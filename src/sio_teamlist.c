@@ -14,6 +14,8 @@
 
 #include "sio_core.h"
 #include "sio.h"
+
+#include "constants/msg.h"
 #include "constants/songs.h"
 
 extern struct ProcCmd ProcScr_SioTeamList[];
@@ -66,46 +68,46 @@ struct LATeamListConfig CONST_DATA gSioTeamListConfig_1[] =
     [0] =
     {
         .kind = MULTIARENA_LIST_BUILDTEAM,
-        .helpTextId = 0x073C, // TODO: msgid "Build a new team."
+        .helpTextId = MSG_73C, // "Build a new team."
         .unk_04 = 1,
         .unk_05 = 0,
-        .menuTextId = 0x0766, // TODO: msgid "Build Team"
+        .menuTextId = MSG_766, // "Build Team"
         .isValidFunc = CanBuildNewLinkArenaTeam,
     },
     [1] =
     {
         .kind = MULTIARENA_LIST_UNITLIST,
-        .helpTextId = 0x073D, // TODO: msgid "View all units on team."
+        .helpTextId = MSG_73D, // "View all units on team."
         .unk_04 = 0,
         .unk_05 = 1,
-        .menuTextId = 0x0767, // TODO: msgid "Unit List"
+        .menuTextId = MSG_767, // Unit List"
         .isValidFunc = sub_8043394,
     },
     [2] =
     {
         .kind = MULTIARENA_LIST_SWAP,
-        .helpTextId = 0x073E, // TODO: msgid "Switch teams."
+        .helpTextId = MSG_73E, // "Switch teams."
         .unk_04 = 0,
         .unk_05 = 0,
-        .menuTextId = 0x0768, // TODO: msgid "Swap"
+        .menuTextId = MSG_768, // "Swap"
         .isValidFunc = NULL,
     },
     [3] =
     {
         .kind = MULTIARENA_LIST_DISBAND,
-        .helpTextId = 0x073F, // TODO: msgid "Disband teams."
+        .helpTextId = MSG_73F, // "Disband teams."
         .unk_04 = 0,
         .unk_05 = 1,
-        .menuTextId = 0x0769, // TODO: msgid "Disband"
+        .menuTextId = MSG_769, // "Disband"
         .isValidFunc = sub_8043394,
     },
     [4] =
     {
         .kind = MULTIARENA_LIST_LINKMENU,
-        .helpTextId = 0x0740, // TODO: msgid "Return to link menu."
+        .helpTextId = MSG_740, // "Return to link menu."
         .unk_04 = 0,
         .unk_05 = 0,
-        .menuTextId = 0x076A, // TODO: msgid "Link Menu"
+        .menuTextId = MSG_76A, // "Link Menu"
         .isValidFunc = NULL,
     },
     [5] =
@@ -124,28 +126,28 @@ struct LATeamListConfig CONST_DATA gSioTeamListConfig_2[] =
     [0] =
     {
         .kind = MULTIARENA_LIST_SELECTTEAM,
-        .helpTextId = 0x0741, // TODO: msgid "Select team for battle."
+        .helpTextId = MSG_741, // "Select team for battle."
         .unk_04 = 0,
         .unk_05 = 1,
-        .menuTextId = 0x076C, // TODO: msgid "Team"
+        .menuTextId = MSG_76C, // "Team"
         .isValidFunc = NULL,
     },
     [1] =
     {
         .kind = MULTIARENA_LIST_UNITLIST,
-        .helpTextId = 0x073D, // TODO: msgid "View all units on team."
+        .helpTextId = MSG_73D, // "View all units on team."
         .unk_04 = 0,
         .unk_05 = 1,
-        .menuTextId = 0x0767, // TODO: msgid "Unit List"
+        .menuTextId = MSG_767, // "Unit List"
         .isValidFunc = NULL,
     },
     [2] =
     {
         .kind = MULTIARENA_LIST_LINKMENU,
-        .helpTextId = 0x0740, // TODO: msgid "Return to link menu."
+        .helpTextId = MSG_740, // "Return to link menu."
         .unk_04 = 0,
         .unk_05 = 1,
-        .menuTextId = 0x076A, // TODO: msgid "Link Menu"
+        .menuTextId = MSG_76A, // "Link Menu"
         .isValidFunc = NULL,
     },
     [3] =
@@ -252,7 +254,7 @@ int sub_80433C0(int activeOption, u8 mode)
                 }
                 else
                 {
-                    SioStrCpy(GetStringFromIndex(0xcc), gLinkArenaTeamList[i].name);
+                    SioStrCpy(GetStringFromIndex(MSG_0CC), gLinkArenaTeamList[i].name); // "NO DATA"
                     gLinkArenaTeamList[i].unk_10 = ptr[activeOption].unk_05;
                     gLinkArenaTeamList[i].unk_0f = i | 0x80;
                 }
@@ -352,7 +354,7 @@ void SioTeamList_EraseTeam(struct SioTeamListProc * proc)
     WipeMultiArenaSaveTeam(gLinkArenaTeamList[team].unk_0f & 0x7f);
     ReadMultiArenaSaveTeam(team, unit, gLinkArenaTeamList[team].name);
 
-    SioStrCpy(GetStringFromIndex(0xcc), gLinkArenaTeamList[team].name);
+    SioStrCpy(GetStringFromIndex(MSG_0CC), gLinkArenaTeamList[team].name); // "NO DATA"
 
     gLinkArenaTeamList[team].unk_10 = ptr[proc->optionIdx].unk_05;
     gLinkArenaTeamList[team].unk_0f = team | 0x80;
@@ -391,7 +393,7 @@ void SioTeamList_SwapTeams(struct SioTeamListProc * proc)
 
     if (ReadMultiArenaSaveTeam(teamA, GetUnit(teamA * 5 + 1), gLinkArenaTeamList[teamA].name) == 0)
     {
-        SioStrCpy(GetStringFromIndex(0xcc), gLinkArenaTeamList[teamA].name);
+        SioStrCpy(GetStringFromIndex(MSG_0CC), gLinkArenaTeamList[teamA].name); // "NO DATA"
         gLinkArenaTeamList[teamA].unk_0f = teamA | 0x80;
     }
     else
@@ -401,7 +403,7 @@ void SioTeamList_SwapTeams(struct SioTeamListProc * proc)
 
     if (ReadMultiArenaSaveTeam(teamB, GetUnit(teamB * 5 + 1), gLinkArenaTeamList[teamB].name) == 0)
     {
-        SioStrCpy(GetStringFromIndex(0xcc), gLinkArenaTeamList[teamB].name);
+        SioStrCpy(GetStringFromIndex(MSG_0CC), gLinkArenaTeamList[teamB].name); // "NO DATA"
         gLinkArenaTeamList[teamB].unk_0f = teamB | 0x80;
     }
     else
@@ -435,7 +437,7 @@ int sub_80437C0(u8 mode, struct SioTeamListProc * proc)
     {
         for (i = 0; i < gLinkArenaSt.unk_05 + 2; i++)
         {
-            SioStrCpy(GetStringFromIndex(0x76B), gUnk_Sio_0203DD50[i]);
+            SioStrCpy(GetStringFromIndex(MSG_76B), gUnk_Sio_0203DD50[i]); // "Empty"
             ClearText(&gLinkArenaSt.unk_64[i]);
             PutDrawTextCentered(&gLinkArenaSt.unk_64[i], 1, i * 3 + 5, gUnk_Sio_0203DD50[i], 10);
         }
@@ -479,11 +481,11 @@ u16 GetLATeamListHelpTextId(struct SioTeamListProc * proc)
 
     if (proc->optionIdx == 0)
     {
-        return 0x742; // TODO: msgid "Select your own team."
+        return MSG_742; // "Select your own team."
     }
     else
     {
-        return 0x743; // TODO: msgid "Select team to battle."
+        return MSG_743; // "Select team to battle."
     }
 }
 
@@ -500,11 +502,11 @@ void SioTeamList_SetupGfx(struct SioTeamListProc * proc)
 
     StartMuralBackgroundExt(proc, 0, 0x12, 2, 0);
 
-    Decompress(Img_TacticianSelObj, (void *)(0x06014800));
-    CallARM_FillTileRect(TILEMAP_LOCATED(gBG2TilemapBuffer, 9, 4), gUnknown_085ADF40, 0x1000);
+    Decompress(Img_TacticianSelObj, OBJ_CHR_ADDR(0x240));
+    CallARM_FillTileRect(TILEMAP_LOCATED(gBG2TilemapBuffer, 9, 4), gUnknown_085ADF40, TILEREF(0x0, 1));
     ApplyPalettes(Pal_TacticianSelObj, 0x13, 4);
 
-    Decompress(gUnknown_085AC604, (void *)(0x06016000));
+    Decompress(gUnknown_085AC604, OBJ_CHR_ADDR(0x300));
     ApplyPalettes(gUnknown_08A1BD00, 0x11, 2);
 
     gPaletteBuffer[0x20] = 0;
@@ -562,7 +564,7 @@ void SioTeamList_SetupGfx(struct SioTeamListProc * proc)
     StartLinkArenaTitleBanner(proc->unk_2c, gUnknown_080D9D5E[gLinkArenaSt.unk_00], 0);
     sub_804C558();
 
-    sub_8043100(GetLATeamListHelpTextId(proc), 1);
+    PutSioText(GetLATeamListHelpTextId(proc), 1);
 
     BG_EnableSyncByMask(BG0_SYNC_BIT | BG1_SYNC_BIT | BG2_SYNC_BIT | BG3_SYNC_BIT);
 
@@ -618,7 +620,7 @@ void SioTeamList_Loop_MainKeyHandler(struct SioTeamListProc * proc)
         unk_2C->unk_3a[proc->optionIdx] = 1;
 
         sub_8043548(proc, gLinkArenaSt.unk_00);
-        sub_8043100(GetLATeamListHelpTextId(proc), 1);
+        PutSioText(GetLATeamListHelpTextId(proc), 1);
     }
 
     if ((gKeyStatusPtr->newKeys & A_BUTTON) != 0)
@@ -1088,9 +1090,9 @@ void SioTeamList_StartEraseTeamSubMenu(struct SioTeamListProc * proc)
     }
 
     ClearText(&Texts_0203DAB0);
-    Text_DrawString(&Texts_0203DAB0, GetStringFromIndex(0x140)); // TODO: msgid "Erase"
+    Text_DrawString(&Texts_0203DAB0, GetStringFromIndex(MSG_140)); // "Erase"
     Text_SetCursor(&Texts_0203DAB0, 38);
-    Text_DrawString(&Texts_0203DAB0, GetStringFromIndex(0x141)); // TODO: msgid "Back"
+    Text_DrawString(&Texts_0203DAB0, GetStringFromIndex(MSG_141)); // "Back"
     PutText(&Texts_0203DAB0, TILEMAP_LOCATED(gBG0TilemapBuffer, 15, (proc->unk_58 + 4)));
 
     BG_EnableSyncByMask(BG0_SYNC_BIT);

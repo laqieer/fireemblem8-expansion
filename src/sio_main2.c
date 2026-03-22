@@ -7,9 +7,11 @@
 #include "bmitem.h"
 #include "bmsave.h"
 #include "ctc.h"
-#include "constants/items.h"
 #include "sio.h"
 #include "sio_core.h"
+
+#include "constants/items.h"
+#include "constants/songs.h"
 
 struct ProcCmd CONST_DATA ProcScr_HOLD[] = {
     PROC_NAME("HOLD"),
@@ -73,7 +75,7 @@ void sub_804309C(void)
     BG_EnableSyncByMask(BG0_SYNC_BIT | BG1_SYNC_BIT | BG2_SYNC_BIT | BG3_SYNC_BIT);
 }
 
-void sub_8043100(int msg, int text_idx)
+void PutSioText(int msg, int text_idx)
 {
     struct Text * text = &gSioTexts[text_idx];
 
@@ -135,7 +137,7 @@ void sub_80431B4(struct Unit * unit)
 
 void SioPlaySoundEffect(int idx)
 {
-    u16 sfx_list[] = {0x6C, 0x6B, 0x6A, 0x66};
+    u16 sfx_list[] = { SONG_6C, SONG_SE_SYS_WINDOW_CANSEL1, SONG_SE_SYS_WINDOW_SELECT1, SONG_SE_SYS_CURSOR_UD1 };
     PlaySoundEffect(sfx_list[idx]);
 }
 

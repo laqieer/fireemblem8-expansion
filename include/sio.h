@@ -132,7 +132,7 @@ void EndSioHold(void);
 void sub_804303C(ProcPtr proc, int num);
 void ClearSioBG(void);
 void sub_804309C(void);
-void sub_8043100(int, int);
+void PutSioText(int, int);
 void sub_8043164(void);
 void sub_80431B4(struct Unit * unit);
 void SioPlaySoundEffect(int);
@@ -407,29 +407,29 @@ void sub_80476CC(int idx, int state);
 void SioRuleSettings_Init(struct ProcSioRuleSettings * proc);
 void SioRuleSettings_Loop_Main(struct ProcSioRuleSettings * proc);
 
-struct SioProc85AA9C0
+struct SioMenuItemProc
 {
     /* 00 */ PROC_HEADER;
     /* 2A */ s16 xBase;
     /* 2C */ s16 yBase;
-    /* 2E */ u8 unk_2e;
-    /* 2F */ u8 unk_2f;
-    /* 30 */ u8 unk_30;
-    /* 32 */ s16 unk_32;
-    /* 34 */ s16 unk_34;
-    /* 36 */ u16 unk_36;
-    /* 38 */ u16 unk_38;
-    /* 3A */ s16 unk_3a;
-    /* 3C */ s16 unk_3c;
+    /* 2E */ u8 state; // 0 = disabled, 1 = enabled, 2 = selected
+    /* 2F */ u8 index;
+    /* 30 */ u8 glowFrame;
+    /* 32 */ s16 xLeftArrow;
+    /* 34 */ s16 xRightArrow;
+    /* 36 */ u16 leftArrowAnmCnt;
+    /* 38 */ u16 rightArrowAnmCnt;
+    /* 3A */ s16 leftArrowSpeed;
+    /* 3C */ s16 rightArrowSpeed;
     /* 3E */ u8 unk_3e;
 };
 
 struct SioMenuProc
 {
     /* 00 */ PROC_HEADER;
-    /* 2C */ struct SioProc85AA9C0 * unk_2c[5];
-    /* 40 */ u8 unk_40[4];
-    /* 44 */ s8 unk_44;
+    /* 2C */ struct SioMenuItemProc * menuItems[5];
+    /* 40 */ u8 menuItemState[5];
+    STRUCT_PAD(0x45, 0x48);
     /* 48 */ int unk_48;
     /* 4C */ int unk_4c;
     /* 50 */ int unk_50;
@@ -438,7 +438,7 @@ struct SioMenuProc
     /* 59 */ s8 unk_59;
 };
 
-int sub_8047A54(struct SioMenuProc * proc, int lineNum);
+int SioMenu_GetItemHelpText(struct SioMenuProc * proc, int lineNum);
 bool CheckSomethingSaveRelated(void);
 void SioMenu_Init(void);
 void SioMenu_LoadGraphics(struct SioMenuProc * proc);
@@ -749,11 +749,11 @@ void sub_804C4F8(void);
 void sub_804C508(void);
 void sub_804C558(void);
 void sub_804C590(void);
-void sub_804C5A4(u8 idx);
-void sub_804C5F8(struct SioProc85AA9C0 * proc);
-ProcPtr sub_804C758(ProcPtr parent, u8 xBase, u8 yBase, u8 d, u8 e);
-void sub_804C7C8(struct SioProc85AA9C0 * proc, int b, int c, int d, int e);
-void sub_804C7DC(struct SioProc85AA9C0 * proc, s16 x, s16 y);
+void UpdateSioMenuSelectedGlow(u8 idx);
+void SioMenuItem_Loop(struct SioMenuItemProc * proc);
+ProcPtr StartSioMenuItem(ProcPtr parent, u8 xBase, u8 yBase, u8 index, u8 state);
+void SioMenuItem_SetArrowConfig(struct SioMenuItemProc * proc, int xLeft, int xRight, int leftSpeed, int rightSpeed);
+void SioMenuItem_SetPosition(struct SioMenuItemProc * proc, s16 x, s16 y);
 void sub_804C7E4(void);
 void sub_804C83C(void);
 void sub_804C894(struct SioProc85AAA78 * proc);
@@ -952,7 +952,7 @@ extern s16 const gUnknown_080D9E1C[5][4];
 extern const u8 gUnknown_080D9E44[3];
 // extern ??? gLinkArenaRuleData
 
-// extern ??? gUnknown_080D9EC8
+// extern ??? linkMenuMsgLut
 // extern ??? gUnknown_080D9EF0
 
 // extern ??? gUnknown_080D9F18
@@ -969,7 +969,7 @@ extern const struct Vec2 gUnknown_080D9F48[];
 // extern ??? Sprite_LinkArenaBButton
 // extern ??? SioDefaultBgConfig
 // extern ??? gUnknown_080DA09C
-// extern ??? gUnknown_080DA0DA
+// extern ??? sioMenuItemGlowLut
 // extern ??? Sprite_LinkArena_PressStart
 // extern ??? gUnknown_080DA102
 // extern ??? Sprite_NameEntry_PositionIndicator
@@ -1043,7 +1043,7 @@ extern u16 CONST_DATA Sprite_LinkArena_MenuTitle[];
 extern struct ProcCmd CONST_DATA ProcScr_LinkArenaTitleBanner[];
 extern const u16 * CONST_DATA SpriteArray_SioMenuItems[];
 extern const u16 * CONST_DATA SpriteArray_SioMenuTeamCount[];
-extern struct ProcCmd CONST_DATA ProcScr_085AA9C0[];
+extern struct ProcCmd CONST_DATA ProcScr_SioMenuItem[];
 extern u16 CONST_DATA Sprite_LinkArena_TeamName[];
 extern u16 CONST_DATA Sprite_085AA9E6[];
 extern u16 CONST_DATA Sprite_085AA9FA[];

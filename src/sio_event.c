@@ -344,13 +344,13 @@ void sub_804879C(void)
 void sub_80487C0(struct Proc * proc)
 {
     int i;
-    struct SioProc85AA9C0 ** iter;
+    struct SioMenuItemProc ** iter;
 
     struct SioMenuProc * pSioMenuProc = proc->proc_parent;
 
     EndFaceById(3);
 
-    iter = pSioMenuProc->unk_2c;
+    iter = pSioMenuProc->menuItems;
 
     for (i = 0; i < 5; i++)
     {
