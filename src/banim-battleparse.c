@@ -397,7 +397,6 @@ void ParseBattleHitToBanimCmd(void)
         u16 * r5;
         struct Unit * unit_r6;
         u16 * r8;
-        u16 * tmp;
 
         if (hit->info & BATTLE_HIT_INFO_RETALIATION)
             is_enemy = true;
@@ -494,9 +493,9 @@ void ParseBattleHitToBanimCmd(void)
             *r8 = gUnknown_080DAEB4[distance_sp1C];
         }
 
-        gAnimRoundData[ANIM_REF_OFFSET(round_sp0C, POS_L)] = r8[sp00 - r8 + POS_L];
-        tmp = sp00 + POS_R;
-        gAnimRoundData[ANIM_REF_OFFSET(round_sp0C, POS_R)] = *tmp;
+        gAnimRoundData[ANIM_REF_OFFSET(round_sp0C, POS_L)] = sp00[POS_L];
+        r8 = sp00;
+        gAnimRoundData[ANIM_REF_OFFSET(round_sp0C, POS_R)] = r8[sp00 - r8 + POS_R];
 
         if (!(hit->attributes & BATTLE_HIT_ATTR_MISS))
         {
