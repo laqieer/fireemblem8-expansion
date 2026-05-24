@@ -581,7 +581,7 @@ void ChapterStatus_Init(struct ChapterStatusProc * proc)
     proc->unitIndex = 0;
     proc->timer = 0;
 
-    proc->units[0] = GetUnitFromCharId(GetPlayerLeaderUnitId());
+    proc->units[0] = GetUnitFromCharId(GetPlayerLeaderPid());
 
     proc->numAllyUnits = CountUnitsByFaction(FACTION_BLUE);
 

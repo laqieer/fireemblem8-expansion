@@ -598,7 +598,7 @@ int sub_8012578(int index)
             continue;
         }
 
-        if (unit->pCharacterData->number == GetPlayerLeaderUnitId())
+        if (unit->pCharacterData->number == GetPlayerLeaderPid())
         {
             continue;
         }
@@ -617,7 +617,7 @@ int sub_8012578(int index)
 //! FE8U = 0x080125C0
 void sub_80125C0(struct UnitDefinition * uDef)
 {
-    int pid = GetPlayerLeaderUnitId();
+    int pid = GetPlayerLeaderPid();
     struct Unit * unit = GetUnitFromCharId(pid);
 
     if (unit)
