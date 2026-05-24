@@ -403,7 +403,7 @@ void AtMenu_ResetBmUiEffect(struct ProcAtMenu * proc)
     else if (CheckInLinkArena())
         sub_8042EA8();
 
-    sub_801240C();
+    SyncUnitDeploymentState();
     ResetUnitSprites();
     RefreshEntityBmMaps();
     RefreshUnitSprites();

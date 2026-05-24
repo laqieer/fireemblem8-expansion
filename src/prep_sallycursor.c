@@ -37,7 +37,10 @@
 #include "bmsave.h"
 #include "bmlib.h"
 #include "eventcall.h"
+
+#include "constants/chapters.h"
 #include "constants/characters.h"
+#include "constants/msg.h"
 #include "constants/terrains.h"
 #include "constants/songs.h"
 
@@ -259,7 +262,7 @@ PROC_LABEL(55),
     PROC_CALL(nullsub_20),
     PROC_YIELD,
 
-    PROC_CALL(sub_801240C),
+    PROC_CALL(SyncUnitDeploymentState),
     PROC_CALL(EndPrepScreen),
 
     PROC_BLOCK,
@@ -330,7 +333,7 @@ int GetPlayerLeaderUnitId(void)
             break;
     }
 
-    if ((u8)gPlaySt.chapterIndex == 5)
+    if ((u8)gPlaySt.chapterIndex == CHAPTER_L_5X)
     {
         return CHARACTER_EPHRAIM;
     }
@@ -345,7 +348,7 @@ int GetPlayerLeaderUnitId(void)
 
         unit = GetUnitFromCharId(unitId);
 
-        if (unit && !(unit->state & US_NOT_DEPLOYED))
+        if (unit != NULL && !(unit->state & US_NOT_DEPLOYED))
         {
             return unitId;
         }
@@ -561,7 +564,7 @@ void sub_8033514(ProcPtr proc)
 void PrepHelpPrompt_Init(struct ProcPrepSallyCursor * proc)
 {
     StartHelpPromptSprite(170, 140, 2, proc);
-    Decompress(Img_PrepHelpButtonSprites, (void *)(OBJ_VRAM1 + 0x3000));
+    Decompress(Img_PrepHelpButtonSprites, OBJ_CHR_ADDR(0x380));
     proc->unk_58 = 0;
     return;
 }
@@ -607,21 +610,21 @@ void PrepScreenProc_StartMapMenu(struct ProcPrepSallyCursor * proc)
 
     StartPrepScreenMenu(proc);
 
-    SetPrepScreenMenuItem(1, PrepMapMenu_OnViewMap, TEXT_COLOR_SYSTEM_WHITE, 0x590, 0x5BB);
+    SetPrepScreenMenuItem(1, PrepMapMenu_OnViewMap, TEXT_COLOR_SYSTEM_WHITE, MSG_590, MSG_5BB);
 
     SetPrepScreenMenuItem(
-        2, PrepMapMenu_OnFormation, (PrepGetDeployedUnitAmt() ? TEXT_COLOR_SYSTEM_WHITE : TEXT_COLOR_SYSTEM_GRAY),
-        0x591, 0x5BC);
+        2, PrepMapMenu_OnFormation, (PrepGetDeployedUnitAmt() != 0 ? TEXT_COLOR_SYSTEM_WHITE : TEXT_COLOR_SYSTEM_GRAY),
+        MSG_591, MSG_5BC);
 
-    SetPrepScreenMenuItem(8, PrepMapMenu_OnOptions, TEXT_COLOR_SYSTEM_WHITE, 0x592, 0x5BD);
+    SetPrepScreenMenuItem(8, PrepMapMenu_OnOptions, TEXT_COLOR_SYSTEM_WHITE, MSG_592, MSG_5BD);
 
     if (CanPrepScreenSave())
     {
-        SetPrepScreenMenuItem(9, PrepMapMenu_OnSave, TEXT_COLOR_SYSTEM_WHITE, 0x579, 0x5BE);
+        SetPrepScreenMenuItem(9, PrepMapMenu_OnSave, TEXT_COLOR_SYSTEM_WHITE, MSG_579, MSG_5BE);
     }
     else
     {
-        SetPrepScreenMenuItem(9, PrepMapMenu_OnSave, TEXT_COLOR_SYSTEM_GRAY, 0x579, 0x5BE);
+        SetPrepScreenMenuItem(9, PrepMapMenu_OnSave, TEXT_COLOR_SYSTEM_GRAY, MSG_579, MSG_5BE);
     }
 
     StartPrepHelpPrompt(proc);
@@ -720,7 +723,7 @@ void sub_80337F0(struct ProcPrepSallyCursor * proc)
         proc->unk_4A = 1;
     }
 
-    if (proc->unk_4A && !(proc->unk_2C & 0xF) && !(proc->unk_30 & 0xF))
+    if (proc->unk_4A && !(proc->unk_2C & 15) && !(proc->unk_30 & 15))
     {
         Proc_Goto(proc, 2);
         return;
@@ -747,7 +750,7 @@ void InitPrepScreenUnitsAndCamera(void)
 {
     LoadUnitPrepScreenPositions();
 
-    if (!(PLAY_FLAG_PREPSCREEN & gPlaySt.chapterStateBits))
+    if (!(gPlaySt.chapterStateBits & PLAY_FLAG_PREPSCREEN))
     {
         SortPlayerUnitsForPrepScreen();
         InitPlayerUnitPositionsForPrepScreen();
@@ -773,7 +776,7 @@ void InitPrepScreenCursorPosition(void)
 
     struct Unit * unit = GetUnitFromCharId(GetPlayerLeaderUnitId());
 
-    if (unit && PrepGetDeployedUnitAmt())
+    if (unit != NULL && PrepGetDeployedUnitAmt() != 0)
     {
         SetCursorMapPosition(unit->xPos, unit->yPos);
     }
@@ -781,7 +784,7 @@ void InitPrepScreenCursorPosition(void)
     {
         uDef = GetChapterAllyUnitDataPointer();
         uDef = uDef + CalcForceDeployedUnitCounts();
-        GenUnitDefinitionFinalPosition(uDef, &x, &y, 0);
+        GenUnitDefinitionFinalPosition(uDef, &x, &y, false);
         SetCursorMapPosition(x, y);
     }
 
@@ -943,7 +946,7 @@ void PrepScreen_StartUnitSwap(struct ProcPrepSallyCursor * proc)
     proc->xCursor = gBmSt.playerCursor.x;
     proc->yCursor = gBmSt.playerCursor.y;
 
-    StartSubtitleHelp(proc, GetStringFromIndex(0x872)); // TODO: msgid "Reorder your units.[.]"
+    StartSubtitleHelp(proc, GetStringFromIndex(MSG_872)); // "Reorder your units.[.]"
 
     EnsureCameraOntoPosition(proc, gActiveUnit->xPos, gActiveUnit->yPos);
     PlaySoundEffect(SONG_69);
@@ -968,9 +971,9 @@ void PrepScreen_UnitSwapIdle(struct ProcPrepSallyCursor * proc)
     xLoc = (proc->xCursor * 16) - gBmSt.camera.x;
     yLoc = (proc->yCursor * 16) - gBmSt.camera.y;
 
-    if (((xLoc + 16) <= 256) && ((yLoc + 32) <= 192))
+    if (((xLoc + 16) <= DISPLAY_WIDTH + 16) && ((yLoc + 32) <= DISPLAY_HEIGHT + 32))
     {
-        PutSprite(4, xLoc, yLoc - 12, gObject_16x16, 6);
+        PutSprite(4, xLoc, yLoc - 12, gObject_16x16, OAM2_CHR(0x6));
     }
 
     if (gKeyStatusPtr->newKeys & A_BUTTON)
@@ -1023,7 +1026,7 @@ void PrepScreen_StartUnitSwapAnim(ProcPtr proc)
 {
     struct Unit * activeUnit = gActiveUnit;
     struct Unit * targetUnit = GetUnit(gBmMapUnit[gBmSt.playerCursor.y][gBmSt.playerCursor.x]);
-    if (!targetUnit)
+    if (targetUnit == NULL)
     {
         StartPrepUnitSwap(proc, activeUnit, gBmSt.playerCursor.x, gBmSt.playerCursor.y);
     }
@@ -1201,7 +1204,7 @@ void StartPrepSaveScreen(ProcPtr proc)
     }
 
     StartBgmVolumeChange(0x100, 0x80, 0x20, NULL);
-    sub_801240C();
+    SyncUnitDeploymentState();
     Make6C_SaveMenuPostChapter(proc);
 
     return;

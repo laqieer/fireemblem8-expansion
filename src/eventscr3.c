@@ -490,10 +490,9 @@ void InitPlayerUnitPositionsForPrepScreen(void)
 }
 
 //! FE8U = 0x0801240C
-void sub_801240C(void)
+void SyncUnitDeploymentState(void)
 {
-    int i = 1;
-    int r5 = -1;
+    int i;
 
     for (i = FACTION_BLUE + 1; i < FACTION_GREEN; i++)
     {
@@ -518,9 +517,9 @@ void sub_801240C(void)
 
         unit->state &= ~(US_HIDDEN);
 
-        if (!(gBmSt.gameStateBits & BM_FLAG_LINKARENA) && unit->xPos == r5)
+        if (!(gBmSt.gameStateBits & BM_FLAG_LINKARENA) && unit->xPos == -1)
         {
-            sub_801247C(unit);
+            AssignUnitToFreeDeploySlot(unit);
         }
     }
 
@@ -528,7 +527,7 @@ void sub_801240C(void)
 }
 
 //! FE8U = 0x0801247C
-void sub_801247C(struct Unit * unit)
+void AssignUnitToFreeDeploySlot(struct Unit * unit)
 {
     int i;
     s8 x;
@@ -545,7 +544,7 @@ void sub_801247C(struct Unit * unit)
 
     while (uDef->charIndex != 0)
     {
-        s8 found = 0;
+        bool found = false;
 
         for (i = FACTION_BLUE + 1; i < FACTION_GREEN; i++)
         {
@@ -561,21 +560,21 @@ void sub_801247C(struct Unit * unit)
                 continue;
             }
 
-            GenUnitDefinitionFinalPosition(uDef, &x, &y, 0);
+            GenUnitDefinitionFinalPosition(uDef, &x, &y, false);
 
             if (unit->xPos != x || unit->yPos != y)
             {
                 continue;
             }
 
-            found = 1;
+            found = true;
 
             break;
         }
 
         if (!found)
         {
-            GenUnitDefinitionFinalPosition(uDef, &x, &y, 0);
+            GenUnitDefinitionFinalPosition(uDef, &x, &y, false);
             unit->xPos = x;
             unit->yPos = y;
             return;
