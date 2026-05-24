@@ -184,7 +184,7 @@ void PrepScreenMenu_OnItems(struct ProcAtMenu* proc) {
 
 void PrepScreenMenu_OnSupport(struct ProcAtMenu* proc) {
     proc->state = 4;
-    CallSomeSoundMaybe(SONG_BONDS, 0x100, 0x100, 0x20, 0);
+    ChangeBgm(SONG_BONDS, 0x100, 0x100, 0x20, 0);
     Proc_Goto(proc, 0xA);
 }
 

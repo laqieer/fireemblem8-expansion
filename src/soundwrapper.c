@@ -414,7 +414,7 @@ static struct ProcCmd sMusicProc4Script[] =
     PROC_END,
 };
 
-void CallSomeSoundMaybe(int songId, int vc_init_volume, int vc_end_volume, int d, ProcPtr parent)
+void ChangeBgm(int songId, int vc_init_volume, int vc_end_volume, int duration, ProcPtr parent)
 {
     struct MusicProc *mproc;
 
@@ -426,7 +426,7 @@ void CallSomeSoundMaybe(int songId, int vc_init_volume, int vc_end_volume, int d
     else
         mproc = Proc_Start(sMusicProc4Script, PROC_TREE_3);
 
-    mproc->unk58 = d;
+    mproc->unk58 = duration;
 
     if (IsBgmPlaying() != 0 && songId == gSoundSt.songId)
         mproc->unk5C = -1;

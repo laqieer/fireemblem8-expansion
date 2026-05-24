@@ -1232,7 +1232,7 @@ void sub_8034194(void)
         return;
     }
 
-    CallSomeSoundMaybe(SONG_COMBAT_PREPARATION, 0x100, 0x100, 0x18, NULL);
+    ChangeBgm(SONG_COMBAT_PREPARATION, 0x100, 0x100, 0x18, NULL);
 
     return;
 }

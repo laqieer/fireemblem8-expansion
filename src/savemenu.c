@@ -1042,12 +1042,12 @@ void sub_80A9B90(struct SaveMenuProc * proc)
             break;
 
         case EXTRA_MENU_OPTION_SOUND_ROOM:
-            CallSomeSoundMaybe(SONG_NONE, 0xc0, 0, 0x18, 0);
+            ChangeBgm(SONG_NONE, 0xc0, 0, 0x18, 0);
             Proc_Goto(proc, PL_SAVEMENU_EXEC_EXTRA_MISC_OPTION);
             break;
 
         case EXTRA_MENU_OPTION_SUPPORT:
-            CallSomeSoundMaybe(SONG_DISTANT_ROADS, 0xc0, 0x100, 0x18, 0);
+            ChangeBgm(SONG_DISTANT_ROADS, 0xc0, 0x100, 0x18, 0);
             Proc_Goto(proc, PL_SAVEMENU_EXEC_EXTRA_MISC_OPTION);
             break;
 
@@ -1315,7 +1315,7 @@ void PostSaveMenuHandler(struct SaveMenuProc * proc)
 //! FE8U = 0x080AA100
 void ExtraMapStartSomeBgm(struct SaveMenuProc * proc)
 {
-    CallSomeSoundMaybe(SONG_NONE, 0xc0, 0, 0x18, proc);
+    ChangeBgm(SONG_NONE, 0xc0, 0, 0x18, proc);
 }
 
 //! FE8U = 0x080AA118
