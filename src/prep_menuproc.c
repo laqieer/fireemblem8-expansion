@@ -80,7 +80,7 @@ void NullExpForChar100AndResetScreen()
 
     SetBlendDarken(16);
     SetDispEnable(0, 0, 0, 0, 0);
-    CallSomeSoundMaybe(SONG_COMBAT_PREPARATION, 0x100, 0x100, 0x20, NULL);
+    ChangeBgm(SONG_COMBAT_PREPARATION, 0x100, 0x100, 0x20, NULL);
 }
 
 void PrepPromoteDebugMaybe(struct Proc08A184B4 * proc)
@@ -102,7 +102,7 @@ void PrepPromoteDebugMaybe(struct Proc08A184B4 * proc)
 
 void sub_8096668()
 {
-    CallSomeSoundMaybe(SONG_NONE, 0x100, 0, 0x20, NULL);
+    ChangeBgm(SONG_NONE, 0x100, 0, 0x20, NULL);
 }
 
 void NewPrepScreenTraineePromotionManager()

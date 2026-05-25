@@ -113,7 +113,7 @@ void NewForceAsyncButtonB(ProcPtr proc)
 
 void HideAllAlliesExceptLeader(void)
 {
-    struct Unit * leader = GetUnitFromCharId(GetPlayerLeaderUnitId());
+    struct Unit * leader = GetUnitFromCharId(GetPlayerLeaderPid());
     int i;
 
     int x = leader->xPos;

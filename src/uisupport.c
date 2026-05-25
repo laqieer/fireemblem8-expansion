@@ -769,9 +769,9 @@ void SupportScreen_StartUnitSubMenu(struct SupportScreenProc* proc) {
 //! FE8U = 0x080A1930
 void SupportScreen_RestartSourceScreenMusic(struct SupportScreenProc* proc) {
     if (!proc->fromPrepScreen) {
-        CallSomeSoundMaybe(SONG_MAIN_THEME, 0x100, 0xc0, 0x18, 0);
+        ChangeBgm(SONG_MAIN_THEME, 0x100, 0xc0, 0x18, 0);
     } else {
-        CallSomeSoundMaybe(SONG_COMBAT_PREPARATION, 0x100, 0x100, 0x18, 0);
+        ChangeBgm(SONG_COMBAT_PREPARATION, 0x100, 0x100, 0x18, 0);
     }
 
     return;
@@ -1726,9 +1726,9 @@ void SupportSubScreen_PrepareSupportConvo(struct SubScreenProc* proc) {
     );
 
     if (proc->songId == 0) {
-        CallSomeSoundMaybe(SONG_DISTANT_ROADS, 0x100, 0x80, 0x10, 0);
+        ChangeBgm(SONG_DISTANT_ROADS, 0x100, 0x80, 0x10, 0);
     } else {
-        CallSomeSoundMaybe(proc->songId, 0x100, 0x100, 0x10, 0);
+        ChangeBgm(proc->songId, 0x100, 0x100, 0x10, 0);
     }
 
     return;
@@ -1738,9 +1738,9 @@ void SupportSubScreen_PrepareSupportConvo(struct SubScreenProc* proc) {
 void sub_80A2BD0(struct SubScreenProc* proc) {
 
     if (proc->songId == 0) {
-        CallSomeSoundMaybe(SONG_DISTANT_ROADS, 0x80, 0x100, 0x10, 0);
+        ChangeBgm(SONG_DISTANT_ROADS, 0x80, 0x100, 0x10, 0);
     } else {
-        CallSomeSoundMaybe(SONG_DISTANT_ROADS, 0x100, 0x100, 0x10, 0);
+        ChangeBgm(SONG_DISTANT_ROADS, 0x100, 0x100, 0x10, 0);
     }
 
     return;

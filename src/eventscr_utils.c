@@ -271,7 +271,7 @@ struct Unit * GetUnitStructFromEventParameter(s16 pid)
         return gActiveUnit;
 
     case CHAR_EVT_PLAYER_LEADER:
-        pid = GetPlayerLeaderUnitId();
+        pid = GetPlayerLeaderPid();
         break;
     }
 

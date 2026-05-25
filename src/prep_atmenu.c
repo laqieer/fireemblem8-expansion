@@ -312,7 +312,7 @@ void AtMenu_CtrlLoop(struct ProcAtMenu * proc)
             PlaySoundEffect(SONG_SE_SYS_WINDOW_SELECT1);
 
             if (2 == sub_8095094(proc->hand_pos, proc->unk_2F))
-                CallSomeSoundMaybe(SONG_BONDS, 0x100, 0x100, 0x20, NULL);
+                ChangeBgm(SONG_BONDS, 0x100, 0x100, 0x20, NULL);
 
             proc->state = 4;
             Proc_Goto(proc, 8);
@@ -403,7 +403,7 @@ void AtMenu_ResetBmUiEffect(struct ProcAtMenu * proc)
     else if (CheckInLinkArena())
         sub_8042EA8();
 
-    sub_801240C();
+    SyncUnitDeploymentState();
     ResetUnitSprites();
     RefreshEntityBmMaps();
     RefreshUnitSprites();

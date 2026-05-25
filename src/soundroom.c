@@ -233,7 +233,7 @@ void sub_80AEEC0(void)
 void SoundRoomSongChange_FadeOutPrevious(struct Proc * proc)
 {
     struct SoundRoomProc * parent = proc->proc_parent;
-    CallSomeSoundMaybe(SONG_NONE, 0x100, 0, 0x78, proc);
+    ChangeBgm(SONG_NONE, 0x100, 0, 0x78, proc);
     parent->unk_3f = 1;
     return;
 }
@@ -717,7 +717,7 @@ bool StartSoundRoomSong(struct SoundRoomProc * proc, int index, int flagsMaybe)
 
     proc->currentSongIdx = index;
     proc->currentSongTime = 1;
-    CallSomeSoundMaybe(gSoundRoomTable[index].bgmId, 0x100, 0x100, flagsMaybe, NULL);
+    ChangeBgm(gSoundRoomTable[index].bgmId, 0x100, 0x100, flagsMaybe, NULL);
 
     return TRUE;
 }
@@ -731,7 +731,7 @@ void StopSoundRoomSong(struct SoundRoomProc * proc)
     }
 
     proc->currentSongTime = 0;
-    CallSomeSoundMaybe(SONG_NONE, 0x100, 0, 0x18, 0);
+    ChangeBgm(SONG_NONE, 0x100, 0, 0x18, 0);
     proc->unk_2f = 0;
     proc->isSongPlaying = 0;
 
@@ -900,7 +900,7 @@ void SoundRoomUi_RestartTitleMusic(struct SoundRoomProc * proc)
 {
     if (!MusicProc4Exists())
     {
-        CallSomeSoundMaybe(SONG_MAIN_THEME, 0, 0xc0, 0x18, 0);
+        ChangeBgm(SONG_MAIN_THEME, 0, 0xc0, 0x18, 0);
         Proc_Break(proc);
     }
 

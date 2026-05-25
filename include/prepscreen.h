@@ -25,7 +25,7 @@ struct ProcPrepSallyCursor
 
     /* 54 */ struct APHandle * ap;
 
-    /* 58 */ u32 unk_58;
+    /* 58 */ u32 lastCmd;
 };
 
 struct PrepUnitList {
@@ -312,8 +312,48 @@ extern u8 gGfx_SupportMenu[];
 extern u16 gPal_SupportMenu[];
 
 /* sally-cursor */
-int GetPlayerLeaderUnitId(void);
-void sub_80332D0(void);
+
+enum
+{
+    PREP_MAPMENU_NONE = 0,
+    PREP_MAPMENU_VIEW_MAP = 1,
+    PREP_MAPMENU_FORMATION = 2,
+
+    PREP_MAPMENU_OPTIONS = 8,
+    PREP_MAPMENU_SAVE = 9,
+    PREP_MAPMENU_DEBUG = 10,
+};
+
+enum
+{
+    PL_SALLYCURSOR_OPEN_MAP_MENU = 0x00,
+    PL_SALLYCURSOR_UNIT_SELECTED = 0x01,
+    PL_SALLYCURSOR_START_ATMENU = 0x02,
+    PL_SALLYCURSOR_UNIT_SWAP = 0x03,
+    PL_SALLYCURSOR_CANCEL_SWAP = 0x04,
+    PL_SALLYCURSOR_POST_STATSCREEN_IDLE = 0x05,
+    PL_SALLYCURSOR_POST_STATSCREEN_MOVE = 0x06,
+    PL_SALLYCURSOR_MAP_IDLE = 0x09,
+    PL_SALLYCURSOR_0B = 0x0B,
+    PL_SALLYCURSOR_0C = 0x0C, // NOTE: Does not exist in the actual proc
+
+    PL_SALLYCURSOR_ENTER_MAP = 0x32,
+    PL_SALLYCURSOR_RETURN_TO_ATMENU = 0x33,
+    PL_SALLYCURSOR_POST_SUPPLY_CHANGE = 0x34,
+    PL_SALLYCURSOR_SUPPLY_DEPLOY = 0x35,
+    PL_SALLYCURSOR_SUPPLY_REMOVE = 0x36,
+    PL_SALLYCURSOR_END_PREP = 0x37,
+    PL_SALLYCURSOR_CHAPTER_STATUS = 0x38,
+    PL_SALLYCURSOR_OPTIONS = 0x39,
+    PL_SALLYCURSOR_POST_DEBUG_MENU = 0x3A,
+    PL_SALLYCURSOR_SAVE = 0x3B,
+    PL_SALLYCURSOR_SHOP = 0x3C,
+    PL_SALLYCURSOR_MAP_MENU = 0x3D,
+    PL_SALLYCURSOR_REENTER_MAP = 0x3E,
+};
+
+int GetPlayerLeaderPid(void);
+void Prep_ShowDeployableTiles(void);
 void EndPrepScreenMenu_(void);
 void PrepMapMenu_OnViewMap(struct ProcPrepSallyCursor*);
 void PrepMapMenu_OnFormation(struct ProcPrepSallyCursor*);
@@ -323,8 +363,8 @@ void SALLYCURSOR_DeploySupplyUnit(void);
 void PrepMapMenu_OnOptions(struct ProcPrepSallyCursor*);
 void SALLYCURSOR_RemoveSupplyUnit(void);
 void PrepMapMenu_OnSave(struct ProcPrepSallyCursor*);
-void sub_8033468(struct ProcPrepSallyCursor*);
-void sub_803348C(ProcPtr);
+void PrepMapMenu_OnDebug_Unused(struct ProcPrepSallyCursor*);
+void PrepScreenProc_SetCameraOnSupply(ProcPtr);
 void PrepScreenProc_InitMapMenu(struct ProcPrepSallyCursor*);
 void PrepScreenProc_DimMapImmediate(void);
 void PrepScreenProc_StartBrightenMap(ProcPtr);
@@ -343,7 +383,7 @@ void sub_80337D4(struct ProcPrepSallyCursor*);
 void sub_80337F0(struct ProcPrepSallyCursor*);
 void InitPrepScreenUnitsAndCamera(void);
 void InitPrepScreenCursorPosition(void);
-void sub_8033940(struct ProcPrepSallyCursor*);
+void PrepScreenProc_SetupMapIdle(struct ProcPrepSallyCursor*);
 void PrepScreenProc_MapIdle(struct ProcPrepSallyCursor* proc);
 int sub_8033BF8(void);
 void PrepScreen_StartUnitSwap(struct ProcPrepSallyCursor*);
@@ -359,12 +399,12 @@ void PrepScreenProc_Cleanup(ProcPtr);
 void sub_8034090(ProcPtr);
 void StartPrepSaveScreen(ProcPtr);
 void sub_8034168(void);
-void sub_8034194(void);
+void PrepScreenProc_UpdateBgm(void);
 void PrepScreenProc_LockGame(void);
 void PrepScreenProc_HideEverythingAndUnlockGame(void);
 void ShrinkPlayerUnits(void);
 void EndPrepScreen(void);
-bool sub_80342FC(void);
+bool IsPrepMapActive(void);
 
 void Prep_DrawChapterGoal(int VRAM_offset, int pal);
 
