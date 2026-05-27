@@ -31906,7 +31906,7 @@ Img_LunaBg1:  @ 0x08728C5C
 
 	.global Pal_LunaBg1
 Pal_LunaBg1:  @ 0x0872972C
-	.incbin "./graphics/banim/assets/pal/0072972C_Pal_LunaBg1.gbapal" @ 0x72974C - 0x72972C
+	.incbin "./graphics/banim/assets/img/00728C5C_Img_LunaBg1.gbapal" @ 0x72974C - 0x72972C
 
 	.global Tsa_LunaBg1_A
 Tsa_LunaBg1_A:  @ 0x0872974C

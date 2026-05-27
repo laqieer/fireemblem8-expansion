@@ -1236,7 +1236,7 @@ graphics/banim_incbin/007285BC_Tsa_ShineBg2_I.bin,graphics/banim/assets/tsa/0072
 graphics/banim_incbin/0072865C_Img_ShineSprites.bin,graphics/banim/assets/img/0072865C_Img_ShineSprites.4bpp.lz
 graphics/banim_incbin/00728920_Pal_ShineSprites.bin,graphics/banim/assets/pal/00728920_Pal_ShineSprites.gbapal
 graphics/banim_incbin/00728C5C_Img_LunaBg1.bin,graphics/banim/assets/img/00728C5C_Img_LunaBg1.4bpp.lz
-graphics/banim_incbin/0072972C_Pal_LunaBg1.bin,graphics/banim/assets/pal/0072972C_Pal_LunaBg1.gbapal
+graphics/banim_incbin/0072972C_Pal_LunaBg1.bin,graphics/banim/assets/img/00728C5C_Img_LunaBg1.gbapal
 graphics/banim_incbin/0072974C_Tsa_LunaBg1_A.bin,graphics/banim/assets/tsa/0072974C_Tsa_LunaBg1_A.tsa.lz
 graphics/banim_incbin/0072987C_Img_LunaBg2.bin,graphics/banim/assets/img/0072987C_Img_LunaBg2.4bpp.lz
 graphics/banim_incbin/00729FDC_Pal_LunaBg2.bin,graphics/banim/assets/pal/00729FDC_Pal_LunaBg2.gbapal
