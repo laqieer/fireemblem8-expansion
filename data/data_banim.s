@@ -28003,7 +28003,7 @@ Img_IvaldiBg2:  @ 0x08695B10
 
 	.global Pal_IvaldiBg2
 Pal_IvaldiBg2:  @ 0x08696840
-	.incbin "./graphics/banim/assets/pal/00696840_Pal_IvaldiBg2.gbapal" @ 0x696860 - 0x696840
+	.incbin "./graphics/banim/assets/img/00695B10_Img_IvaldiBg2.gbapal" @ 0x696860 - 0x696840
 
 	.global Tsa_08696860
 Tsa_08696860:  @ 0x08696860
