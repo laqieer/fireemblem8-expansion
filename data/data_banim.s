@@ -1398,11 +1398,11 @@ Tsa_085DDAF4:  @ 0x085DDAF4
 
 	.global Img_BreathSprites
 Img_BreathSprites:  @ 0x085DDC64
-	.incbin "./graphics/banim/assets/img/005DDC64_Img_BreathSprites.4bpp.lz"
+	.incbin "./graphics/banim/assets/img/FireBreathSprites.4bpp.lz"
 
 	.global Pal_FireBreathSprites
 Pal_FireBreathSprites:  @ 0x085DE964
-	.incbin "./graphics/banim/assets/pal/005DE964_Pal_FireBreathSprites.gbapal"
+	.incbin "./graphics/banim/assets/img/FireBreathSprites.gbapal"
 
 	.global Img_EfxHurtmutEff00OBJ1
 Img_EfxHurtmutEff00OBJ1:  @ 0x085DE984
@@ -1418,11 +1418,11 @@ Pal_EfxHurtmutEff00OBJ:  @ 0x085DFA08
 
 	.global Pal_IceBreathSprites
 Pal_IceBreathSprites:  @ 0x085DFA28
-	.incbin "./graphics/banim/assets/pal/005DFA28_Pal_IceBreathSprites.gbapal"
+	.incbin "./graphics/banim/assets/img/IceBreathSprites.gbapal"
 
 	.global Pal_DarkBreathSprites
 Pal_DarkBreathSprites:  @ 0x085DFA48
-	.incbin "./graphics/banim/assets/pal/005DFA48_Pal_DarkBreathSprites.gbapal"
+	.incbin "./graphics/banim/assets/img/DarkBreathSprites.gbapal"
 
 	.global Pal_WretchedAirSprites
 Pal_WretchedAirSprites:  @ 0x085DFA68
