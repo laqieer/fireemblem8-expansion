@@ -22668,7 +22668,7 @@ Img_SleepBg:  @ 0x086852D8
 
 	.global Pal_SleepBg
 Pal_SleepBg:  @ 0x086861A4
-	.incbin "./graphics/banim/assets/pal/006861A4_Pal_SleepBg.gbapal" @ 0x6861C4 - 0x6861A4
+	.incbin "./graphics/banim/assets/img/006852D8_Img_SleepBg.gbapal" @ 0x6861C4 - 0x6861A4
 
 	.global Tsa_086861C4
 Tsa_086861C4:  @ 0x086861C4
