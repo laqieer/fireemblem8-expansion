@@ -7563,7 +7563,7 @@ Img_EfxMagdhisEffectBG:  @ 0x085F0190
 
 	.global Pal_EfxMagdhisEffectBG
 Pal_EfxMagdhisEffectBG:  @ 0x085F0E04
-	.incbin "./graphics/banim/assets/pal/005F0E04_Pal_EfxMagdhisEffectBG.gbapal"
+	.incbin "./graphics/banim/assets/img/005F0190_Img_EfxMagdhisEffectBG.gbapal"
 
 	.global Tsa1_EfxMagdhisEffectBG
 Tsa1_EfxMagdhisEffectBG:
