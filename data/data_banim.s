@@ -29659,7 +29659,7 @@ Img_086D7F20:  @ 0x086D7F20
 
 	.global Pal_EvilEyeBg2_A
 Pal_EvilEyeBg2_A:  @ 0x086D8A94
-	.incbin "./graphics/banim/assets/pal/006D8A94_Pal_EvilEyeBg2_A.gbapal" @ 0x6D8AB4 - 0x6D8A94
+	.incbin "./graphics/banim/assets/img/006D7F20_Img_086D7F20.gbapal" @ 0x6D8AB4 - 0x6D8A94
 
 	.global Pal_086D8AB4
 Pal_086D8AB4:  @ 0x086D8AB4
