@@ -443,7 +443,7 @@ void PrepItemSupply_InitGfx(struct PrepItemSupplyProc * proc)
     ApplyPalette(Pal_SpinningArrow, 0x14);
 
     StartMenuScrollBarExt(proc, 0xe1, 0x2f, 0x5800, 9);
-    sub_8097668();
+    UnlockMenuScrollBar();
     SomethingPrepListRelated(proc->unit, proc->currentPage, 1);
 
     sub_809D300(

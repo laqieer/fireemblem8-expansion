@@ -4343,7 +4343,7 @@ CONST_DATA EventListScr EventScr_SuspendPrompt[] = {
     TEXTSHOW(0x8fe)
     TEXTEND
     IfNoSelectedGoto(0x0)
-    ASMC(WriteSuspandPlaterIdle)
+    ASMC(WriteSuspendPlayerIdle)
     EvtTextShow2(0x8ff)
     TEXTEND
     MUSCMID(0x7fff)
@@ -4367,7 +4367,7 @@ CONST_DATA EventListScr EventScr_08592114[] = {
     CALL(EventScr_08592140)
     GOTO(0x1)
 LABEL(0x0)
-    CALL(0x8592170)
+    CALL(EventScr_08592170)
 LABEL(0x1)
     ENDA
 };

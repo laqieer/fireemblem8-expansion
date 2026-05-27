@@ -167,7 +167,7 @@ void ekrBattleEnding_8056310(struct ProcEkrBattleEnding * proc)
         UnpackChapterMapPalette();
 
     if (GetBanimLinkArenaFlag() == 1)
-        sub_8049788();
+        LoadLinkArenaFogPlaceholder();
     
     Proc_Break(proc);
 }

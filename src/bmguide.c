@@ -81,7 +81,7 @@ extern u16 Pal_08B17B44[]; // pal
 // TODO: Implicit declarations
 void UpdateMenuScrollBarConfig(int, int, int, int);
 ProcPtr StartMenuScrollBarExt(ProcPtr, int, int, int, int);
-void sub_8097668(void);
+void UnlockMenuScrollBar(void);
 void LockMenuScrollBar(void);
 void EndMenuScrollBar(void);
 
@@ -956,7 +956,7 @@ void Guide_Init(ProcPtr proc)
     StartMenuScrollBarExt(proc, 224, 47, 0x800, 4);
     UpdateMenuScrollBarConfig(10, gGuideSt->unk_2c * 16, gGuideSt->unk_3e, 6);
 
-    sub_8097668();
+    UnlockMenuScrollBar();
 
     return;
 }
@@ -1153,7 +1153,7 @@ void Guide_MainLoop(struct GuideProc * proc)
 
                     case GUIDE_STATE_1:
                         Proc_StartBlocking(gProcScr_GuideEntryListRedraw_Initial, proc_);
-                        sub_8097668();
+                        UnlockMenuScrollBar();
                         return;
 
                     default:

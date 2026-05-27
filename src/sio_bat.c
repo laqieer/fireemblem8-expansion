@@ -14,6 +14,7 @@
 #include "sio_core.h"
 
 #include "constants/faces.h"
+#include "constants/msg.h"
 #include "constants/songs.h"
 
 //! FE8U = 0x08045930
@@ -272,13 +273,13 @@ void sub_8045CEC(void)
             if (gLinkArenaSt.linking_status[i] < 5)
             {
                 PutDrawTextCentered(
-                    &gLinkArenaSt.texts[i], 0xb, 5 + i * 3,
+                    &gLinkArenaSt.texts[i], 11, 5 + i * 3,
                     GetStringFromIndex(gLinkArenaStatusMsg[gLinkArenaSt.linking_status[i]]), 10);
                 ApplyPalette(gUnknown_085ADDA8, 0x13 + i);
             }
             else
             {
-                PutDrawTextCentered(&gLinkArenaSt.texts[i], 0xb, 5 + i * 3, gLinkArenaSt.unk_A1[i], 10);
+                PutDrawTextCentered(&gLinkArenaSt.texts[i], 11, 5 + i * 3, gLinkArenaSt.unk_A1[i], 10);
                 ApplyPalette(Pal_TacticianSelObj + 0x10 * i, 0x13 + i);
             }
 
@@ -300,9 +301,9 @@ void sub_8045DC0(struct SioBatProc * proc)
 
     StartMuralBackgroundExt(proc, 0, 0x12, 2, 0);
 
-    Decompress(Img_TacticianSelObj, (void *)(0x06014800));
-    Decompress(Img_LinkArenaPlayerBanners, (void *)(0x06016000));
-    Decompress(gUnknown_085AC604, (void *)(0x06016800));
+    Decompress(Img_TacticianSelObj, OBJ_CHR_ADDR(0x240));
+    Decompress(Img_LinkArenaPlayerBanners, OBJ_CHR_ADDR(0x300));
+    Decompress(gUnknown_085AC604, OBJ_CHR_ADDR(0x340));
 
     for (i = 0; i < 4; i++)
     {
@@ -331,16 +332,16 @@ void sub_8045DC0(struct SioBatProc * proc)
     proc->unk_34 = 0;
     proc->unk_30 = 0;
 
-    StartLinkArenaButtonSpriteDraw(0xc0, 0x10, proc);
-    proc->unk_2c = (void *)StartLinkArenaVersusSpriteDraw(0x50, 0x20, proc);
+    StartLinkArenaButtonSpriteDraw(192, 16, proc);
+    proc->unk_2c = StartLinkArenaVersusSpriteDraw(80, 32, proc);
 
     SetupFaceGfxData(gUnknown_085A9864);
-    StartFace(3, FID_ANNA, 0xd0, 0x50, 2);
+    StartFace(3, FID_ANNA, 208, 80, FACE_DISP_KIND(FACE_96x80));
 
     StartLinkArenaTitleBanner(proc->unk_2c, gUnknown_080D9D5E[gLinkArenaSt.unk_00], 0);
 
     sub_804C508();
-    sub_8043100(proc->unk_30 + 0x748, 1);
+    PutSioText(MSG_748 + proc->unk_30, 1); // "Setting up. Please wait..."
 
     SetWinEnable(0, 0, 0);
 
@@ -379,7 +380,7 @@ void sub_8045F48(struct SioBatProc * proc)
 
     if (Proc_Find(ProcScr_SIOCON) != NULL)
     {
-        if ((gKeyStatusPtr->newKeys & 2) != 0)
+        if ((gKeyStatusPtr->newKeys & B_BUTTON) != 0)
         {
             SioPlaySoundEffect(1);
             EndLinkArenaButtonSpriteDraw();
@@ -391,7 +392,7 @@ void sub_8045F48(struct SioBatProc * proc)
         return;
     }
 
-    if ((gKeyStatusPtr->newKeys & 2) != 0)
+    if ((gKeyStatusPtr->newKeys & B_BUTTON) != 0)
     {
         SioPlaySoundEffect(1);
         EndLinkArenaButtonSpriteDraw();
@@ -404,7 +405,7 @@ void sub_8045F48(struct SioBatProc * proc)
 
     for (i = 0; i < 4; i++)
     {
-        if (gSioSt->timeoutClock[i] > 0x3c)
+        if (gSioSt->timeoutClock[i] > 60)
         {
             timeouts++;
         }
@@ -418,14 +419,14 @@ void sub_8045F48(struct SioBatProc * proc)
         return;
     }
 
-    if ((sub_80421E4() == 0) || (gSioSt->unk_01E > 0x3C) || (timeouts != 0))
+    if ((sub_80421E4() == 0) || (gSioSt->unk_01E > 60) || (timeouts != 0))
     {
         sub_8045CBC();
         sub_8045CE0();
         sub_8045F00(proc);
         proc->unk_30 = 0;
-        sub_8043100(0x748, 1);
-        StartLinkArenaButtonSpriteDraw(0xc0, 0x10, proc);
+        PutSioText(MSG_748, 1); // "Setting up. Please wait..."
+        StartLinkArenaButtonSpriteDraw(192, 16, proc);
         return;
     }
 
@@ -434,10 +435,10 @@ void sub_8045F48(struct SioBatProc * proc)
         if (proc->unk_30 != 2)
         {
             proc->unk_30 = 2;
-            sub_8043100(0x74A, 1);
+            PutSioText(MSG_74A, 1); // "Press START to begin."
         }
 
-        if ((gKeyStatusPtr->newKeys & 8) != 0)
+        if ((gKeyStatusPtr->newKeys & START_BUTTON) != 0)
         {
             EndLinkArenaButtonSpriteDraw();
 
@@ -465,7 +466,7 @@ void sub_8045F48(struct SioBatProc * proc)
     else if (proc->unk_30 != 1)
     {
         proc->unk_30 = 1;
-        sub_8043100(0x749, 1);
+        PutSioText(MSG_749, 1); // "Please wait..."
     }
 
     if (((gSioSt->selfId != 0) && (sub_8042194(gSioSt->selfId) != 0)))
@@ -492,12 +493,12 @@ void sub_8045F48(struct SioBatProc * proc)
         }
     }
 
-    if ((GetGameClock() % 0x26) != 0)
+    if ((GetGameClock() % 38) != 0)
     {
         return;
     }
 
-    gUnknown_03004E80.kind = 0x8c;
+    gUnknown_03004E80.kind = SIO_MSG_8C;
     gUnknown_03004E80.sender = gSioSt->selfId;
     gUnknown_03004E80.param = gSioSt->unk_000;
 
@@ -513,7 +514,7 @@ void sub_804619C(struct SioBatProc * proc)
 
     gUnk_Sio_0203DD28++;
 
-    if ((gLinkArenaSt.unk_A0 != gSioSt->unk_007) || (gUnk_Sio_0203DD28 >= 0x259))
+    if ((gLinkArenaSt.unk_A0 != gSioSt->unk_007) || (gUnk_Sio_0203DD28 > 600))
     {
         sub_8045CBC();
         sub_8045CE0();
@@ -521,8 +522,8 @@ void sub_804619C(struct SioBatProc * proc)
 
         proc->unk_30 = 0;
 
-        sub_8043100(0x748, 1);
-        StartLinkArenaButtonSpriteDraw(0xc0, 0x10, proc);
+        PutSioText(MSG_748, 1); // "Setting up. Please wait..."
+        StartLinkArenaButtonSpriteDraw(192, 16, proc);
 
         Proc_Goto(proc, 3);
 
@@ -549,7 +550,7 @@ void sub_8046234(struct SioBatProc * proc)
 {
     u8 buf[0x10];
 
-    sub_8043100(0x749, 1);
+    PutSioText(MSG_749, 1); // "Please wait..."
 
     if (gSioSt->selfId == 0)
     {
@@ -564,7 +565,7 @@ void sub_8046234(struct SioBatProc * proc)
 
         StoreRNState((void *)buf + 6);
 
-        proc->unk_34 = SioEmitData(buf, 0x10);
+        proc->unk_34 = SioEmitData(buf, sizeof(buf));
     }
 
     proc->unk_3a = 0;
@@ -587,16 +588,16 @@ void sub_80462D4(struct SioBatProc * proc)
     {
         if (gSioSt->pendingSend[proc->unk_34].unk_00 == gSioSt->unk_009)
         {
-            sub_8043100(0x74E, 1);
+            PutSioText(MSG_74E, 1); // "Select player to move first."
             unk_2c->unk_38 = 0;
             Proc_Break(proc);
         }
     }
     else
     {
-        if ((GetGameClock() % 0x26) == 0)
+        if ((GetGameClock() % 38) == 0)
         {
-            got = SioReceiveData(buf, outSenderId, 0);
+            got = SioReceiveData(buf, outSenderId, NULL);
 
             if (got != 0)
             {
@@ -615,7 +616,7 @@ void sub_80462D4(struct SioBatProc * proc)
                 proc->unk_3b = buf[3];
                 proc->unk_39 = buf[4];
                 LoadRNState((void *)(buf + 6));
-                sub_8043100(0x74E, 1);
+                PutSioText(MSG_74E, 1); // "Select player to move first."
                 unk_2c->unk_38 = 0;
                 Proc_Break(proc);
             }
@@ -632,7 +633,7 @@ void sub_80463A8(struct SioBatProc * proc)
 
     proc->unk_38++;
 
-    if (proc->unk_38 > 0x10)
+    if (proc->unk_38 > 16)
     {
         proc->unk_38 = 0;
         proc->unk_3a++;
@@ -646,11 +647,11 @@ void sub_80463A8(struct SioBatProc * proc)
         {
             if (proc->unk_3b != gSioSt->selfId)
             {
-                sub_8043100(proc->unk_3b + 0x750, 1);
+                PutSioText(MSG_750 + proc->unk_3b, 1); // "P# moves first."
             }
             else
             {
-                sub_8043100(0x74F, 1);
+                PutSioText(MSG_74F, 1); // "You move first."
             }
 
             unk_2c->unk_38 = proc->unk_3b;
@@ -739,7 +740,7 @@ void sub_8046580(struct SioBatProc * proc)
 
     u8 unk = 0;
 
-    if ((proc->unk_4c == 0))
+    if (proc->unk_4c == 0)
     {
         PlaySoundEffect(SONG_7C);
     }
@@ -758,7 +759,7 @@ void sub_8046580(struct SioBatProc * proc)
         gLinkArenaSt.linking_status[gSioSt->selfId] = proc->unk_64;
     }
 
-    if ((GetGameClock() % 0x26) == 0)
+    if ((GetGameClock() % 38) == 0)
     {
         u16 got = SioReceiveData(buf, outSenderId, 0);
 
@@ -856,9 +857,9 @@ void sub_80467AC(struct SioBatProc * proc)
     EndFaceById(3);
 
     ClearText(&gUnk_Sio_0203DA78);
-    Text_SetColor(&gUnk_Sio_0203DA78, 0);
-    Text_SetCursor(&gUnk_Sio_0203DA78, GetStringTextCenteredPos(0x60, GetStringFromIndex(0x77D)));
-    Text_DrawString(&gUnk_Sio_0203DA78, GetStringFromIndex(0x77D));
+    Text_SetColor(&gUnk_Sio_0203DA78, TEXT_COLOR_SYSTEM_WHITE);
+    Text_SetCursor(&gUnk_Sio_0203DA78, GetStringTextCenteredPos(96, GetStringFromIndex(MSG_77D)));
+    Text_DrawString(&gUnk_Sio_0203DA78, GetStringFromIndex(MSG_77D)); // "Now Loading"
     PutText(&gUnk_Sio_0203DA78, TILEMAP_LOCATED(gBG2TilemapBuffer, 9, 12));
 
     Proc_Start(gUnknown_085A93A0, proc);
@@ -879,16 +880,17 @@ void sub_8046838(ProcPtr proc)
 
     StartMuralBackgroundExt(proc, 0, 0x12, 2, 0);
 
-    Decompress(Img_LinkArenaRankIcons, (void *)(GetBackgroundTileDataOffset(1) + 0x06000F00));
+    Decompress(Img_LinkArenaRankIcons, GetBackgroundTileDataOffset(BG_1) + BG_CHR_ADDR(0x78));
     ApplyPalette(Pal_LinkArenaRankIcons, 6);
 
-    Decompress(Img_TacticianSelObj, (void *)(0x06014800));
+    Decompress(Img_TacticianSelObj, OBJ_CHR_ADDR(0x240));
     ApplyPalettes(Pal_TacticianSelObj, 0x13, 4);
 
     sub_804C3A4(0);
 
     Decompress(gUnknown_085AE778, gGenericBuffer);
-    CallARM_FillTileRect(TILEMAP_LOCATED(gBG2TilemapBuffer, 1, 5), gGenericBuffer, 0x1000);
+    CallARM_FillTileRect(TILEMAP_LOCATED(gBG2TilemapBuffer, 1, 5), gGenericBuffer, TILEREF(0x0, 1));
+
     SetTextFont(&Font_0203DB64);
     ResetTextFont();
 
@@ -903,7 +905,7 @@ void sub_8046838(ProcPtr proc)
         int y = 6 + i * 3;
 
         ClearText(&gLinkArenaSt.texts[i]);
-        Text_SetColor(&gLinkArenaSt.texts[i], 0);
+        Text_SetColor(&gLinkArenaSt.texts[i], TEXT_COLOR_SYSTEM_WHITE);
         Text_DrawString(&gLinkArenaSt.texts[i], GetStringFromIndex(gLinkArenaRuleData[i].labelTextId));
         PutText(&gLinkArenaSt.texts[i], TILEMAP_LOCATED(gBG0TilemapBuffer, 6, y));
 
@@ -916,7 +918,7 @@ void sub_8046838(ProcPtr proc)
     StartLinkArenaTitleBanner(proc, gUnknown_080D9D5E[gLinkArenaSt.unk_00], 0);
 
     sub_804C508();
-    sub_8043100(0x74B, 1);
+    PutSioText(MSG_74B, 1); // "The rules for this battle."
 
     BG_EnableSyncByMask(BG0_SYNC_BIT | BG1_SYNC_BIT | BG2_SYNC_BIT | BG3_SYNC_BIT);
 

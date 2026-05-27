@@ -193,7 +193,7 @@ void PrepItemList_InitGfx(struct PrepItemListProc * proc)
     ApplyPalette(Pal_SpinningArrow, 0x14);
 
     StartMenuScrollBarExt(proc, 225, 47, 0x5800, 9);
-    sub_8097668();
+    UnlockMenuScrollBar();
     SomethingPrepListRelated(proc->unit, proc->currentPage, 3);
     sub_809F5F4(proc);
 

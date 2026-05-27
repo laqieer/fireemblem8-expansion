@@ -381,7 +381,7 @@ s8 sub_80B5D48(void) {
 }
 
 //! FE8U = 0x080B5D5C
-void WriteSuspandPlaterIdle(void) {
+void WriteSuspendPlayerIdle(void) {
     gActionData.suspendPointType = SUSPEND_POINT_PLAYERIDLE;
     WriteSuspendSave(SAVE_ID_SUSPEND);
     return;

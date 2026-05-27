@@ -15,6 +15,7 @@
 #include "sio.h"
 #include "prepscreen.h"
 
+#include "constants/chapters.h"
 #include "constants/items.h"
 #include "constants/songs.h"
 
@@ -59,7 +60,7 @@ u8 CanPrepScreenSave(void)
 {
     u32 chapterIndex = gPlaySt.chapterIndex;
 
-    if ((!gGMData.state.bits.state_0) && (chapterIndex - 0x24 < 0x14))
+    if ((!gGMData.state.bits.state_0) && CHAPTER_IS_DUNGEON(chapterIndex))
     {
         return 0;
     }
@@ -140,10 +141,10 @@ void sub_80950E8(int vram, int palId)
 {
     u16 * palettes[4] =
     {
-        Pal_08A1D850,
-        Pal_08A1D870,
-        Pal_08A1D890,
-        Pal_08A1D8B0,
+        Pal_PrepWindowA,
+        Pal_PrepWindowB,
+        Pal_PrepWindowC,
+        Pal_PrepWindowD,
     };
 
     Decompress(Img_PrepWindow, (void *)(vram + VRAM));
@@ -183,7 +184,7 @@ void PrepScreenMenu_OnItems(struct ProcAtMenu* proc) {
 
 void PrepScreenMenu_OnSupport(struct ProcAtMenu* proc) {
     proc->state = 4;
-    CallSomeSoundMaybe(SONG_BONDS, 0x100, 0x100, 0x20, 0);
+    ChangeBgm(SONG_BONDS, 0x100, 0x100, 0x20, 0);
     Proc_Goto(proc, 0xA);
 }
 
@@ -197,7 +198,7 @@ int PrepScreenMenu_OnStartPress(struct ProcAtMenu* proc) {
     if(0 == proc->cur_counter)
         return 0;
 
-    PrepSpecialChar_BlinkButtonStart();
+    PrepSpriteDraw_BlinkButtonStart();
     Proc_Goto(proc, 0xB);
     return 1;
     
@@ -227,7 +228,7 @@ int PrepScreenMenu_OnBPress(struct ProcAtMenu* proc) {
     if (false == CanPrepScreenCheckMap())
         return false;
 
-    PrepSpecialChar_BlinkButtonB();
+    PrepSpriteDraw_BlinkButtonB();
     Proc_Goto(proc, 0x5);
     return true;
 }

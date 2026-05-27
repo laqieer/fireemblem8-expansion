@@ -339,7 +339,7 @@ void ExecFortify(ProcPtr proc) {
         gActionData.itemSlotIndex);
 
     BattleInitItemEffectTarget(
-        GetUnitFromCharId(GetPlayerLeaderUnitId())
+        GetUnitFromCharId(GetPlayerLeaderPid())
     );
 
     MakeTargetListForRangedHeal(GetUnit(gActionData.subjectIndex));
@@ -441,7 +441,7 @@ void ExecLatona(ProcPtr proc) {
         gActionData.itemSlotIndex);
 
     BattleInitItemEffectTarget(
-        GetUnitFromCharId(GetPlayerLeaderUnitId())
+        GetUnitFromCharId(GetPlayerLeaderPid())
     );
 
     MakeTargetListForLatona(GetUnit(gActionData.subjectIndex));

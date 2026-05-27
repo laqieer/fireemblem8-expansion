@@ -100,7 +100,7 @@ int sub_80C089C(int a, int b, int c, int d)
 }
 
 //! FE8U = 0x080C0960
-int sub_80C0960(int chIndex)
+int IsChapterMonsterSpawnActive(int chIndex)
 {
     int nodeId = GetPlayChapterId(chIndex);
 

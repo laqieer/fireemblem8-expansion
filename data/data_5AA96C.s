@@ -36,8 +36,8 @@ Img_LinkArenaPlacementRanks:  @ 0x085AD0CC
 gUnknown_085AD80C:  @ 0x085AD80C
 	.incbin "baserom.gba", 0x5AD80C, 0x1C0
 
-	.global gUnknown_085AD9CC
-gUnknown_085AD9CC:  @ 0x085AD9CC
+	.global Img_LinkArena_FogUnitPlaceholder
+Img_LinkArena_FogUnitPlaceholder:  @ 0x085AD9CC
 	.incbin "baserom.gba", 0x5AD9CC, 0x6C
 
 	.global Img_LinkArenaPlayerBanners

@@ -5,6 +5,8 @@
 #include "bmlib.h"
 #include "fontgrp.h"
 
+#include "constants/msg.h"
+
 #include "sio_core.h"
 #include "sio.h"
 
@@ -67,23 +69,22 @@ void sub_80476CC(int idx, int state)
 void SioRuleSettings_Init(struct ProcSioRuleSettings * proc)
 {
     int i;
-    int r7;
     u8 buf[4];
 
     ClearSioBG();
     InitSioBG();
     StartMuralBackgroundExt(proc, 0, 0x12, 2, 0);
 
-    Decompress(Img_LinkArenaRankIcons, (void *)(0x06000F00 + GetBackgroundTileDataOffset(BG_1)));
+    Decompress(Img_LinkArenaRankIcons, GetBackgroundTileDataOffset(BG_1) + BG_CHR_ADDR(0x78));
     ApplyPalette(Pal_LinkArenaRankIcons, 6);
 
-    Decompress(Img_TacticianSelObj, (void *)0x06014800);
+    Decompress(Img_TacticianSelObj, OBJ_CHR_ADDR(0x240));
     ApplyPalettes(Pal_TacticianSelObj, 0x13, 4);
 
     sub_804C3A4(0);
 
     Decompress(gUnknown_085AE778, gGenericBuffer);
-    CallARM_FillTileRect(gBG2TilemapBuffer + 0xA1, gGenericBuffer, 0x1000);
+    CallARM_FillTileRect(TILEMAP_LOCATED(gBG2TilemapBuffer, 1, 5), gGenericBuffer, TILEREF(0x0, 1));
 
     SetTextFont(&Font_0203DB64);
     ResetTextFont();
@@ -99,16 +100,14 @@ void SioRuleSettings_Init(struct ProcSioRuleSettings * proc)
 
     UpdateRuleSettingSprites(
         proc->unk_2c, proc->unk_30, gLinkArenaRuleData[proc->unk_30].xPos[buf[proc->unk_30]] * 8,
-        ((proc->unk_30 * 3) << 3) + 0x30);
-
-    r7 = 0xc0;
+        ((proc->unk_30 * 3) * 8) + 48);
 
     for (i = 0; i < 3; i++)
     {
         ClearText(&gLinkArenaSt.texts[i]);
-        Text_SetColor(&gLinkArenaSt.texts[i], 0);
+        Text_SetColor(&gLinkArenaSt.texts[i], TEXT_COLOR_SYSTEM_WHITE);
         Text_DrawString(&gLinkArenaSt.texts[i], GetStringFromIndex(gLinkArenaRuleData[i].labelTextId));
-        PutText(&gLinkArenaSt.texts[i], gBG0TilemapBuffer + 6 + (r7 + i * 0x60));
+        PutText(&gLinkArenaSt.texts[i], TILEMAP_LOCATED(gBG0TilemapBuffer, 6, 6 + i * 3));
 
         sub_80476CC(i, buf[i]);
     }
@@ -120,7 +119,7 @@ void SioRuleSettings_Init(struct ProcSioRuleSettings * proc)
 
     sub_804C508();
 
-    sub_8043100(proc->unk_30 + 0x745, 1);
+    PutSioText(MSG_745 + proc->unk_30, 1); // "Set whether to hide enemy units."
 
     BG_EnableSyncByMask(BG0_SYNC_BIT | BG1_SYNC_BIT | BG2_SYNC_BIT | BG3_SYNC_BIT);
 
@@ -182,9 +181,9 @@ void SioRuleSettings_Loop_Main(struct ProcSioRuleSettings * proc)
 
         UpdateRuleSettingSprites(
             proc->unk_2c, proc->unk_30, (gLinkArenaRuleData[proc->unk_30].xPos[buf[proc->unk_30]] + var) * 8,
-            ((proc->unk_30 * 3) << 3) + 0x30);
+            ((proc->unk_30 * 3) * 8) + 48);
 
-        sub_8043100(proc->unk_30 + 0x745, 1);
+        PutSioText(MSG_745 + proc->unk_30, 1);
     }
 
     return;

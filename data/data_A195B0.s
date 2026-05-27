@@ -68,16 +68,16 @@ Pal_SysBrownBox:  @ 0x08A1B154
 gPal_SupportScreenBanner:  @ 0x08A1B174
 	.incbin "baserom.gba", 0xA1B174, 0x20
 
-	.global gUnknown_08A1B194
-gUnknown_08A1B194:  @ 0x08A1B194
+	.global AP_DrawPreparationsBanner
+AP_DrawPreparationsBanner:  @ 0x08A1B194
 	.incbin "baserom.gba", 0xA1B194, 0x68
 
-	.global gUnknown_08A1B1FC
-gUnknown_08A1B1FC:  @ 0x08A1B1FC
+	.global Img_PrepFunds
+Img_PrepFunds:  @ 0x08A1B1FC
 	.incbin "baserom.gba", 0xA1B1FC, 0x43C
 
-	.global gUnknown_08A1B638
-gUnknown_08A1B638:  @ 0x08A1B638
+	.global Pal_PrepFunds
+Pal_PrepFunds:  @ 0x08A1B638
 	.incbin "baserom.gba", 0xA1B638, 0x20
 
 	.global gUnknown_08A1B658
@@ -96,12 +96,12 @@ gUnknown_08A1B730:  @ 0x08A1B730
 gUnknown_08A1B7C8:  @ 0x08A1B7C8
 	.incbin "baserom.gba", 0xA1B7C8, 0xF0
 
-	.global gUnknown_08A1B8B8
-gUnknown_08A1B8B8:  @ 0x08A1B8B8
+	.global Tsa_PrepItemScreen
+Tsa_PrepItemScreen:  @ 0x08A1B8B8
 	.incbin "baserom.gba", 0xA1B8B8, 0xD8
 
-	.global gUnknown_08A1B990
-gUnknown_08A1B990:  @ 0x08A1B990
+	.global Tsa_08A1B990
+Tsa_08A1B990:  @ 0x08A1B990
 	.incbin "baserom.gba", 0xA1B990, 0x5C
 
 	.global gUnknown_08A1B9EC
@@ -184,20 +184,20 @@ Pal_MapBattleInfoNum:  @ 0x08A1D79C
 Img_PrepPopupWindow:  @ 0x08A1D7DC
 	.incbin "baserom.gba", 0xA1D7DC, 0x74
 
-	.global Pal_08A1D850
-Pal_08A1D850:  @ 0x08A1D850
+	.global Pal_PrepWindowA
+Pal_PrepWindowA:  @ 0x08A1D850
 	.incbin "baserom.gba", 0xA1D850, 0x20
 
-	.global Pal_08A1D870
-Pal_08A1D870:  @ 0x08A1D870
+	.global Pal_PrepWindowB
+Pal_PrepWindowB:  @ 0x08A1D870
 	.incbin "baserom.gba", 0xA1D870, 0x20
 
-	.global Pal_08A1D890
-Pal_08A1D890:  @ 0x08A1D890
+	.global Pal_PrepWindowC
+Pal_PrepWindowC:  @ 0x08A1D890
 	.incbin "baserom.gba", 0xA1D890, 0x20
 
-	.global Pal_08A1D8B0
-Pal_08A1D8B0:  @ 0x08A1D8B0
+	.global Pal_PrepWindowD
+Pal_PrepWindowD:  @ 0x08A1D8B0
 	.incbin "baserom.gba", 0xA1D8B0, 0x20
 
 	.global Img_PrepWindow
