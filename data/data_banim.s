@@ -28870,7 +28870,7 @@ Img_086BAF14:  @ 0x086BAF14
 
 	.global Pal_EfxCrimsonEyeBGFinishIntro
 Pal_EfxCrimsonEyeBGFinishIntro:  @ 0x086BC804
-	.incbin "./graphics/banim/assets/pal/006BC804_Pal_EfxCrimsonEyeBGFinishIntro.agbpal"
+	.incbin "./graphics/banim/assets/img/006BAF14_Img_086BAF14.gbapal"
 
 	.global Pal_efxCrimsonEyeBGFinish1
 Pal_efxCrimsonEyeBGFinish1:  @ 0x086BC824
