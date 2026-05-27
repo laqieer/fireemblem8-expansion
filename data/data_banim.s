@@ -33090,7 +33090,7 @@ Img_0874F474:  @ 0x0874F474
 
 	.global Pal_EreshkigalBg3
 Pal_EreshkigalBg3:  @ 0x08750268
-	.incbin "./graphics/banim/assets/pal/00750268_Pal_EreshkigalBg3.gbapal" @ 0x750288 - 0x750268
+	.incbin "./graphics/banim/assets/img/0074F474_Img_0874F474.gbapal" @ 0x750288 - 0x750268
 
 	.global Tsa_08750288
 Tsa_08750288:  @ 0x08750288
