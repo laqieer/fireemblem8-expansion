@@ -7467,7 +7467,7 @@ Img_EfxMagfcastBG:  @ 0x085EE4F8
 
 	.global Pal_EfxMagfcastBG
 Pal_EfxMagfcastBG:  @ 0x085EF24C
-	.incbin "./graphics/banim/assets/pal/005EF24C_Pal_EfxMagfcastBG.gbapal"
+	.incbin "./graphics/banim/assets/img/005EE4F8_Img_EfxMagfcastBG.gbapal"
 
     .global Tsa1_EfxMagfcastBG
 Tsa1_EfxMagfcastBG:
