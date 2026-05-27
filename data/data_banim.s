@@ -28810,7 +28810,7 @@ AnimScr_UnusedUnk1_3: @ 0x6B5A24
 
 	.global Pal_efxGorgonBGFinish
 Pal_efxGorgonBGFinish:  @ 0x086B5A2C
-	.incbin "./graphics/banim/assets/pal/006B5A2C_Pal_efxGorgonBGFinish.gbapal"
+	.incbin "./graphics/banim/assets/img/efxGorgonBGFinish.gbapal"
 
 	.global Img_efxCrimsonEyeBG
 Img_efxCrimsonEyeBG:  @ 0x086B5A4C
