@@ -31637,7 +31637,7 @@ Img_0871F9DC:  @ 0x0871F9DC
 
 	.global Pal_NaglfarBg4
 Pal_NaglfarBg4:  @ 0x08720D84
-	.incbin "./graphics/banim/assets/pal/00720D84_Pal_NaglfarBg4.gbapal" @ 0x720DA4 - 0x720D84
+	.incbin "./graphics/banim/assets/img/0071F9DC_Img_0871F9DC.gbapal" @ 0x720DA4 - 0x720D84
 
 	.global Tsa_08720DA4
 Tsa_08720DA4:  @ 0x08720DA4
