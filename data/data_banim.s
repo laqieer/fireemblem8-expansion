@@ -4518,7 +4518,7 @@ Img_EfxSRankWeaponEffectBG:  @ 0x085E8C04
 
 	.global Pal_EfxSRankWeaponEffectBG
 Pal_EfxSRankWeaponEffectBG:  @ 0x085E8CC4
-	.incbin "./graphics/banim/assets/pal/005E8CC4_Pal_EfxSRankWeaponEffectBG.gbapal"
+	.incbin "./graphics/banim/assets/img/005E8C04_Img_EfxSRankWeaponEffectBG.gbapal"
 
 	.global Tsa_EfxSRankWeaponEffectBG
 Tsa_EfxSRankWeaponEffectBG:  @ 0x085E8CE4
