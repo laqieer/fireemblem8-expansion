@@ -30203,7 +30203,7 @@ Img_086E7EB0:  @ 0x086E7EB0
 
 	.global Pal_086E91B8
 Pal_086E91B8:  @ 0x086E91B8
-	.incbin "./graphics/banim/assets/pal/006E91B8_Pal_086E91B8.gbapal" @ 0x6E91D8 - 0x6E91B8
+	.incbin "./graphics/banim/assets/img/006E7EB0_Img_086E7EB0.gbapal" @ 0x6E91D8 - 0x6E91B8
 
 	.global Tsa_086E91D8
 Tsa_086E91D8:  @ 0x086E91D8
