@@ -31001,7 +31001,7 @@ Img_086FCD58:  @ 0x086FCD58
 
 	.global Pal_086FDA44
 Pal_086FDA44:  @ 0x086FDA44
-	.incbin "./graphics/banim/assets/pal/006FDA44_Pal_086FDA44.gbapal" @ 0x6FDA64 - 0x6FDA44
+	.incbin "./graphics/banim/assets/img/006FCD58_Img_086FCD58.gbapal" @ 0x6FDA64 - 0x6FDA44
 
 	.global Tsa_086FDA64
 Tsa_086FDA64:  @ 0x086FDA64
