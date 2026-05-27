@@ -11346,7 +11346,7 @@ Img_FimbulvetrBg_Tornado_F:  @ 0x08616CC0
 
 	.global Pal_FimbulvetrBg_Tornado
 Pal_FimbulvetrBg_Tornado:  @ 0x08617F04
-	.incbin "./graphics/banim/assets/pal/00617F04_Pal_FimbulvetrBg_Tornado.gbapal" @ 0x617F24 - 0x617F04
+	.incbin "./graphics/banim/assets/img/00616CC0_Img_FimbulvetrBg_Tornado_F.gbapal" @ 0x617F24 - 0x617F04
 
 	.global Tsa_FimbulvetrBg_Tornado_A
 Tsa_FimbulvetrBg_Tornado_A:  @ 0x08617F24
