@@ -7583,19 +7583,19 @@ Tsa4_EfxMagdhisEffectBG:
 
 	.global Img_EfxSunakemuriOBJ
 Img_EfxSunakemuriOBJ:  @ 0x085F11B0
-	.incbin "./graphics/banim/assets/img/005F11B0_Img_EfxSunakemuriOBJ.4bpp.lz"
+	.incbin "./graphics/banim/assets/img/EfxSunakemuriOBJ1.4bpp.lz"
 
 	.global Pal_EfxSunakemuriOBJ1
 Pal_EfxSunakemuriOBJ1:  @ 0x085F1620
-	.incbin "./graphics/banim/assets/pal/005F1620_Pal_EfxSunakemuriOBJ1.gbapal"
+	.incbin "./graphics/banim/assets/img/EfxSunakemuriOBJ1.gbapal"
 
 	.global Pal_EfxSunakemuriOBJ2
 Pal_EfxSunakemuriOBJ2:  @ 0x085F1640
-	.incbin "./graphics/banim/assets/pal/005F1640_Pal_EfxSunakemuriOBJ2.gbapal"
+	.incbin "./graphics/banim/assets/img/EfxSunakemuriOBJ2.gbapal"
 
 	.global Pal_EfxSunakemuriOBJ3
 Pal_EfxSunakemuriOBJ3:  @ 0x085F1660
-	.incbin "./graphics/banim/assets/pal/005F1660_Pal_EfxSunakemuriOBJ3.gbapal"
+	.incbin "./graphics/banim/assets/img/EfxSunakemuriOBJ3.gbapal"
 
 .global AnimSprite_EfxSunakemuriOBJ1_R_1
 AnimSprite_EfxSunakemuriOBJ1_R_1:  @ 0x5F1680

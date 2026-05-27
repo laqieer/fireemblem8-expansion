@@ -70,10 +70,10 @@ graphics/banim_incbin/005F0E24_Tsa1_EfxMagdhisEffectBG.bin,graphics/banim/assets
 graphics/banim_incbin/005F0F24_Tsa2_EfxMagdhisEffectBG.bin,graphics/banim/assets/tsa/005F0F24_Tsa2_EfxMagdhisEffectBG.tsa.lz
 graphics/banim_incbin/005F1018_Tsa3_EfxMagdhisEffectBG.bin,graphics/banim/assets/tsa/005F1018_Tsa3_EfxMagdhisEffectBG.tsa.lz
 graphics/banim_incbin/005F10EC_Tsa4_EfxMagdhisEffectBG.bin,graphics/banim/assets/tsa/005F10EC_Tsa4_EfxMagdhisEffectBG.tsa.lz
-graphics/banim_incbin/005F11B0_Img_EfxSunakemuriOBJ.bin,graphics/banim/assets/img/005F11B0_Img_EfxSunakemuriOBJ.4bpp.lz
-graphics/banim_incbin/005F1620_Pal_EfxSunakemuriOBJ1.bin,graphics/banim/assets/pal/005F1620_Pal_EfxSunakemuriOBJ1.gbapal
-graphics/banim_incbin/005F1640_Pal_EfxSunakemuriOBJ2.bin,graphics/banim/assets/pal/005F1640_Pal_EfxSunakemuriOBJ2.gbapal
-graphics/banim_incbin/005F1660_Pal_EfxSunakemuriOBJ3.bin,graphics/banim/assets/pal/005F1660_Pal_EfxSunakemuriOBJ3.gbapal
+graphics/banim_incbin/005F11B0_Img_EfxSunakemuriOBJ.bin,graphics/banim/assets/img/EfxSunakemuriOBJ1.4bpp.lz
+graphics/banim_incbin/005F1620_Pal_EfxSunakemuriOBJ1.bin,graphics/banim/assets/img/EfxSunakemuriOBJ1.gbapal
+graphics/banim_incbin/005F1640_Pal_EfxSunakemuriOBJ2.bin,graphics/banim/assets/img/EfxSunakemuriOBJ2.gbapal
+graphics/banim_incbin/005F1660_Pal_EfxSunakemuriOBJ3.bin,graphics/banim/assets/img/EfxSunakemuriOBJ3.gbapal
 graphics/banim_incbin/005F2DC0_Img_ThunderSpellBg.bin,graphics/banim/assets/img/005F2DC0_Img_ThunderSpellBg.4bpp.lz
 graphics/banim_incbin/005F367C_Pal_ThunderSpellBg.bin,graphics/banim/assets/pal/005F367C_Pal_ThunderSpellBg.agbpal
 graphics/banim_incbin/005F387C_Tsa_EfxThuderBg1.bin,graphics/banim/assets/tsa/005F387C_Tsa_EfxThuderBg1.tsa.lz
