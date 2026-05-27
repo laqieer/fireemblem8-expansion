@@ -1215,7 +1215,7 @@ graphics/banim_incbin/00723274_Img_08723274.bin,graphics/banim/assets/img/007232
 graphics/banim_incbin/00724424_Pal_efxExcaliburBG0.bin,graphics/banim/assets/pal/00724424_Pal_efxExcaliburBG0.gbapal
 graphics/banim_incbin/00724444_Tsa_08724444.bin,graphics/banim/assets/tsa/00724444_Tsa_08724444.tsa.lz
 graphics/banim_incbin/007246D8_Img_FireBreathBg.bin,graphics/banim/assets/img/007246D8_Img_FireBreathBg.4bpp.lz
-graphics/banim_incbin/00725AD0_Pal_FireBreathBg.bin,graphics/banim/assets/pal/00725AD0_Pal_FireBreathBg.gbapal
+graphics/banim_incbin/00725AD0_Pal_FireBreathBg.bin,graphics/banim/assets/img/007246D8_Img_FireBreathBg.gbapal
 graphics/banim_incbin/00725AF0_Tsa_FireBreathBg.bin,graphics/banim/assets/tsa/00725AF0_Tsa_FireBreathBg.tsa.lz
 graphics/banim_incbin/00725DAC_Pal_08725DAC.bin,graphics/banim/assets/pal/00725DAC_Pal_08725DAC.gbapal
 graphics/banim_incbin/00725DCC_Img_ShineBg1.bin,graphics/banim/assets/img/00725DCC_Img_ShineBg1.4bpp.lz

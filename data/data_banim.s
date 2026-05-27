@@ -31678,7 +31678,7 @@ Img_FireBreathBg:  @ 0x087246D8
 
 	.global Pal_FireBreathBg
 Pal_FireBreathBg:  @ 0x08725AD0
-	.incbin "./graphics/banim/assets/pal/00725AD0_Pal_FireBreathBg.gbapal"
+	.incbin "./graphics/banim/assets/img/007246D8_Img_FireBreathBg.gbapal"
 
 	.global Tsa_FireBreathBg
 Tsa_FireBreathBg:  @ 0x08725AF0
