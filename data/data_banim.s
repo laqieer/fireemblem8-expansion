@@ -31381,7 +31381,7 @@ Img_NaglfarBg1_A:  @ 0x08700404
 
 	.global Pal_NaglfarBg1_A
 Pal_NaglfarBg1_A:  @ 0x087013A0
-	.incbin "./graphics/banim/assets/pal/007013A0_Pal_NaglfarBg1_A.gbapal" @ 0x7013C0 - 0x7013A0
+	.incbin "./graphics/banim/assets/img/00700404_Img_NaglfarBg1_A.gbapal" @ 0x7013C0 - 0x7013A0
 
 	.global Tsa_NaglfarBg1_A
 Tsa_NaglfarBg1_A:  @ 0x087013C0

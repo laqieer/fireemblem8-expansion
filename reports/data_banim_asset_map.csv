@@ -1140,7 +1140,7 @@ graphics/banim_incbin/006FF3A4_Pal_NaglfarSprites_A.bin,graphics/banim/assets/im
 graphics/banim_incbin/006FF5EC_Img_NaglfarSprites_B.bin,graphics/banim/assets/img/006FF5EC_Img_NaglfarSprites_B.4bpp.lz
 graphics/banim_incbin/006FFD3C_Pal_NaglfarSprites_B.bin,graphics/banim/assets/pal/006FFD3C_Pal_NaglfarSprites_B.gbapal
 graphics/banim_incbin/00700404_Img_NaglfarBg1_A.bin,graphics/banim/assets/img/00700404_Img_NaglfarBg1_A.4bpp.lz
-graphics/banim_incbin/007013A0_Pal_NaglfarBg1_A.bin,graphics/banim/assets/pal/007013A0_Pal_NaglfarBg1_A.gbapal
+graphics/banim_incbin/007013A0_Pal_NaglfarBg1_A.bin,graphics/banim/assets/img/00700404_Img_NaglfarBg1_A.gbapal
 graphics/banim_incbin/007013C0_Tsa_NaglfarBg1_A.bin,graphics/banim/assets/tsa/007013C0_Tsa_NaglfarBg1_A.tsa.lz
 graphics/banim_incbin/00701660_Img_08701660.bin,graphics/banim/assets/img/00701660_Img_08701660.4bpp.lz
 graphics/banim_incbin/007020CC_Img_087020CC.bin,graphics/banim/assets/img/007020CC_Img_087020CC.4bpp.lz
