@@ -1414,7 +1414,7 @@ Img_EfxHurtmutEff00OBJ2:  @ 0x085DF224
 
 	.global Pal_EfxHurtmutEff00OBJ
 Pal_EfxHurtmutEff00OBJ:  @ 0x085DFA08
-	.incbin "./graphics/banim/assets/pal/005DFA08_Pal_EfxHurtmutEff00OBJ.gbapal"
+	.incbin "./graphics/banim/assets/img/005DE984_Img_EfxHurtmutEff00OBJ1.gbapal"
 
 	.global Pal_IceBreathSprites
 Pal_IceBreathSprites:  @ 0x085DFA28
