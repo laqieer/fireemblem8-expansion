@@ -1426,7 +1426,7 @@ Pal_DarkBreathSprites:  @ 0x085DFA48
 
 	.global Pal_WretchedAirSprites
 Pal_WretchedAirSprites:  @ 0x085DFA68
-	.incbin "./graphics/banim/assets/pal/005DFA68_Pal_WretchedAirSprites.gbapal"
+	.incbin "./graphics/banim/assets/img/WretchedAirSprites.gbapal"
 
 .global AnimSprite_EfxBindingBlade_Left1
 AnimSprite_EfxBindingBlade_Left1:  @ 0x5DFA88
