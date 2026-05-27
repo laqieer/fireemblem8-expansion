@@ -28465,7 +28465,7 @@ Img_086A6304:  @ 0x086A6304
 
 	.global Pal_GleipnirBg_Sigil
 Pal_GleipnirBg_Sigil:  @ 0x086A66D8
-	.incbin "./graphics/banim/assets/pal/006A66D8_Pal_GleipnirBg_Sigil.gbapal" @ 0x6A66F8 - 0x6A66D8
+	.incbin "./graphics/banim/assets/img/006A6304_Img_086A6304.gbapal" @ 0x6A66F8 - 0x6A66D8
 
 	.global Tsa_086A66F8
 Tsa_086A66F8:  @ 0x086A66F8
