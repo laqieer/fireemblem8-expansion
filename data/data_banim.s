@@ -14864,7 +14864,7 @@ Img_086415F4:  @ 0x086415F4
 
 	.global Pal_DivineBg3
 Pal_DivineBg3:  @ 0x08641D64
-	.incbin "./graphics/banim/assets/pal/00641D64_Pal_DivineBg3.gbapal"
+	.incbin "./graphics/banim/assets/img/006415F4_Img_086415F4.gbapal"
 
 	.global Pal_DivineBg
 Pal_DivineBg:  @ 0x08641D84
