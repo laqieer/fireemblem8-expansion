@@ -30941,7 +30941,7 @@ Img_086F3830:  @ 0x086F3830
 
 	.global Pal_086F4A38
 Pal_086F4A38:  @ 0x086F4A38
-	.incbin "./graphics/banim/assets/pal/006F4A38_Pal_086F4A38.gbapal" @ 0x6F4A58 - 0x6F4A38
+	.incbin "./graphics/banim/assets/img/006F3830_Img_086F3830.gbapal" @ 0x6F4A58 - 0x6F4A38
 
 	.global Pal_086F4A58
 Pal_086F4A58:  @ 0x086F4A58
