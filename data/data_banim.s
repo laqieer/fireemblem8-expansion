@@ -32644,7 +32644,7 @@ Img_AuraBg1:  @ 0x087327C4
 
 	.global Pal_AuraBg1
 Pal_AuraBg1:  @ 0x0873313C
-	.incbin "./graphics/banim/assets/pal/0073313C_Pal_AuraBg1.gbapal" @ 0x73315C - 0x73313C
+	.incbin "./graphics/banim/assets/img/007327C4_Img_AuraBg1.gbapal" @ 0x73315C - 0x73313C
 
 	.global Tsa_0873315C
 Tsa_0873315C:  @ 0x0873315C
