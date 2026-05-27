@@ -31597,7 +31597,7 @@ Img_08717E78:  @ 0x08717E78
 
 	.global Pal_NaglfarBg3
 Pal_NaglfarBg3:  @ 0x087197E4
-	.incbin "./graphics/banim/assets/pal/007197E4_Pal_NaglfarBg3.gbapal" @ 0x719804 - 0x7197E4
+	.incbin "./graphics/banim/assets/img/00717E78_Img_08717E78.gbapal" @ 0x719804 - 0x7197E4
 
 	.global Tsa_08719804
 Tsa_08719804:  @ 0x08719804
