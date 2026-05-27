@@ -14580,7 +14580,7 @@ Img_NosferatuBg_M:  @ 0x08635D60
 
 	.global Pal_NosferatuBg
 Pal_NosferatuBg:  @ 0x08636640
-	.incbin "./graphics/banim/assets/pal/00636640_Pal_NosferatuBg.gbapal" @ 0x636660 - 0x636640
+	.incbin "./graphics/banim/assets/img/00635D60_Img_NosferatuBg_M.gbapal" @ 0x636660 - 0x636640
 
 	.global Tsa_08636660
 Tsa_08636660:  @ 0x08636660
