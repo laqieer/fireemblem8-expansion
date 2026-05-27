@@ -31045,7 +31045,7 @@ Img_NaglfarSprites_A:  @ 0x086FE938
 
 	.global Pal_NaglfarSprites_A
 Pal_NaglfarSprites_A:  @ 0x086FF3A4
-	.incbin "./graphics/banim/assets/pal/006FF3A4_Pal_NaglfarSprites_A.gbapal"
+	.incbin "./graphics/banim/assets/img/006FE938_Img_NaglfarSprites_A.gbapal"
 
 .global AnimSprite_086FF3C4
 AnimSprite_086FF3C4:  @ 0x6FF3C4
