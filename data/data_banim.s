@@ -149,7 +149,6 @@ AnimSprite_EfxTeonoObj_085DA340:
 
 	.global AnimScr_TeonoObjCloseRight
 AnimScr_TeonoObjCloseRight:  @ 0x085DA364
-@ Replacing .incbin "baserom.gba", 0x5DA364, 0x5C
     ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeonoObj_085DA07C, 1
     ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeonoObj_085DA094, 2
     ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeonoObj_085DA0AC, 1
@@ -176,7 +175,6 @@ AnimScr_TeonoObjCloseRight:  @ 0x085DA364
 
 	.global AnimScr_TeonoObjFarRight
 AnimScr_TeonoObjFarRight:  @ 0x085DA3C0
-@ Replacing .incbin "baserom.gba", 0x5DA3C0, 0x20
     ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeonoObj_085DA07C, 1
     ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeonoObj_085DA094, 1
     ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeonoObj_085DA0AC, 1
@@ -5985,7 +5983,6 @@ AnimScr_YushaSpinShieldOBJ_RightTypeA:  @ 0x085EBDF8
 
 	.global AnimScr_YushaSpinShieldOBJ2_LeftTypeA
 AnimScr_YushaSpinShieldOBJ2_LeftTypeA:  @ 0x085EBEFC
-@ Replacing .incbin "baserom.gba", 0x5EBEFC, 0x28
     ANIMSCR_FORCE_SPRITE AnimSprite_YushaSpinShield2_64, 1
     ANIMSCR_FORCE_SPRITE AnimSprite_YushaSpinShield2_65, 1
     ANIMSCR_FORCE_SPRITE AnimSprite_YushaSpinShield2_66, 1

@@ -2,7 +2,6 @@
 
 	.global gChapterDataAssetTable
 gChapterDataAssetTable:  @ 0x088B363C
-@ replacing .incbin "baserom.gba", 0x008b363c, 0x3b0
     .word 0
 	.word ObjectType1
 	.word MapPalette1
