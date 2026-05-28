@@ -55,3 +55,55 @@ graphics/banim/assets/
 - **Handling:** If an `AnimScr_*.bin` is **not compressed** in the ROM (i.e. included without `.lz`), the python linker bypasses it. Direct inclusion using `.include "animscr.s"` natively resolves standard label relocations like `R_ARM_ABS32`.
 
 ---
+
+## Palette ↔ Image Binding Patterns
+
+The banim region's `Pal_*` and `Img_*` labels in `data/data_banim.s` follow three distinct binding patterns. Adjacent addresses are a hint, not a guarantee — the true relationship is established by the `SpellFx_RegisterObjPal/Gfx` (and `RegisterBgPal/Gfx`) calls in `src/banim-efxmagic-*.c`. Identifying which pattern an asset is in determines whether its palette can be derived from a paletted PNG.
+
+### Pattern A — Shared palette (1 Pal, N Imgs)
+
+One palette is registered with several `Img_X_{A,B,C,…}` variants. The variants are animation frames (each frame is a different tilesheet); a single palette is loaded into VRAM and reused across the sequence.
+
+| Pal | Img variants |
+| --- | --- |
+| `Pal_FimbulvetrBg_Tornado` | `Img_FimbulvetrBg_Tornado_A` … `_F` |
+| `Pal_NosferatuBg` | `Img_NosferatuBg_A` … `_M` |
+
+**Migration recipe:** Bake the palette into the *nearest preceding* variant PNG (typically the highest-suffix one — `_F`, `_M`, etc. — since the `Pal_*` label sits at a higher address than the `Img_*_*` labels). Update `data_banim.s` so `Pal_X` `.incbin`s the `.gbapal` derived from that PNG. The other variant PNGs stay grey; only their tile data feeds the build.
+
+### Pattern B — Multi-palette (1 Img, N Pals)
+
+One image tilesheet is reused across multiple visually distinct effects, each with its own named palette. Unlike Pattern C, these palettes are *code-path distinct*: each is registered from a different `banim-efxmagic-*.c` entry function.
+
+| Img | Pals |
+| --- | --- |
+| `Img_BreathSprites` | `Pal_FireBreathSprites`, `Pal_IceBreathSprites`, `Pal_DarkBreathSprites`, `Pal_WretchedAirSprites` |
+| `Img_EfxSunakemuriOBJ` | `Pal_EfxSunakemuriOBJ1/2/3` |
+| `Img_EfxHurtmutEff00OBJ{1,2}` | `Pal_EfxHurtmutEff00OBJ` (the inverse — one palette shared by two image variants) |
+| `Img_efxCrimsonEyeBG` | `Pal_efxCrimsonEyeBG` (primary), `Pal_efxGorgonBGFinish` (alternate) |
+
+**Migration recipe:** Create one paletted PNG sibling per palette, all sharing the same pixel indices (i.e., the same `.4bpp` output) but each carrying its own embedded palette. The build uses one canonical PNG (e.g. `FireBreathSprites.png`) for the shared `.4bpp.lz`; each `Pal_*.gbapal` is derived from its own sibling PNG. Naming convention in this repo: drop the address prefix, use the palette's natural name (`FireBreathSprites.png`, `WretchedAirSprites.png`, `efxGorgonBGFinish.png`).
+
+### Pattern C — Palette group / animation table (cluster of unnamed Pals)
+
+Clusters of 2+ palettes at consecutive 32-byte stride, all unnamed (`Pal_08XXXXXX`), share one preceding `Img_X`. These are runtime palette-cycling animation tables — the engine swaps `proc->pal` between frames to recolor the same tilesheet over time. They were stored as individual labels (rather than a single multi-palette `.agbpal` blob) but they're semantically one animation block.
+
+Examples (showing first and last labels of each cluster):
+
+| Img | Cluster | Count |
+| --- | --- | --- |
+| `Img_0869DB90` | `Pal_0869E8B0` … `Pal_0869E950` | 6 |
+| `Img_086B15C4` | `Pal_086B2878` … `Pal_086B2A58` | 15 |
+| `Img_086D2BE4` | `Pal_086D3454` … `Pal_086D36B4` | 15 |
+| `Img_086D7F20` | `Pal_086D8AB4` … `Pal_086D8B14` (alongside named `Pal_EvilEyeBg2_A`) | 4 + 1 |
+| `Img_086E5A30` | `Pal_086E6440` … `Pal_086E64A0` | 4 |
+| `Img_086EF9C8` | `Pal_086F01E4` … `Pal_086F0324` | 11 |
+| `Img_08710218` | `Pal_08710DB8` … `Pal_08710F78` | 15 |
+
+**Migration recipe:** Do **not** embed cluster members into the PNG — same rationale as multi-palette `.agbpal` files (see Section 3 above and the `005F2DC0_Img_ThunderSpellBg.png` revert in commit `c62a7339`). Keep them as `.pal` sources; the build retains the `.pal → .gbapal` path. If an Img has a *named* primary plus an animation cluster (e.g. `Pal_EvilEyeBg2_A` + four unnamed siblings on `Img_086D7F20`), bake only the named primary into the PNG and leave the cluster as `.pal`.
+
+### Mixed / edge cases
+
+- **`Pal_08725DAC`** sits adjacent to `Img_FireBreathBg` + `Tsa_FireBreathBg`, but `banim-efxmagic-wretchedair.c` loads it via `proc->pal = Pal_08725DAC` for the Demon-King dark-breath BG color animation. It's a palette-only animation frame with no dedicated tilesheet of its own; treat as Pattern C and leave as `.pal` unless a PNG preview is actively wanted.
+- **Same tiles, different palette = sidecar PNG.** When applying Pattern B to a Pal whose canonical Img already has a different palette embedded (e.g. `Pal_efxGorgonBGFinish` vs an already-paletted `Img_efxCrimsonEyeBG.png`), create a sidecar PNG (`efxGorgonBGFinish.png`) sharing the same pixel indices.
+- **Asset map sync.** After changing an `.incbin` path in `data/data_banim.s`, also update the right-hand path in `reports/data_banim_asset_map.csv`. The CSV's left-hand `banim_incbin/*.bin` column is historical and stays as-is.
