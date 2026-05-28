@@ -22,15 +22,15 @@ Img_EfxRightItemBox:  @ 0x088020BC
 
     .global gUnknown_0880210C
 gUnknown_0880210C:  @ 0x0880210C
-    .incbin "dump/data-banimmisc_80210C.bin"
+    .incbin "graphics/banim/misc/gUnknown_0880210C.tsa"
 
     .global gUnknown_088021C0
 gUnknown_088021C0:  @ 0x088021C0
-    .incbin "dump/data-banimmisc_8021C0.bin"
+    .incbin "graphics/banim/misc/gUnknown_088021C0.tsa"
 
     .global gUnknown_08802274
 gUnknown_08802274:  @ 0x08802274
-    .incbin "dump/data-banimmisc_802274.bin"
+    .incbin "graphics/banim/misc/gUnknown_08802274.tsa"
 
     .global gUnknown_08802348
 gUnknown_08802348:  @ 0x08802348
@@ -42,7 +42,7 @@ gUnknown_08802428:  @ 0x08802428
 
     .global gUnknown_08802508
 gUnknown_08802508:  @ 0x08802508
-    .incbin "dump/data-banimmisc_802508.bin"
+    .incbin "graphics/banim/misc/gUnknown_08802508.tsa"
 
     .global gUnknown_08802558
 gUnknown_08802558:  @ 0x08802558
@@ -90,7 +90,7 @@ gPalEfxHpBarPurple:  @ 0x08802C84
 
     .global Pal_BanimUnitFlashing
 Pal_BanimUnitFlashing:  @ 0x08802D24
-    .incbin "dump/data-banimmisc_802D24.bin"
+    .incbin "graphics/banim/misc/Pal_BanimUnitFlashing.agbpal"
 
     .global Img_EkrExpBar
 Img_EkrExpBar:  @ 0x08802D44
@@ -106,7 +106,7 @@ Img_BarNumfx:  @ 0x088033C4
 
     .global Tsa_EkrExpBar
 Tsa_EkrExpBar:  @ 0x08803524
-    .incbin "dump/data-banimmisc_803524.bin"
+    .incbin "graphics/banim/misc/Tsa_EkrExpBar.tsa"
 
     .global Pal_ExpBar
 Pal_ExpBar:  @ 0x08803590
