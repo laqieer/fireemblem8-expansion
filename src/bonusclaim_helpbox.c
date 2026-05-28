@@ -48,14 +48,14 @@ void sub_80AEB1C(void)
 //! FE8U = 0x080AEB28
 void sub_80AEB28(int unk)
 {
-    CallSomeSoundMaybe(SONG_NONE, 0x100, 0, unk, NULL);
+    ChangeBgm(SONG_NONE, 0x100, 0, unk, NULL);
     return;
 }
 
 //! FE8U = 0x080AEB44
 void sub_80AEB44(int songId)
 {
-    CallSomeSoundMaybe(songId, 0x100, 0x100, 0x20, NULL);
+    ChangeBgm(songId, 0x100, 0x100, 0x20, NULL);
     return;
 }
 

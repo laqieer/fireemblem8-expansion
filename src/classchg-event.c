@@ -118,7 +118,7 @@ void PromoTrainee_OnEnd(struct ProcPromoTraineeEvent *proc)
     struct ProcPromoMain *parent = proc->proc_parent;
     parent->stat = PROMO_MAIN_STAT_TRAINEE_EVENT;
     ResetDialogueScreen();
-    EndPrepSpecialCharEffect();
+    EndPrepScreenSpriteDraw();
     APProc_DeleteAll();
     EndMuralBackground_();
     BG_SetPosition(1, 0, 0);

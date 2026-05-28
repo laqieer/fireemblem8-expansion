@@ -131,6 +131,15 @@ clean: clean_common
 
 .PHONY: clean
 
+# Hard clean: remove every untracked and ignored file in the working tree,
+# preserving only baserom.gba (and embedded git repos like .deps/agbcc).
+# After this you must rebuild the tools (and reinstall agbcc into tools/agbcc
+# via .deps/agbcc/install.sh) before `make` will work again.
+clean_all:
+	git clean -dfx -e baserom.gba
+
+.PHONY: clean_all
+
 tag:
 	gtags
 	ctags -R

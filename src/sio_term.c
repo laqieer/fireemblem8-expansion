@@ -8,6 +8,8 @@
 #include "bmio.h"
 #include "prepscreen.h"
 
+#include "constants/msg.h"
+
 #include "sio.h"
 #include "sio_core.h"
 
@@ -32,19 +34,19 @@ void sub_80469C4(struct SioTermProc * proc)
 
     StartMuralBackgroundExt(proc, 0, 0x10, 4, 0);
 
-    Decompress(Img_TacticianSelObj, (void *)0x06014800);
+    Decompress(Img_TacticianSelObj, OBJ_CHR_ADDR(0x240));
 
     SetTextFont(&Font_0203DB64);
     InitSystemTextFont();
     ResetTextFont();
 
-    StartLinkArenaButtonSpriteDraw(0xc0, 0x10, proc);
+    StartLinkArenaButtonSpriteDraw(192, 16, proc);
 
-    InitText(&gSioTexts[0], 0x18);
-    InitText(&gSioTexts[1], 0x18);
+    InitText(&gSioTexts[0], 24);
+    InitText(&gSioTexts[1], 24);
 
-    sub_8043100(0x0000074C, 0);
-    sub_8043100(0x0000074D, 1);
+    PutSioText(MSG_74C, 0); // "Select data to build a team with."
+    PutSioText(MSG_74D, 1); // "Saved data will not be changed."
 
     proc->unk_4c = -1;
 
@@ -156,7 +158,7 @@ void sub_80469C4(struct SioTermProc * proc)
     StartLinkArenaTitleBanner(proc, 1, 0);
     sub_804C508();
 
-    BG_EnableSyncByMask(0xf);
+    BG_EnableSyncByMask(BG0_SYNC_BIT | BG1_SYNC_BIT | BG2_SYNC_BIT | BG3_SYNC_BIT);
 
     return;
 }
@@ -197,7 +199,7 @@ void sub_8046CF0(struct SioTermProc * proc)
     int current = proc->unk_48;
 
     sub_8046C64(&proc->unk_48, proc->unk_50, proc->unk_4c, proc->unk_38, 3);
-    DisplayUiHand(0x1c, proc->unk_48 * 0x20 + 0x28);
+    DisplayUiHand(28, 40 + proc->unk_48 * 32);
 
     if (current != proc->unk_48)
     {
@@ -294,6 +296,6 @@ void sub_8046E0C(ProcPtr proc)
 //! FE8U = 0x08046E4C
 void sub_8046E4C(void)
 {
-    BG_SetPosition(1, 0, 0);
+    BG_SetPosition(BG_1, 0, 0);
     return;
 }

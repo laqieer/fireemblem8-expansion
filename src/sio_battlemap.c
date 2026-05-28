@@ -36,8 +36,9 @@
 #include "sio_core.h"
 #include "sio.h"
 
-#include "constants/terrains.h"
+#include "constants/msg.h"
 #include "constants/songs.h"
+#include "constants/terrains.h"
 
 //! FE8U = 0x08049298
 void sub_8049298(struct Unit * unit)
@@ -421,9 +422,9 @@ void sub_8049744(void)
 }
 
 //! FE8U = 0x08049788
-void sub_8049788(void)
+void LoadLinkArenaFogPlaceholder(void)
 {
-    Decompress(gUnknown_085AD9CC, (void *)(0x06013E00));
+    Decompress(Img_LinkArena_FogUnitPlaceholder, OBJ_CHR_ADDR(0x1F0));
     return;
 }
 
@@ -437,7 +438,7 @@ void sub_80497A0(void)
     ApplyUnitSpritePalettes();
     ForceSyncUnitSpriteSheet();
 
-    sub_8049788();
+    LoadLinkArenaFogPlaceholder();
     InitSystemTextFont();
 
     gUnk_Sio_0203DD90.unk_03 = 0xff;
@@ -519,8 +520,8 @@ void sub_8049828(void)
     ResetUnitSprites();
     RefreshUnitSprites();
 
-    sub_8049788();
-    sub_804B38C();
+    LoadLinkArenaFogPlaceholder();
+    StartLinkArenaFogPlaceholders();
 
     Proc_Start(gProc_MapTask, PROC_TREE_4);
     BMapVSync_Start();
@@ -692,7 +693,7 @@ void sub_8049B04(void)
 {
     Proc_EndEach(gProc_MapTask);
 
-    sub_804B3A0();
+    EndLinkArenaFogPlaceholders();
 
     BMapVSync_End();
     Sound_FadeOutBGM(1);
@@ -968,7 +969,7 @@ void sub_8049D24(struct SioBattleMapProc * proc)
         if (!gPlaySt.config.disableSoundEffects)
         {
             // Interestingly this does not seem to use the normal PlaySoundEffect macro
-            m4aSongNumStart(0x68);
+            m4aSongNumStart(SONG_68);
             Proc_Goto(proc, 2);
         }
 
@@ -1418,7 +1419,7 @@ void sub_804A6A4(ProcPtr proc)
     struct Unit * unitA = GetUnit(unitIdA);
     struct Unit * unitB = GetUnit(unitIdB);
 
-    sub_8049788();
+    LoadLinkArenaFogPlaceholder();
 
     gUnk_Sio_0203DD90.unk_2c[unitIdA >> 6].newScore = gBattleActor.expGain;
     gUnk_Sio_0203DD90.unk_2c[unitIdA >> 6].unitId = unitIdA;
@@ -1688,12 +1689,12 @@ bool sub_804AADC(void * data)
 CONST_DATA struct PopupInstruction gUnknown_085AA1FC[] = {
     POPUP_STR(gUnknown_03001850),
     POPUP_SPACE(3),
-    POPUP_MSG(0x757), // The team surrendered.
+    POPUP_MSG(MSG_757), // The team surrendered.
     POPUP_END
 };
 
 CONST_DATA struct PopupInstruction gUnknown_085AA21C[] = {
-    POPUP_MSG(0x758), // No one can do damage this turn
+    POPUP_MSG(MSG_758), // No one can do damage this turn
     POPUP_END
 };
 
@@ -1969,7 +1970,7 @@ bool sub_804AE7C(struct SioBattleMapProc * proc, int b)
         if (!gPlaySt.config.disableSoundEffects)
         {
             // Another non-usage of the PlaySoundEffects macro
-            m4aSongNumStart(0x68);
+            m4aSongNumStart(SONG_68);
             Proc_Goto(proc, 3);
         }
 
@@ -2263,7 +2264,10 @@ void sub_804B250(ProcPtr proc)
     return;
 }
 
-CONST_DATA u8 gUnknown_085AA22C[] = {
+// clang-format off
+
+CONST_DATA u8 gLut_LinkArenaFogPlaceholder_YOffset[] =
+{
     0, 0, 0, 0, 0, 0, 0,
     1, 1,
     2, 2, 2,
@@ -2274,13 +2278,15 @@ CONST_DATA u8 gUnknown_085AA22C[] = {
     1, 1, 1, 1
 };
 
+// clang-format on
+
 //! FE8U = 0x0804B278
-void sub_804B278(void)
+void LinkArenaFogSprite_Loop(void)
 {
     int i;
     int j;
 
-    int yOffset = (gUnknown_085AA22C[GetGameClock() & 0x1f] + 4) >> 1;
+    int yOffset = (gLut_LinkArenaFogPlaceholder_YOffset[GetGameClock() & 0x1f] + 4) >> 1;
 
     for (i = 0; i < 4; i++)
     {
@@ -2298,60 +2304,60 @@ void sub_804B278(void)
                 continue;
             }
 
-            if ((unit->state & US_BIT9) == 0)
+            if (!(unit->state & US_BIT9))
             {
                 continue;
             }
 
             CallARM_PushToSecondaryOAM(
                 unit->xPos * 16, unit->yPos * 16 - yOffset, gObject_16x8,
-                ((GetUnitDisplayedSpritePalette(unit) & 0xf) << 12) + 0x9f0);
+                OAM2_PAL(GetUnitDisplayedSpritePalette(unit)) + OAM2_CHR(0x1F0) + OAM2_LAYER(2));
             CallARM_PushToSecondaryOAM(
                 unit->xPos * 16, (unit->yPos * 16 - yOffset) + 8, gObject_16x8,
-                ((GetUnitDisplayedSpritePalette(unit) & 0xf) << 12) + 0x9F2);
+                OAM2_PAL(GetUnitDisplayedSpritePalette(unit)) + OAM2_CHR(0x1F2) + OAM2_LAYER(2));
         }
     }
 
     return;
 }
 
-struct ProcCmd CONST_DATA gUnknown_085AA24C[] = {
+// clang-format off
+
+struct ProcCmd CONST_DATA ProcScr_DrawLinkArenaFogPlaceholders[] =
+{
     PROC_15,
-    PROC_MARK(1),
+    PROC_MARK(PROC_MARK_DISP),
     PROC_YIELD,
-    PROC_REPEAT(sub_804B278)
-    // ? maybe just a cut to the following part
-};
-struct ProcCmd CONST_DATA gUnknown_085AA26C[] = {
-    PROC_CALL(sub_804B604),
-PROC_LABEL(0),
-    PROC_CALL(sub_804B624),
-    PROC_SLEEP(32),
-    PROC_CALL(sub_804B6AC),
-    PROC_GOTO(0),
-PROC_LABEL(1),
-    PROC_CALL(sub_804B6B8),
+
+    PROC_REPEAT(LinkArenaFogSprite_Loop),
+
+#ifdef BUGFIX
     PROC_END,
+#endif
 };
 
+// clang-format on
+
 //! FE8U = 0x0804B38C
-void sub_804B38C(void)
+void StartLinkArenaFogPlaceholders(void)
 {
-    Proc_Start(gUnknown_085AA24C, PROC_TREE_4);
+    Proc_Start(ProcScr_DrawLinkArenaFogPlaceholders, PROC_TREE_4);
     return;
 }
 
 //! FE8U = 0x0804B3A0
-void sub_804B3A0(void)
+void EndLinkArenaFogPlaceholders(void)
 {
-    Proc_EndEach(gUnknown_085AA24C);
+    Proc_EndEach(ProcScr_DrawLinkArenaFogPlaceholders);
     return;
 }
 
 //! FE8U = 0x0804B3B0
 void sub_804B3B0(ProcPtr proc)
 {
-    SetStatScreenConfig(0x1f);
+    SetStatScreenConfig(
+        STATSCREEN_CONFIG_NONDEAD | STATSCREEN_CONFIG_NONBENCHED | STATSCREEN_CONFIG_NONUNK9 |
+        STATSCREEN_CONFIG_NONROOFED | STATSCREEN_CONFIG_NONUNK16);
     StartStatScreen(gActiveUnit, proc);
     return;
 }
@@ -2519,18 +2525,18 @@ void sub_804B5E0(ProcPtr proc)
 }
 
 //! FE8U = 0x0804B604
-void sub_804B604(struct SioBattleMapProc * proc)
+void LAUnitDeaths_Init(struct SioBattleMapProc * proc)
 {
     proc->unk_58 = 0;
 
-    proc->unk_5c = gPlaySt.faction << 6;
+    proc->unk_5c = gPlaySt.faction * 0x40;
     gUnk_Sio_0203DD90.unk_0A[gPlaySt.faction] = 0;
 
     return;
 }
 
 //! FE8U = 0x0804B624
-void sub_804B624(struct SioBattleMapProc * proc)
+void LAUnitDeaths_FindNextAndStart(struct SioBattleMapProc * proc)
 {
     struct Unit * unit;
     struct MuProc * mu;
@@ -2582,14 +2588,14 @@ void sub_804B624(struct SioBattleMapProc * proc)
 }
 
 //! FE8U = 0x0804B6AC
-void sub_804B6AC(struct SioBattleMapProc * proc)
+void LAUnitDeaths_EndMu(struct SioBattleMapProc * proc)
 {
     EndMu(proc->unk_54);
     return;
 }
 
 //! FE8U = 0x0804B6B8
-void sub_804B6B8(void)
+void LAUnitDeaths_OnEnd(void)
 {
     sub_8049594();
     sub_80495F4();
@@ -2599,10 +2605,31 @@ void sub_804B6B8(void)
     return;
 }
 
-//! FE8U = 0x0804B6CC
-void sub_804B6CC(void)
+// clang-format off
+
+struct ProcCmd CONST_DATA ProcScr_LASurrender_HandleUnitDeaths[] =
 {
-    if (GetTalkChoiceResult() == 1)
+    PROC_CALL(LAUnitDeaths_Init),
+
+PROC_LABEL(0),
+    PROC_CALL(LAUnitDeaths_FindNextAndStart),
+    PROC_SLEEP(32),
+    PROC_CALL(LAUnitDeaths_EndMu),
+
+    PROC_GOTO(0),
+
+PROC_LABEL(1),
+    PROC_CALL(LAUnitDeaths_OnEnd),
+
+    PROC_END,
+};
+
+// clang-format on
+
+//! FE8U = 0x0804B6CC
+void LinkArena_StoreTalkChoice(void)
+{
+    if (GetTalkChoiceResult() == TALK_CHOICE_YES)
     {
         gUnk_Sio_0203DD90.unk_08 = 1;
         return;
@@ -2613,39 +2640,49 @@ void sub_804B6CC(void)
     return;
 }
 
-CONST_DATA EventScr gUnknown_085AA2B4[] = {
+// clang-format off
+
+CONST_DATA EventScr EventScr_LinkArenaSurrenderPrompt[] =
+{
     STAL(1)
     EVBIT_T(7)
     EVBIT_MODIFY(0x4)
-    TEXTSHOW(0x88c) // do you surrender?
+    TEXTSHOW(MSG_88C) // do you surrender?
     TEXTEND
     REMA
-    ASMC(sub_804B6CC)
+    ASMC(LinkArena_StoreTalkChoice)
     ENDA
 };
 
+// clang-format on
+
 //! FE8U = 0x0804B6F4
-void sub_804B6F4(void)
+void LABattleMap_StartSurrenderPrompt(void)
 {
-    CallEvent((u16 *)gUnknown_085AA2B4, EV_EXEC_CUTSCENE);
+    CallEvent((u16 *)EventScr_LinkArenaSurrenderPrompt, EV_EXEC_CUTSCENE);
     return;
 }
 
-CONST_DATA EventScr gUnknown_085AA2D8[] = {
+// clang-format off
+
+CONST_DATA EventScr EventScr_LinkArenaNoDamagePrompt[] =
+{
     STAL(1)
     EVBIT_T(7)
     EVBIT_MODIFY(0x4)
-    TEXTSHOW(0x88d) // You can do no damage. Would you like to quit?
+    TEXTSHOW(MSG_88D) // You can do no damage. Would you like to quit?
     TEXTEND
     REMA
-    ASMC(sub_804B6CC)
+    ASMC(LinkArena_StoreTalkChoice)
     ENDA
 };
 
+// clang-format on
+
 //! FE8U = 0x0804B708
-void sub_804B708(void)
+void LABattleMap_StartNoDamagePrompt(void)
 {
-    CallEvent((u16 *)gUnknown_085AA2D8, EV_EXEC_CUTSCENE);
+    CallEvent((u16 *)EventScr_LinkArenaNoDamagePrompt, EV_EXEC_CUTSCENE);
     return;
 }
 
@@ -2654,8 +2691,8 @@ void sub_804B71C(struct SioBattleMapProc * proc)
 {
     int i;
 
-    LoadHelpBoxGfx((void *)0x06015000, 6);
-    StartHelpBoxExt_Unk(64, 56, 0x756); // TODO: msgid "Each unit receives 30 extra pts."
+    LoadHelpBoxGfx(OBJ_CHR_ADDR(0x280), 6);
+    StartHelpBoxExt_Unk(64, 56, MSG_756); // "Each unit receives 30 extra pts."
 
     for (i = 0; i < 4; i++)
     {
@@ -2823,15 +2860,15 @@ PROC_LABEL(4),
     PROC_GOTO(0),
 PROC_LABEL(2),
     PROC_SLEEP(1),
-    PROC_CALL(sub_804B6F4),
+    PROC_CALL(LABattleMap_StartSurrenderPrompt),
     PROC_YIELD,
     PROC_CALL(sub_804B3D0),
-    PROC_START_CHILD_BLOCKING(gUnknown_085AA26C),
+    PROC_START_CHILD_BLOCKING(ProcScr_LASurrender_HandleUnitDeaths),
     PROC_YIELD,
     PROC_CALL(sub_804B480),
 PROC_LABEL(3),
     PROC_SLEEP(1),
-    PROC_CALL(sub_804B708),
+    PROC_CALL(LABattleMap_StartNoDamagePrompt),
     PROC_YIELD,
     PROC_CALL(sub_804B408),
     PROC_CALL(sub_804B518),
@@ -2875,7 +2912,7 @@ PROC_LABEL(1),
     PROC_REPEAT(sub_804ABCC),
     PROC_GOTO(2),
 PROC_LABEL(3),
-    PROC_START_CHILD_BLOCKING(gUnknown_085AA26C),
+    PROC_START_CHILD_BLOCKING(ProcScr_LASurrender_HandleUnitDeaths),
     PROC_YIELD,
     PROC_WHILE_EXISTS(ProcScr_Popup),
     PROC_CALL(sub_804B554),
@@ -2916,7 +2953,7 @@ PROC_LABEL(2),
     PROC_GOTO(4),
 PROC_LABEL(3),
     PROC_SLEEP(1),
-    PROC_CALL(sub_804B6F4),
+    PROC_CALL(LABattleMap_StartSurrenderPrompt),
     PROC_YIELD,
     PROC_CALL(sub_804B43C),
 PROC_LABEL(4),

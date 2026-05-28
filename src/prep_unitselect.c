@@ -108,7 +108,7 @@ void PrepUnit_DrawSMSAndObjs(struct ProcPrepUnit *proc)
         if (CheckInLinkArena())
             PutSpriteExt(4, 0x80, 0x82,obj_08A18E62, 0x40);
         else
-            PutSpriteExt(4, 0x80, 0x82,obj_08A18E4E, 0x40);
+            PutSpriteExt(4, 0x80, 0x82,Sprite_PrepStartButton, 0x40);
     }
 
     /* "Select" button */
@@ -736,7 +736,7 @@ CONST_DATA u16 obj_08A18E34[] = {
     0x8000, 0x0050, OAM2_PAL(9) + OAM2_CHR(0x140 / 0x20)
 };
 
-CONST_DATA u16 obj_08A18E4E[] = {
+CONST_DATA u16 Sprite_PrepStartButton[] = {
     3,
     0x4000, 0x8000, OAM2_PAL(9) + OAM2_CHR(0x160 / 0x20),
     0x4000, 0x8020, OAM2_PAL(9) + OAM2_CHR(0x1E0 / 0x20),
@@ -750,7 +750,7 @@ CONST_DATA u16 obj_08A18E62[] = {
     0x8000, 0x0040, OAM2_PAL(9) + OAM2_CHR(0x300 / 0x20)
 };
 
-CONST_DATA u16 obj_08A18E76[] = {
+CONST_DATA u16 Sprite_PrepBButton[] = {
     3,
     0x4000, 0x8000, OAM2_PAL(9) + OAM2_CHR(0x320 / 0x20),
     0x0000, 0x4020, OAM2_PAL(9) + OAM2_CHR(0x3A0 / 0x20),

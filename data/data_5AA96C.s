@@ -36,8 +36,8 @@ Img_LinkArenaPlacementRanks:  @ 0x085AD0CC
 gUnknown_085AD80C:  @ 0x085AD80C
 	.incbin "graphics/misc/gUnknown_085AD80C.4bpp.lz"
 
-	.global gUnknown_085AD9CC
-gUnknown_085AD9CC:  @ 0x085AD9CC
+	.global Img_LinkArena_FogUnitPlaceholder
+Img_LinkArena_FogUnitPlaceholder:  @ 0x085AD9CC
 	.incbin "graphics/misc/gUnknown_085AD9CC.4bpp.lz"
 
 	.global Img_LinkArenaPlayerBanners

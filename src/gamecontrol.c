@@ -18,6 +18,7 @@
 #include "savemenu.h"
 #include "gamecontrol.h"
 #include "sio.h"
+#include "constants/chapters.h"
 #include "constants/event-flags.h"
 #include "constants/songs.h"
 
@@ -209,83 +210,83 @@ int GetRealChaperIndex(int chapterId)
 {
 
     switch (chapterId) {
-    case 0x02:
+    case CHAPTER_L_2:
         return 1;
 
-    case 0x03:
+    case CHAPTER_L_3:
         return 2;
 
-    case 0x04:
+    case CHAPTER_L_4:
         return 3;
 
-    case 0x05:
-    case 0x06:
+    case CHAPTER_L_5X:
+    case CHAPTER_L_5:
         return 4;
 
-    case 0x07:
+    case CHAPTER_L_6:
         return 5;
 
-    case 0x08:
+    case CHAPTER_L_7:
         return 6;
 
-    case 0x09:
-    case 0x38:
+    case CHAPTER_L_8:
+    case CHAPTER_CASTLE_FRELIA:
         return 7;
 
-    case 0x0A:
-    case 0x17:
+    case CHAPTER_E_9:
+    case CHAPTER_I_9:
         return 8;
 
-    case 0x0B:
-    case 0x18:
+    case CHAPTER_E_10:
+    case CHAPTER_I_10:
         return 9;
 
-    case 0x0C:
-    case 0x19:
-    case 0x3D:
-    case 0x3E:
+    case CHAPTER_E_12:
+    case CHAPTER_I_12:
+    case CHAPTER_E_11:
+    case CHAPTER_I_11:
         return 10;
 
-    case 0x0D:
-    case 0x1A:
+    case CHAPTER_E_13:
+    case CHAPTER_I_13:
         return 11;
 
-    case 0x0E:
-    case 0x1B:
+    case CHAPTER_E_14:
+    case CHAPTER_I_14:
         return 12;
 
-    case 0x0F:
-    case 0x1C:
+    case CHAPTER_E_15:
+    case CHAPTER_I_15:
         return 13;
 
-    case 0x10:
-    case 0x1D:
+    case CHAPTER_E_16:
+    case CHAPTER_I_16:
         return 14;
 
-    case 0x11:
-    case 0x1E:
+    case CHAPTER_E_17:
+    case CHAPTER_I_17:
         return 15;
 
-    case 0x12:
-    case 0x1F:
+    case CHAPTER_E_18:
+    case CHAPTER_I_18:
         return 16;
 
-    case 0x13:
-    case 0x20:
+    case CHAPTER_E_19:
+    case CHAPTER_I_19:
         return 17;
 
-    case 0x14:
-    case 0x21:
+    case CHAPTER_E_20:
+    case CHAPTER_I_20:
         return 18;
 
-    case 0x15:
-    case 0x16:
-    case 0x22:
-    case 0x23:
+    case CHAPTER_E_21:
+    case CHAPTER_E_21X:
+    case CHAPTER_I_21:
+    case CHAPTER_I_21X:
         return 19;
 
-    case 0x00:
-    case 0x01:
+    case CHAPTER_L_PROLOGUE:
+    case CHAPTER_L_1:
     default:
         return 0;
     }

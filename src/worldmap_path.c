@@ -1864,9 +1864,9 @@ int GetPlayChapterId(u32 chapterId)
 {
     int i;
 
-    if (chapterId - 0x25 < 9)
+    if (CHAPTER_IS_TOWER(chapterId))
         chapterId = CHAPTER_T_01;
-    else if (chapterId - 0x2f < 9)
+    else if (CHAPTER_IS_RUINS(chapterId))
         chapterId = CHAPTER_R_01;
 
     for (i = 0; i < NODE_MAX; i++)
@@ -1972,11 +1972,11 @@ u32 GetBattleMapKind(void)
         case CHAPTER_E_11:
         case CHAPTER_I_11:
         default:
-            if (chapterId - CHAPTER_T_02 < 9)
+            if (CHAPTER_IS_TOWER(chapterId))
             {
                 chapterId = CHAPTER_T_01;
             }
-            else if (chapterId - CHAPTER_R_02 < 9)
+            else if (CHAPTER_IS_RUINS(chapterId))
             {
                 chapterId = CHAPTER_R_01;
             }

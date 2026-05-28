@@ -93,7 +93,7 @@ void LATitleBanner_Init(struct LinkArenaTitleBannerProc * proc)
     Decompress(gUnknown_085B0DE8, (void *)(VRAM + proc->chr));
     Decompress(gUnknown_085AAE0C, gGenericBuffer);
 
-    sub_804C3AC(gGenericBuffer + (a + b), (void *)(0x06014000), 10, 2);
+    sub_804C3AC(gGenericBuffer + (a + b), OBJ_CHR_ADDR(0x200), 10, 2);
 
     CallARM_FillTileRect(gBG2TilemapBuffer, gUnknown_085B0F2C, (((u16)(proc->chr >> 1) >> 4)) | 0x1000);
     BG_EnableSyncByMask(BG2_SYNC_BIT);
@@ -146,7 +146,7 @@ void StartLinkArenaTitleBanner(ProcPtr parent, int size, int chr)
 
     if (chr == 0)
     {
-        proc->chr = 0x5c00;
+        proc->chr = 0x2E0 * CHR_SIZE;
     }
 
     proc->unk_2c = (proc->unk_58 % 3) * 0x140;
@@ -295,10 +295,10 @@ const u16 * CONST_DATA SpriteArray_SioMenuTeamCount[] =
 // clang-format on
 
 //! FE8U = 0x0804C5A4
-void sub_804C5A4(u8 idx)
+void UpdateSioMenuSelectedGlow(u8 idx)
 {
     // clang-format off
-    const u8 gUnknown_080DA0DA[] =
+    const u8 sioMenuItemGlowLut[] =
     {
         0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
         0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F,
@@ -309,7 +309,7 @@ void sub_804C5A4(u8 idx)
 
     if (gUnk_Sio_0203DDDC == 0)
     {
-        int color = gUnknown_080DA0DA[idx] + 0x10;
+        int color = sioMenuItemGlowLut[idx] + 0x10;
         PAL_OBJ_COLOR(3, 1) = ((color) << 10) + ((color) << 5) + (color);
         EnablePaletteSync();
     }
@@ -318,53 +318,53 @@ void sub_804C5A4(u8 idx)
 }
 
 //! FE8U = 0x0804C5F8
-void sub_804C5F8(struct SioProc85AA9C0 * proc)
+void SioMenuItem_Loop(struct SioMenuItemProc * proc)
 {
     int oam2 = OAM2_CHR(0x2C8) + OAM2_PAL(8);
 
-    PutSprite(4, proc->xBase, proc->yBase, SpriteArray_SioMenuItems[proc->unk_2f], gUnknown_080DA09C[proc->unk_2e]);
+    PutSprite(4, proc->xBase, proc->yBase, SpriteArray_SioMenuItems[proc->index], gUnknown_080DA09C[proc->state]);
 
-    if (proc->unk_2e == 2)
+    if (proc->state == 2)
     {
-        sub_804C5A4(proc->unk_30);
+        UpdateSioMenuSelectedGlow(proc->glowFrame);
     }
 
-    proc->unk_30 = (proc->unk_30 + 1) & 31;
+    proc->glowFrame = (proc->glowFrame + 1) & 31;
 
-    if (proc->unk_2e == 2 && proc->unk_2f == 1)
+    if (proc->state == 2 && proc->index == 1)
     {
-        proc->unk_36 += proc->unk_3a;
-        proc->unk_38 += proc->unk_3c;
+        proc->leftArrowAnmCnt += proc->leftArrowSpeed;
+        proc->rightArrowAnmCnt += proc->rightArrowSpeed;
 
-        if (proc->unk_3a > 4)
+        if (proc->leftArrowSpeed > 4)
         {
-            proc->unk_3a--;
+            proc->leftArrowSpeed--;
         }
 
-        if (proc->unk_3c > 4)
+        if (proc->rightArrowSpeed > 4)
         {
-            proc->unk_3c--;
+            proc->rightArrowSpeed--;
         }
 
         if ((GetGameClock() & 3) == 0)
         {
-            if (proc->unk_32 < 0)
+            if (proc->xLeftArrow < 0)
             {
-                proc->unk_32++;
+                proc->xLeftArrow++;
             }
 
-            if (proc->unk_34 > 52)
+            if (proc->xRightArrow > 52)
             {
-                proc->unk_34--;
+                proc->xRightArrow--;
             }
         }
 
         // Put golden arrow sprites for increasing/decreasing team count
 
-        PutSprite(0, 75 + proc->xBase + proc->unk_32, proc->yBase + 8, gObject_8x16, ((proc->unk_36 >> 5) % 6) + oam2);
+        PutSprite(0, 75 + proc->xBase + proc->xLeftArrow, proc->yBase + 8, gObject_8x16, ((proc->leftArrowAnmCnt >> 5) % 6) + oam2);
         PutSprite(
-            0, 73 + proc->xBase + proc->unk_34, proc->yBase + 8, gObject_8x16_HFlipped,
-            ((proc->unk_38 >> 5) % 6) + oam2);
+            0, 73 + proc->xBase + proc->xRightArrow, proc->yBase + 8, gObject_8x16_HFlipped,
+            ((proc->rightArrowAnmCnt >> 5) % 6) + oam2);
 
         PutSpriteExt(0, 80 + proc->xBase, proc->yBase + 9, SpriteArray_SioMenuTeamCount[gLinkArenaSt.unk_05], 0);
     }
@@ -374,57 +374,55 @@ void sub_804C5F8(struct SioProc85AA9C0 * proc)
 
 // clang-format off
 
-struct ProcCmd CONST_DATA ProcScr_085AA9C0[] =
+struct ProcCmd CONST_DATA ProcScr_SioMenuItem[] =
 {
     PROC_YIELD,
-    PROC_REPEAT(sub_804C5F8),
+    PROC_REPEAT(SioMenuItem_Loop),
     PROC_END,
 };
 
 // clang-format on
 
 //! FE8U = 0x0804C758
-ProcPtr sub_804C758(ProcPtr parent, u8 xBase, u8 yBase, u8 d, u8 e)
+ProcPtr StartSioMenuItem(ProcPtr parent, u8 xBase, u8 yBase, u8 index, u8 state)
 {
-    struct SioProc85AA9C0 * proc = Proc_Start(ProcScr_085AA9C0, parent);
+    struct SioMenuItemProc * proc = Proc_Start(ProcScr_SioMenuItem, parent);
 
     proc->xBase = xBase;
     proc->yBase = yBase;
-    proc->unk_2e = e;
-    proc->unk_2f = d;
-    proc->unk_32 = 0;
-    proc->unk_34 = 52;
-    proc->unk_38 = 0;
-    proc->unk_36 = 0;
-    proc->unk_3c = 4;
-    proc->unk_3a = 4;
+    proc->state = state;
+    proc->index = index;
+    proc->xLeftArrow = 0;
+    proc->xRightArrow = 52;
+    proc->rightArrowAnmCnt = 0;
+    proc->leftArrowAnmCnt = 0;
+    proc->rightArrowSpeed = 4;
+    proc->leftArrowSpeed = 4;
     proc->unk_3e = 0;
-    proc->unk_30 = 0;
+    proc->glowFrame = 0;
 
     return proc;
 }
 
 //! FE8U = 0x0804C7C8
-void sub_804C7C8(struct SioProc85AA9C0 * proc, int b, int c, int d, int e)
+void SioMenuItem_SetArrowConfig(struct SioMenuItemProc * proc, int xLeft, int xRight, int leftSpeed, int rightSpeed)
 {
-    proc->unk_32 = b;
-    proc->unk_34 = c;
-    proc->unk_3a = d;
-    proc->unk_3c = e;
+    proc->xLeftArrow = xLeft;
+    proc->xRightArrow = xRight;
+    proc->leftArrowSpeed = leftSpeed;
+    proc->rightArrowSpeed = rightSpeed;
 
     return;
 }
 
 //! FE8U = 0x0804C7DC
-void sub_804C7DC(struct SioProc85AA9C0 * proc, s16 x, s16 y)
+void SioMenuItem_SetPosition(struct SioMenuItemProc * proc, s16 x, s16 y)
 {
     proc->xBase = x;
     proc->yBase = y;
 
     return;
 }
-
-
 
 // clang-format off
 
@@ -469,7 +467,7 @@ void sub_804C83C(void)
     u16 * ptr = gUnknown_085ADE48;
 
     // clang-format off
-    const u8 gUnknown_080DA0DA[] =
+    const u8 sioMenuItemGlowLut[] =
     {
         0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
         0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F,
@@ -481,7 +479,7 @@ void sub_804C83C(void)
     if (gUnk_Sio_0203DDDC == 0)
     {
         int a = (GetGameClock() % 0x40);
-        int idx = gUnknown_080DA0DA[a / 2];
+        int idx = sioMenuItemGlowLut[a / 2];
 
         PAL_OBJ_COLOR(3, 14) = ptr[idx];
         EnablePaletteSync();
@@ -1386,15 +1384,15 @@ void LAPhaseIntro_Init(void)
     };
     // clang-format on
 
-    Decompress(Img_PhaseChangeUnk, (void *)(0x06014000));
-    Decompress(Img_PhaseChangeSquares, (void *)(0x06002000));
-    Decompress(gUnknown_085AE7EC, (void *)(0x06002800));
+    Decompress(Img_PhaseChangeUnk, OBJ_CHR_ADDR(0x200));
+    Decompress(Img_PhaseChangeSquares, BG_CHR_ADDR(0x100));
+    Decompress(gUnknown_085AE7EC, BG_CHR_ADDR(0x140));
 
     Decompress(gUnknown_080DA20C[gPlaySt.faction], gGenericBuffer);
-    Copy2dChr(gGenericBuffer, (void *)(0x06002980), 3, 3);
+    Copy2dChr(gGenericBuffer, BG_CHR_ADDR(0x14C), 3, 3);
 
-    CopyToPaletteBuffer(gUnknown_080DA21C[gPlaySt.faction], 0xa0, 0x20);
-    CopyToPaletteBuffer(gUnknown_080DA22C[gPlaySt.faction], 0x240, 0x20);
+    ApplyPalette(gUnknown_080DA21C[gPlaySt.faction], 5);
+    ApplyPalette(gUnknown_080DA22C[gPlaySt.faction], 0x12);
 
     gUnknown_03001860 = gPlaySt.faction;
     gPlaySt.faction = FACTION_BLUE;

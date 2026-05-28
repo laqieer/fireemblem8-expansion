@@ -121,7 +121,7 @@ void sub_8095C00(int msg, ProcPtr parent)
 void sub_8095C2C(struct ProcAtMenu * proc)
 {
     EndSysBlackBoxs();
-    EndPrepSpecialCharEffect();
+    EndPrepScreenSpriteDraw();
     EndMuralBackground_();
     proc->cur_cmd = GetActivePrepMenuItemIndex();
     EndPrepScreenMenu();
@@ -187,7 +187,7 @@ void AtMenu_Reinitialize(struct ProcAtMenu* proc)
     BG_EnableSyncByMask(0xF);
     SetDefaultColorEffects();
 
-    StartPrepSpecialCharEffect(proc);
+    StartPrepScreenSpriteDraw(proc);
     RestartMuralBackground();
     ApplyPalettes(gUiFramePaletteB, 0x2, 3);
 
@@ -312,7 +312,7 @@ void AtMenu_CtrlLoop(struct ProcAtMenu * proc)
             PlaySoundEffect(SONG_SE_SYS_WINDOW_SELECT1);
 
             if (2 == sub_8095094(proc->hand_pos, proc->unk_2F))
-                CallSomeSoundMaybe(SONG_BONDS, 0x100, 0x100, 0x20, NULL);
+                ChangeBgm(SONG_BONDS, 0x100, 0x100, 0x20, NULL);
 
             proc->state = 4;
             Proc_Goto(proc, 8);
@@ -384,7 +384,7 @@ void AtMenuSetUnitStateAndEndFlag(struct ProcAtMenu * proc)
 void AtMenu_ResetScreenEffect(struct ProcAtMenu * proc)
 {
     EndMuralBackground_();
-    EndPrepSpecialCharEffect();
+    EndPrepScreenSpriteDraw();
     SetupBackgrounds(0);
     SetBlendConfig(3, 0, 0, 0x10);
     SetBlendTargetA(1, 1, 1, 1, 1);
@@ -403,7 +403,7 @@ void AtMenu_ResetBmUiEffect(struct ProcAtMenu * proc)
     else if (CheckInLinkArena())
         sub_8042EA8();
 
-    sub_801240C();
+    SyncUnitDeploymentState();
     ResetUnitSprites();
     RefreshEntityBmMaps();
     RefreshUnitSprites();

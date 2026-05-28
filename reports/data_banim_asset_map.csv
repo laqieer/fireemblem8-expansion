@@ -1,13 +1,13 @@
 old_path,new_path
 graphics/banim_incbin/005DD518_gUnk_085dd518.bin,graphics/banim/assets/misc/005DD518_gUnk_085dd518.bin
-graphics/banim_incbin/005DDC64_Img_BreathSprites.bin,graphics/banim/assets/img/005DDC64_Img_BreathSprites.4bpp.lz
-graphics/banim_incbin/005DE964_Pal_FireBreathSprites.bin,graphics/banim/assets/pal/005DE964_Pal_FireBreathSprites.gbapal
+graphics/banim_incbin/005DDC64_Img_BreathSprites.bin,graphics/banim/assets/img/FireBreathSprites.4bpp.lz
+graphics/banim_incbin/005DE964_Pal_FireBreathSprites.bin,graphics/banim/assets/img/FireBreathSprites.gbapal
 graphics/banim_incbin/005DE984_Img_EfxHurtmutEff00OBJ1.bin,graphics/banim/assets/img/005DE984_Img_EfxHurtmutEff00OBJ1.4bpp.lz
 graphics/banim_incbin/005DF224_Img_EfxHurtmutEff00OBJ2.bin,graphics/banim/assets/img/005DF224_Img_EfxHurtmutEff00OBJ2.4bpp.lz
-graphics/banim_incbin/005DFA08_Pal_EfxHurtmutEff00OBJ.bin,graphics/banim/assets/pal/005DFA08_Pal_EfxHurtmutEff00OBJ.gbapal
-graphics/banim_incbin/005DFA28_Pal_IceBreathSprites.bin,graphics/banim/assets/pal/005DFA28_Pal_IceBreathSprites.gbapal
-graphics/banim_incbin/005DFA48_Pal_DarkBreathSprites.bin,graphics/banim/assets/pal/005DFA48_Pal_DarkBreathSprites.gbapal
-graphics/banim_incbin/005DFA68_Pal_WretchedAirSprites.bin,graphics/banim/assets/pal/005DFA68_Pal_WretchedAirSprites.gbapal
+graphics/banim_incbin/005DFA08_Pal_EfxHurtmutEff00OBJ.bin,graphics/banim/assets/img/005DE984_Img_EfxHurtmutEff00OBJ1.gbapal
+graphics/banim_incbin/005DFA28_Pal_IceBreathSprites.bin,graphics/banim/assets/img/IceBreathSprites.gbapal
+graphics/banim_incbin/005DFA48_Pal_DarkBreathSprites.bin,graphics/banim/assets/img/DarkBreathSprites.gbapal
+graphics/banim_incbin/005DFA68_Pal_WretchedAirSprites.bin,graphics/banim/assets/img/WretchedAirSprites.gbapal
 graphics/banim_incbin/005E5AE4_Img_DarkBreathBg.bin,graphics/banim/assets/img/005E5AE4_Img_DarkBreathBg.4bpp.lz
 graphics/banim_incbin/005E64D8_Tsa_085E64D8.bin,graphics/banim/assets/tsa/005E64D8_Tsa_085E64D8.tsa.lz
 graphics/banim_incbin/005E65C0_Tsa_085E65C0.bin,graphics/banim/assets/tsa/005E65C0_Tsa_085E65C0.tsa.lz
@@ -26,7 +26,7 @@ graphics/banim_incbin/005E8108_Pal_EfxCriricalEffectBG.bin,graphics/banim/assets
 graphics/banim_incbin/005E8308_Tsa_EfxCriricalEffectBG_L.bin,graphics/banim/assets/tsa/005E8308_Tsa_EfxCriricalEffectBG_L.tsa.lz
 graphics/banim_incbin/005E87A8_Tsa_EfxCriricalEffectBG_R.bin,graphics/banim/assets/tsa/005E87A8_Tsa_EfxCriricalEffectBG_R.tsa.lz
 graphics/banim_incbin/005E8C04_Img_EfxSRankWeaponEffectBG.bin,graphics/banim/assets/img/005E8C04_Img_EfxSRankWeaponEffectBG.4bpp.lz
-graphics/banim_incbin/005E8CC4_Pal_EfxSRankWeaponEffectBG.bin,graphics/banim/assets/pal/005E8CC4_Pal_EfxSRankWeaponEffectBG.gbapal
+graphics/banim_incbin/005E8CC4_Pal_EfxSRankWeaponEffectBG.bin,graphics/banim/assets/img/005E8C04_Img_EfxSRankWeaponEffectBG.gbapal
 graphics/banim_incbin/005E8CE4_Tsa_EfxSRankWeaponEffectBG.bin,graphics/banim/assets/tsa/005E8CE4_Tsa_EfxSRankWeaponEffectBG.tsa.lz
 graphics/banim_incbin/005E8D88_Img_EfxNormalEffectBG.bin,graphics/banim/assets/img/005E8D88_Img_EfxNormalEffectBG.4bpp.lz
 graphics/banim_incbin/005E9150_Pal_EfxNormalEffectBG.bin,graphics/banim/assets/pal/005E9150_Pal_EfxNormalEffectBG.agbpal
@@ -41,7 +41,7 @@ graphics/banim_incbin/005E981C_Tsa8_EfxNormalEffectBG.bin,graphics/banim/assets/
 graphics/banim_incbin/005E98D8_Tsa9_EfxNormalEffectBG.bin,graphics/banim/assets/tsa/005E98D8_Tsa9_EfxNormalEffectBG.tsa.lz
 graphics/banim_incbin/005E9980_TsaA_EfxNormalEffectBG.bin,graphics/banim/assets/tsa/005E9980_TsaA_EfxNormalEffectBG.tsa.lz
 graphics/banim_incbin/005EE4F8_Img_EfxMagfcastBG.bin,graphics/banim/assets/img/005EE4F8_Img_EfxMagfcastBG.4bpp.lz
-graphics/banim_incbin/005EF24C_Pal_EfxMagfcastBG.bin,graphics/banim/assets/pal/005EF24C_Pal_EfxMagfcastBG.gbapal
+graphics/banim_incbin/005EF24C_Pal_EfxMagfcastBG.bin,graphics/banim/assets/img/005EE4F8_Img_EfxMagfcastBG.gbapal
 graphics/banim_incbin/005EF26C_Tsa1_EfxMagfcastBG.bin,graphics/banim/assets/tsa/005EF26C_Tsa1_EfxMagfcastBG.tsa.lz
 graphics/banim_incbin/005EF308_Tsa2_EfxMagfcastBG.bin,graphics/banim/assets/tsa/005EF308_Tsa2_EfxMagfcastBG.tsa.lz
 graphics/banim_incbin/005EF3A4_Tsa3_EfxMagfcastBG.bin,graphics/banim/assets/tsa/005EF3A4_Tsa3_EfxMagfcastBG.tsa.lz
@@ -65,15 +65,15 @@ graphics/banim_incbin/005EFF60_Tsa20_EfxMagfcastBG.bin,graphics/banim/assets/tsa
 graphics/banim_incbin/005F0018_Tsa21_EfxMagfcastBG.bin,graphics/banim/assets/tsa/005F0018_Tsa21_EfxMagfcastBG.tsa.lz
 graphics/banim_incbin/005F00E8_Tsa22_EfxMagfcastBG.bin,graphics/banim/assets/tsa/005F00E8_Tsa22_EfxMagfcastBG.tsa.lz
 graphics/banim_incbin/005F0190_Img_EfxMagdhisEffectBG.bin,graphics/banim/assets/img/005F0190_Img_EfxMagdhisEffectBG.4bpp.lz
-graphics/banim_incbin/005F0E04_Pal_EfxMagdhisEffectBG.bin,graphics/banim/assets/pal/005F0E04_Pal_EfxMagdhisEffectBG.gbapal
+graphics/banim_incbin/005F0E04_Pal_EfxMagdhisEffectBG.bin,graphics/banim/assets/img/005F0190_Img_EfxMagdhisEffectBG.gbapal
 graphics/banim_incbin/005F0E24_Tsa1_EfxMagdhisEffectBG.bin,graphics/banim/assets/tsa/005F0E24_Tsa1_EfxMagdhisEffectBG.tsa.lz
 graphics/banim_incbin/005F0F24_Tsa2_EfxMagdhisEffectBG.bin,graphics/banim/assets/tsa/005F0F24_Tsa2_EfxMagdhisEffectBG.tsa.lz
 graphics/banim_incbin/005F1018_Tsa3_EfxMagdhisEffectBG.bin,graphics/banim/assets/tsa/005F1018_Tsa3_EfxMagdhisEffectBG.tsa.lz
 graphics/banim_incbin/005F10EC_Tsa4_EfxMagdhisEffectBG.bin,graphics/banim/assets/tsa/005F10EC_Tsa4_EfxMagdhisEffectBG.tsa.lz
-graphics/banim_incbin/005F11B0_Img_EfxSunakemuriOBJ.bin,graphics/banim/assets/img/005F11B0_Img_EfxSunakemuriOBJ.4bpp.lz
-graphics/banim_incbin/005F1620_Pal_EfxSunakemuriOBJ1.bin,graphics/banim/assets/pal/005F1620_Pal_EfxSunakemuriOBJ1.gbapal
-graphics/banim_incbin/005F1640_Pal_EfxSunakemuriOBJ2.bin,graphics/banim/assets/pal/005F1640_Pal_EfxSunakemuriOBJ2.gbapal
-graphics/banim_incbin/005F1660_Pal_EfxSunakemuriOBJ3.bin,graphics/banim/assets/pal/005F1660_Pal_EfxSunakemuriOBJ3.gbapal
+graphics/banim_incbin/005F11B0_Img_EfxSunakemuriOBJ.bin,graphics/banim/assets/img/EfxSunakemuriOBJ1.4bpp.lz
+graphics/banim_incbin/005F1620_Pal_EfxSunakemuriOBJ1.bin,graphics/banim/assets/img/EfxSunakemuriOBJ1.gbapal
+graphics/banim_incbin/005F1640_Pal_EfxSunakemuriOBJ2.bin,graphics/banim/assets/img/EfxSunakemuriOBJ2.gbapal
+graphics/banim_incbin/005F1660_Pal_EfxSunakemuriOBJ3.bin,graphics/banim/assets/img/EfxSunakemuriOBJ3.gbapal
 graphics/banim_incbin/005F2DC0_Img_ThunderSpellBg.bin,graphics/banim/assets/img/005F2DC0_Img_ThunderSpellBg.4bpp.lz
 graphics/banim_incbin/005F367C_Pal_ThunderSpellBg.bin,graphics/banim/assets/pal/005F367C_Pal_ThunderSpellBg.agbpal
 graphics/banim_incbin/005F387C_Tsa_EfxThuderBg1.bin,graphics/banim/assets/tsa/005F387C_Tsa_EfxThuderBg1.tsa.lz
@@ -183,7 +183,7 @@ graphics/banim_incbin/00613444_Img_FimbulvetrBg_Tornado_C.bin,graphics/banim/ass
 graphics/banim_incbin/006144C8_Img_FimbulvetrBg_Tornado_D.bin,graphics/banim/assets/img/006144C8_Img_FimbulvetrBg_Tornado_D.4bpp.lz
 graphics/banim_incbin/00615908_Img_FimbulvetrBg_Tornado_E.bin,graphics/banim/assets/img/00615908_Img_FimbulvetrBg_Tornado_E.4bpp.lz
 graphics/banim_incbin/00616CC0_Img_FimbulvetrBg_Tornado_F.bin,graphics/banim/assets/img/00616CC0_Img_FimbulvetrBg_Tornado_F.4bpp.lz
-graphics/banim_incbin/00617F04_Pal_FimbulvetrBg_Tornado.bin,graphics/banim/assets/pal/00617F04_Pal_FimbulvetrBg_Tornado.gbapal
+graphics/banim_incbin/00617F04_Pal_FimbulvetrBg_Tornado.bin,graphics/banim/assets/img/00616CC0_Img_FimbulvetrBg_Tornado_F.gbapal
 graphics/banim_incbin/00617F24_Tsa_FimbulvetrBg_Tornado_A.bin,graphics/banim/assets/tsa/00617F24_Tsa_FimbulvetrBg_Tornado_A.tsa.lz
 graphics/banim_incbin/00618110_Tsa_FimbulvetrBg_Tornado_B.bin,graphics/banim/assets/tsa/00618110_Tsa_FimbulvetrBg_Tornado_B.tsa.lz
 graphics/banim_incbin/006182E8_Tsa_FimbulvetrBg_Tornado_C.bin,graphics/banim/assets/tsa/006182E8_Tsa_FimbulvetrBg_Tornado_C.tsa.lz
@@ -306,7 +306,7 @@ graphics/banim_incbin/00633894_Img_NosferatuBg_J.bin,graphics/banim/assets/img/0
 graphics/banim_incbin/006344C8_Img_NosferatuBg_K.bin,graphics/banim/assets/img/006344C8_Img_NosferatuBg_K.4bpp.lz
 graphics/banim_incbin/0063516C_Img_NosferatuBg_L.bin,graphics/banim/assets/img/0063516C_Img_NosferatuBg_L.4bpp.lz
 graphics/banim_incbin/00635D60_Img_NosferatuBg_M.bin,graphics/banim/assets/img/00635D60_Img_NosferatuBg_M.4bpp.lz
-graphics/banim_incbin/00636640_Pal_NosferatuBg.bin,graphics/banim/assets/pal/00636640_Pal_NosferatuBg.gbapal
+graphics/banim_incbin/00636640_Pal_NosferatuBg.bin,graphics/banim/assets/img/00635D60_Img_NosferatuBg_M.gbapal
 graphics/banim_incbin/00636660_Tsa_08636660.bin,graphics/banim/assets/tsa/00636660_Tsa_08636660.tsa.lz
 graphics/banim_incbin/00636790_Tsa_08636790.bin,graphics/banim/assets/tsa/00636790_Tsa_08636790.tsa.lz
 graphics/banim_incbin/0063683C_Tsa_0863683C.bin,graphics/banim/assets/tsa/0063683C_Tsa_0863683C.tsa.lz
@@ -377,7 +377,7 @@ graphics/banim_incbin/0063FEB4_Img_0863FEB4.bin,graphics/banim/assets/img/0063FE
 graphics/banim_incbin/006405E8_Img_086405E8.bin,graphics/banim/assets/img/006405E8_Img_086405E8.4bpp.lz
 graphics/banim_incbin/00641094_Img_08641094.bin,graphics/banim/assets/img/00641094_Img_08641094.4bpp.lz
 graphics/banim_incbin/006415F4_Img_086415F4.bin,graphics/banim/assets/img/006415F4_Img_086415F4.4bpp.lz
-graphics/banim_incbin/00641D64_Pal_DivineBg3.bin,graphics/banim/assets/pal/00641D64_Pal_DivineBg3.gbapal
+graphics/banim_incbin/00641D64_Pal_DivineBg3.bin,graphics/banim/assets/img/006415F4_Img_086415F4.gbapal
 graphics/banim_incbin/00641D84_Pal_DivineBg.bin,graphics/banim/assets/pal/00641D84_Pal_DivineBg.gbapal
 graphics/banim_incbin/00641DA4_Tsa_08641DA4.bin,graphics/banim/assets/tsa/00641DA4_Tsa_08641DA4.tsa.lz
 graphics/banim_incbin/00641F38_Tsa_08641F38.bin,graphics/banim/assets/tsa/00641F38_Tsa_08641F38.tsa.lz
@@ -704,7 +704,7 @@ graphics/banim_incbin/00681BA4_Tsa_08681BA4.bin,graphics/banim/assets/tsa/00681B
 graphics/banim_incbin/006849B8_Img_086849B8.bin,graphics/banim/assets/img/006849B8_Img_086849B8.4bpp.lz
 graphics/banim_incbin/00684AB8_Tsa_08684AB8.bin,graphics/banim/assets/tsa/00684AB8_Tsa_08684AB8.tsa
 graphics/banim_incbin/006852D8_Img_SleepBg.bin,graphics/banim/assets/img/006852D8_Img_SleepBg.4bpp.lz
-graphics/banim_incbin/006861A4_Pal_SleepBg.bin,graphics/banim/assets/pal/006861A4_Pal_SleepBg.gbapal
+graphics/banim_incbin/006861A4_Pal_SleepBg.bin,graphics/banim/assets/img/006852D8_Img_SleepBg.gbapal
 graphics/banim_incbin/006861C4_Tsa_086861C4.bin,graphics/banim/assets/tsa/006861C4_Tsa_086861C4.tsa.lz
 graphics/banim_incbin/006862A0_Tsa_086862A0.bin,graphics/banim/assets/tsa/006862A0_Tsa_086862A0.tsa.lz
 graphics/banim_incbin/0068637C_Tsa_0868637C.bin,graphics/banim/assets/tsa/0068637C_Tsa_0868637C.tsa.lz
@@ -753,7 +753,7 @@ graphics/banim_incbin/00695744_Tsa_08695744.bin,graphics/banim/assets/tsa/006957
 graphics/banim_incbin/006958F0_Tsa_086958F0.bin,graphics/banim/assets/tsa/006958F0_Tsa_086958F0.tsa.lz
 graphics/banim_incbin/00695A34_Tsa_08695A34.bin,graphics/banim/assets/tsa/00695A34_Tsa_08695A34.tsa.lz
 graphics/banim_incbin/00695B10_Img_IvaldiBg2.bin,graphics/banim/assets/img/00695B10_Img_IvaldiBg2.4bpp.lz
-graphics/banim_incbin/00696840_Pal_IvaldiBg2.bin,graphics/banim/assets/pal/00696840_Pal_IvaldiBg2.gbapal
+graphics/banim_incbin/00696840_Pal_IvaldiBg2.bin,graphics/banim/assets/img/00695B10_Img_IvaldiBg2.gbapal
 graphics/banim_incbin/00696860_Tsa_08696860.bin,graphics/banim/assets/tsa/00696860_Tsa_08696860.tsa.lz
 graphics/banim_incbin/006968F8_Tsa_086968F8.bin,graphics/banim/assets/tsa/006968F8_Tsa_086968F8.tsa.lz
 graphics/banim_incbin/00696A8C_Tsa_08696A8C.bin,graphics/banim/assets/tsa/00696A8C_Tsa_08696A8C.tsa.lz
@@ -810,7 +810,7 @@ graphics/banim_incbin/006A576C_Img_086A576C.bin,graphics/banim/assets/img/006A57
 graphics/banim_incbin/006A5B4C_Img_086A5B4C.bin,graphics/banim/assets/img/006A5B4C_Img_086A5B4C.4bpp.lz
 graphics/banim_incbin/006A5F2C_Img_086A5F2C.bin,graphics/banim/assets/img/006A5F2C_Img_086A5F2C.4bpp.lz
 graphics/banim_incbin/006A6304_Img_086A6304.bin,graphics/banim/assets/img/006A6304_Img_086A6304.4bpp.lz
-graphics/banim_incbin/006A66D8_Pal_GleipnirBg_Sigil.bin,graphics/banim/assets/pal/006A66D8_Pal_GleipnirBg_Sigil.gbapal
+graphics/banim_incbin/006A66D8_Pal_GleipnirBg_Sigil.bin,graphics/banim/assets/img/006A6304_Img_086A6304.gbapal
 graphics/banim_incbin/006A66F8_Tsa_086A66F8.bin,graphics/banim/assets/tsa/006A66F8_Tsa_086A66F8.tsa.lz
 graphics/banim_incbin/006A68A0_Tsa_086A68A0.bin,graphics/banim/assets/tsa/006A68A0_Tsa_086A68A0.tsa.lz
 graphics/banim_incbin/006A6A14_Tsa_086A6A14.bin,graphics/banim/assets/tsa/006A6A14_Tsa_086A6A14.tsa.lz
@@ -875,7 +875,7 @@ graphics/banim_incbin/006B52CC_Pal_GleipnirBg_Fog.bin,graphics/banim/assets/pal/
 graphics/banim_incbin/006B52EC_Tsa_GleipnirBg_Fog.bin,graphics/banim/assets/tsa/006B52EC_Tsa_GleipnirBg_Fog.tsa.lz
 graphics/banim_incbin/006B5580_Img_CrimsonEyeSprites.bin,graphics/banim/assets/img/006B5580_Img_CrimsonEyeSprites.4bpp.lz
 graphics/banim_incbin/006B58DC_Pal_CrimsonEyeSprites.bin,graphics/banim/assets/pal/006B58DC_Pal_CrimsonEyeSprites.gbapal
-graphics/banim_incbin/006B5A2C_Pal_efxGorgonBGFinish.bin,graphics/banim/assets/pal/006B5A2C_Pal_efxGorgonBGFinish.gbapal
+graphics/banim_incbin/006B5A2C_Pal_efxGorgonBGFinish.bin,graphics/banim/assets/img/efxGorgonBGFinish.gbapal
 graphics/banim_incbin/006B5A4C_Img_efxCrimsonEyeBG.bin,graphics/banim/assets/img/006B5A4C_Img_efxCrimsonEyeBG.4bpp.lz
 graphics/banim_incbin/006B5EAC_Pal_efxCrimsonEyeBG.bin,graphics/banim/assets/pal/006B5EAC_Pal_efxCrimsonEyeBG.gbapal
 graphics/banim_incbin/006B5ECC_Tsa_086B5ECC.bin,graphics/banim/assets/tsa/006B5ECC_Tsa_086B5ECC.tsa.lz
@@ -1006,7 +1006,7 @@ graphics/banim_incbin/006D5E44_Img_086D5E44.bin,graphics/banim/assets/img/006D5E
 graphics/banim_incbin/006D68AC_Img_086D68AC.bin,graphics/banim/assets/img/006D68AC_Img_086D68AC.4bpp.lz
 graphics/banim_incbin/006D73A4_Img_086D73A4.bin,graphics/banim/assets/img/006D73A4_Img_086D73A4.4bpp.lz
 graphics/banim_incbin/006D7F20_Img_086D7F20.bin,graphics/banim/assets/img/006D7F20_Img_086D7F20.4bpp.lz
-graphics/banim_incbin/006D8A94_Pal_EvilEyeBg2_A.bin,graphics/banim/assets/pal/006D8A94_Pal_EvilEyeBg2_A.gbapal
+graphics/banim_incbin/006D8A94_Pal_EvilEyeBg2_A.bin,graphics/banim/assets/img/006D7F20_Img_086D7F20.gbapal
 graphics/banim_incbin/006D8AB4_Pal_086D8AB4.bin,graphics/banim/assets/pal/006D8AB4_Pal_086D8AB4.gbapal
 graphics/banim_incbin/006D8AD4_Pal_086D8AD4.bin,graphics/banim/assets/pal/006D8AD4_Pal_086D8AD4.gbapal
 graphics/banim_incbin/006D8AF4_Pal_086D8AF4.bin,graphics/banim/assets/pal/006D8AF4_Pal_086D8AF4.gbapal
@@ -1062,7 +1062,7 @@ graphics/banim_incbin/006E7914_Tsa_086E7914.bin,graphics/banim/assets/tsa/006E79
 graphics/banim_incbin/006E7AFC_Tsa_086E7AFC.bin,graphics/banim/assets/tsa/006E7AFC_Tsa_086E7AFC.tsa.lz
 graphics/banim_incbin/006E7CD8_Tsa_086E7CD8.bin,graphics/banim/assets/tsa/006E7CD8_Tsa_086E7CD8.tsa.lz
 graphics/banim_incbin/006E7EB0_Img_086E7EB0.bin,graphics/banim/assets/img/006E7EB0_Img_086E7EB0.4bpp.lz
-graphics/banim_incbin/006E91B8_Pal_086E91B8.bin,graphics/banim/assets/pal/006E91B8_Pal_086E91B8.gbapal
+graphics/banim_incbin/006E91B8_Pal_086E91B8.bin,graphics/banim/assets/img/006E7EB0_Img_086E7EB0.gbapal
 graphics/banim_incbin/006E91D8_Tsa_086E91D8.bin,graphics/banim/assets/tsa/006E91D8_Tsa_086E91D8.tsa.lz
 graphics/banim_incbin/006E927C_Tsa_086E927C.bin,graphics/banim/assets/tsa/006E927C_Tsa_086E927C.tsa.lz
 graphics/banim_incbin/006E9358_Tsa_086E9358.bin,graphics/banim/assets/tsa/006E9358_Tsa_086E9358.tsa.lz
@@ -1110,7 +1110,7 @@ graphics/banim_incbin/006F0DF8_Tsa_086F0DF8.bin,graphics/banim/assets/tsa/006F0D
 graphics/banim_incbin/006F0F6C_Img_086F0F6C.bin,graphics/banim/assets/img/006F0F6C_Img_086F0F6C.4bpp.lz
 graphics/banim_incbin/006F24C8_Img_086F24C8.bin,graphics/banim/assets/img/006F24C8_Img_086F24C8.4bpp.lz
 graphics/banim_incbin/006F3830_Img_086F3830.bin,graphics/banim/assets/img/006F3830_Img_086F3830.4bpp.lz
-graphics/banim_incbin/006F4A38_Pal_086F4A38.bin,graphics/banim/assets/pal/006F4A38_Pal_086F4A38.gbapal
+graphics/banim_incbin/006F4A38_Pal_086F4A38.bin,graphics/banim/assets/img/006F3830_Img_086F3830.gbapal
 graphics/banim_incbin/006F4A58_Pal_086F4A58.bin,graphics/banim/assets/pal/006F4A58_Pal_086F4A58.gbapal
 graphics/banim_incbin/006F4A78_Pal_086F4A78.bin,graphics/banim/assets/pal/006F4A78_Pal_086F4A78.gbapal
 graphics/banim_incbin/006F4A98_Tsa_086F4A98.bin,graphics/banim/assets/tsa/006F4A98_Tsa_086F4A98.tsa.lz
@@ -1125,7 +1125,7 @@ graphics/banim_incbin/006FA350_Img_086FA350.bin,graphics/banim/assets/img/006FA3
 graphics/banim_incbin/006FB07C_Img_086FB07C.bin,graphics/banim/assets/img/006FB07C_Img_086FB07C.4bpp.lz
 graphics/banim_incbin/006FBCE8_Img_086FBCE8.bin,graphics/banim/assets/img/006FBCE8_Img_086FBCE8.4bpp.lz
 graphics/banim_incbin/006FCD58_Img_086FCD58.bin,graphics/banim/assets/img/006FCD58_Img_086FCD58.4bpp.lz
-graphics/banim_incbin/006FDA44_Pal_086FDA44.bin,graphics/banim/assets/pal/006FDA44_Pal_086FDA44.gbapal
+graphics/banim_incbin/006FDA44_Pal_086FDA44.bin,graphics/banim/assets/img/006FCD58_Img_086FCD58.gbapal
 graphics/banim_incbin/006FDA64_Tsa_086FDA64.bin,graphics/banim/assets/tsa/006FDA64_Tsa_086FDA64.tsa.lz
 graphics/banim_incbin/006FDB08_Tsa_086FDB08.bin,graphics/banim/assets/tsa/006FDB08_Tsa_086FDB08.tsa.lz
 graphics/banim_incbin/006FDCE0_Tsa_086FDCE0.bin,graphics/banim/assets/tsa/006FDCE0_Tsa_086FDCE0.tsa.lz
@@ -1136,11 +1136,11 @@ graphics/banim_incbin/006FE4E0_Tsa_086FE4E0.bin,graphics/banim/assets/tsa/006FE4
 graphics/banim_incbin/006FE680_Tsa_086FE680.bin,graphics/banim/assets/tsa/006FE680_Tsa_086FE680.tsa.lz
 graphics/banim_incbin/006FE81C_Tsa_086FE81C.bin,graphics/banim/assets/tsa/006FE81C_Tsa_086FE81C.tsa.lz
 graphics/banim_incbin/006FE938_Img_NaglfarSprites_A.bin,graphics/banim/assets/img/006FE938_Img_NaglfarSprites_A.4bpp.lz
-graphics/banim_incbin/006FF3A4_Pal_NaglfarSprites_A.bin,graphics/banim/assets/pal/006FF3A4_Pal_NaglfarSprites_A.gbapal
+graphics/banim_incbin/006FF3A4_Pal_NaglfarSprites_A.bin,graphics/banim/assets/img/006FE938_Img_NaglfarSprites_A.gbapal
 graphics/banim_incbin/006FF5EC_Img_NaglfarSprites_B.bin,graphics/banim/assets/img/006FF5EC_Img_NaglfarSprites_B.4bpp.lz
 graphics/banim_incbin/006FFD3C_Pal_NaglfarSprites_B.bin,graphics/banim/assets/pal/006FFD3C_Pal_NaglfarSprites_B.gbapal
 graphics/banim_incbin/00700404_Img_NaglfarBg1_A.bin,graphics/banim/assets/img/00700404_Img_NaglfarBg1_A.4bpp.lz
-graphics/banim_incbin/007013A0_Pal_NaglfarBg1_A.bin,graphics/banim/assets/pal/007013A0_Pal_NaglfarBg1_A.gbapal
+graphics/banim_incbin/007013A0_Pal_NaglfarBg1_A.bin,graphics/banim/assets/img/00700404_Img_NaglfarBg1_A.gbapal
 graphics/banim_incbin/007013C0_Tsa_NaglfarBg1_A.bin,graphics/banim/assets/tsa/007013C0_Tsa_NaglfarBg1_A.tsa.lz
 graphics/banim_incbin/00701660_Img_08701660.bin,graphics/banim/assets/img/00701660_Img_08701660.4bpp.lz
 graphics/banim_incbin/007020CC_Img_087020CC.bin,graphics/banim/assets/img/007020CC_Img_087020CC.4bpp.lz
@@ -1194,7 +1194,7 @@ graphics/banim_incbin/00713558_Img_08713558.bin,graphics/banim/assets/img/007135
 graphics/banim_incbin/00714E64_Img_08714E64.bin,graphics/banim/assets/img/00714E64_Img_08714E64.4bpp.lz
 graphics/banim_incbin/00716710_Img_08716710.bin,graphics/banim/assets/img/00716710_Img_08716710.4bpp.lz
 graphics/banim_incbin/00717E78_Img_08717E78.bin,graphics/banim/assets/img/00717E78_Img_08717E78.4bpp.lz
-graphics/banim_incbin/007197E4_Pal_NaglfarBg3.bin,graphics/banim/assets/pal/007197E4_Pal_NaglfarBg3.gbapal
+graphics/banim_incbin/007197E4_Pal_NaglfarBg3.bin,graphics/banim/assets/img/00717E78_Img_08717E78.gbapal
 graphics/banim_incbin/00719804_Tsa_08719804.bin,graphics/banim/assets/tsa/00719804_Tsa_08719804.tsa.lz
 graphics/banim_incbin/00719CA4_Tsa_08719CA4.bin,graphics/banim/assets/tsa/00719CA4_Tsa_08719CA4.tsa.lz
 graphics/banim_incbin/0071A134_Tsa_0871A134.bin,graphics/banim/assets/tsa/0071A134_Tsa_0871A134.tsa.lz
@@ -1204,7 +1204,7 @@ graphics/banim_incbin/0071BF64_Img_0871BF64.bin,graphics/banim/assets/img/0071BF
 graphics/banim_incbin/0071D310_Img_0871D310.bin,graphics/banim/assets/img/0071D310_Img_0871D310.4bpp.lz
 graphics/banim_incbin/0071E6C0_Img_0871E6C0.bin,graphics/banim/assets/img/0071E6C0_Img_0871E6C0.4bpp.lz
 graphics/banim_incbin/0071F9DC_Img_0871F9DC.bin,graphics/banim/assets/img/0071F9DC_Img_0871F9DC.4bpp.lz
-graphics/banim_incbin/00720D84_Pal_NaglfarBg4.bin,graphics/banim/assets/pal/00720D84_Pal_NaglfarBg4.gbapal
+graphics/banim_incbin/00720D84_Pal_NaglfarBg4.bin,graphics/banim/assets/img/0071F9DC_Img_0871F9DC.gbapal
 graphics/banim_incbin/00720DA4_Tsa_08720DA4.bin,graphics/banim/assets/tsa/00720DA4_Tsa_08720DA4.tsa.lz
 graphics/banim_incbin/0072101C_Tsa_0872101C.bin,graphics/banim/assets/tsa/0072101C_Tsa_0872101C.tsa.lz
 graphics/banim_incbin/00721294_Tsa_08721294.bin,graphics/banim/assets/tsa/00721294_Tsa_08721294.tsa.lz
@@ -1215,7 +1215,7 @@ graphics/banim_incbin/00723274_Img_08723274.bin,graphics/banim/assets/img/007232
 graphics/banim_incbin/00724424_Pal_efxExcaliburBG0.bin,graphics/banim/assets/pal/00724424_Pal_efxExcaliburBG0.gbapal
 graphics/banim_incbin/00724444_Tsa_08724444.bin,graphics/banim/assets/tsa/00724444_Tsa_08724444.tsa.lz
 graphics/banim_incbin/007246D8_Img_FireBreathBg.bin,graphics/banim/assets/img/007246D8_Img_FireBreathBg.4bpp.lz
-graphics/banim_incbin/00725AD0_Pal_FireBreathBg.bin,graphics/banim/assets/pal/00725AD0_Pal_FireBreathBg.gbapal
+graphics/banim_incbin/00725AD0_Pal_FireBreathBg.bin,graphics/banim/assets/img/007246D8_Img_FireBreathBg.gbapal
 graphics/banim_incbin/00725AF0_Tsa_FireBreathBg.bin,graphics/banim/assets/tsa/00725AF0_Tsa_FireBreathBg.tsa.lz
 graphics/banim_incbin/00725DAC_Pal_08725DAC.bin,graphics/banim/assets/pal/00725DAC_Pal_08725DAC.gbapal
 graphics/banim_incbin/00725DCC_Img_ShineBg1.bin,graphics/banim/assets/img/00725DCC_Img_ShineBg1.4bpp.lz
@@ -1236,7 +1236,7 @@ graphics/banim_incbin/007285BC_Tsa_ShineBg2_I.bin,graphics/banim/assets/tsa/0072
 graphics/banim_incbin/0072865C_Img_ShineSprites.bin,graphics/banim/assets/img/0072865C_Img_ShineSprites.4bpp.lz
 graphics/banim_incbin/00728920_Pal_ShineSprites.bin,graphics/banim/assets/pal/00728920_Pal_ShineSprites.gbapal
 graphics/banim_incbin/00728C5C_Img_LunaBg1.bin,graphics/banim/assets/img/00728C5C_Img_LunaBg1.4bpp.lz
-graphics/banim_incbin/0072972C_Pal_LunaBg1.bin,graphics/banim/assets/pal/0072972C_Pal_LunaBg1.gbapal
+graphics/banim_incbin/0072972C_Pal_LunaBg1.bin,graphics/banim/assets/img/00728C5C_Img_LunaBg1.gbapal
 graphics/banim_incbin/0072974C_Tsa_LunaBg1_A.bin,graphics/banim/assets/tsa/0072974C_Tsa_LunaBg1_A.tsa.lz
 graphics/banim_incbin/0072987C_Img_LunaBg2.bin,graphics/banim/assets/img/0072987C_Img_LunaBg2.4bpp.lz
 graphics/banim_incbin/00729FDC_Pal_LunaBg2.bin,graphics/banim/assets/pal/00729FDC_Pal_LunaBg2.gbapal
@@ -1274,7 +1274,7 @@ graphics/banim_incbin/007313C8_Img_GespenstBg4.bin,graphics/banim/assets/img/007
 graphics/banim_incbin/00732228_Pal_GespenstBg4.bin,graphics/banim/assets/pal/00732228_Pal_GespenstBg4.gbapal
 graphics/banim_incbin/00732368_Tsa_GespenstBg4.bin,graphics/banim/assets/tsa/00732368_Tsa_GespenstBg4.tsa.lz
 graphics/banim_incbin/007327C4_Img_AuraBg1.bin,graphics/banim/assets/img/007327C4_Img_AuraBg1.4bpp.lz
-graphics/banim_incbin/0073313C_Pal_AuraBg1.bin,graphics/banim/assets/pal/0073313C_Pal_AuraBg1.gbapal
+graphics/banim_incbin/0073313C_Pal_AuraBg1.bin,graphics/banim/assets/img/007327C4_Img_AuraBg1.gbapal
 graphics/banim_incbin/0073315C_Tsa_0873315C.bin,graphics/banim/assets/tsa/0073315C_Tsa_0873315C.tsa.lz
 graphics/banim_incbin/007331FC_Tsa_087331FC.bin,graphics/banim/assets/tsa/007331FC_Tsa_087331FC.tsa.lz
 graphics/banim_incbin/007332A4_Tsa_087332A4.bin,graphics/banim/assets/tsa/007332A4_Tsa_087332A4.tsa.lz
@@ -1315,7 +1315,7 @@ graphics/banim_incbin/0073EB2C_Img_0873EB2C.bin,graphics/banim/assets/img/0073EB
 graphics/banim_incbin/0073FED8_Img_0873FED8.bin,graphics/banim/assets/img/0073FED8_Img_0873FED8.4bpp.lz
 graphics/banim_incbin/00741288_Img_08741288.bin,graphics/banim/assets/img/00741288_Img_08741288.4bpp.lz
 graphics/banim_incbin/007425A4_Img_087425A4.bin,graphics/banim/assets/img/007425A4_Img_087425A4.4bpp.lz
-graphics/banim_incbin/0074394C_Pal_AuraBg3.bin,graphics/banim/assets/pal/0074394C_Pal_AuraBg3.gbapal
+graphics/banim_incbin/0074394C_Pal_AuraBg3.bin,graphics/banim/assets/img/007425A4_Img_087425A4.gbapal
 graphics/banim_incbin/0074396C_Tsa_0874396C.bin,graphics/banim/assets/tsa/0074396C_Tsa_0874396C.tsa.lz
 graphics/banim_incbin/00743BE4_Tsa_08743BE4.bin,graphics/banim/assets/tsa/00743BE4_Tsa_08743BE4.tsa.lz
 graphics/banim_incbin/00743E5C_Tsa_08743E5C.bin,graphics/banim/assets/tsa/00743E5C_Tsa_08743E5C.tsa.lz
@@ -1342,7 +1342,7 @@ graphics/banim_incbin/0074BFA8_Img_0874BFA8.bin,graphics/banim/assets/img/0074BF
 graphics/banim_incbin/0074CE98_Img_0874CE98.bin,graphics/banim/assets/img/0074CE98_Img_0874CE98.4bpp.lz
 graphics/banim_incbin/0074E110_Img_0874E110.bin,graphics/banim/assets/img/0074E110_Img_0874E110.4bpp.lz
 graphics/banim_incbin/0074F474_Img_0874F474.bin,graphics/banim/assets/img/0074F474_Img_0874F474.4bpp.lz
-graphics/banim_incbin/00750268_Pal_EreshkigalBg3.bin,graphics/banim/assets/pal/00750268_Pal_EreshkigalBg3.gbapal
+graphics/banim_incbin/00750268_Pal_EreshkigalBg3.bin,graphics/banim/assets/img/0074F474_Img_0874F474.gbapal
 graphics/banim_incbin/00750288_Tsa_08750288.bin,graphics/banim/assets/tsa/00750288_Tsa_08750288.tsa.lz
 graphics/banim_incbin/007503E4_Tsa_087503E4.bin,graphics/banim/assets/tsa/007503E4_Tsa_087503E4.tsa.lz
 graphics/banim_incbin/007505C4_Tsa_087505C4.bin,graphics/banim/assets/tsa/007505C4_Tsa_087505C4.tsa.lz

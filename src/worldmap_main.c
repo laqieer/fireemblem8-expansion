@@ -980,7 +980,7 @@ PROC_LABEL(22),
     PROC_CALL_ARG(NewFadeOut, 16),
     PROC_WHILE(FadeOutExists),
     PROC_CALL(sub_80B9810),
-    PROC_CALL(sub_80B9F44),
+    PROC_CALL(WorldMap_StartManageItems),
     PROC_YIELD,
     PROC_CALL(WorldMap_Init),
 
@@ -1659,9 +1659,9 @@ void WorldMap_StartSecretShop(ProcPtr proc)
 }
 
 //! FE8U = 0x080B9F44
-void sub_80B9F44(ProcPtr proc)
+void WorldMap_StartManageItems(ProcPtr proc)
 {
-    StartGMapBaseMenu(3, proc);
+    StartGMapBaseMenu(SHOP_TYPE_MANAGE_ITEMS, proc);
 }
 
 //! FE8U = 0x080B9F54

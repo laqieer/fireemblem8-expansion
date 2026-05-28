@@ -6,6 +6,8 @@
 #include "bmlib.h"
 #include "bmsave.h"
 
+#include "constants/msg.h"
+
 #include "sio.h"
 
 //! FE8U = 0x08046E5C
@@ -43,30 +45,30 @@ void DrawLinkArenaRankingRow(struct Text * th, char * nameStr, u8 rank, u16 poin
     u16 rankMsgLut[] =
     {
         0,
-        0x0782, // TODO: msgid "1st"
-        0x0783, // TODO: msgid "2nd"
-        0x0784, // TODO: msgid "3rd"
-        0x0785, // TODO: msgid "4th"
+        MSG_782, // "1st"
+        MSG_783, // "2nd"
+        MSG_784, // "3rd"
+        MSG_785, // "4th"
     };
 
     u16 playerMsgLut[] =
     {
         0,
-        0x0786, // TODO: msgid "P1"
-        0x0787, // TODO: msgid "P2"
-        0x0788, // TODO: msgid "P3"
-        0x0789, // TODO: msgid "P4"
-        0x078A, // TODO: msgid "P5"
+        MSG_786, // "P1"
+        MSG_787, // "P2"
+        MSG_788, // "P3"
+        MSG_789, // "P4"
+        MSG_78A, // "P5"
     };
     // clang-format on
 
-    Text_InsertDrawString(th, 4, 0, nameStr);
+    Text_InsertDrawString(th, 4, TEXT_COLOR_SYSTEM_WHITE, nameStr);
 
     SioDrawNumber(th, 84, 2, points);
 
-    Text_InsertDrawString(th, 93, 0, GetStringFromIndex(0x77F)); // TODO: msgid "Pts."
-    Text_InsertDrawString(th, 128, 2, GetStringFromIndex(rankMsgLut[rank & 0xff]));
-    Text_InsertDrawString(th, 154, 0, GetStringFromIndex(playerMsgLut[playerCount & 0xff]));
+    Text_InsertDrawString(th, 93, TEXT_COLOR_SYSTEM_WHITE, GetStringFromIndex(MSG_77F)); // "Pts."
+    Text_InsertDrawString(th, 128, TEXT_COLOR_SYSTEM_BLUE, GetStringFromIndex(rankMsgLut[rank & 0xff]));
+    Text_InsertDrawString(th, 154, TEXT_COLOR_SYSTEM_WHITE, GetStringFromIndex(playerMsgLut[playerCount & 0xff]));
 
     return;
 }
@@ -100,13 +102,13 @@ void SioResult_Init(struct SioResultProc * proc)
 
     StartMuralBackgroundExt(proc, 0, 0x12, 2, 0);
 
-    Decompress(Img_LinkArenaRankIcons, (void *)(0x06000F00 + GetBackgroundTileDataOffset(1)));
+    Decompress(Img_LinkArenaRankIcons, GetBackgroundTileDataOffset(BG_1) + BG_CHR_ADDR(0x78));
     ApplyPalette(Pal_LinkArenaRankIcons, 6);
 
-    Decompress(Img_TacticianSelObj, (void *)(0x06014800));
+    Decompress(Img_TacticianSelObj, OBJ_CHR_ADDR(0x240));
     ApplyPalettes(Pal_TacticianSelObj, 0x13, 4);
 
-    CallARM_FillTileRect(TILEMAP_LOCATED(gBG2TilemapBuffer, 1, 4), Tsa_SioResultRankings, 0x1000);
+    CallARM_FillTileRect(TILEMAP_LOCATED(gBG2TilemapBuffer, 1, 4), Tsa_SioResultRankings, TILEREF(0x0, 1));
 
     SetTextFont(&Font_0203DB64);
     InitSystemTextFont();
@@ -121,7 +123,7 @@ void SioResult_Init(struct SioResultProc * proc)
 
     for (i = 0; i < 10; i++)
     {
-        InitText(&Texts_0203DB14[i], 0x16);
+        InitText(&Texts_0203DB14[i], 22);
     }
 
     InitText(&gSioTexts[0], 24);
@@ -129,14 +131,14 @@ void SioResult_Init(struct SioResultProc * proc)
 
     ClearText(&gSioTexts[0]);
 
-    Text_InsertDrawString(&gSioTexts[0], 12, 0, GetStringFromIndex(0x772)); // TODO: msgid "Name"
-    Text_InsertDrawString(&gSioTexts[0], 84, 0, GetStringFromIndex(0x773)); // TODO: msgid "Points"
-    Text_InsertDrawString(&gSioTexts[0], 120, 0, GetStringFromIndex(0x774)); // TODO: msgid "Rank"
-    Text_InsertDrawString(&gSioTexts[0], 150, 0, GetStringFromIndex(0x775)); // TODO: msgid "Players"
+    Text_InsertDrawString(&gSioTexts[0], 12, TEXT_COLOR_SYSTEM_WHITE, GetStringFromIndex(MSG_772)); // "Name"
+    Text_InsertDrawString(&gSioTexts[0], 84, TEXT_COLOR_SYSTEM_WHITE, GetStringFromIndex(MSG_773)); // "Points"
+    Text_InsertDrawString(&gSioTexts[0], 120, TEXT_COLOR_SYSTEM_WHITE, GetStringFromIndex(MSG_774)); // "Rank"
+    Text_InsertDrawString(&gSioTexts[0], 150, TEXT_COLOR_SYSTEM_WHITE, GetStringFromIndex(MSG_775)); // "Players"
 
     PutText(&gSioTexts[0], TILEMAP_LOCATED(gBG0TilemapBuffer, 5, 5));
 
-    sub_8043100(0x744, 1);
+    PutSioText(MSG_744, 1); // "+Control Pad: move/B Button: back."
 
     ReadMultiArenaSaveRankings(gSioResultRankings);
     DrawLinkArenaRankings();
@@ -151,7 +153,7 @@ void SioResult_Init(struct SioResultProc * proc)
     StartLinkArenaMenuScrollBar(217, 57, 10, 5, proc->unk_36 + 56, proc);
     StartLinkArenaTitleBanner(proc, 5, 0);
     sub_804C558();
-    StartLinkArenaButtonSpriteDraw(0xc0, 0x10, proc);
+    StartLinkArenaButtonSpriteDraw(192, 16, proc);
 
     BG_EnableSyncByMask(BG0_SYNC_BIT | BG1_SYNC_BIT | BG2_SYNC_BIT | BG3_SYNC_BIT);
 
@@ -248,14 +250,14 @@ void SioResult_NewHS_Init(struct SioResultProc * proc)
 
     StartMuralBackgroundExt(proc, 0, 0, 0, 0);
 
-    Decompress(Img_LinkArenaRankIcons, (void *)(0x06000F00 + GetBackgroundTileDataOffset(1)));
+    Decompress(Img_LinkArenaRankIcons, GetBackgroundTileDataOffset(BG_1) + BG_CHR_ADDR(0x78));
     ApplyPalette(Pal_LinkArenaRankIcons, 6);
 
-    Decompress(Img_TacticianSelObj, (void *)(0x06014800));
-    Decompress(gUnknown_085ACEFC, (void *)(0x06016000));
+    Decompress(Img_TacticianSelObj, OBJ_CHR_ADDR(0x240));
+    Decompress(gUnknown_085ACEFC, OBJ_CHR_ADDR(0x300));
     ApplyPalette(Pal_LinkArenaActiveBannerFx, 0x13);
 
-    CallARM_FillTileRect(TILEMAP_LOCATED(gBG2TilemapBuffer, 1, 4), Tsa_SioResultRankings, 0x1000);
+    CallARM_FillTileRect(TILEMAP_LOCATED(gBG2TilemapBuffer, 1, 4), Tsa_SioResultRankings, TILEREF(0x0, 1));
 
     SetTextFont(&Font_0203DB64);
     InitSystemTextFont();
@@ -280,10 +282,10 @@ void SioResult_NewHS_Init(struct SioResultProc * proc)
 
     ClearText(&gSioTexts[0]);
 
-    Text_InsertDrawString(&gSioTexts[0], 12, 0, GetStringFromIndex(0x772)); // TODO: msgid "Name"
-    Text_InsertDrawString(&gSioTexts[0], 84, 0, GetStringFromIndex(0x773)); // TODO: msgid "Points"
-    Text_InsertDrawString(&gSioTexts[0], 120, 0, GetStringFromIndex(0x774)); // TODO: msgid "Rank"
-    Text_InsertDrawString(&gSioTexts[0], 150, 0, GetStringFromIndex(0x775)); // TODO: msgid "Players"
+    Text_InsertDrawString(&gSioTexts[0], 12, TEXT_COLOR_SYSTEM_WHITE, GetStringFromIndex(MSG_772)); // "Name"
+    Text_InsertDrawString(&gSioTexts[0], 84, TEXT_COLOR_SYSTEM_WHITE, GetStringFromIndex(MSG_773)); // "Points"
+    Text_InsertDrawString(&gSioTexts[0], 120, TEXT_COLOR_SYSTEM_WHITE, GetStringFromIndex(MSG_774)); // "Rank"
+    Text_InsertDrawString(&gSioTexts[0], 150, TEXT_COLOR_SYSTEM_WHITE, GetStringFromIndex(MSG_775)); // "Players"
 
     PutText(&gSioTexts[0], TILEMAP_LOCATED(gBG0TilemapBuffer, 5, 5));
 

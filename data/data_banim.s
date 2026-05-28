@@ -1398,11 +1398,11 @@ Tsa_085DDAF4:  @ 0x085DDAF4
 
 	.global Img_BreathSprites
 Img_BreathSprites:  @ 0x085DDC64
-	.incbin "./graphics/banim/assets/img/005DDC64_Img_BreathSprites.4bpp.lz"
+	.incbin "./graphics/banim/assets/img/FireBreathSprites.4bpp.lz"
 
 	.global Pal_FireBreathSprites
 Pal_FireBreathSprites:  @ 0x085DE964
-	.incbin "./graphics/banim/assets/pal/005DE964_Pal_FireBreathSprites.gbapal"
+	.incbin "./graphics/banim/assets/img/FireBreathSprites.gbapal"
 
 	.global Img_EfxHurtmutEff00OBJ1
 Img_EfxHurtmutEff00OBJ1:  @ 0x085DE984
@@ -1414,19 +1414,19 @@ Img_EfxHurtmutEff00OBJ2:  @ 0x085DF224
 
 	.global Pal_EfxHurtmutEff00OBJ
 Pal_EfxHurtmutEff00OBJ:  @ 0x085DFA08
-	.incbin "./graphics/banim/assets/pal/005DFA08_Pal_EfxHurtmutEff00OBJ.gbapal"
+	.incbin "./graphics/banim/assets/img/005DE984_Img_EfxHurtmutEff00OBJ1.gbapal"
 
 	.global Pal_IceBreathSprites
 Pal_IceBreathSprites:  @ 0x085DFA28
-	.incbin "./graphics/banim/assets/pal/005DFA28_Pal_IceBreathSprites.gbapal"
+	.incbin "./graphics/banim/assets/img/IceBreathSprites.gbapal"
 
 	.global Pal_DarkBreathSprites
 Pal_DarkBreathSprites:  @ 0x085DFA48
-	.incbin "./graphics/banim/assets/pal/005DFA48_Pal_DarkBreathSprites.gbapal"
+	.incbin "./graphics/banim/assets/img/DarkBreathSprites.gbapal"
 
 	.global Pal_WretchedAirSprites
 Pal_WretchedAirSprites:  @ 0x085DFA68
-	.incbin "./graphics/banim/assets/pal/005DFA68_Pal_WretchedAirSprites.gbapal"
+	.incbin "./graphics/banim/assets/img/WretchedAirSprites.gbapal"
 
 .global AnimSprite_EfxBindingBlade_Left1
 AnimSprite_EfxBindingBlade_Left1:  @ 0x5DFA88
@@ -4518,7 +4518,7 @@ Img_EfxSRankWeaponEffectBG:  @ 0x085E8C04
 
 	.global Pal_EfxSRankWeaponEffectBG
 Pal_EfxSRankWeaponEffectBG:  @ 0x085E8CC4
-	.incbin "./graphics/banim/assets/pal/005E8CC4_Pal_EfxSRankWeaponEffectBG.gbapal"
+	.incbin "./graphics/banim/assets/img/005E8C04_Img_EfxSRankWeaponEffectBG.gbapal"
 
 	.global Tsa_EfxSRankWeaponEffectBG
 Tsa_EfxSRankWeaponEffectBG:  @ 0x085E8CE4
@@ -7467,7 +7467,7 @@ Img_EfxMagfcastBG:  @ 0x085EE4F8
 
 	.global Pal_EfxMagfcastBG
 Pal_EfxMagfcastBG:  @ 0x085EF24C
-	.incbin "./graphics/banim/assets/pal/005EF24C_Pal_EfxMagfcastBG.gbapal"
+	.incbin "./graphics/banim/assets/img/005EE4F8_Img_EfxMagfcastBG.gbapal"
 
     .global Tsa1_EfxMagfcastBG
 Tsa1_EfxMagfcastBG:
@@ -7563,7 +7563,7 @@ Img_EfxMagdhisEffectBG:  @ 0x085F0190
 
 	.global Pal_EfxMagdhisEffectBG
 Pal_EfxMagdhisEffectBG:  @ 0x085F0E04
-	.incbin "./graphics/banim/assets/pal/005F0E04_Pal_EfxMagdhisEffectBG.gbapal"
+	.incbin "./graphics/banim/assets/img/005F0190_Img_EfxMagdhisEffectBG.gbapal"
 
 	.global Tsa1_EfxMagdhisEffectBG
 Tsa1_EfxMagdhisEffectBG:
@@ -7583,19 +7583,19 @@ Tsa4_EfxMagdhisEffectBG:
 
 	.global Img_EfxSunakemuriOBJ
 Img_EfxSunakemuriOBJ:  @ 0x085F11B0
-	.incbin "./graphics/banim/assets/img/005F11B0_Img_EfxSunakemuriOBJ.4bpp.lz"
+	.incbin "./graphics/banim/assets/img/EfxSunakemuriOBJ1.4bpp.lz"
 
 	.global Pal_EfxSunakemuriOBJ1
 Pal_EfxSunakemuriOBJ1:  @ 0x085F1620
-	.incbin "./graphics/banim/assets/pal/005F1620_Pal_EfxSunakemuriOBJ1.gbapal"
+	.incbin "./graphics/banim/assets/img/EfxSunakemuriOBJ1.gbapal"
 
 	.global Pal_EfxSunakemuriOBJ2
 Pal_EfxSunakemuriOBJ2:  @ 0x085F1640
-	.incbin "./graphics/banim/assets/pal/005F1640_Pal_EfxSunakemuriOBJ2.gbapal"
+	.incbin "./graphics/banim/assets/img/EfxSunakemuriOBJ2.gbapal"
 
 	.global Pal_EfxSunakemuriOBJ3
 Pal_EfxSunakemuriOBJ3:  @ 0x085F1660
-	.incbin "./graphics/banim/assets/pal/005F1660_Pal_EfxSunakemuriOBJ3.gbapal"
+	.incbin "./graphics/banim/assets/img/EfxSunakemuriOBJ3.gbapal"
 
 .global AnimSprite_EfxSunakemuriOBJ1_R_1
 AnimSprite_EfxSunakemuriOBJ1_R_1:  @ 0x5F1680
@@ -11346,7 +11346,7 @@ Img_FimbulvetrBg_Tornado_F:  @ 0x08616CC0
 
 	.global Pal_FimbulvetrBg_Tornado
 Pal_FimbulvetrBg_Tornado:  @ 0x08617F04
-	.incbin "./graphics/banim/assets/pal/00617F04_Pal_FimbulvetrBg_Tornado.gbapal" @ 0x617F24 - 0x617F04
+	.incbin "./graphics/banim/assets/img/00616CC0_Img_FimbulvetrBg_Tornado_F.gbapal" @ 0x617F24 - 0x617F04
 
 	.global Tsa_FimbulvetrBg_Tornado_A
 Tsa_FimbulvetrBg_Tornado_A:  @ 0x08617F24
@@ -14580,7 +14580,7 @@ Img_NosferatuBg_M:  @ 0x08635D60
 
 	.global Pal_NosferatuBg
 Pal_NosferatuBg:  @ 0x08636640
-	.incbin "./graphics/banim/assets/pal/00636640_Pal_NosferatuBg.gbapal" @ 0x636660 - 0x636640
+	.incbin "./graphics/banim/assets/img/00635D60_Img_NosferatuBg_M.gbapal" @ 0x636660 - 0x636640
 
 	.global Tsa_08636660
 Tsa_08636660:  @ 0x08636660
@@ -14864,7 +14864,7 @@ Img_086415F4:  @ 0x086415F4
 
 	.global Pal_DivineBg3
 Pal_DivineBg3:  @ 0x08641D64
-	.incbin "./graphics/banim/assets/pal/00641D64_Pal_DivineBg3.gbapal"
+	.incbin "./graphics/banim/assets/img/006415F4_Img_086415F4.gbapal"
 
 	.global Pal_DivineBg
 Pal_DivineBg:  @ 0x08641D84
@@ -22668,7 +22668,7 @@ Img_SleepBg:  @ 0x086852D8
 
 	.global Pal_SleepBg
 Pal_SleepBg:  @ 0x086861A4
-	.incbin "./graphics/banim/assets/pal/006861A4_Pal_SleepBg.gbapal" @ 0x6861C4 - 0x6861A4
+	.incbin "./graphics/banim/assets/img/006852D8_Img_SleepBg.gbapal" @ 0x6861C4 - 0x6861A4
 
 	.global Tsa_086861C4
 Tsa_086861C4:  @ 0x086861C4
@@ -28003,7 +28003,7 @@ Img_IvaldiBg2:  @ 0x08695B10
 
 	.global Pal_IvaldiBg2
 Pal_IvaldiBg2:  @ 0x08696840
-	.incbin "./graphics/banim/assets/pal/00696840_Pal_IvaldiBg2.gbapal" @ 0x696860 - 0x696840
+	.incbin "./graphics/banim/assets/img/00695B10_Img_IvaldiBg2.gbapal" @ 0x696860 - 0x696840
 
 	.global Tsa_08696860
 Tsa_08696860:  @ 0x08696860
@@ -28465,7 +28465,7 @@ Img_086A6304:  @ 0x086A6304
 
 	.global Pal_GleipnirBg_Sigil
 Pal_GleipnirBg_Sigil:  @ 0x086A66D8
-	.incbin "./graphics/banim/assets/pal/006A66D8_Pal_GleipnirBg_Sigil.gbapal" @ 0x6A66F8 - 0x6A66D8
+	.incbin "./graphics/banim/assets/img/006A6304_Img_086A6304.gbapal" @ 0x6A66F8 - 0x6A66D8
 
 	.global Tsa_086A66F8
 Tsa_086A66F8:  @ 0x086A66F8
@@ -28810,7 +28810,7 @@ AnimScr_UnusedUnk1_3: @ 0x6B5A24
 
 	.global Pal_efxGorgonBGFinish
 Pal_efxGorgonBGFinish:  @ 0x086B5A2C
-	.incbin "./graphics/banim/assets/pal/006B5A2C_Pal_efxGorgonBGFinish.gbapal"
+	.incbin "./graphics/banim/assets/img/efxGorgonBGFinish.gbapal"
 
 	.global Img_efxCrimsonEyeBG
 Img_efxCrimsonEyeBG:  @ 0x086B5A4C
@@ -28870,7 +28870,7 @@ Img_086BAF14:  @ 0x086BAF14
 
 	.global Pal_EfxCrimsonEyeBGFinishIntro
 Pal_EfxCrimsonEyeBGFinishIntro:  @ 0x086BC804
-	.incbin "./graphics/banim/assets/pal/006BC804_Pal_EfxCrimsonEyeBGFinishIntro.agbpal"
+	.incbin "./graphics/banim/assets/img/006BAF14_Img_086BAF14.gbapal"
 
 	.global Pal_efxCrimsonEyeBGFinish1
 Pal_efxCrimsonEyeBGFinish1:  @ 0x086BC824
@@ -29659,7 +29659,7 @@ Img_086D7F20:  @ 0x086D7F20
 
 	.global Pal_EvilEyeBg2_A
 Pal_EvilEyeBg2_A:  @ 0x086D8A94
-	.incbin "./graphics/banim/assets/pal/006D8A94_Pal_EvilEyeBg2_A.gbapal" @ 0x6D8AB4 - 0x6D8A94
+	.incbin "./graphics/banim/assets/img/006D7F20_Img_086D7F20.gbapal" @ 0x6D8AB4 - 0x6D8A94
 
 	.global Pal_086D8AB4
 Pal_086D8AB4:  @ 0x086D8AB4
@@ -30203,7 +30203,7 @@ Img_086E7EB0:  @ 0x086E7EB0
 
 	.global Pal_086E91B8
 Pal_086E91B8:  @ 0x086E91B8
-	.incbin "./graphics/banim/assets/pal/006E91B8_Pal_086E91B8.gbapal" @ 0x6E91D8 - 0x6E91B8
+	.incbin "./graphics/banim/assets/img/006E7EB0_Img_086E7EB0.gbapal" @ 0x6E91D8 - 0x6E91B8
 
 	.global Tsa_086E91D8
 Tsa_086E91D8:  @ 0x086E91D8
@@ -30941,7 +30941,7 @@ Img_086F3830:  @ 0x086F3830
 
 	.global Pal_086F4A38
 Pal_086F4A38:  @ 0x086F4A38
-	.incbin "./graphics/banim/assets/pal/006F4A38_Pal_086F4A38.gbapal" @ 0x6F4A58 - 0x6F4A38
+	.incbin "./graphics/banim/assets/img/006F3830_Img_086F3830.gbapal" @ 0x6F4A58 - 0x6F4A38
 
 	.global Pal_086F4A58
 Pal_086F4A58:  @ 0x086F4A58
@@ -31001,7 +31001,7 @@ Img_086FCD58:  @ 0x086FCD58
 
 	.global Pal_086FDA44
 Pal_086FDA44:  @ 0x086FDA44
-	.incbin "./graphics/banim/assets/pal/006FDA44_Pal_086FDA44.gbapal" @ 0x6FDA64 - 0x6FDA44
+	.incbin "./graphics/banim/assets/img/006FCD58_Img_086FCD58.gbapal" @ 0x6FDA64 - 0x6FDA44
 
 	.global Tsa_086FDA64
 Tsa_086FDA64:  @ 0x086FDA64
@@ -31045,7 +31045,7 @@ Img_NaglfarSprites_A:  @ 0x086FE938
 
 	.global Pal_NaglfarSprites_A
 Pal_NaglfarSprites_A:  @ 0x086FF3A4
-	.incbin "./graphics/banim/assets/pal/006FF3A4_Pal_NaglfarSprites_A.gbapal"
+	.incbin "./graphics/banim/assets/img/006FE938_Img_NaglfarSprites_A.gbapal"
 
 .global AnimSprite_086FF3C4
 AnimSprite_086FF3C4:  @ 0x6FF3C4
@@ -31381,7 +31381,7 @@ Img_NaglfarBg1_A:  @ 0x08700404
 
 	.global Pal_NaglfarBg1_A
 Pal_NaglfarBg1_A:  @ 0x087013A0
-	.incbin "./graphics/banim/assets/pal/007013A0_Pal_NaglfarBg1_A.gbapal" @ 0x7013C0 - 0x7013A0
+	.incbin "./graphics/banim/assets/img/00700404_Img_NaglfarBg1_A.gbapal" @ 0x7013C0 - 0x7013A0
 
 	.global Tsa_NaglfarBg1_A
 Tsa_NaglfarBg1_A:  @ 0x087013C0
@@ -31597,7 +31597,7 @@ Img_08717E78:  @ 0x08717E78
 
 	.global Pal_NaglfarBg3
 Pal_NaglfarBg3:  @ 0x087197E4
-	.incbin "./graphics/banim/assets/pal/007197E4_Pal_NaglfarBg3.gbapal" @ 0x719804 - 0x7197E4
+	.incbin "./graphics/banim/assets/img/00717E78_Img_08717E78.gbapal" @ 0x719804 - 0x7197E4
 
 	.global Tsa_08719804
 Tsa_08719804:  @ 0x08719804
@@ -31637,7 +31637,7 @@ Img_0871F9DC:  @ 0x0871F9DC
 
 	.global Pal_NaglfarBg4
 Pal_NaglfarBg4:  @ 0x08720D84
-	.incbin "./graphics/banim/assets/pal/00720D84_Pal_NaglfarBg4.gbapal" @ 0x720DA4 - 0x720D84
+	.incbin "./graphics/banim/assets/img/0071F9DC_Img_0871F9DC.gbapal" @ 0x720DA4 - 0x720D84
 
 	.global Tsa_08720DA4
 Tsa_08720DA4:  @ 0x08720DA4
@@ -31678,7 +31678,7 @@ Img_FireBreathBg:  @ 0x087246D8
 
 	.global Pal_FireBreathBg
 Pal_FireBreathBg:  @ 0x08725AD0
-	.incbin "./graphics/banim/assets/pal/00725AD0_Pal_FireBreathBg.gbapal"
+	.incbin "./graphics/banim/assets/img/007246D8_Img_FireBreathBg.gbapal"
 
 	.global Tsa_FireBreathBg
 Tsa_FireBreathBg:  @ 0x08725AF0
@@ -31906,7 +31906,7 @@ Img_LunaBg1:  @ 0x08728C5C
 
 	.global Pal_LunaBg1
 Pal_LunaBg1:  @ 0x0872972C
-	.incbin "./graphics/banim/assets/pal/0072972C_Pal_LunaBg1.gbapal" @ 0x72974C - 0x72972C
+	.incbin "./graphics/banim/assets/img/00728C5C_Img_LunaBg1.gbapal" @ 0x72974C - 0x72972C
 
 	.global Tsa_LunaBg1_A
 Tsa_LunaBg1_A:  @ 0x0872974C
@@ -32644,7 +32644,7 @@ Img_AuraBg1:  @ 0x087327C4
 
 	.global Pal_AuraBg1
 Pal_AuraBg1:  @ 0x0873313C
-	.incbin "./graphics/banim/assets/pal/0073313C_Pal_AuraBg1.gbapal" @ 0x73315C - 0x73313C
+	.incbin "./graphics/banim/assets/img/007327C4_Img_AuraBg1.gbapal" @ 0x73315C - 0x73313C
 
 	.global Tsa_0873315C
 Tsa_0873315C:  @ 0x0873315C
@@ -32808,7 +32808,7 @@ Img_087425A4:  @ 0x087425A4
 
 	.global Pal_AuraBg3
 Pal_AuraBg3:  @ 0x0874394C
-	.incbin "./graphics/banim/assets/pal/0074394C_Pal_AuraBg3.gbapal" @ 0x74396C - 0x74394C
+	.incbin "./graphics/banim/assets/img/007425A4_Img_087425A4.gbapal" @ 0x74396C - 0x74394C
 
 	.global Tsa_0874396C
 Tsa_0874396C:  @ 0x0874396C
@@ -33090,7 +33090,7 @@ Img_0874F474:  @ 0x0874F474
 
 	.global Pal_EreshkigalBg3
 Pal_EreshkigalBg3:  @ 0x08750268
-	.incbin "./graphics/banim/assets/pal/00750268_Pal_EreshkigalBg3.gbapal" @ 0x750288 - 0x750268
+	.incbin "./graphics/banim/assets/img/0074F474_Img_0874F474.gbapal" @ 0x750288 - 0x750268
 
 	.global Tsa_08750288
 Tsa_08750288:  @ 0x08750288
