@@ -942,7 +942,7 @@ SECTIONS
         . = ALIGN(4); src/banim-ekrbattle.o(.data);
         . = ALIGN(4); src/banim-ekrlvupfan.o(.data);
         . = ALIGN(4); src/banim-ekrgauge.o(.data);
-        . = ALIGN(4); data/data-ekrgauge.o(.data);
+        . = ALIGN(4); src/data-ekrgauge.o(.data);
         . = ALIGN(4); src/banim-ekrdispup.o(.data);
         . = ALIGN(4); src/banim-efxhpbar.o(.data);
         . = ALIGN(4); src/banim-efxdeath.o(.data);
