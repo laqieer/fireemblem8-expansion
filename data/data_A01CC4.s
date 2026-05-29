@@ -115,7 +115,7 @@ gUnknown_08A03334:  @ 0x08A03334
 
 	.global gUnknown_08A03354
 gUnknown_08A03354:  @ 0x08A03354
-	.incbin "dump/data_A01CC4_A03354.bin"
+	.incbin "graphics/misc/gUnknown_08A03354.tsa"
 
 	.global Img_StatscreenBG
 Img_StatscreenBG:  @ 0x08A03368
@@ -175,7 +175,7 @@ gUnknown_08A07BEA:  @ 0x08A07BEA
 
 	.global gUnknown_08A07C0A
 gUnknown_08A07C0A:  @ 0x08A07C0A
-	.incbin "dump/data_A01CC4_A07C0A.bin"
+	.incbin "graphics/misc/gUnknown_08A07C0A.bin"
 
 	.global gPal_08A07C58
 gPal_08A07C58:  @ 0x08A07C58
@@ -187,7 +187,7 @@ Img_ChapterIntroFog:  @ 0x08A07DD8
 
 	.global Pal_PlayerRankFog
 Pal_PlayerRankFog:  @ 0x08A09A5C
-	.incbin "dump/data_A01CC4_A09A5C.bin"
+	.incbin "graphics/misc/Pal_PlayerRankFog.agbpal"
 
 	.global gGfx_08A09E4C
 gGfx_08A09E4C:  @ 0x08A09E4C
@@ -199,7 +199,7 @@ gUnknown_08A0A4E8:  @ 0x08A0A4E8
 
 	.global gTsa_08A0A9F8
 gTsa_08A0A9F8:  @ 0x08A0A9F8
-	.incbin "dump/data_A01CC4_A0A9F8.bin"
+	.incbin "graphics/misc/gUnknown_08A0A9F8.tsa"
 
 	.global Img_GameOverText
 Img_GameOverText:  @ 0x08A0AB0C
@@ -215,4 +215,4 @@ Pal_GameOverText1:  @ 0x08A0AE64
 
 	.global Tsa_GameOverFx
 Tsa_GameOverFx:  @ 0x08A0AE84
-	.incbin "dump/data_A01CC4_A0AE84.bin"
+	.incbin "graphics/misc/gUnknown_08A0AE84.bin"
