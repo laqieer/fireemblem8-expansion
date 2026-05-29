@@ -16,6 +16,3 @@ ProcScr_EkrDragon_08758720:  @ 0x08758720
         .word 0x0
 
 
-	.global gUnknown_08758740
-gUnknown_08758740:  @ 0x08758740
-	.incbin "dump/data-ekrdragon_758740.bin"

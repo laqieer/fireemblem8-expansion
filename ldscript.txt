@@ -1009,6 +1009,7 @@ SECTIONS
         . = ALIGN(4); src/banim-ekrdragon-dracozombie.o(.data);
         . = ALIGN(4); src/banim-ekrdragon-utils.o(.data);
         . = ALIGN(4); data/data-ekrdragon.o(.data);
+        . = ALIGN(4); src/data-ekrdragon.o(.data);
         . = ALIGN(4); src/banim-ekrdragon-myrrh.o(.data);
         . = ALIGN(4); src/banim-efxutils.o(.data);
         . = ALIGN(4); src/banim-efxsound.o(.data);
