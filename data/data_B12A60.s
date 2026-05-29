@@ -34,7 +34,7 @@ Img_ChapterIntro_LensFlare:  @ 0x08B17B64
 
 	.global Tsa_08B18D68
 Tsa_08B18D68:  @ 0x08B18D68
-	.incbin "dump/data_B12A60_B18D68.bin"
+	.incbin "graphics/misc/Tsa_08B18D68.tsa"
 
 	.global Pal_ChapterIntro_LensFlare
 Pal_ChapterIntro_LensFlare:  @ 0x08B18ED4
