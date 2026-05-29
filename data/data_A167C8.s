@@ -34,68 +34,68 @@ gUnknown_08A1740C:  @ 0x08A1740C
 
 	.global gTSA_TerrainBox
 gTSA_TerrainBox:  @ 0x08A1742C
-	.incbin "dump/data_A167C8_A1742C.bin"
+	.incbin "graphics/misc/gTSA_TerrainBox.tsa"
 
 	.global gTSA_MinimugBox
 gTSA_MinimugBox:  @ 0x08A17484
-	.incbin "dump/data_A167C8_A17484.bin"
+	.incbin "graphics/misc/gTSA_MinimugBox.tsa"
 
 	.global gUnknown_08A175B4
 gUnknown_08A175B4:  @ 0x08A175B4
-	.incbin "dump/data_A167C8_A175B4.bin"
+	.incbin "graphics/misc/gUnknown_08A175B4.tsa"
 
 	.global gUnknown_08A175C8
 gUnknown_08A175C8:  @ 0x08A175C8
-	.incbin "dump/data_A167C8_A175C8.bin"
+	.incbin "graphics/misc/gUnknown_08A175C8.tsa"
 
 	.global gUnknown_08A175DC
 gUnknown_08A175DC:  @ 0x08A175DC
-	.incbin "dump/data_A167C8_A175DC.bin"
+	.incbin "graphics/misc/gUnknown_08A175DC.tsa"
 
 	.global gUnknown_08A175F0
 gUnknown_08A175F0:  @ 0x08A175F0
-	.incbin "dump/data_A167C8_A175F0.bin"
+	.incbin "graphics/misc/gUnknown_08A175F0.tsa"
 
 	.global gUnknown_08A17604
 gUnknown_08A17604:  @ 0x08A17604
-	.incbin "dump/data_A167C8_A17604.bin"
+	.incbin "graphics/misc/gUnknown_08A17604.tsa"
 
 	.global gUnknown_08A1763C
 gUnknown_08A1763C:  @ 0x08A1763C
-	.incbin "dump/data_A167C8_A1763C.bin"
+	.incbin "graphics/misc/gUnknown_08A1763C.tsa"
 
 	.global gUnknown_08A17650
 gUnknown_08A17650:  @ 0x08A17650
-	.incbin "dump/data_A167C8_A17650.bin"
+	.incbin "graphics/misc/gUnknown_08A17650.tsa"
 
 	.global gUnknown_08A17664
 gUnknown_08A17664:  @ 0x08A17664
-	.incbin "dump/data_A167C8_A17664.bin"
+	.incbin "graphics/misc/gUnknown_08A17664.tsa"
 
 	.global gUnknown_08A17678
 gUnknown_08A17678:  @ 0x08A17678
-	.incbin "dump/data_A167C8_A17678.bin"
+	.incbin "graphics/misc/gUnknown_08A17678.tsa"
 
 	.global Tsa_TerrainMapUi_Labels
 Tsa_TerrainMapUi_Labels:  @ 0x08A1768C
-	.incbin "dump/data_A167C8_A1768C.bin"
+	.incbin "graphics/misc/Tsa_TerrainMapUi_Labels.tsa"
 
 	.global gTSA_TerrainBox_Ballistae
 gTSA_TerrainBox_Ballistae:  @ 0x08A1769C
-	.incbin "dump/data_A167C8_A1769C.bin"
+	.incbin "graphics/misc/gTSA_TerrainBox_Ballistae.tsa"
 
 	.global Tsa_TerrainMapUi_ObstacleLabels
 Tsa_TerrainMapUi_ObstacleLabels:  @ 0x08A176A4
-	.incbin "dump/data_A167C8_A176A4.bin"
+	.incbin "graphics/misc/Tsa_TerrainMapUi_ObstacleLabels.tsa"
 
 	.global Tsa_TerrainMapUi_ObstacleFullHp
 Tsa_TerrainMapUi_ObstacleFullHp:  @ 0x08A176B4
-	.incbin "dump/data_A167C8_A176B4.bin"
+	.incbin "graphics/misc/Tsa_TerrainMapUi_ObstacleFullHp.tsa"
 
 	.global gTSA_GoalBox_TwoLines
 gTSA_GoalBox_TwoLines:  @ 0x08A176BC
-	.incbin "dump/data_A167C8_A176BC.bin"
+	.incbin "graphics/misc/gTSA_GoalBox_TwoLines.tsa"
 
 	.global gTSA_GoalBox_OneLine
 gTSA_GoalBox_OneLine:  @ 0x08A17744
-	.incbin "dump/data_A167C8_A17744.bin"
+	.incbin "graphics/misc/gTSA_GoalBox_OneLine.tsa"
