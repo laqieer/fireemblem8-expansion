@@ -9,7 +9,9 @@ Img_LvupApfx:  @ 0x085BB0C8
 Pal_LvupApfx:  @ 0x085BB2DC
 	.incbin "./graphics/lvup/LvupAp.gbapal", 0x0, 0x20
 
-    .incbin "dump/banim-efxlvupfx_5BB2FC.bin"
+	.global gUnknown_085BB2FC
+gUnknown_085BB2FC:  @ 0x085BB2FC
+	.incbin "graphics/banim/efxlvupfx/gUnknown_085BB2FC.agbpal"
 
 	.global Img_ArenaBattleBg
 Img_ArenaBattleBg:  @ 0x085BC188
