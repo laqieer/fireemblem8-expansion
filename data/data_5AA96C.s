@@ -86,19 +86,19 @@ Pal_085ADE68:  @ 0x085ADE68
 
 	.global gUnknown_085ADE88
 gUnknown_085ADE88:  @ 0x085ADE88
-	.incbin "dump/data_5AA96C_5ADE88.bin"
+	.incbin "graphics/misc/gUnknown_085ADE88.tsa"
 
 	.global gUnknown_085ADF40
 gUnknown_085ADF40:  @ 0x085ADF40
-	.incbin "dump/data_5AA96C_5ADF40.bin"
+	.incbin "graphics/misc/gUnknown_085ADF40.tsa"
 
 	.global Tsa_085AE190
 Tsa_085AE190:  @ 0x085AE190
-	.incbin "dump/data_5AA96C_5AE190.bin"
+	.incbin "graphics/misc/Tsa_085AE190.tsa"
 
 	.global Tsa_SioResultRankings
 Tsa_SioResultRankings:  @ 0x085AE464
-	.incbin "dump/data_5AA96C_5AE464.bin"
+	.incbin "graphics/misc/Tsa_SioResultRankings.tsa"
 
 	.global gUnknown_085AE778
 gUnknown_085AE778:  @ 0x085AE778
@@ -158,4 +158,4 @@ gUnknown_085B0DE8:  @ 0x085B0DE8
 
 	.global gUnknown_085B0F2C
 gUnknown_085B0F2C:  @ 0x085B0F2C
-    .incbin "dump/data_5AA96C_5B0F2C.bin"
+    .incbin "graphics/misc/gUnknown_085B0F2C.tsa"
