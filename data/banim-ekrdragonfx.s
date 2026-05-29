@@ -641,7 +641,7 @@ Img_DemonLightSprites_EyeFlash:  @ 0x087A4EEC
 
 	.global Pal_DemonLightSprites_EyeFlash
 Pal_DemonLightSprites_EyeFlash:  @ 0x087A5118
-	.incbin "dump/banim-ekrdragonfx_7A5118.bin"
+	.incbin "graphics/banim/dragonfx/Pal_DemonLightSprites_EyeFlash.agbpal"
 
 	.global gUnknown_087A5240
 gUnknown_087A5240:  @ 0x087A5240
