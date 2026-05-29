@@ -51,24 +51,24 @@ gUnknown_08AA70BC:  @ 0x08AA70BC
 
 	.global gUnknown_08AA70DC
 gUnknown_08AA70DC:  @ 0x08AA70DC
-	.incbin "dump/data_AA6BFA_AA70DC.bin"
+	.incbin "graphics/misc/gUnknown_08AA70DC.bin"
 
 	.global gUnknown_08AA70EA
 gUnknown_08AA70EA:  @ 0x08AA70EA
-	.incbin "dump/data_AA6BFA_AA70EA.bin"
+	.incbin "graphics/misc/gUnknown_08AA70EA.bin"
 
 	.global gUnknown_08AA7116
 gUnknown_08AA7116:  @ 0x08AA7116
-	.incbin "dump/data_AA6BFA_AA7116.bin"
+	.incbin "graphics/misc/gUnknown_08AA7116.bin"
 
 	.global gUnknown_08AA712A
 gUnknown_08AA712A:  @ 0x08AA712A
-	.incbin "dump/data_AA6BFA_AA712A.bin"
+	.incbin "graphics/misc/gUnknown_08AA712A.bin"
 
 	.global gUnknown_08AA715C
 gUnknown_08AA715C:  @ 0x08AA715C
-	.incbin "dump/data_AA6BFA_AA715C.bin"
+	.incbin "graphics/misc/gUnknown_08AA715C.bin"
 
 	.global gUnknown_08AA7194
 gUnknown_08AA7194:  @ 0x08AA7194
-	.incbin "dump/data_AA6BFA_AA7194.bin"
+	.incbin "graphics/misc/gUnknown_08AA7194.bin"
