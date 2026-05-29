@@ -114,19 +114,19 @@ Img_PhaseChangeSquares:  @ 0x085A06D8
 
 	.global gUnknown_085A0838
 gUnknown_085A0838:  @ 0x085A0838
-	.incbin "dump/data_59E8E0_5A0838.bin"
+	.incbin "graphics/misc/gUnknown_085A0838.bin"
 
 	.global gUnknown_085A08F0
 gUnknown_085A08F0:  @ 0x085A08F0
-	.incbin "dump/data_59E8E0_5A08F0.bin"
+	.incbin "graphics/misc/gUnknown_085A08F0.bin"
 
 	.global gTSA_BattleForecastStandard
 gTSA_BattleForecastStandard:  @ 0x085A09A8
-	.incbin "dump/data_59E8E0_5A09A8.bin"
+	.incbin "graphics/misc/gTSA_BattleForecastStandard.tsa"
 
 	.global gTSA_BattleForecastExtended
 gTSA_BattleForecastExtended:  @ 0x085A0AEC
-	.incbin "dump/data_59E8E0_5A0AEC.bin"
+	.incbin "graphics/misc/gTSA_BattleForecastExtended.tsa"
 
 	.global gBattleForecast_x2x4Gfx
 gBattleForecast_x2x4Gfx:  @ 0x085A0C80
@@ -138,19 +138,19 @@ gBattleForecast_x2x4Pal:  @ 0x085A0D2C
 
 	.global gUnknown_085A0D4C
 gUnknown_085A0D4C:  @ 0x085A0D4C
-	.incbin "dump/data_59E8E0_5A0D4C.bin"
+	.incbin "graphics/misc/gUnknown_085A0D4C.bin"
 
 	.global gUnknown_085A0EA0
 gUnknown_085A0EA0:  @ 0x085A0EA0
-	.incbin "dump/data_59E8E0_5A0EA0.bin"
+	.incbin "graphics/misc/gUnknown_085A0EA0.bin"
 
 	.global SpriteAnim_GasTrapVertical
 SpriteAnim_GasTrapVertical:  @ 0x085A0FF8
-	.incbin "dump/data_59E8E0_5A0FF8.bin"
+	.incbin "graphics/misc/SpriteAnim_GasTrapVertical.bin"
 
 	.global SpriteAnim_GasTrapHorizontal
 SpriteAnim_GasTrapHorizontal:  @ 0x085A129C
-	.incbin "dump/data_59E8E0_5A129C.bin"
+	.incbin "graphics/misc/SpriteAnim_GasTrapHorizontal.bin"
 
 	.global Img_GasTrapVertical
 Img_GasTrapVertical:  @ 0x085A1510
@@ -174,7 +174,7 @@ Img_ArrowTrap:  @ 0x085A20AC
 
 	.global SpriteAnim_ArrowTrap
 SpriteAnim_ArrowTrap:  @ 0x085A2384
-	.incbin "dump/data_59E8E0_5A2384.bin"
+	.incbin "graphics/misc/SpriteAnim_ArrowTrap.bin"
 
 	.global Img_FireTrap
 Img_FireTrap:  @ 0x085A2940
@@ -186,7 +186,7 @@ Pal_FireTrap:  @ 0x085A2DDC
 
 	.global SpriteAnim_FireTrap
 SpriteAnim_FireTrap:  @ 0x085A2DFC
-	.incbin "dump/data_59E8E0_5A2DFC.bin"
+	.incbin "graphics/misc/SpriteAnim_FireTrap.bin"
 
 	.global Pal_FireTrap2
 Pal_FireTrap2:  @ 0x085A3490
@@ -198,7 +198,7 @@ Img_PikeTrap:  @ 0x085A34B0
 
 	.global SpriteAnim_PikeTrap
 SpriteAnim_PikeTrap:  @ 0x085A3730
-	.incbin "dump/data_59E8E0_5A3730.bin"
+	.incbin "graphics/misc/SpriteAnim_PikeTrap.bin"
 
 	.global Pal_PikeTrap
 Pal_PikeTrap:  @ 0x085A3944
@@ -262,7 +262,7 @@ gUnknown_085A643C:  @ 0x085A643C
 
 	.global Tsa_PlayerRankFog
 Tsa_PlayerRankFog:  @ 0x085A647C
-	.incbin "dump/data_59E8E0_5A647C.bin"
+	.incbin "graphics/misc/Tsa_PlayerRankFog.tsa"
 
 	.global Img_DanceringFx
 Img_DanceringFx:  @ 0x085A6C80
@@ -282,7 +282,7 @@ Img_MineFx:  @ 0x085A7CC0
 
 	.global SpritAnim_MineFx
 SpritAnim_MineFx:  @ 0x085A7E34
-	.incbin "dump/data_59E8E0_5A7E34.bin"
+	.incbin "graphics/misc/SpritAnim_MineFx.bin"
 
 	.global Pal_MineFx
 Pal_MineFx:  @ 0x085A7EC8
