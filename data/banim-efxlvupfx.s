@@ -33,7 +33,17 @@ Pal_ArenaBattleBg_B:  @ 0x085BF014
 Pal_ArenaBattleBg_C:  @ 0x085BF094
 	.incbin "graphics/banim/efxlvupfx/Pal_ArenaBattleBg_C.gbapal"
 
-	.incbin "dump/banim-efxlvupfx_5BF114.bin"
+	.global gUnknown_085BF114
+gUnknown_085BF114:  @ 0x085BF114
+	.incbin "graphics/banim/efxlvupfx/gUnknown_085BF114.4bpp.lz"
+
+	.global gUnknown_085BF4FC
+gUnknown_085BF4FC:  @ 0x085BF4FC
+	.incbin "graphics/banim/efxlvupfx/gUnknown_085BF4FC.agbpal"
+
+	.global gUnknown_085BF5FC
+gUnknown_085BF5FC:  @ 0x085BF5FC
+	.incbin "graphics/banim/efxlvupfx/gUnknown_085BF5FC.bin.lz"
 
 	.global Img1_EfxLvupBG
 Img1_EfxLvupBG:
