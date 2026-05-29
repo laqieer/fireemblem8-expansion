@@ -4,4 +4,4 @@
 
 	.global Pal_080E1164
 Pal_080E1164:  @ 0x080E1164
-	.incbin "dump/const_data_banimekrdk_0E1164.bin"
+	.incbin "graphics/banim/misc/Pal_080E1164.agbpal"
