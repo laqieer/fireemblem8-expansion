@@ -34,7 +34,7 @@ gUnknown_08A1A3FC:  @ 0x08A1A3FC
 
 	.global Tsa_08A1A41C
 Tsa_08A1A41C:  @ 0x08A1A41C
-	.incbin "dump/data_A195B0_A1A41C.bin"
+	.incbin "graphics/misc/Tsa_08A1A41C.tsa"
 
 	.global Tsa_08A1A434
 Tsa_08A1A434:  @ 0x08A1A434
@@ -42,7 +42,7 @@ Tsa_08A1A434:  @ 0x08A1A434
 
 	.global Tsa_08A1A474
 Tsa_08A1A474:  @ 0x08A1A474
-	.incbin "dump/data_A195B0_A1A474.bin"
+	.incbin "graphics/misc/Tsa_08A1A474.tsa"
 
 	.global gUnknown_08A1A4C8
 gUnknown_08A1A4C8:  @ 0x08A1A4C8
@@ -70,7 +70,7 @@ gPal_SupportScreenBanner:  @ 0x08A1B174
 
 	.global AP_DrawPreparationsBanner
 AP_DrawPreparationsBanner:  @ 0x08A1B194
-	.incbin "dump/data_A195B0_A1B194.bin"
+	.incbin "graphics/misc/AP_DrawPreparationsBanner.bin"
 
 	.global Img_PrepFunds
 Img_PrepFunds:  @ 0x08A1B1FC
@@ -134,7 +134,7 @@ gUnknown_08A1BD40:  @ 0x08A1BD40
 
 	.global gUnknown_08A1BD60
 gUnknown_08A1BD60:  @ 0x08A1BD60
-	.incbin "dump/data_A195B0_A1BD60.bin"
+	.incbin "graphics/misc/gUnknown_08A1BD60.bin"
 
 	.global Img_SpinningArrow
 Img_SpinningArrow:  @ 0x08A1C704
@@ -146,7 +146,7 @@ gImg_UiSpinningArrow_Horizontal:  @ 0x08A1C7D8
 
 	.global gUnknown_08A1C8B4
 gUnknown_08A1C8B4:  @ 0x08A1C8B4
-	.incbin "dump/data_A195B0_A1C8B4.bin"
+	.incbin "graphics/misc/gUnknown_08A1C8B4.tsa"
 
 	.global Img_08A1CD68
 Img_08A1CD68:  @ 0x08A1CD68
