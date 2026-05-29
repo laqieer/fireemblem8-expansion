@@ -1,6 +1,6 @@
     .section .data
 
-	.incbin "dump/data_A3E4D4_A3F21C.bin"
+	.incbin "graphics/misc/gUnknown_08A3F21C.bin"
 
 	.global Pal_CharacterEndingMenu
 Pal_CharacterEndingMenu:  @ 0x08A3F710
@@ -12,11 +12,11 @@ Img_CharacterEndingMenu:  @ 0x08A3F750
 
 	.global Tsa_CharacterEnding_TopBorder
 Tsa_CharacterEnding_TopBorder:  @ 0x08A3FFEC
-    .incbin "dump/data_A3E4D4_A3FFEC.bin"
+    .incbin "graphics/misc/Tsa_CharacterEnding_TopBorder.tsa"
 
 	.global Tsa_CharacterEnding_BottomBorder
 Tsa_CharacterEnding_BottomBorder:  @ 0x08A40068
-	.incbin "dump/data_A3E4D4_A40068.bin"
+	.incbin "graphics/misc/Tsa_CharacterEnding_BottomBorder.tsa"
 
 	.global gTsa_SoloEndingNameplate
 gTsa_SoloEndingNameplate:  @ 0x08A400E4
@@ -52,7 +52,7 @@ Pal_08A40AD4:  @ 0x08A40AD4
 
 	.global Tsa_08A40B14
 Tsa_08A40B14:  @ 0x08A40B14
-	.incbin "dump/data_A3E4D4_A40B14.bin"
+	.incbin "graphics/misc/Tsa_08A40B14.tsa"
 
 	.global Pal_StaffReelEnt_08A40FC8
 Pal_StaffReelEnt_08A40FC8:  @ 0x08A40FC8
@@ -168,7 +168,7 @@ gGfx_BrownTextBox:  @ 0x08A4CF2C
 
 	.global gPal_BrownTextBox
 gPal_BrownTextBox:  @ 0x08A4D0CC
-	.incbin "dump/data_A3E4D4_A4D0CC.bin"
+	.incbin "graphics/misc/gPal_BrownTextBox.agbpal"
 
 	.align 2, 0
 	.global cg_0_part_0_tiles
@@ -812,7 +812,7 @@ gPal_08A97ACC:  @ 0x08A97ACC
 
 	.global Sprite_08A97AEC
 Sprite_08A97AEC:  @ 0x08A97AEC
-	.incbin "dump/data_A3E4D4_A97AEC.bin"
+	.incbin "graphics/misc/Sprite_08A97AEC.bin"
 
 	.global gImg_WorldmapNodeRevealEffect
 gImg_WorldmapNodeRevealEffect:  @ 0x08A97C98
@@ -824,7 +824,7 @@ gPal_WorldmapNodeRevealEffect:  @ 0x08A97E28
 
 	.global gUnknown_08A97E48
 gUnknown_08A97E48:  @ 0x08A97E48
-	.incbin "dump/data_A3E4D4_A97E48.bin"
+	.incbin "graphics/misc/gUnknown_08A97E48.bin"
 
 	.global Img_GmapPath
 Img_GmapPath:  @ 0x08A97ED8
@@ -836,35 +836,35 @@ gUnknown_08A97FA4:  @ 0x08A97FA4
 
 	.global gUnknown_08A97FC4
 gUnknown_08A97FC4:  @ 0x08A97FC4
-	.incbin "dump/data_A3E4D4_A97FC4.bin"
+	.incbin "graphics/misc/gUnknown_08A97FC4.bin"
 
 	.global gUnknown_08A97FF8
 gUnknown_08A97FF8:  @ 0x08A97FF8
-	.incbin "dump/data_A3E4D4_A97FF8.bin"
+	.incbin "graphics/misc/gUnknown_08A97FF8.bin"
 
 	.global gUnknown_08A98030
 gUnknown_08A98030:  @ 0x08A98030
-	.incbin "dump/data_A3E4D4_A98030.bin"
+	.incbin "graphics/misc/gUnknown_08A98030.bin"
 
 	.global gUnknown_08A98054
 gUnknown_08A98054:  @ 0x08A98054
-	.incbin "dump/data_A3E4D4_A98054.bin"
+	.incbin "graphics/misc/gUnknown_08A98054.bin"
 
 	.global gUnknown_08A9806C
 gUnknown_08A9806C:  @ 0x8A9806C
-	.incbin "dump/data_A3E4D4_A9806C.bin"
+	.incbin "graphics/misc/gUnknown_08A9806C.bin"
 
 	.global gUnknown_08A98090
 gUnknown_08A98090:  @ 0x8A98090
-	.incbin "dump/data_A3E4D4_A98090.bin"
+	.incbin "graphics/misc/gUnknown_08A98090.bin"
 
 	.global gUnknown_08A980B4
 gUnknown_08A980B4:  @ 0x8A980B4
-	.incbin "dump/data_A3E4D4_A980B4.bin"
+	.incbin "graphics/misc/gUnknown_08A980B4.bin"
 
 	.global gUnknown_08A980DC
 gUnknown_08A980DC:  @ 0x8A980DC
-	.incbin "dump/data_A3E4D4_A980DC.bin"
+	.incbin "graphics/misc/gUnknown_08A980DC.bin"
 
 	.global gUnknown_08A98104
 gUnknown_08A98104:  @ 0x8A98104
@@ -872,11 +872,11 @@ gUnknown_08A98104:  @ 0x8A98104
 
 	.global gUnknown_08A98144
 gUnknown_08A98144:  @ 0x8A98144
-	.incbin "dump/data_A3E4D4_A98144.bin"
+	.incbin "graphics/misc/gUnknown_08A98144.bin"
 
 	.global gUnknown_08A98168
 gUnknown_08A98168:  @ 0x8A98168
-	.incbin "dump/data_A3E4D4_A98168.bin"
+	.incbin "graphics/misc/gUnknown_08A98168.bin"
 
 	.global gUnknown_08A9819C
 gUnknown_08A9819C:  @ 0x8A9819C
@@ -884,19 +884,19 @@ gUnknown_08A9819C:  @ 0x8A9819C
 
 	.global gUnknown_08A981BC
 gUnknown_08A981BC:  @ 0x8A981BC
-	.incbin "dump/data_A3E4D4_A981BC.bin"
+	.incbin "graphics/misc/gUnknown_08A981BC.bin"
 
 	.global gUnknown_08A981F4
 gUnknown_08A981F4:  @ 0x8A981F4
-	.incbin "dump/data_A3E4D4_A981F4.bin"
+	.incbin "graphics/misc/gUnknown_08A981F4.bin"
 
 	.global gUnknown_08A98228
 gUnknown_08A98228:  @ 0x8A98228
-	.incbin "dump/data_A3E4D4_A98228.bin"
+	.incbin "graphics/misc/gUnknown_08A98228.bin"
 
 	.global gUnknown_08A9827C
 gUnknown_08A9827C:  @ 0x8A9827C
-	.incbin "dump/data_A3E4D4_A9827C.bin"
+	.incbin "graphics/misc/gUnknown_08A9827C.bin"
 
 	.global gUnknown_08A982D4
 gUnknown_08A982D4:  @ 0x8A982D4
@@ -904,51 +904,51 @@ gUnknown_08A982D4:  @ 0x8A982D4
 
 	.global gUnknown_08A98314
 gUnknown_08A98314:  @ 0x8A98314
-	.incbin "dump/data_A3E4D4_A98314.bin"
+	.incbin "graphics/misc/gUnknown_08A98314.bin"
 
 	.global gUnknown_08A98344
 gUnknown_08A98344:  @ 0x8A98344
-	.incbin "dump/data_A3E4D4_A98344.bin"
+	.incbin "graphics/misc/gUnknown_08A98344.bin"
 
 	.global gUnknown_08A9836C
 gUnknown_08A9836C:  @ 0x8A9836C
-	.incbin "dump/data_A3E4D4_A9836C.bin"
+	.incbin "graphics/misc/gUnknown_08A9836C.bin"
 
 	.global gUnknown_08A983BC
 gUnknown_08A983BC:  @ 0x8A983BC
-	.incbin "dump/data_A3E4D4_A983BC.bin"
+	.incbin "graphics/misc/gUnknown_08A983BC.bin"
 
 	.global gUnknown_08A983F0
 gUnknown_08A983F0:  @ 0x8A983F0
-	.incbin "dump/data_A3E4D4_A983F0.bin"
+	.incbin "graphics/misc/gUnknown_08A983F0.bin"
 
 	.global gUnknown_08A98448
 gUnknown_08A98448:  @ 0x8A98448
-	.incbin "dump/data_A3E4D4_A98448.bin"
+	.incbin "graphics/misc/gUnknown_08A98448.bin"
 
 	.global gUnknown_08A9847C
 gUnknown_08A9847C:  @ 0x8A9847C
-	.incbin "dump/data_A3E4D4_A9847C.bin"
+	.incbin "graphics/misc/gUnknown_08A9847C.bin"
 
 	.global gUnknown_08A984D4
 gUnknown_08A984D4:  @ 0x8A984D4
-	.incbin "dump/data_A3E4D4_A984D4.bin"
+	.incbin "graphics/misc/gUnknown_08A984D4.bin"
 
 	.global gUnknown_08A9850C
 gUnknown_08A9850C:  @ 0x8A9850C
-	.incbin "dump/data_A3E4D4_A9850C.bin"
+	.incbin "graphics/misc/gUnknown_08A9850C.bin"
 
 	.global gUnknown_08A98540
 gUnknown_08A98540:  @ 0x8A98540
-	.incbin "dump/data_A3E4D4_A98540.bin"
+	.incbin "graphics/misc/gUnknown_08A98540.bin"
 
 	.global gUnknown_08A98568
 gUnknown_08A98568:  @ 0x8A98568
-	.incbin "dump/data_A3E4D4_A98568.bin"
+	.incbin "graphics/misc/gUnknown_08A98568.bin"
 
 	.global gUnknown_08A985A4
 gUnknown_08A985A4:  @ 0x8A985A4
-	.incbin "dump/data_A3E4D4_A985A4.bin"
+	.incbin "graphics/misc/gUnknown_08A985A4.bin"
 
 	.global gUnknown_08A985FC
 gUnknown_08A985FC:  @ 0x8A985FC
@@ -956,11 +956,11 @@ gUnknown_08A985FC:  @ 0x8A985FC
 
 	.global gUnknown_08A9863C
 gUnknown_08A9863C:  @ 0x8A9863C
-	.incbin "dump/data_A3E4D4_A9863C.bin"
+	.incbin "graphics/misc/gUnknown_08A9863C.bin"
 
 	.global gUnknown_08A98694
 gUnknown_08A98694:  @ 0x8A98694
-	.incbin "dump/data_A3E4D4_A98694.bin"
+	.incbin "graphics/misc/gUnknown_08A98694.bin"
 
 	.global gUnknown_08A986C0
 gUnknown_08A986C0:  @ 0x08A986C0
@@ -972,23 +972,23 @@ gUnknown_08A98BF8:  @ 0x08A98BF8
 
 	.global gUnknown_08A98CFC
 gUnknown_08A98CFC:  @ 0x08A98CFC
-	.incbin "dump/data_A3E4D4_A98CFC.bin"
+	.incbin "graphics/misc/gUnknown_08A98CFC.bin"
 
 	.global gUnknown_08A98D58
 gUnknown_08A98D58:  @ 0x08A98D58
-	.incbin "dump/data_A3E4D4_A98D58.bin"
+	.incbin "graphics/misc/gUnknown_08A98D58.bin"
 
 	.global gUnknown_08A98D88
 gUnknown_08A98D88:  @ 0x08A98D88
-	.incbin "dump/data_A3E4D4_A98D88.bin"
+	.incbin "graphics/misc/gUnknown_08A98D88.bin"
 
 	.global gUnknown_08A98DA0
 gUnknown_08A98DA0:  @ 0x08A98DA0
-	.incbin "dump/data_A3E4D4_A98DA0.bin"
+	.incbin "graphics/misc/gUnknown_08A98DA0.bin"
 
 	.global gUnknown_08A98DB8
 gUnknown_08A98DB8:  @ 0x08A98DB8
-	.incbin "dump/data_A3E4D4_A98DB8.bin"
+	.incbin "graphics/misc/gUnknown_08A98DB8.bin"
 
 	.global gUnknown_08A98DCC
 gUnknown_08A98DCC:  @ 0x08A98DCC
@@ -1012,11 +1012,11 @@ gUnknown_08A98E8C:  @ 0x08A98E8C
 
 	.global gUnknown_08A98EAC
 gUnknown_08A98EAC:  @ 0x08A98EAC
-	.incbin "dump/data_A3E4D4_A98EAC.bin"
+	.incbin "graphics/misc/gUnknown_08A98EAC.bin"
 
 	.global gUnknown_08A98F30
 gUnknown_08A98F30:  @ 0x08A98F30
-	.incbin "dump/data_A3E4D4_A98F30.bin"
+	.incbin "graphics/misc/gUnknown_08A98F30.bin"
 
 	.global gGfx_GMapPI_LevelNums
 gGfx_GMapPI_LevelNums:  @ 0x08A9901C
@@ -1060,7 +1060,7 @@ Img_WmHightLightMapFrecia:
 
     .global Ap_WmHightLightMapFrecia
 Ap_WmHightLightMapFrecia:
-    .incbin "dump/data_A3E4D4_A9EC24.bin"
+    .incbin "graphics/misc/Ap_WmHightLightMapFrecia.bin"
 
     .global Img_WmHightLightMap2
 Img_WmHightLightMap2:
@@ -1068,7 +1068,7 @@ Img_WmHightLightMap2:
 
     .global Ap_WmHightLightMap2
 Ap_WmHightLightMap2:
-    .incbin "dump/data_A3E4D4_A9F358.bin"
+    .incbin "graphics/misc/Ap_WmHightLightMap2.bin"
 
     .global Img_WmHightLightMap3
 Img_WmHightLightMap3:
@@ -1076,7 +1076,7 @@ Img_WmHightLightMap3:
 
     .global Ap_WmHightLightMap3
 Ap_WmHightLightMap3:
-    .incbin "dump/data_A3E4D4_A9F9C8.bin"
+    .incbin "graphics/misc/Ap_WmHightLightMap3.bin"
 
     .global Img_WmHightLightMap4
 Img_WmHightLightMap4:
@@ -1084,7 +1084,7 @@ Img_WmHightLightMap4:
 
     .global Ap_WmHightLightMap4
 Ap_WmHightLightMap4:
-    .incbin "dump/data_A3E4D4_A9FEA4.bin"
+    .incbin "graphics/misc/Ap_WmHightLightMap4.bin"
 
     .global Img_WmHightLightMap5
 Img_WmHightLightMap5:
@@ -1092,7 +1092,7 @@ Img_WmHightLightMap5:
 
     .global Ap_WmHightLightMap5
 Ap_WmHightLightMap5:
-    .incbin "dump/data_A3E4D4_AA020C.bin"
+    .incbin "graphics/misc/Ap_WmHightLightMap5.bin"
 
     .global Img_WmHightLightMap6
 Img_WmHightLightMap6:
@@ -1100,7 +1100,7 @@ Img_WmHightLightMap6:
 
     .global Ap_WmHightLightMap6
 Ap_WmHightLightMap6:
-    .incbin "dump/data_A3E4D4_AA0760.bin"
+    .incbin "graphics/misc/Ap_WmHightLightMap6.bin"
 
     .global Img_WmHightLightMap7
 Img_WmHightLightMap7:
@@ -1108,7 +1108,7 @@ Img_WmHightLightMap7:
 
     .global Ap_WmHightLightMap7
 Ap_WmHightLightMap7:
-    .incbin "dump/data_A3E4D4_AA0B90.bin"
+    .incbin "graphics/misc/Ap_WmHightLightMap7.bin"
 
     .global Img_WmHightLightMap8
 Img_WmHightLightMap8:
@@ -1116,7 +1116,7 @@ Img_WmHightLightMap8:
 
     .global Ap_WmHightLightMap8
 Ap_WmHightLightMap8:
-    .incbin "dump/data_A3E4D4_AA10E4.bin"
+    .incbin "graphics/misc/Ap_WmHightLightMap8.bin"
 
 	.global Img_WorldMapPlaceDot
 Img_WorldMapPlaceDot:  @ 0x08AA114C
@@ -1144,7 +1144,7 @@ Pal_WorldmapMinimap:  @ 0x08AA188C
 
 	.global gUnknown_08AA18AC
 gUnknown_08AA18AC:  @ 0x08AA18AC
-	.incbin "dump/data_A3E4D4_AA18AC.bin"
+	.incbin "graphics/misc/gUnknown_08AA18AC.bin"
 
 	.global gUnknown_08AA1930
 gUnknown_08AA1930:  @ 0x08AA1930
@@ -1160,4 +1160,4 @@ gImg_WorldmapSkirmish:  @ 0x08AA1970
 
 	.global SpriteAnim_WorldmapSkirmish
 SpriteAnim_WorldmapSkirmish:  @ 0x08AA1C70
-	.incbin "dump/data_A3E4D4_AA1C70.bin"
+	.incbin "graphics/misc/SpriteAnim_WorldmapSkirmish.bin"
