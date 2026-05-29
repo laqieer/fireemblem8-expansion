@@ -10,7 +10,7 @@ Pal_SaveMenuBG:  @ 0x08A25DCC
 
 	.global Tsa_SaveMenuBG
 Tsa_SaveMenuBG:  @ 0x08A25ECC
-	.incbin "dump/data_A21658_A25ECC.bin"
+	.incbin "graphics/misc/Tsa_SaveMenuBG.tsa"
 
 	.global Img_MainMenuBgFog
 Img_MainMenuBgFog:  @ 0x08A26380
@@ -38,7 +38,7 @@ Pal_08A28088:  @ 0x08A28088
 
 	.global gUnknown_08A280A8
 gUnknown_08A280A8:  @ 0x08A280A8
-	.incbin "dump/data_A21658_A280A8.bin"
+	.incbin "graphics/misc/gUnknown_08A280A8.bin"
 
 	.global Img_GameMainMenuObjs
 Img_GameMainMenuObjs:  @ 0x08A2812C
@@ -66,7 +66,7 @@ Pal_08A295B4:  @ 0x08A295B4
 
 	.global Tsa_CommGameBgScreenInShop
 Tsa_CommGameBgScreenInShop:  @ 0x08A295D4
-	.incbin "dump/data_A21658_A295D4.bin"
+	.incbin "graphics/misc/Tsa_CommGameBgScreenInShop.tsa"
 
 	.global gUnknown_08A29A88
 gUnknown_08A29A88:  @ 0x08A29A88
@@ -82,7 +82,7 @@ gUnknown_08A2C11C:  @ 0x08A2C11C
 
 	.global gUnknown_08A2C23C
 gUnknown_08A2C23C:  @ 0x08A2C23C
-	.incbin "dump/data_A21658_A2C23C.bin"
+	.incbin "graphics/misc/gUnknown_08A2C23C.bin"
 
 	.global gUnknown_08A2C4C8
 gUnknown_08A2C4C8:  @ 0x08A2C4C8
@@ -90,11 +90,11 @@ gUnknown_08A2C4C8:  @ 0x08A2C4C8
 
 	.global gUnknown_08A2C5A8
 gUnknown_08A2C5A8:  @ 0x08A2C5A8
-	.incbin "dump/data_A21658_A2C5A8.bin"
+	.incbin "graphics/misc/gUnknown_08A2C5A8.tsa"
 
 	.global gUnknown_08A2C7A4
 gUnknown_08A2C7A4:  @ 0x08A2C7A4
-	.incbin "dump/data_A21658_A2C7A4.bin"
+	.incbin "graphics/misc/gUnknown_08A2C7A4.tsa"
 
 	.global Img_SoundRoomVolumeGraph
 Img_SoundRoomVolumeGraph:  @ 0x08A2C838
@@ -110,7 +110,7 @@ gUnknown_08A2C908:  @ 0x08A2C908
 
 	.global gUnknown_08A2C92C
 gUnknown_08A2C92C:  @ 0x08A2C92C
-	.incbin "dump/data_A21658_A2C92C.bin"
+	.incbin "graphics/misc/gUnknown_08A2C92C.tsa"
 
 	.global Img_SoundRoomUiElements
 Img_SoundRoomUiElements:  @ 0x08A2CABC
@@ -146,7 +146,11 @@ Tsa_ChapterStatusUi:  @ 0x08A2E4C4
 
 	.global Img_08A2E5EC
 Img_08A2E5EC:  @ 0x08A2E5EC
-	.incbin "dump/data_A21658_A2E5EC.bin"
+	.incbin "graphics/misc/Img_08A2E5EC.4bpp.lz"
+
+	.global gUnknown_08A2E890
+gUnknown_08A2E890:  @ 0x08A2E890
+	.incbin "graphics/misc/gUnknown_08A2E890.gbapal"
 
 	.global Pal_08A2E8F0
 Pal_08A2E8F0:  @ 0x08A2E8F0
