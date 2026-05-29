@@ -2,19 +2,19 @@
 
 	.global TsaConf_BanimTmA1
 TsaConf_BanimTmA1:  @ 0x085B9E58
-	.incbin "dump/banim-efxbattle_5B9E58.bin" @ 0x5B9EF0 - 0x5B9E58
+	.incbin "graphics/banim/efxbattle/TsaConf_BanimTmA1.tsa" @ 0x5B9EF0 - 0x5B9E58
 
 	.global TsaConf_BanimTmA2
 TsaConf_BanimTmA2:  @ 0x085B9EF0
-	.incbin "dump/banim-efxbattle_5B9EF0.bin" @ 0x5B9F88 - 0x5B9EF0
+	.incbin "graphics/banim/efxbattle/TsaConf_BanimTmA2.tsa" @ 0x5B9F88 - 0x5B9EF0
 
 	.global TsaConf_BanimTmA3
 TsaConf_BanimTmA3:  @ 0x085B9F88
-	.incbin "dump/banim-efxbattle_5B9F88.bin" @ 0x5BA020 - 0x5B9F88
+	.incbin "graphics/banim/efxbattle/TsaConf_BanimTmA3.tsa" @ 0x5BA020 - 0x5B9F88
 
 	.global TsaConf_BanimTmA4
 TsaConf_BanimTmA4:  @ 0x085BA020
-	.incbin "dump/banim-efxbattle_5BA020.bin"@ 0x5BA0B8 - 0x5BA020
+	.incbin "graphics/banim/efxbattle/TsaConf_BanimTmA4.tsa" @ 0x5BA0B8 - 0x5BA020
 
 	.global Img_NODAMGEMIS
 Img_NODAMGEMIS:  @ 0x085BA0B8
