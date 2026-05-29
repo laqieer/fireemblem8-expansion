@@ -15,23 +15,23 @@ ProcScr_ManimShiftingSineWaveScanlineBuf:  @ 0x089A52FC
 
 	.global SpriteAnim_ManimStatGain
 SpriteAnim_ManimStatGain:  @ 0x089A5314
-	.incbin "dump/data_9A31F8_9A5314.bin"
+	.incbin "graphics/misc/SpriteAnim_ManimStatGain.bin"
 
 	.global gUnknown_089A5A6C
 gUnknown_089A5A6C:  @ 0x089A5A6C
-	.incbin "dump/data_9A31F8_9A5A6C.bin"
+	.incbin "graphics/misc/gUnknown_089A5A6C.bin"
 
 	.global ApConf_MapAnimTorchfx
 ApConf_MapAnimTorchfx:  @ 0x089A61F8
-	.incbin "dump/data_9A31F8_9A61F8.bin"
+	.incbin "graphics/misc/ApConf_MapAnimTorchfx.bin"
 
 	.global ApConf_089A6254
 ApConf_089A6254:  @ 0x089A6254
-	.incbin "dump/data_9A31F8_9A6254.bin"
+	.incbin "graphics/misc/ApConf_089A6254.bin"
 
 	.global Obj_PoisonAnim
 Obj_PoisonAnim:  @ 0x089A6F40
-	.incbin "dump/data_9A31F8_9A6F40.bin"
+	.incbin "graphics/misc/Obj_PoisonAnim.bin"
 
 	.global Obj_WallBreakAnim
 Obj_WallBreakAnim:  @ 0x089A6FD8
@@ -39,7 +39,7 @@ Obj_WallBreakAnim:  @ 0x089A6FD8
 
 	.global ApHandle_GmapSoguSprites
 ApHandle_GmapSoguSprites:  @ 0x089A8EF8
-	.incbin "dump/data_9A31F8_9A8EF8.bin"
+	.incbin "graphics/misc/ApHandle_GmapSoguSprites.bin"
 
 	.global Pal_MapAnimManaketeMu
 Pal_MapAnimManaketeMu:  @ 0x089A8F74
@@ -51,7 +51,7 @@ gGfx_ArenaBuildingFront:  @ 0x089A8F94
 
 	.global gTsa_ArenaBuildingFront
 gTsa_ArenaBuildingFront:  @ 0x089ABB70
-	.incbin "dump/data_9A31F8_9ABB70.bin"
+	.incbin "graphics/misc/gTsa_ArenaBuildingFront.tsa"
 
 	.global gPal_ArenaBuildingFront
 gPal_ArenaBuildingFront:  @ 0x089AC024
@@ -63,7 +63,7 @@ Img_MapAnimMISS:  @ 0x089AC0A4
 
 	.global Obj_MapAnimMISS
 Obj_MapAnimMISS:  @ 0x089AC194
-	.incbin "dump/data_9A31F8_9AC194.bin"
+	.incbin "graphics/misc/Obj_MapAnimMISS.bin"
 
 	.global Img_MapAnimNODAMAGE
 Img_MapAnimNODAMAGE:  @ 0x089AC2FC
@@ -71,7 +71,7 @@ Img_MapAnimNODAMAGE:  @ 0x089AC2FC
 
 	.global obj_MapAnimNODAMAGE
 obj_MapAnimNODAMAGE:  @ 0x089AC440
-	.incbin "dump/data_9A31F8_9AC440.bin"
+	.incbin "graphics/misc/obj_MapAnimNODAMAGE.bin"
 
 	.global Pal_ManimLevelUpStatGainCycling
 Pal_ManimLevelUpStatGainCycling:  @ 0x089AC5CC
@@ -95,7 +95,7 @@ Img_ManimLevelUpStatGainDigits:  @ 0x089ACC98
 
 	.global gUnknown_089AD498
 gUnknown_089AD498:  @ 0x089AD498
-	.incbin "dump/data_9A31F8_9AD498.bin"
+	.incbin "graphics/misc/gUnknown_089AD498.bin"
 
 	.global Img_MapBattleInfoBox
 Img_MapBattleInfoBox:  @ 0x089AD500
@@ -171,7 +171,7 @@ Img_LinkArenaWarpFx:  @ 0x089AE224
 
 	.global Pal_LinkArenaWarpFx
 Pal_LinkArenaWarpFx:  @ 0x089AE484
-	.incbin "dump/data_9A31F8_9AE484.bin"
+	.incbin "graphics/misc/Pal_LinkArenaWarpFx.agbpal"
 
 	.global gUnknown_089AE4A4
 gUnknown_089AE4A4:  @ 0x089AE4A4
@@ -183,7 +183,7 @@ Img_089AE7A4:  @ 0x089AE7A4
 
 	.global Pal_089AE7C4
 Pal_089AE7C4:  @ 0x089AE7C4
-	.incbin "dump/data_9A31F8_9AE7C4.bin"
+	.incbin "graphics/misc/Pal_089AE7C4.agbpal"
 
 	.global Img_MapAnimAntitoxinPureWater
 Img_MapAnimAntitoxinPureWater:  @ 0x089AE804
@@ -195,11 +195,11 @@ gUnknown_089AF310:  @ 0x089AF310
 
 	.global Pal_MapAnimPureWater
 Pal_MapAnimPureWater:  @ 0x089AF910
-	.incbin "dump/data_9A31F8_9AF910.bin"
+	.incbin "graphics/misc/Pal_MapAnimPureWater.agbpal"
 
 	.global Pal_MapAnimAntitoxin
 Pal_MapAnimAntitoxin:  @ 0x089AF930
-	.incbin "dump/data_9A31F8_9AF930.bin"
+	.incbin "graphics/misc/Pal_MapAnimAntitoxin.agbpal"
 
 	.global gUnknown_089AF950
 gUnknown_089AF950:  @ 0x089AF950
@@ -215,7 +215,7 @@ gUnknown_089AFCBC:  @ 0x089AFCBC
 
 	.global Pal_089AFF78
 Pal_089AFF78:  @ 0x089AFF78
-	.incbin "dump/data_9A31F8_9AFF78.bin"
+	.incbin "graphics/misc/Pal_089AFF78.agbpal"
 
 	.global Pal_089AFFB8
 Pal_089AFFB8:  @ 0x089AFFB8
@@ -231,7 +231,7 @@ Img_MapAnimTorchfx:  @ 0x089B03D4
 
 	.global Pal_MapAnimTorchfx
 Pal_MapAnimTorchfx:  @ 0x089B068C
-	.incbin "dump/data_9A31F8_9B068C.bin"
+	.incbin "graphics/misc/Pal_MapAnimTorchfx.agbpal"
 
 	.global Img_MapAnimUnlockObjfx
 Img_MapAnimUnlockObjfx:  @ 0x089B06AC
@@ -239,7 +239,7 @@ Img_MapAnimUnlockObjfx:  @ 0x089B06AC
 
 	.global Pal_MapAnimUnlockObjfx
 Pal_MapAnimUnlockObjfx:  @ 0x089B0700
-	.incbin "dump/data_9A31F8_9B0700.bin"
+	.incbin "graphics/misc/Pal_MapAnimUnlockObjfx.agbpal"
 
 	.global Img_MapAnimUnlockBgfx
 Img_MapAnimUnlockBgfx:  @ 0x089B0720
@@ -247,15 +247,15 @@ Img_MapAnimUnlockBgfx:  @ 0x089B0720
 
 	.global Pal_MapAnimUnlockObjfx_Unk
 Pal_MapAnimUnlockObjfx_Unk:  @ 0x089B0820
-	.incbin "dump/data_9A31F8_9B0820.bin"
+	.incbin "graphics/misc/Pal_MapAnimUnlockObjfx_Unk.agbpal"
 
 	.global Tsa_MapAnimUnlockBgfx
 Tsa_MapAnimUnlockBgfx:  @ 0x089B0840
-    .incbin "dump/data_9A31F8_9B0840.bin"
+    .incbin "graphics/misc/Tsa_MapAnimUnlockBgfx.tsa"
 
 	.global Tsa_089B0864
 Tsa_089B0864:  @ 0x089B0864
-	.incbin "dump/data_9A31F8_9B0864.bin"
+	.incbin "graphics/misc/Tsa_089B0864.tsa"
 
 	.global Img_MapAnimRepairfx
 Img_MapAnimRepairfx:  @ 0x089B0AD0
@@ -263,7 +263,7 @@ Img_MapAnimRepairfx:  @ 0x089B0AD0
 
 	.global Tsa_089B17A4
 Tsa_089B17A4:  @ 0x089B17A4
-	.incbin "dump/data_9A31F8_9B17A4.bin"
+	.incbin "graphics/misc/Tsa_089B17A4.tsa"
 
 	.global ApConf_MapAnimSleep
 ApConf_MapAnimSleep:  @ 0x089B1A10
@@ -279,7 +279,7 @@ Pal_MapAnimBerserkfx:  @ 0x089B20E8
 
 	.global ApConf_MapAnimBerserkfx
 ApConf_MapAnimBerserkfx:  @ 0x089B2108
-	.incbin "dump/data_9A31F8_9B2108.bin"
+	.incbin "graphics/misc/ApConf_MapAnimBerserkfx.bin"
 
 	.global Img_ManimSilenceObjfx
 Img_ManimSilenceObjfx:  @ 0x089B21D8
@@ -295,7 +295,7 @@ Pal_ManimSilencefx:  @ 0x089B2728
 
 	.global ApConf_ManimSilencefx
 ApConf_ManimSilencefx:  @ 0x089B2748
-	.incbin "dump/data_9A31F8_9B2748.bin"
+	.incbin "graphics/misc/ApConf_ManimSilencefx.bin"
 
 	.global Img_ManimBarrierBgfx
 Img_ManimBarrierBgfx:  @ 0x089B2880
@@ -303,7 +303,7 @@ Img_ManimBarrierBgfx:  @ 0x089B2880
 
 	.global Tsa_089B343C
 Tsa_089B343C:  @ 0x089B343C
-	.incbin "dump/data_9A31F8_9B343C.bin"
+	.incbin "graphics/misc/Tsa_089B343C.tsa"
 
 	.global Img_NightMareMapAnimfx
 Img_NightMareMapAnimfx:  @ 0x089B35D0
