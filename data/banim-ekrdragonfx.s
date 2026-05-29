@@ -645,11 +645,11 @@ Pal_DemonLightSprites_EyeFlash:  @ 0x087A5118
 
 	.global gUnknown_087A5240
 gUnknown_087A5240:  @ 0x087A5240
-	.incbin "dump/banim-ekrdragonfx_7A5240.bin"@ 0x7A536C - 0x7A5240
+	.incbin "graphics/banim/dragonfx/gUnknown_087A5240.bin" @ 0x7A536C - 0x7A5240
 
 	.global gUnknown_087A536C
 gUnknown_087A536C:  @ 0x087A536C
-	.incbin "dump/banim-ekrdragonfx_7A536C.bin"@ 0x7A5390 - 0x7A536C
+	.incbin "graphics/banim/dragonfx/gUnknown_087A536C.bin" @ 0x7A5390 - 0x7A536C
 
 	.global Img_DemonLightSprites
 Img_DemonLightSprites:  @ 0x087A5390
