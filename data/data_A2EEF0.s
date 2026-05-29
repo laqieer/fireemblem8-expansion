@@ -14,7 +14,7 @@ gUnknown_08A30800:  @ 0x08A30800
 
 	.global gUnknown_08A30978
 gUnknown_08A30978:  @ 0x08A30978
-	.incbin "dump/data_A2EEF0_A30978.bin"
+	.incbin "graphics/misc/gUnknown_08A30978.tsa"
 
 	.global gUnknown_08A30E2C
 gUnknown_08A30E2C:  @ 0x08A30E2C
@@ -22,7 +22,7 @@ gUnknown_08A30E2C:  @ 0x08A30E2C
 
 	.global gUnknown_08A35488
 gUnknown_08A35488:  @ 0x08A35488
-	.incbin "dump/data_A2EEF0_A35488.bin"
+	.incbin "graphics/misc/gUnknown_08A35488.tsa"
 
 	.global gUnknown_08A3593C
 gUnknown_08A3593C:  @ 0x08A3593C
@@ -46,7 +46,11 @@ gUnknown_08A360E8:  @ 0x08A360E8
 
 	.global gUnknown_08A36284
 gUnknown_08A36284:  @ 0x08A36284
-	.incbin "dump/data_A2EEF0_A36284.bin"
+	.incbin "graphics/misc/gUnknown_08A36284.bin.lz"
+
+	.global gUnknown_08A36318
+gUnknown_08A36318:  @ 0x08A36318
+	.incbin "graphics/misc/gUnknown_08A36318.gbapal"
 
 	.global gUnknown_08A36338
 gUnknown_08A36338:  @ 0x08A36338
@@ -58,4 +62,4 @@ gUnknown_08A372C0:  @ 0x08A372C0
 
 	.global gUnknown_08A37300
 gUnknown_08A37300:  @ 0x08A37300
-	.incbin "dump/data_A2EEF0_A37300.bin"
+	.incbin "graphics/misc/gUnknown_08A37300.agbpal"
