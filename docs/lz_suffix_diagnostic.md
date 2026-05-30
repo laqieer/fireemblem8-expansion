@@ -74,10 +74,24 @@ The same diagnostic applied to `banim-efxlvupfx_5BF114` (1524 bytes, commit `3cc
 
 ## When the diagnostic *doesn't* apply
 
-If the recompressed output and the original disagree throughout the body (common prefix is only ~4 bytes — just the LZ header), gbagfx really is producing a different valid LZ encoding of the same content. The original's compressor made different greedy choices. Distinguish:
+If the recompressed output and the original disagree throughout the body (common prefix is only ~4 bytes — just the LZ header), gbagfx is producing a different valid LZ encoding of the same content. Distinguish:
 
 - **PREFIX MATCH** → recursive dissection (this doc).
-- **HEADER ONLY** → genuine alternate compression; defer with a `reports/detailed_dump_analysis.md` note explaining gbagfx can't reproduce the original LZ stream.
+- **HEADER ONLY** → *first* sweep the minimum match distance; only if that fails is it genuine alternate compression.
+
+### HEADER ONLY → sweep `-mindist` before deferring
+
+gbagfx's greedy compressor takes a **minimum match distance**, hard-coded historically to 2 for `LZ77UnCompVram` safety and now exposed as `gbagfx … X.lz -mindist N` (default 2). Different original FE8 tools used min-distance 1, 2, or 3. The telltale sign of a min-distance mismatch is at the very first run of repeated bytes: the original emits `(minDist-1)` literals before its first back-reference (e.g. `lit,lit,lit,match(dist=3,…)` ⇒ min-distance 3; `lit,match(dist=1,…)` ⇒ min-distance 1).
+
+```bash
+tools/gbagfx/gbagfx X.bin /tmp/x.raw            # decompress
+for md in 1 2 3 4; do
+  tools/gbagfx/gbagfx /tmp/x.raw /tmp/x.re.lz -mindist $md
+  cmp -s /tmp/x.re.lz X.bin && echo "EXACT at -mindist $md" && break
+done
+```
+
+If a sweep value reproduces the original byte-for-byte, **it was never alternate compression** — extract to the proper source form (PNG / `.tsa` / decompressed `.bin`) and add a target-specific `LZ_FLAGS := -mindist N` in the `Makefile` for that output. This recovered `Img_DemonLightSprites_087A5BA4`/`_087A5E9C` (mindist 3), the FE6 SIO multiboot payload (mindist 1), and the 7 title-screen TSA blobs (mindist 1–2) — all previously deferred as "incompatible compression." Only if all sweep values fail is it **genuine alternate compression**; defer with a `reports/detailed_dump_analysis.md` note.
 
 ## Related rules
 

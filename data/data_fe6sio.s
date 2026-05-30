@@ -88,4 +88,10 @@ _reset: @ 0x08B1A1C4
 
     .space 0x100
 
-	.incbin "dump/data_fe6sio_B1A368.bin"
+    @ LZ77-compressed FE6 multiboot program. _reset (above) receives it over SIO,
+    @ LZ77UnCompWram-decompresses it to 0x02010000, and jumps there. The committed
+    @ source is the decompressed image (data/fe6sio_payload.bin, 34956 bytes, runs at
+    @ 0x02010000); the Makefile recompresses it byte-identically with -mindist 1.
+    @ Full instruction-level disassembly of the payload remains a future decomp task.
+FE6SIO_Payload: @ 0x08B1A368
+	.incbin "data/fe6sio_payload.bin.lz"

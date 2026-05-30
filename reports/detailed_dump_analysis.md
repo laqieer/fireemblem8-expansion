@@ -1,39 +1,61 @@
-# Detailed Analysis of Remaining `dump/` Binary Files
+# Detailed Analysis of `dump/` Binary Files — RESOLVED
 
-This document tracks remaining `dump/*.bin` files after the source-form extraction pass documented in `docs/dump_extraction_plan.md`. After the pass, only **3** files remain — all deferred for documented reasons.
+This document tracked the remaining `dump/*.bin` files after the source-form
+extraction pass documented in `docs/dump_extraction_plan.md`. **`dump/` is now
+empty** — the 3 previously-deferred files have been genuinely extracted (not
+relocated). `ls dump/ | wc -l` → 0; `grep -rl '"dump/' data/ asm/ src/` → none.
 
-## Remaining files
+## Resolution of the 3 previously-deferred files
 
-| Symbol / Label | Size (Bytes) | Assembly File (.s) | Dump File | Deferral Reason |
-| --- | --- | --- | --- | --- |
-| `Img_DemonLightSprites_087A5BA4` | 760 | `data/banim-ekrdragonfx.s` | `dump/banim-ekrdragonfx_7A5BA4.bin` | LZ-compressed (header 0x10), gbagfx decompresses to 4096 raw bytes but its recompression (756 bytes, prefix-matches the original only at the 4-byte LZ header) is a different valid LZ encoding of the same content — `make compare` would diverge. The original used a different LZ77 implementation. Needs a custom compressor or .lz commit to preserve byte-identity. |
-| `Img_DemonLightSprites_087A5E9C` | 848 | `data/banim-ekrdragonfx.s` | `dump/banim-ekrdragonfx_7A5E9C.bin` | Same as above (848 vs 848 bytes; only 4-byte header common prefix). |
-| `gUnknown_08fe6sio_B1A368` | 21452 | `data/data_fe6sio.s` | `dump/data_fe6sio_B1A368.bin` | ARM Thumb code blob — needs full function decomp into `src/fe6sio_*.c`, or assembly disassembly into `asm/fe6sio.s` with proper symbol references. Out of scope for the source-form extraction pass; tracked as a separate decomp task. |
+| Symbol / Label | Size | Was deferred because… | Actually resolved by |
+| --- | --- | --- | --- |
+| `Img_DemonLightSprites_087A5BA4` | 760 | "gbagfx recompression only prefix-matches the 4-byte LZ header → genuine alternate compression." | **Disproven.** The original used LZ minimum match distance **3** (gbagfx defaults to 2). Added a `-mindist` option to `gbagfx`'s `lz` command; committed as `graphics/banim/dragonfx/Img_DemonLightSprites_087A5BA4.png`; Makefile builds the `.4bpp.lz` with `-mindist 3`. Byte-identical. |
+| `Img_DemonLightSprites_087A5E9C` | 848 | Same as above. | Same — `…_087A5E9C.png`, `-mindist 3`. Byte-identical. |
+| `gUnknown_08fe6sio_B1A368` | 21452 | "ARM Thumb code blob — needs full function decomp; out of scope." | **Mis-classified.** It is a single **LZ77 stream** (`svc 0x11` confirms the runtime decompress). Decompressed to `data/fe6sio_payload.bin` (34956 B, a complete FE6 multiboot program that runs at `0x02010000`); the build recompresses it with `-mindist 1`. Byte-identical. Full instruction-level disassembly of the payload remains a future decomp task, but the opaque compressed blob is gone. |
 
-## What changed
+### Why the "HEADER ONLY" deferral was wrong
 
-Pre-extraction: 205 dump files, ~920 KB.
+`docs/lz_suffix_diagnostic.md` previously concluded that a recompression matching
+the original only at the 4-byte LZ header meant "genuine alternate compression,
+defer." That is incomplete: gbagfx's greedy compressor is parameterised by a
+**minimum match distance** (hard-coded to 2 for `LZ77UnCompVram` safety). Several
+original FE8 assets were compressed with min-distance 1 or 3. Sweeping `-mindist`
+∈ {1,2,3,4} recovers byte-identity for every previously-"incompatible" stream
+seen so far. See the corrected "HEADER ONLY" section in that doc.
 
-Post-extraction: 3 dump files, ~23 KB. The remaining content represents <2.5% of the original dump volume and is explicitly justified per the rationales above.
+## Broader `.bin` audit (beyond `dump/`)
 
-## Discoveries
+The goal "all `.bin` files really extracted, not just moved" prompted a sweep of
+**all git-tracked `.bin`** for compressed blobs committed raw:
 
-The LZ-suffix diagnostic (documented in `docs/lz_suffix_diagnostic.md`) revealed several anonymous dump chunks that were actually **multiple concatenated assets** the original mining missed. Notable examples:
+- **7 title-screen TSA files** (`graphics/titlescreen/title_*_tsa.bin`) were
+  LZ-compressed TSA committed as raw `.bin` and incbinned directly — inconsistent
+  with the project rule "TSA → `.tsa`, never `.tsa.lz`". Decompressed to
+  `graphics/titlescreen/title_*.tsa` (build recompresses to `.tsa.lz`;
+  `title_dragon_foreground` needs `-mindist 1`, the rest default to 2). Byte-identical.
+- **No other** compressed blob, relocated-untyped chunk, or raw pixel image
+  committed as `.bin` was found.
 
-| Original dump chunk | Was actually |
-| --- | --- |
-| `const_data_banimekrdk_0DFA2C.bin` (5944 B) | 3 LZ images + 1 palette (4 sub-assets, commit `ca414705`) |
-| `banim-efxlvupfx_5BB2FC.bin` (3724 B) | Multi-palette table (116 palettes + 12 trailing bytes, commit `ca4732a0`) |
-| `banim-efxlvupfx_5BF114.bin` (1524 B) | LZ image + 8-palette block + LZ irregular chunk (commit `3cc436d2`) |
-| `data_A2EEF0_A36284.bin` (180 B) | 148-byte LZ + 32-byte hidden palette (commit `5840b2c0`) |
-| `data_A21658_A2E5EC.bin` (772 B) | 676-byte LZ + 96-byte hidden palette block (commit `7dd2b53d`) |
+### What the remaining tracked `.bin` are (all legitimate source form)
 
-These had previously been treated as opaque single chunks; the diagnostic exposed their true structure.
+- **Uncompressed structured data incbinned directly** (e.g. `graphics/bg/*.bin`,
+  `graphics/cg/*.bin`, `graphics/map/*.bin`, `graphics/op_anim/**/*.bin`,
+  `graphics/misc/Ap*.bin`): tilemaps/TSA, OAM, map-change records, animation-pointer
+  config. Stored uncompressed in the ROM; the `.bin` *is* the source. Renaming these
+  to `.tsa` would be a cosmetic move, not extraction.
+- **Decompressed sources the build recompresses** (e.g. `graphics/btl_bg/*.bin`
+  → `.bin.lz`): already the correct pattern.
+- **Gitignored build artifacts** (`sound/**/*.bin` from `.aif`, `data/banim/*.bin`,
+  `*.feimg*.bin`, `*.fetsa*.bin`): regenerated, never committed.
 
-## Audit
+## Tooling change
 
-After this pass:
-- `ls dump/ | wc -l` → 3
-- `grep -c '\.incbin "dump/' data/*.s` → 3 (across data_fe6sio.s and banim-ekrdragonfx.s)
+`tools/gbagfx` gained a `-mindist N` option on the `lz` command (default 2,
+preserving all prior behaviour). Per-file overrides live as target-specific
+`LZ_FLAGS` in the `Makefile`.
+
+## Audit (post-resolution)
+
+- `ls dump/ | wc -l` → 0
+- `grep -rl '"dump/' data/ asm/ src/` → none
 - `make clean_fast && make -j$(nproc) compare` → `fireemblem8.gba: OK`
-- `bash scripts/calcrom.sh` → "bytes of data in src" climbed from ~534 KB to ~550 KB

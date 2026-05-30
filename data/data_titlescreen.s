@@ -12,7 +12,7 @@ gGfx_TitleMainBackground_2:  @ 0x08AA9708
 
 	.global gTsa_TitleMainBackground
 gTsa_TitleMainBackground:  @ 0x08AAAE90
-	.incbin "graphics/titlescreen/title_main_background_tsa.bin"
+	.incbin "graphics/titlescreen/title_main_background.tsa.lz"
 
 	.global gPal_TitleMainBackground
 gPal_TitleMainBackground:  @ 0x08AAB3F4
@@ -25,7 +25,7 @@ gGfx_TitleDragonForeground:  @ 0x08AAB414
 
 	.global gTsa_TitleDragonForeground
 gTsa_TitleDragonForeground:  @ 0x08AAC2A4
-	.incbin "graphics/titlescreen/title_dragon_foreground_tsa.bin" 	
+	.incbin "graphics/titlescreen/title_dragon_foreground.tsa.lz" 	
 	
 	.global gPal_TitleDragonForeground
 gPal_TitleDragonForeground:  @ 0x08AAC58C
@@ -60,7 +60,7 @@ gGfx_08AADC08:  @ 0x08AADC08
 	
 	.global gTsa_08AAE61C
 gTsa_08AAE61C:  @ 0x08AAE61C
-	.incbin "graphics/titlescreen/title_unk_image_1_tsa.bin"
+	.incbin "graphics/titlescreen/title_unk_image_1.tsa.lz"
 
 	.global gPal_08AAE8CC
 gPal_08AAE8CC:  @ 0x08AAE8CC
@@ -73,7 +73,7 @@ gGfx_08AAE8EC:  @ 0x08AAE8EC
 
 	.global gTsa_08AAF928
 gTsa_08AAF928:  @ 0x08AAF928
-	.incbin "graphics/titlescreen/title_unk_image_2_tsa.bin"
+	.incbin "graphics/titlescreen/title_unk_image_2.tsa.lz"
 
 	.global gPal_08AAFCF4
 gPal_08AAFCF4:  @ 0x08AAFCF4
@@ -86,7 +86,7 @@ gGfx_08AAFD14:  @ 0x08AAFD14
 
 	.global gTsa_08AAFF10
 gTsa_08AAFF10:  @ 0x08AAFF10
-	.incbin "graphics/titlescreen/title_unk_image_3_tsa.bin"
+	.incbin "graphics/titlescreen/title_unk_image_3.tsa.lz"
 
 	.global gPal_08AB0114
 gPal_08AB0114:  @ 0x08AB0114
@@ -99,7 +99,7 @@ gGfx_08AB0134:  @ 0x08AB0134
 
 	.global gTsa_08AB0A20
 gTsa_08AB0A20:  @ 0x08AB0A20
-	.incbin "graphics/titlescreen/title_unk_image_4_tsa.bin"
+	.incbin "graphics/titlescreen/title_unk_image_4.tsa.lz"
 
 	.global gPal_08AB0B24
 gPal_08AB0B24:  @ 0x08AB0B24
@@ -112,7 +112,7 @@ gGfx_TitleDemonKing:  @ 0x08AB0B44
 
 	.global gTsa_TitleDemonKing
 gTsa_TitleDemonKing:  @ 0x08AB1890
-	.incbin "graphics/titlescreen/title_demon_king_tsa.bin"
+	.incbin "graphics/titlescreen/title_demon_king.tsa.lz"
 
 	.global gPal_TitleDemonKing
 gPal_TitleDemonKing:  @ 0x08AB1C04

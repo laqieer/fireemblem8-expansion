@@ -871,11 +871,11 @@ gUnknown_087A5B8C: @ 0x7A5B8C
 
 	.global Img_DemonLightSprites_087A5BA4
 Img_DemonLightSprites_087A5BA4:  @ 0x087A5BA4
-	.incbin "dump/banim-ekrdragonfx_7A5BA4.bin"
+	.incbin "graphics/banim/dragonfx/Img_DemonLightSprites_087A5BA4.4bpp.lz"
 
 	.global Img_DemonLightSprites_087A5E9C
 Img_DemonLightSprites_087A5E9C:  @ 0x087A5E9C
-	.incbin "dump/banim-ekrdragonfx_7A5E9C.bin"
+	.incbin "graphics/banim/dragonfx/Img_DemonLightSprites_087A5E9C.4bpp.lz"
 
 	.global Pal_DemonLightSprites_087A61EC
 Pal_DemonLightSprites_087A61EC:  @ 0x087A61EC
