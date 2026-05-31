@@ -4,9 +4,16 @@ This is a decompilation project for **Fire Emblem: The Sacred Stones** (GBA). Th
 
 ## Build
 
+A legally obtained ROM named `baserom.gba` must be at the repo root. First-time
+setup (installs agbcc + builds the `tools/`): `./scripts/quickstart.sh` (see
+`docs/quickstart.md`). Manual setup is in `README.md`.
+
 ```bash
 # Build the ROM (uses agbcc, a GCC 2.95-based GBA C compiler)
 make fireemblem8.gba -j$(nproc)
+
+# Build AND verify the SHA-1 against baserom — this is the project's "test"
+make -j$(nproc) compare
 
 # Clean all build artifacts (slow — recompresses battle animations)
 make clean
@@ -15,7 +22,13 @@ make clean
 make clean_fast
 ```
 
-A successful build ends with `fireemblem8.gba: OK` (SHA-1 checksum match against `baserom.gba`). This is the project's test — verify the last line of build output contains `OK`.
+A successful build ends with `fireemblem8.gba: OK` (SHA-1 checksum match against
+`baserom.gba`). There is no unit-test suite — **byte-identical ROM output is the
+only test**. Verify the last line of `make compare` output is `OK`; `FAILED`
+means the C does not match. There is no single-test granularity: the whole ROM
+is rebuilt and checksummed. To narrow down a single function's mismatch, use
+`./asmdiff.sh <hex_addr> <byte_len>` (objdump side-by-side of `baserom.gba` vs
+`fireemblem8.gba`). `bash scripts/calcrom.sh` reports decompilation progress.
 
 ## Architecture
 
@@ -26,7 +39,10 @@ A successful build ends with `fireemblem8.gba: OK` (SHA-1 checksum match against
 - Some files use the older compiler (`old_agbcc`) or different flags — see per-file overrides in `Makefile`.
 
 ### Decompilation workflow
-Assembly lives in `asm/` (only `arm.s` and `arm_call.s` remain, plus data files in `data/`). Decompiled C goes in `src/`. The linking order in `ldscript.txt` determines ROM layout — when decompiling a function, you add `src/x.o(.text)` **before** `asm/x.o(.text)` and remove the function from the `.s` file.
+Assembly lives in `asm/` (only `arm.s` and `arm_call.s` remain, plus data files in `data/`). Decompiled C goes in `src/`. The linking order in `ldscript.txt` determines ROM layout — when decompiling a function, you add `src/x.o(.text)` **before** `asm/x.o(.text)` and remove the function from the `.s` file. Keep **both** the `src/` and `asm/` linker entries until `asm/x.s` is fully empty; leaving a function in both places causes a `multiple definition` link error. For undeclared symbols, locate the type with `git grep "<symbol>" include/` and add the owning header (functions still living in `asm/` get a bare forward declaration, not `extern`). The decomp tutorial in `CONTRIBUTING.md` walks a full function end-to-end.
+
+### Files that must NOT be decompiled
+These are handwritten assembly, already commented, and stay in `asm/`: `crt0.s`, `libagbsyscall.s`, `libgcnmultiboot.s`, `m4a_1.s`, `m4a_3.s`, `arm.s`, `arm_call.s`.
 
 ### Proc system (cooperative multitasking)
 The engine uses a **Proc** system (`include/proc.h`, `src/proc.c`) — a tree-based cooperative scheduler. Game entities are `struct Proc` with script tables (`struct ProcCmd[]`) that define behavior as sequences of commands: `PROC_CALL`, `PROC_REPEAT`, `PROC_SLEEP`, `PROC_YIELD`, `PROC_START_CHILD_BLOCKING`, etc. Local proc structs embed `PROC_HEADER` at offset 0 and add custom fields after.
@@ -70,3 +86,15 @@ The compiled output must be **byte-identical** to the original ROM. This means:
 - Sometimes "ugly" code is required to coerce the compiler into generating specific instructions.
 - `STRUCT_PAD(from, to)` is used to pad struct fields to match original layout.
 - The `SHOULD_BE_CONST` marker denotes data that logically should be const but must stay mutable to match.
+
+### Asset extraction
+Raw data blobs are migrated from `dump/`*.bin into typed source (C arrays, or
+`.png`/`.pal`/`.tsa` graphics) following `docs/dump_extraction_plan.md`; each
+conversion must round-trip byte-identical. LZ-compressed assets are committed
+**decompressed** (the build recompresses via `Makefile %.lz` rules) — never
+commit `.lz`/`.4bpp`/`.gbapal`/`.tsa.lz` artifacts. When a recompressed asset
+only prefix-matches the original at the 4-byte LZ header, sweep gbagfx's
+minimum match distance (`gbagfx in out.lz -mindist N`, default 2) and pin the
+winning value per-target via `LZ_FLAGS := -mindist N` in the `Makefile` — this
+is a min-distance mismatch, not incompatible compression. See
+`docs/lz_suffix_diagnostic.md`.
