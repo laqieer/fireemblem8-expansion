@@ -43,7 +43,7 @@ gUnknown_085BF4FC:  @ 0x085BF4FC
 
 	.global gUnknown_085BF5FC
 gUnknown_085BF5FC:  @ 0x085BF5FC
-	.incbin "graphics/banim/efxlvupfx/gUnknown_085BF5FC.bin.lz"
+	.incbin "graphics/banim/efxlvupfx/gUnknown_085BF5FC.tsa.lz"
 
 	.global Img1_EfxLvupBG
 Img1_EfxLvupBG:

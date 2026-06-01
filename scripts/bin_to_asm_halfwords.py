@@ -15,17 +15,19 @@ import struct
 import sys
 
 
-def emit(path, label, comment):
+def emit(path, label, comment, width=2):
     data = open(path, "rb").read()
-    if len(data) % 2 != 0:
-        sys.exit(f"{path}: odd length {len(data)} not representable as u16 table")
-    words = struct.unpack(f"<{len(data)//2}H", data)
+    if len(data) % width != 0:
+        sys.exit(f"{path}: length {len(data)} not a multiple of {width}")
+    fmt, directive, hexw = {2: ("H", ".2byte", 4), 4: ("I", ".4byte", 8)}[width]
+    words = struct.unpack(f"<{len(data)//width}{fmt}", data)
+    per = 8 if width == 2 else 4
     lines = []
     if comment:
-        lines.append(f"\t@ {comment} ({len(words)} u16 entries, {len(data)} bytes)")
-    for i in range(0, len(words), 8):
-        chunk = ", ".join(f"0x{w:04X}" for w in words[i:i + 8])
-        lines.append(f"\t.2byte {chunk}")
+        lines.append(f"\t@ {comment} ({len(words)} u{width*8} entries, {len(data)} bytes)")
+    for i in range(0, len(words), per):
+        chunk = ", ".join(f"0x{w:0{hexw}X}" for w in words[i:i + per])
+        lines.append(f"\t{directive} {chunk}")
     end = f".L_end_{label}"
     lines.append(f"{end}:")
     lines.append(f"\t.if ({end} - {label}) != {len(data)}")
@@ -39,8 +41,9 @@ def main():
     ap.add_argument("bin")
     ap.add_argument("label")
     ap.add_argument("--comment", default="")
+    ap.add_argument("--width", type=int, default=2, choices=(2, 4))
     a = ap.parse_args()
-    sys.stdout.write(emit(a.bin, a.label, a.comment))
+    sys.stdout.write(emit(a.bin, a.label, a.comment, a.width))
 
 
 if __name__ == "__main__":
