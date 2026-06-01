@@ -159,11 +159,18 @@ print "$partial_documented symbols partially documented ($partialPct%)\n";
 print "$undocumented symbols undocumented ($undocPct%)\n";
 
 print "\n";
-my $dataTotal = $srcdata + $data;
+# Every data percentage is computed against the complete data total (all ROM
+# .rodata + .data: decompiled src, raw data/ blobs, and the extracted banim and
+# sound subsystems) so the shares sum to 100% and the ratio is honest -- just
+# like code is reported as a fraction of total code. Counting only src+data in
+# the denominator hid ~6 MB of already-organized banim/sound data.
+my $dataTotal = $srcdata + $data + $dataBanim + $dataSound;
 my $srcDataPct = sprintf("%.4f", 100 * $srcdata / $dataTotal);
 my $dataPct = sprintf("%.4f", 100 * $data / $dataTotal);
+my $dataBanimPct = sprintf("%.4f", 100 * $dataBanim / $dataTotal);
+my $dataSoundPct = sprintf("%.4f", 100 * $dataSound / $dataTotal);
 print "$dataTotal total bytes of data\n";
 print "$srcdata bytes of data in src ($srcDataPct%)\n";
 print "$data bytes of data in data ($dataPct%)\n";
-print "$dataBanim bytes of data is in data/banim\n";
-print "$dataSound bytes of data is in sound\n";
+print "$dataBanim bytes of data in data/banim ($dataBanimPct%)\n";
+print "$dataSound bytes of data in sound ($dataSoundPct%)\n";
