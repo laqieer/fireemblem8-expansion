@@ -683,52 +683,52 @@ cg_9_part_9_tiles: @8a7f494
 	.align 2, 0
 	.global cg_0_map
 cg_0_map: @8a7fcdc
-	.incbin "graphics/cg/cg_0.bin"
+	.incbin "graphics/cg/cg_0.tsa"
 
 	.align 2, 0
 	.global cg_1_map
 cg_1_map: @8a80190
-	.incbin "graphics/cg/cg_1.bin"
+	.incbin "graphics/cg/cg_1.tsa"
 
 	.align 2, 0
 	.global cg_2_map
 cg_2_map: @8a80644
-	.incbin "graphics/cg/cg_2.bin"
+	.incbin "graphics/cg/cg_2.tsa"
 
 	.align 2, 0
 	.global cg_3_map
 cg_3_map: @8a80af8
-	.incbin "graphics/cg/cg_3.bin"
+	.incbin "graphics/cg/cg_3.tsa"
 
 	.align 2, 0
 	.global cg_4_map
 cg_4_map: @8a80fac
-	.incbin "graphics/cg/cg_4.bin"
+	.incbin "graphics/cg/cg_4.tsa"
 
 	.align 2, 0
 	.global cg_5_map
 cg_5_map: @8a81460
-	.incbin "graphics/cg/cg_5.bin"
+	.incbin "graphics/cg/cg_5.tsa"
 
 	.align 2, 0
 	.global cg_6_map
 cg_6_map: @8a81914
-	.incbin "graphics/cg/cg_6.bin"
+	.incbin "graphics/cg/cg_6.tsa"
 
 	.align 2, 0
 	.global cg_7_map
 cg_7_map: @8a81dc8
-	.incbin "graphics/cg/cg_7.bin"
+	.incbin "graphics/cg/cg_7.tsa"
 
 	.align 2, 0
 	.global cg_8_map
 cg_8_map: @8a8227c
-	.incbin "graphics/cg/cg_8.bin"
+	.incbin "graphics/cg/cg_8.tsa"
 
 	.align 2, 0
 	.global cg_9_map
 cg_9_map: @8a82730
-	.incbin "graphics/cg/cg_9.bin"
+	.incbin "graphics/cg/cg_9.tsa"
 
 	.align 2, 0
 	.global cg_0_palette

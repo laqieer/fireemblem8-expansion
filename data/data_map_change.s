@@ -12,35 +12,39 @@ Ch1MapChanges: @0x8a1e104
 
 	.global Ch2TileChanges_change_0
 Ch2TileChanges_change_0: @0x8a1e110
-	.incbin "graphics/map/Ch2TileChanges_change_0.bin"
+	.short 0x0E1C, 0x0E20, 0x0E24, 0x0E9C, 0x0EA0, 0x0EA4, 0x0F1C, 0x0F20
+	.short 0x0F24
 
 	.global Ch2TileChanges_change_1
 Ch2TileChanges_change_1: @0x8a1e122
-	.incbin "graphics/map/Ch2TileChanges_change_1.bin"
+	.short 0x0E1C, 0x0E20, 0x0E24, 0x0E9C, 0x0EA0, 0x0EA4, 0x0F1C, 0x0F20
+	.short 0x0F24
 
 	.global Ch2TileChanges_change_2
 Ch2TileChanges_change_2: @0x8a1e134
-	.incbin "graphics/map/Ch2TileChanges_change_2.bin"
+	.short 0x0E1C, 0x0E20, 0x0E24, 0x0E9C, 0x0EA0, 0x0EA4, 0x0F1C, 0x0F20
+	.short 0x0F24
 
 	.global Ch2TileChanges_change_3
 Ch2TileChanges_change_3: @0x8a1e146
-	.incbin "graphics/map/Ch2TileChanges_change_3.bin"
+	.short 0x0E1C, 0x0E20, 0x0E24, 0x0E9C, 0x0EA0, 0x0EA4, 0x0F1C, 0x0F20
+	.short 0x0F24
 
 	.global Ch2TileChanges_change_4
 Ch2TileChanges_change_4: @0x8a1e158
-	.incbin "graphics/map/Ch2TileChanges_change_4.bin"
+	.short 0x0080
 
 	.global Ch2TileChanges_change_5
 Ch2TileChanges_change_5: @0x8a1e15a
-	.incbin "graphics/map/Ch2TileChanges_change_5.bin"
+	.short 0x0080
 
 	.global Ch2TileChanges_change_6
 Ch2TileChanges_change_6: @0x8a1e15c
-	.incbin "graphics/map/Ch2TileChanges_change_6.bin"
+	.short 0x0080
 
 	.global Ch2TileChanges_change_7
 Ch2TileChanges_change_7: @0x8a1e15e
-	.incbin "graphics/map/Ch2TileChanges_change_7.bin"
+	.short 0x0080
 
 	.align 2, 0
 	.global Ch2TileChanges
@@ -49,43 +53,43 @@ Ch2TileChanges: @0x8a1e160
 
 	.global Ch3MapChanges_change_0
 Ch3MapChanges_change_0: @0x8a1e1cc
-	.incbin "graphics/map/Ch3MapChanges_change_0.bin"
+	.short 0x0A38, 0x0000, 0x0690, 0x0710
 
 	.global Ch3MapChanges_change_1
 Ch3MapChanges_change_1: @0x8a1e1d4
-	.incbin "graphics/map/Ch3MapChanges_change_1.bin"
+	.short 0x0A38, 0x0000, 0x0690, 0x0710
 
 	.global Ch3MapChanges_change_2
 Ch3MapChanges_change_2: @0x8a1e1dc
-	.incbin "graphics/map/Ch3MapChanges_change_2.bin"
+	.short 0x0A38, 0x0000, 0x0690, 0x0838
 
 	.global Ch3MapChanges_change_3
 Ch3MapChanges_change_3: @0x8a1e1e4
-	.incbin "graphics/map/Ch3MapChanges_change_3.bin"
+	.short 0x08BC, 0x0934
 
 	.global Ch3MapChanges_change_4
 Ch3MapChanges_change_4: @0x8a1e1e8
-	.incbin "graphics/map/Ch3MapChanges_change_4.bin"
+	.short 0x0718
 
 	.global Ch3MapChanges_change_5
 Ch3MapChanges_change_5: @0x8a1e1ea
-	.incbin "graphics/map/Ch3MapChanges_change_5.bin"
+	.short 0x08BC
 
 	.global Ch3MapChanges_change_6
 Ch3MapChanges_change_6: @0x8a1e1ec
-	.incbin "graphics/map/Ch3MapChanges_change_6.bin"
+	.short 0x0100
 
 	.global Ch3MapChanges_change_7
 Ch3MapChanges_change_7: @0x8a1e1ee
-	.incbin "graphics/map/Ch3MapChanges_change_7.bin"
+	.short 0x0100
 
 	.global Ch3MapChanges_change_8
 Ch3MapChanges_change_8: @0x8a1e1f0
-	.incbin "graphics/map/Ch3MapChanges_change_8.bin"
+	.short 0x0100
 
 	.global Ch3MapChanges_change_9
 Ch3MapChanges_change_9: @0x8a1e1f2
-	.incbin "graphics/map/Ch3MapChanges_change_9.bin"
+	.short 0x0100
 
 	.align 2, 0
 	.global Ch3MapChanges
@@ -94,27 +98,29 @@ Ch3MapChanges: @0x8a1e1f4
 
 	.global Ch4MapChanges_change_0
 Ch4MapChanges_change_0: @0x8a1e278
-	.incbin "graphics/map/Ch4MapChanges_change_0.bin"
+	.short 0x0E1C, 0x0E20, 0x0E24, 0x0E9C, 0x0EA0, 0x0EA4, 0x0F1C, 0x0F20
+	.short 0x0F24
 
 	.global Ch4MapChanges_change_1
 Ch4MapChanges_change_1: @0x8a1e28a
-	.incbin "graphics/map/Ch4MapChanges_change_1.bin"
+	.short 0x001C, 0x0010, 0x002C
 
 	.global Ch4MapChanges_change_2
 Ch4MapChanges_change_2: @0x8a1e290
-	.incbin "graphics/map/Ch4MapChanges_change_2.bin"
+	.short 0x0E1C, 0x0E20, 0x0E24, 0x0E9C, 0x0EA0, 0x0EA4, 0x0F1C, 0x0F20
+	.short 0x0F24
 
 	.global Ch4MapChanges_change_3
 Ch4MapChanges_change_3: @0x8a1e2a2
-	.incbin "graphics/map/Ch4MapChanges_change_3.bin"
+	.short 0x0080
 
 	.global Ch4MapChanges_change_4
 Ch4MapChanges_change_4: @0x8a1e2a4
-	.incbin "graphics/map/Ch4MapChanges_change_4.bin"
+	.short 0x001C, 0x0010, 0x002C
 
 	.global Ch4MapChanges_change_5
 Ch4MapChanges_change_5: @0x8a1e2aa
-	.incbin "graphics/map/Ch4MapChanges_change_5.bin"
+	.short 0x0080
 
 	.align 2, 0
 	.global Ch4MapChanges
@@ -123,35 +129,35 @@ Ch4MapChanges: @0x8a1e2ac
 
 	.global Ch5MapChanges_change_0
 Ch5MapChanges_change_0: @0x8a1e300
-	.incbin "graphics/map/Ch5MapChanges_change_0.bin"
+	.short 0x0B90, 0x0B94, 0x0C88, 0x0C10, 0x0C14, 0x0D08
 
 	.global Ch5MapChanges_change_1
 Ch5MapChanges_change_1: @0x8a1e30c
-	.incbin "graphics/map/Ch5MapChanges_change_1.bin"
+	.short 0x0B90, 0x0B94, 0x0C88, 0x0C10, 0x0C14, 0x0D08
 
 	.global Ch5MapChanges_change_2
 Ch5MapChanges_change_2: @0x8a1e318
-	.incbin "graphics/map/Ch5MapChanges_change_2.bin"
+	.short 0x0B90, 0x0B94, 0x0C88, 0x0C10, 0x0C14, 0x0D08
 
 	.global Ch5MapChanges_change_3
 Ch5MapChanges_change_3: @0x8a1e324
-	.incbin "graphics/map/Ch5MapChanges_change_3.bin"
+	.short 0x0C88, 0x0B94, 0x0B98, 0x0D08, 0x0C14, 0x0C18
 
 	.global Ch5MapChanges_change_4
 Ch5MapChanges_change_4: @0x8a1e330
-	.incbin "graphics/map/Ch5MapChanges_change_4.bin"
+	.short 0x0080
 
 	.global Ch5MapChanges_change_5
 Ch5MapChanges_change_5: @0x8a1e332
-	.incbin "graphics/map/Ch5MapChanges_change_5.bin"
+	.short 0x0080
 
 	.global Ch5MapChanges_change_6
 Ch5MapChanges_change_6: @0x8a1e334
-	.incbin "graphics/map/Ch5MapChanges_change_6.bin"
+	.short 0x0080
 
 	.global Ch5MapChanges_change_7
 Ch5MapChanges_change_7: @0x8a1e336
-	.incbin "graphics/map/Ch5MapChanges_change_7.bin"
+	.short 0x0080
 
 	.align 2, 0
 	.global Ch5MapChanges
@@ -160,15 +166,15 @@ Ch5MapChanges: @0x8a1e338
 
 	.global Ch5XMapChanges_change_0
 Ch5XMapChanges_change_0: @0x8a1e3a4
-	.incbin "graphics/map/Ch5XMapChanges_change_0.bin"
+	.short 0x0004
 
 	.global Ch5XMapChanges_change_1
 Ch5XMapChanges_change_1: @0x8a1e3a6
-	.incbin "graphics/map/Ch5XMapChanges_change_1.bin"
+	.short 0x0004
 
 	.global Ch5XMapChanges_change_2
 Ch5XMapChanges_change_2: @0x8a1e3a8
-	.incbin "graphics/map/Ch5XMapChanges_change_2.bin"
+	.short 0x0CD0
 
 	.align 2, 0
 	.global Ch5XMapChanges
@@ -177,11 +183,12 @@ Ch5XMapChanges: @0x8a1e3ac
 
 	.global Ch6MapChanges_change_0
 Ch6MapChanges_change_0: @0x8a1e3dc
-	.incbin "graphics/map/Ch6MapChanges_change_0.bin"
+	.short 0x0E1C, 0x0E20, 0x0E24, 0x0E9C, 0x0EA0, 0x0EA4, 0x0F1C, 0x0F20
+	.short 0x0F24
 
 	.global Ch6MapChanges_change_1
 Ch6MapChanges_change_1: @0x8a1e3ee
-	.incbin "graphics/map/Ch6MapChanges_change_1.bin"
+	.short 0x0080
 
 	.align 2, 0
 	.global Ch6MapChanges
@@ -195,31 +202,32 @@ Ch7MapChanges: @0x8a1e414
 
 	.global Ch8MapChanges_change_0
 Ch8MapChanges_change_0: @0x8a1e420
-	.incbin "graphics/map/Ch8MapChanges_change_0.bin"
+	.short 0x0CD0
 
 	.global Ch8MapChanges_change_1
 Ch8MapChanges_change_1: @0x8a1e422
-	.incbin "graphics/map/Ch8MapChanges_change_1.bin"
+	.short 0x0748, 0x0000, 0x07C8, 0x0000, 0x0CE4, 0x0CD4
 
 	.global Ch8MapChanges_change_2
 Ch8MapChanges_change_2: @0x8a1e42e
-	.incbin "graphics/map/Ch8MapChanges_change_2.bin"
+	.short 0x0CD0
 
 	.global Ch8MapChanges_change_3
 Ch8MapChanges_change_3: @0x8a1e430
-	.incbin "graphics/map/Ch8MapChanges_change_3.bin"
+	.short 0x0004
 
 	.global Ch8MapChanges_change_4
 Ch8MapChanges_change_4: @0x8a1e432
-	.incbin "graphics/map/Ch8MapChanges_change_4.bin"
+	.short 0x0004
 
 	.global Ch8MapChanges_change_5
 Ch8MapChanges_change_5: @0x8a1e434
-	.incbin "graphics/map/Ch8MapChanges_change_5.bin"
+	.short 0x036C, 0x0370, 0x0374, 0x0378, 0x03EC, 0x03F0, 0x03F0, 0x03F8
+	.short 0x046C, 0x0470, 0x0474, 0x0478
 
 	.global Ch8MapChanges_change_6
 Ch8MapChanges_change_6: @0x8a1e44c
-	.incbin "graphics/map/Ch8MapChanges_change_6.bin"
+	.short 0x0004
 
 	.align 2, 0
 	.global Ch8MapChanges
@@ -228,19 +236,19 @@ Ch8MapChanges: @0x8a1e450
 
 	.global Ch9EirikaMapChanges_change_0
 Ch9EirikaMapChanges_change_0: @0x8a1e4b0
-	.incbin "graphics/map/Ch9EirikaMapChanges_change_0.bin"
+	.short 0x0B90, 0x0B94, 0x0B98, 0x0C10, 0x0C14, 0x0C18
 
 	.global Ch9EirikaMapChanges_change_1
 Ch9EirikaMapChanges_change_1: @0x8a1e4bc
-	.incbin "graphics/map/Ch9EirikaMapChanges_change_1.bin"
+	.short 0x0B90, 0x0B94, 0x0B98, 0x0C10, 0x0C14, 0x0C18
 
 	.global Ch9EirikaMapChanges_change_2
 Ch9EirikaMapChanges_change_2: @0x8a1e4c8
-	.incbin "graphics/map/Ch9EirikaMapChanges_change_2.bin"
+	.short 0x0E04
 
 	.global Ch9EirikaMapChanges_change_3
 Ch9EirikaMapChanges_change_3: @0x8a1e4ca
-	.incbin "graphics/map/Ch9EirikaMapChanges_change_3.bin"
+	.short 0x0E04
 
 	.align 2, 0
 	.global Ch9EirikaMapChanges
@@ -249,23 +257,23 @@ Ch9EirikaMapChanges: @0x8a1e4cc
 
 	.global Ch10EirikaMapChanges_change_0
 Ch10EirikaMapChanges_change_0: @0x8a1e508
-	.incbin "graphics/map/Ch10EirikaMapChanges_change_0.bin"
+	.short 0x0B68, 0x0B4C
 
 	.global Ch10EirikaMapChanges_change_1
 Ch10EirikaMapChanges_change_1: @0x8a1e50c
-	.incbin "graphics/map/Ch10EirikaMapChanges_change_1.bin"
+	.short 0x0D98
 
 	.global Ch10EirikaMapChanges_change_2
 Ch10EirikaMapChanges_change_2: @0x8a1e50e
-	.incbin "graphics/map/Ch10EirikaMapChanges_change_2.bin"
+	.short 0x0D98
 
 	.global Ch10EirikaMapChanges_change_3
 Ch10EirikaMapChanges_change_3: @0x8a1e510
-	.incbin "graphics/map/Ch10EirikaMapChanges_change_3.bin"
+	.short 0x0D98
 
 	.global Ch10EirikaMapChanges_change_4
 Ch10EirikaMapChanges_change_4: @0x8a1e512
-	.incbin "graphics/map/Ch10EirikaMapChanges_change_4.bin"
+	.short 0x0D98
 
 	.align 2, 0
 	.global Ch10EirikaMapChanges
@@ -274,23 +282,23 @@ Ch10EirikaMapChanges: @0x8a1e514
 
 	.global Ch11EirikaMapChanges_change_0
 Ch11EirikaMapChanges_change_0: @0x8a1e55c
-	.incbin "graphics/map/Ch11EirikaMapChanges_change_0.bin"
+	.short 0x0104
 
 	.global Ch11EirikaMapChanges_change_1
 Ch11EirikaMapChanges_change_1: @0x8a1e55e
-	.incbin "graphics/map/Ch11EirikaMapChanges_change_1.bin"
+	.short 0x0104
 
 	.global Ch11EirikaMapChanges_change_2
 Ch11EirikaMapChanges_change_2: @0x8a1e560
-	.incbin "graphics/map/Ch11EirikaMapChanges_change_2.bin"
+	.short 0x0104
 
 	.global Ch11EirikaMapChanges_change_3
 Ch11EirikaMapChanges_change_3: @0x8a1e562
-	.incbin "graphics/map/Ch11EirikaMapChanges_change_3.bin"
+	.short 0x0BC0
 
 	.global Ch11EirikaMapChanges_change_4
 Ch11EirikaMapChanges_change_4: @0x8a1e564
-	.incbin "graphics/map/Ch11EirikaMapChanges_change_4.bin"
+	.short 0x0BC0, 0x0B44
 
 	.align 2, 0
 	.global Ch11EirikaMapChanges
@@ -299,19 +307,19 @@ Ch11EirikaMapChanges: @0x8a1e568
 
 	.global Ch12EirikaMapChanges_change_0
 Ch12EirikaMapChanges_change_0: @0x8a1e5b0
-	.incbin "graphics/map/Ch12EirikaMapChanges_change_0.bin"
+	.short 0x0E18
 
 	.global Ch12EirikaMapChanges_change_1
 Ch12EirikaMapChanges_change_1: @0x8a1e5b2
-	.incbin "graphics/map/Ch12EirikaMapChanges_change_1.bin"
+	.short 0x0E18
 
 	.global Ch12EirikaMapChanges_change_2
 Ch12EirikaMapChanges_change_2: @0x8a1e5b4
-	.incbin "graphics/map/Ch12EirikaMapChanges_change_2.bin"
+	.short 0x0C18
 
 	.global Ch12EirikaMapChanges_change_3
 Ch12EirikaMapChanges_change_3: @0x8a1e5b6
-	.incbin "graphics/map/Ch12EirikaMapChanges_change_3.bin"
+	.short 0x0C18
 
 	.align 2, 0
 	.global Ch12EirikaMapChanges
@@ -325,59 +333,79 @@ Ch13EirikaMapChanges: @0x8a1e5f4
 
 	.global Ch14EirikaMapChanges_change_0
 Ch14EirikaMapChanges_change_0: @0x8a1e600
-	.incbin "graphics/map/Ch14EirikaMapChanges_change_0.bin"
+	.short 0x06A8, 0x06A8, 0x06A8, 0x06A8, 0x06A8, 0x0000, 0x0000, 0x0CE4
+	.short 0x0C48, 0x0C48, 0x0C48, 0x0000, 0x0000, 0x0000, 0x0C40, 0x0C44
+	.short 0x0C44, 0x0000, 0x0000, 0x0000, 0x0C40, 0x0184, 0x0C40, 0x0000
+	.short 0x0000, 0x0000, 0x0C40, 0x0C48, 0x0C44, 0x0000, 0x0000, 0x0000
+	.short 0x0C40, 0x0184, 0x0C40, 0x0000, 0x0000, 0x0000, 0x0C40, 0x0C48
+	.short 0x0C44, 0x0000, 0x0000, 0x0000, 0x0C40, 0x0C44, 0x0C44, 0x0000
+	.short 0x0000, 0x0000, 0x0000, 0x0C40, 0x0000, 0x0000, 0x0000, 0x0000
+	.short 0x0000, 0x0CD8, 0x0000, 0x0000
 
 	.global Ch14EirikaMapChanges_change_1
 Ch14EirikaMapChanges_change_1: @0x8a1e678
-	.incbin "graphics/map/Ch14EirikaMapChanges_change_1.bin"
+	.short 0x0804, 0x0CD0, 0x0604, 0x0C4C, 0x0C44, 0x0C48, 0x0C40, 0x0C44
+	.short 0x0C44, 0x0C40, 0x0C44, 0x0C44, 0x0C40, 0x0C44, 0x0C44, 0x0C40
+	.short 0x0C44, 0x0C44, 0x0000, 0x0C40, 0x0000
 
 	.global Ch14EirikaMapChanges_change_2
 Ch14EirikaMapChanges_change_2: @0x8a1e6a2
-	.incbin "graphics/map/Ch14EirikaMapChanges_change_2.bin"
+	.short 0x0CD0, 0x0CD8
 
 	.global Ch14EirikaMapChanges_change_3
 Ch14EirikaMapChanges_change_3: @0x8a1e6a6
-	.incbin "graphics/map/Ch14EirikaMapChanges_change_3.bin"
+	.short 0x06A8, 0x06A8, 0x06A8, 0x06A8, 0x0CC8, 0x0C48, 0x0C48, 0x0C48
+	.short 0x0C44, 0x0C44, 0x0184, 0x0C40, 0x0C40, 0x0C44, 0x0C48, 0x0C44
+	.short 0x0C40, 0x0C44, 0x0C44, 0x0C44, 0x0000, 0x0C40, 0x0000, 0x0000
 
 	.global Ch14EirikaMapChanges_change_4
 Ch14EirikaMapChanges_change_4: @0x8a1e6d6
-	.incbin "graphics/map/Ch14EirikaMapChanges_change_4.bin"
+	.short 0x0CD0
 
 	.global Ch14EirikaMapChanges_change_5
 Ch14EirikaMapChanges_change_5: @0x8a1e6d8
-	.incbin "graphics/map/Ch14EirikaMapChanges_change_5.bin"
+	.short 0x06A8, 0x06A8, 0x06A8, 0x06A8, 0x06A8, 0x06A8, 0x0730, 0x0C4C
+	.short 0x0C48, 0x0184, 0x0C4C, 0x0184, 0x0C4C, 0x0C48, 0x0C40, 0x0C44
+	.short 0x0C48, 0x0C44, 0x0C48, 0x0C44, 0x0C44, 0x0D48, 0x0C44, 0x0C44
+	.short 0x0C44, 0x0C44, 0x0C44, 0x0C44, 0x0C44, 0x0C44, 0x0C44, 0x0C44
+	.short 0x0C44, 0x0C44, 0x0C44, 0x0000, 0x0000, 0x0000, 0x0C40, 0x0000
+	.short 0x0000, 0x0000
 
 	.global Ch14EirikaMapChanges_change_6
 Ch14EirikaMapChanges_change_6: @0x8a1e72c
-	.incbin "graphics/map/Ch14EirikaMapChanges_change_6.bin"
+	.short 0x06A8, 0x06A8, 0x06A8, 0x06A8, 0x0C4C, 0x0C48, 0x0C48, 0x0C48
+	.short 0x0C40, 0x0184, 0x0C40, 0x0C44, 0x0C40, 0x0C48, 0x0C44, 0x0C44
+	.short 0x0C40, 0x0C44, 0x0C44, 0x0C44, 0x0000, 0x0C40, 0x0000, 0x0000
 
 	.global Ch14EirikaMapChanges_change_7
 Ch14EirikaMapChanges_change_7: @0x8a1e75c
-	.incbin "graphics/map/Ch14EirikaMapChanges_change_7.bin"
+	.short 0x0104
 
 	.global Ch14EirikaMapChanges_change_8
 Ch14EirikaMapChanges_change_8: @0x8a1e75e
-	.incbin "graphics/map/Ch14EirikaMapChanges_change_8.bin"
+	.short 0x0104
 
 	.global Ch14EirikaMapChanges_change_9
 Ch14EirikaMapChanges_change_9: @0x8a1e760
-	.incbin "graphics/map/Ch14EirikaMapChanges_change_9.bin"
+	.short 0x0000, 0x0804, 0x0CD0, 0x0604, 0x08A4, 0x0C4C, 0x0C44, 0x0C48
+	.short 0x0CE4, 0x0C44, 0x0C44, 0x0C44, 0x0000, 0x0C40, 0x0C44, 0x0C44
+	.short 0x0000, 0x0C40, 0x0C44, 0x0C44, 0x0000, 0x0C40, 0x0C44, 0x0C44
 
 	.global Ch14EirikaMapChanges_change_10
 Ch14EirikaMapChanges_change_10: @0x8a1e790
-	.incbin "graphics/map/Ch14EirikaMapChanges_change_10.bin"
+	.short 0x0104
 
 	.global Ch14EirikaMapChanges_change_11
 Ch14EirikaMapChanges_change_11: @0x8a1e792
-	.incbin "graphics/map/Ch14EirikaMapChanges_change_11.bin"
+	.short 0x0104
 
 	.global Ch14EirikaMapChanges_change_12
 Ch14EirikaMapChanges_change_12: @0x8a1e794
-	.incbin "graphics/map/Ch14EirikaMapChanges_change_12.bin"
+	.short 0x0104
 
 	.global Ch14EirikaMapChanges_change_13
 Ch14EirikaMapChanges_change_13: @0x8a1e796
-	.incbin "graphics/map/Ch14EirikaMapChanges_change_13.bin"
+	.short 0x0104
 
 	.align 2, 0
 	.global Ch14EirikaMapChanges
@@ -386,11 +414,12 @@ Ch14EirikaMapChanges: @0x8a1e798
 
 	.global Ch15MapChanges_change_0
 Ch15MapChanges_change_0: @0x8a1e84c
-	.incbin "graphics/map/Ch15MapChanges_change_0.bin"
+	.short 0x0EC8, 0x0ECC, 0x0ED0, 0x0F48, 0x0F4C, 0x0F50, 0x0FC8, 0x0FCC
+	.short 0x0FD0
 
 	.global Ch15MapChanges_change_1
 Ch15MapChanges_change_1: @0x8a1e85e
-	.incbin "graphics/map/Ch15MapChanges_change_1.bin"
+	.short 0x0E50
 
 	.align 2, 0
 	.global Ch15MapChanges
@@ -399,39 +428,39 @@ Ch15MapChanges: @0x8a1e860
 
 	.global Ch16MapChanges_change_0
 Ch16MapChanges_change_0: @0x8a1e884
-	.incbin "graphics/map/Ch16MapChanges_change_0.bin"
+	.short 0x0740, 0x0C40, 0x0000, 0x0C44
 
 	.global Ch16MapChanges_change_1
 Ch16MapChanges_change_1: @0x8a1e88c
-	.incbin "graphics/map/Ch16MapChanges_change_1.bin"
+	.short 0x08A4, 0x0C40, 0x07B0, 0x0000, 0x0C44, 0x0000
 
 	.global Ch16MapChanges_change_2
 Ch16MapChanges_change_2: @0x8a1e898
-	.incbin "graphics/map/Ch16MapChanges_change_2.bin"
+	.short 0x0004
 
 	.global Ch16MapChanges_change_3
 Ch16MapChanges_change_3: @0x8a1e89a
-	.incbin "graphics/map/Ch16MapChanges_change_3.bin"
+	.short 0x0004
 
 	.global Ch16MapChanges_change_4
 Ch16MapChanges_change_4: @0x8a1e89c
-	.incbin "graphics/map/Ch16MapChanges_change_4.bin"
+	.short 0x0004
 
 	.global Ch16MapChanges_change_5
 Ch16MapChanges_change_5: @0x8a1e89e
-	.incbin "graphics/map/Ch16MapChanges_change_5.bin"
+	.short 0x0C40
 
 	.global Ch16MapChanges_change_6
 Ch16MapChanges_change_6: @0x8a1e8a0
-	.incbin "graphics/map/Ch16MapChanges_change_6.bin"
+	.short 0x0004
 
 	.global Ch16MapChanges_change_7
 Ch16MapChanges_change_7: @0x8a1e8a2
-	.incbin "graphics/map/Ch16MapChanges_change_7.bin"
+	.short 0x0F68, 0x068C
 
 	.global Ch16MapChanges_change_8
 Ch16MapChanges_change_8: @0x8a1e8a6
-	.incbin "graphics/map/Ch16MapChanges_change_8.bin"
+	.short 0x0FDC, 0x0000, 0x09C0, 0x0C2C
 
 	.align 2, 0
 	.global Ch16MapChanges
@@ -440,19 +469,19 @@ Ch16MapChanges: @0x8a1e8b0
 
 	.global Ch17MapChanges_change_0
 Ch17MapChanges_change_0: @0x8a1e928
-	.incbin "graphics/map/Ch17MapChanges_change_0.bin"
+	.short 0x001C, 0x009C, 0x002C
 
 	.global Ch17MapChanges_change_1
 Ch17MapChanges_change_1: @0x8a1e92e
-	.incbin "graphics/map/Ch17MapChanges_change_1.bin"
+	.short 0x0110, 0x0094, 0x0114
 
 	.global Ch17MapChanges_change_2
 Ch17MapChanges_change_2: @0x8a1e934
-	.incbin "graphics/map/Ch17MapChanges_change_2.bin"
+	.short 0x0E0C
 
 	.global Ch17MapChanges_change_3
 Ch17MapChanges_change_3: @0x8a1e936
-	.incbin "graphics/map/Ch17MapChanges_change_3.bin"
+	.short 0x0E0C
 
 	.align 2, 0
 	.global Ch17MapChanges
@@ -466,31 +495,31 @@ Ch18MapChanges: @0x8a1e974
 
 	.global Ch19MapChanges_change_0
 Ch19MapChanges_change_0: @0x8a1e980
-	.incbin "graphics/map/Ch19MapChanges_change_0.bin"
+	.short 0x0004
 
 	.global Ch19MapChanges_change_1
 Ch19MapChanges_change_1: @0x8a1e982
-	.incbin "graphics/map/Ch19MapChanges_change_1.bin"
+	.short 0x0004
 
 	.global Ch19MapChanges_change_2
 Ch19MapChanges_change_2: @0x8a1e984
-	.incbin "graphics/map/Ch19MapChanges_change_2.bin"
+	.short 0x0004
 
 	.global Ch19MapChanges_change_3
 Ch19MapChanges_change_3: @0x8a1e986
-	.incbin "graphics/map/Ch19MapChanges_change_3.bin"
+	.short 0x0004
 
 	.global Ch19MapChanges_change_4
 Ch19MapChanges_change_4: @0x8a1e988
-	.incbin "graphics/map/Ch19MapChanges_change_4.bin"
+	.short 0x0004
 
 	.global Ch19MapChanges_change_5
 Ch19MapChanges_change_5: @0x8a1e98a
-	.incbin "graphics/map/Ch19MapChanges_change_5.bin"
+	.short 0x0004
 
 	.global Ch19MapChanges_change_6
 Ch19MapChanges_change_6: @0x8a1e98c
-	.incbin "graphics/map/Ch19MapChanges_change_6.bin"
+	.short 0x0B40, 0x0B44
 
 	.align 2, 0
 	.global Ch19MapChanges
@@ -504,19 +533,19 @@ Ch20MapChanges: @0x8a1e9f0
 
 	.global FinalChapterMap1Changes_change_0
 FinalChapterMap1Changes_change_0: @0x8a1e9fc
-	.incbin "graphics/map/FinalChapterMap1Changes_change_0.bin"
+	.short 0x0CD4, 0x0C50
 
 	.global FinalChapterMap1Changes_change_1
 FinalChapterMap1Changes_change_1: @0x8a1ea00
-	.incbin "graphics/map/FinalChapterMap1Changes_change_1.bin"
+	.short 0x0D50, 0x0DD0
 
 	.global FinalChapterMap1Changes_change_2
 FinalChapterMap1Changes_change_2: @0x8a1ea04
-	.incbin "graphics/map/FinalChapterMap1Changes_change_2.bin"
+	.short 0x0004
 
 	.global FinalChapterMap1Changes_change_3
 FinalChapterMap1Changes_change_3: @0x8a1ea06
-	.incbin "graphics/map/FinalChapterMap1Changes_change_3.bin"
+	.short 0x0004
 
 	.align 2, 0
 	.global FinalChapterMap1Changes
@@ -530,27 +559,27 @@ FinalChapterMap2Changes: @0x8a1ea44
 
 	.global Ch9EphMapChanges_change_0
 Ch9EphMapChanges_change_0: @0x8a1ea50
-	.incbin "graphics/map/Ch9EphMapChanges_change_0.bin"
+	.short 0x0CD0, 0x0CD4, 0x0CD0, 0x0CD4
 
 	.global Ch9EphMapChanges_change_1
 Ch9EphMapChanges_change_1: @0x8a1ea58
-	.incbin "graphics/map/Ch9EphMapChanges_change_1.bin"
+	.short 0x07A8, 0x0000, 0x0CE4, 0x0CD4
 
 	.global Ch9EphMapChanges_change_2
 Ch9EphMapChanges_change_2: @0x8a1ea60
-	.incbin "graphics/map/Ch9EphMapChanges_change_2.bin"
+	.short 0x0CD0, 0x0CD8
 
 	.global Ch9EphMapChanges_change_3
 Ch9EphMapChanges_change_3: @0x8a1ea64
-	.incbin "graphics/map/Ch9EphMapChanges_change_3.bin"
+	.short 0x0104
 
 	.global Ch9EphMapChanges_change_4
 Ch9EphMapChanges_change_4: @0x8a1ea66
-	.incbin "graphics/map/Ch9EphMapChanges_change_4.bin"
+	.short 0x0104
 
 	.global Ch9EphMapChanges_change_5
 Ch9EphMapChanges_change_5: @0x8a1ea68
-	.incbin "graphics/map/Ch9EphMapChanges_change_5.bin"
+	.short 0x0104
 
 	.align 2, 0
 	.global Ch9EphMapChanges
@@ -559,35 +588,37 @@ Ch9EphMapChanges: @0x8a1ea6c
 
 	.global Ch10EphraimMapChanges_change_0
 Ch10EphraimMapChanges_change_0: @0x8a1eac0
-	.incbin "graphics/map/Ch10EphraimMapChanges_change_0.bin"
+	.short 0x0E84, 0x0E88, 0x0E8C, 0x0F04, 0x0F08, 0x0F0C, 0x0F84, 0x0F88
+	.short 0x0F8C
 
 	.global Ch10EphraimMapChanges_change_1
 Ch10EphraimMapChanges_change_1: @0x8a1ead2
-	.incbin "graphics/map/Ch10EphraimMapChanges_change_1.bin"
+	.short 0x0E84, 0x0E88, 0x0E8C, 0x0F04, 0x0F08, 0x0F0C, 0x0F84, 0x0F88
+	.short 0x0F8C
 
 	.global Ch10EphraimMapChanges_change_2
 Ch10EphraimMapChanges_change_2: @0x8a1eae4
-	.incbin "graphics/map/Ch10EphraimMapChanges_change_2.bin"
+	.short 0x0F80
 
 	.global Ch10EphraimMapChanges_change_3
 Ch10EphraimMapChanges_change_3: @0x8a1eae6
-	.incbin "graphics/map/Ch10EphraimMapChanges_change_3.bin"
+	.short 0x0F80
 
 	.global Ch10EphraimMapChanges_change_4
 Ch10EphraimMapChanges_change_4: @0x8a1eae8
-	.incbin "graphics/map/Ch10EphraimMapChanges_change_4.bin"
+	.short 0x0080
 
 	.global Ch10EphraimMapChanges_change_5
 Ch10EphraimMapChanges_change_5: @0x8a1eaea
-	.incbin "graphics/map/Ch10EphraimMapChanges_change_5.bin"
+	.short 0x0080
 
 	.global Ch10EphraimMapChanges_change_6
 Ch10EphraimMapChanges_change_6: @0x8a1eaec
-	.incbin "graphics/map/Ch10EphraimMapChanges_change_6.bin"
+	.short 0x0F80
 
 	.global Ch10EphraimMapChanges_change_7
 Ch10EphraimMapChanges_change_7: @0x8a1eaee
-	.incbin "graphics/map/Ch10EphraimMapChanges_change_7.bin"
+	.short 0x0F80
 
 	.align 2, 0
 	.global Ch10EphraimMapChanges
@@ -596,19 +627,61 @@ Ch10EphraimMapChanges: @0x8a1eaf0
 
 	.global Ch11EphraimMapChanges_change_0
 Ch11EphraimMapChanges_change_0: @0x8a1eb5c
-	.incbin "graphics/map/Ch11EphraimMapChanges_change_0.bin"
+	.short 0x0000, 0x0000, 0x086C, 0x0868, 0x0000, 0x0000, 0x0000, 0x0000
+	.short 0x0768, 0x064C, 0x0668, 0x0868, 0x0000, 0x0768, 0x07EC, 0x07E8
+	.short 0x0378, 0x06E4, 0x07EC, 0x0868, 0x0768, 0x0000, 0x03EC, 0x03F0
+	.short 0x03F4, 0x03F8, 0x07EC, 0x0768, 0x0468, 0x046C, 0x0470, 0x0474
+	.short 0x0478, 0x047C, 0x0768, 0x04E8, 0x0584, 0x0678, 0x0598, 0x04F8
+	.short 0x04FC, 0x0768, 0x03E4, 0x0604, 0x0598, 0x0610, 0x0608, 0x0460
+	.short 0x0768, 0x0464, 0x06F4, 0x04F4, 0x04F4, 0x04F4, 0x04E0, 0x0768
+	.short 0x0464, 0x06F4, 0x04F4, 0x058C, 0x0678, 0x04E0, 0x0768, 0x0464
+	.short 0x06F4, 0x04F4, 0x060C, 0x0674, 0x04E0, 0x0768, 0x0464, 0x06F4
+	.short 0x04F4, 0x058C, 0x0678, 0x04E0, 0x0768, 0x0464, 0x06F4, 0x04F4
+	.short 0x060C, 0x0674, 0x04E0, 0x0768
 
 	.global Ch11EphraimMapChanges_change_1
 Ch11EphraimMapChanges_change_1: @0x8a1ec04
-	.incbin "graphics/map/Ch11EphraimMapChanges_change_1.bin"
+	.short 0x0000, 0x0000, 0x0000, 0x086C, 0x0868, 0x0000, 0x0000, 0x0000
+	.short 0x0000, 0x0000, 0x086C, 0x064C, 0x0668, 0x0868, 0x0000, 0x0000
+	.short 0x076C, 0x08F0, 0x07E8, 0x0378, 0x06E4, 0x07EC, 0x0868, 0x0000
+	.short 0x08F0, 0x086C, 0x03EC, 0x03F0, 0x03F4, 0x03F8, 0x07EC, 0x0868
+	.short 0x0868, 0x0468, 0x046C, 0x0470, 0x0474, 0x0478, 0x047C, 0x07EC
+	.short 0x086C, 0x04E8, 0x0584, 0x0678, 0x0598, 0x04F8, 0x04FC, 0x07EC
+	.short 0x076C, 0x03E4, 0x0604, 0x0598, 0x0610, 0x0608, 0x0460, 0x0000
+	.short 0x0000, 0x0464, 0x06F4, 0x04F4, 0x04F4, 0x04F4, 0x04E0, 0x0000
+	.short 0x0000, 0x0464, 0x06F4, 0x04F4, 0x058C, 0x0678, 0x04E0, 0x07EC
+	.short 0x0000, 0x0464, 0x06F4, 0x04F4, 0x060C, 0x0674, 0x04E0, 0x0768
+	.short 0x0000, 0x0464, 0x06F4, 0x04F4, 0x058C, 0x0678, 0x04E0, 0x0768
+	.short 0x0000, 0x0464, 0x06F4, 0x04F4, 0x060C, 0x0674, 0x04E0, 0x0768
+	.short 0x0000, 0x03E4, 0x06F4, 0x0598, 0x0598, 0x04F4, 0x04E0, 0x0768
+	.short 0x086C, 0x03E4, 0x05A0, 0x0670, 0x0610, 0x05A0, 0x03E0, 0x0000
+	.short 0x0000, 0x04CC, 0x03D0, 0x03D4, 0x0450, 0x0454, 0x054C, 0x0768
+	.short 0x0868, 0x05D0, 0x05D4, 0x075C, 0x0760, 0x05E0, 0x05E4, 0x07EC
+	.short 0x086C, 0x0650, 0x0654, 0x0658, 0x065C, 0x0660, 0x0664, 0x086C
+	.short 0x0000, 0x07EC, 0x06D4, 0x06D8, 0x06DC, 0x06E0, 0x07E8, 0x0000
+	.short 0x0000, 0x0000, 0x07EC, 0x0968, 0x0968, 0x07E8, 0x0000, 0x0000
 
 	.global Ch11EphraimMapChanges_change_2
 Ch11EphraimMapChanges_change_2: @0x8a1ed34
-	.incbin "graphics/map/Ch11EphraimMapChanges_change_2.bin"
+	.short 0x0618, 0x059C, 0x059C, 0x061C, 0x0618, 0x059C, 0x059C, 0x061C
+	.short 0x0000, 0x076C, 0x0000, 0x0464, 0x03E0, 0x0000, 0x0000, 0x03E4
+	.short 0x0618, 0x059C, 0x059C, 0x061C
 
 	.global Ch11EphraimMapChanges_change_3
 Ch11EphraimMapChanges_change_3: @0x8a1ed5c
-	.incbin "graphics/map/Ch11EphraimMapChanges_change_3.bin"
+	.short 0x0868, 0x0000, 0x0000, 0x0000, 0x086C, 0x0868, 0x0868, 0x0868
+	.short 0x0000, 0x086C, 0x064C, 0x0668, 0x047C, 0x07EC, 0x07E8, 0x086C
+	.short 0x0378, 0x06E4, 0x04FC, 0x07EC, 0x07E8, 0x03EC, 0x03F0, 0x03F4
+	.short 0x0460, 0x07EC, 0x0468, 0x046C, 0x0470, 0x0474, 0x04E0, 0x0000
+	.short 0x04E8, 0x05A0, 0x0578, 0x0598, 0x04E0, 0x0000, 0x0568, 0x06F8
+	.short 0x04F4, 0x04F4, 0x04E0, 0x0000, 0x05E8, 0x06F4, 0x04F4, 0x058C
+	.short 0x0618, 0x059C, 0x061C, 0x06F4, 0x04F4, 0x060C, 0x04E0, 0x0000
+	.short 0x0464, 0x06F4, 0x04F4, 0x058C, 0x04E0, 0x0000, 0x03E4, 0x06F4
+	.short 0x04F4, 0x060C, 0x03E0, 0x0000, 0x0464, 0x06F4, 0x04F4, 0x04F4
+	.short 0x054C, 0x0000, 0x03E4, 0x05A0, 0x0670, 0x04F4, 0x05E4, 0x07EC
+	.short 0x04CC, 0x03D0, 0x0560, 0x055C, 0x0664, 0x07EC, 0x05D0, 0x05D4
+	.short 0x05D8, 0x05DC, 0x07E8, 0x0000, 0x0650, 0x0654, 0x0658, 0x065C
+	.short 0x0000, 0x0000, 0x07EC, 0x06D4, 0x06D8, 0x06DC
 
 	.align 2, 0
 	.global Ch11EphraimMapChanges
@@ -617,11 +690,11 @@ Ch11EphraimMapChanges: @0x8a1ee28
 
 	.global Ch12EphraimMapChanges_change_0
 Ch12EphraimMapChanges_change_0: @0x8a1ee64
-	.incbin "graphics/map/Ch12EphraimMapChanges_change_0.bin"
+	.short 0x0B90, 0x0B94, 0x0B84, 0x0C10, 0x0C14, 0x0C04
 
 	.global Ch12EphraimMapChanges_change_1
 Ch12EphraimMapChanges_change_1: @0x8a1ee70
-	.incbin "graphics/map/Ch12EphraimMapChanges_change_1.bin"
+	.short 0x0080
 
 	.align 2, 0
 	.global Ch12EphraimMapChanges
@@ -630,23 +703,25 @@ Ch12EphraimMapChanges: @0x8a1ee74
 
 	.global Ch13EphraimMapChanges_change_0
 Ch13EphraimMapChanges_change_0: @0x8a1ee98
-	.incbin "graphics/map/Ch13EphraimMapChanges_change_0.bin"
+	.short 0x0E1C, 0x0E20, 0x0E24, 0x0E9C, 0x0EA0, 0x0EA4, 0x0F1C, 0x0F20
+	.short 0x0F24
 
 	.global Ch13EphraimMapChanges_change_1
 Ch13EphraimMapChanges_change_1: @0x8a1eeaa
-	.incbin "graphics/map/Ch13EphraimMapChanges_change_1.bin"
+	.short 0x0E1C, 0x0E20, 0x0E24, 0x0E9C, 0x0EA0, 0x0EA4, 0x0F1C, 0x0F20
+	.short 0x0F24
 
 	.global Ch13EphraimMapChanges_change_2
 Ch13EphraimMapChanges_change_2: @0x8a1eebc
-	.incbin "graphics/map/Ch13EphraimMapChanges_change_2.bin"
+	.short 0x0080
 
 	.global Ch13EphraimMapChanges_change_3
 Ch13EphraimMapChanges_change_3: @0x8a1eebe
-	.incbin "graphics/map/Ch13EphraimMapChanges_change_3.bin"
+	.short 0x0080
 
 	.global Ch13EphraimMapChanges_change_4
 Ch13EphraimMapChanges_change_4: @0x8a1eec0
-	.incbin "graphics/map/Ch13EphraimMapChanges_change_4.bin"
+	.short 0x0028, 0x0010, 0x002C
 
 	.align 2, 0
 	.global Ch13EphraimMapChanges
@@ -655,39 +730,41 @@ Ch13EphraimMapChanges: @0x8a1eec8
 
 	.global Ch14EphraimMapChanges_change_0
 Ch14EphraimMapChanges_change_0: @0x8a1ef10
-	.incbin "graphics/map/Ch14EphraimMapChanges_change_0.bin"
+	.short 0x0680, 0x0684, 0x0684, 0x0680, 0x0684, 0x0684
 
 	.global Ch14EphraimMapChanges_change_1
 Ch14EphraimMapChanges_change_1: @0x8a1ef1c
-	.incbin "graphics/map/Ch14EphraimMapChanges_change_1.bin"
+	.short 0x0980, 0x080C, 0x0890, 0x0984, 0x0A94, 0x080C, 0x0984, 0x088C
+	.short 0x088C
 
 	.global Ch14EphraimMapChanges_change_2
 Ch14EphraimMapChanges_change_2: @0x8a1ef2e
-	.incbin "graphics/map/Ch14EphraimMapChanges_change_2.bin"
+	.short 0x0904, 0x088C, 0x088C, 0x0980, 0x080C, 0x080C, 0x0984, 0x0888
+	.short 0x0810
 
 	.global Ch14EphraimMapChanges_change_3
 Ch14EphraimMapChanges_change_3: @0x8a1ef40
-	.incbin "graphics/map/Ch14EphraimMapChanges_change_3.bin"
+	.short 0x0680, 0x0684, 0x0684, 0x0680, 0x0684, 0x0684
 
 	.global Ch14EphraimMapChanges_change_4
 Ch14EphraimMapChanges_change_4: @0x8a1ef4c
-	.incbin "graphics/map/Ch14EphraimMapChanges_change_4.bin"
+	.short 0x0004
 
 	.global Ch14EphraimMapChanges_change_5
 Ch14EphraimMapChanges_change_5: @0x8a1ef4e
-	.incbin "graphics/map/Ch14EphraimMapChanges_change_5.bin"
+	.short 0x0004
 
 	.global Ch14EphraimMapChanges_change_6
 Ch14EphraimMapChanges_change_6: @0x8a1ef50
-	.incbin "graphics/map/Ch14EphraimMapChanges_change_6.bin"
+	.short 0x0004
 
 	.global Ch14EphraimMapChanges_change_7
 Ch14EphraimMapChanges_change_7: @0x8a1ef52
-	.incbin "graphics/map/Ch14EphraimMapChanges_change_7.bin"
+	.short 0x0004
 
 	.global Ch14EphraimMapChanges_change_8
 Ch14EphraimMapChanges_change_8: @0x8a1ef54
-	.incbin "graphics/map/Ch14EphraimMapChanges_change_8.bin"
+	.short 0x0004
 
 	.align 2, 0
 	.global Ch14EphraimMapChanges
@@ -701,23 +778,23 @@ UnusedMapChanges1: @0x8a1efd0
 
 	.global UnusedMapChanges2_change_0
 UnusedMapChanges2_change_0: @0x8a1efdc
-	.incbin "graphics/map/UnusedMapChanges2_change_0.bin"
+	.short 0x0740, 0x0C40, 0x0000, 0x0C44
 
 	.global UnusedMapChanges2_change_1
 UnusedMapChanges2_change_1: @0x8a1efe4
-	.incbin "graphics/map/UnusedMapChanges2_change_1.bin"
+	.short 0x08A4, 0x0C40, 0x07B0, 0x0000, 0x0C44, 0x0000
 
 	.global UnusedMapChanges2_change_2
 UnusedMapChanges2_change_2: @0x8a1eff0
-	.incbin "graphics/map/UnusedMapChanges2_change_2.bin"
+	.short 0x0004
 
 	.global UnusedMapChanges2_change_3
 UnusedMapChanges2_change_3: @0x8a1eff2
-	.incbin "graphics/map/UnusedMapChanges2_change_3.bin"
+	.short 0x0004
 
 	.global UnusedMapChanges2_change_4
 UnusedMapChanges2_change_4: @0x8a1eff4
-	.incbin "graphics/map/UnusedMapChanges2_change_4.bin"
+	.short 0x0004
 
 	.align 2, 0
 	.global UnusedMapChanges2
@@ -726,11 +803,11 @@ UnusedMapChanges2: @0x8a1eff8
 
 	.global UnusedMapChanges3_change_0
 UnusedMapChanges3_change_0: @0x8a1f040
-	.incbin "graphics/map/UnusedMapChanges3_change_0.bin"
+	.short 0x001C, 0x009C, 0x002C
 
 	.global UnusedMapChanges3_change_1
 UnusedMapChanges3_change_1: @0x8a1f046
-	.incbin "graphics/map/UnusedMapChanges3_change_1.bin"
+	.short 0x0110, 0x0094, 0x0114
 
 	.align 2, 0
 	.global UnusedMapChanges3
@@ -744,23 +821,23 @@ UnusedMapChanges4: @0x8a1f070
 
 	.global UnusedMapChanges5_change_0
 UnusedMapChanges5_change_0: @0x8a1f07c
-	.incbin "graphics/map/UnusedMapChanges5_change_0.bin"
+	.short 0x0004
 
 	.global UnusedMapChanges5_change_1
 UnusedMapChanges5_change_1: @0x8a1f07e
-	.incbin "graphics/map/UnusedMapChanges5_change_1.bin"
+	.short 0x0004
 
 	.global UnusedMapChanges5_change_2
 UnusedMapChanges5_change_2: @0x8a1f080
-	.incbin "graphics/map/UnusedMapChanges5_change_2.bin"
+	.short 0x0B40, 0x0B44
 
 	.global UnusedMapChanges5_change_3
 UnusedMapChanges5_change_3: @0x8a1f084
-	.incbin "graphics/map/UnusedMapChanges5_change_3.bin"
+	.short 0x0004
 
 	.global UnusedMapChanges5_change_4
 UnusedMapChanges5_change_4: @0x8a1f086
-	.incbin "graphics/map/UnusedMapChanges5_change_4.bin"
+	.short 0x0004
 
 	.align 2, 0
 	.global UnusedMapChanges5
@@ -794,7 +871,7 @@ TowerOfValni2MapChanges: @0x8a1f100
 
 	.global TowerOfValni3MapChanges_change_0
 TowerOfValni3MapChanges_change_0: @0x8a1f10c
-	.incbin "graphics/map/TowerOfValni3MapChanges_change_0.bin"
+	.short 0x0110
 
 	.align 2, 0
 	.global TowerOfValni3MapChanges
@@ -808,11 +885,11 @@ TowerOfValni4MapChanges: @0x8a1f128
 
 	.global TowerOfValni5MapChanges_change_0
 TowerOfValni5MapChanges_change_0: @0x8a1f134
-	.incbin "graphics/map/TowerOfValni5MapChanges_change_0.bin"
+	.short 0x0110
 
 	.global TowerOfValni5MapChanges_change_1
 TowerOfValni5MapChanges_change_1: @0x8a1f136
-	.incbin "graphics/map/TowerOfValni5MapChanges_change_1.bin"
+	.short 0x0110
 
 	.align 2, 0
 	.global TowerOfValni5MapChanges
@@ -821,71 +898,73 @@ TowerOfValni5MapChanges: @0x8a1f138
 
 	.global TowerOfValni6MapChanges_change_0
 TowerOfValni6MapChanges_change_0: @0x8a1f15c
-	.incbin "graphics/map/TowerOfValni6MapChanges_change_0.bin"
+	.short 0x08D4, 0x0000, 0x08CC, 0x0000, 0x0018, 0x0014
 
 	.global TowerOfValni6MapChanges_change_1
 TowerOfValni6MapChanges_change_1: @0x8a1f168
-	.incbin "graphics/map/TowerOfValni6MapChanges_change_1.bin"
+	.short 0x08D4, 0x0000, 0x08CC, 0x0000, 0x0018, 0x0014
 
 	.global TowerOfValni6MapChanges_change_2
 TowerOfValni6MapChanges_change_2: @0x8a1f174
-	.incbin "graphics/map/TowerOfValni6MapChanges_change_2.bin"
+	.short 0x0110
 
 	.global TowerOfValni6MapChanges_change_3
 TowerOfValni6MapChanges_change_3: @0x8a1f176
-	.incbin "graphics/map/TowerOfValni6MapChanges_change_3.bin"
+	.short 0x0110
 
 	.global TowerOfValni6MapChanges_change_4
 TowerOfValni6MapChanges_change_4: @0x8a1f178
-	.incbin "graphics/map/TowerOfValni6MapChanges_change_4.bin"
+	.short 0x08D4, 0x0000, 0x08CC, 0x0000, 0x0018, 0x0014
 
 	.global TowerOfValni6MapChanges_change_5
 TowerOfValni6MapChanges_change_5: @0x8a1f184
-	.incbin "graphics/map/TowerOfValni6MapChanges_change_5.bin"
+	.short 0x08C8, 0x001C, 0x06C8, 0x08C4, 0x001C, 0x08C0, 0x0000, 0x0014
+	.short 0x0000
 
 	.global TowerOfValni6MapChanges_change_6
 TowerOfValni6MapChanges_change_6: @0x8a1f196
-	.incbin "graphics/map/TowerOfValni6MapChanges_change_6.bin"
+	.short 0x08C8, 0x001C, 0x06C8, 0x08C4, 0x001C, 0x08C0, 0x0000, 0x0014
+	.short 0x0000
 
 	.global TowerOfValni6MapChanges_change_7
 TowerOfValni6MapChanges_change_7: @0x8a1f1a8
-	.incbin "graphics/map/TowerOfValni6MapChanges_change_7.bin"
+	.short 0x08C8, 0x0000, 0x08C4, 0x0000, 0x0018, 0x0014
 
 	.global TowerOfValni6MapChanges_change_8
 TowerOfValni6MapChanges_change_8: @0x8a1f1b4
-	.incbin "graphics/map/TowerOfValni6MapChanges_change_8.bin"
+	.short 0x08C8, 0x001C, 0x08C4, 0x001C, 0x0000, 0x0014
 
 	.global TowerOfValni6MapChanges_change_9
 TowerOfValni6MapChanges_change_9: @0x8a1f1c0
-	.incbin "graphics/map/TowerOfValni6MapChanges_change_9.bin"
+	.short 0x08C8, 0x001C, 0x08C4, 0x001C, 0x0000, 0x0014
 
 	.global TowerOfValni6MapChanges_change_10
 TowerOfValni6MapChanges_change_10: @0x8a1f1cc
-	.incbin "graphics/map/TowerOfValni6MapChanges_change_10.bin"
+	.short 0x0110
 
 	.global TowerOfValni6MapChanges_change_11
 TowerOfValni6MapChanges_change_11: @0x8a1f1ce
-	.incbin "graphics/map/TowerOfValni6MapChanges_change_11.bin"
+	.short 0x08D4, 0x0000, 0x08CC, 0x0000, 0x0018, 0x0014
 
 	.global TowerOfValni6MapChanges_change_12
 TowerOfValni6MapChanges_change_12: @0x8a1f1da
-	.incbin "graphics/map/TowerOfValni6MapChanges_change_12.bin"
+	.short 0x08D4, 0x0000, 0x08CC, 0x0000, 0x0018, 0x0014
 
 	.global TowerOfValni6MapChanges_change_13
 TowerOfValni6MapChanges_change_13: @0x8a1f1e6
-	.incbin "graphics/map/TowerOfValni6MapChanges_change_13.bin"
+	.short 0x08D4, 0x0000, 0x08CC, 0x0000, 0x0018, 0x0014
 
 	.global TowerOfValni6MapChanges_change_14
 TowerOfValni6MapChanges_change_14: @0x8a1f1f2
-	.incbin "graphics/map/TowerOfValni6MapChanges_change_14.bin"
+	.short 0x06C8, 0x06CC, 0x08C0, 0x0844, 0x0018, 0x0018
 
 	.global TowerOfValni6MapChanges_change_15
 TowerOfValni6MapChanges_change_15: @0x8a1f1fe
-	.incbin "graphics/map/TowerOfValni6MapChanges_change_15.bin"
+	.short 0x08C8, 0x001C, 0x08C4, 0x001C, 0x0000, 0x0014
 
 	.global TowerOfValni6MapChanges_change_16
 TowerOfValni6MapChanges_change_16: @0x8a1f20a
-	.incbin "graphics/map/TowerOfValni6MapChanges_change_16.bin"
+	.short 0x0110
 
 	.align 2, 0
 	.global TowerOfValni6MapChanges
@@ -894,23 +973,25 @@ TowerOfValni6MapChanges: @0x8a1f20c
 
 	.global TowerOfValni7MapChanges_change_0
 TowerOfValni7MapChanges_change_0: @0x8a1f2e4
-	.incbin "graphics/map/TowerOfValni7MapChanges_change_0.bin"
+	.short 0x0094, 0x0094, 0x0094, 0x0094, 0x0094, 0x0094, 0x0094
 
 	.global TowerOfValni7MapChanges_change_1
 TowerOfValni7MapChanges_change_1: @0x8a1f2f2
-	.incbin "graphics/map/TowerOfValni7MapChanges_change_1.bin"
+	.short 0x0094, 0x0094, 0x0094, 0x0094, 0x0094, 0x0094, 0x0094, 0x0094
 
 	.global TowerOfValni7MapChanges_change_2
 TowerOfValni7MapChanges_change_2: @0x8a1f302
-	.incbin "graphics/map/TowerOfValni7MapChanges_change_2.bin"
+	.short 0x0094, 0x0094, 0x0094, 0x0094, 0x0000, 0x0094, 0x0000, 0x0094
+	.short 0x0000, 0x0094, 0x0000, 0x0094, 0x0000, 0x0094, 0x0000, 0x0094
+	.short 0x0000, 0x0094, 0x0000, 0x0094, 0x0000, 0x0094
 
 	.global TowerOfValni7MapChanges_change_3
 TowerOfValni7MapChanges_change_3: @0x8a1f32e
-	.incbin "graphics/map/TowerOfValni7MapChanges_change_3.bin"
+	.short 0x0094, 0x0094, 0x0094, 0x0094
 
 	.global TowerOfValni7MapChanges_change_4
 TowerOfValni7MapChanges_change_4: @0x8a1f336
-	.incbin "graphics/map/TowerOfValni7MapChanges_change_4.bin"
+	.short 0x0094, 0x0094, 0x0094, 0x0094, 0x0094, 0x0094
 
 	.align 2, 0
 	.global TowerOfValni7MapChanges
@@ -919,7 +1000,7 @@ TowerOfValni7MapChanges: @0x8a1f344
 
 	.global TowerOfValni8MapChanges_change_0
 TowerOfValni8MapChanges_change_0: @0x8a1f38c
-	.incbin "graphics/map/TowerOfValni8MapChanges_change_0.bin"
+	.short 0x0110
 
 	.align 2, 0
 	.global TowerOfValni8MapChanges
@@ -938,7 +1019,7 @@ UnusedMapChanges10: @0x8a1f3b4
 
 	.global LagdouRuins1MapChanges_change_0
 LagdouRuins1MapChanges_change_0: @0x8a1f3c0
-	.incbin "graphics/map/LagdouRuins1MapChanges_change_0.bin"
+	.short 0x0DD0, 0x0000
 
 	.align 2, 0
 	.global LagdouRuins1MapChanges
@@ -947,7 +1028,7 @@ LagdouRuins1MapChanges: @0x8a1f3c4
 
 	.global LagdouRuins2MapChanges_change_0
 LagdouRuins2MapChanges_change_0: @0x8a1f3dc
-	.incbin "graphics/map/LagdouRuins2MapChanges_change_0.bin"
+	.short 0x0D18, 0x0000, 0x0654, 0x0000, 0x0E3C, 0x0FBC
 
 	.align 2, 0
 	.global LagdouRuins2MapChanges
@@ -956,55 +1037,55 @@ LagdouRuins2MapChanges: @0x8a1f3e8
 
 	.global LagdouRuins3MapChanges_change_0
 LagdouRuins3MapChanges_change_0: @0x8a1f400
-	.incbin "graphics/map/LagdouRuins3MapChanges_change_0.bin"
+	.short 0x0004
 
 	.global LagdouRuins3MapChanges_change_1
 LagdouRuins3MapChanges_change_1: @0x8a1f402
-	.incbin "graphics/map/LagdouRuins3MapChanges_change_1.bin"
+	.short 0x0D18, 0x0000, 0x0E3C, 0x0FB8
 
 	.global LagdouRuins3MapChanges_change_2
 LagdouRuins3MapChanges_change_2: @0x8a1f40a
-	.incbin "graphics/map/LagdouRuins3MapChanges_change_2.bin"
+	.short 0x0EB8
 
 	.global LagdouRuins3MapChanges_change_3
 LagdouRuins3MapChanges_change_3: @0x8a1f40c
-	.incbin "graphics/map/LagdouRuins3MapChanges_change_3.bin"
+	.short 0x0EB8, 0x0FBC
 
 	.global LagdouRuins3MapChanges_change_4
 LagdouRuins3MapChanges_change_4: @0x8a1f410
-	.incbin "graphics/map/LagdouRuins3MapChanges_change_4.bin"
+	.short 0x0C18, 0x0C18, 0x0C18, 0x0000, 0x0E3C, 0x0E3C
 
 	.global LagdouRuins3MapChanges_change_5
 LagdouRuins3MapChanges_change_5: @0x8a1f41c
-	.incbin "graphics/map/LagdouRuins3MapChanges_change_5.bin"
+	.short 0x0D18, 0x0000, 0x0E3C, 0x0FB8
 
 	.global LagdouRuins3MapChanges_change_6
 LagdouRuins3MapChanges_change_6: @0x8a1f424
-	.incbin "graphics/map/LagdouRuins3MapChanges_change_6.bin"
+	.short 0x0004
 
 	.global LagdouRuins3MapChanges_change_7
 LagdouRuins3MapChanges_change_7: @0x8a1f426
-	.incbin "graphics/map/LagdouRuins3MapChanges_change_7.bin"
+	.short 0x0EB8
 
 	.global LagdouRuins3MapChanges_change_8
 LagdouRuins3MapChanges_change_8: @0x8a1f428
-	.incbin "graphics/map/LagdouRuins3MapChanges_change_8.bin"
+	.short 0x0EB8, 0x0FBC
 
 	.global LagdouRuins3MapChanges_change_9
 LagdouRuins3MapChanges_change_9: @0x8a1f42c
-	.incbin "graphics/map/LagdouRuins3MapChanges_change_9.bin"
+	.short 0x0EB8, 0x0FBC
 
 	.global LagdouRuins3MapChanges_change_10
 LagdouRuins3MapChanges_change_10: @0x8a1f430
-	.incbin "graphics/map/LagdouRuins3MapChanges_change_10.bin"
+	.short 0x0EBC
 
 	.global LagdouRuins3MapChanges_change_11
 LagdouRuins3MapChanges_change_11: @0x8a1f432
-	.incbin "graphics/map/LagdouRuins3MapChanges_change_11.bin"
+	.short 0x0004
 
 	.global LagdouRuins3MapChanges_change_12
 LagdouRuins3MapChanges_change_12: @0x8a1f434
-	.incbin "graphics/map/LagdouRuins3MapChanges_change_12.bin"
+	.short 0x0D18, 0x0EB8, 0x0E3C, 0x0FB8
 
 	.align 2, 0
 	.global LagdouRuins3MapChanges
@@ -1013,75 +1094,79 @@ LagdouRuins3MapChanges: @0x8a1f43c
 
 	.global LagdouRuins4MapChanges_change_0
 LagdouRuins4MapChanges_change_0: @0x8a1f4e4
-	.incbin "graphics/map/LagdouRuins4MapChanges_change_0.bin"
+	.short 0x0D18, 0x0000, 0x0650, 0x0000, 0x0E3C, 0x0FBC
 
 	.global LagdouRuins4MapChanges_change_1
 LagdouRuins4MapChanges_change_1: @0x8a1f4f0
-	.incbin "graphics/map/LagdouRuins4MapChanges_change_1.bin"
+	.short 0x0DAC, 0x0EBC, 0x0C20, 0x05D4, 0x0EBC, 0x0D98, 0x0000, 0x0FBC
+	.short 0x0000
 
 	.global LagdouRuins4MapChanges_change_2
 LagdouRuins4MapChanges_change_2: @0x8a1f502
-	.incbin "graphics/map/LagdouRuins4MapChanges_change_2.bin"
+	.short 0x0004
 
 	.global LagdouRuins4MapChanges_change_3
 LagdouRuins4MapChanges_change_3: @0x8a1f504
-	.incbin "graphics/map/LagdouRuins4MapChanges_change_3.bin"
+	.short 0x0004
 
 	.global LagdouRuins4MapChanges_change_4
 LagdouRuins4MapChanges_change_4: @0x8a1f506
-	.incbin "graphics/map/LagdouRuins4MapChanges_change_4.bin"
+	.short 0x0C24, 0x0EBC, 0x05D4, 0x0EBC, 0x0000, 0x0FBC
 
 	.global LagdouRuins4MapChanges_change_5
 LagdouRuins4MapChanges_change_5: @0x8a1f512
-	.incbin "graphics/map/LagdouRuins4MapChanges_change_5.bin"
+	.short 0x0C24, 0x0EBC, 0x0C90, 0x05D4, 0x0EBC, 0x0000, 0x0000, 0x0FBC
+	.short 0x0000
 
 	.global LagdouRuins4MapChanges_change_6
 LagdouRuins4MapChanges_change_6: @0x8a1f524
-	.incbin "graphics/map/LagdouRuins4MapChanges_change_6.bin"
+	.short 0x0C94, 0x0EB8, 0x0000, 0x0EB8, 0x0000, 0x0EB8
 
 	.global LagdouRuins4MapChanges_change_7
 LagdouRuins4MapChanges_change_7: @0x8a1f530
-	.incbin "graphics/map/LagdouRuins4MapChanges_change_7.bin"
+	.short 0x0C24, 0x0EBC, 0x05D4, 0x0EBC, 0x0000, 0x0FBC
 
 	.global LagdouRuins4MapChanges_change_8
 LagdouRuins4MapChanges_change_8: @0x8a1f53c
-	.incbin "graphics/map/LagdouRuins4MapChanges_change_8.bin"
+	.short 0x0C18, 0x0C18, 0x0D9C, 0x0D9C, 0x0E3C, 0x0E3C
 
 	.global LagdouRuins4MapChanges_change_9
 LagdouRuins4MapChanges_change_9: @0x8a1f548
-	.incbin "graphics/map/LagdouRuins4MapChanges_change_9.bin"
+	.short 0x0D18, 0x0000, 0x0654, 0x0000, 0x0E3C, 0x0FBC
 
 	.global LagdouRuins4MapChanges_change_10
 LagdouRuins4MapChanges_change_10: @0x8a1f554
-	.incbin "graphics/map/LagdouRuins4MapChanges_change_10.bin"
+	.short 0x0D18, 0x0000, 0x0654, 0x0000, 0x0E3C, 0x0FBC
 
 	.global LagdouRuins4MapChanges_change_11
 LagdouRuins4MapChanges_change_11: @0x8a1f560
-	.incbin "graphics/map/LagdouRuins4MapChanges_change_11.bin"
+	.short 0x0D18, 0x0000, 0x0654, 0x0000, 0x0E3C, 0x0FBC
 
 	.global LagdouRuins4MapChanges_change_12
 LagdouRuins4MapChanges_change_12: @0x8a1f56c
-	.incbin "graphics/map/LagdouRuins4MapChanges_change_12.bin"
+	.short 0x0C24, 0x0EBC, 0x0C90, 0x05D4, 0x0EBC, 0x0000, 0x0000, 0x0FBC
+	.short 0x0000
 
 	.global LagdouRuins4MapChanges_change_13
 LagdouRuins4MapChanges_change_13: @0x8a1f57e
-	.incbin "graphics/map/LagdouRuins4MapChanges_change_13.bin"
+	.short 0x0EB8, 0x0D18, 0x0EBC, 0x0654, 0x0EC4, 0x0000
 
 	.global LagdouRuins4MapChanges_change_14
 LagdouRuins4MapChanges_change_14: @0x8a1f58a
-	.incbin "graphics/map/LagdouRuins4MapChanges_change_14.bin"
+	.short 0x0DAC, 0x0EBC, 0x0C90, 0x05D4, 0x0EBC, 0x0000, 0x0000, 0x0FBC
+	.short 0x0000
 
 	.global LagdouRuins4MapChanges_change_15
 LagdouRuins4MapChanges_change_15: @0x8a1f59c
-	.incbin "graphics/map/LagdouRuins4MapChanges_change_15.bin"
+	.short 0x0C24, 0x0EBC, 0x05D4, 0x0EBC, 0x0000, 0x0FBC
 
 	.global LagdouRuins4MapChanges_change_16
 LagdouRuins4MapChanges_change_16: @0x8a1f5a8
-	.incbin "graphics/map/LagdouRuins4MapChanges_change_16.bin"
+	.short 0x0C94, 0x0EBC, 0x0000, 0x0EBC, 0x0000, 0x0EB8
 
 	.global LagdouRuins4MapChanges_change_17
 LagdouRuins4MapChanges_change_17: @0x8a1f5b4
-	.incbin "graphics/map/LagdouRuins4MapChanges_change_17.bin"
+	.short 0x0C24, 0x0EBC, 0x05D4, 0x0EBC, 0x0000, 0x0FBC
 
 	.align 2, 0
 	.global LagdouRuins4MapChanges
@@ -1090,23 +1175,23 @@ LagdouRuins4MapChanges: @0x8a1f5c0
 
 	.global LagdouRuins5MapChanges_change_0
 LagdouRuins5MapChanges_change_0: @0x8a1f6a4
-	.incbin "graphics/map/LagdouRuins5MapChanges_change_0.bin"
+	.short 0x0004
 
 	.global LagdouRuins5MapChanges_change_1
 LagdouRuins5MapChanges_change_1: @0x8a1f6a6
-	.incbin "graphics/map/LagdouRuins5MapChanges_change_1.bin"
+	.short 0x0004
 
 	.global LagdouRuins5MapChanges_change_2
 LagdouRuins5MapChanges_change_2: @0x8a1f6a8
-	.incbin "graphics/map/LagdouRuins5MapChanges_change_2.bin"
+	.short 0x0004
 
 	.global LagdouRuins5MapChanges_change_3
 LagdouRuins5MapChanges_change_3: @0x8a1f6aa
-	.incbin "graphics/map/LagdouRuins5MapChanges_change_3.bin"
+	.short 0x0E14, 0x0EBC, 0x0000, 0x0EBC, 0x0000, 0x0EB8
 
 	.global LagdouRuins5MapChanges_change_4
 LagdouRuins5MapChanges_change_4: @0x8a1f6b6
-	.incbin "graphics/map/LagdouRuins5MapChanges_change_4.bin"
+	.short 0x0EB8, 0x0D18, 0x0EB8, 0x0654, 0x0FBC, 0x0000
 
 	.align 2, 0
 	.global LagdouRuins5MapChanges
@@ -1115,15 +1200,15 @@ LagdouRuins5MapChanges: @0x8a1f6c4
 
 	.global LagdouRuins6MapChanges_change_0
 LagdouRuins6MapChanges_change_0: @0x8a1f70c
-	.incbin "graphics/map/LagdouRuins6MapChanges_change_0.bin"
+	.short 0x0D18, 0x0000, 0x0E3C, 0x0FBC
 
 	.global LagdouRuins6MapChanges_change_1
 LagdouRuins6MapChanges_change_1: @0x8a1f714
-	.incbin "graphics/map/LagdouRuins6MapChanges_change_1.bin"
+	.short 0x0EBC, 0x0FBC
 
 	.global LagdouRuins6MapChanges_change_2
 LagdouRuins6MapChanges_change_2: @0x8a1f718
-	.incbin "graphics/map/LagdouRuins6MapChanges_change_2.bin"
+	.short 0x0EBC
 
 	.align 2, 0
 	.global LagdouRuins6MapChanges
@@ -1132,15 +1217,15 @@ LagdouRuins6MapChanges: @0x8a1f71c
 
 	.global LagdouRuins7MapChanges_change_0
 LagdouRuins7MapChanges_change_0: @0x8a1f74c
-	.incbin "graphics/map/LagdouRuins7MapChanges_change_0.bin"
+	.short 0x0004
 
 	.global LagdouRuins7MapChanges_change_1
 LagdouRuins7MapChanges_change_1: @0x8a1f74e
-	.incbin "graphics/map/LagdouRuins7MapChanges_change_1.bin"
+	.short 0x0C18, 0x0C18, 0x0E3C, 0x0E3C
 
 	.global LagdouRuins7MapChanges_change_2
 LagdouRuins7MapChanges_change_2: @0x8a1f756
-	.incbin "graphics/map/LagdouRuins7MapChanges_change_2.bin"
+	.short 0x0C94, 0x0EBC, 0x0C90, 0x0000, 0x0EBC, 0x0000
 
 	.align 2, 0
 	.global LagdouRuins7MapChanges
@@ -1149,59 +1234,62 @@ LagdouRuins7MapChanges: @0x8a1f764
 
 	.global LagdouRuins8MapChanges_change_0
 LagdouRuins8MapChanges_change_0: @0x8a1f794
-	.incbin "graphics/map/LagdouRuins8MapChanges_change_0.bin"
+	.short 0x06CC, 0x025C, 0x06CC, 0x02DC, 0x06CC, 0x02DC
 
 	.global LagdouRuins8MapChanges_change_1
 LagdouRuins8MapChanges_change_1: @0x8a1f7a0
-	.incbin "graphics/map/LagdouRuins8MapChanges_change_1.bin"
+	.short 0x06CC, 0x06CC, 0x0358, 0x06CC, 0x06CC, 0x02DC
 
 	.global LagdouRuins8MapChanges_change_2
 LagdouRuins8MapChanges_change_2: @0x8a1f7ac
-	.incbin "graphics/map/LagdouRuins8MapChanges_change_2.bin"
+	.short 0x06CC, 0x06CC, 0x06CC, 0x06CC, 0x06CC, 0x06CC, 0x02DC, 0x02D8
+	.short 0x02D8, 0x06CC, 0x06CC, 0x0358, 0x02D8, 0x0000
 
 	.global LagdouRuins8MapChanges_change_3
 LagdouRuins8MapChanges_change_3: @0x8a1f7c8
-	.incbin "graphics/map/LagdouRuins8MapChanges_change_3.bin"
+	.short 0x06CC, 0x0358
 
 	.global LagdouRuins8MapChanges_change_4
 LagdouRuins8MapChanges_change_4: @0x8a1f7cc
-	.incbin "graphics/map/LagdouRuins8MapChanges_change_4.bin"
+	.short 0x06CC, 0x06CC, 0x0358, 0x06CC, 0x06CC, 0x02DC, 0x06CC, 0x06CC
+	.short 0x02DC, 0x06CC, 0x06CC, 0x02DC
 
 	.global LagdouRuins8MapChanges_change_5
 LagdouRuins8MapChanges_change_5: @0x8a1f7e4
-	.incbin "graphics/map/LagdouRuins8MapChanges_change_5.bin"
+	.short 0x06CC, 0x06CC, 0x02DC, 0x06CC, 0x06CC, 0x02DC
 
 	.global LagdouRuins8MapChanges_change_6
 LagdouRuins8MapChanges_change_6: @0x8a1f7f0
-	.incbin "graphics/map/LagdouRuins8MapChanges_change_6.bin"
+	.short 0x06CC, 0x06CC, 0x0000
 
 	.global LagdouRuins8MapChanges_change_7
 LagdouRuins8MapChanges_change_7: @0x8a1f7f6
-	.incbin "graphics/map/LagdouRuins8MapChanges_change_7.bin"
+	.short 0x06CC, 0x06CC, 0x06CC, 0x0358, 0x02D8, 0x02D8
 
 	.global LagdouRuins8MapChanges_change_8
 LagdouRuins8MapChanges_change_8: @0x8a1f802
-	.incbin "graphics/map/LagdouRuins8MapChanges_change_8.bin"
+	.short 0x06CC, 0x06CC
 
 	.global LagdouRuins8MapChanges_change_9
 LagdouRuins8MapChanges_change_9: @0x8a1f806
-	.incbin "graphics/map/LagdouRuins8MapChanges_change_9.bin"
+	.short 0x0000, 0x0000, 0x0000, 0x0000, 0x06CC, 0x06CC, 0x06CC, 0x06CC
+	.short 0x06CC, 0x06CC
 
 	.global LagdouRuins8MapChanges_change_10
 LagdouRuins8MapChanges_change_10: @0x8a1f81a
-	.incbin "graphics/map/LagdouRuins8MapChanges_change_10.bin"
+	.short 0x06CC, 0x06CC, 0x0000
 
 	.global LagdouRuins8MapChanges_change_11
 LagdouRuins8MapChanges_change_11: @0x8a1f820
-	.incbin "graphics/map/LagdouRuins8MapChanges_change_11.bin"
+	.short 0x06CC, 0x0000, 0x06CC, 0x02DC
 
 	.global LagdouRuins8MapChanges_change_12
 LagdouRuins8MapChanges_change_12: @0x8a1f828
-	.incbin "graphics/map/LagdouRuins8MapChanges_change_12.bin"
+	.short 0x0004
 
 	.global LagdouRuins8MapChanges_change_13
 LagdouRuins8MapChanges_change_13: @0x8a1f82a
-	.incbin "graphics/map/LagdouRuins8MapChanges_change_13.bin"
+	.short 0x0DB0, 0x0D28
 
 	.align 2, 0
 	.global LagdouRuins8MapChanges
@@ -1210,11 +1298,11 @@ LagdouRuins8MapChanges: @0x8a1f830
 
 	.global LagdouRuins9MapChanges_change_0
 LagdouRuins9MapChanges_change_0: @0x8a1f8e4
-	.incbin "graphics/map/LagdouRuins9MapChanges_change_0.bin"
+	.short 0x0734, 0x0B70, 0x0730
 
 	.global LagdouRuins9MapChanges_change_1
 LagdouRuins9MapChanges_change_1: @0x8a1f8ea
-	.incbin "graphics/map/LagdouRuins9MapChanges_change_1.bin"
+	.short 0x0734, 0x0B70, 0x0730
 
 	.align 2, 0
 	.global LagdouRuins9MapChanges
@@ -1223,7 +1311,7 @@ LagdouRuins9MapChanges: @0x8a1f8f0
 
 	.global LagdouRuins10MapChanges_change_0
 LagdouRuins10MapChanges_change_0: @0x8a1f914
-	.incbin "graphics/map/LagdouRuins10MapChanges_change_0.bin"
+	.short 0x0004
 
 	.align 2, 0
 	.global LagdouRuins10MapChanges
@@ -1242,83 +1330,83 @@ MelkaenCoastMapChanges: @0x8a1f93c
 
 	.global UnusedMapChanges11_change_0
 UnusedMapChanges11_change_0: @0x8a1f948
-	.incbin "graphics/map/UnusedMapChanges11_change_0.bin"
+	.short 0x0810
 
 	.global UnusedMapChanges11_change_1
 UnusedMapChanges11_change_1: @0x8a1f94a
-	.incbin "graphics/map/UnusedMapChanges11_change_1.bin"
+	.short 0x0810
 
 	.global UnusedMapChanges11_change_2
 UnusedMapChanges11_change_2: @0x8a1f94c
-	.incbin "graphics/map/UnusedMapChanges11_change_2.bin"
+	.short 0x0810
 
 	.global UnusedMapChanges11_change_3
 UnusedMapChanges11_change_3: @0x8a1f94e
-	.incbin "graphics/map/UnusedMapChanges11_change_3.bin"
+	.short 0x0810
 
 	.global UnusedMapChanges11_change_4
 UnusedMapChanges11_change_4: @0x8a1f950
-	.incbin "graphics/map/UnusedMapChanges11_change_4.bin"
+	.short 0x0100
 
 	.global UnusedMapChanges11_change_5
 UnusedMapChanges11_change_5: @0x8a1f952
-	.incbin "graphics/map/UnusedMapChanges11_change_5.bin"
+	.short 0x0100
 
 	.global UnusedMapChanges11_change_6
 UnusedMapChanges11_change_6: @0x8a1f954
-	.incbin "graphics/map/UnusedMapChanges11_change_6.bin"
+	.short 0x0100
 
 	.global UnusedMapChanges11_change_7
 UnusedMapChanges11_change_7: @0x8a1f956
-	.incbin "graphics/map/UnusedMapChanges11_change_7.bin"
+	.short 0x0100
 
 	.global UnusedMapChanges11_change_8
 UnusedMapChanges11_change_8: @0x8a1f958
-	.incbin "graphics/map/UnusedMapChanges11_change_8.bin"
+	.short 0x0810
 
 	.global UnusedMapChanges11_change_9
 UnusedMapChanges11_change_9: @0x8a1f95a
-	.incbin "graphics/map/UnusedMapChanges11_change_9.bin"
+	.short 0x0810
 
 	.global UnusedMapChanges11_change_10
 UnusedMapChanges11_change_10: @0x8a1f95c
-	.incbin "graphics/map/UnusedMapChanges11_change_10.bin"
+	.short 0x0810
 
 	.global UnusedMapChanges11_change_11
 UnusedMapChanges11_change_11: @0x8a1f95e
-	.incbin "graphics/map/UnusedMapChanges11_change_11.bin"
+	.short 0x0810
 
 	.global UnusedMapChanges11_change_12
 UnusedMapChanges11_change_12: @0x8a1f960
-	.incbin "graphics/map/UnusedMapChanges11_change_12.bin"
+	.short 0x0100
 
 	.global UnusedMapChanges11_change_13
 UnusedMapChanges11_change_13: @0x8a1f962
-	.incbin "graphics/map/UnusedMapChanges11_change_13.bin"
+	.short 0x0100
 
 	.global UnusedMapChanges11_change_14
 UnusedMapChanges11_change_14: @0x8a1f964
-	.incbin "graphics/map/UnusedMapChanges11_change_14.bin"
+	.short 0x0100
 
 	.global UnusedMapChanges11_change_15
 UnusedMapChanges11_change_15: @0x8a1f966
-	.incbin "graphics/map/UnusedMapChanges11_change_15.bin"
+	.short 0x0100
 
 	.global UnusedMapChanges11_change_16
 UnusedMapChanges11_change_16: @0x8a1f968
-	.incbin "graphics/map/UnusedMapChanges11_change_16.bin"
+	.short 0x0810
 
 	.global UnusedMapChanges11_change_17
 UnusedMapChanges11_change_17: @0x8a1f96a
-	.incbin "graphics/map/UnusedMapChanges11_change_17.bin"
+	.short 0x0810
 
 	.global UnusedMapChanges11_change_18
 UnusedMapChanges11_change_18: @0x8a1f96c
-	.incbin "graphics/map/UnusedMapChanges11_change_18.bin"
+	.short 0x0810
 
 	.global UnusedMapChanges11_change_19
 UnusedMapChanges11_change_19: @0x8a1f96e
-	.incbin "graphics/map/UnusedMapChanges11_change_19.bin"
+	.short 0x0810
 
 	.align 2, 0
 	.global UnusedMapChanges11
@@ -1327,7 +1415,7 @@ UnusedMapChanges11: @0x8a1f970
 
 	.global RenaisThroneMapChanges_change_0
 RenaisThroneMapChanges_change_0: @0x8a1fa6c
-	.incbin "graphics/map/RenaisThroneMapChanges_change_0.bin"
+	.short 0x0C40, 0x0C44
 
 	.align 2, 0
 	.global RenaisThroneMapChanges
@@ -1336,7 +1424,7 @@ RenaisThroneMapChanges: @0x8a1fa70
 
 	.global GradoPrisonMapChanges_change_0
 GradoPrisonMapChanges_change_0: @0x8a1fa88
-	.incbin "graphics/map/GradoPrisonMapChanges_change_0.bin"
+	.short 0x0780, 0x0788, 0x0780, 0x0788
 
 	.align 2, 0
 	.global GradoPrisonMapChanges
@@ -1345,11 +1433,11 @@ GradoPrisonMapChanges: @0x8a1fa90
 
 	.global GradoShrineMapChangesPast_change_0
 GradoShrineMapChangesPast_change_0: @0x8a1faa8
-	.incbin "graphics/map/GradoShrineMapChangesPast_change_0.bin"
+	.short 0x0DE8, 0x0E68
 
 	.global GradoShrineMapChangesPast_change_1
 GradoShrineMapChangesPast_change_1: @0x8a1faac
-	.incbin "graphics/map/GradoShrineMapChangesPast_change_1.bin"
+	.short 0x0DE4, 0x0E64
 
 	.align 2, 0
 	.global GradoShrineMapChangesPast
@@ -1358,7 +1446,7 @@ GradoShrineMapChangesPast: @0x8a1fab0
 
 	.global RenaisShrineMapChanges_change_0
 RenaisShrineMapChanges_change_0: @0x8a1fad4
-	.incbin "graphics/map/RenaisShrineMapChanges_change_0.bin"
+	.short 0x0B40, 0x0B44, 0x0B44
 
 	.align 2, 0
 	.global RenaisShrineMapChanges
