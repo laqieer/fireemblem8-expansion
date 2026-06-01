@@ -51,24 +51,92 @@ gUnknown_08AA70BC:  @ 0x08AA70BC
 
 	.global gUnknown_08AA70DC
 gUnknown_08AA70DC:  @ 0x08AA70DC
-	.incbin "graphics/misc/gUnknown_08AA70DC.bin"
+	@ 2 OAM objects (PutSpriteExt object list)
+	.2byte 2
+	.2byte 0x0000, 0xC000, 0x03C0  @ obj 0
+	.2byte 0x8000, 0xC040, 0x03C0  @ obj 1
+.L_end_gUnknown_08AA70DC:
+	.if (.L_end_gUnknown_08AA70DC - gUnknown_08AA70DC) != 14
+	.error "gUnknown_08AA70DC size mismatch"
+	.endif
 
 	.global gUnknown_08AA70EA
 gUnknown_08AA70EA:  @ 0x08AA70EA
-	.incbin "graphics/misc/gUnknown_08AA70EA.bin"
+	@ 7 OAM objects (PutSpriteExt object list)
+	.2byte 7
+	.2byte 0x4000, 0xC000, 0x03C0  @ obj 0
+	.2byte 0x0000, 0x8040, 0x03C0  @ obj 1
+	.2byte 0x8000, 0x8060, 0x03C0  @ obj 2
+	.2byte 0x4020, 0x8000, 0x03C0  @ obj 3
+	.2byte 0x4020, 0x8020, 0x03C0  @ obj 4
+	.2byte 0x4020, 0x8040, 0x03C0  @ obj 5
+	.2byte 0x0020, 0x4060, 0x03C0  @ obj 6
+.L_end_gUnknown_08AA70EA:
+	.if (.L_end_gUnknown_08AA70EA - gUnknown_08AA70EA) != 44
+	.error "gUnknown_08AA70EA size mismatch"
+	.endif
 
 	.global gUnknown_08AA7116
 gUnknown_08AA7116:  @ 0x08AA7116
-	.incbin "graphics/misc/gUnknown_08AA7116.bin"
+	@ 3 OAM objects (PutSpriteExt object list)
+	.2byte 3
+	.2byte 0x0000, 0xC000, 0x03C0  @ obj 0
+	.2byte 0x4040, 0x8000, 0x03C0  @ obj 1
+	.2byte 0x4040, 0x8020, 0x03C0  @ obj 2
+.L_end_gUnknown_08AA7116:
+	.if (.L_end_gUnknown_08AA7116 - gUnknown_08AA7116) != 20
+	.error "gUnknown_08AA7116 size mismatch"
+	.endif
 
 	.global gUnknown_08AA712A
 gUnknown_08AA712A:  @ 0x08AA712A
-	.incbin "graphics/misc/gUnknown_08AA712A.bin"
+	@ 8 OAM objects (PutSpriteExt object list)
+	.2byte 8
+	.2byte 0x8000, 0xC000, 0x03C0  @ obj 0
+	.2byte 0x8000, 0x8020, 0x03C0  @ obj 1
+	.2byte 0x8020, 0x8020, 0x03C0  @ obj 2
+	.2byte 0x8000, 0x4030, 0x03C0  @ obj 3
+	.2byte 0x8020, 0x4030, 0x03C0  @ obj 4
+	.2byte 0x4040, 0x8000, 0x03C0  @ obj 5
+	.2byte 0x0040, 0x4020, 0x03C0  @ obj 6
+	.2byte 0x8040, 0x0030, 0x03C0  @ obj 7
+.L_end_gUnknown_08AA712A:
+	.if (.L_end_gUnknown_08AA712A - gUnknown_08AA712A) != 50
+	.error "gUnknown_08AA712A size mismatch"
+	.endif
 
 	.global gUnknown_08AA715C
 gUnknown_08AA715C:  @ 0x08AA715C
-	.incbin "graphics/misc/gUnknown_08AA715C.bin"
+	@ 9 OAM objects (PutSpriteExt object list)
+	.2byte 9
+	.2byte 0x4000, 0xC000, 0x03C0  @ obj 0
+	.2byte 0x4000, 0xC040, 0x03C0  @ obj 1
+	.2byte 0x4000, 0xC080, 0x03C0  @ obj 2
+	.2byte 0x4020, 0x8000, 0x03C0  @ obj 3
+	.2byte 0x4020, 0x8020, 0x03C0  @ obj 4
+	.2byte 0x4020, 0x8040, 0x03C0  @ obj 5
+	.2byte 0x4020, 0x8060, 0x03C0  @ obj 6
+	.2byte 0x4020, 0x8080, 0x03C0  @ obj 7
+	.2byte 0x4020, 0x80A0, 0x03C0  @ obj 8
+.L_end_gUnknown_08AA715C:
+	.if (.L_end_gUnknown_08AA715C - gUnknown_08AA715C) != 56
+	.error "gUnknown_08AA715C size mismatch"
+	.endif
 
 	.global gUnknown_08AA7194
 gUnknown_08AA7194:  @ 0x08AA7194
-	.incbin "graphics/misc/gUnknown_08AA7194.bin"
+	@ 8 OAM objects (PutSpriteExt object list)
+	.2byte 8
+	.2byte 0x0000, 0xC000, 0x03C0  @ obj 0
+	.2byte 0x8000, 0xC040, 0x03C0  @ obj 1
+	.2byte 0x8000, 0x8060, 0x03C0  @ obj 2
+	.2byte 0x8020, 0x8060, 0x03C0  @ obj 3
+	.2byte 0x4040, 0x8000, 0x03C0  @ obj 4
+	.2byte 0x4040, 0x8020, 0x03C0  @ obj 5
+	.2byte 0x4040, 0x8040, 0x03C0  @ obj 6
+	.2byte 0x0040, 0x4060, 0x03C0  @ obj 7
+	.2byte 0x0000  @ pad
+.L_end_gUnknown_08AA7194:
+	.if (.L_end_gUnknown_08AA7194 - gUnknown_08AA7194) != 52
+	.error "gUnknown_08AA7194 size mismatch"
+	.endif
