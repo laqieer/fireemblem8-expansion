@@ -38,8 +38,9 @@ incbin.
   tilemap** (1204 B, tiles based at char `0x260` — exactly where
   `Img_CharacterEndingMenu` is decompressed, `ending_details.c:391`) + a **2x16
   RGB15 palette** (64 B). Not referenced by any symbol or pointer (dead data).
-  Extracted to `gUnknown_08A3F21C.tsa` (raw incbin) + inline `.2byte` palette
-  (`gUnknown_08A3F6D0`); the opaque `.bin` is eliminated.
+  Extracted to `gUnknown_08A3F21C.tsa` (raw incbin) + a JASC `.pal` palette (`Pal_08A3F6D0.pal`; gbagfx regenerates the `.gbapal`
+  byte-identically -- all colors have bit 15 clear); the opaque `.bin` is
+  eliminated.
 
 ## Wave 0 harness findings
 
@@ -105,8 +106,9 @@ cannot round-trip". That was wrong. Verified against `baserom.gba`:
   BG TSA tilemap (1204 B, tiles based at char `0x260`, matching the
   `Img_CharacterEndingMenu` decompress target in `ending_details.c:391`) followed
   by a 2x16 RGB15 palette (64 B). Not referenced by any symbol or pointer.
-  Split into `gUnknown_08A3F21C.tsa` (raw incbin) + inline `.2byte` palette
-  (`gUnknown_08A3F6D0`); the opaque `.bin` is eliminated.
+  Split into `gUnknown_08A3F21C.tsa` (raw incbin) + a JASC `.pal` palette (`Pal_08A3F6D0.pal`; gbagfx regenerates the `.gbapal`
+  byte-identically -- all colors have bit 15 clear); the opaque `.bin` is
+  eliminated.
 
 The `0x1D` byte is data content in both cases — there is no "FE-LZ variant", and
 `gbagfx` handles the actually-compressed blob fine.
