@@ -46,7 +46,7 @@ gUnknown_08A360E8:  @ 0x08A360E8
 
 	.global gUnknown_08A36284
 gUnknown_08A36284:  @ 0x08A36284
-	.incbin "graphics/misc/gUnknown_08A36284.bin.lz"
+	.incbin "graphics/misc/gUnknown_08A36284.tsa.lz"
 
 	.global gUnknown_08A36318
 gUnknown_08A36318:  @ 0x08A36318

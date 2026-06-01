@@ -34,7 +34,8 @@ incbin.
 - `gUnknown_089AD498` (104 B) — colour-table data near map-anim special effects;
   bytes are small RGB15-like `u16`s; classify as palette/colour table on inspection.
 - `gUnknown_08A3F21C` (1268 B) — anonymous block heading the credits/character-
-  ending asset region; no label or reference. **Deferred** (Wave 7).
+  ending asset region; no label or reference. Stored **raw/uncompressed** in the
+  ROM (byte-exact as raw `.bin`); TSA-like `u16` table, left raw pending typing.
 
 ## Wave 0 harness findings
 
@@ -75,26 +76,40 @@ incbin.
 | 4 | AP animation defs | 29 | labeled assembly via `apdump.py` (5 full, 16 + documented tail, 8 flat) |
 | 5 | banim u32 scripts | 2 | in-place inline `.4byte` |
 | 5 | banim tilemap (efxlvupfx) | 1 | renamed `.bin` → `.tsa`, incbin `.bin.lz` → `.tsa.lz` |
+| 7 | TSA (opinfo FillTileRect) | 1 | `gUnknown_08A36284`: renamed `.bin` → `.tsa`, incbin `.bin.lz` → `.tsa.lz` |
 
 Every in-place conversion carries a `.if (.L_end - LABEL) != SIZE / .error` size
 assertion and passed the standalone assemble-and-`cmp` gate
 (`scripts/verify_blob_extraction.py`).
 
-## Deferred (3) — byte-exact typed extraction not achievable with current tooling
+### Correction (Wave 7 re-investigation): `0x1D` is **not** an FE-LZ header
 
-1. **`graphics/misc/gUnknown_08A36284.bin`** (182 B, `Decompress()` in opinfo.c)
-   and **`graphics/misc/gUnknown_08A3F21C.bin`** (1268 B, label-less block in the
-   character-ending-menu region). Both begin with an **FE-format compression
-   header whose first byte is `0x1D`** (high nibble 1 ⇒ the engine's `Decompress`
-   dispatches to `LZ77UnCompVram`/`Wram`, but the reserved low nibble is non-zero).
-   `gbagfx` rejects these streams ("Fatal error while decompressing LZ file"), so
-   they cannot be decompressed to an editable asset and recompressed
-   byte-identically. The committed **raw compressed `.bin`** (incbin'd directly,
-   decompressed by the game at runtime) is the only byte-exact source form until a
-   matching FE-LZ (de)compressor exists. Deferred per the byte-exact-or-defer
-   guardrail.
+An earlier draft of this report mis-classified `gUnknown_08A36284` and
+`gUnknown_08A3F21C` as "FE-format LZ streams with a `0x1D` header that gbagfx
+cannot round-trip". That was wrong. Verified against `baserom.gba`:
 
-2. **`data/fe6sio_payload.bin`** (34956 B) — a complete ARM multiboot program
+- **`gUnknown_08A36284`** (182 B): the committed `.bin` is the **decompressed**
+  TSA, whose *content* happens to start with `1d 02 …`. In the ROM it is a
+  perfectly standard LZ77 stream (header `10 b6 00 00`, type 1, size `0xB6`=182).
+  `gbagfx` recompresses the `.bin` to the **exact 148-byte ROM stream** (verified
+  byte-identical). It is used by `CallARM_FillTileRect` (a TSA consumer), so it is
+  now extracted as `gUnknown_08A36284.tsa` + incbin `.tsa.lz` (Wave 7), matching
+  the Wave 2/5 convention. **No longer deferred.**
+
+- **`gUnknown_08A3F21C`** (1268 B): stored **raw/uncompressed** in the ROM (the
+  committed `.bin` equals the ROM bytes exactly — *not* compressed at all). The
+  `1d 13 …` is raw `u16` data (a TSA-like incrementing tile-index table). It is
+  label-less and not referenced by any direct pointer (accessed via computed
+  offset), so its exact dimensions/consumer are unconfirmed. It is already in
+  byte-exact source form (raw incbin); left as raw `.bin` pending confident typing
+  rather than mislabeling it `.tsa`.
+
+The `0x1D` byte is data content in both cases — there is no "FE-LZ variant", and
+`gbagfx` handles the actually-compressed blob fine.
+
+## Deferred (1) — extraction is a separate decompilation effort
+
+1. **`data/fe6sio_payload.bin`** (34956 B) — a complete ARM multiboot program
    (FE6 link/SIO), already committed in the project's sanctioned form: the
    decompressed image is incbin'd as `data/fe6sio_payload.bin.lz` (recompressed by
    the build via the `%.lz` rule). Further "extraction" would mean disassembling a
