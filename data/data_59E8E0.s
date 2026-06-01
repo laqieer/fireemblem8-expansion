@@ -114,11 +114,11 @@ Img_PhaseChangeSquares:  @ 0x085A06D8
 
 	.global gUnknown_085A0838
 gUnknown_085A0838:  @ 0x085A0838
-	.incbin "graphics/misc/gUnknown_085A0838.bin"
+	.incbin "graphics/misc/gUnknown_085A0838.tsa"
 
 	.global gUnknown_085A08F0
 gUnknown_085A08F0:  @ 0x085A08F0
-	.incbin "graphics/misc/gUnknown_085A08F0.bin"
+	.incbin "graphics/misc/gUnknown_085A08F0.tsa"
 
 	.global gTSA_BattleForecastStandard
 gTSA_BattleForecastStandard:  @ 0x085A09A8
@@ -138,7 +138,7 @@ gBattleForecast_x2x4Pal:  @ 0x085A0D2C
 
 	.global gUnknown_085A0D4C
 gUnknown_085A0D4C:  @ 0x085A0D4C
-	.incbin "graphics/misc/gUnknown_085A0D4C.bin"
+	.incbin "graphics/misc/gUnknown_085A0D4C.tsa"
 
 	.global gUnknown_085A0EA0
 gUnknown_085A0EA0:  @ 0x085A0EA0

@@ -985,23 +985,23 @@ gUnknown_08A98BF8:  @ 0x08A98BF8
 
 	.global gUnknown_08A98CFC
 gUnknown_08A98CFC:  @ 0x08A98CFC
-	.incbin "graphics/misc/gUnknown_08A98CFC.bin"
+	.incbin "graphics/misc/gUnknown_08A98CFC.tsa"
 
 	.global gUnknown_08A98D58
 gUnknown_08A98D58:  @ 0x08A98D58
-	.incbin "graphics/misc/gUnknown_08A98D58.bin"
+	.incbin "graphics/misc/gUnknown_08A98D58.tsa"
 
 	.global gUnknown_08A98D88
 gUnknown_08A98D88:  @ 0x08A98D88
-	.incbin "graphics/misc/gUnknown_08A98D88.bin"
+	.incbin "graphics/misc/gUnknown_08A98D88.tsa"
 
 	.global gUnknown_08A98DA0
 gUnknown_08A98DA0:  @ 0x08A98DA0
-	.incbin "graphics/misc/gUnknown_08A98DA0.bin"
+	.incbin "graphics/misc/gUnknown_08A98DA0.tsa"
 
 	.global gUnknown_08A98DB8
 gUnknown_08A98DB8:  @ 0x08A98DB8
-	.incbin "graphics/misc/gUnknown_08A98DB8.bin"
+	.incbin "graphics/misc/gUnknown_08A98DB8.tsa"
 
 	.global gUnknown_08A98DCC
 gUnknown_08A98DCC:  @ 0x08A98DCC
@@ -1025,11 +1025,11 @@ gUnknown_08A98E8C:  @ 0x08A98E8C
 
 	.global gUnknown_08A98EAC
 gUnknown_08A98EAC:  @ 0x08A98EAC
-	.incbin "graphics/misc/gUnknown_08A98EAC.bin"
+	.incbin "graphics/misc/gUnknown_08A98EAC.tsa"
 
 	.global gUnknown_08A98F30
 gUnknown_08A98F30:  @ 0x08A98F30
-	.incbin "graphics/misc/gUnknown_08A98F30.bin"
+	.incbin "graphics/misc/gUnknown_08A98F30.tsa"
 
 	.global gGfx_GMapPI_LevelNums
 gGfx_GMapPI_LevelNums:  @ 0x08A9901C
@@ -1157,7 +1157,7 @@ Pal_WorldmapMinimap:  @ 0x08AA188C
 
 	.global gUnknown_08AA18AC
 gUnknown_08AA18AC:  @ 0x08AA18AC
-	.incbin "graphics/misc/gUnknown_08AA18AC.bin"
+	.incbin "graphics/misc/gUnknown_08AA18AC.tsa"
 
 	.global gUnknown_08AA1930
 gUnknown_08AA1930:  @ 0x08AA1930
