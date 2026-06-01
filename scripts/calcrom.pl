@@ -16,13 +16,14 @@ my $dataBanim = 0;
 
 while (my $line = <$file>)
 {
-    if ($line =~ /^ \.(\w+)\s+0x[0-9a-f]+\s+(0x[0-9a-f]+) (\w+)\/.+\.o/)
+    if ($line =~ /^ \.(\w+)\s+0x[0-9a-f]+\s+(0x[0-9a-f]+) (\S+\.o)/)
     {
         my $section = $1;
         my $size = hex($2);
-        my $dir = $3;
+        my $path = $3;
+        my ($dir) = $path =~ m{^(\w+)/};
 
-        if ($section =~ /text/)
+        if ($section eq 'text')
         {
             if ($dir eq 'src')
             {
@@ -33,29 +34,26 @@ while (my $line = <$file>)
                 $asm += $size;
             }
         }
-        elsif ($section =~ /rodata/)
+        # Data progress tracks both .rodata and .data. Earlier versions only
+        # counted .rodata, which ignored CONST_DATA / SECTION(".data") that is
+        # decompiled into src (credited below) and the large raw blobs still
+        # incbin'd from data/ (counted as remaining) -- understating how much
+        # data is left, so the reported percentage did not reflect reality.
+        elsif ($section eq 'rodata' or $section eq 'data')
         {
-            if ($dir eq 'src')
+            # data/banim is a self-contained compressed subsystem reported on
+            # its own line; keep it out of the src-vs-data split.
+            if ($path =~ m{^data/banim/})
+            {
+                $dataBanim += $size;
+            }
+            elsif ($dir eq 'src')
             {
                 $srcdata += $size;
             }
             elsif ($dir eq 'data')
             {
                 $data += $size;
-            }
-        }
-    }
-    if ($line =~ /^ \.(\w+)\s+0x[0-9a-f]+\s+(0x[0-9a-f]+) data\/(\w+)\/.+\.o/)
-    {
-        my $section = $1;
-        my $size = hex($2);
-        my $dir = $3;
-
-        if ($section =~ /data/)
-        {
-            if ($dir eq 'banim')
-            {
-                $dataBanim += $size;
             }
         }
     }
