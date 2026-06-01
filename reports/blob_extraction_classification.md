@@ -59,3 +59,44 @@ incbin.
 3. In-assembly `.if size != EXPECTED / .error` guard present.
 4. `make -j$(nproc) compare` → `fireemblem8.gba: OK`.
 5. Map-address diff: converted label and the next symbol unchanged.
+
+## Wave outcomes (final)
+
+83 of the 86 blobs were converted to typed/structured source; all builds verified
+`make -j16 compare` → `fireemblem8.gba: OK`.
+
+| Wave | Group | Count | Form |
+|---|---|---|---|
+| 1 | TSA (Tsa_GameOverFx) | 1 | renamed `.bin` → `.tsa` (raw incbin) |
+| 1 | color/palette tables | 5 | in-place inline `.2byte` (`.pal` not byte-exact; `.gbapal` wiped by clean) |
+| 2 | fill-rect tilemaps | 11 | renamed `.bin` → `.tsa` (raw incbin) |
+| 3 | OAM object lists | 6 | in-place structured `.2byte` (count + OAM attrs) |
+| 3 | worldmap path gfx | 28 | in-place structured `.byte`/`.2byte` (rects + tiles + 0xFF) |
+| 4 | AP animation defs | 29 | labeled assembly via `apdump.py` (5 full, 16 + documented tail, 8 flat) |
+| 5 | banim u32 scripts | 2 | in-place inline `.4byte` |
+| 5 | banim tilemap (efxlvupfx) | 1 | renamed `.bin` → `.tsa`, incbin `.bin.lz` → `.tsa.lz` |
+
+Every in-place conversion carries a `.if (.L_end - LABEL) != SIZE / .error` size
+assertion and passed the standalone assemble-and-`cmp` gate
+(`scripts/verify_blob_extraction.py`).
+
+## Deferred (3) — byte-exact typed extraction not achievable with current tooling
+
+1. **`graphics/misc/gUnknown_08A36284.bin`** (182 B, `Decompress()` in opinfo.c)
+   and **`graphics/misc/gUnknown_08A3F21C.bin`** (1268 B, label-less block in the
+   character-ending-menu region). Both begin with an **FE-format compression
+   header whose first byte is `0x1D`** (high nibble 1 ⇒ the engine's `Decompress`
+   dispatches to `LZ77UnCompVram`/`Wram`, but the reserved low nibble is non-zero).
+   `gbagfx` rejects these streams ("Fatal error while decompressing LZ file"), so
+   they cannot be decompressed to an editable asset and recompressed
+   byte-identically. The committed **raw compressed `.bin`** (incbin'd directly,
+   decompressed by the game at runtime) is the only byte-exact source form until a
+   matching FE-LZ (de)compressor exists. Deferred per the byte-exact-or-defer
+   guardrail.
+
+2. **`data/fe6sio_payload.bin`** (34956 B) — a complete ARM multiboot program
+   (FE6 link/SIO), already committed in the project's sanctioned form: the
+   decompressed image is incbin'd as `data/fe6sio_payload.bin.lz` (recompressed by
+   the build via the `%.lz` rule). Further "extraction" would mean disassembling a
+   35 KB standalone ARM program — a separate decompilation effort — and is
+   deferred per user direction (feasibility-only).
