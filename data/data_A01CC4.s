@@ -175,7 +175,16 @@ gUnknown_08A07BEA:  @ 0x08A07BEA
 
 	.global gUnknown_08A07C0A
 gUnknown_08A07C0A:  @ 0x08A07C0A
-	.incbin "graphics/misc/gUnknown_08A07C0A.bin"
+	@ RGB15 color/palette table (39 u16 entries, 78 bytes)
+	.2byte 0x39F3, 0x0443, 0x3E11, 0x52D7, 0x4A98, 0x290A, 0x5F3D, 0x520E
+	.2byte 0x677D, 0x296A, 0x31AC, 0x39EE, 0x4230, 0x4A52, 0x5294, 0x5AD6
+	.2byte 0x6318, 0x2109, 0x3E11, 0x52D7, 0x5AD6, 0x212A, 0x6F7B, 0x520E
+	.2byte 0x52D8, 0x0CA3, 0x10C4, 0x1906, 0x2148, 0x296A, 0x31AC, 0x39CE
+	.2byte 0x4210, 0x0443, 0x3E11, 0x52D7, 0x5AD6, 0x212A, 0x6F7B
+.L_end_gUnknown_08A07C0A:
+	.if (.L_end_gUnknown_08A07C0A - gUnknown_08A07C0A) != 78
+	.error "gUnknown_08A07C0A size mismatch"
+	.endif
 
 	.global gPal_08A07C58
 gPal_08A07C58:  @ 0x08A07C58
@@ -215,4 +224,4 @@ Pal_GameOverText1:  @ 0x08A0AE64
 
 	.global Tsa_GameOverFx
 Tsa_GameOverFx:  @ 0x08A0AE84
-	.incbin "graphics/misc/gUnknown_08A0AE84.bin"
+	.incbin "graphics/misc/Tsa_GameOverFx.tsa"
