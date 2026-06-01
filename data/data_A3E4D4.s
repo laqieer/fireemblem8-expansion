@@ -1,6 +1,21 @@
     .section .data
 
-	.incbin "graphics/misc/gUnknown_08A3F21C.bin"
+@ Unused/leftover Character Ending Menu background data (not referenced by any
+@ symbol or pointer). Splits into a 30x20 BG tilemap whose tiles are based at
+@ char 0x260 -- where Img_CharacterEndingMenu is decompressed (ending_details.c)
+@ -- followed by a 2x16 RGB15 palette.
+gUnknown_08A3F21C:  @ 0x08A3F21C
+	.incbin "graphics/misc/gUnknown_08A3F21C.tsa"
+@ 2x16 RGB15 palette (32 u16 entries, 64 bytes)
+gUnknown_08A3F6D0:  @ 0x08A3F6D0
+	.2byte 0x0000, 0x2FF8, 0x3BD5, 0x3F93, 0x1564, 0x274E, 0x2F0F, 0x3BB1
+	.2byte 0x26CC, 0x3710, 0x1A6A, 0x15A5, 0x32ED, 0x1A0A, 0x1ECB, 0x47FC
+	.2byte 0x0000, 0x06AE, 0x128B, 0x1649, 0x0020, 0x0204, 0x05C5, 0x1267
+	.2byte 0x0182, 0x0DC6, 0x0120, 0x0060, 0x09A3, 0x00C0, 0x0181, 0x1EB2
+.L_end_gUnknown_08A3F6D0:
+	.if (.L_end_gUnknown_08A3F6D0 - gUnknown_08A3F6D0) != 64
+	.error "gUnknown_08A3F6D0 size mismatch"
+	.endif
 
 	.global Pal_CharacterEndingMenu
 Pal_CharacterEndingMenu:  @ 0x08A3F710

@@ -33,9 +33,13 @@ incbin.
   to `.tsa` (Wave 1/2).
 - `gUnknown_089AD498` (104 B) — colour-table data near map-anim special effects;
   bytes are small RGB15-like `u16`s; classify as palette/colour table on inspection.
-- `gUnknown_08A3F21C` (1268 B) — anonymous block heading the credits/character-
-  ending asset region; no label or reference. Stored **raw/uncompressed** in the
-  ROM (byte-exact as raw `.bin`); TSA-like `u16` table, left raw pending typing.
+- `gUnknown_08A3F21C` (1268 B) — **identified (Wave 7)**: unused/leftover Character
+  Ending Menu background. Stored raw/uncompressed; splits into a 30x20 BG **TSA
+  tilemap** (1204 B, tiles based at char `0x260` — exactly where
+  `Img_CharacterEndingMenu` is decompressed, `ending_details.c:391`) + a **2x16
+  RGB15 palette** (64 B). Not referenced by any symbol or pointer (dead data).
+  Extracted to `gUnknown_08A3F21C.tsa` (raw incbin) + inline `.2byte` palette
+  (`gUnknown_08A3F6D0`); the opaque `.bin` is eliminated.
 
 ## Wave 0 harness findings
 
@@ -96,13 +100,13 @@ cannot round-trip". That was wrong. Verified against `baserom.gba`:
   now extracted as `gUnknown_08A36284.tsa` + incbin `.tsa.lz` (Wave 7), matching
   the Wave 2/5 convention. **No longer deferred.**
 
-- **`gUnknown_08A3F21C`** (1268 B): stored **raw/uncompressed** in the ROM (the
-  committed `.bin` equals the ROM bytes exactly — *not* compressed at all). The
-  `1d 13 …` is raw `u16` data (a TSA-like incrementing tile-index table). It is
-  label-less and not referenced by any direct pointer (accessed via computed
-  offset), so its exact dimensions/consumer are unconfirmed. It is already in
-  byte-exact source form (raw incbin); left as raw `.bin` pending confident typing
-  rather than mislabeling it `.tsa`.
+- **`gUnknown_08A3F21C`** (1268 B): stored **raw/uncompressed** in the ROM. Now
+  identified as unused/leftover **Character Ending Menu** background data: a 30x20
+  BG TSA tilemap (1204 B, tiles based at char `0x260`, matching the
+  `Img_CharacterEndingMenu` decompress target in `ending_details.c:391`) followed
+  by a 2x16 RGB15 palette (64 B). Not referenced by any symbol or pointer.
+  Split into `gUnknown_08A3F21C.tsa` (raw incbin) + inline `.2byte` palette
+  (`gUnknown_08A3F6D0`); the opaque `.bin` is eliminated.
 
 The `0x1D` byte is data content in both cases — there is no "FE-LZ variant", and
 `gbagfx` handles the actually-compressed blob fine.
