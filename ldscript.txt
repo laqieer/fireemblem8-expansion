@@ -1044,7 +1044,7 @@ SECTIONS
         . = ALIGN(4); src/bmreliance-data.o(.data);
         . = ALIGN(4); src/data_debug_creditinfo.o(.data);
         . = ALIGN(4); src/chapterdata.o(.data);
-        . = ALIGN(4); data/data_8B363C.o(.data);
+        . = ALIGN(4); src/data/data_8B363C.o(.data);
         . = ALIGN(4); src/events_udefs.o(.data);
         . = ALIGN(4); src/monstergen_data.o(.data);
         . = ALIGN(4); src/data/data_bg.o(.data);
