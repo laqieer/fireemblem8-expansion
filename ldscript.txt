@@ -1087,7 +1087,7 @@ SECTIONS
         . = ALIGN(4); src/player_interface.o(.data);
         . = ALIGN(4); src/uichapterstatus.o(.data);
         . = ALIGN(4); src/cgtext.o(.data);
-        . = ALIGN(4); data/data_A01CC4.o(.data);
+        . = ALIGN(4); src/data/data_A01CC4.o(.data);
         . = ALIGN(4); src/data/data_chap_title.o(.data);
         . = ALIGN(4); src/data/data_A167C8.o(.data);
         . = ALIGN(4); src/unitlistscreen.o(.data);
@@ -1107,7 +1107,7 @@ SECTIONS
         . = ALIGN(4); src/prep_wm_sell.o(.data);
         . = ALIGN(4); src/prep_80A0760.o(.data);
         . = ALIGN(4); src/uisupport.o(.data);
-        . = ALIGN(4); data/data_A195B0.o(.data);
+        . = ALIGN(4); src/data/data_A195B0.o(.data);
         . = ALIGN(4); data/data_map_change.o(.data);
         . = ALIGN(4); src/bmsave-lib.o(.data);
         . = ALIGN(4); src/bmsave-multiarena.o(.data);
