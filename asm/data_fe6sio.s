@@ -11,7 +11,7 @@
     b FE6SIO_Init
 
 FE6_RomHeader: @ 0xB1A0BC
-    .include "src/fe6_rom_header.s"
+    .include "src/data/fe6_rom_header.inc"
 
 FE6SIO_Init: @ 08B1A178
     b _reset
