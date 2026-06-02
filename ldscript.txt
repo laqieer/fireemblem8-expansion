@@ -622,7 +622,7 @@ SECTIONS
         . = ALIGN(4); src/main.o(.rodata);
         . = ALIGN(4); src/rng.o(.rodata);
         . = ALIGN(4); src/hardware.o(.rodata);
-        . = ALIGN(4); data/trig_rodata.o(.rodata);
+        . = ALIGN(4); src/data/trig_rodata.o(.rodata);
         . = ALIGN(4); src/fontgrp.o(.rodata);
         . = ALIGN(4); src/face.o(.rodata);
         . = ALIGN(4); src/scene.o(.rodata);
@@ -747,7 +747,7 @@ SECTIONS
         . = ALIGN(4); src/banim-efxskill.o(.rodata);
         . = ALIGN(4); src/banim-efxop.o(.rodata);
         . = ALIGN(4); src/banim-ekrdragon-utils.o(.rodata);
-        . = ALIGN(4); data/const_data_banimekrdk.o(.rodata);
+        . = ALIGN(4); src/data/const_data_banimekrdk.o(.rodata);
         . = ALIGN(4); src/banim-efxutils.o(.rodata);
         . = ALIGN(4); src/banim-efxsound.o(.rodata);
         . = ALIGN(4); src/banim-ekrclasschg.o(.rodata);
@@ -760,8 +760,8 @@ SECTIONS
         . = ALIGN(4); src/banim-ekrdragon-demonking.o(.rodata);
         . = ALIGN(4); src/banim-ekrdragon-demonkingobj.o(.rodata);
         . = ALIGN(4); src/msg_data.o(.rodata);
-        . = ALIGN(4); data/const_data_chapter_maps.o(.rodata);
-        . = ALIGN(4); data/const_data_unit_icon_wait.o(.rodata);
+        . = ALIGN(4); src/data/const_data_chapter_maps.o(.rodata);
+        . = ALIGN(4); src/data/const_data_unit_icon_wait.o(.rodata);
         . = ALIGN(4); src/data/const_data_1C0AFC.o(.rodata);
         . = ALIGN(4); src/data_debugpinfo.o(.rodata);
         . = ALIGN(4); src/data_debug_creditinfo.o(.rodata);
@@ -963,7 +963,7 @@ SECTIONS
         . = ALIGN(4); data/banim-ekrmainminifx.o(.data);
         . = ALIGN(4); data/banim-efxhitfx.o(.data);
         . = ALIGN(4); data/banim-efxlvupobj.o(.data);
-        . = ALIGN(4); data/banim-ekrskill.o(.data);
+        . = ALIGN(4); src/data/banim-ekrskill.o(.data);
         . = ALIGN(4); data/banim-efxhitobj.o(.data);
         . = ALIGN(4); data/banim-ekrbattleintro.o(.data);
         . = ALIGN(4); src/banim-efxmagic.o(.data);
@@ -1024,14 +1024,14 @@ SECTIONS
         . = ALIGN(4); src/banim-ekrhensei.o(.data);
         . = ALIGN(4); data/banim-ekrdragonfx.o(.data);
         . = ALIGN(4); src/banim-ekrdragon-demonking.o(.data);
-        . = ALIGN(4); data/data-ekrdk.o(.data);
+        . = ALIGN(4); src/data/data-ekrdk.o(.data);
         . = ALIGN(4); src/banim-ekrdragon-demonkingobj.o(.data);
-        . = ALIGN(4); data/data-banimmisc.o(.data);
+        . = ALIGN(4); src/data/data-banimmisc.o(.data);
         . = ALIGN(4); src/data_characters.o(.data);
         . = ALIGN(4); src/data_classes.o(.data);
         . = ALIGN(4); src/data_items.o(.data);
         . = ALIGN(4); src/data_terrains.o(.data);
-        . = ALIGN(4); data/data_portrait.o(.data);
+        . = ALIGN(4); src/data/data_portrait.o(.data);
         . = ALIGN(4); src/portrait_data.o(.data);
         . = ALIGN(4); src/data_itemuse.o(.data);
         . = ALIGN(4); src/data_debugpinfo.o(.data);
@@ -1047,7 +1047,7 @@ SECTIONS
         . = ALIGN(4); data/data_8B363C.o(.data);
         . = ALIGN(4); src/events_udefs.o(.data);
         . = ALIGN(4); src/monstergen_data.o(.data);
-        . = ALIGN(4); data/data_bg.o(.data);
+        . = ALIGN(4); src/data/data_bg.o(.data);
         . = ALIGN(4); src/eventscr2.o(.data);
         . = ALIGN(4); src/classchg-data.o(.data);
         . = ALIGN(4); data/data_map_anim_frames.o(.data);
@@ -1088,7 +1088,7 @@ SECTIONS
         . = ALIGN(4); src/uichapterstatus.o(.data);
         . = ALIGN(4); src/cgtext.o(.data);
         . = ALIGN(4); data/data_A01CC4.o(.data);
-        . = ALIGN(4); data/data_chap_title.o(.data);
+        . = ALIGN(4); src/data/data_chap_title.o(.data);
         . = ALIGN(4); src/data/data_A167C8.o(.data);
         . = ALIGN(4); src/unitlistscreen.o(.data);
         . = ALIGN(4); src/prepscreen.o(.data);
@@ -1173,7 +1173,7 @@ SECTIONS
         . = ALIGN(4); data/data_AA6BFA.o(.data);
         . = ALIGN(4); data/opanim.o(.data);
         . = ALIGN(4); src/opanim-healthsafetyscreen.o(.data);
-        . = ALIGN(4); data/data_titlescreen.o(.data);
+        . = ALIGN(4); src/data/data_titlescreen.o(.data);
         . = ALIGN(4); src/data/data_opanim_gfx.o(.data);
         . = ALIGN(4); src/classchg-main.o(.data);
         . = ALIGN(4); src/classchg-handler.o(.data);
@@ -1198,19 +1198,19 @@ SECTIONS
         FILL(0xFF);
         . = 0xEE0000; src/banim_terrain_data.o(.data.banim_terrain_head); src/banim_terrain_data.o(.data.banim_terrain_ptr_table);
         FILL(0x00);
-        . = 0xEE0C00; data/data_banim_terrain.o(.data);
+        . = 0xEE0C00; src/data/data_banim_terrain.o(.data);
         FILL(0xFF);
         _banim_pal_start = 0xEF8000;
         . = _banim_pal_start;
         src/banim_pal_chara.o(.data.banim_pal_head);
         src/banim_pal_chara.o(.data.banim_pal_ptr_table);
         FILL(0x00);
-        . = _banim_pal_start + 0x1000; data/data_banim_pal.o(.data);
+        . = _banim_pal_start + 0x1000; src/data/data_banim_pal.o(.data);
         _banim_pal_end = .;
         _banim_pal_size = . - _banim_pal_start;
         FILL(0xFF);
-        . = 0xFE0000; data/data_FE0000.o(.data);
-        . = 0xFFF000; data/data_FFF000.o(.data);
+        . = 0xFE0000; src/data/data_FE0000.o(.data);
+        . = 0xFFF000; src/data/data_FFF000.o(.data);
     } = 0
 
   /* Stabs debugging sections.  */
