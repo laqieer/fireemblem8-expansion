@@ -3,7 +3,7 @@
 
 AP definitions decode to labeled assembly (motion / frame_list / anim_list /
 frame_N / anim_N), the project's canonical form (see
-data/const_data_unit_icon_move.s). scripts/apdump.py emits that form but its
+src/data/unit_icon/const_data_unit_icon_move.s). scripts/apdump.py emits that form but its
 table/sheet-index heuristics do not reproduce every blob exactly. This wrapper
 guarantees byte-identical output by self-verifying and degrading gracefully:
 

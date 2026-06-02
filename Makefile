@@ -82,8 +82,12 @@ DATA_S_FILES := $(wildcard $(DATA_SUBDIR)/*.s)
 DATA_SRC_C_FILES := $(wildcard $(DATA_SRC_SUBDIR)/*.c)
 DATA_SRC_C_OBJECTS := $(DATA_SRC_C_FILES:.c=.o)
 DATA_SRC_SFILES_COMPILED := $(DATA_SRC_C_FILES:.c=.s)
+# Hand-written (extracted, descriptively-named) data assembled directly. Kept in
+# src/data/ subdirs (not the top-level src/data/*.s wildcard, which holds
+# compiler intermediates of the typed .c data).
+DATA_SRC_S_FILES := $(wildcard $(DATA_SRC_SUBDIR)/map/*.s $(DATA_SRC_SUBDIR)/unit_icon/*.s $(DATA_SRC_SUBDIR)/banim/*.s)
 SOUND_S_FILES := $(wildcard sound/*.s sound/songs/*.s sound/songs/mml/*.s sound/voicegroups/*.s)
-SFILES       := $(ASM_S_FILES) $(SRC_S_FILES) $(DATA_S_FILES) $(SOUND_S_FILES)
+SFILES       := $(ASM_S_FILES) $(SRC_S_FILES) $(DATA_S_FILES) $(DATA_SRC_S_FILES) $(SOUND_S_FILES)
 SFILES_COMPILED := $(CFILES:.c=.s)
 C_OBJECTS    := $(CFILES:.c=.o)
 ASM_OBJECTS  := $(SFILES:.s=.o)
@@ -291,7 +295,7 @@ endif
 ifeq ($(NODEP),1)
 src/data/%.o: data_dep :=
 else
-src/data/%.o: data_dep = $(shell $(SCANINC) -I include -I "" $*.c)
+src/data/%.o: data_dep = $(shell $(SCANINC) -I include -I "" $(if $(wildcard $*.c),$*.c,$*.s))
 endif
 
 ifeq ($(NODEP),1)
