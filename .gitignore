@@ -77,7 +77,7 @@ tools/agbcc
 *.8bpp.h
 *.lz
 *.fk
-data/banim/*.bin
+banim/*.bin
 graphics/map/layout/*.bin
 graphics/map/*TileConfiguration*.bin
 graphics/statscreen/*.bin

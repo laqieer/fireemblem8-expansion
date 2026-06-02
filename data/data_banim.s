@@ -31655,7 +31655,7 @@ Tsa_0872150C:  @ 0x0872150C
 	.global Tsa_08721784
 Tsa_08721784:  @ 0x08721784
 	.incbin "./graphics/banim/assets/tsa/00721784_Tsa_08721784.map.bin.lz"
-	.include "data/banim/animscr_naglfarbg4_darkbreath.s"
+	.include "banim/animscr_naglfarbg4_darkbreath.s"
 
 	.global Img_08723274
 Img_08723274:  @ 0x08723274

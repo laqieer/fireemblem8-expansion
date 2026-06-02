@@ -42,13 +42,13 @@ while (my $line = <$file>)
         # data is left, so the reported percentage did not reflect reality.
         elsif ($section eq 'rodata' or $section eq 'data')
         {
-            # data/banim and sound are self-contained extracted subsystems,
+            # banim and sound are self-contained extracted subsystems,
             # each reported on its own line; keep them out of the src-vs-data
             # split so the headline percentage reflects general data
             # decompilation progress. sound/ (linked via linker_script_sound.txt)
             # is ~3.6 MB of .rodata that was previously dropped entirely because
             # its dir is neither 'src' nor 'data', leaving the data total wrong.
-            if ($path =~ m{^data/banim/})
+            if ($path =~ m{^banim/})
             {
                 $dataBanim += $size;
             }
@@ -172,5 +172,5 @@ my $dataSoundPct = sprintf("%.4f", 100 * $dataSound / $dataTotal);
 print "$dataTotal total bytes of data\n";
 print "$srcdata bytes of data in src ($srcDataPct%)\n";
 print "$data bytes of data in data ($dataPct%)\n";
-print "$dataBanim bytes of data in data/banim ($dataBanimPct%)\n";
+print "$dataBanim bytes of data in banim ($dataBanimPct%)\n";
 print "$dataSound bytes of data in sound ($dataSoundPct%)\n";

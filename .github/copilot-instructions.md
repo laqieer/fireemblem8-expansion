@@ -55,7 +55,7 @@ The engine uses a **Proc** system (`include/proc.h`, `src/proc.c`) — a tree-ba
 ### Key subsystems
 - **Units**: `struct Unit` / `struct CharacterData` / `struct ClassData` in `bmunit.h`. Unit arrays: `gUnitArrayBlue` (player), `gUnitArrayRed` (enemy), `gUnitArrayGreen` (NPC), `gUnitArrayPurple`.
 - **Events**: scripted cutscenes via an event engine (`src/event.c`, `src/eventscr*.c`). Event scripts are `ProcCmd` tables.
-- **Battle animations**: `src/banim-*.c` — the largest subsystem by file count. Battle animation data is in `data/banim/` with a custom compression linker (`scripts/arm_compressing_linker.py`).
+- **Battle animations**: `src/banim-*.c` — the largest subsystem by file count. Battle animation data is in `banim/` with a custom compression linker (`scripts/arm_compressing_linker.py`).
 - **World map**: `src/worldmap_*.c` — overworld screen and navigation.
 - **Text system**: text source in `texts/*.txt`, processed by `scripts/texttools/` into `src/msg_data.c` and `include/constants/msg.h`.
 
