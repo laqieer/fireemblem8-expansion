@@ -33,6 +33,7 @@ AIF2PCM    := tools/aif2pcm/aif2pcm$(EXE)
 MID2AGB    := tools/mid2agb/mid2agb$(EXE)
 TEXTENCODE := tools/textencode/textencode$(EXE)
 JSONPROC   := tools/jsonproc/jsonproc$(EXE)
+PREPROC    := tools/preproc/preproc$(EXE)
 FETSATOOL  := scripts/gfxtools/tsa_generator.py
 TMAP2TSA   := scripts/tmap2tsa.py
 MARTOMAP   := scripts/mar_to_map.py
@@ -78,6 +79,9 @@ endif
 ASM_S_FILES  := $(wildcard $(ASM_SUBDIR)/*.s)
 SRC_S_FILES  := src/rom_header.s src/crt0.s src/m4a_1.s src/libagbsyscall.s
 DATA_S_FILES := $(wildcard $(DATA_SUBDIR)/*.s)
+DATA_SRC_C_FILES := $(wildcard $(DATA_SRC_SUBDIR)/*.c)
+DATA_SRC_C_OBJECTS := $(DATA_SRC_C_FILES:.c=.o)
+DATA_SRC_SFILES_COMPILED := $(DATA_SRC_C_FILES:.c=.s)
 SOUND_S_FILES := $(wildcard sound/*.s sound/songs/*.s sound/songs/mml/*.s sound/voicegroups/*.s)
 SFILES       := $(ASM_S_FILES) $(SRC_S_FILES) $(DATA_S_FILES) $(SOUND_S_FILES)
 SFILES_COMPILED := $(CFILES:.c=.s)
@@ -86,7 +90,7 @@ ASM_OBJECTS  := $(SFILES:.s=.o)
 BANIM_OBJECT := data/banim/data_banim.o
 MID_FILES    := $(wildcard $(MID_SUBDIR)/*.mid)
 MID_OBJECTS  := $(MID_FILES:.mid=.o)
-ALL_OBJECTS  := $(C_OBJECTS) $(ASM_OBJECTS) $(BANIM_OBJECT) $(MID_OBJECTS)
+ALL_OBJECTS  := $(C_OBJECTS) $(DATA_SRC_C_OBJECTS) $(ASM_OBJECTS) $(BANIM_OBJECT) $(MID_OBJECTS)
 OBJECTS_LST  := objects.lst
 DEPS_DIR     := .dep
 
@@ -107,7 +111,7 @@ compare: $(ROM)
 
 .PHONY: compare
 
-CLEAN_FILES := $(ROM) $(ELF) $(MAP) $(OBJECTS_LST) $(SFILES_COMPILED) graphics/*.h $(CFILES_GENERATED)
+CLEAN_FILES := $(ROM) $(ELF) $(MAP) $(OBJECTS_LST) $(SFILES_COMPILED) $(DATA_SRC_SFILES_COMPILED) graphics/*.h $(CFILES_GENERATED)
 CLEAN_DIRS := $(DEPS_DIR)
 CLEAN_BINS := graphics/statscreen/*.bin $(SAMPLE_SUBDIR)/*.bin $(MAP_LAYOUT_SUBDIR)/*.bin graphics/map/*TileConfiguration*.bin $(AUTO_GEN_TARGETS)
 CLEAN_SONGS := $(MID_SUBDIR)/*.s
@@ -285,6 +289,12 @@ src/%.o:      data_dep = $(shell $(SCANINC) -I include -I "" $*.s)
 endif
 
 ifeq ($(NODEP),1)
+src/data/%.o: data_dep :=
+else
+src/data/%.o: data_dep = $(shell $(SCANINC) -I include -I "" $*.c)
+endif
+
+ifeq ($(NODEP),1)
 data/%.o:     data_dep :=
 else
 data/%.o:     data_dep = $(shell $(SCANINC) -I include -I "" $*.s)
@@ -305,6 +315,16 @@ endif
 .SECONDEXPANSION:
 $(ASM_OBJECTS): %.o: %.s $$(data_dep)
 	$(AS) $(ASFLAGS) -g $< -o $@
+
+$(DATA_SRC_C_OBJECTS): %.o: %.c $(PREPROC) $$(data_dep)
+	$(PREPROC) $< | $(CPP) $(CPPFLAGS) - | iconv -f UTF-8 -t CP932 | $(CC1) $(CC1FLAGS) -o $*.s
+	echo '.ALIGN 2, 0' >> $*.s
+ifeq ($(UNAME),Darwin)
+	$(SED) -f scripts/align_2_before_debug_section_for_osx.sed $*.s
+else
+	$(SED) '/.section	.debug_line/i\.align 2, 0' $*.s
+endif
+	$(AS) $(ASFLAGS) $*.s -o $@
 %.lz:$(MAP_LAYOUT_SUBDIR)/%.bin ; $(GBAGFX) $< $@
 
 # Don't delete intermediate files

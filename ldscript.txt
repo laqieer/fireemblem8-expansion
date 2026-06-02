@@ -706,7 +706,7 @@ SECTIONS
         . = ALIGN(4); src/banim-ekrmainmini.o(.rodata);
         . = ALIGN(4); src/const_data_DAEF0.o(.rodata);
         . = ALIGN(4); src/banim-ekrarena.o(.rodata);
-        . = ALIGN(4); data/const_data_DB034.o(.rodata);
+        . = ALIGN(4); src/data/const_data_DB034.o(.rodata);
         . = ALIGN(4); src/banim-efxmagic.o(.rodata);
         . = ALIGN(4); src/banim-efxmagic-phywpn.o(.rodata);
         . = ALIGN(4); src/banim-efxmagic-refresh.o(.rodata);
@@ -754,7 +754,7 @@ SECTIONS
         . = ALIGN(4); src/banim-ekrlvup.o(.rodata);
         . = ALIGN(4); src/banim-efxlvup.o(.rodata);
         . = ALIGN(4); src/banim-ekrtriangle.o(.rodata);
-        . = ALIGN(4); data/const_data_E162A.o(.rodata);
+        . = ALIGN(4); src/data/const_data_E162A.o(.rodata);
         . = ALIGN(4); src/banim-ekrpopup.o(.rodata);
         . = ALIGN(4); src/banim-ekrhensei.o(.rodata);
         . = ALIGN(4); src/banim-ekrdragon-demonking.o(.rodata);
@@ -762,7 +762,7 @@ SECTIONS
         . = ALIGN(4); src/msg_data.o(.rodata);
         . = ALIGN(4); data/const_data_chapter_maps.o(.rodata);
         . = ALIGN(4); data/const_data_unit_icon_wait.o(.rodata);
-        . = ALIGN(4); data/const_data_1C0AFC.o(.rodata);
+        . = ALIGN(4); src/data/const_data_1C0AFC.o(.rodata);
         . = ALIGN(4); src/data_debugpinfo.o(.rodata);
         . = ALIGN(4); src/data_debug_creditinfo.o(.rodata);
         . = ALIGN(4); src/chapterdata.o(.rodata);
@@ -859,7 +859,7 @@ SECTIONS
         . = ALIGN(4); src/eventfx-boomfog.o(.data);
         . = ALIGN(4); src/eventfx-earthquake.o(.data);
         . = ALIGN(4); src/eventfx-stoneshatter.o(.data);
-        . = ALIGN(4); data/data_item_icon.o(.data);
+        . = ALIGN(4); src/data/data_item_icon.o(.data);
         . = ALIGN(4); data/generic_icon.o(.data);
         . = ALIGN(4); src/bmlib.o(.data);
         . = ALIGN(4); src/bm.o(.data);
@@ -934,11 +934,11 @@ SECTIONS
         . = ALIGN(4); src/sio_mu.o(.data);
         . = ALIGN(4); src/sio_uiutils.o(.data);
         . = ALIGN(4); src/sio_menudef.o(.data);
-        . = ALIGN(4); data/data_5AA96C.o(.data);
+        . = ALIGN(4); src/data/data_5AA96C.o(.data);
         . = ALIGN(4); src/uiutils.o(.data);
         . = ALIGN(4); src/uimenu.o(.data);
         . = ALIGN(4); src/uiselecttarget.o(.data);
-        . = ALIGN(4); data/data_5B65C0.o(.data);
+        . = ALIGN(4); src/data/data_5B65C0.o(.data);
         . = ALIGN(4); src/banim-ekrbattle.o(.data);
         . = ALIGN(4); src/banim-ekrlvupfan.o(.data);
         . = ALIGN(4); src/banim-ekrgauge.o(.data);
@@ -1051,7 +1051,7 @@ SECTIONS
         . = ALIGN(4); src/eventscr2.o(.data);
         . = ALIGN(4); src/classchg-data.o(.data);
         . = ALIGN(4); data/data_map_anim_frames.o(.data);
-        . = ALIGN(4); data/data_99D6DC.o(.data);
+        . = ALIGN(4); src/data/data_99D6DC.o(.data);
         . = ALIGN(4); src/mu.o(.data);
         . = ALIGN(4); src/muctrl.o(.data);
         . = ALIGN(4); src/unit_icon_move_data.o(.data);
@@ -1089,7 +1089,7 @@ SECTIONS
         . = ALIGN(4); src/cgtext.o(.data);
         . = ALIGN(4); data/data_A01CC4.o(.data);
         . = ALIGN(4); data/data_chap_title.o(.data);
-        . = ALIGN(4); data/data_A167C8.o(.data);
+        . = ALIGN(4); src/data/data_A167C8.o(.data);
         . = ALIGN(4); src/unitlistscreen.o(.data);
         . = ALIGN(4); src/prepscreen.o(.data);
         . = ALIGN(4); src/prep_atmenu.o(.data);
@@ -1114,7 +1114,7 @@ SECTIONS
         . = ALIGN(4); src/bmsave-xmap.o(.data);
         . = ALIGN(4); data/data_A1FAF4.o(.data);
         . = ALIGN(4); src/minimap.o(.data);
-        . = ALIGN(4); data/data_minimap.o(.data);
+        . = ALIGN(4); src/data/data_minimap.o(.data);
         . = ALIGN(4); src/savemenu.o(.data);
         . = ALIGN(4); src/savedraw.o(.data);
         . = ALIGN(4); src/savemenu_data.o(.data);
@@ -1132,7 +1132,7 @@ SECTIONS
         . = ALIGN(4); src/colorfade.o(.data);
         . = ALIGN(4); src/opinfo.o(.data);
         . = ALIGN(4); src/classdisplayfont.o(.data);
-        . = ALIGN(4); data/data_A2EEF0.o(.data);
+        . = ALIGN(4); src/data/data_A2EEF0.o(.data);
         . = ALIGN(4); src/bmshop.o(.data);
         . = ALIGN(4); src/uiarena.o(.data);
         . = ALIGN(4); src/events_wm.o(.data);
@@ -1166,7 +1166,7 @@ SECTIONS
         . = ALIGN(4); data/data_A3E4D4.o(.data);
         . = ALIGN(4); src/ending_credits.o(.data);
         . = ALIGN(4); src/opsubtitle.o(.data);
-        . = ALIGN(4); data/data_opsubtitle.o(.data);
+        . = ALIGN(4); src/data/data_opsubtitle.o(.data);
         . = ALIGN(4); src/titlescreen.o(.data);
         . = ALIGN(4); src/opanimfx.o(.data);
         . = ALIGN(4); src/opanim-main.o(.data);
@@ -1174,7 +1174,7 @@ SECTIONS
         . = ALIGN(4); data/opanim.o(.data);
         . = ALIGN(4); src/opanim-healthsafetyscreen.o(.data);
         . = ALIGN(4); data/data_titlescreen.o(.data);
-        . = ALIGN(4); data/data_opanim_gfx.o(.data);
+        . = ALIGN(4); src/data/data_opanim_gfx.o(.data);
         . = ALIGN(4); src/classchg-main.o(.data);
         . = ALIGN(4); src/classchg-handler.o(.data);
         . = ALIGN(4); src/classchg-sel.o(.data);
@@ -1183,7 +1183,7 @@ SECTIONS
         . = ALIGN(4); src/classchg-menuselect.o(.data);
         . = ALIGN(4); src/classchg-postconfirm.o(.data);
         . = ALIGN(4); src/bmguide.o(.data);
-        . = ALIGN(4); data/data_B12A60.o(.data);
+        . = ALIGN(4); src/data/data_B12A60.o(.data);
         . = ALIGN(4); src/bmguide_config.o(.data);
         . = ALIGN(4); data/data_fe6sio.o(.data);
         . = ALIGN(4); *libc.a:impure.o(.data);

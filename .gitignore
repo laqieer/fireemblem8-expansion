@@ -63,6 +63,7 @@ Temporary Items
 objects.lst
 *.o
 src/*.s
+src/data/*.s
 *.dump
 tools/agbcc
 *.exe
