@@ -1170,7 +1170,7 @@ SECTIONS
         . = ALIGN(4); src/opanimfx.o(.data);
         . = ALIGN(4); src/opanim-main.o(.data);
         . = ALIGN(4); src/data/data_AA6BFA.o(.data);
-        . = ALIGN(4); data/opanim.o(.data);
+        . = ALIGN(4); src/data/opanim.o(.data);
         . = ALIGN(4); src/opanim-healthsafetyscreen.o(.data);
         . = ALIGN(4); src/data/data_titlescreen.o(.data);
         . = ALIGN(4); src/data/data_opanim_gfx.o(.data);
