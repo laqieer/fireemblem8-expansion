@@ -1,0 +1,104 @@
+#include "global.h"
+#include "proc.h"
+
+void sub_80C8554(struct Proc * proc);
+void sub_80C8580(struct Proc * proc);
+void sub_80C85B0(struct Proc * proc);
+void sub_80C85FC(struct Proc * proc);
+void sub_80C8608(struct Proc * proc);
+void sub_80C8638(struct Proc * proc);
+void sub_80C8684(struct Proc * proc);
+
+struct ProcCmd gUnknown_08AA704C[] =
+{
+    PROC_REPEAT(sub_80C8554),
+    PROC_END,
+};
+
+struct ProcCmd gUnknown_08AA705C[] =
+{
+    PROC_SET_END_CB(sub_80C85FC),
+    PROC_CALL(sub_80C8580),
+    PROC_REPEAT(sub_80C85B0),
+    PROC_END,
+};
+
+struct ProcCmd gUnknown_08AA707C[] =
+{
+    PROC_SET_END_CB(sub_80C8684),
+    PROC_CALL(sub_80C8608),
+    PROC_REPEAT(sub_80C8638),
+    PROC_END,
+};
+
+u16 gUnknown_08AA709C[] = INCBIN_U16("graphics/misc/gUnknown_08AA709C.4bpp");
+
+u16 gUnknown_08AA70BC[] = INCBIN_U16("graphics/misc/gUnknown_08AA70BC.4bpp");
+
+u16 gUnknown_08AA70DC[] =
+{
+    2,
+    0x0000, 0xC000, 0x03C0,
+    0x8000, 0xC040, 0x03C0,
+};
+
+u16 gUnknown_08AA70EA[] =
+{
+    7,
+    0x4000, 0xC000, 0x03C0,
+    0x0000, 0x8040, 0x03C0,
+    0x8000, 0x8060, 0x03C0,
+    0x4020, 0x8000, 0x03C0,
+    0x4020, 0x8020, 0x03C0,
+    0x4020, 0x8040, 0x03C0,
+    0x0020, 0x4060, 0x03C0,
+};
+
+u16 gUnknown_08AA7116[] =
+{
+    3,
+    0x0000, 0xC000, 0x03C0,
+    0x4040, 0x8000, 0x03C0,
+    0x4040, 0x8020, 0x03C0,
+};
+
+u16 gUnknown_08AA712A[] =
+{
+    8,
+    0x8000, 0xC000, 0x03C0,
+    0x8000, 0x8020, 0x03C0,
+    0x8020, 0x8020, 0x03C0,
+    0x8000, 0x4030, 0x03C0,
+    0x8020, 0x4030, 0x03C0,
+    0x4040, 0x8000, 0x03C0,
+    0x0040, 0x4020, 0x03C0,
+    0x8040, 0x0030, 0x03C0,
+};
+
+u16 gUnknown_08AA715C[] =
+{
+    9,
+    0x4000, 0xC000, 0x03C0,
+    0x4000, 0xC040, 0x03C0,
+    0x4000, 0xC080, 0x03C0,
+    0x4020, 0x8000, 0x03C0,
+    0x4020, 0x8020, 0x03C0,
+    0x4020, 0x8040, 0x03C0,
+    0x4020, 0x8060, 0x03C0,
+    0x4020, 0x8080, 0x03C0,
+    0x4020, 0x80A0, 0x03C0,
+};
+
+u16 gUnknown_08AA7194[] =
+{
+    8,
+    0x0000, 0xC000, 0x03C0,
+    0x8000, 0xC040, 0x03C0,
+    0x8000, 0x8060, 0x03C0,
+    0x8020, 0x8060, 0x03C0,
+    0x4040, 0x8000, 0x03C0,
+    0x4040, 0x8020, 0x03C0,
+    0x4040, 0x8040, 0x03C0,
+    0x0040, 0x4060, 0x03C0,
+    0x0000,
+};
