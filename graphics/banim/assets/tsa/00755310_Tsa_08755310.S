@@ -1,0 +1,604 @@
+	.include "graphics/tsa.inc"
+
+	.section .rodata
+
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x088, hflip=1
+	tsa_entry 0x087, hflip=1
+	tsa_entry 0x086, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x08C, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x08B, hflip=1
+	tsa_entry 0x08A, hflip=1
+	tsa_entry 0x089, hflip=1
+	tsa_entry 0x031, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x092, hflip=1
+	tsa_entry 0x02F, hflip=1
+	tsa_entry 0x091, hflip=1
+	tsa_entry 0x090, hflip=1
+	tsa_entry 0x08F, hflip=1
+	tsa_entry 0x08E, hflip=1
+	tsa_entry 0x08D, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x09C, hflip=1
+	tsa_entry 0x09B, hflip=1
+	tsa_entry 0x09A, hflip=1
+	tsa_entry 0x099, hflip=1
+	tsa_entry 0x098, hflip=1
+	tsa_entry 0x097, hflip=1
+	tsa_entry 0x096, hflip=1
+	tsa_entry 0x095, hflip=1
+	tsa_entry 0x094, hflip=1
+	tsa_entry 0x093, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x0A5, hflip=1
+	tsa_entry 0x0A4, hflip=1
+	tsa_entry 0x0A3, hflip=1
+	tsa_entry 0x0A2, hflip=1
+	tsa_entry 0x0A1, hflip=1
+	tsa_entry 0x0A0, hflip=1
+	tsa_entry 0x09F, hflip=1
+	tsa_entry 0x09E, hflip=1
+	tsa_entry 0x09D, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x0AB, hflip=1
+	tsa_entry 0x0AA, hflip=1
+	tsa_entry 0x0A9, hflip=1
+	tsa_entry 0x0A8, hflip=1
+	tsa_entry 0x0A7, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x0A6, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x0B2, hflip=1
+	tsa_entry 0x0B1, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x0B0, hflip=1
+	tsa_entry 0x0AF, hflip=1
+	tsa_entry 0x0AE, hflip=1
+	tsa_entry 0x0AD, hflip=1
+	tsa_entry 0x039, hflip=1, vflip=1
+	tsa_entry 0x0AC, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x0B4, hflip=1
+	tsa_entry 0x0B3, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x000, hflip=1
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F
+	tsa_entry 0x01F

@@ -1,0 +1,42 @@
+	.include "graphics/tsa.inc"
+
+	.section .rodata
+
+	tsa_entry 0x105, hflip=1
+	tsa_entry 0x000
+	tsa_entry 0x000
+	tsa_entry 0x065
+	tsa_entry 0x065, hflip=1
+	tsa_entry 0x000
+	tsa_entry 0x000
+	tsa_entry 0x000
+	tsa_entry 0x055
+	tsa_entry 0x056
+	tsa_entry 0x057
+	tsa_entry 0x058
+	tsa_entry 0x000
+	tsa_entry 0x004, hflip=1, vflip=1
+	tsa_entry 0x03F
+	tsa_entry 0x040
+	tsa_entry 0x041
+	tsa_entry 0x042
+	tsa_entry 0x039, hflip=1
+	tsa_entry 0x000
+	tsa_entry 0x026
+	tsa_entry 0x027
+	tsa_entry 0x028
+	tsa_entry 0x029
+	tsa_entry 0x02A
+	tsa_entry 0x000
+	tsa_entry 0x010
+	tsa_entry 0x011
+	tsa_entry 0x012
+	tsa_entry 0x013
+	tsa_entry 0x000
+	tsa_entry 0x000
+	tsa_entry 0x000
+	tsa_entry 0x000
+	tsa_entry 0x000
+	tsa_entry 0x001, hflip=1, vflip=1
+	tsa_entry 0x000
+	tsa_entry 0x000
