@@ -1,0 +1,13 @@
+#include "global.h"
+
+u16 Pal_FinScreen[] = INCBIN_U16("graphics/misc/Pal_FinScreen.gbapal");
+
+u8 Img_FinScreen[] = INCBIN_U8("graphics/misc/Img_FinScreen.4bpp.lz");
+
+u8 Tsa_FinScreen[] = INCBIN_U8("graphics/misc/Tsa_FinScreen.tsa.bin.lz");
+
+u16 Pal_08A40AD4[] = INCBIN_U16("graphics/misc/Pal_08A40AD4.gbapal");
+
+u8 Tsa_08A40B14[] = INCBIN_U8("graphics/misc/Tsa_08A40B14.tsa.bin");
+
+u16 Pal_StaffReelEnt_08A40FC8[] = INCBIN_U16("graphics/misc/Pal_StaffReelEnt_08A40FC8.gbapal");

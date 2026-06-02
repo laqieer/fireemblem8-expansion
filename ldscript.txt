@@ -1175,7 +1175,16 @@ SECTIONS
         . = ALIGN(4); src/worldmap_radar.o(.data);
         . = ALIGN(4); src/worldmap_basemenu.o(.data);
         . = ALIGN(4); src/worldmap_shop_data.o(.data);
-        . = ALIGN(4); data/data_A3E4D4.o(.data);
+        . = ALIGN(4); src/data/ending/ending_details.o(.data);
+        . = ALIGN(4); src/data/ending/ending_fin.o(.data);
+        . = ALIGN(4); src/data/ending/ending_staffreel.o(.data);
+        . = ALIGN(4); src/data/ending/ending_cg.o(.data);
+        . = ALIGN(4); src/data/worldmap/worldmap_gmap.o(.data);
+        . = ALIGN(4); src/data/worldmap/anim_worldmap_sprite.o(.data);
+        . = ALIGN(4); src/data/worldmap/worldmap_minimap.o(.data);
+        . = ALIGN(4); src/data/worldmap/anim_worldmap_highlight.o(.data);
+        . = ALIGN(4); src/data/worldmap/worldmap_skirmish.o(.data);
+        . = ALIGN(4); src/data/worldmap/anim_worldmap_skirmish.o(.data);
         . = ALIGN(4); src/ending_credits.o(.data);
         . = ALIGN(4); src/opsubtitle.o(.data);
         . = ALIGN(4); src/data/data_opsubtitle.o(.data);
