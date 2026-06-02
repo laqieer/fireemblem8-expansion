@@ -10,7 +10,7 @@ Pal_SaveMenuBG:  @ 0x08A25DCC
 
 	.global Tsa_SaveMenuBG
 Tsa_SaveMenuBG:  @ 0x08A25ECC
-	.incbin "graphics/misc/Tsa_SaveMenuBG.map.bin"
+	.incbin "graphics/misc/Tsa_SaveMenuBG.tsa.bin"
 
 	.global Img_MainMenuBgFog
 Img_MainMenuBgFog:  @ 0x08A26380
@@ -22,7 +22,7 @@ Pal_MainMenuBgFog:  @ 0x08A268D8
 
 	.global Tsa_MainMenuBgFog
 Tsa_MainMenuBgFog:  @ 0x08A268F8
-	.incbin "graphics/misc/Tsa_MainMenuBgFog.map.bin.lz"
+	.incbin "graphics/misc/Tsa_MainMenuBgFog.tsa.bin.lz"
 
 	.global Img_SaveScreenSprits
 Img_SaveScreenSprits:  @ 0x08A26A74
@@ -116,7 +116,7 @@ gUnknown_08A29498:  @ 0x08A29498
 
 	.global gUnknown_08A29558
 gUnknown_08A29558:  @ 0x08A29558
-	.incbin "graphics/misc/gUnknown_08A29558.map.bin.lz"
+	.incbin "graphics/misc/gUnknown_08A29558.tsa.bin.lz"
 
 	.global Pal_08A295B4
 Pal_08A295B4:  @ 0x08A295B4
@@ -124,7 +124,7 @@ Pal_08A295B4:  @ 0x08A295B4
 
 	.global Tsa_CommGameBgScreenInShop
 Tsa_CommGameBgScreenInShop:  @ 0x08A295D4
-	.incbin "graphics/misc/Tsa_CommGameBgScreenInShop.map.bin"
+	.incbin "graphics/misc/Tsa_CommGameBgScreenInShop.tsa.bin"
 
 	.global gUnknown_08A29A88
 gUnknown_08A29A88:  @ 0x08A29A88
@@ -193,11 +193,11 @@ gUnknown_08A2C4C8:  @ 0x08A2C4C8
 
 	.global gUnknown_08A2C5A8
 gUnknown_08A2C5A8:  @ 0x08A2C5A8
-	.incbin "graphics/misc/gUnknown_08A2C5A8.map.bin"
+	.incbin "graphics/misc/gUnknown_08A2C5A8.tsa.bin"
 
 	.global gUnknown_08A2C7A4
 gUnknown_08A2C7A4:  @ 0x08A2C7A4
-	.incbin "graphics/misc/gUnknown_08A2C7A4.map.bin"
+	.incbin "graphics/misc/gUnknown_08A2C7A4.tsa.bin"
 
 	.global Img_SoundRoomVolumeGraph
 Img_SoundRoomVolumeGraph:  @ 0x08A2C838
@@ -245,7 +245,7 @@ Pal_StatusScreenLabelSprites:  @ 0x08A2E4A4
 
 	.global Tsa_ChapterStatusUi
 Tsa_ChapterStatusUi:  @ 0x08A2E4C4
-	.incbin "graphics/misc/Tsa_ChapterStatusUi.map.bin.lz"
+	.incbin "graphics/misc/Tsa_ChapterStatusUi.tsa.bin.lz"
 
 	.global Img_08A2E5EC
 Img_08A2E5EC:  @ 0x08A2E5EC

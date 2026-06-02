@@ -196,7 +196,7 @@ graphics/banim/dragonfx/Img_DemonLightSprites_087A5E9C.4bpp.lz: LZ_FLAGS := -min
 # Decompressed FE6 SIO multiboot image; original ROM used minimum LZ match distance 1.
 data/fe6sio_payload.bin.lz: LZ_FLAGS := -mindist 1
 # Titlescreen dragon-foreground TSA was compressed with minimum LZ match distance 1.
-graphics/titlescreen/title_dragon_foreground.tsa.lz: LZ_FLAGS := -mindist 1
+graphics/titlescreen/title_dragon_foreground.map.bin.lz: LZ_FLAGS := -mindist 1
 %.rl: % ; $(GBAGFX) $< $@
 %.fk: % ; ./scripts/compressor.py $< fk
 %.bin: %.mar  ; $(MARTOMAP)  $< $@

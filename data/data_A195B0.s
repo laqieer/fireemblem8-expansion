@@ -34,7 +34,7 @@ gUnknown_08A1A3FC:  @ 0x08A1A3FC
 
 	.global Tsa_08A1A41C
 Tsa_08A1A41C:  @ 0x08A1A41C
-	.incbin "graphics/misc/Tsa_08A1A41C.map.bin"
+	.incbin "graphics/misc/Tsa_08A1A41C.tsa.bin"
 
 	.global Tsa_08A1A434
 Tsa_08A1A434:  @ 0x08A1A434
@@ -42,7 +42,7 @@ Tsa_08A1A434:  @ 0x08A1A434
 
 	.global Tsa_08A1A474
 Tsa_08A1A474:  @ 0x08A1A474
-	.incbin "graphics/misc/Tsa_08A1A474.map.bin"
+	.incbin "graphics/misc/Tsa_08A1A474.tsa.bin"
 
 	.global gUnknown_08A1A4C8
 gUnknown_08A1A4C8:  @ 0x08A1A4C8
@@ -93,11 +93,11 @@ Pal_PrepFunds:  @ 0x08A1B638
 
 	.global gUnknown_08A1B658
 gUnknown_08A1B658:  @ 0x08A1B658
-	.incbin "graphics/misc/gUnknown_08A1B658.map.bin.lz"
+	.incbin "graphics/misc/gUnknown_08A1B658.tsa.bin.lz"
 
 	.global gUnknown_08A1B698
 gUnknown_08A1B698:  @ 0x08A1B698
-	.incbin "graphics/misc/gUnknown_08A1B698.map.bin.lz"
+	.incbin "graphics/misc/gUnknown_08A1B698.tsa.bin.lz"
 
 	.global gUnknown_08A1B730
 gUnknown_08A1B730:  @ 0x08A1B730
@@ -105,19 +105,19 @@ gUnknown_08A1B730:  @ 0x08A1B730
 
 	.global gUnknown_08A1B7C8
 gUnknown_08A1B7C8:  @ 0x08A1B7C8
-	.incbin "graphics/misc/gUnknown_08A1B7C8.map.bin.lz"
+	.incbin "graphics/misc/gUnknown_08A1B7C8.tsa.bin.lz"
 
 	.global Tsa_PrepItemScreen
 Tsa_PrepItemScreen:  @ 0x08A1B8B8
-	.incbin "graphics/misc/gUnknown_08A1B8B8.map.bin.lz"
+	.incbin "graphics/misc/gUnknown_08A1B8B8.tsa.bin.lz"
 
 	.global Tsa_08A1B990
 Tsa_08A1B990:  @ 0x08A1B990
-	.incbin "graphics/misc/gUnknown_08A1B990.map.bin.lz"
+	.incbin "graphics/misc/gUnknown_08A1B990.tsa.bin.lz"
 
 	.global gUnknown_08A1B9EC
 gUnknown_08A1B9EC:  @ 0x08A1B9EC
-	.incbin "graphics/misc/gUnknown_08A1B9EC.map.bin.lz"
+	.incbin "graphics/misc/gUnknown_08A1B9EC.tsa.bin.lz"
 
 	.global Img_PrepItemUseScreen
 Img_PrepItemUseScreen:  @ 0x08A1BAB8
@@ -125,15 +125,15 @@ Img_PrepItemUseScreen:  @ 0x08A1BAB8
 
 	.global Tsa_PrepItemUseScreen
 Tsa_PrepItemUseScreen:  @ 0x08A1BAE4
-	.incbin "graphics/misc/Tsa_PrepItemUseScreen.map.bin.lz"
+	.incbin "graphics/misc/Tsa_PrepItemUseScreen.tsa.bin.lz"
 
 	.global gUnknown_08A1BBD0
 gUnknown_08A1BBD0:  @ 0x08A1BBD0
-	.incbin "graphics/misc/gUnknown_08A1BBD0.map.bin.lz"
+	.incbin "graphics/misc/gUnknown_08A1BBD0.tsa.bin.lz"
 
 	.global gUnknown_08A1BCC0
 gUnknown_08A1BCC0:  @ 0x08A1BCC0
-	.incbin "graphics/misc/gUnknown_08A1BCC0.map.bin.lz"
+	.incbin "graphics/misc/gUnknown_08A1BCC0.tsa.bin.lz"
 
 	.global gUnknown_08A1BD00
 gUnknown_08A1BD00:  @ 0x08A1BD00
@@ -316,7 +316,7 @@ gImg_UiSpinningArrow_Horizontal:  @ 0x08A1C7D8
 
 	.global gUnknown_08A1C8B4
 gUnknown_08A1C8B4:  @ 0x08A1C8B4
-	.incbin "graphics/misc/gUnknown_08A1C8B4.map.bin"
+	.incbin "graphics/misc/gUnknown_08A1C8B4.tsa.bin"
 
 	.global Img_08A1CD68
 Img_08A1CD68:  @ 0x08A1CD68
@@ -376,11 +376,11 @@ Img_PrepWindow:  @ 0x08A1D8D0
 
 	.global gUnknown_08A1DB80
 gUnknown_08A1DB80:  @ 0x08A1DB80
-	.incbin "graphics/misc/gUnknown_08A1DB80.map.bin.lz"
+	.incbin "graphics/misc/gUnknown_08A1DB80.tsa.bin.lz"
 
 	.global gTsa_SupportSubScreen
 gTsa_SupportSubScreen:  @ 0x08A1DC1C
-	.incbin "graphics/misc/gTsa_SupportSubScreen.map.bin.lz"
+	.incbin "graphics/misc/gTsa_SupportSubScreen.tsa.bin.lz"
 
 	.global gGfx_SupportMenu
 gGfx_SupportMenu:  @ 0x08A1DD0C

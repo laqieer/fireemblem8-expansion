@@ -1577,11 +1577,11 @@ Pal_IntelligentSystems:
 
 	.global Tsa_OpAnimHealthSafetyScreenBG1
 Tsa_OpAnimHealthSafetyScreenBG1:
-	.incbin "graphics/op_anim/OpAnimHealthSafetyScreenBG1.map.bin.lz"
+	.incbin "graphics/op_anim/OpAnimHealthSafetyScreenBG1.tsa.bin.lz"
 
 	.global Tsa_OpAnimHealthSafetyScreenBG0
 Tsa_OpAnimHealthSafetyScreenBG0:
-	.incbin "graphics/op_anim/OpAnimHealthSafetyScreenBG0.map.bin.lz"
+	.incbin "graphics/op_anim/OpAnimHealthSafetyScreenBG0.tsa.bin.lz"
 
 	.global Img_OpAnimHealthSafetyScreen
 Img_OpAnimHealthSafetyScreen:

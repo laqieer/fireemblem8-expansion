@@ -115,7 +115,7 @@ gUnknown_08A03334:  @ 0x08A03334
 
 	.global gUnknown_08A03354
 gUnknown_08A03354:  @ 0x08A03354
-	.incbin "graphics/misc/gUnknown_08A03354.map.bin"
+	.incbin "graphics/misc/gUnknown_08A03354.tsa.bin"
 
 	.global Img_StatscreenBG
 Img_StatscreenBG:  @ 0x08A03368
@@ -151,7 +151,7 @@ Img_ConfigUiIcons:  @ 0x08A0754C
 
 	.global Tsa_ConfigUiFrame
 Tsa_ConfigUiFrame:  @ 0x08A079B4
-	.incbin "graphics/misc/Tsa_ConfigUiFrame.map.bin.lz"
+	.incbin "graphics/misc/Tsa_ConfigUiFrame.tsa.bin.lz"
 
 	.global Pal_ConfigUiSprites
 Pal_ConfigUiSprites:  @ 0x08A07A98
@@ -208,7 +208,7 @@ gUnknown_08A0A4E8:  @ 0x08A0A4E8
 
 	.global gTsa_08A0A9F8
 gTsa_08A0A9F8:  @ 0x08A0A9F8
-	.incbin "graphics/misc/gUnknown_08A0A9F8.map.bin"
+	.incbin "graphics/misc/gUnknown_08A0A9F8.tsa.bin"
 
 	.global Img_GameOverText
 Img_GameOverText:  @ 0x08A0AB0C
@@ -224,4 +224,4 @@ Pal_GameOverText1:  @ 0x08A0AE64
 
 	.global Tsa_GameOverFx
 Tsa_GameOverFx:  @ 0x08A0AE84
-	.incbin "graphics/misc/Tsa_GameOverFx.map.bin"
+	.incbin "graphics/misc/Tsa_GameOverFx.tsa.bin"
