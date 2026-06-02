@@ -1019,7 +1019,7 @@ SECTIONS
         . = ALIGN(4); src/banim-efxlvup.o(.data);
         . = ALIGN(4); src/banim-ekrtriangle.o(.data);
         . = ALIGN(4); src/data/banim-ekrtriangle.o(.data);
-        . = ALIGN(4); data/data_btl_bg.o(.data);
+        . = ALIGN(4); src/data/data_btl_bg.o(.data);
         . = ALIGN(4); src/banim-ekrpopup.o(.data);
         . = ALIGN(4); src/banim-ekrhensei.o(.data);
         . = ALIGN(4); src/data/banim-ekrdragonfx.o(.data);
