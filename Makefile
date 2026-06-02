@@ -109,7 +109,7 @@ compare: $(ROM)
 
 CLEAN_FILES := $(ROM) $(ELF) $(MAP) $(OBJECTS_LST) $(SFILES_COMPILED) graphics/*.h $(CFILES_GENERATED)
 CLEAN_DIRS := $(DEPS_DIR)
-CLEAN_BINS := graphics/statscreen/*.bin $(SAMPLE_SUBDIR)/*.bin $(MAP_LAYOUT_SUBDIR)/*.bin $(AUTO_GEN_TARGETS)
+CLEAN_BINS := graphics/statscreen/*.bin $(SAMPLE_SUBDIR)/*.bin $(MAP_LAYOUT_SUBDIR)/*.bin graphics/map/*TileConfiguration*.bin $(AUTO_GEN_TARGETS)
 CLEAN_SONGS := $(MID_SUBDIR)/*.s
 
 # Shared clean routine
@@ -230,6 +230,13 @@ $(BANIM_OBJECT): $(shell ./scripts/arm_compressing_linker.py -t linker_script_ba
 
 %_oam_r.bin: %_motion.o
 	$(OBJCOPY) -O binary -j .data.oam_r $< $@
+
+# Map tileset configuration: assemble .S (metatile/terrain macros) to a flat
+# binary, which the %.lz rule then compresses for incbin.
+graphics/map/%.bin: graphics/map/%.S graphics/map/tile_config.inc
+	$(AS) $(ASFLAGS) -g $< -o $(@:.bin=.o)
+	$(OBJCOPY) -O binary $(@:.bin=.o) $@
+
 
 # Automatic dependency generation
 

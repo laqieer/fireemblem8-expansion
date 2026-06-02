@@ -78,6 +78,7 @@ tools/agbcc
 *.fk
 data/banim/*.bin
 graphics/map/layout/*.bin
+graphics/map/*TileConfiguration*.bin
 graphics/statscreen/*.bin
 
 *.feimg*.bin
