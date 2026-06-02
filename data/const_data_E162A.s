@@ -14,27 +14,27 @@ Img_TriFalconKnightSwordBG:  @ 0x080E2B54
 
 	.global Tsa_EkrTriPegagusRightBG1
 Tsa_EkrTriPegagusRightBG1:  @ 0x080E3554
-	.incbin "graphics/ui/Tsa_EkrTriPegagusRightBG1.tsa.lz"
+	.incbin "graphics/ui/Tsa_EkrTriPegagusRightBG1.map.bin.lz"
 
 	.global Tsa_EkrTriPegagusRightBG2
 Tsa_EkrTriPegagusRightBG2:  @ 0x080E3668
-	.incbin "graphics/ui/Tsa_EkrTriPegagusRightBG2.tsa.lz"
+	.incbin "graphics/ui/Tsa_EkrTriPegagusRightBG2.map.bin.lz"
 
 	.global Tsa_EkrTriPegagusRightBG3
 Tsa_EkrTriPegagusRightBG3:  @ 0x080E378C
-	.incbin "graphics/ui/Tsa_EkrTriPegagusRightBG3.tsa.lz"
+	.incbin "graphics/ui/Tsa_EkrTriPegagusRightBG3.map.bin.lz"
 
 	.global Tsa_EkrTriPegagusLeftBG1
 Tsa_EkrTriPegagusLeftBG1:  @ 0x080E3864
-	.incbin "graphics/ui/Tsa_EkrTriPegagusLeftBG1.tsa.lz"
+	.incbin "graphics/ui/Tsa_EkrTriPegagusLeftBG1.map.bin.lz"
 
 	.global Tsa_EkrTriPegagusLeftBG2
 Tsa_EkrTriPegagusLeftBG2:  @ 0x080E3980
-	.incbin "graphics/ui/Tsa_EkrTriPegagusLeftBG2.tsa.lz"
+	.incbin "graphics/ui/Tsa_EkrTriPegagusLeftBG2.map.bin.lz"
 
 	.global Tsa_EkrTriPegagusLeftBG3
 Tsa_EkrTriPegagusLeftBG3:  @ 0x080E3AA4
-	.incbin "graphics/ui/Tsa_EkrTriPegagusLeftBG3.tsa.lz"
+	.incbin "graphics/ui/Tsa_EkrTriPegagusLeftBG3.map.bin.lz"
 
 	.global Img_TriPegasusKnightOBJ
 Img_TriPegasusKnightOBJ:  @ 0x080E3B78

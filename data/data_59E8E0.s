@@ -114,19 +114,19 @@ Img_PhaseChangeSquares:  @ 0x085A06D8
 
 	.global gUnknown_085A0838
 gUnknown_085A0838:  @ 0x085A0838
-	.incbin "graphics/misc/gUnknown_085A0838.tsa"
+	.incbin "graphics/misc/gUnknown_085A0838.map.bin"
 
 	.global gUnknown_085A08F0
 gUnknown_085A08F0:  @ 0x085A08F0
-	.incbin "graphics/misc/gUnknown_085A08F0.tsa"
+	.incbin "graphics/misc/gUnknown_085A08F0.map.bin"
 
 	.global gTSA_BattleForecastStandard
 gTSA_BattleForecastStandard:  @ 0x085A09A8
-	.incbin "graphics/misc/gTSA_BattleForecastStandard.tsa"
+	.incbin "graphics/misc/gTSA_BattleForecastStandard.map.bin"
 
 	.global gTSA_BattleForecastExtended
 gTSA_BattleForecastExtended:  @ 0x085A0AEC
-	.incbin "graphics/misc/gTSA_BattleForecastExtended.tsa"
+	.incbin "graphics/misc/gTSA_BattleForecastExtended.map.bin"
 
 	.global gBattleForecast_x2x4Gfx
 gBattleForecast_x2x4Gfx:  @ 0x085A0C80
@@ -138,7 +138,7 @@ gBattleForecast_x2x4Pal:  @ 0x085A0D2C
 
 	.global gUnknown_085A0D4C
 gUnknown_085A0D4C:  @ 0x085A0D4C
-	.incbin "graphics/misc/gUnknown_085A0D4C.tsa"
+	.incbin "graphics/misc/gUnknown_085A0D4C.map.bin"
 
 	.global gUnknown_085A0EA0
 gUnknown_085A0EA0:  @ 0x085A0EA0
@@ -935,7 +935,7 @@ gUnknown_085A643C:  @ 0x085A643C
 
 	.global Tsa_PlayerRankFog
 Tsa_PlayerRankFog:  @ 0x085A647C
-	.incbin "graphics/misc/Tsa_PlayerRankFog.tsa"
+	.incbin "graphics/misc/Tsa_PlayerRankFog.map.bin"
 
 	.global Img_DanceringFx
 Img_DanceringFx:  @ 0x085A6C80

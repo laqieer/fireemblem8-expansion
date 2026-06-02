@@ -73,7 +73,7 @@ bg_Serafew_Village_tiles:
 	.align 2, 0
 	.global bg_Serafew_Village_map
 bg_Serafew_Village_map:
-	.incbin "graphics/bg/bg_Serafew_Village.tsa"
+	.incbin "graphics/bg/bg_Serafew_Village.map.bin"
 
 	.align 2, 0
 	.global bg_Serafew_Village_palette
@@ -233,7 +233,7 @@ bg_Garden_tiles:
 	.align 2, 0
 	.global bg_Garden_map
 bg_Garden_map:
-	.incbin "graphics/bg/bg_Garden.tsa"
+	.incbin "graphics/bg/bg_Garden.map.bin"
 
 	.align 2, 0
 	.global bg_Garden_palette
@@ -253,7 +253,7 @@ bg_Manse_Back_tiles:
 	.align 2, 0
 	.global bg_Manse_Back_map
 bg_Manse_Back_map:
-	.incbin "graphics/bg/bg_Manse_Back.tsa"
+	.incbin "graphics/bg/bg_Manse_Back.map.bin"
 
 	.align 2, 0
 	.global bg_Manse_Back_palette
@@ -273,7 +273,7 @@ bg_Cell_tiles:
 	.align 2, 0
 	.global bg_Cell_map
 bg_Cell_map:
-	.incbin "graphics/bg/bg_Cell.tsa"
+	.incbin "graphics/bg/bg_Cell.map.bin"
 
 	.align 2, 0
 	.global bg_Cell_palette
@@ -313,7 +313,7 @@ bg_Grass_Plains_2_tiles:
 	.align 2, 0
 	.global bg_Grass_Plains_2_map
 bg_Grass_Plains_2_map:
-	.incbin "graphics/bg/bg_Grass_Plains_2.tsa"
+	.incbin "graphics/bg/bg_Grass_Plains_2.map.bin"
 
 	.align 2, 0
 	.global bg_Grass_Plains_2_palette
@@ -433,7 +433,7 @@ bg_Castle_Back_tiles:
 	.align 2, 0
 	.global bg_Castle_Back_map
 bg_Castle_Back_map:
-	.incbin "graphics/bg/bg_Castle_Back.tsa"
+	.incbin "graphics/bg/bg_Castle_Back.map.bin"
 
 	.align 2, 0
 	.global bg_Castle_Back_palette
@@ -448,7 +448,7 @@ bg_Interior_Black_tiles:
 	.align 2, 0
 	.global bg_Interior_Black_map
 bg_Interior_Black_map:
-	.incbin "graphics/bg/bg_Interior_Black.tsa"
+	.incbin "graphics/bg/bg_Interior_Black.map.bin"
 
 	.align 2, 0
 	.global bg_Interior_Black_palette
@@ -608,7 +608,7 @@ bg_Volcano_tiles:
 	.align 2, 0
 	.global bg_Volcano_map
 bg_Volcano_map:
-	.incbin "graphics/bg/bg_Volcano.tsa"
+	.incbin "graphics/bg/bg_Volcano.map.bin"
 
 	.align 2, 0
 	.global bg_Volcano_palette

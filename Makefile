@@ -119,7 +119,7 @@ clean_common:
 
 clean_fast: clean_common
 	$(RM) $(C_OBJECTS) $(ASM_OBJECTS) $(MID_OBJECTS)
-	@find . \( -iname '*.o' -o -iname '*.obj' -o -iname '*.feimg*.bin'  -o -iname '*.fetsa*.bin' -o -iname '*.1bpp' -o -iname '*.4bpp' -o -iname '*.8bpp' -o -iname '*.gbapal' -o -iname '*.lz' -o -iname '*.tsa' -o -iname '*.fk' -o -iname '*.latfont' -o -iname '*.hwjpnfont' -o -iname '*.fwjpnfont' \) -not -path './data/banim/*' -exec rm {} +
+	@find . \( -iname '*.o' -o -iname '*.obj' -o -iname '*.feimg*.bin'  -o -iname '*.fetsa*.bin' -o -iname '*.1bpp' -o -iname '*.4bpp' -o -iname '*.8bpp' -o -iname '*.gbapal' -o -iname '*.lz' -o -iname '*.fk' -o -iname '*.latfont' -o -iname '*.hwjpnfont' -o -iname '*.fwjpnfont' \) -not -path './data/banim/*' -exec rm {} +
 
 .PHONY: clean_fast clean_common
 
@@ -127,7 +127,7 @@ clean: clean_common
 	$(RM) $(ALL_OBJECTS)
 	# Remove battle animation binaries
 	$(RM) -f data/banim/*.bin data/banim/*.o data/banim/*.lz data/banim/*.bak
-	@find . \( -iname '*.o' -o -iname '*.obj' -o -iname '*.feimg*.bin'  -o -iname '*.fetsa*.bin' -o -iname '*.1bpp' -o -iname '*.4bpp' -o -iname '*.8bpp' -o -iname '*.gbapal' -o -iname '*.lz' -o -iname '*.tsa' -o -iname '*.fk' -o -iname '*.latfont' -o -iname '*.hwjpnfont' -o -iname '*.fwjpnfont' \) -exec rm {} +
+	@find . \( -iname '*.o' -o -iname '*.obj' -o -iname '*.feimg*.bin'  -o -iname '*.fetsa*.bin' -o -iname '*.1bpp' -o -iname '*.4bpp' -o -iname '*.8bpp' -o -iname '*.gbapal' -o -iname '*.lz' -o -iname '*.fk' -o -iname '*.latfont' -o -iname '*.hwjpnfont' -o -iname '*.fwjpnfont' \) -exec rm {} +
 
 .PHONY: clean
 
@@ -236,12 +236,6 @@ $(BANIM_OBJECT): $(shell ./scripts/arm_compressing_linker.py -t linker_script_ba
 graphics/map/%.bin: graphics/map/%.S graphics/map/tile_config.inc
 	$(AS) $(ASFLAGS) -g $< -o $(@:.bin=.o)
 	$(OBJCOPY) -O binary $(@:.bin=.o) $@
-
-# Tile-screen arrangements: assemble .S (tsa_entry macro) to a flat binary,
-# which the %.lz rule then compresses for incbin.
-%.tsa: %.S graphics/tsa.inc
-	$(AS) $(ASFLAGS) -g $< -o $(@:.tsa=.o)
-	$(OBJCOPY) -O binary $(@:.tsa=.o) $@
 
 
 # Automatic dependency generation

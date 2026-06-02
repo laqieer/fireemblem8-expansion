@@ -30,7 +30,7 @@ Img_OpAnimCharacterBG:
 
 	.global Tsa_OpAnimCharacterBG
 Tsa_OpAnimCharacterBG:
-	.incbin "graphics/op_anim/OpAnimCharacterBG.tsa.lz"
+	.incbin "graphics/op_anim/OpAnimCharacterBG.map.bin.lz"
 
 	.global Pal_OpAnimCharacterBG
 Pal_OpAnimCharacterBG:
@@ -48,7 +48,7 @@ Tsa_OpAnimGenericCharacterBG:
 gUnknown_08AB986C:
 	.incbin "graphics/op_anim/OpAnimGenericCharacterBGUnused.gbapal"
 	.incbin "graphics/op_anim/OpAnimGenericCharacterBGUnused.4bpp.lz"
-	.incbin "graphics/op_anim/OpAnimGenericCharacterBGUnused.tsa.lz"
+	.incbin "graphics/op_anim/OpAnimGenericCharacterBGUnused.map.bin.lz"
 	.incbin "graphics/op_anim/OpAnimGenericCharacterBGUnusedPal2.gbapal"
 
 	.global Img_OpAnimEphraim
@@ -73,7 +73,7 @@ Img_OpAnimEphraimBlur2:
 
 	.global Tsa_OpAnimEphraimBlur2
 Tsa_OpAnimEphraimBlur2:
-	.incbin "graphics/op_anim/OpAnimEphraimBlur2.tsa.lz"
+	.incbin "graphics/op_anim/OpAnimEphraimBlur2.map.bin.lz"
 
 	.global Img_OpAnimEphraimBlur3
 Img_OpAnimEphraimBlur3:
@@ -81,7 +81,7 @@ Img_OpAnimEphraimBlur3:
 
 	.global Tsa_OpAnimEphraimBlur3
 Tsa_OpAnimEphraimBlur3:
-	.incbin "graphics/op_anim/OpAnimEphraimBlur3.tsa.lz"
+	.incbin "graphics/op_anim/OpAnimEphraimBlur3.map.bin.lz"
 
 	.global Img_OpAnimEphraimClose1
 Img_OpAnimEphraimClose1:
@@ -93,11 +93,11 @@ Img_OpAnimEphraimClose2:
 
 	.global Tsa_OpAnimEphraimClose1
 Tsa_OpAnimEphraimClose1:
-	.incbin "graphics/op_anim/OpAnimEphraimClose1.tsa.lz"
+	.incbin "graphics/op_anim/OpAnimEphraimClose1.map.bin.lz"
 
 	.global Tsa_OpAnimEphraimClose2
 Tsa_OpAnimEphraimClose2:
-	.incbin "graphics/op_anim/OpAnimEphraimClose2.tsa.lz"
+	.incbin "graphics/op_anim/OpAnimEphraimClose2.map.bin.lz"
 
 	.global Pal_OpAnimEphraimBlur
 Pal_OpAnimEphraimBlur:
@@ -145,11 +145,11 @@ Img_OpAnimEirikaClose2:
 
 	.global Tsa_OpAnimEirikaClose1
 Tsa_OpAnimEirikaClose1:
-	.incbin "graphics/op_anim/OpAnimEirikaClose1.tsa.lz"
+	.incbin "graphics/op_anim/OpAnimEirikaClose1.map.bin.lz"
 
 	.global Tsa_OpAnimEirikaClose2
 Tsa_OpAnimEirikaClose2:
-	.incbin "graphics/op_anim/OpAnimEirikaClose2.tsa.lz"
+	.incbin "graphics/op_anim/OpAnimEirikaClose2.map.bin.lz"
 
 	.global Pal_OpAnimEirikaBlur
 Pal_OpAnimEirikaBlur:
@@ -165,11 +165,11 @@ Img_OpAnimJoshua2:
 
 	.global Tsa_OpAnimJoshua
 Tsa_OpAnimJoshua:
-	.incbin "graphics/op_anim/OpAnimJoshua.tsa.lz"
+	.incbin "graphics/op_anim/OpAnimJoshua.map.bin.lz"
 
 	.global Tsa_OpAnimJoshua2
 Tsa_OpAnimJoshua2:
-	.incbin "graphics/op_anim/OpAnimJoshua2.tsa.lz"
+	.incbin "graphics/op_anim/OpAnimJoshua2.map.bin.lz"
 
 	.global Pal_OpAnimJoshua
 Pal_OpAnimJoshua:
@@ -185,11 +185,11 @@ Img_OpAnimLArachel2:
 
 	.global Tsa_OpAnimLArachel
 Tsa_OpAnimLArachel:
-	.incbin "graphics/op_anim/OpAnimLArachel.tsa.lz"
+	.incbin "graphics/op_anim/OpAnimLArachel.map.bin.lz"
 
 	.global Tsa_OpAnimLArachel2
 Tsa_OpAnimLArachel2:
-	.incbin "graphics/op_anim/OpAnimLArachel2.tsa.lz"
+	.incbin "graphics/op_anim/OpAnimLArachel2.map.bin.lz"
 
 	.global Pal_OpAnimLArachel
 Pal_OpAnimLArachel:
@@ -205,11 +205,11 @@ Img_OpAnimSeth2:
 
 	.global Tsa_OpAnimSeth
 Tsa_OpAnimSeth:
-	.incbin "graphics/op_anim/OpAnimSeth.tsa.lz"
+	.incbin "graphics/op_anim/OpAnimSeth.map.bin.lz"
 
 	.global Tsa_OpAnimSeth2
 Tsa_OpAnimSeth2:
-	.incbin "graphics/op_anim/OpAnimSeth2.tsa.lz"
+	.incbin "graphics/op_anim/OpAnimSeth2.map.bin.lz"
 
 	.global Pal_OpAnimSeth
 Pal_OpAnimSeth:
@@ -225,11 +225,11 @@ Img_OpAnimMyrrh2:
 
 	.global Tsa_OpAnimMyrrh
 Tsa_OpAnimMyrrh:
-	.incbin "graphics/op_anim/OpAnimMyrrh.tsa.lz"
+	.incbin "graphics/op_anim/OpAnimMyrrh.map.bin.lz"
 
 	.global Tsa_OpAnimMyrrh2
 Tsa_OpAnimMyrrh2:
-	.incbin "graphics/op_anim/OpAnimMyrrh2.tsa.lz"
+	.incbin "graphics/op_anim/OpAnimMyrrh2.map.bin.lz"
 
 	.global Pal_OpAnimMyrrh
 Pal_OpAnimMyrrh:
@@ -245,11 +245,11 @@ Img_OpAnimSaleh2:
 
 	.global Tsa_OpAnimSaleh
 Tsa_OpAnimSaleh:
-	.incbin "graphics/op_anim/OpAnimSaleh.tsa.lz"
+	.incbin "graphics/op_anim/OpAnimSaleh.map.bin.lz"
 
 	.global Tsa_OpAnimSaleh2
 Tsa_OpAnimSaleh2:
-	.incbin "graphics/op_anim/OpAnimSaleh2.tsa.lz"
+	.incbin "graphics/op_anim/OpAnimSaleh2.map.bin.lz"
 
 	.global Pal_OpAnimSaleh
 Pal_OpAnimSaleh:
@@ -265,11 +265,11 @@ Img_OpAnimTethys2:
 
 	.global Tsa_OpAnimTethys
 Tsa_OpAnimTethys:
-	.incbin "graphics/op_anim/OpAnimTethys.tsa.lz"
+	.incbin "graphics/op_anim/OpAnimTethys.map.bin.lz"
 
 	.global Tsa_OpAnimTethys2
 Tsa_OpAnimTethys2:
-	.incbin "graphics/op_anim/OpAnimTethys2.tsa.lz"
+	.incbin "graphics/op_anim/OpAnimTethys2.map.bin.lz"
 
 	.global Pal_OpAnimTethys
 Pal_OpAnimTethys:
@@ -737,11 +737,11 @@ Img_OpAnimShiningRing:
 
 	.global Tsa_OpAnimShiningRing
 Tsa_OpAnimShiningRing:
-	.incbin "graphics/op_anim/OpAnimShiningRing.tsa.lz"
+	.incbin "graphics/op_anim/OpAnimShiningRing.map.bin.lz"
 
 	.global Tsa_OpAnimShiningRingBlinking
 Tsa_OpAnimShiningRingBlinking:
-	.incbin "graphics/op_anim/OpAnimShiningRingBlinking.tsa.lz"
+	.incbin "graphics/op_anim/OpAnimShiningRingBlinking.map.bin.lz"
 
 	.global Pal_OpAnimShiningRing
 Pal_OpAnimShiningRing:
@@ -753,7 +753,7 @@ img_opanim1:
 
 	.global tsa_opanim1
 tsa_opanim1:
-	.incbin "graphics/op_anim/scrolling_background/opanim1.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim1.map.bin"
 
 	.global img_opanim2
 img_opanim2:
@@ -761,7 +761,7 @@ img_opanim2:
 
 	.global tsa_opanim2
 tsa_opanim2:
-	.incbin "graphics/op_anim/scrolling_background/opanim2.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim2.map.bin"
 
 	.global img_opanim3
 img_opanim3:
@@ -769,7 +769,7 @@ img_opanim3:
 
 	.global tsa_opanim3
 tsa_opanim3:
-	.incbin "graphics/op_anim/scrolling_background/opanim3.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim3.map.bin"
 
 	.global img_opanim4
 img_opanim4:
@@ -777,7 +777,7 @@ img_opanim4:
 
 	.global tsa_opanim4
 tsa_opanim4:
-	.incbin "graphics/op_anim/scrolling_background/opanim4.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim4.map.bin"
 
 	.global img_opanim5
 img_opanim5:
@@ -785,7 +785,7 @@ img_opanim5:
 
 	.global tsa_opanim5
 tsa_opanim5:
-	.incbin "graphics/op_anim/scrolling_background/opanim5.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim5.map.bin"
 
 	.global img_opanim6
 img_opanim6:
@@ -793,7 +793,7 @@ img_opanim6:
 
 	.global tsa_opanim6
 tsa_opanim6:
-	.incbin "graphics/op_anim/scrolling_background/opanim6.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim6.map.bin"
 
 	.global img_opanim7
 img_opanim7:
@@ -801,7 +801,7 @@ img_opanim7:
 
 	.global tsa_opanim7
 tsa_opanim7:
-	.incbin "graphics/op_anim/scrolling_background/opanim7.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim7.map.bin"
 
 	.global img_opanim8
 img_opanim8:
@@ -809,7 +809,7 @@ img_opanim8:
 
 	.global tsa_opanim8
 tsa_opanim8:
-	.incbin "graphics/op_anim/scrolling_background/opanim8.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim8.map.bin"
 
 	.global img_opanim9
 img_opanim9:
@@ -817,7 +817,7 @@ img_opanim9:
 
 	.global tsa_opanim9
 tsa_opanim9:
-	.incbin "graphics/op_anim/scrolling_background/opanim9.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim9.map.bin"
 
 	.global img_opanim10
 img_opanim10:
@@ -825,7 +825,7 @@ img_opanim10:
 
 	.global tsa_opanim10
 tsa_opanim10:
-	.incbin "graphics/op_anim/scrolling_background/opanim10.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim10.map.bin"
 
 	.global img_opanim11
 img_opanim11:
@@ -833,7 +833,7 @@ img_opanim11:
 
 	.global tsa_opanim11
 tsa_opanim11:
-	.incbin "graphics/op_anim/scrolling_background/opanim11.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim11.map.bin"
 
 	.global img_opanim12
 img_opanim12:
@@ -841,7 +841,7 @@ img_opanim12:
 
 	.global tsa_opanim12
 tsa_opanim12:
-	.incbin "graphics/op_anim/scrolling_background/opanim12.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim12.map.bin"
 
 	.global img_opanim13
 img_opanim13:
@@ -849,7 +849,7 @@ img_opanim13:
 
 	.global tsa_opanim13
 tsa_opanim13:
-	.incbin "graphics/op_anim/scrolling_background/opanim13.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim13.map.bin"
 
 	.global img_opanim14
 img_opanim14:
@@ -857,7 +857,7 @@ img_opanim14:
 
 	.global tsa_opanim14
 tsa_opanim14:
-	.incbin "graphics/op_anim/scrolling_background/opanim14.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim14.map.bin"
 
 	.global img_opanim15
 img_opanim15:
@@ -865,7 +865,7 @@ img_opanim15:
 
 	.global tsa_opanim15
 tsa_opanim15:
-	.incbin "graphics/op_anim/scrolling_background/opanim15.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim15.map.bin"
 
 	.global img_opanim16
 img_opanim16:
@@ -873,7 +873,7 @@ img_opanim16:
 
 	.global tsa_opanim16
 tsa_opanim16:
-	.incbin "graphics/op_anim/scrolling_background/opanim16.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim16.map.bin"
 
 	.global img_opanim17
 img_opanim17:
@@ -881,7 +881,7 @@ img_opanim17:
 
 	.global tsa_opanim17
 tsa_opanim17:
-	.incbin "graphics/op_anim/scrolling_background/opanim17.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim17.map.bin"
 
 	.global img_opanim18
 img_opanim18:
@@ -889,7 +889,7 @@ img_opanim18:
 
 	.global tsa_opanim18
 tsa_opanim18:
-	.incbin "graphics/op_anim/scrolling_background/opanim18.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim18.map.bin"
 
 	.global img_opanim19
 img_opanim19:
@@ -897,7 +897,7 @@ img_opanim19:
 
 	.global tsa_opanim19
 tsa_opanim19:
-	.incbin "graphics/op_anim/scrolling_background/opanim19.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim19.map.bin"
 
 	.global img_opanim20
 img_opanim20:
@@ -905,7 +905,7 @@ img_opanim20:
 
 	.global tsa_opanim20
 tsa_opanim20:
-	.incbin "graphics/op_anim/scrolling_background/opanim20.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim20.map.bin"
 
 	.global img_opanim21
 img_opanim21:
@@ -913,7 +913,7 @@ img_opanim21:
 
 	.global tsa_opanim21
 tsa_opanim21:
-	.incbin "graphics/op_anim/scrolling_background/opanim21.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim21.map.bin"
 
 	.global img_opanim22
 img_opanim22:
@@ -921,7 +921,7 @@ img_opanim22:
 
 	.global tsa_opanim22
 tsa_opanim22:
-	.incbin "graphics/op_anim/scrolling_background/opanim22.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim22.map.bin"
 
 	.global img_opanim23
 img_opanim23:
@@ -929,7 +929,7 @@ img_opanim23:
 
 	.global tsa_opanim23
 tsa_opanim23:
-	.incbin "graphics/op_anim/scrolling_background/opanim23.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim23.map.bin"
 
 	.global img_opanim24
 img_opanim24:
@@ -937,7 +937,7 @@ img_opanim24:
 
 	.global tsa_opanim24
 tsa_opanim24:
-	.incbin "graphics/op_anim/scrolling_background/opanim24.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim24.map.bin"
 
 	.global img_opanim25
 img_opanim25:
@@ -945,7 +945,7 @@ img_opanim25:
 
 	.global tsa_opanim25
 tsa_opanim25:
-	.incbin "graphics/op_anim/scrolling_background/opanim25.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim25.map.bin"
 
 	.global img_opanim26
 img_opanim26:
@@ -953,7 +953,7 @@ img_opanim26:
 
 	.global tsa_opanim26
 tsa_opanim26:
-	.incbin "graphics/op_anim/scrolling_background/opanim26.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim26.map.bin"
 
 	.global img_opanim27
 img_opanim27:
@@ -961,7 +961,7 @@ img_opanim27:
 
 	.global tsa_opanim27
 tsa_opanim27:
-	.incbin "graphics/op_anim/scrolling_background/opanim27.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim27.map.bin"
 
 	.global img_opanim28
 img_opanim28:
@@ -969,7 +969,7 @@ img_opanim28:
 
 	.global tsa_opanim28
 tsa_opanim28:
-	.incbin "graphics/op_anim/scrolling_background/opanim28.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim28.map.bin"
 
 	.global img_opanim29
 img_opanim29:
@@ -977,7 +977,7 @@ img_opanim29:
 
 	.global tsa_opanim29
 tsa_opanim29:
-	.incbin "graphics/op_anim/scrolling_background/opanim29.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim29.map.bin"
 
 	.global img_opanim30
 img_opanim30:
@@ -985,7 +985,7 @@ img_opanim30:
 
 	.global tsa_opanim30
 tsa_opanim30:
-	.incbin "graphics/op_anim/scrolling_background/opanim30.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim30.map.bin"
 
 	.global img_opanim31
 img_opanim31:
@@ -993,7 +993,7 @@ img_opanim31:
 
 	.global tsa_opanim31
 tsa_opanim31:
-	.incbin "graphics/op_anim/scrolling_background/opanim31.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim31.map.bin"
 
 	.global img_opanim32
 img_opanim32:
@@ -1001,7 +1001,7 @@ img_opanim32:
 
 	.global tsa_opanim32
 tsa_opanim32:
-	.incbin "graphics/op_anim/scrolling_background/opanim32.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim32.map.bin"
 
 	.global img_opanim33
 img_opanim33:
@@ -1009,7 +1009,7 @@ img_opanim33:
 
 	.global tsa_opanim33
 tsa_opanim33:
-	.incbin "graphics/op_anim/scrolling_background/opanim33.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim33.map.bin"
 
 	.global img_opanim34
 img_opanim34:
@@ -1017,7 +1017,7 @@ img_opanim34:
 
 	.global tsa_opanim34
 tsa_opanim34:
-	.incbin "graphics/op_anim/scrolling_background/opanim34.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim34.map.bin"
 
 	.global img_opanim35
 img_opanim35:
@@ -1025,7 +1025,7 @@ img_opanim35:
 
 	.global tsa_opanim35
 tsa_opanim35:
-	.incbin "graphics/op_anim/scrolling_background/opanim35.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim35.map.bin"
 
 	.global img_opanim36
 img_opanim36:
@@ -1033,7 +1033,7 @@ img_opanim36:
 
 	.global tsa_opanim36
 tsa_opanim36:
-	.incbin "graphics/op_anim/scrolling_background/opanim36.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim36.map.bin"
 
 	.global img_opanim37
 img_opanim37:
@@ -1041,7 +1041,7 @@ img_opanim37:
 
 	.global tsa_opanim37
 tsa_opanim37:
-	.incbin "graphics/op_anim/scrolling_background/opanim37.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim37.map.bin"
 
 	.global img_opanim38
 img_opanim38:
@@ -1049,7 +1049,7 @@ img_opanim38:
 
 	.global tsa_opanim38
 tsa_opanim38:
-	.incbin "graphics/op_anim/scrolling_background/opanim38.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim38.map.bin"
 
 	.global img_opanim39
 img_opanim39:
@@ -1057,7 +1057,7 @@ img_opanim39:
 
 	.global tsa_opanim39
 tsa_opanim39:
-	.incbin "graphics/op_anim/scrolling_background/opanim39.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim39.map.bin"
 
 	.global img_opanim40
 img_opanim40:
@@ -1065,7 +1065,7 @@ img_opanim40:
 
 	.global tsa_opanim40
 tsa_opanim40:
-	.incbin "graphics/op_anim/scrolling_background/opanim40.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim40.map.bin"
 
 	.global img_opanim41
 img_opanim41:
@@ -1073,7 +1073,7 @@ img_opanim41:
 
 	.global tsa_opanim41
 tsa_opanim41:
-	.incbin "graphics/op_anim/scrolling_background/opanim41.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim41.map.bin"
 
 	.global img_opanim42
 img_opanim42:
@@ -1081,7 +1081,7 @@ img_opanim42:
 
 	.global tsa_opanim42
 tsa_opanim42:
-	.incbin "graphics/op_anim/scrolling_background/opanim42.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim42.map.bin"
 
 	.global img_opanim43
 img_opanim43:
@@ -1089,7 +1089,7 @@ img_opanim43:
 
 	.global tsa_opanim43
 tsa_opanim43:
-	.incbin "graphics/op_anim/scrolling_background/opanim43.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim43.map.bin"
 
 	.global img_opanim44
 img_opanim44:
@@ -1097,7 +1097,7 @@ img_opanim44:
 
 	.global tsa_opanim44
 tsa_opanim44:
-	.incbin "graphics/op_anim/scrolling_background/opanim44.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim44.map.bin"
 
 	.global img_opanim45
 img_opanim45:
@@ -1105,7 +1105,7 @@ img_opanim45:
 
 	.global tsa_opanim45
 tsa_opanim45:
-	.incbin "graphics/op_anim/scrolling_background/opanim45.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim45.map.bin"
 
 	.global img_opanim46
 img_opanim46:
@@ -1113,7 +1113,7 @@ img_opanim46:
 
 	.global tsa_opanim46
 tsa_opanim46:
-	.incbin "graphics/op_anim/scrolling_background/opanim46.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim46.map.bin"
 
 	.global img_opanim47
 img_opanim47:
@@ -1121,7 +1121,7 @@ img_opanim47:
 
 	.global tsa_opanim47
 tsa_opanim47:
-	.incbin "graphics/op_anim/scrolling_background/opanim47.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim47.map.bin"
 
 	.global img_opanim48
 img_opanim48:
@@ -1129,7 +1129,7 @@ img_opanim48:
 
 	.global tsa_opanim48
 tsa_opanim48:
-	.incbin "graphics/op_anim/scrolling_background/opanim48.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim48.map.bin"
 
 	.global img_opanim49
 img_opanim49:
@@ -1137,7 +1137,7 @@ img_opanim49:
 
 	.global tsa_opanim49
 tsa_opanim49:
-	.incbin "graphics/op_anim/scrolling_background/opanim49.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim49.map.bin"
 
 	.global img_opanim50
 img_opanim50:
@@ -1145,7 +1145,7 @@ img_opanim50:
 
 	.global tsa_opanim50
 tsa_opanim50:
-	.incbin "graphics/op_anim/scrolling_background/opanim50.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim50.map.bin"
 
 	.global img_opanim51
 img_opanim51:
@@ -1153,7 +1153,7 @@ img_opanim51:
 
 	.global tsa_opanim51
 tsa_opanim51:
-	.incbin "graphics/op_anim/scrolling_background/opanim51.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim51.map.bin"
 
 	.global img_opanim52
 img_opanim52:
@@ -1161,7 +1161,7 @@ img_opanim52:
 
 	.global tsa_opanim52
 tsa_opanim52:
-	.incbin "graphics/op_anim/scrolling_background/opanim52.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim52.map.bin"
 
 	.global img_opanim53
 img_opanim53:
@@ -1169,7 +1169,7 @@ img_opanim53:
 
 	.global tsa_opanim53
 tsa_opanim53:
-	.incbin "graphics/op_anim/scrolling_background/opanim53.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim53.map.bin"
 
 	.global img_opanim54
 img_opanim54:
@@ -1177,7 +1177,7 @@ img_opanim54:
 
 	.global tsa_opanim54
 tsa_opanim54:
-	.incbin "graphics/op_anim/scrolling_background/opanim54.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim54.map.bin"
 
 	.global img_opanim55
 img_opanim55:
@@ -1185,7 +1185,7 @@ img_opanim55:
 
 	.global tsa_opanim55
 tsa_opanim55:
-	.incbin "graphics/op_anim/scrolling_background/opanim55.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim55.map.bin"
 
 	.global img_opanim56
 img_opanim56:
@@ -1193,7 +1193,7 @@ img_opanim56:
 
 	.global tsa_opanim56
 tsa_opanim56:
-	.incbin "graphics/op_anim/scrolling_background/opanim56.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim56.map.bin"
 
 	.global img_opanim57
 img_opanim57:
@@ -1201,7 +1201,7 @@ img_opanim57:
 
 	.global tsa_opanim57
 tsa_opanim57:
-	.incbin "graphics/op_anim/scrolling_background/opanim57.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim57.map.bin"
 
 	.global img_opanim58
 img_opanim58:
@@ -1209,7 +1209,7 @@ img_opanim58:
 
 	.global tsa_opanim58
 tsa_opanim58:
-	.incbin "graphics/op_anim/scrolling_background/opanim58.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim58.map.bin"
 
 	.global img_opanim59
 img_opanim59:
@@ -1217,7 +1217,7 @@ img_opanim59:
 
 	.global tsa_opanim59
 tsa_opanim59:
-	.incbin "graphics/op_anim/scrolling_background/opanim59.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim59.map.bin"
 
 	.global img_opanim60
 img_opanim60:
@@ -1225,7 +1225,7 @@ img_opanim60:
 
 	.global tsa_opanim60
 tsa_opanim60:
-	.incbin "graphics/op_anim/scrolling_background/opanim60.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim60.map.bin"
 
 	.global img_opanim61
 img_opanim61:
@@ -1233,7 +1233,7 @@ img_opanim61:
 
 	.global tsa_opanim61
 tsa_opanim61:
-	.incbin "graphics/op_anim/scrolling_background/opanim61.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim61.map.bin"
 
 	.global img_opanim62
 img_opanim62:
@@ -1241,7 +1241,7 @@ img_opanim62:
 
 	.global tsa_opanim62
 tsa_opanim62:
-	.incbin "graphics/op_anim/scrolling_background/opanim62.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim62.map.bin"
 
 	.global img_opanim63
 img_opanim63:
@@ -1249,7 +1249,7 @@ img_opanim63:
 
 	.global tsa_opanim63
 tsa_opanim63:
-	.incbin "graphics/op_anim/scrolling_background/opanim63.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim63.map.bin"
 
 	.global img_opanim64
 img_opanim64:
@@ -1257,7 +1257,7 @@ img_opanim64:
 
 	.global tsa_opanim64
 tsa_opanim64:
-	.incbin "graphics/op_anim/scrolling_background/opanim64.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim64.map.bin"
 
 	.global img_opanim65
 img_opanim65:
@@ -1265,7 +1265,7 @@ img_opanim65:
 
 	.global tsa_opanim65
 tsa_opanim65:
-	.incbin "graphics/op_anim/scrolling_background/opanim65.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim65.map.bin"
 
 	.global img_opanim66
 img_opanim66:
@@ -1273,7 +1273,7 @@ img_opanim66:
 
 	.global tsa_opanim66
 tsa_opanim66:
-	.incbin "graphics/op_anim/scrolling_background/opanim66.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim66.map.bin"
 
 	.global img_opanim67
 img_opanim67:
@@ -1281,7 +1281,7 @@ img_opanim67:
 
 	.global tsa_opanim67
 tsa_opanim67:
-	.incbin "graphics/op_anim/scrolling_background/opanim67.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim67.map.bin"
 
 	.global img_opanim68
 img_opanim68:
@@ -1289,7 +1289,7 @@ img_opanim68:
 
 	.global tsa_opanim68
 tsa_opanim68:
-	.incbin "graphics/op_anim/scrolling_background/opanim68.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim68.map.bin"
 
 	.global img_opanim69
 img_opanim69:
@@ -1297,7 +1297,7 @@ img_opanim69:
 
 	.global tsa_opanim69
 tsa_opanim69:
-	.incbin "graphics/op_anim/scrolling_background/opanim69.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim69.map.bin"
 
 	.global img_opanim70
 img_opanim70:
@@ -1305,7 +1305,7 @@ img_opanim70:
 
 	.global tsa_opanim70
 tsa_opanim70:
-	.incbin "graphics/op_anim/scrolling_background/opanim70.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim70.map.bin"
 
 	.global img_opanim71
 img_opanim71:
@@ -1313,7 +1313,7 @@ img_opanim71:
 
 	.global tsa_opanim71
 tsa_opanim71:
-	.incbin "graphics/op_anim/scrolling_background/opanim71.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim71.map.bin"
 
 	.global img_opanim72
 img_opanim72:
@@ -1321,7 +1321,7 @@ img_opanim72:
 
 	.global tsa_opanim72
 tsa_opanim72:
-	.incbin "graphics/op_anim/scrolling_background/opanim72.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim72.map.bin"
 
 	.global img_opanim73
 img_opanim73:
@@ -1329,7 +1329,7 @@ img_opanim73:
 
 	.global tsa_opanim73
 tsa_opanim73:
-	.incbin "graphics/op_anim/scrolling_background/opanim73.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim73.map.bin"
 
 	.global img_opanim74
 img_opanim74:
@@ -1337,7 +1337,7 @@ img_opanim74:
 
 	.global tsa_opanim74
 tsa_opanim74:
-	.incbin "graphics/op_anim/scrolling_background/opanim74.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim74.map.bin"
 
 	.global img_opanim75
 img_opanim75:
@@ -1345,7 +1345,7 @@ img_opanim75:
 
 	.global tsa_opanim75
 tsa_opanim75:
-	.incbin "graphics/op_anim/scrolling_background/opanim75.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim75.map.bin"
 
 	.global img_opanim76
 img_opanim76:
@@ -1353,7 +1353,7 @@ img_opanim76:
 
 	.global tsa_opanim76
 tsa_opanim76:
-	.incbin "graphics/op_anim/scrolling_background/opanim76.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim76.map.bin"
 
 	.global img_opanim77
 img_opanim77:
@@ -1361,7 +1361,7 @@ img_opanim77:
 
 	.global tsa_opanim77
 tsa_opanim77:
-	.incbin "graphics/op_anim/scrolling_background/opanim77.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim77.map.bin"
 
 	.global img_opanim78
 img_opanim78:
@@ -1369,7 +1369,7 @@ img_opanim78:
 
 	.global tsa_opanim78
 tsa_opanim78:
-	.incbin "graphics/op_anim/scrolling_background/opanim78.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim78.map.bin"
 
 	.global img_opanim79
 img_opanim79:
@@ -1377,7 +1377,7 @@ img_opanim79:
 
 	.global tsa_opanim79
 tsa_opanim79:
-	.incbin "graphics/op_anim/scrolling_background/opanim79.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim79.map.bin"
 
 	.global img_opanim80
 img_opanim80:
@@ -1385,7 +1385,7 @@ img_opanim80:
 
 	.global tsa_opanim80
 tsa_opanim80:
-	.incbin "graphics/op_anim/scrolling_background/opanim80.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim80.map.bin"
 
 	.global img_opanim81
 img_opanim81:
@@ -1393,7 +1393,7 @@ img_opanim81:
 
 	.global tsa_opanim81
 tsa_opanim81:
-	.incbin "graphics/op_anim/scrolling_background/opanim81.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim81.map.bin"
 
 	.global img_opanim82
 img_opanim82:
@@ -1401,7 +1401,7 @@ img_opanim82:
 
 	.global tsa_opanim82
 tsa_opanim82:
-	.incbin "graphics/op_anim/scrolling_background/opanim82.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim82.map.bin"
 
 	.global img_opanim83
 img_opanim83:
@@ -1409,7 +1409,7 @@ img_opanim83:
 
 	.global tsa_opanim83
 tsa_opanim83:
-	.incbin "graphics/op_anim/scrolling_background/opanim83.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim83.map.bin"
 
 	.global img_opanim84
 img_opanim84:
@@ -1417,7 +1417,7 @@ img_opanim84:
 
 	.global tsa_opanim84
 tsa_opanim84:
-	.incbin "graphics/op_anim/scrolling_background/opanim84.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim84.map.bin"
 
 	.global img_opanim85
 img_opanim85:
@@ -1425,7 +1425,7 @@ img_opanim85:
 
 	.global tsa_opanim85
 tsa_opanim85:
-	.incbin "graphics/op_anim/scrolling_background/opanim85.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim85.map.bin"
 
 	.global img_opanim86
 img_opanim86:
@@ -1433,7 +1433,7 @@ img_opanim86:
 
 	.global tsa_opanim86
 tsa_opanim86:
-	.incbin "graphics/op_anim/scrolling_background/opanim86.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim86.map.bin"
 
 	.global img_opanim87
 img_opanim87:
@@ -1441,7 +1441,7 @@ img_opanim87:
 
 	.global tsa_opanim87
 tsa_opanim87:
-	.incbin "graphics/op_anim/scrolling_background/opanim87.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim87.map.bin"
 
 	.global img_opanim88
 img_opanim88:
@@ -1449,7 +1449,7 @@ img_opanim88:
 
 	.global tsa_opanim88
 tsa_opanim88:
-	.incbin "graphics/op_anim/scrolling_background/opanim88.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim88.map.bin"
 
 	.global img_opanim89
 img_opanim89:
@@ -1457,7 +1457,7 @@ img_opanim89:
 
 	.global tsa_opanim89
 tsa_opanim89:
-	.incbin "graphics/op_anim/scrolling_background/opanim89.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim89.map.bin"
 
 	.global img_opanim90
 img_opanim90:
@@ -1465,7 +1465,7 @@ img_opanim90:
 
 	.global tsa_opanim90
 tsa_opanim90:
-	.incbin "graphics/op_anim/scrolling_background/opanim90.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim90.map.bin"
 
 	.global img_opanim91
 img_opanim91:
@@ -1473,7 +1473,7 @@ img_opanim91:
 
 	.global tsa_opanim91
 tsa_opanim91:
-	.incbin "graphics/op_anim/scrolling_background/opanim91.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim91.map.bin"
 
 	.global img_opanim92
 img_opanim92:
@@ -1481,7 +1481,7 @@ img_opanim92:
 
 	.global tsa_opanim92
 tsa_opanim92:
-	.incbin "graphics/op_anim/scrolling_background/opanim92.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim92.map.bin"
 
 	.global img_opanim93
 img_opanim93:
@@ -1489,7 +1489,7 @@ img_opanim93:
 
 	.global tsa_opanim93
 tsa_opanim93:
-	.incbin "graphics/op_anim/scrolling_background/opanim93.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim93.map.bin"
 
 	.global img_opanim94
 img_opanim94:
@@ -1497,7 +1497,7 @@ img_opanim94:
 
 	.global tsa_opanim94
 tsa_opanim94:
-	.incbin "graphics/op_anim/scrolling_background/opanim94.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim94.map.bin"
 
 	.global img_opanim95
 img_opanim95:
@@ -1505,7 +1505,7 @@ img_opanim95:
 
 	.global tsa_opanim95
 tsa_opanim95:
-	.incbin "graphics/op_anim/scrolling_background/opanim95.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim95.map.bin"
 
 	.global img_opanim96
 img_opanim96:
@@ -1513,7 +1513,7 @@ img_opanim96:
 
 	.global tsa_opanim96
 tsa_opanim96:
-	.incbin "graphics/op_anim/scrolling_background/opanim96.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim96.map.bin"
 
 	.global img_opanim97
 img_opanim97:
@@ -1521,7 +1521,7 @@ img_opanim97:
 
 	.global tsa_opanim97
 tsa_opanim97:
-	.incbin "graphics/op_anim/scrolling_background/opanim97.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim97.map.bin"
 
 	.global img_opanim98
 img_opanim98:
@@ -1529,7 +1529,7 @@ img_opanim98:
 
 	.global tsa_opanim98
 tsa_opanim98:
-	.incbin "graphics/op_anim/scrolling_background/opanim98.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim98.map.bin"
 
 	.global img_opanim99
 img_opanim99:
@@ -1537,7 +1537,7 @@ img_opanim99:
 
 	.global tsa_opanim99
 tsa_opanim99:
-	.incbin "graphics/op_anim/scrolling_background/opanim99.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim99.map.bin"
 
 	.global img_opanim100
 img_opanim100:
@@ -1545,7 +1545,7 @@ img_opanim100:
 
 	.global tsa_opanim100
 tsa_opanim100:
-	.incbin "graphics/op_anim/scrolling_background/opanim100.tsa"
+	.incbin "graphics/op_anim/scrolling_background/opanim100.map.bin"
 
 	.global pal_08B103D8
 pal_08B103D8:
@@ -1577,11 +1577,11 @@ Pal_IntelligentSystems:
 
 	.global Tsa_OpAnimHealthSafetyScreenBG1
 Tsa_OpAnimHealthSafetyScreenBG1:
-	.incbin "graphics/op_anim/OpAnimHealthSafetyScreenBG1.tsa.lz"
+	.incbin "graphics/op_anim/OpAnimHealthSafetyScreenBG1.map.bin.lz"
 
 	.global Tsa_OpAnimHealthSafetyScreenBG0
 Tsa_OpAnimHealthSafetyScreenBG0:
-	.incbin "graphics/op_anim/OpAnimHealthSafetyScreenBG0.tsa.lz"
+	.incbin "graphics/op_anim/OpAnimHealthSafetyScreenBG0.map.bin.lz"
 
 	.global Img_OpAnimHealthSafetyScreen
 Img_OpAnimHealthSafetyScreen:

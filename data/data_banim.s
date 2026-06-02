@@ -1383,7 +1383,7 @@ AnimScr_EfxSongObj2: @ 0x5DD4B4
 .global Tsa_BreathBgBase
 gUnk_085dd518:
 Tsa_BreathBgBase:  @ 0x085DD518
-	.incbin "./graphics/banim/assets/tsa/005DD518_Tsa_BreathBgBase.tsa.lz"
+	.incbin "./graphics/banim/assets/tsa/005DD518_Tsa_BreathBgBase.map.bin.lz"
 
 	.global Pal_BreathBgBase
 Pal_BreathBgBase:  @ 0x085DD734
@@ -1391,7 +1391,7 @@ Pal_BreathBgBase:  @ 0x085DD734
 
 	.global Tsa_085DDAF4
 Tsa_085DDAF4:  @ 0x085DDAF4
-	.incbin "./graphics/banim/assets/tsa/005DDAF4_Tsa_085DDAF4.tsa.lz"
+	.incbin "./graphics/banim/assets/tsa/005DDAF4_Tsa_085DDAF4.map.bin.lz"
 
 
 	.global Img_BreathSprites
@@ -4448,51 +4448,51 @@ Img_DarkBreathBg:  @ 0x085E5AE4
 
 	.global Tsa_085E64D8
 Tsa_085E64D8:  @ 0x085E64D8
-	.incbin "./graphics/banim/assets/tsa/005E64D8_Tsa_085E64D8.tsa.lz" @ 0x5E65C0 - 0x5E64D8
+	.incbin "./graphics/banim/assets/tsa/005E64D8_Tsa_085E64D8.map.bin.lz" @ 0x5E65C0 - 0x5E64D8
 
 	.global Tsa_085E65C0
 Tsa_085E65C0:  @ 0x085E65C0
-	.incbin "./graphics/banim/assets/tsa/005E65C0_Tsa_085E65C0.tsa.lz" @ 0x5E667C - 0x5E65C0
+	.incbin "./graphics/banim/assets/tsa/005E65C0_Tsa_085E65C0.map.bin.lz" @ 0x5E667C - 0x5E65C0
 
 	.global Tsa_085E667C
 Tsa_085E667C:  @ 0x085E667C
-	.incbin "./graphics/banim/assets/tsa/005E667C_Tsa_085E667C.tsa.lz" @ 0x5E6778 - 0x5E667C
+	.incbin "./graphics/banim/assets/tsa/005E667C_Tsa_085E667C.map.bin.lz" @ 0x5E6778 - 0x5E667C
 
 	.global Tsa_085E6778
 Tsa_085E6778:  @ 0x085E6778
-	.incbin "./graphics/banim/assets/tsa/005E6778_Tsa_085E6778.tsa.lz" @ 0x5E6860 - 0x5E6778
+	.incbin "./graphics/banim/assets/tsa/005E6778_Tsa_085E6778.map.bin.lz" @ 0x5E6860 - 0x5E6778
 
 	.global Tsa_085E6860
 Tsa_085E6860:  @ 0x085E6860
-	.incbin "./graphics/banim/assets/tsa/005E6860_Tsa_085E6860.tsa.lz" @ 0x5E6948 - 0x5E6860
+	.incbin "./graphics/banim/assets/tsa/005E6860_Tsa_085E6860.map.bin.lz" @ 0x5E6948 - 0x5E6860
 
 	.global Tsa_085E6948
 Tsa_085E6948:  @ 0x085E6948
-	.incbin "./graphics/banim/assets/tsa/005E6948_Tsa_085E6948.tsa.lz" @ 0x5E6A44 - 0x5E6948
+	.incbin "./graphics/banim/assets/tsa/005E6948_Tsa_085E6948.map.bin.lz" @ 0x5E6A44 - 0x5E6948
 
 	.global Tsa_085E6A44
 Tsa_085E6A44:  @ 0x085E6A44
-	.incbin "./graphics/banim/assets/tsa/005E6A44_Tsa_085E6A44.tsa.lz" @ 0x5E6B70 - 0x5E6A44
+	.incbin "./graphics/banim/assets/tsa/005E6A44_Tsa_085E6A44.map.bin.lz" @ 0x5E6B70 - 0x5E6A44
 
 	.global Tsa_085E6B70
 Tsa_085E6B70:  @ 0x085E6B70
-	.incbin "./graphics/banim/assets/tsa/005E6B70_Tsa_085E6B70.tsa.lz" @ 0x5E6CA4 - 0x5E6B70
+	.incbin "./graphics/banim/assets/tsa/005E6B70_Tsa_085E6B70.map.bin.lz" @ 0x5E6CA4 - 0x5E6B70
 
 	.global Tsa_085E6CA4
 Tsa_085E6CA4:  @ 0x085E6CA4
-	.incbin "./graphics/banim/assets/tsa/005E6CA4_Tsa_085E6CA4.tsa.lz" @ 0x5E6D68 - 0x5E6CA4
+	.incbin "./graphics/banim/assets/tsa/005E6CA4_Tsa_085E6CA4.map.bin.lz" @ 0x5E6D68 - 0x5E6CA4
 
 	.global Tsa_085E6D68
 Tsa_085E6D68:  @ 0x085E6D68
-	.incbin "./graphics/banim/assets/tsa/005E6D68_Tsa_085E6D68.tsa.lz" @ 0x5E6E94 - 0x5E6D68
+	.incbin "./graphics/banim/assets/tsa/005E6D68_Tsa_085E6D68.map.bin.lz" @ 0x5E6E94 - 0x5E6D68
 
 	.global Tsa_085E6E94
 Tsa_085E6E94:  @ 0x085E6E94
-	.incbin "./graphics/banim/assets/tsa/005E6E94_Tsa_085E6E94.tsa.lz" @ 0x5E6F90 - 0x5E6E94
+	.incbin "./graphics/banim/assets/tsa/005E6E94_Tsa_085E6E94.map.bin.lz" @ 0x5E6F90 - 0x5E6E94
 
 	.global Tsa_085E6F90
 Tsa_085E6F90:  @ 0x085E6F90
-	.incbin "./graphics/banim/assets/tsa/005E6F90_Tsa_085E6F90.tsa.lz" @ 0x5E7028 - 0x5E6F90
+	.incbin "./graphics/banim/assets/tsa/005E6F90_Tsa_085E6F90.map.bin.lz" @ 0x5E7028 - 0x5E6F90
 
 	.global Img_EfxCriricalEffectBG
 Img_EfxCriricalEffectBG:  @ 0x085E7028
@@ -4504,11 +4504,11 @@ Pal_EfxCriricalEffectBG:  @ 0x085E8108
 
 	.global Tsa_EfxCriricalEffectBG_L
 Tsa_EfxCriricalEffectBG_L:  @ 0x085E8308
-	.incbin "./graphics/banim/assets/tsa/005E8308_Tsa_EfxCriricalEffectBG_L.tsa.lz"
+	.incbin "./graphics/banim/assets/tsa/005E8308_Tsa_EfxCriricalEffectBG_L.map.bin.lz"
 
 	.global Tsa_EfxCriricalEffectBG_R
 Tsa_EfxCriricalEffectBG_R:  @ 0x085E87A8
-	.incbin "./graphics/banim/assets/tsa/005E87A8_Tsa_EfxCriricalEffectBG_R.tsa.lz"
+	.incbin "./graphics/banim/assets/tsa/005E87A8_Tsa_EfxCriricalEffectBG_R.map.bin.lz"
 
 	.global Img_EfxSRankWeaponEffectBG
 Img_EfxSRankWeaponEffectBG:  @ 0x085E8C04
@@ -4520,7 +4520,7 @@ Pal_EfxSRankWeaponEffectBG:  @ 0x085E8CC4
 
 	.global Tsa_EfxSRankWeaponEffectBG
 Tsa_EfxSRankWeaponEffectBG:  @ 0x085E8CE4
-	.incbin "./graphics/banim/assets/tsa/005E8CE4_Tsa_EfxSRankWeaponEffectBG.tsa.lz"
+	.incbin "./graphics/banim/assets/tsa/005E8CE4_Tsa_EfxSRankWeaponEffectBG.map.bin.lz"
 
 	.global Img_EfxNormalEffectBG
 Img_EfxNormalEffectBG:  @ 0x085E8D88
@@ -4532,43 +4532,43 @@ Pal_EfxNormalEffectBG:  @ 0x085E9150
 
 	.global Tsa1_EfxNormalEffectBG
 Tsa1_EfxNormalEffectBG:
-    .incbin "./graphics/banim/assets/tsa/005E9170_Tsa1_EfxNormalEffectBG.tsa.lz"
+    .incbin "./graphics/banim/assets/tsa/005E9170_Tsa1_EfxNormalEffectBG.map.bin.lz"
 
 	.global Tsa2_EfxNormalEffectBG
 Tsa2_EfxNormalEffectBG:
-    .incbin "./graphics/banim/assets/tsa/005E923C_Tsa2_EfxNormalEffectBG.tsa.lz"
+    .incbin "./graphics/banim/assets/tsa/005E923C_Tsa2_EfxNormalEffectBG.map.bin.lz"
 
 	.global Tsa3_EfxNormalEffectBG
 Tsa3_EfxNormalEffectBG:
-    .incbin "./graphics/banim/assets/tsa/005E933C_Tsa3_EfxNormalEffectBG.tsa.lz"
+    .incbin "./graphics/banim/assets/tsa/005E933C_Tsa3_EfxNormalEffectBG.map.bin.lz"
 
 	.global Tsa4_EfxNormalEffectBG
 Tsa4_EfxNormalEffectBG:
-    .incbin "./graphics/banim/assets/tsa/005E944C_Tsa4_EfxNormalEffectBG.tsa.lz"
+    .incbin "./graphics/banim/assets/tsa/005E944C_Tsa4_EfxNormalEffectBG.map.bin.lz"
 
 	.global Tsa5_EfxNormalEffectBG
 Tsa5_EfxNormalEffectBG:
-    .incbin "./graphics/banim/assets/tsa/005E9558_Tsa5_EfxNormalEffectBG.tsa.lz"
+    .incbin "./graphics/banim/assets/tsa/005E9558_Tsa5_EfxNormalEffectBG.map.bin.lz"
 
 	.global Tsa6_EfxNormalEffectBG
 Tsa6_EfxNormalEffectBG:
-    .incbin "./graphics/banim/assets/tsa/005E965C_Tsa6_EfxNormalEffectBG.tsa.lz"
+    .incbin "./graphics/banim/assets/tsa/005E965C_Tsa6_EfxNormalEffectBG.map.bin.lz"
 
 	.global Tsa7_EfxNormalEffectBG
 Tsa7_EfxNormalEffectBG:
-    .incbin "./graphics/banim/assets/tsa/005E9748_Tsa7_EfxNormalEffectBG.tsa.lz"
+    .incbin "./graphics/banim/assets/tsa/005E9748_Tsa7_EfxNormalEffectBG.map.bin.lz"
 
 	.global Tsa8_EfxNormalEffectBG
 Tsa8_EfxNormalEffectBG:
-    .incbin "./graphics/banim/assets/tsa/005E981C_Tsa8_EfxNormalEffectBG.tsa.lz"
+    .incbin "./graphics/banim/assets/tsa/005E981C_Tsa8_EfxNormalEffectBG.map.bin.lz"
 
 	.global Tsa9_EfxNormalEffectBG
 Tsa9_EfxNormalEffectBG:
-    .incbin "./graphics/banim/assets/tsa/005E98D8_Tsa9_EfxNormalEffectBG.tsa.lz"
+    .incbin "./graphics/banim/assets/tsa/005E98D8_Tsa9_EfxNormalEffectBG.map.bin.lz"
 
 	.global TsaA_EfxNormalEffectBG
 TsaA_EfxNormalEffectBG:
-    .incbin "./graphics/banim/assets/tsa/005E9980_TsaA_EfxNormalEffectBG.tsa.lz"
+    .incbin "./graphics/banim/assets/tsa/005E9980_TsaA_EfxNormalEffectBG.map.bin.lz"
 
 .global AnimSprite_YushaSpinShield1_1
 AnimSprite_YushaSpinShield1_1:  @ 0x5E9A18
@@ -7468,91 +7468,91 @@ Pal_EfxMagfcastBG:  @ 0x085EF24C
 
     .global Tsa1_EfxMagfcastBG
 Tsa1_EfxMagfcastBG:
-    .incbin "./graphics/banim/assets/tsa/005EF26C_Tsa1_EfxMagfcastBG.tsa.lz"
+    .incbin "./graphics/banim/assets/tsa/005EF26C_Tsa1_EfxMagfcastBG.map.bin.lz"
 
     .global Tsa2_EfxMagfcastBG
 Tsa2_EfxMagfcastBG:
-    .incbin "./graphics/banim/assets/tsa/005EF308_Tsa2_EfxMagfcastBG.tsa.lz"
+    .incbin "./graphics/banim/assets/tsa/005EF308_Tsa2_EfxMagfcastBG.map.bin.lz"
 
     .global Tsa3_EfxMagfcastBG
 Tsa3_EfxMagfcastBG:
-    .incbin "./graphics/banim/assets/tsa/005EF3A4_Tsa3_EfxMagfcastBG.tsa.lz"
+    .incbin "./graphics/banim/assets/tsa/005EF3A4_Tsa3_EfxMagfcastBG.map.bin.lz"
 
     .global Tsa4_EfxMagfcastBG
 Tsa4_EfxMagfcastBG:
-    .incbin "./graphics/banim/assets/tsa/005EF444_Tsa4_EfxMagfcastBG.tsa.lz"
+    .incbin "./graphics/banim/assets/tsa/005EF444_Tsa4_EfxMagfcastBG.map.bin.lz"
 
     .global Tsa5_EfxMagfcastBG
 Tsa5_EfxMagfcastBG:
-    .incbin "./graphics/banim/assets/tsa/005EF4E8_Tsa5_EfxMagfcastBG.tsa.lz"
+    .incbin "./graphics/banim/assets/tsa/005EF4E8_Tsa5_EfxMagfcastBG.map.bin.lz"
 
     .global Tsa6_EfxMagfcastBG
 Tsa6_EfxMagfcastBG:
-    .incbin "./graphics/banim/assets/tsa/005EF59C_Tsa6_EfxMagfcastBG.tsa.lz"
+    .incbin "./graphics/banim/assets/tsa/005EF59C_Tsa6_EfxMagfcastBG.map.bin.lz"
 
     .global Tsa7_EfxMagfcastBG
 Tsa7_EfxMagfcastBG:
-    .incbin "./graphics/banim/assets/tsa/005EF644_Tsa7_EfxMagfcastBG.tsa.lz"
+    .incbin "./graphics/banim/assets/tsa/005EF644_Tsa7_EfxMagfcastBG.map.bin.lz"
 
     .global Tsa8_EfxMagfcastBG
 Tsa8_EfxMagfcastBG:
-    .incbin "./graphics/banim/assets/tsa/005EF6F4_Tsa8_EfxMagfcastBG.tsa.lz"
+    .incbin "./graphics/banim/assets/tsa/005EF6F4_Tsa8_EfxMagfcastBG.map.bin.lz"
 
     .global Tsa9_EfxMagfcastBG
 Tsa9_EfxMagfcastBG:
-    .incbin "./graphics/banim/assets/tsa/005EF7A4_Tsa9_EfxMagfcastBG.tsa.lz"
+    .incbin "./graphics/banim/assets/tsa/005EF7A4_Tsa9_EfxMagfcastBG.map.bin.lz"
 
     .global Tsa10_EfxMagfcastBG
 Tsa10_EfxMagfcastBG:
-    .incbin "./graphics/banim/assets/tsa/005EF85C_Tsa10_EfxMagfcastBG.tsa.lz"
+    .incbin "./graphics/banim/assets/tsa/005EF85C_Tsa10_EfxMagfcastBG.map.bin.lz"
 
     .global Tsa11_EfxMagfcastBG
 Tsa11_EfxMagfcastBG:
-    .incbin "./graphics/banim/assets/tsa/005EF914_Tsa11_EfxMagfcastBG.tsa.lz"
+    .incbin "./graphics/banim/assets/tsa/005EF914_Tsa11_EfxMagfcastBG.map.bin.lz"
 
     .global Tsa12_EfxMagfcastBG
 Tsa12_EfxMagfcastBG:
-    .incbin "./graphics/banim/assets/tsa/005EF9C8_Tsa12_EfxMagfcastBG.tsa.lz"
+    .incbin "./graphics/banim/assets/tsa/005EF9C8_Tsa12_EfxMagfcastBG.map.bin.lz"
 
     .global Tsa13_EfxMagfcastBG
 Tsa13_EfxMagfcastBG:
-    .incbin "./graphics/banim/assets/tsa/005EFA68_Tsa13_EfxMagfcastBG.tsa.lz"
+    .incbin "./graphics/banim/assets/tsa/005EFA68_Tsa13_EfxMagfcastBG.map.bin.lz"
 
     .global Tsa14_EfxMagfcastBG
 Tsa14_EfxMagfcastBG:
-    .incbin "./graphics/banim/assets/tsa/005EFB1C_Tsa14_EfxMagfcastBG.tsa.lz"
+    .incbin "./graphics/banim/assets/tsa/005EFB1C_Tsa14_EfxMagfcastBG.map.bin.lz"
 
     .global Tsa15_EfxMagfcastBG
 Tsa15_EfxMagfcastBG:
-    .incbin "./graphics/banim/assets/tsa/005EFBD0_Tsa15_EfxMagfcastBG.tsa.lz"
+    .incbin "./graphics/banim/assets/tsa/005EFBD0_Tsa15_EfxMagfcastBG.map.bin.lz"
 
     .global Tsa16_EfxMagfcastBG
 Tsa16_EfxMagfcastBG:
-    .incbin "./graphics/banim/assets/tsa/005EFC84_Tsa16_EfxMagfcastBG.tsa.lz"
+    .incbin "./graphics/banim/assets/tsa/005EFC84_Tsa16_EfxMagfcastBG.map.bin.lz"
 
     .global Tsa17_EfxMagfcastBG
 Tsa17_EfxMagfcastBG:
-    .incbin "./graphics/banim/assets/tsa/005EFD24_Tsa17_EfxMagfcastBG.tsa.lz"
+    .incbin "./graphics/banim/assets/tsa/005EFD24_Tsa17_EfxMagfcastBG.map.bin.lz"
 
     .global Tsa18_EfxMagfcastBG
 Tsa18_EfxMagfcastBG:
-    .incbin "./graphics/banim/assets/tsa/005EFDE0_Tsa18_EfxMagfcastBG.tsa.lz"
+    .incbin "./graphics/banim/assets/tsa/005EFDE0_Tsa18_EfxMagfcastBG.map.bin.lz"
 
     .global Tsa19_EfxMagfcastBG
 Tsa19_EfxMagfcastBG:
-    .incbin "./graphics/banim/assets/tsa/005EFE90_Tsa19_EfxMagfcastBG.tsa.lz"
+    .incbin "./graphics/banim/assets/tsa/005EFE90_Tsa19_EfxMagfcastBG.map.bin.lz"
 
     .global Tsa20_EfxMagfcastBG
 Tsa20_EfxMagfcastBG:
-    .incbin "./graphics/banim/assets/tsa/005EFF60_Tsa20_EfxMagfcastBG.tsa.lz"
+    .incbin "./graphics/banim/assets/tsa/005EFF60_Tsa20_EfxMagfcastBG.map.bin.lz"
 
     .global Tsa21_EfxMagfcastBG
 Tsa21_EfxMagfcastBG:
-    .incbin "./graphics/banim/assets/tsa/005F0018_Tsa21_EfxMagfcastBG.tsa.lz"
+    .incbin "./graphics/banim/assets/tsa/005F0018_Tsa21_EfxMagfcastBG.map.bin.lz"
 
     .global Tsa22_EfxMagfcastBG
 Tsa22_EfxMagfcastBG:
-    .incbin "./graphics/banim/assets/tsa/005F00E8_Tsa22_EfxMagfcastBG.tsa.lz"
+    .incbin "./graphics/banim/assets/tsa/005F00E8_Tsa22_EfxMagfcastBG.map.bin.lz"
 
 	.global Img_EfxMagdhisEffectBG
 Img_EfxMagdhisEffectBG:  @ 0x085F0190
@@ -7564,19 +7564,19 @@ Pal_EfxMagdhisEffectBG:  @ 0x085F0E04
 
 	.global Tsa1_EfxMagdhisEffectBG
 Tsa1_EfxMagdhisEffectBG:
-	.incbin "./graphics/banim/assets/tsa/005F0E24_Tsa1_EfxMagdhisEffectBG.tsa.lz"
+	.incbin "./graphics/banim/assets/tsa/005F0E24_Tsa1_EfxMagdhisEffectBG.map.bin.lz"
 
 	.global Tsa2_EfxMagdhisEffectBG
 Tsa2_EfxMagdhisEffectBG:
-	.incbin "./graphics/banim/assets/tsa/005F0F24_Tsa2_EfxMagdhisEffectBG.tsa.lz"
+	.incbin "./graphics/banim/assets/tsa/005F0F24_Tsa2_EfxMagdhisEffectBG.map.bin.lz"
 
 	.global Tsa3_EfxMagdhisEffectBG
 Tsa3_EfxMagdhisEffectBG:
-	.incbin "./graphics/banim/assets/tsa/005F1018_Tsa3_EfxMagdhisEffectBG.tsa.lz"
+	.incbin "./graphics/banim/assets/tsa/005F1018_Tsa3_EfxMagdhisEffectBG.map.bin.lz"
 
 	.global Tsa4_EfxMagdhisEffectBG
 Tsa4_EfxMagdhisEffectBG:
-	.incbin "./graphics/banim/assets/tsa/005F10EC_Tsa4_EfxMagdhisEffectBG.tsa.lz"
+	.incbin "./graphics/banim/assets/tsa/005F10EC_Tsa4_EfxMagdhisEffectBG.map.bin.lz"
 
 	.global Img_EfxSunakemuriOBJ
 Img_EfxSunakemuriOBJ:  @ 0x085F11B0
@@ -8520,11 +8520,11 @@ Pal_ThunderSpellBg:  @ 0x085F367C
 
 	.global Tsa_EfxThuderBg1
 Tsa_EfxThuderBg1:  @ 0x085F387C
-	.incbin "./graphics/banim/assets/tsa/005F387C_Tsa_EfxThuderBg1.tsa.lz" @ 0x5F3948 - 0x5F387C
+	.incbin "./graphics/banim/assets/tsa/005F387C_Tsa_EfxThuderBg1.map.bin.lz" @ 0x5F3948 - 0x5F387C
 
 	.global Tsa_EfxThuderBg2
 Tsa_EfxThuderBg2:  @ 0x085F3948
-	.incbin "./graphics/banim/assets/tsa/005F3948_Tsa_EfxThuderBg2.tsa.lz" @ 0x5F3AA8 - 0x5F3948
+	.incbin "./graphics/banim/assets/tsa/005F3948_Tsa_EfxThuderBg2.map.bin.lz" @ 0x5F3AA8 - 0x5F3948
 
 	.global Img_BoltingSprites
 Img_BoltingSprites:  @ 0x085F3AA8
@@ -9284,99 +9284,99 @@ Pal_FireSpellBg:  @ 0x085F6230
 
 	.global Tsa_085F6250
 Tsa_085F6250:  @ 0x085F6250
-	.incbin "./graphics/banim/assets/tsa/005F6250_Tsa_085F6250.tsa.lz" @ 0x5F62F8 - 0x5F6250
+	.incbin "./graphics/banim/assets/tsa/005F6250_Tsa_085F6250.map.bin.lz" @ 0x5F62F8 - 0x5F6250
 
 	.global Tsa_085F62F8
 Tsa_085F62F8:  @ 0x085F62F8
-	.incbin "./graphics/banim/assets/tsa/005F62F8_Tsa_085F62F8.tsa.lz" @ 0x5F63A0 - 0x5F62F8
+	.incbin "./graphics/banim/assets/tsa/005F62F8_Tsa_085F62F8.map.bin.lz" @ 0x5F63A0 - 0x5F62F8
 
 	.global Tsa_085F63A0
 Tsa_085F63A0:  @ 0x085F63A0
-	.incbin "./graphics/banim/assets/tsa/005F63A0_Tsa_085F63A0.tsa.lz" @ 0x5F6458 - 0x5F63A0
+	.incbin "./graphics/banim/assets/tsa/005F63A0_Tsa_085F63A0.map.bin.lz" @ 0x5F6458 - 0x5F63A0
 
 	.global Tsa_085F6458
 Tsa_085F6458:  @ 0x085F6458
-	.incbin "./graphics/banim/assets/tsa/005F6458_Tsa_085F6458.tsa.lz" @ 0x5F6520 - 0x5F6458
+	.incbin "./graphics/banim/assets/tsa/005F6458_Tsa_085F6458.map.bin.lz" @ 0x5F6520 - 0x5F6458
 
 	.global Tsa_085F6520
 Tsa_085F6520:  @ 0x085F6520
-	.incbin "./graphics/banim/assets/tsa/005F6520_Tsa_085F6520.tsa.lz" @ 0x5F65F0 - 0x5F6520
+	.incbin "./graphics/banim/assets/tsa/005F6520_Tsa_085F6520.map.bin.lz" @ 0x5F65F0 - 0x5F6520
 
 	.global Tsa_085F65F0
 Tsa_085F65F0:  @ 0x085F65F0
-	.incbin "./graphics/banim/assets/tsa/005F65F0_Tsa_085F65F0.tsa.lz" @ 0x5F66F0 - 0x5F65F0
+	.incbin "./graphics/banim/assets/tsa/005F65F0_Tsa_085F65F0.map.bin.lz" @ 0x5F66F0 - 0x5F65F0
 
 	.global Tsa_085F66F0
 Tsa_085F66F0:  @ 0x085F66F0
-	.incbin "./graphics/banim/assets/tsa/005F66F0_Tsa_085F66F0.tsa.lz" @ 0x5F67F8 - 0x5F66F0
+	.incbin "./graphics/banim/assets/tsa/005F66F0_Tsa_085F66F0.map.bin.lz" @ 0x5F67F8 - 0x5F66F0
 
 	.global Tsa_085F67F8
 Tsa_085F67F8:  @ 0x085F67F8
-	.incbin "./graphics/banim/assets/tsa/005F67F8_Tsa_085F67F8.tsa.lz" @ 0x5F690C - 0x5F67F8
+	.incbin "./graphics/banim/assets/tsa/005F67F8_Tsa_085F67F8.map.bin.lz" @ 0x5F690C - 0x5F67F8
 
 	.global Tsa_085F690C
 Tsa_085F690C:  @ 0x085F690C
-	.incbin "./graphics/banim/assets/tsa/005F690C_Tsa_085F690C.tsa.lz" @ 0x5F6A44 - 0x5F690C
+	.incbin "./graphics/banim/assets/tsa/005F690C_Tsa_085F690C.map.bin.lz" @ 0x5F6A44 - 0x5F690C
 
 	.global Tsa_085F6A44
 Tsa_085F6A44:  @ 0x085F6A44
-	.incbin "./graphics/banim/assets/tsa/005F6A44_Tsa_085F6A44.tsa.lz" @ 0x5F6B48 - 0x5F6A44
+	.incbin "./graphics/banim/assets/tsa/005F6A44_Tsa_085F6A44.map.bin.lz" @ 0x5F6B48 - 0x5F6A44
 
 	.global Tsa_085F6B48
 Tsa_085F6B48:  @ 0x085F6B48
-	.incbin "./graphics/banim/assets/tsa/005F6B48_Tsa_085F6B48.tsa.lz" @ 0x5F6C1C - 0x5F6B48
+	.incbin "./graphics/banim/assets/tsa/005F6B48_Tsa_085F6B48.map.bin.lz" @ 0x5F6C1C - 0x5F6B48
 
 	.global Tsa_085F6C1C
 Tsa_085F6C1C:  @ 0x085F6C1C
-	.incbin "./graphics/banim/assets/tsa/005F6C1C_Tsa_085F6C1C.tsa.lz"
+	.incbin "./graphics/banim/assets/tsa/005F6C1C_Tsa_085F6C1C.map.bin.lz"
 
 	.global Tsa_085F6CDC
 Tsa_085F6CDC:	@ 0x085F6CDC
-	.incbin "./graphics/banim/assets/tsa/005F6CDC_Tsa_085F6CDC.tsa.lz"
+	.incbin "./graphics/banim/assets/tsa/005F6CDC_Tsa_085F6CDC.map.bin.lz"
 
 	.global Tsa_085F6D84
 Tsa_085F6D84:	@ 0x085F6D84
-	.incbin "./graphics/banim/assets/tsa/005F6D84_Tsa_085F6D84.tsa.lz"
+	.incbin "./graphics/banim/assets/tsa/005F6D84_Tsa_085F6D84.map.bin.lz"
 
 	.global Tsa_085F6E2C
 Tsa_085F6E2C:	@ 0x085F6E2C
-	.incbin "./graphics/banim/assets/tsa/005F6E2C_Tsa_085F6E2C.tsa.lz"
+	.incbin "./graphics/banim/assets/tsa/005F6E2C_Tsa_085F6E2C.map.bin.lz"
 
 	.global Tsa_085F6EE4
 Tsa_085F6EE4:	@ 0x085F6EE4
-	.incbin "./graphics/banim/assets/tsa/005F6EE4_Tsa_085F6EE4.tsa.lz"
+	.incbin "./graphics/banim/assets/tsa/005F6EE4_Tsa_085F6EE4.map.bin.lz"
 
 	.global Tsa_085F6FAC
 Tsa_085F6FAC:	@ 0x085F6FAC
-	.incbin "./graphics/banim/assets/tsa/005F6FAC_Tsa_085F6FAC.tsa.lz"
+	.incbin "./graphics/banim/assets/tsa/005F6FAC_Tsa_085F6FAC.map.bin.lz"
 
 	.global Tsa_085F707C
 Tsa_085F707C:	@ 0x085F707C
-	.incbin "./graphics/banim/assets/tsa/005F707C_Tsa_085F707C.tsa.lz"
+	.incbin "./graphics/banim/assets/tsa/005F707C_Tsa_085F707C.map.bin.lz"
 
 	.global Tsa_085F717C
 Tsa_085F717C:	@ 0x085F717C
-	.incbin "./graphics/banim/assets/tsa/005F717C_Tsa_085F717C.tsa.lz"
+	.incbin "./graphics/banim/assets/tsa/005F717C_Tsa_085F717C.map.bin.lz"
 
 	.global Tsa_085F7284
 Tsa_085F7284:	@ 0x085F7284
-	.incbin "./graphics/banim/assets/tsa/005F7284_Tsa_085F7284.tsa.lz"
+	.incbin "./graphics/banim/assets/tsa/005F7284_Tsa_085F7284.map.bin.lz"
 
 	.global Tsa_085F7398
 Tsa_085F7398:	@ 0x085F7398
-	.incbin "./graphics/banim/assets/tsa/005F7398_Tsa_085F7398.tsa.lz"
+	.incbin "./graphics/banim/assets/tsa/005F7398_Tsa_085F7398.map.bin.lz"
 
 	.global Tsa_085F74D0
 Tsa_085F74D0:	@ 0x085F74D0
-	.incbin "./graphics/banim/assets/tsa/005F74D0_Tsa_085F74D0.tsa.lz"
+	.incbin "./graphics/banim/assets/tsa/005F74D0_Tsa_085F74D0.map.bin.lz"
 
 	.global Tsa_085F75D4
 Tsa_085F75D4:	@ 0x085F75D4
-	.incbin "./graphics/banim/assets/tsa/005F75D4_Tsa_085F75D4.tsa.lz"
+	.incbin "./graphics/banim/assets/tsa/005F75D4_Tsa_085F75D4.map.bin.lz"
 
 	.global Tsa_085F76A8
 Tsa_085F76A8:	@ 0x085F76A8
-	.incbin "./graphics/banim/assets/tsa/005F76A8_Tsa_085F76A8.tsa.lz"
+	.incbin "./graphics/banim/assets/tsa/005F76A8_Tsa_085F76A8.map.bin.lz"
 
 	.global Img_FireSpellSprites
 Img_FireSpellSprites:  @ 0x085F7768
@@ -9712,87 +9712,87 @@ Pal_EfxFireHitBG:  @ 0x0860108C
 
 	.global Tsa_086010AC
 Tsa_086010AC:	@ 0x086010AC
-	.incbin "./graphics/banim/assets/tsa/006010AC_Tsa_086010AC.tsa.lz"
+	.incbin "./graphics/banim/assets/tsa/006010AC_Tsa_086010AC.map.bin.lz"
 
 	.global Tsa_08601158
 Tsa_08601158:	@ 0x08601158
-	.incbin "./graphics/banim/assets/tsa/00601158_Tsa_08601158.tsa.lz"
+	.incbin "./graphics/banim/assets/tsa/00601158_Tsa_08601158.map.bin.lz"
 
 	.global Tsa_08601210
 Tsa_08601210:	@ 0x08601210
-	.incbin "./graphics/banim/assets/tsa/00601210_Tsa_08601210.tsa.lz"
+	.incbin "./graphics/banim/assets/tsa/00601210_Tsa_08601210.map.bin.lz"
 
 	.global Tsa_086012DC
 Tsa_086012DC:	@ 0x086012DC
-	.incbin "./graphics/banim/assets/tsa/006012DC_Tsa_086012DC.tsa.lz"
+	.incbin "./graphics/banim/assets/tsa/006012DC_Tsa_086012DC.map.bin.lz"
 
 	.global Tsa_086013BC
 Tsa_086013BC:	@ 0x086013BC
-	.incbin "./graphics/banim/assets/tsa/006013BC_Tsa_086013BC.tsa.lz"
+	.incbin "./graphics/banim/assets/tsa/006013BC_Tsa_086013BC.map.bin.lz"
 
 	.global Tsa_086014B0
 Tsa_086014B0:	@ 0x086014B0
-	.incbin "./graphics/banim/assets/tsa/006014B0_Tsa_086014B0.tsa.lz"
+	.incbin "./graphics/banim/assets/tsa/006014B0_Tsa_086014B0.map.bin.lz"
 
 	.global Tsa_086015C8
 Tsa_086015C8:	@ 0x086015C8
-	.incbin "./graphics/banim/assets/tsa/006015C8_Tsa_086015C8.tsa.lz"
+	.incbin "./graphics/banim/assets/tsa/006015C8_Tsa_086015C8.map.bin.lz"
 
 	.global Tsa_086016F4
 Tsa_086016F4:	@ 0x086016F4
-	.incbin "./graphics/banim/assets/tsa/006016F4_Tsa_086016F4.tsa.lz"
+	.incbin "./graphics/banim/assets/tsa/006016F4_Tsa_086016F4.map.bin.lz"
 
 	.global Tsa_0860182C
 Tsa_0860182C:	@ 0x0860182C
-	.incbin "./graphics/banim/assets/tsa/0060182C_Tsa_0860182C.tsa.lz"
+	.incbin "./graphics/banim/assets/tsa/0060182C_Tsa_0860182C.map.bin.lz"
 
 	.global Tsa_08601970
 Tsa_08601970:	@ 0x08601970
-	.incbin "./graphics/banim/assets/tsa/00601970_Tsa_08601970.tsa.lz"
+	.incbin "./graphics/banim/assets/tsa/00601970_Tsa_08601970.map.bin.lz"
 
 	.global Tsa_08601AC4
 Tsa_08601AC4:	@ 0x08601AC4
-	.incbin "./graphics/banim/assets/tsa/00601AC4_Tsa_08601AC4.tsa.lz"
+	.incbin "./graphics/banim/assets/tsa/00601AC4_Tsa_08601AC4.map.bin.lz"
 
 	.global Tsa_08601C1C
 Tsa_08601C1C:	@ 0x08601C1C
-	.incbin "./graphics/banim/assets/tsa/00601C1C_Tsa_08601C1C.tsa.lz"
+	.incbin "./graphics/banim/assets/tsa/00601C1C_Tsa_08601C1C.map.bin.lz"
 
 	.global Tsa_08601D84
 Tsa_08601D84:	@ 0x08601D84
-	.incbin "./graphics/banim/assets/tsa/00601D84_Tsa_08601D84.tsa.lz"
+	.incbin "./graphics/banim/assets/tsa/00601D84_Tsa_08601D84.map.bin.lz"
 
 	.global Tsa_08601EF0
 Tsa_08601EF0:	@ 0x08601EF0
-	.incbin "./graphics/banim/assets/tsa/00601EF0_Tsa_08601EF0.tsa.lz"
+	.incbin "./graphics/banim/assets/tsa/00601EF0_Tsa_08601EF0.map.bin.lz"
 
 	.global Tsa_0860206C
 Tsa_0860206C:	@ 0x0860206C
-	.incbin "./graphics/banim/assets/tsa/0060206C_Tsa_0860206C.tsa.lz"
+	.incbin "./graphics/banim/assets/tsa/0060206C_Tsa_0860206C.map.bin.lz"
 
 	.global Tsa_08602200
 Tsa_08602200:	@ 0x08602200
-	.incbin "./graphics/banim/assets/tsa/00602200_Tsa_08602200.tsa.lz"
+	.incbin "./graphics/banim/assets/tsa/00602200_Tsa_08602200.map.bin.lz"
 
 	.global Tsa_086023A0
 Tsa_086023A0:	@ 0x086023A0
-	.incbin "./graphics/banim/assets/tsa/006023A0_Tsa_086023A0.tsa.lz"
+	.incbin "./graphics/banim/assets/tsa/006023A0_Tsa_086023A0.map.bin.lz"
 
 	.global Tsa_08602540
 Tsa_08602540:	@ 0x08602540
-	.incbin "./graphics/banim/assets/tsa/00602540_Tsa_08602540.tsa.lz"
+	.incbin "./graphics/banim/assets/tsa/00602540_Tsa_08602540.map.bin.lz"
 
 	.global Tsa_086026E0
 Tsa_086026E0:	@ 0x086026E0
-	.incbin "./graphics/banim/assets/tsa/006026E0_Tsa_086026E0.tsa.lz"
+	.incbin "./graphics/banim/assets/tsa/006026E0_Tsa_086026E0.map.bin.lz"
 
 	.global Tsa_08602880
 Tsa_08602880:	@ 0x08602880
-	.incbin "./graphics/banim/assets/tsa/00602880_Tsa_08602880.tsa.lz"
+	.incbin "./graphics/banim/assets/tsa/00602880_Tsa_08602880.map.bin.lz"
 
 	.global Tsa_08602A10
 Tsa_08602A10:	@ 0x08602A10
-	.incbin "./graphics/banim/assets/tsa/00602A10_Tsa_08602A10.tsa.lz"
+	.incbin "./graphics/banim/assets/tsa/00602A10_Tsa_08602A10.map.bin.lz"
 
 	.global Img_EkrElfireBG
 Img_EkrElfireBG:  @ 0x08602B94
@@ -9804,11 +9804,11 @@ Pal_EkrElfireBG:  @ 0x08603B50
 
 	.global Tsa_EkrElfireBG
 Tsa_EkrElfireBG:  @ 0x08603D50
-	.incbin "./graphics/banim/assets/tsa/00603D50_Tsa_EkrElfireBG.tsa.lz"
+	.incbin "./graphics/banim/assets/tsa/00603D50_Tsa_EkrElfireBG.map.bin.lz"
 
 	.global Tsa_EfxElfireBG_Clear
 Tsa_EfxElfireBG_Clear:  @ 0x08603F00
-	.incbin "./graphics/banim/assets/tsa/00603F00_Tsa_EfxElfireBG_Clear.tsa.lz"
+	.incbin "./graphics/banim/assets/tsa/00603F00_Tsa_EfxElfireBG_Clear.map.bin.lz"
 
 	.global Img_EfxElfireOBJ
 Img_EfxElfireOBJ:  @ 0x08603F98
@@ -10690,47 +10690,47 @@ Pal_BoltingBg:  @ 0x08608838
 
 	.global Tsa_BoltingBg_A
 Tsa_BoltingBg_A:  @ 0x08608898
-	.incbin "./graphics/banim/assets/tsa/00608898_Tsa_BoltingBg_A.tsa.lz" @ 0x608A2C - 0x608898
+	.incbin "./graphics/banim/assets/tsa/00608898_Tsa_BoltingBg_A.map.bin.lz" @ 0x608A2C - 0x608898
 
 	.global Tsa_BoltingBg_B
 Tsa_BoltingBg_B:  @ 0x08608A2C
-	.incbin "./graphics/banim/assets/tsa/00608A2C_Tsa_BoltingBg_B.tsa.lz" @ 0x608C34 - 0x608A2C
+	.incbin "./graphics/banim/assets/tsa/00608A2C_Tsa_BoltingBg_B.map.bin.lz" @ 0x608C34 - 0x608A2C
 
 	.global Tsa_BoltingBg_C
 Tsa_BoltingBg_C:  @ 0x08608C34
-	.incbin "./graphics/banim/assets/tsa/00608C34_Tsa_BoltingBg_C.tsa.lz" @ 0x608D98 - 0x608C34
+	.incbin "./graphics/banim/assets/tsa/00608C34_Tsa_BoltingBg_C.map.bin.lz" @ 0x608D98 - 0x608C34
 
 	.global Tsa_BoltingBg_D
 Tsa_BoltingBg_D:  @ 0x08608D98
-	.incbin "./graphics/banim/assets/tsa/00608D98_Tsa_BoltingBg_D.tsa.lz" @ 0x608E78 - 0x608D98
+	.incbin "./graphics/banim/assets/tsa/00608D98_Tsa_BoltingBg_D.map.bin.lz" @ 0x608E78 - 0x608D98
 
 	.global Tsa_BoltingBg_E
 Tsa_BoltingBg_E:  @ 0x08608E78
-	.incbin "./graphics/banim/assets/tsa/00608E78_Tsa_BoltingBg_E.tsa.lz" @ 0x608F90 - 0x608E78
+	.incbin "./graphics/banim/assets/tsa/00608E78_Tsa_BoltingBg_E.map.bin.lz" @ 0x608F90 - 0x608E78
 
 	.global Tsa_BoltingBg_F
 Tsa_BoltingBg_F:  @ 0x08608F90
-	.incbin "./graphics/banim/assets/tsa/00608F90_Tsa_BoltingBg_F.tsa.lz" @ 0x60913C - 0x608F90
+	.incbin "./graphics/banim/assets/tsa/00608F90_Tsa_BoltingBg_F.map.bin.lz" @ 0x60913C - 0x608F90
 
 	.global Tsa_BoltingBg_G
 Tsa_BoltingBg_G:  @ 0x0860913C
-	.incbin "./graphics/banim/assets/tsa/0060913C_Tsa_BoltingBg_G.tsa.lz" @ 0x60925C - 0x60913C
+	.incbin "./graphics/banim/assets/tsa/0060913C_Tsa_BoltingBg_G.map.bin.lz" @ 0x60925C - 0x60913C
 
 	.global Tsa_BoltingBg_H
 Tsa_BoltingBg_H:  @ 0x0860925C
-	.incbin "./graphics/banim/assets/tsa/0060925C_Tsa_BoltingBg_H.tsa.lz" @ 0x609348 - 0x60925C
+	.incbin "./graphics/banim/assets/tsa/0060925C_Tsa_BoltingBg_H.map.bin.lz" @ 0x609348 - 0x60925C
 
 	.global Tsa_BoltingBg_I
 Tsa_BoltingBg_I:  @ 0x08609348
-	.incbin "./graphics/banim/assets/tsa/00609348_Tsa_BoltingBg_I.tsa.lz" @ 0x609430 - 0x609348
+	.incbin "./graphics/banim/assets/tsa/00609348_Tsa_BoltingBg_I.map.bin.lz" @ 0x609430 - 0x609348
 
 	.global Tsa_BoltingBg_J
 Tsa_BoltingBg_J:  @ 0x08609430
-	.incbin "./graphics/banim/assets/tsa/00609430_Tsa_BoltingBg_J.tsa.lz" @ 0x6094C8 - 0x609430
+	.incbin "./graphics/banim/assets/tsa/00609430_Tsa_BoltingBg_J.map.bin.lz" @ 0x6094C8 - 0x609430
 
 	.global Tsa_BoltingBg_K
 Tsa_BoltingBg_K:  @ 0x086094C8
-	.incbin "./graphics/banim/assets/tsa/006094C8_Tsa_BoltingBg_K.tsa.lz"
+	.incbin "./graphics/banim/assets/tsa/006094C8_Tsa_BoltingBg_K.map.bin.lz"
 
 .global AnimSprite_EfxThunderstormOBJ_1
 AnimSprite_EfxThunderstormOBJ_1:  @ 0x6096BC
@@ -11275,47 +11275,47 @@ Pal_FimbulvetrBg:  @ 0x086101DC
 
 	.global Tsa_FimbulvetrBg_A
 Tsa_FimbulvetrBg_A:  @ 0x086101FC
-	.incbin "./graphics/banim/assets/tsa/006101FC_Tsa_FimbulvetrBg_A.tsa.lz" @ 0x6102A0 - 0x6101FC
+	.incbin "./graphics/banim/assets/tsa/006101FC_Tsa_FimbulvetrBg_A.map.bin.lz" @ 0x6102A0 - 0x6101FC
 
 	.global Tsa_FimbulvetrBg_B
 Tsa_FimbulvetrBg_B:  @ 0x086102A0
-	.incbin "./graphics/banim/assets/tsa/006102A0_Tsa_FimbulvetrBg_B.tsa.lz" @ 0x610348 - 0x6102A0
+	.incbin "./graphics/banim/assets/tsa/006102A0_Tsa_FimbulvetrBg_B.map.bin.lz" @ 0x610348 - 0x6102A0
 
 	.global Tsa_FimbulvetrBg_C
 Tsa_FimbulvetrBg_C:  @ 0x08610348
-	.incbin "./graphics/banim/assets/tsa/00610348_Tsa_FimbulvetrBg_C.tsa.lz" @ 0x610404 - 0x610348
+	.incbin "./graphics/banim/assets/tsa/00610348_Tsa_FimbulvetrBg_C.map.bin.lz" @ 0x610404 - 0x610348
 
 	.global Tsa_FimbulvetrBg_D
 Tsa_FimbulvetrBg_D:  @ 0x08610404
-	.incbin "./graphics/banim/assets/tsa/00610404_Tsa_FimbulvetrBg_D.tsa.lz" @ 0x6104D8 - 0x610404
+	.incbin "./graphics/banim/assets/tsa/00610404_Tsa_FimbulvetrBg_D.map.bin.lz" @ 0x6104D8 - 0x610404
 
 	.global Tsa_FimbulvetrBg_E
 Tsa_FimbulvetrBg_E:  @ 0x086104D8
-	.incbin "./graphics/banim/assets/tsa/006104D8_Tsa_FimbulvetrBg_E.tsa.lz" @ 0x6105D4 - 0x6104D8
+	.incbin "./graphics/banim/assets/tsa/006104D8_Tsa_FimbulvetrBg_E.map.bin.lz" @ 0x6105D4 - 0x6104D8
 
 	.global Tsa_FimbulvetrBg_F
 Tsa_FimbulvetrBg_F:  @ 0x086105D4
-	.incbin "./graphics/banim/assets/tsa/006105D4_Tsa_FimbulvetrBg_F.tsa.lz" @ 0x610714 - 0x6105D4
+	.incbin "./graphics/banim/assets/tsa/006105D4_Tsa_FimbulvetrBg_F.map.bin.lz" @ 0x610714 - 0x6105D4
 
 	.global Tsa_FimbulvetrBg_G
 Tsa_FimbulvetrBg_G:  @ 0x08610714
-	.incbin "./graphics/banim/assets/tsa/00610714_Tsa_FimbulvetrBg_G.tsa.lz" @ 0x6108AC - 0x610714
+	.incbin "./graphics/banim/assets/tsa/00610714_Tsa_FimbulvetrBg_G.map.bin.lz" @ 0x6108AC - 0x610714
 
 	.global Tsa_FimbulvetrBg_H
 Tsa_FimbulvetrBg_H:  @ 0x086108AC
-	.incbin "./graphics/banim/assets/tsa/006108AC_Tsa_FimbulvetrBg_H.tsa.lz" @ 0x610A80 - 0x6108AC
+	.incbin "./graphics/banim/assets/tsa/006108AC_Tsa_FimbulvetrBg_H.map.bin.lz" @ 0x610A80 - 0x6108AC
 
 	.global Tsa_FimbulvetrBg_I
 Tsa_FimbulvetrBg_I:  @ 0x08610A80
-	.incbin "./graphics/banim/assets/tsa/00610A80_Tsa_FimbulvetrBg_I.tsa.lz" @ 0x610C90 - 0x610A80
+	.incbin "./graphics/banim/assets/tsa/00610A80_Tsa_FimbulvetrBg_I.map.bin.lz" @ 0x610C90 - 0x610A80
 
 	.global Tsa_FimbulvetrBg_J
 Tsa_FimbulvetrBg_J:  @ 0x08610C90
-	.incbin "./graphics/banim/assets/tsa/00610C90_Tsa_FimbulvetrBg_J.tsa.lz" @ 0x610EB0 - 0x610C90
+	.incbin "./graphics/banim/assets/tsa/00610C90_Tsa_FimbulvetrBg_J.map.bin.lz" @ 0x610EB0 - 0x610C90
 
 	.global Tsa_FimbulvetrBg_K
 Tsa_FimbulvetrBg_K:  @ 0x08610EB0
-	.incbin "./graphics/banim/assets/tsa/00610EB0_Tsa_FimbulvetrBg_K.tsa.lz" @ 0x6110E0 - 0x610EB0
+	.incbin "./graphics/banim/assets/tsa/00610EB0_Tsa_FimbulvetrBg_K.map.bin.lz" @ 0x6110E0 - 0x610EB0
 
 	.global Img_FimbulvetrBg_Tornado_A
 Img_FimbulvetrBg_Tornado_A:  @ 0x086110E0
@@ -11347,27 +11347,27 @@ Pal_FimbulvetrBg_Tornado:  @ 0x08617F04
 
 	.global Tsa_FimbulvetrBg_Tornado_A
 Tsa_FimbulvetrBg_Tornado_A:  @ 0x08617F24
-	.incbin "./graphics/banim/assets/tsa/00617F24_Tsa_FimbulvetrBg_Tornado_A.tsa.lz" @ 0x618110 - 0x617F24
+	.incbin "./graphics/banim/assets/tsa/00617F24_Tsa_FimbulvetrBg_Tornado_A.map.bin.lz" @ 0x618110 - 0x617F24
 
 	.global Tsa_FimbulvetrBg_Tornado_B
 Tsa_FimbulvetrBg_Tornado_B:  @ 0x08618110
-	.incbin "./graphics/banim/assets/tsa/00618110_Tsa_FimbulvetrBg_Tornado_B.tsa.lz" @ 0x6182E8 - 0x618110
+	.incbin "./graphics/banim/assets/tsa/00618110_Tsa_FimbulvetrBg_Tornado_B.map.bin.lz" @ 0x6182E8 - 0x618110
 
 	.global Tsa_FimbulvetrBg_Tornado_C
 Tsa_FimbulvetrBg_Tornado_C:  @ 0x086182E8
-	.incbin "./graphics/banim/assets/tsa/006182E8_Tsa_FimbulvetrBg_Tornado_C.tsa.lz" @ 0x6184B0 - 0x6182E8
+	.incbin "./graphics/banim/assets/tsa/006182E8_Tsa_FimbulvetrBg_Tornado_C.map.bin.lz" @ 0x6184B0 - 0x6182E8
 
 	.global Tsa_FimbulvetrBg_Tornado_D
 Tsa_FimbulvetrBg_Tornado_D:  @ 0x086184B0
-	.incbin "./graphics/banim/assets/tsa/006184B0_Tsa_FimbulvetrBg_Tornado_D.tsa.lz" @ 0x6186E4 - 0x6184B0
+	.incbin "./graphics/banim/assets/tsa/006184B0_Tsa_FimbulvetrBg_Tornado_D.map.bin.lz" @ 0x6186E4 - 0x6184B0
 
 	.global Tsa_FimbulvetrBg_Tornado_E
 Tsa_FimbulvetrBg_Tornado_E:  @ 0x086186E4
-	.incbin "./graphics/banim/assets/tsa/006186E4_Tsa_FimbulvetrBg_Tornado_E.tsa.lz" @ 0x61892C - 0x6186E4
+	.incbin "./graphics/banim/assets/tsa/006186E4_Tsa_FimbulvetrBg_Tornado_E.map.bin.lz" @ 0x61892C - 0x6186E4
 
 	.global Tsa_FimbulvetrBg_Tornado_F
 Tsa_FimbulvetrBg_Tornado_F:  @ 0x0861892C
-	.incbin "./graphics/banim/assets/tsa/0061892C_Tsa_FimbulvetrBg_Tornado_F.tsa.lz" @ 0x618BBC - 0x61892C
+	.incbin "./graphics/banim/assets/tsa/0061892C_Tsa_FimbulvetrBg_Tornado_F.map.bin.lz" @ 0x618BBC - 0x61892C
 
 	.global Img_FimbulvetrSprites_Snow
 Img_FimbulvetrSprites_Snow:  @ 0x08618BBC
@@ -12209,135 +12209,135 @@ Pal_0861F7D4:  @ 0x0861F7D4
 
 	.global Tsa_0861F7F4
 Tsa_0861F7F4:  @ 0x0861F7F4
-	.incbin "./graphics/banim/assets/tsa/0061F7F4_Tsa_0861F7F4.tsa.lz" @ 0x61F918 - 0x61F7F4
+	.incbin "./graphics/banim/assets/tsa/0061F7F4_Tsa_0861F7F4.map.bin.lz" @ 0x61F918 - 0x61F7F4
 
 	.global Tsa_0861F918
 Tsa_0861F918:  @ 0x0861F918
-	.incbin "./graphics/banim/assets/tsa/0061F918_Tsa_0861F918.tsa.lz" @ 0x61FA38 - 0x61F918
+	.incbin "./graphics/banim/assets/tsa/0061F918_Tsa_0861F918.map.bin.lz" @ 0x61FA38 - 0x61F918
 
 	.global Tsa_0861FA38
 Tsa_0861FA38:  @ 0x0861FA38
-	.incbin "./graphics/banim/assets/tsa/0061FA38_Tsa_0861FA38.tsa.lz" @ 0x61FB44 - 0x61FA38
+	.incbin "./graphics/banim/assets/tsa/0061FA38_Tsa_0861FA38.map.bin.lz" @ 0x61FB44 - 0x61FA38
 
 	.global Tsa_0861FB44
 Tsa_0861FB44:  @ 0x0861FB44
-	.incbin "./graphics/banim/assets/tsa/0061FB44_Tsa_0861FB44.tsa.lz" @ 0x61FC40 - 0x61FB44
+	.incbin "./graphics/banim/assets/tsa/0061FB44_Tsa_0861FB44.map.bin.lz" @ 0x61FC40 - 0x61FB44
 
 	.global Tsa_0861FC40
 Tsa_0861FC40:  @ 0x0861FC40
-	.incbin "./graphics/banim/assets/tsa/0061FC40_Tsa_0861FC40.tsa.lz" @ 0x61FD28 - 0x61FC40
+	.incbin "./graphics/banim/assets/tsa/0061FC40_Tsa_0861FC40.map.bin.lz" @ 0x61FD28 - 0x61FC40
 
 	.global Tsa_0861FD28
 Tsa_0861FD28:  @ 0x0861FD28
-	.incbin "./graphics/banim/assets/tsa/0061FD28_Tsa_0861FD28.tsa.lz" @ 0x61FE0C - 0x61FD28
+	.incbin "./graphics/banim/assets/tsa/0061FD28_Tsa_0861FD28.map.bin.lz" @ 0x61FE0C - 0x61FD28
 
 	.global Tsa_0861FE0C
 Tsa_0861FE0C:  @ 0x0861FE0C
-	.incbin "./graphics/banim/assets/tsa/0061FE0C_Tsa_0861FE0C.tsa.lz" @ 0x61FEF0 - 0x61FE0C
+	.incbin "./graphics/banim/assets/tsa/0061FE0C_Tsa_0861FE0C.map.bin.lz" @ 0x61FEF0 - 0x61FE0C
 
 	.global Tsa_0861FEF0
 Tsa_0861FEF0:  @ 0x0861FEF0
-	.incbin "./graphics/banim/assets/tsa/0061FEF0_Tsa_0861FEF0.tsa.lz" @ 0x61FFCC - 0x61FEF0
+	.incbin "./graphics/banim/assets/tsa/0061FEF0_Tsa_0861FEF0.map.bin.lz" @ 0x61FFCC - 0x61FEF0
 
 	.global Tsa_0861FFCC
 Tsa_0861FFCC:  @ 0x0861FFCC
-	.incbin "./graphics/banim/assets/tsa/0061FFCC_Tsa_0861FFCC.tsa.lz" @ 0x6200AC - 0x61FFCC
+	.incbin "./graphics/banim/assets/tsa/0061FFCC_Tsa_0861FFCC.map.bin.lz" @ 0x6200AC - 0x61FFCC
 
 	.global Tsa_086200AC
 Tsa_086200AC:  @ 0x086200AC
-	.incbin "./graphics/banim/assets/tsa/006200AC_Tsa_086200AC.tsa.lz" @ 0x6201A0 - 0x6200AC
+	.incbin "./graphics/banim/assets/tsa/006200AC_Tsa_086200AC.map.bin.lz" @ 0x6201A0 - 0x6200AC
 
 	.global Tsa_086201A0
 Tsa_086201A0:  @ 0x086201A0
-	.incbin "./graphics/banim/assets/tsa/006201A0_Tsa_086201A0.tsa.lz" @ 0x620294 - 0x6201A0
+	.incbin "./graphics/banim/assets/tsa/006201A0_Tsa_086201A0.map.bin.lz" @ 0x620294 - 0x6201A0
 
 	.global Tsa_08620294
 Tsa_08620294:  @ 0x08620294
-	.incbin "./graphics/banim/assets/tsa/00620294_Tsa_08620294.tsa.lz" @ 0x620398 - 0x620294
+	.incbin "./graphics/banim/assets/tsa/00620294_Tsa_08620294.map.bin.lz" @ 0x620398 - 0x620294
 
 	.global Tsa_08620398
 Tsa_08620398:  @ 0x08620398
-	.incbin "./graphics/banim/assets/tsa/00620398_Tsa_08620398.tsa.lz" @ 0x6204A0 - 0x620398
+	.incbin "./graphics/banim/assets/tsa/00620398_Tsa_08620398.map.bin.lz" @ 0x6204A0 - 0x620398
 
 	.global Tsa_086204A0
 Tsa_086204A0:  @ 0x086204A0
-	.incbin "./graphics/banim/assets/tsa/006204A0_Tsa_086204A0.tsa.lz" @ 0x6205B8 - 0x6204A0
+	.incbin "./graphics/banim/assets/tsa/006204A0_Tsa_086204A0.map.bin.lz" @ 0x6205B8 - 0x6204A0
 
 	.global Tsa_086205B8
 Tsa_086205B8:  @ 0x086205B8
-	.incbin "./graphics/banim/assets/tsa/006205B8_Tsa_086205B8.tsa.lz" @ 0x6206DC - 0x6205B8
+	.incbin "./graphics/banim/assets/tsa/006205B8_Tsa_086205B8.map.bin.lz" @ 0x6206DC - 0x6205B8
 
 	.global Tsa_086206DC
 Tsa_086206DC:  @ 0x086206DC
-	.incbin "./graphics/banim/assets/tsa/006206DC_Tsa_086206DC.tsa.lz" @ 0x6207F0 - 0x6206DC
+	.incbin "./graphics/banim/assets/tsa/006206DC_Tsa_086206DC.map.bin.lz" @ 0x6207F0 - 0x6206DC
 
 	.global Tsa_086207F0
 Tsa_086207F0:  @ 0x086207F0
-	.incbin "./graphics/banim/assets/tsa/006207F0_Tsa_086207F0.tsa.lz" @ 0x6208A0 - 0x6207F0
+	.incbin "./graphics/banim/assets/tsa/006207F0_Tsa_086207F0.map.bin.lz" @ 0x6208A0 - 0x6207F0
 
 	.global Tsa_086208A0
 Tsa_086208A0:  @ 0x086208A0
-	.incbin "./graphics/banim/assets/tsa/006208A0_Tsa_086208A0.tsa.lz" @ 0x6209A8 - 0x6208A0
+	.incbin "./graphics/banim/assets/tsa/006208A0_Tsa_086208A0.map.bin.lz" @ 0x6209A8 - 0x6208A0
 
 	.global Tsa_086209A8
 Tsa_086209A8:  @ 0x086209A8
-	.incbin "./graphics/banim/assets/tsa/006209A8_Tsa_086209A8.tsa.lz" @ 0x620AE4 - 0x6209A8
+	.incbin "./graphics/banim/assets/tsa/006209A8_Tsa_086209A8.map.bin.lz" @ 0x620AE4 - 0x6209A8
 
 	.global Tsa_08620AE4
 Tsa_08620AE4:  @ 0x08620AE4
-	.incbin "./graphics/banim/assets/tsa/00620AE4_Tsa_08620AE4.tsa.lz" @ 0x620C58 - 0x620AE4
+	.incbin "./graphics/banim/assets/tsa/00620AE4_Tsa_08620AE4.map.bin.lz" @ 0x620C58 - 0x620AE4
 
 	.global Tsa_08620C58
 Tsa_08620C58:  @ 0x08620C58
-	.incbin "./graphics/banim/assets/tsa/00620C58_Tsa_08620C58.tsa.lz" @ 0x620DF0 - 0x620C58
+	.incbin "./graphics/banim/assets/tsa/00620C58_Tsa_08620C58.map.bin.lz" @ 0x620DF0 - 0x620C58
 
 	.global Tsa_08620DF0
 Tsa_08620DF0:  @ 0x08620DF0
-	.incbin "./graphics/banim/assets/tsa/00620DF0_Tsa_08620DF0.tsa.lz" @ 0x620F64 - 0x620DF0
+	.incbin "./graphics/banim/assets/tsa/00620DF0_Tsa_08620DF0.map.bin.lz" @ 0x620F64 - 0x620DF0
 
 	.global Tsa_08620F64
 Tsa_08620F64:  @ 0x08620F64
-	.incbin "./graphics/banim/assets/tsa/00620F64_Tsa_08620F64.tsa.lz" @ 0x621070 - 0x620F64
+	.incbin "./graphics/banim/assets/tsa/00620F64_Tsa_08620F64.map.bin.lz" @ 0x621070 - 0x620F64
 
 	.global Tsa_08621070
 Tsa_08621070:  @ 0x08621070
-	.incbin "./graphics/banim/assets/tsa/00621070_Tsa_08621070.tsa.lz" @ 0x621144 - 0x621070
+	.incbin "./graphics/banim/assets/tsa/00621070_Tsa_08621070.map.bin.lz" @ 0x621144 - 0x621070
 
 	.global Tsa_08621144
 Tsa_08621144:  @ 0x08621144
-	.incbin "./graphics/banim/assets/tsa/00621144_Tsa_08621144.tsa.lz" @ 0x6211E4 - 0x621144
+	.incbin "./graphics/banim/assets/tsa/00621144_Tsa_08621144.map.bin.lz" @ 0x6211E4 - 0x621144
 
 	.global Tsa_086211E4
 Tsa_086211E4:  @ 0x086211E4
-	.incbin "./graphics/banim/assets/tsa/006211E4_Tsa_086211E4.tsa.lz" @ 0x621304 - 0x6211E4
+	.incbin "./graphics/banim/assets/tsa/006211E4_Tsa_086211E4.map.bin.lz" @ 0x621304 - 0x6211E4
 
 	.global Tsa_08621304
 Tsa_08621304:  @ 0x08621304
-	.incbin "./graphics/banim/assets/tsa/00621304_Tsa_08621304.tsa.lz" @ 0x621420 - 0x621304
+	.incbin "./graphics/banim/assets/tsa/00621304_Tsa_08621304.map.bin.lz" @ 0x621420 - 0x621304
 
 	.global Tsa_08621420
 Tsa_08621420:  @ 0x08621420
-	.incbin "./graphics/banim/assets/tsa/00621420_Tsa_08621420.tsa.lz" @ 0x621534 - 0x621420
+	.incbin "./graphics/banim/assets/tsa/00621420_Tsa_08621420.map.bin.lz" @ 0x621534 - 0x621420
 
 	.global Tsa_08621534
 Tsa_08621534:  @ 0x08621534
-	.incbin "./graphics/banim/assets/tsa/00621534_Tsa_08621534.tsa.lz" @ 0x62162C - 0x621534
+	.incbin "./graphics/banim/assets/tsa/00621534_Tsa_08621534.map.bin.lz" @ 0x62162C - 0x621534
 
 	.global Tsa_0862162C
 Tsa_0862162C:  @ 0x0862162C
-	.incbin "./graphics/banim/assets/tsa/0062162C_Tsa_0862162C.tsa.lz" @ 0x621714 - 0x62162C
+	.incbin "./graphics/banim/assets/tsa/0062162C_Tsa_0862162C.map.bin.lz" @ 0x621714 - 0x62162C
 
 	.global Tsa_08621714
 Tsa_08621714:  @ 0x08621714
-	.incbin "./graphics/banim/assets/tsa/00621714_Tsa_08621714.tsa.lz" @ 0x6217E4 - 0x621714
+	.incbin "./graphics/banim/assets/tsa/00621714_Tsa_08621714.map.bin.lz" @ 0x6217E4 - 0x621714
 
 	.global Tsa_086217E4
 Tsa_086217E4:  @ 0x086217E4
-	.incbin "./graphics/banim/assets/tsa/006217E4_Tsa_086217E4.tsa.lz" @ 0x6218A8 - 0x6217E4
+	.incbin "./graphics/banim/assets/tsa/006217E4_Tsa_086217E4.map.bin.lz" @ 0x6218A8 - 0x6217E4
 
 	.global Tsa_086218A8
 Tsa_086218A8:  @ 0x086218A8
-	.incbin "./graphics/banim/assets/tsa/006218A8_Tsa_086218A8.tsa.lz" @ 0x621960 - 0x6218A8
+	.incbin "./graphics/banim/assets/tsa/006218A8_Tsa_086218A8.map.bin.lz" @ 0x621960 - 0x6218A8
 
 	.global Img_AircaliburBg
 Img_AircaliburBg:  @ 0x08621960
@@ -12349,11 +12349,11 @@ Pal_AircaliburBg:  @ 0x08622F2C
 
 	.global Tsa_AircaliburBg_A
 Tsa_AircaliburBg_A:  @ 0x08622FEC
-	.incbin "./graphics/banim/assets/tsa/00622FEC_Tsa_AircaliburBg_A.tsa.lz" @ 0x623174 - 0x622FEC
+	.incbin "./graphics/banim/assets/tsa/00622FEC_Tsa_AircaliburBg_A.map.bin.lz" @ 0x623174 - 0x622FEC
 
 	.global Tsa_AircaliburBg_B
 Tsa_AircaliburBg_B:  @ 0x08623174
-	.incbin "./graphics/banim/assets/tsa/00623174_Tsa_AircaliburBg_B.tsa.lz" @ 0x6234D8 - 0x623174
+	.incbin "./graphics/banim/assets/tsa/00623174_Tsa_AircaliburBg_B.map.bin.lz" @ 0x6234D8 - 0x623174
 
 	.global Img_AircaliburSprites
 Img_AircaliburSprites:  @ 0x086234D8
@@ -13955,167 +13955,167 @@ Pal_0862A2F0:  @ 0x0862A2F0
 
 	.global Tsa_0862A310
 Tsa_0862A310:  @ 0x0862A310
-	.incbin "./graphics/banim/assets/tsa/0062A310_Tsa_0862A310.tsa.lz" @ 0x62A40C - 0x62A310
+	.incbin "./graphics/banim/assets/tsa/0062A310_Tsa_0862A310.map.bin.lz" @ 0x62A40C - 0x62A310
 
 	.global Tsa_0862A40C
 Tsa_0862A40C:  @ 0x0862A40C
-	.incbin "./graphics/banim/assets/tsa/0062A40C_Tsa_0862A40C.tsa.lz" @ 0x62A50C - 0x62A40C
+	.incbin "./graphics/banim/assets/tsa/0062A40C_Tsa_0862A40C.map.bin.lz" @ 0x62A50C - 0x62A40C
 
 	.global Tsa_0862A50C
 Tsa_0862A50C:  @ 0x0862A50C
-	.incbin "./graphics/banim/assets/tsa/0062A50C_Tsa_0862A50C.tsa.lz" @ 0x62A610 - 0x62A50C
+	.incbin "./graphics/banim/assets/tsa/0062A50C_Tsa_0862A50C.map.bin.lz" @ 0x62A610 - 0x62A50C
 
 	.global Tsa_0862A610
 Tsa_0862A610:  @ 0x0862A610
-	.incbin "./graphics/banim/assets/tsa/0062A610_Tsa_0862A610.tsa.lz" @ 0x62A708 - 0x62A610
+	.incbin "./graphics/banim/assets/tsa/0062A610_Tsa_0862A610.map.bin.lz" @ 0x62A708 - 0x62A610
 
 	.global Tsa_0862A708
 Tsa_0862A708:  @ 0x0862A708
-	.incbin "./graphics/banim/assets/tsa/0062A708_Tsa_0862A708.tsa.lz" @ 0x62A814 - 0x62A708
+	.incbin "./graphics/banim/assets/tsa/0062A708_Tsa_0862A708.map.bin.lz" @ 0x62A814 - 0x62A708
 
 	.global Tsa_0862A814
 Tsa_0862A814:  @ 0x0862A814
-	.incbin "./graphics/banim/assets/tsa/0062A814_Tsa_0862A814.tsa.lz" @ 0x62A920 - 0x62A814
+	.incbin "./graphics/banim/assets/tsa/0062A814_Tsa_0862A814.map.bin.lz" @ 0x62A920 - 0x62A814
 
 	.global Tsa_0862A920
 Tsa_0862A920:  @ 0x0862A920
-	.incbin "./graphics/banim/assets/tsa/0062A920_Tsa_0862A920.tsa.lz" @ 0x62AA40 - 0x62A920
+	.incbin "./graphics/banim/assets/tsa/0062A920_Tsa_0862A920.map.bin.lz" @ 0x62AA40 - 0x62A920
 
 	.global Tsa_0862AA40
 Tsa_0862AA40:  @ 0x0862AA40
-	.incbin "./graphics/banim/assets/tsa/0062AA40_Tsa_0862AA40.tsa.lz" @ 0x62AB64 - 0x62AA40
+	.incbin "./graphics/banim/assets/tsa/0062AA40_Tsa_0862AA40.map.bin.lz" @ 0x62AB64 - 0x62AA40
 
 	.global Tsa_0862AB64
 Tsa_0862AB64:  @ 0x0862AB64
-	.incbin "./graphics/banim/assets/tsa/0062AB64_Tsa_0862AB64.tsa.lz" @ 0x62AC4C - 0x62AB64
+	.incbin "./graphics/banim/assets/tsa/0062AB64_Tsa_0862AB64.map.bin.lz" @ 0x62AC4C - 0x62AB64
 
 	.global Tsa_0862AC4C
 Tsa_0862AC4C:  @ 0x0862AC4C
-	.incbin "./graphics/banim/assets/tsa/0062AC4C_Tsa_0862AC4C.tsa.lz" @ 0x62AD28 - 0x62AC4C
+	.incbin "./graphics/banim/assets/tsa/0062AC4C_Tsa_0862AC4C.map.bin.lz" @ 0x62AD28 - 0x62AC4C
 
 	.global Tsa_0862AD28
 Tsa_0862AD28:  @ 0x0862AD28
-	.incbin "./graphics/banim/assets/tsa/0062AD28_Tsa_0862AD28.tsa.lz" @ 0x62ADE8 - 0x62AD28
+	.incbin "./graphics/banim/assets/tsa/0062AD28_Tsa_0862AD28.map.bin.lz" @ 0x62ADE8 - 0x62AD28
 
 	.global Tsa_0862ADE8
 Tsa_0862ADE8:  @ 0x0862ADE8
-	.incbin "./graphics/banim/assets/tsa/0062ADE8_Tsa_0862ADE8.tsa.lz" @ 0x62AEA0 - 0x62ADE8
+	.incbin "./graphics/banim/assets/tsa/0062ADE8_Tsa_0862ADE8.map.bin.lz" @ 0x62AEA0 - 0x62ADE8
 
 	.global Tsa_0862AEA0
 Tsa_0862AEA0:  @ 0x0862AEA0
-	.incbin "./graphics/banim/assets/tsa/0062AEA0_Tsa_0862AEA0.tsa.lz" @ 0x62AF48 - 0x62AEA0
+	.incbin "./graphics/banim/assets/tsa/0062AEA0_Tsa_0862AEA0.map.bin.lz" @ 0x62AF48 - 0x62AEA0
 
 	.global Tsa_0862AF48
 Tsa_0862AF48:  @ 0x0862AF48
-	.incbin "./graphics/banim/assets/tsa/0062AF48_Tsa_0862AF48.tsa.lz" @ 0x62B004 - 0x62AF48
+	.incbin "./graphics/banim/assets/tsa/0062AF48_Tsa_0862AF48.map.bin.lz" @ 0x62B004 - 0x62AF48
 
 	.global Tsa_0862B004
 Tsa_0862B004:  @ 0x0862B004
-	.incbin "./graphics/banim/assets/tsa/0062B004_Tsa_0862B004.tsa.lz" @ 0x62B0DC - 0x62B004
+	.incbin "./graphics/banim/assets/tsa/0062B004_Tsa_0862B004.map.bin.lz" @ 0x62B0DC - 0x62B004
 
 	.global Tsa_0862B0DC
 Tsa_0862B0DC:  @ 0x0862B0DC
-	.incbin "./graphics/banim/assets/tsa/0062B0DC_Tsa_0862B0DC.tsa.lz" @ 0x62B1BC - 0x62B0DC
+	.incbin "./graphics/banim/assets/tsa/0062B0DC_Tsa_0862B0DC.map.bin.lz" @ 0x62B1BC - 0x62B0DC
 
 	.global Tsa_0862B1BC
 Tsa_0862B1BC:  @ 0x0862B1BC
-	.incbin "./graphics/banim/assets/tsa/0062B1BC_Tsa_0862B1BC.tsa.lz" @ 0x62B2AC - 0x62B1BC
+	.incbin "./graphics/banim/assets/tsa/0062B1BC_Tsa_0862B1BC.map.bin.lz" @ 0x62B2AC - 0x62B1BC
 
 	.global Tsa_0862B2AC
 Tsa_0862B2AC:  @ 0x0862B2AC
-	.incbin "./graphics/banim/assets/tsa/0062B2AC_Tsa_0862B2AC.tsa.lz" @ 0x62B3A8 - 0x62B2AC
+	.incbin "./graphics/banim/assets/tsa/0062B2AC_Tsa_0862B2AC.map.bin.lz" @ 0x62B3A8 - 0x62B2AC
 
 	.global Tsa_0862B3A8
 Tsa_0862B3A8:  @ 0x0862B3A8
-	.incbin "./graphics/banim/assets/tsa/0062B3A8_Tsa_0862B3A8.tsa.lz" @ 0x62B49C - 0x62B3A8
+	.incbin "./graphics/banim/assets/tsa/0062B3A8_Tsa_0862B3A8.map.bin.lz" @ 0x62B49C - 0x62B3A8
 
 	.global Tsa_0862B49C
 Tsa_0862B49C:  @ 0x0862B49C
-	.incbin "./graphics/banim/assets/tsa/0062B49C_Tsa_0862B49C.tsa.lz" @ 0x62B594 - 0x62B49C
+	.incbin "./graphics/banim/assets/tsa/0062B49C_Tsa_0862B49C.map.bin.lz" @ 0x62B594 - 0x62B49C
 
 	.global Tsa_0862B594
 Tsa_0862B594:  @ 0x0862B594
-	.incbin "./graphics/banim/assets/tsa/0062B594_Tsa_0862B594.tsa.lz" @ 0x62B680 - 0x62B594
+	.incbin "./graphics/banim/assets/tsa/0062B594_Tsa_0862B594.map.bin.lz" @ 0x62B680 - 0x62B594
 
 	.global Tsa_0862B680
 Tsa_0862B680:  @ 0x0862B680
-	.incbin "./graphics/banim/assets/tsa/0062B680_Tsa_0862B680.tsa.lz" @ 0x62B764 - 0x62B680
+	.incbin "./graphics/banim/assets/tsa/0062B680_Tsa_0862B680.map.bin.lz" @ 0x62B764 - 0x62B680
 
 	.global Tsa_0862B764
 Tsa_0862B764:  @ 0x0862B764
-	.incbin "./graphics/banim/assets/tsa/0062B764_Tsa_0862B764.tsa.lz" @ 0x62B83C - 0x62B764
+	.incbin "./graphics/banim/assets/tsa/0062B764_Tsa_0862B764.map.bin.lz" @ 0x62B83C - 0x62B764
 
 	.global Tsa_0862B83C
 Tsa_0862B83C:  @ 0x0862B83C
-	.incbin "./graphics/banim/assets/tsa/0062B83C_Tsa_0862B83C.tsa.lz" @ 0x62B90C - 0x62B83C
+	.incbin "./graphics/banim/assets/tsa/0062B83C_Tsa_0862B83C.map.bin.lz" @ 0x62B90C - 0x62B83C
 
 	.global Tsa_0862B90C
 Tsa_0862B90C:  @ 0x0862B90C
-	.incbin "./graphics/banim/assets/tsa/0062B90C_Tsa_0862B90C.tsa.lz" @ 0x62B9D8 - 0x62B90C
+	.incbin "./graphics/banim/assets/tsa/0062B90C_Tsa_0862B90C.map.bin.lz" @ 0x62B9D8 - 0x62B90C
 
 	.global Tsa_0862B9D8
 Tsa_0862B9D8:  @ 0x0862B9D8
-	.incbin "./graphics/banim/assets/tsa/0062B9D8_Tsa_0862B9D8.tsa.lz" @ 0x62BAA0 - 0x62B9D8
+	.incbin "./graphics/banim/assets/tsa/0062B9D8_Tsa_0862B9D8.map.bin.lz" @ 0x62BAA0 - 0x62B9D8
 
 	.global Tsa_0862BAA0
 Tsa_0862BAA0:  @ 0x0862BAA0
-	.incbin "./graphics/banim/assets/tsa/0062BAA0_Tsa_0862BAA0.tsa.lz" @ 0x62BB54 - 0x62BAA0
+	.incbin "./graphics/banim/assets/tsa/0062BAA0_Tsa_0862BAA0.map.bin.lz" @ 0x62BB54 - 0x62BAA0
 
 	.global Tsa_0862BB54
 Tsa_0862BB54:  @ 0x0862BB54
-	.incbin "./graphics/banim/assets/tsa/0062BB54_Tsa_0862BB54.tsa.lz" @ 0x62BC08 - 0x62BB54
+	.incbin "./graphics/banim/assets/tsa/0062BB54_Tsa_0862BB54.map.bin.lz" @ 0x62BC08 - 0x62BB54
 
 	.global Tsa_0862BC08
 Tsa_0862BC08:  @ 0x0862BC08
-	.incbin "./graphics/banim/assets/tsa/0062BC08_Tsa_0862BC08.tsa.lz" @ 0x62BCA8 - 0x62BC08
+	.incbin "./graphics/banim/assets/tsa/0062BC08_Tsa_0862BC08.map.bin.lz" @ 0x62BCA8 - 0x62BC08
 
 	.global Tsa_0862BCA8
 Tsa_0862BCA8:  @ 0x0862BCA8
-	.incbin "./graphics/banim/assets/tsa/0062BCA8_Tsa_0862BCA8.tsa.lz" @ 0x62BD5C - 0x62BCA8
+	.incbin "./graphics/banim/assets/tsa/0062BCA8_Tsa_0862BCA8.map.bin.lz" @ 0x62BD5C - 0x62BCA8
 
 	.global Tsa_0862BD5C
 Tsa_0862BD5C:  @ 0x0862BD5C
-	.incbin "./graphics/banim/assets/tsa/0062BD5C_Tsa_0862BD5C.tsa.lz" @ 0x62BE18 - 0x62BD5C
+	.incbin "./graphics/banim/assets/tsa/0062BD5C_Tsa_0862BD5C.map.bin.lz" @ 0x62BE18 - 0x62BD5C
 
 	.global Tsa_0862BE18
 Tsa_0862BE18:  @ 0x0862BE18
-	.incbin "./graphics/banim/assets/tsa/0062BE18_Tsa_0862BE18.tsa.lz" @ 0x62BEF4 - 0x62BE18
+	.incbin "./graphics/banim/assets/tsa/0062BE18_Tsa_0862BE18.map.bin.lz" @ 0x62BEF4 - 0x62BE18
 
 	.global Tsa_0862BEF4
 Tsa_0862BEF4:  @ 0x0862BEF4
-	.incbin "./graphics/banim/assets/tsa/0062BEF4_Tsa_0862BEF4.tsa.lz" @ 0x62BFDC - 0x62BEF4
+	.incbin "./graphics/banim/assets/tsa/0062BEF4_Tsa_0862BEF4.map.bin.lz" @ 0x62BFDC - 0x62BEF4
 
 	.global Tsa_0862BFDC
 Tsa_0862BFDC:  @ 0x0862BFDC
-	.incbin "./graphics/banim/assets/tsa/0062BFDC_Tsa_0862BFDC.tsa.lz" @ 0x62C100 - 0x62BFDC
+	.incbin "./graphics/banim/assets/tsa/0062BFDC_Tsa_0862BFDC.map.bin.lz" @ 0x62C100 - 0x62BFDC
 
 	.global Tsa_0862C100
 Tsa_0862C100:  @ 0x0862C100
-	.incbin "./graphics/banim/assets/tsa/0062C100_Tsa_0862C100.tsa.lz" @ 0x62C220 - 0x62C100
+	.incbin "./graphics/banim/assets/tsa/0062C100_Tsa_0862C100.map.bin.lz" @ 0x62C220 - 0x62C100
 
 	.global Tsa_0862C220
 Tsa_0862C220:  @ 0x0862C220
-	.incbin "./graphics/banim/assets/tsa/0062C220_Tsa_0862C220.tsa.lz" @ 0x62C32C - 0x62C220
+	.incbin "./graphics/banim/assets/tsa/0062C220_Tsa_0862C220.map.bin.lz" @ 0x62C32C - 0x62C220
 
 	.global Tsa_0862C32C
 Tsa_0862C32C:  @ 0x0862C32C
-	.incbin "./graphics/banim/assets/tsa/0062C32C_Tsa_0862C32C.tsa.lz" @ 0x62C438 - 0x62C32C
+	.incbin "./graphics/banim/assets/tsa/0062C32C_Tsa_0862C32C.map.bin.lz" @ 0x62C438 - 0x62C32C
 
 	.global Tsa_0862C438
 Tsa_0862C438:  @ 0x0862C438
-	.incbin "./graphics/banim/assets/tsa/0062C438_Tsa_0862C438.tsa.lz" @ 0x62C534 - 0x62C438
+	.incbin "./graphics/banim/assets/tsa/0062C438_Tsa_0862C438.map.bin.lz" @ 0x62C534 - 0x62C438
 
 	.global Tsa_0862C534
 Tsa_0862C534:  @ 0x0862C534
-	.incbin "./graphics/banim/assets/tsa/0062C534_Tsa_0862C534.tsa.lz" @ 0x62C634 - 0x62C534
+	.incbin "./graphics/banim/assets/tsa/0062C534_Tsa_0862C534.map.bin.lz" @ 0x62C634 - 0x62C534
 
 	.global Tsa_0862C634
 Tsa_0862C634:  @ 0x0862C634
-	.incbin "./graphics/banim/assets/tsa/0062C634_Tsa_0862C634.tsa.lz" @ 0x62C730 - 0x62C634
+	.incbin "./graphics/banim/assets/tsa/0062C634_Tsa_0862C634.map.bin.lz" @ 0x62C730 - 0x62C634
 
 	.global Tsa_0862C730
 Tsa_0862C730:  @ 0x0862C730
-	.incbin "./graphics/banim/assets/tsa/0062C730_Tsa_0862C730.tsa.lz" @ 0x62C82C - 0x62C730
+	.incbin "./graphics/banim/assets/tsa/0062C730_Tsa_0862C730.map.bin.lz" @ 0x62C82C - 0x62C730
 
 	.global Img_FluxAnimSprites_Orb
 Img_FluxAnimSprites_Orb:  @ 0x0862C82C
@@ -14581,207 +14581,207 @@ Pal_NosferatuBg:  @ 0x08636640
 
 	.global Tsa_08636660
 Tsa_08636660:  @ 0x08636660
-	.incbin "./graphics/banim/assets/tsa/00636660_Tsa_08636660.tsa.lz" @ 0x636790 - 0x636660
+	.incbin "./graphics/banim/assets/tsa/00636660_Tsa_08636660.map.bin.lz" @ 0x636790 - 0x636660
 
 	.global Tsa_08636790
 Tsa_08636790:  @ 0x08636790
-	.incbin "./graphics/banim/assets/tsa/00636790_Tsa_08636790.tsa.lz" @ 0x63683C - 0x636790
+	.incbin "./graphics/banim/assets/tsa/00636790_Tsa_08636790.map.bin.lz" @ 0x63683C - 0x636790
 
 	.global Tsa_0863683C
 Tsa_0863683C:  @ 0x0863683C
-	.incbin "./graphics/banim/assets/tsa/0063683C_Tsa_0863683C.tsa.lz" @ 0x6368EC - 0x63683C
+	.incbin "./graphics/banim/assets/tsa/0063683C_Tsa_0863683C.map.bin.lz" @ 0x6368EC - 0x63683C
 
 	.global Tsa_086368EC
 Tsa_086368EC:  @ 0x086368EC
-	.incbin "./graphics/banim/assets/tsa/006368EC_Tsa_086368EC.tsa.lz" @ 0x6369A4 - 0x6368EC
+	.incbin "./graphics/banim/assets/tsa/006368EC_Tsa_086368EC.map.bin.lz" @ 0x6369A4 - 0x6368EC
 
 	.global Tsa_086369A4
 Tsa_086369A4:  @ 0x086369A4
-	.incbin "./graphics/banim/assets/tsa/006369A4_Tsa_086369A4.tsa.lz" @ 0x636A64 - 0x6369A4
+	.incbin "./graphics/banim/assets/tsa/006369A4_Tsa_086369A4.map.bin.lz" @ 0x636A64 - 0x6369A4
 
 	.global Tsa_08636A64
 Tsa_08636A64:  @ 0x08636A64
-	.incbin "./graphics/banim/assets/tsa/00636A64_Tsa_08636A64.tsa.lz" @ 0x636B30 - 0x636A64
+	.incbin "./graphics/banim/assets/tsa/00636A64_Tsa_08636A64.map.bin.lz" @ 0x636B30 - 0x636A64
 
 	.global Tsa_08636B30
 Tsa_08636B30:  @ 0x08636B30
-	.incbin "./graphics/banim/assets/tsa/00636B30_Tsa_08636B30.tsa.lz" @ 0x636C10 - 0x636B30
+	.incbin "./graphics/banim/assets/tsa/00636B30_Tsa_08636B30.map.bin.lz" @ 0x636C10 - 0x636B30
 
 	.global Tsa_08636C10
 Tsa_08636C10:  @ 0x08636C10
-	.incbin "./graphics/banim/assets/tsa/00636C10_Tsa_08636C10.tsa.lz" @ 0x636CF8 - 0x636C10
+	.incbin "./graphics/banim/assets/tsa/00636C10_Tsa_08636C10.map.bin.lz" @ 0x636CF8 - 0x636C10
 
 	.global Tsa_08636CF8
 Tsa_08636CF8:  @ 0x08636CF8
-	.incbin "./graphics/banim/assets/tsa/00636CF8_Tsa_08636CF8.tsa.lz" @ 0x636E00 - 0x636CF8
+	.incbin "./graphics/banim/assets/tsa/00636CF8_Tsa_08636CF8.map.bin.lz" @ 0x636E00 - 0x636CF8
 
 	.global Tsa_08636E00
 Tsa_08636E00:  @ 0x08636E00
-	.incbin "./graphics/banim/assets/tsa/00636E00_Tsa_08636E00.tsa.lz" @ 0x636F1C - 0x636E00
+	.incbin "./graphics/banim/assets/tsa/00636E00_Tsa_08636E00.map.bin.lz" @ 0x636F1C - 0x636E00
 
 	.global Tsa_08636F1C
 Tsa_08636F1C:  @ 0x08636F1C
-	.incbin "./graphics/banim/assets/tsa/00636F1C_Tsa_08636F1C.tsa.lz" @ 0x637058 - 0x636F1C
+	.incbin "./graphics/banim/assets/tsa/00636F1C_Tsa_08636F1C.map.bin.lz" @ 0x637058 - 0x636F1C
 
 	.global Tsa_08637058
 Tsa_08637058:  @ 0x08637058
-	.incbin "./graphics/banim/assets/tsa/00637058_Tsa_08637058.tsa.lz" @ 0x6371A8 - 0x637058
+	.incbin "./graphics/banim/assets/tsa/00637058_Tsa_08637058.map.bin.lz" @ 0x6371A8 - 0x637058
 
 	.global Tsa_086371A8
 Tsa_086371A8:  @ 0x086371A8
-	.incbin "./graphics/banim/assets/tsa/006371A8_Tsa_086371A8.tsa.lz" @ 0x637300 - 0x6371A8
+	.incbin "./graphics/banim/assets/tsa/006371A8_Tsa_086371A8.map.bin.lz" @ 0x637300 - 0x6371A8
 
 	.global Tsa_08637300
 Tsa_08637300:  @ 0x08637300
-	.incbin "./graphics/banim/assets/tsa/00637300_Tsa_08637300.tsa.lz" @ 0x637458 - 0x637300
+	.incbin "./graphics/banim/assets/tsa/00637300_Tsa_08637300.map.bin.lz" @ 0x637458 - 0x637300
 
 	.global Tsa_08637458
 Tsa_08637458:  @ 0x08637458
-	.incbin "./graphics/banim/assets/tsa/00637458_Tsa_08637458.tsa.lz" @ 0x6375AC - 0x637458
+	.incbin "./graphics/banim/assets/tsa/00637458_Tsa_08637458.map.bin.lz" @ 0x6375AC - 0x637458
 
 	.global Tsa_086375AC
 Tsa_086375AC:  @ 0x086375AC
-	.incbin "./graphics/banim/assets/tsa/006375AC_Tsa_086375AC.tsa.lz" @ 0x6376FC - 0x6375AC
+	.incbin "./graphics/banim/assets/tsa/006375AC_Tsa_086375AC.map.bin.lz" @ 0x6376FC - 0x6375AC
 
 	.global Tsa_086376FC
 Tsa_086376FC:  @ 0x086376FC
-	.incbin "./graphics/banim/assets/tsa/006376FC_Tsa_086376FC.tsa.lz" @ 0x63784C - 0x6376FC
+	.incbin "./graphics/banim/assets/tsa/006376FC_Tsa_086376FC.map.bin.lz" @ 0x63784C - 0x6376FC
 
 	.global Tsa_0863784C
 Tsa_0863784C:  @ 0x0863784C
-	.incbin "./graphics/banim/assets/tsa/0063784C_Tsa_0863784C.tsa.lz" @ 0x637984 - 0x63784C
+	.incbin "./graphics/banim/assets/tsa/0063784C_Tsa_0863784C.map.bin.lz" @ 0x637984 - 0x63784C
 
 	.global Tsa_08637984
 Tsa_08637984:  @ 0x08637984
-	.incbin "./graphics/banim/assets/tsa/00637984_Tsa_08637984.tsa.lz" @ 0x637AB0 - 0x637984
+	.incbin "./graphics/banim/assets/tsa/00637984_Tsa_08637984.map.bin.lz" @ 0x637AB0 - 0x637984
 
 	.global Tsa_08637AB0
 Tsa_08637AB0:  @ 0x08637AB0
-	.incbin "./graphics/banim/assets/tsa/00637AB0_Tsa_08637AB0.tsa.lz" @ 0x637BCC - 0x637AB0
+	.incbin "./graphics/banim/assets/tsa/00637AB0_Tsa_08637AB0.map.bin.lz" @ 0x637BCC - 0x637AB0
 
 	.global Tsa_08637BCC
 Tsa_08637BCC:  @ 0x08637BCC
-	.incbin "./graphics/banim/assets/tsa/00637BCC_Tsa_08637BCC.tsa.lz" @ 0x637CD8 - 0x637BCC
+	.incbin "./graphics/banim/assets/tsa/00637BCC_Tsa_08637BCC.map.bin.lz" @ 0x637CD8 - 0x637BCC
 
 	.global Tsa_08637CD8
 Tsa_08637CD8:  @ 0x08637CD8
-	.incbin "./graphics/banim/assets/tsa/00637CD8_Tsa_08637CD8.tsa.lz" @ 0x637DD0 - 0x637CD8
+	.incbin "./graphics/banim/assets/tsa/00637CD8_Tsa_08637CD8.map.bin.lz" @ 0x637DD0 - 0x637CD8
 
 	.global Tsa_08637DD0
 Tsa_08637DD0:  @ 0x08637DD0
-	.incbin "./graphics/banim/assets/tsa/00637DD0_Tsa_08637DD0.tsa.lz" @ 0x637EBC - 0x637DD0
+	.incbin "./graphics/banim/assets/tsa/00637DD0_Tsa_08637DD0.map.bin.lz" @ 0x637EBC - 0x637DD0
 
 	.global Tsa_08637EBC
 Tsa_08637EBC:  @ 0x08637EBC
-	.incbin "./graphics/banim/assets/tsa/00637EBC_Tsa_08637EBC.tsa.lz" @ 0x637F8C - 0x637EBC
+	.incbin "./graphics/banim/assets/tsa/00637EBC_Tsa_08637EBC.map.bin.lz" @ 0x637F8C - 0x637EBC
 
 	.global Tsa_08637F8C
 Tsa_08637F8C:  @ 0x08637F8C
-	.incbin "./graphics/banim/assets/tsa/00637F8C_Tsa_08637F8C.tsa.lz" @ 0x638048 - 0x637F8C
+	.incbin "./graphics/banim/assets/tsa/00637F8C_Tsa_08637F8C.map.bin.lz" @ 0x638048 - 0x637F8C
 
 	.global Tsa_08638048
 Tsa_08638048:  @ 0x08638048
-	.incbin "./graphics/banim/assets/tsa/00638048_Tsa_08638048.tsa.lz" @ 0x6380FC - 0x638048
+	.incbin "./graphics/banim/assets/tsa/00638048_Tsa_08638048.map.bin.lz" @ 0x6380FC - 0x638048
 
 	.global Tsa_086380FC
 Tsa_086380FC:  @ 0x086380FC
-	.incbin "./graphics/banim/assets/tsa/006380FC_Tsa_086380FC.tsa.lz" @ 0x6381AC - 0x6380FC
+	.incbin "./graphics/banim/assets/tsa/006380FC_Tsa_086380FC.map.bin.lz" @ 0x6381AC - 0x6380FC
 
 	.global Tsa_086381AC
 Tsa_086381AC:  @ 0x086381AC
-	.incbin "./graphics/banim/assets/tsa/006381AC_Tsa_086381AC.tsa.lz" @ 0x638258 - 0x6381AC
+	.incbin "./graphics/banim/assets/tsa/006381AC_Tsa_086381AC.map.bin.lz" @ 0x638258 - 0x6381AC
 
 	.global Tsa_08638258
 Tsa_08638258:  @ 0x08638258
-	.incbin "./graphics/banim/assets/tsa/00638258_Tsa_08638258.tsa.lz" @ 0x638300 - 0x638258
+	.incbin "./graphics/banim/assets/tsa/00638258_Tsa_08638258.map.bin.lz" @ 0x638300 - 0x638258
 
 	.global Tsa_08638300
 Tsa_08638300:  @ 0x08638300
-	.incbin "./graphics/banim/assets/tsa/00638300_Tsa_08638300.tsa.lz" @ 0x6383B4 - 0x638300
+	.incbin "./graphics/banim/assets/tsa/00638300_Tsa_08638300.map.bin.lz" @ 0x6383B4 - 0x638300
 
 	.global Tsa_086383B4
 Tsa_086383B4:  @ 0x086383B4
-	.incbin "./graphics/banim/assets/tsa/006383B4_Tsa_086383B4.tsa.lz" @ 0x638474 - 0x6383B4
+	.incbin "./graphics/banim/assets/tsa/006383B4_Tsa_086383B4.map.bin.lz" @ 0x638474 - 0x6383B4
 
 	.global Tsa_08638474
 Tsa_08638474:  @ 0x08638474
-	.incbin "./graphics/banim/assets/tsa/00638474_Tsa_08638474.tsa.lz" @ 0x638540 - 0x638474
+	.incbin "./graphics/banim/assets/tsa/00638474_Tsa_08638474.map.bin.lz" @ 0x638540 - 0x638474
 
 	.global Tsa_08638540
 Tsa_08638540:  @ 0x08638540
-	.incbin "./graphics/banim/assets/tsa/00638540_Tsa_08638540.tsa.lz" @ 0x638608 - 0x638540
+	.incbin "./graphics/banim/assets/tsa/00638540_Tsa_08638540.map.bin.lz" @ 0x638608 - 0x638540
 
 	.global Tsa_08638608
 Tsa_08638608:  @ 0x08638608
-	.incbin "./graphics/banim/assets/tsa/00638608_Tsa_08638608.tsa.lz" @ 0x6386D0 - 0x638608
+	.incbin "./graphics/banim/assets/tsa/00638608_Tsa_08638608.map.bin.lz" @ 0x6386D0 - 0x638608
 
 	.global Tsa_086386D0
 Tsa_086386D0:  @ 0x086386D0
-	.incbin "./graphics/banim/assets/tsa/006386D0_Tsa_086386D0.tsa.lz" @ 0x6387A4 - 0x6386D0
+	.incbin "./graphics/banim/assets/tsa/006386D0_Tsa_086386D0.map.bin.lz" @ 0x6387A4 - 0x6386D0
 
 	.global Tsa_086387A4
 Tsa_086387A4:  @ 0x086387A4
-	.incbin "./graphics/banim/assets/tsa/006387A4_Tsa_086387A4.tsa.lz" @ 0x638880 - 0x6387A4
+	.incbin "./graphics/banim/assets/tsa/006387A4_Tsa_086387A4.map.bin.lz" @ 0x638880 - 0x6387A4
 
 	.global Tsa_08638880
 Tsa_08638880:  @ 0x08638880
-	.incbin "./graphics/banim/assets/tsa/00638880_Tsa_08638880.tsa.lz" @ 0x638968 - 0x638880
+	.incbin "./graphics/banim/assets/tsa/00638880_Tsa_08638880.map.bin.lz" @ 0x638968 - 0x638880
 
 	.global Tsa_08638968
 Tsa_08638968:  @ 0x08638968
-	.incbin "./graphics/banim/assets/tsa/00638968_Tsa_08638968.tsa.lz" @ 0x638A5C - 0x638968
+	.incbin "./graphics/banim/assets/tsa/00638968_Tsa_08638968.map.bin.lz" @ 0x638A5C - 0x638968
 
 	.global Tsa_08638A5C
 Tsa_08638A5C:  @ 0x08638A5C
-	.incbin "./graphics/banim/assets/tsa/00638A5C_Tsa_08638A5C.tsa.lz" @ 0x638B64 - 0x638A5C
+	.incbin "./graphics/banim/assets/tsa/00638A5C_Tsa_08638A5C.map.bin.lz" @ 0x638B64 - 0x638A5C
 
 	.global Tsa_08638B64
 Tsa_08638B64:  @ 0x08638B64
-	.incbin "./graphics/banim/assets/tsa/00638B64_Tsa_08638B64.tsa.lz" @ 0x638C6C - 0x638B64
+	.incbin "./graphics/banim/assets/tsa/00638B64_Tsa_08638B64.map.bin.lz" @ 0x638C6C - 0x638B64
 
 	.global Tsa_08638C6C
 Tsa_08638C6C:  @ 0x08638C6C
-	.incbin "./graphics/banim/assets/tsa/00638C6C_Tsa_08638C6C.tsa.lz" @ 0x638D90 - 0x638C6C
+	.incbin "./graphics/banim/assets/tsa/00638C6C_Tsa_08638C6C.map.bin.lz" @ 0x638D90 - 0x638C6C
 
 	.global Tsa_08638D90
 Tsa_08638D90:  @ 0x08638D90
-	.incbin "./graphics/banim/assets/tsa/00638D90_Tsa_08638D90.tsa.lz" @ 0x638EB0 - 0x638D90
+	.incbin "./graphics/banim/assets/tsa/00638D90_Tsa_08638D90.map.bin.lz" @ 0x638EB0 - 0x638D90
 
 	.global Tsa_08638EB0
 Tsa_08638EB0:  @ 0x08638EB0
-	.incbin "./graphics/banim/assets/tsa/00638EB0_Tsa_08638EB0.tsa.lz" @ 0x638FCC - 0x638EB0
+	.incbin "./graphics/banim/assets/tsa/00638EB0_Tsa_08638EB0.map.bin.lz" @ 0x638FCC - 0x638EB0
 
 	.global Tsa_08638FCC
 Tsa_08638FCC:  @ 0x08638FCC
-	.incbin "./graphics/banim/assets/tsa/00638FCC_Tsa_08638FCC.tsa.lz" @ 0x6390DC - 0x638FCC
+	.incbin "./graphics/banim/assets/tsa/00638FCC_Tsa_08638FCC.map.bin.lz" @ 0x6390DC - 0x638FCC
 
 	.global Tsa_086390DC
 Tsa_086390DC:  @ 0x086390DC
-	.incbin "./graphics/banim/assets/tsa/006390DC_Tsa_086390DC.tsa.lz" @ 0x6391E8 - 0x6390DC
+	.incbin "./graphics/banim/assets/tsa/006390DC_Tsa_086390DC.map.bin.lz" @ 0x6391E8 - 0x6390DC
 
 	.global Tsa_086391E8
 Tsa_086391E8:  @ 0x086391E8
-	.incbin "./graphics/banim/assets/tsa/006391E8_Tsa_086391E8.tsa.lz" @ 0x6392E8 - 0x6391E8
+	.incbin "./graphics/banim/assets/tsa/006391E8_Tsa_086391E8.map.bin.lz" @ 0x6392E8 - 0x6391E8
 
 	.global Tsa_086392E8
 Tsa_086392E8:  @ 0x086392E8
-	.incbin "./graphics/banim/assets/tsa/006392E8_Tsa_086392E8.tsa.lz" @ 0x6393D8 - 0x6392E8
+	.incbin "./graphics/banim/assets/tsa/006392E8_Tsa_086392E8.map.bin.lz" @ 0x6393D8 - 0x6392E8
 
 	.global Tsa_086393D8
 Tsa_086393D8:  @ 0x086393D8
-	.incbin "./graphics/banim/assets/tsa/006393D8_Tsa_086393D8.tsa.lz" @ 0x6394B4 - 0x6393D8
+	.incbin "./graphics/banim/assets/tsa/006393D8_Tsa_086393D8.map.bin.lz" @ 0x6394B4 - 0x6393D8
 
 	.global Tsa_086394B4
 Tsa_086394B4:  @ 0x086394B4
-	.incbin "./graphics/banim/assets/tsa/006394B4_Tsa_086394B4.tsa.lz" @ 0x639580 - 0x6394B4
+	.incbin "./graphics/banim/assets/tsa/006394B4_Tsa_086394B4.map.bin.lz" @ 0x639580 - 0x6394B4
 
 	.global Tsa_08639580
 Tsa_08639580:  @ 0x08639580
-	.incbin "./graphics/banim/assets/tsa/00639580_Tsa_08639580.tsa.lz" @ 0x639638 - 0x639580
+	.incbin "./graphics/banim/assets/tsa/00639580_Tsa_08639580.map.bin.lz" @ 0x639638 - 0x639580
 
 	.global Tsa_08639638
 Tsa_08639638:  @ 0x08639638
-	.incbin "./graphics/banim/assets/tsa/00639638_Tsa_08639638.tsa.lz" @ 0x6396E4 - 0x639638
+	.incbin "./graphics/banim/assets/tsa/00639638_Tsa_08639638.map.bin.lz" @ 0x6396E4 - 0x639638
 
 	.global Img_086396E4
 Img_086396E4:  @ 0x086396E4
@@ -14869,179 +14869,179 @@ Pal_DivineBg:  @ 0x08641D84
 
 	.global Tsa_08641DA4
 Tsa_08641DA4:  @ 0x08641DA4
-	.incbin "./graphics/banim/assets/tsa/00641DA4_Tsa_08641DA4.tsa.lz" @ 0x641F38 - 0x641DA4
+	.incbin "./graphics/banim/assets/tsa/00641DA4_Tsa_08641DA4.map.bin.lz" @ 0x641F38 - 0x641DA4
 
 	.global Tsa_08641F38
 Tsa_08641F38:  @ 0x08641F38
-	.incbin "./graphics/banim/assets/tsa/00641F38_Tsa_08641F38.tsa.lz" @ 0x64213C - 0x641F38
+	.incbin "./graphics/banim/assets/tsa/00641F38_Tsa_08641F38.map.bin.lz" @ 0x64213C - 0x641F38
 
 	.global Tsa_0864213C
 Tsa_0864213C:  @ 0x0864213C
-	.incbin "./graphics/banim/assets/tsa/0064213C_Tsa_0864213C.tsa.lz" @ 0x64240C - 0x64213C
+	.incbin "./graphics/banim/assets/tsa/0064213C_Tsa_0864213C.map.bin.lz" @ 0x64240C - 0x64213C
 
 	.global Tsa_0864240C
 Tsa_0864240C:  @ 0x0864240C
-	.incbin "./graphics/banim/assets/tsa/0064240C_Tsa_0864240C.tsa.lz" @ 0x6426DC - 0x64240C
+	.incbin "./graphics/banim/assets/tsa/0064240C_Tsa_0864240C.map.bin.lz" @ 0x6426DC - 0x64240C
 
 	.global Tsa_086426DC
 Tsa_086426DC:  @ 0x086426DC
-	.incbin "./graphics/banim/assets/tsa/006426DC_Tsa_086426DC.tsa.lz" @ 0x64298C - 0x6426DC
+	.incbin "./graphics/banim/assets/tsa/006426DC_Tsa_086426DC.map.bin.lz" @ 0x64298C - 0x6426DC
 
 	.global Tsa_0864298C
 Tsa_0864298C:  @ 0x0864298C
-	.incbin "./graphics/banim/assets/tsa/0064298C_Tsa_0864298C.tsa.lz" @ 0x642C40 - 0x64298C
+	.incbin "./graphics/banim/assets/tsa/0064298C_Tsa_0864298C.map.bin.lz" @ 0x642C40 - 0x64298C
 
 	.global Tsa_08642C40
 Tsa_08642C40:  @ 0x08642C40
-	.incbin "./graphics/banim/assets/tsa/00642C40_Tsa_08642C40.tsa.lz" @ 0x642ECC - 0x642C40
+	.incbin "./graphics/banim/assets/tsa/00642C40_Tsa_08642C40.map.bin.lz" @ 0x642ECC - 0x642C40
 
 	.global Tsa_08642ECC
 Tsa_08642ECC:  @ 0x08642ECC
-	.incbin "./graphics/banim/assets/tsa/00642ECC_Tsa_08642ECC.tsa.lz" @ 0x643150 - 0x642ECC
+	.incbin "./graphics/banim/assets/tsa/00642ECC_Tsa_08642ECC.map.bin.lz" @ 0x643150 - 0x642ECC
 
 	.global Tsa_08643150
 Tsa_08643150:  @ 0x08643150
-	.incbin "./graphics/banim/assets/tsa/00643150_Tsa_08643150.tsa.lz" @ 0x6433C4 - 0x643150
+	.incbin "./graphics/banim/assets/tsa/00643150_Tsa_08643150.map.bin.lz" @ 0x6433C4 - 0x643150
 
 	.global Tsa_086433C4
 Tsa_086433C4:  @ 0x086433C4
-	.incbin "./graphics/banim/assets/tsa/006433C4_Tsa_086433C4.tsa.lz" @ 0x643658 - 0x6433C4
+	.incbin "./graphics/banim/assets/tsa/006433C4_Tsa_086433C4.map.bin.lz" @ 0x643658 - 0x6433C4
 
 	.global Tsa_08643658
 Tsa_08643658:  @ 0x08643658
-	.incbin "./graphics/banim/assets/tsa/00643658_Tsa_08643658.tsa.lz" @ 0x6438E0 - 0x643658
+	.incbin "./graphics/banim/assets/tsa/00643658_Tsa_08643658.map.bin.lz" @ 0x6438E0 - 0x643658
 
 	.global Tsa_086438E0
 Tsa_086438E0:  @ 0x086438E0
-	.incbin "./graphics/banim/assets/tsa/006438E0_Tsa_086438E0.tsa.lz" @ 0x643B7C - 0x6438E0
+	.incbin "./graphics/banim/assets/tsa/006438E0_Tsa_086438E0.map.bin.lz" @ 0x643B7C - 0x6438E0
 
 	.global Tsa_08643B7C
 Tsa_08643B7C:  @ 0x08643B7C
-	.incbin "./graphics/banim/assets/tsa/00643B7C_Tsa_08643B7C.tsa.lz" @ 0x643E04 - 0x643B7C
+	.incbin "./graphics/banim/assets/tsa/00643B7C_Tsa_08643B7C.map.bin.lz" @ 0x643E04 - 0x643B7C
 
 	.global Tsa_08643E04
 Tsa_08643E04:  @ 0x08643E04
-	.incbin "./graphics/banim/assets/tsa/00643E04_Tsa_08643E04.tsa.lz" @ 0x644080 - 0x643E04
+	.incbin "./graphics/banim/assets/tsa/00643E04_Tsa_08643E04.map.bin.lz" @ 0x644080 - 0x643E04
 
 	.global Tsa_08644080
 Tsa_08644080:  @ 0x08644080
-	.incbin "./graphics/banim/assets/tsa/00644080_Tsa_08644080.tsa.lz" @ 0x6442B0 - 0x644080
+	.incbin "./graphics/banim/assets/tsa/00644080_Tsa_08644080.map.bin.lz" @ 0x6442B0 - 0x644080
 
 	.global Tsa_086442B0
 Tsa_086442B0:  @ 0x086442B0
-	.incbin "./graphics/banim/assets/tsa/006442B0_Tsa_086442B0.tsa.lz" @ 0x644500 - 0x6442B0
+	.incbin "./graphics/banim/assets/tsa/006442B0_Tsa_086442B0.map.bin.lz" @ 0x644500 - 0x6442B0
 
 	.global Tsa_08644500
 Tsa_08644500:  @ 0x08644500
-	.incbin "./graphics/banim/assets/tsa/00644500_Tsa_08644500.tsa.lz" @ 0x644730 - 0x644500
+	.incbin "./graphics/banim/assets/tsa/00644500_Tsa_08644500.map.bin.lz" @ 0x644730 - 0x644500
 
 	.global Tsa_08644730
 Tsa_08644730:  @ 0x08644730
-	.incbin "./graphics/banim/assets/tsa/00644730_Tsa_08644730.tsa.lz" @ 0x644928 - 0x644730
+	.incbin "./graphics/banim/assets/tsa/00644730_Tsa_08644730.map.bin.lz" @ 0x644928 - 0x644730
 
 	.global Tsa_08644928
 Tsa_08644928:  @ 0x08644928
-	.incbin "./graphics/banim/assets/tsa/00644928_Tsa_08644928.tsa.lz" @ 0x644B0C - 0x644928
+	.incbin "./graphics/banim/assets/tsa/00644928_Tsa_08644928.map.bin.lz" @ 0x644B0C - 0x644928
 
 	.global Tsa_08644B0C
 Tsa_08644B0C:  @ 0x08644B0C
-	.incbin "./graphics/banim/assets/tsa/00644B0C_Tsa_08644B0C.tsa.lz" @ 0x644CA8 - 0x644B0C
+	.incbin "./graphics/banim/assets/tsa/00644B0C_Tsa_08644B0C.map.bin.lz" @ 0x644CA8 - 0x644B0C
 
 	.global Tsa_08644CA8
 Tsa_08644CA8:  @ 0x08644CA8
-	.incbin "./graphics/banim/assets/tsa/00644CA8_Tsa_08644CA8.tsa.lz" @ 0x644DD0 - 0x644CA8
+	.incbin "./graphics/banim/assets/tsa/00644CA8_Tsa_08644CA8.map.bin.lz" @ 0x644DD0 - 0x644CA8
 
 	.global Tsa_08644DD0
 Tsa_08644DD0:  @ 0x08644DD0
-	.incbin "./graphics/banim/assets/tsa/00644DD0_Tsa_08644DD0.tsa.lz" @ 0x644E70 - 0x644DD0
+	.incbin "./graphics/banim/assets/tsa/00644DD0_Tsa_08644DD0.map.bin.lz" @ 0x644E70 - 0x644DD0
 
 	.global Tsa_08644E70
 Tsa_08644E70:  @ 0x08644E70
-	.incbin "./graphics/banim/assets/tsa/00644E70_Tsa_08644E70.tsa.lz" @ 0x644F18 - 0x644E70
+	.incbin "./graphics/banim/assets/tsa/00644E70_Tsa_08644E70.map.bin.lz" @ 0x644F18 - 0x644E70
 
 	.global Tsa_08644F18
 Tsa_08644F18:  @ 0x08644F18
-	.incbin "./graphics/banim/assets/tsa/00644F18_Tsa_08644F18.tsa.lz" @ 0x644FC0 - 0x644F18
+	.incbin "./graphics/banim/assets/tsa/00644F18_Tsa_08644F18.map.bin.lz" @ 0x644FC0 - 0x644F18
 
 	.global Tsa_08644FC0
 Tsa_08644FC0:  @ 0x08644FC0
-	.incbin "./graphics/banim/assets/tsa/00644FC0_Tsa_08644FC0.tsa.lz" @ 0x645070 - 0x644FC0
+	.incbin "./graphics/banim/assets/tsa/00644FC0_Tsa_08644FC0.map.bin.lz" @ 0x645070 - 0x644FC0
 
 	.global Tsa_08645070
 Tsa_08645070:  @ 0x08645070
-	.incbin "./graphics/banim/assets/tsa/00645070_Tsa_08645070.tsa.lz" @ 0x645128 - 0x645070
+	.incbin "./graphics/banim/assets/tsa/00645070_Tsa_08645070.map.bin.lz" @ 0x645128 - 0x645070
 
 	.global Tsa_08645128
 Tsa_08645128:  @ 0x08645128
-	.incbin "./graphics/banim/assets/tsa/00645128_Tsa_08645128.tsa.lz" @ 0x6451F4 - 0x645128
+	.incbin "./graphics/banim/assets/tsa/00645128_Tsa_08645128.map.bin.lz" @ 0x6451F4 - 0x645128
 
 	.global Tsa_086451F4
 Tsa_086451F4:  @ 0x086451F4
-	.incbin "./graphics/banim/assets/tsa/006451F4_Tsa_086451F4.tsa.lz" @ 0x6452C0 - 0x6451F4
+	.incbin "./graphics/banim/assets/tsa/006451F4_Tsa_086451F4.map.bin.lz" @ 0x6452C0 - 0x6451F4
 
 	.global Tsa_086452C0
 Tsa_086452C0:  @ 0x086452C0
-	.incbin "./graphics/banim/assets/tsa/006452C0_Tsa_086452C0.tsa.lz" @ 0x645394 - 0x6452C0
+	.incbin "./graphics/banim/assets/tsa/006452C0_Tsa_086452C0.map.bin.lz" @ 0x645394 - 0x6452C0
 
 	.global Tsa_08645394
 Tsa_08645394:  @ 0x08645394
-	.incbin "./graphics/banim/assets/tsa/00645394_Tsa_08645394.tsa.lz" @ 0x64546C - 0x645394
+	.incbin "./graphics/banim/assets/tsa/00645394_Tsa_08645394.map.bin.lz" @ 0x64546C - 0x645394
 
 	.global Tsa_0864546C
 Tsa_0864546C:  @ 0x0864546C
-	.incbin "./graphics/banim/assets/tsa/0064546C_Tsa_0864546C.tsa.lz" @ 0x645548 - 0x64546C
+	.incbin "./graphics/banim/assets/tsa/0064546C_Tsa_0864546C.map.bin.lz" @ 0x645548 - 0x64546C
 
 	.global Tsa_08645548
 Tsa_08645548:  @ 0x08645548
-	.incbin "./graphics/banim/assets/tsa/00645548_Tsa_08645548.tsa.lz" @ 0x645624 - 0x645548
+	.incbin "./graphics/banim/assets/tsa/00645548_Tsa_08645548.map.bin.lz" @ 0x645624 - 0x645548
 
 	.global Tsa_08645624
 Tsa_08645624:  @ 0x08645624
-	.incbin "./graphics/banim/assets/tsa/00645624_Tsa_08645624.tsa.lz" @ 0x645708 - 0x645624
+	.incbin "./graphics/banim/assets/tsa/00645624_Tsa_08645624.map.bin.lz" @ 0x645708 - 0x645624
 
 	.global Tsa_08645708
 Tsa_08645708:  @ 0x08645708
-	.incbin "./graphics/banim/assets/tsa/00645708_Tsa_08645708.tsa.lz" @ 0x6457BC - 0x645708
+	.incbin "./graphics/banim/assets/tsa/00645708_Tsa_08645708.map.bin.lz" @ 0x6457BC - 0x645708
 
 	.global Tsa_086457BC
 Tsa_086457BC:  @ 0x086457BC
-	.incbin "./graphics/banim/assets/tsa/006457BC_Tsa_086457BC.tsa.lz" @ 0x645858 - 0x6457BC
+	.incbin "./graphics/banim/assets/tsa/006457BC_Tsa_086457BC.map.bin.lz" @ 0x645858 - 0x6457BC
 
 	.global Tsa_08645858
 Tsa_08645858:  @ 0x08645858
-	.incbin "./graphics/banim/assets/tsa/00645858_Tsa_08645858.tsa.lz" @ 0x6458F4 - 0x645858
+	.incbin "./graphics/banim/assets/tsa/00645858_Tsa_08645858.map.bin.lz" @ 0x6458F4 - 0x645858
 
 	.global Tsa_086458F4
 Tsa_086458F4:  @ 0x086458F4
-	.incbin "./graphics/banim/assets/tsa/006458F4_Tsa_086458F4.tsa.lz" @ 0x645990 - 0x6458F4
+	.incbin "./graphics/banim/assets/tsa/006458F4_Tsa_086458F4.map.bin.lz" @ 0x645990 - 0x6458F4
 
 	.global Tsa_08645990
 Tsa_08645990:  @ 0x08645990
-	.incbin "./graphics/banim/assets/tsa/00645990_Tsa_08645990.tsa.lz" @ 0x645A2C - 0x645990
+	.incbin "./graphics/banim/assets/tsa/00645990_Tsa_08645990.map.bin.lz" @ 0x645A2C - 0x645990
 
 	.global Tsa_08645A2C
 Tsa_08645A2C:  @ 0x08645A2C
-	.incbin "./graphics/banim/assets/tsa/00645A2C_Tsa_08645A2C.tsa.lz" @ 0x645AC8 - 0x645A2C
+	.incbin "./graphics/banim/assets/tsa/00645A2C_Tsa_08645A2C.map.bin.lz" @ 0x645AC8 - 0x645A2C
 
 	.global Tsa_08645AC8
 Tsa_08645AC8:  @ 0x08645AC8
-	.incbin "./graphics/banim/assets/tsa/00645AC8_Tsa_08645AC8.tsa.lz" @ 0x645B64 - 0x645AC8
+	.incbin "./graphics/banim/assets/tsa/00645AC8_Tsa_08645AC8.map.bin.lz" @ 0x645B64 - 0x645AC8
 
 	.global Tsa_08645B64
 Tsa_08645B64:  @ 0x08645B64
-	.incbin "./graphics/banim/assets/tsa/00645B64_Tsa_08645B64.tsa.lz" @ 0x645C00 - 0x645B64
+	.incbin "./graphics/banim/assets/tsa/00645B64_Tsa_08645B64.map.bin.lz" @ 0x645C00 - 0x645B64
 
 	.global Tsa_08645C00
 Tsa_08645C00:  @ 0x08645C00
-	.incbin "./graphics/banim/assets/tsa/00645C00_Tsa_08645C00.tsa.lz" @ 0x645C9C - 0x645C00
+	.incbin "./graphics/banim/assets/tsa/00645C00_Tsa_08645C00.map.bin.lz" @ 0x645C9C - 0x645C00
 
 	.global Tsa_08645C9C
 Tsa_08645C9C:  @ 0x08645C9C
-	.incbin "./graphics/banim/assets/tsa/00645C9C_Tsa_08645C9C.tsa.lz" @ 0x645D38 - 0x645C9C
+	.incbin "./graphics/banim/assets/tsa/00645C9C_Tsa_08645C9C.map.bin.lz" @ 0x645D38 - 0x645C9C
 
 	.global Tsa_08645D38
 Tsa_08645D38:  @ 0x08645D38
-	.incbin "./graphics/banim/assets/tsa/00645D38_Tsa_08645D38.tsa.lz" @ 0x645DD8 - 0x645D38
+	.incbin "./graphics/banim/assets/tsa/00645D38_Tsa_08645D38.map.bin.lz" @ 0x645DD8 - 0x645D38
 
 	.global Img_DivineSprites
 Img_DivineSprites:  @ 0x08645DD8
@@ -15298,111 +15298,111 @@ Pal_EclipseBg_C:  @ 0x0864E7B0
 
 	.global Tsa_EclipseBg_A
 Tsa_EclipseBg_A:  @ 0x0864E7D0
-	.incbin "./graphics/banim/assets/tsa/0064E7D0_Tsa_EclipseBg_A.tsa.lz" @ 0x64E974 - 0x64E7D0
+	.incbin "./graphics/banim/assets/tsa/0064E7D0_Tsa_EclipseBg_A.map.bin.lz" @ 0x64E974 - 0x64E7D0
 
 	.global Tsa_EclipseBg_B
 Tsa_EclipseBg_B:  @ 0x0864E974
-	.incbin "./graphics/banim/assets/tsa/0064E974_Tsa_EclipseBg_B.tsa.lz" @ 0x64EA14 - 0x64E974
+	.incbin "./graphics/banim/assets/tsa/0064E974_Tsa_EclipseBg_B.map.bin.lz" @ 0x64EA14 - 0x64E974
 
 	.global Tsa_EclipseBg_C
 Tsa_EclipseBg_C:  @ 0x0864EA14
-	.incbin "./graphics/banim/assets/tsa/0064EA14_Tsa_EclipseBg_C.tsa.lz" @ 0x64EAB4 - 0x64EA14
+	.incbin "./graphics/banim/assets/tsa/0064EA14_Tsa_EclipseBg_C.map.bin.lz" @ 0x64EAB4 - 0x64EA14
 
 	.global Tsa_EclipseBg_D
 Tsa_EclipseBg_D:  @ 0x0864EAB4
-	.incbin "./graphics/banim/assets/tsa/0064EAB4_Tsa_EclipseBg_D.tsa.lz" @ 0x64EB68 - 0x64EAB4
+	.incbin "./graphics/banim/assets/tsa/0064EAB4_Tsa_EclipseBg_D.map.bin.lz" @ 0x64EB68 - 0x64EAB4
 
 	.global Tsa_EclipseBg_E
 Tsa_EclipseBg_E:  @ 0x0864EB68
-	.incbin "./graphics/banim/assets/tsa/0064EB68_Tsa_EclipseBg_E.tsa.lz" @ 0x64EC1C - 0x64EB68
+	.incbin "./graphics/banim/assets/tsa/0064EB68_Tsa_EclipseBg_E.map.bin.lz" @ 0x64EC1C - 0x64EB68
 
 	.global Tsa_EclipseBg_F
 Tsa_EclipseBg_F:  @ 0x0864EC1C
-	.incbin "./graphics/banim/assets/tsa/0064EC1C_Tsa_EclipseBg_F.tsa.lz" @ 0x64ECD0 - 0x64EC1C
+	.incbin "./graphics/banim/assets/tsa/0064EC1C_Tsa_EclipseBg_F.map.bin.lz" @ 0x64ECD0 - 0x64EC1C
 
 	.global Tsa_EclipseBg_G
 Tsa_EclipseBg_G:  @ 0x0864ECD0
-	.incbin "./graphics/banim/assets/tsa/0064ECD0_Tsa_EclipseBg_G.tsa.lz" @ 0x64EDAC - 0x64ECD0
+	.incbin "./graphics/banim/assets/tsa/0064ECD0_Tsa_EclipseBg_G.map.bin.lz" @ 0x64EDAC - 0x64ECD0
 
 	.global Tsa_EclipseBg_H
 Tsa_EclipseBg_H:  @ 0x0864EDAC
-	.incbin "./graphics/banim/assets/tsa/0064EDAC_Tsa_EclipseBg_H.tsa.lz" @ 0x64EE88 - 0x64EDAC
+	.incbin "./graphics/banim/assets/tsa/0064EDAC_Tsa_EclipseBg_H.map.bin.lz" @ 0x64EE88 - 0x64EDAC
 
 	.global Tsa_EclipseBg_I
 Tsa_EclipseBg_I:  @ 0x0864EE88
-	.incbin "./graphics/banim/assets/tsa/0064EE88_Tsa_EclipseBg_I.tsa.lz" @ 0x64EF9C - 0x64EE88
+	.incbin "./graphics/banim/assets/tsa/0064EE88_Tsa_EclipseBg_I.map.bin.lz" @ 0x64EF9C - 0x64EE88
 
 	.global Tsa_EclipseBg_J
 Tsa_EclipseBg_J:  @ 0x0864EF9C
-	.incbin "./graphics/banim/assets/tsa/0064EF9C_Tsa_EclipseBg_J.tsa.lz" @ 0x64F0B0 - 0x64EF9C
+	.incbin "./graphics/banim/assets/tsa/0064EF9C_Tsa_EclipseBg_J.map.bin.lz" @ 0x64F0B0 - 0x64EF9C
 
 	.global Tsa_EclipseBg_K
 Tsa_EclipseBg_K:  @ 0x0864F0B0
-	.incbin "./graphics/banim/assets/tsa/0064F0B0_Tsa_EclipseBg_K.tsa.lz" @ 0x64F1C4 - 0x64F0B0
+	.incbin "./graphics/banim/assets/tsa/0064F0B0_Tsa_EclipseBg_K.map.bin.lz" @ 0x64F1C4 - 0x64F0B0
 
 	.global Tsa_EclipseBg_L
 Tsa_EclipseBg_L:  @ 0x0864F1C4
-	.incbin "./graphics/banim/assets/tsa/0064F1C4_Tsa_EclipseBg_L.tsa.lz" @ 0x64F2D8 - 0x64F1C4
+	.incbin "./graphics/banim/assets/tsa/0064F1C4_Tsa_EclipseBg_L.map.bin.lz" @ 0x64F2D8 - 0x64F1C4
 
 	.global Tsa_EclipseBg_M
 Tsa_EclipseBg_M:  @ 0x0864F2D8
-	.incbin "./graphics/banim/assets/tsa/0064F2D8_Tsa_EclipseBg_M.tsa.lz" @ 0x64F3EC - 0x64F2D8
+	.incbin "./graphics/banim/assets/tsa/0064F2D8_Tsa_EclipseBg_M.map.bin.lz" @ 0x64F3EC - 0x64F2D8
 
 	.global Tsa_EclipseBg_N
 Tsa_EclipseBg_N:  @ 0x0864F3EC
-	.incbin "./graphics/banim/assets/tsa/0064F3EC_Tsa_EclipseBg_N.tsa.lz" @ 0x64F4F8 - 0x64F3EC
+	.incbin "./graphics/banim/assets/tsa/0064F3EC_Tsa_EclipseBg_N.map.bin.lz" @ 0x64F4F8 - 0x64F3EC
 
 	.global Tsa_EclipseBg_O
 Tsa_EclipseBg_O:  @ 0x0864F4F8
-	.incbin "./graphics/banim/assets/tsa/0064F4F8_Tsa_EclipseBg_O.tsa.lz" @ 0x64F5D0 - 0x64F4F8
+	.incbin "./graphics/banim/assets/tsa/0064F4F8_Tsa_EclipseBg_O.map.bin.lz" @ 0x64F5D0 - 0x64F4F8
 
 	.global Tsa_EclipseBg_P
 Tsa_EclipseBg_P:  @ 0x0864F5D0
-	.incbin "./graphics/banim/assets/tsa/0064F5D0_Tsa_EclipseBg_P.tsa.lz" @ 0x64F6E0 - 0x64F5D0
+	.incbin "./graphics/banim/assets/tsa/0064F5D0_Tsa_EclipseBg_P.map.bin.lz" @ 0x64F6E0 - 0x64F5D0
 
 	.global Tsa_EclipseBg_Q
 Tsa_EclipseBg_Q:  @ 0x0864F6E0
-	.incbin "./graphics/banim/assets/tsa/0064F6E0_Tsa_EclipseBg_Q.tsa.lz" @ 0x64F848 - 0x64F6E0
+	.incbin "./graphics/banim/assets/tsa/0064F6E0_Tsa_EclipseBg_Q.map.bin.lz" @ 0x64F848 - 0x64F6E0
 
 	.global Tsa_EclipseBg_R
 Tsa_EclipseBg_R:  @ 0x0864F848
-	.incbin "./graphics/banim/assets/tsa/0064F848_Tsa_EclipseBg_R.tsa.lz" @ 0x64FA0C - 0x64F848
+	.incbin "./graphics/banim/assets/tsa/0064F848_Tsa_EclipseBg_R.map.bin.lz" @ 0x64FA0C - 0x64F848
 
 	.global Tsa_EclipseBg_S
 Tsa_EclipseBg_S:  @ 0x0864FA0C
-	.incbin "./graphics/banim/assets/tsa/0064FA0C_Tsa_EclipseBg_S.tsa.lz" @ 0x64FBD0 - 0x64FA0C
+	.incbin "./graphics/banim/assets/tsa/0064FA0C_Tsa_EclipseBg_S.map.bin.lz" @ 0x64FBD0 - 0x64FA0C
 
 	.global Tsa_EclipseBg_T
 Tsa_EclipseBg_T:  @ 0x0864FBD0
-	.incbin "./graphics/banim/assets/tsa/0064FBD0_Tsa_EclipseBg_T.tsa.lz" @ 0x64FD8C - 0x64FBD0
+	.incbin "./graphics/banim/assets/tsa/0064FBD0_Tsa_EclipseBg_T.map.bin.lz" @ 0x64FD8C - 0x64FBD0
 
 	.global Tsa_EclipseBg_U
 Tsa_EclipseBg_U:  @ 0x0864FD8C
-	.incbin "./graphics/banim/assets/tsa/0064FD8C_Tsa_EclipseBg_U.tsa.lz" @ 0x64FF3C - 0x64FD8C
+	.incbin "./graphics/banim/assets/tsa/0064FD8C_Tsa_EclipseBg_U.map.bin.lz" @ 0x64FF3C - 0x64FD8C
 
 	.global Tsa_EclipseBg_V
 Tsa_EclipseBg_V:  @ 0x0864FF3C
-	.incbin "./graphics/banim/assets/tsa/0064FF3C_Tsa_EclipseBg_V.tsa.lz" @ 0x6500EC - 0x64FF3C
+	.incbin "./graphics/banim/assets/tsa/0064FF3C_Tsa_EclipseBg_V.map.bin.lz" @ 0x6500EC - 0x64FF3C
 
 	.global Tsa_EclipseBg_W
 Tsa_EclipseBg_W:  @ 0x086500EC
-	.incbin "./graphics/banim/assets/tsa/006500EC_Tsa_EclipseBg_W.tsa.lz" @ 0x65029C - 0x6500EC
+	.incbin "./graphics/banim/assets/tsa/006500EC_Tsa_EclipseBg_W.map.bin.lz" @ 0x65029C - 0x6500EC
 
 	.global Tsa_EclipseBg_X
 Tsa_EclipseBg_X:  @ 0x0865029C
-	.incbin "./graphics/banim/assets/tsa/0065029C_Tsa_EclipseBg_X.tsa.lz" @ 0x650440 - 0x65029C
+	.incbin "./graphics/banim/assets/tsa/0065029C_Tsa_EclipseBg_X.map.bin.lz" @ 0x650440 - 0x65029C
 
 	.global Tsa_EclipseBg_Y
 Tsa_EclipseBg_Y:  @ 0x08650440
-	.incbin "./graphics/banim/assets/tsa/00650440_Tsa_EclipseBg_Y.tsa.lz" @ 0x6505D8 - 0x650440
+	.incbin "./graphics/banim/assets/tsa/00650440_Tsa_EclipseBg_Y.map.bin.lz" @ 0x6505D8 - 0x650440
 
 	.global Tsa_EclipseBg_Z
 Tsa_EclipseBg_Z:  @ 0x086505D8
-	.incbin "./graphics/banim/assets/tsa/006505D8_Tsa_EclipseBg_Z.tsa.lz" @ 0x650768 - 0x6505D8
+	.incbin "./graphics/banim/assets/tsa/006505D8_Tsa_EclipseBg_Z.map.bin.lz" @ 0x650768 - 0x6505D8
 
 	.global Tsa_EclipseBg_AA
 Tsa_EclipseBg_AA:  @ 0x08650768
-	.incbin "./graphics/banim/assets/tsa/00650768_Tsa_EclipseBg_AA.tsa.lz" @ 0x6508DC - 0x650768
+	.incbin "./graphics/banim/assets/tsa/00650768_Tsa_EclipseBg_AA.map.bin.lz" @ 0x6508DC - 0x650768
 
 	.global Img_EclipseSprites_Swirl
 Img_EclipseSprites_Swirl:  @ 0x086508DC
@@ -15649,7 +15649,7 @@ Pal_EfxFenrirBGCOL:  @ 0x08652554
 
 	.global Tsa_FenrirBg_Sigils
 Tsa_FenrirBg_Sigils:  @ 0x08652734
-	.incbin "./graphics/banim/assets/tsa/00652734_Tsa_FenrirBg_Sigils.tsa.lz" @ 0x652948 - 0x652734
+	.incbin "./graphics/banim/assets/tsa/00652734_Tsa_FenrirBg_Sigils.map.bin.lz" @ 0x652948 - 0x652734
 
 	.global Img_08652948
 Img_08652948:  @ 0x08652948
@@ -15677,207 +15677,207 @@ Pal_EfxFenrirBG2_B:  @ 0x08656914
 
 	.global Tsa_08656934
 Tsa_08656934:  @ 0x08656934
-	.incbin "./graphics/banim/assets/tsa/00656934_Tsa_08656934.tsa.lz" @ 0x6569F0 - 0x656934
+	.incbin "./graphics/banim/assets/tsa/00656934_Tsa_08656934.map.bin.lz" @ 0x6569F0 - 0x656934
 
 	.global Tsa_086569F0
 Tsa_086569F0:  @ 0x086569F0
-	.incbin "./graphics/banim/assets/tsa/006569F0_Tsa_086569F0.tsa.lz" @ 0x656AAC - 0x6569F0
+	.incbin "./graphics/banim/assets/tsa/006569F0_Tsa_086569F0.map.bin.lz" @ 0x656AAC - 0x6569F0
 
 	.global Tsa_08656AAC
 Tsa_08656AAC:  @ 0x08656AAC
-	.incbin "./graphics/banim/assets/tsa/00656AAC_Tsa_08656AAC.tsa.lz" @ 0x656B68 - 0x656AAC
+	.incbin "./graphics/banim/assets/tsa/00656AAC_Tsa_08656AAC.map.bin.lz" @ 0x656B68 - 0x656AAC
 
 	.global Tsa_08656B68
 Tsa_08656B68:  @ 0x08656B68
-	.incbin "./graphics/banim/assets/tsa/00656B68_Tsa_08656B68.tsa.lz" @ 0x656C24 - 0x656B68
+	.incbin "./graphics/banim/assets/tsa/00656B68_Tsa_08656B68.map.bin.lz" @ 0x656C24 - 0x656B68
 
 	.global Tsa_08656C24
 Tsa_08656C24:  @ 0x08656C24
-	.incbin "./graphics/banim/assets/tsa/00656C24_Tsa_08656C24.tsa.lz" @ 0x656CE0 - 0x656C24
+	.incbin "./graphics/banim/assets/tsa/00656C24_Tsa_08656C24.map.bin.lz" @ 0x656CE0 - 0x656C24
 
 	.global Tsa_08656CE0
 Tsa_08656CE0:  @ 0x08656CE0
-	.incbin "./graphics/banim/assets/tsa/00656CE0_Tsa_08656CE0.tsa.lz" @ 0x656D9C - 0x656CE0
+	.incbin "./graphics/banim/assets/tsa/00656CE0_Tsa_08656CE0.map.bin.lz" @ 0x656D9C - 0x656CE0
 
 	.global Tsa_08656D9C
 Tsa_08656D9C:  @ 0x08656D9C
-	.incbin "./graphics/banim/assets/tsa/00656D9C_Tsa_08656D9C.tsa.lz" @ 0x656EA0 - 0x656D9C
+	.incbin "./graphics/banim/assets/tsa/00656D9C_Tsa_08656D9C.map.bin.lz" @ 0x656EA0 - 0x656D9C
 
 	.global Tsa_08656EA0
 Tsa_08656EA0:  @ 0x08656EA0
-	.incbin "./graphics/banim/assets/tsa/00656EA0_Tsa_08656EA0.tsa.lz" @ 0x656FA4 - 0x656EA0
+	.incbin "./graphics/banim/assets/tsa/00656EA0_Tsa_08656EA0.map.bin.lz" @ 0x656FA4 - 0x656EA0
 
 	.global Tsa_08656FA4
 Tsa_08656FA4:  @ 0x08656FA4
-	.incbin "./graphics/banim/assets/tsa/00656FA4_Tsa_08656FA4.tsa.lz" @ 0x6570A8 - 0x656FA4
+	.incbin "./graphics/banim/assets/tsa/00656FA4_Tsa_08656FA4.map.bin.lz" @ 0x6570A8 - 0x656FA4
 
 	.global Tsa_086570A8
 Tsa_086570A8:  @ 0x086570A8
-	.incbin "./graphics/banim/assets/tsa/006570A8_Tsa_086570A8.tsa.lz" @ 0x6571AC - 0x6570A8
+	.incbin "./graphics/banim/assets/tsa/006570A8_Tsa_086570A8.map.bin.lz" @ 0x6571AC - 0x6570A8
 
 	.global Tsa_086571AC
 Tsa_086571AC:  @ 0x086571AC
-	.incbin "./graphics/banim/assets/tsa/006571AC_Tsa_086571AC.tsa.lz" @ 0x6572B0 - 0x6571AC
+	.incbin "./graphics/banim/assets/tsa/006571AC_Tsa_086571AC.map.bin.lz" @ 0x6572B0 - 0x6571AC
 
 	.global Tsa_086572B0
 Tsa_086572B0:  @ 0x086572B0
-	.incbin "./graphics/banim/assets/tsa/006572B0_Tsa_086572B0.tsa.lz" @ 0x6573B4 - 0x6572B0
+	.incbin "./graphics/banim/assets/tsa/006572B0_Tsa_086572B0.map.bin.lz" @ 0x6573B4 - 0x6572B0
 
 	.global Tsa_086573B4
 Tsa_086573B4:  @ 0x086573B4
-	.incbin "./graphics/banim/assets/tsa/006573B4_Tsa_086573B4.tsa.lz" @ 0x6574F4 - 0x6573B4
+	.incbin "./graphics/banim/assets/tsa/006573B4_Tsa_086573B4.map.bin.lz" @ 0x6574F4 - 0x6573B4
 
 	.global Tsa_086574F4
 Tsa_086574F4:  @ 0x086574F4
-	.incbin "./graphics/banim/assets/tsa/006574F4_Tsa_086574F4.tsa.lz" @ 0x657638 - 0x6574F4
+	.incbin "./graphics/banim/assets/tsa/006574F4_Tsa_086574F4.map.bin.lz" @ 0x657638 - 0x6574F4
 
 	.global Tsa_08657638
 Tsa_08657638:  @ 0x08657638
-	.incbin "./graphics/banim/assets/tsa/00657638_Tsa_08657638.tsa.lz" @ 0x65777C - 0x657638
+	.incbin "./graphics/banim/assets/tsa/00657638_Tsa_08657638.map.bin.lz" @ 0x65777C - 0x657638
 
 	.global Tsa_0865777C
 Tsa_0865777C:  @ 0x0865777C
-	.incbin "./graphics/banim/assets/tsa/0065777C_Tsa_0865777C.tsa.lz" @ 0x6578C0 - 0x65777C
+	.incbin "./graphics/banim/assets/tsa/0065777C_Tsa_0865777C.map.bin.lz" @ 0x6578C0 - 0x65777C
 
 	.global Tsa_086578C0
 Tsa_086578C0:  @ 0x086578C0
-	.incbin "./graphics/banim/assets/tsa/006578C0_Tsa_086578C0.tsa.lz" @ 0x657A04 - 0x6578C0
+	.incbin "./graphics/banim/assets/tsa/006578C0_Tsa_086578C0.map.bin.lz" @ 0x657A04 - 0x6578C0
 
 	.global Tsa_08657A04
 Tsa_08657A04:  @ 0x08657A04
-	.incbin "./graphics/banim/assets/tsa/00657A04_Tsa_08657A04.tsa.lz" @ 0x657B48 - 0x657A04
+	.incbin "./graphics/banim/assets/tsa/00657A04_Tsa_08657A04.map.bin.lz" @ 0x657B48 - 0x657A04
 
 	.global Tsa_08657B48
 Tsa_08657B48:  @ 0x08657B48
-	.incbin "./graphics/banim/assets/tsa/00657B48_Tsa_08657B48.tsa.lz" @ 0x657CC8 - 0x657B48
+	.incbin "./graphics/banim/assets/tsa/00657B48_Tsa_08657B48.map.bin.lz" @ 0x657CC8 - 0x657B48
 
 	.global Tsa_08657CC8
 Tsa_08657CC8:  @ 0x08657CC8
-	.incbin "./graphics/banim/assets/tsa/00657CC8_Tsa_08657CC8.tsa.lz" @ 0x657E4C - 0x657CC8
+	.incbin "./graphics/banim/assets/tsa/00657CC8_Tsa_08657CC8.map.bin.lz" @ 0x657E4C - 0x657CC8
 
 	.global Tsa_08657E4C
 Tsa_08657E4C:  @ 0x08657E4C
-	.incbin "./graphics/banim/assets/tsa/00657E4C_Tsa_08657E4C.tsa.lz" @ 0x657FD0 - 0x657E4C
+	.incbin "./graphics/banim/assets/tsa/00657E4C_Tsa_08657E4C.map.bin.lz" @ 0x657FD0 - 0x657E4C
 
 	.global Tsa_08657FD0
 Tsa_08657FD0:  @ 0x08657FD0
-	.incbin "./graphics/banim/assets/tsa/00657FD0_Tsa_08657FD0.tsa.lz" @ 0x658130 - 0x657FD0
+	.incbin "./graphics/banim/assets/tsa/00657FD0_Tsa_08657FD0.map.bin.lz" @ 0x658130 - 0x657FD0
 
 	.global Tsa_08658130
 Tsa_08658130:  @ 0x08658130
-	.incbin "./graphics/banim/assets/tsa/00658130_Tsa_08658130.tsa.lz" @ 0x658290 - 0x658130
+	.incbin "./graphics/banim/assets/tsa/00658130_Tsa_08658130.map.bin.lz" @ 0x658290 - 0x658130
 
 	.global Tsa_08658290
 Tsa_08658290:  @ 0x08658290
-	.incbin "./graphics/banim/assets/tsa/00658290_Tsa_08658290.tsa.lz" @ 0x6583F0 - 0x658290
+	.incbin "./graphics/banim/assets/tsa/00658290_Tsa_08658290.map.bin.lz" @ 0x6583F0 - 0x658290
 
 	.global Tsa_086583F0
 Tsa_086583F0:  @ 0x086583F0
-	.incbin "./graphics/banim/assets/tsa/006583F0_Tsa_086583F0.tsa.lz" @ 0x658594 - 0x6583F0
+	.incbin "./graphics/banim/assets/tsa/006583F0_Tsa_086583F0.map.bin.lz" @ 0x658594 - 0x6583F0
 
 	.global Tsa_08658594
 Tsa_08658594:  @ 0x08658594
-	.incbin "./graphics/banim/assets/tsa/00658594_Tsa_08658594.tsa.lz" @ 0x658738 - 0x658594
+	.incbin "./graphics/banim/assets/tsa/00658594_Tsa_08658594.map.bin.lz" @ 0x658738 - 0x658594
 
 	.global Tsa_08658738
 Tsa_08658738:  @ 0x08658738
-	.incbin "./graphics/banim/assets/tsa/00658738_Tsa_08658738.tsa.lz" @ 0x6588DC - 0x658738
+	.incbin "./graphics/banim/assets/tsa/00658738_Tsa_08658738.map.bin.lz" @ 0x6588DC - 0x658738
 
 	.global Tsa_086588DC
 Tsa_086588DC:  @ 0x086588DC
-	.incbin "./graphics/banim/assets/tsa/006588DC_Tsa_086588DC.tsa.lz" @ 0x658A4C - 0x6588DC
+	.incbin "./graphics/banim/assets/tsa/006588DC_Tsa_086588DC.map.bin.lz" @ 0x658A4C - 0x6588DC
 
 	.global Tsa_08658A4C
 Tsa_08658A4C:  @ 0x08658A4C
-	.incbin "./graphics/banim/assets/tsa/00658A4C_Tsa_08658A4C.tsa.lz" @ 0x658BBC - 0x658A4C
+	.incbin "./graphics/banim/assets/tsa/00658A4C_Tsa_08658A4C.map.bin.lz" @ 0x658BBC - 0x658A4C
 
 	.global Tsa_08658BBC
 Tsa_08658BBC:  @ 0x08658BBC
-	.incbin "./graphics/banim/assets/tsa/00658BBC_Tsa_08658BBC.tsa.lz" @ 0x658D2C - 0x658BBC
+	.incbin "./graphics/banim/assets/tsa/00658BBC_Tsa_08658BBC.map.bin.lz" @ 0x658D2C - 0x658BBC
 
 	.global Tsa_08658D2C
 Tsa_08658D2C:  @ 0x08658D2C
-	.incbin "./graphics/banim/assets/tsa/00658D2C_Tsa_08658D2C.tsa.lz" @ 0x658ED0 - 0x658D2C
+	.incbin "./graphics/banim/assets/tsa/00658D2C_Tsa_08658D2C.map.bin.lz" @ 0x658ED0 - 0x658D2C
 
 	.global Tsa_08658ED0
 Tsa_08658ED0:  @ 0x08658ED0
-	.incbin "./graphics/banim/assets/tsa/00658ED0_Tsa_08658ED0.tsa.lz" @ 0x659074 - 0x658ED0
+	.incbin "./graphics/banim/assets/tsa/00658ED0_Tsa_08658ED0.map.bin.lz" @ 0x659074 - 0x658ED0
 
 	.global Tsa_08659074
 Tsa_08659074:  @ 0x08659074
-	.incbin "./graphics/banim/assets/tsa/00659074_Tsa_08659074.tsa.lz" @ 0x659218 - 0x659074
+	.incbin "./graphics/banim/assets/tsa/00659074_Tsa_08659074.map.bin.lz" @ 0x659218 - 0x659074
 
 	.global Tsa_08659218
 Tsa_08659218:  @ 0x08659218
-	.incbin "./graphics/banim/assets/tsa/00659218_Tsa_08659218.tsa.lz" @ 0x65938C - 0x659218
+	.incbin "./graphics/banim/assets/tsa/00659218_Tsa_08659218.map.bin.lz" @ 0x65938C - 0x659218
 
 	.global Tsa_0865938C
 Tsa_0865938C:  @ 0x0865938C
-	.incbin "./graphics/banim/assets/tsa/0065938C_Tsa_0865938C.tsa.lz" @ 0x659500 - 0x65938C
+	.incbin "./graphics/banim/assets/tsa/0065938C_Tsa_0865938C.map.bin.lz" @ 0x659500 - 0x65938C
 
 	.global Tsa_08659500
 Tsa_08659500:  @ 0x08659500
-	.incbin "./graphics/banim/assets/tsa/00659500_Tsa_08659500.tsa.lz" @ 0x659674 - 0x659500
+	.incbin "./graphics/banim/assets/tsa/00659500_Tsa_08659500.map.bin.lz" @ 0x659674 - 0x659500
 
 	.global Tsa_08659674
 Tsa_08659674:  @ 0x08659674
-	.incbin "./graphics/banim/assets/tsa/00659674_Tsa_08659674.tsa.lz" @ 0x659824 - 0x659674
+	.incbin "./graphics/banim/assets/tsa/00659674_Tsa_08659674.map.bin.lz" @ 0x659824 - 0x659674
 
 	.global Tsa_08659824
 Tsa_08659824:  @ 0x08659824
-	.incbin "./graphics/banim/assets/tsa/00659824_Tsa_08659824.tsa.lz" @ 0x6599D4 - 0x659824
+	.incbin "./graphics/banim/assets/tsa/00659824_Tsa_08659824.map.bin.lz" @ 0x6599D4 - 0x659824
 
 	.global Tsa_086599D4
 Tsa_086599D4:  @ 0x086599D4
-	.incbin "./graphics/banim/assets/tsa/006599D4_Tsa_086599D4.tsa.lz" @ 0x659B84 - 0x6599D4
+	.incbin "./graphics/banim/assets/tsa/006599D4_Tsa_086599D4.map.bin.lz" @ 0x659B84 - 0x6599D4
 
 	.global Tsa_08659B84
 Tsa_08659B84:  @ 0x08659B84
-	.incbin "./graphics/banim/assets/tsa/00659B84_Tsa_08659B84.tsa.lz" @ 0x659CF8 - 0x659B84
+	.incbin "./graphics/banim/assets/tsa/00659B84_Tsa_08659B84.map.bin.lz" @ 0x659CF8 - 0x659B84
 
 	.global Tsa_08659CF8
 Tsa_08659CF8:  @ 0x08659CF8
-	.incbin "./graphics/banim/assets/tsa/00659CF8_Tsa_08659CF8.tsa.lz" @ 0x659E6C - 0x659CF8
+	.incbin "./graphics/banim/assets/tsa/00659CF8_Tsa_08659CF8.map.bin.lz" @ 0x659E6C - 0x659CF8
 
 	.global Tsa_08659E6C
 Tsa_08659E6C:  @ 0x08659E6C
-	.incbin "./graphics/banim/assets/tsa/00659E6C_Tsa_08659E6C.tsa.lz" @ 0x659FE0 - 0x659E6C
+	.incbin "./graphics/banim/assets/tsa/00659E6C_Tsa_08659E6C.map.bin.lz" @ 0x659FE0 - 0x659E6C
 
 	.global Tsa_08659FE0
 Tsa_08659FE0:  @ 0x08659FE0
-	.incbin "./graphics/banim/assets/tsa/00659FE0_Tsa_08659FE0.tsa.lz" @ 0x65A194 - 0x659FE0
+	.incbin "./graphics/banim/assets/tsa/00659FE0_Tsa_08659FE0.map.bin.lz" @ 0x65A194 - 0x659FE0
 
 	.global Tsa_0865A194
 Tsa_0865A194:  @ 0x0865A194
-	.incbin "./graphics/banim/assets/tsa/0065A194_Tsa_0865A194.tsa.lz" @ 0x65A348 - 0x65A194
+	.incbin "./graphics/banim/assets/tsa/0065A194_Tsa_0865A194.map.bin.lz" @ 0x65A348 - 0x65A194
 
 	.global Tsa_0865A348
 Tsa_0865A348:  @ 0x0865A348
-	.incbin "./graphics/banim/assets/tsa/0065A348_Tsa_0865A348.tsa.lz" @ 0x65A4FC - 0x65A348
+	.incbin "./graphics/banim/assets/tsa/0065A348_Tsa_0865A348.map.bin.lz" @ 0x65A4FC - 0x65A348
 
 	.global Tsa_0865A4FC
 Tsa_0865A4FC:  @ 0x0865A4FC
-	.incbin "./graphics/banim/assets/tsa/0065A4FC_Tsa_0865A4FC.tsa.lz" @ 0x65A674 - 0x65A4FC
+	.incbin "./graphics/banim/assets/tsa/0065A4FC_Tsa_0865A4FC.map.bin.lz" @ 0x65A674 - 0x65A4FC
 
 	.global Tsa_0865A674
 Tsa_0865A674:  @ 0x0865A674
-	.incbin "./graphics/banim/assets/tsa/0065A674_Tsa_0865A674.tsa.lz" @ 0x65A7EC - 0x65A674
+	.incbin "./graphics/banim/assets/tsa/0065A674_Tsa_0865A674.map.bin.lz" @ 0x65A7EC - 0x65A674
 
 	.global Tsa_0865A7EC
 Tsa_0865A7EC:  @ 0x0865A7EC
-	.incbin "./graphics/banim/assets/tsa/0065A7EC_Tsa_0865A7EC.tsa.lz" @ 0x65A964 - 0x65A7EC
+	.incbin "./graphics/banim/assets/tsa/0065A7EC_Tsa_0865A7EC.map.bin.lz" @ 0x65A964 - 0x65A7EC
 
 	.global Tsa_0865A964
 Tsa_0865A964:  @ 0x0865A964
-	.incbin "./graphics/banim/assets/tsa/0065A964_Tsa_0865A964.tsa.lz" @ 0x65ABBC - 0x65A964
+	.incbin "./graphics/banim/assets/tsa/0065A964_Tsa_0865A964.map.bin.lz" @ 0x65ABBC - 0x65A964
 
 	.global Tsa_0865ABBC
 Tsa_0865ABBC:  @ 0x0865ABBC
-	.incbin "./graphics/banim/assets/tsa/0065ABBC_Tsa_0865ABBC.tsa.lz" @ 0x65ADC4 - 0x65ABBC
+	.incbin "./graphics/banim/assets/tsa/0065ABBC_Tsa_0865ABBC.map.bin.lz" @ 0x65ADC4 - 0x65ABBC
 
 	.global Tsa_0865ADC4
 Tsa_0865ADC4:  @ 0x0865ADC4
-	.incbin "./graphics/banim/assets/tsa/0065ADC4_Tsa_0865ADC4.tsa.lz" @ 0x65AF3C - 0x65ADC4
+	.incbin "./graphics/banim/assets/tsa/0065ADC4_Tsa_0865ADC4.map.bin.lz" @ 0x65AF3C - 0x65ADC4
 
 	.global Img_FenrirSprites
 Img_FenrirSprites:  @ 0x0865AF3C
@@ -16424,295 +16424,295 @@ Pal_08667D90:  @ 0x08667D90
 
 	.global Tsa_08667DB0
 Tsa_08667DB0:  @ 0x08667DB0
-	.incbin "./graphics/banim/assets/tsa/00667DB0_Tsa_08667DB0.tsa.lz" @ 0x667ED4 - 0x667DB0
+	.incbin "./graphics/banim/assets/tsa/00667DB0_Tsa_08667DB0.map.bin.lz" @ 0x667ED4 - 0x667DB0
 
 	.global Tsa_08667ED4
 Tsa_08667ED4:  @ 0x08667ED4
-	.incbin "./graphics/banim/assets/tsa/00667ED4_Tsa_08667ED4.tsa.lz" @ 0x667FF4 - 0x667ED4
+	.incbin "./graphics/banim/assets/tsa/00667ED4_Tsa_08667ED4.map.bin.lz" @ 0x667FF4 - 0x667ED4
 
 	.global Tsa_08667FF4
 Tsa_08667FF4:  @ 0x08667FF4
-	.incbin "./graphics/banim/assets/tsa/00667FF4_Tsa_08667FF4.tsa.lz" @ 0x668100 - 0x667FF4
+	.incbin "./graphics/banim/assets/tsa/00667FF4_Tsa_08667FF4.map.bin.lz" @ 0x668100 - 0x667FF4
 
 	.global Tsa_08668100
 Tsa_08668100:  @ 0x08668100
-	.incbin "./graphics/banim/assets/tsa/00668100_Tsa_08668100.tsa.lz" @ 0x6681FC - 0x668100
+	.incbin "./graphics/banim/assets/tsa/00668100_Tsa_08668100.map.bin.lz" @ 0x6681FC - 0x668100
 
 	.global Tsa_086681FC
 Tsa_086681FC:  @ 0x086681FC
-	.incbin "./graphics/banim/assets/tsa/006681FC_Tsa_086681FC.tsa.lz" @ 0x6682E4 - 0x6681FC
+	.incbin "./graphics/banim/assets/tsa/006681FC_Tsa_086681FC.map.bin.lz" @ 0x6682E4 - 0x6681FC
 
 	.global Tsa_086682E4
 Tsa_086682E4:  @ 0x086682E4
-	.incbin "./graphics/banim/assets/tsa/006682E4_Tsa_086682E4.tsa.lz" @ 0x6683CC - 0x6682E4
+	.incbin "./graphics/banim/assets/tsa/006682E4_Tsa_086682E4.map.bin.lz" @ 0x6683CC - 0x6682E4
 
 	.global Tsa_086683CC
 Tsa_086683CC:  @ 0x086683CC
-	.incbin "./graphics/banim/assets/tsa/006683CC_Tsa_086683CC.tsa.lz" @ 0x6684AC - 0x6683CC
+	.incbin "./graphics/banim/assets/tsa/006683CC_Tsa_086683CC.map.bin.lz" @ 0x6684AC - 0x6683CC
 
 	.global Tsa_086684AC
 Tsa_086684AC:  @ 0x086684AC
-	.incbin "./graphics/banim/assets/tsa/006684AC_Tsa_086684AC.tsa.lz" @ 0x668588 - 0x6684AC
+	.incbin "./graphics/banim/assets/tsa/006684AC_Tsa_086684AC.map.bin.lz" @ 0x668588 - 0x6684AC
 
 	.global Tsa_08668588
 Tsa_08668588:  @ 0x08668588
-	.incbin "./graphics/banim/assets/tsa/00668588_Tsa_08668588.tsa.lz" @ 0x668668 - 0x668588
+	.incbin "./graphics/banim/assets/tsa/00668588_Tsa_08668588.map.bin.lz" @ 0x668668 - 0x668588
 
 	.global Tsa_08668668
 Tsa_08668668:  @ 0x08668668
-	.incbin "./graphics/banim/assets/tsa/00668668_Tsa_08668668.tsa.lz" @ 0x66875C - 0x668668
+	.incbin "./graphics/banim/assets/tsa/00668668_Tsa_08668668.map.bin.lz" @ 0x66875C - 0x668668
 
 	.global Tsa_0866875C
 Tsa_0866875C:  @ 0x0866875C
-	.incbin "./graphics/banim/assets/tsa/0066875C_Tsa_0866875C.tsa.lz" @ 0x668850 - 0x66875C
+	.incbin "./graphics/banim/assets/tsa/0066875C_Tsa_0866875C.map.bin.lz" @ 0x668850 - 0x66875C
 
 	.global Tsa_08668850
 Tsa_08668850:  @ 0x08668850
-	.incbin "./graphics/banim/assets/tsa/00668850_Tsa_08668850.tsa.lz" @ 0x668954 - 0x668850
+	.incbin "./graphics/banim/assets/tsa/00668850_Tsa_08668850.map.bin.lz" @ 0x668954 - 0x668850
 
 	.global Tsa_08668954
 Tsa_08668954:  @ 0x08668954
-	.incbin "./graphics/banim/assets/tsa/00668954_Tsa_08668954.tsa.lz" @ 0x668A5C - 0x668954
+	.incbin "./graphics/banim/assets/tsa/00668954_Tsa_08668954.map.bin.lz" @ 0x668A5C - 0x668954
 
 	.global Tsa_08668A5C
 Tsa_08668A5C:  @ 0x08668A5C
-	.incbin "./graphics/banim/assets/tsa/00668A5C_Tsa_08668A5C.tsa.lz" @ 0x668B74 - 0x668A5C
+	.incbin "./graphics/banim/assets/tsa/00668A5C_Tsa_08668A5C.map.bin.lz" @ 0x668B74 - 0x668A5C
 
 	.global Tsa_08668B74
 Tsa_08668B74:  @ 0x08668B74
-	.incbin "./graphics/banim/assets/tsa/00668B74_Tsa_08668B74.tsa.lz" @ 0x668C98 - 0x668B74
+	.incbin "./graphics/banim/assets/tsa/00668B74_Tsa_08668B74.map.bin.lz" @ 0x668C98 - 0x668B74
 
 	.global Tsa_08668C98
 Tsa_08668C98:  @ 0x08668C98
-	.incbin "./graphics/banim/assets/tsa/00668C98_Tsa_08668C98.tsa.lz" @ 0x668DAC - 0x668C98
+	.incbin "./graphics/banim/assets/tsa/00668C98_Tsa_08668C98.map.bin.lz" @ 0x668DAC - 0x668C98
 
 	.global Tsa_08668DAC
 Tsa_08668DAC:  @ 0x08668DAC
-	.incbin "./graphics/banim/assets/tsa/00668DAC_Tsa_08668DAC.tsa.lz" @ 0x668ED0 - 0x668DAC
+	.incbin "./graphics/banim/assets/tsa/00668DAC_Tsa_08668DAC.map.bin.lz" @ 0x668ED0 - 0x668DAC
 
 	.global Tsa_08668ED0
 Tsa_08668ED0:  @ 0x08668ED0
-	.incbin "./graphics/banim/assets/tsa/00668ED0_Tsa_08668ED0.tsa.lz" @ 0x668FF4 - 0x668ED0
+	.incbin "./graphics/banim/assets/tsa/00668ED0_Tsa_08668ED0.map.bin.lz" @ 0x668FF4 - 0x668ED0
 
 	.global Tsa_08668FF4
 Tsa_08668FF4:  @ 0x08668FF4
-	.incbin "./graphics/banim/assets/tsa/00668FF4_Tsa_08668FF4.tsa.lz" @ 0x669104 - 0x668FF4
+	.incbin "./graphics/banim/assets/tsa/00668FF4_Tsa_08668FF4.map.bin.lz" @ 0x669104 - 0x668FF4
 
 	.global Tsa_08669104
 Tsa_08669104:  @ 0x08669104
-	.incbin "./graphics/banim/assets/tsa/00669104_Tsa_08669104.tsa.lz" @ 0x669204 - 0x669104
+	.incbin "./graphics/banim/assets/tsa/00669104_Tsa_08669104.map.bin.lz" @ 0x669204 - 0x669104
 
 	.global Tsa_08669204
 Tsa_08669204:  @ 0x08669204
-	.incbin "./graphics/banim/assets/tsa/00669204_Tsa_08669204.tsa.lz" @ 0x6692EC - 0x669204
+	.incbin "./graphics/banim/assets/tsa/00669204_Tsa_08669204.map.bin.lz" @ 0x6692EC - 0x669204
 
 	.global Tsa_086692EC
 Tsa_086692EC:  @ 0x086692EC
-	.incbin "./graphics/banim/assets/tsa/006692EC_Tsa_086692EC.tsa.lz" @ 0x6693CC - 0x6692EC
+	.incbin "./graphics/banim/assets/tsa/006692EC_Tsa_086692EC.map.bin.lz" @ 0x6693CC - 0x6692EC
 
 	.global Tsa_086693CC
 Tsa_086693CC:  @ 0x086693CC
-	.incbin "./graphics/banim/assets/tsa/006693CC_Tsa_086693CC.tsa.lz" @ 0x6694A8 - 0x6693CC
+	.incbin "./graphics/banim/assets/tsa/006693CC_Tsa_086693CC.map.bin.lz" @ 0x6694A8 - 0x6693CC
 
 	.global Tsa_086694A8
 Tsa_086694A8:  @ 0x086694A8
-	.incbin "./graphics/banim/assets/tsa/006694A8_Tsa_086694A8.tsa.lz" @ 0x669584 - 0x6694A8
+	.incbin "./graphics/banim/assets/tsa/006694A8_Tsa_086694A8.map.bin.lz" @ 0x669584 - 0x6694A8
 
 	.global Tsa_08669584
 Tsa_08669584:  @ 0x08669584
-	.incbin "./graphics/banim/assets/tsa/00669584_Tsa_08669584.tsa.lz" @ 0x669668 - 0x669584
+	.incbin "./graphics/banim/assets/tsa/00669584_Tsa_08669584.map.bin.lz" @ 0x669668 - 0x669584
 
 	.global Tsa_08669668
 Tsa_08669668:  @ 0x08669668
-	.incbin "./graphics/banim/assets/tsa/00669668_Tsa_08669668.tsa.lz" @ 0x66975C - 0x669668
+	.incbin "./graphics/banim/assets/tsa/00669668_Tsa_08669668.map.bin.lz" @ 0x66975C - 0x669668
 
 	.global Tsa_0866975C
 Tsa_0866975C:  @ 0x0866975C
-	.incbin "./graphics/banim/assets/tsa/0066975C_Tsa_0866975C.tsa.lz" @ 0x66984C - 0x66975C
+	.incbin "./graphics/banim/assets/tsa/0066975C_Tsa_0866975C.map.bin.lz" @ 0x66984C - 0x66975C
 
 	.global Tsa_0866984C
 Tsa_0866984C:  @ 0x0866984C
-	.incbin "./graphics/banim/assets/tsa/0066984C_Tsa_0866984C.tsa.lz" @ 0x669950 - 0x66984C
+	.incbin "./graphics/banim/assets/tsa/0066984C_Tsa_0866984C.map.bin.lz" @ 0x669950 - 0x66984C
 
 	.global Tsa_08669950
 Tsa_08669950:  @ 0x08669950
-	.incbin "./graphics/banim/assets/tsa/00669950_Tsa_08669950.tsa.lz" @ 0x669A58 - 0x669950
+	.incbin "./graphics/banim/assets/tsa/00669950_Tsa_08669950.map.bin.lz" @ 0x669A58 - 0x669950
 
 	.global Tsa_08669A58
 Tsa_08669A58:  @ 0x08669A58
-	.incbin "./graphics/banim/assets/tsa/00669A58_Tsa_08669A58.tsa.lz" @ 0x669B6C - 0x669A58
+	.incbin "./graphics/banim/assets/tsa/00669A58_Tsa_08669A58.map.bin.lz" @ 0x669B6C - 0x669A58
 
 	.global Tsa_08669B6C
 Tsa_08669B6C:  @ 0x08669B6C
-	.incbin "./graphics/banim/assets/tsa/00669B6C_Tsa_08669B6C.tsa.lz" @ 0x669C90 - 0x669B6C
+	.incbin "./graphics/banim/assets/tsa/00669B6C_Tsa_08669B6C.map.bin.lz" @ 0x669C90 - 0x669B6C
 
 	.global Tsa_08669C90
 Tsa_08669C90:  @ 0x08669C90
-	.incbin "./graphics/banim/assets/tsa/00669C90_Tsa_08669C90.tsa.lz" @ 0x669DA4 - 0x669C90
+	.incbin "./graphics/banim/assets/tsa/00669C90_Tsa_08669C90.map.bin.lz" @ 0x669DA4 - 0x669C90
 
 	.global Tsa_08669DA4
 Tsa_08669DA4:  @ 0x08669DA4
-	.incbin "./graphics/banim/assets/tsa/00669DA4_Tsa_08669DA4.tsa.lz" @ 0x669EC8 - 0x669DA4
+	.incbin "./graphics/banim/assets/tsa/00669DA4_Tsa_08669DA4.map.bin.lz" @ 0x669EC8 - 0x669DA4
 
 	.global Tsa_08669EC8
 Tsa_08669EC8:  @ 0x08669EC8
-	.incbin "./graphics/banim/assets/tsa/00669EC8_Tsa_08669EC8.tsa.lz" @ 0x669FE8 - 0x669EC8
+	.incbin "./graphics/banim/assets/tsa/00669EC8_Tsa_08669EC8.map.bin.lz" @ 0x669FE8 - 0x669EC8
 
 	.global Tsa_08669FE8
 Tsa_08669FE8:  @ 0x08669FE8
-	.incbin "./graphics/banim/assets/tsa/00669FE8_Tsa_08669FE8.tsa.lz" @ 0x66A0F4 - 0x669FE8
+	.incbin "./graphics/banim/assets/tsa/00669FE8_Tsa_08669FE8.map.bin.lz" @ 0x66A0F4 - 0x669FE8
 
 	.global Tsa_0866A0F4
 Tsa_0866A0F4:  @ 0x0866A0F4
-	.incbin "./graphics/banim/assets/tsa/0066A0F4_Tsa_0866A0F4.tsa.lz" @ 0x66A1F0 - 0x66A0F4
+	.incbin "./graphics/banim/assets/tsa/0066A0F4_Tsa_0866A0F4.map.bin.lz" @ 0x66A1F0 - 0x66A0F4
 
 	.global Tsa_0866A1F0
 Tsa_0866A1F0:  @ 0x0866A1F0
-	.incbin "./graphics/banim/assets/tsa/0066A1F0_Tsa_0866A1F0.tsa.lz" @ 0x66A2D8 - 0x66A1F0
+	.incbin "./graphics/banim/assets/tsa/0066A1F0_Tsa_0866A1F0.map.bin.lz" @ 0x66A2D8 - 0x66A1F0
 
 	.global Tsa_0866A2D8
 Tsa_0866A2D8:  @ 0x0866A2D8
-	.incbin "./graphics/banim/assets/tsa/0066A2D8_Tsa_0866A2D8.tsa.lz" @ 0x66A3C0 - 0x66A2D8
+	.incbin "./graphics/banim/assets/tsa/0066A2D8_Tsa_0866A2D8.map.bin.lz" @ 0x66A3C0 - 0x66A2D8
 
 	.global Tsa_0866A3C0
 Tsa_0866A3C0:  @ 0x0866A3C0
-	.incbin "./graphics/banim/assets/tsa/0066A3C0_Tsa_0866A3C0.tsa.lz" @ 0x66A4A0 - 0x66A3C0
+	.incbin "./graphics/banim/assets/tsa/0066A3C0_Tsa_0866A3C0.map.bin.lz" @ 0x66A4A0 - 0x66A3C0
 
 	.global Tsa_0866A4A0
 Tsa_0866A4A0:  @ 0x0866A4A0
-	.incbin "./graphics/banim/assets/tsa/0066A4A0_Tsa_0866A4A0.tsa.lz" @ 0x66A57C - 0x66A4A0
+	.incbin "./graphics/banim/assets/tsa/0066A4A0_Tsa_0866A4A0.map.bin.lz" @ 0x66A57C - 0x66A4A0
 
 	.global Tsa_0866A57C
 Tsa_0866A57C:  @ 0x0866A57C
-	.incbin "./graphics/banim/assets/tsa/0066A57C_Tsa_0866A57C.tsa.lz" @ 0x66A65C - 0x66A57C
+	.incbin "./graphics/banim/assets/tsa/0066A57C_Tsa_0866A57C.map.bin.lz" @ 0x66A65C - 0x66A57C
 
 	.global Tsa_0866A65C
 Tsa_0866A65C:  @ 0x0866A65C
-	.incbin "./graphics/banim/assets/tsa/0066A65C_Tsa_0866A65C.tsa.lz" @ 0x66A750 - 0x66A65C
+	.incbin "./graphics/banim/assets/tsa/0066A65C_Tsa_0866A65C.map.bin.lz" @ 0x66A750 - 0x66A65C
 
 	.global Tsa_0866A750
 Tsa_0866A750:  @ 0x0866A750
-	.incbin "./graphics/banim/assets/tsa/0066A750_Tsa_0866A750.tsa.lz" @ 0x66A844 - 0x66A750
+	.incbin "./graphics/banim/assets/tsa/0066A750_Tsa_0866A750.map.bin.lz" @ 0x66A844 - 0x66A750
 
 	.global Tsa_0866A844
 Tsa_0866A844:  @ 0x0866A844
-	.incbin "./graphics/banim/assets/tsa/0066A844_Tsa_0866A844.tsa.lz" @ 0x66A948 - 0x66A844
+	.incbin "./graphics/banim/assets/tsa/0066A844_Tsa_0866A844.map.bin.lz" @ 0x66A948 - 0x66A844
 
 	.global Tsa_0866A948
 Tsa_0866A948:  @ 0x0866A948
-	.incbin "./graphics/banim/assets/tsa/0066A948_Tsa_0866A948.tsa.lz" @ 0x66AA50 - 0x66A948
+	.incbin "./graphics/banim/assets/tsa/0066A948_Tsa_0866A948.map.bin.lz" @ 0x66AA50 - 0x66A948
 
 	.global Tsa_0866AA50
 Tsa_0866AA50:  @ 0x0866AA50
-	.incbin "./graphics/banim/assets/tsa/0066AA50_Tsa_0866AA50.tsa.lz" @ 0x66AB68 - 0x66AA50
+	.incbin "./graphics/banim/assets/tsa/0066AA50_Tsa_0866AA50.map.bin.lz" @ 0x66AB68 - 0x66AA50
 
 	.global Tsa_0866AB68
 Tsa_0866AB68:  @ 0x0866AB68
-	.incbin "./graphics/banim/assets/tsa/0066AB68_Tsa_0866AB68.tsa.lz" @ 0x66AC8C - 0x66AB68
+	.incbin "./graphics/banim/assets/tsa/0066AB68_Tsa_0866AB68.map.bin.lz" @ 0x66AC8C - 0x66AB68
 
 	.global Tsa_0866AC8C
 Tsa_0866AC8C:  @ 0x0866AC8C
-	.incbin "./graphics/banim/assets/tsa/0066AC8C_Tsa_0866AC8C.tsa.lz" @ 0x66AD9C - 0x66AC8C
+	.incbin "./graphics/banim/assets/tsa/0066AC8C_Tsa_0866AC8C.map.bin.lz" @ 0x66AD9C - 0x66AC8C
 
 	.global Tsa_0866AD9C
 Tsa_0866AD9C:  @ 0x0866AD9C
-	.incbin "./graphics/banim/assets/tsa/0066AD9C_Tsa_0866AD9C.tsa.lz" @ 0x66AFB0 - 0x66AD9C
+	.incbin "./graphics/banim/assets/tsa/0066AD9C_Tsa_0866AD9C.map.bin.lz" @ 0x66AFB0 - 0x66AD9C
 
 	.global Tsa_0866AFB0
 Tsa_0866AFB0:  @ 0x0866AFB0
-	.incbin "./graphics/banim/assets/tsa/0066AFB0_Tsa_0866AFB0.tsa.lz" @ 0x66B16C - 0x66AFB0
+	.incbin "./graphics/banim/assets/tsa/0066AFB0_Tsa_0866AFB0.map.bin.lz" @ 0x66B16C - 0x66AFB0
 
 	.global Tsa_0866B16C
 Tsa_0866B16C:  @ 0x0866B16C
-	.incbin "./graphics/banim/assets/tsa/0066B16C_Tsa_0866B16C.tsa.lz" @ 0x66B348 - 0x66B16C
+	.incbin "./graphics/banim/assets/tsa/0066B16C_Tsa_0866B16C.map.bin.lz" @ 0x66B348 - 0x66B16C
 
 	.global Tsa_0866B348
 Tsa_0866B348:  @ 0x0866B348
-	.incbin "./graphics/banim/assets/tsa/0066B348_Tsa_0866B348.tsa.lz" @ 0x66B54C - 0x66B348
+	.incbin "./graphics/banim/assets/tsa/0066B348_Tsa_0866B348.map.bin.lz" @ 0x66B54C - 0x66B348
 
 	.global Tsa_0866B54C
 Tsa_0866B54C:  @ 0x0866B54C
-	.incbin "./graphics/banim/assets/tsa/0066B54C_Tsa_0866B54C.tsa.lz" @ 0x66B754 - 0x66B54C
+	.incbin "./graphics/banim/assets/tsa/0066B54C_Tsa_0866B54C.map.bin.lz" @ 0x66B754 - 0x66B54C
 
 	.global Tsa_0866B754
 Tsa_0866B754:  @ 0x0866B754
-	.incbin "./graphics/banim/assets/tsa/0066B754_Tsa_0866B754.tsa.lz" @ 0x66B968 - 0x66B754
+	.incbin "./graphics/banim/assets/tsa/0066B754_Tsa_0866B754.map.bin.lz" @ 0x66B968 - 0x66B754
 
 	.global Tsa_0866B968
 Tsa_0866B968:  @ 0x0866B968
-	.incbin "./graphics/banim/assets/tsa/0066B968_Tsa_0866B968.tsa.lz" @ 0x66BBC8 - 0x66B968
+	.incbin "./graphics/banim/assets/tsa/0066B968_Tsa_0866B968.map.bin.lz" @ 0x66BBC8 - 0x66B968
 
 	.global Tsa_0866BBC8
 Tsa_0866BBC8:  @ 0x0866BBC8
-	.incbin "./graphics/banim/assets/tsa/0066BBC8_Tsa_0866BBC8.tsa.lz" @ 0x66BDFC - 0x66BBC8
+	.incbin "./graphics/banim/assets/tsa/0066BBC8_Tsa_0866BBC8.map.bin.lz" @ 0x66BDFC - 0x66BBC8
 
 	.global Tsa_0866BDFC
 Tsa_0866BDFC:  @ 0x0866BDFC
-	.incbin "./graphics/banim/assets/tsa/0066BDFC_Tsa_0866BDFC.tsa.lz" @ 0x66C070 - 0x66BDFC
+	.incbin "./graphics/banim/assets/tsa/0066BDFC_Tsa_0866BDFC.map.bin.lz" @ 0x66C070 - 0x66BDFC
 
 	.global Tsa_0866C070
 Tsa_0866C070:  @ 0x0866C070
-	.incbin "./graphics/banim/assets/tsa/0066C070_Tsa_0866C070.tsa.lz" @ 0x66C2B8 - 0x66C070
+	.incbin "./graphics/banim/assets/tsa/0066C070_Tsa_0866C070.map.bin.lz" @ 0x66C2B8 - 0x66C070
 
 	.global Tsa_0866C2B8
 Tsa_0866C2B8:  @ 0x0866C2B8
-	.incbin "./graphics/banim/assets/tsa/0066C2B8_Tsa_0866C2B8.tsa.lz" @ 0x66C618 - 0x66C2B8
+	.incbin "./graphics/banim/assets/tsa/0066C2B8_Tsa_0866C2B8.map.bin.lz" @ 0x66C618 - 0x66C2B8
 
 	.global Tsa_0866C618
 Tsa_0866C618:  @ 0x0866C618
-	.incbin "./graphics/banim/assets/tsa/0066C618_Tsa_0866C618.tsa.lz" @ 0x66C96C - 0x66C618
+	.incbin "./graphics/banim/assets/tsa/0066C618_Tsa_0866C618.map.bin.lz" @ 0x66C96C - 0x66C618
 
 	.global Tsa_0866C96C
 Tsa_0866C96C:  @ 0x0866C96C
-	.incbin "./graphics/banim/assets/tsa/0066C96C_Tsa_0866C96C.tsa.lz" @ 0x66CC7C - 0x66C96C
+	.incbin "./graphics/banim/assets/tsa/0066C96C_Tsa_0866C96C.map.bin.lz" @ 0x66CC7C - 0x66C96C
 
 	.global Tsa_0866CC7C
 Tsa_0866CC7C:  @ 0x0866CC7C
-	.incbin "./graphics/banim/assets/tsa/0066CC7C_Tsa_0866CC7C.tsa.lz" @ 0x66CF60 - 0x66CC7C
+	.incbin "./graphics/banim/assets/tsa/0066CC7C_Tsa_0866CC7C.map.bin.lz" @ 0x66CF60 - 0x66CC7C
 
 	.global Tsa_0866CF60
 Tsa_0866CF60:  @ 0x0866CF60
-	.incbin "./graphics/banim/assets/tsa/0066CF60_Tsa_0866CF60.tsa.lz" @ 0x66D230 - 0x66CF60
+	.incbin "./graphics/banim/assets/tsa/0066CF60_Tsa_0866CF60.map.bin.lz" @ 0x66D230 - 0x66CF60
 
 	.global Tsa_0866D230
 Tsa_0866D230:  @ 0x0866D230
-	.incbin "./graphics/banim/assets/tsa/0066D230_Tsa_0866D230.tsa.lz" @ 0x66D4C8 - 0x66D230
+	.incbin "./graphics/banim/assets/tsa/0066D230_Tsa_0866D230.map.bin.lz" @ 0x66D4C8 - 0x66D230
 
 	.global Tsa_0866D4C8
 Tsa_0866D4C8:  @ 0x0866D4C8
-	.incbin "./graphics/banim/assets/tsa/0066D4C8_Tsa_0866D4C8.tsa.lz" @ 0x66D760 - 0x66D4C8
+	.incbin "./graphics/banim/assets/tsa/0066D4C8_Tsa_0866D4C8.map.bin.lz" @ 0x66D760 - 0x66D4C8
 
 	.global Tsa_0866D760
 Tsa_0866D760:  @ 0x0866D760
-	.incbin "./graphics/banim/assets/tsa/0066D760_Tsa_0866D760.tsa.lz" @ 0x66D98C - 0x66D760
+	.incbin "./graphics/banim/assets/tsa/0066D760_Tsa_0866D760.map.bin.lz" @ 0x66D98C - 0x66D760
 
 	.global Tsa_0866D98C
 Tsa_0866D98C:  @ 0x0866D98C
-	.incbin "./graphics/banim/assets/tsa/0066D98C_Tsa_0866D98C.tsa.lz" @ 0x66DC40 - 0x66D98C
+	.incbin "./graphics/banim/assets/tsa/0066D98C_Tsa_0866D98C.map.bin.lz" @ 0x66DC40 - 0x66D98C
 
 	.global Tsa_0866DC40
 Tsa_0866DC40:  @ 0x0866DC40
-	.incbin "./graphics/banim/assets/tsa/0066DC40_Tsa_0866DC40.tsa.lz" @ 0x66DF00 - 0x66DC40
+	.incbin "./graphics/banim/assets/tsa/0066DC40_Tsa_0866DC40.map.bin.lz" @ 0x66DF00 - 0x66DC40
 
 	.global Tsa_0866DF00
 Tsa_0866DF00:  @ 0x0866DF00
-	.incbin "./graphics/banim/assets/tsa/0066DF00_Tsa_0866DF00.tsa.lz" @ 0x66E230 - 0x66DF00
+	.incbin "./graphics/banim/assets/tsa/0066DF00_Tsa_0866DF00.map.bin.lz" @ 0x66E230 - 0x66DF00
 
 	.global Tsa_0866E230
 Tsa_0866E230:  @ 0x0866E230
-	.incbin "./graphics/banim/assets/tsa/0066E230_Tsa_0866E230.tsa.lz" @ 0x66E580 - 0x66E230
+	.incbin "./graphics/banim/assets/tsa/0066E230_Tsa_0866E230.map.bin.lz" @ 0x66E580 - 0x66E230
 
 	.global Tsa_0866E580
 Tsa_0866E580:  @ 0x0866E580
-	.incbin "./graphics/banim/assets/tsa/0066E580_Tsa_0866E580.tsa.lz" @ 0x66E8F8 - 0x66E580
+	.incbin "./graphics/banim/assets/tsa/0066E580_Tsa_0866E580.map.bin.lz" @ 0x66E8F8 - 0x66E580
 
 	.global Tsa_0866E8F8
 Tsa_0866E8F8:  @ 0x0866E8F8
-	.incbin "./graphics/banim/assets/tsa/0066E8F8_Tsa_0866E8F8.tsa.lz" @ 0x66EC80 - 0x66E8F8
+	.incbin "./graphics/banim/assets/tsa/0066E8F8_Tsa_0866E8F8.map.bin.lz" @ 0x66EC80 - 0x66E8F8
 
 	.global Tsa_0866EC80
 Tsa_0866EC80:  @ 0x0866EC80
-	.incbin "./graphics/banim/assets/tsa/0066EC80_Tsa_0866EC80.tsa.lz" @ 0x66EFF0 - 0x66EC80
+	.incbin "./graphics/banim/assets/tsa/0066EC80_Tsa_0866EC80.map.bin.lz" @ 0x66EFF0 - 0x66EC80
 
 	.global Img_PurgeSprites
 Img_PurgeSprites:  @ 0x0866EFF0
@@ -16871,7 +16871,7 @@ Img_HealSpellBg:  @ 0x0866F5E4
 
 	.global Tsa_HealSpellBg
 Tsa_HealSpellBg:  @ 0x0866F774
-	.incbin "./graphics/banim/assets/tsa/0066F774_Tsa_HealSpellBg.tsa"
+	.incbin "./graphics/banim/assets/tsa/0066F774_Tsa_HealSpellBg.map.bin"
 
 	.global Pal_HealSpellBg
 Pal_HealSpellBg:  @ 0x086700D4
@@ -16891,11 +16891,11 @@ Img_EfxLiveBG_B:  @ 0x08670548
 
 	.global Tsa_EfxLiveBG_B_L
 Tsa_EfxLiveBG_B_L:  @ 0x08670D40
-    .incbin "./graphics/banim/assets/tsa/00670D40_Tsa_EfxLiveBG_B_L.tsa"
+    .incbin "./graphics/banim/assets/tsa/00670D40_Tsa_EfxLiveBG_B_L.map.bin"
 
 	.global Tsa_EfxLiveBG_B_R
 Tsa_EfxLiveBG_B_R:  @ 0x086716A0
-    .incbin "./graphics/banim/assets/tsa/006716A0_Tsa_EfxLiveBG_B_R.tsa"
+    .incbin "./graphics/banim/assets/tsa/006716A0_Tsa_EfxLiveBG_B_R.map.bin"
 
 	.global Pal_08672000
 Pal_08672000:  @ 0x08672000
@@ -19996,23 +19996,23 @@ AnimScr_EfxReblowOBJ_LeftUnk6: @ 0x677E78
 
 	.global Tsa_08677E80
 Tsa_08677E80:  @ 0x08677E80
-	.incbin "./graphics/banim/assets/tsa/00677E80_Tsa_08677E80.tsa.lz" @ 0x677F8C - 0x677E80
+	.incbin "./graphics/banim/assets/tsa/00677E80_Tsa_08677E80.map.bin.lz" @ 0x677F8C - 0x677E80
 
 	.global Tsa_08677F8C
 Tsa_08677F8C:  @ 0x08677F8C
-	.incbin "./graphics/banim/assets/tsa/00677F8C_Tsa_08677F8C.tsa.lz" @ 0x67808C - 0x677F8C
+	.incbin "./graphics/banim/assets/tsa/00677F8C_Tsa_08677F8C.map.bin.lz" @ 0x67808C - 0x677F8C
 
 	.global Tsa_0867808C
 Tsa_0867808C:  @ 0x0867808C
-	.incbin "./graphics/banim/assets/tsa/0067808C_Tsa_0867808C.tsa.lz" @ 0x678198 - 0x67808C
+	.incbin "./graphics/banim/assets/tsa/0067808C_Tsa_0867808C.map.bin.lz" @ 0x678198 - 0x67808C
 
 	.global Tsa_08678198
 Tsa_08678198:  @ 0x08678198
-	.incbin "./graphics/banim/assets/tsa/00678198_Tsa_08678198.tsa.lz" @ 0x6782A4 - 0x678198
+	.incbin "./graphics/banim/assets/tsa/00678198_Tsa_08678198.map.bin.lz" @ 0x6782A4 - 0x678198
 
 	.global Tsa_086782A4
 Tsa_086782A4:  @ 0x086782A4
-	.incbin "./graphics/banim/assets/tsa/006782A4_Tsa_086782A4.tsa.lz" @ 0x678720 - 0x6782A4
+	.incbin "./graphics/banim/assets/tsa/006782A4_Tsa_086782A4.map.bin.lz" @ 0x678720 - 0x6782A4
 
 	.global Pal_08678720
 Pal_08678720:  @ 0x08678720
@@ -20030,14 +20030,14 @@ Pal_08678B20:  @ 0x08678B20
 .global Tsa_StatusEffectBgBase
 gUnknown_08678D20:
 Tsa_StatusEffectBgBase:  @ 0x08678D20
-	.incbin "./graphics/banim/assets/tsa/00678D20_Tsa_StatusEffectBgBase.tsa.lz"
+	.incbin "./graphics/banim/assets/tsa/00678D20_Tsa_StatusEffectBgBase.map.bin.lz"
 
 	.global Pal_StatusEffectBgBase
 Pal_StatusEffectBgBase:  @ 0x086792A4
 	.incbin "./graphics/banim/assets/pal/006792A4_Pal_086792A4.agbpal"
 	.global Tsa_08679304
 Tsa_08679304:  @ 0x08679304
-	.incbin "./graphics/banim/assets/tsa/00679304_Tsa_08679304.tsa"
+	.incbin "./graphics/banim/assets/tsa/00679304_Tsa_08679304.map.bin"
 
 
 
@@ -20066,55 +20066,55 @@ Pal_MapAnimRestore:  @ 0x0867B5A4
 
 	.global Tsa_0867B5C4
 Tsa_0867B5C4:  @ 0x0867B5C4
-	.incbin "./graphics/banim/assets/tsa/0067B5C4_Tsa_0867B5C4.tsa.lz" @ 0x67B670 - 0x67B5C4
+	.incbin "./graphics/banim/assets/tsa/0067B5C4_Tsa_0867B5C4.map.bin.lz" @ 0x67B670 - 0x67B5C4
 
 	.global Tsa_0867B670
 Tsa_0867B670:  @ 0x0867B670
-	.incbin "./graphics/banim/assets/tsa/0067B670_Tsa_0867B670.tsa.lz" @ 0x67B724 - 0x67B670
+	.incbin "./graphics/banim/assets/tsa/0067B670_Tsa_0867B670.map.bin.lz" @ 0x67B724 - 0x67B670
 
 	.global Tsa_0867B724
 Tsa_0867B724:  @ 0x0867B724
-	.incbin "./graphics/banim/assets/tsa/0067B724_Tsa_0867B724.tsa.lz" @ 0x67B7E4 - 0x67B724
+	.incbin "./graphics/banim/assets/tsa/0067B724_Tsa_0867B724.map.bin.lz" @ 0x67B7E4 - 0x67B724
 
 	.global Tsa_0867B7E4
 Tsa_0867B7E4:  @ 0x0867B7E4
-	.incbin "./graphics/banim/assets/tsa/0067B7E4_Tsa_0867B7E4.tsa.lz" @ 0x67B8AC - 0x67B7E4
+	.incbin "./graphics/banim/assets/tsa/0067B7E4_Tsa_0867B7E4.map.bin.lz" @ 0x67B8AC - 0x67B7E4
 
 	.global Tsa_0867B8AC
 Tsa_0867B8AC:  @ 0x0867B8AC
-	.incbin "./graphics/banim/assets/tsa/0067B8AC_Tsa_0867B8AC.tsa.lz" @ 0x67B988 - 0x67B8AC
+	.incbin "./graphics/banim/assets/tsa/0067B8AC_Tsa_0867B8AC.map.bin.lz" @ 0x67B988 - 0x67B8AC
 
 	.global Tsa_0867B988
 Tsa_0867B988:  @ 0x0867B988
-	.incbin "./graphics/banim/assets/tsa/0067B988_Tsa_0867B988.tsa.lz" @ 0x67BA68 - 0x67B988
+	.incbin "./graphics/banim/assets/tsa/0067B988_Tsa_0867B988.map.bin.lz" @ 0x67BA68 - 0x67B988
 
 	.global Tsa_0867BA68
 Tsa_0867BA68:  @ 0x0867BA68
-	.incbin "./graphics/banim/assets/tsa/0067BA68_Tsa_0867BA68.tsa.lz" @ 0x67BB50 - 0x67BA68
+	.incbin "./graphics/banim/assets/tsa/0067BA68_Tsa_0867BA68.map.bin.lz" @ 0x67BB50 - 0x67BA68
 
 	.global Tsa_0867BB50
 Tsa_0867BB50:  @ 0x0867BB50
-	.incbin "./graphics/banim/assets/tsa/0067BB50_Tsa_0867BB50.tsa.lz" @ 0x67BC40 - 0x67BB50
+	.incbin "./graphics/banim/assets/tsa/0067BB50_Tsa_0867BB50.map.bin.lz" @ 0x67BC40 - 0x67BB50
 
 	.global Tsa_0867BC40
 Tsa_0867BC40:  @ 0x0867BC40
-	.incbin "./graphics/banim/assets/tsa/0067BC40_Tsa_0867BC40.tsa.lz" @ 0x67BD40 - 0x67BC40
+	.incbin "./graphics/banim/assets/tsa/0067BC40_Tsa_0867BC40.map.bin.lz" @ 0x67BD40 - 0x67BC40
 
 	.global Tsa_0867BD40
 Tsa_0867BD40:  @ 0x0867BD40
-	.incbin "./graphics/banim/assets/tsa/0067BD40_Tsa_0867BD40.tsa.lz" @ 0x67BE4C - 0x67BD40
+	.incbin "./graphics/banim/assets/tsa/0067BD40_Tsa_0867BD40.map.bin.lz" @ 0x67BE4C - 0x67BD40
 
 	.global Tsa_0867BE4C
 Tsa_0867BE4C:  @ 0x0867BE4C
-	.incbin "./graphics/banim/assets/tsa/0067BE4C_Tsa_0867BE4C.tsa.lz" @ 0x67BF6C - 0x67BE4C
+	.incbin "./graphics/banim/assets/tsa/0067BE4C_Tsa_0867BE4C.map.bin.lz" @ 0x67BF6C - 0x67BE4C
 
 	.global Tsa_0867BF6C
 Tsa_0867BF6C:  @ 0x0867BF6C
-	.incbin "./graphics/banim/assets/tsa/0067BF6C_Tsa_0867BF6C.tsa.lz" @ 0x67C09C - 0x67BF6C
+	.incbin "./graphics/banim/assets/tsa/0067BF6C_Tsa_0867BF6C.map.bin.lz" @ 0x67C09C - 0x67BF6C
 
 	.global Tsa_0867C09C
 Tsa_0867C09C:  @ 0x0867C09C
-	.incbin "./graphics/banim/assets/tsa/0067C09C_Tsa_0867C09C.tsa.lz"
+	.incbin "./graphics/banim/assets/tsa/0067C09C_Tsa_0867C09C.map.bin.lz"
 
 .global AnimSprite_EfxRestOBJ_1
 AnimSprite_EfxRestOBJ_1:  @ 0x67C1DC
@@ -21240,75 +21240,75 @@ Img_SilenceBg:  @ 0x0867EEB4
 
 	.global Tsa_0867F97C
 Tsa_0867F97C:  @ 0x0867F97C
-	.incbin "./graphics/banim/assets/tsa/0067F97C_Tsa_0867F97C.tsa.lz" @ 0x67FA78 - 0x67F97C
+	.incbin "./graphics/banim/assets/tsa/0067F97C_Tsa_0867F97C.map.bin.lz" @ 0x67FA78 - 0x67F97C
 
 	.global Tsa_0867FA78
 Tsa_0867FA78:  @ 0x0867FA78
-	.incbin "./graphics/banim/assets/tsa/0067FA78_Tsa_0867FA78.tsa.lz" @ 0x67FB60 - 0x67FA78
+	.incbin "./graphics/banim/assets/tsa/0067FA78_Tsa_0867FA78.map.bin.lz" @ 0x67FB60 - 0x67FA78
 
 	.global Tsa_0867FB60
 Tsa_0867FB60:  @ 0x0867FB60
-	.incbin "./graphics/banim/assets/tsa/0067FB60_Tsa_0867FB60.tsa.lz" @ 0x67FC48 - 0x67FB60
+	.incbin "./graphics/banim/assets/tsa/0067FB60_Tsa_0867FB60.map.bin.lz" @ 0x67FC48 - 0x67FB60
 
 	.global Tsa_0867FC48
 Tsa_0867FC48:  @ 0x0867FC48
-	.incbin "./graphics/banim/assets/tsa/0067FC48_Tsa_0867FC48.tsa.lz" @ 0x67FD30 - 0x67FC48
+	.incbin "./graphics/banim/assets/tsa/0067FC48_Tsa_0867FC48.map.bin.lz" @ 0x67FD30 - 0x67FC48
 
 	.global Tsa_0867FD30
 Tsa_0867FD30:  @ 0x0867FD30
-	.incbin "./graphics/banim/assets/tsa/0067FD30_Tsa_0867FD30.tsa.lz" @ 0x67FE2C - 0x67FD30
+	.incbin "./graphics/banim/assets/tsa/0067FD30_Tsa_0867FD30.map.bin.lz" @ 0x67FE2C - 0x67FD30
 
 	.global Tsa_0867FE2C
 Tsa_0867FE2C:  @ 0x0867FE2C
-	.incbin "./graphics/banim/assets/tsa/0067FE2C_Tsa_0867FE2C.tsa.lz" @ 0x67FF14 - 0x67FE2C
+	.incbin "./graphics/banim/assets/tsa/0067FE2C_Tsa_0867FE2C.map.bin.lz" @ 0x67FF14 - 0x67FE2C
 
 	.global Tsa_0867FF14
 Tsa_0867FF14:  @ 0x0867FF14
-	.incbin "./graphics/banim/assets/tsa/0067FF14_Tsa_0867FF14.tsa.lz" @ 0x67FFAC - 0x67FF14
+	.incbin "./graphics/banim/assets/tsa/0067FF14_Tsa_0867FF14.map.bin.lz" @ 0x67FFAC - 0x67FF14
 
 	.global Tsa_0867FFAC
 Tsa_0867FFAC:  @ 0x0867FFAC
-	.incbin "./graphics/banim/assets/tsa/0067FFAC_Tsa_0867FFAC.tsa.lz" @ 0x680094 - 0x67FFAC
+	.incbin "./graphics/banim/assets/tsa/0067FFAC_Tsa_0867FFAC.map.bin.lz" @ 0x680094 - 0x67FFAC
 
 	.global Tsa_08680094
 Tsa_08680094:  @ 0x08680094
-	.incbin "./graphics/banim/assets/tsa/00680094_Tsa_08680094.tsa.lz" @ 0x68012C - 0x680094
+	.incbin "./graphics/banim/assets/tsa/00680094_Tsa_08680094.map.bin.lz" @ 0x68012C - 0x680094
 
 	.global Tsa_0868012C
 Tsa_0868012C:  @ 0x0868012C
-	.incbin "./graphics/banim/assets/tsa/0068012C_Tsa_0868012C.tsa.lz" @ 0x680214 - 0x68012C
+	.incbin "./graphics/banim/assets/tsa/0068012C_Tsa_0868012C.map.bin.lz" @ 0x680214 - 0x68012C
 
 	.global Tsa_08680214
 Tsa_08680214:  @ 0x08680214
-	.incbin "./graphics/banim/assets/tsa/00680214_Tsa_08680214.tsa.lz" @ 0x680310 - 0x680214
+	.incbin "./graphics/banim/assets/tsa/00680214_Tsa_08680214.map.bin.lz" @ 0x680310 - 0x680214
 
 	.global Tsa_08680310
 Tsa_08680310:  @ 0x08680310
-	.incbin "./graphics/banim/assets/tsa/00680310_Tsa_08680310.tsa.lz" @ 0x6803A8 - 0x680310
+	.incbin "./graphics/banim/assets/tsa/00680310_Tsa_08680310.map.bin.lz" @ 0x6803A8 - 0x680310
 
 	.global Tsa_086803A8
 Tsa_086803A8:  @ 0x086803A8
-	.incbin "./graphics/banim/assets/tsa/006803A8_Tsa_086803A8.tsa.lz" @ 0x680490 - 0x6803A8
+	.incbin "./graphics/banim/assets/tsa/006803A8_Tsa_086803A8.map.bin.lz" @ 0x680490 - 0x6803A8
 
 	.global Tsa_08680490
 Tsa_08680490:  @ 0x08680490
-	.incbin "./graphics/banim/assets/tsa/00680490_Tsa_08680490.tsa.lz" @ 0x680528 - 0x680490
+	.incbin "./graphics/banim/assets/tsa/00680490_Tsa_08680490.map.bin.lz" @ 0x680528 - 0x680490
 
 	.global Tsa_08680528
 Tsa_08680528:  @ 0x08680528
-	.incbin "./graphics/banim/assets/tsa/00680528_Tsa_08680528.tsa.lz" @ 0x680624 - 0x680528
+	.incbin "./graphics/banim/assets/tsa/00680528_Tsa_08680528.map.bin.lz" @ 0x680624 - 0x680528
 
 	.global Tsa_08680624
 Tsa_08680624:  @ 0x08680624
-	.incbin "./graphics/banim/assets/tsa/00680624_Tsa_08680624.tsa.lz" @ 0x6806BC - 0x680624
+	.incbin "./graphics/banim/assets/tsa/00680624_Tsa_08680624.map.bin.lz" @ 0x6806BC - 0x680624
 
 	.global Tsa_086806BC
 Tsa_086806BC:  @ 0x086806BC
-	.incbin "./graphics/banim/assets/tsa/006806BC_Tsa_086806BC.tsa.lz" @ 0x6807CC - 0x6806BC
+	.incbin "./graphics/banim/assets/tsa/006806BC_Tsa_086806BC.map.bin.lz" @ 0x6807CC - 0x6806BC
 
 	.global Tsa_086807CC
 Tsa_086807CC:  @ 0x086807CC
-	.incbin "./graphics/banim/assets/tsa/006807CC_Tsa_086807CC.tsa.lz" @ 0x6808A0 - 0x6807CC
+	.incbin "./graphics/banim/assets/tsa/006807CC_Tsa_086807CC.map.bin.lz" @ 0x6808A0 - 0x6807CC
 
 	.global Img_SilenceSprites
 Img_SilenceSprites:  @ 0x086808A0
@@ -21483,55 +21483,55 @@ Pal_HammerneBg:  @ 0x086810B8
 
 	.global Tsa_086810D8
 Tsa_086810D8:  @ 0x086810D8
-	.incbin "./graphics/banim/assets/tsa/006810D8_Tsa_086810D8.tsa.lz" @ 0x681184 - 0x6810D8
+	.incbin "./graphics/banim/assets/tsa/006810D8_Tsa_086810D8.map.bin.lz" @ 0x681184 - 0x6810D8
 
 	.global Tsa_08681184
 Tsa_08681184:  @ 0x08681184
-	.incbin "./graphics/banim/assets/tsa/00681184_Tsa_08681184.tsa.lz" @ 0x681234 - 0x681184
+	.incbin "./graphics/banim/assets/tsa/00681184_Tsa_08681184.map.bin.lz" @ 0x681234 - 0x681184
 
 	.global Tsa_08681234
 Tsa_08681234:  @ 0x08681234
-	.incbin "./graphics/banim/assets/tsa/00681234_Tsa_08681234.tsa.lz" @ 0x6812F4 - 0x681234
+	.incbin "./graphics/banim/assets/tsa/00681234_Tsa_08681234.map.bin.lz" @ 0x6812F4 - 0x681234
 
 	.global Tsa_086812F4
 Tsa_086812F4:  @ 0x086812F4
-	.incbin "./graphics/banim/assets/tsa/006812F4_Tsa_086812F4.tsa.lz" @ 0x6813BC - 0x6812F4
+	.incbin "./graphics/banim/assets/tsa/006812F4_Tsa_086812F4.map.bin.lz" @ 0x6813BC - 0x6812F4
 
 	.global Tsa_086813BC
 Tsa_086813BC:  @ 0x086813BC
-	.incbin "./graphics/banim/assets/tsa/006813BC_Tsa_086813BC.tsa.lz" @ 0x681494 - 0x6813BC
+	.incbin "./graphics/banim/assets/tsa/006813BC_Tsa_086813BC.map.bin.lz" @ 0x681494 - 0x6813BC
 
 	.global Tsa_08681494
 Tsa_08681494:  @ 0x08681494
-	.incbin "./graphics/banim/assets/tsa/00681494_Tsa_08681494.tsa.lz" @ 0x681570 - 0x681494
+	.incbin "./graphics/banim/assets/tsa/00681494_Tsa_08681494.map.bin.lz" @ 0x681570 - 0x681494
 
 	.global Tsa_08681570
 Tsa_08681570:  @ 0x08681570
-	.incbin "./graphics/banim/assets/tsa/00681570_Tsa_08681570.tsa.lz" @ 0x681658 - 0x681570
+	.incbin "./graphics/banim/assets/tsa/00681570_Tsa_08681570.map.bin.lz" @ 0x681658 - 0x681570
 
 	.global Tsa_08681658
 Tsa_08681658:  @ 0x08681658
-	.incbin "./graphics/banim/assets/tsa/00681658_Tsa_08681658.tsa.lz" @ 0x681748 - 0x681658
+	.incbin "./graphics/banim/assets/tsa/00681658_Tsa_08681658.map.bin.lz" @ 0x681748 - 0x681658
 
 	.global Tsa_08681748
 Tsa_08681748:  @ 0x08681748
-	.incbin "./graphics/banim/assets/tsa/00681748_Tsa_08681748.tsa.lz" @ 0x681848 - 0x681748
+	.incbin "./graphics/banim/assets/tsa/00681748_Tsa_08681748.map.bin.lz" @ 0x681848 - 0x681748
 
 	.global Tsa_08681848
 Tsa_08681848:  @ 0x08681848
-	.incbin "./graphics/banim/assets/tsa/00681848_Tsa_08681848.tsa.lz" @ 0x681954 - 0x681848
+	.incbin "./graphics/banim/assets/tsa/00681848_Tsa_08681848.map.bin.lz" @ 0x681954 - 0x681848
 
 	.global Tsa_08681954
 Tsa_08681954:  @ 0x08681954
-	.incbin "./graphics/banim/assets/tsa/00681954_Tsa_08681954.tsa.lz" @ 0x681A74 - 0x681954
+	.incbin "./graphics/banim/assets/tsa/00681954_Tsa_08681954.map.bin.lz" @ 0x681A74 - 0x681954
 
 	.global Tsa_08681A74
 Tsa_08681A74:  @ 0x08681A74
-	.incbin "./graphics/banim/assets/tsa/00681A74_Tsa_08681A74.tsa.lz" @ 0x681BA4 - 0x681A74
+	.incbin "./graphics/banim/assets/tsa/00681A74_Tsa_08681A74.map.bin.lz" @ 0x681BA4 - 0x681A74
 
 	.global Tsa_08681BA4
 Tsa_08681BA4:  @ 0x08681BA4
-	.incbin "./graphics/banim/assets/tsa/00681BA4_Tsa_08681BA4.tsa.lz"
+	.incbin "./graphics/banim/assets/tsa/00681BA4_Tsa_08681BA4.map.bin.lz"
 
 .global AnimSprite_EfxHammarneOBJ_1
 AnimSprite_EfxHammarneOBJ_1:  @ 0x681CE0
@@ -22657,7 +22657,7 @@ Img_086849B8:  @ 0x086849B8
 
 	.global Tsa_08684AB8
 Tsa_08684AB8:  @ 0x08684AB8
-	.incbin "./graphics/banim/assets/tsa/00684AB8_Tsa_08684AB8.tsa"
+	.incbin "./graphics/banim/assets/tsa/00684AB8_Tsa_08684AB8.map.bin"
 
 	.global Img_SleepBg
 Img_SleepBg:  @ 0x086852D8
@@ -22669,67 +22669,67 @@ Pal_SleepBg:  @ 0x086861A4
 
 	.global Tsa_086861C4
 Tsa_086861C4:  @ 0x086861C4
-	.incbin "./graphics/banim/assets/tsa/006861C4_Tsa_086861C4.tsa.lz" @ 0x6862A0 - 0x6861C4
+	.incbin "./graphics/banim/assets/tsa/006861C4_Tsa_086861C4.map.bin.lz" @ 0x6862A0 - 0x6861C4
 
 	.global Tsa_086862A0
 Tsa_086862A0:  @ 0x086862A0
-	.incbin "./graphics/banim/assets/tsa/006862A0_Tsa_086862A0.tsa.lz" @ 0x68637C - 0x6862A0
+	.incbin "./graphics/banim/assets/tsa/006862A0_Tsa_086862A0.map.bin.lz" @ 0x68637C - 0x6862A0
 
 	.global Tsa_0868637C
 Tsa_0868637C:  @ 0x0868637C
-	.incbin "./graphics/banim/assets/tsa/0068637C_Tsa_0868637C.tsa.lz" @ 0x686458 - 0x68637C
+	.incbin "./graphics/banim/assets/tsa/0068637C_Tsa_0868637C.map.bin.lz" @ 0x686458 - 0x68637C
 
 	.global Tsa_08686458
 Tsa_08686458:  @ 0x08686458
-	.incbin "./graphics/banim/assets/tsa/00686458_Tsa_08686458.tsa.lz" @ 0x686534 - 0x686458
+	.incbin "./graphics/banim/assets/tsa/00686458_Tsa_08686458.map.bin.lz" @ 0x686534 - 0x686458
 
 	.global Tsa_08686534
 Tsa_08686534:  @ 0x08686534
-	.incbin "./graphics/banim/assets/tsa/00686534_Tsa_08686534.tsa.lz" @ 0x686610 - 0x686534
+	.incbin "./graphics/banim/assets/tsa/00686534_Tsa_08686534.map.bin.lz" @ 0x686610 - 0x686534
 
 	.global Tsa_08686610
 Tsa_08686610:  @ 0x08686610
-	.incbin "./graphics/banim/assets/tsa/00686610_Tsa_08686610.tsa.lz" @ 0x6866EC - 0x686610
+	.incbin "./graphics/banim/assets/tsa/00686610_Tsa_08686610.map.bin.lz" @ 0x6866EC - 0x686610
 
 	.global Tsa_086866EC
 Tsa_086866EC:  @ 0x086866EC
-	.incbin "./graphics/banim/assets/tsa/006866EC_Tsa_086866EC.tsa.lz" @ 0x6867C8 - 0x6866EC
+	.incbin "./graphics/banim/assets/tsa/006866EC_Tsa_086866EC.map.bin.lz" @ 0x6867C8 - 0x6866EC
 
 	.global Tsa_086867C8
 Tsa_086867C8:  @ 0x086867C8
-	.incbin "./graphics/banim/assets/tsa/006867C8_Tsa_086867C8.tsa.lz" @ 0x6868A4 - 0x6867C8
+	.incbin "./graphics/banim/assets/tsa/006867C8_Tsa_086867C8.map.bin.lz" @ 0x6868A4 - 0x6867C8
 
 	.global Tsa_086868A4
 Tsa_086868A4:  @ 0x086868A4
-	.incbin "./graphics/banim/assets/tsa/006868A4_Tsa_086868A4.tsa.lz" @ 0x686980 - 0x6868A4
+	.incbin "./graphics/banim/assets/tsa/006868A4_Tsa_086868A4.map.bin.lz" @ 0x686980 - 0x6868A4
 
 	.global Tsa_08686980
 Tsa_08686980:  @ 0x08686980
-	.incbin "./graphics/banim/assets/tsa/00686980_Tsa_08686980.tsa.lz" @ 0x686A5C - 0x686980
+	.incbin "./graphics/banim/assets/tsa/00686980_Tsa_08686980.map.bin.lz" @ 0x686A5C - 0x686980
 
 	.global Tsa_08686A5C
 Tsa_08686A5C:  @ 0x08686A5C
-	.incbin "./graphics/banim/assets/tsa/00686A5C_Tsa_08686A5C.tsa.lz" @ 0x686B38 - 0x686A5C
+	.incbin "./graphics/banim/assets/tsa/00686A5C_Tsa_08686A5C.map.bin.lz" @ 0x686B38 - 0x686A5C
 
 	.global Tsa_08686B38
 Tsa_08686B38:  @ 0x08686B38
-	.incbin "./graphics/banim/assets/tsa/00686B38_Tsa_08686B38.tsa.lz" @ 0x686C14 - 0x686B38
+	.incbin "./graphics/banim/assets/tsa/00686B38_Tsa_08686B38.map.bin.lz" @ 0x686C14 - 0x686B38
 
 	.global Tsa_08686C14
 Tsa_08686C14:  @ 0x08686C14
-	.incbin "./graphics/banim/assets/tsa/00686C14_Tsa_08686C14.tsa.lz" @ 0x686CF0 - 0x686C14
+	.incbin "./graphics/banim/assets/tsa/00686C14_Tsa_08686C14.map.bin.lz" @ 0x686CF0 - 0x686C14
 
 	.global Tsa_08686CF0
 Tsa_08686CF0:  @ 0x08686CF0
-	.incbin "./graphics/banim/assets/tsa/00686CF0_Tsa_08686CF0.tsa.lz" @ 0x686DCC - 0x686CF0
+	.incbin "./graphics/banim/assets/tsa/00686CF0_Tsa_08686CF0.map.bin.lz" @ 0x686DCC - 0x686CF0
 
 	.global Tsa_08686DCC
 Tsa_08686DCC:  @ 0x08686DCC
-	.incbin "./graphics/banim/assets/tsa/00686DCC_Tsa_08686DCC.tsa.lz" @ 0x686EA8 - 0x686DCC
+	.incbin "./graphics/banim/assets/tsa/00686DCC_Tsa_08686DCC.map.bin.lz" @ 0x686EA8 - 0x686DCC
 
 	.global Tsa_08686EA8
 Tsa_08686EA8:  @ 0x08686EA8
-	.incbin "./graphics/banim/assets/tsa/00686EA8_Tsa_08686EA8.tsa.lz" @ 0x686F84 - 0x686EA8
+	.incbin "./graphics/banim/assets/tsa/00686EA8_Tsa_08686EA8.map.bin.lz" @ 0x686F84 - 0x686EA8
 
 	.global Img_SleepSprites
 Img_SleepSprites:  @ 0x08686F84
@@ -25360,23 +25360,23 @@ Pal_BarrierBg:  @ 0x0868DF5C
 
 	.global Tsa_0868DF9C
 Tsa_0868DF9C:  @ 0x0868DF9C
-	.incbin "./graphics/banim/assets/tsa/0068DF9C_Tsa_0868DF9C.tsa.lz" @ 0x68E054 - 0x68DF9C
+	.incbin "./graphics/banim/assets/tsa/0068DF9C_Tsa_0868DF9C.map.bin.lz" @ 0x68E054 - 0x68DF9C
 
 	.global Tsa_0868E054
 Tsa_0868E054:  @ 0x0868E054
-	.incbin "./graphics/banim/assets/tsa/0068E054_Tsa_0868E054.tsa.lz" @ 0x68E118 - 0x68E054
+	.incbin "./graphics/banim/assets/tsa/0068E054_Tsa_0868E054.map.bin.lz" @ 0x68E118 - 0x68E054
 
 	.global Tsa_0868E118
 Tsa_0868E118:  @ 0x0868E118
-	.incbin "./graphics/banim/assets/tsa/0068E118_Tsa_0868E118.tsa.lz" @ 0x68E208 - 0x68E118
+	.incbin "./graphics/banim/assets/tsa/0068E118_Tsa_0868E118.map.bin.lz" @ 0x68E208 - 0x68E118
 
 	.global Tsa_0868E208
 Tsa_0868E208:  @ 0x0868E208
-	.incbin "./graphics/banim/assets/tsa/0068E208_Tsa_0868E208.tsa.lz" @ 0x68E338 - 0x68E208
+	.incbin "./graphics/banim/assets/tsa/0068E208_Tsa_0868E208.map.bin.lz" @ 0x68E338 - 0x68E208
 
 	.global Tsa_0868E338
 Tsa_0868E338:  @ 0x0868E338
-	.incbin "./graphics/banim/assets/tsa/0068E338_Tsa_0868E338.tsa.lz" @ 0x68E46C - 0x68E338
+	.incbin "./graphics/banim/assets/tsa/0068E338_Tsa_0868E338.map.bin.lz" @ 0x68E46C - 0x68E338
 
 	.global Img_EfxMshield
 Img_EfxMshield:  @ 0x0868E46C
@@ -27948,51 +27948,51 @@ Pal_IvaldiBg1:  @ 0x086945C4
 
 	.global Tsa_086945E4
 Tsa_086945E4:  @ 0x086945E4
-	.incbin "./graphics/banim/assets/tsa/006945E4_Tsa_086945E4.tsa.lz" @ 0x6946A0 - 0x6945E4
+	.incbin "./graphics/banim/assets/tsa/006945E4_Tsa_086945E4.map.bin.lz" @ 0x6946A0 - 0x6945E4
 
 	.global Tsa_086946A0
 Tsa_086946A0:  @ 0x086946A0
-	.incbin "./graphics/banim/assets/tsa/006946A0_Tsa_086946A0.tsa.lz" @ 0x6947C4 - 0x6946A0
+	.incbin "./graphics/banim/assets/tsa/006946A0_Tsa_086946A0.map.bin.lz" @ 0x6947C4 - 0x6946A0
 
 	.global Tsa_086947C4
 Tsa_086947C4:  @ 0x086947C4
-	.incbin "./graphics/banim/assets/tsa/006947C4_Tsa_086947C4.tsa.lz" @ 0x69495C - 0x6947C4
+	.incbin "./graphics/banim/assets/tsa/006947C4_Tsa_086947C4.map.bin.lz" @ 0x69495C - 0x6947C4
 
 	.global Tsa_0869495C
 Tsa_0869495C:  @ 0x0869495C
-	.incbin "./graphics/banim/assets/tsa/0069495C_Tsa_0869495C.tsa.lz" @ 0x694B58 - 0x69495C
+	.incbin "./graphics/banim/assets/tsa/0069495C_Tsa_0869495C.map.bin.lz" @ 0x694B58 - 0x69495C
 
 	.global Tsa_08694B58
 Tsa_08694B58:  @ 0x08694B58
-	.incbin "./graphics/banim/assets/tsa/00694B58_Tsa_08694B58.tsa.lz" @ 0x694DD0 - 0x694B58
+	.incbin "./graphics/banim/assets/tsa/00694B58_Tsa_08694B58.map.bin.lz" @ 0x694DD0 - 0x694B58
 
 	.global Tsa_08694DD0
 Tsa_08694DD0:  @ 0x08694DD0
-	.incbin "./graphics/banim/assets/tsa/00694DD0_Tsa_08694DD0.tsa.lz" @ 0x695048 - 0x694DD0
+	.incbin "./graphics/banim/assets/tsa/00694DD0_Tsa_08694DD0.map.bin.lz" @ 0x695048 - 0x694DD0
 
 	.global Tsa_08695048
 Tsa_08695048:  @ 0x08695048
-	.incbin "./graphics/banim/assets/tsa/00695048_Tsa_08695048.tsa.lz" @ 0x6952C0 - 0x695048
+	.incbin "./graphics/banim/assets/tsa/00695048_Tsa_08695048.map.bin.lz" @ 0x6952C0 - 0x695048
 
 	.global Tsa_086952C0
 Tsa_086952C0:  @ 0x086952C0
-	.incbin "./graphics/banim/assets/tsa/006952C0_Tsa_086952C0.tsa.lz" @ 0x695530 - 0x6952C0
+	.incbin "./graphics/banim/assets/tsa/006952C0_Tsa_086952C0.map.bin.lz" @ 0x695530 - 0x6952C0
 
 	.global Tsa_08695530
 Tsa_08695530:  @ 0x08695530
-	.incbin "./graphics/banim/assets/tsa/00695530_Tsa_08695530.tsa.lz" @ 0x695744 - 0x695530
+	.incbin "./graphics/banim/assets/tsa/00695530_Tsa_08695530.map.bin.lz" @ 0x695744 - 0x695530
 
 	.global Tsa_08695744
 Tsa_08695744:  @ 0x08695744
-	.incbin "./graphics/banim/assets/tsa/00695744_Tsa_08695744.tsa.lz" @ 0x6958F0 - 0x695744
+	.incbin "./graphics/banim/assets/tsa/00695744_Tsa_08695744.map.bin.lz" @ 0x6958F0 - 0x695744
 
 	.global Tsa_086958F0
 Tsa_086958F0:  @ 0x086958F0
-	.incbin "./graphics/banim/assets/tsa/006958F0_Tsa_086958F0.tsa.lz" @ 0x695A34 - 0x6958F0
+	.incbin "./graphics/banim/assets/tsa/006958F0_Tsa_086958F0.map.bin.lz" @ 0x695A34 - 0x6958F0
 
 	.global Tsa_08695A34
 Tsa_08695A34:  @ 0x08695A34
-	.incbin "./graphics/banim/assets/tsa/00695A34_Tsa_08695A34.tsa.lz" @ 0x695B10 - 0x695A34
+	.incbin "./graphics/banim/assets/tsa/00695A34_Tsa_08695A34.map.bin.lz" @ 0x695B10 - 0x695A34
 
 	.global Img_IvaldiBg2
 Img_IvaldiBg2:  @ 0x08695B10
@@ -28004,23 +28004,23 @@ Pal_IvaldiBg2:  @ 0x08696840
 
 	.global Tsa_08696860
 Tsa_08696860:  @ 0x08696860
-	.incbin "./graphics/banim/assets/tsa/00696860_Tsa_08696860.tsa.lz" @ 0x6968F8 - 0x696860
+	.incbin "./graphics/banim/assets/tsa/00696860_Tsa_08696860.map.bin.lz" @ 0x6968F8 - 0x696860
 
 	.global Tsa_086968F8
 Tsa_086968F8:  @ 0x086968F8
-	.incbin "./graphics/banim/assets/tsa/006968F8_Tsa_086968F8.tsa.lz" @ 0x696A8C - 0x6968F8
+	.incbin "./graphics/banim/assets/tsa/006968F8_Tsa_086968F8.map.bin.lz" @ 0x696A8C - 0x6968F8
 
 	.global Tsa_08696A8C
 Tsa_08696A8C:  @ 0x08696A8C
-	.incbin "./graphics/banim/assets/tsa/00696A8C_Tsa_08696A8C.tsa.lz" @ 0x696C28 - 0x696A8C
+	.incbin "./graphics/banim/assets/tsa/00696A8C_Tsa_08696A8C.map.bin.lz" @ 0x696C28 - 0x696A8C
 
 	.global Tsa_08696C28
 Tsa_08696C28:  @ 0x08696C28
-	.incbin "./graphics/banim/assets/tsa/00696C28_Tsa_08696C28.tsa.lz" @ 0x696DC4 - 0x696C28
+	.incbin "./graphics/banim/assets/tsa/00696C28_Tsa_08696C28.map.bin.lz" @ 0x696DC4 - 0x696C28
 
 	.global Tsa_08696DC4
 Tsa_08696DC4:  @ 0x08696DC4
-	.incbin "./graphics/banim/assets/tsa/00696DC4_Tsa_08696DC4.tsa.lz" @ 0x696F64 - 0x696DC4
+	.incbin "./graphics/banim/assets/tsa/00696DC4_Tsa_08696DC4.map.bin.lz" @ 0x696F64 - 0x696DC4
 
 	.global Img_08696F64
 Img_08696F64:  @ 0x08696F64
@@ -28112,47 +28112,47 @@ Pal_0869E950:  @ 0x0869E950
 
 	.global Tsa_0869E970
 Tsa_0869E970:  @ 0x0869E970
-	.incbin "./graphics/banim/assets/tsa/0069E970_Tsa_0869E970.tsa.lz" @ 0x69EBB4 - 0x69E970
+	.incbin "./graphics/banim/assets/tsa/0069E970_Tsa_0869E970.map.bin.lz" @ 0x69EBB4 - 0x69E970
 
 	.global Tsa_0869EBB4
 Tsa_0869EBB4:  @ 0x0869EBB4
-	.incbin "./graphics/banim/assets/tsa/0069EBB4_Tsa_0869EBB4.tsa.lz" @ 0x69EE2C - 0x69EBB4
+	.incbin "./graphics/banim/assets/tsa/0069EBB4_Tsa_0869EBB4.map.bin.lz" @ 0x69EE2C - 0x69EBB4
 
 	.global Tsa_0869EE2C
 Tsa_0869EE2C:  @ 0x0869EE2C
-	.incbin "./graphics/banim/assets/tsa/0069EE2C_Tsa_0869EE2C.tsa.lz" @ 0x69F090 - 0x69EE2C
+	.incbin "./graphics/banim/assets/tsa/0069EE2C_Tsa_0869EE2C.map.bin.lz" @ 0x69F090 - 0x69EE2C
 
 	.global Tsa_0869F090
 Tsa_0869F090:  @ 0x0869F090
-	.incbin "./graphics/banim/assets/tsa/0069F090_Tsa_0869F090.tsa.lz" @ 0x69F304 - 0x69F090
+	.incbin "./graphics/banim/assets/tsa/0069F090_Tsa_0869F090.map.bin.lz" @ 0x69F304 - 0x69F090
 
 	.global Tsa_0869F304
 Tsa_0869F304:  @ 0x0869F304
-	.incbin "./graphics/banim/assets/tsa/0069F304_Tsa_0869F304.tsa.lz" @ 0x69F5C0 - 0x69F304
+	.incbin "./graphics/banim/assets/tsa/0069F304_Tsa_0869F304.map.bin.lz" @ 0x69F5C0 - 0x69F304
 
 	.global Tsa_0869F5C0
 Tsa_0869F5C0:  @ 0x0869F5C0
-	.incbin "./graphics/banim/assets/tsa/0069F5C0_Tsa_0869F5C0.tsa.lz" @ 0x69F888 - 0x69F5C0
+	.incbin "./graphics/banim/assets/tsa/0069F5C0_Tsa_0869F5C0.map.bin.lz" @ 0x69F888 - 0x69F5C0
 
 	.global Tsa_0869F888
 Tsa_0869F888:  @ 0x0869F888
-	.incbin "./graphics/banim/assets/tsa/0069F888_Tsa_0869F888.tsa.lz" @ 0x69FB4C - 0x69F888
+	.incbin "./graphics/banim/assets/tsa/0069F888_Tsa_0869F888.map.bin.lz" @ 0x69FB4C - 0x69F888
 
 	.global Tsa_0869FB4C
 Tsa_0869FB4C:  @ 0x0869FB4C
-	.incbin "./graphics/banim/assets/tsa/0069FB4C_Tsa_0869FB4C.tsa.lz" @ 0x69FDFC - 0x69FB4C
+	.incbin "./graphics/banim/assets/tsa/0069FB4C_Tsa_0869FB4C.map.bin.lz" @ 0x69FDFC - 0x69FB4C
 
 	.global Tsa_0869FDFC
 Tsa_0869FDFC:  @ 0x0869FDFC
-	.incbin "./graphics/banim/assets/tsa/0069FDFC_Tsa_0869FDFC.tsa.lz" @ 0x6A00B0 - 0x69FDFC
+	.incbin "./graphics/banim/assets/tsa/0069FDFC_Tsa_0869FDFC.map.bin.lz" @ 0x6A00B0 - 0x69FDFC
 
 	.global Tsa_086A00B0
 Tsa_086A00B0:  @ 0x086A00B0
-	.incbin "./graphics/banim/assets/tsa/006A00B0_Tsa_086A00B0.tsa.lz" @ 0x6A0388 - 0x6A00B0
+	.incbin "./graphics/banim/assets/tsa/006A00B0_Tsa_086A00B0.map.bin.lz" @ 0x6A0388 - 0x6A00B0
 
 	.global Tsa_086A0388
 Tsa_086A0388:  @ 0x086A0388
-	.incbin "./graphics/banim/assets/tsa/006A0388_Tsa_086A0388.tsa.lz" @ 0x6A06A8 - 0x6A0388
+	.incbin "./graphics/banim/assets/tsa/006A0388_Tsa_086A0388.map.bin.lz" @ 0x6A06A8 - 0x6A0388
 
 	.global Img_IvaldiBg4
 Img_IvaldiBg4:  @ 0x086A06A8
@@ -28164,7 +28164,7 @@ Pal_IvaldiBg4:  @ 0x086A1CE0
 
 	.global Tsa_086A1D00
 Tsa_086A1D00:  @ 0x086A1D00
-	.incbin "./graphics/banim/assets/tsa/006A1D00_Tsa_086A1D00.tsa.lz" @ 0x6A21F4 - 0x6A1D00
+	.incbin "./graphics/banim/assets/tsa/006A1D00_Tsa_086A1D00.map.bin.lz" @ 0x6A21F4 - 0x6A1D00
 
 	.global Img_GleipnirSprites_Rocks
 Img_GleipnirSprites_Rocks:  @ 0x086A21F4
@@ -28466,47 +28466,47 @@ Pal_GleipnirBg_Sigil:  @ 0x086A66D8
 
 	.global Tsa_086A66F8
 Tsa_086A66F8:  @ 0x086A66F8
-	.incbin "./graphics/banim/assets/tsa/006A66F8_Tsa_086A66F8.tsa.lz" @ 0x6A68A0 - 0x6A66F8
+	.incbin "./graphics/banim/assets/tsa/006A66F8_Tsa_086A66F8.map.bin.lz" @ 0x6A68A0 - 0x6A66F8
 
 	.global Tsa_086A68A0
 Tsa_086A68A0:  @ 0x086A68A0
-	.incbin "./graphics/banim/assets/tsa/006A68A0_Tsa_086A68A0.tsa.lz" @ 0x6A6A14 - 0x6A68A0
+	.incbin "./graphics/banim/assets/tsa/006A68A0_Tsa_086A68A0.map.bin.lz" @ 0x6A6A14 - 0x6A68A0
 
 	.global Tsa_086A6A14
 Tsa_086A6A14:  @ 0x086A6A14
-	.incbin "./graphics/banim/assets/tsa/006A6A14_Tsa_086A6A14.tsa.lz" @ 0x6A6B88 - 0x6A6A14
+	.incbin "./graphics/banim/assets/tsa/006A6A14_Tsa_086A6A14.map.bin.lz" @ 0x6A6B88 - 0x6A6A14
 
 	.global Tsa_086A6B88
 Tsa_086A6B88:  @ 0x086A6B88
-	.incbin "./graphics/banim/assets/tsa/006A6B88_Tsa_086A6B88.tsa.lz" @ 0x6A6CD0 - 0x6A6B88
+	.incbin "./graphics/banim/assets/tsa/006A6B88_Tsa_086A6B88.map.bin.lz" @ 0x6A6CD0 - 0x6A6B88
 
 	.global Tsa_086A6CD0
 Tsa_086A6CD0:  @ 0x086A6CD0
-	.incbin "./graphics/banim/assets/tsa/006A6CD0_Tsa_086A6CD0.tsa.lz" @ 0x6A6DDC - 0x6A6CD0
+	.incbin "./graphics/banim/assets/tsa/006A6CD0_Tsa_086A6CD0.map.bin.lz" @ 0x6A6DDC - 0x6A6CD0
 
 	.global Tsa_086A6DDC
 Tsa_086A6DDC:  @ 0x086A6DDC
-	.incbin "./graphics/banim/assets/tsa/006A6DDC_Tsa_086A6DDC.tsa.lz" @ 0x6A6EBC - 0x6A6DDC
+	.incbin "./graphics/banim/assets/tsa/006A6DDC_Tsa_086A6DDC.map.bin.lz" @ 0x6A6EBC - 0x6A6DDC
 
 	.global Tsa_086A6EBC
 Tsa_086A6EBC:  @ 0x086A6EBC
-	.incbin "./graphics/banim/assets/tsa/006A6EBC_Tsa_086A6EBC.tsa.lz" @ 0x6A6F94 - 0x6A6EBC
+	.incbin "./graphics/banim/assets/tsa/006A6EBC_Tsa_086A6EBC.map.bin.lz" @ 0x6A6F94 - 0x6A6EBC
 
 	.global Tsa_086A6F94
 Tsa_086A6F94:  @ 0x086A6F94
-	.incbin "./graphics/banim/assets/tsa/006A6F94_Tsa_086A6F94.tsa.lz" @ 0x6A7058 - 0x6A6F94
+	.incbin "./graphics/banim/assets/tsa/006A6F94_Tsa_086A6F94.map.bin.lz" @ 0x6A7058 - 0x6A6F94
 
 	.global Tsa_086A7058
 Tsa_086A7058:  @ 0x086A7058
-	.incbin "./graphics/banim/assets/tsa/006A7058_Tsa_086A7058.tsa.lz" @ 0x6A7114 - 0x6A7058
+	.incbin "./graphics/banim/assets/tsa/006A7058_Tsa_086A7058.map.bin.lz" @ 0x6A7114 - 0x6A7058
 
 	.global Tsa_086A7114
 Tsa_086A7114:  @ 0x086A7114
-	.incbin "./graphics/banim/assets/tsa/006A7114_Tsa_086A7114.tsa.lz" @ 0x6A71B8 - 0x6A7114
+	.incbin "./graphics/banim/assets/tsa/006A7114_Tsa_086A7114.map.bin.lz" @ 0x6A71B8 - 0x6A7114
 
 	.global Tsa_086A71B8
 Tsa_086A71B8:  @ 0x086A71B8
-	.incbin "./graphics/banim/assets/tsa/006A71B8_Tsa_086A71B8.tsa.lz" @ 0x6A7258 - 0x6A71B8
+	.incbin "./graphics/banim/assets/tsa/006A71B8_Tsa_086A71B8.map.bin.lz" @ 0x6A7258 - 0x6A71B8
 
 	.global Img_086A7258
 Img_086A7258:  @ 0x086A7258
@@ -28638,67 +28638,67 @@ Pal_086B2A58:  @ 0x086B2A58
 
 	.global Tsa_086B2A78
 Tsa_086B2A78:  @ 0x086B2A78
-	.incbin "./graphics/banim/assets/tsa/006B2A78_Tsa_086B2A78.tsa.lz" @ 0x6B2B30 - 0x6B2A78
+	.incbin "./graphics/banim/assets/tsa/006B2A78_Tsa_086B2A78.map.bin.lz" @ 0x6B2B30 - 0x6B2A78
 
 	.global Tsa_086B2B30
 Tsa_086B2B30:  @ 0x086B2B30
-	.incbin "./graphics/banim/assets/tsa/006B2B30_Tsa_086B2B30.tsa.lz" @ 0x6B2BF4 - 0x6B2B30
+	.incbin "./graphics/banim/assets/tsa/006B2B30_Tsa_086B2B30.map.bin.lz" @ 0x6B2BF4 - 0x6B2B30
 
 	.global Tsa_086B2BF4
 Tsa_086B2BF4:  @ 0x086B2BF4
-	.incbin "./graphics/banim/assets/tsa/006B2BF4_Tsa_086B2BF4.tsa.lz" @ 0x6B2CCC - 0x6B2BF4
+	.incbin "./graphics/banim/assets/tsa/006B2BF4_Tsa_086B2BF4.map.bin.lz" @ 0x6B2CCC - 0x6B2BF4
 
 	.global Tsa_086B2CCC
 Tsa_086B2CCC:  @ 0x086B2CCC
-	.incbin "./graphics/banim/assets/tsa/006B2CCC_Tsa_086B2CCC.tsa.lz" @ 0x6B2DB8 - 0x6B2CCC
+	.incbin "./graphics/banim/assets/tsa/006B2CCC_Tsa_086B2CCC.map.bin.lz" @ 0x6B2DB8 - 0x6B2CCC
 
 	.global Tsa_086B2DB8
 Tsa_086B2DB8:  @ 0x086B2DB8
-	.incbin "./graphics/banim/assets/tsa/006B2DB8_Tsa_086B2DB8.tsa.lz" @ 0x6B2EBC - 0x6B2DB8
+	.incbin "./graphics/banim/assets/tsa/006B2DB8_Tsa_086B2DB8.map.bin.lz" @ 0x6B2EBC - 0x6B2DB8
 
 	.global Tsa_086B2EBC
 Tsa_086B2EBC:  @ 0x086B2EBC
-	.incbin "./graphics/banim/assets/tsa/006B2EBC_Tsa_086B2EBC.tsa.lz" @ 0x6B2FD8 - 0x6B2EBC
+	.incbin "./graphics/banim/assets/tsa/006B2EBC_Tsa_086B2EBC.map.bin.lz" @ 0x6B2FD8 - 0x6B2EBC
 
 	.global Tsa_086B2FD8
 Tsa_086B2FD8:  @ 0x086B2FD8
-	.incbin "./graphics/banim/assets/tsa/006B2FD8_Tsa_086B2FD8.tsa.lz" @ 0x6B3114 - 0x6B2FD8
+	.incbin "./graphics/banim/assets/tsa/006B2FD8_Tsa_086B2FD8.map.bin.lz" @ 0x6B3114 - 0x6B2FD8
 
 	.global Tsa_086B3114
 Tsa_086B3114:  @ 0x086B3114
-	.incbin "./graphics/banim/assets/tsa/006B3114_Tsa_086B3114.tsa.lz" @ 0x6B326C - 0x6B3114
+	.incbin "./graphics/banim/assets/tsa/006B3114_Tsa_086B3114.map.bin.lz" @ 0x6B326C - 0x6B3114
 
 	.global Tsa_086B326C
 Tsa_086B326C:  @ 0x086B326C
-	.incbin "./graphics/banim/assets/tsa/006B326C_Tsa_086B326C.tsa.lz" @ 0x6B33E0 - 0x6B326C
+	.incbin "./graphics/banim/assets/tsa/006B326C_Tsa_086B326C.map.bin.lz" @ 0x6B33E0 - 0x6B326C
 
 	.global Tsa_086B33E0
 Tsa_086B33E0:  @ 0x086B33E0
-	.incbin "./graphics/banim/assets/tsa/006B33E0_Tsa_086B33E0.tsa.lz" @ 0x6B3578 - 0x6B33E0
+	.incbin "./graphics/banim/assets/tsa/006B33E0_Tsa_086B33E0.map.bin.lz" @ 0x6B3578 - 0x6B33E0
 
 	.global Tsa_086B3578
 Tsa_086B3578:  @ 0x086B3578
-	.incbin "./graphics/banim/assets/tsa/006B3578_Tsa_086B3578.tsa.lz" @ 0x6B3734 - 0x6B3578
+	.incbin "./graphics/banim/assets/tsa/006B3578_Tsa_086B3578.map.bin.lz" @ 0x6B3734 - 0x6B3578
 
 	.global Tsa_086B3734
 Tsa_086B3734:  @ 0x086B3734
-	.incbin "./graphics/banim/assets/tsa/006B3734_Tsa_086B3734.tsa.lz" @ 0x6B38FC - 0x6B3734
+	.incbin "./graphics/banim/assets/tsa/006B3734_Tsa_086B3734.map.bin.lz" @ 0x6B38FC - 0x6B3734
 
 	.global Tsa_086B38FC
 Tsa_086B38FC:  @ 0x086B38FC
-	.incbin "./graphics/banim/assets/tsa/006B38FC_Tsa_086B38FC.tsa.lz" @ 0x6B3AEC - 0x6B38FC
+	.incbin "./graphics/banim/assets/tsa/006B38FC_Tsa_086B38FC.map.bin.lz" @ 0x6B3AEC - 0x6B38FC
 
 	.global Tsa_086B3AEC
 Tsa_086B3AEC:  @ 0x086B3AEC
-	.incbin "./graphics/banim/assets/tsa/006B3AEC_Tsa_086B3AEC.tsa.lz" @ 0x6B3CE8 - 0x6B3AEC
+	.incbin "./graphics/banim/assets/tsa/006B3AEC_Tsa_086B3AEC.map.bin.lz" @ 0x6B3CE8 - 0x6B3AEC
 
 	.global Tsa_086B3CE8
 Tsa_086B3CE8:  @ 0x086B3CE8
-	.incbin "./graphics/banim/assets/tsa/006B3CE8_Tsa_086B3CE8.tsa.lz" @ 0x6B3F00 - 0x6B3CE8
+	.incbin "./graphics/banim/assets/tsa/006B3CE8_Tsa_086B3CE8.map.bin.lz" @ 0x6B3F00 - 0x6B3CE8
 
 	.global Tsa_086B3F00
 Tsa_086B3F00:  @ 0x086B3F00
-	.incbin "./graphics/banim/assets/tsa/006B3F00_Tsa_086B3F00.tsa.lz" @ 0x6B411C - 0x6B3F00
+	.incbin "./graphics/banim/assets/tsa/006B3F00_Tsa_086B3F00.map.bin.lz" @ 0x6B411C - 0x6B3F00
 
 	.global Img_GleipnirBg_Fog
 Img_GleipnirBg_Fog:  @ 0x086B411C
@@ -28710,7 +28710,7 @@ Pal_GleipnirBg_Fog:  @ 0x086B52CC
 
 	.global Tsa_GleipnirBg_Fog
 Tsa_GleipnirBg_Fog:  @ 0x086B52EC
-	.incbin "./graphics/banim/assets/tsa/006B52EC_Tsa_GleipnirBg_Fog.tsa.lz" @ 0x6B5580 - 0x6B52EC
+	.incbin "./graphics/banim/assets/tsa/006B52EC_Tsa_GleipnirBg_Fog.map.bin.lz" @ 0x6B5580 - 0x6B52EC
 
 	.global Img_CrimsonEyeSprites
 Img_CrimsonEyeSprites:  @ 0x086B5580
@@ -28819,35 +28819,35 @@ Pal_efxCrimsonEyeBG:  @ 0x086B5EAC
 
 	.global Tsa_086B5ECC
 Tsa_086B5ECC:  @ 0x086B5ECC
-	.incbin "./graphics/banim/assets/tsa/006B5ECC_Tsa_086B5ECC.tsa.lz" @ 0x6B5F78 - 0x6B5ECC
+	.incbin "./graphics/banim/assets/tsa/006B5ECC_Tsa_086B5ECC.map.bin.lz" @ 0x6B5F78 - 0x6B5ECC
 
 	.global Tsa_086B5F78
 Tsa_086B5F78:  @ 0x086B5F78
-	.incbin "./graphics/banim/assets/tsa/006B5F78_Tsa_086B5F78.tsa.lz" @ 0x6B603C - 0x6B5F78
+	.incbin "./graphics/banim/assets/tsa/006B5F78_Tsa_086B5F78.map.bin.lz" @ 0x6B603C - 0x6B5F78
 
 	.global Tsa_086B603C
 Tsa_086B603C:  @ 0x086B603C
-	.incbin "./graphics/banim/assets/tsa/006B603C_Tsa_086B603C.tsa.lz" @ 0x6B6100 - 0x6B603C
+	.incbin "./graphics/banim/assets/tsa/006B603C_Tsa_086B603C.map.bin.lz" @ 0x6B6100 - 0x6B603C
 
 	.global Tsa_086B6100
 Tsa_086B6100:  @ 0x086B6100
-	.incbin "./graphics/banim/assets/tsa/006B6100_Tsa_086B6100.tsa.lz" @ 0x6B61C4 - 0x6B6100
+	.incbin "./graphics/banim/assets/tsa/006B6100_Tsa_086B6100.map.bin.lz" @ 0x6B61C4 - 0x6B6100
 
 	.global Tsa_086B61C4
 Tsa_086B61C4:  @ 0x086B61C4
-	.incbin "./graphics/banim/assets/tsa/006B61C4_Tsa_086B61C4.tsa.lz" @ 0x6B6288 - 0x6B61C4
+	.incbin "./graphics/banim/assets/tsa/006B61C4_Tsa_086B61C4.map.bin.lz" @ 0x6B6288 - 0x6B61C4
 
 	.global Tsa_086B6288
 Tsa_086B6288:  @ 0x086B6288
-	.incbin "./graphics/banim/assets/tsa/006B6288_Tsa_086B6288.tsa.lz" @ 0x6B634C - 0x6B6288
+	.incbin "./graphics/banim/assets/tsa/006B6288_Tsa_086B6288.map.bin.lz" @ 0x6B634C - 0x6B6288
 
 	.global Tsa_086B634C
 Tsa_086B634C:  @ 0x086B634C
-	.incbin "./graphics/banim/assets/tsa/006B634C_Tsa_086B634C.tsa.lz" @ 0x6B6410 - 0x6B634C
+	.incbin "./graphics/banim/assets/tsa/006B634C_Tsa_086B634C.map.bin.lz" @ 0x6B6410 - 0x6B634C
 
 	.global Tsa_086B6410
 Tsa_086B6410:  @ 0x086B6410
-	.incbin "./graphics/banim/assets/tsa/006B6410_Tsa_086B6410.tsa.lz" @ 0x6B64BC - 0x6B6410
+	.incbin "./graphics/banim/assets/tsa/006B6410_Tsa_086B6410.map.bin.lz" @ 0x6B64BC - 0x6B6410
 
 	.global Img_086B64BC
 Img_086B64BC:  @ 0x086B64BC
@@ -28875,19 +28875,19 @@ Pal_efxCrimsonEyeBGFinish1:  @ 0x086BC824
 
 	.global Tsa_086BC884
 Tsa_086BC884:  @ 0x086BC884
-	.incbin "./graphics/banim/assets/tsa/006BC884_Tsa_086BC884.tsa.lz" @ 0x6BCAF8 - 0x6BC884
+	.incbin "./graphics/banim/assets/tsa/006BC884_Tsa_086BC884.map.bin.lz" @ 0x6BCAF8 - 0x6BC884
 
 	.global Tsa_086BCAF8
 Tsa_086BCAF8:  @ 0x086BCAF8
-	.incbin "./graphics/banim/assets/tsa/006BCAF8_Tsa_086BCAF8.tsa.lz" @ 0x6BCD70 - 0x6BCAF8
+	.incbin "./graphics/banim/assets/tsa/006BCAF8_Tsa_086BCAF8.map.bin.lz" @ 0x6BCD70 - 0x6BCAF8
 
 	.global Tsa_086BCD70
 Tsa_086BCD70:  @ 0x086BCD70
-	.incbin "./graphics/banim/assets/tsa/006BCD70_Tsa_086BCD70.tsa.lz" @ 0x6BCFE8 - 0x6BCD70
+	.incbin "./graphics/banim/assets/tsa/006BCD70_Tsa_086BCD70.map.bin.lz" @ 0x6BCFE8 - 0x6BCD70
 
 	.global Tsa_086BCFE8
 Tsa_086BCFE8:  @ 0x086BCFE8
-	.incbin "./graphics/banim/assets/tsa/006BCFE8_Tsa_086BCFE8.tsa.lz" @ 0x6BD260 - 0x6BCFE8
+	.incbin "./graphics/banim/assets/tsa/006BCFE8_Tsa_086BCFE8.map.bin.lz" @ 0x6BD260 - 0x6BCFE8
 
 	.global Img_StoneSprites
 Img_StoneSprites:  @ 0x086BD260
@@ -29158,79 +29158,79 @@ Pal_StoneBg_086C794C:  @ 0x086C794C
 
 	.global Tsa_086C796C
 Tsa_086C796C:  @ 0x086C796C
-	.incbin "./graphics/banim/assets/tsa/006C796C_Tsa_086C796C.tsa.lz" @ 0x6C7A2C - 0x6C796C
+	.incbin "./graphics/banim/assets/tsa/006C796C_Tsa_086C796C.map.bin.lz" @ 0x6C7A2C - 0x6C796C
 
 	.global Tsa_086C7A2C
 Tsa_086C7A2C:  @ 0x086C7A2C
-	.incbin "./graphics/banim/assets/tsa/006C7A2C_Tsa_086C7A2C.tsa.lz" @ 0x6C7AF8 - 0x6C7A2C
+	.incbin "./graphics/banim/assets/tsa/006C7A2C_Tsa_086C7A2C.map.bin.lz" @ 0x6C7AF8 - 0x6C7A2C
 
 	.global Tsa_086C7AF8
 Tsa_086C7AF8:  @ 0x086C7AF8
-	.incbin "./graphics/banim/assets/tsa/006C7AF8_Tsa_086C7AF8.tsa.lz" @ 0x6C7BD0 - 0x6C7AF8
+	.incbin "./graphics/banim/assets/tsa/006C7AF8_Tsa_086C7AF8.map.bin.lz" @ 0x6C7BD0 - 0x6C7AF8
 
 	.global Tsa_086C7BD0
 Tsa_086C7BD0:  @ 0x086C7BD0
-	.incbin "./graphics/banim/assets/tsa/006C7BD0_Tsa_086C7BD0.tsa.lz" @ 0x6C7CBC - 0x6C7BD0
+	.incbin "./graphics/banim/assets/tsa/006C7BD0_Tsa_086C7BD0.map.bin.lz" @ 0x6C7CBC - 0x6C7BD0
 
 	.global Tsa_086C7CBC
 Tsa_086C7CBC:  @ 0x086C7CBC
-	.incbin "./graphics/banim/assets/tsa/006C7CBC_Tsa_086C7CBC.tsa.lz" @ 0x6C7DC0 - 0x6C7CBC
+	.incbin "./graphics/banim/assets/tsa/006C7CBC_Tsa_086C7CBC.map.bin.lz" @ 0x6C7DC0 - 0x6C7CBC
 
 	.global Tsa_086C7DC0
 Tsa_086C7DC0:  @ 0x086C7DC0
-	.incbin "./graphics/banim/assets/tsa/006C7DC0_Tsa_086C7DC0.tsa.lz" @ 0x6C7ED4 - 0x6C7DC0
+	.incbin "./graphics/banim/assets/tsa/006C7DC0_Tsa_086C7DC0.map.bin.lz" @ 0x6C7ED4 - 0x6C7DC0
 
 	.global Tsa_086C7ED4
 Tsa_086C7ED4:  @ 0x086C7ED4
-	.incbin "./graphics/banim/assets/tsa/006C7ED4_Tsa_086C7ED4.tsa.lz" @ 0x6C7FFC - 0x6C7ED4
+	.incbin "./graphics/banim/assets/tsa/006C7ED4_Tsa_086C7ED4.map.bin.lz" @ 0x6C7FFC - 0x6C7ED4
 
 	.global Tsa_086C7FFC
 Tsa_086C7FFC:  @ 0x086C7FFC
-	.incbin "./graphics/banim/assets/tsa/006C7FFC_Tsa_086C7FFC.tsa.lz" @ 0x6C8138 - 0x6C7FFC
+	.incbin "./graphics/banim/assets/tsa/006C7FFC_Tsa_086C7FFC.map.bin.lz" @ 0x6C8138 - 0x6C7FFC
 
 	.global Tsa_086C8138
 Tsa_086C8138:  @ 0x086C8138
-	.incbin "./graphics/banim/assets/tsa/006C8138_Tsa_086C8138.tsa.lz" @ 0x6C828C - 0x6C8138
+	.incbin "./graphics/banim/assets/tsa/006C8138_Tsa_086C8138.map.bin.lz" @ 0x6C828C - 0x6C8138
 
 	.global Tsa_086C828C
 Tsa_086C828C:  @ 0x086C828C
-	.incbin "./graphics/banim/assets/tsa/006C828C_Tsa_086C828C.tsa.lz" @ 0x6C8404 - 0x6C828C
+	.incbin "./graphics/banim/assets/tsa/006C828C_Tsa_086C828C.map.bin.lz" @ 0x6C8404 - 0x6C828C
 
 	.global Tsa_086C8404
 Tsa_086C8404:  @ 0x086C8404
-	.incbin "./graphics/banim/assets/tsa/006C8404_Tsa_086C8404.tsa.lz" @ 0x6C8570 - 0x6C8404
+	.incbin "./graphics/banim/assets/tsa/006C8404_Tsa_086C8404.map.bin.lz" @ 0x6C8570 - 0x6C8404
 
 	.global Tsa_086C8570
 Tsa_086C8570:  @ 0x086C8570
-	.incbin "./graphics/banim/assets/tsa/006C8570_Tsa_086C8570.tsa.lz" @ 0x6C86E4 - 0x6C8570
+	.incbin "./graphics/banim/assets/tsa/006C8570_Tsa_086C8570.map.bin.lz" @ 0x6C86E4 - 0x6C8570
 
 	.global Tsa_086C86E4
 Tsa_086C86E4:  @ 0x086C86E4
-	.incbin "./graphics/banim/assets/tsa/006C86E4_Tsa_086C86E4.tsa.lz" @ 0x6C8860 - 0x6C86E4
+	.incbin "./graphics/banim/assets/tsa/006C86E4_Tsa_086C86E4.map.bin.lz" @ 0x6C8860 - 0x6C86E4
 
 	.global Tsa_086C8860
 Tsa_086C8860:  @ 0x086C8860
-	.incbin "./graphics/banim/assets/tsa/006C8860_Tsa_086C8860.tsa.lz" @ 0x6C89EC - 0x6C8860
+	.incbin "./graphics/banim/assets/tsa/006C8860_Tsa_086C8860.map.bin.lz" @ 0x6C89EC - 0x6C8860
 
 	.global Tsa_086C89EC
 Tsa_086C89EC:  @ 0x086C89EC
-	.incbin "./graphics/banim/assets/tsa/006C89EC_Tsa_086C89EC.tsa.lz" @ 0x6C8B30 - 0x6C89EC
+	.incbin "./graphics/banim/assets/tsa/006C89EC_Tsa_086C89EC.map.bin.lz" @ 0x6C8B30 - 0x6C89EC
 
 	.global Tsa_086C8B30
 Tsa_086C8B30:  @ 0x086C8B30
-	.incbin "./graphics/banim/assets/tsa/006C8B30_Tsa_086C8B30.tsa.lz" @ 0x6C8C84 - 0x6C8B30
+	.incbin "./graphics/banim/assets/tsa/006C8B30_Tsa_086C8B30.map.bin.lz" @ 0x6C8C84 - 0x6C8B30
 
 	.global Tsa_086C8C84
 Tsa_086C8C84:  @ 0x086C8C84
-	.incbin "./graphics/banim/assets/tsa/006C8C84_Tsa_086C8C84.tsa.lz" @ 0x6C8DE8 - 0x6C8C84
+	.incbin "./graphics/banim/assets/tsa/006C8C84_Tsa_086C8C84.map.bin.lz" @ 0x6C8DE8 - 0x6C8C84
 
 	.global Tsa_086C8DE8
 Tsa_086C8DE8:  @ 0x086C8DE8
-	.incbin "./graphics/banim/assets/tsa/006C8DE8_Tsa_086C8DE8.tsa.lz" @ 0x6C8F4C - 0x6C8DE8
+	.incbin "./graphics/banim/assets/tsa/006C8DE8_Tsa_086C8DE8.map.bin.lz" @ 0x6C8F4C - 0x6C8DE8
 
 	.global Tsa_086C8F4C
 Tsa_086C8F4C:  @ 0x086C8F4C
-	.incbin "./graphics/banim/assets/tsa/006C8F4C_Tsa_086C8F4C.tsa.lz" @ 0x6C90A4 - 0x6C8F4C
+	.incbin "./graphics/banim/assets/tsa/006C8F4C_Tsa_086C8F4C.map.bin.lz" @ 0x6C90A4 - 0x6C8F4C
 
 	.global Img_086C90A4
 Img_086C90A4:  @ 0x086C90A4
@@ -29552,83 +29552,83 @@ Pal_086D36B4:  @ 0x086D36B4
 
 	.global Tsa_086D36D4
 Tsa_086D36D4:  @ 0x086D36D4
-	.incbin "./graphics/banim/assets/tsa/006D36D4_Tsa_086D36D4.tsa.lz" @ 0x6D37B4 - 0x6D36D4
+	.incbin "./graphics/banim/assets/tsa/006D36D4_Tsa_086D36D4.map.bin.lz" @ 0x6D37B4 - 0x6D36D4
 
 	.global Tsa_086D37B4
 Tsa_086D37B4:  @ 0x086D37B4
-	.incbin "./graphics/banim/assets/tsa/006D37B4_Tsa_086D37B4.tsa.lz" @ 0x6D3890 - 0x6D37B4
+	.incbin "./graphics/banim/assets/tsa/006D37B4_Tsa_086D37B4.map.bin.lz" @ 0x6D3890 - 0x6D37B4
 
 	.global Tsa_086D3890
 Tsa_086D3890:  @ 0x086D3890
-	.incbin "./graphics/banim/assets/tsa/006D3890_Tsa_086D3890.tsa.lz" @ 0x6D3978 - 0x6D3890
+	.incbin "./graphics/banim/assets/tsa/006D3890_Tsa_086D3890.map.bin.lz" @ 0x6D3978 - 0x6D3890
 
 	.global Tsa_086D3978
 Tsa_086D3978:  @ 0x086D3978
-	.incbin "./graphics/banim/assets/tsa/006D3978_Tsa_086D3978.tsa.lz" @ 0x6D3A7C - 0x6D3978
+	.incbin "./graphics/banim/assets/tsa/006D3978_Tsa_086D3978.map.bin.lz" @ 0x6D3A7C - 0x6D3978
 
 	.global Tsa_086D3A7C
 Tsa_086D3A7C:  @ 0x086D3A7C
-	.incbin "./graphics/banim/assets/tsa/006D3A7C_Tsa_086D3A7C.tsa.lz" @ 0x6D3B78 - 0x6D3A7C
+	.incbin "./graphics/banim/assets/tsa/006D3A7C_Tsa_086D3A7C.map.bin.lz" @ 0x6D3B78 - 0x6D3A7C
 
 	.global Tsa_086D3B78
 Tsa_086D3B78:  @ 0x086D3B78
-	.incbin "./graphics/banim/assets/tsa/006D3B78_Tsa_086D3B78.tsa.lz" @ 0x6D3C84 - 0x6D3B78
+	.incbin "./graphics/banim/assets/tsa/006D3B78_Tsa_086D3B78.map.bin.lz" @ 0x6D3C84 - 0x6D3B78
 
 	.global Tsa_086D3C84
 Tsa_086D3C84:  @ 0x086D3C84
-	.incbin "./graphics/banim/assets/tsa/006D3C84_Tsa_086D3C84.tsa.lz" @ 0x6D3D8C - 0x6D3C84
+	.incbin "./graphics/banim/assets/tsa/006D3C84_Tsa_086D3C84.map.bin.lz" @ 0x6D3D8C - 0x6D3C84
 
 	.global Tsa_086D3D8C
 Tsa_086D3D8C:  @ 0x086D3D8C
-	.incbin "./graphics/banim/assets/tsa/006D3D8C_Tsa_086D3D8C.tsa.lz" @ 0x6D3E94 - 0x6D3D8C
+	.incbin "./graphics/banim/assets/tsa/006D3D8C_Tsa_086D3D8C.map.bin.lz" @ 0x6D3E94 - 0x6D3D8C
 
 	.global Tsa_086D3E94
 Tsa_086D3E94:  @ 0x086D3E94
-	.incbin "./graphics/banim/assets/tsa/006D3E94_Tsa_086D3E94.tsa.lz" @ 0x6D3FBC - 0x6D3E94
+	.incbin "./graphics/banim/assets/tsa/006D3E94_Tsa_086D3E94.map.bin.lz" @ 0x6D3FBC - 0x6D3E94
 
 	.global Tsa_086D3FBC
 Tsa_086D3FBC:  @ 0x086D3FBC
-	.incbin "./graphics/banim/assets/tsa/006D3FBC_Tsa_086D3FBC.tsa.lz" @ 0x6D40CC - 0x6D3FBC
+	.incbin "./graphics/banim/assets/tsa/006D3FBC_Tsa_086D3FBC.map.bin.lz" @ 0x6D40CC - 0x6D3FBC
 
 	.global Tsa_086D40CC
 Tsa_086D40CC:  @ 0x086D40CC
-	.incbin "./graphics/banim/assets/tsa/006D40CC_Tsa_086D40CC.tsa.lz" @ 0x6D41F4 - 0x6D40CC
+	.incbin "./graphics/banim/assets/tsa/006D40CC_Tsa_086D40CC.map.bin.lz" @ 0x6D41F4 - 0x6D40CC
 
 	.global Tsa_086D41F4
 Tsa_086D41F4:  @ 0x086D41F4
-	.incbin "./graphics/banim/assets/tsa/006D41F4_Tsa_086D41F4.tsa.lz" @ 0x6D4318 - 0x6D41F4
+	.incbin "./graphics/banim/assets/tsa/006D41F4_Tsa_086D41F4.map.bin.lz" @ 0x6D4318 - 0x6D41F4
 
 	.global Tsa_086D4318
 Tsa_086D4318:  @ 0x086D4318
-	.incbin "./graphics/banim/assets/tsa/006D4318_Tsa_086D4318.tsa.lz" @ 0x6D4428 - 0x6D4318
+	.incbin "./graphics/banim/assets/tsa/006D4318_Tsa_086D4318.map.bin.lz" @ 0x6D4428 - 0x6D4318
 
 	.global Tsa_086D4428
 Tsa_086D4428:  @ 0x086D4428
-	.incbin "./graphics/banim/assets/tsa/006D4428_Tsa_086D4428.tsa.lz" @ 0x6D454C - 0x6D4428
+	.incbin "./graphics/banim/assets/tsa/006D4428_Tsa_086D4428.map.bin.lz" @ 0x6D454C - 0x6D4428
 
 	.global Tsa_086D454C
 Tsa_086D454C:  @ 0x086D454C
-	.incbin "./graphics/banim/assets/tsa/006D454C_Tsa_086D454C.tsa.lz" @ 0x6D466C - 0x6D454C
+	.incbin "./graphics/banim/assets/tsa/006D454C_Tsa_086D454C.map.bin.lz" @ 0x6D466C - 0x6D454C
 
 	.global Tsa_086D466C
 Tsa_086D466C:  @ 0x086D466C
-	.incbin "./graphics/banim/assets/tsa/006D466C_Tsa_086D466C.tsa.lz" @ 0x6D4788 - 0x6D466C
+	.incbin "./graphics/banim/assets/tsa/006D466C_Tsa_086D466C.map.bin.lz" @ 0x6D4788 - 0x6D466C
 
 	.global Tsa_086D4788
 Tsa_086D4788:  @ 0x086D4788
-	.incbin "./graphics/banim/assets/tsa/006D4788_Tsa_086D4788.tsa.lz" @ 0x6D489C - 0x6D4788
+	.incbin "./graphics/banim/assets/tsa/006D4788_Tsa_086D4788.map.bin.lz" @ 0x6D489C - 0x6D4788
 
 	.global Tsa_086D489C
 Tsa_086D489C:  @ 0x086D489C
-	.incbin "./graphics/banim/assets/tsa/006D489C_Tsa_086D489C.tsa.lz" @ 0x6D49D0 - 0x6D489C
+	.incbin "./graphics/banim/assets/tsa/006D489C_Tsa_086D489C.map.bin.lz" @ 0x6D49D0 - 0x6D489C
 
 	.global Tsa_086D49D0
 Tsa_086D49D0:  @ 0x086D49D0
-	.incbin "./graphics/banim/assets/tsa/006D49D0_Tsa_086D49D0.tsa.lz" @ 0x6D4ADC - 0x6D49D0
+	.incbin "./graphics/banim/assets/tsa/006D49D0_Tsa_086D49D0.map.bin.lz" @ 0x6D4ADC - 0x6D49D0
 
 	.global Tsa_086D4ADC
 Tsa_086D4ADC:  @ 0x086D4ADC
-	.incbin "./graphics/banim/assets/tsa/006D4ADC_Tsa_086D4ADC.tsa.lz" @ 0x6D4C08 - 0x6D4ADC
+	.incbin "./graphics/banim/assets/tsa/006D4ADC_Tsa_086D4ADC.map.bin.lz" @ 0x6D4C08 - 0x6D4ADC
 
 	.global Img_086D4C08
 Img_086D4C08:  @ 0x086D4C08
@@ -29680,43 +29680,43 @@ Pal_086D8B34:  @ 0x086D8B34
 
 	.global Tsa_086D8B54
 Tsa_086D8B54:  @ 0x086D8B54
-	.incbin "./graphics/banim/assets/tsa/006D8B54_Tsa_086D8B54.tsa.lz" @ 0x6D8C64 - 0x6D8B54
+	.incbin "./graphics/banim/assets/tsa/006D8B54_Tsa_086D8B54.map.bin.lz" @ 0x6D8C64 - 0x6D8B54
 
 	.global Tsa_086D8C64
 Tsa_086D8C64:  @ 0x086D8C64
-	.incbin "./graphics/banim/assets/tsa/006D8C64_Tsa_086D8C64.tsa.lz" @ 0x6D8DEC - 0x6D8C64
+	.incbin "./graphics/banim/assets/tsa/006D8C64_Tsa_086D8C64.map.bin.lz" @ 0x6D8DEC - 0x6D8C64
 
 	.global Tsa_086D8DEC
 Tsa_086D8DEC:  @ 0x086D8DEC
-	.incbin "./graphics/banim/assets/tsa/006D8DEC_Tsa_086D8DEC.tsa.lz" @ 0x6D8FA4 - 0x6D8DEC
+	.incbin "./graphics/banim/assets/tsa/006D8DEC_Tsa_086D8DEC.map.bin.lz" @ 0x6D8FA4 - 0x6D8DEC
 
 	.global Tsa_086D8FA4
 Tsa_086D8FA4:  @ 0x086D8FA4
-	.incbin "./graphics/banim/assets/tsa/006D8FA4_Tsa_086D8FA4.tsa.lz" @ 0x6D9170 - 0x6D8FA4
+	.incbin "./graphics/banim/assets/tsa/006D8FA4_Tsa_086D8FA4.map.bin.lz" @ 0x6D9170 - 0x6D8FA4
 
 	.global Tsa_086D9170
 Tsa_086D9170:  @ 0x086D9170
-	.incbin "./graphics/banim/assets/tsa/006D9170_Tsa_086D9170.tsa.lz" @ 0x6D9354 - 0x6D9170
+	.incbin "./graphics/banim/assets/tsa/006D9170_Tsa_086D9170.map.bin.lz" @ 0x6D9354 - 0x6D9170
 
 	.global Tsa_086D9354
 Tsa_086D9354:  @ 0x086D9354
-	.incbin "./graphics/banim/assets/tsa/006D9354_Tsa_086D9354.tsa.lz" @ 0x6D953C - 0x6D9354
+	.incbin "./graphics/banim/assets/tsa/006D9354_Tsa_086D9354.map.bin.lz" @ 0x6D953C - 0x6D9354
 
 	.global Tsa_086D953C
 Tsa_086D953C:  @ 0x086D953C
-	.incbin "./graphics/banim/assets/tsa/006D953C_Tsa_086D953C.tsa.lz" @ 0x6D96F0 - 0x6D953C
+	.incbin "./graphics/banim/assets/tsa/006D953C_Tsa_086D953C.map.bin.lz" @ 0x6D96F0 - 0x6D953C
 
 	.global Tsa_086D96F0
 Tsa_086D96F0:  @ 0x086D96F0
-	.incbin "./graphics/banim/assets/tsa/006D96F0_Tsa_086D96F0.tsa.lz" @ 0x6D98A8 - 0x6D96F0
+	.incbin "./graphics/banim/assets/tsa/006D96F0_Tsa_086D96F0.map.bin.lz" @ 0x6D98A8 - 0x6D96F0
 
 	.global Tsa_086D98A8
 Tsa_086D98A8:  @ 0x086D98A8
-	.incbin "./graphics/banim/assets/tsa/006D98A8_Tsa_086D98A8.tsa.lz" @ 0x6D9A74 - 0x6D98A8
+	.incbin "./graphics/banim/assets/tsa/006D98A8_Tsa_086D98A8.map.bin.lz" @ 0x6D9A74 - 0x6D98A8
 
 	.global Tsa_086D9A74
 Tsa_086D9A74:  @ 0x086D9A74
-	.incbin "./graphics/banim/assets/tsa/006D9A74_Tsa_086D9A74.tsa.lz" @ 0x6D9C40 - 0x6D9A74
+	.incbin "./graphics/banim/assets/tsa/006D9A74_Tsa_086D9A74.map.bin.lz" @ 0x6D9C40 - 0x6D9A74
 
 	.global Img_086D9C40
 Img_086D9C40:  @ 0x086D9C40
@@ -30132,67 +30132,67 @@ Pal_086E64C0:  @ 0x086E64C0
 
 	.global Tsa_086E64E0
 Tsa_086E64E0:  @ 0x086E64E0
-	.incbin "./graphics/banim/assets/tsa/006E64E0_Tsa_086E64E0.tsa.lz" @ 0x6E65EC - 0x6E64E0
+	.incbin "./graphics/banim/assets/tsa/006E64E0_Tsa_086E64E0.map.bin.lz" @ 0x6E65EC - 0x6E64E0
 
 	.global Tsa_086E65EC
 Tsa_086E65EC:  @ 0x086E65EC
-	.incbin "./graphics/banim/assets/tsa/006E65EC_Tsa_086E65EC.tsa.lz" @ 0x6E671C - 0x6E65EC
+	.incbin "./graphics/banim/assets/tsa/006E65EC_Tsa_086E65EC.map.bin.lz" @ 0x6E671C - 0x6E65EC
 
 	.global Tsa_086E671C
 Tsa_086E671C:  @ 0x086E671C
-	.incbin "./graphics/banim/assets/tsa/006E671C_Tsa_086E671C.tsa.lz" @ 0x6E6860 - 0x6E671C
+	.incbin "./graphics/banim/assets/tsa/006E671C_Tsa_086E671C.map.bin.lz" @ 0x6E6860 - 0x6E671C
 
 	.global Tsa_086E6860
 Tsa_086E6860:  @ 0x086E6860
-	.incbin "./graphics/banim/assets/tsa/006E6860_Tsa_086E6860.tsa.lz" @ 0x6E69C8 - 0x6E6860
+	.incbin "./graphics/banim/assets/tsa/006E6860_Tsa_086E6860.map.bin.lz" @ 0x6E69C8 - 0x6E6860
 
 	.global Tsa_086E69C8
 Tsa_086E69C8:  @ 0x086E69C8
-	.incbin "./graphics/banim/assets/tsa/006E69C8_Tsa_086E69C8.tsa.lz" @ 0x6E6B38 - 0x6E69C8
+	.incbin "./graphics/banim/assets/tsa/006E69C8_Tsa_086E69C8.map.bin.lz" @ 0x6E6B38 - 0x6E69C8
 
 	.global Tsa_086E6B38
 Tsa_086E6B38:  @ 0x086E6B38
-	.incbin "./graphics/banim/assets/tsa/006E6B38_Tsa_086E6B38.tsa.lz" @ 0x6E6CC4 - 0x6E6B38
+	.incbin "./graphics/banim/assets/tsa/006E6B38_Tsa_086E6B38.map.bin.lz" @ 0x6E6CC4 - 0x6E6B38
 
 	.global Tsa_086E6CC4
 Tsa_086E6CC4:  @ 0x086E6CC4
-	.incbin "./graphics/banim/assets/tsa/006E6CC4_Tsa_086E6CC4.tsa.lz" @ 0x6E6E60 - 0x6E6CC4
+	.incbin "./graphics/banim/assets/tsa/006E6CC4_Tsa_086E6CC4.map.bin.lz" @ 0x6E6E60 - 0x6E6CC4
 
 	.global Tsa_086E6E60
 Tsa_086E6E60:  @ 0x086E6E60
-	.incbin "./graphics/banim/assets/tsa/006E6E60_Tsa_086E6E60.tsa.lz" @ 0x6E700C - 0x6E6E60
+	.incbin "./graphics/banim/assets/tsa/006E6E60_Tsa_086E6E60.map.bin.lz" @ 0x6E700C - 0x6E6E60
 
 	.global Tsa_086E700C
 Tsa_086E700C:  @ 0x086E700C
-	.incbin "./graphics/banim/assets/tsa/006E700C_Tsa_086E700C.tsa.lz" @ 0x6E71BC - 0x6E700C
+	.incbin "./graphics/banim/assets/tsa/006E700C_Tsa_086E700C.map.bin.lz" @ 0x6E71BC - 0x6E700C
 
 	.global Tsa_086E71BC
 Tsa_086E71BC:  @ 0x086E71BC
-	.incbin "./graphics/banim/assets/tsa/006E71BC_Tsa_086E71BC.tsa.lz" @ 0x6E7380 - 0x6E71BC
+	.incbin "./graphics/banim/assets/tsa/006E71BC_Tsa_086E71BC.map.bin.lz" @ 0x6E7380 - 0x6E71BC
 
 	.global Tsa_086E7380
 Tsa_086E7380:  @ 0x086E7380
-	.incbin "./graphics/banim/assets/tsa/006E7380_Tsa_086E7380.tsa.lz" @ 0x6E7550 - 0x6E7380
+	.incbin "./graphics/banim/assets/tsa/006E7380_Tsa_086E7380.map.bin.lz" @ 0x6E7550 - 0x6E7380
 
 	.global Tsa_086E7550
 Tsa_086E7550:  @ 0x086E7550
-	.incbin "./graphics/banim/assets/tsa/006E7550_Tsa_086E7550.tsa.lz" @ 0x6E7730 - 0x6E7550
+	.incbin "./graphics/banim/assets/tsa/006E7550_Tsa_086E7550.map.bin.lz" @ 0x6E7730 - 0x6E7550
 
 	.global Tsa_086E7730
 Tsa_086E7730:  @ 0x086E7730
-	.incbin "./graphics/banim/assets/tsa/006E7730_Tsa_086E7730.tsa.lz" @ 0x6E7914 - 0x6E7730
+	.incbin "./graphics/banim/assets/tsa/006E7730_Tsa_086E7730.map.bin.lz" @ 0x6E7914 - 0x6E7730
 
 	.global Tsa_086E7914
 Tsa_086E7914:  @ 0x086E7914
-	.incbin "./graphics/banim/assets/tsa/006E7914_Tsa_086E7914.tsa.lz" @ 0x6E7AFC - 0x6E7914
+	.incbin "./graphics/banim/assets/tsa/006E7914_Tsa_086E7914.map.bin.lz" @ 0x6E7AFC - 0x6E7914
 
 	.global Tsa_086E7AFC
 Tsa_086E7AFC:  @ 0x086E7AFC
-	.incbin "./graphics/banim/assets/tsa/006E7AFC_Tsa_086E7AFC.tsa.lz" @ 0x6E7CD8 - 0x6E7AFC
+	.incbin "./graphics/banim/assets/tsa/006E7AFC_Tsa_086E7AFC.map.bin.lz" @ 0x6E7CD8 - 0x6E7AFC
 
 	.global Tsa_086E7CD8
 Tsa_086E7CD8:  @ 0x086E7CD8
-	.incbin "./graphics/banim/assets/tsa/006E7CD8_Tsa_086E7CD8.tsa.lz" @ 0x6E7EB0 - 0x6E7CD8
+	.incbin "./graphics/banim/assets/tsa/006E7CD8_Tsa_086E7CD8.map.bin.lz" @ 0x6E7EB0 - 0x6E7CD8
 
 	.global Img_086E7EB0
 Img_086E7EB0:  @ 0x086E7EB0
@@ -30204,39 +30204,39 @@ Pal_086E91B8:  @ 0x086E91B8
 
 	.global Tsa_086E91D8
 Tsa_086E91D8:  @ 0x086E91D8
-	.incbin "./graphics/banim/assets/tsa/006E91D8_Tsa_086E91D8.tsa.lz" @ 0x6E927C - 0x6E91D8
+	.incbin "./graphics/banim/assets/tsa/006E91D8_Tsa_086E91D8.map.bin.lz" @ 0x6E927C - 0x6E91D8
 
 	.global Tsa_086E927C
 Tsa_086E927C:  @ 0x086E927C
-	.incbin "./graphics/banim/assets/tsa/006E927C_Tsa_086E927C.tsa.lz" @ 0x6E9358 - 0x6E927C
+	.incbin "./graphics/banim/assets/tsa/006E927C_Tsa_086E927C.map.bin.lz" @ 0x6E9358 - 0x6E927C
 
 	.global Tsa_086E9358
 Tsa_086E9358:  @ 0x086E9358
-	.incbin "./graphics/banim/assets/tsa/006E9358_Tsa_086E9358.tsa.lz" @ 0x6E9474 - 0x6E9358
+	.incbin "./graphics/banim/assets/tsa/006E9358_Tsa_086E9358.map.bin.lz" @ 0x6E9474 - 0x6E9358
 
 	.global Tsa_086E9474
 Tsa_086E9474:  @ 0x086E9474
-	.incbin "./graphics/banim/assets/tsa/006E9474_Tsa_086E9474.tsa.lz" @ 0x6E95D4 - 0x6E9474
+	.incbin "./graphics/banim/assets/tsa/006E9474_Tsa_086E9474.map.bin.lz" @ 0x6E95D4 - 0x6E9474
 
 	.global Tsa_086E95D4
 Tsa_086E95D4:  @ 0x086E95D4
-	.incbin "./graphics/banim/assets/tsa/006E95D4_Tsa_086E95D4.tsa.lz" @ 0x6E9758 - 0x6E95D4
+	.incbin "./graphics/banim/assets/tsa/006E95D4_Tsa_086E95D4.map.bin.lz" @ 0x6E9758 - 0x6E95D4
 
 	.global Tsa_086E9758
 Tsa_086E9758:  @ 0x086E9758
-	.incbin "./graphics/banim/assets/tsa/006E9758_Tsa_086E9758.tsa.lz" @ 0x6E98E4 - 0x6E9758
+	.incbin "./graphics/banim/assets/tsa/006E9758_Tsa_086E9758.map.bin.lz" @ 0x6E98E4 - 0x6E9758
 
 	.global Tsa_086E98E4
 Tsa_086E98E4:  @ 0x086E98E4
-	.incbin "./graphics/banim/assets/tsa/006E98E4_Tsa_086E98E4.tsa.lz" @ 0x6E9A64 - 0x6E98E4
+	.incbin "./graphics/banim/assets/tsa/006E98E4_Tsa_086E98E4.map.bin.lz" @ 0x6E9A64 - 0x6E98E4
 
 	.global Tsa_086E9A64
 Tsa_086E9A64:  @ 0x086E9A64
-	.incbin "./graphics/banim/assets/tsa/006E9A64_Tsa_086E9A64.tsa.lz" @ 0x6E9BD4 - 0x6E9A64
+	.incbin "./graphics/banim/assets/tsa/006E9A64_Tsa_086E9A64.map.bin.lz" @ 0x6E9BD4 - 0x6E9A64
 
 	.global Tsa_086E9BD4
 Tsa_086E9BD4:  @ 0x086E9BD4
-	.incbin "./graphics/banim/assets/tsa/006E9BD4_Tsa_086E9BD4.tsa.lz" @ 0x6E9D40 - 0x6E9BD4
+	.incbin "./graphics/banim/assets/tsa/006E9BD4_Tsa_086E9BD4.map.bin.lz" @ 0x6E9D40 - 0x6E9BD4
 
 	.global Img_086E9D40
 Img_086E9D40:  @ 0x086E9D40
@@ -30882,47 +30882,47 @@ Pal_086F0324:  @ 0x086F0324
 
 	.global Tsa_086F0344
 Tsa_086F0344:  @ 0x086F0344
-	.incbin "./graphics/banim/assets/tsa/006F0344_Tsa_086F0344.tsa.lz" @ 0x6F03EC - 0x6F0344
+	.incbin "./graphics/banim/assets/tsa/006F0344_Tsa_086F0344.map.bin.lz" @ 0x6F03EC - 0x6F0344
 
 	.global Tsa_086F03EC
 Tsa_086F03EC:  @ 0x086F03EC
-	.incbin "./graphics/banim/assets/tsa/006F03EC_Tsa_086F03EC.tsa.lz" @ 0x6F04B8 - 0x6F03EC
+	.incbin "./graphics/banim/assets/tsa/006F03EC_Tsa_086F03EC.map.bin.lz" @ 0x6F04B8 - 0x6F03EC
 
 	.global Tsa_086F04B8
 Tsa_086F04B8:  @ 0x086F04B8
-	.incbin "./graphics/banim/assets/tsa/006F04B8_Tsa_086F04B8.tsa.lz" @ 0x6F05A0 - 0x6F04B8
+	.incbin "./graphics/banim/assets/tsa/006F04B8_Tsa_086F04B8.map.bin.lz" @ 0x6F05A0 - 0x6F04B8
 
 	.global Tsa_086F05A0
 Tsa_086F05A0:  @ 0x086F05A0
-	.incbin "./graphics/banim/assets/tsa/006F05A0_Tsa_086F05A0.tsa.lz" @ 0x6F069C - 0x6F05A0
+	.incbin "./graphics/banim/assets/tsa/006F05A0_Tsa_086F05A0.map.bin.lz" @ 0x6F069C - 0x6F05A0
 
 	.global Tsa_086F069C
 Tsa_086F069C:  @ 0x086F069C
-	.incbin "./graphics/banim/assets/tsa/006F069C_Tsa_086F069C.tsa.lz" @ 0x6F079C - 0x6F069C
+	.incbin "./graphics/banim/assets/tsa/006F069C_Tsa_086F069C.map.bin.lz" @ 0x6F079C - 0x6F069C
 
 	.global Tsa_086F079C
 Tsa_086F079C:  @ 0x086F079C
-	.incbin "./graphics/banim/assets/tsa/006F079C_Tsa_086F079C.tsa.lz" @ 0x6F08B8 - 0x6F079C
+	.incbin "./graphics/banim/assets/tsa/006F079C_Tsa_086F079C.map.bin.lz" @ 0x6F08B8 - 0x6F079C
 
 	.global Tsa_086F08B8
 Tsa_086F08B8:  @ 0x086F08B8
-	.incbin "./graphics/banim/assets/tsa/006F08B8_Tsa_086F08B8.tsa.lz" @ 0x6F09E0 - 0x6F08B8
+	.incbin "./graphics/banim/assets/tsa/006F08B8_Tsa_086F08B8.map.bin.lz" @ 0x6F09E0 - 0x6F08B8
 
 	.global Tsa_086F09E0
 Tsa_086F09E0:  @ 0x086F09E0
-	.incbin "./graphics/banim/assets/tsa/006F09E0_Tsa_086F09E0.tsa.lz" @ 0x6F0B2C - 0x6F09E0
+	.incbin "./graphics/banim/assets/tsa/006F09E0_Tsa_086F09E0.map.bin.lz" @ 0x6F0B2C - 0x6F09E0
 
 	.global Tsa_086F0B2C
 Tsa_086F0B2C:  @ 0x086F0B2C
-	.incbin "./graphics/banim/assets/tsa/006F0B2C_Tsa_086F0B2C.tsa.lz" @ 0x6F0C88 - 0x6F0B2C
+	.incbin "./graphics/banim/assets/tsa/006F0B2C_Tsa_086F0B2C.map.bin.lz" @ 0x6F0C88 - 0x6F0B2C
 
 	.global Tsa_086F0C88
 Tsa_086F0C88:  @ 0x086F0C88
-	.incbin "./graphics/banim/assets/tsa/006F0C88_Tsa_086F0C88.tsa.lz" @ 0x6F0DF8 - 0x6F0C88
+	.incbin "./graphics/banim/assets/tsa/006F0C88_Tsa_086F0C88.map.bin.lz" @ 0x6F0DF8 - 0x6F0C88
 
 	.global Tsa_086F0DF8
 Tsa_086F0DF8:  @ 0x086F0DF8
-	.incbin "./graphics/banim/assets/tsa/006F0DF8_Tsa_086F0DF8.tsa.lz" @ 0x6F0F6C - 0x6F0DF8
+	.incbin "./graphics/banim/assets/tsa/006F0DF8_Tsa_086F0DF8.map.bin.lz" @ 0x6F0F6C - 0x6F0DF8
 
 	.global Img_086F0F6C
 Img_086F0F6C:  @ 0x086F0F6C
@@ -30950,15 +30950,15 @@ Pal_086F4A78:  @ 0x086F4A78
 
 	.global Tsa_086F4A98
 Tsa_086F4A98:  @ 0x086F4A98
-	.incbin "./graphics/banim/assets/tsa/006F4A98_Tsa_086F4A98.tsa.lz" @ 0x6F4CCC - 0x6F4A98
+	.incbin "./graphics/banim/assets/tsa/006F4A98_Tsa_086F4A98.map.bin.lz" @ 0x6F4CCC - 0x6F4A98
 
 	.global Tsa_086F4CCC
 Tsa_086F4CCC:  @ 0x086F4CCC
-	.incbin "./graphics/banim/assets/tsa/006F4CCC_Tsa_086F4CCC.tsa.lz" @ 0x6F4ED8 - 0x6F4CCC
+	.incbin "./graphics/banim/assets/tsa/006F4CCC_Tsa_086F4CCC.map.bin.lz" @ 0x6F4ED8 - 0x6F4CCC
 
 	.global Tsa_086F4ED8
 Tsa_086F4ED8:  @ 0x086F4ED8
-	.incbin "./graphics/banim/assets/tsa/006F4ED8_Tsa_086F4ED8.tsa.lz" @ 0x6F50D4 - 0x6F4ED8
+	.incbin "./graphics/banim/assets/tsa/006F4ED8_Tsa_086F4ED8.map.bin.lz" @ 0x6F50D4 - 0x6F4ED8
 
 	.global Img_086F50D4
 Img_086F50D4:  @ 0x086F50D4
@@ -31002,39 +31002,39 @@ Pal_086FDA44:  @ 0x086FDA44
 
 	.global Tsa_086FDA64
 Tsa_086FDA64:  @ 0x086FDA64
-	.incbin "./graphics/banim/assets/tsa/006FDA64_Tsa_086FDA64.tsa.lz" @ 0x6FDB08 - 0x6FDA64
+	.incbin "./graphics/banim/assets/tsa/006FDA64_Tsa_086FDA64.map.bin.lz" @ 0x6FDB08 - 0x6FDA64
 
 	.global Tsa_086FDB08
 Tsa_086FDB08:  @ 0x086FDB08
-	.incbin "./graphics/banim/assets/tsa/006FDB08_Tsa_086FDB08.tsa.lz" @ 0x6FDCE0 - 0x6FDB08
+	.incbin "./graphics/banim/assets/tsa/006FDB08_Tsa_086FDB08.map.bin.lz" @ 0x6FDCE0 - 0x6FDB08
 
 	.global Tsa_086FDCE0
 Tsa_086FDCE0:  @ 0x086FDCE0
-	.incbin "./graphics/banim/assets/tsa/006FDCE0_Tsa_086FDCE0.tsa.lz" @ 0x6FDEC4 - 0x6FDCE0
+	.incbin "./graphics/banim/assets/tsa/006FDCE0_Tsa_086FDCE0.map.bin.lz" @ 0x6FDEC4 - 0x6FDCE0
 
 	.global Tsa_086FDEC4
 Tsa_086FDEC4:  @ 0x086FDEC4
-	.incbin "./graphics/banim/assets/tsa/006FDEC4_Tsa_086FDEC4.tsa.lz" @ 0x6FE0D4 - 0x6FDEC4
+	.incbin "./graphics/banim/assets/tsa/006FDEC4_Tsa_086FDEC4.map.bin.lz" @ 0x6FE0D4 - 0x6FDEC4
 
 	.global Tsa_086FE0D4
 Tsa_086FE0D4:  @ 0x086FE0D4
-	.incbin "./graphics/banim/assets/tsa/006FE0D4_Tsa_086FE0D4.tsa.lz" @ 0x6FE320 - 0x6FE0D4
+	.incbin "./graphics/banim/assets/tsa/006FE0D4_Tsa_086FE0D4.map.bin.lz" @ 0x6FE320 - 0x6FE0D4
 
 	.global Tsa_086FE320
 Tsa_086FE320:  @ 0x086FE320
-	.incbin "./graphics/banim/assets/tsa/006FE320_Tsa_086FE320.tsa.lz" @ 0x6FE4E0 - 0x6FE320
+	.incbin "./graphics/banim/assets/tsa/006FE320_Tsa_086FE320.map.bin.lz" @ 0x6FE4E0 - 0x6FE320
 
 	.global Tsa_086FE4E0
 Tsa_086FE4E0:  @ 0x086FE4E0
-	.incbin "./graphics/banim/assets/tsa/006FE4E0_Tsa_086FE4E0.tsa.lz" @ 0x6FE680 - 0x6FE4E0
+	.incbin "./graphics/banim/assets/tsa/006FE4E0_Tsa_086FE4E0.map.bin.lz" @ 0x6FE680 - 0x6FE4E0
 
 	.global Tsa_086FE680
 Tsa_086FE680:  @ 0x086FE680
-	.incbin "./graphics/banim/assets/tsa/006FE680_Tsa_086FE680.tsa.lz" @ 0x6FE81C - 0x6FE680
+	.incbin "./graphics/banim/assets/tsa/006FE680_Tsa_086FE680.map.bin.lz" @ 0x6FE81C - 0x6FE680
 
 	.global Tsa_086FE81C
 Tsa_086FE81C:  @ 0x086FE81C
-	.incbin "./graphics/banim/assets/tsa/006FE81C_Tsa_086FE81C.tsa.lz" @ 0x6FE938 - 0x6FE81C
+	.incbin "./graphics/banim/assets/tsa/006FE81C_Tsa_086FE81C.map.bin.lz" @ 0x6FE938 - 0x6FE81C
 
 	.global Img_NaglfarSprites_A
 Img_NaglfarSprites_A:  @ 0x086FE938
@@ -31382,7 +31382,7 @@ Pal_NaglfarBg1_A:  @ 0x087013A0
 
 	.global Tsa_NaglfarBg1_A
 Tsa_NaglfarBg1_A:  @ 0x087013C0
-	.incbin "./graphics/banim/assets/tsa/007013C0_Tsa_NaglfarBg1_A.tsa.lz" @ 0x701660 - 0x7013C0
+	.incbin "./graphics/banim/assets/tsa/007013C0_Tsa_NaglfarBg1_A.map.bin.lz" @ 0x701660 - 0x7013C0
 
 	.global Img_08701660
 Img_08701660:  @ 0x08701660
@@ -31514,67 +31514,67 @@ Pal_08710F98:  @ 0x08710F98
 
 	.global Tsa_08710FB8
 Tsa_08710FB8:  @ 0x08710FB8
-	.incbin "./graphics/banim/assets/tsa/00710FB8_Tsa_08710FB8.tsa.lz" @ 0x7111E0 - 0x710FB8
+	.incbin "./graphics/banim/assets/tsa/00710FB8_Tsa_08710FB8.map.bin.lz" @ 0x7111E0 - 0x710FB8
 
 	.global Tsa_087111E0
 Tsa_087111E0:  @ 0x087111E0
-	.incbin "./graphics/banim/assets/tsa/007111E0_Tsa_087111E0.tsa.lz" @ 0x711438 - 0x7111E0
+	.incbin "./graphics/banim/assets/tsa/007111E0_Tsa_087111E0.map.bin.lz" @ 0x711438 - 0x7111E0
 
 	.global Tsa_08711438
 Tsa_08711438:  @ 0x08711438
-	.incbin "./graphics/banim/assets/tsa/00711438_Tsa_08711438.tsa.lz" @ 0x7116A4 - 0x711438
+	.incbin "./graphics/banim/assets/tsa/00711438_Tsa_08711438.map.bin.lz" @ 0x7116A4 - 0x711438
 
 	.global Tsa_087116A4
 Tsa_087116A4:  @ 0x087116A4
-	.incbin "./graphics/banim/assets/tsa/007116A4_Tsa_087116A4.tsa.lz" @ 0x7118FC - 0x7116A4
+	.incbin "./graphics/banim/assets/tsa/007116A4_Tsa_087116A4.map.bin.lz" @ 0x7118FC - 0x7116A4
 
 	.global Tsa_087118FC
 Tsa_087118FC:  @ 0x087118FC
-	.incbin "./graphics/banim/assets/tsa/007118FC_Tsa_087118FC.tsa.lz" @ 0x711B6C - 0x7118FC
+	.incbin "./graphics/banim/assets/tsa/007118FC_Tsa_087118FC.map.bin.lz" @ 0x711B6C - 0x7118FC
 
 	.global Tsa_08711B6C
 Tsa_08711B6C:  @ 0x08711B6C
-	.incbin "./graphics/banim/assets/tsa/00711B6C_Tsa_08711B6C.tsa.lz" @ 0x711DD8 - 0x711B6C
+	.incbin "./graphics/banim/assets/tsa/00711B6C_Tsa_08711B6C.map.bin.lz" @ 0x711DD8 - 0x711B6C
 
 	.global Tsa_08711DD8
 Tsa_08711DD8:  @ 0x08711DD8
-	.incbin "./graphics/banim/assets/tsa/00711DD8_Tsa_08711DD8.tsa.lz" @ 0x71203C - 0x711DD8
+	.incbin "./graphics/banim/assets/tsa/00711DD8_Tsa_08711DD8.map.bin.lz" @ 0x71203C - 0x711DD8
 
 	.global Tsa_0871203C
 Tsa_0871203C:  @ 0x0871203C
-	.incbin "./graphics/banim/assets/tsa/0071203C_Tsa_0871203C.tsa.lz" @ 0x7122A4 - 0x71203C
+	.incbin "./graphics/banim/assets/tsa/0071203C_Tsa_0871203C.map.bin.lz" @ 0x7122A4 - 0x71203C
 
 	.global Tsa_087122A4
 Tsa_087122A4:  @ 0x087122A4
-	.incbin "./graphics/banim/assets/tsa/007122A4_Tsa_087122A4.tsa.lz" @ 0x71250C - 0x7122A4
+	.incbin "./graphics/banim/assets/tsa/007122A4_Tsa_087122A4.map.bin.lz" @ 0x71250C - 0x7122A4
 
 	.global Tsa_0871250C
 Tsa_0871250C:  @ 0x0871250C
-	.incbin "./graphics/banim/assets/tsa/0071250C_Tsa_0871250C.tsa.lz" @ 0x71276C - 0x71250C
+	.incbin "./graphics/banim/assets/tsa/0071250C_Tsa_0871250C.map.bin.lz" @ 0x71276C - 0x71250C
 
 	.global Tsa_0871276C
 Tsa_0871276C:  @ 0x0871276C
-	.incbin "./graphics/banim/assets/tsa/0071276C_Tsa_0871276C.tsa.lz" @ 0x7129C0 - 0x71276C
+	.incbin "./graphics/banim/assets/tsa/0071276C_Tsa_0871276C.map.bin.lz" @ 0x7129C0 - 0x71276C
 
 	.global Tsa_087129C0
 Tsa_087129C0:  @ 0x087129C0
-	.incbin "./graphics/banim/assets/tsa/007129C0_Tsa_087129C0.tsa.lz" @ 0x712C14 - 0x7129C0
+	.incbin "./graphics/banim/assets/tsa/007129C0_Tsa_087129C0.map.bin.lz" @ 0x712C14 - 0x7129C0
 
 	.global Tsa_08712C14
 Tsa_08712C14:  @ 0x08712C14
-	.incbin "./graphics/banim/assets/tsa/00712C14_Tsa_08712C14.tsa.lz" @ 0x712E6C - 0x712C14
+	.incbin "./graphics/banim/assets/tsa/00712C14_Tsa_08712C14.map.bin.lz" @ 0x712E6C - 0x712C14
 
 	.global Tsa_08712E6C
 Tsa_08712E6C:  @ 0x08712E6C
-	.incbin "./graphics/banim/assets/tsa/00712E6C_Tsa_08712E6C.tsa.lz" @ 0x7130B4 - 0x712E6C
+	.incbin "./graphics/banim/assets/tsa/00712E6C_Tsa_08712E6C.map.bin.lz" @ 0x7130B4 - 0x712E6C
 
 	.global Tsa_087130B4
 Tsa_087130B4:  @ 0x087130B4
-	.incbin "./graphics/banim/assets/tsa/007130B4_Tsa_087130B4.tsa.lz" @ 0x713310 - 0x7130B4
+	.incbin "./graphics/banim/assets/tsa/007130B4_Tsa_087130B4.map.bin.lz" @ 0x713310 - 0x7130B4
 
 	.global Tsa_08713310
 Tsa_08713310:  @ 0x08713310
-	.incbin "./graphics/banim/assets/tsa/00713310_Tsa_08713310.tsa.lz" @ 0x713558 - 0x713310
+	.incbin "./graphics/banim/assets/tsa/00713310_Tsa_08713310.map.bin.lz" @ 0x713558 - 0x713310
 
 	.global Img_08713558
 Img_08713558:  @ 0x08713558
@@ -31598,19 +31598,19 @@ Pal_NaglfarBg3:  @ 0x087197E4
 
 	.global Tsa_08719804
 Tsa_08719804:  @ 0x08719804
-	.incbin "./graphics/banim/assets/tsa/00719804_Tsa_08719804.tsa.lz" @ 0x719CA4 - 0x719804
+	.incbin "./graphics/banim/assets/tsa/00719804_Tsa_08719804.map.bin.lz" @ 0x719CA4 - 0x719804
 
 	.global Tsa_08719CA4
 Tsa_08719CA4:  @ 0x08719CA4
-	.incbin "./graphics/banim/assets/tsa/00719CA4_Tsa_08719CA4.tsa.lz" @ 0x71A134 - 0x719CA4
+	.incbin "./graphics/banim/assets/tsa/00719CA4_Tsa_08719CA4.map.bin.lz" @ 0x71A134 - 0x719CA4
 
 	.global Tsa_0871A134
 Tsa_0871A134:  @ 0x0871A134
-	.incbin "./graphics/banim/assets/tsa/0071A134_Tsa_0871A134.tsa.lz" @ 0x71A5D0 - 0x71A134
+	.incbin "./graphics/banim/assets/tsa/0071A134_Tsa_0871A134.map.bin.lz" @ 0x71A5D0 - 0x71A134
 
 	.global Tsa_0871A5D0
 Tsa_0871A5D0:  @ 0x0871A5D0
-	.incbin "./graphics/banim/assets/tsa/0071A5D0_Tsa_0871A5D0.tsa.lz" @ 0x71AA78 - 0x71A5D0
+	.incbin "./graphics/banim/assets/tsa/0071A5D0_Tsa_0871A5D0.map.bin.lz" @ 0x71AA78 - 0x71A5D0
 
 	.global Img_0871AA78
 Img_0871AA78:  @ 0x0871AA78
@@ -31638,23 +31638,23 @@ Pal_NaglfarBg4:  @ 0x08720D84
 
 	.global Tsa_08720DA4
 Tsa_08720DA4:  @ 0x08720DA4
-	.incbin "./graphics/banim/assets/tsa/00720DA4_Tsa_08720DA4.tsa.lz" @ 0x72101C - 0x720DA4
+	.incbin "./graphics/banim/assets/tsa/00720DA4_Tsa_08720DA4.map.bin.lz" @ 0x72101C - 0x720DA4
 
 	.global Tsa_0872101C
 Tsa_0872101C:  @ 0x0872101C
-	.incbin "./graphics/banim/assets/tsa/0072101C_Tsa_0872101C.tsa.lz" @ 0x721294 - 0x72101C
+	.incbin "./graphics/banim/assets/tsa/0072101C_Tsa_0872101C.map.bin.lz" @ 0x721294 - 0x72101C
 
 	.global Tsa_08721294
 Tsa_08721294:  @ 0x08721294
-	.incbin "./graphics/banim/assets/tsa/00721294_Tsa_08721294.tsa.lz" @ 0x72150C - 0x721294
+	.incbin "./graphics/banim/assets/tsa/00721294_Tsa_08721294.map.bin.lz" @ 0x72150C - 0x721294
 
 	.global Tsa_0872150C
 Tsa_0872150C:  @ 0x0872150C
-	.incbin "./graphics/banim/assets/tsa/0072150C_Tsa_0872150C.tsa.lz" @ 0x721784 - 0x72150C
+	.incbin "./graphics/banim/assets/tsa/0072150C_Tsa_0872150C.map.bin.lz" @ 0x721784 - 0x72150C
 
 	.global Tsa_08721784
 Tsa_08721784:  @ 0x08721784
-	.incbin "./graphics/banim/assets/tsa/00721784_Tsa_08721784.tsa.lz"
+	.incbin "./graphics/banim/assets/tsa/00721784_Tsa_08721784.map.bin.lz"
 	.include "data/banim/animscr_naglfarbg4_darkbreath.s"
 
 	.global Img_08723274
@@ -31667,7 +31667,7 @@ Pal_efxExcaliburBG0:  @ 0x08724424
 
 	.global Tsa_08724444
 Tsa_08724444:  @ 0x08724444
-	.incbin "./graphics/banim/assets/tsa/00724444_Tsa_08724444.tsa.lz" @ 0x7246D8 - 0x724444
+	.incbin "./graphics/banim/assets/tsa/00724444_Tsa_08724444.map.bin.lz" @ 0x7246D8 - 0x724444
 
 	.global Img_FireBreathBg
 Img_FireBreathBg:  @ 0x087246D8
@@ -31679,7 +31679,7 @@ Pal_FireBreathBg:  @ 0x08725AD0
 
 	.global Tsa_FireBreathBg
 Tsa_FireBreathBg:  @ 0x08725AF0
-	.incbin "./graphics/banim/assets/tsa/00725AF0_Tsa_FireBreathBg.tsa.lz"
+	.incbin "./graphics/banim/assets/tsa/00725AF0_Tsa_FireBreathBg.map.bin.lz"
 
 	.global Pal_08725DAC
 Pal_08725DAC:  @ 0x08725DAC
@@ -31695,11 +31695,11 @@ Pal_ShineBg_08726FF4:  @ 0x08726FF4
 
 	.global Tsa_ShineBg1_Left
 Tsa_ShineBg1_Left:  @ 0x087270B4
-	.incbin "./graphics/banim/assets/tsa/007270B4_Tsa_ShineBg1_Left.tsa.lz"
+	.incbin "./graphics/banim/assets/tsa/007270B4_Tsa_ShineBg1_Left.map.bin.lz"
 
 	.global Tsa_ShineBg1_Right
 Tsa_ShineBg1_Right:  @ 0x08727510
-	.incbin "./graphics/banim/assets/tsa/00727510_Tsa_ShineBg1_Right.tsa.lz"
+	.incbin "./graphics/banim/assets/tsa/00727510_Tsa_ShineBg1_Right.map.bin.lz"
 
 	.global Img_ShineBg2
 Img_ShineBg2:  @ 0x0872796C
@@ -31711,39 +31711,39 @@ Pal_ShineBg2:  @ 0x08727C48
 
 	.global Tsa_ShineBg2_A
 Tsa_ShineBg2_A:  @ 0x08727C68
-	.incbin "./graphics/banim/assets/tsa/00727C68_Tsa_ShineBg2_A.tsa.lz" @ 0x727D18 - 0x727C68
+	.incbin "./graphics/banim/assets/tsa/00727C68_Tsa_ShineBg2_A.map.bin.lz" @ 0x727D18 - 0x727C68
 
 	.global Tsa_ShineBg2_B
 Tsa_ShineBg2_B:  @ 0x08727D18
-	.incbin "./graphics/banim/assets/tsa/00727D18_Tsa_ShineBg2_B.tsa.lz" @ 0x727E20 - 0x727D18
+	.incbin "./graphics/banim/assets/tsa/00727D18_Tsa_ShineBg2_B.map.bin.lz" @ 0x727E20 - 0x727D18
 
 	.global Tsa_ShineBg2_C
 Tsa_ShineBg2_C:  @ 0x08727E20
-	.incbin "./graphics/banim/assets/tsa/00727E20_Tsa_ShineBg2_C.tsa.lz" @ 0x727F5C - 0x727E20
+	.incbin "./graphics/banim/assets/tsa/00727E20_Tsa_ShineBg2_C.map.bin.lz" @ 0x727F5C - 0x727E20
 
 	.global Tsa_ShineBg2_D
 Tsa_ShineBg2_D:  @ 0x08727F5C
-	.incbin "./graphics/banim/assets/tsa/00727F5C_Tsa_ShineBg2_D.tsa.lz" @ 0x7280D0 - 0x727F5C
+	.incbin "./graphics/banim/assets/tsa/00727F5C_Tsa_ShineBg2_D.map.bin.lz" @ 0x7280D0 - 0x727F5C
 
 	.global Tsa_ShineBg2_E
 Tsa_ShineBg2_E:  @ 0x087280D0
-	.incbin "./graphics/banim/assets/tsa/007280D0_Tsa_ShineBg2_E.tsa.lz" @ 0x728268 - 0x7280D0
+	.incbin "./graphics/banim/assets/tsa/007280D0_Tsa_ShineBg2_E.map.bin.lz" @ 0x728268 - 0x7280D0
 
 	.global Tsa_ShineBg2_F
 Tsa_ShineBg2_F:  @ 0x08728268
-	.incbin "./graphics/banim/assets/tsa/00728268_Tsa_ShineBg2_F.tsa.lz" @ 0x7283DC - 0x728268
+	.incbin "./graphics/banim/assets/tsa/00728268_Tsa_ShineBg2_F.map.bin.lz" @ 0x7283DC - 0x728268
 
 	.global Tsa_ShineBg2_G
 Tsa_ShineBg2_G:  @ 0x087283DC
-	.incbin "./graphics/banim/assets/tsa/007283DC_Tsa_ShineBg2_G.tsa.lz" @ 0x7284E8 - 0x7283DC
+	.incbin "./graphics/banim/assets/tsa/007283DC_Tsa_ShineBg2_G.map.bin.lz" @ 0x7284E8 - 0x7283DC
 
 	.global Tsa_ShineBg2_H
 Tsa_ShineBg2_H:  @ 0x087284E8
-	.incbin "./graphics/banim/assets/tsa/007284E8_Tsa_ShineBg2_H.tsa.lz" @ 0x7285BC - 0x7284E8
+	.incbin "./graphics/banim/assets/tsa/007284E8_Tsa_ShineBg2_H.map.bin.lz" @ 0x7285BC - 0x7284E8
 
 	.global Tsa_ShineBg2_I
 Tsa_ShineBg2_I:  @ 0x087285BC
-	.incbin "./graphics/banim/assets/tsa/007285BC_Tsa_ShineBg2_I.tsa.lz" @ 0x72865C - 0x7285BC
+	.incbin "./graphics/banim/assets/tsa/007285BC_Tsa_ShineBg2_I.map.bin.lz" @ 0x72865C - 0x7285BC
 
 	.global Img_ShineSprites
 Img_ShineSprites:  @ 0x0872865C
@@ -31907,7 +31907,7 @@ Pal_LunaBg1:  @ 0x0872972C
 
 	.global Tsa_LunaBg1_A
 Tsa_LunaBg1_A:  @ 0x0872974C
-	.incbin "./graphics/banim/assets/tsa/0072974C_Tsa_LunaBg1_A.tsa.lz" @ 0x72987C - 0x72974C
+	.incbin "./graphics/banim/assets/tsa/0072974C_Tsa_LunaBg1_A.map.bin.lz" @ 0x72987C - 0x72974C
 
 	.global Img_LunaBg2
 Img_LunaBg2:  @ 0x0872987C
@@ -31919,7 +31919,7 @@ Pal_LunaBg2:  @ 0x08729FDC
 
 	.global Tsa_LunaBg2
 Tsa_LunaBg2:  @ 0x0872A1BC
-	.incbin "./graphics/banim/assets/tsa/0072A1BC_Tsa_LunaBg2.tsa.lz" @ 0x72A360 - 0x72A1BC
+	.incbin "./graphics/banim/assets/tsa/0072A1BC_Tsa_LunaBg2.map.bin.lz" @ 0x72A360 - 0x72A1BC
 
 	.global Img_LunaBg3_A
 Img_LunaBg3_A:  @ 0x0872A360
@@ -31939,51 +31939,51 @@ Pal_LunaBg3:  @ 0x0872CE60
 
 	.global Tsa_LunaBg3_A
 Tsa_LunaBg3_A:  @ 0x0872CE80
-	.incbin "./graphics/banim/assets/tsa/0072CE80_Tsa_LunaBg3_A.tsa.lz" @ 0x72CF34 - 0x72CE80
+	.incbin "./graphics/banim/assets/tsa/0072CE80_Tsa_LunaBg3_A.map.bin.lz" @ 0x72CF34 - 0x72CE80
 
 	.global Tsa_LunaBg3_B
 Tsa_LunaBg3_B:  @ 0x0872CF34
-	.incbin "./graphics/banim/assets/tsa/0072CF34_Tsa_LunaBg3_B.tsa.lz" @ 0x72CFF0 - 0x72CF34
+	.incbin "./graphics/banim/assets/tsa/0072CF34_Tsa_LunaBg3_B.map.bin.lz" @ 0x72CFF0 - 0x72CF34
 
 	.global Tsa_LunaBg3_C
 Tsa_LunaBg3_C:  @ 0x0872CFF0
-	.incbin "./graphics/banim/assets/tsa/0072CFF0_Tsa_LunaBg3_C.tsa.lz" @ 0x72D0CC - 0x72CFF0
+	.incbin "./graphics/banim/assets/tsa/0072CFF0_Tsa_LunaBg3_C.map.bin.lz" @ 0x72D0CC - 0x72CFF0
 
 	.global Tsa_LunaBg3_D
 Tsa_LunaBg3_D:  @ 0x0872D0CC
-	.incbin "./graphics/banim/assets/tsa/0072D0CC_Tsa_LunaBg3_D.tsa.lz" @ 0x72D1B4 - 0x72D0CC
+	.incbin "./graphics/banim/assets/tsa/0072D0CC_Tsa_LunaBg3_D.map.bin.lz" @ 0x72D1B4 - 0x72D0CC
 
 	.global Tsa_LunaBg3_E
 Tsa_LunaBg3_E:  @ 0x0872D1B4
-	.incbin "./graphics/banim/assets/tsa/0072D1B4_Tsa_LunaBg3_E.tsa.lz" @ 0x72D2D8 - 0x72D1B4
+	.incbin "./graphics/banim/assets/tsa/0072D1B4_Tsa_LunaBg3_E.map.bin.lz" @ 0x72D2D8 - 0x72D1B4
 
 	.global Tsa_LunaBg3_F
 Tsa_LunaBg3_F:  @ 0x0872D2D8
-	.incbin "./graphics/banim/assets/tsa/0072D2D8_Tsa_LunaBg3_F.tsa.lz" @ 0x72D3F8 - 0x72D2D8
+	.incbin "./graphics/banim/assets/tsa/0072D2D8_Tsa_LunaBg3_F.map.bin.lz" @ 0x72D3F8 - 0x72D2D8
 
 	.global Tsa_LunaBg3_G
 Tsa_LunaBg3_G:  @ 0x0872D3F8
-	.incbin "./graphics/banim/assets/tsa/0072D3F8_Tsa_LunaBg3_G.tsa.lz" @ 0x72D504 - 0x72D3F8
+	.incbin "./graphics/banim/assets/tsa/0072D3F8_Tsa_LunaBg3_G.map.bin.lz" @ 0x72D504 - 0x72D3F8
 
 	.global Tsa_LunaBg3_H
 Tsa_LunaBg3_H:  @ 0x0872D504
-	.incbin "./graphics/banim/assets/tsa/0072D504_Tsa_LunaBg3_H.tsa.lz" @ 0x72D610 - 0x72D504
+	.incbin "./graphics/banim/assets/tsa/0072D504_Tsa_LunaBg3_H.map.bin.lz" @ 0x72D610 - 0x72D504
 
 	.global Tsa_LunaBg3_I
 Tsa_LunaBg3_I:  @ 0x0872D610
-	.incbin "./graphics/banim/assets/tsa/0072D610_Tsa_LunaBg3_I.tsa.lz" @ 0x72D70C - 0x72D610
+	.incbin "./graphics/banim/assets/tsa/0072D610_Tsa_LunaBg3_I.map.bin.lz" @ 0x72D70C - 0x72D610
 
 	.global Tsa_LunaBg3_J
 Tsa_LunaBg3_J:  @ 0x0872D70C
-	.incbin "./graphics/banim/assets/tsa/0072D70C_Tsa_LunaBg3_J.tsa.lz" @ 0x72D80C - 0x72D70C
+	.incbin "./graphics/banim/assets/tsa/0072D70C_Tsa_LunaBg3_J.map.bin.lz" @ 0x72D80C - 0x72D70C
 
 	.global Tsa_LunaBg3_K
 Tsa_LunaBg3_K:  @ 0x0872D80C
-	.incbin "./graphics/banim/assets/tsa/0072D80C_Tsa_LunaBg3_K.tsa.lz" @ 0x72D908 - 0x72D80C
+	.incbin "./graphics/banim/assets/tsa/0072D80C_Tsa_LunaBg3_K.map.bin.lz" @ 0x72D908 - 0x72D80C
 
 	.global Tsa_LunaBg3_L
 Tsa_LunaBg3_L:  @ 0x0872D908
-	.incbin "./graphics/banim/assets/tsa/0072D908_Tsa_LunaBg3_L.tsa.lz" @ 0x72DA04 - 0x72D908
+	.incbin "./graphics/banim/assets/tsa/0072D908_Tsa_LunaBg3_L.map.bin.lz" @ 0x72DA04 - 0x72D908
 
 	.global Img_LunaSprites
 Img_LunaSprites:  @ 0x0872DA04
@@ -32212,7 +32212,7 @@ Pal_ExcaliburBg1:  @ 0x0872E64C
 
 	.global Tsa_ExcaliburBg1
 Tsa_ExcaliburBg1:  @ 0x0872E7EC
-	.incbin "./graphics/banim/assets/tsa/0072E7EC_Tsa_ExcaliburBg1.tsa.lz"
+	.incbin "./graphics/banim/assets/tsa/0072E7EC_Tsa_ExcaliburBg1.map.bin.lz"
 
 	.global Img_ExcaliburBg2
 Img_ExcaliburBg2:  @ 0x0872E998
@@ -32224,11 +32224,11 @@ Pal_ExcaliburBg2:  @ 0x0872FA04
 
 	.global Tsa_ExcaliburBg2_Left
 Tsa_ExcaliburBg2_Left:  @ 0x0872FA84
-	.incbin "./graphics/banim/assets/tsa/0072FA84_Tsa_ExcaliburBg2_Left.tsa.lz"
+	.incbin "./graphics/banim/assets/tsa/0072FA84_Tsa_ExcaliburBg2_Left.map.bin.lz"
 
 	.global Tsa_ExcaliburBg2_Right
 Tsa_ExcaliburBg2_Right:  @ 0x0872FEB8
-	.incbin "./graphics/banim/assets/tsa/0072FEB8_Tsa_ExcaliburBg2_Right.tsa.lz"
+	.incbin "./graphics/banim/assets/tsa/0072FEB8_Tsa_ExcaliburBg2_Right.map.bin.lz"
 
 	.global Pal_ExcaliburBg3
 Pal_ExcaliburBg3:  @ 0x087302A4
@@ -32633,7 +32633,7 @@ Pal_GespenstBg4:  @ 0x08732228
 
 	.global Tsa_GespenstBg4
 Tsa_GespenstBg4:  @ 0x08732368
-	.incbin "./graphics/banim/assets/tsa/00732368_Tsa_GespenstBg4.tsa.lz"
+	.incbin "./graphics/banim/assets/tsa/00732368_Tsa_GespenstBg4.map.bin.lz"
 
 	.global Img_AuraBg1
 Img_AuraBg1:  @ 0x087327C4
@@ -32645,115 +32645,115 @@ Pal_AuraBg1:  @ 0x0873313C
 
 	.global Tsa_0873315C
 Tsa_0873315C:  @ 0x0873315C
-	.incbin "./graphics/banim/assets/tsa/0073315C_Tsa_0873315C.tsa.lz" @ 0x7331FC - 0x73315C
+	.incbin "./graphics/banim/assets/tsa/0073315C_Tsa_0873315C.map.bin.lz" @ 0x7331FC - 0x73315C
 
 	.global Tsa_087331FC
 Tsa_087331FC:  @ 0x087331FC
-	.incbin "./graphics/banim/assets/tsa/007331FC_Tsa_087331FC.tsa.lz" @ 0x7332A4 - 0x7331FC
+	.incbin "./graphics/banim/assets/tsa/007331FC_Tsa_087331FC.map.bin.lz" @ 0x7332A4 - 0x7331FC
 
 	.global Tsa_087332A4
 Tsa_087332A4:  @ 0x087332A4
-	.incbin "./graphics/banim/assets/tsa/007332A4_Tsa_087332A4.tsa.lz" @ 0x73334C - 0x7332A4
+	.incbin "./graphics/banim/assets/tsa/007332A4_Tsa_087332A4.map.bin.lz" @ 0x73334C - 0x7332A4
 
 	.global Tsa_0873334C
 Tsa_0873334C:  @ 0x0873334C
-	.incbin "./graphics/banim/assets/tsa/0073334C_Tsa_0873334C.tsa.lz" @ 0x7333F8 - 0x73334C
+	.incbin "./graphics/banim/assets/tsa/0073334C_Tsa_0873334C.map.bin.lz" @ 0x7333F8 - 0x73334C
 
 	.global Tsa_087333F8
 Tsa_087333F8:  @ 0x087333F8
-	.incbin "./graphics/banim/assets/tsa/007333F8_Tsa_087333F8.tsa.lz" @ 0x7334B0 - 0x7333F8
+	.incbin "./graphics/banim/assets/tsa/007333F8_Tsa_087333F8.map.bin.lz" @ 0x7334B0 - 0x7333F8
 
 	.global Tsa_087334B0
 Tsa_087334B0:  @ 0x087334B0
-	.incbin "./graphics/banim/assets/tsa/007334B0_Tsa_087334B0.tsa.lz" @ 0x733568 - 0x7334B0
+	.incbin "./graphics/banim/assets/tsa/007334B0_Tsa_087334B0.map.bin.lz" @ 0x733568 - 0x7334B0
 
 	.global Tsa_08733568
 Tsa_08733568:  @ 0x08733568
-	.incbin "./graphics/banim/assets/tsa/00733568_Tsa_08733568.tsa.lz" @ 0x733618 - 0x733568
+	.incbin "./graphics/banim/assets/tsa/00733568_Tsa_08733568.map.bin.lz" @ 0x733618 - 0x733568
 
 	.global Tsa_08733618
 Tsa_08733618:  @ 0x08733618
-	.incbin "./graphics/banim/assets/tsa/00733618_Tsa_08733618.tsa.lz" @ 0x7336C4 - 0x733618
+	.incbin "./graphics/banim/assets/tsa/00733618_Tsa_08733618.map.bin.lz" @ 0x7336C4 - 0x733618
 
 	.global Tsa_087336C4
 Tsa_087336C4:  @ 0x087336C4
-	.incbin "./graphics/banim/assets/tsa/007336C4_Tsa_087336C4.tsa.lz" @ 0x73376C - 0x7336C4
+	.incbin "./graphics/banim/assets/tsa/007336C4_Tsa_087336C4.map.bin.lz" @ 0x73376C - 0x7336C4
 
 	.global Tsa_0873376C
 Tsa_0873376C:  @ 0x0873376C
-	.incbin "./graphics/banim/assets/tsa/0073376C_Tsa_0873376C.tsa.lz" @ 0x73380C - 0x73376C
+	.incbin "./graphics/banim/assets/tsa/0073376C_Tsa_0873376C.map.bin.lz" @ 0x73380C - 0x73376C
 
 	.global Tsa_0873380C
 Tsa_0873380C:  @ 0x0873380C
-	.incbin "./graphics/banim/assets/tsa/0073380C_Tsa_0873380C.tsa.lz" @ 0x7338A8 - 0x73380C
+	.incbin "./graphics/banim/assets/tsa/0073380C_Tsa_0873380C.map.bin.lz" @ 0x7338A8 - 0x73380C
 
 	.global Tsa_087338A8
 Tsa_087338A8:  @ 0x087338A8
-	.incbin "./graphics/banim/assets/tsa/007338A8_Tsa_087338A8.tsa.lz" @ 0x733940 - 0x7338A8
+	.incbin "./graphics/banim/assets/tsa/007338A8_Tsa_087338A8.map.bin.lz" @ 0x733940 - 0x7338A8
 
 	.global Tsa_08733940
 Tsa_08733940:  @ 0x08733940
-	.incbin "./graphics/banim/assets/tsa/00733940_Tsa_08733940.tsa.lz" @ 0x733A58 - 0x733940
+	.incbin "./graphics/banim/assets/tsa/00733940_Tsa_08733940.map.bin.lz" @ 0x733A58 - 0x733940
 
 	.global Tsa_08733A58
 Tsa_08733A58:  @ 0x08733A58
-	.incbin "./graphics/banim/assets/tsa/00733A58_Tsa_08733A58.tsa.lz" @ 0x733B94 - 0x733A58
+	.incbin "./graphics/banim/assets/tsa/00733A58_Tsa_08733A58.map.bin.lz" @ 0x733B94 - 0x733A58
 
 	.global Tsa_08733B94
 Tsa_08733B94:  @ 0x08733B94
-	.incbin "./graphics/banim/assets/tsa/00733B94_Tsa_08733B94.tsa.lz" @ 0x733CE4 - 0x733B94
+	.incbin "./graphics/banim/assets/tsa/00733B94_Tsa_08733B94.map.bin.lz" @ 0x733CE4 - 0x733B94
 
 	.global Tsa_08733CE4
 Tsa_08733CE4:  @ 0x08733CE4
-	.incbin "./graphics/banim/assets/tsa/00733CE4_Tsa_08733CE4.tsa.lz" @ 0x733E20 - 0x733CE4
+	.incbin "./graphics/banim/assets/tsa/00733CE4_Tsa_08733CE4.map.bin.lz" @ 0x733E20 - 0x733CE4
 
 	.global Tsa_08733E20
 Tsa_08733E20:  @ 0x08733E20
-	.incbin "./graphics/banim/assets/tsa/00733E20_Tsa_08733E20.tsa.lz" @ 0x733F24 - 0x733E20
+	.incbin "./graphics/banim/assets/tsa/00733E20_Tsa_08733E20.map.bin.lz" @ 0x733F24 - 0x733E20
 
 	.global Tsa_08733F24
 Tsa_08733F24:  @ 0x08733F24
-	.incbin "./graphics/banim/assets/tsa/00733F24_Tsa_08733F24.tsa.lz" @ 0x733FC8 - 0x733F24
+	.incbin "./graphics/banim/assets/tsa/00733F24_Tsa_08733F24.map.bin.lz" @ 0x733FC8 - 0x733F24
 
 	.global Tsa_08733FC8
 Tsa_08733FC8:  @ 0x08733FC8
-	.incbin "./graphics/banim/assets/tsa/00733FC8_Tsa_08733FC8.tsa.lz" @ 0x734064 - 0x733FC8
+	.incbin "./graphics/banim/assets/tsa/00733FC8_Tsa_08733FC8.map.bin.lz" @ 0x734064 - 0x733FC8
 
 	.global Tsa_08734064
 Tsa_08734064:  @ 0x08734064
-	.incbin "./graphics/banim/assets/tsa/00734064_Tsa_08734064.tsa.lz" @ 0x734100 - 0x734064
+	.incbin "./graphics/banim/assets/tsa/00734064_Tsa_08734064.map.bin.lz" @ 0x734100 - 0x734064
 
 	.global Tsa_08734100
 Tsa_08734100:  @ 0x08734100
-	.incbin "./graphics/banim/assets/tsa/00734100_Tsa_08734100.tsa.lz" @ 0x73419C - 0x734100
+	.incbin "./graphics/banim/assets/tsa/00734100_Tsa_08734100.map.bin.lz" @ 0x73419C - 0x734100
 
 	.global Tsa_0873419C
 Tsa_0873419C:  @ 0x0873419C
-	.incbin "./graphics/banim/assets/tsa/0073419C_Tsa_0873419C.tsa.lz" @ 0x734238 - 0x73419C
+	.incbin "./graphics/banim/assets/tsa/0073419C_Tsa_0873419C.map.bin.lz" @ 0x734238 - 0x73419C
 
 	.global Tsa_08734238
 Tsa_08734238:  @ 0x08734238
-	.incbin "./graphics/banim/assets/tsa/00734238_Tsa_08734238.tsa.lz" @ 0x7342D4 - 0x734238
+	.incbin "./graphics/banim/assets/tsa/00734238_Tsa_08734238.map.bin.lz" @ 0x7342D4 - 0x734238
 
 	.global Tsa_087342D4
 Tsa_087342D4:  @ 0x087342D4
-	.incbin "./graphics/banim/assets/tsa/007342D4_Tsa_087342D4.tsa.lz" @ 0x734390 - 0x7342D4
+	.incbin "./graphics/banim/assets/tsa/007342D4_Tsa_087342D4.map.bin.lz" @ 0x734390 - 0x7342D4
 
 	.global Tsa_08734390
 Tsa_08734390:  @ 0x08734390
-	.incbin "./graphics/banim/assets/tsa/00734390_Tsa_08734390.tsa.lz" @ 0x734480 - 0x734390
+	.incbin "./graphics/banim/assets/tsa/00734390_Tsa_08734390.map.bin.lz" @ 0x734480 - 0x734390
 
 	.global Tsa_08734480
 Tsa_08734480:  @ 0x08734480
-	.incbin "./graphics/banim/assets/tsa/00734480_Tsa_08734480.tsa.lz" @ 0x734584 - 0x734480
+	.incbin "./graphics/banim/assets/tsa/00734480_Tsa_08734480.map.bin.lz" @ 0x734584 - 0x734480
 
 	.global Tsa_08734584
 Tsa_08734584:  @ 0x08734584
-	.incbin "./graphics/banim/assets/tsa/00734584_Tsa_08734584.tsa.lz" @ 0x734688 - 0x734584
+	.incbin "./graphics/banim/assets/tsa/00734584_Tsa_08734584.map.bin.lz" @ 0x734688 - 0x734584
 
 	.global Tsa_08734688
 Tsa_08734688:  @ 0x08734688
-	.incbin "./graphics/banim/assets/tsa/00734688_Tsa_08734688.tsa.lz" @ 0x73478C - 0x734688
+	.incbin "./graphics/banim/assets/tsa/00734688_Tsa_08734688.map.bin.lz" @ 0x73478C - 0x734688
 
 	.global Img_0873478C
 Img_0873478C:  @ 0x0873478C
@@ -32809,51 +32809,51 @@ Pal_AuraBg3:  @ 0x0874394C
 
 	.global Tsa_0874396C
 Tsa_0874396C:  @ 0x0874396C
-	.incbin "./graphics/banim/assets/tsa/0074396C_Tsa_0874396C.tsa.lz" @ 0x743BE4 - 0x74396C
+	.incbin "./graphics/banim/assets/tsa/0074396C_Tsa_0874396C.map.bin.lz" @ 0x743BE4 - 0x74396C
 
 	.global Tsa_08743BE4
 Tsa_08743BE4:  @ 0x08743BE4
-	.incbin "./graphics/banim/assets/tsa/00743BE4_Tsa_08743BE4.tsa.lz" @ 0x743E5C - 0x743BE4
+	.incbin "./graphics/banim/assets/tsa/00743BE4_Tsa_08743BE4.map.bin.lz" @ 0x743E5C - 0x743BE4
 
 	.global Tsa_08743E5C
 Tsa_08743E5C:  @ 0x08743E5C
-	.incbin "./graphics/banim/assets/tsa/00743E5C_Tsa_08743E5C.tsa.lz" @ 0x7440D4 - 0x743E5C
+	.incbin "./graphics/banim/assets/tsa/00743E5C_Tsa_08743E5C.map.bin.lz" @ 0x7440D4 - 0x743E5C
 
 	.global Tsa_087440D4
 Tsa_087440D4:  @ 0x087440D4
-	.incbin "./graphics/banim/assets/tsa/007440D4_Tsa_087440D4.tsa.lz" @ 0x74434C - 0x7440D4
+	.incbin "./graphics/banim/assets/tsa/007440D4_Tsa_087440D4.map.bin.lz" @ 0x74434C - 0x7440D4
 
 	.global Tsa_0874434C
 Tsa_0874434C:  @ 0x0874434C
-	.incbin "./graphics/banim/assets/tsa/0074434C_Tsa_0874434C.tsa.lz" @ 0x7445BC - 0x74434C
+	.incbin "./graphics/banim/assets/tsa/0074434C_Tsa_0874434C.map.bin.lz" @ 0x7445BC - 0x74434C
 
 	.global Tsa_087445BC
 Tsa_087445BC:  @ 0x087445BC
-	.incbin "./graphics/banim/assets/tsa/007445BC_Tsa_087445BC.tsa.lz" @ 0x744818 - 0x7445BC
+	.incbin "./graphics/banim/assets/tsa/007445BC_Tsa_087445BC.map.bin.lz" @ 0x744818 - 0x7445BC
 
 	.global Tsa_08744818
 Tsa_08744818:  @ 0x08744818
-	.incbin "./graphics/banim/assets/tsa/00744818_Tsa_08744818.tsa.lz" @ 0x744A90 - 0x744818
+	.incbin "./graphics/banim/assets/tsa/00744818_Tsa_08744818.map.bin.lz" @ 0x744A90 - 0x744818
 
 	.global Tsa_08744A90
 Tsa_08744A90:  @ 0x08744A90
-	.incbin "./graphics/banim/assets/tsa/00744A90_Tsa_08744A90.tsa.lz" @ 0x744D08 - 0x744A90
+	.incbin "./graphics/banim/assets/tsa/00744A90_Tsa_08744A90.map.bin.lz" @ 0x744D08 - 0x744A90
 
 	.global Tsa_08744D08
 Tsa_08744D08:  @ 0x08744D08
-	.incbin "./graphics/banim/assets/tsa/00744D08_Tsa_08744D08.tsa.lz" @ 0x744F80 - 0x744D08
+	.incbin "./graphics/banim/assets/tsa/00744D08_Tsa_08744D08.map.bin.lz" @ 0x744F80 - 0x744D08
 
 	.global Tsa_08744F80
 Tsa_08744F80:  @ 0x08744F80
-	.incbin "./graphics/banim/assets/tsa/00744F80_Tsa_08744F80.tsa.lz" @ 0x7451F8 - 0x744F80
+	.incbin "./graphics/banim/assets/tsa/00744F80_Tsa_08744F80.map.bin.lz" @ 0x7451F8 - 0x744F80
 
 	.global Tsa_087451F8
 Tsa_087451F8:  @ 0x087451F8
-	.incbin "./graphics/banim/assets/tsa/007451F8_Tsa_087451F8.tsa.lz" @ 0x745470 - 0x7451F8
+	.incbin "./graphics/banim/assets/tsa/007451F8_Tsa_087451F8.map.bin.lz" @ 0x745470 - 0x7451F8
 
 	.global Tsa_08745470
 Tsa_08745470:  @ 0x08745470
-	.incbin "./graphics/banim/assets/tsa/00745470_Tsa_08745470.tsa.lz" @ 0x7456E8 - 0x745470
+	.incbin "./graphics/banim/assets/tsa/00745470_Tsa_08745470.map.bin.lz" @ 0x7456E8 - 0x745470
 
 	.global Pal_EfxChillEffectBG
 Pal_EfxChillEffectBG:  @ 0x087456E8
@@ -32861,15 +32861,15 @@ Pal_EfxChillEffectBG:  @ 0x087456E8
 
     .global Tsa1_EfxChillEffectBG
 Tsa1_EfxChillEffectBG:
-    .incbin "./graphics/banim/assets/tsa/007457A8_Tsa1_EfxChillEffectBG.tsa.lz"
+    .incbin "./graphics/banim/assets/tsa/007457A8_Tsa1_EfxChillEffectBG.map.bin.lz"
 
     .global Tsa2_EfxChillEffectBG
 Tsa2_EfxChillEffectBG:
-    .incbin "./graphics/banim/assets/tsa/00745B74_Tsa2_EfxChillEffectBG.tsa.lz"
+    .incbin "./graphics/banim/assets/tsa/00745B74_Tsa2_EfxChillEffectBG.map.bin.lz"
 
     .global Tsa3_EfxChillEffectBG
 Tsa3_EfxChillEffectBG:
-    .incbin "./graphics/banim/assets/tsa/00745FD0_Tsa3_EfxChillEffectBG.tsa.lz"
+    .incbin "./graphics/banim/assets/tsa/00745FD0_Tsa3_EfxChillEffectBG.map.bin.lz"
 
 .global AnimSprite_EfxChill_R_1
 AnimSprite_EfxChill_R_1:  @ 0x746358
@@ -33091,43 +33091,43 @@ Pal_EreshkigalBg3:  @ 0x08750268
 
 	.global Tsa_08750288
 Tsa_08750288:  @ 0x08750288
-	.incbin "./graphics/banim/assets/tsa/00750288_Tsa_08750288.tsa.lz" @ 0x7503E4 - 0x750288
+	.incbin "./graphics/banim/assets/tsa/00750288_Tsa_08750288.map.bin.lz" @ 0x7503E4 - 0x750288
 
 	.global Tsa_087503E4
 Tsa_087503E4:  @ 0x087503E4
-	.incbin "./graphics/banim/assets/tsa/007503E4_Tsa_087503E4.tsa.lz" @ 0x7505C4 - 0x7503E4
+	.incbin "./graphics/banim/assets/tsa/007503E4_Tsa_087503E4.map.bin.lz" @ 0x7505C4 - 0x7503E4
 
 	.global Tsa_087505C4
 Tsa_087505C4:  @ 0x087505C4
-	.incbin "./graphics/banim/assets/tsa/007505C4_Tsa_087505C4.tsa.lz" @ 0x750810 - 0x7505C4
+	.incbin "./graphics/banim/assets/tsa/007505C4_Tsa_087505C4.map.bin.lz" @ 0x750810 - 0x7505C4
 
 	.global Tsa_08750810
 Tsa_08750810:  @ 0x08750810
-	.incbin "./graphics/banim/assets/tsa/00750810_Tsa_08750810.tsa.lz" @ 0x750A38 - 0x750810
+	.incbin "./graphics/banim/assets/tsa/00750810_Tsa_08750810.map.bin.lz" @ 0x750A38 - 0x750810
 
 	.global Tsa_08750A38
 Tsa_08750A38:  @ 0x08750A38
-	.incbin "./graphics/banim/assets/tsa/00750A38_Tsa_08750A38.tsa.lz" @ 0x750C88 - 0x750A38
+	.incbin "./graphics/banim/assets/tsa/00750A38_Tsa_08750A38.map.bin.lz" @ 0x750C88 - 0x750A38
 
 	.global Tsa_08750C88
 Tsa_08750C88:  @ 0x08750C88
-	.incbin "./graphics/banim/assets/tsa/00750C88_Tsa_08750C88.tsa.lz" @ 0x750EFC - 0x750C88
+	.incbin "./graphics/banim/assets/tsa/00750C88_Tsa_08750C88.map.bin.lz" @ 0x750EFC - 0x750C88
 
 	.global Tsa_08750EFC
 Tsa_08750EFC:  @ 0x08750EFC
-	.incbin "./graphics/banim/assets/tsa/00750EFC_Tsa_08750EFC.tsa.lz" @ 0x751128 - 0x750EFC
+	.incbin "./graphics/banim/assets/tsa/00750EFC_Tsa_08750EFC.map.bin.lz" @ 0x751128 - 0x750EFC
 
 	.global Tsa_08751128
 Tsa_08751128:  @ 0x08751128
-	.incbin "./graphics/banim/assets/tsa/00751128_Tsa_08751128.tsa.lz" @ 0x75136C - 0x751128
+	.incbin "./graphics/banim/assets/tsa/00751128_Tsa_08751128.map.bin.lz" @ 0x75136C - 0x751128
 
 	.global Tsa_0875136C
 Tsa_0875136C:  @ 0x0875136C
-	.incbin "./graphics/banim/assets/tsa/0075136C_Tsa_0875136C.tsa.lz" @ 0x7515C4 - 0x75136C
+	.incbin "./graphics/banim/assets/tsa/0075136C_Tsa_0875136C.map.bin.lz" @ 0x7515C4 - 0x75136C
 
 	.global Tsa_087515C4
 Tsa_087515C4:  @ 0x087515C4
-	.incbin "./graphics/banim/assets/tsa/007515C4_Tsa_087515C4.tsa.lz" @ 0x751808 - 0x7515C4
+	.incbin "./graphics/banim/assets/tsa/007515C4_Tsa_087515C4.map.bin.lz" @ 0x751808 - 0x7515C4
 
 	.global Img_08751808
 Img_08751808:  @ 0x08751808
@@ -33238,111 +33238,111 @@ Pal_SongSprites:  @ 0x08754870
 
 	.global Tsa_08754910
 Tsa_08754910:  @ 0x08754910
-	.incbin "./graphics/banim/assets/tsa/00754910_Tsa_08754910.tsa.lz" @ 0x7549B8 - 0x754910
+	.incbin "./graphics/banim/assets/tsa/00754910_Tsa_08754910.map.bin.lz" @ 0x7549B8 - 0x754910
 
 	.global Tsa_087549B8
 Tsa_087549B8:  @ 0x087549B8
-	.incbin "./graphics/banim/assets/tsa/007549B8_Tsa_087549B8.tsa.lz" @ 0x754A64 - 0x7549B8
+	.incbin "./graphics/banim/assets/tsa/007549B8_Tsa_087549B8.map.bin.lz" @ 0x754A64 - 0x7549B8
 
 	.global Tsa_08754A64
 Tsa_08754A64:  @ 0x08754A64
-	.incbin "./graphics/banim/assets/tsa/00754A64_Tsa_08754A64.tsa.lz" @ 0x754B14 - 0x754A64
+	.incbin "./graphics/banim/assets/tsa/00754A64_Tsa_08754A64.map.bin.lz" @ 0x754B14 - 0x754A64
 
 	.global Tsa_08754B14
 Tsa_08754B14:  @ 0x08754B14
-	.incbin "./graphics/banim/assets/tsa/00754B14_Tsa_08754B14.tsa.lz" @ 0x754BD8 - 0x754B14
+	.incbin "./graphics/banim/assets/tsa/00754B14_Tsa_08754B14.map.bin.lz" @ 0x754BD8 - 0x754B14
 
 	.global Tsa_08754BD8
 Tsa_08754BD8:  @ 0x08754BD8
-	.incbin "./graphics/banim/assets/tsa/00754BD8_Tsa_08754BD8.tsa.lz" @ 0x754CA4 - 0x754BD8
+	.incbin "./graphics/banim/assets/tsa/00754BD8_Tsa_08754BD8.map.bin.lz" @ 0x754CA4 - 0x754BD8
 
 	.global Tsa_08754CA4
 Tsa_08754CA4:  @ 0x08754CA4
-	.incbin "./graphics/banim/assets/tsa/00754CA4_Tsa_08754CA4.tsa.lz" @ 0x754D7C - 0x754CA4
+	.incbin "./graphics/banim/assets/tsa/00754CA4_Tsa_08754CA4.map.bin.lz" @ 0x754D7C - 0x754CA4
 
 	.global Tsa_08754D7C
 Tsa_08754D7C:  @ 0x08754D7C
-	.incbin "./graphics/banim/assets/tsa/00754D7C_Tsa_08754D7C.tsa.lz" @ 0x754E5C - 0x754D7C
+	.incbin "./graphics/banim/assets/tsa/00754D7C_Tsa_08754D7C.map.bin.lz" @ 0x754E5C - 0x754D7C
 
 	.global Tsa_08754E5C
 Tsa_08754E5C:  @ 0x08754E5C
-	.incbin "./graphics/banim/assets/tsa/00754E5C_Tsa_08754E5C.tsa.lz" @ 0x754F3C - 0x754E5C
+	.incbin "./graphics/banim/assets/tsa/00754E5C_Tsa_08754E5C.map.bin.lz" @ 0x754F3C - 0x754E5C
 
 	.global Tsa_08754F3C
 Tsa_08754F3C:  @ 0x08754F3C
-	.incbin "./graphics/banim/assets/tsa/00754F3C_Tsa_08754F3C.tsa.lz" @ 0x755028 - 0x754F3C
+	.incbin "./graphics/banim/assets/tsa/00754F3C_Tsa_08754F3C.map.bin.lz" @ 0x755028 - 0x754F3C
 
 	.global Tsa_08755028
 Tsa_08755028:  @ 0x08755028
-	.incbin "./graphics/banim/assets/tsa/00755028_Tsa_08755028.tsa.lz" @ 0x75511C - 0x755028
+	.incbin "./graphics/banim/assets/tsa/00755028_Tsa_08755028.map.bin.lz" @ 0x75511C - 0x755028
 
 	.global Tsa_0875511C
 Tsa_0875511C:  @ 0x0875511C
-	.incbin "./graphics/banim/assets/tsa/0075511C_Tsa_0875511C.tsa.lz" @ 0x755218 - 0x75511C
+	.incbin "./graphics/banim/assets/tsa/0075511C_Tsa_0875511C.map.bin.lz" @ 0x755218 - 0x75511C
 
 	.global Tsa_08755218
 Tsa_08755218:  @ 0x08755218
-	.incbin "./graphics/banim/assets/tsa/00755218_Tsa_08755218.tsa.lz" @ 0x755310 - 0x755218
+	.incbin "./graphics/banim/assets/tsa/00755218_Tsa_08755218.map.bin.lz" @ 0x755310 - 0x755218
 
 	.global Tsa_08755310
 Tsa_08755310:  @ 0x08755310
-	.incbin "./graphics/banim/assets/tsa/00755310_Tsa_08755310.tsa.lz" @ 0x755410 - 0x755310
+	.incbin "./graphics/banim/assets/tsa/00755310_Tsa_08755310.map.bin.lz" @ 0x755410 - 0x755310
 
 	.global Tsa_08755410
 Tsa_08755410:  @ 0x08755410
-	.incbin "./graphics/banim/assets/tsa/00755410_Tsa_08755410.tsa.lz" @ 0x755510 - 0x755410
+	.incbin "./graphics/banim/assets/tsa/00755410_Tsa_08755410.map.bin.lz" @ 0x755510 - 0x755410
 
 	.global Tsa_08755510
 Tsa_08755510:  @ 0x08755510
-	.incbin "./graphics/banim/assets/tsa/00755510_Tsa_08755510.tsa.lz" @ 0x755610 - 0x755510
+	.incbin "./graphics/banim/assets/tsa/00755510_Tsa_08755510.map.bin.lz" @ 0x755610 - 0x755510
 
 	.global Tsa_08755610
 Tsa_08755610:  @ 0x08755610
-	.incbin "./graphics/banim/assets/tsa/00755610_Tsa_08755610.tsa.lz" @ 0x755714 - 0x755610
+	.incbin "./graphics/banim/assets/tsa/00755610_Tsa_08755610.map.bin.lz" @ 0x755714 - 0x755610
 
 	.global Tsa_08755714
 Tsa_08755714:  @ 0x08755714
-	.incbin "./graphics/banim/assets/tsa/00755714_Tsa_08755714.tsa.lz" @ 0x755804 - 0x755714
+	.incbin "./graphics/banim/assets/tsa/00755714_Tsa_08755714.map.bin.lz" @ 0x755804 - 0x755714
 
 	.global Tsa_08755804
 Tsa_08755804:  @ 0x08755804
-	.incbin "./graphics/banim/assets/tsa/00755804_Tsa_08755804.tsa.lz" @ 0x7558EC - 0x755804
+	.incbin "./graphics/banim/assets/tsa/00755804_Tsa_08755804.map.bin.lz" @ 0x7558EC - 0x755804
 
 	.global Tsa_087558EC
 Tsa_087558EC:  @ 0x087558EC
-	.incbin "./graphics/banim/assets/tsa/007558EC_Tsa_087558EC.tsa.lz" @ 0x7559D0 - 0x7558EC
+	.incbin "./graphics/banim/assets/tsa/007558EC_Tsa_087558EC.map.bin.lz" @ 0x7559D0 - 0x7558EC
 
 	.global Tsa_087559D0
 Tsa_087559D0:  @ 0x087559D0
-	.incbin "./graphics/banim/assets/tsa/007559D0_Tsa_087559D0.tsa.lz" @ 0x755AB8 - 0x7559D0
+	.incbin "./graphics/banim/assets/tsa/007559D0_Tsa_087559D0.map.bin.lz" @ 0x755AB8 - 0x7559D0
 
 	.global Tsa_08755AB8
 Tsa_08755AB8:  @ 0x08755AB8
-	.incbin "./graphics/banim/assets/tsa/00755AB8_Tsa_08755AB8.tsa.lz" @ 0x755B94 - 0x755AB8
+	.incbin "./graphics/banim/assets/tsa/00755AB8_Tsa_08755AB8.map.bin.lz" @ 0x755B94 - 0x755AB8
 
 	.global Tsa_08755B94
 Tsa_08755B94:  @ 0x08755B94
-	.incbin "./graphics/banim/assets/tsa/00755B94_Tsa_08755B94.tsa.lz" @ 0x755C64 - 0x755B94
+	.incbin "./graphics/banim/assets/tsa/00755B94_Tsa_08755B94.map.bin.lz" @ 0x755C64 - 0x755B94
 
 	.global Tsa_08755C64
 Tsa_08755C64:  @ 0x08755C64
-	.incbin "./graphics/banim/assets/tsa/00755C64_Tsa_08755C64.tsa.lz" @ 0x755D20 - 0x755C64
+	.incbin "./graphics/banim/assets/tsa/00755C64_Tsa_08755C64.map.bin.lz" @ 0x755D20 - 0x755C64
 
 	.global Tsa_08755D20
 Tsa_08755D20:  @ 0x08755D20
-	.incbin "./graphics/banim/assets/tsa/00755D20_Tsa_08755D20.tsa.lz" @ 0x755DE0 - 0x755D20
+	.incbin "./graphics/banim/assets/tsa/00755D20_Tsa_08755D20.map.bin.lz" @ 0x755DE0 - 0x755D20
 
 	.global Tsa_08755DE0
 Tsa_08755DE0:  @ 0x08755DE0
-	.incbin "./graphics/banim/assets/tsa/00755DE0_Tsa_08755DE0.tsa.lz" @ 0x755E94 - 0x755DE0
+	.incbin "./graphics/banim/assets/tsa/00755DE0_Tsa_08755DE0.map.bin.lz" @ 0x755E94 - 0x755DE0
 
 	.global Tsa_08755E94
 Tsa_08755E94:  @ 0x08755E94
-	.incbin "./graphics/banim/assets/tsa/00755E94_Tsa_08755E94.tsa.lz" @ 0x755F3C - 0x755E94
+	.incbin "./graphics/banim/assets/tsa/00755E94_Tsa_08755E94.map.bin.lz" @ 0x755F3C - 0x755E94
 
 	.global Tsa_08755F3C
 Tsa_08755F3C:  @ 0x08755F3C
-	.incbin "./graphics/banim/assets/tsa/00755F3C_Tsa_08755F3C.tsa.lz" @ 0x755FD4 - 0x755F3C
+	.incbin "./graphics/banim/assets/tsa/00755F3C_Tsa_08755F3C.map.bin.lz" @ 0x755FD4 - 0x755F3C
 
 	.global Img_SongSprites
 Img_SongSprites:  @ 0x08755FD4

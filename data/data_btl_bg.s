@@ -281,7 +281,7 @@ btl_bg_14_palette: @876e2a0
 	.align 2, 0
 	.global btl_bg_14_map
 btl_bg_14_map: @876e350
-	.incbin "graphics/btl_bg/btl_bg_14.tsa.lz"
+	.incbin "graphics/btl_bg/btl_bg_14.map.bin.lz"
 
 	.align 2, 0
 	.global btl_bg_15_tiles
@@ -386,7 +386,7 @@ btl_bg_31_palette: @87728a4
 	.align 2, 0
 	.global btl_bg_27_map
 btl_bg_27_map: @8772950
-	.incbin "graphics/btl_bg/btl_bg_27.tsa.lz"
+	.incbin "graphics/btl_bg/btl_bg_27.map.bin.lz"
 
 	.align 2, 0
 	.global btl_bg_32_tiles
@@ -416,7 +416,7 @@ btl_bg_33_palette: @8776b4c
 	.align 2, 0
 	.global btl_bg_33_map
 btl_bg_33_map: @8776c18
-	.incbin "graphics/btl_bg/btl_bg_33.tsa.lz"
+	.incbin "graphics/btl_bg/btl_bg_33.map.bin.lz"
 
 	.align 2, 0
 	.global btl_bg_34_palette
@@ -571,7 +571,7 @@ btl_bg_59_palette: @877f3dc
 	.align 2, 0
 	.global btl_bg_59_map
 btl_bg_59_map: @877f42c
-	.incbin "graphics/btl_bg/btl_bg_59.tsa.lz"
+	.incbin "graphics/btl_bg/btl_bg_59.map.bin.lz"
 
 	.align 2, 0
 	.global btl_bg_55_tiles
@@ -586,7 +586,7 @@ btl_bg_55_palette: @8781d94
 	.align 2, 0
 	.global btl_bg_55_map
 btl_bg_55_map: @8781ea4
-	.incbin "graphics/btl_bg/btl_bg_55.tsa.lz"
+	.incbin "graphics/btl_bg/btl_bg_55.map.bin.lz"
 
 	.align 2, 0
 	.global btl_bg_56_tiles
@@ -631,7 +631,7 @@ btl_bg_58_palette: @8789d30
 	.align 2, 0
 	.global btl_bg_58_map
 btl_bg_58_map: @8789e3c
-	.incbin "graphics/btl_bg/btl_bg_58.tsa.lz"
+	.incbin "graphics/btl_bg/btl_bg_58.map.bin.lz"
 
 	.align 2, 0
 	.global btl_bg_60_tiles
@@ -646,7 +646,7 @@ btl_bg_60_palette: @878ca60
 	.align 2, 0
 	.global btl_bg_60_map
 btl_bg_60_map: @878cb28
-	.incbin "graphics/btl_bg/btl_bg_60.tsa.lz"
+	.incbin "graphics/btl_bg/btl_bg_60.map.bin.lz"
 
 	.align 2, 0
 	.global btl_bg_61_palette

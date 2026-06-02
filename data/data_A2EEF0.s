@@ -14,7 +14,7 @@ gUnknown_08A30800:  @ 0x08A30800
 
 	.global gUnknown_08A30978
 gUnknown_08A30978:  @ 0x08A30978
-	.incbin "graphics/misc/gUnknown_08A30978.tsa"
+	.incbin "graphics/misc/gUnknown_08A30978.map.bin"
 
 	.global gUnknown_08A30E2C
 gUnknown_08A30E2C:  @ 0x08A30E2C
@@ -22,7 +22,7 @@ gUnknown_08A30E2C:  @ 0x08A30E2C
 
 	.global gUnknown_08A35488
 gUnknown_08A35488:  @ 0x08A35488
-	.incbin "graphics/misc/gUnknown_08A35488.tsa"
+	.incbin "graphics/misc/gUnknown_08A35488.map.bin"
 
 	.global gUnknown_08A3593C
 gUnknown_08A3593C:  @ 0x08A3593C
@@ -34,7 +34,7 @@ gUnknown_08A35A3C:  @ 0x08A35A3C
 
 	.global gUnknown_08A35FD0
 gUnknown_08A35FD0:  @ 0x08A35FD0
-	.incbin "graphics/misc/gUnknown_08A35FD0.tsa.lz"
+	.incbin "graphics/misc/gUnknown_08A35FD0.map.bin.lz"
 
 	.global gUnknown_08A360C8
 gUnknown_08A360C8:  @ 0x08A360C8
@@ -46,7 +46,7 @@ gUnknown_08A360E8:  @ 0x08A360E8
 
 	.global gUnknown_08A36284
 gUnknown_08A36284:  @ 0x08A36284
-	.incbin "graphics/misc/gUnknown_08A36284.tsa.lz"
+	.incbin "graphics/misc/gUnknown_08A36284.map.bin.lz"
 
 	.global gUnknown_08A36318
 gUnknown_08A36318:  @ 0x08A36318

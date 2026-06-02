@@ -22,15 +22,15 @@ Img_EfxRightItemBox:  @ 0x088020BC
 
     .global gUnknown_0880210C
 gUnknown_0880210C:  @ 0x0880210C
-    .incbin "graphics/banim/misc/gUnknown_0880210C.tsa"
+    .incbin "graphics/banim/misc/gUnknown_0880210C.map.bin"
 
     .global gUnknown_088021C0
 gUnknown_088021C0:  @ 0x088021C0
-    .incbin "graphics/banim/misc/gUnknown_088021C0.tsa"
+    .incbin "graphics/banim/misc/gUnknown_088021C0.map.bin"
 
     .global gUnknown_08802274
 gUnknown_08802274:  @ 0x08802274
-    .incbin "graphics/banim/misc/gUnknown_08802274.tsa"
+    .incbin "graphics/banim/misc/gUnknown_08802274.map.bin"
 
     .global gUnknown_08802348
 gUnknown_08802348:  @ 0x08802348
@@ -42,7 +42,7 @@ gUnknown_08802428:  @ 0x08802428
 
     .global gUnknown_08802508
 gUnknown_08802508:  @ 0x08802508
-    .incbin "graphics/banim/misc/gUnknown_08802508.tsa"
+    .incbin "graphics/banim/misc/gUnknown_08802508.map.bin"
 
     .global gUnknown_08802558
 gUnknown_08802558:  @ 0x08802558
@@ -106,7 +106,7 @@ Img_BarNumfx:  @ 0x088033C4
 
     .global Tsa_EkrExpBar
 Tsa_EkrExpBar:  @ 0x08803524
-    .incbin "graphics/banim/misc/Tsa_EkrExpBar.tsa"
+    .incbin "graphics/banim/misc/Tsa_EkrExpBar.map.bin"
 
     .global Pal_ExpBar
 Pal_ExpBar:  @ 0x08803590
@@ -138,4 +138,4 @@ Pal_EkrPopup:  @ 0x08803CB0
 
     .global Tsa_EkrPopup
 Tsa_EkrPopup:  @ 0x08803CD0
-    .incbin "graphics/banim/misc/Tsa_EkrPopup.tsa.lz"
+    .incbin "graphics/banim/misc/Tsa_EkrPopup.map.bin.lz"

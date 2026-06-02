@@ -75,7 +75,6 @@ tools/agbcc
 *.4bpp.h
 *.8bpp.h
 *.lz
-*.tsa
 *.fk
 data/banim/*.bin
 graphics/map/layout/*.bin

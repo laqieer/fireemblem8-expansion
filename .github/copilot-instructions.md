@@ -89,10 +89,10 @@ The compiled output must be **byte-identical** to the original ROM. This means:
 
 ### Asset extraction
 Raw data blobs are migrated from `dump/`*.bin into typed source (C arrays, or
-`.png`/`.pal`/`.tsa` graphics) following `docs/dump_extraction_plan.md`; each
+`.png`/`.pal`/`.map.bin` tilemap graphics) following `docs/dump_extraction_plan.md`; each
 conversion must round-trip byte-identical. LZ-compressed assets are committed
 **decompressed** (the build recompresses via `Makefile %.lz` rules) — never
-commit `.lz`/`.4bpp`/`.gbapal`/`.tsa.lz` artifacts. When a recompressed asset
+commit `.lz`/`.4bpp`/`.gbapal`/`.map.bin.lz` artifacts. When a recompressed asset
 only prefix-matches the original at the 4-byte LZ header, sweep gbagfx's
 minimum match distance (`gbagfx in out.lz -mindist N`, default 2) and pin the
 winning value per-target via `LZ_FLAGS := -mindist N` in the `Makefile` — this

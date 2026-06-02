@@ -34,68 +34,68 @@ gUnknown_08A1740C:  @ 0x08A1740C
 
 	.global gTSA_TerrainBox
 gTSA_TerrainBox:  @ 0x08A1742C
-	.incbin "graphics/misc/gTSA_TerrainBox.tsa"
+	.incbin "graphics/misc/gTSA_TerrainBox.map.bin"
 
 	.global gTSA_MinimugBox
 gTSA_MinimugBox:  @ 0x08A17484
-	.incbin "graphics/misc/gTSA_MinimugBox.tsa"
+	.incbin "graphics/misc/gTSA_MinimugBox.map.bin"
 
 	.global gUnknown_08A175B4
 gUnknown_08A175B4:  @ 0x08A175B4
-	.incbin "graphics/misc/gUnknown_08A175B4.tsa"
+	.incbin "graphics/misc/gUnknown_08A175B4.map.bin"
 
 	.global gUnknown_08A175C8
 gUnknown_08A175C8:  @ 0x08A175C8
-	.incbin "graphics/misc/gUnknown_08A175C8.tsa"
+	.incbin "graphics/misc/gUnknown_08A175C8.map.bin"
 
 	.global gUnknown_08A175DC
 gUnknown_08A175DC:  @ 0x08A175DC
-	.incbin "graphics/misc/gUnknown_08A175DC.tsa"
+	.incbin "graphics/misc/gUnknown_08A175DC.map.bin"
 
 	.global gUnknown_08A175F0
 gUnknown_08A175F0:  @ 0x08A175F0
-	.incbin "graphics/misc/gUnknown_08A175F0.tsa"
+	.incbin "graphics/misc/gUnknown_08A175F0.map.bin"
 
 	.global gUnknown_08A17604
 gUnknown_08A17604:  @ 0x08A17604
-	.incbin "graphics/misc/gUnknown_08A17604.tsa"
+	.incbin "graphics/misc/gUnknown_08A17604.map.bin"
 
 	.global gUnknown_08A1763C
 gUnknown_08A1763C:  @ 0x08A1763C
-	.incbin "graphics/misc/gUnknown_08A1763C.tsa"
+	.incbin "graphics/misc/gUnknown_08A1763C.map.bin"
 
 	.global gUnknown_08A17650
 gUnknown_08A17650:  @ 0x08A17650
-	.incbin "graphics/misc/gUnknown_08A17650.tsa"
+	.incbin "graphics/misc/gUnknown_08A17650.map.bin"
 
 	.global gUnknown_08A17664
 gUnknown_08A17664:  @ 0x08A17664
-	.incbin "graphics/misc/gUnknown_08A17664.tsa"
+	.incbin "graphics/misc/gUnknown_08A17664.map.bin"
 
 	.global gUnknown_08A17678
 gUnknown_08A17678:  @ 0x08A17678
-	.incbin "graphics/misc/gUnknown_08A17678.tsa"
+	.incbin "graphics/misc/gUnknown_08A17678.map.bin"
 
 	.global Tsa_TerrainMapUi_Labels
 Tsa_TerrainMapUi_Labels:  @ 0x08A1768C
-	.incbin "graphics/misc/Tsa_TerrainMapUi_Labels.tsa"
+	.incbin "graphics/misc/Tsa_TerrainMapUi_Labels.map.bin"
 
 	.global gTSA_TerrainBox_Ballistae
 gTSA_TerrainBox_Ballistae:  @ 0x08A1769C
-	.incbin "graphics/misc/gTSA_TerrainBox_Ballistae.tsa"
+	.incbin "graphics/misc/gTSA_TerrainBox_Ballistae.map.bin"
 
 	.global Tsa_TerrainMapUi_ObstacleLabels
 Tsa_TerrainMapUi_ObstacleLabels:  @ 0x08A176A4
-	.incbin "graphics/misc/Tsa_TerrainMapUi_ObstacleLabels.tsa"
+	.incbin "graphics/misc/Tsa_TerrainMapUi_ObstacleLabels.map.bin"
 
 	.global Tsa_TerrainMapUi_ObstacleFullHp
 Tsa_TerrainMapUi_ObstacleFullHp:  @ 0x08A176B4
-	.incbin "graphics/misc/Tsa_TerrainMapUi_ObstacleFullHp.tsa"
+	.incbin "graphics/misc/Tsa_TerrainMapUi_ObstacleFullHp.map.bin"
 
 	.global gTSA_GoalBox_TwoLines
 gTSA_GoalBox_TwoLines:  @ 0x08A176BC
-	.incbin "graphics/misc/gTSA_GoalBox_TwoLines.tsa"
+	.incbin "graphics/misc/gTSA_GoalBox_TwoLines.map.bin"
 
 	.global gTSA_GoalBox_OneLine
 gTSA_GoalBox_OneLine:  @ 0x08A17744
-	.incbin "graphics/misc/gTSA_GoalBox_OneLine.tsa"
+	.incbin "graphics/misc/gTSA_GoalBox_OneLine.map.bin"

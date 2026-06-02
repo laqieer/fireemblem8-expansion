@@ -86,23 +86,23 @@ Pal_085ADE68:  @ 0x085ADE68
 
 	.global gUnknown_085ADE88
 gUnknown_085ADE88:  @ 0x085ADE88
-	.incbin "graphics/misc/gUnknown_085ADE88.tsa"
+	.incbin "graphics/misc/gUnknown_085ADE88.map.bin"
 
 	.global gUnknown_085ADF40
 gUnknown_085ADF40:  @ 0x085ADF40
-	.incbin "graphics/misc/gUnknown_085ADF40.tsa"
+	.incbin "graphics/misc/gUnknown_085ADF40.map.bin"
 
 	.global Tsa_085AE190
 Tsa_085AE190:  @ 0x085AE190
-	.incbin "graphics/misc/Tsa_085AE190.tsa"
+	.incbin "graphics/misc/Tsa_085AE190.map.bin"
 
 	.global Tsa_SioResultRankings
 Tsa_SioResultRankings:  @ 0x085AE464
-	.incbin "graphics/misc/Tsa_SioResultRankings.tsa"
+	.incbin "graphics/misc/Tsa_SioResultRankings.map.bin"
 
 	.global gUnknown_085AE778
 gUnknown_085AE778:  @ 0x085AE778
-	.incbin "graphics/misc/gUnknown_085AE778.tsa.lz"
+	.incbin "graphics/misc/gUnknown_085AE778.map.bin.lz"
 
 	.global gUnknown_085AE7EC
 gUnknown_085AE7EC:  @ 0x085AE7EC
@@ -150,7 +150,7 @@ Pal_LinkArenaPostBattleBg:  @ 0x085B081C
 
 	.global Tsa_LinkArenaPostBattleBg
 Tsa_LinkArenaPostBattleBg:  @ 0x085B089C
-	.incbin "graphics/misc/Tsa_LinkArenaPostBattleBg.tsa.lz"
+	.incbin "graphics/misc/Tsa_LinkArenaPostBattleBg.map.bin.lz"
 
 	.global gUnknown_085B0DE8
 gUnknown_085B0DE8:  @ 0x085B0DE8
@@ -158,4 +158,4 @@ gUnknown_085B0DE8:  @ 0x085B0DE8
 
 	.global gUnknown_085B0F2C
 gUnknown_085B0F2C:  @ 0x085B0F2C
-    .incbin "graphics/misc/gUnknown_085B0F2C.tsa"
+    .incbin "graphics/misc/gUnknown_085B0F2C.map.bin"

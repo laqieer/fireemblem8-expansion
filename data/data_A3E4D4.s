@@ -5,7 +5,7 @@
 @ char 0x260 -- where Img_CharacterEndingMenu is decompressed (ending_details.c)
 @ -- followed by a 2x16 RGB15 palette.
 gUnknown_08A3F21C:  @ 0x08A3F21C
-	.incbin "graphics/misc/gUnknown_08A3F21C.tsa"
+	.incbin "graphics/misc/gUnknown_08A3F21C.map.bin"
 @ 2x16 RGB15 palette (32 colors). All colors have bit 15 clear, so it is stored
 @ as a JASC .pal (gbagfx regenerates the .gbapal byte-identically).
 	.global Pal_08A3F6D0
@@ -22,27 +22,27 @@ Img_CharacterEndingMenu:  @ 0x08A3F750
 
 	.global Tsa_CharacterEnding_TopBorder
 Tsa_CharacterEnding_TopBorder:  @ 0x08A3FFEC
-    .incbin "graphics/misc/Tsa_CharacterEnding_TopBorder.tsa"
+    .incbin "graphics/misc/Tsa_CharacterEnding_TopBorder.map.bin"
 
 	.global Tsa_CharacterEnding_BottomBorder
 Tsa_CharacterEnding_BottomBorder:  @ 0x08A40068
-	.incbin "graphics/misc/Tsa_CharacterEnding_BottomBorder.tsa"
+	.incbin "graphics/misc/Tsa_CharacterEnding_BottomBorder.map.bin"
 
 	.global gTsa_SoloEndingNameplate
 gTsa_SoloEndingNameplate:  @ 0x08A400E4
-	.incbin "graphics/misc/gTsa_SoloEndingNameplate.tsa.lz"
+	.incbin "graphics/misc/gTsa_SoloEndingNameplate.map.bin.lz"
 
 	.global gTsa_SoloEndingWindow
 gTsa_SoloEndingWindow:  @ 0x08A40204
-	.incbin "graphics/misc/gTsa_SoloEndingWindow.tsa.lz"
+	.incbin "graphics/misc/gTsa_SoloEndingWindow.map.bin.lz"
 
 	.global gTsa_PairedEndingNameplates
 gTsa_PairedEndingNameplates:  @ 0x08A4034C
-	.incbin "graphics/misc/gTsa_PairedEndingNameplates.tsa.lz"
+	.incbin "graphics/misc/gTsa_PairedEndingNameplates.map.bin.lz"
 
 	.global gTsa_PairedEndingWindow
 gTsa_PairedEndingWindow:  @ 0x08A40470
-	.incbin "graphics/misc/gTsa_PairedEndingWindow.tsa.lz"
+	.incbin "graphics/misc/gTsa_PairedEndingWindow.map.bin.lz"
 
 	.global Pal_FinScreen
 Pal_FinScreen:  @ 0x08A405B4
@@ -54,7 +54,7 @@ Img_FinScreen:  @ 0x08A405D4
 
 	.global Tsa_FinScreen
 Tsa_FinScreen:  @ 0x08A409D0
-	.incbin "graphics/misc/Tsa_FinScreen.tsa.lz"
+	.incbin "graphics/misc/Tsa_FinScreen.map.bin.lz"
 
 	.global Pal_08A40AD4
 Pal_08A40AD4:  @ 0x08A40AD4
@@ -62,7 +62,7 @@ Pal_08A40AD4:  @ 0x08A40AD4
 
 	.global Tsa_08A40B14
 Tsa_08A40B14:  @ 0x08A40B14
-	.incbin "graphics/misc/Tsa_08A40B14.tsa"
+	.incbin "graphics/misc/Tsa_08A40B14.map.bin"
 
 	.global Pal_StaffReelEnt_08A40FC8
 Pal_StaffReelEnt_08A40FC8:  @ 0x08A40FC8
@@ -122,55 +122,55 @@ Img_StaffReelEnt_08A4A9D4:  @ 0x08A4A9D4
 
 	.global Tsa_StaffReelEnt_08A4AE08
 Tsa_StaffReelEnt_08A4AE08:  @ 0x08A4AE08
-	.incbin "graphics/misc/Tsa_StaffReelEnt_08A4AE08.tsa.lz"@ 0xA4B090 - 0xA4AE08
+	.incbin "graphics/misc/Tsa_StaffReelEnt_08A4AE08.map.bin.lz"@ 0xA4B090 - 0xA4AE08
 
 	.global Tsa_StaffReelEnt_08A4B090
 Tsa_StaffReelEnt_08A4B090:  @ 0x08A4B090
-	.incbin "graphics/misc/Tsa_StaffReelEnt_08A4B090.tsa.lz"@ 0xA4B2F4 - 0xA4B090
+	.incbin "graphics/misc/Tsa_StaffReelEnt_08A4B090.map.bin.lz"@ 0xA4B2F4 - 0xA4B090
 
 	.global Tsa_StaffReelEnt_08A4B2F4
 Tsa_StaffReelEnt_08A4B2F4:  @ 0x08A4B2F4
-	.incbin "graphics/misc/Tsa_StaffReelEnt_08A4B2F4.tsa.lz"@ 0xA4B558 - 0xA4B2F4
+	.incbin "graphics/misc/Tsa_StaffReelEnt_08A4B2F4.map.bin.lz"@ 0xA4B558 - 0xA4B2F4
 
 	.global Tsa_StaffReelEnt_08A4B558
 Tsa_StaffReelEnt_08A4B558:  @ 0x08A4B558
-	.incbin "graphics/misc/Tsa_StaffReelEnt_08A4B558.tsa.lz"@ 0xA4B788 - 0xA4B558
+	.incbin "graphics/misc/Tsa_StaffReelEnt_08A4B558.map.bin.lz"@ 0xA4B788 - 0xA4B558
 
 	.global Tsa_StaffReelEnt_08A4B788
 Tsa_StaffReelEnt_08A4B788:  @ 0x08A4B788
-	.incbin "graphics/misc/Tsa_StaffReelEnt_08A4B788.tsa.lz"@ 0xA4BB50 - 0xA4B788
+	.incbin "graphics/misc/Tsa_StaffReelEnt_08A4B788.map.bin.lz"@ 0xA4BB50 - 0xA4B788
 
 	.global Tsa_StaffReelEnt_08A4BB50
 Tsa_StaffReelEnt_08A4BB50:  @ 0x08A4BB50
-	.incbin "graphics/misc/Tsa_StaffReelEnt_08A4BB50.tsa.lz"@ 0xA4BCC4 - 0xA4BB50
+	.incbin "graphics/misc/Tsa_StaffReelEnt_08A4BB50.map.bin.lz"@ 0xA4BCC4 - 0xA4BB50
 
 	.global Tsa_StaffReelEnt_08A4BCC4
 Tsa_StaffReelEnt_08A4BCC4:  @ 0x08A4BCC4
-	.incbin "graphics/misc/Tsa_StaffReelEnt_08A4BCC4.tsa.lz"@ 0xA4BEC0 - 0xA4BCC4
+	.incbin "graphics/misc/Tsa_StaffReelEnt_08A4BCC4.map.bin.lz"@ 0xA4BEC0 - 0xA4BCC4
 
 	.global Tsa_StaffReelEnt_08A4BEC0
 Tsa_StaffReelEnt_08A4BEC0:  @ 0x08A4BEC0
-	.incbin "graphics/misc/Tsa_StaffReelEnt_08A4BEC0.tsa.lz"@ 0xA4C0E4 - 0xA4BEC0
+	.incbin "graphics/misc/Tsa_StaffReelEnt_08A4BEC0.map.bin.lz"@ 0xA4C0E4 - 0xA4BEC0
 
 	.global Tsa_StaffReelEnt_08A4C0E4
 Tsa_StaffReelEnt_08A4C0E4:  @ 0x08A4C0E4
-	.incbin "graphics/misc/Tsa_StaffReelEnt_08A4C0E4.tsa.lz"@ 0xA4C308 - 0xA4C0E4
+	.incbin "graphics/misc/Tsa_StaffReelEnt_08A4C0E4.map.bin.lz"@ 0xA4C308 - 0xA4C0E4
 
 	.global Tsa_StaffReelEnt_08A4C308
 Tsa_StaffReelEnt_08A4C308:  @ 0x08A4C308
-	.incbin "graphics/misc/Tsa_StaffReelEnt_08A4C308.tsa.lz"@ 0xA4C6EC - 0xA4C308
+	.incbin "graphics/misc/Tsa_StaffReelEnt_08A4C308.map.bin.lz"@ 0xA4C6EC - 0xA4C308
 
 	.global Tsa_StaffReelEnt_08A4C6EC
 Tsa_StaffReelEnt_08A4C6EC:  @ 0x08A4C6EC
-	.incbin "graphics/misc/Tsa_StaffReelEnt_08A4C6EC.tsa.lz"@ 0xA4C9F0 - 0xA4C6EC
+	.incbin "graphics/misc/Tsa_StaffReelEnt_08A4C6EC.map.bin.lz"@ 0xA4C9F0 - 0xA4C6EC
 
 	.global Tsa_StaffReelEnt_08A4C9F0
 Tsa_StaffReelEnt_08A4C9F0:  @ 0x08A4C9F0
-	.incbin "graphics/misc/Tsa_StaffReelEnt_08A4C9F0.tsa.lz"@ 0xA4CD40 - 0xA4C9F0
+	.incbin "graphics/misc/Tsa_StaffReelEnt_08A4C9F0.map.bin.lz"@ 0xA4CD40 - 0xA4C9F0
 
 	.global Tsa_StaffReelEnt_08A4CD40
 Tsa_StaffReelEnt_08A4CD40:  @ 0x08A4CD40
-	.incbin "graphics/misc/Tsa_StaffReelEnt_08A4CD40.tsa.lz"@ 0xA4CF2C - 0xA4CD40
+	.incbin "graphics/misc/Tsa_StaffReelEnt_08A4CD40.map.bin.lz"@ 0xA4CF2C - 0xA4CD40
 
 	.global gGfx_BrownTextBox
 gGfx_BrownTextBox:  @ 0x08A4CF2C
@@ -683,52 +683,52 @@ cg_9_part_9_tiles: @8a7f494
 	.align 2, 0
 	.global cg_0_map
 cg_0_map: @8a7fcdc
-	.incbin "graphics/cg/cg_0.tsa"
+	.incbin "graphics/cg/cg_0.map.bin"
 
 	.align 2, 0
 	.global cg_1_map
 cg_1_map: @8a80190
-	.incbin "graphics/cg/cg_1.tsa"
+	.incbin "graphics/cg/cg_1.map.bin"
 
 	.align 2, 0
 	.global cg_2_map
 cg_2_map: @8a80644
-	.incbin "graphics/cg/cg_2.tsa"
+	.incbin "graphics/cg/cg_2.map.bin"
 
 	.align 2, 0
 	.global cg_3_map
 cg_3_map: @8a80af8
-	.incbin "graphics/cg/cg_3.tsa"
+	.incbin "graphics/cg/cg_3.map.bin"
 
 	.align 2, 0
 	.global cg_4_map
 cg_4_map: @8a80fac
-	.incbin "graphics/cg/cg_4.tsa"
+	.incbin "graphics/cg/cg_4.map.bin"
 
 	.align 2, 0
 	.global cg_5_map
 cg_5_map: @8a81460
-	.incbin "graphics/cg/cg_5.tsa"
+	.incbin "graphics/cg/cg_5.map.bin"
 
 	.align 2, 0
 	.global cg_6_map
 cg_6_map: @8a81914
-	.incbin "graphics/cg/cg_6.tsa"
+	.incbin "graphics/cg/cg_6.map.bin"
 
 	.align 2, 0
 	.global cg_7_map
 cg_7_map: @8a81dc8
-	.incbin "graphics/cg/cg_7.tsa"
+	.incbin "graphics/cg/cg_7.map.bin"
 
 	.align 2, 0
 	.global cg_8_map
 cg_8_map: @8a8227c
-	.incbin "graphics/cg/cg_8.tsa"
+	.incbin "graphics/cg/cg_8.map.bin"
 
 	.align 2, 0
 	.global cg_9_map
 cg_9_map: @8a82730
-	.incbin "graphics/cg/cg_9.tsa"
+	.incbin "graphics/cg/cg_9.map.bin"
 
 	.align 2, 0
 	.global cg_0_palette
@@ -1462,27 +1462,27 @@ gUnknown_08A986C0:  @ 0x08A986C0
 
 	.global gUnknown_08A98BF8
 gUnknown_08A98BF8:  @ 0x08A98BF8
-	.incbin "graphics/misc/gUnknown_08A98BF8.tsa.lz"
+	.incbin "graphics/misc/gUnknown_08A98BF8.map.bin.lz"
 
 	.global gUnknown_08A98CFC
 gUnknown_08A98CFC:  @ 0x08A98CFC
-	.incbin "graphics/misc/gUnknown_08A98CFC.tsa"
+	.incbin "graphics/misc/gUnknown_08A98CFC.map.bin"
 
 	.global gUnknown_08A98D58
 gUnknown_08A98D58:  @ 0x08A98D58
-	.incbin "graphics/misc/gUnknown_08A98D58.tsa"
+	.incbin "graphics/misc/gUnknown_08A98D58.map.bin"
 
 	.global gUnknown_08A98D88
 gUnknown_08A98D88:  @ 0x08A98D88
-	.incbin "graphics/misc/gUnknown_08A98D88.tsa"
+	.incbin "graphics/misc/gUnknown_08A98D88.map.bin"
 
 	.global gUnknown_08A98DA0
 gUnknown_08A98DA0:  @ 0x08A98DA0
-	.incbin "graphics/misc/gUnknown_08A98DA0.tsa"
+	.incbin "graphics/misc/gUnknown_08A98DA0.map.bin"
 
 	.global gUnknown_08A98DB8
 gUnknown_08A98DB8:  @ 0x08A98DB8
-	.incbin "graphics/misc/gUnknown_08A98DB8.tsa"
+	.incbin "graphics/misc/gUnknown_08A98DB8.map.bin"
 
 	.global gUnknown_08A98DCC
 gUnknown_08A98DCC:  @ 0x08A98DCC
@@ -1506,11 +1506,11 @@ gUnknown_08A98E8C:  @ 0x08A98E8C
 
 	.global gUnknown_08A98EAC
 gUnknown_08A98EAC:  @ 0x08A98EAC
-	.incbin "graphics/misc/gUnknown_08A98EAC.tsa"
+	.incbin "graphics/misc/gUnknown_08A98EAC.map.bin"
 
 	.global gUnknown_08A98F30
 gUnknown_08A98F30:  @ 0x08A98F30
-	.incbin "graphics/misc/gUnknown_08A98F30.tsa"
+	.incbin "graphics/misc/gUnknown_08A98F30.map.bin"
 
 	.global gGfx_GMapPI_LevelNums
 gGfx_GMapPI_LevelNums:  @ 0x08A9901C
@@ -1526,7 +1526,7 @@ Img_EventGmap:  @ 0x08A99140
 
 	.global Tsa_EventGmap
 Tsa_EventGmap:  @ 0x08A9DF74
-	.incbin "graphics/misc/Tsa_EventGmap.tsa.lz"
+	.incbin "graphics/misc/Tsa_EventGmap.map.bin.lz"
 
 	.global Pal_EventGmap
 Pal_EventGmap:  @ 0x08A9E4C4
@@ -1542,7 +1542,7 @@ gPal_08A9E5BC:  @ 0x08A9E5BC
 
 	.global gTsa_08A9E5DC
 gTsa_08A9E5DC:  @ 0x08A9E5DC
-	.incbin "graphics/misc/gTsa_08A9E5DC.tsa.lz"
+	.incbin "graphics/misc/gTsa_08A9E5DC.map.bin.lz"
 
 	.global Pal_WmHighLightNationMap
 Pal_WmHighLightNationMap:  @ 0x08A9E688
@@ -1990,7 +1990,7 @@ Pal_WorldmapMinimap:  @ 0x08AA188C
 
 	.global gUnknown_08AA18AC
 gUnknown_08AA18AC:  @ 0x08AA18AC
-	.incbin "graphics/misc/gUnknown_08AA18AC.tsa"
+	.incbin "graphics/misc/gUnknown_08AA18AC.map.bin"
 
 	.global gUnknown_08AA1930
 gUnknown_08AA1930:  @ 0x08AA1930
