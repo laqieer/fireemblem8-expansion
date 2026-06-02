@@ -79,13 +79,13 @@ endif
 ASM_S_FILES  := $(wildcard $(ASM_SUBDIR)/*.s)
 SRC_S_FILES  := src/rom_header.s src/crt0.s src/m4a_1.s src/libagbsyscall.s
 DATA_S_FILES := $(wildcard $(DATA_SUBDIR)/*.s)
-DATA_SRC_C_FILES := $(wildcard $(DATA_SRC_SUBDIR)/*.c)
+DATA_SRC_C_FILES := $(wildcard $(DATA_SRC_SUBDIR)/*.c $(DATA_SRC_SUBDIR)/mapanim/*.c $(DATA_SRC_SUBDIR)/menu/*.c $(DATA_SRC_SUBDIR)/ending/*.c $(DATA_SRC_SUBDIR)/worldmap/*.c $(DATA_SRC_SUBDIR)/ui/*.c)
 DATA_SRC_C_OBJECTS := $(DATA_SRC_C_FILES:.c=.o)
 DATA_SRC_SFILES_COMPILED := $(DATA_SRC_C_FILES:.c=.s)
 # Hand-written (extracted, descriptively-named) data assembled directly. Kept in
 # src/data/ subdirs (not the top-level src/data/*.s wildcard, which holds
 # compiler intermediates of the typed .c data).
-DATA_SRC_S_FILES := $(wildcard $(DATA_SRC_SUBDIR)/map/*.s $(DATA_SRC_SUBDIR)/unit_icon/*.s $(DATA_SRC_SUBDIR)/banim/*.s)
+DATA_SRC_S_FILES := $(wildcard $(DATA_SRC_SUBDIR)/map/*.s $(DATA_SRC_SUBDIR)/unit_icon/*.s $(DATA_SRC_SUBDIR)/banim/*.s $(DATA_SRC_SUBDIR)/mapanim/*.s $(DATA_SRC_SUBDIR)/menu/*.s $(DATA_SRC_SUBDIR)/ending/*.s $(DATA_SRC_SUBDIR)/worldmap/*.s $(DATA_SRC_SUBDIR)/ui/*.s)
 SOUND_S_FILES := $(wildcard sound/*.s sound/songs/*.s sound/songs/mml/*.s sound/voicegroups/*.s)
 SFILES       := $(ASM_S_FILES) $(SRC_S_FILES) $(DATA_S_FILES) $(DATA_SRC_S_FILES) $(SOUND_S_FILES)
 SFILES_COMPILED := $(CFILES:.c=.s)

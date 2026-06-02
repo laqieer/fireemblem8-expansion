@@ -1,0 +1,14 @@
+#include "global.h"
+
+u8 gUnknown_08A2C4C8[] = INCBIN_U8("graphics/misc/gUnknown_08A2C4C8.4bpp");
+u8 gUnknown_08A2C5A8[] = INCBIN_U8("graphics/misc/gUnknown_08A2C5A8.tsa.bin");
+u8 gUnknown_08A2C7A4[] = INCBIN_U8("graphics/misc/gUnknown_08A2C7A4.tsa.bin");
+
+u8 Img_SoundRoomVolumeGraph[] = INCBIN_U8("graphics/misc/Img_SoundRoomVolumeGraph.4bpp.lz");
+u16 Pal_SoundRoomVolumeGraph[] = INCBIN_U16("graphics/misc/Pal_SoundRoomVolumeGraph.gbapal");
+
+u8 gUnknown_08A2C908[] = INCBIN_U8("graphics/misc/gUnknown_08A2C908.4bpp.lz");
+u8 gUnknown_08A2C92C[] = INCBIN_U8("graphics/misc/gUnknown_08A2C92C.map.bin");
+
+u8 Img_SoundRoomUiElements[] = INCBIN_U8("graphics/misc/Img_SoundRoomUiElements.4bpp.lz");
+u16 Pal_SoundRoomUiElements[] = INCBIN_U16("graphics/misc/Pal_SoundRoomUiElements.gbapal");

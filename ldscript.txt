@@ -1126,7 +1126,11 @@ SECTIONS
         . = ALIGN(4); src/soundroom.o(.data);
         . = ALIGN(4); src/extramenu_unk.o(.data);
         . = ALIGN(4); src/bonusclaim.o(.data);
-        . = ALIGN(4); data/data_A21658.o(.data);
+        . = ALIGN(4); src/data/menu/menu_save_main_bg.o(.data);
+        . = ALIGN(4); src/data/menu/anim_save_screen.o(.data);
+        . = ALIGN(4); src/data/menu/menu_main_objs.o(.data);
+        . = ALIGN(4); src/data/menu/menu_soundroom.o(.data);
+        . = ALIGN(4); src/data/menu/menu_status.o(.data);
         . = ALIGN(4); src/uiconfig.o(.data);
         . = ALIGN(4); src/colorfade.o(.data);
         . = ALIGN(4); src/opinfo.o(.data);
