@@ -185,6 +185,15 @@ typedef u32 AnimScr;
 #define ANIMSCR_FORCE_SPRITE(anim_sprite, duration) \
     (ANFMT_FORCESPRITE + (AnimScr)(anim_sprite) + ANIMFMT_OAM_DURATION(duration))
 
+#define ANIMSCR_WAIT(duration) \
+    (ANFMT_NOT_FORCESPRITE + ANFMT_INST_TYPE(ANIM_INS_TYPE_WAIT) + (duration))
+
+#define ANIMSCR_LOOP \
+    (ANFMT_NOT_FORCESPRITE + ANFMT_INST_TYPE(ANIM_INS_TYPE_LOOP))
+
+#define ANIMSCR_DISABLED \
+    (ANFMT_NOT_FORCESPRITE + ANFMT_INST_TYPE(ANIM_INS_TYPE_END))
+
 void AnimUpdateAll(void);
 void AnimClearAll(void);
 struct Anim * AnimCreate_unused(const void * script);

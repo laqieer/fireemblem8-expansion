@@ -959,13 +959,13 @@ SECTIONS
         . = ALIGN(4); src/banim-ekrmainmini.o(.data);
         . = ALIGN(4); src/banim-ekrarena.o(.data);
         . = ALIGN(4); src/data/banim-efxbattle.o(.data);
-        . = ALIGN(4); data/banim-efxlvupfx.o(.data);
-        . = ALIGN(4); data/banim-ekrmainminifx.o(.data);
-        . = ALIGN(4); data/banim-efxhitfx.o(.data);
-        . = ALIGN(4); data/banim-efxlvupobj.o(.data);
+        . = ALIGN(4); src/data/banim-efxlvupfx.o(.data);
+        . = ALIGN(4); src/data/banim-ekrmainminifx.o(.data);
+        . = ALIGN(4); src/data/banim-efxhitfx.o(.data);
+        . = ALIGN(4); src/data/banim-efxlvupobj.o(.data);
         . = ALIGN(4); src/data/banim-ekrskill.o(.data);
         . = ALIGN(4); src/data/banim-efxhitobj.o(.data);
-        . = ALIGN(4); data/banim-ekrbattleintro.o(.data);
+        . = ALIGN(4); src/data/banim-ekrbattleintro.o(.data);
         . = ALIGN(4); src/banim-efxmagic.o(.data);
         . = ALIGN(4); src/banim-efxmagic-phywpn.o(.data);
         . = ALIGN(4); src/banim-efxmagic-refresh.o(.data);
@@ -1018,7 +1018,7 @@ SECTIONS
         . = ALIGN(4); src/banim-ekrlvup.o(.data);
         . = ALIGN(4); src/banim-efxlvup.o(.data);
         . = ALIGN(4); src/banim-ekrtriangle.o(.data);
-        . = ALIGN(4); data/banim-ekrtriangle.o(.data);
+        . = ALIGN(4); src/data/banim-ekrtriangle.o(.data);
         . = ALIGN(4); data/data_btl_bg.o(.data);
         . = ALIGN(4); src/banim-ekrpopup.o(.data);
         . = ALIGN(4); src/banim-ekrhensei.o(.data);
