@@ -1,7 +1,7 @@
 #include "global.h"
 
-/* Arrays expanded from binary files at build time by tools/preproc
- * (run before cpp). Migrated in-place from data/data_item_icon.s into .data.
+/* Arrays expanded from binary files at build time by tools/preproc (run
+ * before cpp). Migrated in-place from data/data_item_icon.s into .data.
  */
 
 u8 item_icon_sword_slim[] = INCBIN_U8("graphics/item_icon/item_icon_sword_slim.4bpp");

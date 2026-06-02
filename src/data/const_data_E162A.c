@@ -1,7 +1,7 @@
 #include "global.h"
 
-/* Arrays expanded from binary files at build time by tools/preproc
- * (run before cpp). Migrated in-place from data/const_data_E162A.s into .rodata.
+/* Arrays expanded from binary files at build time by tools/preproc (run
+ * before cpp). Migrated in-place from data/const_data_E162A.s into .rodata.
  */
 
 const u8 Img_TriPegasusKnightBG[] = INCBIN_U8("./graphics/efxbattle/Img_TriPegasusKnightBG.4bpp.lz");

@@ -150,8 +150,31 @@ int main(int argc, char **argv)
                 fail(ident + ": expected '(' after macro");
             j++;
 
+            // Argument grammar (mirrors GNU as .incbin with optional slicing):
+            //   "path" [, offset [, size]]   per file, repeatable for concat.
+            // A quoted argument starts a new file; numeric arguments that follow
+            // it apply an (offset, size) slice to that most recent file.
             std::vector<uint8_t> bytes;
-            bool expectPath = true;
+            bool haveFile = false;
+            std::vector<uint8_t> fb; // bytes of the current (most recent) file
+            int numIndex = 0;        // 0 => next number is offset, 1 => size
+            size_t sliceOffset = 0;
+            bool sliceHasSize = false;
+            size_t sliceSize = 0;
+
+            auto flushFile = [&]()
+            {
+                if (!haveFile)
+                    return;
+                if (sliceOffset > fb.size())
+                    fail(ident + ": incbin offset beyond end of file");
+                size_t avail = fb.size() - sliceOffset;
+                size_t take = sliceHasSize ? sliceSize : avail;
+                if (take > avail)
+                    fail(ident + ": incbin size beyond end of file");
+                bytes.insert(bytes.end(), fb.begin() + sliceOffset, fb.begin() + sliceOffset + take);
+            };
+
             while (true)
             {
                 while (j < len && (in[j] == ' ' || in[j] == '\t' || in[j] == '\n' || in[j] == '\r'))
@@ -166,34 +189,60 @@ int main(int argc, char **argv)
                 if (in[j] == ',')
                 {
                     j++;
-                    expectPath = true;
                     continue;
                 }
-                if (in[j] != '"')
-                    fail(ident + ": expected string-literal path");
-                if (!expectPath)
-                    fail(ident + ": missing ',' between paths");
-                j++;
-                std::string path;
-                while (j < len && in[j] != '"')
+                if (in[j] == '"')
                 {
-                    if (in[j] == '\\' && j + 1 < len)
+                    flushFile();
+                    j++;
+                    std::string path;
+                    while (j < len && in[j] != '"')
                     {
-                        j++;
-                        path += in[j++];
+                        if (in[j] == '\\' && j + 1 < len)
+                        {
+                            j++;
+                            path += in[j++];
+                        }
+                        else
+                        {
+                            path += in[j++];
+                        }
+                    }
+                    if (j >= len)
+                        fail(ident + ": unterminated path string");
+                    j++; // closing quote
+                    fb = readFileBytes(path);
+                    haveFile = true;
+                    numIndex = 0;
+                    sliceOffset = 0;
+                    sliceHasSize = false;
+                    sliceSize = 0;
+                    continue;
+                }
+                if ((in[j] >= '0' && in[j] <= '9') || in[j] == '+')
+                {
+                    if (!haveFile)
+                        fail(ident + ": numeric argument before any path");
+                    char *endp = NULL;
+                    unsigned long v = strtoul(in.c_str() + j, &endp, 0);
+                    if (endp == in.c_str() + j)
+                        fail(ident + ": malformed numeric argument");
+                    j = (size_t)(endp - in.c_str());
+                    if (numIndex == 0)
+                        sliceOffset = (size_t)v;
+                    else if (numIndex == 1)
+                    {
+                        sliceSize = (size_t)v;
+                        sliceHasSize = true;
                     }
                     else
-                    {
-                        path += in[j++];
-                    }
+                        fail(ident + ": too many numeric arguments for one file");
+                    numIndex++;
+                    continue;
                 }
-                if (j >= len)
-                    fail(ident + ": unterminated path string");
-                j++; // closing quote
-                std::vector<uint8_t> fb = readFileBytes(path);
-                bytes.insert(bytes.end(), fb.begin(), fb.end());
-                expectPath = false;
+                fail(ident + ": expected string-literal path or numeric offset/size");
             }
+            flushFile();
 
             if (bytes.size() % (size_t)width != 0)
                 fail(ident + ": file size not a multiple of element width");

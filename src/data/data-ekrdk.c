@@ -1,7 +1,7 @@
 #include "global.h"
 
-/* Arrays expanded from binary files at build time by tools/preproc
- * (run before cpp). Migrated in-place from data/data-ekrdk.s into .data.
+/* Arrays expanded from binary files at build time by tools/preproc (run
+ * before cpp). Migrated in-place from data/data-ekrdk.s into .data.
  */
 
 u8 Tsa_087F45D0[] = INCBIN_U8("graphics/misc/Tsa_087F45D0.4bpp.lz");

@@ -1,7 +1,7 @@
 #include "global.h"
 
-/* Arrays expanded from binary files at build time by tools/preproc
- * (run before cpp). Migrated in-place from data/data_5AA96C.s into .data.
+/* Arrays expanded from binary files at build time by tools/preproc (run
+ * before cpp). Migrated in-place from data/data_5AA96C.s into .data.
  */
 
 u8 gUnknown_085AAE0C[] = INCBIN_U8("graphics/misc/gUnknown_085AAE0C.4bpp.lz");

@@ -1,7 +1,7 @@
 #include "global.h"
 
-/* Arrays expanded from binary files at build time by tools/preproc
- * (run before cpp). Migrated in-place from data/banim-ekrskill.s into .data.
+/* Arrays expanded from binary files at build time by tools/preproc (run
+ * before cpp). Migrated in-place from data/banim-ekrskill.s into .data.
  */
 
 u8 Img_EfxSkill1[] = INCBIN_U8("graphics/efxskill/efxskill_1.feimg1.bin.lz");

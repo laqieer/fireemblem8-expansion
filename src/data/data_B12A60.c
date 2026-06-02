@@ -1,7 +1,7 @@
 #include "global.h"
 
-/* Arrays expanded from binary files at build time by tools/preproc
- * (run before cpp). Migrated in-place from data/data_B12A60.s into .data.
+/* Arrays expanded from binary files at build time by tools/preproc (run
+ * before cpp). Migrated in-place from data/data_B12A60.s into .data.
  */
 
 u8 Img_CommGameBgScreen[] = INCBIN_U8("graphics/misc/Img_CommGameBgScreen.4bpp.lz");

@@ -1,8 +1,8 @@
 #include "global.h"
 
-/* Each array is expanded from the referenced binary file at build time by
- * tools/preproc (run before cpp). Migrated in-place from data/data_A167C8.s;
- * placed in .data (non-const) with the original ROM symbol types. */
+/* Arrays expanded from binary files at build time by tools/preproc (run
+ * before cpp). Migrated in-place from data/data_A167C8.s into .data.
+ */
 
 u8 gGfx_PlayerInterfaceFontTiles[] = INCBIN_U8("graphics/player_interface/player_interface_font_tiles.4bpp.lz");
 u8 gGfx_PlayerInterfaceNumbers[] = INCBIN_U8("graphics/player_interface/player_interface_numbers.4bpp.lz");
