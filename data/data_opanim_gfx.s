@@ -30,7 +30,7 @@ Img_OpAnimCharacterBG:
 
 	.global Tsa_OpAnimCharacterBG
 Tsa_OpAnimCharacterBG:
-	.incbin "graphics/op_anim/OpAnimCharacterBG.bin.lz"
+	.incbin "graphics/op_anim/OpAnimCharacterBG.tsa.lz"
 
 	.global Pal_OpAnimCharacterBG
 Pal_OpAnimCharacterBG:
@@ -73,7 +73,7 @@ Img_OpAnimEphraimBlur2:
 
 	.global Tsa_OpAnimEphraimBlur2
 Tsa_OpAnimEphraimBlur2:
-	.incbin "graphics/op_anim/OpAnimEphraimBlur2.bin.lz"
+	.incbin "graphics/op_anim/OpAnimEphraimBlur2.tsa.lz"
 
 	.global Img_OpAnimEphraimBlur3
 Img_OpAnimEphraimBlur3:
@@ -81,7 +81,7 @@ Img_OpAnimEphraimBlur3:
 
 	.global Tsa_OpAnimEphraimBlur3
 Tsa_OpAnimEphraimBlur3:
-	.incbin "graphics/op_anim/OpAnimEphraimBlur3.bin.lz"
+	.incbin "graphics/op_anim/OpAnimEphraimBlur3.tsa.lz"
 
 	.global Img_OpAnimEphraimClose1
 Img_OpAnimEphraimClose1:
@@ -93,11 +93,11 @@ Img_OpAnimEphraimClose2:
 
 	.global Tsa_OpAnimEphraimClose1
 Tsa_OpAnimEphraimClose1:
-	.incbin "graphics/op_anim/OpAnimEphraimClose1.bin.lz"
+	.incbin "graphics/op_anim/OpAnimEphraimClose1.tsa.lz"
 
 	.global Tsa_OpAnimEphraimClose2
 Tsa_OpAnimEphraimClose2:
-	.incbin "graphics/op_anim/OpAnimEphraimClose2.bin.lz"
+	.incbin "graphics/op_anim/OpAnimEphraimClose2.tsa.lz"
 
 	.global Pal_OpAnimEphraimBlur
 Pal_OpAnimEphraimBlur:
@@ -145,11 +145,11 @@ Img_OpAnimEirikaClose2:
 
 	.global Tsa_OpAnimEirikaClose1
 Tsa_OpAnimEirikaClose1:
-	.incbin "graphics/op_anim/OpAnimEirikaClose1.bin.lz"
+	.incbin "graphics/op_anim/OpAnimEirikaClose1.tsa.lz"
 
 	.global Tsa_OpAnimEirikaClose2
 Tsa_OpAnimEirikaClose2:
-	.incbin "graphics/op_anim/OpAnimEirikaClose2.bin.lz"
+	.incbin "graphics/op_anim/OpAnimEirikaClose2.tsa.lz"
 
 	.global Pal_OpAnimEirikaBlur
 Pal_OpAnimEirikaBlur:
@@ -165,11 +165,11 @@ Img_OpAnimJoshua2:
 
 	.global Tsa_OpAnimJoshua
 Tsa_OpAnimJoshua:
-	.incbin "graphics/op_anim/OpAnimJoshua.bin.lz"
+	.incbin "graphics/op_anim/OpAnimJoshua.tsa.lz"
 
 	.global Tsa_OpAnimJoshua2
 Tsa_OpAnimJoshua2:
-	.incbin "graphics/op_anim/OpAnimJoshua2.bin.lz"
+	.incbin "graphics/op_anim/OpAnimJoshua2.tsa.lz"
 
 	.global Pal_OpAnimJoshua
 Pal_OpAnimJoshua:
@@ -185,11 +185,11 @@ Img_OpAnimLArachel2:
 
 	.global Tsa_OpAnimLArachel
 Tsa_OpAnimLArachel:
-	.incbin "graphics/op_anim/OpAnimLArachel.bin.lz"
+	.incbin "graphics/op_anim/OpAnimLArachel.tsa.lz"
 
 	.global Tsa_OpAnimLArachel2
 Tsa_OpAnimLArachel2:
-	.incbin "graphics/op_anim/OpAnimLArachel2.bin.lz"
+	.incbin "graphics/op_anim/OpAnimLArachel2.tsa.lz"
 
 	.global Pal_OpAnimLArachel
 Pal_OpAnimLArachel:
@@ -205,11 +205,11 @@ Img_OpAnimSeth2:
 
 	.global Tsa_OpAnimSeth
 Tsa_OpAnimSeth:
-	.incbin "graphics/op_anim/OpAnimSeth.bin.lz"
+	.incbin "graphics/op_anim/OpAnimSeth.tsa.lz"
 
 	.global Tsa_OpAnimSeth2
 Tsa_OpAnimSeth2:
-	.incbin "graphics/op_anim/OpAnimSeth2.bin.lz"
+	.incbin "graphics/op_anim/OpAnimSeth2.tsa.lz"
 
 	.global Pal_OpAnimSeth
 Pal_OpAnimSeth:
@@ -225,11 +225,11 @@ Img_OpAnimMyrrh2:
 
 	.global Tsa_OpAnimMyrrh
 Tsa_OpAnimMyrrh:
-	.incbin "graphics/op_anim/OpAnimMyrrh.bin.lz"
+	.incbin "graphics/op_anim/OpAnimMyrrh.tsa.lz"
 
 	.global Tsa_OpAnimMyrrh2
 Tsa_OpAnimMyrrh2:
-	.incbin "graphics/op_anim/OpAnimMyrrh2.bin.lz"
+	.incbin "graphics/op_anim/OpAnimMyrrh2.tsa.lz"
 
 	.global Pal_OpAnimMyrrh
 Pal_OpAnimMyrrh:
@@ -245,11 +245,11 @@ Img_OpAnimSaleh2:
 
 	.global Tsa_OpAnimSaleh
 Tsa_OpAnimSaleh:
-	.incbin "graphics/op_anim/OpAnimSaleh.bin.lz"
+	.incbin "graphics/op_anim/OpAnimSaleh.tsa.lz"
 
 	.global Tsa_OpAnimSaleh2
 Tsa_OpAnimSaleh2:
-	.incbin "graphics/op_anim/OpAnimSaleh2.bin.lz"
+	.incbin "graphics/op_anim/OpAnimSaleh2.tsa.lz"
 
 	.global Pal_OpAnimSaleh
 Pal_OpAnimSaleh:
@@ -265,11 +265,11 @@ Img_OpAnimTethys2:
 
 	.global Tsa_OpAnimTethys
 Tsa_OpAnimTethys:
-	.incbin "graphics/op_anim/OpAnimTethys.bin.lz"
+	.incbin "graphics/op_anim/OpAnimTethys.tsa.lz"
 
 	.global Tsa_OpAnimTethys2
 Tsa_OpAnimTethys2:
-	.incbin "graphics/op_anim/OpAnimTethys2.bin.lz"
+	.incbin "graphics/op_anim/OpAnimTethys2.tsa.lz"
 
 	.global Pal_OpAnimTethys
 Pal_OpAnimTethys:
@@ -737,11 +737,11 @@ Img_OpAnimShiningRing:
 
 	.global Tsa_OpAnimShiningRing
 Tsa_OpAnimShiningRing:
-	.incbin "graphics/op_anim/OpAnimShiningRing.bin.lz"
+	.incbin "graphics/op_anim/OpAnimShiningRing.tsa.lz"
 
 	.global Tsa_OpAnimShiningRingBlinking
 Tsa_OpAnimShiningRingBlinking:
-	.incbin "graphics/op_anim/OpAnimShiningRingBlinking.bin.lz"
+	.incbin "graphics/op_anim/OpAnimShiningRingBlinking.tsa.lz"
 
 	.global Pal_OpAnimShiningRing
 Pal_OpAnimShiningRing:
@@ -1577,11 +1577,11 @@ Pal_IntelligentSystems:
 
 	.global Tsa_OpAnimHealthSafetyScreenBG1
 Tsa_OpAnimHealthSafetyScreenBG1:
-	.incbin "graphics/op_anim/OpAnimHealthSafetyScreenBG1.bin.lz"
+	.incbin "graphics/op_anim/OpAnimHealthSafetyScreenBG1.tsa.lz"
 
 	.global Tsa_OpAnimHealthSafetyScreenBG0
 Tsa_OpAnimHealthSafetyScreenBG0:
-	.incbin "graphics/op_anim/OpAnimHealthSafetyScreenBG0.bin.lz"
+	.incbin "graphics/op_anim/OpAnimHealthSafetyScreenBG0.tsa.lz"
 
 	.global Img_OpAnimHealthSafetyScreen
 Img_OpAnimHealthSafetyScreen:
