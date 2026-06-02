@@ -860,7 +860,7 @@ SECTIONS
         . = ALIGN(4); src/eventfx-earthquake.o(.data);
         . = ALIGN(4); src/eventfx-stoneshatter.o(.data);
         . = ALIGN(4); src/data/data_item_icon.o(.data);
-        . = ALIGN(4); data/generic_icon.o(.data);
+        . = ALIGN(4); src/data/generic_icon.o(.data);
         . = ALIGN(4); src/bmlib.o(.data);
         . = ALIGN(4); src/bm.o(.data);
         . = ALIGN(4); src/bmunit.o(.data);
@@ -964,7 +964,7 @@ SECTIONS
         . = ALIGN(4); data/banim-efxhitfx.o(.data);
         . = ALIGN(4); data/banim-efxlvupobj.o(.data);
         . = ALIGN(4); src/data/banim-ekrskill.o(.data);
-        . = ALIGN(4); data/banim-efxhitobj.o(.data);
+        . = ALIGN(4); src/data/banim-efxhitobj.o(.data);
         . = ALIGN(4); data/banim-ekrbattleintro.o(.data);
         . = ALIGN(4); src/banim-efxmagic.o(.data);
         . = ALIGN(4); src/banim-efxmagic-phywpn.o(.data);
