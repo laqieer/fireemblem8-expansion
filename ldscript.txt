@@ -906,7 +906,16 @@ SECTIONS
         . = ALIGN(4); src/bksel.o(.data);
         . = ALIGN(4); src/bmtrap.o(.data);
         . = ALIGN(4); src/bmdifficulty.o(.data);
-        . = ALIGN(4); data/data_59E8E0.o(.data);
+        . = ALIGN(4); src/data/ui/ui_palettes.o(.data);
+        . = ALIGN(4); src/data/ui/phase_change.o(.data);
+        . = ALIGN(4); src/data/ui/battle_forecast.o(.data);
+        . = ALIGN(4); src/data/ui/anim_085A0EA0.o(.data);
+        . = ALIGN(4); src/data/ui/trap_gas.o(.data);
+        . = ALIGN(4); src/data/ui/anim_arrow_trap.o(.data);
+        . = ALIGN(4); src/data/ui/trap_fire_pike.o(.data);
+        . = ALIGN(4); src/data/ui/particles_fx.o(.data);
+        . = ALIGN(4); src/data/ui/anim_mine_fx.o(.data);
+        . = ALIGN(4); src/data/ui/mine_pal.o(.data);
         . = ALIGN(4); src/cp_phase.o(.data);
         . = ALIGN(4); src/cp_order.o(.data);
         . = ALIGN(4); src/cp_decide.o(.data);
