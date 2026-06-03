@@ -92,6 +92,16 @@ _reset: @ 0x08B1A1C4
     @ LZ77UnCompWram-decompresses it to 0x02010000, and jumps there. The committed
     @ source is the decompressed image (data/fe6sio_payload.bin, 34956 bytes, runs at
     @ 0x02010000); the Makefile recompresses it byte-identically with -mindist 1.
-    @ Full instruction-level disassembly of the payload remains a future decomp task.
+    @
+    @ This payload is already fully decompiled as StanHash/mgfembp ("Mysterious Gba
+    @ Fire Emblem MultiBoot Payload"), which builds a byte-identical image
+    @ (sha1 8a81a47d88f6b0a3f91c49784b9f7b317382abac == data/fe6sio_payload.bin). It
+    @ reads an inserted FE6 cartridge's save over SIO and reports it (build stamp
+    @ 2002/06/06 kaneko). fireemblem6j does NOT contain this payload (only the FE6
+    @ main-ROM SIO routines). To build it from source instead of this blob, vendor
+    @ mgfembp as a sub-build -- pret/pokeemerald's berry_fix is the model: own Makefile
+    @ + ld_script (ENTRY/load 0x02010000) + crt0 -> objcopy -O binary -> gbagfx LZ
+    @ (-mindist 1) -> .incbin here. Caveat: mgfembp needs the 010110-ThumbPatch agbcc
+    @ variant to reproduce the byte match.
 FE6SIO_Payload: @ 0x08B1A368
 	.incbin "data/fe6sio_payload.bin.lz"
