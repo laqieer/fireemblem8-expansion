@@ -248,6 +248,8 @@ graphics/banim/dragonfx/Img_DemonLightSprites_087A5BA4.4bpp.lz: LZ_FLAGS := -min
 graphics/banim/dragonfx/Img_DemonLightSprites_087A5E9C.4bpp.lz: LZ_FLAGS := -mindist 3
 # Class-reel (gOpinfo) glyph font: 64 per-glyph 4bpp images, min LZ match distance 2.
 graphics/misc/opinfo_letter/%.4bpp.lz: LZ_FLAGS := -mindist 2
+# Orphaned LZ77 TSA tilemap (was hidden after Pal_080E1164), min LZ match distance 1.
+graphics/banim/misc/Tsa_080E1184.tsa.lz: LZ_FLAGS := -mindist 1
 # FE6 SIO multiboot image, built from source via the mgfembp submodule
 # (StanHash/mgfembp) instead of a committed blob, then LZ-compressed (the original
 # ROM used minimum match distance 1) for the incbin in asm/fe6sio.s. mgfembp
