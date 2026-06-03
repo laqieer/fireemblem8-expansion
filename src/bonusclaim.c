@@ -44,8 +44,8 @@ int LoadBonusContentData(void*);
 
 //! FE8U = 0x080B0638
 void PutChapterBannerSprites(void) {
-    PutSpriteExt(4, 24, 8, *SpriteArray_08A209F0, 0x8000);
-    PutSpriteExt(4, 24, 16, *SpriteArray_08A209E4, 0x9000);
+    PutSpriteExt(4, 24, 8, *SpriteArray_SavemenuData_3, 0x8000);
+    PutSpriteExt(4, 24, 16, *SpriteArray_SavemenuData_2, 0x9000);
     return;
 }
 
@@ -331,7 +331,7 @@ void BonusClaim_Init(struct BonusClaimProc * proc)
     SetupBackgrounds(0);
 
     ApplyPalettes(Pal_CommGameBgScreenInShop, 0xC, 2);
-    ApplyPalette(Pal_08A295B4, 0xE);
+    ApplyPalette(Pal_MenuMainObjs_0, 0xE);
     Decompress(Img_CommGameBgScreen, (void*)0x06008000);
 
     CallARM_FillTileRect(gBG3TilemapBuffer, Tsa_CommGameBgScreenInShop, 0xc000);

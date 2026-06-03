@@ -13,7 +13,7 @@
 #include "sio.h"
 #include "sio_core.h"
 
-extern struct Font Font_0203DB64;
+extern struct Font Font_0;
 extern struct Text gSioTexts[];
 
 /* https://decomp.me/scratch/lXFC6 */
@@ -36,7 +36,7 @@ void sub_80469C4(struct SioTermProc * proc)
 
     Decompress(Img_TacticianSelObj, OBJ_CHR_ADDR(0x240));
 
-    SetTextFont(&Font_0203DB64);
+    SetTextFont(&Font_0);
     InitSystemTextFont();
     ResetTextFont();
 
@@ -274,7 +274,7 @@ void sub_8046DEC(ProcPtr proc)
 //! FE8U = 0x08046E0C
 void sub_8046E0C(ProcPtr proc)
 {
-    if (gUnk_Sio_0203DD24 == 0)
+    if (gUnk_Sio_12 == 0)
     {
         return;
     }

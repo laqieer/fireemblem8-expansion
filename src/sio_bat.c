@@ -64,7 +64,7 @@ _080459E4:
     gSioResultRankings[r7].player_count = playerCount;
     gSioResultRankings[r7].mode = mode;
 
-    SioStrCpy(gUnk_Sio_0203DAC5[gSioSt->selfId], gSioResultRankings[r7].name);
+    SioStrCpy(gUnk_Sio_9[gSioSt->selfId], gSioResultRankings[r7].name);
 
     return r7;
 }
@@ -75,7 +75,7 @@ void sub_8045A64(struct SioBatProc * proc)
     int mode = gLinkArenaSt.unk_ec.unk_0_1;
     int playerCount = gLinkArenaSt.unk_A0 - 1;
     u8 ranking = sub_8049A60();
-    int points = gUnk_Sio_0203DD90.currentScore[gSioSt->selfId];
+    int points = gUnk_Sio_16.currentScore[gSioSt->selfId];
 
     ReadMultiArenaSaveRankings(gSioResultRankings);
 
@@ -103,7 +103,7 @@ void sub_8045AF4(void)
 
     // TODO: rodata
     u8 hack[3];
-    memcpy(hack, gUnknown_080D9E44, sizeof(gUnknown_080D9E44));
+    memcpy(hack, gSioPostbattle_1, sizeof(gSioPostbattle_1));
 
     InitUnits();
 
@@ -112,13 +112,13 @@ void sub_8045AF4(void)
         int r4 = i * 0x40 + 1;
 
         struct Unit * unit = GetUnit(r4);
-        ReadMultiArenaSaveTeam(gLinkArenaSt.unk_06[i], unit, gUnk_Sio_0203DAC5[i]);
+        ReadMultiArenaSaveTeam(gLinkArenaSt.unk_06[i], unit, gUnk_Sio_9[i]);
 
         gLinkArenaSt.unk_05 = gLinkArenaSt.unk_05;
 
         for (j = 0; j < 5; j++)
         {
-            u16 * fid = gUnk_Sio_0203DD90.unk_24 - -i;
+            u16 * fid = gUnk_Sio_16.unk_24 - -i;
 
             unit = GetUnit(r4 + j);
 
@@ -154,7 +154,7 @@ void sub_8045AF4(void)
         }
     }
 
-    gUnk_Sio_0203DD90.unk_00 = 0;
+    gUnk_Sio_16.unk_00 = 0;
 
     gSioSt->selfId = 0;
     gSioSt->unk_009 = hack[gLinkArenaSt.unk_05];
@@ -172,7 +172,7 @@ struct ProcCmd CONST_DATA ProcScr_SIOMAIN2[] = {
     PROC_CALL(sub_8049828),
     PROC_CALL(FadeInBlackSpeed20),
     PROC_YIELD,
-    PROC_CALL(Clear_0203DDDC),
+    PROC_CALL(Clear_UnkData_0),
 PROC_LABEL(0),
     PROC_CALL(sub_80499D0),
     PROC_SLEEP(1),
@@ -275,7 +275,7 @@ void sub_8045CEC(void)
                 PutDrawTextCentered(
                     &gLinkArenaSt.texts[i], 11, 5 + i * 3,
                     GetStringFromIndex(gLinkArenaStatusMsg[gLinkArenaSt.linking_status[i]]), 10);
-                ApplyPalette(gUnknown_085ADDA8, 0x13 + i);
+                ApplyPalette(gUnkData_9, 0x13 + i);
             }
             else
             {
@@ -303,16 +303,16 @@ void sub_8045DC0(struct SioBatProc * proc)
 
     Decompress(Img_TacticianSelObj, OBJ_CHR_ADDR(0x240));
     Decompress(Img_LinkArenaPlayerBanners, OBJ_CHR_ADDR(0x300));
-    Decompress(gUnknown_085AC604, OBJ_CHR_ADDR(0x340));
+    Decompress(gUnkData_6, OBJ_CHR_ADDR(0x340));
 
     for (i = 0; i < 4; i++)
     {
-        ApplyPalette(gUnknown_085ADDA8, 0x13 + i);
+        ApplyPalette(gUnkData_9, 0x13 + i);
     }
 
     ReadMultiArenaSaveTeamName(gLinkArenaSt.unk_03, buf);
 
-    SetTextFont(&Font_0203DB64);
+    SetTextFont(&Font_0);
     InitSystemTextFont();
     ResetTextFont();
     sub_8043164();
@@ -326,7 +326,7 @@ void sub_8045DC0(struct SioBatProc * proc)
 
     for (i = 0; i < 15; i++)
     {
-        gUnknown_03004E86[i] = buf[i];
+        gUnk_74[i] = buf[i];
     }
 
     proc->unk_34 = 0;
@@ -335,10 +335,10 @@ void sub_8045DC0(struct SioBatProc * proc)
     StartLinkArenaButtonSpriteDraw(192, 16, proc);
     proc->unk_2c = StartLinkArenaVersusSpriteDraw(80, 32, proc);
 
-    SetupFaceGfxData(gUnknown_085A9864);
+    SetupFaceGfxData(gSioPostbattle_2);
     StartFace(3, FID_ANNA, 208, 80, FACE_DISP_KIND(FACE_96x80));
 
-    StartLinkArenaTitleBanner(proc->unk_2c, gUnknown_080D9D5E[gLinkArenaSt.unk_00], 0);
+    StartLinkArenaTitleBanner(proc->unk_2c, gSioMain2_0[gLinkArenaSt.unk_00], 0);
 
     sub_804C508();
     PutSioText(MSG_748 + proc->unk_30, 1); // "Setting up. Please wait..."
@@ -373,7 +373,7 @@ void sub_8045F48(struct SioBatProc * proc)
     u16 got = 0;
     struct SioBatProc_Unk2C * unk_2c = proc->unk_2c;
 
-    gUnk_Sio_0203DD28 = 0;
+    gUnk_Sio_13 = 0;
     buf[0] = 0;
 
     sub_8045CEC();
@@ -498,11 +498,11 @@ void sub_8045F48(struct SioBatProc * proc)
         return;
     }
 
-    gUnknown_03004E80.kind = SIO_MSG_8C;
-    gUnknown_03004E80.sender = gSioSt->selfId;
-    gUnknown_03004E80.param = gSioSt->unk_000;
+    gUnk_73.kind = SIO_MSG_8C;
+    gUnk_73.sender = gSioSt->selfId;
+    gUnk_73.param = gSioSt->unk_000;
 
-    SioSend(&gUnknown_03004E80, 0x16);
+    SioSend(&gUnk_73, 0x16);
 
     return;
 }
@@ -512,9 +512,9 @@ void sub_804619C(struct SioBatProc * proc)
 {
     sub_8045CEC();
 
-    gUnk_Sio_0203DD28++;
+    gUnk_Sio_13++;
 
-    if ((gLinkArenaSt.unk_A0 != gSioSt->unk_007) || (gUnk_Sio_0203DD28 > 600))
+    if ((gLinkArenaSt.unk_A0 != gSioSt->unk_007) || (gUnk_Sio_13 > 600))
     {
         sub_8045CBC();
         sub_8045CE0();
@@ -656,7 +656,7 @@ void sub_80463A8(struct SioBatProc * proc)
 
             unk_2c->unk_38 = proc->unk_3b;
 
-            gUnk_Sio_0203DD90.unk_00 = proc->unk_3b;
+            gUnk_Sio_16.unk_00 = proc->unk_3b;
             Proc_Break(proc);
         }
     }
@@ -696,17 +696,17 @@ void sub_80464B0(struct SioBatProc * proc)
     int i;
 
     int base = gSioSt->selfId * 0x40 + 1;
-    gUnk_Sio_0203DD28 = 0;
+    gUnk_Sio_13 = 0;
 
     InitUnits();
-    ReadMultiArenaSaveTeamRaw(gLinkArenaSt.unk_03, gUnknown_085A9884);
+    ReadMultiArenaSaveTeamRaw(gLinkArenaSt.unk_03, gSioPostbattle_3);
 
     for (i = 0; i < 5; i++)
     {
         struct Unit * unit = GetUnit(base + i);
 
         ClearUnit(unit);
-        LoadSavedUnit(&gUnknown_085A9884->units[i], unit);
+        LoadSavedUnit(&gSioPostbattle_3->units[i], unit);
 
         sub_8046478(unit);
 
@@ -714,7 +714,7 @@ void sub_80464B0(struct SioBatProc * proc)
 
         if (i == 0)
         {
-            gUnk_Sio_0203DD90.unk_24[gSioSt->selfId] = GetUnitMiniPortraitId(unit);
+            gUnk_Sio_16.unk_24[gSioSt->selfId] = GetUnitMiniPortraitId(unit);
         }
     }
 
@@ -754,7 +754,7 @@ void sub_8046580(struct SioBatProc * proc)
 
     if (proc->unk_64 < 5)
     {
-        proc->unk_58 = (u8)SioEmitData((u8 *)&gUnknown_085A9884->units[proc->unk_64], 0x28);
+        proc->unk_58 = (u8)SioEmitData((u8 *)&gSioPostbattle_3->units[proc->unk_64], 0x28);
         proc->unk_64++;
         gLinkArenaSt.linking_status[gSioSt->selfId] = proc->unk_64;
     }
@@ -776,7 +776,7 @@ void sub_8046580(struct SioBatProc * proc)
 
             if (gLinkArenaSt.linking_status[outSenderId[0]] == 0)
             {
-                gUnk_Sio_0203DD90.unk_24[outSenderId[0]] = GetUnitMiniPortraitId(unit);
+                gUnk_Sio_16.unk_24[outSenderId[0]] = GetUnitMiniPortraitId(unit);
             }
 
             if (gLinkArenaSt.unk_ec.unk_0_0 == 0)
@@ -789,7 +789,7 @@ void sub_8046580(struct SioBatProc * proc)
 
         for (i = 0; i < 4; i++)
         {
-            u8 * ptr = gUnk_Sio_0203DAC0;
+            u8 * ptr = gUnk_Sio_8;
 
             if ((sub_8042194(i) != 0) && (ptr[i] < 5))
             {
@@ -822,9 +822,9 @@ void sub_8046704(struct SioBatProc * proc)
         proc->unk_4c = 0;
     }
 
-    gUnk_Sio_0203DD28++;
+    gUnk_Sio_13++;
 
-    if (gUnk_Sio_0203DD28 > 600)
+    if (gUnk_Sio_13 > 600)
     {
         StartSioErrorScreen();
     }
@@ -838,7 +838,7 @@ void sub_8046704(struct SioBatProc * proc)
     if ((gSioSt->pendingSend[proc->unk_58].unk_00 == gSioSt->unk_009) &&
         ((gSioSt->unk_00A & gSioSt->unk_009) == gSioSt->pendingSend[proc->unk_58].unk_00))
     {
-        Proc_EndEach(gUnknown_085A93A0);
+        Proc_EndEach(gSioMain_0);
         Proc_Break(proc);
     }
 
@@ -856,13 +856,13 @@ void sub_80467AC(struct SioBatProc * proc)
     EndLinkArenaVersusSpriteDraw();
     EndFaceById(3);
 
-    ClearText(&gUnk_Sio_0203DA78);
-    Text_SetColor(&gUnk_Sio_0203DA78, TEXT_COLOR_SYSTEM_WHITE);
-    Text_SetCursor(&gUnk_Sio_0203DA78, GetStringTextCenteredPos(96, GetStringFromIndex(MSG_77D)));
-    Text_DrawString(&gUnk_Sio_0203DA78, GetStringFromIndex(MSG_77D)); // "Now Loading"
-    PutText(&gUnk_Sio_0203DA78, TILEMAP_LOCATED(gBG2TilemapBuffer, 9, 12));
+    ClearText(&gUnk_Sio_6);
+    Text_SetColor(&gUnk_Sio_6, TEXT_COLOR_SYSTEM_WHITE);
+    Text_SetCursor(&gUnk_Sio_6, GetStringTextCenteredPos(96, GetStringFromIndex(MSG_77D)));
+    Text_DrawString(&gUnk_Sio_6, GetStringFromIndex(MSG_77D)); // "Now Loading"
+    PutText(&gUnk_Sio_6, TILEMAP_LOCATED(gBG2TilemapBuffer, 9, 12));
 
-    Proc_Start(gUnknown_085A93A0, proc);
+    Proc_Start(gSioMain_0, proc);
 
     BG_EnableSyncByMask(BG0_SYNC_BIT | BG1_SYNC_BIT | BG2_SYNC_BIT | BG3_SYNC_BIT);
 
@@ -888,10 +888,10 @@ void sub_8046838(ProcPtr proc)
 
     sub_804C3A4(0);
 
-    Decompress(gUnknown_085AE778, gGenericBuffer);
+    Decompress(gUnkData_15, gGenericBuffer);
     CallARM_FillTileRect(TILEMAP_LOCATED(gBG2TilemapBuffer, 1, 5), gGenericBuffer, TILEREF(0x0, 1));
 
-    SetTextFont(&Font_0203DB64);
+    SetTextFont(&Font_0);
     ResetTextFont();
 
     sub_8043164();
@@ -915,7 +915,7 @@ void sub_8046838(ProcPtr proc)
     DrawLinkArenaModeIcon(TILEMAP_LOCATED(gBG1TilemapBuffer, 30 + gLinkArenaRuleData[1].xPos[0], 8), 0);
     DrawLinkArenaModeIcon(TILEMAP_LOCATED(gBG1TilemapBuffer, 30 + gLinkArenaRuleData[1].xPos[1], 8), 1);
 
-    StartLinkArenaTitleBanner(proc, gUnknown_080D9D5E[gLinkArenaSt.unk_00], 0);
+    StartLinkArenaTitleBanner(proc, gSioMain2_0[gLinkArenaSt.unk_00], 0);
 
     sub_804C508();
     PutSioText(MSG_74B, 1); // "The rules for this battle."
@@ -939,7 +939,7 @@ void sub_80469B8(void)
     return;
 }
 
-struct ProcCmd CONST_DATA gUnknown_085AA75C[] = {
+struct ProcCmd CONST_DATA gSioBat_0[] = {
     PROC_CALL(sub_804B800),
     PROC_SLEEP(1),
     PROC_CALL(BattleApplyGameStateUpdates),

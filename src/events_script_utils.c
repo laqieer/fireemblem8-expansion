@@ -760,7 +760,7 @@ CONST_DATA EventListScr EventScr_WholeTowerClear[] = {
     ENDA
 };
 
-CONST_DATA u16 Obj_089EE99C[] = {
+CONST_DATA u16 Obj_EventsScriptUtils_0[] = {
     3,
     0x4100, 0xC000, 0x2200,
     0x4100, 0xC040, 0x2208,
@@ -768,7 +768,7 @@ CONST_DATA u16 Obj_089EE99C[] = {
 };
 
 CONST_DATA u16 * ImgLut_EventMapAnimMaskfx[] = {
-    Img_0899D6DC,
+    Img_UnkData_0,
     Img_99E1A4,
     Img_99ED44,
     Img_99F7D4,
@@ -933,7 +933,7 @@ void sub_8085E94(struct ProcEventMapAnim * proc)
 
     if (0x1C == proc->timer) {
         proc->timer = 0;
-        child = Proc_Start(gUnknown_089EEA28, proc);
+        child = Proc_Start(gEventsScriptUtils_0, proc);
         child->mode = proc->mode;
         Proc_Break(proc);
     }
@@ -978,7 +978,7 @@ void sub_8085F88(struct ProcEventMapAnim * proc)
     BG_EnableSyncByMask(2);
 
     if (0x1C == proc->timer) {
-        Proc_EndEach(gUnknown_089EEA28);
+        Proc_EndEach(gEventsScriptUtils_0);
         proc->timer = 0;
         proc->count = 0;
         SetBlendConfig(1, 0x10, 0x10, 0);
@@ -1042,7 +1042,7 @@ void sub_808613C(struct Proc89EEA28 * proc)
     
     PutSprite(
         0, 0x1FF & (val1 + 0x18), 0x40,
-        Obj_089EE99C, 0
+        Obj_EventsScriptUtils_0, 0
     );
 
     if (0x10 == proc->timer) {
@@ -1065,7 +1065,7 @@ void sub_808622C(struct Proc89EEA28 * proc)
 
     EfxPalWhiteInOut(gPaletteBuffer, 0x12, 1, val);
     EnablePaletteSync();
-    PutSprite(0, 0x18, 0x40, Obj_089EE99C, 0);
+    PutSprite(0, 0x18, 0x40, Obj_EventsScriptUtils_0, 0);
 
     if (8 == proc->timer) {
         proc->timer = 0;
@@ -1087,7 +1087,7 @@ void sub_80862C4(struct Proc89EEA28 * proc)
 
     EfxPalWhiteInOut(gPaletteBuffer, 0x12, 1, val);
     EnablePaletteSync();
-    PutSprite(0, 0x18, 0x40, Obj_089EE99C, 0);
+    PutSprite(0, 0x18, 0x40, Obj_EventsScriptUtils_0, 0);
 
     if (8 == proc->timer) {
         proc->timer = 0;
@@ -1107,7 +1107,7 @@ void sub_808635C(struct Proc89EEA28 * proc)
         Div(+SIN(0) * 0x10, 0x100),
         Div(+COS(0) * 0x10, 0x100)
     );
-    PutSprite(0, 0x18, 0x40, Obj_089EE99C, 0);
+    PutSprite(0, 0x18, 0x40, Obj_EventsScriptUtils_0, 0);
 
     if (0x20 == proc->timer)
         Proc_BreakEach(ProcScr_EventMapAnim);
@@ -1127,7 +1127,7 @@ struct ProcCmd CONST_DATA ProcScr_EventMapAnim[] = {
     PROC_END,
 };
 
-struct ProcCmd CONST_DATA gUnknown_089EEA28[] = {
+struct ProcCmd CONST_DATA gEventsScriptUtils_0[] = {
     PROC_CALL(sub_8086134),
     PROC_REPEAT(sub_808613C),
     PROC_REPEAT(sub_808622C),

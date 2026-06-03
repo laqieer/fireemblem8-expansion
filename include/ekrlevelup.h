@@ -46,7 +46,7 @@ enum ekr_lvup_status_index {
     EKRLVUP_STAT_LVPRE_VAL
 };
 
-extern struct BanimUnkStructComm gUnknown_020200E0;
+extern struct BanimUnkStructComm gEkrlvup_1;
 
 struct ProcEkrLvupApfx {
     /* 00 */ PROC_HEADER;
@@ -87,10 +87,10 @@ extern CONST_DATA unsigned * EkrLvupMsgsMag[];
 extern const u16 sEfxLvupPartsPos[];
 
 extern struct ProcEkrLevelup * gpProcEkrLevelup;
-extern u32 gUnknown_020200B8[8];
+extern u32 gEkrlvup_0[8];
 extern ProcPtr gpProcEfxPartsofScroll;
 extern ProcPtr gpProcEfxleveluphb;
-// extern ??? gUnknown_020200E0
+// extern ??? gEkrlvup_1
 extern struct Unit * gpEkrLvupUnit;
 extern struct BattleUnit * gpEkrLvupBattleUnit;
 extern u16 gEkrLvupPreLevel;

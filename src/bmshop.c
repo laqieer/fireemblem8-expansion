@@ -327,7 +327,7 @@ void TalkChoice_OnSell(void)
         ShopInitTexts_OnSell(proc);
 }
 
-void Shop_null_80B4328(void)
+void Shop_null_0(void)
 {}
 
 void Shop_EntryDialogue(struct ProcShop * proc)

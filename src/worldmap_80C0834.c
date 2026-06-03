@@ -120,13 +120,13 @@ int IsChapterMonsterSpawnActive(int chIndex)
     return 0;
 }
 
-extern u8 gUnknown_0201B430[];
-extern u8 gUnknown_0201B930[];
+extern u8 gUnk_16[];
+extern u8 gUnk_23[];
 
 //! FE8U = 0x080C09B8
 void sub_80C09B8(void)
 {
-    CpuFastFill(0, gUnknown_0201B430, 0x500);
-    CpuFastFill(0, gUnknown_0201B930, 0x500);
+    CpuFastFill(0, gUnk_16, 0x500);
+    CpuFastFill(0, gUnk_23, 0x500);
     return;
 }

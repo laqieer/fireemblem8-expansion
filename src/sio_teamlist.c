@@ -170,8 +170,8 @@ struct LATeamListConfig * CONST_DATA gSioTeamListConfigLut[] =
 
 // clang-format on
 
-extern char gUnk_Sio_0203DD50[][MULTIARENA_TEAMNAME_SIZE + 1];
-extern struct Text gUnk_Sio_0203DA88[];
+extern char gUnk_Sio_14[][MULTIARENA_TEAMNAME_SIZE + 1];
+extern struct Text gUnk_Sio_7[];
 
 //! FE8U = 0x08043308
 void StartLinkArenaTeamList(ProcPtr parent)
@@ -437,9 +437,9 @@ int sub_80437C0(u8 mode, struct SioTeamListProc * proc)
     {
         for (i = 0; i < gLinkArenaSt.unk_05 + 2; i++)
         {
-            SioStrCpy(GetStringFromIndex(MSG_76B), gUnk_Sio_0203DD50[i]); // "Empty"
+            SioStrCpy(GetStringFromIndex(MSG_76B), gUnk_Sio_14[i]); // "Empty"
             ClearText(&gLinkArenaSt.unk_64[i]);
-            PutDrawTextCentered(&gLinkArenaSt.unk_64[i], 1, i * 3 + 5, gUnk_Sio_0203DD50[i], 10);
+            PutDrawTextCentered(&gLinkArenaSt.unk_64[i], 1, i * 3 + 5, gUnk_Sio_14[i], 10);
         }
 
         return gLinkArenaSt.unk_05 + 2;
@@ -461,9 +461,9 @@ int sub_80437C0(u8 mode, struct SioTeamListProc * proc)
             color = TEXT_COLOR_SYSTEM_GRAY;
         }
 
-        ClearText(&gUnk_Sio_0203DA88[i]);
-        Text_SetColor(&gUnk_Sio_0203DA88[i], color);
-        PutDrawTextCentered(&gUnk_Sio_0203DA88[i], 1, i * 2 + 5, GetStringFromIndex(ptr[i].menuTextId), 7);
+        ClearText(&gUnk_Sio_7[i]);
+        Text_SetColor(&gUnk_Sio_7[i], color);
+        PutDrawTextCentered(&gUnk_Sio_7[i], 1, i * 2 + 5, GetStringFromIndex(ptr[i].menuTextId), 7);
 
         i++;
     }
@@ -503,11 +503,11 @@ void SioTeamList_SetupGfx(struct SioTeamListProc * proc)
     StartMuralBackgroundExt(proc, 0, 0x12, 2, 0);
 
     Decompress(Img_TacticianSelObj, OBJ_CHR_ADDR(0x240));
-    CallARM_FillTileRect(TILEMAP_LOCATED(gBG2TilemapBuffer, 9, 4), gUnknown_085ADF40, TILEREF(0x0, 1));
+    CallARM_FillTileRect(TILEMAP_LOCATED(gBG2TilemapBuffer, 9, 4), gUnkData_14, TILEREF(0x0, 1));
     ApplyPalettes(Pal_TacticianSelObj, 0x13, 4);
 
-    Decompress(gUnknown_085AC604, OBJ_CHR_ADDR(0x300));
-    ApplyPalettes(gUnknown_08A1BD00, 0x11, 2);
+    Decompress(gUnkData_6, OBJ_CHR_ADDR(0x300));
+    ApplyPalettes(gUnkData_74, 0x11, 2);
 
     gPaletteBuffer[0x20] = 0;
 
@@ -518,7 +518,7 @@ void SioTeamList_SetupGfx(struct SioTeamListProc * proc)
 
     EnablePaletteSync();
 
-    SetTextFont(&Font_0203DB64);
+    SetTextFont(&Font_0);
     InitSystemTextFont();
     ResetTextFont();
 
@@ -561,7 +561,7 @@ void SioTeamList_SetupGfx(struct SioTeamListProc * proc)
     SetWin1Layers(1, 0, 1, 1, 0);
     SetWOutLayers(1, 0, 1, 1, 1);
 
-    StartLinkArenaTitleBanner(proc->unk_2c, gUnknown_080D9D5E[gLinkArenaSt.unk_00], 0);
+    StartLinkArenaTitleBanner(proc->unk_2c, gSioMain2_0[gLinkArenaSt.unk_00], 0);
     sub_804C558();
 
     PutSioText(GetLATeamListHelpTextId(proc), 1);
@@ -727,12 +727,12 @@ int sub_8043D5C(void)
 }
 
 //! FE8U = 0x08043D8C
-void SioTeamList_8043D8C(struct SioTeamListProc * proc)
+void SioTeamList_0(struct SioTeamListProc * proc)
 {
     int unk_40 = proc->unk_40;
     struct SioProc85AAA78 * unk_2C = proc->unk_2c;
 
-    if ((IsKeyInputSequenceComplete(gSioList_085A93E0)) && ((gLinkArenaTeamList[unk_40].unk_0f & 0x80) == 0))
+    if ((IsKeyInputSequenceComplete(gSioList_SioMain2_1)) && ((gLinkArenaTeamList[unk_40].unk_0f & 0x80) == 0))
     {
         Proc_Goto(proc, 8);
         return;
@@ -870,14 +870,14 @@ void SioTeamList_8043D8C(struct SioTeamListProc * proc)
                 // Team selected (Practice or Battle)
                 SioPlaySoundEffect(2);
 
-                SioStrCpy(gLinkArenaTeamList[unk_40].name, gUnk_Sio_0203DD50[proc->selectedTeam]);
+                SioStrCpy(gLinkArenaTeamList[unk_40].name, gUnk_Sio_14[proc->selectedTeam]);
 
                 gLinkArenaSt.unk_06[proc->selectedTeam] = gLinkArenaTeamList[unk_40].unk_0f;
 
                 ClearText(&gLinkArenaSt.unk_64[proc->selectedTeam]);
                 PutDrawTextCentered(
                     &gLinkArenaSt.unk_64[proc->selectedTeam], 1, proc->selectedTeam * 3 + 5,
-                    gUnk_Sio_0203DD50[proc->selectedTeam], 10);
+                    gUnk_Sio_14[proc->selectedTeam], 10);
 
                 proc->unk_5c = sub_8043D5C();
 
@@ -1005,11 +1005,11 @@ void sub_8044280(struct SioProc85AAA78 * proc, s8 b)
 }
 
 //! FE8U = 0x0804429C
-void SioTeamList_804429C(struct SioTeamListProc * proc)
+void SioTeamList_1(struct SioTeamListProc * proc)
 {
     struct SioProc85AAA78 * unk_2C = proc->unk_2c;
 
-    s8 xPos = gUnknown_080D9D61[proc->unk_44];
+    s8 xPos = gSioMain2_1[proc->unk_44];
 
     if (xPos == -1)
     {
@@ -1037,11 +1037,11 @@ void SioTeamList_804429C(struct SioTeamListProc * proc)
 }
 
 //! FE8U = 0x08044324
-void SioTeamList_8044324(struct SioTeamListProc * proc)
+void SioTeamList_2(struct SioTeamListProc * proc)
 {
     struct SioProc85AAA78 * unk_2C = proc->unk_2c;
 
-    s8 xPos = gUnknown_080D9D61[proc->unk_44];
+    s8 xPos = gSioMain2_1[proc->unk_44];
 
     if (xPos == -1)
     {
@@ -1089,11 +1089,11 @@ void SioTeamList_StartEraseTeamSubMenu(struct SioTeamListProc * proc)
         proc->unk_58 = var * 2 + 5;
     }
 
-    ClearText(&Texts_0203DAB0);
-    Text_DrawString(&Texts_0203DAB0, GetStringFromIndex(MSG_140)); // "Erase"
-    Text_SetCursor(&Texts_0203DAB0, 38);
-    Text_DrawString(&Texts_0203DAB0, GetStringFromIndex(MSG_141)); // "Back"
-    PutText(&Texts_0203DAB0, TILEMAP_LOCATED(gBG0TilemapBuffer, 15, (proc->unk_58 + 4)));
+    ClearText(&Texts_0);
+    Text_DrawString(&Texts_0, GetStringFromIndex(MSG_140)); // "Erase"
+    Text_SetCursor(&Texts_0, 38);
+    Text_DrawString(&Texts_0, GetStringFromIndex(MSG_141)); // "Back"
+    PutText(&Texts_0, TILEMAP_LOCATED(gBG0TilemapBuffer, 15, (proc->unk_58 + 4)));
 
     BG_EnableSyncByMask(BG0_SYNC_BIT);
 
@@ -1182,7 +1182,7 @@ PROC_LABEL(1),
     PROC_CALL(FadeInBlackSpeed20),
     PROC_YIELD,
 
-    PROC_CALL(Clear_0203DDDC),
+    PROC_CALL(Clear_UnkData_0),
 
     // fallthrough
 
@@ -1192,12 +1192,12 @@ PROC_LABEL(2),
     // fallthrough
 
 PROC_LABEL(3),
-    PROC_REPEAT(SioTeamList_8043D8C),
+    PROC_REPEAT(SioTeamList_0),
 
     PROC_GOTO(9),
 
 PROC_LABEL(4),
-    PROC_CALL(Set_0203DDDC),
+    PROC_CALL(Set_UnkData_0),
 
     PROC_CALL(sub_8013F40),
     PROC_YIELD,
@@ -1211,17 +1211,17 @@ PROC_LABEL(4),
     PROC_CALL(FadeInBlackSpeed20),
     PROC_YIELD,
 
-    PROC_CALL(Clear_0203DDDC),
+    PROC_CALL(Clear_UnkData_0),
 
     PROC_GOTO(2),
 
 PROC_LABEL(5),
-    PROC_REPEAT(SioTeamList_804429C),
+    PROC_REPEAT(SioTeamList_1),
 
     // fallthrough
 
 PROC_LABEL(6),
-    PROC_REPEAT(SioTeamList_8044324),
+    PROC_REPEAT(SioTeamList_2),
 
     // fallthrough
 
@@ -1232,7 +1232,7 @@ PROC_LABEL(7),
     PROC_GOTO(3),
 
 PROC_LABEL(8), /* Label for the Battle Password logic in FE6 */
-    PROC_CALL(Set_0203DDDC),
+    PROC_CALL(Set_UnkData_0),
 
     PROC_CALL(sub_8013F40),
     PROC_YIELD,
@@ -1245,7 +1245,7 @@ PROC_LABEL(8), /* Label for the Battle Password logic in FE6 */
 PROC_LABEL(9),
     PROC_CALL(EndMuralBackground),
 
-    PROC_CALL(Set_0203DDDC),
+    PROC_CALL(Set_UnkData_0),
 
     PROC_CALL(sub_8013F40),
     PROC_YIELD,

@@ -14,6 +14,6 @@ u8 Img_PhaseChangeOther[] = INCBIN_U8("graphics/misc/Img_PhaseChangeOther.4bpp.l
 
 u16 Pal_PhaseChangeOther[] = INCBIN_U16("graphics/misc/Pal_PhaseChangeOther.gbapal");
 
-u16 Pal_085A06B8[] = INCBIN_U16("graphics/misc/Pal_085A06B8.gbapal");
+u16 Pal_PhaseChange_0[] = INCBIN_U16("graphics/misc/Pal_085A06B8.gbapal");
 
 u8 Img_PhaseChangeSquares[] = INCBIN_U8("graphics/misc/Img_PhaseChangeSquares.4bpp.lz");

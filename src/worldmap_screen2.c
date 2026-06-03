@@ -265,7 +265,7 @@ ProcPtr StartGmNodeIconDisplay(ProcPtr parent, int chr, int palId, int unk, Proc
     proc->merge_next_node = false;
     proc->nodeId = 0;
 
-    proc->ap = AP_Create(Sprite_08A97AEC, 11);
+    proc->ap = AP_Create(Sprite_0, 11);
     AP_SwitchAnimation(proc->ap, 1);
     proc->ap->tileBase = ((proc->chr + 0x1000) / CHR_SIZE) + OAM2_PAL(proc->pal) + OAM2_LAYER(2);
     return proc;
@@ -282,7 +282,7 @@ const char * GetWorldMapNodeName(u32 nodeId)
     return GetStringFromIndex(0x066D); // TODO: msgid "[DashedLine][DashedLine][DashedLine][DashedLine][DashedLine]"
 }
 
-const u8 gUnknown_08206450[2][0x1d] =
+const u8 gWorldmapScreen2_0[2][0x1d] =
 {
     {
         0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
@@ -315,7 +315,7 @@ int sub_80BBA4C(int nodeId)
             break;
     }
 
-    return gUnknown_08206450[set][nodeId];
+    return gWorldmapScreen2_0[set][nodeId];
 }
 
 // clang-format off

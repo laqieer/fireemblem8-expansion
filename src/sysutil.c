@@ -278,7 +278,7 @@ void DisplayExtendedSysHand(struct SysHandCursorProc * proc)
     int i;
 
     gPaletteBuffer[proc->pal_bank * 0x10  + 0x10E] =
-        ((gPlaySt.config.windowColor << 4) + ((GetGameClock() / 4) % 0x10))[Pal_08A1D448];
+        ((gPlaySt.config.windowColor << 4) + ((GetGameClock() / 4) % 0x10))[Pal_UnkData_1];
 
     EnablePaletteSync();
     PutSpriteExt(4, proc->x, proc->y + 8, gObject_8x8,
@@ -878,7 +878,7 @@ void EndAllProcChildren(ProcPtr p)
     }
 }
 
-void nop_80ADDF8(void)
+void nop_4(void)
 {
     return;
 }

@@ -52,7 +52,7 @@ SECTIONS
         . = ALIGN(4); src/prep_unitselect.o(ewram_overlay_0);
         . = ALIGN(4); src/prep_itemsupply.o(ewram_overlay_0);
         . = ALIGN(4); src/uisupport.o(ewram_overlay_0);
-        . = 0x01F148; gUnk_SoundRoom_0201F148 = .;
+        . = 0x01F148; gUnk_SoundRoom_0 = .;
         . = 0x01F19C; gSoundRoomVolumeGraphBuffer = .;
     }
 
@@ -77,17 +77,17 @@ SECTIONS
     {
         . = 0x000000;
         . = ALIGN(4); src/opinfo.o(ewram_overlay_gamestart);
-        . = 0x002038; gUnknown_02002038 = .;
-        . = 0x007838; gUnknown_02007838 = .;
-        . = 0x0078D8; gUnknown_020078D8 = .;
-        . = 0x00A2D8; gUnknown_0200A2D8 = .;
-        . = 0x00A300; gUnknown_0200A300 = .;
-        . = 0x00C300; gUnknown_0200C300 = .;
-        . = 0x00CB00; gUnknown_0200CB00 = .;
-        . = 0x01CDD4; gUnk_OpSubtitle_0201CDD4 = .;
-        . = 0x01DB00; gUnk_Opinfo_0201DB00 = .;
-        . = 0x01DB28; gUnk_OpInfo_0201DB28 = .;
-        . = 0x01FB28; gUnk_OpInfo_0201FB28 = .;
+        . = 0x002038; gUnk_0 = .;
+        . = 0x007838; gUnk_1 = .;
+        . = 0x0078D8; gUnk_2 = .;
+        . = 0x00A2D8; gUnk_4 = .;
+        . = 0x00A300; gUnk_5 = .;
+        . = 0x00C300; gUnk_7 = .;
+        . = 0x00CB00; gUnk_8 = .;
+        . = 0x01CDD4; gUnk_OpSubtitle_0 = .;
+        . = 0x01DB00; gUnk_Opinfo_0 = .;
+        . = 0x01DB28; gUnk_OpInfo_0 = .;
+        . = 0x01FB28; gUnk_OpInfo_1 = .;
     }
 
     ewram_overlay_banim __ewram_start (NOLOAD) : ALIGN(4)
@@ -105,47 +105,47 @@ SECTIONS
 
     ewram_overlay_sio __ewram_start (NOLOAD) : ALIGN(4)
     {
-        . = 0x000000; gUnk_Sio_02000000 = .;
-        . = 0x000C60; Font_Sio_02000C60 = .;
-        . = 0x000C78; gUnk_Sio_02000C78 = .;
-        . = 0x000F00; gUnk_Sio_02000F00 = .;
-        . = 0x001180; gUnk_Sio_02001180 = .;
-        . = 0x001184; gUnk_Sio_02001184 = .;
-        . = 0x001188; gUnk_Sio_02001188 = .;
+        . = 0x000000; gUnk_Sio_0 = .;
+        . = 0x000C60; Font_Sio_0 = .;
+        . = 0x000C78; gUnk_Sio_1 = .;
+        . = 0x000F00; gUnk_Sio_2 = .;
+        . = 0x001180; gUnk_Sio_3 = .;
+        . = 0x001184; gUnk_Sio_4 = .;
+        . = 0x001188; gUnk_Sio_5 = .;
     }
 
     ewram_overlay_worldmap __ewram_start (NOLOAD) : ALIGN(4)
     {
         . = 0x000000;
-        . = 0x0087A0; gUnknown_020087A0 = .;
-        . = 0x00AF00; gUnknown_0200AF00 = .;
-        . = 0x019D00; gUnknown_02019D00 = .;
-        . = 0x01AFC0; gFont_0201AFC0 = .;
-        . = 0x01AFF0; gUnknown_0201AFF0 = .;
-        . = 0x01B0D8; gUnknown_0201B0D8 = .;
-        . = 0x01B100; gUnknown_0201B100 = .;
-        . = 0x01B104; gUnknown_0201B104 = .;
-        . = 0x01B1E4; gUnknown_0201B1E4 = .;
-        . = 0x01B3A4; gUnknown_0201B3A4 = .;
-        . = 0x01B430; gUnknown_0201B430 = .;
-        . = 0x01B458; gUnknown_0201B458 = .;
-        . = 0x01B718; gUnknown_0201B718 = .;
-        . = 0x01B71C; gUnknown_0201B71C = .;
-        . = 0x01B758; gUnknown_0201B758 = .;
-        . = 0x01B7DA; gUnknown_0201B7DA = .;
-        . = 0x01B864; gUnknown_0201B864 = .;
-        . = 0x01B930; gUnknown_0201B930 = .;
-        . = 0x01B958; gUnknown_0201B958 = .;
-        . = 0x01BBD8; gUnknown_0201BBD8 = .;
+        . = 0x0087A0; gUnk_3 = .;
+        . = 0x00AF00; gUnk_6 = .;
+        . = 0x019D00; gUnk_9 = .;
+        . = 0x01AFC0; gFont_0 = .;
+        . = 0x01AFF0; gUnk_10 = .;
+        . = 0x01B0D8; gUnk_11 = .;
+        . = 0x01B100; gUnk_12 = .;
+        . = 0x01B104; gUnk_13 = .;
+        . = 0x01B1E4; gUnk_14 = .;
+        . = 0x01B3A4; gUnk_15 = .;
+        . = 0x01B430; gUnk_16 = .;
+        . = 0x01B458; gUnk_17 = .;
+        . = 0x01B718; gUnk_18 = .;
+        . = 0x01B71C; gUnk_19 = .;
+        . = 0x01B758; gUnk_20 = .;
+        . = 0x01B7DA; gUnk_21 = .;
+        . = 0x01B864; gUnk_22 = .;
+        . = 0x01B930; gUnk_23 = .;
+        . = 0x01B958; gUnk_24 = .;
+        . = 0x01BBD8; gUnk_25 = .;
         . = 0x01BE30; gWmHblankStatus = .;
-        . = 0x01BE32; gUnknown_0201BE32 = .;
-        . = 0x01C5B4; gUnknown_0201C5B4 = .;
-        . = 0x01C5C0; gUnknown_0201C5C0 = .;
-        . = 0x01C5CC; gUnknown_0201C5CC = .;
-        . = 0x01C5CF; gUnknown_0201C5CF = .;
-        . = 0x01C5D0; gUnknown_0201C5D0 = .;
-        . = 0x01C5D1; gUnknown_0201C5D1 = .;
-        . = 0x01C5D4; gUnknown_0201C5D4 = .;
+        . = 0x01BE32; gUnk_26 = .;
+        . = 0x01C5B4; gUnk_27 = .;
+        . = 0x01C5C0; gUnk_28 = .;
+        . = 0x01C5CC; gUnk_29 = .;
+        . = 0x01C5CF; gUnk_30 = .;
+        . = 0x01C5D0; gUnk_31 = .;
+        . = 0x01C5D1; gUnk_32 = .;
+        . = 0x01C5D4; gUnk_33 = .;
     }
 
     ewram_data __ewram_start (NOLOAD) : ALIGN(4)
@@ -181,33 +181,33 @@ SECTIONS
         . = ALIGN(4); src/cp_0803E2F4.o(ewram_data);
         . = ALIGN(4); src/sio_core.o(ewram_data);
         . = 0x3DA24; gLinkArenaSt = .;
-        . = 0x3DA78; gUnk_Sio_0203DA78 = .;
-        . = 0x3DA88; gUnk_Sio_0203DA88 = .;
-        . = 0x3DAB0; Texts_0203DAB0 = .;
-        . = 0x3DAC0; gUnk_Sio_0203DAC0 = .;
-        . = 0x3DAC5; gUnk_Sio_0203DAC5 = .;
+        . = 0x3DA78; gUnk_Sio_6 = .;
+        . = 0x3DA88; gUnk_Sio_7 = .;
+        . = 0x3DAB0; Texts_0 = .;
+        . = 0x3DAC0; gUnk_Sio_8 = .;
+        . = 0x3DAC5; gUnk_Sio_9 = .;
         . = 0x3DB10; gSioSaveConfig = .;
-        . = 0x3DB14; Texts_0203DB14 = .;
-        . = 0x3DB1C; gUnk_Sio_0203DB1C = .;
-        . = 0x3DB64; Font_0203DB64 = .;
+        . = 0x3DB14; Texts_1 = .;
+        . = 0x3DB1C; gUnk_Sio_10 = .;
+        . = 0x3DB64; Font_0 = .;
         . = 0x3DB7C; gLinkArenaTeamList = .;
         . = 0x3DC44; gSioResultRankings = .;
-        . = 0x3DC48; gUnk_Sio_0203DC48 = .;
+        . = 0x3DC48; gUnk_Sio_11 = .;
         . = 0x3DD0C; gSioTexts = .;
-        . = 0x3DD1C; Text_0203DB14 = .;
-        . = 0x3DD24; gUnk_Sio_0203DD24 = .;
-        . = 0x3DD28; gUnk_Sio_0203DD28 = .;
+        . = 0x3DD1C; Text_0 = .;
+        . = 0x3DD24; gUnk_Sio_12 = .;
+        . = 0x3DD28; gUnk_Sio_13 = .;
         . = 0x3DD2C; gKeyInputSequenceBuffer = .;
         . = 0x3DD4C; gKeyInputSequenceTimer = .;
-        . = 0x3DD50; gUnk_Sio_0203DD50 = .;
-        . = 0x3DD8C; gUnk_Sio_0203DD8C = .;
-        . = 0x3DD90; gUnk_Sio_0203DD90 = .;
-        . = 0x3DD94; gUnk_Sio_0203DD94 = .;
-        . = 0x3DD95; gUnk_Sio_0203DD95 = .;
-        . = 0x3DD9A; gUnk_Sio_0203DD9A = .;
-        . = 0x3DD9F; gUnk_Sio_0203DD9F = .;
-        . = 0x3DDB4; gUnk_Sio_0203DDB4 = .;
-        . = 0x3DDDC; gUnk_Sio_0203DDDC = .;
+        . = 0x3DD50; gUnk_Sio_14 = .;
+        . = 0x3DD8C; gUnk_Sio_15 = .;
+        . = 0x3DD90; gUnk_Sio_16 = .;
+        . = 0x3DD94; gUnk_Sio_17 = .;
+        . = 0x3DD95; gUnk_Sio_18 = .;
+        . = 0x3DD9A; gUnk_Sio_19 = .;
+        . = 0x3DD9F; gUnk_Sio_20 = .;
+        . = 0x3DDB4; gUnk_Sio_21 = .;
+        . = 0x3DDDC; gUnk_Sio_22 = .;
         . = 0x3DDE0;
         . = ALIGN(4); src/uiutils.o(ewram_data);
         . = ALIGN(4); src/uiselecttarget.o(ewram_data);

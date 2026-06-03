@@ -10,8 +10,8 @@ extern struct AnimSpriteData AnimSprite_EkrMainMini_L_Close[];
 extern AnimScr AnimScr_EkrMainMini_L_Close[];
 extern struct AnimSpriteData AnimSprite_EkrMainMini_R_Close[];
 extern AnimScr AnimScr_EkrMainMini_R_Close[];
-extern struct AnimSpriteData AnimSprite_085C7440[];
-extern AnimScr AnimScr_085C74AC[];
+extern struct AnimSpriteData AnimSprite_EkrMainMini_R_Close_1[];
+extern AnimScr AnimScr_Ekrmainminifx[];
 
 struct AnimSpriteData CONST_DATA AnimSprite_EkrMainMini_L_Far[] =
 {
@@ -95,7 +95,7 @@ AnimScr CONST_DATA AnimScr_EkrMainMini_R_Close[] =
     ANIMSCR_BLOCKED,
 };
 
-struct AnimSpriteData CONST_DATA AnimSprite_085C7440[] =
+struct AnimSpriteData CONST_DATA AnimSprite_EkrMainMini_R_Close_1[] =
 {
     { .header = (u32)(ATTR0_WIDE) | ((u32)(ATTR1_SIZE_32) << 16), .as = { .object = { 0x1000, -107, -8 } } },
     { .header = (u32)(ATTR0_SQUARE) | ((u32)(ATTR1_SIZE_16) << 16), .as = { .object = { 0x1008, -75, -8 } } },
@@ -108,8 +108,8 @@ struct AnimSpriteData CONST_DATA AnimSprite_085C7440[] =
     ANIM_SPRITE_END,
 };
 
-AnimScr CONST_DATA AnimScr_085C74AC[] =
+AnimScr CONST_DATA AnimScr_Ekrmainminifx[] =
 {
-    ANIMSCR_FORCE_SPRITE(AnimSprite_085C7440, 4),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_EkrMainMini_R_Close_1, 4),
     ANIMSCR_BLOCKED,
 };

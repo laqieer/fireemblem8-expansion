@@ -38,31 +38,31 @@ u16 CONST_DATA Img_LinkArenaWarpFx[] = INCBIN_U16("graphics/misc/Img_LinkArenaWa
 
 u16 CONST_DATA Pal_LinkArenaWarpFx[] = INCBIN_U16("graphics/misc/Pal_LinkArenaWarpFx.agbpal");
 
-u16 CONST_DATA gUnknown_089AE4A4[] = INCBIN_U16("graphics/misc/gUnknown_089AE4A4.4bpp");
+u16 CONST_DATA gMapanimBattleinfo_0[] = INCBIN_U16("graphics/misc/gUnknown_089AE4A4.4bpp");
 
-u8 Img_089AE7A4[] = INCBIN_U8("graphics/misc/Img_089AE7A4.4bpp.lz");
+u8 Img_MapAnimBerserkfx_1[] = INCBIN_U8("graphics/misc/Img_089AE7A4.4bpp.lz");
 
-u16 Pal_089AE7C4[] = INCBIN_U16("graphics/misc/Pal_089AE7C4.agbpal");
+u16 Pal_MapAnimBerserkfx_0[] = INCBIN_U16("graphics/misc/Pal_089AE7C4.agbpal");
 
 u8 CONST_DATA Img_MapAnimAntitoxinPureWater[] = INCBIN_U8("graphics/misc/Img_MapAnimAntitoxinPureWater.4bpp.lz");
 
-u16 CONST_DATA gUnknown_089AF310[] = INCBIN_U16("graphics/misc/gUnknown_089AF310.4bpp");
+u16 CONST_DATA gMapanimBattleinfo_1[] = INCBIN_U16("graphics/misc/gUnknown_089AF310.4bpp");
 
 u16 CONST_DATA Pal_MapAnimPureWater[] = INCBIN_U16("graphics/misc/Pal_MapAnimPureWater.agbpal");
 
 u16 CONST_DATA Pal_MapAnimAntitoxin[] = INCBIN_U16("graphics/misc/Pal_MapAnimAntitoxin.agbpal");
 
-u8 CONST_DATA gUnknown_089AF950[] = INCBIN_U8("graphics/misc/gUnknown_089AF950.4bpp.lz");
+u8 CONST_DATA gMapanimBattleinfo_2[] = INCBIN_U8("graphics/misc/gUnknown_089AF950.4bpp.lz");
 
-u8 CONST_DATA gUnknown_089AFAC4[] = INCBIN_U8("graphics/misc/gUnknown_089AFAC4.4bpp.lz");
+u8 CONST_DATA gMapanimBattleinfo_3[] = INCBIN_U8("graphics/misc/gUnknown_089AFAC4.4bpp.lz");
 
-u8 CONST_DATA gUnknown_089AFCBC[] = INCBIN_U8("graphics/misc/gUnknown_089AFCBC.4bpp.lz");
+u8 CONST_DATA gMapanimBattleinfo_4[] = INCBIN_U8("graphics/misc/gUnknown_089AFCBC.4bpp.lz");
 
-u16 CONST_DATA Pal_089AFF78[] = INCBIN_U16("graphics/misc/Pal_089AFF78.agbpal");
+u16 CONST_DATA Pal_MapAnimBerserkfx_1[] = INCBIN_U16("graphics/misc/Pal_089AFF78.agbpal");
 
-u16 CONST_DATA Pal_089AFFB8[] = INCBIN_U16("graphics/misc/Pal_089AFFB8.gbapal");
+u16 CONST_DATA Pal_MapAnimBerserkfx_2[] = INCBIN_U16("graphics/misc/Pal_089AFFB8.gbapal");
 
-u8 CONST_DATA gUnknown_089AFFF8[] = INCBIN_U8("graphics/misc/gUnknown_089AFFF8.4bpp.lz");
+u8 CONST_DATA gMapanimBattleinfo_5[] = INCBIN_U8("graphics/misc/gUnknown_089AFFF8.4bpp.lz");
 
 u8 CONST_DATA Img_MapAnimTorchfx[] = INCBIN_U8("graphics/misc/Img_MapAnimTorchfx.4bpp.lz");
 
@@ -78,11 +78,11 @@ u16 Pal_MapAnimUnlockObjfx_Unk[] = INCBIN_U16("graphics/misc/Pal_MapAnimUnlockOb
 
 u8 Tsa_MapAnimUnlockBgfx[] = INCBIN_U8("graphics/misc/Tsa_MapAnimUnlockBgfx.tsa.bin");
 
-u8 Tsa_089B0864[] = INCBIN_U8("graphics/misc/Tsa_089B0864.tsa.bin");
+u8 Tsa_MapAnim_0[] = INCBIN_U8("graphics/misc/Tsa_089B0864.tsa.bin");
 
 u8 Img_MapAnimRepairfx[] = INCBIN_U8("graphics/misc/Img_MapAnimRepairfx.4bpp.lz");
 
-u8 Tsa_089B17A4[] = INCBIN_U8("graphics/misc/Tsa_089B17A4.tsa.bin");
+u8 Tsa_MapAnim_1[] = INCBIN_U8("graphics/misc/Tsa_089B17A4.tsa.bin");
 
 u16 ApConf_MapAnimSleep[] = INCBIN_U16("graphics/misc/ApConf_MapAnimSleep.4bpp");
 

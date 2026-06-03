@@ -1,7 +1,7 @@
 .section .data
 
-	.global Sprite_08A97AEC
-Sprite_08A97AEC:  @ 0x08A97AEC
+	.global Sprite_0
+Sprite_0:  @ 0x08A97AEC
 	@ AP animation definition (frame_list +0x4, anim_list +0x26); flat halfword table, 428 bytes
 	.2byte 0x0004, 0x0026, 0x0026, 0x0034, 0x0042, 0x0056, 0x0070, 0x0090
 	.2byte 0x00B6, 0x00DC, 0x00F0, 0x0104, 0x0112, 0x011A, 0x0122, 0x0136
@@ -31,8 +31,8 @@ Sprite_08A97AEC:  @ 0x08A97AEC
 	.2byte 0x0001, 0x0000, 0xFFFF, 0x000D, 0x000D, 0x000C, 0x000E, 0x000D
 	.2byte 0x000F, 0x000D, 0x0010, 0x0000, 0xFFFF, 0x0000
 .L_end_Sprite_08A97AEC:
-	.if (.L_end_Sprite_08A97AEC - Sprite_08A97AEC) != 428
-	.error "Sprite_08A97AEC size mismatch"
+	.if (.L_end_Sprite_08A97AEC - Sprite_0) != 428
+	.error "Sprite_0 size mismatch"
 	.endif
 
 	.global gImg_WorldmapNodeRevealEffect
@@ -43,8 +43,8 @@ gImg_WorldmapNodeRevealEffect:  @ 0x08A97C98
 gPal_WorldmapNodeRevealEffect:  @ 0x08A97E28
 	.incbin "graphics/misc/gPal_WorldmapNodeRevealEffect.gbapal"
 
-	.global gUnknown_08A97E48
-gUnknown_08A97E48:  @ 0x08A97E48
+	.global gWorldmapSprite_0
+gWorldmapSprite_0:  @ 0x08A97E48
 	@ RGB15 color/palette table (72 u16 entries, 144 bytes)
 	.2byte 0x7BC7, 0x7EE3, 0x7622, 0x7EE3, 0x7BC7, 0x6D43, 0x48E7, 0x48E7
 	.2byte 0x48E7, 0x48E7, 0x48E7, 0x48E7, 0x48E7, 0x6543, 0x7622, 0x7EE3
@@ -56,20 +56,20 @@ gUnknown_08A97E48:  @ 0x08A97E48
 	.2byte 0x0000, 0x0000, 0x0842, 0x1084, 0x18C6, 0x2529, 0x2D6B, 0x35AD
 	.2byte 0x3DEF, 0x4A52, 0x5294, 0x5AD6, 0x6739, 0x6F7B, 0x77BD, 0x7FFF
 .L_end_gUnknown_08A97E48:
-	.if (.L_end_gUnknown_08A97E48 - gUnknown_08A97E48) != 144
-	.error "gUnknown_08A97E48 size mismatch"
+	.if (.L_end_gUnknown_08A97E48 - gWorldmapSprite_0) != 144
+	.error "gWorldmapSprite_0 size mismatch"
 	.endif
 
 	.global Img_GmapPath
 Img_GmapPath:  @ 0x08A97ED8
 	.incbin "graphics/misc/Img_GmapPath.4bpp.lz"
 
-	.global gUnknown_08A97FA4
-gUnknown_08A97FA4:  @ 0x08A97FA4
+	.global gWorldmapSprite_1
+gWorldmapSprite_1:  @ 0x08A97FA4
 	.incbin "graphics/misc/gUnknown_08A97FA4.4bpp"
 
-	.global gUnknown_08A97FC4
-gUnknown_08A97FC4:  @ 0x08A97FC4
+	.global gWorldmapSprite_2
+gWorldmapSprite_2:  @ 0x08A97FC4
 	.byte 12, 8, 3, 1  @ rect 0: x=12 y=8 w=3 h=1
 	.2byte 0x0001, 0x0001, 0x0007
 	.byte 12, 9, 4, 1  @ rect 1: x=12 y=9 w=4 h=1
@@ -81,12 +81,12 @@ gUnknown_08A97FC4:  @ 0x08A97FC4
 	.byte 0xFF  @ terminator
 	.byte 0x00, 0x00, 0x00  @ align pad
 .L_end_gUnknown_08A97FC4:
-	.if (.L_end_gUnknown_08A97FC4 - gUnknown_08A97FC4) != 52
-	.error "gUnknown_08A97FC4 size mismatch"
+	.if (.L_end_gUnknown_08A97FC4 - gWorldmapSprite_2) != 52
+	.error "gWorldmapSprite_2 size mismatch"
 	.endif
 
-	.global gUnknown_08A97FF8
-gUnknown_08A97FF8:  @ 0x08A97FF8
+	.global gWorldmapSprite_3
+gWorldmapSprite_3:  @ 0x08A97FF8
 	.byte 11, 9, 2, 1  @ rect 0: x=11 y=9 w=2 h=1
 	.2byte 0x0006, 0x0007
 	.byte 11, 10, 3, 1  @ rect 1: x=11 y=10 w=3 h=1
@@ -102,12 +102,12 @@ gUnknown_08A97FF8:  @ 0x08A97FF8
 	.byte 0xFF  @ terminator
 	.byte 0x00  @ align pad
 .L_end_gUnknown_08A97FF8:
-	.if (.L_end_gUnknown_08A97FF8 - gUnknown_08A97FF8) != 56
-	.error "gUnknown_08A97FF8 size mismatch"
+	.if (.L_end_gUnknown_08A97FF8 - gWorldmapSprite_3) != 56
+	.error "gWorldmapSprite_3 size mismatch"
 	.endif
 
-	.global gUnknown_08A98030
-gUnknown_08A98030:  @ 0x08A98030
+	.global gWorldmapSprite_4
+gWorldmapSprite_4:  @ 0x08A98030
 	.byte 14, 15, 2, 1  @ rect 0: x=14 y=15 w=2 h=1
 	.2byte 0x0003, 0x0004
 	.byte 14, 16, 2, 1  @ rect 1: x=14 y=16 w=2 h=1
@@ -119,12 +119,12 @@ gUnknown_08A98030:  @ 0x08A98030
 	.byte 0xFF  @ terminator
 	.byte 0x00, 0x00, 0x00  @ align pad
 .L_end_gUnknown_08A98030:
-	.if (.L_end_gUnknown_08A98030 - gUnknown_08A98030) != 36
-	.error "gUnknown_08A98030 size mismatch"
+	.if (.L_end_gUnknown_08A98030 - gWorldmapSprite_4) != 36
+	.error "gWorldmapSprite_4 size mismatch"
 	.endif
 
-	.global gUnknown_08A98054
-gUnknown_08A98054:  @ 0x08A98054
+	.global gWorldmapSprite_5
+gWorldmapSprite_5:  @ 0x08A98054
 	.byte 16, 18, 3, 1  @ rect 0: x=16 y=18 w=3 h=1
 	.2byte 0x0001, 0x0001, 0x0001
 	.byte 16, 19, 3, 1  @ rect 1: x=16 y=19 w=3 h=1
@@ -132,12 +132,12 @@ gUnknown_08A98054:  @ 0x08A98054
 	.byte 0xFF  @ terminator
 	.byte 0x00, 0x00, 0x00  @ align pad
 .L_end_gUnknown_08A98054:
-	.if (.L_end_gUnknown_08A98054 - gUnknown_08A98054) != 24
-	.error "gUnknown_08A98054 size mismatch"
+	.if (.L_end_gUnknown_08A98054 - gWorldmapSprite_5) != 24
+	.error "gWorldmapSprite_5 size mismatch"
 	.endif
 
-	.global gUnknown_08A9806C
-gUnknown_08A9806C:  @ 0x8A9806C
+	.global gWorldmapSprite_6
+gWorldmapSprite_6:  @ 0x8A9806C
 	.byte 18, 19, 2, 1  @ rect 0: x=18 y=19 w=2 h=1
 	.2byte 0x0003, 0x0004
 	.byte 18, 20, 2, 1  @ rect 1: x=18 y=20 w=2 h=1
@@ -149,12 +149,12 @@ gUnknown_08A9806C:  @ 0x8A9806C
 	.byte 0xFF  @ terminator
 	.byte 0x00, 0x00, 0x00  @ align pad
 .L_end_gUnknown_08A9806C:
-	.if (.L_end_gUnknown_08A9806C - gUnknown_08A9806C) != 36
-	.error "gUnknown_08A9806C size mismatch"
+	.if (.L_end_gUnknown_08A9806C - gWorldmapSprite_6) != 36
+	.error "gWorldmapSprite_6 size mismatch"
 	.endif
 
-	.global gUnknown_08A98090
-gUnknown_08A98090:  @ 0x8A98090
+	.global gWorldmapSprite_7
+gWorldmapSprite_7:  @ 0x8A98090
 	.byte 20, 22, 4, 1  @ rect 0: x=20 y=22 w=4 h=1
 	.2byte 0x0001, 0x0001, 0x0001, 0x0007
 	.byte 20, 23, 4, 1  @ rect 1: x=20 y=23 w=4 h=1
@@ -164,12 +164,12 @@ gUnknown_08A98090:  @ 0x8A98090
 	.byte 0xFF  @ terminator
 	.byte 0x00, 0x00, 0x00  @ align pad
 .L_end_gUnknown_08A98090:
-	.if (.L_end_gUnknown_08A98090 - gUnknown_08A98090) != 36
-	.error "gUnknown_08A98090 size mismatch"
+	.if (.L_end_gUnknown_08A98090 - gWorldmapSprite_7) != 36
+	.error "gWorldmapSprite_7 size mismatch"
 	.endif
 
-	.global gUnknown_08A980B4
-gUnknown_08A980B4:  @ 0x8A980B4
+	.global gWorldmapSprite_8
+gWorldmapSprite_8:  @ 0x8A980B4
 	.byte 22, 25, 2, 1  @ rect 0: x=22 y=25 w=2 h=1
 	.2byte 0x0003, 0x0004
 	.byte 22, 26, 5, 1  @ rect 1: x=22 y=26 w=5 h=1
@@ -179,12 +179,12 @@ gUnknown_08A980B4:  @ 0x8A980B4
 	.byte 0xFF  @ terminator
 	.byte 0x00, 0x00, 0x00  @ align pad
 .L_end_gUnknown_08A980B4:
-	.if (.L_end_gUnknown_08A980B4 - gUnknown_08A980B4) != 40
-	.error "gUnknown_08A980B4 size mismatch"
+	.if (.L_end_gUnknown_08A980B4 - gWorldmapSprite_8) != 40
+	.error "gWorldmapSprite_8 size mismatch"
 	.endif
 
-	.global gUnknown_08A980DC
-gUnknown_08A980DC:  @ 0x8A980DC
+	.global gWorldmapSprite_9
+gWorldmapSprite_9:  @ 0x8A980DC
 	.byte 22, 25, 2, 1  @ rect 0: x=22 y=25 w=2 h=1
 	.2byte 0x0003, 0x0004
 	.byte 22, 26, 5, 1  @ rect 1: x=22 y=26 w=5 h=1
@@ -194,16 +194,16 @@ gUnknown_08A980DC:  @ 0x8A980DC
 	.byte 0xFF  @ terminator
 	.byte 0x00, 0x00, 0x00  @ align pad
 .L_end_gUnknown_08A980DC:
-	.if (.L_end_gUnknown_08A980DC - gUnknown_08A980DC) != 40
-	.error "gUnknown_08A980DC size mismatch"
+	.if (.L_end_gUnknown_08A980DC - gWorldmapSprite_9) != 40
+	.error "gWorldmapSprite_9 size mismatch"
 	.endif
 
-	.global gUnknown_08A98104
-gUnknown_08A98104:  @ 0x8A98104
+	.global gWorldmapSprite_10
+gWorldmapSprite_10:  @ 0x8A98104
 	.incbin "graphics/misc/gUnknown_08A98104.4bpp"
 
-	.global gUnknown_08A98144
-gUnknown_08A98144:  @ 0x8A98144
+	.global gWorldmapSprite_11
+gWorldmapSprite_11:  @ 0x8A98144
 	.byte 18, 7, 2, 1  @ rect 0: x=18 y=7 w=2 h=1
 	.2byte 0x0003, 0x0004
 	.byte 18, 8, 2, 1  @ rect 1: x=18 y=8 w=2 h=1
@@ -215,12 +215,12 @@ gUnknown_08A98144:  @ 0x8A98144
 	.byte 0xFF  @ terminator
 	.byte 0x00, 0x00, 0x00  @ align pad
 .L_end_gUnknown_08A98144:
-	.if (.L_end_gUnknown_08A98144 - gUnknown_08A98144) != 36
-	.error "gUnknown_08A98144 size mismatch"
+	.if (.L_end_gUnknown_08A98144 - gWorldmapSprite_11) != 36
+	.error "gWorldmapSprite_11 size mismatch"
 	.endif
 
-	.global gUnknown_08A98168
-gUnknown_08A98168:  @ 0x8A98168
+	.global gWorldmapSprite_12
+gWorldmapSprite_12:  @ 0x8A98168
 	.byte 26, 7, 2, 1  @ rect 0: x=26 y=7 w=2 h=1
 	.2byte 0x0003, 0x0004
 	.byte 26, 8, 2, 1  @ rect 1: x=26 y=8 w=2 h=1
@@ -236,16 +236,16 @@ gUnknown_08A98168:  @ 0x8A98168
 	.byte 0xFF  @ terminator
 	.byte 0x00, 0x00, 0x00  @ align pad
 .L_end_gUnknown_08A98168:
-	.if (.L_end_gUnknown_08A98168 - gUnknown_08A98168) != 52
-	.error "gUnknown_08A98168 size mismatch"
+	.if (.L_end_gUnknown_08A98168 - gWorldmapSprite_12) != 52
+	.error "gWorldmapSprite_12 size mismatch"
 	.endif
 
-	.global gUnknown_08A9819C
-gUnknown_08A9819C:  @ 0x8A9819C
+	.global gWorldmapSprite_13
+gWorldmapSprite_13:  @ 0x8A9819C
 	.incbin "graphics/misc/gUnknown_08A9819C.4bpp"
 
-	.global gUnknown_08A981BC
-gUnknown_08A981BC:  @ 0x8A981BC
+	.global gWorldmapSprite_14
+gWorldmapSprite_14:  @ 0x8A981BC
 	.byte 33, 12, 4, 1  @ rect 0: x=33 y=12 w=4 h=1
 	.2byte 0x0001, 0x0001, 0x0001, 0x0007
 	.byte 33, 13, 5, 1  @ rect 1: x=33 y=13 w=5 h=1
@@ -259,12 +259,12 @@ gUnknown_08A981BC:  @ 0x8A981BC
 	.byte 0xFF  @ terminator
 	.byte 0x00  @ align pad
 .L_end_gUnknown_08A981BC:
-	.if (.L_end_gUnknown_08A981BC - gUnknown_08A981BC) != 56
-	.error "gUnknown_08A981BC size mismatch"
+	.if (.L_end_gUnknown_08A981BC - gWorldmapSprite_14) != 56
+	.error "gWorldmapSprite_14 size mismatch"
 	.endif
 
-	.global gUnknown_08A981F4
-gUnknown_08A981F4:  @ 0x8A981F4
+	.global gWorldmapSprite_15
+gWorldmapSprite_15:  @ 0x8A981F4
 	.byte 38, 17, 2, 1  @ rect 0: x=38 y=17 w=2 h=1
 	.2byte 0x0003, 0x0004
 	.byte 38, 18, 2, 1  @ rect 1: x=38 y=18 w=2 h=1
@@ -280,12 +280,12 @@ gUnknown_08A981F4:  @ 0x8A981F4
 	.byte 0xFF  @ terminator
 	.byte 0x00, 0x00, 0x00  @ align pad
 .L_end_gUnknown_08A981F4:
-	.if (.L_end_gUnknown_08A981F4 - gUnknown_08A981F4) != 52
-	.error "gUnknown_08A981F4 size mismatch"
+	.if (.L_end_gUnknown_08A981F4 - gWorldmapSprite_15) != 52
+	.error "gWorldmapSprite_15 size mismatch"
 	.endif
 
-	.global gUnknown_08A98228
-gUnknown_08A98228:  @ 0x8A98228
+	.global gWorldmapSprite_16
+gWorldmapSprite_16:  @ 0x8A98228
 	.byte 9, 9, 3, 1  @ rect 0: x=9 y=9 w=3 h=1
 	.2byte 0x0407, 0x0406, 0x0807
 	.byte 9, 10, 2, 1  @ rect 1: x=9 y=10 w=2 h=1
@@ -309,12 +309,12 @@ gUnknown_08A98228:  @ 0x8A98228
 	.byte 0xFF  @ terminator
 	.byte 0x00  @ align pad
 .L_end_gUnknown_08A98228:
-	.if (.L_end_gUnknown_08A98228 - gUnknown_08A98228) != 84
-	.error "gUnknown_08A98228 size mismatch"
+	.if (.L_end_gUnknown_08A98228 - gWorldmapSprite_16) != 84
+	.error "gWorldmapSprite_16 size mismatch"
 	.endif
 
-	.global gUnknown_08A9827C
-gUnknown_08A9827C:  @ 0x8A9827C
+	.global gWorldmapSprite_17
+gWorldmapSprite_17:  @ 0x8A9827C
 	.byte 8, 20, 2, 1  @ rect 0: x=8 y=20 w=2 h=1
 	.2byte 0x0003, 0x0004
 	.byte 8, 21, 2, 1  @ rect 1: x=8 y=21 w=2 h=1
@@ -338,16 +338,16 @@ gUnknown_08A9827C:  @ 0x8A9827C
 	.byte 0xFF  @ terminator
 	.byte 0x00  @ align pad
 .L_end_gUnknown_08A9827C:
-	.if (.L_end_gUnknown_08A9827C - gUnknown_08A9827C) != 88
-	.error "gUnknown_08A9827C size mismatch"
+	.if (.L_end_gUnknown_08A9827C - gWorldmapSprite_17) != 88
+	.error "gWorldmapSprite_17 size mismatch"
 	.endif
 
-	.global gUnknown_08A982D4
-gUnknown_08A982D4:  @ 0x8A982D4
+	.global gWorldmapSprite_18
+gWorldmapSprite_18:  @ 0x8A982D4
 	.incbin "graphics/misc/gUnknown_08A982D4.4bpp"
 
-	.global gUnknown_08A98314
-gUnknown_08A98314:  @ 0x8A98314
+	.global gWorldmapSprite_19
+gWorldmapSprite_19:  @ 0x8A98314
 	.byte 19, 30, 2, 1  @ rect 0: x=19 y=30 w=2 h=1
 	.2byte 0x0001, 0x0007
 	.byte 19, 31, 3, 1  @ rect 1: x=19 y=31 w=3 h=1
@@ -359,12 +359,12 @@ gUnknown_08A98314:  @ 0x8A98314
 	.byte 0xFF  @ terminator
 	.byte 0x00, 0x00, 0x00  @ align pad
 .L_end_gUnknown_08A98314:
-	.if (.L_end_gUnknown_08A98314 - gUnknown_08A98314) != 48
-	.error "gUnknown_08A98314 size mismatch"
+	.if (.L_end_gUnknown_08A98314 - gWorldmapSprite_19) != 48
+	.error "gWorldmapSprite_19 size mismatch"
 	.endif
 
-	.global gUnknown_08A98344
-gUnknown_08A98344:  @ 0x8A98344
+	.global gWorldmapSprite_20
+gWorldmapSprite_20:  @ 0x8A98344
 	.byte 25, 32, 7, 1  @ rect 0: x=25 y=32 w=7 h=1
 	.2byte 0x0001, 0x0001, 0x0001, 0x0001, 0x0001, 0x0001, 0x0001
 	.byte 25, 33, 7, 1  @ rect 1: x=25 y=33 w=7 h=1
@@ -372,12 +372,12 @@ gUnknown_08A98344:  @ 0x8A98344
 	.byte 0xFF  @ terminator
 	.byte 0x00, 0x00, 0x00  @ align pad
 .L_end_gUnknown_08A98344:
-	.if (.L_end_gUnknown_08A98344 - gUnknown_08A98344) != 40
-	.error "gUnknown_08A98344 size mismatch"
+	.if (.L_end_gUnknown_08A98344 - gWorldmapSprite_20) != 40
+	.error "gWorldmapSprite_20 size mismatch"
 	.endif
 
-	.global gUnknown_08A9836C
-gUnknown_08A9836C:  @ 0x8A9836C
+	.global gWorldmapSprite_21
+gWorldmapSprite_21:  @ 0x8A9836C
 	.byte 38, 25, 2, 1  @ rect 0: x=38 y=25 w=2 h=1
 	.2byte 0x0003, 0x0004
 	.byte 38, 26, 2, 1  @ rect 1: x=38 y=26 w=2 h=1
@@ -399,12 +399,12 @@ gUnknown_08A9836C:  @ 0x8A9836C
 	.byte 0xFF  @ terminator
 	.byte 0x00  @ align pad
 .L_end_gUnknown_08A9836C:
-	.if (.L_end_gUnknown_08A9836C - gUnknown_08A9836C) != 80
-	.error "gUnknown_08A9836C size mismatch"
+	.if (.L_end_gUnknown_08A9836C - gWorldmapSprite_21) != 80
+	.error "gWorldmapSprite_21 size mismatch"
 	.endif
 
-	.global gUnknown_08A983BC
-gUnknown_08A983BC:  @ 0x8A983BC
+	.global gWorldmapSprite_22
+gWorldmapSprite_22:  @ 0x8A983BC
 	.byte 28, 26, 3, 1  @ rect 0: x=28 y=26 w=3 h=1
 	.2byte 0x0001, 0x0001, 0x0007
 	.byte 28, 27, 4, 1  @ rect 1: x=28 y=27 w=4 h=1
@@ -418,12 +418,12 @@ gUnknown_08A983BC:  @ 0x8A983BC
 	.byte 0xFF  @ terminator
 	.byte 0x00  @ align pad
 .L_end_gUnknown_08A983BC:
-	.if (.L_end_gUnknown_08A983BC - gUnknown_08A983BC) != 52
-	.error "gUnknown_08A983BC size mismatch"
+	.if (.L_end_gUnknown_08A983BC - gWorldmapSprite_22) != 52
+	.error "gWorldmapSprite_22 size mismatch"
 	.endif
 
-	.global gUnknown_08A983F0
-gUnknown_08A983F0:  @ 0x8A983F0
+	.global gWorldmapSprite_23
+gWorldmapSprite_23:  @ 0x8A983F0
 	.byte 26, 19, 2, 1  @ rect 0: x=26 y=19 w=2 h=1
 	.2byte 0x0006, 0x0007
 	.byte 26, 20, 3, 1  @ rect 1: x=26 y=20 w=3 h=1
@@ -441,12 +441,12 @@ gUnknown_08A983F0:  @ 0x8A983F0
 	.byte 0xFF  @ terminator
 	.byte 0x00  @ align pad
 .L_end_gUnknown_08A983F0:
-	.if (.L_end_gUnknown_08A983F0 - gUnknown_08A983F0) != 88
-	.error "gUnknown_08A983F0 size mismatch"
+	.if (.L_end_gUnknown_08A983F0 - gWorldmapSprite_23) != 88
+	.error "gWorldmapSprite_23 size mismatch"
 	.endif
 
-	.global gUnknown_08A98448
-gUnknown_08A98448:  @ 0x8A98448
+	.global gWorldmapSprite_24
+gWorldmapSprite_24:  @ 0x8A98448
 	.byte 38, 17, 2, 1  @ rect 0: x=38 y=17 w=2 h=1
 	.2byte 0x0003, 0x0004
 	.byte 38, 18, 2, 1  @ rect 1: x=38 y=18 w=2 h=1
@@ -462,12 +462,12 @@ gUnknown_08A98448:  @ 0x8A98448
 	.byte 0xFF  @ terminator
 	.byte 0x00, 0x00, 0x00  @ align pad
 .L_end_gUnknown_08A98448:
-	.if (.L_end_gUnknown_08A98448 - gUnknown_08A98448) != 52
-	.error "gUnknown_08A98448 size mismatch"
+	.if (.L_end_gUnknown_08A98448 - gWorldmapSprite_24) != 52
+	.error "gWorldmapSprite_24 size mismatch"
 	.endif
 
-	.global gUnknown_08A9847C
-gUnknown_08A9847C:  @ 0x8A9847C
+	.global gWorldmapSprite_25
+gWorldmapSprite_25:  @ 0x8A9847C
 	.byte 18, 11, 2, 1  @ rect 0: x=18 y=11 w=2 h=1
 	.2byte 0x0003, 0x0004
 	.byte 18, 12, 2, 1  @ rect 1: x=18 y=12 w=2 h=1
@@ -489,12 +489,12 @@ gUnknown_08A9847C:  @ 0x8A9847C
 	.byte 0xFF  @ terminator
 	.byte 0x00  @ align pad
 .L_end_gUnknown_08A9847C:
-	.if (.L_end_gUnknown_08A9847C - gUnknown_08A9847C) != 88
-	.error "gUnknown_08A9847C size mismatch"
+	.if (.L_end_gUnknown_08A9847C - gWorldmapSprite_25) != 88
+	.error "gWorldmapSprite_25 size mismatch"
 	.endif
 
-	.global gUnknown_08A984D4
-gUnknown_08A984D4:  @ 0x8A984D4
+	.global gWorldmapSprite_26
+gWorldmapSprite_26:  @ 0x8A984D4
 	.byte 44, 21, 2, 1  @ rect 0: x=44 y=21 w=2 h=1
 	.2byte 0x0003, 0x0004
 	.byte 44, 22, 2, 1  @ rect 1: x=44 y=22 w=2 h=1
@@ -508,12 +508,12 @@ gUnknown_08A984D4:  @ 0x8A984D4
 	.byte 0xFF  @ terminator
 	.byte 0x00, 0x00, 0x00  @ align pad
 .L_end_gUnknown_08A984D4:
-	.if (.L_end_gUnknown_08A984D4 - gUnknown_08A984D4) != 56
-	.error "gUnknown_08A984D4 size mismatch"
+	.if (.L_end_gUnknown_08A984D4 - gWorldmapSprite_26) != 56
+	.error "gWorldmapSprite_26 size mismatch"
 	.endif
 
-	.global gUnknown_08A9850C
-gUnknown_08A9850C:  @ 0x8A9850C
+	.global gWorldmapSprite_27
+gWorldmapSprite_27:  @ 0x8A9850C
 	.byte 44, 15, 2, 1  @ rect 0: x=44 y=15 w=2 h=1
 	.2byte 0x0003, 0x0004
 	.byte 44, 16, 2, 1  @ rect 1: x=44 y=16 w=2 h=1
@@ -529,12 +529,12 @@ gUnknown_08A9850C:  @ 0x8A9850C
 	.byte 0xFF  @ terminator
 	.byte 0x00, 0x00, 0x00  @ align pad
 .L_end_gUnknown_08A9850C:
-	.if (.L_end_gUnknown_08A9850C - gUnknown_08A9850C) != 52
-	.error "gUnknown_08A9850C size mismatch"
+	.if (.L_end_gUnknown_08A9850C - gWorldmapSprite_27) != 52
+	.error "gWorldmapSprite_27 size mismatch"
 	.endif
 
-	.global gUnknown_08A98540
-gUnknown_08A98540:  @ 0x8A98540
+	.global gWorldmapSprite_28
+gWorldmapSprite_28:  @ 0x8A98540
 	.byte 47, 11, 2, 1  @ rect 0: x=47 y=11 w=2 h=1
 	.2byte 0x0407, 0x0406
 	.byte 46, 12, 3, 1  @ rect 1: x=46 y=12 w=3 h=1
@@ -546,12 +546,12 @@ gUnknown_08A98540:  @ 0x8A98540
 	.byte 0xFF  @ terminator
 	.byte 0x00  @ align pad
 .L_end_gUnknown_08A98540:
-	.if (.L_end_gUnknown_08A98540 - gUnknown_08A98540) != 40
-	.error "gUnknown_08A98540 size mismatch"
+	.if (.L_end_gUnknown_08A98540 - gWorldmapSprite_28) != 40
+	.error "gWorldmapSprite_28 size mismatch"
 	.endif
 
-	.global gUnknown_08A98568
-gUnknown_08A98568:  @ 0x8A98568
+	.global gWorldmapSprite_29
+gWorldmapSprite_29:  @ 0x8A98568
 	.byte 42, 8, 6, 1  @ rect 0: x=42 y=8 w=6 h=1
 	.2byte 0x0407, 0x0001, 0x0001, 0x0001, 0x0001, 0x0001
 	.byte 42, 9, 6, 1  @ rect 1: x=42 y=9 w=6 h=1
@@ -563,12 +563,12 @@ gUnknown_08A98568:  @ 0x8A98568
 	.byte 0xFF  @ terminator
 	.byte 0x00, 0x00, 0x00  @ align pad
 .L_end_gUnknown_08A98568:
-	.if (.L_end_gUnknown_08A98568 - gUnknown_08A98568) != 60
-	.error "gUnknown_08A98568 size mismatch"
+	.if (.L_end_gUnknown_08A98568 - gWorldmapSprite_29) != 60
+	.error "gWorldmapSprite_29 size mismatch"
 	.endif
 
-	.global gUnknown_08A985A4
-gUnknown_08A985A4:  @ 0x8A985A4
+	.global gWorldmapSprite_30
+gWorldmapSprite_30:  @ 0x8A985A4
 	.byte 48, 11, 3, 1  @ rect 0: x=48 y=11 w=3 h=1
 	.2byte 0x0C07, 0x0006, 0x0007
 	.byte 49, 12, 3, 1  @ rect 1: x=49 y=12 w=3 h=1
@@ -592,16 +592,16 @@ gUnknown_08A985A4:  @ 0x8A985A4
 	.byte 0xFF  @ terminator
 	.byte 0x00, 0x00, 0x00  @ align pad
 .L_end_gUnknown_08A985A4:
-	.if (.L_end_gUnknown_08A985A4 - gUnknown_08A985A4) != 88
-	.error "gUnknown_08A985A4 size mismatch"
+	.if (.L_end_gUnknown_08A985A4 - gWorldmapSprite_30) != 88
+	.error "gWorldmapSprite_30 size mismatch"
 	.endif
 
-	.global gUnknown_08A985FC
-gUnknown_08A985FC:  @ 0x8A985FC
+	.global gWorldmapSprite_31
+gWorldmapSprite_31:  @ 0x8A985FC
 	.incbin "graphics/misc/gUnknown_08A985FC.4bpp"
 
-	.global gUnknown_08A9863C
-gUnknown_08A9863C:  @ 0x8A9863C
+	.global gWorldmapSprite_32
+gWorldmapSprite_32:  @ 0x8A9863C
 	.byte 32, 4, 11, 1  @ rect 0: x=32 y=4 w=11 h=1
 	.2byte 0x040E, 0x0008, 0x0008, 0x0008, 0x0008, 0x0008, 0x0008, 0x0008
 	.2byte 0x0008, 0x0008, 0x0008
@@ -615,12 +615,12 @@ gUnknown_08A9863C:  @ 0x8A9863C
 	.byte 0xFF  @ terminator
 	.byte 0x00, 0x00, 0x00  @ align pad
 .L_end_gUnknown_08A9863C:
-	.if (.L_end_gUnknown_08A9863C - gUnknown_08A9863C) != 88
-	.error "gUnknown_08A9863C size mismatch"
+	.if (.L_end_gUnknown_08A9863C - gWorldmapSprite_32) != 88
+	.error "gWorldmapSprite_32 size mismatch"
 	.endif
 
-	.global gUnknown_08A98694
-gUnknown_08A98694:  @ 0x8A98694
+	.global gWorldmapSprite_33
+gWorldmapSprite_33:  @ 0x8A98694
 	.byte 42, 8, 2, 1  @ rect 0: x=42 y=8 w=2 h=1
 	.2byte 0x0407, 0x0001
 	.byte 42, 9, 2, 1  @ rect 1: x=42 y=9 w=2 h=1
@@ -632,6 +632,6 @@ gUnknown_08A98694:  @ 0x8A98694
 	.byte 0xFF  @ terminator
 	.byte 0x00, 0x00, 0x00  @ align pad
 .L_end_gUnknown_08A98694:
-	.if (.L_end_gUnknown_08A98694 - gUnknown_08A98694) != 44
-	.error "gUnknown_08A98694 size mismatch"
+	.if (.L_end_gUnknown_08A98694 - gWorldmapSprite_33) != 44
+	.error "gWorldmapSprite_33 size mismatch"
 	.endif

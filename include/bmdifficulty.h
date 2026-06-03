@@ -37,7 +37,7 @@ struct Struct020038C8 {
     struct Text text[5][8];
 };
 
-extern struct Struct020038C8 gUnknown_020038C8[2];
+extern struct Struct020038C8 gBmdifficulty_3[2];
 
 enum {
     DUNGEONRECORD_LABEL_MONSTERS,
@@ -57,7 +57,7 @@ struct BMDifficultyProc {
     /* 3C */ int unk_3c;
 };
 
-extern int gUnknown_020038C4;
+extern int gBmdifficulty_2;
 
 struct Struct080D7FD0 {
     s8 x;
@@ -74,7 +74,7 @@ struct Outer080D7FD0 {
     s8 x2;
     s8 y2;
 };
-extern const struct Outer080D7FD0 gUnknown_080D7FD0;
+extern const struct Outer080D7FD0 gBmdifficulty_6;
 
 int GetCurrentPromotedLevelBonus(void);
 s8 CanUnitSeize(struct Unit * unit);
@@ -127,18 +127,18 @@ void sub_8039660(struct BMDifficultyProc* proc);
 void sub_8039668(struct BMDifficultyProc* proc);
 void DungeonRecordUi_GotoNextLabel(struct BMDifficultyProc* proc);
 
-extern struct Struct02003BE8 gUnknown_02003BE8;
-extern u16 gUnknown_02003B88[];
-extern int gUnknown_02003BA8[];
-extern u16 gUnknown_0200310C[];
-extern struct Font gUnknown_020038AC;
-extern struct Text gUnknown_02003B48[8];
+extern struct Struct02003BE8 gBmdifficultyEwram_1;
+extern u16 gBmdifficulty_5[];
+extern int gBmdifficultyEwram_0[];
+extern u16 gBmdifficulty_0[];
+extern struct Font gBmdifficulty_1;
+extern struct Text gBmdifficulty_4[8];
 
 extern struct ProcCmd CONST_DATA sProcScr_DisplayDungeonRecord_FromMenu[];
 extern struct ProcCmd CONST_DATA sProcScr_DisplayDungeonRecord_AfterDungeonClear[];
-extern const u16 CONST_DATA obj_859E79C[];
-extern u16 CONST_DATA gUnknown_0859E7C8[];
-extern int CONST_DATA gUnknown_0859E7D4[];
+extern const u16 CONST_DATA obj_0[];
+extern u16 CONST_DATA gBmdifficulty_7[];
+extern int CONST_DATA gBmdifficulty_8[];
 extern struct ProcCmd CONST_DATA sProcScr_DungeonRecord_UpdateNewRecordValues[];
 
 #endif  // GUARD_BMDIFFICULTY_H

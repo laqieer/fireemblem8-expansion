@@ -174,7 +174,7 @@ struct ProcCmd CONST_DATA gProcScr_E_FACE_ExtraFrame[] =
 };
 
 // unk
-u8 CONST_DATA gUnknown_085911C4[] =
+u8 CONST_DATA gFace_1[] =
 {
     4, 4,
     0x00, 0x01, 0x02, 0x03,
@@ -189,21 +189,21 @@ struct ProcCmd CONST_DATA gProcScr_FaceChibiSpr[] =
     PROC_END,
 };
 
-u16 CONST_DATA Sprite_085911E8[] =
+u16 CONST_DATA Sprite_Face_0[] =
 {
     2,
     OAM0_SHAPE_32x16,              OAM1_SIZE_32x16, OAM2_CHR(0),
     OAM0_SHAPE_32x16 + OAM0_Y(16), OAM1_SIZE_32x16, OAM2_CHR(4),
 };
 
-u16 CONST_DATA Sprite_085911F6[] =
+u16 CONST_DATA Sprite_Face_1[] =
 {
     2,
     OAM0_SHAPE_32x16,              OAM1_SIZE_32x16 + OAM1_HFLIP, OAM2_CHR(0),
     OAM0_SHAPE_32x16 + OAM0_Y(16), OAM1_SIZE_32x16 + OAM1_HFLIP, OAM2_CHR(4),
 };
 
-struct ProcCmd CONST_DATA gProcScr_08591204[] =
+struct ProcCmd CONST_DATA gProcScr_Face_0[] =
 {
     PROC_CALL(sub_8005D64),
 
@@ -224,7 +224,7 @@ struct ProcCmd CONST_DATA gProcScr_FaceEndIn8Frames[] =
     PROC_END,
 };
 
-struct ProcCmd CONST_DATA gProcScr_0859124C[] =
+struct ProcCmd CONST_DATA gProcScr_Face_1[] =
 {
     PROC_CALL(sub_8005FD4),
     PROC_REPEAT(sub_8005FE0),
@@ -263,7 +263,7 @@ PROC_LABEL(97),
     PROC_END,
 };
 
-struct ProcCmd CONST_DATA gProcScr_08591304[] =
+struct ProcCmd CONST_DATA gProcScr_Face_2[] =
 {
     PROC_SLEEP(0),
     PROC_CALL(sub_800662C),
@@ -405,7 +405,7 @@ struct FaceProc* StartFace(int slot, int fid, int x, int y, int disp) {
         proc->unk_44 = NULL;
         proc->pBlinkProc = NULL;
     } else {
-        proc->unk_44 = Proc_Start(gProcScr_0859124C, proc);
+        proc->unk_44 = Proc_Start(gProcScr_Face_1, proc);
         proc->pBlinkProc = Proc_Start(gProcScr_FaceBlink, proc);
     }
 
@@ -580,7 +580,7 @@ void PutFaceChibi(int fid, u16 * tm, int chr, int pal, s8 isFlipped) {
     UnpackFaceChibiGraphics(fid, chr, pal);
 
     chr &= 0x3FF;
-    PutFaceTm(tm, gUnknown_085911C4, TILEREF(chr, pal), isFlipped);
+    PutFaceTm(tm, gFace_1, TILEREF(chr, pal), isFlipped);
 
     return;
 }
@@ -641,9 +641,9 @@ void StartFaceChibiSpr(int x, int y, int fid, int chr, int pal, s8 isFlipped, Pr
     proc->oam2 = chr + ((pal & 0xF) * 0x1000);
 
     if (isFlipped) {
-       proc->sprite = Sprite_085911F6;
+       proc->sprite = Sprite_Face_1;
     } else {
-       proc->sprite = Sprite_085911E8;
+       proc->sprite = Sprite_Face_0;
     }
 
     return;
@@ -661,7 +661,7 @@ void PutFace80x72_Standard(u16 * tm, int tileref, const struct FaceData* info) {
     int x = info->xMouth - 1;
     int y = info->yMouth;
 
-    CallARM_FillTileRect(tm, gUnknown_085A0838, (u16)tileref);
+    CallARM_FillTileRect(tm, gBattleForecast_0, (u16)tileref);
 
     tm[TILEMAP_INDEX(x, y) + 0x00 + 0] = tileref + 0x00 + 0x1C;
     tm[TILEMAP_INDEX(x, y) + 0x00 + 1] = tileref + 0x00 + 0x1D;
@@ -681,7 +681,7 @@ void PutFace80x72_Raised(u16 * tm, int tileref, const struct FaceData* info) {
     int x = info->xMouth - 1;
     int y = info->yMouth - 1;
 
-    CallARM_FillTileRect(tm, gUnknown_085A08F0, (u16)tileref);
+    CallARM_FillTileRect(tm, gBattleForecast_1, (u16)tileref);
 
     tm[TILEMAP_INDEX(x, y) + 0x00 + 0] = tileref + 0x00 + 0x1C;
     tm[TILEMAP_INDEX(x, y) + 0x00 + 1] = tileref + 0x00 + 0x1D;
@@ -844,7 +844,7 @@ void sub_8005D98(struct FaceBlinkProc* proc) {
 //! FE8U = 0x08005E98
 void PutFace80x72(ProcPtr proc, u16 * bgOut, int fid, int tileId, int palId)
 {
-    Proc_EndEach(gProcScr_08591204);
+    Proc_EndEach(gProcScr_Face_0);
     PutFace80x72_Core(bgOut, fid, tileId, palId);
     GetPortraitData(fid);
     return;
@@ -893,14 +893,14 @@ u8* sub_8005F6C(int fid) {
 
     // generic minimug image lut
     u8* gUnknown_080D77BC[] = {
-        gUnknown_08599D34,
-        gUnknown_08599B34,
-        gUnknown_08599734,
-        gUnknown_08599734,
-        gUnknown_08599D34,
-        gUnknown_08599934,
-        gUnknown_08599934,
-        gUnknown_08599D34,
+        gGenericIcon_3,
+        gGenericIcon_2,
+        gGenericIcon_0,
+        gGenericIcon_0,
+        gGenericIcon_3,
+        gGenericIcon_1,
+        gGenericIcon_1,
+        gGenericIcon_3,
     };
 
     fid = fid - FID_FACTION_CHIBI;
@@ -913,14 +913,14 @@ void sub_8005F9C(int fid, int pal) {
 
     // generic minimug palette lut
     u16* gUnknown_080D77DC[] = {
-        gUnknown_08599F34,
-        gUnknown_08599F54,
-        gUnknown_08599F74,
-        gUnknown_08599F54,
-        gUnknown_08599F54,
-        gUnknown_08599F74,
-        gUnknown_08599F54,
-        gUnknown_08599F34,
+        gGenericIcon_4,
+        gGenericIcon_5,
+        gGenericIcon_6,
+        gGenericIcon_5,
+        gGenericIcon_5,
+        gGenericIcon_6,
+        gGenericIcon_5,
+        gGenericIcon_4,
     };
 
     fid = fid - FID_FACTION_CHIBI;
@@ -1438,7 +1438,7 @@ void sub_80066A8(struct UnkFaceProc* proc) {
 
 //! FE8U = 0x080066E0
 void sub_80066E0(struct FaceProc* parent, int fid) {
-    struct UnkFaceProc* proc = Proc_Start(gProcScr_08591304, parent);
+    struct UnkFaceProc* proc = Proc_Start(gProcScr_Face_2, parent);
 
     proc->pFaceProc = parent;
     proc->faceId = fid;
@@ -1459,7 +1459,7 @@ void sub_800671C(int pal, int fid) {
 }
 
 // ????
-u16 const gUnknown_080D77FC[] =
+u16 const gFace_0[] =
 {
       -1,   -1, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,   -1,   -1,
       -1,   -1, 0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27,   -1,   -1,
@@ -1477,7 +1477,7 @@ u16 const gUnknown_080D77FC[] =
 void PutFaceOnBackGround(u16* a, u16 b, s8 c) {
     int i;
     int j;
-    const u16* src = gUnknown_080D77FC;
+    const u16* src = gFace_0;
     u16* dst = a;
 
     if (c == 0) {

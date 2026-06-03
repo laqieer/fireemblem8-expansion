@@ -1193,7 +1193,7 @@ u8 EventC4_WmShowPortrait(struct EventEngineProc * proc)
 }
 
 //! FE8U = 0x0800CCE8
-void nop_800CCE8(void)
+void nop_1(void)
 {
     return;
 }
@@ -1233,7 +1233,7 @@ u8 EventC5_WmClearPortrait(struct EventEngineProc * proc)
 
 
 //! FE8U = 0x0800CD38
-void nop_800CD38(struct Proc8591C68 * proc)
+void nop_2(struct Proc8591C68 * proc)
 {
     return;
 }

@@ -10,7 +10,7 @@ u16 Img_ManimLevelUpStatGain[] = INCBIN_U16("./graphics/lvup/ManimLvupStatGain.4
 
 u8 Img_ManimLevelUpStatGainDigits[] = INCBIN_U8("./graphics/lvup/ManimLevelUpStatGainDigits.4bpp");
 
-u16 gUnknown_089AD498[] =
+u16 gMapanimLevelup_0[] =
 {
     0x0210, 0x0006, 0x0007, 0x0007, 0x0007, 0x0007, 0x0007, 0x0007,
     0x0007, 0x0007, 0x0007, 0x0007, 0x0007, 0x0007, 0x0007, 0x0007,

@@ -32,7 +32,7 @@ void ExecEkrHenseiEnd(void)
 {
     AnimClearAll();
     NewEkrHenseiEnd();
-    SetMainUpdateRoutine(MainUpdate_8055C68);
+    SetMainUpdateRoutine(MainUpdate_0);
 }
 
 void sub_8076380(struct ProcEkrHensei *proc);

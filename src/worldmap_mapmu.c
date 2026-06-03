@@ -12,24 +12,24 @@
 // TODO: Implicit declaration?
 void GetWMCenteredCameraPosition(int, int, s16 *, s16 *);
 
-extern u16 gUnknown_08A3E38E[];
-extern u16 gUnknown_08A3E3BA[];
-extern u16 gUnknown_08A3E360[];
-extern u16 gUnknown_08A3E31C[];
-extern u16 gUnknown_08A3E412[];
-extern u16 gUnknown_08A3E2F8[];
+extern u16 gWorldmapMapmu_5[];
+extern u16 gWorldmapMapmu_6[];
+extern u16 gWorldmapMapmu_4[];
+extern u16 gWorldmapMapmu_3[];
+extern u16 gWorldmapMapmu_7[];
+extern u16 gWorldmapMapmu_2[];
 
-extern struct Struct02003BE8 gUnknown_0201B3A4[];
+extern struct Struct02003BE8 gUnk_15[];
 
-extern u16 gUnknown_0201B104[];
-extern int gUnknown_0201B1E4[];
+extern u16 gUnk_13[];
+extern int gUnk_14[];
 
-int CONST_DATA gUnknown_08A3E22C[] =
+int CONST_DATA gWorldmapMapmu_0[] =
 {
     0, 0, 0, 0,
 };
 
-int CONST_DATA gUnknown_08A3E23C[] =
+int CONST_DATA gWorldmapMapmu_1[] =
 {
     0x08001000,
     0x00001000,
@@ -138,7 +138,7 @@ int sub_80BD41C(int a, int b)
 }
 
 //! FE8U = 0x080BD444
-void GmMuPrim_80BD444(struct GMapMuPrimProc * proc)
+void GmMuPrim_0(struct GMapMuPrimProc * proc)
 {
     struct Struct02003BE8 * unkSplineStruct;
 
@@ -154,14 +154,14 @@ void GmMuPrim_80BD444(struct GMapMuPrimProc * proc)
         sub_80BB0E0(((struct WorldMapMainProc *)(proc->proc_parent))->gm_unitc, proc->unk_2b, 0x50);
 
 
-    unkSplineStruct = &gUnknown_0201B3A4[proc->unk_2a];
+    unkSplineStruct = &gUnk_15[proc->unk_2a];
 
     unkSplineStruct->unk_00 = 0;
     unkSplineStruct->unk_00 = 2;
-    unkSplineStruct->unk_04 = gUnknown_0201B104 + proc->unk_2a * 0x10;
-    unkSplineStruct->unk_08 = gUnknown_0201B1E4 + proc->unk_2a * 0x10;
-    unkSplineStruct->unk_0C = (void *)gUnknown_08A3E22C;
-    unkSplineStruct->unk_10 = (void *)gUnknown_08A3E23C;
+    unkSplineStruct->unk_04 = gUnk_13 + proc->unk_2a * 0x10;
+    unkSplineStruct->unk_08 = gUnk_14 + proc->unk_2a * 0x10;
+    unkSplineStruct->unk_0C = (void *)gWorldmapMapmu_0;
+    unkSplineStruct->unk_10 = (void *)gWorldmapMapmu_1;
     unkSplineStruct->unk_02 = sub_80BCE34(proc->unk_2d, proc->unk_2e, proc->unk_50, unkSplineStruct->unk_04, unkSplineStruct->unk_08, 4);
 
     MapUnitC_SetPosition(
@@ -309,7 +309,7 @@ void sub_80BD740(struct GMapMuPrimProc * proc)
 }
 
 //! FE8U = 0x080BD830
-void GmMuPrim_80BD830(struct GMapMuPrimProc * proc)
+void GmMuPrim_1(struct GMapMuPrimProc * proc)
 {
     s16 x1;
     s16 y1;
@@ -337,7 +337,7 @@ void GmMuPrim_80BD830(struct GMapMuPrimProc * proc)
 
     if (proc->unk_54 < proc->unk_50)
     {
-        sub_800A950(&gUnknown_0201B3A4[proc->unk_2a], proc->unk_54 * 0x1000, coord);
+        sub_800A950(&gUnk_15[proc->unk_2a], proc->unk_54 * 0x1000, coord);
         MapUnitC_SetPosition(
             ((struct WorldMapMainProc *)(proc->proc_parent))->gm_unitc, proc->unk_2b, coord[0] >> 4, (coord[1] >> 4) + 6);
         sub_80BD740(proc);
@@ -377,7 +377,7 @@ void GmMuPrim_80BD830(struct GMapMuPrimProc * proc)
 }
 
 //! FE8U = 0x080BD9D8
-void GmMuPrim_80BD9D8(struct GMapMuPrimProc * proc)
+void GmMuPrim_2(struct GMapMuPrimProc * proc)
 {
 
     if (proc->unk_50 < 0)
@@ -403,7 +403,7 @@ void GmMuPrim_80BD9D8(struct GMapMuPrimProc * proc)
 }
 
 //! FE8U = 0x080BDA78
-void GmMuPrim_80BDA78(struct GMapMuPrimProc * proc)
+void GmMuPrim_3(struct GMapMuPrimProc * proc)
 {
     int coeff;
     s16 x;
@@ -482,14 +482,14 @@ PROC_LABEL(0),
     PROC_REPEAT(GmMuPrim_Loop_Null),
 
 PROC_LABEL(1),
-    PROC_CALL(GmMuPrim_80BD444),
-    PROC_REPEAT(GmMuPrim_80BD830),
+    PROC_CALL(GmMuPrim_0),
+    PROC_REPEAT(GmMuPrim_1),
 
     PROC_GOTO(0),
 
 PROC_LABEL(2),
-    PROC_CALL(GmMuPrim_80BD9D8),
-    PROC_REPEAT(GmMuPrim_80BDA78),
+    PROC_CALL(GmMuPrim_2),
+    PROC_REPEAT(GmMuPrim_3),
 
     PROC_GOTO(0),
 
@@ -822,7 +822,7 @@ void GmMu_SetSpriteLayer(struct GMapMuProc * muProc, int index, int layer)
 }
 
 //! FE8U = 0x080BE108
-void GmMu_80BE108(struct GMapMuProc * muProc, int index, s8 flag)
+void GmMu_0(struct GMapMuProc * muProc, int index, s8 flag)
 {
     muProc->unk_2c[index]->flags_3 = flag;
     return;
@@ -1020,7 +1020,7 @@ void sub_80BE45C(struct GMapMuPrimProc * proc)
         {
             case CLASS_PEGASUS_KNIGHT:
             case CLASS_FALCON_KNIGHT:
-                sfxLut = gUnknown_08A3E3BA;
+                sfxLut = gWorldmapMapmu_6;
                 break;
 
             case CLASS_WYVERN_RIDER:
@@ -1029,11 +1029,11 @@ void sub_80BE45C(struct GMapMuPrimProc * proc)
             case CLASS_WYVERN_LORD_F:
             case CLASS_WYVERN_KNIGHT:
             case CLASS_WYVERN_KNIGHT_F:
-                sfxLut = gUnknown_08A3E38E;
+                sfxLut = gWorldmapMapmu_5;
                 break;
 
             default:
-                sfxLut = gUnknown_08A3E360;
+                sfxLut = gWorldmapMapmu_4;
                 break;
         }
     }
@@ -1051,15 +1051,15 @@ void sub_80BE45C(struct GMapMuPrimProc * proc)
             case CLASS_BLST_REGULAR_USED:
             case CLASS_BLST_LONG_USED:
             case CLASS_BLST_KILLER_USED:
-                sfxLut = gUnknown_08A3E31C;
+                sfxLut = gWorldmapMapmu_3;
                 break;
 
             case CLASS_FLEET:
-                sfxLut = gUnknown_08A3E412;
+                sfxLut = gWorldmapMapmu_7;
                 break;
 
             default:
-                sfxLut = gUnknown_08A3E2F8;
+                sfxLut = gWorldmapMapmu_2;
                 break;
         }
     }
@@ -1095,21 +1095,21 @@ void MapMU_SetUnitChar(ProcPtr muProc, int index, int pid, int faction, int node
 
 // clang-format off
 
-u16 CONST_DATA gUnknown_08A3E2F8[] =
+u16 CONST_DATA gWorldmapMapmu_2[] =
 {
     0x0010, 0x0002,
     0x0096, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
     0x0097, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
 };
 
-u16 CONST_DATA gUnknown_08A3E31C[] =
+u16 CONST_DATA gWorldmapMapmu_3[] =
 {
     0x0020, 0x0002,
     0x00A4, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
     0x00A5, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
 };
 
-u16 CONST_DATA gUnknown_08A3E360[] =
+u16 CONST_DATA gWorldmapMapmu_4[] =
 {
     0x0015, 0x0003,
     0x009A, 0x0000, 0x0000, 0x009B, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
@@ -1117,13 +1117,13 @@ u16 CONST_DATA gUnknown_08A3E360[] =
     0x0000,
 };
 
-u16 CONST_DATA gUnknown_08A3E38E[] =
+u16 CONST_DATA gWorldmapMapmu_5[] =
 {
     0x0014, 0x0001,
     0x00A0, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
 };
 
-u16 CONST_DATA gUnknown_08A3E3BA[] =
+u16 CONST_DATA gWorldmapMapmu_6[] =
 {
     0x0014, 0x0001,
     0x00A6, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
@@ -1132,7 +1132,7 @@ u16 CONST_DATA gUnknown_08A3E3BA[] =
     0x02E0, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
 };
 
-u16 CONST_DATA gUnknown_08A3E412[] =
+u16 CONST_DATA gWorldmapMapmu_7[] =
 {
     0x0018, 0x0001,
     0x030F, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,

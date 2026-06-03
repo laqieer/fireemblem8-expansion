@@ -9,7 +9,7 @@ extern u16* sSleepIconSprites[7];
 extern u16* sBerserkIconSprites[9];
 extern u16* sSilenceIconSprites[18];
 
-extern u16 sSprite_0859B968[7];
+extern u16 sSprite_Bmudisp_0[7];
 
 // ??? sub_8026618(???);
 void ApplyUnitSpritePalettes(void);

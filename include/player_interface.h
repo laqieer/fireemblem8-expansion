@@ -107,8 +107,8 @@ extern s8 gUnitBurstMapUiTextYTable[18];
 extern s8 gUnitBurstMapUiXOffsetTable[6];
 extern s8 gUnitBurstMapUiYOffsetTable[6];
 
-extern u16 * gUnknown_08A0186C[6];
-extern u16 * gUnknown_08A01884[6];
+extern u16 * gPlayerInterface_0[6];
+extern u16 * gPlayerInterface_1[6];
 
 extern s8 sMMBSlideInWidthLut[4];
 extern s8 sMMBSlideOutWidthLut[3];

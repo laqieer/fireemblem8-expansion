@@ -4,7 +4,7 @@
  * before cpp). Migrated in-place from data/data-ekrdk.s into .data.
  */
 
-u8 Tsa_087F45D0[] = INCBIN_U8("graphics/misc/Tsa_087F45D0.4bpp.lz");
+u8 Tsa_Ekrdk_0[] = INCBIN_U8("graphics/misc/Tsa_087F45D0.4bpp.lz");
 u8 Img_DemonKingBG[] = INCBIN_U8("graphics/misc/Img_DemonKingBG.4bpp.lz");
 u8 Tsa_DemonKingBG1[] = INCBIN_U8("graphics/misc/Tsa_DemonKingBG1.4bpp.lz");
 u8 Tsa_DemonKingBG2[] = INCBIN_U8("graphics/misc/Tsa_DemonKingBG2.4bpp.lz");

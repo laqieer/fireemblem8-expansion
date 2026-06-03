@@ -16,7 +16,7 @@ void * EWRAM_DATA gBGVramTilemapPointers[4] = { 0 };
 
 void (* EWRAM_DATA gMainCallback)(void) = NULL;
 
-static u32 EWRAM_DATA sPad_Unused_02024CBC = 0;
+static u32 EWRAM_DATA sPad_Unused_0 = 0;
 
 static struct KeyStatusBuffer EWRAM_DATA sKeyStatusBuffer = { 0 };
 struct KeyStatusBuffer * CONST_DATA gKeyStatusPtr = &sKeyStatusBuffer;
@@ -421,15 +421,15 @@ void BG_SetPosition(u16 bg, u16 x, u16 y)
 
 void sub_80014E8(void)
 {
-    gUnknown_03000018 = gUnknown_03000019 = 0;
+    gUnk_34 = gUnk_35 = 0;
     BG_Fill(gBG0TilemapBuffer, 0);
     sModifiedBGs |= 1 << 0;
 }
 
 void sub_800151C(u8 a, u8 b)
 {
-    gUnknown_03000018 = a;
-    gUnknown_03000019 = b;
+    gUnk_34 = a;
+    gUnk_35 = b;
 }
 
 void sub_8001530(u16 *a, u16 *b)

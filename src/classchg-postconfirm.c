@@ -62,7 +62,7 @@ void ExecClassChgReal(struct ProcPromoMain *proc)
 {
     int slot;
     struct ProcPromoHandler *parent = proc->proc_parent;
-    gUnknown_03005398 = -1;
+    gUnk_80 = -1;
     EndCgText();
 
     ResetDialogueScreen();

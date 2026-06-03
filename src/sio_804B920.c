@@ -6,16 +6,16 @@
 #include "sio.h"
 
 //! FE8U = 0x0804B920
-void Set_0203DDDC(void)
+void Set_UnkData_0(void)
 {
-    gUnk_Sio_0203DDDC = 1;
+    gUnk_Sio_22 = 1;
     return;
 }
 
 //! FE8U = 0x0804B92C
-void Clear_0203DDDC(void)
+void Clear_UnkData_0(void)
 {
-    gUnk_Sio_0203DDDC = 0;
+    gUnk_Sio_22 = 0;
     return;
 }
 
@@ -34,11 +34,11 @@ void sub_804B964(void)
 
     if (vcount > DISPLAY_HEIGHT)
     {
-        gUnk_Sio_02001188 = gUnk_Sio_02001180;
+        gUnk_Sio_5 = gUnk_Sio_3;
         vcount = 0;
     }
 
-    REG_WIN1H = (gUnk_Sio_02001188[vcount * 2 + 0] << 8) + gUnk_Sio_02001188[vcount * 2 + 1];
+    REG_WIN1H = (gUnk_Sio_5[vcount * 2 + 0] << 8) + gUnk_Sio_5[vcount * 2 + 1];
 
     return;
 }
@@ -46,9 +46,9 @@ void sub_804B964(void)
 //! FE8U = 0x0804B9A4
 void sub_804B9A4(void)
 {
-    s16 * swap = gUnk_Sio_02001180;
-    gUnk_Sio_02001180 = gUnk_Sio_02001184;
-    gUnk_Sio_02001184 = swap;
+    s16 * swap = gUnk_Sio_3;
+    gUnk_Sio_3 = gUnk_Sio_4;
+    gUnk_Sio_4 = swap;
 
     return;
 }
@@ -120,13 +120,13 @@ void sub_804B9E4(s16 * a, int b, int c, int d, int e, int f, int g, int h, int i
 //! FE8U = 0x0804BB54
 void sub_804BB54(struct SioProc85AA7B4 * proc)
 {
-    gUnk_Sio_02001180 = gUnk_Sio_02000F00;
+    gUnk_Sio_3 = gUnk_Sio_2;
 
-    gUnk_Sio_02001184 = gUnk_Sio_02000F00 - 320;
-    gUnk_Sio_02001188 = gUnk_Sio_02000F00;
+    gUnk_Sio_4 = gUnk_Sio_2 - 320;
+    gUnk_Sio_5 = gUnk_Sio_2;
 
-    sub_80131D0(gUnk_Sio_02001180);
-    sub_80131D0(gUnk_Sio_02001184);
+    sub_80131D0(gUnk_Sio_3);
+    sub_80131D0(gUnk_Sio_4);
 
     proc->unk_4c = 0;
 
@@ -151,8 +151,8 @@ void sub_804BBA0(struct SioProc85AA7B4 * proc)
     a = Interpolate(INTERPOLATE_LINEAR, 0xa0, 0xc0, proc->unk_4c, proc->unk_64);
     b = Interpolate(INTERPOLATE_SQUARE, 0x10, 0x110, proc->unk_4c, proc->unk_64);
 
-    sub_80131D0(gUnk_Sio_02001184);
-    sub_804B9E4(gUnk_Sio_02001184, 0, 0, DISPLAY_WIDTH, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, 0, DISPLAY_HEIGHT, a, b);
+    sub_80131D0(gUnk_Sio_4);
+    sub_804B9E4(gUnk_Sio_4, 0, 0, DISPLAY_WIDTH, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, 0, DISPLAY_HEIGHT, a, b);
     sub_804B9A4();
 
     proc->unk_4c++;
@@ -173,7 +173,7 @@ void sub_804BC3C(void)
 
 // clang-format off
 
-struct ProcCmd CONST_DATA ProcScr_085AA7B4[] =
+struct ProcCmd CONST_DATA ProcScr_Sio804B920_0[] =
 {
     PROC_YIELD,
 
@@ -192,7 +192,7 @@ struct ProcCmd CONST_DATA ProcScr_085AA7B4[] =
 //! FE8U = 0x0804BC84
 void sub_804BC84(u16 a, ProcPtr parent)
 {
-    struct SioProc85AA7B4 * proc = Proc_StartBlocking(ProcScr_085AA7B4, parent);
+    struct SioProc85AA7B4 * proc = Proc_StartBlocking(ProcScr_Sio804B920_0, parent);
     proc->unk_64 = a;
 
     SetDispEnable(1, 1, 1, 1, 1);
@@ -231,8 +231,8 @@ void sub_804BD3C(struct SioProc85AA7B4 * proc)
     a = Interpolate(INTERPOLATE_RSQUARE, 0xc0, 0xa0, proc->unk_4c, proc->unk_64);
     b = Interpolate(INTERPOLATE_RCUBIC, 0x110, 0x10, proc->unk_4c, proc->unk_64);
 
-    sub_80131D0(gUnk_Sio_02001184);
-    sub_804B9E4(gUnk_Sio_02001184, 0, 0, DISPLAY_WIDTH, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, 0, DISPLAY_HEIGHT, a, b);
+    sub_80131D0(gUnk_Sio_4);
+    sub_804B9E4(gUnk_Sio_4, 0, 0, DISPLAY_WIDTH, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, 0, DISPLAY_HEIGHT, a, b);
     sub_804B9A4();
 
     proc->unk_4c++;
@@ -253,7 +253,7 @@ void sub_804BDD8(void)
 
 // clang-format off
 
-struct ProcCmd CONST_DATA ProcScr_085AA7EC[] =
+struct ProcCmd CONST_DATA ProcScr_Sio804B920_1[] =
 {
     PROC_YIELD,
 
@@ -272,7 +272,7 @@ struct ProcCmd CONST_DATA ProcScr_085AA7EC[] =
 //! FE8U = 0x0804BDFC
 void sub_804BDFC(u16 a, ProcPtr parent)
 {
-    struct SioProc85AA7B4 * proc = Proc_StartBlocking(ProcScr_085AA7EC, parent);
+    struct SioProc85AA7B4 * proc = Proc_StartBlocking(ProcScr_Sio804B920_1, parent);
     proc->unk_64 = a;
 
     SetWinEnable(0, 1, 0);
@@ -297,7 +297,7 @@ void sub_804BE88(ProcPtr parent)
 //! FE8U = 0x0804BE98
 void sub_804BE98(ProcPtr proc)
 {
-    if (Proc_Find(ProcScr_085AA7B4) == NULL)
+    if (Proc_Find(ProcScr_Sio804B920_0) == NULL)
     {
         Proc_Break(proc);
     }
@@ -308,7 +308,7 @@ void sub_804BE98(ProcPtr proc)
 //! FE8U = 0x0804BEB8
 void sub_804BEB8(ProcPtr proc)
 {
-    if (Proc_Find(ProcScr_085AA7EC) == NULL)
+    if (Proc_Find(ProcScr_Sio804B920_1) == NULL)
     {
         Proc_Break(proc);
     }

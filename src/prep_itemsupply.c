@@ -63,9 +63,9 @@ void sub_809D278(int idx, ProcPtr proc)
 
 //! FE8U = 0x0809D2C4
 void StoreConvoyWeaponIconGraphics(int vramOffset, int pal) {
-    ApplyPalette(gUnknown_08A1A3FC, pal);
-    Decompress(gUnknown_08A1A0A4, (void*)(VRAM + vramOffset));
-    Decompress(gUnknown_08A1A23C, (void*)(0x6000200 + vramOffset));
+    ApplyPalette(gUnkData_64, pal);
+    Decompress(gUnkData_62, (void*)(VRAM + vramOffset));
+    Decompress(gUnkData_63, (void*)(0x6000200 + vramOffset));
     return;
 }
 
@@ -76,14 +76,14 @@ void sub_809D300(struct Text * textBase, u16 * tm, int yLines, struct Unit * uni
 
     TileMap_FillRect(tm, 12, 31, 0);
 
-    if (gUnknown_02012F56 == 0) {
+    if (gPrepscreen_2 == 0) {
         ClearText(textBase);
         Text_InsertDrawString(textBase, 0, 1, GetStringFromIndex(0x5a8)); // TODO: msgid "Nothing[.]"
         PutText(textBase, tm + 3);
         return;
     }
 
-    for (i = yLines; (i < yLines + 7) && (i < gUnknown_02012F56); i++) {
+    for (i = yLines; (i < yLines + 7) && (i < gPrepscreen_2); i++) {
         struct Text* th = textBase + (i & 7);
         int item = gPrepScreenItemList[i].item;
         int unusable = !IsItemDisplayUsable(unit, item);
@@ -111,7 +111,7 @@ void sub_809D300(struct Text * textBase, u16 * tm, int yLines, struct Unit * uni
 void sub_809D418(u16 * tm, int yLines) {
     int i;
 
-    for (i = yLines; i < yLines + 7 && i < gUnknown_02012F56; i++) {
+    for (i = yLines; i < yLines + 7 && i < gPrepscreen_2; i++) {
         int item = gPrepScreenItemList[i].item;
         DrawIcon(tm + TILEMAP_INDEX(1, i * 2 & 0x1f), GetItemIconId(item), 0x4000);
     }
@@ -122,7 +122,7 @@ void sub_809D418(u16 * tm, int yLines) {
 //! FE8U = 0x0809D47C
 void sub_809D47C(struct Text * textBase, u16 * tm, int yLines, struct Unit * unit)
 {
-    if (gUnknown_02012F56 > yLines) {
+    if (gPrepscreen_2 > yLines) {
         int y = (yLines * 2) & 0x1f;
         struct Text* th = textBase + (yLines & 7);
         int item = gPrepScreenItemList[yLines].item;
@@ -302,13 +302,13 @@ void Supply_PutHighlightedCategorySprites(struct PrepItemSupplyProc * proc)
 {
     int x = proc->currentPage * 12 + 124;
 
-    gPaletteBuffer[0x14D] = *(gUnknown_08A1BD60 + (GetGameClock() >> 2 & 0xf));
+    gPaletteBuffer[0x14D] = *(gUnkData_76 + (GetGameClock() >> 2 & 0xf));
     EnablePaletteSync();
 
-    PutSprite(4, x, 24, gUnknown_08A19608[proc->currentPage], 0x4280);
-    PutSprite(4, x, 24, gUnknown_08A195F8, 0x4280);
+    PutSprite(4, x, 24, gPrepWmSell_1[proc->currentPage], 0x4280);
+    PutSprite(4, x, 24, gPrepWmSell_0, 0x4280);
 
-    UpdateMenuScrollBarConfig(0xc, proc->yOffsetPerPage[proc->currentPage], gUnknown_02012F56, 7);
+    UpdateMenuScrollBarConfig(0xc, proc->yOffsetPerPage[proc->currentPage], gPrepscreen_2, 7);
 
     return;
 }
@@ -377,10 +377,10 @@ void PrepItemSupply_InitGfx(struct PrepItemSupplyProc * proc)
     PutImg_PrepItemUseUnk(0x5000, 5);
     PutImg_PrepPopupWindow(0x800, 10);
 
-    Decompress(gUnknown_08A1B9EC, gGenericBuffer);
+    Decompress(gUnkData_71, gGenericBuffer);
     CallARM_FillTileRect(gBG1TilemapBuffer, gGenericBuffer, 0x1000);
 
-    Decompress(gUnknown_08A1BCC0, gGenericBuffer);
+    Decompress(gUnkData_73, gGenericBuffer);
     CallARM_FillTileRect(gBG1TilemapBuffer, gGenericBuffer, 0x1000);
 
     BG_EnableSyncByMask(7);
@@ -439,7 +439,7 @@ void PrepItemSupply_InitGfx(struct PrepItemSupplyProc * proc)
     StoreConvoyWeaponIconGraphics(0x4000, 6);
     sub_809D8D4(gBG0TilemapBuffer + 0x6F, 0x4000, 6);
 
-    Decompress(gUnknown_08A19CCC, (void*)0x06015000);
+    Decompress(gUnkData_61, (void*)0x06015000);
     ApplyPalette(Pal_SpinningArrow, 0x14);
 
     StartMenuScrollBarExt(proc, 0xe1, 0x2f, 0x5800, 9);
@@ -586,7 +586,7 @@ void sub_809DEFC(struct PrepItemSupplyProc * proc)
         return;
     }
 
-    if (gUnknown_02012F56 != 0) {
+    if (gPrepscreen_2 != 0) {
         int item = gPrepScreenItemList[proc->idxPerPage[proc->currentPage]].item;
         StartItemHelpBox(
             0x80,
@@ -679,17 +679,17 @@ void PrepItemSupply_SwitchPageRight(struct PrepItemSupplyProc * proc)
 void sub_809E100(struct PrepItemSupplyProc * proc)
 {
 
-    if (gUnknown_02012F56 == 0) {
+    if (gPrepscreen_2 == 0) {
         proc->idxPerPage[proc->currentPage] = proc->yOffsetPerPage[proc->currentPage] = 0;
     } else {
-        if (proc->idxPerPage[proc->currentPage] > (gUnknown_02012F56 - 1)) {
-            proc->idxPerPage[proc->currentPage] = gUnknown_02012F56 - 1;
+        if (proc->idxPerPage[proc->currentPage] > (gPrepscreen_2 - 1)) {
+            proc->idxPerPage[proc->currentPage] = gPrepscreen_2 - 1;
         }
     }
 
-    if (gUnknown_02012F56 > 6) {
-        if (((proc->yOffsetPerPage[proc->currentPage] >> 4) + 7) > gUnknown_02012F56) {
-            proc->yOffsetPerPage[proc->currentPage] = (gUnknown_02012F56 - 7) * 0x10;
+    if (gPrepscreen_2 > 6) {
+        if (((proc->yOffsetPerPage[proc->currentPage] >> 4) + 7) > gPrepscreen_2) {
+            proc->yOffsetPerPage[proc->currentPage] = (gPrepscreen_2 - 7) * 0x10;
         }
     }
 
@@ -707,7 +707,7 @@ void sub_809E184(struct PrepItemSupplyProc * proc)
     }
 
     if ((proc->idxPerPage[proc->currentPage] * 16 + 40 - proc->yOffsetPerPage[proc->currentPage] > 0x78) &&
-        (proc->idxPerPage[proc->currentPage] != gUnknown_02012F56 - 1)) {
+        (proc->idxPerPage[proc->currentPage] != gPrepscreen_2 - 1)) {
         proc->idxPerPage[proc->currentPage]--;
     }
 
@@ -760,7 +760,7 @@ void sub_809E2C8(struct PrepItemSupplyProc * proc)
 {
     int count = GetUnitItemCount(proc->unit);
 
-    if ((count == UNIT_ITEM_COUNT) || (gUnknown_02012F56 == 0)) {
+    if ((count == UNIT_ITEM_COUNT) || (gPrepscreen_2 == 0)) {
         PlaySoundEffect(SONG_6C);
         return;
     }
@@ -816,7 +816,7 @@ void sub_809E420(struct PrepItemSupplyProc * proc)
     if ((proc->yOffsetPerPage[proc->currentPage] & 0xf) == 0) {
         if ((proc->unk_38 == 0) || (proc->unk_38 == 0xff)) {
             if (gKeyStatusPtr->newKeys & R_BUTTON) {
-                if (gUnknown_02012F56 != 0) {
+                if (gPrepscreen_2 != 0) {
                     int item = gPrepScreenItemList[proc->idxPerPage[proc->currentPage]].item;
                     StartItemHelpBox(
                         0x80,
@@ -883,7 +883,7 @@ void sub_809E420(struct PrepItemSupplyProc * proc)
 
         if ((gKeyStatusPtr->repeatedKeys & DPAD_DOWN) ||
             ((gKeyStatusPtr->heldKeys & DPAD_DOWN) && (proc->scrollAmount == 8))) {
-            if (proc->idxPerPage[proc->currentPage] < gUnknown_02012F56 - 1) {
+            if (proc->idxPerPage[proc->currentPage] < gPrepscreen_2 - 1) {
                 proc->idxPerPage[proc->currentPage]++;
             }
         }
@@ -915,7 +915,7 @@ void sub_809E420(struct PrepItemSupplyProc * proc)
             PrepItemSupply_ScrollVertical(proc, -proc->scrollAmount);
         } else {
             if ((proc->idxPerPage[proc->currentPage] * 16 + 40 - proc->yOffsetPerPage[proc->currentPage] > 0x78)
-                && (proc->idxPerPage[proc->currentPage] != gUnknown_02012F56 - 1)) {
+                && (proc->idxPerPage[proc->currentPage] != gPrepscreen_2 - 1)) {
 
                 if (proc->unk_38 != 0) {
                     StartItemHelpBox(

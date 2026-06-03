@@ -255,7 +255,7 @@ s8 sub_807A0E4(struct MuCtrlProc * proc)
 
         if (proc->delayFrames < 1)
         {
-            MuCtr_ExecREDA_807A358(proc);
+            MuCtr_ExecREDA_0(proc);
             return false;
         }
     }
@@ -365,37 +365,37 @@ s8 sub_807A294(u8 pid, u16 b)
         return true;
     }
 
-    gUnknown_03001C35 = pid;
-    gUnknown_03001C34 = true;
+    gUnk_53 = pid;
+    gUnk_52 = true;
 
     Proc_ForEach(ProcScr_MuCtrl, (ProcFunc)sub_807A300);
 
-    if ((gUnknown_03001C34 == 0) && (b != 0xFFFF))
+    if ((gUnk_52 == 0) && (b != 0xFFFF))
     {
-        gUnknown_03001C36 = b;
-        gUnknown_03001C34 = 0;
+        gUnk_54 = b;
+        gUnk_52 = 0;
         Proc_ForEach(ProcScr_MuCtrl, (ProcFunc)sub_807A324);
     }
 
-    return gUnknown_03001C34;
+    return gUnk_52;
 }
 
 //! FE8U = 0x0807A300
 void sub_807A300(struct MuCtrlProc * proc)
 {
-    if (proc->unit->pCharacterData->number == gUnknown_03001C35)
-        gUnknown_03001C34 = 0;
+    if (proc->unit->pCharacterData->number == gUnk_53)
+        gUnk_52 = 0;
 }
 
 //! FE8U = 0x0807A324
 void sub_807A324(struct MuCtrlProc * proc)
 {
-    if (proc->unit->pCharacterData->number == gUnknown_03001C35 && gUnknown_03001C36 < proc->timer)
-        gUnknown_03001C34 = true;
+    if (proc->unit->pCharacterData->number == gUnk_53 && gUnk_54 < proc->timer)
+        gUnk_52 = true;
 }
 
 //! FE8U = 0x0807A358
-void MuCtr_ExecREDA_807A358(struct MuCtrlProc * proc)
+void MuCtr_ExecREDA_0(struct MuCtrlProc * proc)
 {
     u8 * commands;
     u8 config;

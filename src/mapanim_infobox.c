@@ -82,7 +82,7 @@ void sub_807BB40(u16* tilemap, int arg1, int arg2, int arg3, u16* buf)
         unk4 = 1;
 
     for (it = buf; it[0]; ++tilemap, it += 2)
-        sub_807BB10(tilemap, &unk4, gUnknown_089A3668[arg3], it[0], it[1]);
+        sub_807BB10(tilemap, &unk4, gMapanimInfobox_1[arg3], it[0], it[1]);
 }
 
 void EndMapAnimInfoWindow(void)
@@ -184,7 +184,7 @@ void sub_807BD54(struct MAInfoFrameProc* proc, int a)
             gManimSt.actor[a].hp_info_y + 3),
         gManimSt.actor[a].hp_max,
         gManimSt.actor[a].hp_displayed_q4/16,
-        0, gUnknown_089A3648);
+        0, gMapanimInfobox_0);
 
     BG_EnableSyncByMask(BG0_SYNC_BIT);
 }
@@ -277,14 +277,14 @@ void MapInfoBoxShake(struct MAInfoFrameProc* proc)
  * section.data
 */
 
-CONST_DATA u16 gUnknown_089A3648[] = {
+CONST_DATA u16 gMapanimInfobox_0[] = {
     0x05, 0x2B, 0x08, 0x31,
     0x08, 0x31, 0x08, 0x31,
     0x08, 0x31, 0x08, 0x31,
     0x05, 0x3A, 0x00, 0x00
 };
 
-CONST_DATA int gUnknown_089A3668[] = {
+CONST_DATA int gMapanimInfobox_1[] = {
     0x05, 0x06
 };
 

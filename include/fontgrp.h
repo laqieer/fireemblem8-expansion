@@ -207,7 +207,7 @@ void Text_DrawStringASCII(struct Text * text, const char * str);
 const char * Text_DrawCharacterAscii(struct Text * text, const char * str);
 const char * GetCharTextLenASCII(const char * str, u32 *width);
 int GetStringTextLenASCII(const char * str);
-// ??? nop_8004598(???);
+// ??? nop_0(???);
 void InitSpriteTextFont(struct Font * font, void * vramDest, int c);
 void InitSpriteText(struct Text * text);
 void SpriteText_DrawBackground(struct Text *);

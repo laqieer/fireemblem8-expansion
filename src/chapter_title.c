@@ -13,8 +13,8 @@ void sub_80895B4(int config, int palId)
 {
     u16 * pal;
     pal = (config & 1)
-        ? gPal_08A07AD8
-        : gPal_08A07C58;
+        ? gPal_UnkData_0
+        : gPal_UnkData_1;
 
     if ((config & 0x80) == 0)
     {
@@ -60,15 +60,15 @@ void _PutChapterTitleGfx(int chr, int titleId)
 void PutChapterTitleBG(int chr)
 {
     gChapterTitleFxSt.chr_bg = chr & 0x3FF;
-    Decompress(gGfx_08A09E4C, (void*)((chr * TILE_SIZE_4BPP) + VRAM));
+    Decompress(gGfx_UnkData_0, (void*)((chr * TILE_SIZE_4BPP) + VRAM));
 }
 
-extern u8 gUnknown_08A0A4E8[];
+extern u8 gUnkData_47[];
 
 void sub_80896A8(int chr)
 {
     gChapterTitleFxSt.chr_bg = chr & 0x3FF;
-    Decompress(gUnknown_08A0A4E8, (void*)((chr * TILE_SIZE_4BPP) + VRAM));
+    Decompress(gUnkData_47, (void*)((chr * TILE_SIZE_4BPP) + VRAM));
 }
 
 void sub_80896D8(u16 * tm, int pal)
@@ -97,7 +97,7 @@ void sub_8089720(u16 * tm, int pal)
 
 void sub_8089744(u16 * tm, int pal)
 {
-    CallARM_FillTileRect(tm, gTsa_08A0A9F8, (u16)TILEREF(gChapterTitleFxSt.chr_bg, pal));
+    CallARM_FillTileRect(tm, gTsa_UnkData_0, (u16)TILEREF(gChapterTitleFxSt.chr_bg, pal));
 }
 
 int GetChapterTitleExtra(struct PlaySt * chapterData)

@@ -391,31 +391,31 @@ void MapAnimCallSpellAssocPureWater(ProcPtr proc)
 void MapAnimCallSpellAssocElixir(ProcPtr proc)
 {
     NewMapAnimEffectAnimator(gManimSt.actor[gManimSt.targetActorId].unit,
-        gUnknown_089AFCBC, Pal_089AFF78, 0x8B);
+        gMapanimBattleinfo_4, Pal_MapAnimBerserkfx_1, 0x8B);
 }
 
 void MapAnimCallSpellAssocHeal(ProcPtr proc)
 {
     NewMapAnimEffectAnimator(gManimSt.actor[gManimSt.targetActorId].unit,
-        gUnknown_089AF950, Pal_089AFF78, 0x89);
+        gMapanimBattleinfo_2, Pal_MapAnimBerserkfx_1, 0x89);
 }
 
 void MapAnimCallSpellAssocMend(ProcPtr proc)
 {
     NewMapAnimEffectAnimator(gManimSt.actor[gManimSt.targetActorId].unit,
-        gUnknown_089AFAC4, Pal_089AFF78, 0x8A);
+        gMapanimBattleinfo_3, Pal_MapAnimBerserkfx_1, 0x8A);
 }
 
 void MapAnimCallSpellAssocRecover(ProcPtr proc)
 {
     NewMapAnimEffectAnimator(gManimSt.actor[gManimSt.targetActorId].unit,
-        gUnknown_089AFCBC, Pal_089AFF78, 0x8B);
+        gMapanimBattleinfo_4, Pal_MapAnimBerserkfx_1, 0x8B);
 }
 
 void MapAnimCallSpellAssocVulenrary(ProcPtr proc)
 {
     NewMapAnimEffectAnimator(gManimSt.actor[gManimSt.targetActorId].unit,
-        gUnknown_089AF950, Pal_089AFF78, 0x89);
+        gMapanimBattleinfo_2, Pal_MapAnimBerserkfx_1, 0x89);
 }
 
 void SpellWarpStartFlashy(ProcPtr proc)

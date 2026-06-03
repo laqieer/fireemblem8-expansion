@@ -49,41 +49,41 @@
 
 // use the source pixel value as-is
 #define COLOR_CONVERT(pixel) (pixel)
-u16 gUnknown_0858829C[] = { GENERATE_LOOKUP_TABLE };
+u16 gFontgrp_3[] = { GENERATE_LOOKUP_TABLE };
 #undef COLOR_CONVERT
 
 // add 3 to the source pixel, except when it is 0
 #define COLOR_CONVERT(pixel) ((pixel == 0) ? 0 : (pixel + 3))
-u16 gUnknown_0858849C[] = { GENERATE_LOOKUP_TABLE };
+u16 gFontgrp_4[] = { GENERATE_LOOKUP_TABLE };
 #undef COLOR_CONVERT
 
 // add 6 to the source pixel, except when it is 0
 #define COLOR_CONVERT(pixel) ((pixel == 0) ? 0 : (pixel + 6))
-u16 gUnknown_0858869C[] = { GENERATE_LOOKUP_TABLE };
+u16 gFontgrp_5[] = { GENERATE_LOOKUP_TABLE };
 #undef COLOR_CONVERT
 
 // add 9 to the source pixel, except when it is 0
 #define COLOR_CONVERT(pixel) ((pixel == 0) ? 0 : (pixel + 9))
-u16 gUnknown_0858889C[] = { GENERATE_LOOKUP_TABLE };
+u16 gFontgrp_6[] = { GENERATE_LOOKUP_TABLE };
 #undef COLOR_CONVERT
 
 // add 12 to the source pixel, except when it is 0
 #define COLOR_CONVERT(pixel) ((pixel == 0) ? 0 : (pixel + 12))
-u16 gUnknown_08588A9C[] = { GENERATE_LOOKUP_TABLE };
+u16 gFontgrp_7[] = { GENERATE_LOOKUP_TABLE };
 #undef COLOR_CONVERT
 
 #define COLOR_CONVERT(pixel) ((pixel == 2) ? 3 : 0)
-u16 gUnknown_08588C9C[] = { GENERATE_LOOKUP_TABLE };
+u16 gFontgrp_8[] = { GENERATE_LOOKUP_TABLE };
 #undef COLOR_CONVERT
 
 #define COLOR_CONVERT(pixel) ((pixel == 0) ? 4 : (pixel + 12))
-u16 gUnknown_08588E9C[] = { GENERATE_LOOKUP_TABLE };
+u16 gFontgrp_9[] = { GENERATE_LOOKUP_TABLE };
 #undef COLOR_CONVERT
 
 #define COLOR_CONVERT(pixel) ((pixel == 0) ?  4 : \
                               (pixel == 3) ? 15 : \
                               (pixel + 4))
-u16 gUnknown_0858909C[] = { GENERATE_LOOKUP_TABLE };
+u16 gFontgrp_10[] = { GENERATE_LOOKUP_TABLE };
 #undef COLOR_CONVERT
 
 #define COLOR_CONVERT(pixel) ((pixel == 0) ?  4 : \
@@ -91,15 +91,15 @@ u16 gUnknown_0858909C[] = { GENERATE_LOOKUP_TABLE };
                               (pixel == 2) ? 12 : \
                               (pixel == 3) ? 15 : \
                               0)
-u16 gUnknown_0858929C[] = { GENERATE_LOOKUP_TABLE };
+u16 gFontgrp_11[] = { GENERATE_LOOKUP_TABLE };
 #undef COLOR_CONVERT
 
 #define COLOR_CONVERT(pixel) ((pixel == 0) ? 15 : 0)
-u16 gUnknown_0858949C[] = { GENERATE_LOOKUP_TABLE };
+u16 gFontgrp_12[] = { GENERATE_LOOKUP_TABLE };
 #undef COLOR_CONVERT
 
 #define COLOR_CONVERT(pixel) (pixel + 4)
-u16 gUnknown_0858969C[] = { GENERATE_LOOKUP_TABLE };
+u16 gFontgrp_13[] = { GENERATE_LOOKUP_TABLE };
 #undef COLOR_CONVERT
 
 #undef X
@@ -113,11 +113,11 @@ u16 gUnknown_0858969C[] = { GENERATE_LOOKUP_TABLE };
               | (COLOR_CONVERT(((byte >> 6) & 3)) << 12)
 
 #define COLOR_CONVERT(pixel) ((pixel == 0) ? 4 : (pixel + 12))
-u16 gUnknown_0858989C[] = { GENERATE_LOOKUP_TABLE };
+u16 gFontgrp_14[] = { GENERATE_LOOKUP_TABLE };
 #undef COLOR_CONVERT
 
 #define COLOR_CONVERT(pixel) ((pixel == 0) ? 4 : (pixel + 4))
-u16 gUnknown_08589A9C[] = { GENERATE_LOOKUP_TABLE };
+u16 gFontgrp_15[] = { GENERATE_LOOKUP_TABLE };
 #undef COLOR_CONVERT
 
 

@@ -1377,7 +1377,7 @@ int GetUnitLastItem(struct Unit* unit) {
 
 const s8* GetUnitMovementCost(struct Unit* unit) {
     if (unit->state & US_IN_BALLISTA)
-        return Unk_TerrainTable_0880BC18;
+        return Unk_TerrainTable_0;
 
     switch (gPlaySt.chapterWeatherId) {
 

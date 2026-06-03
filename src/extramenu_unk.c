@@ -13,9 +13,9 @@ struct Proc8A21568 {
     /* 58 */ int unk_58;
 };
 
-extern u16 gUnknown_08A2C11C[]; // pal
-extern u8 gUnknown_08A29A88[]; // gfx
-extern u8 gUnknown_08A2B1E4[]; // gfx
+extern u16 gMenuMainObjs_4[]; // pal
+extern u8 gMenuMainObjs_2[]; // gfx
+extern u8 gMenuMainObjs_3[]; // gfx
 
 //! FE8U = 0x080B0458
 void sub_80B0458(void) {
@@ -38,7 +38,7 @@ void sub_80B0458(void) {
     return;
 }
 
-u16 CONST_DATA gUnknown_08A21550[] = {
+u16 CONST_DATA gExtramenuUnk_0[] = {
     0x0000, 0x6000, 0x0000,
     0x0000, 0x6800, 0x0000,
     0x8000, 0x7800, 0x0000,
@@ -49,7 +49,7 @@ u16 CONST_DATA gUnknown_08A21550[] = {
 void sub_80B04BC(struct Proc8A21568* proc) {
     proc->unk_58 = 4;
 
-    SetupBackgrounds(gUnknown_08A21550);
+    SetupBackgrounds(gExtramenuUnk_0);
 
     gLCDControlBuffer.dispcnt.mode = 1;
 
@@ -62,15 +62,15 @@ void sub_80B04BC(struct Proc8A21568* proc) {
 //! FE8U = 0x080B04F8
 void sub_80B04F8(void) {
     ApplyPalettes(Pal_CommGameBgScreenInShop, 0, 2);
-    ApplyPalette(Pal_08A295B4, 2);
+    ApplyPalette(Pal_MenuMainObjs_0, 2);
     Decompress(Img_CommGameBgScreen, (void*)0x06001000);
     CallARM_FillTileRect(gBG0TilemapBuffer, Tsa_CommGameBgScreenInShop, 0x80);
 
     BG_EnableSyncByMask(1);
 
-    ApplyPalettes(gUnknown_08A2C11C, 0x11, 8);
-    Decompress(gUnknown_08A29A88, (void*)0x06010800);
-    Decompress(gUnknown_08A2B1E4, (void*)0x06014000);
+    ApplyPalettes(gMenuMainObjs_4, 0x11, 8);
+    Decompress(gMenuMainObjs_2, (void*)0x06010800);
+    Decompress(gMenuMainObjs_3, (void*)0x06014000);
 
     SetPrimaryHBlankHandler(sub_80B0458);
 
@@ -94,13 +94,13 @@ void nullsub_66(void) {
 //! FE8U = 0x080B05C4
 void sub_80B05C4(struct Proc8A21568* proc) {
     if (proc->unk_58 >= 0) {
-        PutSpriteExt(4, 56, 8, Sprite_08A2051C, 0x2000);
-        PutSpriteExt(4, 64, 16, SpriteArray_08A2099C[proc->unk_58], 0x3000);
+        PutSpriteExt(4, 56, 8, Sprite_Savedraw_0, 0x2000);
+        PutSpriteExt(4, 64, 16, SpriteArray_SavemenuData_0[proc->unk_58], 0x3000);
     }
     return;
 }
 
-struct ProcCmd CONST_DATA gUnknown_08A21568[] = {
+struct ProcCmd CONST_DATA gExtramenuUnk_1[] = {
     PROC_CALL(sub_80B04BC),
     PROC_CALL(sub_80B04F8),
 
@@ -113,13 +113,13 @@ struct ProcCmd CONST_DATA gUnknown_08A21568[] = {
 
 //! FE8U = 0x080B060C
 void sub_80B060C(ProcPtr parent) {
-    Proc_Start(gUnknown_08A21568, parent);
+    Proc_Start(gExtramenuUnk_1, parent);
     return;
 }
 
 //! FE8U = 0x080B0620
 void sub_80B0620(int unk) {
-    struct Proc8A21568* proc = Proc_Find(gUnknown_08A21568);
+    struct Proc8A21568* proc = Proc_Find(gExtramenuUnk_1);
     proc->unk_58 = unk;
 
     return;

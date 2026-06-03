@@ -17,7 +17,7 @@
 #include "helpbox.h"
 #include "constants/songs.h"
 
-EWRAM_DATA u32 unuesed_0203E790 = 0;
+EWRAM_DATA u32 unuesed_Helpbox_0 = 0;
 EWRAM_DATA struct HelpBoxSt gHelpBoxSt = { 0 };
 EWRAM_DATA struct HelpBoxInfo gTmpHelpBoxInfo = { 0 };
 EWRAM_DATA const struct HelpBoxInfo * gpHelpBoxCurrentInfo = NULL;
@@ -536,7 +536,7 @@ void ClearHelpBoxText(void) {
 }
 
 //! FE8U = 0x0808A160
-void HelpBoxIntro_bug_808A160(struct HelpBoxProc * proc)
+void HelpBoxIntro_bug_0(struct HelpBoxProc * proc)
 {
     UpdateHelpBoxDisplay(proc, 5);
 
@@ -582,8 +582,8 @@ void sub_808A1B8(struct HelpBoxProc * proc) {
     return;
 }
 
-struct ProcCmd CONST_DATA ProcScr_Helpbox_bug_08A01678[] = {
-    PROC_REPEAT(HelpBoxIntro_bug_808A160),
+struct ProcCmd CONST_DATA ProcScr_Helpbox_bug_0[] = {
+    PROC_REPEAT(HelpBoxIntro_bug_0),
     PROC_CALL(sub_808A188),
     PROC_REPEAT(sub_808A1B8),
 
@@ -609,10 +609,10 @@ void sub_808A200(const struct HelpBoxInfo* info) {
     int wTextBox;
     int hTextBox;
 
-    struct HelpBoxProc * proc = Proc_Find(ProcScr_Helpbox_bug_08A01678);
+    struct HelpBoxProc * proc = Proc_Find(ProcScr_Helpbox_bug_0);
 
     if (!proc) {
-        proc = Proc_Start(ProcScr_Helpbox_bug_08A01678, PROC_TREE_3);
+        proc = Proc_Start(ProcScr_Helpbox_bug_0, PROC_TREE_3);
 
         PlaySoundEffect(SONG_70);
 
@@ -656,7 +656,7 @@ void sub_808A2D0(void) {
 
     ClearHelpBoxText();
 
-    Proc_BreakEach(ProcScr_Helpbox_bug_08A01678);
+    Proc_BreakEach(ProcScr_Helpbox_bug_0);
 
     return;
 }
@@ -694,7 +694,7 @@ void sub_808A340(struct HelpBoxProc * proc) {
     return;
 }
 
-struct ProcCmd CONST_DATA gUnknown_08A01698[] = {
+struct ProcCmd CONST_DATA gHelpbox_0[] = {
     PROC_SLEEP(1),
 
 PROC_LABEL(0),
@@ -707,7 +707,7 @@ PROC_LABEL(0),
 
 //! FE8U = 0x0808A354
 void sub_808A354(const struct HelpBoxInfo* info) {
-    struct HelpBoxProc * proc = Proc_Start(gUnknown_08A01698, PROC_TREE_3);
+    struct HelpBoxProc * proc = Proc_Start(gHelpbox_0, PROC_TREE_3);
 
     proc->info = info;
 
@@ -716,7 +716,7 @@ void sub_808A354(const struct HelpBoxInfo* info) {
 
 //! FE8U = 0x0808A36C
 s8 sub_808A36C(void) {
-    return Proc_Find(gUnknown_08A01698) ? 1 : 0;
+    return Proc_Find(gHelpbox_0) ? 1 : 0;
 }
 
 //! FE8U = 0x0808A384
@@ -820,7 +820,7 @@ void sub_808A4A4(ProcPtr proc) {
     return;
 }
 
-struct ProcCmd CONST_DATA gUnknown_08A016C8[] = {
+struct ProcCmd CONST_DATA gHelpbox_1[] = {
     PROC_REPEAT(sub_808A4A4),
     PROC_END,
 };
@@ -831,7 +831,7 @@ s8 StartHelpoxDirect(int msgId, ProcPtr parent) {
 
     sub_808A1E0(GetUiHandPrevDisplayX(), GetUiHandPrevDisplayY(), msgId);
 
-    Proc_StartBlocking(gUnknown_08A016C8, parent);
+    Proc_StartBlocking(gHelpbox_1, parent);
 
     return 1;
 }
@@ -1054,7 +1054,7 @@ void sub_808A8AC(void) {
     return;
 }
 
-int CONST_DATA gUnknown_08A016D8[] = {
+int CONST_DATA gHelpbox_2[] = {
     0x0843, // TODO: msgid "Yes[.]"
     0x0844, // TODO: msgid "No"
 };
@@ -1605,7 +1605,7 @@ void BoxDialogueInterpreter_Main(struct ProcBoxDialogueDrawTextExt* proc) {
 
                 r3 = Proc_Find(ProcScr_MergeBoxDialogue);
 
-                StartYesNoChoice(gUnknown_08A016D8, proc->texts[proc->current_line], r3->xBoxFinal, r3->yBoxFinal + proc->current_line * 16, 6, 1, proc);
+                StartYesNoChoice(gHelpbox_2, proc->texts[proc->current_line], r3->xBoxFinal, r3->yBoxFinal + proc->current_line * 16, 6, 1, proc);
 
                 proc->str++;
                 goto _0808B772;
@@ -1615,7 +1615,7 @@ void BoxDialogueInterpreter_Main(struct ProcBoxDialogueDrawTextExt* proc) {
 
                 r3 = Proc_Find(ProcScr_MergeBoxDialogue);
 
-                StartYesNoChoice(gUnknown_08A016D8, proc->texts[proc->current_line], r3->xBoxFinal, r3->yBoxFinal + proc->current_line * 16, 6, 2, proc);
+                StartYesNoChoice(gHelpbox_2, proc->texts[proc->current_line], r3->xBoxFinal, r3->yBoxFinal + proc->current_line * 16, 6, 2, proc);
 
                 proc->str++;
                 goto _0808B772;
@@ -2014,7 +2014,7 @@ void sub_808B928(struct HelpBox8A01800Proc * proc) {
     return;
 }
 
-struct ProcCmd CONST_DATA gUnknown_08A01800[] = {
+struct ProcCmd CONST_DATA gHelpbox_3[] = {
     PROC_SLEEP(6),
     PROC_CALL(sub_808B928),
 
@@ -2023,7 +2023,7 @@ struct ProcCmd CONST_DATA gUnknown_08A01800[] = {
 
 //! FE8U = 0x0808BA60
 void sub_808BA60(int msgId, int x, int y) {
-    struct HelpBox8A01800Proc* proc = Proc_Start(gUnknown_08A01800, PROC_TREE_3);
+    struct HelpBox8A01800Proc* proc = Proc_Start(gHelpbox_3, PROC_TREE_3);
 
     proc->unk_5c = msgId;
 
@@ -2064,7 +2064,7 @@ void sub_808BAA4(void) {
     }
 
     Proc_EndEach(ProcScr_BoxDialogueDrawTextExt);
-    Proc_EndEach(gUnknown_08A01800);
+    Proc_EndEach(gHelpbox_3);
 
     SetTextFont(NULL);
 
@@ -2097,6 +2097,6 @@ void sub_808BB74(void) {
     Proc_EndEach(ProcScr_TalkBoxIdle);
     Proc_EndEach(ProcScr_MergeBoxDialogue);
     Proc_EndEach(ProcScr_BoxDialogueDrawTextExt);
-    Proc_EndEach(gUnknown_08A01800);
+    Proc_EndEach(gHelpbox_3);
     return;
 }

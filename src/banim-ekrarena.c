@@ -82,7 +82,7 @@ void ExecBattleAnimArenaExit(void)
     AnimClearAll();
     NewEkrTogiEndPROC();
 
-    SetMainUpdateRoutine(MainUpdate_8055C68);
+    SetMainUpdateRoutine(MainUpdate_0);
     Proc_EndEach(ProcScr_efxStatusUnit);
 
     return;

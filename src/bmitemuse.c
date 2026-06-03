@@ -668,7 +668,7 @@ void WarpSelect_OnInit(struct WarpSelectProc* proc)
         GetUnit(gActionData.targetIndex)->xPos,
         GetUnit(gActionData.targetIndex)->yPos);
 
-    ap = AP_Create(gUnknown_085A0EA0, 0);
+    ap = AP_Create(gUnkData_2, 0);
 
     ap->tileBase = OAM2_CHR(0) + OAM2_PAL(0);
     AP_SwitchAnimation(ap, 0);

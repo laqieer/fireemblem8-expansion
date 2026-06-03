@@ -276,8 +276,8 @@ s8 sub_8097F98(struct Unit* unit, int itemSlot) {
     return 0;
 }
 
-extern u16 Pal_08A1D448[];
-extern u16 gUnknown_02013460[];
+extern u16 Pal_UnkData_1[];
+extern u16 gPrepscreen_5[];
 
 //! FE8U = 0x08097FDC
 void sub_8097FDC(void)
@@ -287,8 +287,8 @@ void sub_8097FDC(void)
     for (i = 0; i < 0x10; i++) {
         int pal = gPlaySt.config.windowColor;
 
-        u16* dst = &gUnknown_02013460[i];
-        u16* src = &Pal_08A1D448[pal * 0x10 + i];
+        u16* dst = &gPrepscreen_5[i];
+        u16* src = &Pal_UnkData_1[pal * 0x10 + i];
 
         *dst = *src;
     }
@@ -336,10 +336,10 @@ void sub_8098048(int page)
     int i;
     int k;
 
-    struct PrepScreenItemListEnt* buffer = gUnknown_02012914;
-    gUnknown_02012F56 = 0;
+    struct PrepScreenItemListEnt* buffer = gPrepscreen_0;
+    gPrepscreen_2 = 0;
 
-    for (i = 0; i < gUnknown_02012F54; i++) {
+    for (i = 0; i < gPrepscreen_1; i++) {
         u8 itemType = GetItemType(gPrepScreenItemList[i].item);
 
         if (itemType < gPrepItemTypePageLut[page].lowerBound) {
@@ -353,10 +353,10 @@ void sub_8098048(int page)
         *buffer = gPrepScreenItemList[i];
         buffer++;
 
-        gUnknown_02012F56++;
+        gPrepscreen_2++;
     }
 
-    for (i = 0; i < gUnknown_02012F54; i++) {
+    for (i = 0; i < gPrepscreen_1; i++) {
         u8 itemType = GetItemType(gPrepScreenItemList[i].item);
 
         if (itemType < gPrepItemTypePageLut[page].lowerBound || itemType > gPrepItemTypePageLut[page].upperBound) {
@@ -368,7 +368,7 @@ void sub_8098048(int page)
     j = 1;
 
     while (1) {
-        if (j >= gUnknown_02012F56 / 3) {
+        if (j >= gPrepscreen_2 / 3) {
             break;
         }
 
@@ -376,24 +376,24 @@ void sub_8098048(int page)
     }
 
     for (; j > 0; j = j / 3) {
-       for (i = j; i < gUnknown_02012F56; i++) {
+       for (i = j; i < gPrepscreen_2; i++) {
             for (k = i - j; k >= 0; k -= j) {
-                int a = GetItemIndex(gUnknown_02012914[k].item);
-                int b = GetItemIndex(gUnknown_02012914[k + j].item);
+                int a = GetItemIndex(gPrepscreen_0[k].item);
+                int b = GetItemIndex(gPrepscreen_0[k + j].item);
 
                 if (a > b) {
-                    struct PrepScreenItemListEnt t = gUnknown_02012914[k];
-                    gUnknown_02012914[k] = gUnknown_02012914[k + j];
-                    gUnknown_02012914[k + j] = t;
+                    struct PrepScreenItemListEnt t = gPrepscreen_0[k];
+                    gPrepscreen_0[k] = gPrepscreen_0[k + j];
+                    gPrepscreen_0[k + j] = t;
                 } else {
-                    if (GetItemIndex(gUnknown_02012914[k].item) != GetItemIndex(gUnknown_02012914[k + j].item)) {
+                    if (GetItemIndex(gPrepscreen_0[k].item) != GetItemIndex(gPrepscreen_0[k + j].item)) {
                         break;
                     }
 
-                    if (gUnknown_02012914[k].item > gUnknown_02012914[k + j].item) {
-                        struct PrepScreenItemListEnt t = gUnknown_02012914[k];
-                        gUnknown_02012914[k] = gUnknown_02012914[k + j];
-                        gUnknown_02012914[k + j] = t;
+                    if (gPrepscreen_0[k].item > gPrepscreen_0[k + j].item) {
+                        struct PrepScreenItemListEnt t = gPrepscreen_0[k];
+                        gPrepscreen_0[k] = gPrepscreen_0[k + j];
+                        gPrepscreen_0[k + j] = t;
                     }
                 }
 
@@ -402,7 +402,7 @@ void sub_8098048(int page)
         }
     }
 
-    CpuFastSet(gUnknown_02012914, gPrepScreenItemList, 0x190);
+    CpuFastSet(gPrepscreen_0, gPrepScreenItemList, 0x190);
 
     return;
 }
@@ -411,7 +411,7 @@ void sub_8098048(int page)
 void SomethingPrepListRelated(struct Unit* pUnit, int page, int flags) {
     struct PrepScreenItemListEnt* pPrepItemList = gPrepScreenItemList;
 
-    gUnknown_02012F54 = 0;
+    gPrepscreen_1 = 0;
 
     if (flags & 2) {
         int i;
@@ -440,7 +440,7 @@ void SomethingPrepListRelated(struct Unit* pUnit, int page, int flags) {
                 pPrepItemList->itemSlot = j;
                 pPrepItemList++;
 
-                gUnknown_02012F54++;
+                gPrepscreen_1++;
             }
         }
     }
@@ -455,7 +455,7 @@ void SomethingPrepListRelated(struct Unit* pUnit, int page, int flags) {
             pPrepItemList->itemSlot = j;
             pPrepItemList++;
 
-            gUnknown_02012F54++;
+            gPrepscreen_1++;
         }
     }
 
@@ -470,7 +470,7 @@ void sub_80982B8(void) {
 
     ClearSupplyItems();
 
-    for (i = 0; i < gUnknown_02012F54; i++) {
+    for (i = 0; i < gPrepscreen_1; i++) {
         if (gPrepScreenItemList[i].pid != 0) {
             continue;
         }

@@ -265,7 +265,7 @@ int sub_800A8D8(s16 * arg_0, s16 arg_1, int * arg_2, int * arg_3)
     return 0;
 }
 
-u32 CONST_DATA gUnknown_08591AB4[3] = { 0, 0, 0 };
+u32 CONST_DATA gSpline_0[3] = { 0, 0, 0 };
 
 //! FE8U = 0x0800A950
 int sub_800A950(struct Struct02003BE8 * params, int mode, int * results)
@@ -331,7 +331,7 @@ int sub_800A950(struct Struct02003BE8 * params, int mode, int * results)
 
     if (params->unk_10 == NULL)
     {
-        r4_ = gUnknown_08591AB4;
+        r4_ = gSpline_0;
     }
     else
     {
@@ -725,7 +725,7 @@ int sub_800AF64(struct Struct02003BE8 * params, int mode, int * results)
             }
             else
             {
-                sp_10[i].unk_08 = (s16 *)gUnknown_08591AB4;
+                sp_10[i].unk_08 = (s16 *)gSpline_0;
             }
         }
         else if (sp_84 + i - 1 >= sp_94)
@@ -739,7 +739,7 @@ int sub_800AF64(struct Struct02003BE8 * params, int mode, int * results)
             }
             else
             {
-                sp_10[i].unk_08 = (s16 *)gUnknown_08591AB4;
+                sp_10[i].unk_08 = (s16 *)gSpline_0;
             }
         }
         else
@@ -753,7 +753,7 @@ int sub_800AF64(struct Struct02003BE8 * params, int mode, int * results)
             }
             else
             {
-                sp_10[i].unk_08 = (s16 *)gUnknown_08591AB4;
+                sp_10[i].unk_08 = (s16 *)gSpline_0;
             }
         }
     }

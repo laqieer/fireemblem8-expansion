@@ -38,7 +38,7 @@ u8 sub_804D8A4(struct MenuProc * menu, struct MenuItemProc * menuItem)
         return MENU_ACT_SND6B;
     }
 
-    gUnk_Sio_0203DD90.unk_07 = menuItem->itemNumber;
+    gUnk_Sio_16.unk_07 = menuItem->itemNumber;
 
     return MENU_ACT_SND6A | MENU_ACT_DOOM;
 }
@@ -46,7 +46,7 @@ u8 sub_804D8A4(struct MenuProc * menu, struct MenuItemProc * menuItem)
 //! FE8U = 0x0804D8C8
 u8 sub_804D8C8(struct MenuProc * menu, struct MenuItemProc * menuItem)
 {
-    gUnk_Sio_0203DD90.unk_06 = menuItem->itemNumber + 1;
+    gUnk_Sio_16.unk_06 = menuItem->itemNumber + 1;
     return MENU_ACT_SKIPCURSOR | MENU_ACT_END | MENU_ACT_SND6A | MENU_ACT_CLEAR;
 }
 
@@ -72,14 +72,14 @@ int sub_804D8DC(struct MenuProc * menu, struct MenuItemProc * menuItem)
 //! FE8U = 0x0804D940
 u8 sub_804D940(struct MenuProc * menu, struct MenuItemProc * menuItem)
 {
-    gUnk_Sio_0203DD90.unk_06 = 0;
+    gUnk_Sio_16.unk_06 = 0;
     return MENU_ACT_SKIPCURSOR | MENU_ACT_END | MENU_ACT_SND6B | MENU_ACT_CLEAR;
 }
 
 //! FE8U = 0x0804D950
 u8 sub_804D950(struct MenuProc * menu)
 {
-    gUnk_Sio_0203DD90.unk_06 = 0;
+    gUnk_Sio_16.unk_06 = 0;
 
     TileMap_FillRect(TILEMAP_LOCATED(gBG0TilemapBuffer, menu->rect.x, menu->rect.y), menu->rect.w, menu->rect.h, 0);
     TileMap_FillRect(TILEMAP_LOCATED(gBG1TilemapBuffer, menu->rect.x, menu->rect.y), menu->rect.w, menu->rect.h, 0);
@@ -91,7 +91,7 @@ u8 sub_804D950(struct MenuProc * menu)
 
 // clang-format off
 
-struct MenuItemDef CONST_DATA MenuItems_085AABF0[] =
+struct MenuItemDef CONST_DATA MenuItems_SioMenudef_0[] =
 {
     {
         .name = "　直接攻撃",
@@ -110,7 +110,7 @@ struct MenuItemDef CONST_DATA MenuItems_085AABF0[] =
     { 0 }, // end
 };
 
-struct MenuItemDef CONST_DATA MenuItems_085AAC5C[] =
+struct MenuItemDef CONST_DATA MenuItems_SioMenudef_1[] =
 {
     {
         .name = "",
@@ -155,41 +155,41 @@ struct MenuItemDef CONST_DATA MenuItems_085AAC5C[] =
     { 0 }, // end
 };
 
-struct MenuItemDef CONST_DATA MenuItems_085AAD34[] =
+struct MenuItemDef CONST_DATA MenuItems_SioMenudef_2[] =
 {
     { 0 }, // end
 };
 
-struct MenuItemDef CONST_DATA MenuItems_085AAD58[] =
+struct MenuItemDef CONST_DATA MenuItems_SioMenudef_3[] =
 {
     { 0 }, // end
 };
 
-struct MenuDef CONST_DATA gUnknown_085AAD7C =
+struct MenuDef CONST_DATA gSioMenudef_0 =
 {
     .rect = { 16, 2, 8, 0 },
-    .menuItems = MenuItems_085AABF0,
+    .menuItems = MenuItems_SioMenudef_0,
     .onBPress = sub_804D940,
 };
 
-struct MenuDef CONST_DATA gUnknown_085AADA0 =
+struct MenuDef CONST_DATA gSioMenudef_1 =
 {
     .rect = { 1, 1, 14, 0 },
-    .menuItems = MenuItems_085AAC5C,
+    .menuItems = MenuItems_SioMenudef_1,
     .onBPress = sub_804D940,
 };
 
-struct MenuDef CONST_DATA gUnknown_085AADC4 =
+struct MenuDef CONST_DATA gSioMenudef_2 =
 {
     .rect = { 1, 2, 12, 0 },
-    .menuItems = MenuItems_085AAD34,
+    .menuItems = MenuItems_SioMenudef_2,
     .onBPress = MenuCancelSelect,
 };
 
-struct MenuDef CONST_DATA gUnknown_085AADE8 =
+struct MenuDef CONST_DATA gSioMenudef_3 =
 {
     .rect = { 1, 2, 22, 0 },
-    .menuItems = MenuItems_085AAD58,
+    .menuItems = MenuItems_SioMenudef_3,
     .onBPress = MenuCancelSelect,
 };
 

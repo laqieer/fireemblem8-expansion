@@ -215,7 +215,7 @@ void sub_80B8BA4(struct WorldMapMainProc * proc)
         {
             int b = sub_80BD28C(proc->unk_40);
             int c = sub_80BD28C(proc->unk_40 + 1);
-            GmMu_80BE108(proc->gm_mu, 0, 1);
+            GmMu_0(proc->gm_mu, 0, 1);
 
             a.unk_00 = 0;
             a.unk_06 = b;
@@ -249,7 +249,7 @@ void sub_80B8BA4(struct WorldMapMainProc * proc)
 
         proc->flags_1 = 0;
         gGMData.units[0].location = sub_80BD28C(proc->unk_40);
-        GmMu_80BE108(proc->gm_mu, 0, 0);
+        GmMu_0(proc->gm_mu, 0, 0);
 
         location = gGMData.units[0].location;
         if (location[gWMNodeData].placementFlag == GMAP_NODE_PLACEMENT_DUNGEON)
@@ -272,7 +272,7 @@ void sub_80B8BA4(struct WorldMapMainProc * proc)
     return;
 }
 
-struct FaceVramEntry CONST_DATA gUnknown_08A3D728[] =
+struct FaceVramEntry CONST_DATA gWorldmapMain_0[] =
 {
     [0] =
     {
@@ -318,7 +318,7 @@ void SetupGraphicSystemsForWorldMap(void)
     LoadLegacyUiFrameGraphics();
     ResetText();
     ResetFaces();
-    SetupFaceGfxData(gUnknown_08A3D728);
+    SetupFaceGfxData(gWorldmapMain_0);
     ResetUnitSprites();
     InitMus();
     ApplyUnitSpritePalettes();
@@ -332,7 +332,7 @@ void SetupGraphicSystemsForWorldMap(void)
 //! FE8U = 0x080B8E14
 void SetupGmapNodeGfx(void)
 {
-    ApplyPalettes(gUnknown_08A97A40, 0x13, 2);
+    ApplyPalettes(gWorldmapGmap_4, 0x13, 2);
     Decompress(Img_GmapNodes, (void *)0x06011000);
     Decompress(Img_GmapCastleNodes, gGenericBuffer);
     Copy2dChr(gGenericBuffer, (void *)0x06010280, 0xc, 4);
@@ -356,12 +356,12 @@ void sub_80B8E60(struct WorldMapMainProc * proc)
 
     ApplyPalettes(gPal_MiscUiGraphics, 0x10, 2);
     ApplyPalette(gPal_MiscUiGraphics, 0x1B);
-    Decompress(gUnknown_08AA11D0, gGenericBuffer);
+    Decompress(gWorldmapSkirmish_0, gGenericBuffer);
     Copy2dChr(gGenericBuffer, (void *)0x06015300, 8, 2);
 
     SetupGmapNodeGfx();
 
-    ApplyPalette(gUnknown_08A97FA4, 0xE);
+    ApplyPalette(gWorldmapSprite_1, 0xE);
     Decompress(Img_GmapPath, (void *)0x06005000);
 
     LoadUiFrameGraphics();
@@ -1005,7 +1005,7 @@ PROC_LABEL(23),
 PROC_LABEL(25),
     PROC_SLEEP(16),
     PROC_CALL(ResetWorldMapScreen),
-    PROC_CALL(NULL_080B9F08),
+    PROC_CALL(NULL_WorldmapMain_0),
     PROC_END,
 };
 
@@ -1353,7 +1353,7 @@ void sub_80B9A34(struct WorldMapMainProc * proc)
 //! FE8U = 0x080B9A58
 void sub_80B9A58(struct WorldMapMainProc * proc)
 {
-    GmMu_80BE108(proc->gm_mu, 0, 0);
+    GmMu_0(proc->gm_mu, 0, 0);
     gPlaySt.chapterIndex = WMLoc_GetChapterId(gGMData.units[0].location);
     gGMData.sprite_disp = 0;
     StartWorldmapSkirmishAnim(0, sub_80BCA1C(gGMData.units[0].location), proc);
@@ -1409,7 +1409,7 @@ void sub_80B9AEC(struct WorldMapMainProc * proc)
 //! FE8U = 0x080B9B38
 void WorldMap_CallIntroEvent(struct WorldMapMainProc * proc)
 {
-    GmMu_80BE108(proc->gm_mu, 0, 0);
+    GmMu_0(proc->gm_mu, 0, 0);
 
     if (gGMData.units[0].location[gWMNodeData].placementFlag != GMAP_NODE_PLACEMENT_DUNGEON)
     {
@@ -1436,7 +1436,7 @@ void WorldMap_PostBeginningEvent(struct WorldMapMainProc * proc)
         return;
     }
 
-    MapRoute_80BC2DC(proc->gm_screen->gmroute);
+    MapRoute_0(proc->gm_screen->gmroute);
     if (!(gGMData.state.raw & GM_STATE_NOFADE))
     {
         SetBlendConfig(0, 0, 0, 0);
@@ -1634,7 +1634,7 @@ void ResetWorldMapScreen(void)
 }
 
 //! FE8U = 0x080B9F08
-void NULL_080B9F08(void)
+void NULL_WorldmapMain_0(void)
 {
     nullsub_22();
     return;
@@ -1784,7 +1784,7 @@ void sub_80BA06C(struct Proc8A3DD08 * proc)
 
 // clang-format off
 
-struct ProcCmd CONST_DATA ProcScr_08A3DD08[] =
+struct ProcCmd CONST_DATA ProcScr_WorldmapMain_0[] =
 {
     PROC_YIELD,
     PROC_REPEAT(sub_80BA06C),
@@ -1799,7 +1799,7 @@ void WmMergeFace(int timerMaybe, u8 b, int faceSlot, int fid, int e, int f, int 
 {
     struct WorldMapMainProc * parent = Proc_Find(ProcScr_WorldMapMain);
 
-    struct Proc8A3DD08 * proc = Proc_Start(ProcScr_08A3DD08, parent);
+    struct Proc8A3DD08 * proc = Proc_Start(ProcScr_WorldmapMain_0, parent);
     proc->unk_2c = timerMaybe; // timer?
     proc->unk_30 = b;
     proc->unk_34 = faceSlot; // face slot
@@ -1842,7 +1842,7 @@ void sub_80BA100(struct Proc8A3DD30 * proc)
 
 // clang-format off
 
-struct ProcCmd CONST_DATA ProcScr_08A3DD20[] =
+struct ProcCmd CONST_DATA ProcScr_WorldmapMain_1[] =
 {
     PROC_YIELD,
     PROC_REPEAT(sub_80BA100),
@@ -1858,7 +1858,7 @@ void sub_80BA198(int color)
     int i;
 
     struct WorldMapMainProc * parent = Proc_Find(ProcScr_WorldMapMain);
-    struct Proc8A3DD30 * proc = Proc_Start(ProcScr_08A3DD20, parent);
+    struct Proc8A3DD30 * proc = Proc_Start(ProcScr_WorldmapMain_1, parent);
 
     proc->unk_30 = color & 0x1f;
     proc->unk_2c = 0;
@@ -1903,7 +1903,7 @@ void sub_80BA1F4(struct Proc8A3DD38 * proc)
 
 // clang-format off
 
-struct ProcCmd CONST_DATA ProcScr_08A3DD38[] =
+struct ProcCmd CONST_DATA ProcScr_WorldmapMain_2[] =
 {
     PROC_YIELD,
     PROC_REPEAT(sub_80BA1F4),
@@ -1919,7 +1919,7 @@ void sub_80BA288(int color)
     int i;
 
     struct WorldMapMainProc * parent = Proc_Find(ProcScr_WorldMapMain);
-    struct Proc8A3DD38 * proc = Proc_Start(ProcScr_08A3DD38, parent);
+    struct Proc8A3DD38 * proc = Proc_Start(ProcScr_WorldmapMain_2, parent);
 
     proc->unk_30 = color & 0x1f;
     proc->unk_2c = 0;

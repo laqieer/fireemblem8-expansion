@@ -21,7 +21,7 @@ EWRAM_OVERLAY(banim) u16 * gpBg1ScrollOffset = NULL;
 EWRAM_OVERLAY(banim) u16 gpBg1ScrollOffsetList1[160] = {0};
 EWRAM_OVERLAY(banim) u16 gpBg1ScrollOffsetList2[160] = {0};
 
-EWRAM_OVERLAY(banim) int gUnknown_02020044 = 0;
+EWRAM_OVERLAY(banim) int gEfxlvup_0 = 0;
 
 CONST_DATA struct ProcCmd ProcScr_EfxPartsofScroll[] = {
     PROC_NAME("efxPartsofScroll"),
@@ -109,7 +109,7 @@ void EfxPartsofScroll2CallBack(ProcPtr proc)
     return;
 }
 
-CONST_DATA s16 gUnknown_0875941C[] = {
+CONST_DATA s16 gEfxlvup_1[] = {
     -0x100, -0xEE, -0xDD, -0xCC, -0xBB, -0xAA, -0x99, -0x88,
      -0x77, -0x66, -0x55, -0x44, -0x33, -0x22, -0x22, -0x11,
       0x11,  0x22,  0x22,  0x33,  0x44,  0x55,  0x66,  0x77,
@@ -130,7 +130,7 @@ void EfxPartsofScroll2Main(ProcPtr proc)
 
     for (; i < 0xA0; i++)
     {
-        s16 * src = gUnknown_0875941C;
+        s16 * src = gEfxlvup_1;
         src = src - 0x28;
 
         if (i < 0x28)

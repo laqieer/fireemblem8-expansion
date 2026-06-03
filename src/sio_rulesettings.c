@@ -52,11 +52,11 @@ void sub_80476CC(int idx, int state)
 
     for (i = 0; i < 2; i++)
     {
-        ClearText(&gUnk_Sio_0203DA88[(idx << 1) + i]);
-        Text_SetColor(&gUnk_Sio_0203DA88[(idx << 1) + i], textColorLut[(state + i) & 1]);
-        Text_DrawString(&gUnk_Sio_0203DA88[(idx << 1) + i], GetStringFromIndex(gLinkArenaRuleData[idx].optionTextId[i]));
+        ClearText(&gUnk_Sio_7[(idx << 1) + i]);
+        Text_SetColor(&gUnk_Sio_7[(idx << 1) + i], textColorLut[(state + i) & 1]);
+        Text_DrawString(&gUnk_Sio_7[(idx << 1) + i], GetStringFromIndex(gLinkArenaRuleData[idx].optionTextId[i]));
         PutText(
-            &gUnk_Sio_0203DA88[(idx << 1) + i],
+            &gUnk_Sio_7[(idx << 1) + i],
             TILEMAP_LOCATED(gBG0TilemapBuffer, gLinkArenaRuleData[idx].xPos[i], 6 + idx * 3));
     }
 
@@ -83,10 +83,10 @@ void SioRuleSettings_Init(struct ProcSioRuleSettings * proc)
 
     sub_804C3A4(0);
 
-    Decompress(gUnknown_085AE778, gGenericBuffer);
+    Decompress(gUnkData_15, gGenericBuffer);
     CallARM_FillTileRect(TILEMAP_LOCATED(gBG2TilemapBuffer, 1, 5), gGenericBuffer, TILEREF(0x0, 1));
 
-    SetTextFont(&Font_0203DB64);
+    SetTextFont(&Font_0);
     ResetTextFont();
 
     sub_8043164();
@@ -198,11 +198,11 @@ struct ProcCmd CONST_DATA ProcScr_SIO_RuleSettings[] =
     PROC_CALL(FadeInBlackSpeed20),
     PROC_YIELD,
 
-    PROC_CALL(Clear_0203DDDC),
+    PROC_CALL(Clear_UnkData_0),
 
     PROC_REPEAT(SioRuleSettings_Loop_Main),
 
-    PROC_CALL(Set_0203DDDC),
+    PROC_CALL(Set_UnkData_0),
 
     PROC_CALL(sub_8013F40),
     PROC_YIELD,

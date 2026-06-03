@@ -4,7 +4,7 @@
  * before cpp). Migrated in-place from data/data_99D6DC.s into .data.
  */
 
-u16 Img_0899D6DC[] = INCBIN_U16("graphics/misc/Img_0899D6DC.4bpp.lz");
+u16 Img_UnkData_0[] = INCBIN_U16("graphics/misc/Img_0899D6DC.4bpp.lz");
 u16 Img_99E1A4[] = INCBIN_U16("graphics/misc/Img_99E1A4.4bpp.lz");
 u16 Img_99ED44[] = INCBIN_U16("graphics/misc/Img_99ED44.4bpp.lz");
 u16 Img_99F7D4[] = INCBIN_U16("graphics/misc/Img_99F7D4.4bpp.lz");
@@ -21,6 +21,6 @@ u16 Img_Congratulations[] = INCBIN_U16("graphics/event/Gfx_Congratulations.4bpp.
 u16 Img_MapClear[] = INCBIN_U16("graphics/event/Gfx_MapClear.4bpp.lz");
 u16 Pal_Congratulations[] = INCBIN_U16("graphics/event/Gfx_Congratulations.gbapal", 0, 0x20);
 u16 Pal_MapClear[] = INCBIN_U16("graphics/event/Gfx_MapClear.gbapal", 0, 0x20);
-u8 gUnknown_089A234C[] = INCBIN_U8("graphics/misc/gUnknown_089A234C.4bpp.lz");
-u8 gUnknown_089A27B4[] = INCBIN_U8("graphics/misc/gUnknown_089A27B4.4bpp.lz");
-u16 gUnknown_089A28E0[] = INCBIN_U16("graphics/misc/gUnknown_089A28E0.4bpp");
+u8 gUnkData_27[] = INCBIN_U8("graphics/misc/gUnknown_089A234C.4bpp.lz");
+u8 gUnkData_28[] = INCBIN_U8("graphics/misc/gUnknown_089A27B4.4bpp.lz");
+u16 gUnkData_29[] = INCBIN_U16("graphics/misc/gUnknown_089A28E0.4bpp");

@@ -2,51 +2,51 @@
 #include "anime.h"
 #include "gba_sprites.h"
 
-extern struct AnimSpriteData AnimSprite_08759684[];
-extern struct AnimSpriteData AnimSprite_0875975C[];
-extern struct AnimSpriteData AnimSprite_0875981C[];
-extern struct AnimSpriteData AnimSprite_087598DC[];
-extern struct AnimSpriteData AnimSprite_0875999C[];
-extern struct AnimSpriteData AnimSprite_08759A5C[];
+extern struct AnimSpriteData AnimSprite_Tri_0[];
+extern struct AnimSpriteData AnimSprite_Tri_1[];
+extern struct AnimSpriteData AnimSprite_Tri_2[];
+extern struct AnimSpriteData AnimSprite_Tri_3[];
+extern struct AnimSpriteData AnimSprite_Tri_4[];
+extern struct AnimSpriteData AnimSprite_Tri_5[];
 extern AnimScr AnimScr_TriAtkLeft[];
-extern struct AnimSpriteData AnimSprite_08759B50[];
-extern struct AnimSpriteData AnimSprite_08759C10[];
-extern struct AnimSpriteData AnimSprite_08759CD0[];
-extern struct AnimSpriteData AnimSprite_08759D90[];
+extern struct AnimSpriteData AnimSprite_Tri_6[];
+extern struct AnimSpriteData AnimSprite_Tri_7[];
+extern struct AnimSpriteData AnimSprite_Tri_8[];
+extern struct AnimSpriteData AnimSprite_Tri_9[];
 extern AnimScr AnimScr_TriAtkRight[];
-extern struct AnimSpriteData AnimSprite_08759E7C[];
-extern struct AnimSpriteData AnimSprite_08759EE8[];
+extern struct AnimSpriteData AnimSprite_Tri_10[];
+extern struct AnimSpriteData AnimSprite_Tri_11[];
 extern AnimScr AnimScr_TriKnightOBJ[];
-extern struct AnimSpriteData AnimSprite_08759F0C[];
-extern struct AnimSpriteData AnimSprite_08759F78[];
+extern struct AnimSpriteData AnimSprite_Tri_12[];
+extern struct AnimSpriteData AnimSprite_TriGenerial_0[];
 extern AnimScr AnimScr_TriGenerialLanceOBJ[];
-extern struct AnimSpriteData AnimSprite_08759F9C[];
-extern struct AnimSpriteData AnimSprite_0875A008[];
+extern struct AnimSpriteData AnimSprite_TriGenerial_1[];
+extern struct AnimSpriteData AnimSprite_TriGenerial_2[];
 extern AnimScr AnimScr_TriGenerialAxeOBJ[];
-extern struct AnimSpriteData AnimSprite_0875A034[];
-extern struct AnimSpriteData AnimSprite_0875A094[];
+extern struct AnimSpriteData AnimSprite_TriGenerial_3[];
+extern struct AnimSpriteData AnimSprite_TriGenerialHandAxe[];
 extern AnimScr AnimScr_TriGenerialHandAxeOBJ[];
-extern struct AnimSpriteData AnimSprite_0875A0B8[];
-extern struct AnimSpriteData AnimSprite_0875A118[];
-extern struct AnimSpriteData AnimSprite_0875A184[];
+extern struct AnimSpriteData AnimSprite_Tri_13[];
+extern struct AnimSpriteData AnimSprite_Tri_14[];
+extern struct AnimSpriteData AnimSprite_Tri_15[];
 extern AnimScr AnimScr_TriKnightAtkOBJ[];
-extern struct AnimSpriteData AnimSprite_0875A200[];
-extern struct AnimSpriteData AnimSprite_0875A278[];
-extern struct AnimSpriteData AnimSprite_0875A2FC[];
+extern struct AnimSpriteData AnimSprite_Tri_16[];
+extern struct AnimSpriteData AnimSprite_TriGenerial_4[];
+extern struct AnimSpriteData AnimSprite_TriGenerial_5[];
 extern AnimScr AnimScr_TriGenerialLanceAtkOBJ[];
-extern struct AnimSpriteData AnimSprite_0875A378[];
-extern struct AnimSpriteData AnimSprite_0875A3CC[];
-extern struct AnimSpriteData AnimSprite_0875A450[];
+extern struct AnimSpriteData AnimSprite_TriGenerial_6[];
+extern struct AnimSpriteData AnimSprite_TriGenerial_7[];
+extern struct AnimSpriteData AnimSprite_TriGenerial_8[];
 extern AnimScr AnimScr_TriGenerialAxeAtkOBJ[];
-extern struct AnimSpriteData AnimSprite_0875A4CC[];
-extern struct AnimSpriteData AnimSprite_0875A508[];
-extern struct AnimSpriteData AnimSprite_0875A598[];
-extern struct AnimSpriteData AnimSprite_0875A5B0[];
-extern struct AnimSpriteData AnimSprite_0875A640[];
-extern struct AnimSpriteData AnimSprite_0875A6C4[];
+extern struct AnimSpriteData AnimSprite_TriGenerial_9[];
+extern struct AnimSpriteData AnimSprite_TriGenerialHandAxeAtkOBJ_0[];
+extern struct AnimSpriteData AnimSprite_TriGenerialHandAxeAtkOBJ_1[];
+extern struct AnimSpriteData AnimSprite_TriGenerialHandAxeAtkOBJ_2[];
+extern struct AnimSpriteData AnimSprite_TriGenerialHandAxeAtkOBJ_3[];
+extern struct AnimSpriteData AnimSprite_TriGenerialHandAxeAtkOBJ_4[];
 extern AnimScr AnimScr_TriGenerialHandAxeAtkOBJ[];
 
-struct AnimSpriteData CONST_DATA AnimSprite_08759684[] =
+struct AnimSpriteData CONST_DATA AnimSprite_Tri_0[] =
 {
     { .header = (u32)(ATTR0_SQUARE) | ((u32)(ATTR1_SIZE_16) << 16), .as = { .object = { 0xA20 / 0x20, +0x26, -0x37 } } },
     { .header = (u32)(ATTR0_TALL) | ((u32)(ATTR1_SIZE_8) << 16), .as = { .object = { 0xA60 / 0x20, +0x36, -0x37 } } },
@@ -68,7 +68,7 @@ struct AnimSpriteData CONST_DATA AnimSprite_08759684[] =
     ANIM_SPRITE_END,
 };
 
-struct AnimSpriteData CONST_DATA AnimSprite_0875975C[] =
+struct AnimSpriteData CONST_DATA AnimSprite_Tri_1[] =
 {
     { .header = (u32)(ATTR0_WIDE) | ((u32)(ATTR1_SIZE_32) << 16), .as = { .object = { 0x0019, 34, -60 } } },
     { .header = (u32)(ATTR0_SQUARE) | ((u32)(ATTR1_SIZE_16) << 16), .as = { .object = { 0x001D, 54, -76 } } },
@@ -88,7 +88,7 @@ struct AnimSpriteData CONST_DATA AnimSprite_0875975C[] =
     ANIM_SPRITE_END,
 };
 
-struct AnimSpriteData CONST_DATA AnimSprite_0875981C[] =
+struct AnimSpriteData CONST_DATA AnimSprite_Tri_2[] =
 {
     { .header = (u32)(ATTR0_WIDE) | ((u32)(ATTR1_SIZE_16) << 16), .as = { .object = { 0x0023, 36, -60 } } },
     { .header = (u32)(ATTR0_WIDE) | ((u32)(ATTR1_SIZE_8) << 16), .as = { .object = { 0x0004, 42, -68 } } },
@@ -108,7 +108,7 @@ struct AnimSpriteData CONST_DATA AnimSprite_0875981C[] =
     ANIM_SPRITE_END,
 };
 
-struct AnimSpriteData CONST_DATA AnimSprite_087598DC[] =
+struct AnimSpriteData CONST_DATA AnimSprite_Tri_3[] =
 {
     { .header = (u32)(ATTR0_WIDE) | ((u32)(ATTR1_SIZE_16) << 16), .as = { .object = { 0x0023, 39, -64 } } },
     { .header = (u32)(ATTR0_WIDE) | ((u32)(ATTR1_SIZE_8) << 16), .as = { .object = { 0x0004, 45, -72 } } },
@@ -128,7 +128,7 @@ struct AnimSpriteData CONST_DATA AnimSprite_087598DC[] =
     ANIM_SPRITE_END,
 };
 
-struct AnimSpriteData CONST_DATA AnimSprite_0875999C[] =
+struct AnimSpriteData CONST_DATA AnimSprite_Tri_4[] =
 {
     { .header = (u32)(ATTR0_WIDE) | ((u32)(ATTR1_SIZE_32) << 16), .as = { .object = { 0x000D, 42, -71 } } },
     { .header = (u32)(ATTR0_WIDE) | ((u32)(ATTR1_SIZE_8) << 16), .as = { .object = { 0x0011, 51, -79 } } },
@@ -148,7 +148,7 @@ struct AnimSpriteData CONST_DATA AnimSprite_0875999C[] =
     ANIM_SPRITE_END,
 };
 
-struct AnimSpriteData CONST_DATA AnimSprite_08759A5C[] =
+struct AnimSpriteData CONST_DATA AnimSprite_Tri_5[] =
 {
     { .header = (u32)(ATTR0_SQUARE) | ((u32)(ATTR1_SIZE_16) << 16), .as = { .object = { 0x0051, 58, -89 } } },
     { .header = (u32)(ATTR0_TALL) | ((u32)(ATTR1_SIZE_8) << 16), .as = { .object = { 0x0053, 74, -89 } } },
@@ -172,16 +172,16 @@ struct AnimSpriteData CONST_DATA AnimSprite_08759A5C[] =
 
 AnimScr CONST_DATA AnimScr_TriAtkLeft[] =
 {
-    ANIMSCR_FORCE_SPRITE(AnimSprite_08759684, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875975C, 2),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875981C, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_087598DC, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875999C, 3),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_08759A5C, 10),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_Tri_0, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_Tri_1, 2),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_Tri_2, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_Tri_3, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_Tri_4, 3),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_Tri_5, 10),
     ANIMSCR_BLOCKED,
 };
 
-struct AnimSpriteData CONST_DATA AnimSprite_08759B50[] =
+struct AnimSpriteData CONST_DATA AnimSprite_Tri_6[] =
 {
     { .header = (u32)(ATTR0_WIDE) | ((u32)(ATTR1_SIZE_32) << 16), .as = { .object = { 0x0019, 42, -5 } } },
     { .header = (u32)(ATTR0_SQUARE) | ((u32)(ATTR1_SIZE_16) << 16), .as = { .object = { 0x001D, 62, -21 } } },
@@ -201,7 +201,7 @@ struct AnimSpriteData CONST_DATA AnimSprite_08759B50[] =
     ANIM_SPRITE_END,
 };
 
-struct AnimSpriteData CONST_DATA AnimSprite_08759C10[] =
+struct AnimSpriteData CONST_DATA AnimSprite_Tri_7[] =
 {
     { .header = (u32)(ATTR0_WIDE) | ((u32)(ATTR1_SIZE_32) << 16), .as = { .object = { 0x0019, 48, 1 } } },
     { .header = (u32)(ATTR0_SQUARE) | ((u32)(ATTR1_SIZE_16) << 16), .as = { .object = { 0x001D, 68, -15 } } },
@@ -221,7 +221,7 @@ struct AnimSpriteData CONST_DATA AnimSprite_08759C10[] =
     ANIM_SPRITE_END,
 };
 
-struct AnimSpriteData CONST_DATA AnimSprite_08759CD0[] =
+struct AnimSpriteData CONST_DATA AnimSprite_Tri_8[] =
 {
     { .header = (u32)(ATTR0_WIDE) | ((u32)(ATTR1_SIZE_32) << 16), .as = { .object = { 0x000D, 57, 4 } } },
     { .header = (u32)(ATTR0_WIDE) | ((u32)(ATTR1_SIZE_8) << 16), .as = { .object = { 0x0011, 66, -4 } } },
@@ -241,7 +241,7 @@ struct AnimSpriteData CONST_DATA AnimSprite_08759CD0[] =
     ANIM_SPRITE_END,
 };
 
-struct AnimSpriteData CONST_DATA AnimSprite_08759D90[] =
+struct AnimSpriteData CONST_DATA AnimSprite_Tri_9[] =
 {
     { .header = (u32)(ATTR0_SQUARE) | ((u32)(ATTR1_SIZE_16) << 16), .as = { .object = { 0x0051, 74, -8 } } },
     { .header = (u32)(ATTR0_TALL) | ((u32)(ATTR1_SIZE_8) << 16), .as = { .object = { 0x0053, 90, -8 } } },
@@ -265,14 +265,14 @@ struct AnimSpriteData CONST_DATA AnimSprite_08759D90[] =
 
 AnimScr CONST_DATA AnimScr_TriAtkRight[] =
 {
-    ANIMSCR_FORCE_SPRITE(AnimSprite_08759B50, 2),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_08759C10, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_08759CD0, 2),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_08759D90, 12),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_Tri_6, 2),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_Tri_7, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_Tri_8, 2),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_Tri_9, 12),
     ANIMSCR_BLOCKED,
 };
 
-struct AnimSpriteData CONST_DATA AnimSprite_08759E7C[] =
+struct AnimSpriteData CONST_DATA AnimSprite_Tri_10[] =
 {
     { .header = (u32)(ATTR0_WIDE) | ((u32)(ATTR1_SIZE_32) << 16), .as = { .object = { 0x0000, -12, -24 } } },
     { .header = (u32)(ATTR0_WIDE) | ((u32)(ATTR1_SIZE_32) << 16), .as = { .object = { 0x0006, -21, -8 } } },
@@ -285,7 +285,7 @@ struct AnimSpriteData CONST_DATA AnimSprite_08759E7C[] =
     ANIM_SPRITE_END,
 };
 
-struct AnimSpriteData CONST_DATA AnimSprite_08759EE8[] =
+struct AnimSpriteData CONST_DATA AnimSprite_Tri_11[] =
 {
     { .header = (u32)(ATTR0_SQUARE) | ((u32)(ATTR1_SIZE_8) << 16), .as = { .object = { 0x001F, 0, -8 } } },
     ANIM_SPRITE_END,
@@ -293,12 +293,12 @@ struct AnimSpriteData CONST_DATA AnimSprite_08759EE8[] =
 
 AnimScr CONST_DATA AnimScr_TriKnightOBJ[] =
 {
-    ANIMSCR_FORCE_SPRITE(AnimSprite_08759E7C, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_08759EE8, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_Tri_10, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_Tri_11, 1),
     ANIMSCR_LOOP,
 };
 
-struct AnimSpriteData CONST_DATA AnimSprite_08759F0C[] =
+struct AnimSpriteData CONST_DATA AnimSprite_Tri_12[] =
 {
     { .header = (u32)(ATTR0_WIDE) | ((u32)(ATTR1_SIZE_32) << 16), .as = { .object = { 0x0000, -13, -32 } } },
     { .header = (u32)(ATTR0_WIDE) | ((u32)(ATTR1_SIZE_32) << 16), .as = { .object = { 0x0004, -13, -16 } } },
@@ -311,7 +311,7 @@ struct AnimSpriteData CONST_DATA AnimSprite_08759F0C[] =
     ANIM_SPRITE_END,
 };
 
-struct AnimSpriteData CONST_DATA AnimSprite_08759F78[] =
+struct AnimSpriteData CONST_DATA AnimSprite_TriGenerial_0[] =
 {
     { .header = (u32)(ATTR0_SQUARE) | ((u32)(ATTR1_SIZE_8) << 16), .as = { .object = { 0x001F, 0, -8 } } },
     ANIM_SPRITE_END,
@@ -319,12 +319,12 @@ struct AnimSpriteData CONST_DATA AnimSprite_08759F78[] =
 
 AnimScr CONST_DATA AnimScr_TriGenerialLanceOBJ[] =
 {
-    ANIMSCR_FORCE_SPRITE(AnimSprite_08759F0C, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_08759F78, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_Tri_12, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_TriGenerial_0, 1),
     ANIMSCR_LOOP,
 };
 
-struct AnimSpriteData CONST_DATA AnimSprite_08759F9C[] =
+struct AnimSpriteData CONST_DATA AnimSprite_TriGenerial_1[] =
 {
     { .header = (u32)(ATTR0_WIDE) | ((u32)(ATTR1_SIZE_32) << 16), .as = { .object = { 0x0000, -34, -31 } } },
     { .header = (u32)(ATTR0_SQUARE) | ((u32)(ATTR1_SIZE_16) << 16), .as = { .object = { 0x0004, -2, -31 } } },
@@ -337,7 +337,7 @@ struct AnimSpriteData CONST_DATA AnimSprite_08759F9C[] =
     ANIM_SPRITE_END,
 };
 
-struct AnimSpriteData CONST_DATA AnimSprite_0875A008[] =
+struct AnimSpriteData CONST_DATA AnimSprite_TriGenerial_2[] =
 {
     { .header = (u32)(ATTR0_SQUARE) | ((u32)(ATTR1_SIZE_8) << 16), .as = { .object = { 0x001F, 0, -8 } } },
     ANIM_SPRITE_END,
@@ -345,14 +345,14 @@ struct AnimSpriteData CONST_DATA AnimSprite_0875A008[] =
 
 AnimScr CONST_DATA AnimScr_TriGenerialAxeOBJ[] =
 {
-    ANIMSCR_FORCE_SPRITE(AnimSprite_08759F9C, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A008, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_TriGenerial_1, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_TriGenerial_2, 1),
     ANIMSCR_LOOP,
-    ANIMSCR_FORCE_SPRITE(AnimSprite_08759F9C, 4),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_TriGenerial_1, 4),
     ANIMSCR_LOOP,
 };
 
-struct AnimSpriteData CONST_DATA AnimSprite_0875A034[] =
+struct AnimSpriteData CONST_DATA AnimSprite_TriGenerial_3[] =
 {
     { .header = (u32)(ATTR0_WIDE) | ((u32)(ATTR1_SIZE_32) << 16), .as = { .object = { 0x0000, -12, -32 } } },
     { .header = (u32)(ATTR0_WIDE) | ((u32)(ATTR1_SIZE_32) << 16), .as = { .object = { 0x0004, -12, -16 } } },
@@ -364,7 +364,7 @@ struct AnimSpriteData CONST_DATA AnimSprite_0875A034[] =
     ANIM_SPRITE_END,
 };
 
-struct AnimSpriteData CONST_DATA AnimSprite_0875A094[] =
+struct AnimSpriteData CONST_DATA AnimSprite_TriGenerialHandAxe[] =
 {
     { .header = (u32)(ATTR0_SQUARE) | ((u32)(ATTR1_SIZE_8) << 16), .as = { .object = { 0x001F, 0, -8 } } },
     ANIM_SPRITE_END,
@@ -372,12 +372,12 @@ struct AnimSpriteData CONST_DATA AnimSprite_0875A094[] =
 
 AnimScr CONST_DATA AnimScr_TriGenerialHandAxeOBJ[] =
 {
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A034, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A094, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_TriGenerial_3, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_TriGenerialHandAxe, 1),
     ANIMSCR_LOOP,
 };
 
-struct AnimSpriteData CONST_DATA AnimSprite_0875A0B8[] =
+struct AnimSpriteData CONST_DATA AnimSprite_Tri_13[] =
 {
     { .header = (u32)(ATTR0_WIDE) | ((u32)(ATTR1_SIZE_32) << 16), .as = { .object = { 0x0000, -21, -27 } } },
     { .header = (u32)(ATTR0_WIDE) | ((u32)(ATTR1_SIZE_32) << 16), .as = { .object = { 0x0004, -21, -11 } } },
@@ -389,7 +389,7 @@ struct AnimSpriteData CONST_DATA AnimSprite_0875A0B8[] =
     ANIM_SPRITE_END,
 };
 
-struct AnimSpriteData CONST_DATA AnimSprite_0875A118[] =
+struct AnimSpriteData CONST_DATA AnimSprite_Tri_14[] =
 {
     { .header = (u32)(ATTR0_WIDE) | ((u32)(ATTR1_SIZE_16) << 16), .as = { .object = { 0x0039, -30, 4 } } },
     { .header = (u32)(ATTR0_WIDE) | ((u32)(ATTR1_SIZE_32) << 16), .as = { .object = { 0x0013, -36, -12 } } },
@@ -402,7 +402,7 @@ struct AnimSpriteData CONST_DATA AnimSprite_0875A118[] =
     ANIM_SPRITE_END,
 };
 
-struct AnimSpriteData CONST_DATA AnimSprite_0875A184[] =
+struct AnimSpriteData CONST_DATA AnimSprite_Tri_15[] =
 {
     { .header = (u32)(ATTR0_SQUARE) | ((u32)(ATTR1_SIZE_8) << 16), .as = { .object = { 0x001F, 0, -8 } } },
     ANIM_SPRITE_END,
@@ -410,34 +410,34 @@ struct AnimSpriteData CONST_DATA AnimSprite_0875A184[] =
 
 AnimScr CONST_DATA AnimScr_TriKnightAtkOBJ[] =
 {
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A0B8, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A184, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A0B8, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A184, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A0B8, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A184, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A0B8, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A184, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A0B8, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A184, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A0B8, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A184, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A118, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A184, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A118, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A184, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A118, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A184, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A118, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A184, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A118, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A184, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A118, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A184, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_Tri_13, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_Tri_15, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_Tri_13, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_Tri_15, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_Tri_13, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_Tri_15, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_Tri_13, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_Tri_15, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_Tri_13, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_Tri_15, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_Tri_13, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_Tri_15, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_Tri_14, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_Tri_15, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_Tri_14, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_Tri_15, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_Tri_14, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_Tri_15, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_Tri_14, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_Tri_15, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_Tri_14, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_Tri_15, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_Tri_14, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_Tri_15, 1),
     ANIMSCR_BLOCKED,
 };
 
-struct AnimSpriteData CONST_DATA AnimSprite_0875A200[] =
+struct AnimSpriteData CONST_DATA AnimSprite_Tri_16[] =
 {
     { .header = (u32)(ATTR0_WIDE) | ((u32)(ATTR1_SIZE_32) << 16), .as = { .object = { 0x0000, -32, -16 } } },
     { .header = (u32)(ATTR0_SQUARE) | ((u32)(ATTR1_SIZE_16) << 16), .as = { .object = { 0x0004, 0, -16 } } },
@@ -451,7 +451,7 @@ struct AnimSpriteData CONST_DATA AnimSprite_0875A200[] =
     ANIM_SPRITE_END,
 };
 
-struct AnimSpriteData CONST_DATA AnimSprite_0875A278[] =
+struct AnimSpriteData CONST_DATA AnimSprite_TriGenerial_4[] =
 {
     { .header = (u32)(ATTR0_WIDE) | ((u32)(ATTR1_SIZE_32) << 16), .as = { .object = { 0x0040, -39, 0 } } },
     { .header = (u32)(ATTR0_TALL) | ((u32)(ATTR1_SIZE_8) << 16), .as = { .object = { 0x0044, -7, 0 } } },
@@ -466,7 +466,7 @@ struct AnimSpriteData CONST_DATA AnimSprite_0875A278[] =
     ANIM_SPRITE_END,
 };
 
-struct AnimSpriteData CONST_DATA AnimSprite_0875A2FC[] =
+struct AnimSpriteData CONST_DATA AnimSprite_TriGenerial_5[] =
 {
     { .header = (u32)(ATTR0_SQUARE) | ((u32)(ATTR1_SIZE_8) << 16), .as = { .object = { 0x001F, 0, -8 } } },
     ANIM_SPRITE_END,
@@ -474,34 +474,34 @@ struct AnimSpriteData CONST_DATA AnimSprite_0875A2FC[] =
 
 AnimScr CONST_DATA AnimScr_TriGenerialLanceAtkOBJ[] =
 {
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A200, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A2FC, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A200, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A2FC, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A200, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A2FC, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A200, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A2FC, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A200, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A2FC, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A200, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A2FC, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A278, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A2FC, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A278, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A2FC, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A278, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A2FC, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A278, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A2FC, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A278, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A2FC, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A278, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A2FC, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_Tri_16, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_TriGenerial_5, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_Tri_16, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_TriGenerial_5, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_Tri_16, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_TriGenerial_5, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_Tri_16, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_TriGenerial_5, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_Tri_16, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_TriGenerial_5, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_Tri_16, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_TriGenerial_5, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_TriGenerial_4, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_TriGenerial_5, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_TriGenerial_4, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_TriGenerial_5, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_TriGenerial_4, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_TriGenerial_5, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_TriGenerial_4, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_TriGenerial_5, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_TriGenerial_4, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_TriGenerial_5, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_TriGenerial_4, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_TriGenerial_5, 1),
     ANIMSCR_BLOCKED,
 };
 
-struct AnimSpriteData CONST_DATA AnimSprite_0875A378[] =
+struct AnimSpriteData CONST_DATA AnimSprite_TriGenerial_6[] =
 {
     { .header = (u32)(ATTR0_WIDE) | ((u32)(ATTR1_SIZE_32) << 16), .as = { .object = { 0x0000, -26, -32 } } },
     { .header = (u32)(ATTR0_TALL) | ((u32)(ATTR1_SIZE_8) << 16), .as = { .object = { 0x0004, 6, -32 } } },
@@ -512,7 +512,7 @@ struct AnimSpriteData CONST_DATA AnimSprite_0875A378[] =
     ANIM_SPRITE_END,
 };
 
-struct AnimSpriteData CONST_DATA AnimSprite_0875A3CC[] =
+struct AnimSpriteData CONST_DATA AnimSprite_TriGenerial_7[] =
 {
     { .header = (u32)(ATTR0_WIDE) | ((u32)(ATTR1_SIZE_32) << 16), .as = { .object = { 0x0040, -68, -24 } } },
     { .header = (u32)(ATTR0_WIDE) | ((u32)(ATTR1_SIZE_32) << 16), .as = { .object = { 0x0044, -36, -32 } } },
@@ -527,7 +527,7 @@ struct AnimSpriteData CONST_DATA AnimSprite_0875A3CC[] =
     ANIM_SPRITE_END,
 };
 
-struct AnimSpriteData CONST_DATA AnimSprite_0875A450[] =
+struct AnimSpriteData CONST_DATA AnimSprite_TriGenerial_8[] =
 {
     { .header = (u32)(ATTR0_SQUARE) | ((u32)(ATTR1_SIZE_8) << 16), .as = { .object = { 0x001F, 0, -8 } } },
     ANIM_SPRITE_END,
@@ -535,34 +535,34 @@ struct AnimSpriteData CONST_DATA AnimSprite_0875A450[] =
 
 AnimScr CONST_DATA AnimScr_TriGenerialAxeAtkOBJ[] =
 {
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A378, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A450, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A378, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A450, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A378, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A450, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A378, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A450, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A378, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A450, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A378, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A450, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A3CC, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A450, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A3CC, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A450, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A3CC, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A450, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A3CC, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A450, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A3CC, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A450, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A3CC, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A450, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_TriGenerial_6, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_TriGenerial_8, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_TriGenerial_6, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_TriGenerial_8, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_TriGenerial_6, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_TriGenerial_8, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_TriGenerial_6, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_TriGenerial_8, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_TriGenerial_6, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_TriGenerial_8, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_TriGenerial_6, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_TriGenerial_8, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_TriGenerial_7, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_TriGenerial_8, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_TriGenerial_7, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_TriGenerial_8, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_TriGenerial_7, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_TriGenerial_8, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_TriGenerial_7, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_TriGenerial_8, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_TriGenerial_7, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_TriGenerial_8, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_TriGenerial_7, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_TriGenerial_8, 1),
     ANIMSCR_BLOCKED,
 };
 
-struct AnimSpriteData CONST_DATA AnimSprite_0875A4CC[] =
+struct AnimSpriteData CONST_DATA AnimSprite_TriGenerial_9[] =
 {
     { .header = (u32)(ATTR0_WIDE) | ((u32)(ATTR1_SIZE_32) << 16), .as = { .object = { 0x0000, -17, -32 } } },
     { .header = (u32)(ATTR0_WIDE) | ((u32)(ATTR1_SIZE_32) << 16), .as = { .object = { 0x0004, -17, -16 } } },
@@ -571,7 +571,7 @@ struct AnimSpriteData CONST_DATA AnimSprite_0875A4CC[] =
     ANIM_SPRITE_END,
 };
 
-struct AnimSpriteData CONST_DATA AnimSprite_0875A508[] =
+struct AnimSpriteData CONST_DATA AnimSprite_TriGenerialHandAxeAtkOBJ_0[] =
 {
     { .header = (u32)(ATTR0_WIDE) | ((u32)(ATTR1_SIZE_32) << 16), .as = { .object = { 0x0040, -32, -31 } } },
     { .header = (u32)(ATTR0_WIDE) | ((u32)(ATTR1_SIZE_32) << 16), .as = { .object = { 0x0044, -32, -15 } } },
@@ -587,13 +587,13 @@ struct AnimSpriteData CONST_DATA AnimSprite_0875A508[] =
     ANIM_SPRITE_END,
 };
 
-struct AnimSpriteData CONST_DATA AnimSprite_0875A598[] =
+struct AnimSpriteData CONST_DATA AnimSprite_TriGenerialHandAxeAtkOBJ_1[] =
 {
     { .header = (u32)(ATTR0_SQUARE) | ((u32)(ATTR1_SIZE_8) << 16), .as = { .object = { 0x005F, 0, -8 } } },
     ANIM_SPRITE_END,
 };
 
-struct AnimSpriteData CONST_DATA AnimSprite_0875A5B0[] =
+struct AnimSpriteData CONST_DATA AnimSprite_TriGenerialHandAxeAtkOBJ_2[] =
 {
     { .header = (u32)(ATTR0_WIDE) | ((u32)(ATTR1_SIZE_32) << 16), .as = { .object = { 0x0040, -32, -31 } } },
     { .header = (u32)(ATTR0_WIDE) | ((u32)(ATTR1_SIZE_32) << 16), .as = { .object = { 0x0044, -32, -15 } } },
@@ -609,7 +609,7 @@ struct AnimSpriteData CONST_DATA AnimSprite_0875A5B0[] =
     ANIM_SPRITE_END,
 };
 
-struct AnimSpriteData CONST_DATA AnimSprite_0875A640[] =
+struct AnimSpriteData CONST_DATA AnimSprite_TriGenerialHandAxeAtkOBJ_3[] =
 {
     { .header = (u32)(ATTR0_WIDE) | ((u32)(ATTR1_SIZE_32) << 16), .as = { .object = { 0x0040, -32, -31 } } },
     { .header = (u32)(ATTR0_WIDE) | ((u32)(ATTR1_SIZE_32) << 16), .as = { .object = { 0x0044, -32, -15 } } },
@@ -624,7 +624,7 @@ struct AnimSpriteData CONST_DATA AnimSprite_0875A640[] =
     ANIM_SPRITE_END,
 };
 
-struct AnimSpriteData CONST_DATA AnimSprite_0875A6C4[] =
+struct AnimSpriteData CONST_DATA AnimSprite_TriGenerialHandAxeAtkOBJ_4[] =
 {
     { .header = (u32)(ATTR0_WIDE) | ((u32)(ATTR1_SIZE_32) << 16), .as = { .object = { 0x0040, -32, -31 } } },
     { .header = (u32)(ATTR0_WIDE) | ((u32)(ATTR1_SIZE_32) << 16), .as = { .object = { 0x0044, -32, -15 } } },
@@ -639,29 +639,29 @@ struct AnimSpriteData CONST_DATA AnimSprite_0875A6C4[] =
 
 AnimScr CONST_DATA AnimScr_TriGenerialHandAxeAtkOBJ[] =
 {
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A4CC, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A598, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A4CC, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A598, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A4CC, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A598, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A4CC, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A598, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A4CC, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A598, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A4CC, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A598, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A508, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A598, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A5B0, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A598, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A640, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A598, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A6C4, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A598, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A6C4, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A598, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A6C4, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_0875A598, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_TriGenerial_9, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_TriGenerialHandAxeAtkOBJ_1, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_TriGenerial_9, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_TriGenerialHandAxeAtkOBJ_1, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_TriGenerial_9, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_TriGenerialHandAxeAtkOBJ_1, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_TriGenerial_9, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_TriGenerialHandAxeAtkOBJ_1, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_TriGenerial_9, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_TriGenerialHandAxeAtkOBJ_1, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_TriGenerial_9, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_TriGenerialHandAxeAtkOBJ_1, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_TriGenerialHandAxeAtkOBJ_0, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_TriGenerialHandAxeAtkOBJ_1, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_TriGenerialHandAxeAtkOBJ_2, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_TriGenerialHandAxeAtkOBJ_1, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_TriGenerialHandAxeAtkOBJ_3, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_TriGenerialHandAxeAtkOBJ_1, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_TriGenerialHandAxeAtkOBJ_4, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_TriGenerialHandAxeAtkOBJ_1, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_TriGenerialHandAxeAtkOBJ_4, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_TriGenerialHandAxeAtkOBJ_1, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_TriGenerialHandAxeAtkOBJ_4, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_TriGenerialHandAxeAtkOBJ_1, 1),
     ANIMSCR_BLOCKED,
 };

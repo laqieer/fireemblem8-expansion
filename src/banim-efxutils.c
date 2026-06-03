@@ -14,7 +14,7 @@
 #include "constants/classes.h"
 #include "constants/items.h"
 
-CONST_DATA short gUnknown_0875879C[0x140] = {
+CONST_DATA short gEfxutils_0[0x140] = {
     0,   0,   0,
     1,   1,   1,
     2,   2,
@@ -156,7 +156,7 @@ void sub_8070DBC(u16 * tm, u16 width, u16 height, int pal, int chr)
     }
 }
 
-CONST_DATA u16 gEfxTileRefPals_08758A1C[] = {
+CONST_DATA u16 gEfxTileRefPals_Efxutils_0[] = {
     0xB000, 0xC000, 0xD000, 0xE000, 0xF000,
     0xB000, 0xC000, 0xD000, 0xE000, 0xF000,
 };
@@ -180,7 +180,7 @@ void EfxTmModifyPal(u16 * tm, u16 width, u16 height)
         {
             tileref = _tileref = *_tm;
             tileref = (tileref & 0xFFF)
-                    + gEfxTileRefPals_08758A1C[(u16)(((_tileref >> 0xC) & 0xF) - 6)];
+                    + gEfxTileRefPals_Efxutils_0[(u16)(((_tileref >> 0xC) & 0xF) - 6)];
             *_tm = tileref;
             _tm++;
         }

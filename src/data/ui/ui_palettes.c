@@ -24,7 +24,7 @@ u16 gPal_MapSpriteSepia[] = INCBIN_U16("graphics/misc/gPal_MapSpriteSepia.gbapal
 
 u16 Pal_Text[] = INCBIN_U16("graphics/misc/Pal_Text.gbapal");
 
-u8 gUnknown_0859EF20[] = INCBIN_U8("graphics/misc/gUnknown_0859EF20.4bpp");
+u8 gUiPalettes_0[] = INCBIN_U8("graphics/misc/gUnknown_0859EF20.4bpp");
 
 u16 Pal_HelpBox[] = INCBIN_U16("graphics/misc/Pal_HelpBox.gbapal");
 

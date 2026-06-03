@@ -24,13 +24,13 @@ struct CursorHandProc
 
 // clang-format off
 
-u16 CONST_DATA gSprite_UiCursorHand_08A20B3C[] =
+u16 CONST_DATA gSprite_UiCursorHand_0[] =
 {
     1,
     OAM0_SHAPE_16x16 + OAM0_Y(2), OAM1_SIZE_16x16, 0,
 };
 
-u16 CONST_DATA gSprite_UiCursorHand_08A20B44[] =
+u16 CONST_DATA gSprite_UiCursorHand_1[] =
 {
     1,
     OAM0_SHAPE_16x16 + OAM0_Y(2), OAM1_SIZE_16x16, OAM2_CHR(0x6),
@@ -120,11 +120,11 @@ void UiCursorHand_Loop(struct CursorHandProc * proc)
 
         if (proc->flags[i] & 2)
         {
-            PutSprite(3, proc->x[i] - 12, proc->y[i], gSprite_UiCursorHand_08A20B44, 0);
+            PutSprite(3, proc->x[i] - 12, proc->y[i], gSprite_UiCursorHand_1, 0);
         }
         else
         {
-            PutSprite(3, proc->x[i] - 12, proc->y[i], gSprite_UiCursorHand_08A20B3C, 0);
+            PutSprite(3, proc->x[i] - 12, proc->y[i], gSprite_UiCursorHand_0, 0);
         }
     }
 
@@ -177,7 +177,7 @@ void SetUiCursorHandConfig(int index, int x, int y, u8 flags)
 }
 
 //! FE8U = 0x080ACA4C
-void UiCursorHand_80ACA4C(int index, int a, int b, int c, int d)
+void UiCursorHand_0(int index, int a, int b, int c, int d)
 {
     struct CursorHandProc * proc = Proc_Find(gProcScr_UiCursorHand);
 

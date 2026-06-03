@@ -27,7 +27,7 @@
 #include "constants/items.h"
 
 static u16 ItemBackupEvtBattle;
-extern struct Unknown03000600 gUnknown_03000600[0x40];
+extern struct Unknown03000600 gUnk_38[0x40];
 
 //! FE8U = 0x08011CCC
 void ChangeUnitAi(struct Unit * unit, u8 ai1, u8 ai2, u8 unused)
@@ -663,7 +663,7 @@ void sub_80125C0(struct UnitDefinition * uDef)
 void StoreUnitWordStructs(void)
 {
     int i;
-    struct Unknown03000600 * it = gUnknown_03000600;
+    struct Unknown03000600 * it = gUnk_38;
 
     for (i = FACTION_BLUE + 1; i < FACTION_GREEN; i++)
     {
@@ -691,7 +691,7 @@ void LoadUnitWordStructs(void)
 {
     struct Unknown03000600 * it;
 
-    for (it = gUnknown_03000600; it->pid != 0; it++)
+    for (it = gUnk_38; it->pid != 0; it++)
     {
         struct Unit * unit = GetUnitFromCharId(it->pid);
         unit->xPos = it->x;

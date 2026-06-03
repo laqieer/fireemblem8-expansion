@@ -106,13 +106,13 @@ void PrepUnit_DrawSMSAndObjs(struct ProcPrepUnit *proc)
     /* "Start" button */
     if (0 == ((proc->button_blank >> 2) & 1) && proc->cur_counter) {
         if (CheckInLinkArena())
-            PutSpriteExt(4, 0x80, 0x82,obj_08A18E62, 0x40);
+            PutSpriteExt(4, 0x80, 0x82,obj_PrepUnitselect_1, 0x40);
         else
             PutSpriteExt(4, 0x80, 0x82,Sprite_PrepStartButton, 0x40);
     }
 
     /* "Select" button */
-    PutSpriteExt(4, 0x80, 0x8F, obj_08A18E34, 0x40);
+    PutSpriteExt(4, 0x80, 0x8F, obj_PrepUnitselect_0, 0x40);
 
     SyncUnitSpriteSheet();
 }
@@ -146,11 +146,11 @@ void PrepUnit_InitGfx()
     Prep_DrawChapterGoal(0x6000, 8);
     sub_80950E8(0x6000, 0xF);
 
-    Decompress(gUnknown_08A1B730, (void*)0x06000440);
-    Decompress(gUnknown_08A1B7C8, gGenericBuffer);
+    Decompress(gUnkData_69, (void*)0x06000440);
+    Decompress(gUnkData_70, gGenericBuffer);
     CallARM_FillTileRect(gBG1TilemapBuffer, gGenericBuffer, 0x1000);
 
-    Decompress(gUnknown_08A1D510, (void*)0x6010800);
+    Decompress(gUnkData_79, (void*)0x6010800);
     ApplyPalette(Pal_MapBattleInfoNum, 0x19);
     EnablePaletteSync();
 }
@@ -728,7 +728,7 @@ void sub_809B520(struct ProcPrepUnit *proc)
     proc->list_num_cur = list_num;
 }
 
-CONST_DATA u16 obj_08A18E34[] = {
+CONST_DATA u16 obj_PrepUnitselect_0[] = {
     4,
     0x4000, 0x8000, OAM2_PAL(9) + OAM2_CHR(0x000 / 0x20),
     0x4000, 0x8020, OAM2_PAL(9) + OAM2_CHR(0x080 / 0x20),
@@ -743,7 +743,7 @@ CONST_DATA u16 Sprite_PrepStartButton[] = {
     0x8000, 0x0040, OAM2_PAL(9) + OAM2_CHR(0x260 / 0x20)
 };
 
-CONST_DATA u16 obj_08A18E62[] = {
+CONST_DATA u16 obj_PrepUnitselect_1[] = {
     3,
     0x4000, 0x8000, OAM2_PAL(9) + OAM2_CHR(0x160 / 0x20),
     0x4000, 0x8020, OAM2_PAL(9) + OAM2_CHR(0x280 / 0x20),

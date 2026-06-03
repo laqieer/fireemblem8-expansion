@@ -105,15 +105,15 @@ struct ProcCmd CONST_DATA ProcScr_GmapRM[] = {
     PROC_REPEAT(GmapRm_BlendIn),
 
 PROC_LABEL(GMAPRM_LABEL_0),
-    PROC_CALL(GmapRm_80C2320),
+    PROC_CALL(GmapRm_1),
     PROC_REPEAT(GmapRm_Blocking),
     PROC_CALL(GmapRm_Goto1IfFlag1),
-    PROC_CALL(GmapRm_80C214C),
+    PROC_CALL(GmapRm_0),
     PROC_SLEEP(1),
     PROC_REPEAT(GmapRm_BlendOut),
 
 PROC_LABEL(GMAPRM_LABEL_1),
-    PROC_CALL(GmapRm_80C2398),
+    PROC_CALL(GmapRm_2),
     PROC_END,
 };
 
@@ -193,7 +193,7 @@ void GmapRm_BlendIn(struct ProcGmapRm * proc)
     }
 }
 
-void GmapRm_80C214C(struct ProcGmapRm * proc)
+void GmapRm_0(struct ProcGmapRm * proc)
 {
     Decompress(Img_GmapPath, (void *)BG_VRAM + 0x5000);
     GM_SCREEN->gmroute->flags |= GM_ROUTE_FLAG_2;
@@ -261,7 +261,7 @@ void GmapRm_DisplayLeaderUnit(struct ProcGmapRm * proc)
         GmShowMuUnit(GM_MU, WM_MU_0);
 }
 
-void GmapRm_80C2320(struct ProcGmapRm * proc)
+void GmapRm_1(struct ProcGmapRm * proc)
 {
     UnskipGmNodeIconDisplay(GM_ICON);
     SetBlendConfig(0, 0x10, 0x10, 0);
@@ -277,7 +277,7 @@ void GmapRm_80C2320(struct ProcGmapRm * proc)
     gGMData.state.bits.state_3 = true;
 }
 
-void GmapRm_80C2398(struct ProcGmapRm * proc)
+void GmapRm_2(struct ProcGmapRm * proc)
 {
     SkipGmNodeIconDisplay(GM_ICON);
     SetBlendConfig(0, 0x10, 0x10, 0);
@@ -475,7 +475,7 @@ void GmapRmBorder1_End(struct ProcGmapRmBorder1 * proc)
         EndGmapRmBaPalAnim1();
 }
 
-void GmapRmBorder1_80C2750(struct ProcGmapRmBorder1 * proc)
+void GmapRmBorder1_0(struct ProcGmapRmBorder1 * proc)
 {
     SetBlendTargetA(0, 0, 0, 0, 0);
     SetBlendTargetB(0, 1, 0, 0, 0);
@@ -576,7 +576,7 @@ void GmapRmBorder1_NationMergeIn(struct ProcGmapRmBorder1 * proc)
     }
 }
 
-void GmapRmBorder1_80C28C4(struct ProcGmapRmBorder1 * proc)
+void GmapRmBorder1_1(struct ProcGmapRmBorder1 * proc)
 {
     if (CountProcs(ProcScr_GmapRmBorder1) == 1)
         EndGmapRmBaPalAnim1();
@@ -606,7 +606,7 @@ void GmapRmBorder1_NationMergeOut(struct ProcGmapRmBorder1 * proc)
     }
 }
 
-void GmapRmBorder1_80C2964(struct ProcGmapRmBorder1 * proc)
+void GmapRmBorder1_2(struct ProcGmapRmBorder1 * proc)
 {
     if (CountProcs(ProcScr_GmapRmBorder1) <= 1)
     {
@@ -631,7 +631,7 @@ void GmapRmBorder1_PutSpriteAll(struct ProcGmapRmBorder1 * proc)
     GmapRmBorder1_PutSprite2(proc, x, y, 0);
 }
 
-void GmapRmBorder1_80C29F8(struct ProcGmapRmBorder1 * proc)
+void GmapRmBorder1_3(struct ProcGmapRmBorder1 * proc)
 {
     GmapRmBorder1_PutSpriteAll(proc);
     if (CheckGmapRmBaPalAnim1State())
@@ -641,7 +641,7 @@ void GmapRmBorder1_80C29F8(struct ProcGmapRmBorder1 * proc)
     }
 }
 
-void GmapRmBorder1_80C2A1C(struct ProcGmapRmBorder1 * proc)
+void GmapRmBorder1_4(struct ProcGmapRmBorder1 * proc)
 {
     GmapRmBorder1_PutSpriteAll(proc);
     if (proc->flag)
@@ -652,15 +652,15 @@ struct ProcCmd CONST_DATA ProcScr_GmapRmBorder1[] = {
     PROC_NAME("Gmap RM border"),
     PROC_MARK(PROC_MARK_WMSTUFF),
     PROC_SET_END_CB(GmapRmBorder1_End),
-    PROC_CALL(GmapRmBorder1_80C2750),
+    PROC_CALL(GmapRmBorder1_0),
     PROC_REPEAT(GmapRmBorder1_NationMergeIn),
-    PROC_CALL(GmapRmBorder1_80C2964),
-    PROC_REPEAT(GmapRmBorder1_80C29F8),
+    PROC_CALL(GmapRmBorder1_2),
+    PROC_REPEAT(GmapRmBorder1_3),
 
 PROC_LABEL(1),
-    PROC_REPEAT(GmapRmBorder1_80C2A1C),
-    PROC_REPEAT(GmapRmBorder1_80C29F8),
-    PROC_CALL(GmapRmBorder1_80C28C4),
+    PROC_REPEAT(GmapRmBorder1_4),
+    PROC_REPEAT(GmapRmBorder1_3),
+    PROC_CALL(GmapRmBorder1_1),
     PROC_REPEAT(GmapRmBorder1_NationMergeOut),
     PROC_END,
 };

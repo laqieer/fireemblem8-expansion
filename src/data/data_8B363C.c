@@ -304,53 +304,53 @@ extern const u8 EventScrWM_Ch6_ChapterIntro[];
 extern const u8 EventScrWM_Ch7_ChapterIntro[];
 extern const u8 EventScrWM_Ch8_ChapterIntro[];
 extern const u8 EventScrWM_Ch9a_ChapterIntro[];
-extern const u8 EventScrWM_08A3A9EC[];
-extern const u8 EventScrWM_08A3AB68[];
-extern const u8 EventScrWM_08A3ABC8[];
-extern const u8 EventScrWM_08A3AD40[];
-extern const u8 EventScrWM_08A3B58C[];
-extern const u8 EventScrWM_08A3B678[];
-extern const u8 EventScrWM_08A3B808[];
-extern const u8 EventScrWM_08A3B944[];
-extern const u8 EventScrWM_08A3BAC0[];
-extern const u8 EventScrWM_08A3BC8C[];
-extern const u8 EventScrWM_08A3BD70[];
-extern const u8 EventScrWM_08A3C89C[];
-extern const u8 EventScrWM_08A3AF30[];
-extern const u8 EventScrWM_08A3B10C[];
-extern const u8 EventScrWM_08A3B1F0[];
-extern const u8 EventScrWM_08A3B250[];
-extern const u8 EventScrWM_08A3B338[];
-extern const u8 EventScrWM_08A3BE14[];
-extern const u8 EventScrWM_08A3BFF4[];
-extern const u8 EventScrWM_08A3C184[];
-extern const u8 EventScrWM_08A3C2BC[];
-extern const u8 EventScrWM_08A3C438[];
-extern const u8 EventScrWM_08A3C604[];
-extern const u8 EventScrWM_08A3C6E8[];
-extern const u8 EventScrWM_08A3C8A4[];
-extern const u8 EventScrWM_08A3B46C[];
-extern const u8 EventScrWM_08A3B47C[];
-extern const u8 EventScrWM_08A3B484[];
-extern const u8 EventScrWM_08A3B48C[];
-extern const u8 EventScrWM_08A3B494[];
-extern const u8 EventScrWM_08A3B49C[];
-extern const u8 EventScrWM_08A3B4A4[];
-extern const u8 EventScrWM_08A3B4AC[];
-extern const u8 EventScrWM_08A3B4C4[];
-extern const u8 EventScrWM_08A3B4D4[];
-extern const u8 EventScrWM_08A3B4DC[];
-extern const u8 EventScrWM_08A3B4E4[];
-extern const u8 EventScrWM_08A3B4EC[];
-extern const u8 EventScrWM_08A3B4F4[];
-extern const u8 EventScrWM_08A3B4FC[];
-extern const u8 EventScrWM_08A3B504[];
-extern const u8 EventScrWM_08A3B50C[];
-extern const u8 EventScrWM_08A3B514[];
-extern const u8 EventScrWM_08A3C888[];
-extern const u8 EventScrWM_08A3B460[];
-extern const u8 EventScrWM_08A3C904[];
-extern const u8 EventScrWM_08A3CA2C[];
+extern const u8 EventScrWM_MessedEventscr_1[];
+extern const u8 EventScrWM_MessedEventscr_2[];
+extern const u8 EventScrWM_MessedEventscr_3[];
+extern const u8 EventScrWM_MessedEventscr_4[];
+extern const u8 EventScrWM_MessedEventscr_37[];
+extern const u8 EventScrWM_MessedEventscr_38[];
+extern const u8 EventScrWM_MessedEventscr_39[];
+extern const u8 EventScrWM_MessedEventscr_40[];
+extern const u8 EventScrWM_MessedEventscr_41[];
+extern const u8 EventScrWM_MessedEventscr_42[];
+extern const u8 EventScrWM_MessedEventscr_43[];
+extern const u8 EventScrWM_MessedEventscr_55[];
+extern const u8 EventScrWM_MessedEventscr_5[];
+extern const u8 EventScrWM_MessedEventscr_6[];
+extern const u8 EventScrWM_MessedEventscr_7[];
+extern const u8 EventScrWM_MessedEventscr_8[];
+extern const u8 EventScrWM_MessedEventscr_9[];
+extern const u8 EventScrWM_MessedEventscr_44[];
+extern const u8 EventScrWM_MessedEventscr_45[];
+extern const u8 EventScrWM_MessedEventscr_46[];
+extern const u8 EventScrWM_MessedEventscr_47[];
+extern const u8 EventScrWM_MessedEventscr_48[];
+extern const u8 EventScrWM_MessedEventscr_49[];
+extern const u8 EventScrWM_MessedEventscr_50[];
+extern const u8 EventScrWM_MessedEventscr_56[];
+extern const u8 EventScrWM_MessedEventscr_11[];
+extern const u8 EventScrWM_MessedEventscr_12[];
+extern const u8 EventScrWM_MessedEventscr_13[];
+extern const u8 EventScrWM_MessedEventscr_14[];
+extern const u8 EventScrWM_MessedEventscr_15[];
+extern const u8 EventScrWM_MessedEventscr_16[];
+extern const u8 EventScrWM_MessedEventscr_17[];
+extern const u8 EventScrWM_MessedEventscr_18[];
+extern const u8 EventScrWM_MessedEventscr_23[];
+extern const u8 EventScrWM_MessedEventscr_24[];
+extern const u8 EventScrWM_MessedEventscr_25[];
+extern const u8 EventScrWM_MessedEventscr_26[];
+extern const u8 EventScrWM_MessedEventscr_27[];
+extern const u8 EventScrWM_MessedEventscr_28[];
+extern const u8 EventScrWM_MessedEventscr_29[];
+extern const u8 EventScrWM_MessedEventscr_30[];
+extern const u8 EventScrWM_MessedEventscr_31[];
+extern const u8 EventScrWM_MessedEventscr_32[];
+extern const u8 EventScrWM_MessedEventscr_54[];
+extern const u8 EventScrWM_MessedEventscr_10[];
+extern const u8 EventScrWM_MessedEventscr_57[];
+extern const u8 EventScrWM_MessedEventscr_58[];
 
 const void* gChapterDataAssetTable[] =
 {
@@ -669,51 +669,51 @@ const void * Events_WM_ChapterIntro[] =
     EventScrWM_Ch7_ChapterIntro,
     EventScrWM_Ch8_ChapterIntro,
     EventScrWM_Ch9a_ChapterIntro,
-    EventScrWM_08A3A9EC,
-    EventScrWM_08A3AB68,
-    EventScrWM_08A3ABC8,
-    EventScrWM_08A3AD40,
-    EventScrWM_08A3B58C,
-    EventScrWM_08A3B678,
-    EventScrWM_08A3B808,
-    EventScrWM_08A3B944,
-    EventScrWM_08A3BAC0,
-    EventScrWM_08A3BC8C,
-    EventScrWM_08A3BD70,
-    EventScrWM_08A3C89C,
-    EventScrWM_08A3AF30,
-    EventScrWM_08A3B10C,
-    EventScrWM_08A3B1F0,
-    EventScrWM_08A3B250,
-    EventScrWM_08A3B338,
-    EventScrWM_08A3BE14,
-    EventScrWM_08A3BFF4,
-    EventScrWM_08A3C184,
-    EventScrWM_08A3C2BC,
-    EventScrWM_08A3C438,
-    EventScrWM_08A3C604,
-    EventScrWM_08A3C6E8,
-    EventScrWM_08A3C8A4,
-    EventScrWM_08A3B46C,
-    EventScrWM_08A3B47C,
-    EventScrWM_08A3B484,
-    EventScrWM_08A3B48C,
-    EventScrWM_08A3B494,
-    EventScrWM_08A3B49C,
-    EventScrWM_08A3B4A4,
-    EventScrWM_08A3B4AC,
-    EventScrWM_08A3B4C4,
-    EventScrWM_08A3B4D4,
-    EventScrWM_08A3B4DC,
-    EventScrWM_08A3B4E4,
-    EventScrWM_08A3B4EC,
-    EventScrWM_08A3B4F4,
-    EventScrWM_08A3B4FC,
-    EventScrWM_08A3B504,
-    EventScrWM_08A3B50C,
-    EventScrWM_08A3B514,
-    EventScrWM_08A3C888,
-    EventScrWM_08A3B460,
-    EventScrWM_08A3C904,
-    EventScrWM_08A3CA2C,
+    EventScrWM_MessedEventscr_1,
+    EventScrWM_MessedEventscr_2,
+    EventScrWM_MessedEventscr_3,
+    EventScrWM_MessedEventscr_4,
+    EventScrWM_MessedEventscr_37,
+    EventScrWM_MessedEventscr_38,
+    EventScrWM_MessedEventscr_39,
+    EventScrWM_MessedEventscr_40,
+    EventScrWM_MessedEventscr_41,
+    EventScrWM_MessedEventscr_42,
+    EventScrWM_MessedEventscr_43,
+    EventScrWM_MessedEventscr_55,
+    EventScrWM_MessedEventscr_5,
+    EventScrWM_MessedEventscr_6,
+    EventScrWM_MessedEventscr_7,
+    EventScrWM_MessedEventscr_8,
+    EventScrWM_MessedEventscr_9,
+    EventScrWM_MessedEventscr_44,
+    EventScrWM_MessedEventscr_45,
+    EventScrWM_MessedEventscr_46,
+    EventScrWM_MessedEventscr_47,
+    EventScrWM_MessedEventscr_48,
+    EventScrWM_MessedEventscr_49,
+    EventScrWM_MessedEventscr_50,
+    EventScrWM_MessedEventscr_56,
+    EventScrWM_MessedEventscr_11,
+    EventScrWM_MessedEventscr_12,
+    EventScrWM_MessedEventscr_13,
+    EventScrWM_MessedEventscr_14,
+    EventScrWM_MessedEventscr_15,
+    EventScrWM_MessedEventscr_16,
+    EventScrWM_MessedEventscr_17,
+    EventScrWM_MessedEventscr_18,
+    EventScrWM_MessedEventscr_23,
+    EventScrWM_MessedEventscr_24,
+    EventScrWM_MessedEventscr_25,
+    EventScrWM_MessedEventscr_26,
+    EventScrWM_MessedEventscr_27,
+    EventScrWM_MessedEventscr_28,
+    EventScrWM_MessedEventscr_29,
+    EventScrWM_MessedEventscr_30,
+    EventScrWM_MessedEventscr_31,
+    EventScrWM_MessedEventscr_32,
+    EventScrWM_MessedEventscr_54,
+    EventScrWM_MessedEventscr_10,
+    EventScrWM_MessedEventscr_57,
+    EventScrWM_MessedEventscr_58,
 };

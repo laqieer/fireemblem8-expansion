@@ -392,7 +392,7 @@ void PrepItemScreen_SetupGfx(struct PrepItemScreenProc * proc)
     ForceSyncUnitSpriteSheet();
 
     Decompress(Img_PrepTextShadow, OBJ_CHR_ADDR(0x1F0));
-    UiCursorHand_80ACA4C(0, 0, 0, 208, 60);
+    UiCursorHand_0(0, 0, 0, 208, 60);
     DisplaySysHandCursorTextShadow(0x30 * CHR_SIZE, 1);
 
     RestartMuralBackground();
@@ -1318,7 +1318,7 @@ void sub_8099AF8(struct PrepItemScreenProc * proc)
     Decompress(Tsa_PrepItemScreen, gGenericBuffer);
     CallARM_FillTileRect(TILEMAP_LOCATED(gBG1TilemapBuffer, 0, 0), gGenericBuffer, TILEREF(0x0, 1));
 
-    Decompress(Tsa_08A1B990, gGenericBuffer);
+    Decompress(Tsa_UnkData_4, gGenericBuffer);
     CallARM_FillTileRect(TILEMAP_LOCATED(gBG1TilemapBuffer, 15, 9), gGenericBuffer, TILEREF(0x0, 1));
 
     proc->unitSelected = false;
@@ -2055,7 +2055,7 @@ bool PrepItemScreen_GiveAll(struct Unit * unit)
 // clang-format off
 
 // Unused?
-u16 CONST_DATA gSprite_08A18E1C[] =
+u16 CONST_DATA gSprite_PrepItemscreen_0[] =
 {
     3,
     OAM0_SHAPE_16x8, OAM1_SIZE_16x8, OAM2_LAYER(2),
@@ -2064,7 +2064,7 @@ u16 CONST_DATA gSprite_08A18E1C[] =
 };
 
 // Unused?
-u16 CONST_DATA gUnknown_08A18E30[] =
+u16 CONST_DATA gPrepItemscreen_0[] =
 {
     0x0200, 0x0204,
 };

@@ -43,6 +43,6 @@ void ActionPick(ProcPtr proc);
 void AfterItemUse_SetTargetStatus(void);
 void sub_8030050(void);
 
-extern struct UnitDefinition gUnknown_03001788;
+extern struct UnitDefinition gUnk_39;
 
 #endif // GUARD_BM_USE_MIND_H

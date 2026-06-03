@@ -4,4 +4,4 @@
  * before cpp). Migrated in-place from data/data_FE0000.s into .data.
  */
 
-u8 gUnknown_08FE0000[] = INCBIN_U8("graphics/misc/gUnknown_08FE0000.4bpp");
+u8 gUnkData_109[] = INCBIN_U8("graphics/misc/gUnknown_08FE0000.4bpp");

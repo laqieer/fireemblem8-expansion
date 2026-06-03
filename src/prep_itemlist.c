@@ -69,7 +69,7 @@ void PrepItemList_DrawCurrentOwnerText(struct PrepItemListProc* proc) {
 
     ClearText(PrepItemSuppyTexts.th + 1);
 
-    if (gUnknown_02012F56 <= idx) {
+    if (gPrepscreen_2 <= idx) {
         PutDrawText(PrepItemSuppyTexts.th + 1, gBG0TilemapBuffer + 0x38, 1, 0, 0, GetStringFromIndex(0x536));
     } else {
         int pid = gPrepScreenItemList[proc->idxPerPage[proc->currentPage]].pid;
@@ -90,13 +90,13 @@ void PrepItemList_DrawCurrentOwnerText(struct PrepItemListProc* proc) {
 void List_PutHighlightedCategorySprites(struct PrepItemListProc* proc) {
     int x = proc->currentPage * 12 + 124;
 
-    gPaletteBuffer[0x14D] = *(gUnknown_08A1BD60 + (GetGameClock() >> 2 & 0xf));
+    gPaletteBuffer[0x14D] = *(gUnkData_76 + (GetGameClock() >> 2 & 0xf));
     EnablePaletteSync();
 
-    PutSprite(4, x, 24, gUnknown_08A19608[proc->currentPage], 0x4280);
-    PutSprite(4, x, 24, gUnknown_08A195F8, 0x4280);
+    PutSprite(4, x, 24, gPrepWmSell_1[proc->currentPage], 0x4280);
+    PutSprite(4, x, 24, gPrepWmSell_0, 0x4280);
 
-    UpdateMenuScrollBarConfig(0xc, proc->yOffsetPerPage[proc->currentPage], gUnknown_02012F56, 7);
+    UpdateMenuScrollBarConfig(0xc, proc->yOffsetPerPage[proc->currentPage], gPrepscreen_2, 7);
 
     return;
 }
@@ -137,7 +137,7 @@ void PrepItemList_InitGfx(struct PrepItemListProc * proc)
 
     PutImg_PrepItemUseUnk(0x5000, 5);
 
-    Decompress(gUnknown_08A1B9EC, gGenericBuffer);
+    Decompress(gUnkData_71, gGenericBuffer);
     CallARM_FillTileRect(gBG1TilemapBuffer, gGenericBuffer, 0x1000);
 
     BG_EnableSyncByMask(7);
@@ -189,7 +189,7 @@ void PrepItemList_InitGfx(struct PrepItemListProc * proc)
 
     sub_809D8D4(gBG0TilemapBuffer + 0x6F, 0x4000, 6);
 
-    Decompress(gUnknown_08A19CCC, (void*)0x06015000);
+    Decompress(gUnkData_61, (void*)0x06015000);
     ApplyPalette(Pal_SpinningArrow, 0x14);
 
     StartMenuScrollBarExt(proc, 225, 47, 0x5800, 9);
@@ -281,7 +281,7 @@ void sub_809F150(struct PrepItemListProc * proc)
         return;
     }
 
-    if (gUnknown_02012F56 != 0) {
+    if (gPrepscreen_2 != 0) {
         int item = gPrepScreenItemList[proc->idxPerPage[proc->currentPage]].item;
         StartItemHelpBox(
             0x80,
@@ -372,17 +372,17 @@ void PrepItemList_SwitchPageRight(struct PrepItemListProc* proc) {
 
 //! FE8U = 0x0809F370
 void sub_809F370(struct PrepItemListProc* proc) {
-    if (gUnknown_02012F56 == 0) {
+    if (gPrepscreen_2 == 0) {
         proc->idxPerPage[proc->currentPage] = proc->yOffsetPerPage[proc->currentPage] = 0;
     } else {
-        if (proc->idxPerPage[proc->currentPage] > gUnknown_02012F56 - 1) {
-            proc->idxPerPage[proc->currentPage] = gUnknown_02012F56 - 1;
+        if (proc->idxPerPage[proc->currentPage] > gPrepscreen_2 - 1) {
+            proc->idxPerPage[proc->currentPage] = gPrepscreen_2 - 1;
         }
     }
 
-    if (gUnknown_02012F56 > 6) {
-        if (((proc->yOffsetPerPage[proc->currentPage] >> 4) + 7) > gUnknown_02012F56) {
-            proc->yOffsetPerPage[proc->currentPage] = (gUnknown_02012F56 - 7) * 0x10;
+    if (gPrepscreen_2 > 6) {
+        if (((proc->yOffsetPerPage[proc->currentPage] >> 4) + 7) > gPrepscreen_2) {
+            proc->yOffsetPerPage[proc->currentPage] = (gPrepscreen_2 - 7) * 0x10;
         }
     }
 
@@ -421,7 +421,7 @@ void sub_809F498(struct PrepItemListProc * proc)
 {
     int count = GetUnitItemCount(proc->unit);
 
-    if ((count == UNIT_ITEM_COUNT) || (gUnknown_02012F56 == 0)) {
+    if ((count == UNIT_ITEM_COUNT) || (gPrepscreen_2 == 0)) {
         PlaySoundEffect(SONG_6C);
         return;
     }
@@ -478,7 +478,7 @@ void sub_809F5F4(struct PrepItemListProc* proc) {
     }
 
     if ((proc->idxPerPage[proc->currentPage] * 16 + 40 - proc->yOffsetPerPage[proc->currentPage] > 0x78) &&
-        (proc->idxPerPage[proc->currentPage] != gUnknown_02012F56 - 1)) {
+        (proc->idxPerPage[proc->currentPage] != gPrepscreen_2 - 1)) {
         proc->idxPerPage[proc->currentPage]--;
     }
 
@@ -502,7 +502,7 @@ void PrepItemList_Loop_MainKeyHandler(struct PrepItemListProc * proc)
     if ((proc->yOffsetPerPage[proc->currentPage] & 0xf) == 0) {
         if ((proc->unk_36 == 0) || (proc->unk_36 == 0xff)) {
             if (gKeyStatusPtr->newKeys & R_BUTTON) {
-                if (gUnknown_02012F56 == 0) {
+                if (gPrepscreen_2 == 0) {
                     PlaySoundEffect(SONG_6C);
                     return;
                 } else {
@@ -518,7 +518,7 @@ void PrepItemList_Loop_MainKeyHandler(struct PrepItemListProc * proc)
             }
 
             if (gKeyStatusPtr->newKeys & A_BUTTON) {
-                if (gUnknown_02012F56 == 0) {
+                if (gPrepscreen_2 == 0) {
                     PlaySoundEffect(SONG_6C);
                     return;
                 }
@@ -587,7 +587,7 @@ void PrepItemList_Loop_MainKeyHandler(struct PrepItemListProc * proc)
 
         if ((gKeyStatusPtr->repeatedKeys & DPAD_DOWN) ||
             ((gKeyStatusPtr->heldKeys & DPAD_DOWN) && (proc->scrollAmount == 8))) {
-            if (proc->idxPerPage[proc->currentPage] < gUnknown_02012F56 - 1) {
+            if (proc->idxPerPage[proc->currentPage] < gPrepscreen_2 - 1) {
                 proc->idxPerPage[proc->currentPage]++;
             }
         }
@@ -623,7 +623,7 @@ void PrepItemList_Loop_MainKeyHandler(struct PrepItemListProc * proc)
             PrepItemList_ScrollVertical(proc, -proc->scrollAmount);
         } else {
             if ((proc->idxPerPage[proc->currentPage] * 16 + 40 - proc->yOffsetPerPage[proc->currentPage] > 0x78)
-                && (proc->idxPerPage[proc->currentPage] != gUnknown_02012F56 - 1)) {
+                && (proc->idxPerPage[proc->currentPage] != gPrepscreen_2 - 1)) {
 
                 if (proc->unk_36 != 0) {
                     StartItemHelpBox(

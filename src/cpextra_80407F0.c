@@ -199,7 +199,7 @@ u8 sub_8040AE0(int x, int y) {
     return gBmMapRange[y][x];
 }
 
-const u8 CONST_DATA gUnknown_085A92DC[] = {
+const u8 CONST_DATA gUnkData_3[] = {
     TERRAIN_DOOR, TERRAIN_NONE,
 };
 
@@ -207,7 +207,7 @@ s8 sub_8040B38(struct Unit* unit, struct Vec2* pos) {
 
     sub_8040FBC(unit);
 
-    if (!AiFindClosestTerrainAdjacentPosition(gUnknown_085A92DC, 0, pos)) {
+    if (!AiFindClosestTerrainAdjacentPosition(gUnkData_3, 0, pos)) {
         return 0;
     }
 
@@ -220,14 +220,14 @@ s8 sub_8040B38(struct Unit* unit, struct Vec2* pos) {
     return 1;
 }
 
-const u8 CONST_DATA gUnknown_085A92DE[] = {
+const u8 CONST_DATA gUnkData_4[] = {
     TERRAIN_CHEST_FULL, TERRAIN_NONE,
 };
 
 s8 sub_8040B8C(struct Unit* unit, struct Vec2* pos) {
     sub_8040E98(unit);
 
-    if (AiFindClosestTerrainPosition(gUnknown_085A92DE, 0, pos) == 0) {
+    if (AiFindClosestTerrainPosition(gUnkData_4, 0, pos) == 0) {
         return 0;
     }
 

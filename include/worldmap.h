@@ -641,7 +641,7 @@ void Worlmap_StartGmapSogu(struct WorldMapMainProc * proc);
 void Worlmap_WaitGmapSogu(ProcPtr proc);
 // ??? sub_80B9E64(???);
 void ResetWorldMapScreen(void);
-void NULL_080B9F08(void);
+void NULL_WorldmapMain_0(void);
 void WorldMap_StartArmory(ProcPtr proc);
 void WorldMap_StartVendor(ProcPtr proc);
 void WorldMap_StartSecretShop(ProcPtr proc);
@@ -757,7 +757,7 @@ ProcPtr NewGmapCursor(ProcPtr, int, int, ProcPtr);
 // ??? MapRoute_TransitionLoop(???);
 // ??? MapRoute_TransitionEnd(???);
 void MapRoute_BeginRouteTransition(struct GmRouteProc * proc, int unk);
-void MapRoute_80BC2DC(struct GmRouteProc * proc);
+void MapRoute_0(struct GmRouteProc * proc);
 ProcPtr StartGMapRoute(ProcPtr parent, struct OpenPaths * pPaths, int c, int d);
 // ??? sub_80BC3D4(???);
 // ??? sub_80BC404(???);
@@ -794,7 +794,7 @@ struct GMapNodeLink
     s8 connections[7]; // node IDs of each connected node
 };
 
-extern struct GMapNodeLink gUnknown_0201AFF0[];
+extern struct GMapNodeLink gUnk_10[];
 
 struct Unknown0201B100
 {
@@ -802,7 +802,7 @@ struct Unknown0201B100
     u8 b[0x20];
 };
 
-extern struct Unknown0201B100 gUnknown_0201B100[];
+extern struct Unknown0201B100 gUnk_12[];
 
 struct Unknown0201B0D8
 {
@@ -812,7 +812,7 @@ struct Unknown0201B0D8
     /* 24 */ int unk_24;
 };
 
-extern struct Unknown0201B0D8 gUnknown_0201B0D8;
+extern struct Unknown0201B0D8 gUnk_11;
 
 // ??? GmPathsInit(???);
 bool AddGmPath(struct GMapData*, struct OpenPaths*, int);
@@ -847,14 +847,14 @@ void MapMUPrim_RemoveLinkedMapUnit(struct GMapMuPrimProc *);
 // ??? GmMuPrim_OnInit(???);
 // ??? GmMuPrim_Loop_Null(???);
 // ??? sub_80BD41C(???);
-// ??? GmMuPrim_80BD444(???);
+// ??? GmMuPrim_0(???);
 // ??? sub_80BD5B8(???);
 // ??? sub_80BD660(???);
 // ??? sub_80BD6A8(???);
 // ??? sub_80BD740(???);
-// ??? GmMuPrim_80BD830(???);
-// ??? GmMuPrim_80BD9D8(???);
-// ??? GmMuPrim_80BDA78(???);
+// ??? GmMuPrim_1(???);
+// ??? GmMuPrim_2(???);
+// ??? GmMuPrim_3(???);
 // ??? GmMu_OnEnd_Null(???);
 // ??? GmMu_OnInit(???);
 ProcPtr StartGmMu(ProcPtr);
@@ -871,7 +871,7 @@ void sub_80BE080(struct GMapMuProc *, int, s8);
 void sub_80BE0A4(struct GMapMuProc *, int, s16*, s16*);
 // ??? sub_80BE0C8(???);
 void GmMu_SetSpriteLayer(struct GMapMuProc *, int, int);
-void GmMu_80BE108(struct GMapMuProc *, int, s8);
+void GmMu_0(struct GMapMuProc *, int, s8);
 s8 sub_80BE12C(struct GMapMuProc *, int);
 // ??? sub_80BE194(???);
 void sub_80BE330(struct GMapMuProc * muProc, int index);
@@ -981,9 +981,9 @@ ProcPtr StartGmPalFade_(ProcPtr, int);
 // ??? RestoreBlendState(???);
 // ??? GmapBaseEntry_OnEnd(???);
 // ??? GmapBaseEntry_Init(???);
-// ??? GmapBaseEntry_80BF8CC(???);
-// ??? GmapBaseEntry_80BF988(???);
-// ??? GmapBaseEntry_80BFA1C(???);
+// ??? GmapBaseEntry_0(???);
+// ??? GmapBaseEntry_1(???);
+// ??? GmapBaseEntry_2(???);
 ProcPtr StartGmBaseEntry(int, int, ProcPtr);
 void EndGmBaseEntry(void);
 s8 GmBaseEntryExists(void);
@@ -998,10 +998,10 @@ void sub_80BFD28(void);
 // ??? GmMuEntry_OnEnd_Null(???);
 // ??? GmMuEntry_Init(???);
 // ??? sub_80BFDA0(???);
-// ??? GmMuEntry_80BFEF8(???);
-// ??? GmMuEntry_80BFFD0(???);
-// ??? GmMuEntry_80C0080(???);
-// ??? GmMuEntry_80C0144(???);
+// ??? GmMuEntry_0(???);
+// ??? GmMuEntry_1(???);
+// ??? GmMuEntry_2(???);
+// ??? GmMuEntry_3(???);
 ProcPtr StartGmapMuEntry(ProcPtr);
 void EndGmMuEntry(void);
 // ??? GmMuEntryExists(???);
@@ -1009,7 +1009,7 @@ s8 GetGmMuEntryFlag(void);
 s8 GmMuEntryStartShow(int, int);
 s8 GmMuEntryStartHide(int, int);
 // ??? GmapLineFade_OnEnd(???);
-// ??? GmapLineFade_80C0358(???);
+// ??? GmapLineFade_0(???);
 // ??? GmapLineFade_Init(???);
 // ??? GmapLineFade_Loop(???);
 ProcPtr StartGmapLineFade(int, ProcPtr);
@@ -1041,14 +1041,14 @@ void sub_80C09B8(void);
 // ??? WorldmapStatus_InitGfx(???);
 // ??? WorldmapStatus_Init(???);
 // ??? WorldmapStatus_OnEnd(???);
-// ??? WorldmapStatus_80C0E58(???);
+// ??? WorldmapStatus_0(???);
 // ??? WorldmapStatus_PutTimeAndGold(???);
 // ??? WorldmapStatus_Loop_KeyHandler(???);
-// ??? WorldmapStatus_80C0FA4(???);
+// ??? WorldmapStatus_1(???);
 // ??? GmapEffectPal_OnEnd(???);
 // ??? GmapEffectPal_Init(???);
 // ??? GmapEffectPal_Loop(???);
-// ??? GmapEffect_80C119C(???);
+// ??? GmapEffect_0(???);
 // ??? GmapEffect_OnEnd(???);
 // ??? GmapEffect_Init(???);
 // ??? GmapEffect_Loop(???);
@@ -1122,12 +1122,12 @@ void GmapRm_Goto1IfFlag1(struct ProcGmapRm * proc);
 void GmapRm_Blocking(struct ProcGmapRm * proc);
 void GmapRm_InitBlend(struct ProcGmapRm * proc);
 void GmapRm_BlendIn(struct ProcGmapRm * proc);
-void GmapRm_80C214C(struct ProcGmapRm * proc);
+void GmapRm_0(struct ProcGmapRm * proc);
 void GmapRm_BlendOut(struct ProcGmapRm * proc);
 void GmapRm_RemoveUnits(struct ProcGmapRm * proc);
 void GmapRm_DisplayLeaderUnit(struct ProcGmapRm * proc);
-void GmapRm_80C2320(struct ProcGmapRm * proc);
-void GmapRm_80C2398(struct ProcGmapRm * proc);
+void GmapRm_1(struct ProcGmapRm * proc);
+void GmapRm_2(struct ProcGmapRm * proc);
 ProcPtr StartGmapRm(int x, int y, u32 mask, ProcPtr parent);
 void EndGmapRM(void);
 int GmapRMExists(void);
@@ -1185,15 +1185,15 @@ struct GmMapRmBorderSet {
 extern const struct GmMapRmBorderSet GfxSet_WmNationMap[WM_NATION_MAX];
 
 void GmapRmBorder1_End(struct ProcGmapRmBorder1 * proc);
-void GmapRmBorder1_80C2750(struct ProcGmapRmBorder1 * proc);
+void GmapRmBorder1_0(struct ProcGmapRmBorder1 * proc);
 void GmapRmBorder1_PutSprite2(struct ProcGmapRmBorder1 * proc, int x, int y, bool transparency);
 void GmapRmBorder1_NationMergeIn(struct ProcGmapRmBorder1 * proc);
-void GmapRmBorder1_80C28C4(struct ProcGmapRmBorder1 * proc);
+void GmapRmBorder1_1(struct ProcGmapRmBorder1 * proc);
 void GmapRmBorder1_NationMergeOut(struct ProcGmapRmBorder1 * proc);
-void GmapRmBorder1_80C2964(struct ProcGmapRmBorder1 * proc);
+void GmapRmBorder1_2(struct ProcGmapRmBorder1 * proc);
 void GmapRmBorder1_PutSpriteAll(struct ProcGmapRmBorder1 * proc);
-void GmapRmBorder1_80C29F8(struct ProcGmapRmBorder1 * proc);
-void GmapRmBorder1_80C2A1C(struct ProcGmapRmBorder1 * proc);
+void GmapRmBorder1_3(struct ProcGmapRmBorder1 * proc);
+void GmapRmBorder1_4(struct ProcGmapRmBorder1 * proc);
 // ??? StartGmapRmBorder1(???);
 // ??? DrawWmNationHighLightMapGfx(???);
 ProcPtr WmShowNationHighlightedMap(int, ProcPtr); // FEBuilder: "Display place name of world map"
@@ -1249,15 +1249,15 @@ struct Sub80C33D4
 
 // ??? GmapAutoMu_OnEnd(???);
 // ??? GmapAutoMu_WaitInitialDelay(???);
-// ??? GmapAutoMu_80C31C4(???);
-// ??? GmapAutoMu_80C31E0(???);
-// ??? GmapAutoMu_80C31FC(???);
+// ??? GmapAutoMu_0(???);
+// ??? GmapAutoMu_1(???);
+// ??? GmapAutoMu_2(???);
 // ??? GmapAutoMu_StartFadeIn(???);
 // ??? GmapAutoMu_StartFadeOut(???);
 // ??? GmapAutoMu_WaitForFadeEnd(???);
-// ??? GmapAutoMu_80C3280(???);
-// ??? GmapAutoMu_80C32E4(???);
-// ??? GmapAutoMu_80C3350(???);
+// ??? GmapAutoMu_3(???);
+// ??? GmapAutoMu_4(???);
+// ??? GmapAutoMu_5(???);
 ProcPtr StartGmapAutoMu_Type0(struct Sub80C3378 *, int, ProcPtr);
 ProcPtr StartGmapAutoMu_Type1(struct Sub80C33D4 *, int, ProcPtr);
 void EndGmAutoMuFor(int);
@@ -1296,9 +1296,9 @@ struct GMapRadarProc
 // ??? WmMinimap_PutSkirmishIcons(???);
 // ??? WmMinimap_BlinkPalette(???);
 // ??? PutWmMinimapSprites(???);
-// ??? GMapRadar_80C3A8C(???);
-// ??? GMapRadar_80C3AB8(???);
-// ??? GMapRadar_80C3B40(???);
+// ??? GMapRadar_0(???);
+// ??? GMapRadar_1(???);
+// ??? GMapRadar_2(???);
 // ??? PutWmMinimapGfx(???);
 // ??? GMapRadar_SlideIn(???);
 // ??? GMapRadar_SlideOut(???);
@@ -1337,40 +1337,40 @@ int GetGMapBaseMenuKind(void);
 int GetGMapBaseMenuPid();
 void SetGMapBaseMenuPid(int);
 
-// extern ??? gFont_0201AFC0
-// extern ??? gUnknown_0201AFF0
-// extern ??? gUnknown_0201B0D8
-// extern ??? gUnknown_0201B100
-// extern ??? gUnknown_0201B104
-// extern ??? gUnknown_0201B1E4
-// extern ??? gUnknown_0201B3A4
-// extern ??? gUnknown_0201B430
-// extern ??? gUnknown_0201B458
-// extern ??? gUnknown_0201B718
-// extern ??? gUnknown_0201B71C
-// extern ??? gUnknown_0201B758
-// extern ??? gUnknown_0201B7DA
-// extern ??? gUnknown_0201B864
-// extern ??? gUnknown_0201B930
-// extern ??? gUnknown_0201B958
-// extern ??? gUnknown_0201BBD8
+// extern ??? gFont_0
+// extern ??? gUnk_10
+// extern ??? gUnk_11
+// extern ??? gUnk_12
+// extern ??? gUnk_13
+// extern ??? gUnk_14
+// extern ??? gUnk_15
+// extern ??? gUnk_16
+// extern ??? gUnk_17
+// extern ??? gUnk_18
+// extern ??? gUnk_19
+// extern ??? gUnk_20
+// extern ??? gUnk_21
+// extern ??? gUnk_22
+// extern ??? gUnk_23
+// extern ??? gUnk_24
+// extern ??? gUnk_25
 extern u8 gWmHblankStatus;
-extern u16 gUnknown_0201BE32[480 * 2];
-extern u16 * gUnknown_0201C5B4[];
-extern u16 * gUnknown_0201C5C0[];
-extern u8 gUnknown_0201C5CC[3];
-extern u8 gUnknown_0201C5CF;
-extern u8 gUnknown_0201C5D0;
-extern u8 gUnknown_0201C5D1;
-// extern ??? gUnknown_0201C5D4
+extern u16 gUnk_26[480 * 2];
+extern u16 * gUnk_27[];
+extern u16 * gUnk_28[];
+extern u8 gUnk_29[3];
+extern u8 gUnk_30;
+extern u8 gUnk_31;
+extern u8 gUnk_32;
+// extern ??? gUnk_33
 
 extern struct ProcCmd CONST_DATA ProcScr_WorldMapFaceHolder[];
 // extern ??? ProcScr_WorldMapFaceCtrl
-// extern ??? gUnknown_08A3D728
+// extern ??? gWorldmapMain_0
 // extern ??? ProcScr_WorldMapMain
-// extern ??? ProcScr_08A3DD08
-// extern ??? ProcScr_08A3DD20
-// extern ??? ProcScr_08A3DD38
+// extern ??? ProcScr_WorldmapMain_0
+// extern ??? ProcScr_WorldmapMain_1
+// extern ??? ProcScr_WorldmapMain_2
 // extern ??? gWMSongTable
 // extern ??? ProcScr_GMapScreenVSync
 // extern ??? ProcScr_GMapScreen
@@ -1385,19 +1385,19 @@ extern struct ProcCmd ProcScr_GmNodeIconDisplay[];
 // extern ??? gMenu_WMNodeMenu
 // extern ??? gMenuRect_WMNodeMenuRectA
 // extern ??? gMenuRect_WMNodeMenuRectB
-// extern ??? gUnknown_08A3E22C
-// extern ??? gUnknown_08A3E23C
+// extern ??? gWorldmapMapmu_0
+// extern ??? gWorldmapMapmu_1
 // extern ??? ProcScr_GMapMuPrim
 // extern ??? ProcScr_GMapMu
 // extern ??? gGMapMuSpriteLayerLut
-// extern ??? gUnknown_08A3E2F8
-// extern ??? gUnknown_08A3E31C
-// extern ??? gUnknown_08A3E360
-// extern ??? gUnknown_08A3E38E
-// extern ??? gUnknown_08A3E3BA
-// extern ??? gUnknown_08A3E412
-// extern ??? gUnknown_08A3E448
-// extern ??? gUnknown_08A3E4D4
+// extern ??? gWorldmapMapmu_2
+// extern ??? gWorldmapMapmu_3
+// extern ??? gWorldmapMapmu_4
+// extern ??? gWorldmapMapmu_5
+// extern ??? gWorldmapMapmu_6
+// extern ??? gWorldmapMapmu_7
+// extern ??? gWorldmapPlayerInterface_0
+// extern ??? gWorldmapPlayerInterface_1
 // extern ??? ProcScr_GmMoveCursor
 // extern ??? ProcScr_GmScrollManage
 // extern ??? ProcScr_GmapPalFade
@@ -1409,7 +1409,7 @@ extern struct ProcCmd ProcScr_GmNodeIconDisplay[];
 // extern ??? gHelpInfo_WorldmapStatus
 // extern ??? gBgConfig_WorldmapStatus
 extern struct ProcCmd ProcScr_WorldmapStatusUi[];
-// extern ??? gUnknown_08A3E9A0
+// extern ??? gWorldmapEffect_0
 extern struct ProcCmd ProcScr_GmapEffectPal[];
 extern struct ProcCmd ProcScr_GmapEffect[];
 extern struct ProcCmd ProcScr_GmapSogu[];
@@ -1425,8 +1425,8 @@ extern struct ProcCmd ProcScr_WmDotPalAnim[];
 // extern ??? ProcScr_GmapAutoMu
 // extern ??? Sprite_WmText
 // extern ??? ProcScr_WorldMapTextHandler
-// extern ??? gUnknown_08A3EE6C
-// extern ??? gUnknown_08A3EE70
+// extern ??? gWorldmapRadar_1
+// extern ??? gWorldmapRadar_2
 // extern ??? ProcScr_GmapRader
 // extern ??? ProcScr_WorldmapMinimapWrapper
 // extern ??? ProcScr_GmapBaseMenu

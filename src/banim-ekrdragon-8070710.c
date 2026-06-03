@@ -104,7 +104,7 @@ void sub_8070874(void)
 {
     if (GetBanimDragonStatusType() != EKRDRGON_TYPE_NORMAL && GetBanimDragonStatusType() != EKRDRGON_TYPE_MYRRH)
     {
-        Proc_EndEach(ProcScr_EkrDragon_08758720);
+        Proc_EndEach(ProcScr_EkrDragon_0);
         SetEkrDragonPaletteFront(POS_L);
         SetEkrDragonPaletteBack(POS_L);
     }
@@ -115,7 +115,7 @@ void sub_80708A0(void)
     if (GetBanimDragonStatusType() != EKRDRGON_TYPE_NORMAL && GetBanimDragonStatusType() != EKRDRGON_TYPE_MYRRH)
     {
         struct ProcEkrDragon_08758720 * proc;
-        proc = Proc_Start(ProcScr_EkrDragon_08758720, PROC_TREE_3);
-        proc->unk38 = gUnknown_08758740;
+        proc = Proc_Start(ProcScr_EkrDragon_0, PROC_TREE_3);
+        proc->unk38 = gEkrdragon_0;
     }
 }

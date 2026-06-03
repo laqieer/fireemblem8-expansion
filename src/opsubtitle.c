@@ -205,7 +205,7 @@ void Subtitle_LightFlareFx_Init(struct OpSubtitleProc* proc) {
     proc->unk_4c = 0;
     proc->unk_4e = 0;
 
-    sub_800154C(gBG2TilemapBuffer, Tsa_08B18D68, 0, 5);
+    sub_800154C(gBG2TilemapBuffer, Tsa_UnkData_6, 0, 5);
 
     BG_EnableSyncByMask(BG2_SYNC_BIT);
 
@@ -576,13 +576,13 @@ void sub_80C5104(struct OpSubtitleProc* proc) {
         int coeff = _DivArm1(proc->timer_2c, 46, 0);
 
         sub_80C4BB4(
-            Pal_08B1756C,
+            Pal_UnkData_2,
             PAL_BG(0xF),
             16,
             coeff
         );
     } else {
-        ApplyPalette(Pal_08B1756C, 0xF);
+        ApplyPalette(Pal_UnkData_2, 0xF);
 
         Proc_Break(proc);
 
@@ -607,7 +607,7 @@ void sub_80C51A8(void) {
     return;
 }
 
-struct ProcCmd CONST_DATA gProcScr_08AA2184[] = {
+struct ProcCmd CONST_DATA gProcScr_Opsubtitle_0[] = {
     PROC_SLEEP(0),
 
     PROC_SLEEP(36),
@@ -617,7 +617,7 @@ struct ProcCmd CONST_DATA gProcScr_08AA2184[] = {
     PROC_END,
 };
 
-u16 CONST_DATA gUnknown_08AA21A4[] = {
+u16 CONST_DATA gOpsubtitle_0[] = {
     0x0000, 0x6000, 0,
     0x0000, 0x6800, 0,
     0x0000, 0x7000, 0,
@@ -634,7 +634,7 @@ void OpSubtitle_SetupBackgrounds(void) {
     memset(&gLCDControlBuffer.bg2cnt, 0, 2);
     memset(&gLCDControlBuffer.bg3cnt, 0, 2);
 
-    bgConfig = gUnknown_08AA21A4;
+    bgConfig = gOpsubtitle_0;
 
     for (bg = 0; bg < 4; bg++) {
         SetBackgroundTileDataOffset(bg, *bgConfig++);
@@ -711,7 +711,7 @@ void sub_80C5328(void) {
 //! FE8U = 0x080C5370
 void sub_80C5370(struct OpSubtitleProc* proc) {
     proc->timer_2c = 0;
-    CpuFastCopy(gPaletteBuffer, gUnk_OpSubtitle_0201CDD4, 0x200);
+    CpuFastCopy(gPaletteBuffer, gUnk_OpSubtitle_0, 0x200);
 
     return;
 }
@@ -725,7 +725,7 @@ void sub_80C538C(struct OpSubtitleProc* proc) {
         int coeff = 0x1000 - _DivArm1(proc->timer_2c, 60, 0);
 
         sub_80C4BB4(
-            gUnk_OpSubtitle_0201CDD4,
+            gUnk_OpSubtitle_0,
             gPaletteBuffer,
             0x200,
             coeff
@@ -784,7 +784,7 @@ PROC_LABEL(0), // loop used for the first two "slides"
 
 PROC_LABEL(1),
     PROC_START_CHILD(gProcScr_OpSubtitle_LightFlareFx),
-    PROC_START_CHILD(gProcScr_08AA2184),
+    PROC_START_CHILD(gProcScr_Opsubtitle_0),
 
     PROC_CALL(sub_80C50A0),
     PROC_REPEAT(OpSubtitle_AwaitTimer2a),
@@ -828,7 +828,7 @@ PROC_LABEL(4),
 
 PROC_LABEL(5),
     PROC_END_EACH(gProcScr_OpSubtitle_LightFlareFx),
-    PROC_END_EACH(gProcScr_08AA2184),
+    PROC_END_EACH(gProcScr_Opsubtitle_0),
 
     PROC_CALL(sub_80C5400),
 
@@ -840,7 +840,7 @@ PROC_LABEL(5),
 
 PROC_LABEL(6), // ended due to Start Button press
     PROC_END_EACH(gProcScr_OpSubtitle_LightFlareFx),
-    PROC_END_EACH(gProcScr_08AA2184),
+    PROC_END_EACH(gProcScr_Opsubtitle_0),
 
     PROC_CALL(StartFastFadeToBlack),
     PROC_REPEAT(WaitForFade),

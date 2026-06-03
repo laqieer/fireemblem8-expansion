@@ -120,9 +120,9 @@ void ekrBaStart_InitScreen(struct ProcEkrBattleStarting * proc);
 void ekrBaStart_SreenFailIn(struct ProcEkrBattleStarting * proc);
 void ekrBaStart_InitBattleScreen(struct ProcEkrBattleStarting * proc);
 void ekrBaStart_ExecEkrBattle6C(struct ProcEkrBattleStarting * proc);
-void ekrBaStart_8055FE8(struct ProcEkrBattleStarting * proc);
-void ekrBaStart_8056024(struct ProcEkrBattleStarting * proc);
-void ekrBaStart_8056078(struct ProcEkrBattleStarting * proc);
+void ekrBaStart_0(struct ProcEkrBattleStarting * proc);
+void ekrBaStart_1(struct ProcEkrBattleStarting * proc);
+void ekrBaStart_2(struct ProcEkrBattleStarting * proc);
 
 struct ProcEkrBattleEnding {
     PROC_HEADER;
@@ -144,14 +144,14 @@ struct ProcEkrBattleEnding {
 };
 
 void NewEkrbattleending(void);
-void ekrBattleEnding_80560F0(struct ProcEkrBattleEnding * proc);
-void ekrBattleEnding_8056170(struct ProcEkrBattleEnding * proc);
-void ekrBattleEnding_80561C8(struct ProcEkrBattleEnding * proc);
-void ekrBattleEnding_8056228(struct ProcEkrBattleEnding * proc);
-void ekrBattleEnding_8056288(struct ProcEkrBattleEnding * proc);
-void ekrBattleEnding_8056310(struct ProcEkrBattleEnding * proc);
-void ekrBattleEnding_8056390(struct ProcEkrBattleEnding * proc);
-void ekrBattleEnding_8056484(struct ProcEkrBattleEnding * proc);
+void ekrBattleEnding_0(struct ProcEkrBattleEnding * proc);
+void ekrBattleEnding_1(struct ProcEkrBattleEnding * proc);
+void ekrBattleEnding_2(struct ProcEkrBattleEnding * proc);
+void ekrBattleEnding_3(struct ProcEkrBattleEnding * proc);
+void ekrBattleEnding_4(struct ProcEkrBattleEnding * proc);
+void ekrBattleEnding_5(struct ProcEkrBattleEnding * proc);
+void ekrBattleEnding_6(struct ProcEkrBattleEnding * proc);
+void ekrBattleEnding_7(struct ProcEkrBattleEnding * proc);
 
 struct ProcEkrBaseKaiten {
     PROC_HEADER;
@@ -404,7 +404,7 @@ extern struct BattleUnit *gpEkrBattleUnitRight;
 extern struct Font gBanimFont;
 
 extern struct Anim *gAnims[4];
-extern void *gUnknown_02000010[2];
+extern void *gEkrbattle_0[2];
 extern int gEkrDebugUnk2;
 extern int gCtrlC01Blocking;
 
@@ -416,8 +416,8 @@ extern s16 gEkrYPosReal[2];
 extern u16 gEkrXPosBase[2];
 extern u16 gEkrYPosBase[2];
 extern struct Vec2 gEkrBg0QuakeVec;
-extern void *gUnknown_0200003C[2];
-extern void *gUnknown_02000044[2];
+extern void *gEkrbattle_1[2];
+extern void *gEkrbattle_2[2];
 extern void *gBanimTerrainPaletteMaybe[2];
 extern u16 *gpEfxUnitPaletteBackup[2];
 extern int *gpBanimModesLeft;
@@ -433,11 +433,11 @@ extern u32 gBanimOamr2[0x1600];
 extern u16 gEfxPal[];
 extern u16 gEfxTerrainPalette[];
 extern u16 gObjBuf_EkrSideHitDmgCrit[];
-extern u8 gUnk_Banim_02016DC8[];
-extern u8 gUnk_Banim_02016E48[0x200];
-extern u8 gUnk_Banim_02017048[0x200];
-extern u8 gUnk_Banim_02017248[0x200];
-extern u8 gUnk_Banim_02017448[0x200];
+extern u8 gUnk_Banim_Ekrbattle_1[];
+extern u8 gUnk_Banim_Ekrbattle_2[0x200];
+extern u8 gUnk_Banim_Ekrbattle_3[0x200];
+extern u8 gUnk_Banim_Ekrbattle_4[0x200];
+extern u8 gUnk_Banim_Ekrbattle_5[0x200];
 extern struct Text gBanimText[20];
 extern u16 gEkrGaugeDecoder[];
 extern u32 gEkrBattleEndFlag;
@@ -478,13 +478,13 @@ extern s16 gBanimUniquePaletteDisabled[2];
 
 extern u8 gBanimScrLeft[];
 extern u8 gBanimScrRight[];
-extern u8 gUnk_Banim_020145C8[];
+extern u8 gUnk_Banim_Ekrbattle_0[];
 extern u32 gBanimDoneFlag[];
 extern u32 gEkrBgPosition;
 extern ProcPtr gpProcEfxAnimeDrv;
 extern const void *gpImgSheet[2];
 extern struct ProcEfxBGCOL * gpProcEkrTogiColor;
-extern int gUnk_Banim_0201FB28;
+extern int gUnk_Banim_Ekrbattle_10;
 extern int gEkrBg2ScrollFlip;
 extern u16 * gpBg2ScrollOffsetStart;
 extern u16 * gpBg2ScrollOffset;
@@ -495,7 +495,7 @@ extern u16 * gpBg1ScrollOffsetStart;
 extern u16 * gpBg1ScrollOffset;
 extern u16 gpBg1ScrollOffsetList1[];
 extern u16 gpBg1ScrollOffsetList2[];
-extern int gUnknown_02020044;
+extern int gEfxlvup_0;
 
 extern int gEkrMainBgmPlaying;
 extern int gEfxSoundSeExist;
@@ -505,18 +505,18 @@ extern struct ProcCmd gProc_ekrBattleDeamon[];
 extern struct ProcCmd gProc_ekrBattle[];
 extern struct ProcCmd ProcScr_ekrLvupFan[];
 extern struct ProcCmd ProcScr_ekrGauge[];
-extern u8 gUnknown_085B93D0[];
-extern u8 gUnknown_085B940C[];
-extern u8 gUnknown_085B9424[];
-extern u8 gUnknown_085B949C[];
-extern u8 gUnknown_085B94F0[];
-extern u8 gUnknown_085B9544[];
-extern u16 gUnknown_085B955C[];
-extern u16 gUnknown_085B9574[];
-extern u16 gUnknown_085B958C[];
-extern u16 gUnknown_085B95A4[];
-extern u16 gUnknown_085B95BC[];
-extern u16 gUnknown_085B95D4[];
+extern u8 gEkrgauge_0[];
+extern u8 gEkrgauge_1[];
+extern u8 gEkrgauge_2[];
+extern u8 gEkrgauge_3[];
+extern u8 gEkrgauge_4[];
+extern u8 gEkrgauge_5[];
+extern u16 gEkrgauge_6[];
+extern u16 gEkrgauge_7[];
+extern u16 gEkrgauge_8[];
+extern u16 gEkrgauge_9[];
+extern u16 gEkrgauge_10[];
+extern u16 gEkrgauge_11[];
 extern struct ProcCmd gProc_ekrDispUP[];
 extern struct ProcCmd ProcScr_efxHPBar[];
 extern struct ProcCmd ProcScr_EfxHpBarResire[];
@@ -552,17 +552,17 @@ extern struct ProcCmd ProcScr_efxSPDQuake[];
 extern struct ProcCmd ProcScr_ekrBattleStarting[];
 extern struct ProcCmd ProcScr_ekrBattleEnding[];
 extern struct ProcCmd ProcScr_EkrBaseKaiten[];
-extern const u8 * CONST_DATA Imgs_085B9B84[];
-extern const u8 * CONST_DATA Imgs_085B9BA4[];
-extern u32 * AnimScrs_085B9BC4[];
-extern u32 * AnimScrs_085B9BE4[];
-extern u32 * AnimScrs_085B9C04[];
-extern u32 * AnimScrs_085B9C24[];
-extern u32 * AnimScrs_085B9C44[];
-extern u32 * AnimScrs_085B9C64[];
-extern const u16 * CONST_DATA gUnknown_085B9C84[];
-extern const u16 * CONST_DATA gUnknown_085B9CA4[];
-extern const u16 * CONST_DATA gUnknown_085B9CC4[];
+extern const u8 * CONST_DATA Imgs_Ekrbattleintro_0[];
+extern const u8 * CONST_DATA Imgs_Ekrbattleintro_1[];
+extern u32 * AnimScrs_Ekrbattleintro_0[];
+extern u32 * AnimScrs_Ekrbattleintro_1[];
+extern u32 * AnimScrs_Ekrbattleintro_2[];
+extern u32 * AnimScrs_Ekrbattleintro_3[];
+extern u32 * AnimScrs_Ekrbattleintro_4[];
+extern u32 * AnimScrs_Ekrbattleintro_5[];
+extern const u16 * CONST_DATA gEkrbattleintro_1[];
+extern const u16 * CONST_DATA gEkrbattleintro_2[];
+extern const u16 * CONST_DATA gEkrbattleintro_3[];
 extern struct ProcCmd ProcScr_ekrUnitKakudai[];
 
 extern AnimScr BanimScr_DefaultAnim[];
@@ -575,52 +575,52 @@ extern struct ProcCmd gProc_ekrTogiEnd[];
 extern struct ProcCmd gProc_ekrTogiColor[];
 
 extern const s16 gEfxNoDmgBgShakeOff[];
-// extern ??? gUnknown_080DA4BA
+// extern ??? gEfxbattle_0
 extern const s16 gEfxQuakeVecs[];
-// extern ??? gUnknown_080DA526
+// extern ??? gEfxbattle_1
 extern const s16 gEfxQuakeVecs2[];
-// extern ??? gUnknown_080DA5BA
-// extern ??? gUnknown_080DA604
-// extern ??? gUnknown_080DA66E
-// extern ??? gUnknown_080DA9F8
-// extern ??? gUnknown_080DAA8E
+// extern ??? gEfxbattle_2
+// extern ??? gEfxbattle_3
+// extern ??? gEfxbattle_4
+// extern ??? gEfxbattle_5
+// extern ??? gEfxbattle_6
 extern const u16 gFrameLut_EfxHPBarColorChange1[];
 extern const u16 gFrameLut_EfxHPBarColorChange2[];
 extern const u16 gFrameLut_EfxStatusUnit[];
 extern const u16 gFrameLut_EfxWeaponIcon[];
-extern const u16 gUnknown_080DAE8C[];
-extern const u16 gUnknown_080DAE96[];
-extern const u16 gUnknown_080DAEA0[];
-extern const u16 gUnknown_080DAEAA[];
-extern const u16 gUnknown_080DAEB4[];
-extern const u16 gUnknown_080DAEBE[];
-extern const u16 gUnknown_080DAEC8[];
-extern const u16 gUnknown_080DAED2[];
-extern const u16 gUnknown_080DAEDC[];
-extern const u16 gUnknown_080DAEE6[];
+extern const u16 gBattleparse_0[];
+extern const u16 gBattleparse_1[];
+extern const u16 gBattleparse_2[];
+extern const u16 gBattleparse_3[];
+extern const u16 gBattleparse_4[];
+extern const u16 gBattleparse_5[];
+extern const u16 gBattleparse_6[];
+extern const u16 gBattleparse_7[];
+extern const u16 gBattleparse_8[];
+extern const u16 gBattleparse_9[];
 extern const u8 BanimDefaultStandingTypes[5];
 extern const u8 BanimTypesPosLeft[5];
 extern const u8 BanimTypesPosRight[5];
 extern const u16 BanimLeftDefaultPos[5];
-extern u16 gUnknown_080DAF60[];
-extern const u8 Img_080DB034[];
-extern const u8 Img_080DB538[];
-extern const u8 Img_080DB9C4[];
-extern const u8 Img_080DBE1C[];
-extern const u8 Img_080DC350[];
-extern const u16 Pal_080DC85C[2];
+extern u16 gUnkData_1[];
+extern const u8 Img_ConstDataDB034_0[];
+extern const u8 Img_ConstDataDB034_1[];
+extern const u8 Img_ConstDataDB034_2[];
+extern const u8 Img_ConstDataDB034_3[];
+extern const u8 Img_ConstDataDB034_4[];
+extern const u16 Pal_NewEkrBaseKaiten[2];
 extern const u16 FrameConfig_AnimaHitBG[];
-// extern ??? gFrameConfig_080DD1F4
-// extern ??? gUnknown_080DD8C6
-// extern ??? gUnknown_080DD8CC
-// extern ??? gUnknown_080DD8D2
-// extern ??? gUnknown_080DD8D8
-// extern ??? gUnknown_080DD8EE
-// extern ??? gUnknown_080DD930
-// extern ??? gUnknown_080DD972
-// extern ??? gUnknown_080DD9A4
+// extern ??? gFrameConfig_EfxmagicNosferatu_0
+// extern ??? gEfxmagicHealstaves_0
+// extern ??? gEfxmagicHealstaves_1
+// extern ??? gEfxmagicHealstaves_2
+// extern ??? gEfxmagicHealstaves_3
+// extern ??? gEfxmagicHealstaves_4
+// extern ??? gEfxmagicHealstaves_5
+// extern ??? gEfxmagicHealstaves_6
+// extern ??? gEfxmagicHealstaves_7
 // extern ??? gUnknown_080DE5E4
-// extern ??? gUnknown_080DE624
+// extern ??? gEfxmagicIvaldi_0
 // extern ??? gUnknown_080DE8A0
 // extern ??? gUnknown_080DE8C0
 // extern ??? gUnknown_080DE8DC
@@ -653,107 +653,107 @@ extern const u16 FrameConf_EfxMagdhisEffectBG[];
 extern const u16 FrameConf_EfxChillEffectBG[];
 extern const u16 FrameConf_EfxChillEffectBGCOL[];
 
-extern CONST_DATA struct BattleAnimDef AnimConf_088AEFD8[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AEFE4[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AEFF0[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AEFFC[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF008[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF018[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF028[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF038[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF048[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF054[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF060[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF080[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF0A0[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF0AC[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF0B8[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF0C4[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF0D0[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF0EC[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF108[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF114[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF120[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF12C[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF138[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF144[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF150[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF168[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF180[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF198[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF1B0[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF1C0[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF1D0[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF1DC[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF1E8[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF1F8[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF208[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF214[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF220[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF234[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF248[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF260[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF278[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF290[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF2A8[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF2C0[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF2D8[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF2EC[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF300[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF318[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF330[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF348[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF360[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF36C[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF38C[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF3AC[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF3B8[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF3D0[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF3E4[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF3F0[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF3FC[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF408[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF420[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF434[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF44C[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF468[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF480[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF498[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF4B0[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF4C4[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF4D0[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF4DC[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF4E8[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF4F8[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF504[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF510[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF528[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF53C[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF548[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF560[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF56C[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF578[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF588[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF594[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF5A4[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF5B0[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF5BC[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF5C8[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF5E0[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF5EC[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF5F8[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF610[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF62C[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF640[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF654[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF668[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF674[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF680[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF68C[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF6A4[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF6BC[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF6C8[];
-extern CONST_DATA struct BattleAnimDef AnimConf_088AF6E0[];
+extern CONST_DATA struct BattleAnimDef AnimConf_0[];
+extern CONST_DATA struct BattleAnimDef AnimConf_1[];
+extern CONST_DATA struct BattleAnimDef AnimConf_2[];
+extern CONST_DATA struct BattleAnimDef AnimConf_3[];
+extern CONST_DATA struct BattleAnimDef AnimConf_4[];
+extern CONST_DATA struct BattleAnimDef AnimConf_5[];
+extern CONST_DATA struct BattleAnimDef AnimConf_6[];
+extern CONST_DATA struct BattleAnimDef AnimConf_7[];
+extern CONST_DATA struct BattleAnimDef AnimConf_8[];
+extern CONST_DATA struct BattleAnimDef AnimConf_9[];
+extern CONST_DATA struct BattleAnimDef AnimConf_10[];
+extern CONST_DATA struct BattleAnimDef AnimConf_11[];
+extern CONST_DATA struct BattleAnimDef AnimConf_12[];
+extern CONST_DATA struct BattleAnimDef AnimConf_13[];
+extern CONST_DATA struct BattleAnimDef AnimConf_14[];
+extern CONST_DATA struct BattleAnimDef AnimConf_15[];
+extern CONST_DATA struct BattleAnimDef AnimConf_16[];
+extern CONST_DATA struct BattleAnimDef AnimConf_17[];
+extern CONST_DATA struct BattleAnimDef AnimConf_18[];
+extern CONST_DATA struct BattleAnimDef AnimConf_19[];
+extern CONST_DATA struct BattleAnimDef AnimConf_20[];
+extern CONST_DATA struct BattleAnimDef AnimConf_21[];
+extern CONST_DATA struct BattleAnimDef AnimConf_22[];
+extern CONST_DATA struct BattleAnimDef AnimConf_23[];
+extern CONST_DATA struct BattleAnimDef AnimConf_24[];
+extern CONST_DATA struct BattleAnimDef AnimConf_25[];
+extern CONST_DATA struct BattleAnimDef AnimConf_26[];
+extern CONST_DATA struct BattleAnimDef AnimConf_27[];
+extern CONST_DATA struct BattleAnimDef AnimConf_28[];
+extern CONST_DATA struct BattleAnimDef AnimConf_29[];
+extern CONST_DATA struct BattleAnimDef AnimConf_30[];
+extern CONST_DATA struct BattleAnimDef AnimConf_31[];
+extern CONST_DATA struct BattleAnimDef AnimConf_32[];
+extern CONST_DATA struct BattleAnimDef AnimConf_33[];
+extern CONST_DATA struct BattleAnimDef AnimConf_34[];
+extern CONST_DATA struct BattleAnimDef AnimConf_35[];
+extern CONST_DATA struct BattleAnimDef AnimConf_36[];
+extern CONST_DATA struct BattleAnimDef AnimConf_37[];
+extern CONST_DATA struct BattleAnimDef AnimConf_38[];
+extern CONST_DATA struct BattleAnimDef AnimConf_39[];
+extern CONST_DATA struct BattleAnimDef AnimConf_40[];
+extern CONST_DATA struct BattleAnimDef AnimConf_41[];
+extern CONST_DATA struct BattleAnimDef AnimConf_42[];
+extern CONST_DATA struct BattleAnimDef AnimConf_43[];
+extern CONST_DATA struct BattleAnimDef AnimConf_44[];
+extern CONST_DATA struct BattleAnimDef AnimConf_45[];
+extern CONST_DATA struct BattleAnimDef AnimConf_46[];
+extern CONST_DATA struct BattleAnimDef AnimConf_47[];
+extern CONST_DATA struct BattleAnimDef AnimConf_48[];
+extern CONST_DATA struct BattleAnimDef AnimConf_49[];
+extern CONST_DATA struct BattleAnimDef AnimConf_50[];
+extern CONST_DATA struct BattleAnimDef AnimConf_51[];
+extern CONST_DATA struct BattleAnimDef AnimConf_52[];
+extern CONST_DATA struct BattleAnimDef AnimConf_53[];
+extern CONST_DATA struct BattleAnimDef AnimConf_54[];
+extern CONST_DATA struct BattleAnimDef AnimConf_55[];
+extern CONST_DATA struct BattleAnimDef AnimConf_56[];
+extern CONST_DATA struct BattleAnimDef AnimConf_57[];
+extern CONST_DATA struct BattleAnimDef AnimConf_58[];
+extern CONST_DATA struct BattleAnimDef AnimConf_59[];
+extern CONST_DATA struct BattleAnimDef AnimConf_60[];
+extern CONST_DATA struct BattleAnimDef AnimConf_61[];
+extern CONST_DATA struct BattleAnimDef AnimConf_62[];
+extern CONST_DATA struct BattleAnimDef AnimConf_63[];
+extern CONST_DATA struct BattleAnimDef AnimConf_64[];
+extern CONST_DATA struct BattleAnimDef AnimConf_65[];
+extern CONST_DATA struct BattleAnimDef AnimConf_66[];
+extern CONST_DATA struct BattleAnimDef AnimConf_67[];
+extern CONST_DATA struct BattleAnimDef AnimConf_68[];
+extern CONST_DATA struct BattleAnimDef AnimConf_69[];
+extern CONST_DATA struct BattleAnimDef AnimConf_70[];
+extern CONST_DATA struct BattleAnimDef AnimConf_71[];
+extern CONST_DATA struct BattleAnimDef AnimConf_72[];
+extern CONST_DATA struct BattleAnimDef AnimConf_73[];
+extern CONST_DATA struct BattleAnimDef AnimConf_74[];
+extern CONST_DATA struct BattleAnimDef AnimConf_75[];
+extern CONST_DATA struct BattleAnimDef AnimConf_76[];
+extern CONST_DATA struct BattleAnimDef AnimConf_77[];
+extern CONST_DATA struct BattleAnimDef AnimConf_78[];
+extern CONST_DATA struct BattleAnimDef AnimConf_79[];
+extern CONST_DATA struct BattleAnimDef AnimConf_80[];
+extern CONST_DATA struct BattleAnimDef AnimConf_81[];
+extern CONST_DATA struct BattleAnimDef AnimConf_82[];
+extern CONST_DATA struct BattleAnimDef AnimConf_83[];
+extern CONST_DATA struct BattleAnimDef AnimConf_84[];
+extern CONST_DATA struct BattleAnimDef AnimConf_85[];
+extern CONST_DATA struct BattleAnimDef AnimConf_86[];
+extern CONST_DATA struct BattleAnimDef AnimConf_87[];
+extern CONST_DATA struct BattleAnimDef AnimConf_88[];
+extern CONST_DATA struct BattleAnimDef AnimConf_89[];
+extern CONST_DATA struct BattleAnimDef AnimConf_90[];
+extern CONST_DATA struct BattleAnimDef AnimConf_91[];
+extern CONST_DATA struct BattleAnimDef AnimConf_92[];
+extern CONST_DATA struct BattleAnimDef AnimConf_93[];
+extern CONST_DATA struct BattleAnimDef AnimConf_94[];
+extern CONST_DATA struct BattleAnimDef AnimConf_95[];
+extern CONST_DATA struct BattleAnimDef AnimConf_96[];
+extern CONST_DATA struct BattleAnimDef AnimConf_97[];
+extern CONST_DATA struct BattleAnimDef AnimConf_98[];
+extern CONST_DATA struct BattleAnimDef AnimConf_99[];
+extern CONST_DATA struct BattleAnimDef AnimConf_100[];
 
 extern struct BattleAnimDef * gUnitSpecificBanimConfigs[];
 
@@ -772,29 +772,29 @@ void MainUpdateEkrBattle(void);
 // ??? ekrBattleMain(???);
 void ekrBattle_HandlePreEventMaybe(struct ProcEkrBattle * proc);
 void ekrBattleWaitPreEvent(struct ProcEkrBattle * proc);
-void ekrBattle_8050134(struct ProcEkrBattle * proc);
+void ekrBattle_0(struct ProcEkrBattle * proc);
 void ekrBattlePrepareDragonIntro(struct ProcEkrBattle * proc);
 void ekrBattleExecDragonIntro(struct ProcEkrBattle * proc);
 void ekrBattleWaitDragonIntro(struct ProcEkrBattle * proc);
 void ekrBattlePostEkrDragonIntro(struct ProcEkrBattle * proc);
-void ekrBattle_8050290(struct ProcEkrBattle * proc);
+void ekrBattle_1(struct ProcEkrBattle * proc);
 void ekrBattleSetFlashingEffect(struct ProcEkrBattle * proc);
 void ekrBattleExecTriangleAtk(struct ProcEkrBattle * proc);
 void ekrBattleWaitTriangleIdle(struct ProcEkrBattle * proc);
 void ekrBattleTriggerNewRoundStart(struct ProcEkrBattle * proc);
-void ekrBattle_80503EC(struct ProcEkrBattle * proc);
+void ekrBattle_2(struct ProcEkrBattle * proc);
 void ekrBattle_StartPromotion(struct ProcEkrBattle * proc);
 void ekrBattle_WaitPromotionIdle(struct ProcEkrBattle * proc);
 void ekrBattleInRoundIdle(struct ProcEkrBattle * proc);
 void ekrBattleOnBattleEnd(struct ProcEkrBattle * proc);
-void ekrBattle_8050600(struct ProcEkrBattle * proc);
+void ekrBattle_3(struct ProcEkrBattle * proc);
 void ekrBattle_WaitForPostBattleAct(struct ProcEkrBattle * proc);
 void ekrBattleExecExpGain(struct ProcEkrBattle * proc);
-void ekrBattle_80508F0(struct ProcEkrBattle * proc);
-void ekrBattle_8050940(struct ProcEkrBattle * proc);
+void ekrBattle_4(struct ProcEkrBattle * proc);
+void ekrBattle_5(struct ProcEkrBattle * proc);
 void ekrBattleWaitExpBarIdle(struct ProcEkrBattle * proc);
 void ekrBattlePostExpBarIdle(struct ProcEkrBattle * proc);
-void ekrBattle_8050AB8(struct ProcEkrBattle * proc);
+void ekrBattle_6(struct ProcEkrBattle * proc);
 void ekrBattleLvupHanlder(struct ProcEkrBattle * proc);
 void ekrBattle_ExecEkrLvup(struct ProcEkrBattle * proc);
 void ekrBattle_WaitEkrLvupIdle(struct ProcEkrBattle * proc);
@@ -880,7 +880,7 @@ bool sub_8055BB4(void);
 s8 sub_8055BC4(void);
 void BeginAnimsOnBattleAnimations(void);
 void EkrMainEndExec(void);
-void MainUpdate_8055C68(void);
+void MainUpdate_0(void);
 
 void EkrPrepareBanimfx(struct Anim * anim, u16);
 s16 GetEfxHp(int index);

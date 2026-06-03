@@ -268,7 +268,7 @@ struct ProcCmd CONST_DATA gProcScr_TalkPutSpriteText_Unused[] =
     PROC_END,
 };
 
-struct ProcCmd CONST_DATA ProcScr_0859160C[] =
+struct ProcCmd CONST_DATA ProcScr_Scene_0[] =
 {
     PROC_SET_END_CB(sub_8008F54),
     PROC_WHILE(sub_8008F3C),
@@ -276,7 +276,7 @@ struct ProcCmd CONST_DATA ProcScr_0859160C[] =
     PROC_END,
 };
 
-struct ProcCmd CONST_DATA ProcScr_08591624[] =
+struct ProcCmd CONST_DATA ProcScr_Scene_1[] =
 {
     PROC_CALL(sub_8008FAC),
     PROC_REPEAT(sub_8008FB4),
@@ -339,7 +339,7 @@ void InitSpriteTalk(int chr, int lines, int palId) {
     SetTextFont(&sTalkFont);
     SetTextFontGlyphs(TEXT_GLYPHS_TALK);
 
-    ApplyPalette(gUnknown_0859EF20, palId + 0x10);
+    ApplyPalette(gUiPalettes_0, palId + 0x10);
 
     PAL_OBJ_COLOR(palId, 4) = RGB(7, 18, 28);
     PAL_OBJ_COLOR(palId, 14) = RGB(14, 13, 12);
@@ -2467,7 +2467,7 @@ void TalkBgSync(int bg) {
 
 //! FE8U = 0x08008F3C
 bool sub_8008F3C(void) {
-    if (Proc_Find(ProcScr_08591624))
+    if (Proc_Find(ProcScr_Scene_1))
         return true;
 
 #if BUGFIX
@@ -2478,19 +2478,19 @@ bool sub_8008F3C(void) {
 //! FE8U = 0x08008F54
 void sub_8008F54(void)
 {
-    Proc_EndEach(ProcScr_08591624);
+    Proc_EndEach(ProcScr_Scene_1);
     return;
 }
 
 //! FE8U = 0x08008F64
 void sub_8008F64(int chr, int b, int c, ProcPtr parent)
 {
-    struct TalkDebugProc * proc = Proc_Start(ProcScr_08591624, PROC_TREE_VSYNC);
+    struct TalkDebugProc * proc = Proc_Start(ProcScr_Scene_1, PROC_TREE_VSYNC);
 
     proc->unk_4c = (0x3FF & chr) * CHR_SIZE + 0x06010000;
     proc->unk_54 = b;
     proc->unk_58 = c;
-    Proc_StartBlocking(ProcScr_0859160C, parent);
+    Proc_StartBlocking(ProcScr_Scene_0, parent);
 
     return;
 }

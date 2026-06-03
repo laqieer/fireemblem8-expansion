@@ -24,13 +24,13 @@ void sub_80C8608(struct Proc * proc);
 void sub_80C8638(struct Proc * proc);
 void sub_80C8684(struct Proc * proc);
 
-struct ProcCmd gUnknown_08AA704C[] =
+struct ProcCmd gUnkData_97[] =
 {
     PROC_REPEAT(sub_80C8554),
     PROC_END,
 };
 
-struct ProcCmd gUnknown_08AA705C[] =
+struct ProcCmd gUnkData_98[] =
 {
     PROC_SET_END_CB(sub_80C85FC),
     PROC_CALL(sub_80C8580),
@@ -38,7 +38,7 @@ struct ProcCmd gUnknown_08AA705C[] =
     PROC_END,
 };
 
-struct ProcCmd gUnknown_08AA707C[] =
+struct ProcCmd gUnkData_99[] =
 {
     PROC_SET_END_CB(sub_80C8684),
     PROC_CALL(sub_80C8608),
@@ -46,11 +46,11 @@ struct ProcCmd gUnknown_08AA707C[] =
     PROC_END,
 };
 
-u16 gUnknown_08AA709C[] = INCBIN_U16("graphics/misc/gUnknown_08AA709C.4bpp");
+u16 gUnkData_100[] = INCBIN_U16("graphics/misc/gUnknown_08AA709C.4bpp");
 
-u16 gUnknown_08AA70BC[] = INCBIN_U16("graphics/misc/gUnknown_08AA70BC.4bpp");
+u16 gUnkData_101[] = INCBIN_U16("graphics/misc/gUnknown_08AA70BC.4bpp");
 
-struct OamObjectList gUnknown_08AA70DC =
+struct OamObjectList gUnkData_102 =
 {
     2,
     {
@@ -59,7 +59,7 @@ struct OamObjectList gUnknown_08AA70DC =
     },
 };
 
-struct OamObjectList gUnknown_08AA70EA =
+struct OamObjectList gUnkData_103 =
 {
     7,
     {
@@ -73,7 +73,7 @@ struct OamObjectList gUnknown_08AA70EA =
     },
 };
 
-struct OamObjectList gUnknown_08AA7116 =
+struct OamObjectList gUnkData_104 =
 {
     3,
     {
@@ -83,7 +83,7 @@ struct OamObjectList gUnknown_08AA7116 =
     },
 };
 
-struct OamObjectList gUnknown_08AA712A =
+struct OamObjectList gUnkData_105 =
 {
     8,
     {
@@ -98,7 +98,7 @@ struct OamObjectList gUnknown_08AA712A =
     },
 };
 
-struct OamObjectList gUnknown_08AA715C =
+struct OamObjectList gUnkData_106 =
 {
     9,
     {
@@ -119,7 +119,7 @@ struct
     u16 count;
     struct OamObject objects[8];
     u16 terminator;
-} __attribute__((packed)) gUnknown_08AA7194 =
+} __attribute__((packed)) gUnkData_107 =
 {
     8,
     {

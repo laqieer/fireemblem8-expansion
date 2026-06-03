@@ -184,6 +184,6 @@ extern struct PopupInstruction CONST_DATA PopupScr_WpnBroken[];
 extern struct PopupInstruction CONST_DATA PopupScr_WRankUp[];
 extern struct PopupInstruction CONST_DATA PopupScr_NewAlly[];
 extern struct ProcCmd CONST_DATA ProcScr_BrownTextBox[];
-extern struct ProcCmd CONST_DATA ProcScr_08592530[];
+extern struct ProcCmd CONST_DATA ProcScr_Popup_0[];
 
 #endif /* GUARD_POPUP_H */

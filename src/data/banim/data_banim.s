@@ -10,392 +10,392 @@ Img_TeonoOBJ:  @ 0x085D9C5C
 Pal_TeonoOBJ:  @ 0x085DA05C
 	.incbin "./graphics/efxmagic/Img_EfxTeonoOBJ.gbapal", 0x0, 0x20
 
-.global AnimSprite_EfxTeonoObj_085DA07C
-AnimSprite_EfxTeonoObj_085DA07C:
+.global AnimSprite_EfxTeonoObj_TeonoO
+AnimSprite_EfxTeonoObj_TeonoO:
 	ANIM_SPRITE ATTR0_WIDE, ATTR1_SIZE_32, 0x0008, -18, -4
 	ANIM_SPRITE_END
 
-.global AnimSprite_EfxTeonoObj_085DA094
-AnimSprite_EfxTeonoObj_085DA094:
+.global AnimSprite_EfxTeonoObj_TeonoObj_0
+AnimSprite_EfxTeonoObj_TeonoObj_0:
 	ANIM_SPRITE ATTR0_WIDE, ATTR1_SIZE_32, 0x0000, -41, 1
 	ANIM_SPRITE_END
 
-.global AnimSprite_EfxTeonoObj_085DA0AC
-AnimSprite_EfxTeonoObj_085DA0AC:
+.global AnimSprite_EfxTeonoObj_TeonoObj_1
+AnimSprite_EfxTeonoObj_TeonoObj_1:
 	ANIM_SPRITE ATTR0_WIDE, ATTR1_SIZE_32, 0x0004, -59, 3
 	ANIM_SPRITE_END
 
-.global AnimSprite_EfxTeonoObj_085DA0C4
-AnimSprite_EfxTeonoObj_085DA0C4:
+.global AnimSprite_EfxTeonoObj_TeonoObj_2
+AnimSprite_EfxTeonoObj_TeonoObj_2:
 	ANIM_SPRITE ATTR0_WIDE, ATTR1_SIZE_32, 0x0008, -75, 3
 	ANIM_SPRITE_END
 
-.global AnimSprite_EfxTeonoObj_085DA0DC
-AnimSprite_EfxTeonoObj_085DA0DC:
+.global AnimSprite_EfxTeonoObj_TeonoObj_3
+AnimSprite_EfxTeonoObj_TeonoObj_3:
 	ANIM_SPRITE ATTR0_WIDE, ATTR1_SIZE_32, 0x0000, -91, 3
 	ANIM_SPRITE_END
 
-.global AnimSprite_EfxTeonoObj_085DA0F4
-AnimSprite_EfxTeonoObj_085DA0F4:
+.global AnimSprite_EfxTeonoObj_TeonoObjCloseRight_0
+AnimSprite_EfxTeonoObj_TeonoObjCloseRight_0:
 	ANIM_SPRITE ATTR0_WIDE, ATTR1_SIZE_32, 0x0004, -101, -1
 	ANIM_SPRITE_END
 
-.global AnimSprite_EfxTeonoObj_085DA10C
-AnimSprite_EfxTeonoObj_085DA10C:
+.global AnimSprite_EfxTeonoObj_TeonoObjCloseRight_1
+AnimSprite_EfxTeonoObj_TeonoObjCloseRight_1:
 	ANIM_SPRITE ATTR0_WIDE, ATTR1_SIZE_32, 0x0008, -104, -4
 	ANIM_SPRITE_END
 
-.global AnimSprite_EfxTeonoObj_085DA124
-AnimSprite_EfxTeonoObj_085DA124:
+.global AnimSprite_EfxTeonoObj_TeonoObjCloseRight_2
+AnimSprite_EfxTeonoObj_TeonoObjCloseRight_2:
 	ANIM_SPRITE ATTR0_WIDE, ATTR1_SIZE_32, 0x0000, -110, -7
 	ANIM_SPRITE_END
 
-.global AnimSprite_EfxTeonoObj_085DA13C
-AnimSprite_EfxTeonoObj_085DA13C:
+.global AnimSprite_EfxTeonoObj_TeonoObjCloseRight_3
+AnimSprite_EfxTeonoObj_TeonoObjCloseRight_3:
 	ANIM_SPRITE ATTR0_WIDE, ATTR1_SIZE_32, 0x0004, -117, -10
 	ANIM_SPRITE_END
 
-.global AnimSprite_EfxTeonoObj_085DA154
-AnimSprite_EfxTeonoObj_085DA154:
+.global AnimSprite_EfxTeonoObj_TeonoObjCloseRight_4
+AnimSprite_EfxTeonoObj_TeonoObjCloseRight_4:
 	ANIM_SPRITE ATTR0_WIDE, ATTR1_SIZE_32, 0x0008, -121, -16
 	ANIM_SPRITE_END
 
-.global AnimSprite_EfxTeonoObj_085DA16C
-AnimSprite_EfxTeonoObj_085DA16C:
+.global AnimSprite_EfxTeonoObj_TeonoObjCloseRight_5
+AnimSprite_EfxTeonoObj_TeonoObjCloseRight_5:
 	ANIM_SPRITE ATTR0_SQUARE, ATTR1_SIZE_16, 0x0040, -114, -18
 	ANIM_SPRITE ATTR0_TALL, ATTR1_SIZE_8, 0x0042, -98, -18
 	ANIM_SPRITE_END
 
-.global AnimSprite_EfxTeonoObj_085DA190
-AnimSprite_EfxTeonoObj_085DA190:
+.global AnimSprite_EfxTeonoObj_0
+AnimSprite_EfxTeonoObj_0:
 	ANIM_SPRITE ATTR0_WIDE, ATTR1_SIZE_8, 0x0043, -109, -22
 	ANIM_SPRITE ATTR0_SQUARE, ATTR1_SIZE_8, 0x0045, -93, -22
 	ANIM_SPRITE_END
 
-.global AnimSprite_EfxTeonoObj_085DA1B4
-AnimSprite_EfxTeonoObj_085DA1B4:
+.global AnimSprite_EfxTeonoObj_TeonoObj_4
+AnimSprite_EfxTeonoObj_TeonoObj_4:
 	ANIM_SPRITE ATTR0_WIDE, ATTR1_SIZE_8, 0x0012, -101, -24
 	ANIM_SPRITE ATTR0_SQUARE, ATTR1_SIZE_8, 0x0014, -85, -24
 	ANIM_SPRITE_END
 
-.global AnimSprite_EfxTeonoObj_085DA1D8
-AnimSprite_EfxTeonoObj_085DA1D8:
+.global AnimSprite_EfxTeonoObj_TeonoObj_5
+AnimSprite_EfxTeonoObj_TeonoObj_5:
 	ANIM_SPRITE ATTR0_WIDE, ATTR1_SIZE_8, 0x000C, -94, -25
 	ANIM_SPRITE ATTR0_SQUARE, ATTR1_SIZE_8, 0x000E, -78, -25
 	ANIM_SPRITE_END
 
-.global AnimSprite_EfxTeonoObj_085DA1FC
-AnimSprite_EfxTeonoObj_085DA1FC:
+.global AnimSprite_EfxTeonoObj_TeonoObj_6
+AnimSprite_EfxTeonoObj_TeonoObj_6:
 	ANIM_SPRITE ATTR0_WIDE, ATTR1_SIZE_8, 0x000F, -83, -26
 	ANIM_SPRITE ATTR0_SQUARE, ATTR1_SIZE_8, 0x0011, -67, -26
 	ANIM_SPRITE_END
 
-.global AnimSprite_EfxTeonoObj_085DA220
-AnimSprite_EfxTeonoObj_085DA220:
+.global AnimSprite_EfxTeonoObj_TeonoObj_7
+AnimSprite_EfxTeonoObj_TeonoObj_7:
 	ANIM_SPRITE ATTR0_WIDE, ATTR1_SIZE_8, 0x0012, -72, -26
 	ANIM_SPRITE ATTR0_SQUARE, ATTR1_SIZE_8, 0x0014, -56, -26
 	ANIM_SPRITE_END
 
-.global AnimSprite_EfxTeonoObj_085DA244
-AnimSprite_EfxTeonoObj_085DA244:
+.global AnimSprite_EfxTeonoObj_TeonoObj_8
+AnimSprite_EfxTeonoObj_TeonoObj_8:
 	ANIM_SPRITE ATTR0_WIDE, ATTR1_SIZE_8, 0x000C, -56, -26
 	ANIM_SPRITE ATTR0_SQUARE, ATTR1_SIZE_8, 0x000E, -40, -26
 	ANIM_SPRITE_END
 
-.global AnimSprite_EfxTeonoObj_085DA268
-AnimSprite_EfxTeonoObj_085DA268:
+.global AnimSprite_EfxTeonoObj_TeonoObj_9
+AnimSprite_EfxTeonoObj_TeonoObj_9:
 	ANIM_SPRITE ATTR0_WIDE, ATTR1_SIZE_8, 0x000F, -46, -26
 	ANIM_SPRITE ATTR0_SQUARE, ATTR1_SIZE_8, 0x0011, -30, -26
 	ANIM_SPRITE_END
 
-.global AnimSprite_EfxTeonoObj_085DA28C
-AnimSprite_EfxTeonoObj_085DA28C:
+.global AnimSprite_EfxTeonoObj_TeonoObj_10
+AnimSprite_EfxTeonoObj_TeonoObj_10:
 	ANIM_SPRITE ATTR0_WIDE, ATTR1_SIZE_8, 0x0012, -33, -25
 	ANIM_SPRITE ATTR0_SQUARE, ATTR1_SIZE_8, 0x0014, -17, -25
 	ANIM_SPRITE_END
 
-.global AnimSprite_EfxTeonoObj_085DA2B0
-AnimSprite_EfxTeonoObj_085DA2B0:
+.global AnimSprite_EfxTeonoObj_TeonoObj_11
+AnimSprite_EfxTeonoObj_TeonoObj_11:
 	ANIM_SPRITE ATTR0_WIDE, ATTR1_SIZE_8, 0x0046, -22, -21
 	ANIM_SPRITE ATTR0_SQUARE, ATTR1_SIZE_8, 0x0048, -6, -21
 	ANIM_SPRITE_END
 
-.global AnimSprite_EfxTeonoObj_085DA2D4
-AnimSprite_EfxTeonoObj_085DA2D4:
+.global AnimSprite_EfxTeonoObj_TeonoObj_12
+AnimSprite_EfxTeonoObj_TeonoObj_12:
 	ANIM_SPRITE ATTR0_SQUARE, ATTR1_SIZE_16, 0x0049, -9, -18
 	ANIM_SPRITE ATTR0_TALL, ATTR1_SIZE_8, 0x004B, 7, -18
 	ANIM_SPRITE_END
 
-.global AnimSprite_EfxTeonoObj_085DA2F8
-AnimSprite_EfxTeonoObj_085DA2F8:
+.global AnimSprite_EfxTeonoObj_TeonoObj_13
+AnimSprite_EfxTeonoObj_TeonoObj_13:
 	ANIM_SPRITE ATTR0_WIDE, ATTR1_SIZE_32, 0x0008, -5, -10
 	ANIM_SPRITE_END
 
-.global AnimSprite_EfxTeonoObj_085DA310
-AnimSprite_EfxTeonoObj_085DA310:
+.global AnimSprite_EfxTeonoObj_TeonoObjFarRight_0
+AnimSprite_EfxTeonoObj_TeonoObjFarRight_0:
 	ANIM_SPRITE ATTR0_WIDE, ATTR1_SIZE_32, 0x0000, -106, 1
 	ANIM_SPRITE_END
 
-.global AnimSprite_EfxTeonoObj_085DA328
-AnimSprite_EfxTeonoObj_085DA328:
+.global AnimSprite_EfxTeonoObj_TeonoObjFarRight_1
+AnimSprite_EfxTeonoObj_TeonoObjFarRight_1:
 	ANIM_SPRITE ATTR0_WIDE, ATTR1_SIZE_32, 0x0000, -127, -3
 	ANIM_SPRITE_END
 
-.global AnimSprite_EfxTeonoObj_085DA340
-AnimSprite_EfxTeonoObj_085DA340:
+.global AnimSprite_EfxTeonoObj_TeonoObj2Right
+AnimSprite_EfxTeonoObj_TeonoObj2Right:
 	ANIM_SPRITE ATTR0_WIDE, ATTR1_SIZE_8, 0x0043, -126, -18
 	ANIM_SPRITE ATTR0_SQUARE, ATTR1_SIZE_8, 0x0045, -110, -18
 	ANIM_SPRITE_END
 
 	.global AnimScr_TeonoObjCloseRight
 AnimScr_TeonoObjCloseRight:  @ 0x085DA364
-    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeonoObj_085DA07C, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeonoObj_085DA094, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeonoObj_085DA0AC, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeonoObj_085DA0C4, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeonoObj_085DA0DC, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeonoObj_085DA0F4, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeonoObj_085DA10C, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeonoObj_085DA124, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeonoObj_085DA13C, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeonoObj_085DA154, 3
-    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeonoObj_085DA16C, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeonoObj_085DA190, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeonoObj_085DA1B4, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeonoObj_085DA1D8, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeonoObj_085DA1FC, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeonoObj_085DA220, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeonoObj_085DA244, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeonoObj_085DA268, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeonoObj_085DA28C, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeonoObj_085DA2B0, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeonoObj_085DA2D4, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeonoObj_085DA2F8, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeonoObj_TeonoO, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeonoObj_TeonoObj_0, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeonoObj_TeonoObj_1, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeonoObj_TeonoObj_2, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeonoObj_TeonoObj_3, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeonoObj_TeonoObjCloseRight_0, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeonoObj_TeonoObjCloseRight_1, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeonoObj_TeonoObjCloseRight_2, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeonoObj_TeonoObjCloseRight_3, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeonoObj_TeonoObjCloseRight_4, 3
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeonoObj_TeonoObjCloseRight_5, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeonoObj_0, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeonoObj_TeonoObj_4, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeonoObj_TeonoObj_5, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeonoObj_TeonoObj_6, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeonoObj_TeonoObj_7, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeonoObj_TeonoObj_8, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeonoObj_TeonoObj_9, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeonoObj_TeonoObj_10, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeonoObj_TeonoObj_11, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeonoObj_TeonoObj_12, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeonoObj_TeonoObj_13, 1
     ANIMSCR_BLOCKED
 
 	.global AnimScr_TeonoObjFarRight
 AnimScr_TeonoObjFarRight:  @ 0x085DA3C0
-    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeonoObj_085DA07C, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeonoObj_085DA094, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeonoObj_085DA0AC, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeonoObj_085DA0C4, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeonoObj_085DA0DC, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeonoObj_085DA310, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeonoObj_085DA328, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeonoObj_TeonoO, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeonoObj_TeonoObj_0, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeonoObj_TeonoObj_1, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeonoObj_TeonoObj_2, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeonoObj_TeonoObj_3, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeonoObj_TeonoObjFarRight_0, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeonoObj_TeonoObjFarRight_1, 2
     ANIMSCR_BLOCKED
 
 	.global AnimScr_TeonoObj2Right
 AnimScr_TeonoObj2Right:  @ 0x085DA3E0
-    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeonoObj_085DA340, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeonoObj_085DA190, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeonoObj_085DA1B4, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeonoObj_085DA1D8, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeonoObj_085DA1FC, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeonoObj_085DA220, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeonoObj_085DA244, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeonoObj_085DA268, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeonoObj_085DA28C, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeonoObj_085DA2B0, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeonoObj_085DA2D4, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeonoObj_085DA2F8, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeonoObj_TeonoObj2Right, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeonoObj_0, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeonoObj_TeonoObj_4, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeonoObj_TeonoObj_5, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeonoObj_TeonoObj_6, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeonoObj_TeonoObj_7, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeonoObj_TeonoObj_8, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeonoObj_TeonoObj_9, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeonoObj_TeonoObj_10, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeonoObj_TeonoObj_11, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeonoObj_TeonoObj_12, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeonoObj_TeonoObj_13, 1
     ANIMSCR_BLOCKED
 
-.global AnimSprite_085DA414
-AnimSprite_085DA414:
+.global AnimSprite_TeonoObj_0
+AnimSprite_TeonoObj_0:
     ANIM_SPRITE_XFLIP ATTR0_WIDE, ATTR1_SIZE_32, 0x0008, -14, -4
     ANIM_SPRITE_END
 
-.global AnimSprite_085DA42C
-AnimSprite_085DA42C:
+.global AnimSprite_TeonoObj_1
+AnimSprite_TeonoObj_1:
     ANIM_SPRITE_XFLIP ATTR0_WIDE, ATTR1_SIZE_32, 0x0000, 9, 1
     ANIM_SPRITE_END
 
-.global AnimSprite_085DA444
-AnimSprite_085DA444:
+.global AnimSprite_TeonoObj_2
+AnimSprite_TeonoObj_2:
     ANIM_SPRITE_XFLIP ATTR0_WIDE, ATTR1_SIZE_32, 0x0004, 27, 3
     ANIM_SPRITE_END
 
-.global AnimSprite_085DA45C
-AnimSprite_085DA45C:
+.global AnimSprite_TeonoObj_3
+AnimSprite_TeonoObj_3:
     ANIM_SPRITE_XFLIP ATTR0_WIDE, ATTR1_SIZE_32, 0x0008, 43, 3
     ANIM_SPRITE_END
 
-.global AnimSprite_085DA474
-AnimSprite_085DA474:
+.global AnimSprite_TeonoObj_4
+AnimSprite_TeonoObj_4:
     ANIM_SPRITE_XFLIP ATTR0_WIDE, ATTR1_SIZE_32, 0x0000, 59, 3
     ANIM_SPRITE_END
 
-.global AnimSprite_085DA48C
-AnimSprite_085DA48C:
+.global AnimSprite_TeonoObjCloseLeft_0
+AnimSprite_TeonoObjCloseLeft_0:
     ANIM_SPRITE_XFLIP ATTR0_WIDE, ATTR1_SIZE_32, 0x0004, 69, -1
     ANIM_SPRITE_END
 
-.global AnimSprite_085DA4A4
-AnimSprite_085DA4A4:
+.global AnimSprite_TeonoObjCloseLeft_1
+AnimSprite_TeonoObjCloseLeft_1:
     ANIM_SPRITE_XFLIP ATTR0_WIDE, ATTR1_SIZE_32, 0x0008, 72, -4
     ANIM_SPRITE_END
 
-.global AnimSprite_085DA4BC
-AnimSprite_085DA4BC:
+.global AnimSprite_TeonoObjCloseLeft_2
+AnimSprite_TeonoObjCloseLeft_2:
     ANIM_SPRITE_XFLIP ATTR0_WIDE, ATTR1_SIZE_32, 0x0000, 78, -7
     ANIM_SPRITE_END
 
-.global AnimSprite_085DA4D4
-AnimSprite_085DA4D4:
+.global AnimSprite_TeonoObjCloseLeft_3
+AnimSprite_TeonoObjCloseLeft_3:
     ANIM_SPRITE_XFLIP ATTR0_WIDE, ATTR1_SIZE_32, 0x0004, 85, -10
     ANIM_SPRITE_END
 
-.global AnimSprite_085DA4EC
-AnimSprite_085DA4EC:
+.global AnimSprite_TeonoObjCloseLeft_4
+AnimSprite_TeonoObjCloseLeft_4:
     ANIM_SPRITE_XFLIP ATTR0_WIDE, ATTR1_SIZE_32, 0x0008, 89, -16
     ANIM_SPRITE_END
 
-.global AnimSprite_085DA504
-AnimSprite_085DA504:
+.global AnimSprite_TeonoObjCloseLeft_5
+AnimSprite_TeonoObjCloseLeft_5:
     ANIM_SPRITE_XFLIP ATTR0_SQUARE, ATTR1_SIZE_16, 0x0040, 98, -18
     ANIM_SPRITE_XFLIP ATTR0_TALL, ATTR1_SIZE_8, 0x0042, 90, -18
     ANIM_SPRITE_END
 
-.global AnimSprite_085DA528
-AnimSprite_085DA528:
+.global AnimSprite_TeonoObj_5
+AnimSprite_TeonoObj_5:
     ANIM_SPRITE_XFLIP ATTR0_WIDE, ATTR1_SIZE_8, 0x0043, 93, -22
     ANIM_SPRITE_XFLIP ATTR0_SQUARE, ATTR1_SIZE_8, 0x0045, 85, -22
     ANIM_SPRITE_END
 
-.global AnimSprite_085DA54C
-AnimSprite_085DA54C:
+.global AnimSprite_TeonoObj_6
+AnimSprite_TeonoObj_6:
     ANIM_SPRITE_XFLIP ATTR0_WIDE, ATTR1_SIZE_8, 0x0012, 85, -24
     ANIM_SPRITE_XFLIP ATTR0_SQUARE, ATTR1_SIZE_8, 0x0014, 77, -24
     ANIM_SPRITE_END
 
-.global AnimSprite_085DA570
-AnimSprite_085DA570:
+.global AnimSprite_TeonoObj_7
+AnimSprite_TeonoObj_7:
     ANIM_SPRITE_XFLIP ATTR0_WIDE, ATTR1_SIZE_8, 0x000C, 78, -25
     ANIM_SPRITE_XFLIP ATTR0_SQUARE, ATTR1_SIZE_8, 0x000E, 70, -25
     ANIM_SPRITE_END
 
-.global AnimSprite_085DA594
-AnimSprite_085DA594:
+.global AnimSprite_TeonoObj_8
+AnimSprite_TeonoObj_8:
     ANIM_SPRITE_XFLIP ATTR0_WIDE, ATTR1_SIZE_8, 0x000F, 67, -26
     ANIM_SPRITE_XFLIP ATTR0_SQUARE, ATTR1_SIZE_8, 0x0011, 59, -26
     ANIM_SPRITE_END
 
-.global AnimSprite_085DA5B8
-AnimSprite_085DA5B8:
+.global AnimSprite_TeonoObj_9
+AnimSprite_TeonoObj_9:
     ANIM_SPRITE_XFLIP ATTR0_WIDE, ATTR1_SIZE_8, 0x0012, 56, -26
     ANIM_SPRITE_XFLIP ATTR0_SQUARE, ATTR1_SIZE_8, 0x0014, 48, -26
     ANIM_SPRITE_END
 
-.global AnimSprite_085DA5DC
-AnimSprite_085DA5DC:
+.global AnimSprite_TeonoObj_10
+AnimSprite_TeonoObj_10:
     ANIM_SPRITE_XFLIP ATTR0_WIDE, ATTR1_SIZE_8, 0x000C, 40, -26
     ANIM_SPRITE_XFLIP ATTR0_SQUARE, ATTR1_SIZE_8, 0x000E, 32, -26
     ANIM_SPRITE_END
 
-.global AnimSprite_085DA600
-AnimSprite_085DA600:
+.global AnimSprite_TeonoObj_11
+AnimSprite_TeonoObj_11:
     ANIM_SPRITE_XFLIP ATTR0_WIDE, ATTR1_SIZE_8, 0x000F, 30, -26
     ANIM_SPRITE_XFLIP ATTR0_SQUARE, ATTR1_SIZE_8, 0x0011, 22, -26
     ANIM_SPRITE_END
 
-.global AnimSprite_085DA624
-AnimSprite_085DA624:
+.global AnimSprite_TeonoObj_12
+AnimSprite_TeonoObj_12:
     ANIM_SPRITE_XFLIP ATTR0_WIDE, ATTR1_SIZE_8, 0x0012, 17, -25
     ANIM_SPRITE_XFLIP ATTR0_SQUARE, ATTR1_SIZE_8, 0x0014, 9, -25
     ANIM_SPRITE_END
 
-.global AnimSprite_085DA648
-AnimSprite_085DA648:
+.global AnimSprite_TeonoObj_13
+AnimSprite_TeonoObj_13:
     ANIM_SPRITE_XFLIP ATTR0_WIDE, ATTR1_SIZE_8, 0x0046, 6, -21
     ANIM_SPRITE_XFLIP ATTR0_SQUARE, ATTR1_SIZE_8, 0x0048, -2, -21
     ANIM_SPRITE_END
 
-.global AnimSprite_085DA66C
-AnimSprite_085DA66C:
+.global AnimSprite_TeonoObj_14
+AnimSprite_TeonoObj_14:
     ANIM_SPRITE_XFLIP ATTR0_SQUARE, ATTR1_SIZE_16, 0x0049, -7, -18
     ANIM_SPRITE_XFLIP ATTR0_TALL, ATTR1_SIZE_8, 0x004B, -15, -18
     ANIM_SPRITE_END
 
-.global AnimSprite_085DA690
-AnimSprite_085DA690:
+.global AnimSprite_TeonoObj_15
+AnimSprite_TeonoObj_15:
     ANIM_SPRITE_XFLIP ATTR0_WIDE, ATTR1_SIZE_32, 0x0008, -27, -10
     ANIM_SPRITE_END
 
-.global AnimSprite_085DA6A8
-AnimSprite_085DA6A8:
+.global AnimSprite_TeonoObjFarLeft_0
+AnimSprite_TeonoObjFarLeft_0:
     ANIM_SPRITE_XFLIP ATTR0_WIDE, ATTR1_SIZE_32, 0x0000, 74, 1
     ANIM_SPRITE_END
 
-.global AnimSprite_085DA6C0
-AnimSprite_085DA6C0:
+.global AnimSprite_TeonoObjFarLeft_1
+AnimSprite_TeonoObjFarLeft_1:
     ANIM_SPRITE_XFLIP ATTR0_WIDE, ATTR1_SIZE_32, 0x0000, 95, -3
     ANIM_SPRITE_END
 
-.global AnimSprite_085DA6D8
-AnimSprite_085DA6D8:
+.global AnimSprite_TeonoObj2Left
+AnimSprite_TeonoObj2Left:
     ANIM_SPRITE_XFLIP ATTR0_WIDE, ATTR1_SIZE_8, 0x0043, 110, -18
     ANIM_SPRITE_XFLIP ATTR0_SQUARE, ATTR1_SIZE_8, 0x0045, 102, -18
     ANIM_SPRITE_END
 
 .global AnimScr_TeonoObjCloseLeft
 AnimScr_TeonoObjCloseLeft: @ 0x085DA6FC
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DA414, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DA42C, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DA444, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DA45C, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DA474, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DA48C, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DA4A4, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DA4BC, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DA4D4, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DA4EC, 3
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DA504, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DA528, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DA54C, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DA570, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DA594, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DA5B8, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DA5DC, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DA600, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DA624, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DA648, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DA66C, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DA690, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_TeonoObj_0, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_TeonoObj_1, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_TeonoObj_2, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_TeonoObj_3, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_TeonoObj_4, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_TeonoObjCloseLeft_0, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_TeonoObjCloseLeft_1, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_TeonoObjCloseLeft_2, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_TeonoObjCloseLeft_3, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_TeonoObjCloseLeft_4, 3
+    ANIMSCR_FORCE_SPRITE AnimSprite_TeonoObjCloseLeft_5, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_TeonoObj_5, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_TeonoObj_6, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_TeonoObj_7, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_TeonoObj_8, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_TeonoObj_9, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_TeonoObj_10, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_TeonoObj_11, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_TeonoObj_12, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_TeonoObj_13, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_TeonoObj_14, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_TeonoObj_15, 1
     ANIMSCR_BLOCKED
 
 .global AnimScr_TeonoObjFarLeft
 AnimScr_TeonoObjFarLeft: @ 0x085DA758
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DA414, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DA42C, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DA444, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DA45C, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DA474, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DA6A8, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DA6C0, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_TeonoObj_0, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_TeonoObj_1, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_TeonoObj_2, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_TeonoObj_3, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_TeonoObj_4, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_TeonoObjFarLeft_0, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_TeonoObjFarLeft_1, 2
     ANIMSCR_BLOCKED
 
 .global AnimScr_TeonoObj2Left
 AnimScr_TeonoObj2Left: @ 0x085DA778
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DA6D8, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DA528, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DA54C, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DA570, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DA594, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DA5B8, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DA5DC, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DA600, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DA624, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DA648, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DA66C, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DA690, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_TeonoObj2Left, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_TeonoObj_5, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_TeonoObj_6, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_TeonoObj_7, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_TeonoObj_8, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_TeonoObj_9, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_TeonoObj_10, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_TeonoObj_11, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_TeonoObj_12, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_TeonoObj_13, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_TeonoObj_14, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_TeonoObj_15, 1
     ANIMSCR_BLOCKED
 
 	.global Img_EfxArrowOBJ
 Img_EfxArrowOBJ:  @ 0x085DA7AC
     .incbin "./graphics/efxmagic/Img_EfxArrowOBJ.4bpp.lz"
 
-.global Obj_085DA7E8
-Obj_085DA7E8:
+.global Obj_EfxArrowOBJ
+Obj_EfxArrowOBJ:
 AnimSprite_EfxArrowObj1:
     ANIM_SPRITE ATTR0_WIDE, ATTR1_SIZE_8, 0x000 / 0x20, -0x3D, -0x0E
     ANIM_SPRITE ATTR0_SQUARE, ATTR1_SIZE_8, 0x040 / 0x20, -0x2D, -0x0E
@@ -425,34 +425,34 @@ AnimScr_ArrowFarRight:  @ 0x085DA864
     ANIMSCR_FORCE_SPRITE AnimSprite_EfxArrowObj3, 1
     ANIMSCR_BLOCKED
 
-.global AnimSprite_085DA874
-AnimSprite_085DA874:
+.global AnimSprite_Arrow_0
+AnimSprite_Arrow_0:
         ANIM_SPRITE_XFLIP ATTR0_WIDE, ATTR1_SIZE_8, 0x0000, 45, -14
         ANIM_SPRITE_XFLIP ATTR0_SQUARE, ATTR1_SIZE_8, 0x0002, 37, -14
         ANIM_SPRITE_END
-.global AnimSprite_085DA898
-AnimSprite_085DA898:
+.global AnimSprite_Arrow_1
+AnimSprite_Arrow_1:
         ANIM_SPRITE_XFLIP ATTR0_WIDE, ATTR1_SIZE_8, 0x0000, 77, -14
         ANIM_SPRITE_XFLIP ATTR0_SQUARE, ATTR1_SIZE_8, 0x0002, 69, -14
         ANIM_SPRITE_END
-.global AnimSprite_085DA8BC
-AnimSprite_085DA8BC:
+.global AnimSprite_Arrow_2
+AnimSprite_Arrow_2:
         ANIM_SPRITE_XFLIP ATTR0_WIDE, ATTR1_SIZE_8, 0x0000, 109, -14
         ANIM_SPRITE_XFLIP ATTR0_SQUARE, ATTR1_SIZE_8, 0x0002, 101, -14
         ANIM_SPRITE_END
 
 .global AnimScr_ArrowCloseLeft
 AnimScr_ArrowCloseLeft: @ 0x5DA8E0
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DA874, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DA898, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DA8BC, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_Arrow_0, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_Arrow_1, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_Arrow_2, 1
     ANIMSCR_BLOCKED
 
 .global AnimScr_ArrowFarLeft
 AnimScr_ArrowFarLeft: @ 0x5DA8F0
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DA874, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DA898, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DA8BC, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_Arrow_0, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_Arrow_1, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_Arrow_2, 1
     ANIMSCR_BLOCKED
 
 	.global Img_SpellJavelin
@@ -535,524 +535,524 @@ Img_SpellJavelinUnk:  @ 0x085DBE20
 Pal_SpellJavelinUnk:  @ 0x085DC050
 	.incbin "./graphics/efxmagic/Img_SpellJavelinUnk.gbapal", 0x0, 0x20
 
-.global AnimSprite_085DC070
-AnimSprite_085DC070:
+.global AnimSprite_Banim_0
+AnimSprite_Banim_0:
     ANIM_SPRITE_AFFIN 1, 0xff, 0x16, -0x16, 0xff
     ANIM_SPRITE ATTR0_WIDE + OBJ_ROT_SCALE_ON, ATTR1_SIZE_64, 0x0000, 9, -29
     ANIM_SPRITE_END
 
-.global AnimSprite_085DC094
-AnimSprite_085DC094:
+.global AnimSprite_EfxTeyariObjType0Right_0
+AnimSprite_EfxTeyariObjType0Right_0:
     ANIM_SPRITE_AFFIN 1, 0xff, 0xd, -0xd, 0xff
     ANIM_SPRITE ATTR0_WIDE + OBJ_ROT_SCALE_ON, ATTR1_SIZE_64, 0x0000, -5, -29
     ANIM_SPRITE_END
 
-.global AnimSprite_085DC0B8
-AnimSprite_085DC0B8:
+.global AnimSprite_EfxTeyariObjType0Right_1
+AnimSprite_EfxTeyariObjType0Right_1:
     ANIM_SPRITE ATTR0_WIDE, ATTR1_SIZE_64, 0x0000, -26, -28
     ANIM_SPRITE_END
 
-.global AnimSprite_085DC0D0
-AnimSprite_085DC0D0:
+.global AnimSprite_EfxTeyariObjType0Right_2
+AnimSprite_EfxTeyariObjType0Right_2:
     ANIM_SPRITE_AFFIN 1, 0xff, -0x9, 0x9, 0xff
     ANIM_SPRITE ATTR0_WIDE + OBJ_ROT_SCALE_ON, ATTR1_SIZE_64, 0x0000, -53, -25
     ANIM_SPRITE_END
 
-.global AnimSprite_085DC0F4
-AnimSprite_085DC0F4:
+.global AnimSprite_EfxTeyariObjType0Right_3
+AnimSprite_EfxTeyariObjType0Right_3:
     ANIM_SPRITE_AFFIN 1, 0xfe, -0x17, 0x17, 0xfe
     ANIM_SPRITE ATTR0_WIDE + OBJ_ROT_SCALE_ON, ATTR1_SIZE_64, 0x0000, -69, -23
     ANIM_SPRITE_END
 
-.global AnimSprite_085DC118
-AnimSprite_085DC118:
+.global AnimSprite_EfxTeyariObjType0Right_4
+AnimSprite_EfxTeyariObjType0Right_4:
     ANIM_SPRITE_AFFIN 1, 0xfb, -0x2d, 0x2d, 0xfb
     ANIM_SPRITE ATTR0_WIDE + OBJ_ROT_SCALE_ON, ATTR1_SIZE_64, 0x0000, -83, -20
     ANIM_SPRITE_END
 
-.global AnimSprite_085DC13C
-AnimSprite_085DC13C:
+.global AnimSprite_EfxTeyariObjType0Right_5
+AnimSprite_EfxTeyariObjType0Right_5:
     ANIM_SPRITE_AFFIN 1, 0xfa, -0x35, 0x35, 0xfa
     ANIM_SPRITE ATTR0_WIDE + OBJ_ROT_SCALE_ON, ATTR1_SIZE_64, 0x0000, -100, -15
     ANIM_SPRITE_END
 
-.global AnimSprite_085DC160
-AnimSprite_085DC160:
+.global AnimSprite_EfxTeyariObjType0Right_6
+AnimSprite_EfxTeyariObjType0Right_6:
     ANIM_SPRITE_AFFIN 1, 0xf8, -0x3e, 0x3e, 0xf8
     ANIM_SPRITE ATTR0_WIDE + OBJ_ROT_SCALE_ON, ATTR1_SIZE_64, 0x0000, -110, -9
     ANIM_SPRITE_END
 
-.global AnimSprite_085DC184
-AnimSprite_085DC184:
+.global AnimSprite_EfxTeyariObjType0Right_7
+AnimSprite_EfxTeyariObjType0Right_7:
     ANIM_SPRITE_AFFIN 1, 0xff, 0x16, -0x16, 0xff
     ANIM_SPRITE ATTR0_WIDE + OBJ_ROT_SCALE_ON, ATTR1_SIZE_64, 0x0000, -113, -12
     ANIM_SPRITE_END
 
-.global AnimSprite_085DC1A8
-AnimSprite_085DC1A8:
+.global AnimSprite_EfxTeyariObjType0Right_8
+AnimSprite_EfxTeyariObjType0Right_8:
     ANIM_SPRITE_AFFIN 1, 0xfe, 0x1f, -0x1f, 0xfe
     ANIM_SPRITE ATTR0_WIDE + OBJ_ROT_SCALE_ON, ATTR1_SIZE_64, 0x0000, -116, -12
     ANIM_SPRITE_END
 
-.global AnimSprite_085DC1CC
-AnimSprite_085DC1CC:
+.global AnimSprite_EfxTeyariObjType0Right_9
+AnimSprite_EfxTeyariObjType0Right_9:
     ANIM_SPRITE_AFFIN 1, 0xff, 0x16, -0x16, 0xff
     ANIM_SPRITE ATTR0_WIDE + OBJ_ROT_SCALE_ON, ATTR1_SIZE_64, 0x0000, -119, -14
     ANIM_SPRITE_END
 
-.global AnimSprite_085DC1F0
-AnimSprite_085DC1F0:
+.global AnimSprite_EfxTeyariObjType0Right_10
+AnimSprite_EfxTeyariObjType0Right_10:
     ANIM_SPRITE_AFFIN 1, 0xff, 0xd, -0xd, 0xff
     ANIM_SPRITE ATTR0_WIDE + OBJ_ROT_SCALE_ON, ATTR1_SIZE_64, 0x0000, -121, -15
     ANIM_SPRITE_END
 
-.global AnimSprite_085DC214
-AnimSprite_085DC214:
+.global AnimSprite_EfxTeyariObjType0Right_11
+AnimSprite_EfxTeyariObjType0Right_11:
     ANIM_SPRITE ATTR0_WIDE, ATTR1_SIZE_64, 0x0000, -123, -14
     ANIM_SPRITE_END
 
-.global AnimSprite_085DC22C
-AnimSprite_085DC22C:
+.global AnimSprite_EfxTeyariObjType0Right_12
+AnimSprite_EfxTeyariObjType0Right_12:
     ANIM_SPRITE ATTR0_SQUARE, ATTR1_SIZE_8, 0x001F, 0, -8
     ANIM_SPRITE_END
 
 .global AnimScr_EfxTeyariObjType0Right
 AnimScr_EfxTeyariObjType0Right: @ 0x5DC244
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC070, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC094, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC0B8, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC0D0, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC0F4, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC118, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC13C, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC160, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC184, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC1A8, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC1CC, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC1F0, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC214, 3
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC22C, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC214, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC22C, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC214, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC22C, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC214, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC22C, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC214, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC22C, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC214, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC22C, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC214, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC22C, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC214, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC22C, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC214, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC22C, 31
+    ANIMSCR_FORCE_SPRITE AnimSprite_Banim_0, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType0Right_0, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType0Right_1, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType0Right_2, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType0Right_3, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType0Right_4, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType0Right_5, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType0Right_6, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType0Right_7, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType0Right_8, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType0Right_9, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType0Right_10, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType0Right_11, 3
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType0Right_12, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType0Right_11, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType0Right_12, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType0Right_11, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType0Right_12, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType0Right_11, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType0Right_12, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType0Right_11, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType0Right_12, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType0Right_11, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType0Right_12, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType0Right_11, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType0Right_12, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType0Right_11, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType0Right_12, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType0Right_11, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType0Right_12, 31
     ANIMSCR_WAIT 19
     ANIMSCR_BLOCKED
 
-.global AnimSprite_085DC2C4
-AnimSprite_085DC2C4:
+.global AnimSprite_EfxTeyariObjType_0
+AnimSprite_EfxTeyariObjType_0:
 	ANIM_SPRITE_AFFIN 1, -0xff, 0x16, 0x16, 0xff
 	ANIM_SPRITE ATTR0_WIDE + OBJ_ROT_SCALE_ON, ATTR1_SIZE_64, 0x0000, -73, -29
 	ANIM_SPRITE_END
 
-.global AnimSprite_085DC2E8
-AnimSprite_085DC2E8:
+.global AnimSprite_EfxTeyariObjType0Left_0
+AnimSprite_EfxTeyariObjType0Left_0:
 	ANIM_SPRITE_AFFIN 1, -0xff, 0xd, 0xd, 0xff
 	ANIM_SPRITE ATTR0_WIDE + OBJ_ROT_SCALE_ON, ATTR1_SIZE_64, 0x0000, -59, -29
 	ANIM_SPRITE_END
 
-.global AnimSprite_085DC30C
-AnimSprite_085DC30C:
+.global AnimSprite_EfxTeyariObjType0Left_1
+AnimSprite_EfxTeyariObjType0Left_1:
 	ANIM_SPRITE_XFLIP ATTR0_WIDE, ATTR1_SIZE_64, 0x0000, -38, -28
 	ANIM_SPRITE_END
 
-.global AnimSprite_085DC324
-AnimSprite_085DC324:
+.global AnimSprite_EfxTeyariObjType0Left_2
+AnimSprite_EfxTeyariObjType0Left_2:
 	ANIM_SPRITE_AFFIN 1, -0xff, -0x9, -0x9, 0xff
 	ANIM_SPRITE ATTR0_WIDE + OBJ_ROT_SCALE_ON, ATTR1_SIZE_64, 0x0000, -11, -25
 	ANIM_SPRITE_END
 
-.global AnimSprite_085DC348
-AnimSprite_085DC348:
+.global AnimSprite_EfxTeyariObjType0Left_3
+AnimSprite_EfxTeyariObjType0Left_3:
 	ANIM_SPRITE_AFFIN 1, -0xfe, -0x17, -0x17, 0xfe
 	ANIM_SPRITE ATTR0_WIDE + OBJ_ROT_SCALE_ON, ATTR1_SIZE_64, 0x0000, 5, -23
 	ANIM_SPRITE_END
 
-.global AnimSprite_085DC36C
-AnimSprite_085DC36C:
+.global AnimSprite_EfxTeyariObjType0Left_4
+AnimSprite_EfxTeyariObjType0Left_4:
 	ANIM_SPRITE_AFFIN 1, -0xfb, -0x2d, -0x2d, 0xfb
 	ANIM_SPRITE ATTR0_WIDE + OBJ_ROT_SCALE_ON, ATTR1_SIZE_64, 0x0000, 19, -20
 	ANIM_SPRITE_END
 
-.global AnimSprite_085DC390
-AnimSprite_085DC390:
+.global AnimSprite_EfxTeyariObjType0Left_5
+AnimSprite_EfxTeyariObjType0Left_5:
 	ANIM_SPRITE_AFFIN 1, -0xfa, -0x35, -0x35, 0xfa
 	ANIM_SPRITE ATTR0_WIDE + OBJ_ROT_SCALE_ON, ATTR1_SIZE_64, 0x0000, 36, -15
 	ANIM_SPRITE_END
 
-.global AnimSprite_085DC3B4
-AnimSprite_085DC3B4:
+.global AnimSprite_EfxTeyariObjType0Left_6
+AnimSprite_EfxTeyariObjType0Left_6:
 	ANIM_SPRITE_AFFIN 1, -0xf8, -0x3e, -0x3e, 0xf8
 	ANIM_SPRITE ATTR0_WIDE + OBJ_ROT_SCALE_ON, ATTR1_SIZE_64, 0x0000, 46, -9
 	ANIM_SPRITE_END
 
-.global AnimSprite_085DC3D8
-AnimSprite_085DC3D8:
+.global AnimSprite_EfxTeyariObjType0Left_7
+AnimSprite_EfxTeyariObjType0Left_7:
 	ANIM_SPRITE_AFFIN 1, -0xff, 0x16, 0x16, 0xff
 	ANIM_SPRITE ATTR0_WIDE + OBJ_ROT_SCALE_ON, ATTR1_SIZE_64, 0x0000, 49, -12
 	ANIM_SPRITE_END
 
-.global AnimSprite_085DC3FC
-AnimSprite_085DC3FC:
+.global AnimSprite_EfxTeyariObjType0Left_8
+AnimSprite_EfxTeyariObjType0Left_8:
 	ANIM_SPRITE_AFFIN 1, -0xfe, 0x1f, 0x1f, 0xfe
 	ANIM_SPRITE ATTR0_WIDE + OBJ_ROT_SCALE_ON, ATTR1_SIZE_64, 0x0000, 52, -12
 	ANIM_SPRITE_END
 
-.global AnimSprite_085DC420
-AnimSprite_085DC420:
+.global AnimSprite_EfxTeyariObjType0Left_9
+AnimSprite_EfxTeyariObjType0Left_9:
 	ANIM_SPRITE_AFFIN 1, -0xff, 0x16, 0x16, 0xff
 	ANIM_SPRITE ATTR0_WIDE + OBJ_ROT_SCALE_ON, ATTR1_SIZE_64, 0x0000, 55, -14
 	ANIM_SPRITE_END
 
-.global AnimSprite_085DC444
-AnimSprite_085DC444:
+.global AnimSprite_EfxTeyariObjType0Left_10
+AnimSprite_EfxTeyariObjType0Left_10:
 	ANIM_SPRITE_AFFIN 1, -0xff, 0xd, 0xd, 0xff
 	ANIM_SPRITE ATTR0_WIDE + OBJ_ROT_SCALE_ON, ATTR1_SIZE_64, 0x0000, 57, -15
 	ANIM_SPRITE_END
 
-.global AnimSprite_085DC468
-AnimSprite_085DC468:
+.global AnimSprite_EfxTeyariObjType0Left_11
+AnimSprite_EfxTeyariObjType0Left_11:
 	ANIM_SPRITE_XFLIP ATTR0_WIDE, ATTR1_SIZE_64, 0x0000, 59, -14
 	ANIM_SPRITE_END
 
-.global AnimSprite_085DC480
-AnimSprite_085DC480:
+.global AnimSprite_EfxTeyariObjType0Left_12
+AnimSprite_EfxTeyariObjType0Left_12:
 	ANIM_SPRITE_XFLIP ATTR0_SQUARE, ATTR1_SIZE_8, 0x001F, -8, -8
 	ANIM_SPRITE_END
 
 .global AnimScr_EfxTeyariObjType0Left
 AnimScr_EfxTeyariObjType0Left: @ 0x5DC498
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC2C4, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC2E8, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC30C, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC324, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC348, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC36C, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC390, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC3B4, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC3D8, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC3FC, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC420, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC444, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC468, 3
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC480, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC468, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC480, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC468, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC480, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC468, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC480, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC468, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC480, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC468, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC480, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC468, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC480, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC468, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC480, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC468, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC480, 31
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType_0, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType0Left_0, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType0Left_1, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType0Left_2, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType0Left_3, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType0Left_4, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType0Left_5, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType0Left_6, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType0Left_7, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType0Left_8, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType0Left_9, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType0Left_10, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType0Left_11, 3
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType0Left_12, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType0Left_11, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType0Left_12, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType0Left_11, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType0Left_12, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType0Left_11, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType0Left_12, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType0Left_11, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType0Left_12, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType0Left_11, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType0Left_12, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType0Left_11, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType0Left_12, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType0Left_11, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType0Left_12, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType0Left_11, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType0Left_12, 31
     ANIMSCR_WAIT 19
     ANIMSCR_BLOCKED
 
-.global AnimSprite_085DC518
-AnimSprite_085DC518:
+.global AnimSprite_EfxTeyariObjType_1
+AnimSprite_EfxTeyariObjType_1:
     ANIM_SPRITE ATTR0_WIDE, ATTR1_SIZE_64, 0x0000, 23, -49
     ANIM_SPRITE_END
 
-.global AnimSprite_085DC530
-AnimSprite_085DC530:
+.global AnimSprite_EfxTeyariObjType1Right_0
+AnimSprite_EfxTeyariObjType1Right_0:
     ANIM_SPRITE ATTR0_WIDE, ATTR1_SIZE_64, 0x0000, 1, -49
     ANIM_SPRITE_END
 
-.global AnimSprite_085DC548
-AnimSprite_085DC548:
+.global AnimSprite_EfxTeyariObjType1Right_1
+AnimSprite_EfxTeyariObjType1Right_1:
     ANIM_SPRITE ATTR0_WIDE, ATTR1_SIZE_64, 0x0000, -15, -49
     ANIM_SPRITE_END
 
-.global AnimSprite_085DC560
-AnimSprite_085DC560:
+.global AnimSprite_EfxTeyariObjType1Right_2
+AnimSprite_EfxTeyariObjType1Right_2:
     ANIM_SPRITE_AFFIN 1, 0xff, -0x9, 0x9, 0xff
     ANIM_SPRITE ATTR0_WIDE + OBJ_ROT_SCALE_ON, ATTR1_SIZE_64, 0x0000, -36, -44
     ANIM_SPRITE_END
 
-.global AnimSprite_085DC584
-AnimSprite_085DC584:
+.global AnimSprite_EfxTeyariObjType1Right_3
+AnimSprite_EfxTeyariObjType1Right_3:
     ANIM_SPRITE_AFFIN 1, 0xff, -0xe, 0xe, 0xff
     ANIM_SPRITE ATTR0_WIDE + OBJ_ROT_SCALE_ON, ATTR1_SIZE_64, 0x0000, -56, -35
     ANIM_SPRITE_END
 
-.global AnimSprite_085DC5A8
-AnimSprite_085DC5A8:
+.global AnimSprite_EfxTeyariObjType1Right_4
+AnimSprite_EfxTeyariObjType1Right_4:
     ANIM_SPRITE_AFFIN 1, 0xfe, -0x17, 0x17, 0xfe
     ANIM_SPRITE ATTR0_WIDE + OBJ_ROT_SCALE_ON, ATTR1_SIZE_64, 0x0000, -75, -28
     ANIM_SPRITE_END
 
-.global AnimSprite_085DC5CC
-AnimSprite_085DC5CC:
+.global AnimSprite_EfxTeyariObjType1Right_5
+AnimSprite_EfxTeyariObjType1Right_5:
     ANIM_SPRITE_AFFIN 1, 0xfe, -0x1b, 0x1b, 0xfe
     ANIM_SPRITE ATTR0_WIDE + OBJ_ROT_SCALE_ON, ATTR1_SIZE_64, 0x0000, -92, -17
     ANIM_SPRITE_END
 
-.global AnimSprite_085DC5F0
-AnimSprite_085DC5F0:
+.global AnimSprite_EfxTeyariObjType1Right_6
+AnimSprite_EfxTeyariObjType1Right_6:
     ANIM_SPRITE_AFFIN 1, 0xfe, -0x17, 0x17, 0xfe
     ANIM_SPRITE ATTR0_WIDE + OBJ_ROT_SCALE_ON, ATTR1_SIZE_64, 0x0000, -106, -10
     ANIM_SPRITE_END
 
-.global AnimSprite_085DC614
-AnimSprite_085DC614:
+.global AnimSprite_EfxTeyariObjType1Right_7
+AnimSprite_EfxTeyariObjType1Right_7:
     ANIM_SPRITE_AFFIN 1, 0xf8, -0x3e, 0x3e, 0xf8
     ANIM_SPRITE ATTR0_WIDE + OBJ_ROT_SCALE_ON, ATTR1_SIZE_64, 0x0000, -110, -12
     ANIM_SPRITE_END
 
-.global AnimSprite_085DC638
-AnimSprite_085DC638:
+.global AnimSprite_EfxTeyariObjType1Right_8
+AnimSprite_EfxTeyariObjType1Right_8:
     ANIM_SPRITE_AFFIN 1, 0xff, 0x16, -0x16, 0xff
     ANIM_SPRITE ATTR0_WIDE + OBJ_ROT_SCALE_ON, ATTR1_SIZE_64, 0x0000, -113, -9
     ANIM_SPRITE_END
 
-.global AnimSprite_085DC65C
-AnimSprite_085DC65C:
+.global AnimSprite_EfxTeyariObjType1Right_9
+AnimSprite_EfxTeyariObjType1Right_9:
     ANIM_SPRITE_AFFIN 1, 0xfe, 0x1f, -0x1f, 0xfe
     ANIM_SPRITE ATTR0_WIDE + OBJ_ROT_SCALE_ON, ATTR1_SIZE_64, 0x0000, -116, -12
     ANIM_SPRITE_END
 
-.global AnimSprite_085DC680
-AnimSprite_085DC680:
+.global AnimSprite_EfxTeyariObjType1Right_10
+AnimSprite_EfxTeyariObjType1Right_10:
     ANIM_SPRITE_AFFIN 1, 0xff, 0x16, -0x16, 0xff
     ANIM_SPRITE ATTR0_WIDE + OBJ_ROT_SCALE_ON, ATTR1_SIZE_64, 0x0000, -119, -14
     ANIM_SPRITE_END
 
-.global AnimSprite_085DC6A4
-AnimSprite_085DC6A4:
+.global AnimSprite_EfxTeyariObjType1Right_11
+AnimSprite_EfxTeyariObjType1Right_11:
     ANIM_SPRITE_AFFIN 1, 0xff, 0xd, -0xd, 0xff
     ANIM_SPRITE ATTR0_WIDE + OBJ_ROT_SCALE_ON, ATTR1_SIZE_64, 0x0000, -121, -15
     ANIM_SPRITE_END
 
-.global AnimSprite_085DC6C8
-AnimSprite_085DC6C8:
+.global AnimSprite_EfxTeyariObjType1Right_12
+AnimSprite_EfxTeyariObjType1Right_12:
     ANIM_SPRITE ATTR0_WIDE, ATTR1_SIZE_64, 0x0000, -123, -14
     ANIM_SPRITE_END
 
-.global AnimSprite_085DC6E0
-AnimSprite_085DC6E0:
+.global AnimSprite_EfxTeyariObjType1Right_13
+AnimSprite_EfxTeyariObjType1Right_13:
     ANIM_SPRITE ATTR0_SQUARE, ATTR1_SIZE_8, 0x001F, 0, -8
     ANIM_SPRITE_END
 
 .global AnimScr_EfxTeyariObjType1Right
 AnimScr_EfxTeyariObjType1Right: @ 0x5DC6F8
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC518, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC530, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC560, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC584, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC5A8, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC5CC, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC5F0, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC614, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC638, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC65C, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC680, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC6A4, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC6C8, 3
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC6E0, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC6C8, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC6E0, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC6C8, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC6E0, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC6C8, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC6E0, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC6C8, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC6E0, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC6C8, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC6E0, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC6C8, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC6E0, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC6C8, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC6E0, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC6C8, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC6E0, 31
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType_1, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType1Right_0, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType1Right_2, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType1Right_3, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType1Right_4, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType1Right_5, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType1Right_6, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType1Right_7, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType1Right_8, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType1Right_9, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType1Right_10, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType1Right_11, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType1Right_12, 3
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType1Right_13, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType1Right_12, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType1Right_13, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType1Right_12, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType1Right_13, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType1Right_12, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType1Right_13, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType1Right_12, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType1Right_13, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType1Right_12, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType1Right_13, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType1Right_12, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType1Right_13, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType1Right_12, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType1Right_13, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType1Right_12, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType1Right_13, 31
     ANIMSCR_WAIT 19
     ANIMSCR_BLOCKED
 
-.global AnimSprite_085DC778
-AnimSprite_085DC778:
+.global AnimSprite_EfxTeyariObjType_2
+AnimSprite_EfxTeyariObjType_2:
 	ANIM_SPRITE_XFLIP ATTR0_WIDE, ATTR1_SIZE_64, 0x0000, -87, -49
 	ANIM_SPRITE_END
-.global AnimSprite_085DC790
-AnimSprite_085DC790:
+.global AnimSprite_EfxTeyariObjType1Left_0
+AnimSprite_EfxTeyariObjType1Left_0:
 	ANIM_SPRITE_XFLIP ATTR0_WIDE, ATTR1_SIZE_64, 0x0000, -65, -49
 	ANIM_SPRITE_END
-.global AnimSprite_085DC7A8
-AnimSprite_085DC7A8:
+.global AnimSprite_EfxTeyariObjType1Left_1
+AnimSprite_EfxTeyariObjType1Left_1:
 	ANIM_SPRITE_XFLIP ATTR0_WIDE, ATTR1_SIZE_64, 0x0000, -49, -49
 	ANIM_SPRITE_END
-.global AnimSprite_085DC7C0
-AnimSprite_085DC7C0:
+.global AnimSprite_EfxTeyariObjType1Left_2
+AnimSprite_EfxTeyariObjType1Left_2:
 	ANIM_SPRITE_AFFIN 1, -0xff, -0x9, -0x9, 0xff
 	ANIM_SPRITE ATTR0_WIDE + OBJ_ROT_SCALE_ON, ATTR1_SIZE_64, 0x0000, -28, -44
 	ANIM_SPRITE_END
-.global AnimSprite_085DC7E4
-AnimSprite_085DC7E4:
+.global AnimSprite_EfxTeyariObjType1Left_3
+AnimSprite_EfxTeyariObjType1Left_3:
 	ANIM_SPRITE_AFFIN 1, -0xff, -0xe, -0xe, 0xff
 	ANIM_SPRITE ATTR0_WIDE + OBJ_ROT_SCALE_ON, ATTR1_SIZE_64, 0x0000, -8, -35
 	ANIM_SPRITE_END
-.global AnimSprite_085DC808
-AnimSprite_085DC808:
+.global AnimSprite_EfxTeyariObjType1Left_4
+AnimSprite_EfxTeyariObjType1Left_4:
 	ANIM_SPRITE_AFFIN 1, -0xfe, -0x17, -0x17, 0xfe
 	ANIM_SPRITE ATTR0_WIDE + OBJ_ROT_SCALE_ON, ATTR1_SIZE_64, 0x0000, 11, -28
 	ANIM_SPRITE_END
-.global AnimSprite_085DC82C
-AnimSprite_085DC82C:
+.global AnimSprite_EfxTeyariObjType1Left_5
+AnimSprite_EfxTeyariObjType1Left_5:
 	ANIM_SPRITE_AFFIN 1, -0xfe, -0x1b, -0x1b, 0xfe
 	ANIM_SPRITE ATTR0_WIDE + OBJ_ROT_SCALE_ON, ATTR1_SIZE_64, 0x0000, 28, -17
 	ANIM_SPRITE_END
-.global AnimSprite_085DC850
-AnimSprite_085DC850:
+.global AnimSprite_EfxTeyariObjType1Left_6
+AnimSprite_EfxTeyariObjType1Left_6:
 	ANIM_SPRITE_AFFIN 1, -0xfe, -0x17, -0x17, 0xfe
 	ANIM_SPRITE ATTR0_WIDE + OBJ_ROT_SCALE_ON, ATTR1_SIZE_64, 0x0000, 42, -10
 	ANIM_SPRITE_END
-.global AnimSprite_085DC874
-AnimSprite_085DC874:
+.global AnimSprite_EfxTeyariObjType1Left_7
+AnimSprite_EfxTeyariObjType1Left_7:
 	ANIM_SPRITE_AFFIN 1, -0xf8, -0x3e, -0x3e, 0xf8
 	ANIM_SPRITE ATTR0_WIDE + OBJ_ROT_SCALE_ON, ATTR1_SIZE_64, 0x0000, 46, -12
 	ANIM_SPRITE_END
-.global AnimSprite_085DC898
-AnimSprite_085DC898:
+.global AnimSprite_EfxTeyariObjType1Left_8
+AnimSprite_EfxTeyariObjType1Left_8:
 	ANIM_SPRITE_AFFIN 1, -0xff, 0x16, 0x16, 0xff
 	ANIM_SPRITE ATTR0_WIDE + OBJ_ROT_SCALE_ON, ATTR1_SIZE_64, 0x0000, 49, -9
 	ANIM_SPRITE_END
-.global AnimSprite_085DC8BC
-AnimSprite_085DC8BC:
+.global AnimSprite_EfxTeyariObjType1Left_9
+AnimSprite_EfxTeyariObjType1Left_9:
 	ANIM_SPRITE_AFFIN 1, -0xfe, 0x1f, 0x1f, 0xfe
 	ANIM_SPRITE ATTR0_WIDE + OBJ_ROT_SCALE_ON, ATTR1_SIZE_64, 0x0000, 52, -12
 	ANIM_SPRITE_END
-.global AnimSprite_085DC8E0
-AnimSprite_085DC8E0:
+.global AnimSprite_EfxTeyariObjType1Left_10
+AnimSprite_EfxTeyariObjType1Left_10:
 	ANIM_SPRITE_AFFIN 1, -0xff, 0x16, 0x16, 0xff
 	ANIM_SPRITE ATTR0_WIDE + OBJ_ROT_SCALE_ON, ATTR1_SIZE_64, 0x0000, 55, -14
 	ANIM_SPRITE_END
-.global AnimSprite_085DC904
-AnimSprite_085DC904:
+.global AnimSprite_EfxTeyariObjType1Left_11
+AnimSprite_EfxTeyariObjType1Left_11:
 	ANIM_SPRITE_AFFIN 1, -0xff, 0xd, 0xd, 0xff
 	ANIM_SPRITE ATTR0_WIDE + OBJ_ROT_SCALE_ON, ATTR1_SIZE_64, 0x0000, 57, -15
 	ANIM_SPRITE_END
-.global AnimSprite_085DC928
-AnimSprite_085DC928:
+.global AnimSprite_EfxTeyariObjType1Left_12
+AnimSprite_EfxTeyariObjType1Left_12:
 	ANIM_SPRITE_XFLIP ATTR0_WIDE, ATTR1_SIZE_64, 0x0000, 59, -14
 	ANIM_SPRITE_END
-.global AnimSprite_085DC940
-AnimSprite_085DC940:
+.global AnimSprite_EfxTeyariObjType1Left_13
+AnimSprite_EfxTeyariObjType1Left_13:
 	ANIM_SPRITE_XFLIP ATTR0_SQUARE, ATTR1_SIZE_8, 0x001F, -8, -8
 	ANIM_SPRITE_END
 
 .global AnimScr_EfxTeyariObjType1Left
 AnimScr_EfxTeyariObjType1Left: @ 0x5DC958
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC778, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC790, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC7C0, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC7E4, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC808, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC82C, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC850, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC874, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC898, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC8BC, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC8E0, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC904, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC928, 3
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC940, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC928, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC940, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC928, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC940, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC928, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC940, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC928, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC940, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC928, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC940, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC928, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC940, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC928, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC940, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC928, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC940, 31
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType_2, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType1Left_0, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType1Left_2, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType1Left_3, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType1Left_4, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType1Left_5, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType1Left_6, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType1Left_7, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType1Left_8, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType1Left_9, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType1Left_10, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType1Left_11, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType1Left_12, 3
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType1Left_13, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType1Left_12, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType1Left_13, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType1Left_12, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType1Left_13, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType1Left_12, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType1Left_13, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType1Left_12, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType1Left_13, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType1Left_12, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType1Left_13, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType1Left_12, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType1Left_13, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType1Left_12, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType1Left_13, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType1Left_12, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType1Left_13, 31
     ANIMSCR_WAIT 19
     ANIMSCR_BLOCKED
 
-.global AnimSprite_085DC9D8
-AnimSprite_085DC9D8:
+.global AnimSprite_EfxTeyariObjType1Left_14
+AnimSprite_EfxTeyariObjType1Left_14:
 	ANIM_SPRITE ATTR0_WIDE, 0xA000, 0x1000, -24, -32
 	ANIM_SPRITE_END
-.global AnimSprite_085DC9F0
-AnimSprite_085DC9F0:
+.global AnimSprite_EfxTeyariObjType1Left_15
+AnimSprite_EfxTeyariObjType1Left_15:
 	ANIM_SPRITE ATTR0_WIDE, 0xA000, 0x1000, 8, -48
 	ANIM_SPRITE_END
-.global AnimSprite_085DCA08
-AnimSprite_085DCA08:
+.global AnimSprite_Banim_1
+AnimSprite_Banim_1:
 	ANIM_SPRITE ATTR0_WIDE, 0xA000, 0x1000, 40, -64
 	ANIM_SPRITE_END
-.global AnimSprite_085DCA20
-AnimSprite_085DCA20:
+.global AnimSprite_efxShooterOBJ_0
+AnimSprite_efxShooterOBJ_0:
 	ANIM_SPRITE ATTR0_WIDE, 0xA000, 0x1000, 72, -80
 	ANIM_SPRITE_END
-.global AnimSprite_085DCA38
-AnimSprite_085DCA38:
+.global AnimSprite_efxShooterOBJ_1
+AnimSprite_efxShooterOBJ_1:
 	ANIM_SPRITE ATTR0_SQUARE, 0x6000, 0x1000, 104, -96
 	ANIM_SPRITE ATTR0_TALL, 0x2000, 0x1002, 120, -96
 	ANIM_SPRITE_END
 
-.global AnimScr_085DCA5C
-AnimScr_085DCA5C: @ 0x5DCA5C
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DCA38, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DCA20, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DCA08, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC9F0, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DC9D8, 2
+.global AnimScr_efxShooterOBJ_0
+AnimScr_efxShooterOBJ_0: @ 0x5DCA5C
+    ANIMSCR_FORCE_SPRITE AnimSprite_efxShooterOBJ_1, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_efxShooterOBJ_0, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_Banim_1, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType1Left_15, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxTeyariObjType1Left_14, 2
     ANIMSCR_BLOCKED
 
-.global AnimSprite_085DCA74
-AnimSprite_085DCA74:
+.global AnimSprite_efxShooterOBJ_2
+AnimSprite_efxShooterOBJ_2:
 	ANIM_SPRITE_XFLIP ATTR0_WIDE, 0xA000, 0x1000, -8, -32
 	ANIM_SPRITE_END
-.global AnimSprite_085DCA8C
-AnimSprite_085DCA8C:
+.global AnimSprite_efxShooterOBJ_3
+AnimSprite_efxShooterOBJ_3:
 	ANIM_SPRITE_XFLIP ATTR0_WIDE, 0xA000, 0x1000, -40, -48
 	ANIM_SPRITE_END
-.global AnimSprite_085DCAA4
-AnimSprite_085DCAA4:
+.global AnimSprite_efxShooterOBJ_4
+AnimSprite_efxShooterOBJ_4:
 	ANIM_SPRITE_XFLIP ATTR0_WIDE, 0xA000, 0x1000, -72, -64
 	ANIM_SPRITE_END
-.global AnimSprite_085DCABC
-AnimSprite_085DCABC:
+.global AnimSprite_efxShooterOBJ_5
+AnimSprite_efxShooterOBJ_5:
 	ANIM_SPRITE_XFLIP ATTR0_WIDE, 0xA000, 0x1000, -104, -80
 	ANIM_SPRITE_END
-.global AnimSprite_085DCAD4
-AnimSprite_085DCAD4:
+.global AnimSprite_efxShooterOBJ_6
+AnimSprite_efxShooterOBJ_6:
 	ANIM_SPRITE_XFLIP ATTR0_SQUARE, 0x6000, 0x1000, -120, -96
 	ANIM_SPRITE_XFLIP ATTR0_TALL, 0x2000, 0x1002, -128, -96
 	ANIM_SPRITE_END
 
-.global AnimScr_085DCAF8
-AnimScr_085DCAF8: @ 0x5DCAF8
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DCAD4, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DCABC, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DCAA4, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DCA8C, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DCA74, 2
+.global AnimScr_efxShooterOBJ_1
+AnimScr_efxShooterOBJ_1: @ 0x5DCAF8
+    ANIMSCR_FORCE_SPRITE AnimSprite_efxShooterOBJ_6, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_efxShooterOBJ_5, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_efxShooterOBJ_4, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_efxShooterOBJ_3, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_efxShooterOBJ_2, 2
     ANIMSCR_BLOCKED
 
 	.global Img_EfxDanceObj
@@ -1063,211 +1063,211 @@ Img_EfxDanceObj:  @ 0x085DCB10
 Pal_EfxDanceObj:  @ 0x085DCC84
 	.incbin "./graphics/efxmagic/Gfx_EfxDanceObj.gbapal", 0x0, 0x20
 
-.global AnimSprite_085DCCA4
-AnimSprite_085DCCA4:
+.global AnimSprite_EfxDanceObj_0
+AnimSprite_EfxDanceObj_0:
 	ANIM_SPRITE_AFFIN 1, 0x505, 0x0, 0x0, 0x505
 	ANIM_SPRITE ATTR0_SQUARE + OBJ_ROT_SCALE_ON, ATTR1_SIZE_16, 0x0000, -13, -62
 	ANIM_SPRITE_END
-.global AnimSprite_085DCCC8
-AnimSprite_085DCCC8:
+.global AnimSprite_EfxDanceObj_1
+AnimSprite_EfxDanceObj_1:
 	ANIM_SPRITE_AFFIN 1, 0x282, 0x0, 0x0, 0x282
 	ANIM_SPRITE ATTR0_SQUARE + OBJ_ROT_SCALE_ON, ATTR1_SIZE_16, 0x0000, -14, -63
 	ANIM_SPRITE_END
-.global AnimSprite_085DCCEC
-AnimSprite_085DCCEC:
+.global AnimSprite_EfxDanceObj_2
+AnimSprite_EfxDanceObj_2:
 	ANIM_SPRITE_AFFIN 1, 0x1ac, 0x0, 0x0, 0x1ac
 	ANIM_SPRITE ATTR0_SQUARE + OBJ_ROT_SCALE_ON, ATTR1_SIZE_16, 0x0000, -14, -64
 	ANIM_SPRITE_END
-.global AnimSprite_085DCD10
-AnimSprite_085DCD10:
+.global AnimSprite_EfxDanceObj_3
+AnimSprite_EfxDanceObj_3:
 	ANIM_SPRITE_AFFIN 1, 0x16e, 0x0, 0x0, 0x16e
 	ANIM_SPRITE ATTR0_SQUARE + OBJ_ROT_SCALE_ON, ATTR1_SIZE_16, 0x0000, -14, -65
 	ANIM_SPRITE_END
-.global AnimSprite_085DCD34
-AnimSprite_085DCD34:
+.global AnimSprite_EfxDanceObj_4
+AnimSprite_EfxDanceObj_4:
 	ANIM_SPRITE_AFFIN 1, 0x141, 0x0, 0x0, 0x141
 	ANIM_SPRITE ATTR0_SQUARE + OBJ_ROT_SCALE_ON, ATTR1_SIZE_16, 0x0000, -14, -66
 	ANIM_SPRITE_END
-.global AnimSprite_085DCD58
-AnimSprite_085DCD58:
+.global AnimSprite_EfxDanceObj_5
+AnimSprite_EfxDanceObj_5:
 	ANIM_SPRITE_AFFIN 1, 0x11c, 0x0, 0x0, 0x11c
 	ANIM_SPRITE ATTR0_SQUARE + OBJ_ROT_SCALE_ON, ATTR1_SIZE_16, 0x0000, -14, -68
 	ANIM_SPRITE_END
-.global AnimSprite_085DCD7C
-AnimSprite_085DCD7C:
+.global AnimSprite_EfxDanceObj_6
+AnimSprite_EfxDanceObj_6:
 	ANIM_SPRITE ATTR0_SQUARE, ATTR1_SIZE_16, 0x0000, -14, -69
 	ANIM_SPRITE_END
-.global AnimSprite_085DCD94
-AnimSprite_085DCD94:
+.global AnimSprite_EfxDanceObj_7
+AnimSprite_EfxDanceObj_7:
 	ANIM_SPRITE_AFFIN 1, 0x141, 0x0, 0x0, 0x141
 	ANIM_SPRITE ATTR0_SQUARE + OBJ_ROT_SCALE_ON, ATTR1_SIZE_16, 0x0000, -14, -72
 	ANIM_SPRITE_END
-.global AnimSprite_085DCDB8
-AnimSprite_085DCDB8:
+.global AnimSprite_EfxDanceObj_8
+AnimSprite_EfxDanceObj_8:
 	ANIM_SPRITE_AFFIN 1, 0x1ac, 0x0, 0x0, 0x1ac
 	ANIM_SPRITE ATTR0_SQUARE + OBJ_ROT_SCALE_ON, ATTR1_SIZE_16, 0x0000, -14, -74
 	ANIM_SPRITE_END
-.global AnimSprite_085DCDDC
-AnimSprite_085DCDDC:
+.global AnimSprite_EfxDanceObj_9
+AnimSprite_EfxDanceObj_9:
 	ANIM_SPRITE_AFFIN 1, 0x282, 0x0, 0x0, 0x282
 	ANIM_SPRITE ATTR0_SQUARE + OBJ_ROT_SCALE_ON, ATTR1_SIZE_16, 0x0000, -14, -76
 	ANIM_SPRITE_END
-.global AnimSprite_085DCE00
-AnimSprite_085DCE00:
+.global AnimSprite_EfxDanceObj_10
+AnimSprite_EfxDanceObj_10:
 	ANIM_SPRITE_AFFIN 1, 0x505, 0x0, 0x0, 0x505
 	ANIM_SPRITE ATTR0_SQUARE + OBJ_ROT_SCALE_ON, ATTR1_SIZE_16, 0x0000, -14, -79
 	ANIM_SPRITE_END
-.global AnimSprite_085DCE24
-AnimSprite_085DCE24:
+.global AnimSprite_EfxDanceObj_11
+AnimSprite_EfxDanceObj_11:
 	ANIM_SPRITE_AFFIN 1, 0x11c, 0x0, 0x0, 0x11c
 	ANIM_SPRITE ATTR0_SQUARE + OBJ_ROT_SCALE_ON, ATTR1_SIZE_16, 0x0000, 2, -74
 	ANIM_SPRITE_END
-.global AnimSprite_085DCE48
-AnimSprite_085DCE48:
+.global AnimSprite_EfxDanceObj_12
+AnimSprite_EfxDanceObj_12:
 	ANIM_SPRITE_AFFIN 1, 0x141, 0x0, 0x0, 0x141
 	ANIM_SPRITE ATTR0_SQUARE + OBJ_ROT_SCALE_ON, ATTR1_SIZE_16, 0x0000, 4, -75
 	ANIM_SPRITE_END
-.global AnimSprite_085DCE6C
-AnimSprite_085DCE6C:
+.global AnimSprite_EfxDanceObj_x_0
+AnimSprite_EfxDanceObj_x_0:
 	ANIM_SPRITE_AFFIN 1, 0x16e, 0x0, 0x0, 0x16e
 	ANIM_SPRITE ATTR0_SQUARE + OBJ_ROT_SCALE_ON, ATTR1_SIZE_16, 0x0000, 6, -76
 	ANIM_SPRITE_END
-.global AnimSprite_085DCE90
-AnimSprite_085DCE90:
+.global AnimSprite_EfxDanceObj_x_1
+AnimSprite_EfxDanceObj_x_1:
 	ANIM_SPRITE_AFFIN 1, 0x1ac, 0x0, 0x0, 0x1ac
 	ANIM_SPRITE ATTR0_SQUARE + OBJ_ROT_SCALE_ON, ATTR1_SIZE_16, 0x0000, 7, -77
 	ANIM_SPRITE_END
-.global AnimSprite_085DCEB4
-AnimSprite_085DCEB4:
+.global AnimSprite_Banim_2
+AnimSprite_Banim_2:
 	ANIM_SPRITE_AFFIN 1, 0x200, 0x0, 0x0, 0x200
 	ANIM_SPRITE ATTR0_SQUARE + OBJ_ROT_SCALE_ON, ATTR1_SIZE_16, 0x0000, 8, -78
 	ANIM_SPRITE_END
-.global AnimSprite_085DCED8
-AnimSprite_085DCED8:
+.global AnimSprite_Banim_3
+AnimSprite_Banim_3:
 	ANIM_SPRITE_AFFIN 1, 0x1ac, 0x0, 0x0, 0x1ac
 	ANIM_SPRITE ATTR0_SQUARE + OBJ_ROT_SCALE_ON, ATTR1_SIZE_16, 0x0000, 8, -79
 	ANIM_SPRITE_END
-.global AnimSprite_085DCEFC
-AnimSprite_085DCEFC:
+.global AnimSprite_Banim_4
+AnimSprite_Banim_4:
 	ANIM_SPRITE_AFFIN 1, 0x16e, 0x0, 0x0, 0x16e
 	ANIM_SPRITE ATTR0_SQUARE + OBJ_ROT_SCALE_ON, ATTR1_SIZE_16, 0x0000, 8, -81
 	ANIM_SPRITE_END
-.global AnimSprite_085DCF20
-AnimSprite_085DCF20:
+.global AnimSprite_Banim_5
+AnimSprite_Banim_5:
 	ANIM_SPRITE_AFFIN 1, 0x141, 0x0, 0x0, 0x141
 	ANIM_SPRITE ATTR0_SQUARE + OBJ_ROT_SCALE_ON, ATTR1_SIZE_16, 0x0000, 7, -82
 	ANIM_SPRITE_END
-.global AnimSprite_085DCF44
-AnimSprite_085DCF44:
+.global AnimSprite_Banim_6
+AnimSprite_Banim_6:
 	ANIM_SPRITE_AFFIN 1, 0x11c, 0x0, 0x0, 0x11c
 	ANIM_SPRITE ATTR0_SQUARE + OBJ_ROT_SCALE_ON, ATTR1_SIZE_16, 0x0000, 5, -83
 	ANIM_SPRITE_END
-.global AnimSprite_085DCF68
-AnimSprite_085DCF68:
+.global AnimSprite_Banim_7
+AnimSprite_Banim_7:
 	ANIM_SPRITE ATTR0_SQUARE, ATTR1_SIZE_16, 0x0000, 2, -84
 	ANIM_SPRITE_END
-.global AnimSprite_085DCF80
-AnimSprite_085DCF80:
+.global AnimSprite_Banim_8
+AnimSprite_Banim_8:
 	ANIM_SPRITE ATTR0_SQUARE, ATTR1_SIZE_16, 0x0000, -1, -85
 	ANIM_SPRITE_END
-.global AnimSprite_085DCF98
-AnimSprite_085DCF98:
+.global AnimSprite_Banim_9
+AnimSprite_Banim_9:
 	ANIM_SPRITE ATTR0_SQUARE, ATTR1_SIZE_16, 0x0000, -5, -86
 	ANIM_SPRITE_END
-.global AnimSprite_085DCFB0
-AnimSprite_085DCFB0:
+.global AnimSprite_Banim_10
+AnimSprite_Banim_10:
 	ANIM_SPRITE ATTR0_SQUARE, ATTR1_SIZE_16, 0x0000, -8, -87
 	ANIM_SPRITE_END
-.global AnimSprite_085DCFC8
-AnimSprite_085DCFC8:
+.global AnimSprite_Banim_11
+AnimSprite_Banim_11:
 	ANIM_SPRITE ATTR0_SQUARE, ATTR1_SIZE_16, 0x0000, -11, -88
 	ANIM_SPRITE_END
-.global AnimSprite_085DCFE0
-AnimSprite_085DCFE0:
+.global AnimSprite_Banim_12
+AnimSprite_Banim_12:
 	ANIM_SPRITE ATTR0_SQUARE, ATTR1_SIZE_16, 0x0000, -14, -89
 	ANIM_SPRITE_END
-.global AnimSprite_085DCFF8
-AnimSprite_085DCFF8:
+.global AnimSprite_Banim_13
+AnimSprite_Banim_13:
 	ANIM_SPRITE ATTR0_SQUARE, ATTR1_SIZE_16, 0x0000, -16, -90
 	ANIM_SPRITE_END
-.global AnimSprite_085DD010
-AnimSprite_085DD010:
+.global AnimSprite_Banim_14
+AnimSprite_Banim_14:
 	ANIM_SPRITE ATTR0_SQUARE, ATTR1_SIZE_16, 0x0000, -18, -91
 	ANIM_SPRITE_END
-.global AnimSprite_085DD028
-AnimSprite_085DD028:
+.global AnimSprite_Banim_15
+AnimSprite_Banim_15:
 	ANIM_SPRITE_AFFIN 1, 0x11c, 0x0, 0x0, 0x11c
 	ANIM_SPRITE ATTR0_SQUARE + OBJ_ROT_SCALE_ON, ATTR1_SIZE_16, 0x0000, -20, -92
 	ANIM_SPRITE_END
-.global AnimSprite_085DD04C
-AnimSprite_085DD04C:
+.global AnimSprite_Banim_16
+AnimSprite_Banim_16:
 	ANIM_SPRITE_AFFIN 1, 0x141, 0x0, 0x0, 0x141
 	ANIM_SPRITE ATTR0_SQUARE + OBJ_ROT_SCALE_ON, ATTR1_SIZE_16, 0x0000, -22, -93
 	ANIM_SPRITE_END
-.global AnimSprite_085DD070
-AnimSprite_085DD070:
+.global AnimSprite_Banim_17
+AnimSprite_Banim_17:
 	ANIM_SPRITE_AFFIN 1, 0x16e, 0x0, 0x0, 0x16e
 	ANIM_SPRITE ATTR0_SQUARE + OBJ_ROT_SCALE_ON, ATTR1_SIZE_16, 0x0000, -24, -94
 	ANIM_SPRITE_END
-.global AnimSprite_085DD094
-AnimSprite_085DD094:
+.global AnimSprite_Banim_18
+AnimSprite_Banim_18:
 	ANIM_SPRITE_AFFIN 1, 0x1ac, 0x0, 0x0, 0x1ac
 	ANIM_SPRITE ATTR0_SQUARE + OBJ_ROT_SCALE_ON, ATTR1_SIZE_16, 0x0000, -25, -95
 	ANIM_SPRITE_END
-.global AnimSprite_085DD0B8
-AnimSprite_085DD0B8:
+.global AnimSprite_Banim_19
+AnimSprite_Banim_19:
 	ANIM_SPRITE_AFFIN 1, 0x16e, 0x0, 0x0, 0x16e
 	ANIM_SPRITE ATTR0_SQUARE + OBJ_ROT_SCALE_ON, ATTR1_SIZE_16, 0x0000, -26, -96
 	ANIM_SPRITE_END
-.global AnimSprite_085DD0DC
-AnimSprite_085DD0DC:
+.global AnimSprite_Banim_20
+AnimSprite_Banim_20:
 	ANIM_SPRITE_AFFIN 1, 0x141, 0x0, 0x0, 0x141
 	ANIM_SPRITE ATTR0_SQUARE + OBJ_ROT_SCALE_ON, ATTR1_SIZE_16, 0x0000, -26, -97
 	ANIM_SPRITE_END
-.global AnimSprite_085DD100
-AnimSprite_085DD100:
+.global AnimSprite_Banim_21
+AnimSprite_Banim_21:
 	ANIM_SPRITE_AFFIN 1, 0x11c, 0x0, 0x0, 0x11c
 	ANIM_SPRITE ATTR0_SQUARE + OBJ_ROT_SCALE_ON, ATTR1_SIZE_16, 0x0000, -26, -98
 	ANIM_SPRITE_END
-.global AnimSprite_085DD124
-AnimSprite_085DD124:
+.global AnimSprite_Banim_22
+AnimSprite_Banim_22:
 	ANIM_SPRITE ATTR0_SQUARE, ATTR1_SIZE_16, 0x0000, -25, -99
 	ANIM_SPRITE_END
-.global AnimSprite_085DD13C
-AnimSprite_085DD13C:
+.global AnimSprite_Banim_23
+AnimSprite_Banim_23:
 	ANIM_SPRITE ATTR0_SQUARE, ATTR1_SIZE_16, 0x0000, -23, -100
 	ANIM_SPRITE_END
-.global AnimSprite_085DD154
-AnimSprite_085DD154:
+.global AnimSprite_Banim_24
+AnimSprite_Banim_24:
 	ANIM_SPRITE ATTR0_SQUARE, ATTR1_SIZE_16, 0x0000, -21, -101
 	ANIM_SPRITE_END
-.global AnimSprite_085DD16C
-AnimSprite_085DD16C:
+.global AnimSprite_Banim_25
+AnimSprite_Banim_25:
 	ANIM_SPRITE ATTR0_SQUARE, ATTR1_SIZE_16, 0x0000, -18, -102
 	ANIM_SPRITE_END
-.global AnimSprite_085DD184
-AnimSprite_085DD184:
+.global AnimSprite_Banim_26
+AnimSprite_Banim_26:
 	ANIM_SPRITE ATTR0_SQUARE, ATTR1_SIZE_16, 0x0000, -15, -103
 	ANIM_SPRITE_END
-.global AnimSprite_085DD19C
-AnimSprite_085DD19C:
+.global AnimSprite_EfxSongObj2_0
+AnimSprite_EfxSongObj2_0:
 	ANIM_SPRITE ATTR0_SQUARE, ATTR1_SIZE_8, 0x0023, -16, -16
 	ANIM_SPRITE_END
-.global AnimSprite_085DD1B4
-AnimSprite_085DD1B4:
+.global AnimSprite_EfxSongObj2_1
+AnimSprite_EfxSongObj2_1:
 	ANIM_SPRITE ATTR0_SQUARE, ATTR1_SIZE_8, 0x0003, -16, -16
 	ANIM_SPRITE ATTR0_SQUARE, ATTR1_SIZE_8, 0x0023, 16, -32
 	ANIM_SPRITE ATTR0_SQUARE, ATTR1_SIZE_8, 0x0023, -24, -40
 	ANIM_SPRITE_END
-.global AnimSprite_085DD1E4
-AnimSprite_085DD1E4:
+.global AnimSprite_EfxSongObj2_2
+AnimSprite_EfxSongObj2_2:
 	ANIM_SPRITE ATTR0_TALL, ATTR1_SIZE_8, 0x0002, -16, -19
 	ANIM_SPRITE ATTR0_SQUARE, ATTR1_SIZE_8, 0x0023, 8, 0
 	ANIM_SPRITE ATTR0_SQUARE, ATTR1_SIZE_8, 0x0003, -24, -40
 	ANIM_SPRITE ATTR0_SQUARE, ATTR1_SIZE_8, 0x0003, 16, -32
 	ANIM_SPRITE_END
-.global AnimSprite_085DD220
-AnimSprite_085DD220:
+.global AnimSprite_EfxSongObj2_3
+AnimSprite_EfxSongObj2_3:
 	ANIM_SPRITE ATTR0_SQUARE, ATTR1_SIZE_8, 0x0023, 0, -24
 	ANIM_SPRITE ATTR0_SQUARE, ATTR1_SIZE_8, 0x0003, 8, 0
 	ANIM_SPRITE ATTR0_SQUARE, ATTR1_SIZE_8, 0x0003, -16, -16
@@ -1276,8 +1276,8 @@ AnimSprite_085DD220:
 	ANIM_SPRITE ATTR0_TALL, ATTR1_SIZE_8, 0x0002, -24, -43
 	ANIM_SPRITE ATTR0_SQUARE, ATTR1_SIZE_8, 0x0023, 24, -16
 	ANIM_SPRITE_END
-.global AnimSprite_085DD280
-AnimSprite_085DD280:
+.global AnimSprite_EfxSongObj2_4
+AnimSprite_EfxSongObj2_4:
 	ANIM_SPRITE ATTR0_SQUARE, ATTR1_SIZE_8, 0x0023, -16, -16
 	ANIM_SPRITE ATTR0_SQUARE, ATTR1_SIZE_8, 0x0003, 0, -24
 	ANIM_SPRITE ATTR0_TALL, ATTR1_SIZE_8, 0x0002, 8, -3
@@ -1288,8 +1288,8 @@ AnimSprite_085DD280:
 	ANIM_SPRITE ATTR0_SQUARE, ATTR1_SIZE_8, 0x0003, -24, -40
 	ANIM_SPRITE ATTR0_SQUARE, ATTR1_SIZE_8, 0x0003, 24, -16
 	ANIM_SPRITE_END
-.global AnimSprite_085DD2F8
-AnimSprite_085DD2F8:
+.global AnimSprite_EfxSongObj2_5
+AnimSprite_EfxSongObj2_5:
 	ANIM_SPRITE ATTR0_SQUARE, ATTR1_SIZE_8, 0x0003, 8, -16
 	ANIM_SPRITE ATTR0_TALL, ATTR1_SIZE_8, 0x0002, 0, -27
 	ANIM_SPRITE ATTR0_SQUARE, ATTR1_SIZE_8, 0x0003, -14, 1
@@ -1299,8 +1299,8 @@ AnimSprite_085DD2F8:
 	ANIM_SPRITE ATTR0_SQUARE, ATTR1_SIZE_8, 0x0023, -24, -40
 	ANIM_SPRITE ATTR0_TALL, ATTR1_SIZE_8, 0x0002, 24, -19
 	ANIM_SPRITE_END
-.global AnimSprite_085DD364
-AnimSprite_085DD364:
+.global AnimSprite_EfxSongObj2_6
+AnimSprite_EfxSongObj2_6:
 	ANIM_SPRITE ATTR0_TALL, ATTR1_SIZE_8, 0x0002, 8, -19
 	ANIM_SPRITE ATTR0_TALL, ATTR1_SIZE_8, 0x0002, -14, -2
 	ANIM_SPRITE ATTR0_SQUARE, ATTR1_SIZE_8, 0x0003, 0, -24
@@ -1308,8 +1308,8 @@ AnimSprite_085DD364:
 	ANIM_SPRITE ATTR0_SQUARE, ATTR1_SIZE_8, 0x0023, 8, 0
 	ANIM_SPRITE ATTR0_SQUARE, ATTR1_SIZE_8, 0x0003, 24, -16
 	ANIM_SPRITE_END
-.global AnimSprite_085DD3B8
-AnimSprite_085DD3B8:
+.global AnimSprite_EfxSongObj2_7
+AnimSprite_EfxSongObj2_7:
 	ANIM_SPRITE ATTR0_SQUARE, ATTR1_SIZE_8, 0x0003, 8, -16
 	ANIM_SPRITE ATTR0_SQUARE, ATTR1_SIZE_8, 0x0003, -14, 0
 	ANIM_SPRITE ATTR0_SQUARE, ATTR1_SIZE_8, 0x0023, 0, -24
@@ -1317,71 +1317,71 @@ AnimSprite_085DD3B8:
 	ANIM_SPRITE ATTR0_SQUARE, ATTR1_SIZE_8, 0x0023, -32, -16
 	ANIM_SPRITE ATTR0_SQUARE, ATTR1_SIZE_8, 0x0023, 24, -16
 	ANIM_SPRITE_END
-.global AnimSprite_085DD40C
-AnimSprite_085DD40C:
+.global AnimSprite_EfxSongObj2_8
+AnimSprite_EfxSongObj2_8:
 	ANIM_SPRITE ATTR0_SQUARE, ATTR1_SIZE_8, 0x0023, 8, -16
 	ANIM_SPRITE ATTR0_SQUARE, ATTR1_SIZE_8, 0x0023, -14, 0
 	ANIM_SPRITE ATTR0_SQUARE, ATTR1_SIZE_8, 0x0003, -32, -16
 	ANIM_SPRITE_END
-.global AnimSprite_085DD43C
-AnimSprite_085DD43C:
+.global AnimSprite_EfxSongObj2_9
+AnimSprite_EfxSongObj2_9:
 	ANIM_SPRITE ATTR0_TALL, ATTR1_SIZE_8, 0x0002, -32, -19
 	ANIM_SPRITE_END
-.global AnimSprite_085DD454
-AnimSprite_085DD454:
+.global AnimSprite_EfxSongObj2_10
+AnimSprite_EfxSongObj2_10:
 	ANIM_SPRITE ATTR0_SQUARE, ATTR1_SIZE_8, 0x0003, -32, -16
 	ANIM_SPRITE_END
-.global AnimSprite_085DD46C
-AnimSprite_085DD46C:
+.global AnimSprite_EfxSongObj2_11
+AnimSprite_EfxSongObj2_11:
 	ANIM_SPRITE ATTR0_SQUARE, ATTR1_SIZE_8, 0x0023, -32, -16
 	ANIM_SPRITE_END
 
 .global AnimScr_EfxDanceObj
 AnimScr_EfxDanceObj: @ 0x5DD484
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DCCA4, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DCCC8, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DCCEC, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DCD10, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DCD34, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DCD58, 3
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DCD7C, 30
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DCD94, 3
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DCDB8, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DCDDC, 1
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DCE00, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxDanceObj_0, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxDanceObj_1, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxDanceObj_2, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxDanceObj_3, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxDanceObj_4, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxDanceObj_5, 3
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxDanceObj_6, 30
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxDanceObj_7, 3
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxDanceObj_8, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxDanceObj_9, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxDanceObj_10, 1
     ANIMSCR_BLOCKED
 
 .global AnimScr_EfxSongObj2
 AnimScr_EfxSongObj2: @ 0x5DD4B4
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DD19C, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DD1B4, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DD1E4, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DD220, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DD280, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DD2F8, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DD364, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DD3B8, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DD40C, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DD43C, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DD454, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DD46C, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DD19C, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DD1B4, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DD1E4, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DD220, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DD280, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DD2F8, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DD364, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DD3B8, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DD40C, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DD43C, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DD454, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_085DD46C, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxSongObj2_0, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxSongObj2_1, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxSongObj2_2, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxSongObj2_3, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxSongObj2_4, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxSongObj2_5, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxSongObj2_6, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxSongObj2_7, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxSongObj2_8, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxSongObj2_9, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxSongObj2_10, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxSongObj2_11, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxSongObj2_0, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxSongObj2_1, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxSongObj2_2, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxSongObj2_3, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxSongObj2_4, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxSongObj2_5, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxSongObj2_6, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxSongObj2_7, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxSongObj2_8, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxSongObj2_9, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxSongObj2_10, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_EfxSongObj2_11, 2
     ANIMSCR_BLOCKED
 
-.global gUnk_085dd518
+.global gUnk_EfxSongObj2
 .global Tsa_BreathBgBase
-gUnk_085dd518:
+gUnk_EfxSongObj2:
 Tsa_BreathBgBase:  @ 0x085DD518
 	.incbin "./graphics/banim/assets/tsa/005DD518_Tsa_BreathBgBase.map.bin.lz"
 
@@ -1389,8 +1389,8 @@ Tsa_BreathBgBase:  @ 0x085DD518
 Pal_BreathBgBase:  @ 0x085DD734
 	.incbin "./graphics/banim/assets/pal/005DD734_Pal_BreathBgBase.agbpal"
 
-	.global Tsa_085DDAF4
-Tsa_085DDAF4:  @ 0x085DDAF4
+	.global Tsa_BreathBgBase_1
+Tsa_BreathBgBase_1:  @ 0x085DDAF4
 	.incbin "./graphics/banim/assets/tsa/005DDAF4_Tsa_085DDAF4.map.bin.lz"
 
 
@@ -4446,52 +4446,52 @@ AnimScr_DarkBreath_Close:  @ 0x085E5A78
 Img_DarkBreathBg:  @ 0x085E5AE4
 	.incbin "./graphics/banim/assets/img/005E5AE4_Img_DarkBreathBg.4bpp.lz" @ 0x5E64D8 - 0x5E5AE4
 
-	.global Tsa_085E64D8
-Tsa_085E64D8:  @ 0x085E64D8
+	.global Tsa_DarkBreathBg_0
+Tsa_DarkBreathBg_0:  @ 0x085E64D8
 	.incbin "./graphics/banim/assets/tsa/005E64D8_Tsa_085E64D8.map.bin.lz" @ 0x5E65C0 - 0x5E64D8
 
-	.global Tsa_085E65C0
-Tsa_085E65C0:  @ 0x085E65C0
+	.global Tsa_DarkBreathBg_1
+Tsa_DarkBreathBg_1:  @ 0x085E65C0
 	.incbin "./graphics/banim/assets/tsa/005E65C0_Tsa_085E65C0.map.bin.lz" @ 0x5E667C - 0x5E65C0
 
-	.global Tsa_085E667C
-Tsa_085E667C:  @ 0x085E667C
+	.global Tsa_DarkBreathBg_2
+Tsa_DarkBreathBg_2:  @ 0x085E667C
 	.incbin "./graphics/banim/assets/tsa/005E667C_Tsa_085E667C.map.bin.lz" @ 0x5E6778 - 0x5E667C
 
-	.global Tsa_085E6778
-Tsa_085E6778:  @ 0x085E6778
+	.global Tsa_DarkBreathBg_3
+Tsa_DarkBreathBg_3:  @ 0x085E6778
 	.incbin "./graphics/banim/assets/tsa/005E6778_Tsa_085E6778.map.bin.lz" @ 0x5E6860 - 0x5E6778
 
-	.global Tsa_085E6860
-Tsa_085E6860:  @ 0x085E6860
+	.global Tsa_DarkBreathBg_4
+Tsa_DarkBreathBg_4:  @ 0x085E6860
 	.incbin "./graphics/banim/assets/tsa/005E6860_Tsa_085E6860.map.bin.lz" @ 0x5E6948 - 0x5E6860
 
-	.global Tsa_085E6948
-Tsa_085E6948:  @ 0x085E6948
+	.global Tsa_DarkBreathBg_5
+Tsa_DarkBreathBg_5:  @ 0x085E6948
 	.incbin "./graphics/banim/assets/tsa/005E6948_Tsa_085E6948.map.bin.lz" @ 0x5E6A44 - 0x5E6948
 
-	.global Tsa_085E6A44
-Tsa_085E6A44:  @ 0x085E6A44
+	.global Tsa_DarkBreathBg_6
+Tsa_DarkBreathBg_6:  @ 0x085E6A44
 	.incbin "./graphics/banim/assets/tsa/005E6A44_Tsa_085E6A44.map.bin.lz" @ 0x5E6B70 - 0x5E6A44
 
-	.global Tsa_085E6B70
-Tsa_085E6B70:  @ 0x085E6B70
+	.global Tsa_DarkBreathBg_7
+Tsa_DarkBreathBg_7:  @ 0x085E6B70
 	.incbin "./graphics/banim/assets/tsa/005E6B70_Tsa_085E6B70.map.bin.lz" @ 0x5E6CA4 - 0x5E6B70
 
-	.global Tsa_085E6CA4
-Tsa_085E6CA4:  @ 0x085E6CA4
+	.global Tsa_DarkBreathBg_8
+Tsa_DarkBreathBg_8:  @ 0x085E6CA4
 	.incbin "./graphics/banim/assets/tsa/005E6CA4_Tsa_085E6CA4.map.bin.lz" @ 0x5E6D68 - 0x5E6CA4
 
-	.global Tsa_085E6D68
-Tsa_085E6D68:  @ 0x085E6D68
+	.global Tsa_DarkBreathBg_9
+Tsa_DarkBreathBg_9:  @ 0x085E6D68
 	.incbin "./graphics/banim/assets/tsa/005E6D68_Tsa_085E6D68.map.bin.lz" @ 0x5E6E94 - 0x5E6D68
 
-	.global Tsa_085E6E94
-Tsa_085E6E94:  @ 0x085E6E94
+	.global Tsa_DarkBreathBg_10
+Tsa_DarkBreathBg_10:  @ 0x085E6E94
 	.incbin "./graphics/banim/assets/tsa/005E6E94_Tsa_085E6E94.map.bin.lz" @ 0x5E6F90 - 0x5E6E94
 
-	.global Tsa_085E6F90
-Tsa_085E6F90:  @ 0x085E6F90
+	.global Tsa_DarkBreathBg_11
+Tsa_DarkBreathBg_11:  @ 0x085E6F90
 	.incbin "./graphics/banim/assets/tsa/005E6F90_Tsa_085E6F90.map.bin.lz" @ 0x5E7028 - 0x5E6F90
 
 	.global Img_EfxCriricalEffectBG
@@ -9282,100 +9282,100 @@ Img_FireSpellBg:  @ 0x085F5638
 Pal_FireSpellBg:  @ 0x085F6230
 	.incbin "./graphics/banim/assets/pal/005F6230_Pal_FireSpellBg.agbpal" @ 0x5F6250 - 0x5F6230
 
-	.global Tsa_085F6250
-Tsa_085F6250:  @ 0x085F6250
+	.global Tsa_Banim_0
+Tsa_Banim_0:  @ 0x085F6250
 	.incbin "./graphics/banim/assets/tsa/005F6250_Tsa_085F6250.map.bin.lz" @ 0x5F62F8 - 0x5F6250
 
-	.global Tsa_085F62F8
-Tsa_085F62F8:  @ 0x085F62F8
+	.global Tsa_Banim_1
+Tsa_Banim_1:  @ 0x085F62F8
 	.incbin "./graphics/banim/assets/tsa/005F62F8_Tsa_085F62F8.map.bin.lz" @ 0x5F63A0 - 0x5F62F8
 
-	.global Tsa_085F63A0
-Tsa_085F63A0:  @ 0x085F63A0
+	.global Tsa_Banim_2
+Tsa_Banim_2:  @ 0x085F63A0
 	.incbin "./graphics/banim/assets/tsa/005F63A0_Tsa_085F63A0.map.bin.lz" @ 0x5F6458 - 0x5F63A0
 
-	.global Tsa_085F6458
-Tsa_085F6458:  @ 0x085F6458
+	.global Tsa_Banim_3
+Tsa_Banim_3:  @ 0x085F6458
 	.incbin "./graphics/banim/assets/tsa/005F6458_Tsa_085F6458.map.bin.lz" @ 0x5F6520 - 0x5F6458
 
-	.global Tsa_085F6520
-Tsa_085F6520:  @ 0x085F6520
+	.global Tsa_Banim_4
+Tsa_Banim_4:  @ 0x085F6520
 	.incbin "./graphics/banim/assets/tsa/005F6520_Tsa_085F6520.map.bin.lz" @ 0x5F65F0 - 0x5F6520
 
-	.global Tsa_085F65F0
-Tsa_085F65F0:  @ 0x085F65F0
+	.global Tsa_Banim_5
+Tsa_Banim_5:  @ 0x085F65F0
 	.incbin "./graphics/banim/assets/tsa/005F65F0_Tsa_085F65F0.map.bin.lz" @ 0x5F66F0 - 0x5F65F0
 
-	.global Tsa_085F66F0
-Tsa_085F66F0:  @ 0x085F66F0
+	.global Tsa_Banim_6
+Tsa_Banim_6:  @ 0x085F66F0
 	.incbin "./graphics/banim/assets/tsa/005F66F0_Tsa_085F66F0.map.bin.lz" @ 0x5F67F8 - 0x5F66F0
 
-	.global Tsa_085F67F8
-Tsa_085F67F8:  @ 0x085F67F8
+	.global Tsa_Banim_7
+Tsa_Banim_7:  @ 0x085F67F8
 	.incbin "./graphics/banim/assets/tsa/005F67F8_Tsa_085F67F8.map.bin.lz" @ 0x5F690C - 0x5F67F8
 
-	.global Tsa_085F690C
-Tsa_085F690C:  @ 0x085F690C
+	.global Tsa_Banim_8
+Tsa_Banim_8:  @ 0x085F690C
 	.incbin "./graphics/banim/assets/tsa/005F690C_Tsa_085F690C.map.bin.lz" @ 0x5F6A44 - 0x5F690C
 
-	.global Tsa_085F6A44
-Tsa_085F6A44:  @ 0x085F6A44
+	.global Tsa_Banim_9
+Tsa_Banim_9:  @ 0x085F6A44
 	.incbin "./graphics/banim/assets/tsa/005F6A44_Tsa_085F6A44.map.bin.lz" @ 0x5F6B48 - 0x5F6A44
 
-	.global Tsa_085F6B48
-Tsa_085F6B48:  @ 0x085F6B48
+	.global Tsa_Banim_10
+Tsa_Banim_10:  @ 0x085F6B48
 	.incbin "./graphics/banim/assets/tsa/005F6B48_Tsa_085F6B48.map.bin.lz" @ 0x5F6C1C - 0x5F6B48
 
-	.global Tsa_085F6C1C
-Tsa_085F6C1C:  @ 0x085F6C1C
+	.global Tsa_Banim_11
+Tsa_Banim_11:  @ 0x085F6C1C
 	.incbin "./graphics/banim/assets/tsa/005F6C1C_Tsa_085F6C1C.map.bin.lz"
 
-	.global Tsa_085F6CDC
-Tsa_085F6CDC:	@ 0x085F6CDC
+	.global Tsa_efxFireBG_0
+Tsa_efxFireBG_0:	@ 0x085F6CDC
 	.incbin "./graphics/banim/assets/tsa/005F6CDC_Tsa_085F6CDC.map.bin.lz"
 
-	.global Tsa_085F6D84
-Tsa_085F6D84:	@ 0x085F6D84
+	.global Tsa_efxFireBG_1
+Tsa_efxFireBG_1:	@ 0x085F6D84
 	.incbin "./graphics/banim/assets/tsa/005F6D84_Tsa_085F6D84.map.bin.lz"
 
-	.global Tsa_085F6E2C
-Tsa_085F6E2C:	@ 0x085F6E2C
+	.global Tsa_efxFireBG_2
+Tsa_efxFireBG_2:	@ 0x085F6E2C
 	.incbin "./graphics/banim/assets/tsa/005F6E2C_Tsa_085F6E2C.map.bin.lz"
 
-	.global Tsa_085F6EE4
-Tsa_085F6EE4:	@ 0x085F6EE4
+	.global Tsa_efxFireBG_3
+Tsa_efxFireBG_3:	@ 0x085F6EE4
 	.incbin "./graphics/banim/assets/tsa/005F6EE4_Tsa_085F6EE4.map.bin.lz"
 
-	.global Tsa_085F6FAC
-Tsa_085F6FAC:	@ 0x085F6FAC
+	.global Tsa_efxFireBG_4
+Tsa_efxFireBG_4:	@ 0x085F6FAC
 	.incbin "./graphics/banim/assets/tsa/005F6FAC_Tsa_085F6FAC.map.bin.lz"
 
-	.global Tsa_085F707C
-Tsa_085F707C:	@ 0x085F707C
+	.global Tsa_efxFireBG_5
+Tsa_efxFireBG_5:	@ 0x085F707C
 	.incbin "./graphics/banim/assets/tsa/005F707C_Tsa_085F707C.map.bin.lz"
 
-	.global Tsa_085F717C
-Tsa_085F717C:	@ 0x085F717C
+	.global Tsa_efxFireBG_6
+Tsa_efxFireBG_6:	@ 0x085F717C
 	.incbin "./graphics/banim/assets/tsa/005F717C_Tsa_085F717C.map.bin.lz"
 
-	.global Tsa_085F7284
-Tsa_085F7284:	@ 0x085F7284
+	.global Tsa_efxFireBG_7
+Tsa_efxFireBG_7:	@ 0x085F7284
 	.incbin "./graphics/banim/assets/tsa/005F7284_Tsa_085F7284.map.bin.lz"
 
-	.global Tsa_085F7398
-Tsa_085F7398:	@ 0x085F7398
+	.global Tsa_efxFireBG_8
+Tsa_efxFireBG_8:	@ 0x085F7398
 	.incbin "./graphics/banim/assets/tsa/005F7398_Tsa_085F7398.map.bin.lz"
 
-	.global Tsa_085F74D0
-Tsa_085F74D0:	@ 0x085F74D0
+	.global Tsa_efxFireBG_9
+Tsa_efxFireBG_9:	@ 0x085F74D0
 	.incbin "./graphics/banim/assets/tsa/005F74D0_Tsa_085F74D0.map.bin.lz"
 
-	.global Tsa_085F75D4
-Tsa_085F75D4:	@ 0x085F75D4
+	.global Tsa_efxFireBG_10
+Tsa_efxFireBG_10:	@ 0x085F75D4
 	.incbin "./graphics/banim/assets/tsa/005F75D4_Tsa_085F75D4.map.bin.lz"
 
-	.global Tsa_085F76A8
-Tsa_085F76A8:	@ 0x085F76A8
+	.global Tsa_efxFireBG_11
+Tsa_efxFireBG_11:	@ 0x085F76A8
 	.incbin "./graphics/banim/assets/tsa/005F76A8_Tsa_085F76A8.map.bin.lz"
 
 	.global Img_FireSpellSprites
@@ -9662,136 +9662,136 @@ AnimScr_EfxFireOBJ_R_Back: @ 0x5F8468
     ANIMSCR_FORCE_SPRITE AnimSprite_EfxFireOBJ_R_14, 2
     ANIMSCR_BLOCKED
 
-	.global Img_085F8494
-Img_085F8494:	@ 0x085F8494
+	.global Img_Banim_0
+Img_Banim_0:	@ 0x085F8494
 	.incbin "./graphics/banim/assets/img/005F8494_Img_085F8494.4bpp.lz"
 
-	.global Img_085F91D0
-Img_085F91D0:	@ 0x085F91D0
+	.global Img_AnimaHitBG_0
+Img_AnimaHitBG_0:	@ 0x085F91D0
 	.incbin "./graphics/banim/assets/img/005F91D0_Img_085F91D0.4bpp.lz"
 
-	.global Img_085F9EAC
-Img_085F9EAC:	@ 0x085F9EAC
+	.global Img_AnimaHitBG_1
+Img_AnimaHitBG_1:	@ 0x085F9EAC
 	.incbin "./graphics/banim/assets/img/005F9EAC_Img_085F9EAC.4bpp.lz"
 
-	.global Img_085FACD4
-Img_085FACD4:	@ 0x085FACD4
+	.global Img_AnimaHitBG_2
+Img_AnimaHitBG_2:	@ 0x085FACD4
 	.incbin "./graphics/banim/assets/img/005FACD4_Img_085FACD4.4bpp.lz"
 
-	.global Img_085FBCC8
-Img_085FBCC8:	@ 0x085FBCC8
+	.global Img_AnimaHitBG_3
+Img_AnimaHitBG_3:	@ 0x085FBCC8
 	.incbin "./graphics/banim/assets/img/005FBCC8_Img_085FBCC8.4bpp.lz"
 
-	.global Img_085FCF64
-Img_085FCF64:	@ 0x085FCF64
+	.global Img_AnimaHitBG_4
+Img_AnimaHitBG_4:	@ 0x085FCF64
 	.incbin "./graphics/banim/assets/img/005FCF64_Img_085FCF64.4bpp.lz"
 
-	.global Img_085FDB30
-Img_085FDB30:	@ 0x085FDB30
+	.global Img_AnimaHitBG_5
+Img_AnimaHitBG_5:	@ 0x085FDB30
 	.incbin "./graphics/banim/assets/img/005FDB30_Img_085FDB30.4bpp.lz"
 
-	.global Img_085FE728
-Img_085FE728:	@ 0x085FE728
+	.global Img_AnimaHitBG_6
+Img_AnimaHitBG_6:	@ 0x085FE728
 	.incbin "./graphics/banim/assets/img/005FE728_Img_085FE728.4bpp.lz"
 
-	.global Img_085FF280
-Img_085FF280:	@ 0x085FF280
+	.global Img_AnimaHitBG_7
+Img_AnimaHitBG_7:	@ 0x085FF280
 	.incbin "./graphics/banim/assets/img/005FF280_Img_085FF280.4bpp.lz"
 
-	.global Img_085FFD7C
-Img_085FFD7C:	@ 0x085FFD7C
+	.global Img_AnimaHitBG_8
+Img_AnimaHitBG_8:	@ 0x085FFD7C
 	.incbin "./graphics/banim/assets/img/005FFD7C_Img_085FFD7C.4bpp.lz"
 
-	.global Img_08600784
-Img_08600784:	@ 0x08600784
+	.global Img_AnimaHitBG_9
+Img_AnimaHitBG_9:	@ 0x08600784
 	.incbin "./graphics/banim/assets/img/00600784_Img_08600784.4bpp.lz"
 
 	.global Pal_EfxFireHitBG
 Pal_EfxFireHitBG:  @ 0x0860108C
 	.incbin "./graphics/banim/assets/pal/0060108C_Pal_EfxFireHitBG.agbpal"
 
-	.global Tsa_086010AC
-Tsa_086010AC:	@ 0x086010AC
+	.global Tsa_Banim_12
+Tsa_Banim_12:	@ 0x086010AC
 	.incbin "./graphics/banim/assets/tsa/006010AC_Tsa_086010AC.map.bin.lz"
 
-	.global Tsa_08601158
-Tsa_08601158:	@ 0x08601158
+	.global Tsa_AnimaHitBG_0
+Tsa_AnimaHitBG_0:	@ 0x08601158
 	.incbin "./graphics/banim/assets/tsa/00601158_Tsa_08601158.map.bin.lz"
 
-	.global Tsa_08601210
-Tsa_08601210:	@ 0x08601210
+	.global Tsa_AnimaHitBG_1
+Tsa_AnimaHitBG_1:	@ 0x08601210
 	.incbin "./graphics/banim/assets/tsa/00601210_Tsa_08601210.map.bin.lz"
 
-	.global Tsa_086012DC
-Tsa_086012DC:	@ 0x086012DC
+	.global Tsa_AnimaHitBG_2
+Tsa_AnimaHitBG_2:	@ 0x086012DC
 	.incbin "./graphics/banim/assets/tsa/006012DC_Tsa_086012DC.map.bin.lz"
 
-	.global Tsa_086013BC
-Tsa_086013BC:	@ 0x086013BC
+	.global Tsa_AnimaHitBG_3
+Tsa_AnimaHitBG_3:	@ 0x086013BC
 	.incbin "./graphics/banim/assets/tsa/006013BC_Tsa_086013BC.map.bin.lz"
 
-	.global Tsa_086014B0
-Tsa_086014B0:	@ 0x086014B0
+	.global Tsa_AnimaHitBG_4
+Tsa_AnimaHitBG_4:	@ 0x086014B0
 	.incbin "./graphics/banim/assets/tsa/006014B0_Tsa_086014B0.map.bin.lz"
 
-	.global Tsa_086015C8
-Tsa_086015C8:	@ 0x086015C8
+	.global Tsa_AnimaHitBG_5
+Tsa_AnimaHitBG_5:	@ 0x086015C8
 	.incbin "./graphics/banim/assets/tsa/006015C8_Tsa_086015C8.map.bin.lz"
 
-	.global Tsa_086016F4
-Tsa_086016F4:	@ 0x086016F4
+	.global Tsa_AnimaHitBG_6
+Tsa_AnimaHitBG_6:	@ 0x086016F4
 	.incbin "./graphics/banim/assets/tsa/006016F4_Tsa_086016F4.map.bin.lz"
 
-	.global Tsa_0860182C
-Tsa_0860182C:	@ 0x0860182C
+	.global Tsa_AnimaHitBG_7
+Tsa_AnimaHitBG_7:	@ 0x0860182C
 	.incbin "./graphics/banim/assets/tsa/0060182C_Tsa_0860182C.map.bin.lz"
 
-	.global Tsa_08601970
-Tsa_08601970:	@ 0x08601970
+	.global Tsa_AnimaHitBG_8
+Tsa_AnimaHitBG_8:	@ 0x08601970
 	.incbin "./graphics/banim/assets/tsa/00601970_Tsa_08601970.map.bin.lz"
 
-	.global Tsa_08601AC4
-Tsa_08601AC4:	@ 0x08601AC4
+	.global Tsa_AnimaHitBG_9
+Tsa_AnimaHitBG_9:	@ 0x08601AC4
 	.incbin "./graphics/banim/assets/tsa/00601AC4_Tsa_08601AC4.map.bin.lz"
 
-	.global Tsa_08601C1C
-Tsa_08601C1C:	@ 0x08601C1C
+	.global Tsa_AnimaHitBG_10
+Tsa_AnimaHitBG_10:	@ 0x08601C1C
 	.incbin "./graphics/banim/assets/tsa/00601C1C_Tsa_08601C1C.map.bin.lz"
 
-	.global Tsa_08601D84
-Tsa_08601D84:	@ 0x08601D84
+	.global Tsa_AnimaHitBG_11
+Tsa_AnimaHitBG_11:	@ 0x08601D84
 	.incbin "./graphics/banim/assets/tsa/00601D84_Tsa_08601D84.map.bin.lz"
 
-	.global Tsa_08601EF0
-Tsa_08601EF0:	@ 0x08601EF0
+	.global Tsa_AnimaHitBG_12
+Tsa_AnimaHitBG_12:	@ 0x08601EF0
 	.incbin "./graphics/banim/assets/tsa/00601EF0_Tsa_08601EF0.map.bin.lz"
 
-	.global Tsa_0860206C
-Tsa_0860206C:	@ 0x0860206C
+	.global Tsa_AnimaHitBG_13
+Tsa_AnimaHitBG_13:	@ 0x0860206C
 	.incbin "./graphics/banim/assets/tsa/0060206C_Tsa_0860206C.map.bin.lz"
 
-	.global Tsa_08602200
-Tsa_08602200:	@ 0x08602200
+	.global Tsa_AnimaHitBG_14
+Tsa_AnimaHitBG_14:	@ 0x08602200
 	.incbin "./graphics/banim/assets/tsa/00602200_Tsa_08602200.map.bin.lz"
 
-	.global Tsa_086023A0
-Tsa_086023A0:	@ 0x086023A0
+	.global Tsa_AnimaHitBG_15
+Tsa_AnimaHitBG_15:	@ 0x086023A0
 	.incbin "./graphics/banim/assets/tsa/006023A0_Tsa_086023A0.map.bin.lz"
 
-	.global Tsa_08602540
-Tsa_08602540:	@ 0x08602540
+	.global Tsa_AnimaHitBG_16
+Tsa_AnimaHitBG_16:	@ 0x08602540
 	.incbin "./graphics/banim/assets/tsa/00602540_Tsa_08602540.map.bin.lz"
 
-	.global Tsa_086026E0
-Tsa_086026E0:	@ 0x086026E0
+	.global Tsa_AnimaHitBG_17
+Tsa_AnimaHitBG_17:	@ 0x086026E0
 	.incbin "./graphics/banim/assets/tsa/006026E0_Tsa_086026E0.map.bin.lz"
 
-	.global Tsa_08602880
-Tsa_08602880:	@ 0x08602880
+	.global Tsa_AnimaHitBG_18
+Tsa_AnimaHitBG_18:	@ 0x08602880
 	.incbin "./graphics/banim/assets/tsa/00602880_Tsa_08602880.map.bin.lz"
 
-	.global Tsa_08602A10
-Tsa_08602A10:	@ 0x08602A10
+	.global Tsa_AnimaHitBG_19
+Tsa_AnimaHitBG_19:	@ 0x08602A10
 	.incbin "./graphics/banim/assets/tsa/00602A10_Tsa_08602A10.map.bin.lz"
 
 	.global Img_EkrElfireBG
@@ -12167,176 +12167,176 @@ AnimScr_FimbulvetrOBJ2Fall_TypeB:  @ 0x0861AD8C
     ANIMSCR_FORCE_SPRITE AnimSprite_FimbulvetrOBJ2Fall_2, 4
     ANIMSCR_LOOP
 
-	.global Img_0861AD94
-Img_0861AD94:  @ 0x0861AD94
+	.global Img_Banim_1
+Img_Banim_1:  @ 0x0861AD94
 	.incbin "./graphics/banim/assets/img/0061AD94_Img_0861AD94.4bpp.lz" @ 0x61B65C - 0x61AD94
 
-	.global Img_0861B65C
-Img_0861B65C:  @ 0x0861B65C
+	.global Img_Banim_2
+Img_Banim_2:  @ 0x0861B65C
 	.incbin "./graphics/banim/assets/img/0061B65C_Img_0861B65C.4bpp.lz" @ 0x61BDAC - 0x61B65C
 
-	.global Img_0861BDAC
-Img_0861BDAC:  @ 0x0861BDAC
+	.global Img_Banim_3
+Img_Banim_3:  @ 0x0861BDAC
 	.incbin "./graphics/banim/assets/img/0061BDAC_Img_0861BDAC.4bpp.lz" @ 0x61C770 - 0x61BDAC
 
-	.global Img_0861C770
-Img_0861C770:  @ 0x0861C770
+	.global Img_Banim_4
+Img_Banim_4:  @ 0x0861C770
 	.incbin "./graphics/banim/assets/img/0061C770_Img_0861C770.4bpp.lz" @ 0x61D2C4 - 0x61C770
 
-	.global Img_0861D2C4
-Img_0861D2C4:  @ 0x0861D2C4
+	.global Img_Banim_5
+Img_Banim_5:  @ 0x0861D2C4
 	.incbin "./graphics/banim/assets/img/0061D2C4_Img_0861D2C4.4bpp.lz" @ 0x61DDCC - 0x61D2C4
 
-	.global Img_0861DDCC
-Img_0861DDCC:  @ 0x0861DDCC
+	.global Img_Light_0
+Img_Light_0:  @ 0x0861DDCC
 	.incbin "./graphics/banim/assets/img/0061DDCC_Img_0861DDCC.4bpp.lz" @ 0x61E0E4 - 0x61DDCC
 
-	.global Img_0861E0E4
-Img_0861E0E4:  @ 0x0861E0E4
+	.global Img_Light_1
+Img_Light_1:  @ 0x0861E0E4
 	.incbin "./graphics/banim/assets/img/0061E0E4_Img_0861E0E4.4bpp.lz" @ 0x61ED94 - 0x61E0E4
 
-	.global Img_0861ED94
-Img_0861ED94:  @ 0x0861ED94
+	.global Img_Light_2
+Img_Light_2:  @ 0x0861ED94
 	.incbin "./graphics/banim/assets/img/0061ED94_Img_0861ED94.4bpp.lz" @ 0x61F7B4 - 0x61ED94
 
-	.global Pal_0861F7B4
-Pal_0861F7B4:  @ 0x0861F7B4
+	.global Pal_Banim_0
+Pal_Banim_0:  @ 0x0861F7B4
 	.incbin "./graphics/banim/assets/pal/0061F7B4_Pal_0861F7B4.gbapal" @ 0x61F7D4 - 0x61F7B4
 
-	.global Pal_0861F7D4
-Pal_0861F7D4:  @ 0x0861F7D4
+	.global Pal_Light
+Pal_Light:  @ 0x0861F7D4
 	.incbin "./graphics/banim/assets/pal/0061F7D4_Pal_0861F7D4.gbapal" @ 0x61F7F4 - 0x61F7D4
 
-	.global Tsa_0861F7F4
-Tsa_0861F7F4:  @ 0x0861F7F4
+	.global Tsa_Light_0
+Tsa_Light_0:  @ 0x0861F7F4
 	.incbin "./graphics/banim/assets/tsa/0061F7F4_Tsa_0861F7F4.map.bin.lz" @ 0x61F918 - 0x61F7F4
 
-	.global Tsa_0861F918
-Tsa_0861F918:  @ 0x0861F918
+	.global Tsa_Light_1
+Tsa_Light_1:  @ 0x0861F918
 	.incbin "./graphics/banim/assets/tsa/0061F918_Tsa_0861F918.map.bin.lz" @ 0x61FA38 - 0x61F918
 
-	.global Tsa_0861FA38
-Tsa_0861FA38:  @ 0x0861FA38
+	.global Tsa_Light_2
+Tsa_Light_2:  @ 0x0861FA38
 	.incbin "./graphics/banim/assets/tsa/0061FA38_Tsa_0861FA38.map.bin.lz" @ 0x61FB44 - 0x61FA38
 
-	.global Tsa_0861FB44
-Tsa_0861FB44:  @ 0x0861FB44
+	.global Tsa_Light_3
+Tsa_Light_3:  @ 0x0861FB44
 	.incbin "./graphics/banim/assets/tsa/0061FB44_Tsa_0861FB44.map.bin.lz" @ 0x61FC40 - 0x61FB44
 
-	.global Tsa_0861FC40
-Tsa_0861FC40:  @ 0x0861FC40
+	.global Tsa_Light_4
+Tsa_Light_4:  @ 0x0861FC40
 	.incbin "./graphics/banim/assets/tsa/0061FC40_Tsa_0861FC40.map.bin.lz" @ 0x61FD28 - 0x61FC40
 
-	.global Tsa_0861FD28
-Tsa_0861FD28:  @ 0x0861FD28
+	.global Tsa_Light_5
+Tsa_Light_5:  @ 0x0861FD28
 	.incbin "./graphics/banim/assets/tsa/0061FD28_Tsa_0861FD28.map.bin.lz" @ 0x61FE0C - 0x61FD28
 
-	.global Tsa_0861FE0C
-Tsa_0861FE0C:  @ 0x0861FE0C
+	.global Tsa_Light_6
+Tsa_Light_6:  @ 0x0861FE0C
 	.incbin "./graphics/banim/assets/tsa/0061FE0C_Tsa_0861FE0C.map.bin.lz" @ 0x61FEF0 - 0x61FE0C
 
-	.global Tsa_0861FEF0
-Tsa_0861FEF0:  @ 0x0861FEF0
+	.global Tsa_Light_7
+Tsa_Light_7:  @ 0x0861FEF0
 	.incbin "./graphics/banim/assets/tsa/0061FEF0_Tsa_0861FEF0.map.bin.lz" @ 0x61FFCC - 0x61FEF0
 
-	.global Tsa_0861FFCC
-Tsa_0861FFCC:  @ 0x0861FFCC
+	.global Tsa_Light_8
+Tsa_Light_8:  @ 0x0861FFCC
 	.incbin "./graphics/banim/assets/tsa/0061FFCC_Tsa_0861FFCC.map.bin.lz" @ 0x6200AC - 0x61FFCC
 
-	.global Tsa_086200AC
-Tsa_086200AC:  @ 0x086200AC
+	.global Tsa_Light_9
+Tsa_Light_9:  @ 0x086200AC
 	.incbin "./graphics/banim/assets/tsa/006200AC_Tsa_086200AC.map.bin.lz" @ 0x6201A0 - 0x6200AC
 
-	.global Tsa_086201A0
-Tsa_086201A0:  @ 0x086201A0
+	.global Tsa_Light_10
+Tsa_Light_10:  @ 0x086201A0
 	.incbin "./graphics/banim/assets/tsa/006201A0_Tsa_086201A0.map.bin.lz" @ 0x620294 - 0x6201A0
 
-	.global Tsa_08620294
-Tsa_08620294:  @ 0x08620294
+	.global Tsa_Light_11
+Tsa_Light_11:  @ 0x08620294
 	.incbin "./graphics/banim/assets/tsa/00620294_Tsa_08620294.map.bin.lz" @ 0x620398 - 0x620294
 
-	.global Tsa_08620398
-Tsa_08620398:  @ 0x08620398
+	.global Tsa_Light_12
+Tsa_Light_12:  @ 0x08620398
 	.incbin "./graphics/banim/assets/tsa/00620398_Tsa_08620398.map.bin.lz" @ 0x6204A0 - 0x620398
 
-	.global Tsa_086204A0
-Tsa_086204A0:  @ 0x086204A0
+	.global Tsa_Light_13
+Tsa_Light_13:  @ 0x086204A0
 	.incbin "./graphics/banim/assets/tsa/006204A0_Tsa_086204A0.map.bin.lz" @ 0x6205B8 - 0x6204A0
 
-	.global Tsa_086205B8
-Tsa_086205B8:  @ 0x086205B8
+	.global Tsa_Light_14
+Tsa_Light_14:  @ 0x086205B8
 	.incbin "./graphics/banim/assets/tsa/006205B8_Tsa_086205B8.map.bin.lz" @ 0x6206DC - 0x6205B8
 
-	.global Tsa_086206DC
-Tsa_086206DC:  @ 0x086206DC
+	.global Tsa_Light_15
+Tsa_Light_15:  @ 0x086206DC
 	.incbin "./graphics/banim/assets/tsa/006206DC_Tsa_086206DC.map.bin.lz" @ 0x6207F0 - 0x6206DC
 
-	.global Tsa_086207F0
-Tsa_086207F0:  @ 0x086207F0
+	.global Tsa_Light_16
+Tsa_Light_16:  @ 0x086207F0
 	.incbin "./graphics/banim/assets/tsa/006207F0_Tsa_086207F0.map.bin.lz" @ 0x6208A0 - 0x6207F0
 
-	.global Tsa_086208A0
-Tsa_086208A0:  @ 0x086208A0
+	.global Tsa_Light_17
+Tsa_Light_17:  @ 0x086208A0
 	.incbin "./graphics/banim/assets/tsa/006208A0_Tsa_086208A0.map.bin.lz" @ 0x6209A8 - 0x6208A0
 
-	.global Tsa_086209A8
-Tsa_086209A8:  @ 0x086209A8
+	.global Tsa_Light_18
+Tsa_Light_18:  @ 0x086209A8
 	.incbin "./graphics/banim/assets/tsa/006209A8_Tsa_086209A8.map.bin.lz" @ 0x620AE4 - 0x6209A8
 
-	.global Tsa_08620AE4
-Tsa_08620AE4:  @ 0x08620AE4
+	.global Tsa_Light_19
+Tsa_Light_19:  @ 0x08620AE4
 	.incbin "./graphics/banim/assets/tsa/00620AE4_Tsa_08620AE4.map.bin.lz" @ 0x620C58 - 0x620AE4
 
-	.global Tsa_08620C58
-Tsa_08620C58:  @ 0x08620C58
+	.global Tsa_Light_20
+Tsa_Light_20:  @ 0x08620C58
 	.incbin "./graphics/banim/assets/tsa/00620C58_Tsa_08620C58.map.bin.lz" @ 0x620DF0 - 0x620C58
 
-	.global Tsa_08620DF0
-Tsa_08620DF0:  @ 0x08620DF0
+	.global Tsa_Light_21
+Tsa_Light_21:  @ 0x08620DF0
 	.incbin "./graphics/banim/assets/tsa/00620DF0_Tsa_08620DF0.map.bin.lz" @ 0x620F64 - 0x620DF0
 
-	.global Tsa_08620F64
-Tsa_08620F64:  @ 0x08620F64
+	.global Tsa_Light_22
+Tsa_Light_22:  @ 0x08620F64
 	.incbin "./graphics/banim/assets/tsa/00620F64_Tsa_08620F64.map.bin.lz" @ 0x621070 - 0x620F64
 
-	.global Tsa_08621070
-Tsa_08621070:  @ 0x08621070
+	.global Tsa_Light_23
+Tsa_Light_23:  @ 0x08621070
 	.incbin "./graphics/banim/assets/tsa/00621070_Tsa_08621070.map.bin.lz" @ 0x621144 - 0x621070
 
-	.global Tsa_08621144
-Tsa_08621144:  @ 0x08621144
+	.global Tsa_Light_24
+Tsa_Light_24:  @ 0x08621144
 	.incbin "./graphics/banim/assets/tsa/00621144_Tsa_08621144.map.bin.lz" @ 0x6211E4 - 0x621144
 
-	.global Tsa_086211E4
-Tsa_086211E4:  @ 0x086211E4
+	.global Tsa_Light_25
+Tsa_Light_25:  @ 0x086211E4
 	.incbin "./graphics/banim/assets/tsa/006211E4_Tsa_086211E4.map.bin.lz" @ 0x621304 - 0x6211E4
 
-	.global Tsa_08621304
-Tsa_08621304:  @ 0x08621304
+	.global Tsa_Light_26
+Tsa_Light_26:  @ 0x08621304
 	.incbin "./graphics/banim/assets/tsa/00621304_Tsa_08621304.map.bin.lz" @ 0x621420 - 0x621304
 
-	.global Tsa_08621420
-Tsa_08621420:  @ 0x08621420
+	.global Tsa_Light_27
+Tsa_Light_27:  @ 0x08621420
 	.incbin "./graphics/banim/assets/tsa/00621420_Tsa_08621420.map.bin.lz" @ 0x621534 - 0x621420
 
-	.global Tsa_08621534
-Tsa_08621534:  @ 0x08621534
+	.global Tsa_Light_28
+Tsa_Light_28:  @ 0x08621534
 	.incbin "./graphics/banim/assets/tsa/00621534_Tsa_08621534.map.bin.lz" @ 0x62162C - 0x621534
 
-	.global Tsa_0862162C
-Tsa_0862162C:  @ 0x0862162C
+	.global Tsa_Light_29
+Tsa_Light_29:  @ 0x0862162C
 	.incbin "./graphics/banim/assets/tsa/0062162C_Tsa_0862162C.map.bin.lz" @ 0x621714 - 0x62162C
 
-	.global Tsa_08621714
-Tsa_08621714:  @ 0x08621714
+	.global Tsa_Light_30
+Tsa_Light_30:  @ 0x08621714
 	.incbin "./graphics/banim/assets/tsa/00621714_Tsa_08621714.map.bin.lz" @ 0x6217E4 - 0x621714
 
-	.global Tsa_086217E4
-Tsa_086217E4:  @ 0x086217E4
+	.global Tsa_Light_31
+Tsa_Light_31:  @ 0x086217E4
 	.incbin "./graphics/banim/assets/tsa/006217E4_Tsa_086217E4.map.bin.lz" @ 0x6218A8 - 0x6217E4
 
-	.global Tsa_086218A8
-Tsa_086218A8:  @ 0x086218A8
+	.global Tsa_Light_32
+Tsa_Light_32:  @ 0x086218A8
 	.incbin "./graphics/banim/assets/tsa/006218A8_Tsa_086218A8.map.bin.lz" @ 0x621960 - 0x6218A8
 
 	.global Img_AircaliburBg
@@ -13921,200 +13921,200 @@ AnimScr_EfxAlacaliburOBJ_LeftBack: @ 0x62688C
     ANIMSCR_FORCE_SPRITE AnimSprite_EfxAlacaliburOBJ_Front_68, 1
     ANIMSCR_DISABLED
 
-	.global Img_08626944
-Img_08626944:  @ 0x08626944
+	.global Img_Banim_6
+Img_Banim_6:  @ 0x08626944
 	.incbin "./graphics/banim/assets/img/00626944_Img_08626944.4bpp.lz" @ 0x627514 - 0x626944
 
-	.global Img_08627514
-Img_08627514:  @ 0x08627514
+	.global Img_Flux_ClassReel_0
+Img_Flux_ClassReel_0:  @ 0x08627514
 	.incbin "./graphics/banim/assets/img/00627514_Img_08627514.4bpp.lz" @ 0x628224 - 0x627514
 
-	.global Img_08628224
-Img_08628224:  @ 0x08628224
+	.global Img_Flux_ClassReel_1
+Img_Flux_ClassReel_1:  @ 0x08628224
 	.incbin "./graphics/banim/assets/img/00628224_Img_08628224.4bpp.lz" @ 0x629480 - 0x628224
 
-	.global Img_08629480
-Img_08629480:  @ 0x08629480
+	.global Img_Flux_ClassReel_2
+Img_Flux_ClassReel_2:  @ 0x08629480
 	.incbin "./graphics/banim/assets/img/00629480_Img_08629480.4bpp.lz" @ 0x629B04 - 0x629480
 
-	.global Img_08629B04
-Img_08629B04:  @ 0x08629B04
+	.global Img_Flux_ClassReel_3
+Img_Flux_ClassReel_3:  @ 0x08629B04
 	.incbin "./graphics/banim/assets/img/00629B04_Img_08629B04.4bpp.lz" @ 0x62A060 - 0x629B04
 
-	.global Img_0862A060
-Img_0862A060:  @ 0x0862A060
+	.global Img_Flux_ClassReel_4
+Img_Flux_ClassReel_4:  @ 0x0862A060
 	.incbin "./graphics/banim/assets/img/0062A060_Img_0862A060.4bpp.lz" @ 0x62A2D0 - 0x62A060
 
-	.global Pal_0862A2D0
-Pal_0862A2D0:  @ 0x0862A2D0
+	.global Pal_Banim_1
+Pal_Banim_1:  @ 0x0862A2D0
 	.incbin "./graphics/banim/assets/pal/0062A2D0_Pal_0862A2D0.gbapal"
 
-	.global Pal_0862A2F0
-Pal_0862A2F0:  @ 0x0862A2F0
+	.global Pal_Banim_2
+Pal_Banim_2:  @ 0x0862A2F0
 	.incbin "./graphics/banim/assets/pal/0062A2F0_Pal_0862A2F0.gbapal" @ 0x62A310 - 0x62A2F0
 
-	.global Tsa_0862A310
-Tsa_0862A310:  @ 0x0862A310
+	.global Tsa_Flux_ClassReel_0
+Tsa_Flux_ClassReel_0:  @ 0x0862A310
 	.incbin "./graphics/banim/assets/tsa/0062A310_Tsa_0862A310.map.bin.lz" @ 0x62A40C - 0x62A310
 
-	.global Tsa_0862A40C
-Tsa_0862A40C:  @ 0x0862A40C
+	.global Tsa_Flux_ClassReel_1
+Tsa_Flux_ClassReel_1:  @ 0x0862A40C
 	.incbin "./graphics/banim/assets/tsa/0062A40C_Tsa_0862A40C.map.bin.lz" @ 0x62A50C - 0x62A40C
 
-	.global Tsa_0862A50C
-Tsa_0862A50C:  @ 0x0862A50C
+	.global Tsa_Flux_ClassReel_2
+Tsa_Flux_ClassReel_2:  @ 0x0862A50C
 	.incbin "./graphics/banim/assets/tsa/0062A50C_Tsa_0862A50C.map.bin.lz" @ 0x62A610 - 0x62A50C
 
-	.global Tsa_0862A610
-Tsa_0862A610:  @ 0x0862A610
+	.global Tsa_Flux_ClassReel_3
+Tsa_Flux_ClassReel_3:  @ 0x0862A610
 	.incbin "./graphics/banim/assets/tsa/0062A610_Tsa_0862A610.map.bin.lz" @ 0x62A708 - 0x62A610
 
-	.global Tsa_0862A708
-Tsa_0862A708:  @ 0x0862A708
+	.global Tsa_Flux_ClassReel_4
+Tsa_Flux_ClassReel_4:  @ 0x0862A708
 	.incbin "./graphics/banim/assets/tsa/0062A708_Tsa_0862A708.map.bin.lz" @ 0x62A814 - 0x62A708
 
-	.global Tsa_0862A814
-Tsa_0862A814:  @ 0x0862A814
+	.global Tsa_Flux_ClassReel_5
+Tsa_Flux_ClassReel_5:  @ 0x0862A814
 	.incbin "./graphics/banim/assets/tsa/0062A814_Tsa_0862A814.map.bin.lz" @ 0x62A920 - 0x62A814
 
-	.global Tsa_0862A920
-Tsa_0862A920:  @ 0x0862A920
+	.global Tsa_Flux_ClassReel_6
+Tsa_Flux_ClassReel_6:  @ 0x0862A920
 	.incbin "./graphics/banim/assets/tsa/0062A920_Tsa_0862A920.map.bin.lz" @ 0x62AA40 - 0x62A920
 
-	.global Tsa_0862AA40
-Tsa_0862AA40:  @ 0x0862AA40
+	.global Tsa_Flux_ClassReel_7
+Tsa_Flux_ClassReel_7:  @ 0x0862AA40
 	.incbin "./graphics/banim/assets/tsa/0062AA40_Tsa_0862AA40.map.bin.lz" @ 0x62AB64 - 0x62AA40
 
-	.global Tsa_0862AB64
-Tsa_0862AB64:  @ 0x0862AB64
+	.global Tsa_Flux_ClassReel_8
+Tsa_Flux_ClassReel_8:  @ 0x0862AB64
 	.incbin "./graphics/banim/assets/tsa/0062AB64_Tsa_0862AB64.map.bin.lz" @ 0x62AC4C - 0x62AB64
 
-	.global Tsa_0862AC4C
-Tsa_0862AC4C:  @ 0x0862AC4C
+	.global Tsa_Flux_ClassReel_9
+Tsa_Flux_ClassReel_9:  @ 0x0862AC4C
 	.incbin "./graphics/banim/assets/tsa/0062AC4C_Tsa_0862AC4C.map.bin.lz" @ 0x62AD28 - 0x62AC4C
 
-	.global Tsa_0862AD28
-Tsa_0862AD28:  @ 0x0862AD28
+	.global Tsa_Flux_ClassReel_10
+Tsa_Flux_ClassReel_10:  @ 0x0862AD28
 	.incbin "./graphics/banim/assets/tsa/0062AD28_Tsa_0862AD28.map.bin.lz" @ 0x62ADE8 - 0x62AD28
 
-	.global Tsa_0862ADE8
-Tsa_0862ADE8:  @ 0x0862ADE8
+	.global Tsa_Flux_ClassReel_11
+Tsa_Flux_ClassReel_11:  @ 0x0862ADE8
 	.incbin "./graphics/banim/assets/tsa/0062ADE8_Tsa_0862ADE8.map.bin.lz" @ 0x62AEA0 - 0x62ADE8
 
-	.global Tsa_0862AEA0
-Tsa_0862AEA0:  @ 0x0862AEA0
+	.global Tsa_Flux_ClassReel_12
+Tsa_Flux_ClassReel_12:  @ 0x0862AEA0
 	.incbin "./graphics/banim/assets/tsa/0062AEA0_Tsa_0862AEA0.map.bin.lz" @ 0x62AF48 - 0x62AEA0
 
-	.global Tsa_0862AF48
-Tsa_0862AF48:  @ 0x0862AF48
+	.global Tsa_Flux_ClassReel_13
+Tsa_Flux_ClassReel_13:  @ 0x0862AF48
 	.incbin "./graphics/banim/assets/tsa/0062AF48_Tsa_0862AF48.map.bin.lz" @ 0x62B004 - 0x62AF48
 
-	.global Tsa_0862B004
-Tsa_0862B004:  @ 0x0862B004
+	.global Tsa_Flux_ClassReel_14
+Tsa_Flux_ClassReel_14:  @ 0x0862B004
 	.incbin "./graphics/banim/assets/tsa/0062B004_Tsa_0862B004.map.bin.lz" @ 0x62B0DC - 0x62B004
 
-	.global Tsa_0862B0DC
-Tsa_0862B0DC:  @ 0x0862B0DC
+	.global Tsa_Flux_ClassReel_15
+Tsa_Flux_ClassReel_15:  @ 0x0862B0DC
 	.incbin "./graphics/banim/assets/tsa/0062B0DC_Tsa_0862B0DC.map.bin.lz" @ 0x62B1BC - 0x62B0DC
 
-	.global Tsa_0862B1BC
-Tsa_0862B1BC:  @ 0x0862B1BC
+	.global Tsa_Flux_ClassReel_16
+Tsa_Flux_ClassReel_16:  @ 0x0862B1BC
 	.incbin "./graphics/banim/assets/tsa/0062B1BC_Tsa_0862B1BC.map.bin.lz" @ 0x62B2AC - 0x62B1BC
 
-	.global Tsa_0862B2AC
-Tsa_0862B2AC:  @ 0x0862B2AC
+	.global Tsa_Flux_ClassReel_17
+Tsa_Flux_ClassReel_17:  @ 0x0862B2AC
 	.incbin "./graphics/banim/assets/tsa/0062B2AC_Tsa_0862B2AC.map.bin.lz" @ 0x62B3A8 - 0x62B2AC
 
-	.global Tsa_0862B3A8
-Tsa_0862B3A8:  @ 0x0862B3A8
+	.global Tsa_Flux_ClassReel_18
+Tsa_Flux_ClassReel_18:  @ 0x0862B3A8
 	.incbin "./graphics/banim/assets/tsa/0062B3A8_Tsa_0862B3A8.map.bin.lz" @ 0x62B49C - 0x62B3A8
 
-	.global Tsa_0862B49C
-Tsa_0862B49C:  @ 0x0862B49C
+	.global Tsa_Flux_ClassReel_19
+Tsa_Flux_ClassReel_19:  @ 0x0862B49C
 	.incbin "./graphics/banim/assets/tsa/0062B49C_Tsa_0862B49C.map.bin.lz" @ 0x62B594 - 0x62B49C
 
-	.global Tsa_0862B594
-Tsa_0862B594:  @ 0x0862B594
+	.global Tsa_Flux_ClassReel_20
+Tsa_Flux_ClassReel_20:  @ 0x0862B594
 	.incbin "./graphics/banim/assets/tsa/0062B594_Tsa_0862B594.map.bin.lz" @ 0x62B680 - 0x62B594
 
-	.global Tsa_0862B680
-Tsa_0862B680:  @ 0x0862B680
+	.global Tsa_Flux_ClassReel_21
+Tsa_Flux_ClassReel_21:  @ 0x0862B680
 	.incbin "./graphics/banim/assets/tsa/0062B680_Tsa_0862B680.map.bin.lz" @ 0x62B764 - 0x62B680
 
-	.global Tsa_0862B764
-Tsa_0862B764:  @ 0x0862B764
+	.global Tsa_Flux_ClassReel_22
+Tsa_Flux_ClassReel_22:  @ 0x0862B764
 	.incbin "./graphics/banim/assets/tsa/0062B764_Tsa_0862B764.map.bin.lz" @ 0x62B83C - 0x62B764
 
-	.global Tsa_0862B83C
-Tsa_0862B83C:  @ 0x0862B83C
+	.global Tsa_Flux_ClassReel_23
+Tsa_Flux_ClassReel_23:  @ 0x0862B83C
 	.incbin "./graphics/banim/assets/tsa/0062B83C_Tsa_0862B83C.map.bin.lz" @ 0x62B90C - 0x62B83C
 
-	.global Tsa_0862B90C
-Tsa_0862B90C:  @ 0x0862B90C
+	.global Tsa_Flux_ClassReel_24
+Tsa_Flux_ClassReel_24:  @ 0x0862B90C
 	.incbin "./graphics/banim/assets/tsa/0062B90C_Tsa_0862B90C.map.bin.lz" @ 0x62B9D8 - 0x62B90C
 
-	.global Tsa_0862B9D8
-Tsa_0862B9D8:  @ 0x0862B9D8
+	.global Tsa_Flux_ClassReel_25
+Tsa_Flux_ClassReel_25:  @ 0x0862B9D8
 	.incbin "./graphics/banim/assets/tsa/0062B9D8_Tsa_0862B9D8.map.bin.lz" @ 0x62BAA0 - 0x62B9D8
 
-	.global Tsa_0862BAA0
-Tsa_0862BAA0:  @ 0x0862BAA0
+	.global Tsa_Flux_ClassReel_26
+Tsa_Flux_ClassReel_26:  @ 0x0862BAA0
 	.incbin "./graphics/banim/assets/tsa/0062BAA0_Tsa_0862BAA0.map.bin.lz" @ 0x62BB54 - 0x62BAA0
 
-	.global Tsa_0862BB54
-Tsa_0862BB54:  @ 0x0862BB54
+	.global Tsa_Flux_ClassReel_27
+Tsa_Flux_ClassReel_27:  @ 0x0862BB54
 	.incbin "./graphics/banim/assets/tsa/0062BB54_Tsa_0862BB54.map.bin.lz" @ 0x62BC08 - 0x62BB54
 
-	.global Tsa_0862BC08
-Tsa_0862BC08:  @ 0x0862BC08
+	.global Tsa_Flux_ClassReel_28
+Tsa_Flux_ClassReel_28:  @ 0x0862BC08
 	.incbin "./graphics/banim/assets/tsa/0062BC08_Tsa_0862BC08.map.bin.lz" @ 0x62BCA8 - 0x62BC08
 
-	.global Tsa_0862BCA8
-Tsa_0862BCA8:  @ 0x0862BCA8
+	.global Tsa_Flux_ClassReel_29
+Tsa_Flux_ClassReel_29:  @ 0x0862BCA8
 	.incbin "./graphics/banim/assets/tsa/0062BCA8_Tsa_0862BCA8.map.bin.lz" @ 0x62BD5C - 0x62BCA8
 
-	.global Tsa_0862BD5C
-Tsa_0862BD5C:  @ 0x0862BD5C
+	.global Tsa_Flux_ClassReel_30
+Tsa_Flux_ClassReel_30:  @ 0x0862BD5C
 	.incbin "./graphics/banim/assets/tsa/0062BD5C_Tsa_0862BD5C.map.bin.lz" @ 0x62BE18 - 0x62BD5C
 
-	.global Tsa_0862BE18
-Tsa_0862BE18:  @ 0x0862BE18
+	.global Tsa_Flux_ClassReel_31
+Tsa_Flux_ClassReel_31:  @ 0x0862BE18
 	.incbin "./graphics/banim/assets/tsa/0062BE18_Tsa_0862BE18.map.bin.lz" @ 0x62BEF4 - 0x62BE18
 
-	.global Tsa_0862BEF4
-Tsa_0862BEF4:  @ 0x0862BEF4
+	.global Tsa_Flux_ClassReel_32
+Tsa_Flux_ClassReel_32:  @ 0x0862BEF4
 	.incbin "./graphics/banim/assets/tsa/0062BEF4_Tsa_0862BEF4.map.bin.lz" @ 0x62BFDC - 0x62BEF4
 
-	.global Tsa_0862BFDC
-Tsa_0862BFDC:  @ 0x0862BFDC
+	.global Tsa_Flux_ClassReel_33
+Tsa_Flux_ClassReel_33:  @ 0x0862BFDC
 	.incbin "./graphics/banim/assets/tsa/0062BFDC_Tsa_0862BFDC.map.bin.lz" @ 0x62C100 - 0x62BFDC
 
-	.global Tsa_0862C100
-Tsa_0862C100:  @ 0x0862C100
+	.global Tsa_Flux_ClassReel_34
+Tsa_Flux_ClassReel_34:  @ 0x0862C100
 	.incbin "./graphics/banim/assets/tsa/0062C100_Tsa_0862C100.map.bin.lz" @ 0x62C220 - 0x62C100
 
-	.global Tsa_0862C220
-Tsa_0862C220:  @ 0x0862C220
+	.global Tsa_Flux_ClassReel_35
+Tsa_Flux_ClassReel_35:  @ 0x0862C220
 	.incbin "./graphics/banim/assets/tsa/0062C220_Tsa_0862C220.map.bin.lz" @ 0x62C32C - 0x62C220
 
-	.global Tsa_0862C32C
-Tsa_0862C32C:  @ 0x0862C32C
+	.global Tsa_Flux_ClassReel_36
+Tsa_Flux_ClassReel_36:  @ 0x0862C32C
 	.incbin "./graphics/banim/assets/tsa/0062C32C_Tsa_0862C32C.map.bin.lz" @ 0x62C438 - 0x62C32C
 
-	.global Tsa_0862C438
-Tsa_0862C438:  @ 0x0862C438
+	.global Tsa_Flux_ClassReel_37
+Tsa_Flux_ClassReel_37:  @ 0x0862C438
 	.incbin "./graphics/banim/assets/tsa/0062C438_Tsa_0862C438.map.bin.lz" @ 0x62C534 - 0x62C438
 
-	.global Tsa_0862C534
-Tsa_0862C534:  @ 0x0862C534
+	.global Tsa_Flux_ClassReel_38
+Tsa_Flux_ClassReel_38:  @ 0x0862C534
 	.incbin "./graphics/banim/assets/tsa/0062C534_Tsa_0862C534.map.bin.lz" @ 0x62C634 - 0x62C534
 
-	.global Tsa_0862C634
-Tsa_0862C634:  @ 0x0862C634
+	.global Tsa_Flux_ClassReel_39
+Tsa_Flux_ClassReel_39:  @ 0x0862C634
 	.incbin "./graphics/banim/assets/tsa/0062C634_Tsa_0862C634.map.bin.lz" @ 0x62C730 - 0x62C634
 
-	.global Tsa_0862C730
-Tsa_0862C730:  @ 0x0862C730
+	.global Tsa_Flux_ClassReel_40
+Tsa_Flux_ClassReel_40:  @ 0x0862C730
 	.incbin "./graphics/banim/assets/tsa/0062C730_Tsa_0862C730.map.bin.lz" @ 0x62C82C - 0x62C730
 
 	.global Img_FluxAnimSprites_Orb
@@ -14579,284 +14579,284 @@ Img_NosferatuBg_M:  @ 0x08635D60
 Pal_NosferatuBg:  @ 0x08636640
 	.incbin "./graphics/banim/assets/img/00635D60_Img_NosferatuBg_M.gbapal" @ 0x636660 - 0x636640
 
-	.global Tsa_08636660
-Tsa_08636660:  @ 0x08636660
+	.global Tsa_NosferatuBg_0
+Tsa_NosferatuBg_0:  @ 0x08636660
 	.incbin "./graphics/banim/assets/tsa/00636660_Tsa_08636660.map.bin.lz" @ 0x636790 - 0x636660
 
-	.global Tsa_08636790
-Tsa_08636790:  @ 0x08636790
+	.global Tsa_NosferatuBg_1
+Tsa_NosferatuBg_1:  @ 0x08636790
 	.incbin "./graphics/banim/assets/tsa/00636790_Tsa_08636790.map.bin.lz" @ 0x63683C - 0x636790
 
-	.global Tsa_0863683C
-Tsa_0863683C:  @ 0x0863683C
+	.global Tsa_NosferatuBg_2
+Tsa_NosferatuBg_2:  @ 0x0863683C
 	.incbin "./graphics/banim/assets/tsa/0063683C_Tsa_0863683C.map.bin.lz" @ 0x6368EC - 0x63683C
 
-	.global Tsa_086368EC
-Tsa_086368EC:  @ 0x086368EC
+	.global Tsa_NosferatuBg_3
+Tsa_NosferatuBg_3:  @ 0x086368EC
 	.incbin "./graphics/banim/assets/tsa/006368EC_Tsa_086368EC.map.bin.lz" @ 0x6369A4 - 0x6368EC
 
-	.global Tsa_086369A4
-Tsa_086369A4:  @ 0x086369A4
+	.global Tsa_NosferatuBg_4
+Tsa_NosferatuBg_4:  @ 0x086369A4
 	.incbin "./graphics/banim/assets/tsa/006369A4_Tsa_086369A4.map.bin.lz" @ 0x636A64 - 0x6369A4
 
-	.global Tsa_08636A64
-Tsa_08636A64:  @ 0x08636A64
+	.global Tsa_NosferatuBg_5
+Tsa_NosferatuBg_5:  @ 0x08636A64
 	.incbin "./graphics/banim/assets/tsa/00636A64_Tsa_08636A64.map.bin.lz" @ 0x636B30 - 0x636A64
 
-	.global Tsa_08636B30
-Tsa_08636B30:  @ 0x08636B30
+	.global Tsa_NosferatuBg_6
+Tsa_NosferatuBg_6:  @ 0x08636B30
 	.incbin "./graphics/banim/assets/tsa/00636B30_Tsa_08636B30.map.bin.lz" @ 0x636C10 - 0x636B30
 
-	.global Tsa_08636C10
-Tsa_08636C10:  @ 0x08636C10
+	.global Tsa_NosferatuBg_7
+Tsa_NosferatuBg_7:  @ 0x08636C10
 	.incbin "./graphics/banim/assets/tsa/00636C10_Tsa_08636C10.map.bin.lz" @ 0x636CF8 - 0x636C10
 
-	.global Tsa_08636CF8
-Tsa_08636CF8:  @ 0x08636CF8
+	.global Tsa_NosferatuBg_8
+Tsa_NosferatuBg_8:  @ 0x08636CF8
 	.incbin "./graphics/banim/assets/tsa/00636CF8_Tsa_08636CF8.map.bin.lz" @ 0x636E00 - 0x636CF8
 
-	.global Tsa_08636E00
-Tsa_08636E00:  @ 0x08636E00
+	.global Tsa_NosferatuBg_9
+Tsa_NosferatuBg_9:  @ 0x08636E00
 	.incbin "./graphics/banim/assets/tsa/00636E00_Tsa_08636E00.map.bin.lz" @ 0x636F1C - 0x636E00
 
-	.global Tsa_08636F1C
-Tsa_08636F1C:  @ 0x08636F1C
+	.global Tsa_NosferatuBg_10
+Tsa_NosferatuBg_10:  @ 0x08636F1C
 	.incbin "./graphics/banim/assets/tsa/00636F1C_Tsa_08636F1C.map.bin.lz" @ 0x637058 - 0x636F1C
 
-	.global Tsa_08637058
-Tsa_08637058:  @ 0x08637058
+	.global Tsa_NosferatuBg_11
+Tsa_NosferatuBg_11:  @ 0x08637058
 	.incbin "./graphics/banim/assets/tsa/00637058_Tsa_08637058.map.bin.lz" @ 0x6371A8 - 0x637058
 
-	.global Tsa_086371A8
-Tsa_086371A8:  @ 0x086371A8
+	.global Tsa_NosferatuBg_12
+Tsa_NosferatuBg_12:  @ 0x086371A8
 	.incbin "./graphics/banim/assets/tsa/006371A8_Tsa_086371A8.map.bin.lz" @ 0x637300 - 0x6371A8
 
-	.global Tsa_08637300
-Tsa_08637300:  @ 0x08637300
+	.global Tsa_NosferatuBg_13
+Tsa_NosferatuBg_13:  @ 0x08637300
 	.incbin "./graphics/banim/assets/tsa/00637300_Tsa_08637300.map.bin.lz" @ 0x637458 - 0x637300
 
-	.global Tsa_08637458
-Tsa_08637458:  @ 0x08637458
+	.global Tsa_NosferatuBg_14
+Tsa_NosferatuBg_14:  @ 0x08637458
 	.incbin "./graphics/banim/assets/tsa/00637458_Tsa_08637458.map.bin.lz" @ 0x6375AC - 0x637458
 
-	.global Tsa_086375AC
-Tsa_086375AC:  @ 0x086375AC
+	.global Tsa_NosferatuBg_15
+Tsa_NosferatuBg_15:  @ 0x086375AC
 	.incbin "./graphics/banim/assets/tsa/006375AC_Tsa_086375AC.map.bin.lz" @ 0x6376FC - 0x6375AC
 
-	.global Tsa_086376FC
-Tsa_086376FC:  @ 0x086376FC
+	.global Tsa_NosferatuBg_16
+Tsa_NosferatuBg_16:  @ 0x086376FC
 	.incbin "./graphics/banim/assets/tsa/006376FC_Tsa_086376FC.map.bin.lz" @ 0x63784C - 0x6376FC
 
-	.global Tsa_0863784C
-Tsa_0863784C:  @ 0x0863784C
+	.global Tsa_NosferatuBg_17
+Tsa_NosferatuBg_17:  @ 0x0863784C
 	.incbin "./graphics/banim/assets/tsa/0063784C_Tsa_0863784C.map.bin.lz" @ 0x637984 - 0x63784C
 
-	.global Tsa_08637984
-Tsa_08637984:  @ 0x08637984
+	.global Tsa_NosferatuBg_18
+Tsa_NosferatuBg_18:  @ 0x08637984
 	.incbin "./graphics/banim/assets/tsa/00637984_Tsa_08637984.map.bin.lz" @ 0x637AB0 - 0x637984
 
-	.global Tsa_08637AB0
-Tsa_08637AB0:  @ 0x08637AB0
+	.global Tsa_NosferatuBg_19
+Tsa_NosferatuBg_19:  @ 0x08637AB0
 	.incbin "./graphics/banim/assets/tsa/00637AB0_Tsa_08637AB0.map.bin.lz" @ 0x637BCC - 0x637AB0
 
-	.global Tsa_08637BCC
-Tsa_08637BCC:  @ 0x08637BCC
+	.global Tsa_NosferatuBg_20
+Tsa_NosferatuBg_20:  @ 0x08637BCC
 	.incbin "./graphics/banim/assets/tsa/00637BCC_Tsa_08637BCC.map.bin.lz" @ 0x637CD8 - 0x637BCC
 
-	.global Tsa_08637CD8
-Tsa_08637CD8:  @ 0x08637CD8
+	.global Tsa_NosferatuBg_21
+Tsa_NosferatuBg_21:  @ 0x08637CD8
 	.incbin "./graphics/banim/assets/tsa/00637CD8_Tsa_08637CD8.map.bin.lz" @ 0x637DD0 - 0x637CD8
 
-	.global Tsa_08637DD0
-Tsa_08637DD0:  @ 0x08637DD0
+	.global Tsa_NosferatuBg_22
+Tsa_NosferatuBg_22:  @ 0x08637DD0
 	.incbin "./graphics/banim/assets/tsa/00637DD0_Tsa_08637DD0.map.bin.lz" @ 0x637EBC - 0x637DD0
 
-	.global Tsa_08637EBC
-Tsa_08637EBC:  @ 0x08637EBC
+	.global Tsa_NosferatuBg_23
+Tsa_NosferatuBg_23:  @ 0x08637EBC
 	.incbin "./graphics/banim/assets/tsa/00637EBC_Tsa_08637EBC.map.bin.lz" @ 0x637F8C - 0x637EBC
 
-	.global Tsa_08637F8C
-Tsa_08637F8C:  @ 0x08637F8C
+	.global Tsa_NosferatuBg_24
+Tsa_NosferatuBg_24:  @ 0x08637F8C
 	.incbin "./graphics/banim/assets/tsa/00637F8C_Tsa_08637F8C.map.bin.lz" @ 0x638048 - 0x637F8C
 
-	.global Tsa_08638048
-Tsa_08638048:  @ 0x08638048
+	.global Tsa_NosferatuBg_25
+Tsa_NosferatuBg_25:  @ 0x08638048
 	.incbin "./graphics/banim/assets/tsa/00638048_Tsa_08638048.map.bin.lz" @ 0x6380FC - 0x638048
 
-	.global Tsa_086380FC
-Tsa_086380FC:  @ 0x086380FC
+	.global Tsa_NosferatuBg_26
+Tsa_NosferatuBg_26:  @ 0x086380FC
 	.incbin "./graphics/banim/assets/tsa/006380FC_Tsa_086380FC.map.bin.lz" @ 0x6381AC - 0x6380FC
 
-	.global Tsa_086381AC
-Tsa_086381AC:  @ 0x086381AC
+	.global Tsa_NosferatuBg_27
+Tsa_NosferatuBg_27:  @ 0x086381AC
 	.incbin "./graphics/banim/assets/tsa/006381AC_Tsa_086381AC.map.bin.lz" @ 0x638258 - 0x6381AC
 
-	.global Tsa_08638258
-Tsa_08638258:  @ 0x08638258
+	.global Tsa_NosferatuBg_28
+Tsa_NosferatuBg_28:  @ 0x08638258
 	.incbin "./graphics/banim/assets/tsa/00638258_Tsa_08638258.map.bin.lz" @ 0x638300 - 0x638258
 
-	.global Tsa_08638300
-Tsa_08638300:  @ 0x08638300
+	.global Tsa_NosferatuBg_29
+Tsa_NosferatuBg_29:  @ 0x08638300
 	.incbin "./graphics/banim/assets/tsa/00638300_Tsa_08638300.map.bin.lz" @ 0x6383B4 - 0x638300
 
-	.global Tsa_086383B4
-Tsa_086383B4:  @ 0x086383B4
+	.global Tsa_NosferatuBg_30
+Tsa_NosferatuBg_30:  @ 0x086383B4
 	.incbin "./graphics/banim/assets/tsa/006383B4_Tsa_086383B4.map.bin.lz" @ 0x638474 - 0x6383B4
 
-	.global Tsa_08638474
-Tsa_08638474:  @ 0x08638474
+	.global Tsa_NosferatuBg_31
+Tsa_NosferatuBg_31:  @ 0x08638474
 	.incbin "./graphics/banim/assets/tsa/00638474_Tsa_08638474.map.bin.lz" @ 0x638540 - 0x638474
 
-	.global Tsa_08638540
-Tsa_08638540:  @ 0x08638540
+	.global Tsa_NosferatuBg_32
+Tsa_NosferatuBg_32:  @ 0x08638540
 	.incbin "./graphics/banim/assets/tsa/00638540_Tsa_08638540.map.bin.lz" @ 0x638608 - 0x638540
 
-	.global Tsa_08638608
-Tsa_08638608:  @ 0x08638608
+	.global Tsa_NosferatuBg_33
+Tsa_NosferatuBg_33:  @ 0x08638608
 	.incbin "./graphics/banim/assets/tsa/00638608_Tsa_08638608.map.bin.lz" @ 0x6386D0 - 0x638608
 
-	.global Tsa_086386D0
-Tsa_086386D0:  @ 0x086386D0
+	.global Tsa_NosferatuBg_34
+Tsa_NosferatuBg_34:  @ 0x086386D0
 	.incbin "./graphics/banim/assets/tsa/006386D0_Tsa_086386D0.map.bin.lz" @ 0x6387A4 - 0x6386D0
 
-	.global Tsa_086387A4
-Tsa_086387A4:  @ 0x086387A4
+	.global Tsa_NosferatuBg_35
+Tsa_NosferatuBg_35:  @ 0x086387A4
 	.incbin "./graphics/banim/assets/tsa/006387A4_Tsa_086387A4.map.bin.lz" @ 0x638880 - 0x6387A4
 
-	.global Tsa_08638880
-Tsa_08638880:  @ 0x08638880
+	.global Tsa_NosferatuBg_36
+Tsa_NosferatuBg_36:  @ 0x08638880
 	.incbin "./graphics/banim/assets/tsa/00638880_Tsa_08638880.map.bin.lz" @ 0x638968 - 0x638880
 
-	.global Tsa_08638968
-Tsa_08638968:  @ 0x08638968
+	.global Tsa_NosferatuBg_37
+Tsa_NosferatuBg_37:  @ 0x08638968
 	.incbin "./graphics/banim/assets/tsa/00638968_Tsa_08638968.map.bin.lz" @ 0x638A5C - 0x638968
 
-	.global Tsa_08638A5C
-Tsa_08638A5C:  @ 0x08638A5C
+	.global Tsa_NosferatuBg_38
+Tsa_NosferatuBg_38:  @ 0x08638A5C
 	.incbin "./graphics/banim/assets/tsa/00638A5C_Tsa_08638A5C.map.bin.lz" @ 0x638B64 - 0x638A5C
 
-	.global Tsa_08638B64
-Tsa_08638B64:  @ 0x08638B64
+	.global Tsa_NosferatuBg_39
+Tsa_NosferatuBg_39:  @ 0x08638B64
 	.incbin "./graphics/banim/assets/tsa/00638B64_Tsa_08638B64.map.bin.lz" @ 0x638C6C - 0x638B64
 
-	.global Tsa_08638C6C
-Tsa_08638C6C:  @ 0x08638C6C
+	.global Tsa_NosferatuBg_40
+Tsa_NosferatuBg_40:  @ 0x08638C6C
 	.incbin "./graphics/banim/assets/tsa/00638C6C_Tsa_08638C6C.map.bin.lz" @ 0x638D90 - 0x638C6C
 
-	.global Tsa_08638D90
-Tsa_08638D90:  @ 0x08638D90
+	.global Tsa_NosferatuBg_41
+Tsa_NosferatuBg_41:  @ 0x08638D90
 	.incbin "./graphics/banim/assets/tsa/00638D90_Tsa_08638D90.map.bin.lz" @ 0x638EB0 - 0x638D90
 
-	.global Tsa_08638EB0
-Tsa_08638EB0:  @ 0x08638EB0
+	.global Tsa_NosferatuBg_42
+Tsa_NosferatuBg_42:  @ 0x08638EB0
 	.incbin "./graphics/banim/assets/tsa/00638EB0_Tsa_08638EB0.map.bin.lz" @ 0x638FCC - 0x638EB0
 
-	.global Tsa_08638FCC
-Tsa_08638FCC:  @ 0x08638FCC
+	.global Tsa_NosferatuBg_43
+Tsa_NosferatuBg_43:  @ 0x08638FCC
 	.incbin "./graphics/banim/assets/tsa/00638FCC_Tsa_08638FCC.map.bin.lz" @ 0x6390DC - 0x638FCC
 
-	.global Tsa_086390DC
-Tsa_086390DC:  @ 0x086390DC
+	.global Tsa_NosferatuBg_44
+Tsa_NosferatuBg_44:  @ 0x086390DC
 	.incbin "./graphics/banim/assets/tsa/006390DC_Tsa_086390DC.map.bin.lz" @ 0x6391E8 - 0x6390DC
 
-	.global Tsa_086391E8
-Tsa_086391E8:  @ 0x086391E8
+	.global Tsa_NosferatuBg_45
+Tsa_NosferatuBg_45:  @ 0x086391E8
 	.incbin "./graphics/banim/assets/tsa/006391E8_Tsa_086391E8.map.bin.lz" @ 0x6392E8 - 0x6391E8
 
-	.global Tsa_086392E8
-Tsa_086392E8:  @ 0x086392E8
+	.global Tsa_NosferatuBg_46
+Tsa_NosferatuBg_46:  @ 0x086392E8
 	.incbin "./graphics/banim/assets/tsa/006392E8_Tsa_086392E8.map.bin.lz" @ 0x6393D8 - 0x6392E8
 
-	.global Tsa_086393D8
-Tsa_086393D8:  @ 0x086393D8
+	.global Tsa_NosferatuBg_47
+Tsa_NosferatuBg_47:  @ 0x086393D8
 	.incbin "./graphics/banim/assets/tsa/006393D8_Tsa_086393D8.map.bin.lz" @ 0x6394B4 - 0x6393D8
 
-	.global Tsa_086394B4
-Tsa_086394B4:  @ 0x086394B4
+	.global Tsa_NosferatuBg_48
+Tsa_NosferatuBg_48:  @ 0x086394B4
 	.incbin "./graphics/banim/assets/tsa/006394B4_Tsa_086394B4.map.bin.lz" @ 0x639580 - 0x6394B4
 
-	.global Tsa_08639580
-Tsa_08639580:  @ 0x08639580
+	.global Tsa_NosferatuBg_49
+Tsa_NosferatuBg_49:  @ 0x08639580
 	.incbin "./graphics/banim/assets/tsa/00639580_Tsa_08639580.map.bin.lz" @ 0x639638 - 0x639580
 
-	.global Tsa_08639638
-Tsa_08639638:  @ 0x08639638
+	.global Tsa_NosferatuBg_50
+Tsa_NosferatuBg_50:  @ 0x08639638
 	.incbin "./graphics/banim/assets/tsa/00639638_Tsa_08639638.map.bin.lz" @ 0x6396E4 - 0x639638
 
-	.global Img_086396E4
-Img_086396E4:  @ 0x086396E4
+	.global Img_DivineBg3_0
+Img_DivineBg3_0:  @ 0x086396E4
 	.incbin "./graphics/banim/assets/img/006396E4_Img_086396E4.4bpp.lz" @ 0x639C98 - 0x6396E4
 
-	.global Img_08639C98
-Img_08639C98:  @ 0x08639C98
+	.global Img_DivineBg3_1
+Img_DivineBg3_1:  @ 0x08639C98
 	.incbin "./graphics/banim/assets/img/00639C98_Img_08639C98.4bpp.lz" @ 0x63A360 - 0x639C98
 
-	.global Img_0863A360
-Img_0863A360:  @ 0x0863A360
+	.global Img_DivineBg3_2
+Img_DivineBg3_2:  @ 0x0863A360
 	.incbin "./graphics/banim/assets/img/0063A360_Img_0863A360.4bpp.lz" @ 0x63A9A0 - 0x63A360
 
-	.global Img_0863A9A0
-Img_0863A9A0:  @ 0x0863A9A0
+	.global Img_DivineBg3_3
+Img_DivineBg3_3:  @ 0x0863A9A0
 	.incbin "./graphics/banim/assets/img/0063A9A0_Img_0863A9A0.4bpp.lz" @ 0x63AFA8 - 0x63A9A0
 
-	.global Img_0863AFA8
-Img_0863AFA8:  @ 0x0863AFA8
+	.global Img_DivineBg3_4
+Img_DivineBg3_4:  @ 0x0863AFA8
 	.incbin "./graphics/banim/assets/img/0063AFA8_Img_0863AFA8.4bpp.lz" @ 0x63B608 - 0x63AFA8
 
-	.global Img_0863B608
-Img_0863B608:  @ 0x0863B608
+	.global Img_DivineBg3_5
+Img_DivineBg3_5:  @ 0x0863B608
 	.incbin "./graphics/banim/assets/img/0063B608_Img_0863B608.4bpp.lz" @ 0x63BC78 - 0x63B608
 
-	.global Img_0863BC78
-Img_0863BC78:  @ 0x0863BC78
+	.global Img_DivineBg3_6
+Img_DivineBg3_6:  @ 0x0863BC78
 	.incbin "./graphics/banim/assets/img/0063BC78_Img_0863BC78.4bpp.lz" @ 0x63C2B4 - 0x63BC78
 
-	.global Img_0863C2B4
-Img_0863C2B4:  @ 0x0863C2B4
+	.global Img_DivineBg3_7
+Img_DivineBg3_7:  @ 0x0863C2B4
 	.incbin "./graphics/banim/assets/img/0063C2B4_Img_0863C2B4.4bpp.lz" @ 0x63C8FC - 0x63C2B4
 
-	.global Img_0863C8FC
-Img_0863C8FC:  @ 0x0863C8FC
+	.global Img_DivineBg3_8
+Img_DivineBg3_8:  @ 0x0863C8FC
 	.incbin "./graphics/banim/assets/img/0063C8FC_Img_0863C8FC.4bpp.lz" @ 0x63D000 - 0x63C8FC
 
-	.global Img_0863D000
-Img_0863D000:  @ 0x0863D000
+	.global Img_DivineBg3_9
+Img_DivineBg3_9:  @ 0x0863D000
 	.incbin "./graphics/banim/assets/img/0063D000_Img_0863D000.4bpp.lz" @ 0x63D7B8 - 0x63D000
 
-	.global Img_0863D7B8
-Img_0863D7B8:  @ 0x0863D7B8
+	.global Img_DivineBg3_10
+Img_DivineBg3_10:  @ 0x0863D7B8
 	.incbin "./graphics/banim/assets/img/0063D7B8_Img_0863D7B8.4bpp.lz" @ 0x63DFAC - 0x63D7B8
 
-	.global Img_0863DFAC
-Img_0863DFAC:  @ 0x0863DFAC
+	.global Img_DivineBg3_11
+Img_DivineBg3_11:  @ 0x0863DFAC
 	.incbin "./graphics/banim/assets/img/0063DFAC_Img_0863DFAC.4bpp.lz" @ 0x63E784 - 0x63DFAC
 
-	.global Img_0863E784
-Img_0863E784:  @ 0x0863E784
+	.global Img_DivineBg3_12
+Img_DivineBg3_12:  @ 0x0863E784
 	.incbin "./graphics/banim/assets/img/0063E784_Img_0863E784.4bpp.lz" @ 0x63EFA0 - 0x63E784
 
-	.global Img_0863EFA0
-Img_0863EFA0:  @ 0x0863EFA0
+	.global Img_DivineBg3_13
+Img_DivineBg3_13:  @ 0x0863EFA0
 	.incbin "./graphics/banim/assets/img/0063EFA0_Img_0863EFA0.4bpp.lz" @ 0x63F720 - 0x63EFA0
 
-	.global Img_0863F720
-Img_0863F720:  @ 0x0863F720
+	.global Img_DivineBg3_14
+Img_DivineBg3_14:  @ 0x0863F720
 	.incbin "./graphics/banim/assets/img/0063F720_Img_0863F720.4bpp.lz" @ 0x63FEB4 - 0x63F720
 
-	.global Img_0863FEB4
-Img_0863FEB4:  @ 0x0863FEB4
+	.global Img_DivineBg3_15
+Img_DivineBg3_15:  @ 0x0863FEB4
 	.incbin "./graphics/banim/assets/img/0063FEB4_Img_0863FEB4.4bpp.lz" @ 0x6405E8 - 0x63FEB4
 
-	.global Img_086405E8
-Img_086405E8:  @ 0x086405E8
+	.global Img_DivineBg3_16
+Img_DivineBg3_16:  @ 0x086405E8
 	.incbin "./graphics/banim/assets/img/006405E8_Img_086405E8.4bpp.lz" @ 0x641094 - 0x6405E8
 
-	.global Img_08641094
-Img_08641094:  @ 0x08641094
+	.global Img_DivineBg3_17
+Img_DivineBg3_17:  @ 0x08641094
 	.incbin "./graphics/banim/assets/img/00641094_Img_08641094.4bpp.lz" @ 0x6415F4 - 0x641094
 
-	.global Img_086415F4
-Img_086415F4:  @ 0x086415F4
+	.global Img_DivineBg
+Img_DivineBg:  @ 0x086415F4
 	.incbin "./graphics/banim/assets/img/006415F4_Img_086415F4.4bpp.lz" @ 0x641D64 - 0x6415F4
 
 	.global Pal_DivineBg3
@@ -14867,180 +14867,180 @@ Pal_DivineBg3:  @ 0x08641D64
 Pal_DivineBg:  @ 0x08641D84
 	.incbin "./graphics/banim/assets/pal/00641D84_Pal_DivineBg.gbapal" @ 0x641DA4 - 0x641D84
 
-	.global Tsa_08641DA4
-Tsa_08641DA4:  @ 0x08641DA4
+	.global Tsa_DivineBg_0
+Tsa_DivineBg_0:  @ 0x08641DA4
 	.incbin "./graphics/banim/assets/tsa/00641DA4_Tsa_08641DA4.map.bin.lz" @ 0x641F38 - 0x641DA4
 
-	.global Tsa_08641F38
-Tsa_08641F38:  @ 0x08641F38
+	.global Tsa_DivineBg3_0
+Tsa_DivineBg3_0:  @ 0x08641F38
 	.incbin "./graphics/banim/assets/tsa/00641F38_Tsa_08641F38.map.bin.lz" @ 0x64213C - 0x641F38
 
-	.global Tsa_0864213C
-Tsa_0864213C:  @ 0x0864213C
+	.global Tsa_DivineBg3_1
+Tsa_DivineBg3_1:  @ 0x0864213C
 	.incbin "./graphics/banim/assets/tsa/0064213C_Tsa_0864213C.map.bin.lz" @ 0x64240C - 0x64213C
 
-	.global Tsa_0864240C
-Tsa_0864240C:  @ 0x0864240C
+	.global Tsa_DivineBg3_2
+Tsa_DivineBg3_2:  @ 0x0864240C
 	.incbin "./graphics/banim/assets/tsa/0064240C_Tsa_0864240C.map.bin.lz" @ 0x6426DC - 0x64240C
 
-	.global Tsa_086426DC
-Tsa_086426DC:  @ 0x086426DC
+	.global Tsa_DivineBg3_3
+Tsa_DivineBg3_3:  @ 0x086426DC
 	.incbin "./graphics/banim/assets/tsa/006426DC_Tsa_086426DC.map.bin.lz" @ 0x64298C - 0x6426DC
 
-	.global Tsa_0864298C
-Tsa_0864298C:  @ 0x0864298C
+	.global Tsa_DivineBg3_4
+Tsa_DivineBg3_4:  @ 0x0864298C
 	.incbin "./graphics/banim/assets/tsa/0064298C_Tsa_0864298C.map.bin.lz" @ 0x642C40 - 0x64298C
 
-	.global Tsa_08642C40
-Tsa_08642C40:  @ 0x08642C40
+	.global Tsa_DivineBg3_5
+Tsa_DivineBg3_5:  @ 0x08642C40
 	.incbin "./graphics/banim/assets/tsa/00642C40_Tsa_08642C40.map.bin.lz" @ 0x642ECC - 0x642C40
 
-	.global Tsa_08642ECC
-Tsa_08642ECC:  @ 0x08642ECC
+	.global Tsa_DivineBg3_6
+Tsa_DivineBg3_6:  @ 0x08642ECC
 	.incbin "./graphics/banim/assets/tsa/00642ECC_Tsa_08642ECC.map.bin.lz" @ 0x643150 - 0x642ECC
 
-	.global Tsa_08643150
-Tsa_08643150:  @ 0x08643150
+	.global Tsa_DivineBg3_7
+Tsa_DivineBg3_7:  @ 0x08643150
 	.incbin "./graphics/banim/assets/tsa/00643150_Tsa_08643150.map.bin.lz" @ 0x6433C4 - 0x643150
 
-	.global Tsa_086433C4
-Tsa_086433C4:  @ 0x086433C4
+	.global Tsa_DivineBg3_8
+Tsa_DivineBg3_8:  @ 0x086433C4
 	.incbin "./graphics/banim/assets/tsa/006433C4_Tsa_086433C4.map.bin.lz" @ 0x643658 - 0x6433C4
 
-	.global Tsa_08643658
-Tsa_08643658:  @ 0x08643658
+	.global Tsa_DivineBg3_9
+Tsa_DivineBg3_9:  @ 0x08643658
 	.incbin "./graphics/banim/assets/tsa/00643658_Tsa_08643658.map.bin.lz" @ 0x6438E0 - 0x643658
 
-	.global Tsa_086438E0
-Tsa_086438E0:  @ 0x086438E0
+	.global Tsa_DivineBg3_10
+Tsa_DivineBg3_10:  @ 0x086438E0
 	.incbin "./graphics/banim/assets/tsa/006438E0_Tsa_086438E0.map.bin.lz" @ 0x643B7C - 0x6438E0
 
-	.global Tsa_08643B7C
-Tsa_08643B7C:  @ 0x08643B7C
+	.global Tsa_DivineBg3_11
+Tsa_DivineBg3_11:  @ 0x08643B7C
 	.incbin "./graphics/banim/assets/tsa/00643B7C_Tsa_08643B7C.map.bin.lz" @ 0x643E04 - 0x643B7C
 
-	.global Tsa_08643E04
-Tsa_08643E04:  @ 0x08643E04
+	.global Tsa_DivineBg3_12
+Tsa_DivineBg3_12:  @ 0x08643E04
 	.incbin "./graphics/banim/assets/tsa/00643E04_Tsa_08643E04.map.bin.lz" @ 0x644080 - 0x643E04
 
-	.global Tsa_08644080
-Tsa_08644080:  @ 0x08644080
+	.global Tsa_DivineBg3_13
+Tsa_DivineBg3_13:  @ 0x08644080
 	.incbin "./graphics/banim/assets/tsa/00644080_Tsa_08644080.map.bin.lz" @ 0x6442B0 - 0x644080
 
-	.global Tsa_086442B0
-Tsa_086442B0:  @ 0x086442B0
+	.global Tsa_DivineBg3_14
+Tsa_DivineBg3_14:  @ 0x086442B0
 	.incbin "./graphics/banim/assets/tsa/006442B0_Tsa_086442B0.map.bin.lz" @ 0x644500 - 0x6442B0
 
-	.global Tsa_08644500
-Tsa_08644500:  @ 0x08644500
+	.global Tsa_DivineBg3_15
+Tsa_DivineBg3_15:  @ 0x08644500
 	.incbin "./graphics/banim/assets/tsa/00644500_Tsa_08644500.map.bin.lz" @ 0x644730 - 0x644500
 
-	.global Tsa_08644730
-Tsa_08644730:  @ 0x08644730
+	.global Tsa_DivineBg3_16
+Tsa_DivineBg3_16:  @ 0x08644730
 	.incbin "./graphics/banim/assets/tsa/00644730_Tsa_08644730.map.bin.lz" @ 0x644928 - 0x644730
 
-	.global Tsa_08644928
-Tsa_08644928:  @ 0x08644928
+	.global Tsa_DivineBg3_17
+Tsa_DivineBg3_17:  @ 0x08644928
 	.incbin "./graphics/banim/assets/tsa/00644928_Tsa_08644928.map.bin.lz" @ 0x644B0C - 0x644928
 
-	.global Tsa_08644B0C
-Tsa_08644B0C:  @ 0x08644B0C
+	.global Tsa_DivineBg3_18
+Tsa_DivineBg3_18:  @ 0x08644B0C
 	.incbin "./graphics/banim/assets/tsa/00644B0C_Tsa_08644B0C.map.bin.lz" @ 0x644CA8 - 0x644B0C
 
-	.global Tsa_08644CA8
-Tsa_08644CA8:  @ 0x08644CA8
+	.global Tsa_DivineBg3_19
+Tsa_DivineBg3_19:  @ 0x08644CA8
 	.incbin "./graphics/banim/assets/tsa/00644CA8_Tsa_08644CA8.map.bin.lz" @ 0x644DD0 - 0x644CA8
 
-	.global Tsa_08644DD0
-Tsa_08644DD0:  @ 0x08644DD0
+	.global Tsa_DivineBg_1
+Tsa_DivineBg_1:  @ 0x08644DD0
 	.incbin "./graphics/banim/assets/tsa/00644DD0_Tsa_08644DD0.map.bin.lz" @ 0x644E70 - 0x644DD0
 
-	.global Tsa_08644E70
-Tsa_08644E70:  @ 0x08644E70
+	.global Tsa_DivineBg_2
+Tsa_DivineBg_2:  @ 0x08644E70
 	.incbin "./graphics/banim/assets/tsa/00644E70_Tsa_08644E70.map.bin.lz" @ 0x644F18 - 0x644E70
 
-	.global Tsa_08644F18
-Tsa_08644F18:  @ 0x08644F18
+	.global Tsa_DivineBg_3
+Tsa_DivineBg_3:  @ 0x08644F18
 	.incbin "./graphics/banim/assets/tsa/00644F18_Tsa_08644F18.map.bin.lz" @ 0x644FC0 - 0x644F18
 
-	.global Tsa_08644FC0
-Tsa_08644FC0:  @ 0x08644FC0
+	.global Tsa_DivineBg_4
+Tsa_DivineBg_4:  @ 0x08644FC0
 	.incbin "./graphics/banim/assets/tsa/00644FC0_Tsa_08644FC0.map.bin.lz" @ 0x645070 - 0x644FC0
 
-	.global Tsa_08645070
-Tsa_08645070:  @ 0x08645070
+	.global Tsa_DivineBg_5
+Tsa_DivineBg_5:  @ 0x08645070
 	.incbin "./graphics/banim/assets/tsa/00645070_Tsa_08645070.map.bin.lz" @ 0x645128 - 0x645070
 
-	.global Tsa_08645128
-Tsa_08645128:  @ 0x08645128
+	.global Tsa_DivineBg_6
+Tsa_DivineBg_6:  @ 0x08645128
 	.incbin "./graphics/banim/assets/tsa/00645128_Tsa_08645128.map.bin.lz" @ 0x6451F4 - 0x645128
 
-	.global Tsa_086451F4
-Tsa_086451F4:  @ 0x086451F4
+	.global Tsa_DivineBg_7
+Tsa_DivineBg_7:  @ 0x086451F4
 	.incbin "./graphics/banim/assets/tsa/006451F4_Tsa_086451F4.map.bin.lz" @ 0x6452C0 - 0x6451F4
 
-	.global Tsa_086452C0
-Tsa_086452C0:  @ 0x086452C0
+	.global Tsa_DivineBg_8
+Tsa_DivineBg_8:  @ 0x086452C0
 	.incbin "./graphics/banim/assets/tsa/006452C0_Tsa_086452C0.map.bin.lz" @ 0x645394 - 0x6452C0
 
-	.global Tsa_08645394
-Tsa_08645394:  @ 0x08645394
+	.global Tsa_DivineBg_9
+Tsa_DivineBg_9:  @ 0x08645394
 	.incbin "./graphics/banim/assets/tsa/00645394_Tsa_08645394.map.bin.lz" @ 0x64546C - 0x645394
 
-	.global Tsa_0864546C
-Tsa_0864546C:  @ 0x0864546C
+	.global Tsa_DivineBg_10
+Tsa_DivineBg_10:  @ 0x0864546C
 	.incbin "./graphics/banim/assets/tsa/0064546C_Tsa_0864546C.map.bin.lz" @ 0x645548 - 0x64546C
 
-	.global Tsa_08645548
-Tsa_08645548:  @ 0x08645548
+	.global Tsa_DivineBg_11
+Tsa_DivineBg_11:  @ 0x08645548
 	.incbin "./graphics/banim/assets/tsa/00645548_Tsa_08645548.map.bin.lz" @ 0x645624 - 0x645548
 
-	.global Tsa_08645624
-Tsa_08645624:  @ 0x08645624
+	.global Tsa_DivineBg_12
+Tsa_DivineBg_12:  @ 0x08645624
 	.incbin "./graphics/banim/assets/tsa/00645624_Tsa_08645624.map.bin.lz" @ 0x645708 - 0x645624
 
-	.global Tsa_08645708
-Tsa_08645708:  @ 0x08645708
+	.global Tsa_DivineBg_13
+Tsa_DivineBg_13:  @ 0x08645708
 	.incbin "./graphics/banim/assets/tsa/00645708_Tsa_08645708.map.bin.lz" @ 0x6457BC - 0x645708
 
-	.global Tsa_086457BC
-Tsa_086457BC:  @ 0x086457BC
+	.global Tsa_DivineBg_14
+Tsa_DivineBg_14:  @ 0x086457BC
 	.incbin "./graphics/banim/assets/tsa/006457BC_Tsa_086457BC.map.bin.lz" @ 0x645858 - 0x6457BC
 
-	.global Tsa_08645858
-Tsa_08645858:  @ 0x08645858
+	.global Tsa_DivineBg_15
+Tsa_DivineBg_15:  @ 0x08645858
 	.incbin "./graphics/banim/assets/tsa/00645858_Tsa_08645858.map.bin.lz" @ 0x6458F4 - 0x645858
 
-	.global Tsa_086458F4
-Tsa_086458F4:  @ 0x086458F4
+	.global Tsa_DivineBg_16
+Tsa_DivineBg_16:  @ 0x086458F4
 	.incbin "./graphics/banim/assets/tsa/006458F4_Tsa_086458F4.map.bin.lz" @ 0x645990 - 0x6458F4
 
-	.global Tsa_08645990
-Tsa_08645990:  @ 0x08645990
+	.global Tsa_DivineBg_17
+Tsa_DivineBg_17:  @ 0x08645990
 	.incbin "./graphics/banim/assets/tsa/00645990_Tsa_08645990.map.bin.lz" @ 0x645A2C - 0x645990
 
-	.global Tsa_08645A2C
-Tsa_08645A2C:  @ 0x08645A2C
+	.global Tsa_DivineBg_18
+Tsa_DivineBg_18:  @ 0x08645A2C
 	.incbin "./graphics/banim/assets/tsa/00645A2C_Tsa_08645A2C.map.bin.lz" @ 0x645AC8 - 0x645A2C
 
-	.global Tsa_08645AC8
-Tsa_08645AC8:  @ 0x08645AC8
+	.global Tsa_DivineBg_19
+Tsa_DivineBg_19:  @ 0x08645AC8
 	.incbin "./graphics/banim/assets/tsa/00645AC8_Tsa_08645AC8.map.bin.lz" @ 0x645B64 - 0x645AC8
 
-	.global Tsa_08645B64
-Tsa_08645B64:  @ 0x08645B64
+	.global Tsa_DivineBg_20
+Tsa_DivineBg_20:  @ 0x08645B64
 	.incbin "./graphics/banim/assets/tsa/00645B64_Tsa_08645B64.map.bin.lz" @ 0x645C00 - 0x645B64
 
-	.global Tsa_08645C00
-Tsa_08645C00:  @ 0x08645C00
+	.global Tsa_DivineBg2_0
+Tsa_DivineBg2_0:  @ 0x08645C00
 	.incbin "./graphics/banim/assets/tsa/00645C00_Tsa_08645C00.map.bin.lz" @ 0x645C9C - 0x645C00
 
-	.global Tsa_08645C9C
-Tsa_08645C9C:  @ 0x08645C9C
+	.global Tsa_DivineBg2_1
+Tsa_DivineBg2_1:  @ 0x08645C9C
 	.incbin "./graphics/banim/assets/tsa/00645C9C_Tsa_08645C9C.map.bin.lz" @ 0x645D38 - 0x645C9C
 
-	.global Tsa_08645D38
-Tsa_08645D38:  @ 0x08645D38
+	.global Tsa_DivineBg2_2
+Tsa_DivineBg2_2:  @ 0x08645D38
 	.incbin "./graphics/banim/assets/tsa/00645D38_Tsa_08645D38.map.bin.lz" @ 0x645DD8 - 0x645D38
 
 	.global Img_DivineSprites
@@ -15408,12 +15408,12 @@ Tsa_EclipseBg_AA:  @ 0x08650768
 Img_EclipseSprites_Swirl:  @ 0x086508DC
 	.incbin "./graphics/banim/assets/img/006508DC_Img_EclipseSprites_Swirl.4bpp.lz"
 
-	.global Img_EclipseSprites_08650DA8
-Img_EclipseSprites_08650DA8:  @ 0x08650DA8
+	.global Img_EclipseSprites_0
+Img_EclipseSprites_0:  @ 0x08650DA8
 	.incbin "./graphics/banim/assets/img/00650DA8_Img_EclipseSprites_08650DA8.4bpp.lz"
 
-	.global Img_EclipseSprites_08651240
-Img_EclipseSprites_08651240:  @ 0x08651240
+	.global Img_EclipseSprites_efxHazymoonOBJ
+Img_EclipseSprites_efxHazymoonOBJ:  @ 0x08651240
 	.incbin "./graphics/banim/assets/img/00651240_Img_EclipseSprites_08651240.4bpp.lz"
 
 	.global Pal_EclipseSprites
@@ -15651,20 +15651,20 @@ Pal_EfxFenrirBGCOL:  @ 0x08652554
 Tsa_FenrirBg_Sigils:  @ 0x08652734
 	.incbin "./graphics/banim/assets/tsa/00652734_Tsa_FenrirBg_Sigils.map.bin.lz" @ 0x652948 - 0x652734
 
-	.global Img_08652948
-Img_08652948:  @ 0x08652948
+	.global Img_FenrirBg_0
+Img_FenrirBg_0:  @ 0x08652948
 	.incbin "./graphics/banim/assets/img/00652948_Img_08652948.4bpp.lz" @ 0x653B60 - 0x652948
 
-	.global Img_08653B60
-Img_08653B60:  @ 0x08653B60
+	.global Img_FenrirBg_1
+Img_FenrirBg_1:  @ 0x08653B60
 	.incbin "./graphics/banim/assets/img/00653B60_Img_08653B60.4bpp.lz" @ 0x654EB0 - 0x653B60
 
-	.global Img_08654EB0
-Img_08654EB0:  @ 0x08654EB0
+	.global Img_FenrirBg_2
+Img_FenrirBg_2:  @ 0x08654EB0
 	.incbin "./graphics/banim/assets/img/00654EB0_Img_08654EB0.4bpp.lz" @ 0x655D2C - 0x654EB0
 
-	.global Img_08655D2C
-Img_08655D2C:  @ 0x08655D2C
+	.global Img_FenrirBg_3
+Img_FenrirBg_3:  @ 0x08655D2C
 	.incbin "./graphics/banim/assets/img/00655D2C_Img_08655D2C.4bpp.lz" @ 0x6568F4 - 0x655D2C
 
 	.global Pal_FenrirBg
@@ -15675,208 +15675,208 @@ Pal_FenrirBg:  @ 0x086568F4
 Pal_EfxFenrirBG2_B:  @ 0x08656914
 	.incbin "./graphics/banim/assets/pal/00656914_Pal_EfxFenrirBG2_B.gbapal" @ 0x656934 - 0x656914
 
-	.global Tsa_08656934
-Tsa_08656934:  @ 0x08656934
+	.global Tsa_Banim_13
+Tsa_Banim_13:  @ 0x08656934
 	.incbin "./graphics/banim/assets/tsa/00656934_Tsa_08656934.map.bin.lz" @ 0x6569F0 - 0x656934
 
-	.global Tsa_086569F0
-Tsa_086569F0:  @ 0x086569F0
+	.global Tsa_FenrirBg_0
+Tsa_FenrirBg_0:  @ 0x086569F0
 	.incbin "./graphics/banim/assets/tsa/006569F0_Tsa_086569F0.map.bin.lz" @ 0x656AAC - 0x6569F0
 
-	.global Tsa_08656AAC
-Tsa_08656AAC:  @ 0x08656AAC
+	.global Tsa_FenrirBg_1
+Tsa_FenrirBg_1:  @ 0x08656AAC
 	.incbin "./graphics/banim/assets/tsa/00656AAC_Tsa_08656AAC.map.bin.lz" @ 0x656B68 - 0x656AAC
 
-	.global Tsa_08656B68
-Tsa_08656B68:  @ 0x08656B68
+	.global Tsa_FenrirBg_2
+Tsa_FenrirBg_2:  @ 0x08656B68
 	.incbin "./graphics/banim/assets/tsa/00656B68_Tsa_08656B68.map.bin.lz" @ 0x656C24 - 0x656B68
 
-	.global Tsa_08656C24
-Tsa_08656C24:  @ 0x08656C24
+	.global Tsa_FenrirBg_3
+Tsa_FenrirBg_3:  @ 0x08656C24
 	.incbin "./graphics/banim/assets/tsa/00656C24_Tsa_08656C24.map.bin.lz" @ 0x656CE0 - 0x656C24
 
-	.global Tsa_08656CE0
-Tsa_08656CE0:  @ 0x08656CE0
+	.global Tsa_FenrirBg_4
+Tsa_FenrirBg_4:  @ 0x08656CE0
 	.incbin "./graphics/banim/assets/tsa/00656CE0_Tsa_08656CE0.map.bin.lz" @ 0x656D9C - 0x656CE0
 
-	.global Tsa_08656D9C
-Tsa_08656D9C:  @ 0x08656D9C
+	.global Tsa_FenrirBg_5
+Tsa_FenrirBg_5:  @ 0x08656D9C
 	.incbin "./graphics/banim/assets/tsa/00656D9C_Tsa_08656D9C.map.bin.lz" @ 0x656EA0 - 0x656D9C
 
-	.global Tsa_08656EA0
-Tsa_08656EA0:  @ 0x08656EA0
+	.global Tsa_FenrirBg_6
+Tsa_FenrirBg_6:  @ 0x08656EA0
 	.incbin "./graphics/banim/assets/tsa/00656EA0_Tsa_08656EA0.map.bin.lz" @ 0x656FA4 - 0x656EA0
 
-	.global Tsa_08656FA4
-Tsa_08656FA4:  @ 0x08656FA4
+	.global Tsa_FenrirBg_7
+Tsa_FenrirBg_7:  @ 0x08656FA4
 	.incbin "./graphics/banim/assets/tsa/00656FA4_Tsa_08656FA4.map.bin.lz" @ 0x6570A8 - 0x656FA4
 
-	.global Tsa_086570A8
-Tsa_086570A8:  @ 0x086570A8
+	.global Tsa_FenrirBg_8
+Tsa_FenrirBg_8:  @ 0x086570A8
 	.incbin "./graphics/banim/assets/tsa/006570A8_Tsa_086570A8.map.bin.lz" @ 0x6571AC - 0x6570A8
 
-	.global Tsa_086571AC
-Tsa_086571AC:  @ 0x086571AC
+	.global Tsa_FenrirBg_9
+Tsa_FenrirBg_9:  @ 0x086571AC
 	.incbin "./graphics/banim/assets/tsa/006571AC_Tsa_086571AC.map.bin.lz" @ 0x6572B0 - 0x6571AC
 
-	.global Tsa_086572B0
-Tsa_086572B0:  @ 0x086572B0
+	.global Tsa_FenrirBg_10
+Tsa_FenrirBg_10:  @ 0x086572B0
 	.incbin "./graphics/banim/assets/tsa/006572B0_Tsa_086572B0.map.bin.lz" @ 0x6573B4 - 0x6572B0
 
-	.global Tsa_086573B4
-Tsa_086573B4:  @ 0x086573B4
+	.global Tsa_FenrirBg_11
+Tsa_FenrirBg_11:  @ 0x086573B4
 	.incbin "./graphics/banim/assets/tsa/006573B4_Tsa_086573B4.map.bin.lz" @ 0x6574F4 - 0x6573B4
 
-	.global Tsa_086574F4
-Tsa_086574F4:  @ 0x086574F4
+	.global Tsa_FenrirBg_12
+Tsa_FenrirBg_12:  @ 0x086574F4
 	.incbin "./graphics/banim/assets/tsa/006574F4_Tsa_086574F4.map.bin.lz" @ 0x657638 - 0x6574F4
 
-	.global Tsa_08657638
-Tsa_08657638:  @ 0x08657638
+	.global Tsa_FenrirBg_13
+Tsa_FenrirBg_13:  @ 0x08657638
 	.incbin "./graphics/banim/assets/tsa/00657638_Tsa_08657638.map.bin.lz" @ 0x65777C - 0x657638
 
-	.global Tsa_0865777C
-Tsa_0865777C:  @ 0x0865777C
+	.global Tsa_FenrirBg_14
+Tsa_FenrirBg_14:  @ 0x0865777C
 	.incbin "./graphics/banim/assets/tsa/0065777C_Tsa_0865777C.map.bin.lz" @ 0x6578C0 - 0x65777C
 
-	.global Tsa_086578C0
-Tsa_086578C0:  @ 0x086578C0
+	.global Tsa_FenrirBg_15
+Tsa_FenrirBg_15:  @ 0x086578C0
 	.incbin "./graphics/banim/assets/tsa/006578C0_Tsa_086578C0.map.bin.lz" @ 0x657A04 - 0x6578C0
 
-	.global Tsa_08657A04
-Tsa_08657A04:  @ 0x08657A04
+	.global Tsa_FenrirBg_16
+Tsa_FenrirBg_16:  @ 0x08657A04
 	.incbin "./graphics/banim/assets/tsa/00657A04_Tsa_08657A04.map.bin.lz" @ 0x657B48 - 0x657A04
 
-	.global Tsa_08657B48
-Tsa_08657B48:  @ 0x08657B48
+	.global Tsa_FenrirBg_17
+Tsa_FenrirBg_17:  @ 0x08657B48
 	.incbin "./graphics/banim/assets/tsa/00657B48_Tsa_08657B48.map.bin.lz" @ 0x657CC8 - 0x657B48
 
-	.global Tsa_08657CC8
-Tsa_08657CC8:  @ 0x08657CC8
+	.global Tsa_FenrirBg_18
+Tsa_FenrirBg_18:  @ 0x08657CC8
 	.incbin "./graphics/banim/assets/tsa/00657CC8_Tsa_08657CC8.map.bin.lz" @ 0x657E4C - 0x657CC8
 
-	.global Tsa_08657E4C
-Tsa_08657E4C:  @ 0x08657E4C
+	.global Tsa_FenrirBg_19
+Tsa_FenrirBg_19:  @ 0x08657E4C
 	.incbin "./graphics/banim/assets/tsa/00657E4C_Tsa_08657E4C.map.bin.lz" @ 0x657FD0 - 0x657E4C
 
-	.global Tsa_08657FD0
-Tsa_08657FD0:  @ 0x08657FD0
+	.global Tsa_FenrirBg_20
+Tsa_FenrirBg_20:  @ 0x08657FD0
 	.incbin "./graphics/banim/assets/tsa/00657FD0_Tsa_08657FD0.map.bin.lz" @ 0x658130 - 0x657FD0
 
-	.global Tsa_08658130
-Tsa_08658130:  @ 0x08658130
+	.global Tsa_FenrirBg_21
+Tsa_FenrirBg_21:  @ 0x08658130
 	.incbin "./graphics/banim/assets/tsa/00658130_Tsa_08658130.map.bin.lz" @ 0x658290 - 0x658130
 
-	.global Tsa_08658290
-Tsa_08658290:  @ 0x08658290
+	.global Tsa_FenrirBg_22
+Tsa_FenrirBg_22:  @ 0x08658290
 	.incbin "./graphics/banim/assets/tsa/00658290_Tsa_08658290.map.bin.lz" @ 0x6583F0 - 0x658290
 
-	.global Tsa_086583F0
-Tsa_086583F0:  @ 0x086583F0
+	.global Tsa_FenrirBg_23
+Tsa_FenrirBg_23:  @ 0x086583F0
 	.incbin "./graphics/banim/assets/tsa/006583F0_Tsa_086583F0.map.bin.lz" @ 0x658594 - 0x6583F0
 
-	.global Tsa_08658594
-Tsa_08658594:  @ 0x08658594
+	.global Tsa_FenrirBg_24
+Tsa_FenrirBg_24:  @ 0x08658594
 	.incbin "./graphics/banim/assets/tsa/00658594_Tsa_08658594.map.bin.lz" @ 0x658738 - 0x658594
 
-	.global Tsa_08658738
-Tsa_08658738:  @ 0x08658738
+	.global Tsa_FenrirBg_25
+Tsa_FenrirBg_25:  @ 0x08658738
 	.incbin "./graphics/banim/assets/tsa/00658738_Tsa_08658738.map.bin.lz" @ 0x6588DC - 0x658738
 
-	.global Tsa_086588DC
-Tsa_086588DC:  @ 0x086588DC
+	.global Tsa_FenrirBg_26
+Tsa_FenrirBg_26:  @ 0x086588DC
 	.incbin "./graphics/banim/assets/tsa/006588DC_Tsa_086588DC.map.bin.lz" @ 0x658A4C - 0x6588DC
 
-	.global Tsa_08658A4C
-Tsa_08658A4C:  @ 0x08658A4C
+	.global Tsa_FenrirBg_27
+Tsa_FenrirBg_27:  @ 0x08658A4C
 	.incbin "./graphics/banim/assets/tsa/00658A4C_Tsa_08658A4C.map.bin.lz" @ 0x658BBC - 0x658A4C
 
-	.global Tsa_08658BBC
-Tsa_08658BBC:  @ 0x08658BBC
+	.global Tsa_FenrirBg_28
+Tsa_FenrirBg_28:  @ 0x08658BBC
 	.incbin "./graphics/banim/assets/tsa/00658BBC_Tsa_08658BBC.map.bin.lz" @ 0x658D2C - 0x658BBC
 
-	.global Tsa_08658D2C
-Tsa_08658D2C:  @ 0x08658D2C
+	.global Tsa_FenrirBg_29
+Tsa_FenrirBg_29:  @ 0x08658D2C
 	.incbin "./graphics/banim/assets/tsa/00658D2C_Tsa_08658D2C.map.bin.lz" @ 0x658ED0 - 0x658D2C
 
-	.global Tsa_08658ED0
-Tsa_08658ED0:  @ 0x08658ED0
+	.global Tsa_FenrirBg_30
+Tsa_FenrirBg_30:  @ 0x08658ED0
 	.incbin "./graphics/banim/assets/tsa/00658ED0_Tsa_08658ED0.map.bin.lz" @ 0x659074 - 0x658ED0
 
-	.global Tsa_08659074
-Tsa_08659074:  @ 0x08659074
+	.global Tsa_FenrirBg_31
+Tsa_FenrirBg_31:  @ 0x08659074
 	.incbin "./graphics/banim/assets/tsa/00659074_Tsa_08659074.map.bin.lz" @ 0x659218 - 0x659074
 
-	.global Tsa_08659218
-Tsa_08659218:  @ 0x08659218
+	.global Tsa_FenrirBg_32
+Tsa_FenrirBg_32:  @ 0x08659218
 	.incbin "./graphics/banim/assets/tsa/00659218_Tsa_08659218.map.bin.lz" @ 0x65938C - 0x659218
 
-	.global Tsa_0865938C
-Tsa_0865938C:  @ 0x0865938C
+	.global Tsa_FenrirBg_33
+Tsa_FenrirBg_33:  @ 0x0865938C
 	.incbin "./graphics/banim/assets/tsa/0065938C_Tsa_0865938C.map.bin.lz" @ 0x659500 - 0x65938C
 
-	.global Tsa_08659500
-Tsa_08659500:  @ 0x08659500
+	.global Tsa_FenrirBg_34
+Tsa_FenrirBg_34:  @ 0x08659500
 	.incbin "./graphics/banim/assets/tsa/00659500_Tsa_08659500.map.bin.lz" @ 0x659674 - 0x659500
 
-	.global Tsa_08659674
-Tsa_08659674:  @ 0x08659674
+	.global Tsa_FenrirBg_35
+Tsa_FenrirBg_35:  @ 0x08659674
 	.incbin "./graphics/banim/assets/tsa/00659674_Tsa_08659674.map.bin.lz" @ 0x659824 - 0x659674
 
-	.global Tsa_08659824
-Tsa_08659824:  @ 0x08659824
+	.global Tsa_FenrirBg_36
+Tsa_FenrirBg_36:  @ 0x08659824
 	.incbin "./graphics/banim/assets/tsa/00659824_Tsa_08659824.map.bin.lz" @ 0x6599D4 - 0x659824
 
-	.global Tsa_086599D4
-Tsa_086599D4:  @ 0x086599D4
+	.global Tsa_FenrirBg_37
+Tsa_FenrirBg_37:  @ 0x086599D4
 	.incbin "./graphics/banim/assets/tsa/006599D4_Tsa_086599D4.map.bin.lz" @ 0x659B84 - 0x6599D4
 
-	.global Tsa_08659B84
-Tsa_08659B84:  @ 0x08659B84
+	.global Tsa_FenrirBg_38
+Tsa_FenrirBg_38:  @ 0x08659B84
 	.incbin "./graphics/banim/assets/tsa/00659B84_Tsa_08659B84.map.bin.lz" @ 0x659CF8 - 0x659B84
 
-	.global Tsa_08659CF8
-Tsa_08659CF8:  @ 0x08659CF8
+	.global Tsa_FenrirBg_39
+Tsa_FenrirBg_39:  @ 0x08659CF8
 	.incbin "./graphics/banim/assets/tsa/00659CF8_Tsa_08659CF8.map.bin.lz" @ 0x659E6C - 0x659CF8
 
-	.global Tsa_08659E6C
-Tsa_08659E6C:  @ 0x08659E6C
+	.global Tsa_FenrirBg_40
+Tsa_FenrirBg_40:  @ 0x08659E6C
 	.incbin "./graphics/banim/assets/tsa/00659E6C_Tsa_08659E6C.map.bin.lz" @ 0x659FE0 - 0x659E6C
 
-	.global Tsa_08659FE0
-Tsa_08659FE0:  @ 0x08659FE0
+	.global Tsa_FenrirBg_41
+Tsa_FenrirBg_41:  @ 0x08659FE0
 	.incbin "./graphics/banim/assets/tsa/00659FE0_Tsa_08659FE0.map.bin.lz" @ 0x65A194 - 0x659FE0
 
-	.global Tsa_0865A194
-Tsa_0865A194:  @ 0x0865A194
+	.global Tsa_FenrirBg_42
+Tsa_FenrirBg_42:  @ 0x0865A194
 	.incbin "./graphics/banim/assets/tsa/0065A194_Tsa_0865A194.map.bin.lz" @ 0x65A348 - 0x65A194
 
-	.global Tsa_0865A348
-Tsa_0865A348:  @ 0x0865A348
+	.global Tsa_FenrirBg_43
+Tsa_FenrirBg_43:  @ 0x0865A348
 	.incbin "./graphics/banim/assets/tsa/0065A348_Tsa_0865A348.map.bin.lz" @ 0x65A4FC - 0x65A348
 
-	.global Tsa_0865A4FC
-Tsa_0865A4FC:  @ 0x0865A4FC
+	.global Tsa_FenrirBg_44
+Tsa_FenrirBg_44:  @ 0x0865A4FC
 	.incbin "./graphics/banim/assets/tsa/0065A4FC_Tsa_0865A4FC.map.bin.lz" @ 0x65A674 - 0x65A4FC
 
-	.global Tsa_0865A674
-Tsa_0865A674:  @ 0x0865A674
+	.global Tsa_FenrirBg_45
+Tsa_FenrirBg_45:  @ 0x0865A674
 	.incbin "./graphics/banim/assets/tsa/0065A674_Tsa_0865A674.map.bin.lz" @ 0x65A7EC - 0x65A674
 
-	.global Tsa_0865A7EC
-Tsa_0865A7EC:  @ 0x0865A7EC
+	.global Tsa_FenrirBg_46
+Tsa_FenrirBg_46:  @ 0x0865A7EC
 	.incbin "./graphics/banim/assets/tsa/0065A7EC_Tsa_0865A7EC.map.bin.lz" @ 0x65A964 - 0x65A7EC
 
-	.global Tsa_0865A964
-Tsa_0865A964:  @ 0x0865A964
+	.global Tsa_FenrirBg_47
+Tsa_FenrirBg_47:  @ 0x0865A964
 	.incbin "./graphics/banim/assets/tsa/0065A964_Tsa_0865A964.map.bin.lz" @ 0x65ABBC - 0x65A964
 
-	.global Tsa_0865ABBC
-Tsa_0865ABBC:  @ 0x0865ABBC
+	.global Tsa_FenrirBg_48
+Tsa_FenrirBg_48:  @ 0x0865ABBC
 	.incbin "./graphics/banim/assets/tsa/0065ABBC_Tsa_0865ABBC.map.bin.lz" @ 0x65ADC4 - 0x65ABBC
 
-	.global Tsa_0865ADC4
-Tsa_0865ADC4:  @ 0x0865ADC4
+	.global Tsa_FenrirBg_49
+Tsa_FenrirBg_49:  @ 0x0865ADC4
 	.incbin "./graphics/banim/assets/tsa/0065ADC4_Tsa_0865ADC4.map.bin.lz" @ 0x65AF3C - 0x65ADC4
 
 	.global Img_FenrirSprites
@@ -16338,380 +16338,380 @@ AnimScr_EfxFenrir3: @ 0x65C7D4
     ANIMSCR_FORCE_SPRITE AnimSprite_EfxFenrir_29, 2
     ANIMSCR_BLOCKED
 
-	.global Img_0865C8C0
-Img_0865C8C0:  @ 0x0865C8C0
+	.global Img_Banim_7
+Img_Banim_7:  @ 0x0865C8C0
 	.incbin "./graphics/banim/assets/img/0065C8C0_Img_0865C8C0.4bpp.lz" @ 0x65CE1C - 0x65C8C0
 
-	.global Img_0865CE1C
-Img_0865CE1C:  @ 0x0865CE1C
+	.global Img_PurgeBg_0
+Img_PurgeBg_0:  @ 0x0865CE1C
 	.incbin "./graphics/banim/assets/img/0065CE1C_Img_0865CE1C.4bpp.lz" @ 0x65D498 - 0x65CE1C
 
-	.global Img_0865D498
-Img_0865D498:  @ 0x0865D498
+	.global Img_PurgeBg_1
+Img_PurgeBg_1:  @ 0x0865D498
 	.incbin "./graphics/banim/assets/img/0065D498_Img_0865D498.4bpp.lz" @ 0x65DAE4 - 0x65D498
 
-	.global Img_0865DAE4
-Img_0865DAE4:  @ 0x0865DAE4
+	.global Img_PurgeBg_2
+Img_PurgeBg_2:  @ 0x0865DAE4
 	.incbin "./graphics/banim/assets/img/0065DAE4_Img_0865DAE4.4bpp.lz" @ 0x65E298 - 0x65DAE4
 
-	.global Img_0865E298
-Img_0865E298:  @ 0x0865E298
+	.global Img_PurgeBg_3
+Img_PurgeBg_3:  @ 0x0865E298
 	.incbin "./graphics/banim/assets/img/0065E298_Img_0865E298.4bpp.lz" @ 0x65E9A0 - 0x65E298
 
-	.global Img_0865E9A0
-Img_0865E9A0:  @ 0x0865E9A0
+	.global Img_PurgeBg_4
+Img_PurgeBg_4:  @ 0x0865E9A0
 	.incbin "./graphics/banim/assets/img/0065E9A0_Img_0865E9A0.4bpp.lz" @ 0x65EEBC - 0x65E9A0
 
-	.global Img_0865EEBC
-Img_0865EEBC:  @ 0x0865EEBC
+	.global Img_PurgeBg_5
+Img_PurgeBg_5:  @ 0x0865EEBC
 	.incbin "./graphics/banim/assets/img/0065EEBC_Img_0865EEBC.4bpp.lz" @ 0x65F7BC - 0x65EEBC
 
-	.global Img_0865F7BC
-Img_0865F7BC:  @ 0x0865F7BC
+	.global Img_PurgeBg_6
+Img_PurgeBg_6:  @ 0x0865F7BC
 	.incbin "./graphics/banim/assets/img/0065F7BC_Img_0865F7BC.4bpp.lz" @ 0x660170 - 0x65F7BC
 
-	.global Img_08660170
-Img_08660170:  @ 0x08660170
+	.global Img_PurgeBg_7
+Img_PurgeBg_7:  @ 0x08660170
 	.incbin "./graphics/banim/assets/img/00660170_Img_08660170.4bpp.lz" @ 0x660AE4 - 0x660170
 
-	.global Img_08660AE4
-Img_08660AE4:  @ 0x08660AE4
+	.global Img_PurgeBg_8
+Img_PurgeBg_8:  @ 0x08660AE4
 	.incbin "./graphics/banim/assets/img/00660AE4_Img_08660AE4.4bpp.lz" @ 0x6614B8 - 0x660AE4
 
-	.global Img_086614B8
-Img_086614B8:  @ 0x086614B8
+	.global Img_PurgeBg_9
+Img_PurgeBg_9:  @ 0x086614B8
 	.incbin "./graphics/banim/assets/img/006614B8_Img_086614B8.4bpp.lz" @ 0x6624BC - 0x6614B8
 
-	.global Img_086624BC
-Img_086624BC:  @ 0x086624BC
+	.global Img_PurgeBg_10
+Img_PurgeBg_10:  @ 0x086624BC
 	.incbin "./graphics/banim/assets/img/006624BC_Img_086624BC.4bpp.lz" @ 0x66330C - 0x6624BC
 
-	.global Img_0866330C
-Img_0866330C:  @ 0x0866330C
+	.global Img_PurgeBg_11
+Img_PurgeBg_11:  @ 0x0866330C
 	.incbin "./graphics/banim/assets/img/0066330C_Img_0866330C.4bpp.lz" @ 0x663DF0 - 0x66330C
 
-	.global Img_08663DF0
-Img_08663DF0:  @ 0x08663DF0
+	.global Img_PurgeBg_12
+Img_PurgeBg_12:  @ 0x08663DF0
 	.incbin "./graphics/banim/assets/img/00663DF0_Img_08663DF0.4bpp.lz" @ 0x664998 - 0x663DF0
 
-	.global Img_08664998
-Img_08664998:  @ 0x08664998
+	.global Img_PurgeBg_13
+Img_PurgeBg_13:  @ 0x08664998
 	.incbin "./graphics/banim/assets/img/00664998_Img_08664998.4bpp.lz" @ 0x665534 - 0x664998
 
-	.global Img_08665534
-Img_08665534:  @ 0x08665534
+	.global Img_PurgeBg_14
+Img_PurgeBg_14:  @ 0x08665534
 	.incbin "./graphics/banim/assets/img/00665534_Img_08665534.4bpp.lz" @ 0x665FF4 - 0x665534
 
-	.global Img_08665FF4
-Img_08665FF4:  @ 0x08665FF4
+	.global Img_PurgeBg_15
+Img_PurgeBg_15:  @ 0x08665FF4
 	.incbin "./graphics/banim/assets/img/00665FF4_Img_08665FF4.4bpp.lz" @ 0x666A6C - 0x665FF4
 
-	.global Img_08666A6C
-Img_08666A6C:  @ 0x08666A6C
+	.global Img_PurgeBg_16
+Img_PurgeBg_16:  @ 0x08666A6C
 	.incbin "./graphics/banim/assets/img/00666A6C_Img_08666A6C.4bpp.lz"
 
 	.global Img_EfxMagdhisEffectBG_LayerB
 Img_EfxMagdhisEffectBG_LayerB:  @ 0x086671B0
 	.incbin "./graphics/banim/assets/img/006671B0_Img_EfxMagdhisEffectBG_LayerB.4bpp.lz"
 
-	.global Pal_08667D70
-Pal_08667D70:  @ 0x08667D70
+	.global Pal_Banim_3
+Pal_Banim_3:  @ 0x08667D70
 	.incbin "./graphics/banim/assets/pal/00667D70_Pal_08667D70.gbapal" @ 0x667D90 - 0x667D70
 
-	.global Pal_08667D90
-Pal_08667D90:  @ 0x08667D90
+	.global Pal_PurgeBg
+Pal_PurgeBg:  @ 0x08667D90
 	.incbin "./graphics/banim/assets/pal/00667D90_Pal_08667D90.gbapal" @ 0x667DB0 - 0x667D90
 
-	.global Tsa_08667DB0
-Tsa_08667DB0:  @ 0x08667DB0
+	.global Tsa_PurgeBg_0
+Tsa_PurgeBg_0:  @ 0x08667DB0
 	.incbin "./graphics/banim/assets/tsa/00667DB0_Tsa_08667DB0.map.bin.lz" @ 0x667ED4 - 0x667DB0
 
-	.global Tsa_08667ED4
-Tsa_08667ED4:  @ 0x08667ED4
+	.global Tsa_PurgeBg_1
+Tsa_PurgeBg_1:  @ 0x08667ED4
 	.incbin "./graphics/banim/assets/tsa/00667ED4_Tsa_08667ED4.map.bin.lz" @ 0x667FF4 - 0x667ED4
 
-	.global Tsa_08667FF4
-Tsa_08667FF4:  @ 0x08667FF4
+	.global Tsa_PurgeBg_2
+Tsa_PurgeBg_2:  @ 0x08667FF4
 	.incbin "./graphics/banim/assets/tsa/00667FF4_Tsa_08667FF4.map.bin.lz" @ 0x668100 - 0x667FF4
 
-	.global Tsa_08668100
-Tsa_08668100:  @ 0x08668100
+	.global Tsa_PurgeBg_3
+Tsa_PurgeBg_3:  @ 0x08668100
 	.incbin "./graphics/banim/assets/tsa/00668100_Tsa_08668100.map.bin.lz" @ 0x6681FC - 0x668100
 
-	.global Tsa_086681FC
-Tsa_086681FC:  @ 0x086681FC
+	.global Tsa_PurgeBg_4
+Tsa_PurgeBg_4:  @ 0x086681FC
 	.incbin "./graphics/banim/assets/tsa/006681FC_Tsa_086681FC.map.bin.lz" @ 0x6682E4 - 0x6681FC
 
-	.global Tsa_086682E4
-Tsa_086682E4:  @ 0x086682E4
+	.global Tsa_PurgeBg_5
+Tsa_PurgeBg_5:  @ 0x086682E4
 	.incbin "./graphics/banim/assets/tsa/006682E4_Tsa_086682E4.map.bin.lz" @ 0x6683CC - 0x6682E4
 
-	.global Tsa_086683CC
-Tsa_086683CC:  @ 0x086683CC
+	.global Tsa_PurgeBg_6
+Tsa_PurgeBg_6:  @ 0x086683CC
 	.incbin "./graphics/banim/assets/tsa/006683CC_Tsa_086683CC.map.bin.lz" @ 0x6684AC - 0x6683CC
 
-	.global Tsa_086684AC
-Tsa_086684AC:  @ 0x086684AC
+	.global Tsa_PurgeBg_7
+Tsa_PurgeBg_7:  @ 0x086684AC
 	.incbin "./graphics/banim/assets/tsa/006684AC_Tsa_086684AC.map.bin.lz" @ 0x668588 - 0x6684AC
 
-	.global Tsa_08668588
-Tsa_08668588:  @ 0x08668588
+	.global Tsa_PurgeBg_8
+Tsa_PurgeBg_8:  @ 0x08668588
 	.incbin "./graphics/banim/assets/tsa/00668588_Tsa_08668588.map.bin.lz" @ 0x668668 - 0x668588
 
-	.global Tsa_08668668
-Tsa_08668668:  @ 0x08668668
+	.global Tsa_PurgeBg_9
+Tsa_PurgeBg_9:  @ 0x08668668
 	.incbin "./graphics/banim/assets/tsa/00668668_Tsa_08668668.map.bin.lz" @ 0x66875C - 0x668668
 
-	.global Tsa_0866875C
-Tsa_0866875C:  @ 0x0866875C
+	.global Tsa_PurgeBg_10
+Tsa_PurgeBg_10:  @ 0x0866875C
 	.incbin "./graphics/banim/assets/tsa/0066875C_Tsa_0866875C.map.bin.lz" @ 0x668850 - 0x66875C
 
-	.global Tsa_08668850
-Tsa_08668850:  @ 0x08668850
+	.global Tsa_PurgeBg_11
+Tsa_PurgeBg_11:  @ 0x08668850
 	.incbin "./graphics/banim/assets/tsa/00668850_Tsa_08668850.map.bin.lz" @ 0x668954 - 0x668850
 
-	.global Tsa_08668954
-Tsa_08668954:  @ 0x08668954
+	.global Tsa_PurgeBg_12
+Tsa_PurgeBg_12:  @ 0x08668954
 	.incbin "./graphics/banim/assets/tsa/00668954_Tsa_08668954.map.bin.lz" @ 0x668A5C - 0x668954
 
-	.global Tsa_08668A5C
-Tsa_08668A5C:  @ 0x08668A5C
+	.global Tsa_PurgeBg_13
+Tsa_PurgeBg_13:  @ 0x08668A5C
 	.incbin "./graphics/banim/assets/tsa/00668A5C_Tsa_08668A5C.map.bin.lz" @ 0x668B74 - 0x668A5C
 
-	.global Tsa_08668B74
-Tsa_08668B74:  @ 0x08668B74
+	.global Tsa_PurgeBg_14
+Tsa_PurgeBg_14:  @ 0x08668B74
 	.incbin "./graphics/banim/assets/tsa/00668B74_Tsa_08668B74.map.bin.lz" @ 0x668C98 - 0x668B74
 
-	.global Tsa_08668C98
-Tsa_08668C98:  @ 0x08668C98
+	.global Tsa_PurgeBg_15
+Tsa_PurgeBg_15:  @ 0x08668C98
 	.incbin "./graphics/banim/assets/tsa/00668C98_Tsa_08668C98.map.bin.lz" @ 0x668DAC - 0x668C98
 
-	.global Tsa_08668DAC
-Tsa_08668DAC:  @ 0x08668DAC
+	.global Tsa_PurgeBg_16
+Tsa_PurgeBg_16:  @ 0x08668DAC
 	.incbin "./graphics/banim/assets/tsa/00668DAC_Tsa_08668DAC.map.bin.lz" @ 0x668ED0 - 0x668DAC
 
-	.global Tsa_08668ED0
-Tsa_08668ED0:  @ 0x08668ED0
+	.global Tsa_PurgeBg_17
+Tsa_PurgeBg_17:  @ 0x08668ED0
 	.incbin "./graphics/banim/assets/tsa/00668ED0_Tsa_08668ED0.map.bin.lz" @ 0x668FF4 - 0x668ED0
 
-	.global Tsa_08668FF4
-Tsa_08668FF4:  @ 0x08668FF4
+	.global Tsa_PurgeBg_18
+Tsa_PurgeBg_18:  @ 0x08668FF4
 	.incbin "./graphics/banim/assets/tsa/00668FF4_Tsa_08668FF4.map.bin.lz" @ 0x669104 - 0x668FF4
 
-	.global Tsa_08669104
-Tsa_08669104:  @ 0x08669104
+	.global Tsa_PurgeBg_19
+Tsa_PurgeBg_19:  @ 0x08669104
 	.incbin "./graphics/banim/assets/tsa/00669104_Tsa_08669104.map.bin.lz" @ 0x669204 - 0x669104
 
-	.global Tsa_08669204
-Tsa_08669204:  @ 0x08669204
+	.global Tsa_PurgeBg_20
+Tsa_PurgeBg_20:  @ 0x08669204
 	.incbin "./graphics/banim/assets/tsa/00669204_Tsa_08669204.map.bin.lz" @ 0x6692EC - 0x669204
 
-	.global Tsa_086692EC
-Tsa_086692EC:  @ 0x086692EC
+	.global Tsa_PurgeBg_21
+Tsa_PurgeBg_21:  @ 0x086692EC
 	.incbin "./graphics/banim/assets/tsa/006692EC_Tsa_086692EC.map.bin.lz" @ 0x6693CC - 0x6692EC
 
-	.global Tsa_086693CC
-Tsa_086693CC:  @ 0x086693CC
+	.global Tsa_PurgeBg_22
+Tsa_PurgeBg_22:  @ 0x086693CC
 	.incbin "./graphics/banim/assets/tsa/006693CC_Tsa_086693CC.map.bin.lz" @ 0x6694A8 - 0x6693CC
 
-	.global Tsa_086694A8
-Tsa_086694A8:  @ 0x086694A8
+	.global Tsa_PurgeBg_23
+Tsa_PurgeBg_23:  @ 0x086694A8
 	.incbin "./graphics/banim/assets/tsa/006694A8_Tsa_086694A8.map.bin.lz" @ 0x669584 - 0x6694A8
 
-	.global Tsa_08669584
-Tsa_08669584:  @ 0x08669584
+	.global Tsa_PurgeBg_24
+Tsa_PurgeBg_24:  @ 0x08669584
 	.incbin "./graphics/banim/assets/tsa/00669584_Tsa_08669584.map.bin.lz" @ 0x669668 - 0x669584
 
-	.global Tsa_08669668
-Tsa_08669668:  @ 0x08669668
+	.global Tsa_PurgeBg_25
+Tsa_PurgeBg_25:  @ 0x08669668
 	.incbin "./graphics/banim/assets/tsa/00669668_Tsa_08669668.map.bin.lz" @ 0x66975C - 0x669668
 
-	.global Tsa_0866975C
-Tsa_0866975C:  @ 0x0866975C
+	.global Tsa_PurgeBg_26
+Tsa_PurgeBg_26:  @ 0x0866975C
 	.incbin "./graphics/banim/assets/tsa/0066975C_Tsa_0866975C.map.bin.lz" @ 0x66984C - 0x66975C
 
-	.global Tsa_0866984C
-Tsa_0866984C:  @ 0x0866984C
+	.global Tsa_PurgeBg_27
+Tsa_PurgeBg_27:  @ 0x0866984C
 	.incbin "./graphics/banim/assets/tsa/0066984C_Tsa_0866984C.map.bin.lz" @ 0x669950 - 0x66984C
 
-	.global Tsa_08669950
-Tsa_08669950:  @ 0x08669950
+	.global Tsa_PurgeBg_28
+Tsa_PurgeBg_28:  @ 0x08669950
 	.incbin "./graphics/banim/assets/tsa/00669950_Tsa_08669950.map.bin.lz" @ 0x669A58 - 0x669950
 
-	.global Tsa_08669A58
-Tsa_08669A58:  @ 0x08669A58
+	.global Tsa_PurgeBg_29
+Tsa_PurgeBg_29:  @ 0x08669A58
 	.incbin "./graphics/banim/assets/tsa/00669A58_Tsa_08669A58.map.bin.lz" @ 0x669B6C - 0x669A58
 
-	.global Tsa_08669B6C
-Tsa_08669B6C:  @ 0x08669B6C
+	.global Tsa_PurgeBg_30
+Tsa_PurgeBg_30:  @ 0x08669B6C
 	.incbin "./graphics/banim/assets/tsa/00669B6C_Tsa_08669B6C.map.bin.lz" @ 0x669C90 - 0x669B6C
 
-	.global Tsa_08669C90
-Tsa_08669C90:  @ 0x08669C90
+	.global Tsa_PurgeBg_31
+Tsa_PurgeBg_31:  @ 0x08669C90
 	.incbin "./graphics/banim/assets/tsa/00669C90_Tsa_08669C90.map.bin.lz" @ 0x669DA4 - 0x669C90
 
-	.global Tsa_08669DA4
-Tsa_08669DA4:  @ 0x08669DA4
+	.global Tsa_PurgeBg_32
+Tsa_PurgeBg_32:  @ 0x08669DA4
 	.incbin "./graphics/banim/assets/tsa/00669DA4_Tsa_08669DA4.map.bin.lz" @ 0x669EC8 - 0x669DA4
 
-	.global Tsa_08669EC8
-Tsa_08669EC8:  @ 0x08669EC8
+	.global Tsa_PurgeBg_33
+Tsa_PurgeBg_33:  @ 0x08669EC8
 	.incbin "./graphics/banim/assets/tsa/00669EC8_Tsa_08669EC8.map.bin.lz" @ 0x669FE8 - 0x669EC8
 
-	.global Tsa_08669FE8
-Tsa_08669FE8:  @ 0x08669FE8
+	.global Tsa_PurgeBg_34
+Tsa_PurgeBg_34:  @ 0x08669FE8
 	.incbin "./graphics/banim/assets/tsa/00669FE8_Tsa_08669FE8.map.bin.lz" @ 0x66A0F4 - 0x669FE8
 
-	.global Tsa_0866A0F4
-Tsa_0866A0F4:  @ 0x0866A0F4
+	.global Tsa_PurgeBg_35
+Tsa_PurgeBg_35:  @ 0x0866A0F4
 	.incbin "./graphics/banim/assets/tsa/0066A0F4_Tsa_0866A0F4.map.bin.lz" @ 0x66A1F0 - 0x66A0F4
 
-	.global Tsa_0866A1F0
-Tsa_0866A1F0:  @ 0x0866A1F0
+	.global Tsa_PurgeBg_36
+Tsa_PurgeBg_36:  @ 0x0866A1F0
 	.incbin "./graphics/banim/assets/tsa/0066A1F0_Tsa_0866A1F0.map.bin.lz" @ 0x66A2D8 - 0x66A1F0
 
-	.global Tsa_0866A2D8
-Tsa_0866A2D8:  @ 0x0866A2D8
+	.global Tsa_PurgeBg_37
+Tsa_PurgeBg_37:  @ 0x0866A2D8
 	.incbin "./graphics/banim/assets/tsa/0066A2D8_Tsa_0866A2D8.map.bin.lz" @ 0x66A3C0 - 0x66A2D8
 
-	.global Tsa_0866A3C0
-Tsa_0866A3C0:  @ 0x0866A3C0
+	.global Tsa_PurgeBg_38
+Tsa_PurgeBg_38:  @ 0x0866A3C0
 	.incbin "./graphics/banim/assets/tsa/0066A3C0_Tsa_0866A3C0.map.bin.lz" @ 0x66A4A0 - 0x66A3C0
 
-	.global Tsa_0866A4A0
-Tsa_0866A4A0:  @ 0x0866A4A0
+	.global Tsa_PurgeBg_39
+Tsa_PurgeBg_39:  @ 0x0866A4A0
 	.incbin "./graphics/banim/assets/tsa/0066A4A0_Tsa_0866A4A0.map.bin.lz" @ 0x66A57C - 0x66A4A0
 
-	.global Tsa_0866A57C
-Tsa_0866A57C:  @ 0x0866A57C
+	.global Tsa_PurgeBg_40
+Tsa_PurgeBg_40:  @ 0x0866A57C
 	.incbin "./graphics/banim/assets/tsa/0066A57C_Tsa_0866A57C.map.bin.lz" @ 0x66A65C - 0x66A57C
 
-	.global Tsa_0866A65C
-Tsa_0866A65C:  @ 0x0866A65C
+	.global Tsa_PurgeBg_41
+Tsa_PurgeBg_41:  @ 0x0866A65C
 	.incbin "./graphics/banim/assets/tsa/0066A65C_Tsa_0866A65C.map.bin.lz" @ 0x66A750 - 0x66A65C
 
-	.global Tsa_0866A750
-Tsa_0866A750:  @ 0x0866A750
+	.global Tsa_PurgeBg_42
+Tsa_PurgeBg_42:  @ 0x0866A750
 	.incbin "./graphics/banim/assets/tsa/0066A750_Tsa_0866A750.map.bin.lz" @ 0x66A844 - 0x66A750
 
-	.global Tsa_0866A844
-Tsa_0866A844:  @ 0x0866A844
+	.global Tsa_PurgeBg_43
+Tsa_PurgeBg_43:  @ 0x0866A844
 	.incbin "./graphics/banim/assets/tsa/0066A844_Tsa_0866A844.map.bin.lz" @ 0x66A948 - 0x66A844
 
-	.global Tsa_0866A948
-Tsa_0866A948:  @ 0x0866A948
+	.global Tsa_PurgeBg_44
+Tsa_PurgeBg_44:  @ 0x0866A948
 	.incbin "./graphics/banim/assets/tsa/0066A948_Tsa_0866A948.map.bin.lz" @ 0x66AA50 - 0x66A948
 
-	.global Tsa_0866AA50
-Tsa_0866AA50:  @ 0x0866AA50
+	.global Tsa_PurgeBg_45
+Tsa_PurgeBg_45:  @ 0x0866AA50
 	.incbin "./graphics/banim/assets/tsa/0066AA50_Tsa_0866AA50.map.bin.lz" @ 0x66AB68 - 0x66AA50
 
-	.global Tsa_0866AB68
-Tsa_0866AB68:  @ 0x0866AB68
+	.global Tsa_PurgeBg_46
+Tsa_PurgeBg_46:  @ 0x0866AB68
 	.incbin "./graphics/banim/assets/tsa/0066AB68_Tsa_0866AB68.map.bin.lz" @ 0x66AC8C - 0x66AB68
 
-	.global Tsa_0866AC8C
-Tsa_0866AC8C:  @ 0x0866AC8C
+	.global Tsa_PurgeBg_47
+Tsa_PurgeBg_47:  @ 0x0866AC8C
 	.incbin "./graphics/banim/assets/tsa/0066AC8C_Tsa_0866AC8C.map.bin.lz" @ 0x66AD9C - 0x66AC8C
 
-	.global Tsa_0866AD9C
-Tsa_0866AD9C:  @ 0x0866AD9C
+	.global Tsa_PurgeBg_48
+Tsa_PurgeBg_48:  @ 0x0866AD9C
 	.incbin "./graphics/banim/assets/tsa/0066AD9C_Tsa_0866AD9C.map.bin.lz" @ 0x66AFB0 - 0x66AD9C
 
-	.global Tsa_0866AFB0
-Tsa_0866AFB0:  @ 0x0866AFB0
+	.global Tsa_PurgeBg_49
+Tsa_PurgeBg_49:  @ 0x0866AFB0
 	.incbin "./graphics/banim/assets/tsa/0066AFB0_Tsa_0866AFB0.map.bin.lz" @ 0x66B16C - 0x66AFB0
 
-	.global Tsa_0866B16C
-Tsa_0866B16C:  @ 0x0866B16C
+	.global Tsa_PurgeBg_50
+Tsa_PurgeBg_50:  @ 0x0866B16C
 	.incbin "./graphics/banim/assets/tsa/0066B16C_Tsa_0866B16C.map.bin.lz" @ 0x66B348 - 0x66B16C
 
-	.global Tsa_0866B348
-Tsa_0866B348:  @ 0x0866B348
+	.global Tsa_PurgeBg_51
+Tsa_PurgeBg_51:  @ 0x0866B348
 	.incbin "./graphics/banim/assets/tsa/0066B348_Tsa_0866B348.map.bin.lz" @ 0x66B54C - 0x66B348
 
-	.global Tsa_0866B54C
-Tsa_0866B54C:  @ 0x0866B54C
+	.global Tsa_PurgeBg_52
+Tsa_PurgeBg_52:  @ 0x0866B54C
 	.incbin "./graphics/banim/assets/tsa/0066B54C_Tsa_0866B54C.map.bin.lz" @ 0x66B754 - 0x66B54C
 
-	.global Tsa_0866B754
-Tsa_0866B754:  @ 0x0866B754
+	.global Tsa_PurgeBg_53
+Tsa_PurgeBg_53:  @ 0x0866B754
 	.incbin "./graphics/banim/assets/tsa/0066B754_Tsa_0866B754.map.bin.lz" @ 0x66B968 - 0x66B754
 
-	.global Tsa_0866B968
-Tsa_0866B968:  @ 0x0866B968
+	.global Tsa_PurgeBg_54
+Tsa_PurgeBg_54:  @ 0x0866B968
 	.incbin "./graphics/banim/assets/tsa/0066B968_Tsa_0866B968.map.bin.lz" @ 0x66BBC8 - 0x66B968
 
-	.global Tsa_0866BBC8
-Tsa_0866BBC8:  @ 0x0866BBC8
+	.global Tsa_PurgeBg_55
+Tsa_PurgeBg_55:  @ 0x0866BBC8
 	.incbin "./graphics/banim/assets/tsa/0066BBC8_Tsa_0866BBC8.map.bin.lz" @ 0x66BDFC - 0x66BBC8
 
-	.global Tsa_0866BDFC
-Tsa_0866BDFC:  @ 0x0866BDFC
+	.global Tsa_PurgeBg_56
+Tsa_PurgeBg_56:  @ 0x0866BDFC
 	.incbin "./graphics/banim/assets/tsa/0066BDFC_Tsa_0866BDFC.map.bin.lz" @ 0x66C070 - 0x66BDFC
 
-	.global Tsa_0866C070
-Tsa_0866C070:  @ 0x0866C070
+	.global Tsa_PurgeBg_57
+Tsa_PurgeBg_57:  @ 0x0866C070
 	.incbin "./graphics/banim/assets/tsa/0066C070_Tsa_0866C070.map.bin.lz" @ 0x66C2B8 - 0x66C070
 
-	.global Tsa_0866C2B8
-Tsa_0866C2B8:  @ 0x0866C2B8
+	.global Tsa_PurgeBg_58
+Tsa_PurgeBg_58:  @ 0x0866C2B8
 	.incbin "./graphics/banim/assets/tsa/0066C2B8_Tsa_0866C2B8.map.bin.lz" @ 0x66C618 - 0x66C2B8
 
-	.global Tsa_0866C618
-Tsa_0866C618:  @ 0x0866C618
+	.global Tsa_PurgeBg_59
+Tsa_PurgeBg_59:  @ 0x0866C618
 	.incbin "./graphics/banim/assets/tsa/0066C618_Tsa_0866C618.map.bin.lz" @ 0x66C96C - 0x66C618
 
-	.global Tsa_0866C96C
-Tsa_0866C96C:  @ 0x0866C96C
+	.global Tsa_PurgeBg_60
+Tsa_PurgeBg_60:  @ 0x0866C96C
 	.incbin "./graphics/banim/assets/tsa/0066C96C_Tsa_0866C96C.map.bin.lz" @ 0x66CC7C - 0x66C96C
 
-	.global Tsa_0866CC7C
-Tsa_0866CC7C:  @ 0x0866CC7C
+	.global Tsa_PurgeBg_61
+Tsa_PurgeBg_61:  @ 0x0866CC7C
 	.incbin "./graphics/banim/assets/tsa/0066CC7C_Tsa_0866CC7C.map.bin.lz" @ 0x66CF60 - 0x66CC7C
 
-	.global Tsa_0866CF60
-Tsa_0866CF60:  @ 0x0866CF60
+	.global Tsa_PurgeBg_62
+Tsa_PurgeBg_62:  @ 0x0866CF60
 	.incbin "./graphics/banim/assets/tsa/0066CF60_Tsa_0866CF60.map.bin.lz" @ 0x66D230 - 0x66CF60
 
-	.global Tsa_0866D230
-Tsa_0866D230:  @ 0x0866D230
+	.global Tsa_PurgeBg_63
+Tsa_PurgeBg_63:  @ 0x0866D230
 	.incbin "./graphics/banim/assets/tsa/0066D230_Tsa_0866D230.map.bin.lz" @ 0x66D4C8 - 0x66D230
 
-	.global Tsa_0866D4C8
-Tsa_0866D4C8:  @ 0x0866D4C8
+	.global Tsa_PurgeBg_64
+Tsa_PurgeBg_64:  @ 0x0866D4C8
 	.incbin "./graphics/banim/assets/tsa/0066D4C8_Tsa_0866D4C8.map.bin.lz" @ 0x66D760 - 0x66D4C8
 
-	.global Tsa_0866D760
-Tsa_0866D760:  @ 0x0866D760
+	.global Tsa_PurgeBg_65
+Tsa_PurgeBg_65:  @ 0x0866D760
 	.incbin "./graphics/banim/assets/tsa/0066D760_Tsa_0866D760.map.bin.lz" @ 0x66D98C - 0x66D760
 
-	.global Tsa_0866D98C
-Tsa_0866D98C:  @ 0x0866D98C
+	.global Tsa_PurgeBg_66
+Tsa_PurgeBg_66:  @ 0x0866D98C
 	.incbin "./graphics/banim/assets/tsa/0066D98C_Tsa_0866D98C.map.bin.lz" @ 0x66DC40 - 0x66D98C
 
-	.global Tsa_0866DC40
-Tsa_0866DC40:  @ 0x0866DC40
+	.global Tsa_PurgeBg_67
+Tsa_PurgeBg_67:  @ 0x0866DC40
 	.incbin "./graphics/banim/assets/tsa/0066DC40_Tsa_0866DC40.map.bin.lz" @ 0x66DF00 - 0x66DC40
 
-	.global Tsa_0866DF00
-Tsa_0866DF00:  @ 0x0866DF00
+	.global Tsa_PurgeBg_68
+Tsa_PurgeBg_68:  @ 0x0866DF00
 	.incbin "./graphics/banim/assets/tsa/0066DF00_Tsa_0866DF00.map.bin.lz" @ 0x66E230 - 0x66DF00
 
-	.global Tsa_0866E230
-Tsa_0866E230:  @ 0x0866E230
+	.global Tsa_PurgeBg_69
+Tsa_PurgeBg_69:  @ 0x0866E230
 	.incbin "./graphics/banim/assets/tsa/0066E230_Tsa_0866E230.map.bin.lz" @ 0x66E580 - 0x66E230
 
-	.global Tsa_0866E580
-Tsa_0866E580:  @ 0x0866E580
+	.global Tsa_PurgeBg_70
+Tsa_PurgeBg_70:  @ 0x0866E580
 	.incbin "./graphics/banim/assets/tsa/0066E580_Tsa_0866E580.map.bin.lz" @ 0x66E8F8 - 0x66E580
 
-	.global Tsa_0866E8F8
-Tsa_0866E8F8:  @ 0x0866E8F8
+	.global Tsa_PurgeBg_71
+Tsa_PurgeBg_71:  @ 0x0866E8F8
 	.incbin "./graphics/banim/assets/tsa/0066E8F8_Tsa_0866E8F8.map.bin.lz" @ 0x66EC80 - 0x66E8F8
 
-	.global Tsa_0866EC80
-Tsa_0866EC80:  @ 0x0866EC80
+	.global Tsa_PurgeBg_72
+Tsa_PurgeBg_72:  @ 0x0866EC80
 	.incbin "./graphics/banim/assets/tsa/0066EC80_Tsa_0866EC80.map.bin.lz" @ 0x66EFF0 - 0x66EC80
 
 	.global Img_PurgeSprites
@@ -16897,12 +16897,12 @@ Tsa_EfxLiveBG_B_L:  @ 0x08670D40
 Tsa_EfxLiveBG_B_R:  @ 0x086716A0
     .incbin "./graphics/banim/assets/tsa/006716A0_Tsa_EfxLiveBG_B_R.map.bin"
 
-	.global Pal_08672000
-Pal_08672000:  @ 0x08672000
+	.global Pal_Banim_4
+Pal_Banim_4:  @ 0x08672000
 	.incbin "./graphics/banim/assets/pal/00672000_Pal_08672000.agbpal"
 
-	.global Pal_08672220
-Pal_08672220:  @ 0x08672220
+	.global Pal_efxLiveBGCOL
+Pal_efxLiveBGCOL:  @ 0x08672220
 	.incbin "./graphics/banim/assets/pal/00672220_Pal_08672220.gbapal"
 
 .global AnimSprite_EfxLiveOBJ_1
@@ -19994,49 +19994,49 @@ AnimScr_EfxReblowOBJ_LeftUnk6: @ 0x677E78
     ANIMSCR_FORCE_SPRITE AnimSprite_EfxReblowOBJ_L_28, 4
     ANIMSCR_BLOCKED
 
-	.global Tsa_08677E80
-Tsa_08677E80:  @ 0x08677E80
+	.global Tsa_Banim_14
+Tsa_Banim_14:  @ 0x08677E80
 	.incbin "./graphics/banim/assets/tsa/00677E80_Tsa_08677E80.map.bin.lz" @ 0x677F8C - 0x677E80
 
-	.global Tsa_08677F8C
-Tsa_08677F8C:  @ 0x08677F8C
+	.global Tsa_Fortify_0
+Tsa_Fortify_0:  @ 0x08677F8C
 	.incbin "./graphics/banim/assets/tsa/00677F8C_Tsa_08677F8C.map.bin.lz" @ 0x67808C - 0x677F8C
 
-	.global Tsa_0867808C
-Tsa_0867808C:  @ 0x0867808C
+	.global Tsa_Fortify_1
+Tsa_Fortify_1:  @ 0x0867808C
 	.incbin "./graphics/banim/assets/tsa/0067808C_Tsa_0867808C.map.bin.lz" @ 0x678198 - 0x67808C
 
-	.global Tsa_08678198
-Tsa_08678198:  @ 0x08678198
+	.global Tsa_Fortify_2
+Tsa_Fortify_2:  @ 0x08678198
 	.incbin "./graphics/banim/assets/tsa/00678198_Tsa_08678198.map.bin.lz" @ 0x6782A4 - 0x678198
 
-	.global Tsa_086782A4
-Tsa_086782A4:  @ 0x086782A4
+	.global Tsa_FortifyBg2
+Tsa_FortifyBg2:  @ 0x086782A4
 	.incbin "./graphics/banim/assets/tsa/006782A4_Tsa_086782A4.map.bin.lz" @ 0x678720 - 0x6782A4
 
-	.global Pal_08678720
-Pal_08678720:  @ 0x08678720
+	.global Pal_Banim_5
+Pal_Banim_5:  @ 0x08678720
 	.incbin "./graphics/banim/assets/pal/00678720_Pal_08678720.gbapal"
 
-	.global Pal_08678920
-Pal_08678920:  @ 0x08678920
+	.global Pal_efxReserveBGCOL_0
+Pal_efxReserveBGCOL_0:  @ 0x08678920
 	.incbin "./graphics/banim/assets/pal/00678920_Pal_08678920.gbapal"
 
-	.global Pal_08678B20
-Pal_08678B20:  @ 0x08678B20
+	.global Pal_efxReserveBGCOL_1
+Pal_efxReserveBGCOL_1:  @ 0x08678B20
 	.incbin "./graphics/banim/assets/pal/00678B20_Pal_08678B20.gbapal"
 
-	.global gUnknown_08678D20
+	.global gefxReserveBGCOL
 .global Tsa_StatusEffectBgBase
-gUnknown_08678D20:
+gefxReserveBGCOL:
 Tsa_StatusEffectBgBase:  @ 0x08678D20
 	.incbin "./graphics/banim/assets/tsa/00678D20_Tsa_StatusEffectBgBase.map.bin.lz"
 
 	.global Pal_StatusEffectBgBase
 Pal_StatusEffectBgBase:  @ 0x086792A4
 	.incbin "./graphics/banim/assets/pal/006792A4_Pal_086792A4.agbpal"
-	.global Tsa_08679304
-Tsa_08679304:  @ 0x08679304
+	.global Tsa_StatusEffectBgBase_1
+Tsa_StatusEffectBgBase_1:  @ 0x08679304
 	.incbin "./graphics/banim/assets/tsa/00679304_Tsa_08679304.map.bin"
 
 
@@ -20044,76 +20044,76 @@ Tsa_08679304:  @ 0x08679304
 
 
 
-	.global Img_08679B04
-Img_08679B04:  @ 0x08679B04
+	.global Img_Banim_8
+Img_Banim_8:  @ 0x08679B04
 	.incbin "./graphics/banim/assets/img/00679B04_Img_08679B04.4bpp.lz" @ 0x67A130 - 0x679B04
 
-	.global Img_0867A130
-Img_0867A130:  @ 0x0867A130
+	.global Img_Banim_9
+Img_Banim_9:  @ 0x0867A130
 	.incbin "./graphics/banim/assets/img/0067A130_Img_0867A130.4bpp.lz" @ 0x67A828 - 0x67A130
 
-	.global Img_0867A828
-Img_0867A828:  @ 0x0867A828
+	.global Img_Banim_10
+Img_Banim_10:  @ 0x0867A828
 	.incbin "./graphics/banim/assets/img/0067A828_Img_0867A828.4bpp.lz" @ 0x67AE48 - 0x67A828
 
-	.global Img_0867AE48
-Img_0867AE48:  @ 0x0867AE48
+	.global Img_Banim_11
+Img_Banim_11:  @ 0x0867AE48
 	.incbin "./graphics/banim/assets/img/0067AE48_Img_0867AE48.4bpp.lz" @ 0x67B5A4 - 0x67AE48
 
 	.global Pal_MapAnimRestore
 Pal_MapAnimRestore:  @ 0x0867B5A4
 	.incbin "./graphics/banim/assets/pal/0067B5A4_Pal_MapAnimRestore.gbapal" @ 0x67B5C4 - 0x67B5A4
 
-	.global Tsa_0867B5C4
-Tsa_0867B5C4:  @ 0x0867B5C4
+	.global Tsa_Banim_15
+Tsa_Banim_15:  @ 0x0867B5C4
 	.incbin "./graphics/banim/assets/tsa/0067B5C4_Tsa_0867B5C4.map.bin.lz" @ 0x67B670 - 0x67B5C4
 
-	.global Tsa_0867B670
-Tsa_0867B670:  @ 0x0867B670
+	.global Tsa_RestoreBg_0
+Tsa_RestoreBg_0:  @ 0x0867B670
 	.incbin "./graphics/banim/assets/tsa/0067B670_Tsa_0867B670.map.bin.lz" @ 0x67B724 - 0x67B670
 
-	.global Tsa_0867B724
-Tsa_0867B724:  @ 0x0867B724
+	.global Tsa_RestoreBg_1
+Tsa_RestoreBg_1:  @ 0x0867B724
 	.incbin "./graphics/banim/assets/tsa/0067B724_Tsa_0867B724.map.bin.lz" @ 0x67B7E4 - 0x67B724
 
-	.global Tsa_0867B7E4
-Tsa_0867B7E4:  @ 0x0867B7E4
+	.global Tsa_RestoreBg_2
+Tsa_RestoreBg_2:  @ 0x0867B7E4
 	.incbin "./graphics/banim/assets/tsa/0067B7E4_Tsa_0867B7E4.map.bin.lz" @ 0x67B8AC - 0x67B7E4
 
-	.global Tsa_0867B8AC
-Tsa_0867B8AC:  @ 0x0867B8AC
+	.global Tsa_RestoreBg_3
+Tsa_RestoreBg_3:  @ 0x0867B8AC
 	.incbin "./graphics/banim/assets/tsa/0067B8AC_Tsa_0867B8AC.map.bin.lz" @ 0x67B988 - 0x67B8AC
 
-	.global Tsa_0867B988
-Tsa_0867B988:  @ 0x0867B988
+	.global Tsa_RestoreBg_4
+Tsa_RestoreBg_4:  @ 0x0867B988
 	.incbin "./graphics/banim/assets/tsa/0067B988_Tsa_0867B988.map.bin.lz" @ 0x67BA68 - 0x67B988
 
-	.global Tsa_0867BA68
-Tsa_0867BA68:  @ 0x0867BA68
+	.global Tsa_RestoreBg_5
+Tsa_RestoreBg_5:  @ 0x0867BA68
 	.incbin "./graphics/banim/assets/tsa/0067BA68_Tsa_0867BA68.map.bin.lz" @ 0x67BB50 - 0x67BA68
 
-	.global Tsa_0867BB50
-Tsa_0867BB50:  @ 0x0867BB50
+	.global Tsa_RestoreBg_6
+Tsa_RestoreBg_6:  @ 0x0867BB50
 	.incbin "./graphics/banim/assets/tsa/0067BB50_Tsa_0867BB50.map.bin.lz" @ 0x67BC40 - 0x67BB50
 
-	.global Tsa_0867BC40
-Tsa_0867BC40:  @ 0x0867BC40
+	.global Tsa_RestoreBg_7
+Tsa_RestoreBg_7:  @ 0x0867BC40
 	.incbin "./graphics/banim/assets/tsa/0067BC40_Tsa_0867BC40.map.bin.lz" @ 0x67BD40 - 0x67BC40
 
-	.global Tsa_0867BD40
-Tsa_0867BD40:  @ 0x0867BD40
+	.global Tsa_RestoreBg_8
+Tsa_RestoreBg_8:  @ 0x0867BD40
 	.incbin "./graphics/banim/assets/tsa/0067BD40_Tsa_0867BD40.map.bin.lz" @ 0x67BE4C - 0x67BD40
 
-	.global Tsa_0867BE4C
-Tsa_0867BE4C:  @ 0x0867BE4C
+	.global Tsa_RestoreBg_9
+Tsa_RestoreBg_9:  @ 0x0867BE4C
 	.incbin "./graphics/banim/assets/tsa/0067BE4C_Tsa_0867BE4C.map.bin.lz" @ 0x67BF6C - 0x67BE4C
 
-	.global Tsa_0867BF6C
-Tsa_0867BF6C:  @ 0x0867BF6C
+	.global Tsa_RestoreBg_10
+Tsa_RestoreBg_10:  @ 0x0867BF6C
 	.incbin "./graphics/banim/assets/tsa/0067BF6C_Tsa_0867BF6C.map.bin.lz" @ 0x67C09C - 0x67BF6C
 
-	.global Tsa_0867C09C
-Tsa_0867C09C:  @ 0x0867C09C
+	.global Tsa_RestoreBg_11
+Tsa_RestoreBg_11:  @ 0x0867C09C
 	.incbin "./graphics/banim/assets/tsa/0067C09C_Tsa_0867C09C.map.bin.lz"
 
 .global AnimSprite_EfxRestOBJ_1
@@ -21238,76 +21238,76 @@ AnimScr_EfxRestOBJ: @ 0x67EE04
 Img_SilenceBg:  @ 0x0867EEB4
 	.incbin "./graphics/banim/assets/img/0067EEB4_Img_SilenceBg.4bpp.lz" @ 0x67F97C - 0x67EEB4
 
-	.global Tsa_0867F97C
-Tsa_0867F97C:  @ 0x0867F97C
+	.global Tsa_SilenceBg_0
+Tsa_SilenceBg_0:  @ 0x0867F97C
 	.incbin "./graphics/banim/assets/tsa/0067F97C_Tsa_0867F97C.map.bin.lz" @ 0x67FA78 - 0x67F97C
 
-	.global Tsa_0867FA78
-Tsa_0867FA78:  @ 0x0867FA78
+	.global Tsa_SilenceBg_1
+Tsa_SilenceBg_1:  @ 0x0867FA78
 	.incbin "./graphics/banim/assets/tsa/0067FA78_Tsa_0867FA78.map.bin.lz" @ 0x67FB60 - 0x67FA78
 
-	.global Tsa_0867FB60
-Tsa_0867FB60:  @ 0x0867FB60
+	.global Tsa_SilenceBg_2
+Tsa_SilenceBg_2:  @ 0x0867FB60
 	.incbin "./graphics/banim/assets/tsa/0067FB60_Tsa_0867FB60.map.bin.lz" @ 0x67FC48 - 0x67FB60
 
-	.global Tsa_0867FC48
-Tsa_0867FC48:  @ 0x0867FC48
+	.global Tsa_SilenceBg_3
+Tsa_SilenceBg_3:  @ 0x0867FC48
 	.incbin "./graphics/banim/assets/tsa/0067FC48_Tsa_0867FC48.map.bin.lz" @ 0x67FD30 - 0x67FC48
 
-	.global Tsa_0867FD30
-Tsa_0867FD30:  @ 0x0867FD30
+	.global Tsa_SilenceBg_4
+Tsa_SilenceBg_4:  @ 0x0867FD30
 	.incbin "./graphics/banim/assets/tsa/0067FD30_Tsa_0867FD30.map.bin.lz" @ 0x67FE2C - 0x67FD30
 
-	.global Tsa_0867FE2C
-Tsa_0867FE2C:  @ 0x0867FE2C
+	.global Tsa_SilenceBg_5
+Tsa_SilenceBg_5:  @ 0x0867FE2C
 	.incbin "./graphics/banim/assets/tsa/0067FE2C_Tsa_0867FE2C.map.bin.lz" @ 0x67FF14 - 0x67FE2C
 
-	.global Tsa_0867FF14
-Tsa_0867FF14:  @ 0x0867FF14
+	.global Tsa_SilenceBg_6
+Tsa_SilenceBg_6:  @ 0x0867FF14
 	.incbin "./graphics/banim/assets/tsa/0067FF14_Tsa_0867FF14.map.bin.lz" @ 0x67FFAC - 0x67FF14
 
-	.global Tsa_0867FFAC
-Tsa_0867FFAC:  @ 0x0867FFAC
+	.global Tsa_SilenceBg_7
+Tsa_SilenceBg_7:  @ 0x0867FFAC
 	.incbin "./graphics/banim/assets/tsa/0067FFAC_Tsa_0867FFAC.map.bin.lz" @ 0x680094 - 0x67FFAC
 
-	.global Tsa_08680094
-Tsa_08680094:  @ 0x08680094
+	.global Tsa_SilenceBg_8
+Tsa_SilenceBg_8:  @ 0x08680094
 	.incbin "./graphics/banim/assets/tsa/00680094_Tsa_08680094.map.bin.lz" @ 0x68012C - 0x680094
 
-	.global Tsa_0868012C
-Tsa_0868012C:  @ 0x0868012C
+	.global Tsa_SilenceBg_9
+Tsa_SilenceBg_9:  @ 0x0868012C
 	.incbin "./graphics/banim/assets/tsa/0068012C_Tsa_0868012C.map.bin.lz" @ 0x680214 - 0x68012C
 
-	.global Tsa_08680214
-Tsa_08680214:  @ 0x08680214
+	.global Tsa_SilenceBg_10
+Tsa_SilenceBg_10:  @ 0x08680214
 	.incbin "./graphics/banim/assets/tsa/00680214_Tsa_08680214.map.bin.lz" @ 0x680310 - 0x680214
 
-	.global Tsa_08680310
-Tsa_08680310:  @ 0x08680310
+	.global Tsa_SilenceBg_11
+Tsa_SilenceBg_11:  @ 0x08680310
 	.incbin "./graphics/banim/assets/tsa/00680310_Tsa_08680310.map.bin.lz" @ 0x6803A8 - 0x680310
 
-	.global Tsa_086803A8
-Tsa_086803A8:  @ 0x086803A8
+	.global Tsa_SilenceBg_12
+Tsa_SilenceBg_12:  @ 0x086803A8
 	.incbin "./graphics/banim/assets/tsa/006803A8_Tsa_086803A8.map.bin.lz" @ 0x680490 - 0x6803A8
 
-	.global Tsa_08680490
-Tsa_08680490:  @ 0x08680490
+	.global Tsa_SilenceBg_13
+Tsa_SilenceBg_13:  @ 0x08680490
 	.incbin "./graphics/banim/assets/tsa/00680490_Tsa_08680490.map.bin.lz" @ 0x680528 - 0x680490
 
-	.global Tsa_08680528
-Tsa_08680528:  @ 0x08680528
+	.global Tsa_SilenceBg_14
+Tsa_SilenceBg_14:  @ 0x08680528
 	.incbin "./graphics/banim/assets/tsa/00680528_Tsa_08680528.map.bin.lz" @ 0x680624 - 0x680528
 
-	.global Tsa_08680624
-Tsa_08680624:  @ 0x08680624
+	.global Tsa_SilenceBg_15
+Tsa_SilenceBg_15:  @ 0x08680624
 	.incbin "./graphics/banim/assets/tsa/00680624_Tsa_08680624.map.bin.lz" @ 0x6806BC - 0x680624
 
-	.global Tsa_086806BC
-Tsa_086806BC:  @ 0x086806BC
+	.global Tsa_SilenceBg_16
+Tsa_SilenceBg_16:  @ 0x086806BC
 	.incbin "./graphics/banim/assets/tsa/006806BC_Tsa_086806BC.map.bin.lz" @ 0x6807CC - 0x6806BC
 
-	.global Tsa_086807CC
-Tsa_086807CC:  @ 0x086807CC
+	.global Tsa_SilenceBg_17
+Tsa_SilenceBg_17:  @ 0x086807CC
 	.incbin "./graphics/banim/assets/tsa/006807CC_Tsa_086807CC.map.bin.lz" @ 0x6808A0 - 0x6807CC
 
 	.global Img_SilenceSprites
@@ -21481,56 +21481,56 @@ AnimScr_EfxSilenceOBJ_Unused2: @ 0x6810B0
 Pal_HammerneBg:  @ 0x086810B8
 	.incbin "./graphics/banim/assets/pal/006810B8_Pal_HammerneBg.gbapal" @ 0x6810D8 - 0x6810B8
 
-	.global Tsa_086810D8
-Tsa_086810D8:  @ 0x086810D8
+	.global Tsa_HammerneBg_0
+Tsa_HammerneBg_0:  @ 0x086810D8
 	.incbin "./graphics/banim/assets/tsa/006810D8_Tsa_086810D8.map.bin.lz" @ 0x681184 - 0x6810D8
 
-	.global Tsa_08681184
-Tsa_08681184:  @ 0x08681184
+	.global Tsa_HammerneBg_1
+Tsa_HammerneBg_1:  @ 0x08681184
 	.incbin "./graphics/banim/assets/tsa/00681184_Tsa_08681184.map.bin.lz" @ 0x681234 - 0x681184
 
-	.global Tsa_08681234
-Tsa_08681234:  @ 0x08681234
+	.global Tsa_HammerneBg_2
+Tsa_HammerneBg_2:  @ 0x08681234
 	.incbin "./graphics/banim/assets/tsa/00681234_Tsa_08681234.map.bin.lz" @ 0x6812F4 - 0x681234
 
-	.global Tsa_086812F4
-Tsa_086812F4:  @ 0x086812F4
+	.global Tsa_HammerneBg_3
+Tsa_HammerneBg_3:  @ 0x086812F4
 	.incbin "./graphics/banim/assets/tsa/006812F4_Tsa_086812F4.map.bin.lz" @ 0x6813BC - 0x6812F4
 
-	.global Tsa_086813BC
-Tsa_086813BC:  @ 0x086813BC
+	.global Tsa_HammerneBg_4
+Tsa_HammerneBg_4:  @ 0x086813BC
 	.incbin "./graphics/banim/assets/tsa/006813BC_Tsa_086813BC.map.bin.lz" @ 0x681494 - 0x6813BC
 
-	.global Tsa_08681494
-Tsa_08681494:  @ 0x08681494
+	.global Tsa_HammerneBg_5
+Tsa_HammerneBg_5:  @ 0x08681494
 	.incbin "./graphics/banim/assets/tsa/00681494_Tsa_08681494.map.bin.lz" @ 0x681570 - 0x681494
 
-	.global Tsa_08681570
-Tsa_08681570:  @ 0x08681570
+	.global Tsa_HammerneBg_6
+Tsa_HammerneBg_6:  @ 0x08681570
 	.incbin "./graphics/banim/assets/tsa/00681570_Tsa_08681570.map.bin.lz" @ 0x681658 - 0x681570
 
-	.global Tsa_08681658
-Tsa_08681658:  @ 0x08681658
+	.global Tsa_HammerneBg_7
+Tsa_HammerneBg_7:  @ 0x08681658
 	.incbin "./graphics/banim/assets/tsa/00681658_Tsa_08681658.map.bin.lz" @ 0x681748 - 0x681658
 
-	.global Tsa_08681748
-Tsa_08681748:  @ 0x08681748
+	.global Tsa_HammerneBg_8
+Tsa_HammerneBg_8:  @ 0x08681748
 	.incbin "./graphics/banim/assets/tsa/00681748_Tsa_08681748.map.bin.lz" @ 0x681848 - 0x681748
 
-	.global Tsa_08681848
-Tsa_08681848:  @ 0x08681848
+	.global Tsa_HammerneBg_9
+Tsa_HammerneBg_9:  @ 0x08681848
 	.incbin "./graphics/banim/assets/tsa/00681848_Tsa_08681848.map.bin.lz" @ 0x681954 - 0x681848
 
-	.global Tsa_08681954
-Tsa_08681954:  @ 0x08681954
+	.global Tsa_HammerneBg_10
+Tsa_HammerneBg_10:  @ 0x08681954
 	.incbin "./graphics/banim/assets/tsa/00681954_Tsa_08681954.map.bin.lz" @ 0x681A74 - 0x681954
 
-	.global Tsa_08681A74
-Tsa_08681A74:  @ 0x08681A74
+	.global Tsa_HammerneBg_11
+Tsa_HammerneBg_11:  @ 0x08681A74
 	.incbin "./graphics/banim/assets/tsa/00681A74_Tsa_08681A74.map.bin.lz" @ 0x681BA4 - 0x681A74
 
-	.global Tsa_08681BA4
-Tsa_08681BA4:  @ 0x08681BA4
+	.global Tsa_HammerneBg_12
+Tsa_HammerneBg_12:  @ 0x08681BA4
 	.incbin "./graphics/banim/assets/tsa/00681BA4_Tsa_08681BA4.map.bin.lz"
 
 .global AnimSprite_EfxHammarneOBJ_1
@@ -22651,12 +22651,12 @@ AnimScr_EfxHammarneOBJ: @ 0x684908
     ANIMSCR_WAIT 19
     ANIMSCR_DISABLED
 
-	.global Img_086849B8
-Img_086849B8:  @ 0x086849B8
+	.global Img_Banim_12
+Img_Banim_12:  @ 0x086849B8
 	.incbin "./graphics/banim/assets/img/006849B8_Img_086849B8.4bpp.lz"
 
-	.global Tsa_08684AB8
-Tsa_08684AB8:  @ 0x08684AB8
+	.global Tsa_Banim_16
+Tsa_Banim_16:  @ 0x08684AB8
 	.incbin "./graphics/banim/assets/tsa/00684AB8_Tsa_08684AB8.map.bin"
 
 	.global Img_SleepBg
@@ -22667,68 +22667,68 @@ Img_SleepBg:  @ 0x086852D8
 Pal_SleepBg:  @ 0x086861A4
 	.incbin "./graphics/banim/assets/img/006852D8_Img_SleepBg.gbapal" @ 0x6861C4 - 0x6861A4
 
-	.global Tsa_086861C4
-Tsa_086861C4:  @ 0x086861C4
+	.global Tsa_SleepBg_0
+Tsa_SleepBg_0:  @ 0x086861C4
 	.incbin "./graphics/banim/assets/tsa/006861C4_Tsa_086861C4.map.bin.lz" @ 0x6862A0 - 0x6861C4
 
-	.global Tsa_086862A0
-Tsa_086862A0:  @ 0x086862A0
+	.global Tsa_SleepBg_1
+Tsa_SleepBg_1:  @ 0x086862A0
 	.incbin "./graphics/banim/assets/tsa/006862A0_Tsa_086862A0.map.bin.lz" @ 0x68637C - 0x6862A0
 
-	.global Tsa_0868637C
-Tsa_0868637C:  @ 0x0868637C
+	.global Tsa_SleepBg_2
+Tsa_SleepBg_2:  @ 0x0868637C
 	.incbin "./graphics/banim/assets/tsa/0068637C_Tsa_0868637C.map.bin.lz" @ 0x686458 - 0x68637C
 
-	.global Tsa_08686458
-Tsa_08686458:  @ 0x08686458
+	.global Tsa_SleepBg_3
+Tsa_SleepBg_3:  @ 0x08686458
 	.incbin "./graphics/banim/assets/tsa/00686458_Tsa_08686458.map.bin.lz" @ 0x686534 - 0x686458
 
-	.global Tsa_08686534
-Tsa_08686534:  @ 0x08686534
+	.global Tsa_SleepBg_4
+Tsa_SleepBg_4:  @ 0x08686534
 	.incbin "./graphics/banim/assets/tsa/00686534_Tsa_08686534.map.bin.lz" @ 0x686610 - 0x686534
 
-	.global Tsa_08686610
-Tsa_08686610:  @ 0x08686610
+	.global Tsa_SleepBg_5
+Tsa_SleepBg_5:  @ 0x08686610
 	.incbin "./graphics/banim/assets/tsa/00686610_Tsa_08686610.map.bin.lz" @ 0x6866EC - 0x686610
 
-	.global Tsa_086866EC
-Tsa_086866EC:  @ 0x086866EC
+	.global Tsa_SleepBg_6
+Tsa_SleepBg_6:  @ 0x086866EC
 	.incbin "./graphics/banim/assets/tsa/006866EC_Tsa_086866EC.map.bin.lz" @ 0x6867C8 - 0x6866EC
 
-	.global Tsa_086867C8
-Tsa_086867C8:  @ 0x086867C8
+	.global Tsa_SleepBg_7
+Tsa_SleepBg_7:  @ 0x086867C8
 	.incbin "./graphics/banim/assets/tsa/006867C8_Tsa_086867C8.map.bin.lz" @ 0x6868A4 - 0x6867C8
 
-	.global Tsa_086868A4
-Tsa_086868A4:  @ 0x086868A4
+	.global Tsa_SleepBg_8
+Tsa_SleepBg_8:  @ 0x086868A4
 	.incbin "./graphics/banim/assets/tsa/006868A4_Tsa_086868A4.map.bin.lz" @ 0x686980 - 0x6868A4
 
-	.global Tsa_08686980
-Tsa_08686980:  @ 0x08686980
+	.global Tsa_SleepBg_9
+Tsa_SleepBg_9:  @ 0x08686980
 	.incbin "./graphics/banim/assets/tsa/00686980_Tsa_08686980.map.bin.lz" @ 0x686A5C - 0x686980
 
-	.global Tsa_08686A5C
-Tsa_08686A5C:  @ 0x08686A5C
+	.global Tsa_SleepBg_10
+Tsa_SleepBg_10:  @ 0x08686A5C
 	.incbin "./graphics/banim/assets/tsa/00686A5C_Tsa_08686A5C.map.bin.lz" @ 0x686B38 - 0x686A5C
 
-	.global Tsa_08686B38
-Tsa_08686B38:  @ 0x08686B38
+	.global Tsa_SleepBg_11
+Tsa_SleepBg_11:  @ 0x08686B38
 	.incbin "./graphics/banim/assets/tsa/00686B38_Tsa_08686B38.map.bin.lz" @ 0x686C14 - 0x686B38
 
-	.global Tsa_08686C14
-Tsa_08686C14:  @ 0x08686C14
+	.global Tsa_SleepBg_12
+Tsa_SleepBg_12:  @ 0x08686C14
 	.incbin "./graphics/banim/assets/tsa/00686C14_Tsa_08686C14.map.bin.lz" @ 0x686CF0 - 0x686C14
 
-	.global Tsa_08686CF0
-Tsa_08686CF0:  @ 0x08686CF0
+	.global Tsa_SleepBg_13
+Tsa_SleepBg_13:  @ 0x08686CF0
 	.incbin "./graphics/banim/assets/tsa/00686CF0_Tsa_08686CF0.map.bin.lz" @ 0x686DCC - 0x686CF0
 
-	.global Tsa_08686DCC
-Tsa_08686DCC:  @ 0x08686DCC
+	.global Tsa_SleepBg_14
+Tsa_SleepBg_14:  @ 0x08686DCC
 	.incbin "./graphics/banim/assets/tsa/00686DCC_Tsa_08686DCC.map.bin.lz" @ 0x686EA8 - 0x686DCC
 
-	.global Tsa_08686EA8
-Tsa_08686EA8:  @ 0x08686EA8
+	.global Tsa_SleepBg_15
+Tsa_SleepBg_15:  @ 0x08686EA8
 	.incbin "./graphics/banim/assets/tsa/00686EA8_Tsa_08686EA8.map.bin.lz" @ 0x686F84 - 0x686EA8
 
 	.global Img_SleepSprites
@@ -25358,24 +25358,24 @@ Img_BarrierBg:  @ 0x0868D6D0
 Pal_BarrierBg:  @ 0x0868DF5C
 	.incbin "./graphics/banim/assets/pal/0068DF5C_Pal_BarrierBg.gbapal" @ 0x68DF9C - 0x68DF5C
 
-	.global Tsa_0868DF9C
-Tsa_0868DF9C:  @ 0x0868DF9C
+	.global Tsa_BarrierBg_0
+Tsa_BarrierBg_0:  @ 0x0868DF9C
 	.incbin "./graphics/banim/assets/tsa/0068DF9C_Tsa_0868DF9C.map.bin.lz" @ 0x68E054 - 0x68DF9C
 
-	.global Tsa_0868E054
-Tsa_0868E054:  @ 0x0868E054
+	.global Tsa_BarrierBg_1
+Tsa_BarrierBg_1:  @ 0x0868E054
 	.incbin "./graphics/banim/assets/tsa/0068E054_Tsa_0868E054.map.bin.lz" @ 0x68E118 - 0x68E054
 
-	.global Tsa_0868E118
-Tsa_0868E118:  @ 0x0868E118
+	.global Tsa_BarrierBg_2
+Tsa_BarrierBg_2:  @ 0x0868E118
 	.incbin "./graphics/banim/assets/tsa/0068E118_Tsa_0868E118.map.bin.lz" @ 0x68E208 - 0x68E118
 
-	.global Tsa_0868E208
-Tsa_0868E208:  @ 0x0868E208
+	.global Tsa_BarrierBg_3
+Tsa_BarrierBg_3:  @ 0x0868E208
 	.incbin "./graphics/banim/assets/tsa/0068E208_Tsa_0868E208.map.bin.lz" @ 0x68E338 - 0x68E208
 
-	.global Tsa_0868E338
-Tsa_0868E338:  @ 0x0868E338
+	.global Tsa_BarrierBg_4
+Tsa_BarrierBg_4:  @ 0x0868E338
 	.incbin "./graphics/banim/assets/tsa/0068E338_Tsa_0868E338.map.bin.lz" @ 0x68E46C - 0x68E338
 
 	.global Img_EfxMshield
@@ -27946,52 +27946,52 @@ Img_IvaldiBg1:  @ 0x086937C0
 Pal_IvaldiBg1:  @ 0x086945C4
 	.incbin "./graphics/banim/assets/pal/006945C4_Pal_IvaldiBg1.gbapal" @ 0x6945E4 - 0x6945C4
 
-	.global Tsa_086945E4
-Tsa_086945E4:  @ 0x086945E4
+	.global Tsa_IvaldiBg1_0
+Tsa_IvaldiBg1_0:  @ 0x086945E4
 	.incbin "./graphics/banim/assets/tsa/006945E4_Tsa_086945E4.map.bin.lz" @ 0x6946A0 - 0x6945E4
 
-	.global Tsa_086946A0
-Tsa_086946A0:  @ 0x086946A0
+	.global Tsa_IvaldiBg1_1
+Tsa_IvaldiBg1_1:  @ 0x086946A0
 	.incbin "./graphics/banim/assets/tsa/006946A0_Tsa_086946A0.map.bin.lz" @ 0x6947C4 - 0x6946A0
 
-	.global Tsa_086947C4
-Tsa_086947C4:  @ 0x086947C4
+	.global Tsa_IvaldiBg1_2
+Tsa_IvaldiBg1_2:  @ 0x086947C4
 	.incbin "./graphics/banim/assets/tsa/006947C4_Tsa_086947C4.map.bin.lz" @ 0x69495C - 0x6947C4
 
-	.global Tsa_0869495C
-Tsa_0869495C:  @ 0x0869495C
+	.global Tsa_IvaldiBg1_3
+Tsa_IvaldiBg1_3:  @ 0x0869495C
 	.incbin "./graphics/banim/assets/tsa/0069495C_Tsa_0869495C.map.bin.lz" @ 0x694B58 - 0x69495C
 
-	.global Tsa_08694B58
-Tsa_08694B58:  @ 0x08694B58
+	.global Tsa_IvaldiBg1_4
+Tsa_IvaldiBg1_4:  @ 0x08694B58
 	.incbin "./graphics/banim/assets/tsa/00694B58_Tsa_08694B58.map.bin.lz" @ 0x694DD0 - 0x694B58
 
-	.global Tsa_08694DD0
-Tsa_08694DD0:  @ 0x08694DD0
+	.global Tsa_IvaldiBg1_5
+Tsa_IvaldiBg1_5:  @ 0x08694DD0
 	.incbin "./graphics/banim/assets/tsa/00694DD0_Tsa_08694DD0.map.bin.lz" @ 0x695048 - 0x694DD0
 
-	.global Tsa_08695048
-Tsa_08695048:  @ 0x08695048
+	.global Tsa_IvaldiBg1_6
+Tsa_IvaldiBg1_6:  @ 0x08695048
 	.incbin "./graphics/banim/assets/tsa/00695048_Tsa_08695048.map.bin.lz" @ 0x6952C0 - 0x695048
 
-	.global Tsa_086952C0
-Tsa_086952C0:  @ 0x086952C0
+	.global Tsa_IvaldiBg1_7
+Tsa_IvaldiBg1_7:  @ 0x086952C0
 	.incbin "./graphics/banim/assets/tsa/006952C0_Tsa_086952C0.map.bin.lz" @ 0x695530 - 0x6952C0
 
-	.global Tsa_08695530
-Tsa_08695530:  @ 0x08695530
+	.global Tsa_IvaldiBg1_8
+Tsa_IvaldiBg1_8:  @ 0x08695530
 	.incbin "./graphics/banim/assets/tsa/00695530_Tsa_08695530.map.bin.lz" @ 0x695744 - 0x695530
 
-	.global Tsa_08695744
-Tsa_08695744:  @ 0x08695744
+	.global Tsa_IvaldiBg1_9
+Tsa_IvaldiBg1_9:  @ 0x08695744
 	.incbin "./graphics/banim/assets/tsa/00695744_Tsa_08695744.map.bin.lz" @ 0x6958F0 - 0x695744
 
-	.global Tsa_086958F0
-Tsa_086958F0:  @ 0x086958F0
+	.global Tsa_IvaldiBg1_10
+Tsa_IvaldiBg1_10:  @ 0x086958F0
 	.incbin "./graphics/banim/assets/tsa/006958F0_Tsa_086958F0.map.bin.lz" @ 0x695A34 - 0x6958F0
 
-	.global Tsa_08695A34
-Tsa_08695A34:  @ 0x08695A34
+	.global Tsa_IvaldiBg1_11
+Tsa_IvaldiBg1_11:  @ 0x08695A34
 	.incbin "./graphics/banim/assets/tsa/00695A34_Tsa_08695A34.map.bin.lz" @ 0x695B10 - 0x695A34
 
 	.global Img_IvaldiBg2
@@ -28002,156 +28002,156 @@ Img_IvaldiBg2:  @ 0x08695B10
 Pal_IvaldiBg2:  @ 0x08696840
 	.incbin "./graphics/banim/assets/img/00695B10_Img_IvaldiBg2.gbapal" @ 0x696860 - 0x696840
 
-	.global Tsa_08696860
-Tsa_08696860:  @ 0x08696860
+	.global Tsa_IvaldiBg2_0
+Tsa_IvaldiBg2_0:  @ 0x08696860
 	.incbin "./graphics/banim/assets/tsa/00696860_Tsa_08696860.map.bin.lz" @ 0x6968F8 - 0x696860
 
-	.global Tsa_086968F8
-Tsa_086968F8:  @ 0x086968F8
+	.global Tsa_IvaldiBg2_1
+Tsa_IvaldiBg2_1:  @ 0x086968F8
 	.incbin "./graphics/banim/assets/tsa/006968F8_Tsa_086968F8.map.bin.lz" @ 0x696A8C - 0x6968F8
 
-	.global Tsa_08696A8C
-Tsa_08696A8C:  @ 0x08696A8C
+	.global Tsa_IvaldiBg2_2
+Tsa_IvaldiBg2_2:  @ 0x08696A8C
 	.incbin "./graphics/banim/assets/tsa/00696A8C_Tsa_08696A8C.map.bin.lz" @ 0x696C28 - 0x696A8C
 
-	.global Tsa_08696C28
-Tsa_08696C28:  @ 0x08696C28
+	.global Tsa_IvaldiBg2_3
+Tsa_IvaldiBg2_3:  @ 0x08696C28
 	.incbin "./graphics/banim/assets/tsa/00696C28_Tsa_08696C28.map.bin.lz" @ 0x696DC4 - 0x696C28
 
-	.global Tsa_08696DC4
-Tsa_08696DC4:  @ 0x08696DC4
+	.global Tsa_IvaldiBg2_4
+Tsa_IvaldiBg2_4:  @ 0x08696DC4
 	.incbin "./graphics/banim/assets/tsa/00696DC4_Tsa_08696DC4.map.bin.lz" @ 0x696F64 - 0x696DC4
 
-	.global Img_08696F64
-Img_08696F64:  @ 0x08696F64
+	.global Img_IvaldiBg3_0
+Img_IvaldiBg3_0:  @ 0x08696F64
 	.incbin "./graphics/banim/assets/img/00696F64_Img_08696F64.4bpp.lz" @ 0x697610 - 0x696F64
 
-	.global Img_08697610
-Img_08697610:  @ 0x08697610
+	.global Img_IvaldiBg3_1
+Img_IvaldiBg3_1:  @ 0x08697610
 	.incbin "./graphics/banim/assets/img/00697610_Img_08697610.4bpp.lz" @ 0x697D18 - 0x697610
 
-	.global Img_08697D18
-Img_08697D18:  @ 0x08697D18
+	.global Img_IvaldiBg3_2
+Img_IvaldiBg3_2:  @ 0x08697D18
 	.incbin "./graphics/banim/assets/img/00697D18_Img_08697D18.4bpp.lz" @ 0x698584 - 0x697D18
 
-	.global Img_08698584
-Img_08698584:  @ 0x08698584
+	.global Img_IvaldiBg3_3
+Img_IvaldiBg3_3:  @ 0x08698584
 	.incbin "./graphics/banim/assets/img/00698584_Img_08698584.4bpp.lz" @ 0x698F78 - 0x698584
 
-	.global Img_08698F78
-Img_08698F78:  @ 0x08698F78
+	.global Img_IvaldiBg3_4
+Img_IvaldiBg3_4:  @ 0x08698F78
 	.incbin "./graphics/banim/assets/img/00698F78_Img_08698F78.4bpp.lz" @ 0x699AEC - 0x698F78
 
-	.global Img_08699AEC
-Img_08699AEC:  @ 0x08699AEC
+	.global Img_IvaldiBg3_5
+Img_IvaldiBg3_5:  @ 0x08699AEC
 	.incbin "./graphics/banim/assets/img/00699AEC_Img_08699AEC.4bpp.lz" @ 0x69A70C - 0x699AEC
 
-	.global Img_0869A70C
-Img_0869A70C:  @ 0x0869A70C
+	.global Img_IvaldiBg3_6
+Img_IvaldiBg3_6:  @ 0x0869A70C
 	.incbin "./graphics/banim/assets/img/0069A70C_Img_0869A70C.4bpp.lz" @ 0x69B470 - 0x69A70C
 
-	.global Img_0869B470
-Img_0869B470:  @ 0x0869B470
+	.global Img_IvaldiBg3_7
+Img_IvaldiBg3_7:  @ 0x0869B470
 	.incbin "./graphics/banim/assets/img/0069B470_Img_0869B470.4bpp.lz" @ 0x69C130 - 0x69B470
 
-	.global Img_0869C130
-Img_0869C130:  @ 0x0869C130
+	.global Img_IvaldiBg3_8
+Img_IvaldiBg3_8:  @ 0x0869C130
 	.incbin "./graphics/banim/assets/img/0069C130_Img_0869C130.4bpp.lz" @ 0x69CE1C - 0x69C130
 
-	.global Img_0869CE1C
-Img_0869CE1C:  @ 0x0869CE1C
+	.global Img_IvaldiBg3_9
+Img_IvaldiBg3_9:  @ 0x0869CE1C
 	.incbin "./graphics/banim/assets/img/0069CE1C_Img_0869CE1C.4bpp.lz" @ 0x69DB90 - 0x69CE1C
 
-	.global Img_0869DB90
-Img_0869DB90:  @ 0x0869DB90
+	.global Img_IvaldiBg3_10
+Img_IvaldiBg3_10:  @ 0x0869DB90
 	.incbin "./graphics/banim/assets/img/0069DB90_Img_0869DB90.4bpp.lz" @ 0x69E810 - 0x69DB90
 
-	.global Pal_0869E810
-Pal_0869E810:  @ 0x0869E810
+	.global Pal_IvaldiBg3_0
+Pal_IvaldiBg3_0:  @ 0x0869E810
 	.incbin "./graphics/banim/assets/pal/0069E810_Pal_0869E810.gbapal" @ 0x69E830 - 0x69E810
 
-	.global Pal_0869E830
-Pal_0869E830:  @ 0x0869E830
+	.global Pal_IvaldiBg3_1
+Pal_IvaldiBg3_1:  @ 0x0869E830
 	.incbin "./graphics/banim/assets/pal/0069E830_Pal_0869E830.gbapal" @ 0x69E850 - 0x69E830
 
-	.global Pal_0869E850
-Pal_0869E850:  @ 0x0869E850
+	.global Pal_IvaldiBg3_2
+Pal_IvaldiBg3_2:  @ 0x0869E850
 	.incbin "./graphics/banim/assets/pal/0069E850_Pal_0869E850.gbapal" @ 0x69E870 - 0x69E850
 
-	.global Pal_0869E870
-Pal_0869E870:  @ 0x0869E870
+	.global Pal_IvaldiBg3_3
+Pal_IvaldiBg3_3:  @ 0x0869E870
 	.incbin "./graphics/banim/assets/pal/0069E870_Pal_0869E870.gbapal" @ 0x69E890 - 0x69E870
 
-	.global Pal_0869E890
-Pal_0869E890:  @ 0x0869E890
+	.global Pal_IvaldiBg3_4
+Pal_IvaldiBg3_4:  @ 0x0869E890
 	.incbin "./graphics/banim/assets/pal/0069E890_Pal_0869E890.gbapal" @ 0x69E8B0 - 0x69E890
 
-	.global Pal_0869E8B0
-Pal_0869E8B0:  @ 0x0869E8B0
+	.global Pal_IvaldiBg3_5
+Pal_IvaldiBg3_5:  @ 0x0869E8B0
 	.incbin "./graphics/banim/assets/pal/0069E8B0_Pal_0869E8B0.gbapal" @ 0x69E8D0 - 0x69E8B0
 
-	.global Pal_0869E8D0
-Pal_0869E8D0:  @ 0x0869E8D0
+	.global Pal_IvaldiBg3_6
+Pal_IvaldiBg3_6:  @ 0x0869E8D0
 	.incbin "./graphics/banim/assets/pal/0069E8D0_Pal_0869E8D0.gbapal" @ 0x69E8F0 - 0x69E8D0
 
-	.global Pal_0869E8F0
-Pal_0869E8F0:  @ 0x0869E8F0
+	.global Pal_IvaldiBg3_7
+Pal_IvaldiBg3_7:  @ 0x0869E8F0
 	.incbin "./graphics/banim/assets/pal/0069E8F0_Pal_0869E8F0.gbapal" @ 0x69E910 - 0x69E8F0
 
-	.global Pal_0869E910
-Pal_0869E910:  @ 0x0869E910
+	.global Pal_IvaldiBg3_8
+Pal_IvaldiBg3_8:  @ 0x0869E910
 	.incbin "./graphics/banim/assets/pal/0069E910_Pal_0869E910.gbapal" @ 0x69E930 - 0x69E910
 
-	.global Pal_0869E930
-Pal_0869E930:  @ 0x0869E930
+	.global Pal_IvaldiBg3_9
+Pal_IvaldiBg3_9:  @ 0x0869E930
 	.incbin "./graphics/banim/assets/pal/0069E930_Pal_0869E930.gbapal" @ 0x69E950 - 0x69E930
 
-	.global Pal_0869E950
-Pal_0869E950:  @ 0x0869E950
+	.global Pal_IvaldiBg3_10
+Pal_IvaldiBg3_10:  @ 0x0869E950
 	.incbin "./graphics/banim/assets/pal/0069E950_Pal_0869E950.gbapal" @ 0x69E970 - 0x69E950
 
-	.global Tsa_0869E970
-Tsa_0869E970:  @ 0x0869E970
+	.global Tsa_IvaldiBg3_0
+Tsa_IvaldiBg3_0:  @ 0x0869E970
 	.incbin "./graphics/banim/assets/tsa/0069E970_Tsa_0869E970.map.bin.lz" @ 0x69EBB4 - 0x69E970
 
-	.global Tsa_0869EBB4
-Tsa_0869EBB4:  @ 0x0869EBB4
+	.global Tsa_IvaldiBg3_1
+Tsa_IvaldiBg3_1:  @ 0x0869EBB4
 	.incbin "./graphics/banim/assets/tsa/0069EBB4_Tsa_0869EBB4.map.bin.lz" @ 0x69EE2C - 0x69EBB4
 
-	.global Tsa_0869EE2C
-Tsa_0869EE2C:  @ 0x0869EE2C
+	.global Tsa_IvaldiBg3_2
+Tsa_IvaldiBg3_2:  @ 0x0869EE2C
 	.incbin "./graphics/banim/assets/tsa/0069EE2C_Tsa_0869EE2C.map.bin.lz" @ 0x69F090 - 0x69EE2C
 
-	.global Tsa_0869F090
-Tsa_0869F090:  @ 0x0869F090
+	.global Tsa_IvaldiBg3_3
+Tsa_IvaldiBg3_3:  @ 0x0869F090
 	.incbin "./graphics/banim/assets/tsa/0069F090_Tsa_0869F090.map.bin.lz" @ 0x69F304 - 0x69F090
 
-	.global Tsa_0869F304
-Tsa_0869F304:  @ 0x0869F304
+	.global Tsa_IvaldiBg3_4
+Tsa_IvaldiBg3_4:  @ 0x0869F304
 	.incbin "./graphics/banim/assets/tsa/0069F304_Tsa_0869F304.map.bin.lz" @ 0x69F5C0 - 0x69F304
 
-	.global Tsa_0869F5C0
-Tsa_0869F5C0:  @ 0x0869F5C0
+	.global Tsa_IvaldiBg3_5
+Tsa_IvaldiBg3_5:  @ 0x0869F5C0
 	.incbin "./graphics/banim/assets/tsa/0069F5C0_Tsa_0869F5C0.map.bin.lz" @ 0x69F888 - 0x69F5C0
 
-	.global Tsa_0869F888
-Tsa_0869F888:  @ 0x0869F888
+	.global Tsa_IvaldiBg3_6
+Tsa_IvaldiBg3_6:  @ 0x0869F888
 	.incbin "./graphics/banim/assets/tsa/0069F888_Tsa_0869F888.map.bin.lz" @ 0x69FB4C - 0x69F888
 
-	.global Tsa_0869FB4C
-Tsa_0869FB4C:  @ 0x0869FB4C
+	.global Tsa_IvaldiBg3_7
+Tsa_IvaldiBg3_7:  @ 0x0869FB4C
 	.incbin "./graphics/banim/assets/tsa/0069FB4C_Tsa_0869FB4C.map.bin.lz" @ 0x69FDFC - 0x69FB4C
 
-	.global Tsa_0869FDFC
-Tsa_0869FDFC:  @ 0x0869FDFC
+	.global Tsa_IvaldiBg3_8
+Tsa_IvaldiBg3_8:  @ 0x0869FDFC
 	.incbin "./graphics/banim/assets/tsa/0069FDFC_Tsa_0869FDFC.map.bin.lz" @ 0x6A00B0 - 0x69FDFC
 
-	.global Tsa_086A00B0
-Tsa_086A00B0:  @ 0x086A00B0
+	.global Tsa_IvaldiBg3_9
+Tsa_IvaldiBg3_9:  @ 0x086A00B0
 	.incbin "./graphics/banim/assets/tsa/006A00B0_Tsa_086A00B0.map.bin.lz" @ 0x6A0388 - 0x6A00B0
 
-	.global Tsa_086A0388
-Tsa_086A0388:  @ 0x086A0388
+	.global Tsa_IvaldiBg3_10
+Tsa_IvaldiBg3_10:  @ 0x086A0388
 	.incbin "./graphics/banim/assets/tsa/006A0388_Tsa_086A0388.map.bin.lz" @ 0x6A06A8 - 0x6A0388
 
 	.global Img_IvaldiBg4
@@ -28162,8 +28162,8 @@ Img_IvaldiBg4:  @ 0x086A06A8
 Pal_IvaldiBg4:  @ 0x086A1CE0
 	.incbin "./graphics/banim/assets/pal/006A1CE0_Pal_IvaldiBg4.gbapal" @ 0x6A1D00 - 0x6A1CE0
 
-	.global Tsa_086A1D00
-Tsa_086A1D00:  @ 0x086A1D00
+	.global Tsa_IvaldiBg4
+Tsa_IvaldiBg4:  @ 0x086A1D00
 	.incbin "./graphics/banim/assets/tsa/006A1D00_Tsa_086A1D00.map.bin.lz" @ 0x6A21F4 - 0x6A1D00
 
 	.global Img_GleipnirSprites_Rocks
@@ -28416,288 +28416,288 @@ AnimScr_EfxDarkGradoOBJ02piece2_L: @ 0x6A2EAC
     ANIMSCR_FORCE_SPRITE AnimSprite_EfxDarkGradoOBJ02piece_L_5, 1
     ANIMSCR_LOOP
 
-	.global Img_086A2EC0
-Img_086A2EC0:  @ 0x086A2EC0
+	.global Img_Banim_13
+Img_Banim_13:  @ 0x086A2EC0
 	.incbin "./graphics/banim/assets/img/006A2EC0_Img_086A2EC0.4bpp.lz" @ 0x6A34D0 - 0x6A2EC0
 
-	.global Img_086A34D0
-Img_086A34D0:  @ 0x086A34D0
+	.global Img_GleipnirBg_Sigil_0
+Img_GleipnirBg_Sigil_0:  @ 0x086A34D0
 	.incbin "./graphics/banim/assets/img/006A34D0_Img_086A34D0.4bpp.lz" @ 0x6A3BA0 - 0x6A34D0
 
-	.global Img_086A3BA0
-Img_086A3BA0:  @ 0x086A3BA0
+	.global Img_GleipnirBg_Sigil_1
+Img_GleipnirBg_Sigil_1:  @ 0x086A3BA0
 	.incbin "./graphics/banim/assets/img/006A3BA0_Img_086A3BA0.4bpp.lz" @ 0x6A4270 - 0x6A3BA0
 
-	.global Img_086A4270
-Img_086A4270:  @ 0x086A4270
+	.global Img_GleipnirBg_Sigil_2
+Img_GleipnirBg_Sigil_2:  @ 0x086A4270
 	.incbin "./graphics/banim/assets/img/006A4270_Img_086A4270.4bpp.lz" @ 0x6A48D8 - 0x6A4270
 
-	.global Img_086A48D8
-Img_086A48D8:  @ 0x086A48D8
+	.global Img_GleipnirBg_Sigil_3
+Img_GleipnirBg_Sigil_3:  @ 0x086A48D8
 	.incbin "./graphics/banim/assets/img/006A48D8_Img_086A48D8.4bpp.lz" @ 0x6A4E9C - 0x6A48D8
 
-	.global Img_086A4E9C
-Img_086A4E9C:  @ 0x086A4E9C
+	.global Img_GleipnirBg_Sigil_4
+Img_GleipnirBg_Sigil_4:  @ 0x086A4E9C
 	.incbin "./graphics/banim/assets/img/006A4E9C_Img_086A4E9C.4bpp.lz" @ 0x6A538C - 0x6A4E9C
 
-	.global Img_086A538C
-Img_086A538C:  @ 0x086A538C
+	.global Img_GleipnirBg_Sigil_5
+Img_GleipnirBg_Sigil_5:  @ 0x086A538C
 	.incbin "./graphics/banim/assets/img/006A538C_Img_086A538C.4bpp.lz" @ 0x6A576C - 0x6A538C
 
-	.global Img_086A576C
-Img_086A576C:  @ 0x086A576C
+	.global Img_GleipnirBg_Sigil_6
+Img_GleipnirBg_Sigil_6:  @ 0x086A576C
 	.incbin "./graphics/banim/assets/img/006A576C_Img_086A576C.4bpp.lz" @ 0x6A5B4C - 0x6A576C
 
-	.global Img_086A5B4C
-Img_086A5B4C:  @ 0x086A5B4C
+	.global Img_GleipnirBg_Sigil_7
+Img_GleipnirBg_Sigil_7:  @ 0x086A5B4C
 	.incbin "./graphics/banim/assets/img/006A5B4C_Img_086A5B4C.4bpp.lz" @ 0x6A5F2C - 0x6A5B4C
 
-	.global Img_086A5F2C
-Img_086A5F2C:  @ 0x086A5F2C
+	.global Img_GleipnirBg_Sigil_8
+Img_GleipnirBg_Sigil_8:  @ 0x086A5F2C
 	.incbin "./graphics/banim/assets/img/006A5F2C_Img_086A5F2C.4bpp.lz" @ 0x6A6304 - 0x6A5F2C
 
-	.global Img_086A6304
-Img_086A6304:  @ 0x086A6304
+	.global Img_GleipnirBg_Sigil_9
+Img_GleipnirBg_Sigil_9:  @ 0x086A6304
 	.incbin "./graphics/banim/assets/img/006A6304_Img_086A6304.4bpp.lz" @ 0x6A66D8 - 0x6A6304
 
 	.global Pal_GleipnirBg_Sigil
 Pal_GleipnirBg_Sigil:  @ 0x086A66D8
 	.incbin "./graphics/banim/assets/img/006A6304_Img_086A6304.gbapal" @ 0x6A66F8 - 0x6A66D8
 
-	.global Tsa_086A66F8
-Tsa_086A66F8:  @ 0x086A66F8
+	.global Tsa_GleipnirBg_Sigil_0
+Tsa_GleipnirBg_Sigil_0:  @ 0x086A66F8
 	.incbin "./graphics/banim/assets/tsa/006A66F8_Tsa_086A66F8.map.bin.lz" @ 0x6A68A0 - 0x6A66F8
 
-	.global Tsa_086A68A0
-Tsa_086A68A0:  @ 0x086A68A0
+	.global Tsa_GleipnirBg_Sigil_1
+Tsa_GleipnirBg_Sigil_1:  @ 0x086A68A0
 	.incbin "./graphics/banim/assets/tsa/006A68A0_Tsa_086A68A0.map.bin.lz" @ 0x6A6A14 - 0x6A68A0
 
-	.global Tsa_086A6A14
-Tsa_086A6A14:  @ 0x086A6A14
+	.global Tsa_GleipnirBg_Sigil_2
+Tsa_GleipnirBg_Sigil_2:  @ 0x086A6A14
 	.incbin "./graphics/banim/assets/tsa/006A6A14_Tsa_086A6A14.map.bin.lz" @ 0x6A6B88 - 0x6A6A14
 
-	.global Tsa_086A6B88
-Tsa_086A6B88:  @ 0x086A6B88
+	.global Tsa_GleipnirBg_Sigil_3
+Tsa_GleipnirBg_Sigil_3:  @ 0x086A6B88
 	.incbin "./graphics/banim/assets/tsa/006A6B88_Tsa_086A6B88.map.bin.lz" @ 0x6A6CD0 - 0x6A6B88
 
-	.global Tsa_086A6CD0
-Tsa_086A6CD0:  @ 0x086A6CD0
+	.global Tsa_GleipnirBg_Sigil_4
+Tsa_GleipnirBg_Sigil_4:  @ 0x086A6CD0
 	.incbin "./graphics/banim/assets/tsa/006A6CD0_Tsa_086A6CD0.map.bin.lz" @ 0x6A6DDC - 0x6A6CD0
 
-	.global Tsa_086A6DDC
-Tsa_086A6DDC:  @ 0x086A6DDC
+	.global Tsa_GleipnirBg_Sigil_5
+Tsa_GleipnirBg_Sigil_5:  @ 0x086A6DDC
 	.incbin "./graphics/banim/assets/tsa/006A6DDC_Tsa_086A6DDC.map.bin.lz" @ 0x6A6EBC - 0x6A6DDC
 
-	.global Tsa_086A6EBC
-Tsa_086A6EBC:  @ 0x086A6EBC
+	.global Tsa_GleipnirBg_Sigil_6
+Tsa_GleipnirBg_Sigil_6:  @ 0x086A6EBC
 	.incbin "./graphics/banim/assets/tsa/006A6EBC_Tsa_086A6EBC.map.bin.lz" @ 0x6A6F94 - 0x6A6EBC
 
-	.global Tsa_086A6F94
-Tsa_086A6F94:  @ 0x086A6F94
+	.global Tsa_GleipnirBg_Sigil_7
+Tsa_GleipnirBg_Sigil_7:  @ 0x086A6F94
 	.incbin "./graphics/banim/assets/tsa/006A6F94_Tsa_086A6F94.map.bin.lz" @ 0x6A7058 - 0x6A6F94
 
-	.global Tsa_086A7058
-Tsa_086A7058:  @ 0x086A7058
+	.global Tsa_GleipnirBg_Sigil_8
+Tsa_GleipnirBg_Sigil_8:  @ 0x086A7058
 	.incbin "./graphics/banim/assets/tsa/006A7058_Tsa_086A7058.map.bin.lz" @ 0x6A7114 - 0x6A7058
 
-	.global Tsa_086A7114
-Tsa_086A7114:  @ 0x086A7114
+	.global Tsa_GleipnirBg_Sigil_9
+Tsa_GleipnirBg_Sigil_9:  @ 0x086A7114
 	.incbin "./graphics/banim/assets/tsa/006A7114_Tsa_086A7114.map.bin.lz" @ 0x6A71B8 - 0x6A7114
 
-	.global Tsa_086A71B8
-Tsa_086A71B8:  @ 0x086A71B8
+	.global Tsa_GleipnirBg_Sigil_10
+Tsa_GleipnirBg_Sigil_10:  @ 0x086A71B8
 	.incbin "./graphics/banim/assets/tsa/006A71B8_Tsa_086A71B8.map.bin.lz" @ 0x6A7258 - 0x6A71B8
 
-	.global Img_086A7258
-Img_086A7258:  @ 0x086A7258
+	.global Img_GleipnirBg_Nebula_0
+Img_GleipnirBg_Nebula_0:  @ 0x086A7258
 	.incbin "./graphics/banim/assets/img/006A7258_Img_086A7258.4bpp.lz" @ 0x6A76C0 - 0x6A7258
 
-	.global Img_086A76C0
-Img_086A76C0:  @ 0x086A76C0
+	.global Img_GleipnirBg_Nebula_1
+Img_GleipnirBg_Nebula_1:  @ 0x086A76C0
 	.incbin "./graphics/banim/assets/img/006A76C0_Img_086A76C0.4bpp.lz" @ 0x6A7BC4 - 0x6A76C0
 
-	.global Img_086A7BC4
-Img_086A7BC4:  @ 0x086A7BC4
+	.global Img_GleipnirBg_Nebula_2
+Img_GleipnirBg_Nebula_2:  @ 0x086A7BC4
 	.incbin "./graphics/banim/assets/img/006A7BC4_Img_086A7BC4.4bpp.lz" @ 0x6A817C - 0x6A7BC4
 
-	.global Img_086A817C
-Img_086A817C:  @ 0x086A817C
+	.global Img_GleipnirBg_Nebula_3
+Img_GleipnirBg_Nebula_3:  @ 0x086A817C
 	.incbin "./graphics/banim/assets/img/006A817C_Img_086A817C.4bpp.lz" @ 0x6A87EC - 0x6A817C
 
-	.global Img_086A87EC
-Img_086A87EC:  @ 0x086A87EC
+	.global Img_GleipnirBg_Nebula_4
+Img_GleipnirBg_Nebula_4:  @ 0x086A87EC
 	.incbin "./graphics/banim/assets/img/006A87EC_Img_086A87EC.4bpp.lz" @ 0x6A8F48 - 0x6A87EC
 
-	.global Img_086A8F48
-Img_086A8F48:  @ 0x086A8F48
+	.global Img_GleipnirBg_Nebula_5
+Img_GleipnirBg_Nebula_5:  @ 0x086A8F48
 	.incbin "./graphics/banim/assets/img/006A8F48_Img_086A8F48.4bpp.lz" @ 0x6A97A8 - 0x6A8F48
 
-	.global Img_086A97A8
-Img_086A97A8:  @ 0x086A97A8
+	.global Img_GleipnirBg_Nebula_6
+Img_GleipnirBg_Nebula_6:  @ 0x086A97A8
 	.incbin "./graphics/banim/assets/img/006A97A8_Img_086A97A8.4bpp.lz" @ 0x6AA13C - 0x6A97A8
 
-	.global Img_086AA13C
-Img_086AA13C:  @ 0x086AA13C
+	.global Img_GleipnirBg_Nebula_7
+Img_GleipnirBg_Nebula_7:  @ 0x086AA13C
 	.incbin "./graphics/banim/assets/img/006AA13C_Img_086AA13C.4bpp.lz" @ 0x6AABE0 - 0x6AA13C
 
-	.global Img_086AABE0
-Img_086AABE0:  @ 0x086AABE0
+	.global Img_GleipnirBg_Nebula_8
+Img_GleipnirBg_Nebula_8:  @ 0x086AABE0
 	.incbin "./graphics/banim/assets/img/006AABE0_Img_086AABE0.4bpp.lz" @ 0x6AB790 - 0x6AABE0
 
-	.global Img_086AB790
-Img_086AB790:  @ 0x086AB790
+	.global Img_GleipnirBg_Nebula_9
+Img_GleipnirBg_Nebula_9:  @ 0x086AB790
 	.incbin "./graphics/banim/assets/img/006AB790_Img_086AB790.4bpp.lz" @ 0x6AC4B0 - 0x6AB790
 
-	.global Img_086AC4B0
-Img_086AC4B0:  @ 0x086AC4B0
+	.global Img_GleipnirBg_Nebula_10
+Img_GleipnirBg_Nebula_10:  @ 0x086AC4B0
 	.incbin "./graphics/banim/assets/img/006AC4B0_Img_086AC4B0.4bpp.lz" @ 0x6AD2B8 - 0x6AC4B0
 
-	.global Img_086AD2B8
-Img_086AD2B8:  @ 0x086AD2B8
+	.global Img_GleipnirBg_Nebula_11
+Img_GleipnirBg_Nebula_11:  @ 0x086AD2B8
 	.incbin "./graphics/banim/assets/img/006AD2B8_Img_086AD2B8.4bpp.lz" @ 0x6AE220 - 0x6AD2B8
 
-	.global Img_086AE220
-Img_086AE220:  @ 0x086AE220
+	.global Img_GleipnirBg_Nebula_12
+Img_GleipnirBg_Nebula_12:  @ 0x086AE220
 	.incbin "./graphics/banim/assets/img/006AE220_Img_086AE220.4bpp.lz" @ 0x6AF26C - 0x6AE220
 
-	.global Img_086AF26C
-Img_086AF26C:  @ 0x086AF26C
+	.global Img_GleipnirBg_Nebula_13
+Img_GleipnirBg_Nebula_13:  @ 0x086AF26C
 	.incbin "./graphics/banim/assets/img/006AF26C_Img_086AF26C.4bpp.lz" @ 0x6B0398 - 0x6AF26C
 
-	.global Img_086B0398
-Img_086B0398:  @ 0x086B0398
+	.global Img_GleipnirBg_Nebula_14
+Img_GleipnirBg_Nebula_14:  @ 0x086B0398
 	.incbin "./graphics/banim/assets/img/006B0398_Img_086B0398.4bpp.lz" @ 0x6B15C4 - 0x6B0398
 
-	.global Img_086B15C4
-Img_086B15C4:  @ 0x086B15C4
+	.global Img_GleipnirBg_Nebula_15
+Img_GleipnirBg_Nebula_15:  @ 0x086B15C4
 	.incbin "./graphics/banim/assets/img/006B15C4_Img_086B15C4.4bpp.lz" @ 0x6B2878 - 0x6B15C4
 
-	.global Pal_086B2878
-Pal_086B2878:  @ 0x086B2878
+	.global Pal_GleipnirBg_Nebula_0
+Pal_GleipnirBg_Nebula_0:  @ 0x086B2878
 	.incbin "./graphics/banim/assets/pal/006B2878_Pal_086B2878.gbapal" @ 0x6B2898 - 0x6B2878
 
-	.global Pal_086B2898
-Pal_086B2898:  @ 0x086B2898
+	.global Pal_GleipnirBg_Nebula_1
+Pal_GleipnirBg_Nebula_1:  @ 0x086B2898
 	.incbin "./graphics/banim/assets/pal/006B2898_Pal_086B2898.gbapal" @ 0x6B28B8 - 0x6B2898
 
-	.global Pal_086B28B8
-Pal_086B28B8:  @ 0x086B28B8
+	.global Pal_GleipnirBg_Nebula_2
+Pal_GleipnirBg_Nebula_2:  @ 0x086B28B8
 	.incbin "./graphics/banim/assets/pal/006B28B8_Pal_086B28B8.gbapal" @ 0x6B28D8 - 0x6B28B8
 
-	.global Pal_086B28D8
-Pal_086B28D8:  @ 0x086B28D8
+	.global Pal_GleipnirBg_Nebula_3
+Pal_GleipnirBg_Nebula_3:  @ 0x086B28D8
 	.incbin "./graphics/banim/assets/pal/006B28D8_Pal_086B28D8.gbapal" @ 0x6B28F8 - 0x6B28D8
 
-	.global Pal_086B28F8
-Pal_086B28F8:  @ 0x086B28F8
+	.global Pal_GleipnirBg_Nebula_4
+Pal_GleipnirBg_Nebula_4:  @ 0x086B28F8
 	.incbin "./graphics/banim/assets/pal/006B28F8_Pal_086B28F8.gbapal" @ 0x6B2918 - 0x6B28F8
 
-	.global Pal_086B2918
-Pal_086B2918:  @ 0x086B2918
+	.global Pal_GleipnirBg_Nebula_5
+Pal_GleipnirBg_Nebula_5:  @ 0x086B2918
 	.incbin "./graphics/banim/assets/pal/006B2918_Pal_086B2918.gbapal" @ 0x6B2938 - 0x6B2918
 
-	.global Pal_086B2938
-Pal_086B2938:  @ 0x086B2938
+	.global Pal_GleipnirBg_Nebula_6
+Pal_GleipnirBg_Nebula_6:  @ 0x086B2938
 	.incbin "./graphics/banim/assets/pal/006B2938_Pal_086B2938.gbapal" @ 0x6B2958 - 0x6B2938
 
-	.global Pal_086B2958
-Pal_086B2958:  @ 0x086B2958
+	.global Pal_GleipnirBg_Nebula_7
+Pal_GleipnirBg_Nebula_7:  @ 0x086B2958
 	.incbin "./graphics/banim/assets/pal/006B2958_Pal_086B2958.gbapal" @ 0x6B2978 - 0x6B2958
 
-	.global Pal_086B2978
-Pal_086B2978:  @ 0x086B2978
+	.global Pal_GleipnirBg_Nebula_8
+Pal_GleipnirBg_Nebula_8:  @ 0x086B2978
 	.incbin "./graphics/banim/assets/pal/006B2978_Pal_086B2978.gbapal" @ 0x6B2998 - 0x6B2978
 
-	.global Pal_086B2998
-Pal_086B2998:  @ 0x086B2998
+	.global Pal_GleipnirBg_Nebula_9
+Pal_GleipnirBg_Nebula_9:  @ 0x086B2998
 	.incbin "./graphics/banim/assets/pal/006B2998_Pal_086B2998.gbapal" @ 0x6B29B8 - 0x6B2998
 
-	.global Pal_086B29B8
-Pal_086B29B8:  @ 0x086B29B8
+	.global Pal_GleipnirBg_Nebula_10
+Pal_GleipnirBg_Nebula_10:  @ 0x086B29B8
 	.incbin "./graphics/banim/assets/pal/006B29B8_Pal_086B29B8.gbapal" @ 0x6B29D8 - 0x6B29B8
 
-	.global Pal_086B29D8
-Pal_086B29D8:  @ 0x086B29D8
+	.global Pal_GleipnirBg_Nebula_11
+Pal_GleipnirBg_Nebula_11:  @ 0x086B29D8
 	.incbin "./graphics/banim/assets/pal/006B29D8_Pal_086B29D8.gbapal" @ 0x6B29F8 - 0x6B29D8
 
-	.global Pal_086B29F8
-Pal_086B29F8:  @ 0x086B29F8
+	.global Pal_GleipnirBg_Nebula_12
+Pal_GleipnirBg_Nebula_12:  @ 0x086B29F8
 	.incbin "./graphics/banim/assets/pal/006B29F8_Pal_086B29F8.gbapal" @ 0x6B2A18 - 0x6B29F8
 
-	.global Pal_086B2A18
-Pal_086B2A18:  @ 0x086B2A18
+	.global Pal_GleipnirBg_Nebula_13
+Pal_GleipnirBg_Nebula_13:  @ 0x086B2A18
 	.incbin "./graphics/banim/assets/pal/006B2A18_Pal_086B2A18.gbapal" @ 0x6B2A38 - 0x6B2A18
 
-	.global Pal_086B2A38
-Pal_086B2A38:  @ 0x086B2A38
+	.global Pal_GleipnirBg_Nebula_14
+Pal_GleipnirBg_Nebula_14:  @ 0x086B2A38
 	.incbin "./graphics/banim/assets/pal/006B2A38_Pal_086B2A38.gbapal" @ 0x6B2A58 - 0x6B2A38
 
-	.global Pal_086B2A58
-Pal_086B2A58:  @ 0x086B2A58
+	.global Pal_GleipnirBg_Nebula_15
+Pal_GleipnirBg_Nebula_15:  @ 0x086B2A58
 	.incbin "./graphics/banim/assets/pal/006B2A58_Pal_086B2A58.gbapal" @ 0x6B2A78 - 0x6B2A58
 
-	.global Tsa_086B2A78
-Tsa_086B2A78:  @ 0x086B2A78
+	.global Tsa_GleipnirBg_Nebula_0
+Tsa_GleipnirBg_Nebula_0:  @ 0x086B2A78
 	.incbin "./graphics/banim/assets/tsa/006B2A78_Tsa_086B2A78.map.bin.lz" @ 0x6B2B30 - 0x6B2A78
 
-	.global Tsa_086B2B30
-Tsa_086B2B30:  @ 0x086B2B30
+	.global Tsa_GleipnirBg_Nebula_1
+Tsa_GleipnirBg_Nebula_1:  @ 0x086B2B30
 	.incbin "./graphics/banim/assets/tsa/006B2B30_Tsa_086B2B30.map.bin.lz" @ 0x6B2BF4 - 0x6B2B30
 
-	.global Tsa_086B2BF4
-Tsa_086B2BF4:  @ 0x086B2BF4
+	.global Tsa_GleipnirBg_Nebula_2
+Tsa_GleipnirBg_Nebula_2:  @ 0x086B2BF4
 	.incbin "./graphics/banim/assets/tsa/006B2BF4_Tsa_086B2BF4.map.bin.lz" @ 0x6B2CCC - 0x6B2BF4
 
-	.global Tsa_086B2CCC
-Tsa_086B2CCC:  @ 0x086B2CCC
+	.global Tsa_GleipnirBg_Nebula_3
+Tsa_GleipnirBg_Nebula_3:  @ 0x086B2CCC
 	.incbin "./graphics/banim/assets/tsa/006B2CCC_Tsa_086B2CCC.map.bin.lz" @ 0x6B2DB8 - 0x6B2CCC
 
-	.global Tsa_086B2DB8
-Tsa_086B2DB8:  @ 0x086B2DB8
+	.global Tsa_GleipnirBg_Nebula_4
+Tsa_GleipnirBg_Nebula_4:  @ 0x086B2DB8
 	.incbin "./graphics/banim/assets/tsa/006B2DB8_Tsa_086B2DB8.map.bin.lz" @ 0x6B2EBC - 0x6B2DB8
 
-	.global Tsa_086B2EBC
-Tsa_086B2EBC:  @ 0x086B2EBC
+	.global Tsa_GleipnirBg_Nebula_5
+Tsa_GleipnirBg_Nebula_5:  @ 0x086B2EBC
 	.incbin "./graphics/banim/assets/tsa/006B2EBC_Tsa_086B2EBC.map.bin.lz" @ 0x6B2FD8 - 0x6B2EBC
 
-	.global Tsa_086B2FD8
-Tsa_086B2FD8:  @ 0x086B2FD8
+	.global Tsa_GleipnirBg_Nebula_6
+Tsa_GleipnirBg_Nebula_6:  @ 0x086B2FD8
 	.incbin "./graphics/banim/assets/tsa/006B2FD8_Tsa_086B2FD8.map.bin.lz" @ 0x6B3114 - 0x6B2FD8
 
-	.global Tsa_086B3114
-Tsa_086B3114:  @ 0x086B3114
+	.global Tsa_GleipnirBg_Nebula_7
+Tsa_GleipnirBg_Nebula_7:  @ 0x086B3114
 	.incbin "./graphics/banim/assets/tsa/006B3114_Tsa_086B3114.map.bin.lz" @ 0x6B326C - 0x6B3114
 
-	.global Tsa_086B326C
-Tsa_086B326C:  @ 0x086B326C
+	.global Tsa_GleipnirBg_Nebula_8
+Tsa_GleipnirBg_Nebula_8:  @ 0x086B326C
 	.incbin "./graphics/banim/assets/tsa/006B326C_Tsa_086B326C.map.bin.lz" @ 0x6B33E0 - 0x6B326C
 
-	.global Tsa_086B33E0
-Tsa_086B33E0:  @ 0x086B33E0
+	.global Tsa_GleipnirBg_Nebula_9
+Tsa_GleipnirBg_Nebula_9:  @ 0x086B33E0
 	.incbin "./graphics/banim/assets/tsa/006B33E0_Tsa_086B33E0.map.bin.lz" @ 0x6B3578 - 0x6B33E0
 
-	.global Tsa_086B3578
-Tsa_086B3578:  @ 0x086B3578
+	.global Tsa_GleipnirBg_Nebula_10
+Tsa_GleipnirBg_Nebula_10:  @ 0x086B3578
 	.incbin "./graphics/banim/assets/tsa/006B3578_Tsa_086B3578.map.bin.lz" @ 0x6B3734 - 0x6B3578
 
-	.global Tsa_086B3734
-Tsa_086B3734:  @ 0x086B3734
+	.global Tsa_GleipnirBg_Nebula_11
+Tsa_GleipnirBg_Nebula_11:  @ 0x086B3734
 	.incbin "./graphics/banim/assets/tsa/006B3734_Tsa_086B3734.map.bin.lz" @ 0x6B38FC - 0x6B3734
 
-	.global Tsa_086B38FC
-Tsa_086B38FC:  @ 0x086B38FC
+	.global Tsa_GleipnirBg_Nebula_12
+Tsa_GleipnirBg_Nebula_12:  @ 0x086B38FC
 	.incbin "./graphics/banim/assets/tsa/006B38FC_Tsa_086B38FC.map.bin.lz" @ 0x6B3AEC - 0x6B38FC
 
-	.global Tsa_086B3AEC
-Tsa_086B3AEC:  @ 0x086B3AEC
+	.global Tsa_GleipnirBg_Nebula_13
+Tsa_GleipnirBg_Nebula_13:  @ 0x086B3AEC
 	.incbin "./graphics/banim/assets/tsa/006B3AEC_Tsa_086B3AEC.map.bin.lz" @ 0x6B3CE8 - 0x6B3AEC
 
-	.global Tsa_086B3CE8
-Tsa_086B3CE8:  @ 0x086B3CE8
+	.global Tsa_GleipnirBg_Nebula_14
+Tsa_GleipnirBg_Nebula_14:  @ 0x086B3CE8
 	.incbin "./graphics/banim/assets/tsa/006B3CE8_Tsa_086B3CE8.map.bin.lz" @ 0x6B3F00 - 0x6B3CE8
 
-	.global Tsa_086B3F00
-Tsa_086B3F00:  @ 0x086B3F00
+	.global Tsa_GleipnirBg_Nebula_15
+Tsa_GleipnirBg_Nebula_15:  @ 0x086B3F00
 	.incbin "./graphics/banim/assets/tsa/006B3F00_Tsa_086B3F00.map.bin.lz" @ 0x6B411C - 0x6B3F00
 
 	.global Img_GleipnirBg_Fog
@@ -28817,52 +28817,52 @@ Img_efxCrimsonEyeBG:  @ 0x086B5A4C
 Pal_efxCrimsonEyeBG:  @ 0x086B5EAC
 	.incbin "./graphics/banim/assets/pal/006B5EAC_Pal_efxCrimsonEyeBG.gbapal" @ 0x6B5ECC - 0x6B5EAC
 
-	.global Tsa_086B5ECC
-Tsa_086B5ECC:  @ 0x086B5ECC
+	.global Tsa_efxCrimsonEyeBG_0
+Tsa_efxCrimsonEyeBG_0:  @ 0x086B5ECC
 	.incbin "./graphics/banim/assets/tsa/006B5ECC_Tsa_086B5ECC.map.bin.lz" @ 0x6B5F78 - 0x6B5ECC
 
-	.global Tsa_086B5F78
-Tsa_086B5F78:  @ 0x086B5F78
+	.global Tsa_efxCrimsonEyeBG_1
+Tsa_efxCrimsonEyeBG_1:  @ 0x086B5F78
 	.incbin "./graphics/banim/assets/tsa/006B5F78_Tsa_086B5F78.map.bin.lz" @ 0x6B603C - 0x6B5F78
 
-	.global Tsa_086B603C
-Tsa_086B603C:  @ 0x086B603C
+	.global Tsa_efxCrimsonEyeBG_2
+Tsa_efxCrimsonEyeBG_2:  @ 0x086B603C
 	.incbin "./graphics/banim/assets/tsa/006B603C_Tsa_086B603C.map.bin.lz" @ 0x6B6100 - 0x6B603C
 
-	.global Tsa_086B6100
-Tsa_086B6100:  @ 0x086B6100
+	.global Tsa_efxCrimsonEyeBG_3
+Tsa_efxCrimsonEyeBG_3:  @ 0x086B6100
 	.incbin "./graphics/banim/assets/tsa/006B6100_Tsa_086B6100.map.bin.lz" @ 0x6B61C4 - 0x6B6100
 
-	.global Tsa_086B61C4
-Tsa_086B61C4:  @ 0x086B61C4
+	.global Tsa_efxCrimsonEyeBG_4
+Tsa_efxCrimsonEyeBG_4:  @ 0x086B61C4
 	.incbin "./graphics/banim/assets/tsa/006B61C4_Tsa_086B61C4.map.bin.lz" @ 0x6B6288 - 0x6B61C4
 
-	.global Tsa_086B6288
-Tsa_086B6288:  @ 0x086B6288
+	.global Tsa_efxCrimsonEyeBG_5
+Tsa_efxCrimsonEyeBG_5:  @ 0x086B6288
 	.incbin "./graphics/banim/assets/tsa/006B6288_Tsa_086B6288.map.bin.lz" @ 0x6B634C - 0x6B6288
 
-	.global Tsa_086B634C
-Tsa_086B634C:  @ 0x086B634C
+	.global Tsa_efxCrimsonEyeBG_6
+Tsa_efxCrimsonEyeBG_6:  @ 0x086B634C
 	.incbin "./graphics/banim/assets/tsa/006B634C_Tsa_086B634C.map.bin.lz" @ 0x6B6410 - 0x6B634C
 
-	.global Tsa_086B6410
-Tsa_086B6410:  @ 0x086B6410
+	.global Tsa_efxCrimsonEyeBG_7
+Tsa_efxCrimsonEyeBG_7:  @ 0x086B6410
 	.incbin "./graphics/banim/assets/tsa/006B6410_Tsa_086B6410.map.bin.lz" @ 0x6B64BC - 0x6B6410
 
-	.global Img_086B64BC
-Img_086B64BC:  @ 0x086B64BC
+	.global Img_efxCrimsonEyeBGFinish1_0
+Img_efxCrimsonEyeBGFinish1_0:  @ 0x086B64BC
 	.incbin "./graphics/banim/assets/img/006B64BC_Img_086B64BC.4bpp.lz" @ 0x6B7DA8 - 0x6B64BC
 
-	.global Img_086B7DA8
-Img_086B7DA8:  @ 0x086B7DA8
+	.global Img_efxCrimsonEyeBGFinish1_1
+Img_efxCrimsonEyeBGFinish1_1:  @ 0x086B7DA8
 	.incbin "./graphics/banim/assets/img/006B7DA8_Img_086B7DA8.4bpp.lz" @ 0x6B9620 - 0x6B7DA8
 
-	.global Img_086B9620
-Img_086B9620:  @ 0x086B9620
+	.global Img_efxCrimsonEyeBGFinish1_2
+Img_efxCrimsonEyeBGFinish1_2:  @ 0x086B9620
 	.incbin "./graphics/banim/assets/img/006B9620_Img_086B9620.4bpp.lz" @ 0x6BAF14 - 0x6B9620
 
-	.global Img_086BAF14
-Img_086BAF14:  @ 0x086BAF14
+	.global Img_efxCrimsonEyeBGFinish1_3
+Img_efxCrimsonEyeBGFinish1_3:  @ 0x086BAF14
 	.incbin "./graphics/banim/assets/img/006BAF14_Img_086BAF14.4bpp.lz"
 
 	.global Pal_EfxCrimsonEyeBGFinishIntro
@@ -28873,20 +28873,20 @@ Pal_EfxCrimsonEyeBGFinishIntro:  @ 0x086BC804
 Pal_efxCrimsonEyeBGFinish1:  @ 0x086BC824
 	.incbin "./graphics/banim/assets/pal/006BC824_Pal_efxCrimsonEyeBGFinish1.gbapal" @ 0x6BC884 - 0x6BC824
 
-	.global Tsa_086BC884
-Tsa_086BC884:  @ 0x086BC884
+	.global Tsa_efxCrimsonEyeBGFinish1_0
+Tsa_efxCrimsonEyeBGFinish1_0:  @ 0x086BC884
 	.incbin "./graphics/banim/assets/tsa/006BC884_Tsa_086BC884.map.bin.lz" @ 0x6BCAF8 - 0x6BC884
 
-	.global Tsa_086BCAF8
-Tsa_086BCAF8:  @ 0x086BCAF8
+	.global Tsa_efxCrimsonEyeBGFinish1_1
+Tsa_efxCrimsonEyeBGFinish1_1:  @ 0x086BCAF8
 	.incbin "./graphics/banim/assets/tsa/006BCAF8_Tsa_086BCAF8.map.bin.lz" @ 0x6BCD70 - 0x6BCAF8
 
-	.global Tsa_086BCD70
-Tsa_086BCD70:  @ 0x086BCD70
+	.global Tsa_efxCrimsonEyeBGFinish1_2
+Tsa_efxCrimsonEyeBGFinish1_2:  @ 0x086BCD70
 	.incbin "./graphics/banim/assets/tsa/006BCD70_Tsa_086BCD70.map.bin.lz" @ 0x6BCFE8 - 0x6BCD70
 
-	.global Tsa_086BCFE8
-Tsa_086BCFE8:  @ 0x086BCFE8
+	.global Tsa_efxCrimsonEyeBGFinish1_3
+Tsa_efxCrimsonEyeBGFinish1_3:  @ 0x086BCFE8
 	.incbin "./graphics/banim/assets/tsa/006BCFE8_Tsa_086BCFE8.map.bin.lz" @ 0x6BD260 - 0x6BCFE8
 
 	.global Img_StoneSprites
@@ -29068,204 +29068,204 @@ AnimScr_EfxStone: @ 0x6BDA5C
     ANIMSCR_FORCE_SPRITE AnimSprite_EfxStone_12, 2
     ANIMSCR_BLOCKED
 
-	.global Img_086BDB7C
-Img_086BDB7C:  @ 0x086BDB7C
+	.global Img_Banim_14
+Img_Banim_14:  @ 0x086BDB7C
 	.incbin "./graphics/banim/assets/img/006BDB7C_Img_086BDB7C.4bpp.lz" @ 0x6BE0CC - 0x6BDB7C
 
-	.global Img_086BE0CC
-Img_086BE0CC:  @ 0x086BE0CC
+	.global Img_Stone_0
+Img_Stone_0:  @ 0x086BE0CC
 	.incbin "./graphics/banim/assets/img/006BE0CC_Img_086BE0CC.4bpp.lz" @ 0x6BE668 - 0x6BE0CC
 
-	.global Img_086BE668
-Img_086BE668:  @ 0x086BE668
+	.global Img_Stone_1
+Img_Stone_1:  @ 0x086BE668
 	.incbin "./graphics/banim/assets/img/006BE668_Img_086BE668.4bpp.lz" @ 0x6BEC5C - 0x6BE668
 
-	.global Img_086BEC5C
-Img_086BEC5C:  @ 0x086BEC5C
+	.global Img_Stone_2
+Img_Stone_2:  @ 0x086BEC5C
 	.incbin "./graphics/banim/assets/img/006BEC5C_Img_086BEC5C.4bpp.lz" @ 0x6BF2F4 - 0x6BEC5C
 
-	.global Img_086BF2F4
-Img_086BF2F4:  @ 0x086BF2F4
+	.global Img_Stone_3
+Img_Stone_3:  @ 0x086BF2F4
 	.incbin "./graphics/banim/assets/img/006BF2F4_Img_086BF2F4.4bpp.lz" @ 0x6BF9B0 - 0x6BF2F4
 
-	.global Img_086BF9B0
-Img_086BF9B0:  @ 0x086BF9B0
+	.global Img_Stone_4
+Img_Stone_4:  @ 0x086BF9B0
 	.incbin "./graphics/banim/assets/img/006BF9B0_Img_086BF9B0.4bpp.lz" @ 0x6C0110 - 0x6BF9B0
 
-	.global Img_086C0110
-Img_086C0110:  @ 0x086C0110
+	.global Img_Stone_5
+Img_Stone_5:  @ 0x086C0110
 	.incbin "./graphics/banim/assets/img/006C0110_Img_086C0110.4bpp.lz" @ 0x6C0924 - 0x6C0110
 
-	.global Img_086C0924
-Img_086C0924:  @ 0x086C0924
+	.global Img_Stone_6
+Img_Stone_6:  @ 0x086C0924
 	.incbin "./graphics/banim/assets/img/006C0924_Img_086C0924.4bpp.lz" @ 0x6C119C - 0x6C0924
 
-	.global Img_086C119C
-Img_086C119C:  @ 0x086C119C
+	.global Img_Stone_7
+Img_Stone_7:  @ 0x086C119C
 	.incbin "./graphics/banim/assets/img/006C119C_Img_086C119C.4bpp.lz" @ 0x6C1AD0 - 0x6C119C
 
-	.global Img_086C1AD0
-Img_086C1AD0:  @ 0x086C1AD0
+	.global Img_Stone_8
+Img_Stone_8:  @ 0x086C1AD0
 	.incbin "./graphics/banim/assets/img/006C1AD0_Img_086C1AD0.4bpp.lz" @ 0x6C2438 - 0x6C1AD0
 
-	.global Img_086C2438
-Img_086C2438:  @ 0x086C2438
+	.global Img_Stone_9
+Img_Stone_9:  @ 0x086C2438
 	.incbin "./graphics/banim/assets/img/006C2438_Img_086C2438.4bpp.lz" @ 0x6C2DA8 - 0x6C2438
 
-	.global Img_086C2DA8
-Img_086C2DA8:  @ 0x086C2DA8
+	.global Img_Stone_10
+Img_Stone_10:  @ 0x086C2DA8
 	.incbin "./graphics/banim/assets/img/006C2DA8_Img_086C2DA8.4bpp.lz" @ 0x6C375C - 0x6C2DA8
 
-	.global Img_086C375C
-Img_086C375C:  @ 0x086C375C
+	.global Img_Stone_11
+Img_Stone_11:  @ 0x086C375C
 	.incbin "./graphics/banim/assets/img/006C375C_Img_086C375C.4bpp.lz" @ 0x6C40F4 - 0x6C375C
 
-	.global Img_086C40F4
-Img_086C40F4:  @ 0x086C40F4
+	.global Img_Stone_12
+Img_Stone_12:  @ 0x086C40F4
 	.incbin "./graphics/banim/assets/img/006C40F4_Img_086C40F4.4bpp.lz" @ 0x6C4AB4 - 0x6C40F4
 
-	.global Img_086C4AB4
-Img_086C4AB4:  @ 0x086C4AB4
+	.global Img_Stone_13
+Img_Stone_13:  @ 0x086C4AB4
 	.incbin "./graphics/banim/assets/img/006C4AB4_Img_086C4AB4.4bpp.lz" @ 0x6C53CC - 0x6C4AB4
 
-	.global Img_086C53CC
-Img_086C53CC:  @ 0x086C53CC
+	.global Img_Stone_14
+Img_Stone_14:  @ 0x086C53CC
 	.incbin "./graphics/banim/assets/img/006C53CC_Img_086C53CC.4bpp.lz" @ 0x6C5D20 - 0x6C53CC
 
-	.global Img_086C5D20
-Img_086C5D20:  @ 0x086C5D20
+	.global Img_Stone_15
+Img_Stone_15:  @ 0x086C5D20
 	.incbin "./graphics/banim/assets/img/006C5D20_Img_086C5D20.4bpp.lz" @ 0x6C669C - 0x6C5D20
 
-	.global Img_086C669C
-Img_086C669C:  @ 0x086C669C
+	.global Img_Stone_16
+Img_Stone_16:  @ 0x086C669C
 	.incbin "./graphics/banim/assets/img/006C669C_Img_086C669C.4bpp.lz" @ 0x6C7010 - 0x6C669C
 
-	.global Img_086C7010
-Img_086C7010:  @ 0x086C7010
+	.global Img_Stone_17
+Img_Stone_17:  @ 0x086C7010
 	.incbin "./graphics/banim/assets/img/006C7010_Img_086C7010.4bpp.lz" @ 0x6C790C - 0x6C7010
 
 	.global Pal_StoneBg
 Pal_StoneBg:  @ 0x086C790C
 	.incbin "./graphics/banim/assets/pal/006C790C_Pal_StoneBg.gbapal"
 
-	.global Pal_StoneBg_086C792C
-Pal_StoneBg_086C792C:  @ 0x086C792C
+	.global Pal_StoneBg_0
+Pal_StoneBg_0:  @ 0x086C792C
 	.incbin "./graphics/banim/assets/pal/006C792C_Pal_StoneBg_086C792C.gbapal"
 
-	.global Pal_StoneBg_086C794C
-Pal_StoneBg_086C794C:  @ 0x086C794C
+	.global Pal_StoneBg_1
+Pal_StoneBg_1:  @ 0x086C794C
 	.incbin "./graphics/banim/assets/pal/006C794C_Pal_StoneBg_086C794C.gbapal" @ 0x6C796C - 0x6C794C
 
-	.global Tsa_086C796C
-Tsa_086C796C:  @ 0x086C796C
+	.global Tsa_Stone_0
+Tsa_Stone_0:  @ 0x086C796C
 	.incbin "./graphics/banim/assets/tsa/006C796C_Tsa_086C796C.map.bin.lz" @ 0x6C7A2C - 0x6C796C
 
-	.global Tsa_086C7A2C
-Tsa_086C7A2C:  @ 0x086C7A2C
+	.global Tsa_Stone_1
+Tsa_Stone_1:  @ 0x086C7A2C
 	.incbin "./graphics/banim/assets/tsa/006C7A2C_Tsa_086C7A2C.map.bin.lz" @ 0x6C7AF8 - 0x6C7A2C
 
-	.global Tsa_086C7AF8
-Tsa_086C7AF8:  @ 0x086C7AF8
+	.global Tsa_Stone_2
+Tsa_Stone_2:  @ 0x086C7AF8
 	.incbin "./graphics/banim/assets/tsa/006C7AF8_Tsa_086C7AF8.map.bin.lz" @ 0x6C7BD0 - 0x6C7AF8
 
-	.global Tsa_086C7BD0
-Tsa_086C7BD0:  @ 0x086C7BD0
+	.global Tsa_Stone_3
+Tsa_Stone_3:  @ 0x086C7BD0
 	.incbin "./graphics/banim/assets/tsa/006C7BD0_Tsa_086C7BD0.map.bin.lz" @ 0x6C7CBC - 0x6C7BD0
 
-	.global Tsa_086C7CBC
-Tsa_086C7CBC:  @ 0x086C7CBC
+	.global Tsa_Stone_4
+Tsa_Stone_4:  @ 0x086C7CBC
 	.incbin "./graphics/banim/assets/tsa/006C7CBC_Tsa_086C7CBC.map.bin.lz" @ 0x6C7DC0 - 0x6C7CBC
 
-	.global Tsa_086C7DC0
-Tsa_086C7DC0:  @ 0x086C7DC0
+	.global Tsa_Stone_5
+Tsa_Stone_5:  @ 0x086C7DC0
 	.incbin "./graphics/banim/assets/tsa/006C7DC0_Tsa_086C7DC0.map.bin.lz" @ 0x6C7ED4 - 0x6C7DC0
 
-	.global Tsa_086C7ED4
-Tsa_086C7ED4:  @ 0x086C7ED4
+	.global Tsa_Stone_6
+Tsa_Stone_6:  @ 0x086C7ED4
 	.incbin "./graphics/banim/assets/tsa/006C7ED4_Tsa_086C7ED4.map.bin.lz" @ 0x6C7FFC - 0x6C7ED4
 
-	.global Tsa_086C7FFC
-Tsa_086C7FFC:  @ 0x086C7FFC
+	.global Tsa_Stone_7
+Tsa_Stone_7:  @ 0x086C7FFC
 	.incbin "./graphics/banim/assets/tsa/006C7FFC_Tsa_086C7FFC.map.bin.lz" @ 0x6C8138 - 0x6C7FFC
 
-	.global Tsa_086C8138
-Tsa_086C8138:  @ 0x086C8138
+	.global Tsa_Stone_8
+Tsa_Stone_8:  @ 0x086C8138
 	.incbin "./graphics/banim/assets/tsa/006C8138_Tsa_086C8138.map.bin.lz" @ 0x6C828C - 0x6C8138
 
-	.global Tsa_086C828C
-Tsa_086C828C:  @ 0x086C828C
+	.global Tsa_Stone_9
+Tsa_Stone_9:  @ 0x086C828C
 	.incbin "./graphics/banim/assets/tsa/006C828C_Tsa_086C828C.map.bin.lz" @ 0x6C8404 - 0x6C828C
 
-	.global Tsa_086C8404
-Tsa_086C8404:  @ 0x086C8404
+	.global Tsa_Stone_10
+Tsa_Stone_10:  @ 0x086C8404
 	.incbin "./graphics/banim/assets/tsa/006C8404_Tsa_086C8404.map.bin.lz" @ 0x6C8570 - 0x6C8404
 
-	.global Tsa_086C8570
-Tsa_086C8570:  @ 0x086C8570
+	.global Tsa_Stone_11
+Tsa_Stone_11:  @ 0x086C8570
 	.incbin "./graphics/banim/assets/tsa/006C8570_Tsa_086C8570.map.bin.lz" @ 0x6C86E4 - 0x6C8570
 
-	.global Tsa_086C86E4
-Tsa_086C86E4:  @ 0x086C86E4
+	.global Tsa_Stone_12
+Tsa_Stone_12:  @ 0x086C86E4
 	.incbin "./graphics/banim/assets/tsa/006C86E4_Tsa_086C86E4.map.bin.lz" @ 0x6C8860 - 0x6C86E4
 
-	.global Tsa_086C8860
-Tsa_086C8860:  @ 0x086C8860
+	.global Tsa_Stone_13
+Tsa_Stone_13:  @ 0x086C8860
 	.incbin "./graphics/banim/assets/tsa/006C8860_Tsa_086C8860.map.bin.lz" @ 0x6C89EC - 0x6C8860
 
-	.global Tsa_086C89EC
-Tsa_086C89EC:  @ 0x086C89EC
+	.global Tsa_Stone_14
+Tsa_Stone_14:  @ 0x086C89EC
 	.incbin "./graphics/banim/assets/tsa/006C89EC_Tsa_086C89EC.map.bin.lz" @ 0x6C8B30 - 0x6C89EC
 
-	.global Tsa_086C8B30
-Tsa_086C8B30:  @ 0x086C8B30
+	.global Tsa_Stone_15
+Tsa_Stone_15:  @ 0x086C8B30
 	.incbin "./graphics/banim/assets/tsa/006C8B30_Tsa_086C8B30.map.bin.lz" @ 0x6C8C84 - 0x6C8B30
 
-	.global Tsa_086C8C84
-Tsa_086C8C84:  @ 0x086C8C84
+	.global Tsa_Stone_16
+Tsa_Stone_16:  @ 0x086C8C84
 	.incbin "./graphics/banim/assets/tsa/006C8C84_Tsa_086C8C84.map.bin.lz" @ 0x6C8DE8 - 0x6C8C84
 
-	.global Tsa_086C8DE8
-Tsa_086C8DE8:  @ 0x086C8DE8
+	.global Tsa_Stone_17
+Tsa_Stone_17:  @ 0x086C8DE8
 	.incbin "./graphics/banim/assets/tsa/006C8DE8_Tsa_086C8DE8.map.bin.lz" @ 0x6C8F4C - 0x6C8DE8
 
-	.global Tsa_086C8F4C
-Tsa_086C8F4C:  @ 0x086C8F4C
+	.global Tsa_Stone_18
+Tsa_Stone_18:  @ 0x086C8F4C
 	.incbin "./graphics/banim/assets/tsa/006C8F4C_Tsa_086C8F4C.map.bin.lz" @ 0x6C90A4 - 0x6C8F4C
 
-	.global Img_086C90A4
-Img_086C90A4:  @ 0x086C90A4
+	.global Img_Banim_15
+Img_Banim_15:  @ 0x086C90A4
 	.incbin "./graphics/banim/assets/img/006C90A4_Img_086C90A4.4bpp.lz"
 
-	.global Pal_086C93FC
-Pal_086C93FC:  @ 0x086C93FC
+	.global Pal_Banim_6
+Pal_Banim_6:  @ 0x086C93FC
 	.incbin "./graphics/banim/assets/pal/006C93FC_Pal_086C93FC.gbapal"
 
-.global AnimSprite_086C941C
-AnimSprite_086C941C:  @ 0x6C941C
+.global AnimSprite_Banim_27
+AnimSprite_Banim_27:  @ 0x6C941C
     ANIM_SPRITE ATTR0_WIDE, ATTR1_SIZE_32, 0x0000, -32, -16
     ANIM_SPRITE ATTR0_SQUARE, ATTR1_SIZE_8, 0x001F, 1, -34
     ANIM_SPRITE_END
 
-.global AnimSprite_086C9440
-AnimSprite_086C9440:  @ 0x6C9440
+.global AnimSprite_Banim_28
+AnimSprite_Banim_28:  @ 0x6C9440
     ANIM_SPRITE ATTR0_WIDE, ATTR1_SIZE_32, 0x0004, -32, -16
     ANIM_SPRITE ATTR0_SQUARE, ATTR1_SIZE_16, 0x0008, 0, -16
     ANIM_SPRITE_END
 
-.global AnimSprite_086C9464
-AnimSprite_086C9464:  @ 0x6C9464
+.global AnimSprite_Banim_29
+AnimSprite_Banim_29:  @ 0x6C9464
     ANIM_SPRITE ATTR0_WIDE, ATTR1_SIZE_32, 0x000A, -32, -16
     ANIM_SPRITE ATTR0_WIDE, ATTR1_SIZE_32, 0x000E, 0, -16
     ANIM_SPRITE_END
 
-.global AnimSprite_086C9488
-AnimSprite_086C9488:  @ 0x6C9488
+.global AnimSprite_Banim_30
+AnimSprite_Banim_30:  @ 0x6C9488
     ANIM_SPRITE ATTR0_WIDE, ATTR1_SIZE_32, 0x0012, -16, -16
     ANIM_SPRITE ATTR0_SQUARE, ATTR1_SIZE_16, 0x0016, 16, -16
     ANIM_SPRITE_END
 
-.global AnimSprite_086C94AC
-AnimSprite_086C94AC:  @ 0x6C94AC
+.global AnimSprite_Banim_31
+AnimSprite_Banim_31:  @ 0x6C94AC
     ANIM_SPRITE ATTR0_SQUARE, ATTR1_SIZE_16, 0x0018, 8, -16
     ANIM_SPRITE ATTR0_TALL, ATTR1_SIZE_8, 0x001A, 24, -16
     ANIM_SPRITE ATTR0_WIDE, ATTR1_SIZE_8, 0x001B, -16, -16
@@ -29273,74 +29273,74 @@ AnimSprite_086C94AC:  @ 0x6C94AC
     ANIM_SPRITE ATTR0_SQUARE, ATTR1_SIZE_16, 0x0044, 16, -32
     ANIM_SPRITE_END
 
-.global AnimSprite_086C94F4
-AnimSprite_086C94F4:  @ 0x6C94F4
+.global AnimSprite_Banim_32
+AnimSprite_Banim_32:  @ 0x6C94F4
     ANIM_SPRITE ATTR0_WIDE, ATTR1_SIZE_32, 0x0046, -16, -32
     ANIM_SPRITE ATTR0_SQUARE, ATTR1_SIZE_16, 0x004A, 16, -32
     ANIM_SPRITE ATTR0_SQUARE, ATTR1_SIZE_8, 0x003B, -24, -24
     ANIM_SPRITE ATTR0_SQUARE, ATTR1_SIZE_8, 0x001F, -23, -16
     ANIM_SPRITE_END
 
-.global AnimSprite_086C9530
-AnimSprite_086C9530:  @ 0x6C9530
+.global AnimSprite_Banim_33
+AnimSprite_Banim_33:  @ 0x6C9530
     ANIM_SPRITE ATTR0_WIDE, ATTR1_SIZE_32, 0x004C, -32, -32
     ANIM_SPRITE ATTR0_WIDE, ATTR1_SIZE_32, 0x0050, 0, -32
     ANIM_SPRITE_END
 
-.global AnimSprite_086C9554
-AnimSprite_086C9554:  @ 0x6C9554
+.global AnimSprite_Banim_34
+AnimSprite_Banim_34:  @ 0x6C9554
     ANIM_SPRITE ATTR0_WIDE, ATTR1_SIZE_32, 0x0054, -32, -32
     ANIM_SPRITE ATTR0_TALL, ATTR1_SIZE_8, 0x0058, 0, -32
     ANIM_SPRITE ATTR0_SQUARE, ATTR1_SIZE_8, 0x001D, 8, -32
     ANIM_SPRITE ATTR0_SQUARE, ATTR1_SIZE_8, 0x001E, 16, -32
     ANIM_SPRITE_END
 
-.global AnimSprite_086C9590
-AnimSprite_086C9590:  @ 0x6C9590
+.global AnimSprite_Banim_35
+AnimSprite_Banim_35:  @ 0x6C9590
     ANIM_SPRITE ATTR0_WIDE, ATTR1_SIZE_32, 0x0059, -32, -32
     ANIM_SPRITE ATTR0_SQUARE, ATTR1_SIZE_8, 0x001F, 16, -32
     ANIM_SPRITE ATTR0_SQUARE, ATTR1_SIZE_8, 0x001E, 0, -34
     ANIM_SPRITE_END
 
-	.global AnimScr_086C95C0
-AnimScr_086C95C0:  @ 0x086C95C0
-    ANIMSCR_FORCE_SPRITE AnimSprite_086C941C, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_086C9440, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_086C9464, 3
-    ANIMSCR_FORCE_SPRITE AnimSprite_086C9488, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_086C94AC, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_086C94F4, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_086C9530, 3
-    ANIMSCR_FORCE_SPRITE AnimSprite_086C9554, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_086C9590, 2
+	.global AnimScr_Banim_0
+AnimScr_Banim_0:  @ 0x086C95C0
+    ANIMSCR_FORCE_SPRITE AnimSprite_Banim_27, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_Banim_28, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_Banim_29, 3
+    ANIMSCR_FORCE_SPRITE AnimSprite_Banim_30, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_Banim_31, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_Banim_32, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_Banim_33, 3
+    ANIMSCR_FORCE_SPRITE AnimSprite_Banim_34, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_Banim_35, 2
     ANIMSCR_LOOP
 
-.global AnimSprite_086C95E8
-AnimSprite_086C95E8:  @ 0x6C95E8
+.global AnimSprite_Banim_36
+AnimSprite_Banim_36:  @ 0x6C95E8
     ANIM_SPRITE_XFLIP ATTR0_WIDE, ATTR1_SIZE_32, 0x0000, 0, -16
     ANIM_SPRITE_XFLIP ATTR0_SQUARE, ATTR1_SIZE_8, 0x001F, -9, -34
     ANIM_SPRITE_END
 
-.global AnimSprite_086C960C
-AnimSprite_086C960C:  @ 0x6C960C
+.global AnimSprite_Banim_37
+AnimSprite_Banim_37:  @ 0x6C960C
     ANIM_SPRITE_XFLIP ATTR0_WIDE, ATTR1_SIZE_32, 0x0004, 0, -16
     ANIM_SPRITE_XFLIP ATTR0_SQUARE, ATTR1_SIZE_16, 0x0008, -16, -16
     ANIM_SPRITE_END
 
-.global AnimSprite_086C9630
-AnimSprite_086C9630:  @ 0x6C9630
+.global AnimSprite_Banim_38
+AnimSprite_Banim_38:  @ 0x6C9630
     ANIM_SPRITE_XFLIP ATTR0_WIDE, ATTR1_SIZE_32, 0x000A, 0, -16
     ANIM_SPRITE_XFLIP ATTR0_WIDE, ATTR1_SIZE_32, 0x000E, -32, -16
     ANIM_SPRITE_END
 
-.global AnimSprite_086C9654
-AnimSprite_086C9654:  @ 0x6C9654
+.global AnimSprite_Banim_39
+AnimSprite_Banim_39:  @ 0x6C9654
     ANIM_SPRITE_XFLIP ATTR0_WIDE, ATTR1_SIZE_32, 0x0012, -16, -16
     ANIM_SPRITE_XFLIP ATTR0_SQUARE, ATTR1_SIZE_16, 0x0016, -32, -16
     ANIM_SPRITE_END
 
-.global AnimSprite_086C9678
-AnimSprite_086C9678:  @ 0x6C9678
+.global AnimSprite_Banim_40
+AnimSprite_Banim_40:  @ 0x6C9678
     ANIM_SPRITE_XFLIP ATTR0_SQUARE, ATTR1_SIZE_16, 0x0018, -24, -16
     ANIM_SPRITE_XFLIP ATTR0_TALL, ATTR1_SIZE_8, 0x001A, -32, -16
     ANIM_SPRITE_XFLIP ATTR0_WIDE, ATTR1_SIZE_8, 0x001B, 0, -16
@@ -29348,386 +29348,386 @@ AnimSprite_086C9678:  @ 0x6C9678
     ANIM_SPRITE_XFLIP ATTR0_SQUARE, ATTR1_SIZE_16, 0x0044, -32, -32
     ANIM_SPRITE_END
 
-.global AnimSprite_086C96C0
-AnimSprite_086C96C0:  @ 0x6C96C0
+.global AnimSprite_Banim_41
+AnimSprite_Banim_41:  @ 0x6C96C0
     ANIM_SPRITE_XFLIP ATTR0_WIDE, ATTR1_SIZE_32, 0x0046, -16, -32
     ANIM_SPRITE_XFLIP ATTR0_SQUARE, ATTR1_SIZE_16, 0x004A, -32, -32
     ANIM_SPRITE_XFLIP ATTR0_SQUARE, ATTR1_SIZE_8, 0x003B, 16, -24
     ANIM_SPRITE_XFLIP ATTR0_SQUARE, ATTR1_SIZE_8, 0x001F, 15, -16
     ANIM_SPRITE_END
 
-.global AnimSprite_086C96FC
-AnimSprite_086C96FC:  @ 0x6C96FC
+.global AnimSprite_Banim_42
+AnimSprite_Banim_42:  @ 0x6C96FC
     ANIM_SPRITE_XFLIP ATTR0_WIDE, ATTR1_SIZE_32, 0x004C, 0, -32
     ANIM_SPRITE_XFLIP ATTR0_WIDE, ATTR1_SIZE_32, 0x0050, -32, -32
     ANIM_SPRITE_END
 
-.global AnimSprite_086C9720
-AnimSprite_086C9720:  @ 0x6C9720
+.global AnimSprite_Banim_43
+AnimSprite_Banim_43:  @ 0x6C9720
     ANIM_SPRITE_XFLIP ATTR0_WIDE, ATTR1_SIZE_32, 0x0054, 0, -32
     ANIM_SPRITE_XFLIP ATTR0_TALL, ATTR1_SIZE_8, 0x0058, -8, -32
     ANIM_SPRITE_XFLIP ATTR0_SQUARE, ATTR1_SIZE_8, 0x001D, -16, -32
     ANIM_SPRITE_XFLIP ATTR0_SQUARE, ATTR1_SIZE_8, 0x001E, -24, -32
     ANIM_SPRITE_END
 
-.global AnimSprite_086C975C
-AnimSprite_086C975C:  @ 0x6C975C
+.global AnimSprite_Banim_44
+AnimSprite_Banim_44:  @ 0x6C975C
     ANIM_SPRITE_XFLIP ATTR0_WIDE, ATTR1_SIZE_32, 0x0059, 0, -32
     ANIM_SPRITE_XFLIP ATTR0_SQUARE, ATTR1_SIZE_8, 0x001F, -24, -32
     ANIM_SPRITE_XFLIP ATTR0_SQUARE, ATTR1_SIZE_8, 0x001E, -8, -34
     ANIM_SPRITE_END
 
-.global AnimScr_086C978C
-AnimScr_086C978C: @ 0x6C978C
-    ANIMSCR_FORCE_SPRITE AnimSprite_086C95E8, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_086C960C, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_086C9630, 3
-    ANIMSCR_FORCE_SPRITE AnimSprite_086C9654, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_086C9678, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_086C96C0, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_086C96FC, 3
-    ANIMSCR_FORCE_SPRITE AnimSprite_086C9720, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_086C975C, 2
+.global AnimScr_Banim_1
+AnimScr_Banim_1: @ 0x6C978C
+    ANIMSCR_FORCE_SPRITE AnimSprite_Banim_36, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_Banim_37, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_Banim_38, 3
+    ANIMSCR_FORCE_SPRITE AnimSprite_Banim_39, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_Banim_40, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_Banim_41, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_Banim_42, 3
+    ANIMSCR_FORCE_SPRITE AnimSprite_Banim_43, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_Banim_44, 2
     ANIMSCR_LOOP
 
-	.global Img_086C97B4
-Img_086C97B4:  @ 0x086C97B4
+	.global Img_EvilEye_0
+Img_EvilEye_0:  @ 0x086C97B4
 	.incbin "./graphics/banim/assets/img/006C97B4_Img_086C97B4.4bpp.lz" @ 0x6C9DAC - 0x6C97B4
 
-	.global Img_086C9DAC
-Img_086C9DAC:  @ 0x086C9DAC
+	.global Img_EvilEye_1
+Img_EvilEye_1:  @ 0x086C9DAC
 	.incbin "./graphics/banim/assets/img/006C9DAC_Img_086C9DAC.4bpp.lz" @ 0x6CA3C4 - 0x6C9DAC
 
-	.global Img_086CA3C4
-Img_086CA3C4:  @ 0x086CA3C4
+	.global Img_EvilEye_2
+Img_EvilEye_2:  @ 0x086CA3C4
 	.incbin "./graphics/banim/assets/img/006CA3C4_Img_086CA3C4.4bpp.lz" @ 0x6CAA94 - 0x6CA3C4
 
-	.global Img_086CAA94
-Img_086CAA94:  @ 0x086CAA94
+	.global Img_EvilEye_3
+Img_EvilEye_3:  @ 0x086CAA94
 	.incbin "./graphics/banim/assets/img/006CAA94_Img_086CAA94.4bpp.lz" @ 0x6CB1C4 - 0x6CAA94
 
-	.global Img_086CB1C4
-Img_086CB1C4:  @ 0x086CB1C4
+	.global Img_EvilEye_4
+Img_EvilEye_4:  @ 0x086CB1C4
 	.incbin "./graphics/banim/assets/img/006CB1C4_Img_086CB1C4.4bpp.lz" @ 0x6CB8F0 - 0x6CB1C4
 
-	.global Img_086CB8F0
-Img_086CB8F0:  @ 0x086CB8F0
+	.global Img_EvilEye_5
+Img_EvilEye_5:  @ 0x086CB8F0
 	.incbin "./graphics/banim/assets/img/006CB8F0_Img_086CB8F0.4bpp.lz" @ 0x6CC0E4 - 0x6CB8F0
 
-	.global Img_086CC0E4
-Img_086CC0E4:  @ 0x086CC0E4
+	.global Img_EvilEye_6
+Img_EvilEye_6:  @ 0x086CC0E4
 	.incbin "./graphics/banim/assets/img/006CC0E4_Img_086CC0E4.4bpp.lz" @ 0x6CC8A0 - 0x6CC0E4
 
-	.global Img_086CC8A0
-Img_086CC8A0:  @ 0x086CC8A0
+	.global Img_EvilEye_7
+Img_EvilEye_7:  @ 0x086CC8A0
 	.incbin "./graphics/banim/assets/img/006CC8A0_Img_086CC8A0.4bpp.lz" @ 0x6CD098 - 0x6CC8A0
 
-	.global Img_086CD098
-Img_086CD098:  @ 0x086CD098
+	.global Img_EvilEye_8
+Img_EvilEye_8:  @ 0x086CD098
 	.incbin "./graphics/banim/assets/img/006CD098_Img_086CD098.4bpp.lz" @ 0x6CD988 - 0x6CD098
 
-	.global Img_086CD988
-Img_086CD988:  @ 0x086CD988
+	.global Img_EvilEye_9
+Img_EvilEye_9:  @ 0x086CD988
 	.incbin "./graphics/banim/assets/img/006CD988_Img_086CD988.4bpp.lz" @ 0x6CE15C - 0x6CD988
 
-	.global Img_086CE15C
-Img_086CE15C:  @ 0x086CE15C
+	.global Img_EvilEye_10
+Img_EvilEye_10:  @ 0x086CE15C
 	.incbin "./graphics/banim/assets/img/006CE15C_Img_086CE15C.4bpp.lz" @ 0x6CE9FC - 0x6CE15C
 
-	.global Img_086CE9FC
-Img_086CE9FC:  @ 0x086CE9FC
+	.global Img_EvilEye_11
+Img_EvilEye_11:  @ 0x086CE9FC
 	.incbin "./graphics/banim/assets/img/006CE9FC_Img_086CE9FC.4bpp.lz" @ 0x6CF244 - 0x6CE9FC
 
-	.global Img_086CF244
-Img_086CF244:  @ 0x086CF244
+	.global Img_EvilEye_12
+Img_EvilEye_12:  @ 0x086CF244
 	.incbin "./graphics/banim/assets/img/006CF244_Img_086CF244.4bpp.lz" @ 0x6CF9D8 - 0x6CF244
 
-	.global Img_086CF9D8
-Img_086CF9D8:  @ 0x086CF9D8
+	.global Img_EvilEye_13
+Img_EvilEye_13:  @ 0x086CF9D8
 	.incbin "./graphics/banim/assets/img/006CF9D8_Img_086CF9D8.4bpp.lz" @ 0x6D0268 - 0x6CF9D8
 
-	.global Img_086D0268
-Img_086D0268:  @ 0x086D0268
+	.global Img_EvilEye_14
+Img_EvilEye_14:  @ 0x086D0268
 	.incbin "./graphics/banim/assets/img/006D0268_Img_086D0268.4bpp.lz" @ 0x6D0B24 - 0x6D0268
 
-	.global Img_086D0B24
-Img_086D0B24:  @ 0x086D0B24
+	.global Img_EvilEye_15
+Img_EvilEye_15:  @ 0x086D0B24
 	.incbin "./graphics/banim/assets/img/006D0B24_Img_086D0B24.4bpp.lz" @ 0x6D134C - 0x6D0B24
 
-	.global Img_086D134C
-Img_086D134C:  @ 0x086D134C
+	.global Img_EvilEye_16
+Img_EvilEye_16:  @ 0x086D134C
 	.incbin "./graphics/banim/assets/img/006D134C_Img_086D134C.4bpp.lz" @ 0x6D1B6C - 0x6D134C
 
-	.global Img_086D1B6C
-Img_086D1B6C:  @ 0x086D1B6C
+	.global Img_EvilEye_17
+Img_EvilEye_17:  @ 0x086D1B6C
 	.incbin "./graphics/banim/assets/img/006D1B6C_Img_086D1B6C.4bpp.lz" @ 0x6D2400 - 0x6D1B6C
 
-	.global Img_086D2400
-Img_086D2400:  @ 0x086D2400
+	.global Img_EvilEye_18
+Img_EvilEye_18:  @ 0x086D2400
 	.incbin "./graphics/banim/assets/img/006D2400_Img_086D2400.4bpp.lz" @ 0x6D2BE4 - 0x6D2400
 
-	.global Img_086D2BE4
-Img_086D2BE4:  @ 0x086D2BE4
+	.global Img_EvilEye_19
+Img_EvilEye_19:  @ 0x086D2BE4
 	.incbin "./graphics/banim/assets/img/006D2BE4_Img_086D2BE4.4bpp.lz" @ 0x6D3454 - 0x6D2BE4
 
-	.global Pal_086D3454
-Pal_086D3454:  @ 0x086D3454
+	.global Pal_EvilEye_0
+Pal_EvilEye_0:  @ 0x086D3454
 	.incbin "./graphics/banim/assets/pal/006D3454_Pal_086D3454.gbapal" @ 0x6D3474 - 0x6D3454
 
-	.global Pal_086D3474
-Pal_086D3474:  @ 0x086D3474
+	.global Pal_EvilEye_1
+Pal_EvilEye_1:  @ 0x086D3474
 	.incbin "./graphics/banim/assets/pal/006D3474_Pal_086D3474.gbapal" @ 0x6D3494 - 0x6D3474
 
-	.global Pal_086D3494
-Pal_086D3494:  @ 0x086D3494
+	.global Pal_EvilEye_2
+Pal_EvilEye_2:  @ 0x086D3494
 	.incbin "./graphics/banim/assets/pal/006D3494_Pal_086D3494.gbapal" @ 0x6D34B4 - 0x6D3494
 
-	.global Pal_086D34B4
-Pal_086D34B4:  @ 0x086D34B4
+	.global Pal_EvilEye_3
+Pal_EvilEye_3:  @ 0x086D34B4
 	.incbin "./graphics/banim/assets/pal/006D34B4_Pal_086D34B4.gbapal" @ 0x6D34D4 - 0x6D34B4
 
-	.global Pal_086D34D4
-Pal_086D34D4:  @ 0x086D34D4
+	.global Pal_EvilEye_4
+Pal_EvilEye_4:  @ 0x086D34D4
 	.incbin "./graphics/banim/assets/pal/006D34D4_Pal_086D34D4.gbapal" @ 0x6D34F4 - 0x6D34D4
 
-	.global Pal_086D34F4
-Pal_086D34F4:  @ 0x086D34F4
+	.global Pal_EvilEye_5
+Pal_EvilEye_5:  @ 0x086D34F4
 	.incbin "./graphics/banim/assets/pal/006D34F4_Pal_086D34F4.gbapal" @ 0x6D3514 - 0x6D34F4
 
-	.global Pal_086D3514
-Pal_086D3514:  @ 0x086D3514
+	.global Pal_EvilEye_6
+Pal_EvilEye_6:  @ 0x086D3514
 	.incbin "./graphics/banim/assets/pal/006D3514_Pal_086D3514.gbapal" @ 0x6D3534 - 0x6D3514
 
-	.global Pal_086D3534
-Pal_086D3534:  @ 0x086D3534
+	.global Pal_EvilEye_7
+Pal_EvilEye_7:  @ 0x086D3534
 	.incbin "./graphics/banim/assets/pal/006D3534_Pal_086D3534.gbapal" @ 0x6D3554 - 0x6D3534
 
-	.global Pal_086D3554
-Pal_086D3554:  @ 0x086D3554
+	.global Pal_EvilEye_8
+Pal_EvilEye_8:  @ 0x086D3554
 	.incbin "./graphics/banim/assets/pal/006D3554_Pal_086D3554.gbapal" @ 0x6D3574 - 0x6D3554
 
-	.global Pal_086D3574
-Pal_086D3574:  @ 0x086D3574
+	.global Pal_EvilEye_9
+Pal_EvilEye_9:  @ 0x086D3574
 	.incbin "./graphics/banim/assets/pal/006D3574_Pal_086D3574.gbapal" @ 0x6D3594 - 0x6D3574
 
-	.global Pal_086D3594
-Pal_086D3594:  @ 0x086D3594
+	.global Pal_EvilEye_10
+Pal_EvilEye_10:  @ 0x086D3594
 	.incbin "./graphics/banim/assets/pal/006D3594_Pal_086D3594.gbapal" @ 0x6D35B4 - 0x6D3594
 
-	.global Pal_086D35B4
-Pal_086D35B4:  @ 0x086D35B4
+	.global Pal_EvilEye_11
+Pal_EvilEye_11:  @ 0x086D35B4
 	.incbin "./graphics/banim/assets/pal/006D35B4_Pal_086D35B4.gbapal" @ 0x6D35D4 - 0x6D35B4
 
-	.global Pal_086D35D4
-Pal_086D35D4:  @ 0x086D35D4
+	.global Pal_EvilEye_12
+Pal_EvilEye_12:  @ 0x086D35D4
 	.incbin "./graphics/banim/assets/pal/006D35D4_Pal_086D35D4.gbapal" @ 0x6D35F4 - 0x6D35D4
 
-	.global Pal_086D35F4
-Pal_086D35F4:  @ 0x086D35F4
+	.global Pal_EvilEye_13
+Pal_EvilEye_13:  @ 0x086D35F4
 	.incbin "./graphics/banim/assets/pal/006D35F4_Pal_086D35F4.gbapal" @ 0x6D3614 - 0x6D35F4
 
-	.global Pal_086D3614
-Pal_086D3614:  @ 0x086D3614
+	.global Pal_EvilEye_14
+Pal_EvilEye_14:  @ 0x086D3614
 	.incbin "./graphics/banim/assets/pal/006D3614_Pal_086D3614.gbapal" @ 0x6D3634 - 0x6D3614
 
-	.global Pal_086D3634
-Pal_086D3634:  @ 0x086D3634
+	.global Pal_EvilEye_15
+Pal_EvilEye_15:  @ 0x086D3634
 	.incbin "./graphics/banim/assets/pal/006D3634_Pal_086D3634.gbapal" @ 0x6D3654 - 0x6D3634
 
-	.global Pal_086D3654
-Pal_086D3654:  @ 0x086D3654
+	.global Pal_EvilEye_16
+Pal_EvilEye_16:  @ 0x086D3654
 	.incbin "./graphics/banim/assets/pal/006D3654_Pal_086D3654.gbapal" @ 0x6D3674 - 0x6D3654
 
-	.global Pal_086D3674
-Pal_086D3674:  @ 0x086D3674
+	.global Pal_EvilEye_17
+Pal_EvilEye_17:  @ 0x086D3674
 	.incbin "./graphics/banim/assets/pal/006D3674_Pal_086D3674.gbapal" @ 0x6D3694 - 0x6D3674
 
-	.global Pal_086D3694
-Pal_086D3694:  @ 0x086D3694
+	.global Pal_EvilEye_18
+Pal_EvilEye_18:  @ 0x086D3694
 	.incbin "./graphics/banim/assets/pal/006D3694_Pal_086D3694.gbapal" @ 0x6D36B4 - 0x6D3694
 
-	.global Pal_086D36B4
-Pal_086D36B4:  @ 0x086D36B4
+	.global Pal_EvilEye_19
+Pal_EvilEye_19:  @ 0x086D36B4
 	.incbin "./graphics/banim/assets/pal/006D36B4_Pal_086D36B4.gbapal" @ 0x6D36D4 - 0x6D36B4
 
-	.global Tsa_086D36D4
-Tsa_086D36D4:  @ 0x086D36D4
+	.global Tsa_EvilEye_0
+Tsa_EvilEye_0:  @ 0x086D36D4
 	.incbin "./graphics/banim/assets/tsa/006D36D4_Tsa_086D36D4.map.bin.lz" @ 0x6D37B4 - 0x6D36D4
 
-	.global Tsa_086D37B4
-Tsa_086D37B4:  @ 0x086D37B4
+	.global Tsa_EvilEye_1
+Tsa_EvilEye_1:  @ 0x086D37B4
 	.incbin "./graphics/banim/assets/tsa/006D37B4_Tsa_086D37B4.map.bin.lz" @ 0x6D3890 - 0x6D37B4
 
-	.global Tsa_086D3890
-Tsa_086D3890:  @ 0x086D3890
+	.global Tsa_EvilEye_2
+Tsa_EvilEye_2:  @ 0x086D3890
 	.incbin "./graphics/banim/assets/tsa/006D3890_Tsa_086D3890.map.bin.lz" @ 0x6D3978 - 0x6D3890
 
-	.global Tsa_086D3978
-Tsa_086D3978:  @ 0x086D3978
+	.global Tsa_EvilEye_3
+Tsa_EvilEye_3:  @ 0x086D3978
 	.incbin "./graphics/banim/assets/tsa/006D3978_Tsa_086D3978.map.bin.lz" @ 0x6D3A7C - 0x6D3978
 
-	.global Tsa_086D3A7C
-Tsa_086D3A7C:  @ 0x086D3A7C
+	.global Tsa_EvilEye_4
+Tsa_EvilEye_4:  @ 0x086D3A7C
 	.incbin "./graphics/banim/assets/tsa/006D3A7C_Tsa_086D3A7C.map.bin.lz" @ 0x6D3B78 - 0x6D3A7C
 
-	.global Tsa_086D3B78
-Tsa_086D3B78:  @ 0x086D3B78
+	.global Tsa_EvilEye_5
+Tsa_EvilEye_5:  @ 0x086D3B78
 	.incbin "./graphics/banim/assets/tsa/006D3B78_Tsa_086D3B78.map.bin.lz" @ 0x6D3C84 - 0x6D3B78
 
-	.global Tsa_086D3C84
-Tsa_086D3C84:  @ 0x086D3C84
+	.global Tsa_EvilEye_6
+Tsa_EvilEye_6:  @ 0x086D3C84
 	.incbin "./graphics/banim/assets/tsa/006D3C84_Tsa_086D3C84.map.bin.lz" @ 0x6D3D8C - 0x6D3C84
 
-	.global Tsa_086D3D8C
-Tsa_086D3D8C:  @ 0x086D3D8C
+	.global Tsa_EvilEye_7
+Tsa_EvilEye_7:  @ 0x086D3D8C
 	.incbin "./graphics/banim/assets/tsa/006D3D8C_Tsa_086D3D8C.map.bin.lz" @ 0x6D3E94 - 0x6D3D8C
 
-	.global Tsa_086D3E94
-Tsa_086D3E94:  @ 0x086D3E94
+	.global Tsa_EvilEye_8
+Tsa_EvilEye_8:  @ 0x086D3E94
 	.incbin "./graphics/banim/assets/tsa/006D3E94_Tsa_086D3E94.map.bin.lz" @ 0x6D3FBC - 0x6D3E94
 
-	.global Tsa_086D3FBC
-Tsa_086D3FBC:  @ 0x086D3FBC
+	.global Tsa_EvilEye_9
+Tsa_EvilEye_9:  @ 0x086D3FBC
 	.incbin "./graphics/banim/assets/tsa/006D3FBC_Tsa_086D3FBC.map.bin.lz" @ 0x6D40CC - 0x6D3FBC
 
-	.global Tsa_086D40CC
-Tsa_086D40CC:  @ 0x086D40CC
+	.global Tsa_EvilEye_10
+Tsa_EvilEye_10:  @ 0x086D40CC
 	.incbin "./graphics/banim/assets/tsa/006D40CC_Tsa_086D40CC.map.bin.lz" @ 0x6D41F4 - 0x6D40CC
 
-	.global Tsa_086D41F4
-Tsa_086D41F4:  @ 0x086D41F4
+	.global Tsa_EvilEye_11
+Tsa_EvilEye_11:  @ 0x086D41F4
 	.incbin "./graphics/banim/assets/tsa/006D41F4_Tsa_086D41F4.map.bin.lz" @ 0x6D4318 - 0x6D41F4
 
-	.global Tsa_086D4318
-Tsa_086D4318:  @ 0x086D4318
+	.global Tsa_EvilEye_12
+Tsa_EvilEye_12:  @ 0x086D4318
 	.incbin "./graphics/banim/assets/tsa/006D4318_Tsa_086D4318.map.bin.lz" @ 0x6D4428 - 0x6D4318
 
-	.global Tsa_086D4428
-Tsa_086D4428:  @ 0x086D4428
+	.global Tsa_EvilEye_13
+Tsa_EvilEye_13:  @ 0x086D4428
 	.incbin "./graphics/banim/assets/tsa/006D4428_Tsa_086D4428.map.bin.lz" @ 0x6D454C - 0x6D4428
 
-	.global Tsa_086D454C
-Tsa_086D454C:  @ 0x086D454C
+	.global Tsa_EvilEye_14
+Tsa_EvilEye_14:  @ 0x086D454C
 	.incbin "./graphics/banim/assets/tsa/006D454C_Tsa_086D454C.map.bin.lz" @ 0x6D466C - 0x6D454C
 
-	.global Tsa_086D466C
-Tsa_086D466C:  @ 0x086D466C
+	.global Tsa_EvilEye_15
+Tsa_EvilEye_15:  @ 0x086D466C
 	.incbin "./graphics/banim/assets/tsa/006D466C_Tsa_086D466C.map.bin.lz" @ 0x6D4788 - 0x6D466C
 
-	.global Tsa_086D4788
-Tsa_086D4788:  @ 0x086D4788
+	.global Tsa_EvilEye_16
+Tsa_EvilEye_16:  @ 0x086D4788
 	.incbin "./graphics/banim/assets/tsa/006D4788_Tsa_086D4788.map.bin.lz" @ 0x6D489C - 0x6D4788
 
-	.global Tsa_086D489C
-Tsa_086D489C:  @ 0x086D489C
+	.global Tsa_EvilEye_17
+Tsa_EvilEye_17:  @ 0x086D489C
 	.incbin "./graphics/banim/assets/tsa/006D489C_Tsa_086D489C.map.bin.lz" @ 0x6D49D0 - 0x6D489C
 
-	.global Tsa_086D49D0
-Tsa_086D49D0:  @ 0x086D49D0
+	.global Tsa_EvilEye_18
+Tsa_EvilEye_18:  @ 0x086D49D0
 	.incbin "./graphics/banim/assets/tsa/006D49D0_Tsa_086D49D0.map.bin.lz" @ 0x6D4ADC - 0x6D49D0
 
-	.global Tsa_086D4ADC
-Tsa_086D4ADC:  @ 0x086D4ADC
+	.global Tsa_EvilEye_19
+Tsa_EvilEye_19:  @ 0x086D4ADC
 	.incbin "./graphics/banim/assets/tsa/006D4ADC_Tsa_086D4ADC.map.bin.lz" @ 0x6D4C08 - 0x6D4ADC
 
-	.global Img_086D4C08
-Img_086D4C08:  @ 0x086D4C08
+	.global Img_EvilEye_20
+Img_EvilEye_20:  @ 0x086D4C08
 	.incbin "./graphics/banim/assets/img/006D4C08_Img_086D4C08.4bpp.lz" @ 0x6D5418 - 0x6D4C08
 
-	.global Img_086D5418
-Img_086D5418:  @ 0x086D5418
+	.global Img_EvilEye_21
+Img_EvilEye_21:  @ 0x086D5418
 	.incbin "./graphics/banim/assets/img/006D5418_Img_086D5418.4bpp.lz" @ 0x6D5E44 - 0x6D5418
 
-	.global Img_086D5E44
-Img_086D5E44:  @ 0x086D5E44
+	.global Img_EvilEye_22
+Img_EvilEye_22:  @ 0x086D5E44
 	.incbin "./graphics/banim/assets/img/006D5E44_Img_086D5E44.4bpp.lz" @ 0x6D68AC - 0x6D5E44
 
-	.global Img_086D68AC
-Img_086D68AC:  @ 0x086D68AC
+	.global Img_EvilEye_23
+Img_EvilEye_23:  @ 0x086D68AC
 	.incbin "./graphics/banim/assets/img/006D68AC_Img_086D68AC.4bpp.lz" @ 0x6D73A4 - 0x6D68AC
 
-	.global Img_086D73A4
-Img_086D73A4:  @ 0x086D73A4
+	.global Img_EvilEye_24
+Img_EvilEye_24:  @ 0x086D73A4
 	.incbin "./graphics/banim/assets/img/006D73A4_Img_086D73A4.4bpp.lz" @ 0x6D7F20 - 0x6D73A4
 
-	.global Img_086D7F20
-Img_086D7F20:  @ 0x086D7F20
+	.global Img_EvilEye_25
+Img_EvilEye_25:  @ 0x086D7F20
 	.incbin "./graphics/banim/assets/img/006D7F20_Img_086D7F20.4bpp.lz" @ 0x6D8A94 - 0x6D7F20
 
 	.global Pal_EvilEyeBg2_A
 Pal_EvilEyeBg2_A:  @ 0x086D8A94
 	.incbin "./graphics/banim/assets/img/006D7F20_Img_086D7F20.gbapal" @ 0x6D8AB4 - 0x6D8A94
 
-	.global Pal_086D8AB4
-Pal_086D8AB4:  @ 0x086D8AB4
+	.global Pal_EvilEye_20
+Pal_EvilEye_20:  @ 0x086D8AB4
 	.incbin "./graphics/banim/assets/pal/006D8AB4_Pal_086D8AB4.gbapal" @ 0x6D8AD4 - 0x6D8AB4
 
-	.global Pal_086D8AD4
-Pal_086D8AD4:  @ 0x086D8AD4
+	.global Pal_EvilEye_21
+Pal_EvilEye_21:  @ 0x086D8AD4
 	.incbin "./graphics/banim/assets/pal/006D8AD4_Pal_086D8AD4.gbapal" @ 0x6D8AF4 - 0x6D8AD4
 
-	.global Pal_086D8AF4
-Pal_086D8AF4:  @ 0x086D8AF4
+	.global Pal_EvilEye_22
+Pal_EvilEye_22:  @ 0x086D8AF4
 	.incbin "./graphics/banim/assets/pal/006D8AF4_Pal_086D8AF4.gbapal" @ 0x6D8B14 - 0x6D8AF4
 
-	.global Pal_086D8B14
-Pal_086D8B14:  @ 0x086D8B14
+	.global Pal_EvilEye_23
+Pal_EvilEye_23:  @ 0x086D8B14
 	.incbin "./graphics/banim/assets/pal/006D8B14_Pal_086D8B14.gbapal" @ 0x6D8B34 - 0x6D8B14
 
-	.global Pal_086D8B34
-Pal_086D8B34:  @ 0x086D8B34
+	.global Pal_EvilEye_24
+Pal_EvilEye_24:  @ 0x086D8B34
 	.incbin "./graphics/banim/assets/pal/006D8B34_Pal_086D8B34.gbapal" @ 0x6D8B54 - 0x6D8B34
 
-	.global Tsa_086D8B54
-Tsa_086D8B54:  @ 0x086D8B54
+	.global Tsa_EvilEye_20
+Tsa_EvilEye_20:  @ 0x086D8B54
 	.incbin "./graphics/banim/assets/tsa/006D8B54_Tsa_086D8B54.map.bin.lz" @ 0x6D8C64 - 0x6D8B54
 
-	.global Tsa_086D8C64
-Tsa_086D8C64:  @ 0x086D8C64
+	.global Tsa_EvilEye_21
+Tsa_EvilEye_21:  @ 0x086D8C64
 	.incbin "./graphics/banim/assets/tsa/006D8C64_Tsa_086D8C64.map.bin.lz" @ 0x6D8DEC - 0x6D8C64
 
-	.global Tsa_086D8DEC
-Tsa_086D8DEC:  @ 0x086D8DEC
+	.global Tsa_EvilEye_22
+Tsa_EvilEye_22:  @ 0x086D8DEC
 	.incbin "./graphics/banim/assets/tsa/006D8DEC_Tsa_086D8DEC.map.bin.lz" @ 0x6D8FA4 - 0x6D8DEC
 
-	.global Tsa_086D8FA4
-Tsa_086D8FA4:  @ 0x086D8FA4
+	.global Tsa_EvilEye_23
+Tsa_EvilEye_23:  @ 0x086D8FA4
 	.incbin "./graphics/banim/assets/tsa/006D8FA4_Tsa_086D8FA4.map.bin.lz" @ 0x6D9170 - 0x6D8FA4
 
-	.global Tsa_086D9170
-Tsa_086D9170:  @ 0x086D9170
+	.global Tsa_EvilEye_24
+Tsa_EvilEye_24:  @ 0x086D9170
 	.incbin "./graphics/banim/assets/tsa/006D9170_Tsa_086D9170.map.bin.lz" @ 0x6D9354 - 0x6D9170
 
-	.global Tsa_086D9354
-Tsa_086D9354:  @ 0x086D9354
+	.global Tsa_EvilEye_25
+Tsa_EvilEye_25:  @ 0x086D9354
 	.incbin "./graphics/banim/assets/tsa/006D9354_Tsa_086D9354.map.bin.lz" @ 0x6D953C - 0x6D9354
 
-	.global Tsa_086D953C
-Tsa_086D953C:  @ 0x086D953C
+	.global Tsa_EvilEyeBg2_Far_0
+Tsa_EvilEyeBg2_Far_0:  @ 0x086D953C
 	.incbin "./graphics/banim/assets/tsa/006D953C_Tsa_086D953C.map.bin.lz" @ 0x6D96F0 - 0x6D953C
 
-	.global Tsa_086D96F0
-Tsa_086D96F0:  @ 0x086D96F0
+	.global Tsa_EvilEyeBg2_Far_1
+Tsa_EvilEyeBg2_Far_1:  @ 0x086D96F0
 	.incbin "./graphics/banim/assets/tsa/006D96F0_Tsa_086D96F0.map.bin.lz" @ 0x6D98A8 - 0x6D96F0
 
-	.global Tsa_086D98A8
-Tsa_086D98A8:  @ 0x086D98A8
+	.global Tsa_EvilEyeBg2_Far_2
+Tsa_EvilEyeBg2_Far_2:  @ 0x086D98A8
 	.incbin "./graphics/banim/assets/tsa/006D98A8_Tsa_086D98A8.map.bin.lz" @ 0x6D9A74 - 0x6D98A8
 
-	.global Tsa_086D9A74
-Tsa_086D9A74:  @ 0x086D9A74
+	.global Tsa_EvilEyeBg2_Far_3
+Tsa_EvilEyeBg2_Far_3:  @ 0x086D9A74
 	.incbin "./graphics/banim/assets/tsa/006D9A74_Tsa_086D9A74.map.bin.lz" @ 0x6D9C40 - 0x6D9A74
 
-	.global Img_086D9C40
-Img_086D9C40:  @ 0x086D9C40
+	.global Img_Banim_16
+Img_Banim_16:  @ 0x086D9C40
 	.incbin "./graphics/banim/assets/img/006D9C40_Img_086D9C40.4bpp.lz"
 
-	.global Pal_086DA33C
-Pal_086DA33C:  @ 0x086DA33C
+	.global Pal_efxDarkLongMonsOBJ
+Pal_efxDarkLongMonsOBJ:  @ 0x086DA33C
 	.incbin "./graphics/banim/assets/pal/006DA33C_Pal_086DA33C.gbapal"
 
-.global AnimSprite_086DA35C
-AnimSprite_086DA35C:  @ 0x6DA35C
+.global AnimSprite_efxDarkLongMonsOBJ_0
+AnimSprite_efxDarkLongMonsOBJ_0:  @ 0x6DA35C
     ANIM_SPRITE ATTR0_TALL, ATTR1_SIZE_32, 0x0000, -48, -56
     ANIM_SPRITE ATTR0_TALL, ATTR1_SIZE_16, 0x0002, -32, -56
     ANIM_SPRITE ATTR0_WIDE, ATTR1_SIZE_32, 0x0003, -24, -56
@@ -29768,8 +29768,8 @@ AnimSprite_086DA35C:  @ 0x6DA35C
     ANIM_SPRITE ATTR0_WIDE, 0x2000, 0x0050, 24, 0
     ANIM_SPRITE_END
 
-.global AnimSprite_086DA530
-AnimSprite_086DA530:  @ 0x6DA530
+.global AnimSprite_efxDarkLongMonsOBJ_1
+AnimSprite_efxDarkLongMonsOBJ_1:  @ 0x6DA530
     ANIM_SPRITE_XFLIP ATTR0_TALL, ATTR1_SIZE_32, 0x0000, 32, -56
     ANIM_SPRITE_XFLIP ATTR0_TALL, ATTR1_SIZE_16, 0x0002, 24, -56
     ANIM_SPRITE_XFLIP ATTR0_WIDE, ATTR1_SIZE_32, 0x0003, -8, -56
@@ -29810,8 +29810,8 @@ AnimSprite_086DA530:  @ 0x6DA530
     ANIM_SPRITE_XFLIP ATTR0_WIDE, 0x2000, 0x0050, -40, 0
     ANIM_SPRITE_END
 
-.global AnimSprite_086DA704
-AnimSprite_086DA704:  @ 0x6DA704
+.global AnimSprite_efxDarkLongMonsOBJ_2
+AnimSprite_efxDarkLongMonsOBJ_2:  @ 0x6DA704
     ANIM_SPRITE ATTR0_WIDE, ATTR1_SIZE_32, 0x0015, -32, -56
     ANIM_SPRITE ATTR0_WIDE, ATTR1_SIZE_32, 0x0019, 0, -56
     ANIM_SPRITE ATTR0_WIDE, ATTR1_SIZE_8, 0x005C, 24, -40
@@ -29852,36 +29852,36 @@ AnimSprite_086DA704:  @ 0x6DA704
     ANIM_SPRITE ATTR0_WIDE, 0x2000, 0x0010, 8, 32
     ANIM_SPRITE_END
 
-.global AnimSprite_086DA8D8
-AnimSprite_086DA8D8:  @ 0x6DA8D8
+.global AnimSprite_efxDarkLongMonsOBJ_3
+AnimSprite_efxDarkLongMonsOBJ_3:  @ 0x6DA8D8
     ANIM_SPRITE ATTR0_SQUARE, ATTR1_SIZE_16, 0x0058, -8, -8
     ANIM_SPRITE_END
 
-.global AnimSprite_086DA8F0
-AnimSprite_086DA8F0:  @ 0x6DA8F0
+.global AnimSprite_efxDarkLongMonsOBJ_4
+AnimSprite_efxDarkLongMonsOBJ_4:  @ 0x6DA8F0
     ANIM_SPRITE ATTR0_SQUARE, ATTR1_SIZE_16, 0x005A, -8, -8
     ANIM_SPRITE_END
 
-.global AnimSprite_086DA908
-AnimSprite_086DA908:  @ 0x6DA908
+.global AnimSprite_efxDarkLongMonsOBJ_5
+AnimSprite_efxDarkLongMonsOBJ_5:  @ 0x6DA908
     ANIM_SPRITE ATTR0_SQUARE, ATTR1_SIZE_8, 0x007C, -8, -8
     ANIM_SPRITE_END
 
-.global AnimScr_086DA920
-AnimScr_086DA920: @ 0x6DA920
-    ANIMSCR_FORCE_SPRITE AnimSprite_086DA35C, 4
-    ANIMSCR_FORCE_SPRITE AnimSprite_086DA530, 4
-    ANIMSCR_FORCE_SPRITE AnimSprite_086DA704, 4
+.global AnimScr_efxDarkLongMonsOBJ
+AnimScr_efxDarkLongMonsOBJ: @ 0x6DA920
+    ANIMSCR_FORCE_SPRITE AnimSprite_efxDarkLongMonsOBJ_0, 4
+    ANIMSCR_FORCE_SPRITE AnimSprite_efxDarkLongMonsOBJ_1, 4
+    ANIMSCR_FORCE_SPRITE AnimSprite_efxDarkLongMonsOBJ_2, 4
     ANIMSCR_LOOP
-    ANIMSCR_FORCE_SPRITE AnimSprite_086DA8D8, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_efxDarkLongMonsOBJ_3, 1
     ANIMSCR_LOOP
-    ANIMSCR_FORCE_SPRITE AnimSprite_086DA8F0, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_efxDarkLongMonsOBJ_4, 1
     ANIMSCR_LOOP
-    ANIMSCR_FORCE_SPRITE AnimSprite_086DA908, 1
+    ANIMSCR_FORCE_SPRITE AnimSprite_efxDarkLongMonsOBJ_5, 1
     ANIMSCR_LOOP
 
-.global AnimSprite_086DA948
-AnimSprite_086DA948:  @ 0x6DA948
+.global AnimSprite_efxDarkLongMonsOBJ_6
+AnimSprite_efxDarkLongMonsOBJ_6:  @ 0x6DA948
     ANIM_SPRITE_XFLIP ATTR0_TALL, ATTR1_SIZE_32, 0x0000, 32, -56
     ANIM_SPRITE_XFLIP ATTR0_TALL, ATTR1_SIZE_16, 0x0002, 24, -56
     ANIM_SPRITE_XFLIP ATTR0_WIDE, ATTR1_SIZE_32, 0x0003, -8, -56
@@ -29922,8 +29922,8 @@ AnimSprite_086DA948:  @ 0x6DA948
     ANIM_SPRITE_XFLIP ATTR0_WIDE, 0x2000, 0x0050, -40, 0
     ANIM_SPRITE_END
 
-.global AnimSprite_086DAB1C
-AnimSprite_086DAB1C:  @ 0x6DAB1C
+.global AnimSprite_efxDarkLongMonsOBJ_7
+AnimSprite_efxDarkLongMonsOBJ_7:  @ 0x6DAB1C
     ANIM_SPRITE ATTR0_TALL, ATTR1_SIZE_32, 0x0000, -48, -56
     ANIM_SPRITE ATTR0_TALL, ATTR1_SIZE_16, 0x0002, -32, -56
     ANIM_SPRITE ATTR0_WIDE, ATTR1_SIZE_32, 0x0003, -24, -56
@@ -29964,8 +29964,8 @@ AnimSprite_086DAB1C:  @ 0x6DAB1C
     ANIM_SPRITE ATTR0_WIDE, 0x2000, 0x0050, 24, 0
     ANIM_SPRITE_END
 
-.global AnimSprite_086DACF0
-AnimSprite_086DACF0:  @ 0x6DACF0
+.global AnimSprite_efxDarkLongMonsOBJ_8
+AnimSprite_efxDarkLongMonsOBJ_8:  @ 0x6DACF0
     ANIM_SPRITE_XFLIP ATTR0_WIDE, ATTR1_SIZE_32, 0x0015, 0, -56
     ANIM_SPRITE_XFLIP ATTR0_WIDE, ATTR1_SIZE_32, 0x0019, -32, -56
     ANIM_SPRITE_XFLIP ATTR0_WIDE, ATTR1_SIZE_8, 0x005C, -40, -40
@@ -30006,248 +30006,248 @@ AnimSprite_086DACF0:  @ 0x6DACF0
     ANIM_SPRITE_XFLIP ATTR0_WIDE, 0x2000, 0x0010, -24, 32
     ANIM_SPRITE_END
 
-.global AnimSprite_086DAEC4
-AnimSprite_086DAEC4:  @ 0x6DAEC4
+.global AnimSprite_efxDarkLongMonsOBJ_x_0
+AnimSprite_efxDarkLongMonsOBJ_x_0:  @ 0x6DAEC4
     ANIM_SPRITE_XFLIP ATTR0_SQUARE, ATTR1_SIZE_16, 0x0058, -8, -8
     ANIM_SPRITE_END
 
-.global AnimSprite_086DAEDC
-AnimSprite_086DAEDC:  @ 0x6DAEDC
+.global AnimSprite_efxDarkLongMonsOBJ_x_1
+AnimSprite_efxDarkLongMonsOBJ_x_1:  @ 0x6DAEDC
     ANIM_SPRITE_XFLIP ATTR0_SQUARE, ATTR1_SIZE_16, 0x005A, -8, -8
     ANIM_SPRITE_END
 
-.global AnimSprite_086DAEF4
-AnimSprite_086DAEF4:  @ 0x6DAEF4
+.global AnimSprite_Banim_45
+AnimSprite_Banim_45:  @ 0x6DAEF4
     ANIM_SPRITE_XFLIP ATTR0_SQUARE, ATTR1_SIZE_8, 0x007C, 0, -8
     ANIM_SPRITE_END
 
 @ unused
-.global AnimScr_086DAF0C
-AnimScr_086DAF0C: @ 0x6DAF0C
-    ANIMSCR_FORCE_SPRITE AnimSprite_086DA948, 4
-    ANIMSCR_FORCE_SPRITE AnimSprite_086DAB1C, 4
-    ANIMSCR_FORCE_SPRITE AnimSprite_086DACF0, 4
+.global AnimScr_Banim_2
+AnimScr_Banim_2: @ 0x6DAF0C
+    ANIMSCR_FORCE_SPRITE AnimSprite_efxDarkLongMonsOBJ_6, 4
+    ANIMSCR_FORCE_SPRITE AnimSprite_efxDarkLongMonsOBJ_7, 4
+    ANIMSCR_FORCE_SPRITE AnimSprite_efxDarkLongMonsOBJ_8, 4
     ANIMSCR_LOOP
 
 @ unused
-.global AnimScr_086DAF1C
-AnimScr_086DAF1C: @ 0x6DAF1C
-    ANIMSCR_FORCE_SPRITE AnimSprite_086DAEC4, 1
+.global AnimScr_Banim_3
+AnimScr_Banim_3: @ 0x6DAF1C
+    ANIMSCR_FORCE_SPRITE AnimSprite_efxDarkLongMonsOBJ_x_0, 1
     ANIMSCR_LOOP
 
 @ unused
-.global AnimScr_086DAF24
-AnimScr_086DAF24: @ 0x6DAF24
-    ANIMSCR_FORCE_SPRITE AnimSprite_086DAEDC, 1
+.global AnimScr_Banim_4
+AnimScr_Banim_4: @ 0x6DAF24
+    ANIMSCR_FORCE_SPRITE AnimSprite_efxDarkLongMonsOBJ_x_1, 1
     ANIMSCR_LOOP
 
 @ unused
-.global AnimScr_086DAF2C
-AnimScr_086DAF2C: @ 0x6DAF2C
-    ANIMSCR_FORCE_SPRITE AnimSprite_086DAEF4, 1
+.global AnimScr_Banim_5
+AnimScr_Banim_5: @ 0x6DAF2C
+    ANIMSCR_FORCE_SPRITE AnimSprite_Banim_45, 1
     ANIMSCR_LOOP
-	.global Img_086DAF34
-Img_086DAF34:  @ 0x086DAF34
+	.global Img_efxDarkLongMonsBG01_0
+Img_efxDarkLongMonsBG01_0:  @ 0x086DAF34
 	.incbin "./graphics/banim/assets/img/006DAF34_Img_086DAF34.4bpp.lz" @ 0x6DB760 - 0x6DAF34
 
-	.global Img_086DB760
-Img_086DB760:  @ 0x086DB760
+	.global Img_efxDarkLongMonsBG01_1
+Img_efxDarkLongMonsBG01_1:  @ 0x086DB760
 	.incbin "./graphics/banim/assets/img/006DB760_Img_086DB760.4bpp.lz" @ 0x6DC064 - 0x6DB760
 
-	.global Img_086DC064
-Img_086DC064:  @ 0x086DC064
+	.global Img_efxDarkLongMonsBG01_2
+Img_efxDarkLongMonsBG01_2:  @ 0x086DC064
 	.incbin "./graphics/banim/assets/img/006DC064_Img_086DC064.4bpp.lz" @ 0x6DCA64 - 0x6DC064
 
-	.global Img_086DCA64
-Img_086DCA64:  @ 0x086DCA64
+	.global Img_efxDarkLongMonsBG01_3
+Img_efxDarkLongMonsBG01_3:  @ 0x086DCA64
 	.incbin "./graphics/banim/assets/img/006DCA64_Img_086DCA64.4bpp.lz" @ 0x6DD598 - 0x6DCA64
 
-	.global Img_086DD598
-Img_086DD598:  @ 0x086DD598
+	.global Img_efxDarkLongMonsBG01_4
+Img_efxDarkLongMonsBG01_4:  @ 0x086DD598
 	.incbin "./graphics/banim/assets/img/006DD598_Img_086DD598.4bpp.lz" @ 0x6DE168 - 0x6DD598
 
-	.global Img_086DE168
-Img_086DE168:  @ 0x086DE168
+	.global Img_efxDarkLongMonsBG01_5
+Img_efxDarkLongMonsBG01_5:  @ 0x086DE168
 	.incbin "./graphics/banim/assets/img/006DE168_Img_086DE168.4bpp.lz" @ 0x6DED90 - 0x6DE168
 
-	.global Img_086DED90
-Img_086DED90:  @ 0x086DED90
+	.global Img_efxDarkLongMonsBG01_6
+Img_efxDarkLongMonsBG01_6:  @ 0x086DED90
 	.incbin "./graphics/banim/assets/img/006DED90_Img_086DED90.4bpp.lz" @ 0x6DF9F8 - 0x6DED90
 
-	.global Img_086DF9F8
-Img_086DF9F8:  @ 0x086DF9F8
+	.global Img_efxDarkLongMonsBG01_7
+Img_efxDarkLongMonsBG01_7:  @ 0x086DF9F8
 	.incbin "./graphics/banim/assets/img/006DF9F8_Img_086DF9F8.4bpp.lz" @ 0x6E05F0 - 0x6DF9F8
 
-	.global Img_086E05F0
-Img_086E05F0:  @ 0x086E05F0
+	.global Img_efxDarkLongMonsBG01_8
+Img_efxDarkLongMonsBG01_8:  @ 0x086E05F0
 	.incbin "./graphics/banim/assets/img/006E05F0_Img_086E05F0.4bpp.lz" @ 0x6E1294 - 0x6E05F0
 
-	.global Img_086E1294
-Img_086E1294:  @ 0x086E1294
+	.global Img_efxDarkLongMonsBG01_9
+Img_efxDarkLongMonsBG01_9:  @ 0x086E1294
 	.incbin "./graphics/banim/assets/img/006E1294_Img_086E1294.4bpp.lz" @ 0x6E1F54 - 0x6E1294
 
-	.global Img_086E1F54
-Img_086E1F54:  @ 0x086E1F54
+	.global Img_efxDarkLongMonsBG01_10
+Img_efxDarkLongMonsBG01_10:  @ 0x086E1F54
 	.incbin "./graphics/banim/assets/img/006E1F54_Img_086E1F54.4bpp.lz" @ 0x6E2BE8 - 0x6E1F54
 
-	.global Img_086E2BE8
-Img_086E2BE8:  @ 0x086E2BE8
+	.global Img_efxDarkLongMonsBG01_11
+Img_efxDarkLongMonsBG01_11:  @ 0x086E2BE8
 	.incbin "./graphics/banim/assets/img/006E2BE8_Img_086E2BE8.4bpp.lz" @ 0x6E3828 - 0x6E2BE8
 
-	.global Img_086E3828
-Img_086E3828:  @ 0x086E3828
+	.global Img_efxDarkLongMonsBG01_12
+Img_efxDarkLongMonsBG01_12:  @ 0x086E3828
 	.incbin "./graphics/banim/assets/img/006E3828_Img_086E3828.4bpp.lz" @ 0x6E4420 - 0x6E3828
 
-	.global Img_086E4420
-Img_086E4420:  @ 0x086E4420
+	.global Img_efxDarkLongMonsBG01_13
+Img_efxDarkLongMonsBG01_13:  @ 0x086E4420
 	.incbin "./graphics/banim/assets/img/006E4420_Img_086E4420.4bpp.lz" @ 0x6E4F90 - 0x6E4420
 
-	.global Img_086E4F90
-Img_086E4F90:  @ 0x086E4F90
+	.global Img_efxDarkLongMonsBG01_14
+Img_efxDarkLongMonsBG01_14:  @ 0x086E4F90
 	.incbin "./graphics/banim/assets/img/006E4F90_Img_086E4F90.4bpp.lz" @ 0x6E5A30 - 0x6E4F90
 
-	.global Img_086E5A30
-Img_086E5A30:  @ 0x086E5A30
+	.global Img_efxDarkLongMonsBG01_15
+Img_efxDarkLongMonsBG01_15:  @ 0x086E5A30
 	.incbin "./graphics/banim/assets/img/006E5A30_Img_086E5A30.4bpp.lz" @ 0x6E6440 - 0x6E5A30
 
-	.global Pal_086E6440
-Pal_086E6440:  @ 0x086E6440
+	.global Pal_efxDarkLongMonsBG01_0
+Pal_efxDarkLongMonsBG01_0:  @ 0x086E6440
 	.incbin "./graphics/banim/assets/pal/006E6440_Pal_086E6440.gbapal" @ 0x6E6460 - 0x6E6440
 
-	.global Pal_086E6460
-Pal_086E6460:  @ 0x086E6460
+	.global Pal_efxDarkLongMonsBG01_1
+Pal_efxDarkLongMonsBG01_1:  @ 0x086E6460
 	.incbin "./graphics/banim/assets/pal/006E6460_Pal_086E6460.gbapal" @ 0x6E6480 - 0x6E6460
 
-	.global Pal_086E6480
-Pal_086E6480:  @ 0x086E6480
+	.global Pal_efxDarkLongMonsBG01_2
+Pal_efxDarkLongMonsBG01_2:  @ 0x086E6480
 	.incbin "./graphics/banim/assets/pal/006E6480_Pal_086E6480.gbapal" @ 0x6E64A0 - 0x6E6480
 
-	.global Pal_086E64A0
-Pal_086E64A0:  @ 0x086E64A0
+	.global Pal_efxDarkLongMonsBG01_3
+Pal_efxDarkLongMonsBG01_3:  @ 0x086E64A0
 	.incbin "./graphics/banim/assets/pal/006E64A0_Pal_086E64A0.gbapal" @ 0x6E64C0 - 0x6E64A0
 
-	.global Pal_086E64C0
-Pal_086E64C0:  @ 0x086E64C0
+	.global Pal_efxDarkLongMonsBG01_4
+Pal_efxDarkLongMonsBG01_4:  @ 0x086E64C0
 	.incbin "./graphics/banim/assets/pal/006E64C0_Pal_086E64C0.gbapal" @ 0x6E64E0 - 0x6E64C0
 
-	.global Tsa_086E64E0
-Tsa_086E64E0:  @ 0x086E64E0
+	.global Tsa_efxDarkLongMonsBG01_0
+Tsa_efxDarkLongMonsBG01_0:  @ 0x086E64E0
 	.incbin "./graphics/banim/assets/tsa/006E64E0_Tsa_086E64E0.map.bin.lz" @ 0x6E65EC - 0x6E64E0
 
-	.global Tsa_086E65EC
-Tsa_086E65EC:  @ 0x086E65EC
+	.global Tsa_efxDarkLongMonsBG01_1
+Tsa_efxDarkLongMonsBG01_1:  @ 0x086E65EC
 	.incbin "./graphics/banim/assets/tsa/006E65EC_Tsa_086E65EC.map.bin.lz" @ 0x6E671C - 0x6E65EC
 
-	.global Tsa_086E671C
-Tsa_086E671C:  @ 0x086E671C
+	.global Tsa_efxDarkLongMonsBG01_2
+Tsa_efxDarkLongMonsBG01_2:  @ 0x086E671C
 	.incbin "./graphics/banim/assets/tsa/006E671C_Tsa_086E671C.map.bin.lz" @ 0x6E6860 - 0x6E671C
 
-	.global Tsa_086E6860
-Tsa_086E6860:  @ 0x086E6860
+	.global Tsa_efxDarkLongMonsBG01_3
+Tsa_efxDarkLongMonsBG01_3:  @ 0x086E6860
 	.incbin "./graphics/banim/assets/tsa/006E6860_Tsa_086E6860.map.bin.lz" @ 0x6E69C8 - 0x6E6860
 
-	.global Tsa_086E69C8
-Tsa_086E69C8:  @ 0x086E69C8
+	.global Tsa_efxDarkLongMonsBG01_4
+Tsa_efxDarkLongMonsBG01_4:  @ 0x086E69C8
 	.incbin "./graphics/banim/assets/tsa/006E69C8_Tsa_086E69C8.map.bin.lz" @ 0x6E6B38 - 0x6E69C8
 
-	.global Tsa_086E6B38
-Tsa_086E6B38:  @ 0x086E6B38
+	.global Tsa_efxDarkLongMonsBG01_5
+Tsa_efxDarkLongMonsBG01_5:  @ 0x086E6B38
 	.incbin "./graphics/banim/assets/tsa/006E6B38_Tsa_086E6B38.map.bin.lz" @ 0x6E6CC4 - 0x6E6B38
 
-	.global Tsa_086E6CC4
-Tsa_086E6CC4:  @ 0x086E6CC4
+	.global Tsa_efxDarkLongMonsBG01_6
+Tsa_efxDarkLongMonsBG01_6:  @ 0x086E6CC4
 	.incbin "./graphics/banim/assets/tsa/006E6CC4_Tsa_086E6CC4.map.bin.lz" @ 0x6E6E60 - 0x6E6CC4
 
-	.global Tsa_086E6E60
-Tsa_086E6E60:  @ 0x086E6E60
+	.global Tsa_efxDarkLongMonsBG01_7
+Tsa_efxDarkLongMonsBG01_7:  @ 0x086E6E60
 	.incbin "./graphics/banim/assets/tsa/006E6E60_Tsa_086E6E60.map.bin.lz" @ 0x6E700C - 0x6E6E60
 
-	.global Tsa_086E700C
-Tsa_086E700C:  @ 0x086E700C
+	.global Tsa_efxDarkLongMonsBG01_8
+Tsa_efxDarkLongMonsBG01_8:  @ 0x086E700C
 	.incbin "./graphics/banim/assets/tsa/006E700C_Tsa_086E700C.map.bin.lz" @ 0x6E71BC - 0x6E700C
 
-	.global Tsa_086E71BC
-Tsa_086E71BC:  @ 0x086E71BC
+	.global Tsa_efxDarkLongMonsBG01_9
+Tsa_efxDarkLongMonsBG01_9:  @ 0x086E71BC
 	.incbin "./graphics/banim/assets/tsa/006E71BC_Tsa_086E71BC.map.bin.lz" @ 0x6E7380 - 0x6E71BC
 
-	.global Tsa_086E7380
-Tsa_086E7380:  @ 0x086E7380
+	.global Tsa_efxDarkLongMonsBG01_10
+Tsa_efxDarkLongMonsBG01_10:  @ 0x086E7380
 	.incbin "./graphics/banim/assets/tsa/006E7380_Tsa_086E7380.map.bin.lz" @ 0x6E7550 - 0x6E7380
 
-	.global Tsa_086E7550
-Tsa_086E7550:  @ 0x086E7550
+	.global Tsa_efxDarkLongMonsBG01_11
+Tsa_efxDarkLongMonsBG01_11:  @ 0x086E7550
 	.incbin "./graphics/banim/assets/tsa/006E7550_Tsa_086E7550.map.bin.lz" @ 0x6E7730 - 0x6E7550
 
-	.global Tsa_086E7730
-Tsa_086E7730:  @ 0x086E7730
+	.global Tsa_efxDarkLongMonsBG01_12
+Tsa_efxDarkLongMonsBG01_12:  @ 0x086E7730
 	.incbin "./graphics/banim/assets/tsa/006E7730_Tsa_086E7730.map.bin.lz" @ 0x6E7914 - 0x6E7730
 
-	.global Tsa_086E7914
-Tsa_086E7914:  @ 0x086E7914
+	.global Tsa_efxDarkLongMonsBG01_13
+Tsa_efxDarkLongMonsBG01_13:  @ 0x086E7914
 	.incbin "./graphics/banim/assets/tsa/006E7914_Tsa_086E7914.map.bin.lz" @ 0x6E7AFC - 0x6E7914
 
-	.global Tsa_086E7AFC
-Tsa_086E7AFC:  @ 0x086E7AFC
+	.global Tsa_efxDarkLongMonsBG01_14
+Tsa_efxDarkLongMonsBG01_14:  @ 0x086E7AFC
 	.incbin "./graphics/banim/assets/tsa/006E7AFC_Tsa_086E7AFC.map.bin.lz" @ 0x6E7CD8 - 0x6E7AFC
 
-	.global Tsa_086E7CD8
-Tsa_086E7CD8:  @ 0x086E7CD8
+	.global Tsa_efxDarkLongMonsBG01_15
+Tsa_efxDarkLongMonsBG01_15:  @ 0x086E7CD8
 	.incbin "./graphics/banim/assets/tsa/006E7CD8_Tsa_086E7CD8.map.bin.lz" @ 0x6E7EB0 - 0x6E7CD8
 
-	.global Img_086E7EB0
-Img_086E7EB0:  @ 0x086E7EB0
+	.global Img_efxDarkLongMonsBG
+Img_efxDarkLongMonsBG:  @ 0x086E7EB0
 	.incbin "./graphics/banim/assets/img/006E7EB0_Img_086E7EB0.4bpp.lz"
 
-	.global Pal_086E91B8
-Pal_086E91B8:  @ 0x086E91B8
+	.global Pal_efxDarkLongMonsBG
+Pal_efxDarkLongMonsBG:  @ 0x086E91B8
 	.incbin "./graphics/banim/assets/img/006E7EB0_Img_086E7EB0.gbapal" @ 0x6E91D8 - 0x6E91B8
 
-	.global Tsa_086E91D8
-Tsa_086E91D8:  @ 0x086E91D8
+	.global Tsa_efxDarkLongMonsBG02_0
+Tsa_efxDarkLongMonsBG02_0:  @ 0x086E91D8
 	.incbin "./graphics/banim/assets/tsa/006E91D8_Tsa_086E91D8.map.bin.lz" @ 0x6E927C - 0x6E91D8
 
-	.global Tsa_086E927C
-Tsa_086E927C:  @ 0x086E927C
+	.global Tsa_efxDarkLongMonsBG02_1
+Tsa_efxDarkLongMonsBG02_1:  @ 0x086E927C
 	.incbin "./graphics/banim/assets/tsa/006E927C_Tsa_086E927C.map.bin.lz" @ 0x6E9358 - 0x6E927C
 
-	.global Tsa_086E9358
-Tsa_086E9358:  @ 0x086E9358
+	.global Tsa_efxDarkLongMonsBG02_2
+Tsa_efxDarkLongMonsBG02_2:  @ 0x086E9358
 	.incbin "./graphics/banim/assets/tsa/006E9358_Tsa_086E9358.map.bin.lz" @ 0x6E9474 - 0x6E9358
 
-	.global Tsa_086E9474
-Tsa_086E9474:  @ 0x086E9474
+	.global Tsa_efxDarkLongMonsBG02_3
+Tsa_efxDarkLongMonsBG02_3:  @ 0x086E9474
 	.incbin "./graphics/banim/assets/tsa/006E9474_Tsa_086E9474.map.bin.lz" @ 0x6E95D4 - 0x6E9474
 
-	.global Tsa_086E95D4
-Tsa_086E95D4:  @ 0x086E95D4
+	.global Tsa_efxDarkLongMonsBG02_4
+Tsa_efxDarkLongMonsBG02_4:  @ 0x086E95D4
 	.incbin "./graphics/banim/assets/tsa/006E95D4_Tsa_086E95D4.map.bin.lz" @ 0x6E9758 - 0x6E95D4
 
-	.global Tsa_086E9758
-Tsa_086E9758:  @ 0x086E9758
+	.global Tsa_efxDarkLongMonsBG02_5
+Tsa_efxDarkLongMonsBG02_5:  @ 0x086E9758
 	.incbin "./graphics/banim/assets/tsa/006E9758_Tsa_086E9758.map.bin.lz" @ 0x6E98E4 - 0x6E9758
 
-	.global Tsa_086E98E4
-Tsa_086E98E4:  @ 0x086E98E4
+	.global Tsa_efxDarkLongMonsBG02_6
+Tsa_efxDarkLongMonsBG02_6:  @ 0x086E98E4
 	.incbin "./graphics/banim/assets/tsa/006E98E4_Tsa_086E98E4.map.bin.lz" @ 0x6E9A64 - 0x6E98E4
 
-	.global Tsa_086E9A64
-Tsa_086E9A64:  @ 0x086E9A64
+	.global Tsa_efxDarkLongMonsBG02_7
+Tsa_efxDarkLongMonsBG02_7:  @ 0x086E9A64
 	.incbin "./graphics/banim/assets/tsa/006E9A64_Tsa_086E9A64.map.bin.lz" @ 0x6E9BD4 - 0x6E9A64
 
-	.global Tsa_086E9BD4
-Tsa_086E9BD4:  @ 0x086E9BD4
+	.global Tsa_efxDarkLongMonsBG02_8
+Tsa_efxDarkLongMonsBG02_8:  @ 0x086E9BD4
 	.incbin "./graphics/banim/assets/tsa/006E9BD4_Tsa_086E9BD4.map.bin.lz" @ 0x6E9D40 - 0x6E9BD4
 
-	.global Img_086E9D40
-Img_086E9D40:  @ 0x086E9D40
+	.global Img_efxGorgon
+Img_efxGorgon:  @ 0x086E9D40
 	.incbin "./graphics/banim/assets/img/006E9D40_Img_086E9D40.4bpp.lz"
 
-	.global Pal_086EA3EC
-Pal_086EA3EC:  @ 0x086EA3EC
+	.global Pal_efxGorgon
+Pal_efxGorgon:  @ 0x086EA3EC
 	.incbin "./graphics/banim/assets/pal/006EA3EC_Pal_086EA3EC.gbapal"
 
-.global AnimSprite_086EA40C
-AnimSprite_086EA40C:  @ 0x6EA40C
+.global AnimSprite_efxGorgon_0
+AnimSprite_efxGorgon_0:  @ 0x6EA40C
     ANIM_SPRITE ATTR0_TALL, ATTR1_SIZE_32, 0x0000, -48, -56
     ANIM_SPRITE ATTR0_TALL, ATTR1_SIZE_16, 0x0002, -32, -56
     ANIM_SPRITE ATTR0_WIDE, ATTR1_SIZE_32, 0x0003, -24, -56
@@ -30288,8 +30288,8 @@ AnimSprite_086EA40C:  @ 0x6EA40C
     ANIM_SPRITE ATTR0_WIDE, 0x2000, 0x0050, 24, 0
     ANIM_SPRITE_END
 
-.global AnimSprite_086EA5E0
-AnimSprite_086EA5E0:  @ 0x6EA5E0
+.global AnimSprite_efxGorgon_1
+AnimSprite_efxGorgon_1:  @ 0x6EA5E0
     ANIM_SPRITE_XFLIP ATTR0_TALL, ATTR1_SIZE_32, 0x0000, 32, -56
     ANIM_SPRITE_XFLIP ATTR0_TALL, ATTR1_SIZE_16, 0x0002, 24, -56
     ANIM_SPRITE_XFLIP ATTR0_WIDE, ATTR1_SIZE_32, 0x0003, -8, -56
@@ -30330,8 +30330,8 @@ AnimSprite_086EA5E0:  @ 0x6EA5E0
     ANIM_SPRITE_XFLIP ATTR0_WIDE, 0x2000, 0x0050, -40, 0
     ANIM_SPRITE_END
 
-.global AnimSprite_086EA7B4
-AnimSprite_086EA7B4:  @ 0x6EA7B4
+.global AnimSprite_efxGorgon_2
+AnimSprite_efxGorgon_2:  @ 0x6EA7B4
     ANIM_SPRITE ATTR0_WIDE, ATTR1_SIZE_32, 0x0015, -32, -56
     ANIM_SPRITE ATTR0_WIDE, ATTR1_SIZE_32, 0x0019, 0, -56
     ANIM_SPRITE ATTR0_WIDE, ATTR1_SIZE_8, 0x005C, 24, -40
@@ -30372,33 +30372,33 @@ AnimSprite_086EA7B4:  @ 0x6EA7B4
     ANIM_SPRITE ATTR0_WIDE, 0x2000, 0x0010, 8, 32
     ANIM_SPRITE_END
 
-.global AnimSprite_086EA988
-AnimSprite_086EA988:  @ 0x6EA988
+.global AnimSprite_efxGorgon_3
+AnimSprite_efxGorgon_3:  @ 0x6EA988
     ANIM_SPRITE_AFFIN 1, 0x200, 0x0, 0x0, 0x200
     ANIM_SPRITE ATTR0_SQUARE + OBJ_ROT_SCALE_ON, ATTR1_SIZE_16, 0x0058, -8, -8
     ANIM_SPRITE_END
 
-.global AnimSprite_086EA9AC
-AnimSprite_086EA9AC:  @ 0x6EA9AC
+.global AnimSprite_efxGorgon_4
+AnimSprite_efxGorgon_4:  @ 0x6EA9AC
     ANIM_SPRITE ATTR0_SQUARE, ATTR1_SIZE_16, 0x0058, -8, -8
     ANIM_SPRITE_END
 
-.global AnimSprite_086EA9C4
-AnimSprite_086EA9C4:  @ 0x6EA9C4
+.global AnimSprite_efxGorgon_5
+AnimSprite_efxGorgon_5:  @ 0x6EA9C4
     ANIM_SPRITE_AFFIN 1, 0xaa, 0x0, 0x0, 0xaa
     ANIM_SPRITE ATTR0_SQUARE + OBJ_ROT_SCALE_ON + OBJ_DISABLE, ATTR1_SIZE_16, 0x0058, -16, -16
     ANIM_SPRITE_END
 
-.global AnimSprite_086EA9E8
-AnimSprite_086EA9E8:  @ 0x6EA9E8
+.global AnimSprite_efxGorgon_6
+AnimSprite_efxGorgon_6:  @ 0x6EA9E8
     ANIM_SPRITE ATTR0_SQUARE, ATTR1_SIZE_16, 0x005A, -16, -16
     ANIM_SPRITE ATTR0_SQUARE, 0x6000, 0x005A, -16, 0
     ANIM_SPRITE_XFLIP ATTR0_SQUARE, 0x6000, 0x005A, 0, 0
     ANIM_SPRITE_XFLIP ATTR0_SQUARE, ATTR1_SIZE_16, 0x005A, 0, -16
     ANIM_SPRITE_END
 
-.global AnimSprite_086EAA24
-AnimSprite_086EAA24:  @ 0x6EAA24
+.global AnimSprite_efxGorgon_7
+AnimSprite_efxGorgon_7:  @ 0x6EAA24
     ANIM_SPRITE_AFFIN 4, 0xaa, 0x0, 0x0, 0xaa
     ANIM_SPRITE_AFFIN 4, 0xaa, 0x0, 0x0, -0xaa
     ANIM_SPRITE_AFFIN 4, -0xaa, 0x0, 0x0, -0xaa
@@ -30409,8 +30409,8 @@ AnimSprite_086EAA24:  @ 0x6EAA24
     ANIM_SPRITE ATTR0_SQUARE + OBJ_ROT_SCALE_ON + OBJ_DISABLE, 0x4600, 0x005A, -5, -28
     ANIM_SPRITE_END
 
-.global AnimSprite_086EAA90
-AnimSprite_086EAA90:  @ 0x6EAA90
+.global AnimSprite_efxGorgon_8
+AnimSprite_efxGorgon_8:  @ 0x6EAA90
     ANIM_SPRITE_AFFIN 4, 0x80, 0x0, 0x0, 0x80
     ANIM_SPRITE_AFFIN 4, 0x80, 0x0, 0x0, -0x80
     ANIM_SPRITE_AFFIN 4, -0x80, 0x0, 0x0, -0x80
@@ -30421,8 +30421,8 @@ AnimSprite_086EAA90:  @ 0x6EAA90
     ANIM_SPRITE ATTR0_SQUARE + OBJ_ROT_SCALE_ON + OBJ_DISABLE, 0x4600, 0x005A, -1, -32
     ANIM_SPRITE_END
 
-.global AnimSprite_086EAAFC
-AnimSprite_086EAAFC:  @ 0x6EAAFC
+.global AnimSprite_efxGorgon_9
+AnimSprite_efxGorgon_9:  @ 0x6EAAFC
     ANIM_SPRITE ATTR0_WIDE, ATTR1_SIZE_32, 0x0015, -29, -44
     ANIM_SPRITE ATTR0_WIDE, ATTR1_SIZE_32, 0x0019, -4, -44
     ANIM_SPRITE ATTR0_TALL, ATTR1_SIZE_32, 0x001E, -36, -29
@@ -30451,8 +30451,8 @@ AnimSprite_086EAAFC:  @ 0x6EAAFC
     ANIM_SPRITE ATTR0_SQUARE, ATTR1_SIZE_16, 0x0012, 8, 0
     ANIM_SPRITE_END
 
-.global AnimSprite_086EAC40
-AnimSprite_086EAC40:  @ 0x6EAC40
+.global AnimSprite_efxGorgon_10
+AnimSprite_efxGorgon_10:  @ 0x6EAC40
     ANIM_SPRITE ATTR0_WIDE, ATTR1_SIZE_32, 0x0015, -32, -50
     ANIM_SPRITE ATTR0_WIDE, ATTR1_SIZE_32, 0x0019, 0, -50
     ANIM_SPRITE ATTR0_WIDE, ATTR1_SIZE_8, 0x005C, 20, -36
@@ -30493,33 +30493,33 @@ AnimSprite_086EAC40:  @ 0x6EAC40
     ANIM_SPRITE ATTR0_WIDE, ATTR1_SIZE_8, 0x0010, 8, -36
     ANIM_SPRITE_END
 
-	.global AnimScr_086EAE14
-AnimScr_086EAE14:  @ 0x086EAE14
-    ANIMSCR_FORCE_SPRITE AnimSprite_086EA40C, 4
-    ANIMSCR_FORCE_SPRITE AnimSprite_086EA5E0, 4
-    ANIMSCR_FORCE_SPRITE AnimSprite_086EA7B4, 4
+	.global AnimScr_Banim_6
+AnimScr_Banim_6:  @ 0x086EAE14
+    ANIMSCR_FORCE_SPRITE AnimSprite_efxGorgon_0, 4
+    ANIMSCR_FORCE_SPRITE AnimSprite_efxGorgon_1, 4
+    ANIMSCR_FORCE_SPRITE AnimSprite_efxGorgon_2, 4
     ANIMSCR_LOOP
 
-	.global AnimScr_086EAE24
-AnimScr_086EAE24:  @ 0x086EAE24
-    ANIMSCR_FORCE_SPRITE AnimSprite_086EA988, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_086EA9AC, 3
-    ANIMSCR_FORCE_SPRITE AnimSprite_086EA9C4, 3
-    ANIMSCR_FORCE_SPRITE AnimSprite_086EA9E8, 3
-    ANIMSCR_FORCE_SPRITE AnimSprite_086EAA24, 3
-    ANIMSCR_FORCE_SPRITE AnimSprite_086EAA90, 3
-    ANIMSCR_FORCE_SPRITE AnimSprite_086EAAFC, 4
-    ANIMSCR_FORCE_SPRITE AnimSprite_086EAC40, 5
-    ANIMSCR_FORCE_SPRITE AnimSprite_086EA40C, 4
-    ANIMSCR_FORCE_SPRITE AnimSprite_086EA5E0, 4
-    ANIMSCR_FORCE_SPRITE AnimSprite_086EA7B4, 4
-    ANIMSCR_FORCE_SPRITE AnimSprite_086EA40C, 4
-    ANIMSCR_FORCE_SPRITE AnimSprite_086EA5E0, 4
-    ANIMSCR_FORCE_SPRITE AnimSprite_086EA7B4, 4
+	.global AnimScr_efxGorgon
+AnimScr_efxGorgon:  @ 0x086EAE24
+    ANIMSCR_FORCE_SPRITE AnimSprite_efxGorgon_3, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_efxGorgon_4, 3
+    ANIMSCR_FORCE_SPRITE AnimSprite_efxGorgon_5, 3
+    ANIMSCR_FORCE_SPRITE AnimSprite_efxGorgon_6, 3
+    ANIMSCR_FORCE_SPRITE AnimSprite_efxGorgon_7, 3
+    ANIMSCR_FORCE_SPRITE AnimSprite_efxGorgon_8, 3
+    ANIMSCR_FORCE_SPRITE AnimSprite_efxGorgon_9, 4
+    ANIMSCR_FORCE_SPRITE AnimSprite_efxGorgon_10, 5
+    ANIMSCR_FORCE_SPRITE AnimSprite_efxGorgon_0, 4
+    ANIMSCR_FORCE_SPRITE AnimSprite_efxGorgon_1, 4
+    ANIMSCR_FORCE_SPRITE AnimSprite_efxGorgon_2, 4
+    ANIMSCR_FORCE_SPRITE AnimSprite_efxGorgon_0, 4
+    ANIMSCR_FORCE_SPRITE AnimSprite_efxGorgon_1, 4
+    ANIMSCR_FORCE_SPRITE AnimSprite_efxGorgon_2, 4
     ANIMSCR_LOOP
 
-.global AnimSprite_086EAE60
-AnimSprite_086EAE60:  @ 0x6EAE60
+.global AnimSprite_efxGorgon_11
+AnimSprite_efxGorgon_11:  @ 0x6EAE60
     ANIM_SPRITE_XFLIP ATTR0_TALL, ATTR1_SIZE_32, 0x0000, 32, -56
     ANIM_SPRITE_XFLIP ATTR0_TALL, ATTR1_SIZE_16, 0x0002, 24, -56
     ANIM_SPRITE_XFLIP ATTR0_WIDE, ATTR1_SIZE_32, 0x0003, -8, -56
@@ -30560,8 +30560,8 @@ AnimSprite_086EAE60:  @ 0x6EAE60
     ANIM_SPRITE_XFLIP ATTR0_WIDE, 0x2000, 0x0050, -40, 0
     ANIM_SPRITE_END
 
-.global AnimSprite_086EB034
-AnimSprite_086EB034:  @ 0x6EB034
+.global AnimSprite_efxGorgon
+AnimSprite_efxGorgon:  @ 0x6EB034
     ANIM_SPRITE ATTR0_TALL, ATTR1_SIZE_32, 0x0000, -48, -56
     ANIM_SPRITE ATTR0_TALL, ATTR1_SIZE_16, 0x0002, -32, -56
     ANIM_SPRITE ATTR0_WIDE, ATTR1_SIZE_32, 0x0003, -24, -56
@@ -30602,8 +30602,8 @@ AnimSprite_086EB034:  @ 0x6EB034
     ANIM_SPRITE ATTR0_WIDE, 0x2000, 0x0050, 24, 0
     ANIM_SPRITE_END
 
-.global AnimSprite_086EB208
-AnimSprite_086EB208:  @ 0x6EB208
+.global AnimSprite_efxGorgon_12
+AnimSprite_efxGorgon_12:  @ 0x6EB208
     ANIM_SPRITE_XFLIP ATTR0_WIDE, ATTR1_SIZE_32, 0x0015, 0, -56
     ANIM_SPRITE_XFLIP ATTR0_WIDE, ATTR1_SIZE_32, 0x0019, -32, -56
     ANIM_SPRITE_XFLIP ATTR0_WIDE, ATTR1_SIZE_8, 0x005C, -40, -40
@@ -30644,33 +30644,33 @@ AnimSprite_086EB208:  @ 0x6EB208
     ANIM_SPRITE_XFLIP ATTR0_WIDE, 0x2000, 0x0010, -24, 32
     ANIM_SPRITE_END
 
-.global AnimSprite_086EB3DC
-AnimSprite_086EB3DC:  @ 0x6EB3DC
+.global AnimSprite_efxGorgon_13
+AnimSprite_efxGorgon_13:  @ 0x6EB3DC
     ANIM_SPRITE_AFFIN 1, -0x200, 0x0, 0x0, 0x200
     ANIM_SPRITE ATTR0_SQUARE + OBJ_ROT_SCALE_ON, ATTR1_SIZE_16, 0x0058, -8, -8
     ANIM_SPRITE_END
 
-.global AnimSprite_086EB400
-AnimSprite_086EB400:  @ 0x6EB400
+.global AnimSprite_efxGorgon_14
+AnimSprite_efxGorgon_14:  @ 0x6EB400
     ANIM_SPRITE_XFLIP ATTR0_SQUARE, ATTR1_SIZE_16, 0x0058, -8, -8
     ANIM_SPRITE_END
 
-.global AnimSprite_086EB418
-AnimSprite_086EB418:  @ 0x6EB418
+.global AnimSprite_efxGorgon_15
+AnimSprite_efxGorgon_15:  @ 0x6EB418
     ANIM_SPRITE_AFFIN 1, -0xaa, 0x0, 0x0, 0xaa
     ANIM_SPRITE ATTR0_SQUARE + OBJ_ROT_SCALE_ON + OBJ_DISABLE, ATTR1_SIZE_16, 0x0058, 0, -16
     ANIM_SPRITE_END
 
-.global AnimSprite_086EB43C
-AnimSprite_086EB43C:  @ 0x6EB43C
+.global AnimSprite_efxGorgon_16
+AnimSprite_efxGorgon_16:  @ 0x6EB43C
     ANIM_SPRITE_XFLIP ATTR0_SQUARE, ATTR1_SIZE_16, 0x005A, 0, -16
     ANIM_SPRITE_XFLIP ATTR0_SQUARE, 0x6000, 0x005A, 0, 0
     ANIM_SPRITE ATTR0_SQUARE, 0x6000, 0x005A, -16, 0
     ANIM_SPRITE ATTR0_SQUARE, ATTR1_SIZE_16, 0x005A, -16, -16
     ANIM_SPRITE_END
 
-.global AnimSprite_086EB478
-AnimSprite_086EB478:  @ 0x6EB478
+.global AnimSprite_efxGorgon_17
+AnimSprite_efxGorgon_17:  @ 0x6EB478
     ANIM_SPRITE_AFFIN 4, -0xaa, 0x0, 0x0, 0xaa
     ANIM_SPRITE_AFFIN 4, -0xaa, 0x0, 0x0, -0xaa
     ANIM_SPRITE_AFFIN 4, 0xaa, 0x0, 0x0, -0xaa
@@ -30681,8 +30681,8 @@ AnimSprite_086EB478:  @ 0x6EB478
     ANIM_SPRITE ATTR0_SQUARE + OBJ_ROT_SCALE_ON + OBJ_DISABLE, 0x4600, 0x005A, -11, -28
     ANIM_SPRITE_END
 
-.global AnimSprite_086EB4E4
-AnimSprite_086EB4E4:  @ 0x6EB4E4
+.global AnimSprite_Banim_46
+AnimSprite_Banim_46:  @ 0x6EB4E4
     ANIM_SPRITE_AFFIN 4, -0x80, 0x0, 0x0, 0x80
     ANIM_SPRITE_AFFIN 4, -0x80, 0x0, 0x0, -0x80
     ANIM_SPRITE_AFFIN 4, 0x80, 0x0, 0x0, -0x80
@@ -30693,8 +30693,8 @@ AnimSprite_086EB4E4:  @ 0x6EB4E4
     ANIM_SPRITE ATTR0_SQUARE + OBJ_ROT_SCALE_ON + OBJ_DISABLE, 0x4600, 0x005A, -15, -32
     ANIM_SPRITE_END
 
-.global AnimSprite_086EB550
-AnimSprite_086EB550:  @ 0x6EB550
+.global AnimSprite_Banim_47
+AnimSprite_Banim_47:  @ 0x6EB550
     ANIM_SPRITE_XFLIP ATTR0_WIDE, ATTR1_SIZE_32, 0x0015, -3, -44
     ANIM_SPRITE_XFLIP ATTR0_WIDE, ATTR1_SIZE_32, 0x0019, -28, -44
     ANIM_SPRITE_XFLIP ATTR0_TALL, ATTR1_SIZE_32, 0x001E, 20, -29
@@ -30723,8 +30723,8 @@ AnimSprite_086EB550:  @ 0x6EB550
     ANIM_SPRITE_XFLIP ATTR0_SQUARE, ATTR1_SIZE_16, 0x0012, -24, 0
     ANIM_SPRITE_END
 
-.global AnimSprite_086EB694
-AnimSprite_086EB694:  @ 0x6EB694
+.global AnimSprite_Banim_48
+AnimSprite_Banim_48:  @ 0x6EB694
     ANIM_SPRITE_XFLIP ATTR0_WIDE, ATTR1_SIZE_32, 0x0015, 0, -50
     ANIM_SPRITE_XFLIP ATTR0_WIDE, ATTR1_SIZE_32, 0x0019, -32, -50
     ANIM_SPRITE_XFLIP ATTR0_WIDE, ATTR1_SIZE_8, 0x005C, -36, -36
@@ -30766,274 +30766,274 @@ AnimSprite_086EB694:  @ 0x6EB694
     ANIM_SPRITE_END
 
 // unused?
-.global AnimScr_086EB868
-AnimScr_086EB868:
-    ANIMSCR_FORCE_SPRITE AnimSprite_086EAE60, 4
-    ANIMSCR_FORCE_SPRITE AnimSprite_086EB034, 4
-    ANIMSCR_FORCE_SPRITE AnimSprite_086EB208, 4
+.global AnimScr_Banim_7
+AnimScr_Banim_7:
+    ANIMSCR_FORCE_SPRITE AnimSprite_efxGorgon_11, 4
+    ANIMSCR_FORCE_SPRITE AnimSprite_efxGorgon, 4
+    ANIMSCR_FORCE_SPRITE AnimSprite_efxGorgon_12, 4
     ANIMSCR_LOOP
 
 // unused?
-.global AnimScr_086EB878
-AnimScr_086EB878:
-    ANIMSCR_FORCE_SPRITE AnimSprite_086EB3DC, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_086EB400, 3
-    ANIMSCR_FORCE_SPRITE AnimSprite_086EB418, 3
-    ANIMSCR_FORCE_SPRITE AnimSprite_086EB43C, 3
-    ANIMSCR_FORCE_SPRITE AnimSprite_086EB478, 3
-    ANIMSCR_FORCE_SPRITE AnimSprite_086EB4E4, 3
-    ANIMSCR_FORCE_SPRITE AnimSprite_086EB550, 4
-    ANIMSCR_FORCE_SPRITE AnimSprite_086EB694, 5
-    ANIMSCR_FORCE_SPRITE AnimSprite_086EAE60, 4
-    ANIMSCR_FORCE_SPRITE AnimSprite_086EB034, 4
-    ANIMSCR_FORCE_SPRITE AnimSprite_086EB208, 4
-    ANIMSCR_FORCE_SPRITE AnimSprite_086EAE60, 4
-    ANIMSCR_FORCE_SPRITE AnimSprite_086EB034, 4
-    ANIMSCR_FORCE_SPRITE AnimSprite_086EB208, 4
+.global AnimScr_Banim_8
+AnimScr_Banim_8:
+    ANIMSCR_FORCE_SPRITE AnimSprite_efxGorgon_13, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_efxGorgon_14, 3
+    ANIMSCR_FORCE_SPRITE AnimSprite_efxGorgon_15, 3
+    ANIMSCR_FORCE_SPRITE AnimSprite_efxGorgon_16, 3
+    ANIMSCR_FORCE_SPRITE AnimSprite_efxGorgon_17, 3
+    ANIMSCR_FORCE_SPRITE AnimSprite_Banim_46, 3
+    ANIMSCR_FORCE_SPRITE AnimSprite_Banim_47, 4
+    ANIMSCR_FORCE_SPRITE AnimSprite_Banim_48, 5
+    ANIMSCR_FORCE_SPRITE AnimSprite_efxGorgon_11, 4
+    ANIMSCR_FORCE_SPRITE AnimSprite_efxGorgon, 4
+    ANIMSCR_FORCE_SPRITE AnimSprite_efxGorgon_12, 4
+    ANIMSCR_FORCE_SPRITE AnimSprite_efxGorgon_11, 4
+    ANIMSCR_FORCE_SPRITE AnimSprite_efxGorgon, 4
+    ANIMSCR_FORCE_SPRITE AnimSprite_efxGorgon_12, 4
     ANIMSCR_LOOP
 
-	.global Img_086EB8B4
-Img_086EB8B4:  @ 0x086EB8B4
+	.global Img_efxGorgonBGDirt_0
+Img_efxGorgonBGDirt_0:  @ 0x086EB8B4
 	.incbin "./graphics/banim/assets/img/006EB8B4_Img_086EB8B4.4bpp.lz" @ 0x6EBD44 - 0x6EB8B4
 
-	.global Img_086EBD44
-Img_086EBD44:  @ 0x086EBD44
+	.global Img_efxGorgonBGDirt_1
+Img_efxGorgonBGDirt_1:  @ 0x086EBD44
 	.incbin "./graphics/banim/assets/img/006EBD44_Img_086EBD44.4bpp.lz" @ 0x6EC264 - 0x6EBD44
 
-	.global Img_086EC264
-Img_086EC264:  @ 0x086EC264
+	.global Img_efxGorgonBGDirt_2
+Img_efxGorgonBGDirt_2:  @ 0x086EC264
 	.incbin "./graphics/banim/assets/img/006EC264_Img_086EC264.4bpp.lz" @ 0x6EC7D4 - 0x6EC264
 
-	.global Img_086EC7D4
-Img_086EC7D4:  @ 0x086EC7D4
+	.global Img_efxGorgonBGDirt_3
+Img_efxGorgonBGDirt_3:  @ 0x086EC7D4
 	.incbin "./graphics/banim/assets/img/006EC7D4_Img_086EC7D4.4bpp.lz" @ 0x6ECDD8 - 0x6EC7D4
 
-	.global Img_086ECDD8
-Img_086ECDD8:  @ 0x086ECDD8
+	.global Img_efxGorgonBGDirt_4
+Img_efxGorgonBGDirt_4:  @ 0x086ECDD8
 	.incbin "./graphics/banim/assets/img/006ECDD8_Img_086ECDD8.4bpp.lz" @ 0x6ED424 - 0x6ECDD8
 
-	.global Img_086ED424
-Img_086ED424:  @ 0x086ED424
+	.global Img_efxGorgonBGDirt_5
+Img_efxGorgonBGDirt_5:  @ 0x086ED424
 	.incbin "./graphics/banim/assets/img/006ED424_Img_086ED424.4bpp.lz" @ 0x6EDAF8 - 0x6ED424
 
-	.global Img_086EDAF8
-Img_086EDAF8:  @ 0x086EDAF8
+	.global Img_efxGorgonBGDirt_6
+Img_efxGorgonBGDirt_6:  @ 0x086EDAF8
 	.incbin "./graphics/banim/assets/img/006EDAF8_Img_086EDAF8.4bpp.lz" @ 0x6EE25C - 0x6EDAF8
 
-	.global Img_086EE25C
-Img_086EE25C:  @ 0x086EE25C
+	.global Img_efxGorgonBGDirt_7
+Img_efxGorgonBGDirt_7:  @ 0x086EE25C
 	.incbin "./graphics/banim/assets/img/006EE25C_Img_086EE25C.4bpp.lz" @ 0x6EE9F8 - 0x6EE25C
 
-	.global Img_086EE9F8
-Img_086EE9F8:  @ 0x086EE9F8
+	.global Img_efxGorgonBGDirt_8
+Img_efxGorgonBGDirt_8:  @ 0x086EE9F8
 	.incbin "./graphics/banim/assets/img/006EE9F8_Img_086EE9F8.4bpp.lz" @ 0x6EF1DC - 0x6EE9F8
 
-	.global Img_086EF1DC
-Img_086EF1DC:  @ 0x086EF1DC
+	.global Img_efxGorgonBGDirt_9
+Img_efxGorgonBGDirt_9:  @ 0x086EF1DC
 	.incbin "./graphics/banim/assets/img/006EF1DC_Img_086EF1DC.4bpp.lz" @ 0x6EF9C8 - 0x6EF1DC
 
-	.global Img_086EF9C8
-Img_086EF9C8:  @ 0x086EF9C8
+	.global Img_efxGorgonBGDirt_10
+Img_efxGorgonBGDirt_10:  @ 0x086EF9C8
 	.incbin "./graphics/banim/assets/img/006EF9C8_Img_086EF9C8.4bpp.lz" @ 0x6F01E4 - 0x6EF9C8
 
-	.global Pal_086F01E4
-Pal_086F01E4:  @ 0x086F01E4
+	.global Pal_efxGorgonBGDirt_0
+Pal_efxGorgonBGDirt_0:  @ 0x086F01E4
 	.incbin "./graphics/banim/assets/pal/006F01E4_Pal_086F01E4.gbapal" @ 0x6F0204 - 0x6F01E4
 
-	.global Pal_086F0204
-Pal_086F0204:  @ 0x086F0204
+	.global Pal_efxGorgonBGDirt_1
+Pal_efxGorgonBGDirt_1:  @ 0x086F0204
 	.incbin "./graphics/banim/assets/pal/006F0204_Pal_086F0204.gbapal" @ 0x6F0224 - 0x6F0204
 
-	.global Pal_086F0224
-Pal_086F0224:  @ 0x086F0224
+	.global Pal_efxGorgonBGDirt_2
+Pal_efxGorgonBGDirt_2:  @ 0x086F0224
 	.incbin "./graphics/banim/assets/pal/006F0224_Pal_086F0224.gbapal" @ 0x6F0244 - 0x6F0224
 
-	.global Pal_086F0244
-Pal_086F0244:  @ 0x086F0244
+	.global Pal_efxGorgonBGDirt_3
+Pal_efxGorgonBGDirt_3:  @ 0x086F0244
 	.incbin "./graphics/banim/assets/pal/006F0244_Pal_086F0244.gbapal" @ 0x6F0264 - 0x6F0244
 
-	.global Pal_086F0264
-Pal_086F0264:  @ 0x086F0264
+	.global Pal_efxGorgonBGDirt_4
+Pal_efxGorgonBGDirt_4:  @ 0x086F0264
 	.incbin "./graphics/banim/assets/pal/006F0264_Pal_086F0264.gbapal" @ 0x6F0284 - 0x6F0264
 
-	.global Pal_086F0284
-Pal_086F0284:  @ 0x086F0284
+	.global Pal_efxGorgonBGDirt_5
+Pal_efxGorgonBGDirt_5:  @ 0x086F0284
 	.incbin "./graphics/banim/assets/pal/006F0284_Pal_086F0284.gbapal" @ 0x6F02A4 - 0x6F0284
 
-	.global Pal_086F02A4
-Pal_086F02A4:  @ 0x086F02A4
+	.global Pal_efxGorgonBGDirt_6
+Pal_efxGorgonBGDirt_6:  @ 0x086F02A4
 	.incbin "./graphics/banim/assets/pal/006F02A4_Pal_086F02A4.gbapal" @ 0x6F02C4 - 0x6F02A4
 
-	.global Pal_086F02C4
-Pal_086F02C4:  @ 0x086F02C4
+	.global Pal_efxGorgonBGDirt_7
+Pal_efxGorgonBGDirt_7:  @ 0x086F02C4
 	.incbin "./graphics/banim/assets/pal/006F02C4_Pal_086F02C4.gbapal" @ 0x6F02E4 - 0x6F02C4
 
-	.global Pal_086F02E4
-Pal_086F02E4:  @ 0x086F02E4
+	.global Pal_efxGorgonBGDirt_8
+Pal_efxGorgonBGDirt_8:  @ 0x086F02E4
 	.incbin "./graphics/banim/assets/pal/006F02E4_Pal_086F02E4.gbapal" @ 0x6F0304 - 0x6F02E4
 
-	.global Pal_086F0304
-Pal_086F0304:  @ 0x086F0304
+	.global Pal_efxGorgonBGDirt_9
+Pal_efxGorgonBGDirt_9:  @ 0x086F0304
 	.incbin "./graphics/banim/assets/pal/006F0304_Pal_086F0304.gbapal" @ 0x6F0324 - 0x6F0304
 
-	.global Pal_086F0324
-Pal_086F0324:  @ 0x086F0324
+	.global Pal_efxGorgonBGDirt_10
+Pal_efxGorgonBGDirt_10:  @ 0x086F0324
 	.incbin "./graphics/banim/assets/pal/006F0324_Pal_086F0324.gbapal" @ 0x6F0344 - 0x6F0324
 
-	.global Tsa_086F0344
-Tsa_086F0344:  @ 0x086F0344
+	.global Tsa_efxGorgonBGDirt_0
+Tsa_efxGorgonBGDirt_0:  @ 0x086F0344
 	.incbin "./graphics/banim/assets/tsa/006F0344_Tsa_086F0344.map.bin.lz" @ 0x6F03EC - 0x6F0344
 
-	.global Tsa_086F03EC
-Tsa_086F03EC:  @ 0x086F03EC
+	.global Tsa_efxGorgonBGDirt_1
+Tsa_efxGorgonBGDirt_1:  @ 0x086F03EC
 	.incbin "./graphics/banim/assets/tsa/006F03EC_Tsa_086F03EC.map.bin.lz" @ 0x6F04B8 - 0x6F03EC
 
-	.global Tsa_086F04B8
-Tsa_086F04B8:  @ 0x086F04B8
+	.global Tsa_efxGorgonBGDirt_2
+Tsa_efxGorgonBGDirt_2:  @ 0x086F04B8
 	.incbin "./graphics/banim/assets/tsa/006F04B8_Tsa_086F04B8.map.bin.lz" @ 0x6F05A0 - 0x6F04B8
 
-	.global Tsa_086F05A0
-Tsa_086F05A0:  @ 0x086F05A0
+	.global Tsa_efxGorgonBGDirt_3
+Tsa_efxGorgonBGDirt_3:  @ 0x086F05A0
 	.incbin "./graphics/banim/assets/tsa/006F05A0_Tsa_086F05A0.map.bin.lz" @ 0x6F069C - 0x6F05A0
 
-	.global Tsa_086F069C
-Tsa_086F069C:  @ 0x086F069C
+	.global Tsa_efxGorgonBGDirt_4
+Tsa_efxGorgonBGDirt_4:  @ 0x086F069C
 	.incbin "./graphics/banim/assets/tsa/006F069C_Tsa_086F069C.map.bin.lz" @ 0x6F079C - 0x6F069C
 
-	.global Tsa_086F079C
-Tsa_086F079C:  @ 0x086F079C
+	.global Tsa_efxGorgonBGDirt_5
+Tsa_efxGorgonBGDirt_5:  @ 0x086F079C
 	.incbin "./graphics/banim/assets/tsa/006F079C_Tsa_086F079C.map.bin.lz" @ 0x6F08B8 - 0x6F079C
 
-	.global Tsa_086F08B8
-Tsa_086F08B8:  @ 0x086F08B8
+	.global Tsa_efxGorgonBGDirt_6
+Tsa_efxGorgonBGDirt_6:  @ 0x086F08B8
 	.incbin "./graphics/banim/assets/tsa/006F08B8_Tsa_086F08B8.map.bin.lz" @ 0x6F09E0 - 0x6F08B8
 
-	.global Tsa_086F09E0
-Tsa_086F09E0:  @ 0x086F09E0
+	.global Tsa_efxGorgonBGDirt_7
+Tsa_efxGorgonBGDirt_7:  @ 0x086F09E0
 	.incbin "./graphics/banim/assets/tsa/006F09E0_Tsa_086F09E0.map.bin.lz" @ 0x6F0B2C - 0x6F09E0
 
-	.global Tsa_086F0B2C
-Tsa_086F0B2C:  @ 0x086F0B2C
+	.global Tsa_efxGorgonBGDirt_8
+Tsa_efxGorgonBGDirt_8:  @ 0x086F0B2C
 	.incbin "./graphics/banim/assets/tsa/006F0B2C_Tsa_086F0B2C.map.bin.lz" @ 0x6F0C88 - 0x6F0B2C
 
-	.global Tsa_086F0C88
-Tsa_086F0C88:  @ 0x086F0C88
+	.global Tsa_efxGorgonBGDirt_9
+Tsa_efxGorgonBGDirt_9:  @ 0x086F0C88
 	.incbin "./graphics/banim/assets/tsa/006F0C88_Tsa_086F0C88.map.bin.lz" @ 0x6F0DF8 - 0x6F0C88
 
-	.global Tsa_086F0DF8
-Tsa_086F0DF8:  @ 0x086F0DF8
+	.global Tsa_efxGorgonBGDirt_10
+Tsa_efxGorgonBGDirt_10:  @ 0x086F0DF8
 	.incbin "./graphics/banim/assets/tsa/006F0DF8_Tsa_086F0DF8.map.bin.lz" @ 0x6F0F6C - 0x6F0DF8
 
-	.global Img_086F0F6C
-Img_086F0F6C:  @ 0x086F0F6C
+	.global Img_efxGorgonBGTwister_0
+Img_efxGorgonBGTwister_0:  @ 0x086F0F6C
 	.incbin "./graphics/banim/assets/img/006F0F6C_Img_086F0F6C.4bpp.lz" @ 0x6F24C8 - 0x6F0F6C
 
-	.global Img_086F24C8
-Img_086F24C8:  @ 0x086F24C8
+	.global Img_efxGorgonBGTwister_1
+Img_efxGorgonBGTwister_1:  @ 0x086F24C8
 	.incbin "./graphics/banim/assets/img/006F24C8_Img_086F24C8.4bpp.lz" @ 0x6F3830 - 0x6F24C8
 
-	.global Img_086F3830
-Img_086F3830:  @ 0x086F3830
+	.global Img_efxGorgonBGTwister_2
+Img_efxGorgonBGTwister_2:  @ 0x086F3830
 	.incbin "./graphics/banim/assets/img/006F3830_Img_086F3830.4bpp.lz" @ 0x6F4A38 - 0x6F3830
 
-	.global Pal_086F4A38
-Pal_086F4A38:  @ 0x086F4A38
+	.global Pal_efxGorgonBGTwister_0
+Pal_efxGorgonBGTwister_0:  @ 0x086F4A38
 	.incbin "./graphics/banim/assets/img/006F3830_Img_086F3830.gbapal" @ 0x6F4A58 - 0x6F4A38
 
-	.global Pal_086F4A58
-Pal_086F4A58:  @ 0x086F4A58
+	.global Pal_efxGorgonBGTwister_1
+Pal_efxGorgonBGTwister_1:  @ 0x086F4A58
 	.incbin "./graphics/banim/assets/pal/006F4A58_Pal_086F4A58.gbapal" @ 0x6F4A78 - 0x6F4A58
 
-	.global Pal_086F4A78
-Pal_086F4A78:  @ 0x086F4A78
+	.global Pal_efxGorgonBGTwister_2
+Pal_efxGorgonBGTwister_2:  @ 0x086F4A78
 	.incbin "./graphics/banim/assets/pal/006F4A78_Pal_086F4A78.gbapal" @ 0x6F4A98 - 0x6F4A78
 
-	.global Tsa_086F4A98
-Tsa_086F4A98:  @ 0x086F4A98
+	.global Tsa_efxGorgonBGTwister_0
+Tsa_efxGorgonBGTwister_0:  @ 0x086F4A98
 	.incbin "./graphics/banim/assets/tsa/006F4A98_Tsa_086F4A98.map.bin.lz" @ 0x6F4CCC - 0x6F4A98
 
-	.global Tsa_086F4CCC
-Tsa_086F4CCC:  @ 0x086F4CCC
+	.global Tsa_efxGorgonBGTwister_1
+Tsa_efxGorgonBGTwister_1:  @ 0x086F4CCC
 	.incbin "./graphics/banim/assets/tsa/006F4CCC_Tsa_086F4CCC.map.bin.lz" @ 0x6F4ED8 - 0x6F4CCC
 
-	.global Tsa_086F4ED8
-Tsa_086F4ED8:  @ 0x086F4ED8
+	.global Tsa_efxGorgonBGTwister_2
+Tsa_efxGorgonBGTwister_2:  @ 0x086F4ED8
 	.incbin "./graphics/banim/assets/tsa/006F4ED8_Tsa_086F4ED8.map.bin.lz" @ 0x6F50D4 - 0x6F4ED8
 
-	.global Img_086F50D4
-Img_086F50D4:  @ 0x086F50D4
+	.global Img_efxGorgonBGFinish_0
+Img_efxGorgonBGFinish_0:  @ 0x086F50D4
 	.incbin "./graphics/banim/assets/img/006F50D4_Img_086F50D4.4bpp.lz" @ 0x6F6264 - 0x6F50D4
 
-	.global Img_086F6264
-Img_086F6264:  @ 0x086F6264
+	.global Img_efxGorgonBGFinish_1
+Img_efxGorgonBGFinish_1:  @ 0x086F6264
 	.incbin "./graphics/banim/assets/img/006F6264_Img_086F6264.4bpp.lz" @ 0x6F7150 - 0x6F6264
 
-	.global Img_086F7150
-Img_086F7150:  @ 0x086F7150
+	.global Img_efxGorgonBGFinish_2
+Img_efxGorgonBGFinish_2:  @ 0x086F7150
 	.incbin "./graphics/banim/assets/img/006F7150_Img_086F7150.4bpp.lz" @ 0x6F80B8 - 0x6F7150
 
-	.global Img_086F80B8
-Img_086F80B8:  @ 0x086F80B8
+	.global Img_efxGorgonBGFinish_3
+Img_efxGorgonBGFinish_3:  @ 0x086F80B8
 	.incbin "./graphics/banim/assets/img/006F80B8_Img_086F80B8.4bpp.lz" @ 0x6F915C - 0x6F80B8
 
-	.global Img_086F915C
-Img_086F915C:  @ 0x086F915C
+	.global Img_efxGorgonBGFinish_4
+Img_efxGorgonBGFinish_4:  @ 0x086F915C
 	.incbin "./graphics/banim/assets/img/006F915C_Img_086F915C.4bpp.lz" @ 0x6FA350 - 0x6F915C
 
-	.global Img_086FA350
-Img_086FA350:  @ 0x086FA350
+	.global Img_efxGorgonBGFinish_5
+Img_efxGorgonBGFinish_5:  @ 0x086FA350
 	.incbin "./graphics/banim/assets/img/006FA350_Img_086FA350.4bpp.lz" @ 0x6FB07C - 0x6FA350
 
-	.global Img_086FB07C
-Img_086FB07C:  @ 0x086FB07C
+	.global Img_efxGorgonBGFinish_6
+Img_efxGorgonBGFinish_6:  @ 0x086FB07C
 	.incbin "./graphics/banim/assets/img/006FB07C_Img_086FB07C.4bpp.lz" @ 0x6FBCE8 - 0x6FB07C
 
-	.global Img_086FBCE8
-Img_086FBCE8:  @ 0x086FBCE8
+	.global Img_efxGorgonBGFinish_7
+Img_efxGorgonBGFinish_7:  @ 0x086FBCE8
 	.incbin "./graphics/banim/assets/img/006FBCE8_Img_086FBCE8.4bpp.lz" @ 0x6FCD58 - 0x6FBCE8
 
-	.global Img_086FCD58
-Img_086FCD58:  @ 0x086FCD58
+	.global Img_efxGorgonBGFinish_8
+Img_efxGorgonBGFinish_8:  @ 0x086FCD58
 	.incbin "./graphics/banim/assets/img/006FCD58_Img_086FCD58.4bpp.lz" @ 0x6FDA44 - 0x6FCD58
 
-	.global Pal_086FDA44
-Pal_086FDA44:  @ 0x086FDA44
+	.global Pal_efxGorgonBGFinish_1
+Pal_efxGorgonBGFinish_1:  @ 0x086FDA44
 	.incbin "./graphics/banim/assets/img/006FCD58_Img_086FCD58.gbapal" @ 0x6FDA64 - 0x6FDA44
 
-	.global Tsa_086FDA64
-Tsa_086FDA64:  @ 0x086FDA64
+	.global Tsa_efxGorgonBGFinish_0
+Tsa_efxGorgonBGFinish_0:  @ 0x086FDA64
 	.incbin "./graphics/banim/assets/tsa/006FDA64_Tsa_086FDA64.map.bin.lz" @ 0x6FDB08 - 0x6FDA64
 
-	.global Tsa_086FDB08
-Tsa_086FDB08:  @ 0x086FDB08
+	.global Tsa_efxGorgonBGFinish_1
+Tsa_efxGorgonBGFinish_1:  @ 0x086FDB08
 	.incbin "./graphics/banim/assets/tsa/006FDB08_Tsa_086FDB08.map.bin.lz" @ 0x6FDCE0 - 0x6FDB08
 
-	.global Tsa_086FDCE0
-Tsa_086FDCE0:  @ 0x086FDCE0
+	.global Tsa_efxGorgonBGFinish_2
+Tsa_efxGorgonBGFinish_2:  @ 0x086FDCE0
 	.incbin "./graphics/banim/assets/tsa/006FDCE0_Tsa_086FDCE0.map.bin.lz" @ 0x6FDEC4 - 0x6FDCE0
 
-	.global Tsa_086FDEC4
-Tsa_086FDEC4:  @ 0x086FDEC4
+	.global Tsa_efxGorgonBGFinish_3
+Tsa_efxGorgonBGFinish_3:  @ 0x086FDEC4
 	.incbin "./graphics/banim/assets/tsa/006FDEC4_Tsa_086FDEC4.map.bin.lz" @ 0x6FE0D4 - 0x6FDEC4
 
-	.global Tsa_086FE0D4
-Tsa_086FE0D4:  @ 0x086FE0D4
+	.global Tsa_efxGorgonBGFinish_4
+Tsa_efxGorgonBGFinish_4:  @ 0x086FE0D4
 	.incbin "./graphics/banim/assets/tsa/006FE0D4_Tsa_086FE0D4.map.bin.lz" @ 0x6FE320 - 0x6FE0D4
 
-	.global Tsa_086FE320
-Tsa_086FE320:  @ 0x086FE320
+	.global Tsa_efxGorgonBGFinish_5
+Tsa_efxGorgonBGFinish_5:  @ 0x086FE320
 	.incbin "./graphics/banim/assets/tsa/006FE320_Tsa_086FE320.map.bin.lz" @ 0x6FE4E0 - 0x6FE320
 
-	.global Tsa_086FE4E0
-Tsa_086FE4E0:  @ 0x086FE4E0
+	.global Tsa_efxGorgonBGFinish_6
+Tsa_efxGorgonBGFinish_6:  @ 0x086FE4E0
 	.incbin "./graphics/banim/assets/tsa/006FE4E0_Tsa_086FE4E0.map.bin.lz" @ 0x6FE680 - 0x6FE4E0
 
-	.global Tsa_086FE680
-Tsa_086FE680:  @ 0x086FE680
+	.global Tsa_efxGorgonBGFinish_7
+Tsa_efxGorgonBGFinish_7:  @ 0x086FE680
 	.incbin "./graphics/banim/assets/tsa/006FE680_Tsa_086FE680.map.bin.lz" @ 0x6FE81C - 0x6FE680
 
-	.global Tsa_086FE81C
-Tsa_086FE81C:  @ 0x086FE81C
+	.global Tsa_efxGorgonBGFinish_8
+Tsa_efxGorgonBGFinish_8:  @ 0x086FE81C
 	.incbin "./graphics/banim/assets/tsa/006FE81C_Tsa_086FE81C.map.bin.lz" @ 0x6FE938 - 0x6FE81C
 
 	.global Img_NaglfarSprites_A
@@ -31044,8 +31044,8 @@ Img_NaglfarSprites_A:  @ 0x086FE938
 Pal_NaglfarSprites_A:  @ 0x086FF3A4
 	.incbin "./graphics/banim/assets/img/006FE938_Img_NaglfarSprites_A.gbapal"
 
-.global AnimSprite_086FF3C4
-AnimSprite_086FF3C4:  @ 0x6FF3C4
+.global AnimSprite_NaglfarSprites_A_0
+AnimSprite_NaglfarSprites_A_0:  @ 0x6FF3C4
     ANIM_SPRITE ATTR0_SQUARE, ATTR1_SIZE_32, 0x0000, -25, -38
     ANIM_SPRITE ATTR0_TALL, ATTR1_SIZE_32, 0x0004, 7, -38
     ANIM_SPRITE ATTR0_SQUARE, ATTR1_SIZE_32, 0x0006, -20, -6
@@ -31053,66 +31053,66 @@ AnimSprite_086FF3C4:  @ 0x6FF3C4
     ANIM_SPRITE ATTR0_WIDE, ATTR1_SIZE_8, 0x0072, -12, 26
     ANIM_SPRITE_END
 
-.global AnimSprite_086FF40C
-AnimSprite_086FF40C:  @ 0x6FF40C
+.global AnimSprite_NaglfarSprites_A_1
+AnimSprite_NaglfarSprites_A_1:  @ 0x6FF40C
     ANIM_SPRITE ATTR0_SQUARE, ATTR1_SIZE_32, 0x000C, -24, -16
     ANIM_SPRITE ATTR0_TALL, ATTR1_SIZE_32, 0x0010, 8, -16
     ANIM_SPRITE_END
 
-.global AnimSprite_086FF430
-AnimSprite_086FF430:  @ 0x6FF430
+.global AnimSprite_Banim_49
+AnimSprite_Banim_49:  @ 0x6FF430
     ANIM_SPRITE ATTR0_WIDE, ATTR1_SIZE_32, 0x0012, -16, -16
     ANIM_SPRITE ATTR0_WIDE, ATTR1_SIZE_16, 0x0052, -16, 0
     ANIM_SPRITE_END
 
-.global AnimSprite_086FF454
-AnimSprite_086FF454:  @ 0x6FF454
+.global AnimSprite_efxNaglfarOBJ_0
+AnimSprite_efxNaglfarOBJ_0:  @ 0x6FF454
     ANIM_SPRITE ATTR0_SQUARE, ATTR1_SIZE_16, 0x0016, -8, -8
     ANIM_SPRITE_END
 
-.global AnimSprite_086FF46C
-AnimSprite_086FF46C:  @ 0x6FF46C
+.global AnimSprite_efxNaglfarOBJ_1
+AnimSprite_efxNaglfarOBJ_1:  @ 0x6FF46C
     ANIM_SPRITE ATTR0_SQUARE, ATTR1_SIZE_8, 0x0074, -8, -8
     ANIM_SPRITE_END
 
-.global AnimSprite_086FF484
-AnimSprite_086FF484:  @ 0x6FF484
+.global AnimSprite_efxNaglfarOBJ_2
+AnimSprite_efxNaglfarOBJ_2:  @ 0x6FF484
     ANIM_SPRITE_XFLIP ATTR0_SQUARE, 0xA000, 0x000C, -8, -16
     ANIM_SPRITE_XFLIP ATTR0_TALL, 0xA000, 0x0010, -24, -16
     ANIM_SPRITE_END
 
-.global AnimScr_086FF4A8
-AnimScr_086FF4A8: @ 0x6FF4A8
-    ANIMSCR_FORCE_SPRITE AnimSprite_086FF3C4, 4
+.global AnimScr_efxNaglfarOBJ_0
+AnimScr_efxNaglfarOBJ_0: @ 0x6FF4A8
+    ANIMSCR_FORCE_SPRITE AnimSprite_NaglfarSprites_A_0, 4
     ANIMSCR_DISABLED
 
-.global AnimScr_086FF4B0
-AnimScr_086FF4B0: @ 0x6FF4B0
-    ANIMSCR_FORCE_SPRITE AnimSprite_086FF40C, 4
+.global AnimScr_efxNaglfarOBJ_1
+AnimScr_efxNaglfarOBJ_1: @ 0x6FF4B0
+    ANIMSCR_FORCE_SPRITE AnimSprite_NaglfarSprites_A_1, 4
     ANIMSCR_DISABLED
 
-.global AnimScr_086FF4B8
-AnimScr_086FF4B8: @ 0x6FF4B8
-    ANIMSCR_FORCE_SPRITE AnimSprite_086FF430, 4
+.global AnimScr_efxNaglfarOBJ_2
+AnimScr_efxNaglfarOBJ_2: @ 0x6FF4B8
+    ANIMSCR_FORCE_SPRITE AnimSprite_Banim_49, 4
     ANIMSCR_DISABLED
 
-.global AnimScr_086FF4C0
-AnimScr_086FF4C0: @ 0x6FF4C0
-    ANIMSCR_FORCE_SPRITE AnimSprite_086FF454, 4
+.global AnimScr_efxNaglfarOBJ_3
+AnimScr_efxNaglfarOBJ_3: @ 0x6FF4C0
+    ANIMSCR_FORCE_SPRITE AnimSprite_efxNaglfarOBJ_0, 4
     ANIMSCR_DISABLED
 
-.global AnimScr_086FF4C8
-AnimScr_086FF4C8: @ 0x6FF4C8
-    ANIMSCR_FORCE_SPRITE AnimSprite_086FF484, 2
+.global AnimScr_efxNaglfarOBJ_4
+AnimScr_efxNaglfarOBJ_4: @ 0x6FF4C8
+    ANIMSCR_FORCE_SPRITE AnimSprite_efxNaglfarOBJ_2, 2
     ANIMSCR_DISABLED
 
-.global AnimScr_086FF4D0
-AnimScr_086FF4D0: @ 0x6FF4D0
-    ANIMSCR_FORCE_SPRITE AnimSprite_086FF484, 2
+.global AnimScr_efxNaglfarOBJ_5
+AnimScr_efxNaglfarOBJ_5: @ 0x6FF4D0
+    ANIMSCR_FORCE_SPRITE AnimSprite_efxNaglfarOBJ_2, 2
     ANIMSCR_DISABLED
 
-.global AnimSprite_086FF4D8
-AnimSprite_086FF4D8:  @ 0x6FF4D8
+.global AnimSprite_efxNaglfarOBJ_3
+AnimSprite_efxNaglfarOBJ_3:  @ 0x6FF4D8
     ANIM_SPRITE_XFLIP ATTR0_SQUARE, ATTR1_SIZE_32, 0x0000, -7, -38
     ANIM_SPRITE_XFLIP ATTR0_TALL, ATTR1_SIZE_32, 0x0004, -23, -38
     ANIM_SPRITE_XFLIP ATTR0_SQUARE, ATTR1_SIZE_32, 0x0006, -12, -6
@@ -31120,62 +31120,62 @@ AnimSprite_086FF4D8:  @ 0x6FF4D8
     ANIM_SPRITE_XFLIP ATTR0_WIDE, ATTR1_SIZE_8, 0x0072, -4, 26
     ANIM_SPRITE_END
 
-.global AnimSprite_086FF520
-AnimSprite_086FF520:  @ 0x6FF520
+.global AnimSprite_efxNaglfarOBJ_4
+AnimSprite_efxNaglfarOBJ_4:  @ 0x6FF520
     ANIM_SPRITE_XFLIP ATTR0_SQUARE, ATTR1_SIZE_32, 0x000C, -8, -16
     ANIM_SPRITE_XFLIP ATTR0_TALL, ATTR1_SIZE_32, 0x0010, -24, -16
     ANIM_SPRITE_END
 
-.global AnimSprite_086FF544
-AnimSprite_086FF544:  @ 0x6FF544
+.global AnimSprite_efxNaglfarOBJ_5
+AnimSprite_efxNaglfarOBJ_5:  @ 0x6FF544
     ANIM_SPRITE_XFLIP ATTR0_WIDE, ATTR1_SIZE_32, 0x0012, -16, -16
     ANIM_SPRITE_XFLIP ATTR0_WIDE, ATTR1_SIZE_16, 0x0052, -16, 0
     ANIM_SPRITE_END
 
-.global AnimSprite_086FF568
-AnimSprite_086FF568:  @ 0x6FF568
+.global AnimSprite_efxNaglfarOBJ_6
+AnimSprite_efxNaglfarOBJ_6:  @ 0x6FF568
     ANIM_SPRITE_XFLIP ATTR0_SQUARE, ATTR1_SIZE_16, 0x0016, -8, -8
     ANIM_SPRITE_END
 
-.global AnimSprite_086FF580
-AnimSprite_086FF580:  @ 0x6FF580
+.global AnimSprite_efxNaglfarOBJ_7
+AnimSprite_efxNaglfarOBJ_7:  @ 0x6FF580
     ANIM_SPRITE_XFLIP ATTR0_SQUARE, ATTR1_SIZE_8, 0x0074, 0, -8
     ANIM_SPRITE_END
 
-.global AnimSprite_086FF598
-AnimSprite_086FF598:  @ 0x6FF598
+.global AnimSprite_efxNaglfarOBJ_8
+AnimSprite_efxNaglfarOBJ_8:  @ 0x6FF598
     ANIM_SPRITE ATTR0_SQUARE, 0xA000, 0x000C, -24, -16
     ANIM_SPRITE ATTR0_TALL, 0xA000, 0x0010, 8, -16
     ANIM_SPRITE_END
 
-.global AnimScr_086FF5BC
-AnimScr_086FF5BC: @ 0x6FF5BC
-    ANIMSCR_FORCE_SPRITE AnimSprite_086FF4D8, 4
+.global AnimScr_efxNaglfarOBJ_6
+AnimScr_efxNaglfarOBJ_6: @ 0x6FF5BC
+    ANIMSCR_FORCE_SPRITE AnimSprite_efxNaglfarOBJ_3, 4
     ANIMSCR_DISABLED
 
-.global AnimScr_086FF5C4
-AnimScr_086FF5C4: @ 0x6FF5C4
-    ANIMSCR_FORCE_SPRITE AnimSprite_086FF520, 4
+.global AnimScr_efxNaglfarOBJ_7
+AnimScr_efxNaglfarOBJ_7: @ 0x6FF5C4
+    ANIMSCR_FORCE_SPRITE AnimSprite_efxNaglfarOBJ_4, 4
     ANIMSCR_DISABLED
 
-.global AnimScr_086FF5CC
-AnimScr_086FF5CC: @ 0x6FF5CC
-    ANIMSCR_FORCE_SPRITE AnimSprite_086FF544, 4
+.global AnimScr_efxNaglfarOBJ_8
+AnimScr_efxNaglfarOBJ_8: @ 0x6FF5CC
+    ANIMSCR_FORCE_SPRITE AnimSprite_efxNaglfarOBJ_5, 4
     ANIMSCR_DISABLED
 
-.global AnimScr_086FF5D4
-AnimScr_086FF5D4: @ 0x6FF5D4
-    ANIMSCR_FORCE_SPRITE AnimSprite_086FF568, 4
+.global AnimScr_efxNaglfarOBJ_9
+AnimScr_efxNaglfarOBJ_9: @ 0x6FF5D4
+    ANIMSCR_FORCE_SPRITE AnimSprite_efxNaglfarOBJ_6, 4
     ANIMSCR_DISABLED
 
-.global AnimScr_086FF5DC
-AnimScr_086FF5DC: @ 0x6FF5DC
-    ANIMSCR_FORCE_SPRITE AnimSprite_086FF598, 2
+.global AnimScr_efxNaglfarOBJ_10
+AnimScr_efxNaglfarOBJ_10: @ 0x6FF5DC
+    ANIMSCR_FORCE_SPRITE AnimSprite_efxNaglfarOBJ_8, 2
     ANIMSCR_DISABLED
 
-.global AnimScr_086FF5E4
-AnimScr_086FF5E4: @ 0x6FF5E4
-    ANIMSCR_FORCE_SPRITE AnimSprite_086FF598, 2
+.global AnimScr_efxNaglfarOBJ_11
+AnimScr_efxNaglfarOBJ_11: @ 0x6FF5E4
+    ANIMSCR_FORCE_SPRITE AnimSprite_efxNaglfarOBJ_8, 2
     ANIMSCR_DISABLED
 
 	.global Img_NaglfarSprites_B
@@ -31186,8 +31186,8 @@ Img_NaglfarSprites_B:  @ 0x086FF5EC
 Pal_NaglfarSprites_B:  @ 0x086FFD3C
 	.incbin "./graphics/banim/assets/pal/006FFD3C_Pal_NaglfarSprites_B.gbapal"
 
-.global AnimSprite_086FFD5C
-AnimSprite_086FFD5C:  @ 0x6FFD5C
+.global AnimSprite_NaglfarSprites_B
+AnimSprite_NaglfarSprites_B:  @ 0x6FFD5C
     ANIM_SPRITE ATTR0_TALL, ATTR1_SIZE_16, 0x0012, -48, -120
     ANIM_SPRITE ATTR0_TALL, ATTR1_SIZE_32, 0x0013, -48, -88
     ANIM_SPRITE ATTR0_TALL, ATTR1_SIZE_32, 0x0016, -40, -56
@@ -31205,8 +31205,8 @@ AnimSprite_086FFD5C:  @ 0x6FFD5C
     ANIM_SPRITE ATTR0_TALL, 0x6000, 0x0015, -104, -56
     ANIM_SPRITE_END
 
-.global AnimSprite_086FFE1C
-AnimSprite_086FFE1C:  @ 0x6FFE1C
+.global AnimSprite_Banim_50
+AnimSprite_Banim_50:  @ 0x6FFE1C
     ANIM_SPRITE ATTR0_TALL, ATTR1_SIZE_32, 0x0000, -16, -120
     ANIM_SPRITE ATTR0_TALL, ATTR1_SIZE_16, 0x0002, 0, -120
     ANIM_SPRITE ATTR0_TALL, ATTR1_SIZE_32, 0x0003, 0, -88
@@ -31219,8 +31219,8 @@ AnimSprite_086FFE1C:  @ 0x6FFE1C
     ANIM_SPRITE_XFLIP ATTR0_TALL, 0x6000, 0x0015, 16, -56
     ANIM_SPRITE_END
 
-.global AnimSprite_086FFEA0
-AnimSprite_086FFEA0:  @ 0x6FFEA0
+.global AnimSprite_efxNaglfarOBJ2_0
+AnimSprite_efxNaglfarOBJ2_0:  @ 0x6FFEA0
     ANIM_SPRITE ATTR0_TALL, ATTR1_SIZE_16, 0x0012, -48, -120
     ANIM_SPRITE ATTR0_TALL, ATTR1_SIZE_32, 0x0013, -48, -88
     ANIM_SPRITE ATTR0_TALL, ATTR1_SIZE_32, 0x0016, -40, -56
@@ -31243,8 +31243,8 @@ AnimSprite_086FFEA0:  @ 0x6FFEA0
     ANIM_SPRITE ATTR0_TALL, ATTR1_SIZE_32, 0x0007, 120, -24
     ANIM_SPRITE_END
 
-.global AnimSprite_086FFF9C
-AnimSprite_086FFF9C:  @ 0x6FFF9C
+.global AnimSprite_efxNaglfarOBJ2_1
+AnimSprite_efxNaglfarOBJ2_1:  @ 0x6FFF9C
     ANIM_SPRITE_XFLIP ATTR0_TALL, ATTR1_SIZE_16, 0x0012, -112, -120
     ANIM_SPRITE_XFLIP ATTR0_TALL, ATTR1_SIZE_32, 0x0013, -120, -88
     ANIM_SPRITE_XFLIP ATTR0_TALL, ATTR1_SIZE_32, 0x0016, -128, -56
@@ -31267,20 +31267,20 @@ AnimSprite_086FFF9C:  @ 0x6FFF9C
     ANIM_SPRITE_XFLIP ATTR0_TALL, ATTR1_SIZE_32, 0x0007, -16, -24
     ANIM_SPRITE_END
 
-.global AnimScr_08700098
-AnimScr_08700098: @ 0x700098
-    ANIMSCR_FORCE_SPRITE AnimSprite_086FFD5C, 3
-    ANIMSCR_FORCE_SPRITE AnimSprite_086FFE1C, 2
+.global AnimScr_efxNaglfarOBJ2_0
+AnimScr_efxNaglfarOBJ2_0: @ 0x700098
+    ANIMSCR_FORCE_SPRITE AnimSprite_NaglfarSprites_B, 3
+    ANIMSCR_FORCE_SPRITE AnimSprite_Banim_50, 2
     ANIMSCR_DISABLED
 
-.global AnimScr_087000A4
-AnimScr_087000A4: @ 0x7000A4
-    ANIMSCR_FORCE_SPRITE AnimSprite_086FFEA0, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_086FFF9C, 2
+.global AnimScr_efxNaglfarOBJ2_1
+AnimScr_efxNaglfarOBJ2_1: @ 0x7000A4
+    ANIMSCR_FORCE_SPRITE AnimSprite_efxNaglfarOBJ2_0, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_efxNaglfarOBJ2_1, 2
     ANIMSCR_DISABLED
 
-.global AnimSprite_087000B0
-AnimSprite_087000B0:  @ 0x7000B0
+.global AnimSprite_efxNaglfarOBJ2_2
+AnimSprite_efxNaglfarOBJ2_2:  @ 0x7000B0
     ANIM_SPRITE_XFLIP ATTR0_TALL, ATTR1_SIZE_16, 0x0012, 40, -120
     ANIM_SPRITE_XFLIP ATTR0_TALL, ATTR1_SIZE_32, 0x0013, 32, -88
     ANIM_SPRITE_XFLIP ATTR0_TALL, ATTR1_SIZE_32, 0x0016, 24, -56
@@ -31298,8 +31298,8 @@ AnimSprite_087000B0:  @ 0x7000B0
     ANIM_SPRITE_XFLIP ATTR0_TALL, 0x6000, 0x0015, 96, -56
     ANIM_SPRITE_END
 
-.global AnimSprite_08700170
-AnimSprite_08700170:  @ 0x700170
+.global AnimSprite_efxNaglfarOBJ2_3
+AnimSprite_efxNaglfarOBJ2_3:  @ 0x700170
     ANIM_SPRITE_XFLIP ATTR0_TALL, ATTR1_SIZE_32, 0x0000, 0, -120
     ANIM_SPRITE_XFLIP ATTR0_TALL, ATTR1_SIZE_16, 0x0002, -8, -120
     ANIM_SPRITE_XFLIP ATTR0_TALL, ATTR1_SIZE_32, 0x0003, -16, -88
@@ -31312,8 +31312,8 @@ AnimSprite_08700170:  @ 0x700170
     ANIM_SPRITE ATTR0_TALL, 0x6000, 0x0015, -24, -56
     ANIM_SPRITE_END
 
-.global AnimSprite_087001F4
-AnimSprite_087001F4:  @ 0x7001F4
+.global AnimSprite_efxNaglfarOBJ2_4
+AnimSprite_efxNaglfarOBJ2_4:  @ 0x7001F4
     ANIM_SPRITE_XFLIP ATTR0_TALL, ATTR1_SIZE_16, 0x0012, 40, -120
     ANIM_SPRITE_XFLIP ATTR0_TALL, ATTR1_SIZE_32, 0x0013, 32, -88
     ANIM_SPRITE_XFLIP ATTR0_TALL, ATTR1_SIZE_32, 0x0016, 24, -56
@@ -31336,8 +31336,8 @@ AnimSprite_087001F4:  @ 0x7001F4
     ANIM_SPRITE_XFLIP ATTR0_TALL, ATTR1_SIZE_32, 0x0007, -136, -24
     ANIM_SPRITE_END
 
-.global AnimSprite_087002F0
-AnimSprite_087002F0:  @ 0x7002F0
+.global AnimSprite_efxNaglfarOBJ2_5
+AnimSprite_efxNaglfarOBJ2_5:  @ 0x7002F0
     ANIM_SPRITE ATTR0_TALL, ATTR1_SIZE_16, 0x0012, 104, -120
     ANIM_SPRITE ATTR0_TALL, ATTR1_SIZE_32, 0x0013, 104, -88
     ANIM_SPRITE ATTR0_TALL, ATTR1_SIZE_32, 0x0016, 112, -56
@@ -31360,16 +31360,16 @@ AnimSprite_087002F0:  @ 0x7002F0
     ANIM_SPRITE ATTR0_TALL, ATTR1_SIZE_32, 0x0007, 0, -24
     ANIM_SPRITE_END
 
-.global AnimScr_087003EC
-AnimScr_087003EC: @ 0x7003EC
-    ANIMSCR_FORCE_SPRITE AnimSprite_087000B0, 3
-    ANIMSCR_FORCE_SPRITE AnimSprite_08700170, 2
+.global AnimScr_efxNaglfarOBJ2_2
+AnimScr_efxNaglfarOBJ2_2: @ 0x7003EC
+    ANIMSCR_FORCE_SPRITE AnimSprite_efxNaglfarOBJ2_2, 3
+    ANIMSCR_FORCE_SPRITE AnimSprite_efxNaglfarOBJ2_3, 2
     ANIMSCR_DISABLED
 
-.global AnimScr_087003F8
-AnimScr_087003F8: @ 0x7003F8
-    ANIMSCR_FORCE_SPRITE AnimSprite_087001F4, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_087002F0, 2
+.global AnimScr_efxNaglfarOBJ2_3
+AnimScr_efxNaglfarOBJ2_3: @ 0x7003F8
+    ANIMSCR_FORCE_SPRITE AnimSprite_efxNaglfarOBJ2_4, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_efxNaglfarOBJ2_5, 2
     ANIMSCR_DISABLED
 
 	.global Img_NaglfarBg1_A
@@ -31384,289 +31384,289 @@ Pal_NaglfarBg1_A:  @ 0x087013A0
 Tsa_NaglfarBg1_A:  @ 0x087013C0
 	.incbin "./graphics/banim/assets/tsa/007013C0_Tsa_NaglfarBg1_A.map.bin.lz" @ 0x701660 - 0x7013C0
 
-	.global Img_08701660
-Img_08701660:  @ 0x08701660
+	.global Img_NaglfarBg
+Img_NaglfarBg:  @ 0x08701660
 	.incbin "./graphics/banim/assets/img/00701660_Img_08701660.4bpp.lz" @ 0x7020CC - 0x701660
 
-	.global Img_087020CC
-Img_087020CC:  @ 0x087020CC
+	.global Img_NaglfarBg2_0
+Img_NaglfarBg2_0:  @ 0x087020CC
 	.incbin "./graphics/banim/assets/img/007020CC_Img_087020CC.4bpp.lz" @ 0x702D98 - 0x7020CC
 
-	.global Img_08702D98
-Img_08702D98:  @ 0x08702D98
+	.global Img_NaglfarBg2_1
+Img_NaglfarBg2_1:  @ 0x08702D98
 	.incbin "./graphics/banim/assets/img/00702D98_Img_08702D98.4bpp.lz" @ 0x703BCC - 0x702D98
 
-	.global Img_08703BCC
-Img_08703BCC:  @ 0x08703BCC
+	.global Img_NaglfarBg2_2
+Img_NaglfarBg2_2:  @ 0x08703BCC
 	.incbin "./graphics/banim/assets/img/00703BCC_Img_08703BCC.4bpp.lz" @ 0x704E90 - 0x703BCC
 
-	.global Img_08704E90
-Img_08704E90:  @ 0x08704E90
+	.global Img_NaglfarBg2_3
+Img_NaglfarBg2_3:  @ 0x08704E90
 	.incbin "./graphics/banim/assets/img/00704E90_Img_08704E90.4bpp.lz" @ 0x706388 - 0x704E90
 
-	.global Img_08706388
-Img_08706388:  @ 0x08706388
+	.global Img_NaglfarBg2_4
+Img_NaglfarBg2_4:  @ 0x08706388
 	.incbin "./graphics/banim/assets/img/00706388_Img_08706388.4bpp.lz" @ 0x7079EC - 0x706388
 
-	.global Img_087079EC
-Img_087079EC:  @ 0x087079EC
+	.global Img_NaglfarBg2_5
+Img_NaglfarBg2_5:  @ 0x087079EC
 	.incbin "./graphics/banim/assets/img/007079EC_Img_087079EC.4bpp.lz" @ 0x708DA0 - 0x7079EC
 
-	.global Img_08708DA0
-Img_08708DA0:  @ 0x08708DA0
+	.global Img_NaglfarBg2_6
+Img_NaglfarBg2_6:  @ 0x08708DA0
 	.incbin "./graphics/banim/assets/img/00708DA0_Img_08708DA0.4bpp.lz" @ 0x709FA8 - 0x708DA0
 
-	.global Img_08709FA8
-Img_08709FA8:  @ 0x08709FA8
+	.global Img_NaglfarBg2_7
+Img_NaglfarBg2_7:  @ 0x08709FA8
 	.incbin "./graphics/banim/assets/img/00709FA8_Img_08709FA8.4bpp.lz" @ 0x70B060 - 0x709FA8
 
-	.global Img_0870B060
-Img_0870B060:  @ 0x0870B060
+	.global Img_NaglfarBg2_8
+Img_NaglfarBg2_8:  @ 0x0870B060
 	.incbin "./graphics/banim/assets/img/0070B060_Img_0870B060.4bpp.lz" @ 0x70C014 - 0x70B060
 
-	.global Img_0870C014
-Img_0870C014:  @ 0x0870C014
+	.global Img_NaglfarBg2_9
+Img_NaglfarBg2_9:  @ 0x0870C014
 	.incbin "./graphics/banim/assets/img/0070C014_Img_0870C014.4bpp.lz" @ 0x70CDF0 - 0x70C014
 
-	.global Img_0870CDF0
-Img_0870CDF0:  @ 0x0870CDF0
+	.global Img_NaglfarBg2_10
+Img_NaglfarBg2_10:  @ 0x0870CDF0
 	.incbin "./graphics/banim/assets/img/0070CDF0_Img_0870CDF0.4bpp.lz" @ 0x70DBCC - 0x70CDF0
 
-	.global Img_0870DBCC
-Img_0870DBCC:  @ 0x0870DBCC
+	.global Img_NaglfarBg2_11
+Img_NaglfarBg2_11:  @ 0x0870DBCC
 	.incbin "./graphics/banim/assets/img/0070DBCC_Img_0870DBCC.4bpp.lz" @ 0x70E894 - 0x70DBCC
 
-	.global Img_0870E894
-Img_0870E894:  @ 0x0870E894
+	.global Img_NaglfarBg2_12
+Img_NaglfarBg2_12:  @ 0x0870E894
 	.incbin "./graphics/banim/assets/img/0070E894_Img_0870E894.4bpp.lz" @ 0x70F524 - 0x70E894
 
-	.global Img_0870F524
-Img_0870F524:  @ 0x0870F524
+	.global Img_NaglfarBg2_13
+Img_NaglfarBg2_13:  @ 0x0870F524
 	.incbin "./graphics/banim/assets/img/0070F524_Img_0870F524.4bpp.lz" @ 0x710218 - 0x70F524
 
-	.global Img_08710218
-Img_08710218:  @ 0x08710218
+	.global Img_NaglfarBg2_14
+Img_NaglfarBg2_14:  @ 0x08710218
 	.incbin "./graphics/banim/assets/img/00710218_Img_08710218.4bpp.lz" @ 0x710DB8 - 0x710218
 
-	.global Pal_08710DB8
-Pal_08710DB8:  @ 0x08710DB8
+	.global Pal_NaglfarBg2_0
+Pal_NaglfarBg2_0:  @ 0x08710DB8
 	.incbin "./graphics/banim/assets/pal/00710DB8_Pal_08710DB8.gbapal" @ 0x710DD8 - 0x710DB8
 
-	.global Pal_08710DD8
-Pal_08710DD8:  @ 0x08710DD8
+	.global Pal_NaglfarBg2_1
+Pal_NaglfarBg2_1:  @ 0x08710DD8
 	.incbin "./graphics/banim/assets/pal/00710DD8_Pal_08710DD8.gbapal" @ 0x710DF8 - 0x710DD8
 
-	.global Pal_08710DF8
-Pal_08710DF8:  @ 0x08710DF8
+	.global Pal_NaglfarBg2_2
+Pal_NaglfarBg2_2:  @ 0x08710DF8
 	.incbin "./graphics/banim/assets/pal/00710DF8_Pal_08710DF8.gbapal" @ 0x710E18 - 0x710DF8
 
-	.global Pal_08710E18
-Pal_08710E18:  @ 0x08710E18
+	.global Pal_NaglfarBg2_3
+Pal_NaglfarBg2_3:  @ 0x08710E18
 	.incbin "./graphics/banim/assets/pal/00710E18_Pal_08710E18.gbapal" @ 0x710E38 - 0x710E18
 
-	.global Pal_08710E38
-Pal_08710E38:  @ 0x08710E38
+	.global Pal_NaglfarBg2_4
+Pal_NaglfarBg2_4:  @ 0x08710E38
 	.incbin "./graphics/banim/assets/pal/00710E38_Pal_08710E38.gbapal" @ 0x710E58 - 0x710E38
 
-	.global Pal_08710E58
-Pal_08710E58:  @ 0x08710E58
+	.global Pal_NaglfarBg2_5
+Pal_NaglfarBg2_5:  @ 0x08710E58
 	.incbin "./graphics/banim/assets/pal/00710E58_Pal_08710E58.gbapal" @ 0x710E78 - 0x710E58
 
-	.global Pal_08710E78
-Pal_08710E78:  @ 0x08710E78
+	.global Pal_NaglfarBg2_6
+Pal_NaglfarBg2_6:  @ 0x08710E78
 	.incbin "./graphics/banim/assets/pal/00710E78_Pal_08710E78.gbapal" @ 0x710E98 - 0x710E78
 
-	.global Pal_08710E98
-Pal_08710E98:  @ 0x08710E98
+	.global Pal_NaglfarBg2_7
+Pal_NaglfarBg2_7:  @ 0x08710E98
 	.incbin "./graphics/banim/assets/pal/00710E98_Pal_08710E98.gbapal" @ 0x710EB8 - 0x710E98
 
-	.global Pal_08710EB8
-Pal_08710EB8:  @ 0x08710EB8
+	.global Pal_NaglfarBg2_8
+Pal_NaglfarBg2_8:  @ 0x08710EB8
 	.incbin "./graphics/banim/assets/pal/00710EB8_Pal_08710EB8.gbapal" @ 0x710ED8 - 0x710EB8
 
-	.global Pal_08710ED8
-Pal_08710ED8:  @ 0x08710ED8
+	.global Pal_NaglfarBg2_9
+Pal_NaglfarBg2_9:  @ 0x08710ED8
 	.incbin "./graphics/banim/assets/pal/00710ED8_Pal_08710ED8.gbapal" @ 0x710EF8 - 0x710ED8
 
-	.global Pal_08710EF8
-Pal_08710EF8:  @ 0x08710EF8
+	.global Pal_NaglfarBg2_10
+Pal_NaglfarBg2_10:  @ 0x08710EF8
 	.incbin "./graphics/banim/assets/pal/00710EF8_Pal_08710EF8.gbapal" @ 0x710F18 - 0x710EF8
 
-	.global Pal_08710F18
-Pal_08710F18:  @ 0x08710F18
+	.global Pal_NaglfarBg2_11
+Pal_NaglfarBg2_11:  @ 0x08710F18
 	.incbin "./graphics/banim/assets/pal/00710F18_Pal_08710F18.gbapal" @ 0x710F38 - 0x710F18
 
-	.global Pal_08710F38
-Pal_08710F38:  @ 0x08710F38
+	.global Pal_NaglfarBg2_12
+Pal_NaglfarBg2_12:  @ 0x08710F38
 	.incbin "./graphics/banim/assets/pal/00710F38_Pal_08710F38.gbapal" @ 0x710F58 - 0x710F38
 
-	.global Pal_08710F58
-Pal_08710F58:  @ 0x08710F58
+	.global Pal_NaglfarBg2_13
+Pal_NaglfarBg2_13:  @ 0x08710F58
 	.incbin "./graphics/banim/assets/pal/00710F58_Pal_08710F58.gbapal" @ 0x710F78 - 0x710F58
 
-	.global Pal_08710F78
-Pal_08710F78:  @ 0x08710F78
+	.global Pal_NaglfarBg2_14
+Pal_NaglfarBg2_14:  @ 0x08710F78
 	.incbin "./graphics/banim/assets/pal/00710F78_Pal_08710F78.gbapal" @ 0x710F98 - 0x710F78
 
-	.global Pal_08710F98
-Pal_08710F98:  @ 0x08710F98
+	.global Pal_NaglfarBg2_15
+Pal_NaglfarBg2_15:  @ 0x08710F98
 	.incbin "./graphics/banim/assets/pal/00710F98_Pal_08710F98.gbapal" @ 0x710FB8 - 0x710F98
 
-	.global Tsa_08710FB8
-Tsa_08710FB8:  @ 0x08710FB8
+	.global Tsa_NaglfarBg2_0
+Tsa_NaglfarBg2_0:  @ 0x08710FB8
 	.incbin "./graphics/banim/assets/tsa/00710FB8_Tsa_08710FB8.map.bin.lz" @ 0x7111E0 - 0x710FB8
 
-	.global Tsa_087111E0
-Tsa_087111E0:  @ 0x087111E0
+	.global Tsa_NaglfarBg2_1
+Tsa_NaglfarBg2_1:  @ 0x087111E0
 	.incbin "./graphics/banim/assets/tsa/007111E0_Tsa_087111E0.map.bin.lz" @ 0x711438 - 0x7111E0
 
-	.global Tsa_08711438
-Tsa_08711438:  @ 0x08711438
+	.global Tsa_NaglfarBg2_2
+Tsa_NaglfarBg2_2:  @ 0x08711438
 	.incbin "./graphics/banim/assets/tsa/00711438_Tsa_08711438.map.bin.lz" @ 0x7116A4 - 0x711438
 
-	.global Tsa_087116A4
-Tsa_087116A4:  @ 0x087116A4
+	.global Tsa_NaglfarBg2_3
+Tsa_NaglfarBg2_3:  @ 0x087116A4
 	.incbin "./graphics/banim/assets/tsa/007116A4_Tsa_087116A4.map.bin.lz" @ 0x7118FC - 0x7116A4
 
-	.global Tsa_087118FC
-Tsa_087118FC:  @ 0x087118FC
+	.global Tsa_NaglfarBg2_4
+Tsa_NaglfarBg2_4:  @ 0x087118FC
 	.incbin "./graphics/banim/assets/tsa/007118FC_Tsa_087118FC.map.bin.lz" @ 0x711B6C - 0x7118FC
 
-	.global Tsa_08711B6C
-Tsa_08711B6C:  @ 0x08711B6C
+	.global Tsa_NaglfarBg2_5
+Tsa_NaglfarBg2_5:  @ 0x08711B6C
 	.incbin "./graphics/banim/assets/tsa/00711B6C_Tsa_08711B6C.map.bin.lz" @ 0x711DD8 - 0x711B6C
 
-	.global Tsa_08711DD8
-Tsa_08711DD8:  @ 0x08711DD8
+	.global Tsa_NaglfarBg2_6
+Tsa_NaglfarBg2_6:  @ 0x08711DD8
 	.incbin "./graphics/banim/assets/tsa/00711DD8_Tsa_08711DD8.map.bin.lz" @ 0x71203C - 0x711DD8
 
-	.global Tsa_0871203C
-Tsa_0871203C:  @ 0x0871203C
+	.global Tsa_NaglfarBg2_7
+Tsa_NaglfarBg2_7:  @ 0x0871203C
 	.incbin "./graphics/banim/assets/tsa/0071203C_Tsa_0871203C.map.bin.lz" @ 0x7122A4 - 0x71203C
 
-	.global Tsa_087122A4
-Tsa_087122A4:  @ 0x087122A4
+	.global Tsa_NaglfarBg2_8
+Tsa_NaglfarBg2_8:  @ 0x087122A4
 	.incbin "./graphics/banim/assets/tsa/007122A4_Tsa_087122A4.map.bin.lz" @ 0x71250C - 0x7122A4
 
-	.global Tsa_0871250C
-Tsa_0871250C:  @ 0x0871250C
+	.global Tsa_NaglfarBg2_9
+Tsa_NaglfarBg2_9:  @ 0x0871250C
 	.incbin "./graphics/banim/assets/tsa/0071250C_Tsa_0871250C.map.bin.lz" @ 0x71276C - 0x71250C
 
-	.global Tsa_0871276C
-Tsa_0871276C:  @ 0x0871276C
+	.global Tsa_NaglfarBg2_10
+Tsa_NaglfarBg2_10:  @ 0x0871276C
 	.incbin "./graphics/banim/assets/tsa/0071276C_Tsa_0871276C.map.bin.lz" @ 0x7129C0 - 0x71276C
 
-	.global Tsa_087129C0
-Tsa_087129C0:  @ 0x087129C0
+	.global Tsa_NaglfarBg2_11
+Tsa_NaglfarBg2_11:  @ 0x087129C0
 	.incbin "./graphics/banim/assets/tsa/007129C0_Tsa_087129C0.map.bin.lz" @ 0x712C14 - 0x7129C0
 
-	.global Tsa_08712C14
-Tsa_08712C14:  @ 0x08712C14
+	.global Tsa_NaglfarBg2_12
+Tsa_NaglfarBg2_12:  @ 0x08712C14
 	.incbin "./graphics/banim/assets/tsa/00712C14_Tsa_08712C14.map.bin.lz" @ 0x712E6C - 0x712C14
 
-	.global Tsa_08712E6C
-Tsa_08712E6C:  @ 0x08712E6C
+	.global Tsa_NaglfarBg2_13
+Tsa_NaglfarBg2_13:  @ 0x08712E6C
 	.incbin "./graphics/banim/assets/tsa/00712E6C_Tsa_08712E6C.map.bin.lz" @ 0x7130B4 - 0x712E6C
 
-	.global Tsa_087130B4
-Tsa_087130B4:  @ 0x087130B4
+	.global Tsa_NaglfarBg2_14
+Tsa_NaglfarBg2_14:  @ 0x087130B4
 	.incbin "./graphics/banim/assets/tsa/007130B4_Tsa_087130B4.map.bin.lz" @ 0x713310 - 0x7130B4
 
-	.global Tsa_08713310
-Tsa_08713310:  @ 0x08713310
+	.global Tsa_NaglfarBg2_15
+Tsa_NaglfarBg2_15:  @ 0x08713310
 	.incbin "./graphics/banim/assets/tsa/00713310_Tsa_08713310.map.bin.lz" @ 0x713558 - 0x713310
 
-	.global Img_08713558
-Img_08713558:  @ 0x08713558
+	.global Img_NaglfarBg3_0
+Img_NaglfarBg3_0:  @ 0x08713558
 	.incbin "./graphics/banim/assets/img/00713558_Img_08713558.4bpp.lz" @ 0x714E64 - 0x713558
 
-	.global Img_08714E64
-Img_08714E64:  @ 0x08714E64
+	.global Img_NaglfarBg3_1
+Img_NaglfarBg3_1:  @ 0x08714E64
 	.incbin "./graphics/banim/assets/img/00714E64_Img_08714E64.4bpp.lz" @ 0x716710 - 0x714E64
 
-	.global Img_08716710
-Img_08716710:  @ 0x08716710
+	.global Img_NaglfarBg3_2
+Img_NaglfarBg3_2:  @ 0x08716710
 	.incbin "./graphics/banim/assets/img/00716710_Img_08716710.4bpp.lz" @ 0x717E78 - 0x716710
 
-	.global Img_08717E78
-Img_08717E78:  @ 0x08717E78
+	.global Img_NaglfarBg3_3
+Img_NaglfarBg3_3:  @ 0x08717E78
 	.incbin "./graphics/banim/assets/img/00717E78_Img_08717E78.4bpp.lz" @ 0x7197E4 - 0x717E78
 
 	.global Pal_NaglfarBg3
 Pal_NaglfarBg3:  @ 0x087197E4
 	.incbin "./graphics/banim/assets/img/00717E78_Img_08717E78.gbapal" @ 0x719804 - 0x7197E4
 
-	.global Tsa_08719804
-Tsa_08719804:  @ 0x08719804
+	.global Tsa_NaglfarBg3_0
+Tsa_NaglfarBg3_0:  @ 0x08719804
 	.incbin "./graphics/banim/assets/tsa/00719804_Tsa_08719804.map.bin.lz" @ 0x719CA4 - 0x719804
 
-	.global Tsa_08719CA4
-Tsa_08719CA4:  @ 0x08719CA4
+	.global Tsa_NaglfarBg3_1
+Tsa_NaglfarBg3_1:  @ 0x08719CA4
 	.incbin "./graphics/banim/assets/tsa/00719CA4_Tsa_08719CA4.map.bin.lz" @ 0x71A134 - 0x719CA4
 
-	.global Tsa_0871A134
-Tsa_0871A134:  @ 0x0871A134
+	.global Tsa_NaglfarBg3_2
+Tsa_NaglfarBg3_2:  @ 0x0871A134
 	.incbin "./graphics/banim/assets/tsa/0071A134_Tsa_0871A134.map.bin.lz" @ 0x71A5D0 - 0x71A134
 
-	.global Tsa_0871A5D0
-Tsa_0871A5D0:  @ 0x0871A5D0
+	.global Tsa_NaglfarBg3_3
+Tsa_NaglfarBg3_3:  @ 0x0871A5D0
 	.incbin "./graphics/banim/assets/tsa/0071A5D0_Tsa_0871A5D0.map.bin.lz" @ 0x71AA78 - 0x71A5D0
 
-	.global Img_0871AA78
-Img_0871AA78:  @ 0x0871AA78
+	.global Img_NaglfarBg4_0
+Img_NaglfarBg4_0:  @ 0x0871AA78
 	.incbin "./graphics/banim/assets/img/0071AA78_Img_0871AA78.4bpp.lz" @ 0x71BF64 - 0x71AA78
 
-	.global Img_0871BF64
-Img_0871BF64:  @ 0x0871BF64
+	.global Img_NaglfarBg4_1
+Img_NaglfarBg4_1:  @ 0x0871BF64
 	.incbin "./graphics/banim/assets/img/0071BF64_Img_0871BF64.4bpp.lz" @ 0x71D310 - 0x71BF64
 
-	.global Img_0871D310
-Img_0871D310:  @ 0x0871D310
+	.global Img_NaglfarBg4_2
+Img_NaglfarBg4_2:  @ 0x0871D310
 	.incbin "./graphics/banim/assets/img/0071D310_Img_0871D310.4bpp.lz" @ 0x71E6C0 - 0x71D310
 
-	.global Img_0871E6C0
-Img_0871E6C0:  @ 0x0871E6C0
+	.global Img_NaglfarBg4_3
+Img_NaglfarBg4_3:  @ 0x0871E6C0
 	.incbin "./graphics/banim/assets/img/0071E6C0_Img_0871E6C0.4bpp.lz" @ 0x71F9DC - 0x71E6C0
 
-	.global Img_0871F9DC
-Img_0871F9DC:  @ 0x0871F9DC
+	.global Img_NaglfarBg4_4
+Img_NaglfarBg4_4:  @ 0x0871F9DC
 	.incbin "./graphics/banim/assets/img/0071F9DC_Img_0871F9DC.4bpp.lz" @ 0x720D84 - 0x71F9DC
 
 	.global Pal_NaglfarBg4
 Pal_NaglfarBg4:  @ 0x08720D84
 	.incbin "./graphics/banim/assets/img/0071F9DC_Img_0871F9DC.gbapal" @ 0x720DA4 - 0x720D84
 
-	.global Tsa_08720DA4
-Tsa_08720DA4:  @ 0x08720DA4
+	.global Tsa_NaglfarBg4_0
+Tsa_NaglfarBg4_0:  @ 0x08720DA4
 	.incbin "./graphics/banim/assets/tsa/00720DA4_Tsa_08720DA4.map.bin.lz" @ 0x72101C - 0x720DA4
 
-	.global Tsa_0872101C
-Tsa_0872101C:  @ 0x0872101C
+	.global Tsa_NaglfarBg4_1
+Tsa_NaglfarBg4_1:  @ 0x0872101C
 	.incbin "./graphics/banim/assets/tsa/0072101C_Tsa_0872101C.map.bin.lz" @ 0x721294 - 0x72101C
 
-	.global Tsa_08721294
-Tsa_08721294:  @ 0x08721294
+	.global Tsa_NaglfarBg4_2
+Tsa_NaglfarBg4_2:  @ 0x08721294
 	.incbin "./graphics/banim/assets/tsa/00721294_Tsa_08721294.map.bin.lz" @ 0x72150C - 0x721294
 
-	.global Tsa_0872150C
-Tsa_0872150C:  @ 0x0872150C
+	.global Tsa_NaglfarBg4_3
+Tsa_NaglfarBg4_3:  @ 0x0872150C
 	.incbin "./graphics/banim/assets/tsa/0072150C_Tsa_0872150C.map.bin.lz" @ 0x721784 - 0x72150C
 
-	.global Tsa_08721784
-Tsa_08721784:  @ 0x08721784
+	.global Tsa_NaglfarBg4_4
+Tsa_NaglfarBg4_4:  @ 0x08721784
 	.incbin "./graphics/banim/assets/tsa/00721784_Tsa_08721784.map.bin.lz"
 	.include "banim/animscr_naglfarbg4_darkbreath.s"
 
-	.global Img_08723274
-Img_08723274:  @ 0x08723274
+	.global Img_efxExcaliburBG0
+Img_efxExcaliburBG0:  @ 0x08723274
 	.incbin "./graphics/banim/assets/img/00723274_Img_08723274.4bpp.lz" @ 0x724424 - 0x723274
 
 	.global Pal_efxExcaliburBG0
 Pal_efxExcaliburBG0:  @ 0x08724424
 	.incbin "./graphics/banim/assets/pal/00724424_Pal_efxExcaliburBG0.gbapal" @ 0x724444 - 0x724424
 
-	.global Tsa_08724444
-Tsa_08724444:  @ 0x08724444
+	.global Tsa_efxExcaliburBG0
+Tsa_efxExcaliburBG0:  @ 0x08724444
 	.incbin "./graphics/banim/assets/tsa/00724444_Tsa_08724444.map.bin.lz" @ 0x7246D8 - 0x724444
 
 	.global Img_FireBreathBg
@@ -31681,16 +31681,16 @@ Pal_FireBreathBg:  @ 0x08725AD0
 Tsa_FireBreathBg:  @ 0x08725AF0
 	.incbin "./graphics/banim/assets/tsa/00725AF0_Tsa_FireBreathBg.map.bin.lz"
 
-	.global Pal_08725DAC
-Pal_08725DAC:  @ 0x08725DAC
+	.global Pal_Banim_7
+Pal_Banim_7:  @ 0x08725DAC
 	.incbin "./graphics/banim/assets/pal/00725DAC_Pal_08725DAC.gbapal"
 
 	.global Img_ShineBg1
 Img_ShineBg1:  @ 0x08725DCC
 	.incbin "./graphics/banim/assets/img/00725DCC_Img_ShineBg1.4bpp.lz"
 
-	.global Pal_ShineBg_08726FF4
-Pal_ShineBg_08726FF4:  @ 0x08726FF4
+	.global Pal_ShineBg_0
+Pal_ShineBg_0:  @ 0x08726FF4
 	.incbin "./graphics/banim/assets/pal/00726FF4_Pal_ShineBg_08726FF4.gbapal"
 
 	.global Tsa_ShineBg1_Left
@@ -32619,8 +32619,8 @@ AnimScr_EfxExcalibur: @ 0x7312BC
     ANIMSCR_FORCE_SPRITE AnimSprite_EfxExcalibur_34, 1
     ANIMSCR_DISABLED
 
-	.global Pal_08731348
-Pal_08731348:  @ 0x08731348
+	.global Pal_Banim_8
+Pal_Banim_8:  @ 0x08731348
 	.incbin "./graphics/banim/assets/pal/00731348_Pal_08731348.gbapal"
 
 	.global Img_GespenstBg4
@@ -32643,216 +32643,216 @@ Img_AuraBg1:  @ 0x087327C4
 Pal_AuraBg1:  @ 0x0873313C
 	.incbin "./graphics/banim/assets/img/007327C4_Img_AuraBg1.gbapal" @ 0x73315C - 0x73313C
 
-	.global Tsa_0873315C
-Tsa_0873315C:  @ 0x0873315C
+	.global Tsa_AuraBg1_0
+Tsa_AuraBg1_0:  @ 0x0873315C
 	.incbin "./graphics/banim/assets/tsa/0073315C_Tsa_0873315C.map.bin.lz" @ 0x7331FC - 0x73315C
 
-	.global Tsa_087331FC
-Tsa_087331FC:  @ 0x087331FC
+	.global Tsa_AuraBg1_1
+Tsa_AuraBg1_1:  @ 0x087331FC
 	.incbin "./graphics/banim/assets/tsa/007331FC_Tsa_087331FC.map.bin.lz" @ 0x7332A4 - 0x7331FC
 
-	.global Tsa_087332A4
-Tsa_087332A4:  @ 0x087332A4
+	.global Tsa_AuraBg1_2
+Tsa_AuraBg1_2:  @ 0x087332A4
 	.incbin "./graphics/banim/assets/tsa/007332A4_Tsa_087332A4.map.bin.lz" @ 0x73334C - 0x7332A4
 
-	.global Tsa_0873334C
-Tsa_0873334C:  @ 0x0873334C
+	.global Tsa_AuraBg1_3
+Tsa_AuraBg1_3:  @ 0x0873334C
 	.incbin "./graphics/banim/assets/tsa/0073334C_Tsa_0873334C.map.bin.lz" @ 0x7333F8 - 0x73334C
 
-	.global Tsa_087333F8
-Tsa_087333F8:  @ 0x087333F8
+	.global Tsa_AuraBg1_4
+Tsa_AuraBg1_4:  @ 0x087333F8
 	.incbin "./graphics/banim/assets/tsa/007333F8_Tsa_087333F8.map.bin.lz" @ 0x7334B0 - 0x7333F8
 
-	.global Tsa_087334B0
-Tsa_087334B0:  @ 0x087334B0
+	.global Tsa_AuraBg1_5
+Tsa_AuraBg1_5:  @ 0x087334B0
 	.incbin "./graphics/banim/assets/tsa/007334B0_Tsa_087334B0.map.bin.lz" @ 0x733568 - 0x7334B0
 
-	.global Tsa_08733568
-Tsa_08733568:  @ 0x08733568
+	.global Tsa_AuraBg1_6
+Tsa_AuraBg1_6:  @ 0x08733568
 	.incbin "./graphics/banim/assets/tsa/00733568_Tsa_08733568.map.bin.lz" @ 0x733618 - 0x733568
 
-	.global Tsa_08733618
-Tsa_08733618:  @ 0x08733618
+	.global Tsa_AuraBg1_7
+Tsa_AuraBg1_7:  @ 0x08733618
 	.incbin "./graphics/banim/assets/tsa/00733618_Tsa_08733618.map.bin.lz" @ 0x7336C4 - 0x733618
 
-	.global Tsa_087336C4
-Tsa_087336C4:  @ 0x087336C4
+	.global Tsa_AuraBg1_8
+Tsa_AuraBg1_8:  @ 0x087336C4
 	.incbin "./graphics/banim/assets/tsa/007336C4_Tsa_087336C4.map.bin.lz" @ 0x73376C - 0x7336C4
 
-	.global Tsa_0873376C
-Tsa_0873376C:  @ 0x0873376C
+	.global Tsa_AuraBg1_9
+Tsa_AuraBg1_9:  @ 0x0873376C
 	.incbin "./graphics/banim/assets/tsa/0073376C_Tsa_0873376C.map.bin.lz" @ 0x73380C - 0x73376C
 
-	.global Tsa_0873380C
-Tsa_0873380C:  @ 0x0873380C
+	.global Tsa_AuraBg1_10
+Tsa_AuraBg1_10:  @ 0x0873380C
 	.incbin "./graphics/banim/assets/tsa/0073380C_Tsa_0873380C.map.bin.lz" @ 0x7338A8 - 0x73380C
 
-	.global Tsa_087338A8
-Tsa_087338A8:  @ 0x087338A8
+	.global Tsa_AuraBg1_11
+Tsa_AuraBg1_11:  @ 0x087338A8
 	.incbin "./graphics/banim/assets/tsa/007338A8_Tsa_087338A8.map.bin.lz" @ 0x733940 - 0x7338A8
 
-	.global Tsa_08733940
-Tsa_08733940:  @ 0x08733940
+	.global Tsa_AuraBg1_12
+Tsa_AuraBg1_12:  @ 0x08733940
 	.incbin "./graphics/banim/assets/tsa/00733940_Tsa_08733940.map.bin.lz" @ 0x733A58 - 0x733940
 
-	.global Tsa_08733A58
-Tsa_08733A58:  @ 0x08733A58
+	.global Tsa_AuraBg1_13
+Tsa_AuraBg1_13:  @ 0x08733A58
 	.incbin "./graphics/banim/assets/tsa/00733A58_Tsa_08733A58.map.bin.lz" @ 0x733B94 - 0x733A58
 
-	.global Tsa_08733B94
-Tsa_08733B94:  @ 0x08733B94
+	.global Tsa_AuraBg1_14
+Tsa_AuraBg1_14:  @ 0x08733B94
 	.incbin "./graphics/banim/assets/tsa/00733B94_Tsa_08733B94.map.bin.lz" @ 0x733CE4 - 0x733B94
 
-	.global Tsa_08733CE4
-Tsa_08733CE4:  @ 0x08733CE4
+	.global Tsa_AuraBg1_15
+Tsa_AuraBg1_15:  @ 0x08733CE4
 	.incbin "./graphics/banim/assets/tsa/00733CE4_Tsa_08733CE4.map.bin.lz" @ 0x733E20 - 0x733CE4
 
-	.global Tsa_08733E20
-Tsa_08733E20:  @ 0x08733E20
+	.global Tsa_AuraBg1_16
+Tsa_AuraBg1_16:  @ 0x08733E20
 	.incbin "./graphics/banim/assets/tsa/00733E20_Tsa_08733E20.map.bin.lz" @ 0x733F24 - 0x733E20
 
-	.global Tsa_08733F24
-Tsa_08733F24:  @ 0x08733F24
+	.global Tsa_AuraBg1_17
+Tsa_AuraBg1_17:  @ 0x08733F24
 	.incbin "./graphics/banim/assets/tsa/00733F24_Tsa_08733F24.map.bin.lz" @ 0x733FC8 - 0x733F24
 
-	.global Tsa_08733FC8
-Tsa_08733FC8:  @ 0x08733FC8
+	.global Tsa_AuraBg1_18
+Tsa_AuraBg1_18:  @ 0x08733FC8
 	.incbin "./graphics/banim/assets/tsa/00733FC8_Tsa_08733FC8.map.bin.lz" @ 0x734064 - 0x733FC8
 
-	.global Tsa_08734064
-Tsa_08734064:  @ 0x08734064
+	.global Tsa_AuraBg1_19
+Tsa_AuraBg1_19:  @ 0x08734064
 	.incbin "./graphics/banim/assets/tsa/00734064_Tsa_08734064.map.bin.lz" @ 0x734100 - 0x734064
 
-	.global Tsa_08734100
-Tsa_08734100:  @ 0x08734100
+	.global Tsa_AuraBg1_20
+Tsa_AuraBg1_20:  @ 0x08734100
 	.incbin "./graphics/banim/assets/tsa/00734100_Tsa_08734100.map.bin.lz" @ 0x73419C - 0x734100
 
-	.global Tsa_0873419C
-Tsa_0873419C:  @ 0x0873419C
+	.global Tsa_AuraBg1_21
+Tsa_AuraBg1_21:  @ 0x0873419C
 	.incbin "./graphics/banim/assets/tsa/0073419C_Tsa_0873419C.map.bin.lz" @ 0x734238 - 0x73419C
 
-	.global Tsa_08734238
-Tsa_08734238:  @ 0x08734238
+	.global Tsa_AuraBg1_22
+Tsa_AuraBg1_22:  @ 0x08734238
 	.incbin "./graphics/banim/assets/tsa/00734238_Tsa_08734238.map.bin.lz" @ 0x7342D4 - 0x734238
 
-	.global Tsa_087342D4
-Tsa_087342D4:  @ 0x087342D4
+	.global Tsa_AuraBg1_23
+Tsa_AuraBg1_23:  @ 0x087342D4
 	.incbin "./graphics/banim/assets/tsa/007342D4_Tsa_087342D4.map.bin.lz" @ 0x734390 - 0x7342D4
 
-	.global Tsa_08734390
-Tsa_08734390:  @ 0x08734390
+	.global Tsa_AuraBg1_24
+Tsa_AuraBg1_24:  @ 0x08734390
 	.incbin "./graphics/banim/assets/tsa/00734390_Tsa_08734390.map.bin.lz" @ 0x734480 - 0x734390
 
-	.global Tsa_08734480
-Tsa_08734480:  @ 0x08734480
+	.global Tsa_AuraBg1_25
+Tsa_AuraBg1_25:  @ 0x08734480
 	.incbin "./graphics/banim/assets/tsa/00734480_Tsa_08734480.map.bin.lz" @ 0x734584 - 0x734480
 
-	.global Tsa_08734584
-Tsa_08734584:  @ 0x08734584
+	.global Tsa_AuraBg1_26
+Tsa_AuraBg1_26:  @ 0x08734584
 	.incbin "./graphics/banim/assets/tsa/00734584_Tsa_08734584.map.bin.lz" @ 0x734688 - 0x734584
 
-	.global Tsa_08734688
-Tsa_08734688:  @ 0x08734688
+	.global Tsa_AuraBg1_27
+Tsa_AuraBg1_27:  @ 0x08734688
 	.incbin "./graphics/banim/assets/tsa/00734688_Tsa_08734688.map.bin.lz" @ 0x73478C - 0x734688
 
-	.global Img_0873478C
-Img_0873478C:  @ 0x0873478C
+	.global Img_AuraBg3_0
+Img_AuraBg3_0:  @ 0x0873478C
 	.incbin "./graphics/banim/assets/img/0073478C_Img_0873478C.4bpp.lz" @ 0x735BA0 - 0x73478C
 
-	.global Img_08735BA0
-Img_08735BA0:  @ 0x08735BA0
+	.global Img_AuraBg3_1
+Img_AuraBg3_1:  @ 0x08735BA0
 	.incbin "./graphics/banim/assets/img/00735BA0_Img_08735BA0.4bpp.lz" @ 0x7370CC - 0x735BA0
 
-	.global Img_087370CC
-Img_087370CC:  @ 0x087370CC
+	.global Img_AuraBg3_2
+Img_AuraBg3_2:  @ 0x087370CC
 	.incbin "./graphics/banim/assets/img/007370CC_Img_087370CC.4bpp.lz" @ 0x738648 - 0x7370CC
 
-	.global Img_08738648
-Img_08738648:  @ 0x08738648
+	.global Img_AuraBg3_3
+Img_AuraBg3_3:  @ 0x08738648
 	.incbin "./graphics/banim/assets/img/00738648_Img_08738648.4bpp.lz" @ 0x739BD0 - 0x738648
 
-	.global Img_08739BD0
-Img_08739BD0:  @ 0x08739BD0
+	.global Img_AuraBg3_4
+Img_AuraBg3_4:  @ 0x08739BD0
 	.incbin "./graphics/banim/assets/img/00739BD0_Img_08739BD0.4bpp.lz" @ 0x73AFC0 - 0x739BD0
 
-	.global Img_0873AFC0
-Img_0873AFC0:  @ 0x0873AFC0
+	.global Img_AuraBg3_5
+Img_AuraBg3_5:  @ 0x0873AFC0
 	.incbin "./graphics/banim/assets/img/0073AFC0_Img_0873AFC0.4bpp.lz" @ 0x73C2CC - 0x73AFC0
 
-	.global Img_0873C2CC
-Img_0873C2CC:  @ 0x0873C2CC
+	.global Img_AuraBg3_6
+Img_AuraBg3_6:  @ 0x0873C2CC
 	.incbin "./graphics/banim/assets/img/0073C2CC_Img_0873C2CC.4bpp.lz" @ 0x73D640 - 0x73C2CC
 
-	.global Img_0873D640
-Img_0873D640:  @ 0x0873D640
+	.global Img_AuraBg3_7
+Img_AuraBg3_7:  @ 0x0873D640
 	.incbin "./graphics/banim/assets/img/0073D640_Img_0873D640.4bpp.lz" @ 0x73EB2C - 0x73D640
 
-	.global Img_0873EB2C
-Img_0873EB2C:  @ 0x0873EB2C
+	.global Img_AuraBg3_8
+Img_AuraBg3_8:  @ 0x0873EB2C
 	.incbin "./graphics/banim/assets/img/0073EB2C_Img_0873EB2C.4bpp.lz" @ 0x73FED8 - 0x73EB2C
 
-	.global Img_0873FED8
-Img_0873FED8:  @ 0x0873FED8
+	.global Img_AuraBg3_9
+Img_AuraBg3_9:  @ 0x0873FED8
 	.incbin "./graphics/banim/assets/img/0073FED8_Img_0873FED8.4bpp.lz" @ 0x741288 - 0x73FED8
 
-	.global Img_08741288
-Img_08741288:  @ 0x08741288
+	.global Img_AuraBg3_10
+Img_AuraBg3_10:  @ 0x08741288
 	.incbin "./graphics/banim/assets/img/00741288_Img_08741288.4bpp.lz" @ 0x7425A4 - 0x741288
 
-	.global Img_087425A4
-Img_087425A4:  @ 0x087425A4
+	.global Img_AuraBg3_11
+Img_AuraBg3_11:  @ 0x087425A4
 	.incbin "./graphics/banim/assets/img/007425A4_Img_087425A4.4bpp.lz" @ 0x74394C - 0x7425A4
 
 	.global Pal_AuraBg3
 Pal_AuraBg3:  @ 0x0874394C
 	.incbin "./graphics/banim/assets/img/007425A4_Img_087425A4.gbapal" @ 0x74396C - 0x74394C
 
-	.global Tsa_0874396C
-Tsa_0874396C:  @ 0x0874396C
+	.global Tsa_AuraBg3_0
+Tsa_AuraBg3_0:  @ 0x0874396C
 	.incbin "./graphics/banim/assets/tsa/0074396C_Tsa_0874396C.map.bin.lz" @ 0x743BE4 - 0x74396C
 
-	.global Tsa_08743BE4
-Tsa_08743BE4:  @ 0x08743BE4
+	.global Tsa_AuraBg3_1
+Tsa_AuraBg3_1:  @ 0x08743BE4
 	.incbin "./graphics/banim/assets/tsa/00743BE4_Tsa_08743BE4.map.bin.lz" @ 0x743E5C - 0x743BE4
 
-	.global Tsa_08743E5C
-Tsa_08743E5C:  @ 0x08743E5C
+	.global Tsa_AuraBg3_2
+Tsa_AuraBg3_2:  @ 0x08743E5C
 	.incbin "./graphics/banim/assets/tsa/00743E5C_Tsa_08743E5C.map.bin.lz" @ 0x7440D4 - 0x743E5C
 
-	.global Tsa_087440D4
-Tsa_087440D4:  @ 0x087440D4
+	.global Tsa_AuraBg3_3
+Tsa_AuraBg3_3:  @ 0x087440D4
 	.incbin "./graphics/banim/assets/tsa/007440D4_Tsa_087440D4.map.bin.lz" @ 0x74434C - 0x7440D4
 
-	.global Tsa_0874434C
-Tsa_0874434C:  @ 0x0874434C
+	.global Tsa_AuraBg3_4
+Tsa_AuraBg3_4:  @ 0x0874434C
 	.incbin "./graphics/banim/assets/tsa/0074434C_Tsa_0874434C.map.bin.lz" @ 0x7445BC - 0x74434C
 
-	.global Tsa_087445BC
-Tsa_087445BC:  @ 0x087445BC
+	.global Tsa_AuraBg3_5
+Tsa_AuraBg3_5:  @ 0x087445BC
 	.incbin "./graphics/banim/assets/tsa/007445BC_Tsa_087445BC.map.bin.lz" @ 0x744818 - 0x7445BC
 
-	.global Tsa_08744818
-Tsa_08744818:  @ 0x08744818
+	.global Tsa_AuraBg3_6
+Tsa_AuraBg3_6:  @ 0x08744818
 	.incbin "./graphics/banim/assets/tsa/00744818_Tsa_08744818.map.bin.lz" @ 0x744A90 - 0x744818
 
-	.global Tsa_08744A90
-Tsa_08744A90:  @ 0x08744A90
+	.global Tsa_AuraBg3_7
+Tsa_AuraBg3_7:  @ 0x08744A90
 	.incbin "./graphics/banim/assets/tsa/00744A90_Tsa_08744A90.map.bin.lz" @ 0x744D08 - 0x744A90
 
-	.global Tsa_08744D08
-Tsa_08744D08:  @ 0x08744D08
+	.global Tsa_AuraBg3_8
+Tsa_AuraBg3_8:  @ 0x08744D08
 	.incbin "./graphics/banim/assets/tsa/00744D08_Tsa_08744D08.map.bin.lz" @ 0x744F80 - 0x744D08
 
-	.global Tsa_08744F80
-Tsa_08744F80:  @ 0x08744F80
+	.global Tsa_AuraBg3_9
+Tsa_AuraBg3_9:  @ 0x08744F80
 	.incbin "./graphics/banim/assets/tsa/00744F80_Tsa_08744F80.map.bin.lz" @ 0x7451F8 - 0x744F80
 
-	.global Tsa_087451F8
-Tsa_087451F8:  @ 0x087451F8
+	.global Tsa_AuraBg3_10
+Tsa_AuraBg3_10:  @ 0x087451F8
 	.incbin "./graphics/banim/assets/tsa/007451F8_Tsa_087451F8.map.bin.lz" @ 0x745470 - 0x7451F8
 
-	.global Tsa_08745470
-Tsa_08745470:  @ 0x08745470
+	.global Tsa_AuraBg3_11
+Tsa_AuraBg3_11:  @ 0x08745470
 	.incbin "./graphics/banim/assets/tsa/00745470_Tsa_08745470.map.bin.lz" @ 0x7456E8 - 0x745470
 
 	.global Pal_EfxChillEffectBG
@@ -33045,100 +33045,100 @@ AnimScr_EfxChill_L: @ 0x74670C
     ANIMSCR_FORCE_SPRITE AnimSprite_EfxChill_L_3, 1
     ANIMSCR_BLOCKED
 
-	.global Img_08746760
-Img_08746760:  @ 0x08746760
+	.global Img_Banim_17
+Img_Banim_17:  @ 0x08746760
 	.incbin "./graphics/banim/assets/img/00746760_Img_08746760.4bpp.lz" @ 0x746F70 - 0x746760
 
-	.global Img_08746F70
-Img_08746F70:  @ 0x08746F70
+	.global Img_EreshkigalBg3_0
+Img_EreshkigalBg3_0:  @ 0x08746F70
 	.incbin "./graphics/banim/assets/img/00746F70_Img_08746F70.4bpp.lz" @ 0x747C7C - 0x746F70
 
-	.global Img_08747C7C
-Img_08747C7C:  @ 0x08747C7C
+	.global Img_EreshkigalBg3_1
+Img_EreshkigalBg3_1:  @ 0x08747C7C
 	.incbin "./graphics/banim/assets/img/00747C7C_Img_08747C7C.4bpp.lz" @ 0x748E9C - 0x747C7C
 
-	.global Img_08748E9C
-Img_08748E9C:  @ 0x08748E9C
+	.global Img_EreshkigalBg3_2
+Img_EreshkigalBg3_2:  @ 0x08748E9C
 	.incbin "./graphics/banim/assets/img/00748E9C_Img_08748E9C.4bpp.lz" @ 0x749DA8 - 0x748E9C
 
-	.global Img_08749DA8
-Img_08749DA8:  @ 0x08749DA8
+	.global Img_EreshkigalBg3_3
+Img_EreshkigalBg3_3:  @ 0x08749DA8
 	.incbin "./graphics/banim/assets/img/00749DA8_Img_08749DA8.4bpp.lz" @ 0x74AE90 - 0x749DA8
 
-	.global Img_0874AE90
-Img_0874AE90:  @ 0x0874AE90
+	.global Img_EreshkigalBg3_4
+Img_EreshkigalBg3_4:  @ 0x0874AE90
 	.incbin "./graphics/banim/assets/img/0074AE90_Img_0874AE90.4bpp.lz" @ 0x74BFA8 - 0x74AE90
 
-	.global Img_0874BFA8
-Img_0874BFA8:  @ 0x0874BFA8
+	.global Img_EreshkigalBg3_5
+Img_EreshkigalBg3_5:  @ 0x0874BFA8
 	.incbin "./graphics/banim/assets/img/0074BFA8_Img_0874BFA8.4bpp.lz" @ 0x74CE98 - 0x74BFA8
 
-	.global Img_0874CE98
-Img_0874CE98:  @ 0x0874CE98
+	.global Img_EreshkigalBg3_6
+Img_EreshkigalBg3_6:  @ 0x0874CE98
 	.incbin "./graphics/banim/assets/img/0074CE98_Img_0874CE98.4bpp.lz" @ 0x74E110 - 0x74CE98
 
-	.global Img_0874E110
-Img_0874E110:  @ 0x0874E110
+	.global Img_EreshkigalBg3_7
+Img_EreshkigalBg3_7:  @ 0x0874E110
 	.incbin "./graphics/banim/assets/img/0074E110_Img_0874E110.4bpp.lz" @ 0x74F474 - 0x74E110
 
-	.global Img_0874F474
-Img_0874F474:  @ 0x0874F474
+	.global Img_EreshkigalBg3_8
+Img_EreshkigalBg3_8:  @ 0x0874F474
 	.incbin "./graphics/banim/assets/img/0074F474_Img_0874F474.4bpp.lz" @ 0x750268 - 0x74F474
 
 	.global Pal_EreshkigalBg3
 Pal_EreshkigalBg3:  @ 0x08750268
 	.incbin "./graphics/banim/assets/img/0074F474_Img_0874F474.gbapal" @ 0x750288 - 0x750268
 
-	.global Tsa_08750288
-Tsa_08750288:  @ 0x08750288
+	.global Tsa_EreshkigalBg3_0
+Tsa_EreshkigalBg3_0:  @ 0x08750288
 	.incbin "./graphics/banim/assets/tsa/00750288_Tsa_08750288.map.bin.lz" @ 0x7503E4 - 0x750288
 
-	.global Tsa_087503E4
-Tsa_087503E4:  @ 0x087503E4
+	.global Tsa_EreshkigalBg3_1
+Tsa_EreshkigalBg3_1:  @ 0x087503E4
 	.incbin "./graphics/banim/assets/tsa/007503E4_Tsa_087503E4.map.bin.lz" @ 0x7505C4 - 0x7503E4
 
-	.global Tsa_087505C4
-Tsa_087505C4:  @ 0x087505C4
+	.global Tsa_EreshkigalBg3_2
+Tsa_EreshkigalBg3_2:  @ 0x087505C4
 	.incbin "./graphics/banim/assets/tsa/007505C4_Tsa_087505C4.map.bin.lz" @ 0x750810 - 0x7505C4
 
-	.global Tsa_08750810
-Tsa_08750810:  @ 0x08750810
+	.global Tsa_EreshkigalBg3_3
+Tsa_EreshkigalBg3_3:  @ 0x08750810
 	.incbin "./graphics/banim/assets/tsa/00750810_Tsa_08750810.map.bin.lz" @ 0x750A38 - 0x750810
 
-	.global Tsa_08750A38
-Tsa_08750A38:  @ 0x08750A38
+	.global Tsa_EreshkigalBg3_4
+Tsa_EreshkigalBg3_4:  @ 0x08750A38
 	.incbin "./graphics/banim/assets/tsa/00750A38_Tsa_08750A38.map.bin.lz" @ 0x750C88 - 0x750A38
 
-	.global Tsa_08750C88
-Tsa_08750C88:  @ 0x08750C88
+	.global Tsa_EreshkigalBg3_5
+Tsa_EreshkigalBg3_5:  @ 0x08750C88
 	.incbin "./graphics/banim/assets/tsa/00750C88_Tsa_08750C88.map.bin.lz" @ 0x750EFC - 0x750C88
 
-	.global Tsa_08750EFC
-Tsa_08750EFC:  @ 0x08750EFC
+	.global Tsa_EreshkigalBg3_6
+Tsa_EreshkigalBg3_6:  @ 0x08750EFC
 	.incbin "./graphics/banim/assets/tsa/00750EFC_Tsa_08750EFC.map.bin.lz" @ 0x751128 - 0x750EFC
 
-	.global Tsa_08751128
-Tsa_08751128:  @ 0x08751128
+	.global Tsa_EreshkigalBg3_7
+Tsa_EreshkigalBg3_7:  @ 0x08751128
 	.incbin "./graphics/banim/assets/tsa/00751128_Tsa_08751128.map.bin.lz" @ 0x75136C - 0x751128
 
-	.global Tsa_0875136C
-Tsa_0875136C:  @ 0x0875136C
+	.global Tsa_EreshkigalBg3_8
+Tsa_EreshkigalBg3_8:  @ 0x0875136C
 	.incbin "./graphics/banim/assets/tsa/0075136C_Tsa_0875136C.map.bin.lz" @ 0x7515C4 - 0x75136C
 
-	.global Tsa_087515C4
-Tsa_087515C4:  @ 0x087515C4
+	.global Tsa_EreshkigalBg3_9
+Tsa_EreshkigalBg3_9:  @ 0x087515C4
 	.incbin "./graphics/banim/assets/tsa/007515C4_Tsa_087515C4.map.bin.lz" @ 0x751808 - 0x7515C4
 
-	.global Img_08751808
-Img_08751808:  @ 0x08751808
+	.global Img_Banim_18
+Img_Banim_18:  @ 0x08751808
 	.incbin "./graphics/banim/assets/img/00751808_Img_08751808.4bpp.lz"
 
-	.global Pal_08751DB4
-Pal_08751DB4:  @ 0x08751DB4
+	.global Pal_efxSuperdruidOBJ
+Pal_efxSuperdruidOBJ:  @ 0x08751DB4
 	.incbin "./graphics/banim/assets/pal/00751DB4_Pal_08751DB4.gbapal"
 
-.global AnimSprite_08751DD4
-AnimSprite_08751DD4:  @ 0x751DD4
+.global AnimSprite_efxSuperdruidOBJ_0
+AnimSprite_efxSuperdruidOBJ_0:  @ 0x751DD4
     ANIM_SPRITE ATTR0_TALL, ATTR1_SIZE_32, 0x0000, -96, -88
     ANIM_SPRITE ATTR0_TALL, ATTR1_SIZE_16, 0x0002, -80, -88
     ANIM_SPRITE ATTR0_TALL, ATTR1_SIZE_32, 0x0003, -80, -56
@@ -33146,8 +33146,8 @@ AnimSprite_08751DD4:  @ 0x751DD4
     ANIM_SPRITE ATTR0_TALL, ATTR1_SIZE_32, 0x0007, -80, 8
     ANIM_SPRITE_END
 
-.global AnimSprite_08751E1C
-AnimSprite_08751E1C:  @ 0x751E1C
+.global AnimSprite_efxSuperdruidOBJ_1
+AnimSprite_efxSuperdruidOBJ_1:  @ 0x751E1C
     ANIM_SPRITE_XFLIP ATTR0_TALL, 0xA000, 0x0009, -88, 8
     ANIM_SPRITE_XFLIP ATTR0_TALL, 0x6000, 0x000B, -96, 8
     ANIM_SPRITE_XFLIP ATTR0_TALL, 0xA000, 0x000C, -104, -24
@@ -33170,8 +33170,8 @@ AnimSprite_08751E1C:  @ 0x751E1C
     ANIM_SPRITE_XFLIP ATTR0_TALL, 0xA000, 0x0010, 72, -88
     ANIM_SPRITE_END
 
-.global AnimSprite_08751F18
-AnimSprite_08751F18:  @ 0x751F18
+.global AnimSprite_efxSuperdruidOBJ_2
+AnimSprite_efxSuperdruidOBJ_2:  @ 0x751F18
     ANIM_SPRITE ATTR0_TALL, 0x6000, 0x0012, 8, 8
     ANIM_SPRITE ATTR0_TALL, 0xA000, 0x0013, 8, -24
     ANIM_SPRITE ATTR0_TALL, 0x6000, 0x0015, 24, -24
@@ -33179,21 +33179,21 @@ AnimSprite_08751F18:  @ 0x751F18
     ANIM_SPRITE ATTR0_TALL, 0xA000, 0x0018, 16, -88
     ANIM_SPRITE_END
 
-.global AnimSprite_08751F60
-AnimSprite_08751F60:  @ 0x751F60
+.global AnimSprite_efxSuperdruidOBJ_3
+AnimSprite_efxSuperdruidOBJ_3:  @ 0x751F60
     ANIM_SPRITE ATTR0_SQUARE, ATTR1_SIZE_8, 0x001F, 0, -8
     ANIM_SPRITE_END
 
-.global AnimSprite_08751F78
-AnimSprite_08751F78:  @ 0x751F78
+.global AnimSprite_efxSuperdruidOBJ_4
+AnimSprite_efxSuperdruidOBJ_4:  @ 0x751F78
     ANIM_SPRITE ATTR0_TALL, ATTR1_SIZE_32, 0x001A, -36, -24
     ANIM_SPRITE ATTR0_TALL, ATTR1_SIZE_16, 0x001C, -32, 8
     ANIM_SPRITE_XFLIP ATTR0_TALL, 0xA000, 0x001A, -40, -88
     ANIM_SPRITE ATTR0_TALL, 0x6000, 0x001C, -33, -56
     ANIM_SPRITE_END
 
-.global AnimSprite_08751FB4
-AnimSprite_08751FB4:  @ 0x751FB4
+.global AnimSprite_efxSuperdruidOBJ_5
+AnimSprite_efxSuperdruidOBJ_5:  @ 0x751FB4
     ANIM_SPRITE ATTR0_TALL, ATTR1_SIZE_16, 0x001D, -67, -88
     ANIM_SPRITE ATTR0_TALL, ATTR1_SIZE_16, 0x001E, -67, -56
     ANIM_SPRITE ATTR0_TALL, ATTR1_SIZE_16, 0x001D, -72, -24
@@ -33204,144 +33204,144 @@ AnimSprite_08751FB4:  @ 0x751FB4
     ANIM_SPRITE_XFLIP ATTR0_TALL, ATTR1_SIZE_16, 0x001E, 29, -88
     ANIM_SPRITE_END
 
-.global AnimScr_08752020
-AnimScr_08752020: @ 0x752020
-    ANIMSCR_FORCE_SPRITE AnimSprite_08751DD4, 3
-    ANIMSCR_FORCE_SPRITE AnimSprite_08751E1C, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_08751F60, 5
-    ANIMSCR_FORCE_SPRITE AnimSprite_08751F18, 2
-    ANIMSCR_FORCE_SPRITE AnimSprite_08751F60, 2
+.global AnimScr_efxSuperdruidOBJ
+AnimScr_efxSuperdruidOBJ: @ 0x752020
+    ANIMSCR_FORCE_SPRITE AnimSprite_efxSuperdruidOBJ_0, 3
+    ANIMSCR_FORCE_SPRITE AnimSprite_efxSuperdruidOBJ_1, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_efxSuperdruidOBJ_3, 5
+    ANIMSCR_FORCE_SPRITE AnimSprite_efxSuperdruidOBJ_2, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_efxSuperdruidOBJ_3, 2
     ANIMSCR_DISABLED
-    ANIMSCR_FORCE_SPRITE AnimSprite_08751F78, 3
-    ANIMSCR_FORCE_SPRITE AnimSprite_08751FB4, 2
+    ANIMSCR_FORCE_SPRITE AnimSprite_efxSuperdruidOBJ_4, 3
+    ANIMSCR_FORCE_SPRITE AnimSprite_efxSuperdruidOBJ_5, 2
     ANIMSCR_DISABLED
 
-	.global Img_08752044
-Img_08752044:  @ 0x08752044
+	.global Img_SongBg_0
+Img_SongBg_0:  @ 0x08752044
 	.incbin "./graphics/banim/assets/img/00752044_Img_08752044.4bpp.lz" @ 0x752C10 - 0x752044
 
-	.global Img_08752C10
-Img_08752C10:  @ 0x08752C10
+	.global Img_SongBg_1
+Img_SongBg_1:  @ 0x08752C10
 	.incbin "./graphics/banim/assets/img/00752C10_Img_08752C10.4bpp.lz" @ 0x75384C - 0x752C10
 
-	.global Img_0875384C
-Img_0875384C:  @ 0x0875384C
+	.global Img_SongBg_2
+Img_SongBg_2:  @ 0x0875384C
 	.incbin "./graphics/banim/assets/img/0075384C_Img_0875384C.4bpp.lz" @ 0x75431C - 0x75384C
 
-	.global Img_0875431C
-Img_0875431C:  @ 0x0875431C
+	.global Img_SongBg_3
+Img_SongBg_3:  @ 0x0875431C
 	.incbin "./graphics/banim/assets/img/0075431C_Img_0875431C.4bpp.lz" @ 0x754870 - 0x75431C
 
 	.global Pal_SongSprites
 Pal_SongSprites:  @ 0x08754870
 	.incbin "./graphics/banim/assets/pal/00754870_Pal_SongSprites.gbapal" @ 0x754910 - 0x754870
 
-	.global Tsa_08754910
-Tsa_08754910:  @ 0x08754910
+	.global Tsa_Song
+Tsa_Song:  @ 0x08754910
 	.incbin "./graphics/banim/assets/tsa/00754910_Tsa_08754910.map.bin.lz" @ 0x7549B8 - 0x754910
 
-	.global Tsa_087549B8
-Tsa_087549B8:  @ 0x087549B8
+	.global Tsa_SongBg_0
+Tsa_SongBg_0:  @ 0x087549B8
 	.incbin "./graphics/banim/assets/tsa/007549B8_Tsa_087549B8.map.bin.lz" @ 0x754A64 - 0x7549B8
 
-	.global Tsa_08754A64
-Tsa_08754A64:  @ 0x08754A64
+	.global Tsa_SongBg_1
+Tsa_SongBg_1:  @ 0x08754A64
 	.incbin "./graphics/banim/assets/tsa/00754A64_Tsa_08754A64.map.bin.lz" @ 0x754B14 - 0x754A64
 
-	.global Tsa_08754B14
-Tsa_08754B14:  @ 0x08754B14
+	.global Tsa_SongBg_2
+Tsa_SongBg_2:  @ 0x08754B14
 	.incbin "./graphics/banim/assets/tsa/00754B14_Tsa_08754B14.map.bin.lz" @ 0x754BD8 - 0x754B14
 
-	.global Tsa_08754BD8
-Tsa_08754BD8:  @ 0x08754BD8
+	.global Tsa_SongBg_3
+Tsa_SongBg_3:  @ 0x08754BD8
 	.incbin "./graphics/banim/assets/tsa/00754BD8_Tsa_08754BD8.map.bin.lz" @ 0x754CA4 - 0x754BD8
 
-	.global Tsa_08754CA4
-Tsa_08754CA4:  @ 0x08754CA4
+	.global Tsa_SongBg_4
+Tsa_SongBg_4:  @ 0x08754CA4
 	.incbin "./graphics/banim/assets/tsa/00754CA4_Tsa_08754CA4.map.bin.lz" @ 0x754D7C - 0x754CA4
 
-	.global Tsa_08754D7C
-Tsa_08754D7C:  @ 0x08754D7C
+	.global Tsa_SongBg_5
+Tsa_SongBg_5:  @ 0x08754D7C
 	.incbin "./graphics/banim/assets/tsa/00754D7C_Tsa_08754D7C.map.bin.lz" @ 0x754E5C - 0x754D7C
 
-	.global Tsa_08754E5C
-Tsa_08754E5C:  @ 0x08754E5C
+	.global Tsa_SongBg_6
+Tsa_SongBg_6:  @ 0x08754E5C
 	.incbin "./graphics/banim/assets/tsa/00754E5C_Tsa_08754E5C.map.bin.lz" @ 0x754F3C - 0x754E5C
 
-	.global Tsa_08754F3C
-Tsa_08754F3C:  @ 0x08754F3C
+	.global Tsa_SongBg_7
+Tsa_SongBg_7:  @ 0x08754F3C
 	.incbin "./graphics/banim/assets/tsa/00754F3C_Tsa_08754F3C.map.bin.lz" @ 0x755028 - 0x754F3C
 
-	.global Tsa_08755028
-Tsa_08755028:  @ 0x08755028
+	.global Tsa_SongBg_8
+Tsa_SongBg_8:  @ 0x08755028
 	.incbin "./graphics/banim/assets/tsa/00755028_Tsa_08755028.map.bin.lz" @ 0x75511C - 0x755028
 
-	.global Tsa_0875511C
-Tsa_0875511C:  @ 0x0875511C
+	.global Tsa_SongBg_9
+Tsa_SongBg_9:  @ 0x0875511C
 	.incbin "./graphics/banim/assets/tsa/0075511C_Tsa_0875511C.map.bin.lz" @ 0x755218 - 0x75511C
 
-	.global Tsa_08755218
-Tsa_08755218:  @ 0x08755218
+	.global Tsa_SongBg_10
+Tsa_SongBg_10:  @ 0x08755218
 	.incbin "./graphics/banim/assets/tsa/00755218_Tsa_08755218.map.bin.lz" @ 0x755310 - 0x755218
 
-	.global Tsa_08755310
-Tsa_08755310:  @ 0x08755310
+	.global Tsa_SongBg_11
+Tsa_SongBg_11:  @ 0x08755310
 	.incbin "./graphics/banim/assets/tsa/00755310_Tsa_08755310.map.bin.lz" @ 0x755410 - 0x755310
 
-	.global Tsa_08755410
-Tsa_08755410:  @ 0x08755410
+	.global Tsa_SongBg_12
+Tsa_SongBg_12:  @ 0x08755410
 	.incbin "./graphics/banim/assets/tsa/00755410_Tsa_08755410.map.bin.lz" @ 0x755510 - 0x755410
 
-	.global Tsa_08755510
-Tsa_08755510:  @ 0x08755510
+	.global Tsa_SongBg_13
+Tsa_SongBg_13:  @ 0x08755510
 	.incbin "./graphics/banim/assets/tsa/00755510_Tsa_08755510.map.bin.lz" @ 0x755610 - 0x755510
 
-	.global Tsa_08755610
-Tsa_08755610:  @ 0x08755610
+	.global Tsa_SongBg_14
+Tsa_SongBg_14:  @ 0x08755610
 	.incbin "./graphics/banim/assets/tsa/00755610_Tsa_08755610.map.bin.lz" @ 0x755714 - 0x755610
 
-	.global Tsa_08755714
-Tsa_08755714:  @ 0x08755714
+	.global Tsa_SongBg_15
+Tsa_SongBg_15:  @ 0x08755714
 	.incbin "./graphics/banim/assets/tsa/00755714_Tsa_08755714.map.bin.lz" @ 0x755804 - 0x755714
 
-	.global Tsa_08755804
-Tsa_08755804:  @ 0x08755804
+	.global Tsa_SongBg_16
+Tsa_SongBg_16:  @ 0x08755804
 	.incbin "./graphics/banim/assets/tsa/00755804_Tsa_08755804.map.bin.lz" @ 0x7558EC - 0x755804
 
-	.global Tsa_087558EC
-Tsa_087558EC:  @ 0x087558EC
+	.global Tsa_SongBg_17
+Tsa_SongBg_17:  @ 0x087558EC
 	.incbin "./graphics/banim/assets/tsa/007558EC_Tsa_087558EC.map.bin.lz" @ 0x7559D0 - 0x7558EC
 
-	.global Tsa_087559D0
-Tsa_087559D0:  @ 0x087559D0
+	.global Tsa_SongBg_18
+Tsa_SongBg_18:  @ 0x087559D0
 	.incbin "./graphics/banim/assets/tsa/007559D0_Tsa_087559D0.map.bin.lz" @ 0x755AB8 - 0x7559D0
 
-	.global Tsa_08755AB8
-Tsa_08755AB8:  @ 0x08755AB8
+	.global Tsa_SongBg_19
+Tsa_SongBg_19:  @ 0x08755AB8
 	.incbin "./graphics/banim/assets/tsa/00755AB8_Tsa_08755AB8.map.bin.lz" @ 0x755B94 - 0x755AB8
 
-	.global Tsa_08755B94
-Tsa_08755B94:  @ 0x08755B94
+	.global Tsa_SongBg_20
+Tsa_SongBg_20:  @ 0x08755B94
 	.incbin "./graphics/banim/assets/tsa/00755B94_Tsa_08755B94.map.bin.lz" @ 0x755C64 - 0x755B94
 
-	.global Tsa_08755C64
-Tsa_08755C64:  @ 0x08755C64
+	.global Tsa_SongBg_21
+Tsa_SongBg_21:  @ 0x08755C64
 	.incbin "./graphics/banim/assets/tsa/00755C64_Tsa_08755C64.map.bin.lz" @ 0x755D20 - 0x755C64
 
-	.global Tsa_08755D20
-Tsa_08755D20:  @ 0x08755D20
+	.global Tsa_SongBg_22
+Tsa_SongBg_22:  @ 0x08755D20
 	.incbin "./graphics/banim/assets/tsa/00755D20_Tsa_08755D20.map.bin.lz" @ 0x755DE0 - 0x755D20
 
-	.global Tsa_08755DE0
-Tsa_08755DE0:  @ 0x08755DE0
+	.global Tsa_SongBg_23
+Tsa_SongBg_23:  @ 0x08755DE0
 	.incbin "./graphics/banim/assets/tsa/00755DE0_Tsa_08755DE0.map.bin.lz" @ 0x755E94 - 0x755DE0
 
-	.global Tsa_08755E94
-Tsa_08755E94:  @ 0x08755E94
+	.global Tsa_SongBg_24
+Tsa_SongBg_24:  @ 0x08755E94
 	.incbin "./graphics/banim/assets/tsa/00755E94_Tsa_08755E94.map.bin.lz" @ 0x755F3C - 0x755E94
 
-	.global Tsa_08755F3C
-Tsa_08755F3C:  @ 0x08755F3C
+	.global Tsa_SongBg_25
+Tsa_SongBg_25:  @ 0x08755F3C
 	.incbin "./graphics/banim/assets/tsa/00755F3C_Tsa_08755F3C.map.bin.lz" @ 0x755FD4 - 0x755F3C
 
 	.global Img_SongSprites

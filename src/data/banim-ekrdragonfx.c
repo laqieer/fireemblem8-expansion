@@ -33,11 +33,11 @@ extern struct AnimSpriteData AnimSprite_EfxClasschgObjDrop_28[];
 extern struct AnimSpriteData AnimSprite_EfxClasschgObjDrop_29[];
 extern struct AnimSpriteData AnimSprite_EfxClasschgObjDrop_30[];
 extern struct AnimSpriteData AnimSprite_EfxClasschgObjDrop_31[];
-extern AnimScr BanimScr_08792928[];
-extern AnimScr BanimScr_08792958[];
-extern AnimScr BanimScr_08792988[];
-extern u32 gUnknown_087A5240[];
-extern u32 gUnknown_087A536C[];
+extern AnimScr BanimScr_Ekrdragonfx_0[];
+extern AnimScr BanimScr_Ekrdragonfx_1[];
+extern AnimScr BanimScr_Ekrdragonfx_2[];
+extern u32 gEkrdragonfx_0[];
+extern u32 gEkrdragonfx_1[];
 extern struct AnimSpriteData AnimSprite_EfxMaohFlashEye_1[];
 extern struct AnimSpriteData AnimSprite_EfxMaohFlashEye_2[];
 extern struct AnimSpriteData AnimSprite_EfxMaohFlashEye_3[];
@@ -51,9 +51,9 @@ extern struct AnimSpriteData AnimSprite_EfxMaohFlashEye_10[];
 extern struct AnimSpriteData AnimSprite_EfxMaohFlashEye_11[];
 extern struct AnimSpriteData AnimSprite_EfxMaohFlashEye_12[];
 extern struct AnimSpriteData AnimSprite_EfxMaohFlashEye_13[];
-extern AnimScr gUnknown_087A5940[];
-extern AnimScr gUnknown_087A5958[];
-extern AnimScr gUnknown_087A5970[];
+extern AnimScr gEkrdragonfx_2[];
+extern AnimScr gEkrdragonfx_3[];
+extern AnimScr gEkrdragonfx_4[];
 extern struct AnimSpriteData AnimSprite_EfxMaohFlashThunderObj_1[];
 extern struct AnimSpriteData AnimSprite_EfxMaohFlashThunderObj_2[];
 extern struct AnimSpriteData AnimSprite_EfxMaohFlashThunderObj_3[];
@@ -67,43 +67,43 @@ extern struct AnimSpriteData AnimSprite_EfxMaohFlashThunderObj_10[];
 extern struct AnimSpriteData AnimSprite_EfxMaohFlashThunderObj_11[];
 extern struct AnimSpriteData AnimSprite_EfxMaohFlashThunderObj_12[];
 extern struct AnimSpriteData AnimSprite_EfxMaohFlashThunderObj_13[];
-extern AnimScr gUnknown_087A5B5C[];
-extern AnimScr gUnknown_087A5B74[];
-extern AnimScr gUnknown_087A5B8C[];
+extern AnimScr gEkrdragonfx_5[];
+extern AnimScr gEkrdragonfx_6[];
+extern AnimScr gEkrdragonfx_7[];
 extern struct AnimSpriteData AnimSprite_EfxMaohFlashEyeFire1Obj_1[];
 extern struct AnimSpriteData AnimSprite_EfxMaohFlashEyeFire1Obj_2[];
 extern struct AnimSpriteData AnimSprite_EfxMaohFlashEyeFire1Obj_3[];
 extern struct AnimSpriteData AnimSprite_EfxMaohFlashEyeFire1Obj_4[];
 extern struct AnimSpriteData AnimSprite_EfxMaohFlashEyeFire1Obj_5[];
 extern struct AnimSpriteData AnimSprite_EfxMaohFlashEyeFire1Obj_6[];
-extern AnimScr gUnknown_087A6674[];
+extern AnimScr gEkrdragonfx_8[];
 extern struct AnimSpriteData AnimSprite_EfxMaohFlashEyeFire1Obj_7[];
 extern struct AnimSpriteData AnimSprite_EfxMaohFlashEyeFire1Obj_8[];
 extern struct AnimSpriteData AnimSprite_EfxMaohFlashEyeFire1Obj_9[];
 extern struct AnimSpriteData AnimSprite_EfxMaohFlashEyeFire1Obj_10[];
 extern struct AnimSpriteData AnimSprite_EfxMaohFlashEyeFire1Obj_11[];
 extern struct AnimSpriteData AnimSprite_EfxMaohFlashEyeFire1Obj_12[];
-extern AnimScr gUnknown_087A6AEC[];
+extern AnimScr gEkrdragonfx_9[];
 extern struct AnimSpriteData AnimSprite_EfxMaohFlashEyeFire2Obj1_1[];
 extern struct AnimSpriteData AnimSprite_EfxMaohFlashEyeFire2Obj1_2[];
 extern struct AnimSpriteData AnimSprite_EfxMaohFlashEyeFire2Obj1_3[];
 extern struct AnimSpriteData AnimSprite_EfxMaohFlashEyeFire2Obj1_4[];
 extern struct AnimSpriteData AnimSprite_EfxMaohFlashEyeFire2Obj1_5[];
 extern struct AnimSpriteData AnimSprite_EfxMaohFlashEyeFire2Obj1_6[];
-extern AnimScr gUnknown_087A6F64[];
+extern AnimScr gEkrdragonfx_10[];
 extern struct AnimSpriteData AnimSprite_EfxMaohFlashEyeFire2Obj1_7[];
 extern struct AnimSpriteData AnimSprite_EfxMaohFlashEyeFire2Obj1_8[];
 extern struct AnimSpriteData AnimSprite_EfxMaohFlashEyeFire2Obj1_9[];
 extern struct AnimSpriteData AnimSprite_EfxMaohFlashEyeFire2Obj1_10[];
 extern struct AnimSpriteData AnimSprite_EfxMaohFlashEyeFire2Obj1_11[];
 extern struct AnimSpriteData AnimSprite_EfxMaohFlashEyeFire2Obj1_12[];
-extern AnimScr gUnknown_087A73E0[];
+extern AnimScr gEkrdragonfx_11[];
 extern struct AnimSpriteData AnimSprite_DemoKingTunkFace_1[];
 extern struct AnimSpriteData AnimSprite_DemoKingTunkFace_2[];
 extern AnimScr BanimScr_DemoKingTunkFace[];
 extern struct AnimSpriteData AnimSprite_DemoKingTunkFace_3[];
 extern struct AnimSpriteData AnimSprite_DemoKingTunkFace_4[];
-extern AnimScr BanimScr_087F4314[];
+extern AnimScr BanimScr_Ekrdragonfx_3[];
 
 u8 CONST_DATA Img_EfxDracoZombie[] = INCBIN_U8("graphics/banim/dragonfx/Img_EfxDracoZombie.4bpp.lz");
 
@@ -123,11 +123,11 @@ u8 CONST_DATA Tsa_EfxDracoZombie1[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_Efx
 
 u16 CONST_DATA Pal_EfxDracoZombie[] = INCBIN_U16("graphics/banim/dragonfx/Pal_EfxDracoZombie.gbapal");
 
-u16 CONST_DATA Pal_08791D7C[] = INCBIN_U16("graphics/banim/dragonfx/Pal_08791D7C.gbapal");
+u16 CONST_DATA Pal_Ekrdragonfx_0[] = INCBIN_U16("graphics/banim/dragonfx/Pal_08791D7C.gbapal");
 
-u8 CONST_DATA Img_08791D9C[] = INCBIN_U8("graphics/banim/dragonfx/Img_08791D9C.4bpp.lz");
+u8 CONST_DATA Img_Ekrdragonfx[] = INCBIN_U8("graphics/banim/dragonfx/Img_08791D9C.4bpp.lz");
 
-u16 CONST_DATA Pal_08792194[] = INCBIN_U16("graphics/banim/dragonfx/Pal_08792194.gbapal");
+u16 CONST_DATA Pal_Ekrdragonfx_1[] = INCBIN_U16("graphics/banim/dragonfx/Pal_08792194.gbapal");
 
 struct AnimSpriteData CONST_DATA AnimSprite_EfxClasschgObjDrop_1[] =
 {
@@ -412,7 +412,7 @@ struct AnimSpriteData CONST_DATA AnimSprite_EfxClasschgObjDrop_31[] =
     ANIM_SPRITE_END,
 };
 
-AnimScr CONST_DATA BanimScr_08792928[] =
+AnimScr CONST_DATA BanimScr_Ekrdragonfx_0[] =
 {
     ANIMSCR_FORCE_SPRITE(AnimSprite_EfxClasschgObjDrop_1, 4),
     ANIMSCR_FORCE_SPRITE(AnimSprite_EfxClasschgObjDrop_2, 4),
@@ -428,7 +428,7 @@ AnimScr CONST_DATA BanimScr_08792928[] =
     ANIMSCR_BLOCKED,
 };
 
-AnimScr CONST_DATA BanimScr_08792958[] =
+AnimScr CONST_DATA BanimScr_Ekrdragonfx_1[] =
 {
     ANIMSCR_FORCE_SPRITE(AnimSprite_EfxClasschgObjDrop_11, 4),
     ANIMSCR_FORCE_SPRITE(AnimSprite_EfxClasschgObjDrop_12, 4),
@@ -444,7 +444,7 @@ AnimScr CONST_DATA BanimScr_08792958[] =
     ANIMSCR_BLOCKED,
 };
 
-AnimScr CONST_DATA BanimScr_08792988[] =
+AnimScr CONST_DATA BanimScr_Ekrdragonfx_2[] =
 {
     ANIMSCR_FORCE_SPRITE(AnimSprite_EfxClasschgObjDrop_21, 4),
     ANIMSCR_FORCE_SPRITE(AnimSprite_EfxClasschgObjDrop_22, 4),
@@ -460,155 +460,155 @@ AnimScr CONST_DATA BanimScr_08792988[] =
     ANIMSCR_BLOCKED,
 };
 
-u8 CONST_DATA Img_87929B8[] = INCBIN_U8("graphics/banim/dragonfx/Img_87929B8.4bpp.lz");
+u8 CONST_DATA Img_Ekrdragonfx_0[] = INCBIN_U8("graphics/banim/dragonfx/Img_87929B8.4bpp.lz");
 
-u16 CONST_DATA Pal_87932CC[] = INCBIN_U16("graphics/banim/dragonfx/Pal_87932CC.gbapal");
+u16 CONST_DATA Pal_Ekrdragonfx_3[] = INCBIN_U16("graphics/banim/dragonfx/Pal_87932CC.gbapal");
 
-u8 CONST_DATA Tsa_87932EC[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_87932EC.map.bin.lz");
+u8 CONST_DATA Tsa_Ekrdragonfx_0[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_87932EC.map.bin.lz");
 
-u8 CONST_DATA Tsa_8793384[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_8793384.map.bin.lz");
+u8 CONST_DATA Tsa_Ekrdragonfx_1[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_8793384.map.bin.lz");
 
-u8 CONST_DATA Tsa_8793494[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_8793494.map.bin.lz");
+u8 CONST_DATA Tsa_Ekrdragonfx_2[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_8793494.map.bin.lz");
 
-u8 CONST_DATA Tsa_87935B0[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_87935B0.map.bin.lz");
+u8 CONST_DATA Tsa_Ekrdragonfx_3[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_87935B0.map.bin.lz");
 
-u8 CONST_DATA Tsa_87936C0[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_87936C0.map.bin.lz");
+u8 CONST_DATA Tsa_Ekrdragonfx_4[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_87936C0.map.bin.lz");
 
-u8 CONST_DATA Tsa_87937D0[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_87937D0.map.bin.lz");
+u8 CONST_DATA Tsa_Ekrdragonfx_5[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_87937D0.map.bin.lz");
 
-u8 CONST_DATA Tsa_87938EC[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_87938EC.map.bin.lz");
+u8 CONST_DATA Tsa_Ekrdragonfx_6[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_87938EC.map.bin.lz");
 
-u8 CONST_DATA Img_87939FC[] = INCBIN_U8("graphics/banim/dragonfx/Img_87939FC.4bpp.lz");
+u8 CONST_DATA Img_Ekrdragonfx_1[] = INCBIN_U8("graphics/banim/dragonfx/Img_87939FC.4bpp.lz");
 
-u8 CONST_DATA Img_8794628[] = INCBIN_U8("graphics/banim/dragonfx/Img_8794628.4bpp.lz");
+u8 CONST_DATA Img_Ekrdragonfx_2[] = INCBIN_U8("graphics/banim/dragonfx/Img_8794628.4bpp.lz");
 
-u8 CONST_DATA Img_87951D8[] = INCBIN_U8("graphics/banim/dragonfx/Img_87951D8.4bpp.lz");
+u8 CONST_DATA Img_Ekrdragonfx_3[] = INCBIN_U8("graphics/banim/dragonfx/Img_87951D8.4bpp.lz");
 
-u8 CONST_DATA Img_8795DF4[] = INCBIN_U8("graphics/banim/dragonfx/Img_8795DF4.4bpp.lz");
+u8 CONST_DATA Img_Ekrdragonfx_4[] = INCBIN_U8("graphics/banim/dragonfx/Img_8795DF4.4bpp.lz");
 
-u8 CONST_DATA Img_87969F4[] = INCBIN_U8("graphics/banim/dragonfx/Img_87969F4.4bpp.lz");
+u8 CONST_DATA Img_Ekrdragonfx_5[] = INCBIN_U8("graphics/banim/dragonfx/Img_87969F4.4bpp.lz");
 
-u8 CONST_DATA Img_87970DC[] = INCBIN_U8("graphics/banim/dragonfx/Img_87970DC.4bpp.lz");
+u8 CONST_DATA Img_Ekrdragonfx_6[] = INCBIN_U8("graphics/banim/dragonfx/Img_87970DC.4bpp.lz");
 
-u8 CONST_DATA Img_8797AC4[] = INCBIN_U8("graphics/banim/dragonfx/Img_8797AC4.4bpp.lz");
+u8 CONST_DATA Img_Ekrdragonfx_7[] = INCBIN_U8("graphics/banim/dragonfx/Img_8797AC4.4bpp.lz");
 
-u8 CONST_DATA Img_8798394[] = INCBIN_U8("graphics/banim/dragonfx/Img_8798394.4bpp.lz");
+u8 CONST_DATA Img_Ekrdragonfx_8[] = INCBIN_U8("graphics/banim/dragonfx/Img_8798394.4bpp.lz");
 
-u8 CONST_DATA Img_8798B6C[] = INCBIN_U8("graphics/banim/dragonfx/Img_8798B6C.4bpp.lz");
+u8 CONST_DATA Img_Ekrdragonfx_9[] = INCBIN_U8("graphics/banim/dragonfx/Img_8798B6C.4bpp.lz");
 
-u8 CONST_DATA Img_8799228[] = INCBIN_U8("graphics/banim/dragonfx/Img_8799228.4bpp.lz");
+u8 CONST_DATA Img_Ekrdragonfx_10[] = INCBIN_U8("graphics/banim/dragonfx/Img_8799228.4bpp.lz");
 
-u16 CONST_DATA Pal_87997F8[] = INCBIN_U16("graphics/banim/dragonfx/Pal_87997F8.gbapal");
+u16 CONST_DATA Pal_Ekrdragonfx_4[] = INCBIN_U16("graphics/banim/dragonfx/Pal_87997F8.gbapal");
 
-u8 CONST_DATA Tsa_8799818[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_8799818.map.bin.lz");
+u8 CONST_DATA Tsa_Ekrdragonfx_7[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_8799818.map.bin.lz");
 
-u8 CONST_DATA Tsa_8799ABC[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_8799ABC.map.bin.lz");
+u8 CONST_DATA Tsa_Ekrdragonfx_8[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_8799ABC.map.bin.lz");
 
-u8 CONST_DATA Tsa_8799D64[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_8799D64.map.bin.lz");
+u8 CONST_DATA Tsa_Ekrdragonfx_9[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_8799D64.map.bin.lz");
 
-u8 CONST_DATA Tsa_879A008[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_879A008.map.bin.lz");
+u8 CONST_DATA Tsa_Ekrdragonfx_10[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_879A008.map.bin.lz");
 
-u8 CONST_DATA Tsa_879A2A8[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_879A2A8.map.bin.lz");
+u8 CONST_DATA Tsa_Ekrdragonfx_11[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_879A2A8.map.bin.lz");
 
-u8 CONST_DATA Tsa_879A444[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_879A444.map.bin.lz");
+u8 CONST_DATA Tsa_Ekrdragonfx_12[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_879A444.map.bin.lz");
 
-u8 CONST_DATA Tsa_879A6A0[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_879A6A0.map.bin.lz");
+u8 CONST_DATA Tsa_Ekrdragonfx_13[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_879A6A0.map.bin.lz");
 
-u8 CONST_DATA Tsa_879A87C[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_879A87C.map.bin.lz");
+u8 CONST_DATA Tsa_Ekrdragonfx_14[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_879A87C.map.bin.lz");
 
-u8 CONST_DATA Tsa_879A9E8[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_879A9E8.map.bin.lz");
+u8 CONST_DATA Tsa_Ekrdragonfx_15[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_879A9E8.map.bin.lz");
 
-u8 CONST_DATA Tsa_879AB10[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_879AB10.map.bin.lz");
+u8 CONST_DATA Tsa_Ekrdragonfx_16[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_879AB10.map.bin.lz");
 
-u8 CONST_DATA Img_879AC08[] = INCBIN_U8("graphics/banim/dragonfx/Img_879AC08.4bpp.lz");
+u8 CONST_DATA Img_Ekrdragonfx_11[] = INCBIN_U8("graphics/banim/dragonfx/Img_879AC08.4bpp.lz");
 
-u8 CONST_DATA Img_879B168[] = INCBIN_U8("graphics/banim/dragonfx/Img_879B168.4bpp.lz");
+u8 CONST_DATA Img_Ekrdragonfx_12[] = INCBIN_U8("graphics/banim/dragonfx/Img_879B168.4bpp.lz");
 
-u8 CONST_DATA Img_879B8F4[] = INCBIN_U8("graphics/banim/dragonfx/Img_879B8F4.4bpp.lz");
+u8 CONST_DATA Img_Ekrdragonfx_13[] = INCBIN_U8("graphics/banim/dragonfx/Img_879B8F4.4bpp.lz");
 
-u8 CONST_DATA Img_879C1E4[] = INCBIN_U8("graphics/banim/dragonfx/Img_879C1E4.4bpp.lz");
+u8 CONST_DATA Img_Ekrdragonfx_14[] = INCBIN_U8("graphics/banim/dragonfx/Img_879C1E4.4bpp.lz");
 
-u8 CONST_DATA Img_879CAB4[] = INCBIN_U8("graphics/banim/dragonfx/Img_879CAB4.4bpp.lz");
+u8 CONST_DATA Img_Ekrdragonfx_15[] = INCBIN_U8("graphics/banim/dragonfx/Img_879CAB4.4bpp.lz");
 
-u8 CONST_DATA Img_879D1F8[] = INCBIN_U8("graphics/banim/dragonfx/Img_879D1F8.4bpp.lz");
+u8 CONST_DATA Img_Ekrdragonfx_16[] = INCBIN_U8("graphics/banim/dragonfx/Img_879D1F8.4bpp.lz");
 
-u8 CONST_DATA Img_879DC10[] = INCBIN_U8("graphics/banim/dragonfx/Img_879DC10.4bpp.lz");
+u8 CONST_DATA Img_Ekrdragonfx_17[] = INCBIN_U8("graphics/banim/dragonfx/Img_879DC10.4bpp.lz");
 
-u8 CONST_DATA Img_879E5DC[] = INCBIN_U8("graphics/banim/dragonfx/Img_879E5DC.4bpp.lz");
+u8 CONST_DATA Img_Ekrdragonfx_18[] = INCBIN_U8("graphics/banim/dragonfx/Img_879E5DC.4bpp.lz");
 
-u8 CONST_DATA Img_879EED0[] = INCBIN_U8("graphics/banim/dragonfx/Img_879EED0.4bpp.lz");
+u8 CONST_DATA Img_Ekrdragonfx_19[] = INCBIN_U8("graphics/banim/dragonfx/Img_879EED0.4bpp.lz");
 
-u8 CONST_DATA Img_879F698[] = INCBIN_U8("graphics/banim/dragonfx/Img_879F698.4bpp.lz");
+u8 CONST_DATA Img_Ekrdragonfx_20[] = INCBIN_U8("graphics/banim/dragonfx/Img_879F698.4bpp.lz");
 
-u8 CONST_DATA Img_879FD3C[] = INCBIN_U8("graphics/banim/dragonfx/Img_879FD3C.4bpp.lz");
+u8 CONST_DATA Img_Ekrdragonfx_21[] = INCBIN_U8("graphics/banim/dragonfx/Img_879FD3C.4bpp.lz");
 
-u8 CONST_DATA Img_87A0338[] = INCBIN_U8("graphics/banim/dragonfx/Img_87A0338.4bpp.lz");
+u8 CONST_DATA Img_Ekrdragonfx_22[] = INCBIN_U8("graphics/banim/dragonfx/Img_87A0338.4bpp.lz");
 
-u8 CONST_DATA Img_87A090C[] = INCBIN_U8("graphics/banim/dragonfx/Img_87A090C.4bpp.lz");
+u8 CONST_DATA Img_Ekrdragonfx_23[] = INCBIN_U8("graphics/banim/dragonfx/Img_87A090C.4bpp.lz");
 
-u8 CONST_DATA Img_87A0E78[] = INCBIN_U8("graphics/banim/dragonfx/Img_87A0E78.4bpp.lz");
+u8 CONST_DATA Img_Ekrdragonfx_24[] = INCBIN_U8("graphics/banim/dragonfx/Img_87A0E78.4bpp.lz");
 
-u8 CONST_DATA Img_87A13C0[] = INCBIN_U8("graphics/banim/dragonfx/Img_87A13C0.4bpp.lz");
+u8 CONST_DATA Img_Ekrdragonfx_25[] = INCBIN_U8("graphics/banim/dragonfx/Img_87A13C0.4bpp.lz");
 
-u16 CONST_DATA Pal_87A18D0[] = INCBIN_U16("graphics/banim/dragonfx/Pal_87A18D0.gbapal");
+u16 CONST_DATA Pal_Ekrdragonfx_5[] = INCBIN_U16("graphics/banim/dragonfx/Pal_87A18D0.gbapal");
 
-u8 CONST_DATA Tsa_87A18F0[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_87A18F0.map.bin.lz");
+u8 CONST_DATA Tsa_Ekrdragonfx_17[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_87A18F0.map.bin.lz");
 
-u8 CONST_DATA Tsa_87A19EC[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_87A19EC.map.bin.lz");
+u8 CONST_DATA Tsa_Ekrdragonfx_18[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_87A19EC.map.bin.lz");
 
-u8 CONST_DATA Tsa_87A1B68[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_87A1B68.map.bin.lz");
+u8 CONST_DATA Tsa_Ekrdragonfx_19[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_87A1B68.map.bin.lz");
 
-u8 CONST_DATA Tsa_87A1D74[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_87A1D74.map.bin.lz");
+u8 CONST_DATA Tsa_Ekrdragonfx_20[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_87A1D74.map.bin.lz");
 
-u8 CONST_DATA Tsa_87A1F9C[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_87A1F9C.map.bin.lz");
+u8 CONST_DATA Tsa_Ekrdragonfx_21[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_87A1F9C.map.bin.lz");
 
-u8 CONST_DATA Tsa_87A2134[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_87A2134.map.bin.lz");
+u8 CONST_DATA Tsa_Ekrdragonfx_22[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_87A2134.map.bin.lz");
 
-u8 CONST_DATA Tsa_87A2384[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_87A2384.map.bin.lz");
+u8 CONST_DATA Tsa_Ekrdragonfx_23[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_87A2384.map.bin.lz");
 
-u8 CONST_DATA Tsa_87A2584[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_87A2584.map.bin.lz");
+u8 CONST_DATA Tsa_Ekrdragonfx_24[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_87A2584.map.bin.lz");
 
-u8 CONST_DATA Tsa_87A2748[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_87A2748.map.bin.lz");
+u8 CONST_DATA Tsa_Ekrdragonfx_25[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_87A2748.map.bin.lz");
 
-u8 CONST_DATA Tsa_87A28A8[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_87A28A8.map.bin.lz");
+u8 CONST_DATA Tsa_Ekrdragonfx_26[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_87A28A8.map.bin.lz");
 
-u8 CONST_DATA Tsa_87A29DC[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_87A29DC.map.bin.lz");
+u8 CONST_DATA Tsa_Ekrdragonfx_27[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_87A29DC.map.bin.lz");
 
-u8 CONST_DATA Tsa_87A2AE8[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_87A2AE8.map.bin.lz");
+u8 CONST_DATA Tsa_Ekrdragonfx_28[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_87A2AE8.map.bin.lz");
 
-u8 CONST_DATA Tsa_87A2BE4[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_87A2BE4.map.bin.lz");
+u8 CONST_DATA Tsa_Ekrdragonfx_29[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_87A2BE4.map.bin.lz");
 
-u8 CONST_DATA Tsa_87A2CCC[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_87A2CCC.map.bin.lz");
+u8 CONST_DATA Tsa_Ekrdragonfx_30[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_87A2CCC.map.bin.lz");
 
-u8 CONST_DATA Tsa_87A2DB8[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_87A2DB8.map.bin.lz");
+u8 CONST_DATA Tsa_Ekrdragonfx_31[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_87A2DB8.map.bin.lz");
 
-u8 CONST_DATA Img_87A2EA0[] = INCBIN_U8("graphics/banim/dragonfx/Img_87A2EA0.4bpp.lz");
+u8 CONST_DATA Img_Ekrdragonfx_26[] = INCBIN_U8("graphics/banim/dragonfx/Img_87A2EA0.4bpp.lz");
 
-u8 CONST_DATA Img_87A3400[] = INCBIN_U8("graphics/banim/dragonfx/Img_87A3400.4bpp.lz");
+u8 CONST_DATA Img_Ekrdragonfx_27[] = INCBIN_U8("graphics/banim/dragonfx/Img_87A3400.4bpp.lz");
 
-u8 CONST_DATA Img_87A39A0[] = INCBIN_U8("graphics/banim/dragonfx/Img_87A39A0.4bpp.lz");
+u8 CONST_DATA Img_Ekrdragonfx_28[] = INCBIN_U8("graphics/banim/dragonfx/Img_87A39A0.4bpp.lz");
 
-u8 CONST_DATA Img_87A3F38[] = INCBIN_U8("graphics/banim/dragonfx/Img_87A3F38.4bpp.lz");
+u8 CONST_DATA Img_Ekrdragonfx_29[] = INCBIN_U8("graphics/banim/dragonfx/Img_87A3F38.4bpp.lz");
 
-u8 CONST_DATA Img_87A44D8[] = INCBIN_U8("graphics/banim/dragonfx/Img_87A44D8.4bpp.lz");
+u8 CONST_DATA Img_Ekrdragonfx_30[] = INCBIN_U8("graphics/banim/dragonfx/Img_87A44D8.4bpp.lz");
 
-u16 CONST_DATA Pal_87A4A68[] = INCBIN_U16("graphics/banim/dragonfx/Pal_87A4A68.gbapal");
+u16 CONST_DATA Pal_Ekrdragonfx_6[] = INCBIN_U16("graphics/banim/dragonfx/Pal_87A4A68.gbapal");
 
-u8 CONST_DATA Tsa_87A4A88[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_87A4A88.map.bin.lz");
+u8 CONST_DATA Tsa_Ekrdragonfx_32[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_87A4A88.map.bin.lz");
 
-u8 CONST_DATA Tsa_87A4B68[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_87A4B68.map.bin.lz");
+u8 CONST_DATA Tsa_Ekrdragonfx_33[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_87A4B68.map.bin.lz");
 
-u8 CONST_DATA Tsa_87A4C44[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_87A4C44.map.bin.lz");
+u8 CONST_DATA Tsa_Ekrdragonfx_34[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_87A4C44.map.bin.lz");
 
-u8 CONST_DATA Tsa_87A4D2C[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_87A4D2C.map.bin.lz");
+u8 CONST_DATA Tsa_Ekrdragonfx_35[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_87A4D2C.map.bin.lz");
 
-u8 CONST_DATA Tsa_87A4E0C[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_87A4E0C.map.bin.lz");
+u8 CONST_DATA Tsa_Ekrdragonfx_36[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_87A4E0C.map.bin.lz");
 
 u8 CONST_DATA Img_DemonLightSprites_EyeFlash[] = INCBIN_U8("graphics/banim/dragonfx/Img_DemonLightSprites_EyeFlash.4bpp.lz");
 
 u16 CONST_DATA Pal_DemonLightSprites_EyeFlash[] = INCBIN_U16("graphics/banim/dragonfx/Pal_DemonLightSprites_EyeFlash.agbpal");
 
-u32 CONST_DATA gUnknown_087A5240[] =
+u32 CONST_DATA gEkrdragonfx_0[] =
 {
     0x187A5138, 0x187A5150, 0x187A5180, 0x187A51A4,
     0x187A51D4, 0x187A51F8, 0x187A521C, 0x087A5236,
@@ -631,7 +631,7 @@ u32 CONST_DATA gUnknown_087A5240[] =
     0x00000001, 0x00000000, 0x00000000,
 };
 
-u32 CONST_DATA gUnknown_087A536C[] =
+u32 CONST_DATA gEkrdragonfx_1[] =
 {
     0x187A5264, 0x187A527C, 0x187A52AC, 0x187A52D0,
     0x187A5300, 0x187A5324, 0x187A5348, 0x087A5362,
@@ -733,7 +733,7 @@ struct AnimSpriteData CONST_DATA AnimSprite_EfxMaohFlashEye_13[] =
     ANIM_SPRITE_END,
 };
 
-AnimScr CONST_DATA gUnknown_087A5940[] =
+AnimScr CONST_DATA gEkrdragonfx_2[] =
 {
     ANIMSCR_FORCE_SPRITE(AnimSprite_EfxMaohFlashEye_1, 2),
     ANIMSCR_FORCE_SPRITE(AnimSprite_EfxMaohFlashEye_2, 2),
@@ -743,7 +743,7 @@ AnimScr CONST_DATA gUnknown_087A5940[] =
     ANIMSCR_DISABLED,
 };
 
-AnimScr CONST_DATA gUnknown_087A5958[] =
+AnimScr CONST_DATA gEkrdragonfx_3[] =
 {
     ANIMSCR_FORCE_SPRITE(AnimSprite_EfxMaohFlashEye_5, 2),
     ANIMSCR_FORCE_SPRITE(AnimSprite_EfxMaohFlashEye_8, 2),
@@ -753,7 +753,7 @@ AnimScr CONST_DATA gUnknown_087A5958[] =
     ANIMSCR_DISABLED,
 };
 
-AnimScr CONST_DATA gUnknown_087A5970[] =
+AnimScr CONST_DATA gEkrdragonfx_4[] =
 {
     ANIMSCR_FORCE_SPRITE(AnimSprite_EfxMaohFlashEye_6, 2),
     ANIMSCR_FORCE_SPRITE(AnimSprite_EfxMaohFlashEye_11, 2),
@@ -854,7 +854,7 @@ struct AnimSpriteData CONST_DATA AnimSprite_EfxMaohFlashThunderObj_13[] =
     ANIM_SPRITE_END,
 };
 
-AnimScr CONST_DATA gUnknown_087A5B5C[] =
+AnimScr CONST_DATA gEkrdragonfx_5[] =
 {
     ANIMSCR_FORCE_SPRITE(AnimSprite_EfxMaohFlashThunderObj_1, 2),
     ANIMSCR_FORCE_SPRITE(AnimSprite_EfxMaohFlashThunderObj_2, 2),
@@ -864,7 +864,7 @@ AnimScr CONST_DATA gUnknown_087A5B5C[] =
     ANIMSCR_DISABLED,
 };
 
-AnimScr CONST_DATA gUnknown_087A5B74[] =
+AnimScr CONST_DATA gEkrdragonfx_6[] =
 {
     ANIMSCR_FORCE_SPRITE(AnimSprite_EfxMaohFlashThunderObj_5, 2),
     ANIMSCR_FORCE_SPRITE(AnimSprite_EfxMaohFlashThunderObj_8, 2),
@@ -874,7 +874,7 @@ AnimScr CONST_DATA gUnknown_087A5B74[] =
     ANIMSCR_DISABLED,
 };
 
-AnimScr CONST_DATA gUnknown_087A5B8C[] =
+AnimScr CONST_DATA gEkrdragonfx_7[] =
 {
     ANIMSCR_FORCE_SPRITE(AnimSprite_EfxMaohFlashThunderObj_6, 2),
     ANIMSCR_FORCE_SPRITE(AnimSprite_EfxMaohFlashThunderObj_11, 2),
@@ -884,11 +884,11 @@ AnimScr CONST_DATA gUnknown_087A5B8C[] =
     ANIMSCR_DISABLED,
 };
 
-u8 CONST_DATA Img_DemonLightSprites_087A5BA4[] = INCBIN_U8("graphics/banim/dragonfx/Img_DemonLightSprites_087A5BA4.4bpp.lz");
+u8 CONST_DATA Img_DemonLightSprites_efxMaohFlashEyeFire1OBJ[] = INCBIN_U8("graphics/banim/dragonfx/Img_DemonLightSprites_087A5BA4.4bpp.lz");
 
-u8 CONST_DATA Img_DemonLightSprites_087A5E9C[] = INCBIN_U8("graphics/banim/dragonfx/Img_DemonLightSprites_087A5E9C.4bpp.lz");
+u8 CONST_DATA Img_DemonLightSprites_efxMaohFlashEyeFire2OBJ[] = INCBIN_U8("graphics/banim/dragonfx/Img_DemonLightSprites_087A5E9C.4bpp.lz");
 
-u16 CONST_DATA Pal_DemonLightSprites_087A61EC[] = INCBIN_U16("graphics/banim/dragonfx/Pal_DemonLightSprites_087A61EC.gbapal");
+u16 CONST_DATA Pal_DemonLightSprites_efxMaohFlashEyeFire[] = INCBIN_U16("graphics/banim/dragonfx/Pal_DemonLightSprites_087A61EC.gbapal");
 
 struct AnimSpriteData CONST_DATA AnimSprite_EfxMaohFlashEyeFire1Obj_1[] =
 {
@@ -1008,7 +1008,7 @@ struct AnimSpriteData CONST_DATA AnimSprite_EfxMaohFlashEyeFire1Obj_6[] =
     ANIM_SPRITE_END,
 };
 
-AnimScr CONST_DATA gUnknown_087A6674[] =
+AnimScr CONST_DATA gEkrdragonfx_8[] =
 {
     ANIMSCR_FORCE_SPRITE(AnimSprite_EfxMaohFlashEyeFire1Obj_1, 2),
     ANIMSCR_FORCE_SPRITE(AnimSprite_EfxMaohFlashEyeFire1Obj_2, 2),
@@ -1134,7 +1134,7 @@ struct AnimSpriteData CONST_DATA AnimSprite_EfxMaohFlashEyeFire1Obj_12[] =
     ANIM_SPRITE_END,
 };
 
-AnimScr CONST_DATA gUnknown_087A6AEC[] =
+AnimScr CONST_DATA gEkrdragonfx_9[] =
 {
     ANIMSCR_FORCE_SPRITE(AnimSprite_EfxMaohFlashEyeFire1Obj_7, 2),
     ANIMSCR_FORCE_SPRITE(AnimSprite_EfxMaohFlashEyeFire1Obj_8, 2),
@@ -1260,7 +1260,7 @@ struct AnimSpriteData CONST_DATA AnimSprite_EfxMaohFlashEyeFire2Obj1_6[] =
     ANIM_SPRITE_END,
 };
 
-AnimScr CONST_DATA gUnknown_087A6F64[] =
+AnimScr CONST_DATA gEkrdragonfx_10[] =
 {
     ANIMSCR_FORCE_SPRITE(AnimSprite_EfxMaohFlashEyeFire2Obj1_3, 1),
     ANIMSCR_FORCE_SPRITE(AnimSprite_EfxMaohFlashEyeFire2Obj1_4, 1),
@@ -1387,7 +1387,7 @@ struct AnimSpriteData CONST_DATA AnimSprite_EfxMaohFlashEyeFire2Obj1_12[] =
     ANIM_SPRITE_END,
 };
 
-AnimScr CONST_DATA gUnknown_087A73E0[] =
+AnimScr CONST_DATA gEkrdragonfx_11[] =
 {
     ANIMSCR_FORCE_SPRITE(AnimSprite_EfxMaohFlashEyeFire2Obj1_9, 1),
     ANIMSCR_FORCE_SPRITE(AnimSprite_EfxMaohFlashEyeFire2Obj1_10, 1),
@@ -1588,83 +1588,83 @@ u8 CONST_DATA Tsa_DemonLightBg_Close_31[] = INCBIN_U8("graphics/efxdragon/DemonL
 
 u8 CONST_DATA Tsa_DemonLightBg_Close_32[] = INCBIN_U8("graphics/efxdragon/DemonLightBg_Close_32.fetsa1.bin.lz");
 
-u8 CONST_DATA Img_087C5190[] = INCBIN_U8("graphics/banim/dragonfx/Img_087C5190.4bpp.lz");
+u8 CONST_DATA Img_DemonLightBg_0[] = INCBIN_U8("graphics/banim/dragonfx/Img_087C5190.4bpp.lz");
 
-u8 CONST_DATA Img_087C56E4[] = INCBIN_U8("graphics/banim/dragonfx/Img_087C56E4.4bpp.lz");
+u8 CONST_DATA Img_DemonLightBg4_Close_0[] = INCBIN_U8("graphics/banim/dragonfx/Img_087C56E4.4bpp.lz");
 
-u8 CONST_DATA Img_087C619C[] = INCBIN_U8("graphics/banim/dragonfx/Img_087C619C.4bpp.lz");
+u8 CONST_DATA Img_DemonLightBg4_Close_1[] = INCBIN_U8("graphics/banim/dragonfx/Img_087C619C.4bpp.lz");
 
-u8 CONST_DATA Img_087C6CF4[] = INCBIN_U8("graphics/banim/dragonfx/Img_087C6CF4.4bpp.lz");
+u8 CONST_DATA Img_DemonLightBg4_Close_2[] = INCBIN_U8("graphics/banim/dragonfx/Img_087C6CF4.4bpp.lz");
 
-u8 CONST_DATA Img_087C7678[] = INCBIN_U8("graphics/banim/dragonfx/Img_087C7678.4bpp.lz");
+u8 CONST_DATA Img_DemonLightBg4_Close_3[] = INCBIN_U8("graphics/banim/dragonfx/Img_087C7678.4bpp.lz");
 
-u8 CONST_DATA Img_087C810C[] = INCBIN_U8("graphics/banim/dragonfx/Img_087C810C.4bpp.lz");
+u8 CONST_DATA Img_DemonLightBg4_Close_4[] = INCBIN_U8("graphics/banim/dragonfx/Img_087C810C.4bpp.lz");
 
-u8 CONST_DATA Img_087C86BC[] = INCBIN_U8("graphics/banim/dragonfx/Img_087C86BC.4bpp.lz");
+u8 CONST_DATA Img_DemonLightBg4_Close_5[] = INCBIN_U8("graphics/banim/dragonfx/Img_087C86BC.4bpp.lz");
 
-u8 CONST_DATA Img_087C8C80[] = INCBIN_U8("graphics/banim/dragonfx/Img_087C8C80.4bpp.lz");
+u8 CONST_DATA Img_DemonLightBg4_Close_6[] = INCBIN_U8("graphics/banim/dragonfx/Img_087C8C80.4bpp.lz");
 
-u16 CONST_DATA Pal_087C9290[] = INCBIN_U16("graphics/banim/dragonfx/Pal_087C9290.gbapal");
+u16 CONST_DATA Pal_DemonLightBg4_Close_0[] = INCBIN_U16("graphics/banim/dragonfx/Pal_087C9290.gbapal");
 
-u16 CONST_DATA Pal_087C92B0[] = INCBIN_U16("graphics/banim/dragonfx/Pal_087C92B0.gbapal");
+u16 CONST_DATA Pal_DemonLightBg4_Close_1[] = INCBIN_U16("graphics/banim/dragonfx/Pal_087C92B0.gbapal");
 
-u16 CONST_DATA Pal_087C92D0[] = INCBIN_U16("graphics/banim/dragonfx/Pal_087C92D0.gbapal");
+u16 CONST_DATA Pal_DemonLightBg4_Close_2[] = INCBIN_U16("graphics/banim/dragonfx/Pal_087C92D0.gbapal");
 
-u16 CONST_DATA Pal_087C92F0[] = INCBIN_U16("graphics/banim/dragonfx/Pal_087C92F0.gbapal");
+u16 CONST_DATA Pal_DemonLightBg4_Close_3[] = INCBIN_U16("graphics/banim/dragonfx/Pal_087C92F0.gbapal");
 
-u16 CONST_DATA Pal_087C9310[] = INCBIN_U16("graphics/banim/dragonfx/Pal_087C9310.gbapal");
+u16 CONST_DATA Pal_DemonLightBg4_Close_4[] = INCBIN_U16("graphics/banim/dragonfx/Pal_087C9310.gbapal");
 
-u16 CONST_DATA Pal_087C9330[] = INCBIN_U16("graphics/banim/dragonfx/Pal_087C9330.gbapal");
+u16 CONST_DATA Pal_DemonLightBg4_Close_5[] = INCBIN_U16("graphics/banim/dragonfx/Pal_087C9330.gbapal");
 
-u16 CONST_DATA Pal_087C9350[] = INCBIN_U16("graphics/banim/dragonfx/Pal_087C9350.gbapal");
+u16 CONST_DATA Pal_DemonLightBg4_Close_6[] = INCBIN_U16("graphics/banim/dragonfx/Pal_087C9350.gbapal");
 
-u16 CONST_DATA Pal_087C9370[] = INCBIN_U16("graphics/banim/dragonfx/Pal_087C9370.gbapal");
+u16 CONST_DATA Pal_DemonLightBg4_Close_7[] = INCBIN_U16("graphics/banim/dragonfx/Pal_087C9370.gbapal");
 
-u8 CONST_DATA Tsa_087C9390[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_087C9390.map.bin.lz");
+u8 CONST_DATA Tsa_DemonLightBg4_Close_0[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_087C9390.map.bin.lz");
 
-u8 CONST_DATA Tsa_087C9464[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_087C9464.map.bin.lz");
+u8 CONST_DATA Tsa_DemonLightBg4_Close_1[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_087C9464.map.bin.lz");
 
-u8 CONST_DATA Tsa_087C9600[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_087C9600.map.bin.lz");
+u8 CONST_DATA Tsa_DemonLightBg4_Close_2[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_087C9600.map.bin.lz");
 
-u8 CONST_DATA Tsa_087C9818[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_087C9818.map.bin.lz");
+u8 CONST_DATA Tsa_DemonLightBg4_Close_3[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_087C9818.map.bin.lz");
 
-u8 CONST_DATA Tsa_087C9A2C[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_087C9A2C.map.bin.lz");
+u8 CONST_DATA Tsa_DemonLightBg4_Close_4[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_087C9A2C.map.bin.lz");
 
-u8 CONST_DATA Tsa_087C9BEC[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_087C9BEC.map.bin.lz");
+u8 CONST_DATA Tsa_DemonLightBg4_Close_5[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_087C9BEC.map.bin.lz");
 
-u8 CONST_DATA Tsa_087C9CF4[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_087C9CF4.map.bin.lz");
+u8 CONST_DATA Tsa_DemonLightBg4_Close_6[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_087C9CF4.map.bin.lz");
 
-u8 CONST_DATA Tsa_087C9E04[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_087C9E04.map.bin.lz");
+u8 CONST_DATA Tsa_DemonLightBg4_Close_7[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_087C9E04.map.bin.lz");
 
-u8 CONST_DATA Img_087C9F18[] = INCBIN_U8("graphics/banim/dragonfx/Img_087C9F18.4bpp.lz");
+u8 CONST_DATA Img_DemonLightBg3_Close_0[] = INCBIN_U8("graphics/banim/dragonfx/Img_087C9F18.4bpp.lz");
 
-u8 CONST_DATA Img_087CA68C[] = INCBIN_U8("graphics/banim/dragonfx/Img_087CA68C.4bpp.lz");
+u8 CONST_DATA Img_DemonLightBg3_Close_1[] = INCBIN_U8("graphics/banim/dragonfx/Img_087CA68C.4bpp.lz");
 
-u8 CONST_DATA Img_087CAE60[] = INCBIN_U8("graphics/banim/dragonfx/Img_087CAE60.4bpp.lz");
+u8 CONST_DATA Img_DemonLightBg3_Close_2[] = INCBIN_U8("graphics/banim/dragonfx/Img_087CAE60.4bpp.lz");
 
-u8 CONST_DATA Img_087CB630[] = INCBIN_U8("graphics/banim/dragonfx/Img_087CB630.4bpp.lz");
+u8 CONST_DATA Img_DemonLightBg3_Close_3[] = INCBIN_U8("graphics/banim/dragonfx/Img_087CB630.4bpp.lz");
 
-u8 CONST_DATA Img_087CBDF4[] = INCBIN_U8("graphics/banim/dragonfx/Img_087CBDF4.4bpp.lz");
+u8 CONST_DATA Img_DemonLightBg3_Close_4[] = INCBIN_U8("graphics/banim/dragonfx/Img_087CBDF4.4bpp.lz");
 
-u16 CONST_DATA Pal_087CC55C[] = INCBIN_U16("graphics/banim/dragonfx/Pal_087CC55C.gbapal");
+u16 CONST_DATA Pal_DemonLightBg3_Close_0[] = INCBIN_U16("graphics/banim/dragonfx/Pal_087CC55C.gbapal");
 
-u16 CONST_DATA Pal_087CC57C[] = INCBIN_U16("graphics/banim/dragonfx/Pal_087CC57C.gbapal");
+u16 CONST_DATA Pal_DemonLightBg3_Close_1[] = INCBIN_U16("graphics/banim/dragonfx/Pal_087CC57C.gbapal");
 
-u16 CONST_DATA Pal_087CC59C[] = INCBIN_U16("graphics/banim/dragonfx/Pal_087CC59C.gbapal");
+u16 CONST_DATA Pal_DemonLightBg3_Close_2[] = INCBIN_U16("graphics/banim/dragonfx/Pal_087CC59C.gbapal");
 
-u16 CONST_DATA Pal_087CC5BC[] = INCBIN_U16("graphics/banim/dragonfx/Pal_087CC5BC.gbapal");
+u16 CONST_DATA Pal_DemonLightBg3_Close_3[] = INCBIN_U16("graphics/banim/dragonfx/Pal_087CC5BC.gbapal");
 
-u16 CONST_DATA Pal_087CC5DC[] = INCBIN_U16("graphics/banim/dragonfx/Pal_087CC5DC.gbapal");
+u16 CONST_DATA Pal_DemonLightBg3_Close_4[] = INCBIN_U16("graphics/banim/dragonfx/Pal_087CC5DC.gbapal");
 
-u8 CONST_DATA Tsa_087CC5FC[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_087CC5FC.map.bin.lz");
+u8 CONST_DATA Tsa_DemonLightBg3_Close_0[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_087CC5FC.map.bin.lz");
 
-u8 CONST_DATA Tsa_087CC734[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_087CC734.map.bin.lz");
+u8 CONST_DATA Tsa_DemonLightBg3_Close_1[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_087CC734.map.bin.lz");
 
-u8 CONST_DATA Tsa_087CC878[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_087CC878.map.bin.lz");
+u8 CONST_DATA Tsa_DemonLightBg3_Close_2[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_087CC878.map.bin.lz");
 
-u8 CONST_DATA Tsa_087CC9B8[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_087CC9B8.map.bin.lz");
+u8 CONST_DATA Tsa_DemonLightBg3_Close_3[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_087CC9B8.map.bin.lz");
 
-u8 CONST_DATA Tsa_087CCAD8[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_087CCAD8.map.bin.lz");
+u8 CONST_DATA Tsa_DemonLightBg3_Close_4[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_087CCAD8.map.bin.lz");
 
 u8 CONST_DATA Img_DemonLightBg_Far_1[] = INCBIN_U8("graphics/efxdragon/DemonLightBg_Far_1.feimg1.bin.lz");
 
@@ -1858,101 +1858,101 @@ u8 CONST_DATA Tsa_DemonLightBg_Far_31[] = INCBIN_U8("graphics/efxdragon/DemonLig
 
 u8 CONST_DATA Tsa_DemonLightBg_Far_32[] = INCBIN_U8("graphics/efxdragon/DemonLightBg_Far_32.fetsa1.bin.lz");
 
-u8 CONST_DATA Img_087EA72C[] = INCBIN_U8("graphics/banim/dragonfx/Img_087EA72C.4bpp.lz");
+u8 CONST_DATA Img_DemonLightBg_1[] = INCBIN_U8("graphics/banim/dragonfx/Img_087EA72C.4bpp.lz");
 
-u8 CONST_DATA Img_087EAC80[] = INCBIN_U8("graphics/banim/dragonfx/Img_087EAC80.4bpp.lz");
+u8 CONST_DATA Img_DemonLightBg4_Far_0[] = INCBIN_U8("graphics/banim/dragonfx/Img_087EAC80.4bpp.lz");
 
-u8 CONST_DATA Img_087EB704[] = INCBIN_U8("graphics/banim/dragonfx/Img_087EB704.4bpp.lz");
+u8 CONST_DATA Img_DemonLightBg4_Far_1[] = INCBIN_U8("graphics/banim/dragonfx/Img_087EB704.4bpp.lz");
 
-u8 CONST_DATA Img_087EC054[] = INCBIN_U8("graphics/banim/dragonfx/Img_087EC054.4bpp.lz");
+u8 CONST_DATA Img_DemonLightBg4_Far_2[] = INCBIN_U8("graphics/banim/dragonfx/Img_087EC054.4bpp.lz");
 
-u8 CONST_DATA Img_087EC944[] = INCBIN_U8("graphics/banim/dragonfx/Img_087EC944.4bpp.lz");
+u8 CONST_DATA Img_DemonLightBg4_Far_3[] = INCBIN_U8("graphics/banim/dragonfx/Img_087EC944.4bpp.lz");
 
-u8 CONST_DATA Img_087ED2B0[] = INCBIN_U8("graphics/banim/dragonfx/Img_087ED2B0.4bpp.lz");
+u8 CONST_DATA Img_DemonLightBg4_Far_4[] = INCBIN_U8("graphics/banim/dragonfx/Img_087ED2B0.4bpp.lz");
 
-u8 CONST_DATA Img_087ED828[] = INCBIN_U8("graphics/banim/dragonfx/Img_087ED828.4bpp.lz");
+u8 CONST_DATA Img_DemonLightBg4_Far_5[] = INCBIN_U8("graphics/banim/dragonfx/Img_087ED828.4bpp.lz");
 
-u8 CONST_DATA Img_087EDDC0[] = INCBIN_U8("graphics/banim/dragonfx/Img_087EDDC0.4bpp.lz");
+u8 CONST_DATA Img_DemonLightBg4_Far_6[] = INCBIN_U8("graphics/banim/dragonfx/Img_087EDDC0.4bpp.lz");
 
-u16 CONST_DATA Pal_087EE3A0[] = INCBIN_U16("graphics/banim/dragonfx/Pal_087EE3A0.gbapal");
+u16 CONST_DATA Pal_DemonLightBg4_Far_0[] = INCBIN_U16("graphics/banim/dragonfx/Pal_087EE3A0.gbapal");
 
-u16 CONST_DATA Pal_087EE3C0[] = INCBIN_U16("graphics/banim/dragonfx/Pal_087EE3C0.gbapal");
+u16 CONST_DATA Pal_DemonLightBg4_Far_1[] = INCBIN_U16("graphics/banim/dragonfx/Pal_087EE3C0.gbapal");
 
-u16 CONST_DATA Pal_087EE3E0[] = INCBIN_U16("graphics/banim/dragonfx/Pal_087EE3E0.gbapal");
+u16 CONST_DATA Pal_DemonLightBg4_Far_2[] = INCBIN_U16("graphics/banim/dragonfx/Pal_087EE3E0.gbapal");
 
-u16 CONST_DATA Pal_087EE400[] = INCBIN_U16("graphics/banim/dragonfx/Pal_087EE400.gbapal");
+u16 CONST_DATA Pal_DemonLightBg4_Far_3[] = INCBIN_U16("graphics/banim/dragonfx/Pal_087EE400.gbapal");
 
-u16 CONST_DATA Pal_087EE420[] = INCBIN_U16("graphics/banim/dragonfx/Pal_087EE420.gbapal");
+u16 CONST_DATA Pal_DemonLightBg4_Far_4[] = INCBIN_U16("graphics/banim/dragonfx/Pal_087EE420.gbapal");
 
-u16 CONST_DATA Pal_087EE440[] = INCBIN_U16("graphics/banim/dragonfx/Pal_087EE440.gbapal");
+u16 CONST_DATA Pal_DemonLightBg4_Far_5[] = INCBIN_U16("graphics/banim/dragonfx/Pal_087EE440.gbapal");
 
-u16 CONST_DATA Pal_087EE460[] = INCBIN_U16("graphics/banim/dragonfx/Pal_087EE460.gbapal");
+u16 CONST_DATA Pal_DemonLightBg4_Far_6[] = INCBIN_U16("graphics/banim/dragonfx/Pal_087EE460.gbapal");
 
-u16 CONST_DATA Pal_087EE480[] = INCBIN_U16("graphics/banim/dragonfx/Pal_087EE480.gbapal");
+u16 CONST_DATA Pal_DemonLightBg4_Far_7[] = INCBIN_U16("graphics/banim/dragonfx/Pal_087EE480.gbapal");
 
-u8 CONST_DATA Tsa_087EE4A0[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_087EE4A0.map.bin.lz");
+u8 CONST_DATA Tsa_DemonLightBg4_Far_0[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_087EE4A0.map.bin.lz");
 
-u8 CONST_DATA Tsa_087EE578[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_087EE578.map.bin.lz");
+u8 CONST_DATA Tsa_DemonLightBg4_Far_1[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_087EE578.map.bin.lz");
 
-u8 CONST_DATA Tsa_087EE710[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_087EE710.map.bin.lz");
+u8 CONST_DATA Tsa_DemonLightBg4_Far_2[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_087EE710.map.bin.lz");
 
-u8 CONST_DATA Tsa_087EE8F8[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_087EE8F8.map.bin.lz");
+u8 CONST_DATA Tsa_DemonLightBg4_Far_3[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_087EE8F8.map.bin.lz");
 
-u8 CONST_DATA Tsa_087EEAF4[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_087EEAF4.map.bin.lz");
+u8 CONST_DATA Tsa_DemonLightBg4_Far_4[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_087EEAF4.map.bin.lz");
 
-u8 CONST_DATA Tsa_087EECA8[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_087EECA8.map.bin.lz");
+u8 CONST_DATA Tsa_DemonLightBg4_Far_5[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_087EECA8.map.bin.lz");
 
-u8 CONST_DATA Tsa_087EEDAC[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_087EEDAC.map.bin.lz");
+u8 CONST_DATA Tsa_DemonLightBg4_Far_6[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_087EEDAC.map.bin.lz");
 
-u8 CONST_DATA Tsa_087EEEB0[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_087EEEB0.map.bin.lz");
+u8 CONST_DATA Tsa_DemonLightBg4_Far_7[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_087EEEB0.map.bin.lz");
 
-u8 CONST_DATA Img_087EEFBC[] = INCBIN_U8("graphics/banim/dragonfx/Img_087EEFBC.4bpp.lz");
+u8 CONST_DATA Img_DemonLightBg3_Far_0[] = INCBIN_U8("graphics/banim/dragonfx/Img_087EEFBC.4bpp.lz");
 
-u8 CONST_DATA Img_087EF730[] = INCBIN_U8("graphics/banim/dragonfx/Img_087EF730.4bpp.lz");
+u8 CONST_DATA Img_DemonLightBg3_Far_1[] = INCBIN_U8("graphics/banim/dragonfx/Img_087EF730.4bpp.lz");
 
-u8 CONST_DATA Img_087EFF04[] = INCBIN_U8("graphics/banim/dragonfx/Img_087EFF04.4bpp.lz");
+u8 CONST_DATA Img_DemonLightBg3_Far_2[] = INCBIN_U8("graphics/banim/dragonfx/Img_087EFF04.4bpp.lz");
 
-u8 CONST_DATA Img_087F06D4[] = INCBIN_U8("graphics/banim/dragonfx/Img_087F06D4.4bpp.lz");
+u8 CONST_DATA Img_DemonLightBg3_Far_3[] = INCBIN_U8("graphics/banim/dragonfx/Img_087F06D4.4bpp.lz");
 
-u8 CONST_DATA Img_087F0E98[] = INCBIN_U8("graphics/banim/dragonfx/Img_087F0E98.4bpp.lz");
+u8 CONST_DATA Img_DemonLightBg3_Far_4[] = INCBIN_U8("graphics/banim/dragonfx/Img_087F0E98.4bpp.lz");
 
-u16 CONST_DATA Pal_087F1600[] = INCBIN_U16("graphics/banim/dragonfx/Pal_087F1600.gbapal");
+u16 CONST_DATA Pal_DemonLightBg3_Far_0[] = INCBIN_U16("graphics/banim/dragonfx/Pal_087F1600.gbapal");
 
-u16 CONST_DATA Pal_087F1620[] = INCBIN_U16("graphics/banim/dragonfx/Pal_087F1620.gbapal");
+u16 CONST_DATA Pal_DemonLightBg3_Far_1[] = INCBIN_U16("graphics/banim/dragonfx/Pal_087F1620.gbapal");
 
-u16 CONST_DATA Pal_087F1640[] = INCBIN_U16("graphics/banim/dragonfx/Pal_087F1640.gbapal");
+u16 CONST_DATA Pal_DemonLightBg3_Far_2[] = INCBIN_U16("graphics/banim/dragonfx/Pal_087F1640.gbapal");
 
-u16 CONST_DATA Pal_087F1660[] = INCBIN_U16("graphics/banim/dragonfx/Pal_087F1660.gbapal");
+u16 CONST_DATA Pal_DemonLightBg3_Far_3[] = INCBIN_U16("graphics/banim/dragonfx/Pal_087F1660.gbapal");
 
-u16 CONST_DATA Pal_087F1680[] = INCBIN_U16("graphics/banim/dragonfx/Pal_087F1680.gbapal");
+u16 CONST_DATA Pal_DemonLightBg3_Far_4[] = INCBIN_U16("graphics/banim/dragonfx/Pal_087F1680.gbapal");
 
-u8 CONST_DATA Tsa_087F16A0[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_087F16A0.map.bin.lz");
+u8 CONST_DATA Tsa_DemonLightBg3_Far_0[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_087F16A0.map.bin.lz");
 
-u8 CONST_DATA Tsa_087F17D8[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_087F17D8.map.bin.lz");
+u8 CONST_DATA Tsa_DemonLightBg3_Far_1[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_087F17D8.map.bin.lz");
 
-u8 CONST_DATA Tsa_087F191C[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_087F191C.map.bin.lz");
+u8 CONST_DATA Tsa_DemonLightBg3_Far_2[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_087F191C.map.bin.lz");
 
-u8 CONST_DATA Tsa_087F1A54[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_087F1A54.map.bin.lz");
+u8 CONST_DATA Tsa_DemonLightBg3_Far_3[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_087F1A54.map.bin.lz");
 
-u8 CONST_DATA Tsa_087F1B74[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_087F1B74.map.bin.lz");
+u8 CONST_DATA Tsa_DemonLightBg3_Far_4[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_087F1B74.map.bin.lz");
 
-u8 CONST_DATA Img_087F1C94[] = INCBIN_U8("graphics/banim/dragonfx/Img_087F1C94.4bpp.lz");
+u8 CONST_DATA Img_DemonLightBg_2[] = INCBIN_U8("graphics/banim/dragonfx/Img_087F1C94.4bpp.lz");
 
-u8 CONST_DATA Img_087F2464[] = INCBIN_U8("graphics/banim/dragonfx/Img_087F2464.4bpp.lz");
+u8 CONST_DATA Img_DemonLightBg_3[] = INCBIN_U8("graphics/banim/dragonfx/Img_087F2464.4bpp.lz");
 
-u8 CONST_DATA Img_087F2E40[] = INCBIN_U8("graphics/banim/dragonfx/Img_087F2E40.4bpp.lz");
+u8 CONST_DATA Img_DemonLightBg_4[] = INCBIN_U8("graphics/banim/dragonfx/Img_087F2E40.4bpp.lz");
 
-u16 CONST_DATA Pal_087F3C14[] = INCBIN_U16("graphics/banim/dragonfx/Pal_087F3C14.gbapal");
+u16 CONST_DATA Pal_DemonLightBg_0[] = INCBIN_U16("graphics/banim/dragonfx/Pal_087F3C14.gbapal");
 
-u16 CONST_DATA Pal_087F3C34[] = INCBIN_U16("graphics/banim/dragonfx/Pal_087F3C34.gbapal");
+u16 CONST_DATA Pal_DemonLightBg_1[] = INCBIN_U16("graphics/banim/dragonfx/Pal_087F3C34.gbapal");
 
-u16 CONST_DATA Pal_087F3C54[] = INCBIN_U16("graphics/banim/dragonfx/Pal_087F3C54.gbapal");
+u16 CONST_DATA Pal_Ekrdragonfx_2[] = INCBIN_U16("graphics/banim/dragonfx/Pal_087F3C54.gbapal");
 
-u8 CONST_DATA Tsa_087F3C74[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_087F3C74.map.bin.lz");
+u8 CONST_DATA Tsa_DemonLightBg_0[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_087F3C74.map.bin.lz");
 
-u8 CONST_DATA Tsa_087F3D60[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_087F3D60.map.bin.lz");
+u8 CONST_DATA Tsa_DemonLightBg_1[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_087F3D60.map.bin.lz");
 
-u8 CONST_DATA Tsa_087F3E88[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_087F3E88.map.bin.lz");
+u8 CONST_DATA Tsa_DemonLightBg_2[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_087F3E88.map.bin.lz");
 
 struct AnimSpriteData CONST_DATA AnimSprite_DemoKingTunkFace_1[] =
 {
@@ -2037,7 +2037,7 @@ struct AnimSpriteData CONST_DATA AnimSprite_DemoKingTunkFace_4[] =
     ANIM_SPRITE_END,
 };
 
-AnimScr CONST_DATA BanimScr_087F4314[] =
+AnimScr CONST_DATA BanimScr_Ekrdragonfx_3[] =
 {
     ANIMSCR_FORCE_SPRITE(AnimSprite_DemoKingTunkFace_3, 2),
     ANIMSCR_FORCE_SPRITE(AnimSprite_DemoKingTunkFace_4, 31),

@@ -175,7 +175,7 @@ void DrawBattlePopup(struct ProcEkrPopup *proc, int type, u32 priv)
     InitText(text, width_popupbox);
     xcursor = (width_popupbox * 8 - width3) >> 1;
     Text_SetCursor(text, xcursor);
-    LZ77UnCompVram(gUnknown_08803BD0, (void *)BG_VRAM + 0x2100);
+    LZ77UnCompVram(gBanimmisc_12, (void *)BG_VRAM + 0x2100);
 
     if (type == 0) {
         /*  [.] */

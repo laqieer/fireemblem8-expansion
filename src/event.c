@@ -46,7 +46,7 @@ CONST_DATA EventFuncType gEventLoCmdTable[] = {
 CONST_DATA struct ProcCmd ProcScr_SomeEventDeamon[] = {
     PROC_MARK(PROC_MARK_WMSTUFF),
     PROC_YIELD,
-    PROC_CALL(nop_800CCE8),
+    PROC_CALL(nop_1),
     PROC_REPEAT(nullsub_32),
     PROC_END
 };
@@ -55,7 +55,7 @@ CONST_DATA struct ProcCmd ProcScr_EventFaceDeamon[] = {
     PROC_MARK(PROC_MARK_WMSTUFF),
     PROC_SET_END_CB(EventFaceDeamonDelete),
     PROC_YIELD,
-    PROC_CALL(nop_800CD38),
+    PROC_CALL(nop_2),
     PROC_REPEAT(nullsub_34),
     PROC_END
 };

@@ -16,7 +16,7 @@
 #include "constants/items.h"
 #include "constants/terrains.h"
 
-u8 EWRAM_DATA gUnknown_0203AAA0 = 0;
+u8 EWRAM_DATA gUnkData_0 = 0;
 
 // forward declarations
 void AiFillDangerMap(void);
@@ -894,11 +894,11 @@ s8 AiTryMoveToSpecificPosition(struct Vec2* out) {
     int idx = (gActiveUnit->ai_config & 0x1fc0) >> 8;
     int ai_counter = gActiveUnit->ai_counter;
 
-    if (gUnknown_085A8400 == NULL) {
+    if (gCpData_31 == NULL) {
         return 0;
     }
 
-    posA = gUnknown_085A8400[idx];
+    posA = gCpData_31[idx];
 
     if (posA == NULL) {
         return 0;
@@ -1046,7 +1046,7 @@ _0803F584:
 //! FE8U = 0x0803F5E0
 s8 sub_803F5E0(struct Unit* unit) {
 
-    if (unit->pCharacterData->number != gUnknown_0203AAA0) {
+    if (unit->pCharacterData->number != gUnkData_0) {
         return 0;
     }
 
@@ -1059,7 +1059,7 @@ s8 sub_803F5E0(struct Unit* unit) {
 
 //! FE8U = 0x0803F61C
 s8 sub_803F61C(const void* input) {
-    gUnknown_0203AAA0 = ((u8*)(input))[0];
+    gUnkData_0 = ((u8*)(input))[0];
 
     if (AiUnitWithCharIdExists(((u8*)(input))[0]) != 1) {
         gAiState.cmd_result[1] = 1;

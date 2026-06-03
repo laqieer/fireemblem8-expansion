@@ -14,8 +14,8 @@ u16 EWRAM_DATA gSioIncoming[0x200][4] = { 0 };
 
 static u8 sSioCnt;
 static int sSioId;
-static struct SioPending * sUnknown_030017E8;
-static u32 sUnknown_030017EC;
+static struct SioPending * sUnk_0;
+static u32 sUnk_1;
 
 static u16 sSendCursor;
 static u16 sWriteCursor;
@@ -23,11 +23,11 @@ static u16 sReadCursor[4];
 static u16 sRecvCursor[4];
 
 // COMMON
-extern u32 gUnknown_03004E70;
-extern u32 gUnknown_03004E74;
+extern u32 gUnk_71;
+extern u32 gUnk_72;
 extern u32 gSioStateId;
 extern struct SioMessage gSioMsgBuf;
-extern u8 gUnknown_03004F20[SIO_MAX_PACKET];
+extern u8 gUnk_75[SIO_MAX_PACKET];
 
 // clang-format off
 
@@ -80,7 +80,7 @@ int SioPollingMsg(void)
                 if (sSioId != 0)
                     sSioId = -1;
 
-                gUnknown_03004E74 = 0;
+                gUnk_72 = 0;
                 gSioStateId = 1;
             }
 
@@ -89,7 +89,7 @@ int SioPollingMsg(void)
         case 1:
             siocnt = REG_SIOCNT;
 
-            if (gUnknown_03004E74 != 0 && (siocnt & SIO_ERROR) == 0 && gSioSt->lastRecv[1] != UINT16_MAX)
+            if (gUnk_72 != 0 && (siocnt & SIO_ERROR) == 0 && gSioSt->lastRecv[1] != UINT16_MAX)
             {
                 sSioId = (siocnt & SIO_ID) >> 4; // TODO: shift constant
                 gSioStateId = 2;
@@ -136,7 +136,7 @@ void sub_8041718(void)
 
     // TODO: constants
 
-    gUnknown_03004E70 = 0;
+    gUnk_71 = 0;
 
     gSioSt->unk_022 = 0;
     gSioSt->selfSeq = 0;
@@ -159,7 +159,7 @@ void sub_8041718(void)
 
     for (i = 0; i < SIO_MAX_PACKET; i++)
     {
-        gUnknown_03004F20[i] = 0;
+        gUnk_75[i] = 0;
         gSioSt->buf[i] = 0;
     }
 
@@ -225,7 +225,7 @@ void sub_8041898(void)
     sub_8042980(0);
     sub_8041718();
 
-    sUnknown_030017EC = 0;
+    sUnk_1 = 0;
 }
 
 void SioRegisterIrq(void)
@@ -236,7 +236,7 @@ void SioRegisterIrq(void)
 
     REG_TM3CNT_H = 0;
 
-    gUnknown_03004E74 = gUnknown_03004E70 = 0;
+    gUnk_72 = gUnk_71 = 0;
     gSioStateId = 0;
     sSioId = -1;
 
@@ -252,7 +252,7 @@ void SioReleaseIrq(void)
     REG_RCNT = 0x8000;
     REG_SIOCNT = 0;
 
-    gUnknown_03004E74 = gUnknown_03004E70 = 0;
+    gUnk_72 = gUnk_71 = 0;
     gSioStateId = 0;
     sSioId = -1;
 
@@ -273,9 +273,9 @@ void SioHandleIrq_Serial(void)
 
     // TODO: constants, cleanup
 
-    gUnknown_03004E74 = 1;
+    gUnk_72 = 1;
     gSioSt->unk_01E = 0;
-    gUnknown_03004E70 = 1;
+    gUnk_71 = 1;
     gSioSt->recvFlags = 0;
 
     REG_TM3CNT_H = 0;
@@ -363,7 +363,7 @@ void SioHandleIrq_Serial(void)
         }
     }
 
-    gUnknown_03004E70 = 0;
+    gUnk_71 = 0;
 }
 
 void SioVsync_Loop(void)
@@ -581,7 +581,7 @@ void SioMain_Loop(void)
                                     (message->param == (u16)(gSioSt->selfSeq + 1)))
                                 {
                                     gSioSt->unk_00F |= 1 << (message->sender >> 4);
-                                    sUnknown_030017E8->unk_00 = gSioSt->unk_00F;
+                                    sUnk_0->unk_00 = gSioSt->unk_00F;
 
                                     if ((gSioSt->unk_00F & gSioSt->unk_009) == gSioSt->unk_009)
                                     {
@@ -998,7 +998,7 @@ struct SioData * sub_8042694(u32 * out)
     if (gSioSt->pendingSend[gSioSt->nextPendingSend].packet.head.kind != SIO_MSG_DATA)
         return NULL;
 
-    sUnknown_030017E8 = &gSioSt->pendingSend[gSioSt->nextPendingSend];
+    sUnk_0 = &gSioSt->pendingSend[gSioSt->nextPendingSend];
 
     *out = gSioSt->pendingSend[gSioSt->nextPendingSend].packet.len;
     return &gSioSt->pendingSend[gSioSt->nextPendingSend].packet;
@@ -1013,7 +1013,7 @@ int SioEmitData(u8 const * src, u16 len)
 
     struct SioData * dat;
 
-    sUnknown_030017EC = 1;
+    sUnk_1 = 1;
 
     gSioSt->pendingSend[gSioSt->nextPendingWrite].unk_00 = 0;
     dat = &gSioSt->pendingSend[gSioSt->nextPendingWrite].packet;
@@ -1035,7 +1035,7 @@ int SioEmitData(u8 const * src, u16 len)
     gSioSt->nextPendingWrite += 1;
     gSioSt->nextPendingWrite &= (SIO_MAX_PENDING_SEND - 1);
 
-    sUnknown_030017EC = 0;
+    sUnk_1 = 0;
 
     return result;
 }

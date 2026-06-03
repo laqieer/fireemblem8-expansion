@@ -659,7 +659,7 @@ void RefreshEntityBmMaps(void) {
 }
 
 char* GetTerrainName(int terrainId) {
-    return GetStringFromIndex(gUnknown_0880D374[terrainId]);
+    return GetStringFromIndex(gTerrains_0[terrainId]);
 }
 
 int GetTerrainHealAmount(int terrainId) {

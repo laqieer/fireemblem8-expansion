@@ -943,7 +943,7 @@ int sub_8033BF8(void)
 //! FE8U = 0x08033C10
 void PrepScreen_StartUnitSwap(struct ProcPrepSallyCursor * proc)
 {
-    struct APHandle * ap = AP_Create(gUnknown_085A0EA0, 0);
+    struct APHandle * ap = AP_Create(gUnkData_2, 0);
     ap->tileBase = 0;
     AP_SwitchAnimation(ap, 0);
 

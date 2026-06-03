@@ -48,14 +48,14 @@ void GenUnitDefinitionFinalPosition(const struct UnitDefinition* uDef, s8* xOut,
 s8 sub_807A294(u8 pid, u16 b);
 void sub_807A300(struct MuCtrlProc *);
 void sub_807A324(struct MuCtrlProc *);
-void MuCtr_ExecREDA_807A358(struct MuCtrlProc *);
+void MuCtr_ExecREDA_0(struct MuCtrlProc *);
 void AdjustNewUnitPosition(struct Unit *, struct Vec2 *, u16);
 u8 * sub_807A644(struct Unit * unit, struct Vec2 * pos, s8 flag);
 
 extern struct REDABuffer gEventREDAs;
-extern s8 gUnknown_03001C34;
-extern u8 gUnknown_03001C35;
-extern u16 gUnknown_03001C36;
+extern s8 gUnk_52;
+extern u8 gUnk_53;
+extern u16 gUnk_54;
 
 extern struct ProcCmd ProcScr_MuCtrl[];
 

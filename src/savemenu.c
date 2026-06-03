@@ -325,9 +325,9 @@ void SaveMenu_InitScreen(struct SaveMenuProc * proc)
     Decompress(Img_SaveScreenSprits, OBJ_VRAM0 + OBJCHR_SAVEMENU_SPRITES * TILE_SIZE_4BPP);
     ApplyPalettes(Pal_SaveScreenSprits, OBJPAL_SAVEMENU_SPRITES + 0x10, 8);
 
-    ApplyPalette(Pal_08A295B4, 2);
+    ApplyPalette(Pal_MenuMainObjs_0, 2);
     SaveMenuCopyPalette(PAL_OBJ(0x2), PAL_OBJ(0x1), 1);
-    SaveMenuCopyPalette(gUnknown_08A2C23C, gEndingTmScratchA, 2);
+    SaveMenuCopyPalette(gMenuMainObjs_5, gEndingTmScratchA, 2);
 
     BG_EnableSyncByMask(BG0_SYNC_BIT | BG1_SYNC_BIT | BG2_SYNC_BIT | BG3_SYNC_BIT);
 
@@ -1132,7 +1132,7 @@ void sub_80A9DBC(struct SaveMenu8A20068Proc  * proc)
     }
 }
 
-struct ProcCmd CONST_DATA gProcScr_08A20068[] = {
+struct ProcCmd CONST_DATA gProcScr_Savemenu_0[] = {
     PROC_YIELD,
 
     PROC_CALL(sub_80A9D84),
@@ -1147,7 +1147,7 @@ struct ProcCmd CONST_DATA gProcScr_08A20068[] = {
 //! FE8U = 0x080A9DFC
 void sub_80A9DFC(int x, int y, int msgId, ProcPtr parent)
 {
-    struct SaveMenu8A20068Proc  * proc = Proc_StartBlocking(gProcScr_08A20068, parent);
+    struct SaveMenu8A20068Proc  * proc = Proc_StartBlocking(gProcScr_Savemenu_0, parent);
     proc->msgId = msgId;
     proc->x = x;
     proc->y = y;
@@ -1481,7 +1481,7 @@ void SaveMenu_ReloadScreenFormDifficulty(struct SaveMenuProc * proc)
 
     Decompress(Img_SaveScreenSprits, (void*)0x06010800);
     ApplyPalettes(Pal_SaveScreenSprits, 0x12, 8);
-    ApplyPalette(Pal_08A295B4, 2);
+    ApplyPalette(Pal_MenuMainObjs_0, 2);
 
     SaveMenuCopyPalette(PAL_OBJ(0x2), PAL_OBJ(0x2) - 0x10, 1);
     Decompress(Img_GameMainMenuObjs, OBJ_VRAM0 + OBJCHR_SAVEMENU_MAINCHOICE_STR * TILE_SIZE_4BPP);
@@ -1949,7 +1949,7 @@ void sub_80AA7AC(int a, int b)
 {
     int offset = (a & 0x3F) >> 2;
     u16 * _src, * src = gPaletteBuffer;
-    u16 * dst = Pal_08A28088 + offset;
+    u16 * dst = Pal_MenuSaveMainBg_0 + offset;
     int val;
 
     val = *dst;

@@ -704,7 +704,7 @@ void sub_8013794(struct Proc8599FD4 *proc)
         Proc_Break(proc);
 }
 
-CONST_DATA struct ProcCmd gUnknown_08599FD4[] = {
+CONST_DATA struct ProcCmd gBmlib_1[] = {
     PROC_YIELD,
     PROC_CALL(sub_801378C),
     PROC_REPEAT(sub_8013794),
@@ -713,7 +713,7 @@ CONST_DATA struct ProcCmd gUnknown_08599FD4[] = {
 
 void sub_8013800(int a, int b, int c, int d, int e, int f, int g, int h, ProcPtr parent)
 {
-    struct Proc8599FD4 *proc = Proc_Start(gUnknown_08599FD4, parent);
+    struct Proc8599FD4 *proc = Proc_Start(gBmlib_1, parent);
 
     proc->unk2C = a;
     proc->unk30 = b;
@@ -727,7 +727,7 @@ void sub_8013800(int a, int b, int c, int d, int e, int f, int g, int h, ProcPtr
 
 bool sub_8013844(void)
 {
-    if (Proc_Find(gUnknown_08599FD4) != NULL)
+    if (Proc_Find(gBmlib_1) != NULL)
         return true;
 
     return false;
@@ -1276,7 +1276,7 @@ struct FadeKindEnt {
     int unit;
 };
 
-struct FadeKindEnt const gUnknown_080D7964[] =
+struct FadeKindEnt const gBmlib_0[] =
 {
     { Proc_Start,         ColorFadeSetupFromBlack,        +1 }, // from black
     { Proc_Start,         ColorFadeSetupFromColorToBlack, -1 }, // to black
@@ -1305,7 +1305,7 @@ void StartFadeCore(int kind, int speed, ProcPtr parent, void * end_callback)
     struct FadeCoreProc * proc;
     int component_step;
 
-    spawn_proc = gUnknown_080D7964[kind].spawn_proc;
+    spawn_proc = gBmlib_0[kind].spawn_proc;
     proc = spawn_proc(ProcScr_FadeCore, parent);
 
     proc->speed = speed;
@@ -1317,8 +1317,8 @@ void StartFadeCore(int kind, int speed, ProcPtr parent, void * end_callback)
         component_step = 1;
 
     // need to cast because parameter types don't match (int vs. i8)
-    setup_color_fade = (void *) gUnknown_080D7964[kind].setup_color_fade;
-    setup_color_fade(component_step * gUnknown_080D7964[kind].unit);
+    setup_color_fade = (void *) gBmlib_0[kind].setup_color_fade;
+    setup_color_fade(component_step * gBmlib_0[kind].unit);
 }
 
 void FadeCoreEndEach(void)

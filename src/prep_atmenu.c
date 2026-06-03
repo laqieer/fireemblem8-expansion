@@ -130,7 +130,7 @@ void sub_8095C2C(struct ProcAtMenu * proc)
 void sub_8095C50(int tile, int pal)
 {
     /* "Cahpter 0", "Infomaion" */
-    Decompress(gUnknown_08A1AC88, OBJ_VRAM0 + tile);
+    Decompress(gUnkData_66, OBJ_VRAM0 + tile);
     ApplyPalette(gPal_SupportScreenBanner, pal + 0x10);
 }
 
@@ -161,13 +161,13 @@ void AtMenu_Reinitialize(struct ProcAtMenu* proc)
     InitText(&gPrepMainMenuTexts[0], 0xA);
 
     /* "Preparations" */
-    Decompress(gUnknown_08A1A4C8, (void*)0x6014800);
+    Decompress(gUnkData_65, (void*)0x6014800);
     /* "Menu", "Start" button */
-    Decompress(gUnknown_08A1D510, (void*)0x6016000);
+    Decompress(gUnkData_79, (void*)0x6016000);
     ApplyPalettes(Pal_SysBrownBox, 0x19, 2);
     
     sub_8095C50(0x7000, 0x6);
-    ApplyPalette(gUnknown_08A1D4C8, 0x14);
+    ApplyPalette(gUnkData_78, 0x14);
     EnablePaletteSync();
 
     gLCDControlBuffer.bg0cnt.priority = 0;
@@ -192,12 +192,12 @@ void AtMenu_Reinitialize(struct ProcAtMenu* proc)
     ApplyPalettes(gUiFramePaletteB, 0x2, 3);
 
     if (CheckInLinkArena()) {
-        Decompress(gUnknown_08A1B698, gGenericBuffer);
+        Decompress(gUnkData_68, gGenericBuffer);
         CallARM_FillTileRect(TILEMAP_LOCATED(gBG1TilemapBuffer, 1, 5), gGenericBuffer, 0x1000);
     } else {
-        Decompress(gUnknown_08A1B658, gGenericBuffer);
+        Decompress(gUnkData_67, gGenericBuffer);
         CallARM_FillTileRect(TILEMAP_LOCATED(gBG1TilemapBuffer, 0x10, 2), gGenericBuffer, 0x1000);
-        Decompress(gUnknown_08A1B698, gGenericBuffer);
+        Decompress(gUnkData_68, gGenericBuffer);
         CallARM_FillTileRect(TILEMAP_LOCATED(gBG1TilemapBuffer, 1, 6), gGenericBuffer, 0x1000);
     }
 
@@ -263,7 +263,7 @@ void sub_8095F54(struct ProcAtMenu * proc)
                 th,
                 (void*)TILEMAP_LOCATED(gBG0TilemapBuffer, 4, 0) + tile,
                 TEXT_COLOR_SYSTEM_WHITE,
-                0, 0, GetStringFromIndex(gUnknown_08A196BC[i]));
+                0, 0, GetStringFromIndex(gUnkData_59[i]));
 
             th++;
             tile += 0x80;
@@ -327,9 +327,9 @@ void AtMenu_CtrlLoop(struct ProcAtMenu * proc)
 
         if (B_BUTTON & gKeyStatusPtr->newKeys) {
             CleanupPrepMenuScreen(proc);
-            Decompress(gUnknown_08A1B658, gGenericBuffer);
+            Decompress(gUnkData_67, gGenericBuffer);
             CallARM_FillTileRect(TILEMAP_LOCATED(gBG1TilemapBuffer, 0x10, 2), gGenericBuffer, 0x1000);
-            Decompress(gUnknown_08A1B698, gGenericBuffer);
+            Decompress(gUnkData_68, gGenericBuffer);
             CallARM_FillTileRect(TILEMAP_LOCATED(gBG1TilemapBuffer, 1, 6), gGenericBuffer, 0x1000);
 
             SetPrepScreenMenuPosition(1, 6);

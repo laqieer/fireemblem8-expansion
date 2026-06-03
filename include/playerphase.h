@@ -72,13 +72,13 @@ void PlayerPhase_HandleAutoEnd(ProcPtr proc);
 extern const struct MenuDef gMapMenuDef;
 extern const struct MenuDef gUnitActionMenuDef;
 
-extern u16 gUnknown_08A02F34[];
-extern u16 gUnknown_08A02F94[];
-extern u16 gUnknown_08A02FF4[];
+extern u16 gUnkData_35[];
+extern u16 gUnkData_36[];
+extern u16 gUnkData_37[];
 
-extern u8 gUnknown_08A02EB4[];
+extern u8 gUnkData_34[];
 
-extern struct ProcCmd gProcScr_0859ACE8[];
+extern struct ProcCmd gProcScr_Playerphase_0[];
 extern struct ProcCmd gProcScr_PlayerPhase[];
 
 #endif  // GUARD_PLAYERPHASE_H

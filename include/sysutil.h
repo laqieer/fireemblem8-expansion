@@ -148,7 +148,7 @@ void SysboxTextMain(struct ProcSysboxText * proc);
 void NewSysboxText(int vobj_offset, int pal, const char * str, int line, int delay, int speed, ProcPtr parent);
 
 void EndAllProcChildren(ProcPtr proc);
-void nop_80ADDF8(void);
+void nop_4(void);
 
 /* Bg-affin rot/scale */
 void BgAffinRotScaling(u8 bg, s16 angle, s16 x_center, s16 y_center, s16 sx, s16 sy);

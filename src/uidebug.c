@@ -23,9 +23,9 @@ struct Struct089ED67C {
     /* 10 */ u8 _pad10[0x18 - 0x10];
 };
 
-CONST_DATA struct Struct089ED67C gUnknown_089ED67C[] = { 0 };
-CONST_DATA struct Struct089ED67C gUnknown_089ED694[] = { 0 };
-CONST_DATA struct Struct089ED67C gUnknown_089ED6AC[] = {
+CONST_DATA struct Struct089ED67C gUidebug_0[] = { 0 };
+CONST_DATA struct Struct089ED67C gUidebug_1[] = { 0 };
+CONST_DATA struct Struct089ED67C gUidebug_2[] = {
     {0},
     {0},
     {0},
@@ -39,8 +39,8 @@ u8 sub_8084880()
     int val = 0;
     int loc = 0;
 
-    for (i = 0; gUnknown_089ED67C[i].func; i++, val++) {
-        if (1 == gUnknown_089ED67C[i].func())
+    for (i = 0; gUidebug_0[i].func; i++, val++) {
+        if (1 == gUidebug_0[i].func())
             buf[loc++] = val;
     }
 
@@ -57,8 +57,8 @@ u8 sub_80848E0()
     int val = 0;
     int loc = 0;
 
-    for (i = 0; gUnknown_089ED694[i].func; i++, val++) {
-        if (1 == gUnknown_089ED694[i].func())
+    for (i = 0; gUidebug_1[i].func; i++, val++) {
+        if (1 == gUidebug_1[i].func())
             buf[loc++] = val;
     }
 
@@ -75,8 +75,8 @@ u8 sub_8084940()
     int val = 0;
     int loc = 0;
 
-    for (i = 0; gUnknown_089ED6AC[i].func; i++, val++) {
-        if (1 == gUnknown_089ED6AC[i].func())
+    for (i = 0; gUidebug_2[i].func; i++, val++) {
+        if (1 == gUidebug_2[i].func())
             buf[loc++] = val;
     }
 
@@ -89,7 +89,7 @@ u8 sub_8084940()
 u8 sub_80849A0()
 {
     int i, val = 0;
-    for (i = 0; gUnknown_089ED6AC[i].func; i++, val++);
+    for (i = 0; gUidebug_2[i].func; i++, val++);
 
     return (GetGameClock() % 0x10) % val;
 }
@@ -97,7 +97,7 @@ u8 sub_80849A0()
 u8 sub_80849D8()
 {
     int i, val = 0;
-    for (i = 0; gUnknown_089ED6AC[i].func; i++, val++);
+    for (i = 0; gUidebug_2[i].func; i++, val++);
 
     return ((GetGameClock() / 2) % 0x10) % val;
 }
@@ -105,7 +105,7 @@ u8 sub_80849D8()
 u8 sub_8084A10()
 {
     int i, val = 0;
-    for (i = 0; gUnknown_089ED6AC[i].func; i++, val++);
+    for (i = 0; gUidebug_2[i].func; i++, val++);
 
     return ((GetGameClock() / 4) % 0x10) % val;
 }

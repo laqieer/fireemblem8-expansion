@@ -91,7 +91,7 @@ void sub_8042EA8(void)
     gLinkArenaSt.unk_04 = -1;
 }
 
-struct ProcCmd CONST_DATA gUnknown_085A93A0[] = {
+struct ProcCmd CONST_DATA gSioMain_0[] = {
     PROC_CALL(sub_8042EB4),
     PROC_REPEAT(sub_8042EF0),
     PROC_END,

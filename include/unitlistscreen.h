@@ -138,7 +138,7 @@ struct Unknown_02013460
     /* 10 */ u16 unk_10; // this is part of unk_00
 };
 
-#define _gUnknown_02013460 ((struct Unknown_02013460 *)gUnknown_02013460)
+#define _gUnknown_02013460 ((struct Unknown_02013460 *)gPrepscreen_5)
 
 
 void sub_809014C(void);
@@ -184,16 +184,16 @@ bool SortUnitList(u8 key, u8 order);
 
 extern EWRAM_OVERLAY(0) struct SortedUnitEnt gSortedUnitsBuf[0x40];
 extern EWRAM_OVERLAY(0) struct SortedUnitEnt * gSortedUnits[0x40];
-extern EWRAM_OVERLAY(0) u16 gUnknown_0200D7E0[0x20][0x20];
-extern EWRAM_OVERLAY(0) u16 gUnknown_0200DFE0[2][0x20];
-extern EWRAM_OVERLAY(0) struct Text gUnknown_0200E060[7];
-extern EWRAM_OVERLAY(0) struct Text gUnknown_0200E098[7][3];
-extern struct Text gUnknown_0200E140;
-extern struct Text gUnknown_0200E148;
-extern struct Text gUnknown_0200E150;
-extern u8 gUnknown_0200E158[0x1000];
-extern u8 gUnknown_0200F158;
-extern EWRAM_OVERLAY(0) u32 gUnknown_0200F15C[8];
+extern EWRAM_OVERLAY(0) u16 gUnitlistscreen_0[0x20][0x20];
+extern EWRAM_OVERLAY(0) u16 gUnitlistscreen_1[2][0x20];
+extern EWRAM_OVERLAY(0) struct Text gUnitlistscreen_2[7];
+extern EWRAM_OVERLAY(0) struct Text gUnitlistscreen_3[7][3];
+extern struct Text gUnitlistscreen_4;
+extern struct Text gUnitlistscreen_5;
+extern struct Text gUnitlistscreen_6;
+extern u8 gUnitlistscreen_7[0x1000];
+extern u8 gUnitlistscreen_8;
+extern EWRAM_OVERLAY(0) u32 gUnitlistscreen_9[8];
 
 // extern ??? ProcScr_UnitListScreen_Field
 extern struct ProcCmd ProcScr_UnitListScreen_PrepMenu[];

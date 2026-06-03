@@ -29,7 +29,7 @@ const void * MMS_GetROMTCS2(u16 idx)
 //! FE8U = 0x080BAC44
 u8 * GetMapUnitMMSGfxBuffer(int idx)
 {
-    return gUnknown_0200AF00 + idx * 0x2200;
+    return gUnk_6 + idx * 0x2200;
 }
 
 //! FE8U = 0x080BAC58
@@ -49,7 +49,7 @@ void GmapUnit_Init(struct GMapUnitProc * proc)
     return;
 }
 
-const u8 gUnknown_08205F7C[] = {
+const u8 gWorldmapGmapunit_0[] = {
     0x00, 0x04, 0x08, 0x0C, 0x10, 0x14, 0x18,
 };
 
@@ -87,9 +87,9 @@ void GmapUnit_Loop(struct GMapUnitProc * proc)
         if (proc->animId == 4)
         {
             int oam2;
-            SetStandingMuFacingWM(gUnknown_08205F7C[proc->index], (void *)(0x06010000 + proc->unk_30 * 0x20));
+            SetStandingMuFacingWM(gWorldmapGmapunit_0[proc->index], (void *)(0x06010000 + proc->unk_30 * 0x20));
 
-            oam2 = proc->unk_30 + OAM2_PAL(proc->pal) + gUnknown_08205F7C[proc->index] + proc->unk_2e;
+            oam2 = proc->unk_30 + OAM2_PAL(proc->pal) + gWorldmapGmapunit_0[proc->index] + proc->unk_2e;
             SMS_DisplayOne(proc->unk_38, proc->unk_2c, xOam1, yOam0, oam2, proc->flags & GMAPUNIT_FLAG_BLEND);
         }
         else
@@ -179,7 +179,7 @@ int NewMapUnit(struct GMapUnitContainerProc * container, u16 classId, int factio
     mapUnitProc->unk_38 = classId;
     mapUnitProc->unk_3a = classId;
 
-    StartWorldMapSMS(GetClassSMSId(classId), mapUnitProc->index, gUnknown_08205F7C[mapUnitProc->index]);
+    StartWorldMapSMS(GetClassSMSId(classId), mapUnitProc->index, gWorldmapGmapunit_0[mapUnitProc->index]);
     mapUnitProc->unk_2c = 8;
 
     ap = AP_Create(MMS_GetROMTCS2(classId), 8);

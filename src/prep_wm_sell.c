@@ -208,7 +208,7 @@ void WmSell_Setup(struct WmSellProc* proc) {
     PutImg_PrepItemUseUnk(0x5000, 5);
     PutImg_PrepPopupWindow(0x800, 8);
 
-    Decompress(gUnknown_08A1BBD0, gGenericBuffer);
+    Decompress(gUnkData_72, gGenericBuffer);
     CallARM_FillTileRect(gBG1TilemapBuffer, gGenericBuffer, 0x1000);
 
     BG_EnableSyncByMask(7);
@@ -528,65 +528,65 @@ void StartWorldMapSellScreen(struct Unit* unit, ProcPtr parent) {
 
 // TODO: Below sprite data is used in "prep_itemlist.s" and "prep_itemsupply.s"
 
-u16 CONST_DATA gSprite_08A195B0[] = {
+u16 CONST_DATA gSprite_PrepWmSell_0[] = {
     1,
     0x0000, 0x4000, 0x0406,
 };
 
-u16 CONST_DATA gSprite_08A195B8[] = {
+u16 CONST_DATA gSprite_PrepWmSell_1[] = {
     1,
     0x0000, 0x4000, 0x0408,
 };
 
-u16 CONST_DATA gSprite_08A195C0[] = {
+u16 CONST_DATA gSprite_PrepWmSell_2[] = {
     1,
     0x0000, 0x4000, 0x040A,
 };
 
-u16 CONST_DATA gSprite_08A195C8[] = {
+u16 CONST_DATA gSprite_PrepWmSell_3[] = {
     1,
     0x0000, 0x4000, 0x040C,
 };
 
-u16 CONST_DATA gSprite_08A195D0[] = {
+u16 CONST_DATA gSprite_PrepWmSell_4[] = {
     1,
     0x0000, 0x4000, 0x040E,
 };
 
-u16 CONST_DATA gSprite_08A195D8[] = {
+u16 CONST_DATA gSprite_PrepWmSell_5[] = {
     1,
     0x0000, 0x4000, 0x0410,
 };
 
-u16 CONST_DATA gSprite_08A195E0[] = {
+u16 CONST_DATA gSprite_PrepWmSell_6[] = {
     1,
     0x0000, 0x4000, 0x0412,
 };
 
-u16 CONST_DATA gSprite_08A195E8[] = {
+u16 CONST_DATA gSprite_PrepWmSell_7[] = {
     1,
     0x0000, 0x4000, 0x0414,
 };
 
-u16 CONST_DATA gSprite_08A195F0[] = {
+u16 CONST_DATA gSprite_PrepWmSell_8[] = {
     1,
     0x0000, 0x4000, 0x0416,
 };
 
-u16 CONST_DATA gUnknown_08A195F8[] = {
+u16 CONST_DATA gPrepWmSell_0[] = {
     2,
     0x4000, 0x8000, 0x0400,
     0x4010, 0x0000, 0x0404,
 };
 
-u16* CONST_DATA gUnknown_08A19608[] = {
-    gSprite_08A195B0,
-    gSprite_08A195B8,
-    gSprite_08A195C0,
-    gSprite_08A195C8,
-    gSprite_08A195D0,
-    gSprite_08A195D8,
-    gSprite_08A195E0,
-    gSprite_08A195E8,
-    gSprite_08A195F0,
+u16* CONST_DATA gPrepWmSell_1[] = {
+    gSprite_PrepWmSell_0,
+    gSprite_PrepWmSell_1,
+    gSprite_PrepWmSell_2,
+    gSprite_PrepWmSell_3,
+    gSprite_PrepWmSell_4,
+    gSprite_PrepWmSell_5,
+    gSprite_PrepWmSell_6,
+    gSprite_PrepWmSell_7,
+    gSprite_PrepWmSell_8,
 };

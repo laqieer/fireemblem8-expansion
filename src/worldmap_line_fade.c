@@ -33,7 +33,7 @@ void GmapLineFade_OnEnd(void)
 }
 
 //! FE8U = 0x080C0358
-void GmapLineFade_80C0358(struct GmapLineFadeProc * proc)
+void GmapLineFade_0(struct GmapLineFadeProc * proc)
 {
     u16 * bufA;
     u16 * bufB;
@@ -130,7 +130,7 @@ void GmapLineFade_Loop(struct GmapLineFadeProc * proc)
 
     if (proc->unk_2a < proc->unk_2c)
     {
-        GmapLineFade_80C0358(proc);
+        GmapLineFade_0(proc);
     }
     else
     {

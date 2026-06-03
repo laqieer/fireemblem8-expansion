@@ -1,8 +1,8 @@
 #include "global.h"
 
-u8 gUnknown_08A3F21C[] = INCBIN_U8("graphics/misc/gUnknown_08A3F21C.tsa.bin");
+u8 gEndingDetails_0[] = INCBIN_U8("graphics/misc/gUnknown_08A3F21C.tsa.bin");
 
-u8 Pal_08A3F6D0[] = INCBIN_U8("graphics/misc/Pal_08A3F6D0.gbapal");
+u8 Pal_EndingDetails_0[] = INCBIN_U8("graphics/misc/Pal_08A3F6D0.gbapal");
 
 u16 Pal_CharacterEndingMenu[] = INCBIN_U16("graphics/misc/Pal_CharacterEndingMenu.gbapal");
 

@@ -761,7 +761,7 @@ void AiScriptCmd_18_TryAttackSnagWall(u8* pc) {
 
     sub_8041020(gActiveUnit);
 
-    if (sub_803D124(gUnknown_085A814C, 0, &posA) == 1) {
+    if (sub_803D124(gCpData_24, 0, &posA) == 1) {
         if (sub_803CFB4(posA.x, posA.y, &posB, &slot) == 1) {
 
             struct Trap* trap = GetTrapAt(posA.x, posA.y);

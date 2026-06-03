@@ -719,7 +719,7 @@ void sub_8011AA0(struct BrownTextBoxProc * proc)
     }
 }
 
-struct ProcCmd CONST_DATA gProcScr_085924F8[] =
+struct ProcCmd CONST_DATA gProcScr_Popup_0[] =
 {
     PROC_CALL(sub_8011A48),
     PROC_REPEAT(sub_8011AA0),
@@ -763,7 +763,7 @@ void sub_8011B90(void)
     SetBlendNone();
 }
 
-struct ProcCmd CONST_DATA gProcScr_08592510[] =
+struct ProcCmd CONST_DATA gProcScr_Popup_1[] =
 {
     PROC_CALL(sub_8011AF4),
     PROC_REPEAT(sub_8011B4C),
@@ -813,7 +813,7 @@ void StartBrownTextBoxCore(int x, int y, int textId, int chr, int pal, ProcPtr p
     SetTextFont(NULL);
 }
 
-struct ProcCmd CONST_DATA ProcScr_08592530[] = {
+struct ProcCmd CONST_DATA ProcScr_Popup_0[] = {
     PROC_CALL(sub_8011A48),
     PROC_REPEAT(sub_8011AA0),
 
@@ -830,5 +830,5 @@ struct ProcCmd CONST_DATA ProcScr_08592530[] = {
 void StartBrownTextBox(int textId, s16 x, s16 y, ProcPtr parent)
 {
     StartBrownTextBoxCore(x, y, textId, 0x5000, 9, parent);
-    Proc_StartBlocking(ProcScr_08592530, parent);
+    Proc_StartBlocking(ProcScr_Popup_0, parent);
 }

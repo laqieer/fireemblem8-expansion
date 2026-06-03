@@ -26,7 +26,7 @@
 
 void PrintDebugBuildDateAndTime(u16 *bg);
 
-u16 CONST_DATA gUnknown_0859A9D8[] = {
+u16 CONST_DATA gBmdebug_0[] = {
     0x0000, 0x0008, 0x000A, 0x0040, 0x0014,
     0x0000, 0x0015, 0x0030, 0x0000, 0x0080,
 };
@@ -97,7 +97,7 @@ void SetNewKeyStatusWith16(void)
     AsnycKeyStatus(DPAD_RIGHT);
 }
 
-struct ProcCmd CONST_DATA gProcScr_0859A9EC[] = {
+struct ProcCmd CONST_DATA gProcScr_Bmdebug_0[] = {
     PROC_REPEAT(Loop6C_WaitForSelectPress),
 
 PROC_LABEL(1),

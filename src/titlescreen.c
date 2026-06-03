@@ -71,9 +71,9 @@ void DrawTitleSprites_Loop(struct TitleScreenProc* proc) {
     }
 
     if ((proc->unk_52 & 0x10) != 0) {
-        CopyToPaletteBuffer(gPal_08AADBE8 + (proc->unk_52 & 0xf), 0x210, 2);
+        CopyToPaletteBuffer(gPal_Titlescreen_0 + (proc->unk_52 & 0xf), 0x210, 2);
     } else {
-        CopyToPaletteBuffer(gPal_08AADBE8 + ((0x1f - proc->unk_52) & 0xf), 0x210, 2);
+        CopyToPaletteBuffer(gPal_Titlescreen_0 + ((0x1f - proc->unk_52) & 0xf), 0x210, 2);
     }
 
     proc->unk_4c++;
@@ -281,18 +281,18 @@ void Title_SetupSpecialEffectGraphics(struct TitleScreenProc* proc) {
             SetBackgroundTileDataOffset(0, 0xc000);
             SetBackgroundMapDataOffset(0, 0x7800);
 
-            Decompress(gGfx_08AAFD14, (void*)0x06008000);
-            Decompress(gTsa_08AAFF10, (void*)0x0600B000);
-            ApplyPalette(gPal_08AB0114, 0);
+            Decompress(gGfx_Titlescreen_2, (void*)0x06008000);
+            Decompress(gTsa_Titlescreen_2, (void*)0x0600B000);
+            ApplyPalette(gPal_Titlescreen_3, 0);
             gPaletteBuffer[PAL_BACKDROP_OFFSET] = 0x7FFF; // White
 
             proc->timer++;
             break;
 
         case 1:
-            Decompress(gGfx_08AADC08, (void*)0x0600C000);
-            Decompress(gTsa_08AAE61C, gBG0TilemapBuffer);
-            ApplyPalette(gPal_08AAE8CC, 1);
+            Decompress(gGfx_Titlescreen_0, (void*)0x0600C000);
+            Decompress(gTsa_Titlescreen_0, gBG0TilemapBuffer);
+            ApplyPalette(gPal_Titlescreen_1, 1);
 
             for (i = 0; i < 0x280; i++) {
                 gBG0TilemapBuffer[i] += 0x1000;
@@ -304,9 +304,9 @@ void Title_SetupSpecialEffectGraphics(struct TitleScreenProc* proc) {
             break;
 
         case 2:
-            Decompress(gGfx_08AAE8EC, (void*)0x0600D000);
-            Decompress(gTsa_08AAF928, gBG0TilemapBuffer);
-            ApplyPalette(gPal_08AAFCF4, 2);
+            Decompress(gGfx_Titlescreen_1, (void*)0x0600D000);
+            Decompress(gTsa_Titlescreen_1, gBG0TilemapBuffer);
+            ApplyPalette(gPal_Titlescreen_2, 2);
 
             for (i = 0; i < 0x280; i++) {
                 gBG0TilemapBuffer[i] += 0x2080;
@@ -531,7 +531,7 @@ void Title_Loop_FlashFxExpand(struct TitleScreenProc* proc) {
         BG_EnableSyncByMask(1);
     }
 
-    ApplyPalette(gPal_08AAFCF4, 2);
+    ApplyPalette(gPal_Titlescreen_2, 2);
     sub_80C69B0(PAL_BG(2), 0x7FFF, res);
 
     ApplyPalette(gPal_TitleMainBackground, 0xE);
@@ -602,10 +602,10 @@ void Title_PrepareMainLogoZoom(void) {
 
     sub_80C5548(0x40);
 
-    Decompress(gGfx_08AB0134, (void*)0x06008000);
-    Decompress(gTsa_08AB0A20, gBG2TilemapBuffer);
+    Decompress(gGfx_Titlescreen_3, (void*)0x06008000);
+    Decompress(gTsa_Titlescreen_3, gBG2TilemapBuffer);
 
-    ApplyPalette(gPal_08AB0B24, 0);
+    ApplyPalette(gPal_Titlescreen_4, 0);
 
     BG_EnableSyncByMask(4);
 
@@ -670,7 +670,7 @@ void sub_80C6104(struct TitleScreenProc* proc) {
     return;
 }
 
-s8 CONST_DATA gUnknown_08AA682C[] = {
+s8 CONST_DATA gTitlescreen_0[] = {
     0x68, 0xC4,
     0x6B, 0xCA,
     0x6E, 0xCF,
@@ -702,7 +702,7 @@ struct Unknown08AA6858 {
     /* 05 */ u8 d;
 };
 
-struct Unknown08AA6858 CONST_DATA gUnknown_08AA6858[] = {
+struct Unknown08AA6858 CONST_DATA gTitlescreen_1[] = {
     { 0x0060, 0x0100, 0x00, 0x00, },
     { 0x00A0, 0x0140, 0x01, 0x01, },
     { 0x0070, 0x0180, 0x02, 0x02, },
@@ -771,7 +771,7 @@ struct Unknown08AA6858 CONST_DATA gUnknown_08AA6858[] = {
 //! FE8U = 0x080C6144
 void DrawTitleLightBubbleSprites(int arg) {
 
-    struct Unknown08AA6858* it = gUnknown_08AA6858;
+    struct Unknown08AA6858* it = gTitlescreen_1;
 
     while (it->a != 0) {
         int m;
@@ -779,10 +779,10 @@ void DrawTitleLightBubbleSprites(int arg) {
         int xOam1;
         int yOam0;
 
-        m = gUnknown_08AA682C[it->c * 2 + 0];
+        m = gTitlescreen_0[it->c * 2 + 0];
         xOam1 = Interpolate(0, (m * it->a) >> 8, (it->b * m) >> 8, arg, 24) + 116;
 
-        n = gUnknown_08AA682C[it->c * 2 + 1];
+        n = gTitlescreen_0[it->c * 2 + 1];
         yOam0 = Interpolate(0, (n * it->a) >> 8, (it->b * n) >> 8, arg, 24) + 56;
 
         PutSpriteExt(

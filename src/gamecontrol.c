@@ -22,8 +22,8 @@
 #include "constants/event-flags.h"
 #include "constants/songs.h"
 
-extern u16 EventScr_8A0035C[];
-extern u16 EventScr_8A00364[];
+extern u16 EventScr_Ruin_83[];
+extern u16 EventScr_Ruin_84[];
 extern u16 EventScr_EirikaModeGameEnd[];
 extern u16 EventScr_EphraimModeGameEnd[];
 
@@ -31,10 +31,10 @@ extern struct ProcCmd CONST_DATA ProcScr_GameEarlyStartUI[]; // pre-intro cutsce
 extern struct ProcCmd CONST_DATA ProcScr_OpAnim[]; // intro cutscene
 extern struct ProcCmd CONST_DATA ProcScr_WorldMapWrapper[];
 
-struct ProcCmd CONST_DATA gUnused_085916BC[] =
+struct ProcCmd CONST_DATA gUnused_Gamecontrol_0[] =
 {
-    PROC_CALL(GameControl_8009A58),
-    PROC_REPEAT(GameControl_8009A60_Null),
+    PROC_CALL(GameControl_0),
+    PROC_REPEAT(GameControl_Null_0),
 
     PROC_END,
 };
@@ -46,8 +46,8 @@ struct ProcCmd CONST_DATA gProcScr_GameControl[] =
 
     PROC_15,
     PROC_CALL(GameControl_CallEraseSaveEventWithKeyCombo),
-    PROC_CALL(GameControl_8009A58),
-    PROC_REPEAT(GameControl_8009A60_Null),
+    PROC_CALL(GameControl_0),
+    PROC_REPEAT(GameControl_Null_0),
 
     // fallthrough
 
@@ -360,12 +360,12 @@ void GameControl_CallEraseMural(ProcPtr proc)
     StartMuralBackground(PROC_TREE_3, 0, -1);
 }
 
-void GameControl_8009A58(struct GameCtrlProc * proc)
+void GameControl_0(struct GameCtrlProc * proc)
 {
     proc->unk_2E = 20;
 }
 
-void GameControl_8009A60_Null(ProcPtr proc)
+void GameControl_Null_0(ProcPtr proc)
 {
     Proc_Break(proc);
 }
@@ -645,11 +645,11 @@ void sub_8009E54(ProcPtr proc)
 
     switch (gPlaySt.chapterModeIndex) {
         case 2:
-            CallEvent(EventScr_8A0035C, EV_EXEC_CUTSCENE);
+            CallEvent(EventScr_Ruin_83, EV_EXEC_CUTSCENE);
             break;
 
         case 3:
-            CallEvent(EventScr_8A00364, EV_EXEC_CUTSCENE);
+            CallEvent(EventScr_Ruin_84, EV_EXEC_CUTSCENE);
             break;
     }
 

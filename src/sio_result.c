@@ -80,12 +80,12 @@ void DrawLinkArenaRankings(void)
 
     for (i = 0; i < 10; i++)
     {
-        ClearText(&Texts_0203DB14[i]);
+        ClearText(&Texts_1[i]);
         DrawLinkArenaRankingRow(
-            &Texts_0203DB14[i], gSioResultRankings[i].name, gSioResultRankings[i].ranking + 1,
+            &Texts_1[i], gSioResultRankings[i].name, gSioResultRankings[i].ranking + 1,
             gSioResultRankings[i].points, gSioResultRankings[i].player_count + 1);
         DrawLinkArenaRankIcon(TILEMAP_LOCATED(gBG1TilemapBuffer, 3, i * 2), i);
-        PutText(&Texts_0203DB14[i], TILEMAP_LOCATED(gBG1TilemapBuffer, 6, i * 2));
+        PutText(&Texts_1[i], TILEMAP_LOCATED(gBG1TilemapBuffer, 6, i * 2));
         DrawLinkArenaModeIcon(TILEMAP_LOCATED(gBG1TilemapBuffer, 20, i * 2), gSioResultRankings[i].mode);
     }
 
@@ -110,7 +110,7 @@ void SioResult_Init(struct SioResultProc * proc)
 
     CallARM_FillTileRect(TILEMAP_LOCATED(gBG2TilemapBuffer, 1, 4), Tsa_SioResultRankings, TILEREF(0x0, 1));
 
-    SetTextFont(&Font_0203DB64);
+    SetTextFont(&Font_0);
     InitSystemTextFont();
     ResetTextFont();
 
@@ -123,7 +123,7 @@ void SioResult_Init(struct SioResultProc * proc)
 
     for (i = 0; i < 10; i++)
     {
-        InitText(&Texts_0203DB14[i], 22);
+        InitText(&Texts_1[i], 22);
     }
 
     InitText(&gSioTexts[0], 24);
@@ -254,12 +254,12 @@ void SioResult_NewHS_Init(struct SioResultProc * proc)
     ApplyPalette(Pal_LinkArenaRankIcons, 6);
 
     Decompress(Img_TacticianSelObj, OBJ_CHR_ADDR(0x240));
-    Decompress(gUnknown_085ACEFC, OBJ_CHR_ADDR(0x300));
+    Decompress(gUnkData_7, OBJ_CHR_ADDR(0x300));
     ApplyPalette(Pal_LinkArenaActiveBannerFx, 0x13);
 
     CallARM_FillTileRect(TILEMAP_LOCATED(gBG2TilemapBuffer, 1, 4), Tsa_SioResultRankings, TILEREF(0x0, 1));
 
-    SetTextFont(&Font_0203DB64);
+    SetTextFont(&Font_0);
     InitSystemTextFont();
     ResetTextFont();
 
@@ -274,7 +274,7 @@ void SioResult_NewHS_Init(struct SioResultProc * proc)
 
     for (i = 0; i < 10; i++)
     {
-        InitText(&Texts_0203DB14[i], 24);
+        InitText(&Texts_1[i], 24);
     }
 
     InitText(&gSioTexts[0], 24);
@@ -386,11 +386,11 @@ struct ProcCmd CONST_DATA ProcScr_SIORESULT[] =
     PROC_CALL(FadeInBlackSpeed20),
     PROC_YIELD,
 
-    PROC_CALL(Clear_0203DDDC),
+    PROC_CALL(Clear_UnkData_0),
 
     PROC_REPEAT(SioResult_Loop_Main),
 
-    PROC_CALL(Set_0203DDDC),
+    PROC_CALL(Set_UnkData_0),
 
     PROC_CALL(sub_8013F40),
     PROC_YIELD,
@@ -409,12 +409,12 @@ struct ProcCmd CONST_DATA ProcScr_SIORESULT_NewHighScore[] =
     PROC_CALL(FadeInBlackSpeed20),
     PROC_YIELD,
 
-    PROC_CALL(Clear_0203DDDC),
+    PROC_CALL(Clear_UnkData_0),
 
     PROC_REPEAT(SioResult_NewHS_LoopScroll),
     PROC_REPEAT(SioResult_NewHS_AwaitAPress),
 
-    PROC_CALL(Set_0203DDDC),
+    PROC_CALL(Set_UnkData_0),
 
     PROC_CALL(sub_8013F40),
     PROC_YIELD,

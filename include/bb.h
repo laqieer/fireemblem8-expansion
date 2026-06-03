@@ -33,6 +33,6 @@ void sub_8035770(ProcPtr parent, const char * string);
 
 extern struct ProcCmd gProcScr_SubtitleHelpDarkener[];
 extern struct ProcCmd gProcScr_SubtitleHelp[];
-extern u8 gUnknown_0859EF20[]; // pal
+extern u8 gUiPalettes_0[]; // pal
 
 #endif  // GUARD_BB_H

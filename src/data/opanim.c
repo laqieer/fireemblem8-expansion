@@ -63,7 +63,7 @@ void sub_80CB878(struct Proc * proc);
 void sub_80CBA64(struct Proc * proc);
 void sub_80CBC40(struct Proc * proc);
 void sub_80CBD7C(struct Proc * proc);
-extern struct ProcCmd gUnknown_08AA704C[];
+extern struct ProcCmd gUnkData_97[];
 
 struct ProcCmd CONST_DATA ProcScr_OpAnim[] =
 {
@@ -94,9 +94,9 @@ struct ProcCmd CONST_DATA ProcScr_OpAnim[] =
     PROC_REPEAT(sub_80C835C),
     PROC_REPEAT(sub_80C84D8),
     PROC_CALL(sub_80C8564),
-    PROC_START_CHILD(gUnknown_08AA705C),
+    PROC_START_CHILD(gUnkData_98),
     PROC_REPEAT(sub_80C8690),
-    PROC_START_CHILD(gUnknown_08AA704C),
+    PROC_START_CHILD(gUnkData_97),
     PROC_CALL(sub_80C9DF0),
     PROC_REPEAT(sub_80C9E6C),
     PROC_CALL(sub_80C9C08),
@@ -156,8 +156,8 @@ struct ProcCmd CONST_DATA ProcScr_OpAnim[] =
     PROC_CALL(sub_80C9EE8),
     PROC_REPEAT(sub_80C9F7C),
     PROC_CALL(sub_80C8564),
-    PROC_START_CHILD(gUnknown_08AA707C),
-    PROC_END_EACH(gUnknown_08AA704C),
+    PROC_START_CHILD(gUnkData_99),
+    PROC_END_EACH(gUnkData_97),
     PROC_REPEAT(sub_80C8CE4),
     PROC_CALL(sub_80CA4A4),
     PROC_REPEAT(sub_80CA4DC),

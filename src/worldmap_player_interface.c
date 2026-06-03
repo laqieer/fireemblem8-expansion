@@ -49,7 +49,7 @@ struct Unknown8A3E448
     /* 03 */ s8 unk_03;
 };
 
-struct Unknown8A3E448 CONST_DATA gUnknown_08A3E448[] =
+struct Unknown8A3E448 CONST_DATA gWorldmapPlayerInterface_0[] =
 {
     {
         -1,
@@ -101,23 +101,23 @@ s8 CONST_DATA gGMapPIHideOffsetTableB[] =
 
 // clang-format on
 
-extern u16 gUnknown_0201B430[];
-extern u16 gUnknown_0201B458[];
-extern u16 gUnknown_0201B718[];
-extern u16 gUnknown_0201B71C[];
-extern u16 gUnknown_0201B758[];
-extern u16 gUnknown_0201B7DA[];
-extern u16 gUnknown_0201B864[];
-extern u16 gUnknown_0201B958[];
-extern u16 gUnknown_0201BBD8[];
+extern u16 gUnk_16[];
+extern u16 gUnk_17[];
+extern u16 gUnk_18[];
+extern u16 gUnk_19[];
+extern u16 gUnk_20[];
+extern u16 gUnk_21[];
+extern u16 gUnk_22[];
+extern u16 gUnk_24[];
+extern u16 gUnk_25[];
 
 // forward declarations
 void sub_80BEF20(struct GMapPIProc *, int);
 
-extern u16 gUnknown_08A98E2C[];
-extern u16 gUnknown_08A98E4C[];
-extern u16 gUnknown_08A98E6C[];
-extern u16 gUnknown_08A98E8C[];
+extern u16 gWorldmapMinimap_8[];
+extern u16 gWorldmapMinimap_9[];
+extern u16 gWorldmapMinimap_10[];
+extern u16 gWorldmapMinimap_11[];
 
 //! FE8U = 0x080BE56C
 void sub_80BE56C(struct GMapPIProc * proc)
@@ -159,19 +159,19 @@ void sub_80BE5B4(int faction, int palId)
     switch (faction)
     {
         case FACTION_BLUE:
-            src = gUnknown_08A98E2C;
+            src = gWorldmapMinimap_8;
             break;
 
         case FACTION_RED:
-            src = gUnknown_08A98E4C;
+            src = gWorldmapMinimap_9;
             break;
 
         case FACTION_GREEN:
-            src = gUnknown_08A98E6C;
+            src = gWorldmapMinimap_10;
             break;
 
         default:
-            src = gUnknown_08A98E8C;
+            src = gWorldmapMinimap_11;
             break;
     }
 
@@ -218,8 +218,8 @@ void sub_80BE65C(int index, int height, int kind)
     int width;
     int height2;
 
-    int a = gUnknown_08A3E448[index].unk_02;
-    int b = gUnknown_08A3E448[index].unk_03;
+    int a = gWorldmapPlayerInterface_0[index].unk_02;
+    int b = gWorldmapPlayerInterface_0[index].unk_03;
 
     switch (kind)
     {
@@ -241,8 +241,8 @@ void sub_80BE65C(int index, int height, int kind)
         TileMap_FillRect(gBG0TilemapBuffer, width, height2, 0);
 
         diff = height - 10;
-        TileMap_CopyRect(gUnknown_0201B958 + (height2 - diff) * 0x20, gBG1TilemapBuffer, width, height);
-        TileMap_CopyRect(gUnknown_0201B458 + (height2 - diff) * 0x20, gBG0TilemapBuffer, width, height);
+        TileMap_CopyRect(gUnk_24 + (height2 - diff) * 0x20, gBG1TilemapBuffer, width, height);
+        TileMap_CopyRect(gUnk_17 + (height2 - diff) * 0x20, gBG0TilemapBuffer, width, height);
     }
 
     if ((a > 0) && (b < 0))
@@ -253,9 +253,9 @@ void sub_80BE65C(int index, int height, int kind)
 
         diff = height - 10;
         TileMap_CopyRect(
-            gUnknown_0201B958 + (height2 - diff) * 0x20, gBG1TilemapBuffer + (0x1e - width), width, height);
+            gUnk_24 + (height2 - diff) * 0x20, gBG1TilemapBuffer + (0x1e - width), width, height);
         TileMap_CopyRect(
-            gUnknown_0201B458 + (height2 - diff) * 0x20, gBG0TilemapBuffer + (0x1e - width), width, height);
+            gUnk_17 + (height2 - diff) * 0x20, gBG0TilemapBuffer + (0x1e - width), width, height);
     }
 
     if ((a < 0) && (b > 0))
@@ -263,8 +263,8 @@ void sub_80BE65C(int index, int height, int kind)
         TileMap_FillRect(gBG1TilemapBuffer + 0x200, 13, 4, 0);
         TileMap_FillRect(gBG0TilemapBuffer + 0x200, 13, 4, 0);
 
-        TileMap_CopyRect(gUnknown_0201BBD8, gBG1TilemapBuffer + 0x200 + (0x16 - height) * 0x20 - 0x200, 13, height);
-        TileMap_CopyRect(gUnknown_0201B758, gBG0TilemapBuffer + 0x200 + (0x16 - height) * 0x20 - 0x200, 13, height);
+        TileMap_CopyRect(gUnk_25, gBG1TilemapBuffer + 0x200 + (0x16 - height) * 0x20 - 0x200, 13, height);
+        TileMap_CopyRect(gUnk_20, gBG0TilemapBuffer + 0x200 + (0x16 - height) * 0x20 - 0x200, 13, height);
     }
 
     if ((a > 0) && (b > 0))
@@ -272,8 +272,8 @@ void sub_80BE65C(int index, int height, int kind)
         TileMap_FillRect(gBG1TilemapBuffer + 0x211, 13, 4, 0);
         TileMap_FillRect(gBG0TilemapBuffer + 0x211, 13, 4, 0);
 
-        TileMap_CopyRect(gUnknown_0201BBD8, gBG1TilemapBuffer + 0x211 + (0x16 - height) * 0x20 - 0x200, 13, height);
-        TileMap_CopyRect(gUnknown_0201B758, gBG0TilemapBuffer + 0x211 + (0x16 - height) * 0x20 - 0x200, 13, height);
+        TileMap_CopyRect(gUnk_25, gBG1TilemapBuffer + 0x211 + (0x16 - height) * 0x20 - 0x200, 13, height);
+        TileMap_CopyRect(gUnk_20, gBG0TilemapBuffer + 0x211 + (0x16 - height) * 0x20 - 0x200, 13, height);
     }
 
     BG_EnableSyncByMask(BG0_SYNC_BIT | BG1_SYNC_BIT);
@@ -284,8 +284,8 @@ void sub_80BE65C(int index, int height, int kind)
 //! FE8U = 0x080BE82C
 void sub_80BE82C(int index)
 {
-    int a = gUnknown_08A3E448[index].unk_02;
-    int b = gUnknown_08A3E448[index].unk_03;
+    int a = gWorldmapPlayerInterface_0[index].unk_02;
+    int b = gWorldmapPlayerInterface_0[index].unk_03;
 
     if ((a < 0) && (b < 0))
     {
@@ -349,7 +349,7 @@ void PutGMapPIFace(struct GMapPIProc * proc)
         fid = 0x7F04;
     }
 
-    PutFaceChibi(fid, gUnknown_0201B7DA, 0x220, 4, 0);
+    PutFaceChibi(fid, gUnk_21, 0x220, 4, 0);
 
     return;
 }
@@ -371,19 +371,19 @@ void sub_80BE9D8(struct GMapPIProc * param_1, int param_2)
     if ((gGMData.nodes[param_2].state & 2) == 0)
     {
         if (param_2[gWMNodeData].armory[0] != 0)
-            gUnknown_0201B430[0x15D] = 0x3231;
+            gUnk_16[0x15D] = 0x3231;
         else
-            gUnknown_0201B430[0x15D] = 0;
+            gUnk_16[0x15D] = 0;
 
         if (param_2[gWMNodeData].vendor[0] != 0)
-            gUnknown_0201B430[0x15E] = 0x3232;
+            gUnk_16[0x15E] = 0x3232;
         else
-            gUnknown_0201B430[0x15E] = 0;
+            gUnk_16[0x15E] = 0;
     }
     else
     {
-        gUnknown_0201B430[0x15D] = 0;
-        gUnknown_0201B430[0x15E] = 0;
+        gUnk_16[0x15D] = 0;
+        gUnk_16[0x15E] = 0;
     }
 
     return;
@@ -403,17 +403,17 @@ void sub_80BEA78(struct GMapPIProc * proc)
         level = 0;
     }
 
-    *(gUnknown_0201B864 + TILEMAP_INDEX(0, 0)) = 0x5233;
-    *(gUnknown_0201B864 + TILEMAP_INDEX(0, 1)) = 0x5253;
-    *(gUnknown_0201B864 + TILEMAP_INDEX(1, 0)) = 0x5234;
-    *(gUnknown_0201B864 + TILEMAP_INDEX(1, 1)) = 0x5254;
+    *(gUnk_22 + TILEMAP_INDEX(0, 0)) = 0x5233;
+    *(gUnk_22 + TILEMAP_INDEX(0, 1)) = 0x5253;
+    *(gUnk_22 + TILEMAP_INDEX(1, 0)) = 0x5234;
+    *(gUnk_22 + TILEMAP_INDEX(1, 1)) = 0x5254;
 
     if (level == 0)
     {
-        *(gUnknown_0201B864 + TILEMAP_INDEX(2, 0)) = 0x5234 + 0xb;
-        *(gUnknown_0201B864 + TILEMAP_INDEX(2, 1)) = 0x5234 + 0x2b;
-        *(gUnknown_0201B864 + TILEMAP_INDEX(3, 0)) = 0x5234 + 0xb;
-        *(gUnknown_0201B864 + TILEMAP_INDEX(3, 1)) = 0x5234 + 0x2b;
+        *(gUnk_22 + TILEMAP_INDEX(2, 0)) = 0x5234 + 0xb;
+        *(gUnk_22 + TILEMAP_INDEX(2, 1)) = 0x5234 + 0x2b;
+        *(gUnk_22 + TILEMAP_INDEX(3, 0)) = 0x5234 + 0xb;
+        *(gUnk_22 + TILEMAP_INDEX(3, 1)) = 0x5234 + 0x2b;
     }
     else
     {
@@ -421,13 +421,13 @@ void sub_80BEA78(struct GMapPIProc * proc)
         if (level > 9)
         {
             int tens = level / 10;
-            *(gUnknown_0201B864 + TILEMAP_INDEX(2, 0)) = tens + 0x5235;
-            *(gUnknown_0201B864 + TILEMAP_INDEX(2, 1)) = tens + 0x5255;
+            *(gUnk_22 + TILEMAP_INDEX(2, 0)) = tens + 0x5235;
+            *(gUnk_22 + TILEMAP_INDEX(2, 1)) = tens + 0x5255;
         }
 
         ones = level % 10;
-        *(gUnknown_0201B864 + TILEMAP_INDEX(3, 0)) = ones + 0x5235;
-        *(gUnknown_0201B864 + TILEMAP_INDEX(3, 1)) = ones + 0x5255;
+        *(gUnk_22 + TILEMAP_INDEX(3, 0)) = ones + 0x5235;
+        *(gUnk_22 + TILEMAP_INDEX(3, 1)) = ones + 0x5255;
     }
 
     return;
@@ -439,20 +439,20 @@ void sub_80BEB2C(struct GMapPIProc * proc)
     switch (proc->interfaceKind)
     {
         case 0:
-            TileMap_FillRect(gUnknown_0201BBD8, 13, 4, 0);
-            TileMap_FillRect(gUnknown_0201B718, 13, 2, 0);
+            TileMap_FillRect(gUnk_25, 13, 4, 0);
+            TileMap_FillRect(gUnk_18, 13, 2, 0);
 
-            CallARM_FillTileRect(gUnknown_0201BBD8, gUnknown_08A98EAC, 0x8000);
+            CallARM_FillTileRect(gUnk_25, gWorldmapMinimap_12, 0x8000);
 
             break;
 
         case 1:
-            TileMap_FillRect(gUnknown_0201BBD8, 13, 9, 0);
-            TileMap_FillRect(gUnknown_0201B718, 13, 7, 0);
+            TileMap_FillRect(gUnk_25, 13, 9, 0);
+            TileMap_FillRect(gUnk_18, 13, 7, 0);
 
-            CallARM_FillTileRect(gUnknown_0201BBD8, gUnknown_08A98F30, 0x8000);
+            CallARM_FillTileRect(gUnk_25, gWorldmapMinimap_13, 0x8000);
 
-            PutText(&proc->text[1], gUnknown_0201B718 + 0x64);
+            PutText(&proc->text[1], gUnk_18 + 0x64);
 
             sub_80BEA78(proc);
             PutGMapPIFace(proc);
@@ -460,7 +460,7 @@ void sub_80BEB2C(struct GMapPIProc * proc)
             break;
     }
 
-    PutText(&proc->text[0], gUnknown_0201B71C);
+    PutText(&proc->text[0], gUnk_19);
 
     return;
 }
@@ -472,7 +472,7 @@ void sub_80BEBD4(struct GMapPIProc * proc)
     proc->unk_55 = 1;
 
     proc->unk_50 = sub_80C089C(0, 0, 0, 0);
-    proc->unk_57 = sub_80BE594(gUnknown_08A3E448[proc->unk_50].unk_02, gUnknown_08A3E448[proc->unk_50].unk_03);
+    proc->unk_57 = sub_80BE594(gWorldmapPlayerInterface_0[proc->unk_50].unk_02, gWorldmapPlayerInterface_0[proc->unk_50].unk_03);
 
     sub_80BEB2C(proc);
 
@@ -575,8 +575,8 @@ void sub_80BECB8(struct GMapPIProc * proc)
 
     if (index != proc->unk_50)
     {
-        if ((gUnknown_08A3E448[index].unk_02 != gUnknown_08A3E448[proc->unk_50].unk_02) ||
-            (gUnknown_08A3E448[index].unk_03 != gUnknown_08A3E448[proc->unk_50].unk_03))
+        if ((gWorldmapPlayerInterface_0[index].unk_02 != gWorldmapPlayerInterface_0[proc->unk_50].unk_02) ||
+            (gWorldmapPlayerInterface_0[index].unk_03 != gWorldmapPlayerInterface_0[proc->unk_50].unk_03))
         {
             Proc_Break(proc);
         }
@@ -839,7 +839,7 @@ void StartWorldMapPlayerInterface(struct Proc * parent)
 
 // clang-format off
 
-struct ProcCmd CONST_DATA gUnknown_08A3E4D4[] =
+struct ProcCmd CONST_DATA gWorldmapPlayerInterface_1[] =
 {
     PROC_MARK(PROC_MARK_WMSTUFF),
 
@@ -856,14 +856,14 @@ ProcPtr sub_80BF13C(ProcPtr parent)
 {
     ResetText();
     sub_80C09B8();
-    return Proc_Start(gUnknown_08A3E4D4, parent);
+    return Proc_Start(gWorldmapPlayerInterface_1, parent);
 }
 
 //! FE8U = 0x080BF15C
 void sub_80BF15C(void)
 {
     Proc_EndEach(ProcScr_GMapPlayerInterface);
-    Proc_EndEach(gUnknown_08A3E4D4);
+    Proc_EndEach(gWorldmapPlayerInterface_1);
 
     SetDefaultColorEffects();
     ClearBg0Bg1();

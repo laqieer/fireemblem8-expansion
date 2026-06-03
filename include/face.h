@@ -158,15 +158,15 @@ extern const struct FaceData portrait_data[];
 extern struct FaceProc* gFaces[];
 
 // generic minimug images
-extern u8 CONST_DATA gUnknown_08599D34[];
-extern u8 CONST_DATA gUnknown_08599B34[];
-extern u8 CONST_DATA gUnknown_08599734[];
-extern u8 CONST_DATA gUnknown_08599934[];
+extern u8 CONST_DATA gGenericIcon_3[];
+extern u8 CONST_DATA gGenericIcon_2[];
+extern u8 CONST_DATA gGenericIcon_0[];
+extern u8 CONST_DATA gGenericIcon_1[];
 
 // generic minimug palettes
-extern u16 CONST_DATA gUnknown_08599F34[];
-extern u16 CONST_DATA gUnknown_08599F54[];
-extern u16 CONST_DATA gUnknown_08599F74[];
+extern u16 CONST_DATA gGenericIcon_4[];
+extern u16 CONST_DATA gGenericIcon_5[];
+extern u16 CONST_DATA gGenericIcon_6[];
 
 extern struct FaceVramEntry CONST_DATA gDefaultFaceConfig[FACE_SLOT_COUNT];
 extern u16 CONST_DATA gSprite_Face64x96[];
@@ -179,14 +179,14 @@ extern u16 CONST_DATA gSprite_Face96x72[];
 extern u16 CONST_DATA gSprite_Face96x72_Flipped[];
 extern struct ProcCmd gProcScr_E_FACE[];
 extern struct ProcCmd CONST_DATA gProcScr_E_FACE_ExtraFrame[];
-extern u8 CONST_DATA gUnknown_085911C4[];
+extern u8 CONST_DATA gFace_1[];
 extern struct ProcCmd CONST_DATA gProcScr_FaceChibiSpr[];
-extern u16 CONST_DATA Sprite_085911E8[];
-extern u16 CONST_DATA Sprite_085911F6[];
-extern struct ProcCmd CONST_DATA gProcScr_08591204[];
+extern u16 CONST_DATA Sprite_Face_0[];
+extern u16 CONST_DATA Sprite_Face_1[];
+extern struct ProcCmd CONST_DATA gProcScr_Face_0[];
 extern struct ProcCmd CONST_DATA gProcScr_FaceEndIn8Frames[];
-extern struct ProcCmd CONST_DATA gProcScr_0859124C[];
+extern struct ProcCmd CONST_DATA gProcScr_Face_1[];
 extern struct ProcCmd CONST_DATA gProcScr_FaceBlink[];
-extern struct ProcCmd CONST_DATA gProcScr_08591304[];
+extern struct ProcCmd CONST_DATA gProcScr_Face_2[];
 
 #endif  // GUARD_FACE_H

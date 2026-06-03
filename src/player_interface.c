@@ -71,24 +71,24 @@ s8 CONST_DATA gUnitBurstMapUiYOffsetTable[6] =
     -6, -6, -6, 3, 3, 3
 };
 
-u16 * CONST_DATA gUnknown_08A0186C[6] =
+u16 * CONST_DATA gPlayerInterface_0[6] =
 {
-    gUnknown_08A175B4,
-    gUnknown_08A175B4,
-    gUnknown_08A175B4,
-    gUnknown_08A175C8,
-    gUnknown_08A175DC,
-    gUnknown_08A175F0
+    gUnkData_50,
+    gUnkData_50,
+    gUnkData_50,
+    gUnkData_51,
+    gUnkData_52,
+    gUnkData_53
 };
 
-u16 * CONST_DATA gUnknown_08A01884[6] =
+u16 * CONST_DATA gPlayerInterface_1[6] =
 {
-    gUnknown_08A1763C,
-    gUnknown_08A17650,
-    gUnknown_08A17664,
-    gUnknown_08A17678,
-    gUnknown_08A17678,
-    gUnknown_08A17678
+    gUnkData_55,
+    gUnkData_56,
+    gUnkData_57,
+    gUnkData_58,
+    gUnkData_58,
+    gUnkData_58
 };
 
 s8 CONST_DATA sMMBSlideInWidthLut[4] =
@@ -985,9 +985,9 @@ void DrawUnitBurstMapUi(struct PlayerInterfaceProc * proc, struct Unit * unit)
 
     UnitMapUiUpdate(proc, unit);
 
-    CallARM_FillTileRect(gBG1TilemapBuffer + TILEMAP_INDEX(x, y), gUnknown_08A0186C[orientation], TILEREF(0x100, 3));
-    CallARM_FillTileRect(gBG1TilemapBuffer + TILEMAP_INDEX(x, y + 1), gUnknown_08A17604, TILEREF(0x100, 3));
-    CallARM_FillTileRect(gBG1TilemapBuffer + TILEMAP_INDEX(x, y + 4), gUnknown_08A01884[orientation], TILEREF(0x100, 3));
+    CallARM_FillTileRect(gBG1TilemapBuffer + TILEMAP_INDEX(x, y), gPlayerInterface_0[orientation], TILEREF(0x100, 3));
+    CallARM_FillTileRect(gBG1TilemapBuffer + TILEMAP_INDEX(x, y + 1), gUnkData_54, TILEREF(0x100, 3));
+    CallARM_FillTileRect(gBG1TilemapBuffer + TILEMAP_INDEX(x, y + 4), gPlayerInterface_1[orientation], TILEREF(0x100, 3));
 
     BG_EnableSyncByMask(BG0_SYNC_BIT | BG1_SYNC_BIT);
 

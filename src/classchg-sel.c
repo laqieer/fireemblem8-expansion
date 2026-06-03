@@ -60,8 +60,8 @@ void LoadClassReelFontPalette(struct ProcPromoSel *proc, int class_id) {
             proc->u46 += 4;
     }
 
-    Decompress(&gUnknown_08A36338, OBJ_VRAM0 + 0x1000);
-    ApplyPalettes(gUnknown_08A372C0, 0x14, 0x2);
+    Decompress(&gUnkData_94, OBJ_VRAM0 + 0x1000);
+    ApplyPalettes(gUnkData_95, 0x14, 0x2);
 }
 
 void LoadClassNameInClassReelFont(struct ProcPromoSel *proc) {
@@ -91,16 +91,16 @@ void LoadClassNameInClassReelFont(struct ProcPromoSel *proc) {
 void ClassChgLoadEfxTerrain(void)
 {
     EndEfxAnimeDrvProc();
-    sub_805AA28(&gUnknown_030053A0);
-    sub_805AE14(&gUnknown_0201FADC);
+    sub_805AA28(&gUnk_81);
+    sub_805AE14(&gEkrbattle_9);
 }
 
 void ClassChgLoadUI(void)
 {
-    u8 *src = gUnknown_08A30800;
+    u8 *src = gUnkData_83;
     u32 off = GetBackgroundTileDataOffset(BG_2);
     Decompress(src, (void *)VRAM + 0x3000 + off);
-    RegisterTsaWithOffset(gBG2TilemapBuffer, gUnknown_08A30978, TILEREF(0x180, BGPAL_TEXT_DEFAULT) + 0x1000);
+    RegisterTsaWithOffset(gBG2TilemapBuffer, gUnkData_84, TILEREF(0x180, BGPAL_TEXT_DEFAULT) + 0x1000);
 }
 
 void ClassChgSelDrawPidName(struct ProcPromoSel *proc) {
@@ -316,14 +316,14 @@ void LoadBattleSpritesForBranchScreen(struct ProcPromoSel *proc) {
     struct Unit copied_unit;
     void *tmp;
     u16 chara_pal;
-    anim1 = gUnknown_030053A0.anim1;
-    anim2 = gUnknown_030053A0.anim2;
+    anim1 = gUnk_81.anim1;
+    anim2 = gUnk_81.anim2;
 
-    p2 = (void *)gUnknown_0201FADC.proc14;
-    c2 = (void *)gUnknown_0201FADC.proc18;
+    p2 = (void *)gEkrbattle_9.proc14;
+    c2 = (void *)gEkrbattle_9.proc18;
 
     a = proc->stat;
-    tmp = &gUnknown_030053A0;
+    tmp = &gUnk_81;
 
     if (a == 1) {
         u16 _pid, _jid;
@@ -343,7 +343,7 @@ void LoadBattleSpritesForBranchScreen(struct ProcPromoSel *proc) {
 
         if (proc->stat == 2) {
             EndEfxAnimeDrvProc();
-            sub_805AA28(&gUnknown_030053A0);
+            sub_805AA28(&gUnk_81);
             _pid = proc->pid - 1;
             _jid = proc->jid[proc->main_select];
             chara_pal = -1;
@@ -363,7 +363,7 @@ void LoadBattleSpritesForBranchScreen(struct ProcPromoSel *proc) {
                 }
             }
             sub_80CD47C((s16) ret, (s16) chara_pal, (s16) (p2->sprite[0] + 0x28), 0x58, 6);
-            sub_805AE14(&gUnknown_0201FADC);
+            sub_805AE14(&gEkrbattle_9);
             sub_80CD408(proc->u50, p2->sprite[0], p2->msg_desc[1]);
         } else {
             goto D1AC;
@@ -371,7 +371,7 @@ void LoadBattleSpritesForBranchScreen(struct ProcPromoSel *proc) {
     }
     ++proc; --proc;
     b = proc->stat;
-    tmp = &gUnknown_030053A0;
+    tmp = &gUnk_81;
     if (b == 2) {
         if ((s16) p2->sprite[0] > 0x82) {
 #ifdef NONMATCHING
@@ -406,8 +406,8 @@ void sub_80CD1D4(struct ProcPromoSel *proc)
         Proc_End(proc);
         Proc_End(parent);
         Proc_End(gparent);
-        sub_805AA28(&gUnknown_030053A0);
-        sub_805AE14(&gUnknown_0201FADC);
+        sub_805AA28(&gUnk_81);
+        sub_805AE14(&gEkrbattle_9);
         EndEfxAnimeDrvProc();
     }
 }
@@ -424,8 +424,8 @@ void PrepClassChgOnCancel(struct ProcPromoSel *proc)
         Proc_End(proc);
         Proc_End(parent);
         Proc_End(gparent);
-        sub_805AA28(&gUnknown_030053A0);
-        sub_805AE14(&gUnknown_0201FADC);
+        sub_805AA28(&gUnk_81);
+        sub_805AE14(&gEkrbattle_9);
         EndEfxAnimeDrvProc();
         gActionData.unitActionType = 0;
         Proc_Goto(ggparent, PROC_LABEL_PREPITEMUSE_CONFIRM);
@@ -518,63 +518,63 @@ void sub_80CD34C(void)
 }
 
 void sub_80CD408(u32 a, s16 b, s16 c) {
-    gUnknown_0201FADC.terrain_l = a;
-    gUnknown_0201FADC.pal_l = 0xe;
-    gUnknown_0201FADC.chr_l = 0x380;
-    gUnknown_0201FADC.terrain_r = a;
-    gUnknown_0201FADC.pal_r = 0xf;
-    gUnknown_0201FADC.chr_r = 0xf0 << 2;
-    gUnknown_0201FADC.distance = 0;
-    gUnknown_0201FADC.unk0E = -1;
-    gUnknown_0201FADC.unk1C = (void *)0x06010000;
-    gUnknown_0201FADC.unk20 = gUnk_Banim_020145C8;
-    sub_805AA68(&gUnknown_0201FADC);
+    gEkrbattle_9.terrain_l = a;
+    gEkrbattle_9.pal_l = 0xe;
+    gEkrbattle_9.chr_l = 0x380;
+    gEkrbattle_9.terrain_r = a;
+    gEkrbattle_9.pal_r = 0xf;
+    gEkrbattle_9.chr_r = 0xf0 << 2;
+    gEkrbattle_9.distance = 0;
+    gEkrbattle_9.unk0E = -1;
+    gEkrbattle_9.unk1C = (void *)0x06010000;
+    gEkrbattle_9.unk20 = gUnk_Banim_Ekrbattle_0;
+    sub_805AA68(&gEkrbattle_9);
 
-    sub_805AE40(&gUnknown_0201FADC, b, c, b + 0x60, c);
+    sub_805AE40(&gEkrbattle_9, b, c, b + 0x60, c);
 }
 
 void sub_80CD47C(int a, int b, int c, int d, int e) {
     u16 c1 = c;
     u16 d1 = d;
     if (gKeyStatusPtr->heldKeys & 0xc)
-        gUnknown_03005408[0] = 0;
+        gUnk_83[0] = 0;
 
     if (gKeyStatusPtr->newKeys & 0x200)
-        gUnknown_03005408[0] += 1;
+        gUnk_83[0] += 1;
 
     NewEfxAnimeDrvProc();
-    gUnknown_030053A0.xPos = c1;
-    gUnknown_030053A0.yPos = d1;
-    gUnknown_030053A0.state2 = 1;
-    gUnknown_030053A0.animId = a;
-    gUnknown_030053A0.charPalId = b;
-    gUnknown_030053A0.roundType = e;
-    gUnknown_030053A0.genericPalId = 0;
-    gUnknown_030053A0.oam2Tile = 0x200;
-    gUnknown_030053A0.oam2Pal = 0xa;
-    gUnknown_030053A0.pImgSheetBuf = gBanimLeftImgSheetBuf;
-    gUnknown_030053A0.unk_24 = gBanimOaml;
-    gUnknown_030053A0.unk_20 = gBanimPaletteLeft;
-    gUnknown_030053A0.unk_28 = gBanimScrLeft;
-    gUnknown_030053A0.unk_30 = &gUnknown_030053E0;
-    gUnknown_030053E0.u00 = 0x4;
-    gUnknown_030053E0.u02 = 0;
-    gUnknown_030053E0.u04 = 0;
-    gUnknown_030053E0.u06 = 0;
-    gUnknown_030053E0.u08 = 0;
-    gUnknown_030053E0.u0e = 0x300;
-    gUnknown_030053E0.u10 = 0x8;
-    gUnknown_030053E0.u0a = 0x200;
-    gUnknown_030053E0.u0c = 0x4;
-    gUnknown_030053E0.u12 = 0x1;
-    gUnknown_030053E0.buf = gBG1TilemapBuffer;
-    gUnknown_030053E0.u18 = gSpellAnimBgfx;
-    gUnknown_030053E0.u1c = (void *)gEkrTsaBuffer;
-    gUnknown_030053E0.u20 = gBuf_Banim;
-    gUnknown_030053E0.u24 = sub_80CD34C;
+    gUnk_81.xPos = c1;
+    gUnk_81.yPos = d1;
+    gUnk_81.state2 = 1;
+    gUnk_81.animId = a;
+    gUnk_81.charPalId = b;
+    gUnk_81.roundType = e;
+    gUnk_81.genericPalId = 0;
+    gUnk_81.oam2Tile = 0x200;
+    gUnk_81.oam2Pal = 0xa;
+    gUnk_81.pImgSheetBuf = gBanimLeftImgSheetBuf;
+    gUnk_81.unk_24 = gBanimOaml;
+    gUnk_81.unk_20 = gBanimPaletteLeft;
+    gUnk_81.unk_28 = gBanimScrLeft;
+    gUnk_81.unk_30 = &gUnk_82;
+    gUnk_82.u00 = 0x4;
+    gUnk_82.u02 = 0;
+    gUnk_82.u04 = 0;
+    gUnk_82.u06 = 0;
+    gUnk_82.u08 = 0;
+    gUnk_82.u0e = 0x300;
+    gUnk_82.u10 = 0x8;
+    gUnk_82.u0a = 0x200;
+    gUnk_82.u0c = 0x4;
+    gUnk_82.u12 = 0x1;
+    gUnk_82.buf = gBG1TilemapBuffer;
+    gUnk_82.u18 = gSpellAnimBgfx;
+    gUnk_82.u1c = (void *)gEkrTsaBuffer;
+    gUnk_82.u20 = gBuf_Banim;
+    gUnk_82.u24 = sub_80CD34C;
 
     ResetClassReelSpell();
-    NewEkrUnitMainMini(&gUnknown_030053A0);
+    NewEkrUnitMainMini(&gUnk_81);
 }
 
 u8 LoadClassBattleSprite(s16 * out, u16 jid, u16 wpn_before) 

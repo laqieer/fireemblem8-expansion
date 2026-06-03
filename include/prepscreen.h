@@ -175,28 +175,28 @@ struct Win1H {
     /* 01 */ u8 right;
 };
 
-extern struct Win1H gUnknown_02012F58[][160];
-extern struct Win1H* gUnknown_02013458[];
+extern struct Win1H gPrepscreen_3[][160];
+extern struct Win1H* gPrepscreen_4[];
 
 extern struct Text gPrepMainMenuTexts[10];
 extern u8 gPrepUnitPool[];
 extern u8 gBanimScrRight[];
 extern struct PrepUnitList gPrepUnitList;
 extern struct PrepScreenItemListEnt gPrepScreenItemList[];
-extern struct PrepScreenItemListEnt gUnknown_02012914[];
-extern u16 gUnknown_02012F54;
-extern u16 gUnknown_02012F56;
-// extern ??? gUnknown_02012F58
-// extern ??? gUnknown_02013458
-extern u16 gUnknown_02013460[];
+extern struct PrepScreenItemListEnt gPrepscreen_0[];
+extern u16 gPrepscreen_1;
+extern u16 gPrepscreen_2;
+// extern ??? gPrepscreen_3
+// extern ??? gPrepscreen_4
+extern u16 gPrepscreen_5[];
 extern struct Text gPrepUnitTexts[0x16];
 extern int sSupportScreenUnitCount;
-extern u16 gUnknown_020136F4[];
+extern u16 gUisupport_0[];
 
 extern struct ProcCmd gProcScr_SALLYCURSOR[];
 extern struct ProcCmd gProcScr_PrepHelpPrompt[];
 extern u16 gBgConfig_ItemUseScreen[];
-// extern ??? gUnknown_08A18200
+// extern ??? gPrepscreen_6
 extern CONST_DATA struct ProcCmd ProcScr_PrepMenuDescHandler[];
 extern CONST_DATA struct ProcCmd ProcScr_AtMenu[];
 extern CONST_DATA struct ProcCmd ProcScr_PrepPromoteDebug[];
@@ -234,9 +234,9 @@ extern CONST_DATA struct ProcCmd gProcScr_DrawPrepFundsSprite[];
 extern CONST_DATA u16 gSprite_PrepUnitInfoBg[];
 extern CONST_DATA struct ProcCmd gProcScr_DrawUnitInfoBgSprites[];
 extern CONST_DATA struct ProcCmd ProcScr_PrepItemScreen[];
-extern CONST_DATA u16 obj_08A18E34[];
+extern CONST_DATA u16 obj_PrepUnitselect_0[];
 extern CONST_DATA u16 Sprite_PrepStartButton[];
-extern CONST_DATA u16 obj_08A18E62[];
+extern CONST_DATA u16 obj_PrepUnitselect_1[];
 extern CONST_DATA u16 Sprite_PrepBButton[];
 extern CONST_DATA struct ProcCmd ProcScr_PrepUnitScreen[];
 extern CONST_DATA struct ProcCmd ProcScr_PrepItemTradeScreen[];
@@ -249,56 +249,56 @@ extern int CONST_DATA gSupplyHelpTextIndexLookup[];
 extern CONST_DATA struct ProcCmd ProcScr_PrepItemSupplyScreen[];
 extern CONST_DATA struct ProcCmd ProcScr_BmSupplyScreen[];
 extern CONST_DATA struct ProcCmd ProcScr_PrepItemListScreen[];
-extern u16 gUnknown_08A195F8[];
-extern u16 * gUnknown_08A19608[];
+extern u16 gPrepWmSell_0[];
+extern u16 * gPrepWmSell_1[];
 extern CONST_DATA struct ProcCmd gProcScr_FortuneSubMenu[];
-extern int gUnknown_08A196BC[]; /* msg lists */
-extern int CONST_DATA gUnknown_08A196D0[];
-extern int CONST_DATA gUnused_08A196E4[];
+extern int gUnkData_59[]; /* msg lists */
+extern int CONST_DATA gUnkData_60[];
+extern int CONST_DATA gUnused_UnkData_0[];
 extern u16 CONST_DATA Img_PrepHelpButtonSprites[];
 extern u8 Img_MenuScrollBar[];
 extern u16 Pal_MenuScrollBar[];
-extern u8 gUnknown_08A19CCC[]; // gfx
+extern u8 gUnkData_61[]; // gfx
 extern u16 Pal_SpinningArrow[]; // pal
-extern u8 gUnknown_08A1A0A4[]; // gfx
-extern u8 gUnknown_08A1A23C[]; // gfx
-extern u16 gUnknown_08A1A3FC[]; // pal
-extern u8 CONST_DATA Tsa_08A1A41C[];
-extern u8 CONST_DATA Tsa_08A1A434[];
-extern u8 CONST_DATA Tsa_08A1A474[];
-extern u8 CONST_DATA gUnknown_08A1A4C8[];
+extern u8 gUnkData_62[]; // gfx
+extern u8 gUnkData_63[]; // gfx
+extern u16 gUnkData_64[]; // pal
+extern u8 CONST_DATA Tsa_UnkData_1[];
+extern u8 CONST_DATA Tsa_UnkData_2[];
+extern u8 CONST_DATA Tsa_UnkData_3[];
+extern u8 CONST_DATA gUnkData_65[];
 extern u8 gGfx_SupportScreenBanner[];
-extern u8 CONST_DATA gUnknown_08A1AC88[];
+extern u8 CONST_DATA gUnkData_66[];
 extern u16 CONST_DATA Img_SysBrownBox[];
 extern u16 CONST_DATA Pal_SysBrownBox[];
 extern u16 CONST_DATA gPal_SupportScreenBanner[];
 extern u16 CONST_DATA AP_DrawPreparationsBanner[];
 extern u8 Img_PrepFunds[]; // gfx
 extern u16 Pal_PrepFunds[]; // pal
-extern u8 CONST_DATA gUnknown_08A1B658[];
-extern u8 CONST_DATA gUnknown_08A1B698[];
-extern u8 CONST_DATA gUnknown_08A1B730[];
-extern u8 CONST_DATA gUnknown_08A1B7C8[];
+extern u8 CONST_DATA gUnkData_67[];
+extern u8 CONST_DATA gUnkData_68[];
+extern u8 CONST_DATA gUnkData_69[];
+extern u8 CONST_DATA gUnkData_70[];
 extern u8 Tsa_PrepItemScreen[]; // tsa
-extern u8 Tsa_08A1B990[]; // tsa
-extern u8 gUnknown_08A1B9EC[]; // tsa
+extern u8 Tsa_UnkData_4[]; // tsa
+extern u8 gUnkData_71[]; // tsa
 extern u16 CONST_DATA Img_PrepItemUseScreen[];
 extern u16 CONST_DATA Tsa_PrepItemUseScreen[];
-extern u8 gUnknown_08A1BBD0[]; // tsa?
-extern u8 gUnknown_08A1BCC0[];
-extern u16 gUnknown_08A1BD00[]; // pal
-// extern ??? gUnknown_08A1BD40
-extern u16 gUnknown_08A1BD60[];
+extern u8 gUnkData_72[]; // tsa?
+extern u8 gUnkData_73[];
+extern u16 gUnkData_74[]; // pal
+// extern ??? gUnkData_75
+extern u16 gUnkData_76[];
 extern u8 Img_SpinningArrow[]; // arrow gfx
 extern u8 gImg_UiSpinningArrow_Horizontal[];
-extern u8 gUnknown_08A1C8B4[]; // tsa
-extern u8 Img_08A1CD68[];
+extern u8 gUnkData_77[]; // tsa
+extern u8 Img_UnkData_1[];
 extern u8 Img_UnitListBanners[];
 extern u8 Img_UnitListBanner_Animation[];
-extern u16 Pal_08A1D448[];
-extern u16 CONST_DATA gUnknown_08A1D4C8[];
+extern u16 Pal_UnkData_1[];
+extern u16 CONST_DATA gUnkData_78[];
 extern u8 Img_PrepTextShadow[];
-extern u8 CONST_DATA gUnknown_08A1D510[];
+extern u8 CONST_DATA gUnkData_79[];
 extern u16 CONST_DATA Pal_MapBattleInfoNum[]; // 'R is info' palette
 extern u8 Img_PrepPopupWindow[];
 extern u16 Pal_PrepWindowA[];
@@ -306,7 +306,7 @@ extern u16 Pal_PrepWindowB[];
 extern u16 Pal_PrepWindowC[];
 extern u16 Pal_PrepWindowD[];
 extern u8 Img_PrepWindow[];
-extern u8 gUnknown_08A1DB80[];
+extern u8 gUnkData_80[];
 extern u8 gTsa_SupportSubScreen[];
 extern u8 gGfx_SupportMenu[];
 extern u16 gPal_SupportMenu[];

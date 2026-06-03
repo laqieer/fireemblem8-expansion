@@ -281,7 +281,7 @@ void GmapTimeMons_ExecMonsterMergeMu(struct ProcGmapTimeMons * proc)
             y = y1 - y2 + 8;
 
             if ((y >= 0 && y < 0xB0) && (x >= 0 && x < 0xF0))
-                proc->ap_procs[i] = APProc_Create(Sprite_08A97AEC, (s16)x, (s16)y, 0x3880, 0, 7);
+                proc->ap_procs[i] = APProc_Create(Sprite_0, (s16)x, (s16)y, 0x3880, 0, 7);
 
             wm_uid = i + 4;
             SetGmClassUnit(wm_uid, proc->confs[i].jid, WM_FACTION_RED, proc->confs[i].node);

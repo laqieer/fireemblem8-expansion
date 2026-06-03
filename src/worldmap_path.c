@@ -18,52 +18,52 @@
 
 // clang-format off
 
-const struct GMapMovementPathData gUnknown_082064BC[] =
+const struct GMapMovementPathData gWorldmapPath_0[] =
 {
     { 1351, 128, 88, },
     { 2703, 112, 72, },
     { -1, },
 };
 
-const struct GMapMovementPathData gUnknown_082064D4[] =
+const struct GMapMovementPathData gWorldmapPath_1[] =
 {
     { 2990, 120, 104, },
     { -1, },
 };
 
-const struct GMapMovementPathData gUnknown_082064E4[] =
+const struct GMapMovementPathData gWorldmapPath_2[] =
 {
     { 2048, 184, 184, },
     { -1, },
 };
 
-const struct GMapMovementPathData gUnknown_082064F4[] =
+const struct GMapMovementPathData gWorldmapPath_3[] =
 {
     { 2048, 184, 216, },
     { -1, },
 };
 
-const struct GMapMovementPathData gUnknown_08206504[] =
+const struct GMapMovementPathData gWorldmapPath_4[] =
 {
     { 819, 168, 88, },
     { 3276, 200, 56, },
     { -1, },
 };
 
-const struct GMapMovementPathData gUnknown_0820651C[] =
+const struct GMapMovementPathData gWorldmapPath_5[] =
 {
     { 1474, 288, 104, },
     { 3563, 312, 128, },
     { -1, },
 };
 
-const struct GMapMovementPathData gUnknown_08206534[] =
+const struct GMapMovementPathData gWorldmapPath_6[] =
 {
     { 1064, 72, 88, },
     { -1, },
 };
 
-const struct GMapMovementPathData gUnknown_08206544[] =
+const struct GMapMovementPathData gWorldmapPath_7[] =
 {
     { 1638, 72, 192, },
     { 2580, 56, 208, },
@@ -71,55 +71,55 @@ const struct GMapMovementPathData gUnknown_08206544[] =
     { -1, },
 };
 
-const struct GMapMovementPathData gUnknown_08206564[] =
+const struct GMapMovementPathData gWorldmapPath_8[] =
 {
     { 1720, 104, 232, },
     { 2949, 120, 248, },
     { -1, },
 };
 
-const struct GMapMovementPathData gUnknown_0820657C[] =
+const struct GMapMovementPathData gWorldmapPath_9[] =
 {
     { 573, 160, 248, },
     { 2293, 176, 264, },
     { -1, },
 };
 
-const struct GMapMovementPathData gUnknown_08206594[] =
+const struct GMapMovementPathData gWorldmapPath_10[] =
 {
     { 983, 288, 264, },
     { 2416, 312, 240, },
     { -1, },
 };
 
-const struct GMapMovementPathData gUnknown_082065AC[] =
+const struct GMapMovementPathData gWorldmapPath_11[] =
 {
     { 1187, 240, 216, },
     { 2867, 264, 240, },
     { -1, },
 };
 
-const struct GMapMovementPathData gUnknown_082065C4[] =
+const struct GMapMovementPathData gWorldmapPath_12[] =
 {
     { 1884, 256, 200, },
     { 3809, 216, 160, },
     { -1, },
 };
 
-const struct GMapMovementPathData gUnknown_082065DC[] =
+const struct GMapMovementPathData gWorldmapPath_13[] =
 {
     { 901, 152, 112, },
     { 3153, 192, 152, },
     { -1, },
 };
 
-const struct GMapMovementPathData gUnknown_082065F4[] =
+const struct GMapMovementPathData gWorldmapPath_14[] =
 {
     { 2457, 360, 200, },
     { -1, },
 };
 
-const struct GMapMovementPathData gUnknown_08206604[] =
+const struct GMapMovementPathData gWorldmapPath_15[] =
 {
     { 303, 392, 80, },
     { 733, 384, 72, },
@@ -128,84 +128,84 @@ const struct GMapMovementPathData gUnknown_08206604[] =
     { -1, },
 };
 
-const struct GMapMovementPathData gUnknown_0820662C[] =
+const struct GMapMovementPathData gWorldmapPath_16[] =
 {
     { 901, 408, 104, },
     { -1, },
 };
 
-const struct GMapMovementPathData gUnknown_0820663C[] =
+const struct GMapMovementPathData gWorldmapPath_17[] =
 {
     { 2048, 392, 40, },
     { -1, },
 };
 
-const struct GMapMovementPathData gUnknown_0820664C[] =
+const struct GMapMovementPathData gWorldmapPath_18[] =
 {
     { 942, 248, 56, },
     { 1638, 264, 40, },
     { -1, },
 };
 
-const struct GMapMovementPathData gUnknown_08206664[] =
+const struct GMapMovementPathData gWorldmapPath_19[] =
 {
     { 1351, 344, 88, },
     { -1, },
 };
 
-extern u8 gUnknown_08A97FC4[];
-extern u8 gUnknown_08A97FF8[];
-extern u8 gUnknown_08A98030[];
-extern u8 gUnknown_08A98054[];
-extern u8 gUnknown_08A9806C[];
-extern u8 gUnknown_08A98090[];
-extern u8 gUnknown_08A980B4[];
-extern u8 gUnknown_08A980DC[];
-extern u8 gUnknown_08A98104[];
-extern u8 gUnknown_08A98144[];
-extern u8 gUnknown_08A98168[];
-extern u8 gUnknown_08A9819C[];
-extern u8 gUnknown_08A981BC[];
-extern u8 gUnknown_08A981F4[];
-extern u8 gUnknown_08A98228[];
-extern u8 gUnknown_08A9827C[];
-extern u8 gUnknown_08A982D4[];
-extern u8 gUnknown_08A98314[];
-extern u8 gUnknown_08A98344[];
-extern u8 gUnknown_08A9836C[];
-extern u8 gUnknown_08A983BC[];
-extern u8 gUnknown_08A983F0[];
-extern u8 gUnknown_08A98448[];
-extern u8 gUnknown_08A9847C[];
-extern u8 gUnknown_08A984D4[];
-extern u8 gUnknown_08A9850C[];
-extern u8 gUnknown_08A98540[];
-extern u8 gUnknown_08A98568[];
-extern u8 gUnknown_08A985A4[];
-extern u8 gUnknown_08A985FC[];
-extern u8 gUnknown_08A9863C[];
-extern u8 gUnknown_08A98694[];
+extern u8 gWorldmapSprite_2[];
+extern u8 gWorldmapSprite_3[];
+extern u8 gWorldmapSprite_4[];
+extern u8 gWorldmapSprite_5[];
+extern u8 gWorldmapSprite_6[];
+extern u8 gWorldmapSprite_7[];
+extern u8 gWorldmapSprite_8[];
+extern u8 gWorldmapSprite_9[];
+extern u8 gWorldmapSprite_10[];
+extern u8 gWorldmapSprite_11[];
+extern u8 gWorldmapSprite_12[];
+extern u8 gWorldmapSprite_13[];
+extern u8 gWorldmapSprite_14[];
+extern u8 gWorldmapSprite_15[];
+extern u8 gWorldmapSprite_16[];
+extern u8 gWorldmapSprite_17[];
+extern u8 gWorldmapSprite_18[];
+extern u8 gWorldmapSprite_19[];
+extern u8 gWorldmapSprite_20[];
+extern u8 gWorldmapSprite_21[];
+extern u8 gWorldmapSprite_22[];
+extern u8 gWorldmapSprite_23[];
+extern u8 gWorldmapSprite_24[];
+extern u8 gWorldmapSprite_25[];
+extern u8 gWorldmapSprite_26[];
+extern u8 gWorldmapSprite_27[];
+extern u8 gWorldmapSprite_28[];
+extern u8 gWorldmapSprite_29[];
+extern u8 gWorldmapSprite_30[];
+extern u8 gWorldmapSprite_31[];
+extern u8 gWorldmapSprite_32[];
+extern u8 gWorldmapSprite_33[];
 
 const struct GMapPathData gWMPathData[] =
 {
     {
-        .gfxData = gUnknown_08A97FC4,
+        .gfxData = gWorldmapSprite_2,
         .node = {
             [0] = NODE_BORDER_MULAN,
             [1] = NODE_CASTLE_FRELIA,
         },
-        .movementPath = gUnknown_082064BC,
+        .movementPath = gWorldmapPath_0,
     },
     {
-        .gfxData = gUnknown_08A97FF8,
+        .gfxData = gWorldmapSprite_3,
         .node = {
             [0] = NODE_CASTLE_FRELIA,
             [1] = NODE_IDE,
         },
-        .movementPath = gUnknown_082064D4,
+        .movementPath = gWorldmapPath_1,
     },
     {
-        .gfxData = gUnknown_08A98030,
+        .gfxData = gWorldmapSprite_4,
         .node = {
             [0] = NODE_IDE,
             [1] = NODE_BORGO_RIDGE,
@@ -213,7 +213,7 @@ const struct GMapPathData gWMPathData[] =
         .movementPath = NULL,
     },
     {
-        .gfxData = gUnknown_08A98054,
+        .gfxData = gWorldmapSprite_5,
         .node = {
             [0] = NODE_BORGO_RIDGE,
             [1] = NODE_ZAHA_WOODS,
@@ -221,7 +221,7 @@ const struct GMapPathData gWMPathData[] =
         .movementPath = NULL,
     },
     {
-        .gfxData = gUnknown_08A9806C,
+        .gfxData = gWorldmapSprite_6,
         .node = {
             [0] = NODE_ZAHA_WOODS,
             [1] = NODE_SERAFEW,
@@ -229,39 +229,39 @@ const struct GMapPathData gWMPathData[] =
         .movementPath = NULL,
     },
     {
-        .gfxData = gUnknown_08A98090,
+        .gfxData = gWorldmapSprite_7,
         .node = {
             [0] = NODE_SERAFEW,
             [1] = NODE_ADLAS_PLAINS,
         },
-        .movementPath = gUnknown_082064E4,
+        .movementPath = gWorldmapPath_2,
     },
     {
-        .gfxData = gUnknown_08A980B4,
+        .gfxData = gWorldmapSprite_8,
         .node = {
             [0] = NODE_ADLAS_PLAINS,
             [1] = NODE_RENVALL_07,
         },
-        .movementPath = gUnknown_082064F4,
+        .movementPath = gWorldmapPath_3,
     },
     {
-        .gfxData = gUnknown_08A980DC,
+        .gfxData = gWorldmapSprite_9,
         .node = {
             [0] = NODE_ADLAS_PLAINS,
             [1] = NODE_RENVALL_08,
         },
-        .movementPath = gUnknown_082064F4,
+        .movementPath = gWorldmapPath_3,
     },
     {
-        .gfxData = gUnknown_08A98104,
+        .gfxData = gWorldmapSprite_10,
         .node = {
             [0] = NODE_BORDER_MULAN,
             [1] = NODE_PORT_KIRIS,
         },
-        .movementPath = gUnknown_08206504,
+        .movementPath = gWorldmapPath_4,
     },
     {
-        .gfxData = gUnknown_08A98144,
+        .gfxData = gWorldmapSprite_11,
         .node = {
             [0] = NODE_BORDER_MULAN,
             [1] = NODE_TOWER_OF_VALNI,
@@ -269,7 +269,7 @@ const struct GMapPathData gWMPathData[] =
         .movementPath = NULL,
     },
     {
-        .gfxData = gUnknown_08A98168,
+        .gfxData = gWorldmapSprite_12,
         .node = {
             [0] = NODE_PORT_KIRIS,
             [1] = NODE_TERAZ_PLATEAU,
@@ -277,7 +277,7 @@ const struct GMapPathData gWMPathData[] =
         .movementPath = NULL,
     },
     {
-        .gfxData = gUnknown_08A9819C,
+        .gfxData = gWorldmapSprite_13,
         .node = {
             [0] = NODE_TERAZ_PLATEAU,
             [1] = NODE_CAER_PELYN,
@@ -285,15 +285,15 @@ const struct GMapPathData gWMPathData[] =
         .movementPath = NULL,
     },
     {
-        .gfxData = gUnknown_08A981BC,
+        .gfxData = gWorldmapSprite_14,
         .node = {
             [0] = NODE_CAER_PELYN,
             [1] = NODE_HAMILL_CANYON,
         },
-        .movementPath = gUnknown_0820651C,
+        .movementPath = gWorldmapPath_5,
     },
     {
-        .gfxData = gUnknown_08A981F4,
+        .gfxData = gWorldmapSprite_15,
         .node = {
             [0] = NODE_HAMILL_CANYON,
             [1] = NODE_JEHANNA_HALL_0D,
@@ -301,39 +301,39 @@ const struct GMapPathData gWMPathData[] =
         .movementPath = NULL,
     },
     {
-        .gfxData = gUnknown_08A98228,
+        .gfxData = gWorldmapSprite_16,
         .node = {
             [0] = NODE_CASTLE_FRELIA,
             [1] = NODE_FORT_RIGWALD,
         },
-        .movementPath = gUnknown_08206534,
+        .movementPath = gWorldmapPath_6,
     },
     {
-        .gfxData = gUnknown_08A9827C,
+        .gfxData = gWorldmapSprite_17,
         .node = {
             [0] = NODE_FORT_RIGWALD,
             [1] = NODE_BETHROEN,
         },
-        .movementPath = gUnknown_08206544,
+        .movementPath = gWorldmapPath_7,
     },
     {
-        .gfxData = gUnknown_08A982D4,
+        .gfxData = gWorldmapSprite_18,
         .node = {
             [0] = NODE_BETHROEN,
             [1] = NODE_TAIZEL,
         },
-        .movementPath = gUnknown_08206564,
+        .movementPath = gWorldmapPath_8,
     },
     {
-        .gfxData = gUnknown_08A98314,
+        .gfxData = gWorldmapSprite_19,
         .node = {
             [0] = NODE_TAIZEL,
             [1] = NODE_ZAALBUL_MARSH,
         },
-        .movementPath = gUnknown_0820657C,
+        .movementPath = gWorldmapPath_9,
     },
     {
-        .gfxData = gUnknown_08A98344,
+        .gfxData = gWorldmapSprite_20,
         .node = {
             [0] = NODE_ZAALBUL_MARSH,
             [1] = NODE_GRADO_KEEP,
@@ -341,31 +341,31 @@ const struct GMapPathData gWMPathData[] =
         .movementPath = NULL,
     },
     {
-        .gfxData = gUnknown_08A9836C,
+        .gfxData = gWorldmapSprite_21,
         .node = {
             [0] = NODE_GRADO_KEEP,
             [1] = NODE_JEHANNA_HALL_13,
         },
-        .movementPath = gUnknown_08206594,
+        .movementPath = gWorldmapPath_10,
     },
     {
-        .gfxData = gUnknown_08A983BC,
+        .gfxData = gWorldmapSprite_22,
         .node = {
             [0] = NODE_RENVALL_08,
             [1] = NODE_GRADO_KEEP,
         },
-        .movementPath = gUnknown_082065AC,
+        .movementPath = gWorldmapPath_11,
     },
     {
-        .gfxData = gUnknown_08A983F0,
+        .gfxData = gWorldmapSprite_23,
         .node = {
             [0] = NODE_JEHANNA_HALL_13,
             [1] = NODE_RENAIS_CASTLE,
         },
-        .movementPath = gUnknown_082065C4,
+        .movementPath = gWorldmapPath_12,
     },
     {
-        .gfxData = gUnknown_08A98448,
+        .gfxData = gWorldmapSprite_24,
         .node = {
             [0] = NODE_HAMILL_CANYON,
             [1] = NODE_JEHANNA_HALL_13,
@@ -373,23 +373,23 @@ const struct GMapPathData gWMPathData[] =
         .movementPath = NULL,
     },
     {
-        .gfxData = gUnknown_08A9847C,
+        .gfxData = gWorldmapSprite_25,
         .node = {
             [0] = NODE_BORDER_MULAN,
             [1] = NODE_RENAIS_CASTLE,
         },
-        .movementPath = gUnknown_082065DC,
+        .movementPath = gWorldmapPath_13,
     },
     {
-        .gfxData = gUnknown_08A984D4,
+        .gfxData = gWorldmapSprite_26,
         .node = {
             [0] = NODE_JEHANNA_HALL_13,
             [1] = NODE_NARUBE_RIVER,
         },
-        .movementPath = gUnknown_082065F4,
+        .movementPath = gWorldmapPath_14,
     },
     {
-        .gfxData = gUnknown_08A9850C,
+        .gfxData = gWorldmapSprite_27,
         .node = {
             [0] = NODE_NARUBE_RIVER,
             [1] = NODE_NELERAS_PEAK,
@@ -397,7 +397,7 @@ const struct GMapPathData gWMPathData[] =
         .movementPath = NULL,
     },
     {
-        .gfxData = gUnknown_08A98540,
+        .gfxData = gWorldmapSprite_28,
         .node = {
             [0] = NODE_NELERAS_PEAK,
             [1] = NODE_RAUSTEN_COURT,
@@ -405,48 +405,48 @@ const struct GMapPathData gWMPathData[] =
         .movementPath = NULL,
     },
     {
-        .gfxData = gUnknown_08A98568,
+        .gfxData = gWorldmapSprite_29,
         .node = {
             [0] = NODE_RAUSTEN_COURT,
             [1] = NODE_BLACK_TEMPLE,
         },
-        .movementPath = gUnknown_08206604,
+        .movementPath = gWorldmapPath_15,
     },
     {
-        .gfxData = gUnknown_08A985A4,
+        .gfxData = gWorldmapSprite_30,
         .node = {
             [0] = NODE_RAUSTEN_COURT,
             [1] = NODE_LAGDOU_RUINS,
         },
-        .movementPath = gUnknown_0820662C,
+        .movementPath = gWorldmapPath_16,
     },
     {
-        .gfxData = gUnknown_08A985FC,
+        .gfxData = gWorldmapSprite_31,
         .node = {
             [0] = NODE_RAUSTEN_COURT,
             [1] = NODE_MELKAEN_COAST,
         },
-        .movementPath = gUnknown_0820663C,
+        .movementPath = gWorldmapPath_17,
     },
     {
-        .gfxData = gUnknown_08A9863C,
+        .gfxData = gWorldmapSprite_32,
         .node = {
             [0] = NODE_PORT_KIRIS,
             [1] = NODE_MELKAEN_COAST,
         },
-        .movementPath = gUnknown_0820664C,
+        .movementPath = gWorldmapPath_18,
     },
     {
-        .gfxData = gUnknown_08A98694,
+        .gfxData = gWorldmapSprite_33,
         .node = {
             [0] = NODE_DARKLING_WOODS,
             [1] = NODE_BLACK_TEMPLE,
         },
-        .movementPath = gUnknown_08206664,
+        .movementPath = gWorldmapPath_19,
     },
 };
 
-extern u16 gUnknown_02019D00[];
+extern u16 gUnk_9[];
 
 // clang-format on
 
@@ -488,13 +488,13 @@ void sub_80BBC54(struct GmRouteProc * proc)
 
     u16 oam2Base = (proc->chr / CHR_SIZE) | (proc->pal << 0xc);
 
-    CpuFill16(0, gUnknown_02019D00, 0x12C0);
+    CpuFill16(0, gUnk_9, 0x12C0);
 
     for (i = 0; i < proc->pOpenPaths->openPathsLength; i++)
     {
         sub_80BBBF4(
             proc->pOpenPaths->openPaths[i][gWMPathData].gfxData,
-            gUnknown_02019D00,
+            gUnk_9,
             60,
             oam2Base
         );
@@ -528,7 +528,7 @@ void sub_80BBCC8(int a, int b, int bg)
 
     bgBuf = BG_GetMapBuffer(bg);
 
-    buf = gUnknown_02019D00 + (b * 60 + a);
+    buf = gUnk_9 + (b * 60 + a);
 
     if (unkB >= 0x1f)
     {
@@ -580,7 +580,7 @@ void sub_80BBDA4(int a1, int r8, int r4, int r9, int sp20)
         }
         r7 = r1 & 0x1f;
     
-        puVar6 = gUnknown_02019D00 + (r2 * 0x3c + r1);
+        puVar6 = gUnk_9 + (r2 * 0x3c + r1);
         for (i = 0; i < 0x15; i++)
         {
             tm = bgBuf + TILEMAP_INDEX(r7, (r2 + i) & 0x1f);
@@ -604,7 +604,7 @@ void sub_80BBDA4(int a1, int r8, int r4, int r9, int sp20)
         r7 = r1 & 0x1f;
         r3 = r2 & 0x1f;
 
-        puVar6 = gUnknown_02019D00 + (r2 * 0x3c + r1);
+        puVar6 = gUnk_9 + (r2 * 0x3c + r1);
         r6 = 0x20 - r7;
         if (r6 > 0x1e)
         {
@@ -817,7 +817,7 @@ void MapRoute_BeginRouteTransition(struct GmRouteProc * proc, int unk)
 }
 
 //! FE8U = 0x080BC2DC
-void MapRoute_80BC2DC(struct GmRouteProc * proc)
+void MapRoute_0(struct GmRouteProc * proc)
 {
     s16 x;
     s16 y;
@@ -961,7 +961,7 @@ void sub_80BC428(struct UnknownWorldMapStructA * a)
     return;
 }
 
-extern struct Font gFont_0201AFC0;
+extern struct Font gFont_0;
 extern struct MenuDef gMenu_WMGeneralMenu;
 extern struct MenuRect gMenuRect_WMGeneralMenuRect;
 
@@ -969,7 +969,7 @@ extern struct MenuRect gMenuRect_WMGeneralMenuRect;
 struct MenuProc * StartWMGeneralMenu(ProcPtr parent)
 {
     gGMData.sprite_disp = 0;
-    InitTextFont(&gFont_0201AFC0, (void *)0x06001000, 0x80, 0);
+    InitTextFont(&gFont_0, (void *)0x06001000, 0x80, 0);
     return StartMenuAt(&gMenu_WMGeneralMenu, gMenuRect_WMGeneralMenuRect, parent);
 }
 
@@ -1132,7 +1132,7 @@ struct MenuProc * StartWMNodeMenu(struct WorldMapMainProc * parent)
 
     gGMData.sprite_disp = 0;
 
-    InitTextFont(&gFont_0201AFC0, (void *)0x06001000, 0x80, 0);
+    InitTextFont(&gFont_0, (void *)0x06001000, 0x80, 0);
 
     if ((gGMData.ix >> 8) - gGMData.xCamera < 152)
     {
@@ -1494,7 +1494,7 @@ void RefreshGmNodeLinksExt(struct GMapData * param_1, struct GMapNodeLink * para
 //! FE8U = 0x080BCA0C
 void RefreshGmNodeLinks(struct GMapData * param_1)
 {
-    RefreshGmNodeLinksExt(param_1, gUnknown_0201AFF0);
+    RefreshGmNodeLinksExt(param_1, gUnk_10);
     return;
 }
 
@@ -1578,7 +1578,7 @@ int sub_80BCAB8(struct Unknown0201B0D8 * buf, struct GMapNodeLink * links, s8 pa
 
             r2 = connections[i] == param_5;
 
-            if (r2 || !sub_80BCA90(gUnknown_0201B100, connections[i]))
+            if (r2 || !sub_80BCA90(gUnk_12, connections[i]))
             {
                 connections = link->connections; // redundant
                 buf->unk_10[param_6] = connections[i];
@@ -1686,7 +1686,7 @@ int sub_80BCBAC(struct Unknown0201B0D8 * buf, struct GMapNodeLink * param_2, s8 
                 if (!r2)
                 {
 
-                    if (sub_80BCA90(gUnknown_0201B100, connections[i]))
+                    if (sub_80BCA90(gUnk_12, connections[i]))
                     {
                         sub_80BCBAC(buf, param_2, param_4, connections[i], param_5, param_6 + 1, param_7 + 1);
                         continue;
@@ -1717,7 +1717,7 @@ int sub_80BCBAC(struct Unknown0201B0D8 * buf, struct GMapNodeLink * param_2, s8 
 
 // FIXME: Probably should be in a different file due to the alignment
 
-const u8 ALIGNED(4) gUnknown_08206868[] =
+const u8 ALIGNED(4) gWorldmapPath_20[] =
 {
     0, 0, 2, 1, 1, 1, 1,
 };
@@ -1729,14 +1729,14 @@ s8 sub_80BCCFC(s8 a, s8 b, s8 flag)
     int r4;
     struct Unknown0201B0D8 * r6;
 
-    sub_80BCA54(gUnknown_0201B100);
+    sub_80BCA54(gUnk_12);
 
     if (flag != 0)
     {
-        gUnknown_0201B0D8.unk_24 = 0x10;
+        gUnk_11.unk_24 = 0x10;
     }
 
-    r6 = &gUnknown_0201B0D8;
+    r6 = &gUnk_11;
     r6->unk_20 = 0x10;
 
     CpuFill32(0, r6->unk_00, 0x10);
@@ -1747,11 +1747,11 @@ s8 sub_80BCCFC(s8 a, s8 b, s8 flag)
 
     if (flag != 0)
     {
-        ret = sub_80BCBAC(r6, gUnknown_0201AFF0, -1, a, b, r4 = 1, -1);
+        ret = sub_80BCBAC(r6, gUnk_10, -1, a, b, r4 = 1, -1);
     }
     else
     {
-        ret = sub_80BCAB8(r6, gUnknown_0201AFF0, -1, a, b, r4 = 1);
+        ret = sub_80BCAB8(r6, gUnk_10, -1, a, b, r4 = 1);
     }
 
     if (ret != 0)
@@ -1762,7 +1762,7 @@ s8 sub_80BCCFC(s8 a, s8 b, s8 flag)
         return 1;
     }
 
-    return gUnknown_0201B0D8.unk_20 < 0x10;
+    return gUnk_11.unk_20 < 0x10;
 }
 
 //! FE8U = 0x080BCDE4
@@ -2038,7 +2038,7 @@ int sub_80BD20C(int index)
         index = 0;
     }
 
-    return gUnknown_08206868[index];
+    return gWorldmapPath_20[index];
 }
 
 //! FE8U = 0x080BD224
@@ -2087,17 +2087,17 @@ void sub_80BD270(struct GMapData * dst, void * src)
 //! FE8U = 0x080BD284
 struct Unknown0201B0D8 * sub_80BD284(void)
 {
-    return &gUnknown_0201B0D8;
+    return &gUnk_11;
 }
 
 //! FE8U = 0x080BD28C
 int sub_80BD28C(int idx)
 {
-    return gUnknown_0201B0D8.unk_00[idx];
+    return gUnk_11.unk_00[idx];
 }
 
 //! FE8U = 0x080BD29C
 int sub_80BD29C(void)
 {
-    return gUnknown_0201B0D8.unk_20 + 1;
+    return gUnk_11.unk_20 + 1;
 }

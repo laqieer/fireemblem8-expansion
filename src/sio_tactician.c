@@ -16,7 +16,7 @@ struct ProcCmd CONST_DATA ProcScr_TacticianNameSelection[] = {
     PROC_CALL(Tactician_InitScreen),
     PROC_CALL(FadeInBlackSpeed20),
     PROC_YIELD,
-    PROC_CALL(Clear_0203DDDC),
+    PROC_CALL(Clear_UnkData_0),
 PROC_LABEL(0),
     PROC_REPEAT(Tactician_Loop),
     PROC_GOTO(2),
@@ -31,7 +31,7 @@ PROC_LABEL(3),
     PROC_REPEAT(sub_8045108),
     PROC_GOTO(0),
 PROC_LABEL(2),
-    PROC_CALL(Set_0203DDDC),
+    PROC_CALL(Set_UnkData_0),
     PROC_CALL(sub_8013F40),
     PROC_YIELD,
     PROC_CALL(sub_80451F0),
@@ -617,8 +617,8 @@ void sub_8044614(struct ProcTactician * proc)
 
     for (i = 0; i < 5; i++)
     {
-        ClearText(Texts_0203DB14 + (i + proc->text_idx * 5));
-        Text_SetColor(Texts_0203DB14 + (i + proc->text_idx * 5), TEXT_COLOR_SYSTEM_WHITE);
+        ClearText(Texts_1 + (i + proc->text_idx * 5));
+        Text_SetColor(Texts_1 + (i + proc->text_idx * 5), TEXT_COLOR_SYSTEM_WHITE);
 
         for (j = 0; j < 0xF; j++)
         {
@@ -628,16 +628,16 @@ void sub_8044614(struct ProcTactician * proc)
 
             if (*str != '\0')
             {
-                Text_SetCursor(Texts_0203DB14 + (i + proc->text_idx * 5), conf->x);
+                Text_SetCursor(Texts_1 + (i + proc->text_idx * 5), conf->x);
                 Text_DrawString(
-                    Texts_0203DB14 + (i + proc->text_idx * 5),
+                    Texts_1 + (i + proc->text_idx * 5),
                     conf->str[proc->line_idx * 3]
                 );
             }
         }
 
         PutText(
-            Texts_0203DB14 + (i + proc->text_idx * 5),
+            Texts_1 + (i + proc->text_idx * 5),
             TILEMAP_LOCATED(gBG1TilemapBuffer, 0, i * 2 + 9)
         );
     }
@@ -649,11 +649,11 @@ void TacticianDrawCharacters(struct ProcTactician * proc)
     struct Text * text;
     const char * str = proc->str;
 
-    ClearText(&Text_0203DB14);
+    ClearText(&Text_0);
 
     if (*str != '\0')
     {
-        text = &Text_0203DB14;
+        text = &Text_0;
         x = 0;
     
         while (*str != '\0')
@@ -663,7 +663,7 @@ void TacticianDrawCharacters(struct ProcTactician * proc)
             x = x + 7;
         }
     }
-    PutText(&Text_0203DB14, TILEMAP_LOCATED(gBG0TilemapBuffer, 12, 5));
+    PutText(&Text_0, TILEMAP_LOCATED(gBG0TilemapBuffer, 12, 5));
     BG_EnableSyncByMask(BG0_SYNC_BIT);
 }
 
@@ -690,9 +690,9 @@ void Tactician_InitScreen(struct ProcTactician * proc)
     StartMuralBackgroundExt(proc, 0, 0, 0, 0);
     Decompress(Img_TacticianSelObj, (void *)0x06014800);
     ApplyPalette(Pal_TacticianSelObj, 0x13);
-    ApplyPalette(Pal_085ADE68, 0x14);
-    CallARM_FillTileRect(TILEMAP_LOCATED(gBG2TilemapBuffer, 0, 8), Tsa_085AE190, 0x1000);
-    SetTextFont(&Font_0203DB64);
+    ApplyPalette(Pal_UnkData_0, 0x14);
+    CallARM_FillTileRect(TILEMAP_LOCATED(gBG2TilemapBuffer, 0, 8), Tsa_UnkData_0, 0x1000);
+    SetTextFont(&Font_0);
     InitSystemTextFont();
     ResetTextFont();
 
@@ -716,7 +716,7 @@ void Tactician_InitScreen(struct ProcTactician * proc)
         proc->max_len = 9;
 
     proc->cur_len = 0;
-    InitText(&Text_0203DB14, 8);
+    InitText(&Text_0, 8);
     proc->line_idx = 1;
     proc->conf_idx = 6;
 
@@ -725,12 +725,12 @@ void Tactician_InitScreen(struct ProcTactician * proc)
     proc->unk39 = 0;
 
     for (i = 0; i < 10; i++)
-        InitText(Texts_0203DB14 + i, 0x1A);
+        InitText(Texts_1 + i, 0x1A);
 
-    InitText(&Texts_0203DAB0, 0xC);
+    InitText(&Texts_0, 0xC);
     StartLinkArenaTitleBanner(proc->child1, 3, 0x500);
     sub_804C508();
-    gUnk_Sio_0203DD24 = 0;
+    gUnk_Sio_12 = 0;
     proc->text_idx = 0;
     sub_8044614(proc);
 
@@ -1123,7 +1123,7 @@ void sub_8044F84(void)
     else
     {
         REG_BLDCNT = 0x442;
-        REG_BLDALPHA = ((15 - gUnknown_03001810) << 8) + gUnknown_03001810;
+        REG_BLDALPHA = ((15 - gUnk_41) << 8) + gUnk_41;
     }
 
     return;
@@ -1139,7 +1139,7 @@ void sub_8044FE4(struct ProcTactician * proc)
 //! FE8U = 0x08044FFC
 void sub_8044FFC(struct ProcTactician * proc)
 {
-    gUnknown_03001810 = Interpolate(INTERPOLATE_LINEAR, 15, 0, proc->unk3A, 8);
+    gUnk_41 = Interpolate(INTERPOLATE_LINEAR, 15, 0, proc->unk3A, 8);
     proc->unk3A++;
 
     if (proc->unk3A > 8)
@@ -1167,7 +1167,7 @@ void sub_804503C(struct ProcTactician * proc)
 //! FE8U = 0x08045068
 void sub_8045068(struct ProcTactician * proc)
 {
-    gUnknown_03001810 = Interpolate(INTERPOLATE_LINEAR, 0, 15, proc->unk3A, 8);
+    gUnk_41 = Interpolate(INTERPOLATE_LINEAR, 0, 15, proc->unk3A, 8);
     proc->unk3A++;
 
     if (proc->unk3A > 8)
@@ -1186,13 +1186,13 @@ void NameSelect_DrawName(struct ProcTactician * proc)
 
     sub_804D80C();
 
-    ClearText(&Texts_0203DAB0);
+    ClearText(&Texts_0);
 
-    Text_DrawString(&Texts_0203DAB0, GetStringFromIndex(0x141)); // TODO: msgid "Back"
-    Text_SetCursor(&Texts_0203DAB0, 38);
+    Text_DrawString(&Texts_0, GetStringFromIndex(0x141)); // TODO: msgid "Back"
+    Text_SetCursor(&Texts_0, 38);
 
-    Text_DrawString(&Texts_0203DAB0, GetStringFromIndex(0x146)); // TODO: msgid "Entry"
-    PutText(&Texts_0203DAB0, TILEMAP_LOCATED(gBG0TilemapBuffer, 11, 12));
+    Text_DrawString(&Texts_0, GetStringFromIndex(0x146)); // TODO: msgid "Entry"
+    PutText(&Texts_0, TILEMAP_LOCATED(gBG0TilemapBuffer, 11, 12));
 
     BG_EnableSyncByMask(BG0_SYNC_BIT);
 
@@ -1235,7 +1235,7 @@ void sub_8045108(struct ProcTactician * proc)
         if (proc->unk3B == 0)
         {
             SioPlaySoundEffect(2);
-            gUnk_Sio_0203DD24 = 1;
+            gUnk_Sio_12 = 1;
             Proc_Goto(proc, 2);
         }
         else

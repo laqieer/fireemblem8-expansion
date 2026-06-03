@@ -68,7 +68,7 @@ void StoreAdjustedCameraPositions(int xIn, int yIn, int * xOut, int * yOut);
 s8 sub_8015D84(ProcPtr parent, int x, int y);
 s8 EnsureCameraOntoPosition(ProcPtr p, int x, int y);
 s8 IsCameraNotWatchingPosition(int x, int y);
-s8 CameraMove_8015EDC(ProcPtr parent);
+s8 CameraMove_0(ProcPtr parent);
 void UnkMapCursor_OnLoop(struct UnkMapCursorProc * proc);
 void sub_8015F90(int x, int y, int duration);
 int GetCurrentMapMusicIndex(void);

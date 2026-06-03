@@ -181,11 +181,11 @@ extern struct SioSt * SHOULD_BE_CONST gSioSt;
 extern u16 EWRAM_DATA gSioOutgoing[0x200];
 extern u16 EWRAM_DATA gSioIncoming[0x200][4];
 
-extern u32 gUnknown_03004E70;
-extern u32 gUnknown_03004E74;
+extern u32 gUnk_71;
+extern u32 gUnk_72;
 extern u32 gSioStateId;
 extern struct SioMessage gSioMsgBuf;
-extern u8 gUnknown_03004F20[SIO_MAX_PACKET];
+extern u8 gUnk_75[SIO_MAX_PACKET];
 
 extern struct ProcCmd CONST_DATA gProcScr_SioBigSend[];
 extern struct ProcCmd CONST_DATA gProcScr_SioBigReceive[];

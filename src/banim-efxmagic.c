@@ -32,7 +32,7 @@ CONST_DATA SpellAnimFunc gEkrSpellAnimLut[] = {
     StartSpellAnimDarkBreath,
     StartSpellAnimFire,
     StartSpellAnimElfire,
-    StartSpellAnim_805FE80_Null,
+    StartSpellAnim_Null_0,
     StartSpellAnimThunder,
     StartSpellAnimBolting,
     StartSpellAnimFimbulvetr,
@@ -41,9 +41,9 @@ CONST_DATA SpellAnimFunc gEkrSpellAnimLut[] = {
     StartSpellAnimNosferatu,
     StartSpellAnimLightning,
     StartSpellAnimPurge,
-    StartSpellAnim_8060284_Null,
+    StartSpellAnim_Null_1,
     StartSpellAnimDivine,
-    StartSpellAnim_8060288_Null,
+    StartSpellAnim_Null_2,
     StartSpellAnimEclipse,
     StartSpellAnimFenrir,
     StartSpellAnimHeal,
@@ -156,7 +156,7 @@ void efxRestRSTMain(struct ProcEfx *proc)
 
     for (i = 0; i < 0x78; buf++, i++) {
         val1 += proc->unk48;
-        *buf = (((gUnknown_0875879C[val1] * proc->frame) << 8) >> 0x10) + gLCDControlBuffer.bgoffset[1].x;
+        *buf = (((gEfxutils_0[val1] * proc->frame) << 8) >> 0x10) + gLCDControlBuffer.bgoffset[1].x;
     }
 
     if (++proc->timer == proc->unk44)
@@ -309,19 +309,19 @@ void EfxRestWINMain(struct ProcEfx *proc)
     }
 }
 
-void EfxMagicHBlank_805B724(void)
+void EfxMagicHBlank_0(void)
 {
     if (!(REG_DISPSTAT & DISPSTAT_VBLANK))
         REG_BG1HOFS = *gpBg1ScrollOffset++;
 }
 
-void EfxMagicHBlank_805B750(void)
+void EfxMagicHBlank_1(void)
 {
     if (!(REG_DISPSTAT & DISPSTAT_VBLANK))
         REG_BG1VOFS = *gpBg1ScrollOffset++;
 }
 
-void EfxMagicHBlank_805B77C(void)
+void EfxMagicHBlank_2(void)
 {
     if (!(REG_DISPSTAT & DISPSTAT_VBLANK)) {
         REG_BG2VOFS = *gpBg2ScrollOffset++;
@@ -329,7 +329,7 @@ void EfxMagicHBlank_805B77C(void)
     }
 }
 
-void EfxMagicHBlank_805B7BC(void)
+void EfxMagicHBlank_3(void)
 {
     if (!(REG_DISPSTAT & DISPSTAT_VBLANK)) {
         REG_BG2VOFS = *gpBg2ScrollOffset++;
@@ -337,7 +337,7 @@ void EfxMagicHBlank_805B7BC(void)
     }
 }
 
-void EfxMagicHBlank_805B7FC(void)
+void EfxMagicHBlank_4(void)
 {
     if (!(REG_DISPSTAT & DISPSTAT_VBLANK)) {
         REG_BG2VOFS = *gpBg2ScrollOffset++;
@@ -386,15 +386,15 @@ void NewEfxRestWINH(struct Anim *anim, int a, s16 b, u32 c)
 
     switch (c) {
     case 0:
-        SetPrimaryHBlankHandler(EfxMagicHBlank_805B724);
+        SetPrimaryHBlankHandler(EfxMagicHBlank_0);
         break;
 
     case 1:
-        SetPrimaryHBlankHandler(EfxMagicHBlank_805B750);
+        SetPrimaryHBlankHandler(EfxMagicHBlank_1);
         break;
 
     case 2:
-        SetPrimaryHBlankHandler(EfxMagicHBlank_805B750);
+        SetPrimaryHBlankHandler(EfxMagicHBlank_1);
         break;
     }
 

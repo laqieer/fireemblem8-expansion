@@ -25,12 +25,12 @@ EWRAM_OVERLAY(0) struct Text gPrepMainMenuTexts[10] = {};
 EWRAM_OVERLAY(0) u8 gPrepUnitPool[0x1000] = {};
 EWRAM_OVERLAY(0) struct PrepUnitList gPrepUnitList = {};
 EWRAM_OVERLAY(0) struct PrepScreenItemListEnt gPrepScreenItemList[400] = {};
-EWRAM_OVERLAY(0) struct PrepScreenItemListEnt gUnknown_02012914[400] = {};
-EWRAM_OVERLAY(0) u16 gUnknown_02012F54 = 0;
-EWRAM_OVERLAY(0) u16 gUnknown_02012F56 = 0;
-EWRAM_OVERLAY(0) struct Win1H gUnknown_02012F58[2][160] = {};
-EWRAM_OVERLAY(0) struct Win1H * gUnknown_02013458[2] = {};
-EWRAM_OVERLAY(0) u16 gUnknown_02013460[0x1C] = {}; // maybe there is 0xC*sizeof(u16) free space
+EWRAM_OVERLAY(0) struct PrepScreenItemListEnt gPrepscreen_0[400] = {};
+EWRAM_OVERLAY(0) u16 gPrepscreen_1 = 0;
+EWRAM_OVERLAY(0) u16 gPrepscreen_2 = 0;
+EWRAM_OVERLAY(0) struct Win1H gPrepscreen_3[2][160] = {};
+EWRAM_OVERLAY(0) struct Win1H * gPrepscreen_4[2] = {};
+EWRAM_OVERLAY(0) u16 gPrepscreen_5[0x1C] = {}; // maybe there is 0xC*sizeof(u16) free space
 
 u16 CONST_DATA gBgConfig_ItemUseScreen[] =
 {
@@ -40,7 +40,7 @@ u16 CONST_DATA gBgConfig_ItemUseScreen[] =
     0x8000, 0xF800, 0x0000,
 };
 
-int CONST_DATA gUnknown_08A18200[][3] =
+int CONST_DATA gPrepscreen_6[][3] =
 {
     { 0x57A, 0x57A, 0x75D, },
     { 0x57B, 0x57C, 0x75E, },
@@ -75,25 +75,25 @@ int sub_8095024(void)
 
     if (CheckInLinkArena())
     {
-        return gUnknown_08A18200[index][2];
+        return gPrepscreen_6[index][2];
     }
 
     if (index == 4)
     {
         if (!sub_80A095C(2))
         {
-            return gUnknown_08A18200[4][0];
+            return gPrepscreen_6[4][0];
         }
     }
     else if (index == 2)
     {
         if (!CanPrepScreenSave())
         {
-            return gUnknown_08A18200[2][0];
+            return gPrepscreen_6[2][0];
         }
     }
 
-    return gUnknown_08A18200[index][1];
+    return gPrepscreen_6[index][1];
 }
 
 //! FE8U = 0x08095094
@@ -158,16 +158,16 @@ void sub_8095138(u16 * tm, int b, u32 c, int d)
 {
     int i;
 
-    CallARM_FillTileRect(tm, Tsa_08A1A41C, (u16)TILEREF((c / 2 & 0xffff) / 0x10, 1));
+    CallARM_FillTileRect(tm, Tsa_UnkData_1, (u16)TILEREF((c / 2 & 0xffff) / 0x10, 1));
 
     for (i = 0; i < b; i++)
     {
         CallARM_FillTileRect(
-            (i * 0x40) + tm + 0x20, Tsa_08A1A434, (u16)TILEREF((c / 2 & 0xffff) / 0x10, 1));
+            (i * 0x40) + tm + 0x20, Tsa_UnkData_2, (u16)TILEREF((c / 2 & 0xffff) / 0x10, 1));
     }
 
     CallARM_FillTileRect(
-        i * 0x40 + tm + 0x20, Tsa_08A1A474, (u16)(d * 0x1000 + ((c / 2) & 0xffff) / 0x10));
+        i * 0x40 + tm + 0x20, Tsa_UnkData_3, (u16)(d * 0x1000 + ((c / 2) & 0xffff) / 0x10));
 
     return;
 }

@@ -47,7 +47,7 @@ void sub_8049298(struct Unit * unit)
 
     for (i = 0; i < UNIT_ITEM_COUNT; i++)
     {
-        gUnknown_03001840[i] = unit->items[i];
+        gUnk_47[i] = unit->items[i];
     }
 
     return;
@@ -60,7 +60,7 @@ void sub_80492B8(struct Unit * unit)
 
     for (i = 0; i < UNIT_ITEM_COUNT; i++)
     {
-        unit->items[i] = gUnknown_03001840[i];
+        unit->items[i] = gUnk_47[i];
     }
 
     return;
@@ -105,7 +105,7 @@ void sub_80492E8(int faction)
                 break;
         }
 
-        if (gUnk_Sio_0203DD90.unk_0A[next] != 0 || next == 0xFF)
+        if (gUnk_Sio_16.unk_0A[next] != 0 || next == 0xFF)
         {
             break;
         }
@@ -113,7 +113,7 @@ void sub_80492E8(int faction)
         current = next;
     }
 
-    gUnk_Sio_0203DD90.unk_01 = next;
+    gUnk_Sio_16.unk_01 = next;
 
     return;
 }
@@ -121,10 +121,10 @@ void sub_80492E8(int faction)
 //! FE8U = 0x0804933C
 void sub_804933C(void)
 {
-    gUnknown_03001834[0] = 0;
-    gUnknown_03001834[1] = 0;
-    gUnknown_03001834[3] = 0;
-    gUnknown_03001834[2] = 0;
+    gUnk_45[0] = 0;
+    gUnk_45[1] = 0;
+    gUnk_45[3] = 0;
+    gUnk_45[2] = 0;
 
     return;
 }
@@ -134,14 +134,14 @@ u16 sub_8049350(u8 a, u8 b, u8 c, u8 d)
 {
     sub_804933C();
 
-    gUnknown_03001834[0] = a;
-    gUnknown_03001834[1] = b;
-    gUnknown_03001834[2] = c;
-    gUnknown_03001834[3] = d;
+    gUnk_45[0] = a;
+    gUnk_45[1] = b;
+    gUnk_45[2] = c;
+    gUnk_45[3] = d;
 
     if (gLinkArenaSt.unk_00 == 2)
     {
-        return SioEmitData(gUnknown_03001834, 4);
+        return SioEmitData(gUnk_45, 4);
     }
 
     return 0;
@@ -154,7 +154,7 @@ int sub_80493A8(u8 target)
 
     for (i = 0; i < 20; i++)
     {
-        if (gUnknown_03001818[i] == target)
+        if (gUnk_42[i] == target)
         {
             return i;
         }
@@ -200,13 +200,13 @@ void sub_80493D0(u8 a, int b, u8 * c, int * xOut, int * yOut)
 
     *c = var;
 
-    unit = GetUnit(gUnknown_03001818[var]);
+    unit = GetUnit(gUnk_42[var]);
 
     if ((unit->state & US_BIT9) == 0)
     {
-        gUnknown_03001838[b] = StartMu(unit);
-        DisableMuCamera(gUnknown_03001838[b]);
-        SetMuMoveScript(gUnknown_03001838[b], gUnknown_080D9FA0 + index);
+        gUnk_46[b] = StartMu(unit);
+        DisableMuCamera(gUnk_46[b]);
+        SetMuMoveScript(gUnk_46[b], gUnknown_080D9FA0 + index);
     }
 
     unit->state |= US_HIDDEN;
@@ -224,7 +224,7 @@ void sub_80493D0(u8 a, int b, u8 * c, int * xOut, int * yOut)
         *xOut = *xOut - gUnknown_080D9FA8[index + 0];
         *yOut = *yOut - gUnknown_080D9FA8[index + 1];
 
-        gUnknown_03001838[b] = NULL;
+        gUnk_46[b] = NULL;
     }
 
     return;
@@ -237,7 +237,7 @@ void sub_80494D4(void)
 
     for (i = 0; i < 20; i++)
     {
-        gUnknown_03001818[i] = 0;
+        gUnk_42[i] = 0;
     }
 
     return;
@@ -245,7 +245,7 @@ void sub_80494D4(void)
 
 // clang-format off
 
-const u8 gUnknown_080D9FB0[] =
+const u8 gSioBattlemap_0[] =
 {
     4, 2, 0, 1, 3,
 };
@@ -261,7 +261,7 @@ void sub_80494F0(void)
 
     for (i = 0; i < 4; i++)
     {
-        int playerId = gUnknown_080D9F28[gSioSt->selfId][i];
+        int playerId = gSioPoints_0[gSioSt->selfId][i];
 
         if (!sub_8042194(playerId))
         {
@@ -273,16 +273,16 @@ void sub_80494F0(void)
         for (j = 0; j < 5; j++)
         {
             int idx = i * 5 + j;
-            int unitId = faction + gUnknown_080D9FB0[j];
+            int unitId = faction + gSioBattlemap_0[j];
 
             struct Unit * unit = GetUnit(unitId);
 
             if (unit->pCharacterData != NULL)
             {
-                gUnknown_03001818[idx] = unitId;
+                gUnk_42[idx] = unitId;
 
-                unit->xPos = gUnknown_080D9F48[idx].x;
-                unit->yPos = gUnknown_080D9F48[idx].y;
+                unit->xPos = gSioPoints_2[idx].x;
+                unit->yPos = gSioPoints_2[idx].y;
             }
         }
     }
@@ -328,7 +328,7 @@ void sub_80495F4(void)
     {
         int faction;
 
-        int playerId = gUnknown_080D9F28[gSioSt->selfId][i];
+        int playerId = gSioPoints_0[gSioSt->selfId][i];
 
         if (!sub_8042194(playerId))
         {
@@ -340,17 +340,17 @@ void sub_80495F4(void)
         for (j = 0; j < 5; j++)
         {
             int idx = i * 5 + j;
-            int unitId = faction + gUnknown_080D9FB0[j];
+            int unitId = faction + gSioBattlemap_0[j];
 
             struct Unit * unit = GetUnit(unitId);
 
             if ((unit->pCharacterData == NULL) || ((unit->state & (US_HIDDEN | US_DEAD | US_BIT16)) != 0))
             {
-                gUnknown_03001818[idx] = 0;
+                gUnk_42[idx] = 0;
             }
             else
             {
-                gUnknown_03001818[idx] = unitId;
+                gUnk_42[idx] = unitId;
             }
         }
     }
@@ -405,16 +405,16 @@ void sub_8049744(void)
 
     for (i = 0; i < 4; i++)
     {
-        gUnk_Sio_0203DD90.unk_0A[i] = 0;
+        gUnk_Sio_16.unk_0A[i] = 0;
     }
 
     for (i = 0; i < 20; i++)
     {
-        u32 a = gUnknown_03001818[i];
+        u32 a = gUnk_42[i];
 
         if (a != 0)
         {
-            gUnk_Sio_0203DD90.unk_0A[a >> 6]++;
+            gUnk_Sio_16.unk_0A[a >> 6]++;
         }
     }
 
@@ -441,7 +441,7 @@ void sub_80497A0(void)
     LoadLinkArenaFogPlaceholder();
     InitSystemTextFont();
 
-    gUnk_Sio_0203DD90.unk_03 = 0xff;
+    gUnk_Sio_16.unk_03 = 0xff;
 
     return;
 }
@@ -468,7 +468,7 @@ void sub_80497CC(void)
 
 // clang-format off
 
-u8 CONST_DATA gUnknown_085AA158[] =
+u8 CONST_DATA gSioBattlemap_1[] =
 {
     FACTION_ID_PURPLE,
     FACTION_ID_RED,
@@ -490,24 +490,24 @@ void sub_8049828(void)
     sub_804970C();
     sub_8049744();
 
-    gUnk_Sio_0203DD90.unk_09 = 0;
+    gUnk_Sio_16.unk_09 = 0;
     gLinkArenaSt.unk_0B = 0;
 
-    sub_80492E8(gUnknown_085AA158[gUnk_Sio_0203DD90.unk_00]);
+    sub_80492E8(gSioBattlemap_1[gUnk_Sio_16.unk_00]);
 
-    gUnk_Sio_0203DD90.unk_0E = 1;
-    gUnk_Sio_0203DD90.unk_02 = 0;
-    gUnk_Sio_0203DD90.unk_03 = 1;
+    gUnk_Sio_16.unk_0E = 1;
+    gUnk_Sio_16.unk_02 = 0;
+    gUnk_Sio_16.unk_03 = 1;
 
     for (i = 0; i < 4; i++)
     {
-        gUnk_Sio_0203DD90.currentScore[i] = 0;
+        gUnk_Sio_16.currentScore[i] = 0;
     }
 
-    unit = GetUnit(gUnknown_03001818[3]);
+    unit = GetUnit(gUnk_42[3]);
 
-    gUnknown_0300182C.x = unit->xPos * 16;
-    gUnknown_0300182C.y = unit->yPos * 16;
+    gUnk_43.x = unit->xPos * 16;
+    gUnk_43.y = unit->yPos * 16;
 
     SetCursorMapPosition(unit->xPos, unit->yPos);
 
@@ -535,14 +535,14 @@ void sub_8049828(void)
 //! FE8U = 0x080498F4
 void sub_80498F4(void)
 {
-    struct Unit * unit = GetUnit(gUnknown_03001818[gUnk_Sio_0203DD90.unk_04]);
+    struct Unit * unit = GetUnit(gUnk_42[gUnk_Sio_16.unk_04]);
 
-    gUnknown_03001838[0] = StartMu(unit);
+    gUnk_46[0] = StartMu(unit);
 
-    SetMuScreenPosition(gUnknown_03001838[0], unit->xPos * 16, (unit->yPos - 1) * 16);
+    SetMuScreenPosition(gUnk_46[0], unit->xPos * 16, (unit->yPos - 1) * 16);
 
-    DisableMuCamera(gUnknown_03001838[0]);
-    SetMuFacing(gUnknown_03001838[0], 3);
+    DisableMuCamera(gUnk_46[0]);
+    SetMuFacing(gUnk_46[0], 3);
 
     return;
 }
@@ -566,11 +566,11 @@ void sub_8049964(ProcPtr parent)
         case 1:
             if (gPlaySt.faction == FACTION_BLUE)
             {
-                Proc_StartBlocking(gUnknown_085AA2FC, parent);
+                Proc_StartBlocking(gSioBattlemap_6, parent);
             }
             else
             {
-                Proc_StartBlocking(gUnknown_085AA5BC, parent);
+                Proc_StartBlocking(gSioBattlemap_8, parent);
             }
 
             break;
@@ -578,11 +578,11 @@ void sub_8049964(ProcPtr parent)
         case 2:
             if (gPlaySt.faction == gSioSt->selfId)
             {
-                Proc_StartBlocking(gUnknown_085AA2FC, parent);
+                Proc_StartBlocking(gSioBattlemap_6, parent);
             }
             else
             {
-                Proc_StartBlocking(gUnknown_085AA4CC, parent);
+                Proc_StartBlocking(gSioBattlemap_7, parent);
             }
 
             break;
@@ -612,27 +612,27 @@ void sub_80499D0(ProcPtr proc)
         return;
     }
 
-    if (gUnk_Sio_0203DD90.unk_01 == 0xFF)
+    if (gUnk_Sio_16.unk_01 == 0xFF)
     {
         Proc_Goto(proc, 2);
         return;
     }
 
-    gPlaySt.faction = gUnk_Sio_0203DD90.unk_01;
+    gPlaySt.faction = gUnk_Sio_16.unk_01;
 
-    for (; gUnknown_03001818[i] == 0; i++)
+    for (; gUnk_42[i] == 0; i++)
     {
     }
 
-    gUnk_Sio_0203DD90.unk_02 = i;
-    gUnk_Sio_0203DD90.unk_03 = i + 1;
+    gUnk_Sio_16.unk_02 = i;
+    gUnk_Sio_16.unk_03 = i + 1;
 
     LoadObjUIGfx();
 
     for (i = 0; i < 4; i++)
     {
-        gUnk_Sio_0203DD90.unk_2c[i].newScore = 0;
-        gUnk_Sio_0203DD90.unk_2c[i].unitId = 0;
+        gUnk_Sio_16.unk_2c[i].newScore = 0;
+        gUnk_Sio_16.unk_2c[i].unitId = 0;
     }
 
     SetupDebugFontForOBJ(-1, 9);
@@ -647,13 +647,13 @@ int sub_8049A60(void)
 
     u32 ret = 4;
 
-    u32 score = gUnk_Sio_0203DD90.currentScore[gSioSt->selfId];
+    u32 score = gUnk_Sio_16.currentScore[gSioSt->selfId];
 
     if (gLinkArenaSt.unk_ec.unk_0_1)
     {
         for (i = 0; i < 4; i++)
         {
-            if (sub_8042194(i) && (gSioSt->selfId == gUnk_Sio_0203DD90.unk_0F[i]))
+            if (sub_8042194(i) && (gSioSt->selfId == gUnk_Sio_16.unk_0F[i]))
             {
                 return i;
             }
@@ -677,7 +677,7 @@ int sub_8049A60(void)
                 continue;
             }
 
-            if (score > gUnk_Sio_0203DD90.currentScore[i])
+            if (score > gUnk_Sio_16.currentScore[i])
             {
                 ret--;
                 continue;
@@ -703,7 +703,7 @@ void sub_8049B04(void)
 
 // clang-format off
 
-u8 CONST_DATA gUnknown_085AA15C[] =
+u8 CONST_DATA gSioBattlemap_2[] =
 {
     0x0E, 0x0E, 0x13, 0x01,
     0x0D, 0x0D, 0x00, 0x02,
@@ -736,9 +736,9 @@ void sub_8049B24(u16 keys, s8 flag)
     int r4;
     int r5;
 
-    r2 = gUnk_Sio_0203DD90.unk_02;
+    r2 = gUnk_Sio_16.unk_02;
     r5 = r2;
-    gUnk_Sio_0203DD90.unk_03 = gUnk_Sio_0203DD90.unk_02;
+    gUnk_Sio_16.unk_03 = gUnk_Sio_16.unk_02;
 
     if ((keys & DPAD_ANY) == 0)
     {
@@ -749,38 +749,38 @@ void sub_8049B24(u16 keys, s8 flag)
 
     if ((keys & DPAD_UP) != 0)
     {
-        r2 = gUnknown_085AA15C[r4 + 0];
+        r2 = gSioBattlemap_2[r4 + 0];
     }
     else if ((keys & DPAD_DOWN) != 0)
     {
-        r2 = gUnknown_085AA15C[r4 + 1];
+        r2 = gSioBattlemap_2[r4 + 1];
     }
     else if ((keys & DPAD_LEFT) != 0)
     {
-        r2 = gUnknown_085AA15C[r4 + 2];
+        r2 = gSioBattlemap_2[r4 + 2];
     }
     else if ((keys & DPAD_RIGHT) != 0)
     {
-        r2 = gUnknown_085AA15C[r4 + 3];
+        r2 = gSioBattlemap_2[r4 + 3];
     }
 
     r5 = r2 - r5;
 
-    if ((gUnk_Sio_0203DD90.unk_03 == 0) && ((keys & DPAD_LEFT) != 0))
+    if ((gUnk_Sio_16.unk_03 == 0) && ((keys & DPAD_LEFT) != 0))
     {
         r5 = -1;
     }
 
-    if ((gUnk_Sio_0203DD90.unk_03 == 19) && ((keys & DPAD_DOWN) != 0))
+    if ((gUnk_Sio_16.unk_03 == 19) && ((keys & DPAD_DOWN) != 0))
     {
         r5 = +1;
     }
 
     while (1)
     {
-        if (gUnknown_03001818[r2] != 0)
+        if (gUnk_42[r2] != 0)
         {
-            if (flag == 0 || (gUnknown_03001818[r2] >> 6) != gSioSt->selfId)
+            if (flag == 0 || (gUnk_42[r2] >> 6) != gSioSt->selfId)
             {
                 goto _end; // FIXME: Goto appears to be required for match
             }
@@ -803,7 +803,7 @@ void sub_8049B24(u16 keys, s8 flag)
     }
 
 _end:
-    gUnk_Sio_0203DD90.unk_02 = r2;
+    gUnk_Sio_16.unk_02 = r2;
 
     return;
 }
@@ -814,13 +814,13 @@ void sub_8049C18(void)
     struct Unit * unitA;
     struct Unit * unitB;
 
-    if (gUnk_Sio_0203DD90.unk_02 == gUnk_Sio_0203DD90.unk_03)
+    if (gUnk_Sio_16.unk_02 == gUnk_Sio_16.unk_03)
     {
         return;
     }
 
-    unitA = GetUnit(gUnknown_03001818[gUnk_Sio_0203DD90.unk_03]);
-    unitB = GetUnit(gUnknown_03001818[gUnk_Sio_0203DD90.unk_02]);
+    unitA = GetUnit(gUnk_42[gUnk_Sio_16.unk_03]);
+    unitB = GetUnit(gUnk_42[gUnk_Sio_16.unk_02]);
 
     if (unitA != NULL)
     {
@@ -838,7 +838,7 @@ void sub_8049C18(void)
         return;
     }
 
-    if ((gUnknown_03001818[gUnk_Sio_0203DD90.unk_02] >> 6) != gSioSt->selfId)
+    if ((gUnk_42[gUnk_Sio_16.unk_02] >> 6) != gSioSt->selfId)
     {
         return;
     }
@@ -875,7 +875,7 @@ bool sub_8049C94(struct Unit * unit)
 //! FE8U = 0x08049CD4
 void sub_8049CD4(ProcPtr proc)
 {
-    if (gUnk_Sio_0203DD90.unk_09 >= gLinkArenaSt.unk_A0 * 3)
+    if (gUnk_Sio_16.unk_09 >= gLinkArenaSt.unk_A0 * 3)
     {
         EndLinkArenaPointsBox();
         Proc_Goto(proc, 3);
@@ -915,12 +915,12 @@ void sub_8049D24(struct SioBattleMapProc * proc)
 
     // clang-format on
 
-    u8 previous = gUnk_Sio_0203DD90.unk_02;
+    u8 previous = gUnk_Sio_16.unk_02;
 
     sub_8049C18();
     sub_8049B24(gKeyStatusPtr->repeatedKeys, 0);
 
-    gActiveUnitId = gUnknown_03001818[gUnk_Sio_0203DD90.unk_02];
+    gActiveUnitId = gUnk_42[gUnk_Sio_16.unk_02];
     gActiveUnit = GetUnit(gActiveUnitId);
 
     if ((gKeyStatusPtr->newKeys & A_BUTTON) != 0)
@@ -930,9 +930,9 @@ void sub_8049D24(struct SioBattleMapProc * proc)
             PlaySoundEffect(SONG_69);
             EndAllMus();
 
-            gUnknown_03001838[0] = StartMu(gActiveUnit);
-            DisableMuCamera(gUnknown_03001838[0]);
-            SetMuMoveScript(gUnknown_03001838[0], gUnknown_080D9FB5);
+            gUnk_46[0] = StartMu(gActiveUnit);
+            DisableMuCamera(gUnk_46[0]);
+            SetMuMoveScript(gUnk_46[0], gUnknown_080D9FB5);
 
             proc->unk_2c = gActiveUnit->xPos;
             proc->unk_30 = gActiveUnit->yPos - 1;
@@ -940,7 +940,7 @@ void sub_8049D24(struct SioBattleMapProc * proc)
 
             sub_80492D8();
 
-            gUnk_Sio_0203DD90.unk_04 = gUnk_Sio_0203DD90.unk_02;
+            gUnk_Sio_16.unk_04 = gUnk_Sio_16.unk_02;
 
             sub_8049B24(0x40, 1);
             sub_8049350(1, gActiveUnitId, 0, 0);
@@ -981,20 +981,20 @@ void sub_8049D24(struct SioBattleMapProc * proc)
 
     SetCursorMapPosition(gActiveUnit->xPos, gActiveUnit->yPos);
 
-    if (GetGameClock() - 1 == gUnknown_03001830)
+    if (GetGameClock() - 1 == gUnk_44)
     {
-        x = (x + gUnknown_0300182C.x) >> 1;
-        y = (y + gUnknown_0300182C.y) >> 1;
+        x = (x + gUnk_43.x) >> 1;
+        y = (y + gUnk_43.y) >> 1;
     }
 
-    gUnknown_0300182C.x = x;
-    gUnknown_0300182C.y = y;
+    gUnk_43.x = x;
+    gUnk_43.y = y;
 
-    gUnknown_03001830 = GetGameClock();
+    gUnk_44 = GetGameClock();
 
     PutMapCursor(x, y, 0);
 
-    if (previous != gUnk_Sio_0203DD90.unk_02)
+    if (previous != gUnk_Sio_16.unk_02)
     {
         PlaySoundEffect(SONG_65);
     }
@@ -1015,11 +1015,11 @@ void sub_8049F44(struct SioBattleMapProc * proc)
     int x;
     int y;
 
-    u8 previous = gUnk_Sio_0203DD90.unk_02;
+    u8 previous = gUnk_Sio_16.unk_02;
 
     sub_8049B24(gKeyStatusPtr->repeatedKeys, 1);
 
-    gActiveUnitId = gUnknown_03001818[gUnk_Sio_0203DD90.unk_02];
+    gActiveUnitId = gUnk_42[gUnk_Sio_16.unk_02];
 
     gActiveUnit = GetUnit(gActiveUnitId);
     x = gActiveUnit->xPos * 16;
@@ -1027,16 +1027,16 @@ void sub_8049F44(struct SioBattleMapProc * proc)
 
     SetCursorMapPosition(gActiveUnit->xPos, gActiveUnit->yPos);
 
-    if (GetGameClock() - 1 == gUnknown_03001830)
+    if (GetGameClock() - 1 == gUnk_44)
     {
-        x = (x + gUnknown_0300182C.x) >> 1;
-        y = (y + gUnknown_0300182C.y) >> 1;
+        x = (x + gUnk_43.x) >> 1;
+        y = (y + gUnk_43.y) >> 1;
     }
 
-    gUnknown_0300182C.x = x;
-    gUnknown_0300182C.y = y;
+    gUnk_43.x = x;
+    gUnk_43.y = y;
 
-    gUnknown_03001830 = GetGameClock();
+    gUnk_44 = GetGameClock();
 
     PutMapCursor(x, y, 0);
 
@@ -1045,8 +1045,8 @@ void sub_8049F44(struct SioBattleMapProc * proc)
         PlaySoundEffect(SONG_69);
 
         sub_80493D0(
-            gUnknown_03001818[gUnk_Sio_0203DD90.unk_02], 1, &gUnk_Sio_0203DD90.unk_05, &proc->unk_34, &proc->unk_38);
-        sub_8049350(3, gUnknown_03001818[gUnk_Sio_0203DD90.unk_05], gActiveUnitId, 0);
+            gUnk_42[gUnk_Sio_16.unk_02], 1, &gUnk_Sio_16.unk_05, &proc->unk_34, &proc->unk_38);
+        sub_8049350(3, gUnk_42[gUnk_Sio_16.unk_05], gActiveUnitId, 0);
         EndLinkArenaPointsBox();
 
         Proc_Goto(proc, 7);
@@ -1058,15 +1058,15 @@ void sub_8049F44(struct SioBattleMapProc * proc)
     {
         PlaySoundEffect(SONG_SE_SYS_WINDOW_CANSEL1);
 
-        EndMu(gUnknown_03001838[0]);
-        GetUnit(gUnknown_03001818[gUnk_Sio_0203DD90.unk_04])->state &= ~US_HIDDEN;
+        EndMu(gUnk_46[0]);
+        GetUnit(gUnk_42[gUnk_Sio_16.unk_04])->state &= ~US_HIDDEN;
 
         sub_80492D8();
 
-        gUnk_Sio_0203DD90.unk_02 = gUnk_Sio_0203DD90.unk_04;
-        gUnk_Sio_0203DD90.unk_03 = gUnk_Sio_0203DD90.unk_04 + 1;
+        gUnk_Sio_16.unk_02 = gUnk_Sio_16.unk_04;
+        gUnk_Sio_16.unk_03 = gUnk_Sio_16.unk_04 + 1;
 
-        sub_8049350(2, gActiveUnitId, gUnknown_03001818[gUnk_Sio_0203DD90.unk_04], 0);
+        sub_8049350(2, gActiveUnitId, gUnk_42[gUnk_Sio_16.unk_04], 0);
 
         Proc_Goto(proc, 1);
 
@@ -1083,7 +1083,7 @@ void sub_8049F44(struct SioBattleMapProc * proc)
         }
     }
 
-    if (previous != gUnk_Sio_0203DD90.unk_02)
+    if (previous != gUnk_Sio_16.unk_02)
     {
         PlaySoundEffect(SONG_65);
     }
@@ -1096,15 +1096,15 @@ void sub_804A108(struct SioProc85AA1AC * proc)
 {
     ResetTextFont();
 
-    gUnk_Sio_0203DD90.unk_06 = 0xff;
+    gUnk_Sio_16.unk_06 = 0xff;
 
-    gActiveUnit = GetUnit(gUnknown_03001818[gUnk_Sio_0203DD90.unk_04]);
+    gActiveUnit = GetUnit(gUnk_42[gUnk_Sio_16.unk_04]);
     sub_8049298(gActiveUnit);
 
     proc->unk_64 = GetGameLock();
     LoadIconPalettes(4);
 
-    StartOrphanMenu(&gUnknown_085AADA0);
+    StartOrphanMenu(&gSioMenudef_1);
 
     return;
 }
@@ -1117,7 +1117,7 @@ void sub_804A158(struct SioProc85AA1AC * proc)
         return;
     }
 
-    if (gUnk_Sio_0203DD90.unk_06 == 0)
+    if (gUnk_Sio_16.unk_06 == 0)
     {
         sub_80492B8(gActiveUnit);
         Proc_End(proc);
@@ -1135,43 +1135,43 @@ void sub_804A158(struct SioProc85AA1AC * proc)
 //! FE8U = 0x0804A1D0
 void sub_804A1D0(struct SioProc85AA1AC * proc)
 {
-    u16 item = gActiveUnit->items[gUnk_Sio_0203DD90.unk_07];
+    u16 item = gActiveUnit->items[gUnk_Sio_16.unk_07];
 
     proc->unk_64 = GetGameLock();
 
     if ((GetItemMinRange(item) == 1) && (GetItemMaxRange(item) == 1))
     {
-        gUnk_Sio_0203DD90.unk_06 = 1;
+        gUnk_Sio_16.unk_06 = 1;
         return;
     }
 
     if ((GetItemMinRange(item) == 2) && (GetItemMaxRange(item) == 2))
     {
-        gUnk_Sio_0203DD90.unk_06 = 2;
+        gUnk_Sio_16.unk_06 = 2;
         return;
     }
 
     if ((GetItemMinRange(item) == 2) && (GetItemMaxRange(item) == 3))
     {
-        gUnk_Sio_0203DD90.unk_06 = 2;
+        gUnk_Sio_16.unk_06 = 2;
         return;
     }
 
-    item = GetUnitEquippedWeapon(GetUnit(gUnknown_03001818[gUnk_Sio_0203DD90.unk_05]));
+    item = GetUnitEquippedWeapon(GetUnit(gUnk_42[gUnk_Sio_16.unk_05]));
 
     if (item == 0)
     {
-        gUnk_Sio_0203DD90.unk_06 = 1;
+        gUnk_Sio_16.unk_06 = 1;
         return;
     }
 
     if (GetItemMinRange(item) >= 2)
     {
-        gUnk_Sio_0203DD90.unk_06 = 2;
+        gUnk_Sio_16.unk_06 = 2;
         return;
     }
 
-    gUnk_Sio_0203DD90.unk_06 = 1;
+    gUnk_Sio_16.unk_06 = 1;
     LoadIconPalettes(4);
 
     return;
@@ -1183,8 +1183,8 @@ void sub_804A298(struct SioProc85AA1AC * proc)
     int tmp = 0;
     int local_24 = +1;
 
-    struct Unit * unitA = GetUnit(gUnknown_03001818[gUnk_Sio_0203DD90.unk_04]);
-    struct Unit * unitB = GetUnit(gUnknown_03001818[gUnk_Sio_0203DD90.unk_05]);
+    struct Unit * unitA = GetUnit(gUnk_42[gUnk_Sio_16.unk_04]);
+    struct Unit * unitB = GetUnit(gUnk_42[gUnk_Sio_16.unk_05]);
 
     if (proc->unk_64 == GetGameLock())
     {
@@ -1195,19 +1195,19 @@ void sub_804A298(struct SioProc85AA1AC * proc)
             local_24 = -1;
         }
 
-        if (gUnk_Sio_0203DD90.unk_06 == 0)
+        if (gUnk_Sio_16.unk_06 == 0)
         {
             sub_80492B8(gActiveUnit);
             Proc_Goto(proc, 0);
         }
         else
         {
-            EquipUnitItemSlot(gActiveUnit, gUnk_Sio_0203DD90.unk_07);
+            EquipUnitItemSlot(gActiveUnit, gUnk_Sio_16.unk_07);
 
             if ((unitB->state & US_BIT9) == 0)
             {
                 NewBattleForecast(proc);
-                tmp = (gUnk_Sio_0203DD90.unk_06 == 2) ? 1 : 0;
+                tmp = (gUnk_Sio_16.unk_06 == 2) ? 1 : 0;
                 BattleGenerateSimulation(unitA, unitB, unitB->xPos + tmp, unitB->yPos + local_24, 0);
                 UpdateBattleForecastContents();
                 sub_80492B8(gActiveUnit);
@@ -1251,7 +1251,7 @@ void sub_804A3A8(ProcPtr proc)
 
 // clang-format off
 
-struct ProcCmd CONST_DATA gUnknown_085AA1AC[] =
+struct ProcCmd CONST_DATA gSioBattlemap_3[] =
 {
 PROC_LABEL(0),
     PROC_WHILE_EXISTS(gProcScr_BKSEL),
@@ -1274,7 +1274,7 @@ PROC_LABEL(1),
 //! FE8U = 0x0804A430
 void sub_804A430(ProcPtr parent)
 {
-    Proc_StartBlocking(gUnknown_085AA1AC, parent);
+    Proc_StartBlocking(gSioBattlemap_3, parent);
     Proc_Break(parent);
     return;
 }
@@ -1282,15 +1282,15 @@ void sub_804A430(ProcPtr parent)
 //! FE8U = 0x0804A44C
 void sub_804A44C(struct SioBattleMapProc * proc)
 {
-    struct Unit * unit = GetUnit(gUnknown_03001818[gUnk_Sio_0203DD90.unk_05]);
+    struct Unit * unit = GetUnit(gUnk_42[gUnk_Sio_16.unk_05]);
 
     ClearBg0Bg1();
 
-    if (gUnk_Sio_0203DD90.unk_06 == 0)
+    if (gUnk_Sio_16.unk_06 == 0)
     {
         if ((unit->state & US_BIT9) == 0)
         {
-            EndMu(gUnknown_03001838[1]);
+            EndMu(gUnk_46[1]);
         }
         else
         {
@@ -1302,9 +1302,9 @@ void sub_804A44C(struct SioBattleMapProc * proc)
 
         RefreshUnitSprites();
 
-        gUnk_Sio_0203DD90.unk_02 = gUnk_Sio_0203DD90.unk_05;
-        gUnk_Sio_0203DD90.unk_03 = gUnk_Sio_0203DD90.unk_05 + 1;
-        sub_8049350(4, 0, gUnknown_03001818[gUnk_Sio_0203DD90.unk_05], 0);
+        gUnk_Sio_16.unk_02 = gUnk_Sio_16.unk_05;
+        gUnk_Sio_16.unk_03 = gUnk_Sio_16.unk_05 + 1;
+        sub_8049350(4, 0, gUnk_42[gUnk_Sio_16.unk_05], 0);
         sub_8049F38(proc);
         Proc_Goto(proc, 5);
     }
@@ -1312,13 +1312,13 @@ void sub_804A44C(struct SioBattleMapProc * proc)
     {
         if ((unit->state & US_BIT9) != 0)
         {
-            gUnknown_03001838[1] = (void *)StartMu(unit);
+            gUnk_46[1] = (void *)StartMu(unit);
             proc->unk_34 = unit->xPos;
             proc->unk_38 = unit->yPos;
             unit->state &= ~US_BIT9;
         }
 
-        sub_8049350(5, 0, gUnk_Sio_0203DD90.unk_06, gUnk_Sio_0203DD90.unk_07);
+        sub_8049350(5, 0, gUnk_Sio_16.unk_06, gUnk_Sio_16.unk_07);
     }
 
     return;
@@ -1327,8 +1327,8 @@ void sub_804A44C(struct SioBattleMapProc * proc)
 //! FE8U = 0x0804A51C
 void sub_804A51C(struct SioBattleMapProc * proc)
 {
-    struct Unit * unitA = GetUnit(gUnknown_03001818[gUnk_Sio_0203DD90.unk_04]);
-    struct Unit * unitB = GetUnit(gUnknown_03001818[gUnk_Sio_0203DD90.unk_05]);
+    struct Unit * unitA = GetUnit(gUnk_42[gUnk_Sio_16.unk_04]);
+    struct Unit * unitB = GetUnit(gUnk_42[gUnk_Sio_16.unk_05]);
 
     unitA->xPos = proc->unk_2c;
     unitA->yPos = proc->unk_30;
@@ -1336,13 +1336,13 @@ void sub_804A51C(struct SioBattleMapProc * proc)
     unitB->xPos = proc->unk_34;
     unitB->yPos = proc->unk_38;
 
-    StartSioWarpFx(unitA, gUnknown_03001838[0], 6, 5, 1, 1, proc);
-    StartSioWarpFx(unitB, gUnknown_03001838[1], 8, 5, 0, 0, proc);
+    StartSioWarpFx(unitA, gUnk_46[0], 6, 5, 1, 1, proc);
+    StartSioWarpFx(unitB, gUnk_46[1], 8, 5, 0, 0, proc);
 
     return;
 }
 
-extern u8 gUnknown_03001834[];
+extern u8 gUnk_45[];
 
 extern u8 gUnknown_080D9FB7[];
 
@@ -1350,7 +1350,7 @@ extern u8 gUnknown_080D9FB7[];
 void sub_804A5A4(void)
 {
     struct Unit * unitB;
-    struct Unit * unitA = GetUnit(gUnknown_03001818[gUnk_Sio_0203DD90.unk_04]);
+    struct Unit * unitA = GetUnit(gUnk_42[gUnk_Sio_16.unk_04]);
 
     // clang-format off
 
@@ -1362,14 +1362,14 @@ void sub_804A5A4(void)
 
     // clang-format on
 
-    EndMu(gUnknown_03001838[1]);
+    EndMu(gUnk_46[1]);
 
-    unitB = GetUnit(gUnknown_03001818[gUnk_Sio_0203DD90.unk_05]);
+    unitB = GetUnit(gUnk_42[gUnk_Sio_16.unk_05]);
     unitB->state &= ~US_HIDDEN;
 
-    if (gUnknown_03001834[2] == 1)
+    if (gUnk_45[2] == 1)
     {
-        SetMuMoveScript(gUnknown_03001838[0], gUnknown_080D9FB7);
+        SetMuMoveScript(gUnk_46[0], gUnknown_080D9FB7);
         unitA->xPos = 7;
     }
 
@@ -1378,7 +1378,7 @@ void sub_804A5A4(void)
     return;
 }
 
-extern struct ProcCmd gUnknown_085AA75C[];
+extern struct ProcCmd gSioBat_0[];
 
 //! FE8U = 0x0804A614
 void sub_804A614(ProcPtr proc)
@@ -1391,20 +1391,20 @@ void sub_804A614(ProcPtr proc)
         return;
     }
 
-    unitA = GetUnit(gUnknown_03001818[gUnk_Sio_0203DD90.unk_04]);
-    unitB = GetUnit(gUnknown_03001818[gUnk_Sio_0203DD90.unk_05]);
+    unitA = GetUnit(gUnk_42[gUnk_Sio_16.unk_04]);
+    unitB = GetUnit(gUnk_42[gUnk_Sio_16.unk_05]);
 
     HideUnitSprite(unitA);
 
     gActionData.unitActionType = 2;
-    gActionData.targetIndex = gUnknown_03001818[gUnk_Sio_0203DD90.unk_05];
+    gActionData.targetIndex = gUnk_42[gUnk_Sio_16.unk_05];
 
-    EquipUnitItemSlot(unitA, gUnknown_03001834[3]);
+    EquipUnitItemSlot(unitA, gUnk_45[3]);
     BattleGenerateReal(unitA, unitB);
 
     gBmSt.gameStateBits |= BM_FLAG_LINKARENA;
 
-    Proc_StartBlocking(gUnknown_085AA75C, proc);
+    Proc_StartBlocking(gSioBat_0, proc);
     Proc_Break(proc);
 
     return;
@@ -1413,20 +1413,20 @@ void sub_804A614(ProcPtr proc)
 //! FE8U = 0x0804A6A4
 void sub_804A6A4(ProcPtr proc)
 {
-    u8 unitIdA = gUnknown_03001818[gUnk_Sio_0203DD90.unk_04];
-    u8 unitIdB = gUnknown_03001818[gUnk_Sio_0203DD90.unk_05];
+    u8 unitIdA = gUnk_42[gUnk_Sio_16.unk_04];
+    u8 unitIdB = gUnk_42[gUnk_Sio_16.unk_05];
 
     struct Unit * unitA = GetUnit(unitIdA);
     struct Unit * unitB = GetUnit(unitIdB);
 
     LoadLinkArenaFogPlaceholder();
 
-    gUnk_Sio_0203DD90.unk_2c[unitIdA >> 6].newScore = gBattleActor.expGain;
-    gUnk_Sio_0203DD90.unk_2c[unitIdA >> 6].unitId = unitIdA;
+    gUnk_Sio_16.unk_2c[unitIdA >> 6].newScore = gBattleActor.expGain;
+    gUnk_Sio_16.unk_2c[unitIdA >> 6].unitId = unitIdA;
     unitA->exp = 0;
 
-    gUnk_Sio_0203DD90.unk_2c[unitIdB >> 6].newScore = gBattleTarget.expGain;
-    gUnk_Sio_0203DD90.unk_2c[unitIdB >> 6].unitId = unitIdB;
+    gUnk_Sio_16.unk_2c[unitIdB >> 6].newScore = gBattleTarget.expGain;
+    gUnk_Sio_16.unk_2c[unitIdB >> 6].unitId = unitIdB;
     unitB->exp = 0;
 
     sub_804D40C(unitA);
@@ -1448,11 +1448,11 @@ void sub_804A6A4(ProcPtr proc)
 
     if ((GetUnitCurrentHp(unitA) == gBattleActor.hpInitial) && (GetUnitCurrentHp(unitB) == gBattleTarget.hpInitial))
     {
-        gUnk_Sio_0203DD90.unk_09++;
+        gUnk_Sio_16.unk_09++;
     }
     else
     {
-        gUnk_Sio_0203DD90.unk_09 = 0;
+        gUnk_Sio_16.unk_09 = 0;
     }
 
     Proc_Break(proc);
@@ -1463,8 +1463,8 @@ void sub_804A6A4(ProcPtr proc)
 //! FE8U = 0x0804A7C0
 void sub_804A7C0(ProcPtr proc)
 {
-    u8 unitIdA = gUnknown_03001818[gUnk_Sio_0203DD90.unk_04];
-    u8 unitIdB = gUnknown_03001818[gUnk_Sio_0203DD90.unk_05];
+    u8 unitIdA = gUnk_42[gUnk_Sio_16.unk_04];
+    u8 unitIdB = gUnk_42[gUnk_Sio_16.unk_05];
 
     struct Unit * unitA = GetUnit(unitIdA);
     struct Unit * unitB = GetUnit(unitIdB);
@@ -1474,34 +1474,34 @@ void sub_804A7C0(ProcPtr proc)
     int indexA = sub_80493A8(unitIdA);
     int indexB = sub_80493A8(unitIdB);
 
-    gUnknown_03001838[1] = NULL;
-    gUnknown_03001838[0] = NULL;
+    gUnk_46[1] = NULL;
+    gUnk_46[0] = NULL;
 
     if (((unitA->state & (US_DEAD | US_BIT16)) != 0) || (unitA->pCharacterData == NULL))
     {
-        gUnk_Sio_0203DD90.unk_0A[unitIdA >> 6]--;
+        gUnk_Sio_16.unk_0A[unitIdA >> 6]--;
     }
     else
     {
-        gUnknown_03001838[0] = (void *)StartMu(unitA);
-        DisableMuCamera(gUnknown_03001838[0]);
+        gUnk_46[0] = (void *)StartMu(unitA);
+        DisableMuCamera(gUnk_46[0]);
 
         unitA->state |= US_HIDDEN;
 
         flag = 1;
 
         StartSioWarpFx(
-            unitA, gUnknown_03001838[0], gUnknown_080D9F48[indexA].x, gUnknown_080D9F48[indexA].y, 2, flag, proc);
+            unitA, gUnk_46[0], gSioPoints_2[indexA].x, gSioPoints_2[indexA].y, 2, flag, proc);
     }
 
     if (((unitB->state & (US_DEAD | US_BIT16)) != 0) || (unitB->pCharacterData == NULL))
     {
-        gUnk_Sio_0203DD90.unk_0A[unitIdB >> 6]--;
+        gUnk_Sio_16.unk_0A[unitIdB >> 6]--;
     }
     else
     {
-        gUnknown_03001838[1] = (void *)StartMu(unitB);
-        DisableMuCamera(gUnknown_03001838[1]);
+        gUnk_46[1] = (void *)StartMu(unitB);
+        DisableMuCamera(gUnk_46[1]);
 
         unitB->state |= US_HIDDEN;
 
@@ -1515,7 +1515,7 @@ void sub_804A7C0(ProcPtr proc)
         }
 
         StartSioWarpFx(
-            unitB, gUnknown_03001838[1], gUnknown_080D9F48[indexB].x, gUnknown_080D9F48[indexB].y, 2, flag, proc);
+            unitB, gUnk_46[1], gSioPoints_2[indexB].x, gSioPoints_2[indexB].y, 2, flag, proc);
     }
 
     sub_80492D8();
@@ -1548,14 +1548,14 @@ void sub_804A914(void)
         {
             struct Unit * unit;
 
-            if (gUnknown_03001818[i + j * 5] == 0)
+            if (gUnk_42[i + j * 5] == 0)
             {
                 continue;
             }
 
             countB++;
 
-            unit = GetUnit(gUnknown_03001818[i + j * 5]);
+            unit = GetUnit(gUnk_42[i + j * 5]);
 
             if ((unit->state & (US_DEAD | US_BIT16)) != 0)
             {
@@ -1570,7 +1570,7 @@ void sub_804A914(void)
 
         if ((countA == 0) && (countB != 0))
         {
-            gUnk_Sio_0203DD90.unk_0A[i] = 0;
+            gUnk_Sio_16.unk_0A[i] = 0;
         }
     }
 
@@ -1582,8 +1582,8 @@ void sub_804A9A4(ProcPtr proc)
 {
     u8 r4_;
 
-    u8 r6 = gUnknown_03001818[gUnk_Sio_0203DD90.unk_04];
-    u8 r7 = gUnknown_03001818[gUnk_Sio_0203DD90.unk_05];
+    u8 r6 = gUnk_42[gUnk_Sio_16.unk_04];
+    u8 r7 = gUnk_42[gUnk_Sio_16.unk_05];
 
     struct Unit * r4 = GetUnit(r6);
     struct Unit * r2 = GetUnit(r7);
@@ -1598,11 +1598,11 @@ void sub_804A9A4(ProcPtr proc)
         r2->state &= ~US_HIDDEN;
     }
 
-    if (gUnk_Sio_0203DD90.unk_0A[r6 >> 6] == 0)
+    if (gUnk_Sio_16.unk_0A[r6 >> 6] == 0)
     {
         r4_ = r6 >> 6;
     }
-    else if (gUnk_Sio_0203DD90.unk_0A[r7 >> 6] == 0)
+    else if (gUnk_Sio_16.unk_0A[r7 >> 6] == 0)
     {
         r4_ = r7 >> 6;
     }
@@ -1611,13 +1611,13 @@ void sub_804A9A4(ProcPtr proc)
         goto _end;
     }
 
-    gUnk_Sio_0203DD90.unk_0F[gLinkArenaSt.unk_A0 - gUnk_Sio_0203DD90.unk_0E] = r4_;
-    gUnk_Sio_0203DD90.unk_0E++;
+    gUnk_Sio_16.unk_0F[gLinkArenaSt.unk_A0 - gUnk_Sio_16.unk_0E] = r4_;
+    gUnk_Sio_16.unk_0E++;
 
-    if (gUnk_Sio_0203DD90.unk_0E == gLinkArenaSt.unk_A0)
+    if (gUnk_Sio_16.unk_0E == gLinkArenaSt.unk_A0)
     {
 
-        if (gUnk_Sio_0203DD90.unk_0A[r6 >> 6] != 0)
+        if (gUnk_Sio_16.unk_0A[r6 >> 6] != 0)
         {
             r4_ = r6 >> 6;
         }
@@ -1626,7 +1626,7 @@ void sub_804A9A4(ProcPtr proc)
             r4_ = r7 >> 6;
         }
 
-        gUnk_Sio_0203DD90.unk_0F[0] = r4_;
+        gUnk_Sio_16.unk_0F[0] = r4_;
 
         sub_80492E8(0xff);
 
@@ -1686,14 +1686,14 @@ bool sub_804AADC(void * data)
     return false;
 }
 
-CONST_DATA struct PopupInstruction gUnknown_085AA1FC[] = {
-    POPUP_STR(gUnknown_03001850),
+CONST_DATA struct PopupInstruction gSioBattlemap_4[] = {
+    POPUP_STR(gUnk_48),
     POPUP_SPACE(3),
     POPUP_MSG(MSG_757), // The team surrendered.
     POPUP_END
 };
 
-CONST_DATA struct PopupInstruction gUnknown_085AA21C[] = {
+CONST_DATA struct PopupInstruction gSioBattlemap_5[] = {
     POPUP_MSG(MSG_758), // No one can do damage this turn
     POPUP_END
 };
@@ -1703,22 +1703,22 @@ void sub_804AAFC(struct SioProc85AA4CC * proc)
 {
     u8 buf[4];
 
-    u16 got = SioReceiveData(gUnknown_03001834, buf, sub_804AADC);
+    u16 got = SioReceiveData(gUnk_45, buf, sub_804AADC);
 
     if (got != 0)
     {
-        switch (gUnknown_03001834[0])
+        switch (gUnk_45[0])
         {
             case 1:
-                sub_80493D0(gUnknown_03001834[1], 0, &gUnk_Sio_0203DD90.unk_04, &proc->unk_2c, &proc->unk_30);
+                sub_80493D0(gUnk_45[1], 0, &gUnk_Sio_16.unk_04, &proc->unk_2c, &proc->unk_30);
                 Proc_Goto(proc, 1);
 
                 break;
 
             case 6:
                 EndLinkArenaPointsBox();
-                SioStrCpy(gUnk_Sio_0203DAC5[buf[0]], gUnknown_03001850);
-                NewPopup_Simple(gUnknown_085AA1FC, 0x60, 0, 0);
+                SioStrCpy(gUnk_Sio_9[buf[0]], gUnk_48);
+                NewPopup_Simple(gSioBattlemap_4, 0x60, 0, 0);
 
                 Proc_Goto(proc, 3);
 
@@ -1726,7 +1726,7 @@ void sub_804AAFC(struct SioProc85AA4CC * proc)
 
             case 7:
                 EndLinkArenaPointsBox();
-                NewPopup_Simple(gUnknown_085AA21C, 0x60, 0, 0);
+                NewPopup_Simple(gSioBattlemap_5, 0x60, 0, 0);
 
                 Proc_Goto(proc, 4);
 
@@ -1760,18 +1760,18 @@ void sub_804ABCC(struct SioProc85AA4CC * proc)
     struct Unit * unit;
     u8 buf[4];
 
-    u16 got = SioReceiveData(gUnknown_03001834, buf, sub_804ABB4);
+    u16 got = SioReceiveData(gUnk_45, buf, sub_804ABB4);
 
     if (got != 0)
     {
-        switch (gUnknown_03001834[0])
+        switch (gUnk_45[0])
         {
             case 2:
-                unit = GetUnit(gUnknown_03001834[2]);
+                unit = GetUnit(gUnk_45[2]);
 
                 if ((unit->state & US_BIT9) == 0)
                 {
-                    EndMu(gUnknown_03001838[0]);
+                    EndMu(gUnk_46[0]);
                 }
                 else
                 {
@@ -1788,7 +1788,7 @@ void sub_804ABCC(struct SioProc85AA4CC * proc)
                 break;
 
             case 3:
-                sub_80493D0(gUnknown_03001834[1], 1, &gUnk_Sio_0203DD90.unk_05, &proc->unk_34, &proc->unk_38);
+                sub_80493D0(gUnk_45[1], 1, &gUnk_Sio_16.unk_05, &proc->unk_34, &proc->unk_38);
                 Proc_Goto(proc, 2);
                 break;
         }
@@ -1802,7 +1802,7 @@ void sub_804ABCC(struct SioProc85AA4CC * proc)
 //! FE8U = 0x0804AC68
 void sub_804AC68(struct Unit * unit, int idx, int * xOut, int * yOut)
 {
-    gUnknown_03001838[idx] = StartMu(unit);
+    gUnk_46[idx] = StartMu(unit);
 
     *xOut = unit->xPos;
     *yOut = unit->yPos;
@@ -1834,18 +1834,18 @@ void sub_804ACC4(struct SioProc85AA4CC * proc)
     struct Unit * unitB;
     u8 buf[4];
 
-    u16 got = SioReceiveData(gUnknown_03001834, buf, sub_804ACAC);
+    u16 got = SioReceiveData(gUnk_45, buf, sub_804ACAC);
 
     if (got != 0)
     {
-        switch (gUnknown_03001834[0])
+        switch (gUnk_45[0])
         {
             case 4:
-                unitA = GetUnit(gUnknown_03001834[2]);
+                unitA = GetUnit(gUnk_45[2]);
 
                 if ((unitA->state & US_BIT9) == 0)
                 {
-                    EndMu(gUnknown_03001838[1]);
+                    EndMu(gUnk_46[1]);
                 }
                 else
                 {
@@ -1861,8 +1861,8 @@ void sub_804ACC4(struct SioProc85AA4CC * proc)
                 break;
 
             case 5:
-                unitA = GetUnit(gUnknown_03001818[gUnk_Sio_0203DD90.unk_04]);
-                unitB = GetUnit(gUnknown_03001818[gUnk_Sio_0203DD90.unk_05]);
+                unitA = GetUnit(gUnk_42[gUnk_Sio_16.unk_04]);
+                unitB = GetUnit(gUnk_42[gUnk_Sio_16.unk_05]);
 
                 if ((unitA->state & US_BIT9) != 0)
                 {
@@ -1952,7 +1952,7 @@ int sub_804AE08(int playerId)
         score += GetUnitCurrentHp(unit);
     }
 
-    score += gUnk_Sio_0203DD90.currentScore[playerId >> 6];
+    score += gUnk_Sio_16.currentScore[playerId >> 6];
 
     score = Div(score, count);
 
@@ -2001,7 +2001,7 @@ void sub_804AEC4(ProcPtr proc)
             continue;
         }
 
-        if (gUnk_Sio_0203DD90.unk_0A[i] == 0)
+        if (gUnk_Sio_16.unk_0A[i] == 0)
         {
             continue;
         }
@@ -2019,7 +2019,7 @@ void sub_804AEC4(ProcPtr proc)
         }
 
         bestScore = score;
-        gUnk_Sio_0203DD90.unk_02 = i;
+        gUnk_Sio_16.unk_02 = i;
     }
 
     Proc_Break(proc);
@@ -2129,13 +2129,13 @@ void sub_804AF5C(struct SioBattleMapProc * proc)
 
             sim.itemSlot = bestSlot;
 
-            targetFaction = gUnk_Sio_0203DD90.unk_02 * 0x40;
+            targetFaction = gUnk_Sio_16.unk_02 * 0x40;
 
             for (j = targetFaction + 1; j < targetFaction + 6; j++)
             {
                 struct AiCombatSimulationSt * simp = &sim;
                 int flags2;
-                u8 * r7 = gUnknown_03001834;
+                u8 * r7 = gUnk_45;
                 struct Unit * unit = GetUnit(j);
 
                 if ((unit->state & (US_DEAD | US_BIT16)) != 0)
@@ -2204,8 +2204,8 @@ void sub_804AF5C(struct SioBattleMapProc * proc)
         }
     }
 
-    sub_80493D0(selectedUnitId, 0, &gUnk_Sio_0203DD90.unk_04, &proc->unk_2c, &proc->unk_30);
-    gUnknown_03001834[1] = targetUnitId;
+    sub_80493D0(selectedUnitId, 0, &gUnk_Sio_16.unk_04, &proc->unk_2c, &proc->unk_30);
+    gUnk_45[1] = targetUnitId;
 
     Proc_Break(proc);
 
@@ -2215,7 +2215,7 @@ void sub_804AF5C(struct SioBattleMapProc * proc)
 //! FE8U = 0x0804B190
 void sub_804B190(ProcPtr proc)
 {
-    struct Unit * unit = GetUnit(gUnknown_03001834[1]);
+    struct Unit * unit = GetUnit(gUnk_45[1]);
 
     StartAiTargetCursor(unit->xPos * 16, unit->yPos * 16, 2, proc);
 
@@ -2228,10 +2228,10 @@ void sub_804B1C0(struct SioProc85AA4CC * proc)
     struct Unit * unitA;
     struct Unit * unitB;
 
-    sub_80493D0(gUnknown_03001834[1], 1, &gUnk_Sio_0203DD90.unk_05, &proc->unk_34, &proc->unk_38);
+    sub_80493D0(gUnk_45[1], 1, &gUnk_Sio_16.unk_05, &proc->unk_34, &proc->unk_38);
 
-    unitA = GetUnit(gUnknown_03001818[gUnk_Sio_0203DD90.unk_04]);
-    unitB = GetUnit(gUnknown_03001818[gUnk_Sio_0203DD90.unk_05]);
+    unitA = GetUnit(gUnk_42[gUnk_Sio_16.unk_04]);
+    unitB = GetUnit(gUnk_42[gUnk_Sio_16.unk_05]);
 
     if ((unitA->state & US_BIT9) != 0)
     {
@@ -2290,14 +2290,14 @@ void LinkArenaFogSprite_Loop(void)
 
     for (i = 0; i < 4; i++)
     {
-        if (!sub_8042194(gUnknown_080D9F28[gSioSt->selfId][i]))
+        if (!sub_8042194(gSioPoints_0[gSioSt->selfId][i]))
         {
             continue;
         }
 
         for (j = 0; j < 5; j++)
         {
-            struct Unit * unit = GetUnit(gUnknown_03001818[i * 5 + j]);
+            struct Unit * unit = GetUnit(gUnk_42[i * 5 + j]);
 
             if (!UNIT_IS_VALID(unit))
             {
@@ -2365,7 +2365,7 @@ void sub_804B3B0(ProcPtr proc)
 //! FE8U = 0x0804B3D0
 void sub_804B3D0(ProcPtr proc)
 {
-    if (gUnk_Sio_0203DD90.unk_08 == 0)
+    if (gUnk_Sio_16.unk_08 == 0)
     {
         Proc_Goto(proc, 0);
         return;
@@ -2380,9 +2380,9 @@ void sub_804B3D0(ProcPtr proc)
 //! FE8U = 0x0804B408
 void sub_804B408(ProcPtr proc)
 {
-    if (gUnk_Sio_0203DD90.unk_08 == 0)
+    if (gUnk_Sio_16.unk_08 == 0)
     {
-        gUnk_Sio_0203DD90.unk_09 = 0;
+        gUnk_Sio_16.unk_09 = 0;
         Proc_Goto(proc, 0);
         return;
     }
@@ -2396,7 +2396,7 @@ void sub_804B408(ProcPtr proc)
 //! FE8U = 0x0804B43C
 void sub_804B43C(struct SioBattleMapProc * proc)
 {
-    if (gUnk_Sio_0203DD90.unk_08 == 0)
+    if (gUnk_Sio_16.unk_08 == 0)
     {
         Proc_Goto(proc, proc->unk_58);
         return;
@@ -2428,22 +2428,22 @@ void sub_804B480(struct SioBattleMapProc * proc)
         return;
     }
 
-    gUnk_Sio_0203DD90.unk_0F[gLinkArenaSt.unk_A0 - gUnk_Sio_0203DD90.unk_0E] = gPlaySt.faction;
-    gUnk_Sio_0203DD90.unk_0E++;
+    gUnk_Sio_16.unk_0F[gLinkArenaSt.unk_A0 - gUnk_Sio_16.unk_0E] = gPlaySt.faction;
+    gUnk_Sio_16.unk_0E++;
 
-    gUnk_Sio_0203DD90.currentScore[gPlaySt.faction] = 0;
+    gUnk_Sio_16.currentScore[gPlaySt.faction] = 0;
 
-    if (gUnk_Sio_0203DD90.unk_0E == gLinkArenaSt.unk_A0)
+    if (gUnk_Sio_16.unk_0E == gLinkArenaSt.unk_A0)
     {
         for (i = 0; i < gLinkArenaSt.unk_A0; i++)
         {
-            if (gUnk_Sio_0203DD90.unk_0A[i] != 0)
+            if (gUnk_Sio_16.unk_0A[i] != 0)
             {
                 r6 = i;
             }
         }
 
-        gUnk_Sio_0203DD90.unk_0F[0] = r6;
+        gUnk_Sio_16.unk_0F[0] = r6;
 
         sub_80492E8(0xff);
         Proc_Goto(proc, 8);
@@ -2484,22 +2484,22 @@ void sub_804B554(struct SioBattleMapProc * proc)
     int i;
     int r6 = 0;
 
-    gUnk_Sio_0203DD90.unk_0F[gLinkArenaSt.unk_A0 - gUnk_Sio_0203DD90.unk_0E] = gPlaySt.faction;
-    gUnk_Sio_0203DD90.unk_0E++;
+    gUnk_Sio_16.unk_0F[gLinkArenaSt.unk_A0 - gUnk_Sio_16.unk_0E] = gPlaySt.faction;
+    gUnk_Sio_16.unk_0E++;
 
-    gUnk_Sio_0203DD90.currentScore[gPlaySt.faction] = 0;
+    gUnk_Sio_16.currentScore[gPlaySt.faction] = 0;
 
-    if (gUnk_Sio_0203DD90.unk_0E == gLinkArenaSt.unk_A0)
+    if (gUnk_Sio_16.unk_0E == gLinkArenaSt.unk_A0)
     {
         for (i = 0; i < gLinkArenaSt.unk_A0; i++)
         {
-            if (gUnk_Sio_0203DD90.unk_0A[i] != 0)
+            if (gUnk_Sio_16.unk_0A[i] != 0)
             {
                 r6 = i;
             }
         }
 
-        gUnk_Sio_0203DD90.unk_0F[0] = r6;
+        gUnk_Sio_16.unk_0F[0] = r6;
 
         sub_80492E8(0xff);
         Proc_Goto(proc, 5);
@@ -2530,7 +2530,7 @@ void LAUnitDeaths_Init(struct SioBattleMapProc * proc)
     proc->unk_58 = 0;
 
     proc->unk_5c = gPlaySt.faction * 0x40;
-    gUnk_Sio_0203DD90.unk_0A[gPlaySt.faction] = 0;
+    gUnk_Sio_16.unk_0A[gPlaySt.faction] = 0;
 
     return;
 }
@@ -2631,11 +2631,11 @@ void LinkArena_StoreTalkChoice(void)
 {
     if (GetTalkChoiceResult() == TALK_CHOICE_YES)
     {
-        gUnk_Sio_0203DD90.unk_08 = 1;
+        gUnk_Sio_16.unk_08 = 1;
         return;
     }
 
-    gUnk_Sio_0203DD90.unk_08 = 0;
+    gUnk_Sio_16.unk_08 = 0;
 
     return;
 }
@@ -2701,7 +2701,7 @@ void sub_804B71C(struct SioBattleMapProc * proc)
             continue;
         }
 
-        if (gUnk_Sio_0203DD90.unk_0A[i] == 0)
+        if (gUnk_Sio_16.unk_0A[i] == 0)
         {
             continue;
         }
@@ -2745,8 +2745,8 @@ void sub_804B76C(struct SioBattleMapProc * proc)
         break;
     }
 
-    gUnk_Sio_0203DD90.unk_2c[proc->unk_58].newScore = 30;
-    gUnk_Sio_0203DD90.unk_2c[proc->unk_58].unitId = proc->unk_58 * 0x40 + proc->unk_5c + 1;
+    gUnk_Sio_16.unk_2c[proc->unk_58].newScore = 30;
+    gUnk_Sio_16.unk_2c[proc->unk_58].unitId = proc->unk_58 * 0x40 + proc->unk_5c + 1;
 
     sub_804926C(proc);
 
@@ -2843,7 +2843,7 @@ void sub_804B8D0(void)
     return;
 }
 
-struct ProcCmd CONST_DATA gUnknown_085AA2FC[] = {
+struct ProcCmd CONST_DATA gSioBattlemap_6[] = {
 PROC_LABEL(0),
     PROC_REPEAT(sub_8049CD4),
     PROC_CALL(sub_8049F38),
@@ -2904,7 +2904,7 @@ PROC_LABEL(8),
     PROC_END,
 };
 
-struct ProcCmd CONST_DATA gUnknown_085AA4CC[] = {
+struct ProcCmd CONST_DATA gSioBattlemap_7[] = {
 PROC_LABEL(0),
     PROC_CALL(sub_8049F38),
     PROC_REPEAT(sub_804AAFC),
@@ -2937,7 +2937,7 @@ PROC_LABEL(5),
     PROC_END,
 };
 
-struct ProcCmd CONST_DATA gUnknown_085AA5BC[] = {
+struct ProcCmd CONST_DATA gSioBattlemap_8[] = {
     PROC_CALL(sub_8049F38),
     PROC_YIELD,
 PROC_LABEL(0),

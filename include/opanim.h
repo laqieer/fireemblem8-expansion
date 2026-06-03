@@ -101,36 +101,36 @@ struct ProcOpAnimBlend
 };
 
 extern CONST_DATA u16 Obj_OpAnimEphEirikaName[];
-extern CONST_DATA u16 Obj_08AA6C0E[];
-extern CONST_DATA u16 Obj_08AA6C22[];
-extern CONST_DATA u16 Obj_08AA6C36[];
-extern CONST_DATA u16 Obj_08AA6C4A[];
-extern CONST_DATA u16 Obj_08AA6C58[];
-extern CONST_DATA u16 Obj_08AA6C58[];
-extern CONST_DATA u16 Obj_08AA6C58[];
-extern CONST_DATA u16 Obj_08AA6C66[];
-extern CONST_DATA u16 Obj_08AA6C74[];
-extern CONST_DATA u16 Obj_08AA6C82[];
-extern CONST_DATA u16 Obj_08AA6C8A[];
-extern CONST_DATA u16 Obj_08AA6C92[];
-extern CONST_DATA u16 Obj_08AA6C9A[];
+extern CONST_DATA u16 Obj_Opanimfx_0[];
+extern CONST_DATA u16 Obj_Opanimfx_1[];
+extern CONST_DATA u16 Obj_Opanimfx_2[];
+extern CONST_DATA u16 Obj_Opanimfx_3[];
+extern CONST_DATA u16 Obj_Opanimfx_4[];
+extern CONST_DATA u16 Obj_Opanimfx_4[];
+extern CONST_DATA u16 Obj_Opanimfx_4[];
+extern CONST_DATA u16 Obj_Opanimfx_5[];
+extern CONST_DATA u16 Obj_Opanimfx_6[];
+extern CONST_DATA u16 Obj_Opanimfx_7[];
+extern CONST_DATA u16 Obj_Opanimfx_8[];
+extern CONST_DATA u16 Obj_Opanimfx_9[];
+extern CONST_DATA u16 Obj_Opanimfx_10[];
 extern CONST_DATA struct ProcCmd ProcScr_OpAnimfxTerminator[];
 extern CONST_DATA struct ProcCmd ProcScr_OpAnimFadeIn[];
 extern CONST_DATA struct ProcCmd ProcScr_OpAnimBLDALPHA[];
-extern CONST_DATA struct ProcCmd ProcScr_08AA6D04[];
-extern CONST_DATA u8 * imgs_08AA6D14[100];
-extern CONST_DATA u16 * tsas_08AA6EA4[100];
+extern CONST_DATA struct ProcCmd ProcScr_Opanim_0[];
+extern CONST_DATA u8 * imgs_Opanim_0[100];
+extern CONST_DATA u16 * tsas_Opanim_0[100];
 extern CONST_DATA struct ProcCmd ProcScr_OpAnimMergeBG[];
-// extern ??? gUnknown_08AA705C
-// extern ??? gUnknown_08AA707C
-// extern ??? gUnknown_08AA709C
-// extern ??? gUnknown_08AA70BC
-// extern ??? gUnknown_08AA70DC
-// extern ??? gUnknown_08AA70EA
-// extern ??? gUnknown_08AA7116
-// extern ??? gUnknown_08AA712A
-// extern ??? gUnknown_08AA715C
-// extern ??? gUnknown_08AA7194
+// extern ??? gUnkData_98
+// extern ??? gUnkData_99
+// extern ??? gUnkData_100
+// extern ??? gUnkData_101
+// extern ??? gUnkData_102
+// extern ??? gUnkData_103
+// extern ??? gUnkData_104
+// extern ??? gUnkData_105
+// extern ??? gUnkData_106
+// extern ??? gUnkData_107
 
 extern CONST_DATA u16 * Pal_OpAnimShiningRing[];
 extern CONST_DATA u8 img_opanim1[];
@@ -333,7 +333,7 @@ extern CONST_DATA u16 tsa_opanim97[];
 extern CONST_DATA u16 tsa_opanim98[];
 extern CONST_DATA u16 tsa_opanim99[];
 extern CONST_DATA u16 tsa_opanim100[];
-extern u16 pal_08B103D8[];
+extern u16 pal_OpanimGfx_0[];
 
 extern u8 Img_OpAnimGenericCharacterBG[];
 extern u8 Tsa_OpAnimGenericCharacterBG[];
@@ -346,8 +346,8 @@ extern u8 Tsa_OpAnimJoshua[];
 extern u8 Img_OpAnimShiningRing[];
 extern u8 Tsa_OpAnimShiningRing[];
 
-extern struct ProcCmd gUnknown_08AA705C[];
-extern struct ProcCmd gUnknown_08AA707C[];
+extern struct ProcCmd gUnkData_98[];
+extern struct ProcCmd gUnkData_99[];
 
 extern u8 Img_OpAnimTethys[];
 extern u8 Tsa_OpAnimTethys[];
@@ -355,9 +355,9 @@ extern u8 Tsa_OpAnimTethys[];
 extern u8 Img_OpAnimTethys2[];
 extern u8 Tsa_OpAnimTethys2[];
 
-extern u16 pal_08B103D8[];
+extern u16 pal_OpanimGfx_0[];
 
-extern u16 Pal_08ADBE78[];
+extern u16 Pal_OpanimGfx_0[];
 
 extern u8 Img_OpAnimFaceRennac[];
 extern u16 Pal_OpAnimFaceRennac[];
@@ -503,15 +503,15 @@ extern u16 Pal_OpAnimTethys[];
 
 extern u8 Tsa_OpAnimShiningRingBlinking[];
 
-extern u16 gUnknown_08AA709C[];
-extern u16 gUnknown_08AA70BC[];
-extern u16 gUnknown_08AA70DC[];
-extern u16 gUnknown_08AA70EA[];
-extern u16 gUnknown_08AA7116[];
-extern u16 gUnknown_08AA712A[];
-extern u16 gUnknown_08AA715C[];
+extern u16 gUnkData_100[];
+extern u16 gUnkData_101[];
+extern u16 gUnkData_102[];
+extern u16 gUnkData_103[];
+extern u16 gUnkData_104[];
+extern u16 gUnkData_105[];
+extern u16 gUnkData_106[];
 
-extern u16 gUnknown_08AA7194[];
+extern u16 gUnkData_107[];
 
 void OpAnimPutObjCommon(int ix, int iy, u8 a, u8 b);
 void OpAnimfxTerminatorMain(struct Proc * proc);

@@ -147,8 +147,8 @@ struct OpInfoGaugeDrawProc {
 };
 
 extern struct AnimBuffer gOpInfoData;
-extern struct AnimMagicFxBuffer gUnknown_0200A2D8;
-extern struct BanimUnkStructComm gUnk_Opinfo_0201DB00;
+extern struct AnimMagicFxBuffer gUnk_4;
+extern struct BanimUnkStructComm gUnk_Opinfo_0;
 
 // ??? ClassReel_Init(???);
 // ??? ClassReel_ButtonPress_GoToTitle(???);

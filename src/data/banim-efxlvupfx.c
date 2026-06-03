@@ -2,29 +2,29 @@
 #include "anime.h"
 #include "gba_sprites.h"
 
-extern struct AnimSpriteData AnimSprite_EfxLvupOBJ2_085C69C8[];
-extern struct AnimSpriteData AnimSprite_EfxLvupOBJ2_085C6A04[];
-extern struct AnimSpriteData AnimSprite_EfxLvupOBJ2_085C6A58[];
-extern struct AnimSpriteData AnimSprite_EfxLvupOBJ2_085C6AC4[];
-extern struct AnimSpriteData AnimSprite_EfxLvupOBJ2_085C6B48[];
-extern struct AnimSpriteData AnimSprite_EfxLvupOBJ2_085C6BCC[];
-extern struct AnimSpriteData AnimSprite_EfxLvupOBJ2_085C6C5C[];
-extern struct AnimSpriteData AnimSprite_EfxLvupOBJ2_085C6CEC[];
-extern struct AnimSpriteData AnimSprite_EfxLvupOBJ2_085C6D70[];
-extern struct AnimSpriteData AnimSprite_EfxLvupOBJ2_085C6DF4[];
-extern struct AnimSpriteData AnimSprite_EfxLvupOBJ2_085C6E84[];
-extern struct AnimSpriteData AnimSprite_EfxLvupOBJ2_085C6F14[];
-extern struct AnimSpriteData AnimSprite_EfxLvupOBJ2_085C6FB0[];
-extern struct AnimSpriteData AnimSprite_EfxLvupOBJ2_085C704C[];
-extern struct AnimSpriteData AnimSprite_EfxLvupOBJ2_085C70E8[];
-extern struct AnimSpriteData AnimSprite_EfxLvupOBJ2_085C7178[];
+extern struct AnimSpriteData AnimSprite_EfxLvupOBJ2_EfxLvupOBJ_0[];
+extern struct AnimSpriteData AnimSprite_EfxLvupOBJ2_EfxLvupOBJ_1[];
+extern struct AnimSpriteData AnimSprite_EfxLvupOBJ2_EfxLvupOBJ_2[];
+extern struct AnimSpriteData AnimSprite_EfxLvupOBJ2_EfxLvupOBJ_3[];
+extern struct AnimSpriteData AnimSprite_EfxLvupOBJ2_EfxLvupOBJ_4[];
+extern struct AnimSpriteData AnimSprite_EfxLvupOBJ2_EfxLvupOBJ_5[];
+extern struct AnimSpriteData AnimSprite_EfxLvupOBJ2_EfxLvupOBJ_6[];
+extern struct AnimSpriteData AnimSprite_EfxLvupOBJ2_EfxLvupOBJ_7[];
+extern struct AnimSpriteData AnimSprite_EfxLvupOBJ2_EfxLvupOBJ_8[];
+extern struct AnimSpriteData AnimSprite_EfxLvupOBJ2_EfxLvupOBJ_9[];
+extern struct AnimSpriteData AnimSprite_EfxLvupOBJ2_EfxLvupOBJ_10[];
+extern struct AnimSpriteData AnimSprite_EfxLvupOBJ2_EfxLvupOBJ_11[];
+extern struct AnimSpriteData AnimSprite_EfxLvupOBJ2_EfxLvupOBJ_12[];
+extern struct AnimSpriteData AnimSprite_EfxLvupOBJ2_EfxLvupOBJ_13[];
+extern struct AnimSpriteData AnimSprite_EfxLvupOBJ2_EfxLvupOBJ_14[];
+extern struct AnimSpriteData AnimSprite_EfxLvupOBJ2_EfxLvupOBJ_15[];
 extern AnimScr AnimScr_EfxLvupOBJ2[];
 
 u8 CONST_DATA Img_LvupApfx[] = INCBIN_U8("./graphics/lvup/LvupAp.4bpp.lz");
 
 u16 CONST_DATA Pal_LvupApfx[] = INCBIN_U16("./graphics/lvup/LvupAp.gbapal", 0x0, 0x20);
 
-u16 CONST_DATA gUnknown_085BB2FC[] = INCBIN_U16("graphics/banim/efxlvupfx/gUnknown_085BB2FC.agbpal");
+u16 CONST_DATA gEfxlvupfx_0[] = INCBIN_U16("graphics/banim/efxlvupfx/gUnknown_085BB2FC.agbpal");
 
 u8 CONST_DATA Img_ArenaBattleBg[] = INCBIN_U8("graphics/banim/efxlvupfx/Img_ArenaBattleBg.4bpp.lz");
 
@@ -36,11 +36,11 @@ u16 CONST_DATA Pal_ArenaBattleBg_B[] = INCBIN_U16("graphics/banim/efxlvupfx/Pal_
 
 u16 CONST_DATA Pal_ArenaBattleBg_C[] = INCBIN_U16("graphics/banim/efxlvupfx/Pal_ArenaBattleBg_C.gbapal");
 
-u8 CONST_DATA gUnknown_085BF114[] = INCBIN_U8("graphics/banim/efxlvupfx/gUnknown_085BF114.4bpp.lz");
+u8 CONST_DATA gEfxlvupfx_1[] = INCBIN_U8("graphics/banim/efxlvupfx/gUnknown_085BF114.4bpp.lz");
 
-u16 CONST_DATA gUnknown_085BF4FC[] = INCBIN_U16("graphics/banim/efxlvupfx/gUnknown_085BF4FC.agbpal");
+u16 CONST_DATA gEfxlvupfx_2[] = INCBIN_U16("graphics/banim/efxlvupfx/gUnknown_085BF4FC.agbpal");
 
-u8 CONST_DATA gUnknown_085BF5FC[] = INCBIN_U8("graphics/banim/efxlvupfx/gUnknown_085BF5FC.map.bin.lz");
+u8 CONST_DATA gEfxlvupfx_3[] = INCBIN_U8("graphics/banim/efxlvupfx/gUnknown_085BF5FC.map.bin.lz");
 
 u8 CONST_DATA Img1_EfxLvupBG[] = INCBIN_U8("graphics/banim/efxlvupfx/Img1_EfxLvupBG.4bpp.lz");
 
@@ -100,7 +100,7 @@ u8 CONST_DATA Tsa6_EfxLvupBG2[] = INCBIN_U8("graphics/banim/efxlvupfx/Tsa6_EfxLv
 
 u8 CONST_DATA Img_EfxLvupOBJ2[] = INCBIN_U8("graphics/banim/efxlvupfx/Img_EfxLvupOBJ2.4bpp.lz");
 
-struct AnimSpriteData CONST_DATA AnimSprite_EfxLvupOBJ2_085C69C8[] =
+struct AnimSpriteData CONST_DATA AnimSprite_EfxLvupOBJ2_EfxLvupOBJ_0[] =
 {
     { .header = (u32)(0x8000) | ((u32)(0x8000) << 16), .as = { .object = { 0x0002, -120, -48 } } },
     { .header = (u32)(0x0000) | ((u32)(0x4000) << 16), .as = { .object = { 0x0024, -104, -40 } } },
@@ -109,7 +109,7 @@ struct AnimSpriteData CONST_DATA AnimSprite_EfxLvupOBJ2_085C69C8[] =
     { .header = (u32)(0x0001) | ((u32)(0x0000) << 16), .as = { .object = { 0x0000, 0, 0 } } },
 };
 
-struct AnimSpriteData CONST_DATA AnimSprite_EfxLvupOBJ2_085C6A04[] =
+struct AnimSpriteData CONST_DATA AnimSprite_EfxLvupOBJ2_EfxLvupOBJ_1[] =
 {
     { .header = (u32)(0x0000) | ((u32)(0x8000) << 16), .as = { .object = { 0x0000, -120, -48 } } },
     { .header = (u32)(0x4000) | ((u32)(0x0000) << 16), .as = { .object = { 0x0004, -120, -36 } } },
@@ -120,7 +120,7 @@ struct AnimSpriteData CONST_DATA AnimSprite_EfxLvupOBJ2_085C6A04[] =
     { .header = (u32)(0x0001) | ((u32)(0x0000) << 16), .as = { .object = { 0x0000, 0, 0 } } },
 };
 
-struct AnimSpriteData CONST_DATA AnimSprite_EfxLvupOBJ2_085C6A58[] =
+struct AnimSpriteData CONST_DATA AnimSprite_EfxLvupOBJ2_EfxLvupOBJ_2[] =
 {
     { .header = (u32)(0x0000) | ((u32)(0x8000) << 16), .as = { .object = { 0x0000, -104, -48 } } },
     { .header = (u32)(0x0000) | ((u32)(0x4000) << 16), .as = { .object = { 0x0024, -120, -40 } } },
@@ -133,7 +133,7 @@ struct AnimSpriteData CONST_DATA AnimSprite_EfxLvupOBJ2_085C6A58[] =
     { .header = (u32)(0x0001) | ((u32)(0x0000) << 16), .as = { .object = { 0x0000, 0, 0 } } },
 };
 
-struct AnimSpriteData CONST_DATA AnimSprite_EfxLvupOBJ2_085C6AC4[] =
+struct AnimSpriteData CONST_DATA AnimSprite_EfxLvupOBJ2_EfxLvupOBJ_3[] =
 {
     { .header = (u32)(0x0000) | ((u32)(0x8000) << 16), .as = { .object = { 0x0000, -88, -48 } } },
     { .header = (u32)(0x0000) | ((u32)(0x4000) << 16), .as = { .object = { 0x0024, -104, -40 } } },
@@ -148,7 +148,7 @@ struct AnimSpriteData CONST_DATA AnimSprite_EfxLvupOBJ2_085C6AC4[] =
     { .header = (u32)(0x0001) | ((u32)(0x0000) << 16), .as = { .object = { 0x0000, 0, 0 } } },
 };
 
-struct AnimSpriteData CONST_DATA AnimSprite_EfxLvupOBJ2_085C6B48[] =
+struct AnimSpriteData CONST_DATA AnimSprite_EfxLvupOBJ2_EfxLvupOBJ_4[] =
 {
     { .header = (u32)(0x0000) | ((u32)(0x8000) << 16), .as = { .object = { 0x0000, -72, -48 } } },
     { .header = (u32)(0x0000) | ((u32)(0x4000) << 16), .as = { .object = { 0x0024, -88, -40 } } },
@@ -163,7 +163,7 @@ struct AnimSpriteData CONST_DATA AnimSprite_EfxLvupOBJ2_085C6B48[] =
     { .header = (u32)(0x0001) | ((u32)(0x0000) << 16), .as = { .object = { 0x0000, 0, 0 } } },
 };
 
-struct AnimSpriteData CONST_DATA AnimSprite_EfxLvupOBJ2_085C6BCC[] =
+struct AnimSpriteData CONST_DATA AnimSprite_EfxLvupOBJ2_EfxLvupOBJ_5[] =
 {
     { .header = (u32)(0x0000) | ((u32)(0x8000) << 16), .as = { .object = { 0x0000, -56, -48 } } },
     { .header = (u32)(0x0000) | ((u32)(0x4000) << 16), .as = { .object = { 0x0024, -72, -40 } } },
@@ -179,7 +179,7 @@ struct AnimSpriteData CONST_DATA AnimSprite_EfxLvupOBJ2_085C6BCC[] =
     { .header = (u32)(0x0001) | ((u32)(0x0000) << 16), .as = { .object = { 0x0000, 0, 0 } } },
 };
 
-struct AnimSpriteData CONST_DATA AnimSprite_EfxLvupOBJ2_085C6C5C[] =
+struct AnimSpriteData CONST_DATA AnimSprite_EfxLvupOBJ2_EfxLvupOBJ_6[] =
 {
     { .header = (u32)(0x0000) | ((u32)(0x8000) << 16), .as = { .object = { 0x0000, -40, -48 } } },
     { .header = (u32)(0x0000) | ((u32)(0x4000) << 16), .as = { .object = { 0x0024, -56, -40 } } },
@@ -195,7 +195,7 @@ struct AnimSpriteData CONST_DATA AnimSprite_EfxLvupOBJ2_085C6C5C[] =
     { .header = (u32)(0x0001) | ((u32)(0x0000) << 16), .as = { .object = { 0x0000, 0, 0 } } },
 };
 
-struct AnimSpriteData CONST_DATA AnimSprite_EfxLvupOBJ2_085C6CEC[] =
+struct AnimSpriteData CONST_DATA AnimSprite_EfxLvupOBJ2_EfxLvupOBJ_7[] =
 {
     { .header = (u32)(0x0000) | ((u32)(0x8000) << 16), .as = { .object = { 0x0000, -24, -48 } } },
     { .header = (u32)(0x0000) | ((u32)(0x4000) << 16), .as = { .object = { 0x0024, -40, -40 } } },
@@ -210,7 +210,7 @@ struct AnimSpriteData CONST_DATA AnimSprite_EfxLvupOBJ2_085C6CEC[] =
     { .header = (u32)(0x0001) | ((u32)(0x0000) << 16), .as = { .object = { 0x0000, 0, 0 } } },
 };
 
-struct AnimSpriteData CONST_DATA AnimSprite_EfxLvupOBJ2_085C6D70[] =
+struct AnimSpriteData CONST_DATA AnimSprite_EfxLvupOBJ2_EfxLvupOBJ_8[] =
 {
     { .header = (u32)(0x0000) | ((u32)(0x8000) << 16), .as = { .object = { 0x0000, -8, -48 } } },
     { .header = (u32)(0x0000) | ((u32)(0x4000) << 16), .as = { .object = { 0x0024, -24, -40 } } },
@@ -225,7 +225,7 @@ struct AnimSpriteData CONST_DATA AnimSprite_EfxLvupOBJ2_085C6D70[] =
     { .header = (u32)(0x0001) | ((u32)(0x0000) << 16), .as = { .object = { 0x0000, 0, 0 } } },
 };
 
-struct AnimSpriteData CONST_DATA AnimSprite_EfxLvupOBJ2_085C6DF4[] =
+struct AnimSpriteData CONST_DATA AnimSprite_EfxLvupOBJ2_EfxLvupOBJ_9[] =
 {
     { .header = (u32)(0x0000) | ((u32)(0x8000) << 16), .as = { .object = { 0x0000, 8, -48 } } },
     { .header = (u32)(0x0000) | ((u32)(0x4000) << 16), .as = { .object = { 0x0024, -8, -40 } } },
@@ -241,7 +241,7 @@ struct AnimSpriteData CONST_DATA AnimSprite_EfxLvupOBJ2_085C6DF4[] =
     { .header = (u32)(0x0001) | ((u32)(0x0000) << 16), .as = { .object = { 0x0000, 0, 0 } } },
 };
 
-struct AnimSpriteData CONST_DATA AnimSprite_EfxLvupOBJ2_085C6E84[] =
+struct AnimSpriteData CONST_DATA AnimSprite_EfxLvupOBJ2_EfxLvupOBJ_10[] =
 {
     { .header = (u32)(0x0000) | ((u32)(0x8000) << 16), .as = { .object = { 0x0000, 24, -48 } } },
     { .header = (u32)(0x0000) | ((u32)(0x4000) << 16), .as = { .object = { 0x0024, 8, -40 } } },
@@ -257,7 +257,7 @@ struct AnimSpriteData CONST_DATA AnimSprite_EfxLvupOBJ2_085C6E84[] =
     { .header = (u32)(0x0001) | ((u32)(0x0000) << 16), .as = { .object = { 0x0000, 0, 0 } } },
 };
 
-struct AnimSpriteData CONST_DATA AnimSprite_EfxLvupOBJ2_085C6F14[] =
+struct AnimSpriteData CONST_DATA AnimSprite_EfxLvupOBJ2_EfxLvupOBJ_11[] =
 {
     { .header = (u32)(0x0000) | ((u32)(0x8000) << 16), .as = { .object = { 0x0000, 40, -48 } } },
     { .header = (u32)(0x0000) | ((u32)(0x4000) << 16), .as = { .object = { 0x0024, 24, -40 } } },
@@ -274,7 +274,7 @@ struct AnimSpriteData CONST_DATA AnimSprite_EfxLvupOBJ2_085C6F14[] =
     { .header = (u32)(0x0001) | ((u32)(0x0000) << 16), .as = { .object = { 0x0000, 0, 0 } } },
 };
 
-struct AnimSpriteData CONST_DATA AnimSprite_EfxLvupOBJ2_085C6FB0[] =
+struct AnimSpriteData CONST_DATA AnimSprite_EfxLvupOBJ2_EfxLvupOBJ_12[] =
 {
     { .header = (u32)(0x0000) | ((u32)(0x8000) << 16), .as = { .object = { 0x0000, 56, -48 } } },
     { .header = (u32)(0x0000) | ((u32)(0x4000) << 16), .as = { .object = { 0x0024, 40, -40 } } },
@@ -291,7 +291,7 @@ struct AnimSpriteData CONST_DATA AnimSprite_EfxLvupOBJ2_085C6FB0[] =
     { .header = (u32)(0x0001) | ((u32)(0x0000) << 16), .as = { .object = { 0x0000, 0, 0 } } },
 };
 
-struct AnimSpriteData CONST_DATA AnimSprite_EfxLvupOBJ2_085C704C[] =
+struct AnimSpriteData CONST_DATA AnimSprite_EfxLvupOBJ2_EfxLvupOBJ_13[] =
 {
     { .header = (u32)(0x0000) | ((u32)(0x8000) << 16), .as = { .object = { 0x0000, 72, -48 } } },
     { .header = (u32)(0x0000) | ((u32)(0x4000) << 16), .as = { .object = { 0x0024, 56, -40 } } },
@@ -308,7 +308,7 @@ struct AnimSpriteData CONST_DATA AnimSprite_EfxLvupOBJ2_085C704C[] =
     { .header = (u32)(0x0001) | ((u32)(0x0000) << 16), .as = { .object = { 0x0000, 0, 0 } } },
 };
 
-struct AnimSpriteData CONST_DATA AnimSprite_EfxLvupOBJ2_085C70E8[] =
+struct AnimSpriteData CONST_DATA AnimSprite_EfxLvupOBJ2_EfxLvupOBJ_14[] =
 {
     { .header = (u32)(0x0000) | ((u32)(0x8000) << 16), .as = { .object = { 0x0000, 88, -48 } } },
     { .header = (u32)(0x0000) | ((u32)(0x4000) << 16), .as = { .object = { 0x0024, 72, -40 } } },
@@ -324,7 +324,7 @@ struct AnimSpriteData CONST_DATA AnimSprite_EfxLvupOBJ2_085C70E8[] =
     { .header = (u32)(0x0001) | ((u32)(0x0000) << 16), .as = { .object = { 0x0000, 0, 0 } } },
 };
 
-struct AnimSpriteData CONST_DATA AnimSprite_EfxLvupOBJ2_085C7178[] =
+struct AnimSpriteData CONST_DATA AnimSprite_EfxLvupOBJ2_EfxLvupOBJ_15[] =
 {
     { .header = (u32)(0x4000) | ((u32)(0x4000) << 16), .as = { .object = { 0x0004, -120, -36 } } },
     { .header = (u32)(0x4000) | ((u32)(0x4000) << 16), .as = { .object = { 0x0004, -88, -36 } } },
@@ -339,21 +339,21 @@ struct AnimSpriteData CONST_DATA AnimSprite_EfxLvupOBJ2_085C7178[] =
 
 AnimScr CONST_DATA AnimScr_EfxLvupOBJ2[] =
 {
-    ANIMSCR_FORCE_SPRITE(AnimSprite_EfxLvupOBJ2_085C69C8, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_EfxLvupOBJ2_085C6A04, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_EfxLvupOBJ2_085C6A58, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_EfxLvupOBJ2_085C6AC4, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_EfxLvupOBJ2_085C6B48, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_EfxLvupOBJ2_085C6BCC, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_EfxLvupOBJ2_085C6C5C, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_EfxLvupOBJ2_085C6CEC, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_EfxLvupOBJ2_085C6D70, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_EfxLvupOBJ2_085C6DF4, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_EfxLvupOBJ2_085C6E84, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_EfxLvupOBJ2_085C6F14, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_EfxLvupOBJ2_085C6FB0, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_EfxLvupOBJ2_085C704C, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_EfxLvupOBJ2_085C70E8, 1),
-    ANIMSCR_FORCE_SPRITE(AnimSprite_EfxLvupOBJ2_085C7178, 10),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_EfxLvupOBJ2_EfxLvupOBJ_0, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_EfxLvupOBJ2_EfxLvupOBJ_1, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_EfxLvupOBJ2_EfxLvupOBJ_2, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_EfxLvupOBJ2_EfxLvupOBJ_3, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_EfxLvupOBJ2_EfxLvupOBJ_4, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_EfxLvupOBJ2_EfxLvupOBJ_5, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_EfxLvupOBJ2_EfxLvupOBJ_6, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_EfxLvupOBJ2_EfxLvupOBJ_7, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_EfxLvupOBJ2_EfxLvupOBJ_8, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_EfxLvupOBJ2_EfxLvupOBJ_9, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_EfxLvupOBJ2_EfxLvupOBJ_10, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_EfxLvupOBJ2_EfxLvupOBJ_11, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_EfxLvupOBJ2_EfxLvupOBJ_12, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_EfxLvupOBJ2_EfxLvupOBJ_13, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_EfxLvupOBJ2_EfxLvupOBJ_14, 1),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_EfxLvupOBJ2_EfxLvupOBJ_15, 10),
     ANIMSCR_BLOCKED,
 };

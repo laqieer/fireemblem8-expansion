@@ -6,21 +6,21 @@
 
 #include "worldmap.h"
 
-extern u8 gUnknown_020087A0[];
+extern u8 gUnk_3[];
 
-extern u8 gUnknown_03001DA8[];
-extern u8 gUnknown_03001DE8[];
-extern u8 gUnknown_03001E30;
+extern u8 gUnk_59[];
+extern u8 gUnk_60[];
+extern u8 gUnk_61;
 
-extern u8 gUnknown_08A83364[];  // FEB: worldmap_big_image Length:76800
-extern u16 gUnknown_08A95FE4[]; // FEB: worldmap_big_palette Length:128
-extern u16 gUnknown_08A96064[]; // FEB: worldmap_big_palettemap Length:673
+extern u8 gWorldmapGmap_0[];  // FEB: worldmap_big_image Length:76800
+extern u16 gWorldmapGmap_2[]; // FEB: worldmap_big_palette Length:128
+extern u16 gWorldmapGmap_3[]; // FEB: worldmap_big_palettemap Length:673
 
 //! FE8U = 0x080BA424
 void sub_80BA424(void)
 {
     sub_8002AC8();
-    MapRoute_80BC2DC(GM_SCREEN->gmroute);
+    MapRoute_0(GM_SCREEN->gmroute);
     GM_SCREEN->gmroute->flags |= 3;
 }
 
@@ -216,7 +216,7 @@ struct ProcCmd CONST_DATA ProcScr_GMapScreenVSync[] =
 // clang-format on
 
 // Does not appear to be used; FEBuilder labels part of this as free space
-u8 CONST_DATA gUnused_08A3DE1C[] =
+u8 CONST_DATA gUnused_WorldmapScreen_0[] =
 {
     0x00, 0x00, 0x78, 0x00, 0xF0, 0x00,
     0x2C, 0x01, 0xA4, 0x01, 0x1C, 0x02,
@@ -277,12 +277,12 @@ void MapScreen_Init(struct GmScreenProc * proc)
     proc->unk_3a = 0;
     proc->unk_38 = 0;
 
-    proc->unk_3c = gUnknown_08A83364;
+    proc->unk_3c = gWorldmapGmap_0;
 
     proc->unk_40 = BG_GetMapBuffer(BG_3);
 
-    Decompress(gUnknown_08A96064, gUnknown_020087A0);
-    proc->unk_44 = gUnknown_020087A0;
+    Decompress(gWorldmapGmap_3, gUnk_3);
+    proc->unk_44 = gUnk_3;
     proc->unk_2c = 0;
     proc->unk_2b = 0;
     proc->unk_2e = 0;
@@ -292,14 +292,14 @@ void MapScreen_Init(struct GmScreenProc * proc)
     proc->unk_32 = 0;
     proc->unk_31 = 0;
 
-    ApplyPalettes(gUnknown_08A95FE4, 9, 4);
+    ApplyPalettes(gWorldmapGmap_2, 9, 4);
     EnablePaletteSync();
 
     BG_Fill(gBG3TilemapBuffer, 0);
     BG_EnableSyncByMask(BG3_SYNC_BIT);
 
     proc->unk_48 =
-        NewMapScreenVSync(proc->unk_3c, proc->unk_40, proc->unk_44, gUnknown_03001DA8, gUnknown_03001DE8);
+        NewMapScreenVSync(proc->unk_3c, proc->unk_40, proc->unk_44, gUnk_59, gUnk_60);
 
     return;
 }
@@ -409,7 +409,7 @@ void sub_80BA8A0(struct GmScreenProc * proc)
 //! FE8U = 0x080BAB00
 void sub_80BAB00(void)
 {
-    gUnknown_03001E30 = 0;
+    gUnk_61 = 0;
     return;
 }
 
@@ -443,7 +443,7 @@ void sub_80BAB0C(struct GmScreenProc * proc)
 
     if (proc->unk_2a & 4)
     {
-        ApplyPalettes(gUnknown_08A95FE4, 9, 4);
+        ApplyPalettes(gWorldmapGmap_2, 9, 4);
         proc->unk_2a &= ~4;
     }
 

@@ -177,8 +177,8 @@ struct Proc8591C68
     /* 2A */ s16 faceSlot;
 };
 
-extern struct Struct03000428 gUnknown_03000428;
-extern char gUnknown_03000430[4];
+extern struct Struct03000428 gUnk_36;
+extern char gUnk_37[4];
 extern struct Unit * gLoadedUnitBuffer;
 extern u32 gEventSlotQueue[]; // event slot queue (just an array)
 extern u32 gEventSlotCounter;
@@ -191,29 +191,29 @@ extern EventFuncType gEventLoCmdTable[]; // regular event functions
 extern EventFuncType gEventHiCmdTable[]; // gmap event functions
 extern struct ProcCmd ProcScr_EventEngineDeamon[]; // map event engine "witness lock" (alive while map event engine is)
 
-extern struct ProcCmd gUnknown_08591DE8[]; // "face witness"
-extern struct ProcCmd gUnknown_08591E00[];
-extern struct ProcCmd gUnknown_08591E58[];
-extern struct ProcCmd gUnknown_08591EB0[];
+extern struct ProcCmd gEventscr_0[]; // "face witness"
+extern struct ProcCmd gEventscr_1[];
+extern struct ProcCmd gEventscr_3[];
+extern struct ProcCmd gEventscr_4[];
 extern struct ProcCmd CONST_DATA ProcScr_EventDisplayCursor[];
 extern struct ProcCmd CONST_DATA ProcScr_ScriptBattleDeamon[];
 extern struct ProcCmd CONST_DATA ProcScr_EventPromoteUnit[];
 
 extern EventListScr EventScr_Nop[];
 extern EventScr EventScr_RemoveBGIfNeeded[];
-extern EventScr EventScr_08591F64[];
+extern EventScr EventScr_Ch16A_13[];
 extern EventScr EventScr_DisplayBattleQuote[];
 extern EventScr EventScr_TriggerQueuedTileChanges[];
 extern EventScr EventScr_OpenChest[];
-extern EventListScr EventScr_08591FD8[];
+extern EventListScr EventScr_CommonPrep[];
 extern EventScr EventScr_MapSupportConversation[];
 extern EventScr EventScr_SupportViewerConversation[];
 extern EventScr EventScr_SkirmishRetreat[];
 extern EventScr EventScr_SuspendPrompt[];
 extern EventScr EventScr_GameOver[];
-extern EventScr EventScr_08592114[];
-extern EventScr EventScr_08592140[];
-extern EventScr EventScr_08592170[];
+extern EventScr EventScr_CutsceneExecEnd[];
+extern EventScr EventScr_CutsceneExecEnd_Sub0[];
+extern EventScr EventScr_CutsceneExecEnd_Sub1[];
 extern u16 CONST_DATA Obj_EventShinningCursor[];
 
 void _FreezeMenu(void);
@@ -341,10 +341,10 @@ u8 EventC3_SpawnLord(struct EventEngineProc * proc);
 u8 EventCE_(struct EventEngineProc * proc);
 u8 EventCF_(struct EventEngineProc * proc);
 u8 EventC4_WmShowPortrait(struct EventEngineProc * proc);
-void nop_800CCE8(void);
+void nop_1(void);
 void nullsub_32(void);
 u8 EventC5_WmClearPortrait(struct EventEngineProc * proc);
-void nop_800CD38(struct Proc8591C68 * proc);
+void nop_2(struct Proc8591C68 * proc);
 void nullsub_34(struct Proc8591C68 * proc);
 void EventFaceDeamonDelete(struct Proc8591C68 * proc);
 u8 EventC6_WmDisplayText(struct EventEngineProc * proc);
@@ -416,7 +416,7 @@ u8 Event2A_MoveToChapter(struct EventEngineProc * proc);
 // ??? ShouldUNITBeLoaded(???);
 // ??? EventLoadUnitWithMovement(???);
 void EventLoadUnitSliently(const struct UnitDefinition* def, s16 count, u8 param);
-void LoadUnit_800F704(const struct UnitDefinition *, u16, s8, s8);
+void LoadUnit_0(const struct UnitDefinition *, u16, s8, s8);
 void sub_800F8A8(struct Unit*, const struct UnitDefinition*, u16, s8);
 // ??? GetUnitDefinitionFormEventScr(???);
 u8 Event2B_ConfigLoadUnit(struct EventEngineProc * proc);

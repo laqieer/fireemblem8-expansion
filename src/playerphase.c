@@ -73,7 +73,7 @@ PROC_LABEL(1),
     PROC_CALL(SetAllUnitNotBackSprite),
     PROC_CALL(RefreshUnitSprites),
 
-    PROC_START_CHILD_BLOCKING(gProcScr_0859ACE8),
+    PROC_START_CHILD_BLOCKING(gProcScr_Playerphase_0),
 
     PROC_CALL(PlayerPhase_InitUnitMovementSelect),
     PROC_SLEEP(1),
@@ -153,7 +153,7 @@ PROC_LABEL(3),
     PROC_END,
 };
 
-struct ProcCmd CONST_DATA gProcScr_0859ACE8[] =
+struct ProcCmd CONST_DATA gProcScr_Playerphase_0[] =
 {
     PROC_CALL(MakeMoveunitForActiveUnit),
     PROC_CALL(TryCallSelectEvents),
@@ -1235,7 +1235,7 @@ void PlayPhaseForceActiveUnitCanto(void)
 //! FE8U = 0x0801D89C
 void MoveLimitViewChange_OnInit(struct MoveLimitViewProc * proc)
 {
-    RegisterDataMove(gUnknown_08A02EB4, (u8 *)VRAM + 0x5080, 0x80);
+    RegisterDataMove(gUnkData_34, (u8 *)VRAM + 0x5080, 0x80);
 
     if (!(gBmSt.gameStateBits & BM_FLAG_0))
     {
@@ -1243,7 +1243,7 @@ void MoveLimitViewChange_OnInit(struct MoveLimitViewProc * proc)
     }
     else
     {
-        RegisterDataMove(gUnknown_08A02EB4, (u8 *)VRAM + 0x5000, 0x80);
+        RegisterDataMove(gUnkData_34, (u8 *)VRAM + 0x5000, 0x80);
         Proc_End(proc);
     }
 
@@ -1310,22 +1310,22 @@ void MoveLimitView_OnLoop(struct MoveLimitViewProc * proc)
 
     if (proc->flags & LIMITVIEW_BLUE)
     {
-        CopyToPaletteBuffer(gUnknown_08A02F34 + frame, 0x82, 0x20);
+        CopyToPaletteBuffer(gUnkData_35 + frame, 0x82, 0x20);
     }
 
     if (proc->flags & LIMITVIEW_RED)
     {
-        CopyToPaletteBuffer(gUnknown_08A02F94 + frame, 0xA2, 0x20);
+        CopyToPaletteBuffer(gUnkData_36 + frame, 0xA2, 0x20);
     }
 
     if (proc->flags & LIMITVIEW_GREEN)
     {
-        CopyToPaletteBuffer(gUnknown_08A02FF4 + frame, 0xA2, 0x20);
+        CopyToPaletteBuffer(gUnkData_37 + frame, 0xA2, 0x20);
     }
 
     if (proc->flags & LIMITVIEW_UNK)
     {
-        CopyToPaletteBuffer(gUnknown_08A02F34 + frame, 0xA2, 0x20);
+        CopyToPaletteBuffer(gUnkData_35 + frame, 0xA2, 0x20);
     }
 
     return;

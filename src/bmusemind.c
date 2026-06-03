@@ -850,37 +850,37 @@ void sub_802FAD0(ProcPtr proc) {
     // Seems to be required
     unit = 0;
 
-    gUnknown_03001788.charIndex = 0x80;
-    gUnknown_03001788.classIndex = CLASS_BERSERKER;
-    gUnknown_03001788.leaderCharIndex = 1;
+    gUnk_39.charIndex = 0x80;
+    gUnk_39.classIndex = CLASS_BERSERKER;
+    gUnk_39.leaderCharIndex = 1;
 
-    gUnknown_03001788.autolevel = 0;
-    gUnknown_03001788.allegiance = 0;
-    gUnknown_03001788.level = 1;
+    gUnk_39.autolevel = 0;
+    gUnk_39.allegiance = 0;
+    gUnk_39.level = 1;
 
-    gUnknown_03001788.xPosition = xPos;
-    gUnknown_03001788.yPosition = yPos;
+    gUnk_39.xPosition = xPos;
+    gUnk_39.yPosition = yPos;
 
-    gUnknown_03001788.redaCount = 0;
-    gUnknown_03001788.redas = NULL;
+    gUnk_39.redaCount = 0;
+    gUnk_39.redas = NULL;
 
-    gUnknown_03001788.genMonster = 0;
-    gUnknown_03001788.itemDrop = 0;
+    gUnk_39.genMonster = 0;
+    gUnk_39.itemDrop = 0;
 
-    gUnknown_03001788.items[0] = ITEM_AXE_STEEL;
-    gUnknown_03001788.items[1] = ITEM_AXE_SILVER;
-    gUnknown_03001788.items[2] = ITEM_AXE_DEVIL;
-    gUnknown_03001788.items[3] = ITEM_AXE_TOMAHAWK;
+    gUnk_39.items[0] = ITEM_AXE_STEEL;
+    gUnk_39.items[1] = ITEM_AXE_SILVER;
+    gUnk_39.items[2] = ITEM_AXE_DEVIL;
+    gUnk_39.items[3] = ITEM_AXE_TOMAHAWK;
 
-    gUnknown_03001788.ai[0] = 0;
-    gUnknown_03001788.ai[1] = 0;
-    gUnknown_03001788.ai[2] = 0;
-    gUnknown_03001788.ai[3] = 0;
+    gUnk_39.ai[0] = 0;
+    gUnk_39.ai[1] = 0;
+    gUnk_39.ai[2] = 0;
+    gUnk_39.ai[3] = 0;
 
     // TODO: Can't seem to force the extra register allocation for the return, which is required for match
     unit = GetUnitFromCharId(1); // CHARACTER_EIRIKA
     if (!unit) {
-        LoadUnits(&gUnknown_03001788);
+        LoadUnits(&gUnk_39);
     }
 
     gBattleTarget.statusOut = -1;

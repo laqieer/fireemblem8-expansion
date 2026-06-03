@@ -32,7 +32,7 @@ struct MinimapProc {
 
 extern u8 gGfx_MinimapTiles[];
 extern u16 gPal_MinimapTiles[];
-extern u16 gPal_08A1FFD0[];
+extern u16 gPal_Minimap_0[];
 
 EWRAM_OVERLAY(0) s16 gMinimapWinBuf[2][320] = {};
 EWRAM_OVERLAY(0) s16 * gMinimapFrontWinBuf = NULL;
@@ -928,7 +928,7 @@ void ApplyMinimapGraphics(int palId) {
     Decompress(gGfx_MinimapTiles, gGenericBuffer);
 
     ApplyPalette(gPal_MinimapTiles, palId);
-    ApplyPalette(gPal_08A1FFD0, palId + 1);
+    ApplyPalette(gPal_Minimap_0, palId + 1);
 
     return;
 }

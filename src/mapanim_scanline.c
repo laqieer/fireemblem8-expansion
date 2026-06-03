@@ -7,7 +7,7 @@
 EWRAM_DATA u16 gManimScanlineBufA[DISPLAY_HEIGHT * 2 * 2] = { 0 };
 EWRAM_DATA u16 * gManimScanlineBufs[2] = { NULL };
 EWRAM_DATA u16 * gManimActiveScanlineBuf = NULL;
-EWRAM_DATA u32 unused_0203e760 = 0;
+EWRAM_DATA u32 unused_MapanimScanline_0 = 0;
 
 //! FE8U = 0x08081E78
 void InitScanline(void)
@@ -71,7 +71,7 @@ void sub_8081F64(void)
 }
 
 //! FE8U = 0x08081FA8
-void HBlank_MapAnimEffect_Unk_8081FA8(void)
+void HBlank_MapAnimEffect_Unk_0(void)
 {
     u16 vcount = REG_VCOUNT;
 

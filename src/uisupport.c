@@ -29,8 +29,8 @@
 struct SupportScreenUnit * CONST_DATA sSupportScreenUnits = (void*)gBufPrep;
 
 EWRAM_OVERLAY(0) int sSupportScreenUnitCount = 0;
-EWRAM_OVERLAY(0) u16 gUnknown_020136F4[0xC00] = {};
-EWRAM_OVERLAY(0) u16 gUnknown_02014EF4[0x2706] = {};
+EWRAM_OVERLAY(0) u16 gUisupport_0[0xC00] = {};
+EWRAM_OVERLAY(0) u16 gUisupport_1[0x2706] = {};
 
 u16 CONST_DATA gSprite_SupportScreenSuccessBox[] = {
     6,
@@ -520,7 +520,7 @@ void SupportScreen_SetupGraphics(struct SupportScreenProc* proc) {
     sub_80A0EC0((void*)proc);
     PutImg_PrepItemUseUnk(0x5000, 5);
 
-    Decompress(gUnknown_08A1DB80, gGenericBuffer);
+    Decompress(gUnkData_80, gGenericBuffer);
     CallARM_FillTileRect(TILEMAP_LOCATED(gBG1TilemapBuffer, 1, 4), gGenericBuffer, 0x1200);
 
     Decompress(gGfx_SupportScreenBanner, (void*)0x06013800);
@@ -921,9 +921,9 @@ void sub_80A1AE4(void) {
 
     for (ix = 0; ix < 30; ix++) {
         for (iy = 0; iy < 20; iy++) {
-            *(gUnknown_020136F4 + TILEMAP_INDEX(ix, iy+0x00)) = gBG0TilemapBuffer[TILEMAP_INDEX(ix, iy)];
-            *(gUnknown_020136F4 + TILEMAP_INDEX(ix, iy+0x20)) = gBG1TilemapBuffer[TILEMAP_INDEX(ix, iy)];
-            *(gUnknown_020136F4 + TILEMAP_INDEX(ix, iy+0x40)) = gBG2TilemapBuffer[TILEMAP_INDEX(ix, iy)];
+            *(gUisupport_0 + TILEMAP_INDEX(ix, iy+0x00)) = gBG0TilemapBuffer[TILEMAP_INDEX(ix, iy)];
+            *(gUisupport_0 + TILEMAP_INDEX(ix, iy+0x20)) = gBG1TilemapBuffer[TILEMAP_INDEX(ix, iy)];
+            *(gUisupport_0 + TILEMAP_INDEX(ix, iy+0x40)) = gBG2TilemapBuffer[TILEMAP_INDEX(ix, iy)];
         }
     }
 
@@ -947,13 +947,13 @@ u16 CONST_DATA sSprite_NameAffinLv[] = {
     0x4000, 0x4040, 0x0834,
 };
 
-u16 CONST_DATA sSprite_08A19850[] = {
+u16 CONST_DATA sSprite_Uisupport_0[] = {
     2,
     0x4000, 0x8000, 0x0800,
     0x0000, 0x4020, 0x0804,
 };
 
-u16 CONST_DATA sSprite_08A1985E[] = {
+u16 CONST_DATA sSprite_Uisupport_1[] = {
     3,
     0x4000, 0x8000, 0x0806,
     0x4000, 0x8020, 0x080A,
@@ -974,9 +974,9 @@ void DrawSupportSubScreenSprites(struct SubScreenProc* proc) {
     int y;
 
     PutSpriteExt(4, (proc->x + 128) & 0x1FF, 8, sSprite_NameAffinLv, 0x23c0);
-    PutSpriteExt(4, (proc->x + 32) & 0x1FF, 80, sSprite_08A19850, 0xE280);
+    PutSpriteExt(4, (proc->x + 32) & 0x1FF, 80, sSprite_Uisupport_0, 0xE280);
     PutSpriteExt(4, (proc->x + 5) & 0x1FF, 103, gSprite_SupportScreenSuccessBox, 0xABC0);
-    PutSpriteExt(4, (proc->x + 20) & 0x1FF, 111, sSprite_08A1985E, 0xE280);
+    PutSpriteExt(4, (proc->x + 20) & 0x1FF, 111, sSprite_Uisupport_1, 0xE280);
     PutSpriteExt(4, (proc->x + 12) & 0x1FF, 144, sSprite_BackButton, 0x2bc0);
 
     x = (proc->x + 112) & 0x1FF;
@@ -1515,9 +1515,9 @@ void sub_80A2730(u32 xBase) {
         if (x < 30) {
 
             for (iy = 0; iy < 20; iy++) {
-                *(gBG0TilemapBuffer + TILEMAP_INDEX(ix, iy)) = *(gUnknown_020136F4 + TILEMAP_INDEX(x, iy + 0x00));
-                *(gBG1TilemapBuffer + TILEMAP_INDEX(ix, iy)) = *(gUnknown_020136F4 + TILEMAP_INDEX(x, iy + 0x20));
-                *(gBG2TilemapBuffer + TILEMAP_INDEX(ix, iy)) = *(gUnknown_020136F4 + TILEMAP_INDEX(x, iy + 0x40));
+                *(gBG0TilemapBuffer + TILEMAP_INDEX(ix, iy)) = *(gUisupport_0 + TILEMAP_INDEX(x, iy + 0x00));
+                *(gBG1TilemapBuffer + TILEMAP_INDEX(ix, iy)) = *(gUisupport_0 + TILEMAP_INDEX(x, iy + 0x20));
+                *(gBG2TilemapBuffer + TILEMAP_INDEX(ix, iy)) = *(gUisupport_0 + TILEMAP_INDEX(x, iy + 0x40));
             }
 
         } else {

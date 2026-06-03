@@ -5,16 +5,16 @@ u8 Img_GameMainMenuObjs[] = INCBIN_U8("graphics/misc/Img_GameMainMenuObjs.4bpp.l
 u8 Img_DifficultyMenuObjs[] = INCBIN_U8("graphics/misc/Img_DifficultyMenuObjs.4bpp.lz");
 u16 Pal_DifficultyMenuObjs[] = INCBIN_U16("graphics/misc/Pal_DifficultyMenuObjs.gbapal");
 
-u16 gUnknown_08A29498[] = INCBIN_U16("graphics/misc/gUnknown_08A29498.4bpp");
-u8 gUnknown_08A29558[] = INCBIN_U8("graphics/misc/gUnknown_08A29558.tsa.bin.lz");
-u16 Pal_08A295B4[] = INCBIN_U16("graphics/misc/Pal_08A295B4.gbapal");
+u16 gMenuMainObjs_0[] = INCBIN_U16("graphics/misc/gUnknown_08A29498.4bpp");
+u8 gMenuMainObjs_1[] = INCBIN_U8("graphics/misc/gUnknown_08A29558.tsa.bin.lz");
+u16 Pal_MenuMainObjs_0[] = INCBIN_U16("graphics/misc/Pal_08A295B4.gbapal");
 u8 Tsa_CommGameBgScreenInShop[] = INCBIN_U8("graphics/misc/Tsa_CommGameBgScreenInShop.tsa.bin");
-u8 gUnknown_08A29A88[] = INCBIN_U8("graphics/misc/gUnknown_08A29A88.4bpp.lz");
-u8 gUnknown_08A2B1E4[] = INCBIN_U8("graphics/misc/gUnknown_08A2B1E4.4bpp.lz");
-u16 gUnknown_08A2C11C[] = INCBIN_U16("graphics/misc/gUnknown_08A2C11C.4bpp");
+u8 gMenuMainObjs_2[] = INCBIN_U8("graphics/misc/gUnknown_08A29A88.4bpp.lz");
+u8 gMenuMainObjs_3[] = INCBIN_U8("graphics/misc/gUnknown_08A2B1E4.4bpp.lz");
+u16 gMenuMainObjs_4[] = INCBIN_U16("graphics/misc/gUnknown_08A2C11C.4bpp");
 
 /* RGB15 color/palette table (326 u16 entries, 652 bytes) */
-u16 gUnknown_08A2C23C[] =
+u16 gMenuMainObjs_5[] =
 {
     0x7FFF, 0x739C, 0x6319, 0x52B6, 0x4233, 0x31CF, 0x254C, 0x14E9,
     0x14E9, 0x214C, 0x31CF, 0x4232, 0x52B6, 0x6319, 0x739C, 0x7FFF,

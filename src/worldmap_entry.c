@@ -47,9 +47,9 @@ struct GmapMuEntryProc
 
 extern u8 gWmHblankStatus;
 
-extern u16 gPal_08A9E5BC[];
-extern u8 gImg_08A9E544[];
-extern u8 gTsa_08A9E5DC[];
+extern u16 gPal_WorldmapMinimap_0[];
+extern u8 gImg_WorldmapMinimap_0[];
+extern u8 gTsa_WorldmapMinimap_0[];
 
 //! FE8U = 0x080BF7B4
 void RememberBlendState(struct BlendStruct * blend)
@@ -108,7 +108,7 @@ void GmapBaseEntry_Init(struct GmapBaseEntryProc * proc)
 }
 
 //! FE8U = 0x080BF8CC
-void GmapBaseEntry_80BF8CC(struct GmapBaseEntryProc * proc)
+void GmapBaseEntry_0(struct GmapBaseEntryProc * proc)
 {
     gGMData.nodes[proc->unk_29].state |= 1;
 
@@ -140,7 +140,7 @@ void GmapBaseEntry_80BF8CC(struct GmapBaseEntryProc * proc)
 }
 
 //! FE8U = 0x080BF988
-void GmapBaseEntry_80BF988(struct GmapBaseEntryProc * proc)
+void GmapBaseEntry_1(struct GmapBaseEntryProc * proc)
 {
     proc->unk_2c--;
 
@@ -176,7 +176,7 @@ void GmapBaseEntry_80BF988(struct GmapBaseEntryProc * proc)
 }
 
 //! FE8U = 0x080BFA1C
-void GmapBaseEntry_80BFA1C(struct GmapBaseEntryProc * proc)
+void GmapBaseEntry_2(struct GmapBaseEntryProc * proc)
 {
     const struct NodeIcon * nodeIcon;
     struct GmapEffectProc * otherProc;
@@ -230,11 +230,11 @@ struct ProcCmd CONST_DATA gProcScr_GmapBaseEntry[] =
     PROC_CALL(GmapBaseEntry_Init),
     PROC_YIELD,
 
-    PROC_CALL(GmapBaseEntry_80BFA1C),
+    PROC_CALL(GmapBaseEntry_2),
     PROC_YIELD,
 
-    PROC_CALL(GmapBaseEntry_80BF8CC),
-    PROC_REPEAT(GmapBaseEntry_80BF988),
+    PROC_CALL(GmapBaseEntry_0),
+    PROC_REPEAT(GmapBaseEntry_1),
 
     PROC_END,
 };
@@ -418,11 +418,11 @@ s8 sub_80BFD10(void)
 //! FE8U = 0x080BFD28
 void sub_80BFD28(void)
 {
-    ApplyPalette(gPal_08A9E5BC, 2);
+    ApplyPalette(gPal_WorldmapMinimap_0, 2);
     EnablePaletteSync();
 
-    Decompress(gImg_08A9E544, (void *)0x06004C00);
-    Decompress(gTsa_08A9E5DC, gGenericBuffer);
+    Decompress(gImg_WorldmapMinimap_0, (void *)0x06004C00);
+    Decompress(gTsa_WorldmapMinimap_0, gGenericBuffer);
     CallARM_FillTileRect(gBG0TilemapBuffer, gGenericBuffer, 0x2260);
 
     BG_EnableSyncByMask(BG0_SYNC_BIT);
@@ -492,7 +492,7 @@ void sub_80BFDA0(struct GmapMuEntryProc * proc, int unused)
 }
 
 //! FE8U = 0x080BFEF8
-void GmMuEntry_80BFEF8(struct GmapMuEntryProc * proc)
+void GmMuEntry_0(struct GmapMuEntryProc * proc)
 {
     u16 * buf;
     sub_80BFD28();
@@ -524,7 +524,7 @@ void GmMuEntry_80BFEF8(struct GmapMuEntryProc * proc)
 }
 
 //! FE8U = 0x080BFFD0
-void GmMuEntry_80BFFD0(struct GmapMuEntryProc * proc)
+void GmMuEntry_1(struct GmapMuEntryProc * proc)
 {
     u16 * buf;
     sub_80BFD28();
@@ -552,7 +552,7 @@ void GmMuEntry_80BFFD0(struct GmapMuEntryProc * proc)
 }
 
 //! FE8U = 0x080C0080
-void GmMuEntry_80C0080(struct GmapMuEntryProc * proc)
+void GmMuEntry_2(struct GmapMuEntryProc * proc)
 {
     int unk;
 
@@ -585,7 +585,7 @@ void GmMuEntry_80C0080(struct GmapMuEntryProc * proc)
 }
 
 //! FE8U = 0x080C0144
-void GmMuEntry_80C0144(struct GmapMuEntryProc * proc)
+void GmMuEntry_3(struct GmapMuEntryProc * proc)
 {
     int unk;
 
@@ -630,14 +630,14 @@ PROC_LABEL(0),
     PROC_BLOCK,
 
 PROC_LABEL(1),
-    PROC_CALL(GmMuEntry_80BFEF8),
-    PROC_REPEAT(GmMuEntry_80C0080),
+    PROC_CALL(GmMuEntry_0),
+    PROC_REPEAT(GmMuEntry_2),
 
     PROC_GOTO(0),
 
 PROC_LABEL(1),
-    PROC_CALL(GmMuEntry_80BFFD0),
-    PROC_REPEAT(GmMuEntry_80C0144),
+    PROC_CALL(GmMuEntry_1),
+    PROC_REPEAT(GmMuEntry_3),
 
     PROC_GOTO(0),
 

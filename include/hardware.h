@@ -168,8 +168,8 @@ extern u8 sModifiedBGs;  // BGs that need copying
 extern s8 sModifiedPalette;
 extern u16 gKeyStatusIgnoredSt;
 // extern ??? gUnknown_03000014
-extern u8 gUnknown_03000018;
-extern u8 gUnknown_03000019;
+extern u8 gUnk_34;
+extern u8 gUnk_35;
 extern bool gSoftwareResetFlag;
 
 extern s8 gFadeComponentStep[];

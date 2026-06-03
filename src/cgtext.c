@@ -19,7 +19,7 @@ EWRAM_DATA struct CgTextSt gCgTextSt = { 0 };
 
 // clang-format off
 
-u16 CONST_DATA gSprite_08A01D88[] =
+u16 CONST_DATA gSprite_Cgtext_0[] =
 {
     6,
     OAM0_SHAPE_32x8 + OAM0_BLEND, OAM1_SIZE_32x8, OAM2_CHR(0),
@@ -30,7 +30,7 @@ u16 CONST_DATA gSprite_08A01D88[] =
     OAM0_SHAPE_32x8 + OAM0_Y(16) + OAM0_BLEND, OAM1_SIZE_32x8 + OAM1_X(32), OAM2_CHR(0x14),
 };
 
-u16 CONST_DATA gSprite_08A01DAE[] =
+u16 CONST_DATA gSprite_Cgtext_1[] =
 {
     2,
     OAM0_SHAPE_32x16 + OAM0_BLEND, OAM1_SIZE_32x16, OAM2_CHR(0),
@@ -156,8 +156,8 @@ void sub_808EB0C(struct CgTextMainProc * proc)
         SetTextFont(NULL);
 
         ApplyPalette(Pal_Text, 0x12);
-        ApplyPalette(gUnknown_085A643C, 0x11);
-        Decompress(gUnknown_085A638C, (void *)0x06017900);
+        ApplyPalette(gParticlesFx_7, 0x11);
+        Decompress(gParticlesFx_6, (void *)0x06017900);
     }
 
     return;
@@ -392,7 +392,7 @@ void CgText_LoopFadeOut(struct CgTextMainProc * proc)
 }
 
 //! FE8U = 0x0808F04C
-void CgText_808F04C(struct CgTextMainProc * proc)
+void CgText_0(struct CgTextMainProc * proc)
 {
     if (!(gKeyStatusPtr->newKeys & (B_BUTTON | START_BUTTON)))
     {
@@ -413,7 +413,7 @@ void CgText_808F04C(struct CgTextMainProc * proc)
 }
 
 //! FE8U = 0x0808F084
-void CgText_808F084(struct CgTextMainProc * proc)
+void CgText_1(struct CgTextMainProc * proc)
 {
     u16 * bg = BG_GetMapBuffer(GetCgTextBg(GetCgTextFlags()));
     TileMap_FillRect(bg + (proc->y - 1) * 32, 31, proc->boxHeight + 1, 0);
@@ -425,13 +425,13 @@ void CgText_808F084(struct CgTextMainProc * proc)
 void CgText_OnEnd(struct CgTextMainProc * proc)
 {
     SetFaceDisplayBitsById(0, GetFaceDisplayBitsById(0) & ~FACE_DISP_TALK_1);
-    CgText_808F084(proc);
+    CgText_1(proc);
     SetSecondaryHBlankHandler(NULL);
     return;
 }
 
 //! FE8U = 0x0808F0EC
-void CgText_808F0EC(struct CgTextMainProc * proc)
+void CgText_2(struct CgTextMainProc * proc)
 {
     CgText_ClearSpriteText(proc);
 
@@ -470,8 +470,8 @@ PROC_LABEL(2),
     // fallthrough
 
 PROC_LABEL(3),
-    PROC_CALL(CgText_808F0EC),
-    PROC_REPEAT(CgText_808F04C),
+    PROC_CALL(CgText_2),
+    PROC_REPEAT(CgText_0),
 
     // fallthrough
 
@@ -484,7 +484,7 @@ PROC_LABEL(0),
     PROC_CALL(CgText_InitFadeOut),
     PROC_REPEAT(CgText_LoopFadeOut),
 
-    PROC_CALL(CgText_808F084),
+    PROC_CALL(CgText_1),
     PROC_YIELD,
 
     // fallthrough
@@ -872,8 +872,8 @@ void sub_808F5C8(struct CgTextMainProc * proc)
 
     if (GetCgTextFlags() & CG_TEXT_FLAG_16)
     {
-        PutSpriteExt(0, OAM1_X(x - 16), OAM0_Y(y - 24), gSprite_08A01D88, OAM2_CHR(0x3C8) + OAM2_PAL(1));
-        PutSpriteExt(0, OAM1_X(x - 8), OAM0_Y(y - 20), gSprite_08A01DAE, OAM2_CHR(0x3C0) + OAM2_PAL(2));
+        PutSpriteExt(0, OAM1_X(x - 16), OAM0_Y(y - 24), gSprite_Cgtext_0, OAM2_CHR(0x3C8) + OAM2_PAL(1));
+        PutSpriteExt(0, OAM1_X(x - 8), OAM0_Y(y - 20), gSprite_Cgtext_1, OAM2_CHR(0x3C0) + OAM2_PAL(2));
     }
 
     for (iy = 0; iy < proc->boxHeight / 2; iy++)
@@ -998,7 +998,7 @@ void CgTextInterpreter_Loop_Main(struct CgTextInterpreterProc * proc)
 
     SetTextFont(parent->pFont);
 
-    switch ((u8)gUnknown_03005398)
+    switch ((u8)gUnk_80)
     {
         case 0:
             faceDisp = GetFaceDisplayBitsById(0) | FACE_DISP_TALK_1;
@@ -1212,7 +1212,7 @@ void CgTextInterpreter_Loop_Main(struct CgTextInterpreterProc * proc)
 _0808FE68:
     SetTextFont(NULL);
 
-    switch ((u8)gUnknown_03005398)
+    switch ((u8)gUnk_80)
     {
         case 0:
             SetFaceDisplayBitsById(0, faceDisp);
@@ -1271,14 +1271,14 @@ void sub_808FEA4(int * src, int x, int y)
 }
 
 //! FE8U = 0x0808FF10
-void CgTextInterpreter_808FF10(struct CgTextInterpreterProc * proc)
+void CgTextInterpreter_0(struct CgTextInterpreterProc * proc)
 {
     proc->unk_4c = 0;
     return;
 }
 
 //! FE8U = 0x0808FF18
-void CgTextInterpreter_808FF18(struct CgTextInterpreterProc * proc)
+void CgTextInterpreter_1(struct CgTextInterpreterProc * proc)
 {
     struct CgTextMainProc * parent = proc->proc_parent;
 
@@ -1307,7 +1307,7 @@ void CgTextInterpreter_808FF18(struct CgTextInterpreterProc * proc)
 }
 
 //! FE8U = 0x0808FF9C
-void CgTextInterpreter_808FF9C(struct CgTextInterpreterProc * proc)
+void CgTextInterpreter_2(struct CgTextInterpreterProc * proc)
 {
     struct CgTextMainProc * parent = proc->proc_parent;
 
@@ -1334,13 +1334,13 @@ PROC_LABEL(0),
     // fallthrough
 
 PROC_LABEL(1),
-    PROC_CALL(CgTextInterpreter_808FF10),
-    PROC_REPEAT(CgTextInterpreter_808FF18),
+    PROC_CALL(CgTextInterpreter_0),
+    PROC_REPEAT(CgTextInterpreter_1),
 
     PROC_GOTO(0),
 
 PROC_LABEL(2),
-    PROC_CALL(CgTextInterpreter_808FF9C),
+    PROC_CALL(CgTextInterpreter_2),
 
     PROC_GOTO(0),
 

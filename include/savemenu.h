@@ -323,14 +323,14 @@ struct Unknown020007E0 {
 };
 // sizeof = 0x10
 
-extern struct Unknown020007E0 gUnknown_020007E0[];
+extern struct Unknown020007E0 gSavedraw_0[];
 
 extern struct Font gSaveMenuSubBoxFont;
 extern struct Text gSaveMenuSubBoxText;
 
-extern u16 Sprite_08A20570[];
-extern u16 Sprite_08A20578[];
-extern u16 Sprite_08A20580[];
+extern u16 Sprite_Savedraw_3[];
+extern u16 Sprite_Savedraw_4[];
+extern u16 Sprite_Savedraw_5[];
 
 void SaveDrawCursor_Init(struct SaveDrawCursorProc * proc);
 void SaveDrawCursor_Loop(struct SaveDrawCursorProc * proc);
@@ -378,30 +378,30 @@ void sub_80AC680(struct DifficultyMenuSpritesProc *, int, int);
 ProcPtr StartDrawDifficultyMenuSprites(ProcPtr);
 
 extern u16 gBgConfig_SaveMenu[]; // bg config
-// extern ??? gProcScr_08A20068
+// extern ??? gProcScr_Savemenu_0
 // extern ??? ProcScr_CallExtraMap
 // extern ??? ProcScr_SaveMenu
 // extern ??? gProcScr_SaveMenuPostChapter
 extern CONST_DATA struct BonusClaimEnt * gpBonusClaimData;
 // extern ??? ProcScr_BonusClaimMenu;
-extern u16 Sprite_08A2051C[];
-extern u16 Sprite_08A20536[];
-extern u16 Sprite_08A20570[];
-extern u16 Sprite_08A20578[];
-extern u16 Sprite_08A20580[];
-extern u16 Sprite_08A20588[];
-extern u16 Sprite_08A20590[];
-extern u16 * SpriteArray_08A20650[];
-extern u16 * SpriteArray_08A2067C[];
+extern u16 Sprite_Savedraw_0[];
+extern u16 Sprite_Savedraw_1[];
+extern u16 Sprite_Savedraw_3[];
+extern u16 Sprite_Savedraw_4[];
+extern u16 Sprite_Savedraw_5[];
+extern u16 Sprite_Savedraw_6[];
+extern u16 Sprite_Savedraw_7[];
+extern u16 * SpriteArray_Savedraw_0[];
+extern u16 * SpriteArray_Savedraw_1[];
 // extern ??? ProcScr_savedraw
 // extern ??? gProcScr_SaveDrawCursor
-// extern ??? gProcScr_08A206F8
+// extern ??? gProcScr_Savedraw_0
 // extern ??? SaveMenuSubSelBoxTexts
 // extern ??? gProcScr_SqMask
 // extern ??? gProcScr_SaveBgUp
-extern u16 * SpriteArray_08A2099C[];
-extern u16 * SpriteArray_08A209B8[];
-extern u16 * SpriteArray_08A209E4[];
-extern u16 * SpriteArray_08A209F0[];
+extern u16 * SpriteArray_SavemenuData_0[];
+extern u16 * SpriteArray_SavemenuData_1[];
+extern u16 * SpriteArray_SavemenuData_2[];
+extern u16 * SpriteArray_SavemenuData_3[];
 
 #endif // GUARD_SAVEMENU_H

@@ -5,7 +5,7 @@
 void sub_80707C0(struct Proc * proc);
 void sub_80707FC(struct Proc * proc);
 
-struct ProcCmd CONST_DATA ProcScr_EkrDragon_08758720[] =
+struct ProcCmd CONST_DATA ProcScr_EkrDragon_0[] =
 {
     PROC_YIELD,
     PROC_CALL(sub_80707C0),

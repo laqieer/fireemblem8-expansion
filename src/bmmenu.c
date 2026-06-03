@@ -48,7 +48,7 @@
 #include "constants/items.h"
 #include "constants/songs.h"
 
-extern u16 gUnknown_085A0D4C[];
+extern u16 gBattleForecast_2[];
 
 extern u8 gSummonConfig[4][2];
 
@@ -67,7 +67,7 @@ struct ProcCmd CONST_DATA gProcScr_BackToUnitMenu[] = {
     PROC_END,
 };
 
-struct ProcCmd CONST_DATA gProcScr_0859B630[] = {
+struct ProcCmd CONST_DATA gProcScr_Bmmenu_0[] = {
     PROC_CALL(LockGame),
 
     PROC_CALL(sub_8022E38),
@@ -620,7 +620,7 @@ u8 AttackMapSelect_Cancel(ProcPtr proc, struct SelectTarget * target) {
         return 0;
     }
 
-    Proc_Start(gProcScr_0859B630, PROC_TREE_3);
+    Proc_Start(gProcScr_Bmmenu_0, PROC_TREE_3);
 
     return MENU_ACT_SKIPCURSOR | MENU_ACT_END | MENU_ACT_SND6B;
 }
@@ -1817,7 +1817,7 @@ u8 StealMapSelect_Select(ProcPtr proc, struct SelectTarget* target) {
 
     EndTargetSelection(proc);
 
-    CallARM_FillTileRect(gBG1TilemapBuffer + 0x42, gUnknown_085A0D4C, 0x1000);
+    CallARM_FillTileRect(gBG1TilemapBuffer + 0x42, gBattleForecast_2, 0x1000);
 
     pos = (56 - GetStringTextLen(GetStringFromIndex(GetUnit(gActionData.targetIndex)->pCharacterData->nameTextId))) / 2;
 

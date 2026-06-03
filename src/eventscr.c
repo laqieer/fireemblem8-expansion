@@ -93,8 +93,8 @@ u8 Event01_End(struct EventEngineProc * proc)
 
                 proc->execType = EV_EXEC_UNK5;
 
-                proc->pEventIdk = (u16 *)EventScr_08592114;
-                proc->pEventCurrent = (u16 *)EventScr_08592114;
+                proc->pEventIdk = (u16 *)EventScr_CutsceneExecEnd;
+                proc->pEventCurrent = (u16 *)EventScr_CutsceneExecEnd;
 
                 return EVC_STOP_CONTINUE;
 
@@ -1207,7 +1207,7 @@ void sub_800E640(struct EventEngineProc * proc)
     {
         ClearTalkBubble();
         Proc_ForEach(gProcScr_E_FACE, (ProcFunc)StartFaceFadeOut);
-        Proc_StartBlocking(gUnknown_08591DE8, proc);
+        Proc_StartBlocking(gEventscr_0, proc);
     }
 }
 
@@ -1219,7 +1219,7 @@ void _WhileFace6CExists(struct Proc * proc)
 }
 
 
-struct ProcCmd CONST_DATA gUnknown_08591DE8[] =
+struct ProcCmd CONST_DATA gEventscr_0[] =
 {
     PROC_REPEAT(_WhileFace6CExists),
     PROC_YIELD,
@@ -1243,22 +1243,22 @@ u8 Event1E_(struct EventEngineProc * proc)
             if (EVENT_IS_SKIPPING(proc))
                 return EVC_ADVANCE_CONTINUE;
 
-            gUnknown_03000428.str[0] = subcode + 8;
-            gUnknown_03000428.str[1] = 0x10;
-            gUnknown_03000428.str[2] = evArgument;
-            gUnknown_03000428.str[3] = 1;
+            gUnk_36.str[0] = subcode + 8;
+            gUnk_36.str[1] = 0x10;
+            gUnk_36.str[2] = evArgument;
+            gUnk_36.str[3] = 1;
 
-            gUnknown_03000428.unk04 = 1;
-            gUnknown_03000428.unk05 = 0;
+            gUnk_36.unk04 = 1;
+            gUnk_36.unk05 = 0;
 
             InitTalk(0x80, 2, 1);
         }
         else
         {
-            gUnknown_03000428.str[0] = subcode + 8;
-            gUnknown_03000428.str[1] = 0x11;
-            gUnknown_03000428.str[2] = 1;
-            gUnknown_03000428.str[3] = 0;
+            gUnk_36.str[0] = subcode + 8;
+            gUnk_36.str[1] = 0x11;
+            gUnk_36.str[2] = 1;
+            gUnk_36.str[3] = 0;
 
             ClearTalkBubble();
         }
@@ -1277,7 +1277,7 @@ u8 Event1E_(struct EventEngineProc * proc)
         return EVC_ADVANCE_YIELD;
     }
 
-    StartTalk(0, 0, gUnknown_03000428.str);
+    StartTalk(0, 0, gUnk_36.str);
     return EVC_ADVANCE_CONTINUE;
 }
 
@@ -1296,12 +1296,12 @@ u8 Event1F_(struct EventEngineProc * proc)
     evX = EVT_CMD_ARGV(proc->pEventCurrent)[0];
     evY = EVT_CMD_ARGV(proc->pEventCurrent)[0] >> 8;
 
-    gUnknown_03000430[0] = evX + 8;
-    gUnknown_03000430[1] = 0x80;
-    gUnknown_03000430[2] = evY + 10;
-    gUnknown_03000430[3] = 0;
+    gUnk_37[0] = evX + 8;
+    gUnk_37[1] = 0x80;
+    gUnk_37[2] = evY + 10;
+    gUnk_37[3] = 0;
 
-    StartTalk(0, 0, gUnknown_03000430);
+    StartTalk(0, 0, gUnk_37);
     return EVC_ADVANCE_CONTINUE;
 }
 
@@ -1415,7 +1415,7 @@ u8 Event21_TextBg(struct EventEngineProc * proc)
                     if (EVENT_IS_SKIPPING(proc))
                         return EVC_ADVANCE_CONTINUE;
 
-                    otherProc = Proc_StartBlocking(gUnknown_08591E58, proc);
+                    otherProc = Proc_StartBlocking(gEventscr_3, proc);
                     otherProc->fadeType = 1;
 
                     break;
@@ -1434,7 +1434,7 @@ u8 Event21_TextBg(struct EventEngineProc * proc)
                 if (EVENT_IS_SKIPPING(proc))
                     return Event22_ClearScreen(proc); // CLEAN
 
-                otherProc = Proc_StartBlocking(gUnknown_08591EB0, proc);
+                otherProc = Proc_StartBlocking(gEventscr_4, proc);
                 otherProc->fadeType = 2;
 
                 break;
@@ -1444,7 +1444,7 @@ u8 Event21_TextBg(struct EventEngineProc * proc)
                 if (EVENT_IS_SKIPPING(proc))
                     return EVC_ADVANCE_CONTINUE;
 
-                otherProc = Proc_StartBlocking(gUnknown_08591E00, proc);
+                otherProc = Proc_StartBlocking(gEventscr_1, proc);
                 otherProc->fadeType = 0;
 
                 break;
@@ -1779,7 +1779,7 @@ void sub_800EF48(struct ConvoBackgroundFadeProc * proc)
 }
 
 
-struct ProcCmd CONST_DATA gUnknown_08591E00[] =
+struct ProcCmd CONST_DATA gEventscr_1[] =
 {
     PROC_YIELD,
 
@@ -1799,13 +1799,13 @@ struct ProcCmd CONST_DATA gUnknown_08591E00[] =
 };
 
 
-struct ProcCmd CONST_DATA gUnknown_08591E50[] =
+struct ProcCmd CONST_DATA gEventscr_2[] =
 {
     PROC_END,
 };
 
 
-struct ProcCmd CONST_DATA gUnknown_08591E58[] =
+struct ProcCmd CONST_DATA gEventscr_3[] =
 {
     PROC_YIELD,
 
@@ -1826,7 +1826,7 @@ struct ProcCmd CONST_DATA gUnknown_08591E58[] =
     PROC_END,
 };
 
-struct ProcCmd CONST_DATA gUnknown_08591EB0[] =
+struct ProcCmd CONST_DATA gEventscr_4[] =
 {
     PROC_YIELD,
 
@@ -2239,7 +2239,7 @@ void EventLoadUnitWithMovement(struct EventEngineProc * proc)
                 return;
             }
 
-            LoadUnit_800F704(pUnitDefinition, something, FALSE, r3);
+            LoadUnit_0(pUnitDefinition, something, FALSE, r3);
             count--;
         }
     }
@@ -2261,13 +2261,13 @@ void EventLoadUnitSliently(const struct UnitDefinition * def, s16 count, u8 para
         if (ShouldUNITBeLoaded(def, param) != TRUE)
             continue;
 
-        LoadUnit_800F704(def, 1, TRUE, r3);
+        LoadUnit_0(def, 1, TRUE, r3);
         count--;
     }
 }
 
 //! FE8U = 0x0800F704
-void LoadUnit_800F704(const struct UnitDefinition * def, u16 b, s8 quiet, s8 d)
+void LoadUnit_0(const struct UnitDefinition * def, u16 b, s8 quiet, s8 d)
 {
     struct Unit * unit;
 
@@ -3179,7 +3179,7 @@ u8 Event32_SpawnSingleUnit(struct EventEngineProc * proc)
     unitDef.ai[UDEF_AIIDX_AI_CONF_L] = 0;
     unitDef.ai[UDEF_AIIDX_AI_CONF_H] = 0;
 
-    LoadUnit_800F704(&unitDef, 0, 0, subcmd == 0xf);
+    LoadUnit_0(&unitDef, 0, 0, subcmd == 0xf);
 
     return EVC_ADVANCE_CONTINUE;
 }
@@ -3722,7 +3722,7 @@ void EventDisplayCursor_Loop(struct MapCursorProc * proc)
     return;
 }
 
-struct ProcCmd CONST_DATA gUnknown_08591F00[] =
+struct ProcCmd CONST_DATA gEventscr_5[] =
 {
     PROC_END,
 };
@@ -4242,7 +4242,7 @@ LABEL(0x0)
     ENDA
 };
 
-CONST_DATA EventListScr EventScr_08591F64[] = {
+CONST_DATA EventListScr EventScr_Ch16A_13[] = {
     EVBIT_MODIFY(0x1)
     EVBIT_F(2)
     CHECK_EVBIT(8)
@@ -4280,8 +4280,8 @@ LABEL(0x1)
     ENDA
 };
 
-CONST_DATA EventListScr EventScr_08591FD8[] = {
-    CALL(EventScr_08591F64)
+CONST_DATA EventListScr EventScr_CommonPrep[] = {
+    CALL(EventScr_Ch16A_13)
     CLEAN
     PREP
     CLEAN
@@ -4361,18 +4361,18 @@ CONST_DATA EventListScr EventScr_GameOver[] = {
     ENDA
 };
 
-CONST_DATA EventListScr EventScr_08592114[] = {
+CONST_DATA EventListScr EventScr_CutsceneExecEnd[] = {
     CHECK_EVBIT(10)
     BNE(0x0, EVT_SLOT_C, EVT_SLOT_0)
-    CALL(EventScr_08592140)
+    CALL(EventScr_CutsceneExecEnd_Sub0)
     GOTO(0x1)
 LABEL(0x0)
-    CALL(EventScr_08592170)
+    CALL(EventScr_CutsceneExecEnd_Sub1)
 LABEL(0x1)
     ENDA
 };
 
-CONST_DATA EventListScr EventScr_08592140[] = {
+CONST_DATA EventListScr EventScr_CutsceneExecEnd_Sub0[] = {
     CHECK_EVBIT(8)
     BNE(0x0, EVT_SLOT_C, EVT_SLOT_0)
     CHECK_EVBIT(7)
@@ -4385,7 +4385,7 @@ LABEL(0x63)
     ENDA
 };
 
-CONST_DATA EventListScr EventScr_08592170[] = {
+CONST_DATA EventListScr EventScr_CutsceneExecEnd_Sub1[] = {
     CHECK_EVBIT(8)
     BNE(0x0, EVT_SLOT_C, EVT_SLOT_0)
     FADI(16)

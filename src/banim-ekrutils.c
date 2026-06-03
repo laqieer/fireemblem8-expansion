@@ -458,7 +458,7 @@ s16 EfxAdvanceFrameLut(s16 *ptime, s16 *pcount, const s16 lut[])
 
 void sub_8055980(void)
 {
-    gUnknown_0201775C = true;
+    gEkrbattle_5 = true;
 }
 
 int EfxGetCamMovDuration(void)
@@ -510,12 +510,12 @@ void SetEkrFrontAnimPostion(int pos, s16 x, s16 y)
 
 int Get0201FAC8(void)
 {
-    return gUnknown_0201FAC8;
+    return gEkrbattle_7;
 }
 
 void Set0201FAC8(int a)
 {
-    gUnknown_0201FAC8 = a;
+    gEkrbattle_7 = a;
 }
 
 CONST_DATA struct ProcCmd ProcScr_efxSPDQuake[] = {

@@ -293,7 +293,7 @@ struct ProcCmd CONST_DATA ProcScr_UnkMapCursor[] = {
     PROC_END,
 };
 
-struct ProcCmd CONST_DATA gProcScr_0859A580[] = {
+struct ProcCmd CONST_DATA gProcScr_Bm_0[] = {
     PROC_SET_END_CB(sub_801613C),
     PROC_REPEAT(sub_80160E0),
     PROC_END,
@@ -1086,7 +1086,7 @@ s8 IsCameraNotWatchingPosition(int x, int y) {
 }
 
 //! FE8U = 0x08015EDC
-s8 CameraMove_8015EDC(ProcPtr parent) {
+s8 CameraMove_0(ProcPtr parent) {
     struct CamMoveProc* proc;
 
     if (gBmSt.camera.y <= gBmSt.cameraMax.y) {
@@ -1231,9 +1231,9 @@ void sub_8016140(ProcPtr parent, int x, int y, int distance) {
     struct CamMoveProc* proc;
 
     if (parent != 0) {
-        proc = Proc_StartBlocking(gProcScr_0859A580, parent);
+        proc = Proc_StartBlocking(gProcScr_Bm_0, parent);
     } else {
-        proc = Proc_Start(gProcScr_0859A580, PROC_TREE_3);
+        proc = Proc_Start(gProcScr_Bm_0, PROC_TREE_3);
     }
 
     proc->from.x = gBmSt.camera.x;

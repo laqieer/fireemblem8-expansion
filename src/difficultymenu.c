@@ -14,7 +14,7 @@
 #include "savemenu.h"
 #include "constants/songs.h"
 
-struct Unknown_08A209FC gUnknown_08A209FC[] =
+struct Unknown_08A209FC gDifficultymenu_0[] =
 {
     { 0, 0x20, },
     { 0, 0x40, },
@@ -156,10 +156,10 @@ void SaveMenuInitSlotPalette(u8 slot)
     EnablePaletteSync();
 }
 
-extern u16 gUnknown_08A07B0A[];
-extern u16 gUnknown_08A07AEA[];
-extern u16 gUnknown_08A07C0A[];
-extern u16 gUnknown_08A07BEA[];
+extern u16 gUnkData_44[];
+extern u16 gUnkData_43[];
+extern u16 gUnkData_46[];
+extern u16 gUnkData_45[];
 
 //! FE8U = 0x080ABE3C
 void SaveDrawSetDifficultSlotPalette(int param_1, int param_2)
@@ -170,8 +170,8 @@ void SaveDrawSetDifficultSlotPalette(int param_1, int param_2)
     int r9;
     u16 * ip;
     // permuter
-    u16 * pickle = gUnknown_08A07BEA;
-    u16 * ketchup = gUnknown_08A07AEA;
+    u16 * pickle = gUnkData_45;
+    u16 * ketchup = gUnkData_43;
 
     param_1 = (param_1 >> 1) & 0x1f;
     if (param_1 > 0x10)
@@ -193,8 +193,8 @@ void SaveDrawSetDifficultSlotPalette(int param_1, int param_2)
         }
         else
         {
-            ip = gUnknown_08A07B0A;
-            r6 = gUnknown_08A07C0A;
+            ip = gUnkData_44;
+            r6 = gUnkData_46;
         }
 
         for (r9 = 0; r9 < 7; r9++)
@@ -331,11 +331,11 @@ void DifficultySelect_OnEnd(struct DifficultyMenuProc * proc)
 extern u16 Pal_SaveMenuBG[];    // pal
 extern u16 Pal_MainMenuBgFog[];    // pal
 extern u16 Pal_SaveScreenSprits[]; // pal
-extern u16 Pal_08A295B4[];    // pal
+extern u16 Pal_MenuMainObjs_0[];    // pal
 extern u16 Pal_DifficultyMenuObjs[];
 extern u8 Img_DifficultyMenuObjs[];
 
-extern u8 gUnknown_08A29558[];
+extern u8 gMenuMainObjs_1[];
 
 //! FE8U = 0x080AC084
 void InitDifficultySelectScreen(struct DifficultyMenuProc * proc)
@@ -355,7 +355,7 @@ void InitDifficultySelectScreen(struct DifficultyMenuProc * proc)
     ApplyPalette(Pal_MainMenuBgFog, 7);
 
     ApplyPalettes(Pal_SaveScreenSprits, 18, 8);
-    ApplyPalette(Pal_08A295B4, 2);
+    ApplyPalette(Pal_MenuMainObjs_0, 2);
 
     Decompress(Img_DifficultyMenuObjs, (void *)0x06010800);
     ApplyPalettes(Pal_DifficultyMenuObjs, 17, 10);
@@ -367,7 +367,7 @@ void InitDifficultySelectScreen(struct DifficultyMenuProc * proc)
     BG_Fill(gBG0TilemapBuffer, 0);
     BG_Fill(gBG1TilemapBuffer, 0);
 
-    Decompress(gUnknown_08A29558, gGenericBuffer);
+    Decompress(gMenuMainObjs_1, gGenericBuffer);
     CallARM_FillTileRect(gBG1TilemapBuffer + 0xd1, gGenericBuffer, 0x1000);
 
     DrawDifficultyModeText(proc);
@@ -378,8 +378,8 @@ void InitDifficultySelectScreen(struct DifficultyMenuProc * proc)
     proc->sprites_proc = StartDrawDifficultyMenuSprites(proc);
     proc->current_selection = 0;
     proc->sprites_proc->current_selection = 0;
-    proc->sprites_proc->unk_2c = gUnknown_08A209FC[proc->current_selection].a;
-    proc->sprites_proc->unk_2e = gUnknown_08A209FC[proc->current_selection].b;
+    proc->sprites_proc->unk_2c = gDifficultymenu_0[proc->current_selection].a;
+    proc->sprites_proc->unk_2e = gDifficultymenu_0[proc->current_selection].b;
 
     return;
 }
@@ -477,7 +477,7 @@ void DifficultySelect_Loop_KeyHandler(struct DifficultyMenuProc * proc)
     {
         PlaySoundEffect(SONG_SE_SYS_CURSOR_UD1);
         proc->sprites_proc->current_selection = proc->current_selection;
-        sub_80AC680(proc->sprites_proc, gUnknown_08A209FC[proc->current_selection].a, gUnknown_08A209FC[proc->current_selection].b);
+        sub_80AC680(proc->sprites_proc, gDifficultymenu_0[proc->current_selection].a, gDifficultymenu_0[proc->current_selection].b);
         DrawDifficultyModeText(proc);
         sub_80AC034(proc);
         return;
@@ -583,7 +583,7 @@ void DrawDifficultySprite_Init(struct DifficultyMenuSpritesProc * proc)
 
 // clang-format off
 
-u16 CONST_DATA gSprite_08A20A98[] =
+u16 CONST_DATA gSprite_Difficultymenu_0[] =
 {
     1,
     OAM0_SHAPE_32x32, OAM1_SIZE_32x32, OAM2_CHR(0x5C) + OAM2_LAYER(1),
@@ -625,14 +625,14 @@ void DrawDifficultyMenuCursorMaybe(struct DifficultyMenuSpritesProc * proc)
     }
 
     PutSpriteExt(
-        4, proc->unk_2c, OAM0_Y(proc->unk_2e + gUnknown_08A20B14[(proc->unk_2a >> 3) & 7]), gSprite_08A20A98, OAM2_PAL(3));
+        4, proc->unk_2c, OAM0_Y(proc->unk_2e + gDifficultymenu_1[(proc->unk_2a >> 3) & 7]), gSprite_Difficultymenu_0, OAM2_PAL(3));
 
     return;
 }
 
 // TODO: Confirm that this is a 3D array
 // Seems to be palettes for easy, normal, difficult; active / inactive; size 0x10 each
-extern u16 gUnknown_08A29498[0x60];
+extern u16 gMenuMainObjs_0[0x60];
 
 //! FE8U = 0x080AC4F8
 void sub_80AC4F8(u8 frameMaybe, u8 selectedIdx)
@@ -647,14 +647,14 @@ void sub_80AC4F8(u8 frameMaybe, u8 selectedIdx)
         if (i == selectedIdx)
         {
             var = i * 0x20;
-            PAL_OBJ_COLOR(5 + i * 2, 1) = (gUnknown_08A29498 + var)[1];
+            PAL_OBJ_COLOR(5 + i * 2, 1) = (gMenuMainObjs_0 + var)[1];
         }
         else
-            PAL_OBJ_COLOR(6 + i * 2, 1) = (gUnknown_08A29498 + i * 0x20)[0x10 + 1];
+            PAL_OBJ_COLOR(6 + i * 2, 1) = (gMenuMainObjs_0 + i * 0x20)[0x10 + 1];
     }
 
     color = (frameMaybe % 0x40) / 4;
-    gPaletteBuffer[((5 + 0x10) * 0x10 + 1) + selectedIdx * 0x20] = Pal_08A28088[color];
+    gPaletteBuffer[((5 + 0x10) * 0x10 + 1) + selectedIdx * 0x20] = Pal_MenuSaveMainBg_0[color];
     EnablePaletteSync();
 }
 
@@ -675,14 +675,14 @@ u16 CONST_DATA gSprite_DifficultyMenuSelectModeText[] =
     OAM0_SHAPE_32x16 + OAM0_Y(8), OAM1_SIZE_32x16 + OAM1_X(80), OAM2_CHR(0x58) + OAM2_LAYER(2),
 };
 
-u16 CONST_DATA gSprite_08A20AC2[] =
+u16 CONST_DATA gSprite_Difficultymenu_1[] =
 {
     2,
     OAM0_SHAPE_64x32, OAM1_SIZE_64x32, OAM2_CHR(0x40) + OAM2_LAYER(2),
     OAM0_SHAPE_64x32, OAM1_SIZE_64x32 + OAM1_X(64), OAM2_CHR(0x48) + OAM2_LAYER(2),
 };
 
-u16 CONST_DATA gSprite_08A20AD0[] =
+u16 CONST_DATA gSprite_Difficultymenu_2[] =
 {
     3,
     OAM0_SHAPE_32x16 + OAM0_Y(8), OAM1_SIZE_32x16 + OAM1_X(24), OAM2_CHR(0xC0) + OAM2_LAYER(2),
@@ -690,14 +690,14 @@ u16 CONST_DATA gSprite_08A20AD0[] =
     OAM0_SHAPE_16x16 + OAM0_Y(8), OAM1_SIZE_16x16 + OAM1_X(88), OAM2_CHR(0xC8) + OAM2_LAYER(2),
 };
 
-u16 CONST_DATA gSprite_08A20AE4[] =
+u16 CONST_DATA gSprite_Difficultymenu_3[] =
 {
     2,
     OAM0_SHAPE_32x16 + OAM0_Y(8), OAM1_SIZE_32x16 + OAM1_X(32), OAM2_CHR(0xCA) + OAM2_LAYER(2),
     OAM0_SHAPE_32x16 + OAM0_Y(8), OAM1_SIZE_32x16 + OAM1_X(64), OAM2_CHR(0xCE) + OAM2_LAYER(2),
 };
 
-u16 CONST_DATA gSprite_08A20AF2[] =
+u16 CONST_DATA gSprite_Difficultymenu_4[] =
 {
     3,
     OAM0_SHAPE_32x16 + OAM0_Y(8), OAM1_SIZE_32x16 + OAM1_X(16), OAM2_CHR(0x90) + OAM2_LAYER(2),
@@ -705,14 +705,14 @@ u16 CONST_DATA gSprite_08A20AF2[] =
     OAM0_SHAPE_32x16 + OAM0_Y(8), OAM1_SIZE_32x16 + OAM1_X(80), OAM2_CHR(0x98) + OAM2_LAYER(2),
 };
 
-u16 * CONST_DATA gSpriteArray_08A20B08[] =
+u16 * CONST_DATA gSpriteArray_Difficultymenu_0[] =
 {
-    gSprite_08A20AD0,
-    gSprite_08A20AE4,
-    gSprite_08A20AF2,
+    gSprite_Difficultymenu_2,
+    gSprite_Difficultymenu_3,
+    gSprite_Difficultymenu_4,
 };
 
-u8 CONST_DATA gUnknown_08A20B14[] =
+u8 CONST_DATA gDifficultymenu_1[] =
 {
     0, 1, 2, 3, 3, 2, 1, 0,
 };
@@ -736,14 +736,14 @@ void DrawDifficultySprites_Loop(struct DifficultyMenuSpritesProc * proc)
 
         if (i == proc->current_selection)
         {
-            PutSpriteExt(4, x, y, gSprite_08A20AC2, OAM2_PAL(5 + (i * 2)));
+            PutSpriteExt(4, x, y, gSprite_Difficultymenu_1, OAM2_PAL(5 + (i * 2)));
         }
         else
         {
-            PutSpriteExt(4, x, y, gSprite_08A20AC2, OAM2_PAL(6 + (i * 2)));
+            PutSpriteExt(4, x, y, gSprite_Difficultymenu_1, OAM2_PAL(6 + (i * 2)));
         }
 
-        PutSpriteExt(4, x, y, gSpriteArray_08A20B08[i], OAM2_PAL(4));
+        PutSpriteExt(4, x, y, gSpriteArray_Difficultymenu_0[i], OAM2_PAL(4));
     }
 
     sub_80AC4F8(proc->unk_2a, proc->current_selection);

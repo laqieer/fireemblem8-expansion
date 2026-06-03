@@ -13,7 +13,7 @@
 // TODO: Should be in "bmsave.h", but doing so causes a non-match (implicit declaration?) in "bonusclaim.c"
 bool LoadBonusContentData(void *buf);
 
-EWRAM_DATA u8 gUnused_0203E884[10] = { 0 };
+EWRAM_DATA u8 gUnused_BmsaveLib_0[10] = { 0 };
 EWRAM_DATA bool gBoolSramWorking = false;
 
 static const char sSaveMarker[] = "AGB-FE9";
@@ -49,8 +49,8 @@ CONST_DATA int sSupportUnkLut[][2] = {
 //! FE8U = 0x080A2C2C
 u8 * sub_80A2C2C(void)
 {
-    gUnused_0203E884[0] = 0;
-    return gUnused_0203E884;
+    gUnused_BmsaveLib_0[0] = 0;
+    return gUnused_BmsaveLib_0;
 }
 
 void sub_80A2C38(void)

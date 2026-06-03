@@ -11,4 +11,4 @@ u8 Tsa_MainMenuBgFog[] = INCBIN_U8("graphics/misc/Tsa_MainMenuBgFog.tsa.bin.lz")
 u8 Img_SaveScreenSprits[] = INCBIN_U8("graphics/misc/Img_SaveScreenSprits.4bpp.lz");
 u16 Pal_SaveScreenSprits[] = INCBIN_U16("graphics/misc/Pal_SaveScreenSprits.gbapal");
 
-u16 Pal_08A28088[] = INCBIN_U16("graphics/misc/Pal_08A28088.gbapal");
+u16 Pal_MenuSaveMainBg_0[] = INCBIN_U16("graphics/misc/Pal_08A28088.gbapal");

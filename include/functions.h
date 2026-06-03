@@ -457,7 +457,7 @@ void sub_80AC844(u16 *, int, int, int, int, int, int, int);
 // ??? UiCursorHand_Loop(???);
 ProcPtr StartUiCursorHand(ProcPtr);
 void SetUiCursorHandConfig(int, int, int, u8);
-void UiCursorHand_80ACA4C(int, int, int, int, int);
+void UiCursorHand_0(int, int, int, int, int);
 void sub_80ACA84(u32 a);
 void sub_80ACAA4(void);
 void BlockUiCursorHand(void);

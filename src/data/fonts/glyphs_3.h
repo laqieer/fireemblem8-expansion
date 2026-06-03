@@ -1,4 +1,4 @@
-struct Glyph gUnknown_0858FAF4 =
+struct Glyph gFontgrp_323 =
 {
     .sjisNext = NULL,
     .sjisByte1 = 0,
@@ -24,7 +24,7 @@ struct Glyph gUnknown_0858FAF4 =
     },
 };
 
-struct Glyph gUnknown_0858FB3C =
+struct Glyph gFontgrp_324 =
 {
     .sjisNext = NULL,
     .sjisByte1 = 0,
@@ -50,7 +50,7 @@ struct Glyph gUnknown_0858FB3C =
     },
 };
 
-struct Glyph gUnknown_0858FB84 =
+struct Glyph gFontgrp_325 =
 {
     .sjisNext = NULL,
     .sjisByte1 = 0,
@@ -76,7 +76,7 @@ struct Glyph gUnknown_0858FB84 =
     },
 };
 
-struct Glyph gUnknown_0858FBCC =
+struct Glyph gFontgrp_326 =
 {
     .sjisNext = NULL,
     .sjisByte1 = 0,
@@ -102,7 +102,7 @@ struct Glyph gUnknown_0858FBCC =
     },
 };
 
-struct Glyph gUnknown_0858FC14 =
+struct Glyph gFontgrp_327 =
 {
     .sjisNext = NULL,
     .sjisByte1 = 0,
@@ -128,7 +128,7 @@ struct Glyph gUnknown_0858FC14 =
     },
 };
 
-struct Glyph gUnknown_0858FC5C =
+struct Glyph gFontgrp_328 =
 {
     .sjisNext = NULL,
     .sjisByte1 = 0,
@@ -154,7 +154,7 @@ struct Glyph gUnknown_0858FC5C =
     },
 };
 
-struct Glyph gUnknown_0858FCA4 =
+struct Glyph gFontgrp_329 =
 {
     .sjisNext = NULL,
     .sjisByte1 = 0,
@@ -180,7 +180,7 @@ struct Glyph gUnknown_0858FCA4 =
     },
 };
 
-struct Glyph gUnknown_0858FCEC =
+struct Glyph gFontgrp_330 =
 {
     .sjisNext = NULL,
     .sjisByte1 = 0,
@@ -206,7 +206,7 @@ struct Glyph gUnknown_0858FCEC =
     },
 };
 
-struct Glyph gUnknown_0858FD34 =
+struct Glyph gFontgrp_331 =
 {
     .sjisNext = NULL,
     .sjisByte1 = 0,
@@ -232,7 +232,7 @@ struct Glyph gUnknown_0858FD34 =
     },
 };
 
-struct Glyph gUnknown_0858FD7C =
+struct Glyph gFontgrp_332 =
 {
     .sjisNext = NULL,
     .sjisByte1 = 0,
@@ -258,7 +258,7 @@ struct Glyph gUnknown_0858FD7C =
     },
 };
 
-struct Glyph gUnknown_0858FDC4 =
+struct Glyph gFontgrp_333 =
 {
     .sjisNext = NULL,
     .sjisByte1 = 0,
@@ -284,7 +284,7 @@ struct Glyph gUnknown_0858FDC4 =
     },
 };
 
-struct Glyph gUnknown_0858FE0C =
+struct Glyph gFontgrp_334 =
 {
     .sjisNext = NULL,
     .sjisByte1 = 0,
@@ -310,7 +310,7 @@ struct Glyph gUnknown_0858FE0C =
     },
 };
 
-struct Glyph gUnknown_0858FE54 =
+struct Glyph gFontgrp_335 =
 {
     .sjisNext = NULL,
     .sjisByte1 = 0,
@@ -336,7 +336,7 @@ struct Glyph gUnknown_0858FE54 =
     },
 };
 
-struct Glyph gUnknown_0858FE9C =
+struct Glyph gFontgrp_336 =
 {
     .sjisNext = NULL,
     .sjisByte1 = 0,
@@ -362,7 +362,7 @@ struct Glyph gUnknown_0858FE9C =
     },
 };
 
-struct Glyph gUnknown_0858FEE4 =
+struct Glyph gFontgrp_337 =
 {
     .sjisNext = NULL,
     .sjisByte1 = 0,
@@ -388,7 +388,7 @@ struct Glyph gUnknown_0858FEE4 =
     },
 };
 
-struct Glyph gUnknown_0858FF2C =
+struct Glyph gFontgrp_338 =
 {
     .sjisNext = NULL,
     .sjisByte1 = 0,
@@ -414,7 +414,7 @@ struct Glyph gUnknown_0858FF2C =
     },
 };
 
-struct Glyph gUnknown_0858FF74 =
+struct Glyph gFontgrp_339 =
 {
     .sjisNext = NULL,
     .sjisByte1 = 0,
@@ -440,7 +440,7 @@ struct Glyph gUnknown_0858FF74 =
     },
 };
 
-struct Glyph gUnknown_0858FFBC =
+struct Glyph gFontgrp_340 =
 {
     .sjisNext = NULL,
     .sjisByte1 = 0,
@@ -466,7 +466,7 @@ struct Glyph gUnknown_0858FFBC =
     },
 };
 
-struct Glyph gUnknown_08590004 =
+struct Glyph gFontgrp_341 =
 {
     .sjisNext = NULL,
     .sjisByte1 = 0,
@@ -492,7 +492,7 @@ struct Glyph gUnknown_08590004 =
     },
 };
 
-struct Glyph gUnknown_0859004C =
+struct Glyph gFontgrp_342 =
 {
     .sjisNext = NULL,
     .sjisByte1 = 0,
@@ -518,7 +518,7 @@ struct Glyph gUnknown_0859004C =
     },
 };
 
-struct Glyph gUnknown_08590094 =
+struct Glyph gFontgrp_343 =
 {
     .sjisNext = NULL,
     .sjisByte1 = 0,
@@ -544,7 +544,7 @@ struct Glyph gUnknown_08590094 =
     },
 };
 
-struct Glyph gUnknown_085900DC =
+struct Glyph gFontgrp_344 =
 {
     .sjisNext = NULL,
     .sjisByte1 = 0,
@@ -570,7 +570,7 @@ struct Glyph gUnknown_085900DC =
     },
 };
 
-struct Glyph gUnknown_08590124 =
+struct Glyph gFontgrp_345 =
 {
     .sjisNext = NULL,
     .sjisByte1 = 0,
@@ -596,7 +596,7 @@ struct Glyph gUnknown_08590124 =
     },
 };
 
-struct Glyph gUnknown_0859016C =
+struct Glyph gFontgrp_346 =
 {
     .sjisNext = NULL,
     .sjisByte1 = 0,
@@ -622,7 +622,7 @@ struct Glyph gUnknown_0859016C =
     },
 };
 
-struct Glyph gUnknown_085901B4 =
+struct Glyph gFontgrp_347 =
 {
     .sjisNext = NULL,
     .sjisByte1 = 0,
@@ -648,7 +648,7 @@ struct Glyph gUnknown_085901B4 =
     },
 };
 
-struct Glyph gUnknown_085901FC =
+struct Glyph gFontgrp_348 =
 {
     .sjisNext = NULL,
     .sjisByte1 = 0,
@@ -674,7 +674,7 @@ struct Glyph gUnknown_085901FC =
     },
 };
 
-struct Glyph gUnknown_08590244 =
+struct Glyph gFontgrp_349 =
 {
     .sjisNext = NULL,
     .sjisByte1 = 0,
@@ -700,7 +700,7 @@ struct Glyph gUnknown_08590244 =
     },
 };
 
-struct Glyph gUnknown_0859028C =
+struct Glyph gFontgrp_350 =
 {
     .sjisNext = NULL,
     .sjisByte1 = 0,
@@ -726,7 +726,7 @@ struct Glyph gUnknown_0859028C =
     },
 };
 
-struct Glyph gUnknown_085902D4 =
+struct Glyph gFontgrp_351 =
 {
     .sjisNext = NULL,
     .sjisByte1 = 0,
@@ -752,7 +752,7 @@ struct Glyph gUnknown_085902D4 =
     },
 };
 
-struct Glyph gUnknown_0859031C =
+struct Glyph gFontgrp_352 =
 {
     .sjisNext = NULL,
     .sjisByte1 = 0,
@@ -778,7 +778,7 @@ struct Glyph gUnknown_0859031C =
     },
 };
 
-struct Glyph gUnknown_08590364 =
+struct Glyph gFontgrp_353 =
 {
     .sjisNext = NULL,
     .sjisByte1 = 0,
@@ -804,7 +804,7 @@ struct Glyph gUnknown_08590364 =
     },
 };
 
-struct Glyph gUnknown_085903AC =
+struct Glyph gFontgrp_354 =
 {
     .sjisNext = NULL,
     .sjisByte1 = 0,
@@ -830,7 +830,7 @@ struct Glyph gUnknown_085903AC =
     },
 };
 
-struct Glyph gUnknown_085903F4 =
+struct Glyph gFontgrp_355 =
 {
     .sjisNext = NULL,
     .sjisByte1 = 0,
@@ -856,7 +856,7 @@ struct Glyph gUnknown_085903F4 =
     },
 };
 
-struct Glyph gUnknown_0859043C =
+struct Glyph gFontgrp_356 =
 {
     .sjisNext = NULL,
     .sjisByte1 = 0,
@@ -882,7 +882,7 @@ struct Glyph gUnknown_0859043C =
     },
 };
 
-struct Glyph gUnknown_08590484 =
+struct Glyph gFontgrp_357 =
 {
     .sjisNext = NULL,
     .sjisByte1 = 0,
@@ -908,7 +908,7 @@ struct Glyph gUnknown_08590484 =
     },
 };
 
-struct Glyph gUnknown_085904CC =
+struct Glyph gFontgrp_358 =
 {
     .sjisNext = NULL,
     .sjisByte1 = 0,
@@ -934,7 +934,7 @@ struct Glyph gUnknown_085904CC =
     },
 };
 
-struct Glyph gUnknown_08590514 =
+struct Glyph gFontgrp_359 =
 {
     .sjisNext = NULL,
     .sjisByte1 = 0,
@@ -960,7 +960,7 @@ struct Glyph gUnknown_08590514 =
     },
 };
 
-struct Glyph gUnknown_0859055C =
+struct Glyph gFontgrp_360 =
 {
     .sjisNext = NULL,
     .sjisByte1 = 0,
@@ -986,7 +986,7 @@ struct Glyph gUnknown_0859055C =
     },
 };
 
-struct Glyph gUnknown_085905A4 =
+struct Glyph gFontgrp_361 =
 {
     .sjisNext = NULL,
     .sjisByte1 = 0,
@@ -1012,7 +1012,7 @@ struct Glyph gUnknown_085905A4 =
     },
 };
 
-struct Glyph gUnknown_085905EC =
+struct Glyph gFontgrp_362 =
 {
     .sjisNext = NULL,
     .sjisByte1 = 0,
@@ -1038,7 +1038,7 @@ struct Glyph gUnknown_085905EC =
     },
 };
 
-struct Glyph gUnknown_08590634 =
+struct Glyph gFontgrp_363 =
 {
     .sjisNext = NULL,
     .sjisByte1 = 0,
@@ -1064,7 +1064,7 @@ struct Glyph gUnknown_08590634 =
     },
 };
 
-struct Glyph gUnknown_0859067C =
+struct Glyph gFontgrp_364 =
 {
     .sjisNext = NULL,
     .sjisByte1 = 0,
@@ -1090,7 +1090,7 @@ struct Glyph gUnknown_0859067C =
     },
 };
 
-struct Glyph gUnknown_085906C4 =
+struct Glyph gFontgrp_365 =
 {
     .sjisNext = NULL,
     .sjisByte1 = 0,
@@ -1116,7 +1116,7 @@ struct Glyph gUnknown_085906C4 =
     },
 };
 
-struct Glyph gUnknown_0859070C =
+struct Glyph gFontgrp_366 =
 {
     .sjisNext = NULL,
     .sjisByte1 = 0,
@@ -1142,7 +1142,7 @@ struct Glyph gUnknown_0859070C =
     },
 };
 
-struct Glyph gUnknown_08590754 =
+struct Glyph gFontgrp_367 =
 {
     .sjisNext = NULL,
     .sjisByte1 = 0,
@@ -1168,7 +1168,7 @@ struct Glyph gUnknown_08590754 =
     },
 };
 
-struct Glyph gUnknown_0859079C =
+struct Glyph gFontgrp_368 =
 {
     .sjisNext = NULL,
     .sjisByte1 = 0,
@@ -1194,7 +1194,7 @@ struct Glyph gUnknown_0859079C =
     },
 };
 
-struct Glyph gUnknown_085907E4 =
+struct Glyph gFontgrp_369 =
 {
     .sjisNext = NULL,
     .sjisByte1 = 0,
@@ -1220,7 +1220,7 @@ struct Glyph gUnknown_085907E4 =
     },
 };
 
-struct Glyph gUnknown_0859082C =
+struct Glyph gFontgrp_370 =
 {
     .sjisNext = NULL,
     .sjisByte1 = 0,
@@ -1246,7 +1246,7 @@ struct Glyph gUnknown_0859082C =
     },
 };
 
-struct Glyph gUnknown_08590874 =
+struct Glyph gFontgrp_371 =
 {
     .sjisNext = NULL,
     .sjisByte1 = 0,
@@ -1272,7 +1272,7 @@ struct Glyph gUnknown_08590874 =
     },
 };
 
-struct Glyph gUnknown_085908BC =
+struct Glyph gFontgrp_372 =
 {
     .sjisNext = NULL,
     .sjisByte1 = 0,
@@ -1298,7 +1298,7 @@ struct Glyph gUnknown_085908BC =
     },
 };
 
-struct Glyph gUnknown_08590904 =
+struct Glyph gFontgrp_373 =
 {
     .sjisNext = NULL,
     .sjisByte1 = 0,
@@ -1324,7 +1324,7 @@ struct Glyph gUnknown_08590904 =
     },
 };
 
-struct Glyph gUnknown_0859094C =
+struct Glyph gFontgrp_374 =
 {
     .sjisNext = NULL,
     .sjisByte1 = 0,
@@ -1350,7 +1350,7 @@ struct Glyph gUnknown_0859094C =
     },
 };
 
-struct Glyph gUnknown_08590994 =
+struct Glyph gFontgrp_375 =
 {
     .sjisNext = NULL,
     .sjisByte1 = 0,
@@ -1376,7 +1376,7 @@ struct Glyph gUnknown_08590994 =
     },
 };
 
-struct Glyph gUnknown_085909DC =
+struct Glyph gFontgrp_376 =
 {
     .sjisNext = NULL,
     .sjisByte1 = 0,
@@ -1402,7 +1402,7 @@ struct Glyph gUnknown_085909DC =
     },
 };
 
-struct Glyph gUnknown_08590A24 =
+struct Glyph gFontgrp_377 =
 {
     .sjisNext = NULL,
     .sjisByte1 = 0,
@@ -1428,7 +1428,7 @@ struct Glyph gUnknown_08590A24 =
     },
 };
 
-struct Glyph gUnknown_08590A6C =
+struct Glyph gFontgrp_378 =
 {
     .sjisNext = NULL,
     .sjisByte1 = 0,
@@ -1454,7 +1454,7 @@ struct Glyph gUnknown_08590A6C =
     },
 };
 
-struct Glyph gUnknown_08590AB4 =
+struct Glyph gFontgrp_379 =
 {
     .sjisNext = NULL,
     .sjisByte1 = 0,
@@ -1480,7 +1480,7 @@ struct Glyph gUnknown_08590AB4 =
     },
 };
 
-struct Glyph gUnknown_08590AFC =
+struct Glyph gFontgrp_380 =
 {
     .sjisNext = NULL,
     .sjisByte1 = 0,
@@ -1508,63 +1508,63 @@ struct Glyph gUnknown_08590AFC =
 
 struct Glyph *TextGlyphs_Special[] =
 {
-    &gUnknown_0858FAF4,
-    &gUnknown_0858FB3C,
-    &gUnknown_0858FB84,
-    &gUnknown_0858FBCC,
-    &gUnknown_0858FC14,
-    &gUnknown_0858FC5C,
-    &gUnknown_0858FCA4,
-    &gUnknown_0858FCEC,
-    &gUnknown_0858FD34,
-    &gUnknown_0858FD7C,
-    &gUnknown_0858FDC4,
-    &gUnknown_0858FE0C,
-    &gUnknown_0858FE54,
-    &gUnknown_0858FE9C,
-    &gUnknown_0858FEE4,
-    &gUnknown_0858FF2C,
-    &gUnknown_0858FF74,
-    &gUnknown_0858FFBC,
-    &gUnknown_08590004,
-    &gUnknown_0859004C,
-    &gUnknown_08590094,
-    &gUnknown_085900DC,
-    &gUnknown_08590124,
-    &gUnknown_0859016C,
-    &gUnknown_085901B4,
-    &gUnknown_085901FC,
-    &gUnknown_08590244,
-    &gUnknown_0859028C,
-    &gUnknown_085902D4,
-    &gUnknown_0859031C,
-    &gUnknown_08590364,
-    &gUnknown_085903AC,
-    &gUnknown_085903F4,
-    &gUnknown_0859043C,
-    &gUnknown_08590484,
-    &gUnknown_085904CC,
-    &gUnknown_08590514,
-    &gUnknown_0859055C,
-    &gUnknown_085905A4,
-    &gUnknown_085905EC,
-    &gUnknown_08590634,
-    &gUnknown_0859067C,
-    &gUnknown_085906C4,
-    &gUnknown_0859070C,
-    &gUnknown_08590754,
-    &gUnknown_0859079C,
-    &gUnknown_085907E4,
-    &gUnknown_0859082C,
-    &gUnknown_08590874,
-    &gUnknown_085908BC,
-    &gUnknown_08590904,
-    &gUnknown_0859094C,
-    &gUnknown_08590994,
-    &gUnknown_085909DC,
-    &gUnknown_08590A24,
-    &gUnknown_08590A6C,
-    &gUnknown_08590AB4,
+    &gFontgrp_323,
+    &gFontgrp_324,
+    &gFontgrp_325,
+    &gFontgrp_326,
+    &gFontgrp_327,
+    &gFontgrp_328,
+    &gFontgrp_329,
+    &gFontgrp_330,
+    &gFontgrp_331,
+    &gFontgrp_332,
+    &gFontgrp_333,
+    &gFontgrp_334,
+    &gFontgrp_335,
+    &gFontgrp_336,
+    &gFontgrp_337,
+    &gFontgrp_338,
+    &gFontgrp_339,
+    &gFontgrp_340,
+    &gFontgrp_341,
+    &gFontgrp_342,
+    &gFontgrp_343,
+    &gFontgrp_344,
+    &gFontgrp_345,
+    &gFontgrp_346,
+    &gFontgrp_347,
+    &gFontgrp_348,
+    &gFontgrp_349,
+    &gFontgrp_350,
+    &gFontgrp_351,
+    &gFontgrp_352,
+    &gFontgrp_353,
+    &gFontgrp_354,
+    &gFontgrp_355,
+    &gFontgrp_356,
+    &gFontgrp_357,
+    &gFontgrp_358,
+    &gFontgrp_359,
+    &gFontgrp_360,
+    &gFontgrp_361,
+    &gFontgrp_362,
+    &gFontgrp_363,
+    &gFontgrp_364,
+    &gFontgrp_365,
+    &gFontgrp_366,
+    &gFontgrp_367,
+    &gFontgrp_368,
+    &gFontgrp_369,
+    &gFontgrp_370,
+    &gFontgrp_371,
+    &gFontgrp_372,
+    &gFontgrp_373,
+    &gFontgrp_374,
+    &gFontgrp_375,
+    &gFontgrp_376,
+    &gFontgrp_377,
+    &gFontgrp_378,
+    &gFontgrp_379,
     NULL,
     NULL,
     NULL,
@@ -1763,5 +1763,5 @@ struct Glyph *TextGlyphs_Special[] =
     NULL,
     NULL,
     NULL,
-    &gUnknown_08590AFC,
+    &gFontgrp_380,
 };
