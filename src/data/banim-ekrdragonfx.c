@@ -610,8 +610,15 @@ u16 CONST_DATA Pal_DemonLightSprites_EyeFlash[] = INCBIN_U16("graphics/banim/dra
 
 u32 CONST_DATA gEkrdragonfx_0[] =
 {
-    0x187A5138, 0x187A5150, 0x187A5180, 0x187A51A4,
-    0x187A51D4, 0x187A51F8, 0x187A521C, 0x087A5236,
+    /* relocatable FORCE_SPRITE ptrs into Pal_DemonLightSprites_EyeFlash (were raw) */
+    0x10000000 + (uintptr_t)((u8 *)Pal_DemonLightSprites_EyeFlash + 0x20),
+    0x10000000 + (uintptr_t)((u8 *)Pal_DemonLightSprites_EyeFlash + 0x38),
+    0x10000000 + (uintptr_t)((u8 *)Pal_DemonLightSprites_EyeFlash + 0x68),
+    0x10000000 + (uintptr_t)((u8 *)Pal_DemonLightSprites_EyeFlash + 0x8c),
+    0x10000000 + (uintptr_t)((u8 *)Pal_DemonLightSprites_EyeFlash + 0xbc),
+    0x10000000 + (uintptr_t)((u8 *)Pal_DemonLightSprites_EyeFlash + 0xe0),
+    0x10000000 + (uintptr_t)((u8 *)Pal_DemonLightSprites_EyeFlash + 0x104),
+    0x2 + (uintptr_t)((u8 *)Pal_DemonLightSprites_EyeFlash + 0x11c),
     0x81000000, 0x10004000, 0xFFF00000, 0x00000000,
     0x00000001, 0x00000000, 0x00000000, 0x10008000,
     0xFFF00002, 0x00000000, 0x10000000, 0xFFF80023,
@@ -633,8 +640,15 @@ u32 CONST_DATA gEkrdragonfx_0[] =
 
 u32 CONST_DATA gEkrdragonfx_1[] =
 {
-    0x187A5264, 0x187A527C, 0x187A52AC, 0x187A52D0,
-    0x187A5300, 0x187A5324, 0x187A5348, 0x087A5362,
+    /* relocatable FORCE_SPRITE ptrs into gEkrdragonfx_0 body (were raw) */
+    0x10000000 + (uintptr_t)((u8 *)gEkrdragonfx_0 + 0x24),
+    0x10000000 + (uintptr_t)((u8 *)gEkrdragonfx_0 + 0x3c),
+    0x10000000 + (uintptr_t)((u8 *)gEkrdragonfx_0 + 0x6c),
+    0x10000000 + (uintptr_t)((u8 *)gEkrdragonfx_0 + 0x90),
+    0x10000000 + (uintptr_t)((u8 *)gEkrdragonfx_0 + 0xc0),
+    0x10000000 + (uintptr_t)((u8 *)gEkrdragonfx_0 + 0xe4),
+    0x10000000 + (uintptr_t)((u8 *)gEkrdragonfx_0 + 0x108),
+    0x2 + (uintptr_t)((u8 *)gEkrdragonfx_0 + 0x120),
     0x81000000,
 };
 
