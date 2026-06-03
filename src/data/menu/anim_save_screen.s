@@ -2,51 +2,51 @@
 
 	.global gSaveScreen_0
 gSaveScreen_0:  @ 0x08A280A8
-g08A280A8_motion:
-	.2byte (g08A280A8_frame_list - g08A280A8_motion), (g08A280A8_anim_list - g08A280A8_motion) @ header
+gSaveScreen_motion:
+	.2byte (gSaveScreen_frame_list - gSaveScreen_motion), (gSaveScreen_anim_list - gSaveScreen_motion) @ header
 
-g08A280A8_frame_list: @ +$4
-	.2byte (g08A280A8_frame_0 - g08A280A8_frame_list)
-	.2byte (g08A280A8_frame_1 - g08A280A8_frame_list)
-	.2byte (g08A280A8_frame_2 - g08A280A8_frame_list)
-	.2byte (g08A280A8_frame_3 - g08A280A8_frame_list)
-	.2byte (g08A280A8_frame_4 - g08A280A8_frame_list)
-	.2byte (g08A280A8_frame_5 - g08A280A8_frame_list)
+gSaveScreen_frame_list: @ +$4
+	.2byte (gSaveScreen_frame_0 - gSaveScreen_frame_list)
+	.2byte (gSaveScreen_frame_1 - gSaveScreen_frame_list)
+	.2byte (gSaveScreen_frame_2 - gSaveScreen_frame_list)
+	.2byte (gSaveScreen_frame_3 - gSaveScreen_frame_list)
+	.2byte (gSaveScreen_frame_4 - gSaveScreen_frame_list)
+	.2byte (gSaveScreen_frame_5 - gSaveScreen_frame_list)
 
-g08A280A8_anim_list: @ +$10
-	.2byte (g08A280A8_anim_0 - g08A280A8_anim_list)
+gSaveScreen_anim_list: @ +$10
+	.2byte (gSaveScreen_anim_0 - gSaveScreen_anim_list)
 
-g08A280A8_frame_0: @ +$12
+gSaveScreen_frame_0: @ +$12
 	.2byte 2 @ oam entries
 	.2byte 0x40F0, 0x81F0, 0x4 @ OAM Data #0
 	.2byte 0x4000, 0x41F0, 0x0 @ OAM Data #1
 
-g08A280A8_frame_1: @ +$20
+gSaveScreen_frame_1: @ +$20
 	.2byte 2 @ oam entries
 	.2byte 0x4000, 0x41F0, 0x0 @ OAM Data #0
 	.2byte 0x40F0, 0x81F0, 0x8 @ OAM Data #1
 
-g08A280A8_frame_2: @ +$2E
+gSaveScreen_frame_2: @ +$2E
 	.2byte 2 @ oam entries
 	.2byte 0x4000, 0x41F0, 0x0 @ OAM Data #0
 	.2byte 0x40F0, 0x81F0, 0xC @ OAM Data #1
 
-g08A280A8_frame_3: @ +$3C
+gSaveScreen_frame_3: @ +$3C
 	.2byte 2 @ oam entries
 	.2byte 0x4000, 0x41F0, 0x0 @ OAM Data #0
 	.2byte 0x40F0, 0x81F0, 0x10 @ OAM Data #1
 
-g08A280A8_frame_4: @ +$4A
+gSaveScreen_frame_4: @ +$4A
 	.2byte 2 @ oam entries
 	.2byte 0x4000, 0x41F0, 0x0 @ OAM Data #0
 	.2byte 0x40F0, 0x81F0, 0x14 @ OAM Data #1
 
-g08A280A8_frame_5: @ +$58
+gSaveScreen_frame_5: @ +$58
 	.2byte 2 @ oam entries
 	.2byte 0x4000, 0x41F0, 0x0 @ OAM Data #0
 	.2byte 0x40F0, 0x81F0, 0x18 @ OAM Data #1
 
-g08A280A8_anim_0: @ +$66
+gSaveScreen_anim_0: @ +$66
 	.2byte  8,  0
 	.2byte  9,  1
 	.2byte 10,  2
