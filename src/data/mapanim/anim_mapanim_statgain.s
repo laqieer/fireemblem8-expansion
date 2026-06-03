@@ -1,1005 +1,718 @@
-@ AP (object/sprite animation) definition. The root and the frame/anim offset
-@ tables are computed at assemble time via label arithmetic (the runtime reads
-@ them as byte offsets; see include/ap.h). Byte-identical to the original data.
+@ AP (object/sprite animation) definition(s). Offset tables computed via assembler
+@ label arithmetic; OAM/anim data uses the macros in include/ap.inc. See include/ap.h
+@ / src/ap.c. Byte-identical to the original data.
 
-	.globl	SpriteAnim_ManimStatGain
-.data
-	.align	1, 0
-	.type	 SpriteAnim_ManimStatGain,object
+	.include "ap.inc"
+
+	.data
+	.global SpriteAnim_ManimStatGain
+	.align 1, 0
+	.type SpriteAnim_ManimStatGain, %object
 SpriteAnim_ManimStatGain:
-	.short	.Lftab - SpriteAnim_ManimStatGain
-	.short	.Latab - SpriteAnim_ManimStatGain
-.Lftab:
-	.short	.Lf0 - .Lftab
-	.short	.Lf1 - .Lftab
-	.short	.Lf2 - .Lftab
-	.short	.Lf3 - .Lftab
-	.short	.Lf4 - .Lftab
-	.short	.Lf5 - .Lftab
-	.short	.Lf6 - .Lftab
-	.short	.Lf7 - .Lftab
-	.short	.Lf8 - .Lftab
-	.short	.Lf9 - .Lftab
-	.short	.Lf10 - .Lftab
-	.short	.Lf11 - .Lftab
-	.short	.Lf12 - .Lftab
-	.short	.Lf13 - .Lftab
-	.short	.Lf14 - .Lftab
-	.short	.Lf15 - .Lftab
-	.short	.Lf16 - .Lftab
-	.short	.Lf17 - .Lftab
-	.short	.Lf18 - .Lftab
-	.short	.Lf19 - .Lftab
-	.short	.Lf20 - .Lftab
-	.short	.Lf21 - .Lftab
-	.short	.Lf22 - .Lftab
-	.short	.Lf23 - .Lftab
-	.short	.Lf24 - .Lftab
-	.short	.Lf25 - .Lftab
-	.short	.Lf26 - .Lftab
-	.short	.Lf27 - .Lftab
-	.short	.Lf28 - .Lftab
-	.short	.Lf29 - .Lftab
-	.short	.Lf30 - .Lftab
-	.short	.Lf31 - .Lftab
-	.short	.Lf32 - .Lftab
-	.short	.Lf33 - .Lftab
-	.short	.Lf34 - .Lftab
-	.short	.Lf35 - .Lftab
-	.short	.Lf36 - .Lftab
-	.short	.Lf37 - .Lftab
-	.short	.Lf38 - .Lftab
-	.short	.Lf39 - .Lftab
-	.short	.Lf40 - .Lftab
-	.short	.Lf41 - .Lftab
-	.short	.Lf42 - .Lftab
-	.short	.Lf43 - .Lftab
-	.short	.Lf44 - .Lftab
-	.short	.Lf45 - .Lftab
-.Latab:
-	.short	.La0 - .Latab
-	.short	.La1 - .Latab
-	.short	.La2 - .Latab
-	.short	.La3 - .Latab
-	.short	.La4 - .Latab
-	.short	.La5 - .Latab
-	.short	.La6 - .Latab
-.Lf0:
-	.short	0x3
-	.short	0xF6
-	.short	0x1F9
-	.short	0x0
-	.short	0xFA
-	.short	0x1FA
-	.short	0x1
-	.short	0xFC
-	.short	0x1FC
-	.short	0x2
-.Lf1:
-	.short	0x5
-	.short	0xF8
-	.short	0x1F9
-	.short	0x1
-	.short	0xFB
-	.short	0x1FB
-	.short	0x2
-	.short	0xED
-	.short	0x2
-	.short	0x0
-	.short	0xEF
-	.short	0x1FC
-	.short	0x0
-	.short	0xF3
-	.short	0x1F9
-	.short	0x1
-.Lf2:
-	.short	0x6
-	.short	0xF1
-	.short	0x1FB
-	.short	0x1
-	.short	0xFA
-	.short	0x1F9
-	.short	0x2
-	.short	0xF4
-	.short	0xB
-	.short	0x0
-	.short	0xEE
-	.short	0x6
-	.short	0x0
-	.short	0xEE
-	.short	0x1FF
-	.short	0x1
-	.short	0xF5
-	.short	0x1F9
-	.short	0x1
-.Lf3:
-	.short	0x6
-	.short	0xED
-	.short	0x0
-	.short	0x1
-	.short	0xF6
-	.short	0x1F9
-	.short	0x2
-	.short	0xFB
-	.short	0xD
-	.short	0x0
-	.short	0xF4
-	.short	0xB
-	.short	0x0
-	.short	0xEF
-	.short	0x7
-	.short	0x1
-	.short	0xF1
-	.short	0x1FB
-	.short	0x1
-.Lf4:
-	.short	0x6
-	.short	0xF2
-	.short	0x9
-	.short	0x1
-	.short	0xEF
-	.short	0x1FC
-	.short	0x2
-	.short	0x6
-	.short	0x8
-	.short	0x0
-	.short	0xFF
-	.short	0xD
-	.short	0x0
-	.short	0xF9
-	.short	0xD
-	.short	0x1
-	.short	0xEE
-	.short	0x2
-	.short	0x1
-.Lf5:
-	.short	0x6
-	.short	0xF9
-	.short	0xD
-	.short	0x1
-	.short	0xEE
-	.short	0x4
-	.short	0x2
-	.short	0xC
-	.short	0x1FE
-	.short	0x0
-	.short	0x8
-	.short	0x8
-	.short	0x0
-	.short	0x2
-	.short	0xD
-	.short	0x1
-	.short	0xF2
-	.short	0x9
-	.short	0x1
-.Lf6:
-	.short	0x6
-	.short	0x2
-	.short	0xD
-	.short	0x1
-	.short	0xF0
-	.short	0x8
-	.short	0x2
-	.short	0xA
-	.short	0x1F0
-	.short	0x0
-	.short	0xD
-	.short	0x1FA
-	.short	0x0
-	.short	0xA
-	.short	0x5
-	.short	0x1
-	.short	0xF8
-	.short	0xD
-	.short	0x1
-.Lf7:
-	.short	0x6
-	.short	0xE
-	.short	0x0
-	.short	0x1
-	.short	0xFD
-	.short	0xD
-	.short	0x2
-	.short	0xFE
-	.short	0x1E8
-	.short	0x0
-	.short	0x8
-	.short	0x1EC
-	.short	0x0
-	.short	0xF
-	.short	0x1F4
-	.short	0x1
-	.short	0x7
-	.short	0xA
-	.short	0x1
-.Lf8:
-	.short	0x6
-	.short	0xE
-	.short	0x1EF
-	.short	0x1
-	.short	0x8
-	.short	0x8
-	.short	0x2
-	.short	0xEF
-	.short	0x1E7
-	.short	0x0
-	.short	0xFA
-	.short	0x1E4
-	.short	0x0
-	.short	0x5
-	.short	0x1E7
-	.short	0x1
-	.short	0x10
-	.short	0x1FC
-	.short	0x1
-.Lf9:
-	.short	0x6
-	.short	0x11
-	.short	0x1F9
-	.short	0x2
-	.short	0xF5
-	.short	0x1E4
-	.short	0x1
-	.short	0xEA
-	.short	0x1EA
-	.short	0x1
-	.short	0xD
-	.short	0x1EE
-	.short	0x2
-	.short	0xE3
-	.short	0x1F3
-	.short	0x0
-	.short	0x2
-	.short	0x1E5
-	.short	0x1
-.Lf10:
-	.short	0x6
-	.short	0xC
-	.short	0x1ED
-	.short	0x2
-	.short	0xEE
-	.short	0x1E7
-	.short	0x1
-	.short	0xE1
-	.short	0x1F9
-	.short	0x1
-	.short	0xE5
-	.short	0x1EF
-	.short	0x1
-	.short	0x4
-	.short	0x1E7
-	.short	0x2
-	.short	0xF9
-	.short	0x1E4
-	.short	0x2
-.Lf11:
-	.short	0x2
-	.short	0x40F7
-	.short	0x1F8
-	.short	0x40
-	.short	0xF8
-	.short	0x1DB
-	.short	0x3
-.Lf12:
-	.short	0x3
-	.short	0xEF
-	.short	0x41F8
-	.short	0x22
-	.short	0x40F8
-	.short	0x1D2
-	.short	0x4
-	.short	0xF8
-	.short	0x1E2
-	.short	0x6
-.Lf13:
-	.short	0x3
-	.short	0xEF
-	.short	0x41F8
-	.short	0x24
-	.short	0x40F8
-	.short	0x41CC
-	.short	0x7
-	.short	0xF8
-	.short	0x1EC
-	.short	0xB
-.Lf14:
-	.short	0x3
-	.short	0xEC
-	.short	0x41F8
-	.short	0x24
-	.short	0x40F8
-	.short	0x41C8
-	.short	0xC
-	.short	0x40F8
-	.short	0x1E8
-	.short	0x10
-.Lf15:
-	.short	0x3
-	.short	0xE5
-	.short	0x41F8
-	.short	0x22
-	.short	0x40F8
-	.short	0x41C8
-	.short	0xC
-	.short	0x40F8
-	.short	0x1E8
-	.short	0x10
-.Lf16:
-	.short	0x3
-	.short	0x40EA
-	.short	0x1F8
-	.short	0x40
-	.short	0x40F8
-	.short	0x41C8
-	.short	0xC
-	.short	0x40F8
-	.short	0x1E8
-	.short	0x10
-.Lf17:
-	.short	0x3
-	.short	0xE7
-	.short	0x41F8
-	.short	0x22
-	.short	0x40F8
-	.short	0x41C8
-	.short	0xC
-	.short	0x40F8
-	.short	0x1E8
-	.short	0x10
-.Lf18:
-	.short	0x3
-	.short	0xEF
-	.short	0x41F8
-	.short	0x26
-	.short	0x40F8
-	.short	0x41C8
-	.short	0xC
-	.short	0x40F8
-	.short	0x1E8
-	.short	0x10
-.Lf19:
-	.short	0x3
-	.short	0xEF
-	.short	0x41F8
-	.short	0x28
-	.short	0x40F8
-	.short	0x41C8
-	.short	0xC
-	.short	0x40F8
-	.short	0x1E8
-	.short	0x10
-.Lf20:
-	.short	0x3
-	.short	0xEF
-	.short	0x41F8
-	.short	0x2A
-	.short	0x40F8
-	.short	0x41C8
-	.short	0xC
-	.short	0x40F8
-	.short	0x1E8
-	.short	0x10
-.Lf21:
-	.short	0x1
-	.short	0x40F0
-	.short	0x21F8
-	.short	0x40
-.Lf22:
-	.short	0x1
-	.short	0xEA
-	.short	0x61F8
-	.short	0x28
-.Lf23:
-	.short	0x1
-	.short	0xEA
-	.short	0x61F8
-	.short	0x2A
-.Lf24:
-	.short	0x1
-	.short	0xF0
-	.short	0x41F8
-	.short	0x2C
-.Lf25:
-	.short	0x1
-	.short	0x40F7
-	.short	0x1F8
-	.short	0x40
-.Lf26:
-	.short	0x1
-	.short	0xEF
-	.short	0x41F8
-	.short	0x22
-.Lf27:
-	.short	0x1
-	.short	0xEF
-	.short	0x41F8
-	.short	0x24
-.Lf28:
-	.short	0x1
-	.short	0xEC
-	.short	0x41F8
-	.short	0x24
-.Lf29:
-	.short	0x1
-	.short	0xE5
-	.short	0x41F8
-	.short	0x22
-.Lf30:
-	.short	0x1
-	.short	0x40EA
-	.short	0x1F8
-	.short	0x40
-.Lf31:
-	.short	0x1
-	.short	0xE7
-	.short	0x41F8
-	.short	0x22
-.Lf32:
-	.short	0x1
-	.short	0xEF
-	.short	0x41F8
-	.short	0x26
-.Lf33:
-	.short	0x1
-	.short	0xEF
-	.short	0x41F8
-	.short	0x28
-.Lf34:
-	.short	0x1
-	.short	0xEF
-	.short	0x41F8
-	.short	0x2A
-.Lf35:
-	.short	0x0
-.Lf36:
-	.short	0x1
-	.short	0x40F8
-	.short	0x21F8
-	.short	0x40
-.Lf37:
-	.short	0x1
-	.short	0xF8
-	.short	0x61F8
-	.short	0x22
-.Lf38:
-	.short	0x1
-	.short	0xF8
-	.short	0x61F8
-	.short	0x24
-.Lf39:
-	.short	0x1
-	.short	0xFB
-	.short	0x61F8
-	.short	0x24
-.Lf40:
-	.short	0x1
-	.short	0x2
-	.short	0x61F8
-	.short	0x22
-.Lf41:
-	.short	0x1
-	.short	0x4005
-	.short	0x21F8
-	.short	0x40
-.Lf42:
-	.short	0x1
-	.short	0x0
-	.short	0x61F8
-	.short	0x22
-.Lf43:
-	.short	0x1
-	.short	0xF8
-	.short	0x61F8
-	.short	0x26
-.Lf44:
-	.short	0x1
-	.short	0xF8
-	.short	0x61F8
-	.short	0x28
-.Lf45:
-	.short	0x1
-	.short	0xF8
-	.short	0x61F8
-	.short	0x2A
-.La0:
-	.short	0x2
-	.short	0x0
-	.short	0x2
-	.short	0x1
-	.short	0x2
-	.short	0x2
-	.short	0x2
-	.short	0x3
-	.short	0x2
-	.short	0x4
-	.short	0x2
-	.short	0x5
-	.short	0x2
-	.short	0x6
-	.short	0x2
-	.short	0x7
-	.short	0x2
-	.short	0x8
-	.short	0x2
-	.short	0x9
-	.short	0x2
-	.short	0xA
-	.short	0x0
-	.short	0x1
-	.short	0x0
-	.short	0xFFFF
-.La1:
-	.short	0x1
-	.short	0xB
-	.short	0x1
-	.short	0xC
-	.short	0x1
-	.short	0xD
-	.short	0x2
-	.short	0xE
-	.short	0x2
-	.short	0xF
-	.short	0x3
-	.short	0x10
-	.short	0x2
-	.short	0xF
-	.short	0x2
-	.short	0x11
-	.short	0x1
-	.short	0x12
-	.short	0x18
-	.short	0x13
-	.short	0x8
-	.short	0x14
-	.short	0x0
-	.short	0x0
-	.short	0x0
-	.short	0xFFFF
-.La2:
-	.short	0x1
-	.short	0x15
-	.short	0x18
-	.short	0x16
-	.short	0x8
-	.short	0x17
-	.short	0x0
-	.short	0x0
-	.short	0x0
-	.short	0xFFFF
-.La3:
-	.short	0xF
-	.short	0x23
-	.short	0x1
-	.short	0x18
-	.short	0x0
-	.short	0x0
-	.short	0x0
-	.short	0xFFFF
-.La4:
-	.short	0x1
-	.short	0x24
-	.short	0x4
-	.short	0x18
-	.short	0x0
-	.short	0x0
-	.short	0x0
-	.short	0xFFFF
-.La5:
-	.short	0x1
-	.short	0x19
-	.short	0x1
-	.short	0x1A
-	.short	0x1
-	.short	0x1B
-	.short	0x2
-	.short	0x1C
-	.short	0x2
-	.short	0x1D
-	.short	0x3
-	.short	0x1E
-	.short	0x2
-	.short	0x1D
-	.short	0x2
-	.short	0x1F
-	.short	0x1
-	.short	0x20
-	.short	0x18
-	.short	0x21
-	.short	0x8
-	.short	0x22
-	.short	0x0
-	.short	0x0
-	.short	0x0
-	.short	0xFFFF
-.La6:
-	.short	0x1
-	.short	0x24
-	.short	0x1
-	.short	0x25
-	.short	0x1
-	.short	0x26
-	.short	0x2
-	.short	0x27
-	.short	0x2
-	.short	0x28
-	.short	0x3
-	.short	0x29
-	.short	0x2
-	.short	0x28
-	.short	0x2
-	.short	0x2A
-	.short	0x1
-	.short	0x2B
-	.short	0x18
-	.short	0x2C
-	.short	0x8
-	.short	0x2D
-	.short	0x0
-	.short	0x0
-	.short	0x0
-	.short	0xFFFF
-	.short	0x4
-	.short	0x22
-	.short	0x22
-	.short	0x30
-	.short	0x3E
-	.short	0x4C
-	.short	0x5A
-	.short	0x8C
-	.short	0xBE
-	.short	0xF0
-	.short	0x122
-	.short	0x154
-	.short	0x186
-	.short	0x1B8
-	.short	0x1EA
-	.short	0x21C
-	.short	0x24E
-	.short	0x262
-	.short	0x282
-	.short	0x2
-	.short	0x4000
-	.short	0x1F9
-	.short	0xD
-	.short	0x80FB
-	.short	0x1FD
-	.short	0xA
-	.short	0x2
-	.short	0x4000
-	.short	0x1F9
-	.short	0x2B
-	.short	0x80FA
-	.short	0x1FD
-	.short	0xA
-	.short	0x2
-	.short	0x4000
-	.short	0x1F9
-	.short	0xB
-	.short	0x80F9
-	.short	0x1FD
-	.short	0xA
-	.short	0x2
-	.short	0x4000
-	.short	0x1F9
-	.short	0xB
-	.short	0x80F8
-	.short	0x1FD
-	.short	0xA
-	.short	0x8
-	.short	0xF8
-	.short	0x1FC
-	.short	0xF
-	.short	0xFA
-	.short	0x1FF
-	.short	0xF
-	.short	0xFA
-	.short	0x1FA
-	.short	0xF
-	.short	0xFF
-	.short	0x1FA
-	.short	0xF
-	.short	0x1
-	.short	0x1FC
-	.short	0xF
-	.short	0xFF
-	.short	0x1FF
-	.short	0xF
-	.short	0xFC
-	.short	0x1
-	.short	0xF
-	.short	0xFC
-	.short	0x1F8
-	.short	0xF
-	.short	0x8
-	.short	0xF7
-	.short	0x1FE
-	.short	0xF
-	.short	0xFA
-	.short	0x1
-	.short	0xF
-	.short	0xF8
-	.short	0x1FA
-	.short	0xF
-	.short	0xFF
-	.short	0x1F8
-	.short	0xF
-	.short	0x2
-	.short	0x1FB
-	.short	0xF
-	.short	0x1
-	.short	0x1FF
-	.short	0xF
-	.short	0xFE
-	.short	0x2
-	.short	0xF
-	.short	0xFB
-	.short	0x1F7
-	.short	0xF
-	.short	0x8
-	.short	0xFB
-	.short	0x3
-	.short	0xF
-	.short	0x0
-	.short	0x2
-	.short	0xF
-	.short	0xF7
-	.short	0x0
-	.short	0xF
-	.short	0xF9
-	.short	0x1F7
-	.short	0xF
-	.short	0xFE
-	.short	0x1F6
-	.short	0xF
-	.short	0x2
-	.short	0x1F9
-	.short	0xF
-	.short	0x3
-	.short	0x1FE
-	.short	0xF
-	.short	0xF6
-	.short	0x1FB
-	.short	0xF
-	.short	0x8
-	.short	0xFD
-	.short	0x5
-	.short	0xF
-	.short	0x2
-	.short	0x1
-	.short	0xF
-	.short	0xF7
-	.short	0x3
-	.short	0xF
-	.short	0xF6
-	.short	0x1F8
-	.short	0xF
-	.short	0xFB
-	.short	0x1F5
-	.short	0xF
-	.short	0x0
-	.short	0x1F7
-	.short	0xF
-	.short	0x4
-	.short	0x1FB
-	.short	0xF
-	.short	0xF4
-	.short	0x1FE
-	.short	0xF
-	.short	0x8
-	.short	0x0
-	.short	0x11F3
-	.short	0xF
-	.short	0x5
-	.short	0x11F8
-	.short	0xF
-	.short	0xF9
-	.short	0x11F3
-	.short	0xF
-	.short	0xF4
-	.short	0x11FF
-	.short	0xF
-	.short	0xF9
-	.short	0x1004
-	.short	0xF
-	.short	0x0
-	.short	0x1004
-	.short	0xF
-	.short	0x5
-	.short	0x11FF
-	.short	0xF
-	.short	0xF4
-	.short	0x11F8
-	.short	0xF
-	.short	0x8
-	.short	0xFD
-	.short	0x11F2
-	.short	0xF
-	.short	0x5
-	.short	0x11F6
-	.short	0xF
-	.short	0xF6
-	.short	0x11F4
-	.short	0xF
-	.short	0xF4
-	.short	0x1002
-	.short	0xF
-	.short	0xFB
-	.short	0x1006
-	.short	0xF
-	.short	0x3
-	.short	0x1004
-	.short	0xF
-	.short	0x7
-	.short	0x11FD
-	.short	0xF
-	.short	0xF2
-	.short	0x11FA
-	.short	0xF
-	.short	0x8
-	.short	0xFC
-	.short	0x11F1
-	.short	0xF
-	.short	0x5
-	.short	0x11F4
-	.short	0xF
-	.short	0xF4
-	.short	0x11F4
-	.short	0xF
-	.short	0xF5
-	.short	0x1004
-	.short	0xF
-	.short	0xFD
-	.short	0x1007
-	.short	0xF
-	.short	0x5
-	.short	0x1003
-	.short	0xF
-	.short	0x8
-	.short	0x11FB
-	.short	0xF
-	.short	0xF1
-	.short	0x11FC
-	.short	0xF
-	.short	0x8
-	.short	0xF9
-	.short	0x11F0
-	.short	0xF
-	.short	0x3
-	.short	0x11F2
-	.short	0xF
-	.short	0xF2
-	.short	0x11F6
-	.short	0xF
-	.short	0xF7
-	.short	0x1006
-	.short	0xF
-	.short	0x0
-	.short	0x1007
-	.short	0xF
-	.short	0x7
-	.short	0x1001
-	.short	0xF
-	.short	0x8
-	.short	0x11F8
-	.short	0xF
-	.short	0xF1
-	.short	0x11FF
-	.short	0xF
-	.short	0x8
-	.short	0xF6
-	.short	0x11F1
-	.short	0xF
-	.short	0x0
-	.short	0x11F0
-	.short	0xF
-	.short	0xF1
-	.short	0x11F9
-	.short	0xF
-	.short	0xFA
-	.short	0x1008
-	.short	0xF
-	.short	0x4
-	.short	0x1006
-	.short	0xF
-	.short	0x9
-	.short	0x11FE
-	.short	0xF
-	.short	0x7
-	.short	0x11F5
-	.short	0xF
-	.short	0xF2
-	.short	0x1003
-	.short	0xF
-	.short	0x8
-	.short	0xF0
-	.short	0x1FE
-	.short	0x10
-	.short	0xF5
-	.short	0x7
-	.short	0x10
-	.short	0xFE
-	.short	0xA
-	.short	0x10
-	.short	0x6
-	.short	0x5
-	.short	0x10
-	.short	0xA
-	.short	0x1FB
-	.short	0x10
-	.short	0x5
-	.short	0x1F3
-	.short	0x10
-	.short	0xFC
-	.short	0x1F0
-	.short	0x10
-	.short	0xF3
-	.short	0x1F4
-	.short	0x10
-	.short	0x8
-	.short	0xF0
-	.short	0x0
-	.short	0x11
-	.short	0xF7
-	.short	0x8
-	.short	0x11
-	.short	0x0
-	.short	0xA
-	.short	0x11
-	.short	0x8
-	.short	0x3
-	.short	0x11
-	.short	0xA
-	.short	0x1F9
-	.short	0x11
-	.short	0x3
-	.short	0x1F2
-	.short	0x11
-	.short	0xFA
-	.short	0x1F0
-	.short	0x11
-	.short	0xF1
-	.short	0x1F6
-	.short	0x11
-	.short	0xA
-	.short	0x0
-	.short	0x3
-	.short	0x1
-	.short	0x3
-	.short	0x2
-	.short	0xA
-	.short	0x3
-	.short	0x3
-	.short	0x2
-	.short	0x3
-	.short	0x1
-	.short	0x0
-	.short	0x0
-	.short	0x0
-	.short	0xFFFF
-	.short	0x2
-	.short	0x4
-	.short	0x2
-	.short	0x5
-	.short	0x2
-	.short	0x6
-	.short	0x2
-	.short	0x7
-	.short	0x2
-	.short	0x8
-	.short	0x2
-	.short	0x9
-	.short	0x2
-	.short	0xA
-	.short	0x2
-	.short	0xB
-	.short	0x2
-	.short	0xC
-	.short	0x2
-	.short	0xD
-	.short	0x2
-	.short	0xE
-	.short	0x0
-	.short	0x1
-	.short	0x0
-	.short	0xFFFF
-	.size	 SpriteAnim_ManimStatGain, . - SpriteAnim_ManimStatGain
+	.hword .LSpriteAnim_ManimStatGain_ftab - SpriteAnim_ManimStatGain, .LSpriteAnim_ManimStatGain_atab - SpriteAnim_ManimStatGain
+.LSpriteAnim_ManimStatGain_ftab:
+	.hword .LSpriteAnim_ManimStatGain_frame_0 - .LSpriteAnim_ManimStatGain_ftab
+	.hword .LSpriteAnim_ManimStatGain_frame_1 - .LSpriteAnim_ManimStatGain_ftab
+	.hword .LSpriteAnim_ManimStatGain_frame_2 - .LSpriteAnim_ManimStatGain_ftab
+	.hword .LSpriteAnim_ManimStatGain_frame_3 - .LSpriteAnim_ManimStatGain_ftab
+	.hword .LSpriteAnim_ManimStatGain_frame_4 - .LSpriteAnim_ManimStatGain_ftab
+	.hword .LSpriteAnim_ManimStatGain_frame_5 - .LSpriteAnim_ManimStatGain_ftab
+	.hword .LSpriteAnim_ManimStatGain_frame_6 - .LSpriteAnim_ManimStatGain_ftab
+	.hword .LSpriteAnim_ManimStatGain_frame_7 - .LSpriteAnim_ManimStatGain_ftab
+	.hword .LSpriteAnim_ManimStatGain_frame_8 - .LSpriteAnim_ManimStatGain_ftab
+	.hword .LSpriteAnim_ManimStatGain_frame_9 - .LSpriteAnim_ManimStatGain_ftab
+	.hword .LSpriteAnim_ManimStatGain_frame_10 - .LSpriteAnim_ManimStatGain_ftab
+	.hword .LSpriteAnim_ManimStatGain_frame_11 - .LSpriteAnim_ManimStatGain_ftab
+	.hword .LSpriteAnim_ManimStatGain_frame_12 - .LSpriteAnim_ManimStatGain_ftab
+	.hword .LSpriteAnim_ManimStatGain_frame_13 - .LSpriteAnim_ManimStatGain_ftab
+	.hword .LSpriteAnim_ManimStatGain_frame_14 - .LSpriteAnim_ManimStatGain_ftab
+	.hword .LSpriteAnim_ManimStatGain_frame_15 - .LSpriteAnim_ManimStatGain_ftab
+	.hword .LSpriteAnim_ManimStatGain_frame_16 - .LSpriteAnim_ManimStatGain_ftab
+	.hword .LSpriteAnim_ManimStatGain_frame_17 - .LSpriteAnim_ManimStatGain_ftab
+	.hword .LSpriteAnim_ManimStatGain_frame_18 - .LSpriteAnim_ManimStatGain_ftab
+	.hword .LSpriteAnim_ManimStatGain_frame_19 - .LSpriteAnim_ManimStatGain_ftab
+	.hword .LSpriteAnim_ManimStatGain_frame_20 - .LSpriteAnim_ManimStatGain_ftab
+	.hword .LSpriteAnim_ManimStatGain_frame_21 - .LSpriteAnim_ManimStatGain_ftab
+	.hword .LSpriteAnim_ManimStatGain_frame_22 - .LSpriteAnim_ManimStatGain_ftab
+	.hword .LSpriteAnim_ManimStatGain_frame_23 - .LSpriteAnim_ManimStatGain_ftab
+	.hword .LSpriteAnim_ManimStatGain_frame_24 - .LSpriteAnim_ManimStatGain_ftab
+	.hword .LSpriteAnim_ManimStatGain_frame_25 - .LSpriteAnim_ManimStatGain_ftab
+	.hword .LSpriteAnim_ManimStatGain_frame_26 - .LSpriteAnim_ManimStatGain_ftab
+	.hword .LSpriteAnim_ManimStatGain_frame_27 - .LSpriteAnim_ManimStatGain_ftab
+	.hword .LSpriteAnim_ManimStatGain_frame_28 - .LSpriteAnim_ManimStatGain_ftab
+	.hword .LSpriteAnim_ManimStatGain_frame_29 - .LSpriteAnim_ManimStatGain_ftab
+	.hword .LSpriteAnim_ManimStatGain_frame_30 - .LSpriteAnim_ManimStatGain_ftab
+	.hword .LSpriteAnim_ManimStatGain_frame_31 - .LSpriteAnim_ManimStatGain_ftab
+	.hword .LSpriteAnim_ManimStatGain_frame_32 - .LSpriteAnim_ManimStatGain_ftab
+	.hword .LSpriteAnim_ManimStatGain_frame_33 - .LSpriteAnim_ManimStatGain_ftab
+	.hword .LSpriteAnim_ManimStatGain_frame_34 - .LSpriteAnim_ManimStatGain_ftab
+	.hword .LSpriteAnim_ManimStatGain_frame_35 - .LSpriteAnim_ManimStatGain_ftab
+	.hword .LSpriteAnim_ManimStatGain_frame_36 - .LSpriteAnim_ManimStatGain_ftab
+	.hword .LSpriteAnim_ManimStatGain_frame_37 - .LSpriteAnim_ManimStatGain_ftab
+	.hword .LSpriteAnim_ManimStatGain_frame_38 - .LSpriteAnim_ManimStatGain_ftab
+	.hword .LSpriteAnim_ManimStatGain_frame_39 - .LSpriteAnim_ManimStatGain_ftab
+	.hword .LSpriteAnim_ManimStatGain_frame_40 - .LSpriteAnim_ManimStatGain_ftab
+	.hword .LSpriteAnim_ManimStatGain_frame_41 - .LSpriteAnim_ManimStatGain_ftab
+	.hword .LSpriteAnim_ManimStatGain_frame_42 - .LSpriteAnim_ManimStatGain_ftab
+	.hword .LSpriteAnim_ManimStatGain_frame_43 - .LSpriteAnim_ManimStatGain_ftab
+	.hword .LSpriteAnim_ManimStatGain_frame_44 - .LSpriteAnim_ManimStatGain_ftab
+	.hword .LSpriteAnim_ManimStatGain_frame_45 - .LSpriteAnim_ManimStatGain_ftab
+.LSpriteAnim_ManimStatGain_atab:
+	.hword .LSpriteAnim_ManimStatGain_anim_0 - .LSpriteAnim_ManimStatGain_atab
+	.hword .LSpriteAnim_ManimStatGain_anim_1 - .LSpriteAnim_ManimStatGain_atab
+	.hword .LSpriteAnim_ManimStatGain_anim_2 - .LSpriteAnim_ManimStatGain_atab
+	.hword .LSpriteAnim_ManimStatGain_anim_3 - .LSpriteAnim_ManimStatGain_atab
+	.hword .LSpriteAnim_ManimStatGain_anim_4 - .LSpriteAnim_ManimStatGain_atab
+	.hword .LSpriteAnim_ManimStatGain_anim_5 - .LSpriteAnim_ManimStatGain_atab
+	.hword .LSpriteAnim_ManimStatGain_anim_6 - .LSpriteAnim_ManimStatGain_atab
+.LSpriteAnim_ManimStatGain_frame_0:
+	ap_objs 3
+	ap_obj 0x00F6, 0x01F9, 0x0000
+	ap_obj 0x00FA, 0x01FA, 0x0001
+	ap_obj 0x00FC, 0x01FC, 0x0002
+.LSpriteAnim_ManimStatGain_frame_1:
+	ap_objs 5
+	ap_obj 0x00F8, 0x01F9, 0x0001
+	ap_obj 0x00FB, 0x01FB, 0x0002
+	ap_obj 0x00ED, 0x0002, 0x0000
+	ap_obj 0x00EF, 0x01FC, 0x0000
+	ap_obj 0x00F3, 0x01F9, 0x0001
+.LSpriteAnim_ManimStatGain_frame_2:
+	ap_objs 6
+	ap_obj 0x00F1, 0x01FB, 0x0001
+	ap_obj 0x00FA, 0x01F9, 0x0002
+	ap_obj 0x00F4, 0x000B, 0x0000
+	ap_obj 0x00EE, 0x0006, 0x0000
+	ap_obj 0x00EE, 0x01FF, 0x0001
+	ap_obj 0x00F5, 0x01F9, 0x0001
+.LSpriteAnim_ManimStatGain_frame_3:
+	ap_objs 6
+	ap_obj 0x00ED, 0x0000, 0x0001
+	ap_obj 0x00F6, 0x01F9, 0x0002
+	ap_obj 0x00FB, 0x000D, 0x0000
+	ap_obj 0x00F4, 0x000B, 0x0000
+	ap_obj 0x00EF, 0x0007, 0x0001
+	ap_obj 0x00F1, 0x01FB, 0x0001
+.LSpriteAnim_ManimStatGain_frame_4:
+	ap_objs 6
+	ap_obj 0x00F2, 0x0009, 0x0001
+	ap_obj 0x00EF, 0x01FC, 0x0002
+	ap_obj 0x0006, 0x0008, 0x0000
+	ap_obj 0x00FF, 0x000D, 0x0000
+	ap_obj 0x00F9, 0x000D, 0x0001
+	ap_obj 0x00EE, 0x0002, 0x0001
+.LSpriteAnim_ManimStatGain_frame_5:
+	ap_objs 6
+	ap_obj 0x00F9, 0x000D, 0x0001
+	ap_obj 0x00EE, 0x0004, 0x0002
+	ap_obj 0x000C, 0x01FE, 0x0000
+	ap_obj 0x0008, 0x0008, 0x0000
+	ap_obj 0x0002, 0x000D, 0x0001
+	ap_obj 0x00F2, 0x0009, 0x0001
+.LSpriteAnim_ManimStatGain_frame_6:
+	ap_objs 6
+	ap_obj 0x0002, 0x000D, 0x0001
+	ap_obj 0x00F0, 0x0008, 0x0002
+	ap_obj 0x000A, 0x01F0, 0x0000
+	ap_obj 0x000D, 0x01FA, 0x0000
+	ap_obj 0x000A, 0x0005, 0x0001
+	ap_obj 0x00F8, 0x000D, 0x0001
+.LSpriteAnim_ManimStatGain_frame_7:
+	ap_objs 6
+	ap_obj 0x000E, 0x0000, 0x0001
+	ap_obj 0x00FD, 0x000D, 0x0002
+	ap_obj 0x00FE, 0x01E8, 0x0000
+	ap_obj 0x0008, 0x01EC, 0x0000
+	ap_obj 0x000F, 0x01F4, 0x0001
+	ap_obj 0x0007, 0x000A, 0x0001
+.LSpriteAnim_ManimStatGain_frame_8:
+	ap_objs 6
+	ap_obj 0x000E, 0x01EF, 0x0001
+	ap_obj 0x0008, 0x0008, 0x0002
+	ap_obj 0x00EF, 0x01E7, 0x0000
+	ap_obj 0x00FA, 0x01E4, 0x0000
+	ap_obj 0x0005, 0x01E7, 0x0001
+	ap_obj 0x0010, 0x01FC, 0x0001
+.LSpriteAnim_ManimStatGain_frame_9:
+	ap_objs 6
+	ap_obj 0x0011, 0x01F9, 0x0002
+	ap_obj 0x00F5, 0x01E4, 0x0001
+	ap_obj 0x00EA, 0x01EA, 0x0001
+	ap_obj 0x000D, 0x01EE, 0x0002
+	ap_obj 0x00E3, 0x01F3, 0x0000
+	ap_obj 0x0002, 0x01E5, 0x0001
+.LSpriteAnim_ManimStatGain_frame_10:
+	ap_objs 6
+	ap_obj 0x000C, 0x01ED, 0x0002
+	ap_obj 0x00EE, 0x01E7, 0x0001
+	ap_obj 0x00E1, 0x01F9, 0x0001
+	ap_obj 0x00E5, 0x01EF, 0x0001
+	ap_obj 0x0004, 0x01E7, 0x0002
+	ap_obj 0x00F9, 0x01E4, 0x0002
+.LSpriteAnim_ManimStatGain_frame_11:
+	ap_objs 2
+	ap_obj 0x40F7, 0x01F8, 0x0040
+	ap_obj 0x00F8, 0x01DB, 0x0003
+.LSpriteAnim_ManimStatGain_frame_12:
+	ap_objs 3
+	ap_obj 0x00EF, 0x41F8, 0x0022
+	ap_obj 0x40F8, 0x01D2, 0x0004
+	ap_obj 0x00F8, 0x01E2, 0x0006
+.LSpriteAnim_ManimStatGain_frame_13:
+	ap_objs 3
+	ap_obj 0x00EF, 0x41F8, 0x0024
+	ap_obj 0x40F8, 0x41CC, 0x0007
+	ap_obj 0x00F8, 0x01EC, 0x000B
+.LSpriteAnim_ManimStatGain_frame_14:
+	ap_objs 3
+	ap_obj 0x00EC, 0x41F8, 0x0024
+	ap_obj 0x40F8, 0x41C8, 0x000C
+	ap_obj 0x40F8, 0x01E8, 0x0010
+.LSpriteAnim_ManimStatGain_frame_15:
+	ap_objs 3
+	ap_obj 0x00E5, 0x41F8, 0x0022
+	ap_obj 0x40F8, 0x41C8, 0x000C
+	ap_obj 0x40F8, 0x01E8, 0x0010
+.LSpriteAnim_ManimStatGain_frame_16:
+	ap_objs 3
+	ap_obj 0x40EA, 0x01F8, 0x0040
+	ap_obj 0x40F8, 0x41C8, 0x000C
+	ap_obj 0x40F8, 0x01E8, 0x0010
+.LSpriteAnim_ManimStatGain_frame_17:
+	ap_objs 3
+	ap_obj 0x00E7, 0x41F8, 0x0022
+	ap_obj 0x40F8, 0x41C8, 0x000C
+	ap_obj 0x40F8, 0x01E8, 0x0010
+.LSpriteAnim_ManimStatGain_frame_18:
+	ap_objs 3
+	ap_obj 0x00EF, 0x41F8, 0x0026
+	ap_obj 0x40F8, 0x41C8, 0x000C
+	ap_obj 0x40F8, 0x01E8, 0x0010
+.LSpriteAnim_ManimStatGain_frame_19:
+	ap_objs 3
+	ap_obj 0x00EF, 0x41F8, 0x0028
+	ap_obj 0x40F8, 0x41C8, 0x000C
+	ap_obj 0x40F8, 0x01E8, 0x0010
+.LSpriteAnim_ManimStatGain_frame_20:
+	ap_objs 3
+	ap_obj 0x00EF, 0x41F8, 0x002A
+	ap_obj 0x40F8, 0x41C8, 0x000C
+	ap_obj 0x40F8, 0x01E8, 0x0010
+.LSpriteAnim_ManimStatGain_frame_21:
+	ap_objs 1
+	ap_obj 0x40F0, 0x21F8, 0x0040
+.LSpriteAnim_ManimStatGain_frame_22:
+	ap_objs 1
+	ap_obj 0x00EA, 0x61F8, 0x0028
+.LSpriteAnim_ManimStatGain_frame_23:
+	ap_objs 1
+	ap_obj 0x00EA, 0x61F8, 0x002A
+.LSpriteAnim_ManimStatGain_frame_24:
+	ap_objs 1
+	ap_obj 0x00F0, 0x41F8, 0x002C
+.LSpriteAnim_ManimStatGain_frame_25:
+	ap_objs 1
+	ap_obj 0x40F7, 0x01F8, 0x0040
+.LSpriteAnim_ManimStatGain_frame_26:
+	ap_objs 1
+	ap_obj 0x00EF, 0x41F8, 0x0022
+.LSpriteAnim_ManimStatGain_frame_27:
+	ap_objs 1
+	ap_obj 0x00EF, 0x41F8, 0x0024
+.LSpriteAnim_ManimStatGain_frame_28:
+	ap_objs 1
+	ap_obj 0x00EC, 0x41F8, 0x0024
+.LSpriteAnim_ManimStatGain_frame_29:
+	ap_objs 1
+	ap_obj 0x00E5, 0x41F8, 0x0022
+.LSpriteAnim_ManimStatGain_frame_30:
+	ap_objs 1
+	ap_obj 0x40EA, 0x01F8, 0x0040
+.LSpriteAnim_ManimStatGain_frame_31:
+	ap_objs 1
+	ap_obj 0x00E7, 0x41F8, 0x0022
+.LSpriteAnim_ManimStatGain_frame_32:
+	ap_objs 1
+	ap_obj 0x00EF, 0x41F8, 0x0026
+.LSpriteAnim_ManimStatGain_frame_33:
+	ap_objs 1
+	ap_obj 0x00EF, 0x41F8, 0x0028
+.LSpriteAnim_ManimStatGain_frame_34:
+	ap_objs 1
+	ap_obj 0x00EF, 0x41F8, 0x002A
+.LSpriteAnim_ManimStatGain_frame_35:
+	ap_objs 0
+.LSpriteAnim_ManimStatGain_frame_36:
+	ap_objs 1
+	ap_obj 0x40F8, 0x21F8, 0x0040
+.LSpriteAnim_ManimStatGain_frame_37:
+	ap_objs 1
+	ap_obj 0x00F8, 0x61F8, 0x0022
+.LSpriteAnim_ManimStatGain_frame_38:
+	ap_objs 1
+	ap_obj 0x00F8, 0x61F8, 0x0024
+.LSpriteAnim_ManimStatGain_frame_39:
+	ap_objs 1
+	ap_obj 0x00FB, 0x61F8, 0x0024
+.LSpriteAnim_ManimStatGain_frame_40:
+	ap_objs 1
+	ap_obj 0x0002, 0x61F8, 0x0022
+.LSpriteAnim_ManimStatGain_frame_41:
+	ap_objs 1
+	ap_obj 0x4005, 0x21F8, 0x0040
+.LSpriteAnim_ManimStatGain_frame_42:
+	ap_objs 1
+	ap_obj 0x0000, 0x61F8, 0x0022
+.LSpriteAnim_ManimStatGain_frame_43:
+	ap_objs 1
+	ap_obj 0x00F8, 0x61F8, 0x0026
+.LSpriteAnim_ManimStatGain_frame_44:
+	ap_objs 1
+	ap_obj 0x00F8, 0x61F8, 0x0028
+.LSpriteAnim_ManimStatGain_frame_45:
+	ap_objs 1
+	ap_obj 0x00F8, 0x61F8, 0x002A
+.LSpriteAnim_ManimStatGain_anim_0:
+	ap_anim 2, 0
+	ap_anim 2, 1
+	ap_anim 2, 2
+	ap_anim 2, 3
+	ap_anim 2, 4
+	ap_anim 2, 5
+	ap_anim 2, 6
+	ap_anim 2, 7
+	ap_anim 2, 8
+	ap_anim 2, 9
+	ap_anim 2, 10
+	ap_anim_delete
+	.hword 0x0000
+	.hword 0xFFFF
+.LSpriteAnim_ManimStatGain_anim_1:
+	ap_anim 1, 11
+	ap_anim 1, 12
+	ap_anim 1, 13
+	ap_anim 2, 14
+	ap_anim 2, 15
+	ap_anim 3, 16
+	ap_anim 2, 15
+	ap_anim 2, 17
+	ap_anim 1, 18
+	ap_anim 24, 19
+	ap_anim 8, 20
+	ap_anim_end
+	.hword 0x0000
+	.hword 0xFFFF
+.LSpriteAnim_ManimStatGain_anim_2:
+	ap_anim 1, 21
+	ap_anim 24, 22
+	ap_anim 8, 23
+	ap_anim_end
+	.hword 0x0000
+	.hword 0xFFFF
+.LSpriteAnim_ManimStatGain_anim_3:
+	ap_anim 15, 35
+	ap_anim 1, 24
+	ap_anim_end
+	.hword 0x0000
+	.hword 0xFFFF
+.LSpriteAnim_ManimStatGain_anim_4:
+	ap_anim 1, 36
+	ap_anim 4, 24
+	ap_anim_end
+	.hword 0x0000
+	.hword 0xFFFF
+.LSpriteAnim_ManimStatGain_anim_5:
+	ap_anim 1, 25
+	ap_anim 1, 26
+	ap_anim 1, 27
+	ap_anim 2, 28
+	ap_anim 2, 29
+	ap_anim 3, 30
+	ap_anim 2, 29
+	ap_anim 2, 31
+	ap_anim 1, 32
+	ap_anim 24, 33
+	ap_anim 8, 34
+	ap_anim_end
+	.hword 0x0000
+	.hword 0xFFFF
+.LSpriteAnim_ManimStatGain_anim_6:
+	ap_anim 1, 36
+	ap_anim 1, 37
+	ap_anim 1, 38
+	ap_anim 2, 39
+	ap_anim 2, 40
+	ap_anim 3, 41
+	ap_anim 2, 40
+	ap_anim 2, 42
+	ap_anim 1, 43
+	ap_anim 24, 44
+	ap_anim 8, 45
+	ap_anim_end
+	.hword 0x0000
+	.hword 0xFFFF
+	.hword 0x0004
+	.hword 0x0022
+	.hword 0x0022
+	.hword 0x0030
+	.hword 0x003E
+	.hword 0x004C
+	.hword 0x005A
+	.hword 0x008C
+	.hword 0x00BE
+	.hword 0x00F0
+	.hword 0x0122
+	.hword 0x0154
+	.hword 0x0186
+	.hword 0x01B8
+	.hword 0x01EA
+	.hword 0x021C
+	.hword 0x024E
+	.hword 0x0262
+	.hword 0x0282
+	.hword 0x0002
+	.hword 0x4000
+	.hword 0x01F9
+	.hword 0x000D
+	.hword 0x80FB
+	.hword 0x01FD
+	.hword 0x000A
+	.hword 0x0002
+	.hword 0x4000
+	.hword 0x01F9
+	.hword 0x002B
+	.hword 0x80FA
+	.hword 0x01FD
+	.hword 0x000A
+	.hword 0x0002
+	.hword 0x4000
+	.hword 0x01F9
+	.hword 0x000B
+	.hword 0x80F9
+	.hword 0x01FD
+	.hword 0x000A
+	.hword 0x0002
+	.hword 0x4000
+	.hword 0x01F9
+	.hword 0x000B
+	.hword 0x80F8
+	.hword 0x01FD
+	.hword 0x000A
+	.hword 0x0008
+	.hword 0x00F8
+	.hword 0x01FC
+	.hword 0x000F
+	.hword 0x00FA
+	.hword 0x01FF
+	.hword 0x000F
+	.hword 0x00FA
+	.hword 0x01FA
+	.hword 0x000F
+	.hword 0x00FF
+	.hword 0x01FA
+	.hword 0x000F
+	.hword 0x0001
+	.hword 0x01FC
+	.hword 0x000F
+	.hword 0x00FF
+	.hword 0x01FF
+	.hword 0x000F
+	.hword 0x00FC
+	.hword 0x0001
+	.hword 0x000F
+	.hword 0x00FC
+	.hword 0x01F8
+	.hword 0x000F
+	.hword 0x0008
+	.hword 0x00F7
+	.hword 0x01FE
+	.hword 0x000F
+	.hword 0x00FA
+	.hword 0x0001
+	.hword 0x000F
+	.hword 0x00F8
+	.hword 0x01FA
+	.hword 0x000F
+	.hword 0x00FF
+	.hword 0x01F8
+	.hword 0x000F
+	.hword 0x0002
+	.hword 0x01FB
+	.hword 0x000F
+	.hword 0x0001
+	.hword 0x01FF
+	.hword 0x000F
+	.hword 0x00FE
+	.hword 0x0002
+	.hword 0x000F
+	.hword 0x00FB
+	.hword 0x01F7
+	.hword 0x000F
+	.hword 0x0008
+	.hword 0x00FB
+	.hword 0x0003
+	.hword 0x000F
+	.hword 0x0000
+	.hword 0x0002
+	.hword 0x000F
+	.hword 0x00F7
+	.hword 0x0000
+	.hword 0x000F
+	.hword 0x00F9
+	.hword 0x01F7
+	.hword 0x000F
+	.hword 0x00FE
+	.hword 0x01F6
+	.hword 0x000F
+	.hword 0x0002
+	.hword 0x01F9
+	.hword 0x000F
+	.hword 0x0003
+	.hword 0x01FE
+	.hword 0x000F
+	.hword 0x00F6
+	.hword 0x01FB
+	.hword 0x000F
+	.hword 0x0008
+	.hword 0x00FD
+	.hword 0x0005
+	.hword 0x000F
+	.hword 0x0002
+	.hword 0x0001
+	.hword 0x000F
+	.hword 0x00F7
+	.hword 0x0003
+	.hword 0x000F
+	.hword 0x00F6
+	.hword 0x01F8
+	.hword 0x000F
+	.hword 0x00FB
+	.hword 0x01F5
+	.hword 0x000F
+	.hword 0x0000
+	.hword 0x01F7
+	.hword 0x000F
+	.hword 0x0004
+	.hword 0x01FB
+	.hword 0x000F
+	.hword 0x00F4
+	.hword 0x01FE
+	.hword 0x000F
+	.hword 0x0008
+	.hword 0x0000
+	.hword 0x11F3
+	.hword 0x000F
+	.hword 0x0005
+	.hword 0x11F8
+	.hword 0x000F
+	.hword 0x00F9
+	.hword 0x11F3
+	.hword 0x000F
+	.hword 0x00F4
+	.hword 0x11FF
+	.hword 0x000F
+	.hword 0x00F9
+	.hword 0x1004
+	.hword 0x000F
+	.hword 0x0000
+	.hword 0x1004
+	.hword 0x000F
+	.hword 0x0005
+	.hword 0x11FF
+	.hword 0x000F
+	.hword 0x00F4
+	.hword 0x11F8
+	.hword 0x000F
+	.hword 0x0008
+	.hword 0x00FD
+	.hword 0x11F2
+	.hword 0x000F
+	.hword 0x0005
+	.hword 0x11F6
+	.hword 0x000F
+	.hword 0x00F6
+	.hword 0x11F4
+	.hword 0x000F
+	.hword 0x00F4
+	.hword 0x1002
+	.hword 0x000F
+	.hword 0x00FB
+	.hword 0x1006
+	.hword 0x000F
+	.hword 0x0003
+	.hword 0x1004
+	.hword 0x000F
+	.hword 0x0007
+	.hword 0x11FD
+	.hword 0x000F
+	.hword 0x00F2
+	.hword 0x11FA
+	.hword 0x000F
+	.hword 0x0008
+	.hword 0x00FC
+	.hword 0x11F1
+	.hword 0x000F
+	.hword 0x0005
+	.hword 0x11F4
+	.hword 0x000F
+	.hword 0x00F4
+	.hword 0x11F4
+	.hword 0x000F
+	.hword 0x00F5
+	.hword 0x1004
+	.hword 0x000F
+	.hword 0x00FD
+	.hword 0x1007
+	.hword 0x000F
+	.hword 0x0005
+	.hword 0x1003
+	.hword 0x000F
+	.hword 0x0008
+	.hword 0x11FB
+	.hword 0x000F
+	.hword 0x00F1
+	.hword 0x11FC
+	.hword 0x000F
+	.hword 0x0008
+	.hword 0x00F9
+	.hword 0x11F0
+	.hword 0x000F
+	.hword 0x0003
+	.hword 0x11F2
+	.hword 0x000F
+	.hword 0x00F2
+	.hword 0x11F6
+	.hword 0x000F
+	.hword 0x00F7
+	.hword 0x1006
+	.hword 0x000F
+	.hword 0x0000
+	.hword 0x1007
+	.hword 0x000F
+	.hword 0x0007
+	.hword 0x1001
+	.hword 0x000F
+	.hword 0x0008
+	.hword 0x11F8
+	.hword 0x000F
+	.hword 0x00F1
+	.hword 0x11FF
+	.hword 0x000F
+	.hword 0x0008
+	.hword 0x00F6
+	.hword 0x11F1
+	.hword 0x000F
+	.hword 0x0000
+	.hword 0x11F0
+	.hword 0x000F
+	.hword 0x00F1
+	.hword 0x11F9
+	.hword 0x000F
+	.hword 0x00FA
+	.hword 0x1008
+	.hword 0x000F
+	.hword 0x0004
+	.hword 0x1006
+	.hword 0x000F
+	.hword 0x0009
+	.hword 0x11FE
+	.hword 0x000F
+	.hword 0x0007
+	.hword 0x11F5
+	.hword 0x000F
+	.hword 0x00F2
+	.hword 0x1003
+	.hword 0x000F
+	.hword 0x0008
+	.hword 0x00F0
+	.hword 0x01FE
+	.hword 0x0010
+	.hword 0x00F5
+	.hword 0x0007
+	.hword 0x0010
+	.hword 0x00FE
+	.hword 0x000A
+	.hword 0x0010
+	.hword 0x0006
+	.hword 0x0005
+	.hword 0x0010
+	.hword 0x000A
+	.hword 0x01FB
+	.hword 0x0010
+	.hword 0x0005
+	.hword 0x01F3
+	.hword 0x0010
+	.hword 0x00FC
+	.hword 0x01F0
+	.hword 0x0010
+	.hword 0x00F3
+	.hword 0x01F4
+	.hword 0x0010
+	.hword 0x0008
+	.hword 0x00F0
+	.hword 0x0000
+	.hword 0x0011
+	.hword 0x00F7
+	.hword 0x0008
+	.hword 0x0011
+	.hword 0x0000
+	.hword 0x000A
+	.hword 0x0011
+	.hword 0x0008
+	.hword 0x0003
+	.hword 0x0011
+	.hword 0x000A
+	.hword 0x01F9
+	.hword 0x0011
+	.hword 0x0003
+	.hword 0x01F2
+	.hword 0x0011
+	.hword 0x00FA
+	.hword 0x01F0
+	.hword 0x0011
+	.hword 0x00F1
+	.hword 0x01F6
+	.hword 0x0011
+	.hword 0x000A
+	.hword 0x0000
+	.hword 0x0003
+	.hword 0x0001
+	.hword 0x0003
+	.hword 0x0002
+	.hword 0x000A
+	.hword 0x0003
+	.hword 0x0003
+	.hword 0x0002
+	.hword 0x0003
+	.hword 0x0001
+	.hword 0x0000
+	.hword 0x0000
+	.hword 0x0000
+	.hword 0xFFFF
+	.hword 0x0002
+	.hword 0x0004
+	.hword 0x0002
+	.hword 0x0005
+	.hword 0x0002
+	.hword 0x0006
+	.hword 0x0002
+	.hword 0x0007
+	.hword 0x0002
+	.hword 0x0008
+	.hword 0x0002
+	.hword 0x0009
+	.hword 0x0002
+	.hword 0x000A
+	.hword 0x0002
+	.hword 0x000B
+	.hword 0x0002
+	.hword 0x000C
+	.hword 0x0002
+	.hword 0x000D
+	.hword 0x0002
+	.hword 0x000E
+	.hword 0x0000
+	.hword 0x0001
+	.hword 0x0000
+	.hword 0xFFFF
+	.size SpriteAnim_ManimStatGain, . - SpriteAnim_ManimStatGain

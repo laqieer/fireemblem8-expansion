@@ -1,141 +1,69 @@
-@ AP (object/sprite animation) definition(s); root + frame/anim offset tables
-@ computed via assembler label arithmetic (see include/ap.h). Byte-identical.
+@ AP (object/sprite animation) definition(s). Offset tables computed via assembler
+@ label arithmetic; OAM/anim data uses the macros in include/ap.inc. See include/ap.h
+@ / src/ap.c. Byte-identical to the original data.
+
+	.include "ap.inc"
 
 	.data
-	.globl	SpriteAnim_BrownTextBox
-	.align	1, 0
-	.type	 SpriteAnim_BrownTextBox,object
+	.global SpriteAnim_BrownTextBox
+	.align 1, 0
+	.type SpriteAnim_BrownTextBox, %object
 SpriteAnim_BrownTextBox:
-	.short	.LSpriteAnim_BrownTextBox_ftab - SpriteAnim_BrownTextBox
-	.short	.LSpriteAnim_BrownTextBox_atab - SpriteAnim_BrownTextBox
+	.hword .LSpriteAnim_BrownTextBox_ftab - SpriteAnim_BrownTextBox, .LSpriteAnim_BrownTextBox_atab - SpriteAnim_BrownTextBox
 .LSpriteAnim_BrownTextBox_ftab:
-	.short	.LSpriteAnim_BrownTextBox_f0 - .LSpriteAnim_BrownTextBox_ftab
-	.short	.LSpriteAnim_BrownTextBox_f1 - .LSpriteAnim_BrownTextBox_ftab
+	.hword .LSpriteAnim_BrownTextBox_frame_0 - .LSpriteAnim_BrownTextBox_ftab
+	.hword .LSpriteAnim_BrownTextBox_frame_1 - .LSpriteAnim_BrownTextBox_ftab
 .LSpriteAnim_BrownTextBox_atab:
-	.short	.LSpriteAnim_BrownTextBox_a0 - .LSpriteAnim_BrownTextBox_atab
-	.short	.LSpriteAnim_BrownTextBox_a1 - .LSpriteAnim_BrownTextBox_atab
-.LSpriteAnim_BrownTextBox_f0:
-	.short	0x14
-	.short	0x4000
-	.short	0x4000
-	.short	0x0
-	.short	0x4000
-	.short	0x4040
-	.short	0x2
-	.short	0x4000
-	.short	0x20
-	.short	0x2
-	.short	0x4018
-	.short	0x4000
-	.short	0xD
-	.short	0x4018
-	.short	0x4040
-	.short	0xF
-	.short	0x4018
-	.short	0x20
-	.short	0xF
-	.short	0x4008
-	.short	0x4000
-	.short	0x6
-	.short	0x4008
-	.short	0x4040
-	.short	0x7
-	.short	0x10
-	.short	0x0
-	.short	0xB
-	.short	0x10
-	.short	0x58
-	.short	0xC
-	.short	0x4008
-	.short	0x20
-	.short	0x7
-	.short	0x4010
-	.short	0x8
-	.short	0x7
-	.short	0x4010
-	.short	0x18
-	.short	0x7
-	.short	0x4010
-	.short	0x38
-	.short	0x7
-	.short	0x4010
-	.short	0x48
-	.short	0x7
-	.short	0x4010
-	.short	0x38
-	.short	0x7
-	.short	0x4010
-	.short	0x28
-	.short	0x7
-	.short	0x4008
-	.short	0x30
-	.short	0x7
-	.short	0x4000
-	.short	0x30
-	.short	0x2
-	.short	0x4018
-	.short	0x30
-	.short	0xF
-.LSpriteAnim_BrownTextBox_f1:
-	.short	0xF
-	.short	0x4000
-	.short	0x4000
-	.short	0x0
-	.short	0x4000
-	.short	0x4030
-	.short	0x2
-	.short	0x4000
-	.short	0x20
-	.short	0x2
-	.short	0x4018
-	.short	0x4000
-	.short	0xD
-	.short	0x4018
-	.short	0x4030
-	.short	0xF
-	.short	0x4018
-	.short	0x20
-	.short	0xF
-	.short	0x4008
-	.short	0x4000
-	.short	0x6
-	.short	0x4008
-	.short	0x4030
-	.short	0x7
-	.short	0x10
-	.short	0x0
-	.short	0xB
-	.short	0x10
-	.short	0x48
-	.short	0xC
-	.short	0x4008
-	.short	0x20
-	.short	0x7
-	.short	0x4010
-	.short	0x8
-	.short	0x7
-	.short	0x4010
-	.short	0x18
-	.short	0x7
-	.short	0x4010
-	.short	0x38
-	.short	0x7
-	.short	0x4010
-	.short	0x28
-	.short	0x7
-.LSpriteAnim_BrownTextBox_a0:
-	.short	0x4
-	.short	0x0
-	.short	0x0
-	.short	0x0
-	.short	0x0
-	.short	0xFFFF
-.LSpriteAnim_BrownTextBox_a1:
-	.short	0x4
-	.short	0x1
-	.short	0x0
-	.short	0x0
-	.short	0x0
-	.short	0xFFFF
-	.short	0x0
-	.size	 SpriteAnim_BrownTextBox, . - SpriteAnim_BrownTextBox
+	.hword .LSpriteAnim_BrownTextBox_anim_0 - .LSpriteAnim_BrownTextBox_atab
+	.hword .LSpriteAnim_BrownTextBox_anim_1 - .LSpriteAnim_BrownTextBox_atab
+.LSpriteAnim_BrownTextBox_frame_0:
+	ap_objs 20
+	ap_obj 0x4000, 0x4000, 0x0000
+	ap_obj 0x4000, 0x4040, 0x0002
+	ap_obj 0x4000, 0x0020, 0x0002
+	ap_obj 0x4018, 0x4000, 0x000D
+	ap_obj 0x4018, 0x4040, 0x000F
+	ap_obj 0x4018, 0x0020, 0x000F
+	ap_obj 0x4008, 0x4000, 0x0006
+	ap_obj 0x4008, 0x4040, 0x0007
+	ap_obj 0x0010, 0x0000, 0x000B
+	ap_obj 0x0010, 0x0058, 0x000C
+	ap_obj 0x4008, 0x0020, 0x0007
+	ap_obj 0x4010, 0x0008, 0x0007
+	ap_obj 0x4010, 0x0018, 0x0007
+	ap_obj 0x4010, 0x0038, 0x0007
+	ap_obj 0x4010, 0x0048, 0x0007
+	ap_obj 0x4010, 0x0038, 0x0007
+	ap_obj 0x4010, 0x0028, 0x0007
+	ap_obj 0x4008, 0x0030, 0x0007
+	ap_obj 0x4000, 0x0030, 0x0002
+	ap_obj 0x4018, 0x0030, 0x000F
+.LSpriteAnim_BrownTextBox_frame_1:
+	ap_objs 15
+	ap_obj 0x4000, 0x4000, 0x0000
+	ap_obj 0x4000, 0x4030, 0x0002
+	ap_obj 0x4000, 0x0020, 0x0002
+	ap_obj 0x4018, 0x4000, 0x000D
+	ap_obj 0x4018, 0x4030, 0x000F
+	ap_obj 0x4018, 0x0020, 0x000F
+	ap_obj 0x4008, 0x4000, 0x0006
+	ap_obj 0x4008, 0x4030, 0x0007
+	ap_obj 0x0010, 0x0000, 0x000B
+	ap_obj 0x0010, 0x0048, 0x000C
+	ap_obj 0x4008, 0x0020, 0x0007
+	ap_obj 0x4010, 0x0008, 0x0007
+	ap_obj 0x4010, 0x0018, 0x0007
+	ap_obj 0x4010, 0x0038, 0x0007
+	ap_obj 0x4010, 0x0028, 0x0007
+.LSpriteAnim_BrownTextBox_anim_0:
+	ap_anim 4, 0
+	ap_anim_end
+	.hword 0x0000
+	.hword 0xFFFF
+.LSpriteAnim_BrownTextBox_anim_1:
+	ap_anim 4, 1
+	ap_anim_end
+	.hword 0x0000
+	.hword 0xFFFF
+	.hword 0x0000
+	.size SpriteAnim_BrownTextBox, . - SpriteAnim_BrownTextBox
