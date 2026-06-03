@@ -27,8 +27,10 @@ valid oracle — it holds relocated pointers (= shifted addresses); only the
 ## How to run
 
 ```bash
-# 1. emulator + BIOS (BIOS sha1 300c20df...; the movie requires the real one)
-scripts/shiftcheck/tas/get_gbahawk.sh v2.1.1 /mnt/c/gbahawk_test /path/to/gba_bios.bin
+# 1. emulator + BIOS. The movie requires the real GBA BIOS (sha1 300c20df...);
+#    get_gbahawk.sh downloads it (and the portable emulator) and verifies the sha1.
+#    Pass a local gba_bios.bin as the 3rd arg to use your own instead.
+scripts/shiftcheck/tas/get_gbahawk.sh v2.1.1 /mnt/c/gbahawk_test [/path/to/gba_bios.bin]
 # 2. movie + matching ROM into the C:\ working dir; build + stage the shifted ROM
 #    (reuse diff_shift.build_shifted) and repack the movie for it:
 python3 scripts/shiftcheck/tas/repack_movie.py <movie.gbmv> <shifted.gba> <shifted.gbmv>
