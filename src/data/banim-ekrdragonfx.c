@@ -36,8 +36,8 @@ extern struct AnimSpriteData AnimSprite_EfxClasschgObjDrop_31[];
 extern AnimScr BanimScr_Ekrdragonfx_0[];
 extern AnimScr BanimScr_Ekrdragonfx_1[];
 extern AnimScr BanimScr_Ekrdragonfx_2[];
-extern u32 gEkrdragonfx_0[];
-extern u32 gEkrdragonfx_1[];
+extern AnimScr gEkrdragonfx_0[];
+extern AnimScr gEkrdragonfx_1[];
 extern struct AnimSpriteData AnimSprite_EfxMaohFlashEye_1[];
 extern struct AnimSpriteData AnimSprite_EfxMaohFlashEye_2[];
 extern struct AnimSpriteData AnimSprite_EfxMaohFlashEye_3[];
@@ -608,48 +608,138 @@ u8 CONST_DATA Img_DemonLightSprites_EyeFlash[] = INCBIN_U8("graphics/banim/drago
 
 u16 CONST_DATA Pal_DemonLightSprites_EyeFlash[] = INCBIN_U16("graphics/banim/dragonfx/Pal_DemonLightSprites_EyeFlash.agbpal");
 
-u32 CONST_DATA gEkrdragonfx_0[] =
+struct AnimSpriteData CONST_DATA AnimSprite_Ekrdragonfx0_0[] =
 {
-    /* relocatable FORCE_SPRITE ptrs into Pal_DemonLightSprites_EyeFlash (were raw) */
-    0x10000000 + (uintptr_t)((u8 *)Pal_DemonLightSprites_EyeFlash + 0x20),
-    0x10000000 + (uintptr_t)((u8 *)Pal_DemonLightSprites_EyeFlash + 0x38),
-    0x10000000 + (uintptr_t)((u8 *)Pal_DemonLightSprites_EyeFlash + 0x68),
-    0x10000000 + (uintptr_t)((u8 *)Pal_DemonLightSprites_EyeFlash + 0x8c),
-    0x10000000 + (uintptr_t)((u8 *)Pal_DemonLightSprites_EyeFlash + 0xbc),
-    0x10000000 + (uintptr_t)((u8 *)Pal_DemonLightSprites_EyeFlash + 0xe0),
-    0x10000000 + (uintptr_t)((u8 *)Pal_DemonLightSprites_EyeFlash + 0x104),
-    0x2 + (uintptr_t)((u8 *)Pal_DemonLightSprites_EyeFlash + 0x11c),
-    0x81000000, 0x10004000, 0xFFF00000, 0x00000000,
-    0x00000001, 0x00000000, 0x00000000, 0x10008000,
-    0xFFF00002, 0x00000000, 0x10000000, 0xFFF80023,
-    0x00000010, 0x10000000, 0xFFE80003, 0x00000000,
-    0x00000001, 0x00000000, 0x00000000, 0x50000000,
-    0xFFE80004, 0x00000000, 0x10000000, 0xFFF80006,
-    0x00000010, 0x00000001, 0x00000000, 0x00000000,
-    0x10000000, 0xFFF80026, 0x00000010, 0x50000000,
-    0xFFE80007, 0x00000000, 0x10000000, 0xFFE00009,
-    0x00000008, 0x00000001, 0x00000000, 0x00000000,
-    0x10008000, 0xFFF0000A, 0x00000008, 0x50000000,
-    0xFFE0000B, 0x00000010, 0x00000001, 0x00000000,
-    0x00000000, 0x10000000, 0xFFF00029, 0x00000008,
-    0x50000000, 0xFFE0000D, 0x00000010, 0x00000001,
-    0x00000000, 0x00000000, 0x10008000, 0xFFE0000F,
-    0x00000010, 0x00000001, 0x00000000, 0x00000000,
-    0x00000001, 0x00000000, 0x00000000,
+    { .header = (u32)(ATTR0_WIDE) | ((u32)(ATTR1_SIZE_8) << 16), .as = { .object = { 0x0000, 0, 0 } } },
+    ANIM_SPRITE_END,
 };
 
-u32 CONST_DATA gEkrdragonfx_1[] =
+struct AnimSpriteData CONST_DATA AnimSprite_Ekrdragonfx0_1[] =
 {
-    /* relocatable FORCE_SPRITE ptrs into gEkrdragonfx_0 body (were raw) */
-    0x10000000 + (uintptr_t)((u8 *)gEkrdragonfx_0 + 0x24),
-    0x10000000 + (uintptr_t)((u8 *)gEkrdragonfx_0 + 0x3c),
-    0x10000000 + (uintptr_t)((u8 *)gEkrdragonfx_0 + 0x6c),
-    0x10000000 + (uintptr_t)((u8 *)gEkrdragonfx_0 + 0x90),
-    0x10000000 + (uintptr_t)((u8 *)gEkrdragonfx_0 + 0xc0),
-    0x10000000 + (uintptr_t)((u8 *)gEkrdragonfx_0 + 0xe4),
-    0x10000000 + (uintptr_t)((u8 *)gEkrdragonfx_0 + 0x108),
-    0x2 + (uintptr_t)((u8 *)gEkrdragonfx_0 + 0x120),
-    0x81000000,
+    { .header = (u32)(ATTR0_TALL) | ((u32)(ATTR1_SIZE_8) << 16), .as = { .object = { 0x0002, 8, 0 } } },
+    { .header = (u32)(ATTR0_SQUARE) | ((u32)(ATTR1_SIZE_8) << 16), .as = { .object = { 0x0023, 0, 16 } } },
+    { .header = (u32)(ATTR0_SQUARE) | ((u32)(ATTR1_SIZE_8) << 16), .as = { .object = { 0x0003, 16, 0 } } },
+    ANIM_SPRITE_END,
+};
+
+struct AnimSpriteData CONST_DATA AnimSprite_Ekrdragonfx0_2[] =
+{
+    { .header = (u32)(ATTR0_SQUARE) | ((u32)(ATTR1_SIZE_16) << 16), .as = { .object = { 0x0004, 8, 0 } } },
+    { .header = (u32)(ATTR0_SQUARE) | ((u32)(ATTR1_SIZE_8) << 16), .as = { .object = { 0x0006, 0, 16 } } },
+    ANIM_SPRITE_END,
+};
+
+struct AnimSpriteData CONST_DATA AnimSprite_Ekrdragonfx0_3[] =
+{
+    { .header = (u32)(ATTR0_SQUARE) | ((u32)(ATTR1_SIZE_8) << 16), .as = { .object = { 0x0026, 0, 16 } } },
+    { .header = (u32)(ATTR0_SQUARE) | ((u32)(ATTR1_SIZE_16) << 16), .as = { .object = { 0x0007, 8, 0 } } },
+    { .header = (u32)(ATTR0_SQUARE) | ((u32)(ATTR1_SIZE_8) << 16), .as = { .object = { 0x0009, 24, 8 } } },
+    ANIM_SPRITE_END,
+};
+
+struct AnimSpriteData CONST_DATA AnimSprite_Ekrdragonfx0_4[] =
+{
+    { .header = (u32)(ATTR0_TALL) | ((u32)(ATTR1_SIZE_8) << 16), .as = { .object = { 0x000A, 8, 8 } } },
+    { .header = (u32)(ATTR0_SQUARE) | ((u32)(ATTR1_SIZE_16) << 16), .as = { .object = { 0x000B, 16, 16 } } },
+    ANIM_SPRITE_END,
+};
+
+struct AnimSpriteData CONST_DATA AnimSprite_Ekrdragonfx0_5[] =
+{
+    { .header = (u32)(ATTR0_SQUARE) | ((u32)(ATTR1_SIZE_8) << 16), .as = { .object = { 0x0029, 8, 8 } } },
+    { .header = (u32)(ATTR0_SQUARE) | ((u32)(ATTR1_SIZE_16) << 16), .as = { .object = { 0x000D, 16, 16 } } },
+    ANIM_SPRITE_END,
+};
+
+struct AnimSpriteData CONST_DATA AnimSprite_Ekrdragonfx0_6[] =
+{
+    { .header = (u32)(ATTR0_TALL) | ((u32)(ATTR1_SIZE_8) << 16), .as = { .object = { 0x000F, 24, 16 } } },
+    ANIM_SPRITE_END,
+};
+
+struct AnimSpriteData CONST_DATA AnimSprite_Ekrdragonfx0_7[] =
+{
+    ANIM_SPRITE_END,
+};
+
+AnimScr CONST_DATA gEkrdragonfx_0[] =
+{
+    ANIMSCR_FORCE_SPRITE(AnimSprite_Ekrdragonfx0_0, 4),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_Ekrdragonfx0_1, 4),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_Ekrdragonfx0_2, 4),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_Ekrdragonfx0_3, 4),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_Ekrdragonfx0_4, 4),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_Ekrdragonfx0_5, 4),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_Ekrdragonfx0_6, 4),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_Ekrdragonfx0_7, 2),
+    ANIMSCR_DISABLED,
+};
+
+struct AnimSpriteData CONST_DATA AnimSprite_Ekrdragonfx1_0[] =
+{
+    { .header = (u32)(ATTR0_WIDE) | (((u32)(ATTR1_SIZE_8) + ATTR1_FLIP_X) << 16), .as = { .object = { 0x0000, -16, 0 } } },
+    ANIM_SPRITE_END,
+};
+
+struct AnimSpriteData CONST_DATA AnimSprite_Ekrdragonfx1_1[] =
+{
+    { .header = (u32)(ATTR0_TALL) | (((u32)(ATTR1_SIZE_8) + ATTR1_FLIP_X) << 16), .as = { .object = { 0x0002, -16, 0 } } },
+    { .header = (u32)(ATTR0_SQUARE) | (((u32)(ATTR1_SIZE_8) + ATTR1_FLIP_X) << 16), .as = { .object = { 0x0023, -8, 16 } } },
+    { .header = (u32)(ATTR0_SQUARE) | (((u32)(ATTR1_SIZE_8) + ATTR1_FLIP_X) << 16), .as = { .object = { 0x0003, -24, 0 } } },
+    ANIM_SPRITE_END,
+};
+
+struct AnimSpriteData CONST_DATA AnimSprite_Ekrdragonfx1_2[] =
+{
+    { .header = (u32)(ATTR0_SQUARE) | (((u32)(ATTR1_SIZE_16) + ATTR1_FLIP_X) << 16), .as = { .object = { 0x0004, -24, 0 } } },
+    { .header = (u32)(ATTR0_SQUARE) | (((u32)(ATTR1_SIZE_8) + ATTR1_FLIP_X) << 16), .as = { .object = { 0x0006, -8, 16 } } },
+    ANIM_SPRITE_END,
+};
+
+struct AnimSpriteData CONST_DATA AnimSprite_Ekrdragonfx1_3[] =
+{
+    { .header = (u32)(ATTR0_SQUARE) | (((u32)(ATTR1_SIZE_8) + ATTR1_FLIP_X) << 16), .as = { .object = { 0x0026, -8, 16 } } },
+    { .header = (u32)(ATTR0_SQUARE) | (((u32)(ATTR1_SIZE_16) + ATTR1_FLIP_X) << 16), .as = { .object = { 0x0007, -24, 0 } } },
+    { .header = (u32)(ATTR0_SQUARE) | (((u32)(ATTR1_SIZE_8) + ATTR1_FLIP_X) << 16), .as = { .object = { 0x0009, -32, 8 } } },
+    ANIM_SPRITE_END,
+};
+
+struct AnimSpriteData CONST_DATA AnimSprite_Ekrdragonfx1_4[] =
+{
+    { .header = (u32)(ATTR0_TALL) | (((u32)(ATTR1_SIZE_8) + ATTR1_FLIP_X) << 16), .as = { .object = { 0x000A, -16, 8 } } },
+    { .header = (u32)(ATTR0_SQUARE) | (((u32)(ATTR1_SIZE_16) + ATTR1_FLIP_X) << 16), .as = { .object = { 0x000B, -32, 16 } } },
+    ANIM_SPRITE_END,
+};
+
+struct AnimSpriteData CONST_DATA AnimSprite_Ekrdragonfx1_5[] =
+{
+    { .header = (u32)(ATTR0_SQUARE) | (((u32)(ATTR1_SIZE_8) + ATTR1_FLIP_X) << 16), .as = { .object = { 0x0029, -16, 8 } } },
+    { .header = (u32)(ATTR0_SQUARE) | (((u32)(ATTR1_SIZE_16) + ATTR1_FLIP_X) << 16), .as = { .object = { 0x000D, -32, 16 } } },
+    ANIM_SPRITE_END,
+};
+
+struct AnimSpriteData CONST_DATA AnimSprite_Ekrdragonfx1_6[] =
+{
+    { .header = (u32)(ATTR0_TALL) | (((u32)(ATTR1_SIZE_8) + ATTR1_FLIP_X) << 16), .as = { .object = { 0x000F, -32, 16 } } },
+    ANIM_SPRITE_END,
+};
+
+struct AnimSpriteData CONST_DATA AnimSprite_Ekrdragonfx1_7[] =
+{
+    ANIM_SPRITE_END,
+};
+
+AnimScr CONST_DATA gEkrdragonfx_1[] =
+{
+    ANIMSCR_FORCE_SPRITE(AnimSprite_Ekrdragonfx1_0, 4),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_Ekrdragonfx1_1, 4),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_Ekrdragonfx1_2, 4),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_Ekrdragonfx1_3, 4),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_Ekrdragonfx1_4, 4),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_Ekrdragonfx1_5, 4),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_Ekrdragonfx1_6, 4),
+    ANIMSCR_FORCE_SPRITE(AnimSprite_Ekrdragonfx1_7, 2),
+    ANIMSCR_DISABLED,
 };
 
 u8 CONST_DATA Img_DemonLightSprites[] = INCBIN_U8("graphics/banim/dragonfx/Img_DemonLightSprites.4bpp.lz");

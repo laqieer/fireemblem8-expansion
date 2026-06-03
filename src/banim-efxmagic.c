@@ -88,7 +88,7 @@ u32 FramScr_Unk5D4F84[] = {
 };
 
 u32 FramScr_Unk5D4F90[] = {
-    (uintptr_t)FramScr_Unk5D4F84 + 1, /* was raw 0x85D4F85 (now relocatable) */
+    ANIMSCR_FORCE_SPRITE(FramScr_Unk5D4F84, 1),
     0x80000000
 };
 
