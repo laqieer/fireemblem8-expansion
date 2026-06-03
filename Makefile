@@ -335,6 +335,14 @@ endif
 $(ASM_OBJECTS): %.o: %.s $$(data_dep)
 	$(AS) $(ASFLAGS) -g $< -o $@
 
+# Build the host preproc via its own Makefile (plain g++). build_tools.sh already
+# does this through make_tools.mk's tools/* wildcard; this explicit rule shadows
+# make's built-in %:%.cpp rule, which would otherwise inherit the project's
+# -nostdinc CPPFLAGS and fail (<cstdio> not found) if preproc.cpp is newer than
+# the binary -- e.g. after a `git pull` followed by `make` without rebuilding tools.
+$(PREPROC): tools/preproc/preproc.cpp tools/preproc/Makefile
+	$(MAKE) -C tools/preproc
+
 $(DATA_SRC_C_OBJECTS): %.o: %.c $(PREPROC) $$(data_dep)
 	$(PREPROC) $< | $(CPP) $(CPPFLAGS) - | iconv -f UTF-8 -t CP932 | $(CC1) $(CC1FLAGS) -o $*.s
 	echo '.ALIGN 2, 0' >> $*.s
