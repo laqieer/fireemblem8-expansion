@@ -208,8 +208,7 @@ SpriteAnim_PlayerRankFog:
 	ap_anim 1, 12
 	ap_anim 1, 13
 	ap_anim_delete
-	.hword 0x0000
-	.hword 0xFFFF
+	ap_anim_loop
 .LSpriteAnim_PlayerRankFog_anim_1:
 	ap_anim 4, 15
 	ap_anim_loop

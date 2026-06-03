@@ -381,8 +381,7 @@ SpriteAnim_FireTrap:
 	ap_anim 2, 4
 	ap_anim 2, 3
 	ap_anim_delete
-	.hword 0x0000
-	.hword 0xFFFF
+	ap_anim_loop
 .LSpriteAnim_FireTrap_anim_1:
 	ap_anim 2, 6
 	ap_anim 2, 7
@@ -405,8 +404,7 @@ SpriteAnim_FireTrap:
 	ap_anim 2, 24
 	ap_anim 2, 25
 	ap_anim_delete
-	.hword 0x0000
-	.hword 0xFFFF
+	ap_anim_loop
 .LSpriteAnim_FireTrap_anim_2:
 	ap_anim 1, 26
 	ap_anim 1, 28
@@ -437,6 +435,5 @@ SpriteAnim_FireTrap:
 	ap_anim 2, 47
 	ap_anim 2, 48
 	ap_anim_delete
-	.hword 0x0000
-	.hword 0xFFFF
+	ap_anim_loop
 	.size SpriteAnim_FireTrap, . - SpriteAnim_FireTrap

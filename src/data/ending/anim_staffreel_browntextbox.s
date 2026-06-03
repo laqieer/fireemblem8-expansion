@@ -58,12 +58,10 @@ SpriteAnim_BrownTextBox:
 .LSpriteAnim_BrownTextBox_anim_0:
 	ap_anim 4, 0
 	ap_anim_end
-	.hword 0x0000
-	.hword 0xFFFF
+	ap_anim_loop
 .LSpriteAnim_BrownTextBox_anim_1:
 	ap_anim 4, 1
 	ap_anim_end
-	.hword 0x0000
-	.hword 0xFFFF
-	.hword 0x0000
+	ap_anim_loop
+	.hword 0x0000  @ trailing padding
 	.size SpriteAnim_BrownTextBox, . - SpriteAnim_BrownTextBox

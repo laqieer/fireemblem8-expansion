@@ -174,8 +174,7 @@ SpriteAnim_GasTrapVertical:
 	ap_anim 6, 10
 	ap_anim 5, 11
 	ap_anim_delete
-	.hword 0x0000
-	.hword 0xFFFF
+	ap_anim_loop
 .LSpriteAnim_GasTrapVertical_anim_1:
 	ap_anim 1, 12
 	ap_anim 3, 13
@@ -198,8 +197,7 @@ SpriteAnim_GasTrapVertical:
 	ap_anim 6, 22
 	ap_anim 5, 23
 	ap_anim_delete
-	.hword 0x0000
-	.hword 0xFFFF
+	ap_anim_loop
 	.size SpriteAnim_GasTrapVertical, . - SpriteAnim_GasTrapVertical
 
 	.data
@@ -364,8 +362,7 @@ SpriteAnim_GasTrapHorizontal:
 	ap_anim 6, 10
 	ap_anim 5, 11
 	ap_anim_delete
-	.hword 0x0000
-	.hword 0xFFFF
+	ap_anim_loop
 .LSpriteAnim_GasTrapHorizontal_anim_1:
 	ap_anim 1, 12
 	ap_anim 3, 13
@@ -388,6 +385,5 @@ SpriteAnim_GasTrapHorizontal:
 	ap_anim 6, 22
 	ap_anim 5, 23
 	ap_anim_delete
-	.hword 0x0000
-	.hword 0xFFFF
+	ap_anim_loop
 	.size SpriteAnim_GasTrapHorizontal, . - SpriteAnim_GasTrapHorizontal

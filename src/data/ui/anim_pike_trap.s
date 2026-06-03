@@ -143,8 +143,7 @@ SpriteAnim_PikeTrap:
 	ap_anim 2, 6
 	ap_anim 2, 7
 	ap_anim_delete
-	.hword 0x0000
-	.hword 0xFFFF
+	ap_anim_loop
 .LSpriteAnim_PikeTrap_anim_1:
 	ap_anim 3, 8
 	ap_anim 2, 9
@@ -160,8 +159,7 @@ SpriteAnim_PikeTrap:
 	ap_anim 2, 14
 	ap_anim 2, 15
 	ap_anim_delete
-	.hword 0x0000
-	.hword 0xFFFF
+	ap_anim_loop
 .LSpriteAnim_PikeTrap_anim_2:
 	ap_anim 3, 16
 	ap_anim 2, 17
@@ -177,6 +175,5 @@ SpriteAnim_PikeTrap:
 	ap_anim 2, 22
 	ap_anim 2, 23
 	ap_anim_delete
-	.hword 0x0000
-	.hword 0xFFFF
+	ap_anim_loop
 	.size SpriteAnim_PikeTrap, . - SpriteAnim_PikeTrap
