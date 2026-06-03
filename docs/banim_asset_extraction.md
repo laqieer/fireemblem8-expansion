@@ -49,6 +49,7 @@ graphics/banim/assets/
 ### 3. Palette Translation (`.gbapal` vs `.agbpal`)
 - **Rule:** Standard 15-bit palettes extracted from the ROM translate well to `.pal` / `.gbapal`. However, palettes containing a high-bit configuration flag (where the highest bit of the 16-bit color is 1) will fail strict `gbagfx` parsing back into identical `.gbapal` binaries.
 - **Handling:** Such edge-case palettes are preserved as `.agbpal` binary files and not pushed to `.pal` plain text, ensuring a 1:1 match upon ROM linking.
+- **Caveat:** a `.agbpal` whose size is **not a multiple of 32**, or whose leading 16 colours have **no high bit set**, is probably *not* a genuine high-bit palette but an oversized blob with non-palette data baked onto the end — see [Oversized `.agbpal` with hidden trailing assets](#oversized-agbpal-with-hidden-trailing-assets) below.
 
 ### 4. `animscr` Conversion (`arm_compressing_linker.py`)
 - **Rule:** Animation scripts usually fall under the GNU Assembler (`arm-none-eabi-as`) via `.incbin`. Scripts that require LZ compression or isolated symbol-wrapping must pass through `scripts/arm_compressing_linker.py`.
@@ -107,3 +108,50 @@ Examples (showing first and last labels of each cluster):
 - **`Pal_08725DAC`** sits adjacent to `Img_FireBreathBg` + `Tsa_FireBreathBg`, but `banim-efxmagic-wretchedair.c` loads it via `proc->pal = Pal_08725DAC` for the Demon-King dark-breath BG color animation. It's a palette-only animation frame with no dedicated tilesheet of its own; treat as Pattern C and leave as `.pal` unless a PNG preview is actively wanted.
 - **Same tiles, different palette = sidecar PNG.** When applying Pattern B to a Pal whose canonical Img already has a different palette embedded (e.g. `Pal_efxGorgonBGFinish` vs an already-paletted `Img_efxCrimsonEyeBG.png`), create a sidecar PNG (`efxGorgonBGFinish.png`) sharing the same pixel indices.
 - **Asset map sync.** After changing an `.incbin` path in `data/data_banim.s`, also update the right-hand path in `reports/data_banim_asset_map.csv`. The CSV's left-hand `banim_incbin/*.bin` column is historical and stays as-is.
+
+### Worked example — why a shared image's palette can't be baked (DemonLightSprites family)
+
+All 66 `graphics/banim/dragonfx/Img_*.png` keep their palette in a separate `.pal`; **none** is baked into the PNG (63 are indexed against a shared `Pal_*` symbol, 3 are left grey). The reasons are *not* uniform — they instantiate Patterns A/B/C above plus a base-vs-runtime split, all in one family:
+
+| # imgs | Group | Why no single palette can be baked |
+| --- | --- | --- |
+| ~29 | Palette-cycling backgrounds (`Img_DemonLightBg*`) | the runtime animates a **sequence** of palette frames — `Pal_DemonLightBg_Close_1..32` are listed as an animation array at `src/banim-efxmagic-demonlight.c:208-239` (32 frames). The PNG is indexed against frame `_0`; the palette changes every frame. **(Pattern C)** |
+| ~31 | Shared sprite palette across battle-anim frames (`Pal_Ekrdragonfx_3..6`) | battle-animation frame images (e.g. `Img_879C1E4` = `Img_Ekrdragonfx_14`); the animation data selects a palette **per frame** from a small shared set (`src/banim-ekrclasschg.c:255+`). One palette is shared by 3–12 images — owned by the animation, not any image. **(Pattern A)** |
+| ~3 | Base-vs-runtime split (`DemonLightSprites`/EyeFlash, DracoZombie) | the PNG is indexed against the family **base** palette (`Pal_DemonLightSprites`), but the code swaps in a **different** runtime palette (`Pal_DemonLightSprites_EyeFlash` via `efxMaohFlash_RegisterEyeFlashGfx`). |
+| 3 | Grey (`Img_879B8F4`, `Img_DemonLightSprites_087A5BA4/_087A5E9C`) | left unindexed — no embedded palette at all. |
+
+The unifying fact: in the banim engine a palette is an **independent ROM blob, shared across images and/or swapped/animated at runtime**, so it is essentially never owned 1:1 by an image — which is why none can be (or are) baked, through three different mechanisms. To diagnose any one image: `gbagfx img.png x.gbapal`, then search the ROM for those 32 bytes — if they match a *different* `Pal_*` symbol than the one the code registers, it's a base-vs-runtime split, not a placeholder.
+
+## Oversized `.agbpal` with hidden trailing assets
+
+Section 3 says a `.agbpal` exists because its palette has high-bit colours that `gbagfx` can't round-trip to `.pal`. But some extracted `.agbpal` are *not* that: they are a real 16-colour palette with **non-palette data baked onto the end** (the extractor dumped a whole ROM region as one "palette"), or are wholly non-palette data given the extension. The trailing bytes are a separate asset that other code references via `<symbol> + <offset>`, silently hidden inside a file that looks like a palette.
+
+### Exemplar — `Pal_DemonLightSprites_EyeFlash` (commit `5bc757b9` / `835ef068`)
+
+A 296-byte `.agbpal` = a 16-colour palette (32B, read by `SpellFx_RegisterObjPal(…, PLTT_SIZE_4BPP)`) + 264B of embedded `struct AnimSpriteData` that the `gEkrdragonfx_0`/`_1` FORCE_SPRITE scripts referenced via pointers into the blob (`Pal+0x20..`). Fixed by truncating the `.agbpal` to the real palette, carving the sprite data into named `AnimSpriteData` arrays referenced through `ANIMSCR_FORCE_SPRITE`, and migrating the now-clean (non-high-bit) palette to `.pal`.
+
+### Detection signals
+
+1. **Size not a multiple of 32** — a pure palette is always N×32 bytes (N 16-colour sub-palettes). `wc -c` mod 32 ≠ 0 ⇒ definite trailing non-palette bytes.
+2. **File ≫ the palette size actually consumed** — the symbol is registered as a 32-byte palette (`PLTT_SIZE_4BPP`, or `ApplyPalette(p, 0x10)` copies only 0x20 bytes) but the file is far larger.
+3. **Foreign references into the blob** — other code/data holds `<symbol> + <offset>` pointers with `offset ≥ palette_size`, or the ROM has pointer words landing inside `[addr+palette_size, addr+file_size)`. This is how the hidden asset is consumed (a FORCE_SPRITE list, a glyph-index table, …).
+4. **No high-bit colours** — if the leading "palette" has no high-bit `u16`s it had no reason to be `.agbpal` at all (Section 3): a hint it was kept binary for the *trailing bytes*, not the colours.
+
+### Audit of this PR's `.agbpal` (2026-06-03)
+
+All 27 `.agbpal` added in this PR were audited (14 are exactly 32B = one clean palette; the 13 larger files were deep-analyzed by a fan-out workflow with adversarial verification of every finding). **5 carried hidden assets and were fixed** (commit `ed35e880`); the other 8 are genuine high-bit / multi-palette / cycling-table palettes (legitimately `.agbpal`).
+
+| File | Symbol | Shape | Hidden asset | Fix |
+| --- | --- | --- | --- | --- |
+| `gUnknown_08A37300.agbpal` | `gUnkData_96` | 32B pal + 7760B | class-reel letter/glyph **font** (64 LZ77 blocks, char-indexed by `gOpinfo_1[*str]`) | carved to `gOpinfoLetterGfx[]`; rewrote `gOpinfo_1`'s 64 `(u8*)gUnkData_96 + 0xNN` to `gOpinfoLetterGfx + (0xNN−0x20)` (identical addresses) |
+| `Pal_PlayerRankFog.agbpal` | `Pal_PlayerRankFog` | 32B pal + 976B | orphaned LZ77 image | carved to `gUnknown_08A09A7C[]` |
+| `Pal_080E1164.agbpal` | `Pal_ConstDataBanimekrdk_0` | 32B pal + 528B | orphaned LZ77 TSA tilemap | carved to `Tsa_ConstDataBanimekrdk_0[]` |
+| `gPal_BrownTextBox.agbpal` | `gPal_BrownTextBox` | 32B pal + 252B | unreferenced tile-attr records | carved to `gUnknown_08A4D0EC[]` |
+| `gUnknown_085BB2FC.agbpal` | `gEfxlvupfx_0` | 0B pal + 3724B | **whole file** is AnimSpriteData + AnimScr (not a palette) | renamed `.agbpal`→`.bin`; full AnimScr decomp (like `gEkrdragonfx`) is a follow-up |
+
+### Fix recipe (byte-identical)
+
+1. Truncate the `.agbpal` to the real palette (`head -c 32`). If the palette has no high-bit colours it may further migrate to `.pal` (Section 3 / EyeFlash).
+2. Carve the trailing bytes into a new committed binary and INCBIN it as a **new symbol declared immediately after** the palette in the same `.c` — declaration order == ROM order, so the layout (and any `<symbol>+offset` pointer value) is unchanged. Keep compressed bytes verbatim when `gbagfx` can't reproduce the original LZ stream (PlayerRankFog's does not round-trip at any `-mindist`; 080E1164's does, at `-mindist 1`).
+3. If foreign code references the hidden region (`gUnkData_96`), repoint those refs to `new_symbol + (offset − palette_size)` — the absolute address is identical.
+4. Rebuild; confirm `fireemblem8.gba: OK`.
