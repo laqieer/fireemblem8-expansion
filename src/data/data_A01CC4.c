@@ -51,11 +51,15 @@ u16 gUnkData_46[] = { 0x39F3, 0x0443, 0x3E11, 0x52D7, 0x4A98, 0x290A, 0x5F3D, 0x
 u16 gPal_UnkData_1[] = INCBIN_U16("graphics/misc/gPal_08A07C58.gbapal");
 u16 CONST_DATA Img_ChapterIntroFog[] = INCBIN_U16("graphics/misc/Img_ChapterIntroFog.4bpp.lz");
 u16 Pal_PlayerRankFog[] = INCBIN_U16("graphics/misc/Pal_PlayerRankFog.agbpal");
-/* PlayerRankFog: a fog sprite animation hidden after the palette (orphaned, unreferenced).
- * An LZ77 image (512B / 16 4bpp tiles -> Img_08A09A7C.png, rebuilt at -mindist 2) followed
- * by 872B of OAM/AnimScr animation data (decoded to a typed u16 array). No raw blob. */
-u8 gUnknown_08A09A7C[] = INCBIN_U8("graphics/misc/Img_08A09A7C.4bpp.lz");
-u16 gUnknown_08A09AE4[] =
+/* PlayerRankFog (orphaned/unreferenced): a sprite "fog" object animation in the FE8 AP
+ * format (consumed by AP_Create/StartSpriteAnimfx; see include/ap.h). Img_PlayerRankFog is
+ * the 16-tile 4bpp graphics; SpriteAnim_PlayerRankFog is the AP definition u16[] -- an
+ * offset table, then per-frame [rot/scale][objCount][obj OAM attr0/attr1/attr2], then the
+ * (interval, frame) playback sequence terminated by 0xFFFF. Stored as raw u16[] like every
+ * other AP definition in the tree (e.g. SpriteAnim_GasTrapVertical); there is no struct/
+ * macro form for this format anywhere in the codebase. */
+u8 Img_PlayerRankFog[] = INCBIN_U8("graphics/misc/Img_PlayerRankFog.4bpp.lz");
+u16 SpriteAnim_PlayerRankFog[] =
 {
     0x0004, 0x0024, 0x0024, 0x003A, 0x004A, 0x0066, 0x0088, 0x00B0,
     0x00DE, 0x0112, 0x014C, 0x018C, 0x01D2, 0x021E, 0x0270, 0x02C2,

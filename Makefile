@@ -251,7 +251,7 @@ graphics/misc/opinfo_letter/%.4bpp.lz: LZ_FLAGS := -mindist 2
 # Orphaned LZ77 TSA tilemap (was hidden after Pal_080E1164), min LZ match distance 1.
 graphics/banim/misc/Tsa_080E1184.tsa.lz: LZ_FLAGS := -mindist 1
 # Orphaned PlayerRankFog fog image (was hidden after Pal_PlayerRankFog), min match distance 2.
-graphics/misc/Img_08A09A7C.4bpp.lz: LZ_FLAGS := -mindist 2
+graphics/misc/Img_PlayerRankFog.4bpp.lz: LZ_FLAGS := -mindist 2
 # FE6 SIO multiboot image, built from source via the mgfembp submodule
 # (StanHash/mgfembp) instead of a committed blob, then LZ-compressed (the original
 # ROM used minimum match distance 1) for the incbin in asm/fe6sio.s. mgfembp

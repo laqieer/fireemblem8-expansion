@@ -56,11 +56,11 @@ u8 gGfx_BrownTextBox[] = INCBIN_U8("graphics/misc/gGfx_BrownTextBox.4bpp.lz");
 
 u16 gPal_BrownTextBox[] = INCBIN_U16("graphics/misc/gPal_BrownTextBox.agbpal");
 
-/* Was hidden trailing data baked onto gPal_BrownTextBox.agbpal (a 16-colour palette):
- * unreferenced structured records (a 7-short header + 3-short tile-attr/position records).
- * Decoded to a typed u16 array so the palette is a clean 16-colour palette and no raw
- * blob remains (ROM byte-identical). */
-u16 gUnknown_08A4D0EC[] =
+/* Brown-text-box sprite object animation (FE8 AP format; see include/ap.h), hidden after
+ * gPal_BrownTextBox's 16-colour palette. An AP definition u16[] -- offset table then
+ * per-frame [objCount][obj OAM attr0/attr1/attr2] -- the same raw form as every other AP
+ * definition (e.g. SpriteAnim_GasTrapVertical); no struct/macro form exists for it. */
+u16 SpriteAnim_BrownTextBox[] =
 {
     0x0004, 0x0008, 0x0008, 0x0082, 0x00DA, 0x00E6, 0x0014, 0x4000,
     0x4000, 0x0000, 0x4000, 0x4040, 0x0002, 0x4000, 0x0020, 0x0002,
