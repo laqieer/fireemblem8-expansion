@@ -203,7 +203,7 @@ graphics/banim/dragonfx/Img_DemonLightSprites_087A5BA4.4bpp.lz: LZ_FLAGS := -min
 graphics/banim/dragonfx/Img_DemonLightSprites_087A5E9C.4bpp.lz: LZ_FLAGS := -mindist 3
 # FE6 SIO multiboot image, built from source via the mgfembp submodule
 # (StanHash/mgfembp) instead of a committed blob, then LZ-compressed (the original
-# ROM used minimum match distance 1) for the incbin in asm/data_fe6sio.s. mgfembp
+# ROM used minimum match distance 1) for the incbin in asm/fe6sio.s. mgfembp
 # needs its own agbcc variant (010110-ThumbPatch, fetched by its installer) and
 # CPP=cpp because arm-none-eabi-cpp may be absent.
 mgfembp/tools/agbcc/bin/agbcc:
