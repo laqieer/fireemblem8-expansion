@@ -119,19 +119,19 @@ my $partial_documented_as_string;
 ))
     or die "ERROR: Error while filtering for partial symbols: $?";
 
-# Performing addition on a string converts it to a number. Any string that fails
-# to convert to a number becomes 0. So if our converted number is 0, but our string
-# is nonzero, then the conversion was an error.
+# These come from `wc -l`, so a valid result is any string of digits -- including
+# "0" once everything is documented. Treat a non-numeric string (e.g. a failed
+# subcommand) as the error, but accept a legitimate count of zero.
 my $undocumented = $undocumented_as_string + 0;
-(($undocumented != 0) and ($undocumented_as_string ne "0"))
+($undocumented_as_string =~ /^\s*\d+\s*$/)
     or die "ERROR: Cannot convert string to num: '$undocumented_as_string'";
 
 my $partial_documented = $partial_documented_as_string + 0;
-(($partial_documented != 0) and ($partial_documented_as_string ne "0"))
+($partial_documented_as_string =~ /^\s*\d+\s*$/)
 	or die "ERROR: Cannot convert string to num: '$partial_documented_as_string'";
 
 my $total_syms = $total_syms_as_string + 0;
-(($total_syms != 0) and ($total_syms_as_string ne "0"))
+($total_syms_as_string =~ /^\s*\d+\s*$/)
     or die "ERROR: Cannot convert string to num: '$total_syms_as_string'";
 
 ($total_syms != 0)
