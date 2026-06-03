@@ -69,6 +69,25 @@ unrelocated pointers at distinct symbol starts) elsewhere in the shiftable regio
 remaining `[B]`/`[C]`/`[D]` words are coincidental incbin data, not pointers; the
 definitive check on those is Layer 3 (runtime).
 
+## Layer 3 runtime results
+
+Backend: `mgba_oracle.c`, a small program linking `libmgba` (apt: `libmgba-dev`);
+`run_dynamic.py` compiles it on demand. (The mGBA Python bindings aren't on PyPI for
+this environment.) It is validated and non-vacuous:
+
+- **Positive** — fixed ROM vs a shifted ROM (`+0x40000` and `+0x80000`): framebuffers
+  are **identical at every checkpoint** through boot → title → intro → menus
+  (frames 120–3000). The per-frame hashes vary (real changing screens), so the
+  oracle is reading actual output, not a constant.
+- **Oracle sanity** — base vs a heavily-corrupted ROM: correctly reports
+  **DIVERGENCE**. So it does detect differences.
+- **Coverage caveat** — reverting the fix and shifting did *not* diverge under
+  generic input, because `gOpinfo_1` is only used on the deep in-game class-reel
+  screen, which START/A spam doesn't reach in ~50 s. Layer 3 confirms the broadly
+  exercised paths are shiftable; the **static layers** are what conclusively caught
+  `opinfo` (the literal had no relocation; the fix gives it one). Reaching the
+  class-reel screen would need a targeted input script / save state.
+
 ## Files
 
 - `scan_build_addrs.py` — Layer 0.

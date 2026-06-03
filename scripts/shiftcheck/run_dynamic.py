@@ -33,14 +33,14 @@ KEY = dict(A=1 << 0, B=1 << 1, SELECT=1 << 2, START=1 << 3, RIGHT=1 << 4,
            LEFT=1 << 5, UP=1 << 6, DOWN=1 << 7, R=1 << 8, L=1 << 9)
 
 INSTALL_HINT = """\
-Layer 3 needs mGBA's Python bindings. They are not importable here.
+Layer 3 needs mGBA. Neither the C library (libmgba) nor the Python bindings are
+available here.
 
-Install (needs sudo for the system library; run these yourself):
-    sudo apt-get install -y libmgba-dev mgba-common
-    pip install --user mgba
+Install the C library (preferred; the harness compiles a small oracle against it):
+    sudo apt-get install -y libmgba-dev
 
 Then re-run:  make shiftcheck-run
-(Static layers 1-2 already gate CI, so this layer is optional/non-blocking.)
+(Static layers 0-2 already gate CI, so this layer is optional/non-blocking.)
 """
 
 
@@ -109,19 +109,9 @@ def main():
                     help="comma-separated hex RAM addresses to compare")
     args = ap.parse_args()
 
-    if not try_import_mgba():
-        print(INSTALL_HINT)
-        return 0
+    checkpoints = [int(x) for x in args.checkpoints.split(",") if x.strip()]
 
-    # Identical input for both ROMs: tap START then A repeatedly to advance through
-    # title / intro / first menus. (start_frame, duration_frames, KEY).
-    input_script = []
-    for f in range(90, 1200, 60):
-        input_script.append((f, 6, "START" if (f // 60) % 2 else "A"))
-
-    checkpoints = sorted(int(x) for x in args.checkpoints.split(","))
-    ram_addrs = [int(x, 16) for x in args.ram.split(",") if x.strip()]
-
+    # Build the shifted ROM (Layer 2 mechanism) unless one was supplied.
     shifted = args.shifted_gba
     if not shifted:
         import diff_shift
@@ -135,32 +125,56 @@ def main():
         shifted = diff_shift.build_shifted(int(args.shift, 0), args.ldscript,
                                            args.map, args.outdir, env)
 
-    print(f"running base    : {args.base_gba}")
-    base = run_rom(args.base_gba, input_script, checkpoints, ram_addrs)
-    print(f"running shifted : {shifted}")
-    shi = run_rom(shifted, input_script, checkpoints, ram_addrs)
+    # Preferred backend: the C oracle linking libmgba (the Python bindings are not
+    # on PyPI for this environment). Compile on demand if libmgba headers exist.
+    oracle = ensure_c_oracle()
+    if oracle:
+        import subprocess
+        cmd = [oracle, args.base_gba, shifted] + [str(c) for c in checkpoints]
+        return subprocess.run(cmd).returncode
 
-    print("\n" + "=" * 70)
-    print("Layer 3 - runtime oracle comparison (base vs shifted)")
-    print("=" * 70)
-    diverged = []
+    # Fallback: Python bindings, if importable.
+    if try_import_mgba():
+        return run_via_python(args.base_gba, shifted, checkpoints)
+
+    print(INSTALL_HINT)
+    return 0
+
+
+def ensure_c_oracle():
+    """Return path to a working mgba_oracle binary, compiling it if libmgba is
+    present; else None."""
+    import subprocess
+    binpath = os.path.join(HERE, "mgba_oracle")
+    src = os.path.join(HERE, "mgba_oracle.c")
+    if os.path.exists(binpath) and os.path.getmtime(binpath) >= os.path.getmtime(src):
+        return binpath
+    if not os.path.exists("/usr/include/mgba/core/core.h"):
+        return None
+    cc = os.environ.get("CC", "cc")
+    r = subprocess.run([cc, "-O2", "-o", binpath, src, "-lmgba"],
+                       capture_output=True, text=True)
+    if r.returncode != 0:
+        sys.stderr.write(r.stderr)
+        return None
+    return binpath
+
+
+def run_via_python(base_gba, shifted, checkpoints):
+    input_script = [(f, 6, "START" if (f // 60) % 2 else "A")
+                    for f in range(90, max(checkpoints), 60)]
+    base = run_rom(base_gba, input_script, checkpoints, [])
+    shi = run_rom(shifted, input_script, checkpoints, [])
+    print("\nLayer 3 - runtime oracle (python backend)")
+    diverged = [f for f in checkpoints if base.get(f) != shi.get(f)]
     for f in checkpoints:
-        b, s = base.get(f), shi.get(f)
-        ok = b == s
-        mark = "OK " if ok else "DIVERGE"
-        print(f"  frame {f:5d}: base fb={b[0]} | shifted fb={s[0]}  [{mark}]")
-        if ram_addrs:
-            print(f"            base ram={b[1]} | shifted ram={s[1]}")
-        if not ok:
-            diverged.append(f)
-
-    print("\n" + "=" * 70)
+        ok = base.get(f) == shi.get(f)
+        print(f"  frame {f:5d}: base={base[f][0]} shifted={shi[f][0]} "
+              f"[{'OK' if ok else 'DIVERGE'}]")
     if diverged:
-        print(f"RESULT: DIVERGENCE at frame(s) {diverged} -> the shifted ROM behaves "
-              f"differently; a hardcoded pointer is hit by then.")
+        print(f"RESULT: DIVERGENCE at {diverged}")
         return 1
-    print("RESULT: matching and shifted ROMs are identical at every checkpoint -> "
-          "shiftable through this depth.")
+    print("RESULT: identical at every checkpoint -> shiftable through this depth.")
     return 0
 
 

@@ -976,3 +976,6 @@ include/msg_data.h
 !src/crt0.s
 !src/m4a_1.s
 !src/libagbsyscall.s
+
+# shiftcheck Layer 3 compiled oracle (built on demand from mgba_oracle.c)
+scripts/shiftcheck/mgba_oracle
