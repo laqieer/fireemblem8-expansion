@@ -1,7 +1,6 @@
 # Fire Emblem: The Sacred Stones
 
 [![Build CI](https://github.com/laqieer/fireemblem8u/actions/workflows/build.yml/badge.svg)](https://github.com/laqieer/fireemblem8u/actions/workflows/build.yml)
-[![Build Verification](https://github.com/laqieer/fireemblem8u/actions/workflows/build-verification.yml/badge.svg)](https://github.com/laqieer/fireemblem8u/actions/workflows/build-verification.yml)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square)](http://makeapullrequest.com)
 
 [FE Decomp Portal](https://laqieer.github.io/fe-decomp-portal/)
