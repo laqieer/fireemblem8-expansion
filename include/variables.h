@@ -989,6 +989,7 @@ extern u8 gUnkData_92[]; // tsa?
 extern u8 gUnkData_94[]; // gfx
 extern u8 gUnkData_95[]; // pal
 extern u16 gUnkData_96[]; // pal
+extern u8 gOpinfoLetterGfx[]; // class-reel glyph font, was hidden after gUnkData_96's palette
 // extern ??? gOverallRankWeightLookup
 // extern ??? gOverallRankLookup
 // extern ??? gGamerankings_0

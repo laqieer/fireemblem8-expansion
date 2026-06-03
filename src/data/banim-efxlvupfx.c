@@ -24,7 +24,7 @@ u8 CONST_DATA Img_LvupApfx[] = INCBIN_U8("./graphics/lvup/LvupAp.4bpp.lz");
 
 u16 CONST_DATA Pal_LvupApfx[] = INCBIN_U16("./graphics/lvup/LvupAp.gbapal", 0x0, 0x20);
 
-u16 CONST_DATA gEfxlvupfx_0[] = INCBIN_U16("graphics/banim/efxlvupfx/gUnknown_085BB2FC.agbpal");
+u16 CONST_DATA gEfxlvupfx_0[] = INCBIN_U16("graphics/banim/efxlvupfx/gUnknown_085BB2FC.bin");
 
 u8 CONST_DATA Img_ArenaBattleBg[] = INCBIN_U8("graphics/banim/efxlvupfx/Img_ArenaBattleBg.4bpp.lz");
 

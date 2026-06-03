@@ -20,3 +20,9 @@ u16 gUnkData_93[] = INCBIN_U16("graphics/misc/gUnknown_08A36318.gbapal");
 u8 gUnkData_94[] = INCBIN_U8("graphics/misc/gUnknown_08A36338.4bpp.lz");
 u8 gUnkData_95[] = INCBIN_U8("graphics/misc/gUnknown_08A372C0.4bpp");
 u16 gUnkData_96[] = INCBIN_U16("graphics/misc/gUnknown_08A37300.agbpal");
+
+/* Class-reel (promotion-info) letter/glyph font: 64 LZ77-compressed 4bpp glyph blocks,
+ * character-indexed via gOpinfo_1[*str] and decompressed at runtime (src/opinfo.c).
+ * Was hidden trailing data baked onto gUnknown_08A37300.agbpal after its 16-colour
+ * palette; carved out so gUnkData_96 is a clean palette (ROM byte-identical). */
+u8 gOpinfoLetterGfx[] = INCBIN_U8("graphics/misc/gOpinfoLetterGfx.bin");

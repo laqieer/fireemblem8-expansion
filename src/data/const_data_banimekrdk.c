@@ -9,3 +9,7 @@ const u16 gConstDataBanimekrdk_1[] = INCBIN_U16("graphics/banim/misc/gUnknown_08
 const u8 gConstDataBanimekrdk_2[] = INCBIN_U8("graphics/banim/misc/gUnknown_080E043C.4bpp.lz");
 const u8 gConstDataBanimekrdk_3[] = INCBIN_U8("graphics/banim/misc/gUnknown_080E05F8.4bpp.lz");
 const u8 Pal_ConstDataBanimekrdk_0[] = INCBIN_U8("graphics/banim/misc/Pal_080E1164.agbpal");
+/* Was a hidden LZ77 TSA tilemap (32x32, FEBuilderGBA @ 0x080E1184) baked onto the end of
+ * Pal_080E1164.agbpal. Orphaned (no code references it). Carved out so the palette is a
+ * clean 16-colour palette; compressed bytes kept verbatim (ROM byte-identical). */
+const u8 Tsa_ConstDataBanimekrdk_0[] = INCBIN_U8("graphics/banim/misc/gUnknown_080E1184.bin");

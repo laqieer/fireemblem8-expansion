@@ -55,3 +55,8 @@ u8 Tsa_StaffReelEnt_12[] = INCBIN_U8("graphics/misc/Tsa_StaffReelEnt_08A4CD40.ts
 u8 gGfx_BrownTextBox[] = INCBIN_U8("graphics/misc/gGfx_BrownTextBox.4bpp.lz");
 
 u16 gPal_BrownTextBox[] = INCBIN_U16("graphics/misc/gPal_BrownTextBox.agbpal");
+
+/* Was hidden trailing data baked onto gPal_BrownTextBox.agbpal (a 16-colour palette):
+ * unreferenced structured tile-attribute records. Carved out so the palette is a clean
+ * 32-byte / 16-colour palette; bytes preserved verbatim (ROM byte-identical). */
+u8 gUnknown_08A4D0EC[] = INCBIN_U8("graphics/misc/gUnknown_08A4D0EC.bin");
