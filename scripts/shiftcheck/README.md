@@ -88,8 +88,22 @@ this environment.) It is validated and non-vacuous:
   `opinfo` (the literal had no relocation; the fix gives it one). Reaching the
   class-reel screen would need a targeted input script / save state.
 
+## Source-level raw-pointer scan (`scan_raw_casts.sh`)
+
+The binary delta-0 heuristic in `scan_relocs.py` is noisy (coincidental data words
+that equal symbol addresses). The **reliable** detector for the redas bug class is
+at the source level: `scan_raw_casts.sh` greps for raw pointer casts in C
+(`(T *)0x08…`) and raw `.4byte/.word 0x08…` literals in committed asm data. A full-
+game TAS replay (see `tas/`) found one such bug that the binary scan ranked low:
+`src/events_udefs.c` had `.redas = (void *)0x88b6e28` (9 chapter-7 `UnitDefinition.redas`
+pointers) instead of the `REDA_*` symbols — they didn't relocate, so a shifted ROM
+read garbage unit positions and desynced. Lesson: a *scattered* pointer (one per
+struct, not a contiguous table) pointing exactly at a data symbol is the signal the
+coherence heuristic misses; `scan_raw_casts.sh` catches it directly.
+
 ## Files
 
+- `scan_raw_casts.sh` — source-level raw-pointer-cast detector (the redas class).
 - `scan_build_addrs.py` — Layer 0.
 - `emit_relocs_link.sh` — single source of truth for the production link line,
   parameterized (used with `-q` for Layer 1 and with a shifted ldscript for Layer 2).
