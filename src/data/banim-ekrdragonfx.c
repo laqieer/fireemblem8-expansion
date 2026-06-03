@@ -606,7 +606,7 @@ u8 CONST_DATA Tsa_Ekrdragonfx_36[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_87A4
 
 u8 CONST_DATA Img_DemonLightSprites_EyeFlash[] = INCBIN_U8("graphics/banim/dragonfx/Img_DemonLightSprites_EyeFlash.4bpp.lz");
 
-u16 CONST_DATA Pal_DemonLightSprites_EyeFlash[] = INCBIN_U16("graphics/banim/dragonfx/Pal_DemonLightSprites_EyeFlash.agbpal");
+u16 CONST_DATA Pal_DemonLightSprites_EyeFlash[] = INCBIN_U16("graphics/banim/dragonfx/Pal_DemonLightSprites_EyeFlash.gbapal");
 
 struct AnimSpriteData CONST_DATA AnimSprite_Ekrdragonfx0_0[] =
 {
