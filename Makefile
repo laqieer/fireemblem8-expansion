@@ -246,6 +246,8 @@ include json_data_rules.mk
 # minimum LZ match distance of 3 (gbagfx defaults to 2). Reproduce byte-identically.
 graphics/banim/dragonfx/Img_DemonLightSprites_087A5BA4.4bpp.lz: LZ_FLAGS := -mindist 3
 graphics/banim/dragonfx/Img_DemonLightSprites_087A5E9C.4bpp.lz: LZ_FLAGS := -mindist 3
+# Class-reel (gOpinfo) glyph font: 64 per-glyph 4bpp images, min LZ match distance 2.
+graphics/misc/opinfo_letter/%.4bpp.lz: LZ_FLAGS := -mindist 2
 # FE6 SIO multiboot image, built from source via the mgfembp submodule
 # (StanHash/mgfembp) instead of a committed blob, then LZ-compressed (the original
 # ROM used minimum match distance 1) for the incbin in asm/fe6sio.s. mgfembp

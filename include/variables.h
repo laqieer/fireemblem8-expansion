@@ -989,7 +989,71 @@ extern u8 gUnkData_92[]; // tsa?
 extern u8 gUnkData_94[]; // gfx
 extern u8 gUnkData_95[]; // pal
 extern u16 gUnkData_96[]; // pal
-extern u8 gOpinfoLetterGfx[]; // class-reel glyph font, was hidden after gUnkData_96's palette
+// class-reel glyph font (was hidden after gUnkData_96's palette), one symbol per glyph
+extern u8 gOpinfoLetter_00[];
+extern u8 gOpinfoLetter_01[];
+extern u8 gOpinfoLetter_02[];
+extern u8 gOpinfoLetter_03[];
+extern u8 gOpinfoLetter_04[];
+extern u8 gOpinfoLetter_05[];
+extern u8 gOpinfoLetter_06[];
+extern u8 gOpinfoLetter_07[];
+extern u8 gOpinfoLetter_08[];
+extern u8 gOpinfoLetter_09[];
+extern u8 gOpinfoLetter_10[];
+extern u8 gOpinfoLetter_11[];
+extern u8 gOpinfoLetter_12[];
+extern u8 gOpinfoLetter_13[];
+extern u8 gOpinfoLetter_14[];
+extern u8 gOpinfoLetter_15[];
+extern u8 gOpinfoLetter_16[];
+extern u8 gOpinfoLetter_17[];
+extern u8 gOpinfoLetter_18[];
+extern u8 gOpinfoLetter_19[];
+extern u8 gOpinfoLetter_20[];
+extern u8 gOpinfoLetter_21[];
+extern u8 gOpinfoLetter_22[];
+extern u8 gOpinfoLetter_23[];
+extern u8 gOpinfoLetter_24[];
+extern u8 gOpinfoLetter_25[];
+extern u8 gOpinfoLetter_26[];
+extern u8 gOpinfoLetter_27[];
+extern u8 gOpinfoLetter_28[];
+extern u8 gOpinfoLetter_29[];
+extern u8 gOpinfoLetter_30[];
+extern u8 gOpinfoLetter_31[];
+extern u8 gOpinfoLetter_32[];
+extern u8 gOpinfoLetter_33[];
+extern u8 gOpinfoLetter_34[];
+extern u8 gOpinfoLetter_35[];
+extern u8 gOpinfoLetter_36[];
+extern u8 gOpinfoLetter_37[];
+extern u8 gOpinfoLetter_38[];
+extern u8 gOpinfoLetter_39[];
+extern u8 gOpinfoLetter_40[];
+extern u8 gOpinfoLetter_41[];
+extern u8 gOpinfoLetter_42[];
+extern u8 gOpinfoLetter_43[];
+extern u8 gOpinfoLetter_44[];
+extern u8 gOpinfoLetter_45[];
+extern u8 gOpinfoLetter_46[];
+extern u8 gOpinfoLetter_47[];
+extern u8 gOpinfoLetter_48[];
+extern u8 gOpinfoLetter_49[];
+extern u8 gOpinfoLetter_50[];
+extern u8 gOpinfoLetter_51[];
+extern u8 gOpinfoLetter_52[];
+extern u8 gOpinfoLetter_53[];
+extern u8 gOpinfoLetter_54[];
+extern u8 gOpinfoLetter_55[];
+extern u8 gOpinfoLetter_56[];
+extern u8 gOpinfoLetter_57[];
+extern u8 gOpinfoLetter_58[];
+extern u8 gOpinfoLetter_59[];
+extern u8 gOpinfoLetter_60[];
+extern u8 gOpinfoLetter_61[];
+extern u8 gOpinfoLetter_62[];
+extern u8 gOpinfoLetter_63[];
 // extern ??? gOverallRankWeightLookup
 // extern ??? gOverallRankLookup
 // extern ??? gGamerankings_0
