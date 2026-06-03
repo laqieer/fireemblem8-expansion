@@ -1108,6 +1108,8 @@ SECTIONS
         . = ALIGN(4); src/uichapterstatus.o(.data);
         . = ALIGN(4); src/cgtext.o(.data);
         . = ALIGN(4); src/data/data_A01CC4.o(.data);
+        . = ALIGN(4); src/data/spriteanim_playerrankfog.o(.data);
+        . = ALIGN(4); src/data/data_A01CC4_2.o(.data);
         . = ALIGN(4); src/data/data_chap_title.o(.data);
         . = ALIGN(4); src/data/data_A167C8.o(.data);
         . = ALIGN(4); src/unitlistscreen.o(.data);
