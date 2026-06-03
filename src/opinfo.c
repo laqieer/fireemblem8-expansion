@@ -23,17 +23,17 @@
 EWRAM_OVERLAY(gamestart) struct AnimBuffer gOpInfoData = {0};
 
 // TODO: Move elsewhere
-void sub_805AA68(void *);
-void sub_805AE14(void *);
-void sub_805AE40(void *, s16, s16, s16, s16);
+void InitBanimTerrain(void *);
+void EndBanimTerrain(void *);
+void SetBanimTerrainPos(void *, s16, s16, s16, s16);
 
 // TODO: Forward declarations
 
-void sub_80B40E4(ProcPtr, int);
+void SetClassStatsDisplayNameX(ProcPtr, int);
 struct ClassReelEnt* GetClassReelEntry(int, int);
 ProcPtr StartClassNameIntro(ProcPtr, struct ClassReelEnt*);
 ProcPtr StartClassAnimDisplay(ProcPtr, struct ClassReelEnt*);
-signed char* sub_80B369C(u8, signed char*);
+signed char* GetClassReelName(u8, signed char*);
 ProcPtr StartClassNameIntroLetter(ProcPtr, u8);
 ProcPtr StartClassNameIntroIcon(ProcPtr, u8);
 
@@ -98,7 +98,7 @@ void ClassReel_ButtonPress_GoToTitle(struct OpInfoProc* proc) {
     return;
 }
 
-void sub_80B2904(struct OpInfoProc* proc) {
+void ClassReel_Loop(struct OpInfoProc* proc) {
 
     switch (proc->mode) {
         case 2:
@@ -131,7 +131,7 @@ void sub_80B2904(struct OpInfoProc* proc) {
     return;
 }
 
-s8 sub_80B2988(void) {
+s8 IsClassReelFinished(void) {
     struct OpInfoProc* proc = Proc_Find(gProcScr_opinfo);
 
     if (proc && !GetClassReelEntry(proc->classSet, proc->index)) {
@@ -162,7 +162,7 @@ void ClassReel_OnEnd(ProcPtr proc) {
     EndAllProcChildren(proc);
 
     EndEfxAnimeDrvProc();
-    sub_8009A84(0);
+    GameControl_ClearPaletteAndReset(0);
     EndActiveClassReelBgColorProc();
 
     return;
@@ -173,7 +173,7 @@ struct ProcCmd CONST_DATA gProcScr_opinfo[] = {
     PROC_SLEEP(0),
 
     PROC_CALL(ClassReel_Init),
-    PROC_REPEAT(sub_80B2904),
+    PROC_REPEAT(ClassReel_Loop),
 
 PROC_LABEL(4),
     PROC_CALL(ClassReel_FadeOutBGM),
@@ -202,7 +202,7 @@ u16 CONST_DATA sSprite_Opinfo_0[] = {
     0x8300, 0x8000, 0x0400
 };
 
-void sub_80B2A14(u8 charId, int x, int y, u16 xScale, u16 yScale, u8 offset) {
+void PutClassNameIntroLetter(u8 charId, int x, int y, u16 xScale, u16 yScale, u8 offset) {
     int i;
     int k;
 
@@ -311,7 +311,7 @@ void ClassIntro_Init(struct OpInfoEnterProc* proc) {
 
     ApplyPalette(gUnkData_96, 0x10);
 
-    str = sub_80B369C(proc->classReelEnt->classId, NULL);
+    str = GetClassReelName(proc->classReelEnt->classId, NULL);
 
     ptr = 0;
 
@@ -347,7 +347,7 @@ void ClassIntro_Init(struct OpInfoEnterProc* proc) {
 
     Decompress(Img_ChapterIntro_LensFlare, (void *)0x06008000);
 
-    sub_800154C(gBG2TilemapBuffer, Tsa_UnkData_6, 0, 5);
+    BlitU8TileMapData(gBG2TilemapBuffer, Tsa_UnkData_6, 0, 5);
 
     ApplyPalettes(Pal_ChapterIntro_LensFlare, 0, 3);
 
@@ -357,7 +357,7 @@ void ClassIntro_Init(struct OpInfoEnterProc* proc) {
 }
 
 // unused??
-void sub_80B2DF0(struct OpInfoEnterProc* proc) {
+void ClassIntro_LoopBackdropFadeIn(struct OpInfoEnterProc* proc) {
 
     SetBlendConfig(2, 0, 0, DarknessCoeff(proc->timer, 1));
 
@@ -505,7 +505,7 @@ void ClassIntroLetter_LoopFadeIn(struct OpInfoViewProc* proc) {
     timer2 >>= 4;
     a = (0x10 - timer2) * 2;
 
-    sub_80B2A14(
+    PutClassNameIntroLetter(
         proc->charIndex,
         proc->unk_2e - a,
         0x18,
@@ -524,7 +524,7 @@ void ClassIntroLetter_LoopFadeIn(struct OpInfoViewProc* proc) {
 
 void ClassIntroLetter_LoopDisplay(struct OpInfoViewProc* proc) {
 
-    sub_80B2A14(proc->charIndex, proc->unk_2e, 0x18, 0x100, 0x100, 0);
+    PutClassNameIntroLetter(proc->charIndex, proc->unk_2e, 0x18, 0x100, 0x100, 0);
 
     proc->timer = 0;
 
@@ -535,7 +535,7 @@ void ClassIntroLetter_LoopFadeOut(struct OpInfoViewProc* proc) {
     u32 a4 = 0x100 + proc->timer;
     u32 a5 = 0x100 - proc->timer;
 
-    sub_80B2A14(
+    PutClassNameIntroLetter(
         proc->charIndex,
         proc->unk_2e,
         0x18,
@@ -577,7 +577,7 @@ ProcPtr StartClassNameIntroLetter(ProcPtr parent, u8 index) {
 }
 
 // unused?
-void sub_80B307C(void) {
+void ClassIntro_EnablePalSync(void) {
     EnablePaletteSync();
 
     return;
@@ -615,7 +615,7 @@ void ClassIntroIcon_Init(struct OpInfoIconProc* proc) {
 
 extern u16* CONST_DATA sSpriteLut_Opinfo_0[];
 
-void sub_80B30FC(u8 a, u8 b, u8 c) {
+void PutClassWeaponRankIcons(u8 a, u8 b, u8 c) {
     int i;
     int tmp;
     int tmp2;
@@ -661,14 +661,14 @@ void ClassIntroIcon_LoopFadeIn(struct OpInfoIconProc* proc) {
         unk = 0x10 - (proc->timer >> 1);
     }
 
-    sub_80B30FC(unk, proc->numIcons, proc->unk_2e);
+    PutClassWeaponRankIcons(unk, proc->numIcons, proc->unk_2e);
 
     return;
 }
 
 void ClassIntroIcon_LoopDisplay(struct OpInfoIconProc* proc) {
 
-    sub_80B30FC(0, proc->numIcons, proc->unk_2e);
+    PutClassWeaponRankIcons(0, proc->numIcons, proc->unk_2e);
 
     proc->timer = 0;
 
@@ -687,7 +687,7 @@ void ClassIntroIcon_LoopFadeOut(struct OpInfoIconProc* proc) {
 
         Proc_Break(proc);
     } else {
-        sub_80B30FC((proc->timer >> 1), proc->numIcons, proc->unk_2e);
+        PutClassWeaponRankIcons((proc->timer >> 1), proc->numIcons, proc->unk_2e);
     }
 
     return;
@@ -883,7 +883,7 @@ struct ProcCmd CONST_DATA gProcScr_ClassIntro_BurstFX[] = {
     PROC_END,
 };
 
-signed char* sub_80B369C(u8 classId, signed char* buffer) {
+signed char* GetClassReelName(u8 classId, signed char* buffer) {
     char* str;
 
     const struct ClassData* class = GetClassData(classId);
@@ -901,7 +901,7 @@ signed char* sub_80B369C(u8 classId, signed char* buffer) {
     return buffer;
 }
 
-void sub_80B36E0(void) {
+void ClassInfoDisplay_HBlankHandler(void) {
     u16 vcount = (REG_VCOUNT + 1);
 
     if (vcount < 110) {
@@ -919,7 +919,7 @@ void sub_80B36E0(void) {
     return;
 }
 
-void sub_80B3740(void) {
+void ClassInfoDisplay_ResetWindowBlend(void) {
 
     SetBlendConfig(1, 0x10, 0x10, 0);
 
@@ -1140,7 +1140,7 @@ void ClassInfoDisplay_Init(struct OpInfoClassDisplayProc* proc) {
     gUnk_4.bgImgBuf = gUnk_5;
     gUnk_4.bgTsaBuf = gUnk_7;
     gUnk_4.objImgBuf = gUnk_8;
-    gUnk_4.resetCallback = sub_80B3740;
+    gUnk_4.resetCallback = ClassInfoDisplay_ResetWindowBlend;
 
     NewEkrUnitMainMini(&gOpInfoData);
 
@@ -1156,19 +1156,19 @@ void ClassInfoDisplay_Init(struct OpInfoClassDisplayProc* proc) {
     gUnk_Opinfo_0.unk1C = (void *)0x06010000;
     gUnk_Opinfo_0.unk20 = &gUnk_OpInfo_0;
 
-    sub_805AA68(&gUnk_Opinfo_0);
-    sub_805AE40(&gUnk_Opinfo_0, 0xD0, 0x68, 0x130, 0x68);
+    InitBanimTerrain(&gUnk_Opinfo_0);
+    SetBanimTerrainPos(&gUnk_Opinfo_0, 0xD0, 0x68, 0x130, 0x68);
 
-    SetPrimaryHBlankHandler(sub_80B36E0);
+    SetPrimaryHBlankHandler(ClassInfoDisplay_HBlankHandler);
 
     return;
 }
 
-void sub_80B3C14(struct OpInfoClassDisplayProc* proc) {
+void ClassInfoDisplay_AutoAdvanceWorker(struct OpInfoClassDisplayProc* proc) {
 
     if (proc->unk_2c == 400) {
 
-        if (sub_80B2988() != 0) {
+        if (IsClassReelFinished() != 0) {
             Sound_FadeOutBGM(60);
             Proc_Goto(proc, 7);
         } else {
@@ -1210,15 +1210,15 @@ void ClassInfoDisplay_LoopWindowIn(struct OpInfoClassDisplayProc* proc) {
 
         Proc_Break(proc);
 
-        StartParallelWorker(sub_80B3C14, proc);
+        StartParallelWorker(ClassInfoDisplay_AutoAdvanceWorker, proc);
     } else {
         proc->unk_2a += 4;
     }
 
-    sub_805A940(&gOpInfoData, proc->unk_46, 88);
-    sub_805AE40(&gUnk_Opinfo_0, proc->unk_46 - 48, 104, proc->unk_46 + 48, 104);
+    SetMainMiniAnimPos(&gOpInfoData, proc->unk_46, 88);
+    SetBanimTerrainPos(&gUnk_Opinfo_0, proc->unk_46 - 48, 104, proc->unk_46 + 48, 104);
 
-    sub_80B40E4(proc->unk_3c, 100);
+    SetClassStatsDisplayNameX(proc->unk_3c, 100);
 
     return;
 }
@@ -1232,31 +1232,31 @@ void ClassInfoDisplay_ExecScript(struct OpInfoClassDisplayProc* proc) {
 
         case CLASS_REEL_OP_1:
             gOpInfoData.roundType = ANIM_ROUND_HIT_CLOSE;
-            sub_805A7B4(&gOpInfoData);
+            RestartMainMiniAnim(&gOpInfoData);
 
             break;
 
         case CLASS_REEL_OP_2:
             gOpInfoData.roundType = ANIM_ROUND_CRIT_CLOSE;
-            sub_805A7B4(&gOpInfoData);
+            RestartMainMiniAnim(&gOpInfoData);
 
             break;
 
         case CLASS_REEL_OP_3:
         case CLASS_REEL_OP_7:
-            sub_805A990(&gOpInfoData);
+            ApplyMainMiniAnimHitEffect(&gOpInfoData);
 
             break;
 
         case CLASS_REEL_OP_4:
             gOpInfoData.roundType = ANIM_ROUND_NONCRIT_FAR;
-            sub_805A7B4(&gOpInfoData);
+            RestartMainMiniAnim(&gOpInfoData);
 
             break;
 
         case CLASS_REEL_OP_6:
             gOpInfoData.roundType = ANIM_ROUND_TAKING_MISS_CLOSE;
-            sub_805A7B4(&gOpInfoData);
+            RestartMainMiniAnim(&gOpInfoData);
 
             break;
 
@@ -1297,7 +1297,7 @@ void ClassInfoDisplay_LoopScript(struct OpInfoClassDisplayProc* proc) {
             break;
 
         case CLASS_REEL_OP_8:
-            if (sub_805A96C(&gOpInfoData) != 0) {
+            if (IsMainMiniAnimRoundEnd(&gOpInfoData) != 0) {
                 proc->script++;
                 Proc_Break(proc);
             }
@@ -1312,9 +1312,9 @@ void ClassInfoDisplay_OnEnd(struct OpInfoClassDisplayProc* proc) {
 
     EndTalk();
     EndActiveClassReelBgColorProc();
-    sub_805AE14(&gUnk_Opinfo_0);
+    EndBanimTerrain(&gUnk_Opinfo_0);
     EndActiveClassReelSpell();
-    sub_805AA28(&gOpInfoData);
+    EndEkrUnitMainMini(&gOpInfoData);
 
     if (proc->unk_3c != 0) {
         Proc_End(proc->unk_3c);
@@ -1383,7 +1383,7 @@ void ClassStatsDisplay_Init(struct OpInfoGaugeDrawProc* proc) {
     proc->unk_34 = 0;
     proc->unk_35 = 100;
 
-    sub_80B369C(proc->unk_30->classReelEnt->classId, buffer);
+    GetClassReelName(proc->unk_30->classReelEnt->classId, buffer);
 
     for (i = 0; buffer[i] != 0; ) {
 
@@ -1448,7 +1448,7 @@ void ClassStatsDisplay_Loop(struct OpInfoGaugeDrawProc* proc) {
 
     x = ((120 - proc->unk_34) / 2) + proc->unk_35;
 
-    sub_80B369C(proc->unk_30->classReelEnt->classId, buffer);
+    GetClassReelName(proc->unk_30->classReelEnt->classId, buffer);
 
     for (i = 0; (buffer[i] != 0); ) {
         struct ClassDisplayFont* res = GetClassDisplayFontInfo(buffer[i]);
@@ -1500,7 +1500,7 @@ ProcPtr StartClassStatsDisplay(ProcPtr proc) {
     return Proc_Start(gProcScr_opinfogaugedraw, proc);
 }
 
-void sub_80B40E4(ProcPtr proc, int unk) {
+void SetClassStatsDisplayNameX(ProcPtr proc, int unk) {
     ((struct OpInfoGaugeDrawProc*)(proc))->unk_35 = unk;
     return;
 }

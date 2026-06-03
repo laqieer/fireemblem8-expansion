@@ -77,7 +77,7 @@ void efxDarkGrado_Loop_Main(struct ProcEfx * proc)
         if ((GetBanimDragonStatusType() != EKRDRGON_TYPE_DRACO_ZOMBIE) &&
             (GetBanimDragonStatusType() != EKRDRGON_TYPE_DEMON_KING))
         {
-            sub_8068D9C();
+            efxDarkGradoRestoreMapBg();
         }
 
         NewEfxSpellCast();
@@ -166,7 +166,7 @@ void StartSubSpell_efxDarkGradoMapFadeOut(void)
 }
 
 //! FE8U = 0x08068D9C
-void sub_8068D9C(void)
+void efxDarkGradoRestoreMapBg(void)
 {
     if (gBanimBG == 0)
     {
@@ -183,7 +183,7 @@ void sub_8068D9C(void)
 }
 
 //! FE8U = 0x08068DD8
-void sub_8068DD8(void)
+void efxDarkGradoBG01_OnHBlank_13(void)
 {
     u16 vcount = REG_VCOUNT + 1;
 
@@ -200,7 +200,7 @@ void sub_8068DD8(void)
 }
 
 //! FE8U = 0x08068E14
-void sub_8068E14(void)
+void efxDarkGradoBG01_OnHBlank_12(void)
 {
     u16 vcount = REG_VCOUNT + 1;
 
@@ -217,7 +217,7 @@ void sub_8068E14(void)
 }
 
 //! FE8U = 0x08068E50
-void sub_8068E50(void)
+void efxDarkGradoBG01_OnHBlank_11(void)
 {
     u16 vcount = REG_VCOUNT + 1;
 
@@ -234,7 +234,7 @@ void sub_8068E50(void)
 }
 
 //! FE8U = 0x08068E8C
-void sub_8068E8C(void)
+void efxDarkGradoBG01_OnHBlank_10(void)
 {
     u16 vcount = REG_VCOUNT + 1;
 
@@ -251,7 +251,7 @@ void sub_8068E8C(void)
 }
 
 //! FE8U = 0x08068EC8
-void sub_8068EC8(void)
+void efxDarkGradoBG01_OnHBlank_9(void)
 {
     u16 vcount = REG_VCOUNT + 1;
 
@@ -268,7 +268,7 @@ void sub_8068EC8(void)
 }
 
 //! FE8U = 0x08068F04
-void sub_8068F04(void)
+void efxDarkGradoBG01_OnHBlank_8(void)
 {
     u16 vcount = REG_VCOUNT + 1;
 
@@ -285,7 +285,7 @@ void sub_8068F04(void)
 }
 
 //! FE8U = 0x08068F40
-void sub_8068F40(void)
+void efxDarkGradoBG01_OnHBlank_7(void)
 {
     u16 vcount = REG_VCOUNT + 1;
 
@@ -302,7 +302,7 @@ void sub_8068F40(void)
 }
 
 //! FE8U = 0x08068F7C
-void sub_8068F7C(void)
+void efxDarkGradoBG01_OnHBlank_6(void)
 {
     u16 vcount = REG_VCOUNT + 1;
 
@@ -319,7 +319,7 @@ void sub_8068F7C(void)
 }
 
 //! FE8U = 0x08068FB8
-void sub_8068FB8(void)
+void efxDarkGradoBG01_OnHBlank_5(void)
 {
     u16 vcount = REG_VCOUNT + 1;
 
@@ -336,7 +336,7 @@ void sub_8068FB8(void)
 }
 
 //! FE8U = 0x08068FF4
-void sub_8068FF4(void)
+void efxDarkGradoBG01_OnHBlank_4(void)
 {
     u16 vcount = REG_VCOUNT + 1;
 
@@ -353,7 +353,7 @@ void sub_8068FF4(void)
 }
 
 //! FE8U = 0x08069030
-void sub_8069030(void)
+void efxDarkGradoBG01_OnHBlank_3(void)
 {
     u16 vcount = REG_VCOUNT + 1;
 
@@ -370,7 +370,7 @@ void sub_8069030(void)
 }
 
 //! FE8U = 0x0806906C
-void sub_806906C(void)
+void efxDarkGradoBG01_OnHBlank_2(void)
 {
     u16 vcount = REG_VCOUNT + 1;
 
@@ -387,7 +387,7 @@ void sub_806906C(void)
 }
 
 //! FE8U = 0x080690A8
-void sub_80690A8(void)
+void efxDarkGradoBG01_OnHBlank_1(void)
 {
     u16 vcount = REG_VCOUNT + 1;
 
@@ -404,7 +404,7 @@ void sub_80690A8(void)
 }
 
 //! FE8U = 0x080690E4
-void sub_80690E4(void)
+void efxDarkGradoBG01_OnHBlank_0(void)
 {
     u16 vcount = REG_VCOUNT + 1;
     REG_BG1VOFS = -gUnk_Banim_Ekrbattle_10;
@@ -422,11 +422,11 @@ void efxDarkGradoBG01_Loop(struct ProcEfxBG * proc)
             switch (proc->timer)
             {
                 case 0:
-                    SetPrimaryHBlankHandler(sub_8068E8C);
+                    SetPrimaryHBlankHandler(efxDarkGradoBG01_OnHBlank_10);
                     break;
 
                 case 1:
-                    SetPrimaryHBlankHandler(sub_8068DD8);
+                    SetPrimaryHBlankHandler(efxDarkGradoBG01_OnHBlank_13);
                     break;
             }
 
@@ -436,19 +436,19 @@ void efxDarkGradoBG01_Loop(struct ProcEfxBG * proc)
             switch (proc->timer)
             {
                 case 2:
-                    SetPrimaryHBlankHandler(sub_80690E4);
+                    SetPrimaryHBlankHandler(efxDarkGradoBG01_OnHBlank_0);
                     break;
 
                 case 3:
-                    SetPrimaryHBlankHandler(sub_8068F40);
+                    SetPrimaryHBlankHandler(efxDarkGradoBG01_OnHBlank_7);
                     break;
 
                 case 0:
-                    SetPrimaryHBlankHandler(sub_8068F04);
+                    SetPrimaryHBlankHandler(efxDarkGradoBG01_OnHBlank_8);
                     break;
 
                 case 1:
-                    SetPrimaryHBlankHandler(sub_8068E8C);
+                    SetPrimaryHBlankHandler(efxDarkGradoBG01_OnHBlank_10);
                     break;
             }
 
@@ -458,19 +458,19 @@ void efxDarkGradoBG01_Loop(struct ProcEfxBG * proc)
             switch (proc->timer)
             {
                 case 2:
-                    SetPrimaryHBlankHandler(sub_80690E4);
+                    SetPrimaryHBlankHandler(efxDarkGradoBG01_OnHBlank_0);
                     break;
 
                 case 3:
-                    SetPrimaryHBlankHandler(sub_8068F7C);
+                    SetPrimaryHBlankHandler(efxDarkGradoBG01_OnHBlank_6);
                     break;
 
                 case 1:
-                    SetPrimaryHBlankHandler(sub_8068F04);
+                    SetPrimaryHBlankHandler(efxDarkGradoBG01_OnHBlank_8);
                     break;
 
                 case 0:
-                    SetPrimaryHBlankHandler(sub_8068F7C);
+                    SetPrimaryHBlankHandler(efxDarkGradoBG01_OnHBlank_6);
                     break;
             }
 
@@ -480,19 +480,19 @@ void efxDarkGradoBG01_Loop(struct ProcEfxBG * proc)
             switch (proc->timer)
             {
                 case 3:
-                    SetPrimaryHBlankHandler(sub_8068FF4);
+                    SetPrimaryHBlankHandler(efxDarkGradoBG01_OnHBlank_4);
                     break;
 
                 case 2:
-                    SetPrimaryHBlankHandler(sub_80690E4);
+                    SetPrimaryHBlankHandler(efxDarkGradoBG01_OnHBlank_0);
                     break;
 
                 case 1:
-                    SetPrimaryHBlankHandler(sub_8068FB8);
+                    SetPrimaryHBlankHandler(efxDarkGradoBG01_OnHBlank_5);
                     break;
 
                 case 0:
-                    SetPrimaryHBlankHandler(sub_8068FF4);
+                    SetPrimaryHBlankHandler(efxDarkGradoBG01_OnHBlank_4);
                     break;
             }
 
@@ -502,26 +502,26 @@ void efxDarkGradoBG01_Loop(struct ProcEfxBG * proc)
             switch (proc->timer)
             {
                 case 3:
-                    SetPrimaryHBlankHandler(sub_8069030);
+                    SetPrimaryHBlankHandler(efxDarkGradoBG01_OnHBlank_3);
                     break;
 
                 case 2:
-                    SetPrimaryHBlankHandler(sub_80690E4);
+                    SetPrimaryHBlankHandler(efxDarkGradoBG01_OnHBlank_0);
                     break;
 
                 case 1:
-                    SetPrimaryHBlankHandler(sub_8069030);
+                    SetPrimaryHBlankHandler(efxDarkGradoBG01_OnHBlank_3);
                     break;
 
                 case 0:
-                    SetPrimaryHBlankHandler(sub_806906C);
+                    SetPrimaryHBlankHandler(efxDarkGradoBG01_OnHBlank_2);
                     break;
             }
 
             break;
 
         default:
-            SetPrimaryHBlankHandler(sub_80690E4);
+            SetPrimaryHBlankHandler(efxDarkGradoBG01_OnHBlank_0);
             break;
     }
 
@@ -667,7 +667,7 @@ void efxDarkGradoBG02_Loop_A(struct ProcEfxBG * proc)
     {
         if (ret == -6)
         {
-            sub_80696F0();
+            StartSubSpell_efxDarkGradoPalFlash();
             proc->frame++;
         }
         else if (ret == -1)
@@ -912,7 +912,7 @@ struct Proc085D84B4
 };
 
 //! FE8U = 0x08069528
-void sub_8069528(struct Proc085D84B4 * proc)
+void efxDarkGradoPalFlash_Init(struct Proc085D84B4 * proc)
 {
     proc->unk4C = 0;
     return;
@@ -921,7 +921,7 @@ void sub_8069528(struct Proc085D84B4 * proc)
 #define RGB_(r, g, b) (((b) << 10) | ((g) << 5) | (r))
 
 //! FE8U = 0x08069530
-void sub_8069530(struct Proc085D84B4 * param_1)
+void efxDarkGradoPalFlash_Loop(struct Proc085D84B4 * param_1)
 {
     u16 r1;
     int r6;
@@ -994,8 +994,8 @@ void sub_8069530(struct Proc085D84B4 * param_1)
 
 struct ProcCmd CONST_DATA ProcScr_EfxmagicGleipnir_0[] =
 {
-    PROC_CALL(sub_8069528),
-    PROC_REPEAT(sub_8069530),
+    PROC_CALL(efxDarkGradoPalFlash_Init),
+    PROC_REPEAT(efxDarkGradoPalFlash_Loop),
 
     PROC_CALL(EnablePaletteSync),
 
@@ -1005,7 +1005,7 @@ struct ProcCmd CONST_DATA ProcScr_EfxmagicGleipnir_0[] =
 // clang-format on
 
 //! FE8U = 0x080696F0
-void sub_80696F0(void)
+void StartSubSpell_efxDarkGradoPalFlash(void)
 {
     Proc_Start(ProcScr_EfxmagicGleipnir_0, PROC_TREE_VSYNC);
     return;
@@ -1184,7 +1184,7 @@ s16 CONST_DATA gEfxmagicGleipnir_6[] =
 // clang-format on
 
 //! FE8U = 0x08069704
-int sub_8069704(int a, int b, int c)
+int efxDarkGradoGetPieceX(int a, int b, int c)
 {
     s16 * ptr;
 
@@ -1223,7 +1223,7 @@ int sub_8069704(int a, int b, int c)
 }
 
 //! FE8U = 0x0806977C
-int sub_806977C(int a, int b, int c)
+int efxDarkGradoGetPieceY(int a, int b, int c)
 {
     s16 * ptr;
 
@@ -1266,14 +1266,14 @@ void efxDarkGradoOBJ01piece_Loop(struct ProcEfxOBJ * proc)
 {
     if (GetAnimPosition(proc->anim) == 0)
     {
-        proc->anim2->xPosition = proc->unk32 + sub_8069704(proc->timer, proc->unk44, proc->unk48);
+        proc->anim2->xPosition = proc->unk32 + efxDarkGradoGetPieceX(proc->timer, proc->unk44, proc->unk48);
     }
     else
     {
-        proc->anim2->xPosition = proc->unk32 - sub_8069704(proc->timer, proc->unk44, proc->unk48);
+        proc->anim2->xPosition = proc->unk32 - efxDarkGradoGetPieceX(proc->timer, proc->unk44, proc->unk48);
     }
 
-    proc->anim2->yPosition = proc->unk3A + sub_806977C(proc->timer, proc->unk44, proc->unk48);
+    proc->anim2->yPosition = proc->unk3A + efxDarkGradoGetPieceY(proc->timer, proc->unk44, proc->unk48);
 
     proc->timer++;
 
@@ -1363,14 +1363,14 @@ void NewEfxDarkGradoOBJ01piece(struct Anim * anim, s16 b, s16 c, s16 d, u16 e)
 
     if (GetAnimPosition(proc->anim) == 0)
     {
-        frontAnim->xPosition = proc->unk32 + sub_8069704(proc->timer, proc->unk44, proc->unk48);
+        frontAnim->xPosition = proc->unk32 + efxDarkGradoGetPieceX(proc->timer, proc->unk44, proc->unk48);
     }
     else
     {
-        frontAnim->xPosition = proc->unk32 - sub_8069704(proc->timer, proc->unk44, proc->unk48);
+        frontAnim->xPosition = proc->unk32 - efxDarkGradoGetPieceX(proc->timer, proc->unk44, proc->unk48);
     }
 
-    frontAnim->yPosition = proc->unk3A + sub_806977C(proc->timer, proc->unk44, proc->unk48);
+    frontAnim->yPosition = proc->unk3A + efxDarkGradoGetPieceY(proc->timer, proc->unk44, proc->unk48);
 
     return;
 }

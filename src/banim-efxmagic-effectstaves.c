@@ -287,7 +287,7 @@ void efxSleep_Loop_Main(struct ProcEfx * proc)
 
     if (proc->timer == 1)
     {
-        sub_8062898(proc->anim);
+        StartSubSpell_efxSleepOBJ(proc->anim);
         PlaySFX(0x11B, 0x100, proc->anim->xPosition, 1);
     }
 
@@ -508,7 +508,7 @@ struct ProcCmd CONST_DATA ProcScr_efxSleepOBJ[] =
 // clang-format on
 
 //! FE8U = 0x08062898
-void sub_8062898(struct Anim * anim)
+void StartSubSpell_efxSleepOBJ(struct Anim * anim)
 {
     struct ProcEfxOBJ * proc;
 
@@ -952,7 +952,7 @@ void StartSubSpell_efxBerserkBG(struct Anim * anim, int terminator)
     SpellFx_SetSomeColorEffect();
     SetBlendAlpha(14, 8);
 
-    sub_80708A0();
+    NewEkrDragonPalFade();
 
     gLCDControlBuffer.wincnt.wobj_enableBlend = 1;
     SetWinEnable(0, 0, 1);
@@ -984,7 +984,7 @@ void efxBerserkBG_Loop(struct ProcEfxBG * proc)
     {
         SpellFx_ClearBG1();
         SetDefaultColorEffects_();
-        sub_8070874();
+        EkrDragonPalFade_End();
 
         anim->oamBase &= ~OAM0_WINDOW;
 

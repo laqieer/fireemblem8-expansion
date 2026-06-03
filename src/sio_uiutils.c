@@ -50,25 +50,25 @@ void InitSioBG(void)
 }
 
 //! FE8U = 0x0804C3A0
-void sub_804C3A0(int unusedA, int unusedB)
+void Nop_SioUiutils_1(int unusedA, int unusedB)
 {
     return;
 }
 
 //! FE8U = 0x0804C3A4
-void sub_804C3A4(int unused)
+void Nop_SioUiutils_2(int unused)
 {
     return;
 }
 
 //! FE8U = 0x0804C3A8
-void nullsub_13(void)
+void Nop_SioUiutils_0(void)
 {
     return;
 }
 
 //! FE8U = 0x0804C3AC
-void sub_804C3AC(u8 * src, u8 * dst, int c, int d)
+void CopyLinkArenaTileRows(u8 * src, u8 * dst, int c, int d)
 {
     int i;
 
@@ -93,7 +93,7 @@ void LATitleBanner_Init(struct LinkArenaTitleBannerProc * proc)
     Decompress(gUnkData_25, (void *)(VRAM + proc->chr));
     Decompress(gUnkData_5, gGenericBuffer);
 
-    sub_804C3AC(gGenericBuffer + (a + b), OBJ_CHR_ADDR(0x200), 10, 2);
+    CopyLinkArenaTileRows(gGenericBuffer + (a + b), OBJ_CHR_ADDR(0x200), 10, 2);
 
     CallARM_FillTileRect(gBG2TilemapBuffer, gUnkData_26, (((u16)(proc->chr >> 1) >> 4)) | 0x1000);
     BG_EnableSyncByMask(BG2_SYNC_BIT);
@@ -156,14 +156,14 @@ void StartLinkArenaTitleBanner(ProcPtr parent, int size, int chr)
 }
 
 //! FE8U = 0x0804C4F8
-void sub_804C4F8(void)
+void EndLinkArenaTitleBanner(void)
 {
     Proc_EndEach(ProcScr_LinkArenaTitleBanner);
     return;
 }
 
 //! FE8U = 0x0804C508
-void sub_804C508(void)
+void SetLinkArenaUiBlendAndWindowOff(void)
 {
     SetBlendAlpha(16, 4);
 
@@ -176,7 +176,7 @@ void sub_804C508(void)
 }
 
 //! FE8U = 0x0804C558
-void sub_804C558(void)
+void SetLinkArenaUiBlend(void)
 {
     SetBlendAlpha(16, 4);
 
@@ -187,7 +187,7 @@ void sub_804C558(void)
 }
 
 //! FE8U = 0x0804C590
-void sub_804C590(void)
+void ResetLinkArenaUiBlend(void)
 {
     SetBlendConfig(0, 0, 0, 0);
     return;
@@ -435,7 +435,7 @@ const u16 Sprite_LinkArena_PressStart[] =
 // clang-format on
 
 //! FE8U = 0x0804C7E4
-void sub_804C7E4(void)
+void UpdateLinkArenaSideMenuGlow(void)
 {
     u16 * ptr = gUnkData_10;
 
@@ -462,7 +462,7 @@ void sub_804C7E4(void)
 }
 
 //! FE8U = 0x0804C83C
-void sub_804C83C(void)
+void UpdateLinkArenaNameBannerGlow(void)
 {
     u16 * ptr = gUnkData_12;
 
@@ -554,7 +554,7 @@ u16 CONST_DATA gSioUiutils_4[] =
 extern u16 gUnkData_75[];
 
 //! FE8U = 0x0804C894
-void sub_804C894(struct SioProc85AAA78 * proc)
+void SioTeamMenuSpriteDraw_Loop(struct SioProc85AAA78 * proc)
 {
     int i;
     int oam2;
@@ -612,7 +612,7 @@ void sub_804C894(struct SioProc85AAA78 * proc)
             PutSprite(4, 120, 0, Sprite_LinkArena_PressStart, OAM2_PAL(8));
         }
 
-        sub_804C83C();
+        UpdateLinkArenaNameBannerGlow();
     }
     else
     {
@@ -637,7 +637,7 @@ void sub_804C894(struct SioProc85AAA78 * proc)
             }
         }
 
-        sub_804C7E4();
+        UpdateLinkArenaSideMenuGlow();
     }
 
     if (gLinkArenaSt.unk_00 == 1)
@@ -668,14 +668,14 @@ void sub_804C894(struct SioProc85AAA78 * proc)
 struct ProcCmd CONST_DATA ProcScr_SioUiutils_0[] =
 {
     PROC_YIELD,
-    PROC_REPEAT(sub_804C894),
+    PROC_REPEAT(SioTeamMenuSpriteDraw_Loop),
     PROC_END,
 };
 
 // clang-format on
 
 //! FE8U = 0x0804CAEC
-ProcPtr sub_804CAEC(struct SioTeamListProc * parent, int numActiveOptions, u8 * buf)
+ProcPtr StartSioTeamMenuSpriteDraw(struct SioTeamListProc * parent, int numActiveOptions, u8 * buf)
 {
     struct SioProc85AAA78 * proc;
     int i;
@@ -729,7 +729,7 @@ void LATeamSpriteDraw_Loop(struct LATeamSpriteDrawProc * proc)
                 continue;
             }
 
-            sub_8027E4C(4, proc->xBase + j * 14, y, OAM2_LAYER(1), unit);
+            PutUiUnitSprite(4, proc->xBase + j * 14, y, OAM2_LAYER(1), unit);
         }
     }
 
@@ -1446,7 +1446,7 @@ struct ProcCmd CONST_DATA ProcScr_LinkArenaPhaseIntro[] =
 // clang-format on
 
 //! FE8U = 0x0804D3F0
-void sub_804D3F0(struct Unit * unit, int itemSlot)
+void SetUnitItemUsesToMax(struct Unit * unit, int itemSlot)
 {
     u16 item = unit->items[itemSlot];
 
@@ -1459,20 +1459,20 @@ void sub_804D3F0(struct Unit * unit, int itemSlot)
 }
 
 //! FE8U = 0x0804D40C
-void sub_804D40C(struct Unit * unit)
+void SetUnitAllItemsUsesToMax(struct Unit * unit)
 {
     int i;
 
     for (i = 0; i < UNIT_ITEM_COUNT; i++)
     {
-        sub_804D3F0(unit, i);
+        SetUnitItemUsesToMax(unit, i);
     }
 
     return;
 }
 
 //! FE8U = 0x0804D428
-void sub_804D428(void)
+void UpdateLinkArenaVersusBannerGlow(void)
 {
     int idx;
     int i;
@@ -1606,7 +1606,7 @@ void LAVersusSpriteDraw_Loop(struct LAVersusSpriteDrawProc * proc)
     {
         PutSprite(4, proc->x - 72, proc->yBase + proc->unk_34 * 24 + 8, Sprite_SioUiutils_0, 0);
         PutSprite(4, proc->x - 72, proc->yBase + proc->unk_34 * 24 + 18, Sprite_SioUiutils_1, 0);
-        sub_804D428();
+        UpdateLinkArenaVersusBannerGlow();
     }
 
     return;
@@ -1658,7 +1658,7 @@ ProcPtr GetLinkArenaVersusSpriteDraw(void)
 }
 
 //! FE8U = 0x0804D6D4
-void sub_804D6D4(void)
+void UpdateLinkArenaActiveBannerBgGlow(void)
 {
     int idx;
     int i;
@@ -1682,7 +1682,7 @@ void sub_804D6D4(void)
 }
 
 //! FE8U = 0x0804D724
-void sub_804D724(void)
+void UpdateLinkArenaActiveBannerObjGlow(void)
 {
     int idx;
     int i;
@@ -1706,7 +1706,7 @@ void sub_804D724(void)
 }
 
 //! FE8U = 0x0804D778
-void sub_804D778(void)
+void SetLinkArenaResultBlend(void)
 {
     SetBlendAlpha(8, 12);
 
@@ -1734,12 +1734,12 @@ const u16 Sprite_SioUiutils_2[] =
 // clang-format on
 
 //! FE8U = 0x0804D7B0
-void sub_804D7B0(struct SioProc85AABD8 * proc)
+void LinkArenaResultBanner_Loop(struct SioProc85AABD8 * proc)
 {
     if (proc->y > 30 && proc->y < 153)
     {
         PutSprite(4, proc->x, proc->y, Sprite_SioUiutils_2, 0);
-        sub_804D724();
+        UpdateLinkArenaActiveBannerObjGlow();
     }
 
     return;
@@ -1750,14 +1750,14 @@ void sub_804D7B0(struct SioProc85AABD8 * proc)
 struct ProcCmd CONST_DATA ProcScr_SioUiutils_1[] =
 {
     PROC_YIELD,
-    PROC_REPEAT(sub_804D7B0),
+    PROC_REPEAT(LinkArenaResultBanner_Loop),
     PROC_END,
 };
 
 // clang-format on
 
 //! FE8U = 0x0804D7DC
-ProcPtr sub_804D7DC(int x, int y, ProcPtr parent)
+ProcPtr StartLinkArenaResultBanner(int x, int y, ProcPtr parent)
 {
     struct SioProc85AABD8 * proc;
 
@@ -1771,7 +1771,7 @@ ProcPtr sub_804D7DC(int x, int y, ProcPtr parent)
 }
 
 //! FE8U = 0x0804D80C
-void sub_804D80C(void)
+void LoadLinkArenaChoiceBoxGfx(void)
 {
     Decompress(gGfx_SupportMenu, (void *)(0x06016800));
     ApplyPalette(gPal_SupportMenu, 0x12);

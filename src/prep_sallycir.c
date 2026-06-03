@@ -12,7 +12,7 @@
 
 
 //! FE8U = 0x080977AC
-void sub_80977AC(struct Text * th, u16 * tm, int color, int x, const char * str)
+void PrepSallycir_PutColoredText(struct Text * th, u16 * tm, int color, int x, const char * str)
 {
     ClearText(th);
     Text_SetColor(th, color);
@@ -24,7 +24,7 @@ void sub_80977AC(struct Text * th, u16 * tm, int color, int x, const char * str)
 }
 
 //! FE8U = 0x080977EC
-void sub_80977EC(u8 * a, u16 * b)
+void PrepSallycir_ClampCursorScroll(u8 * a, u16 * b)
 {
     if (gPrepscreen_2 == 0) {
         *a = 0;
@@ -218,7 +218,7 @@ struct SallyCirProc* StartSallyCirProc(ProcPtr parent, u8 unk)
 }
 
 //! FE8U = 0x08097ACC
-void sub_8097ACC(struct SallyCirProc * proc)
+void SallyCir_RectInit(struct SallyCirProc * proc)
 {
     proc->unk_29 = 0;
 
@@ -260,7 +260,7 @@ void sub_8097ACC(struct SallyCirProc * proc)
 }
 
 //! FE8U = 0x08097B98
-void sub_8097B98(struct SallyCirProc * proc)
+void SallyCir_RectLoop(struct SallyCirProc * proc)
 {
     int a;
     int t;

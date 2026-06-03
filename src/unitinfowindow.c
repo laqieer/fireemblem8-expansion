@@ -62,7 +62,7 @@ void UnitInfoWindow_OnLoop(struct UnitInfoWindowProc* proc) {
             );
         }
     } else {
-        sub_8027E4C(2, x, y, 0, proc->unit);
+        PutUiUnitSprite(2, x, y, 0, proc->unit);
     }
 
     return;

@@ -119,7 +119,7 @@ void CgText_OnHBlank(void)
 }
 
 //! FE8U = 0x0808EB0C
-void sub_808EB0C(struct CgTextMainProc * proc)
+void CgText_DrawNameBox(struct CgTextMainProc * proc)
 {
     struct Font font;
     struct Text th;
@@ -190,7 +190,7 @@ void CgText_Init(struct CgTextMainProc * proc)
     proc->thIndex = 0;
     proc->unk_5e = 0;
 
-    sub_808EB0C(proc);
+    CgText_DrawNameBox(proc);
 
     if ((proc->boxWidth < 0) || (proc->boxHeight < 0))
     {
@@ -244,8 +244,8 @@ void CgText_Init(struct CgTextMainProc * proc)
         BG_EnableSyncByMask(BG0_SYNC_BIT | BG1_SYNC_BIT | BG2_SYNC_BIT | BG3_SYNC_BIT);
     }
 
-    sub_808F3D8(proc);
-    StartParallelWorker(sub_808F5C8, proc);
+    CgText_AdjustBoxPosition(proc);
+    StartParallelWorker(CgText_Display, proc);
 
     SetTextFont(proc->pFont);
     SetTextFontGlyphs(TEXT_GLYPHS_TALK);
@@ -597,7 +597,7 @@ s8 CgTextExists(void)
 }
 
 //! FE8U = 0x0808F2A0
-void sub_808F2A0(void)
+void FadeOutCgText(void)
 {
     struct CgTextMainProc * proc = Proc_Find(gProcScr_CgTextMain);
 
@@ -627,7 +627,7 @@ void CgText_ClearSpriteText(struct CgTextMainProc * proc)
 }
 
 //! FE8U = 0x0808F30C
-void sub_808F30C(struct CgTextMainProc * proc)
+void CgText_ResetSpriteTextCursors(struct CgTextMainProc * proc)
 {
     int i;
 
@@ -699,7 +699,7 @@ void GetCgTextDimensions(const char * str, u8 * wOut, u8 * hOut)
 }
 
 //! FE8U = 0x0808F3D8
-void sub_808F3D8(struct CgTextMainProc * proc)
+void CgText_AdjustBoxPosition(struct CgTextMainProc * proc)
 {
     if (GetCgTextFlags() & CG_TEXT_FLAG_0)
     {
@@ -836,7 +836,7 @@ s8 DoesStringContainTact(const char * str)
 }
 
 //! FE8U = 0x0808F5C8
-void sub_808F5C8(struct CgTextMainProc * proc)
+void CgText_Display(struct CgTextMainProc * proc)
 {
     int iy;
 
@@ -910,7 +910,7 @@ void sub_808F5C8(struct CgTextMainProc * proc)
 }
 
 //! FE8U = 0x0808F824
-s8 sub_808F824(int textCode)
+s8 CgText_HandleFaceBlinkCode(int textCode)
 {
     switch (textCode)
     {
@@ -939,19 +939,19 @@ s8 sub_808F824(int textCode)
             return 1;
 
         case 0x1c: // [OpenEyes]
-            sub_80064DC(0, 0);
+            SetFaceEyeControlById(0, 0);
             return 1;
 
         case 0x1d: // [CloseEyes]
-            sub_80064DC(0, 2);
+            SetFaceEyeControlById(0, 2);
             return 1;
 
         case 0x1e: // [HalfCloseEyes]
-            sub_80064DC(0, 3);
+            SetFaceEyeControlById(0, 3);
             return 1;
 
         case 0x1f: // [Wink]
-            sub_80064DC(0, 4);
+            SetFaceEyeControlById(0, 4);
             return 1;
     }
 
@@ -1231,7 +1231,7 @@ _0808FE68:
 }
 
 //! FE8U = 0x0808FEA4
-void sub_808FEA4(int * src, int x, int y)
+void CgText_ScrollVramUp(int * src, int x, int y)
 {
     int i;
     int ix;
@@ -1284,13 +1284,13 @@ void CgTextInterpreter_1(struct CgTextInterpreterProc * proc)
 
     int a = (parent->thIndex + 1) * 2;
 
-    sub_808FEA4(parent->vram, parent->boxWidth, a);
+    CgText_ScrollVramUp(parent->vram, parent->boxWidth, a);
 
     proc->unk_4c++;
 
     if (proc->unk_4c == parent->unk_5f * 16)
     {
-        sub_808F30C(parent);
+        CgText_ResetSpriteTextCursors(parent);
 
         parent->thIndex -= parent->unk_5f - 1;
 
@@ -1366,7 +1366,7 @@ void EndCgTextInterpreter(void)
 }
 
 //! FE8U = 0x0808FFFC
-s8 sub_808FFFC(void)
+s8 IsCgTextBlocking(void)
 {
     if (GetCgTextFlags() & CG_TEXT_FLAG_2)
     {

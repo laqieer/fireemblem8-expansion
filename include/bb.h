@@ -29,7 +29,7 @@ void SubtitleHelp_Loop(struct SubtitleHelpProc * proc);
 void StartSubtitleHelp(ProcPtr parent, const char * string);
 void EndSubtitleHelp(void);
 s8 IsSubtitleHelpActive(void);
-void sub_8035770(ProcPtr parent, const char * string);
+void ChangeSubtitleHelp(ProcPtr parent, const char * string);
 
 extern struct ProcCmd gProcScr_SubtitleHelpDarkener[];
 extern struct ProcCmd gProcScr_SubtitleHelp[];

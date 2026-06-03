@@ -603,7 +603,7 @@ PROC_LABEL(1),
 
 void PoisonDamageDisplay_Init(struct UnknownBMUSAilmentProc* proc) {
     MakePoisonDamageTargetList(gPlaySt.faction);
-    sub_8026414(4);
+    PidStatsRecordTargetListDeaths(4);
 
     if (GetSelectTargetCount() == 0) {
         Proc_End(proc);

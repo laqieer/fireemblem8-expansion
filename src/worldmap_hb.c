@@ -81,7 +81,7 @@ void ClearWmHblank(void)
     gWmHblankStatus = 0;
 }
 
-u16 * sub_80C1DA0(int line, int page)
+u16 * GetWorldMapHblankBuffer(int line, int page)
 {
     int _page = ((gUnk_30 + page) & 1);
     int __page = _page * 480;
@@ -89,28 +89,28 @@ u16 * sub_80C1DA0(int line, int page)
     return gUnk_26 + __page + line * 160;
 }
 
-void sub_80C1DC8(void)
+void FlipWorldMapHblankBuffer(void)
 {
     gUnk_30 ^= 1;
 }
 
-void sub_80C1DD8(int idx, uintptr_t reg)
+void SetWorldMapHblankDest(int idx, uintptr_t reg)
 {
     gUnk_27[idx] = (void *)reg;
 }
 
-void sub_80C1DE8(int idx)
+void ClearWorldMapHblankChannelFlags(int idx)
 {
     gUnk_29[idx] &= 3;
 }
 
-void sub_80C1DFC(int idx)
+void SetWorldMapHblankChannelFlag0(int idx)
 {
     gUnk_29[idx] &= 3;
     gUnk_29[idx] |= 1;
 }
 
-void sub_80C1E14(int idx)
+void SetWorldMapHblankChannelFlag1(int idx)
 {
     gUnk_29[idx] &= 3;
     gUnk_29[idx] |= 2;

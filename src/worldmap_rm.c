@@ -57,7 +57,7 @@ void GmapRmUpdateExt_ScrollPosition(struct ProcGmapRmUpdate * proc)
 {
     if (++proc->timer < proc->speed)
     {
-        int ret = sub_8014CA4(proc->timer, proc->speed, 0x800, 0x800);
+        int ret = GetEasedProgress(proc->timer, proc->speed, 0x800, 0x800);
         u16 x = proc->x0 + DivArm(0x1000, (proc->x1 - proc->x0) * ret);
         u16 y = proc->y0 + DivArm(0x1000, (proc->y1 - proc->y0) * ret);
 
@@ -785,7 +785,7 @@ void EndGmapRmBorder1(int index)
 }
 
 //! FE8U = 0x080C2BC4
-int sub_80C2BC4(int index)
+int GmapRmBorder1Exists(int index)
 {
     struct ProcGmapRmBorder1 * proc;
     struct ProcFindIterator procIter;
@@ -810,7 +810,7 @@ int sub_80C2BC4(int index)
 }
 
 //! FE8U = 0x080C2C10
-void sub_80C2C10(int index)
+void RequestGmapRmBorder1Remove(int index)
 {
     struct ProcGmapRmBorder1 * proc;
     struct ProcFindIterator procIter;
@@ -853,7 +853,7 @@ void WmDotPalAnim_Init(struct ProcGmapRmBaPalAnim * proc)
 }
 
 //! FE8U = 0x080C2C80
-void sub_80C2C80(int a, int b, const u16 * srcA, const u16 * srcB, u16 * dst)
+void BlendWmDotPalette(int a, int b, const u16 * srcA, const u16 * srcB, u16 * dst)
 {
     int i;
 
@@ -887,7 +887,7 @@ void WmDotPalAnim_Loop1(struct ProcGmapRmBaPalAnim * proc)
 
     if (proc->timer < 30)
     {
-        sub_80C2C80(proc->timer, 30, Pal_WmPlaceDot_Standard, Pal_WmPlaceDot_Standard - 0x10, gPaletteBuffer + 0x150);
+        BlendWmDotPalette(proc->timer, 30, Pal_WmPlaceDot_Standard, Pal_WmPlaceDot_Standard - 0x10, gPaletteBuffer + 0x150);
         proc->flag = 0;
     }
     else
@@ -907,7 +907,7 @@ void WmDotPalAnim_Loop2(struct ProcGmapRmBaPalAnim * proc)
 
     if (proc->timer < 30)
     {
-        sub_80C2C80(proc->timer, 30, Pal_WmPlaceDot_Highlight, Pal_WmPlaceDot_Highlight + 0x10, gPaletteBuffer + 0x150);
+        BlendWmDotPalette(proc->timer, 30, Pal_WmPlaceDot_Highlight, Pal_WmPlaceDot_Highlight + 0x10, gPaletteBuffer + 0x150);
     }
     else
     {
@@ -975,7 +975,7 @@ bool IsWmDotPalAnimActive(void)
 }
 
 //! FE8U = 0x080C2E50
-s8 sub_80C2E50(void)
+s8 GetWmDotPalAnimFlag(void)
 {
     struct ProcGmapRmBaPalAnim * proc = Proc_Find(ProcScr_WmDotPalAnim);
 
@@ -999,7 +999,7 @@ void WmPlaceDot_OnEnd(struct ProcWmPlaceDot * proc)
 
     if (((proc->unk_2a & 2) != 0) && (proc->effectProc != NULL))
     {
-        sub_80C13CC(proc->effectProc);
+        EndGmapEffectProc(proc->effectProc);
     }
 
     return;
@@ -1070,7 +1070,7 @@ void WmPlaceDot_Loop1(struct ProcWmPlaceDot * proc)
 {
     PutWmDotSprite(proc);
 
-    if (sub_80C2E50() != 0)
+    if (GetWmDotPalAnimFlag() != 0)
     {
         Proc_Break(proc);
     }

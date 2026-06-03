@@ -444,7 +444,7 @@ struct ProcCmd CONST_DATA sProcScr_DisplayDungeonRecord_AfterDungeonClear[] = {
     PROC_CALL(BMapDispSuspend),
     PROC_CALL(EndAllMus),
     PROC_SLEEP(0),
-    PROC_CALL(sub_8038230),
+    PROC_CALL(DungeonRecordUi_StartBgm),
     PROC_CALL(SetupDungeonRecordUi),
 
     PROC_CALL_ARG(NewFadeIn, 4),
@@ -485,7 +485,7 @@ void PopGlobalTimer() {
     return;
 }
 
-void sub_8038230() {
+void DungeonRecordUi_StartBgm() {
     StartBgm(SONG_RECORDS, 0);
     return;
 }
@@ -562,7 +562,7 @@ void SetupDungeonRecordUi(ProcPtr proc) {
 
     BG_EnableSyncByMask(0xF);
 
-    sub_80AB760(gBmdifficulty_0);
+    StartSaveBgFog(gBmdifficulty_0);
 
     CpuFastSet(PAL_BG(BGPAL_BMDIFFICULTY_UNK_0), PAL_OBJ(OBPAL_BMDIFFICULTY_UNK_5), 8);
 
@@ -673,7 +673,7 @@ struct Text* DrawNumberText_WithReset(struct Text* th, u16 number, u8 numTiles, 
     return th;
 }
 
-void sub_8038668(struct Text* th, u8 count) {
+void DungeonRecordUi_ClearTexts(struct Text* th, u8 count) {
     int i;
 
     for (i = count - 1; i >= 0; i--) {
@@ -1021,7 +1021,7 @@ void DungeonRecordUi_KeyListener(ProcPtr proc) {
 }
 
 void EndDungeonRecordUi() {
-    sub_80AB77C();
+    EndSaveBgFog();
 
     EndGreenText();
 
@@ -1047,7 +1047,7 @@ void EndDungeonRecordUi() {
     return;
 }
 
-void sub_8038F78(struct Text* th) {
+void DungeonRecordUi_CopyDigitsToObjVram(struct Text* th) {
     int i;
     int bgOffset;
 
@@ -1101,14 +1101,14 @@ int CONST_DATA gBmdifficulty_8[] = {
      24,   0,
 };
 
-void sub_803901C(struct BMDifficultyProc * proc)
+void DungeonRecordUi_UpdateValueAnim_Init(struct BMDifficultyProc * proc)
 {
     int r7;
     int r8;
     u16 * iter1;
     int * iter2;
 
-    sub_8038F78(&gBmdifficulty_3[0].text[proc->labelIndex][0]);
+    DungeonRecordUi_CopyDigitsToObjVram(&gBmdifficulty_3[0].text[proc->labelIndex][0]);
 
     gBmdifficultyEwram_1.unk_00 = 2;
     gBmdifficultyEwram_1.unk_04 = gBmdifficulty_5;
@@ -1138,14 +1138,14 @@ void sub_803901C(struct BMDifficultyProc * proc)
 
 
 
-void sub_80390D4(struct BMDifficultyProc* proc) {
+void DungeonRecordUi_UpdateValueAnim_Loop(struct BMDifficultyProc* proc) {
     int pos[2];
 
     proc->unk_34++;
 
     if (proc->unk_34 < 45) {
 
-        sub_800A950(&gBmdifficultyEwram_1, proc->unk_34 * 4096, pos);
+        Spline_Eval(&gBmdifficultyEwram_1, proc->unk_34 * 4096, pos);
 
         PutSpriteExt(
             4,
@@ -1186,10 +1186,10 @@ void sub_80390D4(struct BMDifficultyProc* proc) {
 
 struct ProcCmd CONST_DATA sProcScr_DungeonRecord_UpdateValue[] = {
     PROC_SLEEP(0),
-    PROC_CALL(sub_803901C),
+    PROC_CALL(DungeonRecordUi_UpdateValueAnim_Init),
 
 PROC_LABEL(0),
-    PROC_REPEAT(sub_80390D4),
+    PROC_REPEAT(DungeonRecordUi_UpdateValueAnim_Loop),
 
     PROC_END,
 };
@@ -1330,8 +1330,8 @@ int CONST_DATA gBmdifficulty_10[] =
     0x980, 0x380,
 };
 
-void sub_803943C(struct BMDifficultyProc* proc) {
-    sub_8038F78(gBmdifficulty_4);
+void DungeonRecordUi_ClearCountAnim_Init(struct BMDifficultyProc* proc) {
+    DungeonRecordUi_CopyDigitsToObjVram(gBmdifficulty_4);
 
     gBmdifficultyEwram_1.unk_00 = 2;
     gBmdifficultyEwram_1.unk_02 = 5;
@@ -1347,15 +1347,15 @@ void sub_803943C(struct BMDifficultyProc* proc) {
     return;
 }
 
-void sub_803948C(ProcPtr proc) {
-    sub_8038668(gBmdifficulty_4, 8);
+void DungeonRecordUi_ClearCountClearText(ProcPtr proc) {
+    DungeonRecordUi_ClearTexts(gBmdifficulty_4, 8);
 
     Proc_Break(proc);
 
     return;
 }
 
-void sub_80394A8(struct BMDifficultyProc* proc) {
+void DungeonRecordUi_ClearCountAnim_Loop(struct BMDifficultyProc* proc) {
     int val;
     int pos[2];
     struct Dungeon record;
@@ -1363,7 +1363,7 @@ void sub_80394A8(struct BMDifficultyProc* proc) {
     proc->unk_38++;
 
     if (proc->unk_38 < 30) {
-        sub_800A950(&gBmdifficultyEwram_1, proc->unk_38 * 0x1000, pos);
+        Spline_Eval(&gBmdifficultyEwram_1, proc->unk_38 * 0x1000, pos);
 
         PutSpriteExt(
             4,
@@ -1401,7 +1401,7 @@ void sub_80394A8(struct BMDifficultyProc* proc) {
     return;
 }
 
-void sub_8039554(struct BMDifficultyProc* proc) {
+void DungeonRecordUi_EnemiesDefeatedTally_Init(struct BMDifficultyProc* proc) {
 
     proc->unk_30 = GetRecordDungeonValueByUiLabel(0);
     proc->unk_34 = GetCurrentDungeonValueByUiLabel(0) + proc->unk_30;
@@ -1451,7 +1451,7 @@ void DungeonRecordUi_UpdateEnemiesDefeatedCount(struct BMDifficultyProc* proc) {
     return;
 }
 
-void sub_803963C(struct BMDifficultyProc* proc) {
+void DungeonRecordUi_StopTallySound(struct BMDifficultyProc* proc) {
     if (proc->unk_3c < 1) {
         m4aSongNumStop(SONG_74);
         Proc_Break(proc);
@@ -1462,12 +1462,12 @@ void sub_803963C(struct BMDifficultyProc* proc) {
     return;
 }
 
-void sub_8039660(struct BMDifficultyProc* proc) {
+void DungeonRecordUi_SetLabelToExp(struct BMDifficultyProc* proc) {
     proc->labelIndex = DUNGEONRECORD_LABEL_EXP;
     return;
 }
 
-void sub_8039668(struct BMDifficultyProc* proc) {
+void DungeonRecordUi_UpdateLabelIfNewRecord(struct BMDifficultyProc* proc) {
 
     if (DungeonRecordUi_IsNewRecordForLabel(proc->labelIndex) != 0) {
         DungeonRecordUi_SpawnUpdateValueProc(
@@ -1492,23 +1492,23 @@ void DungeonRecordUi_GotoNextLabel(struct BMDifficultyProc* proc) {
 }
 
 struct ProcCmd CONST_DATA sProcScr_DungeonRecord_UpdateNewRecordValues[] = {
-    PROC_CALL(sub_803943C),
+    PROC_CALL(DungeonRecordUi_ClearCountAnim_Init),
     PROC_SLEEP(1),
 
-    PROC_REPEAT(sub_803948C),
-    PROC_REPEAT(sub_80394A8),
+    PROC_REPEAT(DungeonRecordUi_ClearCountClearText),
+    PROC_REPEAT(DungeonRecordUi_ClearCountAnim_Loop),
     PROC_SLEEP(30),
 
-    PROC_CALL(sub_8039554),
+    PROC_CALL(DungeonRecordUi_EnemiesDefeatedTally_Init),
     PROC_REPEAT(DungeonRecordUi_UpdateEnemiesDefeatedCount),
-    PROC_REPEAT(sub_803963C),
+    PROC_REPEAT(DungeonRecordUi_StopTallySound),
     PROC_SLEEP(40),
 
 PROC_LABEL(0),
-    PROC_CALL(sub_8039660),
+    PROC_CALL(DungeonRecordUi_SetLabelToExp),
 
 PROC_LABEL(1),
-    PROC_CALL(sub_8039668),
+    PROC_CALL(DungeonRecordUi_UpdateLabelIfNewRecord),
     PROC_SLEEP(25),
     PROC_CALL(DungeonRecordUi_GotoNextLabel),
 

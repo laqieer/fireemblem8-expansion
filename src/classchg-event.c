@@ -15,7 +15,7 @@
 #include "constants/characters.h"
 #include "classchg.h"
 
-void sub_80CD62C(void)
+void RefreshBMapDisplay_FromPromotion(void)
 {
     BMapDispResume();
     RefreshBMapGraphics();

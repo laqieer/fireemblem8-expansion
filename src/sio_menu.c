@@ -122,7 +122,7 @@ void SioMenu_LoadGraphics(struct SioMenuProc * proc)
     InitSystemTextFont();
     ResetTextFont();
 
-    sub_8043164();
+    InitSioTexts();
 
     proc->unk_4c = 0;
 
@@ -156,7 +156,7 @@ void SioMenu_LoadGraphics(struct SioMenuProc * proc)
     }
 
     StartLinkArenaTitleBanner(proc->menuItems[0], 0, 0);
-    sub_804C508();
+    SetLinkArenaUiBlendAndWindowOff();
 
     SetupFaceGfxData(FaceConfig_SioMenu_0);
     StartFace(3, FID_ANNA, 208, 80, FACE_DISP_KIND(FACE_96x80));
@@ -164,7 +164,7 @@ void SioMenu_LoadGraphics(struct SioMenuProc * proc)
     proc->unk_54 = 0;
 
     StartBgm(SONG_COLOSSEUM_ENTRANCE, 0);
-    sub_80497CC();
+    LinkArenaBattleMap_InitConfig();
 
     return;
 }
@@ -212,7 +212,7 @@ void SioMenu_0(struct SioMenuProc * proc)
 }
 
 //! FE8U = 0x08047CF0
-void sub_8047CF0(struct SioMenuProc * proc)
+void SioMenu_AnimateItemsSpreadFromSelection(struct SioMenuProc * proc)
 {
     int i;
 
@@ -269,7 +269,7 @@ void SioMenu_RestartGraphicsMaybe(struct SioMenuProc * proc)
     InitSystemTextFont();
     ResetTextFont();
 
-    sub_8043164();
+    InitSioTexts();
 
     proc->unk_4c = 0;
 
@@ -305,14 +305,14 @@ void SioMenu_RestartGraphicsMaybe(struct SioMenuProc * proc)
     }
 
     StartLinkArenaTitleBanner(proc->menuItems[0], 0, 0);
-    sub_804C508();
+    SetLinkArenaUiBlendAndWindowOff();
 
     SetupFaceGfxData(FaceConfig_SioMenu_1);
     StartFace(3, FID_ANNA, 208, 80, FACE_DISP_KIND(FACE_96x80));
 
     PutSioText(SioMenu_GetItemHelpText(proc, 0), 0);
     PutSioText(SioMenu_GetItemHelpText(proc, 1), 1);
-    sub_80497CC();
+    LinkArenaBattleMap_InitConfig();
 
     StartBgm(SONG_COLOSSEUM_ENTRANCE, 0);
 
@@ -478,7 +478,7 @@ void SioMenu_End(struct SioMenuProc * proc)
     if (gLinkArenaSt.unk_00 == 0xFF)
     {
         BMapVSync_End();
-        nullsub_13();
+        Nop_SioUiutils_0();
 
         UnsetBmStLinkArenaFlag();
 
@@ -520,13 +520,13 @@ PROC_LABEL(1),
     // fallthrough
 
 PROC_LABEL(2),
-    PROC_REPEAT(sub_8047CF0),
+    PROC_REPEAT(SioMenu_AnimateItemsSpreadFromSelection),
     PROC_REPEAT(SioMenu_Loop_HandleKeyInput),
     PROC_REPEAT(SioMenu_1),
 
     PROC_CALL(Set_UnkData_0),
 
-    PROC_CALL(sub_8013F40),
+    PROC_CALL(FadeOutBlackSpeed20Locking),
     PROC_YIELD,
 
     PROC_CALL(SioMenu_End),
@@ -553,7 +553,7 @@ void StartLinkArenaMainMenu(ProcPtr parent)
     gLinkArenaSt.unk_01 = 0;
 
     SetBmStLinkArenaFlag();
-    sub_80496A4();
+    LinkArenaBattleMap_InitChapter();
 
     BMapVSync_Start();
 

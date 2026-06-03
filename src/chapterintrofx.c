@@ -419,7 +419,7 @@ void ChapterIntro_Init(struct ChapterIntroFxProc * proc)
 
     MaybeResetSomePal();
 
-    sub_80017B4(0, 2, 64, -1);
+    ColorFadeSetupRange(0, 2, 64, -1);
 
     CALLARM_ColorFadeTick();
 
@@ -431,7 +431,7 @@ void ChapterIntro_Init(struct ChapterIntroFxProc * proc)
     Decompress(Img_ChapterIntro_LensFlare, BG_CHR_ADDR(0x400));
     ApplyPalettes(Pal_ChapterIntro_LensFlare, 0, 3);
 
-    sub_800154C(gBG2TilemapBuffer, Tsa_UnkData_6, 0, 5);
+    BlitU8TileMapData(gBG2TilemapBuffer, Tsa_UnkData_6, 0, 5);
 
     Decompress(Img_ChapterIntro_Sprites, OBJ_CHR_ADDR(0x200));
     ApplyPalette(Pal_ChapterIntro_Sprites, 18);
@@ -627,10 +627,10 @@ void ChapterIntro_DrawChapterTitle(void)
 
     BG_Fill(gBG0TilemapBuffer, TILEREF(0x280, 1));
 
-    sub_80895B4(8, 5);
+    ApplyChapterTitlePal(8, 5);
     titleId = GetChapterTitleWM(&gPlaySt);
     _PutChapterTitleGfx(0x280, titleId);
-    sub_80896FC(TILEMAP_LOCATED(gBG0TilemapBuffer, 3, 9), 5, titleId);
+    DrawChapterTitleStrEx(TILEMAP_LOCATED(gBG0TilemapBuffer, 3, 9), 5, titleId);
 
     BG_EnableSyncByMask(BG0_SYNC_BIT);
 
@@ -815,7 +815,7 @@ void ChapterIntro_3(void)
 {
     SetupBackgrounds(NULL);
 
-    sub_80156D4();
+    LoadGameCoreGfxLegacyFrame();
     AllocWeatherParticles(gPlaySt.chapterWeatherId);
 
     RefreshUnitSprites();
@@ -1113,7 +1113,7 @@ void ChapterIntro_TickTimerMaybe(struct ChapterIntroFxProc * proc)
 }
 
 //! FE8U = 0x080210C0
-void sub_80210C0(struct ChapterIntroFxProc * proc)
+void ChapterIntro_SetSkipping(struct ChapterIntroFxProc * proc)
 {
     proc->isSkipping = 2;
     return;
@@ -1140,7 +1140,7 @@ void ChapterIntro_End(void)
     if (GetBattleMapKind() == BATTLEMAP_KIND_SKIRMISH || GetROMChapterStruct(gPlaySt.chapterIndex)->fadeToBlack)
     {
         RefreshBMapGraphics();
-        sub_80141B0();
+        ForceScreenToBlack();
     }
 
     return;

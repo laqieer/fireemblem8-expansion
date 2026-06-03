@@ -9,7 +9,7 @@
 
 EWRAM_DATA struct ChapterTitleFxSt gChapterTitleFxSt = { 0 };
 
-void sub_80895B4(int config, int palId)
+void ApplyChapterTitlePal(int config, int palId)
 {
     u16 * pal;
     pal = (config & 1)
@@ -65,13 +65,13 @@ void PutChapterTitleBG(int chr)
 
 extern u8 gUnkData_47[];
 
-void sub_80896A8(int chr)
+void PutChapterTitleBGAlt(int chr)
 {
     gChapterTitleFxSt.chr_bg = chr & 0x3FF;
     Decompress(gUnkData_47, (void*)((chr * TILE_SIZE_4BPP) + VRAM));
 }
 
-void sub_80896D8(u16 * tm, int pal)
+void DrawChapterTitleStr(u16 * tm, int pal)
 {
     int i;
     int tile = TILEREF(gChapterTitleFxSt.chr_str, pal);
@@ -79,7 +79,7 @@ void sub_80896D8(u16 * tm, int pal)
         *tm++ = tile++;
 }
 
-void sub_80896FC(u16 * tm, int pal, int c)
+void DrawChapterTitleStrEx(u16 * tm, int pal, int c)
 {
     int i;
     int tile = TILEREF(gChapterTitleFxSt.chr_str, pal);
@@ -87,7 +87,7 @@ void sub_80896FC(u16 * tm, int pal, int c)
         *tm++ = tile++;
 }
 
-void sub_8089720(u16 * tm, int pal)
+void DrawChapterTitleBG(u16 * tm, int pal)
 {
     int i;
     int tile = TILEREF(gChapterTitleFxSt.chr_bg, pal);
@@ -95,7 +95,7 @@ void sub_8089720(u16 * tm, int pal)
         *tm++ = tile++;
 }
 
-void sub_8089744(u16 * tm, int pal)
+void DrawChapterTitleBGTsa(u16 * tm, int pal)
 {
     CallARM_FillTileRect(tm, gTsa_UnkData_0, (u16)TILEREF(gChapterTitleFxSt.chr_bg, pal));
 }

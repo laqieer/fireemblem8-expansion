@@ -152,7 +152,7 @@ void SioResult_Init(struct SioResultProc * proc)
 
     StartLinkArenaMenuScrollBar(217, 57, 10, 5, proc->unk_36 + 56, proc);
     StartLinkArenaTitleBanner(proc, 5, 0);
-    sub_804C558();
+    SetLinkArenaUiBlend();
     StartLinkArenaButtonSpriteDraw(192, 16, proc);
 
     BG_EnableSyncByMask(BG0_SYNC_BIT | BG1_SYNC_BIT | BG2_SYNC_BIT | BG3_SYNC_BIT);
@@ -221,7 +221,7 @@ void SioResult_Loop_Main(struct SioResultProc * proc)
 }
 
 //! FE8U = 0x08047308
-u8 sub_8047308(int var)
+u8 SioResult_GetNewHSScrollTarget(int var)
 {
     int i;
 
@@ -267,7 +267,7 @@ void SioResult_NewHS_Init(struct SioResultProc * proc)
     proc->unk_36 = 280;
     proc->unk_39 = 0;
     proc->unk_38 = 0;
-    proc->unk_35 = sub_8047308(proc->unk_3c);
+    proc->unk_35 = SioResult_GetNewHSScrollTarget(proc->unk_3c);
     proc->unk_40 = 0;
 
     BG_SetPosition(BG_1, 0, proc->unk_36);
@@ -302,9 +302,9 @@ void SioResult_NewHS_Init(struct SioResultProc * proc)
 
     SetWOutLayers(1, 0, 1, 1, 1);
 
-    sub_804C558();
+    SetLinkArenaUiBlend();
 
-    proc->unk_2c = sub_804D7DC(14, proc->unk_3c * 16 - 24, proc);
+    proc->unk_2c = StartLinkArenaResultBanner(14, proc->unk_3c * 16 - 24, proc);
 
     BG_EnableSyncByMask(BG0_SYNC_BIT | BG1_SYNC_BIT | BG2_SYNC_BIT | BG3_SYNC_BIT);
 
@@ -392,7 +392,7 @@ struct ProcCmd CONST_DATA ProcScr_SIORESULT[] =
 
     PROC_CALL(Set_UnkData_0),
 
-    PROC_CALL(sub_8013F40),
+    PROC_CALL(FadeOutBlackSpeed20Locking),
     PROC_YIELD,
 
     PROC_CALL(EndMuralBackground),
@@ -416,7 +416,7 @@ struct ProcCmd CONST_DATA ProcScr_SIORESULT_NewHighScore[] =
 
     PROC_CALL(Set_UnkData_0),
 
-    PROC_CALL(sub_8013F40),
+    PROC_CALL(FadeOutBlackSpeed20Locking),
     PROC_YIELD,
 
     PROC_CALL(EndMuralBackground),

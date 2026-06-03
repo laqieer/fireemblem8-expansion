@@ -34,17 +34,17 @@ extern u8 gUnk_75[SIO_MAX_PACKET];
 struct ProcCmd CONST_DATA gProcScr_SioBigSend[] =
 {
     PROC_YIELD,
-    PROC_CALL(sub_8042B08),
-    PROC_REPEAT(sub_8042B68),
+    PROC_CALL(SioBigSend_Init),
+    PROC_REPEAT(SioBigSend_Loop),
     PROC_END,
 };
 
 struct ProcCmd CONST_DATA gProcScr_SioBigReceive[] =
 {
     PROC_YIELD,
-    PROC_CALL(sub_8042BD8),
-    PROC_REPEAT(sub_8042C00),
-    PROC_REPEAT(sub_8042C44),
+    PROC_CALL(SioBigReceive_Init),
+    PROC_REPEAT(SioBigReceive_RecvHeader),
+    PROC_REPEAT(SioBigReceive_Loop),
     PROC_END,
 };
 
@@ -122,7 +122,7 @@ int GetSioIndex(void)
     return (REG_SIOCNT & SIO_ID) >> 4; // TODO: shift constant
 }
 
-void sub_80416E0(u16 arg_0, u16 sioCnt, u16 arg_2)
+void Sio_SetCommParams(u16 arg_0, u16 sioCnt, u16 arg_2)
 {
     gSioSt->unk_1B78 = arg_0;
     gSioSt->unk_1B7A = sioCnt;
@@ -130,7 +130,7 @@ void sub_80416E0(u16 arg_0, u16 sioCnt, u16 arg_2)
     sSioCnt = sioCnt;
 }
 
-void sub_8041718(void)
+void Sio_ResetSession(void)
 {
     int j, i;
 
@@ -203,7 +203,7 @@ void sub_8041718(void)
     }
 }
 
-void sub_8041898(void)
+void Sio_ResetState(void)
 {
     int i;
 
@@ -221,9 +221,9 @@ void sub_8041898(void)
     gSioSt->unk_02E = 0;
     gSioSt->unk_00A = 0;
 
-    sub_80416E0(0x6584, 3, 0x88);
-    sub_8042980(0);
-    sub_8041718();
+    Sio_SetCommParams(0x6584, 3, 0x88);
+    Sio_SetSubState(0);
+    Sio_ResetSession();
 
     sUnk_1 = 0;
 }
@@ -304,7 +304,7 @@ void SioHandleIrq_Serial(void)
         }
         else
         {
-            if (sub_8042194(i) == TRUE)
+            if (Sio_IsPlayerConnected(i) == TRUE)
             {
                 if (gSioSt->lastRecv[i] == 0xFFFF)
                 {
@@ -352,7 +352,7 @@ void SioHandleIrq_Serial(void)
                 for (i = 0; i < 4; i++)
                 {
                     // TODO: what is 0x1288? it is 0x9ABC in mgfembp
-                    if (sub_8042194(i) && recv[i] != 0x1288)
+                    if (Sio_IsPlayerConnected(i) && recv[i] != 0x1288)
                         sb++;
                 }
 
@@ -392,7 +392,7 @@ void SioVsync_Loop(void)
                     // fallthrough
 
                 case 2:
-                    if (gSioSt->unk_001 != 0 && !sub_80421E4())
+                    if (gSioSt->unk_001 != 0 && !Sio_CheckLinkAlive())
                     {
                         gSioSt->playerStatus[gSioSt->selfId] = PLAYER_STATUS_0;
                         StartSioErrorScreen();
@@ -425,7 +425,7 @@ void SioVsync_Loop(void)
                     return;
                 }
 
-                dat = sub_8042694(&len);
+                dat = Sio_PeekPendingSendData(&len);
 
                 if (dat != NULL)
                 {
@@ -458,7 +458,7 @@ void SioHandleIrq_Timer3(void)
     REG_SIOCNT = sSioCnt | SIO_MULTI_MODE | SIO_INTR_ENABLE | SIO_ENABLE;
 }
 
-void sub_8041D8C(int num)
+void Sio_PlayRemoteSoundEffect(int num)
 {
     u32 table[4] = {
         0x6C, 0x6C, 0x6C, 0x6C
@@ -483,7 +483,7 @@ void SioMain_Loop(void)
         u16 len;
 
     redo:
-        len = sub_80423B0(i, gSioSt->buf);
+        len = Sio_ReadPacket(i, gSioSt->buf);
 
         if (len != 0)
         {
@@ -536,8 +536,8 @@ void SioMain_Loop(void)
                         gLinkArenaSt.unk_A1[i][j] = data_message->bytes[j];
                     }
 
-                    if ((sub_8042194(i) == 0 && gSioSt->unk_000 == data_message->head.param && gSioSt->unk_004 <= 5) ||
-                        (sub_8042194(i) == 1))
+                    if ((Sio_IsPlayerConnected(i) == 0 && gSioSt->unk_000 == data_message->head.param && gSioSt->unk_004 <= 5) ||
+                        (Sio_IsPlayerConnected(i) == 1))
                     {
                         if (gSioSt->selfId == 0)
                         {
@@ -598,7 +598,7 @@ void SioMain_Loop(void)
                             break;
 
                         case SIO_MSG_87:
-                            if (sub_8042194(message->param) == 0)
+                            if (Sio_IsPlayerConnected(message->param) == 0)
                             {
                                 gSioSt->playerStatus[gSioSt->selfId] = PLAYER_STATUS_2;
                                 gSioSt->playerStatus[(gSioSt->lastSioCnt & 0x30) >> 4] = PLAYER_STATUS_2;
@@ -609,7 +609,7 @@ void SioMain_Loop(void)
                             break;
 
                         case SIO_MSG_85:
-                            if (sub_8042194(message->param) == 0)
+                            if (Sio_IsPlayerConnected(message->param) == 0)
                             {
                                 gSioSt->playerStatus[message->param] = PLAYER_STATUS_2;
                                 gSioSt->unk_004 = 6;
@@ -625,7 +625,7 @@ void SioMain_Loop(void)
                             break;
 
                         case SIO_MSG_84:
-                            sub_8041D8C(message->sender);
+                            Sio_PlayRemoteSoundEffect(message->sender);
                             break;
                     }
 
@@ -635,26 +635,11 @@ void SioMain_Loop(void)
     }
 }
 
-void sub_8042138(void)
+void SioCore_Nop_0(void)
 {
 }
 
-int sub_804213C(void)
-{
-    int i;
-
-    u8 count = 0;
-
-    for (i = 0; i < 4; i++)
-    {
-        if (sub_8042194(i) == TRUE)
-            count++;
-    }
-
-    return count;
-}
-
-int sub_8042168(void)
+int Sio_CountConnectedPlayers(void)
 {
     int i;
 
@@ -662,14 +647,29 @@ int sub_8042168(void)
 
     for (i = 0; i < 4; i++)
     {
-        if (sub_80421BC(i) == TRUE)
+        if (Sio_IsPlayerConnected(i) == TRUE)
             count++;
     }
 
     return count;
 }
 
-bool sub_8042194(u8 playerId)
+int Sio_CountActivePlayers(void)
+{
+    int i;
+
+    u8 count = 0;
+
+    for (i = 0; i < 4; i++)
+    {
+        if (Sio_IsPlayerActiveThisFrame(i) == TRUE)
+            count++;
+    }
+
+    return count;
+}
+
+bool Sio_IsPlayerConnected(u8 playerId)
 {
     if (((gSioSt->unk_009 >> playerId) & 1) != 0)
         return TRUE;
@@ -677,7 +677,7 @@ bool sub_8042194(u8 playerId)
     return FALSE;
 }
 
-bool sub_80421BC(u8 playerId)
+bool Sio_IsPlayerActiveThisFrame(u8 playerId)
 {
     if (((gSioSt->recvFlags >> playerId) & 1) != 0)
         return TRUE;
@@ -685,7 +685,7 @@ bool sub_80421BC(u8 playerId)
     return FALSE;
 }
 
-bool sub_80421E4(void)
+bool Sio_CheckLinkAlive(void)
 {
     int lastSioCnt = gSioSt->lastSioCnt;
     gSioSt->lastSioCnt = 0;
@@ -705,7 +705,7 @@ bool sub_80421E4(void)
     return TRUE;
 }
 
-int sub_8042238(void)
+int Sio_GetPendingSendCount(void)
 {
     if (gSioSt->nextPendingWrite >= gSioSt->nextPendingSend)
     {
@@ -717,7 +717,7 @@ int sub_8042238(void)
     }
 }
 
-bool sub_804226C(void)
+bool Sio_AreAllPlayersReady(void)
 {
     int i, count = 0;
 
@@ -817,7 +817,7 @@ s16 SioSend(const void * src, u16 len)
 #undef SRC_U16
 }
 
-s16 sub_80423B0(s8 playerId, void * dst)
+s16 Sio_ReadPacket(s8 playerId, void * dst)
 {
 #define DST_U16 ((u16 *)dst)
 
@@ -945,7 +945,7 @@ int SioSend16(u16 * word, int arg_1)
     return 0;
 }
 
-int sub_80425B4(int unused_0, u16 * arg_1)
+int Sio_ReadMultiFrame(int unused_0, u16 * arg_1)
 {
     int i;
 
@@ -993,7 +993,7 @@ void SioQueuePendingRecvData(struct SioData * data)
     gSioSt->nextPendingRecv &= (SIO_MAX_PENDING_RECV - 1);
 }
 
-struct SioData * sub_8042694(u32 * out)
+struct SioData * Sio_PeekPendingSendData(u32 * out)
 {
     if (gSioSt->pendingSend[gSioSt->nextPendingSend].packet.head.kind != SIO_MSG_DATA)
         return NULL;
@@ -1113,7 +1113,7 @@ int SioReceiveData(void * dst, u8 * outSenderId, bool (*verify)(void *))
     }
 }
 
-void sub_804292C(void)
+void Sio_Halt(void)
 {
     int i;
 
@@ -1131,12 +1131,12 @@ void sub_804292C(void)
     }
 }
 
-void sub_8042980(int arg_0)
+void Sio_SetSubState(int arg_0)
 {
     gSioSt->unk_021 = arg_0;
 }
 
-void sub_8042990(void)
+void Sio_BeginSyncPhase(void)
 {
     int i;
 
@@ -1158,7 +1158,7 @@ void sub_8042990(void)
     gSioSt->unk_001 = 3;
 }
 
-void sub_8042A04(void)
+void Sio_StartLinkSession(void)
 {
     int i;
 
@@ -1181,7 +1181,7 @@ void sub_8042A04(void)
     SioSend16(&abc, -1);
 }
 
-void sub_8042A7C(void)
+void Sio_StartLinkSessionFast(void)
 {
     int i;
 
@@ -1204,12 +1204,12 @@ void sub_8042A7C(void)
     SioSend16(&abc, -1);
 }
 
-void sub_8042AF4(void)
+void SioClearOutgoingQueue(void)
 {
     sWriteCursor = sSendCursor;
 }
 
-void sub_8042B08(struct SioBigSendProc * proc)
+void SioBigSend_Init(struct SioBigSendProc * proc)
 {
     int i;
     u8 data[4];
@@ -1218,7 +1218,7 @@ void sub_8042B08(struct SioBigSendProc * proc)
 
     gSioSt->seq[0] = gSioSt->seq[1] = gSioSt->seq[2] = gSioSt->seq[3] = 0;
 
-    sub_8041718();
+    Sio_ResetSession();
 
     data[0] = proc->unk_34;
     data[1] = proc->blockCount >> 8;
@@ -1229,7 +1229,7 @@ void sub_8042B08(struct SioBigSendProc * proc)
     gSioSt->unk_02E = 1;
 }
 
-void sub_8042B68(struct SioBigSendProc * proc)
+void SioBigSend_Loop(struct SioBigSendProc * proc)
 {
     if (proc->func != NULL)
         proc->func(proc);
@@ -1253,16 +1253,16 @@ void sub_8042B68(struct SioBigSendProc * proc)
     }
 }
 
-void sub_8042BD8(struct SioBigReceiveProc * proc)
+void SioBigReceive_Init(struct SioBigReceiveProc * proc)
 {
     gSioSt->selfSeq = gSioSt->unk_022 = gSioSt->unk_02E = 0;
 
     gSioSt->seq[0] = gSioSt->seq[1] = gSioSt->seq[2] = gSioSt->seq[3] = 0;
 
-    sub_8041718();
+    Sio_ResetSession();
 }
 
-void sub_8042C00(struct SioBigReceiveProc * proc)
+void SioBigReceive_RecvHeader(struct SioBigReceiveProc * proc)
 {
     u8 data[4];
     u8 id;
@@ -1279,7 +1279,7 @@ void sub_8042C00(struct SioBigReceiveProc * proc)
     }
 }
 
-void sub_8042C44(struct SioBigReceiveProc * proc)
+void SioBigReceive_Loop(struct SioBigReceiveProc * proc)
 {
     int i;
     u8 id;

@@ -1,7 +1,7 @@
 #include "gbafe.h"
 
 CONST_DATA EventListScr EventScr_Tower1_BeginningScene[] = {
-    ASMC(sub_8085C4C)
+    ASMC(InitTowerDungeonState)
     SVAL(EVT_SLOT_2, 0x0)
     CALL(EventScr_ConfigHardModeLoadUnitHard)
     SVAL(EVT_SLOT_D, 0x0)

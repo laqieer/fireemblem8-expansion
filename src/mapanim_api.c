@@ -67,7 +67,7 @@ void SetBattleAnimFacing(int maActor, int maOpponent, int facing)
 void SetupBattleMOVEUNITs(void)
 {
     int maFacing = GetSpellAssocFacing(gManimSt.actor[0].bu->weaponBefore);
-    sub_807B4D0();
+    SortMapAnimActorObjLayers();
 
     switch (gManimSt.actorCount) {
     case 2:
@@ -86,7 +86,7 @@ void SetupBattleMOVEUNITs(void)
     } // switch (gManimSt.actorCount_maybe)
 }
 
-void sub_807B4D0(void)
+void SortMapAnimActorObjLayers(void)
 {
     u8 array[4];
     int i, j;
@@ -323,11 +323,11 @@ CONST_DATA struct ProcCmd ProcScr_MapAnimDance[] = {
     PROC_CALL(MapAnim_MoveCameraOntoSubject),
     PROC_SLEEP(0x2),
     PROC_SLEEP(0x14),
-    PROC_CALL(sub_80812C0),
+    PROC_CALL(MapAnim_StartSubjectDanceAnim),
     PROC_SLEEP(0x50),
     PROC_CALL(StartDanceringAnim),
     PROC_SLEEP(0xA),
-    PROC_CALL(sub_80813C0),
+    PROC_CALL(MapAnim_FreezeSubjectAnim),
     PROC_SLEEP(0x14),
     PROC_JUMP(ProcScr_MapAnimEnd),
 };

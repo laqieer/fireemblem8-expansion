@@ -74,7 +74,7 @@ u16 CONST_DATA Sprite_SioPoints_0[] =
 // clang-format on
 
 //! FE8U = 0x08048864
-void sub_8048864(void)
+void SioPointsSprite_Loop(void)
 {
     PutSprite(4, 56, 4, Sprite_SioPoints_0, 0);
     return;
@@ -84,7 +84,7 @@ void sub_8048864(void)
 
 struct ProcCmd CONST_DATA ProcScr_SioPoints_0[] =
 {
-    PROC_REPEAT(sub_8048864),
+    PROC_REPEAT(SioPointsSprite_Loop),
     PROC_END,
 };
 
@@ -111,7 +111,7 @@ u16 CONST_DATA gSioPoints_4[] =
 // clang-format on
 
 //! FE8U = 0x08048884
-void sub_8048884(struct SioProc85A971C_Unk44 * buf)
+void Sio_SortPlayersByScore(struct SioProc85A971C_Unk44 * buf)
 {
     int i;
     int j;
@@ -201,7 +201,7 @@ void LAPointsBox_LoadBoxes(struct LAPointsBoxProc * proc)
     {
         int playerId = gSioPoints_0[gSioSt->selfId][i];
 
-        if (sub_8042194(playerId) != 0)
+        if (Sio_IsPlayerConnected(playerId) != 0)
         {
             if (gUnk_Sio_16.unk_0A[playerId] == 0)
             {
@@ -601,7 +601,7 @@ struct ProcCmd CONST_DATA ProcScr_LinkArena_PointsSpriteText[] =
 // clang-format on
 
 //! FE8U = 0x080490EC
-s8 sub_80490EC(int x, int y, const char * str, u8 flag, ProcPtr parent)
+s8 StartLinkArenaPointsNumberMovers(int x, int y, const char * str, u8 flag, ProcPtr parent)
 {
     int i;
     struct Text text;
@@ -624,7 +624,7 @@ s8 sub_80490EC(int x, int y, const char * str, u8 flag, ProcPtr parent)
     {
         int playerId = gSioPoints_1[gSioSt->selfId][i];
 
-        if (sub_8042194(playerId) != 0)
+        if (Sio_IsPlayerConnected(playerId) != 0)
         {
             if (gUnk_Sio_16.unk_2c[playerId].newScore != 0)
             {
@@ -669,11 +669,11 @@ s8 sub_80490EC(int x, int y, const char * str, u8 flag, ProcPtr parent)
 }
 
 //! FE8U = 0x08049238
-void sub_8049238(ProcPtr proc)
+void StartLinkArenaShowPointsAnimated(ProcPtr proc)
 {
     StartLinkArenaPointsBox();
 
-    if (!sub_80490EC(88, 60, GetStringFromIndex(0x771), 1, proc)) // TODO: msgid "Points"
+    if (!StartLinkArenaPointsNumberMovers(88, 60, GetStringFromIndex(0x771), 1, proc)) // TODO: msgid "Points"
     {
         EndLinkArenaPointsBox();
     }
@@ -682,9 +682,9 @@ void sub_8049238(ProcPtr proc)
 }
 
 //! FE8U = 0x0804926C
-void sub_804926C(ProcPtr proc)
+void StartLinkArenaShowPoints(ProcPtr proc)
 {
     StartLinkArenaPointsBox();
-    sub_80490EC(88, 60, GetStringFromIndex(0x771), 0, proc); // TODO: msgid "Points"
+    StartLinkArenaPointsNumberMovers(88, 60, GetStringFromIndex(0x771), 0, proc); // TODO: msgid "Points"
     return;
 }

@@ -871,12 +871,12 @@ u8 Event1A_TEXTSTART(struct EventEngineProc * proc)
     {
         EndTalk();
         EndCgText();
-        sub_808BB74();
+        EndAllBoxDialogue();
 
         if (proc->execType == EV_EXEC_CUTSCENE)
             ChangeUnitSpritePalette(proc->mapSpritePalIdOverride);
 
-        sub_800E640(proc);
+        EndEventFaces(proc);
     }
 
     proc->activeTextType = subcode;
@@ -898,7 +898,7 @@ u8 Event1A_TEXTSTART(struct EventEngineProc * proc)
     } // switch (subcode)
 }
 
-void sub_800E210(struct EventEngineProc * proc, u16 stringIndex, s8 b)
+void EventText_StartTalkMsg(struct EventEngineProc * proc, u16 stringIndex, s8 b)
 {
     if (b == TRUE)
         InitTalk(0x80, 2, 1);
@@ -922,7 +922,7 @@ void sub_800E210(struct EventEngineProc * proc, u16 stringIndex, s8 b)
         SetTalkFlag(TALK_FLAG_NOFAST);
 }
 
-void sub_800E290(struct EventEngineProc * proc, u16 stringIndex, u32 flags)
+void EventText_StartCgTextMsg(struct EventEngineProc * proc, u16 stringIndex, u32 flags)
 {
     flags |= 0x0400;
 
@@ -946,7 +946,7 @@ void sub_800E290(struct EventEngineProc * proc, u16 stringIndex, u32 flags)
     SetCgTextFlags(flags);
 }
 
-void sub_800E31C(struct EventEngineProc * proc, u16 stringIndex, u32 flags)
+void EventText_StartBoxDialogueMsg(struct EventEngineProc * proc, u16 stringIndex, u32 flags)
 {
     u8 x = ((u16 *)(gEventSlots + 0xB))[0];
     u8 y = ((u16 *)(gEventSlots + 0xB))[1];
@@ -976,7 +976,7 @@ void sub_800E31C(struct EventEngineProc * proc, u16 stringIndex, u32 flags)
     if (proc->evStateBits & EV_STATE_0040)
         flags |= 0x0008;
 
-    sub_808AA04(x, y, stringIndex, NULL);
+    StartBoxDialogue(x, y, stringIndex, NULL);
     SetDialogueBoxConfig(flags);
 }
 
@@ -1012,15 +1012,15 @@ u8 Event1B_TEXTSHOW(struct EventEngineProc * proc)
             {
 
                 case 0:
-                    sub_800E210(proc, evArgument, TRUE);
+                    EventText_StartTalkMsg(proc, evArgument, TRUE);
                     break;
 
                 case 1:
-                    sub_800E210(proc, evArgument, TRUE);
+                    EventText_StartTalkMsg(proc, evArgument, TRUE);
                     break;
 
                 case 2:
-                    sub_800E290(proc, evArgument, zeroFlag);
+                    EventText_StartCgTextMsg(proc, evArgument, zeroFlag);
                     break;
 
                 case 3:
@@ -1033,7 +1033,7 @@ u8 Event1B_TEXTSHOW(struct EventEngineProc * proc)
                     goto label;
 
                 case 4:
-                    sub_800E31C(proc, evArgument, zeroFlag);
+                    EventText_StartBoxDialogueMsg(proc, evArgument, zeroFlag);
                     break;
 
                 case 5:
@@ -1056,15 +1056,15 @@ u8 Event1B_TEXTSHOW(struct EventEngineProc * proc)
             {
 
                 case 0:
-                    sub_800E210(proc, evArgument, FALSE);
+                    EventText_StartTalkMsg(proc, evArgument, FALSE);
                     break;
 
                 case 1:
-                    sub_800E210(proc, evArgument, FALSE);
+                    EventText_StartTalkMsg(proc, evArgument, FALSE);
                     break;
 
                 case 2:
-                    sub_800E290(proc, evArgument, zeroFlag);
+                    EventText_StartCgTextMsg(proc, evArgument, zeroFlag);
                     break;
 
                 case 3:
@@ -1073,14 +1073,14 @@ u8 Event1B_TEXTSHOW(struct EventEngineProc * proc)
                     goto label;
 
                 case 4:
-                    sub_800E31C(proc, evArgument, zeroFlag);
+                    EventText_StartBoxDialogueMsg(proc, evArgument, zeroFlag);
                     break;
 
                 case 5:
                     ea = evArgument;
                     flags = 0x0010 | 0x0020;
                 label:
-                    sub_800E31C(proc, ea, flags);
+                    EventText_StartBoxDialogueMsg(proc, ea, flags);
                     break;
 
             } // switch (proc->activeTextType)
@@ -1092,12 +1092,12 @@ u8 Event1B_TEXTSHOW(struct EventEngineProc * proc)
 
             EndTalk();
             EndCgText();
-            sub_808BB74();
+            EndAllBoxDialogue();
 
             if (proc->execType == EV_EXEC_CUTSCENE)
                 ChangeUnitSpritePalette(proc->mapSpritePalIdOverride);
 
-            sub_800E640(proc);
+            EndEventFaces(proc);
 
             return EVC_ADVANCE_YIELD;
 
@@ -1113,12 +1113,12 @@ u8 Event1D_TalkContinue(struct EventEngineProc * proc)
     {
         EndTalk();
         EndCgText();
-        sub_808BB74();
+        EndAllBoxDialogue();
 
         if (proc->execType == EV_EXEC_CUTSCENE)
             ChangeUnitSpritePalette(proc->mapSpritePalIdOverride);
 
-        sub_800E640(proc);
+        EndEventFaces(proc);
     }
     else
     {
@@ -1135,12 +1135,12 @@ u8 Event1D_WaitForLockTalk(struct EventEngineProc * proc)
     {
         EndTalk();
         EndCgText();
-        sub_808BB74();
+        EndAllBoxDialogue();
 
         if (proc->execType == EV_EXEC_CUTSCENE)
             ChangeUnitSpritePalette(proc->mapSpritePalIdOverride);
 
-        sub_800E640(proc);
+        EndEventFaces(proc);
 
         gEventSlots[0xC] = 0;
     }
@@ -1194,7 +1194,7 @@ u8 Event1D_WaitForLockTalk(struct EventEngineProc * proc)
 }
 
 //! FE8U = 0x0800E640
-void sub_800E640(struct EventEngineProc * proc)
+void EndEventFaces(struct EventEngineProc * proc)
 {
     if (proc->evStateBits & EV_STATE_FADEDIN)
     {
@@ -1267,12 +1267,12 @@ u8 Event1E_(struct EventEngineProc * proc)
     {
         EndTalk();
         EndCgText();
-        sub_808BB74();
+        EndAllBoxDialogue();
 
         if (proc->execType == EV_EXEC_CUTSCENE)
             ChangeUnitSpritePalette(proc->mapSpritePalIdOverride);
 
-        sub_800E640(proc);
+        EndEventFaces(proc);
 
         return EVC_ADVANCE_YIELD;
     }
@@ -1490,7 +1490,7 @@ u8 Event21_TextBg(struct EventEngineProc * proc)
 }
 
 //! FE8U = 0x0800EA84
-void sub_800EA84(struct ConvoBackgroundFadeProc * proc)
+void ConvoBackgroundFade_Init(struct ConvoBackgroundFadeProc * proc)
 {
     SetDispEnable(FALSE, FALSE, FALSE, TRUE, TRUE);
 
@@ -1547,11 +1547,11 @@ void sub_800EA84(struct ConvoBackgroundFadeProc * proc)
     SetBlendBackdropA(TRUE);
     SetBlendBackdropB(FALSE);
 
-    sub_800BA04(0, 6);
+    BackupPalette(0, 6);
 }
 
 //! FE8U = 0x0800EBB0
-void sub_800EBB0(struct ConvoBackgroundFadeProc * proc)
+void ConvoBackgroundFade_CopyBg3ToBg2(struct ConvoBackgroundFadeProc * proc)
 {
     CopyBgImage(3, 2, 10);
     CopyBgTiles(BG_3, BG_2, 1);
@@ -1562,7 +1562,7 @@ void sub_800EBB0(struct ConvoBackgroundFadeProc * proc)
 }
 
 //! FE8U = 0x0800EC00
-void sub_800EC00(struct ConvoBackgroundFadeProc * proc)
+void ConvoBackgroundFade_CopyBg2ToBg3(struct ConvoBackgroundFadeProc * proc)
 {
     CopyBgImage(2, 3, 10);
     CopyBgTiles(BG_2, BG_3, 1);
@@ -1573,7 +1573,7 @@ void sub_800EC00(struct ConvoBackgroundFadeProc * proc)
 }
 
 //! FE8U = 0x0800EC50
-void sub_800EC50(struct ConvoBackgroundFadeProc * proc)
+void ConvoBackgroundFade_LoadBg2(struct ConvoBackgroundFadeProc * proc)
 {
     switch (proc->unkType)
     {
@@ -1625,7 +1625,7 @@ void sub_800EC50(struct ConvoBackgroundFadeProc * proc)
 }
 
 //! FE8U = 0x0800ED50
-void sub_800ED50(struct ConvoBackgroundFadeProc * proc)
+void ConvoBackgroundFade_LoadBg3(struct ConvoBackgroundFadeProc * proc)
 {
     switch (proc->unkType)
     {
@@ -1677,7 +1677,7 @@ void sub_800ED50(struct ConvoBackgroundFadeProc * proc)
 }
 
 //! FE8U = 0x0800EE54
-void sub_800EE54(struct ConvoBackgroundFadeProc * proc)
+void ConvoBackgroundFade_RestoreMap(struct ConvoBackgroundFadeProc * proc)
 {
     switch (proc->unkType)
     {
@@ -1707,7 +1707,7 @@ void sub_800EE54(struct ConvoBackgroundFadeProc * proc)
 }
 
 //! FE8U = 0x0800EEE8
-void sub_800EEE8(struct ConvoBackgroundFadeProc * proc)
+void ConvoBackgroundFade_Loop(struct ConvoBackgroundFadeProc * proc)
 {
     u32 currentFadeLevel = (proc->fadeTimer += proc->fadeSpeed) / 16;
 
@@ -1728,7 +1728,7 @@ void sub_800EEE8(struct ConvoBackgroundFadeProc * proc)
 }
 
 //! FE8U = 0x0800EF48
-void sub_800EF48(struct ConvoBackgroundFadeProc * proc)
+void ConvoBackgroundFade_End(struct ConvoBackgroundFadeProc * proc)
 {
     switch (proc->fadeType)
     {
@@ -1747,7 +1747,7 @@ void sub_800EF48(struct ConvoBackgroundFadeProc * proc)
             SetDispEnable(FALSE, FALSE, FALSE, TRUE, TRUE);
 
             InitSystemTextFont();
-            sub_80156D4();
+            LoadGameCoreGfxLegacyFrame();
 
             break;
     }
@@ -1768,7 +1768,7 @@ void sub_800EF48(struct ConvoBackgroundFadeProc * proc)
     SetBlendBackdropA(TRUE);
     SetBlendBackdropB(TRUE);
 
-    sub_800BA34();
+    RestorePalette();
 
     BG_Fill(gBG2TilemapBuffer, 0);
     BG_EnableSyncByMask(BG2_SYNC_BIT);
@@ -1783,17 +1783,17 @@ struct ProcCmd CONST_DATA gEventscr_1[] =
 {
     PROC_YIELD,
 
-    PROC_CALL(sub_800EA84),
+    PROC_CALL(ConvoBackgroundFade_Init),
     PROC_YIELD,
 
-    PROC_CALL(sub_800EBB0),
+    PROC_CALL(ConvoBackgroundFade_CopyBg3ToBg2),
     PROC_YIELD,
 
-    PROC_CALL(sub_800ED50),
+    PROC_CALL(ConvoBackgroundFade_LoadBg3),
     PROC_YIELD,
 
-    PROC_REPEAT(sub_800EEE8),
-    PROC_CALL(sub_800EF48),
+    PROC_REPEAT(ConvoBackgroundFade_Loop),
+    PROC_CALL(ConvoBackgroundFade_End),
 
     PROC_END,
 };
@@ -1809,19 +1809,19 @@ struct ProcCmd CONST_DATA gEventscr_3[] =
 {
     PROC_YIELD,
 
-    PROC_CALL(sub_800EA84),
+    PROC_CALL(ConvoBackgroundFade_Init),
     PROC_YIELD,
 
-    PROC_CALL(sub_800EC50),
+    PROC_CALL(ConvoBackgroundFade_LoadBg2),
     PROC_YIELD,
 
-    PROC_REPEAT(sub_800EEE8),
+    PROC_REPEAT(ConvoBackgroundFade_Loop),
     PROC_YIELD,
 
-    PROC_CALL(sub_800EC00),
+    PROC_CALL(ConvoBackgroundFade_CopyBg2ToBg3),
     PROC_YIELD,
 
-    PROC_CALL(sub_800EF48),
+    PROC_CALL(ConvoBackgroundFade_End),
 
     PROC_END,
 };
@@ -1830,17 +1830,17 @@ struct ProcCmd CONST_DATA gEventscr_4[] =
 {
     PROC_YIELD,
 
-    PROC_CALL(sub_800EA84),
+    PROC_CALL(ConvoBackgroundFade_Init),
     PROC_YIELD,
 
-    PROC_CALL(sub_800EBB0),
+    PROC_CALL(ConvoBackgroundFade_CopyBg3ToBg2),
     PROC_YIELD,
 
-    PROC_CALL(sub_800EE54),
+    PROC_CALL(ConvoBackgroundFade_RestoreMap),
     PROC_YIELD,
 
-    PROC_REPEAT(sub_800EEE8),
-    PROC_CALL(sub_800EF48),
+    PROC_REPEAT(ConvoBackgroundFade_Loop),
+    PROC_CALL(ConvoBackgroundFade_End),
 
     PROC_END,
 };
@@ -1982,7 +1982,7 @@ u8 Event26_CameraControl(struct EventEngineProc * proc)
         if (!sc2)
             EnsureCameraOntoPosition(proc, x, y);
         else
-            sub_8015D84(proc, x, y);
+            EnsureCameraCenteredOnPosition(proc, x, y);
 
         SetCursorMapPosition(x, y);
 
@@ -2344,11 +2344,11 @@ void LoadUnit_0(const struct UnitDefinition * def, u16 b, s8 quiet, s8 d)
         }
     }
 
-    sub_800F8A8(unit, def, b, quiet);
+    LoadUnit_MoveToPosition(unit, def, b, quiet);
 }
 
 //! FE8U = 0x0800F8A8
-void sub_800F8A8(struct Unit * unit, const struct UnitDefinition * unitDefition, u16 flags, s8 unk)
+void LoadUnit_MoveToPosition(struct Unit * unit, const struct UnitDefinition * unitDefition, u16 flags, s8 unk)
 {
     if (!unit)
         return;
@@ -2462,7 +2462,7 @@ struct UnitDefinition * GetUnitDefinitionFormEventScr(struct UnitDefinition * so
     source = gLoadUnitBuffer;
 
     if (arg3 == TRUE)
-        sub_80125C0(source);
+        BuildDeployedUnitDefinitionList(source);
 
 #undef MASK_BIT_GET
 #undef MASK_BIT_SET
@@ -2744,7 +2744,7 @@ struct UnitDefinition * GetUnitDefinitionFormEventScr(struct UnitDefinition * so
         "cmp r0, #1\n"
         "bne _0800FB06\n"
         "adds r0, r6, #0\n"
-        "bl sub_80125C0\n"
+        "bl BuildDeployedUnitDefinitionList\n"
     "_0800FB06:\n"
         "adds r0, r6, #0\n"
         "add sp, #0x60\n"
@@ -4016,7 +4016,7 @@ void WaitEventPromoteDone(struct ProcEventPromote * proc)
 {
     if (proc->lock == GetGameLock())
     {
-        sub_8012324();
+        RestoreScreenAfterPromotion();
         Proc_SetMark(proc->event_engine, PROC_MARK_EVENT);
         Proc_Break(proc);
     }
@@ -4165,7 +4165,7 @@ u8 Event43_SummonUnit(struct EventEngineProc * proc)
         return EVC_ERROR;
     }
 
-    sub_8080E9C(proc, unit);
+    StartSummonUnitRevealAnim(proc, unit);
     return EVC_ADVANCE_YIELD;
 }
 

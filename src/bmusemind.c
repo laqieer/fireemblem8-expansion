@@ -31,7 +31,7 @@ s8 CanUnitCrossTerrain(struct Unit* unit, int terrain);
  struct ProcCmd CONST_DATA ProcScr_PostWarpStaffAction[] = {
     PROC_SLEEP(0),
     PROC_CALL_2(PostWarpStaff_ExecTrap),
-    PROC_CALL(sub_802EF80),
+    PROC_CALL(PostWarpStaff_RefreshMap),
 
     PROC_END,
 };
@@ -45,7 +45,7 @@ s8 CanUnitCrossTerrain(struct Unit* unit, int terrain);
 
  struct ProcCmd CONST_DATA ProcScr_ExecNightmareStaff[] = {
     PROC_SLEEP(1),
-    PROC_CALL(sub_8030050),
+    PROC_CALL(ExecNightmareStaffEffect),
 
     PROC_END,
 };
@@ -237,7 +237,7 @@ int PostWarpStaff_ExecTrap(ProcPtr proc) {
     return ExecTrapAfterWarp(proc);
 }
 
-int sub_802EF80() {
+int PostWarpStaff_RefreshMap() {
     EndMu(GetUnitMu(GetUnit(gActionData.targetIndex)));
 
     RefreshEntityBmMaps();
@@ -562,7 +562,7 @@ void ExecKeyItem() {
     return;
 }
 
-void sub_802F598(struct Unit* unit, int itemIdx, s8 unk) {
+void ExecUnitDefaultPromotion(struct Unit* unit, int itemIdx, s8 unk) {
 
     if (itemIdx != -1) {
         gBattleActor.weaponBefore = gBattleTarget.weaponBefore = unit->items[itemIdx];
@@ -634,14 +634,14 @@ void ExecUnitPromotion(struct Unit* unit, u8 classId, int itemIdx, s8 unk) {
     return;
 }
 
-void sub_802F73C() {
+void ExecPromotionToClass1() {
     ExecUnitPromotion(GetUnit(gActionData.subjectIndex), 1, gActionData.itemSlotIndex, 1);
     BeginBattleAnimations();
 
     return;
 }
 
-void sub_802F760(struct Unit* unit, int item) {
+void ExecUnitDefaultPromotionAndHide(struct Unit* unit, int item) {
     gBattleActor.weaponBefore = gBattleTarget.weaponBefore = item;
     gBattleActor.weapon = gBattleTarget.weapon = item;
 
@@ -834,7 +834,7 @@ void ExecLightRune(ProcPtr proc) {
     return;
 }
 
-void sub_802FAD0(ProcPtr proc) {
+void ExecLightRuneSummon(ProcPtr proc) {
     int xPos, yPos;
     struct Unit* unit;
     BattleInitItemEffect(GetUnit(gActionData.subjectIndex),
@@ -1094,7 +1094,7 @@ void AfterItemUse_SetTargetStatus() {
     return;
 }
 
-void sub_8030050() {
+void ExecNightmareStaffEffect() {
     ApplyNightmareEffect();
     return;
 }

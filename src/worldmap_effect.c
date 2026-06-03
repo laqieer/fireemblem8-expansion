@@ -468,7 +468,7 @@ struct GmapEffectProc * StartGmapEffect(ProcPtr parent, int unk)
 }
 
 //! FE8U = 0x080C13CC
-void sub_80C13CC(ProcPtr proc)
+void EndGmapEffectProc(ProcPtr proc)
 {
     Proc_End(proc);
     return;

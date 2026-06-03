@@ -41,7 +41,7 @@
 #include "constants/terrains.h"
 
 //! FE8U = 0x08049298
-void sub_8049298(struct Unit * unit)
+void LinkArenaBattleMap_BackupUnitItems(struct Unit * unit)
 {
     int i;
 
@@ -54,7 +54,7 @@ void sub_8049298(struct Unit * unit)
 }
 
 //! FE8U = 0x080492B8
-void sub_80492B8(struct Unit * unit)
+void LinkArenaBattleMap_RestoreUnitItems(struct Unit * unit)
 {
     int i;
 
@@ -67,15 +67,15 @@ void sub_80492B8(struct Unit * unit)
 }
 
 //! FE8U = 0x080492D8
-void sub_80492D8(void)
+void LinkArenaBattleMap_RefreshMapAndSprites(void)
 {
-    sub_8049594();
+    LinkArenaBattleMap_RebuildUnitMap();
     RefreshUnitSprites();
     return;
 }
 
 //! FE8U = 0x080492E8
-void sub_80492E8(int faction)
+void LinkArenaBattleMap_AdvancePhase(int faction)
 {
     int current = faction;
     int next = FACTION_ID_BLUE;
@@ -119,7 +119,7 @@ void sub_80492E8(int faction)
 }
 
 //! FE8U = 0x0804933C
-void sub_804933C(void)
+void LinkArenaBattleMap_ClearCmdBuffer(void)
 {
     gUnk_45[0] = 0;
     gUnk_45[1] = 0;
@@ -130,9 +130,9 @@ void sub_804933C(void)
 }
 
 //! FE8U = 0x08049350
-u16 sub_8049350(u8 a, u8 b, u8 c, u8 d)
+u16 LinkArenaBattleMap_SendCommand(u8 a, u8 b, u8 c, u8 d)
 {
-    sub_804933C();
+    LinkArenaBattleMap_ClearCmdBuffer();
 
     gUnk_45[0] = a;
     gUnk_45[1] = b;
@@ -148,7 +148,7 @@ u16 sub_8049350(u8 a, u8 b, u8 c, u8 d)
 }
 
 //! FE8U = 0x080493A8
-int sub_80493A8(u8 target)
+int LinkArenaBattleMap_FindUnitSlot(u8 target)
 {
     int i = 0;
 
@@ -164,7 +164,7 @@ int sub_80493A8(u8 target)
 }
 
 //! FE8U = 0x080493D0
-void sub_80493D0(u8 a, int b, u8 * c, int * xOut, int * yOut)
+void LinkArenaBattleMap_StartUnitMoveOut(u8 a, int b, u8 * c, int * xOut, int * yOut)
 {
     struct Unit * unit;
 
@@ -195,7 +195,7 @@ void sub_80493D0(u8 a, int b, u8 * c, int * xOut, int * yOut)
 
     // clang-format on
 
-    int var = sub_80493A8(a);
+    int var = LinkArenaBattleMap_FindUnitSlot(a);
     int index = Div(var, 5) << 1;
 
     *c = var;
@@ -231,7 +231,7 @@ void sub_80493D0(u8 a, int b, u8 * c, int * xOut, int * yOut)
 }
 
 //! FE8U = 0x080494D4
-void sub_80494D4(void)
+void LinkArenaBattleMap_ClearUnitSlots(void)
 {
     int i = 0;
 
@@ -253,7 +253,7 @@ const u8 gSioBattlemap_0[] =
 // clang-format on
 
 //! FE8U = 0x080494F0
-void sub_80494F0(void)
+void LinkArenaBattleMap_InitUnitSlots(void)
 {
     int faction;
     int i;
@@ -263,7 +263,7 @@ void sub_80494F0(void)
     {
         int playerId = gSioPoints_0[gSioSt->selfId][i];
 
-        if (!sub_8042194(playerId))
+        if (!Sio_IsPlayerConnected(playerId))
         {
             continue;
         }
@@ -291,7 +291,7 @@ void sub_80494F0(void)
 }
 
 //! FE8U = 0x08049594
-void sub_8049594(void)
+void LinkArenaBattleMap_RebuildUnitMap(void)
 {
     int i;
 
@@ -319,7 +319,7 @@ void sub_8049594(void)
 }
 
 //! FE8U = 0x080495F4
-void sub_80495F4(void)
+void LinkArenaBattleMap_RefreshUnitSlots(void)
 {
     int i;
     int j;
@@ -330,7 +330,7 @@ void sub_80495F4(void)
 
         int playerId = gSioPoints_0[gSioSt->selfId][i];
 
-        if (!sub_8042194(playerId))
+        if (!Sio_IsPlayerConnected(playerId))
         {
             continue;
         }
@@ -359,7 +359,7 @@ void sub_80495F4(void)
 }
 
 //! FE8U = 0x080496A4
-void sub_80496A4(void)
+void LinkArenaBattleMap_InitChapter(void)
 {
     CpuFill16(0, &gBmSt, sizeof(struct BmSt));
 
@@ -383,15 +383,15 @@ void sub_80496A4(void)
 }
 
 //! FE8U = 0x0804970C
-void sub_804970C(void)
+void LinkArenaBattleMap_InitMap(void)
 {
-    sub_80496A4();
-    sub_80494D4();
-    sub_80494F0();
+    LinkArenaBattleMap_InitChapter();
+    LinkArenaBattleMap_ClearUnitSlots();
+    LinkArenaBattleMap_InitUnitSlots();
 
     BmMapFill(gBmMapFog, gPlaySt.chapterVisionRange == 0);
 
-    sub_8049594();
+    LinkArenaBattleMap_RebuildUnitMap();
 
     RenderBmMap();
 
@@ -399,7 +399,7 @@ void sub_804970C(void)
 }
 
 //! FE8U = 0x08049744
-void sub_8049744(void)
+void LinkArenaBattleMap_CountTeamUnits(void)
 {
     int i;
 
@@ -429,11 +429,11 @@ void LoadLinkArenaFogPlaceholder(void)
 }
 
 //! FE8U = 0x080497A0
-void sub_80497A0(void)
+void LinkArenaBattleMap_InitDisplay(void)
 {
     SetupBackgrounds(NULL);
 
-    sub_80156D4();
+    LoadGameCoreGfxLegacyFrame();
 
     ApplyUnitSpritePalettes();
     ForceSyncUnitSpriteSheet();
@@ -447,7 +447,7 @@ void sub_80497A0(void)
 }
 
 //! FE8U = 0x080497CC
-void sub_80497CC(void)
+void LinkArenaBattleMap_InitConfig(void)
 {
     gPlaySt.config.animationType = 0;
 
@@ -479,7 +479,7 @@ u8 CONST_DATA gSioBattlemap_1[] =
 // clang-format on
 
 //! FE8U = 0x08049828
-void sub_8049828(void)
+void LinkArenaBattleMap_Init(void)
 {
     int i;
     struct Unit * unit;
@@ -487,13 +487,13 @@ void sub_8049828(void)
     SetupBackgrounds(NULL);
     ClearSioBG();
 
-    sub_804970C();
-    sub_8049744();
+    LinkArenaBattleMap_InitMap();
+    LinkArenaBattleMap_CountTeamUnits();
 
     gUnk_Sio_16.unk_09 = 0;
     gLinkArenaSt.unk_0B = 0;
 
-    sub_80492E8(gSioBattlemap_1[gUnk_Sio_16.unk_00]);
+    LinkArenaBattleMap_AdvancePhase(gSioBattlemap_1[gUnk_Sio_16.unk_00]);
 
     gUnk_Sio_16.unk_0E = 1;
     gUnk_Sio_16.unk_02 = 0;
@@ -525,7 +525,7 @@ void sub_8049828(void)
 
     Proc_Start(gProc_MapTask, PROC_TREE_4);
     BMapVSync_Start();
-    sub_80497CC();
+    LinkArenaBattleMap_InitConfig();
 
     gPlaySt.chapterStateBits &= ~PLAY_FLAG_HARD;
 
@@ -533,7 +533,7 @@ void sub_8049828(void)
 }
 
 //! FE8U = 0x080498F4
-void sub_80498F4(void)
+void LinkArenaBattleMap_StartSelectedUnitMu(void)
 {
     struct Unit * unit = GetUnit(gUnk_42[gUnk_Sio_16.unk_04]);
 
@@ -548,7 +548,7 @@ void sub_80498F4(void)
 }
 
 //! FE8U = 0x08049940
-void sub_8049940(ProcPtr proc)
+void LinkArenaBattleMap_WaitLButton(ProcPtr proc)
 {
     if ((gKeyStatusPtr->newKeys & L_BUTTON) != 0)
     {
@@ -559,7 +559,7 @@ void sub_8049940(ProcPtr proc)
 }
 
 //! FE8U = 0x08049964
-void sub_8049964(ProcPtr parent)
+void LABattleMap_StartFactionTurn(ProcPtr parent)
 {
     switch (gLinkArenaSt.unk_00)
     {
@@ -594,7 +594,7 @@ void sub_8049964(ProcPtr parent)
 }
 
 //! FE8U = 0x080499D0
-void sub_80499D0(ProcPtr proc)
+void LABattleMap_BeginTurn(ProcPtr proc)
 {
     int i = 0;
 
@@ -641,7 +641,7 @@ void sub_80499D0(ProcPtr proc)
 }
 
 //! FE8U = 0x08049A60
-int sub_8049A60(void)
+int LinkArena_GetPlayerRanking(void)
 {
     int i;
 
@@ -653,7 +653,7 @@ int sub_8049A60(void)
     {
         for (i = 0; i < 4; i++)
         {
-            if (sub_8042194(i) && (gSioSt->selfId == gUnk_Sio_16.unk_0F[i]))
+            if (Sio_IsPlayerConnected(i) && (gSioSt->selfId == gUnk_Sio_16.unk_0F[i]))
             {
                 return i;
             }
@@ -665,7 +665,7 @@ int sub_8049A60(void)
     {
         for (i = 0; i < 4; i++)
         {
-            if (!sub_8042194(i))
+            if (!Sio_IsPlayerConnected(i))
             {
                 ret--;
                 continue;
@@ -689,7 +689,7 @@ int sub_8049A60(void)
 }
 
 //! FE8U = 0x08049B04
-void sub_8049B04(void)
+void LABattleMap_End(void)
 {
     Proc_EndEach(gProc_MapTask);
 
@@ -730,7 +730,7 @@ u8 CONST_DATA gSioBattlemap_2[] =
 // clang-format on
 
 //! FE8U = 0x08049B24
-void sub_8049B24(u16 keys, s8 flag)
+void LABattleMap_MoveSelectCursor(u16 keys, s8 flag)
 {
     u8 r2;
     int r4;
@@ -809,7 +809,7 @@ _end:
 }
 
 //! FE8U = 0x08049C18
-void sub_8049C18(void)
+void LABattleMap_UpdateCursorMu(void)
 {
     struct Unit * unitA;
     struct Unit * unitB;
@@ -850,7 +850,7 @@ void sub_8049C18(void)
 }
 
 //! FE8U = 0x08049C94
-bool sub_8049C94(struct Unit * unit)
+bool UnitHasUsableWeapon(struct Unit * unit)
 {
     int i;
 
@@ -873,7 +873,7 @@ bool sub_8049C94(struct Unit * unit)
 }
 
 //! FE8U = 0x08049CD4
-void sub_8049CD4(ProcPtr proc)
+void LABattleMap_CheckNoDamageStall_Loop(ProcPtr proc)
 {
     if (gUnk_Sio_16.unk_09 >= gLinkArenaSt.unk_A0 * 3)
     {
@@ -887,9 +887,9 @@ void sub_8049CD4(ProcPtr proc)
 }
 
 //! FE8U = 0x08049D0C
-void sub_8049D0C(ProcPtr proc)
+void LABattleMap_WaitSioSendDrain_Loop(ProcPtr proc)
 {
-    if (sub_8042238() < 8)
+    if (Sio_GetPendingSendCount() < 8)
     {
         Proc_Break(proc);
     }
@@ -900,7 +900,7 @@ void sub_8049D0C(ProcPtr proc)
 extern u8 gUnknown_080D9FB5[];
 
 //! FE8U = 0x08049D24
-void sub_8049D24(struct SioBattleMapProc * proc)
+void LABattleMap_SelectAttacker_Loop(struct SioBattleMapProc * proc)
 {
     int x;
     int y;
@@ -917,15 +917,15 @@ void sub_8049D24(struct SioBattleMapProc * proc)
 
     u8 previous = gUnk_Sio_16.unk_02;
 
-    sub_8049C18();
-    sub_8049B24(gKeyStatusPtr->repeatedKeys, 0);
+    LABattleMap_UpdateCursorMu();
+    LABattleMap_MoveSelectCursor(gKeyStatusPtr->repeatedKeys, 0);
 
     gActiveUnitId = gUnk_42[gUnk_Sio_16.unk_02];
     gActiveUnit = GetUnit(gActiveUnitId);
 
     if ((gKeyStatusPtr->newKeys & A_BUTTON) != 0)
     {
-        if (((gActiveUnitId >> 6) == gSioSt->selfId) && (sub_8049C94(gActiveUnit) == 1))
+        if (((gActiveUnitId >> 6) == gSioSt->selfId) && (UnitHasUsableWeapon(gActiveUnit) == 1))
         {
             PlaySoundEffect(SONG_69);
             EndAllMus();
@@ -938,12 +938,12 @@ void sub_8049D24(struct SioBattleMapProc * proc)
             proc->unk_30 = gActiveUnit->yPos - 1;
             gActiveUnit->state |= US_HIDDEN;
 
-            sub_80492D8();
+            LinkArenaBattleMap_RefreshMapAndSprites();
 
             gUnk_Sio_16.unk_04 = gUnk_Sio_16.unk_02;
 
-            sub_8049B24(0x40, 1);
-            sub_8049350(1, gActiveUnitId, 0, 0);
+            LABattleMap_MoveSelectCursor(0x40, 1);
+            LinkArenaBattleMap_SendCommand(1, gActiveUnitId, 0, 0);
 
             Proc_Goto(proc, 5);
             return;
@@ -1003,21 +1003,21 @@ void sub_8049D24(struct SioBattleMapProc * proc)
 }
 
 //! FE8U = 0x08049F38
-void sub_8049F38(ProcPtr unused)
+void LABattleMap_StartPointsBox(ProcPtr unused)
 {
     StartLinkArenaPointsBox();
     return;
 }
 
 //! FE8U = 0x08049F44
-void sub_8049F44(struct SioBattleMapProc * proc)
+void LABattleMap_SelectTarget_Loop(struct SioBattleMapProc * proc)
 {
     int x;
     int y;
 
     u8 previous = gUnk_Sio_16.unk_02;
 
-    sub_8049B24(gKeyStatusPtr->repeatedKeys, 1);
+    LABattleMap_MoveSelectCursor(gKeyStatusPtr->repeatedKeys, 1);
 
     gActiveUnitId = gUnk_42[gUnk_Sio_16.unk_02];
 
@@ -1044,9 +1044,9 @@ void sub_8049F44(struct SioBattleMapProc * proc)
     {
         PlaySoundEffect(SONG_69);
 
-        sub_80493D0(
+        LinkArenaBattleMap_StartUnitMoveOut(
             gUnk_42[gUnk_Sio_16.unk_02], 1, &gUnk_Sio_16.unk_05, &proc->unk_34, &proc->unk_38);
-        sub_8049350(3, gUnk_42[gUnk_Sio_16.unk_05], gActiveUnitId, 0);
+        LinkArenaBattleMap_SendCommand(3, gUnk_42[gUnk_Sio_16.unk_05], gActiveUnitId, 0);
         EndLinkArenaPointsBox();
 
         Proc_Goto(proc, 7);
@@ -1061,12 +1061,12 @@ void sub_8049F44(struct SioBattleMapProc * proc)
         EndMu(gUnk_46[0]);
         GetUnit(gUnk_42[gUnk_Sio_16.unk_04])->state &= ~US_HIDDEN;
 
-        sub_80492D8();
+        LinkArenaBattleMap_RefreshMapAndSprites();
 
         gUnk_Sio_16.unk_02 = gUnk_Sio_16.unk_04;
         gUnk_Sio_16.unk_03 = gUnk_Sio_16.unk_04 + 1;
 
-        sub_8049350(2, gActiveUnitId, gUnk_42[gUnk_Sio_16.unk_04], 0);
+        LinkArenaBattleMap_SendCommand(2, gActiveUnitId, gUnk_42[gUnk_Sio_16.unk_04], 0);
 
         Proc_Goto(proc, 1);
 
@@ -1092,14 +1092,14 @@ void sub_8049F44(struct SioBattleMapProc * proc)
 }
 
 //! FE8U = 0x0804A108
-void sub_804A108(struct SioProc85AA1AC * proc)
+void LABattleMap_ForecastMenu_Init(struct SioProc85AA1AC * proc)
 {
     ResetTextFont();
 
     gUnk_Sio_16.unk_06 = 0xff;
 
     gActiveUnit = GetUnit(gUnk_42[gUnk_Sio_16.unk_04]);
-    sub_8049298(gActiveUnit);
+    LinkArenaBattleMap_BackupUnitItems(gActiveUnit);
 
     proc->unk_64 = GetGameLock();
     LoadIconPalettes(4);
@@ -1110,7 +1110,7 @@ void sub_804A108(struct SioProc85AA1AC * proc)
 }
 
 //! FE8U = 0x0804A158
-void sub_804A158(struct SioProc85AA1AC * proc)
+void LABattleMap_ForecastMenu_Loop(struct SioProc85AA1AC * proc)
 {
     if (proc->unk_64 != GetGameLock())
     {
@@ -1119,7 +1119,7 @@ void sub_804A158(struct SioProc85AA1AC * proc)
 
     if (gUnk_Sio_16.unk_06 == 0)
     {
-        sub_80492B8(gActiveUnit);
+        LinkArenaBattleMap_RestoreUnitItems(gActiveUnit);
         Proc_End(proc);
         SetDispEnable(1, 1, 1, 1, 1);
     }
@@ -1133,7 +1133,7 @@ void sub_804A158(struct SioProc85AA1AC * proc)
 }
 
 //! FE8U = 0x0804A1D0
-void sub_804A1D0(struct SioProc85AA1AC * proc)
+void LABattleMap_DetermineAttackRange(struct SioProc85AA1AC * proc)
 {
     u16 item = gActiveUnit->items[gUnk_Sio_16.unk_07];
 
@@ -1178,7 +1178,7 @@ void sub_804A1D0(struct SioProc85AA1AC * proc)
 }
 
 //! FE8U = 0x0804A298
-void sub_804A298(struct SioProc85AA1AC * proc)
+void LABattleMap_GenerateForecast(struct SioProc85AA1AC * proc)
 {
     int tmp = 0;
     int local_24 = +1;
@@ -1197,7 +1197,7 @@ void sub_804A298(struct SioProc85AA1AC * proc)
 
         if (gUnk_Sio_16.unk_06 == 0)
         {
-            sub_80492B8(gActiveUnit);
+            LinkArenaBattleMap_RestoreUnitItems(gActiveUnit);
             Proc_Goto(proc, 0);
         }
         else
@@ -1210,12 +1210,12 @@ void sub_804A298(struct SioProc85AA1AC * proc)
                 tmp = (gUnk_Sio_16.unk_06 == 2) ? 1 : 0;
                 BattleGenerateSimulation(unitA, unitB, unitB->xPos + tmp, unitB->yPos + local_24, 0);
                 UpdateBattleForecastContents();
-                sub_80492B8(gActiveUnit);
+                LinkArenaBattleMap_RestoreUnitItems(gActiveUnit);
                 Proc_Break(proc);
             }
             else
             {
-                sub_80492B8(gActiveUnit);
+                LinkArenaBattleMap_RestoreUnitItems(gActiveUnit);
                 Proc_Goto(proc, 1);
             }
         }
@@ -1224,7 +1224,7 @@ void sub_804A298(struct SioProc85AA1AC * proc)
 }
 
 //! FE8U = 0x0804A3A8
-void sub_804A3A8(ProcPtr proc)
+void LABattleMap_ForecastConfirm_Loop(ProcPtr proc)
 {
     SetDispEnable(1, 1, 1, 1, 1);
 
@@ -1257,13 +1257,13 @@ PROC_LABEL(0),
     PROC_WHILE_EXISTS(gProcScr_BKSEL),
     PROC_SLEEP(1),
 
-    PROC_CALL(sub_804A108),
+    PROC_CALL(LABattleMap_ForecastMenu_Init),
 
-    PROC_REPEAT(sub_804A158),
+    PROC_REPEAT(LABattleMap_ForecastMenu_Loop),
 
-    PROC_CALL(sub_804A1D0),
-    PROC_REPEAT(sub_804A298),
-    PROC_REPEAT(sub_804A3A8),
+    PROC_CALL(LABattleMap_DetermineAttackRange),
+    PROC_REPEAT(LABattleMap_GenerateForecast),
+    PROC_REPEAT(LABattleMap_ForecastConfirm_Loop),
 
 PROC_LABEL(1),
     PROC_END,
@@ -1272,7 +1272,7 @@ PROC_LABEL(1),
 // clang-format on
 
 //! FE8U = 0x0804A430
-void sub_804A430(ProcPtr parent)
+void LABattleMap_StartForecast(ProcPtr parent)
 {
     Proc_StartBlocking(gSioBattlemap_3, parent);
     Proc_Break(parent);
@@ -1280,7 +1280,7 @@ void sub_804A430(ProcPtr parent)
 }
 
 //! FE8U = 0x0804A44C
-void sub_804A44C(struct SioBattleMapProc * proc)
+void LABattleMap_ConfirmTarget(struct SioBattleMapProc * proc)
 {
     struct Unit * unit = GetUnit(gUnk_42[gUnk_Sio_16.unk_05]);
 
@@ -1304,8 +1304,8 @@ void sub_804A44C(struct SioBattleMapProc * proc)
 
         gUnk_Sio_16.unk_02 = gUnk_Sio_16.unk_05;
         gUnk_Sio_16.unk_03 = gUnk_Sio_16.unk_05 + 1;
-        sub_8049350(4, 0, gUnk_42[gUnk_Sio_16.unk_05], 0);
-        sub_8049F38(proc);
+        LinkArenaBattleMap_SendCommand(4, 0, gUnk_42[gUnk_Sio_16.unk_05], 0);
+        LABattleMap_StartPointsBox(proc);
         Proc_Goto(proc, 5);
     }
     else
@@ -1318,14 +1318,14 @@ void sub_804A44C(struct SioBattleMapProc * proc)
             unit->state &= ~US_BIT9;
         }
 
-        sub_8049350(5, 0, gUnk_Sio_16.unk_06, gUnk_Sio_16.unk_07);
+        LinkArenaBattleMap_SendCommand(5, 0, gUnk_Sio_16.unk_06, gUnk_Sio_16.unk_07);
     }
 
     return;
 }
 
 //! FE8U = 0x0804A51C
-void sub_804A51C(struct SioBattleMapProc * proc)
+void LABattleMap_StartCombatantWarpFx(struct SioBattleMapProc * proc)
 {
     struct Unit * unitA = GetUnit(gUnk_42[gUnk_Sio_16.unk_04]);
     struct Unit * unitB = GetUnit(gUnk_42[gUnk_Sio_16.unk_05]);
@@ -1347,7 +1347,7 @@ extern u8 gUnk_45[];
 extern u8 gUnknown_080D9FB7[];
 
 //! FE8U = 0x0804A5A4
-void sub_804A5A4(void)
+void LABattleMap_PrepareCombatantSprites(void)
 {
     struct Unit * unitB;
     struct Unit * unitA = GetUnit(gUnk_42[gUnk_Sio_16.unk_04]);
@@ -1373,7 +1373,7 @@ void sub_804A5A4(void)
         unitA->xPos = 7;
     }
 
-    sub_80492D8();
+    LinkArenaBattleMap_RefreshMapAndSprites();
 
     return;
 }
@@ -1381,7 +1381,7 @@ void sub_804A5A4(void)
 extern struct ProcCmd gSioBat_0[];
 
 //! FE8U = 0x0804A614
-void sub_804A614(ProcPtr proc)
+void LABattleMap_StartCombat(ProcPtr proc)
 {
     struct Unit * unitA;
     struct Unit * unitB;
@@ -1411,7 +1411,7 @@ void sub_804A614(ProcPtr proc)
 }
 
 //! FE8U = 0x0804A6A4
-void sub_804A6A4(ProcPtr proc)
+void LABattleMap_ApplyCombatResults(ProcPtr proc)
 {
     u8 unitIdA = gUnk_42[gUnk_Sio_16.unk_04];
     u8 unitIdB = gUnk_42[gUnk_Sio_16.unk_05];
@@ -1429,8 +1429,8 @@ void sub_804A6A4(ProcPtr proc)
     gUnk_Sio_16.unk_2c[unitIdB >> 6].unitId = unitIdB;
     unitB->exp = 0;
 
-    sub_804D40C(unitA);
-    sub_804D40C(unitB);
+    SetUnitAllItemsUsesToMax(unitA);
+    SetUnitAllItemsUsesToMax(unitB);
 
     SetUnitStatus(unitA, 0);
     SetUnitStatus(unitB, 0);
@@ -1443,7 +1443,7 @@ void sub_804A6A4(ProcPtr proc)
         unitA->state &= ~US_HIDDEN;
     }
 
-    sub_80492D8();
+    LinkArenaBattleMap_RefreshMapAndSprites();
     BG_SetPosition(2, 0, 0);
 
     if ((GetUnitCurrentHp(unitA) == gBattleActor.hpInitial) && (GetUnitCurrentHp(unitB) == gBattleTarget.hpInitial))
@@ -1461,7 +1461,7 @@ void sub_804A6A4(ProcPtr proc)
 }
 
 //! FE8U = 0x0804A7C0
-void sub_804A7C0(ProcPtr proc)
+void LABattleMap_WarpCombatantsToRoster(ProcPtr proc)
 {
     u8 unitIdA = gUnk_42[gUnk_Sio_16.unk_04];
     u8 unitIdB = gUnk_42[gUnk_Sio_16.unk_05];
@@ -1471,8 +1471,8 @@ void sub_804A7C0(ProcPtr proc)
 
     s8 flag = 0;
 
-    int indexA = sub_80493A8(unitIdA);
-    int indexB = sub_80493A8(unitIdB);
+    int indexA = LinkArenaBattleMap_FindUnitSlot(unitIdA);
+    int indexB = LinkArenaBattleMap_FindUnitSlot(unitIdB);
 
     gUnk_46[1] = NULL;
     gUnk_46[0] = NULL;
@@ -1518,7 +1518,7 @@ void sub_804A7C0(ProcPtr proc)
             unitB, gUnk_46[1], gSioPoints_2[indexB].x, gSioPoints_2[indexB].y, 2, flag, proc);
     }
 
-    sub_80492D8();
+    LinkArenaBattleMap_RefreshMapAndSprites();
 
     Proc_Break(proc);
 
@@ -1526,7 +1526,7 @@ void sub_804A7C0(ProcPtr proc)
 }
 
 //! FE8U = 0x0804A914
-void sub_804A914(void)
+void LABattleMap_EliminateTeamsWithoutAttackers(void)
 {
     int i;
 
@@ -1536,7 +1536,7 @@ void sub_804A914(void)
         int countA;
         int countB;
 
-        if (sub_8042194(i) == 0)
+        if (Sio_IsPlayerConnected(i) == 0)
         {
             continue;
         }
@@ -1562,7 +1562,7 @@ void sub_804A914(void)
                 continue;
             }
 
-            if (sub_8049C94(unit) == 1)
+            if (UnitHasUsableWeapon(unit) == 1)
             {
                 countA++;
             }
@@ -1578,7 +1578,7 @@ void sub_804A914(void)
 }
 
 //! FE8U = 0x0804A9A4
-void sub_804A9A4(ProcPtr proc)
+void LABattleMap_RecordEliminationAndAdvance(ProcPtr proc)
 {
     u8 r4_;
 
@@ -1628,7 +1628,7 @@ void sub_804A9A4(ProcPtr proc)
 
         gUnk_Sio_16.unk_0F[0] = r4_;
 
-        sub_80492E8(0xff);
+        LinkArenaBattleMap_AdvancePhase(0xff);
 
         Proc_Break(proc);
 
@@ -1636,20 +1636,20 @@ void sub_804A9A4(ProcPtr proc)
     }
 
 _end:
-    sub_80492E8(gPlaySt.faction);
+    LinkArenaBattleMap_AdvancePhase(gPlaySt.faction);
     Proc_Break(proc);
 
     return;
 }
 
 //! FE8U = 0x0804AA88
-void sub_804AA88(void)
+void LABattleMap_RefreshAfterCombat(void)
 {
     EndAllMus();
     EndAllMus();
 
-    sub_8049594();
-    sub_80495F4();
+    LinkArenaBattleMap_RebuildUnitMap();
+    LinkArenaBattleMap_RefreshUnitSlots();
 
     RefreshUnitSprites();
 
@@ -1657,7 +1657,7 @@ void sub_804AA88(void)
 }
 
 //! FE8U = 0x0804AAA4
-void sub_804AAA4(void)
+void LABattleMap_PollSurrenderInput(void)
 {
     if ((gKeyStatusPtr->newKeys & B_BUTTON) != 0)
     {
@@ -1671,7 +1671,7 @@ void sub_804AAA4(void)
 }
 
 //! FE8U = 0x0804AADC
-bool sub_804AADC(void * data)
+bool LABattleMap_IsAttackOrSurrenderMsg(void * data)
 {
     u8 * cast = data;
 
@@ -1699,18 +1699,18 @@ CONST_DATA struct PopupInstruction gSioBattlemap_5[] = {
 };
 
 //! FE8U = 0x0804AAFC
-void sub_804AAFC(struct SioProc85AA4CC * proc)
+void LABattleMap_ReceiveAttackDeclaration(struct SioProc85AA4CC * proc)
 {
     u8 buf[4];
 
-    u16 got = SioReceiveData(gUnk_45, buf, sub_804AADC);
+    u16 got = SioReceiveData(gUnk_45, buf, LABattleMap_IsAttackOrSurrenderMsg);
 
     if (got != 0)
     {
         switch (gUnk_45[0])
         {
             case 1:
-                sub_80493D0(gUnk_45[1], 0, &gUnk_Sio_16.unk_04, &proc->unk_2c, &proc->unk_30);
+                LinkArenaBattleMap_StartUnitMoveOut(gUnk_45[1], 0, &gUnk_Sio_16.unk_04, &proc->unk_2c, &proc->unk_30);
                 Proc_Goto(proc, 1);
 
                 break;
@@ -1734,13 +1734,13 @@ void sub_804AAFC(struct SioProc85AA4CC * proc)
         }
     }
 
-    sub_804AAA4();
+    LABattleMap_PollSurrenderInput();
 
     return;
 }
 
 //! FE8U = 0x0804ABB4
-bool sub_804ABB4(void * data)
+bool LABattleMap_IsSelectOrCancelMsg(void * data)
 {
     u8 * cast = data;
 
@@ -1755,12 +1755,12 @@ bool sub_804ABB4(void * data)
 }
 
 //! FE8U = 0x0804ABCC
-void sub_804ABCC(struct SioProc85AA4CC * proc)
+void LABattleMap_ReceiveTargetSelection(struct SioProc85AA4CC * proc)
 {
     struct Unit * unit;
     u8 buf[4];
 
-    u16 got = SioReceiveData(gUnk_45, buf, sub_804ABB4);
+    u16 got = SioReceiveData(gUnk_45, buf, LABattleMap_IsSelectOrCancelMsg);
 
     if (got != 0)
     {
@@ -1788,19 +1788,19 @@ void sub_804ABCC(struct SioProc85AA4CC * proc)
                 break;
 
             case 3:
-                sub_80493D0(gUnk_45[1], 1, &gUnk_Sio_16.unk_05, &proc->unk_34, &proc->unk_38);
+                LinkArenaBattleMap_StartUnitMoveOut(gUnk_45[1], 1, &gUnk_Sio_16.unk_05, &proc->unk_34, &proc->unk_38);
                 Proc_Goto(proc, 2);
                 break;
         }
     }
 
-    sub_804AAA4();
+    LABattleMap_PollSurrenderInput();
 
     return;
 }
 
 //! FE8U = 0x0804AC68
-void sub_804AC68(struct Unit * unit, int idx, int * xOut, int * yOut)
+void LABattleMap_StartMuAndSavePosition(struct Unit * unit, int idx, int * xOut, int * yOut)
 {
     gUnk_46[idx] = StartMu(unit);
 
@@ -1813,7 +1813,7 @@ void sub_804AC68(struct Unit * unit, int idx, int * xOut, int * yOut)
 }
 
 //! FE8U = 0x0804ACAC
-bool sub_804ACAC(void * data)
+bool LABattleMap_IsForecastMsg(void * data)
 {
     u8 * cast = data;
 
@@ -1828,13 +1828,13 @@ bool sub_804ACAC(void * data)
 }
 
 //! FE8U = 0x0804ACC4
-void sub_804ACC4(struct SioProc85AA4CC * proc)
+void LABattleMap_ReceiveForecastResponse(struct SioProc85AA4CC * proc)
 {
     struct Unit * unitA;
     struct Unit * unitB;
     u8 buf[4];
 
-    u16 got = SioReceiveData(gUnk_45, buf, sub_804ACAC);
+    u16 got = SioReceiveData(gUnk_45, buf, LABattleMap_IsForecastMsg);
 
     if (got != 0)
     {
@@ -1866,12 +1866,12 @@ void sub_804ACC4(struct SioProc85AA4CC * proc)
 
                 if ((unitA->state & US_BIT9) != 0)
                 {
-                    sub_804AC68(unitA, 0, &proc->unk_2c, &proc->unk_30);
+                    LABattleMap_StartMuAndSavePosition(unitA, 0, &proc->unk_2c, &proc->unk_30);
                 }
 
                 if ((unitB->state & US_BIT9) != 0)
                 {
-                    sub_804AC68(unitB, 1, &proc->unk_34, &proc->unk_38);
+                    LABattleMap_StartMuAndSavePosition(unitB, 1, &proc->unk_34, &proc->unk_38);
                 }
 
                 Proc_Break(proc);
@@ -1880,13 +1880,13 @@ void sub_804ACC4(struct SioProc85AA4CC * proc)
         }
     }
 
-    sub_804AAA4();
+    LABattleMap_PollSurrenderInput();
 
     return;
 }
 
 //! FE8U = 0x0804ADA0
-int sub_804ADA0(struct Unit * unit)
+int GetUnitBestWeaponPower(struct Unit * unit)
 {
     int i;
 
@@ -1925,7 +1925,7 @@ int sub_804ADA0(struct Unit * unit)
 }
 
 //! FE8U = 0x0804AE08
-int sub_804AE08(int playerId)
+int LABattleMap_GetTeamCombatScore(int playerId)
 {
     int i;
 
@@ -1948,7 +1948,7 @@ int sub_804AE08(int playerId)
 
         count++;
 
-        score += sub_804ADA0(unit);
+        score += GetUnitBestWeaponPower(unit);
         score += GetUnitCurrentHp(unit);
     }
 
@@ -1960,7 +1960,7 @@ int sub_804AE08(int playerId)
 }
 
 //! FE8U = 0x0804AE7C
-bool sub_804AE7C(struct SioBattleMapProc * proc, int b)
+bool LABattleMap_PollSurrenderHeld(struct SioBattleMapProc * proc, int b)
 {
     if ((gKeyStatusPtr->heldKeys & START_BUTTON) != 0)
     {
@@ -1981,13 +1981,13 @@ bool sub_804AE7C(struct SioBattleMapProc * proc, int b)
 }
 
 //! FE8U = 0x0804AEC4
-void sub_804AEC4(ProcPtr proc)
+void LABattleMap_AiPickWeakestTeam(ProcPtr proc)
 {
     int i;
 
     int bestScore = -1;
 
-    if (sub_804AE7C(proc, 0) == true)
+    if (LABattleMap_PollSurrenderHeld(proc, 0) == true)
     {
         return;
     }
@@ -1996,7 +1996,7 @@ void sub_804AEC4(ProcPtr proc)
     {
         u32 score;
 
-        if (!sub_8042194(i))
+        if (!Sio_IsPlayerConnected(i))
         {
             continue;
         }
@@ -2011,7 +2011,7 @@ void sub_804AEC4(ProcPtr proc)
             continue;
         }
 
-        score = sub_804AE08(i * 0x40 + 1);
+        score = LABattleMap_GetTeamCombatScore(i * 0x40 + 1);
 
         if (bestScore <= score)
         {
@@ -2028,7 +2028,7 @@ void sub_804AEC4(ProcPtr proc)
 }
 
 //! FE8U = 0x0804AF2C
-int ITEMRANGEDONE_sub_804AF2C(int unused, struct Unit * unit)
+int ITEMRANGEDONE_Stub_0(int unused, struct Unit * unit)
 {
     u16 weapon = GetUnitEquippedWeapon(unit);
 
@@ -2051,7 +2051,7 @@ int ITEMRANGEDONE_sub_804AF2C(int unused, struct Unit * unit)
 }
 
 //! FE8U = 0x0804AF5C
-void sub_804AF5C(struct SioBattleMapProc * proc)
+void LABattleMap_AiPickBestAttack(struct SioBattleMapProc * proc)
 {
     struct AiCombatSimulationSt sim;
     int i;
@@ -2063,7 +2063,7 @@ void sub_804AF5C(struct SioBattleMapProc * proc)
     u8 selectedUnitId = 0;
     u8 targetUnitId = 0;
 
-    if (sub_804AE7C(proc, 1) == true)
+    if (LABattleMap_PollSurrenderHeld(proc, 1) == true)
     {
         return;
     }
@@ -2166,7 +2166,7 @@ void sub_804AF5C(struct SioBattleMapProc * proc)
 
                         if (flags == 3)
                         {
-                            r7[2] = ITEMRANGEDONE_sub_804AF2C(3, unit);
+                            r7[2] = ITEMRANGEDONE_Stub_0(3, unit);
                         }
                         else
                         {
@@ -2191,7 +2191,7 @@ void sub_804AF5C(struct SioBattleMapProc * proc)
 
                         if (flags == 3)
                         {
-                            r7[2] = ITEMRANGEDONE_sub_804AF2C(3, unit);
+                            r7[2] = ITEMRANGEDONE_Stub_0(3, unit);
                         }
                         else
                         {
@@ -2204,7 +2204,7 @@ void sub_804AF5C(struct SioBattleMapProc * proc)
         }
     }
 
-    sub_80493D0(selectedUnitId, 0, &gUnk_Sio_16.unk_04, &proc->unk_2c, &proc->unk_30);
+    LinkArenaBattleMap_StartUnitMoveOut(selectedUnitId, 0, &gUnk_Sio_16.unk_04, &proc->unk_2c, &proc->unk_30);
     gUnk_45[1] = targetUnitId;
 
     Proc_Break(proc);
@@ -2213,7 +2213,7 @@ void sub_804AF5C(struct SioBattleMapProc * proc)
 }
 
 //! FE8U = 0x0804B190
-void sub_804B190(ProcPtr proc)
+void LABattleMap_Ai_StartTargetCursor(ProcPtr proc)
 {
     struct Unit * unit = GetUnit(gUnk_45[1]);
 
@@ -2223,33 +2223,33 @@ void sub_804B190(ProcPtr proc)
 }
 
 //! FE8U = 0x0804B1C0
-void sub_804B1C0(struct SioProc85AA4CC * proc)
+void LABattleMap_Ai_PrepareCombatants(struct SioProc85AA4CC * proc)
 {
     struct Unit * unitA;
     struct Unit * unitB;
 
-    sub_80493D0(gUnk_45[1], 1, &gUnk_Sio_16.unk_05, &proc->unk_34, &proc->unk_38);
+    LinkArenaBattleMap_StartUnitMoveOut(gUnk_45[1], 1, &gUnk_Sio_16.unk_05, &proc->unk_34, &proc->unk_38);
 
     unitA = GetUnit(gUnk_42[gUnk_Sio_16.unk_04]);
     unitB = GetUnit(gUnk_42[gUnk_Sio_16.unk_05]);
 
     if ((unitA->state & US_BIT9) != 0)
     {
-        sub_804AC68(unitA, 0, &proc->unk_2c, &proc->unk_30);
+        LABattleMap_StartMuAndSavePosition(unitA, 0, &proc->unk_2c, &proc->unk_30);
     }
 
     if ((unitB->state & US_BIT9) != 0)
     {
-        sub_804AC68(unitB, 1, &proc->unk_34, &proc->unk_38);
+        LABattleMap_StartMuAndSavePosition(unitB, 1, &proc->unk_34, &proc->unk_38);
     }
 
     return;
 }
 
 //! FE8U = 0x0804B250
-void sub_804B250(ProcPtr proc)
+void LABattleMap_Ai_WaitCombatantMu(ProcPtr proc)
 {
-    if (sub_804AE7C(proc, 2) == 1)
+    if (LABattleMap_PollSurrenderHeld(proc, 2) == 1)
     {
         return;
     }
@@ -2290,7 +2290,7 @@ void LinkArenaFogSprite_Loop(void)
 
     for (i = 0; i < 4; i++)
     {
-        if (!sub_8042194(gSioPoints_0[gSioSt->selfId][i]))
+        if (!Sio_IsPlayerConnected(gSioPoints_0[gSioSt->selfId][i]))
         {
             continue;
         }
@@ -2353,7 +2353,7 @@ void EndLinkArenaFogPlaceholders(void)
 }
 
 //! FE8U = 0x0804B3B0
-void sub_804B3B0(ProcPtr proc)
+void LABattleMap_StartStatScreen(ProcPtr proc)
 {
     SetStatScreenConfig(
         STATSCREEN_CONFIG_NONDEAD | STATSCREEN_CONFIG_NONBENCHED | STATSCREEN_CONFIG_NONUNK9 |
@@ -2363,7 +2363,7 @@ void sub_804B3B0(ProcPtr proc)
 }
 
 //! FE8U = 0x0804B3D0
-void sub_804B3D0(ProcPtr proc)
+void LABattleMap_HandleSurrenderPrompt(ProcPtr proc)
 {
     if (gUnk_Sio_16.unk_08 == 0)
     {
@@ -2372,13 +2372,13 @@ void sub_804B3D0(ProcPtr proc)
     }
 
     EndAllMus();
-    sub_8049350(6, gPlaySt.faction, 0, 0);
+    LinkArenaBattleMap_SendCommand(6, gPlaySt.faction, 0, 0);
 
     return;
 }
 
 //! FE8U = 0x0804B408
-void sub_804B408(ProcPtr proc)
+void LABattleMap_HandleNoDamagePrompt(ProcPtr proc)
 {
     if (gUnk_Sio_16.unk_08 == 0)
     {
@@ -2388,13 +2388,13 @@ void sub_804B408(ProcPtr proc)
     }
 
     EndAllMus();
-    sub_8049350(7, gPlaySt.faction, 0, 0);
+    LinkArenaBattleMap_SendCommand(7, gPlaySt.faction, 0, 0);
 
     return;
 }
 
 //! FE8U = 0x0804B43C
-void sub_804B43C(struct SioBattleMapProc * proc)
+void LABattleMap_Ai_HandleSurrender(struct SioBattleMapProc * proc)
 {
     if (gUnk_Sio_16.unk_08 == 0)
     {
@@ -2407,7 +2407,7 @@ void sub_804B43C(struct SioBattleMapProc * proc)
 
     gLinkArenaSt.unk_0B = 1;
 
-    sub_80492E8(0xff);
+    LinkArenaBattleMap_AdvancePhase(0xff);
 
     Proc_Goto(proc, 5);
 
@@ -2415,7 +2415,7 @@ void sub_804B43C(struct SioBattleMapProc * proc)
 }
 
 //! FE8U = 0x0804B480
-void sub_804B480(struct SioBattleMapProc * proc)
+void LABattleMap_RecordSurrenderRanking(struct SioBattleMapProc * proc)
 {
     int i;
     int r6 = 0;
@@ -2423,7 +2423,7 @@ void sub_804B480(struct SioBattleMapProc * proc)
     if (gLinkArenaSt.unk_00 == 1)
     {
         gLinkArenaSt.unk_0B = 1;
-        sub_80492E8(0xff);
+        LinkArenaBattleMap_AdvancePhase(0xff);
         Proc_Goto(proc, 8);
         return;
     }
@@ -2445,25 +2445,25 @@ void sub_804B480(struct SioBattleMapProc * proc)
 
         gUnk_Sio_16.unk_0F[0] = r6;
 
-        sub_80492E8(0xff);
+        LinkArenaBattleMap_AdvancePhase(0xff);
         Proc_Goto(proc, 8);
 
         return;
     }
 
-    sub_80492E8(gPlaySt.faction);
+    LinkArenaBattleMap_AdvancePhase(gPlaySt.faction);
     Proc_Goto(proc, 8);
 
     return;
 }
 
 //! FE8U = 0x0804B518
-void sub_804B518(ProcPtr proc)
+void LABattleMap_SetQuitEndState(ProcPtr proc)
 {
     if (gLinkArenaSt.unk_00 == 1)
     {
         gLinkArenaSt.unk_0B = 1;
-        sub_80492E8(0xff);
+        LinkArenaBattleMap_AdvancePhase(0xff);
 
         Proc_Goto(proc, 8);
 
@@ -2471,7 +2471,7 @@ void sub_804B518(ProcPtr proc)
     }
 
     gLinkArenaSt.unk_0B = 2;
-    sub_80492E8(0xff);
+    LinkArenaBattleMap_AdvancePhase(0xff);
 
     Proc_Goto(proc, 8);
 
@@ -2479,7 +2479,7 @@ void sub_804B518(ProcPtr proc)
 }
 
 //! FE8U = 0x0804B554
-void sub_804B554(struct SioBattleMapProc * proc)
+void LABattleMap_Remote_RecordSurrenderRanking(struct SioBattleMapProc * proc)
 {
     int i;
     int r6 = 0;
@@ -2501,23 +2501,23 @@ void sub_804B554(struct SioBattleMapProc * proc)
 
         gUnk_Sio_16.unk_0F[0] = r6;
 
-        sub_80492E8(0xff);
+        LinkArenaBattleMap_AdvancePhase(0xff);
         Proc_Goto(proc, 5);
 
         return;
     }
 
-    sub_80492E8(gPlaySt.faction);
+    LinkArenaBattleMap_AdvancePhase(gPlaySt.faction);
     Proc_Goto(proc, 5);
 
     return;
 }
 
 //! FE8U = 0x0804B5E0
-void sub_804B5E0(ProcPtr proc)
+void LABattleMap_Remote_SetQuitEndState(ProcPtr proc)
 {
     gLinkArenaSt.unk_0B = 2;
-    sub_80492E8(0xff);
+    LinkArenaBattleMap_AdvancePhase(0xff);
 
     Proc_Goto(proc, 5);
 
@@ -2597,8 +2597,8 @@ void LAUnitDeaths_EndMu(struct SioBattleMapProc * proc)
 //! FE8U = 0x0804B6B8
 void LAUnitDeaths_OnEnd(void)
 {
-    sub_8049594();
-    sub_80495F4();
+    LinkArenaBattleMap_RebuildUnitMap();
+    LinkArenaBattleMap_RefreshUnitSlots();
 
     RefreshUnitSprites();
 
@@ -2687,7 +2687,7 @@ void LABattleMap_StartNoDamagePrompt(void)
 }
 
 //! FE8U = 0x0804B71C
-void sub_804B71C(struct SioBattleMapProc * proc)
+void LABattleMap_StartBonusPointsHelp(struct SioBattleMapProc * proc)
 {
     int i;
 
@@ -2696,7 +2696,7 @@ void sub_804B71C(struct SioBattleMapProc * proc)
 
     for (i = 0; i < 4; i++)
     {
-        if (!sub_8042194(i))
+        if (!Sio_IsPlayerConnected(i))
         {
             continue;
         }
@@ -2715,7 +2715,7 @@ void sub_804B71C(struct SioBattleMapProc * proc)
 }
 
 //! FE8U = 0x0804B76C
-void sub_804B76C(struct SioBattleMapProc * proc)
+void LABattleMap_AwardBonusPoints(struct SioBattleMapProc * proc)
 {
     struct Unit * unit;
 
@@ -2748,7 +2748,7 @@ void sub_804B76C(struct SioBattleMapProc * proc)
     gUnk_Sio_16.unk_2c[proc->unk_58].newScore = 30;
     gUnk_Sio_16.unk_2c[proc->unk_58].unitId = proc->unk_58 * 0x40 + proc->unk_5c + 1;
 
-    sub_804926C(proc);
+    StartLinkArenaShowPoints(proc);
 
     proc->unk_5c++;
 
@@ -2756,7 +2756,7 @@ void sub_804B76C(struct SioBattleMapProc * proc)
 }
 
 //! FE8U = 0x0804B7E4
-void sub_804B7E4(ProcPtr proc)
+void LABattleMap_SkipIfSingleConsoleMode(ProcPtr proc)
 {
     if (gLinkArenaSt.unk_00 == 1)
     {
@@ -2767,14 +2767,14 @@ void sub_804B7E4(ProcPtr proc)
 }
 
 //! FE8U = 0x0804B800
-void sub_804B800(void)
+void LABattle_BeginAnims(void)
 {
     BG_Fill(gBG2TilemapBuffer, 0);
     BG_EnableSyncByMask(BG2_SYNC_BIT);
 
     RenderBmMap();
 
-    if (sub_8055BB4())
+    if (EkrBattleStarting_IsBattleAnimEnabled())
     {
         SetBanimLinkArenaFlag(1);
         BeginAnimsOnBattleAnimations();
@@ -2792,7 +2792,7 @@ void sub_804B800(void)
 }
 
 //! FE8U = 0x0804B850
-void sub_804B850(struct SioBattleMapProc * proc)
+void LABattle_StartDeathFades(struct SioBattleMapProc * proc)
 {
     struct MuProc * mu;
 
@@ -2825,7 +2825,7 @@ void sub_804B850(struct SioBattleMapProc * proc)
 }
 
 //! FE8U = 0x0804B8D0
-void sub_804B8D0(void)
+void LABattle_MarkDeadCombatants(void)
 {
     struct Unit * unitA = GetUnit(gBattleActor.unit.index);
     struct Unit * unitB = GetUnit(gBattleTarget.unit.index);
@@ -2845,129 +2845,129 @@ void sub_804B8D0(void)
 
 struct ProcCmd CONST_DATA gSioBattlemap_6[] = {
 PROC_LABEL(0),
-    PROC_REPEAT(sub_8049CD4),
-    PROC_CALL(sub_8049F38),
+    PROC_REPEAT(LABattleMap_CheckNoDamageStall_Loop),
+    PROC_CALL(LABattleMap_StartPointsBox),
 PROC_LABEL(1),
-    PROC_REPEAT(sub_8049D0C),
-    PROC_REPEAT(sub_8049D24),
+    PROC_REPEAT(LABattleMap_WaitSioSendDrain_Loop),
+    PROC_REPEAT(LABattleMap_SelectAttacker_Loop),
 PROC_LABEL(4),
     PROC_CALL(EndLinkArenaPointsBox),
     PROC_YIELD,
-    PROC_CALL(sub_804B3B0),
+    PROC_CALL(LABattleMap_StartStatScreen),
     PROC_YIELD,
-    PROC_CALL(sub_80497A0),
+    PROC_CALL(LinkArenaBattleMap_InitDisplay),
     PROC_CALL(RefreshBMapGraphics),
     PROC_GOTO(0),
 PROC_LABEL(2),
     PROC_SLEEP(1),
     PROC_CALL(LABattleMap_StartSurrenderPrompt),
     PROC_YIELD,
-    PROC_CALL(sub_804B3D0),
+    PROC_CALL(LABattleMap_HandleSurrenderPrompt),
     PROC_START_CHILD_BLOCKING(ProcScr_LASurrender_HandleUnitDeaths),
     PROC_YIELD,
-    PROC_CALL(sub_804B480),
+    PROC_CALL(LABattleMap_RecordSurrenderRanking),
 PROC_LABEL(3),
     PROC_SLEEP(1),
     PROC_CALL(LABattleMap_StartNoDamagePrompt),
     PROC_YIELD,
-    PROC_CALL(sub_804B408),
-    PROC_CALL(sub_804B518),
+    PROC_CALL(LABattleMap_HandleNoDamagePrompt),
+    PROC_CALL(LABattleMap_SetQuitEndState),
 PROC_LABEL(5),
-    PROC_REPEAT(sub_8049D0C),
-    PROC_REPEAT(sub_8049F44),
+    PROC_REPEAT(LABattleMap_WaitSioSendDrain_Loop),
+    PROC_REPEAT(LABattleMap_SelectTarget_Loop),
 PROC_LABEL(6),
     PROC_CALL(EndLinkArenaPointsBox),
     PROC_YIELD,
-    PROC_CALL(sub_804B3B0),
+    PROC_CALL(LABattleMap_StartStatScreen),
     PROC_YIELD,
-    PROC_CALL(sub_80497A0),
+    PROC_CALL(LinkArenaBattleMap_InitDisplay),
     PROC_CALL(RefreshBMapGraphics),
-    PROC_CALL(sub_8049F38),
-    PROC_CALL(sub_80498F4),
+    PROC_CALL(LABattleMap_StartPointsBox),
+    PROC_CALL(LinkArenaBattleMap_StartSelectedUnitMu),
     PROC_GOTO(5),
 PROC_LABEL(7),
-    PROC_REPEAT(sub_804A430),
+    PROC_REPEAT(LABattleMap_StartForecast),
     PROC_CALL(EndLinkArenaPointsBox),
-    PROC_CALL(sub_804A44C),
-    PROC_CALL(sub_804A51C),
+    PROC_CALL(LABattleMap_ConfirmTarget),
+    PROC_CALL(LABattleMap_StartCombatantWarpFx),
     PROC_YIELD,
-    PROC_CALL(sub_804A5A4),
-    PROC_REPEAT(sub_804A614),
-    PROC_REPEAT(sub_804A6A4),
-    PROC_CALL(sub_8049238),
+    PROC_CALL(LABattleMap_PrepareCombatantSprites),
+    PROC_REPEAT(LABattleMap_StartCombat),
+    PROC_REPEAT(LABattleMap_ApplyCombatResults),
+    PROC_CALL(StartLinkArenaShowPointsAnimated),
     PROC_YIELD,
     PROC_CALL(EndLinkArenaPointsBox),
-    PROC_REPEAT(sub_804A7C0),
-    PROC_REPEAT(sub_804A9A4),
-    PROC_CALL(sub_804AA88),
+    PROC_REPEAT(LABattleMap_WarpCombatantsToRoster),
+    PROC_REPEAT(LABattleMap_RecordEliminationAndAdvance),
+    PROC_CALL(LABattleMap_RefreshAfterCombat),
 PROC_LABEL(8),
     PROC_END,
 };
 
 struct ProcCmd CONST_DATA gSioBattlemap_7[] = {
 PROC_LABEL(0),
-    PROC_CALL(sub_8049F38),
-    PROC_REPEAT(sub_804AAFC),
+    PROC_CALL(LABattleMap_StartPointsBox),
+    PROC_REPEAT(LABattleMap_ReceiveAttackDeclaration),
 PROC_LABEL(1),
-    PROC_REPEAT(sub_804ABCC),
+    PROC_REPEAT(LABattleMap_ReceiveTargetSelection),
     PROC_GOTO(2),
 PROC_LABEL(3),
     PROC_START_CHILD_BLOCKING(ProcScr_LASurrender_HandleUnitDeaths),
     PROC_YIELD,
     PROC_WHILE_EXISTS(ProcScr_Popup),
-    PROC_CALL(sub_804B554),
+    PROC_CALL(LABattleMap_Remote_RecordSurrenderRanking),
 PROC_LABEL(4),
     PROC_WHILE_EXISTS(ProcScr_Popup),
-    PROC_CALL(sub_804B5E0),
+    PROC_CALL(LABattleMap_Remote_SetQuitEndState),
 PROC_LABEL(2),
-    PROC_REPEAT(sub_804ACC4),
+    PROC_REPEAT(LABattleMap_ReceiveForecastResponse),
     PROC_CALL(EndLinkArenaPointsBox),
-    PROC_CALL(sub_804A51C),
+    PROC_CALL(LABattleMap_StartCombatantWarpFx),
     PROC_YIELD,
-    PROC_CALL(sub_804A5A4),
-    PROC_REPEAT(sub_804A614),
-    PROC_REPEAT(sub_804A6A4),
-    PROC_CALL(sub_8049238),
+    PROC_CALL(LABattleMap_PrepareCombatantSprites),
+    PROC_REPEAT(LABattleMap_StartCombat),
+    PROC_REPEAT(LABattleMap_ApplyCombatResults),
+    PROC_CALL(StartLinkArenaShowPointsAnimated),
     PROC_YIELD,
     PROC_CALL(EndLinkArenaPointsBox),
-    PROC_REPEAT(sub_804A7C0),
-    PROC_REPEAT(sub_804A9A4),
-    PROC_CALL(sub_804AA88),
+    PROC_REPEAT(LABattleMap_WarpCombatantsToRoster),
+    PROC_REPEAT(LABattleMap_RecordEliminationAndAdvance),
+    PROC_CALL(LABattleMap_RefreshAfterCombat),
 PROC_LABEL(5),
     PROC_END,
 };
 
 struct ProcCmd CONST_DATA gSioBattlemap_8[] = {
-    PROC_CALL(sub_8049F38),
+    PROC_CALL(LABattleMap_StartPointsBox),
     PROC_YIELD,
 PROC_LABEL(0),
-    PROC_REPEAT(sub_804AEC4),
+    PROC_REPEAT(LABattleMap_AiPickWeakestTeam),
 PROC_LABEL(1),
-    PROC_REPEAT(sub_804AF5C),
-    PROC_CALL(sub_804B190),
+    PROC_REPEAT(LABattleMap_AiPickBestAttack),
+    PROC_CALL(LABattleMap_Ai_StartTargetCursor),
     PROC_YIELD,
-    PROC_CALL(sub_804B1C0),
+    PROC_CALL(LABattleMap_Ai_PrepareCombatants),
 PROC_LABEL(2),
-    PROC_REPEAT(sub_804B250),
+    PROC_REPEAT(LABattleMap_Ai_WaitCombatantMu),
     PROC_CALL(EndLinkArenaPointsBox),
     PROC_GOTO(4),
 PROC_LABEL(3),
     PROC_SLEEP(1),
     PROC_CALL(LABattleMap_StartSurrenderPrompt),
     PROC_YIELD,
-    PROC_CALL(sub_804B43C),
+    PROC_CALL(LABattleMap_Ai_HandleSurrender),
 PROC_LABEL(4),
-    PROC_CALL(sub_804A51C),
+    PROC_CALL(LABattleMap_StartCombatantWarpFx),
     PROC_YIELD,
-    PROC_CALL(sub_804A5A4),
-    PROC_REPEAT(sub_804A614),
-    PROC_REPEAT(sub_804A6A4),
-    PROC_CALL(sub_8049238),
+    PROC_CALL(LABattleMap_PrepareCombatantSprites),
+    PROC_REPEAT(LABattleMap_StartCombat),
+    PROC_REPEAT(LABattleMap_ApplyCombatResults),
+    PROC_CALL(StartLinkArenaShowPointsAnimated),
     PROC_YIELD,
     PROC_CALL(EndLinkArenaPointsBox),
-    PROC_REPEAT(sub_804A7C0),
-    PROC_REPEAT(sub_804A9A4),
-    PROC_CALL(sub_804AA88),
+    PROC_REPEAT(LABattleMap_WarpCombatantsToRoster),
+    PROC_REPEAT(LABattleMap_RecordEliminationAndAdvance),
+    PROC_CALL(LABattleMap_RefreshAfterCombat),
 PROC_LABEL(5),
     PROC_END,
 };

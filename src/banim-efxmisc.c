@@ -1562,7 +1562,7 @@ void EfxChillAnime_Loop(struct ProcEfxOBJ * proc)
     }
 }
 
-void nullsub_17(struct Anim *anim)
+void Nop_BanimEfxmisc_0(struct Anim *anim)
 {
     return;
 }

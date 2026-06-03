@@ -85,7 +85,7 @@ void PrintDebugStringToBG(u16 *dest, const char *str)
     BG_EnableSync(gFontgrp_0.bg);
 }
 
-void sub_800384C(u16 *dest, const char *fmt, ...)
+void PrintDebugStringFmtToBG(u16 *dest, const char *fmt, ...)
 {
     va_list args;
     char buffer[256];
@@ -97,7 +97,7 @@ void sub_800384C(u16 *dest, const char *fmt, ...)
     PrintDebugStringToBG(dest, buffer);
 }
 
-void sub_8003870(void)
+void ClearDBG(void)
 {
     int i;
 
@@ -111,7 +111,7 @@ void sub_8003870(void)
     BG_EnableSyncByMask(1 << 2);
 }
 
-void sub_80038B4(const char *fmt, ...)
+void PrintEmptyStringToDBG(const char *fmt, ...)
 {
     char buffer[256];
 
@@ -157,7 +157,7 @@ void StoreNumberStringOrDashesToSmallBuffer(int n)
     }
 }
 
-void sub_800394C(int n, int length)
+void PrintNumberToDBG(int n, int length)
 {
     StoreNumberStringToSmallBuffer(n);
     PrintStringToDBG(gNumberStr + 8 - length);
@@ -178,7 +178,7 @@ void StoreNumberHexStringToSmallBuffer(int n)
     }
 }
 
-void sub_80039B4(int n, int length)
+void PrintHexNumberToDBG(int n, int length)
 {
     StoreNumberHexStringToSmallBuffer(n);
     PrintStringToDBG(gNumberStr + 8 - length);
@@ -240,7 +240,7 @@ void FlushDBGToBG2(void)
     BG_EnableSyncByMask(1 << 2);
 }
 
-int sub_8003ABC(u16 a, u16 b)
+int UpdateDBGScroll(u16 a, u16 b)
 {
     int r1;
     int r2;
@@ -302,19 +302,19 @@ void PrintDebugStringAsOBJ(int a, int b, const char *str)
     }
 }
 
-void sub_8003BFC(int a, int b, int c, int length)
+void PrintNumberAsOBJ(int a, int b, int c, int length)
 {
     StoreNumberStringToSmallBuffer(c);
     PrintDebugStringAsOBJ(a, b, gNumberStr + 8 - length);
 }
 
-void sub_8003C20(int a, int b, int c, int length)
+void PrintHexNumberAsOBJ(int a, int b, int c, int length)
 {
     StoreNumberHexStringToSmallBuffer(c);
     PrintDebugStringAsOBJ(a, b, gNumberStr + 8 - length);
 }
 
-void sub_8003C44(s16 a, s16 b, const char *fmt, ...)
+void PrintDebugStringFmtAsOBJ(s16 a, s16 b, const char *fmt, ...)
 {
     va_list args;
     char buffer[256];

@@ -112,7 +112,7 @@ extern u16 gUnk_24[];
 extern u16 gUnk_25[];
 
 // forward declarations
-void sub_80BEF20(struct GMapPIProc *, int);
+void RedrawGMapPIForNode(struct GMapPIProc *, int);
 
 extern u16 gWorldmapMinimap_8[];
 extern u16 gWorldmapMinimap_9[];
@@ -120,7 +120,7 @@ extern u16 gWorldmapMinimap_10[];
 extern u16 gWorldmapMinimap_11[];
 
 //! FE8U = 0x080BE56C
-void sub_80BE56C(struct GMapPIProc * proc)
+void InitGMapPI(struct GMapPIProc * proc)
 {
     proc->unk_57 = 0xff;
     InitTextDb(proc->text, 6);
@@ -130,7 +130,7 @@ void sub_80BE56C(struct GMapPIProc * proc)
 }
 
 //! FE8U = 0x080BE594
-int sub_80BE594(int a, int b)
+int GetGMapPIQuadrantFromOffsets(int a, int b)
 {
     if (a < 0)
     {
@@ -152,7 +152,7 @@ int sub_80BE594(int a, int b)
 }
 
 //! FE8U = 0x080BE5B4
-void sub_80BE5B4(int faction, int palId)
+void ApplyGMapPIMinimapUnitPalette(int faction, int palId)
 {
     u16 * src;
 
@@ -181,7 +181,7 @@ void sub_80BE5B4(int faction, int palId)
 }
 
 //! FE8U = 0x080BE5F8
-void sub_80BE5F8(u16 * src, struct Unit * unit)
+void PutGMapPILevelDigits(u16 * src, struct Unit * unit)
 {
     int level;
 
@@ -201,11 +201,11 @@ void sub_80BE5F8(u16 * src, struct Unit * unit)
 }
 
 //! FE8U = 0x080BE638
-void sub_80BE638(struct GMapPIProc * proc, struct Unit * unit)
+void UpdateGMapPILevelDigits(struct GMapPIProc * proc, struct Unit * unit)
 {
     if ((proc->unk_44 & 0x3f) == 0)
     {
-        sub_80BE5F8(proc->unk_40, unit);
+        PutGMapPILevelDigits(proc->unk_40, unit);
         BG_EnableSyncByMask(BG0_SYNC_BIT);
     }
 
@@ -213,7 +213,7 @@ void sub_80BE638(struct GMapPIProc * proc, struct Unit * unit)
 }
 
 //! FE8U = 0x080BE65C
-void sub_80BE65C(int index, int height, int kind)
+void DrawGMapPIPanelAtHeight(int index, int height, int kind)
 {
     int width;
     int height2;
@@ -282,7 +282,7 @@ void sub_80BE65C(int index, int height, int kind)
 }
 
 //! FE8U = 0x080BE82C
-void sub_80BE82C(int index)
+void ClearGMapPIPanel(int index)
 {
     int a = gWorldmapPlayerInterface_0[index].unk_02;
     int b = gWorldmapPlayerInterface_0[index].unk_03;
@@ -366,7 +366,7 @@ void PutGMapPIClassName(struct GMapPIProc * proc, int jid)
 }
 
 //! FE8U = 0x080BE9D8
-void sub_80BE9D8(struct GMapPIProc * param_1, int param_2)
+void PutGMapPIShopIcons(struct GMapPIProc * param_1, int param_2)
 {
     if ((gGMData.nodes[param_2].state & 2) == 0)
     {
@@ -390,7 +390,7 @@ void sub_80BE9D8(struct GMapPIProc * param_1, int param_2)
 }
 
 //! FE8U = 0x080BEA78
-void sub_80BEA78(struct GMapPIProc * proc)
+void PutGMapPILevelNumber(struct GMapPIProc * proc)
 {
     int level;
 
@@ -434,7 +434,7 @@ void sub_80BEA78(struct GMapPIProc * proc)
 }
 
 //! FE8U = 0x080BEB2C
-void sub_80BEB2C(struct GMapPIProc * proc)
+void DrawGMapPIPanelContents(struct GMapPIProc * proc)
 {
     switch (proc->interfaceKind)
     {
@@ -454,7 +454,7 @@ void sub_80BEB2C(struct GMapPIProc * proc)
 
             PutText(&proc->text[1], gUnk_18 + 0x64);
 
-            sub_80BEA78(proc);
+            PutGMapPILevelNumber(proc);
             PutGMapPIFace(proc);
 
             break;
@@ -466,15 +466,15 @@ void sub_80BEB2C(struct GMapPIProc * proc)
 }
 
 //! FE8U = 0x080BEBD4
-void sub_80BEBD4(struct GMapPIProc * proc)
+void GMapPI_ShowInit(struct GMapPIProc * proc)
 {
     proc->showHideCnt = 0;
     proc->unk_55 = 1;
 
-    proc->unk_50 = sub_80C089C(0, 0, 0, 0);
-    proc->unk_57 = sub_80BE594(gWorldmapPlayerInterface_0[proc->unk_50].unk_02, gWorldmapPlayerInterface_0[proc->unk_50].unk_03);
+    proc->unk_50 = GetWMCursorScreenQuadrant(0, 0, 0, 0);
+    proc->unk_57 = GetGMapPIQuadrantFromOffsets(gWorldmapPlayerInterface_0[proc->unk_50].unk_02, gWorldmapPlayerInterface_0[proc->unk_50].unk_03);
 
-    sub_80BEB2C(proc);
+    DrawGMapPIPanelContents(proc);
 
     *&proc->xNew = gGMData.ix >> 8;
     *&proc->yNew = gGMData.iy >> 8;
@@ -506,7 +506,7 @@ void GMapPI_ShowLoop(struct GMapPIProc * proc)
             break;
     }
 
-    sub_80BE65C(proc->unk_50, height, proc->interfaceKind);
+    DrawGMapPIPanelAtHeight(proc->unk_50, height, proc->interfaceKind);
 
     proc->showHideCnt++;
 
@@ -522,7 +522,7 @@ void GMapPI_ShowLoop(struct GMapPIProc * proc)
 }
 
 //! FE8U = 0x080BECB8
-void sub_80BECB8(struct GMapPIProc * proc)
+void GMapPI_TrackCursorLoop(struct GMapPIProc * proc)
 {
     int nodeId;
     int height;
@@ -550,10 +550,10 @@ void sub_80BECB8(struct GMapPIProc * proc)
 
     if (proc->nodeId != nodeId)
     {
-        sub_80BE82C(proc->unk_50);
-        sub_80BEF20(proc, nodeId);
+        ClearGMapPIPanel(proc->unk_50);
+        RedrawGMapPIForNode(proc, nodeId);
 
-        proc->unk_50 = sub_80C089C(0, 0, 0, 0);
+        proc->unk_50 = GetWMCursorScreenQuadrant(0, 0, 0, 0);
 
         switch (proc->interfaceKind)
         {
@@ -566,12 +566,12 @@ void sub_80BECB8(struct GMapPIProc * proc)
                 break;
         }
 
-        sub_80BE65C(proc->unk_50, height, proc->interfaceKind);
+        DrawGMapPIPanelAtHeight(proc->unk_50, height, proc->interfaceKind);
 
         proc->nodeId = nodeId;
     }
 
-    index = sub_80C089C(0, 0, 0, 0);
+    index = GetWMCursorScreenQuadrant(0, 0, 0, 0);
 
     if (index != proc->unk_50)
     {
@@ -586,7 +586,7 @@ void sub_80BECB8(struct GMapPIProc * proc)
 }
 
 //! FE8U = 0x080BEDCC
-void sub_80BEDCC(struct GMapPIProc * proc)
+void GMapPI_RequestHide(struct GMapPIProc * proc)
 {
     proc->unk_56 = 1;
     return;
@@ -613,7 +613,7 @@ void GMapPI_HideLoop(struct GMapPIProc * proc)
             break;
     }
 
-    sub_80BE65C(proc->unk_50, height, proc->interfaceKind);
+    DrawGMapPIPanelAtHeight(proc->unk_50, height, proc->interfaceKind);
 
     proc->showHideCnt++;
 
@@ -646,7 +646,7 @@ int GMapPI_GetGMapUnitIndexAndFaction(int nodeId, int * faction)
             continue;
         }
 
-        switch (sub_80BD20C(i))
+        switch (GetGmUnitFaction(i))
         {
             case 0:
             default:
@@ -698,17 +698,17 @@ void InitGMapPIInterfaceKind(struct GMapPIProc * proc, int nodeId)
         proc->interfaceKind = 0;
     }
 
-    sub_80BE5B4(faction, 8);
+    ApplyGMapPIMinimapUnitPalette(faction, 8);
 
     return;
 }
 
 //! FE8U = 0x080BEF20
-void sub_80BEF20(struct GMapPIProc * proc, int nodeId)
+void RedrawGMapPIForNode(struct GMapPIProc * proc, int nodeId)
 {
     InitGMapPIInterfaceKind(proc, nodeId);
 
-    sub_80BEB2C(proc);
+    DrawGMapPIPanelContents(proc);
 
     PutGMapPINodeName(proc, nodeId);
 
@@ -721,13 +721,13 @@ void sub_80BEF20(struct GMapPIProc * proc, int nodeId)
         PutGMapPIClassName(proc, proc->jid);
     }
 
-    sub_80BE9D8(proc, nodeId);
+    PutGMapPIShopIcons(proc, nodeId);
 
     return;
 }
 
 //! FE8U = 0x080BEF6C
-void sub_80BEF6C(struct GMapPIProc * proc)
+void GMapPI_WaitForNodeLoop(struct GMapPIProc * proc)
 {
     int nodeId;
     s16 x;
@@ -740,7 +740,7 @@ void sub_80BEF6C(struct GMapPIProc * proc)
 
     if (nodeId > -1)
     {
-        sub_80BEF20(proc, nodeId);
+        RedrawGMapPIForNode(proc, nodeId);
         Proc_Break(proc);
     }
 
@@ -774,7 +774,7 @@ void GMapPI_Init(struct GMapPIProc * proc)
     if (nodeId > -1)
     {
         proc->nodeId = nodeId;
-        sub_80BEF20(proc, nodeId);
+        RedrawGMapPIForNode(proc, nodeId);
     }
 
     return;
@@ -792,12 +792,12 @@ struct ProcCmd CONST_DATA ProcScr_GMapPlayerInterface[] =
     PROC_CALL(GMapPI_Init),
 
 PROC_LABEL(0),
-    PROC_REPEAT(sub_80BEF6C),
-    PROC_REPEAT(sub_80BEBD4),
+    PROC_REPEAT(GMapPI_WaitForNodeLoop),
+    PROC_REPEAT(GMapPI_ShowInit),
     PROC_REPEAT(GMapPI_ShowLoop),
-    PROC_REPEAT(sub_80BECB8),
+    PROC_REPEAT(GMapPI_TrackCursorLoop),
 
-    PROC_CALL(sub_80BEDCC),
+    PROC_CALL(GMapPI_RequestHide),
     PROC_REPEAT(GMapPI_HideLoop),
 
     PROC_GOTO(0),
@@ -852,15 +852,15 @@ struct ProcCmd CONST_DATA gWorldmapPlayerInterface_1[] =
 // clang-format on
 
 //! FE8U = 0x080BF13C
-ProcPtr sub_80BF13C(ProcPtr parent)
+ProcPtr StartGMapPlayerInterface(ProcPtr parent)
 {
     ResetText();
-    sub_80C09B8();
+    ClearWMPlayerInterfaceTilemapBuffers();
     return Proc_Start(gWorldmapPlayerInterface_1, parent);
 }
 
 //! FE8U = 0x080BF15C
-void sub_80BF15C(void)
+void EndGMapPlayerInterface(void)
 {
     Proc_EndEach(ProcScr_GMapPlayerInterface);
     Proc_EndEach(gWorldmapPlayerInterface_1);

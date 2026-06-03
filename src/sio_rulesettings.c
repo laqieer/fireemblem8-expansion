@@ -36,7 +36,7 @@ void SaveLinkArenaRuleSettings(u8 * buf)
 }
 
 //! FE8U = 0x080476CC
-void sub_80476CC(int idx, int state)
+void SioRuleSettings_DrawRuleOptions(int idx, int state)
 {
     int i;
 
@@ -81,7 +81,7 @@ void SioRuleSettings_Init(struct ProcSioRuleSettings * proc)
     Decompress(Img_TacticianSelObj, OBJ_CHR_ADDR(0x240));
     ApplyPalettes(Pal_TacticianSelObj, 0x13, 4);
 
-    sub_804C3A4(0);
+    Nop_SioUiutils_2(0);
 
     Decompress(gUnkData_15, gGenericBuffer);
     CallARM_FillTileRect(TILEMAP_LOCATED(gBG2TilemapBuffer, 1, 5), gGenericBuffer, TILEREF(0x0, 1));
@@ -89,7 +89,7 @@ void SioRuleSettings_Init(struct ProcSioRuleSettings * proc)
     SetTextFont(&Font_0);
     ResetTextFont();
 
-    sub_8043164();
+    InitSioTexts();
 
     proc->unk_30 = 0;
     proc->unk_2c = StartRuleSettingSpriteDrawInteractive(proc);
@@ -109,7 +109,7 @@ void SioRuleSettings_Init(struct ProcSioRuleSettings * proc)
         Text_DrawString(&gLinkArenaSt.texts[i], GetStringFromIndex(gLinkArenaRuleData[i].labelTextId));
         PutText(&gLinkArenaSt.texts[i], TILEMAP_LOCATED(gBG0TilemapBuffer, 6, 6 + i * 3));
 
-        sub_80476CC(i, buf[i]);
+        SioRuleSettings_DrawRuleOptions(i, buf[i]);
     }
 
     DrawLinkArenaModeIcon(gBG1TilemapBuffer + 0x11E + gLinkArenaRuleData[1].xPos[0], 0);
@@ -117,7 +117,7 @@ void SioRuleSettings_Init(struct ProcSioRuleSettings * proc)
 
     StartLinkArenaTitleBanner(proc->unk_2c, 6, 0);
 
-    sub_804C508();
+    SetLinkArenaUiBlendAndWindowOff();
 
     PutSioText(MSG_745 + proc->unk_30, 1); // "Set whether to hide enemy units."
 
@@ -157,14 +157,14 @@ void SioRuleSettings_Loop_Main(struct ProcSioRuleSettings * proc)
     if ((gKeyStatusPtr->newKeys & DPAD_LEFT) != 0)
     {
         buf[proc->unk_30] = (buf[proc->unk_30] - 1) & 1;
-        sub_80476CC(proc->unk_30, buf[proc->unk_30]);
+        SioRuleSettings_DrawRuleOptions(proc->unk_30, buf[proc->unk_30]);
         change++;
     }
 
     if ((gKeyStatusPtr->newKeys & DPAD_RIGHT) != 0)
     {
         buf[proc->unk_30] = (buf[proc->unk_30] + 1) & 1;
-        sub_80476CC(proc->unk_30, buf[proc->unk_30]);
+        SioRuleSettings_DrawRuleOptions(proc->unk_30, buf[proc->unk_30]);
         change++;
     }
 
@@ -204,7 +204,7 @@ struct ProcCmd CONST_DATA ProcScr_SIO_RuleSettings[] =
 
     PROC_CALL(Set_UnkData_0),
 
-    PROC_CALL(sub_8013F40),
+    PROC_CALL(FadeOutBlackSpeed20Locking),
     PROC_YIELD,
 
     PROC_CALL(EndMuralBackground),

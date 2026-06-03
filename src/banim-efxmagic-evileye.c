@@ -58,7 +58,7 @@ void efxEvilEye_Loop_Main(struct ProcEfx * proc)
     }
     else if (proc->timer == duration + 88)
     {
-        sub_8067984(anim);
+        StartSubSpell_efxEvilEyeBG2(anim);
     }
     else if (proc->timer == duration + 90)
     {
@@ -308,7 +308,7 @@ u16 * CONST_DATA PalArray_EvilEyeBg2[] =
 // clang-format on
 
 //! FE8U = 0x08067984
-void sub_8067984(struct Anim * anim)
+void StartSubSpell_efxEvilEyeBG2(struct Anim * anim)
 {
     // clang-format off
     static const u16 frames[] =

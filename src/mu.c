@@ -1018,12 +1018,12 @@ void PutMuSMS(struct MuProc * proc)
         if (proc->state == MU_STATE_DEATHFADE)
             pos.y |= OAM0_BLEND;
 
-        sub_8026FF4(
+        SetStandingMuFacingFast(
             proc->slot,
             proc->pGfxVRAM
         );
 
-        sub_8027DB4(
+        PutStandingMuSprite(
             proc->sprite_anim->objLayer,
 
             pos.x - 8,

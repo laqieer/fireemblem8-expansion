@@ -16,33 +16,33 @@ struct OamObjectList
     struct OamObject objects[0];
 } __attribute__((packed));
 
-void sub_80C8554(struct Proc * proc);
-void sub_80C8580(struct Proc * proc);
-void sub_80C85B0(struct Proc * proc);
-void sub_80C85FC(struct Proc * proc);
-void sub_80C8608(struct Proc * proc);
-void sub_80C8638(struct Proc * proc);
-void sub_80C8684(struct Proc * proc);
+void OpAnimScrollBg3Loop(struct Proc * proc);
+void OpAnimDarkenBg2Init(struct Proc * proc);
+void OpAnimDarkenBg2In(struct Proc * proc);
+void OpAnimRestoreColorEffectsOnEnd(struct Proc * proc);
+void OpAnimDarkenBg2OutInit(struct Proc * proc);
+void OpAnimDarkenBg2Out(struct Proc * proc);
+void OpAnimRestoreColorEffectsOnEnd2(struct Proc * proc);
 
 struct ProcCmd gUnkData_97[] =
 {
-    PROC_REPEAT(sub_80C8554),
+    PROC_REPEAT(OpAnimScrollBg3Loop),
     PROC_END,
 };
 
 struct ProcCmd gUnkData_98[] =
 {
-    PROC_SET_END_CB(sub_80C85FC),
-    PROC_CALL(sub_80C8580),
-    PROC_REPEAT(sub_80C85B0),
+    PROC_SET_END_CB(OpAnimRestoreColorEffectsOnEnd),
+    PROC_CALL(OpAnimDarkenBg2Init),
+    PROC_REPEAT(OpAnimDarkenBg2In),
     PROC_END,
 };
 
 struct ProcCmd gUnkData_99[] =
 {
-    PROC_SET_END_CB(sub_80C8684),
-    PROC_CALL(sub_80C8608),
-    PROC_REPEAT(sub_80C8638),
+    PROC_SET_END_CB(OpAnimRestoreColorEffectsOnEnd2),
+    PROC_CALL(OpAnimDarkenBg2OutInit),
+    PROC_REPEAT(OpAnimDarkenBg2Out),
     PROC_END,
 };
 

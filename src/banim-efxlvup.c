@@ -504,7 +504,7 @@ void Loop6C1_EfxLvupBGCOL(struct ProcEfxBGCOL * proc)
     int ret;
     ret = EfxAdvanceFrameLut((s16 *)&proc->timer, (s16 *)&proc->frame, proc->frame_config);
     if (ret >= 0)
-        sub_805588C(proc->pal, gPaletteBuffer + 1, ret, 0xF, 8);
+        EfxCyclePalette(proc->pal, gPaletteBuffer + 1, ret, 0xF, 8);
 
     if (++proc->timer2 > proc->terminator)
     {
@@ -644,9 +644,9 @@ void PutEkrLvupStatGainLabelGfx2(int chr, int stat_gain)
 
 CONST_DATA struct ProcCmd ProcScr_eobjLvup[] = {
     PROC_NAME("eobjLvup"),
-    PROC_REPEAT(sub_8074E6C),
-    PROC_REPEAT(sub_8074EDC),
-    PROC_REPEAT(sub_8074F14),
+    PROC_REPEAT(EobjLvup_SpawnArrowAndLabel),
+    PROC_REPEAT(EobjLvup_RedrawGainLabel),
+    PROC_REPEAT(EobjLvup_WaitEndAndClear),
     PROC_END
 };
 
@@ -697,7 +697,7 @@ void BanimDrawStatupAp(int chr, int pal, int x, int y, int index, int gain)
     proc->diff = gain;
 }
 
-void sub_8074E6C(struct ProcEobjLvup * proc)
+void EobjLvup_SpawnArrowAndLabel(struct ProcEobjLvup * proc)
 {
     int oam2;
     if (proc->diff < 0)
@@ -731,7 +731,7 @@ void sub_8074E6C(struct ProcEobjLvup * proc)
     }
 }
 
-void sub_8074EDC(struct ProcEobjLvup * proc)
+void EobjLvup_RedrawGainLabel(struct ProcEobjLvup * proc)
 {
     int oam2;
     if (proc->diff < 0)
@@ -748,7 +748,7 @@ void sub_8074EDC(struct ProcEobjLvup * proc)
     }
 }
 
-void sub_8074F14(struct ProcEobjLvup * proc)
+void EobjLvup_WaitEndAndClear(struct ProcEobjLvup * proc)
 {
     if (gEkrLvupApfxUnexist == true)
     {

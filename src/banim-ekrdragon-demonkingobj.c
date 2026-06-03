@@ -1,24 +1,24 @@
 #include "gbafe.h"
 
 CONST_DATA struct ProcCmd ProcScr_EkrdragonDemonkingobj_0[] = {
-    PROC_CALL(sub_8077D30),
-    PROC_REPEAT(sub_8077D38),
+    PROC_CALL(EkrDemonkingObj_Init),
+    PROC_REPEAT(EkrDemonkingObj_UpdateBgPosLoop),
 };
 
-void sub_8077D30(struct Proc08801800 *proc)
+void EkrDemonkingObj_Init(struct Proc08801800 *proc)
 {
     proc->timer = 0;
 }
 
 /* This function is unusable */
-void sub_8077D38(struct Proc08801800 *proc)
+void EkrDemonkingObj_UpdateBgPosLoop(struct Proc08801800 *proc)
 {
-    sub_8077EAC(-gUnk_76 + gEkrBgPosition, -gUnk_77);
+    EkrDemonkingObj_SetBgPosition(-gUnk_76 + gEkrBgPosition, -gUnk_77);
     EkrDragonTmCpyExt(-gUnk_76 + gEkrBgPosition, -gUnk_77);
     proc->timer++;
 }
 
-void sub_8077D80(s16 *out1, s16 *out2, int val1, int val2)
+void EkrDemonkingObj_GetShakeOffset(s16 *out1, s16 *out2, int val1, int val2)
 {
     s16 *ref = gEkrdragonDemonkingobj_2[val2];
     int ret = (val1 % ref[0]) * 2 + 1;
@@ -26,27 +26,27 @@ void sub_8077D80(s16 *out1, s16 *out2, int val1, int val2)
     *out2 = ref[ret + 1];
 }
 
-void sub_8077DB4(int a, int b)
+void EkrDemonkingObj_SetBgOffset(int a, int b)
 {
     gUnk_76 = a;
     gUnk_77 = b;
 }
 
 CONST_DATA struct ProcCmd ProcScr_EkrdragonDemonkingobj_1[] = {
-    PROC_SET_END_CB(sub_8077E9C),
-    PROC_CALL(sub_8077DC8),
-    PROC_CALL(sub_8077E64),
-    PROC_REPEAT(sub_8077E6C),
+    PROC_SET_END_CB(EkrDemonkingObj_RevealOnEnd),
+    PROC_CALL(EkrDemonkingObj_RevealInit),
+    PROC_CALL(EkrDemonkingObj_RevealTimerInit),
+    PROC_REPEAT(EkrDemonkingObj_RevealLoop),
     PROC_WHILE_EXISTS(ProcScr_EkrdragonDemonkingobj_2),
     PROC_END
 };
 
-void sub_8077DC8(void)
+void EkrDemonkingObj_RevealInit(void)
 {
     Decompress(Tsa_Ekrdk_0, gEkrTsaBuffer);
     EfxTmCpyBG(gEkrTsaBuffer, gBG1TilemapBuffer, 0x20, 0x20, 1, 0x100);
     BG_EnableSyncByMask(BG1_SYNC_BIT);
-    sub_8077EAC(gEkrBgPosition, 0);
+    EkrDemonkingObj_SetBgPosition(gEkrBgPosition, 0);
     SetBlackPal(0x1);
     EnablePaletteSync();
     CpuFill16(0, (void *)(BG_VRAM + 0x2000), 0x1000);
@@ -56,16 +56,16 @@ void sub_8077DC8(void)
     SetBlendTargetB(0, 0, 0, 0, 1);
 }
 
-void sub_8077E64(struct Proc08801810 *proc)
+void EkrDemonkingObj_RevealTimerInit(struct Proc08801810 *proc)
 {
     proc->timer1 = 0;
     proc->timer2 = 0;
 }
 
-void sub_8077E6C(struct Proc08801810 *proc)
+void EkrDemonkingObj_RevealLoop(struct Proc08801810 *proc)
 {
     if (++proc->timer1 == 0x18) {
-        sub_8077EEC(proc->timer2, proc);
+        EkrDemonkingObj_StartDissolveProc(proc->timer2, proc);
         proc->timer1 = 0;
         
         if (++proc->timer2 > 0xF)
@@ -73,13 +73,13 @@ void sub_8077E6C(struct Proc08801810 *proc)
     }
 }
 
-void sub_8077E9C(void)
+void EkrDemonkingObj_RevealOnEnd(void)
 {
     SpellFx_ClearBG1();
     BG_EnableSyncByMask(BG1_SYNC_BIT);
 }
 
-void sub_8077EAC(int x, int y)
+void EkrDemonkingObj_SetBgPosition(int x, int y)
 {
     int type = gEkrDistanceType;
     switch (type) {
@@ -100,29 +100,29 @@ void sub_8077EAC(int x, int y)
 }
 
 CONST_DATA struct ProcCmd ProcScr_EkrdragonDemonkingobj_2[] = {
-    PROC_CALL(sub_8077F04),
-    PROC_REPEAT(sub_8077F10),
+    PROC_CALL(EkrDemonkingObj_DissolveInit),
+    PROC_REPEAT(EkrDemonkingObj_DissolveLoop),
     PROC_END
 };
 
-void sub_8077EEC(int ref, ProcPtr parent)
+void EkrDemonkingObj_StartDissolveProc(int ref, ProcPtr parent)
 {
     struct Proc08801840 *proc;
     proc = Proc_Start(ProcScr_EkrdragonDemonkingobj_2, parent);
     proc->ref = ref;
 }
 
-void sub_8077F04(struct Proc08801840 *proc)
+void EkrDemonkingObj_DissolveInit(struct Proc08801840 *proc)
 {
     proc->ref = 0;
     proc->timer = 0;
 }
 
-void sub_8077F10(struct Proc08801840 *proc)
+void EkrDemonkingObj_DissolveLoop(struct Proc08801840 *proc)
 {
     int i = 0;
     for (i = 0; i < 6; i++)
-        sub_8077F9C((void *)0x6002000 + ((proc->ref + i * 0x10) & 0x3FF) * 0x20, gEkrdragonDemonkingobj_3[i][proc->timer]);
+        EkrDemonkingObj_SetTilePixel((void *)0x6002000 + ((proc->ref + i * 0x10) & 0x3FF) * 0x20, gEkrdragonDemonkingobj_3[i][proc->timer]);
 
     if (proc->timer > 0x3E)
         Proc_Break(proc);
@@ -130,7 +130,7 @@ void sub_8077F10(struct Proc08801840 *proc)
         proc->timer++;
 
         for (i = 0; i < 6; i++)
-            sub_8077F9C((void *)0x6002000 + ((proc->ref + i * 0x10) & 0x3FF) * 0x20, gEkrdragonDemonkingobj_3[i][proc->timer]);
+            EkrDemonkingObj_SetTilePixel((void *)0x6002000 + ((proc->ref + i * 0x10) & 0x3FF) * 0x20, gEkrdragonDemonkingobj_3[i][proc->timer]);
 
         if (proc->timer > 0x3E)
             Proc_Break(proc);
@@ -146,7 +146,7 @@ CONST_DATA u16 gEkrdragonDemonkingobj_1[] = {
     0x0001, 0x0010, 0x0100, 0x1000
 };
 
-void sub_8077F9C(u16 *buf, int a)
+void EkrDemonkingObj_SetTilePixel(u16 *buf, int a)
 {
     u16 *dst = &buf[a >> 2];
     *dst &= ~gEkrdragonDemonkingobj_0[a & 3];

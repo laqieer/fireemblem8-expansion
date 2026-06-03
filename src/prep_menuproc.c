@@ -59,7 +59,7 @@ void DoPromoteAnimForChar100(struct Proc08A184B4 * proc)
     proc->game_lock = GetGameLock();
     SetWinEnable(0, 0, 0);
 
-    sub_802F598(unit, -1, 0);
+    ExecUnitDefaultPromotion(unit, -1, 0);
     gBattleStats.config = BATTLE_CONFIG_PROMOTION | BATTLE_CONFIG_PROMOTION_PREP;
     gBattleActor.weaponBefore = 0;
     gBattleTarget.weaponBefore = 0;
@@ -100,7 +100,7 @@ void PrepPromoteDebugMaybe(struct Proc08A184B4 * proc)
     Proc_StartBlocking(ProcScr_PrepPromoteDebug, proc);
 }
 
-void sub_8096668()
+void FadeOutPrepBgm()
 {
     ChangeBgm(SONG_NONE, 0x100, 0, 0x20, NULL);
 }
@@ -331,7 +331,7 @@ void EndPrepScreenSpriteDraw(void)
     Proc_End(Proc_Find(ProcScr_PrepScreenSpriteDraw));
 }
 
-void sub_8096C34(int a1, int a2)
+void PrepDebugDrawWindowPosition(int a1, int a2)
 {
     int val1, val2, val4, r5, r6, _r8;
     int r7;

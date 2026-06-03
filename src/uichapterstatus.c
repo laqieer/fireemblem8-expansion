@@ -133,7 +133,7 @@ PROC_LABEL(0),
     PROC_REPEAT(ChapterStatus_LoopKeyHandler),
 
 PROC_LABEL(1),
-    PROC_CALL(sub_8013F58),
+    PROC_CALL(FadeOutBlackSpeed40Locking),
     PROC_YIELD,
     PROC_CALL(EndMuralBackground),
 
@@ -168,7 +168,7 @@ PROC_LABEL(0),
     PROC_REPEAT(ChapterStatus_LoopKeyHandler),
 
 PROC_LABEL(1),
-    PROC_CALL(sub_8013F58),
+    PROC_CALL(FadeOutBlackSpeed40Locking),
     PROC_YIELD,
 
     PROC_CALL(EndMuralBackground),
@@ -980,7 +980,7 @@ void StatusScreenSpriteDraw_Init(struct ChapterStatusProc * proc)
 
     proc->unk_64 = 0;
 
-    sub_80895B4(0x80, 0x13);
+    ApplyChapterTitlePal(0x80, 0x13);
     PutChapterTitleGfx(0xB80, GetChapterTitleWM(&gPlaySt));
 
     return;

@@ -62,13 +62,13 @@ void efxMaohFlash_Loop_Main(struct ProcEfx * proc)
 
         case 177:
         {
-            sub_8066914(anim);
+            StartSubSpell_efxMaohFlashBG3(anim);
             break;
         }
 
         case 255:
         {
-            sub_8066C98();
+            efxMaohFlash_RegisterSpritesGfx();
             StartSubSpell_efxMaohFlashEyeROBJ2(anim, 10, 173, 44);
             StartSubSpell_efxMaohFlashEyeLOBJ2(anim, 10, 159, 48);
             break;
@@ -548,7 +548,7 @@ void efxMaohFlashBG2_Loop(struct ProcEfxBG * proc)
         u16 ** pal = proc->pal;
 
         SpellFx_WriteBgMap(proc->anim, *(tsaL + ret), *(tsaR + ret));
-        sub_80668DC();
+        efxMaohFlashBG2_FillTilemapRightEdge();
         SpellFx_RegisterBgGfx(*(img + ret), 32 * 8 * CHR_SIZE);
         SpellFx_RegisterBgPal(*(pal + ret), PLTT_SIZE_4BPP);
     }
@@ -567,7 +567,7 @@ void efxMaohFlashBG2_Loop(struct ProcEfxBG * proc)
 }
 
 //! FE8U = 0x080668DC
-void sub_80668DC(void)
+void efxMaohFlashBG2_FillTilemapRightEdge(void)
 {
     int ix;
     int iy;
@@ -649,7 +649,7 @@ u16 * CONST_DATA PalArray_DemonLightBg3_Far[] =
 // clang-format on
 
 //! FE8U = 0x08066914
-void sub_8066914(struct Anim * anim)
+void StartSubSpell_efxMaohFlashBG3(struct Anim * anim)
 {
     // clang-format off
     static const u16 frames[] =
@@ -1081,7 +1081,7 @@ void efxMaohFlashBGCOL_Loop(struct ProcEfxBGCOL * proc)
 }
 
 //! FE8U = 0x08066C74
-int sub_8066C74(int pos)
+int efxMaohFlash_GetSideXOffset(int pos)
 {
     int xNew;
 
@@ -1103,7 +1103,7 @@ int sub_8066C74(int pos)
 }
 
 //! FE8U = 0x08066C98
-void sub_8066C98(void)
+void efxMaohFlash_RegisterSpritesGfx(void)
 {
     SpellFx_RegisterObjPal(Pal_DemonLightSprites, PLTT_SIZE_4BPP);
     SpellFx_RegisterObjGfx(Img_DemonLightSprites, 32 * 4 * CHR_SIZE);
@@ -1156,12 +1156,12 @@ void StartSubSpell_efxMaohFlashEyeROBJ2(struct Anim * anim, int terminator, s16 
 
     if (pos != 0)
     {
-        a = (sub_8066C74(pos) + DISPLAY_WIDTH);
+        a = (efxMaohFlash_GetSideXOffset(pos) + DISPLAY_WIDTH);
         a = a - x;
     }
     else
     {
-        a = x + sub_8066C74(0);
+        a = x + efxMaohFlash_GetSideXOffset(0);
     }
 
     ref->xPosition = frontAnim->xPosition = a;
@@ -1234,12 +1234,12 @@ void StartSubSpell_efxMaohFlashEyeLOBJ2(struct Anim * anim, int terminator, s16 
 
     if (pos != 0)
     {
-        a = (sub_8066C74(pos) + DISPLAY_WIDTH);
+        a = (efxMaohFlash_GetSideXOffset(pos) + DISPLAY_WIDTH);
         a = a - x;
     }
     else
     {
-        a = x + sub_8066C74(0);
+        a = x + efxMaohFlash_GetSideXOffset(0);
     }
 
     ref->xPosition = frontAnim->xPosition = a;
@@ -1267,7 +1267,7 @@ void efxMaohFlashEyeLOBJ2_Loop(struct ProcEfxOBJ * proc)
 }
 
 //! FE8U = 0x08066EA8
-void sub_8066EA8(void)
+void efxMaohFlash_RegisterEyeFlashGfx(void)
 {
     SpellFx_RegisterObjPal(Pal_DemonLightSprites_EyeFlash, PLTT_SIZE_4BPP);
     SpellFx_RegisterObjGfx(Img_DemonLightSprites_EyeFlash, 32 * 4 * CHR_SIZE);
@@ -1320,12 +1320,12 @@ void StartSubSpell_efxMaohFlashEyeOBJ1(struct Anim * anim, int terminator, s16 x
 
     if (pos != 0)
     {
-        a = (sub_8066C74(pos) + DISPLAY_WIDTH);
+        a = (efxMaohFlash_GetSideXOffset(pos) + DISPLAY_WIDTH);
         a = a - x;
     }
     else
     {
-        a = x + sub_8066C74(0);
+        a = x + efxMaohFlash_GetSideXOffset(0);
     }
 
     ref->xPosition = frontAnim->xPosition = a;
@@ -1398,12 +1398,12 @@ void StartSubSpell_efxMaohFlashEyeFire1OBJ1(struct Anim * anim, int terminator, 
 
     if (pos != 0)
     {
-        a = (sub_8066C74(pos) + DISPLAY_WIDTH);
+        a = (efxMaohFlash_GetSideXOffset(pos) + DISPLAY_WIDTH);
         a = a - x;
     }
     else
     {
-        a = x + sub_8066C74(0);
+        a = x + efxMaohFlash_GetSideXOffset(0);
     }
 
     ref->xPosition = frontAnim->xPosition = a;
@@ -1479,12 +1479,12 @@ void StartSubSpell_efxMaohFlashEyeFire2OBJ1(struct Anim * anim, int terminator, 
 
     if (pos != 0)
     {
-        a = (sub_8066C74(pos) + DISPLAY_WIDTH);
+        a = (efxMaohFlash_GetSideXOffset(pos) + DISPLAY_WIDTH);
         a = a - x;
     }
     else
     {
-        a = x + sub_8066C74(0);
+        a = x + efxMaohFlash_GetSideXOffset(0);
     }
 
     ref->xPosition = frontAnim->xPosition = a;
@@ -1547,7 +1547,7 @@ void StartSubSpell_efxMaohFlashThunderOBJ(struct Anim * anim, int terminator)
 void efxMaohFlashThunderOBJ_Loop(struct ProcEfxOBJ * proc)
 {
     u8 pos = GetAnimPosition(proc->anim);
-    s16 xBase = sub_8066C74(pos);
+    s16 xBase = efxMaohFlash_GetSideXOffset(pos);
 
     proc->timer++;
 

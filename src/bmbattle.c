@@ -471,7 +471,7 @@ void SetBattleUnitWeaponBallista(struct BattleUnit* bu) {
     bu->canCounter = FALSE;
 }
 
-void sub_802A958(void) {} // unused
+void Battle_Nop(void) {} // unused
 
 void ComputeBattleUnitStats(struct BattleUnit* attacker, struct BattleUnit* defender) {
     ComputeBattleUnitDefense(attacker, defender);
@@ -1542,7 +1542,7 @@ void BattleApplyUnitUpdates(void) {
 }
 
 // unused?
-s8 sub_802C0B0(void) {
+s8 Battle_CondTrue(void) {
     return TRUE;
 }
 
@@ -1671,7 +1671,7 @@ void BattleApplyBallistaUpdates(void) {
 }
 
 // ???
-void sub_802C334(void) {
+void ClearBmbattleStruct0(void) {
     sBmbattle_0.unk00 = 0;
     sBmbattle_0.unk01 = 0;
     sBmbattle_0.unk02 = 0;
@@ -2031,7 +2031,7 @@ void BeginBattleAnimations(void) {
 
     RenderBmMap();
 
-    if (sub_8055BC4()) {
+    if (EkrBattleStarting_CheckBattleAnimEnabled()) {
         SetBanimLinkArenaFlag(0);
         BeginAnimsOnBattleAnimations();
     } else {

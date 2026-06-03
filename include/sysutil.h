@@ -160,8 +160,8 @@ void BgAffinScalingHighPrecision(u8 bg, int sy, int sx);
 void BgAffinAnchoringHighPrecision(u8 bg, int q0_x, int q0_y, int p0_x, int p0_y);
 
 /* No idea, maybe some tile map or palette modication */
-void sub_80AE044(int a, u16 * buf, int c, int d, int e, int f, int g, int h);
-void sub_80AE0F0(int a, int b, int c, int d, int e, u16 f) ;
+void Mode4BlitRect(int a, u16 * buf, int c, int d, int e, int f, int g, int h);
+void Mode4FillRect(int a, int b, int c, int d, int e, u16 f) ;
 void SetBlankBgColor(int, int, int);
 
 struct ProcFadeInOut {

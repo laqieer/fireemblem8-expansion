@@ -34,9 +34,9 @@ struct GMapAutoMuProc
 //! FE8U = 0x080C3124
 void GmapAutoMu_OnEnd(struct GMapAutoMuProc * proc)
 {
-    if (sub_80BE12C(GM_MU, proc->unitId) != 0)
+    if (GmMu_IsMoving(GM_MU, proc->unitId) != 0)
     {
-        sub_80BE330(GM_MU, proc->unitId);
+        GmMu_FinishMovement(GM_MU, proc->unitId);
     }
 
     EndGmapUnitFade();
@@ -157,7 +157,7 @@ void GmapAutoMu_3(struct GMapAutoMuProc * proc)
     input.unk_03 = 0xff;
     input.unk_04 = 4;
 
-    sub_80BDEB4(GM_MU, &input);
+    GmMu_StartMoveBetweenNodes(GM_MU, &input);
 
     return;
 }
@@ -180,7 +180,7 @@ void GmapAutoMu_4(struct GMapAutoMuProc * proc)
     input.unk_04 = 0xff;
     input.unk_05 = 4;
 
-    sub_80BDFA4(GM_MU, &input);
+    GmMu_StartMoveToPosition(GM_MU, &input);
 
     return;
 }
@@ -188,7 +188,7 @@ void GmapAutoMu_4(struct GMapAutoMuProc * proc)
 //! FE8U = 0x080C3350
 void GmapAutoMu_5(struct GMapAutoMuProc * proc)
 {
-    if (!sub_80BE12C(GM_MU, proc->unitId))
+    if (!GmMu_IsMoving(GM_MU, proc->unitId))
     {
         Proc_Break(proc);
     }

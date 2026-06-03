@@ -394,7 +394,7 @@ void SetupCharacterEndingGfx(void)
 }
 
 //! FE8U = 0x080B6810
-void sub_80B6810(void)
+void SetupCharacterEndingBg(void)
 {
     int offset;
     int i;
@@ -419,13 +419,13 @@ void sub_80B6810(void)
 }
 
 //! FE8U = 0x080B689C
-void sub_80B689C(int a, int b)
+void PutEndingBattleDisplayBg(int a, int b)
 {
     BG_Fill(gBG1TilemapBuffer, 0);
 
-    sub_80AC844(gSoloEndingBattleDispConf[2], 0, 1, BG_2, a, b + 2, 30, 16);
-    sub_80AC844(gSoloEndingBattleDispConf[1], 0, 1, BG_1, a, b + 2, 30, 18);
-    sub_80AC844(gSoloEndingBattleDispConf[0], 0, 0, BG_0, a, b, 30, 20);
+    BlitClippedTileMapToBg(gSoloEndingBattleDispConf[2], 0, 1, BG_2, a, b + 2, 30, 16);
+    BlitClippedTileMapToBg(gSoloEndingBattleDispConf[1], 0, 1, BG_1, a, b + 2, 30, 18);
+    BlitClippedTileMapToBg(gSoloEndingBattleDispConf[0], 0, 0, BG_0, a, b, 30, 20);
 
     BG_EnableSyncByMask(BG0_SYNC_BIT | BG1_SYNC_BIT | BG2_SYNC_BIT);
 
@@ -492,7 +492,7 @@ void CharacterEnding_0(void)
     ResetDialogueScreen();
 
     EndEndingBattleText();
-    sub_80B6810();
+    SetupCharacterEndingBg();
 
     BG_EnableSyncByMask(BG0_SYNC_BIT | BG1_SYNC_BIT | BG2_SYNC_BIT);
 
@@ -866,7 +866,7 @@ void SoloEndingBattleDisp_Loop(struct EndingBattleDisplayProc * proc)
 
     SetFacePosition(0, (xBase * 8 + 176) & 0x1FF, 56);
 
-    sub_80B689C(xBase, 0);
+    PutEndingBattleDisplayBg(xBase, 0);
 
     if (xOffset == 30)
     {
@@ -967,7 +967,7 @@ void PairedEndingBattleDisp_Loop_SlideIn(struct EndingBattleDisplayProc * proc)
     SetFacePosition(0, (xBase * 8 + 64) & 0x1FF, 48);
     SetFacePosition(1, (xBase * 8 + 176) & 0x1FF, 48);
 
-    sub_80B689C(xBase, 0);
+    PutEndingBattleDisplayBg(xBase, 0);
 
     if (xOffset == 30)
     {
@@ -1222,7 +1222,7 @@ void Fin_Loop_KeyListener(struct FinScreenProc * proc)
 }
 
 //! FE8U = 0x080B7500
-void sub_80B7500(struct FinScreenProc * proc)
+void Fin_InitBlend(struct FinScreenProc * proc)
 {
     SetBlendAlpha(0, 0x10);
     SetBlendTargetA(0, 0, 1, 0, 0);
@@ -1236,7 +1236,7 @@ void sub_80B7500(struct FinScreenProc * proc)
 }
 
 //! FE8U = 0x080B7540
-void sub_80B7540(struct FinScreenProc * proc)
+void Fin_Loop_Blend(struct FinScreenProc * proc)
 {
     int blendAmt;
 
@@ -1290,8 +1290,8 @@ PROC_LABEL(1),
 
     PROC_SLEEP(60),
 
-    PROC_CALL(sub_80B7500),
-    PROC_REPEAT(sub_80B7540),
+    PROC_CALL(Fin_InitBlend),
+    PROC_REPEAT(Fin_Loop_Blend),
 
     PROC_GOTO(0),
 
@@ -1469,7 +1469,7 @@ u16 * CONST_DATA SpriteArray_EndingDetails_1[] =
 // clang-format on
 
 //! FE8U = 0x080B75AC
-void sub_80B75AC(struct EndingTurnRecordProc * proc)
+void EndingDetails_InitFog(struct EndingTurnRecordProc * proc)
 {
     SetDispEnable(1, 1, 0, 1, 1);
 
@@ -1486,7 +1486,7 @@ void sub_80B75AC(struct EndingTurnRecordProc * proc)
 }
 
 //! FE8U = 0x080B7614
-void sub_80B7614(struct EndingTurnRecordProc * proc)
+void EndingDetails_LoopFog(struct EndingTurnRecordProc * proc)
 {
     int x;
     int y;
@@ -1507,8 +1507,8 @@ struct ProcCmd CONST_DATA gProcScr_EndingDetails_0[] =
 {
     PROC_YIELD,
 
-    PROC_CALL(sub_80B75AC),
-    PROC_REPEAT(sub_80B7614),
+    PROC_CALL(EndingDetails_InitFog),
+    PROC_REPEAT(EndingDetails_LoopFog),
 
     PROC_END,
 };
@@ -1719,7 +1719,7 @@ void TurnRecord_Loop_Main(struct EndingTurnRecordProc * proc)
  * sprites in FE6.
  */
 //! FE8U = 0x080B7BD8
-void sub_80B7BD8(struct UnkProc * proc)
+void EndingDetails_PutSprites(struct UnkProc * proc)
 {
     int i;
 
@@ -1862,7 +1862,7 @@ void TurnRecord_SetupGfx(void)
 
     BG_EnableSyncByMask(BG2_SYNC_BIT | BG3_SYNC_BIT);
 
-    sub_80AB760(gEndingDetailBuf);
+    StartSaveBgFog(gEndingDetailBuf);
     StartBgm(SONG_EPILOGUE, 0);
 
     return;
@@ -1871,7 +1871,7 @@ void TurnRecord_SetupGfx(void)
 //! FE8U = 0x080B8168
 int TurnRecord_End(void)
 {
-    sub_80AB77C();
+    EndSaveBgFog();
     // return; // BUG
 }
 
@@ -1910,19 +1910,19 @@ void StartEndingTurnRecordScreen(ProcPtr parent)
 }
 
 //! FE8U = 0x080B8188
-void sub_80B8188(int unusedA, int unusedB, int unusedC)
+void Nop_EndingDetails_2(int unusedA, int unusedB, int unusedC)
 {
     return;
 }
 
 //! FE8U = 0x080B818C
-void nullsub_7(void)
+void Nop_EndingDetails_1(void)
 {
     return;
 }
 
 //! FE8U = 0x080B8190
-void sub_80B8190(u16 * dst, u16 * src, u8 coeff)
+void EndingDetails_DimPalette(u16 * dst, u16 * src, u8 coeff)
 {
     int i;
 
@@ -1941,13 +1941,13 @@ void sub_80B8190(u16 * dst, u16 * src, u8 coeff)
 }
 
 //! FE8U = 0x080B81FC
-void nullsub_5(int unused)
+void Nop_EndingDetails_0(int unused)
 {
     return;
 }
 
 //! FE8U = 0x080B8200
-void sub_80B8200(void)
+void EndingDetails_FadeOutBgm(void)
 {
     Sound_FadeOutBGM(4);
     return;

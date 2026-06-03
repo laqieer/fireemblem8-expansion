@@ -275,9 +275,9 @@ s8 GmBaseEntryExists(void)
 }
 
 //! FE8U = 0x080BFB4C
-void sub_80BFB4C(struct GmapBaseEntryProc * proc)
+void GmapMuEntry_OnEnd(struct GmapBaseEntryProc * proc)
 {
-    sub_80BE080(GM_MU, proc->unk_29, 0);
+    GmMu_SetBlendEnabled(GM_MU, proc->unk_29, 0);
 
     gGMData.units[proc->unk_29].state |= 1;
 
@@ -288,7 +288,7 @@ void sub_80BFB4C(struct GmapBaseEntryProc * proc)
 }
 
 //! FE8U = 0x080BFB90
-void sub_80BFB90(struct GmapBaseEntryProc * proc)
+void GmapMuEntry_Init(struct GmapBaseEntryProc * proc)
 {
     RememberBlendState(&proc->unk_30);
 
@@ -302,11 +302,11 @@ void sub_80BFB90(struct GmapBaseEntryProc * proc)
 }
 
 //! FE8U = 0x080BFBCC
-void sub_80BFBCC(struct GmapBaseEntryProc * proc)
+void GmapMuEntry_0(struct GmapBaseEntryProc * proc)
 {
     gGMData.units[proc->unk_29].state |= 1;
 
-    sub_80BE080(GM_MU, proc->unk_29, 1);
+    GmMu_SetBlendEnabled(GM_MU, proc->unk_29, 1);
 
     SetBlendConfig(BLEND_EFFECT_NONE, 0, 0x10, 0);
 
@@ -328,7 +328,7 @@ void sub_80BFBCC(struct GmapBaseEntryProc * proc)
 }
 
 //! FE8U = 0x080BFC44
-void sub_80BFC44(struct GmapBaseEntryProc * proc)
+void GmapMuEntry_1(struct GmapBaseEntryProc * proc)
 {
     proc->unk_2c--;
 
@@ -355,7 +355,7 @@ void sub_80BFC44(struct GmapBaseEntryProc * proc)
     }
     else
     {
-        sub_80BE080(GM_MU, proc->unk_29, 0);
+        GmMu_SetBlendEnabled(GM_MU, proc->unk_29, 0);
         Proc_Break(proc);
     }
 
@@ -369,13 +369,13 @@ struct ProcCmd CONST_DATA gProcScr_GmapMuEntry1[] =
     PROC_NAME("Gmap Mu Entry"),
     PROC_MARK(PROC_MARK_WMSTUFF),
 
-    PROC_SET_END_CB(sub_80BFB4C),
+    PROC_SET_END_CB(GmapMuEntry_OnEnd),
 
-    PROC_CALL(sub_80BFB90),
+    PROC_CALL(GmapMuEntry_Init),
     PROC_SLEEP(0),
 
-    PROC_CALL(sub_80BFBCC),
-    PROC_REPEAT(sub_80BFC44),
+    PROC_CALL(GmapMuEntry_0),
+    PROC_REPEAT(GmapMuEntry_1),
 
     PROC_END,
 };
@@ -383,7 +383,7 @@ struct ProcCmd CONST_DATA gProcScr_GmapMuEntry1[] =
 // clang-format on
 
 //! FE8U = 0x080BFCC8
-ProcPtr sub_80BFCC8(int a, int b, ProcPtr parent)
+ProcPtr StartGmapMuEntry1(int a, int b, ProcPtr parent)
 {
     struct GmapBaseEntryProc * proc;
 
@@ -403,20 +403,20 @@ ProcPtr sub_80BFCC8(int a, int b, ProcPtr parent)
 }
 
 //! FE8U = 0x080BFD00
-void sub_80BFD00(void)
+void EndGmapMuEntry1(void)
 {
     Proc_EndEach(gProcScr_GmapMuEntry1);
     return;
 }
 
 //! FE8U = 0x080BFD10
-s8 sub_80BFD10(void)
+s8 GmapMuEntry1Exists(void)
 {
     return Proc_Find(gProcScr_GmapMuEntry1) ? 1 : 0;
 }
 
 //! FE8U = 0x080BFD28
-void sub_80BFD28(void)
+void LoadWorldmapMinimap(void)
 {
     ApplyPalette(gPal_WorldmapMinimap_0, 2);
     EnablePaletteSync();
@@ -447,7 +447,7 @@ void GmMuEntry_Init(struct GmapMuEntryProc * proc)
 }
 
 //! FE8U = 0x080BFDA0
-void sub_80BFDA0(struct GmapMuEntryProc * proc, int unused)
+void GmMuEntry_SetupHblankGradient(struct GmapMuEntryProc * proc, int unused)
 {
     int r;
     int g;
@@ -456,8 +456,8 @@ void sub_80BFDA0(struct GmapMuEntryProc * proc, int unused)
     int i;
     int j;
 
-    u16 * palA = sub_80C1DA0(0, 1);
-    u16 * palB = sub_80C1DA0(1, 1);
+    u16 * palA = GetWorldMapHblankBuffer(0, 1);
+    u16 * palB = GetWorldMapHblankBuffer(1, 1);
 
     for (i = 0; i < DISPLAY_HEIGHT; i++)
     {
@@ -486,7 +486,7 @@ void sub_80BFDA0(struct GmapMuEntryProc * proc, int unused)
         palB[j] = (b << 10) + (g << 5) + r;
     }
 
-    sub_80C1DC8();
+    FlipWorldMapHblankBuffer();
 
     return;
 }
@@ -495,7 +495,7 @@ void sub_80BFDA0(struct GmapMuEntryProc * proc, int unused)
 void GmMuEntry_0(struct GmapMuEntryProc * proc)
 {
     u16 * buf;
-    sub_80BFD28();
+    LoadWorldmapMinimap();
 
     proc->unk_38 = 0;
     proc->unk_2a = proc->unk_2c;
@@ -503,15 +503,15 @@ void GmMuEntry_0(struct GmapMuEntryProc * proc)
     proc->unk_3c = proc->unk_2d - proc->unk_2c;
     proc->unk_40 = proc->unk_2f - proc->unk_2e;
 
-    buf = sub_80C1DA0(0, 1);
+    buf = GetWorldMapHblankBuffer(0, 1);
     CpuFill16(0x10, buf, DISPLAY_HEIGHT * 2);
-    sub_80C1DD8(0, 0x04000012);
-    sub_80C1DE8(0);
+    SetWorldMapHblankDest(0, 0x04000012);
+    ClearWorldMapHblankChannelFlags(0);
 
-    buf = sub_80C1DA0(1, 1);
+    buf = GetWorldMapHblankBuffer(1, 1);
     CpuFill16(0, buf, DISPLAY_HEIGHT * 2);
-    sub_80C1DD8(1, 0x05000054);
-    sub_80C1DE8(1);
+    SetWorldMapHblankDest(1, 0x05000054);
+    ClearWorldMapHblankChannelFlags(1);
 
     gWmHblankStatus |= 4;
 
@@ -527,7 +527,7 @@ void GmMuEntry_0(struct GmapMuEntryProc * proc)
 void GmMuEntry_1(struct GmapMuEntryProc * proc)
 {
     u16 * buf;
-    sub_80BFD28();
+    LoadWorldmapMinimap();
 
     proc->unk_38 = 0;
 
@@ -536,15 +536,15 @@ void GmMuEntry_1(struct GmapMuEntryProc * proc)
     proc->unk_3c = proc->unk_2d - proc->unk_2c;
     proc->unk_40 = proc->unk_2f - proc->unk_2e;
 
-    buf = sub_80C1DA0(0, 1);
+    buf = GetWorldMapHblankBuffer(0, 1);
     CpuFill16(0x10, buf, DISPLAY_HEIGHT * 2);
-    sub_80C1DD8(0, 0x04000012);
-    sub_80C1DE8(0);
+    SetWorldMapHblankDest(0, 0x04000012);
+    ClearWorldMapHblankChannelFlags(0);
 
-    buf = sub_80C1DA0(1, 1);
+    buf = GetWorldMapHblankBuffer(1, 1);
     CpuFill16(0, buf, DISPLAY_HEIGHT * 2);
-    sub_80C1DD8(1, 0x05000054);
-    sub_80C1DE8(1);
+    SetWorldMapHblankDest(1, 0x05000054);
+    ClearWorldMapHblankChannelFlags(1);
 
     gWmHblankStatus |= 4;
 
@@ -569,7 +569,7 @@ void GmMuEntry_2(struct GmapMuEntryProc * proc)
     }
     else
     {
-        sub_80C1DD8(0, 0);
+        SetWorldMapHblankDest(0, 0);
         unk = 0x1000;
         SetBlendConfig(BLEND_EFFECT_NONE, 0, 0x10, 0);
         proc->unk_2a = proc->unk_2d;
@@ -579,7 +579,7 @@ void GmMuEntry_2(struct GmapMuEntryProc * proc)
         Proc_Goto(proc, 0);
     }
 
-    sub_80BFDA0(proc, unk);
+    GmMuEntry_SetupHblankGradient(proc, unk);
 
     return;
 }
@@ -599,7 +599,7 @@ void GmMuEntry_3(struct GmapMuEntryProc * proc)
     }
     else
     {
-        sub_80C1DD8(0, 0);
+        SetWorldMapHblankDest(0, 0);
         unk = 0x1000;
         proc->unk_2a = proc->unk_2d;
         proc->unk_2b = proc->unk_2f;
@@ -609,7 +609,7 @@ void GmMuEntry_3(struct GmapMuEntryProc * proc)
         Proc_Goto(proc, 0);
     }
 
-    sub_80BFDA0(proc, unk);
+    GmMuEntry_SetupHblankGradient(proc, unk);
 
     return;
 }

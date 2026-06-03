@@ -212,7 +212,7 @@ void EndCreditsBlendCG(void)
 }
 
 //! FE8U = 0x080C4238
-void sub_80C4238(struct CreditsMainProc * proc)
+void EndingCredits_UpdateStaffReel(struct CreditsMainProc * proc)
 {
     u32 something;
     s32 i;
@@ -278,7 +278,7 @@ void sub_80C4238(struct CreditsMainProc * proc)
 }
 
 //! FE8U = 0x080C43B4
-void sub_80C43B4(struct CreditsMainProc * proc)
+void EndingCredits_UpdateScroll(struct CreditsMainProc * proc)
 {
     int unk_30 = (proc->unk_30 >> 8);
     proc->unk_38 = unk_30 / 16;
@@ -370,7 +370,7 @@ void EndingCredits_Init(struct CreditsMainProc * proc)
 }
 
 //! FE8U = 0x080C45E0
-void sub_80C45E0(struct CreditsMainProc * proc)
+void EndingCredits_LoadCG(struct CreditsMainProc * proc)
 {
     if (proc->unk_29_1)
     {
@@ -417,9 +417,9 @@ void EndingCredits_Loop_Main(struct CreditsMainProc * proc)
         proc->unk_30 += 0x80;
     }
 
-    sub_80C4238(proc);
-    sub_80C43B4(proc);
-    sub_80C45E0(proc);
+    EndingCredits_UpdateStaffReel(proc);
+    EndingCredits_UpdateScroll(proc);
+    EndingCredits_LoadCG(proc);
 
     if ((u8)proc->unk_35 > 20)
     {

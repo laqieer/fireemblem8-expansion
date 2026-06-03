@@ -785,27 +785,27 @@ u16 CONST_DATA * TsaLut_EventMapAnimMaskfx[] = {
     TileSet_9A174C,
 };
 
-void sub_8085C10()
+void RecordGlobalSupportRankC()
 {
     UpdateBestGlobalSupportValue(0x100, 0x100, 1);
 }
 
-void sub_8085C24()
+void RecordGlobalSupportRankB()
 {
     UpdateBestGlobalSupportValue(0x100, 0x100, 2);
 }
 
-void sub_8085C38()
+void RecordGlobalSupportRankA()
 {
     UpdateBestGlobalSupportValue(0x100, 0x100, 3);
 }
 
-void sub_8085C4C()
+void InitTowerDungeonState()
 {
     InitDungeon(0);
 }
 
-void sub_8085C58()
+void InitRuinsDungeonState()
 {
     InitDungeon(1);
 }
@@ -872,7 +872,7 @@ void DrawEventMapAnimMaskfx(int index, int mode)
         Decompress(ImgLut_EventMapAnimMaskfx[index], BG_CHR_ADDR(0x200));
 }
 
-void sub_8085E08(int index, int mode)
+void DrawEventMapAnimMaskfxTsa(int index, int mode)
 {
     int i;
     u16 *buf = gBG0TilemapBuffer;
@@ -886,7 +886,7 @@ void sub_8085E08(int index, int mode)
         *buf += val;
 }
 
-void sub_8085E48(struct ProcEventMapAnim * proc)
+void EventMapAnim_Init(struct ProcEventMapAnim * proc)
 {
     if (0 == proc->mode)
         StartBgm(SONG_VICTORY_SONG_B, 0);
@@ -897,7 +897,7 @@ void sub_8085E48(struct ProcEventMapAnim * proc)
     proc->timer = 0;
 }
 
-void sub_8085E94(struct ProcEventMapAnim * proc)
+void EventMapAnim_SlideSquaresInLoop(struct ProcEventMapAnim * proc)
 {
     int iy, ix;
     struct Proc89EEA28 *child;
@@ -939,12 +939,12 @@ void sub_8085E94(struct ProcEventMapAnim * proc)
     }
 }
 
-void nullsub_30()
+void Nop_EventsScriptUtils_0()
 {
     return;
 }
 
-void sub_8085F88(struct ProcEventMapAnim * proc)
+void EventMapAnim_SlideSquaresOutLoop(struct ProcEventMapAnim * proc)
 {
     int iy, ix;
 
@@ -988,11 +988,11 @@ void sub_8085F88(struct ProcEventMapAnim * proc)
     }
 }
 
-void sub_808609C(struct ProcEventMapAnim * proc)
+void EventMapAnim_DrawMaskfxLoop(struct ProcEventMapAnim * proc)
 {
     switch (proc->timer) {
         case 0:
-            sub_8085E08(proc->count, 1 & proc->count);
+            DrawEventMapAnimMaskfxTsa(proc->count, 1 & proc->count);
             BG_EnableSyncByMask(1);
             proc->count += 1;
             break;
@@ -1013,7 +1013,7 @@ void sub_808609C(struct ProcEventMapAnim * proc)
     proc->timer++;
 }
 
-void sub_8086100(struct ProcEventMapAnim * proc)
+void EventMapAnim_End(struct ProcEventMapAnim * proc)
 {
     BG_SetPosition(0, 0, 0);
     BG_Fill(gBG0TilemapBuffer, 0);
@@ -1022,12 +1022,12 @@ void sub_8086100(struct ProcEventMapAnim * proc)
     SetDefaultColorEffects();
 }
 
-void sub_8086134(struct Proc89EEA28 * proc)
+void EventMapAnimBanner_Init(struct Proc89EEA28 * proc)
 {
     proc->timer = 0;
 }
 
-void sub_808613C(struct Proc89EEA28 * proc)
+void EventMapAnimBanner_SlideInLoop(struct Proc89EEA28 * proc)
 {
     int val1 = Interpolate(0, -24, 0, proc->timer, 0x10);
     int val2 = Interpolate(0, 2, 0x100, proc->timer, 0x10);
@@ -1054,7 +1054,7 @@ void sub_808613C(struct Proc89EEA28 * proc)
     proc->timer++;
 }
 
-void sub_808622C(struct Proc89EEA28 * proc)
+void EventMapAnimBanner_FlashInLoop(struct Proc89EEA28 * proc)
 {
     int val = Interpolate(0, 0, 0x10, proc->timer, 8);
 
@@ -1076,7 +1076,7 @@ void sub_808622C(struct Proc89EEA28 * proc)
     proc->timer++;
 }
 
-void sub_80862C4(struct Proc89EEA28 * proc)
+void EventMapAnimBanner_FlashOutLoop(struct Proc89EEA28 * proc)
 {
     int val = Interpolate(0, 0x10, 0, proc->timer, 8);
 
@@ -1098,7 +1098,7 @@ void sub_80862C4(struct Proc89EEA28 * proc)
     proc->timer++;
 }
 
-void sub_808635C(struct Proc89EEA28 * proc)
+void EventMapAnimBanner_HoldLoop(struct Proc89EEA28 * proc)
 {
     SetObjAffine(
         0,
@@ -1117,21 +1117,21 @@ void sub_808635C(struct Proc89EEA28 * proc)
 
 struct ProcCmd CONST_DATA ProcScr_EventMapAnim[] = {
     PROC_SLEEP(1),
-    PROC_CALL(sub_8085E48),
-    PROC_REPEAT(sub_8085E94),
-    PROC_REPEAT(nullsub_30),
-    PROC_REPEAT(sub_8085F88),
-    PROC_REPEAT(sub_808609C),
-    PROC_CALL(sub_8086100),
+    PROC_CALL(EventMapAnim_Init),
+    PROC_REPEAT(EventMapAnim_SlideSquaresInLoop),
+    PROC_REPEAT(Nop_EventsScriptUtils_0),
+    PROC_REPEAT(EventMapAnim_SlideSquaresOutLoop),
+    PROC_REPEAT(EventMapAnim_DrawMaskfxLoop),
+    PROC_CALL(EventMapAnim_End),
     PROC_SLEEP(8),
     PROC_END,
 };
 
 struct ProcCmd CONST_DATA gEventsScriptUtils_0[] = {
-    PROC_CALL(sub_8086134),
-    PROC_REPEAT(sub_808613C),
-    PROC_REPEAT(sub_808622C),
-    PROC_REPEAT(sub_80862C4),
-    PROC_REPEAT(sub_808635C),
+    PROC_CALL(EventMapAnimBanner_Init),
+    PROC_REPEAT(EventMapAnimBanner_SlideInLoop),
+    PROC_REPEAT(EventMapAnimBanner_FlashInLoop),
+    PROC_REPEAT(EventMapAnimBanner_FlashOutLoop),
+    PROC_REPEAT(EventMapAnimBanner_HoldLoop),
     PROC_END,
 };

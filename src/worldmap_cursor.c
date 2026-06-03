@@ -6,7 +6,7 @@
 #include "worldmap.h"
 
 //! FE8U = 0x080BBA80
-void nullsub_59(void)
+void Nop_WorldmapCursor_0(void)
 {
     return;
 }
@@ -108,7 +108,7 @@ struct ProcCmd CONST_DATA gProcScr_GmapCursor[] =
     PROC_NAME("GmapCursor"),
     PROC_MARK(PROC_MARK_WMSTUFF),
 
-    PROC_SET_END_CB(nullsub_59),
+    PROC_SET_END_CB(Nop_WorldmapCursor_0),
 
     PROC_CALL(GmapCursor_Init),
     PROC_REPEAT(GmapCursor_Loop),

@@ -15,9 +15,9 @@ struct ProcCmd CONST_DATA gProc_efxFarAttack[] =
 {
     PROC_NAME("efxFarAttack"),
 
-    PROC_REPEAT(sub_80534E4),
-    PROC_REPEAT(sub_8053514),
-    PROC_REPEAT(sub_8053584),
+    PROC_REPEAT(efxFarAttack_Init),
+    PROC_REPEAT(efxFarAttack_ScrollIn),
+    PROC_REPEAT(efxFarAttack_ScrollOut),
 
     PROC_END,
 };
@@ -96,7 +96,7 @@ void NewEfxFarAttackWithDistance(struct Anim * anim, s16 arg)
 }
 
 //! FE8U = 0x080534AC
-void sub_80534AC(struct ProcEfxFarAttack * unused, int x)
+void EfxFarAttack_SetAnimXPositions(struct ProcEfxFarAttack * unused, int x)
 {
     struct Anim * anim = gAnims[0];
     x = -x;
@@ -116,11 +116,11 @@ void sub_80534AC(struct ProcEfxFarAttack * unused, int x)
 }
 
 //! FE8U = 0x080534E4
-void sub_80534E4(struct ProcEfxFarAttack * proc)
+void efxFarAttack_Init(struct ProcEfxFarAttack * proc)
 {
-    sub_80534AC(proc, proc->unk_32);
+    EfxFarAttack_SetAnimXPositions(proc, proc->unk_32);
     EkrDragonTmCpyExt(proc->unk_32, 0);
-    sub_8053618(proc->unk_32);
+    EfxUpdateBg2Scroll(proc->unk_32);
 
     proc->timer = 0;
 
@@ -130,18 +130,18 @@ void sub_80534E4(struct ProcEfxFarAttack * proc)
 }
 
 //! FE8U = 0x08053514
-void sub_8053514(struct ProcEfxFarAttack * proc)
+void efxFarAttack_ScrollIn(struct ProcEfxFarAttack * proc)
 {
     u32 ret = Interpolate(INTERPOLATE_SQUARE, proc->unk_32, proc->unk_34, proc->timer, proc->unk_2e);
     gEkrBgPosition = ret;
 
-    sub_80534AC(proc, ret);
+    EfxFarAttack_SetAnimXPositions(proc, ret);
     EkrDragonTmCpyExt(gEkrBgPosition, 0);
-    sub_8053618(gEkrBgPosition);
+    EfxUpdateBg2Scroll(gEkrBgPosition);
 
     if (GetBattleAnimArenaFlag() != 0)
     {
-        sub_805B034(gEkrBgPosition);
+        EkrArenaBgScroll(gEkrBgPosition);
     }
 
     proc->timer++;
@@ -156,18 +156,18 @@ void sub_8053514(struct ProcEfxFarAttack * proc)
 }
 
 //! FE8U = 0x08053584
-void sub_8053584(struct ProcEfxFarAttack * proc)
+void efxFarAttack_ScrollOut(struct ProcEfxFarAttack * proc)
 {
     u32 ret = Interpolate(INTERPOLATE_RSQUARE, proc->unk_36, proc->unk_38, proc->timer, proc->terminator);
     gEkrBgPosition = ret;
 
-    sub_80534AC(proc, ret);
+    EfxFarAttack_SetAnimXPositions(proc, ret);
     EkrDragonTmCpyExt(gEkrBgPosition, 0);
-    sub_8053618(gEkrBgPosition);
+    EfxUpdateBg2Scroll(gEkrBgPosition);
 
     if (GetBattleAnimArenaFlag() != 0)
     {
-        sub_805B034(gEkrBgPosition);
+        EkrArenaBgScroll(gEkrBgPosition);
     }
 
     proc->timer++;
@@ -188,7 +188,7 @@ void sub_8053584(struct ProcEfxFarAttack * proc)
 }
 
 //! FE8U = 0x08053618
-void sub_8053618(int xPos)
+void EfxUpdateBg2Scroll(int xPos)
 {
     u16 * p;
     int a;
@@ -1106,8 +1106,8 @@ void NewEfxHitQuake(struct Anim * anim1, struct Anim * anim2, int kind)
     CpuFastCopy(gBanimTerrainPaletteMaybe[GetAnimPosition(anim1)], gPaletteBuffer + 0x130, PLTT_SIZE_4BPP);
     EnablePaletteSync();
 
-    sub_805AFA0(gEkrDistanceType, GetAnimPosition(anim1));
-    sub_8053618(gEkrBgPosition);
+    RegisterBanimTerrainTmByPos(gEkrDistanceType, GetAnimPosition(anim1));
+    EfxUpdateBg2Scroll(gEkrBgPosition);
 
     return;
 }
@@ -1144,7 +1144,7 @@ void efxHitQuake_Loop(struct ProcEfxQuake * proc)
                     BG_SetPosition(BG_3, 0, 0);
                 }
 
-                sub_8053618(gEkrBgPosition);
+                EfxUpdateBg2Scroll(gEkrBgPosition);
 
                 break;
         }
@@ -1152,7 +1152,7 @@ void efxHitQuake_Loop(struct ProcEfxQuake * proc)
         if (proc->unk_64 != NULL)
         {
             AnimDelete(proc->unk_64);
-            sub_805AE58(&gEkrbattle_9);
+            RegisterBanimTerrainTm(&gEkrbattle_9);
         }
 
         x1 = gEkrXPosReal[0] - gEkrBgPosition;

@@ -211,7 +211,7 @@ void UnsetMapStaffAnim(s16 * out, u16 pos, u16 weapon);
 void ParseBattleHitToBanimCmd(void);
 u16 GetBattleAnimationId(struct Unit * unit, const struct BattleAnimDef * anim_def, u16 wpn, u32 * out);
 bool CheckBattleHasHit(void);
-// ??? sub_805893C(???);
+// ??? GetBanimSheetSelectByte(???);
 u16 * FilterBattleAnimCharacterPalette(s16 banim_index, u16 item);
 int GetBanimFactionPalette(u32 faction);
 

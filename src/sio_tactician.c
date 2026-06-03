@@ -21,20 +21,20 @@ PROC_LABEL(0),
     PROC_REPEAT(Tactician_Loop),
     PROC_GOTO(2),
 PROC_LABEL(1),
-    PROC_CALL(sub_8044FE4),
-    PROC_REPEAT(sub_8044FFC),
-    PROC_CALL(sub_804503C),
-    PROC_REPEAT(sub_8045068),
+    PROC_CALL(Tactician_PageFade_Init),
+    PROC_REPEAT(Tactician_PageFadeOut_Loop),
+    PROC_CALL(Tactician_SwapPage),
+    PROC_REPEAT(Tactician_PageFadeIn_Loop),
     PROC_GOTO(0),
 PROC_LABEL(3),
     PROC_CALL(NameSelect_DrawName),
-    PROC_REPEAT(sub_8045108),
+    PROC_REPEAT(NameSelect_ConfirmLoop),
     PROC_GOTO(0),
 PROC_LABEL(2),
     PROC_CALL(Set_UnkData_0),
-    PROC_CALL(sub_8013F40),
+    PROC_CALL(FadeOutBlackSpeed20Locking),
     PROC_YIELD,
-    PROC_CALL(sub_80451F0),
+    PROC_CALL(Tactician_OnEnd),
     PROC_END,
 };
 
@@ -570,7 +570,7 @@ const struct TacticianTextConf * GetTacticianTextConf(s16 idx)
     return gTacticianTextConf + idx;
 }
 
-void sub_8044560(struct ProcTactician * proc, u8 * str_buf)
+void Tactician_MapNameToConfIndices(struct ProcTactician * proc, u8 * str_buf)
 {
     int i;
     int j;
@@ -611,7 +611,7 @@ void sub_8044560(struct ProcTactician * proc, u8 * str_buf)
     return;
 }
 
-void sub_8044614(struct ProcTactician * proc)
+void Tactician_DrawCharGrid(struct ProcTactician * proc)
 {
     int i, j;
 
@@ -729,10 +729,10 @@ void Tactician_InitScreen(struct ProcTactician * proc)
 
     InitText(&Texts_0, 0xC);
     StartLinkArenaTitleBanner(proc->child1, 3, 0x500);
-    sub_804C508();
+    SetLinkArenaUiBlendAndWindowOff();
     gUnk_Sio_12 = 0;
     proc->text_idx = 0;
-    sub_8044614(proc);
+    Tactician_DrawCharGrid(proc);
 
     /* 80448DE */
     if (proc->unk32 != 0)
@@ -751,7 +751,7 @@ void Tactician_InitScreen(struct ProcTactician * proc)
             if (char_cnt < proc->unk33)
                 proc->cur_len = char_cnt;
         }
-        sub_8044560(proc, str_buf);
+        Tactician_MapNameToConfIndices(proc, str_buf);
         TacticianDrawCharacters(proc);
         proc->child1->unk40 = proc->cur_len * 7;
     }
@@ -869,7 +869,7 @@ void SaveTactician(struct ProcTactician * proc, const struct TacticianTextConf *
     }
 }
 
-bool sub_8044B78(struct ProcTactician * proc, const struct TacticianTextConf * conf, u32 c, int d)
+bool Tactician_TryChangeLastCharVariant(struct ProcTactician * proc, const struct TacticianTextConf * conf, u32 c, int d)
 {
     if (proc->line_idx > 1 && d == 0)
     {
@@ -951,12 +951,12 @@ void Tactician_LoopCore(struct ProcTactician * proc, const struct TacticianTextC
             break;
 
         case 6:
-            sub_8044B78(proc, conf, 1, 0);
+            Tactician_TryChangeLastCharVariant(proc, conf, 1, 0);
 
             break;
 
         case 7:
-            sub_8044B78(proc, conf, 2, 0);
+            Tactician_TryChangeLastCharVariant(proc, conf, 2, 0);
 
             break;
 
@@ -1025,7 +1025,7 @@ void Tactician_LoopCore(struct ProcTactician * proc, const struct TacticianTextC
             if (var == proc->unk39)
                 break;
 
-        } while (sub_8044B78(proc, conf, proc->unk39, 1) == 0);
+        } while (Tactician_TryChangeLastCharVariant(proc, conf, proc->unk39, 1) == 0);
     }
 
     if ((gKeyStatusPtr->newKeys & L_BUTTON) != 0)
@@ -1106,7 +1106,7 @@ void Tactician_Loop(struct ProcTactician * proc)
 }
 
 //! FE8U = 0x08044F84
-void sub_8044F84(void)
+void Tactician_PageFadeHBlankHandler(void)
 {
     u16 vcount = REG_VCOUNT + 1;
 
@@ -1129,15 +1129,15 @@ void sub_8044F84(void)
     return;
 }
 
-void sub_8044FE4(struct ProcTactician * proc)
+void Tactician_PageFade_Init(struct ProcTactician * proc)
 {
     proc->unk3A = 0;
-    SetPrimaryHBlankHandler(sub_8044F84);
+    SetPrimaryHBlankHandler(Tactician_PageFadeHBlankHandler);
     return;
 }
 
 //! FE8U = 0x08044FFC
-void sub_8044FFC(struct ProcTactician * proc)
+void Tactician_PageFadeOut_Loop(struct ProcTactician * proc)
 {
     gUnk_41 = Interpolate(INTERPOLATE_LINEAR, 15, 0, proc->unk3A, 8);
     proc->unk3A++;
@@ -1151,12 +1151,12 @@ void sub_8044FFC(struct ProcTactician * proc)
 }
 
 //! FE8U = 0x0804503C
-void sub_804503C(struct ProcTactician * proc)
+void Tactician_SwapPage(struct ProcTactician * proc)
 {
     proc->text_idx++;
     proc->text_idx &= 1;
 
-    sub_8044614(proc);
+    Tactician_DrawCharGrid(proc);
     BG_EnableSyncByMask(BG1_SYNC_BIT);
 
     proc->unk3A = 0;
@@ -1165,7 +1165,7 @@ void sub_804503C(struct ProcTactician * proc)
 }
 
 //! FE8U = 0x08045068
-void sub_8045068(struct ProcTactician * proc)
+void Tactician_PageFadeIn_Loop(struct ProcTactician * proc)
 {
     gUnk_41 = Interpolate(INTERPOLATE_LINEAR, 0, 15, proc->unk3A, 8);
     proc->unk3A++;
@@ -1184,7 +1184,7 @@ void NameSelect_DrawName(struct ProcTactician * proc)
 {
     proc->unk3B = 1;
 
-    sub_804D80C();
+    LoadLinkArenaChoiceBoxGfx();
 
     ClearText(&Texts_0);
 
@@ -1200,7 +1200,7 @@ void NameSelect_DrawName(struct ProcTactician * proc)
 }
 
 //! FE8U = 0x08045108
-void sub_8045108(struct ProcTactician * proc)
+void NameSelect_ConfirmLoop(struct ProcTactician * proc)
 {
     PutLinkArenaChoiceBannerSprite(0x40, 0x58);
 
@@ -1253,13 +1253,13 @@ void sub_8045108(struct ProcTactician * proc)
 }
 
 //! FE8U = 0x080451F0
-void sub_80451F0(void)
+void Tactician_OnEnd(void)
 {
     EndMuralBackground();
 
     if (!CheckInLinkArena())
     {
-        nullsub_13();
+        Nop_SioUiutils_0();
     }
 
     return;

@@ -998,7 +998,7 @@ void BgAffinAnchoringHighPrecision(u8 bg, int q0_x, int q0_y, int p0_x, int p0_y
     affin->dy = ((affin->pc * (-q0_x) + affin->pd * (-q0_y)) >> 8) + p0_y;
 }
 
-void sub_80AE044(int a, u16 * buf, int c, int d, int e, int f, int g, int h)
+void Mode4BlitRect(int a, u16 * buf, int c, int d, int e, int f, int g, int h)
 {
     int i, ip, r4;
     u16 * r5, * r6;
@@ -1040,7 +1040,7 @@ void sub_80AE044(int a, u16 * buf, int c, int d, int e, int f, int g, int h)
     }
 }
 
-void sub_80AE0F0(int a, int b, int c, int d, int e, u16 f) 
+void Mode4FillRect(int a, int b, int c, int d, int e, u16 f) 
 {
     int i, r8 = 0x78;
     u16 * r5 = (void *)BG_VRAM + a * 0xA000;

@@ -81,7 +81,7 @@ bool IsSoundRoomCompleted(struct SoundRoomProc * proc)
 }
 
 //! FE8U = 0x080AEC90
-bool sub_80AEC90(void)
+bool SoundRoom_RetFalse(void)
 {
     return FALSE;
 }
@@ -224,7 +224,7 @@ void InitSoundRoomSongData(struct SoundRoomProc * proc)
 }
 
 //! FE8U = 0x080AEEC0
-void sub_80AEEC0(void)
+void SoundRoom_Null(void)
 {
     return;
 }
@@ -494,7 +494,7 @@ struct ProcCmd CONST_DATA gProcScr_VolumeGraphBuffer[] =
 // clang-format on
 
 //! FE8U = 0x080AF338
-void sub_80AF338(struct SoundRoomProc * proc)
+void SoundRoom_UpdateScrollBar(struct SoundRoomProc * proc)
 {
     int currentSegment = proc->bgYOffset;
     int totalRows = (proc->totalSongs + 3) / 4;
@@ -503,7 +503,7 @@ void sub_80AF338(struct SoundRoomProc * proc)
 }
 
 //! FE8U = 0x080AF350
-void sub_80AF350(struct SoundRoomProc * proc)
+void SoundRoom_PutHandCursor(struct SoundRoomProc * proc)
 {
     int x = (proc->curIndex & 3) * 32 + 96;
     int y = (proc->curIndex >> 2) * 16;
@@ -515,7 +515,7 @@ void sub_80AF350(struct SoundRoomProc * proc)
 }
 
 //! FE8U = 0x080AF378
-s8 sub_80AF378(struct SoundRoomProc * proc)
+s8 SoundRoom_GetScrollDirection(struct SoundRoomProc * proc)
 {
     int adjusted = ((proc->curIndex / 4) * 16 - proc->bgYOffset) / 16;
 
@@ -539,7 +539,7 @@ s8 sub_80AF378(struct SoundRoomProc * proc)
 }
 
 //! FE8U = 0x080AF3C8
-void sub_80AF3C8(struct SoundRoomProc * proc)
+void SoundRoom_DrawSongList(struct SoundRoomProc * proc)
 {
     int i;
     int color;
@@ -593,7 +593,7 @@ void sub_80AF3C8(struct SoundRoomProc * proc)
     return;
 }
 
-void sub_80AF4D0(u16 * tm, struct SoundRoomProc * proc)
+void SoundRoom_DrawCompletionPercent(u16 * tm, struct SoundRoomProc * proc)
 {
     PutText(&gUnk_SoundRoom_0.text[0], tm);
     PutNumber(
@@ -658,14 +658,14 @@ void SoundRoomUi_Init(struct SoundRoomProc * proc)
     proc->unk_3f = 0;
 
     InitSoundRoomSongData(proc);
-    sub_80AFF30();
+    SoundRoom_InitText();
     TryDrawSoundRoomSongTitle(proc);
     ResetSysHandCursor(proc);
     DisplaySysHandCursorTextShadow(0x280, 2);
-    sub_80AF350(proc);
-    sub_80AF3C8(proc);
+    SoundRoom_PutHandCursor(proc);
+    SoundRoom_DrawSongList(proc);
     StartMenuScrollBarExt(proc, 216, 72, 0x1000, 3);
-    sub_80AF338(proc);
+    SoundRoom_UpdateScrollBar(proc);
 
     Decompress(gMenuSoundroom_3, (void *)0x06004000);
     ApplyPalette(gUnkData_30, 4);
@@ -673,7 +673,7 @@ void SoundRoomUi_Init(struct SoundRoomProc * proc)
     CallARM_FillTileRect(TILEMAP_LOCATED(gBG1TilemapBuffer, 1, 7), gMenuSoundroom_0, 0x1000);
     CallARM_FillTileRect(TILEMAP_LOCATED(gBG1TilemapBuffer, 11, 5), gMenuSoundroom_1, 0x1000);
 
-    sub_80AF4D0(TILEMAP_LOCATED(gBG0TilemapBuffer, 15, 6), proc);
+    SoundRoom_DrawCompletionPercent(TILEMAP_LOCATED(gBG0TilemapBuffer, 15, 6), proc);
 
     Decompress(Img_PlayStatusSprites, (void *)0x06016000);
     ApplyPalette(Pal_PlayStatusSprites, 0x1C);
@@ -814,7 +814,7 @@ void SoundRoomUi_Loop_MainKeyHandler(struct SoundRoomProc * proc)
 
             TryDrawSoundRoomSongTitle(proc);
 
-            proc->unk_37 = sub_80AF378(proc);
+            proc->unk_37 = SoundRoom_GetScrollDirection(proc);
 
             if (proc->unk_37 != 0)
             {
@@ -828,11 +828,11 @@ void SoundRoomUi_Loop_MainKeyHandler(struct SoundRoomProc * proc)
                     Proc_Goto(proc, 11);
                 }
 
-                sub_80AF3C8(proc);
+                SoundRoom_DrawSongList(proc);
             }
             else
             {
-                sub_80AF350(proc);
+                SoundRoom_PutHandCursor(proc);
             }
         }
     }
@@ -851,7 +851,7 @@ void SoundRoomUi_Loop_MainKeyHandler(struct SoundRoomProc * proc)
             proc->unk_37 = 0;
         }
 
-        sub_80AF338(proc);
+        SoundRoom_UpdateScrollBar(proc);
 
         return;
     }
@@ -918,7 +918,7 @@ void SoundRoomUi_OnEnd(struct SoundRoomProc * proc)
 }
 
 //! FE8U = 0x080AFAB4
-void sub_80AFAB4(struct SoundRoomProc * proc)
+void SoundRoom_DrawSlidingUi(struct SoundRoomProc * proc)
 {
     proc->unk_3c = -proc->unk_3b / 3;
     proc->unk_3d = (-(proc->unk_3b) * 2) / 3;
@@ -929,11 +929,11 @@ void sub_80AFAB4(struct SoundRoomProc * proc)
     BG_Fill(gBG1TilemapBuffer, 0);
     BG_Fill(gBG2TilemapBuffer, 0);
 
-    sub_80AC844(gSoundroom_0, 0, 7, 1, proc->unk_3d + 1, 7, 10, 11);
-    sub_80AC844(gSoundroom_0, 10, 5, 1, proc->unk_3e + 11, 5, 18, 14);
+    BlitClippedTileMapToBg(gSoundroom_0, 0, 7, 1, proc->unk_3d + 1, 7, 10, 11);
+    BlitClippedTileMapToBg(gSoundroom_0, 10, 5, 1, proc->unk_3e + 11, 5, 18, 14);
 
-    sub_80AC844(gSoundroom_1, 12, 0, 2, proc->unk_3e + 12, 0, 16, 32);
-    sub_80AC844(gSoundroom_1, 0, 0, 0, proc->unk_3e + 15, 6, 10, 2);
+    BlitClippedTileMapToBg(gSoundroom_1, 12, 0, 2, proc->unk_3e + 12, 0, 16, 32);
+    BlitClippedTileMapToBg(gSoundroom_1, 0, 0, 0, proc->unk_3e + 15, 6, 10, 2);
 
     PutMenuScrollBarAt(proc->unk_3e * 8 + 216, 72);
 
@@ -952,7 +952,7 @@ void SoundRoomUi_0(struct SoundRoomProc * proc)
 
     CpuFastCopy(gBG2TilemapBuffer, gSoundroom_1, 0x800);
 
-    sub_80AF4D0(gSoundroom_1, proc);
+    SoundRoom_DrawCompletionPercent(gSoundroom_1, proc);
 
     CallARM_FillTileRect(TILEMAP_LOCATED(gBG1TilemapBuffer, 2, 19), gMenuSoundroom_4, 0x1200);
     CallARM_FillTileRect(TILEMAP_LOCATED(gSoundroom_0, 1, 25), gMenuSoundroom_2, 0x1000);
@@ -975,7 +975,7 @@ void SoundRoomUi_Loop_MainUiSlideOut(struct SoundRoomProc * proc)
 
     proc->unk_3b = tmp >> 6;
 
-    sub_80AFAB4(proc);
+    SoundRoom_DrawSlidingUi(proc);
 
     if (proc->unk_3b == 24)
     {
@@ -1034,12 +1034,12 @@ void SoundRoomUi_Loop_MainUiSlideIn(struct SoundRoomProc * proc)
 
     proc->unk_3b = (tmp / 64);
 
-    sub_80AFAB4(proc);
+    SoundRoom_DrawSlidingUi(proc);
 
     if (proc->unk_3b == 0)
     {
-        sub_80AF350(proc);
-        sub_80AF338(proc);
+        SoundRoom_PutHandCursor(proc);
+        SoundRoom_UpdateScrollBar(proc);
         Proc_Break(proc);
     }
 
@@ -1071,7 +1071,7 @@ void SoundRoomUi_Loop_ShufflePlayUiSlideIn(struct SoundRoomProc * proc)
 
     BG_Fill(gBG1TilemapBuffer, 0);
 
-    sub_80AC844(gSoundroom_0, 1, 25, 1, 3, proc->unk_3c + 4, 24, 3);
+    BlitClippedTileMapToBg(gSoundroom_0, 1, 25, 1, 3, proc->unk_3c + 4, 24, 3);
 
     BG_EnableSyncByMask(BG1_SYNC_BIT);
 
@@ -1148,7 +1148,7 @@ void SoundRoomUi_Loop_ShufflePlayUiSlideOut(struct SoundRoomProc * proc)
 
     BG_Fill(gBG1TilemapBuffer, 0);
 
-    sub_80AC844(gSoundroom_0, 1, 25, 1, 3, proc->unk_3c + 4, 24, 3);
+    BlitClippedTileMapToBg(gSoundroom_0, 1, 25, 1, 3, proc->unk_3c + 4, 24, 3);
 
     BG_EnableSyncByMask(BG1_SYNC_BIT);
 
@@ -1231,7 +1231,7 @@ ProcPtr StartSoundRoomScreen(ProcPtr parent)
 }
 
 //! FE8U = 0x080AFF30
-void sub_80AFF30(void)
+void SoundRoom_InitText(void)
 {
     int i;
 
@@ -1302,7 +1302,7 @@ void DrawSoundRoomSongTitle(int index)
 }
 
 //! FE8U = 0x080B0088
-void sub_80B0088(int y, u16 unk)
+void SoundRoom_DrawSongTitleSprites(int y, u16 unk)
 {
     int i;
 
@@ -1378,7 +1378,7 @@ void DrawSoundRoomVolumeGraphSprites(int x, int y, int c, int d)
 }
 
 //! FE8U = 0x080B0204
-void sub_80B0204(struct SoundRoomSpriteDrawProc * proc)
+void SoundRoom_DrawVolumeGraphSprites(struct SoundRoomSpriteDrawProc * proc)
 {
     int i;
 
@@ -1569,7 +1569,7 @@ void SoundRoom_DrawSprites_Loop(struct SoundRoomSpriteDrawProc * proc)
 {
     struct SoundRoomProc * parent = proc->proc_parent;
 
-    sub_80B0088(parent->unk_3c * 8 + 6, 0x100);
+    SoundRoom_DrawSongTitleSprites(parent->unk_3c * 8 + 6, 0x100);
 
     if (parent->isSongPlaying != 0)
     {
@@ -1593,7 +1593,7 @@ void SoundRoom_DrawSprites_Loop(struct SoundRoomSpriteDrawProc * proc)
     PutSprite(0xb, OAM1_X(parent->unk_3d * 8 + 17), 104, gSprite_SoundRoom_StartButtonStop, OAM2_PAL(3));
     PutSprite(0xb, OAM1_X(parent->unk_3d * 8 + 17), 120, gSprite_SoundRoom_SelectButtonRandom, OAM2_PAL(3));
 
-    sub_80B0204(proc);
+    SoundRoom_DrawVolumeGraphSprites(proc);
 
     return;
 }

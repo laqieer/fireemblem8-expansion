@@ -39,7 +39,7 @@ int CONST_DATA gShopSellTextIndexLookup[] = {
 char * CONST_DATA gpShopSellStringBuffer = gBufPrep;
 
 //! FE8U = 0x0809FDD4
-void sub_809FDD4(int index, ProcPtr parent) {
+void WmSell_ShowDialoguePrompt(int index, ProcPtr parent) {
 
     StartParallelWorker(WmSell_DrawSupplyDialogueSpriteText, parent);
 
@@ -57,7 +57,7 @@ void sub_809FDD4(int index, ProcPtr parent) {
 }
 
 //! FE8U = 0x0809FE1C
-void sub_809FE1C(void) {
+void WmSell_OnHBlank(void) {
     u16 vcount = REG_VCOUNT + 1;
 
     if (vcount > DISPLAY_HEIGHT) {
@@ -84,7 +84,7 @@ void WmSell_Init(struct WmSellProc* proc) {
 }
 
 //! FE8U = 0x0809FE68
-void sub_809FE68(void) {
+void WmSell_InitMenuSpriteText(void) {
     InitSpriteTextFont(&_PrepItemSuppyTexts->font, (void*)0x06011000, 11);
     ApplyPalette(Pal_Text, 0x1B);
 
@@ -259,14 +259,14 @@ void WmSell_Setup(struct WmSellProc* proc) {
     InitText(&_PrepItemSuppyTexts->textA, 4);
     InitText(&_PrepItemSuppyTexts->textB, 2);
 
-    sub_809FE68();
+    WmSell_InitMenuSpriteText();
 
     for (i = 0; i < 5; i++) {
         InitText(&_PrepItemSuppyTexts->textArray[i], 7);
     }
 
     SetPrimaryHBlankHandler(0);
-    SetPrimaryHBlankHandler(sub_809FE1C);
+    SetPrimaryHBlankHandler(WmSell_OnHBlank);
 
     BG_EnableSyncByMask(4);
 
@@ -321,17 +321,17 @@ s8 WmSell_MainLoop_HandleDpadKeys(struct WmSellProc* proc) {
 }
 
 //! FE8U = 0x080A03C4
-void sub_80A03C4(struct WmSellProc* proc) {
+void WmSell_OnInit_ItemSelect(struct WmSellProc* proc) {
     DrawPrepScreenItems(gBG0TilemapBuffer + 0x122, &_PrepItemSuppyTexts->textArray[0], proc->unit, 0);
 
     WmSell_DrawItemGoldValue(proc->unit->items[proc->unk_30]);
 
-    sub_80ACA84(0);
+    ClearUiCursorHandConfig(0);
 
     Proc_End(GetParallelWorker(WmSell_DrawSellOptionSpriteText));
 
     ShowSysHandCursor(16, proc->unk_30 * 16 + 72, 11, 0x400);
-    sub_809FDD4(0, proc);
+    WmSell_ShowDialoguePrompt(0, proc);
 
     return;
 }
@@ -395,14 +395,14 @@ void WmSell_OnLoop_MainKeyHandler(struct WmSellProc* proc) {
 }
 
 //! FE8U = 0x080A0570
-void sub_80A0570(struct WmSellProc* proc) {
+void WmSell_OnInit_ConfirmSell(struct WmSellProc* proc) {
     proc->unk_31 = 1;
 
     StartParallelWorker(WmSell_DrawSellOptionSpriteText, proc);
 
     SetUiCursorHandConfig(0, 16, proc->unk_30 * 16 + 72, 2);
     ShowSysHandCursor(proc->unk_31 * 32 + 164, 111, 0, 0x400);
-    sub_809FDD4(1, proc);
+    WmSell_ShowDialoguePrompt(1, proc);
 
     return;
 }
@@ -411,7 +411,7 @@ void sub_80A0570(struct WmSellProc* proc) {
 void WmSell_ConfirmSellItem(struct WmSellProc* proc) {
     int count;
 
-    sub_8024E20(GetItemSellPrice(proc->unit->items[proc->unk_30]));
+    AddPartyGoldAmount(GetItemSellPrice(proc->unit->items[proc->unk_30]));
 
     proc->unit->items[proc->unk_30] = 0;
 
@@ -502,11 +502,11 @@ PROC_LABEL(0),
     PROC_WHILE(FadeInExists),
 
 PROC_LABEL(1),
-    PROC_CALL(sub_80A03C4),
+    PROC_CALL(WmSell_OnInit_ItemSelect),
     PROC_REPEAT(WmSell_OnLoop_MainKeyHandler),
 
 PROC_LABEL(2),
-    PROC_CALL(sub_80A0570),
+    PROC_CALL(WmSell_OnInit_ConfirmSell),
     PROC_REPEAT(WmSell_OnLoop_ConfirmSellKeyHandler),
 
 PROC_LABEL(3),

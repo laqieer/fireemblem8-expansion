@@ -830,12 +830,12 @@ void Minimap_OpenAnim(struct MinimapProc* proc) {
         arr[i].y = ((a2 * unk) >> 20) + 80;
     }
 
-    sub_80131D0(gMinimapBackWinBuf);
+    InitWindowScanlineBounds(gMinimapBackWinBuf);
 
-    sub_80131F0(gMinimapBackWinBuf, arr[0].x, arr[0].y, arr[1].x, arr[1].y);
-    sub_80131F0(gMinimapBackWinBuf, arr[1].x, arr[1].y, arr[2].x, arr[2].y);
-    sub_80131F0(gMinimapBackWinBuf, arr[2].x, arr[2].y, arr[3].x, arr[3].y);
-    sub_80131F0(gMinimapBackWinBuf, arr[3].x, arr[3].y, arr[0].x, arr[0].y);
+    RasterizeWindowEdge(gMinimapBackWinBuf, arr[0].x, arr[0].y, arr[1].x, arr[1].y);
+    RasterizeWindowEdge(gMinimapBackWinBuf, arr[1].x, arr[1].y, arr[2].x, arr[2].y);
+    RasterizeWindowEdge(gMinimapBackWinBuf, arr[2].x, arr[2].y, arr[3].x, arr[3].y);
+    RasterizeWindowEdge(gMinimapBackWinBuf, arr[3].x, arr[3].y, arr[0].x, arr[0].y);
 
     InitMinimapWindowBuffers();
 
@@ -901,12 +901,12 @@ void Minimap_CloseAnim(struct MinimapProc* proc) {
         arr[i].y = ((a2 * unk) >> 20) + 80;
     }
 
-    sub_80131D0(gMinimapBackWinBuf);
+    InitWindowScanlineBounds(gMinimapBackWinBuf);
 
-    sub_80131F0(gMinimapBackWinBuf, arr[0].x, arr[0].y, arr[1].x, arr[1].y);
-    sub_80131F0(gMinimapBackWinBuf, arr[1].x, arr[1].y, arr[2].x, arr[2].y);
-    sub_80131F0(gMinimapBackWinBuf, arr[2].x, arr[2].y, arr[3].x, arr[3].y);
-    sub_80131F0(gMinimapBackWinBuf, arr[3].x, arr[3].y, arr[0].x, arr[0].y);
+    RasterizeWindowEdge(gMinimapBackWinBuf, arr[0].x, arr[0].y, arr[1].x, arr[1].y);
+    RasterizeWindowEdge(gMinimapBackWinBuf, arr[1].x, arr[1].y, arr[2].x, arr[2].y);
+    RasterizeWindowEdge(gMinimapBackWinBuf, arr[2].x, arr[2].y, arr[3].x, arr[3].y);
+    RasterizeWindowEdge(gMinimapBackWinBuf, arr[3].x, arr[3].y, arr[0].x, arr[0].y);
 
     InitMinimapWindowBuffers();
 

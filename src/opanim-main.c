@@ -236,7 +236,7 @@ void OpAnimUpdateScreen1(struct ProcOpAnim * proc)
     proc->unk2E = 0;
 }
 
-void sub_80C6F70(struct ProcOpAnim * proc)
+void OpAnimWorldMapfxMain(struct ProcOpAnim * proc)
 {
     if (!(proc->timer & 1))
         proc->unk2C++;
@@ -250,7 +250,7 @@ void sub_80C6F70(struct ProcOpAnim * proc)
     {
         int ret = Interpolate(INTERPOLATE_LINEAR, 0x10, 0, proc->timer, 0x60);
         ApplyPaletteOpAnim(Pal_OpAnimWorldMap, 0);
-        sub_80C69B0(PAL_BG(0), 0x7FFF, ret);
+        BlendPaletteToColor(PAL_BG(0), 0x7FFF, ret);
     }
 
     if ((u32)(proc->timer - 0x80) <= 0x60)
@@ -275,7 +275,7 @@ void sub_80C6F70(struct ProcOpAnim * proc)
     proc->timer++;
 }
 
-void sub_80C7050(struct ProcOpAnim * proc)
+void OpAnimSetupCharacterScene(struct ProcOpAnim * proc)
 {
     gLCDControlBuffer.dispcnt.mode = 0;
 
@@ -590,7 +590,7 @@ void OpAnim1_UpdateScroll(int new, int old)
     BG_SetPosition(2, 0, 0x60 - new);
 }
 
-void sub_80C72A4(u8 type)
+void OpAnimApplyScrollPalettes(u8 type)
 {
     SetDefaultColorEffects();
 
@@ -717,7 +717,7 @@ void OpAnimMergeBGProcUpdateBgPalette(struct Proc08AA7034 * proc)
 {
     int ret = Interpolate(INTERPOLATE_LINEAR, 0x10, 0, proc->timer, 0x20);
     ApplyPaletteOpAnim(Pal_OpAnimCharacterBG, 14);
-    sub_80C69B0(PAL_BG(14), 0x7FFF, ret);
+    BlendPaletteToColor(PAL_BG(14), 0x7FFF, ret);
 
     if (proc->timer == 0x20)
     {
@@ -788,12 +788,12 @@ void OpAnimEphraimfxFlyIn(struct ProcOpAnim * proc)
     if (val >= 0)
     {
         ret = Interpolate(4, 0, 0x90, val, 0x10);
-        sub_80C689C(ret, proc->unk32, 0xC8, BG_1, (u16 *)(gGenericBuffer), (u16 *)(gGenericBuffer + 0x800), 1);
+        TsaModifyFirstPalReverse(ret, proc->unk32, 0xC8, BG_1, (u16 *)(gGenericBuffer), (u16 *)(gGenericBuffer + 0x800), 1);
         proc->unk32 = ret;
 
         if (val == 0x10)
         {
-            sub_80C689C(proc->unk32, 0, 0xC8, BG_0, (u16 *)(gGenericBuffer), (u16 *)(gGenericBuffer + 0x800), 0);
+            TsaModifyFirstPalReverse(proc->unk32, 0, 0xC8, BG_0, (u16 *)(gGenericBuffer), (u16 *)(gGenericBuffer + 0x800), 0);
             proc->timer = 0;
             Proc_Break(proc);
             return;
@@ -832,7 +832,7 @@ void OpAnimHBlank2(void)
         REG_BLDCNT = 0xCCF;
 }
 
-void sub_80C7900(struct ProcOpAnim * proc)
+void OpAnimEphraimSetupSplitWindow(struct ProcOpAnim * proc)
 {
     SetPrimaryHBlankHandler(OpAnimHBlank1);
 
@@ -976,7 +976,7 @@ void OpAnimEphraimExit(struct ProcOpAnim * proc)
                 SetBlendConfig(1, ret, 0x10 - ret, 8);
             }
             ret = Interpolate(1, proc->unk36, 0x180, time2, 0x18);
-            sub_80C689C(ret, proc->unk32, 0xC8, BG_0, (void *)gGenericBuffer, (void *)(gGenericBuffer + 0x800), 0);
+            TsaModifyFirstPalReverse(ret, proc->unk32, 0xC8, BG_0, (void *)gGenericBuffer, (void *)(gGenericBuffer + 0x800), 0);
             proc->unk32 = ret;
 
             if (time2 == 0x18)
@@ -1096,7 +1096,7 @@ void OpAnimPreparefxEirika(struct ProcOpAnim * proc)
 }
 
 //! FE8U = 0x080C7F90
-void sub_80C7F90(struct ProcOpAnim * proc)
+void OpAnimEirikafxFlyIn(struct ProcOpAnim * proc)
 {
     int time;
     int ret;
@@ -1110,30 +1110,30 @@ void sub_80C7F90(struct ProcOpAnim * proc)
         switch (proc->timer)
         {
             case 12:
-                sub_80C689C(ret, 0, 0x98, 2, (void *)(0x0600C800), 0, 0);
+                TsaModifyFirstPalReverse(ret, 0, 0x98, 2, (void *)(0x0600C800), 0, 0);
 
                 break;
 
             case 13:
                 Decompress(Img_OpAnimEirikaBlur1, (void *)(0x06008000));
-                sub_80C689C(ret, proc->unk30, 0x98, 2, (void *)(0x0600C800), 0, 0);
+                TsaModifyFirstPalReverse(ret, proc->unk30, 0x98, 2, (void *)(0x0600C800), 0, 0);
 
                 break;
 
             case 14:
                 Decompress(Tsa_OpAnimEirikaBlur1, (void *)(0x0600C000));
-                sub_80C689C(ret, 0, 0x98, 2, (void *)(0x0600C000), 0, 0);
+                TsaModifyFirstPalReverse(ret, 0, 0x98, 2, (void *)(0x0600C000), 0, 0);
 
                 break;
 
             case 15:
             default:
-                sub_80C689C(ret, proc->unk30, 0x98, 2, (void *)(0x0600C000), 0, 0);
+                TsaModifyFirstPalReverse(ret, proc->unk30, 0x98, 2, (void *)(0x0600C000), 0, 0);
 
                 break;
 
             case 16:
-                sub_80C689C(ret, 0, 0x98, 2, (u16 *)(gGenericBuffer + 0x1000), 0, 0);
+                TsaModifyFirstPalReverse(ret, 0, 0x98, 2, (u16 *)(gGenericBuffer + 0x1000), 0, 0);
                 SetBackgroundTileDataOffset(2, 0x4000);
 
                 break;
@@ -1165,7 +1165,7 @@ void sub_80C7F90(struct ProcOpAnim * proc)
 }
 
 //! FE8U = 0x080C8100
-void sub_80C8100(struct ProcOpAnim * proc)
+void OpAnimEirikaSetupSplitWindow(struct ProcOpAnim * proc)
 {
     SetPrimaryHBlankHandler(OpAnimHBlank1);
 
@@ -1184,7 +1184,7 @@ void sub_80C8100(struct ProcOpAnim * proc)
 }
 
 //! FE8U = 0x080C8184
-void sub_80C8184(struct ProcOpAnim * proc)
+void OpAnimEirikaAdvanceSplitLine(struct ProcOpAnim * proc)
 {
     int x;
     int y;
@@ -1224,7 +1224,7 @@ void sub_80C8184(struct ProcOpAnim * proc)
 }
 
 //! FE8U = 0x080C8214
-void sub_80C8214(struct ProcOpAnim * proc)
+void OpAnimEirikaMergeShadow(struct ProcOpAnim * proc)
 {
     gOpAnimSt.unk06 = Interpolate(INTERPOLATE_RSQUARE, DISPLAY_HEIGHT, DISPLAY_WIDTH / 2, proc->timer, 0x10);
     OpAnimDrawSplitLine(8, 0x88);
@@ -1248,7 +1248,7 @@ void sub_80C8214(struct ProcOpAnim * proc)
 }
 
 //! FE8U = 0x080C8278
-void sub_80C8278(struct ProcOpAnim * proc)
+void OpAnimEirikaDisplayName(struct ProcOpAnim * proc)
 {
     int i;
 
@@ -1306,7 +1306,7 @@ void sub_80C8278(struct ProcOpAnim * proc)
 }
 
 //! FE8U = 0x080C835C
-void sub_80C835C(struct ProcOpAnim * proc)
+void OpAnimEirikaExit(struct ProcOpAnim * proc)
 {
     int time;
     int time1;
@@ -1340,7 +1340,7 @@ void sub_80C835C(struct ProcOpAnim * proc)
         if (time1 <= 0x18)
         {
             ret = Interpolate(1, proc->unk34, 0x158, time1, 0x18);
-            sub_80C689C(ret, proc->unk30, 0x98, 2, (u16 *)(gGenericBuffer + 0x1000), 0, 1);
+            TsaModifyFirstPalReverse(ret, proc->unk30, 0x98, 2, (u16 *)(gGenericBuffer + 0x1000), 0, 1);
             proc->unk30 = ret;
         }
 
@@ -1381,7 +1381,7 @@ void sub_80C835C(struct ProcOpAnim * proc)
 }
 
 //! FE8U = 0x080C84D8
-void sub_80C84D8(struct ProcOpAnim * proc)
+void OpAnimFadeToBlack(struct ProcOpAnim * proc)
 {
     if (proc->timer == 0)
     {
@@ -1406,22 +1406,22 @@ void sub_80C84D8(struct ProcOpAnim * proc)
 }
 
 //! FE8U = 0x080C8554
-void sub_80C8554(void)
+void OpAnimScrollBg3Loop(void)
 {
     gLCDControlBuffer.bgoffset[BG_3].x += 2;
     return;
 }
 
 //! FE8U = 0x080C8564
-void sub_80C8564(struct ProcOpAnim * proc)
+void OpAnimApplyScrollAndPalettes(struct ProcOpAnim * proc)
 {
-    sub_80C72A4(proc->unk46);
+    OpAnimApplyScrollPalettes(proc->unk46);
     OpAnim1_UpdateScroll(proc->unk38, proc->unk3A);
     return;
 }
 
 //! FE8U = 0x080C8580
-void sub_80C8580(struct ProcOpAnimBlend * proc)
+void OpAnimDarkenBg2Init(struct ProcOpAnimBlend * proc)
 {
     SetBlendConfig(BLEND_EFFECT_DARKEN, 8, 8, 14);
     SetBlendTargetA(0, 0, 1, 0, 0);
@@ -1432,7 +1432,7 @@ void sub_80C8580(struct ProcOpAnimBlend * proc)
 }
 
 //! FE8U = 0x080C85B0
-void sub_80C85B0(struct ProcOpAnimBlend * proc)
+void OpAnimDarkenBg2In(struct ProcOpAnimBlend * proc)
 {
     SetBlendConfig(BLEND_EFFECT_DARKEN, 8, 8, Interpolate(INTERPOLATE_LINEAR, 0xe, 0, proc->unk4C, 0x28));
 
@@ -1449,14 +1449,14 @@ void sub_80C85B0(struct ProcOpAnimBlend * proc)
 }
 
 //! FE8U = 0x080C85FC
-void sub_80C85FC(void)
+void OpAnimRestoreColorEffectsOnEnd(void)
 {
     SetDefaultColorEffects();
     return;
 }
 
 //! FE8U = 0x080C8608
-void sub_80C8608(struct ProcOpAnimBlend * proc)
+void OpAnimDarkenBg2OutInit(struct ProcOpAnimBlend * proc)
 {
     SetBlendConfig(BLEND_EFFECT_DARKEN, 8, 8, 0);
     SetBlendTargetA(0, 0, 1, 0, 0);
@@ -1467,7 +1467,7 @@ void sub_80C8608(struct ProcOpAnimBlend * proc)
 }
 
 //! FE8U = 0x080C8638
-void sub_80C8638(struct ProcOpAnimBlend * proc)
+void OpAnimDarkenBg2Out(struct ProcOpAnimBlend * proc)
 {
     SetBlendConfig(BLEND_EFFECT_DARKEN, 8, 8, Interpolate(INTERPOLATE_LINEAR, 0, 12, proc->unk4C, 0x28));
 
@@ -1484,14 +1484,14 @@ void sub_80C8638(struct ProcOpAnimBlend * proc)
 }
 
 //! FE8U = 0x080C8684
-void sub_80C8684(void)
+void OpAnimRestoreColorEffectsOnEnd2(void)
 {
     SetDefaultColorEffects();
     return;
 }
 
 //! FE8U = 0x080C8690
-void sub_80C8690(struct ProcOpAnim * proc)
+void OpAnimJoshuaScrollIn(struct ProcOpAnim * proc)
 {
     int i;
     s16 * vram;
@@ -1571,7 +1571,7 @@ void sub_80C8690(struct ProcOpAnim * proc)
 }
 
 //! FE8U = 0x080C883C
-void sub_80C883C(struct ProcOpAnim * proc)
+void OpAnimScrollInLArachel(struct ProcOpAnim * proc)
 {
     OpAnim1_UpdateScroll(proc->unk38, proc->unk3A);
     proc->unk3A = proc->unk38;
@@ -1617,7 +1617,7 @@ void sub_80C883C(struct ProcOpAnim * proc)
 }
 
 //! FE8U = 0x080C8934
-void sub_80C8934(struct ProcOpAnim * proc)
+void OpAnimScrollInSeth(struct ProcOpAnim * proc)
 {
     OpAnim1_UpdateScroll(proc->unk38, proc->unk3A);
     proc->unk3A = proc->unk38;
@@ -1662,7 +1662,7 @@ void sub_80C8934(struct ProcOpAnim * proc)
 }
 
 //! FE8U = 0x080C8A20
-void sub_80C8A20(struct ProcOpAnim * proc)
+void OpAnimScrollInMyrrh(struct ProcOpAnim * proc)
 {
     OpAnim1_UpdateScroll(proc->unk38, proc->unk3A);
     proc->unk3A = proc->unk38;
@@ -1707,7 +1707,7 @@ void sub_80C8A20(struct ProcOpAnim * proc)
 }
 
 //! FE8U = 0x080C8B0C
-void sub_80C8B0C(struct ProcOpAnim * proc)
+void OpAnimScrollInSaleh(struct ProcOpAnim * proc)
 {
     OpAnim1_UpdateScroll(proc->unk38, proc->unk3A);
     proc->unk3A = proc->unk38;
@@ -1752,7 +1752,7 @@ void sub_80C8B0C(struct ProcOpAnim * proc)
 }
 
 //! FE8U = 0x080C8BF8
-void sub_80C8BF8(struct ProcOpAnim * proc)
+void OpAnimScrollInTethys(struct ProcOpAnim * proc)
 {
     OpAnim1_UpdateScroll(proc->unk38, proc->unk3A);
     proc->unk3A = proc->unk38;
@@ -1797,7 +1797,7 @@ void sub_80C8BF8(struct ProcOpAnim * proc)
 }
 
 //! FE8U = 0x080C8CE4
-void sub_80C8CE4(struct ProcOpAnim * proc)
+void OpAnimScrollInBlank(struct ProcOpAnim * proc)
 {
     OpAnim1_UpdateScroll(proc->unk38, proc->unk3A);
     proc->unk3A = proc->unk38;
@@ -1819,7 +1819,7 @@ void sub_80C8CE4(struct ProcOpAnim * proc)
 }
 
 //! FE8U = 0x080C8D30
-void sub_80C8D30(struct ProcOpAnim * proc)
+void OpAnimFaceMontageBegin(struct ProcOpAnim * proc)
 {
     int ret;
     int i;
@@ -1844,7 +1844,7 @@ void sub_80C8D30(struct ProcOpAnim * proc)
 
     for (i = 0; i < 8; i++)
     {
-        sub_80C69B0(gPaletteBuffer + i * 0x10, 0, ret);
+        BlendPaletteToColor(gPaletteBuffer + i * 0x10, 0, ret);
     }
 
     switch (proc->timer)
@@ -1896,7 +1896,7 @@ void sub_80C8D30(struct ProcOpAnim * proc)
 }
 
 //! FE8U = 0x080C8ED4
-void sub_80C8ED4(struct ProcOpAnim * proc)
+void OpAnimFaceMontageEwanGroup(struct ProcOpAnim * proc)
 {
     int ret;
 
@@ -1959,7 +1959,7 @@ void sub_80C8ED4(struct ProcOpAnim * proc)
 }
 
 //! FE8U = 0x080C9024
-void sub_80C9024(struct ProcOpAnim * proc)
+void OpAnimFaceMontageGarciaGroup(struct ProcOpAnim * proc)
 {
     int ret;
 
@@ -2008,7 +2008,7 @@ void sub_80C9024(struct ProcOpAnim * proc)
 }
 
 //! FE8U = 0x080C9100
-void sub_80C9100(struct ProcOpAnim * proc)
+void OpAnimFaceMontageVanessaGroup(struct ProcOpAnim * proc)
 {
     int ret;
 
@@ -2064,7 +2064,7 @@ void sub_80C9100(struct ProcOpAnim * proc)
 }
 
 //! FE8U = 0x080C9218
-void sub_80C9218(struct ProcOpAnim * proc)
+void OpAnimFaceMontageGilliamGroup(struct ProcOpAnim * proc)
 {
     int ret;
 
@@ -2120,7 +2120,7 @@ void sub_80C9218(struct ProcOpAnim * proc)
 }
 
 //! FE8U = 0x080C9330
-void sub_80C9330(struct ProcOpAnim * proc)
+void OpAnimFaceMontageColmGroup(struct ProcOpAnim * proc)
 {
     int ret;
 
@@ -2169,7 +2169,7 @@ void sub_80C9330(struct ProcOpAnim * proc)
 }
 
 //! FE8U = 0x080C940C
-void sub_80C940C(struct ProcOpAnim * proc)
+void OpAnimFaceMontageKnollGroup(struct ProcOpAnim * proc)
 {
     int ret;
 
@@ -2232,7 +2232,7 @@ void sub_80C940C(struct ProcOpAnim * proc)
 }
 
 //! FE8U = 0x080C955C
-void sub_80C955C(struct ProcOpAnim * proc)
+void OpAnimFaceMontageLuteGroup(struct ProcOpAnim * proc)
 {
     int ret;
 
@@ -2281,7 +2281,7 @@ void sub_80C955C(struct ProcOpAnim * proc)
 }
 
 //! FE8U = 0x080C9638
-void sub_80C9638(struct ProcOpAnim * proc)
+void OpAnimFaceMontageDuesselGroup(struct ProcOpAnim * proc)
 {
     int ret;
 
@@ -2337,7 +2337,7 @@ void sub_80C9638(struct ProcOpAnim * proc)
 }
 
 //! FE8U = 0x080C9750
-void sub_80C9750(struct ProcOpAnim * proc)
+void OpAnimFaceMontageKyleGroup(struct ProcOpAnim * proc)
 {
     int ret;
 
@@ -2400,7 +2400,7 @@ void sub_80C9750(struct ProcOpAnim * proc)
 }
 
 //! FE8U = 0x080C98A0
-void sub_80C98A0(struct ProcOpAnim * proc)
+void OpAnimFaceMontageValterGroup(struct ProcOpAnim * proc)
 {
     int ret;
 
@@ -2456,7 +2456,7 @@ void sub_80C98A0(struct ProcOpAnim * proc)
 }
 
 //! FE8U = 0x080C99B8
-void sub_80C99B8(struct ProcOpAnim * proc)
+void OpAnimFaceMontageLyonGroup(struct ProcOpAnim * proc)
 {
     int ret;
 
@@ -2505,7 +2505,7 @@ void sub_80C99B8(struct ProcOpAnim * proc)
 }
 
 //! FE8U = 0x080C9A94
-void sub_80C9A94(struct ProcOpAnim * proc)
+void OpAnimFaceMontageBlendOut(struct ProcOpAnim * proc)
 {
     SetDispEnable(0, 1, 1, 0, 0);
 
@@ -2525,7 +2525,7 @@ void sub_80C9A94(struct ProcOpAnim * proc)
 }
 
 //! FE8U = 0x080C9AFC
-void sub_80C9AFC(struct ProcOpAnim * proc)
+void OpAnimFadeToWhite(struct ProcOpAnim * proc)
 {
     int i;
 
@@ -2535,7 +2535,7 @@ void sub_80C9AFC(struct ProcOpAnim * proc)
 
     for (i = 0; i < 8; i++)
     {
-        sub_80C69B0(gPaletteBuffer + i * 0x10, 0x7FFF, ret);
+        BlendPaletteToColor(gPaletteBuffer + i * 0x10, 0x7FFF, ret);
     }
 
     if (proc->timer == 0x30)
@@ -2553,7 +2553,7 @@ void sub_80C9AFC(struct ProcOpAnim * proc)
 }
 
 //! FE8U = 0x080C9B6C
-void sub_80C9B6C(void)
+void OpAnimConfigCharacterScrollBg(void)
 {
     gLCDControlBuffer.bg0cnt.priority = 0;
     gLCDControlBuffer.bg1cnt.priority = 1;
@@ -2573,9 +2573,9 @@ void sub_80C9B6C(void)
 }
 
 //! FE8U = 0x080C9C08
-void sub_80C9C08(struct ProcOpAnim * proc)
+void OpAnimSetupJoshuaScroll(struct ProcOpAnim * proc)
 {
-    sub_80C9B6C();
+    OpAnimConfigCharacterScrollBg();
     CopyToPalOpAnim(Pal_OpAnimJoshua, 0, 0x160);
 
     proc->unk47 = 1;
@@ -2591,9 +2591,9 @@ void sub_80C9C08(struct ProcOpAnim * proc)
 }
 
 //! FE8U = 0x080C9C5C
-void sub_80C9C5C(struct ProcOpAnim * proc)
+void OpAnimSetupLArachelScroll(struct ProcOpAnim * proc)
 {
-    sub_80C9B6C();
+    OpAnimConfigCharacterScrollBg();
     CopyToPalOpAnim(Pal_OpAnimLArachel, 0, 0x160);
 
     proc->unk47 = 0;
@@ -2609,9 +2609,9 @@ void sub_80C9C5C(struct ProcOpAnim * proc)
 }
 
 //! FE8U = 0x080C9CAC
-void sub_80C9CAC(struct ProcOpAnim * proc)
+void OpAnimSetupSethScroll(struct ProcOpAnim * proc)
 {
-    sub_80C9B6C();
+    OpAnimConfigCharacterScrollBg();
     CopyToPalOpAnim(Pal_OpAnimSeth, 0, 0x160);
 
     proc->unk47 = 1;
@@ -2627,9 +2627,9 @@ void sub_80C9CAC(struct ProcOpAnim * proc)
 }
 
 //! FE8U = 0x080C9CFC
-void sub_80C9CFC(struct ProcOpAnim * proc)
+void OpAnimSetupMyrrhScroll(struct ProcOpAnim * proc)
 {
-    sub_80C9B6C();
+    OpAnimConfigCharacterScrollBg();
     CopyToPalOpAnim(Pal_OpAnimMyrrh, 0, 0x160);
 
     proc->unk47 = 0;
@@ -2645,9 +2645,9 @@ void sub_80C9CFC(struct ProcOpAnim * proc)
 }
 
 //! FE8U = 0x080C9D4C
-void sub_80C9D4C(struct ProcOpAnim * proc)
+void OpAnimSetupSalehScroll(struct ProcOpAnim * proc)
 {
-    sub_80C9B6C();
+    OpAnimConfigCharacterScrollBg();
     CopyToPalOpAnim(Pal_OpAnimSaleh, 0, 0x160);
     proc->unk47 = 1;
     proc->unk48 = (u16 *)gGenericBuffer;
@@ -2662,9 +2662,9 @@ void sub_80C9D4C(struct ProcOpAnim * proc)
 }
 
 //! FE8U = 0x080C9DA0
-void sub_80C9DA0(struct ProcOpAnim * proc)
+void OpAnimSetupTethysScroll(struct ProcOpAnim * proc)
 {
-    sub_80C9B6C();
+    OpAnimConfigCharacterScrollBg();
     CopyToPalOpAnim(Pal_OpAnimTethys, 0, 0x160);
 
     proc->unk47 = 0;
@@ -2680,7 +2680,7 @@ void sub_80C9DA0(struct ProcOpAnim * proc)
 }
 
 //! FE8U = 0x080C9DF0
-void sub_80C9DF0(void)
+void OpAnimCharacterScrollInBegin(void)
 {
     SetBlendConfig(BLEND_EFFECT_ALPHA, 0x10, 0, 8);
     SetBlendTargetA(0, 0, 1, 0, 0);
@@ -2697,7 +2697,7 @@ void sub_80C9DF0(void)
 }
 
 //! FE8U = 0x080C9E6C
-void sub_80C9E6C(struct ProcOpAnim * proc)
+void OpAnimCharacterScrollInMain(struct ProcOpAnim * proc)
 {
     OpAnim1_UpdateScroll(proc->unk38, proc->unk3A);
     proc->unk3A = proc->unk38;
@@ -2726,7 +2726,7 @@ void sub_80C9E6C(struct ProcOpAnim * proc)
 }
 
 //! FE8U = 0x080C9EE8
-void sub_80C9EE8(void)
+void OpAnimCharacterScrollOutBegin(void)
 {
     CopyToPalOpAnim(pal_OpanimGfx_0, 0, 0x100);
 
@@ -2745,7 +2745,7 @@ void sub_80C9EE8(void)
 }
 
 //! FE8U = 0x080C9F7C
-void sub_80C9F7C(struct ProcOpAnim * proc)
+void OpAnimCharacterScrollOutMain(struct ProcOpAnim * proc)
 {
     OpAnim1_UpdateScroll(proc->unk38, proc->unk3A);
     proc->unk3A = proc->unk38;
@@ -2774,7 +2774,7 @@ void sub_80C9F7C(struct ProcOpAnim * proc)
 }
 
 //! FE8U = 0x080C9FF8
-void sub_80C9FF8(struct ProcOpAnim * proc)
+void OpAnimCharacterFlyIn1(struct ProcOpAnim * proc)
 {
     int ret;
 
@@ -2793,7 +2793,7 @@ void sub_80C9FF8(struct ProcOpAnim * proc)
     }
     else
     {
-        sub_80C689C(ret, proc->unk30, proc->unk44, 0, proc->unk48, proc->unk4C, 0);
+        TsaModifyFirstPalReverse(ret, proc->unk30, proc->unk44, 0, proc->unk48, proc->unk4C, 0);
     }
 
     proc->unk30 = ret;
@@ -2806,7 +2806,7 @@ void sub_80C9FF8(struct ProcOpAnim * proc)
 
         if (proc->unk47 != 0)
         {
-            sub_80C689C(proc->unk32, 0, proc->unk44, 1, proc->unk48, proc->unk4C, 1);
+            TsaModifyFirstPalReverse(proc->unk32, 0, proc->unk44, 1, proc->unk48, proc->unk4C, 1);
         }
         else
         {
@@ -2825,7 +2825,7 @@ void sub_80C9FF8(struct ProcOpAnim * proc)
 }
 
 //! FE8U = 0x080CA10C
-void sub_80CA10C(struct ProcOpAnim * proc)
+void OpAnimCharacterFlyIn2(struct ProcOpAnim * proc)
 {
     int ret;
 
@@ -2847,7 +2847,7 @@ void sub_80CA10C(struct ProcOpAnim * proc)
     }
     else
     {
-        sub_80C689C(ret, proc->unk30, proc->unk44, 0, proc->unk48, proc->unk4C, 0);
+        TsaModifyFirstPalReverse(ret, proc->unk30, proc->unk44, 0, proc->unk48, proc->unk4C, 0);
     }
 
     proc->unk30 = ret;
@@ -2859,7 +2859,7 @@ void sub_80CA10C(struct ProcOpAnim * proc)
 
     if (proc->unk47 != 0)
     {
-        sub_80C689C(ret, proc->unk32, proc->unk44, 1, proc->unk48, proc->unk4C, 1);
+        TsaModifyFirstPalReverse(ret, proc->unk32, proc->unk44, 1, proc->unk48, proc->unk4C, 1);
     }
     else
     {
@@ -2882,7 +2882,7 @@ void sub_80CA10C(struct ProcOpAnim * proc)
 }
 
 //! FE8U = 0x080CA26C
-void sub_80CA26C(struct ProcOpAnim * proc)
+void OpAnimCharacterFlyOutBg1(struct ProcOpAnim * proc)
 {
     int ret;
 
@@ -2910,7 +2910,7 @@ void sub_80CA26C(struct ProcOpAnim * proc)
 
         if (proc->unk47 != 0)
         {
-            sub_80C689C(ret, proc->unk32, proc->unk44, 1, proc->unk48, proc->unk4C, 1);
+            TsaModifyFirstPalReverse(ret, proc->unk32, proc->unk44, 1, proc->unk48, proc->unk4C, 1);
         }
         else
         {
@@ -2924,11 +2924,11 @@ void sub_80CA26C(struct ProcOpAnim * proc)
 }
 
 //! FE8U = 0x080CA3B8
-void sub_80CA3B8(struct ProcOpAnim * proc)
+void OpAnimCharacterFlyOut(struct ProcOpAnim * proc)
 {
     int ret;
 
-    sub_80CA26C(proc);
+    OpAnimCharacterFlyOutBg1(proc);
 
     OpAnim1_UpdateScroll(proc->unk38, proc->unk3A);
     proc->unk3A = proc->unk38;
@@ -2953,7 +2953,7 @@ void sub_80CA3B8(struct ProcOpAnim * proc)
     }
     else
     {
-        sub_80C689C(ret, proc->unk30, proc->unk44, 0, proc->unk48, proc->unk4C, 0);
+        TsaModifyFirstPalReverse(ret, proc->unk30, proc->unk44, 0, proc->unk48, proc->unk4C, 0);
     }
 
     proc->unk30 = ret;
@@ -2972,7 +2972,7 @@ void sub_80CA3B8(struct ProcOpAnim * proc)
 }
 
 //! FE8U = 0x080CA4A4
-void sub_80CA4A4(void)
+void OpAnimGatherUnitsBegin(void)
 {
     Proc_EndEach(gUnkData_99);
     SetDispEnable(0, 0, 0, 0, 1);
@@ -2981,7 +2981,7 @@ void sub_80CA4A4(void)
 }
 
 //! FE8U = 0x080CA4DC
-void sub_80CA4DC(struct ProcOpAnim * proc)
+void OpAnimGatherUnitsMain(struct ProcOpAnim * proc)
 {
     int bldAmt;
     int ret;
@@ -3242,7 +3242,7 @@ void sub_80CA4DC(struct ProcOpAnim * proc)
 
         for (i = 0; i < 8; i++)
         {
-            sub_80C69B0(gPaletteBuffer + i * 0x10, 0, ret);
+            BlendPaletteToColor(gPaletteBuffer + i * 0x10, 0, ret);
         }
     }
 
@@ -3276,7 +3276,7 @@ void sub_80CA4DC(struct ProcOpAnim * proc)
 }
 
 //! FE8U = 0x080CA92C
-void sub_80CA92C(struct ProcOpAnim * proc)
+void OpAnimGatherUnitsEnd(struct ProcOpAnim * proc)
 {
     SetDefaultColorEffects();
     proc->unk46 = 1;
@@ -3284,7 +3284,7 @@ void sub_80CA92C(struct ProcOpAnim * proc)
 }
 
 //! FE8U = 0x080CA940
-void sub_80CA940(void)
+void OpAnimSetupWalkingObjWindow(void)
 {
     Proc_EndEach(gUnkData_99);
 
@@ -3306,7 +3306,7 @@ void sub_80CA940(void)
 }
 
 //! FE8U = 0x080CA9F8
-int sub_80CA9F8(int a, int b, int c, int d)
+int OpAnimCalcObjSlideIn(int a, int b, int c, int d)
 {
     int val = 0x10 - (d - c);
 
@@ -3324,13 +3324,13 @@ int sub_80CA9F8(int a, int b, int c, int d)
 }
 
 //! FE8U = 0x080CAA38
-void sub_80CAA38(struct ProcOpAnim * proc)
+void OpAnimTitleFlyInSeg1(struct ProcOpAnim * proc)
 {
     int x;
 
     int timer = proc->timer + 10;
 
-    x = sub_80CA9F8(0x78, -1, timer, 0x14);
+    x = OpAnimCalcObjSlideIn(0x78, -1, timer, 0x14);
 
     if (x != 0x0000FFFF)
     {
@@ -3340,7 +3340,7 @@ void sub_80CAA38(struct ProcOpAnim * proc)
     }
 
     timer = proc->timer + 6;
-    x = sub_80CA9F8(0x78, -1, timer, 0x14);
+    x = OpAnimCalcObjSlideIn(0x78, -1, timer, 0x14);
 
     if (x != 0x0000FFFF)
     {
@@ -3350,7 +3350,7 @@ void sub_80CAA38(struct ProcOpAnim * proc)
     }
 
     timer = proc->timer + 2;
-    x = sub_80CA9F8(0x78, -1, timer, 0x14);
+    x = OpAnimCalcObjSlideIn(0x78, -1, timer, 0x14);
 
     if (x != 0x0000FFFF)
     {
@@ -3373,7 +3373,7 @@ void sub_80CAA38(struct ProcOpAnim * proc)
 }
 
 //! FE8U = 0x080CABB0
-void sub_80CABB0(struct ProcOpAnim * proc)
+void OpAnimTitleFlyInSeg2(struct ProcOpAnim * proc)
 {
     int x1;
     int y1;
@@ -3383,10 +3383,10 @@ void sub_80CABB0(struct ProcOpAnim * proc)
 
     timer = proc->timer + 2;
 
-    x1 = sub_80CA9F8(0x42, -1, timer, 0x12);
-    y1 = sub_80CA9F8(0x2a, -1, timer, 0x12);
-    x2 = sub_80CA9F8(0xae, +1, timer, 0x12);
-    y2 = sub_80CA9F8(0x76, +1, timer, 0x12);
+    x1 = OpAnimCalcObjSlideIn(0x42, -1, timer, 0x12);
+    y1 = OpAnimCalcObjSlideIn(0x2a, -1, timer, 0x12);
+    x2 = OpAnimCalcObjSlideIn(0xae, +1, timer, 0x12);
+    y2 = OpAnimCalcObjSlideIn(0x76, +1, timer, 0x12);
 
     if (x1 != 0x0000FFFF)
     {
@@ -3441,13 +3441,13 @@ void sub_80CABB0(struct ProcOpAnim * proc)
 }
 
 //! FE8U = 0x080CAE20
-void sub_80CAE20(struct ProcOpAnim * proc)
+void OpAnimTitleFlyInSeg3(struct ProcOpAnim * proc)
 {
     int timer;
     int x;
 
     timer = proc->timer + 2;
-    x = sub_80CA9F8(0x3e, -1, timer, 0x10);
+    x = OpAnimCalcObjSlideIn(0x3e, -1, timer, 0x10);
 
     if (x != 0x0000FFFF)
     {
@@ -3456,7 +3456,7 @@ void sub_80CAE20(struct ProcOpAnim * proc)
         PutSpriteExt(0, OAM1_X(x - 0x38), 0x00000838, gUnkData_103, 0);
     }
 
-    x = sub_80CA9F8(0xb2, +1, timer, 0x10);
+    x = OpAnimCalcObjSlideIn(0xb2, +1, timer, 0x10);
 
     if (x != 0x0000FFFF)
     {
@@ -3479,13 +3479,13 @@ void sub_80CAE20(struct ProcOpAnim * proc)
 }
 
 //! FE8U = 0x080CAF2C
-void sub_80CAF2C(struct ProcOpAnim * proc)
+void OpAnimTitleFlyInSeg4(struct ProcOpAnim * proc)
 {
     int y;
     int timer;
 
     timer = proc->timer + 10;
-    y = sub_80CA9F8(0x50, -1, timer, 0xf);
+    y = OpAnimCalcObjSlideIn(0x50, -1, timer, 0xf);
 
     if ((y != 0x0000FFFF) && (y >= -0x28) && (y < 0xc9))
     {
@@ -3496,7 +3496,7 @@ void sub_80CAF2C(struct ProcOpAnim * proc)
     }
 
     timer = proc->timer + 6;
-    y = sub_80CA9F8(0x50, -1, timer, 0xf);
+    y = OpAnimCalcObjSlideIn(0x50, -1, timer, 0xf);
 
     if ((y != 0x0000FFFF) && (y >= -0x28) && (y < 0xc9))
     {
@@ -3506,7 +3506,7 @@ void sub_80CAF2C(struct ProcOpAnim * proc)
     }
 
     timer = proc->timer + 2;
-    y = sub_80CA9F8(0x50, -1, timer, 0xf);
+    y = OpAnimCalcObjSlideIn(0x50, -1, timer, 0xf);
 
     if ((y != 0x0000FFFF) && (y >= -0x28) && (y < 0xc9))
     {
@@ -3529,13 +3529,13 @@ void sub_80CAF2C(struct ProcOpAnim * proc)
 }
 
 //! FE8U = 0x080CB0A0
-void sub_80CB0A0(struct ProcOpAnim * proc)
+void OpAnimTitleFlyInSeg5(struct ProcOpAnim * proc)
 {
     int y;
     int timer;
 
     timer = proc->timer + 10;
-    y = sub_80CA9F8(0x50, +1, timer, 0xd);
+    y = OpAnimCalcObjSlideIn(0x50, +1, timer, 0xd);
 
     if (((y != 0x0000FFFF) && (y >= -0x28)) && (y < 0xc9))
     {
@@ -3546,7 +3546,7 @@ void sub_80CB0A0(struct ProcOpAnim * proc)
     }
 
     timer = proc->timer + 6;
-    y = sub_80CA9F8(0x50, +1, timer, 0xd);
+    y = OpAnimCalcObjSlideIn(0x50, +1, timer, 0xd);
 
     if (((y != 0x0000FFFF) && (y >= -0x28)) && (y < 0xc9))
     {
@@ -3556,7 +3556,7 @@ void sub_80CB0A0(struct ProcOpAnim * proc)
     }
 
     timer = proc->timer + 2;
-    y = sub_80CA9F8(0x50, +1, timer, 0xd);
+    y = OpAnimCalcObjSlideIn(0x50, +1, timer, 0xd);
 
     if (((y != 0x0000FFFF) && (y >= -0x28)) && (y < 0xc9))
     {
@@ -3579,13 +3579,13 @@ void sub_80CB0A0(struct ProcOpAnim * proc)
 }
 
 //! FE8U = 0x080CB20C
-void sub_80CB20C(struct ProcOpAnim * proc)
+void OpAnimTitleFlyInSeg6(struct ProcOpAnim * proc)
 {
     int timer;
     int x;
 
     timer = proc->timer + 6;
-    x = sub_80CA9F8(0x3c, -1, timer, 0xb);
+    x = OpAnimCalcObjSlideIn(0x3c, -1, timer, 0xb);
 
     if (x != 0x0000FFFF)
     {
@@ -3595,7 +3595,7 @@ void sub_80CB20C(struct ProcOpAnim * proc)
     }
 
     timer = proc->timer + 2;
-    x = sub_80CA9F8(0x3c, -1, timer, 0xb);
+    x = OpAnimCalcObjSlideIn(0x3c, -1, timer, 0xb);
 
     if (x != 0x0000FFFF)
     {
@@ -3618,7 +3618,7 @@ void sub_80CB20C(struct ProcOpAnim * proc)
 }
 
 //! FE8U = 0x080CB320
-void sub_80CB320(struct ProcOpAnim * proc)
+void OpAnimTitleFlyInSeg7(struct ProcOpAnim * proc)
 {
     int timer;
     int y;
@@ -3641,7 +3641,7 @@ void sub_80CB320(struct ProcOpAnim * proc)
     }
 
     timer = proc->timer + 2;
-    y = sub_80CA9F8(0x1c, -1, timer, 10);
+    y = OpAnimCalcObjSlideIn(0x1c, -1, timer, 10);
 
     if ((y != 0x0000FFFF) && (y >= -0x28) && (y < 0xc9))
     {
@@ -3650,7 +3650,7 @@ void sub_80CB320(struct ProcOpAnim * proc)
         PutSpriteExt(0, (x - 0x38), (OAM0_Y(y - 0x18)) | OAM0_WINDOW, gUnkData_103, 0);
     }
 
-    y = sub_80CA9F8(0x84, +1, timer, 10);
+    y = OpAnimCalcObjSlideIn(0x84, +1, timer, 10);
 
     if ((x != 0x0000FFFF) && (y != 0x0000FFFF) && (y >= -0x28) && (y < 0xc9))
     {
@@ -3687,13 +3687,13 @@ void sub_80CB320(struct ProcOpAnim * proc)
 }
 
 //! FE8U = 0x080CB594
-void sub_80CB594(struct ProcOpAnim * proc)
+void OpAnimTitleFlyInSeg8(struct ProcOpAnim * proc)
 {
     int timer;
     int x;
 
     timer = proc->timer + 6;
-    x = sub_80CA9F8(0xb4, +1, timer, 9);
+    x = OpAnimCalcObjSlideIn(0xb4, +1, timer, 9);
 
     if (x != 0x0000FFFF)
     {
@@ -3703,7 +3703,7 @@ void sub_80CB594(struct ProcOpAnim * proc)
     }
 
     timer = proc->timer + 2;
-    x = sub_80CA9F8(0xb4, +1, timer, 9);
+    x = OpAnimCalcObjSlideIn(0xb4, +1, timer, 9);
 
     if (x != 0x0000FFFF)
     {
@@ -3726,7 +3726,7 @@ void sub_80CB594(struct ProcOpAnim * proc)
 }
 
 //! FE8U = 0x080CB6A0
-void sub_80CB6A0(struct ProcOpAnim * proc)
+void OpAnimTitleFlyInSeg9(struct ProcOpAnim * proc)
 {
     int x;
     int y;
@@ -3735,7 +3735,7 @@ void sub_80CB6A0(struct ProcOpAnim * proc)
     timer = proc->timer + 10;
     x = 0x78;
 
-    y = sub_80CA9F8(0x1c, 1, timer, 8);
+    y = OpAnimCalcObjSlideIn(0x1c, 1, timer, 8);
 
     if (((y != 0x0000FFFF) && (y >= -0x28)) && (y < 0xc9))
     {
@@ -3745,7 +3745,7 @@ void sub_80CB6A0(struct ProcOpAnim * proc)
     }
 
     timer = proc->timer + 6;
-    y = sub_80CA9F8(0x50, +1, timer, 8);
+    y = OpAnimCalcObjSlideIn(0x50, +1, timer, 8);
 
     if ((x != 0x0000FFFF) && (y != 0x0000FFFF) && (y >= -0x28) && (y < 0xc9))
     {
@@ -3756,7 +3756,7 @@ void sub_80CB6A0(struct ProcOpAnim * proc)
     }
 
     timer = proc->timer + 2;
-    y = sub_80CA9F8(0x84, +1, timer, 8);
+    y = OpAnimCalcObjSlideIn(0x84, +1, timer, 8);
 
     if ((x != 0x0000FFFF) && (y != 0x0000FFFF) && (y >= -0x28) && (y < 0xc9))
     {
@@ -3780,7 +3780,7 @@ void sub_80CB6A0(struct ProcOpAnim * proc)
 }
 
 //! FE8U = 0x080CB878
-void sub_80CB878(struct ProcOpAnim * proc)
+void OpAnimTitleFlyInSeg10(struct ProcOpAnim * proc)
 {
     int timer;
     int y;
@@ -3788,7 +3788,7 @@ void sub_80CB878(struct ProcOpAnim * proc)
 
     timer = proc->timer + 2;
     x = 0x1e;
-    y = sub_80CA9F8(0x50, -1, timer, 7);
+    y = OpAnimCalcObjSlideIn(0x50, -1, timer, 7);
 
     if ((y != 0x0000FFFF) && (y >= -0x28) && (y < 0xc9))
     {
@@ -3807,7 +3807,7 @@ void sub_80CB878(struct ProcOpAnim * proc)
         PutSpriteExt(0, 0x7a, (OAM0_Y(y - 0x28)) | OAM0_WINDOW, gUnkData_105, 0);
     }
 
-    y = sub_80CA9F8(0x50, 1, timer, 7);
+    y = OpAnimCalcObjSlideIn(0x50, 1, timer, 7);
 
     if ((y != 0x0000FFFF) && (y >= -0x28) && (y < 0xc9))
     {
@@ -3839,7 +3839,7 @@ void sub_80CB878(struct ProcOpAnim * proc)
 }
 
 //! FE8U = 0x080CBA64
-void sub_80CBA64(struct ProcOpAnim * proc)
+void OpAnimTitleFlyInSeg11(struct ProcOpAnim * proc)
 {
     int y;
     int x;
@@ -3847,7 +3847,7 @@ void sub_80CBA64(struct ProcOpAnim * proc)
 
     timer = proc->timer + 2;
     x = 0x78;
-    y = sub_80CA9F8(0x1c, -1, timer, 6);
+    y = OpAnimCalcObjSlideIn(0x1c, -1, timer, 6);
 
     if ((y != 0x0000FFFF) && (y >= -0x28) && (y < 0xc9))
     {
@@ -3857,7 +3857,7 @@ void sub_80CBA64(struct ProcOpAnim * proc)
     }
 
     timer = proc->timer + 6;
-    y = sub_80CA9F8(0x50, -1, timer, 6);
+    y = OpAnimCalcObjSlideIn(0x50, -1, timer, 6);
 
     if ((x != 0x0000FFFF) && (y != 0x0000FFFF) && (y >= -0x28) && (y < 0xc9))
     {
@@ -3868,7 +3868,7 @@ void sub_80CBA64(struct ProcOpAnim * proc)
     }
 
     timer = proc->timer + 10;
-    y = sub_80CA9F8(0x84, -1, timer, 6);
+    y = OpAnimCalcObjSlideIn(0x84, -1, timer, 6);
 
     if ((x != 0x0000FFFF) && (y != 0x0000FFFF) && (y >= -0x28) && (y < 0xc9))
     {
@@ -3892,7 +3892,7 @@ void sub_80CBA64(struct ProcOpAnim * proc)
 }
 
 //! FE8U = 0x080CBC40
-void sub_80CBC40(struct ProcOpAnim * proc)
+void OpAnimTitleFlyInSeg12(struct ProcOpAnim * proc)
 {
     int timer;
     int x;
@@ -3900,7 +3900,7 @@ void sub_80CBC40(struct ProcOpAnim * proc)
     u16 * ptr;
 
     timer = proc->timer + 2;
-    x = sub_80CA9F8(0x3e, -1, timer, 5);
+    x = OpAnimCalcObjSlideIn(0x3e, -1, timer, 5);
 
     if (x != 0x0000FFFF)
     {
@@ -3909,7 +3909,7 @@ void sub_80CBC40(struct ProcOpAnim * proc)
         PutSpriteExt(0, OAM1_X(x - 0x38), 0x00000828, gUnkData_107, 0);
     }
 
-    x = sub_80CA9F8(0xb2, +1, timer, 5);
+    x = OpAnimCalcObjSlideIn(0xb2, +1, timer, 5);
 
     if (x != 0x0000FFFF)
     {
@@ -3943,7 +3943,7 @@ void sub_80CBC40(struct ProcOpAnim * proc)
 }
 
 //! FE8U = 0x080CBD7C
-void sub_80CBD7C(struct ProcOpAnim * proc)
+void OpAnimEnd(struct ProcOpAnim * proc)
 {
     EndAllProcChildren(proc);
     EndProc08AA6D04();

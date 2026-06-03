@@ -229,7 +229,7 @@ void GMapRadar_1(struct GMapRadarProc * proc)
     if ((gGMData.state.bits.state_2) != 0)
     {
         proc->unk_34 = 0;
-        proc->unk_2a = sub_80C089C(0x20, 0x20, 0x30, 0x30);
+        proc->unk_2a = GetWMCursorScreenQuadrant(0x20, 0x20, 0x30, 0x30);
 
         state = ((gWorldmapRadar_0[proc->unk_2a + (gGMData.state.bits.state_4_5) * 5] & 3) << 4);
         gGMData.state.bits.state_4_5 = 0;
@@ -274,7 +274,7 @@ void GMapRadar_2(struct GMapRadarProc * proc)
             return;
         }
 
-        var = sub_80C089C(0x20, 0x20, 0x30, 0x30);
+        var = GetWMCursorScreenQuadrant(0x20, 0x20, 0x30, 0x30);
 
         if (var == proc->unk_2a)
         {

@@ -1,8 +1,8 @@
 #include "gbafe.h"
 
-void sub_805AA68(void *);
-void sub_805AE14(void *);
-void sub_805AE40(void *, s16, s16, s16, s16);
+void InitBanimTerrain(void *);
+void EndBanimTerrain(void *);
+void SetBanimTerrainPos(void *, s16, s16, s16, s16);
 
 CONST_DATA struct ProcCmd gProc_ekrDispUP[] = {
     PROC_NAME("ekrDispUP"),
@@ -121,12 +121,12 @@ void ekrDispUPMain(struct ProcEkrDispUP *proc)
     if (height > 0) {
         if (proc->unk4C == 0) { 
             EfxTmCpyBG(&gBanimmisc_0[map_idx], &gBG0TilemapBuffer2D[iy][ix1], 15, height, -1, -1);
-            sub_8070D04(&gBG0TilemapBuffer2D[iy][ix1], 15, height, 2, 128);
+            EfxTmReplacePal(&gBG0TilemapBuffer2D[iy][ix1], 15, height, 2, 128);
         }
 
         if (proc->unk50 == 0) {
             EfxTmCpyBG(&gBanimmisc_1[map_idx], &gBG0TilemapBuffer2D[iy][ix2], ix2, height, -1, -1);
-            sub_8070D04(&gBG0TilemapBuffer2D[iy][ix2], 15, height, 3, 128);
+            EfxTmReplacePal(&gBG0TilemapBuffer2D[iy][ix2], 15, height, 3, 128);
         }
     }
 
@@ -163,7 +163,7 @@ void EfxClearScreenFx(void)
     CpuFastFill16(0, gBG2TilemapBuffer, 0x800);
 
     if (GetBattleAnimArenaFlag() == false)
-        sub_8051E00();
+        EfxInitTerrainBg();
     else
         CpuFastFill16(0, gBG2TilemapBuffer, 0x800);
 
@@ -176,7 +176,7 @@ void EfxClearScreenFx(void)
     SetDefaultColorEffects();
 }
 
-void sub_8051E00(void)
+void EfxInitTerrainBg(void)
 {
     struct BanimUnkStructComm * unk0201FADC = &gEkrbattle_9;
     struct BattleAnimTerrain * terrain1 = &battle_terrain_table[gBanimFloorfx[0]];
@@ -225,7 +225,7 @@ void sub_8051E00(void)
     unk0201FADC->unk1C = 0;
     unk0201FADC->unk20 = &gUnk_Banim_Ekrbattle_0[0];
     unk0201FADC->unk10 = (u16)gEkrSnowWeather;
-    sub_805AA68(unk0201FADC);
+    InitBanimTerrain(unk0201FADC);
 }
 
 void EfxPrepareScreenFx(void)
@@ -284,8 +284,8 @@ void EfxPrepareScreenFx(void)
 
     BG_Fill(gBG0TilemapBuffer, 0x80);
     EfxTmCpyBG(gBanimmisc_5, gBG0TilemapBuffer + 0x1E, 2, 20, -1, -1);
-    sub_8070D04(gBG0TilemapBuffer + 0x1F, 1, 20, 2, 128);
-    sub_8070D04(gBG0TilemapBuffer + 0x1E, 1, 20, 3, 128);
+    EfxTmReplacePal(gBG0TilemapBuffer + 0x1F, 1, 20, 2, 128);
+    EfxTmReplacePal(gBG0TilemapBuffer + 0x1E, 1, 20, 3, 128);
     BG_EnableSyncByMask(BG0_SYNC_BIT);
 
     CpuFastCopy(&PAL_BUF_COLOR(gBanimmisc_6, gBanimFactionPal[POS_L], 0), PAL_BG(0x2), 0x20);

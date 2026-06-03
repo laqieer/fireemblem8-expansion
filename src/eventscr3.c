@@ -180,7 +180,7 @@ void StartScriptBattleAnim(s8 useMapAnims)
 
     RenderBmMap();
 
-    banimEnabled = sub_8055BC4();
+    banimEnabled = EkrBattleStarting_CheckBattleAnimEnabled();
     if (useMapAnims)
     {
         banimEnabled = 0;
@@ -413,17 +413,17 @@ void EventPromoteUnitExt(struct Unit * unit, u8 jid, u8 item)
 }
 
 //! FE8U = 0x08012324
-void sub_8012324(void)
+void RestoreScreenAfterPromotion(void)
 {
     EndCgText();
 
     ResetDialogueScreen();
     SetupBackgrounds(NULL);
 
-    sub_80141B0();
+    ForceScreenToBlack();
 
     InitSystemTextFont();
-    sub_80156D4();
+    LoadGameCoreGfxLegacyFrame();
 
     return;
 }
@@ -587,7 +587,7 @@ void AssignUnitToFreeDeploySlot(struct Unit * unit)
 }
 
 //! FE8U = 0x08012578
-int sub_8012578(int index)
+int GetNextDeployedPlayerUnitId(int index)
 {
     for (; index < FACTION_GREEN; index++)
     {
@@ -615,7 +615,7 @@ int sub_8012578(int index)
 }
 
 //! FE8U = 0x080125C0
-void sub_80125C0(struct UnitDefinition * uDef)
+void BuildDeployedUnitDefinitionList(struct UnitDefinition * uDef)
 {
     int pid = GetPlayerLeaderPid();
     struct Unit * unit = GetUnitFromCharId(pid);
@@ -636,7 +636,7 @@ void sub_80125C0(struct UnitDefinition * uDef)
 
     while (uDef->charIndex != 0)
     {
-        pid = sub_8012578(pid);
+        pid = GetNextDeployedPlayerUnitId(pid);
 
         if (pid == 0)
         {

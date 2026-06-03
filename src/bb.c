@@ -215,7 +215,7 @@ void StartSubtitleHelp(ProcPtr parent, const char * string) {
 
         InitSubtitleHelpText(proc);
 
-        sub_801A278();
+        BlankTilesetConfigTiles();
 
         gBmSt.cameraMax.y += 16;
     }
@@ -232,7 +232,7 @@ s8 IsSubtitleHelpActive() {
     return Proc_Find(gProcScr_SubtitleHelp) != 0;
 }
 
-void sub_8035770(ProcPtr parent, const char * string)
+void ChangeSubtitleHelp(ProcPtr parent, const char * string)
 {
     struct SubtitleHelpProc* proc;
 

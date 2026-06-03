@@ -149,8 +149,8 @@ void SaveMenuInitSlotPalette(u8 slot)
             flags = (u8)flags;
         }
         r1 = 1;
-        sub_80895B4(flags | r1, i * 2 + 0x1a);
-        sub_80895B4(flags, i * 2 + 0x1b);
+        ApplyChapterTitlePal(flags | r1, i * 2 + 0x1a);
+        ApplyChapterTitlePal(flags, i * 2 + 0x1b);
     }
 
     EnablePaletteSync();
@@ -228,7 +228,7 @@ u8 SaveMenuGetValidMenuAmt(u8 endMask, struct SaveMenuProc * proc)
 }
 
 //! FE8U = 0x080ABF74
-void sub_80ABF74(u8 param_1)
+void SaveMenu_LoadExtraSelectGfx(u8 param_1)
 {
     int r4;
     void * r6;
@@ -305,7 +305,7 @@ void DrawDifficultyModeText(struct DifficultyMenuProc * proc)
 }
 
 //! FE8U = 0x080AC034
-void sub_80AC034(struct DifficultyMenuProc * proc)
+void DifficultySelect_PutModeText(struct DifficultyMenuProc * proc)
 {
     int i;
 
@@ -371,7 +371,7 @@ void InitDifficultySelectScreen(struct DifficultyMenuProc * proc)
     CallARM_FillTileRect(gBG1TilemapBuffer + 0xd1, gGenericBuffer, 0x1000);
 
     DrawDifficultyModeText(proc);
-    sub_80AC034(proc);
+    DifficultySelect_PutModeText(proc);
 
     BG_EnableSyncByMask(BG0_SYNC_BIT | BG1_SYNC_BIT);
 
@@ -394,7 +394,7 @@ void DifficultySelect_Init(struct DifficultyMenuProc * proc)
 }
 
 //! FE8U = 0x080AC1BC
-void sub_80AC1BC(struct DifficultyMenuProc * proc)
+void DifficultySelect_WinBoxOpen(struct DifficultyMenuProc * proc)
 {
     int a;
     int b;
@@ -419,7 +419,7 @@ void sub_80AC1BC(struct DifficultyMenuProc * proc)
 }
 
 //! FE8U = 0x080AC22C
-void sub_80AC22C(struct DifficultyMenuProc * proc)
+void DifficultySelect_WinBoxClose(struct DifficultyMenuProc * proc)
 {
     int a;
     int b;
@@ -477,9 +477,9 @@ void DifficultySelect_Loop_KeyHandler(struct DifficultyMenuProc * proc)
     {
         PlaySoundEffect(SONG_SE_SYS_CURSOR_UD1);
         proc->sprites_proc->current_selection = proc->current_selection;
-        sub_80AC680(proc->sprites_proc, gDifficultymenu_0[proc->current_selection].a, gDifficultymenu_0[proc->current_selection].b);
+        DifficultyMenu_StartCursorMove(proc->sprites_proc, gDifficultymenu_0[proc->current_selection].a, gDifficultymenu_0[proc->current_selection].b);
         DrawDifficultyModeText(proc);
-        sub_80AC034(proc);
+        DifficultySelect_PutModeText(proc);
         return;
     }
 
@@ -519,7 +519,7 @@ void DifficultySelect_Loop_KeyHandler(struct DifficultyMenuProc * proc)
 }
 
 //! FE8U = 0x080AC3DC
-void nullsub_64(void)
+void Nop_Difficultymenu_0(void)
 {
     return;
 }
@@ -554,7 +554,7 @@ PROC_LABEL(2),
     PROC_CALL_ARG(NewFadeOut, 8),
     PROC_WHILE(FadeOutExists),
 
-    PROC_CALL(nullsub_64),
+    PROC_CALL(Nop_Difficultymenu_0),
 
     PROC_END,
 };
@@ -635,7 +635,7 @@ void DrawDifficultyMenuCursorMaybe(struct DifficultyMenuSpritesProc * proc)
 extern u16 gMenuMainObjs_0[0x60];
 
 //! FE8U = 0x080AC4F8
-void sub_80AC4F8(u8 frameMaybe, u8 selectedIdx)
+void DifficultyMenu_UpdateModePalettes(u8 frameMaybe, u8 selectedIdx)
 {
     int i;
     int palId;
@@ -746,14 +746,14 @@ void DrawDifficultySprites_Loop(struct DifficultyMenuSpritesProc * proc)
         PutSpriteExt(4, x, y, gSpriteArray_Difficultymenu_0[i], OAM2_PAL(4));
     }
 
-    sub_80AC4F8(proc->unk_2a, proc->current_selection);
+    DifficultyMenu_UpdateModePalettes(proc->unk_2a, proc->current_selection);
     DrawDifficultyMenuCursorMaybe(proc);
 
     return;
 }
 
 //! FE8U = 0x080AC680
-void sub_80AC680(struct DifficultyMenuSpritesProc * proc, int param_2, int param_3)
+void DifficultyMenu_StartCursorMove(struct DifficultyMenuSpritesProc * proc, int param_2, int param_3)
 {
     proc->unk_30 = proc->unk_2c;
     proc->unk_32 = proc->unk_2e;

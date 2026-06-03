@@ -24,8 +24,8 @@ struct PrepProcA1962C {
     /* 30 */ s8 unk_30[4];
 };
 
-s8 sub_80A0A34(void);
-s8 sub_80A0A70(void);
+s8 IsTacticianDivinationAvailable(void);
+s8 IsAuguryDivinationAvailable(void);
 
 void FortuneSubMenu_Init_Null(void);
 void FortuneSubMenu_OnOptionSelected(ProcPtr);
@@ -91,7 +91,7 @@ int CONST_DATA gUnused_UnkData_0[] = {
 };
 
 //! FE8U = 0x080A0724
-void sub_80A0724(struct PrepProcA1962C* proc) {
+void FortuneSubMenu_StartText(struct PrepProcA1962C* proc) {
     StartCgText(10, 7, 17, 4, proc->unk_2c, OBJ_VRAM0 + 0x1000, -1, 0);
     SetCgTextFlags(CG_TEXT_FLAG_2 | CG_TEXT_FLAG_3 | CG_TEXT_FLAG_4 | CG_TEXT_FLAG_5 | CG_TEXT_FLAG_6); 
     return;
@@ -110,8 +110,8 @@ void __malloc_unlock_2(void) {
 //! FE8U = 0x080A0760
 void FortuneSubMenu_Unused_SetAvailableOptions(struct PrepProcA1962C* proc) {
     proc->unk_30[0] = 1;
-    proc->unk_30[1] = sub_80A0A34();
-    proc->unk_30[2] = sub_80A0A70();
+    proc->unk_30[1] = IsTacticianDivinationAvailable();
+    proc->unk_30[2] = IsAuguryDivinationAvailable();
     proc->unk_30[3] = 1;
     return;
 }
@@ -216,14 +216,14 @@ void StartFortuneSubMenu(int option, ProcPtr parent) {
 }
 
 //! FE8U = 0x080A095C
-bool sub_80A095C(int var) {
+bool IsDivinationOptionAvailable(int var) {
     switch (var) {
         case 0:
             return 1;
         case 1:
-            return sub_80A0A34();
+            return IsTacticianDivinationAvailable();
         case 2:
-            return sub_80A0A70();
+            return IsAuguryDivinationAvailable();
     }
 
     return 0;
@@ -255,7 +255,7 @@ int GetChapterDivinationPortrait(void) {
 }
 
 //! FE8U = 0x080A0A18
-s8 sub_80A0A18(void) {
+s8 IsDivinationBeginningAvailable(void) {
     if (!GetChapterDivinationTextIdHectorStory()) {
         return 0;
     }
@@ -268,7 +268,7 @@ s8 sub_80A0A18(void) {
 }
 
 //! FE8U = 0x080A0A34
-s8 sub_80A0A34(void) {
+s8 IsTacticianDivinationAvailable(void) {
     if ((gPlaySt.chapterStateBits & PLAY_FLAG_HARD) || !GetChapterDivinationTextIdHectorStory()) {
         return 0;
     }
@@ -277,7 +277,7 @@ s8 sub_80A0A34(void) {
 }
 
 //! FE8U = 0x080A0A5C
-s8 sub_80A0A5C(void) {
+s8 IsDivinationPortrait1(void) {
     if (GetChapterDivinationPortrait() == 1) {
         return 1;
     }
@@ -286,12 +286,12 @@ s8 sub_80A0A5C(void) {
 }
 
 //! FE8U = 0x080A0A70
-s8 sub_80A0A70(void) {
+s8 IsAuguryDivinationAvailable(void) {
     return 1;
 }
 
 //! FE8U = 0x080A0A74
-s8 sub_80A0A74(void) {
+s8 IsChapterIndexAbove0x61(void) {
 
     if (gPlaySt.chapterIndex > 0x61) {
         return 1;

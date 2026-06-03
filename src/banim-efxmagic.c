@@ -104,14 +104,14 @@ void StartSpellAnimation(struct Anim *anim)
     gEkrSpellAnimLut[index](anim);
 }
 
-void sub_805B3FC(void)
+void EfxMagicNop(void)
 {
     return;
 }
 
 CONST_DATA struct ProcCmd ProcScr_efxRestRST[] = {
     PROC_NAME("efxRestRST"),
-    PROC_SET_END_CB(sub_805B444),
+    PROC_SET_END_CB(efxRestRST_OnEnd),
     PROC_REPEAT(efxRestRSTMain),
     PROC_END
 };
@@ -134,7 +134,7 @@ ProcPtr NewefxRestRST(struct Anim *anim, int unk44, int unk48, int frame, int sp
     return proc;
 }
 
-void sub_805B444(struct ProcEfx *proc)
+void efxRestRST_OnEnd(struct ProcEfx *proc)
 {
     gEfxBgSemaphore--;
 }
@@ -197,7 +197,7 @@ void EfxTwobaiRSTMain(struct ProcEfx *proc)
 
 CONST_DATA struct ProcCmd ProcScr_DummvRST[] = {
     PROC_NAME("efxDummyRST"),
-    PROC_SET_END_CB(sub_805B584),
+    PROC_SET_END_CB(DummvRST_OnEnd),
     PROC_REPEAT(DummvRSTMain),
     PROC_END
 };
@@ -215,7 +215,7 @@ void NewDummvRST(struct Anim *anim, int unk44)
     proc->unk44 = unk44;
 }
 
-void sub_805B584(void)
+void DummvRST_OnEnd(void)
 {
     gEfxBgSemaphore--;
 }
@@ -346,8 +346,8 @@ void EfxMagicHBlank_4(void)
 
 CONST_DATA struct ProcCmd ProcScr_EfxRestWINH[] = {
     PROC_NAME("efxRestWINH"),
-    PROC_REPEAT(sub_805B94C),
-    PROC_REPEAT(sub_805B958),
+    PROC_REPEAT(EfxRestWINH_Wait),
+    PROC_REPEAT(EfxRestWINHMain),
     PROC_END
 };
 
@@ -410,12 +410,12 @@ void NewEfxRestWINH_(struct Anim *anim, int a, int b)
     NewEfxRestWINH(anim, a, 0, b);
 }
 
-void sub_805B94C(ProcPtr proc)
+void EfxRestWINH_Wait(ProcPtr proc)
 {
     Proc_Break(proc);
 }
 
-void sub_805B958(struct ProcEfx *proc)
+void EfxRestWINHMain(struct ProcEfx *proc)
 {
     if (gBmSt.main_loop_ended != false) {
         if (proc->unk48 == 0x2) {
@@ -527,7 +527,7 @@ struct ProcCmd CONST_DATA ProcScr_efxCircleWIN[] =
 // clang-format on
 
 //! FE8U = 0x0805BB24
-void sub_805BB24(struct Anim * anim, int terminator, u16 * c, u16 d, u16 e)
+void NewEfxCircleWIN(struct Anim * anim, int terminator, u16 * c, u16 d, u16 e)
 {
     struct ProcEfxCircleWIN * proc;
 
@@ -568,7 +568,7 @@ void EfxCircleWINMain(struct ProcEfxCircleWIN * proc)
     unk_54 = proc->unk_54;
     var = unk_54[proc->unk_2e];
 
-    vec = sub_8013278(var);
+    vec = MakeCircleWindowBounds(var);
 
     if (unk_54[proc->unk_2e + 1] != 0xFFFF)
     {

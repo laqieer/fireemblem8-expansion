@@ -344,7 +344,7 @@ u16 CONST_DATA sSprite_32x32_Window[] = {
 
 #define GetInfo(id) (unit_icon_wait_table[(id) & ((1<<7)-1)])
 
-void sub_8026618(void)
+void RequestUnitSpriteSheetSync(void)
 {
     gSMSSyncFlag++;
 }
@@ -359,7 +359,7 @@ void ApplyUnitSpritePalettes(void)
         ApplyPalette(gPal_LightRune, 0x10 + OBJPAL_UNITSPRITE_PURPLE);
 }
 
-void sub_8026670(void)
+void ApplyUnitSpriteSepiaPalette(void)
 {
     ApplyPalette(gPal_MapSpriteSepia, 0x1E);
 }
@@ -682,7 +682,7 @@ void ForceSyncUnitSpriteSheet(void)
 }
 
 //! FE8U = 0x08026FF4
-void sub_8026FF4(int frameId, u8* dst) {
+void SetStandingMuFacingFast(int frameId, u8* dst) {
     int i;
     int off;
 
@@ -1192,7 +1192,7 @@ void PutUnitSpriteIconsOam(void)
     }
 }
 
-void sub_8027A30(void)
+void ResetUnitSpriteHoverCursor(void)
 {
     gBmSt.cursorPrevious.x = -1;
     return;
@@ -1310,7 +1310,7 @@ void PutUnitSpriteForClassId(int layer, int x, int y, u16 oam2, int class)
     }
 }
 
-void sub_8027CFC(int layer, int x, int y, int class)
+void PutWindowUnitSpriteForClassId(int layer, int x, int y, int class)
 {
     u32 id = GetClassSMSId(class);
     int chr = UseUnitSprite(id) + 0x80;
@@ -1336,7 +1336,7 @@ void sub_8027CFC(int layer, int x, int y, int class)
     }
 }
 
-void sub_8027DB4(int layer, int x, int y, u16 oam2, int class, int idx)
+void PutStandingMuSprite(int layer, int x, int y, u16 oam2, int class, int idx)
 {
     u32 id = GetClassSMSId(class);
     int chr = gSomeSMSLookupTable_0[idx] + 1;
@@ -1359,7 +1359,7 @@ void sub_8027DB4(int layer, int x, int y, u16 oam2, int class, int idx)
     }
 }
 
-void sub_8027E4C(int layer, int x, int y, int oam2, struct Unit * unit)
+void PutUiUnitSprite(int layer, int x, int y, int oam2, struct Unit * unit)
 {
     u32 id = GetUnitSMSId(unit);
     int chr = UseUnitSprite(id) + 0x80;
@@ -1438,7 +1438,7 @@ void PutBlendWindowUnitSprite(int layer, int x, int y, int oam2, struct Unit * u
     }
 }
 
-void sub_8028100(void)
+void ClearUnitSpriteList(void)
 {
     gSMSHandleArray[0].pNext = NULL;
 }
@@ -1474,7 +1474,7 @@ u8 GetUnitSpriteHideFlag(struct Unit * unit)
 //! FE8U = 0x08028160
 // attempt with 1D array gets very close
 // https://decomp.me/scratch/wkkkM
-void sub_8028160(u32 (*r8)[1][1], int r5, int r9, int d)
+void TornOutChr(u32 (*r8)[1][1], int r5, int r9, int d)
 {
     int i, j;
     int r6 = gBmudisp_0[d];

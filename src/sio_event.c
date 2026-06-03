@@ -25,7 +25,7 @@
 
 
 //! FE8U = 0x08048260
-void sub_8048260(ProcPtr parent)
+void StartTacticianNameEntry(ProcPtr parent)
 {
     struct ProcTactician * proc = Proc_StartBlocking(ProcScr_TacticianNameSelection, parent);
     proc->unk33 = 7;
@@ -71,7 +71,7 @@ bool XMapTransfer_0(ProcPtr proc)
     {
         if ((gKeyStatusPtr->newKeys & B_BUTTON) != 0)
         {
-            nullsub_15(proc, 4);
+            Nop_Scene_0(proc, 4);
             return false;
         }
 
@@ -80,7 +80,7 @@ bool XMapTransfer_0(ProcPtr proc)
 
     if ((gSioSt->selfId > 1) || (gSioSt->playerStatus[gSioSt->selfId] == PLAYER_STATUS_2))
     {
-        nullsub_15(proc, 0);
+        Nop_Scene_0(proc, 0);
         return false;
     }
 
@@ -92,9 +92,9 @@ bool XMapTransfer_0(ProcPtr proc)
         }
     }
 
-    if (!sub_80421E4() || (gSioSt->unk_01E > 60) || (numTimeouts != 0))
+    if (!Sio_CheckLinkAlive() || (gSioSt->unk_01E > 60) || (numTimeouts != 0))
     {
-        nullsub_15(proc, 0);
+        Nop_Scene_0(proc, 0);
         return false;
     }
 
@@ -107,21 +107,21 @@ bool XMapTransfer_0(ProcPtr proc)
     {
         buf[0] = 1;
         SioEmitData(buf, sizeof(buf));
-        nullsub_15(proc, 3);
+        Nop_Scene_0(proc, 3);
         return false;
     }
 
     if ((gSioSt->unk_009 & 3) == 3)
     {
         gSioSt->unk_009 = 3;
-        sub_8042AF4();
+        SioClearOutgoingQueue();
 
         gSioSt->unk_004 = 6;
         gSioSt->unk_01E = 0;
 
         if (gSioSt->selfId != 0)
         {
-            nullsub_15(proc, 1);
+            Nop_Scene_0(proc, 1);
         }
 
         return false;
@@ -135,7 +135,7 @@ void XMapTransfer_1(ProcPtr proc)
 {
     if (gSioSt->unk_009 > 3)
     {
-        nullsub_15(proc, 0);
+        Nop_Scene_0(proc, 0);
     }
 
     return;
@@ -160,7 +160,7 @@ void XMapTransfer_2(ProcPtr proc)
 
     if (gUnk_Sio_15 != 0)
     {
-        nullsub_15(proc, 5);
+        Nop_Scene_0(proc, 5);
     }
 
     return;
@@ -184,9 +184,9 @@ bool XMapTransfer_3(ProcPtr proc)
         }
     }
 
-    if (!sub_80421E4() || (gSioSt->unk_01E > 60) || (numTimeouts != 0))
+    if (!Sio_CheckLinkAlive() || (gSioSt->unk_01E > 60) || (numTimeouts != 0))
     {
-        nullsub_15(proc, 0);
+        Nop_Scene_0(proc, 0);
         return 0;
     }
 
@@ -196,7 +196,7 @@ bool XMapTransfer_3(ProcPtr proc)
     {
         if (buf[0] != 0)
         {
-            nullsub_15(proc, 5);
+            Nop_Scene_0(proc, 5);
         }
 
         return false;
@@ -293,14 +293,14 @@ bool XMapTransfer_AwaitCompletion(void)
 }
 
 //! FE8U = 0x080486D4
-void sub_80486D4(void)
+void Sio_InitAckMask(void)
 {
     gSioSt->unk_00A = 1 << gSioSt->selfId;
     return;
 }
 
 //! FE8U = 0x080486E8
-bool sub_80486E8(void)
+bool Sio_SyncWaitAllAck(void)
 {
     gSioMsgBuf.kind = SIO_MSG_89;
     gSioMsgBuf.sender = gSioSt->selfId;
@@ -334,14 +334,14 @@ void XMapTransfer_4(void)
 }
 
 //! FE8U = 0x0804879C
-void sub_804879C(void)
+void Sio_EnableAllWOutLayers(void)
 {
     SetWOutLayers(1, 1, 1, 1, 1);
     return;
 }
 
 //! FE8U = 0x080487C0
-void sub_80487C0(struct Proc * proc)
+void EndSioMenuForXMapTransfer(struct Proc * proc)
 {
     int i;
     struct SioMenuItemProc ** iter;
@@ -358,7 +358,7 @@ void sub_80487C0(struct Proc * proc)
     }
 
     InitSioBG();
-    sub_804C3A0(0, 0);
+    Nop_SioUiutils_1(0, 0);
 
     gSioSt->unk_000 = 3;
 
@@ -373,13 +373,13 @@ void sub_80487C0(struct Proc * proc)
 }
 
 //! FE8U = 0x0804881C
-void sub_804881C(void)
+void EndSioSessionAndLoadSuspend(void)
 {
     ClearSioBG();
 
-    sub_8045CBC();
-    sub_8045CE0();
-    sub_8041898();
+    EndSioProcs();
+    SioBat_ReleaseIrq();
+    Sio_ResetState();
 
     LoadAndVerfySuspendSave();
 

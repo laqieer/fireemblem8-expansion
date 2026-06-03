@@ -51,7 +51,7 @@ void PrepItemList_Init(struct PrepItemListProc * proc)
 }
 
 //! FE8U = 0x0809EBF0
-void sub_809EBF0(void)
+void PrepItemList_DrawOwnerHeaderText(void)
 {
     TileMap_FillRect(gBG0TilemapBuffer + 0x34, 0xc, 1, 0);
 
@@ -187,7 +187,7 @@ void PrepItemList_InitGfx(struct PrepItemListProc * proc)
 
     StoreConvoyWeaponIconGraphics(0x4000, 6);
 
-    sub_809D8D4(gBG0TilemapBuffer + 0x6F, 0x4000, 6);
+    PrepItemSupply_DrawConvoyWeaponIconTiles(gBG0TilemapBuffer + 0x6F, 0x4000, 6);
 
     Decompress(gUnkData_61, (void*)0x06015000);
     ApplyPalette(Pal_SpinningArrow, 0x14);
@@ -195,9 +195,9 @@ void PrepItemList_InitGfx(struct PrepItemListProc * proc)
     StartMenuScrollBarExt(proc, 225, 47, 0x5800, 9);
     UnlockMenuScrollBar();
     SomethingPrepListRelated(proc->unit, proc->currentPage, 3);
-    sub_809F5F4(proc);
+    PrepItemList_SnapCursorIntoView(proc);
 
-    sub_809D300(
+    PrepItemSupply_DrawItemList(
         PrepItemSuppyTexts.th + 7,
         gBG2TilemapBuffer + 0xF,
         (proc->yOffsetPerPage[proc->currentPage]) >> 4,
@@ -207,7 +207,7 @@ void PrepItemList_InitGfx(struct PrepItemListProc * proc)
     BG_EnableSyncByMask(4);
 
     DrawPrepScreenItems(gBG0TilemapBuffer + 0x6F + 0xb3, PrepItemSuppyTexts.th + 2, proc->unit, 0);
-    sub_809EBF0();
+    PrepItemList_DrawOwnerHeaderText();
 
     StartUiSpinningArrows(proc);
     LoadUiSpinningArrowGfx(0, 0x280, 2);
@@ -257,13 +257,13 @@ void PrepItemList_OnEnd(struct PrepItemListProc * proc)
 }
 
 //! FE8U = 0x0809F150
-void sub_809F150(struct PrepItemListProc * proc)
+void PrepItemList_RedrawPageContents(struct PrepItemListProc * proc)
 {
     ResetIconGraphics_();
     SomethingPrepListRelated(proc->unit, proc->currentPage, 3);
-    sub_809F370(proc);
+    PrepItemList_ClampCursorAndScroll(proc);
 
-    sub_809D300(PrepItemSuppyTexts.th + 7, gBG2TilemapBuffer + 0xF, proc->yOffsetPerPage[proc->currentPage] >> 4, proc->unit);
+    PrepItemSupply_DrawItemList(PrepItemSuppyTexts.th + 7, gBG2TilemapBuffer + 0xF, proc->yOffsetPerPage[proc->currentPage] >> 4, proc->unit);
     DrawPrepScreenItemIcons(gBG0TilemapBuffer + 0x122, proc->unit);
 
     ShowSysHandCursor(
@@ -317,7 +317,7 @@ void PrepItemList_SwitchPageLeft(struct PrepItemListProc * proc)
         } else {
             proc->currentPage--;
         }
-        sub_809F150(proc);
+        PrepItemList_RedrawPageContents(proc);
     }
 
     if (proc->unk_32 >= four) {
@@ -353,7 +353,7 @@ void PrepItemList_SwitchPageRight(struct PrepItemListProc* proc) {
         } else {
             proc->currentPage++;
         }
-        sub_809F150(proc);
+        PrepItemList_RedrawPageContents(proc);
     }
 
     if (proc->unk_32 >= four) {
@@ -371,7 +371,7 @@ void PrepItemList_SwitchPageRight(struct PrepItemListProc* proc) {
 }
 
 //! FE8U = 0x0809F370
-void sub_809F370(struct PrepItemListProc* proc) {
+void PrepItemList_ClampCursorAndScroll(struct PrepItemListProc* proc) {
     if (gPrepscreen_2 == 0) {
         proc->idxPerPage[proc->currentPage] = proc->yOffsetPerPage[proc->currentPage] = 0;
     } else {
@@ -396,17 +396,17 @@ void PrepItemList_ScrollVertical(struct PrepItemListProc * proc, int amount)
 {
     ResetIconGraphics_();
 
-    sub_809D418(gBG2TilemapBuffer + 0xF, proc->yOffsetPerPage[proc->currentPage] >> 4);
+    PrepItemSupply_DrawItemListIcons(gBG2TilemapBuffer + 0xF, proc->yOffsetPerPage[proc->currentPage] >> 4);
     DrawPrepScreenItemIcons(gBG0TilemapBuffer + 0x122, proc->unit);
 
     BG_EnableSyncByMask(5);
 
     if (amount < 0) {
-        sub_809D47C(PrepItemSuppyTexts.th + 7, gBG2TilemapBuffer + 0xF, (proc->yOffsetPerPage[proc->currentPage] >> 4) - 1,  proc->unit);
+        PrepItemSupply_DrawItemListRow(PrepItemSuppyTexts.th + 7, gBG2TilemapBuffer + 0xF, (proc->yOffsetPerPage[proc->currentPage] >> 4) - 1,  proc->unit);
     }
 
     if (amount > 0) {
-        sub_809D47C(PrepItemSuppyTexts.th + 7, gBG2TilemapBuffer + 0xF, (proc->yOffsetPerPage[proc->currentPage] >> 4) + 7, proc->unit);
+        PrepItemSupply_DrawItemListRow(PrepItemSuppyTexts.th + 7, gBG2TilemapBuffer + 0xF, (proc->yOffsetPerPage[proc->currentPage] >> 4) + 7, proc->unit);
     }
 
     proc->yOffsetPerPage[proc->currentPage] += amount;
@@ -417,7 +417,7 @@ void PrepItemList_ScrollVertical(struct PrepItemListProc * proc, int amount)
 }
 
 //! FE8U = 0x0809F498
-void sub_809F498(struct PrepItemListProc * proc)
+void PrepItemList_TakeItemToUnit(struct PrepItemListProc * proc)
 {
     int count = GetUnitItemCount(proc->unit);
 
@@ -432,14 +432,14 @@ void sub_809F498(struct PrepItemListProc * proc)
     UnitRemoveInvalidItems(proc->unit);
     gPrepScreenItemList[proc->idxPerPage[proc->currentPage]].item = 0;
 
-    sub_80982B8();
+    RebuildConvoyFromPrepList();
 
     SomethingPrepListRelated(proc->unit, proc->currentPage, 3);
-    sub_809F370(proc);
+    PrepItemList_ClampCursorAndScroll(proc);
     ResetIconGraphics_();
 
     DrawPrepScreenItems(gBG0TilemapBuffer + 0x122, PrepItemSuppyTexts.th + 2, proc->unit, 0);
-    sub_809D300(
+    PrepItemSupply_DrawItemList(
         PrepItemSuppyTexts.th + 7,
         gBG2TilemapBuffer + 0xF,
         proc->yOffsetPerPage[proc->currentPage] >> 4,
@@ -470,7 +470,7 @@ void sub_809F498(struct PrepItemListProc * proc)
 }
 
 //! FE8U = 0x0809F5F4
-void sub_809F5F4(struct PrepItemListProc* proc) {
+void PrepItemList_SnapCursorIntoView(struct PrepItemListProc* proc) {
 
     if ((proc->idxPerPage[proc->currentPage] * 16 + 40 - proc->yOffsetPerPage[proc->currentPage] < 0x38) &&
         (proc->idxPerPage[proc->currentPage] != 0)) {
@@ -482,7 +482,7 @@ void sub_809F5F4(struct PrepItemListProc* proc) {
         proc->idxPerPage[proc->currentPage]--;
     }
 
-    sub_809F370(proc);
+    PrepItemList_ClampCursorAndScroll(proc);
 
     ShowSysHandCursor(
         0x80,
@@ -656,7 +656,7 @@ void PrepItemList_Loop_MainKeyHandler(struct PrepItemListProc * proc)
 }
 
 //! FE8U = 0x0809FA88
-s8 sub_809FA88(struct PrepItemListProc * proc)
+s8 PrepItemList_MoveUnitInvCursor(struct PrepItemListProc * proc)
 {
     int count = GetUnitItemCount(proc->unit);
     u8 unitInvSlot = proc->unitInvIdx;
@@ -713,7 +713,7 @@ void PrepItemList_SwitchToUnitInventory(struct PrepItemListProc * proc)
 }
 
 //! FE8U = 0x0809FB70
-void sub_809FB70(struct PrepItemListProc * proc)
+void PrepItemList_SwapItemWithUnitSlot(struct PrepItemListProc * proc)
 {
     u16 idx = proc->idxPerPage[proc->currentPage];
     u16 item = proc->unit->items[proc->unitInvIdx];
@@ -722,14 +722,14 @@ void sub_809FB70(struct PrepItemListProc * proc)
     UnitRemoveInvalidItems(proc->unit);
     gPrepScreenItemList[idx].item = item;
 
-    sub_80982B8();
+    RebuildConvoyFromPrepList();
     if (item == 0) {
         SomethingPrepListRelated(proc->unit, proc->currentPage, 3);
     }
 
-    sub_809F370(proc);
+    PrepItemList_ClampCursorAndScroll(proc);
     DrawPrepScreenItems(gBG0TilemapBuffer + 0x122, PrepItemSuppyTexts.th + 2, proc->unit, 0);
-    sub_809D300(PrepItemSuppyTexts.th + 7, gBG2TilemapBuffer + 0xF, proc->yOffsetPerPage[proc->currentPage] >> 4, proc->unit);
+    PrepItemSupply_DrawItemList(PrepItemSuppyTexts.th + 7, gBG2TilemapBuffer + 0xF, proc->yOffsetPerPage[proc->currentPage] >> 4, proc->unit);
     StartParallelFiniteLoop(PrepItemList_DrawCurrentOwnerText, 1, proc);
     BG_EnableSyncByMask(4);
 
@@ -765,21 +765,21 @@ void PrepItemList_Loop_UnitInvKeyHandler(struct PrepItemListProc * proc)
                 StartPrepErrorHelpbox(-1, -1, 0x88B, proc);
                 return;
             }
-            sub_80ACA84(0);
+            ClearUiCursorHandConfig(0);
             Proc_Break(proc);
-            sub_809FB70(proc);
+            PrepItemList_SwapItemWithUnitSlot(proc);
             return;
         }
 
         if (gKeyStatusPtr->newKeys & B_BUTTON) {
-            sub_80ACA84(0);
+            ClearUiCursorHandConfig(0);
             Proc_Break(proc);
             PlaySoundEffect(SONG_SE_SYS_WINDOW_CANSEL1);
             return;
         }
     }
 
-    if (sub_809FA88(proc) != 0) {
+    if (PrepItemList_MoveUnitInvCursor(proc) != 0) {
         ShowSysHandCursor(16, proc->unitInvIdx * 16 + 72, 0xb, 0x800);
         if (proc->unk_36 == 1) {
             item = proc->unit->items[proc->unitInvIdx];
@@ -797,7 +797,7 @@ void PrepItemList_StartTradeScreen(struct PrepItemListProc * proc)
 {
     struct PrepScreenItemListEnt* ent = &gPrepScreenItemList[proc->idxPerPage[proc->currentPage]];
 
-    sub_809BE60(
+    StartPrepItemTradeScreenProcAtSlot(
         proc->unit,
         GetUnitFromCharId(ent->pid),
         ent->itemSlot,
@@ -820,7 +820,7 @@ PROC_LABEL(0),
     // fallthrough
 
 PROC_LABEL(1),
-    PROC_CALL(sub_809F5F4),
+    PROC_CALL(PrepItemList_SnapCursorIntoView),
 
     // fallthrough
 

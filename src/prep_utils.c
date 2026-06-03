@@ -18,7 +18,7 @@ int CheckInLinkArena(void);
 
 
 //! FE8U = 0x08097CC4
-int sub_8097CC4(void)
+int PrepUtils_CondFalse_0(void)
 {
     return 0;
 }
@@ -148,7 +148,7 @@ int CountUnitUsableWeapons(struct Unit * unit)
 }
 
 //! FE8U = 0x08097E38
-s8 sub_8097E38(struct Unit* unit) {
+s8 CanUnitJoinLinkArena(struct Unit* unit) {
 
     if (UNIT_CATTRIBUTES(unit) & CA_SUPPLY) {
         return 0;
@@ -255,7 +255,7 @@ s8 CheckValidLinkArenaItemSupply(struct Unit* unit, int itemSlot, int item) {
 }
 
 //! FE8U = 0x08097F98
-s8 sub_8097F98(struct Unit* unit, int itemSlot) {
+s8 CheckValidLinkArenaItemRemoval(struct Unit* unit, int itemSlot) {
 
     if (!CheckInLinkArena()) {
         return 1;
@@ -280,7 +280,7 @@ extern u16 Pal_UnkData_1[];
 extern u16 gPrepscreen_5[];
 
 //! FE8U = 0x08097FDC
-void sub_8097FDC(void)
+void ApplyPrepWindowColorPalette(void)
 {
     int i;
 
@@ -330,7 +330,7 @@ int GetPrepPageForItem(int item) {
 }
 
 //! FE8U = 0x08098048
-void sub_8098048(int page)
+void SortPrepScreenItemsByPage(int page)
 {
     int j;
     int i;
@@ -459,13 +459,13 @@ void SomethingPrepListRelated(struct Unit* pUnit, int page, int flags) {
         }
     }
 
-    sub_8098048(page);
+    SortPrepScreenItemsByPage(page);
 
     return;
 }
 
 //! FE8U = 0x080982B8
-void sub_80982B8(void) {
+void RebuildConvoyFromPrepList(void) {
     u16 i;
 
     ClearSupplyItems();
@@ -486,7 +486,7 @@ void sub_80982B8(void) {
 }
 
 //! FE8U = 0x080982FC
-void sub_80982FC(void)
+void DebugFillConvoyWithItems(void)
 {
     u16 i;
 
@@ -500,7 +500,7 @@ void sub_80982FC(void)
 }
 
 //! FE8U = 0x0809831C
-int sub_809831C(u16 a)
+int CountSetBits(u16 a)
 {
     int i;
 
@@ -516,7 +516,7 @@ int sub_809831C(u16 a)
 }
 
 //! FE8U = 0x08098344
-int sub_8098344(u16 a, int b)
+int GetNthSetBitMask(u16 a, int b)
 {
     int i;
     int unk = 0;
@@ -536,7 +536,7 @@ int sub_8098344(u16 a, int b)
 }
 
 //! FE8U = 0x08098378
-int sub_8098378(u16 a)
+int GetFirstSetBitIndex(u16 a)
 {
     int i;
 

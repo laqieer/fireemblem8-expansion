@@ -159,7 +159,7 @@ void ekrBattleDeamon_Destructor(void)
     UnlockGame();
 }
 
-void nullsub_35(void)
+void Nop_BanimEkrbattle_0(void)
 {
     return;
 }
@@ -248,7 +248,7 @@ void MainUpdateEkrBattle(void)
     PushSpriteLayerObjects(0xD);
 }
 
-void nullsub_36(void)
+void Nop_BanimEkrbattle_1(void)
 {
     return;
 }
@@ -456,7 +456,7 @@ void ekrBattleExecTriangleAtk(struct ProcEkrBattle *proc)
 void ekrBattleWaitTriangleIdle(struct ProcEkrBattle *proc)
 {
     if (CheckEkrTriangleInvalid() == true) {
-        nullsub_18();
+        Nop_BanimEkrtriangle_0();
         proc->timer = 0x1E;
         proc->proc_idleCb = (ProcFunc)ekrBattleTriggerNewRoundStart;
     }
@@ -545,7 +545,7 @@ void ekrBattleInRoundIdle(struct ProcEkrBattle *proc)
                     gBanimExpGain[1] = 0;
                     ret = 1;
                 } else if (proc->speedup == true) {
-                    sub_805B094();
+                    StopArenaBattleMusic();
                     ArenaSetResult(4);
                     gBanimExpGain[1] = 0;
                     ret = 1;
@@ -999,10 +999,10 @@ void ekrBattle_PostDragonStatusEffect(struct ProcEkrBattle *proc)
         EkrRestoreBGM();
     }
 
-    proc->proc_idleCb = (ProcFunc)nullsub_69;
+    proc->proc_idleCb = (ProcFunc)Nop_BanimEkrbattle_2;
 }
 
-void nullsub_69(struct ProcEkrBattle *proc)
+void Nop_BanimEkrbattle_2(struct ProcEkrBattle *proc)
 {
     return;
 }
@@ -1016,13 +1016,13 @@ CONST_DATA char gNopStr[] = "\0";
 CONST_DATA struct ProcCmd gProc_ekrBattleDeamon[] = {
     PROC_NAME("ekrBattleDaemon"),
     PROC_SET_END_CB(ekrBattleDeamon_Destructor),
-    PROC_REPEAT(nullsub_35),
+    PROC_REPEAT(Nop_BanimEkrbattle_0),
     PROC_END
 };
 
 CONST_DATA struct ProcCmd gProc_ekrBattle[] = {
     PROC_NAME("ekrBattle"),
-    PROC_SET_END_CB(nullsub_36),
+    PROC_SET_END_CB(Nop_BanimEkrbattle_1),
     PROC_REPEAT(ekrBattle_Init),
     PROC_REPEAT(ekrBattleMain),
     PROC_END

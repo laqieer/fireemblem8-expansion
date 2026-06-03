@@ -460,7 +460,7 @@ void ParseBattleHitToBanimCmd(void)
         }
         else
         {
-            switch (sub_80716B0(2)) {
+            switch (LCGRand_N(2)) {
             case 0:
                 *r5 = gBattleparse_7[distance_r4];
                 break;

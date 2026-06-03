@@ -59,7 +59,7 @@ void efxGorgon_Loop_Main(struct ProcEfx * proc)
     }
     else if (proc->timer == duration + 84)
     {
-        sub_806BBDC();
+        StartEfxmagicDemonsurgeFadeBlack();
     }
     else if (proc->timer == duration + 96)
     {
@@ -76,7 +76,7 @@ void efxGorgon_Loop_Main(struct ProcEfx * proc)
     }
     else if (proc->timer == duration + 122)
     {
-        sub_806C464();
+        StartEfxmagicDemonsurgeFlashWhite();
     }
     else if (proc->timer == duration + 123)
     {
@@ -105,7 +105,7 @@ void efxGorgon_Loop_Main(struct ProcEfx * proc)
 }
 
 //! FE8U = 0x0806B64C
-void sub_806B64C(struct ProcEfxOBJ * proc)
+void efxGorgonOBJ_OnEnd(struct ProcEfxOBJ * proc)
 {
     AnimDelete(proc->anim2);
     gEfxBgSemaphore--;
@@ -113,7 +113,7 @@ void sub_806B64C(struct ProcEfxOBJ * proc)
 }
 
 //! FE8U = 0x0806B664
-void sub_806B664(struct ProcEfxOBJ * proc)
+void efxGorgonOBJ_Loop(struct ProcEfxOBJ * proc)
 {
     struct Anim * anim = proc->anim2;
 
@@ -131,10 +131,10 @@ void sub_806B664(struct ProcEfxOBJ * proc)
 
 struct ProcCmd CONST_DATA ProcScr_EfxmagicDemonsurge_0[] =
 {
-    PROC_SET_END_CB(sub_806B64C),
+    PROC_SET_END_CB(efxGorgonOBJ_OnEnd),
     PROC_SLEEP(25),
 
-    PROC_REPEAT(sub_806B664),
+    PROC_REPEAT(efxGorgonOBJ_Loop),
     PROC_SLEEP(54),
 
     PROC_END,
@@ -462,7 +462,7 @@ struct Proc085D8C24
 };
 
 //! FE8U = 0x0806B938
-void sub_806B938(struct Proc085D8C24 * proc)
+void EfxmagicDemonsurgeFadeBlack_Init(struct Proc085D8C24 * proc)
 {
     proc->unk4C = 0;
     return;
@@ -471,7 +471,7 @@ void sub_806B938(struct Proc085D8C24 * proc)
 #define RGB_(r, g, b) (((b) << 10) | ((g) << 5) | (r))
 
 //! FE8U = 0x0806B940
-void sub_806B940(struct Proc085D8C24 * proc)
+void EfxmagicDemonsurgeFadeBlack_Loop_FadeOut(struct Proc085D8C24 * proc)
 {
     int sl;
     u16 * r6;
@@ -540,7 +540,7 @@ void sub_806B940(struct Proc085D8C24 * proc)
 }
 
 //! FE8U = 0x0806BACC
-void sub_806BACC(struct Proc085D8C24 * proc)
+void EfxmagicDemonsurgeFadeBlack_Loop_HoldBlack(struct Proc085D8C24 * proc)
 {
     int sl;
     u16 * r6;
@@ -607,10 +607,10 @@ void sub_806BACC(struct Proc085D8C24 * proc)
 
 struct ProcCmd CONST_DATA ProcScr_EfxmagicDemonsurge_1[] =
 {
-    PROC_CALL(sub_806B938),
+    PROC_CALL(EfxmagicDemonsurgeFadeBlack_Init),
 
-    PROC_REPEAT(sub_806B940),
-    PROC_REPEAT(sub_806BACC),
+    PROC_REPEAT(EfxmagicDemonsurgeFadeBlack_Loop_FadeOut),
+    PROC_REPEAT(EfxmagicDemonsurgeFadeBlack_Loop_HoldBlack),
 
     PROC_CALL(EnablePaletteSync),
 
@@ -620,7 +620,7 @@ struct ProcCmd CONST_DATA ProcScr_EfxmagicDemonsurge_1[] =
 // clang-format on
 
 //! FE8U = 0x0806BBDC
-void sub_806BBDC(void)
+void StartEfxmagicDemonsurgeFadeBlack(void)
 {
     Proc_Start(ProcScr_EfxmagicDemonsurge_1, PROC_TREE_VSYNC);
     return;
@@ -892,7 +892,7 @@ void efxGorgonBGFinish_Loop(struct ProcEfxBG * proc)
         u16 ** img = proc->img;
 
         SpellFx_RegisterBgGfx(*(img + ret), 32 * 8 * CHR_SIZE);
-        sub_8068AFC(GetAnimAnotherSide(proc->anim), *(tsa + ret), *(tsa + ret), 1);
+        SpellFx_WriteBgMapFillEdges(GetAnimAnotherSide(proc->anim), *(tsa + ret), *(tsa + ret), 1);
     }
     else
     {
@@ -1008,14 +1008,14 @@ struct Proc085D8CE4
 };
 
 //! FE8U = 0x0806C14C
-void sub_806C14C(struct Proc085D8CE4 * proc)
+void EfxmagicDemonsurgeFlash_Init(struct Proc085D8CE4 * proc)
 {
     proc->unk4C = 0;
     return;
 }
 
 //! FE8U = 0x0806C154
-void sub_806C154(struct Proc085D8CE4 * proc)
+void EfxmagicDemonsurgeFlash_Loop_White(struct Proc085D8CE4 * proc)
 {
     u16 * src;
     int i;
@@ -1052,7 +1052,7 @@ void sub_806C154(struct Proc085D8CE4 * proc)
 #define RGB_(r, g, b) (((b) << 10) | ((g) << 5) | (r))
 
 //! FE8U = 0x0806C1B8
-void sub_806C1B8(struct Proc085D8CE4 * proc)
+void EfxmagicDemonsurgeFlash_Loop_HoldBlack(struct Proc085D8CE4 * proc)
 {
     int sl;
     u16 * r6;
@@ -1116,7 +1116,7 @@ void sub_806C1B8(struct Proc085D8CE4 * proc)
 }
 
 //! FE8U = 0x0806C2D4
-void sub_806C2D4(struct Proc085D8CE4 * proc)
+void EfxmagicDemonsurgeFlash_Loop_FadeIn(struct Proc085D8CE4 * proc)
 {
     int sl;
     u16 * r6;
@@ -1191,11 +1191,11 @@ void sub_806C2D4(struct Proc085D8CE4 * proc)
 
 struct ProcCmd CONST_DATA ProcScr_EfxmagicDemonsurge_2[] =
 {
-    PROC_CALL(sub_806C14C),
+    PROC_CALL(EfxmagicDemonsurgeFlash_Init),
 
-    PROC_REPEAT(sub_806C154),
-    PROC_REPEAT(sub_806C1B8),
-    PROC_REPEAT(sub_806C2D4),
+    PROC_REPEAT(EfxmagicDemonsurgeFlash_Loop_White),
+    PROC_REPEAT(EfxmagicDemonsurgeFlash_Loop_HoldBlack),
+    PROC_REPEAT(EfxmagicDemonsurgeFlash_Loop_FadeIn),
 
     PROC_CALL(EnablePaletteSync),
 
@@ -1205,7 +1205,7 @@ struct ProcCmd CONST_DATA ProcScr_EfxmagicDemonsurge_2[] =
 // clang-format on
 
 //! FE8U = 0x0806C464
-void sub_806C464(void)
+void StartEfxmagicDemonsurgeFlashWhite(void)
 {
     Proc_Start(ProcScr_EfxmagicDemonsurge_2, PROC_TREE_VSYNC);
     return;
@@ -1221,7 +1221,7 @@ struct Proc085D8D14
 #define RGB_(r, g, b) (((b) << 10) | ((g) << 5) | (r))
 
 //! FE8U = 0x0806C478
-void sub_806C478(struct Proc085D8D14 * proc)
+void EfxmagicDemonsurgeFlash_Loop_FadeOut(struct Proc085D8D14 * proc)
 {
     int sl;
     u16 * r6;
@@ -1296,11 +1296,11 @@ void sub_806C478(struct Proc085D8D14 * proc)
 
 struct ProcCmd CONST_DATA ProcScr_EfxmagicDemonsurge_3[] =
 {
-    PROC_CALL(sub_806C14C),
+    PROC_CALL(EfxmagicDemonsurgeFlash_Init),
 
-    PROC_REPEAT(sub_806C478),
-    PROC_REPEAT(sub_806C1B8),
-    PROC_REPEAT(sub_806C2D4),
+    PROC_REPEAT(EfxmagicDemonsurgeFlash_Loop_FadeOut),
+    PROC_REPEAT(EfxmagicDemonsurgeFlash_Loop_HoldBlack),
+    PROC_REPEAT(EfxmagicDemonsurgeFlash_Loop_FadeIn),
 
     PROC_CALL(EnablePaletteSync),
 
@@ -1310,7 +1310,7 @@ struct ProcCmd CONST_DATA ProcScr_EfxmagicDemonsurge_3[] =
 // clang-format on
 
 //! FE8U = 0x0806C608
-void sub_806C608(void)
+void StartEfxmagicDemonsurgeFlashBlack(void)
 {
     Proc_Start(ProcScr_EfxmagicDemonsurge_3, PROC_TREE_VSYNC);
     return;

@@ -146,7 +146,7 @@ void GmapScreen2_Init(struct GmNodeIconDisplayProc * proc)
 }
 
 //! FE8U = 0x080BB744
-s8 sub_80BB744(struct GmScreenProc * proc, s16 xIn, s16 yIn, s16 * xOut, s16 * yOut)
+s8 GmapScreen2_GetNodeScreenPos(struct GmScreenProc * proc, s16 xIn, s16 yIn, s16 * xOut, s16 * yOut)
 {
     s16 x;
     s16 y;
@@ -199,7 +199,7 @@ void GmapScreen2_Loop(struct GmNodeIconDisplayProc * proc)
         x1 = node->x - icon->xCenter;
         y1 = node->y - icon->yCenter;
 
-        if (sub_80BB744(proc->pScreenProc, x1, y1, &local_2c, &local_2a))
+        if (GmapScreen2_GetNodeScreenPos(proc->pScreenProc, x1, y1, &local_2c, &local_2a))
         {
             local_2c = OAM1_X(local_2c);
             local_2a = OAM0_Y(local_2a);
@@ -299,7 +299,7 @@ const u8 gWorldmapScreen2_0[2][0x1d] =
 };
 
 //! FE8U = 0x080BBA4C
-int sub_80BBA4C(int nodeId)
+int GetWorldMapNodeIdByOrder(int nodeId)
 {
     int set;
 

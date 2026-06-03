@@ -18,7 +18,7 @@
 #include "constants/songs.h"
 
 //! FE8U = 0x08045930
-int sub_8045930(u8 ranking, u32 playerCount, u32 mode, u32 points)
+int InsertMultiArenaRanking(u8 ranking, u32 playerCount, u32 mode, u32 points)
 {
     u32 r4;
     int r2;
@@ -70,16 +70,16 @@ _080459E4:
 }
 
 //! FE8U = 0x08045A64
-void sub_8045A64(struct SioBatProc * proc)
+void SioBat_RegisterHighScore(struct SioBatProc * proc)
 {
     int mode = gLinkArenaSt.unk_ec.unk_0_1;
     int playerCount = gLinkArenaSt.unk_A0 - 1;
-    u8 ranking = sub_8049A60();
+    u8 ranking = LinkArena_GetPlayerRanking();
     int points = gUnk_Sio_16.currentScore[gSioSt->selfId];
 
     ReadMultiArenaSaveRankings(gSioResultRankings);
 
-    proc->unk_58 = sub_8045930(ranking, playerCount, mode, points);
+    proc->unk_58 = InsertMultiArenaRanking(ranking, playerCount, mode, points);
 
     WriteMultiArenaSaveRankings(gSioResultRankings);
 
@@ -96,7 +96,7 @@ void sub_8045A64(struct SioBatProc * proc)
 }
 
 //! FE8U = 0x08045AF4
-void sub_8045AF4(void)
+void SioBat_LoadAllTeamUnits(void)
 {
     int i;
     int j;
@@ -128,11 +128,11 @@ void sub_8045AF4(void)
 
             if ((gSioSaveConfig._unk2_) == 0)
             {
-                sub_80431B4(unit);
+                GiveUnitDefaultWeapons(unit);
             }
             else
             {
-                sub_804D40C(unit);
+                SetUnitAllItemsUsesToMax(unit);
             }
 
             if (j == 0)
@@ -169,22 +169,22 @@ struct ProcCmd CONST_DATA ProcScr_SIOMAIN2[] = {
     PROC_15,
     PROC_NAME("SIOMAIN"),
     PROC_YIELD,
-    PROC_CALL(sub_8049828),
+    PROC_CALL(LinkArenaBattleMap_Init),
     PROC_CALL(FadeInBlackSpeed20),
     PROC_YIELD,
     PROC_CALL(Clear_UnkData_0),
 PROC_LABEL(0),
-    PROC_CALL(sub_80499D0),
+    PROC_CALL(LABattleMap_BeginTurn),
     PROC_SLEEP(1),
     PROC_START_CHILD_BLOCKING(ProcScr_LinkArenaPhaseIntro),
     PROC_YIELD,
-    PROC_REPEAT(sub_8049964),
+    PROC_REPEAT(LABattleMap_StartFactionTurn),
     PROC_GOTO(0),
 PROC_LABEL(2),
-    PROC_CALL(sub_804B71C),
-    PROC_REPEAT(sub_804B76C),
+    PROC_CALL(LABattleMap_StartBonusPointsHelp),
+    PROC_REPEAT(LABattleMap_AwardBonusPoints),
 PROC_LABEL(3),
-    PROC_CALL(sub_8049B04),
+    PROC_CALL(LABattleMap_End),
     PROC_END,
 };
 
@@ -196,7 +196,7 @@ void New6C_SIOMAIN2(void)
 }
 
 //! FE8U = 0x08045C28
-void sub_8045C28(ProcPtr proc)
+void SioMain2_WaitEndAndRoute(ProcPtr proc)
 {
     if (Proc_Find(ProcScr_SIOMAIN2) != NULL)
     {
@@ -219,7 +219,7 @@ void sub_8045C28(ProcPtr proc)
 }
 
 //! FE8U = 0x08045C68
-void sub_8045C68(const char * str, int x, int y, ProcPtr parent)
+void SioBat_StartTalkText(const char * str, int x, int y, ProcPtr parent)
 {
     SetInitTalkTextFont();
     ClearTalkText();
@@ -241,7 +241,7 @@ void sub_8045C68(const char * str, int x, int y, ProcPtr parent)
 }
 
 //! FE8U = 0x08045CBC
-void sub_8045CBC(void)
+void EndSioProcs(void)
 {
     Proc_EndEach(ProcScr_SIOVSYNC);
     Proc_EndEach(ProcScr_SIOMAIN);
@@ -250,14 +250,14 @@ void sub_8045CBC(void)
 }
 
 //! FE8U = 0x08045CE0
-void sub_8045CE0(void)
+void SioBat_ReleaseIrq(void)
 {
     SioReleaseIrq();
     return;
 }
 
 //! FE8U = 0x08045CEC
-void sub_8045CEC(void)
+void LinkArena_UpdatePlayerStatusText(void)
 {
     int i;
 
@@ -291,7 +291,7 @@ void sub_8045CEC(void)
 }
 
 //! FE8U = 0x08045DC0
-void sub_8045DC0(struct SioBatProc * proc)
+void SioBat_InitSetupScreen(struct SioBatProc * proc)
 {
     int i;
     char buf[15];
@@ -315,14 +315,14 @@ void sub_8045DC0(struct SioBatProc * proc)
     SetTextFont(&Font_0);
     InitSystemTextFont();
     ResetTextFont();
-    sub_8043164();
+    InitSioTexts();
 
     for (i = 0; i < 4; i++)
     {
         gLinkArenaSt.linking_status[i] = 0xff;
     }
 
-    sub_8045CEC();
+    LinkArena_UpdatePlayerStatusText();
 
     for (i = 0; i < 15; i++)
     {
@@ -340,7 +340,7 @@ void sub_8045DC0(struct SioBatProc * proc)
 
     StartLinkArenaTitleBanner(proc->unk_2c, gSioMain2_0[gLinkArenaSt.unk_00], 0);
 
-    sub_804C508();
+    SetLinkArenaUiBlendAndWindowOff();
     PutSioText(MSG_748 + proc->unk_30, 1); // "Setting up. Please wait..."
 
     SetWinEnable(0, 0, 0);
@@ -349,7 +349,7 @@ void sub_8045DC0(struct SioBatProc * proc)
 }
 
 //! FE8U = 0x08045F00
-void sub_8045F00(ProcPtr proc)
+void StartSioProcs(ProcPtr proc)
 {
     u16 data = 0x2586;
 
@@ -363,7 +363,7 @@ void sub_8045F00(ProcPtr proc)
 }
 
 //! FE8U = 0x08045F48
-void sub_8045F48(struct SioBatProc * proc)
+void SioBat_SetupLoop(struct SioBatProc * proc)
 {
     int i;
     u8 buf[4];
@@ -376,7 +376,7 @@ void sub_8045F48(struct SioBatProc * proc)
     gUnk_Sio_13 = 0;
     buf[0] = 0;
 
-    sub_8045CEC();
+    LinkArena_UpdatePlayerStatusText();
 
     if (Proc_Find(ProcScr_SIOCON) != NULL)
     {
@@ -384,8 +384,8 @@ void sub_8045F48(struct SioBatProc * proc)
         {
             SioPlaySoundEffect(1);
             EndLinkArenaButtonSpriteDraw();
-            sub_8045CBC();
-            sub_8045CE0();
+            EndSioProcs();
+            SioBat_ReleaseIrq();
             Proc_Goto(proc, 2);
         }
 
@@ -396,8 +396,8 @@ void sub_8045F48(struct SioBatProc * proc)
     {
         SioPlaySoundEffect(1);
         EndLinkArenaButtonSpriteDraw();
-        sub_8045CBC();
-        sub_8045CE0();
+        EndSioProcs();
+        SioBat_ReleaseIrq();
         Proc_Goto(proc, 2);
     }
 
@@ -413,24 +413,24 @@ void sub_8045F48(struct SioBatProc * proc)
 
     if (gSioSt->playerStatus[gSioSt->selfId] == 2)
     {
-        sub_8045CBC();
-        sub_8045CE0();
+        EndSioProcs();
+        SioBat_ReleaseIrq();
         Proc_Goto(proc, 2);
         return;
     }
 
-    if ((sub_80421E4() == 0) || (gSioSt->unk_01E > 60) || (timeouts != 0))
+    if ((Sio_CheckLinkAlive() == 0) || (gSioSt->unk_01E > 60) || (timeouts != 0))
     {
-        sub_8045CBC();
-        sub_8045CE0();
-        sub_8045F00(proc);
+        EndSioProcs();
+        SioBat_ReleaseIrq();
+        StartSioProcs(proc);
         proc->unk_30 = 0;
         PutSioText(MSG_748, 1); // "Setting up. Please wait..."
         StartLinkArenaButtonSpriteDraw(192, 16, proc);
         return;
     }
 
-    if ((gSioSt->selfId == 0) && (sub_804226C() == 1))
+    if ((gSioSt->selfId == 0) && (Sio_AreAllPlayersReady() == 1))
     {
         if (proc->unk_30 != 2)
         {
@@ -452,9 +452,9 @@ void sub_8045F48(struct SioBatProc * proc)
 
             SioPlaySoundEffect(2);
 
-            gSioSt->unk_007 = sub_804213C();
+            gSioSt->unk_007 = Sio_CountConnectedPlayers();
             gLinkArenaSt.unk_A0 = gSioSt->unk_007;
-            sub_8042AF4();
+            SioClearOutgoingQueue();
 
             buf[0] = 0x18;
             proc->unk_34 = SioEmitData(buf, 4);
@@ -469,7 +469,7 @@ void sub_8045F48(struct SioBatProc * proc)
         PutSioText(MSG_749, 1); // "Please wait..."
     }
 
-    if (((gSioSt->selfId != 0) && (sub_8042194(gSioSt->selfId) != 0)))
+    if (((gSioSt->selfId != 0) && (Sio_IsPlayerConnected(gSioSt->selfId) != 0)))
     {
         got = SioReceiveData(buf, recvBuf, 0);
         if (got != 0)
@@ -484,10 +484,10 @@ void sub_8045F48(struct SioBatProc * proc)
                 gSioSt->timeoutClock[i] = 0;
             }
 
-            gSioSt->unk_007 = sub_804213C();
+            gSioSt->unk_007 = Sio_CountConnectedPlayers();
             gLinkArenaSt.unk_A0 = gSioSt->unk_007;
 
-            sub_8042AF4();
+            SioClearOutgoingQueue();
             Proc_Break(proc);
             return;
         }
@@ -508,17 +508,17 @@ void sub_8045F48(struct SioBatProc * proc)
 }
 
 //! FE8U = 0x0804619C
-void sub_804619C(struct SioBatProc * proc)
+void SioBat_WaitSetupAck(struct SioBatProc * proc)
 {
-    sub_8045CEC();
+    LinkArena_UpdatePlayerStatusText();
 
     gUnk_Sio_13++;
 
     if ((gLinkArenaSt.unk_A0 != gSioSt->unk_007) || (gUnk_Sio_13 > 600))
     {
-        sub_8045CBC();
-        sub_8045CE0();
-        sub_8045F00(proc);
+        EndSioProcs();
+        SioBat_ReleaseIrq();
+        StartSioProcs(proc);
 
         proc->unk_30 = 0;
 
@@ -546,7 +546,7 @@ void sub_804619C(struct SioBatProc * proc)
 }
 
 //! FE8U = 0x08046234
-void sub_8046234(struct SioBatProc * proc)
+void SioBat_DecideFirstMover(struct SioBatProc * proc)
 {
     u8 buf[0x10];
 
@@ -575,7 +575,7 @@ void sub_8046234(struct SioBatProc * proc)
 }
 
 //! FE8U = 0x080462D4
-void sub_80462D4(struct SioBatProc * proc)
+void SioBat_ReceiveFirstMover(struct SioBatProc * proc)
 {
     u16 got;
     struct SioBatProc_Unk2C * unk_2c;
@@ -627,7 +627,7 @@ void sub_80462D4(struct SioBatProc * proc)
 }
 
 //! FE8U = 0x080463A8
-void sub_80463A8(struct SioBatProc * proc)
+void SioBat_FirstMoverRoulette(struct SioBatProc * proc)
 {
     struct SioBatProc_Unk2C * unk_2c = proc->unk_2c;
 
@@ -665,14 +665,14 @@ void sub_80463A8(struct SioBatProc * proc)
 }
 
 //! FE8U = 0x0804645C
-void sub_804645C(void)
+void SioBat_PlayFirstMoverSound(void)
 {
     PlaySoundEffect(SONG_7E);
     return;
 }
 
 //! FE8U = 0x08046478
-void sub_8046478(struct Unit * unit)
+void SioBat_PrepareTeamUnit(struct Unit * unit)
 {
     unit->exp = 0;
     SetUnitStatus(unit, 0);
@@ -680,18 +680,18 @@ void sub_8046478(struct Unit * unit)
 
     if (gLinkArenaSt.unk_ec.unk_0_2 == 0)
     {
-        sub_80431B4(unit);
+        GiveUnitDefaultWeapons(unit);
     }
     else
     {
-        sub_804D40C(unit);
+        SetUnitAllItemsUsesToMax(unit);
     }
 
     return;
 }
 
 //! FE8U = 0x080464B0
-void sub_80464B0(struct SioBatProc * proc)
+void SioBat_InitTeamTransfer(struct SioBatProc * proc)
 {
     int i;
 
@@ -708,7 +708,7 @@ void sub_80464B0(struct SioBatProc * proc)
         ClearUnit(unit);
         LoadSavedUnit(&gSioPostbattle_3->units[i], unit);
 
-        sub_8046478(unit);
+        SioBat_PrepareTeamUnit(unit);
 
         unit->index = base + i;
 
@@ -732,7 +732,7 @@ void sub_80464B0(struct SioBatProc * proc)
 }
 
 //! FE8U = 0x08046580
-void sub_8046580(struct SioBatProc * proc)
+void SioBat_TeamTransferLoop(struct SioBatProc * proc)
 {
     int i;
     u8 buf[0x24];
@@ -770,7 +770,7 @@ void sub_8046580(struct SioBatProc * proc)
 
             ClearUnit(unit);
             LoadSavedUnit(buf, unit);
-            sub_8046478(unit);
+            SioBat_PrepareTeamUnit(unit);
 
             unit->index = gLinkArenaSt.linking_status[outSenderId[0]] + base;
 
@@ -791,7 +791,7 @@ void sub_8046580(struct SioBatProc * proc)
         {
             u8 * ptr = gUnk_Sio_8;
 
-            if ((sub_8042194(i) != 0) && (ptr[i] < 5))
+            if ((Sio_IsPlayerConnected(i) != 0) && (ptr[i] < 5))
             {
                 unk++;
             }
@@ -808,7 +808,7 @@ void sub_8046580(struct SioBatProc * proc)
 }
 
 //! FE8U = 0x08046704
-void sub_8046704(struct SioBatProc * proc)
+void SioBat_WaitTeamTransferDone(struct SioBatProc * proc)
 {
     if (proc->unk_4c == 0)
     {
@@ -846,7 +846,7 @@ void sub_8046704(struct SioBatProc * proc)
 }
 
 //! FE8U = 0x080467AC
-void sub_80467AC(struct SioBatProc * proc)
+void DrawLinkArenaLoadingScreen(struct SioBatProc * proc)
 {
     ClearSioBG();
     InitSioBG();
@@ -870,7 +870,7 @@ void sub_80467AC(struct SioBatProc * proc)
 }
 
 //! FE8U = 0x08046838
-void sub_8046838(ProcPtr proc)
+void DrawLinkArenaRuleScreen(ProcPtr proc)
 {
     int i;
     u8 buf[4];
@@ -886,7 +886,7 @@ void sub_8046838(ProcPtr proc)
     Decompress(Img_TacticianSelObj, OBJ_CHR_ADDR(0x240));
     ApplyPalettes(Pal_TacticianSelObj, 0x13, 4);
 
-    sub_804C3A4(0);
+    Nop_SioUiutils_2(0);
 
     Decompress(gUnkData_15, gGenericBuffer);
     CallARM_FillTileRect(TILEMAP_LOCATED(gBG2TilemapBuffer, 1, 5), gGenericBuffer, TILEREF(0x0, 1));
@@ -894,7 +894,7 @@ void sub_8046838(ProcPtr proc)
     SetTextFont(&Font_0);
     ResetTextFont();
 
-    sub_8043164();
+    InitSioTexts();
     StartRuleSettingSpriteDrawStatic();
     LoadLinkArenaRuleSettings(buf);
 
@@ -909,7 +909,7 @@ void sub_8046838(ProcPtr proc)
         Text_DrawString(&gLinkArenaSt.texts[i], GetStringFromIndex(gLinkArenaRuleData[i].labelTextId));
         PutText(&gLinkArenaSt.texts[i], TILEMAP_LOCATED(gBG0TilemapBuffer, 6, y));
 
-        sub_80476CC(i, buf[i]);
+        SioRuleSettings_DrawRuleOptions(i, buf[i]);
     }
 
     DrawLinkArenaModeIcon(TILEMAP_LOCATED(gBG1TilemapBuffer, 30 + gLinkArenaRuleData[1].xPos[0], 8), 0);
@@ -917,7 +917,7 @@ void sub_8046838(ProcPtr proc)
 
     StartLinkArenaTitleBanner(proc, gSioMain2_0[gLinkArenaSt.unk_00], 0);
 
-    sub_804C508();
+    SetLinkArenaUiBlendAndWindowOff();
     PutSioText(MSG_74B, 1); // "The rules for this battle."
 
     BG_EnableSyncByMask(BG0_SYNC_BIT | BG1_SYNC_BIT | BG2_SYNC_BIT | BG3_SYNC_BIT);
@@ -926,29 +926,29 @@ void sub_8046838(ProcPtr proc)
 }
 
 //! FE8U = 0x080469AC
-void sub_80469AC(void)
+void EnableSioLinkTimeoutCheck(void)
 {
-    sub_8042980(3);
+    Sio_SetSubState(3);
     return;
 }
 
 //! FE8U = 0x080469B8
-void sub_80469B8(void)
+void DisableSioLinkTimeoutCheck(void)
 {
-    sub_8042980(0);
+    Sio_SetSubState(0);
     return;
 }
 
 struct ProcCmd CONST_DATA gSioBat_0[] = {
-    PROC_CALL(sub_804B800),
+    PROC_CALL(LABattle_BeginAnims),
     PROC_SLEEP(1),
     PROC_CALL(BattleApplyGameStateUpdates),
     PROC_WHILE(DoesBMXFADEExist),
     PROC_CALL(BATTLE_GOTO1_IfNobodyIsDead),
-    PROC_CALL(sub_804B850),
+    PROC_CALL(LABattle_StartDeathFades),
     PROC_SLEEP(32),
     PROC_CALL(BATTLE_DeleteLinkedMOVEUNIT),
 PROC_LABEL(1),
-    PROC_CALL(sub_804B8D0),
+    PROC_CALL(LABattle_MarkDeadCombatants),
     PROC_END,
 };

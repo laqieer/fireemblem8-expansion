@@ -1,6 +1,6 @@
 #include "gbafe.h"
 
-void sub_8050E40(void *_src, void *_dst)
+void EkrGauge_BuildHpBarGfx(void *_src, void *_dst)
 {
     u16 *src = _src;
     u16 *dst = _dst;
@@ -192,7 +192,7 @@ void DisableEkrGauge(void)
     gpProcEkrGauge->valid = false;
 }
 
-void sub_8051238(struct EkrGaugeStruct1 *buf, int a, int b)
+void EkrGauge_SetWtaArrowSprite(struct EkrGaugeStruct1 *buf, int a, int b)
 {
     if (a > 0) {
         if (b != 1) {
@@ -290,7 +290,7 @@ void ekrGaugeMain(struct ProcEkrGauge * proc)
 
         if (0 == proc->unk4C) {
             EfxTmCpyBG(gBanimmisc_2 + r8, &gBG0TilemapBuffer2D[r7][r9], 15, r6, -1, -1);
-            sub_8070D04(&gBG0TilemapBuffer2D[r7][r9], 15, r6, 2, 0x80);
+            EfxTmReplacePal(&gBG0TilemapBuffer2D[r7][r9], 15, r6, 2, 0x80);
         }
 
         if (0 == proc->unk50) {
@@ -302,7 +302,7 @@ void ekrGaugeMain(struct ProcEkrGauge * proc)
                 ptr = gBanimmisc_4 + r8;
 
             EfxTmCpyBG(ptr, &gBG0TilemapBuffer2D[r7][spDC], 16, r6, -1, -1);
-            sub_8070D04(&gBG0TilemapBuffer2D[r7][spDC], 16, r6, 3, 128);
+            EfxTmReplacePal(&gBG0TilemapBuffer2D[r7][spDC], 16, r6, 3, 128);
         }
 
         BG_EnableSyncByMask(1);
@@ -478,9 +478,9 @@ void ekrGaugeMain(struct ProcEkrGauge * proc)
 
     if (proc->unk4C == 0) {
         if (uVar8 != 0) {
-            sub_8071068(auStack_e8, uVar15, uVar8);
+            EkrBuildGaugeBarTiles(auStack_e8, uVar15, uVar8);
             if (hp_changed == 1) {
-                sub_8050E40(auStack_e8, gUnk_Banim_Ekrbattle_2);
+                EkrGauge_BuildHpBarGfx(auStack_e8, gUnk_Banim_Ekrbattle_2);
             }
 
             AStack_130.yPosition = y + 0x8e;
@@ -491,10 +491,10 @@ void ekrGaugeMain(struct ProcEkrGauge * proc)
             AnimDisplay(&AStack_130);
         }
 
-        sub_8071068(auStack_e8, sVar16, sVar5);
+        EkrBuildGaugeBarTiles(auStack_e8, sVar16, sVar5);
 
         if (hp_changed == 1) {
-            sub_8050E40(auStack_e8, gUnk_Banim_Ekrbattle_4);
+            EkrGauge_BuildHpBarGfx(auStack_e8, gUnk_Banim_Ekrbattle_4);
         }
 
         if (uVar8 != 0) {
@@ -548,9 +548,9 @@ void ekrGaugeMain(struct ProcEkrGauge * proc)
 
     if (proc->unk50 == 0) {
         if (uVar8 != 0) {
-            sub_8071068(auStack_e8, uVar15, uVar8);
+            EkrBuildGaugeBarTiles(auStack_e8, uVar15, uVar8);
             if (hp_changed == 1) {
-                sub_8050E40(auStack_e8, gUnk_Banim_Ekrbattle_3);
+                EkrGauge_BuildHpBarGfx(auStack_e8, gUnk_Banim_Ekrbattle_3);
             }
 
             AStack_130.yPosition = y + 0x8e;
@@ -561,10 +561,10 @@ void ekrGaugeMain(struct ProcEkrGauge * proc)
             AnimDisplay(&AStack_130);
         }
 
-        sub_8071068(auStack_e8, sVar16, sVar5);
+        EkrBuildGaugeBarTiles(auStack_e8, sVar16, sVar5);
 
         if (hp_changed == 1) {
-            sub_8050E40(auStack_e8, gUnk_Banim_Ekrbattle_5);
+            EkrGauge_BuildHpBarGfx(auStack_e8, gUnk_Banim_Ekrbattle_5);
         }
 
         if (uVar8 != 0) {
@@ -631,7 +631,7 @@ void ekrGaugeMain(struct ProcEkrGauge * proc)
     if (proc->unk4C == 0) {
         AStack_130.oamBase = 0;
         if (gBanimWtaBonus[0] != 0) {
-            sub_8051238((void*)&AStack_130, gBanimWtaBonus[0], clk);
+            EkrGauge_SetWtaArrowSprite((void*)&AStack_130, gBanimWtaBonus[0], clk);
             AStack_130.oam2Base = 0x1ca;
             AStack_130.oam2Base |= proc->unk44;
 
@@ -655,7 +655,7 @@ void ekrGaugeMain(struct ProcEkrGauge * proc)
         AStack_130.oamBase = 0;
         if (gBanimWtaBonus[1] != 0) {
 
-            sub_8051238((void*)&AStack_130, gBanimWtaBonus[1], clk);
+            EkrGauge_SetWtaArrowSprite((void*)&AStack_130, gBanimWtaBonus[1], clk);
             AStack_130.oam2Base = 0x1ca;
             AStack_130.oam2Base |= proc->unk44;
 

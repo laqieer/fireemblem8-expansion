@@ -309,14 +309,14 @@ struct ProcEfxDead {
 };
 
 void NewEfxDeadEvent(struct Anim * anim1, struct Anim * anim2);
-void sub_8052DFC(struct ProcEfxDead * proc);
-void sub_8052E7C(struct ProcEfxDead * proc);
-void sub_8052EAC(struct ProcEfxDead * proc);
-void sub_8052F24(struct ProcEfxDead * proc);
-void sub_8052F84(struct ProcEfxDead * proc);
+void efxDeadEvent_Loop_A(struct ProcEfxDead * proc);
+void efxDeadEvent_Loop_B(struct ProcEfxDead * proc);
+void efxDeadEvent_Loop_C(struct ProcEfxDead * proc);
+void efxDeadEvent_Loop_D(struct ProcEfxDead * proc);
+void efxDeadEvent_Loop_E(struct ProcEfxDead * proc);
 void NewEfxDead(struct Anim * anim1, struct Anim * anim2);
-void sub_8052FEC(struct ProcEfxDead * proc);
-void sub_8053080(struct ProcEfxDead * proc);
+void efxDead_Loop_A(struct ProcEfxDead * proc);
+void efxDead_Loop_B(struct ProcEfxDead * proc);
 void NewEfxDeadPika(struct Anim * anim1, struct Anim * anim2);
 void EfxDeadPikaMain(struct ProcEfxDead * proc);
 void NewEfxDeadAlpha(struct Anim * anim1, struct Anim * anim2);
@@ -376,8 +376,8 @@ void NewEfxWeaponIcon(s16 a, s16 b);
 void EndProcEfxWeaponIcon(void);
 void DisableEfxWeaponIcon(void);
 void EnableEfxWeaponIcon(void);
-void sub_8054F10(struct ProcEfxWeaponIcon * proc);
-void sub_8054F78(struct ProcEfxWeaponIcon * proc);
+void efxWeaponIcon_Loop(struct ProcEfxWeaponIcon * proc);
+void efxWeaponIcon_OnEnd(struct ProcEfxWeaponIcon * proc);
 
 struct ProcEfxSpellCast {
     PROC_HEADER;
@@ -393,9 +393,9 @@ extern struct ProcEfxSpellCast * gpProcEfxSpellCast;
 void NewEfxSpellCast(void);
 void RegisterEfxSpellCastEnd(void);
 void EndEfxSpellCast(void);
-void sub_8055038(struct ProcEfxSpellCast * proc);
-void sub_805509C(struct ProcEfxSpellCast * proc);
-void sub_80550DC(struct ProcEfxSpellCast * proc);
+void efxSpellCast_Loop_A(struct ProcEfxSpellCast * proc);
+void efxSpellCast_Loop_B(struct ProcEfxSpellCast * proc);
+void efxSpellCast_Loop_C(struct ProcEfxSpellCast * proc);
 
 struct ProcEfxSkill {
     PROC_HEADER;
@@ -422,12 +422,12 @@ struct ProcEfxSkill {
 void NewEfxSkillType01BG(struct Anim * anim);
 void EfxSkillType01BGMain(struct ProcEfxSkill * proc);
 void NewEfxSkillCommonBG(struct Anim * anim, u8 val);
-void sub_806E610(struct ProcEfxSkill * proc);
-void sub_806E638(struct ProcEfxSkill * proc);
-void sub_806E6E0(struct ProcEfxSkill * proc);
-void sub_806E79C(struct ProcEfxSkill * proc);
-void sub_806E868(struct ProcEfxSkill * proc);
-void sub_806E8A4(struct ProcEfxSkill * proc);
+void EfxSkillCommonBG_PlaySfx(struct ProcEfxSkill * proc);
+void EfxSkillCommonBGMain(struct ProcEfxSkill * proc);
+void EfxSkillCommonBG_FreezeAnims(struct ProcEfxSkill * proc);
+void EfxSkillCommonBG_UnfreezeAnims(struct ProcEfxSkill * proc);
+void EfxSkillCommonBG_MoveCamToSelf(struct ProcEfxSkill * proc);
+void EfxSkillCommonBG_MoveCamToOther(struct ProcEfxSkill * proc);
 
 extern CONST_DATA u16 Img_EfxSkill1[];
 extern CONST_DATA u16 Img_EfxSkill2[];
@@ -2627,11 +2627,11 @@ struct ProcEfxFarAttack
 };
 
 void NewEfxFarAttackWithDistance(struct Anim * anim, s16 arg);
-void sub_80534AC(struct ProcEfxFarAttack * unused, int x);
-void sub_80534E4(struct ProcEfxFarAttack * proc);
-void sub_8053514(struct ProcEfxFarAttack * proc);
-void sub_8053584(struct ProcEfxFarAttack * proc);
-void sub_8053618(int);
+void EfxFarAttack_SetAnimXPositions(struct ProcEfxFarAttack * unused, int x);
+void efxFarAttack_Init(struct ProcEfxFarAttack * proc);
+void efxFarAttack_ScrollIn(struct ProcEfxFarAttack * proc);
+void efxFarAttack_ScrollOut(struct ProcEfxFarAttack * proc);
+void EfxUpdateBg2Scroll(int);
 
 /* banim-efxquake.h */
 
@@ -2790,7 +2790,7 @@ void NewEfxChillEffectBGCOL(struct Anim * anim);
 void EfxChillEffectBGCOL_Loop(struct ProcEfxBGCOL * proc);
 void NewEfxChillAnime(struct Anim * anim, int arg1);
 void EfxChillAnime_Loop(struct ProcEfxOBJ * proc);
-void nullsub_17(struct Anim * anim);
+void Nop_BanimEfxmisc_0(struct Anim * anim);
 
 struct AnimMagicFxBuffer
 {

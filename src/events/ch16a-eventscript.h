@@ -306,7 +306,7 @@ CONST_DATA EventListScr EventScr_Ch16A_12[] = {
     REMA
     STARTFADE
     EvtColorFadeSetup(0x6, 0xa, 4, 128, 128, 128) // ENOSUPP in EAstdlib
-    ASMC2(sub_8080014)
+    ASMC2(StartMapEventcallFx2)
     SVAL(EVT_SLOT_B, 0x3000d)
     TILECHANGE(0xffff)
     SVAL(EVT_SLOT_B, 0x3000e)

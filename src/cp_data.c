@@ -1181,7 +1181,7 @@ struct AiScr CONST_DATA gAiScript_CpData_2[] = {
     AI_GOTO_IFGT(0x1, gAiState.cmd_result+0, 0x0),
     AI_GOTO_START,
 AI_LABEL(0x1),
-    AI_CALL_FUNC(sub_803F34C, gCpData_18),
+    AI_CALL_FUNC(AiFunc_RestartDecisionState, gCpData_18),
 };
 
 // 0x06 = If could reach opponents in two turns, change AI2 to 0x0
@@ -1294,7 +1294,7 @@ struct AiScr CONST_DATA gAiScript_DoNothing[] = {
 // unused
 struct AiScr CONST_DATA gAiScript_CpData_7[] = {
     AI_ACTION(100),
-    AI_CALL_FUNC(sub_803F330, NULL),
+    AI_CALL_FUNC(AiFunc_StoreAiCounter, NULL),
     AI_GOTO_IFGT(0x1, gAiState.cmd_result+0, 0x0),
     AI_GOTO_START,
 AI_LABEL(0x1),
@@ -1411,9 +1411,9 @@ AI_LABEL(0x1),
 
 // 0x0D = CHAI [0x0, 0x0] if the unit's leader has foe in range.(?)
 struct AiScr CONST_DATA gAiScript_CpData_18[] = {
-    AI_CALL_FUNC(sub_803F51C, NULL),
+    AI_CALL_FUNC(AiFunc_FindLeaderCombatTarget, NULL),
     AI_GOTO_IFEQ(0x1, gAiState.cmd_result+1, 0x1),
-    AI_CALL_FUNC(sub_803F72C, NULL),
+    AI_CALL_FUNC(AiFunc_AttackStoredTargetOrMoveToward, NULL),
     AI_GOTO_START,
 AI_LABEL(0x1),
     AI_SET_AI(0x0, 0x0),
@@ -1482,27 +1482,27 @@ AI_LABEL(0x2),
 
 // unused
 struct AiScr CONST_DATA gAiScript_CpData_24[] = {
-    AI_CALL_FUNC(sub_803F51C, NULL),
-    AI_CALL_FUNC(sub_803F72C, NULL),
+    AI_CALL_FUNC(AiFunc_FindLeaderCombatTarget, NULL),
+    AI_CALL_FUNC(AiFunc_AttackStoredTargetOrMoveToward, NULL),
     AI_GOTO_START,
 };
 
 // 0x0E = Heal allies under 50% HP(?)
 struct AiScr CONST_DATA gAiScript_CpData_25[] = {
-    AI_CALL_FUNC(sub_803F790, gCpData_21),
+    AI_CALL_FUNC(AiFunc_TryHealStaffByChance, gCpData_21),
     AI_GOTO_START,
 };
 
 // 0x0F = Alternate between 0xE and 0x3
 struct AiScr CONST_DATA gAiScript_CpData_26[] = {
-    AI_CALL_FUNC(sub_803F790, gCpData_21),
+    AI_CALL_FUNC(AiFunc_TryHealStaffByChance, gCpData_21),
     AI_ACTION_IN_PLACE(100),
     AI_GOTO_START,
 };
 
 // 0x10 = Pick Locks/Steal, then CHAI [0x6, 0xC] (Escape)
 struct AiScr CONST_DATA gAiScript_CpData_27[] = {
-    AI_CALL_FUNC(sub_803F7DC, gCpData_22),
+    AI_CALL_FUNC(AiFunc_TrySpecialItemsByChance, gCpData_22),
     AI_GOTO_IFEQ(0x1, gAiState.cmd_result+0, 0x5),
     AI_GOTO_START,
 AI_LABEL(0x1),
@@ -1512,7 +1512,7 @@ AI_LABEL(0x1),
 
 // 0x11 = Pick Locks/Steal
 struct AiScr CONST_DATA gAiScript_CpData_28[] = {
-    AI_CALL_FUNC(sub_803F7DC, gCpData_23),
+    AI_CALL_FUNC(AiFunc_TrySpecialItemsByChance, gCpData_23),
     AI_GOTO_START,
 };
 
@@ -1536,9 +1536,9 @@ const u8 CONST_DATA gCpData_41[] = {
 
 // 0x10 = If not in area [13,15]-[18,19], move to [15,17]; if in area, CHAI [0x0,0x0]
 struct AiScr CONST_DATA AiScr_AiB_GuardSpecificLocation[] = {
-    AI_CALL_FUNC(sub_803F4A4, gCpData_41),
+    AI_CALL_FUNC(AiFunc_CheckUnitInBoundingBox, gCpData_41),
     AI_GOTO_IFEQ(0x1, gAiState.cmd_result+0, 0x1),
-    AI_CALL_FUNC(sub_803F9A8, gCpData_40),
+    AI_CALL_FUNC(AiFunc_MoveTowardsInputPosition, gCpData_40),
     AI_GOTO_START,
 AI_LABEL(0x1),
     AI_SET_AI(0x0, 0x0),

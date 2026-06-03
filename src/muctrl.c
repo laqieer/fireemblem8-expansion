@@ -234,7 +234,7 @@ void GenUnitDefinitionFinalPosition(const struct UnitDefinition * def, s8 * xOut
 }
 
 //! FE8U = 0x0807A0E4
-s8 sub_807A0E4(struct MuCtrlProc * proc)
+s8 MuCtr_DelayMoveLoop(struct MuCtrlProc * proc)
 {
     const struct REDA * reda = proc->redas + proc->timer;
 
@@ -246,7 +246,7 @@ s8 sub_807A0E4(struct MuCtrlProc * proc)
         return false;
     }
 
-    if (sub_807A294(reda->a, reda->b) == 1)
+    if (MuCtr_CheckMoveDependency(reda->a, reda->b) == 1)
     {
         if (gKeyStatusPtr->heldKeys & A_BUTTON)
             proc->delayFrames -= 4;
@@ -275,7 +275,7 @@ s8 sub_807A0E4(struct MuCtrlProc * proc)
 }
 
 //! FE8U = 0x0807A194
-bool sub_807A194(struct MuCtrlProc * proc)
+bool MuCtr_WaitForMoveLoop(struct MuCtrlProc * proc)
 {
     struct MuProc * muProc = proc->muProc;
 
@@ -343,11 +343,11 @@ struct ProcCmd CONST_DATA ProcScr_MuCtrl[] =
     PROC_SET_END_CB(MuCtr_OnEnd),
     PROC_YIELD,
 
-    PROC_WHILE(sub_807A0E4),
+    PROC_WHILE(MuCtr_DelayMoveLoop),
 
 PROC_LABEL(0),
-    PROC_WHILE(sub_807A194),
-    PROC_WHILE(sub_807A0E4),
+    PROC_WHILE(MuCtr_WaitForMoveLoop),
+    PROC_WHILE(MuCtr_DelayMoveLoop),
 
     PROC_GOTO(0),
 
@@ -358,7 +358,7 @@ PROC_LABEL(1),
 // clang-format on
 
 //! FE8U = 0x0807A294
-s8 sub_807A294(u8 pid, u16 b)
+s8 MuCtr_CheckMoveDependency(u8 pid, u16 b)
 {
     if (pid == 0)
     {
@@ -368,27 +368,27 @@ s8 sub_807A294(u8 pid, u16 b)
     gUnk_53 = pid;
     gUnk_52 = true;
 
-    Proc_ForEach(ProcScr_MuCtrl, (ProcFunc)sub_807A300);
+    Proc_ForEach(ProcScr_MuCtrl, (ProcFunc)MuCtr_FindMovingUnit);
 
     if ((gUnk_52 == 0) && (b != 0xFFFF))
     {
         gUnk_54 = b;
         gUnk_52 = 0;
-        Proc_ForEach(ProcScr_MuCtrl, (ProcFunc)sub_807A324);
+        Proc_ForEach(ProcScr_MuCtrl, (ProcFunc)MuCtr_CheckUnitPassedStep);
     }
 
     return gUnk_52;
 }
 
 //! FE8U = 0x0807A300
-void sub_807A300(struct MuCtrlProc * proc)
+void MuCtr_FindMovingUnit(struct MuCtrlProc * proc)
 {
     if (proc->unit->pCharacterData->number == gUnk_53)
         gUnk_52 = 0;
 }
 
 //! FE8U = 0x0807A324
-void sub_807A324(struct MuCtrlProc * proc)
+void MuCtr_CheckUnitPassedStep(struct MuCtrlProc * proc)
 {
     if (proc->unit->pCharacterData->number == gUnk_53 && gUnk_54 < proc->timer)
         gUnk_52 = true;
@@ -425,7 +425,7 @@ void MuCtr_ExecREDA_0(struct MuCtrlProc * proc)
         }
     }
 
-    commands = sub_807A644(unit, &pos, flagsB & 1);
+    commands = MuCtr_GenMoveScript(unit, &pos, flagsB & 1);
 
     gBmMapOther[proc->y][proc->x] = unit->pCharacterData->number;
 
@@ -536,7 +536,7 @@ void AdjustNewUnitPosition(struct Unit * unit, struct Vec2 * pos, u16 flags)
 }
 
 //! FE8U = 0x0807A644
-u8 * sub_807A644(struct Unit * unit, struct Vec2 * pos, s8 flag)
+u8 * MuCtr_GenMoveScript(struct Unit * unit, struct Vec2 * pos, s8 flag)
 {
     s8 terrainFlag;
 

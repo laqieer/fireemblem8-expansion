@@ -20,7 +20,7 @@ void Clear_UnkData_0(void)
 }
 
 //! FE8U = 0x0804B938
-void sub_804B938(void)
+void Sio_DisableWindowAndBlend(void)
 {
     SetWinEnable(0, 0, 0);
     SetBlendConfig(0, 0, 0, 0);
@@ -28,7 +28,7 @@ void sub_804B938(void)
 }
 
 //! FE8U = 0x0804B964
-void sub_804B964(void)
+void Sio_BoxTransitionHBlankHandler(void)
 {
     u16 vcount = REG_VCOUNT + 1;
 
@@ -44,7 +44,7 @@ void sub_804B964(void)
 }
 
 //! FE8U = 0x0804B9A4
-void sub_804B9A4(void)
+void Sio_SwapBoxTransitionBuffers(void)
 {
     s16 * swap = gUnk_Sio_3;
     gUnk_Sio_3 = gUnk_Sio_4;
@@ -54,7 +54,7 @@ void sub_804B9A4(void)
 }
 
 //! FE8U = 0x0804B9BC
-void sub_804B9BC(void)
+void Sio_EndBoxTransitionHBlank(void)
 {
     SetWinEnable(0, 0, 0);
     SetPrimaryHBlankHandler(NULL);
@@ -62,7 +62,7 @@ void sub_804B9BC(void)
 }
 
 //! FE8U = 0x0804B9E4
-void sub_804B9E4(s16 * a, int b, int c, int d, int e, int f, int g, int h, int i, s16 j, u16 k)
+void Sio_RasterRotatedBoxToWinBuf(s16 * a, int b, int c, int d, int e, int f, int g, int h, int i, s16 j, u16 k)
 {
     int x1;
     int y1;
@@ -109,34 +109,34 @@ void sub_804B9E4(s16 * a, int b, int c, int d, int e, int f, int g, int h, int i
     x4 = ((k * (x4 >> 0xc)) >> 0x8) + (DISPLAY_WIDTH / 2);
     y4 = ((k * (y4 >> 0xc)) >> 0x8) + (DISPLAY_HEIGHT / 2);
 
-    sub_80131F0(a, x1, y1, x2, y2);
-    sub_80131F0(a, x2, y2, x3, y3);
-    sub_80131F0(a, x3, y3, x4, y4);
-    sub_80131F0(a, x4, y4, x1, y1);
+    RasterizeWindowEdge(a, x1, y1, x2, y2);
+    RasterizeWindowEdge(a, x2, y2, x3, y3);
+    RasterizeWindowEdge(a, x3, y3, x4, y4);
+    RasterizeWindowEdge(a, x4, y4, x1, y1);
 
     return;
 }
 
 //! FE8U = 0x0804BB54
-void sub_804BB54(struct SioProc85AA7B4 * proc)
+void Sio_BoxTransition_Init(struct SioProc85AA7B4 * proc)
 {
     gUnk_Sio_3 = gUnk_Sio_2;
 
     gUnk_Sio_4 = gUnk_Sio_2 - 320;
     gUnk_Sio_5 = gUnk_Sio_2;
 
-    sub_80131D0(gUnk_Sio_3);
-    sub_80131D0(gUnk_Sio_4);
+    InitWindowScanlineBounds(gUnk_Sio_3);
+    InitWindowScanlineBounds(gUnk_Sio_4);
 
     proc->unk_4c = 0;
 
-    SetPrimaryHBlankHandler(sub_804B964);
+    SetPrimaryHBlankHandler(Sio_BoxTransitionHBlankHandler);
 
     return;
 }
 
 //! FE8U = 0x0804BBA0
-void sub_804BBA0(struct SioProc85AA7B4 * proc)
+void Sio_BoxTransitionOpen_Loop(struct SioProc85AA7B4 * proc)
 {
     int a;
     int b;
@@ -151,9 +151,9 @@ void sub_804BBA0(struct SioProc85AA7B4 * proc)
     a = Interpolate(INTERPOLATE_LINEAR, 0xa0, 0xc0, proc->unk_4c, proc->unk_64);
     b = Interpolate(INTERPOLATE_SQUARE, 0x10, 0x110, proc->unk_4c, proc->unk_64);
 
-    sub_80131D0(gUnk_Sio_4);
-    sub_804B9E4(gUnk_Sio_4, 0, 0, DISPLAY_WIDTH, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, 0, DISPLAY_HEIGHT, a, b);
-    sub_804B9A4();
+    InitWindowScanlineBounds(gUnk_Sio_4);
+    Sio_RasterRotatedBoxToWinBuf(gUnk_Sio_4, 0, 0, DISPLAY_WIDTH, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, 0, DISPLAY_HEIGHT, a, b);
+    Sio_SwapBoxTransitionBuffers();
 
     proc->unk_4c++;
 
@@ -161,7 +161,7 @@ void sub_804BBA0(struct SioProc85AA7B4 * proc)
 }
 
 //! FE8U = 0x0804BC3C
-void sub_804BC3C(void)
+void Sio_BoxTransitionOpen_End(void)
 {
     SetDispEnable(1, 1, 1, 1, 1);
     SetWinEnable(0, 0, 0);
@@ -177,11 +177,11 @@ struct ProcCmd CONST_DATA ProcScr_Sio804B920_0[] =
 {
     PROC_YIELD,
 
-    PROC_CALL(sub_804BB54),
-    PROC_REPEAT(sub_804BBA0),
+    PROC_CALL(Sio_BoxTransition_Init),
+    PROC_REPEAT(Sio_BoxTransitionOpen_Loop),
     PROC_SLEEP(1),
 
-    PROC_CALL(sub_804BC3C),
+    PROC_CALL(Sio_BoxTransitionOpen_End),
     PROC_SLEEP(1),
 
     PROC_END,
@@ -190,7 +190,7 @@ struct ProcCmd CONST_DATA ProcScr_Sio804B920_0[] =
 // clang-format on
 
 //! FE8U = 0x0804BC84
-void sub_804BC84(u16 a, ProcPtr parent)
+void Sio_StartBoxTransitionOpen(u16 a, ProcPtr parent)
 {
     struct SioProc85AA7B4 * proc = Proc_StartBlocking(ProcScr_Sio804B920_0, parent);
     proc->unk_64 = a;
@@ -209,14 +209,14 @@ void sub_804BC84(u16 a, ProcPtr parent)
 }
 
 //! FE8U = 0x0804BD2C
-void sub_804BD2C(ProcPtr parent)
+void Sio_StartBoxTransitionOpenDefault(ProcPtr parent)
 {
-    sub_804BC84(0x40, parent);
+    Sio_StartBoxTransitionOpen(0x40, parent);
     return;
 }
 
 //! FE8U = 0x0804BD3C
-void sub_804BD3C(struct SioProc85AA7B4 * proc)
+void Sio_BoxTransitionClose_Loop(struct SioProc85AA7B4 * proc)
 {
     int a;
     int b;
@@ -231,9 +231,9 @@ void sub_804BD3C(struct SioProc85AA7B4 * proc)
     a = Interpolate(INTERPOLATE_RSQUARE, 0xc0, 0xa0, proc->unk_4c, proc->unk_64);
     b = Interpolate(INTERPOLATE_RCUBIC, 0x110, 0x10, proc->unk_4c, proc->unk_64);
 
-    sub_80131D0(gUnk_Sio_4);
-    sub_804B9E4(gUnk_Sio_4, 0, 0, DISPLAY_WIDTH, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, 0, DISPLAY_HEIGHT, a, b);
-    sub_804B9A4();
+    InitWindowScanlineBounds(gUnk_Sio_4);
+    Sio_RasterRotatedBoxToWinBuf(gUnk_Sio_4, 0, 0, DISPLAY_WIDTH, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, 0, DISPLAY_HEIGHT, a, b);
+    Sio_SwapBoxTransitionBuffers();
 
     proc->unk_4c++;
 
@@ -241,7 +241,7 @@ void sub_804BD3C(struct SioProc85AA7B4 * proc)
 }
 
 //! FE8U = 0x0804BDD8
-void sub_804BDD8(void)
+void Sio_BoxTransitionClose_End(void)
 {
     SetDispEnable(0, 0, 0, 0, 0);
     SetWinEnable(0, 0, 0);
@@ -257,11 +257,11 @@ struct ProcCmd CONST_DATA ProcScr_Sio804B920_1[] =
 {
     PROC_YIELD,
 
-    PROC_CALL(sub_804BB54),
-    PROC_REPEAT(sub_804BD3C),
+    PROC_CALL(Sio_BoxTransition_Init),
+    PROC_REPEAT(Sio_BoxTransitionClose_Loop),
     PROC_SLEEP(1),
 
-    PROC_CALL(sub_804BDD8),
+    PROC_CALL(Sio_BoxTransitionClose_End),
     PROC_SLEEP(1),
 
     PROC_END,
@@ -270,7 +270,7 @@ struct ProcCmd CONST_DATA ProcScr_Sio804B920_1[] =
 // clang-format on
 
 //! FE8U = 0x0804BDFC
-void sub_804BDFC(u16 a, ProcPtr parent)
+void Sio_StartBoxTransitionClose(u16 a, ProcPtr parent)
 {
     struct SioProc85AA7B4 * proc = Proc_StartBlocking(ProcScr_Sio804B920_1, parent);
     proc->unk_64 = a;
@@ -288,14 +288,14 @@ void sub_804BDFC(u16 a, ProcPtr parent)
 }
 
 //! FE8U = 0x0804BE88
-void sub_804BE88(ProcPtr parent)
+void Sio_StartBoxTransitionCloseDefault(ProcPtr parent)
 {
-    sub_804BDFC(0x40, parent);
+    Sio_StartBoxTransitionClose(0x40, parent);
     return;
 }
 
 //! FE8U = 0x0804BE98
-void sub_804BE98(ProcPtr proc)
+void Sio_WaitBoxTransitionOpen(ProcPtr proc)
 {
     if (Proc_Find(ProcScr_Sio804B920_0) == NULL)
     {
@@ -306,7 +306,7 @@ void sub_804BE98(ProcPtr proc)
 }
 
 //! FE8U = 0x0804BEB8
-void sub_804BEB8(ProcPtr proc)
+void Sio_WaitBoxTransitionClose(ProcPtr proc)
 {
     if (Proc_Find(ProcScr_Sio804B920_1) == NULL)
     {

@@ -58,7 +58,7 @@ void efxDarkLongMons_Loop_Main(struct ProcEfx * proc)
     }
     else if (proc->timer == duration + 151)
     {
-        sub_806B4E4();
+        StartSubSpell_efxDarkLongMonsFadeToBlack();
     }
     else if (proc->timer == duration + 167)
     {
@@ -473,7 +473,7 @@ struct Proc085D8AEC
 };
 
 //! FE8U = 0x0806B33C
-void sub_806B33C(struct Proc085D8AEC * proc)
+void EfxmagicShadowshot_FadeToBlack_Init(struct Proc085D8AEC * proc)
 {
     proc->unk4C = 0;
     return;
@@ -482,7 +482,7 @@ void sub_806B33C(struct Proc085D8AEC * proc)
 #define RGB_(r, g, b) (((b) << 10) | ((g) << 5) | (r))
 
 //! FE8U = 0x0806B344
-void sub_806B344(struct Proc085D8AEC * proc)
+void EfxmagicShadowshot_FadeToBlack_Loop(struct Proc085D8AEC * proc)
 {
     int sl;
     u16 * r6;
@@ -558,8 +558,8 @@ void sub_806B344(struct Proc085D8AEC * proc)
 
 struct ProcCmd CONST_DATA ProcScr_EfxmagicShadowshot_0[] =
 {
-    PROC_CALL(sub_806B33C),
-    PROC_REPEAT(sub_806B344),
+    PROC_CALL(EfxmagicShadowshot_FadeToBlack_Init),
+    PROC_REPEAT(EfxmagicShadowshot_FadeToBlack_Loop),
 
     PROC_CALL(EnablePaletteSync),
 
@@ -569,7 +569,7 @@ struct ProcCmd CONST_DATA ProcScr_EfxmagicShadowshot_0[] =
 // clang-format on
 
 //! FE8U = 0x0806B4E4
-void sub_806B4E4(void)
+void StartSubSpell_efxDarkLongMonsFadeToBlack(void)
 {
     Proc_Start(ProcScr_EfxmagicShadowshot_0, PROC_TREE_VSYNC);
     return;

@@ -301,7 +301,7 @@ void PlayerPhase_MainIdle(ProcPtr proc)
                     }
 
                     StartOrphanMenuAdjusted(&gMapMenuDef, gBmSt.cursorTarget.x - gBmSt.camera.x, 1, 0x17);
-                    sub_80832CC();
+                    Eventinfo_CondFalse_2();
 
                     Proc_Goto(proc, 9);
 
@@ -924,7 +924,7 @@ void PlayerPhase_FinishAction(ProcPtr proc)
 }
 
 //! FE8U = 0x0801D404
-void sub_801D404(void)
+void PlayerPhase_CommitActiveUnitMove(void)
 {
     if (gPlaySt.faction == FACTION_BLUE)
     {
@@ -939,7 +939,7 @@ void sub_801D404(void)
 }
 
 //! FE8U = 0x0801D434
-void sub_801D434(ProcPtr proc)
+void PlayerPhase_OpenUnitActionMenu(ProcPtr proc)
 {
     if (gActionData.unitActionType != UNIT_ACTION_TRAPPED)
     {
@@ -968,7 +968,7 @@ void PlayerPhase_ApplyUnitMovement(ProcPtr proc)
 
     if (StartAfterUnitMovedEvent() == 1)
     {
-        sub_801D434(proc);
+        PlayerPhase_OpenUnitActionMenu(proc);
         return;
     }
 

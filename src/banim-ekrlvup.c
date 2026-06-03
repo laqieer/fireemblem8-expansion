@@ -12,9 +12,9 @@
 #include "ekrlevelup.h"
 #include "constants/songs.h"
 
-void sub_805AA68(void *);
-void sub_805AE14(void *);
-void sub_805AE40(void *, s16, s16, s16, s16);
+void InitBanimTerrain(void *);
+void EndBanimTerrain(void *);
+void SetBanimTerrainPos(void *, s16, s16, s16, s16);
 
 /**
  * section.ewramdata
@@ -353,7 +353,7 @@ void EkrLvup_InitScreen(struct ProcEkrLevelup *proc)
 
     if (GetBattleAnimArenaFlag() == false && GetBanimDragonStatusType() != EKRDRGON_TYPE_DEMON_KING) {
         struct ProcEkrSubAnimeEmulator * _buf;
-        sub_805AA68(buf);
+        InitBanimTerrain(buf);
 
         _buf = buf->proc14;
         _buf->oam2Base &= (u16)~OAM2_LAYER(0x3);
@@ -700,7 +700,7 @@ void EkrLvup_ResetScreen(struct ProcEkrLevelup *proc)
     buf = &gEkrlvup_1;
 
     if (GetBattleAnimArenaFlag() == false && GetBanimDragonStatusType() != EKRDRGON_TYPE_DEMON_KING)
-        sub_805AE14(buf);
+        EndBanimTerrain(buf);
 
     SetBackgroundMapDataOffset(0, 0x6000);
     SetBackgroundMapDataOffset(1, 0x6800);
@@ -724,7 +724,7 @@ void EkrLvup_ResetScreen(struct ProcEkrLevelup *proc)
 
     if (GetBattleAnimArenaFlag() == false && GetBanimDragonStatusType() != EKRDRGON_TYPE_DEMON_KING) {
         BG_SetPosition(2, 0, 0);
-        sub_805AA68(&_buf);
+        InitBanimTerrain(&_buf);
     }
 
     proc->ais_main->oam2Base &= ~OAM2_LAYER(0x3);

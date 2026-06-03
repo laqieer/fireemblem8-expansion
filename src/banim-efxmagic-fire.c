@@ -223,7 +223,7 @@ void EfxFireOBJ_Loop(struct ProcEfxOBJ * proc)
 
 struct ProcCmd CONST_DATA ProcScr_efxFireHITBG[] = {
     PROC_NAME("efxFireHITBG"),
-    PROC_REPEAT(sub_805DE74),
+    PROC_REPEAT(EfxFireHitBG_Loop),
     PROC_END,
 };
 
@@ -309,7 +309,7 @@ void StartSubSpell_efxFireHITBG(struct Anim * anim)
         BG_SetPosition(BG_1, 0xE8, 0x0);
 }
 
-void sub_805DE74(struct ProcEfxBG * proc)
+void EfxFireHitBG_Loop(struct ProcEfxBG * proc)
 {
     int ret;
     ret = EfxAdvanceFrameLut((s16 *)&proc->timer, (s16 *)&proc->frame, proc->frame_config);
@@ -356,7 +356,7 @@ void StartSubSpell_efxElfireBG(struct Anim * anim)
     else
         BG_SetPosition(BG_1, 0xE8, 0x0);
     
-    sub_8070DBC(TILEMAP_LOCATED(gBG1TilemapBuffer, 0x1E, 0x0), 2, 0x14, 0x1, 0x100);
+    EfxTmAddPal(TILEMAP_LOCATED(gBG1TilemapBuffer, 0x1E, 0x0), 2, 0x14, 0x1, 0x100);
 }
 
 void EfxElfireBG_Loop(struct ProcEfxBG * proc)

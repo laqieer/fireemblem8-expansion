@@ -335,7 +335,7 @@ void efxDrzDrakbreathBGCOL_Loop(struct ProcEfxBGCOL * proc)
 }
 
 //! FE8U = 0x08068AFC
-void sub_8068AFC(struct Anim * anim, u16 * tsaL, u16 * tsaR, u8 unk)
+void SpellFx_WriteBgMapFillEdges(struct Anim * anim, u16 * tsaL, u16 * tsaR, u8 unk)
 {
     SpellFx_WriteBgMap(anim, tsaL, tsaR);
 

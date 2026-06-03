@@ -15,7 +15,7 @@ CONST_DATA struct ProcCmd ProcScr_ClassChgReal[] = {
     PROC_CALL(ClassChgExecPromotionReal),
     PROC_REPEAT(ClassChgPostConfirmWaitBanimEnd),
     PROC_SLEEP(0x8),
-    PROC_CALL(sub_80CDE98),
+    PROC_CALL(ClassChgPostConfirmGetUnit),
     PROC_SLEEP(0x5),
     PROC_WHILE(MusicProc4Exists),
     PROC_END
@@ -52,7 +52,7 @@ void ClassChgPostConfirmWaitBanimEnd(struct ProcClassChgPostConfirm *proc)
         Proc_Break(proc);
 }
 
-void sub_80CDE98(struct ProcClassChgPostConfirm *proc)
+void ClassChgPostConfirmGetUnit(struct ProcClassChgPostConfirm *proc)
 {
     struct ProcPromoMain *parent = proc->proc_parent;
     GetUnitFromCharId(parent->pid);

@@ -451,7 +451,7 @@ extern u16 gUnk_9[];
 // clang-format on
 
 //! FE8U = 0x080BBBF4
-void sub_80BBBF4(u8 * data, u16 * buf, int size, u16 oam2)
+void MapRoute_RenderPathGfx(u8 * data, u16 * buf, int size, u16 oam2)
 {
     while (*(data + 0) != 0xff)
     {
@@ -482,7 +482,7 @@ void sub_80BBBF4(u8 * data, u16 * buf, int size, u16 oam2)
 }
 
 //! FE8U = 0x080BBC54
-void sub_80BBC54(struct GmRouteProc * proc)
+void MapRoute_RenderOpenPaths(struct GmRouteProc * proc)
 {
     int i;
 
@@ -492,7 +492,7 @@ void sub_80BBC54(struct GmRouteProc * proc)
 
     for (i = 0; i < proc->pOpenPaths->openPathsLength; i++)
     {
-        sub_80BBBF4(
+        MapRoute_RenderPathGfx(
             proc->pOpenPaths->openPaths[i][gWMPathData].gfxData,
             gUnk_9,
             60,
@@ -504,7 +504,7 @@ void sub_80BBC54(struct GmRouteProc * proc)
 }
 
 //! FE8U = 0x080BBCC8
-void sub_80BBCC8(int a, int b, int bg)
+void MapRoute_BlitFullWindow(int a, int b, int bg)
 {
     u16 * buf;
     u16 * bgBuf;
@@ -554,7 +554,7 @@ void sub_80BBCC8(int a, int b, int bg)
 }
 
 //! FE8U = 0x080BBDA4
-void sub_80BBDA4(int a1, int r8, int r4, int r9, int sp20)
+void MapRoute_BlitScrollEdge(int a1, int r8, int r4, int r9, int sp20)
 {
     u16 i;
     u16 r1, r2;
@@ -623,13 +623,13 @@ void sub_80BBDA4(int a1, int r8, int r4, int r9, int sp20)
 }
 
 //! FE8U = 0x080BBEB4
-void nullsub_38(void)
+void Nop_WorldmapPath_0(void)
 {
     return;
 }
 
 //! FE8U = 0x080BBEB8
-void sub_80BBEB8(struct GmRouteProc * proc)
+void MapRoute_Init(struct GmRouteProc * proc)
 {
     proc->flags = 4;
     proc->unk_32 = 0;
@@ -644,14 +644,14 @@ void sub_80BBEB8(struct GmRouteProc * proc)
     proc->y2 = -2;
     proc->x2 = -2;
 
-    sub_80BBC54(proc);
+    MapRoute_RenderOpenPaths(proc);
     proc->flags |= 3;
 
     return;
 }
 
 //! FE8U = 0x080BBF1C
-void sub_80BBF1C(u16 * a, u16 b, int c)
+void MapRoute_OffsetTileIndices(u16 * a, u16 b, int c)
 {
     int i;
 
@@ -665,7 +665,7 @@ void sub_80BBF1C(u16 * a, u16 b, int c)
 }
 
 //! FE8U = 0x080BBF60
-void sub_80BBF60(struct GmRouteProc * proc)
+void MapRoute_Loop(struct GmRouteProc * proc)
 {
     s16 x;
     s16 y;
@@ -688,25 +688,25 @@ void sub_80BBF60(struct GmRouteProc * proc)
     {
         if ((ABS(proc->x1 - proc->x2) >= 2) || (ABS(proc->y1 - proc->y2) >= 2))
         {
-            sub_80BBCC8(proc->x1, proc->y1, proc->bgA);
+            MapRoute_BlitFullWindow(proc->x1, proc->y1, proc->bgA);
             BG_EnableSync(proc->bgA);
         }
         else
         {
-            sub_80BBDA4(proc->x1, proc->y1, proc->x2, proc->y2, proc->bgA);
+            MapRoute_BlitScrollEdge(proc->x1, proc->y1, proc->x2, proc->y2, proc->bgA);
             BG_EnableSync(proc->bgA);
         }
     }
 
     if (proc->flags & 2)
     {
-        sub_80BBC54(proc);
+        MapRoute_RenderOpenPaths(proc);
         proc->flags &= ~2;
     }
 
     if (proc->flags & 1)
     {
-        sub_80BBCC8(proc->x1, proc->y1, proc->bgA);
+        MapRoute_BlitFullWindow(proc->x1, proc->y1, proc->bgA);
         BG_EnableSync(proc->bgA);
         proc->flags &= ~1;
     }
@@ -726,7 +726,7 @@ int MapRoute_StartTransition(struct GmRouteProc * proc)
 }
 
 //! FE8U = 0x080BC0F4
-int sub_80BC0F4(struct GmRouteProc * proc)
+int MapRoute_PrepareTransition(struct GmRouteProc * proc)
 {
     s16 x;
     s16 y;
@@ -738,8 +738,8 @@ int sub_80BC0F4(struct GmRouteProc * proc)
     *((u16 *) &gLCDControlBuffer.bldcnt) &= ~(BLDCNT_TARGETB(1, 1, 1, 1, 1) | BLDCNT_TGT2_BD);
     *((u16 *) &gLCDControlBuffer.bldcnt) |= BLDCNT_TGT2_BG3;
 
-    sub_80BBC54(proc);
-    sub_80BBCC8(proc->x1, proc->y1, proc->bgB);
+    MapRoute_RenderOpenPaths(proc);
+    MapRoute_BlitFullWindow(proc->x1, proc->y1, proc->bgB);
 
     *&x = ((struct GmScreenProc *)(proc->proc_parent))->x;
     *&y = ((struct GmScreenProc *)(proc->proc_parent))->y;
@@ -830,9 +830,9 @@ void MapRoute_0(struct GmRouteProc * proc)
     *&x = ((struct GmScreenProc *)(proc->proc_parent))->x;
     *&y = ((struct GmScreenProc *)(proc->proc_parent))->y;
 
-    sub_80BBC54(proc);
+    MapRoute_RenderOpenPaths(proc);
 
-    sub_80BBCC8(x / 8, y / 8, proc->bgA);
+    MapRoute_BlitFullWindow(x / 8, y / 8, proc->bgA);
     BG_SetPosition(proc->bgB, 0, 0);
     BG_Fill(BG_GetMapBuffer(proc->bgB), 0);
     BG_SetPriority(proc->bgB, proc->bgPriority);
@@ -857,19 +857,19 @@ struct ProcCmd CONST_DATA ProcScr_GMapRoute[] =
     PROC_NAME("GmapRoute"),
     PROC_MARK(PROC_MARK_WMSTUFF),
 
-    PROC_SET_END_CB(nullsub_38),
+    PROC_SET_END_CB(Nop_WorldmapPath_0),
     PROC_SLEEP(0),
 
-    PROC_CALL(sub_80BBEB8),
+    PROC_CALL(MapRoute_Init),
 
 PROC_LABEL(0),
-    PROC_REPEAT(sub_80BBF60),
+    PROC_REPEAT(MapRoute_Loop),
 
     PROC_GOTO(2),
 
 PROC_LABEL(1),
     PROC_CALL_2(MapRoute_StartTransition),
-    PROC_CALL_2(sub_80BC0F4),
+    PROC_CALL_2(MapRoute_PrepareTransition),
     PROC_CALL_2(MapRoute_EnableBGSyncs),
 
     PROC_REPEAT(MapRoute_TransitionLoop),
@@ -896,7 +896,7 @@ ProcPtr StartGMapRoute(ProcPtr parent, struct OpenPaths * pPaths, int c, int d)
 }
 
 //! FE8U = 0x080BC3D4
-int sub_80BC3D4(int pathId)
+int GetGmPathWaypointCount(int pathId)
 {
     int count;
 
@@ -919,7 +919,7 @@ int sub_80BC3D4(int pathId)
 }
 
 //! FE8U = 0x080BC404
-void sub_80BC404(struct GmRouteProc * proc)
+void MapRoute_ClearBg(struct GmRouteProc * proc)
 {
     BG_Fill(BG_GetMapBuffer(proc->bgA), 0);
     BG_EnableSyncByMask((1 << proc->bgA));
@@ -944,7 +944,7 @@ struct UnknownWorldMapStructA
 };
 
 //! FE8U = 0x080BC428
-void sub_80BC428(struct UnknownWorldMapStructA * a)
+void WorldMap_ResetTextCursors(struct UnknownWorldMapStructA * a)
 {
     int i = 0;
 
@@ -1231,7 +1231,7 @@ u8 WMMenu_IsSecretShopAvailable(const struct MenuItemDef * def, int number)
 }
 
 //! FE8U = 0x080BC72C
-u8 sub_80BC72C(const struct MenuItemDef * def, int number)
+u8 WMMenu_IsNodeUnclearedAvailable(const struct MenuItemDef * def, int number)
 {
     if (!(gGMData.nodes[gGMData.units[0].location].state & 2))
     {
@@ -1242,7 +1242,7 @@ u8 sub_80BC72C(const struct MenuItemDef * def, int number)
 }
 
 //! FE8U = 0x080BC754
-u8 sub_80BC754(const struct MenuItemDef * def, int number)
+u8 WMMenu_IsNodeClearedAvailable(const struct MenuItemDef * def, int number)
 {
     if (gGMData.nodes[gGMData.units[0].location].state & 2)
     {
@@ -1499,7 +1499,7 @@ void RefreshGmNodeLinks(struct GMapData * param_1)
 }
 
 //! FE8U = 0x080BCA1C
-int sub_80BCA1C(int nodeId)
+int GetGmSkirmishUnitAtNode(int nodeId)
 {
     int i;
 
@@ -1522,7 +1522,7 @@ int sub_80BCA1C(int nodeId)
 }
 
 //! FE8U = 0x080BCA54
-void sub_80BCA54(struct Unknown0201B100 * buf)
+void GmBuildSkirmishNodeList(struct Unknown0201B100 * buf)
 {
     int i;
 
@@ -1541,7 +1541,7 @@ void sub_80BCA54(struct Unknown0201B100 * buf)
 }
 
 //! FE8U = 0x080BCA90
-s8 sub_80BCA90(struct Unknown0201B100 * buf, int target)
+s8 GmIsNodeInList(struct Unknown0201B100 * buf, int target)
 {
     int i;
 
@@ -1557,7 +1557,7 @@ s8 sub_80BCA90(struct Unknown0201B100 * buf, int target)
 }
 
 //! FE8U = 0x080BCAB8
-int sub_80BCAB8(struct Unknown0201B0D8 * buf, struct GMapNodeLink * links, s8 param_3, s8 param_4, s8 param_5, int param_6)
+int GmFindPathRecursive(struct Unknown0201B0D8 * buf, struct GMapNodeLink * links, s8 param_3, s8 param_4, s8 param_5, int param_6)
 {
     s8 * connections;
     int i;
@@ -1578,7 +1578,7 @@ int sub_80BCAB8(struct Unknown0201B0D8 * buf, struct GMapNodeLink * links, s8 pa
 
             r2 = connections[i] == param_5;
 
-            if (r2 || !sub_80BCA90(gUnk_12, connections[i]))
+            if (r2 || !GmIsNodeInList(gUnk_12, connections[i]))
             {
                 connections = link->connections; // redundant
                 buf->unk_10[param_6] = connections[i];
@@ -1596,7 +1596,7 @@ int sub_80BCAB8(struct Unknown0201B0D8 * buf, struct GMapNodeLink * links, s8 pa
                     return 1;
                 }
 
-                sub_80BCAB8(buf, links, param_4, connections[i], param_5, param_6 + 1);
+                GmFindPathRecursive(buf, links, param_4, connections[i], param_5, param_6 + 1);
             }
         }
     }
@@ -1606,7 +1606,7 @@ int sub_80BCAB8(struct Unknown0201B0D8 * buf, struct GMapNodeLink * links, s8 pa
 /* https://decomp.me/scratch/eDz84 */
 
 //! FE8U = 0x080BCBAC
-int sub_80BCBAC(struct Unknown0201B0D8 * buf, struct GMapNodeLink * param_2, s8 param_3, s8 param_4, s8 param_5, int param_6, int param_7)
+int GmFindPathThroughBlockedRecursive(struct Unknown0201B0D8 * buf, struct GMapNodeLink * param_2, s8 param_3, s8 param_4, s8 param_5, int param_6, int param_7)
 {
     int i;
     int j;
@@ -1638,7 +1638,7 @@ int sub_80BCBAC(struct Unknown0201B0D8 * buf, struct GMapNodeLink * param_2, s8 
                 connections = link->connections; // redundant here too ?
                 if (!r2)
                 {
-                    sub_80BCBAC(buf, param_2, param_4, connections[i], param_5, param_6 + 1, param_7 + 1);
+                    GmFindPathThroughBlockedRecursive(buf, param_2, param_4, connections[i], param_5, param_6 + 1, param_7 + 1);
                     continue;
                 }
                 else
@@ -1686,9 +1686,9 @@ int sub_80BCBAC(struct Unknown0201B0D8 * buf, struct GMapNodeLink * param_2, s8 
                 if (!r2)
                 {
 
-                    if (sub_80BCA90(gUnk_12, connections[i]))
+                    if (GmIsNodeInList(gUnk_12, connections[i]))
                     {
-                        sub_80BCBAC(buf, param_2, param_4, connections[i], param_5, param_6 + 1, param_7 + 1);
+                        GmFindPathThroughBlockedRecursive(buf, param_2, param_4, connections[i], param_5, param_6 + 1, param_7 + 1);
                         continue;
                     }
                 }
@@ -1708,7 +1708,7 @@ int sub_80BCBAC(struct Unknown0201B0D8 * buf, struct GMapNodeLink * param_2, s8 
                 }
             }
 
-            sub_80BCBAC(buf, param_2, param_4, connections[i], param_5, param_6 + 1, param_7);
+            GmFindPathThroughBlockedRecursive(buf, param_2, param_4, connections[i], param_5, param_6 + 1, param_7);
         }
     }
 
@@ -1723,13 +1723,13 @@ const u8 ALIGNED(4) gWorldmapPath_20[] =
 };
 
 //! FE8U = 0x080BCCFC
-s8 sub_80BCCFC(s8 a, s8 b, s8 flag)
+s8 GmFindPath(s8 a, s8 b, s8 flag)
 {
     int ret;
     int r4;
     struct Unknown0201B0D8 * r6;
 
-    sub_80BCA54(gUnk_12);
+    GmBuildSkirmishNodeList(gUnk_12);
 
     if (flag != 0)
     {
@@ -1747,11 +1747,11 @@ s8 sub_80BCCFC(s8 a, s8 b, s8 flag)
 
     if (flag != 0)
     {
-        ret = sub_80BCBAC(r6, gUnk_10, -1, a, b, r4 = 1, -1);
+        ret = GmFindPathThroughBlockedRecursive(r6, gUnk_10, -1, a, b, r4 = 1, -1);
     }
     else
     {
-        ret = sub_80BCAB8(r6, gUnk_10, -1, a, b, r4 = 1);
+        ret = GmFindPathRecursive(r6, gUnk_10, -1, a, b, r4 = 1);
     }
 
     if (ret != 0)
@@ -1766,7 +1766,7 @@ s8 sub_80BCCFC(s8 a, s8 b, s8 flag)
 }
 
 //! FE8U = 0x080BCDE4
-int sub_80BCDE4(int nodeA, int nodeB, int * startingNode)
+int GetGmPathBetweenNodes(int nodeA, int nodeB, int * startingNode)
 {
     u32 i;
 
@@ -1788,7 +1788,7 @@ int sub_80BCDE4(int nodeA, int nodeB, int * startingNode)
 }
 
 //! FE8U = 0x080BCE34
-int sub_80BCE34(int nodeA, int nodeB, s16 c, u16 * d, int * e, int f)
+int BuildGmPathSplineData(int nodeA, int nodeB, s16 c, u16 * d, int * e, int f)
 {
     int nodeId;
     int pathId;
@@ -1796,7 +1796,7 @@ int sub_80BCE34(int nodeA, int nodeB, s16 c, u16 * d, int * e, int f)
     int startingNodeIdx;
     int local_24;
 
-    pathId = sub_80BCDE4(nodeA, nodeB, &startingNodeIdx);
+    pathId = GetGmPathBetweenNodes(nodeA, nodeB, &startingNodeIdx);
 
     if (pathId < 0)
     {
@@ -1813,7 +1813,7 @@ int sub_80BCE34(int nodeA, int nodeB, s16 c, u16 * d, int * e, int f)
     d++;
     e += 2;
 
-    local_24 = sub_80BC3D4(pathId);
+    local_24 = GetGmPathWaypointCount(pathId);
 
     if (startingNodeIdx == 0)
     {
@@ -2031,7 +2031,7 @@ u32 GetBattleMapKind(void)
 }
 
 //! FE8U = 0x080BD20C
-int sub_80BD20C(int index)
+int GetGmUnitFaction(int index)
 {
     if (index >= 7)
     {
@@ -2071,33 +2071,33 @@ int GetChapterIndexOnWmNode(struct GMapData * worldMapData)
 }
 
 //! FE8U = 0x080BD260
-void sub_80BD260(struct GMapData * src, void * dst)
+void GetGmRNState(struct GMapData * src, void * dst)
 {
     CpuSet(&src->unk_ce, dst, 3);
     return;
 }
 
 //! FE8U = 0x080BD270
-void sub_80BD270(struct GMapData * dst, void * src)
+void SetGmRNState(struct GMapData * dst, void * src)
 {
     CpuSet(src, &dst->unk_ce, 3);
     return;
 }
 
 //! FE8U = 0x080BD284
-struct Unknown0201B0D8 * sub_80BD284(void)
+struct Unknown0201B0D8 * GetGmPathSearchResult(void)
 {
     return &gUnk_11;
 }
 
 //! FE8U = 0x080BD28C
-int sub_80BD28C(int idx)
+int GetGmPathNode(int idx)
 {
     return gUnk_11.unk_00[idx];
 }
 
 //! FE8U = 0x080BD29C
-int sub_80BD29C(void)
+int GetGmPathLength(void)
 {
     return gUnk_11.unk_20 + 1;
 }

@@ -146,7 +146,7 @@ void NewEfxHpBarColorChange(struct Anim * anim)
         gEfxSplitedColorBufB,
         0x10);
 
-    sub_8071574(
+    EfxCalcSplitedColorStep(
         gEfxSplitedColorBufA,
         gEfxSplitedColorBufB,
         gEfxSplitedColorBufC,
@@ -162,7 +162,7 @@ void NewEfxHpBarColorChange(struct Anim * anim)
         gEfxSplitedColorBufE,
         0x10);
 
-    sub_8071574(
+    EfxCalcSplitedColorStep(
         gEfxSplitedColorBufD,
         gEfxSplitedColorBufE,
         gEfxSplitedColorBufF,

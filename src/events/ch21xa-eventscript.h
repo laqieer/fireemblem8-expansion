@@ -26,12 +26,12 @@ LABEL(0x1)
     CHECK_EVBIT(2)
     BNE(0x2, EVT_SLOT_C, EVT_SLOT_0)
     EVBIT_MODIFY(0x1)
-    ASMC(sub_807F878)
+    ASMC(StartMapEventcallFx0)
     LOAD1(0x1, UnitDef_Ch21XAEnemy)
     ENUN
     EvtColorFadeSetup(0x6, 0xa, 8, 256, 256, 256) // ENOSUPP in EAstdlib
     MUSC(SONG_LIGHTS_IN_THE_DARK)
-    ASMC(sub_807FCC0)
+    ASMC(StartMapEventcallFx1)
     EVBIT_MODIFY(0x0)
     GOTO(0x3)
 LABEL(0x2)
@@ -535,7 +535,7 @@ LABEL(0x11)
     TEXTSHOW(0xbf0)
     TEXTEND
     CAMERA2(11, 10)
-    ASMC2(sub_8080474)
+    ASMC2(StartDemonKingSummonAnim)
     CUMO_CHAR(CHAR_EVT_PLAYER_LEADER)
     STAL(60)
     CURE

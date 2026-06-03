@@ -73,7 +73,7 @@ struct UnkStruct2_sub_805893C {
     struct UnkStruct1_sub_805893C * unk2;
 };
 
-int sub_805893C(struct UnkStruct2_sub_805893C * arg)
+int GetBanimSheetSelectByte(struct UnkStruct2_sub_805893C * arg)
 {
     u32 val;
     u32 val1;

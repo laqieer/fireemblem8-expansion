@@ -17,15 +17,15 @@ extern u16 gWorldmapGmap_2[]; // FEB: worldmap_big_palette Length:128
 extern u16 gWorldmapGmap_3[]; // FEB: worldmap_big_palettemap Length:673
 
 //! FE8U = 0x080BA424
-void sub_80BA424(void)
+void GMapScreen_OnWorldmapEventUpdate(void)
 {
-    sub_8002AC8();
+    Sound_StopBgmImmediate();
     MapRoute_0(GM_SCREEN->gmroute);
     GM_SCREEN->gmroute->flags |= 3;
 }
 
 //! FE8U = 0x080BA458
-u32 sub_80BA458(void)
+u32 GMapScreen_FillBg3TileIndices(void)
 {
     int iy;
     int ix;
@@ -48,7 +48,7 @@ u32 sub_80BA458(void)
 }
 
 //! FE8U = 0x080BA490
-void sub_80BA490(struct GmScreenProc * proc)
+void GMapScreen_LoadTileGfx(struct GmScreenProc * proc)
 {
     int i;
 
@@ -57,7 +57,7 @@ void sub_80BA490(struct GmScreenProc * proc)
         CpuFastCopy(proc->unk_3c + (i * 0x780), (void*)(0x06008000 + (i * 0x400)), 0x400);
     }
 
-    sub_80BA458();
+    GMapScreen_FillBg3TileIndices();
 
     BG_EnableSyncByMask(BG3_SYNC_BIT);
 
@@ -65,7 +65,7 @@ void sub_80BA490(struct GmScreenProc * proc)
 }
 
 //! FE8U = 0x080BA4D0
-void sub_80BA4D0(struct GmScreenProc * proc)
+void GMapScreen_ApplyTilePalettes(struct GmScreenProc * proc)
 {
     int x;
     int y;
@@ -177,7 +177,7 @@ void GMScreenVSync_Loop(struct GMapScreenVSyncProc * proc)
 }
 
 //! FE8U = 0x080BA6DC
-s8 sub_80BA6DC(struct GMapScreenVSyncProc * proc, int arg1, int arg2, int arg3, int arg4, int arg5, int arg6)
+s8 GMapScreenVSync_AddCopyRequest(struct GMapScreenVSyncProc * proc, int arg1, int arg2, int arg3, int arg4, int arg5, int arg6)
 {
     struct Unknown_3001DA8 * ptr;
 
@@ -305,7 +305,7 @@ void MapScreen_Init(struct GmScreenProc * proc)
 }
 
 //! FE8U = 0x080BA818
-void sub_80BA818(ProcPtr proc, int a, int b)
+void GMapScreenVSync_RequestFullCopy(ProcPtr proc, int a, int b)
 {
     int a_ = a % 0x3c;
     int b_ = b % 0x28;
@@ -313,19 +313,19 @@ void sub_80BA818(ProcPtr proc, int a, int b)
     if (a_ + 0x20 > 0x20)
     {
         int c = 0x20 - a_;
-        sub_80BA6DC(proc, a_, b_, a, b, c, 0x16);
-        sub_80BA6DC(proc, a_ + c, b_, a + c, b, 0x20 - c, 0x16);
+        GMapScreenVSync_AddCopyRequest(proc, a_, b_, a, b, c, 0x16);
+        GMapScreenVSync_AddCopyRequest(proc, a_ + c, b_, a + c, b, 0x20 - c, 0x16);
     }
     else
     {
-        sub_80BA6DC(proc, a_, b_, a, b, 0x20, 0x16);
+        GMapScreenVSync_AddCopyRequest(proc, a_, b_, a, b, 0x20, 0x16);
     }
 
     return;
 }
 
 //! FE8U = 0x080BA8A0
-void sub_80BA8A0(struct GmScreenProc * proc)
+void GMapScreen_UpdateScroll(struct GmScreenProc * proc)
 {
     s16 r4, r5, r6, r9;
     s16 a, iVar6;
@@ -333,11 +333,11 @@ void sub_80BA8A0(struct GmScreenProc * proc)
 
     if (proc->unk_2b != proc->unk_2d)
     {
-        sub_80BA4D0(proc);
+        GMapScreen_ApplyTilePalettes(proc);
 
         if (ABS(proc->unk_2d - proc->unk_2b) > 1)
         {
-            sub_80BA818(proc->unk_48, proc->unk_2d, proc->unk_2e);
+            GMapScreenVSync_RequestFullCopy(proc->unk_48, proc->unk_2d, proc->unk_2e);
             proc->unk_2b = proc->unk_2d;
             proc->unk_2c = proc->unk_2e;
             return;
@@ -361,17 +361,17 @@ void sub_80BA8A0(struct GmScreenProc * proc)
         else
             r9 = 0x28 - r5;
 
-        sub_80BA6DC(proc->unk_48, r6, r5, r4, proc->unk_2e, 1, r9);
+        GMapScreenVSync_AddCopyRequest(proc->unk_48, r6, r5, r4, proc->unk_2e, 1, r9);
         proc->unk_2b = proc->unk_2d;
     }
 
     if (proc->unk_2c != proc->unk_2e)
     {
-        sub_80BA4D0(proc);
+        GMapScreen_ApplyTilePalettes(proc);
 
         if (ABS(proc->unk_2e - proc->unk_2c) > 1)
         {
-            sub_80BA818(proc->unk_48, proc->unk_2d, proc->unk_2e);
+            GMapScreenVSync_RequestFullCopy(proc->unk_48, proc->unk_2d, proc->unk_2e);
             proc->unk_2b = proc->unk_2d;
             proc->unk_2c = proc->unk_2e;
             return;
@@ -393,28 +393,28 @@ void sub_80BA8A0(struct GmScreenProc * proc)
         r6 = proc->unk_2d % 0x3c;
 
         if (r4 < 1)
-            sub_80BA6DC(proc->unk_48, r6, r5, r4, r9, 0x1f, 1);
+            GMapScreenVSync_AddCopyRequest(proc->unk_48, r6, r5, r4, r9, 0x1f, 1);
         else
         {
             s16 tmp;
             iVar6 = (0x20 - r4);
-            sub_80BA6DC(proc->unk_48, r6, r5, r4, r9, iVar6, 1);
+            GMapScreenVSync_AddCopyRequest(proc->unk_48, r6, r5, r4, r9, iVar6, 1);
             tmp = (0x1f - iVar6);
-            sub_80BA6DC(proc->unk_48, r6 + iVar6, r5, iVar6 + r4, r9, tmp, 1);
+            GMapScreenVSync_AddCopyRequest(proc->unk_48, r6 + iVar6, r5, iVar6 + r4, r9, tmp, 1);
         }
         proc->unk_2c = proc->unk_2e;
     }
 }
 
 //! FE8U = 0x080BAB00
-void sub_80BAB00(void)
+void GMapScreen_ResetState(void)
 {
     gUnk_61 = 0;
     return;
 }
 
 //! FE8U = 0x080BAB0C
-void sub_80BAB0C(struct GmScreenProc * proc)
+void GMapScreen_Loop(struct GmScreenProc * proc)
 {
     if (!(proc->flags_0))
     {
@@ -449,18 +449,18 @@ void sub_80BAB0C(struct GmScreenProc * proc)
 
     if (proc->unk_2a & 2)
     {
-        sub_80BA818(proc->unk_48, proc->unk_2d, proc->unk_2e);
+        GMapScreenVSync_RequestFullCopy(proc->unk_48, proc->unk_2d, proc->unk_2e);
         proc->unk_2a &= ~2;
     }
 
     if (proc->unk_2a & 1)
     {
-        sub_80BA458();
-        sub_80BA4D0(proc);
+        GMapScreen_FillBg3TileIndices();
+        GMapScreen_ApplyTilePalettes(proc);
         proc->unk_2a &= ~1;
     }
 
-    sub_80BA8A0(proc);
+    GMapScreen_UpdateScroll(proc);
     BG_SetPosition(BG_3, proc->x, proc->y);
 
     proc->unk_38 = proc->x;
@@ -479,11 +479,11 @@ struct ProcCmd CONST_DATA ProcScr_GMapScreen[] =
     PROC_SET_END_CB(MapScreen_OnDelete),
 
     PROC_CALL(MapScreen_Init),
-    PROC_CALL(sub_80BA490),
-    PROC_CALL(sub_80BA4D0),
-    PROC_CALL(sub_80BAB00),
+    PROC_CALL(GMapScreen_LoadTileGfx),
+    PROC_CALL(GMapScreen_ApplyTilePalettes),
+    PROC_CALL(GMapScreen_ResetState),
 
-    PROC_REPEAT(sub_80BAB0C),
+    PROC_REPEAT(GMapScreen_Loop),
 
     PROC_END,
 };

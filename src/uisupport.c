@@ -50,7 +50,7 @@ u16 CONST_DATA gSprite_SupportScreenBanner[] = {
 };
 
 int GetSupportScreenCharIdAt(int);
-void sub_80A199C(struct SupportScreenProc*, int);
+void SupportScreen_DrawUnitNameRow(struct SupportScreenProc*, int);
 int GetSupportScreenPartnerCount(int);
 void StartSupportUnitSubScreen(s8, int, ProcPtr);
 
@@ -135,7 +135,7 @@ int GetSupportClassForCharId(int charId) {
 }
 
 //! FE8U = 0x080A0BBC
-s8 sub_80A0BBC(int charId) {
+s8 DoesCharIdHaveSupportTalk(int charId) {
     struct SupportTalkEnt* iter;
 
     for (iter = GetSupportTalkList(); ; iter++) {
@@ -152,7 +152,7 @@ s8 sub_80A0BBC(int charId) {
 }
 
 //! FE8U = 0x080A0BF4
-void sub_80A0BF4(void) {
+void RegisterAllSupportTalksToGlobalSave(void) {
     struct SupportTalkEnt* iter;
 
     for (iter = GetSupportTalkList(); iter->unitA != 0xFFFF; iter++) {
@@ -260,7 +260,7 @@ void SupportScreen_SetupUnits(struct SupportScreenProc* proc) {
 }
 
 //! FE8U = 0x080A0EC0
-void sub_80A0EC0(struct SupportScreenProc* proc) {
+void SupportScreen_LoadUnitSprites(struct SupportScreenProc* proc) {
     int i;
 
     if (proc->fromPrepScreen) {
@@ -298,7 +298,7 @@ int GetTotalSupportLevel(int idx) {
 }
 
 //! FE8U = 0x080A0F6C
-int sub_80A0F6C(s8 flag, int idx) {
+int GetSupportScreenUnitSupportStatus(s8 flag, int idx) {
     int i;
     int a;
     int b;
@@ -451,7 +451,7 @@ void DrawSupportScreenUnitSprites(struct SupportScreenProc* proc) {
 }
 
 //! FE8U = 0x080A11E0
-void sub_80A11E0(struct SupportScreenProc* proc) {
+void SupportScreen_ScrollToPendingIndex(struct SupportScreenProc* proc) {
     int a;
     int b;
 
@@ -506,7 +506,7 @@ void SupportScreen_SetupGraphics(struct SupportScreenProc* proc) {
     LoadObjUIGfx();
     LoadIconPalettes(0xe);
 
-    sub_80A11E0(proc);
+    SupportScreen_ScrollToPendingIndex(proc);
 
     BG_SetPosition(0, 0, 0);
     BG_SetPosition(1, 0, 2);
@@ -517,7 +517,7 @@ void SupportScreen_SetupGraphics(struct SupportScreenProc* proc) {
     ApplyUnitSpritePalettes();
     ResetUnitSprites();
 
-    sub_80A0EC0((void*)proc);
+    SupportScreen_LoadUnitSprites((void*)proc);
     PutImg_PrepItemUseUnk(0x5000, 5);
 
     Decompress(gUnkData_80, gGenericBuffer);
@@ -584,7 +584,7 @@ void SupportScreen_SetupGraphics(struct SupportScreenProc* proc) {
     UnlockMenuScrollBar();
 
     for (i = proc->unk_34 / 16; i < (proc->unk_34 / 16) + 6; i++) {
-        sub_80A199C(proc, i);
+        SupportScreen_DrawUnitNameRow(proc, i);
     }
 
     StartGreenText((void*)proc);
@@ -703,11 +703,11 @@ void SupportScreen_Loop_KeyHandler(struct SupportScreenProc* proc) {
                 PlaySoundEffect(SONG_65);
 
                 if ((var < 0x10) && (proc->unk_34 != 0)) {
-                    sub_80A199C(proc, (proc->unk_34 / 16) - 1);
+                    SupportScreen_DrawUnitNameRow(proc, (proc->unk_34 / 16) - 1);
                     proc->unk_40 = -1;
                     SetSysHandCursorXPos((proc->curIndex % 3) * 64 + 20);
                 } else if ((var >= 0x50) && (proc->unk_34 != ((((GetSupportScreenUnitCount() - 1) / 3) - 5) * 16))) {
-                    sub_80A199C(proc, (proc->unk_34 / 16) + 6);
+                    SupportScreen_DrawUnitNameRow(proc, (proc->unk_34 / 16) + 6);
                     proc->unk_40 = 1;
                     SetSysHandCursorXPos((proc->curIndex % 3) * 64 + 20);
                 } else {
@@ -840,7 +840,7 @@ void StartSupportScreen(ProcPtr parent) {
 }
 
 //! FE8U = 0x080A199C
-void sub_80A199C(struct SupportScreenProc* proc, int param_2) {
+void SupportScreen_DrawUnitNameRow(struct SupportScreenProc* proc, int param_2) {
     int i;
     int j;
     int x;
@@ -859,7 +859,7 @@ void sub_80A199C(struct SupportScreenProc* proc, int param_2) {
             x = ((i) % 3) * 8;
             y = ((param_2 * 2)) & 0x1f;
 
-            switch (sub_80A0F6C(proc->fromPrepScreen, (j))) {
+            switch (GetSupportScreenUnitSupportStatus(proc->fromPrepScreen, (j))) {
                 case 0:
                     color = 1;
                     break;
@@ -892,7 +892,7 @@ void sub_80A199C(struct SupportScreenProc* proc, int param_2) {
 }
 
 //! FE8U = 0x080A1A90
-void sub_80A1A90(int idx) {
+void SupportScreen_SetPendingIndex(int idx) {
     struct SupportScreenProc* proc = Proc_Find(gProcScr_SupportScreen);
 
     if (proc != 0) {
@@ -915,7 +915,7 @@ int UiSupport_GetSupportTalkSong(int idx, int partner, int rank) {
 }
 
 //! FE8U = 0x080A1AE4
-void sub_80A1AE4(void) {
+void SupportSubScreen_BackupTilemaps(void) {
     int ix;
     int iy;
 
@@ -1285,7 +1285,7 @@ void SupportSubScreen_Init(struct SubScreenProc* proc) {
 }
 
 //! FE8U = 0x080A221C
-void sub_80A221C(void) {
+void SupportSubScreen_MakeDimmedObjPalette(void) {
     int i;
     u16* src = PAL_OBJ(0xC);
     u16* dst = PAL_OBJ(0xD);
@@ -1315,7 +1315,7 @@ void SupportSubScreen_SetupGraphics(struct SubScreenProc* proc) {
     LoadObjUIGfx();
 
     ApplyUnitSpritePalettes();
-    sub_80A221C();
+    SupportSubScreen_MakeDimmedObjPalette();
     LoadIconPalettes(0xd);
 
     StartGreenText((void*)proc);
@@ -1453,7 +1453,7 @@ void SupportSubScreen_Loop_KeyHandler(struct SubScreenProc* proc) {
 }
 
 //! FE8U = 0x080A25F8
-void sub_80A25F8(struct SubScreenProc* proc) {
+void SupportSubScreen_StartSupportConvo(struct SubScreenProc* proc) {
 
     SetupBackgrounds(0);
 
@@ -1498,7 +1498,7 @@ void SupportSubScreen_StartSwapPage(struct SubScreenProc* proc) {
     SetBlendTargetA(0, 0, 0, 1, 0);
     SetBlendTargetB(1, 1, 1, 0, 1);
 
-    sub_80A1AE4();
+    SupportSubScreen_BackupTilemaps();
 
     PlaySoundEffect(SONG_C8);
 
@@ -1506,7 +1506,7 @@ void SupportSubScreen_StartSwapPage(struct SubScreenProc* proc) {
 }
 
 //! FE8U = 0x080A2730
-void sub_80A2730(u32 xBase) {
+void SupportSubScreen_DrawScrolledTilemaps(u32 xBase) {
     int ix;
     int iy;
 
@@ -1548,7 +1548,7 @@ void SupportSubScreen_SwapPageOut_ToLeft(struct SubScreenProc* proc) {
     c = 16 - (a * 0x10) * a / 100;
 
     proc->x = -b * 8;
-    sub_80A2730(b);
+    SupportSubScreen_DrawScrolledTilemaps(b);
 
     SetBlendConfig(1, c, 0x10 - c, 0);
 
@@ -1575,7 +1575,7 @@ void SupportSubScreen_SwapPageIn_FromRight(struct SubScreenProc* proc) {
 
     proc->x = (8 - b) * 8;
 
-    sub_80A2730(b - 8);
+    SupportSubScreen_DrawScrolledTilemaps(b - 8);
     SetBlendConfig(1, 0x10 - c, c, 0);
 
     if (proc->unk_3a == 10) {
@@ -1600,7 +1600,7 @@ void SupportSubScreen_SwapPageOut_ToRight(struct SubScreenProc* proc) {
 
     proc->x = b * 8;
 
-    sub_80A2730(-b);
+    SupportSubScreen_DrawScrolledTilemaps(-b);
     SetBlendConfig(1, c, 0x10 - c, 0);
 
     if (proc->unk_3a == 10) {
@@ -1626,7 +1626,7 @@ void SupportSubScreen_SwapPageIn_FromLeft(struct SubScreenProc* proc) {
 
     proc->x = (b - 8) * 8;
 
-    sub_80A2730(8 - b);
+    SupportSubScreen_DrawScrolledTilemaps(8 - b);
     SetBlendConfig(1, 0x10 - c, c, 0);
 
     if (proc->unk_3a == 10) {
@@ -1669,7 +1669,7 @@ void SupportSubScreen_ReinitAfterSwapPage(struct SubScreenProc* proc) {
 
     DrawSupportSubScreenUnitPartnerDetails(proc);
     DrawSupportSubScreenRemainingText(proc);
-    sub_80A1AE4();
+    SupportSubScreen_BackupTilemaps();
 
     proc->unk_3a = 0;
 
@@ -1712,7 +1712,7 @@ void SupportSubScreen_OnEnd(struct SubScreenProc* proc) {
     EndAllProcChildren(proc);
     EndMuralBackground_();
     EndFaceById(0);
-    sub_80A1A90(proc->unitIdx);
+    SupportScreen_SetPendingIndex(proc->unitIdx);
     return;
 }
 
@@ -1735,7 +1735,7 @@ void SupportSubScreen_PrepareSupportConvo(struct SubScreenProc* proc) {
 }
 
 //! FE8U = 0x080A2BD0
-void sub_80A2BD0(struct SubScreenProc* proc) {
+void SupportSubScreen_RestoreBgm(struct SubScreenProc* proc) {
 
     if (proc->songId == 0) {
         ChangeBgm(SONG_DISTANT_ROADS, 0x80, 0x100, 0x10, 0);
@@ -1775,12 +1775,12 @@ PROC_LABEL(2),
 
     PROC_WHILE(MusicProc4Exists),
 
-    PROC_CALL(sub_80A25F8),
+    PROC_CALL(SupportSubScreen_StartSupportConvo),
     PROC_SLEEP(0),
 
     PROC_WHILE(EventEngineExists),
 
-    PROC_CALL(sub_80A2BD0),
+    PROC_CALL(SupportSubScreen_RestoreBgm),
     PROC_SLEEP(8),
 
     PROC_GOTO(0),

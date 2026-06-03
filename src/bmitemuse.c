@@ -389,7 +389,7 @@ s8 CanUnitUseHealItem(struct Unit* unit)
     return TRUE;
 }
 
-s8 sub_802909C(struct Unit* unit)
+s8 CanUnitUseBindingBladeToHeal(struct Unit* unit)
 {
     return FALSE;
 }
@@ -1004,7 +1004,7 @@ void SubtitleMapSelect_End(ProcPtr proc)
     ClearBg0Bg1();
 }
 
-int sub_8029D38(struct Unit* unit)
+int CanAssassinPlaceTrapHere(struct Unit* unit)
 {
     if ((UNIT_CATTRIBUTES(unit) & CA_ASSASSIN) && GetTrapAt(unit->xPos, unit->yPos) == NULL)
         return TRUE;
@@ -1012,7 +1012,7 @@ int sub_8029D38(struct Unit* unit)
     return FALSE;
 }
 
-void sub_8029D6C(void)
+void StartRescueStaffSelection(void)
 {
     StartSubtitleHelp(
         NewTargetSelection_Specialized(&gSelectInfo_WarpUnit, StaffSelectOnSelect),
@@ -1129,7 +1129,7 @@ s8 CanUnitUseItemPrepScreen(struct Unit* unit, int item)
     }
 }
 
-s8 sub_802A108(struct Unit* unit)
+s8 DoesUnitHoldItemCC(struct Unit* unit)
 {
     int i, count = GetUnitItemCount(unit);
 

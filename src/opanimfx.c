@@ -384,7 +384,7 @@ void TsaModifyFirstPalMaybe(s16 end, s16 start, s16 unused, u16 bg, u16 * src1, 
 }
 
 //! FE8U = 0x080C689C
-void sub_80C689C(s16 end, s16 start, s16 offset, u16 bg, u16 * src1, u16 * src2, s8 flag)
+void TsaModifyFirstPalReverse(s16 end, s16 start, s16 offset, u16 bg, u16 * src1, u16 * src2, s8 flag)
 {
     u16 * src;
     u16 * dst;
@@ -449,7 +449,7 @@ void sub_80C689C(s16 end, s16 start, s16 offset, u16 bg, u16 * src1, u16 * src2,
 }
 
 //! FE8U = 0x080C69B0
-void sub_80C69B0(u16 * pal, u16 color, u16 blend)
+void BlendPaletteToColor(u16 * pal, u16 color, u16 blend)
 {
     int i;
 

@@ -57,7 +57,7 @@ struct ProcCmd CONST_DATA ProcScr_UnitListScreen_Field[] =
 
 PROC_LABEL(1),
     PROC_CALL(UnitList_SetBlendEffects),
-    PROC_REPEAT(sub_8091AEC),
+    PROC_REPEAT(UnitList_Loop),
 
     PROC_CALL(StartFastFadeToBlack),
     PROC_REPEAT(WaitForFade),
@@ -78,8 +78,8 @@ PROC_LABEL(1),
 
 PROC_LABEL(2),
     PROC_CALL(UnitList_StartPageChange),
-    PROC_REPEAT(sub_8091D54),
-    PROC_REPEAT(sub_8091F10),
+    PROC_REPEAT(UnitList_PageChangeOut_Loop),
+    PROC_REPEAT(UnitList_PageChangeIn_Loop),
 
     PROC_GOTO(1),
 
@@ -110,7 +110,7 @@ struct ProcCmd CONST_DATA ProcScr_UnitListScreen_PrepMenu[] =
 
 PROC_LABEL(1),
     PROC_CALL(UnitList_SetBlendEffects),
-    PROC_REPEAT(sub_8091AEC),
+    PROC_REPEAT(UnitList_Loop),
 
     PROC_CALL(StartMidFadeToBlack),
     PROC_REPEAT(WaitForFade),
@@ -121,8 +121,8 @@ PROC_LABEL(1),
 
 PROC_LABEL(2),
     PROC_CALL(UnitList_StartPageChange),
-    PROC_REPEAT(sub_8091D54),
-    PROC_REPEAT(sub_8091F10),
+    PROC_REPEAT(UnitList_PageChangeOut_Loop),
+    PROC_REPEAT(UnitList_PageChangeIn_Loop),
 
     PROC_GOTO(1),
 
@@ -152,7 +152,7 @@ struct ProcCmd CONST_DATA ProcScr_UnitListScreen_SoloAnim[] =
 
 PROC_LABEL(1),
     PROC_CALL(UnitList_SetBlendEffects),
-    PROC_REPEAT(sub_8091AEC),
+    PROC_REPEAT(UnitList_Loop),
 
     PROC_CALL(StartFastFadeToBlack),
     PROC_REPEAT(WaitForFade),
@@ -189,7 +189,7 @@ struct ProcCmd CONST_DATA ProcScr_UnitListScreen_WorldMap[] =
 
 PROC_LABEL(1),
     PROC_CALL(UnitList_SetBlendEffects),
-    PROC_REPEAT(sub_8091AEC),
+    PROC_REPEAT(UnitList_Loop),
 
     PROC_CALL(StartFastFadeToBlack),
     PROC_REPEAT(WaitForFade),
@@ -202,8 +202,8 @@ PROC_LABEL(1),
 
 PROC_LABEL(2),
     PROC_CALL(UnitList_StartPageChange),
-    PROC_REPEAT(sub_8091D54),
-    PROC_REPEAT(sub_8091F10),
+    PROC_REPEAT(UnitList_PageChangeOut_Loop),
+    PROC_REPEAT(UnitList_PageChangeIn_Loop),
 
     PROC_GOTO(1),
 
@@ -237,7 +237,7 @@ struct ProcCmd CONST_DATA ProcScr_bmview[] =
 // clang-format on
 
 //! FE8U = 0x0809014C
-void sub_809014C(void)
+void UnitList_ReorderPlayerUnits(void)
 {
     int i;
 
@@ -285,7 +285,7 @@ void sub_809014C(void)
 
 
 //! FE8U = 0x080901BC
-void sub_80901BC(u8 x, u8 y, u8 width)
+void UnitList_PutHBarSprite(u8 x, u8 y, u8 width)
 {
     int i;
 
@@ -302,7 +302,7 @@ void sub_80901BC(u8 x, u8 y, u8 width)
 }
 
 //! FE8U = 0x08090238
-void sub_8090238(u8 key)
+void UnitList_DrawSortLabel(u8 key)
 {
     int i;
     int j;
@@ -345,7 +345,7 @@ void sub_8090238(u8 key)
 }
 
 //! FE8U = 0x08090324
-void sub_8090324(int itemIconId)
+void UnitList_RegisterEquippedIcon(int itemIconId)
 {
     int i;
 
@@ -370,7 +370,7 @@ void sub_8090324(int itemIconId)
 }
 
 //! FE8U = 0x08090358
-void sub_8090358(u16 arg_0)
+void UnitList_ClearUnusedEquipIcons(u16 arg_0)
 {
     int displayIcons[10];
     int i;
@@ -418,7 +418,7 @@ void sub_8090358(u16 arg_0)
 }
 
 //! FE8U = 0x08090418
-void sub_8090418(struct UnitListScreenProc * proc, s8 unk)
+void UnitList_SetCursorToUnit(struct UnitListScreenProc * proc, s8 unk)
 {
     int i;
 
@@ -501,7 +501,7 @@ void sub_8090418(struct UnitListScreenProc * proc, s8 unk)
 }
 
 //! FE8U = 0x08090514
-void sub_8090514(s8 flag)
+void UnitList_SetMuralWindow(s8 flag)
 {
     if (flag != 0)
     {
@@ -558,7 +558,7 @@ void UnitList_StartStatScreen(struct UnitListScreenProc * proc)
 //! FE8U = 0x080906AC
 void UnitList_ResetFromStatScreen(struct UnitListScreenProc * proc)
 {
-    sub_8090D80(proc);
+    UnitList_SetupDisplay(proc);
     SetDispEnable(0, 0, 0, 0, 0);
 
     return;
@@ -639,7 +639,7 @@ void UnitListScreenSprites_Main(struct UnitListScreenSpritesProc * proc)
 
         if (proc->unk_3a == 0)
         {
-            sub_8090514(1);
+            UnitList_SetMuralWindow(1);
             proc->unk_3a = 1;
         }
     }
@@ -650,7 +650,7 @@ void UnitListScreenSprites_Main(struct UnitListScreenSpritesProc * proc)
 
         if (proc->unk_3a == 1)
         {
-            sub_8090514(0);
+            UnitList_SetMuralWindow(0);
             proc->unk_3a = 0;
         }
     }
@@ -733,7 +733,7 @@ void UnitListScreenSprites_Dummy(void)
 }
 
 //! FE8U = 0x08090B48
-void sub_8090B48(struct Unit * unit, struct UnitListScreenProc * proc)
+void UnitList_AddUnit(struct Unit * unit, struct UnitListScreenProc * proc)
 {
     int supporterCount;
     int i;
@@ -782,7 +782,7 @@ void sub_8090B48(struct Unit * unit, struct UnitListScreenProc * proc)
 }
 
 //! FE8U = 0x08090C58
-void sub_8090C58(struct UnitListScreenProc * proc)
+void UnitList_BuildUnitListFromFaction(struct UnitListScreenProc * proc)
 {
     gUnitlistscreen_8 = 0;
 
@@ -804,7 +804,7 @@ void sub_8090C58(struct UnitListScreenProc * proc)
                 continue;
             }
 
-            sub_8090B48(unit, proc);
+            UnitList_AddUnit(unit, proc);
         }
     }
     else
@@ -825,7 +825,7 @@ void sub_8090C58(struct UnitListScreenProc * proc)
                 continue;
             }
 
-            sub_8090B48(unit, proc);
+            UnitList_AddUnit(unit, proc);
         }
     }
 
@@ -833,7 +833,7 @@ void sub_8090C58(struct UnitListScreenProc * proc)
 }
 
 //! FE8U = 0x08090D00
-void sub_8090D00(struct UnitListScreenProc * proc)
+void UnitList_BuildUnitList(struct UnitListScreenProc * proc)
 {
     gUnitlistscreen_8 = 0;
 
@@ -855,7 +855,7 @@ void sub_8090D00(struct UnitListScreenProc * proc)
                 continue;
             }
 
-            sub_8090B48(unit, proc);
+            UnitList_AddUnit(unit, proc);
         }
     }
     else
@@ -876,7 +876,7 @@ void sub_8090D00(struct UnitListScreenProc * proc)
                 continue;
             }
 
-            sub_8090B48(unit, proc);
+            UnitList_AddUnit(unit, proc);
         }
     }
 
@@ -884,7 +884,7 @@ void sub_8090D00(struct UnitListScreenProc * proc)
 }
 
 //! FE8U = 0x08090D80
-void sub_8090D80(struct UnitListScreenProc * proc)
+void UnitList_SetupDisplay(struct UnitListScreenProc * proc)
 {
     int i;
     u8 val;
@@ -907,7 +907,7 @@ void sub_8090D80(struct UnitListScreenProc * proc)
     proc->deployedCount = 0;
     proc->unk_2e = 6;
 
-    sub_8090D00(proc);
+    UnitList_BuildUnitList(proc);
 
     if ((proc->mode != UNITLIST_MODE_PREPMENU) || (proc->unk_2a == 1))
     {
@@ -955,7 +955,7 @@ void sub_8090D80(struct UnitListScreenProc * proc)
 
     ApplyPalettes(Pal_SysBrownBox, 0x19, 2);
 
-    sub_8097FDC();
+    ApplyPrepWindowColorPalette();
 
     CallARM_FillTileRect(gBG1TilemapBuffer, gUnkData_77, 0x1000);
 
@@ -971,16 +971,16 @@ void sub_8090D80(struct UnitListScreenProc * proc)
     InitText(&gUnitlistscreen_5, 20);
     InitText(&gUnitlistscreen_6, 8);
 
-    sub_8090238(proc->unk_32);
+    UnitList_DrawSortLabel(proc->unk_32);
 
     if (proc->unk_29 == 4)
     {
-        sub_8090418(proc, 0);
+        UnitList_SetCursorToUnit(proc, 0);
         proc->unk_29 = 0;
     }
     else if (proc->mode == UNITLIST_MODE_PREPMENU)
     {
-        sub_8090418(proc, 1);
+        UnitList_SetCursorToUnit(proc, 1);
     }
 
     proc->unk_3c = 0;
@@ -1002,7 +1002,7 @@ void sub_8090D80(struct UnitListScreenProc * proc)
         UnitList_PutRow(proc, i, gBG0TilemapBuffer, proc->page, 1);
     }
 
-    sub_8092298(proc->unk_2e, proc->page, 1);
+    UnitList_DrawPageHeader(proc->unk_2e, proc->page, 1);
 
     SetWinEnable(1, 0, 0);
     SetWin0Box(16, 58, 224, 152);
@@ -1058,7 +1058,7 @@ void UnitList_Init(struct UnitListScreenProc * proc)
     proc->unk_34 = 0;
     proc->unk_35 = 0;
 
-    sub_8090D80(proc);
+    UnitList_SetupDisplay(proc);
 
     return;
 }
@@ -1137,7 +1137,7 @@ void UnitList_TogglePrepDeployState(struct UnitListScreenProc * proc)
             return;
         }
 
-        if (CheckInLinkArena() && !sub_8097E38(unit))
+        if (CheckInLinkArena() && !CanUnitJoinLinkArena(unit))
         {
             StartPrepErrorHelpbox(0, proc->unk_2c * 16 + 56, 0x889, proc);
             return;
@@ -1175,7 +1175,7 @@ void UnitList_ToggleSoloAnimState(struct Unit * unit, int step)
 }
 
 //! FE8U = 0x0809144C
-void sub_809144C(struct UnitListScreenProc * proc)
+void UnitList_HandleListInput(struct UnitListScreenProc * proc)
 {
     if ((gKeyStatusPtr->heldKeys & L_BUTTON) != 0)
     {
@@ -1339,7 +1339,7 @@ void sub_809144C(struct UnitListScreenProc * proc)
 }
 
 //! FE8U = 0x080917D8
-void sub_80917D8(struct UnitListScreenProc * proc)
+void UnitList_HandleSortInput(struct UnitListScreenProc * proc)
 {
     int i;
     u8 unk_32;
@@ -1367,7 +1367,7 @@ void sub_80917D8(struct UnitListScreenProc * proc)
                 UnitList_PutRow(proc, i, gBG0TilemapBuffer, proc->page, 1);
             }
 
-            sub_8090358(proc->unk_3e);
+            UnitList_ClearUnusedEquipIcons(proc->unk_3e);
             BG_EnableSyncByMask(1);
         }
 
@@ -1375,7 +1375,7 @@ void sub_80917D8(struct UnitListScreenProc * proc)
         proc->unk_35 = proc->unk_2d;
 
         if (proc->unk_32 != unk_32)
-            sub_8090238(proc->unk_32);
+            UnitList_DrawSortLabel(proc->unk_32);
 
         return;
     }
@@ -1467,7 +1467,7 @@ void UnitList_SetBlendEffects(void)
 }
 
 //! FE8U = 0x08091AEC
-void sub_8091AEC(struct UnitListScreenProc * proc)
+void UnitList_Loop(struct UnitListScreenProc * proc)
 {
     int prev = proc->unk_2d;
 
@@ -1482,11 +1482,11 @@ void sub_8091AEC(struct UnitListScreenProc * proc)
     switch (proc->unk_29)
     {
         case 0:
-            sub_809144C(proc);
+            UnitList_HandleListInput(proc);
             break;
 
         case 3:
-            sub_80917D8(proc);
+            UnitList_HandleSortInput(proc);
             break;
 
         case 1:
@@ -1496,7 +1496,7 @@ void sub_8091AEC(struct UnitListScreenProc * proc)
             if ((proc->unk_3e % 0x10) == 0)
             {
                 proc->unk_29 = 0;
-                sub_8090358(proc->unk_3e);
+                UnitList_ClearUnusedEquipIcons(proc->unk_3e);
             }
 
             break;
@@ -1508,7 +1508,7 @@ void sub_8091AEC(struct UnitListScreenProc * proc)
             if ((proc->unk_3e % 0x10) == 0)
             {
                 proc->unk_29 = 0;
-                sub_8090358(proc->unk_3e);
+                UnitList_ClearUnusedEquipIcons(proc->unk_3e);
             }
 
             break;
@@ -1532,7 +1532,7 @@ void UnitList_OnEnd(struct UnitListScreenProc * proc)
     if (proc->mode == UNITLIST_MODE_PREPMENU)
     {
         PrepSetLatestCharId(gSortedUnits[proc->unk_30]->unit->pCharacterData->number);
-        sub_809014C();
+        UnitList_ReorderPlayerUnits();
     }
 
     gPlaySt.lastUnitSortType = (proc->unk_34 << 7) + proc->unk_32;
@@ -1594,7 +1594,7 @@ void UnitList_StartPageChange(struct UnitListScreenProc * proc)
 extern u8 gUnitlistscreen_10[];
 
 //! FE8U = 0x08091D54
-void sub_8091D54(struct UnitListScreenProc * proc)
+void UnitList_PageChangeOut_Loop(struct UnitListScreenProc * proc)
 {
     int i;
     int r4;
@@ -1665,7 +1665,7 @@ void sub_8091D54(struct UnitListScreenProc * proc)
     }
 
     ResetIconGraphics();
-    sub_8090238(proc->unk_32);
+    UnitList_DrawSortLabel(proc->unk_32);
 
     for (r4 = proc->unk_3e / 16; r4 < proc->unk_3e / 16 + 6 && r4 < gUnitlistscreen_8; r4++)
     {
@@ -1673,7 +1673,7 @@ void sub_8091D54(struct UnitListScreenProc * proc)
     }
 
     UnitList_DrawColumnNames(gUnitlistscreen_1[0], proc->page);
-    sub_8092298(proc->unk_2e, proc->page, 0);
+    UnitList_DrawPageHeader(proc->unk_2e, proc->page, 0);
 
     proc->unk_38 = 0;
     proc->unk_3c = 0;
@@ -1692,7 +1692,7 @@ void sub_8091D54(struct UnitListScreenProc * proc)
 #define TILEMAP_INDEX_(aX, aY) ((aX) + (aY) * 0x20)
 
 //! FE8U = 0x08091F10
-void sub_8091F10(struct UnitListScreenProc * proc)
+void UnitList_PageChangeIn_Loop(struct UnitListScreenProc * proc)
 {
     int r4, r5;
 
@@ -1750,7 +1750,7 @@ void sub_8091F10(struct UnitListScreenProc * proc)
 #else
 
 NAKEDFUNC
-void sub_8091F10(struct UnitListScreenProc * proc)
+void UnitList_PageChangeIn_Loop(struct UnitListScreenProc * proc)
 {
     asm("\n\
         .syntax unified\n\
@@ -2112,7 +2112,7 @@ void UnitList_DrawColumnNames(u16 * tm, u8 page)
 }
 
 //! FE8U = 0x08092298
-void sub_8092298(u8 maxPages, u8 page, s8 drawColumnNames)
+void UnitList_DrawPageHeader(u8 maxPages, u8 page, s8 drawColumnNames)
 {
     if (page != UNITLIST_PAGE_SOLOANIM)
     {
@@ -2195,7 +2195,7 @@ void UnitList_PutRow(struct UnitListScreenProc * proc, u8 unitNum, u16 * tm, u8 
                 DrawIcon(
                     tm + y * 0x20 + 15, GetItemIconId(GetUnitEquippedWeapon(gSortedUnits[unitNum]->unit)),
                     TILEREF(0, 4));
-                sub_8090324(GetItemIconId(GetUnitEquippedWeapon(gSortedUnits[unitNum]->unit)));
+                UnitList_RegisterEquippedIcon(GetItemIconId(GetUnitEquippedWeapon(gSortedUnits[unitNum]->unit)));
             }
 
             ClearText(&gUnitlistscreen_3[row][2]);
@@ -2302,7 +2302,7 @@ void UnitList_PutRow(struct UnitListScreenProc * proc, u8 unitNum, u16 * tm, u8 
                 DrawIcon(
                     tm + y * 0x20 + 8, GetItemIconId(GetUnitEquippedWeapon(gSortedUnits[unitNum]->unit)),
                     TILEREF(0, 4));
-                sub_8090324(GetItemIconId(GetUnitEquippedWeapon(gSortedUnits[unitNum]->unit)));
+                UnitList_RegisterEquippedIcon(GetItemIconId(GetUnitEquippedWeapon(gSortedUnits[unitNum]->unit)));
             }
 
             PutNumberOrBlank(

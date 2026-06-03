@@ -41,7 +41,7 @@ void EndSioHold(void)
     Proc_EndEach(ProcScr_HOLD);
 }
 
-void sub_804303C(ProcPtr proc, int num)
+void MoveSioHold(ProcPtr proc, int num)
 {
     ((struct Proc *)proc)->y += num;
 }
@@ -60,7 +60,7 @@ void ClearSioBG(void)
     BG_EnableSyncByMask(BG0_SYNC_BIT | BG1_SYNC_BIT | BG2_SYNC_BIT);
 }
 
-void sub_804309C(void)
+void ClearSioBGFull(void)
 {
     BG_SetPosition(BG_0, 0, 0);
     BG_SetPosition(BG_1, 0, 0);
@@ -93,7 +93,7 @@ void PutSioText(int msg, int text_idx)
     }
 }
 
-void sub_8043164(void)
+void InitSioTexts(void)
 {
     int i;
     for (i = 0; i < 6; i++)
@@ -106,7 +106,7 @@ void sub_8043164(void)
         InitText(&gSioTexts[i], 24);
 }
 
-void sub_80431B4(struct Unit * unit)
+void GiveUnitDefaultWeapons(struct Unit * unit)
 {
     int i;
     u8 item_list[] = {
@@ -141,7 +141,7 @@ void SioPlaySoundEffect(int idx)
     PlaySoundEffect(sfx_list[idx]);
 }
 
-void sub_8043244(void)
+void SetSioSaveConfigFlag3(void)
 {
     ReadMultiArenaSaveConfig(&gSioSaveConfig);
     gSioSaveConfig._unk3_ = true;
@@ -193,7 +193,7 @@ u16 gSioList_SioMain2_2[] = {
     DPAD_LEFT, DPAD_LEFT, DPAD_RIGHT, DPAD_RIGHT, L_BUTTON, L_BUTTON, START_BUTTON, -1
 };
 
-bool sub_80432F4(void)
+bool CheckSioKeyInputSequence2(void)
 {
     return IsKeyInputSequenceComplete(gSioList_SioMain2_2);
 }

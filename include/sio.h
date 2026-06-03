@@ -102,7 +102,7 @@ void SioPollingMsgAndAck(ProcPtr proc);
 void SetBmStLinkArenaFlag(void);
 void UnsetBmStLinkArenaFlag(void);
 bool CheckInLinkArena(void);    // <!> This function is defined as different types by files, maybe a bug.
-void sub_8042EA8(void);
+void LinkArena_ResetUnk04(void);
 
 struct Proc_Sio_085A93A0 {
     PROC_HEADER;
@@ -112,12 +112,12 @@ struct Proc_Sio_085A93A0 {
     /* 38 */ u32 timer;
 };
 
-void sub_8042EB4(struct Proc_Sio_085A93A0 * proc);
-void sub_8042EF0(struct Proc_Sio_085A93A0 * proc);
-void sub_8042F44(void);
-void sub_8042F58(ProcPtr proc);
-void sub_8042F84(void);
-void sub_8042F98(ProcPtr proc);
+void Sio_LoadingBlendPulse_Init(struct Proc_Sio_085A93A0 * proc);
+void Sio_LoadingBlendPulse_Loop(struct Proc_Sio_085A93A0 * proc);
+void Sio_ScrollBgsParallax_Loop(void);
+void Sio_SyncBarrier_Loop(ProcPtr proc);
+void Sio_Msg89Barrier_Init(void);
+void Sio_Msg89Barrier_Loop(ProcPtr proc);
 
 struct ProcSioHold {
     PROC_HEADER;
@@ -129,16 +129,16 @@ struct ProcSioHold {
 void SioHold_Loop(struct ProcSioHold * proc);
 ProcPtr StartSioHold(ProcPtr parent, int x, int y, int y_max, int y_min);
 void EndSioHold(void);
-void sub_804303C(ProcPtr proc, int num);
+void MoveSioHold(ProcPtr proc, int num);
 void ClearSioBG(void);
-void sub_804309C(void);
+void ClearSioBGFull(void);
 void PutSioText(int, int);
-void sub_8043164(void);
-void sub_80431B4(struct Unit * unit);
+void InitSioTexts(void);
+void GiveUnitDefaultWeapons(struct Unit * unit);
 void SioPlaySoundEffect(int);
-void sub_8043244(void);
+void SetSioSaveConfigFlag3(void);
 bool IsKeyInputSequenceComplete(const u16 * list);
-bool sub_80432F4(void);
+bool CheckSioKeyInputSequence2(void);
 
 /* sio_teamlist.c */
 
@@ -178,37 +178,37 @@ struct SioTeamListProc
     /* 5C */ s8 unk_5c;
 };
 
-int sub_80437C0(u8, struct SioTeamListProc *);;
+int DrawLinkArenaTeamListMenu(u8, struct SioTeamListProc *);;
 bool CanBuildNewLinkArenaTeam(void);;
-bool sub_8043394(void);;
+bool AnyLinkArenaTeamExists(void);;
 void StartLinkArenaTeamList(ProcPtr parent);
 void SioTeamList_Init(struct SioTeamListProc * proc);
 bool CanBuildNewLinkArenaTeam(void);
-bool sub_8043394(void);
-int sub_80433C0(int activeOption, u8 mode);
+bool AnyLinkArenaTeamExists(void);
+int LoadLinkArenaTeamList(int activeOption, u8 mode);
 void DrawLinkArenaTeamName(int idx);
-void sub_804352C(struct SioTeamListProc * proc);
-void sub_8043548(struct SioTeamListProc * proc, u8 mode);
+void DrawAllLinkArenaTeamNames(struct SioTeamListProc * proc);
+void UpdateLinkArenaTeamNamePalettes(struct SioTeamListProc * proc, u8 mode);
 void SioTeamList_EraseTeam(struct SioTeamListProc * proc);
 void SioTeamList_SwapTeams(struct SioTeamListProc * proc);
-int sub_80437C0(u8 mode, struct SioTeamListProc * proc);
+int DrawLinkArenaTeamListMenu(u8 mode, struct SioTeamListProc * proc);
 u16 GetLATeamListHelpTextId(struct SioTeamListProc * proc);
 void SioTeamList_SetupGfx(struct SioTeamListProc * proc);
 void SioTeamList_Main_HandleDPadInput(int * selection, u8 max, u8 min, u8 total);
 void SioTeamList_Loop_MainKeyHandler(struct SioTeamListProc * proc);
 void SioTeamList_StartUnitList(struct SioTeamListProc * proc);
 void SioTeamList_WaitForUnitListScreen(ProcPtr proc);
-int sub_8043D5C(void);
+int AreAllLinkArenaTeamsSelected(void);
 void SioTeamList_0(struct SioTeamListProc * proc);
-void sub_8044280(struct SioProc85AAA78 * proc, s8 b);
+void SioTeamList_SetTeamSpriteXOffsets(struct SioProc85AAA78 * proc, s8 b);
 void SioTeamList_1(struct SioTeamListProc * proc);
 void SioTeamList_2(struct SioTeamListProc * proc);
 void SioTeamList_StartEraseTeamSubMenu(struct SioTeamListProc * proc);
 void SioTeamList_EraseTeam_KeyHandler(struct SioTeamListProc * proc);
 void SioTeamList_LoadTeam_Dummy(struct SioTeamListProc * proc);
 
-void sub_8044560(struct ProcTactician * proc, u8 * str_buf);
-void sub_8044614(struct ProcTactician * proc);
+void Tactician_MapNameToConfIndices(struct ProcTactician * proc, u8 * str_buf);
+void Tactician_DrawCharGrid(struct ProcTactician * proc);
 void TacticianDrawCharacters(struct ProcTactician * proc);
 int StrLen(u8 * buf);
 void Tactician_InitScreen(struct ProcTactician * proc);
@@ -217,17 +217,17 @@ void Tactician_MoveHand(struct ProcTactician * proc, int idx, const struct Tacti
 void TacticianTryAppendChar(struct ProcTactician * proc, const struct TacticianTextConf * conf);
 void TacticianTryDeleteChar(struct ProcTactician * proc, const struct TacticianTextConf * conf);
 void SaveTactician(struct ProcTactician * proc, const struct TacticianTextConf * conf);
-bool sub_8044B78(struct ProcTactician * proc, const struct TacticianTextConf * conf, u32 c, int d);
+bool Tactician_TryChangeLastCharVariant(struct ProcTactician * proc, const struct TacticianTextConf * conf, u32 c, int d);
 void Tactician_LoopCore(struct ProcTactician * proc, const struct TacticianTextConf * conf);
 void Tactician_Loop(struct ProcTactician * proc);
-void sub_8044F84(void);
-void sub_8044FE4(struct ProcTactician * proc);
-void sub_8044FFC(struct ProcTactician * proc);
-void sub_804503C(struct ProcTactician * proc);
-void sub_8045068(struct ProcTactician * proc);
+void Tactician_PageFadeHBlankHandler(void);
+void Tactician_PageFade_Init(struct ProcTactician * proc);
+void Tactician_PageFadeOut_Loop(struct ProcTactician * proc);
+void Tactician_SwapPage(struct ProcTactician * proc);
+void Tactician_PageFadeIn_Loop(struct ProcTactician * proc);
 void NameSelect_DrawName(struct ProcTactician * proc);
-void sub_8045108(struct ProcTactician * proc);
-void sub_80451F0(void);
+void NameSelect_ConfirmLoop(struct ProcTactician * proc);
+void Tactician_OnEnd(void);
 
 struct SioPostBattleProc
 {
@@ -266,8 +266,8 @@ void SioPostBattleSprites_Init(struct SioPostBattleSpritesProc * proc);
 void SioPostBattleSprites_Loop_DrawSlideIn(struct SioPostBattleSpritesProc * proc);
 void SioPostBattleSprites_Loop_DrawStatic(struct SioPostBattleSpritesProc * proc);
 ProcPtr StartDrawLinkArenaRankSprites(struct SioPostBattleProc * parent, int delayMaybe, u16 fid, u8 oam2, u8 ranking);
-void sub_80454E4(struct SioPostBattleProc * proc);
-void sub_804556C(struct SioPostBattleProc * proc);
+void SioPostBattle_DrawRankingRowBar(struct SioPostBattleProc * proc);
+void SioPostBattle_DrawRankingText(struct SioPostBattleProc * proc);
 ProcPtr SioPostBattle_StartMusicProc(struct SioPostBattleProc * parent);
 void SioPostBattle_Init(struct SioPostBattleProc * proc);
 void SioPostBattle_Loop_Main(struct SioPostBattleProc * proc);
@@ -301,31 +301,31 @@ struct SioBatProc
     /* 64 */ s16 unk_64;
 };
 
-int sub_8045930(u8 ranking, u32 playerCount, u32 mode, u32 points);
-void sub_8045A64(struct SioBatProc * proc);
-void sub_8045AF4(void);
+int InsertMultiArenaRanking(u8 ranking, u32 playerCount, u32 mode, u32 points);
+void SioBat_RegisterHighScore(struct SioBatProc * proc);
+void SioBat_LoadAllTeamUnits(void);
 void New6C_SIOMAIN2(void);
-void sub_8045C28(ProcPtr proc);
-void sub_8045C68(const char * str, int x, int y, ProcPtr parent);
-void sub_8045CBC(void);
-void sub_8045CE0(void);
-void sub_8045CEC(void);
-void sub_8045DC0(struct SioBatProc * proc);
-void sub_8045F00(ProcPtr proc);
-void sub_8045F48(struct SioBatProc * proc);
-void sub_804619C(struct SioBatProc * proc);
-void sub_8046234(struct SioBatProc * proc);
-void sub_80462D4(struct SioBatProc * proc);
-void sub_80463A8(struct SioBatProc * proc);
-void sub_804645C(void);
-void sub_8046478(struct Unit * unit);
-void sub_80464B0(struct SioBatProc * proc);
-void sub_8046580(struct SioBatProc * proc);
-void sub_8046704(struct SioBatProc * proc);
-void sub_80467AC(struct SioBatProc * proc);
-void sub_8046838(ProcPtr proc);
-void sub_80469AC(void);
-void sub_80469B8(void);
+void SioMain2_WaitEndAndRoute(ProcPtr proc);
+void SioBat_StartTalkText(const char * str, int x, int y, ProcPtr parent);
+void EndSioProcs(void);
+void SioBat_ReleaseIrq(void);
+void LinkArena_UpdatePlayerStatusText(void);
+void SioBat_InitSetupScreen(struct SioBatProc * proc);
+void StartSioProcs(ProcPtr proc);
+void SioBat_SetupLoop(struct SioBatProc * proc);
+void SioBat_WaitSetupAck(struct SioBatProc * proc);
+void SioBat_DecideFirstMover(struct SioBatProc * proc);
+void SioBat_ReceiveFirstMover(struct SioBatProc * proc);
+void SioBat_FirstMoverRoulette(struct SioBatProc * proc);
+void SioBat_PlayFirstMoverSound(void);
+void SioBat_PrepareTeamUnit(struct Unit * unit);
+void SioBat_InitTeamTransfer(struct SioBatProc * proc);
+void SioBat_TeamTransferLoop(struct SioBatProc * proc);
+void SioBat_WaitTeamTransferDone(struct SioBatProc * proc);
+void DrawLinkArenaLoadingScreen(struct SioBatProc * proc);
+void DrawLinkArenaRuleScreen(ProcPtr proc);
+void EnableSioLinkTimeoutCheck(void);
+void DisableSioLinkTimeoutCheck(void);
 
 struct SioTermProc
 {
@@ -338,15 +338,15 @@ struct SioTermProc
     /* 50 */ int unk_50;
 };
 
-void sub_80469C4(struct SioTermProc * proc);
-void sub_8046C64(int * cur, u8 bottom, u8 top, int * buf, u8 total);
-void sub_8046CF0(struct SioTermProc * proc);
-void sub_8046D6C(struct SioTermProc * proc);
-void sub_8046DB4(ProcPtr proc);
-void sub_8046DD0(ProcPtr proc);
-void sub_8046DEC(ProcPtr proc);
-void sub_8046E0C(ProcPtr proc);
-void sub_8046E4C(void);
+void LinkArenaTeamBuild_Init(struct SioTermProc * proc);
+void MoveMenuCursorSkippingInvalid(int * cur, u8 bottom, u8 top, int * buf, u8 total);
+void LinkArenaTeamBuild_Loop(struct SioTermProc * proc);
+void LinkArenaTeamBuild_LoadSelectedSave(struct SioTermProc * proc);
+void LinkArenaTeamBuild_GotoExitIfNoCursor(ProcPtr proc);
+void LinkArenaTeamBuild_GotoIfNoSelection(ProcPtr proc);
+void LinkArenaTeamBuild_WaitAtMenu(ProcPtr proc);
+void LinkArenaTeamBuild_OnTacticianDone(ProcPtr proc);
+void LinkArenaTeamBuild_ResetBg1Position(void);
 
 struct SioResultProcUnk2C
 {
@@ -376,7 +376,7 @@ void DrawLinkArenaRankingRow(struct Text * th, char * nameStr, u8 rank, u16 poin
 void DrawLinkArenaRankings(void);
 void SioResult_Init(struct SioResultProc * proc);
 void SioResult_Loop_Main(struct SioResultProc * proc);
-u8 sub_8047308(int var);
+u8 SioResult_GetNewHSScrollTarget(int var);
 void SioResult_NewHS_Init(struct SioResultProc * proc);
 void SioResult_NewHS_LoopScroll(struct SioResultProc * proc);
 void SioResult_NewHS_AwaitAPress(ProcPtr proc);
@@ -403,7 +403,7 @@ extern const struct LinkArenaRuleInfo gLinkArenaRuleData[];
 void StartSioResultNewHighScore(int value, ProcPtr parent);
 void LoadLinkArenaRuleSettings(u8 * buf);
 void SaveLinkArenaRuleSettings(u8 * buf);
-void sub_80476CC(int idx, int state);
+void SioRuleSettings_DrawRuleOptions(int idx, int state);
 void SioRuleSettings_Init(struct ProcSioRuleSettings * proc);
 void SioRuleSettings_Loop_Main(struct ProcSioRuleSettings * proc);
 
@@ -443,7 +443,7 @@ bool CheckSomethingSaveRelated(void);
 void SioMenu_Init(void);
 void SioMenu_LoadGraphics(struct SioMenuProc * proc);
 void SioMenu_0(struct SioMenuProc * proc);
-void sub_8047CF0(struct SioMenuProc * proc);
+void SioMenu_AnimateItemsSpreadFromSelection(struct SioMenuProc * proc);
 void SioMenu_RestartGraphicsMaybe(struct SioMenuProc * proc);
 void SioMenu_HandleDPadInput(struct SioMenuProc * proc, u8 b);
 void SioMenu_Loop_HandleKeyInput(struct SioMenuProc * proc);
@@ -451,7 +451,7 @@ void SioMenu_1(struct SioMenuProc * proc);
 void SioMenu_End(struct SioMenuProc * proc);
 void StartLinkArenaMainMenu(ProcPtr parent);
 
-void sub_8048260(ProcPtr parent);
+void StartTacticianNameEntry(ProcPtr parent);
 void StartTacticianNameSelect(ProcPtr parent);
 bool XMapTransfer_0(ProcPtr proc);
 void XMapTransfer_1(ProcPtr proc);
@@ -462,12 +462,12 @@ void DrawXMapSendProgress(struct SioBigSendProc * proc);
 void DrawXMapReceiveProgress(struct SioBigReceiveProc * proc);
 void StartXMapTransfer(struct SioBigSendProc * proc);
 bool XMapTransfer_AwaitCompletion(void);
-void sub_80486D4(void);
-bool sub_80486E8(void);
+void Sio_InitAckMask(void);
+bool Sio_SyncWaitAllAck(void);
 void XMapTransfer_4(void);
-void sub_804879C(void);
-void sub_80487C0(struct Proc * proc);
-void sub_804881C(void);
+void Sio_EnableAllWOutLayers(void);
+void EndSioMenuForXMapTransfer(struct Proc * proc);
+void EndSioSessionAndLoadSuspend(void);
 void EraseSaveData(void);
 void CallEraseSaveEvent(void);
 
@@ -506,8 +506,8 @@ struct PointsSpriteTextProc
     /* 54 */ const char * str;
 };
 
-void sub_8048864(void);
-void sub_8048884(struct SioProc85A971C_Unk44 * buf);
+void SioPointsSprite_Loop(void);
+void Sio_SortPlayersByScore(struct SioProc85A971C_Unk44 * buf);
 void DrawLinkArenaPointsBox(struct Text * th, int x, int y, int var, int number);
 void LAPointsBox_LoadBoxes(struct LAPointsBoxProc * proc);
 void LAPointsBox_Dummy(void);
@@ -523,9 +523,9 @@ void PointsNumberMover_AwaitEnd(struct PointsNumberMoverProc * proc);
 void PointsSpriteText_Init(struct PointsSpriteTextProc * proc);
 void PointsSpriteText_LoopIn(struct PointsSpriteTextProc * proc);
 void PointsSpriteText_LoopOut(struct PointsSpriteTextProc * proc);
-s8 sub_80490EC(int x, int y, const char * str, u8 flag, ProcPtr parent);
-void sub_8049238(ProcPtr proc);
-void sub_804926C(ProcPtr proc);
+s8 StartLinkArenaPointsNumberMovers(int x, int y, const char * str, u8 flag, ProcPtr parent);
+void StartLinkArenaShowPointsAnimated(ProcPtr proc);
+void StartLinkArenaShowPoints(ProcPtr proc);
 
 struct SioBattleMapProc
 {
@@ -547,56 +547,56 @@ struct SioProc85AA1AC
     /* 64 */ s16 unk_64;
 };
 
-void sub_8049298(struct Unit * unit);
-void sub_80492B8(struct Unit * unit);
-void sub_80492D8(void);
-void sub_80492E8(int faction);
-void sub_804933C(void);
-u16 sub_8049350(u8 a, u8 b, u8 c, u8 d);
-int sub_80493A8(u8 target);
-void sub_80493D0(u8 a, int b, u8 * c, int * xOut, int * yOut);
-void sub_80494D4(void);
-void sub_80494F0(void);
-void sub_8049594(void);
-void sub_80495F4(void);
-void sub_80496A4(void);
-void sub_804970C(void);
-void sub_8049744(void);
+void LinkArenaBattleMap_BackupUnitItems(struct Unit * unit);
+void LinkArenaBattleMap_RestoreUnitItems(struct Unit * unit);
+void LinkArenaBattleMap_RefreshMapAndSprites(void);
+void LinkArenaBattleMap_AdvancePhase(int faction);
+void LinkArenaBattleMap_ClearCmdBuffer(void);
+u16 LinkArenaBattleMap_SendCommand(u8 a, u8 b, u8 c, u8 d);
+int LinkArenaBattleMap_FindUnitSlot(u8 target);
+void LinkArenaBattleMap_StartUnitMoveOut(u8 a, int b, u8 * c, int * xOut, int * yOut);
+void LinkArenaBattleMap_ClearUnitSlots(void);
+void LinkArenaBattleMap_InitUnitSlots(void);
+void LinkArenaBattleMap_RebuildUnitMap(void);
+void LinkArenaBattleMap_RefreshUnitSlots(void);
+void LinkArenaBattleMap_InitChapter(void);
+void LinkArenaBattleMap_InitMap(void);
+void LinkArenaBattleMap_CountTeamUnits(void);
 void LoadLinkArenaFogPlaceholder(void);
-void sub_80497A0(void);
-void sub_80497CC(void);
-void sub_8049828(void);
-void sub_80498F4(void);
-void sub_8049940(ProcPtr proc);
-void sub_8049964(ProcPtr parent);
-void sub_80499D0(ProcPtr proc);
-int sub_8049A60(void);
-void sub_8049B04(void);
-void sub_8049B24(u16 keys, s8 flag);
-void sub_8049C18(void);
-bool sub_8049C94(struct Unit * unit);
-void sub_8049CD4(ProcPtr proc);
-void sub_8049D0C(ProcPtr proc);
-void sub_8049D24(struct SioBattleMapProc * proc);
-void sub_8049F38(ProcPtr unused);
-void sub_8049F44(struct SioBattleMapProc * proc);
-void sub_804A108(struct SioProc85AA1AC * proc);
-void sub_804A158(struct SioProc85AA1AC * proc);
-void sub_804A1D0(struct SioProc85AA1AC * proc);
-void sub_804A298(struct SioProc85AA1AC * proc);
-void sub_804A3A8(ProcPtr proc);
-void sub_804A430(ProcPtr parent);
-void sub_804A44C(struct SioBattleMapProc * proc);
-void sub_804A51C(struct SioBattleMapProc * proc);
-void sub_804A5A4(void);
-void sub_804A614(ProcPtr proc);
-void sub_804A6A4(ProcPtr proc);
-void sub_804A7C0(ProcPtr proc);
-void sub_804A914(void);
-void sub_804A9A4(ProcPtr proc);
-void sub_804AA88(void);
-void sub_804AAA4(void);
-bool sub_804AADC(void * data);
+void LinkArenaBattleMap_InitDisplay(void);
+void LinkArenaBattleMap_InitConfig(void);
+void LinkArenaBattleMap_Init(void);
+void LinkArenaBattleMap_StartSelectedUnitMu(void);
+void LinkArenaBattleMap_WaitLButton(ProcPtr proc);
+void LABattleMap_StartFactionTurn(ProcPtr parent);
+void LABattleMap_BeginTurn(ProcPtr proc);
+int LinkArena_GetPlayerRanking(void);
+void LABattleMap_End(void);
+void LABattleMap_MoveSelectCursor(u16 keys, s8 flag);
+void LABattleMap_UpdateCursorMu(void);
+bool UnitHasUsableWeapon(struct Unit * unit);
+void LABattleMap_CheckNoDamageStall_Loop(ProcPtr proc);
+void LABattleMap_WaitSioSendDrain_Loop(ProcPtr proc);
+void LABattleMap_SelectAttacker_Loop(struct SioBattleMapProc * proc);
+void LABattleMap_StartPointsBox(ProcPtr unused);
+void LABattleMap_SelectTarget_Loop(struct SioBattleMapProc * proc);
+void LABattleMap_ForecastMenu_Init(struct SioProc85AA1AC * proc);
+void LABattleMap_ForecastMenu_Loop(struct SioProc85AA1AC * proc);
+void LABattleMap_DetermineAttackRange(struct SioProc85AA1AC * proc);
+void LABattleMap_GenerateForecast(struct SioProc85AA1AC * proc);
+void LABattleMap_ForecastConfirm_Loop(ProcPtr proc);
+void LABattleMap_StartForecast(ProcPtr parent);
+void LABattleMap_ConfirmTarget(struct SioBattleMapProc * proc);
+void LABattleMap_StartCombatantWarpFx(struct SioBattleMapProc * proc);
+void LABattleMap_PrepareCombatantSprites(void);
+void LABattleMap_StartCombat(ProcPtr proc);
+void LABattleMap_ApplyCombatResults(ProcPtr proc);
+void LABattleMap_WarpCombatantsToRoster(ProcPtr proc);
+void LABattleMap_EliminateTeamsWithoutAttackers(void);
+void LABattleMap_RecordEliminationAndAdvance(ProcPtr proc);
+void LABattleMap_RefreshAfterCombat(void);
+void LABattleMap_PollSurrenderInput(void);
+bool LABattleMap_IsAttackOrSurrenderMsg(void * data);
 
 struct SioProc85AA4CC
 {
@@ -607,32 +607,32 @@ struct SioProc85AA4CC
     int unk_38;
 };
 
-void sub_804AAFC(struct SioProc85AA4CC * proc);
-bool sub_804ABB4(void * data);
-void sub_804ABCC(struct SioProc85AA4CC * proc);
-void sub_804AC68(struct Unit * unit, int idx, int * xOut, int * yOut);
-bool sub_804ACAC(void * data);
-void sub_804ACC4(struct SioProc85AA4CC * proc);
-int sub_804ADA0(struct Unit * unit);
-int sub_804AE08(int playerId);
-bool sub_804AE7C(struct SioBattleMapProc * proc, int b);
-void sub_804AEC4(ProcPtr proc);
-int ITEMRANGEDONE_sub_804AF2C(int unused, struct Unit * unit);
-void sub_804AF5C(struct SioBattleMapProc * proc);
-void sub_804B190(ProcPtr proc);
-void sub_804B1C0(struct SioProc85AA4CC * proc);
-void sub_804B250(ProcPtr proc);
+void LABattleMap_ReceiveAttackDeclaration(struct SioProc85AA4CC * proc);
+bool LABattleMap_IsSelectOrCancelMsg(void * data);
+void LABattleMap_ReceiveTargetSelection(struct SioProc85AA4CC * proc);
+void LABattleMap_StartMuAndSavePosition(struct Unit * unit, int idx, int * xOut, int * yOut);
+bool LABattleMap_IsForecastMsg(void * data);
+void LABattleMap_ReceiveForecastResponse(struct SioProc85AA4CC * proc);
+int GetUnitBestWeaponPower(struct Unit * unit);
+int LABattleMap_GetTeamCombatScore(int playerId);
+bool LABattleMap_PollSurrenderHeld(struct SioBattleMapProc * proc, int b);
+void LABattleMap_AiPickWeakestTeam(ProcPtr proc);
+int ITEMRANGEDONE_Stub_0(int unused, struct Unit * unit);
+void LABattleMap_AiPickBestAttack(struct SioBattleMapProc * proc);
+void LABattleMap_Ai_StartTargetCursor(ProcPtr proc);
+void LABattleMap_Ai_PrepareCombatants(struct SioProc85AA4CC * proc);
+void LABattleMap_Ai_WaitCombatantMu(ProcPtr proc);
 void LinkArenaFogSprite_Loop(void);
 void StartLinkArenaFogPlaceholders(void);
 void EndLinkArenaFogPlaceholders(void);
-void sub_804B3B0(ProcPtr proc);
-void sub_804B3D0(ProcPtr proc);
-void sub_804B408(ProcPtr proc);
-void sub_804B43C(struct SioBattleMapProc * proc);
-void sub_804B480(struct SioBattleMapProc * proc);
-void sub_804B518(ProcPtr proc);
-void sub_804B554(struct SioBattleMapProc * proc);
-void sub_804B5E0(ProcPtr proc);
+void LABattleMap_StartStatScreen(ProcPtr proc);
+void LABattleMap_HandleSurrenderPrompt(ProcPtr proc);
+void LABattleMap_HandleNoDamagePrompt(ProcPtr proc);
+void LABattleMap_Ai_HandleSurrender(struct SioBattleMapProc * proc);
+void LABattleMap_RecordSurrenderRanking(struct SioBattleMapProc * proc);
+void LABattleMap_SetQuitEndState(ProcPtr proc);
+void LABattleMap_Remote_RecordSurrenderRanking(struct SioBattleMapProc * proc);
+void LABattleMap_Remote_SetQuitEndState(ProcPtr proc);
 void LAUnitDeaths_Init(struct SioBattleMapProc * proc);
 void LAUnitDeaths_FindNextAndStart(struct SioBattleMapProc * proc);
 void LAUnitDeaths_EndMu(struct SioBattleMapProc * proc);
@@ -640,12 +640,12 @@ void LAUnitDeaths_OnEnd(void);
 void LinkArena_StoreTalkChoice(void);
 void LABattleMap_StartSurrenderPrompt(void);
 void LABattleMap_StartNoDamagePrompt(void);
-void sub_804B71C(struct SioBattleMapProc * proc);
-void sub_804B76C(struct SioBattleMapProc * proc);
-void sub_804B7E4(ProcPtr proc);
-void sub_804B800(void);
-void sub_804B850(struct SioBattleMapProc * proc);
-void sub_804B8D0(void);
+void LABattleMap_StartBonusPointsHelp(struct SioBattleMapProc * proc);
+void LABattleMap_AwardBonusPoints(struct SioBattleMapProc * proc);
+void LABattleMap_SkipIfSingleConsoleMode(ProcPtr proc);
+void LABattle_BeginAnims(void);
+void LABattle_StartDeathFades(struct SioBattleMapProc * proc);
+void LABattle_MarkDeadCombatants(void);
 void Set_UnkData_0(void);
 void Clear_UnkData_0(void);
 
@@ -660,22 +660,22 @@ struct SioProc85AA7B4
 
 void Set_UnkData_0(void);
 void Clear_UnkData_0(void);
-void sub_804B938(void);
-void sub_804B964(void);
-void sub_804B9A4(void);
-void sub_804B9BC(void);
-void sub_804B9E4(s16 * a, int b, int c, int d, int e, int f, int g, int h, int i, s16 j, u16 k);
-void sub_804BB54(struct SioProc85AA7B4 * proc);
-void sub_804BBA0(struct SioProc85AA7B4 * proc);
-void sub_804BC3C(void);
-void sub_804BC84(u16 a, ProcPtr parent);
-void sub_804BD2C(ProcPtr parent);
-void sub_804BD3C(struct SioProc85AA7B4 * proc);
-void sub_804BDD8(void);
-void sub_804BDFC(u16 a, ProcPtr parent);
-void sub_804BE88(ProcPtr parent);
-void sub_804BE98(ProcPtr proc);
-void sub_804BEB8(ProcPtr proc);
+void Sio_DisableWindowAndBlend(void);
+void Sio_BoxTransitionHBlankHandler(void);
+void Sio_SwapBoxTransitionBuffers(void);
+void Sio_EndBoxTransitionHBlank(void);
+void Sio_RasterRotatedBoxToWinBuf(s16 * a, int b, int c, int d, int e, int f, int g, int h, int i, s16 j, u16 k);
+void Sio_BoxTransition_Init(struct SioProc85AA7B4 * proc);
+void Sio_BoxTransitionOpen_Loop(struct SioProc85AA7B4 * proc);
+void Sio_BoxTransitionOpen_End(void);
+void Sio_StartBoxTransitionOpen(u16 a, ProcPtr parent);
+void Sio_StartBoxTransitionOpenDefault(ProcPtr parent);
+void Sio_BoxTransitionClose_Loop(struct SioProc85AA7B4 * proc);
+void Sio_BoxTransitionClose_End(void);
+void Sio_StartBoxTransitionClose(u16 a, ProcPtr parent);
+void Sio_StartBoxTransitionCloseDefault(ProcPtr parent);
+void Sio_WaitBoxTransitionOpen(ProcPtr proc);
+void Sio_WaitBoxTransitionClose(ProcPtr proc);
 
 struct SioProc85AA83C
 {
@@ -705,11 +705,11 @@ struct SioProc85AA954
     /* 30 */ int y;
 };
 
-void sub_804BED8(struct MuProc * muProc, int kind);
-void sub_804BF30(struct SioProc85AA83C * proc);
+void StartSioMuFadeFromColor(struct MuProc * muProc, int kind);
+void SioMuFade_RestorePal(struct SioProc85AA83C * proc);
 void StartLinkArenaMUDeathFade(struct MuProc * muProc);
-void sub_804BFAC(struct MuProc * muProc, int palIdx);
-void sub_804BFF8(struct MuProc * muProc);
+void StartSioMuFadeToColor(struct MuProc * muProc, int palIdx);
+void StartSioMuFadeRestore(struct MuProc * muProc);
 void SioWarp_Init(struct SioWarpProc * proc);
 void SioWarp_Loop(struct SioWarpProc * proc);
 void SioWarp_End(void);
@@ -721,7 +721,7 @@ void SioWarpFx_ShowMoveUnit(struct SioWarpProc * proc);
 void SioWarpFx_1(struct SioWarpProc * proc);
 void SioWarpFx_AwaitSioWarp(ProcPtr proc);
 ProcPtr StartSioWarpFx(struct Unit * unit, struct MuProc * muProc, int x, int y, int facing, u8 playStepSe, ProcPtr parent);
-ProcPtr sub_804C260(struct Unit * unit, struct MuProc * muProc, int x, int y, int facing, u8 playStepSe, ProcPtr parent);
+ProcPtr StartSioWarpFxPartial(struct Unit * unit, struct MuProc * muProc, int x, int y, int facing, u8 playStepSe, ProcPtr parent);
 void PutLinkArenaButtonSpriteAt(int x, int y);
 void LAButtonSprites_Loop(struct SioProc85AA954 * proc);
 void StartLinkArenaButtonSpriteDraw(int x, int y, ProcPtr parent);
@@ -738,26 +738,26 @@ struct LinkArenaTitleBannerProc
 };
 
 void InitSioBG(void);
-void sub_804C3A0(int unusedA, int unusedB);
-void sub_804C3A4(int unused);
-void nullsub_13(void);
-void sub_804C3AC(u8 * src, u8 * dst, int c, int d);
+void Nop_SioUiutils_1(int unusedA, int unusedB);
+void Nop_SioUiutils_2(int unused);
+void Nop_SioUiutils_0(void);
+void CopyLinkArenaTileRows(u8 * src, u8 * dst, int c, int d);
 void LATitleBanner_Init(struct LinkArenaTitleBannerProc * proc);
 void LATitleBanner_Loop(void);
 void StartLinkArenaTitleBanner(ProcPtr parent, int size, int chr);
-void sub_804C4F8(void);
-void sub_804C508(void);
-void sub_804C558(void);
-void sub_804C590(void);
+void EndLinkArenaTitleBanner(void);
+void SetLinkArenaUiBlendAndWindowOff(void);
+void SetLinkArenaUiBlend(void);
+void ResetLinkArenaUiBlend(void);
 void UpdateSioMenuSelectedGlow(u8 idx);
 void SioMenuItem_Loop(struct SioMenuItemProc * proc);
 ProcPtr StartSioMenuItem(ProcPtr parent, u8 xBase, u8 yBase, u8 index, u8 state);
 void SioMenuItem_SetArrowConfig(struct SioMenuItemProc * proc, int xLeft, int xRight, int leftSpeed, int rightSpeed);
 void SioMenuItem_SetPosition(struct SioMenuItemProc * proc, s16 x, s16 y);
-void sub_804C7E4(void);
-void sub_804C83C(void);
-void sub_804C894(struct SioProc85AAA78 * proc);
-ProcPtr sub_804CAEC(struct SioTeamListProc * parent, int numActiveOptions, u8 * buf);
+void UpdateLinkArenaSideMenuGlow(void);
+void UpdateLinkArenaNameBannerGlow(void);
+void SioTeamMenuSpriteDraw_Loop(struct SioProc85AAA78 * proc);
+ProcPtr StartSioTeamMenuSpriteDraw(struct SioTeamListProc * parent, int numActiveOptions, u8 * buf);
 
 struct LATeamSpriteDrawProc
 {
@@ -840,9 +840,9 @@ void UpdateLinkArenaMenuScrollBar(u8 a, s16 b);
 void LAPhaseIntro_Init(void);
 void LAPhaseIntro_End(void);
 void LAPhaseIntro_StartBgm(void);
-void sub_804D3F0(struct Unit * unit, int itemSlot);
-void sub_804D40C(struct Unit * unit);
-void sub_804D428(void);
+void SetUnitItemUsesToMax(struct Unit * unit, int itemSlot);
+void SetUnitAllItemsUsesToMax(struct Unit * unit);
+void UpdateLinkArenaVersusBannerGlow(void);
 
 struct LAVersusSpriteDrawProc
 {
@@ -858,9 +858,9 @@ void LAVersusSpriteDraw_Loop(struct LAVersusSpriteDrawProc * proc);
 ProcPtr StartLinkArenaVersusSpriteDraw(int x, int y, ProcPtr parent);
 void EndLinkArenaVersusSpriteDraw(void);
 ProcPtr GetLinkArenaVersusSpriteDraw(void);
-void sub_804D6D4(void);
-void sub_804D724(void);
-void sub_804D778(void);
+void UpdateLinkArenaActiveBannerBgGlow(void);
+void UpdateLinkArenaActiveBannerObjGlow(void);
+void SetLinkArenaResultBlend(void);
 
 struct SioProc85AABD8
 {
@@ -869,17 +869,17 @@ struct SioProc85AABD8
     /* 30 */ int y;
 };
 
-void sub_804D7B0(struct SioProc85AABD8 * proc);
-ProcPtr sub_804D7DC(int x, int y, ProcPtr parent);
-void sub_804D80C(void);
+void LinkArenaResultBanner_Loop(struct SioProc85AABD8 * proc);
+ProcPtr StartLinkArenaResultBanner(int x, int y, ProcPtr parent);
+void LoadLinkArenaChoiceBoxGfx(void);
 void PutLinkArenaChoiceBannerSprite(int x, int y);
 
-u8 sub_804D858(const struct MenuItemDef * def, int number);
-u8 sub_804D8A4(struct MenuProc * menu, struct MenuItemProc * menuItem);
-u8 sub_804D8C8(struct MenuProc * menu, struct MenuItemProc * menuItem);
-int sub_804D8DC(struct MenuProc * menu, struct MenuItemProc * menuItem);
-u8 sub_804D940(struct MenuProc * menu, struct MenuItemProc * menuItem);
-u8 sub_804D950(struct MenuProc * menu);
+u8 SioWeaponSelectMenu_Usability(const struct MenuItemDef * def, int number);
+u8 SioWeaponSelectMenu_OnSelect(struct MenuProc * menu, struct MenuItemProc * menuItem);
+u8 SioAttackTypeMenu_OnSelect(struct MenuProc * menu, struct MenuItemProc * menuItem);
+int SioWeaponSelectMenu_Draw(struct MenuProc * menu, struct MenuItemProc * menuItem);
+u8 SioMenu_OnBPress(struct MenuProc * menu, struct MenuItemProc * menuItem);
+u8 SioMenu_OnRPress(struct MenuProc * menu);
 int MultiBootSend(struct MultiBootParam * mp, u16 data);;
 int MultiBootCheckComplete(struct MultiBootParam * mp);;
 int MultiBootHandShake(struct MultiBootParam * mp);;

@@ -22,9 +22,9 @@
 #include "bmitem.h"
 #include "prepscreen.h"
 
-void sub_805AE14(void *);
-void sub_805AA68(void *);
-void sub_805AE40(void *, s16, s16, s16, s16);
+void EndBanimTerrain(void *);
+void InitBanimTerrain(void *);
+void SetBanimTerrainPos(void *, s16, s16, s16, s16);
 
 void ChangeClassDescription(u32 msg) {
     SetInitTalkTextFont();
@@ -91,8 +91,8 @@ void LoadClassNameInClassReelFont(struct ProcPromoSel *proc) {
 void ClassChgLoadEfxTerrain(void)
 {
     EndEfxAnimeDrvProc();
-    sub_805AA28(&gUnk_81);
-    sub_805AE14(&gEkrbattle_9);
+    EndEkrUnitMainMini(&gUnk_81);
+    EndBanimTerrain(&gEkrbattle_9);
 }
 
 void ClassChgLoadUI(void)
@@ -197,9 +197,9 @@ void Make6C_PromotionMenuSelect(struct ProcPromoSel* proc) {
     BG_Fill(gBG2TilemapBuffer, 0);
     LoadUiFrameGraphics();
     LoadObjUIGfx();
-    sub_80CD47C(0, -1, 0xfb * 2, 0x58, 6);
+    ClassChgSel_StartClassBattleSprite(0, -1, 0xfb * 2, 0x58, 6);
     ClassChgLoadUI();
-    sub_80CD408(proc->u50, 0x8c * 2, 0x68);
+    ClassChgSel_SetupBattleTerrain(proc->u50, 0x8c * 2, 0x68);
 
     proc->sprite[0] = 0;
     proc->sprite[1] = 0;
@@ -274,7 +274,7 @@ void Make6C_PromotionMenuSelect(struct ProcPromoSel* proc) {
     }
 }
 
-void sub_80CCF60(struct ProcPromoSel *proc) {
+void ClassChgSel_InitDescAndBg(struct ProcPromoSel *proc) {
     u16 tmp;
 
     ResetTextFont();
@@ -343,7 +343,7 @@ void LoadBattleSpritesForBranchScreen(struct ProcPromoSel *proc) {
 
         if (proc->stat == 2) {
             EndEfxAnimeDrvProc();
-            sub_805AA28(&gUnk_81);
+            EndEkrUnitMainMini(&gUnk_81);
             _pid = proc->pid - 1;
             _jid = proc->jid[proc->main_select];
             chara_pal = -1;
@@ -362,9 +362,9 @@ void LoadBattleSpritesForBranchScreen(struct ProcPromoSel *proc) {
                     break;
                 }
             }
-            sub_80CD47C((s16) ret, (s16) chara_pal, (s16) (p2->sprite[0] + 0x28), 0x58, 6);
-            sub_805AE14(&gEkrbattle_9);
-            sub_80CD408(proc->u50, p2->sprite[0], p2->msg_desc[1]);
+            ClassChgSel_StartClassBattleSprite((s16) ret, (s16) chara_pal, (s16) (p2->sprite[0] + 0x28), 0x58, 6);
+            EndBanimTerrain(&gEkrbattle_9);
+            ClassChgSel_SetupBattleTerrain(proc->u50, p2->sprite[0], p2->msg_desc[1]);
         } else {
             goto D1AC;
         }
@@ -388,14 +388,14 @@ void LoadBattleSpritesForBranchScreen(struct ProcPromoSel *proc) {
         }
     }
 D1AC:
-    if ((u8) sub_805A96C(tmp)) {
-        sub_805A990(tmp);
+    if ((u8) IsMainMiniAnimRoundEnd(tmp)) {
+        ApplyMainMiniAnimHitEffect(tmp);
     }
     LoadClassNameInClassReelFont(proc);
     return;
 }
 
-void sub_80CD1D4(struct ProcPromoSel *proc)
+void ClassChgSel_OnEndCleanupBm(struct ProcPromoSel *proc)
 {
     struct ProcPromoMain *parent = proc->proc_parent;
     struct ProcPromoHandler *gparent = parent->proc_parent;
@@ -406,8 +406,8 @@ void sub_80CD1D4(struct ProcPromoSel *proc)
         Proc_End(proc);
         Proc_End(parent);
         Proc_End(gparent);
-        sub_805AA28(&gUnk_81);
-        sub_805AE14(&gEkrbattle_9);
+        EndEkrUnitMainMini(&gUnk_81);
+        EndBanimTerrain(&gEkrbattle_9);
         EndEfxAnimeDrvProc();
     }
 }
@@ -424,8 +424,8 @@ void PrepClassChgOnCancel(struct ProcPromoSel *proc)
         Proc_End(proc);
         Proc_End(parent);
         Proc_End(gparent);
-        sub_805AA28(&gUnk_81);
-        sub_805AE14(&gEkrbattle_9);
+        EndEkrUnitMainMini(&gUnk_81);
+        EndBanimTerrain(&gEkrbattle_9);
         EndEfxAnimeDrvProc();
         gActionData.unitActionType = 0;
         Proc_Goto(ggparent, PROC_LABEL_PREPITEMUSE_CONFIRM);
@@ -439,7 +439,7 @@ void PrepClassChgOnCancel(struct ProcPromoSel *proc)
     }
 }
 
-void sub_80CD294(struct ProcPromoSel *proc)
+void ClassChgSel_RoutePreEndByType(struct ProcPromoSel *proc)
 {
     struct ProcPromoMain *parent;
     struct ProcPromoHandler *gparent;
@@ -453,7 +453,7 @@ void sub_80CD294(struct ProcPromoSel *proc)
         Proc_Goto(proc, 4);
 }
 
-void sub_80CD2CC(struct ProcPromoSel *proc)
+void ClassChgSel_RouteOnEndByType(struct ProcPromoSel *proc)
 {
     struct ProcPromoMain *parent;
     struct ProcPromoHandler *gparent;
@@ -486,7 +486,7 @@ bool StartAndWaitPromoSelect(struct ProcPromoMain *proc)
     }
 }
 
-bool sub_80CD330(struct ProcPromoMain *proc)
+bool PromoMain_WaitSelectDone(struct ProcPromoMain *proc)
 {
     switch (proc->stat) {
     case PROMO_MAIN_STAT_INIT:
@@ -501,7 +501,7 @@ bool sub_80CD330(struct ProcPromoMain *proc)
     }
 }
 
-void sub_80CD34C(void)
+void ClassChgSel_SetBlendWindowConfig(void)
 {
     SetBlendConfig(1, 16, 16, 0);
     SetBlendTargetA(0, 1, 0, 0, 0);
@@ -517,7 +517,7 @@ void sub_80CD34C(void)
     gLCDControlBuffer.bldcnt.target2_bd_on = true;
 }
 
-void sub_80CD408(u32 a, s16 b, s16 c) {
+void ClassChgSel_SetupBattleTerrain(u32 a, s16 b, s16 c) {
     gEkrbattle_9.terrain_l = a;
     gEkrbattle_9.pal_l = 0xe;
     gEkrbattle_9.chr_l = 0x380;
@@ -528,12 +528,12 @@ void sub_80CD408(u32 a, s16 b, s16 c) {
     gEkrbattle_9.unk0E = -1;
     gEkrbattle_9.unk1C = (void *)0x06010000;
     gEkrbattle_9.unk20 = gUnk_Banim_Ekrbattle_0;
-    sub_805AA68(&gEkrbattle_9);
+    InitBanimTerrain(&gEkrbattle_9);
 
-    sub_805AE40(&gEkrbattle_9, b, c, b + 0x60, c);
+    SetBanimTerrainPos(&gEkrbattle_9, b, c, b + 0x60, c);
 }
 
-void sub_80CD47C(int a, int b, int c, int d, int e) {
+void ClassChgSel_StartClassBattleSprite(int a, int b, int c, int d, int e) {
     u16 c1 = c;
     u16 d1 = d;
     if (gKeyStatusPtr->heldKeys & 0xc)
@@ -571,7 +571,7 @@ void sub_80CD47C(int a, int b, int c, int d, int e) {
     gUnk_82.u18 = gSpellAnimBgfx;
     gUnk_82.u1c = (void *)gEkrTsaBuffer;
     gUnk_82.u20 = gBuf_Banim;
-    gUnk_82.u24 = sub_80CD34C;
+    gUnk_82.u24 = ClassChgSel_SetBlendWindowConfig;
 
     ResetClassReelSpell();
     NewEkrUnitMainMini(&gUnk_81);
@@ -629,7 +629,7 @@ CONST_DATA struct ProcCmd ProcScr_PromoSelect[] = {
 PROC_LABEL(PROC_CLASSCHG_SEL_INIT),
     PROC_CALL(Make6C_PromotionMenuSelect),
     PROC_SLEEP(6),
-    PROC_CALL(sub_80CCF60),
+    PROC_CALL(ClassChgSel_InitDescAndBg),
 
 PROC_LABEL(PROC_CLASSCHG_SEL_1),
     PROC_CALL(StartMidFadeFromBlack),
@@ -639,14 +639,14 @@ PROC_LABEL(PROC_CLASSCHG_SEL_1),
 
 /* Pre End */
 PROC_LABEL(PROC_CLASSCHG_SEL_2),
-    PROC_CALL(sub_80CD294),
+    PROC_CALL(ClassChgSel_RoutePreEndByType),
     PROC_CALL(StartMidFadeToBlack),
     PROC_REPEAT(WaitForFade),
 
 /* On End */
 PROC_LABEL(PROC_CLASSCHG_SEL_4),
-    PROC_CALL(sub_80CD1D4),
-    PROC_CALL(sub_80CD2CC),
+    PROC_CALL(ClassChgSel_OnEndCleanupBm),
+    PROC_CALL(ClassChgSel_RouteOnEndByType),
     PROC_SET_END_CB(NewCcramifyEnd),
     PROC_CALL(StartMidFadeToBlack),
     PROC_REPEAT(WaitForFade),

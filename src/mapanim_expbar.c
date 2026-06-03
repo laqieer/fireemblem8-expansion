@@ -12,13 +12,13 @@
 
 void DrawMAExpBar(int arg0, int arg1, int arg2)
 {
-    sub_807BA28(
+    MapAnim_DrawNumber(
         TILEMAP_LOCATED(gBG0TilemapBuffer,
             arg0 + 2,
             arg1 + 1),
         arg2, 0x5225, 2, 0x522F, FALSE);
 
-    sub_807BB40(
+    MapAnim_DrawBar(
         TILEMAP_LOCATED(gBG0TilemapBuffer,
             arg0 + 3,
             arg1 + 1),

@@ -205,11 +205,11 @@ u16 CONST_DATA Sprite_Face_1[] =
 
 struct ProcCmd CONST_DATA gProcScr_Face_0[] =
 {
-    PROC_CALL(sub_8005D64),
+    PROC_CALL(FaceBgBlink_Init),
 
 PROC_LABEL(0),
-    PROC_REPEAT(sub_8005D70),
-    PROC_REPEAT(sub_8005D98),
+    PROC_REPEAT(FaceBgBlink_WaitLoop),
+    PROC_REPEAT(FaceBgBlink_AnimLoop),
 
     PROC_GOTO(0),
 
@@ -226,8 +226,8 @@ struct ProcCmd CONST_DATA gProcScr_FaceEndIn8Frames[] =
 
 struct ProcCmd CONST_DATA gProcScr_Face_1[] =
 {
-    PROC_CALL(sub_8005FD4),
-    PROC_REPEAT(sub_8005FE0),
+    PROC_CALL(FaceMouth_Init),
+    PROC_REPEAT(FaceMouth_Loop),
 
     PROC_END,
 };
@@ -235,30 +235,30 @@ struct ProcCmd CONST_DATA gProcScr_Face_1[] =
 struct ProcCmd CONST_DATA gProcScr_FaceBlink[] =
 {
 PROC_LABEL(0),
-    PROC_CALL(sub_800623C),
+    PROC_CALL(FaceBlink_Init),
 
 PROC_LABEL(0),
-    PROC_REPEAT(sub_8006280),
+    PROC_REPEAT(FaceBlink_WaitLoop),
 
 PROC_LABEL(1),
-    PROC_REPEAT(sub_80062B8),
+    PROC_REPEAT(FaceBlink_AnimLoop),
 
 PROC_LABEL(2),
-    PROC_CALL(sub_8006324),
-    PROC_REPEAT(sub_800632C),
-    PROC_REPEAT(sub_8006280),
+    PROC_CALL(FaceBlink_CloseEyesInit),
+    PROC_REPEAT(FaceBlink_CloseEyesLoop),
+    PROC_REPEAT(FaceBlink_WaitLoop),
 
 PROC_LABEL(3),
-    PROC_CALL(sub_8006370),
-    PROC_REPEAT(sub_8006378),
-    PROC_REPEAT(sub_8006280),
+    PROC_CALL(FaceBlink_HalfCloseInit),
+    PROC_REPEAT(FaceBlink_HalfCloseLoop),
+    PROC_REPEAT(FaceBlink_WaitLoop),
 
 PROC_LABEL(4),
-    PROC_CALL(sub_80063BC),
-    PROC_REPEAT(sub_80063C4),
+    PROC_CALL(FaceBlink_WinkInit),
+    PROC_REPEAT(FaceBlink_WinkLoop),
 
 PROC_LABEL(97),
-    PROC_REPEAT(sub_800632C),
+    PROC_REPEAT(FaceBlink_CloseEyesLoop),
 
     PROC_END,
 };
@@ -266,13 +266,13 @@ PROC_LABEL(97),
 struct ProcCmd CONST_DATA gProcScr_Face_2[] =
 {
     PROC_SLEEP(0),
-    PROC_CALL(sub_800662C),
+    PROC_CALL(FaceChange_LockChildProcs),
 
     PROC_SLEEP(2),
-    PROC_CALL(sub_8006650),
+    PROC_CALL(FaceChange_LoadGfx),
 
     PROC_SLEEP(0),
-    PROC_CALL(sub_80066A8),
+    PROC_CALL(FaceChange_Finish),
 
     PROC_END,
 };
@@ -564,8 +564,8 @@ void PutFaceTm(u16 * tm, u8* data, int tileref, s8 isFlipped) {
 //! FE8U = 0x08005924
 void UnpackFaceChibiGraphics(int fid, int chr, int pal) {
     if (fid >= FID_FACTION_CHIBI) {
-        RegisterDataMove(sub_8005F6C(fid), (void *)(((chr * CHR_SIZE + VRAM) & 0x1FFFF) + VRAM), 0x200);
-        sub_8005F9C(fid, pal);
+        RegisterDataMove(GetGenericChibiImg(fid), (void *)(((chr * CHR_SIZE + VRAM) & 0x1FFFF) + VRAM), 0x200);
+        ApplyGenericChibiPal(fid, pal);
     } else {
         const struct FaceData* info = GetPortraitData(fid);
 
@@ -592,12 +592,12 @@ void UnpackFaceChibiSprGraphics(int fid, int chr, int pal) {
     chr += 0x800;
 
     if (fid >= FID_FACTION_CHIBI) {
-        RegisterDataMove(sub_8005F6C(fid) + 0x00, (void *)(((chr + 0x00) * 0x20 & 0x1FFFF) + VRAM), 0x80);
-        RegisterDataMove(sub_8005F6C(fid) + 0x80, (void *)(((chr + 0x20) * 0x20 & 0x1FFFF) + VRAM), 0x80);
-        RegisterDataMove(sub_8005F6C(fid) + 0x100, (void *)(((chr + 0x04) * 0x20 & 0x1FFFF) + VRAM), 0x80);
-        RegisterDataMove(sub_8005F6C(fid) + 0x180, (void *)(((chr + 0x24) * 0x20 & 0x1FFFF) + VRAM), 0x80);
+        RegisterDataMove(GetGenericChibiImg(fid) + 0x00, (void *)(((chr + 0x00) * 0x20 & 0x1FFFF) + VRAM), 0x80);
+        RegisterDataMove(GetGenericChibiImg(fid) + 0x80, (void *)(((chr + 0x20) * 0x20 & 0x1FFFF) + VRAM), 0x80);
+        RegisterDataMove(GetGenericChibiImg(fid) + 0x100, (void *)(((chr + 0x04) * 0x20 & 0x1FFFF) + VRAM), 0x80);
+        RegisterDataMove(GetGenericChibiImg(fid) + 0x180, (void *)(((chr + 0x24) * 0x20 & 0x1FFFF) + VRAM), 0x80);
 
-        sub_8005F9C(fid, pal + 0x10);
+        ApplyGenericChibiPal(fid, pal + 0x10);
     } else {
         const struct FaceData* info = GetPortraitData(fid);
 
@@ -750,7 +750,7 @@ void PutFace80x72_Core(u16 * tm, int fid, int chr, int pal) {
 }
 
 //! FE8U = 0x08005D64
-void sub_8005D64(struct FaceBlinkProc* proc) {
+void FaceBgBlink_Init(struct FaceBlinkProc* proc) {
     proc->pFaceProc = NULL;
     proc->unk_38 = 120;
     proc->unk_32 = 0;
@@ -759,7 +759,7 @@ void sub_8005D64(struct FaceBlinkProc* proc) {
 }
 
 //! FE8U = 0x08005D70
-void sub_8005D70(struct FaceBlinkProc* proc) {
+void FaceBgBlink_WaitLoop(struct FaceBlinkProc* proc) {
 
     proc->unk_38--;
 
@@ -776,7 +776,7 @@ void sub_8005D70(struct FaceBlinkProc* proc) {
 }
 
 //! FE8U = 0x08005D98
-void sub_8005D98(struct FaceBlinkProc* proc) {
+void FaceBgBlink_AnimLoop(struct FaceBlinkProc* proc) {
     const struct FaceData* info;
     u16* ptrA;
     u16* ptrB;
@@ -889,7 +889,7 @@ void StartFaceFadeOut(struct FaceProc* proc) {
 }
 
 //! FE8U = 0x08005F6C
-u8* sub_8005F6C(int fid) {
+u8* GetGenericChibiImg(int fid) {
 
     // generic minimug image lut
     u8* gUnknown_080D77BC[] = {
@@ -909,7 +909,7 @@ u8* sub_8005F6C(int fid) {
 }
 
 //! FE8U = 0x08005F9C
-void sub_8005F9C(int fid, int pal) {
+void ApplyGenericChibiPal(int fid, int pal) {
 
     // generic minimug palette lut
     u16* gUnknown_080D77DC[] = {
@@ -931,7 +931,7 @@ void sub_8005F9C(int fid, int pal) {
 }
 
 //! FE8U = 0x08005FD4
-void sub_8005FD4(struct FaceBlinkProc* proc) {
+void FaceMouth_Init(struct FaceBlinkProc* proc) {
     proc->pFaceProc = (struct FaceProc*)(proc->proc_parent);
     proc->unk_32 = 0;
 
@@ -939,7 +939,7 @@ void sub_8005FD4(struct FaceBlinkProc* proc) {
 }
 
 //! FE8U = 0x08005FE0
-void sub_8005FE0(struct FaceBlinkProc* proc) {
+void FaceMouth_Loop(struct FaceBlinkProc* proc) {
     int oam1;
     int oam0;
 
@@ -1019,7 +1019,7 @@ void sub_8005FE0(struct FaceBlinkProc* proc) {
 }
 
 //! FE8U = 0x08006134
-void sub_8006134(struct FaceBlinkProc* proc, int unk) {
+void FaceBlink_PutEyeSprite(struct FaceBlinkProc* proc, int unk) {
     int oam1;
     int oam0;
 
@@ -1093,7 +1093,7 @@ void sub_8006134(struct FaceBlinkProc* proc, int unk) {
 }
 
 //! FE8U = 0x0800623C
-void sub_800623C(struct FaceBlinkProc* proc) {
+void FaceBlink_Init(struct FaceBlinkProc* proc) {
 
     proc->pFaceProc = (struct FaceProc*)(proc->proc_parent);
     proc->blinkControl = ((struct FaceProc*)(proc->proc_parent))->pFaceInfo->blinkKind;
@@ -1113,7 +1113,7 @@ void sub_800623C(struct FaceBlinkProc* proc) {
 }
 
 //! FE8U = 0x08006280
-void sub_8006280(struct FaceBlinkProc* proc) {
+void FaceBlink_WaitLoop(struct FaceBlinkProc* proc) {
     int unk;
 
     proc->unk_38--;
@@ -1136,7 +1136,7 @@ void sub_8006280(struct FaceBlinkProc* proc) {
 }
 
 //! FE8U = 0x080062B8
-void sub_80062B8(struct FaceBlinkProc* proc) {
+void FaceBlink_AnimLoop(struct FaceBlinkProc* proc) {
     int r5 = 2;
 
     switch (proc->unk_34) {
@@ -1161,7 +1161,7 @@ void sub_80062B8(struct FaceBlinkProc* proc) {
 
     }
 
-    sub_8006134(proc, r5);
+    FaceBlink_PutEyeSprite(proc, r5);
 
     proc->unk_34++;
 
@@ -1169,20 +1169,20 @@ void sub_80062B8(struct FaceBlinkProc* proc) {
 }
 
 //! FE8U = 0x08006324
-void sub_8006324(struct FaceBlinkProc* proc) {
+void FaceBlink_CloseEyesInit(struct FaceBlinkProc* proc) {
     proc->unk_34 = 0;
     return;
 }
 
 //! FE8U = 0x0800632C
-void sub_800632C(struct FaceBlinkProc* proc) {
+void FaceBlink_CloseEyesLoop(struct FaceBlinkProc* proc) {
 
     if (proc->unk_34 < 6) {
-        sub_80062B8(proc);
+        FaceBlink_AnimLoop(proc);
         return;
     }
 
-    sub_8006134(proc, 0);
+    FaceBlink_PutEyeSprite(proc, 0);
 
     if (proc->unk_32 == 0) {
         Proc_Goto(proc, 1);
@@ -1196,20 +1196,20 @@ void sub_800632C(struct FaceBlinkProc* proc) {
 }
 
 //! FE8U = 0x08006370
-void sub_8006370(struct FaceBlinkProc* proc) {
+void FaceBlink_HalfCloseInit(struct FaceBlinkProc* proc) {
     proc->unk_34 = 0;
     return;
 }
 
 //! FE8U = 0x08006378
-void sub_8006378(struct FaceBlinkProc* proc) {
+void FaceBlink_HalfCloseLoop(struct FaceBlinkProc* proc) {
 
     if (proc->unk_34 < 3) {
-        sub_80062B8(proc);
+        FaceBlink_AnimLoop(proc);
         return;
     }
 
-    sub_8006134(proc, 1);
+    FaceBlink_PutEyeSprite(proc, 1);
 
     if (proc->unk_32 == 0) {
         Proc_Goto(proc, 1);
@@ -1223,13 +1223,13 @@ void sub_8006378(struct FaceBlinkProc* proc) {
 }
 
 //! FE8U = 0x080063BC
-void sub_80063BC(struct FaceBlinkProc* proc) {
+void FaceBlink_WinkInit(struct FaceBlinkProc* proc) {
     proc->unk_34 = 0;
     return;
 }
 
 //! FE8U = 0x080063C4
-void sub_80063C4(struct FaceBlinkProc* proc) {
+void FaceBlink_WinkLoop(struct FaceBlinkProc* proc) {
     int r5 = 2;
 
     switch (proc->unk_34) {
@@ -1253,7 +1253,7 @@ void sub_80063C4(struct FaceBlinkProc* proc) {
             proc->unk_32 = 0;
     }
 
-    sub_8006134(proc, 0x80 + r5);
+    FaceBlink_PutEyeSprite(proc, 0x80 + r5);
 
     proc->unk_34++;
 
@@ -1305,14 +1305,14 @@ int FaceBlinkProc_GenBlinkInterval(struct FaceBlinkProc* proc) {
 }
 
 //! FE8U = 0x080064D4
-void sub_80064D4(struct FaceProc* proc, int unk) {
+void SetFaceEyeControl(struct FaceProc* proc, int unk) {
     proc->pBlinkProc->unk_32 = unk;
     return;
 }
 
 //! FE8U = 0x080064DC
-void sub_80064DC(int slot, int unk) {
-    sub_80064D4(gFaces[slot], unk);
+void SetFaceEyeControlById(int slot, int unk) {
+    SetFaceEyeControl(gFaces[slot], unk);
     return;
 }
 
@@ -1389,7 +1389,7 @@ void SetFacePosition(int slot, int x, int y) {
 }
 
 //! FE8U = 0x0800662C
-void sub_800662C(struct UnkFaceProc* proc) {
+void FaceChange_LockChildProcs(struct UnkFaceProc* proc) {
 
     if (proc->pFaceProc->pBlinkProc) {
         TryLockProc(proc->pFaceProc->pBlinkProc);
@@ -1403,7 +1403,7 @@ void sub_800662C(struct UnkFaceProc* proc) {
 }
 
 //! FE8U = 0x08006650
-void sub_8006650(struct UnkFaceProc* proc) {
+void FaceChange_LoadGfx(struct UnkFaceProc* proc) {
     struct FaceProc* faceProc;
 
     proc->pFaceInfo = GetPortraitData(proc->faceId);
@@ -1420,7 +1420,7 @@ void sub_8006650(struct UnkFaceProc* proc) {
 }
 
 //! FE8U = 0x080066A8
-void sub_80066A8(struct UnkFaceProc* proc) {
+void FaceChange_Finish(struct UnkFaceProc* proc) {
     if (proc->pFaceProc->pBlinkProc) {
         proc->pFaceProc->pBlinkProc->blinkControl = proc->pFaceInfo->blinkKind;
 
@@ -1437,7 +1437,7 @@ void sub_80066A8(struct UnkFaceProc* proc) {
 }
 
 //! FE8U = 0x080066E0
-void sub_80066E0(struct FaceProc* parent, int fid) {
+void StartFaceChange(struct FaceProc* parent, int fid) {
     struct UnkFaceProc* proc = Proc_Start(gProcScr_Face_2, parent);
 
     proc->pFaceProc = parent;
@@ -1447,13 +1447,13 @@ void sub_80066E0(struct FaceProc* parent, int fid) {
 }
 
 //! FE8U = 0x080066FC
-void sub_80066FC(int offset, int fid) {
+void DecompressFaceImg(int offset, int fid) {
     Decompress(GetPortraitData(fid)->img, (void*)(offset * 0x20 + VRAM));
     return;
 }
 
 //! FE8U = 0x0800671C
-void sub_800671C(int pal, int fid) {
+void ApplyFacePalette(int pal, int fid) {
     ApplyPalette(GetPortraitData(fid)->pal, pal);
     return;
 }

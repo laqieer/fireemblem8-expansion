@@ -11,12 +11,12 @@
 #include "efxbattle.h"
 #include "ekrdragon.h"
 
-bool sub_8055BB4(void)
+bool EkrBattleStarting_IsBattleAnimEnabled(void)
 {
     return PrepareBattleGraphicsMaybe();
 }
 
-bool sub_8055BC4(void)
+bool EkrBattleStarting_CheckBattleAnimEnabled(void)
 {
     return PrepareBattleGraphicsMaybe();
 }
