@@ -22,12 +22,15 @@ client.invisibleemulation(true)
 if client.speedmode then client.speedmode(6399) end
 memory.usememorydomain("System Bus")
 
+-- whole GBA memory map except ROM (0x08, the program) and BIOS (0x00, fixed).
 local REGIONS = {
-  { "ew",   0x02000000, 0x40000 },
-  { "iw",   0x03000000, 0x08000 },
-  { "pal",  0x05000000, 0x00400 },
-  { "vram", 0x06000000, 0x18000 },
-  { "oam",  0x07000000, 0x00400 },
+  { "ew",   0x02000000, 0x40000 },  -- EWRAM (game state, incl. FE8 render buffers)
+  { "iw",   0x03000000, 0x08000 },  -- IWRAM
+  { "io",   0x04000000, 0x00400 },  -- I/O regs (DISPCNT, DMA src/dst pointers, ...)
+  { "pal",  0x05000000, 0x00400 },  -- Palette
+  { "vram", 0x06000000, 0x18000 },  -- VRAM (tiles)
+  { "oam",  0x07000000, 0x00400 },  -- OAM (sprites)
+  { "sram", 0x0E000000, 0x10000 },  -- GamePak save (battery/Flash); empty if Use_SRAM=false
 }
 
 local function dump(addr, len, path)

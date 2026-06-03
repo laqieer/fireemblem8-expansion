@@ -21,9 +21,10 @@ import struct
 import subprocess
 import sys
 
-REGIONS = [  # (name, base, is_ram_with_pointers)
-    ("ew", 0x02000000, True), ("iw", 0x03000000, True),
+REGIONS = [  # (name, base, is_ram_with_pointers); whole map minus ROM/BIOS
+    ("ew", 0x02000000, True), ("iw", 0x03000000, True), ("io", 0x04000000, False),
     ("pal", 0x05000000, False), ("vram", 0x06000000, False), ("oam", 0x07000000, False),
+    ("sram", 0x0E000000, False),
 ]
 
 
