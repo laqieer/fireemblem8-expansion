@@ -739,7 +739,7 @@ void MapAnimTorch_Init(struct MAEffectProc * proc)
             OAM2_CHR(OBCHR_MANIM_1C0) + OAM2_PAL(OBJPAL_MANIM_4), 0, 2);
     }
     InitScanline();
-    SetupCircleScanlineWindow();
+    SetupMapAnimScanlineWindow();
     SetDefaultMapAnimScreenConf();
 
     SetBlendAlpha(0, 0x10);
@@ -1144,7 +1144,7 @@ void MapAnim_Init_0(struct MAEffectProc * proc)
     PlaySeSpacial(SONG_FD, proc->xDisplay);
 
     InitScanline();
-    SetupCircleScanlineWindow();
+    SetupMapAnimScanlineWindow();
     SetPrimaryHBlankHandler(HBlank_MapAnimEffect_Unk_0);
     SetDefaultMapAnimScreenConf();
     SetBlendAlpha(0x10, 0x10);
@@ -1373,7 +1373,7 @@ void MapAnimUnlock_Init(struct MAEffectProc * proc)
     StartPaletteAnimatorReverse(Pal_MapAnimUnlockObjfx_Unk, 0x20 * BGPAL_MANIM_4, 0x20, 4, proc);
 
     InitScanline();
-    SetupCircleScanlineWindow();
+    SetupMapAnimScanlineWindow();
     SetDefaultMapAnimScreenConf();
 
     SetBlendAlpha(0x10, 0x10);

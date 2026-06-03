@@ -24,7 +24,7 @@ void InitScanline(void)
 }
 
 //! FE8U = 0x08081EAC
-void SetupCircleScanlineWindow(void)
+void SetupMapAnimScanlineWindow(void)
 {
     SetWinEnable(1, 0, 0);
     SetWin0Box(0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT);

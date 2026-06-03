@@ -1163,7 +1163,7 @@ void MapAnimSpellAssocResetPal(ProcPtr proc);
 void MapAnim_RefreshMapAndEndMus(ProcPtr proc);
 
 void InitScanline();
-void SetupCircleScanlineWindow(void);
+void SetupMapAnimScanlineWindow(void);
 void UpdateMapAnimScanline(int x, int y, int arg3);
 void MapAnimResetHBlank(void);
 void HBlank_MapAnimWin0H(void);

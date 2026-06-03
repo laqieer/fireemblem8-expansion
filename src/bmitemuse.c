@@ -389,7 +389,7 @@ s8 CanUnitUseHealItem(struct Unit* unit)
     return TRUE;
 }
 
-s8 CanUnitUseBindingBladeToHeal(struct Unit* unit)
+s8 CanUnitUseUnusedItem(struct Unit* unit)
 {
     return FALSE;
 }

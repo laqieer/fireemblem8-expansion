@@ -439,17 +439,17 @@ int AreAllNpcUnitsUnselectable()
     return 1;
 }
 
-s8 IsChar0DeadAsNonPlayerUnit() {return IsCharDeadAsNonPlayerUnit(0);}
-s8 IsChar0DeadAsNonPlayerUnit_02() {return IsCharDeadAsNonPlayerUnit(0);}
-s8 IsChar0DeadAsNonPlayerUnit_03() {return IsCharDeadAsNonPlayerUnit(0);}
+s8 IsChar0AliveAsNonPlayerUnit() {return IsCharDeadAsNonPlayerUnit(0);}
+s8 IsChar0AliveAsNonPlayerUnit_02() {return IsCharDeadAsNonPlayerUnit(0);}
+s8 IsChar0AliveAsNonPlayerUnit_03() {return IsCharDeadAsNonPlayerUnit(0);}
 s8 IsChar0DeadAsNonPlayerUnit_2() {return IsCharDeadAsNonPlayerUnit(0);}
-s8 IsChar0DeadAsNonPlayerUnit_02_2() {return IsCharDeadAsNonPlayerUnit(0);}
-s8 IsChar0DeadAsNonPlayerUnit_03_2() {return IsCharDeadAsNonPlayerUnit(0);}
-s8 IsChar0DeadAsNonPlayerUnit_04() {return IsCharDeadAsNonPlayerUnit(0);}
-s8 IsChar0DeadAsNonPlayerUnit_05() {return IsCharDeadAsNonPlayerUnit(0);}
-s8 IsChar0DeadAsNonPlayerUnit_06() {return IsCharDeadAsNonPlayerUnit(0);}
-s8 IsChar0DeadAsNonPlayerUnit_07() {return IsCharDeadAsNonPlayerUnit(0);}
-s8 IsChar0DeadAsNonPlayerUnit_08() {return IsCharDeadAsNonPlayerUnit(0);}
+s8 IsChar0AliveAsNonPlayerUnit_02_2() {return IsCharDeadAsNonPlayerUnit(0);}
+s8 IsChar0AliveAsNonPlayerUnit_03_2() {return IsCharDeadAsNonPlayerUnit(0);}
+s8 IsChar0AliveAsNonPlayerUnit_04() {return IsCharDeadAsNonPlayerUnit(0);}
+s8 IsChar0AliveAsNonPlayerUnit_05() {return IsCharDeadAsNonPlayerUnit(0);}
+s8 IsChar0AliveAsNonPlayerUnit_06() {return IsCharDeadAsNonPlayerUnit(0);}
+s8 IsChar0AliveAsNonPlayerUnit_07() {return IsCharDeadAsNonPlayerUnit(0);}
+s8 IsChar0AliveAsNonPlayerUnit_08() {return IsCharDeadAsNonPlayerUnit(0);}
 s8 IsChar0DeadAsNonPlayerUnit_09() {return IsCharDeadAsNonPlayerUnit(0);}
 s8 IsChar0DeadAsNonPlayerUnit_10() {return IsCharDeadAsNonPlayerUnit(0);}
 s8 IsChar0DeadAsNonPlayerUnit_11() {return IsCharDeadAsNonPlayerUnit(0);}
@@ -557,7 +557,7 @@ int Uidebug_IsTalkChoiceResultOne()
     return 1 == GetTalkChoiceResult();
 }
 
-int Uidebug_IsDeadEnemyCountAtLeast50()
+int Uidebug_IsAliveEnemyCountAtLeast50()
 {
     if (GetDeadEnemyAmount() >= 50)
         return 1;

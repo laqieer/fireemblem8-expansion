@@ -24,7 +24,7 @@ int GetItemCantUseMsgid(struct Unit * unit, int item);
 void DoItemUse(struct Unit * unit, int item);
 s8 HasSelectTarget(struct Unit * unit, void (*func)(struct Unit *));
 s8 CanUnitUseHealItem(struct Unit * unit);
-s8 CanUnitUseBindingBladeToHeal(struct Unit * unit);
+s8 CanUnitUseUnusedItem(struct Unit * unit);
 s8 CanUnitUsePureWaterItem(struct Unit * unit);
 s8 CanUnitUseTorchItem(struct Unit * unit);
 s8 CanUnitUseAntitoxinItem(struct Unit * unit);
