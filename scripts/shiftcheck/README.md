@@ -1,0 +1,68 @@
+# Shiftability harness
+
+Tools that test whether the ROM is **shiftable** — i.e. whether it could be edited,
+recompiled, and run correctly without breaking pointer integrity. The build being
+byte-identical (`make compare`) does **not** prove this: a pointer stored as a raw
+absolute address (`(u8*)0x08A39148`) holds the correct value only because everything
+sits at its original offset. It carries no relocation, so it breaks the moment the
+layout moves. These tools find such hardcoded pointers.
+
+Nothing here touches the matching build — every target is `.PHONY` and uses a
+separate ELF / a generated ldscript, never `ldscript.txt`, `$(ROM)`, or `compare`.
+
+## Layers (cheapest → strongest)
+
+| Make target | Layer | What it does |
+| --- | --- | --- |
+| `make shiftcheck-build` | 0 | Audits hardcoded GBA addresses in the **build system** (Makefile, ldscripts). Cross-checks coupled constants — e.g. the banim link base `-b 0x8c02000` must equal the ldscript pin `0xC02000` — and fails on a mismatch. |
+| `make shiftcheck-static` | 1 | Relinks with `ld --emit-relocs`, then flags every ROM-pointer-looking word that carries **no relocation**. Ranked by signal (see below). |
+| `make shiftcheck-diff` | 2 | Builds the ROM **shifted** by two amounts and diffs: a real pointer's value tracks the shift; a hardcoded literal stays put. Independent of the reloc table; confirms Layer 1. |
+| `make shiftcheck-run` | 3 | Runs the matching vs a shifted ROM headless under identical input and compares framebuffer/RAM at checkpoints. End-to-end proof. Needs mGBA python bindings (non-blocking if absent). |
+| `make shiftcheck` | 0+1+2 | The static gate (no emulator). |
+
+## Why ranking, not a flat list
+
+Perfect static precision is impossible: incbin'd audio/graphics/animation data
+contains byte runs that coincidentally look like unrelocated ROM pointers. The
+shared classifier (`_classify.py`) buckets findings so the signal isn't drowned:
+
+- **[A] HIGH** — a *coherent* pointer table (≥4 consecutive entries pointing into
+  1–2 symbols) inside a **MIXED** object (one that also has real relocated pointers).
+  This is the actionable worklist; the tools exit non-zero when it is non-empty.
+- **[B] MIXED scattered** — unrelocated words in pointer-bearing objects that aren't
+  a coherent table. Review / let Layers 2–3 adjudicate.
+- **[C] BLOB** — objects with no relocations at all (pure incbin data); almost
+  certainly coincidental.
+- **[D] BLOB-INTERNAL** — a word inside the very symbol it points at (embedded blob
+  data, e.g. a banim palette), not a typed pointer table.
+
+Coincidental values in the cartridge header range (`< 0x08000100`) and `.text`
+literal pools are filtered out; pinned-region (`≥ 0x08C00000`) words are bucketed
+separately.
+
+## Validation case
+
+Both Layers 1 and 2 independently isolate exactly the same finding:
+
+```
+src/opinfo.o  (64 suspects in 1 table(s); targets: gUnkData_96(64))
+  0x08A2F340 = 0x08A39148  -> gUnkData_96+0x1E48
+  ...
+```
+
+`gOpinfo_1[]` in `src/opinfo.c` is a 64-entry table of raw `(u8*)0x08A3xxxx` casts
+into the graphics blob `gUnkData_96`. The fix is to write each as a symbol
+reference, e.g. `(u8*)((u8*)&gUnkData_96 + 0x1E48)` — byte-identical in the matching
+build (so `make compare` still passes) but now a relocation, so it shifts correctly.
+
+## Files
+
+- `scan_build_addrs.py` — Layer 0.
+- `emit_relocs_link.sh` — single source of truth for the production link line,
+  parameterized (used with `-q` for Layer 1 and with a shifted ldscript for Layer 2).
+- `scan_relocs.py` — Layer 1.
+- `gen_shifted_ldscript.py`, `diff_shift.py` — Layer 2.
+- `run_dynamic.py` — Layer 3.
+- `_classify.py` — shared classifier (Layers 1 and 2 feed it different "relocated"
+  oracles: the reloc table vs. tracks-the-shift).
+- `allowlist.txt` — value ranges proven coincidental (keep tight; prefer fixing).
