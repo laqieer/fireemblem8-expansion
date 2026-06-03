@@ -144,7 +144,7 @@ All 27 `.agbpal` added in this PR were audited (14 are exactly 32B = one clean p
 | File | Symbol | Shape | Hidden asset | Fix |
 | --- | --- | --- | --- | --- |
 | `gUnknown_08A37300.agbpal` | `gUnkData_96` | 32B pal + 7760B | class-reel letter/glyph **font** (64 LZ77 blocks, char-indexed by `gOpinfo_1[*str]`) | carved to `gOpinfoLetterGfx[]`; rewrote `gOpinfo_1`'s 64 `(u8*)gUnkData_96 + 0xNN` to `gOpinfoLetterGfx + (0xNN−0x20)` (identical addresses) |
-| `Pal_PlayerRankFog.agbpal` | `Pal_PlayerRankFog` | 32B pal + 976B | orphaned LZ77 image | carved to `gUnknown_08A09A7C[]` |
+| `Pal_PlayerRankFog.agbpal` | `Pal_PlayerRankFog` | 32B pal + 976B | orphaned multi-frame **animation** — 4 LZ77 frames (102/267/172/214B) interleaved with OAM/AnimScr, *not* a single image | carved to `gUnknown_08A09A7C[]` |
 | `Pal_080E1164.agbpal` | `Pal_ConstDataBanimekrdk_0` | 32B pal + 528B | orphaned LZ77 TSA tilemap | carved to `Tsa_ConstDataBanimekrdk_0[]` |
 | `gPal_BrownTextBox.agbpal` | `gPal_BrownTextBox` | 32B pal + 252B | unreferenced tile-attr records | carved to `gUnknown_08A4D0EC[]` |
 | `gUnknown_085BB2FC.agbpal` | `gEfxlvupfx_0` | 0B pal + 3724B | **whole file** is AnimSpriteData + AnimScr (not a palette) | renamed `.agbpal`→`.bin`; full AnimScr decomp (like `gEkrdragonfx`) is a follow-up |
@@ -154,4 +154,5 @@ All 27 `.agbpal` added in this PR were audited (14 are exactly 32B = one clean p
 1. Truncate the `.agbpal` to the real palette (`head -c 32`). If the palette has no high-bit colours it may further migrate to `.pal` (Section 3 / EyeFlash).
 2. Carve the trailing bytes into a new committed binary and INCBIN it as a **new symbol declared immediately after** the palette in the same `.c` — declaration order == ROM order, so the layout (and any `<symbol>+offset` pointer value) is unchanged. Keep compressed bytes verbatim when `gbagfx` can't reproduce the original LZ stream (PlayerRankFog's does not round-trip at any `-mindist`; 080E1164's does, at `-mindist 1`).
 3. If foreign code references the hidden region (`gUnkData_96`), repoint those refs to `new_symbol + (offset − palette_size)` — the absolute address is identical.
-4. Rebuild; confirm `fireemblem8.gba: OK`.
+4. **Recurse — verify the carved chunk is fully accounted for.** The trailing bytes are often *not* a single asset. Compute the actual LZ77 compressed-stream length (decompress and track input bytes consumed) and compare to the carved size; if the stream is shorter, more assets follow — walk the blob recursively. Examples from this PR: `Pal_PlayerRankFog`'s "976B image" is really **4** LZ frames + interleaved OAM/AnimScr (the first stream is only 102B, so 874B more follows — *not* padding); `gOpinfoLetterGfx` is exactly **64** concatenated LZ blocks (ends at EOF, gap 0); `Pal_080E1164`'s is one 526B LZ TSA + 2B align padding. (Do not trust an audit that reports the *file* size as the "compressed size" — verify by decompressing.)
+5. Rebuild; confirm `fireemblem8.gba: OK`.

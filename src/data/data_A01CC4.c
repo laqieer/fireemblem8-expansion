@@ -51,10 +51,13 @@ u16 gUnkData_46[] = { 0x39F3, 0x0443, 0x3E11, 0x52D7, 0x4A98, 0x290A, 0x5F3D, 0x
 u16 gPal_UnkData_1[] = INCBIN_U16("graphics/misc/gPal_08A07C58.gbapal");
 u16 CONST_DATA Img_ChapterIntroFog[] = INCBIN_U16("graphics/misc/Img_ChapterIntroFog.4bpp.lz");
 u16 Pal_PlayerRankFog[] = INCBIN_U16("graphics/misc/Pal_PlayerRankFog.agbpal");
-/* Was a hidden LZ77 image ("rectangle", per FEBuilderGBA @ 0x08A09A7C) baked onto the
- * end of Pal_PlayerRankFog.agbpal. Orphaned (no code references it). Carved out so the
- * palette is a clean 16-colour palette; compressed bytes kept verbatim (does not
- * round-trip through gbagfx, so preserved as-is). */
+/* Was a compound animation asset baked onto the end of Pal_PlayerRankFog.agbpal:
+ * FOUR LZ77-compressed frame images (102/267/172/214B -> 512/640/384/384B) interleaved
+ * with OAM/AnimScr control data, 976B total. Orphaned (no code references it). Kept
+ * verbatim as one blob -- it is a multi-frame animation, not a single image or palette;
+ * the interleaving is why naive whole-blob LZ recompression does not round-trip. The
+ * first LZ stream is only 102B, so the remaining 874B is the rest of the animation,
+ * not padding. (Frame-level decomposition is possible but low value for dead data.) */
 u8 gUnknown_08A09A7C[] = INCBIN_U8("graphics/misc/gUnknown_08A09A7C.bin");
 u8 gGfx_UnkData_0[] = INCBIN_U8("graphics/misc/gGfx_08A09E4C.4bpp.lz");
 u8 gUnkData_47[] = INCBIN_U8("graphics/misc/gUnknown_08A0A4E8.4bpp.lz");
