@@ -40,9 +40,10 @@ Coincidental values in the cartridge header range (`< 0x08000100`) and `.text`
 literal pools are filtered out; pinned-region (`≥ 0x08C00000`) words are bucketed
 separately.
 
-## Validation case
+## Validation case (now fixed)
 
-Both Layers 1 and 2 independently isolate exactly the same finding:
+When first run, both Layers 1 and 2 independently isolated exactly one
+high-confidence finding:
 
 ```
 src/opinfo.o  (64 suspects in 1 table(s); targets: gUnkData_96(64))
@@ -50,10 +51,23 @@ src/opinfo.o  (64 suspects in 1 table(s); targets: gUnkData_96(64))
   ...
 ```
 
-`gOpinfo_1[]` in `src/opinfo.c` is a 64-entry table of raw `(u8*)0x08A3xxxx` casts
-into the graphics blob `gUnkData_96`. The fix is to write each as a symbol
-reference, e.g. `(u8*)((u8*)&gUnkData_96 + 0x1E48)` — byte-identical in the matching
-build (so `make compare` still passes) but now a relocation, so it shifts correctly.
+`gOpinfo_1[]` in `src/opinfo.c` was a 64-entry table of raw `(u8*)0x08A3xxxx` casts
+into the graphics blob `gUnkData_96`. Each was rewritten as a symbol reference,
+`(u8*)gUnkData_96 + 0x1E48` (gUnkData_96 is `u16[]`, so the byte offset needs the
+`(u8*)` cast). This is **byte-identical** in the matching build (so `make compare`
+still passes) but is now a relocation, so it shifts correctly. After the fix the
+HIGH bucket is empty:
+
+```
+[A] HIGH-CONFIDENCE ... : 0 in 0 object(s)
+RESULT: no high-confidence shiftable-region suspects.
+```
+
+A separate probe also confirmed there are no hardcoded *jump* tables (runs of
+unrelocated pointers at distinct symbol starts) elsewhere in the shiftable region —
+`gOpinfo_1` was the only real hardcoded-pointer table in the typed data. The
+remaining `[B]`/`[C]`/`[D]` words are coincidental incbin data, not pointers; the
+definitive check on those is Layer 3 (runtime).
 
 ## Files
 
