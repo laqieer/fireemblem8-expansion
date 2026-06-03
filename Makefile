@@ -202,12 +202,10 @@ include json_data_rules.mk
 graphics/banim/dragonfx/Img_DemonLightSprites_087A5BA4.4bpp.lz: LZ_FLAGS := -mindist 3
 graphics/banim/dragonfx/Img_DemonLightSprites_087A5E9C.4bpp.lz: LZ_FLAGS := -mindist 3
 # FE6 SIO multiboot image, built from source via the mgfembp submodule
-# (StanHash/mgfembp) instead of a committed blob; the %.lz rule then compresses it
-# (original ROM used minimum LZ match distance 1). mgfembp needs its own agbcc
-# variant (010110-ThumbPatch, fetched by its installer) and CPP=cpp because
-# arm-none-eabi-cpp may be absent.
-data/fe6sio_payload.bin.lz: LZ_FLAGS := -mindist 1
-
+# (StanHash/mgfembp) instead of a committed blob, then LZ-compressed (the original
+# ROM used minimum match distance 1) for the incbin in asm/data_fe6sio.s. mgfembp
+# needs its own agbcc variant (010110-ThumbPatch, fetched by its installer) and
+# CPP=cpp because arm-none-eabi-cpp may be absent.
 mgfembp/tools/agbcc/bin/agbcc:
 	cd mgfembp && bash tools/install_agbcc.sh
 
@@ -215,8 +213,8 @@ mgfembp/mgfembp.bin: mgfembp/tools/agbcc/bin/agbcc FORCE
 	$(MAKE) -C mgfembp CPP=cpp tools
 	$(MAKE) -C mgfembp CPP=cpp mgfembp.bin
 
-data/fe6sio_payload.bin: mgfembp/mgfembp.bin
-	cp $< $@
+fe6sio_payload.bin.lz: mgfembp/mgfembp.bin
+	$(GBAGFX) $< $@ -mindist 1
 
 FORCE:
 .PHONY: FORCE

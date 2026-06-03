@@ -89,19 +89,15 @@ _reset: @ 0x08B1A1C4
     .space 0x100
 
     @ LZ77-compressed FE6 multiboot program. _reset (above) receives it over SIO,
-    @ LZ77UnCompWram-decompresses it to 0x02010000, and jumps there. The committed
-    @ source is the decompressed image (data/fe6sio_payload.bin, 34956 bytes, runs at
-    @ 0x02010000); the Makefile recompresses it byte-identically with -mindist 1.
+    @ LZ77UnCompWram-decompresses it to 0x02010000, and jumps there. It reads an
+    @ inserted FE6 cartridge's save over SIO and reports it (build stamp
+    @ 2002/06/06 kaneko).
     @
-    @ This payload is already fully decompiled as StanHash/mgfembp ("Mysterious Gba
-    @ Fire Emblem MultiBoot Payload"), which builds a byte-identical image
-    @ (sha1 8a81a47d88f6b0a3f91c49784b9f7b317382abac == data/fe6sio_payload.bin). It
-    @ reads an inserted FE6 cartridge's save over SIO and reports it (build stamp
-    @ 2002/06/06 kaneko). fireemblem6j does NOT contain this payload (only the FE6
-    @ main-ROM SIO routines). To build it from source instead of this blob, vendor
-    @ mgfembp as a sub-build -- pret/pokeemerald's berry_fix is the model: own Makefile
-    @ + ld_script (ENTRY/load 0x02010000) + crt0 -> objcopy -O binary -> gbagfx LZ
-    @ (-mindist 1) -> .incbin here. Caveat: mgfembp needs the 010110-ThumbPatch agbcc
-    @ variant to reproduce the byte match.
+    @ Built from source via the mgfembp submodule (StanHash/mgfembp, "Mysterious Gba
+    @ Fire Emblem MultiBoot Payload") -- the Makefile builds mgfembp/mgfembp.bin
+    @ (sha1 8a81a47d88f6b0a3f91c49784b9f7b317382abac) and LZ-compresses it (-mindist
+    @ 1) to fe6sio_payload.bin.lz, incbin'd below. mgfembp uses its own agbcc variant
+    @ (010110-ThumbPatch). fireemblem6j does NOT contain this payload (only the FE6
+    @ main-ROM SIO routines).
 FE6SIO_Payload: @ 0x08B1A368
-	.incbin "data/fe6sio_payload.bin.lz"
+	.incbin "fe6sio_payload.bin.lz"

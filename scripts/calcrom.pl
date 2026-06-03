@@ -174,3 +174,9 @@ print "$srcdata bytes of data in src ($srcDataPct%)\n";
 print "$data bytes of data in data ($dataPct%)\n";
 print "$dataBanim bytes of data in banim ($dataBanimPct%)\n";
 print "$dataSound bytes of data in sound ($dataSoundPct%)\n";
+# Data "extraction" = everything pulled out of the raw data/ blobs into organized
+# forms (decompiled src + the banim/sound subsystems). What is left to extract is
+# whatever still sits in data/; when that hits 0, extraction is 100%.
+my $dataExtracted = $dataTotal - $data;
+my $dataExtractPct = sprintf("%.4f", 100 * $dataExtracted / $dataTotal);
+print "$dataExtracted of $dataTotal bytes of data extracted ($dataExtractPct%)\n";

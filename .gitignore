@@ -976,4 +976,3 @@ include/msg_data.h
 !src/crt0.s
 !src/m4a_1.s
 !src/libagbsyscall.s
-data/fe6sio_payload.bin
