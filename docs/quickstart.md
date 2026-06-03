@@ -4,7 +4,7 @@ Get a working build of this decompilation with a single command using the bundle
 
 ## Prerequisites
 
-- A legally obtained copy of **Fire Emblem: The Sacred Stones (USA)**. Place it at the repo root as `baserom.gba`, or provide a path via `--rom /path/to/rom.gba` or `FIREEMBLEM8U_ROM=/path/to/rom.gba` when running the script.
+- _(Optional)_ A legally obtained copy of **Fire Emblem: The Sacred Stones (USA)**. The build does **not** need it — the result is verified against `checksum.sha1` — so it is only used by `asmdiff.sh` for disassembly comparison. If you have one, place it at the repo root as `baserom.gba`, or pass `--rom /path/to/rom.gba` (or `FIREEMBLEM8U_ROM=/path/to/rom.gba`).
 - Ubuntu/WSL (apt), Arch Linux/pacman, or macOS/Homebrew with sudo/admin access. The script only auto-installs dependencies for these package managers; other environments can still run manually.
 - ~2.5 GB of free disk space and up to 15 minutes for the first full build.
 
@@ -18,7 +18,7 @@ From the repo root, run:
 
 What the script now does:
 
-1. Ensures `baserom.gba` exists. If missing, it copies from the provided `--rom` path (or `FIREEMBLEM8U_ROM`).
+1. Copies `baserom.gba` from the `--rom` path (or `FIREEMBLEM8U_ROM`) if you provided one. A missing ROM is fine — it is optional and not required to build.
 2. Detects your package manager (`apt`, `pacman`, or `brew`) and installs the prerequisites only when they’re not already available:
    - Toolchain (`arm-none-eabi-binutils`/`arm-none-eabi-gcc`)
    - `pkg-config` / `pkgconf`
@@ -38,7 +38,7 @@ fireemblem8.gba: OK
 
 ## Troubleshooting
 
-- **Missing ROM** – Provide `--rom /path/to/rom.gba` or set `FIREEMBLEM8U_ROM=/path/to/rom.gba` when running the script.
+- **No ROM** – `baserom.gba` is optional; the build works and self-verifies without it. Provide `--rom /path/to/rom.gba` (or `FIREEMBLEM8U_ROM=/path/to/rom.gba`) only if you want to use `asmdiff.sh`.
 - **No sudo/root** – apt/pacman installs require elevated privileges. If you run the script without sudo, it will skip the package install step and remind you to install the prerequisites manually before re-running. Homebrew installs keep working without sudo.
 - **Unsupported distro** – Install the prerequisites manually (arm-none-eabi toolchain, pkg-config, libpng, python3, pip, numpy, pillow) then rerun the script; it’ll skip package installs once the tools are on your PATH.
 - **Already-installed toolchain** – The script detects `arm-none-eabi-*` binaries and skips reinstalling them. Existing `tools/agbcc` installs are reused too; run `./scripts/quickstart.sh --refresh-agbcc` if you need a fresh copy.

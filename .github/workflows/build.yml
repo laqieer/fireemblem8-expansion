@@ -36,11 +36,11 @@ jobs:
     - name: Build tools
       run: ./build_tools.sh
 
-    - name: Mock base ROM
-      run: head -c 16M /dev/urandom > baserom.gba
-
     - name: Build target ROM
       run: make fireemblem8.gba
+
+    - name: Verify ROM matches
+      run: make compare
 
     - name: Calculate decomp progress
       run: scripts/calcrom.sh | tee _site/progress.txt

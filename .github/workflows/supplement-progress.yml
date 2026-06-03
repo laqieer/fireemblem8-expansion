@@ -30,6 +30,9 @@ jobs:
     - name: Build tools
       run: ./build_tools.sh
 
+    # This workflow rebuilds historical commits; older revisions may still
+    # expect a baserom.gba file to exist, so mock one. The current build does
+    # not need it (see build.yml / build-verification.yml).
     - name: Mock base ROM
       run: head -c 16777216 /dev/urandom > baserom.gba
 

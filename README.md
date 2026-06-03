@@ -1,5 +1,7 @@
 # Fire Emblem: The Sacred Stones
 
+[![Build CI](https://github.com/laqieer/fireemblem8u/actions/workflows/build.yml/badge.svg)](https://github.com/laqieer/fireemblem8u/actions/workflows/build.yml)
+[![Build Verification](https://github.com/laqieer/fireemblem8u/actions/workflows/build-verification.yml/badge.svg)](https://github.com/laqieer/fireemblem8u/actions/workflows/build-verification.yml)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square)](http://makeapullrequest.com)
 
 [FE Decomp Portal](https://laqieer.github.io/fe-decomp-portal/)
@@ -11,11 +13,13 @@ It builds the following ROM:
 
 ### Quick Start
 
-If you just want to get the repo building quickly (Ubuntu/WSL, Arch Linux, or macOS/Homebrew), drop your legally obtained ROM at the repo root as `baserom.gba` and run:
+If you just want to get the repo building quickly (Ubuntu/WSL, Arch Linux, or macOS/Homebrew), run:
 
 ```
 ./scripts/quickstart.sh [--rom /path/to/baserom.gba] [--refresh-agbcc]
 ```
+
+The build does **not** require the original ROM — the result is byte-verified against `checksum.sha1`. A `baserom.gba` is only needed if you want to use `asmdiff.sh` for disassembly comparison; pass it with `--rom` (or `FIREEMBLEM8U_ROM=...`) if you have one.
 
 See [`docs/quickstart.md`](docs/quickstart.md) for full details, flags, and troubleshooting tips.
 
@@ -36,28 +40,27 @@ make clean_fast
 
 ### Setting up the repository manually
 
-1. You must have a copy of the Fire Emblem: The Sacred Stones ROM named `baserom.gba` in the repository directory.
-2. Install [devkitPro](https://devkitpro.org/wiki/Getting_Started) or [GNU Arm Embedded Toolchain](https://developer.arm.com/tools-and-software/open-source-software/developer-tools/gnu-toolchain/gnu-rm).
+1. Install [devkitPro](https://devkitpro.org/wiki/Getting_Started) or [GNU Arm Embedded Toolchain](https://developer.arm.com/tools-and-software/open-source-software/developer-tools/gnu-toolchain/gnu-rm).
 ```
 # for Ubuntu/WSL users
 apt install binutils-arm-none-eabi
 ```
-3. Install [agbcc](https://github.com/pret/agbcc) to this project.
+2. Install [agbcc](https://github.com/pret/agbcc) to this project.
 ```
 cd /path/to/agbcc
 ./build.sh
 ./install.sh /path/to/fireemblem8u
 ```
-4. Build tools.
+3. Build tools.
 ```
 cd /path/to/fireemblem8u
 ./build_tools.sh
 ```
-5. Build the project.
+4. Build the project.
 ```
 make
 ```
-6. You will see this for success.
+5. You will see this for success.
 ```
 fireemblem8.gba: OK
 ```
@@ -68,7 +71,7 @@ A: Install [libpng](http://www.libpng.org/pub/png/libpng.html) to build `tools/g
 
 Q: `make: *** No rule to make target 'baserom.gba', needed by 'xxx'.  Stop.`
 
-A: You must place a copy of the Fire Emblem: The Sacred Stones ROM named `baserom.gba` in the repository directory.
+A: The current tree builds without the original ROM (it is verified against `checksum.sha1`), so this should not happen on an up-to-date checkout. If you hit it on an older revision, either update or place a copy of the Fire Emblem: The Sacred Stones ROM named `baserom.gba` in the repository directory.
 
 Q: `unrecognized option '--add-symbol'`
 
