@@ -1,0 +1,907 @@
+@ AP (object/sprite animation) definition(s); root + frame/anim offset tables
+@ computed via assembler label arithmetic (see include/ap.h). Byte-identical.
+
+	.data
+	.globl	SpriteAnim_FireTrap
+	.align	1, 0
+	.type	 SpriteAnim_FireTrap,object
+SpriteAnim_FireTrap:
+	.short	.LSpriteAnim_FireTrap_ftab - SpriteAnim_FireTrap
+	.short	.LSpriteAnim_FireTrap_atab - SpriteAnim_FireTrap
+.LSpriteAnim_FireTrap_ftab:
+	.short	.LSpriteAnim_FireTrap_f0 - .LSpriteAnim_FireTrap_ftab
+	.short	.LSpriteAnim_FireTrap_f1 - .LSpriteAnim_FireTrap_ftab
+	.short	.LSpriteAnim_FireTrap_f2 - .LSpriteAnim_FireTrap_ftab
+	.short	.LSpriteAnim_FireTrap_f3 - .LSpriteAnim_FireTrap_ftab
+	.short	.LSpriteAnim_FireTrap_f4 - .LSpriteAnim_FireTrap_ftab
+	.short	.LSpriteAnim_FireTrap_f5 - .LSpriteAnim_FireTrap_ftab
+	.short	.LSpriteAnim_FireTrap_f6 - .LSpriteAnim_FireTrap_ftab
+	.short	.LSpriteAnim_FireTrap_f7 - .LSpriteAnim_FireTrap_ftab
+	.short	.LSpriteAnim_FireTrap_f8 - .LSpriteAnim_FireTrap_ftab
+	.short	.LSpriteAnim_FireTrap_f9 - .LSpriteAnim_FireTrap_ftab
+	.short	.LSpriteAnim_FireTrap_f10 - .LSpriteAnim_FireTrap_ftab
+	.short	.LSpriteAnim_FireTrap_f11 - .LSpriteAnim_FireTrap_ftab
+	.short	.LSpriteAnim_FireTrap_f12 - .LSpriteAnim_FireTrap_ftab
+	.short	.LSpriteAnim_FireTrap_f13 - .LSpriteAnim_FireTrap_ftab
+	.short	.LSpriteAnim_FireTrap_f14 - .LSpriteAnim_FireTrap_ftab
+	.short	.LSpriteAnim_FireTrap_f15 - .LSpriteAnim_FireTrap_ftab
+	.short	.LSpriteAnim_FireTrap_f16 - .LSpriteAnim_FireTrap_ftab
+	.short	.LSpriteAnim_FireTrap_f17 - .LSpriteAnim_FireTrap_ftab
+	.short	.LSpriteAnim_FireTrap_f18 - .LSpriteAnim_FireTrap_ftab
+	.short	.LSpriteAnim_FireTrap_f19 - .LSpriteAnim_FireTrap_ftab
+	.short	.LSpriteAnim_FireTrap_f20 - .LSpriteAnim_FireTrap_ftab
+	.short	.LSpriteAnim_FireTrap_f21 - .LSpriteAnim_FireTrap_ftab
+	.short	.LSpriteAnim_FireTrap_f22 - .LSpriteAnim_FireTrap_ftab
+	.short	.LSpriteAnim_FireTrap_f23 - .LSpriteAnim_FireTrap_ftab
+	.short	.LSpriteAnim_FireTrap_f24 - .LSpriteAnim_FireTrap_ftab
+	.short	.LSpriteAnim_FireTrap_f25 - .LSpriteAnim_FireTrap_ftab
+	.short	.LSpriteAnim_FireTrap_f26 - .LSpriteAnim_FireTrap_ftab
+	.short	.LSpriteAnim_FireTrap_f27 - .LSpriteAnim_FireTrap_ftab
+	.short	.LSpriteAnim_FireTrap_f28 - .LSpriteAnim_FireTrap_ftab
+	.short	.LSpriteAnim_FireTrap_f29 - .LSpriteAnim_FireTrap_ftab
+	.short	.LSpriteAnim_FireTrap_f30 - .LSpriteAnim_FireTrap_ftab
+	.short	.LSpriteAnim_FireTrap_f31 - .LSpriteAnim_FireTrap_ftab
+	.short	.LSpriteAnim_FireTrap_f32 - .LSpriteAnim_FireTrap_ftab
+	.short	.LSpriteAnim_FireTrap_f33 - .LSpriteAnim_FireTrap_ftab
+	.short	.LSpriteAnim_FireTrap_f34 - .LSpriteAnim_FireTrap_ftab
+	.short	.LSpriteAnim_FireTrap_f35 - .LSpriteAnim_FireTrap_ftab
+	.short	.LSpriteAnim_FireTrap_f36 - .LSpriteAnim_FireTrap_ftab
+	.short	.LSpriteAnim_FireTrap_f37 - .LSpriteAnim_FireTrap_ftab
+	.short	.LSpriteAnim_FireTrap_f38 - .LSpriteAnim_FireTrap_ftab
+	.short	.LSpriteAnim_FireTrap_f39 - .LSpriteAnim_FireTrap_ftab
+	.short	.LSpriteAnim_FireTrap_f40 - .LSpriteAnim_FireTrap_ftab
+	.short	.LSpriteAnim_FireTrap_f41 - .LSpriteAnim_FireTrap_ftab
+	.short	.LSpriteAnim_FireTrap_f42 - .LSpriteAnim_FireTrap_ftab
+	.short	.LSpriteAnim_FireTrap_f43 - .LSpriteAnim_FireTrap_ftab
+	.short	.LSpriteAnim_FireTrap_f44 - .LSpriteAnim_FireTrap_ftab
+	.short	.LSpriteAnim_FireTrap_f45 - .LSpriteAnim_FireTrap_ftab
+	.short	.LSpriteAnim_FireTrap_f46 - .LSpriteAnim_FireTrap_ftab
+	.short	.LSpriteAnim_FireTrap_f47 - .LSpriteAnim_FireTrap_ftab
+	.short	.LSpriteAnim_FireTrap_f48 - .LSpriteAnim_FireTrap_ftab
+.LSpriteAnim_FireTrap_atab:
+	.short	.LSpriteAnim_FireTrap_a0 - .LSpriteAnim_FireTrap_atab
+	.short	.LSpriteAnim_FireTrap_a1 - .LSpriteAnim_FireTrap_atab
+	.short	.LSpriteAnim_FireTrap_a2 - .LSpriteAnim_FireTrap_atab
+	.short	.LSpriteAnim_FireTrap_a3 - .LSpriteAnim_FireTrap_atab
+	.short	.LSpriteAnim_FireTrap_a4 - .LSpriteAnim_FireTrap_atab
+.LSpriteAnim_FireTrap_f0:
+	.short	0x3
+	.short	0x4000
+	.short	0x1F8
+	.short	0x6
+	.short	0xE0
+	.short	0x41F8
+	.short	0x0
+	.short	0xF0
+	.short	0x41F8
+	.short	0xC
+.LSpriteAnim_FireTrap_f1:
+	.short	0x3
+	.short	0x4000
+	.short	0x1F8
+	.short	0x26
+	.short	0xF0
+	.short	0x41F8
+	.short	0xE
+	.short	0xE0
+	.short	0x41F8
+	.short	0x2
+.LSpriteAnim_FireTrap_f2:
+	.short	0x3
+	.short	0x4000
+	.short	0x1F8
+	.short	0x12
+	.short	0xF0
+	.short	0x41F8
+	.short	0x10
+	.short	0xE0
+	.short	0x41F8
+	.short	0x4
+.LSpriteAnim_FireTrap_f3:
+	.short	0x1
+	.short	0xF8
+	.short	0x41F8
+	.short	0x8
+.LSpriteAnim_FireTrap_f4:
+	.short	0x2
+	.short	0xF8
+	.short	0x41F8
+	.short	0x14
+	.short	0x40F0
+	.short	0x1F8
+	.short	0x32
+.LSpriteAnim_FireTrap_f5:
+	.short	0x2
+	.short	0xF8
+	.short	0x41F8
+	.short	0x16
+	.short	0xE8
+	.short	0x41F8
+	.short	0xA
+.LSpriteAnim_FireTrap_f6:
+	.short	0x1
+	.short	0xF5
+	.short	0x1F5
+	.short	0x19
+.LSpriteAnim_FireTrap_f7:
+	.short	0x2
+	.short	0xF7
+	.short	0x1F5
+	.short	0x19
+	.short	0xF8
+	.short	0x1F8
+	.short	0x1A
+.LSpriteAnim_FireTrap_f8:
+	.short	0x3
+	.short	0xF8
+	.short	0x1F6
+	.short	0x19
+	.short	0xF9
+	.short	0x1F9
+	.short	0x1A
+	.short	0xF5
+	.short	0x1F7
+	.short	0x19
+.LSpriteAnim_FireTrap_f9:
+	.short	0x5
+	.short	0xFA
+	.short	0x1F7
+	.short	0x19
+	.short	0xFB
+	.short	0x1FB
+	.short	0x1A
+	.short	0xF7
+	.short	0x1F9
+	.short	0x19
+	.short	0xF5
+	.short	0x1F5
+	.short	0x19
+	.short	0xF8
+	.short	0x1F4
+	.short	0x18
+.LSpriteAnim_FireTrap_f10:
+	.short	0x5
+	.short	0xFD
+	.short	0x1F8
+	.short	0x1A
+	.short	0xF9
+	.short	0x1FB
+	.short	0x19
+	.short	0xFD
+	.short	0x1FD
+	.short	0x1B
+	.short	0xF6
+	.short	0x1F6
+	.short	0x19
+	.short	0xFA
+	.short	0x1F6
+	.short	0x19
+.LSpriteAnim_FireTrap_f11:
+	.short	0x6
+	.short	0x0
+	.short	0x1FA
+	.short	0x1A
+	.short	0x0
+	.short	0x1
+	.short	0x1B
+	.short	0xF8
+	.short	0x1F8
+	.short	0x19
+	.short	0xFC
+	.short	0x1F8
+	.short	0x19
+	.short	0xFB
+	.short	0x1FD
+	.short	0x1A
+	.short	0xF5
+	.short	0x1F4
+	.short	0x18
+.LSpriteAnim_FireTrap_f12:
+	.short	0x6
+	.short	0xFA
+	.short	0x1F9
+	.short	0x1A
+	.short	0x3
+	.short	0x4
+	.short	0x1B
+	.short	0xFE
+	.short	0x1FA
+	.short	0x19
+	.short	0xFD
+	.short	0x0
+	.short	0x1A
+	.short	0xF6
+	.short	0x1F6
+	.short	0x19
+	.short	0x2
+	.short	0x1FC
+	.short	0x1B
+.LSpriteAnim_FireTrap_f13:
+	.short	0x7
+	.short	0xFC
+	.short	0x1FB
+	.short	0x1A
+	.short	0x6
+	.short	0x6
+	.short	0x1B
+	.short	0x0
+	.short	0x1FB
+	.short	0x19
+	.short	0xFF
+	.short	0x2
+	.short	0x1A
+	.short	0xF9
+	.short	0x1F8
+	.short	0x19
+	.short	0x5
+	.short	0x1FE
+	.short	0x1B
+	.short	0xF5
+	.short	0x1F6
+	.short	0x18
+.LSpriteAnim_FireTrap_f14:
+	.short	0x7
+	.short	0xFD
+	.short	0x1FD
+	.short	0x1A
+	.short	0x1
+	.short	0x1FC
+	.short	0x19
+	.short	0x1
+	.short	0x5
+	.short	0x1A
+	.short	0xFA
+	.short	0x1F9
+	.short	0x19
+	.short	0x6
+	.short	0x1FF
+	.short	0x1B
+	.short	0xF6
+	.short	0x1F7
+	.short	0x18
+	.short	0x7
+	.short	0x8
+	.short	0x1A
+.LSpriteAnim_FireTrap_f15:
+	.short	0x7
+	.short	0xFF
+	.short	0x1FE
+	.short	0x1A
+	.short	0x3
+	.short	0x1FD
+	.short	0x19
+	.short	0x2
+	.short	0x6
+	.short	0x1A
+	.short	0x7
+	.short	0x0
+	.short	0x1A
+	.short	0x8
+	.short	0xA
+	.short	0x19
+	.short	0xF7
+	.short	0x1F9
+	.short	0x19
+	.short	0xFB
+	.short	0x1FA
+	.short	0x1A
+.LSpriteAnim_FireTrap_f16:
+	.short	0x8
+	.short	0x1
+	.short	0x0
+	.short	0x1A
+	.short	0x5
+	.short	0x1FF
+	.short	0x19
+	.short	0x4
+	.short	0x8
+	.short	0x1A
+	.short	0xF9
+	.short	0x1FA
+	.short	0x19
+	.short	0xFD
+	.short	0x1FC
+	.short	0x1A
+	.short	0xF8
+	.short	0x1F5
+	.short	0x18
+	.short	0xA
+	.short	0xB
+	.short	0x18
+	.short	0x9
+	.short	0x2
+	.short	0x19
+.LSpriteAnim_FireTrap_f17:
+	.short	0x7
+	.short	0x3
+	.short	0x1
+	.short	0x1A
+	.short	0x7
+	.short	0x0
+	.short	0x19
+	.short	0xFB
+	.short	0x1FB
+	.short	0x19
+	.short	0xFF
+	.short	0x1FD
+	.short	0x1A
+	.short	0xFA
+	.short	0x1F6
+	.short	0x18
+	.short	0xB
+	.short	0x3
+	.short	0x18
+	.short	0x5
+	.short	0x9
+	.short	0x19
+.LSpriteAnim_FireTrap_f18:
+	.short	0x6
+	.short	0x5
+	.short	0x3
+	.short	0x1A
+	.short	0x9
+	.short	0x2
+	.short	0x19
+	.short	0xFD
+	.short	0x1FC
+	.short	0x19
+	.short	0x1
+	.short	0x1FF
+	.short	0x1A
+	.short	0xFB
+	.short	0x1F8
+	.short	0x18
+	.short	0x7
+	.short	0xA
+	.short	0x18
+.LSpriteAnim_FireTrap_f19:
+	.short	0x5
+	.short	0x7
+	.short	0x5
+	.short	0x1A
+	.short	0xFF
+	.short	0x1FE
+	.short	0x19
+	.short	0x3
+	.short	0x1
+	.short	0x1A
+	.short	0xFD
+	.short	0x1FA
+	.short	0x18
+	.short	0xC
+	.short	0x4
+	.short	0x18
+.LSpriteAnim_FireTrap_f20:
+	.short	0x4
+	.short	0x1
+	.short	0x0
+	.short	0x19
+	.short	0x5
+	.short	0x3
+	.short	0x1A
+	.short	0xFF
+	.short	0x1FC
+	.short	0x18
+	.short	0x9
+	.short	0x7
+	.short	0x19
+.LSpriteAnim_FireTrap_f21:
+	.short	0x4
+	.short	0x3
+	.short	0x2
+	.short	0x19
+	.short	0x1
+	.short	0x1FE
+	.short	0x18
+	.short	0x7
+	.short	0x5
+	.short	0x19
+	.short	0xB
+	.short	0x8
+	.short	0x18
+.LSpriteAnim_FireTrap_f22:
+	.short	0x4
+	.short	0x3
+	.short	0x2
+	.short	0x19
+	.short	0x1
+	.short	0x1FE
+	.short	0x18
+	.short	0x7
+	.short	0x5
+	.short	0x19
+	.short	0xB
+	.short	0x8
+	.short	0x18
+.LSpriteAnim_FireTrap_f23:
+	.short	0x3
+	.short	0x5
+	.short	0x4
+	.short	0x19
+	.short	0x3
+	.short	0x0
+	.short	0x18
+	.short	0xA
+	.short	0x7
+	.short	0x18
+.LSpriteAnim_FireTrap_f24:
+	.short	0x2
+	.short	0x4
+	.short	0x2
+	.short	0x18
+	.short	0x7
+	.short	0x6
+	.short	0x18
+.LSpriteAnim_FireTrap_f25:
+	.short	0x1
+	.short	0x5
+	.short	0x4
+	.short	0x18
+.LSpriteAnim_FireTrap_f26:
+	.short	0x1
+	.short	0xFC
+	.short	0x1FB
+	.short	0x1C
+.LSpriteAnim_FireTrap_f27:
+	.short	0x1
+	.short	0xFC
+	.short	0x1FC
+	.short	0x1D
+.LSpriteAnim_FireTrap_f28:
+	.short	0x1
+	.short	0xFB
+	.short	0x1FC
+	.short	0x1F
+.LSpriteAnim_FireTrap_f29:
+	.short	0x1
+	.short	0xF5
+	.short	0x3
+	.short	0x19
+.LSpriteAnim_FireTrap_f30:
+	.short	0x2
+	.short	0xF7
+	.short	0x1003
+	.short	0x19
+	.short	0xF8
+	.short	0x1000
+	.short	0x1A
+.LSpriteAnim_FireTrap_f31:
+	.short	0x3
+	.short	0xF8
+	.short	0x1002
+	.short	0x19
+	.short	0xF9
+	.short	0x11FF
+	.short	0x1A
+	.short	0xF5
+	.short	0x1001
+	.short	0x19
+.LSpriteAnim_FireTrap_f32:
+	.short	0x5
+	.short	0xFA
+	.short	0x1001
+	.short	0x19
+	.short	0xFB
+	.short	0x11FD
+	.short	0x1A
+	.short	0xF7
+	.short	0x11FF
+	.short	0x19
+	.short	0xF5
+	.short	0x1003
+	.short	0x19
+	.short	0xF8
+	.short	0x1004
+	.short	0x18
+.LSpriteAnim_FireTrap_f33:
+	.short	0x5
+	.short	0xFD
+	.short	0x1000
+	.short	0x1A
+	.short	0xF9
+	.short	0x11FD
+	.short	0x19
+	.short	0xFD
+	.short	0x11FB
+	.short	0x1B
+	.short	0xF6
+	.short	0x1002
+	.short	0x19
+	.short	0xFA
+	.short	0x1002
+	.short	0x19
+.LSpriteAnim_FireTrap_f34:
+	.short	0x6
+	.short	0x0
+	.short	0x11FE
+	.short	0x1A
+	.short	0x0
+	.short	0x11F7
+	.short	0x1B
+	.short	0xF8
+	.short	0x1000
+	.short	0x19
+	.short	0xFC
+	.short	0x1000
+	.short	0x19
+	.short	0xFB
+	.short	0x11FB
+	.short	0x1A
+	.short	0xF5
+	.short	0x1004
+	.short	0x18
+.LSpriteAnim_FireTrap_f35:
+	.short	0x6
+	.short	0xFA
+	.short	0x11FF
+	.short	0x1A
+	.short	0x3
+	.short	0x11F4
+	.short	0x1B
+	.short	0xFE
+	.short	0x11FE
+	.short	0x19
+	.short	0xFD
+	.short	0x11F8
+	.short	0x1A
+	.short	0xF6
+	.short	0x1002
+	.short	0x19
+	.short	0x2
+	.short	0x11FC
+	.short	0x1B
+.LSpriteAnim_FireTrap_f36:
+	.short	0x7
+	.short	0xFC
+	.short	0x11FD
+	.short	0x1A
+	.short	0x6
+	.short	0x11F2
+	.short	0x1B
+	.short	0x0
+	.short	0x11FD
+	.short	0x19
+	.short	0xFF
+	.short	0x11F6
+	.short	0x1A
+	.short	0xF9
+	.short	0x1000
+	.short	0x19
+	.short	0x5
+	.short	0x11FA
+	.short	0x1B
+	.short	0xF5
+	.short	0x1002
+	.short	0x18
+.LSpriteAnim_FireTrap_f37:
+	.short	0x7
+	.short	0xFD
+	.short	0x11FB
+	.short	0x1A
+	.short	0x1
+	.short	0x11FC
+	.short	0x19
+	.short	0x1
+	.short	0x11F3
+	.short	0x1A
+	.short	0xFA
+	.short	0x11FF
+	.short	0x19
+	.short	0x6
+	.short	0x11F9
+	.short	0x1B
+	.short	0xF6
+	.short	0x1001
+	.short	0x18
+	.short	0x7
+	.short	0x11F0
+	.short	0x1A
+.LSpriteAnim_FireTrap_f38:
+	.short	0x7
+	.short	0xFF
+	.short	0x11FA
+	.short	0x1A
+	.short	0x3
+	.short	0x11FB
+	.short	0x19
+	.short	0x2
+	.short	0x11F2
+	.short	0x1A
+	.short	0x7
+	.short	0x11F8
+	.short	0x1A
+	.short	0x8
+	.short	0x11EE
+	.short	0x19
+	.short	0xF7
+	.short	0x11FF
+	.short	0x19
+	.short	0xFB
+	.short	0x11FE
+	.short	0x1A
+.LSpriteAnim_FireTrap_f39:
+	.short	0x8
+	.short	0x1
+	.short	0x11F8
+	.short	0x1A
+	.short	0x5
+	.short	0x11F9
+	.short	0x19
+	.short	0x4
+	.short	0x11F0
+	.short	0x1A
+	.short	0xF9
+	.short	0x11FE
+	.short	0x19
+	.short	0xFD
+	.short	0x11FC
+	.short	0x1A
+	.short	0xF8
+	.short	0x1003
+	.short	0x18
+	.short	0xA
+	.short	0x11ED
+	.short	0x18
+	.short	0x9
+	.short	0x11F6
+	.short	0x19
+.LSpriteAnim_FireTrap_f40:
+	.short	0x7
+	.short	0x3
+	.short	0x11F7
+	.short	0x1A
+	.short	0x7
+	.short	0x11F8
+	.short	0x19
+	.short	0xFB
+	.short	0x11FD
+	.short	0x19
+	.short	0xFF
+	.short	0x11FB
+	.short	0x1A
+	.short	0xFA
+	.short	0x1002
+	.short	0x18
+	.short	0xB
+	.short	0x11F5
+	.short	0x18
+	.short	0x5
+	.short	0x11EF
+	.short	0x19
+.LSpriteAnim_FireTrap_f41:
+	.short	0x6
+	.short	0x5
+	.short	0x11F5
+	.short	0x1A
+	.short	0x9
+	.short	0x11F6
+	.short	0x19
+	.short	0xFD
+	.short	0x11FC
+	.short	0x19
+	.short	0x1
+	.short	0x11F9
+	.short	0x1A
+	.short	0xFB
+	.short	0x1000
+	.short	0x18
+	.short	0x7
+	.short	0x11EE
+	.short	0x18
+.LSpriteAnim_FireTrap_f42:
+	.short	0x5
+	.short	0x7
+	.short	0x11F3
+	.short	0x1A
+	.short	0xFF
+	.short	0x11FA
+	.short	0x19
+	.short	0x3
+	.short	0x11F7
+	.short	0x1A
+	.short	0xFD
+	.short	0x11FE
+	.short	0x18
+	.short	0xC
+	.short	0x11F4
+	.short	0x18
+.LSpriteAnim_FireTrap_f43:
+	.short	0x4
+	.short	0x1
+	.short	0x11F8
+	.short	0x19
+	.short	0x5
+	.short	0x11F5
+	.short	0x1A
+	.short	0xFF
+	.short	0x11FC
+	.short	0x18
+	.short	0x9
+	.short	0x11F1
+	.short	0x19
+.LSpriteAnim_FireTrap_f44:
+	.short	0x4
+	.short	0x3
+	.short	0x11F6
+	.short	0x19
+	.short	0x1
+	.short	0x11FA
+	.short	0x18
+	.short	0x7
+	.short	0x11F3
+	.short	0x19
+	.short	0xB
+	.short	0x11F0
+	.short	0x18
+.LSpriteAnim_FireTrap_f45:
+	.short	0x4
+	.short	0x3
+	.short	0x11F6
+	.short	0x19
+	.short	0x1
+	.short	0x11FA
+	.short	0x18
+	.short	0x7
+	.short	0x11F3
+	.short	0x19
+	.short	0xB
+	.short	0x11F0
+	.short	0x18
+.LSpriteAnim_FireTrap_f46:
+	.short	0x3
+	.short	0x5
+	.short	0x11F4
+	.short	0x19
+	.short	0x3
+	.short	0x11F8
+	.short	0x18
+	.short	0xA
+	.short	0x11F1
+	.short	0x18
+.LSpriteAnim_FireTrap_f47:
+	.short	0x2
+	.short	0x4
+	.short	0x11F7
+	.short	0x18
+	.short	0x7
+	.short	0x11F3
+	.short	0x18
+.LSpriteAnim_FireTrap_f48:
+	.short	0x1
+	.short	0x5
+	.short	0x1F3
+	.short	0x18
+.LSpriteAnim_FireTrap_a0:
+	.short	0x2
+	.short	0x3
+	.short	0x2
+	.short	0x4
+	.short	0x2
+	.short	0x5
+	.short	0x3
+	.short	0x0
+	.short	0x3
+	.short	0x1
+	.short	0x3
+	.short	0x2
+	.short	0x3
+	.short	0x0
+	.short	0x3
+	.short	0x1
+	.short	0x3
+	.short	0x2
+	.short	0x2
+	.short	0x5
+	.short	0x2
+	.short	0x4
+	.short	0x2
+	.short	0x3
+	.short	0x0
+	.short	0x1
+	.short	0x0
+	.short	0xFFFF
+.LSpriteAnim_FireTrap_a1:
+	.short	0x2
+	.short	0x6
+	.short	0x2
+	.short	0x7
+	.short	0x2
+	.short	0x8
+	.short	0x2
+	.short	0x9
+	.short	0x2
+	.short	0xA
+	.short	0x2
+	.short	0xB
+	.short	0x2
+	.short	0xC
+	.short	0x2
+	.short	0xD
+	.short	0x2
+	.short	0xE
+	.short	0x2
+	.short	0xF
+	.short	0x2
+	.short	0x10
+	.short	0x2
+	.short	0x11
+	.short	0x2
+	.short	0x12
+	.short	0x2
+	.short	0x13
+	.short	0x2
+	.short	0x14
+	.short	0x2
+	.short	0x15
+	.short	0x2
+	.short	0x16
+	.short	0x2
+	.short	0x17
+	.short	0x2
+	.short	0x18
+	.short	0x2
+	.short	0x19
+	.short	0x0
+	.short	0x1
+	.short	0x0
+	.short	0xFFFF
+.LSpriteAnim_FireTrap_a2:
+	.short	0x1
+	.short	0x1A
+	.short	0x1
+	.short	0x1C
+	.short	0x0
+	.short	0xFFFF
+.LSpriteAnim_FireTrap_a3:
+	.short	0x1
+	.short	0x1A
+	.short	0x1
+	.short	0x1B
+	.short	0x0
+	.short	0xFFFF
+.LSpriteAnim_FireTrap_a4:
+	.short	0x2
+	.short	0x1D
+	.short	0x2
+	.short	0x1E
+	.short	0x2
+	.short	0x1F
+	.short	0x2
+	.short	0x20
+	.short	0x2
+	.short	0x21
+	.short	0x2
+	.short	0x22
+	.short	0x2
+	.short	0x23
+	.short	0x2
+	.short	0x24
+	.short	0x2
+	.short	0x25
+	.short	0x2
+	.short	0x26
+	.short	0x2
+	.short	0x27
+	.short	0x2
+	.short	0x28
+	.short	0x2
+	.short	0x29
+	.short	0x2
+	.short	0x2A
+	.short	0x2
+	.short	0x2B
+	.short	0x2
+	.short	0x2C
+	.short	0x2
+	.short	0x2D
+	.short	0x2
+	.short	0x2E
+	.short	0x2
+	.short	0x2F
+	.short	0x2
+	.short	0x30
+	.short	0x0
+	.short	0x1
+	.short	0x0
+	.short	0xFFFF
+	.size	 SpriteAnim_FireTrap, . - SpriteAnim_FireTrap

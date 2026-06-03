@@ -910,13 +910,13 @@ SECTIONS
         . = ALIGN(4); src/data/ui/phase_change.o(.data);
         . = ALIGN(4); src/data/ui/battle_forecast.o(.data);
         . = ALIGN(4); src/data/ui/anim_085A0EA0.o(.data);
-        . = ALIGN(4); src/data/ui/trap_gas_anim_0.o(.data);
+        . = ALIGN(4); src/data/ui/anim_trap_gas.o(.data);
         src/data/ui/trap_gas.o(.data);
         . = ALIGN(4); src/data/ui/anim_arrow_trap.o(.data);
         . = ALIGN(4); src/data/ui/trap_fire_pike.o(.data);
-        src/data/ui/trap_fire_pike_anim_0.o(.data);
+        src/data/ui/anim_fire_trap.o(.data);
         src/data/ui/trap_fire_pike_2.o(.data);
-        src/data/ui/trap_fire_pike_anim_1.o(.data);
+        src/data/ui/anim_pike_trap.o(.data);
         src/data/ui/trap_fire_pike_3.o(.data);
         . = ALIGN(4); src/data/ui/particles_fx.o(.data);
         . = ALIGN(4); src/data/ui/anim_mine_fx.o(.data);
@@ -1084,9 +1084,9 @@ SECTIONS
         . = ALIGN(4); src/mapanim_eventcall.o(.data);
         . = ALIGN(4); src/mapanim_spellassoc.o(.data);
         . = ALIGN(4); src/data/mapanim/anim_mapanim_scanline.o(.data);
-        . = ALIGN(4); src/data/mapanim/mapanim_statgain_anim.o(.data);
+        . = ALIGN(4); src/data/mapanim/anim_mapanim_statgain.o(.data);
         . = ALIGN(4); src/data/mapanim/anim_mapanim_torchfx.o(.data);
-        . = ALIGN(4); src/data/mapanim/mapanim_torch_anim.o(.data);
+        . = ALIGN(4); src/data/mapanim/anim_mapanim_torch.o(.data);
         . = ALIGN(4); src/data/mapanim/anim_mapanim_objects.o(.data);
         . = ALIGN(4); src/data/mapanim/mapanim_levelup.o(.data);
         . = ALIGN(4); src/data/mapanim/mapanim_battleinfo.o(.data);
@@ -1113,7 +1113,7 @@ SECTIONS
         . = ALIGN(4); src/uichapterstatus.o(.data);
         . = ALIGN(4); src/cgtext.o(.data);
         . = ALIGN(4); src/data/data_A01CC4.o(.data);
-        . = ALIGN(4); src/data/spriteanim_playerrankfog.o(.data);
+        . = ALIGN(4); src/data/ui/anim_player_rank_fog.o(.data);
         . = ALIGN(4); src/data/data_A01CC4_2.o(.data);
         . = ALIGN(4); src/data/data_chap_title.o(.data);
         . = ALIGN(4); src/data/data_A167C8.o(.data);
@@ -1196,7 +1196,7 @@ SECTIONS
         . = ALIGN(4); src/data/ending/ending_details.o(.data);
         . = ALIGN(4); src/data/ending/ending_fin.o(.data);
         . = ALIGN(4); src/data/ending/ending_staffreel.o(.data);
-        src/data/ending/ending_staffreel_anim_0.o(.data);
+        src/data/ending/anim_staffreel_browntextbox.o(.data);
         . = ALIGN(4); src/data/ending/ending_cg.o(.data);
         . = ALIGN(4); src/data/worldmap/worldmap_gmap.o(.data);
         . = ALIGN(4); src/data/worldmap/anim_worldmap_sprite.o(.data);
