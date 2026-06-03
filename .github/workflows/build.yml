@@ -29,9 +29,20 @@ jobs:
       run: sudo apt-get update && sudo apt-get install -y build-essential binutils-arm-none-eabi libpng-dev && python -m pip install ttp numpy pillow
 
     - uses: actions/checkout@v4
+      with:
+        submodules: recursive
 
     - name: Install agbcc
       run: git clone https://github.com/pret/agbcc.git && cd agbcc/ && ./build.sh && ./install.sh .. && cd ..
+
+    # Cache the mgfembp submodule's agbcc variant (010110-ThumbPatch); the FE6 SIO
+    # payload sub-build installs it on a cache miss. `make compare` is the backstop
+    # if a stale cache ever produced a different payload.
+    - name: Cache mgfembp agbcc
+      uses: actions/cache@v4
+      with:
+        path: mgfembp/tools/agbcc
+        key: mgfembp-agbcc-${{ hashFiles('mgfembp/tools/install_agbcc.sh') }}
 
     - name: Build tools
       run: ./build_tools.sh

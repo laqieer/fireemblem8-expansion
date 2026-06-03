@@ -50,16 +50,22 @@ cd /path/to/agbcc
 ./build.sh
 ./install.sh /path/to/fireemblem8u
 ```
-3. Build tools.
+3. Fetch submodules. The FE6 SIO link payload is built from source via the
+   [mgfembp](https://github.com/StanHash/mgfembp) submodule (not a committed blob);
+   the first `make` also fetches/builds its own agbcc variant for it.
 ```
 cd /path/to/fireemblem8u
+git submodule update --init --recursive
+```
+4. Build tools.
+```
 ./build_tools.sh
 ```
-4. Build the project.
+5. Build the project.
 ```
 make
 ```
-5. You will see this for success.
+6. You will see this for success.
 ```
 fireemblem8.gba: OK
 ```

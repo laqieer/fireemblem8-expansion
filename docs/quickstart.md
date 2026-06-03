@@ -25,9 +25,10 @@ What the script now does:
    - `libpng`
    - `python3`, `pip3`, `numpy`, `pillow`
 3. Checks whether `tools/agbcc/bin/agbcc` already exists. If it does, the script reuses it; otherwise it clones and builds [`pret/agbcc`](https://github.com/pret/agbcc) inside `.deps/agbcc` (ignored by git), installs it into `tools/agbcc`, and you can force a refresh any time with `--refresh-agbcc`.
-4. Builds helper tools via `./build_tools.sh`.
-5. Runs `make -j$(nproc)` to produce `fireemblem8.gba`.
-6. Verifies the ROM hash with `sha1sum -c checksum.sha1`.
+4. Fetches submodules (`git submodule update --init --recursive`). The FE6 SIO link payload is built from source via the [mgfembp](https://github.com/StanHash/mgfembp) submodule rather than a committed blob.
+5. Builds helper tools via `./build_tools.sh`.
+6. Runs `make -j$(nproc)` to produce `fireemblem8.gba`. The first build also fetches/builds mgfembp's own agbcc variant (`010110-ThumbPatch`) for the payload sub-build.
+7. Verifies the ROM hash with `sha1sum -c checksum.sha1`.
 
 On success you’ll see:
 

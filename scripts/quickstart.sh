@@ -183,9 +183,12 @@ prepare_agbcc() {
 
 build_project() {
   pushd "${PROJECT_DIR}" >/dev/null
+    echo "[+] Fetching submodules (mgfembp FE6 SIO payload sub-build)"
+    git submodule update --init --recursive
     echo "[+] Building project-specific tools"
     ./build_tools.sh
     echo "[+] Building fireemblem8u (this can take several minutes)"
+    echo "    (first build also fetches/builds the mgfembp agbcc variant for the FE6 SIO payload)"
     make -j"$(nproc)"
     echo "[+] Verifying ROM checksum"
     sha1sum -c checksum.sha1
