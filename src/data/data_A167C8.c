@@ -10,8 +10,9 @@ u8 gGfx_StatusText[] = INCBIN_U8("graphics/player_interface/status_text.4bpp");
 u16 gPal_PlayerInterface_Blue[] = INCBIN_U16("graphics/player_interface/player_interface_blue.gbapal");
 u16 gPal_PlayerInterface_Red[] = INCBIN_U16("graphics/player_interface/player_interface_red.gbapal");
 u16 gPal_PlayerInterface_Green[] = INCBIN_U16("graphics/player_interface/player_interface_green.gbapal");
-u16 gUnkData_48[] = INCBIN_U16("graphics/player_interface/gUnknown_08A173EC.gbapal");
-u16 gUnkData_49[] = INCBIN_U16("graphics/player_interface/gUnknown_08A1740C.gbapal");
+/* TSA tilemap (0x09/0x02 header) filled by CallARM_FillTileRect in unitinfowindow.c;
+ * was mis-extracted as two .gbapal palettes (gUnkData_48 + the spillover gUnkData_49). */
+u16 gTSA_UnitInfoWindow[] = INCBIN_U16("graphics/player_interface/gTSA_UnitInfoWindow.tsa.bin");
 u16 gTSA_TerrainBox[] = INCBIN_U16("graphics/misc/gTSA_TerrainBox.tsa.bin");
 u16 gTSA_MinimugBox[] = INCBIN_U16("graphics/misc/gTSA_MinimugBox.tsa.bin");
 u16 gUnkData_50[] = INCBIN_U16("graphics/misc/gUnkData_50.tsa.bin");

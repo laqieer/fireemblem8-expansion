@@ -846,8 +846,7 @@ extern u8 gGfx_StatusText[];
 extern u16 gPal_PlayerInterface_Blue[];
 extern u16 gPal_PlayerInterface_Red[];
 extern u16 gPal_PlayerInterface_Green[];
-// extern ??? gUnkData_48
-// extern ??? gUnkData_49
+extern u16 gTSA_UnitInfoWindow[];
 extern u16 gTSA_TerrainBox[];
 extern u16 gTSA_MinimugBox[];
 extern u16 gUnkData_50[];

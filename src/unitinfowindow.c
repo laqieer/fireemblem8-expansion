@@ -29,7 +29,7 @@ struct UnitInfoWindowProc {
     /* 63 */ u8 xNameText;
 };
 
-extern u8 gUnkData_48[];
+extern u16 gTSA_UnitInfoWindow[];
 
 void UnitInfoWindow_OnLoop(struct UnitInfoWindowProc* proc);
 
@@ -134,7 +134,7 @@ struct UnitInfoWindowProc* UnitInfoWindow_DrawBase(struct UnitInfoWindowProc* pr
 
     DrawUiFrame2(x, y + 2, width, 2 + lines * 2, 3);
 
-    CallARM_FillTileRect(gBG1TilemapBuffer + TILEMAP_INDEX(x, y), gUnkData_48, 0x1000);
+    CallARM_FillTileRect(gBG1TilemapBuffer + TILEMAP_INDEX(x, y), gTSA_UnitInfoWindow, 0x1000);
 
     if (width > 10) {
         int ix, j;
