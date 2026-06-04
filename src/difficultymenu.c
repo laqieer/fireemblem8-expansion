@@ -335,7 +335,7 @@ extern u16 Pal_MenuMainObjs_0[];    // pal
 extern u16 Pal_DifficultyMenuObjs[];
 extern u8 Img_DifficultyMenuObjs[];
 
-extern u8 gMenuMainObjs_1[];
+extern u8 Tsa_DifficultyMenuObjs[];
 
 //! FE8U = 0x080AC084
 void InitDifficultySelectScreen(struct DifficultyMenuProc * proc)
@@ -367,7 +367,7 @@ void InitDifficultySelectScreen(struct DifficultyMenuProc * proc)
     BG_Fill(gBG0TilemapBuffer, 0);
     BG_Fill(gBG1TilemapBuffer, 0);
 
-    Decompress(gMenuMainObjs_1, gGenericBuffer);
+    Decompress(Tsa_DifficultyMenuObjs, gGenericBuffer);
     CallARM_FillTileRect(gBG1TilemapBuffer + 0xd1, gGenericBuffer, 0x1000);
 
     DrawDifficultyModeText(proc);

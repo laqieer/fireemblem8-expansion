@@ -948,7 +948,7 @@ extern u8 Img_GameMainMenuObjs[];
 // extern ??? Pal_DifficultyMenuObjs
 // extern ??? gUnknown_08A2949A
 // extern ??? gUnknown_08A294BA
-// extern ??? gMenuMainObjs_1
+extern u8 Tsa_DifficultyMenuObjs[]; // difficulty-select screen BG tilemap
 extern u16 Pal_MenuMainObjs_0[]; // pal
 extern u8 Tsa_CommGameBgScreenInShop[]; // tsa
 // extern ??? gMenuMainObjs_2

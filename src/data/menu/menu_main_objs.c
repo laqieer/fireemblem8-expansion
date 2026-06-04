@@ -6,7 +6,7 @@ u8 Img_DifficultyMenuObjs[] = INCBIN_U8("graphics/misc/Img_DifficultyMenuObjs.4b
 u16 Pal_DifficultyMenuObjs[] = INCBIN_U16("graphics/misc/Pal_DifficultyMenuObjs.gbapal");
 
 u16 gMenuMainObjs_0[] = INCBIN_U16("graphics/misc/gUnknown_08A29498.4bpp");
-u8 gMenuMainObjs_1[] = INCBIN_U8("graphics/misc/gUnknown_08A29558.tsa.bin.lz");
+u8 Tsa_DifficultyMenuObjs[] = INCBIN_U8("graphics/misc/Tsa_DifficultyMenuObjs.tsa.bin.lz");
 u16 Pal_MenuMainObjs_0[] = INCBIN_U16("graphics/misc/Pal_08A295B4.gbapal");
 u8 Tsa_CommGameBgScreenInShop[] = INCBIN_U8("graphics/misc/Tsa_CommGameBgScreenInShop.tsa.bin");
 u8 gMenuMainObjs_2[] = INCBIN_U8("graphics/misc/gUnknown_08A29A88.4bpp.lz");
