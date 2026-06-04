@@ -5,7 +5,6 @@ graphics/misc/Tsa_ConfigUiFrame.tsa.bin.lz	least-bad: repetitive UI frame border
 graphics/misc/Tsa_PrepItemUseScreen.tsa.bin.lz	prep item-use UI overlay (sparse, max real tid~104, one stray tid797); menu-window frames recognizable but partial; exact Img_PrepItemUseScreen.4bpp.lz has only 3 tiles
 graphics/misc/Tsa_StaffReelEnt_08A4BB50.tsa.bin.lz	readable credits text band at bottom but heavy textured/noise fill over frame; no tileset/offset removed it
 graphics/misc/Tsa_StaffReelEnt_08A4BCC4.tsa.bin.lz	readable credits (EXECUTIVE PRODUCER/Staff) at bottom but checker/noise fill over rest; no pairing cleared it
-graphics/misc/gTsa_StoneShatter_081C1CDC.map.bin	not a tilemap - embedded shift-jis text+pointers, all magenta
 graphics/misc/gTsa_SupportSubScreen.tsa.bin.lz	no matching tileset among candidates - all sprite sheets render as textured noise
 graphics/misc/gUnknown_085B0F2C.tsa.bin	thin link arena placement-ranks banner strip 15x4; repetitive border pattern, no magenta but not clearly readable; seed pairing is least-bad
 graphics/misc/gUnknown_08A1B8B8.tsa.bin.lz	prep item-screen UI tilemap; window-frame structure visible but no clean tileset fit among candidates (seed tileset was 1-tile placeholder)
