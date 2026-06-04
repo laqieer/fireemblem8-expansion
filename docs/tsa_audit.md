@@ -151,7 +151,11 @@ workflow over 126 groups / 430 TSA assets.
 - **`EndingDetails`** — Unused/leftover ending-details (turn-record) screen TSA; sits with Img_CharacterEndingMenu data, not referenced in C. Content: blue/brown nameplate-style bar strip on green field.
 - **`Mapnightmare`** — Barrier spell map-animation tilemap (animated barrier-dome shimmer on BG2); symbol name 'nightmare' is a misnomer. Content: red/orange flame-like swirls on pale teal background (barrier dome effect).
 
-### Proposed symbol renames (placeholder → descriptive)
+### Proposed symbol renames (NOT applied — low confidence)
+These are agent suggestions left UN-applied because the evidence is uncertain
+(`Tsa_Mapnightmare` is used in `mapanim_staffeffect.c` and lives in
+`mapanim_nightmare.c`, contradicting the "barrier" guess; `gEfxlvupfx_3` is an
+orphan with no code usage). Recorded for a human to confirm:
 - **`Efxlvupfx`** → Tsa_EfxLvupBgText (paired Img/Pal -> Img_EfxLvupBgText / Pal_EfxLvupBgText) ("Level Up!" popup banner tilemap; orphan img/pal/tsa triplet (gEfxlvupfx_1 gfx + gEfxlvupfx_2 pal + gEfxlvupfx_3 map) in level-up data file, not referenced by any C code (only appears in proc/symbol-name tables))
 - **`Mapnightmare`** → Tsa_ManimBarrierBgfx (Barrier spell map-animation tilemap (animated barrier-dome shimmer on BG2); symbol name 'nightmare' is a misnomer)
 
@@ -168,6 +172,8 @@ code trace gives the correct one. Applied to the previews where concrete:
 - **`MapAnimUnlockBgfx`**: graphics/misc/Img_MapAnimUnlockBgfx.4bpp.lz (NOT Img_WallBreakAnim; that is a separate trapfx effect sharing the same .c) — BGPAL_MANIM_4 (TILEREF in PutTmAnimFrameFromTsa); Pal_WallBreakAnim listed in work item is unrelated
 
 ### File renaming
-21 groups have address-named source files (e.g. `Tsa_087C9390.map.bin`) whose
-symbols are already descriptive; those files are renamed to match their symbols.
+**Applied** (commit 9a06d67d): 224 address-named source files (e.g.
+`Tsa_087C9390.map.bin`, `gUnknown_08A1B8B8.tsa.bin`) were renamed to match their
+already-descriptive symbols (`Tsa_DemonLightBg4_Close_0`, `Tsa_PrepItemScreen`,
+…), with INCBIN paths, preview PNGs and `MANIFEST.tsv` updated. Byte-identical.
 
