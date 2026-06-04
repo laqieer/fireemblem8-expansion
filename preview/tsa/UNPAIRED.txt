@@ -1,156 +1,20 @@
-# In-scope TSAs not yet paired to a tileset+palette (need C-usage/FEBuilder resolution).
-graphics/banim/misc/gUnknown_0880210C.map.bin
-graphics/banim/misc/gUnknown_088021C0.map.bin
-graphics/banim/misc/gUnknown_08802274.map.bin
-graphics/misc/Tsa_089E7E0C.tsa.bin.lz
-graphics/misc/Tsa_089E7E2C.tsa.bin.lz
-graphics/misc/Tsa_089E7E50.tsa.bin.lz
-graphics/misc/Tsa_089E7E78.tsa.bin.lz
-graphics/misc/Tsa_089E7EA0.tsa.bin.lz
-graphics/misc/Tsa_089E7ECC.tsa.bin.lz
-graphics/misc/Tsa_089E7EFC.tsa.bin.lz
-graphics/misc/Tsa_089E7F2C.tsa.bin.lz
-graphics/misc/Tsa_089E7F5C.tsa.bin.lz
-graphics/misc/Tsa_089E7F8C.tsa.bin.lz
-graphics/misc/Tsa_089E7FBC.tsa.bin.lz
-graphics/misc/Tsa_089E7FFC.tsa.bin.lz
-graphics/misc/Tsa_089E8040.tsa.bin.lz
-graphics/misc/Tsa_089E8090.tsa.bin.lz
-graphics/misc/Tsa_089E80EC.tsa.bin.lz
-graphics/misc/Tsa_089E8148.tsa.bin.lz
-graphics/misc/Tsa_089E81A4.tsa.bin.lz
-graphics/misc/Tsa_089E8200.tsa.bin.lz
-graphics/misc/Tsa_NightMareMapAnimfx11.tsa.bin.lz
-graphics/misc/Tsa_NightMareMapAnimfx12.tsa.bin.lz
-graphics/misc/Tsa_NightMareMapAnimfx13.tsa.bin.lz
-graphics/misc/Tsa_NightMareMapAnimfx14.tsa.bin.lz
-graphics/misc/Tsa_NightMareMapAnimfx15.tsa.bin.lz
-graphics/misc/Tsa_NightMareMapAnimfx16.tsa.bin.lz
-graphics/misc/Tsa_NightMareMapAnimfx17.tsa.bin.lz
-graphics/misc/Tsa_NightMareMapAnimfx18.tsa.bin.lz
-graphics/misc/Tsa_NightMareMapAnimfx19.tsa.bin.lz
-graphics/misc/Tsa_NightMareMapAnimfx20.tsa.bin.lz
-graphics/misc/Tsa_NightMareMapAnimfx21.tsa.bin.lz
-graphics/misc/Tsa_NightMareMapAnimfx22.tsa.bin.lz
-graphics/misc/Tsa_NightMareMapAnimfx23.tsa.bin.lz
-graphics/misc/Tsa_NightMareMapAnimfx24.tsa.bin.lz
-graphics/misc/Tsa_NightMareMapAnimfx25.tsa.bin.lz
-graphics/misc/Tsa_NightMareMapAnimfx26.tsa.bin.lz
-graphics/misc/Tsa_NightMareMapAnimfx27.tsa.bin.lz
-graphics/misc/Tsa_NightMareMapAnimfx28.tsa.bin.lz
-graphics/misc/Tsa_NightMareMapAnimfx29.tsa.bin.lz
-graphics/misc/Tsa_NightMareMapAnimfx30.tsa.bin.lz
-graphics/misc/Tsa_NightMareMapAnimfx31.tsa.bin.lz
-graphics/misc/Tsa_NightMareMapAnimfx32.tsa.bin.lz
-graphics/misc/Tsa_NightMareMapAnimfx33.tsa.bin.lz
-graphics/misc/Tsa_StaffReelEnt_08A4AE08.tsa.bin.lz
-graphics/misc/Tsa_StaffReelEnt_08A4B090.tsa.bin.lz
-graphics/misc/Tsa_StaffReelEnt_08A4B2F4.tsa.bin.lz
-graphics/misc/Tsa_TerrainMapUi_Labels.tsa.bin
-graphics/misc/Tsa_TerrainMapUi_ObstacleFullHp.tsa.bin
-graphics/misc/Tsa_TerrainMapUi_ObstacleLabels.tsa.bin
-graphics/misc/gTSA_GoalBox_OneLine.tsa.bin
-graphics/misc/gTSA_GoalBox_TwoLines.tsa.bin
-graphics/misc/gTSA_TerrainBox_Ballistae.tsa.bin
-graphics/misc/gTsa_StoneShatter_081C1BF8.tsa.bin
-graphics/misc/gTsa_StoneShatter_081C1C44.tsa.bin
-graphics/misc/gTsa_StoneShatter_081C1C90.tsa.bin
-graphics/misc/gTsa_StoneShatter_081C1CDC.map.bin
-graphics/misc/gUnknown_089D2AD8.tsa.bin.lz
-graphics/misc/gUnknown_089D2C30.tsa.bin.lz
-graphics/misc/gUnknown_089D2DC0.tsa.bin.lz
-graphics/misc/gUnknown_089D2F78.tsa.bin.lz
-graphics/misc/gUnknown_089D3130.tsa.bin.lz
-graphics/misc/gUnknown_089D32D8.tsa.bin.lz
-graphics/misc/gUnknown_089D34A0.tsa.bin.lz
-graphics/misc/gUnknown_089D36B0.tsa.bin.lz
-graphics/misc/gUnknown_089D38CC.tsa.bin.lz
-graphics/misc/gUnknown_089D3AD4.tsa.bin.lz
-graphics/misc/gUnknown_089D3CF8.tsa.bin.lz
-graphics/misc/gUnknown_089D3F20.tsa.bin.lz
-graphics/misc/gUnknown_089D4150.tsa.bin.lz
-graphics/misc/gUnknown_089D432C.tsa.bin.lz
-graphics/misc/gUnknown_089D4500.tsa.bin.lz
-graphics/misc/gUnknown_089D46C4.tsa.bin.lz
-graphics/misc/gUnknown_089D48AC.tsa.bin.lz
-graphics/misc/gUnknown_089D4A60.tsa.bin.lz
-graphics/misc/gUnknown_089D4BFC.tsa.bin.lz
-graphics/misc/gUnknown_089D4D74.tsa.bin.lz
-graphics/misc/gUnknown_089D4ECC.tsa.bin.lz
-graphics/misc/gUnknown_089D4FDC.tsa.bin.lz
-graphics/misc/gUnknown_089D5100.tsa.bin.lz
-graphics/misc/gUnknown_089D5214.tsa.bin.lz
-graphics/misc/gUnknown_089D52D0.tsa.bin.lz
-graphics/misc/gUnknown_089D538C.tsa.bin.lz
-graphics/misc/gUnknown_089D5440.tsa.bin.lz
-graphics/misc/gUnknown_089D5540.tsa.bin.lz
-graphics/misc/gUnknown_089D5658.tsa.bin.lz
-graphics/misc/gUnknown_089D5764.tsa.bin.lz
-graphics/misc/gUnknown_089D5820.tsa.bin.lz
-graphics/misc/gUnknown_089D58E0.tsa.bin.lz
-graphics/misc/gUnknown_089D5A20.tsa.bin.lz
-graphics/misc/gUnknown_089D5B58.tsa.bin.lz
-graphics/misc/gUnknown_089D5C90.tsa.bin.lz
-graphics/misc/gUnknown_089D5D4C.tsa.bin.lz
-graphics/misc/gUnknown_089D5E9C.tsa.bin.lz
-graphics/misc/gUnknown_089D5FF0.tsa.bin.lz
-graphics/misc/gUnknown_089D6170.tsa.bin.lz
-graphics/misc/gUnknown_089D62F8.tsa.bin.lz
-graphics/misc/gUnknown_089D64EC.tsa.bin.lz
-graphics/misc/gUnknown_089D66D0.tsa.bin.lz
-graphics/misc/gUnknown_089D67F4.tsa.bin.lz
-graphics/misc/gUnknown_089D6AA4.tsa.bin.lz
-graphics/misc/gUnknown_089D6E1C.tsa.bin.lz
-graphics/misc/gUnknown_089D6F0C.tsa.bin.lz
-graphics/misc/gUnknown_089D704C.tsa.bin.lz
-graphics/misc/gUnknown_089D71DC.tsa.bin.lz
-graphics/misc/gUnknown_089D73B4.tsa.bin.lz
-graphics/misc/gUnknown_089D75BC.tsa.bin.lz
-graphics/misc/gUnknown_089D77CC.tsa.bin.lz
-graphics/misc/gUnknown_089D79B4.tsa.bin.lz
-graphics/misc/gUnknown_089D7B78.tsa.bin.lz
-graphics/misc/gUnknown_089D7D04.tsa.bin.lz
-graphics/misc/gUnknown_089D7E48.tsa.bin.lz
-graphics/misc/gUnknown_089D7F48.tsa.bin.lz
-graphics/misc/gUnknown_089DCE48.tsa.bin.lz
-graphics/misc/gUnknown_089DCF10.tsa.bin.lz
-graphics/misc/gUnknown_089DCFFC.tsa.bin.lz
-graphics/misc/gUnknown_089DD114.tsa.bin.lz
-graphics/misc/gUnknown_089DD284.tsa.bin.lz
-graphics/misc/gUnknown_089DD4E8.tsa.bin.lz
-graphics/misc/gUnknown_089DD790.tsa.bin.lz
-graphics/misc/gUnknown_089DDA68.tsa.bin.lz
-graphics/misc/gUnknown_089E4FBC.tsa.bin.lz
-graphics/misc/gUnknown_089E5074.tsa.bin.lz
-graphics/misc/gUnknown_089E5130.tsa.bin.lz
-graphics/misc/gUnknown_089E51EC.tsa.bin.lz
-graphics/misc/gUnknown_089E52AC.tsa.bin.lz
-graphics/misc/gUnknown_089E5364.tsa.bin.lz
-graphics/misc/gUnknown_089E541C.tsa.bin.lz
-graphics/misc/gUnknown_089E5600.tsa.bin.lz
-graphics/misc/gUnknown_089E5814.tsa.bin.lz
-graphics/misc/gUnknown_089E5A58.tsa.bin.lz
-graphics/misc/gUnknown_089E5D08.tsa.bin.lz
-graphics/misc/gUnknown_089E5FEC.tsa.bin.lz
-graphics/misc/gUnknown_089E6290.tsa.bin.lz
-graphics/misc/gUnknown_089E64D0.tsa.bin.lz
-graphics/misc/gUnknown_089E66A0.tsa.bin.lz
-graphics/misc/gUnknown_089E6808.tsa.bin.lz
-graphics/misc/gUnknown_089E6924.tsa.bin.lz
-graphics/misc/gUnknown_089E6A14.tsa.bin.lz
-graphics/misc/gUnknown_089E6AE4.tsa.bin.lz
-graphics/misc/gUnknown_089E6BB0.tsa.bin.lz
-graphics/misc/gUnknown_089E6C80.tsa.bin.lz
-graphics/misc/gUnknown_089E6D50.tsa.bin.lz
-graphics/misc/gUnknown_089E6E1C.tsa.bin.lz
-graphics/misc/gUnknown_089E6EE8.tsa.bin.lz
-graphics/misc/gUnknown_089E6FB4.tsa.bin.lz
-graphics/misc/gUnknown_089E7080.tsa.bin.lz
-graphics/misc/gUnknown_08A17604.tsa.bin
-graphics/misc/gUnknown_08A1763C.tsa.bin
-graphics/misc/gUnknown_08A17650.tsa.bin
-graphics/misc/gUnknown_08A17664.tsa.bin
-graphics/misc/gUnknown_08A17678.tsa.bin
-graphics/misc/gUnknown_08A98BF8.tsa.bin.lz
-graphics/misc/gUnknown_08A98CFC.tsa.bin
-graphics/misc/gUnknown_08A98D58.tsa.bin
+# In-scope TSAs the vision pass could NOT confirm a coherent pairing for (best-effort preview still committed).
+# tsa	reason
+graphics/misc/Tsa_08B18D68.map.bin	all magenta - no tileset fits: multi-palette tilemap uses all 16 banks + tile ids up to 1015, largest candidate 640 tiles
+graphics/misc/Tsa_ConfigUiFrame.tsa.bin.lz	least-bad: repetitive UI frame border, magenta band at bottom; seed tileset was 1-tile noise
+graphics/misc/Tsa_PrepItemUseScreen.tsa.bin.lz	prep item-use UI overlay (sparse, max real tid~104, one stray tid797); menu-window frames recognizable but partial; exact Img_PrepItemUseScreen.4bpp.lz has only 3 tiles
+graphics/misc/Tsa_StaffReelEnt_08A4BB50.tsa.bin.lz	readable credits text band at bottom but heavy textured/noise fill over frame; no tileset/offset removed it
+graphics/misc/Tsa_StaffReelEnt_08A4BCC4.tsa.bin.lz	readable credits (EXECUTIVE PRODUCER/Staff) at bottom but checker/noise fill over rest; no pairing cleared it
+graphics/misc/gTsa_StoneShatter_081C1CDC.map.bin	not a tilemap - embedded shift-jis text+pointers, all magenta
+graphics/misc/gTsa_SupportSubScreen.tsa.bin.lz	no matching tileset among candidates - all sprite sheets render as textured noise
+graphics/misc/gUnknown_085B0F2C.tsa.bin	thin link arena placement-ranks banner strip 15x4; repetitive border pattern, no magenta but not clearly readable; seed pairing is least-bad
+graphics/misc/gUnknown_08A1B8B8.tsa.bin.lz	prep item-screen UI tilemap; window-frame structure visible but no clean tileset fit among candidates (seed tileset was 1-tile placeholder)
+graphics/misc/gUnknown_08A1B990.tsa.bin.lz	no candidate tileset fits: TSA needs ~783 tiles (max id 782), largest candidate only 64; sparse sprites on green + magenta-missing band
+graphics/misc/gUnknown_08A29558.tsa.bin.lz	menu obj-arrangement, no tileset renders coherent BG; least-bad pick
+graphics/misc/gUnknown_08A35488.tsa.bin	correct tileset (640 tiles=max tid 637) but multi-palette (banks 0-7); preview tool single-pal -> magenta
+graphics/misc/gUnknown_08A35FD0.tsa.bin.lz	banner+pillars partial; max tid 797 exceeds all tilesets, 2 palette banks - no single-pal/tileset fits
+graphics/op_anim/OpAnimSaleh2.map.bin.lz	_2 overlay map (616/640 tiles are tid0); correct pairing but not standalone-coherent in preview
+graphics/op_anim/OpAnimSeth2.map.bin.lz	_2 overlay map (mostly tid0); correct tileset+pal but not standalone-coherent
+graphics/op_anim/OpAnimTethys2.map.bin.lz	_2 overlay map (mostly tid0); correct tileset+pal but not standalone-coherent
+graphics/titlescreen/title_unk_image_3.map.bin.lz	sparse effect overlay - 2008/2048 entries are blank fill (tid257), only ~40 small sprite tiles in a centered cross; no candidate tileset renders them clearly
+graphics/titlescreen/title_unk_image_4.map.bin.lz	sparse overlay - dominant fill tile 895 is out of range (transparent by design); mostly magenta, no candidate tileset fits the scattered tiles

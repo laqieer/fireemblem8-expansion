@@ -33,6 +33,12 @@ def decode_lz(d):
     return bytes(out)
 
 def load_tiles(path):
+    # path may be a '+'-joined list of tileset files to concatenate (e.g. CG part_0..9)
+    if '+' in path:
+        tiles = []
+        for p in path.split('+'):
+            tiles.extend(load_tiles(p.strip()))
+        return tiles
     d = open(path, 'rb').read()
     if path.endswith('.lz'):
         d = decode_lz(d)
