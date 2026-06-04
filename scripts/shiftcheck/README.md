@@ -16,9 +16,10 @@ separate ELF / a generated ldscript, never `ldscript.txt`, `$(ROM)`, or `compare
 | --- | --- | --- |
 | `make shiftcheck-build` | 0 | Audits hardcoded GBA addresses in the **build system** (Makefile, ldscripts). Cross-checks coupled constants — e.g. the banim link base `-b 0x8c02000` must equal the ldscript pin `0xC02000` — and fails on a mismatch. |
 | `make shiftcheck-static` | 1 | Relinks with `ld --emit-relocs`, then flags every ROM-pointer-looking word that carries **no relocation**. Ranked by signal (see below). |
+| `make shiftcheck-offsets` | 1b | Of the words that *do* relocate, flags any relocated against the **wrong base symbol** — `ResourceA + hardcoded offset` that lands at the start of a different resource B (`scan_offsets.py`). |
 | `make shiftcheck-diff` | 2 | Builds the ROM **shifted** by two amounts and diffs: a real pointer's value tracks the shift; a hardcoded literal stays put. Independent of the reloc table; confirms Layer 1. |
 | `make shiftcheck-run` | 3 | Runs the matching vs a shifted ROM headless under identical input and compares framebuffer/RAM at checkpoints. End-to-end proof. Needs mGBA python bindings (non-blocking if absent). |
-| `make shiftcheck` | 0+1+2 | The static gate (no emulator). |
+| `make shiftcheck` | 0+1+1b+2 | The static gate (no emulator). |
 
 ## Why ranking, not a flat list
 
@@ -88,6 +89,63 @@ this environment.) It is validated and non-vacuous:
   `opinfo` (the literal had no relocation; the fix gives it one). Reaching the
   class-reel screen would need a targeted input script / save state.
 
+## Cross-resource hardcoded offsets — Layer 1b (`scan_offsets.py`)
+
+Layers 1/2 ask "which ROM-pointer words carry **no** relocation?" (raw literals).
+Layer 1b asks the complementary question: of the words that **do** relocate, which
+point at a *different* resource than the symbol they relocate against — i.e.
+`&ResourceA + hardcoded_offset` that actually lands in resource B.
+
+A pointer written `Img_LimitViewSquares + 0x280` carries a relocation (so Layers 1–3
+think it is safe), but the relocation tracks **Img_LimitViewSquares**, not the resource
+that lives at `+0x280`. Grow `Img_LimitViewSquares.4bpp` and the next resource slides
+down, while `+ 0x280` stays put → the pointer now lands in the middle of the enlarged
+image. The shiftable form is a direct `&B` reference (addend 0), which relocates to
+follow B.
+
+`scan_offsets.py` parses the retained `R_ARM_ABS32` relocations: for each one against a
+**named global** S it computes `addend = word − S.value` and the symbol T that owns the
+word; `T ≠ S` means the offset crossed out of S. It buckets:
+
+- **[A] HIGH** — `word == T.start`, location is a **data** section, addend `> 0`: a stored
+  pointer that reaches the *start* of a different resource. The actionable bug shape;
+  exits non-zero when non-empty.
+- **[B] REVIEW** — negative addends and mid-symbol landings: compiler `&arr[-1]`
+  1-based-index bias bases and base-register reuse in `.text` literal pools. These are
+  regenerated correctly every build and move with their object under a uniform shift.
+
+**Blind spot — section symbols and runtime `ADD`.** binutils collapses relocations
+against *local* symbols / asm labels onto the section symbol (`ROM`, `IWRAM`,
+`ewram_data`), losing the source symbol — so a local-base `A + offset` is invisible here
+(catch it at the source level). And when the compiler applies the offset as a runtime
+`ADD #imm` reusing the base register, the relocated word is the base with addend 0 — also
+invisible. Both classes must be found by reading the source.
+
+### Validation cases (now fixed)
+
+Three real cross-resource offsets were found, each resolved by its nature (all
+byte-identical — `make compare` still passes):
+
+- `src/playerphase.c` `gOpenLimitViewImgLut[]` — entry 6 was
+  `Img_LimitViewSquares + (5*4*CHR_SIZE)` = `+0x280`, which fell into the *separate*
+  resource `gUnkData_34` (the image was only `0x280` = 5 frames). These are six uniform
+  frames of one animation, so the **stray 6th-frame asset was merged** into
+  `Img_LimitViewSquares.png` (now `0x300` = 6 frames) and the table uses a clean
+  `Img_LimitViewSquares + (n * LIMIT_VIEW_FRAME_SIZE)` formula that is genuinely
+  within-resource. `gUnkData_34` is gone. (Was a HIGH-bucket hit; now within-resource.)
+- `src/fontgrp.c` `InitTalkTextFont` — `Pal_Text + 0x10` (`Pal_Text` is `u16[]`, so
+  `+0x20` bytes) was the separate talk-text palette `gUiPalettes_0`. Now references it
+  directly; the palette was also **renamed `Pal_TalkText`** (it is the talk/sprite text
+  palette in `fontgrp`, `scene`, and `bb`). (HIGH-bucket hit, now resolved.)
+- `src/worldmap_rm.c` `WmDotPalAnim_Loop1`/`Loop2` — `Pal_WmPlaceDot_Standard - 0x10` and
+  `Pal_WmPlaceDot_Highlight + 0x10` are the adjacent opposite palette. agbcc emits these as
+  a runtime `ADD`/`SUB #0x20` reusing the other arg's base register, and the two loops
+  anchor on different symbols, so there is **no byte-identical symbol form**; documented in
+  place (keep the two palettes adjacent if the layout is edited). Invisible to this scan by
+  construction — `Loop1` was found only via the source scan (subtraction form).
+
+After the fixes the HIGH bucket is empty.
+
 ## Source-level raw-pointer scan (`scan_raw_casts.sh`)
 
 The binary delta-0 heuristic in `scan_relocs.py` is noisy (coincidental data words
@@ -108,6 +166,7 @@ coherence heuristic misses; `scan_raw_casts.sh` catches it directly.
 - `emit_relocs_link.sh` — single source of truth for the production link line,
   parameterized (used with `-q` for Layer 1 and with a shifted ldscript for Layer 2).
 - `scan_relocs.py` — Layer 1.
+- `scan_offsets.py` — Layer 1b (cross-resource wrong-base relocations).
 - `gen_shifted_ldscript.py`, `diff_shift.py` — Layer 2.
 - `run_dynamic.py` — Layer 3.
 - `_classify.py` — shared classifier (Layers 1 and 2 feed it different "relocated"

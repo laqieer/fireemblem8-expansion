@@ -76,8 +76,6 @@ extern u16 gUnkData_35[];
 extern u16 gUnkData_36[];
 extern u16 gUnkData_37[];
 
-extern u8 gUnkData_34[];
-
 extern struct ProcCmd gProcScr_Playerphase_0[];
 extern struct ProcCmd gProcScr_PlayerPhase[];
 

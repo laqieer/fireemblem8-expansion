@@ -38,7 +38,7 @@ void InitSubtitleHelpText(struct SubtitleHelpProc * proc)
     InitSpriteTextFont(&proc->font, OBJ_VRAM0 + 0x4800, 0x14);
     SetTextFontGlyphs(1);
 
-    ApplyPalette(gUiPalettes_0, 0x14);
+    ApplyPalette(Pal_TalkText, 0x14);
 
     for (line = 0; line < 2; line++) {
         InitSpriteText(proc->text + line);

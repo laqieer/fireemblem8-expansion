@@ -339,7 +339,7 @@ void InitSpriteTalk(int chr, int lines, int palId) {
     SetTextFont(&sTalkFont);
     SetTextFontGlyphs(TEXT_GLYPHS_TALK);
 
-    ApplyPalette(gUiPalettes_0, palId + 0x10);
+    ApplyPalette(Pal_TalkText, palId + 0x10);
 
     PAL_OBJ_COLOR(palId, 4) = RGB(7, 18, 28);
     PAL_OBJ_COLOR(palId, 14) = RGB(14, 13, 12);

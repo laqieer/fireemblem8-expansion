@@ -414,7 +414,7 @@ extern u16 gPal_LightRune[];
 extern u16 gPal_MapSpriteArena[];
 extern u16 gPal_MapSpriteSepia[];
 extern u16 Pal_Text[];
-extern u8 gUiPalettes_0[];
+extern u8 Pal_TalkText[];
 extern u16 Pal_HelpBox[]; // pal
 extern u16 gPal_HelpTextBox[];
 extern u16 gPal_YellowTextBox[];
@@ -806,8 +806,7 @@ extern u8 gGfx_YellowTextBox2[];
 extern u8 gGfx_YellowTextBox3[];
 extern u8 gGfx_YellowTextBox4[];
 extern u8 gGfx_YellowTextBox5[];
-extern u8 CONST_DATA Img_LimitViewSquares[];
-// extern ??? gUnkData_34
+extern u8 CONST_DATA Img_LimitViewSquares[]; // 6 uniform 4-tile move-limit-view frames
 // extern ??? gUnkData_35
 // extern ??? gUnkData_36
 // extern ??? gUnkData_37

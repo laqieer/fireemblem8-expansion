@@ -163,16 +163,19 @@ struct ProcCmd CONST_DATA gProcScr_Playerphase_0[] =
     PROC_END,
 };
 
+/* The move-limit-view open animation is 6 uniform frames of 4 tiles (32x8 px) each. */
+#define LIMIT_VIEW_FRAME_SIZE (4 * CHR_SIZE)
+
 u8 * CONST_DATA gOpenLimitViewImgLut[] =
 {
     NULL,
     NULL,
-    Img_LimitViewSquares + (0 * 4 * CHR_SIZE),
-    Img_LimitViewSquares + (1 * 4 * CHR_SIZE),
-    Img_LimitViewSquares + (2 * 4 * CHR_SIZE),
-    Img_LimitViewSquares + (3 * 4 * CHR_SIZE),
-    Img_LimitViewSquares + (4 * 4 * CHR_SIZE),
-    Img_LimitViewSquares + (5 * 4 * CHR_SIZE),
+    Img_LimitViewSquares + (0 * LIMIT_VIEW_FRAME_SIZE),
+    Img_LimitViewSquares + (1 * LIMIT_VIEW_FRAME_SIZE),
+    Img_LimitViewSquares + (2 * LIMIT_VIEW_FRAME_SIZE),
+    Img_LimitViewSquares + (3 * LIMIT_VIEW_FRAME_SIZE),
+    Img_LimitViewSquares + (4 * LIMIT_VIEW_FRAME_SIZE),
+    Img_LimitViewSquares + (5 * LIMIT_VIEW_FRAME_SIZE),
 };
 
 struct ProcCmd CONST_DATA sProcScr_MoveLimitViewChange[] =
@@ -1235,7 +1238,7 @@ void PlayPhaseForceActiveUnitCanto(void)
 //! FE8U = 0x0801D89C
 void MoveLimitViewChange_OnInit(struct MoveLimitViewProc * proc)
 {
-    RegisterDataMove(gUnkData_34, (u8 *)VRAM + 0x5080, 0x80);
+    RegisterDataMove(Img_LimitViewSquares + (5 * LIMIT_VIEW_FRAME_SIZE), (u8 *)VRAM + 0x5080, 0x80);
 
     if (!(gBmSt.gameStateBits & BM_FLAG_0))
     {
@@ -1243,7 +1246,7 @@ void MoveLimitViewChange_OnInit(struct MoveLimitViewProc * proc)
     }
     else
     {
-        RegisterDataMove(gUnkData_34, (u8 *)VRAM + 0x5000, 0x80);
+        RegisterDataMove(Img_LimitViewSquares + (5 * LIMIT_VIEW_FRAME_SIZE), (u8 *)VRAM + 0x5000, 0x80);
         Proc_End(proc);
     }
 

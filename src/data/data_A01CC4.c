@@ -23,8 +23,8 @@ u8 gGfx_YellowTextBox2[] = INCBIN_U8("graphics/misc/gGfx_YellowTextBox2.4bpp.lz"
 u8 gGfx_YellowTextBox3[] = INCBIN_U8("graphics/misc/gGfx_YellowTextBox3.4bpp.lz");
 u8 gGfx_YellowTextBox4[] = INCBIN_U8("graphics/misc/gGfx_YellowTextBox4.4bpp.lz");
 u8 gGfx_YellowTextBox5[] = INCBIN_U8("graphics/misc/gGfx_YellowTextBox5.4bpp.lz");
+/* 6 uniform 4-tile animation frames; frame 5 was formerly the separate gUnkData_34. */
 u8 CONST_DATA Img_LimitViewSquares[] = INCBIN_U8("graphics/misc/Img_LimitViewSquares.4bpp");
-u8 gUnkData_34[] = INCBIN_U8("graphics/misc/gUnknown_08A02EB4.4bpp");
 u16 gUnkData_35[] = INCBIN_U16("graphics/misc/gUnknown_08A02F34.4bpp");
 u16 gUnkData_36[] = INCBIN_U16("graphics/misc/gUnknown_08A02F94.4bpp");
 u16 gUnkData_37[] = INCBIN_U16("graphics/misc/gUnknown_08A02FF4.4bpp");

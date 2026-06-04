@@ -887,6 +887,9 @@ void WmDotPalAnim_Loop1(struct ProcGmapRmBaPalAnim * proc)
 
     if (proc->timer < 30)
     {
+        /* srcB (Pal_WmPlaceDot_Standard - 0x10) is the adjacent Pal_WmPlaceDot_Highlight; the
+         * offset is hardcoded because agbcc reuses the Standard base register, so there is no
+         * byte-identical symbol form. Keep the two palettes adjacent if the layout is edited. */
         BlendWmDotPalette(proc->timer, 30, Pal_WmPlaceDot_Standard, Pal_WmPlaceDot_Standard - 0x10, gPaletteBuffer + 0x150);
         proc->flag = 0;
     }
@@ -907,6 +910,9 @@ void WmDotPalAnim_Loop2(struct ProcGmapRmBaPalAnim * proc)
 
     if (proc->timer < 30)
     {
+        /* srcB (Pal_WmPlaceDot_Highlight + 0x10) is the adjacent Pal_WmPlaceDot_Standard; the
+         * offset is hardcoded because agbcc reuses the Highlight base register, so there is no
+         * byte-identical symbol form. Keep the two palettes adjacent if the layout is edited. */
         BlendWmDotPalette(proc->timer, 30, Pal_WmPlaceDot_Highlight, Pal_WmPlaceDot_Highlight + 0x10, gPaletteBuffer + 0x150);
     }
     else

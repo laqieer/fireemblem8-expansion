@@ -140,6 +140,12 @@ shiftcheck-static: $(RELOCS_ELF) $(ROM) $(MAP)
 	    --map $(MAP) --ref-elf $(ELF) --prefix $(PREFIX) \
 	    --allowlist $(SHIFTCHECK)/allowlist.txt
 
+# Layer 1b: flag relocations against the WRONG base symbol -- a stored pointer written
+# "ResourceA + hardcoded offset" that lands in a different resource B (breaks if A is resized).
+shiftcheck-offsets: $(RELOCS_ELF) $(ROM) $(MAP)
+	$(PYTHON) $(SHIFTCHECK)/scan_offsets.py --elf $(RELOCS_ELF) --gba $(ROM) \
+	    --map $(MAP) --ref-elf $(ELF) --prefix $(PREFIX)
+
 # Layer 2: differential two-shift build; an independent (reloc-table-free) confirm.
 shiftcheck-diff: $(ROM) $(MAP) $(OBJECTS_LST)
 	LD='$(LD)' OBJCOPY='$(OBJCOPY)' OBJECTS_LST='$(OBJECTS_LST)' \
@@ -155,10 +161,10 @@ shiftcheck-run: $(ROM) $(MAP) $(OBJECTS_LST)
 	    $(PYTHON) $(SHIFTCHECK)/run_dynamic.py --base-gba $(ROM) --shift $(SHIFT) \
 	    --ldscript $(LDSCRIPT) --map $(MAP) --outdir $(SHIFTDIR) --prefix $(PREFIX)
 
-# Static layers (the CI gate): build-system audit + reloc scan + differential.
-shiftcheck: shiftcheck-build shiftcheck-static shiftcheck-diff
+# Static layers (the CI gate): build-system audit + reloc scan + cross-resource offsets + differential.
+shiftcheck: shiftcheck-build shiftcheck-static shiftcheck-offsets shiftcheck-diff
 
-.PHONY: shiftcheck shiftcheck-build shiftcheck-static shiftcheck-diff shiftcheck-run
+.PHONY: shiftcheck shiftcheck-build shiftcheck-static shiftcheck-offsets shiftcheck-diff shiftcheck-run
 
 CLEAN_FILES := $(ROM) $(ELF) $(MAP) $(OBJECTS_LST) $(SFILES_COMPILED) $(DATA_SRC_SFILES_COMPILED) graphics/*.h $(CFILES_GENERATED) $(RELOCS_ELF) $(RELOCS_ELF:.elf=.map)
 CLEAN_DIRS := $(DEPS_DIR) $(SHIFTDIR)

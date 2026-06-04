@@ -33,6 +33,6 @@ void ChangeSubtitleHelp(ProcPtr parent, const char * string);
 
 extern struct ProcCmd gProcScr_SubtitleHelpDarkener[];
 extern struct ProcCmd gProcScr_SubtitleHelp[];
-extern u8 gUiPalettes_0[]; // pal
+extern u8 Pal_TalkText[]; // talk/sprite text palette
 
 #endif  // GUARD_BB_H
