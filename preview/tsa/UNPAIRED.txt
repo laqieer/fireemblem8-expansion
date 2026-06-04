@@ -1,26 +1,3 @@
-# TSAs whose preview is not trustworthy (tileset does not name-match and no covering tileset committed).
+# TSAs whose preview is still not trustworthy.
 # tsa_source	check	issue
-graphics/misc/Tsa6_MonsterStoneMapAnimfx.tsa.bin.lz	wrong	tileset does not name-match TSA and no covering tileset in repo
-graphics/misc/Tsa9_MonsterStoneMapAnimfx.tsa.bin.lz	wrong	tileset does not name-match TSA and no covering tileset in repo
-graphics/misc/Tsa_08B18D68.map.bin	wrong	~90% magenta, no tileset fits (status unresolved)
-graphics/misc/Tsa_CommGameBgScreenInShop.tsa.bin	wrong	tileset does not name-match TSA and no covering tileset in repo
-graphics/misc/Tsa_ConfigUiFrame.tsa.bin.lz	uncertain	degenerate repeated-tile UI pattern + magenta band at bottom; status unresolved, least-bad render
-graphics/misc/Tsa_EventGmap.tsa.bin.lz	wrong	tileset does not name-match TSA and no covering tileset in repo
-graphics/misc/Tsa_GorgonHatchCloud_A.tsa.bin.lz	wrong	tileset does not name-match TSA and no covering tileset in repo
-graphics/misc/Tsa_GorgonHatchCloud_B.tsa.bin.lz	wrong	tileset does not name-match TSA and no covering tileset in repo
-graphics/misc/Tsa_GorgonHatchCloud_D.tsa.bin.lz	wrong	tileset does not name-match TSA and no covering tileset in repo
-graphics/misc/Tsa_GorgonHatchCloud_E.tsa.bin.lz	wrong	tileset does not name-match TSA and no covering tileset in repo
-graphics/misc/Tsa_GorgonHatchCloud_F.tsa.bin.lz	wrong	tileset does not name-match TSA and no covering tileset in repo
-graphics/misc/Tsa_GorgonHatchCloud_G.tsa.bin.lz	wrong	tileset does not name-match TSA and no covering tileset in repo
-graphics/misc/Tsa_LinkArenaPostBattleBg.tsa.bin.lz	wrong	tileset does not name-match TSA and no covering tileset in repo
-graphics/misc/Tsa_StaffReelEnt_08A4BB50.tsa.bin.lz	uncertain	majority of frame is orange checker/textured noise fill; only bottom credits band readable; note says no pairing removed it
-graphics/misc/Tsa_StaffReelEnt_08A4BCC4.tsa.bin.lz	uncertain	majority of frame is orange checker/noise fill; only bottom credits readable; note says no pairing cleared it
-graphics/misc/gTsa_SupportSubScreen.tsa.bin.lz	wrong	tile noise/garbage with magenta bands; no matching tileset (status unresolved)
-graphics/misc/gUnknown_089D64EC.tsa.bin.lz	uncertain	pervasive regular grid of magenta missing-tile speckle across whole frame (ids exceed tileset); base storm-cloud silhouette still readable
-graphics/misc/gUnknown_08A1B658.tsa.bin.lz	wrong	tileset does not name-match TSA and no covering tileset in repo
-graphics/misc/gUnknown_08A1B8B8.tsa.bin.lz	uncertain	green/white striped texture reads as noise, not a coherent UI window; note flags unresolved/no tileset fit
-graphics/misc/gUnknown_08A1B990.tsa.bin.lz	uncertain	sparse red sprite fragments on green striped field + magenta band; note says no candidate tileset fits (max tile id 782 vs candidate 64)
-graphics/misc/gUnknown_08A29558.tsa.bin.lz	uncertain	flat blue-gray field with only a thin green sprite strip at bottom; note says no tileset renders coherent BG, least-bad pick
-graphics/misc/gUnknown_08A2C92C.map.bin	wrong	tileset does not name-match TSA and no covering tileset in repo
-graphics/misc/gUnknown_08A35488.tsa.bin	wrong	Garish clashing red/orange/cyan/yellow random tile noise; no coherent structure
-graphics/titlescreen/title_unk_image_4.map.bin.lz	wrong	tileset does not name-match TSA and no covering tileset in repo
+graphics/misc/gUnknown_08A29558.tsa.bin.lz	wrong	difficulty-select popup: 13x12 UI-frame box (fill tile 9 + frame ids 1-69) copied to gBG1TilemapBuffer+0xd1; BG tiles ar [overlay: render --oob-black]

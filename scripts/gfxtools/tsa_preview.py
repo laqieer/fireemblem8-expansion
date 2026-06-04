@@ -86,14 +86,16 @@ def parse_tsa(path, width=None, with_header=None):
         h = (len(entries) + w - 1) // w
     return w, h, entries
 
-def render(tsa_path, tiles_path, pal_path, out_path, width=None, offset=0, flip_rows=False):
+def render(tsa_path, tiles_path, pal_path, out_path, width=None, offset=0, flip_rows=False, oob=(255, 0, 255)):
+    # oob = colour for tile ids outside the tileset (default magenta = "missing"; use black
+    # for overlay tilemaps whose out-of-range ids are intentionally external map/system tiles).
     from PIL import Image
     tiles = load_tiles(tiles_path)
     pal = load_palette(pal_path)
     w, h, entries = parse_tsa(tsa_path, width)
-    img = Image.new('RGB', (w*8, h*8), (255, 0, 255))
+    img = Image.new('RGB', (w*8, h*8), oob)
     px = img.load()
-    blank = [0]*64
+    blank = None  # out-of-range -> oob colour
     for idx in range(min(len(entries), w*h)):
         v = entries[idx]
         tid = (v & 0x3FF); hf = (v >> 10) & 1; vf = (v >> 11) & 1; pidx = (v >> 12) & 0xF
@@ -104,12 +106,14 @@ def render(tsa_path, tiles_path, pal_path, out_path, width=None, offset=0, flip_
         tile = tiles[tid] if 0 <= tid < len(tiles) else blank
         row = (h - 1 - idx // w) if flip_rows else (idx // w)  # CG maps store rows bottom-up
         tx = (idx % w) * 8; ty = row * 8
+        if tile is None:  # out-of-range tile id: leave the oob background
+            continue
         for yy in range(8):
             sy = 7 - yy if vf else yy
             for xx in range(8):
                 sx = 7 - xx if hf else xx
                 c = tile[sy*8 + sx]
-                col = pal[pidx*16 + c] if pidx*16 + c < len(pal) else (255,0,255)
+                col = pal[pidx*16 + c] if pidx*16 + c < len(pal) else oob
                 px[tx+xx, ty+yy] = col
     img.save(out_path)
     return w, h
@@ -120,6 +124,7 @@ if __name__ == '__main__':
     ap.add_argument('--width', type=int, default=None)
     ap.add_argument('--offset', type=int, default=0)
     ap.add_argument('--flip-rows', action='store_true')
+    ap.add_argument('--oob-black', action='store_true', help='render out-of-range tile ids as black (overlay tilemaps)')
     a = ap.parse_args()
-    w, h = render(a.tsa, a.tiles, a.palette, a.out, a.width, a.offset, a.flip_rows)
+    w, h = render(a.tsa, a.tiles, a.palette, a.out, a.width, a.offset, a.flip_rows, (0,0,0) if a.oob_black else (255,0,255))
     print("rendered %s  %dx%d tiles -> %s" % (a.tsa, w, h, a.out))
