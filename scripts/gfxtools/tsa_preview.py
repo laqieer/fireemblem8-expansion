@@ -75,7 +75,7 @@ def parse_tsa(path, width=None, with_header=None):
     if path.endswith('.lz'):
         d = decode_lz(d)
     if with_header is None:
-        with_header = path.endswith('.tsa.bin')
+        with_header = '.tsa.bin' in path  # headered, incl. compressed '.tsa.bin.lz'
     off = 0; w = width; h = None
     if with_header:
         w = d[0] + 1; h = d[1] + 1; off = 2

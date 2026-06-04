@@ -1,3 +1,2 @@
-# TSAs whose preview is still not trustworthy.
-# tsa_source	check	issue
-graphics/misc/gUnknown_08A29558.tsa.bin.lz	wrong	difficulty-select popup: 13x12 UI-frame box (fill tile 9 + frame ids 1-69) copied to gBG1TilemapBuffer+0xd1; BG tiles ar [overlay: render --oob-black]
+# Still-untrustworthy previews.
+# tsa	check	issue
