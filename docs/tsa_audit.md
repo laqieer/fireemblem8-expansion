@@ -177,3 +177,39 @@ code trace gives the correct one. Applied to the previews where concrete:
 already-descriptive symbols (`Tsa_DemonLightBg4_Close_0`, `Tsa_PrepItemScreen`,
 …), with INCBIN paths, preview PNGs and `MANIFEST.tsv` updated. Byte-identical.
 
+
+## Bulk TSA asset categories (not individually previewed)
+
+The 430 audited above are the individually-INCBIN'd effect/screen TSAs. The other
+948 TSA files are two homogeneous bulk categories, audited at the category level:
+
+### Battle-animation background tilemaps — 832 files (`graphics/banim/assets/tsa/`)
+- **Trace:** declared in `src/data/banim/data_banim.s` (791 `.global Tsa_*` symbols,
+  each immediately followed by its paired `Pal_*`); loaded by the battle-animation
+  (EKR/banim) engine, paired with a per-animation banim tileset packed via
+  `scripts/arm_compressing_linker.py`.
+- **Size:** almost all 600 entries (30×20 = full 240×160 screen); a few 640 (32×20),
+  1024, 1200, 960, 512.
+- **Palette:** the `Pal_*` declared next to each `Tsa_*` in `data_banim.s`.
+- **Content / name:** per-spell / per-class battle backgrounds; symbols are already
+  descriptive (e.g. `Tsa_BreathBgBase`, `Tsa_DarkBreathBg_*`) and match their role.
+- **Rename:** files use the banim-asset `<romaddr>_<Symbol>.map.bin` convention shared
+  by all banim asset types (Img/Pal/Tsa); the address prefix is intentional for
+  traceability, so the TSA files are left in that convention (renaming only the TSA
+  subset would make the banim asset dir inconsistent). Not standalone-previewable —
+  the matching tileset lives in the per-animation banim asset set.
+
+### Opening-animation scrolling backgrounds — 100 files (`graphics/op_anim/scrolling_background/`)
+- **Trace:** `src/data/data_opanim_gfx.c` — `img_opanimN` (4bpp) + `tsa_opanimN`
+  (`opanimN.map.bin`) pairs; the opening cinematic's horizontally-scrolling BG.
+- **Size:** small 30-tile strips (60 bytes). **Content:** scrolling backdrop tiles;
+  symbols (`tsa_opanim1..100`) match. Files already cleanly named.
+
+### Misc — 16 files
+A handful of `graphics/bg`, `graphics/ui`, `graphics/misc` BG tilemaps not in the
+preview set; same TSA format, paired with their screen's tileset.
+
+## Coverage
+All **1378** committed `.tsa.bin`/`.map.bin` files are accounted for: 430 audited
+individually (table above) + 948 in the two bulk categories. A prior classification
+pass confirmed 0 are mis-typed (genuinely non-tilemap) — see the project history.
