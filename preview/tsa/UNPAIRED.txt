@@ -1,19 +1,13 @@
-# In-scope TSAs the vision pass could NOT confirm a coherent pairing for (best-effort preview still committed).
-# tsa	reason
-graphics/misc/Tsa_08B18D68.map.bin	all magenta - no tileset fits: multi-palette tilemap uses all 16 banks + tile ids up to 1015, largest candidate 640 tiles
-graphics/misc/Tsa_ConfigUiFrame.tsa.bin.lz	least-bad: repetitive UI frame border, magenta band at bottom; seed tileset was 1-tile noise
-graphics/misc/Tsa_PrepItemUseScreen.tsa.bin.lz	prep item-use UI overlay (sparse, max real tid~104, one stray tid797); menu-window frames recognizable but partial; exact Img_PrepItemUseScreen.4bpp.lz has only 3 tiles
-graphics/misc/Tsa_StaffReelEnt_08A4BB50.tsa.bin.lz	readable credits text band at bottom but heavy textured/noise fill over frame; no tileset/offset removed it
-graphics/misc/Tsa_StaffReelEnt_08A4BCC4.tsa.bin.lz	readable credits (EXECUTIVE PRODUCER/Staff) at bottom but checker/noise fill over rest; no pairing cleared it
-graphics/misc/gTsa_SupportSubScreen.tsa.bin.lz	no matching tileset among candidates - all sprite sheets render as textured noise
-graphics/misc/gUnknown_085B0F2C.tsa.bin	thin link arena placement-ranks banner strip 15x4; repetitive border pattern, no magenta but not clearly readable; seed pairing is least-bad
-graphics/misc/gUnknown_08A1B8B8.tsa.bin.lz	prep item-screen UI tilemap; window-frame structure visible but no clean tileset fit among candidates (seed tileset was 1-tile placeholder)
-graphics/misc/gUnknown_08A1B990.tsa.bin.lz	no candidate tileset fits: TSA needs ~783 tiles (max id 782), largest candidate only 64; sparse sprites on green + magenta-missing band
-graphics/misc/gUnknown_08A29558.tsa.bin.lz	menu obj-arrangement, no tileset renders coherent BG; least-bad pick
-graphics/misc/gUnknown_08A35488.tsa.bin	correct tileset (640 tiles=max tid 637) but multi-palette (banks 0-7); preview tool single-pal -> magenta
-graphics/misc/gUnknown_08A35FD0.tsa.bin.lz	banner+pillars partial; max tid 797 exceeds all tilesets, 2 palette banks - no single-pal/tileset fits
-graphics/op_anim/OpAnimSaleh2.map.bin.lz	_2 overlay map (616/640 tiles are tid0); correct pairing but not standalone-coherent in preview
-graphics/op_anim/OpAnimSeth2.map.bin.lz	_2 overlay map (mostly tid0); correct tileset+pal but not standalone-coherent
-graphics/op_anim/OpAnimTethys2.map.bin.lz	_2 overlay map (mostly tid0); correct tileset+pal but not standalone-coherent
-graphics/titlescreen/title_unk_image_3.map.bin.lz	sparse effect overlay - 2008/2048 entries are blank fill (tid257), only ~40 small sprite tiles in a centered cross; no candidate tileset renders them clearly
-graphics/titlescreen/title_unk_image_4.map.bin.lz	sparse overlay - dominant fill tile 895 is out of range (transparent by design); mostly magenta, no candidate tileset fits the scattered tiles
+# TSAs flagged by vision QA as not-clearly-correct (mostly: correct tileset not among repo candidates).
+# preview	check	issue
+graphics/misc/Tsa_08B18D68.map.bin	wrong	~90% magenta, no tileset fits (status unresolved)
+graphics/misc/Tsa_ConfigUiFrame.tsa.bin.lz	uncertain	degenerate repeated-tile UI pattern + magenta band at bottom; status unresolved, least-bad render
+graphics/misc/Tsa_StaffReelEnt_08A4BB50.tsa.bin.lz	uncertain	majority of frame is orange checker/textured noise fill; only bottom credits band readable; note says no pairing removed it
+graphics/misc/Tsa_StaffReelEnt_08A4BCC4.tsa.bin.lz	uncertain	majority of frame is orange checker/noise fill; only bottom credits readable; note says no pairing cleared it
+graphics/misc/gTsa_SupportSubScreen.tsa.bin.lz	wrong	tile noise/garbage with magenta bands; no matching tileset (status unresolved)
+graphics/misc/gUnknown_089D64EC.tsa.bin.lz	uncertain	pervasive regular grid of magenta missing-tile speckle across whole frame (ids exceed tileset); base storm-cloud silhouette still readable
+graphics/misc/gUnknown_08A1B8B8.tsa.bin.lz	uncertain	green/white striped texture reads as noise, not a coherent UI window; note flags unresolved/no tileset fit
+graphics/misc/gUnknown_08A1B990.tsa.bin.lz	uncertain	sparse red sprite fragments on green striped field + magenta band; note says no candidate tileset fits (max tile id 782 vs candidate 64)
+graphics/misc/gUnknown_08A29558.tsa.bin.lz	uncertain	flat blue-gray field with only a thin green sprite strip at bottom; note says no tileset renders coherent BG, least-bad pick
+graphics/misc/gUnknown_08A2C5A8.tsa.bin	uncertain	legible sound-room text glyphs visible but background is garish red/green zigzag stripes; palette imperfect per note
+graphics/misc/gUnknown_08A35488.tsa.bin	wrong	full-frame tile noise/garbage, garish random palette; not a coherent render

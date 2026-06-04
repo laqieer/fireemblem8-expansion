@@ -86,7 +86,7 @@ def parse_tsa(path, width=None, with_header=None):
         h = (len(entries) + w - 1) // w
     return w, h, entries
 
-def render(tsa_path, tiles_path, pal_path, out_path, width=None, offset=0):
+def render(tsa_path, tiles_path, pal_path, out_path, width=None, offset=0, flip_rows=False):
     from PIL import Image
     tiles = load_tiles(tiles_path)
     pal = load_palette(pal_path)
@@ -102,7 +102,8 @@ def render(tsa_path, tiles_path, pal_path, out_path, width=None, offset=0):
         else:
             tid -= offset
         tile = tiles[tid] if 0 <= tid < len(tiles) else blank
-        tx = (idx % w) * 8; ty = (idx // w) * 8
+        row = (h - 1 - idx // w) if flip_rows else (idx // w)  # CG maps store rows bottom-up
+        tx = (idx % w) * 8; ty = row * 8
         for yy in range(8):
             sy = 7 - yy if vf else yy
             for xx in range(8):
@@ -118,6 +119,7 @@ if __name__ == '__main__':
     ap.add_argument('tsa'); ap.add_argument('tiles'); ap.add_argument('palette'); ap.add_argument('out')
     ap.add_argument('--width', type=int, default=None)
     ap.add_argument('--offset', type=int, default=0)
+    ap.add_argument('--flip-rows', action='store_true')
     a = ap.parse_args()
-    w, h = render(a.tsa, a.tiles, a.palette, a.out, a.width, a.offset)
+    w, h = render(a.tsa, a.tiles, a.palette, a.out, a.width, a.offset, a.flip_rows)
     print("rendered %s  %dx%d tiles -> %s" % (a.tsa, w, h, a.out))
