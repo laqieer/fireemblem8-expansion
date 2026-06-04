@@ -78,11 +78,11 @@ u16 Pal_MapAnimUnlockObjfx_Unk[] = INCBIN_U16("graphics/misc/Pal_MapAnimUnlockOb
 
 u8 Tsa_MapAnimUnlockBgfx[] = INCBIN_U8("graphics/misc/Tsa_MapAnimUnlockBgfx.tsa.bin");
 
-u8 Tsa_MapAnim_0[] = INCBIN_U8("graphics/misc/Tsa_089B0864.tsa.bin");
+u8 Tsa_MapAnim_0[] = INCBIN_U8("graphics/misc/Tsa_MapAnim_0.tsa.bin");
 
 u8 Img_MapAnimRepairfx[] = INCBIN_U8("graphics/misc/Img_MapAnimRepairfx.4bpp.lz");
 
-u8 Tsa_MapAnim_1[] = INCBIN_U8("graphics/misc/Tsa_089B17A4.tsa.bin");
+u8 Tsa_MapAnim_1[] = INCBIN_U8("graphics/misc/Tsa_MapAnim_1.tsa.bin");
 
 u16 ApConf_MapAnimSleep[] = INCBIN_U16("graphics/misc/ApConf_MapAnimSleep.4bpp");
 

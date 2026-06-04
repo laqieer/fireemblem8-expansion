@@ -12,7 +12,7 @@ u8 Img_WorldmapMinimap[] = INCBIN_U8("graphics/misc/Img_WorldmapMinimap.4bpp.lz"
 
 u16 Pal_WorldmapMinimap[] = INCBIN_U16("graphics/misc/Pal_WorldmapMinimap.gbapal");
 
-u8 gWorldmapSkirmish_1[] = INCBIN_U8("graphics/misc/gUnknown_08AA18AC.tsa.bin");
+u8 gWorldmapSkirmish_1[] = INCBIN_U8("graphics/misc/gWorldmapSkirmish_1.tsa.bin");
 
 u16 gWorldmapSkirmish_2[] = INCBIN_U16("graphics/misc/gUnknown_08AA1930.4bpp");
 

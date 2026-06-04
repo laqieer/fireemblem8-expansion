@@ -2,7 +2,7 @@
 
 u8 Img_ManimBarrierBgfx[] = INCBIN_U8("graphics/misc/Img_ManimBarrierBgfx.4bpp.lz");
 
-u8 Tsa_Mapnightmare[] = INCBIN_U8("graphics/misc/Tsa_089B343C.tsa.bin");
+u8 Tsa_Mapnightmare[] = INCBIN_U8("graphics/misc/Tsa_Mapnightmare.tsa.bin");
 
 u16 Img_NightMareMapAnimfx[] = INCBIN_U16("graphics/misc/Img_NightMareMapAnimfx.4bpp.lz");
 

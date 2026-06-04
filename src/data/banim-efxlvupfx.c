@@ -398,7 +398,7 @@ u8 CONST_DATA gEfxlvupfx_1[] = INCBIN_U8("graphics/banim/efxlvupfx/gUnknown_085B
 
 u16 CONST_DATA gEfxlvupfx_2[] = INCBIN_U16("graphics/banim/efxlvupfx/gUnknown_085BF4FC.agbpal");
 
-u8 CONST_DATA gEfxlvupfx_3[] = INCBIN_U8("graphics/banim/efxlvupfx/gUnknown_085BF5FC.map.bin.lz");
+u8 CONST_DATA gEfxlvupfx_3[] = INCBIN_U8("graphics/banim/efxlvupfx/gEfxlvupfx_3.map.bin.lz");
 
 u8 CONST_DATA Img1_EfxLvupBG[] = INCBIN_U8("graphics/banim/efxlvupfx/Img1_EfxLvupBG.4bpp.lz");
 

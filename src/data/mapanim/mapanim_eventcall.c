@@ -224,117 +224,117 @@ u16 gMapanimEventcall_133[] = INCBIN_U16("graphics/misc/gUnknown_089D2A98.4bpp")
 
 u16 gMapanimEventcall_134[] = INCBIN_U16("graphics/misc/gUnknown_089D2AB8.4bpp");
 
-u16 gMapanimEventcall_135[] = INCBIN_U16("graphics/misc/gUnknown_089D2AD8.tsa.bin.lz");
+u16 gMapanimEventcall_135[] = INCBIN_U16("graphics/misc/gMapanimEventcall_135.tsa.bin.lz");
 
-u16 gMapanimEventcall_136[] = INCBIN_U16("graphics/misc/gUnknown_089D2C30.tsa.bin.lz");
+u16 gMapanimEventcall_136[] = INCBIN_U16("graphics/misc/gMapanimEventcall_136.tsa.bin.lz");
 
-u16 gMapanimEventcall_137[] = INCBIN_U16("graphics/misc/gUnknown_089D2DC0.tsa.bin.lz");
+u16 gMapanimEventcall_137[] = INCBIN_U16("graphics/misc/gMapanimEventcall_137.tsa.bin.lz");
 
-u16 gMapanimEventcall_138[] = INCBIN_U16("graphics/misc/gUnknown_089D2F78.tsa.bin.lz");
+u16 gMapanimEventcall_138[] = INCBIN_U16("graphics/misc/gMapanimEventcall_138.tsa.bin.lz");
 
-u16 gMapanimEventcall_139[] = INCBIN_U16("graphics/misc/gUnknown_089D3130.tsa.bin.lz");
+u16 gMapanimEventcall_139[] = INCBIN_U16("graphics/misc/gMapanimEventcall_139.tsa.bin.lz");
 
-u16 gMapanimEventcall_140[] = INCBIN_U16("graphics/misc/gUnknown_089D32D8.tsa.bin.lz");
+u16 gMapanimEventcall_140[] = INCBIN_U16("graphics/misc/gMapanimEventcall_140.tsa.bin.lz");
 
-u16 gMapanimEventcall_141[] = INCBIN_U16("graphics/misc/gUnknown_089D34A0.tsa.bin.lz");
+u16 gMapanimEventcall_141[] = INCBIN_U16("graphics/misc/gMapanimEventcall_141.tsa.bin.lz");
 
-u16 gMapanimEventcall_142[] = INCBIN_U16("graphics/misc/gUnknown_089D36B0.tsa.bin.lz");
+u16 gMapanimEventcall_142[] = INCBIN_U16("graphics/misc/gMapanimEventcall_142.tsa.bin.lz");
 
-u16 gMapanimEventcall_143[] = INCBIN_U16("graphics/misc/gUnknown_089D38CC.tsa.bin.lz");
+u16 gMapanimEventcall_143[] = INCBIN_U16("graphics/misc/gMapanimEventcall_143.tsa.bin.lz");
 
-u16 gMapanimEventcall_144[] = INCBIN_U16("graphics/misc/gUnknown_089D3AD4.tsa.bin.lz");
+u16 gMapanimEventcall_144[] = INCBIN_U16("graphics/misc/gMapanimEventcall_144.tsa.bin.lz");
 
-u16 gMapanimEventcall_145[] = INCBIN_U16("graphics/misc/gUnknown_089D3CF8.tsa.bin.lz");
+u16 gMapanimEventcall_145[] = INCBIN_U16("graphics/misc/gMapanimEventcall_145.tsa.bin.lz");
 
-u16 gMapanimEventcall_146[] = INCBIN_U16("graphics/misc/gUnknown_089D3F20.tsa.bin.lz");
+u16 gMapanimEventcall_146[] = INCBIN_U16("graphics/misc/gMapanimEventcall_146.tsa.bin.lz");
 
-u16 gMapanimEventcall_147[] = INCBIN_U16("graphics/misc/gUnknown_089D4150.tsa.bin.lz");
+u16 gMapanimEventcall_147[] = INCBIN_U16("graphics/misc/gMapanimEventcall_147.tsa.bin.lz");
 
-u16 gMapanimEventcall_148[] = INCBIN_U16("graphics/misc/gUnknown_089D432C.tsa.bin.lz");
+u16 gMapanimEventcall_148[] = INCBIN_U16("graphics/misc/gMapanimEventcall_148.tsa.bin.lz");
 
-u16 gMapanimEventcall_149[] = INCBIN_U16("graphics/misc/gUnknown_089D4500.tsa.bin.lz");
+u16 gMapanimEventcall_149[] = INCBIN_U16("graphics/misc/gMapanimEventcall_149.tsa.bin.lz");
 
-u16 gMapanimEventcall_150[] = INCBIN_U16("graphics/misc/gUnknown_089D46C4.tsa.bin.lz");
+u16 gMapanimEventcall_150[] = INCBIN_U16("graphics/misc/gMapanimEventcall_150.tsa.bin.lz");
 
-u16 gMapanimEventcall_151[] = INCBIN_U16("graphics/misc/gUnknown_089D48AC.tsa.bin.lz");
+u16 gMapanimEventcall_151[] = INCBIN_U16("graphics/misc/gMapanimEventcall_151.tsa.bin.lz");
 
-u16 gMapanimEventcall_152[] = INCBIN_U16("graphics/misc/gUnknown_089D4A60.tsa.bin.lz");
+u16 gMapanimEventcall_152[] = INCBIN_U16("graphics/misc/gMapanimEventcall_152.tsa.bin.lz");
 
-u16 gMapanimEventcall_153[] = INCBIN_U16("graphics/misc/gUnknown_089D4BFC.tsa.bin.lz");
+u16 gMapanimEventcall_153[] = INCBIN_U16("graphics/misc/gMapanimEventcall_153.tsa.bin.lz");
 
-u16 gMapanimEventcall_154[] = INCBIN_U16("graphics/misc/gUnknown_089D4D74.tsa.bin.lz");
+u16 gMapanimEventcall_154[] = INCBIN_U16("graphics/misc/gMapanimEventcall_154.tsa.bin.lz");
 
-u16 gMapanimEventcall_155[] = INCBIN_U16("graphics/misc/gUnknown_089D4ECC.tsa.bin.lz");
+u16 gMapanimEventcall_155[] = INCBIN_U16("graphics/misc/gMapanimEventcall_155.tsa.bin.lz");
 
-u16 gMapanimEventcall_156[] = INCBIN_U16("graphics/misc/gUnknown_089D4FDC.tsa.bin.lz");
+u16 gMapanimEventcall_156[] = INCBIN_U16("graphics/misc/gMapanimEventcall_156.tsa.bin.lz");
 
-u16 gMapanimEventcall_157[] = INCBIN_U16("graphics/misc/gUnknown_089D5100.tsa.bin.lz");
+u16 gMapanimEventcall_157[] = INCBIN_U16("graphics/misc/gMapanimEventcall_157.tsa.bin.lz");
 
-u16 gMapanimEventcall_158[] = INCBIN_U16("graphics/misc/gUnknown_089D5214.tsa.bin.lz");
+u16 gMapanimEventcall_158[] = INCBIN_U16("graphics/misc/gMapanimEventcall_158.tsa.bin.lz");
 
-u16 gMapanimEventcall_159[] = INCBIN_U16("graphics/misc/gUnknown_089D52D0.tsa.bin.lz");
+u16 gMapanimEventcall_159[] = INCBIN_U16("graphics/misc/gMapanimEventcall_159.tsa.bin.lz");
 
-u16 gMapanimEventcall_160[] = INCBIN_U16("graphics/misc/gUnknown_089D538C.tsa.bin.lz");
+u16 gMapanimEventcall_160[] = INCBIN_U16("graphics/misc/gMapanimEventcall_160.tsa.bin.lz");
 
-u16 gMapanimEventcall_161[] = INCBIN_U16("graphics/misc/gUnknown_089D5440.tsa.bin.lz");
+u16 gMapanimEventcall_161[] = INCBIN_U16("graphics/misc/gMapanimEventcall_161.tsa.bin.lz");
 
-u16 gMapanimEventcall_162[] = INCBIN_U16("graphics/misc/gUnknown_089D5540.tsa.bin.lz");
+u16 gMapanimEventcall_162[] = INCBIN_U16("graphics/misc/gMapanimEventcall_162.tsa.bin.lz");
 
-u16 gMapanimEventcall_163[] = INCBIN_U16("graphics/misc/gUnknown_089D5658.tsa.bin.lz");
+u16 gMapanimEventcall_163[] = INCBIN_U16("graphics/misc/gMapanimEventcall_163.tsa.bin.lz");
 
-u16 gMapanimEventcall_164[] = INCBIN_U16("graphics/misc/gUnknown_089D5764.tsa.bin.lz");
+u16 gMapanimEventcall_164[] = INCBIN_U16("graphics/misc/gMapanimEventcall_164.tsa.bin.lz");
 
-u16 gMapanimEventcall_165[] = INCBIN_U16("graphics/misc/gUnknown_089D5820.tsa.bin.lz");
+u16 gMapanimEventcall_165[] = INCBIN_U16("graphics/misc/gMapanimEventcall_165.tsa.bin.lz");
 
-u16 gMapanimEventcall_166[] = INCBIN_U16("graphics/misc/gUnknown_089D58E0.tsa.bin.lz");
+u16 gMapanimEventcall_166[] = INCBIN_U16("graphics/misc/gMapanimEventcall_166.tsa.bin.lz");
 
-u16 gMapanimEventcall_167[] = INCBIN_U16("graphics/misc/gUnknown_089D5A20.tsa.bin.lz");
+u16 gMapanimEventcall_167[] = INCBIN_U16("graphics/misc/gMapanimEventcall_167.tsa.bin.lz");
 
-u16 gMapanimEventcall_168[] = INCBIN_U16("graphics/misc/gUnknown_089D5B58.tsa.bin.lz");
+u16 gMapanimEventcall_168[] = INCBIN_U16("graphics/misc/gMapanimEventcall_168.tsa.bin.lz");
 
-u16 gMapanimEventcall_169[] = INCBIN_U16("graphics/misc/gUnknown_089D5C90.tsa.bin.lz");
+u16 gMapanimEventcall_169[] = INCBIN_U16("graphics/misc/gMapanimEventcall_169.tsa.bin.lz");
 
-u16 gMapanimEventcall_170[] = INCBIN_U16("graphics/misc/gUnknown_089D5D4C.tsa.bin.lz");
+u16 gMapanimEventcall_170[] = INCBIN_U16("graphics/misc/gMapanimEventcall_170.tsa.bin.lz");
 
-u16 gMapanimEventcall_171[] = INCBIN_U16("graphics/misc/gUnknown_089D5E9C.tsa.bin.lz");
+u16 gMapanimEventcall_171[] = INCBIN_U16("graphics/misc/gMapanimEventcall_171.tsa.bin.lz");
 
-u16 gMapanimEventcall_172[] = INCBIN_U16("graphics/misc/gUnknown_089D5FF0.tsa.bin.lz");
+u16 gMapanimEventcall_172[] = INCBIN_U16("graphics/misc/gMapanimEventcall_172.tsa.bin.lz");
 
-u16 gMapanimEventcall_173[] = INCBIN_U16("graphics/misc/gUnknown_089D6170.tsa.bin.lz");
+u16 gMapanimEventcall_173[] = INCBIN_U16("graphics/misc/gMapanimEventcall_173.tsa.bin.lz");
 
-u16 gMapanimEventcall_174[] = INCBIN_U16("graphics/misc/gUnknown_089D62F8.tsa.bin.lz");
+u16 gMapanimEventcall_174[] = INCBIN_U16("graphics/misc/gMapanimEventcall_174.tsa.bin.lz");
 
-u16 gMapanimEventcall_175[] = INCBIN_U16("graphics/misc/gUnknown_089D64EC.tsa.bin.lz");
+u16 gMapanimEventcall_175[] = INCBIN_U16("graphics/misc/gMapanimEventcall_175.tsa.bin.lz");
 
-u16 gMapanimEventcall_176[] = INCBIN_U16("graphics/misc/gUnknown_089D66D0.tsa.bin.lz");
+u16 gMapanimEventcall_176[] = INCBIN_U16("graphics/misc/gMapanimEventcall_176.tsa.bin.lz");
 
-u16 gMapanimEventcall_177[] = INCBIN_U16("graphics/misc/gUnknown_089D67F4.tsa.bin.lz");
+u16 gMapanimEventcall_177[] = INCBIN_U16("graphics/misc/gMapanimEventcall_177.tsa.bin.lz");
 
-u16 gMapanimEventcall_178[] = INCBIN_U16("graphics/misc/gUnknown_089D6AA4.tsa.bin.lz");
+u16 gMapanimEventcall_178[] = INCBIN_U16("graphics/misc/gMapanimEventcall_178.tsa.bin.lz");
 
-u16 gMapanimEventcall_179[] = INCBIN_U16("graphics/misc/gUnknown_089D6E1C.tsa.bin.lz");
+u16 gMapanimEventcall_179[] = INCBIN_U16("graphics/misc/gMapanimEventcall_179.tsa.bin.lz");
 
-u16 gMapanimEventcall_180[] = INCBIN_U16("graphics/misc/gUnknown_089D6F0C.tsa.bin.lz");
+u16 gMapanimEventcall_180[] = INCBIN_U16("graphics/misc/gMapanimEventcall_180.tsa.bin.lz");
 
-u16 gMapanimEventcall_181[] = INCBIN_U16("graphics/misc/gUnknown_089D704C.tsa.bin.lz");
+u16 gMapanimEventcall_181[] = INCBIN_U16("graphics/misc/gMapanimEventcall_181.tsa.bin.lz");
 
-u16 gMapanimEventcall_182[] = INCBIN_U16("graphics/misc/gUnknown_089D71DC.tsa.bin.lz");
+u16 gMapanimEventcall_182[] = INCBIN_U16("graphics/misc/gMapanimEventcall_182.tsa.bin.lz");
 
-u16 gMapanimEventcall_183[] = INCBIN_U16("graphics/misc/gUnknown_089D73B4.tsa.bin.lz");
+u16 gMapanimEventcall_183[] = INCBIN_U16("graphics/misc/gMapanimEventcall_183.tsa.bin.lz");
 
-u16 gMapanimEventcall_184[] = INCBIN_U16("graphics/misc/gUnknown_089D75BC.tsa.bin.lz");
+u16 gMapanimEventcall_184[] = INCBIN_U16("graphics/misc/gMapanimEventcall_184.tsa.bin.lz");
 
-u16 gMapanimEventcall_185[] = INCBIN_U16("graphics/misc/gUnknown_089D77CC.tsa.bin.lz");
+u16 gMapanimEventcall_185[] = INCBIN_U16("graphics/misc/gMapanimEventcall_185.tsa.bin.lz");
 
-u16 gMapanimEventcall_186[] = INCBIN_U16("graphics/misc/gUnknown_089D79B4.tsa.bin.lz");
+u16 gMapanimEventcall_186[] = INCBIN_U16("graphics/misc/gMapanimEventcall_186.tsa.bin.lz");
 
-u16 gMapanimEventcall_187[] = INCBIN_U16("graphics/misc/gUnknown_089D7B78.tsa.bin.lz");
+u16 gMapanimEventcall_187[] = INCBIN_U16("graphics/misc/gMapanimEventcall_187.tsa.bin.lz");
 
-u16 gMapanimEventcall_188[] = INCBIN_U16("graphics/misc/gUnknown_089D7D04.tsa.bin.lz");
+u16 gMapanimEventcall_188[] = INCBIN_U16("graphics/misc/gMapanimEventcall_188.tsa.bin.lz");
 
-u16 gMapanimEventcall_189[] = INCBIN_U16("graphics/misc/gUnknown_089D7E48.tsa.bin.lz");
+u16 gMapanimEventcall_189[] = INCBIN_U16("graphics/misc/gMapanimEventcall_189.tsa.bin.lz");
 
-u16 gMapanimEventcall_190[] = INCBIN_U16("graphics/misc/gUnknown_089D7F48.tsa.bin.lz");
+u16 gMapanimEventcall_190[] = INCBIN_U16("graphics/misc/gMapanimEventcall_190.tsa.bin.lz");
 
 u16 gMapanimEventcall_191[] = INCBIN_U16("graphics/misc/gUnknown_089D8010.4bpp.lz");
 
@@ -368,21 +368,21 @@ u16 gMapanimEventcall_205[] = INCBIN_U16("graphics/misc/gUnknown_089DCE08.4bpp")
 
 u16 gMapanimEventcall_206[] = INCBIN_U16("graphics/misc/gUnknown_089DCE28.4bpp");
 
-u16 gMapanimEventcall_207[] = INCBIN_U16("graphics/misc/gUnknown_089DCE48.tsa.bin.lz");
+u16 gMapanimEventcall_207[] = INCBIN_U16("graphics/misc/gMapanimEventcall_207.tsa.bin.lz");
 
-u16 gMapanimEventcall_208[] = INCBIN_U16("graphics/misc/gUnknown_089DCF10.tsa.bin.lz");
+u16 gMapanimEventcall_208[] = INCBIN_U16("graphics/misc/gMapanimEventcall_208.tsa.bin.lz");
 
-u16 gMapanimEventcall_209[] = INCBIN_U16("graphics/misc/gUnknown_089DCFFC.tsa.bin.lz");
+u16 gMapanimEventcall_209[] = INCBIN_U16("graphics/misc/gMapanimEventcall_209.tsa.bin.lz");
 
-u16 gMapanimEventcall_210[] = INCBIN_U16("graphics/misc/gUnknown_089DD114.tsa.bin.lz");
+u16 gMapanimEventcall_210[] = INCBIN_U16("graphics/misc/gMapanimEventcall_210.tsa.bin.lz");
 
-u16 gMapanimEventcall_211[] = INCBIN_U16("graphics/misc/gUnknown_089DD284.tsa.bin.lz");
+u16 gMapanimEventcall_211[] = INCBIN_U16("graphics/misc/gMapanimEventcall_211.tsa.bin.lz");
 
-u16 gMapanimEventcall_212[] = INCBIN_U16("graphics/misc/gUnknown_089DD4E8.tsa.bin.lz");
+u16 gMapanimEventcall_212[] = INCBIN_U16("graphics/misc/gMapanimEventcall_212.tsa.bin.lz");
 
-u16 gMapanimEventcall_213[] = INCBIN_U16("graphics/misc/gUnknown_089DD790.tsa.bin.lz");
+u16 gMapanimEventcall_213[] = INCBIN_U16("graphics/misc/gMapanimEventcall_213.tsa.bin.lz");
 
-u16 gMapanimEventcall_214[] = INCBIN_U16("graphics/misc/gUnknown_089DDA68.tsa.bin.lz");
+u16 gMapanimEventcall_214[] = INCBIN_U16("graphics/misc/gMapanimEventcall_214.tsa.bin.lz");
 
 u16 gMapanimEventcall_215[] = INCBIN_U16("graphics/misc/gUnknown_089DDE8C.4bpp.lz");
 
@@ -488,94 +488,94 @@ u16 gMapanimEventcall_265[] = INCBIN_U16("graphics/misc/gUnknown_089E4F7C.4bpp")
 
 u16 gMapanimEventcall_266[] = INCBIN_U16("graphics/misc/gUnknown_089E4F9C.4bpp");
 
-u16 gMapanimEventcall_267[] = INCBIN_U16("graphics/misc/gUnknown_089E4FBC.tsa.bin.lz");
+u16 gMapanimEventcall_267[] = INCBIN_U16("graphics/misc/gMapanimEventcall_267.tsa.bin.lz");
 
-u16 gMapanimEventcall_268[] = INCBIN_U16("graphics/misc/gUnknown_089E5074.tsa.bin.lz");
+u16 gMapanimEventcall_268[] = INCBIN_U16("graphics/misc/gMapanimEventcall_268.tsa.bin.lz");
 
-u16 gMapanimEventcall_269[] = INCBIN_U16("graphics/misc/gUnknown_089E5130.tsa.bin.lz");
+u16 gMapanimEventcall_269[] = INCBIN_U16("graphics/misc/gMapanimEventcall_269.tsa.bin.lz");
 
-u16 gMapanimEventcall_270[] = INCBIN_U16("graphics/misc/gUnknown_089E51EC.tsa.bin.lz");
+u16 gMapanimEventcall_270[] = INCBIN_U16("graphics/misc/gMapanimEventcall_270.tsa.bin.lz");
 
-u16 gMapanimEventcall_271[] = INCBIN_U16("graphics/misc/gUnknown_089E52AC.tsa.bin.lz");
+u16 gMapanimEventcall_271[] = INCBIN_U16("graphics/misc/gMapanimEventcall_271.tsa.bin.lz");
 
-u16 gMapanimEventcall_272[] = INCBIN_U16("graphics/misc/gUnknown_089E5364.tsa.bin.lz");
+u16 gMapanimEventcall_272[] = INCBIN_U16("graphics/misc/gMapanimEventcall_272.tsa.bin.lz");
 
-u16 gMapanimEventcall_273[] = INCBIN_U16("graphics/misc/gUnknown_089E541C.tsa.bin.lz");
+u16 gMapanimEventcall_273[] = INCBIN_U16("graphics/misc/gMapanimEventcall_273.tsa.bin.lz");
 
-u16 gMapanimEventcall_274[] = INCBIN_U16("graphics/misc/gUnknown_089E5600.tsa.bin.lz");
+u16 gMapanimEventcall_274[] = INCBIN_U16("graphics/misc/gMapanimEventcall_274.tsa.bin.lz");
 
-u16 gMapanimEventcall_275[] = INCBIN_U16("graphics/misc/gUnknown_089E5814.tsa.bin.lz");
+u16 gMapanimEventcall_275[] = INCBIN_U16("graphics/misc/gMapanimEventcall_275.tsa.bin.lz");
 
-u16 gMapanimEventcall_276[] = INCBIN_U16("graphics/misc/gUnknown_089E5A58.tsa.bin.lz");
+u16 gMapanimEventcall_276[] = INCBIN_U16("graphics/misc/gMapanimEventcall_276.tsa.bin.lz");
 
-u16 gMapanimEventcall_277[] = INCBIN_U16("graphics/misc/gUnknown_089E5D08.tsa.bin.lz");
+u16 gMapanimEventcall_277[] = INCBIN_U16("graphics/misc/gMapanimEventcall_277.tsa.bin.lz");
 
-u16 gMapanimEventcall_278[] = INCBIN_U16("graphics/misc/gUnknown_089E5FEC.tsa.bin.lz");
+u16 gMapanimEventcall_278[] = INCBIN_U16("graphics/misc/gMapanimEventcall_278.tsa.bin.lz");
 
-u16 gMapanimEventcall_279[] = INCBIN_U16("graphics/misc/gUnknown_089E6290.tsa.bin.lz");
+u16 gMapanimEventcall_279[] = INCBIN_U16("graphics/misc/gMapanimEventcall_279.tsa.bin.lz");
 
-u16 gMapanimEventcall_280[] = INCBIN_U16("graphics/misc/gUnknown_089E64D0.tsa.bin.lz");
+u16 gMapanimEventcall_280[] = INCBIN_U16("graphics/misc/gMapanimEventcall_280.tsa.bin.lz");
 
-u16 gMapanimEventcall_281[] = INCBIN_U16("graphics/misc/gUnknown_089E66A0.tsa.bin.lz");
+u16 gMapanimEventcall_281[] = INCBIN_U16("graphics/misc/gMapanimEventcall_281.tsa.bin.lz");
 
-u16 gMapanimEventcall_282[] = INCBIN_U16("graphics/misc/gUnknown_089E6808.tsa.bin.lz");
+u16 gMapanimEventcall_282[] = INCBIN_U16("graphics/misc/gMapanimEventcall_282.tsa.bin.lz");
 
-u16 gMapanimEventcall_283[] = INCBIN_U16("graphics/misc/gUnknown_089E6924.tsa.bin.lz");
+u16 gMapanimEventcall_283[] = INCBIN_U16("graphics/misc/gMapanimEventcall_283.tsa.bin.lz");
 
-u16 gMapanimEventcall_284[] = INCBIN_U16("graphics/misc/gUnknown_089E6A14.tsa.bin.lz");
+u16 gMapanimEventcall_284[] = INCBIN_U16("graphics/misc/gMapanimEventcall_284.tsa.bin.lz");
 
-u16 gMapanimEventcall_285[] = INCBIN_U16("graphics/misc/gUnknown_089E6AE4.tsa.bin.lz");
+u16 gMapanimEventcall_285[] = INCBIN_U16("graphics/misc/gMapanimEventcall_285.tsa.bin.lz");
 
-u16 gMapanimEventcall_286[] = INCBIN_U16("graphics/misc/gUnknown_089E6BB0.tsa.bin.lz");
+u16 gMapanimEventcall_286[] = INCBIN_U16("graphics/misc/gMapanimEventcall_286.tsa.bin.lz");
 
-u16 gMapanimEventcall_287[] = INCBIN_U16("graphics/misc/gUnknown_089E6C80.tsa.bin.lz");
+u16 gMapanimEventcall_287[] = INCBIN_U16("graphics/misc/gMapanimEventcall_287.tsa.bin.lz");
 
-u16 gMapanimEventcall_288[] = INCBIN_U16("graphics/misc/gUnknown_089E6D50.tsa.bin.lz");
+u16 gMapanimEventcall_288[] = INCBIN_U16("graphics/misc/gMapanimEventcall_288.tsa.bin.lz");
 
-u16 gMapanimEventcall_289[] = INCBIN_U16("graphics/misc/gUnknown_089E6E1C.tsa.bin.lz");
+u16 gMapanimEventcall_289[] = INCBIN_U16("graphics/misc/gMapanimEventcall_289.tsa.bin.lz");
 
-u16 gMapanimEventcall_290[] = INCBIN_U16("graphics/misc/gUnknown_089E6EE8.tsa.bin.lz");
+u16 gMapanimEventcall_290[] = INCBIN_U16("graphics/misc/gMapanimEventcall_290.tsa.bin.lz");
 
-u16 gMapanimEventcall_291[] = INCBIN_U16("graphics/misc/gUnknown_089E6FB4.tsa.bin.lz");
+u16 gMapanimEventcall_291[] = INCBIN_U16("graphics/misc/gMapanimEventcall_291.tsa.bin.lz");
 
-u16 gMapanimEventcall_292[] = INCBIN_U16("graphics/misc/gUnknown_089E7080.tsa.bin.lz");
+u16 gMapanimEventcall_292[] = INCBIN_U16("graphics/misc/gMapanimEventcall_292.tsa.bin.lz");
 
 u8 gMapanimEventcall_293[] = INCBIN_U8("graphics/misc/gUnknown_089E714C.4bpp.lz");
 
 u16 gMapanimEventcall_294[] = INCBIN_U16("graphics/misc/gUnknown_089E7DEC.4bpp");
 
-u8 Tsa_Mapeventcall_0[] = INCBIN_U8("graphics/misc/Tsa_089E7E0C.tsa.bin.lz");
+u8 Tsa_Mapeventcall_0[] = INCBIN_U8("graphics/misc/Tsa_Mapeventcall_0.tsa.bin.lz");
 
-u8 Tsa_Mapeventcall_1[] = INCBIN_U8("graphics/misc/Tsa_089E7E2C.tsa.bin.lz");
+u8 Tsa_Mapeventcall_1[] = INCBIN_U8("graphics/misc/Tsa_Mapeventcall_1.tsa.bin.lz");
 
-u8 Tsa_Mapeventcall_2[] = INCBIN_U8("graphics/misc/Tsa_089E7E50.tsa.bin.lz");
+u8 Tsa_Mapeventcall_2[] = INCBIN_U8("graphics/misc/Tsa_Mapeventcall_2.tsa.bin.lz");
 
-u8 Tsa_Mapeventcall_3[] = INCBIN_U8("graphics/misc/Tsa_089E7E78.tsa.bin.lz");
+u8 Tsa_Mapeventcall_3[] = INCBIN_U8("graphics/misc/Tsa_Mapeventcall_3.tsa.bin.lz");
 
-u8 Tsa_Mapeventcall_4[] = INCBIN_U8("graphics/misc/Tsa_089E7EA0.tsa.bin.lz");
+u8 Tsa_Mapeventcall_4[] = INCBIN_U8("graphics/misc/Tsa_Mapeventcall_4.tsa.bin.lz");
 
-u8 Tsa_Mapeventcall_5[] = INCBIN_U8("graphics/misc/Tsa_089E7ECC.tsa.bin.lz");
+u8 Tsa_Mapeventcall_5[] = INCBIN_U8("graphics/misc/Tsa_Mapeventcall_5.tsa.bin.lz");
 
-u8 Tsa_Mapeventcall_6[] = INCBIN_U8("graphics/misc/Tsa_089E7EFC.tsa.bin.lz");
+u8 Tsa_Mapeventcall_6[] = INCBIN_U8("graphics/misc/Tsa_Mapeventcall_6.tsa.bin.lz");
 
-u8 Tsa_Mapeventcall_7[] = INCBIN_U8("graphics/misc/Tsa_089E7F2C.tsa.bin.lz");
+u8 Tsa_Mapeventcall_7[] = INCBIN_U8("graphics/misc/Tsa_Mapeventcall_7.tsa.bin.lz");
 
-u8 Tsa_Mapeventcall_8[] = INCBIN_U8("graphics/misc/Tsa_089E7F5C.tsa.bin.lz");
+u8 Tsa_Mapeventcall_8[] = INCBIN_U8("graphics/misc/Tsa_Mapeventcall_8.tsa.bin.lz");
 
-u8 Tsa_Mapeventcall_9[] = INCBIN_U8("graphics/misc/Tsa_089E7F8C.tsa.bin.lz");
+u8 Tsa_Mapeventcall_9[] = INCBIN_U8("graphics/misc/Tsa_Mapeventcall_9.tsa.bin.lz");
 
-u8 Tsa_Mapeventcall_10[] = INCBIN_U8("graphics/misc/Tsa_089E7FBC.tsa.bin.lz");
+u8 Tsa_Mapeventcall_10[] = INCBIN_U8("graphics/misc/Tsa_Mapeventcall_10.tsa.bin.lz");
 
-u8 Tsa_Mapeventcall_11[] = INCBIN_U8("graphics/misc/Tsa_089E7FFC.tsa.bin.lz");
+u8 Tsa_Mapeventcall_11[] = INCBIN_U8("graphics/misc/Tsa_Mapeventcall_11.tsa.bin.lz");
 
-u8 Tsa_Mapeventcall_12[] = INCBIN_U8("graphics/misc/Tsa_089E8040.tsa.bin.lz");
+u8 Tsa_Mapeventcall_12[] = INCBIN_U8("graphics/misc/Tsa_Mapeventcall_12.tsa.bin.lz");
 
-u8 Tsa_Mapeventcall_13[] = INCBIN_U8("graphics/misc/Tsa_089E8090.tsa.bin.lz");
+u8 Tsa_Mapeventcall_13[] = INCBIN_U8("graphics/misc/Tsa_Mapeventcall_13.tsa.bin.lz");
 
-u8 Tsa_Mapeventcall_14[] = INCBIN_U8("graphics/misc/Tsa_089E80EC.tsa.bin.lz");
+u8 Tsa_Mapeventcall_14[] = INCBIN_U8("graphics/misc/Tsa_Mapeventcall_14.tsa.bin.lz");
 
-u8 Tsa_Mapeventcall_15[] = INCBIN_U8("graphics/misc/Tsa_089E8148.tsa.bin.lz");
+u8 Tsa_Mapeventcall_15[] = INCBIN_U8("graphics/misc/Tsa_Mapeventcall_15.tsa.bin.lz");
 
-u8 Tsa_Mapeventcall_16[] = INCBIN_U8("graphics/misc/Tsa_089E81A4.tsa.bin.lz");
+u8 Tsa_Mapeventcall_16[] = INCBIN_U8("graphics/misc/Tsa_Mapeventcall_16.tsa.bin.lz");
 
-u8 Tsa_Mapeventcall_17[] = INCBIN_U8("graphics/misc/Tsa_089E8200.tsa.bin.lz");
+u8 Tsa_Mapeventcall_17[] = INCBIN_U8("graphics/misc/Tsa_Mapeventcall_17.tsa.bin.lz");

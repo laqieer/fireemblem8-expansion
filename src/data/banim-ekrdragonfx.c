@@ -1724,21 +1724,21 @@ u16 CONST_DATA Pal_DemonLightBg4_Close_6[] = INCBIN_U16("graphics/banim/dragonfx
 
 u16 CONST_DATA Pal_DemonLightBg4_Close_7[] = INCBIN_U16("graphics/banim/dragonfx/Pal_087C9370.gbapal");
 
-u8 CONST_DATA Tsa_DemonLightBg4_Close_0[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_087C9390.map.bin.lz");
+u8 CONST_DATA Tsa_DemonLightBg4_Close_0[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_DemonLightBg4_Close_0.map.bin.lz");
 
-u8 CONST_DATA Tsa_DemonLightBg4_Close_1[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_087C9464.map.bin.lz");
+u8 CONST_DATA Tsa_DemonLightBg4_Close_1[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_DemonLightBg4_Close_1.map.bin.lz");
 
-u8 CONST_DATA Tsa_DemonLightBg4_Close_2[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_087C9600.map.bin.lz");
+u8 CONST_DATA Tsa_DemonLightBg4_Close_2[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_DemonLightBg4_Close_2.map.bin.lz");
 
-u8 CONST_DATA Tsa_DemonLightBg4_Close_3[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_087C9818.map.bin.lz");
+u8 CONST_DATA Tsa_DemonLightBg4_Close_3[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_DemonLightBg4_Close_3.map.bin.lz");
 
-u8 CONST_DATA Tsa_DemonLightBg4_Close_4[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_087C9A2C.map.bin.lz");
+u8 CONST_DATA Tsa_DemonLightBg4_Close_4[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_DemonLightBg4_Close_4.map.bin.lz");
 
-u8 CONST_DATA Tsa_DemonLightBg4_Close_5[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_087C9BEC.map.bin.lz");
+u8 CONST_DATA Tsa_DemonLightBg4_Close_5[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_DemonLightBg4_Close_5.map.bin.lz");
 
-u8 CONST_DATA Tsa_DemonLightBg4_Close_6[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_087C9CF4.map.bin.lz");
+u8 CONST_DATA Tsa_DemonLightBg4_Close_6[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_DemonLightBg4_Close_6.map.bin.lz");
 
-u8 CONST_DATA Tsa_DemonLightBg4_Close_7[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_087C9E04.map.bin.lz");
+u8 CONST_DATA Tsa_DemonLightBg4_Close_7[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_DemonLightBg4_Close_7.map.bin.lz");
 
 u8 CONST_DATA Img_DemonLightBg3_Close_0[] = INCBIN_U8("graphics/banim/dragonfx/Img_087C9F18.4bpp.lz");
 
@@ -1760,15 +1760,15 @@ u16 CONST_DATA Pal_DemonLightBg3_Close_3[] = INCBIN_U16("graphics/banim/dragonfx
 
 u16 CONST_DATA Pal_DemonLightBg3_Close_4[] = INCBIN_U16("graphics/banim/dragonfx/Pal_087CC5DC.gbapal");
 
-u8 CONST_DATA Tsa_DemonLightBg3_Close_0[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_087CC5FC.map.bin.lz");
+u8 CONST_DATA Tsa_DemonLightBg3_Close_0[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_DemonLightBg3_Close_0.map.bin.lz");
 
-u8 CONST_DATA Tsa_DemonLightBg3_Close_1[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_087CC734.map.bin.lz");
+u8 CONST_DATA Tsa_DemonLightBg3_Close_1[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_DemonLightBg3_Close_1.map.bin.lz");
 
-u8 CONST_DATA Tsa_DemonLightBg3_Close_2[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_087CC878.map.bin.lz");
+u8 CONST_DATA Tsa_DemonLightBg3_Close_2[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_DemonLightBg3_Close_2.map.bin.lz");
 
-u8 CONST_DATA Tsa_DemonLightBg3_Close_3[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_087CC9B8.map.bin.lz");
+u8 CONST_DATA Tsa_DemonLightBg3_Close_3[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_DemonLightBg3_Close_3.map.bin.lz");
 
-u8 CONST_DATA Tsa_DemonLightBg3_Close_4[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_087CCAD8.map.bin.lz");
+u8 CONST_DATA Tsa_DemonLightBg3_Close_4[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_DemonLightBg3_Close_4.map.bin.lz");
 
 u8 CONST_DATA Img_DemonLightBg_Far_1[] = INCBIN_U8("graphics/efxdragon/DemonLightBg_Far_1.feimg1.bin.lz");
 
@@ -1994,21 +1994,21 @@ u16 CONST_DATA Pal_DemonLightBg4_Far_6[] = INCBIN_U16("graphics/banim/dragonfx/P
 
 u16 CONST_DATA Pal_DemonLightBg4_Far_7[] = INCBIN_U16("graphics/banim/dragonfx/Pal_087EE480.gbapal");
 
-u8 CONST_DATA Tsa_DemonLightBg4_Far_0[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_087EE4A0.map.bin.lz");
+u8 CONST_DATA Tsa_DemonLightBg4_Far_0[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_DemonLightBg4_Far_0.map.bin.lz");
 
-u8 CONST_DATA Tsa_DemonLightBg4_Far_1[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_087EE578.map.bin.lz");
+u8 CONST_DATA Tsa_DemonLightBg4_Far_1[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_DemonLightBg4_Far_1.map.bin.lz");
 
-u8 CONST_DATA Tsa_DemonLightBg4_Far_2[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_087EE710.map.bin.lz");
+u8 CONST_DATA Tsa_DemonLightBg4_Far_2[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_DemonLightBg4_Far_2.map.bin.lz");
 
-u8 CONST_DATA Tsa_DemonLightBg4_Far_3[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_087EE8F8.map.bin.lz");
+u8 CONST_DATA Tsa_DemonLightBg4_Far_3[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_DemonLightBg4_Far_3.map.bin.lz");
 
-u8 CONST_DATA Tsa_DemonLightBg4_Far_4[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_087EEAF4.map.bin.lz");
+u8 CONST_DATA Tsa_DemonLightBg4_Far_4[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_DemonLightBg4_Far_4.map.bin.lz");
 
-u8 CONST_DATA Tsa_DemonLightBg4_Far_5[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_087EECA8.map.bin.lz");
+u8 CONST_DATA Tsa_DemonLightBg4_Far_5[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_DemonLightBg4_Far_5.map.bin.lz");
 
-u8 CONST_DATA Tsa_DemonLightBg4_Far_6[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_087EEDAC.map.bin.lz");
+u8 CONST_DATA Tsa_DemonLightBg4_Far_6[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_DemonLightBg4_Far_6.map.bin.lz");
 
-u8 CONST_DATA Tsa_DemonLightBg4_Far_7[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_087EEEB0.map.bin.lz");
+u8 CONST_DATA Tsa_DemonLightBg4_Far_7[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_DemonLightBg4_Far_7.map.bin.lz");
 
 u8 CONST_DATA Img_DemonLightBg3_Far_0[] = INCBIN_U8("graphics/banim/dragonfx/Img_087EEFBC.4bpp.lz");
 
@@ -2030,15 +2030,15 @@ u16 CONST_DATA Pal_DemonLightBg3_Far_3[] = INCBIN_U16("graphics/banim/dragonfx/P
 
 u16 CONST_DATA Pal_DemonLightBg3_Far_4[] = INCBIN_U16("graphics/banim/dragonfx/Pal_087F1680.gbapal");
 
-u8 CONST_DATA Tsa_DemonLightBg3_Far_0[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_087F16A0.map.bin.lz");
+u8 CONST_DATA Tsa_DemonLightBg3_Far_0[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_DemonLightBg3_Far_0.map.bin.lz");
 
-u8 CONST_DATA Tsa_DemonLightBg3_Far_1[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_087F17D8.map.bin.lz");
+u8 CONST_DATA Tsa_DemonLightBg3_Far_1[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_DemonLightBg3_Far_1.map.bin.lz");
 
-u8 CONST_DATA Tsa_DemonLightBg3_Far_2[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_087F191C.map.bin.lz");
+u8 CONST_DATA Tsa_DemonLightBg3_Far_2[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_DemonLightBg3_Far_2.map.bin.lz");
 
-u8 CONST_DATA Tsa_DemonLightBg3_Far_3[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_087F1A54.map.bin.lz");
+u8 CONST_DATA Tsa_DemonLightBg3_Far_3[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_DemonLightBg3_Far_3.map.bin.lz");
 
-u8 CONST_DATA Tsa_DemonLightBg3_Far_4[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_087F1B74.map.bin.lz");
+u8 CONST_DATA Tsa_DemonLightBg3_Far_4[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_DemonLightBg3_Far_4.map.bin.lz");
 
 u8 CONST_DATA Img_DemonLightBg_2[] = INCBIN_U8("graphics/banim/dragonfx/Img_087F1C94.4bpp.lz");
 
@@ -2052,11 +2052,11 @@ u16 CONST_DATA Pal_DemonLightBg_1[] = INCBIN_U16("graphics/banim/dragonfx/Pal_08
 
 u16 CONST_DATA Pal_Ekrdragonfx_2[] = INCBIN_U16("graphics/banim/dragonfx/Pal_087F3C54.gbapal");
 
-u8 CONST_DATA Tsa_DemonLightBg_0[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_087F3C74.map.bin.lz");
+u8 CONST_DATA Tsa_DemonLightBg_0[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_DemonLightBg_0.map.bin.lz");
 
-u8 CONST_DATA Tsa_DemonLightBg_1[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_087F3D60.map.bin.lz");
+u8 CONST_DATA Tsa_DemonLightBg_1[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_DemonLightBg_1.map.bin.lz");
 
-u8 CONST_DATA Tsa_DemonLightBg_2[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_087F3E88.map.bin.lz");
+u8 CONST_DATA Tsa_DemonLightBg_2[] = INCBIN_U8("graphics/banim/dragonfx/Tsa_DemonLightBg_2.map.bin.lz");
 
 struct AnimSpriteData CONST_DATA AnimSprite_DemoKingTunkFace_1[] =
 {
