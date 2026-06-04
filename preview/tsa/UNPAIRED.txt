@@ -1,107 +1,26 @@
-# TSAs whose preview is NOT trustworthy.
-# under-rendered: paired tileset too small AND no covering tileset is committed in the repo.
-# wrong: re-paired with a covering tileset but palette/content still off.
-# tsa_source	check	dropped_pct	issue
-graphics/misc/Tsa_ConfigUiFrame.tsa.bin.lz	uncertain	0	degenerate repeated-tile UI pattern + magenta band at bottom; status unresolved, least-bad render
-graphics/misc/Tsa_StaffReelEnt_08A4BB50.tsa.bin.lz	uncertain	0	majority of frame is orange checker/textured noise fill; only bottom credits band readable; note says no pairing removed it
-graphics/misc/Tsa_StaffReelEnt_08A4BCC4.tsa.bin.lz	uncertain	0	majority of frame is orange checker/noise fill; only bottom credits readable; note says no pairing cleared it
-graphics/misc/gUnknown_089D64EC.tsa.bin.lz	uncertain	3	pervasive regular grid of magenta missing-tile speckle across whole frame (ids exceed tileset); base storm-cloud silhouette still readable
-graphics/misc/gUnknown_08A1B990.tsa.bin.lz	uncertain	14	sparse red sprite fragments on green striped field + magenta band; note says no candidate tileset fits (max tile id 782 vs candidate 64)
-graphics/misc/gUnknown_08A29558.tsa.bin.lz	uncertain	92	flat blue-gray field with only a thin green sprite strip at bottom; note says no tileset renders coherent BG, least-bad pick
-graphics/misc/Tsa10_MonsterStoneMapAnimfx.tsa.bin.lz	under-rendered	6	
-graphics/misc/Tsa1_MonsterStoneMapAnimfx.tsa.bin.lz	under-rendered	20	
-graphics/misc/Tsa2_MonsterStoneMapAnimfx.tsa.bin.lz	under-rendered	14	
-graphics/misc/Tsa3_MonsterStoneMapAnimfx.tsa.bin.lz	under-rendered	11	
-graphics/misc/Tsa4_MonsterStoneMapAnimfx.tsa.bin.lz	under-rendered	8	
-graphics/misc/Tsa5_MonsterStoneMapAnimfx.tsa.bin.lz	under-rendered	6	
-graphics/misc/Tsa6_MonsterStoneMapAnimfx.tsa.bin.lz	under-rendered	5	
-graphics/misc/Tsa9_MonsterStoneMapAnimfx.tsa.bin.lz	under-rendered	6	
-graphics/misc/Tsa_089B0864.tsa.bin	under-rendered	81	
-graphics/misc/Tsa_089B17A4.tsa.bin	under-rendered	81	
-graphics/misc/Tsa_08A40B14.tsa.bin	under-rendered	90	
-graphics/misc/Tsa_ChapterStatusUi.tsa.bin.lz	under-rendered	15	
-graphics/misc/Tsa_CommGameBgScreenInShop.tsa.bin	under-rendered	40	
-graphics/misc/Tsa_EventGmap.tsa.bin.lz	under-rendered	80	
-graphics/misc/Tsa_GorgonHatchCloud_A.tsa.bin.lz	under-rendered	8	
-graphics/misc/Tsa_GorgonHatchCloud_B.tsa.bin.lz	under-rendered	7	
-graphics/misc/Tsa_GorgonHatchCloud_D.tsa.bin.lz	under-rendered	16	
-graphics/misc/Tsa_GorgonHatchCloud_E.tsa.bin.lz	under-rendered	6	
-graphics/misc/Tsa_GorgonHatchCloud_F.tsa.bin.lz	under-rendered	5	
-graphics/misc/Tsa_GorgonHatchCloud_G.tsa.bin.lz	under-rendered	6	
-graphics/misc/Tsa_LinkArenaPostBattleBg.tsa.bin.lz	under-rendered	40	
-graphics/misc/Tsa_StaffReelEnt_08A4B090.tsa.bin.lz	under-rendered	83	credits text readable but overlapping/jumbled with some orange noise bands; matches messy-but-expected content
-graphics/misc/Tsa_StaffReelEnt_08A4B2F4.tsa.bin.lz	under-rendered	82	credits text fragments readable, minor orange noise bands
-graphics/misc/Tsa_StaffReelEnt_08A4B788.tsa.bin.lz	under-rendered	80	credits text readable with scattered orange specks
-graphics/misc/Tsa_StaffReelEnt_08A4C308.tsa.bin.lz	under-rendered	73	
-graphics/misc/Tsa_StaffReelEnt_08A4C6EC.tsa.bin.lz	under-rendered	33	
-graphics/misc/Tsa_StaffReelEnt_08A4C9F0.tsa.bin.lz	under-rendered	38	
-graphics/misc/gTSA_BattleForecastExtended.tsa.bin	under-rendered	88	
-graphics/misc/gTSA_BattleForecastStandard.tsa.bin	under-rendered	87	
-graphics/misc/gUnknown_085A0838.tsa.bin	under-rendered	79	
-graphics/misc/gUnknown_085A08F0.tsa.bin	under-rendered	89	
-graphics/misc/gUnknown_085A0D4C.tsa.bin	under-rendered	90	
-graphics/misc/gUnknown_085B0F2C.tsa.bin	under-rendered	82	thin repetitive border banner strip, no magenta/noise; legitimate thin UI strip but not clearly readable text
-graphics/misc/gUnknown_089D32D8.tsa.bin.lz	under-rendered	85	
-graphics/misc/gUnknown_089D34A0.tsa.bin.lz	under-rendered	84	
-graphics/misc/gUnknown_089D36B0.tsa.bin.lz	under-rendered	84	
-graphics/misc/gUnknown_089D38CC.tsa.bin.lz	under-rendered	84	
-graphics/misc/gUnknown_089D3AD4.tsa.bin.lz	under-rendered	84	
-graphics/misc/gUnknown_089D3CF8.tsa.bin.lz	under-rendered	84	
-graphics/misc/gUnknown_089D3F20.tsa.bin.lz	under-rendered	84	
-graphics/misc/gUnknown_089D4150.tsa.bin.lz	under-rendered	84	
-graphics/misc/gUnknown_089D432C.tsa.bin.lz	under-rendered	85	
-graphics/misc/gUnknown_089D4500.tsa.bin.lz	under-rendered	84	
-graphics/misc/gUnknown_089D46C4.tsa.bin.lz	under-rendered	84	
-graphics/misc/gUnknown_089D48AC.tsa.bin.lz	under-rendered	82	
-graphics/misc/gUnknown_089D4A60.tsa.bin.lz	under-rendered	82	
-graphics/misc/gUnknown_089D4BFC.tsa.bin.lz	under-rendered	83	
-graphics/misc/gUnknown_089D4D74.tsa.bin.lz	under-rendered	84	
-graphics/misc/gUnknown_089D5E9C.tsa.bin.lz	under-rendered	85	
-graphics/misc/gUnknown_089D67F4.tsa.bin.lz	under-rendered	66	
-graphics/misc/gUnknown_089D6AA4.tsa.bin.lz	under-rendered	71	
-graphics/misc/gUnknown_089D704C.tsa.bin.lz	under-rendered	85	
-graphics/misc/gUnknown_089D71DC.tsa.bin.lz	under-rendered	84	
-graphics/misc/gUnknown_089D73B4.tsa.bin.lz	under-rendered	82	
-graphics/misc/gUnknown_089D75BC.tsa.bin.lz	under-rendered	80	
-graphics/misc/gUnknown_089D77CC.tsa.bin.lz	under-rendered	81	
-graphics/misc/gUnknown_089D79B4.tsa.bin.lz	under-rendered	85	
-graphics/misc/gUnknown_089D7B78.tsa.bin.lz	under-rendered	84	
-graphics/misc/gUnknown_089DD114.tsa.bin.lz	under-rendered	85	
-graphics/misc/gUnknown_089DD284.tsa.bin.lz	under-rendered	84	
-graphics/misc/gUnknown_089DD4E8.tsa.bin.lz	under-rendered	69	
-graphics/misc/gUnknown_089DD790.tsa.bin.lz	under-rendered	64	
-graphics/misc/gUnknown_089DDA68.tsa.bin.lz	under-rendered	75	
-graphics/misc/gUnknown_08A0A9F8.tsa.bin	under-rendered	11	
-graphics/misc/gUnknown_08A1B658.tsa.bin.lz	under-rendered	47	
-graphics/misc/gUnknown_08A1B698.tsa.bin.lz	under-rendered	5	
-graphics/misc/gUnknown_08A1B7C8.tsa.bin.lz	under-rendered	14	
-graphics/misc/gUnknown_08A1B9EC.tsa.bin.lz	under-rendered	100	
-graphics/misc/gUnknown_08A1BBD0.tsa.bin.lz	under-rendered	7	
-graphics/misc/gUnknown_08A1BCC0.tsa.bin.lz	under-rendered	10	
-graphics/misc/gUnknown_08A1DB80.tsa.bin.lz	under-rendered	100	
-graphics/misc/gUnknown_08A2C92C.map.bin	under-rendered	27	
-graphics/misc/gUnknown_08A35FD0.tsa.bin.lz	under-rendered	31	recognizable banner+pillars per note; only a thin magenta band at bottom
-graphics/misc/gUnknown_08A3F21C.tsa.bin	under-rendered	88	
-graphics/titlescreen/title_main_background.map.bin.lz	under-rendered	36	
-graphics/titlescreen/title_unk_image_4.map.bin.lz	under-rendered	100	mostly magenta with thin green strip + bottom green row; note: sparse overlay, dominant fill transparent by design
-graphics/misc/Tsa_089E7E0C.tsa.bin.lz	wrong	0	240x24 strip: a solid #FF00FF magenta block (10% of image) fills the right side, which is most of the non-transparent content; palette/tileset still does not cover those tile ids.
-graphics/misc/Tsa_08B18D68.map.bin	wrong	61	~90% magenta, no tileset fits (status unresolved)
-graphics/misc/gTsa_SupportSubScreen.tsa.bin.lz	wrong	5	tile noise/garbage with magenta bands; no matching tileset (status unresolved)
-graphics/misc/gUnknown_089E541C.tsa.bin.lz	wrong	0	Garish clashing red/yellow/white streak of apparent noise over a tan tiled field with a magenta band at bottom; not a coherent scene or smooth effect layer.
-graphics/misc/gUnknown_089E5600.tsa.bin.lz	wrong	0	Chaotic red/yellow/white garbage strip over a tan tiled background plus bottom magenta band; clashing colors, not a coherent effect layer.
-graphics/misc/gUnknown_08A35488.tsa.bin	wrong	0	Garish clashing red/orange/cyan/yellow random tile noise; no coherent structure
-graphics/misc/gUnknown_08A36284.tsa.bin.lz	wrong	0	~24% magenta background with a band of garbage tile noise; palette/tileset still wrong
-graphics/op_anim/OpAnimEirikaClose1.map.bin.lz	wrong	0	Large magenta top half (~34%) and garbled tile content below; broken portrait
-graphics/op_anim/OpAnimEirikaClose2.map.bin.lz	wrong	0	~88% magenta with diagonal garbled streaks; palette too small / broken
-graphics/op_anim/OpAnimEphraimClose1.map.bin.lz	wrong	0	~53% magenta with garbled diagonal noise band; broken portrait
-graphics/op_anim/OpAnimEphraimClose2.map.bin.lz	wrong	0	~94% magenta #FF00FF field with only a thin diagonal band of scattered noise tiles; palette still wrong / no scene
-graphics/op_anim/OpAnimJoshua.map.bin.lz	wrong	0	Large magenta bands plus diagonal swaths of random noise/garbage tiles; no recognizable opening-anim scene
-graphics/op_anim/OpAnimLArachel.map.bin.lz	wrong	0	~52% magenta with scattered noise/garbage tiles; not a clean scene or effect layer
-graphics/op_anim/OpAnimLArachel2.map.bin.lz	wrong	0	~92% magenta with only sparse noise tiles; palette still wrong
-graphics/op_anim/OpAnimMyrrh.map.bin.lz	wrong	0	Magenta bands plus diagonal noise/garbage tiles; no recognizable scene
-graphics/op_anim/OpAnimSaleh.map.bin.lz	wrong	0	~41% magenta with widespread noise/garbage tiles; not a coherent scene or effect layer
-graphics/op_anim/OpAnimSaleh2.map.bin.lz	wrong	0	~96% magenta with a thin noise band; palette still wrong
-graphics/op_anim/OpAnimSeth.map.bin.lz	wrong	0	Low magenta but brown field covered in scattered random noise/garbage tiles; not a clean scene or smooth effect layer
-graphics/op_anim/OpAnimSeth2.map.bin.lz	wrong	0	~88% magenta with a noise band; palette still wrong
-graphics/op_anim/OpAnimTethys.map.bin.lz	wrong	0	Low magenta but brown field full of scattered noise/garbage tiles; not a clean scene or effect layer
-graphics/op_anim/OpAnimTethys2.map.bin.lz	wrong	0	~92% magenta with sparse noise tiles; palette still wrong
+# TSAs whose preview is not trustworthy (tileset does not name-match and no covering tileset committed).
+# tsa_source	check	issue
+graphics/misc/Tsa6_MonsterStoneMapAnimfx.tsa.bin.lz	wrong	tileset does not name-match TSA and no covering tileset in repo
+graphics/misc/Tsa9_MonsterStoneMapAnimfx.tsa.bin.lz	wrong	tileset does not name-match TSA and no covering tileset in repo
+graphics/misc/Tsa_08B18D68.map.bin	wrong	~90% magenta, no tileset fits (status unresolved)
+graphics/misc/Tsa_CommGameBgScreenInShop.tsa.bin	wrong	tileset does not name-match TSA and no covering tileset in repo
+graphics/misc/Tsa_ConfigUiFrame.tsa.bin.lz	uncertain	degenerate repeated-tile UI pattern + magenta band at bottom; status unresolved, least-bad render
+graphics/misc/Tsa_EventGmap.tsa.bin.lz	wrong	tileset does not name-match TSA and no covering tileset in repo
+graphics/misc/Tsa_GorgonHatchCloud_A.tsa.bin.lz	wrong	tileset does not name-match TSA and no covering tileset in repo
+graphics/misc/Tsa_GorgonHatchCloud_B.tsa.bin.lz	wrong	tileset does not name-match TSA and no covering tileset in repo
+graphics/misc/Tsa_GorgonHatchCloud_D.tsa.bin.lz	wrong	tileset does not name-match TSA and no covering tileset in repo
+graphics/misc/Tsa_GorgonHatchCloud_E.tsa.bin.lz	wrong	tileset does not name-match TSA and no covering tileset in repo
+graphics/misc/Tsa_GorgonHatchCloud_F.tsa.bin.lz	wrong	tileset does not name-match TSA and no covering tileset in repo
+graphics/misc/Tsa_GorgonHatchCloud_G.tsa.bin.lz	wrong	tileset does not name-match TSA and no covering tileset in repo
+graphics/misc/Tsa_LinkArenaPostBattleBg.tsa.bin.lz	wrong	tileset does not name-match TSA and no covering tileset in repo
+graphics/misc/Tsa_StaffReelEnt_08A4BB50.tsa.bin.lz	uncertain	majority of frame is orange checker/textured noise fill; only bottom credits band readable; note says no pairing removed it
+graphics/misc/Tsa_StaffReelEnt_08A4BCC4.tsa.bin.lz	uncertain	majority of frame is orange checker/noise fill; only bottom credits readable; note says no pairing cleared it
+graphics/misc/gTsa_SupportSubScreen.tsa.bin.lz	wrong	tile noise/garbage with magenta bands; no matching tileset (status unresolved)
+graphics/misc/gUnknown_089D64EC.tsa.bin.lz	uncertain	pervasive regular grid of magenta missing-tile speckle across whole frame (ids exceed tileset); base storm-cloud silhouette still readable
+graphics/misc/gUnknown_08A1B658.tsa.bin.lz	wrong	tileset does not name-match TSA and no covering tileset in repo
+graphics/misc/gUnknown_08A1B8B8.tsa.bin.lz	uncertain	green/white striped texture reads as noise, not a coherent UI window; note flags unresolved/no tileset fit
+graphics/misc/gUnknown_08A1B990.tsa.bin.lz	uncertain	sparse red sprite fragments on green striped field + magenta band; note says no candidate tileset fits (max tile id 782 vs candidate 64)
+graphics/misc/gUnknown_08A29558.tsa.bin.lz	uncertain	flat blue-gray field with only a thin green sprite strip at bottom; note says no tileset renders coherent BG, least-bad pick
+graphics/misc/gUnknown_08A2C92C.map.bin	wrong	tileset does not name-match TSA and no covering tileset in repo
+graphics/misc/gUnknown_08A35488.tsa.bin	wrong	Garish clashing red/orange/cyan/yellow random tile noise; no coherent structure
+graphics/titlescreen/title_unk_image_4.map.bin.lz	wrong	tileset does not name-match TSA and no covering tileset in repo
