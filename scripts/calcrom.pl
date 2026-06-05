@@ -165,6 +165,7 @@ print "\n";
 # like code is reported as a fraction of total code. Counting only src+data in
 # the denominator hid ~6 MB of already-organized banim/sound data.
 my $dataTotal = $srcdata + $data + $dataBanim + $dataSound;
+($dataTotal != 0) or die "ERROR: No data sections found.\n";
 my $srcDataPct = sprintf("%.4f", 100 * $srcdata / $dataTotal);
 my $dataPct = sprintf("%.4f", 100 * $data / $dataTotal);
 my $dataBanimPct = sprintf("%.4f", 100 * $dataBanim / $dataTotal);

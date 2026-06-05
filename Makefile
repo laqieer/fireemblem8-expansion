@@ -267,8 +267,8 @@ mgfembp/tools/agbcc/bin/agbcc:
 	cd mgfembp && bash tools/install_agbcc.sh
 
 mgfembp/mgfembp.bin: mgfembp/tools/agbcc/bin/agbcc FORCE
-	$(MAKE) -C mgfembp CPP=cpp tools
-	$(MAKE) -C mgfembp CPP=cpp mgfembp.bin
+	$(MAKE) -C mgfembp CPP=cpp PREFIX="$(PREFIX)" tools
+	$(MAKE) -C mgfembp CPP=cpp PREFIX="$(PREFIX)" mgfembp.bin
 
 fe6sio_payload.bin.lz: mgfembp/mgfembp.bin
 	$(GBAGFX) $< $@ -mindist 1

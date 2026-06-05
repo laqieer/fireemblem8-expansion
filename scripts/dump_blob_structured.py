@@ -60,6 +60,8 @@ def dump_wmpath(data, label):
         out.append(f"\t.byte {x}, {y}, {w}, {h}  @ rect {rect}: x={x} y={y} w={w} h={h}")
         p += 4
         ntiles = w * h
+        if p + ntiles * 2 > len(data):
+            sys.exit(f"{label}: insufficient tile data for rect {rect} at offset {p}")
         tiles = [f"0x{u16le(data, p + 2*k):04X}" for k in range(ntiles)]
         for k in range(0, ntiles, 8):
             out.append("\t.2byte " + ", ".join(tiles[k:k + 8]))

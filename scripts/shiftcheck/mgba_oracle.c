@@ -26,6 +26,22 @@ enum { K_A = 1 << 0, K_B = 1 << 1, K_SELECT = 1 << 2, K_START = 1 << 3,
        K_RIGHT = 1 << 4, K_LEFT = 1 << 5, K_UP = 1 << 6, K_DOWN = 1 << 7,
        K_R = 1 << 8, K_L = 1 << 9 };
 
+static int cmp_int(const void* a, const void* b)
+{
+	int x = *(const int*) a, y = *(const int*) b;
+	return (x > y) - (x < y);
+}
+
+static void* xmalloc(size_t n)
+{
+	void* p = malloc(n);
+	if (!p) {
+		fprintf(stderr, "mgba_oracle: out of memory\n");
+		exit(2);
+	}
+	return p;
+}
+
 static uint64_t fnv1a(const void* data, size_t n)
 {
 	uint64_t h = 1469598103934665603ULL;
@@ -61,7 +77,7 @@ static int run(const char* path, const int* cps, int ncps, uint64_t* out)
 	}
 	unsigned w, h;
 	core->desiredVideoDimensions(core, &w, &h);
-	color_t* buf = (color_t*) malloc((size_t) w * h * sizeof(color_t));
+	color_t* buf = (color_t*) xmalloc((size_t) w * h * sizeof(color_t));
 	core->setVideoBuffer(core, buf, w);
 	core->reset(core);
 
@@ -88,15 +104,18 @@ int main(int argc, char** argv)
 	}
 	int default_cps[] = { 120, 300, 600, 900, 1200 };
 	int ncps = argc > 3 ? argc - 3 : 5;
-	int* cps = (int*) malloc(sizeof(int) * ncps);
+	int* cps = (int*) xmalloc(sizeof(int) * ncps);
 	if (argc > 3)
 		for (int i = 0; i < ncps; i++)
 			cps[i] = atoi(argv[3 + i]);
 	else
 		memcpy(cps, default_cps, sizeof(default_cps));
+	/* The frame loop runs to cps[ncps-1] and advances ci in order, so checkpoints
+	 * must be ascending; sort user-supplied frames so out[] is always fully written. */
+	qsort(cps, ncps, sizeof(int), cmp_int);
 
-	uint64_t* a = (uint64_t*) malloc(sizeof(uint64_t) * ncps);
-	uint64_t* b = (uint64_t*) malloc(sizeof(uint64_t) * ncps);
+	uint64_t* a = (uint64_t*) xmalloc(sizeof(uint64_t) * ncps);
+	uint64_t* b = (uint64_t*) xmalloc(sizeof(uint64_t) * ncps);
 	int rc = run(argv[1], cps, ncps, a);
 	if (rc) return rc;
 	rc = run(argv[2], cps, ncps, b);

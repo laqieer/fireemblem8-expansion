@@ -161,7 +161,9 @@ def ensure_c_oracle():
 
 
 def run_via_python(base_gba, shifted, checkpoints):
-    input_script = [(f, 6, "START" if (f // 60) % 2 else "A")
+    # Must match mgba_oracle.c keys_for(): tap A then START in turn from frame 90,
+    # i.e. ((f - 90) / 60) % 2 -> START else A (the two backends must drive identically).
+    input_script = [(f, 6, "START" if ((f - 90) // 60) % 2 else "A")
                     for f in range(90, max(checkpoints), 60)]
     base = run_rom(base_gba, input_script, checkpoints, [])
     shi = run_rom(shifted, input_script, checkpoints, [])

@@ -16,7 +16,9 @@ set -uo pipefail
 cd "$(git rev-parse --show-toplevel 2>/dev/null || echo .)"
 
 echo "== (1) C raw ROM/RAM pointer casts in typed data/source =="
-c_hits=$(grep -rnE '\((const +)?(void|struct +[A-Za-z_]+|union +[A-Za-z_]+|u8|u16|u32|s8|s16|s32|[A-Za-z_]+) ?\*+\) ?0x0[2389][0-9A-Fa-f]{6}' \
+# The type may be multi-word (e.g. `unsigned char *`, `const struct Foo *`), so the
+# bare-identifier branch allows trailing words to avoid false negatives.
+c_hits=$(grep -rnE '\((const +)?(void|struct +[A-Za-z_]+|union +[A-Za-z_]+|u8|u16|u32|s8|s16|s32|[A-Za-z_]+( +[A-Za-z_]+)*) ?\*+\) ?0x0[2389][0-9A-Fa-f]{6}' \
   src/ include/ 2>/dev/null | grep -vE '0x0[4567][0-9A-Fa-f]{6}')
 [ -n "$c_hits" ] && echo "$c_hits" || echo "  (none)"
 

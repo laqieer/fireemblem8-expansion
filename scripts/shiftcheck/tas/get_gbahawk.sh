@@ -13,7 +13,9 @@
 set -euo pipefail
 
 VER="${1:-v2.1.1}"
-WORK="${2:-/mnt/c/gbahawk_test}"
+# GBAHawk is a Windows binary driven from WSL2, so a Windows-visible path (/mnt/c) is
+# the default; fall back to a user-local dir when not under WSL (pure Linux/macOS).
+if [ -d /mnt/c ]; then WORK="${2:-/mnt/c/gbahawk_test}"; else WORK="${2:-$HOME/gbahawk_test}"; fi
 BIOS="${3:-}"
 BIOS_SHA1="300c20df6731a33952ded8c436f7f186d25d3492"
 BIOS_URL="https://raw.githubusercontent.com/Abdess/retrobios/main/bios/Nintendo/Game%20Boy%20Advance/gba_bios.bin"

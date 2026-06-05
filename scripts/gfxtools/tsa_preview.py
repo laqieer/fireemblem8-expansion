@@ -12,7 +12,7 @@ import struct, sys, argparse
 
 def decode_lz(d):
     # GBA BIOS LZ77 (0x10). Return decompressed bytes; if not LZ, return as-is.
-    if not d or d[0] != 0x10:
+    if len(d) < 4 or d[0] != 0x10:
         return d
     n = d[1] | (d[2] << 8) | (d[3] << 16)
     out = bytearray(); i = 4
