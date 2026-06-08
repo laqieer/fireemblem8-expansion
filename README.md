@@ -2,7 +2,9 @@
 
 [![Build CI](https://github.com/laqieer/fireemblem8u/actions/workflows/build.yml/badge.svg)](https://github.com/laqieer/fireemblem8u/actions/workflows/build.yml)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square)](http://makeapullrequest.com)
-[![decomp.dev](https://decomp.dev/laqieer/fireemblem8u/us.svg?mode=shield)](https://decomp.dev/laqieer/fireemblem8u/us)
+[![Code](https://decomp.dev/laqieer/fireemblem8u/us.svg?mode=shield&measure=matched_code_percent&label=Code)](https://decomp.dev/laqieer/fireemblem8u/us)
+[![Data](https://decomp.dev/laqieer/fireemblem8u/us.svg?mode=shield&measure=matched_data_percent&label=Data)](https://decomp.dev/laqieer/fireemblem8u/us)
+[![Functions](https://decomp.dev/laqieer/fireemblem8u/us.svg?mode=shield&measure=matched_functions_percent&label=Functions)](https://decomp.dev/laqieer/fireemblem8u/us)
 
 [FE Decomp Portal](https://laqieer.github.io/fe-decomp-portal/) · [decomp.dev](https://decomp.dev/laqieer/fireemblem8u/us)
 
