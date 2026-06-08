@@ -2,8 +2,9 @@
 
 [![Build CI](https://github.com/laqieer/fireemblem8u/actions/workflows/build.yml/badge.svg)](https://github.com/laqieer/fireemblem8u/actions/workflows/build.yml)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square)](http://makeapullrequest.com)
+[![decomp.dev](https://decomp.dev/laqieer/fireemblem8u/us.svg?mode=shield)](https://decomp.dev/laqieer/fireemblem8u/us)
 
-[FE Decomp Portal](https://laqieer.github.io/fe-decomp-portal/)
+[FE Decomp Portal](https://laqieer.github.io/fe-decomp-portal/) · [decomp.dev](https://decomp.dev/laqieer/fireemblem8u/us)
 
 This is a disassembly of Fire Emblem: The Sacred Stones (U)[!]
 

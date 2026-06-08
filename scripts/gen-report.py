@@ -10,9 +10,17 @@ workflow artifact named `<version>_report` (see build.yml). It needs only the
     <N> total symbols
     <N> symbols documented (<P>%)
     <N> symbols partially documented (<P>%)
+    <M> of <N> bytes of data extracted (<P>%)
+    <N> functions in total, <M> functions (<P>%) have been decompiled.
 
 matched_code = bytes of code in src (this decomp builds byte-identical, so code in
-src is matched code); the asm/ remainder is the only unmatched code.
+src is matched code); the asm/ remainder is the only unmatched code. matched_data =
+bytes of data extracted out of the raw blobs (src + banim + sound = 100%).
+matched_functions = functions decompiled into src.
+
+Per the objdiff report.proto, uint64 measures (total_code/matched_code/total_data/
+matched_data) serialize as JSON strings, uint32 measures (total_functions/
+matched_functions) as JSON numbers, and *_percent as JSON numbers.
 
 Usage: gen-report.py <progress.txt> <report.json>
 """
@@ -47,15 +55,33 @@ def parse_and_convert(input_text):
     src_code = int(src_code_match.group(1))
     src_percent = float(src_code_match.group(2))
 
-    output = {
-        "measures": {
-            # protobuf-JSON: u64 byte counts are strings, percents are numbers.
-            "total_code": str(total_code),
-            "matched_code": str(src_code),
-            "matched_code_percent": src_percent,
-        }
+    measures = {
+        # protobuf-JSON: uint64 byte counts are strings, percents are numbers.
+        "total_code": str(total_code),
+        "matched_code": str(src_code),
+        "matched_code_percent": src_percent,
     }
-    return output
+
+    # Data: 100% extracted = all data pulled out of raw blobs (src + banim + sound).
+    data_match = re.search(
+        r"(\d+)\s+of\s+(\d+)\s+bytes of data extracted \(([\d.]+)%\)", input_text
+    )
+    if data_match:
+        measures["total_data"] = str(int(data_match.group(2)))
+        measures["matched_data"] = str(int(data_match.group(1)))
+        measures["matched_data_percent"] = float(data_match.group(3))
+
+    # Functions decompiled into src. uint32 -> JSON numbers.
+    fn_match = re.search(
+        r"(\d+)\s+functions in total,\s+(\d+)\s+functions\s+\(([\d.]+)%\)\s+have been decompiled",
+        input_text,
+    )
+    if fn_match:
+        measures["total_functions"] = int(fn_match.group(1))
+        measures["matched_functions"] = int(fn_match.group(2))
+        measures["matched_functions_percent"] = float(fn_match.group(3))
+
+    return {"measures": measures}
 
 
 def main():
