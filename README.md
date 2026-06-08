@@ -6,7 +6,9 @@
 
 [FE Decomp Portal](https://laqieer.github.io/fe-decomp-portal/) · [decomp.dev](https://decomp.dev/laqieer/fireemblem8u/us)
 
-This is a disassembly of Fire Emblem: The Sacred Stones (U)[!]
+This is a disassembly **and decompilation** of Fire Emblem: The Sacred Stones (U)[!] — the
+ROM has been reverse-engineered into C (~99.8% of the code is decompiled; 100% of the data is
+extracted and all symbols are documented), and it builds **byte-identical** to the original.
 
 It builds the following ROM:
 * fireemblem8.gba `sha1: c25b145e37456171ada4b0d440bf88a19f4d509f`
