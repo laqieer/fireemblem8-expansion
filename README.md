@@ -6,7 +6,7 @@
 [![Data](https://decomp.dev/laqieer/fireemblem8u/us.svg?mode=shield&measure=matched_data_percent&label=Data)](https://decomp.dev/laqieer/fireemblem8u/us)
 [![Functions](https://decomp.dev/laqieer/fireemblem8u/us.svg?mode=shield&measure=matched_functions_percent&label=Functions)](https://decomp.dev/laqieer/fireemblem8u/us)
 
-[FE Decomp Portal](https://laqieer.github.io/fe-decomp-portal/) · [decomp.dev](https://decomp.dev/laqieer/fireemblem8u/us)
+[Wiki](https://github.com/laqieer/fireemblem8u/wiki) · [FE Decomp Portal](https://laqieer.github.io/fe-decomp-portal/) · [decomp.dev](https://decomp.dev/laqieer/fireemblem8u/us)
 
 This is a disassembly **and decompilation** of Fire Emblem: The Sacred Stones (U)[!] — the
 ROM has been reverse-engineered into C (~99.8% of the code is decompiled; 100% of the data is
