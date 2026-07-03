@@ -15,6 +15,14 @@ extracted and all symbols are documented), and it builds **byte-identical** to t
 It builds the following ROM:
 * fireemblem8.gba `sha1: c25b145e37456171ada4b0d440bf88a19f4d509f`
 
+## Used by
+
+Projects powered by this decomp:
+
+* [**fe-maps**](https://github.com/laqieer/fe-maps) ([site](https://laqieer.github.io/fe-maps/)) — browsable ROM/RAM data maps extracted from this decomp's ELF with `readelf`/`nm -l`.
+* [**FE_GBA_Function_Library**](https://github.com/laqieer/FE_GBA_Function_Library) ([site](https://laqieer.github.io/FE_GBA_Function_Library/)) — cross-game function documentation using `nm -l` for signatures and `source:line` links.
+* [**FE-Clib-Decomp**](https://github.com/laqieer/FE-Clib-Decomp) — ROM-hacking linker scripts, `lyn` reference assembly, and Event Assembler defines generated from this decomp's ELF.
+
 ### Quick Start
 
 If you just want to get the repo building quickly (Ubuntu/WSL, Arch Linux, or macOS/Homebrew), run:
