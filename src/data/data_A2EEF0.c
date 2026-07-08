@@ -4,22 +4,22 @@
  * before cpp). Migrated in-place from data/data_A2EEF0.s into .data.
  */
 
-u8 gUnkData_81[] = INCBIN_U8("graphics/misc/gUnknown_08A301B0.4bpp.lz");
-u16 gUnkData_82[] = INCBIN_U16("graphics/misc/gUnknown_08A30780.4bpp");
-u8 gUnkData_83[] = INCBIN_U8("graphics/misc/gUnknown_08A30800.4bpp.lz");
-u16 gUnkData_84[] = INCBIN_U16("graphics/misc/gUnkData_84.tsa.bin");
-u8 gUnkData_85[] = INCBIN_U8("graphics/misc/gUnknown_08A30E2C.4bpp.lz");
-u8 gUnkData_86[] = INCBIN_U8("graphics/misc/gUnkData_86.tsa.bin");
-u16 gUnkData_87[] = INCBIN_U16("graphics/misc/gUnknown_08A3593C.4bpp");
-u8 gUnkData_88[] = INCBIN_U8("graphics/misc/gUnknown_08A35A3C.4bpp.lz");
-u8 gUnkData_89[] = INCBIN_U8("graphics/misc/gUnkData_89.tsa.bin.lz");
-u16 gUnkData_90[] = INCBIN_U16("graphics/misc/gUnknown_08A360C8.4bpp");
-u8 gUnkData_91[] = INCBIN_U8("graphics/misc/gUnknown_08A360E8.4bpp.lz");
-u8 gUnkData_92[] = INCBIN_U8("graphics/misc/gUnkData_92.tsa.bin.lz");
+u8 gImg_ClassIntroNameSprites[] = INCBIN_U8("graphics/misc/gUnknown_08A301B0.4bpp.lz");
+u16 gPal_ClassIntroNameSprites[] = INCBIN_U16("graphics/misc/gUnknown_08A30780.4bpp");
+u8 Img_ClassChangeSelectUi[] = INCBIN_U8("graphics/misc/gUnknown_08A30800.4bpp.lz");
+u16 Tsa_ClassChangeSelectUi[] = INCBIN_U16("graphics/misc/gUnkData_84.tsa.bin");
+u8 gImg_ClassReelInfoBg[] = INCBIN_U8("graphics/misc/gUnknown_08A30E2C.4bpp.lz");
+u8 gTsa_ClassReelInfoBg[] = INCBIN_U8("graphics/misc/gUnkData_86.tsa.bin");
+u16 gPal_ClassReelInfoBg[] = INCBIN_U16("graphics/misc/gUnknown_08A3593C.4bpp");
+u8 gImg_ClassIntroBg1[] = INCBIN_U8("graphics/misc/gUnknown_08A35A3C.4bpp.lz");
+u8 gTsa_ClassIntroBg1[] = INCBIN_U8("graphics/misc/gUnkData_89.tsa.bin.lz");
+u16 gPal_ClassIntroBg1[] = INCBIN_U16("graphics/misc/gUnknown_08A360C8.4bpp");
+u8 gImg_ClassIntroBg0[] = INCBIN_U8("graphics/misc/gUnknown_08A360E8.4bpp.lz");
+u8 gTsa_ClassIntroBg0[] = INCBIN_U8("graphics/misc/gUnkData_92.tsa.bin.lz");
 u16 gUnkData_93[] = INCBIN_U16("graphics/misc/gUnknown_08A36318.gbapal");
-u8 gUnkData_94[] = INCBIN_U8("graphics/misc/gUnknown_08A36338.4bpp.lz");
-u8 gUnkData_95[] = INCBIN_U8("graphics/misc/gUnknown_08A372C0.4bpp");
-u16 gUnkData_96[] = INCBIN_U16("graphics/misc/gUnknown_08A37300.agbpal");
+u8 Img_ClassReelFont[] = INCBIN_U8("graphics/misc/gUnknown_08A36338.4bpp.lz");
+u8 Pal_ClassReelFont[] = INCBIN_U8("graphics/misc/gUnknown_08A372C0.4bpp");
+u16 gPal_ClassIntroLetterFont[] = INCBIN_U16("graphics/misc/gUnknown_08A37300.agbpal");
 
 /* Class-reel (promotion-info) letter/glyph font: 64 separately LZ77-compressed
  * 4bpp glyphs, char-indexed by gOpinfo_1[*str] and decompressed at runtime. Each was a

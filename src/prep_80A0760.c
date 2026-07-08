@@ -65,7 +65,7 @@ PROC_LABEL(5),
     PROC_END,
 };
 
-int CONST_DATA gUnkData_59[] = {
+int CONST_DATA gPrepFortuneSubMenuTextIds[] = {
     0x586, // TODO: msgid "Rank"
     0x587, // TODO: msgid "Tactician"
     0x588, // TODO: msgid "Augury"
@@ -73,7 +73,7 @@ int CONST_DATA gUnkData_59[] = {
     0x589, // TODO: msgid "Augury Menu"
 };
 
-int CONST_DATA gUnkData_60[] = {
+int CONST_DATA gPrepFortuneSubMenuTextIdsAlt[] = {
     0x586, // TODO: msgid "Rank"
     0x587, // TODO: msgid "Tactician"
     0x588, // TODO: msgid "Augury"
@@ -81,7 +81,7 @@ int CONST_DATA gUnkData_60[] = {
     0x589, // TODO: msgid "Augury Menu"
 };
 
-int CONST_DATA gUnused_UnkData_0[] = {
+int CONST_DATA gUnusedPrepFortuneSubMenuStatTextIds[] = {
     0x58A, // TODO: msgid "Tactics"
     0x58B, // TODO: msgid "Survival"
     0x58C, // TODO: msgid "Funds"
@@ -135,7 +135,7 @@ void FortuneSubMenu_Unused_SetupText(struct PrepProcA1962C* proc) {
             proc->unk_30[i] != 0 ? 0 : 1,
             0,
             0,
-            GetStringFromIndex(gUnkData_60[i])
+            GetStringFromIndex(gPrepFortuneSubMenuTextIdsAlt[i])
         );
     }
 
@@ -148,7 +148,7 @@ void FortuneSubMenu_Unused_SetupText(struct PrepProcA1962C* proc) {
         0,
         0,
         0,
-        GetStringFromIndex(gUnkData_59[3])
+        GetStringFromIndex(gPrepFortuneSubMenuTextIds[3])
     );
 
     BG_EnableSyncByMask(1);

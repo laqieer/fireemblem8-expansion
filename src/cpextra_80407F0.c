@@ -199,7 +199,7 @@ u8 AiGetRangeValueAt(int x, int y) {
     return gBmMapRange[y][x];
 }
 
-const u8 CONST_DATA gUnkData_3[] = {
+const u8 CONST_DATA gAiDoorTerrainList[] = {
     TERRAIN_DOOR, TERRAIN_NONE,
 };
 
@@ -207,7 +207,7 @@ s8 AiFindReachableDoorPosition(struct Unit* unit, struct Vec2* pos) {
 
     GenerateExtendedMovementMapOnRangeNeglectDoor(unit);
 
-    if (!AiFindClosestTerrainAdjacentPosition(gUnkData_3, 0, pos)) {
+    if (!AiFindClosestTerrainAdjacentPosition(gAiDoorTerrainList, 0, pos)) {
         return 0;
     }
 
@@ -220,14 +220,14 @@ s8 AiFindReachableDoorPosition(struct Unit* unit, struct Vec2* pos) {
     return 1;
 }
 
-const u8 CONST_DATA gUnkData_4[] = {
+const u8 CONST_DATA gAiChestTerrainList[] = {
     TERRAIN_CHEST_FULL, TERRAIN_NONE,
 };
 
 s8 AiFindClosestChestPosition(struct Unit* unit, struct Vec2* pos) {
     GenerateUnitExtendedMovementMapOnRange(unit);
 
-    if (AiFindClosestTerrainPosition(gUnkData_4, 0, pos) == 0) {
+    if (AiFindClosestTerrainPosition(gAiChestTerrainList, 0, pos) == 0) {
         return 0;
     }
 

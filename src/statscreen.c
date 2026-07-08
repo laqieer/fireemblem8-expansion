@@ -1264,7 +1264,7 @@ void DisplayPageNameSprite(int pageid)
     colorid = (GetGameClock()/4) % 16;
 
     CpuCopy16(
-        gUnkData_33[pageid] + colorid,
+        gPal_StatscreenPageNameAnim[pageid] + colorid,
         PAL_OBJ(3) + 0xE,
         sizeof(u16));
 
@@ -1619,9 +1619,9 @@ void StatScreen_Display(struct Proc* proc)
         0x4E0, STATSCREEN_BGPAL_FACE);
 
     if (GetPortraitData(fid)->img)
-        ApplyPalette(gUnkData_30, STATSCREEN_BGPAL_2);
+        ApplyPalette(Pal_FaceDisplayPortrait, STATSCREEN_BGPAL_2);
     else
-        ApplyPalette(gUnkData_31, STATSCREEN_BGPAL_2);
+        ApplyPalette(Pal_FaceDisplayGenericCard, STATSCREEN_BGPAL_2);
 
     // Display Map Sprite
 

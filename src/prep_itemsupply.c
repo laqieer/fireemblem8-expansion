@@ -63,9 +63,9 @@ void PrepItemSupply_StartPromptText(int idx, ProcPtr proc)
 
 //! FE8U = 0x0809D2C4
 void StoreConvoyWeaponIconGraphics(int vramOffset, int pal) {
-    ApplyPalette(gUnkData_64, pal);
-    Decompress(gUnkData_62, (void*)(VRAM + vramOffset));
-    Decompress(gUnkData_63, (void*)(0x6000200 + vramOffset));
+    ApplyPalette(Pal_PrepConvoyWeaponIcon, pal);
+    Decompress(Img_PrepConvoyWeaponIconGfxA, (void*)(VRAM + vramOffset));
+    Decompress(Img_PrepConvoyWeaponIconGfxB, (void*)(0x6000200 + vramOffset));
     return;
 }
 
@@ -302,7 +302,7 @@ void Supply_PutHighlightedCategorySprites(struct PrepItemSupplyProc * proc)
 {
     int x = proc->currentPage * 12 + 124;
 
-    gPaletteBuffer[0x14D] = *(gUnkData_76 + (GetGameClock() >> 2 & 0xf));
+    gPaletteBuffer[0x14D] = *(Pal_PrepItemListSpinningArrowCycle + (GetGameClock() >> 2 & 0xf));
     EnablePaletteSync();
 
     PutSprite(4, x, 24, gPrepWmSell_1[proc->currentPage], 0x4280);
@@ -377,10 +377,10 @@ void PrepItemSupply_InitGfx(struct PrepItemSupplyProc * proc)
     PutImg_PrepItemUseUnk(0x5000, 5);
     PutImg_PrepPopupWindow(0x800, 10);
 
-    Decompress(gUnkData_71, gGenericBuffer);
+    Decompress(Tsa_PrepItemSupplyBgA, gGenericBuffer);
     CallARM_FillTileRect(gBG1TilemapBuffer, gGenericBuffer, 0x1000);
 
-    Decompress(gUnkData_73, gGenericBuffer);
+    Decompress(Tsa_PrepItemSupplyBgB, gGenericBuffer);
     CallARM_FillTileRect(gBG1TilemapBuffer, gGenericBuffer, 0x1000);
 
     BG_EnableSyncByMask(7);
@@ -439,7 +439,7 @@ void PrepItemSupply_InitGfx(struct PrepItemSupplyProc * proc)
     StoreConvoyWeaponIconGraphics(0x4000, 6);
     PrepItemSupply_DrawConvoyWeaponIconTiles(gBG0TilemapBuffer + 0x6F, 0x4000, 6);
 
-    Decompress(gUnkData_61, (void*)0x06015000);
+    Decompress(Img_PrepItemListSpinningArrow, (void*)0x06015000);
     ApplyPalette(Pal_SpinningArrow, 0x14);
 
     StartMenuScrollBarExt(proc, 0xe1, 0x2f, 0x5800, 9);

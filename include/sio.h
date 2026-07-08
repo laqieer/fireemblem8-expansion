@@ -646,8 +646,8 @@ void LABattleMap_SkipIfSingleConsoleMode(ProcPtr proc);
 void LABattle_BeginAnims(void);
 void LABattle_StartDeathFades(struct SioBattleMapProc * proc);
 void LABattle_MarkDeadCombatants(void);
-void Set_UnkData_0(void);
-void Clear_UnkData_0(void);
+void SetLinkArenaUiBlendWindow(void);
+void ClearLinkArenaUiBlendWindow(void);
 
 struct SioProc85AA7B4
 {
@@ -658,8 +658,8 @@ struct SioProc85AA7B4
     /* 64 */ s16 unk_64;
 };
 
-void Set_UnkData_0(void);
-void Clear_UnkData_0(void);
+void SetLinkArenaUiBlendWindow(void);
+void ClearLinkArenaUiBlendWindow(void);
 void Sio_DisableWindowAndBlend(void);
 void Sio_BoxTransitionHBlankHandler(void);
 void Sio_SwapBoxTransitionBuffers(void);
@@ -1069,46 +1069,46 @@ extern const u16 * CONST_DATA SpriteArray_LAVersusPlayerNumbers[];
 extern struct ProcCmd CONST_DATA ProcScr_LAVersusSpriteDraw[];
 extern struct ProcCmd CONST_DATA ProcScr_SioUiutils_1[];
 extern struct MenuDef gSioMenudef_1;
-extern u8 gUnkData_5[];
+extern u8 Img_LinkArenaMenuTitle[];
 extern u8 Img_LinkArenaMenu[];
 extern u8 Img_TacticianSelObj[];
-extern u8 gUnkData_6[]; // img
+extern u8 Img_LinkArenaMenuBanner[]; // img
 extern u8 Img_LinkArenaRankIcons[]; // img
 extern u8 Img_LinkArenaActiveBannerFx[]; // img
-extern u8 gUnkData_7[]; // img
+extern u8 Img_SioResultBanner[]; // img
 extern u8 Img_LinkArenaPlacementRanks[]; // img
-extern u8 gUnkData_8[];
+extern u8 Img_SioPointsBox[];
 extern u8 Img_LinkArena_FogUnitPlaceholder[]; // img
 extern u8 Img_LinkArenaPlayerBanners[]; // img
 extern u16 Pal_LinkArenaMenu[];
 extern u16 Pal_TacticianSelObj[];
 extern u16 Pal_LinkArenaRankIcons[]; // pal
-extern u16 gUnkData_9[]; // pal
+extern u16 Pal_SioPointsBox[]; // pal
 extern u16 Pal_LinkArenaPlacementRanks[]; // pal
-extern u16 gUnkData_10[];
+extern u16 Pal_SioSideMenuGlow[];
 extern u16 Pal_LinkArenaActiveBannerFx[]; // pal
-extern u16 gUnkData_11[];
-extern u16 gUnkData_12[];
-extern u16 Pal_UnkData_0[];
-extern u8 gUnkData_13[]; // tsa?
-extern u8 gUnkData_14[]; // tsa
-extern u16 Tsa_UnkData_0[];
+extern u16 Pal_SioNameEntryGlow[];
+extern u16 Pal_SioNameBannerGlow[];
+extern u16 Pal_TacticianNameInputBg[];
+extern u8 gTsa_LinkArenaPostBattleRankingRowHighlight[]; // tsa?
+extern u8 Tsa_SioTeamList[]; // tsa
+extern u16 Tsa_TacticianNameInputBg[];
 extern u8 Tsa_SioResultRankings[]; // tsa
-extern u8 gUnkData_15[]; // tsa
-extern u8 gUnkData_16[];
-extern u8 gUnkData_17[];
-extern u8 gUnkData_18[];
-extern u8 gUnkData_19[];
-extern u8 gUnkData_20[];
-extern u16 gUnkData_21[];
-extern u16 gUnkData_22[];
-extern u16 gUnkData_23[];
-extern u16 gUnkData_24[];
+extern u8 Tsa_SioRuleSettings[]; // tsa
+extern u8 Img_LinkArenaPhaseIntroBg[];
+extern u8 Img_LinkArenaPhaseIntroPlayer[];
+extern u8 Img_LinkArenaPhaseIntroOther[];
+extern u8 Img_LinkArenaPhaseIntroEnemy[];
+extern u8 Img_LinkArenaPhaseIntro4[];
+extern u16 Pal_LinkArenaPhaseIntroPlayer[];
+extern u16 Pal_LinkArenaPhaseIntroEnemy[];
+extern u16 Pal_LinkArenaPhaseIntroOther[];
+extern u16 Pal_LinkArenaPhaseIntro4[];
 extern u8 Img_LinkArenaPostBattleBg[]; // img
 extern u16 Pal_LinkArenaPostBattleBg[]; // pal
 extern u8 Tsa_LinkArenaPostBattleBg[]; // tsa
-extern u8 gUnkData_25[];
-extern CONST_DATA u8 gUnkData_26[];
+extern u8 Img_LinkArenaTitleBanner[];
+extern CONST_DATA u8 Tsa_LinkArenaTitleBanner[];
 
 extern int gCurrentKeyInSeqIndex;
 extern int gTargetKeyInSeqIndex;

@@ -485,12 +485,12 @@ void AntitoxinPureWaterfx_Loop(struct MAEffectProc * proc)
 
 struct ProcCmd CONST_DATA ProcScr_MapanimStaffeffect_0[] = {
     PROC_SLEEP(1),
-    PROC_CALL(MapAnimEffect_Unk_2_PlaySe),
+    PROC_CALL(MapAnimEffect_SoundOnly_PlaySe),
     PROC_SLEEP(100),
     PROC_END,
 };
 
-void StartMapAnimEffect_Unk_2(struct Unit * unit)
+void StartMapAnimEffect_SoundOnly(struct Unit * unit)
 {
     struct MAEffectProc * proc;
 
@@ -500,7 +500,7 @@ void StartMapAnimEffect_Unk_2(struct Unit * unit)
     proc->yDisplay = SCREEN_TILE_Y(unit->yPos) * 16 + 8;
 }
 
-void MapAnimEffect_Unk_2_PlaySe(struct MAEffectProc * proc)
+void MapAnimEffect_SoundOnly_PlaySe(struct MAEffectProc * proc)
 {
     PlaySeSpacial(SONG_10F, proc->xDisplay);
 }
@@ -1117,7 +1117,7 @@ void MapAnimMonsterStone_Resetfx(struct MAEffectProc * proc)
     BG_EnableSyncByMask(BG2_SYNC_BIT);
 }
 
-struct ProcCmd CONST_DATA ProcScr_MapAnimEffect_Unk_0[] = {
+struct ProcCmd CONST_DATA ProcScr_MapAnimEffect_SineWaveWindow[] = {
     PROC_SLEEP(1),
     PROC_CALL(MapAnim_Init_0),
     PROC_SLEEP(10),
@@ -1129,11 +1129,11 @@ struct ProcCmd CONST_DATA ProcScr_MapAnimEffect_Unk_0[] = {
     PROC_END,
 };
 
-void StartMapAnimEffect_Unk_0(struct Unit * unit)
+void StartMapAnimEffect_SineWaveWindow(struct Unit * unit)
 {
     struct MAEffectProc * proc;
 
-    proc = Proc_Start(ProcScr_MapAnimEffect_Unk_0, PROC_TREE_3);
+    proc = Proc_Start(ProcScr_MapAnimEffect_SineWaveWindow, PROC_TREE_3);
 
     proc->xDisplay = (SCREEN_TILE_X(unit->xPos) * 2 + 1) * 8;
     proc->yDisplay = (SCREEN_TILE_Y(unit->yPos)) * 16 + 18;
@@ -1145,14 +1145,14 @@ void MapAnim_Init_0(struct MAEffectProc * proc)
 
     InitScanline();
     SetupMapAnimScanlineWindow();
-    SetPrimaryHBlankHandler(HBlank_MapAnimEffect_Unk_0);
+    SetPrimaryHBlankHandler(HBlank_MapAnimEffect_SineWaveWindow);
     SetDefaultMapAnimScreenConf();
     SetBlendAlpha(0x10, 0x10);
 
     CallARM_FillTileRect(gBG2TilemapBuffer, gGenericBuffer, TILEREF(BGCHR_MANIM_160, BGPAL_MANIM_4));
     BG_EnableSyncByMask(BG2_SYNC_BIT);
 
-    StartMapAnimEffect_Unk_1(2, 0, 1, proc);
+    StartMapAnimEffect_BgScroll(2, 0, 1, proc);
     Proc_Start(ProcScr_ManimShiftingSineWaveScanlineBuf, proc);
 
     proc->unk48 = 0;
@@ -1430,16 +1430,16 @@ void SetDefaultMapAnimScreenConf(void)
     SetWOutLayers(1, 1, 0, 1, 1);
 }
 
-struct ProcCmd CONST_DATA ProcScr_MapAnimEffect_Unk_1[] = {
-    PROC_REPEAT(MapAnimEffect_Unk_1_Loop),
+struct ProcCmd CONST_DATA ProcScr_MapAnimEffect_BgScroll[] = {
+    PROC_REPEAT(MapAnimEffect_BgScroll_Loop),
     PROC_END,
 };
 
-void StartMapAnimEffect_Unk_1(int bg, int x_inc, int y_inc, ProcPtr parent)
+void StartMapAnimEffect_BgScroll(int bg, int x_inc, int y_inc, ProcPtr parent)
 {
     struct ManimSomethingProc_08067498 * proc;
 
-    proc = Proc_Start(ProcScr_MapAnimEffect_Unk_1, parent);
+    proc = Proc_Start(ProcScr_MapAnimEffect_BgScroll, parent);
 
     proc->bg = bg;
 
@@ -1449,12 +1449,12 @@ void StartMapAnimEffect_Unk_1(int bg, int x_inc, int y_inc, ProcPtr parent)
     proc->y_inc = y_inc;
 }
 
-void EndMapAnimEffect_Unk_1(void)
+void EndMapAnimEffect_BgScroll(void)
 {
-    Proc_EndEach(ProcScr_MapAnimEffect_Unk_1);
+    Proc_EndEach(ProcScr_MapAnimEffect_BgScroll);
 }
 
-void MapAnimEffect_Unk_1_Loop(struct ManimSomethingProc_08067498 * proc)
+void MapAnimEffect_BgScroll_Loop(struct ManimSomethingProc_08067498 * proc)
 {
     BG_SetPosition(proc->bg, proc->x, proc->y);
 

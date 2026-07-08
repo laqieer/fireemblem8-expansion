@@ -503,11 +503,11 @@ void SioTeamList_SetupGfx(struct SioTeamListProc * proc)
     StartMuralBackgroundExt(proc, 0, 0x12, 2, 0);
 
     Decompress(Img_TacticianSelObj, OBJ_CHR_ADDR(0x240));
-    CallARM_FillTileRect(TILEMAP_LOCATED(gBG2TilemapBuffer, 9, 4), gUnkData_14, TILEREF(0x0, 1));
+    CallARM_FillTileRect(TILEMAP_LOCATED(gBG2TilemapBuffer, 9, 4), Tsa_SioTeamList, TILEREF(0x0, 1));
     ApplyPalettes(Pal_TacticianSelObj, 0x13, 4);
 
-    Decompress(gUnkData_6, OBJ_CHR_ADDR(0x300));
-    ApplyPalettes(gUnkData_74, 0x11, 2);
+    Decompress(Img_LinkArenaMenuBanner, OBJ_CHR_ADDR(0x300));
+    ApplyPalettes(Pal_SioTeamList, 0x11, 2);
 
     gPaletteBuffer[0x20] = 0;
 
@@ -1182,7 +1182,7 @@ PROC_LABEL(1),
     PROC_CALL(FadeInBlackSpeed20),
     PROC_YIELD,
 
-    PROC_CALL(Clear_UnkData_0),
+    PROC_CALL(ClearLinkArenaUiBlendWindow),
 
     // fallthrough
 
@@ -1197,7 +1197,7 @@ PROC_LABEL(3),
     PROC_GOTO(9),
 
 PROC_LABEL(4),
-    PROC_CALL(Set_UnkData_0),
+    PROC_CALL(SetLinkArenaUiBlendWindow),
 
     PROC_CALL(FadeOutBlackSpeed20Locking),
     PROC_YIELD,
@@ -1211,7 +1211,7 @@ PROC_LABEL(4),
     PROC_CALL(FadeInBlackSpeed20),
     PROC_YIELD,
 
-    PROC_CALL(Clear_UnkData_0),
+    PROC_CALL(ClearLinkArenaUiBlendWindow),
 
     PROC_GOTO(2),
 
@@ -1232,7 +1232,7 @@ PROC_LABEL(7),
     PROC_GOTO(3),
 
 PROC_LABEL(8), /* Label for the Battle Password logic in FE6 */
-    PROC_CALL(Set_UnkData_0),
+    PROC_CALL(SetLinkArenaUiBlendWindow),
 
     PROC_CALL(FadeOutBlackSpeed20Locking),
     PROC_YIELD,
@@ -1245,7 +1245,7 @@ PROC_LABEL(8), /* Label for the Battle Password logic in FE6 */
 PROC_LABEL(9),
     PROC_CALL(EndMuralBackground),
 
-    PROC_CALL(Set_UnkData_0),
+    PROC_CALL(SetLinkArenaUiBlendWindow),
 
     PROC_CALL(FadeOutBlackSpeed20Locking),
     PROC_YIELD,

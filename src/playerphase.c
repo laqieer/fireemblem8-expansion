@@ -1313,22 +1313,22 @@ void MoveLimitView_OnLoop(struct MoveLimitViewProc * proc)
 
     if (proc->flags & LIMITVIEW_BLUE)
     {
-        CopyToPaletteBuffer(gUnkData_35 + frame, 0x82, 0x20);
+        CopyToPaletteBuffer(Pal_LimitViewBlue + frame, 0x82, 0x20);
     }
 
     if (proc->flags & LIMITVIEW_RED)
     {
-        CopyToPaletteBuffer(gUnkData_36 + frame, 0xA2, 0x20);
+        CopyToPaletteBuffer(Pal_LimitViewRed + frame, 0xA2, 0x20);
     }
 
     if (proc->flags & LIMITVIEW_GREEN)
     {
-        CopyToPaletteBuffer(gUnkData_37 + frame, 0xA2, 0x20);
+        CopyToPaletteBuffer(Pal_LimitViewGreen + frame, 0xA2, 0x20);
     }
 
     if (proc->flags & LIMITVIEW_UNK)
     {
-        CopyToPaletteBuffer(gUnkData_35 + frame, 0xA2, 0x20);
+        CopyToPaletteBuffer(Pal_LimitViewBlue + frame, 0xA2, 0x20);
     }
 
     return;

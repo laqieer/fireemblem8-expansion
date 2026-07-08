@@ -72,9 +72,9 @@ void PlayerPhase_HandleAutoEnd(ProcPtr proc);
 extern const struct MenuDef gMapMenuDef;
 extern const struct MenuDef gUnitActionMenuDef;
 
-extern u16 gUnkData_35[];
-extern u16 gUnkData_36[];
-extern u16 gUnkData_37[];
+extern u16 Pal_LimitViewBlue[];
+extern u16 Pal_LimitViewRed[];
+extern u16 Pal_LimitViewGreen[];
 
 extern struct ProcCmd gProcScr_Playerphase_0[];
 extern struct ProcCmd gProcScr_PlayerPhase[];

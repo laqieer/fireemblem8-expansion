@@ -252,53 +252,53 @@ extern CONST_DATA struct ProcCmd ProcScr_PrepItemListScreen[];
 extern u16 gPrepWmSell_0[];
 extern u16 * gPrepWmSell_1[];
 extern CONST_DATA struct ProcCmd gProcScr_FortuneSubMenu[];
-extern int gUnkData_59[]; /* msg lists */
-extern int CONST_DATA gUnkData_60[];
-extern int CONST_DATA gUnused_UnkData_0[];
+extern int gPrepFortuneSubMenuTextIds[]; /* msg lists */
+extern int CONST_DATA gPrepFortuneSubMenuTextIdsAlt[];
+extern int CONST_DATA gUnusedPrepFortuneSubMenuStatTextIds[];
 extern u16 CONST_DATA Img_PrepHelpButtonSprites[];
 extern u8 Img_MenuScrollBar[];
 extern u16 Pal_MenuScrollBar[];
-extern u8 gUnkData_61[]; // gfx
+extern u8 Img_PrepItemListSpinningArrow[]; // gfx
 extern u16 Pal_SpinningArrow[]; // pal
-extern u8 gUnkData_62[]; // gfx
-extern u8 gUnkData_63[]; // gfx
-extern u16 gUnkData_64[]; // pal
-extern u8 CONST_DATA Tsa_UnkData_1[];
-extern u8 CONST_DATA Tsa_UnkData_2[];
-extern u8 CONST_DATA Tsa_UnkData_3[];
-extern u8 CONST_DATA gUnkData_65[];
+extern u8 Img_PrepConvoyWeaponIconGfxA[]; // gfx
+extern u8 Img_PrepConvoyWeaponIconGfxB[]; // gfx
+extern u16 Pal_PrepConvoyWeaponIcon[]; // pal
+extern u8 CONST_DATA Tsa_PrepWindowFrameTop[];
+extern u8 CONST_DATA Tsa_PrepWindowFrameMiddle[];
+extern u8 CONST_DATA Tsa_PrepWindowFrameBottom[];
+extern u8 CONST_DATA gImg_PrepAtMenuTitleText[];
 extern u8 gGfx_SupportScreenBanner[];
-extern u8 CONST_DATA gUnkData_66[];
+extern u8 CONST_DATA gImg_PrepBannerText[];
 extern u16 CONST_DATA Img_SysBrownBox[];
 extern u16 CONST_DATA Pal_SysBrownBox[];
 extern u16 CONST_DATA gPal_SupportScreenBanner[];
 extern u16 CONST_DATA AP_DrawPreparationsBanner[];
 extern u8 Img_PrepFunds[]; // gfx
 extern u16 Pal_PrepFunds[]; // pal
-extern u8 CONST_DATA gUnkData_67[];
-extern u8 CONST_DATA gUnkData_68[];
-extern u8 CONST_DATA gUnkData_69[];
-extern u8 CONST_DATA gUnkData_70[];
+extern u8 CONST_DATA gTsa_PrepAtMenuRightPanel[];
+extern u8 CONST_DATA gTsa_PrepAtMenuLeftPanel[];
+extern u8 CONST_DATA gImg_PrepUnitSelectBg[];
+extern u8 CONST_DATA gTsa_PrepUnitSelectBg[];
 extern u8 Tsa_PrepItemScreen[]; // tsa
-extern u8 Tsa_UnkData_4[]; // tsa
-extern u8 gUnkData_71[]; // tsa
+extern u8 Tsa_PrepItemTradeUnitPanel[]; // tsa
+extern u8 Tsa_PrepItemSupplyBgA[]; // tsa
 extern u16 CONST_DATA Img_PrepItemUseScreen[];
 extern u16 CONST_DATA Tsa_PrepItemUseScreen[];
-extern u8 gUnkData_72[]; // tsa?
-extern u8 gUnkData_73[];
-extern u16 gUnkData_74[]; // pal
-// extern ??? gUnkData_75
-extern u16 gUnkData_76[];
+extern u8 gTsa_PrepWorldMapSellScreen[]; // tsa?
+extern u8 Tsa_PrepItemSupplyBgB[];
+extern u16 Pal_SioTeamList[]; // pal
+// extern ??? Pal_SioPressStartGlow
+extern u16 Pal_PrepItemListSpinningArrowCycle[];
 extern u8 Img_SpinningArrow[]; // arrow gfx
 extern u8 gImg_UiSpinningArrow_Horizontal[];
-extern u8 gUnkData_77[]; // tsa
-extern u8 Img_UnkData_1[];
+extern u8 Tsa_UnitListScreenBg[]; // tsa
+extern u8 Img_UnitListScreenBg[];
 extern u8 Img_UnitListBanners[];
 extern u8 Img_UnitListBanner_Animation[];
-extern u16 Pal_UnkData_1[];
-extern u16 CONST_DATA gUnkData_78[];
+extern u16 Pal_PrepWindowColors[];
+extern u16 CONST_DATA gPal_PrepScreenTextSprites[];
 extern u8 Img_PrepTextShadow[];
-extern u8 CONST_DATA gUnkData_79[];
+extern u8 CONST_DATA gImg_PrepMenuStartButtonSprites[];
 extern u16 CONST_DATA Pal_MapBattleInfoNum[]; // 'R is info' palette
 extern u8 Img_PrepPopupWindow[];
 extern u16 Pal_PrepWindowA[];
@@ -306,7 +306,7 @@ extern u16 Pal_PrepWindowB[];
 extern u16 Pal_PrepWindowC[];
 extern u16 Pal_PrepWindowD[];
 extern u8 Img_PrepWindow[];
-extern u8 gUnkData_80[];
+extern u8 Tsa_SupportScreenWindow[];
 extern u8 gTsa_SupportSubScreen[];
 extern u8 gGfx_SupportMenu[];
 extern u16 gPal_SupportMenu[];

@@ -300,11 +300,11 @@ void WorldmapStatus_InitDetails(struct WorldmapStatusProc * proc)
 
     if (GetPortraitData(fid)->img)
     {
-        ApplyPalette(gUnkData_30, 2);
+        ApplyPalette(Pal_FaceDisplayPortrait, 2);
     }
     else
     {
-        ApplyPalette(gUnkData_31, 2);
+        ApplyPalette(Pal_FaceDisplayGenericCard, 2);
     }
 
     EndAllMus();

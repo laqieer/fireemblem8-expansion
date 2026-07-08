@@ -6,14 +6,14 @@
 #include "sio.h"
 
 //! FE8U = 0x0804B920
-void Set_UnkData_0(void)
+void SetLinkArenaUiBlendWindow(void)
 {
     gUnk_Sio_22 = 1;
     return;
 }
 
 //! FE8U = 0x0804B92C
-void Clear_UnkData_0(void)
+void ClearLinkArenaUiBlendWindow(void)
 {
     gUnk_Sio_22 = 0;
     return;

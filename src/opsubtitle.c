@@ -205,7 +205,7 @@ void Subtitle_LightFlareFx_Init(struct OpSubtitleProc* proc) {
     proc->unk_4c = 0;
     proc->unk_4e = 0;
 
-    BlitU8TileMapData(gBG2TilemapBuffer, Tsa_UnkData_6, 0, 5);
+    BlitU8TileMapData(gBG2TilemapBuffer, Tsa_ChapterIntroLensFlare, 0, 5);
 
     BG_EnableSyncByMask(BG2_SYNC_BIT);
 
@@ -576,13 +576,13 @@ void OpSubtitle_FadeInScrollTextPal_Loop(struct OpSubtitleProc* proc) {
         int coeff = _DivArm1(proc->timer_2c, 46, 0);
 
         OpSubtitle_FadePalette(
-            Pal_UnkData_2,
+            Pal_OpSubtitleScrollText,
             PAL_BG(0xF),
             16,
             coeff
         );
     } else {
-        ApplyPalette(Pal_UnkData_2, 0xF);
+        ApplyPalette(Pal_OpSubtitleScrollText, 0xF);
 
         Proc_Break(proc);
 

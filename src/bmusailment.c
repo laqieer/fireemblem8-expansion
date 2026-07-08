@@ -24,9 +24,9 @@
 #include "bmusailment.h"
 #include "constants/songs.h"
 
-extern u16 gUnkData_40[];
-extern u16 gUnkData_41[]; // palette
-extern u16 gUnkData_42[];
+extern u16 Img_StatusHealEffectBg[];
+extern u16 Pal_StatusHealEffectBg[]; // palette
+extern u16 Tsa_StatusHealEffectBg[];
 
 // code_mapanim.s
 void BeginMapAnimForPoisonDmg(void);
@@ -248,10 +248,10 @@ void StatusHealEffect_OverlayBg_Init() {
 
     ClearBg0Bg1();
 
-    Decompress(gUnkData_40, (u8*)BG_VRAM + 0x5000);
-    ApplyPalette(gUnkData_41, 3);
+    Decompress(Img_StatusHealEffectBg, (u8*)BG_VRAM + 0x5000);
+    ApplyPalette(Pal_StatusHealEffectBg, 3);
 
-    CallARM_FillTileRect(gBG0TilemapBuffer, gUnkData_42, 0x3280);
+    CallARM_FillTileRect(gBG0TilemapBuffer, Tsa_StatusHealEffectBg, 0x3280);
 
     src = gBG0TilemapBuffer;
     dst = gBG0TilemapBuffer + 0x80;

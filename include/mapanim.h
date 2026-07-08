@@ -332,12 +332,12 @@ extern CONST_DATA struct ProcCmd ProcScr_MapAnimRestore[];
 extern CONST_DATA struct ProcCmd ProcScr_MapAnimSleep[];
 extern CONST_DATA struct ProcCmd ProcScr_MapAnimMonsterStone[];
 extern CONST_DATA void * TsaSet_MonsterStoneMapAnimfx[];
-extern CONST_DATA struct ProcCmd ProcScr_MapAnimEffect_Unk_0[];
+extern CONST_DATA struct ProcCmd ProcScr_MapAnimEffect_SineWaveWindow[];
 extern CONST_DATA u8 gMapanimStaffeffect_0[];
 extern CONST_DATA struct ProcCmd ProcScr_MapAnimSilencefx[];
 extern CONST_DATA struct ProcCmd ProcScr_MapAnimBarrierfx[];
 extern CONST_DATA struct ProcCmd ProcScr_MapAnimUnlock[];
-extern CONST_DATA struct ProcCmd ProcScr_MapAnimEffect_Unk_1[];
+extern CONST_DATA struct ProcCmd ProcScr_MapAnimEffect_BgScroll[];
 // extern ??? gManimLevelUpLabelInfoList
 extern CONST_DATA struct ProcCmd ProcScr_ManimLevelUpStatGainLabel[];
 extern CONST_DATA struct ProcCmd ProcScr_ManimLevelUpLabelColor[];
@@ -933,8 +933,8 @@ void AntitoxinPureWaterfx_Init(struct MAEffectProc * proc);
 void AntitoxinPureWaterfx_Loop(struct MAEffectProc * proc);
 
 /* Unused mapanim effect? */
-void StartMapAnimEffect_Unk_2(struct Unit * unit);
-void MapAnimEffect_Unk_2_PlaySe(struct MAEffectProc * proc);
+void StartMapAnimEffect_SoundOnly(struct Unit * unit);
+void MapAnimEffect_SoundOnly_PlaySe(struct MAEffectProc * proc);
 
 /* This is just the same as MAEffectProc */
 struct ProcMapAnimator {
@@ -984,7 +984,7 @@ void MapAnimMonsterStone_Loop1(struct MAEffectProc * proc);
 void MapAnimMonsterStone_Resetfx(struct MAEffectProc * proc);
 
 /* Unused mapanim effect? */
-void StartMapAnimEffect_Unk_0(struct Unit * unit);
+void StartMapAnimEffect_SineWaveWindow(struct Unit * unit);
 void MapAnim_Init_0(struct MAEffectProc * proc);
 void MapAnim_Loop1_0(struct MAEffectProc * proc);
 void MapAnim_Loop2_0(struct MAEffectProc * proc);
@@ -1016,9 +1016,9 @@ struct ManimSomethingProc_08067498
     /* 6A */ s16 y_inc;
 };
 
-void StartMapAnimEffect_Unk_1(int bg, int x_inc, int y_inc, ProcPtr parent);
-void EndMapAnimEffect_Unk_1(void);
-void MapAnimEffect_Unk_1_Loop(struct ManimSomethingProc_08067498 * proc);
+void StartMapAnimEffect_BgScroll(int bg, int x_inc, int y_inc, ProcPtr parent);
+void EndMapAnimEffect_BgScroll(void);
+void MapAnimEffect_BgScroll_Loop(struct ManimSomethingProc_08067498 * proc);
 void PutManimLevelUpFrame(int actor_id, int x, int y);
 void PutManimLevelUpStat(int actor_id, int x, int y, int stat_num, bool after_gain);
 int GetManimLevelUpStatGain(int actor_id, int stat_num);
@@ -1167,7 +1167,7 @@ void SetupMapAnimScanlineWindow(void);
 void UpdateMapAnimScanline(int x, int y, int arg3);
 void MapAnimResetHBlank(void);
 void HBlank_MapAnimWin0H(void);
-void HBlank_MapAnimEffect_Unk_0(void);
+void HBlank_MapAnimEffect_SineWaveWindow(void);
 void HBlank_MapAnimGradientColor(void);
 void HBlank_MapAnimBldAlpha(void);
 void HBlank_MapAnimBldY(void);

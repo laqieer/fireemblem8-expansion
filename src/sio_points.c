@@ -191,7 +191,7 @@ void LAPointsBox_LoadBoxes(struct LAPointsBoxProc * proc)
     int i;
     int oam2;
 
-    Decompress(gUnkData_8, (void *)(0x06002800));
+    Decompress(Img_SioPointsBox, (void *)(0x06002800));
     ApplyPalettes(Pal_TacticianSelObj, 2, 4);
 
     SetTextFont(NULL);
@@ -205,7 +205,7 @@ void LAPointsBox_LoadBoxes(struct LAPointsBoxProc * proc)
         {
             if (gUnk_Sio_16.unk_0A[playerId] == 0)
             {
-                ApplyPalette(gUnkData_9, playerId + 2);
+                ApplyPalette(Pal_SioPointsBox, playerId + 2);
             }
 
             oam2 = 0x140 + OAM2_PAL(playerId + 2);

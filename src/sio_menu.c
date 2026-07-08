@@ -506,7 +506,7 @@ PROC_LABEL(0),
     PROC_CALL(FadeInBlackSpeed20),
     PROC_YIELD,
 
-    PROC_CALL(Clear_UnkData_0),
+    PROC_CALL(ClearLinkArenaUiBlendWindow),
     PROC_REPEAT(SioMenu_0),
 
     PROC_GOTO(2),
@@ -515,7 +515,7 @@ PROC_LABEL(1),
     PROC_CALL(SioMenu_RestartGraphicsMaybe),
     PROC_CALL(FadeInBlackSpeed20),
     PROC_YIELD,
-    PROC_CALL(Clear_UnkData_0),
+    PROC_CALL(ClearLinkArenaUiBlendWindow),
 
     // fallthrough
 
@@ -524,7 +524,7 @@ PROC_LABEL(2),
     PROC_REPEAT(SioMenu_Loop_HandleKeyInput),
     PROC_REPEAT(SioMenu_1),
 
-    PROC_CALL(Set_UnkData_0),
+    PROC_CALL(SetLinkArenaUiBlendWindow),
 
     PROC_CALL(FadeOutBlackSpeed20Locking),
     PROC_YIELD,

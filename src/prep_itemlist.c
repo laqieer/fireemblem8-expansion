@@ -90,7 +90,7 @@ void PrepItemList_DrawCurrentOwnerText(struct PrepItemListProc* proc) {
 void List_PutHighlightedCategorySprites(struct PrepItemListProc* proc) {
     int x = proc->currentPage * 12 + 124;
 
-    gPaletteBuffer[0x14D] = *(gUnkData_76 + (GetGameClock() >> 2 & 0xf));
+    gPaletteBuffer[0x14D] = *(Pal_PrepItemListSpinningArrowCycle + (GetGameClock() >> 2 & 0xf));
     EnablePaletteSync();
 
     PutSprite(4, x, 24, gPrepWmSell_1[proc->currentPage], 0x4280);
@@ -137,7 +137,7 @@ void PrepItemList_InitGfx(struct PrepItemListProc * proc)
 
     PutImg_PrepItemUseUnk(0x5000, 5);
 
-    Decompress(gUnkData_71, gGenericBuffer);
+    Decompress(Tsa_PrepItemSupplyBgA, gGenericBuffer);
     CallARM_FillTileRect(gBG1TilemapBuffer, gGenericBuffer, 0x1000);
 
     BG_EnableSyncByMask(7);
@@ -189,7 +189,7 @@ void PrepItemList_InitGfx(struct PrepItemListProc * proc)
 
     PrepItemSupply_DrawConvoyWeaponIconTiles(gBG0TilemapBuffer + 0x6F, 0x4000, 6);
 
-    Decompress(gUnkData_61, (void*)0x06015000);
+    Decompress(Img_PrepItemListSpinningArrow, (void*)0x06015000);
     ApplyPalette(Pal_SpinningArrow, 0x14);
 
     StartMenuScrollBarExt(proc, 225, 47, 0x5800, 9);

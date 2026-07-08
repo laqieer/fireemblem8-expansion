@@ -156,10 +156,10 @@ void SaveMenuInitSlotPalette(u8 slot)
     EnablePaletteSync();
 }
 
-extern u16 gUnkData_44[];
-extern u16 gUnkData_43[];
-extern u16 gUnkData_46[];
-extern u16 gUnkData_45[];
+extern u16 gPal_SaveSlotHardUnselectedBlendA[];
+extern u16 gPal_SaveSlotHardSelectedBlendA[];
+extern u16 gPal_SaveSlotHardUnselectedBlendB[];
+extern u16 gPal_SaveSlotHardSelectedBlendB[];
 
 //! FE8U = 0x080ABE3C
 void SaveDrawSetDifficultSlotPalette(int param_1, int param_2)
@@ -170,8 +170,8 @@ void SaveDrawSetDifficultSlotPalette(int param_1, int param_2)
     int r9;
     u16 * ip;
     // permuter
-    u16 * pickle = gUnkData_45;
-    u16 * ketchup = gUnkData_43;
+    u16 * pickle = gPal_SaveSlotHardSelectedBlendB;
+    u16 * ketchup = gPal_SaveSlotHardSelectedBlendA;
 
     param_1 = (param_1 >> 1) & 0x1f;
     if (param_1 > 0x10)
@@ -193,8 +193,8 @@ void SaveDrawSetDifficultSlotPalette(int param_1, int param_2)
         }
         else
         {
-            ip = gUnkData_44;
-            r6 = gUnkData_46;
+            ip = gPal_SaveSlotHardUnselectedBlendA;
+            r6 = gPal_SaveSlotHardUnselectedBlendB;
         }
 
         for (r9 = 0; r9 < 7; r9++)

@@ -50,8 +50,8 @@ extern struct Unknown201F148 gUnk_SoundRoom_0;
 extern u8 gSoundRoomVolumeGraphBuffer[][0x31];
 
 extern u8 gMenuSoundroom_3[]; // gfx
-extern u16 gUnkData_30[]; // pal
-extern u16 gUnkData_31[]; // pal
+extern u16 Pal_FaceDisplayPortrait[]; // pal
+extern u16 Pal_FaceDisplayGenericCard[]; // pal
 extern u8 gMenuSoundroom_0[]; // tsa
 extern u8 gMenuSoundroom_1[]; // tsa
 
@@ -668,8 +668,8 @@ void SoundRoomUi_Init(struct SoundRoomProc * proc)
     SoundRoom_UpdateScrollBar(proc);
 
     Decompress(gMenuSoundroom_3, (void *)0x06004000);
-    ApplyPalette(gUnkData_30, 4);
-    ApplyPalette(gUnkData_31, 5);
+    ApplyPalette(Pal_FaceDisplayPortrait, 4);
+    ApplyPalette(Pal_FaceDisplayGenericCard, 5);
     CallARM_FillTileRect(TILEMAP_LOCATED(gBG1TilemapBuffer, 1, 7), gMenuSoundroom_0, 0x1000);
     CallARM_FillTileRect(TILEMAP_LOCATED(gBG1TilemapBuffer, 11, 5), gMenuSoundroom_1, 0x1000);
 

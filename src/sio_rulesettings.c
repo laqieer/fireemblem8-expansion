@@ -83,7 +83,7 @@ void SioRuleSettings_Init(struct ProcSioRuleSettings * proc)
 
     Nop_SioUiutils_2(0);
 
-    Decompress(gUnkData_15, gGenericBuffer);
+    Decompress(Tsa_SioRuleSettings, gGenericBuffer);
     CallARM_FillTileRect(TILEMAP_LOCATED(gBG2TilemapBuffer, 1, 5), gGenericBuffer, TILEREF(0x0, 1));
 
     SetTextFont(&Font_0);
@@ -198,11 +198,11 @@ struct ProcCmd CONST_DATA ProcScr_SIO_RuleSettings[] =
     PROC_CALL(FadeInBlackSpeed20),
     PROC_YIELD,
 
-    PROC_CALL(Clear_UnkData_0),
+    PROC_CALL(ClearLinkArenaUiBlendWindow),
 
     PROC_REPEAT(SioRuleSettings_Loop_Main),
 
-    PROC_CALL(Set_UnkData_0),
+    PROC_CALL(SetLinkArenaUiBlendWindow),
 
     PROC_CALL(FadeOutBlackSpeed20Locking),
     PROC_YIELD,

@@ -73,10 +73,10 @@ u16 CONST_DATA gTextIds_GuideCategoriesTopic[] =
 
 // clang-format on
 
-extern u8 Tsa_UnkData_5[]; // tsa
-extern u8 Img_UnkData_2[]; // gfx
-extern u8 Img_UnkData_3[]; // gfx
-extern u16 Pal_UnkData_3[]; // pal
+extern u8 Tsa_GuideScreenBg[]; // tsa
+extern u8 Img_GuideScreenPanels[]; // gfx
+extern u8 Img_GuideScreenBg[]; // gfx
+extern u16 Pal_GuideScreenBg[]; // pal
 
 // TODO: Implicit declarations
 void UpdateMenuScrollBarConfig(int, int, int, int);
@@ -921,11 +921,11 @@ void Guide_Init(ProcPtr proc)
     SetWin0Layers(1, 1, 1, 1, 1);
     SetWOutLayers(1, 0, 1, 1, 1);
 
-    ApplyPalette(Pal_UnkData_3, 0x12);
-    Decompress(Img_UnkData_3, (void *)0x06011000);
-    Decompress(Img_UnkData_2, (void *)0x06011800);
+    ApplyPalette(Pal_GuideScreenBg, 0x12);
+    Decompress(Img_GuideScreenBg, (void *)0x06011000);
+    Decompress(Img_GuideScreenPanels, (void *)0x06011800);
 
-    Decompress(Tsa_UnkData_5, gGenericBuffer + 0x100);
+    Decompress(Tsa_GuideScreenBg, gGenericBuffer + 0x100);
     CallARM_FillTileRect(gBG2TilemapBuffer, gGenericBuffer + 0x100, 0x1000);
 
     ApplyPalette(gUiFramePaletteA + (gPlaySt.config.windowColor + 4) * 0x10, 2);

@@ -71,7 +71,7 @@ void HBlank_MapAnimWin0H(void)
 }
 
 //! FE8U = 0x08081FA8
-void HBlank_MapAnimEffect_Unk_0(void)
+void HBlank_MapAnimEffect_SineWaveWindow(void)
 {
     u16 vcount = REG_VCOUNT;
 

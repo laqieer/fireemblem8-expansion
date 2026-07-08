@@ -602,7 +602,7 @@ extern const u8 BanimDefaultStandingTypes[5];
 extern const u8 BanimTypesPosLeft[5];
 extern const u8 BanimTypesPosRight[5];
 extern const u16 BanimLeftDefaultPos[5];
-extern u16 gUnkData_1[];
+extern u16 gBanimTerrainBlankTm[];
 extern const u8 Img_ConstDataDB034_0[];
 extern const u8 Img_ConstDataDB034_1[];
 extern const u8 Img_ConstDataDB034_2[];

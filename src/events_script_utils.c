@@ -768,7 +768,7 @@ CONST_DATA u16 Obj_EventsScriptUtils_0[] = {
 };
 
 CONST_DATA u16 * ImgLut_EventMapAnimMaskfx[] = {
-    Img_UnkData_0,
+    Img_EventMapAnimMaskfx_Frame0,
     Img_99E1A4,
     Img_99ED44,
     Img_99F7D4,

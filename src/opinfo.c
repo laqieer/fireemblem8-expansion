@@ -309,7 +309,7 @@ void ClassIntro_Init(struct OpInfoEnterProc* proc) {
 
     BG_Fill(gBG0TilemapBuffer, 0);
 
-    ApplyPalette(gUnkData_96, 0x10);
+    ApplyPalette(gPal_ClassIntroLetterFont, 0x10);
 
     str = GetClassReelName(proc->classReelEnt->classId, NULL);
 
@@ -325,29 +325,29 @@ void ClassIntro_Init(struct OpInfoEnterProc* proc) {
         ptr += 0x40;
     }
 
-    ApplyPalette(gUnkData_82, 0x1E);
-    ApplyPalette(gUnkData_82, 0x1F);
+    ApplyPalette(gPal_ClassIntroNameSprites, 0x1E);
+    ApplyPalette(gPal_ClassIntroNameSprites, 0x1F);
 
-    Decompress(gUnkData_81, (void *)0x06016000);
+    Decompress(gImg_ClassIntroNameSprites, (void *)0x06016000);
 
     proc->unk_2c = ((240 - (((proc->classNameLength << 1) + proc->classNameLength) << 2)) >> 1) - 8;
 
     *proc->letterProcsPtr = StartClassNameIntroLetter(proc, 0);
 
-    Decompress(gUnkData_91, (void *)VRAM);
+    Decompress(gImg_ClassIntroBg0, (void *)VRAM);
 
-    Decompress(gUnkData_92, gGenericBuffer);
+    Decompress(gTsa_ClassIntroBg0, gGenericBuffer);
     CallARM_FillTileRect(TILEMAP_LOCATED(gBG0TilemapBuffer, 0, 0x7), gGenericBuffer, 0x4000);
 
-    Decompress(gUnkData_88, (void *)0x06000800);
+    Decompress(gImg_ClassIntroBg1, (void *)0x06000800);
 
-    Decompress(gUnkData_89, gGenericBuffer);
+    Decompress(gTsa_ClassIntroBg1, gGenericBuffer);
     CallARM_FillTileRect(gBG1TilemapBuffer, gGenericBuffer, 0x5040);
-    ApplyPalette(gUnkData_90, 5);
+    ApplyPalette(gPal_ClassIntroBg1, 5);
 
     Decompress(Img_ChapterIntro_LensFlare, (void *)0x06008000);
 
-    BlitU8TileMapData(gBG2TilemapBuffer, Tsa_UnkData_6, 0, 5);
+    BlitU8TileMapData(gBG2TilemapBuffer, Tsa_ChapterIntroLensFlare, 0, 5);
 
     ApplyPalettes(Pal_ChapterIntro_LensFlare, 0, 3);
 
@@ -1047,15 +1047,15 @@ void ClassInfoDisplay_Init(struct OpInfoClassDisplayProc* proc) {
     BG_SetPosition(2, 0, 0);
     BG_SetPosition(3, 0, 0);
 
-    Decompress(gUnkData_85, (void *)(GetBackgroundTileDataOffset(3) + VRAM));
-    ApplyPalettes(gUnkData_87, 7, 8);
+    Decompress(gImg_ClassReelInfoBg, (void *)(GetBackgroundTileDataOffset(3) + VRAM));
+    ApplyPalettes(gPal_ClassReelInfoBg, 7, 8);
 
-    CallARM_FillTileRect(gBG3TilemapBuffer, gUnkData_86, 0x7000);
+    CallARM_FillTileRect(gBG3TilemapBuffer, gTsa_ClassReelInfoBg, 0x7000);
 
-    Decompress(gUnkData_83, (void *)(GetBackgroundTileDataOffset(2) + VRAM));
+    Decompress(Img_ClassChangeSelectUi, (void *)(GetBackgroundTileDataOffset(2) + VRAM));
     ApplyPalette(gUiFramePaletteA, 6);
 
-    CallARM_FillTileRect(gBG2TilemapBuffer, gUnkData_84, 0x6000);
+    CallARM_FillTileRect(gBG2TilemapBuffer, Tsa_ClassChangeSelectUi, 0x6000);
 
     BG_EnableSyncByMask(0xF);
 
@@ -1402,9 +1402,9 @@ void ClassStatsDisplay_Init(struct OpInfoGaugeDrawProc* proc) {
         }
     }
 
-    Decompress(gUnkData_94, (void *)0x06010000);
+    Decompress(Img_ClassReelFont, (void *)0x06010000);
 
-    ApplyPalettes(gUnkData_95, 0x14, 2);
+    ApplyPalettes(Pal_ClassReelFont, 0x14, 2);
 
     return;
 }

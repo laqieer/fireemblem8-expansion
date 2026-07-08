@@ -1318,7 +1318,7 @@ void PrepItem_InitTradeScreen(struct PrepItemScreenProc * proc)
     Decompress(Tsa_PrepItemScreen, gGenericBuffer);
     CallARM_FillTileRect(TILEMAP_LOCATED(gBG1TilemapBuffer, 0, 0), gGenericBuffer, TILEREF(0x0, 1));
 
-    Decompress(Tsa_UnkData_4, gGenericBuffer);
+    Decompress(Tsa_PrepItemTradeUnitPanel, gGenericBuffer);
     CallARM_FillTileRect(TILEMAP_LOCATED(gBG1TilemapBuffer, 15, 9), gGenericBuffer, TILEREF(0x0, 1));
 
     proc->unitSelected = false;

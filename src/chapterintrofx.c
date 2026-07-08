@@ -431,7 +431,7 @@ void ChapterIntro_Init(struct ChapterIntroFxProc * proc)
     Decompress(Img_ChapterIntro_LensFlare, BG_CHR_ADDR(0x400));
     ApplyPalettes(Pal_ChapterIntro_LensFlare, 0, 3);
 
-    BlitU8TileMapData(gBG2TilemapBuffer, Tsa_UnkData_6, 0, 5);
+    BlitU8TileMapData(gBG2TilemapBuffer, Tsa_ChapterIntroLensFlare, 0, 5);
 
     Decompress(Img_ChapterIntro_Sprites, OBJ_CHR_ADDR(0x200));
     ApplyPalette(Pal_ChapterIntro_Sprites, 18);

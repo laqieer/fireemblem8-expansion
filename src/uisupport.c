@@ -520,7 +520,7 @@ void SupportScreen_SetupGraphics(struct SupportScreenProc* proc) {
     SupportScreen_LoadUnitSprites((void*)proc);
     PutImg_PrepItemUseUnk(0x5000, 5);
 
-    Decompress(gUnkData_80, gGenericBuffer);
+    Decompress(Tsa_SupportScreenWindow, gGenericBuffer);
     CallARM_FillTileRect(TILEMAP_LOCATED(gBG1TilemapBuffer, 1, 4), gGenericBuffer, 0x1200);
 
     Decompress(gGfx_SupportScreenBanner, (void*)0x06013800);

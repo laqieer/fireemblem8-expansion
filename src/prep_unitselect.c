@@ -146,11 +146,11 @@ void PrepUnit_InitGfx()
     Prep_DrawChapterGoal(0x6000, 8);
     Prep_LoadWindowGfx(0x6000, 0xF);
 
-    Decompress(gUnkData_69, (void*)0x06000440);
-    Decompress(gUnkData_70, gGenericBuffer);
+    Decompress(gImg_PrepUnitSelectBg, (void*)0x06000440);
+    Decompress(gTsa_PrepUnitSelectBg, gGenericBuffer);
     CallARM_FillTileRect(gBG1TilemapBuffer, gGenericBuffer, 0x1000);
 
-    Decompress(gUnkData_79, (void*)0x6010800);
+    Decompress(gImg_PrepMenuStartButtonSprites, (void*)0x6010800);
     ApplyPalette(Pal_MapBattleInfoNum, 0x19);
     EnablePaletteSync();
 }

@@ -950,14 +950,14 @@ void UnitList_SetupDisplay(struct UnitListScreenProc * proc)
     LoadIconPalettes(4);
     LoadUiFrameGraphics();
 
-    Decompress(Img_UnkData_1, (void *)0x06014800);
+    Decompress(Img_UnitListScreenBg, (void *)0x06014800);
     Decompress(proc->page != 0 ? Img_UnitListBanners : Img_UnitListBanner_Animation, (void *)0x06015800);
 
     ApplyPalettes(Pal_SysBrownBox, 0x19, 2);
 
     ApplyPrepWindowColorPalette();
 
-    CallARM_FillTileRect(gBG1TilemapBuffer, gUnkData_77, 0x1000);
+    CallARM_FillTileRect(gBG1TilemapBuffer, Tsa_UnitListScreenBg, 0x1000);
 
     for (i = 0; i < 7; i++)
     {

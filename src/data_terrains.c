@@ -1090,7 +1090,7 @@ CONST_DATA s8 TerrainTable_MovCost_DemonKing[] = {
     [TERRAIN_MAST] = -1,
 };
 
-CONST_DATA s8 Unk_TerrainTable_0[] = {
+CONST_DATA s8 TerrainMoveCost_Ballista[] = {
     [TERRAIN_NONE] = -1,
     [TERRAIN_PLAINS] = 1,
     [TERRAIN_ROAD] = 1,

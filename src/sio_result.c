@@ -254,7 +254,7 @@ void SioResult_NewHS_Init(struct SioResultProc * proc)
     ApplyPalette(Pal_LinkArenaRankIcons, 6);
 
     Decompress(Img_TacticianSelObj, OBJ_CHR_ADDR(0x240));
-    Decompress(gUnkData_7, OBJ_CHR_ADDR(0x300));
+    Decompress(Img_SioResultBanner, OBJ_CHR_ADDR(0x300));
     ApplyPalette(Pal_LinkArenaActiveBannerFx, 0x13);
 
     CallARM_FillTileRect(TILEMAP_LOCATED(gBG2TilemapBuffer, 1, 4), Tsa_SioResultRankings, TILEREF(0x0, 1));
@@ -386,11 +386,11 @@ struct ProcCmd CONST_DATA ProcScr_SIORESULT[] =
     PROC_CALL(FadeInBlackSpeed20),
     PROC_YIELD,
 
-    PROC_CALL(Clear_UnkData_0),
+    PROC_CALL(ClearLinkArenaUiBlendWindow),
 
     PROC_REPEAT(SioResult_Loop_Main),
 
-    PROC_CALL(Set_UnkData_0),
+    PROC_CALL(SetLinkArenaUiBlendWindow),
 
     PROC_CALL(FadeOutBlackSpeed20Locking),
     PROC_YIELD,
@@ -409,12 +409,12 @@ struct ProcCmd CONST_DATA ProcScr_SIORESULT_NewHighScore[] =
     PROC_CALL(FadeInBlackSpeed20),
     PROC_YIELD,
 
-    PROC_CALL(Clear_UnkData_0),
+    PROC_CALL(ClearLinkArenaUiBlendWindow),
 
     PROC_REPEAT(SioResult_NewHS_LoopScroll),
     PROC_REPEAT(SioResult_NewHS_AwaitAPress),
 
-    PROC_CALL(Set_UnkData_0),
+    PROC_CALL(SetLinkArenaUiBlendWindow),
 
     PROC_CALL(FadeOutBlackSpeed20Locking),
     PROC_YIELD,

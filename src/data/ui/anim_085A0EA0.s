@@ -1,7 +1,7 @@
 .section .data
 
-	.global gUnkData_2
-gUnkData_2:  @ 0x085A0EA0
+	.global gWarpPrepUnitSwapCursorAp
+gWarpPrepUnitSwapCursorAp:  @ 0x085A0EA0
 g085A0EA0_motion:
 	.2byte (g085A0EA0_frame_list - g085A0EA0_motion), (g085A0EA0_anim_list - g085A0EA0_motion) @ header
 
@@ -106,6 +106,6 @@ g085A0EA0_anim_1: @ +$14A
 
 	.byte 0x00, 0x00  @ trailing anim data not decoded by apdump
 .L_end_gUnknown_085A0EA0:
-	.if (.L_end_gUnknown_085A0EA0 - gUnkData_2) != 344
-	.error "gUnkData_2 size mismatch"
+	.if (.L_end_gUnknown_085A0EA0 - gWarpPrepUnitSwapCursorAp) != 344
+	.error "gWarpPrepUnitSwapCursorAp size mismatch"
 	.endif

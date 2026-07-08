@@ -276,7 +276,7 @@ s8 CheckValidLinkArenaItemRemoval(struct Unit* unit, int itemSlot) {
     return 0;
 }
 
-extern u16 Pal_UnkData_1[];
+extern u16 Pal_PrepWindowColors[];
 extern u16 gPrepscreen_5[];
 
 //! FE8U = 0x08097FDC
@@ -288,7 +288,7 @@ void ApplyPrepWindowColorPalette(void)
         int pal = gPlaySt.config.windowColor;
 
         u16* dst = &gPrepscreen_5[i];
-        u16* src = &Pal_UnkData_1[pal * 0x10 + i];
+        u16* src = &Pal_PrepWindowColors[pal * 0x10 + i];
 
         *dst = *src;
     }

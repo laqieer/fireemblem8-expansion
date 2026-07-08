@@ -943,7 +943,7 @@ int PrepMapMenu_ReturnToAtMenu(void)
 //! FE8U = 0x08033C10
 void PrepScreen_StartUnitSwap(struct ProcPrepSallyCursor * proc)
 {
-    struct APHandle * ap = AP_Create(gUnkData_2, 0);
+    struct APHandle * ap = AP_Create(gWarpPrepUnitSwapCursorAp, 0);
     ap->tileBase = 0;
     AP_SwitchAnimation(ap, 0);
 

@@ -60,8 +60,8 @@ void LoadClassReelFontPalette(struct ProcPromoSel *proc, int class_id) {
             proc->u46 += 4;
     }
 
-    Decompress(&gUnkData_94, OBJ_VRAM0 + 0x1000);
-    ApplyPalettes(gUnkData_95, 0x14, 0x2);
+    Decompress(&Img_ClassReelFont, OBJ_VRAM0 + 0x1000);
+    ApplyPalettes(Pal_ClassReelFont, 0x14, 0x2);
 }
 
 void LoadClassNameInClassReelFont(struct ProcPromoSel *proc) {
@@ -97,10 +97,10 @@ void ClassChgLoadEfxTerrain(void)
 
 void ClassChgLoadUI(void)
 {
-    u8 *src = gUnkData_83;
+    u8 *src = Img_ClassChangeSelectUi;
     u32 off = GetBackgroundTileDataOffset(BG_2);
     Decompress(src, (void *)VRAM + 0x3000 + off);
-    RegisterTsaWithOffset(gBG2TilemapBuffer, gUnkData_84, TILEREF(0x180, BGPAL_TEXT_DEFAULT) + 0x1000);
+    RegisterTsaWithOffset(gBG2TilemapBuffer, Tsa_ClassChangeSelectUi, TILEREF(0x180, BGPAL_TEXT_DEFAULT) + 0x1000);
 }
 
 void ClassChgSelDrawPidName(struct ProcPromoSel *proc) {

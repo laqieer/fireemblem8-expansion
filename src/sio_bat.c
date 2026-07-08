@@ -172,7 +172,7 @@ struct ProcCmd CONST_DATA ProcScr_SIOMAIN2[] = {
     PROC_CALL(LinkArenaBattleMap_Init),
     PROC_CALL(FadeInBlackSpeed20),
     PROC_YIELD,
-    PROC_CALL(Clear_UnkData_0),
+    PROC_CALL(ClearLinkArenaUiBlendWindow),
 PROC_LABEL(0),
     PROC_CALL(LABattleMap_BeginTurn),
     PROC_SLEEP(1),
@@ -275,7 +275,7 @@ void LinkArena_UpdatePlayerStatusText(void)
                 PutDrawTextCentered(
                     &gLinkArenaSt.texts[i], 11, 5 + i * 3,
                     GetStringFromIndex(gLinkArenaStatusMsg[gLinkArenaSt.linking_status[i]]), 10);
-                ApplyPalette(gUnkData_9, 0x13 + i);
+                ApplyPalette(Pal_SioPointsBox, 0x13 + i);
             }
             else
             {
@@ -303,11 +303,11 @@ void SioBat_InitSetupScreen(struct SioBatProc * proc)
 
     Decompress(Img_TacticianSelObj, OBJ_CHR_ADDR(0x240));
     Decompress(Img_LinkArenaPlayerBanners, OBJ_CHR_ADDR(0x300));
-    Decompress(gUnkData_6, OBJ_CHR_ADDR(0x340));
+    Decompress(Img_LinkArenaMenuBanner, OBJ_CHR_ADDR(0x340));
 
     for (i = 0; i < 4; i++)
     {
-        ApplyPalette(gUnkData_9, 0x13 + i);
+        ApplyPalette(Pal_SioPointsBox, 0x13 + i);
     }
 
     ReadMultiArenaSaveTeamName(gLinkArenaSt.unk_03, buf);
@@ -888,7 +888,7 @@ void DrawLinkArenaRuleScreen(ProcPtr proc)
 
     Nop_SioUiutils_2(0);
 
-    Decompress(gUnkData_15, gGenericBuffer);
+    Decompress(Tsa_SioRuleSettings, gGenericBuffer);
     CallARM_FillTileRect(TILEMAP_LOCATED(gBG2TilemapBuffer, 1, 5), gGenericBuffer, TILEREF(0x0, 1));
 
     SetTextFont(&Font_0);

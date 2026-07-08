@@ -158,16 +158,16 @@ void Prep_DrawWindowFrame(u16 * tm, int b, u32 c, int d)
 {
     int i;
 
-    CallARM_FillTileRect(tm, Tsa_UnkData_1, (u16)TILEREF((c / 2 & 0xffff) / 0x10, 1));
+    CallARM_FillTileRect(tm, Tsa_PrepWindowFrameTop, (u16)TILEREF((c / 2 & 0xffff) / 0x10, 1));
 
     for (i = 0; i < b; i++)
     {
         CallARM_FillTileRect(
-            (i * 0x40) + tm + 0x20, Tsa_UnkData_2, (u16)TILEREF((c / 2 & 0xffff) / 0x10, 1));
+            (i * 0x40) + tm + 0x20, Tsa_PrepWindowFrameMiddle, (u16)TILEREF((c / 2 & 0xffff) / 0x10, 1));
     }
 
     CallARM_FillTileRect(
-        i * 0x40 + tm + 0x20, Tsa_UnkData_3, (u16)(d * 0x1000 + ((c / 2) & 0xffff) / 0x10));
+        i * 0x40 + tm + 0x20, Tsa_PrepWindowFrameBottom, (u16)(d * 0x1000 + ((c / 2) & 0xffff) / 0x10));
 
     return;
 }

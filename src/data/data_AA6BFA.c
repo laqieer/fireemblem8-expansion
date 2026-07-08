@@ -24,13 +24,13 @@ void OpAnimDarkenBg2OutInit(struct Proc * proc);
 void OpAnimDarkenBg2Out(struct Proc * proc);
 void OpAnimRestoreColorEffectsOnEnd2(struct Proc * proc);
 
-struct ProcCmd gUnkData_97[] =
+struct ProcCmd ProcScr_OpAnimScrollBg3[] =
 {
     PROC_REPEAT(OpAnimScrollBg3Loop),
     PROC_END,
 };
 
-struct ProcCmd gUnkData_98[] =
+struct ProcCmd ProcScr_OpAnimDarkenBg2In[] =
 {
     PROC_SET_END_CB(OpAnimRestoreColorEffectsOnEnd),
     PROC_CALL(OpAnimDarkenBg2Init),
@@ -38,7 +38,7 @@ struct ProcCmd gUnkData_98[] =
     PROC_END,
 };
 
-struct ProcCmd gUnkData_99[] =
+struct ProcCmd ProcScr_OpAnimDarkenBg2Out[] =
 {
     PROC_SET_END_CB(OpAnimRestoreColorEffectsOnEnd2),
     PROC_CALL(OpAnimDarkenBg2OutInit),
@@ -46,11 +46,11 @@ struct ProcCmd gUnkData_99[] =
     PROC_END,
 };
 
-u16 gUnkData_100[] = INCBIN_U16("graphics/misc/gUnknown_08AA709C.4bpp");
+u16 Obj_OpanimClassReelUnitSprite[] = INCBIN_U16("graphics/misc/gUnknown_08AA709C.4bpp");
 
-u16 gUnkData_101[] = INCBIN_U16("graphics/misc/gUnknown_08AA70BC.4bpp");
+u16 Obj_OpanimTitleFlyInSeg1ObjWindow[] = INCBIN_U16("graphics/misc/gUnknown_08AA70BC.4bpp");
 
-struct OamObjectList gUnkData_102 =
+struct OamObjectList Obj_OpanimTitleFlyInSeg2ObjWindow =
 {
     2,
     {
@@ -59,7 +59,7 @@ struct OamObjectList gUnkData_102 =
     },
 };
 
-struct OamObjectList gUnkData_103 =
+struct OamObjectList Obj_OpanimTitleFlyInSeg3ObjWindow =
 {
     7,
     {
@@ -73,7 +73,7 @@ struct OamObjectList gUnkData_103 =
     },
 };
 
-struct OamObjectList gUnkData_104 =
+struct OamObjectList Obj_OpanimTitleFlyInSeg4ObjWindow =
 {
     3,
     {
@@ -83,7 +83,7 @@ struct OamObjectList gUnkData_104 =
     },
 };
 
-struct OamObjectList gUnkData_105 =
+struct OamObjectList Obj_OpanimTitleFlyInSeg10ObjWindow =
 {
     8,
     {
@@ -98,7 +98,7 @@ struct OamObjectList gUnkData_105 =
     },
 };
 
-struct OamObjectList gUnkData_106 =
+struct OamObjectList Obj_OpanimTitleFlyInSeg9ObjWindow =
 {
     9,
     {
@@ -119,7 +119,7 @@ struct
     u16 count;
     struct OamObject objects[8];
     u16 terminator;
-} __attribute__((packed)) gUnkData_107 =
+} __attribute__((packed)) Obj_OpanimTitleFlyInSeg12ObjWindow =
 {
     8,
     {

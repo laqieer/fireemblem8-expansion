@@ -90,12 +90,12 @@ void LATitleBanner_Init(struct LinkArenaTitleBannerProc * proc)
     int a = (proc->unk_58 % 3) * 0x140;
     int b = (proc->unk_58 / 3) * 0x800;
 
-    Decompress(gUnkData_25, (void *)(VRAM + proc->chr));
-    Decompress(gUnkData_5, gGenericBuffer);
+    Decompress(Img_LinkArenaTitleBanner, (void *)(VRAM + proc->chr));
+    Decompress(Img_LinkArenaMenuTitle, gGenericBuffer);
 
     CopyLinkArenaTileRows(gGenericBuffer + (a + b), OBJ_CHR_ADDR(0x200), 10, 2);
 
-    CallARM_FillTileRect(gBG2TilemapBuffer, gUnkData_26, (((u16)(proc->chr >> 1) >> 4)) | 0x1000);
+    CallARM_FillTileRect(gBG2TilemapBuffer, Tsa_LinkArenaTitleBanner, (((u16)(proc->chr >> 1) >> 4)) | 0x1000);
     BG_EnableSyncByMask(BG2_SYNC_BIT);
 
     return;
@@ -437,7 +437,7 @@ const u16 Sprite_LinkArena_PressStart[] =
 //! FE8U = 0x0804C7E4
 void UpdateLinkArenaSideMenuGlow(void)
 {
-    u16 * ptr = gUnkData_10;
+    u16 * ptr = Pal_SioSideMenuGlow;
 
     // clang-format off
     const u8 gUnknown_080DA102[] =
@@ -464,7 +464,7 @@ void UpdateLinkArenaSideMenuGlow(void)
 //! FE8U = 0x0804C83C
 void UpdateLinkArenaNameBannerGlow(void)
 {
-    u16 * ptr = gUnkData_12;
+    u16 * ptr = Pal_SioNameBannerGlow;
 
     // clang-format off
     const u8 sioMenuItemGlowLut[] =
@@ -551,7 +551,7 @@ u16 CONST_DATA gSioUiutils_4[] =
 
 // clang-format on
 
-extern u16 gUnkData_75[];
+extern u16 Pal_SioPressStartGlow[];
 
 //! FE8U = 0x0804C894
 void SioTeamMenuSpriteDraw_Loop(struct SioProc85AAA78 * proc)
@@ -589,7 +589,7 @@ void SioTeamMenuSpriteDraw_Loop(struct SioProc85AAA78 * proc)
         {
             if (gUnk_Sio_22 == 0)
             {
-                PAL_OBJ_COLOR(8, 14) = ((GetGameClock() % 0x40) / 4)[gUnkData_75];
+                PAL_OBJ_COLOR(8, 14) = ((GetGameClock() % 0x40) / 4)[Pal_SioPressStartGlow];
                 EnablePaletteSync();
             }
 
@@ -781,7 +781,7 @@ void UpdateNameEntrySpriteGlow(void)
     int r2;
     int i;
 
-    u16 * ptr = gUnkData_11;
+    u16 * ptr = Pal_SioNameEntryGlow;
 
     if (gUnk_Sio_22 == 0)
     {
@@ -1069,12 +1069,12 @@ void UpdateRuleSettingSprites(ProcPtr proc, s16 b, s16 xOption, s16 yOption)
     return;
 }
 
-extern u16 gUnkData_11[];
+extern u16 Pal_SioNameEntryGlow[];
 
 //! FE8U = 0x0804CECC
 void UpdateSioMenuBurstGlow(int idx)
 {
-    u16 * ptr = gUnkData_11;
+    u16 * ptr = Pal_SioNameEntryGlow;
 
     if (gUnk_Sio_22 == 0)
     {
@@ -1361,18 +1361,18 @@ void LAPhaseIntro_Init(void)
     // clang-format off
     u8 * gUnknown_080DA20C[] =
     {
-        gUnkData_17,
-        gUnkData_18,
-        gUnkData_19,
-        gUnkData_20,
+        Img_LinkArenaPhaseIntroPlayer,
+        Img_LinkArenaPhaseIntroOther,
+        Img_LinkArenaPhaseIntroEnemy,
+        Img_LinkArenaPhaseIntro4,
     };
 
     u16 * gUnknown_080DA21C[] =
     {
-        gUnkData_21,
-        gUnkData_23,
-        gUnkData_22,
-        gUnkData_24,
+        Pal_LinkArenaPhaseIntroPlayer,
+        Pal_LinkArenaPhaseIntroOther,
+        Pal_LinkArenaPhaseIntroEnemy,
+        Pal_LinkArenaPhaseIntro4,
     };
 
     u16 * gUnknown_080DA22C[] =
@@ -1386,7 +1386,7 @@ void LAPhaseIntro_Init(void)
 
     Decompress(Img_PhaseChangeUnk, OBJ_CHR_ADDR(0x200));
     Decompress(Img_PhaseChangeSquares, BG_CHR_ADDR(0x100));
-    Decompress(gUnkData_16, BG_CHR_ADDR(0x140));
+    Decompress(Img_LinkArenaPhaseIntroBg, BG_CHR_ADDR(0x140));
 
     Decompress(gUnknown_080DA20C[gPlaySt.faction], gGenericBuffer);
     Copy2dChr(gGenericBuffer, BG_CHR_ADDR(0x14C), 3, 3);

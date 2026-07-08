@@ -16,7 +16,7 @@ struct ProcCmd CONST_DATA ProcScr_TacticianNameSelection[] = {
     PROC_CALL(Tactician_InitScreen),
     PROC_CALL(FadeInBlackSpeed20),
     PROC_YIELD,
-    PROC_CALL(Clear_UnkData_0),
+    PROC_CALL(ClearLinkArenaUiBlendWindow),
 PROC_LABEL(0),
     PROC_REPEAT(Tactician_Loop),
     PROC_GOTO(2),
@@ -31,7 +31,7 @@ PROC_LABEL(3),
     PROC_REPEAT(NameSelect_ConfirmLoop),
     PROC_GOTO(0),
 PROC_LABEL(2),
-    PROC_CALL(Set_UnkData_0),
+    PROC_CALL(SetLinkArenaUiBlendWindow),
     PROC_CALL(FadeOutBlackSpeed20Locking),
     PROC_YIELD,
     PROC_CALL(Tactician_OnEnd),
@@ -690,8 +690,8 @@ void Tactician_InitScreen(struct ProcTactician * proc)
     StartMuralBackgroundExt(proc, 0, 0, 0, 0);
     Decompress(Img_TacticianSelObj, (void *)0x06014800);
     ApplyPalette(Pal_TacticianSelObj, 0x13);
-    ApplyPalette(Pal_UnkData_0, 0x14);
-    CallARM_FillTileRect(TILEMAP_LOCATED(gBG2TilemapBuffer, 0, 8), Tsa_UnkData_0, 0x1000);
+    ApplyPalette(Pal_TacticianNameInputBg, 0x14);
+    CallARM_FillTileRect(TILEMAP_LOCATED(gBG2TilemapBuffer, 0, 8), Tsa_TacticianNameInputBg, 0x1000);
     SetTextFont(&Font_0);
     InitSystemTextFont();
     ResetTextFont();

@@ -130,7 +130,7 @@ void AtMenu_EndScreenElements(struct ProcAtMenu * proc)
 void LoadPrepBannerGfx(int tile, int pal)
 {
     /* "Cahpter 0", "Infomaion" */
-    Decompress(gUnkData_66, OBJ_VRAM0 + tile);
+    Decompress(gImg_PrepBannerText, OBJ_VRAM0 + tile);
     ApplyPalette(gPal_SupportScreenBanner, pal + 0x10);
 }
 
@@ -161,13 +161,13 @@ void AtMenu_Reinitialize(struct ProcAtMenu* proc)
     InitText(&gPrepMainMenuTexts[0], 0xA);
 
     /* "Preparations" */
-    Decompress(gUnkData_65, (void*)0x6014800);
+    Decompress(gImg_PrepAtMenuTitleText, (void*)0x6014800);
     /* "Menu", "Start" button */
-    Decompress(gUnkData_79, (void*)0x6016000);
+    Decompress(gImg_PrepMenuStartButtonSprites, (void*)0x6016000);
     ApplyPalettes(Pal_SysBrownBox, 0x19, 2);
     
     LoadPrepBannerGfx(0x7000, 0x6);
-    ApplyPalette(gUnkData_78, 0x14);
+    ApplyPalette(gPal_PrepScreenTextSprites, 0x14);
     EnablePaletteSync();
 
     gLCDControlBuffer.bg0cnt.priority = 0;
@@ -192,12 +192,12 @@ void AtMenu_Reinitialize(struct ProcAtMenu* proc)
     ApplyPalettes(gUiFramePaletteB, 0x2, 3);
 
     if (CheckInLinkArena()) {
-        Decompress(gUnkData_68, gGenericBuffer);
+        Decompress(gTsa_PrepAtMenuLeftPanel, gGenericBuffer);
         CallARM_FillTileRect(TILEMAP_LOCATED(gBG1TilemapBuffer, 1, 5), gGenericBuffer, 0x1000);
     } else {
-        Decompress(gUnkData_67, gGenericBuffer);
+        Decompress(gTsa_PrepAtMenuRightPanel, gGenericBuffer);
         CallARM_FillTileRect(TILEMAP_LOCATED(gBG1TilemapBuffer, 0x10, 2), gGenericBuffer, 0x1000);
-        Decompress(gUnkData_68, gGenericBuffer);
+        Decompress(gTsa_PrepAtMenuLeftPanel, gGenericBuffer);
         CallARM_FillTileRect(TILEMAP_LOCATED(gBG1TilemapBuffer, 1, 6), gGenericBuffer, 0x1000);
     }
 
@@ -263,7 +263,7 @@ void AtMenu_DrawSubmenuOptions(struct ProcAtMenu * proc)
                 th,
                 (void*)TILEMAP_LOCATED(gBG0TilemapBuffer, 4, 0) + tile,
                 TEXT_COLOR_SYSTEM_WHITE,
-                0, 0, GetStringFromIndex(gUnkData_59[i]));
+                0, 0, GetStringFromIndex(gPrepFortuneSubMenuTextIds[i]));
 
             th++;
             tile += 0x80;
@@ -327,9 +327,9 @@ void AtMenu_CtrlLoop(struct ProcAtMenu * proc)
 
         if (B_BUTTON & gKeyStatusPtr->newKeys) {
             CleanupPrepMenuScreen(proc);
-            Decompress(gUnkData_67, gGenericBuffer);
+            Decompress(gTsa_PrepAtMenuRightPanel, gGenericBuffer);
             CallARM_FillTileRect(TILEMAP_LOCATED(gBG1TilemapBuffer, 0x10, 2), gGenericBuffer, 0x1000);
-            Decompress(gUnkData_68, gGenericBuffer);
+            Decompress(gTsa_PrepAtMenuLeftPanel, gGenericBuffer);
             CallARM_FillTileRect(TILEMAP_LOCATED(gBG1TilemapBuffer, 1, 6), gGenericBuffer, 0x1000);
 
             SetPrepScreenMenuPosition(1, 6);

@@ -546,11 +546,11 @@ void SetupDungeonRecordUi(ProcPtr proc) {
 
     // Load and display "Combat Record" graphic
 
-    Decompress(gUnkData_27, (void *)(BG_VRAM + 0x4000) + GetBackgroundTileDataOffset(1));
+    Decompress(gImg_CombatRecordTitle, (void *)(BG_VRAM + 0x4000) + GetBackgroundTileDataOffset(1));
 
-    Decompress(gUnkData_28, gBG1TilemapBuffer);
+    Decompress(gTsa_CombatRecordTitle, gBG1TilemapBuffer);
 
-    ApplyPalettes(gUnkData_29, 2, 2);
+    ApplyPalettes(gPal_CombatRecordTitle, 2, 2);
 
     for (i = 0; i < 0x280; i++) {
         gBG1TilemapBuffer[i] = gBG1TilemapBuffer[i] + 0x2200;

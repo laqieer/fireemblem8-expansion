@@ -979,7 +979,7 @@ void RegisterBanimTerrainTmByPos(s16 distance, s16 position)
             break;
     }
 
-    EfxTmCpyExt(gUnkData_1, -1, gTmA_Banim + 0x35A + offset, 0x42, 0xf, 5, -1, -1);
+    EfxTmCpyExt(gBanimTerrainBlankTm, -1, gTmA_Banim + 0x35A + offset, 0x42, 0xf, 5, -1, -1);
 
     return;
 }

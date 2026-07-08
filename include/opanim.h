@@ -121,16 +121,16 @@ extern CONST_DATA struct ProcCmd ProcScr_Opanim_0[];
 extern CONST_DATA u8 * imgs_Opanim_0[100];
 extern CONST_DATA u16 * tsas_Opanim_0[100];
 extern CONST_DATA struct ProcCmd ProcScr_OpAnimMergeBG[];
-// extern ??? gUnkData_98
-// extern ??? gUnkData_99
-// extern ??? gUnkData_100
-// extern ??? gUnkData_101
-// extern ??? gUnkData_102
-// extern ??? gUnkData_103
-// extern ??? gUnkData_104
-// extern ??? gUnkData_105
-// extern ??? gUnkData_106
-// extern ??? gUnkData_107
+// extern ??? ProcScr_OpAnimDarkenBg2In
+// extern ??? ProcScr_OpAnimDarkenBg2Out
+// extern ??? Obj_OpanimClassReelUnitSprite
+// extern ??? Obj_OpanimTitleFlyInSeg1ObjWindow
+// extern ??? Obj_OpanimTitleFlyInSeg2ObjWindow
+// extern ??? Obj_OpanimTitleFlyInSeg3ObjWindow
+// extern ??? Obj_OpanimTitleFlyInSeg4ObjWindow
+// extern ??? Obj_OpanimTitleFlyInSeg10ObjWindow
+// extern ??? Obj_OpanimTitleFlyInSeg9ObjWindow
+// extern ??? Obj_OpanimTitleFlyInSeg12ObjWindow
 
 extern CONST_DATA u16 * Pal_OpAnimShiningRing[];
 extern CONST_DATA u8 img_opanim1[];
@@ -346,8 +346,8 @@ extern u8 Tsa_OpAnimJoshua[];
 extern u8 Img_OpAnimShiningRing[];
 extern u8 Tsa_OpAnimShiningRing[];
 
-extern struct ProcCmd gUnkData_98[];
-extern struct ProcCmd gUnkData_99[];
+extern struct ProcCmd ProcScr_OpAnimDarkenBg2In[];
+extern struct ProcCmd ProcScr_OpAnimDarkenBg2Out[];
 
 extern u8 Img_OpAnimTethys[];
 extern u8 Tsa_OpAnimTethys[];
@@ -503,15 +503,15 @@ extern u16 Pal_OpAnimTethys[];
 
 extern u8 Tsa_OpAnimShiningRingBlinking[];
 
-extern u16 gUnkData_100[];
-extern u16 gUnkData_101[];
-extern u16 gUnkData_102[];
-extern u16 gUnkData_103[];
-extern u16 gUnkData_104[];
-extern u16 gUnkData_105[];
-extern u16 gUnkData_106[];
+extern u16 Obj_OpanimClassReelUnitSprite[];
+extern u16 Obj_OpanimTitleFlyInSeg1ObjWindow[];
+extern u16 Obj_OpanimTitleFlyInSeg2ObjWindow[];
+extern u16 Obj_OpanimTitleFlyInSeg3ObjWindow[];
+extern u16 Obj_OpanimTitleFlyInSeg4ObjWindow[];
+extern u16 Obj_OpanimTitleFlyInSeg10ObjWindow[];
+extern u16 Obj_OpanimTitleFlyInSeg9ObjWindow[];
 
-extern u16 gUnkData_107[];
+extern u16 Obj_OpanimTitleFlyInSeg12ObjWindow[];
 
 void OpAnimPutObjCommon(int ix, int iy, u8 a, u8 b);
 void OpAnimfxTerminatorMain(struct Proc * proc);

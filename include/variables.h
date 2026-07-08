@@ -426,7 +426,7 @@ extern u8 gBattleForecast_0[]; // tsa
 extern u8 gBattleForecast_1[]; // tsa
 
 // extern ??? gBattleForecast_2
-extern u16 CONST_DATA gUnkData_2[]; // ap
+extern u16 CONST_DATA gWarpPrepUnitSwapCursorAp[]; // ap
 // extern ??? SpriteAnim_GasTrapVertical
 // extern ??? SpriteAnim_GasTrapHorizontal
 // extern ??? Img_GasTrapVertical
@@ -475,8 +475,8 @@ extern u16 CONST_DATA Pal_EventCursorShinning[];
 // extern ??? gProcScr_CpPhase
 // extern ??? gProcScr_BerserkCpPhase
 // extern ??? gProcScr_CpDecide
-// extern ??? gUnkData_3
-// extern ??? gUnkData_4
+// extern ??? gAiDoorTerrainList
+// extern ??? gAiChestTerrainList
 // extern ??? gUnknown_085A92E0
 // extern ??? gUnknown_085A92E4
 // extern ??? gUnknown_085A9304
@@ -536,7 +536,7 @@ extern CONST_DATA s8 TerrainTable_MovCost_AnimalT1Normal[];
 extern CONST_DATA s8 TerrainTable_MovCost_AnimalT2Normal[];
 extern CONST_DATA s8 TerrainTable_MovCost_FlyNormal[];
 extern CONST_DATA s8 TerrainTable_MovCost_DemonKing[];
-extern CONST_DATA s8 Unk_TerrainTable_0[];
+extern CONST_DATA s8 TerrainMoveCost_Ballista[];
 extern CONST_DATA s8 TerrainTable_MovCost_CommonT2Rain[];
 extern CONST_DATA s8 TerrainTable_MovCost_CommonT1Rain[];
 extern CONST_DATA s8 TerrainTable_MovCost_ArmorRain[];
@@ -672,7 +672,7 @@ extern u8 gAnimCharaPalConfig[0x100][7];
 extern u8 gAnimCharaPalIt[0x100][7];
 extern u8 gSummonConfig[4][2];
 // extern ??? gUnknown_0895F5A5
-extern u16 Img_UnkData_0[];
+extern u16 Img_EventMapAnimMaskfx_Frame0[];
 extern u16 Img_99E1A4[];
 extern u16 Img_99ED44[];
 extern u16 Img_99F7D4[];
@@ -689,9 +689,9 @@ extern u16 CONST_DATA Img_Congratulations[];      /* a image */
 extern u16 CONST_DATA Img_MapClear[];      /* a image */
 extern u16 CONST_DATA Pal_Congratulations[];      /* a palatte */
 extern u16 CONST_DATA Pal_MapClear[];      /* a palatte */
-extern u8 gUnkData_27[]; // "combat record" img
-extern u8 gUnkData_28[]; // "combat record" tsa
-extern u16 gUnkData_29[]; // "combat record" pal
+extern u8 gImg_CombatRecordTitle[]; // "combat record" img
+extern u8 gTsa_CombatRecordTitle[]; // "combat record" tsa
+extern u16 gPal_CombatRecordTitle[]; // "combat record" pal
 
 // extern ??? Img_TalkBubble
 extern u16 Pal_TalkBubble[];
@@ -787,15 +787,15 @@ extern struct ProcCmd gProcScr_BoxDialogue[];
 // extern ??? ProcScr_BoxDialogueDrawTextExt
 // extern ??? gHelpbox_3
 // extern ??? ProcScr_TalkBoxIdle
-extern u16 CONST_DATA gUnkData_30[]; // some face-related palette (if portrait)
-extern u16 CONST_DATA gUnkData_31[]; // some face-related palette (if card)
+extern u16 CONST_DATA Pal_FaceDisplayPortrait[]; // some face-related palette (if portrait)
+extern u16 CONST_DATA Pal_FaceDisplayGenericCard[]; // some face-related palette (if card)
 extern u8  CONST_DATA gUnkData_32[]; // img?
 extern u8  CONST_DATA Img_StatscreenEquipmentText[]; // img?
 extern u16 CONST_DATA Pal_StatscreenEquipmentText[]; // pal
 extern u8  CONST_DATA Tsa_StatscreenEquipmentBG[]; // tsa
 extern u8  CONST_DATA Tsa_StatscreenEquipedWeaponHighlight[]; // tsa
 extern u8  CONST_DATA Img_StatscreenObjs[]; // img objects
-extern u16 CONST_DATA gUnkData_33[][0x10]; // color animation for each page
+extern u16 CONST_DATA gPal_StatscreenPageNameAnim[][0x10]; // color animation for each page
 extern u8 gGfx_HelpTextBox[];
 extern u8 gGfx_HelpTextBox2[];
 extern u8 gGfx_HelpTextBox3[];
@@ -807,14 +807,14 @@ extern u8 gGfx_YellowTextBox3[];
 extern u8 gGfx_YellowTextBox4[];
 extern u8 gGfx_YellowTextBox5[];
 extern u8 CONST_DATA Img_LimitViewSquares[]; // 6 uniform 4-tile move-limit-view frames
-// extern ??? gUnkData_35
-// extern ??? gUnkData_36
-// extern ??? gUnkData_37
-extern u8 CONST_DATA gUnkData_38[];
-extern u8 CONST_DATA gUnkData_39[];
-// extern ??? gUnkData_40
-// extern ??? gUnkData_41
-// extern ??? gUnkData_42
+// extern ??? Pal_LimitViewBlue
+// extern ??? Pal_LimitViewRed
+// extern ??? Pal_LimitViewGreen
+extern u8 CONST_DATA gImg_PathArrow[];
+extern u8 CONST_DATA gPal_PathArrow[];
+// extern ??? Img_StatusHealEffectBg
+// extern ??? Pal_StatusHealEffectBg
+// extern ??? Tsa_StatusHealEffectBg
 extern u8  CONST_DATA Img_StatscreenBG[]; // stat screen background img
 extern u8  CONST_DATA Tsa_StatscreenBG[]; // stat screen background tsa
 extern u16 CONST_DATA Pal_StatscreenBG[]; // stat screen background pal
@@ -825,17 +825,17 @@ extern u8 Img_ConfigUiSprites[]; // gfx
 extern u8 Img_ConfigUiIcons[]; // gfx
 extern u8 Tsa_ConfigUiFrame[]; // tsa
 extern u16 Pal_ConfigUiSprites[]; // pal
-extern u16 gPal_UnkData_0[]; // pal
-// extern ??? gUnkData_43
-// extern ??? gUnkData_44
-// extern ??? gUnkData_45
-// extern ??? gUnkData_46
-extern u16 gPal_UnkData_1[]; // pal
+extern u16 Pal_ChapterTitleAlt[]; // pal
+// extern ??? gPal_SaveSlotHardSelectedBlendA
+// extern ??? gPal_SaveSlotHardUnselectedBlendA
+// extern ??? gPal_SaveSlotHardSelectedBlendB
+// extern ??? gPal_SaveSlotHardUnselectedBlendB
+extern u16 Pal_ChapterTitleMain[]; // pal
 extern u16 CONST_DATA Img_ChapterIntroFog[];
 extern u16 Pal_PlayerRankFog[]; // pal
-extern u8 gGfx_UnkData_0[]; // gfx
-// extern ??? gUnkData_47
-extern u8 gTsa_UnkData_0[]; // tsa
+extern u8 Img_ChapterTitleBg[]; // gfx
+// extern ??? Img_ChapterTitleBgAlt
+extern u8 Tsa_ChapterTitleBg[]; // tsa
 extern u16 CONST_DATA Img_GameOverText[];
 extern u16 CONST_DATA Pal_GameOverText2[];
 extern u16 CONST_DATA Pal_GameOverText1[];
@@ -849,15 +849,15 @@ extern u16 gPal_PlayerInterface_Green[];
 extern u16 gTSA_UnitInfoWindow[];
 extern u16 gTSA_TerrainBox[];
 extern u16 gTSA_MinimugBox[];
-extern u16 gUnkData_50[];
-extern u16 gUnkData_51[];
-extern u16 gUnkData_52[];
-extern u16 gUnkData_53[];
-extern u16 gUnkData_54[];
-extern u16 gUnkData_55[];
-extern u16 gUnkData_56[];
-extern u16 gUnkData_57[];
-extern u16 gUnkData_58[];
+extern u16 gTsa_UnitBurstMapUiTopFlat[];
+extern u16 gTsa_UnitBurstMapUiTopLeftTail[];
+extern u16 gTsa_UnitBurstMapUiTopCenterTail[];
+extern u16 gTsa_UnitBurstMapUiTopRightTail[];
+extern u16 gTsa_UnitBurstMapUiMiddle[];
+extern u16 gTsa_UnitBurstMapUiBottomLeftTail[];
+extern u16 gTsa_UnitBurstMapUiBottomCenterTail[];
+extern u16 gTsa_UnitBurstMapUiBottomRightTail[];
+extern u16 gTsa_UnitBurstMapUiBottomFlat[];
 extern u16 Tsa_TerrainMapUi_Labels[];
 extern u16 gTSA_TerrainBox_Ballistae[];
 extern u16 Tsa_TerrainMapUi_ObstacleLabels[];
@@ -972,22 +972,22 @@ extern u8 Img_MenuStatus_0[]; // Gfx
 extern u16 Pal_MenuStatus_0[]; // Pal
 extern u8 Img_SysBlackBox[]; // Gfx
 
-extern u8 gUnkData_81[]; // gfx?
-extern u16 gUnkData_82[]; // pal
-extern u8 gUnkData_83[]; // gfx
-extern u16 gUnkData_84[]; // tsa
-extern u8 gUnkData_85[]; // gfx
-extern u8 gUnkData_86[]; // tsa
-extern u16 gUnkData_87[]; // pal
-extern u8 gUnkData_88[]; // gfx?
-extern u8 gUnkData_89[]; // tsa?
-extern u16 gUnkData_90[]; // pal
-extern u8 gUnkData_91[]; // gfx?
-extern u8 gUnkData_92[]; // tsa?
-extern u8 gUnkData_94[]; // gfx
-extern u8 gUnkData_95[]; // pal
-extern u16 gUnkData_96[]; // pal
-// class-reel glyph font (was hidden after gUnkData_96's palette), one symbol per glyph
+extern u8 gImg_ClassIntroNameSprites[]; // gfx?
+extern u16 gPal_ClassIntroNameSprites[]; // pal
+extern u8 Img_ClassChangeSelectUi[]; // gfx
+extern u16 Tsa_ClassChangeSelectUi[]; // tsa
+extern u8 gImg_ClassReelInfoBg[]; // gfx
+extern u8 gTsa_ClassReelInfoBg[]; // tsa
+extern u16 gPal_ClassReelInfoBg[]; // pal
+extern u8 gImg_ClassIntroBg1[]; // gfx?
+extern u8 gTsa_ClassIntroBg1[]; // tsa?
+extern u16 gPal_ClassIntroBg1[]; // pal
+extern u8 gImg_ClassIntroBg0[]; // gfx?
+extern u8 gTsa_ClassIntroBg0[]; // tsa?
+extern u8 Img_ClassReelFont[]; // gfx
+extern u8 Pal_ClassReelFont[]; // pal
+extern u16 gPal_ClassIntroLetterFont[]; // pal
+// class-reel glyph font (was hidden after gPal_ClassIntroLetterFont's palette), one symbol per glyph
 extern u8 gOpinfoLetter_00[];
 extern u8 gOpinfoLetter_01[];
 extern u8 gOpinfoLetter_02[];
@@ -1432,13 +1432,13 @@ extern struct ProcCmd CONST_DATA ProcScr_E_Guide1[];
 extern struct ProcCmd CONST_DATA ProcScr_E_Guide2[];
 extern u8 Img_CommGameBgScreen[];  // gfx
 extern u16 Pal_CommGameBgScreenInShop[]; // pal
-extern u16 Pal_UnkData_2[]; // pal, used in opsubtitle
-// extern ??? Tsa_UnkData_5
-// extern ??? Img_UnkData_2
-// extern ??? Img_UnkData_3
-// extern ??? Pal_UnkData_3
+extern u16 Pal_OpSubtitleScrollText[]; // pal, used in opsubtitle
+// extern ??? Tsa_GuideScreenBg
+// extern ??? Img_GuideScreenPanels
+// extern ??? Img_GuideScreenBg
+// extern ??? Pal_GuideScreenBg
 extern u8 Img_ChapterIntro_LensFlare[]; // gfx?
-extern u8 Tsa_UnkData_6[];
+extern u8 Tsa_ChapterIntroLensFlare[];
 extern u16 Pal_ChapterIntro_LensFlare[]; // pal
 // extern ??? Img_ChapterIntro_Fog
 // extern ??? Tsa_ChapterIntro_Fog

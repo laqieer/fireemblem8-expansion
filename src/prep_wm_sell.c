@@ -208,7 +208,7 @@ void WmSell_Setup(struct WmSellProc* proc) {
     PutImg_PrepItemUseUnk(0x5000, 5);
     PutImg_PrepPopupWindow(0x800, 8);
 
-    Decompress(gUnkData_72, gGenericBuffer);
+    Decompress(gTsa_PrepWorldMapSellScreen, gGenericBuffer);
     CallARM_FillTileRect(gBG1TilemapBuffer, gGenericBuffer, 0x1000);
 
     BG_EnableSyncByMask(7);

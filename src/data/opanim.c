@@ -63,7 +63,7 @@ void OpAnimTitleFlyInSeg10(struct Proc * proc);
 void OpAnimTitleFlyInSeg11(struct Proc * proc);
 void OpAnimTitleFlyInSeg12(struct Proc * proc);
 void OpAnimEnd(struct Proc * proc);
-extern struct ProcCmd gUnkData_97[];
+extern struct ProcCmd ProcScr_OpAnimScrollBg3[];
 
 struct ProcCmd CONST_DATA ProcScr_OpAnim[] =
 {
@@ -94,9 +94,9 @@ struct ProcCmd CONST_DATA ProcScr_OpAnim[] =
     PROC_REPEAT(OpAnimEirikaExit),
     PROC_REPEAT(OpAnimFadeToBlack),
     PROC_CALL(OpAnimApplyScrollAndPalettes),
-    PROC_START_CHILD(gUnkData_98),
+    PROC_START_CHILD(ProcScr_OpAnimDarkenBg2In),
     PROC_REPEAT(OpAnimJoshuaScrollIn),
-    PROC_START_CHILD(gUnkData_97),
+    PROC_START_CHILD(ProcScr_OpAnimScrollBg3),
     PROC_CALL(OpAnimCharacterScrollInBegin),
     PROC_REPEAT(OpAnimCharacterScrollInMain),
     PROC_CALL(OpAnimSetupJoshuaScroll),
@@ -156,8 +156,8 @@ struct ProcCmd CONST_DATA ProcScr_OpAnim[] =
     PROC_CALL(OpAnimCharacterScrollOutBegin),
     PROC_REPEAT(OpAnimCharacterScrollOutMain),
     PROC_CALL(OpAnimApplyScrollAndPalettes),
-    PROC_START_CHILD(gUnkData_99),
-    PROC_END_EACH(gUnkData_97),
+    PROC_START_CHILD(ProcScr_OpAnimDarkenBg2Out),
+    PROC_END_EACH(ProcScr_OpAnimScrollBg3),
     PROC_REPEAT(OpAnimScrollInBlank),
     PROC_CALL(OpAnimGatherUnitsBegin),
     PROC_REPEAT(OpAnimGatherUnitsMain),
