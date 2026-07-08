@@ -883,13 +883,13 @@ extern u16 * gSpriteArray_Unitlistscreen_1[];
 // extern ??? sArenaCpTeamNameLut
 // extern ??? gpSramExtraData
 
-struct Unknown_08A209FC
+struct DifficultyMenuCursorPosition
 {
     s8 a;
     s8 b;
 };
 
-extern struct Unknown_08A209FC gDifficultymenu_0[];
+extern struct DifficultyMenuCursorPosition gDifficultymenu_0[];
 extern u16 CONST_DATA gTextIds_DifficultyDescription[];
 extern struct ProcCmd CONST_DATA ProcScr_NewGameDifficultySelect[];
 extern u16 CONST_DATA gSprite_Difficultymenu_0[];

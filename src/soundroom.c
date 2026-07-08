@@ -33,7 +33,7 @@ struct SoundRoomSpriteDrawProc
     /* 2C */ int unk_2c;
 };
 
-struct Unknown_08A212DC
+struct SoundRoomVolumeGraphPoint
 {
     u8 x;
     u8 y;
@@ -66,7 +66,7 @@ extern u8 gMenuSoundroom_2[];
 
 u16 * CONST_DATA gSoundroom_0 = (u16 *)gGenericBuffer;
 void * CONST_DATA gSoundroom_1 = gGenericBuffer + 0x800;
-struct Unknown_08A212DC * CONST_DATA gSoundroom_2 = (void *)(gGenericBuffer + 0x1000);
+struct SoundRoomVolumeGraphPoint * CONST_DATA gSoundroom_2 = (void *)(gGenericBuffer + 0x1000);
 s8 * CONST_DATA gSoundRoomShuffleBuffer = gGenericBuffer + 0x1200;
 
 //! FE8U = 0x080AEC7C

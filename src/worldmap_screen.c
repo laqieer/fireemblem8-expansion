@@ -149,7 +149,7 @@ void GMScreenVSync_Loop(struct GMapScreenVSyncProc * proc)
     {
         s8 j;
 
-        struct Unknown_3001DA8 * ptr = &proc->unk_3c[i];
+        struct GMapScreenVSyncCopyRequest * ptr = &proc->unk_3c[i];
 
         int unk_00 = ptr->unk_00 * 8;
         int unk_02 = ptr->unk_02 & 0x1f;
@@ -179,7 +179,7 @@ void GMScreenVSync_Loop(struct GMapScreenVSyncProc * proc)
 //! FE8U = 0x080BA6DC
 s8 GMapScreenVSync_AddCopyRequest(struct GMapScreenVSyncProc * proc, int arg1, int arg2, int arg3, int arg4, int arg5, int arg6)
 {
-    struct Unknown_3001DA8 * ptr;
+    struct GMapScreenVSyncCopyRequest * ptr;
 
     if (proc->unk_38 > 7)
     {

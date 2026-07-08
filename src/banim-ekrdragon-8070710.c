@@ -5,7 +5,7 @@
 #include "efxbattle.h"
 #include "ekrdragon.h"
 
-struct ProcEkrDragon_08758720 {
+struct ProcEkrDragonPalFade {
     PROC_HEADER;
 
     STRUCT_PAD(0x29, 0x2C);
@@ -62,7 +62,7 @@ void EkrDragon_BlendPalette(u16 * a, u16 * paldst, u16 c, u8 d, u8 e)
     return;
 }
 
-void EkrDragonPalFade_Init(struct ProcEkrDragon_08758720 * proc)
+void EkrDragonPalFade_Init(struct ProcEkrDragonPalFade * proc)
 {
     proc->unk2C = 0;
     proc->unk30 = 0;
@@ -77,7 +77,7 @@ void EkrDragonPalFade_Init(struct ProcEkrDragon_08758720 * proc)
     return;
 }
 
-void EkrDragonPalFade_Loop(struct ProcEkrDragon_08758720 * proc)
+void EkrDragonPalFade_Loop(struct ProcEkrDragonPalFade * proc)
 {
     EkrDragon_BlendPalette(proc->unk34,
                 gPaletteBuffer + 0x60,
@@ -114,7 +114,7 @@ void NewEkrDragonPalFade(void)
 {
     if (GetBanimDragonStatusType() != EKRDRGON_TYPE_NORMAL && GetBanimDragonStatusType() != EKRDRGON_TYPE_MYRRH)
     {
-        struct ProcEkrDragon_08758720 * proc;
+        struct ProcEkrDragonPalFade * proc;
         proc = Proc_Start(ProcScr_EkrDragon_0, PROC_TREE_3);
         proc->unk38 = gEkrdragon_0;
     }

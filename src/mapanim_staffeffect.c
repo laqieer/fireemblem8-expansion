@@ -1437,7 +1437,7 @@ struct ProcCmd CONST_DATA ProcScr_MapAnimEffect_BgScroll[] = {
 
 void StartMapAnimEffect_BgScroll(int bg, int x_inc, int y_inc, ProcPtr parent)
 {
-    struct ManimSomethingProc_08067498 * proc;
+    struct ProcMapAnimBgScroll * proc;
 
     proc = Proc_Start(ProcScr_MapAnimEffect_BgScroll, parent);
 
@@ -1454,7 +1454,7 @@ void EndMapAnimEffect_BgScroll(void)
     Proc_EndEach(ProcScr_MapAnimEffect_BgScroll);
 }
 
-void MapAnimEffect_BgScroll_Loop(struct ManimSomethingProc_08067498 * proc)
+void MapAnimEffect_BgScroll_Loop(struct ProcMapAnimBgScroll * proc)
 {
     BG_SetPosition(proc->bg, proc->x, proc->y);
 

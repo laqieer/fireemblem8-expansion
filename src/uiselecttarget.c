@@ -30,12 +30,12 @@ PROC_LABEL(0),
     PROC_END,
 };
 
-struct Unk_085B658C
+struct NearTargetLinkOrderEnt
 {
     s8 x, y;
 };
 
-struct Unk_085B658C CONST_DATA gNearTargetLinkOrder[] =
+struct NearTargetLinkOrderEnt CONST_DATA gNearTargetLinkOrder[] =
 {
     {  0,  0 },
     {  0, -2 },

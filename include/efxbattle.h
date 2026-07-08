@@ -213,7 +213,7 @@ struct ProcEfxMagicQuake
     /* 60 */ ProcPtr pQuakePureProc;
 };
 
-struct Unknown_030053E0 {
+struct EfxopMagicDesc {
     u16 u00;
     u16 u02;
     u16 u04;
@@ -230,7 +230,7 @@ struct Unknown_030053E0 {
     u8 *u20;
     void (*u24)(void);
 };
-extern struct Unknown_030053E0 gUnk_82;
+extern struct EfxopMagicDesc gUnk_82;
 
 extern struct AnimBuffer gUnk_81;
 

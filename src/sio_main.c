@@ -97,7 +97,7 @@ struct ProcCmd CONST_DATA gSioMain_0[] = {
     PROC_END,
 };
 
-void Sio_LoadingBlendPulse_Init(struct Proc_Sio_085A93A0 * proc)
+void Sio_LoadingBlendPulse_Init(struct ProcSioLoadingBlendPulse * proc)
 {
     SetBlendTargetA(0, 0, 1, 0, 0);
     SetBlendTargetB(1, 1, 0, 1, 1);
@@ -106,7 +106,7 @@ void Sio_LoadingBlendPulse_Init(struct Proc_Sio_085A93A0 * proc)
     proc->timer = 0;
 }
 
-void Sio_LoadingBlendPulse_Loop(struct Proc_Sio_085A93A0 * proc)
+void Sio_LoadingBlendPulse_Loop(struct ProcSioLoadingBlendPulse * proc)
 {
     int time = (++proc->timer) % 0x40;
 

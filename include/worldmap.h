@@ -55,7 +55,7 @@ enum gm_route_flags {
     GM_ROUTE_FLAG_7 = 1 << 7,
 };
 
-struct Unknown_3001DA8
+struct GMapScreenVSyncCopyRequest
 {
     /* 00 */ s8 unk_00;
     /* 01 */ s8 unk_01;
@@ -72,7 +72,7 @@ struct GMapScreenVSyncProc
     /* 30 */ u16 * unk_30;
     /* 34 */ u8 * unk_34;
     /* 38 */ s16 unk_38;
-    /* 3C */ struct Unknown_3001DA8 * unk_3c;
+    /* 3C */ struct GMapScreenVSyncCopyRequest * unk_3c;
     /* 40 */ u16 unk_40;
     /* 44 */ void * unk_44;
 };

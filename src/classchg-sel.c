@@ -144,7 +144,7 @@ bool Check3rdTraineeEnabled(void)
     return false;
 }
 
-struct Struct_8A30978 {
+struct TsaData {
     u8 a;
     u8 b; // Accessed indirectly, strangely
     u16 longBuffer[0x4B2];
@@ -160,7 +160,7 @@ void RegisterTsaWithOffset(u16 *_dst, u16 *_src, u32 offset) {
     u16 *dst;
     u32 word;
     u8 mask;
-    struct Struct_8A30978 *b = (void *)_src;
+    struct TsaData *b = (void *)_src;
     u16 add = offset;
     src = b->longBuffer;
     mask = 0xff;

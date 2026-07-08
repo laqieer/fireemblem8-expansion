@@ -14,7 +14,7 @@
 #include "savemenu.h"
 #include "constants/songs.h"
 
-struct Unknown_08A209FC gDifficultymenu_0[] =
+struct DifficultyMenuCursorPosition gDifficultymenu_0[] =
 {
     { 0, 0x20, },
     { 0, 0x40, },

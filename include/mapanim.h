@@ -1004,7 +1004,7 @@ void MapAnimUnlock_Loop1(struct MAEffectProc * proc);
 void MapAnimUnlock_Loop2(struct MAEffectProc * proc);
 void SetDefaultMapAnimScreenConf(void);
 
-struct ManimSomethingProc_08067498
+struct ProcMapAnimBgScroll
 {
     /* 00 */ PROC_HEADER;
     /* 29 */ STRUCT_PAD(0x29, 0x58);
@@ -1018,7 +1018,7 @@ struct ManimSomethingProc_08067498
 
 void StartMapAnimEffect_BgScroll(int bg, int x_inc, int y_inc, ProcPtr parent);
 void EndMapAnimEffect_BgScroll(void);
-void MapAnimEffect_BgScroll_Loop(struct ManimSomethingProc_08067498 * proc);
+void MapAnimEffect_BgScroll_Loop(struct ProcMapAnimBgScroll * proc);
 void PutManimLevelUpFrame(int actor_id, int x, int y);
 void PutManimLevelUpStat(int actor_id, int x, int y, int stat_num, bool after_gain);
 int GetManimLevelUpStatGain(int actor_id, int stat_num);

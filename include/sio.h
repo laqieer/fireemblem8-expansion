@@ -66,7 +66,7 @@ struct SioUnknown_0203DD90_Unk2C
     /* 04 */ int newScore;
 };
 
-struct SioUnknown_0203DD90
+struct LinkArenaBattleState
 {
     u8 unk_00; // ?
     u8 unk_01; // current phase
@@ -86,7 +86,7 @@ struct SioUnknown_0203DD90
     /* 2C */ struct SioUnknown_0203DD90_Unk2C unk_2c[4];
 };
 
-extern struct SioUnknown_0203DD90 gUnk_Sio_16;
+extern struct LinkArenaBattleState gUnk_Sio_16;
 
 struct SioProc85A971C_Unk44
 {
@@ -104,7 +104,7 @@ void UnsetBmStLinkArenaFlag(void);
 bool CheckInLinkArena(void);    // <!> This function is defined as different types by files, maybe a bug.
 void LinkArena_ResetUnk04(void);
 
-struct Proc_Sio_085A93A0 {
+struct ProcSioLoadingBlendPulse {
     PROC_HEADER;
 
     STRUCT_PAD(0x29, 0x58);
@@ -112,8 +112,8 @@ struct Proc_Sio_085A93A0 {
     /* 38 */ u32 timer;
 };
 
-void Sio_LoadingBlendPulse_Init(struct Proc_Sio_085A93A0 * proc);
-void Sio_LoadingBlendPulse_Loop(struct Proc_Sio_085A93A0 * proc);
+void Sio_LoadingBlendPulse_Init(struct ProcSioLoadingBlendPulse * proc);
+void Sio_LoadingBlendPulse_Loop(struct ProcSioLoadingBlendPulse * proc);
 void Sio_ScrollBgsParallax_Loop(void);
 void Sio_SyncBarrier_Loop(ProcPtr proc);
 void Sio_Msg89Barrier_Init(void);

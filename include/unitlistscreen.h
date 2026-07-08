@@ -132,13 +132,13 @@ struct SortedUnitEnt
 extern struct SortedUnitEnt gSortedUnitsBuf[];
 extern struct SortedUnitEnt * gSortedUnits[];
 
-struct Unknown_02013460
+struct UnitListMuralPaletteCycle
 {
     /* 00 */ u16 unk_00[8]; // 0x10
     /* 10 */ u16 unk_10; // this is part of unk_00
 };
 
-#define _gUnknown_02013460 ((struct Unknown_02013460 *)gPrepscreen_5)
+#define _gUnknown_02013460 ((struct UnitListMuralPaletteCycle *)gPrepscreen_5)
 
 
 void UnitList_ReorderPlayerUnits(void);
