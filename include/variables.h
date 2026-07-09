@@ -177,8 +177,8 @@ extern const char gBuildDateTime[]; // "2005/02/04(FRI) 16:55:40...."
 extern const char gYearProjectCreated[]; // "_2003..."
 // extern ??? gUnknown_080D74F4
 extern const u16 gUnknown_080D7504[];
-// extern ??? gUnknown_080D77BC
-// extern ??? gUnknown_080D77DC
+// extern ??? sGenericChibiImgLut
+// extern ??? sGenericChibiPalLut
 // extern ??? gFace_0
 // extern ??? gUnknown_080D792C
 // extern ??? gUnknown_080D793C
@@ -241,7 +241,7 @@ extern u8 const gMapanimEventcall_4[];
 // extern ??? gMapanimEventcall_13
 // extern ??? gMapanimEventcall_14
 // extern ??? gMapanimEventcall_15
-// extern ??? gUnknown_08205B84
+// extern ??? sUnitListPageArrowYOffsetLut
 // extern ??? gUnknown_08205BC0
 // extern ??? gLinkArenaBanList
 // extern ??? gUnknown_08205C14
@@ -255,7 +255,7 @@ extern const struct FaceVramEntry gFaceConfig_PrepItemUseScreen[4];
 // extern ??? gUnknown_08205D7C
 // extern ??? Objs1_SysBrownBox
 // extern ??? Objs2_SysBrownBox
-// extern ??? gUnknown_08205F28
+// extern ??? sWMFaceCtrlLoopFrameCycle
 // extern ??? gWorldmapGmapunit_0
 
 // extern ??? gWorldmapScreen2_0

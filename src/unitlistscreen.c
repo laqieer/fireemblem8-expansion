@@ -606,13 +606,13 @@ void UnitListScreenSprites_Main(struct UnitListScreenSpritesProc * proc)
     int r7;
     int r8;
 
-    int gUnknown_08205B84[4] =
+    int sUnitListPageArrowYOffsetLut[4] =
     {
         0, 1, 2, 1,
     };
 
     PutSpriteExt(
-        0xb, (proc->unk_2c->unk_34 == 0) ? 226 : 226 + OAM1_VFLIP, gUnknown_08205B84[(proc->unk_3b / 8) % 4] + 7, Sprite_Unitlistscreen_3,
+        0xb, (proc->unk_2c->unk_34 == 0) ? 226 : 226 + OAM1_VFLIP, sUnitListPageArrowYOffsetLut[(proc->unk_3b / 8) % 4] + 7, Sprite_Unitlistscreen_3,
         OAM2_PAL(9));
 
     PutSpriteExt(0xd, 0x10, 8, gSpriteArray_Unitlistscreen_1[proc->unk_2c->page], OAM2_PAL(9));

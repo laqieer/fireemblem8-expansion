@@ -415,7 +415,7 @@ void StartSubSpell_efxEvilEyeOBJ(struct Anim * anim, int terminator)
     u32 * scr;
 
     // clang-format off
-    u32 * gUnknown_080DEA74[2] =
+    u32 * sEvilEyeObjAnimScrLut[2] =
     {
         AnimScr_Banim_0,
         AnimScr_Banim_1,
@@ -431,7 +431,7 @@ void StartSubSpell_efxEvilEyeOBJ(struct Anim * anim, int terminator)
     proc->timer = 0;
     proc->terminator = terminator;
 
-    scr = gUnknown_080DEA74[pos];
+    scr = sEvilEyeObjAnimScrLut[pos];
 
     frontAnim = EfxCreateFrontAnim(anim, scr, scr, scr, scr);
     proc->anim2 = frontAnim;

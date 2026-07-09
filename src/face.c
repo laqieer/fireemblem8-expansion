@@ -892,7 +892,7 @@ void StartFaceFadeOut(struct FaceProc* proc) {
 u8* GetGenericChibiImg(int fid) {
 
     // generic minimug image lut
-    u8* gUnknown_080D77BC[] = {
+    u8* sGenericChibiImgLut[] = {
         gGenericIcon_3,
         gGenericIcon_2,
         gGenericIcon_0,
@@ -905,14 +905,14 @@ u8* GetGenericChibiImg(int fid) {
 
     fid = fid - FID_FACTION_CHIBI;
 
-    return gUnknown_080D77BC[fid];
+    return sGenericChibiImgLut[fid];
 }
 
 //! FE8U = 0x08005F9C
 void ApplyGenericChibiPal(int fid, int pal) {
 
     // generic minimug palette lut
-    u16* gUnknown_080D77DC[] = {
+    u16* sGenericChibiPalLut[] = {
         gGenericIcon_4,
         gGenericIcon_5,
         gGenericIcon_6,
@@ -925,7 +925,7 @@ void ApplyGenericChibiPal(int fid, int pal) {
 
     fid = fid - FID_FACTION_CHIBI;
 
-    ApplyPalette(gUnknown_080D77DC[fid], pal);
+    ApplyPalette(sGenericChibiPalLut[fid], pal);
 
     return;
 }

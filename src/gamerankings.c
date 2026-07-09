@@ -321,7 +321,7 @@ int GetChapterSurvivalRank(void) {
     int deathCount;
     u8 i;
 
-    u8 gUnknown_08205F24[4] = {
+    u8 sChapterSurvivalRankDeathCountThresholds[4] = {
         4,
         3,
         2,
@@ -331,7 +331,7 @@ int GetChapterSurvivalRank(void) {
     deathCount = GetChapterDeathCount();
 
     for (i = 0; i < 4; i++) {
-        if (deathCount >= gUnknown_08205F24[i]) {
+        if (deathCount >= sChapterSurvivalRankDeathCountThresholds[i]) {
             return i;
         }
     }

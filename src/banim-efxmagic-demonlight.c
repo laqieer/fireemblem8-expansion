@@ -1132,7 +1132,7 @@ void StartSubSpell_efxMaohFlashEyeROBJ2(struct Anim * anim, int terminator, s16 
 
     u32 * scr;
     // clang-format off
-    u32 * gUnknown_080DE8A0[2] =
+    u32 * sMaohFlashEyeRObj2AnimScrLut[2] =
     {
         gEkrdragonfx_6,
         gEkrdragonfx_3
@@ -1148,7 +1148,7 @@ void StartSubSpell_efxMaohFlashEyeROBJ2(struct Anim * anim, int terminator, s16 
     proc->timer = 0;
     proc->terminator = terminator;
 
-    scr = gUnknown_080DE8A0[pos];
+    scr = sMaohFlashEyeRObj2AnimScrLut[pos];
 
     frontAnim = EfxCreateFrontAnim(proc->anim, scr, scr, scr, scr);
     proc->anim2 = frontAnim;
@@ -1210,7 +1210,7 @@ void StartSubSpell_efxMaohFlashEyeLOBJ2(struct Anim * anim, int terminator, s16 
 
     u32 * scr;
     // clang-format off
-    u32 * gUnknown_080DE8C0[2] =
+    u32 * sMaohFlashEyeLObj2AnimScrLut[2] =
     {
         gEkrdragonfx_7,
         gEkrdragonfx_4,
@@ -1226,7 +1226,7 @@ void StartSubSpell_efxMaohFlashEyeLOBJ2(struct Anim * anim, int terminator, s16 
     proc->timer = 0;
     proc->terminator = terminator;
 
-    scr = gUnknown_080DE8C0[pos];
+    scr = sMaohFlashEyeLObj2AnimScrLut[pos];
 
     frontAnim = EfxCreateFrontAnim(proc->anim, scr, scr, scr, scr);
     proc->anim2 = frontAnim;
@@ -1296,7 +1296,7 @@ void StartSubSpell_efxMaohFlashEyeOBJ1(struct Anim * anim, int terminator, s16 x
 
     u32 * scr;
     // clang-format off
-    u32 * gUnknown_080DE8DC[2] =
+    u32 * sMaohFlashEyeObj1AnimScrLut[2] =
     {
         gEkrdragonfx_1,
         gEkrdragonfx_0
@@ -1312,7 +1312,7 @@ void StartSubSpell_efxMaohFlashEyeOBJ1(struct Anim * anim, int terminator, s16 x
     proc->timer = 0;
     proc->terminator = terminator;
 
-    scr = gUnknown_080DE8DC[pos];
+    scr = sMaohFlashEyeObj1AnimScrLut[pos];
 
     frontAnim = EfxCreateFrontAnim(anim, scr, scr, scr, scr);
     proc->anim2 = frontAnim;
@@ -1374,7 +1374,7 @@ void StartSubSpell_efxMaohFlashEyeFire1OBJ1(struct Anim * anim, int terminator, 
 
     u32 * scr;
     // clang-format off
-    u32 * gUnknown_080DE900[2] =
+    u32 * sMaohFlashEyeFire1Obj1AnimScrLut[2] =
     {
         gEkrdragonfx_9,
         gEkrdragonfx_8,
@@ -1390,7 +1390,7 @@ void StartSubSpell_efxMaohFlashEyeFire1OBJ1(struct Anim * anim, int terminator, 
     proc->timer = 0;
     proc->terminator = terminator;
 
-    scr = gUnknown_080DE900[pos];
+    scr = sMaohFlashEyeFire1Obj1AnimScrLut[pos];
 
     frontAnim = EfxCreateFrontAnim(anim, scr, scr, scr, scr);
     proc->anim2 = frontAnim;
@@ -1455,7 +1455,7 @@ void StartSubSpell_efxMaohFlashEyeFire2OBJ1(struct Anim * anim, int terminator, 
 
     u32 * scr;
     // clang-format off
-    u32 * gUnknown_080DE924[2] =
+    u32 * sMaohFlashEyeFire2Obj1AnimScrLut[2] =
     {
         gEkrdragonfx_11,
         gEkrdragonfx_10,
@@ -1471,7 +1471,7 @@ void StartSubSpell_efxMaohFlashEyeFire2OBJ1(struct Anim * anim, int terminator, 
     proc->timer = 0;
     proc->terminator = terminator;
 
-    scr = gUnknown_080DE924[pos];
+    scr = sMaohFlashEyeFire2Obj1AnimScrLut[pos];
 
     frontAnim = EfxCreateFrontAnim(anim, scr, scr, scr, scr);
     proc->anim2 = frontAnim;

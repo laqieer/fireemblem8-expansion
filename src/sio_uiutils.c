@@ -440,7 +440,7 @@ void UpdateLinkArenaSideMenuGlow(void)
     u16 * ptr = Pal_SioSideMenuGlow;
 
     // clang-format off
-    const u8 gUnknown_080DA102[] =
+    const u8 sLinkArenaSideMenuGlowPalIndexLut[] =
     {
         0x0F, 0x0E, 0x0D, 0x0C, 0x0B, 0x0A, 0x09, 0x08,
         0x07, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01, 0x00,
@@ -452,7 +452,7 @@ void UpdateLinkArenaSideMenuGlow(void)
     if (gUnk_Sio_22 == 0)
     {
         int a = (GetGameClock() % 0x40);
-        int idx = gUnknown_080DA102[a / 2];
+        int idx = sLinkArenaSideMenuGlowPalIndexLut[a / 2];
 
         PAL_OBJ_COLOR(8, 14) = ptr[idx];
         EnablePaletteSync();
@@ -1359,7 +1359,7 @@ void UpdateLinkArenaMenuScrollBar(u8 a, s16 b)
 void LAPhaseIntro_Init(void)
 {
     // clang-format off
-    u8 * gUnknown_080DA20C[] =
+    u8 * sLinkArenaPhaseIntroFactionImgLut[] =
     {
         Img_LinkArenaPhaseIntroPlayer,
         Img_LinkArenaPhaseIntroOther,
@@ -1367,7 +1367,7 @@ void LAPhaseIntro_Init(void)
         Img_LinkArenaPhaseIntro4,
     };
 
-    u16 * gUnknown_080DA21C[] =
+    u16 * sLinkArenaPhaseIntroFactionPalLut[] =
     {
         Pal_LinkArenaPhaseIntroPlayer,
         Pal_LinkArenaPhaseIntroOther,
@@ -1375,7 +1375,7 @@ void LAPhaseIntro_Init(void)
         Pal_LinkArenaPhaseIntro4,
     };
 
-    u16 * gUnknown_080DA22C[] =
+    u16 * sLinkArenaPhaseIntroPhaseChangePalLut[] =
     {
         Pal_PhaseChangePlayer,
         Pal_PhaseChangeOther,
@@ -1388,11 +1388,11 @@ void LAPhaseIntro_Init(void)
     Decompress(Img_PhaseChangeSquares, BG_CHR_ADDR(0x100));
     Decompress(Img_LinkArenaPhaseIntroBg, BG_CHR_ADDR(0x140));
 
-    Decompress(gUnknown_080DA20C[gPlaySt.faction], gGenericBuffer);
+    Decompress(sLinkArenaPhaseIntroFactionImgLut[gPlaySt.faction], gGenericBuffer);
     Copy2dChr(gGenericBuffer, BG_CHR_ADDR(0x14C), 3, 3);
 
-    ApplyPalette(gUnknown_080DA21C[gPlaySt.faction], 5);
-    ApplyPalette(gUnknown_080DA22C[gPlaySt.faction], 0x12);
+    ApplyPalette(sLinkArenaPhaseIntroFactionPalLut[gPlaySt.faction], 5);
+    ApplyPalette(sLinkArenaPhaseIntroPhaseChangePalLut[gPlaySt.faction], 0x12);
 
     gUnk_49 = gPlaySt.faction;
     gPlaySt.faction = FACTION_BLUE;

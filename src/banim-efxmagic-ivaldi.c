@@ -889,7 +889,7 @@ void StartSubSpell_efxIvaldiOBJ1(struct Anim * anim, int terminator, s16 x, s16 
     struct Anim * frontAnim;
 
     // clang-format off
-    u32 * gUnknown_080DE5E4[6][2] =
+    u32 * sIvaldiObj1AnimScrLut[6][2] =
     {
         {
             AnimScr_EfxIvald_L1,
@@ -931,28 +931,28 @@ void StartSubSpell_efxIvaldiOBJ1(struct Anim * anim, int terminator, s16 x, s16 
     switch (kind)
     {
         case 1:
-            scr = gUnknown_080DE5E4[1][pos];
+            scr = sIvaldiObj1AnimScrLut[1][pos];
             break;
 
         case 2:
-            scr = gUnknown_080DE5E4[2][pos];
+            scr = sIvaldiObj1AnimScrLut[2][pos];
             break;
 
         case 3:
-            scr = gUnknown_080DE5E4[3][pos];
+            scr = sIvaldiObj1AnimScrLut[3][pos];
             break;
 
         case 4:
-            scr = gUnknown_080DE5E4[4][pos];
+            scr = sIvaldiObj1AnimScrLut[4][pos];
             break;
 
         case 5:
-            scr = gUnknown_080DE5E4[5][pos];
+            scr = sIvaldiObj1AnimScrLut[5][pos];
             break;
 
         case 0:
         default:
-            scr = gUnknown_080DE5E4[0][pos];
+            scr = sIvaldiObj1AnimScrLut[0][pos];
             break;
     }
 

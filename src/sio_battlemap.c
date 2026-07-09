@@ -170,7 +170,7 @@ void LinkArenaBattleMap_StartUnitMoveOut(u8 a, int b, u8 * c, int * xOut, int * 
 
     // clang-format off
 
-    u8 gUnknown_080D9FA0[8] =
+    u8 sLinkArenaUnitMoveOutMoveScriptLut[8] =
     {
         MOVE_CMD_MOVE_UP,
         MOVE_CMD_HALT,
@@ -185,7 +185,7 @@ void LinkArenaBattleMap_StartUnitMoveOut(u8 a, int b, u8 * c, int * xOut, int * 
         MOVE_CMD_HALT,
     };
 
-    s8 gUnknown_080D9FA8[8] =
+    s8 sLinkArenaUnitMoveOutPositionOffsets[8] =
     {
         +0, -1,
         -1, +0,
@@ -206,23 +206,23 @@ void LinkArenaBattleMap_StartUnitMoveOut(u8 a, int b, u8 * c, int * xOut, int * 
     {
         gUnk_46[b] = StartMu(unit);
         DisableMuCamera(gUnk_46[b]);
-        SetMuMoveScript(gUnk_46[b], gUnknown_080D9FA0 + index);
+        SetMuMoveScript(gUnk_46[b], sLinkArenaUnitMoveOutMoveScriptLut + index);
     }
 
     unit->state |= US_HIDDEN;
 
     RefreshUnitSprites();
 
-    *xOut = unit->xPos + gUnknown_080D9FA8[index + 0];
-    *yOut = unit->yPos + gUnknown_080D9FA8[index + 1];
+    *xOut = unit->xPos + sLinkArenaUnitMoveOutPositionOffsets[index + 0];
+    *yOut = unit->yPos + sLinkArenaUnitMoveOutPositionOffsets[index + 1];
 
     if ((unit->state & US_BIT9) != 0)
     {
         unit->xPos = *xOut;
         unit->yPos = *yOut;
 
-        *xOut = *xOut - gUnknown_080D9FA8[index + 0];
-        *yOut = *yOut - gUnknown_080D9FA8[index + 1];
+        *xOut = *xOut - sLinkArenaUnitMoveOutPositionOffsets[index + 0];
+        *yOut = *yOut - sLinkArenaUnitMoveOutPositionOffsets[index + 1];
 
         gUnk_46[b] = NULL;
     }
@@ -897,7 +897,7 @@ void LABattleMap_WaitSioSendDrain_Loop(ProcPtr proc)
     return;
 }
 
-extern u8 gUnknown_080D9FB5[];
+extern u8 sLinkArenaAttackerMoveUpScript[];
 
 //! FE8U = 0x08049D24
 void LABattleMap_SelectAttacker_Loop(struct SioBattleMapProc * proc)
@@ -907,7 +907,7 @@ void LABattleMap_SelectAttacker_Loop(struct SioBattleMapProc * proc)
 
     // clang-format off
 
-    u8 gUnknown_080D9FB5[2] =
+    u8 sLinkArenaAttackerMoveUpScript[2] =
     {
         MOVE_CMD_MOVE_UP,
         MOVE_CMD_HALT,
@@ -932,7 +932,7 @@ void LABattleMap_SelectAttacker_Loop(struct SioBattleMapProc * proc)
 
             gUnk_46[0] = StartMu(gActiveUnit);
             DisableMuCamera(gUnk_46[0]);
-            SetMuMoveScript(gUnk_46[0], gUnknown_080D9FB5);
+            SetMuMoveScript(gUnk_46[0], sLinkArenaAttackerMoveUpScript);
 
             proc->unk_2c = gActiveUnit->xPos;
             proc->unk_30 = gActiveUnit->yPos - 1;
@@ -1344,7 +1344,7 @@ void LABattleMap_StartCombatantWarpFx(struct SioBattleMapProc * proc)
 
 extern u8 gUnk_45[];
 
-extern u8 gUnknown_080D9FB7[];
+extern u8 sLinkArenaCombatantMoveRightScript[];
 
 //! FE8U = 0x0804A5A4
 void LABattleMap_PrepareCombatantSprites(void)
@@ -1354,7 +1354,7 @@ void LABattleMap_PrepareCombatantSprites(void)
 
     // clang-format off
 
-    u8 gUnknown_080D9FB7[2] =
+    u8 sLinkArenaCombatantMoveRightScript[2] =
     {
         MOVE_CMD_MOVE_RIGHT,
         MOVE_CMD_HALT,
@@ -1369,7 +1369,7 @@ void LABattleMap_PrepareCombatantSprites(void)
 
     if (gUnk_45[2] == 1)
     {
-        SetMuMoveScript(gUnk_46[0], gUnknown_080D9FB7);
+        SetMuMoveScript(gUnk_46[0], sLinkArenaCombatantMoveRightScript);
         unitA->xPos = 7;
     }
 

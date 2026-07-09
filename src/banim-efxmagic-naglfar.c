@@ -619,7 +619,7 @@ void StartSubSpell_efxNaglfarOBJ(struct Anim * anim, int terminator, s16 x, s16 
         AnimScr_efxNaglfarOBJ_5, AnimScr_efxNaglfarOBJ_11,
     };
 
-    s16 gUnknown_080DEBF8[] =
+    s16 sNaglfarObjSide0PositionOffsets[] =
     {
         64, 128,
         32, 72,
@@ -628,7 +628,7 @@ void StartSubSpell_efxNaglfarOBJ(struct Anim * anim, int terminator, s16 x, s16 
         144, 32,
     };
 
-    s16 gUnknown_080DEC0C[] =
+    s16 sNaglfarObjSide1PositionOffsets[] =
     {
         176, 16,
         216, 64,
@@ -655,13 +655,13 @@ void StartSubSpell_efxNaglfarOBJ(struct Anim * anim, int terminator, s16 x, s16 
     switch (pos)
     {
         case 0:
-            frontAnim->xPosition = x + gUnknown_080DEBF8[index * 2];
-            frontAnim->yPosition = y + (gUnknown_080DEBF8 + 1)[index * 2];
+            frontAnim->xPosition = x + sNaglfarObjSide0PositionOffsets[index * 2];
+            frontAnim->yPosition = y + (sNaglfarObjSide0PositionOffsets + 1)[index * 2];
             break;
 
         case 1:
-            frontAnim->xPosition = x + gUnknown_080DEC0C[index * 2];
-            frontAnim->yPosition = y + (gUnknown_080DEC0C + 1)[index * 2];
+            frontAnim->xPosition = x + sNaglfarObjSide1PositionOffsets[index * 2];
+            frontAnim->yPosition = y + (sNaglfarObjSide1PositionOffsets + 1)[index * 2];
             break;
     }
 
@@ -706,7 +706,7 @@ void StartSubSpell_efxNaglfarOBJ2(struct Anim * anim, int terminator, u8 c)
     struct Anim * frontAnim;
 
     // clang-format off
-    u32 * gUnknown_080DEC30[4] =
+    u32 * sNaglfarObj2AnimScrLut[4] =
     {
         AnimScr_efxNaglfarOBJ2_0, AnimScr_efxNaglfarOBJ2_2,
         AnimScr_efxNaglfarOBJ2_1, AnimScr_efxNaglfarOBJ2_3,
@@ -721,7 +721,7 @@ void StartSubSpell_efxNaglfarOBJ2(struct Anim * anim, int terminator, u8 c)
     proc->timer = 0;
     proc->terminator = terminator;
 
-    scr = gUnknown_080DEC30[((pos * 4) + (c * 8)) >> 2];
+    scr = sNaglfarObj2AnimScrLut[((pos * 4) + (c * 8)) >> 2];
     frontAnim = EfxCreateFrontAnim(anim, scr, scr, scr, scr);
     proc->anim2 = frontAnim;
     frontAnim->yPosition += 24;

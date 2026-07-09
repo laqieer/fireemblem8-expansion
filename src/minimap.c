@@ -972,14 +972,14 @@ void InitMinimapFlashPalette() {
 
 //! FE8U = 0x080A849C
 void Minimap_ApplyFlashPalette() {
-    u8 gUnknown_08205D87[] = {
+    u8 sMinimapObjectFlashPalIndexLut[] = {
         0, 4, 7, 6,
         5, 4, 3, 2,
         2, 1, 1, 1,
         0, 0, 0, 0,
     };
 
-    u8 idx = gUnknown_08205D87[(GetGameClock() >> 2) % sizeof(gUnknown_08205D87)];
+    u8 idx = sMinimapObjectFlashPalIndexLut[(GetGameClock() >> 2) % sizeof(sMinimapObjectFlashPalIndexLut)];
 
     ApplyPalette(gMinimapObjectFlashPal + idx * 0x10, 4);
 
@@ -992,7 +992,7 @@ void Minimap_ApplyViewportFlashColor() {
     int tmp;
     int r, g, b;
 
-    u8 gUnknown_08205D97[] = {
+    u8 sMinimapViewportFlashColorIndexLut[] = {
         0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
         0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F,
         0x0F, 0x0E, 0x0D, 0x0C, 0x0B, 0x0A, 0x09, 0x08,
@@ -1000,7 +1000,7 @@ void Minimap_ApplyViewportFlashColor() {
     };
 
     tmp = GetGameClock() & 0x1F;
-    idx = gUnknown_08205D97[tmp];
+    idx = sMinimapViewportFlashColorIndexLut[tmp];
     tmp = idx + 0x10;
 
     r = tmp;
