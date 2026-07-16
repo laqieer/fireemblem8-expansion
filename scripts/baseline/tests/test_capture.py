@@ -173,6 +173,37 @@ def make_artifacts(directory: Path, *, debug_path: bytes = b"/one/source.c\0"):
     return rom_path, elf_path, map_path
 
 
+def git(root: Path, *arguments: str) -> str:
+    return subprocess.run(
+        ["git", *arguments],
+        cwd=root,
+        check=True,
+        text=True,
+        stdout=subprocess.PIPE,
+    ).stdout.strip()
+
+
+def make_agbcc_source(root: Path) -> Path:
+    source = root / "agbcc-source"
+    source.mkdir()
+    git(source, "init", "-q")
+    git(source, "config", "user.name", "Compiler Source Test")
+    git(source, "config", "user.email", "compiler@example.invalid")
+    (source / "gcc").mkdir()
+    (source / "gcc/version.c").write_text(
+        'char *version_string = "2.9-arm-000512";\n'
+    )
+    (source / "gcc/Makefile").write_text(
+        "all:\n\t@echo current\nold:\n\t@echo old\n"
+    )
+    (source / "build.sh").write_text(
+        "make -C gcc old\nmake -C gcc\n"
+    )
+    git(source, "add", ".")
+    git(source, "commit", "-qm", "compiler source")
+    return source
+
+
 FIXED_SOURCE = {
     "commit": "1" * 40,
     "dirty": False,
@@ -302,7 +333,7 @@ class CaptureTests(unittest.TestCase):
     def test_full_capture_validates_and_serializes(self):
         with tempfile.TemporaryDirectory() as temp:
             manifest = self.capture_with_fixed_environment(Path(temp))
-        self.assertEqual(manifest["schema_version"], 2)
+        self.assertEqual(manifest["schema_version"], 3)
         self.assertEqual(
             manifest["rom"]["sha1"], manifest["rom"]["checksum_sha1"]
         )
@@ -423,23 +454,45 @@ class ToolTests(unittest.TestCase):
             with self.assertRaisesRegex(capture.BaselineError, "exit code 1"):
                 capture.command_version(["tool", "--version"], "test tool")
 
-    def test_compiler_binaries_have_unique_fingerprints_and_collisions_fail(self):
+    def test_compiler_source_identity_is_cross_path_and_dirty_aware(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            binary_dir = root / "tools/agbcc/bin"
-            binary_dir.mkdir(parents=True)
-            agbcc = b"compiler 2.9-arm-000512 current"
-            old_agbcc = b"compiler 2.9-arm-000512 old"
-            (binary_dir / "agbcc").write_bytes(agbcc)
-            (binary_dir / "old_agbcc").write_bytes(old_agbcc)
-            identities = capture.compiler_identities(root)
-            self.assertNotEqual(
-                identities["agbcc"]["sha256"],
-                identities["old_agbcc"]["sha256"],
+            first = make_agbcc_source(root)
+            second = root / "different-checkout-path"
+            subprocess.run(
+                ["git", "clone", "-q", str(first), str(second)],
+                check=True,
             )
-            (binary_dir / "old_agbcc").write_bytes(agbcc)
-            with self.assertRaisesRegex(capture.BaselineError, "identical"):
-                capture.compiler_identities(root)
+
+            first_clean = capture.compiler_source_provenance(first)
+            second_clean = capture.compiler_source_provenance(second)
+            self.assertEqual(first_clean, second_clean)
+            self.assertFalse(first_clean["source"]["dirty"])
+            self.assertNotEqual(
+                first_clean["roles"]["agbcc"]["identity_sha256"],
+                first_clean["roles"]["old_agbcc"]["identity_sha256"],
+            )
+
+            for checkout in (first, second):
+                with (checkout / "gcc/version.c").open("a") as stream:
+                    stream.write("/* equivalent dirty change */\n")
+                (checkout / "local-source.c").write_text("int local_source;\n")
+            first_dirty = capture.compiler_source_provenance(first)
+            second_dirty = capture.compiler_source_provenance(second)
+            self.assertEqual(first_dirty, second_dirty)
+            self.assertTrue(first_dirty["source"]["dirty"])
+            self.assertNotEqual(
+                first_dirty["source"]["content_sha256"],
+                first_clean["source"]["content_sha256"],
+            )
+
+    def test_missing_compiler_source_requires_explicit_checkout(self):
+        with tempfile.TemporaryDirectory() as temp:
+            missing = Path(temp) / "missing"
+            with self.assertRaisesRegex(
+                capture.BaselineError, "--agbcc-source PATH"
+            ):
+                capture.agbcc_source_identity(missing)
 
 
 class CliAndSerializationTests(unittest.TestCase):

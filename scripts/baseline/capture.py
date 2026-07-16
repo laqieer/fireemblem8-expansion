@@ -400,32 +400,9 @@ def command_version(command: list[str], label: str) -> str:
     return versions[-1]
 
 
-def agbcc_identity(path: Path, label: str) -> dict[str, str]:
-    data = path.read_bytes()
-    match = re.search(rb"\b\d+\.\d+-arm-\d+\b", data)
-    if not match:
-        raise BaselineError(f"cannot find embedded version in {label}")
+def tool_versions(root: Path, prefix: str, agbcc_source: Path) -> dict[str, Any]:
     return {
-        "sha256": hashlib.sha256(data).hexdigest(),
-        "version": match.group(0).decode("ascii"),
-    }
-
-
-def compiler_identities(root: Path) -> dict[str, dict[str, str]]:
-    identities = {
-        "agbcc": agbcc_identity(root / "tools/agbcc/bin/agbcc", "agbcc"),
-        "old_agbcc": agbcc_identity(
-            root / "tools/agbcc/bin/old_agbcc", "old_agbcc"
-        ),
-    }
-    if identities["agbcc"]["sha256"] == identities["old_agbcc"]["sha256"]:
-        raise BaselineError("agbcc and old_agbcc binaries are identical")
-    return identities
-
-
-def tool_versions(root: Path, prefix: str) -> dict[str, Any]:
-    return {
-        "compilers": compiler_identities(root),
+        "compilers": compiler_source_provenance(agbcc_source),
         "arm_binutils_as": command_version([prefix + "as", "--version"], "assembler"),
         "arm_binutils_ld": command_version([prefix + "ld", "--version"], "linker"),
         "arm_binutils_objcopy": command_version(
@@ -451,6 +428,137 @@ def git_output(root: Path, arguments: list[str], label: str) -> str:
         ).stdout.strip()
     except (OSError, subprocess.CalledProcessError) as error:
         raise BaselineError(f"cannot determine {label} from git") from error
+
+
+def git_bytes(root: Path, arguments: list[str], label: str) -> bytes:
+    try:
+        return subprocess.run(
+            ["git", *arguments],
+            cwd=root,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+        ).stdout
+    except (OSError, subprocess.CalledProcessError) as error:
+        raise BaselineError(f"cannot determine {label} from git") from error
+
+
+def agbcc_source_identity(source: Path) -> dict[str, Any]:
+    if not source.is_dir():
+        raise BaselineError(
+            "agbcc source checkout is required; pass --agbcc-source PATH"
+        )
+    try:
+        inside = git_output(
+            source,
+            ["rev-parse", "--is-inside-work-tree"],
+            "agbcc source repository",
+        )
+        revision = git_output(
+            source, ["rev-parse", "HEAD"], "agbcc source revision"
+        )
+        head_tree = git_output(
+            source, ["rev-parse", "HEAD^{tree}"], "agbcc source tree"
+        )
+    except BaselineError as error:
+        raise BaselineError(
+            "agbcc source must be a Git checkout; pass --agbcc-source PATH"
+        ) from error
+    if inside != "true" or not re.fullmatch(r"[0-9a-f]{40}", revision):
+        raise BaselineError(
+            "agbcc source must be a Git checkout; pass --agbcc-source PATH"
+        )
+    if not re.fullmatch(r"[0-9a-f]{40}", head_tree):
+        raise BaselineError("git returned an invalid agbcc source tree")
+
+    status = git_bytes(
+        source,
+        ["status", "--porcelain=v1", "-z", "--untracked-files=all"],
+        "agbcc source dirty-tree state",
+    )
+    diff = git_bytes(
+        source,
+        [
+            "-c",
+            "core.quotePath=true",
+            "diff",
+            "--binary",
+            "--full-index",
+            "--no-color",
+            "--no-ext-diff",
+            "--no-renames",
+            "HEAD",
+            "--",
+        ],
+        "agbcc source changes",
+    )
+    untracked = sorted(
+        path
+        for path in git_bytes(
+            source,
+            ["ls-files", "--others", "--exclude-standard", "-z"],
+            "agbcc untracked source files",
+        ).split(b"\0")
+        if path
+    )
+
+    content = hashlib.sha256()
+    content.update(b"agbcc-source-worktree-v1\0")
+    content.update(head_tree.encode("ascii"))
+    content.update(struct.pack("<Q", len(diff)))
+    content.update(diff)
+    for raw_path in untracked:
+        path = os.fsdecode(raw_path)
+        blob = git_output(
+            source,
+            ["hash-object", f"--path={path}", "--", path],
+            f"agbcc untracked source file {path!r}",
+        )
+        if not re.fullmatch(r"[0-9a-f]{40}", blob):
+            raise BaselineError("git returned an invalid agbcc source blob")
+        content.update(struct.pack("<I", len(raw_path)))
+        content.update(raw_path)
+        content.update(blob.encode("ascii"))
+
+    version_path = source / "gcc/version.c"
+    ensure_file(version_path, "agbcc version source")
+    version_match = re.search(
+        r'version_string\s*=\s*"([^"]+)"',
+        version_path.read_text(encoding="ascii"),
+    )
+    if not version_match:
+        raise BaselineError("cannot determine agbcc version from gcc/version.c")
+    return {
+        "content_sha256": content.hexdigest(),
+        "dirty": bool(status),
+        "head_tree": head_tree,
+        "revision": revision,
+        "version": version_match.group(1),
+    }
+
+
+def compiler_source_provenance(source: Path) -> dict[str, Any]:
+    source_identity = agbcc_source_identity(source)
+    roles = {
+        "agbcc": {
+            "build_recipe": "make -C gcc",
+            "role": "current",
+        },
+        "old_agbcc": {
+            "build_recipe": "make -C gcc old",
+            "role": "old",
+        },
+    }
+    for name, role in roles.items():
+        digest = hashlib.sha256()
+        digest.update(b"agbcc-compiler-role-v1\0")
+        digest.update(source_identity["content_sha256"].encode("ascii"))
+        digest.update(name.encode("ascii"))
+        digest.update(role["build_recipe"].encode("ascii"))
+        role["identity_sha256"] = digest.hexdigest()
+    if roles["agbcc"]["identity_sha256"] == roles["old_agbcc"]["identity_sha256"]:
+        raise BaselineError("agbcc compiler role identities collide")
+    return {"roles": roles, "source": source_identity}
 
 
 def source_provenance(root: Path) -> dict[str, Any]:
@@ -535,7 +643,12 @@ def ensure_file(path: Path, label: str) -> None:
 
 
 def capture(
-    root: Path, rom_path: Path, elf_path: Path, map_path: Path, prefix: str
+    root: Path,
+    rom_path: Path,
+    elf_path: Path,
+    map_path: Path,
+    prefix: str,
+    agbcc_source: Path | None = None,
 ) -> dict[str, Any]:
     for path, label in (
         (rom_path, "ROM"),
@@ -567,9 +680,11 @@ def capture(
         "map": map_evidence,
         "memory": memory_usage(elf["sections"], rom["size_bytes"]),
         "rom": rom,
-        "schema_version": 2,
+        "schema_version": 3,
         "source": source_provenance(root),
-        "tools": tool_versions(root, prefix),
+        "tools": tool_versions(
+            root, prefix, agbcc_source or root / ".deps/agbcc"
+        ),
     }
 
 
@@ -604,6 +719,11 @@ def resolve_input(root: Path, value: str) -> Path:
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     default_root = Path(__file__).resolve().parents[2]
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--agbcc-source",
+        default=".deps/agbcc",
+        help="Git checkout used to build agbcc and old_agbcc",
+    )
     parser.add_argument("--build", action="store_true", help="clean and run make compare")
     parser.add_argument("--elf", default="fireemblem8.elf")
     parser.add_argument("--jobs", type=int, default=os.cpu_count() or 1)
@@ -627,6 +747,7 @@ def main(argv: list[str] | None = None) -> int:
             resolve_input(root, args.elf),
             resolve_input(root, args.map_file),
             args.prefix,
+            resolve_input(root, args.agbcc_source),
         )
         output = serialize(manifest)
         if args.output == "-":
