@@ -1,7 +1,7 @@
 
 MAKEFLAGS += --no-print-directory
 
-TOOLDIRS := $(filter-out tools/agbcc,$(wildcard tools/*))
+TOOLDIRS := $(patsubst %/Makefile,%,$(filter-out tools/agbcc/Makefile,$(wildcard tools/*/Makefile)))
 
 .PHONY: all $(TOOLDIRS) clean
 
