@@ -139,11 +139,11 @@ Up to five deterministic examples per category; use `inventory.json` for every f
 | `layout-sensitive-struct` | P1 | `include/anime.h:11` | `headers-api` | `layout-assert` | /* 04 */ short yPosition; |
 | `layout-sensitive-struct` | P1 | `include/anime.h:12` | `headers-api` | `layout-assert` | /* 06 */ short timer; |
 | `layout-sensitive-struct` | P1 | `include/anime.h:13` | `headers-api` | `layout-assert` | /* 08 */ u16 oam2Base; |
-| `legacy-compiler-pipeline` | P0 | `.github/workflows/build-verification.yml:42` | `build-tooling` | `toolchain-migrate` | - name: Install agbcc |
-| `legacy-compiler-pipeline` | P0 | `.github/workflows/build-verification.yml:43` | `build-tooling` | `toolchain-migrate` | run: git clone https://github.com/pret/agbcc.git && cd agbcc/ && ./build.sh && ./install.sh .. && cd .. |
-| `legacy-compiler-pipeline` | P0 | `.github/workflows/build-verification.yml:47` | `build-tooling` | `toolchain-migrate` | - name: Cache mgfembp agbcc |
-| `legacy-compiler-pipeline` | P0 | `.github/workflows/build-verification.yml:50` | `build-tooling` | `toolchain-migrate` | path: mgfembp/tools/agbcc |
-| `legacy-compiler-pipeline` | P0 | `.github/workflows/build-verification.yml:51` | `build-tooling` | `toolchain-migrate` | key: mgfembp-agbcc-${{ hashFiles('mgfembp/tools/install_agbcc.sh') }} |
+| `legacy-compiler-pipeline` | P0 | `.github/workflows/build-verification.yml:40` | `build-tooling` | `toolchain-migrate` | - name: Install agbcc |
+| `legacy-compiler-pipeline` | P0 | `.github/workflows/build-verification.yml:41` | `build-tooling` | `toolchain-migrate` | run: git clone https://github.com/pret/agbcc.git && cd agbcc/ && ./build.sh && ./install.sh .. && cd .. |
+| `legacy-compiler-pipeline` | P0 | `.github/workflows/build-verification.yml:45` | `build-tooling` | `toolchain-migrate` | - name: Cache mgfembp agbcc |
+| `legacy-compiler-pipeline` | P0 | `.github/workflows/build-verification.yml:48` | `build-tooling` | `toolchain-migrate` | path: mgfembp/tools/agbcc |
+| `legacy-compiler-pipeline` | P0 | `.github/workflows/build-verification.yml:49` | `build-tooling` | `toolchain-migrate` | key: mgfembp-agbcc-${{ hashFiles('mgfembp/tools/install_agbcc.sh') }} |
 | `linker-placement-coupling` | P1 | `Makefile:97` | `build-tooling` | `linker-migrate` | ALL_OBJECTS := $(C_OBJECTS) $(DATA_SRC_C_OBJECTS) $(ASM_OBJECTS) $(BANIM_OBJECT) $(MID_OBJECTS) |
 | `linker-placement-coupling` | P1 | `Makefile:98` | `build-tooling` | `linker-migrate` | OBJECTS_LST := objects.lst |
 | `linker-placement-coupling` | P1 | `Makefile:134` | `build-tooling` | `linker-migrate` | $(RELOCS_ELF): $(ALL_OBJECTS) $(OBJECTS_LST) $(LDSCRIPT) |
