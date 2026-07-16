@@ -1162,7 +1162,7 @@ void MapAnimStartSpellAssocFade(ProcPtr proc);
 void MapAnimSpellAssocResetPal(ProcPtr proc);
 void MapAnim_RefreshMapAndEndMus(ProcPtr proc);
 
-void InitScanline();
+void InitScanline(void);
 void SetupMapAnimScanlineWindow(void);
 void UpdateMapAnimScanline(int x, int y, int arg3);
 void MapAnimResetHBlank(void);

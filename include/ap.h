@@ -35,7 +35,7 @@ struct APHandle {
 };
 
 
-void AP_ClearAll();
+void AP_ClearAll(void);
 struct APHandle * AP_Create(const void * apDefinition, u16 aObjNode);
 void AP_Delete(struct APHandle * handle);
 s8   AP_Update(struct APHandle * handle, int x, int y);

@@ -525,7 +525,7 @@ void Bmlib_DeadRecursiveStub(const char *_str)
     Bmlib_DeadRecursiveStub(str);
 }
 
-struct PalFadeSt *GetPalFadeSt()
+struct PalFadeSt *GetPalFadeSt(void)
 {
     return (void *)sPalFadeSt;
 }
@@ -552,22 +552,22 @@ void SetPalFadeStClkEnd3(int end)
     GetPalFadeSt()[2].clock_end = end;
 }
 
-int GetPalFadeStClkEnd1()
+int GetPalFadeStClkEnd1(void)
 {
     return GetPalFadeSt()[0].clock_end;
 }
 
-int GetPalFadeStClkEnd2()
+int GetPalFadeStClkEnd2(void)
 {
     return GetPalFadeSt()[1].clock_end;
 }
 
-int GetPalFadeStClkEnd3()
+int GetPalFadeStClkEnd3(void)
 {
     return GetPalFadeSt()[2].clock_end;
 }
 
-void ArchiveCurrentPalettes()
+void ArchiveCurrentPalettes(void)
 {
     int i, j;
     u16 *dst = (void *)GetPalFadeSt();
@@ -1760,7 +1760,7 @@ void CallDelayed_OnLoop(struct CallDelayedProc * proc)
 
     if (proc->clock == -1)
     {
-        void (* func)(void) = (void(*)(void)) proc->func;
+        void (* func)(void) = proc->func.without_arg;
 
         func();
         Proc_Break(proc);
@@ -1773,7 +1773,7 @@ void CallDelayedArg_OnLoop(struct CallDelayedProc * proc)
 
     if (proc->clock == -1)
     {
-        void (* func)(int) = (void(*)(int)) proc->func;
+        void (* func)(int) = proc->func.with_arg;
 
         func(proc->arg);
         Proc_Break(proc);
@@ -1789,7 +1789,7 @@ void CallDelayed(void (* func)(void), int delay)
 {
     struct CallDelayedProc * proc = Proc_Start(ProcScr_CallDelayed, PROC_TREE_3);
 
-    proc->func = func;
+    proc->func.without_arg = func;
     proc->clock = delay;
 }
 
@@ -1802,7 +1802,7 @@ void CallDelayedArg(void (* func)(int), int arg, int delay)
 {
     struct CallDelayedProc * proc = Proc_Start(ProcScr_CallDelayedArg, PROC_TREE_3);
 
-    proc->func = func;
+    proc->func.with_arg = func;
     proc->arg = arg;
     proc->clock = delay;
 }

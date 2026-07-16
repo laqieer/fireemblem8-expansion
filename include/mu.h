@@ -214,7 +214,7 @@ extern CONST_DATA struct MuInfo unit_icon_move_table[];
 
 typedef void (* MuStateFunc)(struct MuProc *);
 
-void InitMus();
+void InitMus(void);
 struct MuProc * StartMuExt(struct Unit * unit, unsigned jid, unsigned palId);
 struct MuProc * StartMu(struct Unit * unit);
 void UpdateMu(struct MuProc * proc);

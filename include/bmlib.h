@@ -30,7 +30,7 @@ struct PalFadeSt {
 
 extern struct PalFadeSt EWRAM_DATA sPalFadeSt[0x20];
 
-struct PalFadeSt *GetPalFadeSt();
+struct PalFadeSt *GetPalFadeSt(void);
 struct PalFadeSt *StartPalFade(u16 const *colors, int pal, int duration, ProcPtr parent);
 
 #define RGB_16TIMES(r, g, b) \
@@ -101,10 +101,10 @@ void SetPalFadeStClkEnd(int _2a, int _5a, int _8a);
 void SetPalFadeStClkEnd1(int a);
 void SetPalFadeStClkEnd2(int a);
 void SetPalFadeStClkEnd3(int a);
-int GetPalFadeStClkEnd1();
-int GetPalFadeStClkEnd2();
-int GetPalFadeStClkEnd3();
-void ArchiveCurrentPalettes();
+int GetPalFadeStClkEnd1(void);
+int GetPalFadeStClkEnd2(void);
+int GetPalFadeStClkEnd3(void);
+void ArchiveCurrentPalettes(void);
 void ArchivePalette(int index);
 void WriteFadedPaletteFromArchive(int red, int green, int blue, u32 mask);
 // ??? MapPaletteBrightnessFade_Init(???);
@@ -241,7 +241,10 @@ void PutTmSized(u16 * tm, int x, int y, u32 const * arg_3, u16 tileref);
 struct CallDelayedProc {
     /* 00 */ PROC_HEADER;
 
-    /* 2C */ void (* func)();
+    /* 2C */ union {
+        void (* without_arg)(void);
+        void (* with_arg)(int);
+    } func;
     /* 30 */ int arg;
     /* 34 */ int clock;
 };
