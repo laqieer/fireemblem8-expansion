@@ -171,6 +171,9 @@ CLEAN_DIRS := $(DEPS_DIR) $(SHIFTDIR)
 CLEAN_BINS := graphics/statscreen/*.bin $(SAMPLE_SUBDIR)/*.bin $(MAP_LAYOUT_SUBDIR)/*.bin graphics/map/*TileConfiguration*.bin $(AUTO_GEN_TARGETS)
 CLEAN_SONGS := $(MID_SUBDIR)/*.s
 
+# Isolated, opt-in modern GCC object rules (no modern ELF/ROM target).
+include modern.mk
+
 # Shared clean routine
 clean_common:
 	$(RM) $(CLEAN_FILES) $(CLEAN_BINS) $(CLEAN_SONGS)
@@ -322,7 +325,7 @@ graphics/map/%.bin: graphics/map/%.S graphics/map/tile_config.inc
 
 MAKEDEP = mkdir -p $(DEPS_DIR)/$(dir $*) && $(CPP) $(CPPFLAGS) $< -MM -MG -MT $*.o > $(DEPS_DIR)/$*.d
 
-MAKECMDGOALS_NODEP := clean tag
+MAKECMDGOALS_NODEP := clean tag $(MODERN_GOALS)
 
 ifeq (,$(filter $(MAKECMDGOALS),$(MAKECMDGOALS_NODEP)))
 -include $(addprefix $(DEPS_DIR)/,$(CFILES:.c=.d))

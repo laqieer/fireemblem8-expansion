@@ -92,12 +92,13 @@ install_deps() {
     pkg_mgr="brew"
   else
     echo "[!] No supported package manager detected (apt, pacman, brew)." >&2
-    echo "    Install the prerequisites manually: binutils arm-none-eabi toolchain, pkg-config, libpng, python3, pip, numpy, pillow." >&2
+    echo "    Install the prerequisites manually: arm-none-eabi GCC/binutils/newlib, pkg-config, libpng, python3, pip, numpy, pillow." >&2
     return
   fi
 
   local need_toolchain=0
-  if ! have_cmd arm-none-eabi-as; then
+  if ! have_cmd arm-none-eabi-as || ! have_cmd arm-none-eabi-gcc ||
+     ! printf '#include <stdint.h>\n' | arm-none-eabi-gcc -E -x c - >/dev/null 2>&1; then
     need_toolchain=1
   fi
 
@@ -117,7 +118,7 @@ install_deps() {
       ${sudo_cmd} apt-get update -y >/dev/null
       local packages=(pkg-config libpng-dev python3-pip python3-numpy python3-pil)
       if (( need_toolchain )); then
-        packages=(binutils-arm-none-eabi "${packages[@]}")
+        packages=(binutils-arm-none-eabi gcc-arm-none-eabi libnewlib-arm-none-eabi "${packages[@]}")
       fi
       if [[ ${#packages[@]} -gt 0 ]]; then
         echo "[+] Installing packages via apt: ${packages[*]}"
@@ -137,7 +138,7 @@ install_deps() {
       fi
       local packages=(pkgconf libpng python-pip python-numpy python-pillow)
       if (( need_toolchain )); then
-        packages=(arm-none-eabi-binutils "${packages[@]}")
+        packages=(arm-none-eabi-binutils arm-none-eabi-gcc arm-none-eabi-newlib "${packages[@]}")
       fi
       echo "[+] Installing packages via pacman: ${packages[*]}"
       ${sudo_cmd} pacman -Sy --needed --noconfirm "${packages[@]}"

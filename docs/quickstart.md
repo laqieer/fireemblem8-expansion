@@ -20,7 +20,7 @@ What the script now does:
 
 1. Copies `baserom.gba` from the `--rom` path (or `FIREEMBLEM8U_ROM`) if you provided one. A missing ROM is fine — it is optional and not required to build.
 2. Detects your package manager (`apt`, `pacman`, or `brew`) and installs the prerequisites only when they’re not already available:
-   - Toolchain (`arm-none-eabi-binutils`/`arm-none-eabi-gcc`)
+   - Toolchain (`arm-none-eabi-binutils`, `arm-none-eabi-gcc`, and newlib headers)
    - `pkg-config` / `pkgconf`
    - `libpng`
    - `python3`, `pip3`, `numpy`, `pillow`
@@ -46,3 +46,46 @@ fireemblem8.gba: OK
 - **Slower rebuilds** – Subsequent `make` runs are faster. For incremental work, run `make -j$(nproc)` manually.
 
 After the script finishes, launch your preferred emulator with `fireemblem8.gba` or start modifying the source.
+
+## Opt-in modern GCC object cohort
+
+The first modern bootstrap compiles eight verified C files to ARM relocatable
+objects only. It does **not** link an ELF or a modern ROM, and it does not replace
+the matching legacy ROM build.
+
+Install GCC, binutils, and newlib headers for `arm-none-eabi`. Package names are
+`gcc-arm-none-eabi`, `binutils-arm-none-eabi`, and
+`libnewlib-arm-none-eabi` on Ubuntu/WSL; `arm-none-eabi-gcc`,
+`arm-none-eabi-binutils`, and `arm-none-eabi-newlib` on Arch; and
+`arm-none-eabi-gcc` on Homebrew.
+
+The system toolchain selected by the existing `PREFIX` (default
+`arm-none-eabi-`) is used by default:
+
+```bash
+make expansion-modern-toolchain-check
+make expansion-modern-cohort
+```
+
+Outputs are isolated under
+`build/expansion-modern/<config>/<abi>/src/` as eight `.o` and eight `.d`
+files. Select `MODERN_CONFIG=debug` (`-Og -g3`, the default) or
+`MODERN_CONFIG=release` (`-O2 -g0 -DNDEBUG`). Select the provisional
+`MODERN_ABI=aapcs` default (GCC's default ABI, with no explicit `-mabi`) or
+`MODERN_ABI=apcs-gnu`. These modes support migration experiments and do not
+declare a final ABI choice.
+
+For unpacked/local toolchains, use generic overrides rather than editing the
+makefile:
+
+```bash
+make expansion-modern-cohort \
+  MODERN_TOOLCHAIN_ROOT=/path/to/toolchain/usr \
+  MODERN_BINUTILS_DIR=/path/to/binutils \
+  MODERN_NEWLIB_INCLUDE=/path/to/newlib
+```
+
+`MODERN_BINUTILS_DIR` is passed to GCC as `-B<dir>/`, and
+`MODERN_NEWLIB_INCLUDE` is optional when GCC already finds its target headers.
+`MODERN_CC` and `MODERN_OBJDUMP` provide direct executable overrides.
+Run `make expansion-modern-clean` to remove only `build/expansion-modern`.
