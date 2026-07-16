@@ -1,0 +1,2 @@
+graphics/banim/sheet.4bpp.lz
+banim/motion.o|.data.script>lz
