@@ -1,0 +1,8 @@
+Linker script and memory map
+
+ewram_data
+                0x02000000       0x20
+IWRAM           0x03000000       0x10
+ROM             0x08000000       0x40
+
+OUTPUT(fireemblem8.elf elf32-littlearm)

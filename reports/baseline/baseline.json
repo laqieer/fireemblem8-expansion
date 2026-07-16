@@ -1,0 +1,230 @@
+{
+  "elf": {
+    "entry_address": 134217728,
+    "machine": 40,
+    "sections": [
+      {
+        "address": 33554432,
+        "name": "ewram_data",
+        "size_bytes": 257976,
+        "type": "nobits"
+      },
+      {
+        "address": 33554432,
+        "name": "ewram_overlay_0",
+        "size_bytes": 127388,
+        "type": "nobits"
+      },
+      {
+        "address": 33554432,
+        "name": "ewram_overlay_banim",
+        "size_bytes": 131464,
+        "type": "nobits"
+      },
+      {
+        "address": 33554432,
+        "name": "ewram_overlay_bmstart",
+        "size_bytes": 6144,
+        "type": "nobits"
+      },
+      {
+        "address": 33554432,
+        "name": "ewram_overlay_gameending",
+        "size_bytes": 10296,
+        "type": "nobits"
+      },
+      {
+        "address": 33554432,
+        "name": "ewram_overlay_gamestart",
+        "size_bytes": 129832,
+        "type": "nobits"
+      },
+      {
+        "address": 33554432,
+        "name": "ewram_overlay_gamestartsave",
+        "size_bytes": 65536,
+        "type": "nobits"
+      },
+      {
+        "address": 33554432,
+        "name": "ewram_overlay_sio",
+        "size_bytes": 4488,
+        "type": "nobits"
+      },
+      {
+        "address": 33554432,
+        "name": "ewram_overlay_worldmap",
+        "size_bytes": 116180,
+        "type": "nobits"
+      },
+      {
+        "address": 50331648,
+        "name": "IWRAM",
+        "size_bytes": 26540,
+        "type": "nobits"
+      },
+      {
+        "address": 134217728,
+        "name": "ROM",
+        "size_bytes": 16776960,
+        "type": "progbits"
+      }
+    ],
+    "sha1": "45b29bedb5e2587683175cb3d2b1a38f675c301b",
+    "size_bytes": 47930304,
+    "symbols": {
+      "bindings": {
+        "global": 27384,
+        "local": 282545,
+        "other": 0,
+        "weak": 0
+      },
+      "defined": 309929,
+      "named": 309929,
+      "types": {
+        "file": 1201,
+        "function": 8518,
+        "no_type": 285207,
+        "object": 15003,
+        "other": 0,
+        "section": 0
+      },
+      "undefined": 0
+    }
+  },
+  "map": {
+    "output_sections": {
+      ".ARM.attributes": {
+        "address": 0,
+        "size_bytes": 32
+      },
+      ".debug_abbrev": {
+        "address": 0,
+        "size_bytes": 241321
+      },
+      ".debug_aranges": {
+        "address": 0,
+        "size_bytes": 10368
+      },
+      ".debug_info": {
+        "address": 0,
+        "size_bytes": 23333964
+      },
+      ".debug_line": {
+        "address": 0,
+        "size_bytes": 1023271
+      },
+      ".debug_pubnames": {
+        "address": 0,
+        "size_bytes": 507680
+      },
+      ".debug_str": {
+        "address": 0,
+        "size_bytes": 1017
+      },
+      "IWRAM": {
+        "address": 50331648,
+        "size_bytes": 26540
+      },
+      "ROM": {
+        "address": 134217728,
+        "size_bytes": 16776960
+      },
+      "ewram": {
+        "address": 33554432,
+        "size_bytes": 262144
+      },
+      "ewram_data": {
+        "address": 33554432,
+        "size_bytes": 257976
+      },
+      "ewram_overlay_0": {
+        "address": 33554432,
+        "size_bytes": 127388
+      },
+      "ewram_overlay_banim": {
+        "address": 33554432,
+        "size_bytes": 131464
+      },
+      "ewram_overlay_bmstart": {
+        "address": 33554432,
+        "size_bytes": 6144
+      },
+      "ewram_overlay_gameending": {
+        "address": 33554432,
+        "size_bytes": 10296
+      },
+      "ewram_overlay_gamestart": {
+        "address": 33554432,
+        "size_bytes": 129832
+      },
+      "ewram_overlay_gamestartsave": {
+        "address": 33554432,
+        "size_bytes": 65536
+      },
+      "ewram_overlay_sio": {
+        "address": 33554432,
+        "size_bytes": 4488
+      },
+      "ewram_overlay_worldmap": {
+        "address": 33554432,
+        "size_bytes": 116180
+      },
+      "iwram": {
+        "address": 50331648,
+        "size_bytes": 32768
+      },
+      "rom": {
+        "address": 134217728,
+        "size_bytes": 33554432
+      }
+    },
+    "sha1": "93a8d5c690a4fd6fd966ad798b1a0c9d936c0d79",
+    "size_bytes": 2464527
+  },
+  "memory": {
+    "ewram": {
+      "capacity_bytes": 262144,
+      "high_watermark_bytes": 257976,
+      "occupied_bytes": 257976,
+      "section_bytes_including_overlays": 849304
+    },
+    "iwram": {
+      "capacity_bytes": 32768,
+      "high_watermark_bytes": 26540,
+      "occupied_bytes": 26540,
+      "section_bytes_including_overlays": 26540
+    },
+    "rom": {
+      "capacity_bytes": 33554432,
+      "high_watermark_bytes": 16776960,
+      "image_size_bytes": 16777216,
+      "occupied_bytes": 16776960,
+      "section_bytes_including_overlays": 16776960
+    }
+  },
+  "rom": {
+    "header": {
+      "game_code": "BE8E",
+      "maker_code": "01",
+      "revision": 0,
+      "title": "FIREEMBLEM2E"
+    },
+    "sha1": "c25b145e37456171ada4b0d440bf88a19f4d509f",
+    "size_bytes": 16777216
+  },
+  "schema_version": 1,
+  "source": {
+    "commit": "7b47dec8da6ff7c2ff9aad2bfa9bf40cc8b07b90"
+  },
+  "tools": {
+    "agbcc": "2.9-arm-000512",
+    "arm_binutils_as": "2.42",
+    "arm_binutils_ld": "2.42",
+    "arm_binutils_objcopy": "2.42",
+    "arm_binutils_strip": "2.42",
+    "make": "4.3",
+    "old_agbcc": "2.9-arm-000512",
+    "python": "3.12.3"
+  }
+}
