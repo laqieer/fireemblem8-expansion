@@ -69,7 +69,7 @@ Up to three largest roots per category.
 | `assembly-boundary` | `manifest` asm/arm.s | `asm/arm.s:1` | 1 | `typed-asm-boundary` |
 | `assembly-boundary` | `manifest` asm/arm_call.s | `asm/arm_call.s:1` | 1 | `typed-asm-boundary` |
 | `assembly-boundary` | `manifest` asm/fe6sio.s | `asm/fe6sio.s:2` | 1 | `typed-asm-boundary` |
-| `fixed-rom-base` | `construct` battle-animation ROM base | `Makefile:303` | 1 | `linker-migrate` |
+| `fixed-rom-base` | `construct` battle-animation ROM base | `Makefile:306` | 1 | `linker-migrate` |
 | `fixed-rom-base` | `construct` ROM base | `ldscript.txt:5` | 1 | `linker-migrate` |
 | `forced-data-placement` | `placement` CONST_DATA → .data | `include/ap.h:68` | 11828 | `linker-migrate` |
 | `forced-data-placement` | `placement` EWRAM_OVERLAY | `include/unitlistscreen.h:185` | 185 | `linker-migrate` |
@@ -117,7 +117,7 @@ Up to five deterministic examples per category; use `inventory.json` for every f
 | `assembly-boundary` | P2 | `asm/fe6sio.s:2` | `multiplayer` | `typed-asm-boundary` | handwritten assembly boundary (.s) |
 | `assembly-boundary` | P2 | `asm/macros/m4a.inc:1` | `audio` | `typed-asm-boundary` | handwritten assembly boundary (.inc) |
 | `assembly-boundary` | P2 | `asm/macros/music_voice.inc:1` | `audio` | `typed-asm-boundary` | handwritten assembly boundary (.inc) |
-| `fixed-rom-base` | P0 | `Makefile:303` | `build-tooling` | `linker-migrate` | ./scripts/arm_compressing_linker.py -o $@ -t linker_script_banim.txt -b 0x8c02000 -l $(LD) --objcopy $(OBJCOPY) -c ./scripts/compressor.py |
+| `fixed-rom-base` | P0 | `Makefile:306` | `build-tooling` | `linker-migrate` | ./scripts/arm_compressing_linker.py -o $@ -t linker_script_banim.txt -b 0x8c02000 -l $(LD) --objcopy $(OBJCOPY) -c ./scripts/compressor.py |
 | `fixed-rom-base` | P0 | `ldscript.txt:5` | `linker` | `linker-migrate` | rom : ORIGIN = 0x08000000, LENGTH = 32M |
 | `forced-data-placement` | P1 | `include/ap.h:68` | `headers-api` | `linker-migrate` | extern struct ProcCmd CONST_DATA ProcScr_ApProc[]; |
 | `forced-data-placement` | P1 | `include/ap.h:69` | `headers-api` | `linker-migrate` | extern u8 CONST_DATA sOamTileSizeLut[]; |
@@ -139,11 +139,11 @@ Up to five deterministic examples per category; use `inventory.json` for every f
 | `layout-sensitive-struct` | P1 | `include/anime.h:11` | `headers-api` | `layout-assert` | /* 04 */ short yPosition; |
 | `layout-sensitive-struct` | P1 | `include/anime.h:12` | `headers-api` | `layout-assert` | /* 06 */ short timer; |
 | `layout-sensitive-struct` | P1 | `include/anime.h:13` | `headers-api` | `layout-assert` | /* 08 */ u16 oam2Base; |
-| `legacy-compiler-pipeline` | P0 | `.github/workflows/build-verification.yml:25` | `build-tooling` | `toolchain-migrate` | - name: Install agbcc |
-| `legacy-compiler-pipeline` | P0 | `.github/workflows/build-verification.yml:26` | `build-tooling` | `toolchain-migrate` | run: git clone https://github.com/pret/agbcc.git && cd agbcc/ && ./build.sh && ./install.sh .. && cd .. |
-| `legacy-compiler-pipeline` | P0 | `.github/workflows/build-verification.yml:30` | `build-tooling` | `toolchain-migrate` | - name: Cache mgfembp agbcc |
-| `legacy-compiler-pipeline` | P0 | `.github/workflows/build-verification.yml:33` | `build-tooling` | `toolchain-migrate` | path: mgfembp/tools/agbcc |
-| `legacy-compiler-pipeline` | P0 | `.github/workflows/build-verification.yml:34` | `build-tooling` | `toolchain-migrate` | key: mgfembp-agbcc-${{ hashFiles('mgfembp/tools/install_agbcc.sh') }} |
+| `legacy-compiler-pipeline` | P0 | `.github/workflows/build-verification.yml:42` | `build-tooling` | `toolchain-migrate` | - name: Install agbcc |
+| `legacy-compiler-pipeline` | P0 | `.github/workflows/build-verification.yml:43` | `build-tooling` | `toolchain-migrate` | run: git clone https://github.com/pret/agbcc.git && cd agbcc/ && ./build.sh && ./install.sh .. && cd .. |
+| `legacy-compiler-pipeline` | P0 | `.github/workflows/build-verification.yml:47` | `build-tooling` | `toolchain-migrate` | - name: Cache mgfembp agbcc |
+| `legacy-compiler-pipeline` | P0 | `.github/workflows/build-verification.yml:50` | `build-tooling` | `toolchain-migrate` | path: mgfembp/tools/agbcc |
+| `legacy-compiler-pipeline` | P0 | `.github/workflows/build-verification.yml:51` | `build-tooling` | `toolchain-migrate` | key: mgfembp-agbcc-${{ hashFiles('mgfembp/tools/install_agbcc.sh') }} |
 | `linker-placement-coupling` | P1 | `Makefile:97` | `build-tooling` | `linker-migrate` | ALL_OBJECTS := $(C_OBJECTS) $(DATA_SRC_C_OBJECTS) $(ASM_OBJECTS) $(BANIM_OBJECT) $(MID_OBJECTS) |
 | `linker-placement-coupling` | P1 | `Makefile:98` | `build-tooling` | `linker-migrate` | OBJECTS_LST := objects.lst |
 | `linker-placement-coupling` | P1 | `Makefile:134` | `build-tooling` | `linker-migrate` | $(RELOCS_ELF): $(ALL_OBJECTS) $(OBJECTS_LST) $(LDSCRIPT) |
