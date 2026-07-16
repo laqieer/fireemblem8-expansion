@@ -19,9 +19,9 @@ struct SubtitleHelpProc {
 
 void PutSubtitleHelpText(struct SubtitleHelpProc * proc, int y);
 void InitSubtitleHelpText(struct SubtitleHelpProc * proc);
-void SubtitleHelpDarkenerOnHBlank();
-void SubtitleHelpDarkener_Init();
-void SubtitleHelpDarkener_FadeIn();
+void SubtitleHelpDarkenerOnHBlank(void);
+void SubtitleHelpDarkener_Init(ProcPtr proc);
+void SubtitleHelpDarkener_FadeIn(ProcPtr proc);
 void SubtitleHelpDarkener_FadeOut(struct SubtitleHelpProc * proc);
 void SubtitleHelp_Init(struct SubtitleHelpProc * proc);
 void SubtitleHelp_OnEnd(void);

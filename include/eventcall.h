@@ -5,6 +5,7 @@
 #include "event.h"
 #include "uimenu.h"
 #include "bmtrap.h"
+#include "muctrl.h"
 
 struct UnkProc80855A0 {
     PROC_HEADER;
@@ -137,13 +138,13 @@ void DrawEventMapAnimMaskfx(int, int);
 // ??? EventMapAnimBanner_FlashInLoop(???);
 // ??? EventMapAnimBanner_FlashOutLoop(???);
 // ??? EventMapAnimBanner_HoldLoop(???);
-void HandleCh5xUnits_Start();
-void HandleCh5xUnits_End();
+void HandleCh5xUnits_Start(struct EventEngineProc * proc);
+void HandleCh5xUnits_End(struct EventEngineProc * proc);
 void CallRouteSplitMenu(ProcPtr proc);
 int MenuCommand_DrawRouteSplit(struct MenuProc* menu, struct MenuItemProc* menu_item);
 u8 Command_EirikaMode(struct MenuProc* menu, struct MenuItemProc* menu_item);
 u8 Command_EphraimMode(struct MenuProc* menu, struct MenuItemProc* menu_item);
-void AutolevelSecondaryLord();
+void AutolevelSecondaryLord(struct EventEngineProc * proc);
 
 extern u8 gUdefCnt;
 extern struct UnitDefinition gUdefs[];

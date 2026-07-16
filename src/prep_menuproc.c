@@ -30,7 +30,7 @@ s8 HasConvoyAccess_(void)
     return HasConvoyAccess();
 }
 
-void TraineePromo_ResetScreenEffect()
+void TraineePromo_ResetScreenEffect(struct Proc08A184B4 * proc)
 {
     EndCgText();
     ResetDialogueScreen();
@@ -72,7 +72,7 @@ void IsGameLockLevelReserved(struct Proc08A184B4 * proc)
         Proc_Break(proc);
 }
 
-void NullExpForChar100AndResetScreen()
+void NullExpForChar100AndResetScreen(struct Proc08A184B4 * proc)
 {
     struct Unit * unit = GetUnitFromCharId(0x100);
     if (unit)
@@ -105,7 +105,7 @@ void FadeOutPrepBgm()
     ChangeBgm(SONG_NONE, 0x100, 0, 0x20, NULL);
 }
 
-void NewPrepScreenTraineePromotionManager()
+void NewPrepScreenTraineePromotionManager(ProcPtr proc)
 {
     Proc_Start(ProcScr_PrepTraineePromo, PROC_TREE_3);
 }
@@ -737,7 +737,7 @@ void ResetPrepMenuScreen(void)
     }
 }
 
-int PrepScreenMenuExists(void)
+int PrepScreenMenuExists(ProcPtr parent)
 {
     struct ProcPrepMenu * proc = Proc_Find(ProcScr_PrepMenu);
 
@@ -763,7 +763,7 @@ void ShowPrepScreenMenuActiveHand(void)
         Proc_Goto(proc, 0);
 }
 
-void EnablePrepScreenMenu(void)
+void EnablePrepScreenMenu(ProcPtr parent)
 {
     struct ProcPrepMenu * proc = Proc_Find(ProcScr_PrepMenu);
 

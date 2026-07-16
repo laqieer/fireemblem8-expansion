@@ -12,7 +12,7 @@
 #include "constants/songs.h"
 #include "constants/chapters.h"
 
-void HandleCh5xUnits_Start(void)
+void HandleCh5xUnits_Start(struct EventEngineProc * proc)
 {
     int i;
     for (i = FACTION_BLUE + 1; i < FACTION_GREEN; i++) {
@@ -134,7 +134,7 @@ CONST_DATA EventListScr EventScr_Ch5x_BeginningScene[] = {
     ENDA
 };
 
-void HandleCh5xUnits_End(void)
+void HandleCh5xUnits_End(struct EventEngineProc * proc)
 {
     int i;
     for (i = FACTION_BLUE + 1; i < FACTION_GREEN; i++) {

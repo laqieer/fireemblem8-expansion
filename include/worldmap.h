@@ -1334,7 +1334,7 @@ ProcPtr StartGMapBaseMenu(int, ProcPtr);
 struct GMapBaseMenuProc * FindGMapBaseMenu(void);
 // ??? IsGMapBaseMenuActive(???);
 int GetGMapBaseMenuKind(void);
-int GetGMapBaseMenuPid();
+int GetGMapBaseMenuPid(void);
 void SetGMapBaseMenuPid(int);
 
 // extern ??? gFont_0

@@ -35,10 +35,10 @@ void MakeBgmOverridePersist(void);
 void StartBgmVolumeChange(int volumeInit, int volumeEnd, int duration, ProcPtr parent);
 // ??? MusicVc_OnLoop(???);
 // ??? DelaySong_OnLoop(???);
-void StartSongDelayed();
-void PlaySong();
-void Sound_SetDefaultMaxNumChannels();
-void Sound_SetMaxNumChannels();
+void StartSongDelayed(int songId, int delay, struct MusicPlayerInfo * player);
+void PlaySong(int songId, struct MusicPlayerInfo * player);
+void Sound_SetDefaultMaxNumChannels(void);
+void Sound_SetMaxNumChannels(int maxchn);
 void Sound_SetupMaxChannelsForSong(int songId);
 int IsMusicProc2Running(void);
 // ??? ChangeBgm_FadeVolume(???);
@@ -46,7 +46,7 @@ int IsMusicProc2Running(void);
 void ChangeBgm(int songId, int vc_init_volume, int vc_end_volume, int duration, ProcPtr parent);
 s8 MusicProc4Exists(void);
 // ??? Sound_ForceChangeBgm(???);
-void DeleteAll6CWaitMusicRelated();
+void DeleteAll6CWaitMusicRelated(void);
 void Sound_StopBgmImmediate(void);
 
 #define PlaySoundEffect(id) \

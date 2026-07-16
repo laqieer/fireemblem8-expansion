@@ -1,5 +1,7 @@
 #include "global.h"
 
+#include <string.h>
+
 #include "bmlib.h"
 #include "sram-layout.h"
 #include "bmdifficulty.h"

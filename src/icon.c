@@ -29,7 +29,7 @@ void LoadIconPalette(u32 Index, u32 Dest)
     ApplyPalette(item_icon_palette[Index], Dest);
 }
 
-int GetNextFreeIcon() // Unused
+int GetNextFreeIcon(void) // Unused
 { 
     int retVal = 0;
     int i;

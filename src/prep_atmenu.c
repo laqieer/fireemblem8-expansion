@@ -101,7 +101,7 @@ void PrepMenuDescOnParse(struct ProcPrepMenuDesc * proc)
     ParsePrepMenuDescTexts(proc->msg);
 }
 
-void PrepMenuDescOnDraw()
+void PrepMenuDescOnDraw(struct ProcPrepMenuDesc * proc)
 {
     DrawPrepMenuDescTexts();
 }
@@ -470,7 +470,7 @@ void AtMenu_EnableDisplay()
     SetDispEnable(1, 1, 1, 1, 1);
 }
 
-void AtMenu_LockGame()
+void AtMenu_LockGame(ProcPtr proc)
 {
     if (!CheckInLinkArena()) {
         LockGame();
@@ -478,7 +478,7 @@ void AtMenu_LockGame()
     }
 }
 
-void AtMenu_UnlockGame()
+void AtMenu_UnlockGame(ProcPtr proc)
 {
     if (!CheckInLinkArena()) {
         BMapDispResume();
@@ -491,7 +491,10 @@ void StartPrepAtMenu()
     Proc_Start(ProcScr_AtMenu, PROC_TREE_3);
 }
 
-void StartPrepAtMenuWithConfig()
+void StartPrepAtMenuFromProc(ProcPtr proc)
+    __attribute__((alias("StartPrepAtMenu")));
+
+void StartPrepAtMenuWithConfig(ProcPtr proc)
 {
     Proc_Start(ProcScr_AtMenu, PROC_TREE_3);
     RemoveSomeUnitItems();

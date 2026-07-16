@@ -605,15 +605,15 @@ void WriteMultiArenaSaveRankings(struct MultiArenaRankingEnt const *src);
 void ReadMultiArenaSaveRankings(struct MultiArenaRankingEnt *dst);
 void WriteMultiArenaSaveConfig(void const * config_src);
 void ReadMultiArenaSaveConfig(void * config_dst);
-bool IsMultiArenaSaveReady();
-void LoadAndVerfySuspendSave();
+bool IsMultiArenaSaveReady(void);
+void LoadAndVerfySuspendSave(void);
 // ??? ReadExtraMapSaveHead(???);
 void const * GetExtraMapMapReadAddr(void);
-unsigned  GetExtraMapMapSize(void);
+u32 GetExtraMapMapSize(void);
 // ??? GetExtraMapInfoReadAddr(???);
 // ??? GetExtraMapInfoSize(???);
 // ??? ExtraMapChecksum(???);
-bool IsExtraMapAvailable();
+bool IsExtraMapAvailable(void);
 void ReadExtraMapInfo(void);
 // ??? GetExtraMapEmptyString(???);
 // ??? sub_80A6D24(???);
@@ -644,6 +644,6 @@ void LoadGMMonsterRnState(void*);
 // ??? CopyLinkArenaStruct2(???);
 // ??? CopySoundRoomSaveData(???);
 // ??? CopyGameRankSaveData(???);
-void EraseInvalidSaveData();
+void EraseInvalidSaveData(void);
 
 #endif /* BMSAVE_H */

@@ -72,7 +72,7 @@ u8 DebugMenu_GNightEffect(struct MenuProc*, struct MenuItemProc*);
 int DebugContinueMenuInit(struct MenuProc*);
 int DebugContinueMenuEnd(struct MenuProc*);
 u8 Debug_GetChapterId(int menuItemNumber);
-void Nop_Gamecontrol_0();
+void Nop_Gamecontrol_0(void);
 
 extern u8 gDebugChapterModeIndex;
 

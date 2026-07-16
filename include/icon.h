@@ -6,11 +6,11 @@ struct IconStruct {
     u8 Index;
 };
 
-void ResetIconGraphics_();
-void ResetIconGraphics();
+void ResetIconGraphics_(void);
+void ResetIconGraphics(void);
 void LoadIconPalettes(u32 Dest);
 void LoadIconPalette(u32 Index, u32 Dest);
-int sub_80035EC();
+int GetNextFreeIcon(void);
 u16 GetIconGfxTileIndex(u32 Index);
 int GetIconGfxIndex(int Index);
 u16 GetIconTileIndex(int Index); // NONMATCHING

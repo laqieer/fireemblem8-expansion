@@ -431,9 +431,9 @@ struct ProcAtMenu {
 };
 
 void PrepAtMenu_OnInit(struct ProcAtMenu * proc);
-void ResetPrepMenuDescTexts();
+void ResetPrepMenuDescTexts(void);
 void ParsePrepMenuDescTexts(int msg);
-void DrawPrepMenuDescTexts();
+void DrawPrepMenuDescTexts(void);
 
 struct ProcPrepMenuDesc {
     PROC_HEADER;
@@ -445,7 +445,7 @@ struct ProcPrepMenuDesc {
 
 void PrepMenuDescOnInit(struct ProcPrepMenuDesc * proc);
 void PrepMenuDescOnParse(struct ProcPrepMenuDesc * proc);
-void PrepMenuDescOnDraw();
+void PrepMenuDescOnDraw(struct ProcPrepMenuDesc * proc);
 void StartPrepMenuDesc(int msg, ProcPtr parent);
 void AtMenu_EndScreenElements(struct ProcAtMenu * proc);
 void LoadPrepBannerGfx(int tile, int pal);
@@ -461,13 +461,15 @@ void AtMenu_ResetScreenEffect(struct ProcAtMenu * proc);
 void AtMenu_ResetBmUiEffect(struct ProcAtMenu * proc);
 void AtMenu_StartSubmenu(struct ProcAtMenu * proc);
 void AtMenu_OnSubmenuEnd(struct ProcAtMenu * proc);
-void AtMenu_EnableDisplay();
-void AtMenu_LockGame();
-void AtMenu_UnlockGame();
-void StartPrepAtMenu();
-void StartPrepAtMenuWithConfig();
+void AtMenu_EnableDisplay(void);
+void AtMenu_LockGame(ProcPtr proc);
+void AtMenu_UnlockGame(ProcPtr proc);
+void StartPrepAtMenu(void);
+void StartPrepAtMenuFromProc(ProcPtr proc);
+void StartPrepAtMenuWithConfig(ProcPtr proc);
 s8 HasConvoyAccess_(void);
-void TraineePromo_ResetScreenEffect();
+struct Proc08A184B4;
+void TraineePromo_ResetScreenEffect(struct Proc08A184B4 * proc);
 
 struct Proc08A184B4 {
     PROC_HEADER;
@@ -477,10 +479,10 @@ struct Proc08A184B4 {
 
 void DoPromoteAnimForChar100(struct Proc08A184B4 * proc);
 void IsGameLockLevelReserved(struct Proc08A184B4 *proc);
-void NullExpForChar100AndResetScreen();
+void NullExpForChar100AndResetScreen(struct Proc08A184B4 * proc);
 void IsGameLockLevelReserved(struct Proc08A184B4 *proc);
-void FadeOutPrepBgm();
-void NewPrepScreenTraineePromotionManager();
+void FadeOutPrepBgm(void);
+void NewPrepScreenTraineePromotionManager(ProcPtr proc);
 int PrepScreenTraineePromotionManagerExists(ProcPtr proc);
 int PrepAtMenuExists(ProcPtr proc);
 void PutPrepInformationSprite(int xOam1, int yOam0, u16 oam2);
@@ -523,31 +525,31 @@ void PrepSpriteDraw_OnEnd(struct PrepSpriteDrawProc *proc);
 
 struct Unit * GetUnitFromPrepList(int index);
 void RegisterPrepUnitList(int index, struct Unit *);
-int PrepGetUnitAmount();
+int PrepGetUnitAmount(void);
 void PrepSetUnitAmount(int);
-int PrepGetLatestCharId();
+int PrepGetLatestCharId(void);
 void PrepSetLatestCharId(int);
 s8 IsCharacterForceDeployed(int char_id);
-int CalcForceDeployedUnitCounts();
+int CalcForceDeployedUnitCounts(void);
 s8 SomeLeftoverFunctionThatReturns0(struct Unit *unit);
 s8 IsUnitInCurrentRoster(struct Unit *unit);
 void AtMenu_AddPrepScreenSupportMenuItem(struct ProcAtMenu *proc);
-s8 CanPrepScreenCheckMap();
+s8 CanPrepScreenCheckMap(void);
 void InitPrepScreenMainMenu(struct ProcAtMenu*);
-int GetLatestUnitIndexInPrepListByUId();
-int PrepGetLatestUnitIndex();
-void ReorderPlayerUnitsBasedOnDeployment();
-void SortPlayerUnitsForPrepScreen();
-void RemoveSomeUnitItems();
-void MakePrepUnitList();
+int GetLatestUnitIndexInPrepListByUId(void);
+int PrepGetLatestUnitIndex(void);
+void ReorderPlayerUnitsBasedOnDeployment(void);
+void SortPlayerUnitsForPrepScreen(void);
+void RemoveSomeUnitItems(void);
+void MakePrepUnitList(void);
 int UnitGetIndexInPrepList(int pid);
-void PrepUpdateSMS();
+void PrepUpdateSMS(void);
 int PrepGetDeployedUnitAmt(void);
 void PrepAutoCapDeployUnits(struct ProcAtMenu* proc);
-void RestartMuralBackground();
+void RestartMuralBackground(void);
 void EndMuralBackground_(void);
-void PrepSpriteDraw_BlinkButtonStart();
-void PrepSpriteDraw_BlinkButtonB();
+void PrepSpriteDraw_BlinkButtonStart(void);
+void PrepSpriteDraw_BlinkButtonB(void);
 ProcPtr StartPrepScreenSpriteDraw(ProcPtr parent);
 void EndPrepScreenSpriteDraw(void);
 // ??? PrepDebugDrawWindowPosition(???);
@@ -580,16 +582,16 @@ void SetPrepScreenMenuOnStartPress(const void*);
 void SetPrepScreenMenuOnEnd(const void * func);
 void SetPrepScreenMenuItem(int index, const void * func, int color, int msg, int msg_rtext);
 void SetPrepScreenMenuSelectedItem(int);
-int GetActivePrepMenuItemIndex();
+int GetActivePrepMenuItemIndex(void);
 void DrawPrepScreenMenuFrameAt(int x, int y);
 void SetPrepScreenMenuPosition(int x, int y);
 int GetPrepMenuItemAmt(void);
-void EndPrepScreenMenu();
-void ResetPrepMenuScreen();
-int PrepScreenMenuExists();
-void ShowPrepScreenMenuFrozenHand();
-void ShowPrepScreenMenuActiveHand();
-void EnablePrepScreenMenu();
+void EndPrepScreenMenu(void);
+void ResetPrepMenuScreen(void);
+int PrepScreenMenuExists(ProcPtr proc);
+void ShowPrepScreenMenuFrozenHand(void);
+void ShowPrepScreenMenuActiveHand(void);
+void EnablePrepScreenMenu(ProcPtr proc);
 
 struct MenuScrollBarProc {
     /* 00 */ PROC_HEADER;
@@ -813,7 +815,7 @@ void DrawPrepScreenItemUseStatLabels(struct Unit *unit);
 void DrawPrepScreenItemUseStatBars(struct Unit *unit, int mask);
 void DrawPrepScreenItemUseStatValues(struct Unit *unit);
 void DrawPrepScreenItemUseDesc(struct Unit *unit, int slot);
-void PrepItemUseParallel_UpdateSMS();
+void PrepItemUseParallel_UpdateSMS(struct ProcPrepItemUse * proc);
 void PrepItemUse_OnInit(struct ProcPrepItemUse * proc);
 void PrepItemUse_InitDisplay(struct ProcPrepItemUse * proc);
 void PrepItemUse_CtrlLoop(struct ProcPrepItemUse * proc);

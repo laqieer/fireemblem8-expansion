@@ -69,14 +69,14 @@ void GameControl_RememberChapterId(struct GameCtrlProc *);
 void GameControl_RestoreChapterId(struct GameCtrlProc *);
 void _SetGameEndFlag(ProcPtr);
 void StartGame(void);
-struct GameCtrlProc * GetGameControl();
+struct GameCtrlProc * GetGameControl(void);
 void SetNextGameActionId(int id);
 void SetNextChapterId(int id);
-s8 HasNextChapter();
+s8 HasNextChapter(void);
 void RestartGameAndGoto8(void);
 void RestartGameAndGoto12(void);
 void RestartGameAndGoto7(void);
-void Nop_Gamecontrol_0();
+void Nop_Gamecontrol_0(void);
 void GameControl_EnableSoundEffects(ProcPtr);
 void GameControl_ResetPlayConfig(ProcPtr proc);
 

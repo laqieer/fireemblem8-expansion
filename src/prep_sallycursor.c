@@ -82,7 +82,7 @@ struct ProcCmd CONST_DATA gProcScr_SALLYCURSOR[] =
     PROC_WHILE(PrepScreenTraineePromotionManagerExists),
 
 PROC_LABEL(PL_SALLYCURSOR_START_ATMENU),
-    PROC_CALL(StartPrepAtMenu),
+    PROC_CALL(StartPrepAtMenuFromProc),
     PROC_WHILE(PrepAtMenuExists),
     PROC_YIELD,
     PROC_CALL(InitPrepScreenCursorPosition),
@@ -93,7 +93,7 @@ PROC_LABEL(PL_SALLYCURSOR_RETURN_TO_ATMENU),
     PROC_CALL(StartMidFadeToBlack),
     PROC_REPEAT(WaitForFade),
 
-    PROC_CALL(StartPrepAtMenu),
+    PROC_CALL(StartPrepAtMenuFromProc),
     PROC_WHILE(PrepAtMenuExists),
     PROC_YIELD,
 

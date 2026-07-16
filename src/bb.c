@@ -31,7 +31,7 @@ void InitSubtitleHelpText(struct SubtitleHelpProc * proc)
 {
     const char * iter;
     int line;
-    int width;
+    u32 width;
 
     iter = proc->string;
 
@@ -111,7 +111,7 @@ void SubtitleHelpDarkenerOnHBlank()
     return;
 }
 
-void SubtitleHelpDarkener_Init()
+void SubtitleHelpDarkener_Init(ProcPtr proc)
 {
     gBmSt.altBlendACa = 8;
     SetPrimaryHBlankHandler(SubtitleHelpDarkenerOnHBlank);
@@ -119,7 +119,7 @@ void SubtitleHelpDarkener_Init()
     return;
 }
 
-void SubtitleHelpDarkener_FadeIn()
+void SubtitleHelpDarkener_FadeIn(ProcPtr proc)
 {
     if (gBmSt.altBlendACa != 0)
         gBmSt.altBlendACa--;

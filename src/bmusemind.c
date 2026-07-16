@@ -31,7 +31,7 @@ s8 CanUnitCrossTerrain(struct Unit* unit, int terrain);
  struct ProcCmd CONST_DATA ProcScr_PostWarpStaffAction[] = {
     PROC_SLEEP(0),
     PROC_CALL_2(PostWarpStaff_ExecTrap),
-    PROC_CALL(PostWarpStaff_RefreshMap),
+    PROC_CALL(PostWarpStaff_RefreshMapFromProc),
 
     PROC_END,
 };
@@ -247,6 +247,9 @@ int PostWarpStaff_RefreshMap() {
 
     // return; // BUG?
 }
+
+void PostWarpStaff_RefreshMapFromProc(ProcPtr proc)
+    __attribute__((alias("PostWarpStaff_RefreshMap")));
 
 void ExecWarpStaff(ProcPtr proc) {
     BattleInitItemEffect(GetUnit(gActionData.subjectIndex),

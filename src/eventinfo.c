@@ -1,5 +1,7 @@
 #include "global.h"
 
+#include <string.h>
+
 #include "event.h"
 #include "bmunit.h"
 #include "chapterdata.h"
