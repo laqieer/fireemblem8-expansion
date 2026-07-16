@@ -41,7 +41,8 @@ class AuditTests(unittest.TestCase):
             for finding in inventory["findings"]
             if finding["category"] == "naked-function"
         ]
-        self.assertEqual(len(naked), 1)
+        self.assertEqual(len(naked), 2)
+        self.assertTrue(any("__attribute__((naked))" in item["evidence"] for item in naked))
         mismatched = [
             finding
             for finding in inventory["findings"]
@@ -70,6 +71,61 @@ class AuditTests(unittest.TestCase):
                 if item["category"] == "raw-rom-address"
             )
         )
+        raw_addresses = [
+            finding
+            for finding in inventory["findings"]
+            if finding["category"] == "raw-rom-address"
+        ]
+        self.assertEqual(len(raw_addresses), 1)
+        self.assertIn("raw_pointer", raw_addresses[0]["evidence"])
+        forced = [
+            finding["evidence"]
+            for finding in inventory["findings"]
+            if finding["category"] == "forced-data-placement"
+        ]
+        self.assertFalse(any("SHOULD_BE_CONST" in item for item in forced))
+        compiler_debt = [
+            finding
+            for finding in inventory["findings"]
+            if finding["category"] == "legacy-compiler-pipeline"
+        ]
+        self.assertFalse(any(item["file"] == "scripts/tool.py" for item in compiler_debt))
+
+    def test_root_aggregation_retains_every_drill_down_id(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = self.copy_fixture(Path(temporary))
+            inventory = audit.scan_repository(
+                root, root / "scripts" / "modernize" / "decisions.json"
+            )
+
+        drill_down = [
+            finding_id
+            for aggregate in inventory["aggregates"]
+            for finding_id in aggregate["finding_ids"]
+        ]
+        self.assertEqual(sorted(drill_down), sorted(item["id"] for item in inventory["findings"]))
+        self.assertEqual(len(drill_down), len(set(drill_down)))
+        packed = next(
+            item
+            for item in inventory["aggregates"]
+            if item["category"] == "layout-sensitive-struct"
+            and item["root_construct"] == "struct Packed"
+        )
+        self.assertGreaterEqual(packed["finding_count"], 2)
+        manifest = next(
+            item
+            for item in inventory["aggregates"]
+            if item["category"] == "linker-placement-coupling"
+            and item["file"] == "ldscript.txt"
+        )
+        self.assertGreaterEqual(manifest["finding_count"], 2)
+        construct = next(
+            item
+            for item in inventory["aggregates"]
+            if item["category"] == "forced-data-placement"
+            and item["root_construct"] == "forced_data"
+        )
+        self.assertEqual(construct["root_kind"], "construct")
 
     def test_output_is_deterministic_relative_and_sorted(self):
         with tempfile.TemporaryDirectory() as temporary:

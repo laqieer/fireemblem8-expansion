@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Iterable
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 DEFAULT_JSON = "reports/modernize/inventory.json"
 DEFAULT_MARKDOWN = "reports/modernize/inventory.md"
 DEFAULT_DECISIONS = "scripts/modernize/decisions.json"
@@ -50,6 +50,9 @@ SUPPRESSION_RULES = [
     "Inspect compiler-facing C only under src/ and include/; vendored host tools are not target ABI blockers.",
     "Ignore C and GNU ARM @ comment ROM literals while retaining literals used by executable or build syntax.",
     "Ignore marker macro definitions for NAKEDFUNC and MISMATCHED_SIGNATURE; report their call sites instead.",
+    "Ignore SHOULD_BE_CONST because it expands to nothing and creates no compiler or placement constraint.",
+    "Treat CP932 as compiler-pipeline debt only when a build recipe couples it to agbcc/CC1; asset and text decoding are data-format concerns.",
+    "Require pointer/address syntax for ROM-range source literals; ordinary fill values and integer data are not addresses.",
     "Report one assembly-boundary finding per tracked .s/.S/.inc file rather than every assembly directive.",
     "Recognize old-style declarations only when a src/include line has declaration shape and an empty parameter list.",
 ]
@@ -76,6 +79,7 @@ REGISTER_RE = re.compile(
 )
 ASM_RE = re.compile(r"\b(?:asm|__asm__)\s*(?:volatile\s*)?\(")
 EMPTY_ASM_RE = re.compile(r"\b(?:asm|__asm__)\s*(?:volatile\s*)?\(\s*\"\"")
+NAKED_ATTR_RE = re.compile(r"__attribute__\s*\(\([^)]*\bnaked\b[^)]*\)\)")
 ROM_LITERAL = r"0x(?:0[89][0-9A-Fa-f]{6}|[89][0-9A-Fa-f]{6})"
 RAW_ROM_RE = re.compile(rf"(?<![0-9A-Za-z_]){ROM_LITERAL}(?![0-9A-Fa-f])")
 BITFIELD_RE = re.compile(r"\b[A-Za-z_]\w*\s*:\s*\d+\s*;")
@@ -89,14 +93,12 @@ OLD_STYLE_RE = re.compile(
     r"(?:\s+|\s*\*+\s*)[A-Za-z_]\w*\s*\(\s*\)\s*(?:;|\{)"
 )
 FORCED_DATA_RE = re.compile(
-    r"\b(?:CONST_DATA|SHOULD_BE_CONST|EWRAM_DATA|IWRAM_DATA|EWRAM_OVERLAY)\b"
+    r"\b(?:CONST_DATA|EWRAM_DATA|IWRAM_DATA|EWRAM_OVERLAY)\b"
     r"|__attribute__\s*\(\([^)]*\bsection\s*\("
     r"|\bSECTION\s*\("
 )
-LEGACY_PIPELINE_RE = re.compile(
-    r"\b(?:old_agbcc|agbcc)\b|CP932|iconv\s+-f\s+UTF-8\s+-t\s+CP932",
-    re.IGNORECASE,
-)
+LEGACY_COMPILER_RE = re.compile(r"\b(?:old_agbcc|agbcc)\b", re.IGNORECASE)
+CP932_RE = re.compile(r"\bCP932\b|iconv\s+-f\s+UTF-8\s+-t\s+CP932", re.IGNORECASE)
 FIXED_BASE_RE = re.compile(
     r"(?:banim|battle.?animation|arm_compressing_linker).*"
     rf"(?:-b|--base|--section-start|-Ttext)?\s*{ROM_LITERAL}",
@@ -107,6 +109,22 @@ LINKER_ABSOLUTE_RE = re.compile(
     r"\bORIGIN\s*=\s*0x[0-9A-Fa-f]+|"
     r"^[A-Za-z_]\w*\s*=\s*0x[0-9A-Fa-f]+)"
 )
+FUNCTION_DECL_RE = re.compile(
+    r"^\s*(?:(?:static|inline|extern|const|volatile|unsigned|signed|NAKEDFUNC)\s+)*"
+    r"(?:struct\s+[A-Za-z_]\w*|[A-Za-z_]\w*)"
+    r"(?:\s+|\s*\*+\s*)([A-Za-z_]\w*)\s*\("
+)
+NON_FUNCTION_NAMES = {
+    "if",
+    "for",
+    "while",
+    "switch",
+    "return",
+    "sizeof",
+    "asm",
+    "__asm__",
+    "__attribute__",
+}
 
 
 def normalize_evidence(line: str, limit: int = 140) -> str:
@@ -277,6 +295,45 @@ def make_finding(category: str, path: str, line: int, evidence: str) -> dict:
     }
 
 
+def is_rom_address_context(path: str, code: str, match: re.Match[str]) -> bool:
+    """Return true only when a ROM-range literal is used as an address."""
+    prefix = code[: match.start()]
+    suffix = code[match.end() :]
+    if Path(path).suffix in ASM_EXTENSIONS:
+        if re.search(r"(?:\.4byte|\.word|\.long)\s*$", prefix, re.IGNORECASE):
+            return True
+        if re.search(r"\bldr\b[^@;]*=\s*$", prefix, re.IGNORECASE):
+            return True
+        assignment = re.search(r"\b([A-Za-z_]\w*)\s*=\s*$", prefix)
+        return bool(
+            assignment
+            and re.search(r"(?:ROM|ADDR|ADDRESS|PTR|BASE|START|END)", assignment.group(1), re.I)
+        )
+
+    # Explicit pointer casts are the strongest source-level signal.
+    if re.search(r"\([^();\n]*\*\s*\)\s*$", prefix):
+        return True
+    # Pointer declarations/assignments without a cast.
+    if re.search(r"\*\s*[A-Za-z_]\w*\s*=\s*$", prefix):
+        return True
+    assignment = re.search(r"\b([A-Za-z_]\w*)\s*=\s*$", prefix)
+    if assignment and re.search(
+        r"(?:addr|address|pointer|ptr|rom|base|start|end)", assignment.group(1), re.I
+    ):
+        return True
+    # A literal followed by a pointer cast is uncommon but valid C.
+    return bool(re.match(r"\s*(?:[uUlL]*\s*)?\)", suffix) and "*" in prefix.rsplit("(", 1)[-1])
+
+
+def compile_encoding_context(path: str, index: int, lines: list[str]) -> bool:
+    """CP932 is debt only when the surrounding build recipe feeds a compiler."""
+    suffix = Path(path).suffix
+    if Path(path).name not in BUILD_BASENAMES and suffix not in {".mk", ".sh", ".yml", ".yaml"}:
+        return False
+    nearby = "\n".join(lines[max(0, index - 3) : min(len(lines), index + 2)])
+    return bool(re.search(r"\b(?:CC1|agbcc|old_agbcc|compiler)\b", nearby, re.IGNORECASE))
+
+
 def scan_c_file(path: str, lines: list[str]) -> list[dict]:
     findings: list[dict] = []
     code_lines = strip_c_comments(lines)
@@ -293,7 +350,10 @@ def scan_c_file(path: str, lines: list[str]) -> list[dict]:
             category = "inline-asm-barrier" if EMPTY_ASM_RE.search(statement) else "inline-asm"
             findings.append(make_finding(category, path, index, original))
 
-        if "NAKEDFUNC" in code and not code.lstrip().startswith("#define"):
+        if (
+            ("NAKEDFUNC" in code or NAKED_ATTR_RE.search(code))
+            and not code.lstrip().startswith("#define")
+        ):
             findings.append(make_finding("naked-function", path, index, original))
 
         if "MISMATCHED_SIGNATURE" in code and not code.lstrip().startswith("#define"):
@@ -317,7 +377,8 @@ def scan_c_file(path: str, lines: list[str]) -> list[dict]:
             findings.append(make_finding("old-style-function-declaration", path, index, original))
 
         for match in RAW_ROM_RE.finditer(code):
-            findings.append(make_finding("raw-rom-address", path, index, match.group(0)))
+            if is_rom_address_context(path, code, match):
+                findings.append(make_finding("raw-rom-address", path, index, original))
     return findings
 
 
@@ -329,7 +390,8 @@ def scan_source_file(path: str, lines: list[str]) -> list[dict]:
         for index, original in enumerate(lines, 1):
             code = raw_code_for_line(path, original)
             for match in RAW_ROM_RE.finditer(code):
-                findings.append(make_finding("raw-rom-address", path, index, match.group(0)))
+                if is_rom_address_context(path, code, match):
+                    findings.append(make_finding("raw-rom-address", path, index, original))
 
     if Path(path).suffix in ASM_EXTENSIONS:
         first_line = next((index for index, value in enumerate(lines, 1) if value.strip()), 1)
@@ -351,7 +413,9 @@ def scan_build_file(path: str, lines: list[str]) -> list[dict]:
         code = raw_code_for_line(path, original)
         if not code.strip():
             continue
-        if LEGACY_PIPELINE_RE.search(code):
+        if LEGACY_COMPILER_RE.search(code) or (
+            CP932_RE.search(code) and compile_encoding_context(path, index, lines)
+        ):
             findings.append(make_finding("legacy-compiler-pipeline", path, index, original))
         if re.search(r"^\s*#\s*(?:if|ifdef|ifndef|elif)\b.*\bMODERN\b", code):
             findings.append(make_finding("modern-conditional", path, index, original))
@@ -397,6 +461,184 @@ def scan_linker_file(path: str, lines: list[str]) -> list[dict]:
     return findings
 
 
+def struct_contexts(lines: list[str]) -> dict[int, tuple[str, str, int]]:
+    """Map lines in named struct/union definitions to their root construct."""
+    code_lines = strip_c_comments(lines)
+    contexts: dict[int, tuple[str, str, int]] = {}
+    stack: list[tuple[int, str, str, int]] = []
+    pending: tuple[str, str, int] | None = None
+    depth = 0
+
+    for index, code in enumerate(code_lines, 1):
+        if stack:
+            _, kind, name, start = stack[-1]
+            contexts[index] = (kind, name, start)
+
+        inline = re.search(
+            r"^\s*(?:typedef\s+)?(struct|union)\s*([A-Za-z_]\w*)?\s*\{",
+            code,
+        )
+        declaration = re.match(
+            r"^\s*(?:typedef\s+)?(struct|union)(?:\s+([A-Za-z_]\w*))?\s*$",
+            code,
+        )
+        opens = code.count("{")
+        closes = code.count("}")
+
+        if inline:
+            kind = inline.group(1)
+            name = inline.group(2) or f"anonymous@{index}"
+            stack.append((depth + 1, kind, name, index))
+            contexts[index] = (kind, name, index)
+            pending = None
+        elif declaration:
+            kind = declaration.group(1)
+            name = declaration.group(2) or f"anonymous@{index}"
+            pending = (kind, name, index)
+        elif pending and opens:
+            kind, name, start = pending
+            stack.append((depth + 1, kind, name, start))
+            contexts[index] = (kind, name, start)
+            pending = None
+        elif code.strip() and pending and not code.lstrip().startswith(("#", "{")):
+            pending = None
+
+        depth += opens - closes
+        while stack and depth < stack[-1][0]:
+            stack.pop()
+    return contexts
+
+
+def macro_contexts(lines: list[str]) -> dict[int, tuple[str, int]]:
+    """Map continued preprocessor macro bodies to their defining macro."""
+    contexts: dict[int, tuple[str, int]] = {}
+    current: tuple[str, int] | None = None
+    for index, line in enumerate(lines, 1):
+        match = re.match(r"^\s*#\s*define\s+([A-Za-z_]\w*)", line)
+        if match:
+            current = (match.group(1), index)
+        if current:
+            contexts[index] = current
+        if current and not line.rstrip().endswith("\\"):
+            current = None
+    return contexts
+
+
+def declaration_name(code: str) -> str | None:
+    """Best-effort symbol name for a declaration containing a marker."""
+    cleaned = re.sub(
+        r"\b(?:CONST_DATA|EWRAM_DATA|IWRAM_DATA|EWRAM_OVERLAY)\b(?:\s*\([^)]*\))?",
+        " ",
+        code,
+    )
+    cleaned = re.sub(r"__attribute__\s*\(\(.*?\)\)", " ", cleaned)
+    head = cleaned.split("=", 1)[0].split(";", 1)[0]
+    head = re.sub(r"\[[^\]]*\]", "", head)
+    names = re.findall(r"\b[A-Za-z_]\w*\b", head)
+    ignored = {
+        "extern",
+        "static",
+        "const",
+        "volatile",
+        "unsigned",
+        "signed",
+        "struct",
+        "union",
+        "enum",
+        "void",
+        "char",
+        "short",
+        "int",
+        "long",
+    }
+    candidates = [name for name in names if name not in ignored]
+    return candidates[-1] if candidates else None
+
+
+def nearest_function(code_lines: list[str], line: int) -> tuple[str, int] | None:
+    """Find a nearby declaration-shaped function root, avoiding call sites."""
+    # Attributes precede their function, so first inspect a small forward window.
+    for index in range(line - 1, min(len(code_lines), line + 8)):
+        match = FUNCTION_DECL_RE.match(code_lines[index])
+        if match and match.group(1) not in NON_FUNCTION_NAMES:
+            return match.group(1), index + 1
+    for index in range(line - 1, -1, -1):
+        match = FUNCTION_DECL_RE.match(code_lines[index])
+        if match and match.group(1) not in NON_FUNCTION_NAMES:
+            return match.group(1), index + 1
+    return None
+
+
+def root_for_finding(
+    finding: dict,
+    lines: list[str],
+    code_lines: list[str],
+    struct_map: dict[int, tuple[str, str, int]],
+    macro_map: dict[int, tuple[str, int]],
+) -> tuple[str, str, int]:
+    category = finding["detected_category"]
+    path = finding["file"]
+    line = finding["line"]
+    code = code_lines[line - 1] if 0 < line <= len(code_lines) else ""
+
+    if category == "layout-sensitive-struct":
+        context = struct_map.get(line)
+        if context:
+            kind, name, start = context
+            return "struct", f"{kind} {name}", start
+        macro = macro_map.get(line)
+        if macro:
+            return "construct", f"macro {macro[0]}", macro[1]
+    if category == "linker-placement-coupling":
+        return "manifest", path, 1
+    if category == "assembly-boundary":
+        return "manifest", path, line
+    if category == "forced-data-placement":
+        declaration = "\n".join(code_lines[line - 1 : min(len(code_lines), line + 4)])
+        name = declaration_name(declaration)
+        if name:
+            return "construct", name, line
+    if category == "mismatched-signature":
+        match = re.search(r"MISMATCHED_SIGNATURE\s*\(\s*([A-Za-z_]\w*)", code)
+        if match:
+            return "construct", match.group(1), line
+    if category == "old-style-function-declaration":
+        match = FUNCTION_DECL_RE.match(code)
+        if match:
+            return "construct", match.group(1), line
+    if category == "modern-conditional":
+        return "construct", "MODERN conditional", line
+    if category == "legacy-compiler-pipeline":
+        return "construct", f"compiler pipeline in {path}", 1
+    if category == "fixed-rom-base":
+        name = "battle-animation ROM base" if "banim" in finding["evidence"].lower() else "ROM base"
+        return "construct", name, line
+
+    function = nearest_function(code_lines, line) if Path(path).suffix in C_EXTENSIONS else None
+    if function:
+        return "construct", function[0], function[1]
+    return "construct", path, line
+
+
+def annotate_roots(findings: list[dict], file_lines: dict[str, list[str]]) -> None:
+    by_file: dict[str, list[dict]] = {}
+    for finding in findings:
+        by_file.setdefault(finding["file"], []).append(finding)
+    for path, members in by_file.items():
+        lines = file_lines.get(path, [])
+        is_c = Path(path).suffix in C_EXTENSIONS
+        code_lines = strip_c_comments(lines) if is_c else lines
+        struct_map = struct_contexts(lines) if is_c else {}
+        macro_map = macro_contexts(lines) if is_c else {}
+        for finding in members:
+            kind, construct, line = root_for_finding(
+                finding, lines, code_lines, struct_map, macro_map
+            )
+            finding["root_kind"] = kind
+            finding["root_construct"] = construct
+            finding["root_line"] = line
+
+
 def assign_ids(findings: list[dict]) -> None:
     occurrences: Counter[tuple[str, str, str]] = Counter()
     for finding in findings:
@@ -409,6 +651,68 @@ def assign_ids(findings: list[dict]) -> None:
         material = "\0".join((*key, str(occurrences[key])))
         digest = hashlib.sha256(material.encode("utf-8")).hexdigest()[:12]
         finding["id"] = f"{finding['detected_category']}:{digest}"
+
+
+def build_aggregates(findings: list[dict]) -> list[dict]:
+    groups: dict[tuple, list[dict]] = {}
+    for finding in findings:
+        key = (
+            finding["category"],
+            finding["root_kind"],
+            finding["root_construct"],
+            finding["file"],
+            finding["root_line"],
+            finding["subsystem"],
+            finding["priority"],
+            finding["severity"],
+            finding["disposition"],
+        )
+        groups.setdefault(key, []).append(finding)
+
+    aggregates: list[dict] = []
+    for key, members in groups.items():
+        (
+            category,
+            root_kind,
+            root_construct,
+            path,
+            root_line,
+            subsystem,
+            priority,
+            severity,
+            disposition,
+        ) = key
+        material = "\0".join(
+            (category, root_kind, root_construct, path, str(root_line))
+        )
+        aggregate_id = "root:" + hashlib.sha256(material.encode("utf-8")).hexdigest()[:12]
+        statuses = Counter(member["status"] for member in members)
+        aggregates.append(
+            {
+                "id": aggregate_id,
+                "category": category,
+                "severity": severity,
+                "priority": priority,
+                "file": path,
+                "line": root_line,
+                "root_kind": root_kind,
+                "root_construct": root_construct,
+                "subsystem": subsystem,
+                "disposition": disposition,
+                "finding_count": len(members),
+                "finding_ids": sorted(member["id"] for member in members),
+                "by_status": dict(sorted(statuses.items())),
+            }
+        )
+    return sorted(
+        aggregates,
+        key=lambda item: (
+            item["category"],
+            item["file"],
+            item["line"],
+            item["root_construct"],
+        ),
+    )
 
 
 def load_decisions(path: Path) -> list[dict]:
@@ -454,6 +758,7 @@ def apply_decisions(findings: list[dict], decisions: list[dict]) -> list[dict]:
 
 def scan_repository(root: Path, decisions_path: Path | None = None) -> dict:
     findings: list[dict] = []
+    file_lines: dict[str, list[str]] = {}
     for path in tracked_files(root):
         if not (is_source(path) or is_build_file(path) or is_linker_file(path)):
             continue
@@ -461,6 +766,7 @@ def scan_repository(root: Path, decisions_path: Path | None = None) -> dict:
             lines = (root / path).read_text(encoding="utf-8").splitlines()
         except UnicodeDecodeError:
             continue
+        file_lines[path] = lines
         if is_source(path):
             findings.extend(scan_source_file(path, lines))
         if is_build_file(path):
@@ -486,14 +792,17 @@ def scan_repository(root: Path, decisions_path: Path | None = None) -> dict:
             item["evidence"],
         ),
     )
+    annotate_roots(findings, file_lines)
     assign_ids(findings)
     decisions = load_decisions(decisions_path) if decisions_path else []
     ledger = apply_decisions(findings, decisions)
+    aggregates = build_aggregates(findings)
 
     by_category = Counter(item["category"] for item in findings)
     by_subsystem = Counter(item["subsystem"] for item in findings)
     by_priority = Counter(item["priority"] for item in findings)
     by_status = Counter(item["status"] for item in findings)
+    by_root_kind = Counter(item["root_kind"] for item in aggregates)
     return {
         "schema_version": SCHEMA_VERSION,
         "summary": {
@@ -502,8 +811,11 @@ def scan_repository(root: Path, decisions_path: Path | None = None) -> dict:
             "by_subsystem": dict(sorted(by_subsystem.items())),
             "by_priority": dict(sorted(by_priority.items())),
             "by_status": dict(sorted(by_status.items())),
+            "aggregate_total": len(aggregates),
+            "by_root_kind": dict(sorted(by_root_kind.items())),
         },
         "findings": findings,
+        "aggregates": aggregates,
         "decision_ledger": ledger,
         "suppression_rules": SUPPRESSION_RULES,
     }
@@ -533,6 +845,45 @@ def markdown_text(inventory: dict) -> str:
     lines.extend(f"| `{name}` | {count} |" for name, count in summary["by_subsystem"].items())
     lines.extend(["", "## Migration priority", "", "| Priority | Count |", "|---|---:|"])
     lines.extend(f"| {name} | {count} |" for name, count in summary["by_priority"].items())
+    lines.extend(
+        [
+            "",
+            "## Root aggregation",
+            "",
+            f"**Actionable roots:** {summary['aggregate_total']}. "
+            "Every aggregate retains its complete `finding_ids` drill-down list in JSON.",
+            "",
+            "| Root kind | Count |",
+            "|---|---:|",
+        ]
+    )
+    lines.extend(f"| `{name}` | {count} |" for name, count in summary["by_root_kind"].items())
+    lines.extend(
+        [
+            "",
+            "### Root migration queue",
+            "",
+            "Up to three largest roots per category.",
+            "",
+            "| Category | Root | Location | Findings | Disposition |",
+            "|---|---|---|---:|---|",
+        ]
+    )
+    aggregate_categories: dict[str, list[dict]] = {}
+    for aggregate in inventory["aggregates"]:
+        aggregate_categories.setdefault(aggregate["category"], []).append(aggregate)
+    for category in sorted(aggregate_categories):
+        roots = sorted(
+            aggregate_categories[category],
+            key=lambda item: (-item["finding_count"], item["file"], item["line"], item["id"]),
+        )
+        for aggregate in roots[:3]:
+            root = aggregate["root_construct"].replace("|", "\\|").replace("`", "\\`")
+            lines.append(
+                f"| `{category}` | `{aggregate['root_kind']}` {root} | "
+                f"`{aggregate['file']}:{aggregate['line']}` | "
+                f"{aggregate['finding_count']} | `{aggregate['disposition']}` |"
+            )
 
     lines.extend(
         [

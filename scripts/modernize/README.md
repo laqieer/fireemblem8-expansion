@@ -35,7 +35,10 @@ The scanner reports these stable categories:
 
 Each JSON finding has an ID, detected/current category, severity, priority,
 repository-relative file and line, evidence, subsystem, status, and recommended
-disposition. No timestamp or absolute path is emitted.
+disposition. It also names a `root_kind`, `root_construct`, and `root_line`.
+Top-level `aggregates` group findings by actionable source construct, struct, or
+manifest and retain every member in `finding_ids`; aggregation never hides or
+replaces the drill-down list. No timestamp or absolute path is emitted.
 
 ## Resolve, retain, or reclassify
 
@@ -69,11 +72,16 @@ Suppressions are narrow and are also recorded in every JSON/Markdown report:
 
 1. The scanner and generated reports are excluded to prevent self-matches.
 2. Target-C ABI checks cover `src/` and `include/`, not vendored host tools.
-3. C comments and GNU ARM `@` comments containing ROM addresses are ignored;
-   executable/build/linker literals are retained.
-4. Marker macro definitions are not counted as marker use sites.
-5. Assembly is represented once per source boundary, not once per directive.
-6. Empty-parameter declarations are reported only for declaration-shaped target
+3. C comments and GNU ARM `@` comments containing ROM addresses are ignored.
+   Source literals require pointer/address syntax, so palette fills and integer
+   layout data do not masquerade as pointers.
+4. Marker macro definitions are not counted as marker use sites; direct
+   `__attribute__((naked))` function sites are counted.
+5. Empty `SHOULD_BE_CONST` annotations are not placement constraints.
+6. CP932 is toolchain debt only in a compiler-coupled build recipe. Generic
+   text/asset decoding remains a data-format concern.
+7. Assembly is represented once per source boundary, not once per directive.
+8. Empty-parameter declarations are reported only for declaration-shaped target
    C lines.
 
 If a new false-positive class appears, add a precise syntactic rule and a
