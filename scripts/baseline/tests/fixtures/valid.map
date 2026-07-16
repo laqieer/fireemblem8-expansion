@@ -1,8 +1,16 @@
+Memory Configuration
+
+Name             Origin             Length             Attributes
+rom              0x08000000         0x02000000         xr
+ewram            0x02000000         0x00040000         rw
+
 Linker script and memory map
 
 ewram_data
                 0x02000000       0x20
 IWRAM           0x03000000       0x10
 ROM             0x08000000       0x40
+
+.debug_str      0x00000000       0x123
 
 OUTPUT(fireemblem8.elf elf32-littlearm)

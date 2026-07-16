@@ -27,10 +27,19 @@ REGIONS = {
 SHT_NOBITS = 8
 SHT_SYMTAB = 2
 SHF_ALLOC = 2
+EM_ARM = 40
 
 
 def sha1_file(path: Path) -> str:
     digest = hashlib.sha1()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
     with path.open("rb") as stream:
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(chunk)
@@ -83,7 +92,7 @@ def c_string(table: bytes, offset: int, label: str) -> str:
         raise BaselineError(f"ELF {label} is not UTF-8") from error
 
 
-def parse_elf(path: Path) -> tuple[dict[str, Any], list[dict[str, int | str]]]:
+def parse_elf(path: Path) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     data = path.read_bytes()
     if len(data) < 52 or data[:4] != b"\x7fELF":
         raise BaselineError("ELF input has an invalid ELF header")
@@ -108,6 +117,8 @@ def parse_elf(path: Path) -> tuple[dict[str, Any], list[dict[str, int | str]]]:
     ) = fields
     if version != 1 or header_size < 52:
         raise BaselineError("ELF input has an unsupported header version")
+    if machine != EM_ARM:
+        raise BaselineError("ELF input is not an ARM ELF")
     if section_count == 0 or section_entry_size < 40:
         raise BaselineError("ELF input has no usable section table")
     if section_names_index >= section_count:
@@ -119,7 +130,7 @@ def parse_elf(path: Path) -> tuple[dict[str, Any], list[dict[str, int | str]]]:
         "section table",
     )
 
-    sections: list[dict[str, int | str]] = []
+    sections: list[dict[str, Any]] = []
     for index in range(section_count):
         offset = section_offset + index * section_entry_size
         values = struct.unpack_from("<IIIIIIIIII", data, offset)
@@ -150,13 +161,23 @@ def parse_elf(path: Path) -> tuple[dict[str, Any], list[dict[str, int | str]]]:
             names, int(section["name_offset"]), "section name"
         )
         if section["type"] != SHT_NOBITS:
-            bounded_slice(
+            section["contents"] = bounded_slice(
                 data,
                 int(section["offset"]),
                 int(section["size"]),
                 f"section {section['name']!r}",
             )
+        else:
+            section["contents"] = b""
 
+    raw_alloc_sections = [
+        section
+        for section in sections
+        if int(section["flags"]) & SHF_ALLOC and int(section["size"]) > 0
+    ]
+    raw_alloc_sections.sort(
+        key=lambda section: (int(section["address"]), str(section["name"]))
+    )
     alloc_sections = [
         {
             "address": int(section["address"]),
@@ -164,10 +185,25 @@ def parse_elf(path: Path) -> tuple[dict[str, Any], list[dict[str, int | str]]]:
             "size_bytes": int(section["size"]),
             "type": "nobits" if section["type"] == SHT_NOBITS else "progbits",
         }
-        for section in sections
-        if int(section["flags"]) & SHF_ALLOC and int(section["size"]) > 0
+        for section in raw_alloc_sections
     ]
-    alloc_sections.sort(key=lambda item: (int(item["address"]), str(item["name"])))
+
+    canonical = hashlib.sha256()
+    canonical.update(b"fe8-elf-alloc-sections-v1\0")
+    for section in raw_alloc_sections:
+        name = str(section["name"]).encode("utf-8")
+        canonical.update(struct.pack("<I", len(name)))
+        canonical.update(name)
+        canonical.update(
+            struct.pack(
+                "<IIII",
+                int(section["type"]),
+                int(section["flags"]),
+                int(section["address"]),
+                int(section["size"]),
+            )
+        )
+        canonical.update(section["contents"])
 
     symbol_counts = {
         "bindings": {"global": 0, "local": 0, "other": 0, "weak": 0},
@@ -230,10 +266,12 @@ def parse_elf(path: Path) -> tuple[dict[str, Any], list[dict[str, int | str]]]:
     return (
         {
             "entry_address": entry,
-            "machine": machine,
+            "identity": {
+                "algorithm": "sha256-alloc-sections-v1",
+                "sha256": canonical.hexdigest(),
+            },
+            "machine": "ARM",
             "sections": alloc_sections,
-            "sha1": hashlib.sha1(data).hexdigest(),
-            "size_bytes": len(data),
             "symbols": symbol_counts,
         },
         sections,
@@ -247,29 +285,55 @@ MAP_SECTION_RE = re.compile(
 )
 
 
+def address_is_in_memory_region(address: int, size: int) -> bool:
+    return any(
+        origin <= address and address + size <= origin + capacity
+        for origin, capacity in REGIONS.values()
+    )
+
+
 def parse_map(path: Path) -> tuple[dict[str, Any], dict[str, dict[str, int]]]:
     try:
         text = path.read_text(encoding="utf-8")
     except UnicodeDecodeError as error:
         raise BaselineError("map input is not UTF-8 text") from error
-    if "Linker script and memory map" not in text:
+    marker = "Linker script and memory map"
+    if marker not in text:
         raise BaselineError("map input lacks a GNU ld memory-map marker")
+    # GNU ld's preceding "Memory Configuration" table uses a deceptively
+    # similar name/address/size layout; only parse the actual output map.
+    output_map = text.split(marker, 1)[1]
     sections: dict[str, dict[str, int]] = {}
-    for match in MAP_SECTION_RE.finditer(text):
+    for match in MAP_SECTION_RE.finditer(output_map):
         name = match.group(1)
+        address = int(match.group(2), 16)
+        size = int(match.group(3), 16)
+        if not address_is_in_memory_region(address, size):
+            continue
         if name in sections:
             raise BaselineError(f"map output section {name!r} is duplicated")
         sections[name] = {
-            "address": int(match.group(2), 16),
-            "size_bytes": int(match.group(3), 16),
+            "address": address,
+            "size_bytes": size,
         }
     if not sections:
         raise BaselineError("map input contains no output sections")
+    canonical = hashlib.sha256()
+    canonical.update(b"gnu-ld-output-sections-v1\0")
+    for name, section in sorted(sections.items()):
+        encoded = name.encode("utf-8")
+        canonical.update(struct.pack("<I", len(encoded)))
+        canonical.update(encoded)
+        canonical.update(
+            struct.pack("<II", section["address"], section["size_bytes"])
+        )
     return (
         {
+            "identity": {
+                "algorithm": "sha256-output-sections-v1",
+                "sha256": canonical.hexdigest(),
+            },
             "output_sections": sections,
-            "sha1": sha1_file(path),
-            "size_bytes": path.stat().st_size,
         },
         sections,
     )
@@ -324,6 +388,11 @@ def command_version(command: list[str], label: str) -> str:
         )
     except OSError as error:
         raise BaselineError(f"cannot execute required tool {label}") from error
+    if process.returncode != 0:
+        raise BaselineError(
+            f"required tool {label} version command failed "
+            f"with exit code {process.returncode}"
+        )
     first_line = process.stdout.splitlines()[0] if process.stdout else ""
     versions = re.findall(r"\b\d+\.\d+(?:\.\d+)*\b", first_line)
     if not versions:
@@ -331,17 +400,32 @@ def command_version(command: list[str], label: str) -> str:
     return versions[-1]
 
 
-def agbcc_version(path: Path, label: str) -> str:
+def agbcc_identity(path: Path, label: str) -> dict[str, str]:
     data = path.read_bytes()
     match = re.search(rb"\b\d+\.\d+-arm-\d+\b", data)
     if not match:
         raise BaselineError(f"cannot find embedded version in {label}")
-    return match.group(0).decode("ascii")
-
-
-def tool_versions(root: Path, prefix: str) -> dict[str, str]:
     return {
-        "agbcc": agbcc_version(root / "tools/agbcc/bin/agbcc", "agbcc"),
+        "sha256": hashlib.sha256(data).hexdigest(),
+        "version": match.group(0).decode("ascii"),
+    }
+
+
+def compiler_identities(root: Path) -> dict[str, dict[str, str]]:
+    identities = {
+        "agbcc": agbcc_identity(root / "tools/agbcc/bin/agbcc", "agbcc"),
+        "old_agbcc": agbcc_identity(
+            root / "tools/agbcc/bin/old_agbcc", "old_agbcc"
+        ),
+    }
+    if identities["agbcc"]["sha256"] == identities["old_agbcc"]["sha256"]:
+        raise BaselineError("agbcc and old_agbcc binaries are identical")
+    return identities
+
+
+def tool_versions(root: Path, prefix: str) -> dict[str, Any]:
+    return {
+        "compilers": compiler_identities(root),
         "arm_binutils_as": command_version([prefix + "as", "--version"], "assembler"),
         "arm_binutils_ld": command_version([prefix + "ld", "--version"], "linker"),
         "arm_binutils_objcopy": command_version(
@@ -351,27 +435,14 @@ def tool_versions(root: Path, prefix: str) -> dict[str, str]:
             [prefix + "strip", "--version"], "strip"
         ),
         "make": command_version(["make", "--version"], "make"),
-        "old_agbcc": agbcc_version(
-            root / "tools/agbcc/bin/old_agbcc", "old_agbcc"
-        ),
         "python": ".".join(str(part) for part in sys.version_info[:3]),
     }
 
 
-def source_commit(root: Path) -> str:
-    command = [
-        "git",
-        "rev-list",
-        "-1",
-        "HEAD",
-        "--",
-        ".",
-        ":(exclude)scripts/baseline/**",
-        ":(exclude)reports/baseline/**",
-    ]
+def git_output(root: Path, arguments: list[str], label: str) -> str:
     try:
-        commit = subprocess.run(
-            command,
+        return subprocess.run(
+            ["git", *arguments],
             cwd=root,
             text=True,
             stdout=subprocess.PIPE,
@@ -379,10 +450,83 @@ def source_commit(root: Path) -> str:
             check=True,
         ).stdout.strip()
     except (OSError, subprocess.CalledProcessError) as error:
-        raise BaselineError("cannot determine source commit from git") from error
+        raise BaselineError(f"cannot determine {label} from git") from error
+
+
+def source_provenance(root: Path) -> dict[str, Any]:
+    report_exclusion = ":(exclude)reports/baseline/**"
+    commit = git_output(
+        root,
+        ["rev-list", "-1", "HEAD", "--", ".", report_exclusion],
+        "source commit",
+    )
     if not re.fullmatch(r"[0-9a-f]{40}", commit):
         raise BaselineError("git returned an invalid source commit")
-    return commit
+    status = git_output(
+        root,
+        [
+            "status",
+            "--porcelain",
+            "--untracked-files=all",
+            "--",
+            ".",
+            report_exclusion,
+        ],
+        "source dirty-tree state",
+    )
+    generator = root / "scripts/baseline/capture.py"
+    ensure_file(generator, "baseline generator")
+    return {
+        "commit": commit,
+        "dirty": bool(status),
+        "generator_sha256": sha256_file(generator),
+    }
+
+
+def verify_checksum(root: Path, rom_path: Path, actual_sha1: str) -> str:
+    checksum_path = root / "checksum.sha1"
+    ensure_file(checksum_path, "checksum.sha1")
+    try:
+        lines = checksum_path.read_text(encoding="ascii").splitlines()
+    except UnicodeDecodeError as error:
+        raise BaselineError("checksum.sha1 is not ASCII text") from error
+    matches: list[str] = []
+    for line in lines:
+        match = re.fullmatch(r"([0-9a-fA-F]{40})[ \t]+[*]?(.+)", line)
+        if match and Path(match.group(2)).name == rom_path.name:
+            matches.append(match.group(1).lower())
+    if len(matches) != 1:
+        raise BaselineError(
+            f"checksum.sha1 must contain exactly one entry for {rom_path.name}"
+        )
+    if matches[0] != actual_sha1:
+        raise BaselineError("ROM SHA-1 does not match checksum.sha1")
+    return matches[0]
+
+
+def verify_rom_elf(
+    rom_path: Path, raw_sections: list[dict[str, Any]]
+) -> None:
+    rom_sections = [
+        section
+        for section in raw_sections
+        if section["name"] == "ROM"
+        and int(section["flags"]) & SHF_ALLOC
+        and int(section["size"]) > 0
+    ]
+    if len(rom_sections) != 1:
+        raise BaselineError("ELF must contain exactly one allocatable ROM section")
+    section = rom_sections[0]
+    if section["type"] == SHT_NOBITS:
+        raise BaselineError("ELF ROM section cannot be NOBITS")
+    if int(section["address"]) != REGIONS["rom"][0]:
+        raise BaselineError("ELF ROM section has an unexpected address")
+    rom = rom_path.read_bytes()
+    contents = section["contents"]
+    if len(rom) < len(contents) or rom[: len(contents)] != contents:
+        raise BaselineError("ROM bytes do not match the ELF ROM section")
+    if any(byte != 0xFF for byte in rom[len(contents) :]):
+        raise BaselineError("ROM bytes after the ELF ROM section are not 0xFF padding")
 
 
 def ensure_file(path: Path, label: str) -> None:
@@ -400,7 +544,9 @@ def capture(
     ):
         ensure_file(path, label)
     rom = parse_rom(rom_path)
+    rom["checksum_sha1"] = verify_checksum(root, rom_path, rom["sha1"])
     elf, raw_sections = parse_elf(elf_path)
+    verify_rom_elf(rom_path, raw_sections)
     map_evidence, map_sections = parse_map(map_path)
 
     for section in raw_sections:
@@ -421,8 +567,8 @@ def capture(
         "map": map_evidence,
         "memory": memory_usage(elf["sections"], rom["size_bytes"]),
         "rom": rom,
-        "schema_version": 1,
-        "source": {"commit": source_commit(root)},
+        "schema_version": 2,
+        "source": source_provenance(root),
         "tools": tool_versions(root, prefix),
     }
 
