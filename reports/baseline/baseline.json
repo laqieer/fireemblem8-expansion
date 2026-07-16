@@ -178,11 +178,11 @@
     "sha1": "c25b145e37456171ada4b0d440bf88a19f4d509f",
     "size_bytes": 16777216
   },
-  "schema_version": 2,
+  "schema_version": 3,
   "source": {
-    "commit": "3128b1459d442a3809eb3f8d8f32227ec0da743e",
+    "commit": "2986566a2bed9d5a5fe6a8565693fbe6587a5a2e",
     "dirty": false,
-    "generator_sha256": "c15ecbfc33559ba8a4e8e6a417ac353161a71422ee1e2f6e43f5f4fd46ac8d77"
+    "generator_sha256": "92dc73c1ae2cfc0b5c83ba1245bc17c6b52fdf8dcbc20694932b8f65d1cc10c3"
   },
   "tools": {
     "arm_binutils_as": "2.42",
@@ -190,12 +190,23 @@
     "arm_binutils_objcopy": "2.42",
     "arm_binutils_strip": "2.42",
     "compilers": {
-      "agbcc": {
-        "sha256": "f22f4912e15a8e99e5d9aca0585dab5de63334e8bd06dd488832a4bf8f94f123",
-        "version": "2.9-arm-000512"
+      "roles": {
+        "agbcc": {
+          "build_recipe": "make -C gcc",
+          "identity_sha256": "599af9acda966669cdae0d93eefa590675be5c07e51c327b61d0a4316254a6b4",
+          "role": "current"
+        },
+        "old_agbcc": {
+          "build_recipe": "make -C gcc old",
+          "identity_sha256": "4d844ad9fadaf06f15b7b9a51d53d8970d59ff276c01870140be05e7e85ba16f",
+          "role": "old"
+        }
       },
-      "old_agbcc": {
-        "sha256": "e0df7faab312ff37a25054b42bb86615a182ce06b13232920c8fd7e00e2175b1",
+      "source": {
+        "content_sha256": "58ba49e751ff8075a0296da4a959261e671019777ed63f15090e9e6829c22758",
+        "dirty": false,
+        "head_tree": "dd8b159e245cc1e01b98a42581101e473ba0743d",
+        "revision": "da598c1d918402c42c0c0d7128ba14567f3175e9",
         "version": "2.9-arm-000512"
       }
     },

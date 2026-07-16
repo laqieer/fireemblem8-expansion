@@ -14,8 +14,8 @@ The manifest records:
   and symbol counts;
 - a canonical GNU ld identity and memory output-section addresses/sizes;
 - ROM, EWRAM, and IWRAM capacities, occupied bytes, and high-water marks; and
-- normalized Python, Make, and ARM binutils versions plus distinct SHA-256
-  fingerprints for the agbcc and old_agbcc binaries.
+- normalized Python, Make, and ARM binutils versions plus path-independent
+  source identities for the current and old agbcc compiler roles.
 
 The ELF identity hashes only named allocatable section metadata and loaded
 bytes. Debug sections are deliberately excluded because they embed build paths;
@@ -33,6 +33,15 @@ Tool versions are normalized to semantic version components, excluding distro,
 host, and absolute-path text. A failed version command is fatal even if it
 prints version-looking text. Project-built tools without version interfaces are
 tied to the recorded source commit.
+
+The agbcc identity never hashes host-native executables. It records the Git
+revision and tree of the source checkout, a canonical SHA-256 over tracked
+changes and non-ignored untracked source, dirty state, and distinct identities
+for the `make -C gcc` current role and `make -C gcc old` legacy role. The
+default checkout is `.deps/agbcc`; use `--agbcc-source PATH` when setup placed
+the exact source used for the installed compilers elsewhere. Capture fails
+rather than falling back to platform-dependent executable bytes when that
+checkout is unavailable.
 
 ## Regenerate
 
@@ -63,5 +72,6 @@ python3 -m unittest discover -s scripts/baseline/tests -v
 
 Capture, including no-build capture, rejects checksum mismatches, ROM/ELF byte
 or padding mismatches, non-ARM and malformed ELF files, ELF/map disagreement,
-compiler fingerprint collisions, failed tool version commands, and malformed
-map input rather than silently reporting untrusted evidence.
+compiler role identity collisions, missing compiler source provenance, failed
+tool version commands, and malformed map input rather than silently reporting
+untrusted evidence.
