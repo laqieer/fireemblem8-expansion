@@ -21,14 +21,29 @@ endif
 
 MODERN_TOOLCHAIN_ROOT ?=
 MODERN_BINUTILS_DIR ?=
-MODERN_NEWLIB_INCLUDE ?=
 
-MODERN_TOOLCHAIN_BIN := $(if $(strip $(MODERN_TOOLCHAIN_ROOT)),$(patsubst %/,%,$(MODERN_TOOLCHAIN_ROOT))/bin/,)
-MODERN_CC ?= $(MODERN_TOOLCHAIN_BIN)$(PREFIX)gcc$(EXE)
-MODERN_OBJDUMP ?= $(PREFIX)objdump$(EXE)
+# Debian/Ubuntu package newlib's target headers here rather than in GCC's
+# built-in search path. An explicitly set (even empty) value always wins.
+ifeq ($(origin MODERN_NEWLIB_INCLUDE),undefined)
+  ifneq ($(wildcard /usr/include/newlib/stdlib.h),)
+    MODERN_NEWLIB_INCLUDE := /usr/include/newlib
+  else
+    MODERN_NEWLIB_INCLUDE :=
+  endif
+endif
 
-MODERN_BINUTILS_FLAG := $(if $(strip $(MODERN_BINUTILS_DIR)),-B$(patsubst %/,%,$(MODERN_BINUTILS_DIR))/,)
-MODERN_NEWLIB_FLAG := $(if $(strip $(MODERN_NEWLIB_INCLUDE)),-isystem $(MODERN_NEWLIB_INCLUDE),)
+ifeq ($(MODERN_TOOLCHAIN_ROOT),)
+  MODERN_CC ?= $(PREFIX)gcc$(EXE)
+  MODERN_OBJDUMP ?= $(PREFIX)objdump$(EXE)
+else
+  MODERN_CC ?= $(MODERN_TOOLCHAIN_ROOT)/bin/$(PREFIX)gcc$(EXE)
+  MODERN_OBJDUMP ?= $(MODERN_TOOLCHAIN_ROOT)/bin/$(PREFIX)objdump$(EXE)
+endif
+
+# Quotes are part of the recipe text after make expansion, preserving spaces.
+# Do not treat user-supplied paths as make word lists.
+MODERN_BINUTILS_FLAG = $(if $(MODERN_BINUTILS_DIR),"-B$(MODERN_BINUTILS_DIR)/")
+MODERN_NEWLIB_FLAG = $(if $(MODERN_NEWLIB_INCLUDE),-isystem "$(MODERN_NEWLIB_INCLUDE)")
 MODERN_DRIVER_FLAGS := $(MODERN_BINUTILS_FLAG) $(MODERN_NEWLIB_FLAG)
 
 MODERN_ARCH_FLAGS := -mcpu=arm7tdmi -mthumb -mthumb-interwork
@@ -154,10 +169,10 @@ expansion-modern-cohort: expansion-modern-toolchain-check $(MODERN_COHORT_OBJECT
 $(MODERN_COHORT_OBJECTS): | expansion-modern-toolchain-check
 
 $(MODERN_OUTPUT_DIR)/%.o: %.c
-	@mkdir -p $(@D)
-	$(MODERN_CC) $(MODERN_CFLAGS) -MMD -MP -MF $(@:.o=.d) -MT $@ -c $< -o $@
+	@mkdir -p "$(@D)"
+	"$(MODERN_CC)" $(MODERN_CFLAGS) -MMD -MP -MF "$(@:.o=.d)" -MQ "$@" -c "$<" -o "$@"
 
 expansion-modern-clean:
-	$(RM) -r $(MODERN_BUILD_ROOT)
+	$(RM) -r "$(MODERN_BUILD_ROOT)"
 
 -include $(wildcard $(MODERN_COHORT_DEPS))

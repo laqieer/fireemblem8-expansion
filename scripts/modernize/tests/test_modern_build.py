@@ -23,7 +23,7 @@ COHORT = (
 
 class ModernBuildTests(unittest.TestCase):
     def make_fixture(self, destination: Path) -> Path:
-        root = destination / "repo"
+        root = destination / "repo with spaces"
         (root / "include").mkdir(parents=True)
         (root / "src").mkdir()
         shutil.copy2(MODERN_MK, root / "modern.mk")
@@ -199,6 +199,89 @@ class ModernBuildTests(unittest.TestCase):
             self.assertFalse(list((root / "src").glob("*.o")))
             self.assertFalse(list((root / "src").glob("*.d")))
             self.assertFalse(list((root / "src").glob("*.s")))
+
+    def test_spaced_toolchain_binutils_newlib_and_direct_cc_paths(self):
+        overrides = self.tool_overrides()
+        if overrides is None:
+            self.skipTest("arm-none-eabi GCC and objdump are not available")
+
+        values = dict(item.split("=", 1) for item in overrides)
+        cc = Path(values["MODERN_CC"])
+        if not cc.is_absolute():
+            resolved_cc = shutil.which(str(cc))
+            self.assertIsNotNone(resolved_cc)
+            cc = Path(resolved_cc)
+
+        newlib_value = values.get("MODERN_NEWLIB_INCLUDE")
+        if not newlib_value and Path("/usr/include/newlib/stdlib.h").is_file():
+            newlib_value = "/usr/include/newlib"
+        if not newlib_value or not Path(newlib_value).is_dir():
+            self.skipTest("a source newlib include directory is not available")
+
+        assembler_command = [str(cc)]
+        binutils_value = values.get("MODERN_BINUTILS_DIR")
+        if binutils_value:
+            assembler_command.append(f"-B{binutils_value}/")
+        assembler_command.append("-print-prog-name=as")
+        assembler_name = subprocess.check_output(
+            assembler_command, text=True
+        ).strip()
+        assembler = Path(assembler_name)
+        if not assembler.is_absolute():
+            resolved_assembler = shutil.which(assembler_name)
+            self.assertIsNotNone(resolved_assembler)
+            assembler = Path(resolved_assembler)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            temporary_path = Path(temporary)
+            root = self.make_fixture(temporary_path)
+            toolchain_root = temporary_path / "toolchain root with spaces"
+            toolchain_bin = toolchain_root / "bin"
+            binutils = temporary_path / "binutils directory with spaces"
+            newlib = temporary_path / "newlib headers with spaces"
+            toolchain_bin.mkdir(parents=True)
+            binutils.mkdir()
+
+            prefix = os.environ.get("PREFIX", "arm-none-eabi-")
+            spaced_cc = toolchain_bin / f"{prefix}gcc"
+            spaced_objdump = toolchain_bin / f"{prefix}objdump"
+            os.symlink(cc.resolve(), spaced_cc)
+            os.symlink(Path(values["MODERN_OBJDUMP"]).resolve(), spaced_objdump)
+            os.symlink(assembler.resolve(), binutils / "as")
+            os.symlink(Path(newlib_value).resolve(), newlib, target_is_directory=True)
+
+            root_check = self.make(
+                root,
+                "expansion-modern-toolchain-check",
+                f"MODERN_TOOLCHAIN_ROOT={toolchain_root}",
+                f"MODERN_BINUTILS_DIR={binutils}",
+                f"MODERN_NEWLIB_INCLUDE={newlib}",
+            )
+            self.assertEqual(root_check.returncode, 0, root_check.stdout)
+
+            cohort = self.make(
+                root,
+                "expansion-modern-cohort",
+                f"MODERN_CC={spaced_cc}",
+                f"MODERN_OBJDUMP={spaced_objdump}",
+                f"MODERN_BINUTILS_DIR={binutils}",
+                f"MODERN_NEWLIB_INCLUDE={newlib}",
+            )
+            self.assertEqual(cohort.returncode, 0, cohort.stdout)
+            output = root / "build" / "expansion-modern" / "debug" / "aapcs"
+            objects = sorted(output.glob("src/*.o"))
+            self.assertEqual(len(objects), 8)
+            self.assertEqual(len(list(output.glob("src/*.d"))), 8)
+            architecture = subprocess.run(
+                [str(spaced_objdump), "-f", *map(str, objects)],
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                check=False,
+            )
+            self.assertEqual(architecture.returncode, 0, architecture.stdout)
+            self.assertEqual(architecture.stdout.count("file format elf32-littlearm"), 8)
+            self.assertEqual(architecture.stdout.count("architecture: armv4t"), 8)
 
 
 if __name__ == "__main__":

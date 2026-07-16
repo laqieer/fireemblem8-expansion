@@ -16,40 +16,46 @@ You can also set FIREEMBLEM8U_ROM to point to the ROM.
 EOF
 }
 
-FORCE_AGBCC_UPDATE=0
-ROM_SOURCE="${FIREEMBLEM8U_ROM:-}"
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --rom)
-      ROM_SOURCE="$2"
-      shift 2
-      ;;
-    --rom=*)
-      ROM_SOURCE="${1#*=}"
-      shift 1
-      ;;
-    --refresh-agbcc)
-      FORCE_AGBCC_UPDATE=1
-      shift 1
-      ;;
-    -h|--help)
-      usage
-      exit 0
-      ;;
-    *)
-      echo "Unknown option: $1" >&2
-      usage
-      exit 1
-      ;;
-  esac
-done
-
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 AGBCC_SRC_DIR="${PROJECT_DIR}/.deps/agbcc"
 AGBCC_INSTALL_DIR="${PROJECT_DIR}/tools/agbcc"
 AGBCC_BIN="${AGBCC_INSTALL_DIR}/bin/agbcc"
 BASEROM_PATH="${PROJECT_DIR}/baserom.gba"
+FORCE_AGBCC_UPDATE=0
+ROM_SOURCE="${FIREEMBLEM8U_ROM:-}"
+
+parse_args() {
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --rom)
+        if [[ $# -lt 2 ]]; then
+          echo "--rom requires a path" >&2
+          return 1
+        fi
+        ROM_SOURCE="$2"
+        shift 2
+        ;;
+      --rom=*)
+        ROM_SOURCE="${1#*=}"
+        shift
+        ;;
+      --refresh-agbcc)
+        FORCE_AGBCC_UPDATE=1
+        shift
+        ;;
+      -h|--help)
+        usage
+        return 2
+        ;;
+      *)
+        echo "Unknown option: $1" >&2
+        usage
+        return 1
+        ;;
+    esac
+  done
+}
 
 # baserom.gba is OPTIONAL: the build is verified against checksum.sha1, not the
 # original ROM. It is only used by asmdiff.sh for disassembly comparison, so a
@@ -76,6 +82,48 @@ have_cmd() {
   command -v "$1" >/dev/null 2>&1
 }
 
+job_count() {
+  local count=""
+  if have_cmd nproc; then
+    count="$(nproc)"
+  elif have_cmd sysctl; then
+    count="$(sysctl -n hw.logicalcpu 2>/dev/null || true)"
+  fi
+
+  if [[ ! "${count}" =~ ^[1-9][0-9]*$ ]]; then
+    count=1
+  fi
+  printf '%s\n' "${count}"
+}
+
+verify_rom_checksum() {
+  if have_cmd sha1sum; then
+    sha1sum -c checksum.sha1
+  elif have_cmd shasum; then
+    shasum -a 1 -c checksum.sha1
+  else
+    echo "[!] Neither sha1sum nor shasum is available to verify the ROM." >&2
+    return 1
+  fi
+}
+
+probe_arm_toolchain_headers() {
+  have_cmd arm-none-eabi-as || return 1
+  have_cmd arm-none-eabi-gcc || return 1
+
+  local header_flags=()
+  if [[ -f /usr/include/newlib/stdlib.h ]]; then
+    header_flags=(-isystem /usr/include/newlib)
+  fi
+
+  printf '#include <stdlib.h>\n#include <stdint.h>\n' |
+    arm-none-eabi-gcc "${header_flags[@]}" -E -x c - >/dev/null 2>&1 || return 1
+  printf '#include "global.h"\n' |
+    arm-none-eabi-gcc "${header_flags[@]}" -std=gnu11 -DMODERN=1 -DNONMATCHING=1 \
+      -I"${PROJECT_DIR}/include" -I"${PROJECT_DIR}" -fsyntax-only -x c - \
+      >/dev/null 2>&1
+}
+
 install_python_modules() {
   if have_cmd pip3; then
     pip3 install --user --upgrade numpy pillow >/dev/null
@@ -97,8 +145,7 @@ install_deps() {
   fi
 
   local need_toolchain=0
-  if ! have_cmd arm-none-eabi-as || ! have_cmd arm-none-eabi-gcc ||
-     ! printf '#include <stdint.h>\n' | arm-none-eabi-gcc -E -x c - >/dev/null 2>&1; then
+  if ! probe_arm_toolchain_headers; then
     need_toolchain=1
   fi
 
@@ -111,7 +158,7 @@ install_deps() {
         else
           echo "[!] Need root privileges to install packages via apt, but sudo is unavailable." >&2
           echo "    Install the prerequisites manually and rerun the script." >&2
-          return
+          return 1
         fi
       fi
       echo "[+] Updating apt package index..."
@@ -133,7 +180,7 @@ install_deps() {
         else
           echo "[!] Need root privileges to install packages via pacman, but sudo is unavailable." >&2
           echo "    Install the prerequisites manually and rerun the script." >&2
-          return
+          return 1
         fi
       fi
       local packages=(pkgconf libpng python-pip python-numpy python-pillow)
@@ -141,21 +188,43 @@ install_deps() {
         packages=(arm-none-eabi-binutils arm-none-eabi-gcc arm-none-eabi-newlib "${packages[@]}")
       fi
       echo "[+] Installing packages via pacman: ${packages[*]}"
-      ${sudo_cmd} pacman -Sy --needed --noconfirm "${packages[@]}"
+      if ! ${sudo_cmd} pacman -S --needed --noconfirm "${packages[@]}"; then
+        echo "[!] pacman install failed; if package databases are stale, run a full" >&2
+        echo "    'sudo pacman --sync --refresh --sysupgrade' upgrade, then rerun." >&2
+        return 1
+      fi
       ;;
     brew)
       local packages=(pkg-config libpng)
       if (( need_toolchain )); then
-        packages=(arm-none-eabi-gcc "${packages[@]}")
+        if brew list --formula arm-none-eabi-gcc >/dev/null 2>&1; then
+          echo "[!] Homebrew's arm-none-eabi-gcc formula is installed without target headers." >&2
+          echo "    Run 'brew uninstall arm-none-eabi-gcc', then" >&2
+          echo "    'brew install --cask gcc-arm-embedded', and rerun this script." >&2
+          return 1
+        fi
+        echo "[+] Installing official Arm GNU toolchain cask (bundled newlib)"
+        brew install --cask gcc-arm-embedded
       fi
       echo "[+] Installing packages via Homebrew: ${packages[*]}"
       brew update >/dev/null
       brew install "${packages[@]}"
       echo "[+] Ensuring Python modules (numpy, pillow) via pip3"
       install_python_modules
-      return
       ;;
   esac
+
+  hash -r
+  if ! probe_arm_toolchain_headers; then
+    echo "[!] arm-none-eabi-gcc still cannot parse <stdlib.h> and include/global.h." >&2
+    if [[ "${pkg_mgr}" == "brew" ]]; then
+      echo "    Remove a headerless formula with 'brew uninstall arm-none-eabi-gcc'," >&2
+      echo "    then install 'brew install --cask gcc-arm-embedded'." >&2
+    else
+      echo "    Install the matching arm-none-eabi newlib headers and rerun." >&2
+    fi
+    return 1
+  fi
 }
 
 prepare_agbcc() {
@@ -183,6 +252,8 @@ prepare_agbcc() {
 }
 
 build_project() {
+  local jobs
+  jobs="$(job_count)"
   pushd "${PROJECT_DIR}" >/dev/null
     echo "[+] Fetching submodules (mgfembp FE6 SIO payload sub-build)"
     git submodule update --init --recursive
@@ -190,14 +261,28 @@ build_project() {
     ./build_tools.sh
     echo "[+] Building fireemblem8u (this can take several minutes)"
     echo "    (first build also fetches/builds the mgfembp agbcc variant for the FE6 SIO payload)"
-    make -j"$(nproc)"
+    make -j"${jobs}"
     echo "[+] Verifying ROM checksum"
-    sha1sum -c checksum.sha1
+    verify_rom_checksum
     echo "[✓] Build complete: ${PROJECT_DIR}/fireemblem8.gba"
   popd >/dev/null
 }
 
-ensure_baserom
-install_deps
-prepare_agbcc
-build_project
+main() {
+  local parse_status=0
+  parse_args "$@" || parse_status=$?
+  if (( parse_status == 2 )); then
+    return 0
+  elif (( parse_status != 0 )); then
+    return "${parse_status}"
+  fi
+
+  ensure_baserom
+  install_deps
+  prepare_agbcc
+  build_project
+}
+
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi
