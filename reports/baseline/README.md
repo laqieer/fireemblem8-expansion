@@ -6,12 +6,22 @@ from it. It intentionally contains no timestamp, hostname, or path.
 
 The manifest records:
 
-- the latest source commit outside `scripts/baseline/` and `reports/baseline/`;
+- the latest commit outside recursive `reports/baseline/` output, whether that
+  source tree is dirty, and the exact baseline-generator SHA-256;
 - ROM SHA-1, size, and GBA title/game/maker/revision header fields;
-- ELF SHA-1, entry point, allocatable section addresses/sizes, and symbol counts;
-- map SHA-1 and GNU ld output-section addresses/sizes;
+- checksum-file verification and ROM-to-ELF content/padding consistency;
+- a canonical ELF identity, entry point, allocatable section addresses/sizes,
+  and symbol counts;
+- a canonical GNU ld identity and memory output-section addresses/sizes;
 - ROM, EWRAM, and IWRAM capacities, occupied bytes, and high-water marks; and
-- normalized agbcc, old_agbcc, Python, Make, and ARM binutils versions.
+- normalized Python, Make, and ARM binutils versions plus distinct SHA-256
+  fingerprints for the agbcc and old_agbcc binaries.
+
+The ELF identity hashes only named allocatable section metadata and loaded
+bytes. Debug sections are deliberately excluded because they embed build paths;
+raw ELF size or hash is therefore not canonical evidence. Likewise, map
+identity covers only output sections assigned to GBA memory regions, not debug
+rows or the separate linker `Memory Configuration` table.
 
 EWRAM overlays share addresses. Therefore `occupied_bytes` is the union of
 section ranges, while `section_bytes_including_overlays` deliberately counts
@@ -20,8 +30,9 @@ to the region origin. For ROM, `image_size_bytes` is the padded `.gba` size and
 the other usage fields come from ELF allocatable sections.
 
 Tool versions are normalized to semantic version components, excluding distro,
-host, and absolute-path text. Project-built tools without version interfaces
-are tied to the recorded source commit.
+host, and absolute-path text. A failed version command is fatal even if it
+prints version-looking text. Project-built tools without version interfaces are
+tied to the recorded source commit.
 
 ## Regenerate
 
@@ -50,5 +61,7 @@ cmp /tmp/fe8-baseline.json reports/baseline/baseline.json
 python3 -m unittest discover -s scripts/baseline/tests -v
 ```
 
-Any ELF/map disagreement is rejected rather than silently reported. Missing,
-truncated, non-ELF, and malformed map inputs also fail with a concise error.
+Capture, including no-build capture, rejects checksum mismatches, ROM/ELF byte
+or padding mismatches, non-ARM and malformed ELF files, ELF/map disagreement,
+compiler fingerprint collisions, failed tool version commands, and malformed
+map input rather than silently reporting untrusted evidence.

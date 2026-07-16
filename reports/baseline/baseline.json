@@ -1,7 +1,11 @@
 {
   "elf": {
     "entry_address": 134217728,
-    "machine": 40,
+    "identity": {
+      "algorithm": "sha256-alloc-sections-v1",
+      "sha256": "16d98da21b9811f8d56d187428962d5a9e3b5e373f9403eb5e7b23d4b25d0136"
+    },
+    "machine": "ARM",
     "sections": [
       {
         "address": 33554432,
@@ -70,8 +74,6 @@
         "type": "progbits"
       }
     ],
-    "sha1": "45b29bedb5e2587683175cb3d2b1a38f675c301b",
-    "size_bytes": 47930304,
     "symbols": {
       "bindings": {
         "global": 27384,
@@ -93,35 +95,11 @@
     }
   },
   "map": {
+    "identity": {
+      "algorithm": "sha256-output-sections-v1",
+      "sha256": "196726c0d652da02536ef99a2d186d932eeb86723c49ebc285905855744bf358"
+    },
     "output_sections": {
-      ".ARM.attributes": {
-        "address": 0,
-        "size_bytes": 32
-      },
-      ".debug_abbrev": {
-        "address": 0,
-        "size_bytes": 241321
-      },
-      ".debug_aranges": {
-        "address": 0,
-        "size_bytes": 10368
-      },
-      ".debug_info": {
-        "address": 0,
-        "size_bytes": 23333964
-      },
-      ".debug_line": {
-        "address": 0,
-        "size_bytes": 1023271
-      },
-      ".debug_pubnames": {
-        "address": 0,
-        "size_bytes": 507680
-      },
-      ".debug_str": {
-        "address": 0,
-        "size_bytes": 1017
-      },
       "IWRAM": {
         "address": 50331648,
         "size_bytes": 26540
@@ -129,10 +107,6 @@
       "ROM": {
         "address": 134217728,
         "size_bytes": 16776960
-      },
-      "ewram": {
-        "address": 33554432,
-        "size_bytes": 262144
       },
       "ewram_data": {
         "address": 33554432,
@@ -169,18 +143,8 @@
       "ewram_overlay_worldmap": {
         "address": 33554432,
         "size_bytes": 116180
-      },
-      "iwram": {
-        "address": 50331648,
-        "size_bytes": 32768
-      },
-      "rom": {
-        "address": 134217728,
-        "size_bytes": 33554432
       }
-    },
-    "sha1": "93a8d5c690a4fd6fd966ad798b1a0c9d936c0d79",
-    "size_bytes": 2464527
+    }
   },
   "memory": {
     "ewram": {
@@ -204,6 +168,7 @@
     }
   },
   "rom": {
+    "checksum_sha1": "c25b145e37456171ada4b0d440bf88a19f4d509f",
     "header": {
       "game_code": "BE8E",
       "maker_code": "01",
@@ -213,18 +178,28 @@
     "sha1": "c25b145e37456171ada4b0d440bf88a19f4d509f",
     "size_bytes": 16777216
   },
-  "schema_version": 1,
+  "schema_version": 2,
   "source": {
-    "commit": "7b47dec8da6ff7c2ff9aad2bfa9bf40cc8b07b90"
+    "commit": "3128b1459d442a3809eb3f8d8f32227ec0da743e",
+    "dirty": false,
+    "generator_sha256": "c15ecbfc33559ba8a4e8e6a417ac353161a71422ee1e2f6e43f5f4fd46ac8d77"
   },
   "tools": {
-    "agbcc": "2.9-arm-000512",
     "arm_binutils_as": "2.42",
     "arm_binutils_ld": "2.42",
     "arm_binutils_objcopy": "2.42",
     "arm_binutils_strip": "2.42",
+    "compilers": {
+      "agbcc": {
+        "sha256": "f22f4912e15a8e99e5d9aca0585dab5de63334e8bd06dd488832a4bf8f94f123",
+        "version": "2.9-arm-000512"
+      },
+      "old_agbcc": {
+        "sha256": "e0df7faab312ff37a25054b42bb86615a182ce06b13232920c8fd7e00e2175b1",
+        "version": "2.9-arm-000512"
+      }
+    },
     "make": "4.3",
-    "old_agbcc": "2.9-arm-000512",
     "python": "3.12.3"
   }
 }
