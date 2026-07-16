@@ -1,0 +1,57 @@
+{
+  "checkpoints": [
+    {
+      "frame": 0,
+      "framebuffer_hash": "fnv1a64-rgb24:e39b31bd4ef59d25",
+      "name": "first-rendered-frame",
+      "probes": [
+        {
+          "address": "0x02000000",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x03000000",
+          "size": 4,
+          "value": "0x00000000"
+        }
+      ]
+    },
+    {
+      "frame": 60,
+      "framebuffer_hash": "fnv1a64-rgb24:aa44dbf1d49c5808",
+      "name": "boot-animation",
+      "probes": [
+        {
+          "address": "0x02000000",
+          "size": 4,
+          "value": "0xffffffff"
+        },
+        {
+          "address": "0x03000000",
+          "size": 4,
+          "value": "0x90ea3671"
+        }
+      ]
+    },
+    {
+      "frame": 120,
+      "framebuffer_hash": "fnv1a64-rgb24:aa44dbf1d49c5808",
+      "name": "boot-settled",
+      "probes": [
+        {
+          "address": "0x02000000",
+          "size": 4,
+          "value": "0xffffffff"
+        },
+        {
+          "address": "0x03000000",
+          "size": 4,
+          "value": "0x90ea3671"
+        }
+      ]
+    }
+  ],
+  "format_version": 1,
+  "scenario": "boot"
+}

@@ -1,0 +1,641 @@
+#!/usr/bin/env python3
+"""Deterministic, headless GBA scenario capture and verification."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Iterable
+
+
+FORMAT_VERSION = 1
+KEY_BITS = {
+    "A": 1 << 0,
+    "B": 1 << 1,
+    "SELECT": 1 << 2,
+    "START": 1 << 3,
+    "RIGHT": 1 << 4,
+    "LEFT": 1 << 5,
+    "UP": 1 << 6,
+    "DOWN": 1 << 7,
+    "R": 1 << 8,
+    "L": 1 << 9,
+}
+NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
+HEX_ADDRESS_RE = re.compile(r"^0x[0-9a-fA-F]{8}$")
+HASH_RE = re.compile(r"^fnv1a64-rgb24:[0-9a-f]{16}$")
+RAM_RANGES = ((0x02000000, 0x02040000), (0x03000000, 0x03008000))
+
+
+class PlaytestError(Exception):
+    """A user-actionable setup or input error."""
+
+
+class DuplicateKeyError(ValueError):
+    pass
+
+
+def _object_no_duplicates(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise DuplicateKeyError(f"duplicate JSON key {key!r}")
+        result[key] = value
+    return result
+
+
+def _read_json(path: Path) -> Any:
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise PlaytestError(f"cannot read {path}: {exc}") from exc
+    try:
+        return json.loads(text, object_pairs_hook=_object_no_duplicates)
+    except (json.JSONDecodeError, DuplicateKeyError) as exc:
+        raise PlaytestError(f"invalid JSON in {path}: {exc}") from exc
+
+
+def _is_int(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def _expect_object(
+    value: Any, path: str, required: set[str], optional: set[str] = frozenset()
+) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise PlaytestError(f"{path} must be an object")
+    missing = sorted(required - value.keys())
+    unknown = sorted(value.keys() - required - optional)
+    if missing:
+        raise PlaytestError(f"{path} is missing required field(s): {', '.join(missing)}")
+    if unknown:
+        raise PlaytestError(f"{path} has unknown field(s): {', '.join(unknown)}")
+    return value
+
+
+def _expect_name(value: Any, path: str) -> str:
+    if not isinstance(value, str) or not NAME_RE.fullmatch(value):
+        raise PlaytestError(
+            f"{path} must match {NAME_RE.pattern!r} (1-64 ASCII characters)"
+        )
+    return value
+
+
+def _expect_frame(value: Any, path: str) -> int:
+    if not _is_int(value) or value < 0 or value > 10_000_000:
+        raise PlaytestError(f"{path} must be an integer from 0 through 10000000")
+    return value
+
+
+def _parse_address(value: Any, size: int, path: str) -> int:
+    if not isinstance(value, str) or not HEX_ADDRESS_RE.fullmatch(value):
+        raise PlaytestError(f"{path} must be an 8-digit hexadecimal string such as 0x02000000")
+    address = int(value, 16)
+    containing = next(
+        ((start, end) for start, end in RAM_RANGES if start <= address < end),
+        None,
+    )
+    if containing is None:
+        raise PlaytestError(f"{path} must be in EWRAM 0x02000000-0x0203ffff or IWRAM 0x03000000-0x03007fff")
+    _, end = containing
+    if address + size > end:
+        raise PlaytestError(f"{path} plus size {size} crosses the RAM region boundary")
+    if address % size:
+        raise PlaytestError(f"{path} must be aligned to probe size {size}")
+    return address
+
+
+@dataclass(frozen=True)
+class InputRange:
+    start: int
+    end: int
+    key_mask: int
+
+
+@dataclass(frozen=True)
+class Probe:
+    address: int
+    size: int
+    expected: str | None
+
+
+@dataclass(frozen=True)
+class Checkpoint:
+    name: str
+    frame: int
+    framebuffer: bool
+    expected_framebuffer_hash: str | None
+    probes: tuple[Probe, ...]
+
+
+@dataclass(frozen=True)
+class Scenario:
+    name: str
+    description: str
+    disabled: bool
+    blocker: str | None
+    inputs: tuple[InputRange, ...]
+    checkpoints: tuple[Checkpoint, ...]
+
+
+def parse_scenario_data(data: Any, source: str = "<scenario>") -> Scenario:
+    root = _expect_object(
+        data,
+        source,
+        {"schema_version", "name", "frames", "checkpoints"},
+        {"description", "disabled", "blocker"},
+    )
+    if not _is_int(root["schema_version"]) or root["schema_version"] != FORMAT_VERSION:
+        raise PlaytestError(f"{source}.schema_version must be integer {FORMAT_VERSION}")
+    name = _expect_name(root["name"], f"{source}.name")
+    description = root.get("description", "")
+    if not isinstance(description, str):
+        raise PlaytestError(f"{source}.description must be a string")
+    disabled = root.get("disabled", False)
+    if not isinstance(disabled, bool):
+        raise PlaytestError(f"{source}.disabled must be a boolean")
+    blocker = root.get("blocker")
+    if blocker is not None and (not isinstance(blocker, str) or not blocker.strip()):
+        raise PlaytestError(f"{source}.blocker must be a non-empty string")
+    if disabled and not blocker:
+        raise PlaytestError(f"{source}.blocker is required when disabled is true")
+    if not disabled and blocker is not None:
+        raise PlaytestError(f"{source}.blocker is only allowed when disabled is true")
+
+    frames_data = root["frames"]
+    if not isinstance(frames_data, list):
+        raise PlaytestError(f"{source}.frames must be an array")
+    inputs: list[InputRange] = []
+    previous_end = -1
+    for index, raw in enumerate(frames_data):
+        path = f"{source}.frames[{index}]"
+        item = _expect_object(raw, path, {"start", "end", "keys"})
+        start = _expect_frame(item["start"], f"{path}.start")
+        end = _expect_frame(item["end"], f"{path}.end")
+        if end < start:
+            raise PlaytestError(f"{path}.end must be greater than or equal to start")
+        if start <= previous_end:
+            raise PlaytestError(f"{path} overlaps or is not ordered after the previous frame range")
+        keys = item["keys"]
+        if not isinstance(keys, list):
+            raise PlaytestError(f"{path}.keys must be an array")
+        if not all(isinstance(key, str) for key in keys):
+            raise PlaytestError(f"{path}.keys must contain only string key names")
+        if len(keys) != len(set(keys)):
+            raise PlaytestError(f"{path}.keys must contain unique key names")
+        invalid = [key for key in keys if key not in KEY_BITS]
+        if invalid:
+            rendered = ", ".join(repr(key) for key in invalid)
+            raise PlaytestError(
+                f"{path}.keys contains invalid key name(s): {rendered}; "
+                f"valid names: {', '.join(KEY_BITS)}"
+            )
+        mask = 0
+        for key in keys:
+            mask |= KEY_BITS[key]
+        inputs.append(InputRange(start, end, mask))
+        previous_end = end
+
+    checkpoints_data = root["checkpoints"]
+    if not isinstance(checkpoints_data, list):
+        raise PlaytestError(f"{source}.checkpoints must be an array")
+    if not disabled and not checkpoints_data:
+        raise PlaytestError(f"{source}.checkpoints must not be empty for an active scenario")
+    checkpoints: list[Checkpoint] = []
+    checkpoint_names: set[str] = set()
+    checkpoint_frames: set[int] = set()
+    for index, raw in enumerate(checkpoints_data):
+        path = f"{source}.checkpoints[{index}]"
+        item = _expect_object(
+            raw,
+            path,
+            {"name", "frame", "framebuffer", "probes"},
+            {"expected_framebuffer_hash"},
+        )
+        checkpoint_name = _expect_name(item["name"], f"{path}.name")
+        if checkpoint_name in checkpoint_names:
+            raise PlaytestError(f"{path}.name duplicates checkpoint {checkpoint_name!r}")
+        checkpoint_names.add(checkpoint_name)
+        frame = _expect_frame(item["frame"], f"{path}.frame")
+        if frame in checkpoint_frames:
+            raise PlaytestError(f"{path}.frame duplicates checkpoint frame {frame}")
+        checkpoint_frames.add(frame)
+        framebuffer = item["framebuffer"]
+        if not isinstance(framebuffer, bool):
+            raise PlaytestError(f"{path}.framebuffer must be a boolean")
+        expected_hash = item.get("expected_framebuffer_hash")
+        if expected_hash is not None and (
+            not isinstance(expected_hash, str) or not HASH_RE.fullmatch(expected_hash)
+        ):
+            raise PlaytestError(
+                f"{path}.expected_framebuffer_hash must look like "
+                "'fnv1a64-rgb24:0123456789abcdef'"
+            )
+        if expected_hash is not None and not framebuffer:
+            raise PlaytestError(f"{path}.expected_framebuffer_hash requires framebuffer true")
+        probes_data = item["probes"]
+        if not isinstance(probes_data, list):
+            raise PlaytestError(f"{path}.probes must be an array")
+        probes: list[Probe] = []
+        seen_probes: set[tuple[int, int]] = set()
+        for probe_index, raw_probe in enumerate(probes_data):
+            probe_path = f"{path}.probes[{probe_index}]"
+            probe_data = _expect_object(
+                raw_probe, probe_path, {"address", "size"}, {"expected"}
+            )
+            size = probe_data["size"]
+            if not _is_int(size) or size not in (1, 2, 4):
+                raise PlaytestError(f"{probe_path}.size must be integer 1, 2, or 4")
+            address = _parse_address(probe_data["address"], size, f"{probe_path}.address")
+            identity = (address, size)
+            if identity in seen_probes:
+                raise PlaytestError(f"{probe_path} duplicates address/size in this checkpoint")
+            seen_probes.add(identity)
+            expected = probe_data.get("expected")
+            if expected is not None:
+                pattern = re.compile(rf"^0x[0-9a-f]{{{size * 2}}}$")
+                if not isinstance(expected, str) or not pattern.fullmatch(expected):
+                    raise PlaytestError(
+                        f"{probe_path}.expected must be lowercase 0x plus {size * 2} hex digits"
+                    )
+            probes.append(Probe(address, size, expected))
+        if not framebuffer and not probes:
+            raise PlaytestError(f"{path} must capture a framebuffer or at least one probe")
+        checkpoints.append(
+            Checkpoint(
+                checkpoint_name,
+                frame,
+                framebuffer,
+                expected_hash,
+                tuple(sorted(probes, key=lambda probe: (probe.address, probe.size))),
+            )
+        )
+    if not disabled and inputs:
+        last_checkpoint_frame = max(checkpoint.frame for checkpoint in checkpoints)
+        if inputs[-1].end > last_checkpoint_frame:
+            raise PlaytestError(
+                f"{source}.frames[-1].end is after the final checkpoint frame "
+                f"{last_checkpoint_frame}"
+            )
+    return Scenario(
+        name,
+        description,
+        disabled,
+        blocker,
+        tuple(inputs),
+        tuple(sorted(checkpoints, key=lambda checkpoint: (checkpoint.frame, checkpoint.name))),
+    )
+
+
+def load_scenario(path: Path) -> Scenario:
+    return parse_scenario_data(_read_json(path), str(path))
+
+
+def serialize_fingerprint(fingerprint: dict[str, Any]) -> str:
+    return json.dumps(fingerprint, indent=2, sort_keys=True, ensure_ascii=True) + "\n"
+
+
+def _compiler_command(source: Path, output: Path) -> list[str]:
+    cc = os.environ.get("CC", "cc")
+    if not shutil.which(cc):
+        raise PlaytestError(f"libmGBA backend unavailable: C compiler {cc!r} was not found")
+    command = [
+        cc,
+        "-std=gnu11",
+        "-O2",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        str(source),
+        "-o",
+        str(output),
+    ]
+    pkg_config = shutil.which("pkg-config")
+    if pkg_config:
+        flags = subprocess.run(
+            [pkg_config, "--cflags", "--libs", "mgba"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if flags.returncode == 0:
+            import shlex
+
+            command.extend(shlex.split(flags.stdout))
+            return command
+    command.append("-lmgba")
+    return command
+
+
+def build_backend(output: Path) -> None:
+    source = Path(__file__).with_name("backend.c")
+    command = _compiler_command(source, output)
+    result = subprocess.run(command, capture_output=True, text=True, check=False)
+    if result.returncode:
+        detail = result.stderr.strip() or result.stdout.strip() or "compiler returned no diagnostics"
+        raise PlaytestError(
+            "libmGBA backend unavailable: compilation failed.\n"
+            "Install libmGBA development headers (Linux: libmgba-dev; macOS: brew install mgba).\n"
+            f"Compiler diagnostic:\n{detail}"
+        )
+
+
+def _write_plan(path: Path, scenario: Scenario) -> None:
+    lines = ["GBA_PLAYTEST_PLAN 1", f"RANGES {len(scenario.inputs)}"]
+    lines.extend(
+        f"{frame_range.start} {frame_range.end} {frame_range.key_mask}"
+        for frame_range in scenario.inputs
+    )
+    lines.append(f"CHECKPOINTS {len(scenario.checkpoints)}")
+    for checkpoint in scenario.checkpoints:
+        lines.append(f"{checkpoint.frame} {len(checkpoint.probes)}")
+        lines.extend(f"{probe.address} {probe.size}" for probe in checkpoint.probes)
+    path.write_text("\n".join(lines) + "\n", encoding="ascii")
+
+
+def _parse_backend_output(stdout: str, scenario: Scenario) -> dict[str, Any]:
+    hashes: dict[int, str] = {}
+    values: dict[tuple[int, int], int] = {}
+    for line_number, line in enumerate(stdout.splitlines(), 1):
+        fields = line.split("\t")
+        try:
+            if len(fields) == 4 and fields[0] == "CHECKPOINT":
+                checkpoint_index = int(fields[1])
+                frame = int(fields[2])
+                if checkpoint_index in hashes:
+                    raise ValueError("duplicate checkpoint")
+                if not (0 <= checkpoint_index < len(scenario.checkpoints)):
+                    raise ValueError("checkpoint index out of range")
+                if frame != scenario.checkpoints[checkpoint_index].frame:
+                    raise ValueError("checkpoint frame does not match plan")
+                if not re.fullmatch(r"[0-9a-f]{16}", fields[3]):
+                    raise ValueError("malformed hash")
+                hashes[checkpoint_index] = f"fnv1a64-rgb24:{fields[3]}"
+            elif len(fields) == 4 and fields[0] == "PROBE":
+                checkpoint_index = int(fields[1])
+                probe_index = int(fields[2])
+                value = int(fields[3])
+                identity = (checkpoint_index, probe_index)
+                if identity in values:
+                    raise ValueError("duplicate probe")
+                if not (0 <= checkpoint_index < len(scenario.checkpoints)):
+                    raise ValueError("probe checkpoint index out of range")
+                if not (0 <= probe_index < len(scenario.checkpoints[checkpoint_index].probes)):
+                    raise ValueError("probe index out of range")
+                values[identity] = value
+            else:
+                raise ValueError("unknown record")
+        except ValueError as exc:
+            raise PlaytestError(
+                f"malformed backend output at line {line_number}: {line!r} ({exc})"
+            ) from exc
+    if len(hashes) != len(scenario.checkpoints):
+        raise PlaytestError(
+            f"backend returned {len(hashes)} of {len(scenario.checkpoints)} checkpoints"
+        )
+    expected_probe_count = sum(len(checkpoint.probes) for checkpoint in scenario.checkpoints)
+    if len(values) != expected_probe_count:
+        raise PlaytestError(
+            f"backend returned {len(values)} of {expected_probe_count} probes"
+        )
+    checkpoints: list[dict[str, Any]] = []
+    for checkpoint_index, checkpoint in enumerate(scenario.checkpoints):
+        captured: dict[str, Any] = {
+            "frame": checkpoint.frame,
+            "name": checkpoint.name,
+            "probes": [],
+        }
+        if checkpoint.framebuffer:
+            captured["framebuffer_hash"] = hashes[checkpoint_index]
+        captured["probes"] = [
+            {
+                "address": f"0x{probe.address:08x}",
+                "size": probe.size,
+                "value": f"0x{values[(checkpoint_index, probe_index)]:0{probe.size * 2}x}",
+            }
+            for probe_index, probe in enumerate(checkpoint.probes)
+        ]
+        checkpoints.append(captured)
+    return {
+        "checkpoints": checkpoints,
+        "format_version": FORMAT_VERSION,
+        "scenario": scenario.name,
+    }
+
+
+def capture(rom: Path, scenario: Scenario) -> dict[str, Any]:
+    if scenario.disabled:
+        raise PlaytestError(f"scenario {scenario.name!r} is disabled: {scenario.blocker}")
+    if not rom.is_file():
+        raise PlaytestError(f"ROM does not exist or is not a regular file: {rom}")
+    with tempfile.TemporaryDirectory(prefix="gba-playtest-") as temporary:
+        temporary_path = Path(temporary)
+        backend = temporary_path / "gba-playtest-backend"
+        plan = temporary_path / "plan.txt"
+        build_backend(backend)
+        _write_plan(plan, scenario)
+        result = subprocess.run(
+            [str(backend), str(rom), str(plan)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode:
+            diagnostic = result.stderr.strip() or "backend returned no diagnostic"
+            raise PlaytestError(
+                f"libmGBA backend failed with exit {result.returncode}: {diagnostic}"
+            )
+        fingerprint = _parse_backend_output(result.stdout, scenario)
+    inline_differences = compare_inline_expectations(scenario, fingerprint)
+    if inline_differences:
+        raise PlaytestError(
+            "scenario inline expectation mismatch:\n"
+            + "\n".join(f"  - {difference}" for difference in inline_differences)
+        )
+    return fingerprint
+
+
+def compare_inline_expectations(
+    scenario: Scenario, fingerprint: dict[str, Any]
+) -> list[str]:
+    differences: list[str] = []
+    actual_checkpoints = fingerprint["checkpoints"]
+    for checkpoint, actual in zip(scenario.checkpoints, actual_checkpoints):
+        prefix = f"checkpoint {checkpoint.name!r} (frame {checkpoint.frame})"
+        if (
+            checkpoint.expected_framebuffer_hash is not None
+            and actual.get("framebuffer_hash") != checkpoint.expected_framebuffer_hash
+        ):
+            differences.append(
+                f"{prefix} framebuffer_hash: expected "
+                f"{checkpoint.expected_framebuffer_hash!r}, actual "
+                f"{actual.get('framebuffer_hash')!r}"
+            )
+        for probe_index, probe in enumerate(checkpoint.probes):
+            if probe.expected is None:
+                continue
+            actual_value = actual["probes"][probe_index]["value"]
+            if actual_value != probe.expected:
+                differences.append(
+                    f"{prefix} probe 0x{probe.address:08x}/{probe.size}: "
+                    f"expected {probe.expected!r}, actual {actual_value!r}"
+                )
+    return differences
+
+
+def validate_fingerprint(data: Any, source: str) -> dict[str, Any]:
+    root = _expect_object(data, source, {"format_version", "scenario", "checkpoints"})
+    if not _is_int(root["format_version"]) or root["format_version"] != FORMAT_VERSION:
+        raise PlaytestError(f"{source}.format_version must be integer {FORMAT_VERSION}")
+    _expect_name(root["scenario"], f"{source}.scenario")
+    if not isinstance(root["checkpoints"], list):
+        raise PlaytestError(f"{source}.checkpoints must be an array")
+    previous_frame = -1
+    names: set[str] = set()
+    for index, raw in enumerate(root["checkpoints"]):
+        path = f"{source}.checkpoints[{index}]"
+        checkpoint = _expect_object(
+            raw, path, {"frame", "name", "probes"}, {"framebuffer_hash"}
+        )
+        frame = _expect_frame(checkpoint["frame"], f"{path}.frame")
+        if frame <= previous_frame:
+            raise PlaytestError(f"{path}.frame must be strictly increasing")
+        previous_frame = frame
+        name = _expect_name(checkpoint["name"], f"{path}.name")
+        if name in names:
+            raise PlaytestError(f"{path}.name duplicates {name!r}")
+        names.add(name)
+        framebuffer_hash = checkpoint.get("framebuffer_hash")
+        if framebuffer_hash is not None and (
+            not isinstance(framebuffer_hash, str) or not HASH_RE.fullmatch(framebuffer_hash)
+        ):
+            raise PlaytestError(f"{path}.framebuffer_hash is malformed")
+        if not isinstance(checkpoint["probes"], list):
+            raise PlaytestError(f"{path}.probes must be an array")
+        previous_probe: tuple[int, int] | None = None
+        for probe_index, raw_probe in enumerate(checkpoint["probes"]):
+            probe_path = f"{path}.probes[{probe_index}]"
+            probe = _expect_object(raw_probe, probe_path, {"address", "size", "value"})
+            size = probe["size"]
+            if not _is_int(size) or size not in (1, 2, 4):
+                raise PlaytestError(f"{probe_path}.size must be integer 1, 2, or 4")
+            address = _parse_address(probe["address"], size, f"{probe_path}.address")
+            identity = (address, size)
+            if previous_probe is not None and identity <= previous_probe:
+                raise PlaytestError(f"{probe_path} must be sorted and unique by address/size")
+            previous_probe = identity
+            pattern = re.compile(rf"^0x[0-9a-f]{{{size * 2}}}$")
+            if not isinstance(probe["value"], str) or not pattern.fullmatch(probe["value"]):
+                raise PlaytestError(f"{probe_path}.value is malformed for size {size}")
+    return root
+
+
+def _recursive_differences(expected: Any, actual: Any, path: str = "") -> Iterable[str]:
+    if type(expected) is not type(actual):
+        yield f"{path or '<root>'}: expected type {type(expected).__name__}, actual {type(actual).__name__}"
+        return
+    if isinstance(expected, dict):
+        for key in sorted(expected.keys() - actual.keys()):
+            yield f"{path + '.' if path else ''}{key}: missing from actual capture"
+        for key in sorted(actual.keys() - expected.keys()):
+            yield f"{path + '.' if path else ''}{key}: unexpected in actual capture"
+        for key in sorted(expected.keys() & actual.keys()):
+            child = f"{path}.{key}" if path else key
+            yield from _recursive_differences(expected[key], actual[key], child)
+    elif isinstance(expected, list):
+        if len(expected) != len(actual):
+            yield f"{path}: expected {len(expected)} item(s), actual {len(actual)}"
+        for index, (expected_item, actual_item) in enumerate(zip(expected, actual)):
+            yield from _recursive_differences(
+                expected_item, actual_item, f"{path}[{index}]"
+            )
+    elif expected != actual:
+        yield f"{path}: expected {expected!r}, actual {actual!r}"
+
+
+def compare_fingerprints(
+    expected: dict[str, Any], actual: dict[str, Any]
+) -> list[str]:
+    return list(_recursive_differences(expected, actual))
+
+
+def _write_output(path: str, text: str) -> None:
+    if path == "-":
+        sys.stdout.write(text)
+        return
+    output = Path(path)
+    try:
+        output.write_text(text, encoding="utf-8")
+    except OSError as exc:
+        raise PlaytestError(f"cannot write {output}: {exc}") from exc
+
+
+def _make_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description=__doc__)
+    subparsers = parser.add_subparsers(dest="mode", required=True)
+
+    capture_parser = subparsers.add_parser(
+        "capture", help="run a scenario and emit its deterministic fingerprint"
+    )
+    capture_parser.add_argument("--rom", required=True, type=Path)
+    capture_parser.add_argument("--scenario", required=True, type=Path)
+    capture_parser.add_argument(
+        "--output", "-o", default="-", help="output JSON path (default: stdout)"
+    )
+
+    verify_parser = subparsers.add_parser(
+        "verify", help="capture and compare against an expected fingerprint"
+    )
+    verify_parser.add_argument("--rom", required=True, type=Path)
+    verify_parser.add_argument("--scenario", required=True, type=Path)
+    verify_parser.add_argument("--expected", required=True, type=Path)
+
+    subparsers.add_parser(
+        "backend-check", help="compile the libmGBA backend without running a ROM"
+    )
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = _make_parser().parse_args(argv)
+    try:
+        if args.mode == "backend-check":
+            with tempfile.TemporaryDirectory(prefix="gba-playtest-check-") as temporary:
+                build_backend(Path(temporary) / "gba-playtest-backend")
+            print("libmGBA backend: available")
+            return 0
+        scenario = load_scenario(args.scenario)
+        actual = capture(args.rom, scenario)
+        if args.mode == "capture":
+            _write_output(args.output, serialize_fingerprint(actual))
+            return 0
+        expected = validate_fingerprint(_read_json(args.expected), str(args.expected))
+        differences = compare_fingerprints(expected, actual)
+        if differences:
+            print(
+                f"fingerprint mismatch for scenario {scenario.name!r}:",
+                file=sys.stderr,
+            )
+            for difference in differences:
+                print(f"  - {difference}", file=sys.stderr)
+            return 1
+        print(
+            f"fingerprint verified: scenario={scenario.name} "
+            f"checkpoints={len(scenario.checkpoints)}"
+        )
+        return 0
+    except PlaytestError as exc:
+        print(f"gba-playtest: {exc}", file=sys.stderr)
+        return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

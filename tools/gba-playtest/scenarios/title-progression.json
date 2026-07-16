@@ -1,0 +1,167 @@
+{
+  "checkpoints": [
+    {
+      "frame": 120,
+      "framebuffer": true,
+      "name": "early-title-sequence",
+      "probes": [
+        {
+          "address": "0x02000000",
+          "size": 4
+        },
+        {
+          "address": "0x03000000",
+          "size": 4
+        }
+      ]
+    },
+    {
+      "frame": 300,
+      "framebuffer": true,
+      "name": "title-input-progression",
+      "probes": [
+        {
+          "address": "0x02000000",
+          "size": 4
+        },
+        {
+          "address": "0x03000000",
+          "size": 4
+        }
+      ]
+    },
+    {
+      "frame": 600,
+      "framebuffer": true,
+      "name": "intro-menu-progression",
+      "probes": [
+        {
+          "address": "0x02000000",
+          "size": 4
+        },
+        {
+          "address": "0x03000000",
+          "size": 4
+        }
+      ]
+    },
+    {
+      "frame": 900,
+      "framebuffer": true,
+      "name": "post-title-progression",
+      "probes": [
+        {
+          "address": "0x02000000",
+          "size": 4
+        },
+        {
+          "address": "0x03000000",
+          "size": 4
+        }
+      ]
+    }
+  ],
+  "description": "Deterministic A/START taps adapted from the shiftcheck smoke path.",
+  "frames": [
+    {
+      "end": 95,
+      "keys": [
+        "A"
+      ],
+      "start": 90
+    },
+    {
+      "end": 155,
+      "keys": [
+        "START"
+      ],
+      "start": 150
+    },
+    {
+      "end": 215,
+      "keys": [
+        "A"
+      ],
+      "start": 210
+    },
+    {
+      "end": 275,
+      "keys": [
+        "START"
+      ],
+      "start": 270
+    },
+    {
+      "end": 335,
+      "keys": [
+        "A"
+      ],
+      "start": 330
+    },
+    {
+      "end": 395,
+      "keys": [
+        "START"
+      ],
+      "start": 390
+    },
+    {
+      "end": 455,
+      "keys": [
+        "A"
+      ],
+      "start": 450
+    },
+    {
+      "end": 515,
+      "keys": [
+        "START"
+      ],
+      "start": 510
+    },
+    {
+      "end": 575,
+      "keys": [
+        "A"
+      ],
+      "start": 570
+    },
+    {
+      "end": 635,
+      "keys": [
+        "START"
+      ],
+      "start": 630
+    },
+    {
+      "end": 695,
+      "keys": [
+        "A"
+      ],
+      "start": 690
+    },
+    {
+      "end": 755,
+      "keys": [
+        "START"
+      ],
+      "start": 750
+    },
+    {
+      "end": 815,
+      "keys": [
+        "A"
+      ],
+      "start": 810
+    },
+    {
+      "end": 875,
+      "keys": [
+        "START"
+      ],
+      "start": 870
+    }
+  ],
+  "name": "title-progression",
+  "schema_version": 1
+}
