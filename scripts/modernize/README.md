@@ -38,7 +38,10 @@ repository-relative file and line, evidence, subsystem, status, and recommended
 disposition. It also names a `root_kind`, `root_construct`, and `root_line`.
 Top-level `aggregates` group findings by actionable source construct, struct, or
 manifest and retain every member in `finding_ids`; aggregation never hides or
-replaces the drill-down list. No timestamp or absolute path is emitted.
+replaces the drill-down list. Forced-placement roots are grouped by shared
+mechanism (for example `CONST_DATA → .data`) and additionally retain every
+affected `symbol`, `file`, and finding ID. No timestamp or absolute path is
+emitted.
 
 ## Resolve, retain, or reclassify
 
@@ -83,6 +86,8 @@ Suppressions are narrow and are also recorded in every JSON/Markdown report:
 7. Assembly is represented once per source boundary, not once per directive.
 8. Empty-parameter declarations are reported only for declaration-shaped target
    C lines.
+9. Bitfields require declaration shape from the start of a line; ternary `?:`
+   expressions are never inferred to be layout declarations.
 
 If a new false-positive class appears, add a precise syntactic rule and a
 fixture proving both the suppression and the nearby true positive.

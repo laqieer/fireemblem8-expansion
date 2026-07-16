@@ -90,6 +90,26 @@ class AuditTests(unittest.TestCase):
             if finding["category"] == "legacy-compiler-pipeline"
         ]
         self.assertFalse(any(item["file"] == "scripts/tool.py" for item in compiler_debt))
+        layout = [
+            finding
+            for finding in inventory["findings"]
+            if finding["category"] == "layout-sensitive-struct"
+        ]
+        self.assertTrue(any("value : 3" in item["evidence"] for item in layout))
+        self.assertFalse(any("?" in item["evidence"] for item in layout))
+        barrier = next(
+            finding
+            for finding in inventory["findings"]
+            if finding["category"] == "inline-asm-barrier"
+        )
+        self.assertEqual(barrier["root_construct"], "BarrierOwner")
+        self.assertNotEqual(barrier["root_construct"], "LaterDefinition")
+        inline_owner = next(
+            finding
+            for finding in inventory["findings"]
+            if finding["category"] == "inline-asm"
+        )
+        self.assertEqual(inline_owner["root_construct"], "InlineOwner")
 
     def test_root_aggregation_retains_every_drill_down_id(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -123,9 +143,22 @@ class AuditTests(unittest.TestCase):
             item
             for item in inventory["aggregates"]
             if item["category"] == "forced-data-placement"
-            and item["root_construct"] == "forced_data"
+            and item["root_construct"] == "CONST_DATA → .data"
         )
-        self.assertEqual(construct["root_kind"], "construct")
+        self.assertEqual(construct["root_kind"], "placement")
+        self.assertGreaterEqual(construct["finding_count"], 2)
+        self.assertIn("forced_data", construct["symbols"])
+        self.assertIn("forced_data_2", construct["symbols"])
+        placement_findings = [
+            item
+            for item in inventory["findings"]
+            if item["root_kind"] == "placement"
+            and item["root_construct"] == "CONST_DATA → .data"
+        ]
+        self.assertEqual(
+            set(construct["symbols"]),
+            {item["symbol"] for item in placement_findings},
+        )
 
     def test_output_is_deterministic_relative_and_sorted(self):
         with tempfile.TemporaryDirectory() as temporary:

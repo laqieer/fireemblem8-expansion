@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Iterable
 
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 DEFAULT_JSON = "reports/modernize/inventory.json"
 DEFAULT_MARKDOWN = "reports/modernize/inventory.md"
 DEFAULT_DECISIONS = "scripts/modernize/decisions.json"
@@ -53,6 +53,7 @@ SUPPRESSION_RULES = [
     "Ignore SHOULD_BE_CONST because it expands to nothing and creates no compiler or placement constraint.",
     "Treat CP932 as compiler-pipeline debt only when a build recipe couples it to agbcc/CC1; asset and text decoding are data-format concerns.",
     "Require pointer/address syntax for ROM-range source literals; ordinary fill values and integer data are not addresses.",
+    "Require declaration shape for bitfields so ternary ?: expressions are never treated as layout declarations.",
     "Report one assembly-boundary finding per tracked .s/.S/.inc file rather than every assembly directive.",
     "Recognize old-style declarations only when a src/include line has declaration shape and an empty parameter list.",
 ]
@@ -82,7 +83,14 @@ EMPTY_ASM_RE = re.compile(r"\b(?:asm|__asm__)\s*(?:volatile\s*)?\(\s*\"\"")
 NAKED_ATTR_RE = re.compile(r"__attribute__\s*\(\([^)]*\bnaked\b[^)]*\)\)")
 ROM_LITERAL = r"0x(?:0[89][0-9A-Fa-f]{6}|[89][0-9A-Fa-f]{6})"
 RAW_ROM_RE = re.compile(rf"(?<![0-9A-Za-z_]){ROM_LITERAL}(?![0-9A-Fa-f])")
-BITFIELD_RE = re.compile(r"\b[A-Za-z_]\w*\s*:\s*\d+\s*;")
+# Declaration-shaped bitfields only. Requiring a type/declarator sequence from
+# the start of the line prevents ``condition ? value : 1;`` from matching.
+# The final alternative also covers unnamed integral padding fields (``u8 : 2``).
+BITFIELD_RE = re.compile(
+    r"^\s*(?:(?:const|volatile|signed|unsigned|struct\s+[A-Za-z_]\w*|"
+    r"union\s+[A-Za-z_]\w*|enum\s+[A-Za-z_]\w*|[A-Za-z_]\w*)\s+)+"
+    r"(?:[A-Za-z_]\w*\s*)?:\s*(?:\d+|[A-Za-z_]\w*)\s*;"
+)
 OFFSET_FIELD_RE = re.compile(
     r"/\*\s*(?:0x)?[0-9A-Fa-f]{1,4}\s*\*/[^;{}]*\b[A-Za-z_]\w*(?:\[[^\]]+\])?\s*;"
 )
@@ -555,13 +563,39 @@ def declaration_name(code: str) -> str | None:
     return candidates[-1] if candidates else None
 
 
-def nearest_function(code_lines: list[str], line: int) -> tuple[str, int] | None:
+def placement_mechanism(code: str) -> str:
+    """Name the shared placement mechanism independently of each symbol."""
+    for marker, label in (
+        ("CONST_DATA", "CONST_DATA → .data"),
+        ("EWRAM_DATA", "EWRAM_DATA → ewram_data"),
+        ("IWRAM_DATA", "IWRAM_DATA → iwram_data"),
+        ("EWRAM_OVERLAY", "EWRAM_OVERLAY"),
+    ):
+        if marker in code:
+            return label
+    section = re.search(r"\bSECTION\s*\(\s*([^)]+)\)", code)
+    if section:
+        return f"SECTION({normalize_evidence(section.group(1), 60)})"
+    attribute = re.search(
+        r"__attribute__\s*\(\([^)]*\bsection\s*\(\s*([^)]+)\)",
+        code,
+    )
+    if attribute:
+        return f"section({normalize_evidence(attribute.group(1), 60)})"
+    return "custom section placement"
+
+
+def nearest_function(
+    code_lines: list[str], line: int, *, allow_forward: bool = False
+) -> tuple[str, int] | None:
     """Find a nearby declaration-shaped function root, avoiding call sites."""
-    # Attributes precede their function, so first inspect a small forward window.
-    for index in range(line - 1, min(len(code_lines), line + 8)):
-        match = FUNCTION_DECL_RE.match(code_lines[index])
-        if match and match.group(1) not in NON_FUNCTION_NAMES:
-            return match.group(1), index + 1
+    # Only naked markers/attributes legitimately precede the function they own.
+    # All findings inside bodies must bind backwards, never to a later function.
+    if allow_forward:
+        for index in range(line - 1, min(len(code_lines), line + 8)):
+            match = FUNCTION_DECL_RE.match(code_lines[index])
+            if match and match.group(1) not in NON_FUNCTION_NAMES:
+                return match.group(1), index + 1
     for index in range(line - 1, -1, -1):
         match = FUNCTION_DECL_RE.match(code_lines[index])
         if match and match.group(1) not in NON_FUNCTION_NAMES:
@@ -595,9 +629,8 @@ def root_for_finding(
         return "manifest", path, line
     if category == "forced-data-placement":
         declaration = "\n".join(code_lines[line - 1 : min(len(code_lines), line + 4)])
-        name = declaration_name(declaration)
-        if name:
-            return "construct", name, line
+        finding["symbol"] = declaration_name(declaration)
+        return "placement", placement_mechanism(declaration), line
     if category == "mismatched-signature":
         match = re.search(r"MISMATCHED_SIGNATURE\s*\(\s*([A-Za-z_]\w*)", code)
         if match:
@@ -614,7 +647,15 @@ def root_for_finding(
         name = "battle-animation ROM base" if "banim" in finding["evidence"].lower() else "ROM base"
         return "construct", name, line
 
-    function = nearest_function(code_lines, line) if Path(path).suffix in C_EXTENSIONS else None
+    function = (
+        nearest_function(
+            code_lines,
+            line,
+            allow_forward=category == "naked-function",
+        )
+        if Path(path).suffix in C_EXTENSIONS
+        else None
+    )
     if function:
         return "construct", function[0], function[1]
     return "construct", path, line
@@ -656,54 +697,88 @@ def assign_ids(findings: list[dict]) -> None:
 def build_aggregates(findings: list[dict]) -> list[dict]:
     groups: dict[tuple, list[dict]] = {}
     for finding in findings:
-        key = (
-            finding["category"],
-            finding["root_kind"],
-            finding["root_construct"],
-            finding["file"],
-            finding["root_line"],
-            finding["subsystem"],
-            finding["priority"],
-            finding["severity"],
-            finding["disposition"],
-        )
+        if finding["root_kind"] == "placement":
+            # Placement macros/sections are repository-wide migration roots.
+            # Symbols and files remain available on the aggregate and through
+            # every finding ID, but do not split the actionable root.
+            key = (
+                finding["category"],
+                finding["root_kind"],
+                finding["root_construct"],
+                finding["priority"],
+                finding["severity"],
+                finding["disposition"],
+            )
+        else:
+            key = (
+                finding["category"],
+                finding["root_kind"],
+                finding["root_construct"],
+                finding["file"],
+                finding["root_line"],
+                finding["subsystem"],
+                finding["priority"],
+                finding["severity"],
+                finding["disposition"],
+            )
         groups.setdefault(key, []).append(finding)
 
     aggregates: list[dict] = []
-    for key, members in groups.items():
-        (
-            category,
-            root_kind,
-            root_construct,
-            path,
-            root_line,
-            subsystem,
-            priority,
-            severity,
-            disposition,
-        ) = key
-        material = "\0".join(
-            (category, root_kind, root_construct, path, str(root_line))
+    for members in groups.values():
+        members = sorted(
+            members, key=lambda item: (item["file"], item["line"], item["id"])
         )
+        first = members[0]
+        category = first["category"]
+        root_kind = first["root_kind"]
+        root_construct = first["root_construct"]
+        priority = first["priority"]
+        severity = first["severity"]
+        disposition = first["disposition"]
+        files = sorted({member["file"] for member in members})
+        subsystems = sorted({member["subsystem"] for member in members})
+        if root_kind == "placement":
+            path = files[0]
+            root_line = min(
+                member["line"] for member in members if member["file"] == path
+            )
+            subsystem = subsystems[0] if len(subsystems) == 1 else "cross-subsystem"
+            material = "\0".join((category, root_kind, root_construct))
+        else:
+            path = first["file"]
+            root_line = first["root_line"]
+            subsystem = first["subsystem"]
+            material = "\0".join(
+                (category, root_kind, root_construct, path, str(root_line))
+            )
         aggregate_id = "root:" + hashlib.sha256(material.encode("utf-8")).hexdigest()[:12]
         statuses = Counter(member["status"] for member in members)
-        aggregates.append(
-            {
-                "id": aggregate_id,
-                "category": category,
-                "severity": severity,
-                "priority": priority,
-                "file": path,
-                "line": root_line,
-                "root_kind": root_kind,
-                "root_construct": root_construct,
-                "subsystem": subsystem,
-                "disposition": disposition,
-                "finding_count": len(members),
-                "finding_ids": sorted(member["id"] for member in members),
-                "by_status": dict(sorted(statuses.items())),
-            }
-        )
+        aggregate = {
+            "id": aggregate_id,
+            "category": category,
+            "severity": severity,
+            "priority": priority,
+            "file": path,
+            "line": root_line,
+            "root_kind": root_kind,
+            "root_construct": root_construct,
+            "subsystem": subsystem,
+            "disposition": disposition,
+            "finding_count": len(members),
+            "finding_ids": sorted(member["id"] for member in members),
+            "by_status": dict(sorted(statuses.items())),
+        }
+        if root_kind == "placement":
+            aggregate["file_count"] = len(files)
+            aggregate["files"] = files
+            aggregate["symbols"] = sorted(
+                {
+                    member["symbol"]
+                    for member in members
+                    if member.get("symbol")
+                }
+            )
+        aggregates.append(aggregate)
     return sorted(
         aggregates,
         key=lambda item: (
