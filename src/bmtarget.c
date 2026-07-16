@@ -148,7 +148,7 @@ void ForEachUnitInMagBy2Range(void(*func)(struct Unit* unit)) {
     return;
 }
 
-void TryAddTrapsToTargetList() {
+void TryAddTrapsToTargetList(void) {
     struct Trap* trap;
 
     for (trap = GetTrap(0); trap->type != TRAP_NONE; ++trap) {

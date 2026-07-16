@@ -21,8 +21,6 @@
 #include "sio.h"
 #include "constants/songs.h"
 
-s8 CheckInLinkArena();
-
 void PrepAtMenu_OnInit(struct ProcAtMenu * proc)
 {
     PrepSetLatestCharId(0);

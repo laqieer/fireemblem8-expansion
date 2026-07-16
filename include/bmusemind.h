@@ -10,7 +10,7 @@ void ExecBarrierStaff(ProcPtr proc);
 void GetRescueStaffeePosition(struct Unit* unit, struct Unit* target, int* xOut, int* yOut);
 void ExecRescueStaff(ProcPtr proc);
 int PostWarpStaff_ExecTrap(ProcPtr proc);
-int PostWarpStaff_RefreshMap(void);
+int PostWarpStaff_RefreshMap(ProcPtr proc);
 void PostWarpStaff_RefreshMapFromProc(ProcPtr proc);
 void ExecWarpStaff(ProcPtr proc);
 void ExecStatusStaff(ProcPtr proc);
@@ -41,8 +41,8 @@ void ExecTorchStaff(ProcPtr proc);
 void ExecDanceRing(ProcPtr proc);
 void ActionStaffDoorChestUseItem(ProcPtr proc);
 void ActionPick(ProcPtr proc);
-void AfterItemUse_SetTargetStatus(void);
-void ExecNightmareStaffEffect(void);
+void AfterItemUse_SetTargetStatus(ProcPtr proc);
+void ExecNightmareStaffEffect(ProcPtr proc);
 
 extern struct UnitDefinition gUnk_39;
 

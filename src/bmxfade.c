@@ -4,7 +4,7 @@
 #include "proc.h"
 #include "bm.h"
 
-void SetAllUnitNotBackSprite();
+void SetAllUnitNotBackSprite(ProcPtr proc);
 
 struct BmxfadeProc {
     PROC_HEADER;
@@ -54,7 +54,7 @@ void bmxfade_loop(struct BmxfadeProc *proc)
 
 void Destruct6CBMXFADE(struct BmxfadeProc *proc)
 {
-    SetAllUnitNotBackSprite();
+    SetAllUnitNotBackSprite(proc);
 
     if (0 != proc->game_lock)
         UnlockGame();

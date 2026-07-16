@@ -1175,7 +1175,7 @@ void TickActiveFactionTurn(void) {
     }
 }
 
-void SetAllUnitNotBackSprite(void) {
+void SetAllUnitNotBackSprite(ProcPtr proc) {
     int i;
 
     for (i = 1; i < 0xC0; ++i) {

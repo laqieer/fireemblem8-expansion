@@ -237,7 +237,7 @@ int PostWarpStaff_ExecTrap(ProcPtr proc) {
     return ExecTrapAfterWarp(proc);
 }
 
-int PostWarpStaff_RefreshMap() {
+int PostWarpStaff_RefreshMap(ProcPtr proc) {
     EndMu(GetUnitMu(GetUnit(gActionData.targetIndex)));
 
     RefreshEntityBmMaps();
@@ -376,7 +376,7 @@ void ExecNightmare(ProcPtr proc) {
     return;
 }
 
-void ApplyNightmareEffect() {
+void ApplyNightmareEffect(void) {
     int i;
     int accuracy;
     int targetCount;
@@ -540,7 +540,7 @@ void ExecAntitoxinItem(ProcPtr proc) {
     return;
 }
 
-void ExecKeyItem() {
+void ExecKeyItem(void) {
     int x, y;
 
     UnitUpdateUsedItem(
@@ -637,7 +637,7 @@ void ExecUnitPromotion(struct Unit* unit, u8 classId, int itemIdx, s8 unk) {
     return;
 }
 
-void ExecPromotionToClass1() {
+void ExecPromotionToClass1(void) {
     ExecUnitPromotion(GetUnit(gActionData.subjectIndex), 1, gActionData.itemSlotIndex, 1);
     BeginBattleAnimations();
 
@@ -1086,7 +1086,7 @@ void ActionPick(ProcPtr proc) {
     return;
 }
 
-void AfterItemUse_SetTargetStatus() {
+void AfterItemUse_SetTargetStatus(ProcPtr proc) {
     if (gBattleTarget.statusOut < 0) {
         return;
     }
@@ -1097,7 +1097,7 @@ void AfterItemUse_SetTargetStatus() {
     return;
 }
 
-void ExecNightmareStaffEffect() {
+void ExecNightmareStaffEffect(ProcPtr proc) {
     ApplyNightmareEffect();
     return;
 }

@@ -237,8 +237,8 @@ void PrepScreenMenu_OnCheckMap(struct ProcAtMenu* proc) {
     Proc_Goto(proc, 0x5);
 }
 
-void __malloc_lock_1() {}
-void __malloc_unlock_1() {}
+void __malloc_lock_1(void) {}
+void __malloc_unlock_1(void) {}
 
 void ResetSioPidPool(void)
 {

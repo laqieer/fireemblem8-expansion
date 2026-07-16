@@ -223,12 +223,12 @@ void StartSubtitleHelp(ProcPtr parent, const char * string) {
     return;
 }
 
-void EndSubtitleHelp() {
+void EndSubtitleHelp(void) {
     Proc_EndEach(gProcScr_SubtitleHelp);
     return;
 }
 
-s8 IsSubtitleHelpActive() {
+s8 IsSubtitleHelpActive(ProcPtr proc) {
     return Proc_Find(gProcScr_SubtitleHelp) != 0;
 }
 

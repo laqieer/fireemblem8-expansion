@@ -1,4 +1,5 @@
 #include "global.h"
+#include <string.h>
 
 #include "constants/characters.h"
 
@@ -50,7 +51,7 @@ const struct Outer080D7FD0 gBmdifficulty_6 = {
     0x11,
 };
 
-int GetCurrentPromotedLevelBonus() {
+int GetCurrentPromotedLevelBonus(void) {
     if (gPlaySt.chapterStateBits & PLAY_FLAG_HARD) {
         return 19;
     }
@@ -80,7 +81,7 @@ s8 CanUnitSeize(struct Unit* unit) {
     return unit->pCharacterData->number == leaderId;
 }
 
-void DungeonRecordUi_InitText() {
+void DungeonRecordUi_InitText(void) {
     int r2;
     int r4;
     int r5;
@@ -322,7 +323,7 @@ void UpdateDungeonStats(struct Dungeon* dungeon) {
     return;
 }
 
-void UpdateDungeonRecordStats() {
+void UpdateDungeonRecordStats(void) {
     struct Dungeon* current;
     struct Dungeon* record;
     int val;
@@ -375,7 +376,7 @@ void UpdateDungeonRecordStats() {
     return;
 }
 
-void UpdateDungeonEnemiesDefeated() {
+void UpdateDungeonEnemiesDefeated(void) {
     struct Dungeon* current;
     struct Dungeon* dungeon;
     int val;
@@ -474,18 +475,18 @@ void RecordDisplayAfterTowerCleared(ProcPtr proc)
     return;
 }
 
-void PushGlobalTimer() {
+void PushGlobalTimer(ProcPtr proc) {
     int clock = GetGameClock();
     gBmdifficulty_2 = clock;
     return;
 }
 
-void PopGlobalTimer() {
+void PopGlobalTimer(ProcPtr proc) {
     SetGameTime(gBmdifficulty_2);
     return;
 }
 
-void DungeonRecordUi_StartBgm() {
+void DungeonRecordUi_StartBgm(ProcPtr proc) {
     StartBgm(SONG_RECORDS, 0);
     return;
 }
@@ -971,7 +972,7 @@ void DrawDungeonRecordUiText(ProcPtr proc) {
     return;
 }
 
-void DungeonRecordUi_UpdateRunningTime() {
+void DungeonRecordUi_UpdateRunningTime(void) {
     struct Dungeon currentDungeon;
     int unkTime1;
     u32 unkTime2;
@@ -1020,7 +1021,7 @@ void DungeonRecordUi_KeyListener(ProcPtr proc) {
     return;
 }
 
-void EndDungeonRecordUi() {
+void EndDungeonRecordUi(ProcPtr proc) {
     EndSaveBgFog();
 
     EndGreenText();
@@ -1321,7 +1322,7 @@ u16 CONST_DATA gBmdifficulty_9[] = {
     0x16, 0x1E, 0x00,
 };
 
-int CONST_DATA gBmdifficulty_10[] =
+u32 CONST_DATA gBmdifficulty_10[] =
 {
     0x980, 0x380,
     0x8D0, 0x430,

@@ -57,7 +57,7 @@ struct ProcCmd CONST_DATA gProcScr_AiTargetCursor[] = {
     PROC_END,
 };
 
-void CpPerform_UpdateMapMusic(void);
+void CpPerform_UpdateMapMusic(ProcPtr proc);
 void CpPerform_MoveCameraOntoUnit(struct CpPerformProc* proc);
 void CpPerform_BeginUnitMovement(struct CpPerformProc* proc);
 void CpPerform_MoveCameraOntoTarget(struct CpPerformProc* proc);
@@ -123,7 +123,7 @@ void StartAiTargetCursor(int x, int y, int kind, ProcPtr parent) {
     return;
 }
 
-void CpPerform_UpdateMapMusic() {
+void CpPerform_UpdateMapMusic(ProcPtr proc) {
     if (!Proc_Find(gMusicProc3Script)) {
         StartMapSongBgm();
     }
@@ -176,7 +176,7 @@ void CpPerform_BeginUnitMovement(struct CpPerformProc* proc) {
     return;
 }
 
-void AiRefreshMap() {
+void AiRefreshMap(void) {
     gActiveUnit = GetUnit(gActionData.subjectIndex);
 
     SetCursorMapPosition(gAiDecision.xMove, gAiDecision.yMove);

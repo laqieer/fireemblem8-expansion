@@ -241,7 +241,7 @@ PROC_LABEL(99),
     PROC_END,
 };
 
-void StatusHealEffect_OverlayBg_Init() {
+void StatusHealEffect_OverlayBg_Init(ProcPtr proc) {
     int i;
     u16* src;
     u16* dst;
@@ -264,7 +264,7 @@ void StatusHealEffect_OverlayBg_Init() {
     return;
 }
 
-void StatusHealEffect_OverlayBg_Loop() {
+void StatusHealEffect_OverlayBg_Loop(ProcPtr proc) {
     BG_SetPosition(0, gBmSt.camera.x - (gActiveUnit->xPos * 16), GetGameClock());
 
     return;
@@ -327,7 +327,7 @@ void StatusHealEffect_BlendedSprite_Loop(struct UnknownBMUSAilmentProc* proc) {
     return;
 }
 
-void StatusHealEffect_BlendedSprite_Finish() {
+void StatusHealEffect_BlendedSprite_Finish(ProcPtr proc) {
     ShowUnitSprite(gActiveUnit);
     return;
 }
@@ -457,7 +457,7 @@ struct ProcCmd CONST_DATA sProcScr_StatusHealEffect_PalAnim[] = {
     PROC_END,
 };
 
-void StatusHealEffect_Finish() {
+void StatusHealEffect_Finish(ProcPtr proc) {
 
     ClearBg0Bg1();
 
@@ -555,7 +555,7 @@ void TerrainHealDisplay_Display(struct UnknownBMUSAilmentProc* proc) {
     return;
 }
 
-void FinishDamageDisplay() {
+void FinishDamageDisplay(ProcPtr proc) {
     EndAllMus();
 
     if (gBattleActor.unit.curHP != 0) {

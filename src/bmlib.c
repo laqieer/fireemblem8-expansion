@@ -73,7 +73,7 @@ int Interpolate(int method, int lo, int hi, int x, int x_max)
     return ret;
 }
 
-void Nop_Bmlib_0() {}
+void Nop_Bmlib_0(void) {}
 
 bool StringCompare(const char *str1, const char *str2)
 {
@@ -514,7 +514,7 @@ void DarkenPals(int reduction)
     RegisterDataMove(buf, (void*)PLTT, 0x400);
 }
 
-void Nop_Bmlib_1()
+void Nop_Bmlib_1(void)
 {
     return;
 }

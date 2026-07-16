@@ -189,11 +189,11 @@ void PathArrowDisp_Init(u8 a) {
     }
 }
 
-static inline s8 GetBmMapPointAtCursor() {
+static inline s8 GetBmMapPointAtCursor(void) {
     return gWorkingBmMap[gBmSt.playerCursor.y][gBmSt.playerCursor.x];
 }
 
-static inline u8 GetTerrainAtCursor() {
+static inline u8 GetTerrainAtCursor(void) {
     return TERRAIN_AT(gBmSt.playerCursor.x, gBmSt.playerCursor.y);
 }
 

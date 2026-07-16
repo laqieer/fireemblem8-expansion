@@ -20,7 +20,7 @@
  * port from fe6@StanHash
  */
 
-int CheckInLinkArena();
+int CheckInLinkArena(void);
 
 /* section.data */
 

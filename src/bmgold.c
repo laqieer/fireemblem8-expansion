@@ -1,6 +1,6 @@
 #include "global.h"
 
-u32 GetPartyGoldAmount() {
+u32 GetPartyGoldAmount(void) {
     s8 id = gPlaySt.chapterIndex;
     if (id == 5) {
         return 0;
@@ -25,4 +25,3 @@ void AddPartyGoldAmount(u32 amt) {
         gPlaySt.partyGoldAmount = 999999;
     }
 }
-

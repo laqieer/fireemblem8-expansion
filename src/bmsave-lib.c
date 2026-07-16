@@ -1,4 +1,5 @@
 #include "global.h"
+#include <string.h>
 #include "agb_sram.h"
 #include "bmunit.h"
 #include "bmitem.h"
@@ -825,9 +826,9 @@ int GGM_IsAnyCharacterKnown(struct GlobalSaveInfo *buf)
     return 0;
 }
 
-void BmSave_NopStub2() {}
+void BmSave_NopStub2(void) {}
 
-void __malloc_unlock_3() {}
+void __malloc_unlock_3(void) {}
 
 int IsGamePlayedThrough(void)
 {

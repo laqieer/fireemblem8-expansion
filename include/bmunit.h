@@ -422,7 +422,7 @@ void UnitBeginCantoAction(struct Unit* unit);
 void MoveActiveUnit(int x, int y);
 void ClearActiveFactionGrayedStates(void);
 void TickActiveFactionTurn(void);
-void SetAllUnitNotBackSprite(void); // TODO: better name
+void SetAllUnitNotBackSprite(ProcPtr proc); // TODO: better name
 void UnitUpdateUsedItem(struct Unit* unit, int itemSlot);
 int GetUnitAid(struct Unit* unit);
 int GetUnitMagBy2Range(struct Unit* unit);

@@ -733,7 +733,7 @@ s8 HasNextChapter()
     return proc->nextChapter == 0 ? 0 : 1;
 }
 
-void RestartGameAndGoto8() {
+void RestartGameAndGoto8(void) {
     struct GameCtrlProc* proc;
 
     Proc_EndEach(gProcScr_GameControl);
@@ -745,7 +745,7 @@ void RestartGameAndGoto8() {
     return;
 }
 
-void RestartGameAndGoto12() {
+void RestartGameAndGoto12(void) {
     struct GameCtrlProc* proc;
 
     Proc_EndEach(gProcScr_GameControl);

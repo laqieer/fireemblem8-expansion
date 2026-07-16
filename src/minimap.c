@@ -47,7 +47,7 @@ void Minimap_Init(ProcPtr proc);
 void Minimap_AdjustDisplay(struct MinimapProc* proc);
 void Minimap_InitOpenAnim(struct MinimapProc* proc);
 void Minimap_OpenAnim(struct MinimapProc* proc);
-void InitMinimapFlashPalette(void);
+void InitMinimapFlashPalette(ProcPtr proc);
 void Minimap_Main(ProcPtr proc);
 void Minimap_InitCloseAnim(struct MinimapProc* proc);
 void Minimap_CloseAnim(struct MinimapProc* proc);
@@ -742,7 +742,7 @@ void Minimap_Init(ProcPtr proc) {
 }
 
 //! FE8U = 0x080A7EC4
-void Minimap_OnHBlank() {
+void Minimap_OnHBlank(void) {
     u16 vcount = REG_VCOUNT + 1;
 
     if (vcount > 160) {
@@ -756,7 +756,7 @@ void Minimap_OnHBlank() {
 }
 
 //! FE8U = 0x080A7F04
-void InitMinimapWindowBuffers() {
+void InitMinimapWindowBuffers(void) {
     s16* swap = gMinimapFrontWinBuf;
     gMinimapFrontWinBuf = gMinimapBackWinBuf;
     gMinimapBackWinBuf = swap;
@@ -934,7 +934,7 @@ void ApplyMinimapGraphics(int palId) {
 }
 
 //! FE8U = 0x080A8410
-void InitMinimapFlashPalette() {
+void InitMinimapFlashPalette(ProcPtr proc) {
     int colorNum;
     int palNum;
 
@@ -971,7 +971,7 @@ void InitMinimapFlashPalette() {
 }
 
 //! FE8U = 0x080A849C
-void Minimap_ApplyFlashPalette() {
+void Minimap_ApplyFlashPalette(void) {
     u8 sMinimapObjectFlashPalIndexLut[] = {
         0, 4, 7, 6,
         5, 4, 3, 2,
@@ -987,7 +987,7 @@ void Minimap_ApplyFlashPalette() {
 }
 
 //! FE8U = 0x080A84D8
-void Minimap_ApplyViewportFlashColor() {
+void Minimap_ApplyViewportFlashColor(ProcPtr proc) {
     u8 idx;
     int tmp;
     int r, g, b;
@@ -1163,7 +1163,7 @@ void Minimap_Main(ProcPtr proc) {
 }
 
 //! FE8U = 0x080A87C8
-void StartMinimapPlayerPhase() {
+void StartMinimapPlayerPhase(void) {
     Proc_Start(gProcScr_Minimap, PROC_TREE_3);
     return;
 }

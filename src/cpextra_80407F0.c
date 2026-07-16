@@ -58,7 +58,7 @@ int GetSpecialItemFuncIndex(u16 item) {
     return -1;
 }
 
-s8 AiTryDoSpecialItems() {
+s8 AiTryDoSpecialItems(void) {
     int i;
 
     if (gAiState.flags & AI_FLAG_STAY) {
@@ -258,7 +258,7 @@ s8 AiFindReachableUnlockPosition(struct Unit* unit, u32 flags, struct Vec2* posA
     return 0;
 }
 
-s8 AiTryDoRogueSpecialItems() {
+s8 AiTryDoRogueSpecialItems(void) {
     int flags;
     struct Vec2 posA;
     struct Vec2 posB;
@@ -629,7 +629,7 @@ s8 AiTryUseNightmareStaff(struct UnknownAiInputA* input) {
     // return 0; BUG? No explicit return if foundItem is false
 }
 
-s8 AiDecideNightmareStaff() {
+s8 AiDecideNightmareStaff(const void * input) {
 
     AiSetDecision(gAiState.cmd_result[1], gAiState.cmd_result[2], AI_ACTION_DKNIGHTMARE, gAiState.cmd_result[3], gAiState.cmd_result[4], 0, 0);
 
@@ -715,7 +715,7 @@ s8 AiTryDKSummon(struct UnknownAiInputB* input) {
     return 0;
 }
 
-s8 AiDecideDKSummon() {
+s8 AiDecideDKSummon(const void * input) {
     AiSetDecision(gAiState.cmd_result[1], gAiState.cmd_result[2], AI_ACTION_DKSUMMON, 0, 0, 0, 0);
 
     return 1;
