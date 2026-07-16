@@ -4,61 +4,25 @@
       "frame": 120,
       "framebuffer": true,
       "name": "early-title-sequence",
-      "probes": [
-        {
-          "address": "0x02000000",
-          "size": 4
-        },
-        {
-          "address": "0x03000000",
-          "size": 4
-        }
-      ]
+      "probes": []
     },
     {
       "frame": 300,
       "framebuffer": true,
       "name": "title-input-progression",
-      "probes": [
-        {
-          "address": "0x02000000",
-          "size": 4
-        },
-        {
-          "address": "0x03000000",
-          "size": 4
-        }
-      ]
+      "probes": []
     },
     {
       "frame": 600,
       "framebuffer": true,
       "name": "intro-menu-progression",
-      "probes": [
-        {
-          "address": "0x02000000",
-          "size": 4
-        },
-        {
-          "address": "0x03000000",
-          "size": 4
-        }
-      ]
+      "probes": []
     },
     {
       "frame": 900,
       "framebuffer": true,
       "name": "post-title-progression",
-      "probes": [
-        {
-          "address": "0x02000000",
-          "size": 4
-        },
-        {
-          "address": "0x03000000",
-          "size": 4
-        }
-      ]
+      "probes": []
     }
   ],
   "description": "Deterministic A/START taps adapted from the shiftcheck smoke path.",

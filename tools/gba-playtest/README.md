@@ -2,13 +2,17 @@
 
 `gba_playtest.py` replays a strict JSON input scenario through libmGBA, captures
 named framebuffer/RAM checkpoints, and emits deterministic JSON. It is intended
-to compare behavior when ROM bytes or link addresses legitimately change; the
-fingerprint therefore does **not** contain or compare the ROM hash.
+to compare behavior when ROM bytes or link addresses legitimately change.
+Every capture binds the behavior to machine-readable ROM provenance: SHA-1,
+byte size, header title, and header game code. The backend executes the same
+immutable temporary ROM copy that is hashed, avoiding a hash/load path race.
 
 The tool does not load save files, screenshots, or savestates. Framebuffer hashes
 are FNV-1a-64 over canonical 24-bit RGB bytes (alpha/padding and host endianness
 are excluded). The small C backend is compiled into a temporary directory for
 each command, so no emulator-generated binary is left in the tree.
+Compiler, pkg-config, and emulator processes all have bounded timeouts with
+actionable diagnostics.
 
 ## Dependencies
 
@@ -25,7 +29,7 @@ python3 tools/gba-playtest/gba_playtest.py backend-check
 macOS (Homebrew):
 
 ```sh
-brew install mgba
+brew install pkg-config mgba
 python3 tools/gba-playtest/gba_playtest.py backend-check
 ```
 
@@ -51,11 +55,32 @@ python3 tools/gba-playtest/gba_playtest.py verify \
   --rom fireemblem8.gba \
   --scenario tools/gba-playtest/scenarios/boot.json \
   --expected tools/gba-playtest/fingerprints/boot.json
+
+# Explicit migration comparison: report both ROM identities but compare behavior
+python3 tools/gba-playtest/gba_playtest.py verify \
+  --policy behavior \
+  --rom candidate.gba \
+  --scenario tools/gba-playtest/scenarios/boot.json \
+  --expected tools/gba-playtest/fingerprints/boot.json
 ```
 
 Exit statuses are 0 for success, 1 for a valid-but-different fingerprint, and 2
 for malformed input, missing dependencies, or backend/setup failure. Verify
 diagnostics identify the exact JSON path, expected value, and captured value.
+
+### Verification policy
+
+`verify` defaults to `--policy exact-rom`. This is the safe regression policy:
+ROM SHA-1, size, title, game code, scenario identity, hashes, and probes must all
+match. Accidentally testing the wrong ROM is therefore a hard mismatch.
+
+`--policy behavior` is the explicit baseline-vs-candidate migration mode. It
+compares scenario/checkpoint behavior while intentionally allowing ROM
+provenance to differ, and always prints both complete identities. Use it only
+when changed ROM bytes are expected; it never silently turns off identity
+reporting. Capture JSON always contains provenance under `"rom"` regardless of
+the later verification policy. Scenario schema version remains 1; provenance is
+mandatory in fingerprint format version 2.
 
 ## Scenario format
 
@@ -78,10 +103,7 @@ expectations, and invalid key/address names are errors.
       "frame": 180,
       "framebuffer": true,
       "expected_framebuffer_hash": "fnv1a64-rgb24:0123456789abcdef",
-      "probes": [
-        {"address": "0x02000000", "size": 4},
-        {"address": "0x03000000", "size": 2, "expected": "0x1234"}
-      ]
+      "probes": []
     }
   ]
 }
@@ -99,6 +121,12 @@ Probes may be 1, 2, or 4 aligned bytes in EWRAM
 Optional probe values are lowercase, fixed-width little-endian integer
 renderings. Optional inline expectations make capture fail immediately; normal
 regression verification uses a separate checked-in fingerprint.
+Only probe documented semantic state whose address and meaning remain stable
+under the intended compiler/linker migration. Arbitrary region-base words,
+allocator scratch, and relocated pointers are not valid behavioral oracles.
+The boot/title scenarios intentionally use framebuffer-only checkpoints. The
+source-generated integration fixture uses `0x02000000` only because its own
+documented program explicitly mirrors KEYINPUT there.
 
 Disabled schema-ready stubs additionally use `"disabled": true` and a non-empty
 `"blocker"`. They may have no checkpoints, and capture rejects them explicitly.
@@ -113,6 +141,10 @@ The committed fingerprints were captured with libmGBA 0.10.2 from the baseline
 ROM whose project checksum is `c25b145e37456171ada4b0d440bf88a19f4d509f`.
 An emulator-version change that alters rendered pixels is intentionally reported
 as a fingerprint difference and should be reviewed rather than normalized away.
+`tests/homebrew_fixture.py` generates a tiny original homebrew ROM in a temporary
+directory and drives released/A-held/released frames, pixels, and a semantic RAM
+value through capture and both verification policies. Only generator source is
+committed.
 
 The checked-in new-game, chapter, combat, and save stubs are intentionally
 disabled. The generic shiftcheck input does not prove arrival in those states.

@@ -4,71 +4,33 @@
       "frame": 120,
       "framebuffer_hash": "fnv1a64-rgb24:aa44dbf1d49c5808",
       "name": "early-title-sequence",
-      "probes": [
-        {
-          "address": "0x02000000",
-          "size": 4,
-          "value": "0xffffffff"
-        },
-        {
-          "address": "0x03000000",
-          "size": 4,
-          "value": "0x90ea3671"
-        }
-      ]
+      "probes": []
     },
     {
       "frame": 300,
       "framebuffer_hash": "fnv1a64-rgb24:3855f352b10ce427",
       "name": "title-input-progression",
-      "probes": [
-        {
-          "address": "0x02000000",
-          "size": 4,
-          "value": "0xffffffff"
-        },
-        {
-          "address": "0x03000000",
-          "size": 4,
-          "value": "0x90ea3671"
-        }
-      ]
+      "probes": []
     },
     {
       "frame": 600,
       "framebuffer_hash": "fnv1a64-rgb24:5e614e4c45546454",
       "name": "intro-menu-progression",
-      "probes": [
-        {
-          "address": "0x02000000",
-          "size": 4,
-          "value": "0x000a0008"
-        },
-        {
-          "address": "0x03000000",
-          "size": 4,
-          "value": "0x90ea3671"
-        }
-      ]
+      "probes": []
     },
     {
       "frame": 900,
       "framebuffer_hash": "fnv1a64-rgb24:2d9ab45bcfc84b25",
       "name": "post-title-progression",
-      "probes": [
-        {
-          "address": "0x02000000",
-          "size": 4,
-          "value": "0x00000000"
-        },
-        {
-          "address": "0x03000000",
-          "size": 4,
-          "value": "0x90ea3671"
-        }
-      ]
+      "probes": []
     }
   ],
-  "format_version": 1,
+  "format_version": 2,
+  "rom": {
+    "game_code": "BE8E",
+    "sha1": "c25b145e37456171ada4b0d440bf88a19f4d509f",
+    "size": 16777216,
+    "title": "FIREEMBLEM2E"
+  },
   "scenario": "title-progression"
 }

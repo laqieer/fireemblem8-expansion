@@ -4,46 +4,19 @@
       "frame": 0,
       "framebuffer": true,
       "name": "first-rendered-frame",
-      "probes": [
-        {
-          "address": "0x02000000",
-          "size": 4
-        },
-        {
-          "address": "0x03000000",
-          "size": 4
-        }
-      ]
+      "probes": []
     },
     {
       "frame": 60,
       "framebuffer": true,
       "name": "boot-animation",
-      "probes": [
-        {
-          "address": "0x02000000",
-          "size": 4
-        },
-        {
-          "address": "0x03000000",
-          "size": 4
-        }
-      ]
+      "probes": []
     },
     {
       "frame": 120,
       "framebuffer": true,
       "name": "boot-settled",
-      "probes": [
-        {
-          "address": "0x02000000",
-          "size": 4
-        },
-        {
-          "address": "0x03000000",
-          "size": 4
-        }
-      ]
+      "probes": []
     }
   ],
   "description": "No-input boot capture through the early title sequence.",

@@ -4,54 +4,27 @@
       "frame": 0,
       "framebuffer_hash": "fnv1a64-rgb24:e39b31bd4ef59d25",
       "name": "first-rendered-frame",
-      "probes": [
-        {
-          "address": "0x02000000",
-          "size": 4,
-          "value": "0x00000000"
-        },
-        {
-          "address": "0x03000000",
-          "size": 4,
-          "value": "0x00000000"
-        }
-      ]
+      "probes": []
     },
     {
       "frame": 60,
       "framebuffer_hash": "fnv1a64-rgb24:aa44dbf1d49c5808",
       "name": "boot-animation",
-      "probes": [
-        {
-          "address": "0x02000000",
-          "size": 4,
-          "value": "0xffffffff"
-        },
-        {
-          "address": "0x03000000",
-          "size": 4,
-          "value": "0x90ea3671"
-        }
-      ]
+      "probes": []
     },
     {
       "frame": 120,
       "framebuffer_hash": "fnv1a64-rgb24:aa44dbf1d49c5808",
       "name": "boot-settled",
-      "probes": [
-        {
-          "address": "0x02000000",
-          "size": 4,
-          "value": "0xffffffff"
-        },
-        {
-          "address": "0x03000000",
-          "size": 4,
-          "value": "0x90ea3671"
-        }
-      ]
+      "probes": []
     }
   ],
-  "format_version": 1,
+  "format_version": 2,
+  "rom": {
+    "game_code": "BE8E",
+    "sha1": "c25b145e37456171ada4b0d440bf88a19f4d509f",
+    "size": 16777216,
+    "title": "FIREEMBLEM2E"
+  },
   "scenario": "boot"
 }

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -16,7 +17,12 @@ from pathlib import Path
 from typing import Any, Iterable
 
 
-FORMAT_VERSION = 1
+SCENARIO_SCHEMA_VERSION = 1
+FINGERPRINT_FORMAT_VERSION = 2
+PKG_CONFIG_TIMEOUT_SECONDS = 10
+COMPILER_TIMEOUT_SECONDS = 60
+MIN_BACKEND_TIMEOUT_SECONDS = 10
+MAX_BACKEND_TIMEOUT_SECONDS = 300
 KEY_BITS = {
     "A": 1 << 0,
     "B": 1 << 1,
@@ -153,8 +159,13 @@ def parse_scenario_data(data: Any, source: str = "<scenario>") -> Scenario:
         {"schema_version", "name", "frames", "checkpoints"},
         {"description", "disabled", "blocker"},
     )
-    if not _is_int(root["schema_version"]) or root["schema_version"] != FORMAT_VERSION:
-        raise PlaytestError(f"{source}.schema_version must be integer {FORMAT_VERSION}")
+    if (
+        not _is_int(root["schema_version"])
+        or root["schema_version"] != SCENARIO_SCHEMA_VERSION
+    ):
+        raise PlaytestError(
+            f"{source}.schema_version must be integer {SCENARIO_SCHEMA_VERSION}"
+        )
     name = _expect_name(root["name"], f"{source}.name")
     description = root.get("description", "")
     if not isinstance(description, str):
@@ -303,6 +314,34 @@ def serialize_fingerprint(fingerprint: dict[str, Any]) -> str:
     return json.dumps(fingerprint, indent=2, sort_keys=True, ensure_ascii=True) + "\n"
 
 
+def _header_text(raw: bytes) -> str:
+    raw = raw.rstrip(b"\x00 ")
+    return "".join(
+        chr(byte) if 0x20 <= byte <= 0x7E else f"\\x{byte:02x}" for byte in raw
+    )
+
+
+def rom_provenance(path: Path) -> dict[str, Any]:
+    digest = hashlib.sha1()
+    try:
+        size = path.stat().st_size
+        with path.open("rb") as rom:
+            header = rom.read(0xB0)
+            digest.update(header)
+            while chunk := rom.read(1024 * 1024):
+                digest.update(chunk)
+    except OSError as exc:
+        raise PlaytestError(f"cannot fingerprint ROM {path}: {exc}") from exc
+    if len(header) < 0xB0:
+        raise PlaytestError(f"ROM is too small to contain a GBA header: {path}")
+    return {
+        "game_code": _header_text(header[0xAC:0xB0]),
+        "sha1": digest.hexdigest(),
+        "size": size,
+        "title": _header_text(header[0xA0:0xAC]),
+    }
+
+
 def _compiler_command(source: Path, output: Path) -> list[str]:
     cc = os.environ.get("CC", "cc")
     if not shutil.which(cc):
@@ -320,12 +359,19 @@ def _compiler_command(source: Path, output: Path) -> list[str]:
     ]
     pkg_config = shutil.which("pkg-config")
     if pkg_config:
-        flags = subprocess.run(
-            [pkg_config, "--cflags", "--libs", "mgba"],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        try:
+            flags = subprocess.run(
+                [pkg_config, "--cflags", "--libs", "mgba"],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=PKG_CONFIG_TIMEOUT_SECONDS,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise PlaytestError(
+                f"pkg-config timed out after {PKG_CONFIG_TIMEOUT_SECONDS}s "
+                "while locating libmGBA"
+            ) from exc
         if flags.returncode == 0:
             import shlex
 
@@ -338,7 +384,19 @@ def _compiler_command(source: Path, output: Path) -> list[str]:
 def build_backend(output: Path) -> None:
     source = Path(__file__).with_name("backend.c")
     command = _compiler_command(source, output)
-    result = subprocess.run(command, capture_output=True, text=True, check=False)
+    try:
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=COMPILER_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise PlaytestError(
+            f"libmGBA backend compilation timed out after "
+            f"{COMPILER_TIMEOUT_SECONDS}s"
+        ) from exc
     if result.returncode:
         detail = result.stderr.strip() or result.stdout.strip() or "compiler returned no diagnostics"
         raise PlaytestError(
@@ -426,7 +484,7 @@ def _parse_backend_output(stdout: str, scenario: Scenario) -> dict[str, Any]:
         checkpoints.append(captured)
     return {
         "checkpoints": checkpoints,
-        "format_version": FORMAT_VERSION,
+        "format_version": FINGERPRINT_FORMAT_VERSION,
         "scenario": scenario.name,
     }
 
@@ -440,20 +498,42 @@ def capture(rom: Path, scenario: Scenario) -> dict[str, Any]:
         temporary_path = Path(temporary)
         backend = temporary_path / "gba-playtest-backend"
         plan = temporary_path / "plan.txt"
+        execution_rom = temporary_path / "input.gba"
+        try:
+            shutil.copyfile(rom, execution_rom)
+            execution_rom.chmod(0o400)
+        except OSError as exc:
+            raise PlaytestError(f"cannot stage ROM {rom} for deterministic execution: {exc}") from exc
+        # The identity is computed from the immutable temporary copy passed to
+        # libmGBA, avoiding a path-replacement race between hashing and loading.
+        provenance = rom_provenance(execution_rom)
         build_backend(backend)
         _write_plan(plan, scenario)
-        result = subprocess.run(
-            [str(backend), str(rom), str(plan)],
-            capture_output=True,
-            text=True,
-            check=False,
+        last_frame = scenario.checkpoints[-1].frame
+        backend_timeout = min(
+            MAX_BACKEND_TIMEOUT_SECONDS,
+            max(MIN_BACKEND_TIMEOUT_SECONDS, 10 + last_frame / 30),
         )
+        try:
+            result = subprocess.run(
+                [str(backend), str(execution_rom), str(plan)],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=backend_timeout,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise PlaytestError(
+                f"libmGBA backend timed out after {backend_timeout:g}s "
+                f"while running through frame {last_frame}"
+            ) from exc
         if result.returncode:
             diagnostic = result.stderr.strip() or "backend returned no diagnostic"
             raise PlaytestError(
                 f"libmGBA backend failed with exit {result.returncode}: {diagnostic}"
             )
         fingerprint = _parse_backend_output(result.stdout, scenario)
+        fingerprint["rom"] = provenance
     inline_differences = compare_inline_expectations(scenario, fingerprint)
     if inline_differences:
         raise PlaytestError(
@@ -492,10 +572,31 @@ def compare_inline_expectations(
 
 
 def validate_fingerprint(data: Any, source: str) -> dict[str, Any]:
-    root = _expect_object(data, source, {"format_version", "scenario", "checkpoints"})
-    if not _is_int(root["format_version"]) or root["format_version"] != FORMAT_VERSION:
-        raise PlaytestError(f"{source}.format_version must be integer {FORMAT_VERSION}")
+    root = _expect_object(
+        data, source, {"format_version", "scenario", "rom", "checkpoints"}
+    )
+    if (
+        not _is_int(root["format_version"])
+        or root["format_version"] != FINGERPRINT_FORMAT_VERSION
+    ):
+        raise PlaytestError(
+            f"{source}.format_version must be integer {FINGERPRINT_FORMAT_VERSION}"
+        )
     _expect_name(root["scenario"], f"{source}.scenario")
+    rom = _expect_object(
+        root["rom"], f"{source}.rom", {"sha1", "size", "title", "game_code"}
+    )
+    if not isinstance(rom["sha1"], str) or not re.fullmatch(
+        r"[0-9a-f]{40}", rom["sha1"]
+    ):
+        raise PlaytestError(f"{source}.rom.sha1 must be 40 lowercase hex digits")
+    if not _is_int(rom["size"]) or rom["size"] <= 0:
+        raise PlaytestError(f"{source}.rom.size must be a positive integer")
+    for field, limit in (("title", 48), ("game_code", 16)):
+        if not isinstance(rom[field], str) or len(rom[field]) > limit:
+            raise PlaytestError(
+                f"{source}.rom.{field} must be a string no longer than {limit} characters"
+            )
     if not isinstance(root["checkpoints"], list):
         raise PlaytestError(f"{source}.checkpoints must be an array")
     previous_frame = -1
@@ -562,9 +663,26 @@ def _recursive_differences(expected: Any, actual: Any, path: str = "") -> Iterab
 
 
 def compare_fingerprints(
-    expected: dict[str, Any], actual: dict[str, Any]
+    expected: dict[str, Any], actual: dict[str, Any], policy: str = "exact-rom"
 ) -> list[str]:
-    return list(_recursive_differences(expected, actual))
+    if policy == "exact-rom":
+        return list(_recursive_differences(expected, actual))
+    if policy == "behavior":
+        expected_behavior = {
+            key: expected[key] for key in ("format_version", "scenario", "checkpoints")
+        }
+        actual_behavior = {
+            key: actual[key] for key in ("format_version", "scenario", "checkpoints")
+        }
+        return list(_recursive_differences(expected_behavior, actual_behavior))
+    raise ValueError(f"unknown verification policy: {policy}")
+
+
+def format_rom_identity(provenance: dict[str, Any]) -> str:
+    return (
+        f"sha1={provenance['sha1']} size={provenance['size']} "
+        f"title={provenance['title']!r} game_code={provenance['game_code']!r}"
+    )
 
 
 def _write_output(path: str, text: str) -> None:
@@ -597,6 +715,15 @@ def _make_parser() -> argparse.ArgumentParser:
     verify_parser.add_argument("--rom", required=True, type=Path)
     verify_parser.add_argument("--scenario", required=True, type=Path)
     verify_parser.add_argument("--expected", required=True, type=Path)
+    verify_parser.add_argument(
+        "--policy",
+        choices=("exact-rom", "behavior"),
+        default="exact-rom",
+        help=(
+            "exact-rom (safe default) compares ROM identity and behavior; "
+            "behavior explicitly compares checkpoints across different ROM identities"
+        ),
+    )
 
     subparsers.add_parser(
         "backend-check", help="compile the libmGBA backend without running a ROM"
@@ -618,18 +745,29 @@ def main(argv: list[str] | None = None) -> int:
             _write_output(args.output, serialize_fingerprint(actual))
             return 0
         expected = validate_fingerprint(_read_json(args.expected), str(args.expected))
-        differences = compare_fingerprints(expected, actual)
+        differences = compare_fingerprints(expected, actual, args.policy)
         if differences:
             print(
-                f"fingerprint mismatch for scenario {scenario.name!r}:",
+                f"fingerprint mismatch for scenario {scenario.name!r} "
+                f"under policy {args.policy!r}:",
+                file=sys.stderr,
+            )
+            print(
+                f"  baseline ROM: {format_rom_identity(expected['rom'])}",
+                file=sys.stderr,
+            )
+            print(
+                f"  candidate ROM: {format_rom_identity(actual['rom'])}",
                 file=sys.stderr,
             )
             for difference in differences:
                 print(f"  - {difference}", file=sys.stderr)
             return 1
         print(
-            f"fingerprint verified: scenario={scenario.name} "
-            f"checkpoints={len(scenario.checkpoints)}"
+            f"fingerprint verified: policy={args.policy} scenario={scenario.name} "
+            f"checkpoints={len(scenario.checkpoints)}\n"
+            f"  baseline ROM: {format_rom_identity(expected['rom'])}\n"
+            f"  candidate ROM: {format_rom_identity(actual['rom'])}"
         )
         return 0
     except PlaytestError as exc:

@@ -11,12 +11,12 @@ class SerializationTests(unittest.TestCase):
     def test_serialization_is_sorted_and_has_one_trailing_newline(self):
         first = {
             "scenario": "stable",
-            "format_version": 1,
+            "format_version": 2,
             "checkpoints": [{"probes": [], "name": "cp", "frame": 1}],
         }
         second = {
             "checkpoints": [{"frame": 1, "name": "cp", "probes": []}],
-            "format_version": 1,
+            "format_version": 2,
             "scenario": "stable",
         }
         self.assertEqual(
