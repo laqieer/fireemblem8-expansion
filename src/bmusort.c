@@ -25,7 +25,7 @@ void PushUnit(struct Unit* unit)
     sUnitStackTop++;
 }
 
-void LoadPlayerUnitsFromUnitStack()
+void LoadPlayerUnitsFromUnitStack(void)
 {
     int i;
     for (i = 0; i < 0x3E; ++i)
@@ -34,7 +34,7 @@ void LoadPlayerUnitsFromUnitStack()
     CpuCopy16(sUnitStackBase, gUnitArrayBlue, (void*)sUnitStackTop - (void*)sUnitStackBase);
 }
 
-void LoadPlayerUnitsFromUnitStack2()
+void LoadPlayerUnitsFromUnitStack2(void)
 {
     int i;
     for (i = 0; i < 0x3E; ++i)
@@ -42,4 +42,3 @@ void LoadPlayerUnitsFromUnitStack2()
 
     CpuCopy16(sUnitStackBase, gUnitArrayBlue, (void*)sUnitStackTop - (void*)sUnitStackBase);
 }
-

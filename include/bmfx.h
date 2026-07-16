@@ -155,7 +155,7 @@ extern u16 Tsa_ChapterIntro_Fog[];
 void ProcBmFx_CommonEnd(struct ProcBmFx *proc);
 
 void StartPrepUnitSwap(ProcPtr parent, struct Unit *unit, int x_dest, int y_dest);
-int PrepUnitSwapProcExits();
+int PrepUnitSwapProcExits(ProcPtr proc);
 void NewPopup2_DropItem(ProcPtr, int);
 void NewPopup2_SendItem(ProcPtr, int);
 void StartGameOverScreen(ProcPtr parent);

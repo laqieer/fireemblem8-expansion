@@ -3,7 +3,7 @@
 extern u8 gUnk_68[];  // buffer to copy the code to
 
 // pointers to the loaded functions
-extern void (*gUnk_67)(int, int, int, int);
+extern void (*gUnk_67)(u16 *, u32 *, u32 *, int);
 extern void (*DecodeStringRAMFunc)(const char *, char *);
 extern void (*gUnk_66)(int, int, const u16 *, int);
 extern void (*gUnk_69)(int, int, const u16 *, int);
@@ -36,9 +36,9 @@ void StoreRoutinesToIRAM(void)
     gUnk_65 = (void *)(gUnk_68 + (MapFloodCore    - ARMCodeToCopy_Start));
 }
 
-void DrawGlyphRam(int a, int b, int c, int d)
+void DrawGlyphRam(u16 *pal, u32 *dest, u32 *src, int subx)
 {
-    gUnk_67(a, b, c, d);
+    gUnk_67(pal, dest, src, subx);
 }
 
 void CallARM_DecompText(const char *a, char *b)
@@ -61,7 +61,7 @@ void CallARM_Func5(int a, int b, int c)
     gUnk_70(a, b, c);
 }
 
-void CallARM_FillMovementMap()
+void CallARM_FillMovementMap(void)
 {
     gUnk_65();
 }

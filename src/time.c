@@ -3,22 +3,22 @@
 extern s8 gKeyComboResetEN;
 extern u32 gGameClock;
 
-void EnableKeyComboResetEN()
+void EnableKeyComboResetEN(ProcPtr proc)
 {
   gKeyComboResetEN = 1;
 };
 
-void DisableKeyComboResetEN()
+void DisableKeyComboResetEN(void)
 {
   gKeyComboResetEN = 0;
 };
 
-int CheckCanKeyComboReset()
+int CheckCanKeyComboReset(void)
 {
   return gKeyComboResetEN;
 };
 
-u32 GetGameClock() {
+u32 GetGameClock(void) {
   return gGameClock;
 };
 
@@ -26,7 +26,7 @@ void SetGameTime(int newTime) {
   gGameClock = newTime;
 };
 
-void IncrementGameClock() {
+void IncrementGameClock(void) {
   gGameClock++;
   if (gGameClock > 215999999) gGameClock = 213840000;
 };

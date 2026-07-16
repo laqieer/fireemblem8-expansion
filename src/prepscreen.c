@@ -204,7 +204,7 @@ int PrepScreenMenu_OnStartPress(struct ProcAtMenu* proc) {
     
 }
 
-int Prep_HasUnitDeployed()
+int Prep_HasUnitDeployed(void)
 {
     struct ProcAtMenu* proc = Proc_Find(ProcScr_AtMenu);
     if (0 == proc->cur_counter)
@@ -240,7 +240,7 @@ void PrepScreenMenu_OnCheckMap(struct ProcAtMenu* proc) {
 void __malloc_lock_1() {}
 void __malloc_unlock_1() {}
 
-void ResetSioPidPool()
+void ResetSioPidPool(void)
 {
     int i;
     for (i = 0; i < 5; i++)

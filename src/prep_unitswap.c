@@ -109,7 +109,7 @@ void StartPrepUnitSwap(ProcPtr parent, struct Unit *unit, int x_dest, int y_dest
     HideUnitSprite(unit);
 }
 
-int PrepUnitSwapProcExits()
+int PrepUnitSwapProcExits(ProcPtr proc)
 {
     if (Proc_Find(sProcScr_PrepUnitSwap))
         return 1;
