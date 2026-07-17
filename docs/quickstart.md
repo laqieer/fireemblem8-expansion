@@ -65,7 +65,7 @@ After the script finishes, launch your preferred emulator with `fireemblem8.gba`
 
 The modern bootstrap compiles fifteen verified C files to ARM relocatable
 objects only. It does **not** link an ELF or a modern ROM, and it does not replace
-the matching legacy ROM build. The modern `ap.o`, the five save objects
+the current legacy ROM build. The modern `ap.o`, the five save objects
 (`bmsave-misc.o`, `bmsave-gmap.o`, `bmsave-lib.o`, `bmsave.o`, and
 `bmsave-xmap.o`), and the object defining `AgbMain` remain compile-only; none is
 linked into or executed by the ROM. Cross-ABI layout probes cover the world-map
