@@ -455,7 +455,7 @@ bool null_true(void)
     return true;
 }
 
-bool IsExtraLinkArenaEnabled(int index)
+bool IsExtraLinkArenaEnabled(int index __attribute__((unused)))
 {
     int i;
 
@@ -540,7 +540,7 @@ bool IsExtraFreeMapEnabled(void)
 
 bool IsExtraBonusClaimEnabled(void)
 {
-    struct PlaySt playSt;
+    struct PlaySt playSt __attribute__((unused));
     struct BonusClaimEnt * buf1;
     int i, ret;
 
@@ -608,7 +608,7 @@ int GetTotalAverageSupportValue(void)
 int GetTotalGlobalSupportValue(struct GlobalSaveInfo * buf)
 {
     int i, j, tmp1, tmp2, ret = 0;
-    unsigned char *SuppordRecord;
+    unsigned char *SuppordRecord __attribute__((unused));
     struct GlobalSaveInfo tmp_header;
 
     if (0 == buf) {
@@ -648,8 +648,8 @@ int GetGlobalBestSupport(int unitA, int unitB, struct GlobalSaveInfo *info)
     struct GlobalSaveInfo local_info;
     int i = 0;
     int ret = 0;
-    int tmp0, tmp1, tmp2, tmp3;
-    unsigned char *SuppordRecord;
+    int tmp0, tmp1, tmp2 __attribute__((unused)), tmp3 __attribute__((unused));
+    unsigned char *SuppordRecord __attribute__((unused));
     struct SupportTalkEnt *cur = GetSupportTalkList();
 
     if (info == NULL) {
