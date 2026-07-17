@@ -1,4 +1,5 @@
 #include "global.h"
+#include <string.h>
 #include "proc.h"
 #include "worldmap.h"
 #include "rng.h"
@@ -9,7 +10,6 @@
 #include "constants/worldmap.h"
 #include "constants/chapters.h"
 #include "constants/songs.h"
-
 /**
  * Generate random monsters on the worldmap
  */

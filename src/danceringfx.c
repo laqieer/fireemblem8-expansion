@@ -1,4 +1,5 @@
 #include "global.h"
+#include <string.h>
 #include "functions.h"
 #include "variables.h"
 #include "constants/video-global.h"
@@ -9,7 +10,6 @@
 #include "bmfx.h"
 #include "bmmind.h"
 #include "bmlib.h"
-
 /**
  * Some sparkle effect that's apparenly calling on dance
  */

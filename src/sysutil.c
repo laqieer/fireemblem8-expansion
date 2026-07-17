@@ -1,5 +1,5 @@
 #include "global.h"
-
+#include <string.h>
 #include "bm.h"
 #include "ap.h"
 #include "ctc.h"

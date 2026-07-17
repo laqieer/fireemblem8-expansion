@@ -1,5 +1,5 @@
 #include "global.h"
-
+#include <string.h>
 #include "bmsave.h"
 #include "hardware.h"
 #include "worldmap.h"

@@ -1,6 +1,6 @@
 
 #include "global.h"
-
+#include <string.h>
 #include "proc.h"
 #include "ctc.h"
 #include "hardware.h"

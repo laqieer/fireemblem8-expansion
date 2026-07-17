@@ -1,5 +1,5 @@
 #include "global.h"
-
+#include <string.h>
 #include "hardware.h"
 #include "bmlib.h"
 #include "ctc.h"

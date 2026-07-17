@@ -1,5 +1,5 @@
 #include "global.h"
-
+#include <string.h>
 #include "hardware.h"
 #include "m4a.h"
 #include "soundwrapper.h"

@@ -1,5 +1,5 @@
 #include "global.h"
-
+#include <string.h>
 #include "proc.h"
 #include "bmio.h"
 #include "bmitem.h"
