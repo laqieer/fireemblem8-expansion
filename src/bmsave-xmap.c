@@ -39,7 +39,7 @@ bool ReadExtraMapSaveHead(void)
     if (gExtraMapSaveHead.xmap_magic != XMAP_MAGIC)
         return FALSE;
 
-    if (gExtraMapSaveHead.save_magic32 != SAVEMAGIC32_XMAP + (GetLang() << 24))
+    if (gExtraMapSaveHead.save_magic32 != SAVEMAGIC32_XMAP + ((u32)GetLang() << 24))
         return FALSE;
 
     gExtraMapSaveHead.map_sram += (ptrdiff_t)gpSramExtraData;
@@ -104,7 +104,7 @@ bool IsExtraMapAvailable(void)
     if (buf->xmap_magic != XMAP_MAGIC)
         return FALSE;
 
-    if (buf->save_magic32 != SAVEMAGIC32_XMAP + (GetLang() << 24))
+    if (buf->save_magic32 != SAVEMAGIC32_XMAP + ((u32)GetLang() << 24))
         return FALSE;
 
     if (buf->xmap_size == 0)
