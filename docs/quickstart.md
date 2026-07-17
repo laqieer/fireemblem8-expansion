@@ -59,10 +59,11 @@ After the script finishes, launch your preferred emulator with `fireemblem8.gba`
 
 ## Opt-in modern GCC object cohort
 
-The modern bootstrap compiles nine verified C files to ARM relocatable
+The modern bootstrap compiles ten verified C files to ARM relocatable
 objects only. It does **not** link an ELF or a modern ROM, and it does not replace
-the matching legacy ROM build. The cohort includes `src/main.c`, but its
-`AgbMain` object is not linked into or executed by the ROM.
+the matching legacy ROM build. The modern `ap.o` and the object defining
+`AgbMain` remain compile-only; neither is linked into or executed by the ROM.
+This does not claim callback or ABI execution readiness.
 
 Install GCC, binutils, and newlib headers for `arm-none-eabi`. Package names are
 `gcc-arm-none-eabi`, `binutils-arm-none-eabi`, and
@@ -90,7 +91,7 @@ make expansion-modern-cohort
 ```
 
 Outputs are isolated under
-`build/expansion-modern/<config>/<abi>/src/` as nine `.o` and nine `.d`
+`build/expansion-modern/<config>/<abi>/src/` as ten `.o` and ten `.d`
 files. Select `MODERN_CONFIG=debug` (`-Og -g3`, the default) or
 `MODERN_CONFIG=release` (`-O2 -g0 -DNDEBUG`). Select the provisional
 `MODERN_ABI=aapcs` default (GCC's default ABI, with no explicit `-mabi`) or

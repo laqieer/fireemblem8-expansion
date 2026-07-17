@@ -117,7 +117,7 @@ s8 AP_ExecFrame(struct APHandle* handle) {
             return AP_ExecFrame(handle);
         
         case 1: // delete handle
-            AP_Delete(handle);
+            AP_Delete(handle); /* fall through */
         case 0: // end animation
             return FALSE;
         }
