@@ -205,6 +205,30 @@ class AuditTests(unittest.TestCase):
                 "RealAfterLiteral",
                 "REAL_AFTER_LITERAL(RealAfterLiteral)",
             ),
+            (
+                "src/old_style_definitions.c",
+                128,
+                "ReviewerStringReal",
+                "REVIEWER_REAL_DEFINITION(ReviewerStringReal)",
+            ),
+            (
+                "src/old_style_definitions.c",
+                134,
+                "SlashStringReal",
+                "SLASH_STRING_REAL_DEFINITION(SlashStringReal)",
+            ),
+            (
+                "src/old_style_definitions.c",
+                141,
+                "LineCommentReal",
+                "LINE_COMMENT_REAL_DEFINITION(LineCommentReal)",
+            ),
+            (
+                "src/old_style_definitions.c",
+                151,
+                "BlockCommentReal",
+                "BLOCK_COMMENT_REAL_DEFINITION(BlockCommentReal)",
+            ),
         ]
         actual = [
             (
@@ -243,6 +267,8 @@ class AuditTests(unittest.TestCase):
             "FalsePositive",
             "EscapedFalsePositive",
             "CharacterFalsePositive",
+            "LineCommentFalse",
+            "BlockCommentFalse",
         }
         self.assertFalse(rejected & {finding["symbol"] for finding in findings})
         fixture_lines = (
@@ -251,9 +277,15 @@ class AuditTests(unittest.TestCase):
         macros = audit.definition_macros(fixture_lines)
         self.assertIn("REAL_BEFORE_LITERAL", macros)
         self.assertIn("REAL_AFTER_LITERAL", macros)
+        self.assertIn("REVIEWER_REAL_DEFINITION", macros)
+        self.assertIn("SLASH_STRING_REAL_DEFINITION", macros)
+        self.assertIn("LINE_COMMENT_REAL_DEFINITION", macros)
+        self.assertIn("BLOCK_COMMENT_REAL_DEFINITION", macros)
         self.assertNotIn("LITERAL_DEFINITION", macros)
         self.assertNotIn("ESCAPED_LITERAL_DEFINITION", macros)
         self.assertNotIn("CHARACTER_LITERAL_DEFINITION", macros)
+        self.assertNotIn("LINE_COMMENT_FAKE_DEFINITION", macros)
+        self.assertNotIn("BLOCK_COMMENT_FAKE_DEFINITION", macros)
         inline_asm_fixture = (
             HERE / "fixtures" / "old_style_negative_inline_asm.c"
         ).read_text(encoding="utf-8").splitlines()

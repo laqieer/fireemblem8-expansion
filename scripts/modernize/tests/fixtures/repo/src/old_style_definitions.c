@@ -120,3 +120,32 @@ CHARACTER_LITERAL_DEFINITION(CharacterFalsePositive);
 
 #define REAL_AFTER_LITERAL(name) void name() {}
 REAL_AFTER_LITERAL(RealAfterLiteral)
+
+const char * ReviewerContinuedString =
+    "continued reviewer token \
+/*";
+#define REVIEWER_REAL_DEFINITION(name) void name() {}
+REVIEWER_REAL_DEFINITION(ReviewerStringReal)
+
+const char * SlashContinuedString =
+    "continued slash token \
+//";
+#define SLASH_STRING_REAL_DEFINITION(name) void name() {}
+SLASH_STRING_REAL_DEFINITION(SlashStringReal)
+
+// continued line comment with fake directive \
+#define LINE_COMMENT_FAKE_DEFINITION(name) void name() {}
+#define LINE_COMMENT_FAKE_DEFINITION(name) int line_comment_fake_ ## name
+LINE_COMMENT_FAKE_DEFINITION(LineCommentFalse);
+#define LINE_COMMENT_REAL_DEFINITION(name) void name() {}
+LINE_COMMENT_REAL_DEFINITION(LineCommentReal)
+
+/*
+" quote and escaped backslash \\
+// line-looking comment
+#define BLOCK_COMMENT_FAKE_DEFINITION(name) void name() {}
+*/
+#define BLOCK_COMMENT_FAKE_DEFINITION(name) int block_comment_fake_ ## name
+BLOCK_COMMENT_FAKE_DEFINITION(BlockCommentFalse);
+#define BLOCK_COMMENT_REAL_DEFINITION(name) void name() {}
+BLOCK_COMMENT_REAL_DEFINITION(BlockCommentReal)

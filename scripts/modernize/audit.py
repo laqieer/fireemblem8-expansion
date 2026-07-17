@@ -266,43 +266,94 @@ def strip_c_comments(lines: list[str]) -> list[str]:
     return result
 
 
-def mask_c_literals(lines: list[str]) -> list[str]:
-    """Mask strings/chars after comment removal while preserving line numbers."""
+def mask_c_translation(lines: list[str]) -> list[str]:
+    """Mask comments and literals in one translation-aware lexical pass."""
+    normal = "NORMAL"
+    block_comment = "BLOCK_COMMENT"
+    line_comment = "LINE_COMMENT"
+    string = "STRING"
+    character = "CHAR"
     result: list[str] = []
-    quote = ""
+    state = normal
     escaped = False
-    for line in strip_c_comments(lines):
+    for line in lines:
         output: list[str] = []
-        for char in line:
-            if quote:
+        index = 0
+        while index < len(line):
+            char = line[index]
+            pair = line[index : index + 2]
+            if state == normal:
+                if pair == "/*":
+                    output.extend((" ", " "))
+                    state = block_comment
+                    index += 2
+                    continue
+                if pair == "//":
+                    output.extend((" ", " "))
+                    state = line_comment
+                    index += 2
+                    continue
+                if char == '"':
+                    output.append(" ")
+                    state = string
+                    escaped = False
+                elif char == "'":
+                    output.append(" ")
+                    state = character
+                    escaped = False
+                else:
+                    output.append(char)
+                index += 1
+                continue
+
+            if state == block_comment:
+                if pair == "*/":
+                    output.extend((" ", " "))
+                    state = normal
+                    index += 2
+                else:
+                    output.append(" ")
+                    index += 1
+                continue
+
+            if state == line_comment:
                 output.append(" ")
-                if escaped:
+                index += 1
+                continue
+
+            if state in {string, character}:
+                output.append(" ")
+                if char == "\\" and index == len(line) - 1:
+                    trailing = len(line) - len(line.rstrip("\\"))
+                    escaped = (trailing - 1) % 2 == 1
+                elif escaped:
                     escaped = False
                 elif char == "\\":
                     escaped = True
-                elif char == quote:
-                    quote = ""
+                elif (state == string and char == '"') or (
+                    state == character and char == "'"
+                ):
+                    state = normal
+                index += 1
                 continue
-            if char in {'"', "'"}:
-                quote = char
-                output.append(" ")
-            else:
-                output.append(char)
+
         result.append("".join(output))
-        if quote and not line.endswith("\\"):
-            # Translation-phase line splicing keeps a literal open whenever
-            # the physical line ends in a backslash, including an escaped
-            # backslash pair. Otherwise an unclosed literal ends on this line.
-            quote = ""
-        escaped = False
+        spliced = line.endswith("\\")
+        if state == line_comment and not spliced:
+            state = normal
+        elif state in {string, character} and not spliced:
+            # Recover at an invalid unescaped physical newline so a malformed
+            # literal cannot hide later real directives.
+            state = normal
+            escaped = False
     return result
 
 
-def preprocessor_lines(lines: list[str]) -> set[int]:
+def preprocessor_lines(masked_lines: list[str]) -> set[int]:
     """Return one-based physical lines occupied by preprocessor directives."""
     result: set[int] = set()
     continued = False
-    for index, line in enumerate(mask_c_literals(lines), 1):
+    for index, line in enumerate(masked_lines, 1):
         directive = continued or line.lstrip().startswith("#")
         if directive:
             result.add(index)
@@ -311,8 +362,8 @@ def preprocessor_lines(lines: list[str]) -> set[int]:
 
 
 def old_style_tokens(lines: list[str]) -> list[CToken]:
-    masked = mask_c_literals(lines)
-    directives = preprocessor_lines(lines)
+    masked = mask_c_translation(lines)
+    directives = preprocessor_lines(masked)
     return [
         CToken(match.group(0), line_number)
         for line_number, line in enumerate(masked, 1)
@@ -494,7 +545,7 @@ def normalized_token_evidence(tokens: list[CToken]) -> str:
 
 def logical_directives(lines: list[str]) -> list[tuple[int, str]]:
     result: list[tuple[int, str]] = []
-    cleaned = mask_c_literals(lines)
+    cleaned = mask_c_translation(lines)
     index = 0
     while index < len(cleaned):
         if not cleaned[index].lstrip().startswith("#"):
@@ -629,7 +680,7 @@ def definition_macros(
             for parameter in parameter_text.split(",")
             if parameter.strip()
         ]
-        replacement = mask_c_literals([replacement])[0]
+        replacement = mask_c_translation([replacement])[0]
         for parameter_index, parameter in enumerate(parameters):
             declarator = re.search(
                 rf"\b{re.escape(parameter)}\s*\(\s*\)\s*(\{{)?",
