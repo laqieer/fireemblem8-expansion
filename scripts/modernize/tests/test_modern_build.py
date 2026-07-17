@@ -178,6 +178,95 @@ class ModernBuildTests(unittest.TestCase):
             self.assertEqual(len(list(output_root.rglob("*.o"))), 4)
             self.assertEqual(len(list(output_root.rglob("*.d"))), 4)
 
+    def test_world_map_save_layout_in_all_modern_modes(self):
+        overrides = self.tool_overrides()
+        if overrides is None:
+            self.skipTest("arm-none-eabi GCC and objdump are not available")
+
+        with tempfile.TemporaryDirectory() as temporary:
+            temporary_path = Path(temporary)
+            source = temporary_path / "world_map_save_layout.c"
+            output_root = temporary_path / "layout-objects"
+            source.write_text(
+                "#include <stddef.h>\n"
+                '#include "src/bmsave-gmap.c"\n'
+                "_Static_assert(sizeof(struct GMNode) == 4, "
+                '"GMNode size");\n'
+                "_Static_assert(_Alignof(struct GMNode) == 4, "
+                '"GMNode alignment");\n'
+                "_Static_assert(sizeof(struct OpenPaths) == 0x24, "
+                '"OpenPaths size");\n'
+                "_Static_assert(_Alignof(struct OpenPaths) == 4, "
+                '"OpenPaths alignment");\n'
+                "_Static_assert(sizeof(union PackedWorldMapUnit) == 4, "
+                '"PackedWorldMapUnit size");\n'
+                "_Static_assert(_Alignof(union PackedWorldMapUnit) == 4, "
+                '"PackedWorldMapUnit alignment");\n'
+                "_Static_assert(sizeof(struct GMapSaveInfo) == 0x24, "
+                '"GMapSaveInfo size");\n'
+                "_Static_assert(_Alignof(struct GMapSaveInfo) == 4, "
+                '"GMapSaveInfo alignment");\n'
+                "_Static_assert(offsetof(struct GMapSaveInfo, skirmishState) == 0x20, "
+                '"GMapSaveInfo.skirmishState offset");\n'
+                "_Static_assert(sizeof(struct GMapData) == 0xD0, "
+                '"GMapData size");\n'
+                "_Static_assert(offsetof(struct GMapData, nodes) == 0x30, "
+                '"GMapData.nodes offset");\n'
+                "_Static_assert(offsetof(struct GMapData, unk_a0) == 0xA0, "
+                '"GMapData.unk_a0 offset");\n'
+                "_Static_assert(offsetof(struct GMapData, openPaths) == 0xA4, "
+                '"GMapData.openPaths offset");\n'
+                "_Static_assert(offsetof(struct GMapData, current_node) == 0xC8, "
+                '"GMapData.current_node offset");\n'
+                "const union PackedWorldMapUnit gPackedWorldMapUnitProbe = {\n"
+                "    .pat1 = {\n"
+                "        .unk0_0 = 1,\n"
+                "        .unk0_1 = 0x2A,\n"
+                "        .unk0_7 = 1,\n"
+                "        .unk1 = 0x5A,\n"
+                "    },\n"
+                "};\n",
+                encoding="utf-8",
+            )
+
+            for config in ("debug", "release"):
+                for abi in ("aapcs", "apcs-gnu"):
+                    result = self.make(
+                        ROOT,
+                        "expansion-modern-cohort",
+                        f"MODERN_CONFIG={config}",
+                        f"MODERN_ABI={abi}",
+                        f"MODERN_BUILD_ROOT={output_root}",
+                        f"MODERN_COHORT_SOURCES={source}",
+                        *overrides,
+                    )
+                    self.assertEqual(
+                        result.returncode,
+                        0,
+                        f"{config}/{abi} world-map layout probe failed:\n"
+                        f"{result.stdout}",
+                    )
+
+            objects = sorted(output_root.rglob("*.o"))
+            self.assertEqual(len(objects), 4)
+            self.assertEqual(len(list(output_root.rglob("*.d"))), 4)
+
+            objdump = next(
+                value.split("=", 1)[1]
+                for value in overrides
+                if value.startswith("MODERN_OBJDUMP=")
+            )
+            for object_file in objects:
+                section = subprocess.run(
+                    [objdump, "-s", "-j", ".rodata", str(object_file)],
+                    text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    check=False,
+                )
+                self.assertEqual(section.returncode, 0, section.stdout)
+                self.assertIn("d55a0000", "".join(section.stdout.split()).lower())
+
     def test_real_objects_are_isolated_architectural_and_dependency_aware(self):
         overrides = self.tool_overrides()
         if overrides is None:

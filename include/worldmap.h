@@ -415,7 +415,7 @@ struct GMUnit {
 
 struct GMNode {
     /* 00 */ u8 state;
-};
+} ALIGN(4);
 
 /* GMNode::state */
 enum gm_node_states {
@@ -450,7 +450,7 @@ enum gm_state_bits {
 struct OpenPaths {
     s8 openPaths[0x20];
     s8 openPathsLength;
-};
+} ALIGN(4);
 
 struct GMapData
 {

@@ -345,7 +345,7 @@ struct GMapSaveInfo {
     /* 1C */ u8 unk_1c_3 : 2;
     /* 1D */ u8 skirmishes[3];
     /* 20 */ u8 skirmishState;
-};
+} ALIGN(4);
 
 struct GameSaveBlock {
     struct PlaySt playSt;

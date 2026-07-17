@@ -126,7 +126,7 @@ union PackedWorldMapUnit {
         u8 unk1;
     } pat1;
     u16 pat2;
-};
+} ALIGN(4);
 
 //! FE8U = 0x080A6F50
 void WriteWorldMapUnits(struct GMapData* pGMapData, u16* param_2) {
