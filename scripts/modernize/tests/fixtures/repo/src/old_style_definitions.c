@@ -149,3 +149,29 @@ LINE_COMMENT_REAL_DEFINITION(LineCommentReal)
 BLOCK_COMMENT_FAKE_DEFINITION(BlockCommentFalse);
 #define BLOCK_COMMENT_REAL_DEFINITION(name) void name() {}
 BLOCK_COMMENT_REAL_DEFINITION(BlockCommentReal)
+
+/\
+*
+#define SPLIT_BLOCK_OPEN_FAKE(name) void name() {}
+*/
+#define SPLIT_BLOCK_OPEN_FAKE(name) int split_block_open_fake_ ## name
+SPLIT_BLOCK_OPEN_FAKE(SplitBlockOpenFalse);
+#define SPLIT_BLOCK_OPEN_REAL(name) void name() {}
+SPLIT_BLOCK_OPEN_REAL(SplitBlockOpenReal)
+
+/*
+#define SPLIT_BLOCK_CLOSE_FAKE(name) void name() {}
+*\
+/
+#define SPLIT_BLOCK_CLOSE_FAKE(name) int split_block_close_fake_ ## name
+SPLIT_BLOCK_CLOSE_FAKE(SplitBlockCloseFalse);
+#define SPLIT_BLOCK_CLOSE_REAL(name) void name() {}
+SPLIT_BLOCK_CLOSE_REAL(SplitBlockCloseReal)
+
+/\
+/ split line comment with fake directive \
+#define SPLIT_LINE_FAKE(name) void name() {}
+#define SPLIT_LINE_FAKE(name) int split_line_fake_ ## name
+SPLIT_LINE_FAKE(SplitLineFalse);
+#define SPLIT_LINE_REAL(name) void name() {}
+SPLIT_LINE_REAL(SplitLineReal)

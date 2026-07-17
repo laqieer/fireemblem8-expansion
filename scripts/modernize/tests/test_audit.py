@@ -1,6 +1,9 @@
 import importlib.util
 import json
+import os
+import re
 import shutil
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -229,6 +232,24 @@ class AuditTests(unittest.TestCase):
                 "BlockCommentReal",
                 "BLOCK_COMMENT_REAL_DEFINITION(BlockCommentReal)",
             ),
+            (
+                "src/old_style_definitions.c",
+                160,
+                "SplitBlockOpenReal",
+                "SPLIT_BLOCK_OPEN_REAL(SplitBlockOpenReal)",
+            ),
+            (
+                "src/old_style_definitions.c",
+                169,
+                "SplitBlockCloseReal",
+                "SPLIT_BLOCK_CLOSE_REAL(SplitBlockCloseReal)",
+            ),
+            (
+                "src/old_style_definitions.c",
+                177,
+                "SplitLineReal",
+                "SPLIT_LINE_REAL(SplitLineReal)",
+            ),
         ]
         actual = [
             (
@@ -269,6 +290,9 @@ class AuditTests(unittest.TestCase):
             "CharacterFalsePositive",
             "LineCommentFalse",
             "BlockCommentFalse",
+            "SplitBlockOpenFalse",
+            "SplitBlockCloseFalse",
+            "SplitLineFalse",
         }
         self.assertFalse(rejected & {finding["symbol"] for finding in findings})
         fixture_lines = (
@@ -281,11 +305,17 @@ class AuditTests(unittest.TestCase):
         self.assertIn("SLASH_STRING_REAL_DEFINITION", macros)
         self.assertIn("LINE_COMMENT_REAL_DEFINITION", macros)
         self.assertIn("BLOCK_COMMENT_REAL_DEFINITION", macros)
+        self.assertIn("SPLIT_BLOCK_OPEN_REAL", macros)
+        self.assertIn("SPLIT_BLOCK_CLOSE_REAL", macros)
+        self.assertIn("SPLIT_LINE_REAL", macros)
         self.assertNotIn("LITERAL_DEFINITION", macros)
         self.assertNotIn("ESCAPED_LITERAL_DEFINITION", macros)
         self.assertNotIn("CHARACTER_LITERAL_DEFINITION", macros)
         self.assertNotIn("LINE_COMMENT_FAKE_DEFINITION", macros)
         self.assertNotIn("BLOCK_COMMENT_FAKE_DEFINITION", macros)
+        self.assertNotIn("SPLIT_BLOCK_OPEN_FAKE", macros)
+        self.assertNotIn("SPLIT_BLOCK_CLOSE_FAKE", macros)
+        self.assertNotIn("SPLIT_LINE_FAKE", macros)
         inline_asm_fixture = (
             HERE / "fixtures" / "old_style_negative_inline_asm.c"
         ).read_text(encoding="utf-8").splitlines()
@@ -295,6 +325,151 @@ class AuditTests(unittest.TestCase):
             ),
             [],
         )
+
+    def test_phase2_splice_table_matches_arm_gcc(self):
+        cases = [
+            (
+                "block-open",
+                "/\\\n"
+                "*\n"
+                "#define HIDDEN(n) void n() {}\n"
+                "*/\n"
+                "#define REAL(n) void n() {}\n"
+                "REAL(BlockOpenTable)\n",
+                "\n",
+                6,
+                "BlockOpenTable",
+                "REAL(BlockOpenTable)",
+                "/*",
+                (1, 2),
+            ),
+            (
+                "block-close",
+                "/*\n"
+                "#define HIDDEN(n) void n() {}\n"
+                "*\\\n"
+                "/\n"
+                "#define REAL(n) void n() {}\n"
+                "REAL(BlockCloseTable)\n",
+                "\n",
+                6,
+                "BlockCloseTable",
+                "REAL(BlockCloseTable)",
+                "*/",
+                (3, 4),
+            ),
+            (
+                "line-open",
+                "/\\\n"
+                "/ fake directive follows \\\n"
+                "#define HIDDEN(n) void n() {}\n"
+                "#define REAL(n) void n() {}\n"
+                "REAL(LineOpenTable)\n",
+                "\n",
+                5,
+                "LineOpenTable",
+                "REAL(LineOpenTable)",
+                "//",
+                (1, 2),
+            ),
+            (
+                "lf-string",
+                'const char * text = "continued \\\n'
+                '/*";\n'
+                "#define REAL(n) void n() {}\n"
+                "REAL(LfStringTable)\n",
+                "\n",
+                4,
+                "LfStringTable",
+                "REAL(LfStringTable)",
+                "/*",
+                (2, 2),
+            ),
+            (
+                "crlf-string",
+                'const char * text = "continued \\\n'
+                '/*";\n'
+                "#define REAL(n) void n() {}\n"
+                "REAL(CrlfStringTable)\n",
+                "\r\n",
+                4,
+                "CrlfStringTable",
+                "REAL(CrlfStringTable)",
+                "/*",
+                (2, 2),
+            ),
+        ]
+        rendered: list[tuple[str, bytes, int]] = []
+        for (
+            name,
+            source_lf,
+            newline,
+            line,
+            symbol,
+            evidence,
+            delimiter,
+            delimiter_lines,
+        ) in cases:
+            source = source_lf.replace("\n", newline)
+            physical_lines = source.split("\n")
+            finding = audit.scan_old_style_definitions(
+                f"src/{name}.c", physical_lines
+            )
+            self.assertEqual(
+                [
+                    (
+                        item["file"],
+                        item["line"],
+                        item["symbol"],
+                        item["evidence"],
+                    )
+                    for item in finding
+                ],
+                [(f"src/{name}.c", line, symbol, evidence)],
+            )
+            spliced = audit.splice_c_phase2(physical_lines)
+            delimiter_offset = spliced.text.index(delimiter)
+            self.assertEqual(
+                (
+                    spliced.points[delimiter_offset].line,
+                    spliced.points[delimiter_offset + 1].line,
+                ),
+                delimiter_lines,
+            )
+            rendered.append((name, source.encode("utf-8"), line))
+
+        cc = os.environ.get("MODERN_CC") or shutil.which("arm-none-eabi-gcc")
+        if not cc:
+            self.skipTest("arm-none-eabi GCC is not available")
+        with tempfile.TemporaryDirectory() as temporary:
+            for name, source, expected_line in rendered:
+                path = Path(temporary) / f"{name}.c"
+                path.write_bytes(source)
+                result = subprocess.run(
+                    [
+                        cc,
+                        "-mcpu=arm7tdmi",
+                        "-mthumb",
+                        "-std=gnu11",
+                        "-ffreestanding",
+                        "-Wold-style-definition",
+                        "-fsyntax-only",
+                        "-fdiagnostics-color=never",
+                        str(path),
+                    ],
+                    text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    check=False,
+                )
+                warning_lines = {
+                    int(value)
+                    for value in re.findall(
+                        r":(\d+):\d+: warning: old-style function definition",
+                        result.stdout,
+                    )
+                }
+                self.assertEqual(warning_lines, {expected_line}, result.stdout)
 
     def test_root_aggregation_retains_every_drill_down_id(self):
         with tempfile.TemporaryDirectory() as temporary:

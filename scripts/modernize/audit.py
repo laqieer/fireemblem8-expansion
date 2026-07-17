@@ -150,6 +150,16 @@ class DefinitionMacro(NamedTuple):
     emits_body: bool
 
 
+class SourcePoint(NamedTuple):
+    line: int
+    column: int
+
+
+class MappedSource(NamedTuple):
+    text: str
+    points: tuple[SourcePoint, ...]
+
+
 def normalize_evidence(line: str, limit: int = 140) -> str:
     evidence = " ".join(line.strip().split())
     if len(evidence) > limit:
@@ -266,110 +276,147 @@ def strip_c_comments(lines: list[str]) -> list[str]:
     return result
 
 
-def mask_c_translation(lines: list[str]) -> list[str]:
-    """Mask comments and literals in one translation-aware lexical pass."""
+def splice_c_phase2(lines: list[str]) -> MappedSource:
+    """Remove physical backslash-newline pairs and retain source locations."""
+    characters: list[str] = []
+    points: list[SourcePoint] = []
+    for line_number, physical_line in enumerate(lines, 1):
+        content = physical_line
+        if content.endswith("\n"):
+            content = content[:-1]
+        if content.endswith("\r"):
+            content = content[:-1]
+        spliced = content.endswith("\\")
+        retained = content[:-1] if spliced else content
+        for column, char in enumerate(retained, 1):
+            characters.append(char)
+            points.append(SourcePoint(line_number, column))
+        if not spliced:
+            characters.append("\n")
+            points.append(SourcePoint(line_number, len(content) + 1))
+    return MappedSource("".join(characters), tuple(points))
+
+
+def mask_c_translation(source: MappedSource) -> MappedSource:
+    """Mask comments and literals after phase-2 splicing."""
     normal = "NORMAL"
     block_comment = "BLOCK_COMMENT"
     line_comment = "LINE_COMMENT"
     string = "STRING"
     character = "CHAR"
-    result: list[str] = []
+    result = list(source.text)
     state = normal
     escaped = False
-    for line in lines:
-        output: list[str] = []
-        index = 0
-        while index < len(line):
-            char = line[index]
-            pair = line[index : index + 2]
-            if state == normal:
-                if pair == "/*":
-                    output.extend((" ", " "))
-                    state = block_comment
-                    index += 2
-                    continue
-                if pair == "//":
-                    output.extend((" ", " "))
-                    state = line_comment
-                    index += 2
-                    continue
-                if char == '"':
-                    output.append(" ")
-                    state = string
-                    escaped = False
-                elif char == "'":
-                    output.append(" ")
-                    state = character
-                    escaped = False
-                else:
-                    output.append(char)
+    index = 0
+    while index < len(source.text):
+        char = source.text[index]
+        pair = source.text[index : index + 2]
+        if state == normal:
+            if pair == "/*":
+                result[index : index + 2] = [" ", " "]
+                state = block_comment
+                index += 2
+                continue
+            if pair == "//":
+                result[index : index + 2] = [" ", " "]
+                state = line_comment
+                index += 2
+                continue
+            if char == '"':
+                result[index] = " "
+                state = string
+                escaped = False
+            elif char == "'":
+                result[index] = " "
+                state = character
+                escaped = False
+            index += 1
+            continue
+
+        if state == block_comment:
+            if char == "\n":
+                index += 1
+            elif pair == "*/":
+                result[index : index + 2] = [" ", " "]
+                state = normal
+                index += 2
+            else:
+                result[index] = " "
+                index += 1
+            continue
+
+        if state == line_comment:
+            if char == "\n":
+                state = normal
+            else:
+                result[index] = " "
+            index += 1
+            continue
+
+        if state in {string, character}:
+            if char == "\n":
+                state = normal
+                escaped = False
                 index += 1
                 continue
+            result[index] = " "
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif (state == string and char == '"') or (
+                state == character and char == "'"
+            ):
+                state = normal
+            index += 1
+            continue
 
-            if state == block_comment:
-                if pair == "*/":
-                    output.extend((" ", " "))
-                    state = normal
-                    index += 2
-                else:
-                    output.append(" ")
-                    index += 1
-                continue
+    return MappedSource("".join(result), source.points)
 
-            if state == line_comment:
-                output.append(" ")
-                index += 1
-                continue
 
-            if state in {string, character}:
-                output.append(" ")
-                if char == "\\" and index == len(line) - 1:
-                    trailing = len(line) - len(line.rstrip("\\"))
-                    escaped = (trailing - 1) % 2 == 1
-                elif escaped:
-                    escaped = False
-                elif char == "\\":
-                    escaped = True
-                elif (state == string and char == '"') or (
-                    state == character and char == "'"
-                ):
-                    state = normal
-                index += 1
-                continue
+def directive_source(lines: list[str]) -> MappedSource:
+    """Apply C phase ordering used by directive and definition discovery."""
+    return mask_c_translation(splice_c_phase2(lines))
 
-        result.append("".join(output))
-        spliced = line.endswith("\\")
-        if state == line_comment and not spliced:
-            state = normal
-        elif state in {string, character} and not spliced:
-            # Recover at an invalid unescaped physical newline so a malformed
-            # literal cannot hide later real directives.
-            state = normal
-            escaped = False
+
+def logical_line_spans(text: str) -> Iterable[tuple[int, int]]:
+    start = 0
+    while start < len(text):
+        end = text.find("\n", start)
+        if end < 0:
+            end = len(text)
+        yield start, end
+        start = end + 1
+
+
+def old_style_tokens(
+    lines: list[str], source: MappedSource | None = None
+) -> list[CToken]:
+    source = source if source is not None else directive_source(lines)
+    tokens: list[CToken] = []
+    for start, end in logical_line_spans(source.text):
+        line = source.text[start:end]
+        if line.lstrip().startswith("#"):
+            continue
+        for match in OLD_STYLE_TOKEN_RE.finditer(line):
+            point = source.points[start + match.start()]
+            tokens.append(CToken(match.group(0), point.line))
+    return tokens
+
+
+def logical_directives(
+    lines: list[str], source: MappedSource | None = None
+) -> list[tuple[int, str]]:
+    source = source if source is not None else directive_source(lines)
+    result: list[tuple[int, str]] = []
+    for start, end in logical_line_spans(source.text):
+        line = source.text[start:end]
+        stripped = line.lstrip()
+        if not stripped.startswith("#"):
+            continue
+        hash_offset = len(line) - len(stripped)
+        result.append((source.points[start + hash_offset].line, line))
     return result
-
-
-def preprocessor_lines(masked_lines: list[str]) -> set[int]:
-    """Return one-based physical lines occupied by preprocessor directives."""
-    result: set[int] = set()
-    continued = False
-    for index, line in enumerate(masked_lines, 1):
-        directive = continued or line.lstrip().startswith("#")
-        if directive:
-            result.add(index)
-        continued = directive and line.rstrip().endswith("\\")
-    return result
-
-
-def old_style_tokens(lines: list[str]) -> list[CToken]:
-    masked = mask_c_translation(lines)
-    directives = preprocessor_lines(masked)
-    return [
-        CToken(match.group(0), line_number)
-        for line_number, line in enumerate(masked, 1)
-        if line_number not in directives
-        for match in OLD_STYLE_TOKEN_RE.finditer(line)
-    ]
 
 
 def matching_paren(tokens: list[CToken], opening: int) -> int | None:
@@ -543,27 +590,6 @@ def normalized_token_evidence(tokens: list[CToken]) -> str:
     return normalize_evidence(text)
 
 
-def logical_directives(lines: list[str]) -> list[tuple[int, str]]:
-    result: list[tuple[int, str]] = []
-    cleaned = mask_c_translation(lines)
-    index = 0
-    while index < len(cleaned):
-        if not cleaned[index].lstrip().startswith("#"):
-            index += 1
-            continue
-        start = index + 1
-        parts: list[str] = []
-        while index < len(cleaned):
-            part = cleaned[index].rstrip()
-            continued = part.endswith("\\")
-            parts.append(part[:-1] if continued else part)
-            index += 1
-            if not continued:
-                break
-        result.append((start, " ".join(parts)))
-    return result
-
-
 def conditional_boundary_before(
     directives: list[tuple[int, str]], line: int
 ) -> int:
@@ -680,7 +706,7 @@ def definition_macros(
             for parameter in parameter_text.split(",")
             if parameter.strip()
         ]
-        replacement = mask_c_translation([replacement])[0]
+        replacement = directive_source([replacement]).text.rstrip("\n")
         for parameter_index, parameter in enumerate(parameters):
             declarator = re.search(
                 rf"\b{re.escape(parameter)}\s*\(\s*\)\s*(\{{)?",
@@ -719,9 +745,10 @@ def macro_arguments(tokens: list[CToken]) -> list[list[CToken]]:
 
 def scan_old_style_definitions(path: str, lines: list[str]) -> list[dict]:
     """Lexically find top-level non-prototype function definitions."""
-    tokens = old_style_tokens(lines)
+    source = directive_source(lines)
+    tokens = old_style_tokens(lines, source)
     brace_depths, paren_depths = token_depths(tokens)
-    directives = logical_directives(lines)
+    directives = logical_directives(lines, source)
     macros = definition_macros(lines, directives)
     findings: list[dict] = []
     seen: set[tuple[int, str]] = set()
