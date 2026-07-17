@@ -111,7 +111,25 @@ MODERN_COHORT_SOURCES ?= \
 	src/bmcontainer.c \
 	src/proc.c \
 	src/hardware.c
-MODERN_COHORT_OBJECTS := $(addprefix $(MODERN_OUTPUT_DIR)/,$(MODERN_COHORT_SOURCES:.c=.o))
+
+# Handwritten assembly that must not be decompiled (see CONTRIBUTING.md).
+# libagbsyscall.s is a self-contained set of BIOS SWI trampolines; arm.s and
+# arm_call.s are a coupled pair (arm_call.s's Thumb trampolines branch into
+# arm.s's ARM-mode functions) and must stay together in this cohort.
+MODERN_COHORT_ASM_SOURCES ?= \
+	src/libagbsyscall.s \
+	asm/arm.s \
+	asm/arm_call.s
+
+MODERN_ASFLAGS := \
+	$(MODERN_DRIVER_FLAGS) \
+	$(MODERN_ARCH_FLAGS) \
+	$(MODERN_INCLUDE_FLAGS) \
+	$(MODERN_ABI_FLAGS)
+
+MODERN_COHORT_C_OBJECTS := $(addprefix $(MODERN_OUTPUT_DIR)/,$(MODERN_COHORT_SOURCES:.c=.o))
+MODERN_COHORT_ASM_OBJECTS := $(addprefix $(MODERN_OUTPUT_DIR)/,$(MODERN_COHORT_ASM_SOURCES:.s=.o))
+MODERN_COHORT_OBJECTS := $(MODERN_COHORT_C_OBJECTS) $(MODERN_COHORT_ASM_OBJECTS)
 MODERN_COHORT_DEPS := $(MODERN_COHORT_OBJECTS:.o=.d)
 
 CLEAN_DIRS += $(MODERN_BUILD_ROOT)
@@ -181,6 +199,12 @@ $(MODERN_COHORT_OBJECTS): | expansion-modern-toolchain-check
 $(MODERN_OUTPUT_DIR)/%.o: %.c
 	@mkdir -p "$(@D)"
 	"$(MODERN_CC)" $(MODERN_CFLAGS) -MMD -MP -MF "$(@:.o=.d)" -MQ "$@" -c "$<" -o "$@"
+
+# GAS's own --MD tracks uppercase .INCLUDE directives (e.g. macro.inc,
+# gba.inc), so no cpp preprocessing or scaninc invocation is needed here.
+$(MODERN_OUTPUT_DIR)/%.o: %.s
+	@mkdir -p "$(@D)"
+	"$(MODERN_CC)" $(MODERN_ASFLAGS) -Wa,--MD,"$(@:.o=.d)" -c "$<" -o "$@"
 
 expansion-modern-clean:
 	$(RM) -r "$(MODERN_BUILD_ROOT)"

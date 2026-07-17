@@ -63,21 +63,39 @@ After the script finishes, launch your preferred emulator with `fireemblem8.gba`
 
 ## Opt-in modern GCC object cohort
 
-The modern bootstrap compiles eighteen verified C files to ARM relocatable
-objects only. It does **not** link an ELF or a modern ROM, and it does not replace
-the current legacy ROM build. The modern `ap.o`, the five save objects
-(`bmsave-misc.o`, `bmsave-gmap.o`, `bmsave-lib.o`, `bmsave.o`, and
-`bmsave-xmap.o`), the convoy/container object (`bmcontainer.o`, which defines
-`ClearSupplyItems` and `GetConvoyItemArray` for save dependency closure but is
-not itself one of the save objects), the Proc scheduler object (`proc.o`), the
-hardware/input object (`hardware.o`, which calls into `proc.o`'s `Proc_Start`),
-and the object defining `AgbMain` remain compile-only; none is linked into or
-executed by the ROM. `proc.o` and `hardware.o` are neither save nor container
-objects; they close prior cohort-internal Proc and key/VBlank dependencies but
-do not claim OAM, software-reset, callback, ABI, SRAM, EWRAM-overlay, or any
-other runtime readiness. Cross-ABI layout probes cover the world-map save
-structures, but this does not claim callback, ABI, SRAM, EWRAM-overlay, or
-save-persistence readiness.
+The modern bootstrap compiles eighteen verified C files and three handwritten
+assembly files to ARM relocatable objects only. It does **not** link an ELF or a
+modern ROM, and it does not replace the current legacy ROM build. The modern
+`ap.o`, the five save objects (`bmsave-misc.o`, `bmsave-gmap.o`,
+`bmsave-lib.o`, `bmsave.o`, and `bmsave-xmap.o`), the convoy/container object
+(`bmcontainer.o`, which defines `ClearSupplyItems` and `GetConvoyItemArray` for
+save dependency closure but is not itself one of the save objects), the Proc
+scheduler object (`proc.o`), the hardware/input object (`hardware.o`, which
+calls into `proc.o`'s `Proc_Start`), and the object defining `AgbMain` remain
+compile-only; none is linked into or executed by the ROM. `proc.o` and
+`hardware.o` are neither save nor container objects; they close prior
+cohort-internal Proc and key/VBlank dependencies but do not claim OAM,
+software-reset, callback, ABI, SRAM, EWRAM-overlay, or any other runtime
+readiness. Cross-ABI layout probes cover the world-map save structures, but
+this does not claim callback, ABI, SRAM, EWRAM-overlay, or save-persistence
+readiness.
+
+The cohort also assembles three handwritten files that must not be
+decompiled (see `CONTRIBUTING.md`): `libagbsyscall.o` is a self-contained set
+of BIOS SWI trampolines (`SoftReset`, `SoundBiasReset`, `SoundBiasSet`, and
+others), while `arm.o` and `arm_call.o` are a coupled ARM/Thumb interwork
+pair — `arm_call.o`'s Thumb trampolines branch directly into `arm.o`'s
+ARM-mode functions, so they are promoted together. Adding all three closes 17
+prior cohort-unsatisfied symbols (the debug/aapcs unsatisfied set moves from
+139 to 131), including `ClearOAMBuffer`, `SoftReset`, `SoundBiasReset`, and
+`SoundBiasSet`, while exposing nine new IWRAM/ROM data globals that `arm.o`
+references but does not define: `gBmMapTerrain`, `gBmMapUnit`,
+`gMovMapFillStPool1`, `gMovMapFillStPool2`, `gMovMapFillState`,
+`gMsgHuffmanTable`, `gMsgHuffmanTableRoot`, `gWorkingBmMap`, and
+`gWorkingTerrainMoveCosts`. `arm.s`'s 13 exported functions are not yet typed
+in `include/functions.h` (most are placeholder `// ??? Name(???);` comments);
+this cohort promotion assembles the handwritten source as-is and does not
+type those exports, link, boot, or otherwise claim runtime readiness.
 
 Install GCC, binutils, and newlib headers for `arm-none-eabi`. Package names are
 `gcc-arm-none-eabi`, `binutils-arm-none-eabi`, and
@@ -105,12 +123,13 @@ make expansion-modern-cohort
 ```
 
 Outputs are isolated under
-`build/expansion-modern/<config>/<abi>/src/` as eighteen `.o` and eighteen `.d`
-files. Select `MODERN_CONFIG=debug` (`-Og -g3`, the default) or
-`MODERN_CONFIG=release` (`-O2 -g0 -DNDEBUG`). Select the provisional
-`MODERN_ABI=aapcs` default (GCC's default ABI, with no explicit `-mabi`) or
-`MODERN_ABI=apcs-gnu`. These modes support migration experiments and do not
-declare a final ABI choice.
+`build/expansion-modern/<config>/<abi>/` (C objects under `src/`, the three
+handwritten assembly objects under `src/` and `asm/`, matching each source's
+own directory) as twenty-one `.o` and twenty-one `.d` files. Select
+`MODERN_CONFIG=debug` (`-Og -g3`, the default) or `MODERN_CONFIG=release`
+(`-O2 -g0 -DNDEBUG`). Select the provisional `MODERN_ABI=aapcs` default
+(GCC's default ABI, with no explicit `-mabi`) or `MODERN_ABI=apcs-gnu`. These
+modes support migration experiments and do not declare a final ABI choice.
 
 For unpacked/local toolchains, use generic overrides rather than editing the
 makefile. Paths containing spaces are supported:

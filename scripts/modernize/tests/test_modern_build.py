@@ -31,6 +31,7 @@ class ModernBuildTests(unittest.TestCase):
             "PREFIX ?= arm-none-eabi-\n"
             "EXE :=\n"
             "CLEAN_DIRS :=\n"
+            "MODERN_COHORT_ASM_SOURCES :=\n"
             "include modern.mk\n"
             "%.d:\n"
             "\t@touch legacy-dependency-regenerated\n",
@@ -52,6 +53,40 @@ class ModernBuildTests(unittest.TestCase):
                 f"int modern_fixture_{index}(void) {{ return FIXTURE_VALUE + {index}; }}\n",
                 encoding="utf-8",
             )
+        return root
+
+    def make_asm_fixture(self, destination: Path) -> Path:
+        root = destination / "asm repo with spaces"
+        (root / "include").mkdir(parents=True)
+        (root / "asm").mkdir()
+        shutil.copy2(MODERN_MK, root / "modern.mk")
+        (root / "Makefile").write_text(
+            "PREFIX ?= arm-none-eabi-\n"
+            "EXE :=\n"
+            "CLEAN_DIRS :=\n"
+            "MODERN_COHORT_ASM_SOURCES :=\n"
+            "include modern.mk\n",
+            encoding="utf-8",
+        )
+        (root / "include" / "global.h").write_text(
+            "#include <stdlib.h>\n"
+            "#include <stdint.h>\n"
+            "#include <limits.h>\n",
+            encoding="utf-8",
+        )
+        (root / "include" / "fixture.inc").write_text(
+            ".equ FIXTURE_ASM_VALUE, 1\n", encoding="utf-8"
+        )
+        (root / "asm" / "fixture.s").write_text(
+            '\t.INCLUDE "fixture.inc"\n'
+            "\t.text\n"
+            "\t.thumb\n"
+            "\t.global modern_asm_fixture_probe\n"
+            "\t.thumb_func\n"
+            "modern_asm_fixture_probe:\n"
+            "\tbx lr\n",
+            encoding="utf-8",
+        )
         return root
 
     def make(self, root: Path, *arguments: str) -> subprocess.CompletedProcess[str]:
@@ -167,6 +202,7 @@ class ModernBuildTests(unittest.TestCase):
                         f"MODERN_ABI={abi}",
                         f"MODERN_BUILD_ROOT={output_root}",
                         f"MODERN_COHORT_SOURCES={source}",
+                        "MODERN_COHORT_ASM_SOURCES=",
                         *overrides,
                     )
                     self.assertEqual(
@@ -238,6 +274,7 @@ class ModernBuildTests(unittest.TestCase):
                         f"MODERN_ABI={abi}",
                         f"MODERN_BUILD_ROOT={output_root}",
                         f"MODERN_COHORT_SOURCES={source}",
+                        "MODERN_COHORT_ASM_SOURCES=",
                         *overrides,
                     )
                     self.assertEqual(
@@ -329,6 +366,64 @@ class ModernBuildTests(unittest.TestCase):
             self.assertFalse(list((root / "src").glob("*.o")))
             self.assertFalse(list((root / "src").glob("*.d")))
             self.assertFalse(list((root / "src").glob("*.s")))
+
+    def test_synthetic_assembly_is_architectural_and_dependency_aware(self):
+        overrides = self.tool_overrides()
+        if overrides is None:
+            self.skipTest("arm-none-eabi GCC and objdump are not available")
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = self.make_asm_fixture(Path(temporary))
+            asm_arguments = (
+                "expansion-modern-cohort",
+                "MODERN_CONFIG=debug",
+                "MODERN_ABI=aapcs",
+                "MODERN_COHORT_SOURCES=",
+                "MODERN_COHORT_ASM_SOURCES=asm/fixture.s",
+            )
+            result = self.make(root, *asm_arguments, *overrides)
+            self.assertEqual(result.returncode, 0, result.stdout)
+
+            output = root / "build" / "expansion-modern" / "debug" / "aapcs"
+            objects = sorted(output.glob("asm/*.o"))
+            dependencies = sorted(output.glob("asm/*.d"))
+            self.assertEqual(len(objects), 1)
+            self.assertEqual(len(dependencies), 1)
+            self.assertFalse(list((root / "asm").glob("*.o")))
+            self.assertFalse(list((root / "asm").glob("*.d")))
+
+            objdump = next(
+                value.split("=", 1)[1]
+                for value in overrides
+                if value.startswith("MODERN_OBJDUMP=")
+            )
+            architecture = subprocess.run(
+                [objdump, "-f", *map(str, objects)],
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                check=False,
+            )
+            self.assertEqual(architecture.returncode, 0, architecture.stdout)
+            self.assertEqual(architecture.stdout.count("file format elf32-littlearm"), 1)
+            self.assertEqual(architecture.stdout.count("architecture: armv4t"), 1)
+
+            # GAS's --MD tracks the uppercase .INCLUDE directive, so the
+            # generated .d file must list the included fixture header.
+            dependency_text = dependencies[0].read_text(encoding="utf-8")
+            self.assertIn("include/fixture.inc", dependency_text)
+
+            watched_object = objects[0]
+            before = watched_object.stat().st_mtime_ns
+            time.sleep(1.1)
+            (root / "include" / "fixture.inc").write_text(
+                ".equ FIXTURE_ASM_VALUE, 2\n", encoding="utf-8"
+            )
+            rebuild = self.make(root, *asm_arguments, *overrides)
+            self.assertEqual(rebuild.returncode, 0, rebuild.stdout)
+            self.assertGreater(watched_object.stat().st_mtime_ns, before)
+            self.assertFalse(list((root / "asm").glob("*.o")))
+            self.assertFalse(list((root / "asm").glob("*.d")))
 
     def test_spaced_toolchain_binutils_newlib_and_direct_cc_paths(self):
         overrides = self.tool_overrides()
