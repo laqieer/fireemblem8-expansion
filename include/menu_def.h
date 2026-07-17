@@ -4,21 +4,21 @@
 struct MenuDef;
 struct SelectTarget;
 
-extern struct MenuDef CONST_DATA gDebugClearMenuDef;
-extern struct MenuDef CONST_DATA gDebugChargeMenuDef;
-extern struct MenuDef CONST_DATA gDebugContinueMenuDef;
-extern struct MenuDef CONST_DATA gDebugChuudanMenuDef;
-extern struct MenuDef CONST_DATA gDebugMenuDef;
-extern struct MenuDef CONST_DATA gMenuInfo_RepairItems;
-extern struct MenuDef CONST_DATA gStealItemMenuDef;
-extern struct MenuDef CONST_DATA gYesNoSelectionMenuDef;
-extern struct MenuDef CONST_DATA gItemSubMenuDef;
-extern struct MenuDef CONST_DATA gItemMenuDef;
-extern struct MenuDef CONST_DATA gStaffItemSelectMenuDef;
-extern struct MenuDef CONST_DATA gItemSelectMenuDef;
-extern struct MenuDef CONST_DATA gBallistaRangeMenuDef;
-extern struct MenuDef CONST_DATA gWeaponSelectMenuDef;
-extern struct MenuDef CONST_DATA gUnitActionMenuDef;
+extern struct MenuDef gDebugClearMenuDef;
+extern struct MenuDef gDebugChargeMenuDef;
+extern struct MenuDef gDebugContinueMenuDef;
+extern struct MenuDef gDebugChuudanMenuDef;
+extern struct MenuDef gDebugMenuDef;
+extern struct MenuDef gMenuInfo_RepairItems;
+extern struct MenuDef gStealItemMenuDef;
+extern struct MenuDef gYesNoSelectionMenuDef;
+extern struct MenuDef gItemSubMenuDef;
+extern struct MenuDef gItemMenuDef;
+extern struct MenuDef gStaffItemSelectMenuDef;
+extern struct MenuDef gItemSelectMenuDef;
+extern struct MenuDef gBallistaRangeMenuDef;
+extern struct MenuDef gWeaponSelectMenuDef;
+extern struct MenuDef gUnitActionMenuDef;
 
 extern struct SelectInfo CONST_DATA gSelectInfo_OffensiveStaff;
 extern struct SelectInfo CONST_DATA gSelectInfo_Barrier;
