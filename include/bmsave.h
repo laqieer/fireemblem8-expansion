@@ -587,7 +587,7 @@ void ReadTraps(void *sram_dest); /* ReadTraps */
 int GetLastSuspendSaveId(void);
 int GetNextSuspendSaveId(void);
 void WriteSwappedSuspendSaveId(void);
-int SramChecksum32(void *sram_src, int size);
+u32 SramChecksum32(void *sram_src, int size);
 bool VerifySaveBlockChecksum(struct SaveBlockInfo *buf);
 void PopulateSaveBlockChecksum(struct SaveBlockInfo* buf);
 u16 GetGameStateChecksum_Unused(void);

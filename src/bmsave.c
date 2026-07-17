@@ -788,7 +788,7 @@ void WriteSwappedSuspendSaveId(void)
     WriteGlobalSaveInfoNoChecksum(&header);
 }
 
-int SramChecksum32(void *sram_src, int size)
+u32 SramChecksum32(void *sram_src, int size)
 {
     ReadSramFast(sram_src, gGenericBuffer, size);
     return ComputeChecksum32((const u32*)gGenericBuffer, size);
@@ -798,7 +798,7 @@ bool VerifySaveBlockChecksum(struct SaveBlockInfo *buf)
 {
     int size = buf->size;
     void *sram_dest = SramOffsetToAddr(buf->offset);
-    int check_sum = SramChecksum32(sram_dest, size);
+    u32 check_sum = SramChecksum32(sram_dest, size);
 
     if (buf->checksum32 != check_sum)
         return false;
@@ -853,7 +853,7 @@ u16 GetGameStateChecksum_Unused(void)
 
 void SaveStub_Empty(void)
 {
-    u8 buf[8];
+    u8 buf[8] __attribute__((unused));
 }
 
 bool IsMultiArenaSaveValid(int index)
