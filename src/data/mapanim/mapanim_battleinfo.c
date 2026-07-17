@@ -28,7 +28,7 @@ u16 CONST_DATA Img_WallBreakAnim[] = INCBIN_U16("graphics/misc/Img_WallBreakAnim
 
 u16 CONST_DATA Pal_WallBreakAnim[] = INCBIN_U16("graphics/misc/Pal_WallBreakAnim.gbapal");
 
-const u8 CONST_DATA Img_GmapSoguSprites[] = INCBIN_U8("graphics/misc/Img_GmapSoguSprites.4bpp.lz");
+SHOULD_BE_CONST u8 CONST_DATA Img_GmapSoguSprites[] = INCBIN_U8("graphics/misc/Img_GmapSoguSprites.4bpp.lz");
 
 u16 CONST_DATA Img_PoisonAnim[] = INCBIN_U16("graphics/misc/Img_PoisonAnim.4bpp.lz");
 

@@ -444,12 +444,12 @@ extern u16 CONST_DATA gWarpPrepUnitSwapCursorAp[]; // ap
 // extern ??? Pal_PikeTrap
 
 // Weather graphics
-extern const u8  gParticlesFx_0[]; // sandstorm particle 4bpp image (compressed)
-extern const u8  gParticlesFx_1[]; // snowstorm particle 4bpp image (compressed)
-extern const u8  gParticlesFx_2[]; // flames particle 4bpp image (compressed)
-extern const u16 gParticlesFx_3[]; // flames particle palette
-extern const u8  gParticlesFx_4[]; // clouds 4bpp image (compressed)
-extern const u16 gParticlesFx_5[]; // clouds palette
+extern SHOULD_BE_CONST u8 gParticlesFx_0[]; // sandstorm particle 4bpp image (compressed)
+extern SHOULD_BE_CONST u8 gParticlesFx_1[]; // snowstorm particle 4bpp image (compressed)
+extern SHOULD_BE_CONST u8 gParticlesFx_2[]; // flames particle 4bpp image (compressed)
+extern SHOULD_BE_CONST u16 gParticlesFx_3[]; // flames particle palette
+extern SHOULD_BE_CONST u8 gParticlesFx_4[]; // clouds 4bpp image (compressed)
+extern SHOULD_BE_CONST u16 gParticlesFx_5[]; // clouds palette
 
 extern u16 CONST_DATA Img_LightRune[];
 extern u16 CONST_DATA Pal_LightRune[];

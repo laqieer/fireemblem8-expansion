@@ -1,16 +1,16 @@
 #include "global.h"
 
-const u8 CONST_DATA gParticlesFx_0[] = INCBIN_U8("graphics/misc/gUnknown_085A3964.4bpp.lz");
+SHOULD_BE_CONST u8 CONST_DATA gParticlesFx_0[] = INCBIN_U8("graphics/misc/gUnknown_085A3964.4bpp.lz");
 
-const u8 CONST_DATA gParticlesFx_1[] = INCBIN_U8("graphics/misc/gUnknown_085A39EC.4bpp.lz");
+SHOULD_BE_CONST u8 CONST_DATA gParticlesFx_1[] = INCBIN_U8("graphics/misc/gUnknown_085A39EC.4bpp.lz");
 
-const u8 CONST_DATA gParticlesFx_2[] = INCBIN_U8("graphics/misc/gUnknown_085A3A84.4bpp.lz");
+SHOULD_BE_CONST u8 CONST_DATA gParticlesFx_2[] = INCBIN_U8("graphics/misc/gUnknown_085A3A84.4bpp.lz");
 
-const u16 CONST_DATA gParticlesFx_3[] = INCBIN_U16("graphics/misc/gUnknown_085A3AC0.4bpp");
+SHOULD_BE_CONST u16 CONST_DATA gParticlesFx_3[] = INCBIN_U16("graphics/misc/gUnknown_085A3AC0.4bpp");
 
-const u8 CONST_DATA gParticlesFx_4[] = INCBIN_U8("graphics/misc/gUnknown_085A3B00.4bpp.lz");
+SHOULD_BE_CONST u8 CONST_DATA gParticlesFx_4[] = INCBIN_U8("graphics/misc/gUnknown_085A3B00.4bpp.lz");
 
-const u16 CONST_DATA gParticlesFx_5[] = INCBIN_U16("graphics/misc/gUnknown_085A401C.4bpp");
+SHOULD_BE_CONST u16 CONST_DATA gParticlesFx_5[] = INCBIN_U16("graphics/misc/gUnknown_085A401C.4bpp");
 
 u16 CONST_DATA Img_LightRune[] = INCBIN_U16("graphics/misc/Img_LightRune.4bpp.lz");
 

@@ -1079,7 +1079,7 @@ void DungeonRecordUi_CopyDigitsToObjVram(struct Text* th) {
 }
 
 // obj data?
-const u16 CONST_DATA obj_0[] = {
+SHOULD_BE_CONST u16 CONST_DATA obj_0[] = {
     0x0002, 0x4000, 0x8000, 0x0100,
     0x4000, 0x8020, 0x0104, 0x0000,
     0x0000, 0x0000, 0x0000, 0x0000,
