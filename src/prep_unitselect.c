@@ -480,7 +480,7 @@ void ProcPrepUnit_InitScreen(struct ProcPrepUnit *proc)
     RestartMuralBackground();
 }
 
-void PrepUnit_EndScreenGfx()
+void PrepUnit_EndScreenGfx(ProcPtr proc)
 {
     EndMenuScrollBar();
     EndAllParallelWorkers();
@@ -702,12 +702,12 @@ void PrepUnit_RecountSelectedUnits(struct ProcPrepUnit *proc)
     }
 }
 
-void PrepUnitDisableDisp()
+void PrepUnitDisableDisp(ProcPtr proc)
 {
     SetDispEnable(0, 0, 0, 0, 0);
 }
 
-void PrepUnitEnableDisp()
+void PrepUnitEnableDisp(ProcPtr proc)
 {
     SetDispEnable(1, 1, 1, 1, 1);
 }

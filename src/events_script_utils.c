@@ -800,12 +800,12 @@ void RecordGlobalSupportRankA(void)
     UpdateBestGlobalSupportValue(0x100, 0x100, 3);
 }
 
-void InitTowerDungeonState()
+void InitTowerDungeonState(struct EventEngineProc *proc)
 {
     InitDungeon(0);
 }
 
-void InitRuinsDungeonState()
+void InitRuinsDungeonState(struct EventEngineProc *proc)
 {
     InitDungeon(1);
 }
@@ -939,7 +939,7 @@ void EventMapAnim_SlideSquaresInLoop(struct ProcEventMapAnim * proc)
     }
 }
 
-void Nop_EventsScriptUtils_0()
+void Nop_EventsScriptUtils_0(ProcPtr proc)
 {
     return;
 }
