@@ -105,7 +105,8 @@ MODERN_COHORT_SOURCES ?= \
 	src/ap.c \
 	src/bmsave-misc.c \
 	src/bmsave-gmap.c \
-	src/bmsave-lib.c
+	src/bmsave-lib.c \
+	src/bmsave.c
 MODERN_COHORT_OBJECTS := $(addprefix $(MODERN_OUTPUT_DIR)/,$(MODERN_COHORT_SOURCES:.c=.o))
 MODERN_COHORT_DEPS := $(MODERN_COHORT_OBJECTS:.o=.d)
 
