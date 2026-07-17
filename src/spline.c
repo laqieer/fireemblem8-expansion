@@ -80,9 +80,9 @@ void Spline_ComputeRightTangents(struct UnkSplineStruct2 * arg_0, int * arg_1, i
     int r3 = arg_0->unk_04;
     int r2 = arg_0->unk_06;
 
-    int * sp_18 = arg_0->unk_08;
-    int * sp_1c = arg_0->unk_0c;
-    int * r9 = arg_0->unk_10;
+    u32 * sp_18 = arg_0->unk_08;
+    u32 * sp_1c = arg_0->unk_0c;
+    u32 * r9 = arg_0->unk_10;
 
     int r4 = 0x1000 - r1[0];
     int r8 = r1[1];
@@ -134,9 +134,9 @@ void Spline_ComputeLeftTangents(struct UnkSplineStruct2 * arg_0, int * arg_1, in
     int r3 = arg_0->unk_04;
     int r2 = arg_0->unk_06;
 
-    int * sp_14 = arg_0->unk_08;
-    int * sp_18 = arg_0->unk_0c;
-    int * r9 = arg_0->unk_10;
+    u32 * sp_14 = arg_0->unk_08;
+    u32 * sp_18 = arg_0->unk_0c;
+    u32 * r9 = arg_0->unk_10;
 
     int r7 = 0x1000 - r1[0];
     int r8 = r1[1];
@@ -178,14 +178,14 @@ void Spline_ComputeLeftTangents(struct UnkSplineStruct2 * arg_0, int * arg_1, in
 //! FE8U = 0x0800A7D8
 void Spline_BuildCubicCoeffs(struct UnkSplineStruct1 * arg_0, struct UnkSplineStruct3 * arg_1, int arg_2)
 {
-    int * r8;
-    int * r9;
+    u32 * r8;
+    u32 * r9;
     int sp_44;
     int * sp_48;
     int * sp_4c;
     int i;
-    int * sl;
-    int * r9_;
+    u32 * sl;
+    u32 * r9_;
     struct UnkSplineStruct2 unk;
     int arrayA[4];
     int arrayB[4];
@@ -280,7 +280,7 @@ int Spline_Eval(struct Struct02003BE8 * params, int mode, int * results)
     s16 * r8;
     s16 * r9;
     u32 ** sl;
-    u32 sp_80;
+    int sp_80;
     int sp_84;
     u32 sp_8c;
     u32 * sp_90;
@@ -661,7 +661,7 @@ int Spline_EvalIndirect(struct Struct02003BE8 * params, int mode, int * results)
     s16 * r8;
     s16 * r9;
     u32 ** sl;
-    u32 sp_80;
+    int sp_80;
     int sp_84;
     u32 sp_8c;
     u32 * sp_90;

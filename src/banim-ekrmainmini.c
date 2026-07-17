@@ -288,7 +288,7 @@ void InitMainMiniAnim(struct AnimBuffer * pAnimBuf)
 
     if (pAnimBuf->state2 == 0)
     {
-        int * p;
+        u32 * p;
         puVar8 = pAnimBuf->unk_24;
         LZ77UnCompWram(ba2->oam_l, puVar8);
         p = (puVar8 + 0x15FC);
@@ -296,7 +296,7 @@ void InitMainMiniAnim(struct AnimBuffer * pAnimBuf)
     }
     else
     {
-        int * p;
+        u32 * p;
         puVar8 = pAnimBuf->unk_24;
         LZ77UnCompWram(ba2->oam_r, puVar8);
         p = (puVar8 + 0x15FC);
@@ -402,7 +402,7 @@ void RestartMainMiniAnim(struct AnimBuffer * pAnimBuf)
 
     if (pAnimBuf->state2 == 0)
     {
-        int * p;
+        u32 * p;
         puVar8 = pAnimBuf->unk_24;
         LZ77UnCompWram(ba2->oam_l, puVar8);
         p = (puVar8 + 0x15FC);
@@ -410,7 +410,7 @@ void RestartMainMiniAnim(struct AnimBuffer * pAnimBuf)
     }
     else
     {
-        int * p;
+        u32 * p;
         puVar8 = pAnimBuf->unk_24;
         LZ77UnCompWram(ba2->oam_r, puVar8);
         p = (puVar8 + 0x15FC);

@@ -21,8 +21,8 @@ extern u16 gWorldmapMapmu_2[];
 
 extern struct Struct02003BE8 gUnk_15[];
 
-extern u16 gUnk_13[];
-extern int gUnk_14[];
+extern s16 gUnk_13[];
+extern u32 gUnk_14[];
 
 int CONST_DATA gWorldmapMapmu_0[] =
 {
@@ -162,7 +162,16 @@ void GmMuPrim_0(struct GMapMuPrimProc * proc)
     unkSplineStruct->unk_08 = gUnk_14 + proc->unk_2a * 0x10;
     unkSplineStruct->unk_0C = (void *)gWorldmapMapmu_0;
     unkSplineStruct->unk_10 = (void *)gWorldmapMapmu_1;
-    unkSplineStruct->unk_02 = BuildGmPathSplineData(proc->unk_2d, proc->unk_2e, proc->unk_50, unkSplineStruct->unk_04, unkSplineStruct->unk_08, 4);
+    unkSplineStruct->unk_02 = BuildGmPathSplineData(
+        proc->unk_2d, proc->unk_2e, proc->unk_50, unkSplineStruct->unk_04,
+        /* BuildGmPathSplineData (worldmap_path.c) declares its 5th param as
+         * int*, but Struct02003BE8::unk_08 is u32* everywhere else it is
+         * used (see spline.c). Both are plain 4-byte-aligned word pointers
+         * into the same waypoint coordinate buffer written by this same
+         * call, so this is a proven same-buffer reinterpretation between
+         * two independently-typed 32-bit word pointers, not a warning
+         * suppression. */
+        (int *)unkSplineStruct->unk_08, 4);
 
     MapUnitC_SetPosition(
         ((struct WorldMapMainProc *)(proc->proc_parent))->gm_unitc, proc->unk_2b, proc->unk_2d[gWMNodeData].x,

@@ -118,7 +118,7 @@ s8 DoesStringContainTact(const char * str);
 void CgText_Display(struct CgTextMainProc * proc);
 s8 CgText_HandleFaceBlinkCode(int textCode);
 void CgTextInterpreter_Loop_Main(struct CgTextInterpreterProc * proc);
-void CgText_ScrollVramUp(int * src, int x, int y);
+void CgText_ScrollVramUp(u32 * src, int x, int y);
 void CgTextInterpreter_0(struct CgTextInterpreterProc * proc);
 void CgTextInterpreter_1(struct CgTextInterpreterProc * proc);
 void CgTextInterpreter_2(struct CgTextInterpreterProc * proc);

@@ -1231,17 +1231,17 @@ _0808FE68:
 }
 
 //! FE8U = 0x0808FEA4
-void CgText_ScrollVramUp(int * src, int x, int y)
+void CgText_ScrollVramUp(u32 * src, int x, int y)
 {
     int i;
     int ix;
     int iy;
 
-    int * srcPtr = src;
+    u32 * srcPtr = src;
 
     for (iy = 0; iy < y; iy++)
     {
-        int * srcPtr_ = srcPtr;
+        u32 * srcPtr_ = srcPtr;
 
         for (ix = 0; ix < x; ix++)
         {
