@@ -43,10 +43,6 @@
     else if (num > max)             \
         num = max;
 
-#if !defined(MODERN) || !MODERN
-#  define STRUCT_PAD(from, to) unsigned char _pad_ ## from[(to) - (from)]
-#else
-#  define STRUCT_PAD(from, to)
-#endif
+#define STRUCT_PAD(from, to) unsigned char _pad_ ## from[(to) - (from)]
 
 #endif  // GUARD_GLOBAL_H

@@ -137,6 +137,47 @@ class ModernBuildTests(unittest.TestCase):
         self.assertIn("targets 'x86_64-linux-gnu'", wrong_target.stdout)
         self.assertIn("expected 'arm-none-eabi'", wrong_target.stdout)
 
+    def test_prep_sprite_draw_layout_in_all_modern_modes(self):
+        overrides = self.tool_overrides()
+        if overrides is None:
+            self.skipTest("arm-none-eabi GCC and objdump are not available")
+
+        with tempfile.TemporaryDirectory() as temporary:
+            temporary_path = Path(temporary)
+            source = temporary_path / "prep_sprite_draw_layout.c"
+            output_root = temporary_path / "layout-objects"
+            source.write_text(
+                "#include <stddef.h>\n"
+                '#include "prepscreen.h"\n'
+                "_Static_assert(offsetof(struct PrepSpriteDrawProc, unk2A) == 0x2A, "
+                '"PrepSpriteDrawProc.unk2A offset");\n'
+                "_Static_assert(offsetof(struct PrepSpriteDrawProc, apProc) == 0x38, "
+                '"PrepSpriteDrawProc.apProc offset");\n'
+                "_Static_assert(sizeof(struct PrepSpriteDrawProc) == 0x3C, "
+                '"PrepSpriteDrawProc size");\n',
+                encoding="utf-8",
+            )
+
+            for config in ("debug", "release"):
+                for abi in ("aapcs", "apcs-gnu"):
+                    result = self.make(
+                        ROOT,
+                        "expansion-modern-cohort",
+                        f"MODERN_CONFIG={config}",
+                        f"MODERN_ABI={abi}",
+                        f"MODERN_BUILD_ROOT={output_root}",
+                        f"MODERN_COHORT_SOURCES={source}",
+                        *overrides,
+                    )
+                    self.assertEqual(
+                        result.returncode,
+                        0,
+                        f"{config}/{abi} layout probe failed:\n{result.stdout}",
+                    )
+
+            self.assertEqual(len(list(output_root.rglob("*.o"))), 4)
+            self.assertEqual(len(list(output_root.rglob("*.d"))), 4)
+
     def test_real_objects_are_isolated_architectural_and_dependency_aware(self):
         overrides = self.tool_overrides()
         if overrides is None:
