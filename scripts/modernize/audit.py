@@ -289,8 +289,10 @@ def mask_c_literals(lines: list[str]) -> list[str]:
             else:
                 output.append(char)
         result.append("".join(output))
-        if quote and not escaped:
-            # C literals cannot continue without an escaped newline.
+        if quote and not line.endswith("\\"):
+            # Translation-phase line splicing keeps a literal open whenever
+            # the physical line ends in a backslash, including an escaped
+            # backslash pair. Otherwise an unclosed literal ends on this line.
             quote = ""
         escaped = False
     return result
@@ -300,7 +302,7 @@ def preprocessor_lines(lines: list[str]) -> set[int]:
     """Return one-based physical lines occupied by preprocessor directives."""
     result: set[int] = set()
     continued = False
-    for index, line in enumerate(lines, 1):
+    for index, line in enumerate(mask_c_literals(lines), 1):
         directive = continued or line.lstrip().startswith("#")
         if directive:
             result.add(index)
@@ -492,7 +494,7 @@ def normalized_token_evidence(tokens: list[CToken]) -> str:
 
 def logical_directives(lines: list[str]) -> list[tuple[int, str]]:
     result: list[tuple[int, str]] = []
-    cleaned = strip_c_comments(lines)
+    cleaned = mask_c_literals(lines)
     index = 0
     while index < len(cleaned):
         if not cleaned[index].lstrip().startswith("#"):
@@ -511,9 +513,11 @@ def logical_directives(lines: list[str]) -> list[tuple[int, str]]:
     return result
 
 
-def conditional_boundary_before(lines: list[str], line: int) -> int:
+def conditional_boundary_before(
+    directives: list[tuple[int, str]], line: int
+) -> int:
     boundary = 0
-    for directive_line, directive in logical_directives(lines):
+    for directive_line, directive in directives:
         if directive_line >= line:
             break
         if re.match(
@@ -529,7 +533,7 @@ def shared_conditional_body(
     closing: int,
     symbol: str,
     brace_depths: list[int],
-    lines: list[str],
+    directives: list[tuple[int, str]],
 ) -> int | None:
     body = next(
         (
@@ -543,7 +547,7 @@ def shared_conditional_body(
         return None
     directives = [
         directive
-        for directive_line, directive in logical_directives(lines)
+        for directive_line, directive in directives
         if tokens[closing].line < directive_line < tokens[body].line
     ]
     if not any(re.match(r"^\s*#\s*(?:else|elif)\b", item) for item in directives):
@@ -604,10 +608,15 @@ def complex_declarator_body(
     return after, after - 1
 
 
-def definition_macros(lines: list[str]) -> dict[str, DefinitionMacro]:
+def definition_macros(
+    lines: list[str],
+    directives: list[tuple[int, str]] | None = None,
+) -> dict[str, DefinitionMacro]:
     """Find simple function-like macros whose replacement emits a definition."""
     result: dict[str, DefinitionMacro] = {}
-    for _, directive in logical_directives(lines):
+    for _, directive in (
+        directives if directives is not None else logical_directives(lines)
+    ):
         match = re.match(
             r"^\s*#\s*define\s+([A-Za-z_]\w*)\s*\(([^)]*)\)\s*(.*)$",
             directive,
@@ -661,7 +670,8 @@ def scan_old_style_definitions(path: str, lines: list[str]) -> list[dict]:
     """Lexically find top-level non-prototype function definitions."""
     tokens = old_style_tokens(lines)
     brace_depths, paren_depths = token_depths(tokens)
-    macros = definition_macros(lines)
+    directives = logical_directives(lines)
+    macros = definition_macros(lines, directives)
     findings: list[dict] = []
     seen: set[tuple[int, str]] = set()
 
@@ -717,7 +727,7 @@ def scan_old_style_definitions(path: str, lines: list[str]) -> list[dict]:
         prefix = declarator_prefix(
             tokens,
             opening - 1,
-            conditional_boundary_before(lines, name_token.line),
+            conditional_boundary_before(directives, name_token.line),
         )
         parameters = tokens[opening + 1 : closing]
         body: int | None = None
@@ -748,7 +758,7 @@ def scan_old_style_definitions(path: str, lines: list[str]) -> list[dict]:
                     body = after
                 else:
                     body = shared_conditional_body(
-                        tokens, closing, name, brace_depths, lines
+                        tokens, closing, name, brace_depths, directives
                     )
             else:
                 parameter_names = identifier_parameter_list(parameters)

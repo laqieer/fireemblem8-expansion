@@ -193,6 +193,18 @@ class AuditTests(unittest.TestCase):
                 "SplitConditional",
                 "void SplitConditional()",
             ),
+            (
+                "src/old_style_definitions.c",
+                101,
+                "RealBeforeLiteral",
+                "REAL_BEFORE_LITERAL(RealBeforeLiteral)",
+            ),
+            (
+                "src/old_style_definitions.c",
+                122,
+                "RealAfterLiteral",
+                "REAL_AFTER_LITERAL(RealAfterLiteral)",
+            ),
         ]
         actual = [
             (
@@ -228,8 +240,20 @@ class AuditTests(unittest.TestCase):
             "NOT_A_DEFINITION",
             "UNINVOKED_DEFINITION",
             "CommentedMacroInvocation",
+            "FalsePositive",
+            "EscapedFalsePositive",
+            "CharacterFalsePositive",
         }
         self.assertFalse(rejected & {finding["symbol"] for finding in findings})
+        fixture_lines = (
+            FIXTURE / "src" / "old_style_definitions.c"
+        ).read_text(encoding="utf-8").splitlines()
+        macros = audit.definition_macros(fixture_lines)
+        self.assertIn("REAL_BEFORE_LITERAL", macros)
+        self.assertIn("REAL_AFTER_LITERAL", macros)
+        self.assertNotIn("LITERAL_DEFINITION", macros)
+        self.assertNotIn("ESCAPED_LITERAL_DEFINITION", macros)
+        self.assertNotIn("CHARACTER_LITERAL_DEFINITION", macros)
         inline_asm_fixture = (
             HERE / "fixtures" / "old_style_negative_inline_asm.c"
         ).read_text(encoding="utf-8").splitlines()

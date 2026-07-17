@@ -96,3 +96,27 @@ void SplitConditional(void)
 */
 #define COMMENTED_DEFINITION(name) int name ## _object
 COMMENTED_DEFINITION(CommentedMacroInvocation);
+
+#define REAL_BEFORE_LITERAL(name) void name() {}
+REAL_BEFORE_LITERAL(RealBeforeLiteral)
+
+const char * ContinuedDirectiveLiteral =
+    "ordinary continuation \
+#define LITERAL_DEFINITION(name) void name() {}";
+#define LITERAL_DEFINITION(name) int literal_ ## name
+LITERAL_DEFINITION(FalsePositive);
+
+const char * EscapedBackslashDirectiveLiteral =
+    "escaped backslash pair \\
+#define ESCAPED_LITERAL_DEFINITION(name) void name() {}";
+#define ESCAPED_LITERAL_DEFINITION(name) int escaped_literal_ ## name
+ESCAPED_LITERAL_DEFINITION(EscapedFalsePositive);
+
+int ContinuedCharacterDirectiveLiteral =
+    '\
+#define CHARACTER_LITERAL_DEFINITION(name) void name() {}';
+#define CHARACTER_LITERAL_DEFINITION(name) int character_literal_ ## name
+CHARACTER_LITERAL_DEFINITION(CharacterFalsePositive);
+
+#define REAL_AFTER_LITERAL(name) void name() {}
+REAL_AFTER_LITERAL(RealAfterLiteral)
