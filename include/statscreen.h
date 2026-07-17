@@ -209,9 +209,9 @@ void MoveHelpPromptSprite(int x, int y);
 
 const struct HelpBoxInfo* GetLastHelpBoxInfo(void);
 
-extern struct HelpBoxInfo gHelpInfo_Ss1CharName; // hardcoded thing bad
-extern struct HelpBoxInfo gHelpInfo_Ss1Item0; // page 1 root help
-extern struct HelpBoxInfo gHelpInfo_Ss2Rank0; // page 2 root help
+extern DECL_INFO gHelpInfo_Ss1CharName; // hardcoded thing bad
+extern DECL_INFO gHelpInfo_Ss1Item0; // page 1 root help
+extern DECL_INFO gHelpInfo_Ss2Rank0; // page 2 root help
                                                          //
 struct StatScreenEffectProc
 {

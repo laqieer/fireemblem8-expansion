@@ -4,6 +4,7 @@
 #include "global.h"
 #include "proc.h"
 #include "bmunit.h"
+#include "fontgrp.h" // struct Text must be complete: gShopItemTexts below is an array of it
 
 enum {
     SHOP_TYPE_ARMORY        = 0,
