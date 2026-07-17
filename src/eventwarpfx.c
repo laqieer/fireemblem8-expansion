@@ -167,7 +167,7 @@ void StartEventWarpAnim_unused(ProcPtr parent, int xCamera, int yCamera, s8 subc
     proc->yPos = 1;
 }
 
-int EventWarpAnimExists()
+int EventWarpAnimExists(void)
 {
     return NULL != Proc_Find(ProcScr_EventWrapAnim);
 }

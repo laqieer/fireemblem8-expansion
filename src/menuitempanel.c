@@ -182,7 +182,7 @@ void UpdateMenuItemPanel(int slot_or_item)
 	BG_EnableSyncByMask(BG0_SYNC_BIT);
 }
 
-void EndMenuItemPanel()
+void EndMenuItemPanel(void)
 {
 	Proc_EndEach(gProcCmd_MenuItemPanel);
 }

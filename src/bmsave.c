@@ -21,7 +21,7 @@
 EWRAM_DATA u32 gBonusContentClaimFlags = 0;
 EWRAM_DATA u8 gSuspendSaveIdOffset = 0;
 
-u32 GetBonusContentClaimFlags()
+u32 GetBonusContentClaimFlags(void)
 {
     return gBonusContentClaimFlags;
 }
@@ -54,7 +54,7 @@ void WriteLastGameSaveId(int num)
     WriteGlobalSaveInfoNoChecksum(&info);
 }
 
-int ReadLastGameSaveId()
+int ReadLastGameSaveId(void)
 {
     int ret;
     struct GlobalSaveInfo info;
@@ -764,7 +764,7 @@ void ReadTraps(void *sram_dest)
     ReadSramFast(sram_dest, GetTrap(0), TRAP_MAX_COUNT * sizeof(struct Trap));
 }
 
-int GetLastSuspendSaveId()
+int GetLastSuspendSaveId(void)
 {
     struct GlobalSaveInfo header;
     ReadGlobalSaveInfo(&header);
@@ -775,12 +775,12 @@ int GetLastSuspendSaveId()
         return 0;
 }
 
-int GetNextSuspendSaveId()
+int GetNextSuspendSaveId(void)
 {
     return 1 - GetLastSuspendSaveId();
 }
 
-void WriteSwappedSuspendSaveId()
+void WriteSwappedSuspendSaveId(void)
 {
     struct GlobalSaveInfo header;   
     ReadGlobalSaveInfo(&header);
@@ -813,7 +813,7 @@ void PopulateSaveBlockChecksum(struct SaveBlockInfo* buf)
     buf->checksum32 = SramChecksum32(sram_dest, size);
 }
 
-u16 GetGameStateChecksum_Unused()
+u16 GetGameStateChecksum_Unused(void)
 {
     int i;
     u16 ret = 0;
@@ -851,7 +851,7 @@ u16 GetGameStateChecksum_Unused()
     return ret;
 }
 
-void SaveStub_Empty()
+void SaveStub_Empty(void)
 {
     u8 buf[8];
 }

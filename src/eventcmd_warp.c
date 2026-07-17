@@ -8,7 +8,7 @@ void StartEventWarpAnim_ret(ProcPtr parent, s16 x, s16 y, s8 subcmd, s8 flag)
     StartEventWarpAnim(parent, x, y, subcmd, flag);
 }
 
-s8 EventWarpAnimExists_ret()
+s8 EventWarpAnimExists_ret(void)
 {
     return EventWarpAnimExists();
 }

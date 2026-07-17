@@ -42,7 +42,7 @@ void PrepAtMenu_OnInit(struct ProcAtMenu * proc)
     proc->hand_pos = 0;
 }
 
-void ResetPrepMenuDescTexts()
+void ResetPrepMenuDescTexts(void)
 {
     int i = 0;
     for (i = 0; i < 5; i++)
@@ -74,7 +74,7 @@ void ParsePrepMenuDescTexts(int msg)
     }
 }
 
-void DrawPrepMenuDescTexts()
+void DrawPrepMenuDescTexts(void)
 {
     int i, base_line;
 
@@ -463,7 +463,7 @@ void AtMenu_OnSubmenuEnd(struct ProcAtMenu * proc)
     proc->state = 0;
 }
 
-void AtMenu_EnableDisplay()
+void AtMenu_EnableDisplay(void)
 {
     SetDispEnable(1, 1, 1, 1, 1);
 }
@@ -484,7 +484,7 @@ void AtMenu_UnlockGame(ProcPtr proc)
     }
 }
 
-void StartPrepAtMenu()
+void StartPrepAtMenu(void)
 {
     Proc_Start(ProcScr_AtMenu, PROC_TREE_3);
 }

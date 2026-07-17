@@ -74,7 +74,7 @@ void InitSubtitleHelpText(struct SubtitleHelpProc * proc)
     return;
 }
 
-void SubtitleHelpDarkenerOnHBlank()
+void SubtitleHelpDarkenerOnHBlank(void)
 {
     static u8 bldyLut[] = {
         0, 0, 0, 0, 0, 0, 0, 0, // 128 .. 135

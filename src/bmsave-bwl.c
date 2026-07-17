@@ -30,14 +30,14 @@ void ClearPidChStatsSaveData(struct GameSaveBlock *sram_dest)
     gPidStatsSaveLoc = sram_dest->pidStats;
 }
 
-void ClearPidStats_ret()
+void ClearPidStats_ret(void)
 {
     gPlaySt.unk_2C_04 = 0;
     SetPartyGoldAmount(0);
     ClearPidStats();
 }
 
-void ClearPidStats()
+void ClearPidStats(void)
 {
     CpuFill16(0, gPidStatsData, sizeof(gPidStatsData));
     gPlaySt.unk_30.unk_8_2 = 0;
@@ -92,7 +92,7 @@ int GetNextChapterStatsSlot(void)
     return ret;
 }
 
-int GetCurCompleteChapters()
+int GetCurCompleteChapters(void)
 {
     struct ChapterStats *cur = GetChapterStats(0);
     int ret;
@@ -105,7 +105,7 @@ int GetCurCompleteChapters()
     return ret;
 }
 
-int GetNextChapterStatsEntry()
+int GetNextChapterStatsEntry(void)
 {
     int index = GetNextChapterStatsSlot();
 
@@ -134,7 +134,7 @@ void RegisterChapterTimeAndTurnCount(struct PlaySt * play_st)
     
 }
 
-int GetGameTotalTime_unused()
+int GetGameTotalTime_unused(void)
 {
     int time = 0;
     int index = GetNextChapterStatsSlot();
@@ -147,7 +147,7 @@ int GetGameTotalTime_unused()
     return time;
 }
 
-int GetGameTotalTurnCount()
+int GetGameTotalTurnCount(void)
 {
     int ret = 0;
     int index = GetNextChapterStatsSlot();
@@ -181,7 +181,7 @@ bool IsChapterBelongCurGame(u32 ch_index)
     return false;
 }
 
-int GetGameTotalTime()
+int GetGameTotalTime(void)
 {
     int time = 0;
     int ch_index = GetNextChapterStatsSlot();
@@ -198,7 +198,7 @@ int GetGameTotalTime()
     return time;
 }
 
-int GetGameTotalTurnCount2()
+int GetGameTotalTurnCount2(void)
 {
     int count = 0;
     int ch_index = GetNextChapterStatsSlot();
@@ -648,7 +648,7 @@ void SavePlayThroughData(void)
     WriteGlobalSaveInfo(&info);
 }
 
-s8 CheckGameEndFlag()
+s8 CheckGameEndFlag(void)
 {
     struct GlobalSaveInfo info;
 
@@ -658,7 +658,7 @@ s8 CheckGameEndFlag()
         return 0;
 }
 
-void SetGameEndFlag()
+void SetGameEndFlag(void)
 {
     struct GlobalSaveInfo info;
 

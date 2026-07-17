@@ -1391,7 +1391,7 @@ bool Config_HandleExit(struct ConfigProc * proc)
     return true;
 }
 
-static inline s8 * GetConfigSource()
+static inline s8 *GetConfigSource(void)
 {
     return &gConfigUiState->source;
 }

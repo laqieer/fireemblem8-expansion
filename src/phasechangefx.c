@@ -80,7 +80,7 @@ struct ProcCmd CONST_DATA ProcScr_PhaseIntro[] = {
 
 /* section.text */
 
-void PhaseIntroVMatchHi()
+void PhaseIntroVMatchHi(void)
 {
     REG_BLDCNT = BLDCNT_TGT1_BG1
                | BLDCNT_EFFECT_BLEND
@@ -94,7 +94,7 @@ void PhaseIntroVMatchHi()
     SetInterrupt_LCDVCountMatch(PhaseIntroVMatchMid);
 }
 
-void PhaseIntroVMatchMid()
+void PhaseIntroVMatchMid(void)
 {
     REG_BLDCNT = BLDCNT_TGT1_BG0
                | BLDCNT_EFFECT_BLEND
@@ -108,7 +108,7 @@ void PhaseIntroVMatchMid()
     SetInterrupt_LCDVCountMatch(PhaseIntroVMatchLo);
 }
 
-void PhaseIntroVMatchLo()
+void PhaseIntroVMatchLo(void)
 {
     REG_BLDCNT = BLDCNT_TGT1_BG1
                | BLDCNT_EFFECT_BLEND

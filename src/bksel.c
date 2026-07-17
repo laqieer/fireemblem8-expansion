@@ -678,7 +678,7 @@ void UpdateBattleForecastContents(void)
         proc->needContentUpdate = 1;
 }
 
-void CloseBattleForecast()
+void CloseBattleForecast(void)
 {
     struct BattleForecastProc * proc = Proc_Find(gProcScr_BKSEL);
 

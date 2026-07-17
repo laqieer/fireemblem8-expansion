@@ -100,7 +100,7 @@ void PrepPromoteDebugMaybe(struct Proc08A184B4 * proc)
     Proc_StartBlocking(ProcScr_PrepPromoteDebug, proc);
 }
 
-void FadeOutPrepBgm()
+void FadeOutPrepBgm(void)
 {
     ChangeBgm(SONG_NONE, 0x100, 0, 0x20, NULL);
 }
@@ -619,7 +619,7 @@ void SetPrepScreenMenuSelectedItem(int index)
     }
 }
 
-int GetActivePrepMenuItemIndex()
+int GetActivePrepMenuItemIndex(void)
 {
     int i, cur = 0;
 

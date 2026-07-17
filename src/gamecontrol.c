@@ -706,7 +706,7 @@ void StartGame(void)
     proc->idle_status = 0;
 }
 
-struct GameCtrlProc * GetGameControl()
+struct GameCtrlProc *GetGameControl(void)
 {
     return Proc_Find(gProcScr_GameControl);
 }
@@ -727,7 +727,7 @@ void SetNextChapterId(int id) {
     return;
 }
 
-s8 HasNextChapter()
+s8 HasNextChapter(void)
 {
     struct GameCtrlProc* proc = GetGameControl();
     return proc->nextChapter == 0 ? 0 : 1;
@@ -761,7 +761,7 @@ void RestartGameAndGoto7(void) {
     return;
 }
 
-void Nop_Gamecontrol_0()
+void Nop_Gamecontrol_0(void)
 {
     return;
 }

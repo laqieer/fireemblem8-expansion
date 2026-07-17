@@ -59,7 +59,7 @@ void BmSave_NopStub(void)
     return;
 }
 
-void SramInit()
+void SramInit(void)
 {
     u32 buf[2];
     buf[0] = 0x12345678;
@@ -75,12 +75,12 @@ void SramInit()
                      : false;
 }
 
-bool IsSramWorking()
+bool IsSramWorking(void)
 {
     return gBoolSramWorking;
 }
 
-void WipeSram()
+void WipeSram(void)
 {
     u32 buf[0x10];
     int i;
@@ -143,7 +143,7 @@ void WriteGlobalSaveInfoNoChecksum(struct GlobalSaveInfo *header)
     WriteAndVerifySramFast(header, &gSram->globalSaveInfo, sizeof(struct GlobalSaveInfo));
 }
 
-void InitGlobalSaveInfodata()
+void InitGlobalSaveInfodata(void)
 {
     struct GlobalSaveInfo info;
     int i;
@@ -184,7 +184,7 @@ void InitGlobalSaveInfodata()
     WriteGlobalSaveInfo(&info);
 }
 
-void EraseBonusContentData()
+void EraseBonusContentData(void)
 {
     u8 *buf = gGenericBuffer;
     CPU_FILL(0, buf, 0x144, 16);
@@ -450,7 +450,7 @@ void ReadSupplyItems(const void *sram_src)
 
 }
 
-bool null_true()
+bool null_true(void)
 {
     return true;
 }
@@ -469,12 +469,12 @@ bool IsExtraLinkArenaEnabled(int index)
     return IsMultiArenaSaveReady();
 }
 
-bool IsExtraSoundRoomEnabled()
+bool IsExtraSoundRoomEnabled(void)
 {
     return 1;
 }
 
-bool IsExtraSupportViewerEnabled()
+bool IsExtraSupportViewerEnabled(void)
 {
     int tmp0 = GGM_IsAnyCharacterKnown(NULL);
     int tmp1 = IsGamePlayedThrough();
@@ -524,7 +524,7 @@ bool IsValidExtraMapAvilable(void)
         return true;
 }
 
-bool IsExtraFreeMapEnabled()
+bool IsExtraFreeMapEnabled(void)
 {
     int i;
 
@@ -594,7 +594,7 @@ int GetUnitsAverageSupportValue(const int unitA, const int unitB)
     return 3;
 }
 
-int GetTotalAverageSupportValue()
+int GetTotalAverageSupportValue(void)
 {
     int ret = 0;
     struct SupportTalkEnt *buf = GetSupportTalkList();
@@ -907,7 +907,7 @@ void SaveRankings(void * buf)
     );
 }
 
-void EraseSaveRankData()
+void EraseSaveRankData(void)
 {
     u16 _buf[sizeof(struct GameRankSaveDataPacks) / 2];
 
@@ -915,7 +915,7 @@ void EraseSaveRankData()
     SaveRankings(_buf);
 }
 
-int GetNextChapterMode()
+int GetNextChapterMode(void)
 {
     return gPlaySt.chapterModeIndex - 1;
 }
@@ -1053,7 +1053,7 @@ void GenerateGameRankSaveData(struct GameRankSaveData *buf, int chapter_mode, in
     strcpy((void*)&buf->tactician_name, GetTacticianName());
 }
 
-void SaveEndgameRankings()
+void SaveEndgameRankings(void)
 {
     struct GameRankSaveData old, new;
 
@@ -1144,7 +1144,7 @@ void UnlockSoundRoomSong(struct SoundRoomSaveData * buf, int val)
     WriteSoundRoomSaveData(buf);
 }
 
-void EraseLinkArenaStruct2()
+void EraseLinkArenaStruct2(void)
 {
     struct bmsave_unkstruct2 buf;
     
@@ -1216,7 +1216,7 @@ void ModifySaveLinkArenaStruct2B(struct bmsave_unkstruct2 * buf, int val)
     WriteLinkArenaStruct2(buf);
 }
 
-void EraseSramDataIfInvalid()
+void EraseSramDataIfInvalid(void)
 {
     if (!ReadGlobalSaveInfo(NULL))
         InitGlobalSaveInfodata();

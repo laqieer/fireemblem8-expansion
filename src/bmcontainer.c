@@ -129,7 +129,7 @@ bool8 ChapterHasMerchant(void)
     return true;
 }
 
-struct Unit * GetSupplyUnit()
+struct Unit *GetSupplyUnit(void)
 {
     int i;
 

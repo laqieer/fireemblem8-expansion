@@ -117,7 +117,7 @@ void PrepUnit_DrawSMSAndObjs(struct ProcPrepUnit *proc)
     SyncUnitSpriteSheet();
 }
 
-void PrepUnit_InitTexts()
+void PrepUnit_InitTexts(void)
 {
     int i;
 
@@ -136,7 +136,7 @@ void PrepUnit_InitTexts()
     InitText(&gPrepUnitTexts[0x15], 12);
 }
 
-void PrepUnit_InitGfx()
+void PrepUnit_InitGfx(void)
 {
     ResetIconGraphics_();
     LoadUiFrameGraphics();
@@ -630,7 +630,7 @@ void PrepUnit_ScrollUpLoop(struct ProcPrepUnit *proc)
     BG_SetPosition(BG_2, 0, proc->yDiff_cur - 0x18);
 }
 
-void Nop_PrepUnitselect_0()
+void Nop_PrepUnitselect_0(void)
 {
     return;
 }

@@ -8,12 +8,12 @@
 EWRAM_DATA static struct IconStruct DrawnIconLookupTable[MAX_ICON_COUNT] = {0};
 EWRAM_DATA static u8 IconGFXIDLookupTable[MAX_ICON_GFX_COUNT] = {0};
 
-void ResetIconGraphics_()
+void ResetIconGraphics_(void)
 {
     ResetIconGraphics(); //Probably was a debug wrapper.
 }
 
-void ResetIconGraphics() 
+void ResetIconGraphics(void)
 {
     CpuFill16(0, &DrawnIconLookupTable, sizeof(DrawnIconLookupTable));
     CpuFill16(0, &IconGFXIDLookupTable, 0x20);

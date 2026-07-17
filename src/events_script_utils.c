@@ -785,17 +785,17 @@ u16 CONST_DATA * TsaLut_EventMapAnimMaskfx[] = {
     TileSet_9A174C,
 };
 
-void RecordGlobalSupportRankC()
+void RecordGlobalSupportRankC(void)
 {
     UpdateBestGlobalSupportValue(0x100, 0x100, 1);
 }
 
-void RecordGlobalSupportRankB()
+void RecordGlobalSupportRankB(void)
 {
     UpdateBestGlobalSupportValue(0x100, 0x100, 2);
 }
 
-void RecordGlobalSupportRankA()
+void RecordGlobalSupportRankA(void)
 {
     UpdateBestGlobalSupportValue(0x100, 0x100, 3);
 }

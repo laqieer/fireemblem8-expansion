@@ -287,7 +287,7 @@ void RegisterPrepUnitList(int index, struct Unit *unit)
     gPrepUnitList.units[index] = unit;
 }
 
-int PrepGetUnitAmount()
+int PrepGetUnitAmount(void)
 {
     return gPrepUnitList.max_num;
 }
@@ -297,7 +297,7 @@ void PrepSetUnitAmount(int val)
     gPrepUnitList.max_num = val;
 }
 
-int PrepGetLatestCharId()
+int PrepGetLatestCharId(void)
 {
     if (0 == (gGMData.state.bits.state_0))
         return gPrepUnitList.latest_pid;
@@ -324,7 +324,7 @@ s8 IsCharacterForceDeployed(int char_id)
     return IsCharacterForceDeployed_(char_id);
 }
 
-int CalcForceDeployedUnitCounts()
+int CalcForceDeployedUnitCounts(void)
 {
     int i, ret = 0;
     for (i = 1; i < 0x40; i++) {
@@ -382,7 +382,7 @@ void AtMenu_AddPrepScreenSupportMenuItem(struct ProcAtMenu *proc)
     SetPrepScreenMenuItem(4, PrepScreenMenu_OnSupport, color, 0x577, 0);
 }
 
-s8 CanPrepScreenCheckMap()
+s8 CanPrepScreenCheckMap(void)
 {
     if (0x7D == gPlaySt.chapterIndex)
         return 0;
@@ -468,7 +468,7 @@ void InitPrepScreenMainMenu(struct ProcAtMenu* proc)
     SetPrepScreenMenuSelectedItem(proc->cur_cmd);
 }
 
-int GetLatestUnitIndexInPrepListByUId()
+int GetLatestUnitIndexInPrepListByUId(void)
 {
     int i;
     for (i = 0; i < PrepGetUnitAmount(); i++) {
@@ -478,7 +478,7 @@ int GetLatestUnitIndexInPrepListByUId()
     return 0;
 }
 
-int PrepGetLatestUnitIndex()
+int PrepGetLatestUnitIndex(void)
 {
     int i;
     for (i = 0; i < PrepGetUnitAmount(); i++) {
@@ -488,7 +488,7 @@ int PrepGetLatestUnitIndex()
     return 0;
 }
 
-void ReorderPlayerUnitsBasedOnDeployment()
+void ReorderPlayerUnitsBasedOnDeployment(void)
 {
     int i;
     struct Unit *unit;
@@ -509,7 +509,7 @@ void ReorderPlayerUnitsBasedOnDeployment()
     LoadPlayerUnitsFromUnitStack();
 }
 
-void SortPlayerUnitsForPrepScreen()
+void SortPlayerUnitsForPrepScreen(void)
 {
     int i, state1, state2;
     struct Unit *unit;
@@ -570,7 +570,7 @@ void SortPlayerUnitsForPrepScreen()
     }
 }
 
-void RemoveSomeUnitItems()
+void RemoveSomeUnitItems(void)
 {
     int i, j, itemNum, removeItem;
     struct Unit *unit;
@@ -605,7 +605,7 @@ void RemoveSomeUnitItems()
     }
 }
 
-void MakePrepUnitList()
+void MakePrepUnitList(void)
 {
     int i, cur = 0;
     struct Unit *unit;
@@ -638,7 +638,7 @@ int UnitGetIndexInPrepList(int pid)
     return 0;
 }
 
-void PrepUpdateSMS()
+void PrepUpdateSMS(void)
 {
     int i, state;
     struct Unit *unit;
@@ -707,13 +707,13 @@ void PrepAutoCapDeployUnits(struct ProcAtMenu* proc)
         proc->max_counter = proc->unit_count;
 }
 
-void RestartMuralBackground()
+void RestartMuralBackground(void)
 {
     Proc_EndEach(ProcScr_SlidingWallBg);
     StartMuralBackground(0, 0, 0xA);
 }
 
-void EndMuralBackground_()
+void EndMuralBackground_(void)
 {
     EndMuralBackground();
 }

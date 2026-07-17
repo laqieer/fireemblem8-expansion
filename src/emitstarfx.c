@@ -226,13 +226,13 @@ void StartEmitStarsAnim(ProcPtr parent, int xloc, int yloc, int xdiff, int ydiff
     proc->star_cannot_move = 0;
 }
 
-void ClearEmitedStars()
+void ClearEmitedStars(void)
 {
     struct ProcEmitStars *proc = Proc_Find(ProcScr_EmitStars);
     proc->stars = 0;
 }
 
-void EndEmitStars()
+void EndEmitStars(void)
 {
     Proc_EndEach(ProcScr_EmitStars);
 }
