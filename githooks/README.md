@@ -1,6 +1,6 @@
 # Git hooks
 
-Local commit gates that mirror CI, so a red build never reaches `main`.
+Local build and shiftability gates that complement CI.
 
 ## Install (once per clone)
 
@@ -16,14 +16,12 @@ On any commit that touches build inputs (`src/`, `asm/`, `layout/`,
 `graphics/`, `sound/`, `data/`, `banim/`, `Makefile`, `*.c/.h/.s/.inc/.tsv/.mk`,
 etc.) it runs, in order:
 
-1. **`make compare`** — the byte-match / self-containment oracle
-   (`fireemblem8.gba: OK`). Incremental, so it is fast (~1–2 min) once the tree
-   is built; a fresh tree's first run is a full ~5 min build.
+1. **`make fireemblem8.gba`** — builds the target ROM. Incremental, so it is
+   fast once the tree is built; a fresh tree's first run is a full build.
 2. **`make shiftcheck`** — the blocking shiftability gate (fails on
    `[A] HIGH` un-relocated data pointers). ~13 s once the ELF is built.
 
-These are exactly the two gates CI enforces (CI is a ~5.5 min clean build), so
-catching them locally avoids the slow CI round-trip and keeps `main` green.
+These gates catch build and shiftability failures before they reach CI.
 
 ## Bypass (use sparingly)
 

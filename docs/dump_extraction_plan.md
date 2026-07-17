@@ -4,7 +4,7 @@
 
 `dump/` holds 205 raw byte-blobs (~920 KB) that earlier passes left behind because they couldn't be type-determined automatically. They're catalogued in `reports/detailed_dump_analysis.md`.
 
-Extraction here means **moving each chunk into typed source form** — `const`-typed C arrays in `src/data/*.c`, or typed graphics (`.png`/`.pal`/`.tsa`) under `graphics/misc/`. Relocating raw `.bin` files from `dump/` to `graphics/misc/` without typing them is not extraction — it's cheating. Each conversion must round-trip byte-identical via `make compare`.
+Extraction here means **moving each chunk into typed source form** — `const`-typed C arrays in `src/data/*.c`, or typed graphics (`.png`/`.pal`/`.tsa`) under `graphics/misc/`. Relocating raw `.bin` files from `dump/` to `graphics/misc/` without typing them is not extraction — it's cheating. Each conversion must pass the targeted byte-for-byte round-trip check in `scripts/verify_blob_extraction.py`.
 
 The hard constraint on the mechanics: `ldscript.txt` places each `data/<file>.o(.data)` section contiguously, so removing a single `.incbin` from a `.s` file shifts every subsequent label's ROM address. The only safe unit of migration is the **whole `.s` file** (or a contiguous tail of it ending at a section boundary): every label gets typed C source at once, the `.s` file empties, and the linker line moves from `data/X.o(.data)` to `src/data/X.o(.rodata)`.
 
@@ -52,8 +52,8 @@ For each `data/<file>.s` that references `dump/`:
 6. **Update `ldscript.txt`.** Default rewrite: `. = ALIGN(4); data/<file>.o(.data);` → `. = ALIGN(4); src/data/<file>.o(.rodata);`. But this is **conditional**: confirm by inspecting the original `.s` whether it was `.section .data` (so `.rodata` is wrong — the C file must use `CONST_DATA` / the `.data` attribute to preserve the linker bucket) or `.section .rodata`. Picking the wrong section silently changes which linker bucket the symbols land in, re-ordering the final ROM layout. If the file is split, keep both entries. For banim region (wave 4), update `linker_script_banim.txt` too.
 7. **Preserve every non-global directive in the .s file.** Don't drop local labels, `.align`/`.balign`/`.p2align` directives, `.section` annotations, or inline comments. Unusual alignment may need `__attribute__((aligned(N)))` on the C side or a `.align` shim in a tiny remnant `.s`.
 8. **Audit pointer literals.** `grep -E '0x0[89][0-9A-Fa-f]{6}|0x02[0-9A-Fa-f]{6}|0x03[0-9A-Fa-f]{6}' src/data/<file>.c` — any hit is a raw address that escaped pointer resolution.
-9. **`make -j$(nproc) compare`.** Must end with `fireemblem8.gba: OK`. ROM-byte equality alone does NOT prove pointers were resolved correctly or that label addresses match — the audit + map check guard against silent failures.
-10. **Compare label addresses in the linker map.** Save `fireemblem8.map` before the migration as `/tmp/pre.map`, rebuild, then verify every migrated label and the next symbol after the block have identical addresses pre/post. Compiler-inserted alignment padding shows up here, not in `make compare`.
+9. **`make fireemblem8.gba -j$(nproc)`.** The full ROM must compile and link successfully. A successful build alone does NOT prove pointers were resolved correctly or that label addresses match — the audit + map check guard against silent failures.
+10. **Compare label addresses in the linker map.** Save `fireemblem8.map` before the migration as `/tmp/pre.map`, rebuild, then verify every migrated label and the next symbol after the block have identical addresses pre/post. Compiler-inserted alignment padding shows up here, not in the build result.
 11. If steps 9 or 10 fail, bisect by halving the migration scope and recheck.
 
 ### Wave ordering
@@ -109,7 +109,7 @@ Shared pointer-resolution helper: scans `fireemblem8.map` once, builds an addres
 ## Verification
 
 Per wave:
-- `make clean_fast && make -j$(nproc) compare` (from clean state) → `fireemblem8.gba: OK`.
+- `make clean_fast && make fireemblem8.gba -j$(nproc)` succeeds from a clean state.
 - Pointer-literal audit grep → empty.
 - Map-address diff: every migrated label and the next-block-boundary symbol have identical addresses pre/post.
 - `bash scripts/calcrom.sh` → expected delta in src vs data byte counts.

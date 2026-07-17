@@ -52,8 +52,8 @@ python3 scripts/baseline/capture.py --build \
   --output reports/baseline/baseline.json
 ```
 
-`--build` runs `make clean` followed by `make compare -j<N>` before capture; it
-does not alter the Makefile. To capture already-built artifacts:
+`--build` runs `make clean` followed by `make fireemblem8.gba -j<N>` before
+capture; it does not alter the Makefile. To capture already-built artifacts:
 
 ```sh
 python3 scripts/baseline/capture.py \

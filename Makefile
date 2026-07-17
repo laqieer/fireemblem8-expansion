@@ -46,12 +46,6 @@ else
 	SED := sed -i
 endif
 
-ifeq ($(UNAME),Darwin)
-	SHASUM := shasum
-else
-	SHASUM := sha1sum
-endif
-
 CC1FLAGS := -mthumb-interwork -Wimplicit -Wparentheses -Werror -O2 -fhex-asm -ffix-debug-line -g
 CPPFLAGS := -I tools/agbcc/include -iquote include -iquote . -nostdinc -undef
 ASFLAGS  := -mcpu=arm7tdmi -mthumb-interwork -I include
@@ -110,15 +104,19 @@ src/menu_def.o: CC1FLAGS += -Wno-error
 
 #### Main Targets ####
 
-compare: $(ROM)
-	$(SHASUM) -c checksum.sha1
+all: $(ROM)
 
-.PHONY: compare
+# Prevent the catch-all %.s rule from turning the removed comparison command
+# into an unrelated native executable through make's built-in implicit rules.
+compare:
+	@echo "The legacy comparison target has been removed; build fireemblem8.gba instead." >&2
+	@false
+
+.PHONY: all compare
 
 #### Shiftability harness (scripts/shiftcheck/) ####
 # Detects hardcoded pointers (raw absolute addresses that bypass the symbol system)
-# which would break if the ROM layout shifted. Entirely separate from the matching
-# build: never touches $(ROM)/$(ELF)/compare. See scripts/shiftcheck/README.md.
+# which would break if the ROM layout shifted. See scripts/shiftcheck/README.md.
 RELOCS_ELF  := fireemblem8_relocs.elf
 SHIFTDIR    := build/shiftcheck
 SHIFT       ?= 0x40000

@@ -7,9 +7,8 @@ Usage: ./scripts/quickstart.sh [--rom /path/to/baserom.gba] [--refresh-agbcc]
 
 Options:
   --rom PATH        Copy the ROM from PATH to baserom.gba if it is missing.
-                    Optional: the build is byte-verified against checksum.sha1,
-                    so baserom.gba is NOT required to build. It is only used by
-                    asmdiff.sh for disassembly comparison.
+                    Optional: baserom.gba is NOT required to build. It is only
+                    used by asmdiff.sh for disassembly comparison.
   --refresh-agbcc   Force re-clone/rebuild of agbcc even if one exists in tools/agbcc.
 
 You can also set FIREEMBLEM8U_ROM to point to the ROM.
@@ -57,9 +56,8 @@ parse_args() {
   done
 }
 
-# baserom.gba is OPTIONAL: the build is verified against checksum.sha1, not the
-# original ROM. It is only used by asmdiff.sh for disassembly comparison, so a
-# missing ROM is a note, not a failure.
+# baserom.gba is OPTIONAL. It is only used by asmdiff.sh for disassembly
+# comparison, so a missing ROM is a note, not a failure.
 ensure_baserom() {
   if [[ -f "${BASEROM_PATH}" ]]; then
     return
@@ -94,17 +92,6 @@ job_count() {
     count=1
   fi
   printf '%s\n' "${count}"
-}
-
-verify_rom_checksum() {
-  if have_cmd sha1sum; then
-    sha1sum -c checksum.sha1
-  elif have_cmd shasum; then
-    shasum -a 1 -c checksum.sha1
-  else
-    echo "[!] Neither sha1sum nor shasum is available to verify the ROM." >&2
-    return 1
-  fi
 }
 
 probe_arm_toolchain_headers() {
@@ -259,11 +246,9 @@ build_project() {
     git submodule update --init --recursive
     echo "[+] Building project-specific tools"
     ./build_tools.sh
-    echo "[+] Building fireemblem8u (this can take several minutes)"
+    echo "[+] Building fireemblem8.gba (this can take several minutes)"
     echo "    (first build also fetches/builds the mgfembp agbcc variant for the FE6 SIO payload)"
     make -j"${jobs}"
-    echo "[+] Verifying ROM checksum"
-    verify_rom_checksum
     echo "[✓] Build complete: ${PROJECT_DIR}/fireemblem8.gba"
   popd >/dev/null
 }

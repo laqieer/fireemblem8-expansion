@@ -5,9 +5,8 @@ Given a generated assembly fragment that is meant to replace an opaque
 `.incbin "X.bin"`, prove it assembles to the *exact* original bytes BEFORE it is
 integrated into a real `data/*.s` file and a full ROM rebuild is attempted.
 
-This localises errors (which blob, how many bytes off) that a global
-`make compare` would only report as a single ROM mismatch, and it catches
-1-2 byte length errors that a later `.align` could zero-fill and mask.
+This localises errors (which blob, how many bytes off) before integration and
+catches 1-2 byte length errors that a later `.align` could zero-fill and mask.
 
 Two entry points:
 

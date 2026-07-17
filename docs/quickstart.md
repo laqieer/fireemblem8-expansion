@@ -1,10 +1,16 @@
 # Fire Emblem 8U Quick Start
 
-Get a working build of this decompilation with a single command using the bundled `scripts/quickstart.sh` helper. (If you prefer manual setup or run on another distro/package manager, see the README section below.)
+Get a working build of this ROM-hack base with a single command using the
+bundled `scripts/quickstart.sh` helper. If you prefer manual setup or run on
+another distro/package manager, see the README.
 
 ## Prerequisites
 
-- _(Optional)_ A legally obtained copy of **Fire Emblem: The Sacred Stones (USA)**. The build does **not** need it — the result is verified against `checksum.sha1` — so it is only used by `asmdiff.sh` for disassembly comparison. If you have one, place it at the repo root as `baserom.gba`, or pass `--rom /path/to/rom.gba` (or `FIREEMBLEM8U_ROM=/path/to/rom.gba`).
+- _(Optional)_ A legally obtained copy of **Fire Emblem: The Sacred Stones
+  (USA)**. The build does **not** need it; it is only used by `asmdiff.sh` for
+  disassembly comparison. If you have one, place it at the repo root as
+  `baserom.gba`, or pass `--rom /path/to/rom.gba` (or
+  `FIREEMBLEM8U_ROM=/path/to/rom.gba`).
 - Ubuntu/WSL (apt), Arch Linux/pacman, or macOS/Homebrew with sudo/admin access. The script only auto-installs dependencies for these package managers; other environments can still run manually.
 - ~2.5 GB of free disk space and up to 15 minutes for the first full build.
 
@@ -31,19 +37,17 @@ What the script now does:
    `sysctl -n hw.logicalcpu`, or 1 job in that order. The first build also
    fetches/builds mgfembp's own agbcc variant (`010110-ThumbPatch`) for the
    payload sub-build.
-7. Verifies the ROM hash with `sha1sum`, or `shasum -a 1` where GNU
-   `sha1sum` is unavailable.
-
 On success you’ll see:
 
 ```
-fireemblem8.gba: OK
-[✓] Build complete: /path/to/fireemblem8u/fireemblem8.gba
+[✓] Build complete: /path/to/fireemblem8-expansion/fireemblem8.gba
 ```
 
 ## Troubleshooting
 
-- **No ROM** – `baserom.gba` is optional; the build works and self-verifies without it. Provide `--rom /path/to/rom.gba` (or `FIREEMBLEM8U_ROM=/path/to/rom.gba`) only if you want to use `asmdiff.sh`.
+- **No ROM** – `baserom.gba` is optional; the build works without it. Provide
+  `--rom /path/to/rom.gba` (or `FIREEMBLEM8U_ROM=/path/to/rom.gba`) only if you
+  want to use `asmdiff.sh`.
 - **No sudo/root** – apt/pacman installs require elevated privileges. Without
   sudo the script stops and asks you to install the prerequisites manually.
   Homebrew installs keep working without sudo.

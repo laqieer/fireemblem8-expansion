@@ -58,23 +58,6 @@ class QuickstartTests(unittest.TestCase):
         single = self.run_helper("job_count", {})
         self.assertEqual((single.returncode, single.stdout), (0, "1\n"))
 
-    def test_checksum_fallback_order(self):
-        sha1sum = self.run_helper(
-            "verify_rom_checksum",
-            {
-                "sha1sum": 'printf "sha1sum:%s\\n" "$*"',
-                "shasum": 'printf "shasum:%s\\n" "$*"',
-            },
-        )
-        self.assertEqual(sha1sum.returncode, 0)
-        self.assertEqual(sha1sum.stdout, "sha1sum:-c checksum.sha1\n")
-
-        shasum = self.run_helper(
-            "verify_rom_checksum", {"shasum": 'printf "shasum:%s\\n" "$*"'}
-        )
-        self.assertEqual(shasum.returncode, 0)
-        self.assertEqual(shasum.stdout, "shasum:-a 1 -c checksum.sha1\n")
-
     def test_package_commands_and_shell_syntax(self):
         syntax = subprocess.run(
             ["/bin/bash", "-n", str(QUICKSTART)],
@@ -95,11 +78,6 @@ class QuickstartTests(unittest.TestCase):
         self.assertIn("brew install --cask gcc-arm-embedded", script)
         self.assertIn("brew uninstall arm-none-eabi-gcc", script)
         self.assertNotRegex(script, re.compile(r"make [^\n]*\$\(nproc\)"))
-        self.assertEqual(script.count("sha1sum -c checksum.sha1"), 1)
-        self.assertLess(
-            script.index("if have_cmd sha1sum"),
-            script.index("sha1sum -c checksum.sha1"),
-        )
 
 
 if __name__ == "__main__":

@@ -2,11 +2,8 @@
 #
 # FE8J pre-commit hook — fast local build gate.
 #
-# Runs `make compare` (byte-match / self-containment oracle) and
-# `make shiftcheck` (blocking shiftability gate) before every commit that
-# touches build-relevant files, so CI never sees a red push. These are the two
-# gates CI enforces; catching them locally (incrementally, ~1-2 min + ~13 s)
-# is far faster than the ~5.5 min CI round-trip.
+# Builds the target ROM and runs `make shiftcheck` before every commit that
+# touches build-relevant files, so CI never sees a red push.
 #
 # Bypass (use sparingly):
 #   git commit --no-verify        # skip all hooks
@@ -56,11 +53,10 @@ fail() {
     exit 1
 }
 
-echo "[pre-commit] make compare (fast/incremental)…"
-if ! make compare >/tmp/fe8j_precommit_compare.log 2>&1 \
-    || ! grep -q "fireemblem8.gba: OK" /tmp/fe8j_precommit_compare.log; then
-    tail -25 /tmp/fe8j_precommit_compare.log
-    fail "make compare"
+echo "[pre-commit] make fireemblem8.gba (fast/incremental)…"
+if ! make fireemblem8.gba >/tmp/fe8j_precommit_build.log 2>&1; then
+    tail -25 /tmp/fe8j_precommit_build.log
+    fail "make fireemblem8.gba"
 fi
 
 echo "[pre-commit] make shiftcheck…"
@@ -70,5 +66,5 @@ if ! make shiftcheck >/tmp/fe8j_precommit_shift.log 2>&1; then
     fail "make shiftcheck"
 fi
 
-echo "[pre-commit] OK — make compare + make shiftcheck passed."
+echo "[pre-commit] OK — ROM build + make shiftcheck passed."
 exit 0

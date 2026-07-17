@@ -591,27 +591,6 @@ def source_provenance(root: Path) -> dict[str, Any]:
     }
 
 
-def verify_checksum(root: Path, rom_path: Path, actual_sha1: str) -> str:
-    checksum_path = root / "checksum.sha1"
-    ensure_file(checksum_path, "checksum.sha1")
-    try:
-        lines = checksum_path.read_text(encoding="ascii").splitlines()
-    except UnicodeDecodeError as error:
-        raise BaselineError("checksum.sha1 is not ASCII text") from error
-    matches: list[str] = []
-    for line in lines:
-        match = re.fullmatch(r"([0-9a-fA-F]{40})[ \t]+[*]?(.+)", line)
-        if match and Path(match.group(2)).name == rom_path.name:
-            matches.append(match.group(1).lower())
-    if len(matches) != 1:
-        raise BaselineError(
-            f"checksum.sha1 must contain exactly one entry for {rom_path.name}"
-        )
-    if matches[0] != actual_sha1:
-        raise BaselineError("ROM SHA-1 does not match checksum.sha1")
-    return matches[0]
-
-
 def verify_rom_elf(
     rom_path: Path, raw_sections: list[dict[str, Any]]
 ) -> None:
@@ -657,7 +636,6 @@ def capture(
     ):
         ensure_file(path, label)
     rom = parse_rom(rom_path)
-    rom["checksum_sha1"] = verify_checksum(root, rom_path, rom["sha1"])
     elf, raw_sections = parse_elf(elf_path)
     verify_rom_elf(rom_path, raw_sections)
     map_evidence, map_sections = parse_map(map_path)
@@ -680,7 +658,7 @@ def capture(
         "map": map_evidence,
         "memory": memory_usage(elf["sections"], rom["size_bytes"]),
         "rom": rom,
-        "schema_version": 3,
+        "schema_version": 4,
         "source": source_provenance(root),
         "tools": tool_versions(
             root, prefix, agbcc_source or root / ".deps/agbcc"
@@ -702,13 +680,13 @@ def run_build(root: Path, jobs: int) -> None:
             ["make", "clean"], cwd=root, check=True, stdout=sys.stderr
         )
         subprocess.run(
-            ["make", "compare", f"-j{jobs}"],
+            ["make", "fireemblem8.gba", f"-j{jobs}"],
             cwd=root,
             check=True,
             stdout=sys.stderr,
         )
     except (OSError, subprocess.CalledProcessError) as error:
-        raise BaselineError("clean/build/compare failed") from error
+        raise BaselineError("clean/build failed") from error
 
 
 def resolve_input(root: Path, value: str) -> Path:
@@ -724,7 +702,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=".deps/agbcc",
         help="Git checkout used to build agbcc and old_agbcc",
     )
-    parser.add_argument("--build", action="store_true", help="clean and run make compare")
+    parser.add_argument(
+        "--build", action="store_true", help="clean and build fireemblem8.gba"
+    )
     parser.add_argument("--elf", default="fireemblem8.elf")
     parser.add_argument("--jobs", type=int, default=os.cpu_count() or 1)
     parser.add_argument("--map", dest="map_file", default="fireemblem8.map")

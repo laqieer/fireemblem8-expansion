@@ -29,13 +29,6 @@ def make_rom(directory: Path) -> tuple[Path, bytes]:
     return path, bytes(rom)
 
 
-def write_checksum(directory: Path, rom: bytes) -> None:
-    digest = hashlib.sha1(rom).hexdigest()
-    (directory / "checksum.sha1").write_text(
-        f"{digest}  fireemblem8.gba\n", encoding="ascii"
-    )
-
-
 def make_elf(
     path: Path,
     rom: bytes,
@@ -169,7 +162,6 @@ def make_artifacts(directory: Path, *, debug_path: bytes = b"/one/source.c\0"):
     elf_path = directory / "fireemblem8.elf"
     make_elf(elf_path, rom, debug_path=debug_path)
     map_path = write_map(directory, len(rom))
-    write_checksum(directory, rom)
     return rom_path, elf_path, map_path
 
 
@@ -333,10 +325,8 @@ class CaptureTests(unittest.TestCase):
     def test_full_capture_validates_and_serializes(self):
         with tempfile.TemporaryDirectory() as temp:
             manifest = self.capture_with_fixed_environment(Path(temp))
-        self.assertEqual(manifest["schema_version"], 3)
-        self.assertEqual(
-            manifest["rom"]["sha1"], manifest["rom"]["checksum_sha1"]
-        )
+        self.assertEqual(manifest["schema_version"], 4)
+        self.assertIn("sha1", manifest["rom"])
         self.assertEqual(manifest["source"], FIXED_SOURCE)
         self.assertEqual(json.loads(capture.serialize(manifest)), manifest)
 
@@ -359,23 +349,14 @@ class CaptureTests(unittest.TestCase):
                 second = capture.capture(second_dir, *second_paths, "unused-")
         self.assertEqual(capture.serialize(first), capture.serialize(second))
 
-    def test_checksum_and_rom_elf_mismatches_are_rejected(self):
+    def test_rom_elf_mismatches_are_rejected(self):
         with tempfile.TemporaryDirectory() as temp:
             directory = Path(temp)
             rom_path, elf_path, map_path = make_artifacts(directory)
-            (directory / "checksum.sha1").write_text(
-                f"{'0' * 40}  fireemblem8.gba\n", encoding="ascii"
-            )
-            with self.assertRaisesRegex(capture.BaselineError, "checksum.sha1"):
-                capture.capture(
-                    directory, rom_path, elf_path, map_path, "unused-"
-                )
-
             original = rom_path.read_bytes()
             changed = bytearray(original)
             changed[0] ^= 1
             rom_path.write_bytes(changed)
-            write_checksum(directory, bytes(changed))
             with self.assertRaisesRegex(capture.BaselineError, "ELF ROM section"):
                 capture.capture(
                     directory, rom_path, elf_path, map_path, "unused-"
@@ -383,7 +364,6 @@ class CaptureTests(unittest.TestCase):
 
             padded = original + b"\0"
             rom_path.write_bytes(padded)
-            write_checksum(directory, padded)
             with self.assertRaisesRegex(capture.BaselineError, "not 0xFF padding"):
                 capture.capture(
                     directory, rom_path, elf_path, map_path, "unused-"

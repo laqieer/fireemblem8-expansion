@@ -4,7 +4,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a decompilation of **Fire Emblem: The Sacred Stones** (GBA). The goal is to reverse-engineer the original ROM into matching C source code, translating ARM/Thumb assembly from `asm/` into equivalent C in `src/`. The compiled output must be **byte-identical** to the original ROM. Only `asm/arm.s` and `asm/arm_call.s` remain as non-handwritten assembly to decompile.
+This is a ROM-hack base derived from the **Fire Emblem: The Sacred Stones**
+(GBA) decompilation. The expansion output is not required to be byte-identical
+to the original ROM. Only `asm/arm.s` and `asm/arm_call.s` remain as
+non-handwritten assembly to decompile.
 
 ## Build Commands
 
@@ -19,7 +22,8 @@ make clean
 make clean_fast
 ```
 
-A successful build ends with `fireemblem8.gba: OK` (SHA-1 checksum match). This is the only "test" — there is no test suite. If the last line says `FAILED`, the decompiled code does not match the original ROM.
+A successful build exits cleanly and produces `fireemblem8.gba`. Modern ROM
+correctness is judged by successful link, boot, and runtime behavior.
 
 ## Compiler & Toolchain
 
@@ -79,10 +83,9 @@ All headers use `#ifndef GUARD_FILENAME_H` / `#define GUARD_FILENAME_H`.
 
 `.clang-format` configured: Allman braces, 4-space indent, 100-column limit, no tabs. `global.h` is always sorted first in includes.
 
-### Matching Requirements
+### Legacy Layout Constraints
 
-Compiled output must be byte-identical to the original ROM:
-- Register allocation, instruction selection, and data layout must match exactly
-- Sometimes "ugly" code is needed to coerce specific instruction generation
-- `STRUCT_PAD(from, to)` pads struct fields to match original layout
-- `SHOULD_BE_CONST` marks data that logically should be const but must stay mutable to match
+The current migration still relies on original ABI and data-layout details:
+- Preserve register-sensitive code only where the legacy compiler still requires it
+- `STRUCT_PAD(from, to)` pads struct fields to preserve explicit layout
+- `SHOULD_BE_CONST` marks data that must stay writable for legacy placement

@@ -2,8 +2,8 @@
 
 Reusable helpers used to rename the project's placeholder symbols
 (`sub_XXXX`, `gUnknown_XXXX`, `*_<addr>`) to meaningful names. Symbol names are
-not present in the GBA ROM, so every rename preserves the SHA-1 match — these
-tools verify that with `make compare` after applying.
+not present in the GBA ROM. These tools check collisions and dangling
+references, then rebuild the ROM after applying a rename map.
 
 ## Appliers
 

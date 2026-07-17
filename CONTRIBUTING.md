@@ -320,19 +320,13 @@ Build again, and we get:
 ```sh
 make
 ```
-```sha1sum
-pokeruby.gba: OK
-```
 
-This means the function matches. Congratulations!
+This confirms that the source compiles and links. Use the project's disassembly
+comparison tools when you need to investigate instruction-level matching.
 
 ---
 
-If it doesn't match, you will get:
-```sha1sum
-pokeruby.gba: FAILED
-sha1sum: WARNING: 1 computed checksum did NOT match
-```
+If the build fails, `make` reports the compiler or linker error to fix.
 
 ---
 

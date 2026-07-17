@@ -1,19 +1,18 @@
-# Copilot Instructions — fireemblem8u
+# Copilot Instructions — fireemblem8-expansion
 
-This is a decompilation project for **Fire Emblem: The Sacred Stones** (GBA). The goal is to reverse-engineer the original ROM into matching C source code, translating ARM/Thumb assembly in `asm/` into equivalent C in `src/`. The output must produce a byte-identical ROM when compiled.
+This is a ROM-hack base derived from the **Fire Emblem: The Sacred Stones**
+(GBA) decompilation. The expansion output is not required to be byte-identical
+to the original ROM.
 
 ## Build
 
-A legally obtained ROM named `baserom.gba` must be at the repo root. First-time
-setup (installs agbcc + builds the `tools/`): `./scripts/quickstart.sh` (see
-`docs/quickstart.md`). Manual setup is in `README.md`.
+First-time setup (installs agbcc + builds the `tools/`):
+`./scripts/quickstart.sh` (see `docs/quickstart.md`). A legally obtained
+`baserom.gba` is optional and only needed for `asmdiff.sh`.
 
 ```bash
 # Build the ROM (uses agbcc, a GCC 2.95-based GBA C compiler)
 make fireemblem8.gba -j$(nproc)
-
-# Build AND verify the SHA-1 against baserom — this is the project's "test"
-make -j$(nproc) compare
 
 # Clean all build artifacts (slow — recompresses battle animations)
 make clean
@@ -22,13 +21,10 @@ make clean
 make clean_fast
 ```
 
-A successful build ends with `fireemblem8.gba: OK` (SHA-1 checksum match against
-`baserom.gba`). There is no unit-test suite — **byte-identical ROM output is the
-only test**. Verify the last line of `make compare` output is `OK`; `FAILED`
-means the C does not match. There is no single-test granularity: the whole ROM
-is rebuilt and checksummed. To narrow down a single function's mismatch, use
-`./asmdiff.sh <hex_addr> <byte_len>` (objdump side-by-side of `baserom.gba` vs
-`fireemblem8.gba`). `bash scripts/calcrom.sh` reports decompilation progress.
+A successful build exits cleanly and produces `fireemblem8.gba`. Modern ROM
+correctness is judged by successful link, boot, and runtime behavior, not by
+equality with the vanilla ROM. `./asmdiff.sh <hex_addr> <byte_len>` remains
+available for legacy matching investigations when `baserom.gba` is present.
 
 ## Architecture
 
@@ -80,12 +76,11 @@ All headers use `#ifndef GUARD_FILENAME_H` / `#define GUARD_FILENAME_H` style gu
 ### Formatting
 Configured in `.clang-format`: Allman braces, 4-space indent, 100-column limit, no tabs. `global.h` is always sorted first in includes.
 
-### Matching requirements
-The compiled output must be **byte-identical** to the original ROM. This means:
-- Register allocation, instruction selection, and data layout must match exactly.
-- Sometimes "ugly" code is required to coerce the compiler into generating specific instructions.
-- `STRUCT_PAD(from, to)` is used to pad struct fields to match original layout.
-- The `SHOULD_BE_CONST` marker denotes data that logically should be const but must stay mutable to match.
+### Legacy layout constraints
+The current migration still relies on original ABI and data-layout details:
+- Preserve register-sensitive code only where the legacy compiler still requires it.
+- `STRUCT_PAD(from, to)` is used to preserve explicit structure layout.
+- The `SHOULD_BE_CONST` marker denotes data that must remain writable for legacy placement.
 
 ### Asset extraction
 Raw data blobs are migrated from `dump/`*.bin into typed source (C arrays, or

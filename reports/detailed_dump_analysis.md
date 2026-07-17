@@ -58,4 +58,4 @@ preserving all prior behaviour). Per-file overrides live as target-specific
 
 - `ls dump/ | wc -l` → 0
 - `grep -rl '"dump/' data/ asm/ src/` → none
-- `make clean_fast && make -j$(nproc) compare` → `fireemblem8.gba: OK`
+- `make clean_fast && make fireemblem8.gba -j$(nproc)` → successful ROM build

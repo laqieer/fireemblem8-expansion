@@ -1,6 +1,6 @@
-# Fire Emblem: The Sacred Stones
+# Fire Emblem 8 Expansion
 
-[![Build CI](https://github.com/laqieer/fireemblem8u/actions/workflows/build.yml/badge.svg)](https://github.com/laqieer/fireemblem8u/actions/workflows/build.yml)
+[![Build CI](https://github.com/laqieer/fireemblem8-expansion/actions/workflows/build.yml/badge.svg)](https://github.com/laqieer/fireemblem8-expansion/actions/workflows/build.yml)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square)](http://makeapullrequest.com)
 [![Code](https://decomp.dev/laqieer/fireemblem8u/us.svg?mode=shield&measure=matched_code_percent&label=Code)](https://decomp.dev/laqieer/fireemblem8u/us)
 [![Data](https://decomp.dev/laqieer/fireemblem8u/us.svg?mode=shield&measure=matched_data_percent&label=Data)](https://decomp.dev/laqieer/fireemblem8u/us)
@@ -8,12 +8,9 @@
 
 [Wiki](https://github.com/laqieer/fireemblem8u/wiki) · [FE Decomp Portal](https://laqieer.github.io/fe-decomp-portal/) · [decomp.dev](https://decomp.dev/laqieer/fireemblem8u/us)
 
-This is a disassembly **and decompilation** of Fire Emblem: The Sacred Stones (U)[!] — the
-ROM has been reverse-engineered into C (~99.8% of the code is decompiled; 100% of the data is
-extracted and all symbols are documented), and it builds **byte-identical** to the original.
-
-It builds the following ROM:
-* fireemblem8.gba `sha1: c25b145e37456171ada4b0d440bf88a19f4d509f`
+This is a ROM-hack base derived from the Fire Emblem: The Sacred Stones (U)
+decompilation. The expansion ROM is built from source and is not required to be
+byte-identical to the original game.
 
 ## Used by
 
@@ -31,7 +28,9 @@ If you just want to get the repo building quickly (Ubuntu/WSL, Arch Linux, or ma
 ./scripts/quickstart.sh [--rom /path/to/baserom.gba] [--refresh-agbcc]
 ```
 
-The build does **not** require the original ROM — the result is byte-verified against `checksum.sha1`. A `baserom.gba` is only needed if you want to use `asmdiff.sh` for disassembly comparison; pass it with `--rom` (or `FIREEMBLEM8U_ROM=...`) if you have one.
+The build does **not** require the original ROM. A `baserom.gba` is only needed
+if you want to use `asmdiff.sh` for disassembly comparison; pass it with `--rom`
+(or `FIREEMBLEM8U_ROM=...`) if you have one.
 
 See [`docs/quickstart.md`](docs/quickstart.md) for full details, flags, and troubleshooting tips.
 
@@ -78,10 +77,7 @@ git submodule update --init --recursive
 ```
 make
 ```
-6. You will see this for success.
-```
-fireemblem8.gba: OK
-```
+6. A successful command produces `fireemblem8.gba`.
 
 Q: `fatal error: png.h: No such file or directory`
 
@@ -89,7 +85,8 @@ A: Install [libpng](http://www.libpng.org/pub/png/libpng.html) to build `tools/g
 
 Q: `make: *** No rule to make target 'baserom.gba', needed by 'xxx'.  Stop.`
 
-A: The current tree builds without the original ROM (it is verified against `checksum.sha1`), so this should not happen on an up-to-date checkout. If you hit it on an older revision, either update or place a copy of the Fire Emblem: The Sacred Stones ROM named `baserom.gba` in the repository directory.
+A: The current tree builds without the original ROM, so this should not happen
+on an up-to-date checkout. If you hit it on an older revision, update first.
 
 Q: `unrecognized option '--add-symbol'`
 

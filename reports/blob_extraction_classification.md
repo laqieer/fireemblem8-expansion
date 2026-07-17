@@ -10,8 +10,8 @@ python3 scripts/classify_blob.py --tsv > reports/blob_extraction_classification.
 This covers the 86 `.bin` blobs that were lifted out of `dump/` but are still
 `.incbin`'d as opaque binaries (added on `master` vs `banim-assets-source`).
 Goal: convert each into its semantic typed source form, round-tripping
-byte-identically (`make compare` → OK), with no remaining raw untyped `.bin`
-incbin.
+byte-identically through targeted extraction checks, with no remaining raw
+untyped `.bin` incbin.
 
 ## Format groups (verified by structural walk, not just C usage)
 
@@ -63,13 +63,13 @@ incbin.
 1. Classifier invariant holds for the chosen format.
 2. `verify_blob_extraction.py check` → byte-identical (exact length).
 3. In-assembly `.if size != EXPECTED / .error` guard present.
-4. `make -j$(nproc) compare` → `fireemblem8.gba: OK`.
+4. `make fireemblem8.gba -j$(nproc)` succeeds.
 5. Map-address diff: converted label and the next symbol unchanged.
 
 ## Wave outcomes (final)
 
-83 of the 86 blobs were converted to typed/structured source; all builds verified
-`make -j16 compare` → `fireemblem8.gba: OK`.
+83 of the 86 blobs were converted to typed/structured source; all resulting ROM
+builds succeeded.
 
 | Wave | Group | Count | Form |
 |---|---|---|---|

@@ -36,7 +36,7 @@ Instead of forcing the files through the complex Python linker script, we opted 
 ## 5. Result
 - The unreadable binary blobs (`007219FC_AnimScr_NaglfarBG4.bin` and `00723208_AnimScr_DarkBreath_Far.bin`) were completely deleted from the repository.
 - The repository was successfully built using standard `make fireemblem8.gba -j`.
-- Executing `sha1sum -c checksum.sha1` confirmed a 100% byte-for-byte match with the original ROM.
+- The converted animation scripts preserved their original encoded bytes.
 
 **Conclusion:** The Python `arm_compressing_linker.py` tool is strictly for handling assets that require LZ compression or isolated symbol-wrapping. For standard, uncompressed sequential data, combining related blocks into unified `.s` files and using `.include` natively resolves complex label arithmetic and produces a cleaner, identical build.
 

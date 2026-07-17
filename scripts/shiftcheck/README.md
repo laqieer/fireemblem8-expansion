@@ -2,10 +2,10 @@
 
 Tools that test whether the ROM is **shiftable** — i.e. whether it could be edited,
 recompiled, and run correctly without breaking pointer integrity. The build being
-byte-identical (`make compare`) does **not** prove this: a pointer stored as a raw
-absolute address (`(u8*)0x08A39148`) holds the correct value only because everything
-sits at its original offset. It carries no relocation, so it breaks the moment the
-layout moves. These tools find such hardcoded pointers.
+successful does **not** prove this: a pointer stored as a raw absolute address
+(`(u8*)0x08A39148`) holds the correct value only because everything sits at its
+original offset. It carries no relocation, so it breaks the moment the layout
+moves. These tools find such hardcoded pointers.
 
 Nothing here touches the matching build — every target is `.PHONY` and uses a
 separate ELF / a generated ldscript, never `ldscript.txt`, `$(ROM)`, or `compare`.
@@ -55,9 +55,8 @@ src/opinfo.o  (64 suspects in 1 table(s); targets: gUnkData_96(64))
 `gOpinfo_1[]` in `src/opinfo.c` was a 64-entry table of raw `(u8*)0x08A3xxxx` casts
 into the graphics blob `gUnkData_96`. Each was rewritten as a symbol reference,
 `(u8*)gUnkData_96 + 0x1E48` (gUnkData_96 is `u16[]`, so the byte offset needs the
-`(u8*)` cast). This is **byte-identical** in the matching build (so `make compare`
-still passes) but is now a relocation, so it shifts correctly. After the fix the
-HIGH bucket is empty:
+`(u8*)` cast). This preserves the pointer value but is now a relocation, so it
+shifts correctly. After the fix the HIGH bucket is empty:
 
 ```
 [A] HIGH-CONFIDENCE ... : 0 in 0 object(s)
@@ -123,8 +122,8 @@ invisible. Both classes must be found by reading the source.
 
 ### Validation cases (now fixed)
 
-Three real cross-resource offsets were found, each resolved by its nature (all
-byte-identical — `make compare` still passes):
+Three real cross-resource offsets were found, each resolved according to its
+actual ownership and relocation requirements:
 
 - `src/playerphase.c` `gOpenLimitViewImgLut[]` — entry 6 was
   `Img_LimitViewSquares + (5*4*CHR_SIZE)` = `+0x280`, which fell into the *separate*
