@@ -644,7 +644,7 @@ void CgText_ResetSpriteTextCursors(struct CgTextMainProc * proc)
 //! FE8U = 0x0808F358
 void GetCgTextDimensions(const char * str, u8 * wOut, u8 * hOut)
 {
-    int charWidth;
+    u32 charWidth;
 
     int w = 0;
     int h = *hOut;
@@ -723,7 +723,7 @@ void CgText_AdjustBoxPosition(struct CgTextMainProc * proc)
 //! FE8U = 0x0808F428
 void GetCgTextBoxDimensions(const char * str, int * wOut, int * hOut)
 {
-    int charWidth;
+    u32 charWidth;
 
     int w = 0;
     int h = 16;

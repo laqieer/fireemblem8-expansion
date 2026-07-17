@@ -25,7 +25,7 @@ struct BonusClaimHelpBoxProc
 const char * CopyTextChar(char ** src, char ** dst)
 {
     const char * result;
-    int len;
+    u32 len;
 
     result = GetCharTextLen(*src, &len);
     result -= (uintptr_t)*src;

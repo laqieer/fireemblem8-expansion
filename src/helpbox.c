@@ -1203,7 +1203,7 @@ void StartBoxDialogueExt(int x, int y, int msgId, u16* unkA, int unkB, ProcPtr p
 
 //! FE8U = 0x0808AADC
 void GetBoxDialogueSize(const char* str, int* wOut, int* hOut) {
-    int charWidth;
+    u32 charWidth;
 
     int w = 0;
     int h = 16;
@@ -1320,7 +1320,7 @@ void GetBoxDialogueSize(const char* str, int* wOut, int* hOut) {
 
 //! FE8U = 0x0808AB98
 void DialogBoxGetGlyphLen(const char* str, u8* xOut) {
-    int charWidth;
+    u32 charWidth;
     u8 a;
 
     int x = 0;

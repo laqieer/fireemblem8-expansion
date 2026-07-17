@@ -2196,7 +2196,7 @@ void TalkPutSpriteText_OnEnd(void) {
 //! FE8U = 0x08008B44
 int GetStrTalkLen(const char* str, s8 isBubbleOpen) {
     char buf[0x20];
-    int chrLen;
+    u32 chrLen;
 
     int speakFace = sTalkState->speakingFaceSlot;
     int activeFace = sTalkState->activeFaceSlot;
