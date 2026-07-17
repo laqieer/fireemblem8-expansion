@@ -350,21 +350,45 @@ def token_depths(tokens: list[CToken]) -> tuple[list[int], list[int]]:
     return brace_depths, paren_depths
 
 
-def declarator_prefix(tokens: list[CToken], name_index: int) -> list[CToken]:
+def declarator_prefix(
+    tokens: list[CToken], name_index: int, minimum_line: int = 0
+) -> list[CToken]:
     start = name_index - 1
-    while start >= 0 and tokens[start].text not in {";", "{", "}"}:
+    while (
+        start >= 0
+        and tokens[start].line > minimum_line
+        and tokens[start].text not in {";", "{", "}"}
+    ):
         start -= 1
     return tokens[start + 1 : name_index]
 
 
+def without_attributes(tokens: list[CToken]) -> list[CToken]:
+    result: list[CToken] = []
+    index = 0
+    while index < len(tokens):
+        if tokens[index].text in {"__attribute__", "__attribute"}:
+            if index + 1 >= len(tokens) or tokens[index + 1].text != "(":
+                return []
+            closing = matching_paren(tokens, index + 1)
+            if closing is None:
+                return []
+            index = closing + 1
+            continue
+        result.append(tokens[index])
+        index += 1
+    return result
+
+
 def valid_return_prefix(tokens: list[CToken]) -> bool:
     """Accept type/macro return forms, but not initializers or pointer typedefs."""
+    tokens = without_attributes(tokens)
     if not tokens:
-        return True  # implicit-int/K&R form
+        return True  # attribute-only or implicit-int/K&R form
     texts = [token.text for token in tokens]
     if any(text in {"=", ";", "{", "}", "[", "]", ",", "?", ":"} for text in texts):
         return False
-    if any(text in {"typedef", "__attribute__", "__attribute", "asm", "__asm__"} for text in texts):
+    if any(text in {"typedef", "asm", "__asm__"} for text in texts):
         return False
     depth = 0
     for text in texts:
@@ -419,6 +443,8 @@ def knr_declarations_end(
     brace_depths: list[int],
 ) -> int | None:
     """Validate K&R parameter declarations and return the body brace index."""
+    if start >= len(tokens) or tokens[start].text == ";":
+        return None
     index = start
     declaration_tokens: list[CToken] = []
     saw_semicolon = False
@@ -437,9 +463,22 @@ def knr_declarations_end(
     if index >= len(tokens) or tokens[index].text != "{" or not saw_semicolon:
         return None
     texts = [token.text for token in declaration_tokens]
-    if any(text in {"(", ")", "{", "}"} for text in texts):
-        return None
     if not set(parameter_names).issubset(texts):
+        return None
+    paren_depth = 0
+    bracket_depth = 0
+    for text in texts:
+        if text == "(":
+            paren_depth += 1
+        elif text == ")":
+            paren_depth -= 1
+        elif text == "[":
+            bracket_depth += 1
+        elif text == "]":
+            bracket_depth -= 1
+        if paren_depth < 0 or bracket_depth < 0:
+            return None
+    if paren_depth or bracket_depth:
         return None
     return index
 
@@ -453,15 +492,16 @@ def normalized_token_evidence(tokens: list[CToken]) -> str:
 
 def logical_directives(lines: list[str]) -> list[tuple[int, str]]:
     result: list[tuple[int, str]] = []
+    cleaned = strip_c_comments(lines)
     index = 0
-    while index < len(lines):
-        if not lines[index].lstrip().startswith("#"):
+    while index < len(cleaned):
+        if not cleaned[index].lstrip().startswith("#"):
             index += 1
             continue
         start = index + 1
         parts: list[str] = []
-        while index < len(lines):
-            part = lines[index].rstrip()
+        while index < len(cleaned):
+            part = cleaned[index].rstrip()
             continued = part.endswith("\\")
             parts.append(part[:-1] if continued else part)
             index += 1
@@ -469,6 +509,99 @@ def logical_directives(lines: list[str]) -> list[tuple[int, str]]:
                 break
         result.append((start, " ".join(parts)))
     return result
+
+
+def conditional_boundary_before(lines: list[str], line: int) -> int:
+    boundary = 0
+    for directive_line, directive in logical_directives(lines):
+        if directive_line >= line:
+            break
+        if re.match(
+            r"^\s*#\s*(?:if|ifdef|ifndef|elif|else|endif)\b",
+            directive,
+        ):
+            boundary = directive_line
+    return boundary
+
+
+def shared_conditional_body(
+    tokens: list[CToken],
+    closing: int,
+    symbol: str,
+    brace_depths: list[int],
+    lines: list[str],
+) -> int | None:
+    body = next(
+        (
+            index
+            for index in range(closing + 1, len(tokens))
+            if tokens[index].text == "{" and brace_depths[index] == 0
+        ),
+        None,
+    )
+    if body is None:
+        return None
+    directives = [
+        directive
+        for directive_line, directive in logical_directives(lines)
+        if tokens[closing].line < directive_line < tokens[body].line
+    ]
+    if not any(re.match(r"^\s*#\s*(?:else|elif)\b", item) for item in directives):
+        return None
+    if not any(re.match(r"^\s*#\s*endif\b", item) for item in directives):
+        return None
+    between = tokens[closing + 1 : body]
+    if any(token.text in {";", "=", "{", "}"} for token in between):
+        return None
+    return body if any(token.text == symbol for token in between) else None
+
+
+def complex_declarator_body(
+    tokens: list[CToken],
+    opening: int,
+    closing: int,
+    prefix: list[CToken],
+    brace_depths: list[int],
+    paren_depths: list[int],
+) -> tuple[int, int] | None:
+    """Handle a function returning a pointer to a function."""
+    if paren_depths[opening] != 1:
+        return None
+    outer = next(
+        (
+            index
+            for index in range(opening - 2, -1, -1)
+            if tokens[index].text == "(" and paren_depths[index] == 0
+        ),
+        None,
+    )
+    if outer is None or "*" not in {
+        token.text for token in tokens[outer + 1 : opening - 1]
+    }:
+        return None
+    # The prefix slice contains the unmatched outer '(' and pointer stars.
+    outer_offset = next(
+        (index for index, token in enumerate(prefix) if token is tokens[outer]),
+        None,
+    )
+    if outer_offset is None or not valid_return_prefix(prefix[:outer_offset]):
+        return None
+    if closing + 1 >= len(tokens) or tokens[closing + 1].text != ")":
+        return None
+    suffix_open = closing + 2
+    if suffix_open >= len(tokens) or tokens[suffix_open].text != "(":
+        return None
+    suffix_close = matching_paren(tokens, suffix_open)
+    if suffix_close is None:
+        return None
+    after = skip_post_declarator_attributes(tokens, suffix_close + 1)
+    if (
+        after >= len(tokens)
+        or tokens[after].text != "{"
+        or brace_depths[after] != 0
+    ):
+        return None
+    return after, after - 1
 
 
 def definition_macros(lines: list[str]) -> dict[str, DefinitionMacro]:
@@ -536,7 +669,7 @@ def scan_old_style_definitions(path: str, lines: list[str]) -> list[dict]:
         if (
             token.text != "("
             or brace_depths[opening] != 0
-            or paren_depths[opening] != 0
+            or paren_depths[opening] not in {0, 1}
             or opening == 0
             or not re.fullmatch(r"[A-Za-z_]\w*", tokens[opening - 1].text)
         ):
@@ -581,30 +714,53 @@ def scan_old_style_definitions(path: str, lines: list[str]) -> list[dict]:
                 seen.add(key)
             continue
 
-        prefix = declarator_prefix(tokens, opening - 1)
-        if not valid_return_prefix(prefix):
-            continue
+        prefix = declarator_prefix(
+            tokens,
+            opening - 1,
+            conditional_boundary_before(lines, name_token.line),
+        )
         parameters = tokens[opening + 1 : closing]
-        after = skip_post_declarator_attributes(tokens, closing + 1)
         body: int | None = None
-        if not parameters:
-            if (
-                after < len(tokens)
-                and tokens[after].text == "{"
-                and brace_depths[after] == 0
-            ):
-                body = after
+        evidence_end = closing
+        if paren_depths[opening] == 1:
+            if parameters:
+                continue
+            complex_result = complex_declarator_body(
+                tokens,
+                opening,
+                closing,
+                prefix,
+                brace_depths,
+                paren_depths,
+            )
+            if complex_result:
+                body, evidence_end = complex_result
         else:
-            parameter_names = identifier_parameter_list(parameters)
-            if parameter_names:
-                body = knr_declarations_end(
-                    tokens, after, parameter_names, brace_depths
-                )
+            if not valid_return_prefix(prefix):
+                continue
+            after = skip_post_declarator_attributes(tokens, closing + 1)
+            if not parameters:
+                if (
+                    after < len(tokens)
+                    and tokens[after].text == "{"
+                    and brace_depths[after] == 0
+                ):
+                    body = after
+                else:
+                    body = shared_conditional_body(
+                        tokens, closing, name, brace_depths, lines
+                    )
+            else:
+                parameter_names = identifier_parameter_list(parameters)
+                if parameter_names:
+                    body = knr_declarations_end(
+                        tokens, after, parameter_names, brace_depths
+                    )
         if body is None:
             continue
 
-        signature = [*prefix, name_token, *tokens[opening : closing + 1]]
-        line = prefix[0].line if prefix else name_token.line
+        signature = [*prefix, name_token, *tokens[opening : evidence_end + 1]]
+        line = name_token.line
         key = (line, name)
         if key in seen:
             continue

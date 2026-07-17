@@ -123,18 +123,87 @@ class AuditTests(unittest.TestCase):
             for finding in inventory["findings"]
             if finding["category"] == "old-style-function-definition"
         ]
-        expected = {
-            "SameLine",
-            "MultiLine",
-            "SplitParens",
-            "KnrDefinition",
-            "MacroGenerated",
-            "ConditionalDefinition",
-            "MacroReturnType",
-            "MacroFunctionReturn",
-        }
-        self.assertEqual({finding["symbol"] for finding in findings}, expected)
-        self.assertEqual(len(findings), len(expected))
+        expected = [
+            ("src/old_style_definitions.c", 1, "SameLine", "void SameLine()"),
+            ("src/old_style_definitions.c", 3, "MultiLine", "int MultiLine()"),
+            ("src/old_style_definitions.c", 9, "SplitParens", "static int SplitParens()"),
+            (
+                "src/old_style_definitions.c",
+                16,
+                "KnrDefinition",
+                "int KnrDefinition(first, second)",
+            ),
+            (
+                "src/old_style_definitions.c",
+                24,
+                "MacroGenerated",
+                "DEFINE_OLD(MacroGenerated)",
+            ),
+            (
+                "src/old_style_definitions.c",
+                27,
+                "ConditionalDefinition",
+                "void ConditionalDefinition()",
+            ),
+            (
+                "src/old_style_definitions.c",
+                33,
+                "MacroReturnType",
+                "OLD_RETURN_TYPE MacroReturnType()",
+            ),
+            (
+                "src/old_style_definitions.c",
+                39,
+                "MacroFunctionReturn",
+                "OLD_RETURN_FUNCTION() MacroFunctionReturn()",
+            ),
+            (
+                "src/old_style_definitions.c",
+                65,
+                "LeadingAttribute",
+                "__attribute__((noreturn)) void LeadingAttribute()",
+            ),
+            (
+                "src/old_style_definitions.c",
+                66,
+                "MiddleAttribute",
+                "void __attribute__((noreturn)) MiddleAttribute()",
+            ),
+            (
+                "src/old_style_definitions.c",
+                70,
+                "MultilineAttribute",
+                "__attribute__((noreturn)) void MultilineAttribute()",
+            ),
+            (
+                "src/old_style_definitions.c",
+                75,
+                "ComplexReturn",
+                "int(*ComplexReturn())(void)",
+            ),
+            (
+                "src/old_style_definitions.c",
+                80,
+                "KnrFunctionPointer",
+                "int KnrFunctionPointer(cb)",
+            ),
+            (
+                "src/old_style_definitions.c",
+                87,
+                "SplitConditional",
+                "void SplitConditional()",
+            ),
+        ]
+        actual = [
+            (
+                finding["file"],
+                finding["line"],
+                finding["symbol"],
+                finding["evidence"],
+            )
+            for finding in findings
+        ]
+        self.assertEqual(actual, expected)
         self.assertTrue(all(finding["priority"] == "P0" for finding in findings))
         self.assertTrue(all(finding["severity"] == "high" for finding in findings))
         self.assertTrue(all(finding["disposition"] == "rewrite-c" for finding in findings))
@@ -158,6 +227,7 @@ class AuditTests(unittest.TestCase):
             "AsmDefinition",
             "NOT_A_DEFINITION",
             "UNINVOKED_DEFINITION",
+            "CommentedMacroInvocation",
         }
         self.assertFalse(rejected & {finding["symbol"] for finding in findings})
         inline_asm_fixture = (

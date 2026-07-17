@@ -61,3 +61,38 @@ void NegativeBody(void)
 
 #define NOT_A_DEFINITION() Factory()
 #define UNINVOKED_DEFINITION(name) void name() {}
+
+__attribute__((noreturn)) void LeadingAttribute() {}
+void __attribute__((noreturn)) MiddleAttribute() {}
+
+__attribute__((noreturn))
+void
+MultilineAttribute()
+{
+    for (;;) {}
+}
+
+int (* ComplexReturn())(void)
+{
+    return 0;
+}
+
+int KnrFunctionPointer(cb)
+int (* cb)();
+{
+    return cb();
+}
+
+#if EDGE_OLD_BRANCH
+void SplitConditional()
+#else
+void SplitConditional(void)
+#endif
+{
+}
+
+/*
+#define COMMENTED_DEFINITION(name) void name() {}
+*/
+#define COMMENTED_DEFINITION(name) int name ## _object
+COMMENTED_DEFINITION(CommentedMacroInvocation);
