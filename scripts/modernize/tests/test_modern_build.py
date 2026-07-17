@@ -212,8 +212,8 @@ class ModernBuildTests(unittest.TestCase):
                 '"GMapData size");\n'
                 "_Static_assert(offsetof(struct GMapData, nodes) == 0x30, "
                 '"GMapData.nodes offset");\n'
-                "_Static_assert(offsetof(struct GMapData, unk_a0) == 0xA0, "
-                '"GMapData.unk_a0 offset");\n'
+                "_Static_assert(sizeof(((struct GMapData *)0)->nodes) == 0x74, "
+                '"GMapData.nodes size");\n'
                 "_Static_assert(offsetof(struct GMapData, openPaths) == 0xA4, "
                 '"GMapData.openPaths offset");\n'
                 "_Static_assert(offsetof(struct GMapData, current_node) == 0xC8, "
