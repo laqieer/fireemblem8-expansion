@@ -27,7 +27,7 @@ u8 SECTION(".rodata") gTsa_StoneShatter_13[] = INCBIN_U8("graphics/misc/gTsa_Sto
  * that gTsa_StoneShatter_13 was mis-extracted from; it is not referenced in
  * FE8U (the apparent pointer to it is coincidental s8 data in Unk_TerrainTable_11).
  * Emitted as UTF-8 literals; the build's iconv(UTF-8->CP932) yields the exact bytes. */
-const char SECTION(".rodata") JapaneseTerrainNames[408] =
+SHOULD_BE_CONST char SECTION(".rodata") JapaneseTerrainNames[408] =
     "マスト\0\0"            /* +0x000 */
     "支柱\0\0\0\0"         /* +0x008 */
     "甲板\0\0\0\0"         /* +0x010 */

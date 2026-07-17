@@ -425,7 +425,7 @@ extern u8 Tsa_ShopWindows[]; // tsa
 extern u16 Img_ShopGoldBox[]; // pal
 extern u16 CONST_DATA Img_WallBreakAnim[];
 extern u16 CONST_DATA Pal_WallBreakAnim[];
-extern const u8 Img_GmapSoguSprites[];
+extern SHOULD_BE_CONST u8 Img_GmapSoguSprites[];
 extern u16 CONST_DATA Img_PoisonAnim[];
 extern u16 CONST_DATA Pal_PoisonAnim[];
 extern u16 CONST_DATA Img_LinkArenaWarpFx[];

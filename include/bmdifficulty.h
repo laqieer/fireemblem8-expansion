@@ -136,7 +136,7 @@ extern struct Text gBmdifficulty_4[8];
 
 extern struct ProcCmd CONST_DATA sProcScr_DisplayDungeonRecord_FromMenu[];
 extern struct ProcCmd CONST_DATA sProcScr_DisplayDungeonRecord_AfterDungeonClear[];
-extern const u16 CONST_DATA obj_0[];
+extern SHOULD_BE_CONST u16 CONST_DATA obj_0[];
 extern u16 CONST_DATA gBmdifficulty_7[];
 extern int CONST_DATA gBmdifficulty_8[];
 extern struct ProcCmd CONST_DATA sProcScr_DungeonRecord_UpdateNewRecordValues[];
