@@ -12,7 +12,7 @@ import subprocess
 import sys
 from collections import Counter
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, NamedTuple
 
 
 SCHEMA_VERSION = 3
@@ -64,6 +64,7 @@ CATEGORY_META = {
     "inline-asm-barrier": ("high", "P0", "rewrite-c"),
     "naked-function": ("critical", "P0", "typed-asm-boundary"),
     "old-style-function-declaration": ("high", "P0", "rewrite-c"),
+    "old-style-function-definition": ("high", "P0", "rewrite-c"),
     "mismatched-signature": ("critical", "P0", "rewrite-c"),
     "layout-sensitive-struct": ("high", "P1", "layout-assert"),
     "forced-data-placement": ("medium", "P1", "linker-migrate"),
@@ -98,7 +99,7 @@ OLD_STYLE_RE = re.compile(
     r"^\s*(?:(?:extern|static|inline|const|volatile|unsigned|signed)\s+)*"
     r"(?:void|char|short|int|long|float|double|bool|[us](?:8|16|32|64)|"
     r"struct\s+[A-Za-z_]\w*|[A-Za-z_]\w*_t|[A-Z][A-Za-z0-9_]*)"
-    r"(?:\s+|\s*\*+\s*)[A-Za-z_]\w*\s*\(\s*\)\s*(?:;|\{)"
+    r"(?:\s+|\s*\*+\s*)[A-Za-z_]\w*\s*\(\s*\)\s*;"
 )
 FORCED_DATA_RE = re.compile(
     r"\b(?:CONST_DATA|EWRAM_DATA|IWRAM_DATA|EWRAM_OVERLAY)\b"
@@ -133,6 +134,20 @@ NON_FUNCTION_NAMES = {
     "__asm__",
     "__attribute__",
 }
+OLD_STYLE_TOKEN_RE = re.compile(
+    r"[A-Za-z_]\w*|\.\.\.|->|&&|\|\||==|!=|<=|>=|<<|>>|"
+    r"[(){}\[\];,=*?:]"
+)
+
+
+class CToken(NamedTuple):
+    text: str
+    line: int
+
+
+class DefinitionMacro(NamedTuple):
+    name_parameter: int
+    emits_body: bool
 
 
 def normalize_evidence(line: str, limit: int = 140) -> str:
@@ -249,6 +264,360 @@ def strip_c_comments(lines: list[str]) -> list[str]:
                 index += 1
         result.append("".join(output))
     return result
+
+
+def mask_c_literals(lines: list[str]) -> list[str]:
+    """Mask strings/chars after comment removal while preserving line numbers."""
+    result: list[str] = []
+    quote = ""
+    escaped = False
+    for line in strip_c_comments(lines):
+        output: list[str] = []
+        for char in line:
+            if quote:
+                output.append(" ")
+                if escaped:
+                    escaped = False
+                elif char == "\\":
+                    escaped = True
+                elif char == quote:
+                    quote = ""
+                continue
+            if char in {'"', "'"}:
+                quote = char
+                output.append(" ")
+            else:
+                output.append(char)
+        result.append("".join(output))
+        if quote and not escaped:
+            # C literals cannot continue without an escaped newline.
+            quote = ""
+        escaped = False
+    return result
+
+
+def preprocessor_lines(lines: list[str]) -> set[int]:
+    """Return one-based physical lines occupied by preprocessor directives."""
+    result: set[int] = set()
+    continued = False
+    for index, line in enumerate(lines, 1):
+        directive = continued or line.lstrip().startswith("#")
+        if directive:
+            result.add(index)
+        continued = directive and line.rstrip().endswith("\\")
+    return result
+
+
+def old_style_tokens(lines: list[str]) -> list[CToken]:
+    masked = mask_c_literals(lines)
+    directives = preprocessor_lines(lines)
+    return [
+        CToken(match.group(0), line_number)
+        for line_number, line in enumerate(masked, 1)
+        if line_number not in directives
+        for match in OLD_STYLE_TOKEN_RE.finditer(line)
+    ]
+
+
+def matching_paren(tokens: list[CToken], opening: int) -> int | None:
+    depth = 0
+    for index in range(opening, len(tokens)):
+        if tokens[index].text == "(":
+            depth += 1
+        elif tokens[index].text == ")":
+            depth -= 1
+            if depth == 0:
+                return index
+    return None
+
+
+def token_depths(tokens: list[CToken]) -> tuple[list[int], list[int]]:
+    brace_depths: list[int] = []
+    paren_depths: list[int] = []
+    brace_depth = 0
+    paren_depth = 0
+    for token in tokens:
+        brace_depths.append(brace_depth)
+        paren_depths.append(paren_depth)
+        if token.text == "{":
+            brace_depth += 1
+        elif token.text == "}":
+            brace_depth = max(0, brace_depth - 1)
+        elif token.text == "(":
+            paren_depth += 1
+        elif token.text == ")":
+            paren_depth = max(0, paren_depth - 1)
+    return brace_depths, paren_depths
+
+
+def declarator_prefix(tokens: list[CToken], name_index: int) -> list[CToken]:
+    start = name_index - 1
+    while start >= 0 and tokens[start].text not in {";", "{", "}"}:
+        start -= 1
+    return tokens[start + 1 : name_index]
+
+
+def valid_return_prefix(tokens: list[CToken]) -> bool:
+    """Accept type/macro return forms, but not initializers or pointer typedefs."""
+    if not tokens:
+        return True  # implicit-int/K&R form
+    texts = [token.text for token in tokens]
+    if any(text in {"=", ";", "{", "}", "[", "]", ",", "?", ":"} for text in texts):
+        return False
+    if any(text in {"typedef", "__attribute__", "__attribute", "asm", "__asm__"} for text in texts):
+        return False
+    depth = 0
+    for text in texts:
+        if text == "(":
+            depth += 1
+        elif text == ")":
+            depth -= 1
+            if depth < 0:
+                return False
+        elif text != "*" and not re.fullmatch(r"[A-Za-z_]\w*", text):
+            return False
+    return depth == 0
+
+
+def identifier_parameter_list(tokens: list[CToken]) -> list[str] | None:
+    if not tokens or len(tokens) % 2 == 0:
+        return None
+    names: list[str] = []
+    for index, token in enumerate(tokens):
+        if index % 2 == 0:
+            if not re.fullmatch(r"[A-Za-z_]\w*", token.text):
+                return None
+            names.append(token.text)
+        elif token.text != ",":
+            return None
+    if names == ["void"]:
+        return None
+    return names
+
+
+def skip_post_declarator_attributes(tokens: list[CToken], index: int) -> int:
+    while index < len(tokens) and tokens[index].text in {
+        "__attribute__",
+        "__attribute",
+        "asm",
+        "__asm__",
+    }:
+        index += 1
+        if index >= len(tokens) or tokens[index].text != "(":
+            return index
+        closing = matching_paren(tokens, index)
+        if closing is None:
+            return len(tokens)
+        index = closing + 1
+    return index
+
+
+def knr_declarations_end(
+    tokens: list[CToken],
+    start: int,
+    parameter_names: list[str],
+    brace_depths: list[int],
+) -> int | None:
+    """Validate K&R parameter declarations and return the body brace index."""
+    index = start
+    declaration_tokens: list[CToken] = []
+    saw_semicolon = False
+    while index < len(tokens):
+        token = tokens[index]
+        if brace_depths[index] != 0:
+            return None
+        if token.text == "{":
+            break
+        if token.text in {"}", "="}:
+            return None
+        declaration_tokens.append(token)
+        if token.text == ";":
+            saw_semicolon = True
+        index += 1
+    if index >= len(tokens) or tokens[index].text != "{" or not saw_semicolon:
+        return None
+    texts = [token.text for token in declaration_tokens]
+    if any(text in {"(", ")", "{", "}"} for text in texts):
+        return None
+    if not set(parameter_names).issubset(texts):
+        return None
+    return index
+
+
+def normalized_token_evidence(tokens: list[CToken]) -> str:
+    text = " ".join(token.text for token in tokens)
+    text = re.sub(r"\s+([(),;])", r"\1", text)
+    text = re.sub(r"([(*])\s+", r"\1", text)
+    return normalize_evidence(text)
+
+
+def logical_directives(lines: list[str]) -> list[tuple[int, str]]:
+    result: list[tuple[int, str]] = []
+    index = 0
+    while index < len(lines):
+        if not lines[index].lstrip().startswith("#"):
+            index += 1
+            continue
+        start = index + 1
+        parts: list[str] = []
+        while index < len(lines):
+            part = lines[index].rstrip()
+            continued = part.endswith("\\")
+            parts.append(part[:-1] if continued else part)
+            index += 1
+            if not continued:
+                break
+        result.append((start, " ".join(parts)))
+    return result
+
+
+def definition_macros(lines: list[str]) -> dict[str, DefinitionMacro]:
+    """Find simple function-like macros whose replacement emits a definition."""
+    result: dict[str, DefinitionMacro] = {}
+    for _, directive in logical_directives(lines):
+        match = re.match(
+            r"^\s*#\s*define\s+([A-Za-z_]\w*)\s*\(([^)]*)\)\s*(.*)$",
+            directive,
+        )
+        if not match:
+            continue
+        macro_name, parameter_text, replacement = match.groups()
+        parameters = [
+            parameter.strip()
+            for parameter in parameter_text.split(",")
+            if parameter.strip()
+        ]
+        replacement = mask_c_literals([replacement])[0]
+        for parameter_index, parameter in enumerate(parameters):
+            declarator = re.search(
+                rf"\b{re.escape(parameter)}\s*\(\s*\)\s*(\{{)?",
+                replacement,
+            )
+            if declarator and valid_return_prefix(
+                [
+                    CToken(token.group(0), 1)
+                    for token in OLD_STYLE_TOKEN_RE.finditer(
+                        replacement[: declarator.start()]
+                    )
+                ]
+            ):
+                result[macro_name] = DefinitionMacro(
+                    parameter_index,
+                    declarator.group(1) is not None,
+                )
+                break
+    return result
+
+
+def macro_arguments(tokens: list[CToken]) -> list[list[CToken]]:
+    arguments: list[list[CToken]] = [[]]
+    depth = 0
+    for token in tokens:
+        if token.text == "(":
+            depth += 1
+        elif token.text == ")":
+            depth -= 1
+        if token.text == "," and depth == 0:
+            arguments.append([])
+        else:
+            arguments[-1].append(token)
+    return arguments
+
+
+def scan_old_style_definitions(path: str, lines: list[str]) -> list[dict]:
+    """Lexically find top-level non-prototype function definitions."""
+    tokens = old_style_tokens(lines)
+    brace_depths, paren_depths = token_depths(tokens)
+    macros = definition_macros(lines)
+    findings: list[dict] = []
+    seen: set[tuple[int, str]] = set()
+
+    for opening, token in enumerate(tokens):
+        if (
+            token.text != "("
+            or brace_depths[opening] != 0
+            or paren_depths[opening] != 0
+            or opening == 0
+            or not re.fullmatch(r"[A-Za-z_]\w*", tokens[opening - 1].text)
+        ):
+            continue
+        name_token = tokens[opening - 1]
+        name = name_token.text
+        if name in NON_FUNCTION_NAMES:
+            continue
+        closing = matching_paren(tokens, opening)
+        if closing is None:
+            continue
+
+        # Expand only the deliberately supported simple definition-macro form.
+        macro = macros.get(name)
+        if macro:
+            arguments = macro_arguments(tokens[opening + 1 : closing])
+            if macro.name_parameter >= len(arguments):
+                continue
+            name_argument = arguments[macro.name_parameter]
+            if len(name_argument) != 1 or not re.fullmatch(
+                r"[A-Za-z_]\w*", name_argument[0].text
+            ):
+                continue
+            after = closing + 1
+            if not macro.emits_body and (
+                after >= len(tokens)
+                or tokens[after].text != "{"
+                or brace_depths[after] != 0
+            ):
+                continue
+            symbol = name_argument[0].text
+            key = (name_token.line, symbol)
+            if key not in seen:
+                finding = make_finding(
+                    "old-style-function-definition",
+                    path,
+                    name_token.line,
+                    normalized_token_evidence(tokens[opening - 1 : closing + 1]),
+                )
+                finding["symbol"] = symbol
+                findings.append(finding)
+                seen.add(key)
+            continue
+
+        prefix = declarator_prefix(tokens, opening - 1)
+        if not valid_return_prefix(prefix):
+            continue
+        parameters = tokens[opening + 1 : closing]
+        after = skip_post_declarator_attributes(tokens, closing + 1)
+        body: int | None = None
+        if not parameters:
+            if (
+                after < len(tokens)
+                and tokens[after].text == "{"
+                and brace_depths[after] == 0
+            ):
+                body = after
+        else:
+            parameter_names = identifier_parameter_list(parameters)
+            if parameter_names:
+                body = knr_declarations_end(
+                    tokens, after, parameter_names, brace_depths
+                )
+        if body is None:
+            continue
+
+        signature = [*prefix, name_token, *tokens[opening : closing + 1]]
+        line = prefix[0].line if prefix else name_token.line
+        key = (line, name)
+        if key in seen:
+            continue
+        finding = make_finding(
+            "old-style-function-definition",
+            path,
+            line,
+            normalized_token_evidence(signature),
+        )
+        finding["symbol"] = name
+        findings.append(finding)
+        seen.add(key)
+    return findings
 
 
 def is_source(path: str) -> bool:
@@ -387,6 +756,7 @@ def scan_c_file(path: str, lines: list[str]) -> list[dict]:
         for match in RAW_ROM_RE.finditer(code):
             if is_rom_address_context(path, code, match):
                 findings.append(make_finding("raw-rom-address", path, index, original))
+    findings.extend(scan_old_style_definitions(path, lines))
     return findings
 
 
@@ -639,6 +1009,8 @@ def root_for_finding(
         match = FUNCTION_DECL_RE.match(code)
         if match:
             return "construct", match.group(1), line
+    if category == "old-style-function-definition":
+        return "construct", finding.get("symbol", finding["evidence"]), line
     if category == "modern-conditional":
         return "construct", "MODERN conditional", line
     if category == "legacy-compiler-pipeline":

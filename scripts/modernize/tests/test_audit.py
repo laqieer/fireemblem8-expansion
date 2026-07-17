@@ -111,6 +111,65 @@ class AuditTests(unittest.TestCase):
         )
         self.assertEqual(inline_owner["root_construct"], "InlineOwner")
 
+    def test_old_style_definition_lexical_forms_and_negatives(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = self.copy_fixture(Path(temporary))
+            inventory = audit.scan_repository(
+                root, root / "scripts" / "modernize" / "decisions.json"
+            )
+
+        findings = [
+            finding
+            for finding in inventory["findings"]
+            if finding["category"] == "old-style-function-definition"
+        ]
+        expected = {
+            "SameLine",
+            "MultiLine",
+            "SplitParens",
+            "KnrDefinition",
+            "MacroGenerated",
+            "ConditionalDefinition",
+            "MacroReturnType",
+            "MacroFunctionReturn",
+        }
+        self.assertEqual({finding["symbol"] for finding in findings}, expected)
+        self.assertEqual(len(findings), len(expected))
+        self.assertTrue(all(finding["priority"] == "P0" for finding in findings))
+        self.assertTrue(all(finding["severity"] == "high" for finding in findings))
+        self.assertTrue(all(finding["disposition"] == "rewrite-c" for finding in findings))
+        self.assertTrue(
+            all(finding["root_construct"] == finding["symbol"] for finding in findings)
+        )
+        rejected = {
+            "PrototypeOnly",
+            "TypedVoid",
+            "TypedParameter",
+            "FunctionType",
+            "FunctionPointerType",
+            "FunctionPointerObject",
+            "Factory",
+            "StringDefinition",
+            "CommentDefinition",
+            "BlockCommentDefinition",
+            "SectionObject",
+            "ObjectInitializer",
+            "NegativeBody",
+            "AsmDefinition",
+            "NOT_A_DEFINITION",
+            "UNINVOKED_DEFINITION",
+        }
+        self.assertFalse(rejected & {finding["symbol"] for finding in findings})
+        inline_asm_fixture = (
+            HERE / "fixtures" / "old_style_negative_inline_asm.c"
+        ).read_text(encoding="utf-8").splitlines()
+        self.assertEqual(
+            audit.scan_old_style_definitions(
+                "src/old_style_negative_inline_asm.c", inline_asm_fixture
+            ),
+            [],
+        )
+
     def test_root_aggregation_retains_every_drill_down_id(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = self.copy_fixture(Path(temporary))
