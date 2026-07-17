@@ -69,8 +69,8 @@ bool TrySetCursorOn(int unitId);
 void TrySwitchViewedUnit(int x, int y);
 void PlayerPhase_HandleAutoEnd(ProcPtr proc);
 
-extern const struct MenuDef gMapMenuDef;
-extern const struct MenuDef gUnitActionMenuDef;
+extern struct MenuDef CONST_DATA gMapMenuDef;
+extern struct MenuDef CONST_DATA gUnitActionMenuDef;
 
 extern u16 Pal_LimitViewBlue[];
 extern u16 Pal_LimitViewRed[];
