@@ -100,7 +100,8 @@ MODERN_COHORT_SOURCES ?= \
 	src/agb_sram.c \
 	src/bmlib-math.c \
 	src/rng.c \
-	src/irq.c
+	src/irq.c \
+	src/main.c
 MODERN_COHORT_OBJECTS := $(addprefix $(MODERN_OUTPUT_DIR)/,$(MODERN_COHORT_SOURCES:.c=.o))
 MODERN_COHORT_DEPS := $(MODERN_COHORT_OBJECTS:.o=.d)
 
