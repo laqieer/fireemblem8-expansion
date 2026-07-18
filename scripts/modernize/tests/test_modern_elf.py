@@ -204,6 +204,21 @@ class ModernElfTargetTests(unittest.TestCase):
             "real error line found in dry-run output",
         )
 
+    # -- ABI enforcement ----------------------------------------------------
+
+    def test_elf_rejects_apcs_gnu(self):
+        """expansion-modern-elf MODERN_ABI=apcs-gnu must fail early."""
+        result = self.make("expansion-modern-elf", "MODERN_ABI=apcs-gnu")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("requires MODERN_ABI=aapcs", result.stdout)
+
+    def test_elf_accepts_aapcs(self):
+        """expansion-modern-elf MODERN_ABI=aapcs must not fail on ABI check."""
+        result = self.make(
+            "-n", "expansion-modern-elf", "MODERN_ABI=aapcs",
+        )
+        self.assertNotIn("requires MODERN_ABI=aapcs", result.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()
