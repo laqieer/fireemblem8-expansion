@@ -117,11 +117,16 @@ class PrepareModernLinkTests(unittest.TestCase):
 
     def test_no_substring_replacement(self):
         """src/main.o must not match suffixed variants."""
-        text = "src/main.o.bak src/main.obj src/main.o-bak src/main.o+x src/main.o/p src/main.o(.text)"
+        text = (
+            "src/main.o.bak src/main.obj src/main.o-bak"
+            " src/main.o+x src/main.o/p src/main.o(.text)"
+        )
         result = gen._substitute_objects(text, {"src/main.o"}, "build/mod")
         self.assertEqual(
             result,
-            "src/main.o.bak src/main.obj src/main.o-bak src/main.o+x src/main.o/p build/mod/src/main.o(.text)",
+            "src/main.o.bak src/main.obj src/main.o-bak"
+            " src/main.o+x src/main.o/p"
+            " build/mod/src/main.o(.text)",
         )
 
     def test_substitution_quotes_paths_with_spaces(self):
