@@ -639,6 +639,42 @@ class AuditTests(unittest.TestCase):
                 f"expected {expected_cat} for: {line.strip()}",
             )
 
+    def test_multiline_declaration_asm_label_excluded(self):
+        """A wrapped declaration asm label split across lines must be suppressed."""
+        lines = [
+            'extern u8 Alias(\n',
+            '    struct A * a, struct B * b) __asm__("Target");\n',
+        ]
+        findings = audit.scan_c_file("test.c", lines)
+        categories = [f["detected_category"] for f in findings]
+        self.assertNotIn("inline-asm", categories)
+        self.assertNotIn("inline-asm-barrier", categories)
+
+    def test_multiline_control_flow_asm_not_suppressed(self):
+        """Asm on a continuation line after a control keyword must still be detected."""
+        cases = [
+            (
+                ['if (x)\n', '    asm("nop");\n'],
+                "inline-asm",
+            ),
+            (
+                ['while (x)\n', '    __asm__("nop");\n'],
+                "inline-asm",
+            ),
+            (
+                ['void f(void) {\n', '    asm("swi 3");\n', '}\n'],
+                "inline-asm",
+            ),
+        ]
+        for lines, expected_cat in cases:
+            findings = audit.scan_c_file("test.c", lines)
+            categories = [f["detected_category"] for f in findings]
+            self.assertIn(
+                expected_cat,
+                categories,
+                f"expected {expected_cat} for multiline: {lines}",
+            )
+
     def test_register_pinned_still_detected_with_label_exclusion(self):
         """Register-pinned locals must keep their own category, not be suppressed."""
         line = 'register int r4 asm("r4");\n'
