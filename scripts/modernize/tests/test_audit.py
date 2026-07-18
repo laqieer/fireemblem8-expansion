@@ -583,6 +583,73 @@ class AuditTests(unittest.TestCase):
         self.assertEqual(updated["status"], "reclassified")
         self.assertTrue(inventory["decision_ledger"][0]["active"])
 
+    def test_declaration_asm_labels_are_not_inline_asm(self):
+        """Declaration-level asm symbol labels must not be classified as inline-asm."""
+        lines = [
+            'extern u8 F(int x) __asm__("OrigSym");\n',
+            'extern int var __asm__("orig_var");\n',
+            'static int sVar asm("_sVar");\n',
+        ]
+        for line in lines:
+            findings = audit.scan_c_file("test.c", [line])
+            categories = [f["detected_category"] for f in findings]
+            self.assertNotIn(
+                "inline-asm",
+                categories,
+                f"declaration asm label incorrectly classified: {line.strip()}",
+            )
+            self.assertNotIn(
+                "inline-asm-barrier",
+                categories,
+                f"declaration asm label incorrectly classified: {line.strip()}",
+            )
+
+    def test_real_inline_asm_still_detected(self):
+        """Executable inline asm must still be reported even with the label exclusion."""
+        lines_and_expected = [
+            ('void f(void) { asm("swi 3"); }\n', "inline-asm"),
+            ('void g(void) { asm("" ::: "memory"); }\n', "inline-asm-barrier"),
+            ('    asm("nop");\n', "inline-asm"),
+            ('    asm("add r0, r0, #1");\n', "inline-asm"),
+        ]
+        for line, expected_cat in lines_and_expected:
+            findings = audit.scan_c_file("test.c", [line])
+            categories = [f["detected_category"] for f in findings]
+            self.assertIn(
+                expected_cat,
+                categories,
+                f"expected {expected_cat} for: {line.strip()}",
+            )
+
+    def test_register_pinned_still_detected_with_label_exclusion(self):
+        """Register-pinned locals must keep their own category, not be suppressed."""
+        line = 'register int r4 asm("r4");\n'
+        findings = audit.scan_c_file("test.c", [line])
+        categories = [f["detected_category"] for f in findings]
+        self.assertIn("register-pinned-local", categories)
+        self.assertNotIn("inline-asm", categories)
+
+    def test_fixture_declaration_asm_labels_excluded(self):
+        """Fixture sample.c has declaration asm labels that must not appear as findings."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = self.copy_fixture(Path(temporary))
+            inventory = audit.scan_repository(
+                root, root / "scripts" / "modernize" / "decisions.json"
+            )
+
+        inline_asm = [
+            f for f in inventory["findings"] if f["category"] == "inline-asm"
+        ]
+        self.assertEqual(len(inline_asm), 1, "only real inline asm should be reported")
+        self.assertEqual(inline_asm[0]["root_construct"], "InlineOwner")
+        asm_labels = [
+            f
+            for f in inventory["findings"]
+            if "AliasedFunc" in f.get("evidence", "")
+            or "aliased_var" in f.get("evidence", "")
+        ]
+        self.assertEqual(asm_labels, [], "declaration asm labels should not produce findings")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -81,6 +81,9 @@ REGISTER_RE = re.compile(
 )
 ASM_RE = re.compile(r"\b(?:asm|__asm__)\s*(?:volatile\s*)?\(")
 EMPTY_ASM_RE = re.compile(r"\b(?:asm|__asm__)\s*(?:volatile\s*)?\(\s*\"\"")
+DECL_ASM_LABEL_RE = re.compile(
+    r"(?:\)|[A-Za-z_]\w*)\s*(?:asm|__asm__)\s*\(\s*\"[A-Za-z_]\w*\"\s*\)\s*;"
+)
 NAKED_ATTR_RE = re.compile(r"__attribute__\s*\(\([^)]*\bnaked\b[^)]*\)\)")
 ROM_LITERAL = r"0x(?:0[89][0-9A-Fa-f]{6}|[89][0-9A-Fa-f]{6})"
 RAW_ROM_RE = re.compile(rf"(?<![0-9A-Za-z_]){ROM_LITERAL}(?![0-9A-Fa-f])")
@@ -962,7 +965,7 @@ def scan_c_file(path: str, lines: list[str]) -> list[dict]:
         if REGISTER_RE.search(code):
             findings.append(make_finding("register-pinned-local", path, index, original))
 
-        if ASM_RE.search(code) and not REGISTER_RE.search(code):
+        if ASM_RE.search(code) and not REGISTER_RE.search(code) and not DECL_ASM_LABEL_RE.search(code):
             statement = code
             for following in code_lines[index : min(len(code_lines), index + 30)]:
                 if ");" in statement:

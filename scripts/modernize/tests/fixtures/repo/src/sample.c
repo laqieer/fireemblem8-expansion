@@ -12,6 +12,9 @@ void Naked(void) {}
 __attribute__((naked))
 void DirectNaked(void) {}
 
+extern int AliasedFunc(int x) __asm__("OriginalSymbol");
+extern int aliased_var __asm__("original_var");
+
 void Legacy();
 void * callback = MISMATCHED_SIGNATURE(Legacy);
 
