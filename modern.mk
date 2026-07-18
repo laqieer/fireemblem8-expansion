@@ -300,14 +300,13 @@ expansion-modern-clean:
 #
 # Links a full modern ELF using the reviewed prepare_modern_link.py
 # generator, modern runtime libraries (-lc -lnosys -lgcc), and no
-# agbcc libraries.  The generator transforms the legacy per-object
+# tools/agbcc libraries.  The generator transforms the legacy per-object
 # ldscript into a transitional variant with section catchalls and
-# library member renaming — see scripts/modernize/prepare_modern_link.py.
+# library member renaming; see scripts/modernize/prepare_modern_link.py.
 #
-# asm/fe6sio.o is a pre-existing transitional object: the preflight
-# checks that it exists but never invokes the mgfembp build that
-# generates it.  A clean build from scratch requires running the
-# legacy asset pipeline first (see docs/quickstart.md).
+# asm/fe6sio.o is a pre-existing transitional object.  The FE6 SIO
+# object requires the legacy mgfembp preparation path; see
+# docs/quickstart.md.  This target never silently invokes that build.
 # ---------------------------------------------------------------------------
 
 # Link-only assembly objects not in expansion-modern-all.
@@ -315,14 +314,18 @@ MODERN_ELF_EXTRA_ASM_SOURCES := src/rom_header.s src/crt0.s src/m4a_1.s
 MODERN_ELF_EXTRA_ASM_OBJECTS := \
 	$(addprefix $(MODERN_OUTPUT_DIR)/,$(MODERN_ELF_EXTRA_ASM_SOURCES:.s=.o))
 
+# All assembly sources replaced by modern objects (source-relative names).
+MODERN_ELF_REPLACED_ASM := \
+	$(MODERN_ALL_ASM_SOURCES:.s=.o) $(MODERN_ELF_EXTRA_ASM_SOURCES:.s=.o)
+
 # Pre-existing non-C objects that cannot be built by modern rules.
 MODERN_ELF_PREBUILT := asm/fe6sio.o $(BANIM_OBJECT)
 
 # Non-C assembled objects from the legacy pipeline (sound, data asm, midi).
-# These are ABI-neutral binary blobs assembled by arm-none-eabi-as.
+# Filter out every C object, every modern-replaced assembly, and prebuilts.
 MODERN_ELF_LEGACY_ASM := $(filter-out \
 	$(C_OBJECTS) $(DATA_SRC_C_OBJECTS) $(MODERN_ELF_PREBUILT) \
-	$(patsubst %,$(MODERN_OUTPUT_DIR)/%,$(MODERN_ALL_ASM_SOURCES:.s=.o)), \
+	$(MODERN_ELF_REPLACED_ASM), \
 	$(ASM_OBJECTS))
 MODERN_ELF_LEGACY_MIDI := $(MID_OBJECTS)
 
@@ -345,11 +348,13 @@ endif
 
 # Library discovery at recipe time.
 MODERN_LIBGCC_DIR = $(shell "$(MODERN_CC)" $(MODERN_BINUTILS_FLAG) \
-	$(MODERN_ARCH_FLAGS) -print-libgcc-file-name 2>/dev/null | xargs dirname)
+	$(MODERN_ARCH_FLAGS) -print-libgcc-file-name 2>/dev/null \
+	| xargs dirname)
 MODERN_NEWLIB_LIB ?=
 ifeq ($(MODERN_NEWLIB_LIB),)
   MODERN_LIBC_DIR = $(shell "$(MODERN_CC)" $(MODERN_BINUTILS_FLAG) \
-	$(MODERN_ARCH_FLAGS) -print-file-name=libc.a 2>/dev/null | xargs dirname)
+	$(MODERN_ARCH_FLAGS) -print-file-name=libc.a 2>/dev/null \
+	| xargs dirname)
 else
   MODERN_LIBC_DIR = $(MODERN_NEWLIB_LIB)
 endif
@@ -359,18 +364,32 @@ $(MODERN_ELF_MANIFEST): $(MODERN_ALL_OBJECTS) $(MODERN_ELF_EXTRA_ASM_OBJECTS)
 	@mkdir -p "$(@D)"
 	@printf '%s\n' $(sort \
 		$(patsubst $(MODERN_OUTPUT_DIR)/%,%, \
-			$(MODERN_ALL_OBJECTS) $(MODERN_ELF_EXTRA_ASM_OBJECTS))) > "$@"
+			$(MODERN_ALL_OBJECTS) \
+			$(MODERN_ELF_EXTRA_ASM_OBJECTS))) > "$@"
 
-# FE6 SIO preflight + generator invocation.
-$(MODERN_ELF_LDSCRIPT): $(MODERN_ELF_MANIFEST) $(LDSCRIPT) $(SYM_FILES) linker_script_sound.txt
+# Phony preparation step: preflight + generator, runs before every link.
+.PHONY: expansion-modern-link-prepare
+expansion-modern-link-prepare: $(MODERN_ELF_MANIFEST) \
+		$(LDSCRIPT) $(SYM_FILES) linker_script_sound.txt
 	@for obj in $(MODERN_ELF_PREBUILT); do \
 		if [ ! -f "$$obj" ]; then \
-			printf '%s\n' "error: pre-existing object missing: $$obj" >&2; \
-			printf '%s\n' "asm/fe6sio.o requires the mgfembp submodule (separate agbcc)." >&2; \
-			printf '%s\n' "Run the legacy build first: make fireemblem8.gba" >&2; \
+			printf '%s\n' \
+				"error: pre-existing object missing: $$obj" >&2; \
+			printf '%s\n' \
+				"FE6 SIO object requires the legacy mgfembp" \
+				"preparation path; see docs/quickstart.md" >&2; \
 			exit 1; \
 		fi; \
 	done
+	@if [ ! -f "$(MODERN_ELF_BANIM_SYM)" ]; then \
+		printf '%s\n' "Regenerating banim objects for symbol sidecar..." >&2; \
+		$(MAKE) $(BANIM_OBJECT); \
+		if [ ! -f "$(MODERN_ELF_BANIM_SYM)" ]; then \
+			printf '%s\n' \
+				"error: $(MODERN_ELF_BANIM_SYM) not produced" >&2; \
+			exit 1; \
+		fi; \
+	fi
 	$(MODERN_LINK_GENERATOR) \
 		--root . \
 		--modern-root "$(MODERN_OUTPUT_DIR)" \
@@ -382,20 +401,25 @@ $(MODERN_ELF_LDSCRIPT): $(MODERN_ELF_MANIFEST) $(LDSCRIPT) $(SYM_FILES) linker_s
 			$(MODERN_ELF_LEGACY_MIDI)
 
 # Link the transitional modern ELF.
-$(MODERN_ELF): $(MODERN_ELF_LDSCRIPT) $(MODERN_ELF_PREBUILT) \
+$(MODERN_ELF): expansion-modern-link-prepare $(MODERN_ELF_PREBUILT) \
 		$(MODERN_ELF_LEGACY_ASM) $(MODERN_ELF_LEGACY_MIDI) \
-		$(MODERN_ELF_BANIM_SYM)
+		$(BANIM_OBJECT)
 	@set -eu; \
 	libgcc_dir="$(MODERN_LIBGCC_DIR)"; \
 	libc_dir="$(MODERN_LIBC_DIR)"; \
 	if [ -z "$$libgcc_dir" ] || [ ! -d "$$libgcc_dir" ]; then \
-		printf '%s\n' "error: cannot discover modern libgcc directory" >&2; \
-		printf '%s\n' "Check MODERN_CC or set library paths explicitly." >&2; \
+		printf '%s\n' \
+			"error: cannot discover modern libgcc directory" >&2; \
+		printf '%s\n' \
+			"Check MODERN_CC or set library paths explicitly." >&2; \
 		exit 1; \
 	fi; \
 	if [ -z "$$libc_dir" ] || [ ! -d "$$libc_dir" ]; then \
-		printf '%s\n' "error: cannot discover modern libc directory" >&2; \
-		printf '%s\n' "Set MODERN_NEWLIB_LIB to the directory containing libc.a." >&2; \
+		printf '%s\n' \
+			"error: cannot discover modern libc directory" >&2; \
+		printf '%s\n' \
+			"Set MODERN_NEWLIB_LIB to the directory containing" \
+			"libc.a." >&2; \
 		exit 1; \
 	fi; \
 	"$(MODERN_LD)" \
@@ -409,7 +433,8 @@ $(MODERN_ELF): $(MODERN_ELF_LDSCRIPT) $(MODERN_ELF_PREBUILT) \
 		-lc -lnosys -lgcc
 	@printf 'Linked modern ELF: %s\n' "$@"
 
-expansion-modern-elf: expansion-modern-all $(MODERN_ELF_EXTRA_ASM_OBJECTS) $(MODERN_ELF)
+expansion-modern-elf: expansion-modern-all \
+		$(MODERN_ELF_EXTRA_ASM_OBJECTS) $(MODERN_ELF)
 	@printf 'Modern ELF ready: %s\n' "$(MODERN_ELF)"
 
 -include $(wildcard $(sort $(MODERN_COHORT_DEPS) $(MODERN_ALL_DEPS)))
