@@ -127,9 +127,9 @@ Outputs are isolated under
 handwritten assembly objects under `src/` and `asm/`, matching each source's
 own directory) as twenty-one `.o` and twenty-one `.d` files. Select
 `MODERN_CONFIG=debug` (`-Og -g3`, the default) or `MODERN_CONFIG=release`
-(`-O2 -g0 -DNDEBUG`). Select the provisional `MODERN_ABI=aapcs` default
-(GCC's default ABI, with no explicit `-mabi`) or `MODERN_ABI=apcs-gnu`. These
-modes support migration experiments and do not declare a final ABI choice.
+(`-O2 -g0 -DNDEBUG`). Select `MODERN_ABI=aapcs` (GCC's default ABI, the
+supported choice for linked outputs) or `MODERN_ABI=apcs-gnu` (compile-only
+layout comparison, incompatible with EABI5 runtime libraries).
 The language mode stays `-std=gnu11` with `-fgnu89-inline` added solely so
 that plain (non-static) `inline` definitions keep emitting an external
 symbol the way legacy agbcc always did, not a broader GNU89 language switch.

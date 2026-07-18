@@ -73,8 +73,8 @@ else
   MODERN_CONFIG_FLAGS := -O2 -g0 -DNDEBUG
 endif
 
-# aapcs deliberately uses GCC's default ABI. It is provisional, not a final
-# ABI selection. apcs-gnu exists for side-by-side migration experiments.
+# aapcs uses GCC's default ABI and is the supported choice for linked
+# outputs.  apcs-gnu remains available for compile-only layout comparison.
 ifeq ($(MODERN_ABI),aapcs)
   MODERN_ABI_FLAGS :=
 else
@@ -224,7 +224,7 @@ expansion-modern-toolchain-check:
 		printf '%s\n' "Check the GCC/binutils pairing and MODERN_BINUTILS_DIR." >&2; \
 		exit 1; \
 	fi; \
-	printf 'Modern flags: ARM7TDMI Thumb/interwork; config=%s; provisional ABI=%s\n' \
+	printf 'Modern flags: ARM7TDMI Thumb/interwork; config=%s; ABI=%s\n' \
 		'$(MODERN_CONFIG)' '$(MODERN_ABI)'
 
 expansion-modern-cohort: expansion-modern-toolchain-check $(MODERN_COHORT_OBJECTS)
@@ -305,14 +305,23 @@ expansion-modern-clean:
 #
 # Links a full modern ELF using the reviewed prepare_modern_link.py
 # generator, modern runtime libraries (-lc -lnosys -lgcc), and no
-# tools/agbcc libraries.  The generator transforms the legacy per-object
-# ldscript into a transitional variant with section catchalls and
-# library member renaming; see scripts/modernize/prepare_modern_link.py.
+# tools/agbcc libraries.  AAPCS is the selected supported ABI for
+# linked outputs; APCS-GNU remains available for compile-only layout
+# comparison via expansion-modern-cohort/all but is incompatible with
+# the EABI5 runtime libraries.
 #
 # asm/fe6sio.o is a pre-existing transitional object.  The FE6 SIO
 # object requires the legacy mgfembp preparation path; see
 # docs/quickstart.md.  This target never silently invokes that build.
 # ---------------------------------------------------------------------------
+
+# Enforce AAPCS for linked outputs.
+ifneq (,$(filter expansion-modern-elf,$(MAKECMDGOALS)))
+  ifneq ($(MODERN_ABI),aapcs)
+    $(error expansion-modern-elf requires MODERN_ABI=aapcs; \
+      apcs-gnu objects are incompatible with EABI5 newlib/libgcc)
+  endif
+endif
 
 # Link-only assembly objects not in expansion-modern-all.
 MODERN_ELF_EXTRA_ASM_SOURCES := src/rom_header.s src/crt0.s src/m4a_1.s
