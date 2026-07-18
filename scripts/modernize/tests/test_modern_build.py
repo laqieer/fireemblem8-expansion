@@ -399,6 +399,82 @@ class ModernBuildTests(unittest.TestCase):
                 self.assertEqual(section.returncode, 0, section.stdout)
                 self.assertIn("d55a0000", "".join(section.stdout.split()).lower())
 
+    def test_plain_inline_definition_exports_global_symbol_in_all_modern_modes(self):
+        # Legacy agbcc always emits a plain (non-static, non-extern) `inline`
+        # definition as an externally linkable symbol. Under bare -std=gnu11,
+        # GCC may instead treat it as a C99 "inline definition" and elide the
+        # external body once it can eliminate every call site it can see,
+        # silently breaking any other translation unit that still calls it
+        # (see src/bmunit.c's CanUnitCrossTerrain). This probe defines such a
+        # function with no paired extern declaration and no internal caller
+        # -- the worst case for elision -- and asserts the modern object
+        # still exports it as a defined, global .text symbol in every
+        # debug/release x aapcs/apcs-gnu cell. It fails if -fgnu89-inline is
+        # removed from MODERN_LANGUAGE_FLAGS.
+        overrides = self.tool_overrides()
+        if overrides is None:
+            self.skipTest("arm-none-eabi GCC and objdump are not available")
+
+        with tempfile.TemporaryDirectory() as temporary:
+            temporary_path = Path(temporary)
+            source = temporary_path / "gnu89_inline_symbol.c"
+            output_root = temporary_path / "gnu89-inline-objects"
+            source.write_text(
+                "inline int modern_gnu89_inline_probe(void) { return 1; }\n",
+                encoding="utf-8",
+            )
+
+            for config in ("debug", "release"):
+                for abi in ("aapcs", "apcs-gnu"):
+                    result = self.make(
+                        ROOT,
+                        "expansion-modern-cohort",
+                        f"MODERN_CONFIG={config}",
+                        f"MODERN_ABI={abi}",
+                        f"MODERN_BUILD_ROOT={output_root}",
+                        f"MODERN_COHORT_SOURCES={source}",
+                        "MODERN_COHORT_ASM_SOURCES=",
+                        *overrides,
+                    )
+                    self.assertEqual(
+                        result.returncode,
+                        0,
+                        f"{config}/{abi} gnu89-inline probe failed:\n"
+                        f"{result.stdout}",
+                    )
+
+            objects = sorted(output_root.rglob("*.o"))
+            self.assertEqual(len(objects), 4)
+
+            objdump = next(
+                value.split("=", 1)[1]
+                for value in overrides
+                if value.startswith("MODERN_OBJDUMP=")
+            )
+            for object_file in objects:
+                symbols = subprocess.run(
+                    [objdump, "-t", str(object_file)],
+                    text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    check=False,
+                )
+                self.assertEqual(symbols.returncode, 0, symbols.stdout)
+                defined_global = [
+                    line
+                    for line in symbols.stdout.splitlines()
+                    if "modern_gnu89_inline_probe" in line
+                    and ".text" in line
+                    and " g " in line
+                ]
+                self.assertTrue(
+                    defined_global,
+                    "plain inline definition was not exported as a global "
+                    f".text symbol for {object_file.name}; -fgnu89-inline "
+                    "may be missing from MODERN_LANGUAGE_FLAGS:\n"
+                    f"{symbols.stdout}",
+                )
+
     def test_real_objects_are_isolated_architectural_and_dependency_aware(self):
         overrides = self.tool_overrides()
         if overrides is None:

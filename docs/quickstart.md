@@ -130,6 +130,9 @@ own directory) as twenty-one `.o` and twenty-one `.d` files. Select
 (`-O2 -g0 -DNDEBUG`). Select the provisional `MODERN_ABI=aapcs` default
 (GCC's default ABI, with no explicit `-mabi`) or `MODERN_ABI=apcs-gnu`. These
 modes support migration experiments and do not declare a final ABI choice.
+The language mode stays `-std=gnu11` with `-fgnu89-inline` added solely so
+that plain (non-static) `inline` definitions keep emitting an external
+symbol the way legacy agbcc always did, not a broader GNU89 language switch.
 
 For unpacked/local toolchains, use generic overrides rather than editing the
 makefile. Paths containing spaces are supported:

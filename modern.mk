@@ -47,7 +47,12 @@ MODERN_NEWLIB_FLAG = $(if $(MODERN_NEWLIB_INCLUDE),-isystem "$(MODERN_NEWLIB_INC
 MODERN_DRIVER_FLAGS := $(MODERN_BINUTILS_FLAG) $(MODERN_NEWLIB_FLAG)
 
 MODERN_ARCH_FLAGS := -mcpu=arm7tdmi -mthumb -mthumb-interwork
-MODERN_LANGUAGE_FLAGS := -std=gnu11
+# -fgnu89-inline restores legacy-compatible emission for plain (non-static,
+# non-extern) `inline` definitions: under -std=gnu11 alone, GCC may elide the
+# external definition of such a function once every internal call site is
+# inlined, silently breaking any other translation unit that still calls it.
+# agbcc always emitted these externally; this flag matches that behavior.
+MODERN_LANGUAGE_FLAGS := -std=gnu11 -fgnu89-inline
 MODERN_RUNTIME_FLAGS := \
 	-ffreestanding -fno-builtin -fno-common \
 	-fno-pic -fno-pie \
