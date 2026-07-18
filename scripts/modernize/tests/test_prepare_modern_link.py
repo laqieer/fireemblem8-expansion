@@ -116,12 +116,12 @@ class PrepareModernLinkTests(unittest.TestCase):
         self.assertEqual(result, "src/unknown.o(.text);")
 
     def test_no_substring_replacement(self):
-        """src/main.o must not match src/main.o.bak or src/main.obj."""
-        text = "src/main.o.bak src/main.obj src/main.o(.text)"
+        """src/main.o must not match suffixed variants."""
+        text = "src/main.o.bak src/main.obj src/main.o-bak src/main.o+x src/main.o/p src/main.o(.text)"
         result = gen._substitute_objects(text, {"src/main.o"}, "build/mod")
         self.assertEqual(
             result,
-            "src/main.o.bak src/main.obj build/mod/src/main.o(.text)",
+            "src/main.o.bak src/main.obj src/main.o-bak src/main.o+x src/main.o/p build/mod/src/main.o(.text)",
         )
 
     def test_substitution_quotes_paths_with_spaces(self):
@@ -254,6 +254,14 @@ class PrepareModernLinkTests(unittest.TestCase):
             gen.transform_ldscript(doubled, set(), "build/mod", "out")
         self.assertIn("2 times", str(ctx.exception))
 
+    def test_include_redirect_rejects_embedded_quote_in_output_dir(self):
+        with self.assertRaises(ValueError):
+            gen.transform_ldscript(_FIXTURE_LDSCRIPT, set(), "build/mod", 'out"dir')
+
+    def test_include_redirect_rejects_embedded_newline_in_output_dir(self):
+        with self.assertRaises(ValueError):
+            gen.transform_ldscript(_FIXTURE_LDSCRIPT, set(), "build/mod", "out\ndir")
+
     # -- Include fragment transforms ----------------------------------------
 
     def test_iwram_fragment_transformed(self):
@@ -385,6 +393,80 @@ class PrepareModernLinkTests(unittest.TestCase):
         self.assertIn(".bss.catchall", result)
         self.assertIn("*(ewram_data)", result)
         self.assertIn(f'INCLUDE "{root / "out" / "sym_iwram.ld"}"', result)
+
+    # -- Real linker parse test with spaces ---------------------------------
+
+    def test_real_ld_parses_generated_script_with_spaces(self):
+        """Invoke real arm-none-eabi-ld on a generated script with spaced paths."""
+        import shutil
+        import subprocess
+
+        prefix = os.environ.get("PREFIX", "arm-none-eabi-")
+        ld = shutil.which(f"{prefix}ld")
+        gas = shutil.which(f"{prefix}as")
+        if not ld or not gas:
+            self.skipTest("arm-none-eabi-as/ld not available")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp) / "dir with spaces"
+            base.mkdir()
+
+            obj_dir = base / "modern objs"
+            obj_dir.mkdir()
+            out_dir = base / "link out"
+            out_dir.mkdir()
+
+            asm_src = base / "stub.s"
+            asm_src.write_text(
+                ".syntax unified\n.thumb\n"
+                ".global _start\n_start: bx lr\n",
+                encoding="utf-8",
+            )
+            obj_path = obj_dir / "src"
+            obj_path.mkdir()
+            stub_o = obj_path / "stub.o"
+            subprocess.run(
+                [gas, "-mcpu=arm7tdmi", "-mthumb-interwork",
+                 str(asm_src), "-o", str(stub_o)],
+                check=True,
+            )
+
+            manifest = out_dir / "manifest.txt"
+            manifest.write_text("src/stub.o\n", encoding="utf-8")
+
+            mini_ld = (
+                'MEMORY { rom : ORIGIN = 0x08000000, LENGTH = 1M }\n'
+                'ENTRY(_start)\n'
+                'SECTIONS {\n'
+                '    ROM : { src/stub.o(.text); } > rom\n'
+                '    /DISCARD/ : { *(*); }\n'
+                '}\n'
+            )
+            mini_ld_path = base / "mini.ld"
+            mini_ld_path.write_text(mini_ld, encoding="utf-8")
+
+            transformed = gen._substitute_objects(
+                mini_ld, {"src/stub.o"}, str(obj_dir)
+            )
+            gen_ld = out_dir / "test.ld"
+            gen_ld.write_text(transformed, encoding="utf-8")
+
+            obj_list = gen.build_object_list(
+                {"src/stub.o"}, str(obj_dir), []
+            )
+            lst_path = out_dir / "objects.lst"
+            lst_path.write_text("\n".join(obj_list) + "\n", encoding="utf-8")
+
+            result = subprocess.run(
+                [ld, "-T", str(gen_ld), "@" + str(lst_path),
+                 "-o", str(out_dir / "test.elf")],
+                capture_output=True, text=True,
+            )
+            self.assertEqual(
+                result.returncode, 0,
+                f"ld failed with spaced paths:\n{result.stderr}",
+            )
+            self.assertTrue((out_dir / "test.elf").is_file())
 
 
 if __name__ == "__main__":
