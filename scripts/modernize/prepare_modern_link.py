@@ -43,7 +43,7 @@ from pathlib import Path, PurePosixPath
 # Constants
 # ---------------------------------------------------------------------------
 
-_OBJ_RE = re.compile(r"((?:src|asm)/[\w/.+-]+\.o)(?![\w.])")
+_OBJ_RE = re.compile(r"((?:src|asm)/[\w/.+-]+\.o)(?=[\s(;:]|\Z)")
 
 _LIBC_MEMBER_RE = re.compile(
     r"\*libc\.a:([\w.+-]+\.o)(\([^)]*\))"
@@ -236,6 +236,10 @@ def _add_ewram_catchall(text: str) -> str:
 
 def _redirect_includes(text: str, output_dir: str) -> str:
     """Redirect INCLUDE directives to generated files in output_dir."""
+    if '"' in output_dir or "\n" in output_dir:
+        raise ValueError(
+            f"output directory contains unsupported characters: {output_dir!r}"
+        )
     iwram_out = str(PurePosixPath(output_dir) / "sym_iwram.ld")
     sound_out = str(PurePosixPath(output_dir) / "linker_script_sound.ld")
     _check_anchor(text, _ANCHOR_INCLUDE_IWRAM, "INCLUDE sym_iwram")
