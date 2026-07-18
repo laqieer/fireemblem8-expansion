@@ -5,7 +5,7 @@ save, and data-table structures match documented header-comment offsets in
 all four modern build cells (debug/release x AAPCS/APCS-GNU).
 
 Every expected value was established by a four-cell compiler probe using
-arm-none-eabi-gcc 13.3 against the real project headers.  The assertions
+arm-none-eabi-gcc 13.2.1 against the real project headers.  The assertions
 are compiled — not executed — so no target hardware is needed.
 """
 
@@ -147,7 +147,7 @@ class CoreABILayoutTests(unittest.TestCase):
     """)
 
     def test_core_abi_layout_in_all_modern_modes(self):
-        """All 31 layout assertions must compile in every debug/release x ABI cell."""
+        """All 35 layout assertions must compile in every debug/release x ABI cell."""
         overrides = self.tool_overrides()
         if overrides is None:
             self.skipTest("arm-none-eabi GCC and objdump are not available")
