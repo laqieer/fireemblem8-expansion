@@ -5,9 +5,9 @@
 #include "proc.h"
 #include "types.h"
 
-/* rom_header.s / crt0.s — assembly-only entry points, no C prototype. */
+/* rom_header.s / crt0.s - assembly-only entry points, no C prototype. */
 void IrqMain(void);
-/* asm/arm.s — ARM-mode functions copied to IWRAM at boot.  These are
+/* asm/arm.s - ARM-mode functions copied to IWRAM at boot.  These are
  * private implementations; C code uses the Thumb veneers declared
  * below (ClearOAMBuffer, TileMap_FillRect, TileMap_CopyRect,
  * CallARM_FillTileRect, CALLARM_ColorFadeTick, ComputeChecksum32)
