@@ -68,6 +68,21 @@ _EWRAM_END_RE = re.compile(
 _REMOVED_LIBC = frozenset({"syscalls.o", "libcfunc.o"})
 _LIBM_MEMBERS = frozenset({"s_isinf.o", "s_isnan.o"})
 
+# Stale modern IWRAM symbol pins.  These symbols are defined both by a
+# hardcoded ``NAME = .;`` assignment in sym_iwram.txt AND by a real
+# allocatable section in a modern object.  The pin must be neutralized so
+# the linker uses the object-owned definition.  Transitional issue-#4 debt.
+_STALE_MODERN_IWRAM_PINS = frozenset({
+    "gText_GoldBox",
+    "SoundMainRAM_Buffer",
+    "gSoundInfo",
+    "gMPlayJumpTable",
+    "gCgbChans",
+    "gMPlayMemAccArea",
+    "ReadSramFast",
+    "VerifySramFast",
+})
+
 _WIDEN_SECTIONS = {
     ".text": ".text .text.*",
     ".rodata": ".rodata .rodata.*",
@@ -150,6 +165,36 @@ def _widen_lib_sections(text: str) -> str:
             return f"{prefix}({wider})"
         return m.group(0)
     return _LIB_SECTION_RE.sub(_repl, text)
+
+
+def _neutralize_stale_iwram_pins(text: str) -> str:
+    """Neutralize hardcoded IWRAM symbol pins that conflict with modern objects.
+
+    Each symbol in ``_STALE_MODERN_IWRAM_PINS`` has a ``NAME = .;``
+    assignment in ``sym_iwram.txt`` that shadows the real definition
+    from a modern object's allocatable section.  This function comments
+    out exactly those assignments.  Fails closed if any expected pin is
+    not found exactly once.
+    """
+    for sym in sorted(_STALE_MODERN_IWRAM_PINS):
+        pattern = re.compile(
+            rf"^([^\n]*\b{re.escape(sym)}\s*=\s*\.;)",
+            re.MULTILINE,
+        )
+        matches = pattern.findall(text)
+        if len(matches) != 1:
+            raise ValueError(
+                f"stale IWRAM pin {sym!r} found {len(matches)} times"
+                f" (expected 1)"
+            )
+        original = matches[0]
+        text = text.replace(
+            original,
+            f"/* transitional: pin neutralized; modern object owns"
+            f" {sym} (issue #4) */",
+            1,
+        )
+    return text
 
 
 def _relax_ewram_pins(text: str) -> str:
@@ -290,6 +335,17 @@ def transform_include(
     return text
 
 
+def transform_iwram_include(
+    text: str,
+    manifest: set[str],
+    modern_root: str,
+) -> str:
+    """Apply all transforms to the sym_iwram include, including pin neutralization."""
+    text = transform_include(text, manifest, modern_root)
+    text = _neutralize_stale_iwram_pins(text)
+    return text
+
+
 def _quote_response_path(path: str) -> str:
     """Quote a response-file object path if it contains spaces."""
     if '"' in path or "\n" in path:
@@ -364,7 +420,7 @@ def main(argv: list[str] | None = None) -> None:
     # Transform
     out_dir_str = str(output_dir)
     ldscript_out = transform_ldscript(ldscript, manifest, args.modern_root, out_dir_str)
-    iwram_out = transform_include(sym_iwram, manifest, args.modern_root)
+    iwram_out = transform_iwram_include(sym_iwram, manifest, args.modern_root)
     sound_out = transform_include(sound_script, manifest, args.modern_root)
 
     # Build object list

@@ -73,6 +73,15 @@ _FIXTURE_IWRAM = textwrap.dedent("""\
     . = ALIGN(4); *libgcc.a:dp-bit.o(.bss);
     . = ALIGN(4); *libgcc.a:fp-bit.o(.bss);
     . = ALIGN(4); *libc.a:sbrkr.o(COMMON);
+    . = 0x001DA0; gText_GoldBox = .;
+    . = 0x002C60; SoundMainRAM_Buffer = .;
+    . = 0x003070; gOamLoPutIt = .;
+    . = 0x005410; gSoundInfo = .;
+    . = 0x006480; gMPlayJumpTable = .;
+    . = 0x006510; gCgbChans = .;
+    . = 0x006710; gMPlayMemAccArea = .;
+    . = 0x0067A0; ReadSramFast = .;
+    . = 0x0067A4; VerifySramFast = .;
 """)
 
 _FIXTURE_SOUND = textwrap.dedent("""\
@@ -283,6 +292,60 @@ class PrepareModernLinkTests(unittest.TestCase):
         result = gen.transform_include(_FIXTURE_SOUND, manifest, "build/mod")
         self.assertIn("build/mod/src/m4a_tables.o(.rodata)", result)
         self.assertIn("sound/voicegroups/voicegroup000.o(.rodata)", result)
+
+    # -- Stale IWRAM pin neutralization -------------------------------------
+
+    def test_all_eight_stale_pins_neutralized(self):
+        """All eight stale pins must be commented out in iwram output."""
+        result = gen.transform_iwram_include(
+            _FIXTURE_IWRAM, {"src/rng.o"}, "build/mod"
+        )
+        for sym in gen._STALE_MODERN_IWRAM_PINS:
+            self.assertNotIn(f"{sym} = .;", result)
+            self.assertIn(
+                f"modern object owns {sym}",
+                result,
+                f"neutralization comment missing for {sym}",
+            )
+
+    def test_legitimate_pins_preserved(self):
+        """The 122 non-stale pins must remain (gOamLoPutIt as example)."""
+        result = gen.transform_iwram_include(
+            _FIXTURE_IWRAM, {"src/rng.o"}, "build/mod"
+        )
+        self.assertIn("gOamLoPutIt = .;", result)
+
+    def test_stale_pin_missing_raises(self):
+        """A missing stale pin must raise ValueError."""
+        without_one = _FIXTURE_IWRAM.replace(
+            ". = 0x0067A0; ReadSramFast = .;", ""
+        )
+        with self.assertRaises(ValueError) as ctx:
+            gen._neutralize_stale_iwram_pins(without_one)
+        self.assertIn("ReadSramFast", str(ctx.exception))
+
+    def test_stale_pin_duplicate_raises(self):
+        """A duplicated stale pin must raise ValueError."""
+        doubled = _FIXTURE_IWRAM + ". = 0x009999; ReadSramFast = .;\n"
+        with self.assertRaises(ValueError) as ctx:
+            gen._neutralize_stale_iwram_pins(doubled)
+        self.assertIn("ReadSramFast", str(ctx.exception))
+
+    def test_neutralization_deterministic(self):
+        r1 = gen.transform_iwram_include(
+            _FIXTURE_IWRAM, {"src/rng.o"}, "build/mod"
+        )
+        r2 = gen.transform_iwram_include(
+            _FIXTURE_IWRAM, {"src/rng.o"}, "build/mod"
+        )
+        self.assertEqual(r1, r2)
+
+    def test_legacy_iwram_input_unchanged(self):
+        """The original fixture text must not be mutated."""
+        original = _FIXTURE_IWRAM
+        copy = str(original)
+        gen.transform_iwram_include(copy, {"src/rng.o"}, "build/mod")
+        self.assertEqual(original, copy)
 
     # -- Object list --------------------------------------------------------
 
