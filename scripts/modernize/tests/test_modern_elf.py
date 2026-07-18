@@ -1,8 +1,8 @@
 """Tests for the expansion-modern-elf Make target wiring.
 
-Covers legacy-assembly filtering, FE6 SIO preflight, generator
-re-invocation, output isolation, and non-interaction with fast/all
-targets.
+Covers legacy-assembly filtering, FE6 SIO preflight, legacy dependency
+freshness, library discovery, output isolation, and non-interaction
+with fast/all targets.
 
 Tests using print-* and make -n run unconditionally.  Tests invoking
 real cross tools skip only when the exact required executable is absent.
@@ -59,10 +59,10 @@ class ModernElfTargetTests(unittest.TestCase):
                 overrides.append(f"{var}={val}")
         return overrides
 
-    # -- Fix 1: legacy-asm filter -------------------------------------------
+    # -- Legacy-asm filter --------------------------------------------------
 
     def test_legacy_asm_filter_excludes_all_replaced(self):
-        """MODERN_ELF_REPLACED_ASM must list all six; none in legacy."""
+        """All six modern-replaced asm objects excluded from legacy list."""
         overrides = self.tool_overrides()
         if overrides is None:
             self.skipTest("modern toolchain not available")
@@ -72,33 +72,23 @@ class ModernElfTargetTests(unittest.TestCase):
             *overrides,
         )
         self.assertEqual(result.returncode, 0, result.stdout)
-        legacy_line = ""
-        replaced_line = ""
+        legacy = set()
+        replaced = set()
         for line in result.stdout.strip().splitlines():
-            if line.startswith("MODERN_ELF_LEGACY_ASM "):
-                legacy_line = line
-            elif line.startswith("MODERN_ELF_REPLACED_ASM "):
-                replaced_line = line
-        legacy = set(
-            legacy_line.split("[")[1].rstrip("]").split()
-        ) if "[" in legacy_line else set()
-        replaced = set(
-            replaced_line.split("[")[1].rstrip("]").split()
-        ) if "[" in replaced_line else set()
+            if line.startswith("MODERN_ELF_LEGACY_ASM ") and "[" in line:
+                legacy = set(line.split("[")[1].rstrip("]").split())
+            elif line.startswith("MODERN_ELF_REPLACED_ASM ") and "[" in line:
+                replaced = set(line.split("[")[1].rstrip("]").split())
         expected = {
             "src/libagbsyscall.o", "asm/arm.o", "asm/arm_call.o",
             "src/rom_header.o", "src/crt0.o", "src/m4a_1.o",
         }
-        self.assertTrue(
-            expected.issubset(replaced),
-            f"replaced missing: {expected - replaced}",
-        )
-        self.assertEqual(
-            legacy & replaced, set(),
-            f"overlap: {legacy & replaced}",
-        )
+        self.assertTrue(expected.issubset(replaced),
+                        f"missing: {expected - replaced}")
+        self.assertEqual(legacy & replaced, set(),
+                         f"overlap: {legacy & replaced}")
 
-    # -- Fix 3: FE6 preflight (lightweight, no deps) ------------------------
+    # -- FE6 SIO preflight --------------------------------------------------
 
     def test_fe6sio_check_fails_without_object(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -123,7 +113,7 @@ class ModernElfTargetTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout)
         self.assertNotIn("gcc", result.stdout.lower())
 
-    # -- Fix 4: cohort/all non-interaction ----------------------------------
+    # -- Cohort/all non-interaction -----------------------------------------
 
     def test_cohort_dry_run_no_elf(self):
         overrides = self.tool_overrides()
@@ -142,6 +132,48 @@ class ModernElfTargetTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout)
         self.assertNotIn("fireemblem8.elf", result.stdout)
         self.assertNotIn("prepare_modern_link", result.stdout)
+
+    # -- Space-safe library discovery ---------------------------------------
+
+    def test_library_discovery_space_safe(self):
+        """Library dirs with spaces must be discovered correctly."""
+        overrides = self.tool_overrides()
+        if overrides is None:
+            self.skipTest("modern toolchain not available")
+        cc = next(o.split("=", 1)[1] for o in overrides
+                  if o.startswith("MODERN_CC="))
+        # Query the real compiler for library paths
+        libgcc_result = subprocess.run(
+            [cc, "-mcpu=arm7tdmi", "-mthumb", "-print-libgcc-file-name"],
+            capture_output=True, text=True,
+        )
+        self.assertEqual(libgcc_result.returncode, 0)
+        expected_dir = str(Path(libgcc_result.stdout.strip()).parent)
+
+        # Verify Make's shell-variable discovery matches
+        result = self.make("print-MODERN_LIBGCC_DIR", *overrides)
+        self.assertEqual(result.returncode, 0, result.stdout)
+        for line in result.stdout.strip().splitlines():
+            if "MODERN_LIBGCC_DIR" in line and "[" in line:
+                discovered = line.split("[")[1].rstrip("]").strip()
+                self.assertEqual(
+                    discovered, expected_dir,
+                    "library discovery mismatch",
+                )
+                break
+
+    # -- Legacy freshness via NODEP=0 recursive make ------------------------
+
+    def test_legacy_ready_step_uses_nodep_zero(self):
+        """modern.mk must declare NODEP=0 in the legacy-ready step."""
+        mk = (ROOT / "modern.mk").read_text(encoding="utf-8")
+        self.assertIn("expansion-modern-legacy-ready", mk)
+        self.assertIn("+$(MAKE) NODEP=0", mk)
+        # link-prepare must depend on legacy-ready (may span lines)
+        self.assertIn("expansion-modern-legacy-ready", mk)
+        prep_idx = mk.index("expansion-modern-link-prepare:")
+        ready_idx = mk.index("expansion-modern-legacy-ready", prep_idx)
+        self.assertGreater(ready_idx, prep_idx)
 
 
 if __name__ == "__main__":

@@ -347,15 +347,15 @@ else
   MODERN_LD ?= $(MODERN_TOOLCHAIN_ROOT)/bin/$(PREFIX)ld$(EXE)
 endif
 
-# Library discovery at recipe time.
-MODERN_LIBGCC_DIR = $(shell "$(MODERN_CC)" $(MODERN_BINUTILS_FLAG) \
-	$(MODERN_ARCH_FLAGS) -print-libgcc-file-name 2>/dev/null \
-	| xargs dirname)
+# Library discovery at recipe time (space-safe, no xargs).
+MODERN_LIBGCC_DIR = $(shell p=$$("$(MODERN_CC)" $(MODERN_BINUTILS_FLAG) \
+	$(MODERN_ARCH_FLAGS) -print-libgcc-file-name 2>/dev/null) \
+	&& dirname "$$p")
 MODERN_NEWLIB_LIB ?=
 ifeq ($(MODERN_NEWLIB_LIB),)
-  MODERN_LIBC_DIR = $(shell "$(MODERN_CC)" $(MODERN_BINUTILS_FLAG) \
-	$(MODERN_ARCH_FLAGS) -print-file-name=libc.a 2>/dev/null \
-	| xargs dirname)
+  MODERN_LIBC_DIR = $(shell p=$$("$(MODERN_CC)" $(MODERN_BINUTILS_FLAG) \
+	$(MODERN_ARCH_FLAGS) -print-file-name=libc.a 2>/dev/null) \
+	&& dirname "$$p")
 else
   MODERN_LIBC_DIR = $(MODERN_NEWLIB_LIB)
 endif
@@ -380,11 +380,23 @@ expansion-modern-fe6sio-check:
 		exit 1; \
 	fi
 
-# Link preparation: FE6 preflight, banim via scheduler, sidecar
-# recovery, then generator.  $(BANIM_OBJECT) is a normal prerequisite
-# so the main scheduler builds it once with no recursive-make race.
+# Ensure legacy non-C objects are fresh with full scaninc tracking.
+# The outer expansion-modern-elf runs under NODEP=1 which disables
+# scaninc for legacy rules.  This phony step invokes a single recursive
+# $(MAKE) with NODEP=0 to rebuild only the non-C assembly and MIDI
+# objects with proper asset dependency tracking, using jobserver
+# propagation (+).  No legacy C objects or mgfembp are invoked.
+.PHONY: expansion-modern-legacy-ready
+expansion-modern-legacy-ready:
+	+$(MAKE) NODEP=0 $(MODERN_ELF_LEGACY_ASM) $(MODERN_ELF_LEGACY_MIDI)
+
+# Link preparation: FE6 preflight, banim via scheduler, legacy
+# freshness, sidecar recovery, then generator.  $(BANIM_OBJECT) is a
+# normal prerequisite so the main scheduler builds it once with no
+# recursive-make race.
 .PHONY: expansion-modern-link-prepare
 expansion-modern-link-prepare: expansion-modern-fe6sio-check \
+		expansion-modern-legacy-ready \
 		$(MODERN_ELF_MANIFEST) $(BANIM_OBJECT) \
 		$(LDSCRIPT) $(SYM_FILES) linker_script_sound.txt
 	@if [ ! -f "$(MODERN_ELF_BANIM_SYM)" ]; then \
@@ -409,8 +421,8 @@ expansion-modern-link-prepare: expansion-modern-fe6sio-check \
 			$(MODERN_ELF_LEGACY_MIDI)
 
 # Link the transitional modern ELF.
-$(MODERN_ELF): expansion-modern-link-prepare \
-		$(MODERN_ELF_LEGACY_ASM) $(MODERN_ELF_LEGACY_MIDI)
+# Legacy objects and banim are owned by expansion-modern-link-prepare.
+$(MODERN_ELF): expansion-modern-link-prepare
 	@set -eu; \
 	libgcc_dir="$(MODERN_LIBGCC_DIR)"; \
 	libc_dir="$(MODERN_LIBC_DIR)"; \
