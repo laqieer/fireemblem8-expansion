@@ -140,9 +140,10 @@ _STMT_BOUNDARY_RE = re.compile(r"[;{}]")
 def _asm_label_context(code_lines: list[str], index: int) -> str:
     """Build a bounded lexical context around the asm token on *code_lines[index]*.
 
-    Walks backward from *index* (inclusive) until a statement or block boundary
-    character (``;``, ``{``, ``}``) is found on a preceding line, or at most 5
-    lines back.  Returns the joined context string.
+    Walks backward from *index* (inclusive) collecting continuation lines until
+    a statement or block boundary character (``;``, ``{``, ``}``) is found on a
+    preceding line or at most 5 lines have been prepended.  The line containing
+    the boundary is excluded — only the undelimited continuation is returned.
     """
     start = index
     limit = max(0, index - 5)
@@ -151,6 +152,8 @@ def _asm_label_context(code_lines: list[str], index: int) -> str:
             break
         start = j
     return " ".join(code_lines[start : index + 1])
+
+
 NAKED_ATTR_RE = re.compile(r"__attribute__\s*\(\([^)]*\bnaked\b[^)]*\)\)")
 ROM_LITERAL = r"0x(?:0[89][0-9A-Fa-f]{6}|[89][0-9A-Fa-f]{6})"
 RAW_ROM_RE = re.compile(rf"(?<![0-9A-Za-z_]){ROM_LITERAL}(?![0-9A-Fa-f])")
@@ -1032,7 +1035,13 @@ def scan_c_file(path: str, lines: list[str]) -> list[dict]:
         if REGISTER_RE.search(code):
             findings.append(make_finding("register-pinned-local", path, index, original))
 
-        if ASM_RE.search(code) and not REGISTER_RE.search(code) and not _is_decl_asm_label(_asm_label_context(code_lines, index - 1)):
+        if (
+            ASM_RE.search(code)
+            and not REGISTER_RE.search(code)
+            and not _is_decl_asm_label(
+                _asm_label_context(code_lines, index - 1)
+            )
+        ):
             statement = code
             for following in code_lines[index : min(len(code_lines), index + 30)]:
                 if ");" in statement:
