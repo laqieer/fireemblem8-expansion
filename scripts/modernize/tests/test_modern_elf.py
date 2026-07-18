@@ -178,14 +178,30 @@ class ModernElfTargetTests(unittest.TestCase):
     # -- Dry-run safety -----------------------------------------------------
 
     def test_dry_run_does_not_fail_on_missing_sidecar(self):
-        """make -n expansion-modern-elf must exit 0."""
-        overrides = self.tool_overrides()
-        if overrides is None:
-            self.skipTest("modern toolchain not available")
-        result = self.make("-n", "expansion-modern-elf", *overrides)
+        """make -n with a guaranteed-missing sidecar must exit 0."""
+        with tempfile.TemporaryDirectory() as tmp:
+            missing_sym = Path(tmp) / "dir with spaces" / "banim.o.sym.o"
+            banim_obj = Path(ROOT / "banim" / "data_banim.o")
+            if not banim_obj.is_file():
+                banim_obj = Path(tmp) / "banim_stub.o"
+                banim_obj.write_bytes(b"\x00")
+            self.assertFalse(missing_sym.exists())
+            result = self.make(
+                "-n", "expansion-modern-elf",
+                f"MODERN_ELF_BANIM_SYM={missing_sym}",
+                f"BANIM_OBJECT={banim_obj}",
+            )
         self.assertEqual(
             result.returncode, 0,
             f"dry-run failed:\n{result.stdout[-500:]}",
+        )
+        self.assertFalse(missing_sym.exists(),
+                         "sidecar must not be created by dry-run")
+        self.assertFalse(
+            any("error:" in line and "not produced" in line
+                for line in result.stdout.splitlines()
+                if not line.startswith("\t") and not line.startswith(" ")),
+            "real error line found in dry-run output",
         )
 
 
