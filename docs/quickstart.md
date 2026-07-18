@@ -245,3 +245,12 @@ target never silently triggers the mgfembp build.
 **No boot/ROM claim**: this ELF is not stripped, converted to GBA, or tested
 for runtime behavior. It proves the modern toolchain can link a full
 executable with zero undefined symbols.
+
+**IWRAM symbol placement**: eight performance-critical symbols
+(`ReadSramFast`, `VerifySramFast`, `gSoundInfo`, `gMPlayJumpTable`,
+`gCgbChans`, `gMPlayMemAccArea`, `SoundMainRAM_Buffer`, `gText_GoldBox`)
+are placed at their exact legacy IWRAM offsets via per-symbol BSS sections.
+Three source files (`src/agb_sram.c`, `src/m4a.c`, `src/bmshop.c`) receive
+`-fdata-sections` so modern GCC emits the named `.bss.<symbol>` sections
+the generated linker script places at pinned offsets. This is transitional
+issue-#4 debt; the clean linker will handle IWRAM layout directly.

@@ -248,6 +248,11 @@ $(MODERN_OUTPUT_DIR)/%.o: %.c
 	@mkdir -p "$(@D)"
 	"$(MODERN_CC)" $(MODERN_CFLAGS) -MMD -MP -MF "$(@:.o=.d)" -MQ "$@" -c "$<" -o "$@"
 
+# IWRAM-placed symbols need per-symbol BSS sections.
+$(MODERN_OUTPUT_DIR)/src/agb_sram.o: MODERN_CFLAGS += -fdata-sections
+$(MODERN_OUTPUT_DIR)/src/m4a.o: MODERN_CFLAGS += -fdata-sections
+$(MODERN_OUTPUT_DIR)/src/bmshop.o: MODERN_CFLAGS += -fdata-sections
+
 # GAS's own --MD tracks uppercase .INCLUDE directives (e.g. macro.inc,
 # gba.inc), so no cpp preprocessing or scaninc invocation is needed here.
 $(MODERN_OUTPUT_DIR)/%.o: %.s

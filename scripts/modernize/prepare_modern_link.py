@@ -68,6 +68,30 @@ _EWRAM_END_RE = re.compile(
 _REMOVED_LIBC = frozenset({"syscalls.o", "libcfunc.o"})
 _LIBM_MEMBERS = frozenset({"s_isinf.o", "s_isnan.o"})
 
+_MODERN_IWRAM_PLACEMENTS = {
+    "gText_GoldBox": (0x1DA0, "src/bmshop.o", ".bss.gText_GoldBox"),
+    "SoundMainRAM_Buffer": (0x2C60, "src/m4a.o", ".bss.code"),
+    "gSoundInfo": (0x5410, "src/m4a.o", ".bss.gSoundInfo"),
+    "gMPlayJumpTable": (0x6480, "src/m4a.o", ".bss.gMPlayJumpTable"),
+    "gCgbChans": (0x6510, "src/m4a.o", ".bss.gCgbChans"),
+    "gMPlayMemAccArea": (0x6710, "src/m4a.o", ".bss.gMPlayMemAccArea"),
+    "ReadSramFast": (0x67A0, "src/agb_sram.o", ".bss.ReadSramFast"),
+    "VerifySramFast": (0x67A4, "src/agb_sram.o", ".bss.VerifySramFast"),
+}
+
+_MODERN_IWRAM_ALIASES = {
+    "gUnk_62": 0x2C61,
+    "gUnk_84": 0x6484,
+    "gUnk_85": 0x6508,
+    "gUnk_86": 0x650C,
+}
+
+_AGBSRAM_BSS_ANCHOR = ". = ALIGN(4); src/agb_sram.o(.bss);"
+_AGBSRAM_BSS_REPLACEMENT = (
+    ". = ALIGN(4); {obj}(.bss.readSramFast_Work);\n"
+    "        . = ALIGN(4); {obj}(.bss.verifySramFast_Work);"
+)
+
 _WIDEN_SECTIONS = {
     ".text": ".text .text.*",
     ".rodata": ".rodata .rodata.*",
@@ -164,6 +188,62 @@ def _relax_ewram_pins(text: str) -> str:
         r"        \1 = .;",
         text,
     )
+    return text
+
+
+def _restore_iwram_placements(text: str, manifest: set[str], modern_root: str) -> str:
+    """Replace stale IWRAM pin assignments with explicit modern section placements."""
+    anchor = _AGBSRAM_BSS_ANCHOR
+
+    for candidate in [anchor, _substitute_objects(anchor, manifest, modern_root)]:
+        if candidate in text:
+            if "src/agb_sram.o" in manifest:
+                obj_path = _quote_ld_path(
+                    str(PurePosixPath(modern_root) / "src/agb_sram.o")
+                )
+            else:
+                obj_path = "src/agb_sram.o"
+            replacement = _AGBSRAM_BSS_REPLACEMENT.format(obj=obj_path)
+            text = text.replace(candidate, replacement, 1)
+            break
+    else:
+        raise ValueError("agb_sram.o(.bss) anchor not found")
+
+    for sym, (offset, src_obj, section) in sorted(_MODERN_IWRAM_PLACEMENTS.items()):
+        pin_pattern = re.compile(
+            rf"^\. = 0x{offset:06X};\s*{re.escape(sym)}\s*=\s*\.;",
+            re.MULTILINE | re.IGNORECASE,
+        )
+        matches = pin_pattern.findall(text)
+        if len(matches) != 1:
+            raise ValueError(
+                f"IWRAM pin {sym!r} at 0x{offset:06X} found {len(matches)} times (expected 1)"
+            )
+
+        if src_obj in manifest:
+            obj_path = _quote_ld_path(str(PurePosixPath(modern_root) / src_obj))
+        else:
+            obj_path = src_obj
+
+        replacement = (
+            f". = 0x{offset:06X}; /* transitional: modern object placement (issue #4) */\n"
+            f"        . = ALIGN(4); {obj_path}({section});"
+        )
+        text = pin_pattern.sub(replacement, text, count=1)
+
+    for alias, addr in sorted(_MODERN_IWRAM_ALIASES.items()):
+        pin_pattern = re.compile(
+            rf"^\. = 0x{addr:06X};\s*{re.escape(alias)}\s*=\s*\.;",
+            re.MULTILINE | re.IGNORECASE,
+        )
+        matches = pin_pattern.findall(text)
+        if len(matches) != 1:
+            raise ValueError(
+                f"IWRAM alias {alias!r} at 0x{addr:06X} found {len(matches)} times (expected 1)"
+            )
+        replacement = f"PROVIDE({alias} = __iwram_start + 0x{addr:06X});"
+        text = pin_pattern.sub(replacement, text, count=1)
+
     return text
 
 
@@ -290,6 +370,17 @@ def transform_include(
     return text
 
 
+def transform_iwram_include(
+    text: str,
+    manifest: set[str],
+    modern_root: str,
+) -> str:
+    """Apply all transforms to the sym_iwram include, including IWRAM placement."""
+    text = transform_include(text, manifest, modern_root)
+    text = _restore_iwram_placements(text, manifest, modern_root)
+    return text
+
+
 def _quote_response_path(path: str) -> str:
     """Quote a response-file object path if it contains spaces."""
     if '"' in path or "\n" in path:
@@ -364,7 +455,7 @@ def main(argv: list[str] | None = None) -> None:
     # Transform
     out_dir_str = str(output_dir)
     ldscript_out = transform_ldscript(ldscript, manifest, args.modern_root, out_dir_str)
-    iwram_out = transform_include(sym_iwram, manifest, args.modern_root)
+    iwram_out = transform_iwram_include(sym_iwram, manifest, args.modern_root)
     sound_out = transform_include(sound_script, manifest, args.modern_root)
 
     # Build object list
