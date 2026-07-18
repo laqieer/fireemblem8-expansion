@@ -14,14 +14,15 @@
 
 /* MenuCommand_SelectNo (bmmenu.c) intentionally ignores the selected menu
  * item and only needs the owning menu, so its real contract takes a single
- * struct MenuProc* argument. The onSelected/onBPress callback slots below
- * require the two-argument MenuSelectFunc shape; adapt here rather than
- * changing MenuCommand_SelectNo's signature (and its unrelated direct call
- * in bmmenu.c) to fit an unused parameter. */
-static u8 MenuCommand_SelectNoItem(struct MenuProc* menu, struct MenuItemProc* menuItem)
-{
-    return MenuCommand_SelectNo(menu);
-}
+ * struct MenuProc* argument, and its direct call in bmmenu.c relies on that.
+ * The onSelected/onBPress callback slots below require the two-argument
+ * MenuSelectFunc shape. Rather than defining a new adapter function (extra
+ * .text that the legacy linker cannot place once this object's .text is
+ * dropped from the link), declare a distinctly-typed extern binding to the
+ * very same MenuCommand_SelectNo symbol via a GCC asm label. This adds no
+ * code and no new symbol; every reference below is a plain data relocation
+ * against the existing MenuCommand_SelectNo function. */
+extern u8 MenuCommand_SelectNoItem(struct MenuProc * menu, struct MenuItemProc * menuItem) __asm__("MenuCommand_SelectNo");
 
 CONST_DATA struct MenuItemDef gDebugClearMenuItems[] = {
     {"ファイルをクリアずみに", 0x6b9, 0, 0, 3, MenuAlwaysEnabled, 0, 0, 0, 0, 0}, // Erase
