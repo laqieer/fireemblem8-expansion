@@ -89,6 +89,101 @@ class ModernBuildTests(unittest.TestCase):
         )
         return root
 
+    def make_all_fixture(self, destination: Path) -> Path:
+        # A minimal synthetic tree exercising expansion-modern-all's three
+        # source kinds (normal C, preprocessed data C, handwritten assembly)
+        # with fake preproc/scaninc scripts standing in for the real tools,
+        # so the test does not depend on the real INCBIN_* macro grammar or
+        # any pre-generated repository graphics assets.
+        root = destination / "all repo with spaces"
+        (root / "include").mkdir(parents=True)
+        (root / "src" / "data").mkdir(parents=True)
+        (root / "asm").mkdir()
+        (root / "assets").mkdir()
+        (root / "tools" / "preproc").mkdir(parents=True)
+        (root / "tools" / "scaninc").mkdir(parents=True)
+        shutil.copy2(MODERN_MK, root / "modern.mk")
+        (root / "Makefile").write_text(
+            "PREFIX ?= arm-none-eabi-\n"
+            "EXE :=\n"
+            "CLEAN_DIRS :=\n"
+            "MODERN_COHORT_SOURCES :=\n"
+            "MODERN_COHORT_ASM_SOURCES :=\n"
+            "include modern.mk\n",
+            encoding="utf-8",
+        )
+        (root / "include" / "global.h").write_text(
+            "#include <stdlib.h>\n"
+            "#include <stdint.h>\n"
+            "#include <limits.h>\n"
+            '#include "fixture.h"\n',
+            encoding="utf-8",
+        )
+        (root / "include" / "fixture.h").write_text(
+            "#define FIXTURE_VALUE 1\n", encoding="utf-8"
+        )
+        (root / "include" / "fixture.inc").write_text(
+            ".equ FIXTURE_ASM_VALUE, 1\n", encoding="utf-8"
+        )
+        (root / "src" / "normal_fixture.c").write_text(
+            '#include "global.h"\n'
+            "int modern_all_normal_fixture(void) { return FIXTURE_VALUE; }\n",
+            encoding="utf-8",
+        )
+        (root / "assets" / "fixture_asset.bin").write_text("v1", encoding="utf-8")
+        (root / "assets" / "fixture_asset_2.bin").write_text("v1", encoding="utf-8")
+        # Two INCBIN assets deliberately exercise scaninc reporting more than
+        # one path (real scaninc prints one path per line): the appended
+        # dependency line must still collapse to a single, valid Makefile
+        # line even when scaninc's output spans multiple lines.
+        (root / "src" / "data" / "data_fixture.c").write_text(
+            '#include "global.h"\n'
+            'FIXTURE_INCBIN("assets/fixture_asset.bin")\n'
+            'FIXTURE_INCBIN("assets/fixture_asset_2.bin")\n',
+            encoding="utf-8",
+        )
+        (root / "asm" / "fixture.s").write_text(
+            '\t.INCLUDE "fixture.inc"\n'
+            "\t.text\n"
+            "\t.thumb\n"
+            "\t.global modern_all_asm_fixture_probe\n"
+            "\t.thumb_func\n"
+            "modern_all_asm_fixture_probe:\n"
+            "\tbx lr\n",
+            encoding="utf-8",
+        )
+
+        fake_preproc = root / "tools" / "preproc" / "preproc"
+        fake_preproc.write_text(
+            "#!/usr/bin/env python3\n"
+            "import pathlib, re, sys\n"
+            "text = pathlib.Path(sys.argv[1]).read_text()\n"
+            "counter = [0]\n"
+            "def expand(match):\n"
+            "    data = pathlib.Path(match.group(1)).read_bytes()\n"
+            "    body = ', '.join(str(b) for b in data)\n"
+            "    counter[0] += 1\n"
+            "    name = 'gFixtureAsset' + str(counter[0])\n"
+            "    return 'const unsigned char ' + name + '[] = {' + body + '};'\n"
+            "text = re.sub(r'FIXTURE_INCBIN\\(\"([^\"]+)\"\\)', expand, text)\n"
+            "sys.stdout.write(text)\n",
+            encoding="utf-8",
+        )
+        fake_preproc.chmod(0o755)
+
+        fake_scaninc = root / "tools" / "scaninc" / "scaninc"
+        fake_scaninc.write_text(
+            "#!/usr/bin/env python3\n"
+            "import pathlib, re, sys\n"
+            "text = pathlib.Path(sys.argv[-1]).read_text()\n"
+            "for match in re.finditer(r'FIXTURE_INCBIN\\(\"([^\"]+)\"\\)', text):\n"
+            "    print(match.group(1))\n",
+            encoding="utf-8",
+        )
+        fake_scaninc.chmod(0o755)
+
+        return root
+
     def make(self, root: Path, *arguments: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
             ["make", "--no-print-directory", *arguments],
@@ -424,6 +519,129 @@ class ModernBuildTests(unittest.TestCase):
             self.assertGreater(watched_object.stat().st_mtime_ns, before)
             self.assertFalse(list((root / "asm").glob("*.o")))
             self.assertFalse(list((root / "asm").glob("*.d")))
+
+    def test_full_source_target_is_architectural_and_dependency_aware(self):
+        overrides = self.tool_overrides()
+        if overrides is None:
+            self.skipTest("arm-none-eabi GCC and objdump are not available")
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = self.make_all_fixture(Path(temporary))
+            all_arguments = (
+                "expansion-modern-all",
+                "MODERN_CONFIG=debug",
+                "MODERN_ABI=aapcs",
+                "MODERN_ALL_C_SOURCES=src/normal_fixture.c",
+                "MODERN_ALL_DATA_C_SOURCES=src/data/data_fixture.c",
+                "MODERN_ALL_ASM_SOURCES=asm/fixture.s",
+                "MODERN_PREPROC=tools/preproc/preproc",
+                "MODERN_SCANINC=tools/scaninc/scaninc",
+            )
+            result = self.make(root, *all_arguments, *overrides)
+            self.assertEqual(result.returncode, 0, result.stdout)
+            self.assertIn("Built 3 modern relocatable objects", result.stdout)
+
+            output = root / "build" / "expansion-modern" / "debug" / "aapcs"
+            normal_object = output / "src" / "normal_fixture.o"
+            data_pre = output / "src" / "data" / "data_fixture.pre.c"
+            data_object = output / "src" / "data" / "data_fixture.o"
+            asm_object = output / "asm" / "fixture.o"
+
+            objects = sorted(output.rglob("*.o"))
+            dependencies = sorted(output.rglob("*.d"))
+            self.assertEqual(len(objects), 3)
+            self.assertEqual(len(dependencies), 3)
+            self.assertTrue(data_pre.is_file())
+            self.assertTrue(normal_object.is_file())
+            self.assertTrue(data_object.is_file())
+            self.assertTrue(asm_object.is_file())
+
+            # No intermediate/output ever lands in the source tree.
+            self.assertFalse(list((root / "src").rglob("*.o")))
+            self.assertFalse(list((root / "src").rglob("*.d")))
+            self.assertFalse(list((root / "src").rglob("*.pre.c")))
+            self.assertFalse(list((root / "asm").glob("*.o")))
+            self.assertFalse(list((root / "asm").glob("*.d")))
+
+            objdump = next(
+                value.split("=", 1)[1]
+                for value in overrides
+                if value.startswith("MODERN_OBJDUMP=")
+            )
+            architecture = subprocess.run(
+                [objdump, "-f", *map(str, objects)],
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                check=False,
+            )
+            self.assertEqual(architecture.returncode, 0, architecture.stdout)
+            self.assertEqual(
+                architecture.stdout.count("file format elf32-littlearm"), 3
+            )
+            self.assertEqual(architecture.stdout.count("architecture: armv4t"), 3)
+
+            # The data object's single .d file must carry both GCC's own
+            # object/header rule and the appended scaninc-derived
+            # pre.c-depends-on-source-and-asset rule. The fixture's data
+            # source intentionally embeds two INCBIN assets: real scaninc
+            # prints one path per line, so this proves the appended rule
+            # collapses multi-line scaninc output into one valid Makefile
+            # line rather than corrupting the .d file with a bare
+            # continuation-less newline (which previously broke "make" with
+            # "missing separator" on any subsequent goal, including the fast
+            # cohort, since both .d sets are -included together).
+            data_dependency_path = output / "src" / "data" / "data_fixture.d"
+            data_dependency_text = data_dependency_path.read_text(encoding="utf-8")
+            self.assertIn("include/fixture.h", data_dependency_text)
+            self.assertIn("assets/fixture_asset.bin", data_dependency_text)
+            self.assertIn("assets/fixture_asset_2.bin", data_dependency_text)
+            self.assertIn("src/data/data_fixture.c", data_dependency_text)
+
+            appended_rule_lines = [
+                line
+                for line in data_dependency_text.splitlines()
+                if line.startswith("build/expansion-modern/debug/aapcs/src/data/data_fixture.pre.c:")
+            ]
+            self.assertEqual(len(appended_rule_lines), 1)
+            self.assertIn("assets/fixture_asset.bin", appended_rule_lines[0])
+            self.assertIn("assets/fixture_asset_2.bin", appended_rule_lines[0])
+
+            # A corrupted (multi-line, non-continued) appended rule breaks
+            # make's parser outright as soon as the .d is -included; re-
+            # invoking make with the same arguments must keep succeeding now
+            # that the asset list is collapsed onto one line.
+            reparse = self.make(root, *all_arguments, *overrides)
+            self.assertEqual(reparse.returncode, 0, reparse.stdout)
+
+            # Header touch rebuilds both the normal object and the data
+            # object (the .pre.c intermediate still contains the original
+            # #include "global.h", so GCC's own -MMD tracks it transitively).
+            before_normal = normal_object.stat().st_mtime_ns
+            before_data = data_object.stat().st_mtime_ns
+            time.sleep(1.1)
+            (root / "include" / "fixture.h").touch()
+            rebuild = self.make(root, *all_arguments, *overrides)
+            self.assertEqual(rebuild.returncode, 0, rebuild.stdout)
+            self.assertGreater(normal_object.stat().st_mtime_ns, before_normal)
+            self.assertGreater(data_object.stat().st_mtime_ns, before_data)
+
+            # Touching the scanned INCBIN asset (not the .c source) rebuilds
+            # the data object starting with the next make invocation, per
+            # the appended dependency rule.
+            before_data_after_header = data_object.stat().st_mtime_ns
+            time.sleep(1.1)
+            (root / "assets" / "fixture_asset.bin").write_text(
+                "v2", encoding="utf-8"
+            )
+            asset_rebuild = self.make(root, *all_arguments, *overrides)
+            self.assertEqual(asset_rebuild.returncode, 0, asset_rebuild.stdout)
+            self.assertGreater(
+                data_object.stat().st_mtime_ns, before_data_after_header
+            )
+            self.assertFalse(list((root / "src").rglob("*.o")))
+            self.assertFalse(list((root / "src").rglob("*.d")))
+            self.assertFalse(list((root / "src").rglob("*.pre.c")))
 
     def test_spaced_toolchain_binutils_newlib_and_direct_cc_paths(self):
         overrides = self.tool_overrides()
