@@ -192,17 +192,27 @@ def _relax_ewram_pins(text: str) -> str:
 
 
 def _restore_iwram_placements(text: str, manifest: set[str], modern_root: str) -> str:
-    """Replace stale IWRAM pin assignments with explicit modern section placements."""
-    anchor = _AGBSRAM_BSS_ANCHOR
+    """Replace stale IWRAM pin assignments with explicit modern section placements.
 
+    Requires all IWRAM owner objects be in the manifest (compiled with
+    ``-fdata-sections``).  Raises ``ValueError`` if any are missing.
+    """
+    required_owners = sorted({
+        src_obj for _, src_obj, _ in _MODERN_IWRAM_PLACEMENTS.values()
+    })
+    missing = [o for o in required_owners if o not in manifest]
+    if missing:
+        raise ValueError(
+            f"IWRAM placement requires modern -fdata-sections objects"
+            f" in manifest; missing: {missing}"
+        )
+
+    anchor = _AGBSRAM_BSS_ANCHOR
     for candidate in [anchor, _substitute_objects(anchor, manifest, modern_root)]:
         if candidate in text:
-            if "src/agb_sram.o" in manifest:
-                obj_path = _quote_ld_path(
-                    str(PurePosixPath(modern_root) / "src/agb_sram.o")
-                )
-            else:
-                obj_path = "src/agb_sram.o"
+            obj_path = _quote_ld_path(
+                str(PurePosixPath(modern_root) / "src/agb_sram.o")
+            )
             replacement = _AGBSRAM_BSS_REPLACEMENT.format(obj=obj_path)
             text = text.replace(candidate, replacement, 1)
             break
@@ -217,16 +227,16 @@ def _restore_iwram_placements(text: str, manifest: set[str], modern_root: str) -
         matches = pin_pattern.findall(text)
         if len(matches) != 1:
             raise ValueError(
-                f"IWRAM pin {sym!r} at 0x{offset:06X} found {len(matches)} times (expected 1)"
+                f"IWRAM pin {sym!r} at 0x{offset:06X} found"
+                f" {len(matches)} times (expected 1)"
             )
 
-        if src_obj in manifest:
-            obj_path = _quote_ld_path(str(PurePosixPath(modern_root) / src_obj))
-        else:
-            obj_path = src_obj
-
+        obj_path = _quote_ld_path(
+            str(PurePosixPath(modern_root) / src_obj)
+        )
         replacement = (
-            f". = 0x{offset:06X}; /* transitional: modern object placement (issue #4) */\n"
+            f". = 0x{offset:06X};"
+            f" /* transitional: modern object placement (issue #4) */\n"
             f"        . = ALIGN(4); {obj_path}({section});"
         )
         text = pin_pattern.sub(replacement, text, count=1)
@@ -239,7 +249,8 @@ def _restore_iwram_placements(text: str, manifest: set[str], modern_root: str) -
         matches = pin_pattern.findall(text)
         if len(matches) != 1:
             raise ValueError(
-                f"IWRAM alias {alias!r} at 0x{addr:06X} found {len(matches)} times (expected 1)"
+                f"IWRAM alias {alias!r} at 0x{addr:06X} found"
+                f" {len(matches)} times (expected 1)"
             )
         replacement = f"PROVIDE({alias} = __iwram_start + 0x{addr:06X});"
         text = pin_pattern.sub(replacement, text, count=1)

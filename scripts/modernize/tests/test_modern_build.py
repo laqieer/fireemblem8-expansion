@@ -802,6 +802,82 @@ class ModernBuildTests(unittest.TestCase):
             self.assertEqual(architecture.stdout.count("file format elf32-littlearm"), 8)
             self.assertEqual(architecture.stdout.count("architecture: armv4t"), 8)
 
+    def test_iwram_objects_have_per_symbol_bss_sections(self):
+        """Three IWRAM owner objects must have per-symbol BSS sections."""
+        overrides = self.tool_overrides()
+        if overrides is None:
+            self.skipTest("arm-none-eabi GCC and objdump are not available")
+
+        with tempfile.TemporaryDirectory() as temporary:
+            output_root = Path(temporary) / "iwram-objs"
+            for source in (
+                "src/agb_sram.c", "src/m4a.c", "src/bmshop.c",
+            ):
+                result = self.make(
+                    ROOT,
+                    f"MODERN_BUILD_ROOT={output_root}",
+                    f"MODERN_CONFIG=debug",
+                    f"MODERN_ABI=aapcs",
+                    f"MODERN_COHORT_SOURCES={source}",
+                    "MODERN_COHORT_ASM_SOURCES=",
+                    "expansion-modern-cohort",
+                    *overrides,
+                )
+                self.assertEqual(
+                    result.returncode, 0,
+                    f"{source} build failed:\n{result.stdout[-300:]}",
+                )
+
+            objdump = next(
+                v.split("=", 1)[1]
+                for v in overrides
+                if v.startswith("MODERN_OBJDUMP=")
+            )
+            obj_dir = output_root / "debug" / "aapcs"
+
+            # agb_sram.o
+            agb = subprocess.run(
+                [objdump, "-h", str(obj_dir / "src" / "agb_sram.o")],
+                capture_output=True, text=True,
+            )
+            for sect in (
+                ".bss.ReadSramFast",
+                ".bss.VerifySramFast",
+                ".bss.readSramFast_Work",
+                ".bss.verifySramFast_Work",
+            ):
+                self.assertIn(
+                    sect, agb.stdout,
+                    f"agb_sram.o missing section {sect}",
+                )
+
+            # m4a.o
+            m4a = subprocess.run(
+                [objdump, "-h", str(obj_dir / "src" / "m4a.o")],
+                capture_output=True, text=True,
+            )
+            for sect in (
+                ".bss.gSoundInfo",
+                ".bss.gMPlayJumpTable",
+                ".bss.gCgbChans",
+                ".bss.gMPlayMemAccArea",
+                ".bss.code",
+            ):
+                self.assertIn(
+                    sect, m4a.stdout,
+                    f"m4a.o missing section {sect}",
+                )
+
+            # bmshop.o
+            bms = subprocess.run(
+                [objdump, "-h", str(obj_dir / "src" / "bmshop.o")],
+                capture_output=True, text=True,
+            )
+            self.assertIn(
+                ".bss.gText_GoldBox", bms.stdout,
+                "bmshop.o missing section .bss.gText_GoldBox",
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
