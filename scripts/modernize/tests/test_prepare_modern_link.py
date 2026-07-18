@@ -366,6 +366,43 @@ class PrepareModernLinkTests(unittest.TestCase):
             )
         self.assertIn("found 2 times", str(ctx.exception))
 
+    def test_iwram_missing_agb_sram_owner_raises(self):
+        with self.assertRaises(ValueError) as ctx:
+            gen.transform_iwram_include(
+                _FIXTURE_IWRAM,
+                {"src/rng.o", "src/bmshop.o", "src/m4a.o"},
+                "build/mod",
+            )
+        self.assertIn("src/agb_sram.o", str(ctx.exception))
+
+    def test_iwram_missing_m4a_owner_raises(self):
+        with self.assertRaises(ValueError) as ctx:
+            gen.transform_iwram_include(
+                _FIXTURE_IWRAM,
+                {"src/rng.o", "src/agb_sram.o", "src/bmshop.o"},
+                "build/mod",
+            )
+        self.assertIn("src/m4a.o", str(ctx.exception))
+
+    def test_iwram_missing_bmshop_owner_raises(self):
+        with self.assertRaises(ValueError) as ctx:
+            gen.transform_iwram_include(
+                _FIXTURE_IWRAM,
+                {"src/rng.o", "src/agb_sram.o", "src/m4a.o"},
+                "build/mod",
+            )
+        self.assertIn("src/bmshop.o", str(ctx.exception))
+
+    def test_iwram_missing_all_owners_raises(self):
+        with self.assertRaises(ValueError) as ctx:
+            gen.transform_iwram_include(
+                _FIXTURE_IWRAM, {"src/rng.o"}, "build/mod",
+            )
+        self.assertIn("missing", str(ctx.exception))
+        self.assertIn("src/agb_sram.o", str(ctx.exception))
+        self.assertIn("src/bmshop.o", str(ctx.exception))
+        self.assertIn("src/m4a.o", str(ctx.exception))
+
     def test_iwram_placement_deterministic(self):
         manifest = {"src/rng.o", "src/agb_sram.o", "src/bmshop.o", "src/m4a.o"}
         r1 = gen.transform_iwram_include(_FIXTURE_IWRAM, manifest, "build/mod")
@@ -443,7 +480,10 @@ class PrepareModernLinkTests(unittest.TestCase):
             mod_root = root / "build dir" / "modern"
             out_dir = root / "output dir"
             manifest_path = self._make_manifest(
-                root, ["src/main.o", "src/proc.o", "asm/arm_call.o"]
+                root, [
+                    "src/main.o", "src/proc.o", "asm/arm_call.o",
+                    "src/agb_sram.o", "src/bmshop.o", "src/m4a.o",
+                ]
             )
 
             gen.main([
@@ -464,7 +504,7 @@ class PrepareModernLinkTests(unittest.TestCase):
             self.assertNotIn("0x3EFB8", ld)
 
             obj_list = (out_dir / "objects.lst").read_text(encoding="utf-8").splitlines()
-            self.assertEqual(len(obj_list), 5)
+            self.assertEqual(len(obj_list), 8)
 
     # -- Deterministic output bytes -----------------------------------------
 
