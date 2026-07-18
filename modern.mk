@@ -403,12 +403,14 @@ expansion-modern-link-prepare: expansion-modern-fe6sio-check \
 		printf '%s\n' \
 			"Sidecar missing; forcing banim rebuild..." >&2; \
 		rm -f "$(BANIM_OBJECT)" "$(MODERN_ELF_BANIM_SYM)"; \
+	fi
+	+@if [ ! -f "$(MODERN_ELF_BANIM_SYM)" ]; then \
 		$(MAKE) "$(BANIM_OBJECT)"; \
-		if [ ! -f "$(MODERN_ELF_BANIM_SYM)" ]; then \
-			printf '%s\n' \
-				"error: $(MODERN_ELF_BANIM_SYM) not produced" >&2; \
-			exit 1; \
-		fi; \
+	fi
+	@if [ ! -f "$(MODERN_ELF_BANIM_SYM)" ]; then \
+		printf '%s\n' \
+			"error: $(MODERN_ELF_BANIM_SYM) not produced" >&2; \
+		exit 1; \
 	fi
 	$(MODERN_LINK_GENERATOR) \
 		--root . \
