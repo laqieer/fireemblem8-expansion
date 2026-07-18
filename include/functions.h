@@ -5,24 +5,17 @@
 #include "proc.h"
 #include "types.h"
 
-// ??? RomHeaderNintendoLogo(???);
-// ??? crt0(???);
+/* rom_header.s / crt0.s — assembly-only entry points, no C prototype. */
 void IrqMain(void);
-// ??? ARMCodeToCopy_Start(???);
-// ??? ColorFadeTick(???);
-// ??? ClearOam(???);
-// ??? Checksum32(???);
-// ??? TmFillRect(???);
-// ??? sub_80003E0(???);
-// ??? sub_800043C(???);
-// ??? PutOamHi(???);
-// ??? PutOamLo(???);
-// ??? DrawGlyph(???);
-// ??? DrawGlyphHalfStride(???);
-// ??? DecodeString(???);
-// ??? MapFloodCoreStep(???);
-// ??? MapFloodCore(???);
-// ??? ARMCodeToCopy_End(???);
+/* asm/arm.s — ARM-mode functions copied to IWRAM at boot.  These are
+ * private implementations; C code uses the Thumb veneers declared
+ * below (ClearOAMBuffer, TileMap_FillRect, TileMap_CopyRect,
+ * CallARM_FillTileRect, CALLARM_ColorFadeTick, ComputeChecksum32)
+ * or the IWRAM wrapper functions (DrawGlyphRam, CallARM_DecompText,
+ * CallARM_PushToPrimaryOAM, CallARM_PushToSecondaryOAM,
+ * CallARM_Func5, CallARM_FillMovementMap).
+ * ARMCodeToCopy_Start/End are region labels used as byte addresses
+ * by StoreRoutinesToIRAM in src/ramfunc.c. */
 // ??? AgbMain(???);
 // ??? sub_8000B10(???);
 // ??? StoreIRQToIRAM(???);
@@ -42,7 +35,7 @@ void DrawGlyphRam(u16 *pal, u32 *dest, u32 *src, int subx);
 void CallARM_DecompText(const char *, char *);
 void CallARM_PushToSecondaryOAM(int a, int b, const u16 *c, int d);
 void CallARM_PushToPrimaryOAM(int x, int y, const u16* data, int oam2base);
-// ??? CallARM_Func5(???);
+void CallARM_Func5(int a, int b, int c);
 void CallARM_FillMovementMap(void);
 // ??? ResetIconGraphics_(???);
 // ??? ResetIconGraphics(???);
