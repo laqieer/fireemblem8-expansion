@@ -604,6 +604,24 @@ class AuditTests(unittest.TestCase):
                 f"declaration asm label incorrectly classified: {line.strip()}",
             )
 
+    def test_control_flow_asm_not_suppressed(self):
+        """Asm after control-flow keywords must remain detected as inline-asm."""
+        lines_and_expected = [
+            ('if (x) asm("nop");\n', "inline-asm"),
+            ('while (x) __asm__("nop");\n', "inline-asm"),
+            ('for (;;) asm("nop");\n', "inline-asm"),
+            ('void f(void) { asm("swi 3"); }\n', "inline-asm"),
+            ('if (c) asm("" ::: "memory");\n', "inline-asm-barrier"),
+        ]
+        for line, expected_cat in lines_and_expected:
+            findings = audit.scan_c_file("test.c", [line])
+            categories = [f["detected_category"] for f in findings]
+            self.assertIn(
+                expected_cat,
+                categories,
+                f"expected {expected_cat} for: {line.strip()}",
+            )
+
     def test_real_inline_asm_still_detected(self):
         """Executable inline asm must still be reported even with the label exclusion."""
         lines_and_expected = [

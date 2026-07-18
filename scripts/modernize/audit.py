@@ -81,9 +81,49 @@ REGISTER_RE = re.compile(
 )
 ASM_RE = re.compile(r"\b(?:asm|__asm__)\s*(?:volatile\s*)?\(")
 EMPTY_ASM_RE = re.compile(r"\b(?:asm|__asm__)\s*(?:volatile\s*)?\(\s*\"\"")
-DECL_ASM_LABEL_RE = re.compile(
-    r"(?:\)|[A-Za-z_]\w*)\s*(?:asm|__asm__)\s*\(\s*\"[A-Za-z_]\w*\"\s*\)\s*;"
+_DECL_ASM_LABEL_TAIL_RE = re.compile(
+    r"(?:asm|__asm__)\s*\(\s*\"[A-Za-z_]\w*\"\s*\)\s*;"
 )
+_CONTROL_KEYWORDS = frozenset({"if", "while", "for", "switch", "do", "else"})
+
+
+def _is_decl_asm_label(code: str) -> bool:
+    """True when *code* contains only a declaration-level asm symbol label.
+
+    GCC ``asm("symbol")`` after a declarator renames the linker symbol without
+    emitting executable code.  This helper distinguishes that from executable
+    inline asm by rejecting control-flow contexts (``if (...) asm(...)``),
+    function-body contexts (any ``{`` before the asm token), and bare
+    statement-level asm (no preceding declarator).
+    """
+    m = _DECL_ASM_LABEL_TAIL_RE.search(code)
+    if not m:
+        return False
+    before = code[: m.start()].rstrip()
+    if "{" in before:
+        return False
+    # Variable form: ``type identifier asm("sym");``
+    word_m = re.search(r"([A-Za-z_]\w*)\s*$", before)
+    if word_m and not before.endswith(")"):
+        return word_m.group(1) not in _CONTROL_KEYWORDS
+    # Function form: ``type identifier(...) asm("sym");``
+    if before.endswith(")"):
+        depth, i = 0, len(before) - 1
+        while i >= 0:
+            ch = before[i]
+            if ch == ")":
+                depth += 1
+            elif ch == "(":
+                depth -= 1
+                if depth == 0:
+                    break
+            i -= 1
+        if i > 0:
+            prefix_word = re.search(r"([A-Za-z_]\w*)\s*$", before[:i].rstrip())
+            if prefix_word and prefix_word.group(1) in _CONTROL_KEYWORDS:
+                return False
+            return True
+    return False
 NAKED_ATTR_RE = re.compile(r"__attribute__\s*\(\([^)]*\bnaked\b[^)]*\)\)")
 ROM_LITERAL = r"0x(?:0[89][0-9A-Fa-f]{6}|[89][0-9A-Fa-f]{6})"
 RAW_ROM_RE = re.compile(rf"(?<![0-9A-Za-z_]){ROM_LITERAL}(?![0-9A-Fa-f])")
@@ -965,7 +1005,7 @@ def scan_c_file(path: str, lines: list[str]) -> list[dict]:
         if REGISTER_RE.search(code):
             findings.append(make_finding("register-pinned-local", path, index, original))
 
-        if ASM_RE.search(code) and not REGISTER_RE.search(code) and not DECL_ASM_LABEL_RE.search(code):
+        if ASM_RE.search(code) and not REGISTER_RE.search(code) and not _is_decl_asm_label(code):
             statement = code
             for following in code_lines[index : min(len(code_lines), index + 30)]:
                 if ");" in statement:
