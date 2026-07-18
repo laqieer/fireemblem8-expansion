@@ -88,9 +88,9 @@ Up to three largest roots per category.
 | `linker-placement-coupling` | `manifest` ldscript.txt | `ldscript.txt:1` | 1166 | `linker-migrate` |
 | `linker-placement-coupling` | `manifest` sym_iwram.txt | `sym_iwram.txt:1` | 162 | `linker-migrate` |
 | `linker-placement-coupling` | `manifest` Makefile | `Makefile:1` | 14 | `linker-migrate` |
-| `mismatched-signature` | `construct` DebugContinueMenuInit | `src/menu_def.c:227` | 1 | `rewrite-c` |
-| `mismatched-signature` | `construct` DebugContinueMenuEnd | `src/menu_def.c:228` | 1 | `rewrite-c` |
-| `mismatched-signature` | `construct` DebugMenuInit | `src/menu_def.c:245` | 1 | `rewrite-c` |
+| `mismatched-signature` | `construct` DebugContinueMenuInit | `src/menu_def.c:229` | 1 | `rewrite-c` |
+| `mismatched-signature` | `construct` DebugContinueMenuEnd | `src/menu_def.c:230` | 1 | `rewrite-c` |
+| `mismatched-signature` | `construct` DebugMenuInit | `src/menu_def.c:247` | 1 | `rewrite-c` |
 | `modern-conditional` | `construct` MODERN conditional | `include/statscreen.h:161` | 1 | `rewrite-c` |
 | `naked-function` | `construct` GetUnitDefinitionFormEventScr | `src/eventscr.c:2476` | 1 | `typed-asm-boundary` |
 | `naked-function` | `construct` MultiBootWaitCycles | `src/sio_multiboot.c:447` | 1 | `typed-asm-boundary` |
@@ -144,11 +144,11 @@ Up to five deterministic examples per category; use `inventory.json` for every f
 | `linker-placement-coupling` | P1 | `Makefile:132` | `build-tooling` | `linker-migrate` | $(RELOCS_ELF): $(ALL_OBJECTS) $(OBJECTS_LST) $(LDSCRIPT) |
 | `linker-placement-coupling` | P1 | `Makefile:133` | `build-tooling` | `linker-migrate` | LD='$(LD)' OBJECTS_LST='$(OBJECTS_LST)' BANIM_OBJECT='$(BANIM_OBJECT)' \ |
 | `linker-placement-coupling` | P1 | `Makefile:148` | `build-tooling` | `linker-migrate` | shiftcheck-diff: $(ROM) $(MAP) $(OBJECTS_LST) |
-| `mismatched-signature` | P0 | `src/menu_def.c:227` | `ui` | `rewrite-c` | MISMATCHED_SIGNATURE(DebugContinueMenuInit), |
-| `mismatched-signature` | P0 | `src/menu_def.c:228` | `ui` | `rewrite-c` | MISMATCHED_SIGNATURE(DebugContinueMenuEnd), |
-| `mismatched-signature` | P0 | `src/menu_def.c:245` | `ui` | `rewrite-c` | MISMATCHED_SIGNATURE(DebugMenuInit), |
-| `mismatched-signature` | P0 | `src/menu_def.c:384` | `ui` | `rewrite-c` | .onInit = MISMATCHED_SIGNATURE(AttackStaffMapSelect_Init), |
-| `mismatched-signature` | P0 | `src/menu_def.c:385` | `ui` | `rewrite-c` | .onEnd = MISMATCHED_SIGNATURE(ClearBg0Bg1), |
+| `mismatched-signature` | P0 | `src/menu_def.c:229` | `ui` | `rewrite-c` | MISMATCHED_SIGNATURE(DebugContinueMenuInit), |
+| `mismatched-signature` | P0 | `src/menu_def.c:230` | `ui` | `rewrite-c` | MISMATCHED_SIGNATURE(DebugContinueMenuEnd), |
+| `mismatched-signature` | P0 | `src/menu_def.c:247` | `ui` | `rewrite-c` | MISMATCHED_SIGNATURE(DebugMenuInit), |
+| `mismatched-signature` | P0 | `src/menu_def.c:386` | `ui` | `rewrite-c` | .onInit = MISMATCHED_SIGNATURE(AttackStaffMapSelect_Init), |
+| `mismatched-signature` | P0 | `src/menu_def.c:387` | `ui` | `rewrite-c` | .onEnd = MISMATCHED_SIGNATURE(ClearBg0Bg1), |
 | `modern-conditional` | P0 | `include/statscreen.h:161` | `ui` | `rewrite-c` | #if !MODERN |
 | `naked-function` | P0 | `src/eventscr.c:2475` | `events` | `typed-asm-boundary` | __attribute__((naked)) |
 | `naked-function` | P0 | `src/sio_multiboot.c:446` | `multiplayer` | `typed-asm-boundary` | NAKEDFUNC |
