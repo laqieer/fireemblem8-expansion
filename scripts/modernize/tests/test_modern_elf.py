@@ -175,6 +175,19 @@ class ModernElfTargetTests(unittest.TestCase):
         ready_idx = mk.index("expansion-modern-legacy-ready", prep_idx)
         self.assertGreater(ready_idx, prep_idx)
 
+    # -- Dry-run safety -----------------------------------------------------
+
+    def test_dry_run_does_not_fail_on_missing_sidecar(self):
+        """make -n expansion-modern-elf must exit 0."""
+        overrides = self.tool_overrides()
+        if overrides is None:
+            self.skipTest("modern toolchain not available")
+        result = self.make("-n", "expansion-modern-elf", *overrides)
+        self.assertEqual(
+            result.returncode, 0,
+            f"dry-run failed:\n{result.stdout[-500:]}",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
