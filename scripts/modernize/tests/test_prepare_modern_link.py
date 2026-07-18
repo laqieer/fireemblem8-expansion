@@ -119,9 +119,22 @@ class PrepareModernLinkTests(unittest.TestCase):
         """src/main.o must not match src/main.o.bak or src/main.obj."""
         text = "src/main.o.bak src/main.obj src/main.o(.text)"
         result = gen._substitute_objects(text, {"src/main.o"}, "build/mod")
-        self.assertIn("src/main.o.bak", result)
-        self.assertIn("src/main.obj", result)
-        self.assertIn("build/mod/src/main.o(.text)", result)
+        self.assertEqual(
+            result,
+            "src/main.o.bak src/main.obj build/mod/src/main.o(.text)",
+        )
+
+    def test_substitution_quotes_paths_with_spaces(self):
+        result = gen._substitute_objects(
+            "src/main.o(.text);", {"src/main.o"}, "build dir/mod"
+        )
+        self.assertEqual(result, '"build dir/mod/src/main.o"(.text);')
+
+    def test_substitution_rejects_embedded_quotes(self):
+        with self.assertRaises(ValueError):
+            gen._substitute_objects(
+                "src/main.o(.text);", {"src/main.o"}, 'build"dir/mod'
+            )
 
     # -- Library transforms -------------------------------------------------
 
@@ -223,6 +236,24 @@ class PrepareModernLinkTests(unittest.TestCase):
         self.assertNotIn('INCLUDE "sym_iwram.txt"', result)
         self.assertNotIn('INCLUDE "linker_script_sound.txt"', result)
 
+    def test_include_redirect_fails_on_missing_iwram(self):
+        broken = _FIXTURE_LDSCRIPT.replace('INCLUDE "sym_iwram.txt"', "")
+        with self.assertRaises(ValueError) as ctx:
+            gen.transform_ldscript(broken, set(), "build/mod", "out")
+        self.assertIn("INCLUDE sym_iwram", str(ctx.exception))
+
+    def test_include_redirect_fails_on_missing_sound(self):
+        broken = _FIXTURE_LDSCRIPT.replace('INCLUDE "linker_script_sound.txt"', "")
+        with self.assertRaises(ValueError) as ctx:
+            gen.transform_ldscript(broken, set(), "build/mod", "out")
+        self.assertIn("INCLUDE linker_script_sound", str(ctx.exception))
+
+    def test_include_redirect_fails_on_duplicate(self):
+        doubled = _FIXTURE_LDSCRIPT + '\n        INCLUDE "sym_iwram.txt"\n'
+        with self.assertRaises(ValueError) as ctx:
+            gen.transform_ldscript(doubled, set(), "build/mod", "out")
+        self.assertIn("2 times", str(ctx.exception))
+
     # -- Include fragment transforms ----------------------------------------
 
     def test_iwram_fragment_transformed(self):
@@ -259,6 +290,26 @@ class PrepareModernLinkTests(unittest.TestCase):
         self.assertEqual(result1, result2)
         modern_part = [p for p in result1 if "build/mod" in p]
         self.assertEqual(modern_part, sorted(modern_part))
+
+    def test_object_list_quotes_paths_with_spaces(self):
+        result = gen.build_object_list(
+            {"src/a.o"}, "build dir/mod", ["legacy obj/b.o"]
+        )
+        self.assertIn('"build dir/mod/src/a.o"', result)
+        self.assertIn('"legacy obj/b.o"', result)
+
+    def test_object_list_no_quotes_without_spaces(self):
+        result = gen.build_object_list({"src/a.o"}, "build/mod", ["x.o"])
+        for entry in result:
+            self.assertNotIn('"', entry)
+
+    def test_object_list_rejects_embedded_quote(self):
+        with self.assertRaises(ValueError):
+            gen.build_object_list({"src/a.o"}, 'build"mod', [])
+
+    def test_object_list_rejects_embedded_newline(self):
+        with self.assertRaises(ValueError):
+            gen.build_object_list(set(), "build/mod", ["a\nb.o"])
 
     # -- End-to-end with path spaces ----------------------------------------
 
