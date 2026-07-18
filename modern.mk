@@ -1,7 +1,6 @@
-# Opt-in modern GCC object cohort. This intentionally stops at relocatable
-# objects; the matching ROM build and linker remain on the legacy pipeline.
+# Opt-in modern GCC object cohort and transitional modern ELF target.
 
-MODERN_GOALS := expansion-modern-toolchain-check expansion-modern-cohort expansion-modern-all expansion-modern-clean
+MODERN_GOALS := expansion-modern-toolchain-check expansion-modern-cohort expansion-modern-all expansion-modern-elf expansion-modern-clean
 ifneq (,$(filter $(MODERN_GOALS),$(MAKECMDGOALS)))
   NODEP := 1
 endif
@@ -295,5 +294,122 @@ $(MODERN_ALL_DATA_OBJECTS): $(MODERN_OUTPUT_DIR)/%.o: $(MODERN_OUTPUT_DIR)/%.pre
 
 expansion-modern-clean:
 	$(RM) -r "$(MODERN_BUILD_ROOT)"
+
+# ---------------------------------------------------------------------------
+# Transitional modern ELF target (issue #3)
+#
+# Links a full modern ELF using the reviewed prepare_modern_link.py
+# generator, modern runtime libraries (-lc -lnosys -lgcc), and no
+# agbcc libraries.  The generator transforms the legacy per-object
+# ldscript into a transitional variant with section catchalls and
+# library member renaming — see scripts/modernize/prepare_modern_link.py.
+#
+# asm/fe6sio.o is a pre-existing transitional object: the preflight
+# checks that it exists but never invokes the mgfembp build that
+# generates it.  A clean build from scratch requires running the
+# legacy asset pipeline first (see docs/quickstart.md).
+# ---------------------------------------------------------------------------
+
+# Link-only assembly objects not in expansion-modern-all.
+MODERN_ELF_EXTRA_ASM_SOURCES := src/rom_header.s src/crt0.s src/m4a_1.s
+MODERN_ELF_EXTRA_ASM_OBJECTS := \
+	$(addprefix $(MODERN_OUTPUT_DIR)/,$(MODERN_ELF_EXTRA_ASM_SOURCES:.s=.o))
+
+# Pre-existing non-C objects that cannot be built by modern rules.
+MODERN_ELF_PREBUILT := asm/fe6sio.o $(BANIM_OBJECT)
+
+# Non-C assembled objects from the legacy pipeline (sound, data asm, midi).
+# These are ABI-neutral binary blobs assembled by arm-none-eabi-as.
+MODERN_ELF_LEGACY_ASM := $(filter-out \
+	$(C_OBJECTS) $(DATA_SRC_C_OBJECTS) $(MODERN_ELF_PREBUILT) \
+	$(patsubst %,$(MODERN_OUTPUT_DIR)/%,$(MODERN_ALL_ASM_SOURCES:.s=.o)), \
+	$(ASM_OBJECTS))
+MODERN_ELF_LEGACY_MIDI := $(MID_OBJECTS)
+
+MODERN_ELF_LINK_DIR := $(MODERN_OUTPUT_DIR)/link
+MODERN_ELF_MANIFEST := $(MODERN_ELF_LINK_DIR)/manifest.txt
+MODERN_ELF_OBJECTS_LST := $(MODERN_ELF_LINK_DIR)/objects.lst
+MODERN_ELF_LDSCRIPT := $(MODERN_ELF_LINK_DIR)/ldscript.ld
+MODERN_ELF := $(MODERN_OUTPUT_DIR)/fireemblem8.elf
+MODERN_MAP := $(MODERN_OUTPUT_DIR)/fireemblem8.map
+MODERN_ELF_BANIM_SYM := $(BANIM_OBJECT).sym.o
+
+MODERN_LINK_GENERATOR := $(PYTHON) scripts/modernize/prepare_modern_link.py
+
+# Resolve modern LD consistently with the toolchain root.
+ifeq ($(MODERN_TOOLCHAIN_ROOT),)
+  MODERN_LD ?= $(PREFIX)ld$(EXE)
+else
+  MODERN_LD ?= $(MODERN_TOOLCHAIN_ROOT)/bin/$(PREFIX)ld$(EXE)
+endif
+
+# Library discovery at recipe time.
+MODERN_LIBGCC_DIR = $(shell "$(MODERN_CC)" $(MODERN_BINUTILS_FLAG) \
+	$(MODERN_ARCH_FLAGS) -print-libgcc-file-name 2>/dev/null | xargs dirname)
+MODERN_NEWLIB_LIB ?=
+ifeq ($(MODERN_NEWLIB_LIB),)
+  MODERN_LIBC_DIR = $(shell "$(MODERN_CC)" $(MODERN_BINUTILS_FLAG) \
+	$(MODERN_ARCH_FLAGS) -print-file-name=libc.a 2>/dev/null | xargs dirname)
+else
+  MODERN_LIBC_DIR = $(MODERN_NEWLIB_LIB)
+endif
+
+# Manifest: source-relative paths of every modern-built object.
+$(MODERN_ELF_MANIFEST): $(MODERN_ALL_OBJECTS) $(MODERN_ELF_EXTRA_ASM_OBJECTS)
+	@mkdir -p "$(@D)"
+	@printf '%s\n' $(sort \
+		$(patsubst $(MODERN_OUTPUT_DIR)/%,%, \
+			$(MODERN_ALL_OBJECTS) $(MODERN_ELF_EXTRA_ASM_OBJECTS))) > "$@"
+
+# FE6 SIO preflight + generator invocation.
+$(MODERN_ELF_LDSCRIPT): $(MODERN_ELF_MANIFEST) $(LDSCRIPT) $(SYM_FILES) linker_script_sound.txt
+	@for obj in $(MODERN_ELF_PREBUILT); do \
+		if [ ! -f "$$obj" ]; then \
+			printf '%s\n' "error: pre-existing object missing: $$obj" >&2; \
+			printf '%s\n' "asm/fe6sio.o requires the mgfembp submodule (separate agbcc)." >&2; \
+			printf '%s\n' "Run the legacy build first: make fireemblem8.gba" >&2; \
+			exit 1; \
+		fi; \
+	done
+	$(MODERN_LINK_GENERATOR) \
+		--root . \
+		--modern-root "$(MODERN_OUTPUT_DIR)" \
+		--manifest "$(MODERN_ELF_MANIFEST)" \
+		--output-dir "$(MODERN_ELF_LINK_DIR)" \
+		--legacy-objects \
+			$(MODERN_ELF_PREBUILT) \
+			$(MODERN_ELF_LEGACY_ASM) \
+			$(MODERN_ELF_LEGACY_MIDI)
+
+# Link the transitional modern ELF.
+$(MODERN_ELF): $(MODERN_ELF_LDSCRIPT) $(MODERN_ELF_PREBUILT) \
+		$(MODERN_ELF_LEGACY_ASM) $(MODERN_ELF_LEGACY_MIDI) \
+		$(MODERN_ELF_BANIM_SYM)
+	@set -eu; \
+	libgcc_dir="$(MODERN_LIBGCC_DIR)"; \
+	libc_dir="$(MODERN_LIBC_DIR)"; \
+	if [ -z "$$libgcc_dir" ] || [ ! -d "$$libgcc_dir" ]; then \
+		printf '%s\n' "error: cannot discover modern libgcc directory" >&2; \
+		printf '%s\n' "Check MODERN_CC or set library paths explicitly." >&2; \
+		exit 1; \
+	fi; \
+	if [ -z "$$libc_dir" ] || [ ! -d "$$libc_dir" ]; then \
+		printf '%s\n' "error: cannot discover modern libc directory" >&2; \
+		printf '%s\n' "Set MODERN_NEWLIB_LIB to the directory containing libc.a." >&2; \
+		exit 1; \
+	fi; \
+	"$(MODERN_LD)" \
+		-T "$(MODERN_ELF_LDSCRIPT)" \
+		-Map "$(MODERN_MAP)" \
+		@"$(MODERN_ELF_OBJECTS_LST)" \
+		-R "$(MODERN_ELF_BANIM_SYM)" \
+		-L "$$libgcc_dir" \
+		-L "$$libc_dir" \
+		-o "$@" \
+		-lc -lnosys -lgcc
+	@printf 'Linked modern ELF: %s\n' "$@"
+
+expansion-modern-elf: expansion-modern-all $(MODERN_ELF_EXTRA_ASM_OBJECTS) $(MODERN_ELF)
+	@printf 'Modern ELF ready: %s\n' "$(MODERN_ELF)"
 
 -include $(wildcard $(sort $(MODERN_COHORT_DEPS) $(MODERN_ALL_DEPS)))

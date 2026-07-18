@@ -209,3 +209,39 @@ links an ELF or ROM.
 `MODERN_ALL_ASM_SOURCES` (a separate list from `MODERN_COHORT_ASM_SOURCES`,
 so overriding one does not blank the other) default to the full supported
 source set and can be overridden the same way as the cohort variables.
+
+### Transitional modern ELF target
+
+`expansion-modern-elf` links a full modern ELF using all 438 modern objects,
+modern runtime libraries (`-lc -lnosys -lgcc`), and no agbcc libraries.
+A transitional generated linker script transforms the legacy per-object
+`ldscript.txt` with section catchalls and library member renaming (see
+`scripts/modernize/prepare_modern_link.py`). This is issue-#3 transitional
+infrastructure; issue #4 will replace the per-object layout with a clean
+section-oriented linker.
+
+```bash
+make expansion-modern-elf MODERN_CONFIG=debug MODERN_ABI=aapcs
+```
+
+Outputs land under `build/expansion-modern/<config>/<abi>/`:
+- `fireemblem8.elf` — linked modern ELF (entry `Init` at `0x08000000`)
+- `fireemblem8.map` — linker map
+- `link/` — generated transitional linker script, include fragments, and
+  object list
+
+The target discovers modern `libgcc.a`, `libc.a`, and `libnosys.a` paths
+from the configured `MODERN_CC` at recipe time. Override `MODERN_NEWLIB_LIB`
+to point at a specific newlib library directory if auto-discovery fails.
+`MODERN_LD` defaults to `$(PREFIX)ld` or
+`$(MODERN_TOOLCHAIN_ROOT)/bin/$(PREFIX)ld`.
+
+**Pre-existing object requirement**: `asm/fe6sio.o` and `banim/data_banim.o`
+must exist before running this target. Generating `asm/fe6sio.o` currently
+invokes the mgfembp submodule's own agbcc variant. Run the legacy build
+(`make fireemblem8.gba`) first to produce these objects. The modern ELF
+target never silently triggers the mgfembp build.
+
+**No boot/ROM claim**: this ELF is not stripped, converted to GBA, or tested
+for runtime behavior. It proves the modern toolchain can link a full
+executable with zero undefined symbols.
