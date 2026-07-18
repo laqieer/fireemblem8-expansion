@@ -69,9 +69,25 @@ _FIXTURE_LDSCRIPT = textwrap.dedent("""\
 
 _FIXTURE_IWRAM = textwrap.dedent("""\
     . = ALIGN(4); src/rng.o(.bss);
+    . = 0x001DA0; gText_GoldBox = .;
+    . = 0x001DA8; gUnk_59 = .;
+    . = 0x002A68;
+    . = ALIGN(4); src/agb_sram.o(.bss);
     . = ALIGN(4); *libc.a:syscalls.o(.bss);
     . = ALIGN(4); *libgcc.a:dp-bit.o(.bss);
     . = ALIGN(4); *libgcc.a:fp-bit.o(.bss);
+    . = 0x002C60; SoundMainRAM_Buffer = .;
+    . = 0x002C61; gUnk_62 = .;
+    . = 0x003070; gOamLoPutIt = .;
+    . = 0x005410; gSoundInfo = .;
+    . = 0x006480; gMPlayJumpTable = .;
+    . = 0x006484; gUnk_84 = .;
+    . = 0x006508; gUnk_85 = .;
+    . = 0x00650C; gUnk_86 = .;
+    . = 0x006510; gCgbChans = .;
+    . = 0x006710; gMPlayMemAccArea = .;
+    . = 0x0067A0; ReadSramFast = .;
+    . = 0x0067A4; VerifySramFast = .;
     . = ALIGN(4); *libc.a:sbrkr.o(COMMON);
 """)
 
@@ -277,6 +293,98 @@ class PrepareModernLinkTests(unittest.TestCase):
         self.assertNotIn("fp-bit", result)
         self.assertIn("removed: libc syscalls.o", result)
         self.assertIn("libc_a-sbrkr.o", result)
+
+    def test_all_eight_iwram_placements_restored(self):
+        manifest = {"src/rng.o", "src/agb_sram.o", "src/bmshop.o", "src/m4a.o"}
+        result = gen.transform_iwram_include(_FIXTURE_IWRAM, manifest, "build/mod")
+
+        expected_sections = {
+            "gText_GoldBox": "build/mod/src/bmshop.o(.bss.gText_GoldBox)",
+            "SoundMainRAM_Buffer": "build/mod/src/m4a.o(.bss.code)",
+            "gSoundInfo": "build/mod/src/m4a.o(.bss.gSoundInfo)",
+            "gMPlayJumpTable": "build/mod/src/m4a.o(.bss.gMPlayJumpTable)",
+            "gCgbChans": "build/mod/src/m4a.o(.bss.gCgbChans)",
+            "gMPlayMemAccArea": "build/mod/src/m4a.o(.bss.gMPlayMemAccArea)",
+            "ReadSramFast": "build/mod/src/agb_sram.o(.bss.ReadSramFast)",
+            "VerifySramFast": "build/mod/src/agb_sram.o(.bss.VerifySramFast)",
+        }
+
+        for symbol, selector in expected_sections.items():
+            self.assertIn(selector, result, symbol)
+            self.assertNotIn(f"{symbol} = .;", result)
+
+    def test_legitimate_pins_preserved(self):
+        result = gen.transform_iwram_include(
+            _FIXTURE_IWRAM,
+            {"src/rng.o", "src/agb_sram.o", "src/bmshop.o", "src/m4a.o"},
+            "build/mod",
+        )
+        self.assertIn(". = 0x001DA8; gUnk_59 = .;", result)
+        self.assertIn(". = 0x003070; gOamLoPutIt = .;", result)
+
+    def test_aliases_converted_to_absolute(self):
+        result = gen.transform_iwram_include(
+            _FIXTURE_IWRAM,
+            {"src/rng.o", "src/agb_sram.o", "src/bmshop.o", "src/m4a.o"},
+            "build/mod",
+        )
+        self.assertIn("PROVIDE(gUnk_62 = __iwram_start + 0x002C61);", result)
+        self.assertIn("PROVIDE(gUnk_84 = __iwram_start + 0x006484);", result)
+        self.assertIn("PROVIDE(gUnk_85 = __iwram_start + 0x006508);", result)
+        self.assertIn("PROVIDE(gUnk_86 = __iwram_start + 0x00650C);", result)
+
+    def test_agbsram_bss_replaced_with_work_sections(self):
+        result = gen.transform_iwram_include(
+            _FIXTURE_IWRAM,
+            {"src/rng.o", "src/agb_sram.o", "src/bmshop.o", "src/m4a.o"},
+            "build/mod",
+        )
+        self.assertNotIn('src/agb_sram.o(.bss);', result)
+        self.assertIn("build/mod/src/agb_sram.o(.bss.readSramFast_Work);", result)
+        self.assertIn("build/mod/src/agb_sram.o(.bss.verifySramFast_Work);", result)
+
+    def test_iwram_pin_missing_raises(self):
+        broken = _FIXTURE_IWRAM.replace(". = 0x005410; gSoundInfo = .;\n", "")
+        with self.assertRaises(ValueError) as ctx:
+            gen.transform_iwram_include(
+                broken,
+                {"src/rng.o", "src/agb_sram.o", "src/bmshop.o", "src/m4a.o"},
+                "build/mod",
+            )
+        self.assertIn("gSoundInfo", str(ctx.exception))
+
+    def test_iwram_pin_duplicate_raises(self):
+        broken = _FIXTURE_IWRAM.replace(
+            ". = 0x005410; gSoundInfo = .;\n",
+            ". = 0x005410; gSoundInfo = .;\n. = 0x005410; gSoundInfo = .;\n",
+        )
+        with self.assertRaises(ValueError) as ctx:
+            gen.transform_iwram_include(
+                broken,
+                {"src/rng.o", "src/agb_sram.o", "src/bmshop.o", "src/m4a.o"},
+                "build/mod",
+            )
+        self.assertIn("found 2 times", str(ctx.exception))
+
+    def test_iwram_placement_deterministic(self):
+        manifest = {"src/rng.o", "src/agb_sram.o", "src/bmshop.o", "src/m4a.o"}
+        r1 = gen.transform_iwram_include(_FIXTURE_IWRAM, manifest, "build/mod")
+        r2 = gen.transform_iwram_include(_FIXTURE_IWRAM, manifest, "build/mod")
+        self.assertEqual(r1, r2)
+
+    def test_legacy_iwram_input_unchanged(self):
+        legacy = textwrap.dedent("""\
+            . = ALIGN(4); src/rng.o(.bss);
+            . = ALIGN(4); *libc.a:sbrkr.o(COMMON);
+        """)
+        result = gen.transform_include(legacy, {"src/rng.o"}, "build/mod")
+        self.assertEqual(
+            result,
+            textwrap.dedent("""\
+                . = ALIGN(4); build/mod/src/rng.o(.bss);
+                . = ALIGN(4); *libc.a:libc_a-sbrkr.o(COMMON);
+            """),
+        )
 
     def test_sound_fragment_substituted(self):
         manifest = {"src/m4a_tables.o"}
