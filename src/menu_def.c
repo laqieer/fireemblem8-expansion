@@ -22,7 +22,8 @@
  * very same MenuCommand_SelectNo symbol via a GCC asm label. This adds no
  * code and no new symbol; every reference below is a plain data relocation
  * against the existing MenuCommand_SelectNo function. */
-extern u8 MenuCommand_SelectNoItem(struct MenuProc * menu, struct MenuItemProc * menuItem) __asm__("MenuCommand_SelectNo");
+extern u8 MenuCommand_SelectNoItem(
+    struct MenuProc * menu, struct MenuItemProc * menuItem) __asm__("MenuCommand_SelectNo");
 
 CONST_DATA struct MenuItemDef gDebugClearMenuItems[] = {
     {"ファイルをクリアずみに", 0x6b9, 0, 0, 3, MenuAlwaysEnabled, 0, 0, 0, 0, 0}, // Erase
