@@ -318,13 +318,14 @@ MODERN_ELF_EXTRA_ASM_OBJECTS := \
 MODERN_ELF_REPLACED_ASM := \
 	$(MODERN_ALL_ASM_SOURCES:.s=.o) $(MODERN_ELF_EXTRA_ASM_SOURCES:.s=.o)
 
-# Pre-existing non-C objects that cannot be built by modern rules.
-MODERN_ELF_PREBUILT := asm/fe6sio.o $(BANIM_OBJECT)
+# Pre-existing transitional FE6 SIO object (not a scheduler target).
+MODERN_ELF_FE6SIO := asm/fe6sio.o
 
 # Non-C assembled objects from the legacy pipeline (sound, data asm, midi).
 # Filter out every C object, every modern-replaced assembly, and prebuilts.
 MODERN_ELF_LEGACY_ASM := $(filter-out \
-	$(C_OBJECTS) $(DATA_SRC_C_OBJECTS) $(MODERN_ELF_PREBUILT) \
+	$(C_OBJECTS) $(DATA_SRC_C_OBJECTS) \
+	$(MODERN_ELF_FE6SIO) $(BANIM_OBJECT) \
 	$(MODERN_ELF_REPLACED_ASM), \
 	$(ASM_OBJECTS))
 MODERN_ELF_LEGACY_MIDI := $(MID_OBJECTS)
@@ -367,23 +368,30 @@ $(MODERN_ELF_MANIFEST): $(MODERN_ALL_OBJECTS) $(MODERN_ELF_EXTRA_ASM_OBJECTS)
 			$(MODERN_ALL_OBJECTS) \
 			$(MODERN_ELF_EXTRA_ASM_OBJECTS))) > "$@"
 
-# Phony preparation step: preflight + generator, runs before every link.
+# Lightweight FE6 SIO preflight (no toolchain/manifest deps).
+.PHONY: expansion-modern-fe6sio-check
+expansion-modern-fe6sio-check:
+	@if [ ! -f "$(MODERN_ELF_FE6SIO)" ]; then \
+		printf '%s\n' \
+			"error: pre-existing object missing: $(MODERN_ELF_FE6SIO)" >&2; \
+		printf '%s\n' \
+			"FE6 SIO object requires the legacy mgfembp" \
+			"preparation path; see docs/quickstart.md" >&2; \
+		exit 1; \
+	fi
+
+# Link preparation: FE6 preflight, banim via scheduler, sidecar
+# recovery, then generator.  $(BANIM_OBJECT) is a normal prerequisite
+# so the main scheduler builds it once with no recursive-make race.
 .PHONY: expansion-modern-link-prepare
-expansion-modern-link-prepare: $(MODERN_ELF_MANIFEST) \
+expansion-modern-link-prepare: expansion-modern-fe6sio-check \
+		$(MODERN_ELF_MANIFEST) $(BANIM_OBJECT) \
 		$(LDSCRIPT) $(SYM_FILES) linker_script_sound.txt
-	@for obj in $(MODERN_ELF_PREBUILT); do \
-		if [ ! -f "$$obj" ]; then \
-			printf '%s\n' \
-				"error: pre-existing object missing: $$obj" >&2; \
-			printf '%s\n' \
-				"FE6 SIO object requires the legacy mgfembp" \
-				"preparation path; see docs/quickstart.md" >&2; \
-			exit 1; \
-		fi; \
-	done
 	@if [ ! -f "$(MODERN_ELF_BANIM_SYM)" ]; then \
-		printf '%s\n' "Regenerating banim objects for symbol sidecar..." >&2; \
-		$(MAKE) $(BANIM_OBJECT); \
+		printf '%s\n' \
+			"Sidecar missing; forcing banim rebuild..." >&2; \
+		rm -f "$(BANIM_OBJECT)" "$(MODERN_ELF_BANIM_SYM)"; \
+		$(MAKE) "$(BANIM_OBJECT)"; \
 		if [ ! -f "$(MODERN_ELF_BANIM_SYM)" ]; then \
 			printf '%s\n' \
 				"error: $(MODERN_ELF_BANIM_SYM) not produced" >&2; \
@@ -396,14 +404,13 @@ expansion-modern-link-prepare: $(MODERN_ELF_MANIFEST) \
 		--manifest "$(MODERN_ELF_MANIFEST)" \
 		--output-dir "$(MODERN_ELF_LINK_DIR)" \
 		--legacy-objects \
-			$(MODERN_ELF_PREBUILT) \
+			$(MODERN_ELF_FE6SIO) $(BANIM_OBJECT) \
 			$(MODERN_ELF_LEGACY_ASM) \
 			$(MODERN_ELF_LEGACY_MIDI)
 
 # Link the transitional modern ELF.
-$(MODERN_ELF): expansion-modern-link-prepare $(MODERN_ELF_PREBUILT) \
-		$(MODERN_ELF_LEGACY_ASM) $(MODERN_ELF_LEGACY_MIDI) \
-		$(BANIM_OBJECT)
+$(MODERN_ELF): expansion-modern-link-prepare \
+		$(MODERN_ELF_LEGACY_ASM) $(MODERN_ELF_LEGACY_MIDI)
 	@set -eu; \
 	libgcc_dir="$(MODERN_LIBGCC_DIR)"; \
 	libc_dir="$(MODERN_LIBC_DIR)"; \
