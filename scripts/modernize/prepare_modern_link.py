@@ -43,7 +43,7 @@ from pathlib import Path, PurePosixPath
 # Constants
 # ---------------------------------------------------------------------------
 
-_OBJ_RE = re.compile(r"((?:src|asm)/[\w/.+-]+\.o)")
+_OBJ_RE = re.compile(r"((?:src|asm)/[\w/.+-]+\.o)(?![\w.])")
 
 _LIBC_MEMBER_RE = re.compile(
     r"\*libc\.a:([\w.+-]+\.o)(\([^)]*\))"
@@ -76,7 +76,9 @@ _WIDEN_SECTIONS = {
 }
 
 # Anchors — the generator fails if these are not found exactly once.
-_ANCHOR_ARM_CALL_TEXT = "asm/arm_call.o(.text);"
+_ANCHOR_ARM_CALL_TEXT_RE = re.compile(
+    r'("?[^"\n]*asm/arm_call\.o"?)\(\.text\);'
+)
 _ANCHOR_RODATA_COMMENT = "/* .rodata */"
 _ANCHOR_DATA_COMMENT = "/* .data */"
 _ANCHOR_ROM_CLOSE = "} = 0"
@@ -101,12 +103,21 @@ def _load_manifest(path: str) -> set[str]:
     return entries
 
 
+def _quote_ld_path(path: str) -> str:
+    """Quote a linker-script path if it contains spaces."""
+    if '"' in path or "\n" in path:
+        raise ValueError(f"path contains unsupported characters: {path!r}")
+    if " " in path:
+        return f'"{path}"'
+    return path
+
+
 def _substitute_objects(text: str, manifest: set[str], modern_root: str) -> str:
     """Replace every manifest object reference with its modern-root path."""
     def _repl(m: re.Match[str]) -> str:
         rel = m.group(1)
         if rel in manifest:
-            return str(PurePosixPath(modern_root) / rel)
+            return _quote_ld_path(str(PurePosixPath(modern_root) / rel))
         return rel
     return _OBJ_RE.sub(_repl, text)
 
@@ -168,13 +179,16 @@ def _check_anchor(text: str, anchor: str, name: str) -> None:
 def _add_catchalls(text: str) -> str:
     """Insert transitional section catchalls at proven anchors."""
     # After arm_call.o(.text): catch remaining .text
-    _check_anchor(text, _ANCHOR_ARM_CALL_TEXT, "arm_call .text")
-    text = text.replace(
-        _ANCHOR_ARM_CALL_TEXT,
-        _ANCHOR_ARM_CALL_TEXT + "\n"
-        "        /* transitional: catch remaining .text */\n"
-        "        *(.text .text.* .glue_7 .glue_7t)",
-    )
+    matches = list(_ANCHOR_ARM_CALL_TEXT_RE.finditer(text))
+    if len(matches) != 1:
+        raise ValueError(
+            f"anchor 'arm_call .text' found {len(matches)} times (expected 1)"
+        )
+    m = matches[0]
+    text = text[:m.end()] + (
+        "\n        /* transitional: catch remaining .text */\n"
+        "        *(.text .text.* .glue_7 .glue_7t)"
+    ) + text[m.end():]
 
     # Before /* .data */: catch remaining .rodata
     _check_anchor(text, _ANCHOR_DATA_COMMENT, ".data comment")
@@ -224,6 +238,8 @@ def _redirect_includes(text: str, output_dir: str) -> str:
     """Redirect INCLUDE directives to generated files in output_dir."""
     iwram_out = str(PurePosixPath(output_dir) / "sym_iwram.ld")
     sound_out = str(PurePosixPath(output_dir) / "linker_script_sound.ld")
+    _check_anchor(text, _ANCHOR_INCLUDE_IWRAM, "INCLUDE sym_iwram")
+    _check_anchor(text, _ANCHOR_INCLUDE_SOUND, "INCLUDE linker_script_sound")
     text = text.replace(
         _ANCHOR_INCLUDE_IWRAM,
         f'INCLUDE "{iwram_out}"',
@@ -270,6 +286,15 @@ def transform_include(
     return text
 
 
+def _quote_response_path(path: str) -> str:
+    """Quote a response-file object path if it contains spaces."""
+    if '"' in path or "\n" in path:
+        raise ValueError(f"object path contains unsupported characters: {path!r}")
+    if " " in path:
+        return f'"{path}"'
+    return path
+
+
 def build_object_list(
     manifest: set[str],
     modern_root: str,
@@ -277,23 +302,21 @@ def build_object_list(
 ) -> list[str]:
     """Build a deduplicated object list: modern for manifest, legacy for rest.
 
-    Returns a sorted, deterministic list of object paths.
+    Returns a sorted, deterministic list of object paths.  Paths with
+    spaces are quoted for GNU ld response-file compatibility.
     """
     seen_bases: dict[str, str] = {}
     result: list[str] = []
 
-    # Modern objects first (sorted for determinism)
     for rel in sorted(manifest):
         modern_path = str(PurePosixPath(modern_root) / rel)
         seen_bases[rel] = modern_path
-        result.append(modern_path)
+        result.append(_quote_response_path(modern_path))
 
-    # Legacy objects that are NOT in the manifest
     for legacy in legacy_objects:
-        # Normalize to relative path for dedup
         if legacy not in seen_bases:
             seen_bases[legacy] = legacy
-            result.append(legacy)
+            result.append(_quote_response_path(legacy))
 
     return result
 
