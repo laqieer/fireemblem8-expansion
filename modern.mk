@@ -431,12 +431,19 @@ expansion-modern-mgfembp: $(MODERN_MGFEMBP_PAYLOAD)
 
 # Assemble fe6sio.s from the modern payload directory so
 # .incbin "fe6sio_payload.bin.lz" resolves to the modern payload,
-# not a potentially stale root artifact.  All paths are absolute
-# so the CWD change is transparent.
+# not a potentially stale root artifact.  The compiler path is
+# resolved before cd: absolute paths pass through; bare command
+# names are resolved via PATH using command -v.
 $(MODERN_FE6SIO_OBJ): asm/fe6sio.s $(MODERN_MGFEMBP_PAYLOAD)
 	@mkdir -p "$(@D)"
+	@set -eu; \
+	cc="$(MODERN_CC)"; \
+	case "$$cc" in /*) ;; */*) cc="$(CURDIR)/$$cc" ;; \
+	*) cc=$$(command -v "$$cc" 2>/dev/null) || { \
+		printf '%s\n' "error: cannot resolve modern CC: $(MODERN_CC)" >&2; \
+		exit 1; } ;; esac; \
 	cd "$(abspath $(MODERN_MGFEMBP_DIR))" && \
-	"$(abspath $(MODERN_CC))" \
+	"$$cc" \
 		$(MODERN_DRIVER_FLAGS) $(MODERN_ARCH_FLAGS) \
 		-I"$(CURDIR)/include" -I"$(CURDIR)" \
 		$(MODERN_ABI_FLAGS) \
