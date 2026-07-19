@@ -7,10 +7,11 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
     - name: Install dependencies
-      run: sudo apt-get update && sudo apt-get install -y build-essential binutils-arm-none-eabi libpng-dev && python -m pip install ttp numpy pillow
+      run: sudo apt-get update && sudo apt-get install -y build-essential binutils-arm-none-eabi libpng-dev gcc-arm-none-eabi libnewlib-arm-none-eabi libmgba-dev && python -m pip install ttp numpy pillow
 
     - uses: actions/checkout@v4
       with:
@@ -30,5 +31,13 @@ jobs:
     - name: Build tools
       run: ./build_tools.sh
 
-    - name: Build target ROM
-      run: make fireemblem8.gba
+    # Compile-only modern GCC objects/ELF are not built or gated here (see
+    # modern.mk / expansion-modern-* targets); only the legacy ROM build and
+    # the modern debug/release boot-check gate run in CI. Per repository
+    # policy, CI ends after the target ROM build -- no decomp compare,
+    # progress, report, symbol, or Pages stages follow this step.
+    - name: Build and verify target ROMs
+      run: |
+        make fireemblem8.gba -j2
+        make expansion-modern-boot-check MODERN_CONFIG=debug MODERN_ABI=aapcs -j2
+        make expansion-modern-boot-check MODERN_CONFIG=release MODERN_ABI=aapcs -j2
