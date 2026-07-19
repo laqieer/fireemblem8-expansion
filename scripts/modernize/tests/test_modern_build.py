@@ -1489,6 +1489,166 @@ class ModernBuildTests(unittest.TestCase):
                 "the fetsa .lz compression recipe re-ran on a true no-op second invocation",
             )
 
+    def test_stale_lz_recompresses_when_raw_sibling_is_freshly_rebuilt(self):
+        # Reproduces the first-invocation staleness bug found while
+        # stabilizing "expansion-modern-all" clean-build idempotency: an
+        # old-style two-output FETSATOOL rule builds a raw
+        # "<name>.feimgN.bin"/"<name>.fetsaN.bin" pair, and the top-level
+        # Makefile's generic "%.lz: %" pattern rule compresses one of the
+        # two into "<name>.feimgN.bin.lz". If that ".lz" file is already
+        # present (e.g. left over from an earlier run) but *older* than a
+        # freshly-generated payload, and the raw ".feimgN.bin" sibling is
+        # currently *missing* on disk (so it must be rebuilt this same
+        # invocation via the shared FETSATOOL recipe), GNU Make's
+        # prerequisite check for ".lz" evaluates the still-missing raw
+        # file with a bare existence test, concludes "does not exist" /
+        # "No need to remake target" for ".lz" on the spot, and never
+        # revisits that verdict later in the same invocation even after
+        # the shared recipe successfully creates the raw file moments
+        # afterward -- so recompression is wrongly deferred to the *next*
+        # invocation instead of happening in this one. Without the
+        # order-only prerequisite fix (an early "TARGET: | raw-siblings"
+        # line on the consuming ".pre.c" target, listed before its normal
+        # dependency line), this test fails because the ".lz" file still
+        # holds its stale payload after a single "expansion-modern-all".
+        overrides = self.tool_overrides()
+        if overrides is None:
+            self.skipTest("arm-none-eabi GCC and objdump are not available")
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = self.make_all_fixture(Path(temporary))
+
+            (root / "assets" / "fixture_pair_source.src").write_text(
+                "fresh-payload", encoding="utf-8"
+            )
+
+            # Fixture stand-in for scripts/gfxtools/tsa_generator.py.
+            fake_fetsatool = root / "scripts" / "gfxtools" / "fetsatool_fixture.py"
+            fake_fetsatool.parent.mkdir(parents=True)
+            fake_fetsatool.write_text(
+                "#!/usr/bin/env python3\n"
+                "import pathlib, sys\n"
+                "src, out1, out2 = sys.argv[1:4]\n"
+                "payload = pathlib.Path(src).read_bytes()\n"
+                "pathlib.Path(out1).write_bytes(payload)\n"
+                "pathlib.Path(out2).write_bytes(payload)\n",
+                encoding="utf-8",
+            )
+            fake_fetsatool.chmod(0o755)
+
+            makefile_path = root / "Makefile"
+            makefile_path.write_text(
+                "FETSATOOL := scripts/gfxtools/fetsatool_fixture.py\n"
+                + makefile_path.read_text(encoding="utf-8")
+                # Old-style two-output rule standing in for a real
+                # FETSATOOL invocation: one recipe, two sibling targets.
+                + "assets/fixture.feimg2.bin assets/fixture.fetsa2.bin: "
+                + "assets/fixture_pair_source.src\n"
+                + "\t$(FETSATOOL) $< assets/fixture.feimg2.bin assets/fixture.fetsa2.bin\n"
+                # Minimal stand-in for the top-level Makefile's real
+                # "%.lz: %" LZ-compression rule.
+                + "assets/%.bin.lz: assets/%.bin\n"
+                + "\tcp $< $@\n",
+                encoding="utf-8",
+            )
+
+            # One data source referencing both the compressed feimg and
+            # the raw fetsa sibling -- the exact shape of src/data/data_bg.c's
+            # real bg_White_Chamber reference (compressed FEIMG, raw FETSA).
+            (root / "src" / "data" / "data_fixture.c").write_text(
+                '#include "global.h"\n'
+                'FIXTURE_INCBIN("assets/fixture.feimg2.bin.lz")\n'
+                'FIXTURE_INCBIN("assets/fixture.fetsa2.bin")\n',
+                encoding="utf-8",
+            )
+
+            # Simulate the exact clean-build reproduction: a stale ".lz"
+            # already on disk (old payload, old mtime) while the raw pair
+            # is currently missing and must be rebuilt this invocation.
+            stale_lz = root / "assets" / "fixture.feimg2.bin.lz"
+            stale_lz.write_bytes(b"stale-payload")
+            old = time.time() - 3600
+            os.utime(stale_lz, (old, old))
+
+            all_arguments = (
+                "expansion-modern-all",
+                "MODERN_CONFIG=debug",
+                "MODERN_ABI=aapcs",
+                "MODERN_ALL_C_SOURCES=src/normal_fixture.c",
+                "MODERN_ALL_DATA_C_SOURCES=src/data/data_fixture.c",
+                "MODERN_ALL_ASM_SOURCES=asm/fixture.s",
+                "MODERN_PREPROC=tools/preproc/preproc",
+                "MODERN_SCANINC=tools/scaninc/scaninc",
+                "-j4",
+            )
+
+            result = self.make(root, *all_arguments, *overrides)
+            self.assertEqual(result.returncode, 0, result.stdout)
+            self.assertIn("Built 3 modern relocatable objects", result.stdout)
+
+            # The raw sibling must have been rebuilt this invocation...
+            self.assertEqual(
+                (root / "assets" / "fixture.feimg2.bin").read_bytes(),
+                b"fresh-payload",
+            )
+            # ...and, crucially, ".lz" must have been recompressed from
+            # that fresh raw output in the *same* invocation, not left
+            # holding its stale pre-existing payload.
+            self.assertEqual(
+                stale_lz.read_bytes(),
+                b"fresh-payload",
+                "stale .lz was not recompressed in the same invocation "
+                "as its freshly-rebuilt raw sibling",
+            )
+
+            # Structural check on the generated ".assets.d" itself: the
+            # order-only prerequisite line naming the raw sibling must be
+            # present, and it must appear *before* the target's normal
+            # dependency line (whose ".lz" reference is what triggers the
+            # unreliable staleness check) -- a plain "grep for the raw
+            # sibling name" would not catch a regression that emits the
+            # order-only line in the wrong position (e.g. appended after
+            # the main line, or attached to ".assets.d" instead of
+            # ".pre.c"), either of which silently reintroduces the bug
+            # even though the string itself is still present somewhere.
+            generated_deps = (
+                root
+                / "build"
+                / "expansion-modern"
+                / "debug"
+                / "aapcs"
+                / "src"
+                / "data"
+                / "data_fixture.assets.d"
+            ).read_text(encoding="utf-8")
+            order_only_line_index = None
+            main_line_index = None
+            for index, line in enumerate(generated_deps.splitlines()):
+                if line.startswith("build/expansion-modern/debug/aapcs/src/data/data_fixture.pre.c: |"):
+                    order_only_line_index = index
+                elif line.startswith(
+                    "build/expansion-modern/debug/aapcs/src/data/data_fixture.pre.c: "
+                    "src/data/data_fixture.c"
+                ):
+                    main_line_index = index
+            self.assertIsNotNone(
+                order_only_line_index,
+                "no order-only prerequisite line was emitted for "
+                "data_fixture.pre.c naming the compressed asset's raw "
+                "sibling -- this is the fix for the stale-.lz-after-"
+                "clean-build bug",
+            )
+            self.assertIn("assets/fixture.feimg2.bin", generated_deps.splitlines()[order_only_line_index])
+            self.assertIsNotNone(main_line_index)
+            self.assertLess(
+                order_only_line_index,
+                main_line_index,
+                "the order-only prerequisite line must precede the main "
+                "dependency line so Make considers the raw sibling before "
+                "the compressed ('.lz') asset later in the same combined "
+                "prerequisite list",
+            )
+
     def test_fetsatool_lock_dedups_single_invocation(self):
         # Tool-free baseline: even after the PID-liveness rewrite, a
         # normal parallel single invocation with no pre-existing lock must

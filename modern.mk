@@ -426,6 +426,39 @@ $(MODERN_ALL_DATA_OBJECTS): $(MODERN_OUTPUT_DIR)/%.o: $(MODERN_OUTPUT_DIR)/%.pre
 # edge above nor the FETSATOOL wrapper present) and is not introduced or
 # affected by either mechanism here; Make drops the spurious self-edge
 # and proceeds, so it does not affect build correctness.
+#
+# A related but distinct GNU Make limitation affects the generic
+# "%.lz: %" compression rule (Makefile) whenever its raw prerequisite is
+# itself one half of an old-style multi-target FETSATOOL pair that is
+# still missing on a clean build: reproduced and isolated with GNU Make
+# 4.3 "--debug=v" tracing, Make's prerequisite check for the ".lz"
+# target evaluates its raw prerequisite as a bare file-existence test
+# rather than recursively resolving it through the multi-target rule
+# that would actually build it, concludes "does not exist" / "No need to
+# remake" for the ".lz" target on the spot, and never revisits that
+# verdict later in the same invocation even after the multi-target rule
+# successfully creates the raw file moments afterward -- so a fresh
+# ".lz" recompression is deferred to the *next* invocation instead of
+# happening in the same pass. This reproduces regardless of whether the
+# raw pair's rule is the generic pattern or an explicit per-file rule,
+# and regardless of prerequisite ordering *within* the existing ".pre.c"
+# dependency line below, so it cannot be fixed by reordering that single
+# line or by giving ".lz" its own explicit rule -- nor by attaching an
+# order-only prerequisite to the ".assets.d" file itself: that file is
+# only ever consumed as an *included makefile* (never as a normal graph
+# node any other target depends on), so Make's "remake included
+# makefiles" pass regenerates its *content* but never walks prerequisites
+# declared *inside* that freshly-generated content until the later main
+# graph walk begins -- by which point the same buggy ".lz" verdict above
+# has already been cached. What *does* work: giving ".pre.c" itself (a
+# real, normally-walked graph node) a *separate, earlier* order-only
+# prerequisite line -- listed as its own "TARGET: | deps" line placed
+# *before* the existing "TARGET: normal-deps..." line in the generated
+# file -- naming every compressed asset's raw (uncompressed) sibling.
+# Make concatenates multiple prerequisite lines for the same target in
+# the order they are read, so this earlier order-only line is considered,
+# and its raw sibling built via the multi-target rule if missing, before
+# ".lz" is ever reached later in the same combined prerequisite list.
 ifneq (,$(filter $(MODERN_GOALS),$(MAKECMDGOALS)))
   MODERN_FETSATOOL_REAL := $(FETSATOOL)
   # $0 is "_"; $1 is the real tool path; $2.. are the tool's own args
@@ -498,7 +531,29 @@ $(MODERN_ALL_DATA_ASSET_DEPS): $(MODERN_OUTPUT_DIR)/%.assets.d: %.c $(MODERN_SCA
 	    n=$${match#*|}; \
 	    printf '%s:%s\n' "$${prefix}.fetsa$${n}.bin" "$${prefix}.feimg$${n}.bin"; \
 	  done) || exit 1; \
-	{ printf '%s: %s' "$(MODERN_OUTPUT_DIR)/$*.pre.c" "$<"; \
+	lz_raw_siblings=$$(printf '%s\n' "$$assets" | while IFS= read -r asset; do \
+	    [ -n "$$asset" ] || continue; \
+	    case "$$asset" in \
+	      *.feimg[1-9]*.bin.lz|*.fetsa[1-9]*.bin.lz) ;; \
+	      *) continue ;; \
+	    esac; \
+	    match=$$(printf '%s\n' "$$asset" | sed -n -E 's/^(.*\.(feimg|fetsa)[1-4]\.bin)\.lz$$/\1/p'); \
+	    if [ -z "$$match" ]; then \
+	      printf '%s\n' "error: malformed compressed FEIMG/FETSA asset name: $$asset" >&2; \
+	      exit 1; \
+	    fi; \
+	    printf '%s\n' "$$match"; \
+	  done | sort -u) || exit 1; \
+	{ if [ -n "$$lz_raw_siblings" ]; then \
+	    printf '%s: |' "$(MODERN_OUTPUT_DIR)/$*.pre.c"; \
+	    printf '%s\n' "$$lz_raw_siblings" | while IFS= read -r raw; do \
+	      [ -n "$$raw" ] || continue; \
+	      escaped_raw=$$(printf '%s' "$$raw" | sed -e 's/\\/\\\\/g' -e 's/ /\\ /g'); \
+	      printf ' %s' "$$escaped_raw"; \
+	    done; \
+	    printf '\n'; \
+	  fi; \
+	  printf '%s: %s' "$(MODERN_OUTPUT_DIR)/$*.pre.c" "$<"; \
 	  printf '%s\n' "$$assets" | while IFS= read -r asset; do \
 	    [ -n "$$asset" ] || continue; \
 	    escaped=$$(printf '%s' "$$asset" | sed -e 's/\\/\\\\/g' -e 's/ /\\ /g'); \
