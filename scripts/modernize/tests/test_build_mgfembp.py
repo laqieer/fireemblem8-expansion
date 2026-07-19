@@ -112,6 +112,47 @@ class BuildMgfembpTests(unittest.TestCase):
             self.assertLess(lz_path.stat().st_size, bin_path.stat().st_size)
             self.assertEqual(lz_path.read_bytes()[0], 0x10)
 
+    def test_embed_asset_list_matches_final_assets(self):
+        """EXPECTED_EMBED_SOURCE_ASSETS must cover every non-embed source
+        referenced in FINAL_EMBED_ASSETS."""
+        sources_from_pipeline = set()
+        for source_name, _, _ in builder.FINAL_EMBED_ASSETS:
+            if not source_name.startswith("embed/"):
+                sources_from_pipeline.add(source_name)
+        expected_set = set(builder.EXPECTED_EMBED_SOURCE_ASSETS)
+        self.assertEqual(
+            sources_from_pipeline, expected_set,
+            f"drift: pipeline={sources_from_pipeline - expected_set}"
+            f" expected={expected_set - sources_from_pipeline}",
+        )
+
+    def test_embed_assets_exist_in_submodule(self):
+        """Every listed embed source asset must exist in the submodule."""
+        if not MGFEMBP.is_dir():
+            self.skipTest("mgfembp submodule not present")
+        for asset in builder.EXPECTED_EMBED_SOURCE_ASSETS:
+            path = MGFEMBP / asset
+            self.assertTrue(
+                path.is_file(),
+                f"missing submodule asset: {asset}",
+            )
+
+    def test_modern_mk_embed_list_matches_script(self):
+        """modern.mk MODERN_MGFEMBP_EMBED_ASSETS must list the same
+        source assets as build_mgfembp.py."""
+        mk = (ROOT / "modern.mk").read_text(encoding="utf-8")
+        for asset in builder.EXPECTED_EMBED_SOURCE_ASSETS:
+            self.assertIn(
+                f"mgfembp/{asset}",
+                mk,
+                f"modern.mk missing embed asset: mgfembp/{asset}",
+            )
+
+    def test_fe6sio_dep_included_in_modern_mk(self):
+        """modern.mk must -include the fe6sio .d file."""
+        mk = (ROOT / "modern.mk").read_text(encoding="utf-8")
+        self.assertIn("MODERN_FE6SIO_OBJ:.o=.d", mk)
+
 
 if __name__ == "__main__":
     unittest.main()
