@@ -310,9 +310,8 @@ expansion-modern-clean:
 # comparison via expansion-modern-cohort/all but is incompatible with
 # the EABI5 runtime libraries.
 #
-# asm/fe6sio.o is a pre-existing transitional object.  The FE6 SIO
-# object requires the legacy mgfembp preparation path; see
-# docs/quickstart.md.  This target never silently invokes that build.
+# asm/fe6sio.o is assembled by the modern build from a generated
+# FE6 SIO payload built from the mgfembp submodule with modern GCC.
 # ---------------------------------------------------------------------------
 
 # Enforce AAPCS for linked outputs. expansion-modern-elf is the only target
@@ -338,12 +337,18 @@ MODERN_ELF_EXTRA_ASM_SOURCES := src/rom_header.s src/crt0.s src/m4a_1.s
 MODERN_ELF_EXTRA_ASM_OBJECTS := \
 	$(addprefix $(MODERN_OUTPUT_DIR)/,$(MODERN_ELF_EXTRA_ASM_SOURCES:.s=.o))
 
+# Modern FE6 SIO payload build.
+MODERN_MGFEMBP_DIR := $(MODERN_OUTPUT_DIR)/mgfembp
+MODERN_MGFEMBP_PAYLOAD := $(MODERN_MGFEMBP_DIR)/fe6sio_payload.bin.lz
+MODERN_FE6SIO_OBJ := $(MODERN_OUTPUT_DIR)/asm/fe6sio.o
+MODERN_MGFEMBP_BUILDER := $(PYTHON) scripts/modernize/build_mgfembp.py
+
 # All assembly sources replaced by modern objects (source-relative names).
 MODERN_ELF_REPLACED_ASM := \
-	$(MODERN_ALL_ASM_SOURCES:.s=.o) $(MODERN_ELF_EXTRA_ASM_SOURCES:.s=.o)
+	$(MODERN_ALL_ASM_SOURCES:.s=.o) $(MODERN_ELF_EXTRA_ASM_SOURCES:.s=.o) \
+	$(MODERN_FE6SIO_OBJ:$(MODERN_OUTPUT_DIR)/%=%)
 
-# Pre-existing transitional FE6 SIO object (not a scheduler target).
-MODERN_ELF_FE6SIO := asm/fe6sio.o
+MODERN_ELF_FE6SIO := $(MODERN_FE6SIO_OBJ)
 
 # Non-C assembled objects from the legacy pipeline (sound, data asm, midi).
 # Filter out every C object, every modern-replaced assembly, and prebuilts.
@@ -392,25 +397,34 @@ else
   MODERN_LIBC_DIR = $(MODERN_NEWLIB_LIB)
 endif
 
+.PHONY: expansion-modern-mgfembp
+expansion-modern-mgfembp: expansion-modern-toolchain-check
+	$(MODERN_MGFEMBP_BUILDER) \
+		--submodule-root mgfembp \
+		--output-dir "$(MODERN_MGFEMBP_DIR)" \
+		--cc "$(MODERN_CC)" \
+		--ld "$(MODERN_LD)" \
+		--objcopy "$(PREFIX)objcopy$(EXE)" \
+		--gbagfx "$(GBAGFX)"
+
+$(MODERN_MGFEMBP_PAYLOAD): | expansion-modern-mgfembp
+
+# Assemble fe6sio.s with -I pointing to modern payload directory
+# so .incbin "fe6sio_payload.bin.lz" resolves to modern output.
+$(MODERN_FE6SIO_OBJ): asm/fe6sio.s $(MODERN_MGFEMBP_PAYLOAD)
+	@mkdir -p "$(@D)"
+	"$(MODERN_CC)" $(MODERN_ASFLAGS) \
+		-Wa,-I,"$(MODERN_MGFEMBP_DIR)" \
+		-Wa,--MD,"$(@:.o=.d)" -c "$<" -o "$@"
+
 # Manifest: source-relative paths of every modern-built object.
-$(MODERN_ELF_MANIFEST): $(MODERN_ALL_OBJECTS) $(MODERN_ELF_EXTRA_ASM_OBJECTS)
+$(MODERN_ELF_MANIFEST): $(MODERN_ALL_OBJECTS) $(MODERN_ELF_EXTRA_ASM_OBJECTS) $(MODERN_ELF_FE6SIO)
 	@mkdir -p "$(@D)"
 	@printf '%s\n' $(sort \
 		$(patsubst $(MODERN_OUTPUT_DIR)/%,%, \
 			$(MODERN_ALL_OBJECTS) \
-			$(MODERN_ELF_EXTRA_ASM_OBJECTS))) > "$@"
-
-# Lightweight FE6 SIO preflight (no toolchain/manifest deps).
-.PHONY: expansion-modern-fe6sio-check
-expansion-modern-fe6sio-check:
-	@if [ ! -f "$(MODERN_ELF_FE6SIO)" ]; then \
-		printf '%s\n' \
-			"error: pre-existing object missing: $(MODERN_ELF_FE6SIO)" >&2; \
-		printf '%s\n' \
-			"FE6 SIO object requires the legacy mgfembp" \
-			"preparation path; see docs/quickstart.md" >&2; \
-		exit 1; \
-	fi
+			$(MODERN_ELF_EXTRA_ASM_OBJECTS) \
+			$(MODERN_ELF_FE6SIO))) > "$@"
 
 # Ensure legacy non-C objects are fresh with full scaninc tracking.
 # The outer expansion-modern-elf runs under NODEP=1 which disables
@@ -422,12 +436,12 @@ expansion-modern-fe6sio-check:
 expansion-modern-legacy-ready:
 	+$(MAKE) NODEP=0 $(MODERN_ELF_LEGACY_ASM) $(MODERN_ELF_LEGACY_MIDI)
 
-# Link preparation: FE6 preflight, banim via scheduler, legacy
+# Link preparation: FE6 SIO build output, banim via scheduler, legacy
 # freshness, sidecar recovery, then generator.  $(BANIM_OBJECT) is a
 # normal prerequisite so the main scheduler builds it once with no
 # recursive-make race.
 .PHONY: expansion-modern-link-prepare
-expansion-modern-link-prepare: expansion-modern-fe6sio-check \
+expansion-modern-link-prepare: $(MODERN_ELF_FE6SIO) \
 		expansion-modern-legacy-ready \
 		$(MODERN_ELF_MANIFEST) $(BANIM_OBJECT) \
 		$(LDSCRIPT) $(SYM_FILES) linker_script_sound.txt
@@ -486,7 +500,7 @@ $(MODERN_ELF): expansion-modern-link-prepare
 		-lc -lnosys -lgcc
 	@printf 'Linked modern ELF: %s\n' "$@"
 
-expansion-modern-elf: expansion-modern-all \
+expansion-modern-elf: expansion-modern-mgfembp expansion-modern-all \
 		$(MODERN_ELF_EXTRA_ASM_OBJECTS) $(MODERN_ELF)
 	@printf 'Modern ELF ready: %s\n' "$(MODERN_ELF)"
 

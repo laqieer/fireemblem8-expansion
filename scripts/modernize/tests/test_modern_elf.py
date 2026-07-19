@@ -1,8 +1,8 @@
 """Tests for the expansion-modern-elf Make target wiring.
 
-Covers legacy-assembly filtering, FE6 SIO preflight, legacy dependency
-freshness, library discovery, output isolation, and non-interaction
-with fast/all targets.
+Covers legacy-assembly filtering, FE6 SIO build wiring, legacy
+dependency freshness, library discovery, output isolation, and
+non-interaction with fast/all targets.
 
 Tests using print-* and make -n run unconditionally.  Tests invoking
 real cross tools skip only when the exact required executable is absent.
@@ -62,7 +62,7 @@ class ModernElfTargetTests(unittest.TestCase):
     # -- Legacy-asm filter --------------------------------------------------
 
     def test_legacy_asm_filter_excludes_all_replaced(self):
-        """All six modern-replaced asm objects excluded from legacy list."""
+        """All modern-replaced asm objects excluded from legacy list."""
         overrides = self.tool_overrides()
         if overrides is None:
             self.skipTest("modern toolchain not available")
@@ -82,36 +82,20 @@ class ModernElfTargetTests(unittest.TestCase):
         expected = {
             "src/libagbsyscall.o", "asm/arm.o", "asm/arm_call.o",
             "src/rom_header.o", "src/crt0.o", "src/m4a_1.o",
+            "asm/fe6sio.o",
         }
         self.assertTrue(expected.issubset(replaced),
                         f"missing: {expected - replaced}")
         self.assertEqual(legacy & replaced, set(),
                          f"overlap: {legacy & replaced}")
 
-    # -- FE6 SIO preflight --------------------------------------------------
+    # -- FE6 SIO build wiring ------------------------------------------------
 
-    def test_fe6sio_check_fails_without_object(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            result = self.make(
-                "expansion-modern-fe6sio-check",
-                f"MODERN_ELF_FE6SIO={tmp}/missing.o",
-            )
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("pre-existing object missing", result.stdout)
-
-    def test_fe6sio_check_succeeds_with_object(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            Path(tmp, "stub.o").write_bytes(b"\x00")
-            result = self.make(
-                "expansion-modern-fe6sio-check",
-                f"MODERN_ELF_FE6SIO={tmp}/stub.o",
-            )
+    def test_elf_depends_on_mgfembp_target(self):
+        result = self.make("-n", "expansion-modern-elf")
         self.assertEqual(result.returncode, 0, result.stdout)
-
-    def test_fe6sio_check_no_toolchain_invocation(self):
-        result = self.make("-n", "expansion-modern-fe6sio-check")
-        self.assertEqual(result.returncode, 0, result.stdout)
-        self.assertNotIn("gcc", result.stdout.lower())
+        self.assertIn("scripts/modernize/build_mgfembp.py", result.stdout)
+        self.assertIn('-Wa,-I,"build/expansion-modern/debug/aapcs/mgfembp"', result.stdout)
 
     # -- Cohort/all non-interaction -----------------------------------------
 
