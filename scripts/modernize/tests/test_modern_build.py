@@ -624,18 +624,42 @@ class ModernBuildTests(unittest.TestCase):
             asm_object = output / "asm" / "fixture.o"
 
             objects = sorted(output.rglob("*.o"))
-            dependencies = sorted(output.rglob("*.d"))
+            dependencies = sorted(
+                path
+                for path in output.rglob("*.d")
+                if not path.name.endswith(".assets.d") and not path.name.endswith(".headers.d")
+            )
+            asset_dependencies = sorted(output.rglob("*.assets.d"))
+            header_dependencies = sorted(output.rglob("*.headers.d"))
             self.assertEqual(len(objects), 3)
             self.assertEqual(len(dependencies), 3)
+            self.assertEqual(len(asset_dependencies), 1)
+            # MODERN_ALL_C_HEADER_DEPS covers every MODERN_ALL_C_SOURCES
+            # member (here just normal_fixture.c); data/asm sources are
+            # untouched by this second, generated-header bootstrap.
+            self.assertEqual(len(header_dependencies), 1)
             self.assertTrue(data_pre.is_file())
             self.assertTrue(normal_object.is_file())
             self.assertTrue(data_object.is_file())
             self.assertTrue(asm_object.is_file())
 
+            # The generated .headers.d file must use GCC's own "-MM -MG"
+            # scan (not scaninc, which cannot see not-yet-generated
+            # headers) and must still report real, already-existing
+            # headers such as fixture.h correctly.
+            normal_header_dependency_path = output / "src" / "normal_fixture.headers.d"
+            self.assertTrue(normal_header_dependency_path.is_file())
+            normal_header_dependency_text = normal_header_dependency_path.read_text(
+                encoding="utf-8"
+            )
+            self.assertIn("include/fixture.h", normal_header_dependency_text)
+
             # No intermediate/output ever lands in the source tree.
             self.assertFalse(list((root / "src").rglob("*.o")))
             self.assertFalse(list((root / "src").rglob("*.d")))
             self.assertFalse(list((root / "src").rglob("*.pre.c")))
+            self.assertFalse(list((root / "src").rglob("*.assets.d")))
+            self.assertFalse(list((root / "src").rglob("*.headers.d")))
             self.assertFalse(list((root / "asm").glob("*.o")))
             self.assertFalse(list((root / "asm").glob("*.d")))
 
@@ -657,38 +681,51 @@ class ModernBuildTests(unittest.TestCase):
             )
             self.assertEqual(architecture.stdout.count("architecture: armv4t"), 3)
 
-            # The data object's single .d file must carry both GCC's own
-            # object/header rule and the appended scaninc-derived
-            # pre.c-depends-on-source-and-asset rule. The fixture's data
-            # source intentionally embeds two INCBIN assets: real scaninc
-            # prints one path per line, so this proves the appended rule
-            # collapses multi-line scaninc output into one valid Makefile
-            # line rather than corrupting the .d file with a bare
-            # continuation-less newline (which previously broke "make" with
-            # "missing separator" on any subsequent goal, including the fast
-            # cohort, since both .d sets are -included together).
+            # The data object's own .d file only carries GCC's own
+            # object/header rule now (asset tracking moved to the generated
+            # .assets.d bootstrap file below), so it still names the header
+            # but no longer needs to name the INCBIN assets itself.
             data_dependency_path = output / "src" / "data" / "data_fixture.d"
             data_dependency_text = data_dependency_path.read_text(encoding="utf-8")
             self.assertIn("include/fixture.h", data_dependency_text)
-            self.assertIn("assets/fixture_asset.bin", data_dependency_text)
-            self.assertIn("assets/fixture_asset_2.bin", data_dependency_text)
-            self.assertIn("src/data/data_fixture.c", data_dependency_text)
+
+            # The generated $(MODERN_OUTPUT_DIR)/%.assets.d bootstrap file
+            # must carry the pre.c-depends-on-source-and-asset rule instead.
+            # The fixture's data source intentionally embeds two INCBIN
+            # assets: real scaninc prints one path per line, so this proves
+            # the generated rule collapses multi-line scaninc output into
+            # one valid Makefile line rather than corrupting the file with
+            # a bare continuation-less newline (which would break "make"
+            # with "missing separator" on any subsequent goal, since this
+            # file is `include`d directly, not filtered through
+            # $(wildcard ...)).
+            asset_dependency_path = output / "src" / "data" / "data_fixture.assets.d"
+            self.assertTrue(asset_dependency_path.is_file())
+            asset_dependency_text = asset_dependency_path.read_text(encoding="utf-8")
+            self.assertIn("src/data/data_fixture.c", asset_dependency_text)
+            self.assertIn("assets/fixture_asset.bin", asset_dependency_text)
+            self.assertIn("assets/fixture_asset_2.bin", asset_dependency_text)
 
             appended_rule_lines = [
                 line
-                for line in data_dependency_text.splitlines()
+                for line in asset_dependency_text.splitlines()
                 if line.startswith("build/expansion-modern/debug/aapcs/src/data/data_fixture.pre.c:")
             ]
             self.assertEqual(len(appended_rule_lines), 1)
             self.assertIn("assets/fixture_asset.bin", appended_rule_lines[0])
             self.assertIn("assets/fixture_asset_2.bin", appended_rule_lines[0])
 
-            # A corrupted (multi-line, non-continued) appended rule breaks
-            # make's parser outright as soon as the .d is -included; re-
-            # invoking make with the same arguments must keep succeeding now
-            # that the asset list is collapsed onto one line.
+            # A corrupted (multi-line, non-continued) generated rule breaks
+            # make's parser outright as soon as the .assets.d is included;
+            # re-invoking make with the same arguments must keep succeeding
+            # now that the asset list is collapsed onto one line, and must
+            # be a true no-op (nothing touched, nothing rebuilt).
+            before_reparse_normal = normal_object.stat().st_mtime_ns
+            before_reparse_data = data_object.stat().st_mtime_ns
             reparse = self.make(root, *all_arguments, *overrides)
             self.assertEqual(reparse.returncode, 0, reparse.stdout)
+            self.assertEqual(normal_object.stat().st_mtime_ns, before_reparse_normal)
+            self.assertEqual(data_object.stat().st_mtime_ns, before_reparse_data)
 
             # Header touch rebuilds both the normal object and the data
             # object (the .pre.c intermediate still contains the original
@@ -703,8 +740,10 @@ class ModernBuildTests(unittest.TestCase):
             self.assertGreater(data_object.stat().st_mtime_ns, before_data)
 
             # Touching the scanned INCBIN asset (not the .c source) rebuilds
-            # the data object starting with the next make invocation, per
-            # the appended dependency rule.
+            # the data object immediately, since the already-generated
+            # .assets.d file already declares it as a real prerequisite of
+            # .pre.c (no "next invocation" delay needed, unlike the old
+            # append-after-compile mechanism this replaces).
             before_data_after_header = data_object.stat().st_mtime_ns
             time.sleep(1.1)
             (root / "assets" / "fixture_asset.bin").write_text(
@@ -718,6 +757,237 @@ class ModernBuildTests(unittest.TestCase):
             self.assertFalse(list((root / "src").rglob("*.o")))
             self.assertFalse(list((root / "src").rglob("*.d")))
             self.assertFalse(list((root / "src").rglob("*.pre.c")))
+            self.assertFalse(list((root / "src").rglob("*.assets.d")))
+            self.assertFalse(list((root / "src").rglob("*.headers.d")))
+
+    def test_cohort_target_never_scans_data_sources_for_assets(self):
+        # expansion-modern-cohort must stay untouched by (and not pay the
+        # cost of) the data-source asset dependency bootstrap, nor the
+        # generated-header bootstrap for normal C sources: its source list
+        # is fixed and disjoint from MODERN_ALL_DATA_C_SOURCES/
+        # MODERN_ALL_C_SOURCES, and the goal filter guarding
+        # `include $(MODERN_ALL_DATA_ASSET_DEPS)`/
+        # `include $(MODERN_ALL_C_HEADER_DEPS)` must never fire for
+        # expansion-modern-cohort/-toolchain-check/-clean.
+        overrides = self.tool_overrides()
+        if overrides is None:
+            self.skipTest("arm-none-eabi GCC and objdump are not available")
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = self.make_all_fixture(Path(temporary))
+            # Deliberately do not provide a working MODERN_SCANINC: if the
+            # cohort goal ever tried to generate a .assets.d file it would
+            # fail loudly (missing executable), giving a clear, fast
+            # failure signal if isolation ever regresses.
+            result = self.make(
+                root,
+                "expansion-modern-cohort",
+                "MODERN_CONFIG=debug",
+                "MODERN_ABI=aapcs",
+                "MODERN_COHORT_SOURCES=src/normal_fixture.c",
+                "MODERN_COHORT_ASM_SOURCES=",
+                "MODERN_SCANINC=tools/scaninc/does-not-exist",
+                *overrides,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout)
+            self.assertFalse(
+                list((root / "build").rglob("*.assets.d")),
+                "expansion-modern-cohort must never generate .assets.d files",
+            )
+            self.assertFalse(
+                list((root / "build").rglob("*.headers.d")),
+                "expansion-modern-cohort must never generate .headers.d files",
+            )
+
+    def test_missing_generated_asset_is_built_before_preprocessing(self):
+        # The core first-invocation bug this milestone fixes: a graphics/
+        # binary asset that does not exist yet, but is derivable via an
+        # existing top-level generation rule, must be built automatically
+        # before preproc ever runs -- on the very first invocation, with no
+        # prior build required.
+        overrides = self.tool_overrides()
+        if overrides is None:
+            self.skipTest("arm-none-eabi GCC and objdump are not available")
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = self.make_all_fixture(Path(temporary))
+            # Replace the pre-created asset with a "source" file plus a
+            # top-level generation rule, standing in for real asset
+            # pipelines like %.4bpp: %.png without needing gbagfx/PNG
+            # decoding in this fixture.
+            (root / "assets" / "fixture_asset.bin").unlink()
+            (root / "assets" / "fixture_asset.src").write_text(
+                "generated-from-source", encoding="utf-8"
+            )
+            makefile_path = root / "Makefile"
+            makefile_path.write_text(
+                makefile_path.read_text(encoding="utf-8")
+                + "assets/%.bin: assets/%.src\n"
+                + "\tcp $< $@\n",
+                encoding="utf-8",
+            )
+
+            all_arguments = (
+                "expansion-modern-all",
+                "MODERN_CONFIG=debug",
+                "MODERN_ABI=aapcs",
+                "MODERN_ALL_C_SOURCES=src/normal_fixture.c",
+                "MODERN_ALL_DATA_C_SOURCES=src/data/data_fixture.c",
+                "MODERN_ALL_ASM_SOURCES=asm/fixture.s",
+                "MODERN_PREPROC=tools/preproc/preproc",
+                "MODERN_SCANINC=tools/scaninc/scaninc",
+            )
+            result = self.make(root, *all_arguments, *overrides)
+            self.assertEqual(result.returncode, 0, result.stdout)
+            self.assertIn("Built 3 modern relocatable objects", result.stdout)
+
+            # The missing asset must now exist, generated by the top-level
+            # rule, and the data object must have been produced from it.
+            self.assertTrue((root / "assets" / "fixture_asset.bin").is_file())
+            self.assertEqual(
+                (root / "assets" / "fixture_asset.bin").read_text(encoding="utf-8"),
+                "generated-from-source",
+            )
+            data_object = (
+                root
+                / "build"
+                / "expansion-modern"
+                / "debug"
+                / "aapcs"
+                / "src"
+                / "data"
+                / "data_fixture.o"
+            )
+            self.assertTrue(data_object.is_file())
+
+    def test_source_less_asset_fails_actionably(self):
+        # A data source whose INCBIN references an asset with no matching
+        # file and no rule to build one must fail with GNU Make's own
+        # actionable "No rule to make target" error naming the missing
+        # asset, not a confusing preproc "cannot open incbin file" error or
+        # a silent/successful no-op.
+        overrides = self.tool_overrides()
+        if overrides is None:
+            self.skipTest("arm-none-eabi GCC and objdump are not available")
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = self.make_all_fixture(Path(temporary))
+            (root / "src" / "data" / "data_fixture.c").write_text(
+                '#include "global.h"\n'
+                'FIXTURE_INCBIN("assets/does_not_exist_anywhere.bin")\n',
+                encoding="utf-8",
+            )
+
+            all_arguments = (
+                "expansion-modern-all",
+                "MODERN_CONFIG=debug",
+                "MODERN_ABI=aapcs",
+                "MODERN_ALL_C_SOURCES=src/normal_fixture.c",
+                "MODERN_ALL_DATA_C_SOURCES=src/data/data_fixture.c",
+                "MODERN_ALL_ASM_SOURCES=asm/fixture.s",
+                "MODERN_PREPROC=tools/preproc/preproc",
+                "MODERN_SCANINC=tools/scaninc/scaninc",
+            )
+            result = self.make(root, *all_arguments, *overrides)
+            self.assertNotEqual(result.returncode, 0, result.stdout)
+            self.assertIn("No rule to make target", result.stdout)
+            self.assertIn("does_not_exist_anywhere.bin", result.stdout)
+
+    def test_missing_generated_header_is_built_before_normal_compile(self):
+        # The chapterdata.c/chapter_settings.h class of bug: an ordinary
+        # (non-data) MODERN_ALL_C_SOURCES member #includes a *generated*
+        # header (not an INCBIN asset) that does not exist yet, but is
+        # derivable via an existing top-level generation rule (mirroring
+        # json_data_rules.mk's chapter_settings.h rule). scaninc cannot
+        # discover this at all (it silently drops unresolvable #includes),
+        # so this must go through GCC's own "-MM -MG" MODERN_ALL_C_HEADER_DEPS
+        # bootstrap instead, and the header must be built automatically
+        # before the normal compile -- on the very first invocation.
+        overrides = self.tool_overrides()
+        if overrides is None:
+            self.skipTest("arm-none-eabi GCC and objdump are not available")
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = self.make_all_fixture(Path(temporary))
+            (root / "src" / "generated_header_fixture.c").write_text(
+                '#include "global.h"\n'
+                '#include "src/generated_fixture.h"\n'
+                "int modern_all_generated_header_fixture(void) "
+                "{ return GENERATED_FIXTURE_VALUE; }\n",
+                encoding="utf-8",
+            )
+            (root / "src" / "generated_fixture.src").write_text(
+                "#define GENERATED_FIXTURE_VALUE 7\n", encoding="utf-8"
+            )
+            makefile_path = root / "Makefile"
+            makefile_path.write_text(
+                makefile_path.read_text(encoding="utf-8")
+                + "src/%.h: src/%.src\n"
+                + "\tcp $< $@\n",
+                encoding="utf-8",
+            )
+
+            all_arguments = (
+                "expansion-modern-all",
+                "MODERN_CONFIG=debug",
+                "MODERN_ABI=aapcs",
+                "MODERN_ALL_C_SOURCES=src/normal_fixture.c src/generated_header_fixture.c",
+                "MODERN_ALL_DATA_C_SOURCES=src/data/data_fixture.c",
+                "MODERN_ALL_ASM_SOURCES=asm/fixture.s",
+                "MODERN_PREPROC=tools/preproc/preproc",
+                "MODERN_SCANINC=tools/scaninc/scaninc",
+            )
+            result = self.make(root, *all_arguments, *overrides)
+            self.assertEqual(result.returncode, 0, result.stdout)
+            self.assertIn("Built 4 modern relocatable objects", result.stdout)
+
+            # The missing header must now exist, generated by the top-level
+            # rule, and the depending object must have been produced from
+            # it -- no prior build required.
+            self.assertTrue((root / "src" / "generated_fixture.h").is_file())
+            generated_object = (
+                root
+                / "build"
+                / "expansion-modern"
+                / "debug"
+                / "aapcs"
+                / "src"
+                / "generated_header_fixture.o"
+            )
+            self.assertTrue(generated_object.is_file())
+
+    def test_source_less_header_fails_actionably(self):
+        # A normal C source that #includes a header with no matching file
+        # and no rule to build one must fail with GNU Make's own actionable
+        # "No rule to make target" error naming the missing header, not a
+        # confusing compiler "fatal error: ... No such file or directory"
+        # or a silent/successful no-op.
+        overrides = self.tool_overrides()
+        if overrides is None:
+            self.skipTest("arm-none-eabi GCC and objdump are not available")
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = self.make_all_fixture(Path(temporary))
+            (root / "src" / "generated_header_fixture.c").write_text(
+                '#include "global.h"\n'
+                '#include "does_not_exist_anywhere.h"\n',
+                encoding="utf-8",
+            )
+
+            all_arguments = (
+                "expansion-modern-all",
+                "MODERN_CONFIG=debug",
+                "MODERN_ABI=aapcs",
+                "MODERN_ALL_C_SOURCES=src/normal_fixture.c src/generated_header_fixture.c",
+                "MODERN_ALL_DATA_C_SOURCES=src/data/data_fixture.c",
+                "MODERN_ALL_ASM_SOURCES=asm/fixture.s",
+                "MODERN_PREPROC=tools/preproc/preproc",
+                "MODERN_SCANINC=tools/scaninc/scaninc",
+            )
+            result = self.make(root, *all_arguments, *overrides)
+            self.assertNotEqual(result.returncode, 0, result.stdout)
+            self.assertIn("No rule to make target", result.stdout)
+            self.assertIn("does_not_exist_anywhere.h", result.stdout)
 
     def test_spaced_toolchain_binutils_newlib_and_direct_cc_paths(self):
         overrides = self.tool_overrides()
