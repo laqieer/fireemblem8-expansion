@@ -25,8 +25,15 @@ Projects powered by this decomp:
 If you just want to get the repo building quickly (Ubuntu/WSL, Arch Linux, or macOS/Homebrew), run:
 
 ```
-./scripts/quickstart.sh [--rom /path/to/baserom.gba] [--refresh-agbcc]
+./scripts/quickstart.sh [--rom /path/to/baserom.gba] [--legacy] [--refresh-agbcc]
 ```
+
+By default this installs the modern `arm-none-eabi` GCC toolchain and the
+libmGBA playtest backend (no agbcc of any kind), then builds and
+boot-verifies the **supported modern AAPCS release ROM**
+(`build/expansion-modern/release/aapcs/fireemblem8.gba`). Pass `--legacy` to
+build the archival agbcc-based `fireemblem8.gba` instead (used for
+decomp-matching work; see [`CONTRIBUTING.md`](CONTRIBUTING.md)).
 
 The build does **not** require the original ROM. A `baserom.gba` is only needed
 if you want to use `asmdiff.sh` for disassembly comparison; pass it with `--rom`
@@ -36,10 +43,15 @@ See [`docs/quickstart.md`](docs/quickstart.md) for full details, flags, and trou
 
 ### Building
 
-To build the ROM:
+To build and boot-verify the supported modern release ROM:
 ```bash
-make fireemblem8.gba -j$(nproc)
+make expansion-modern-toolchain-check
+make expansion-modern-boot-check MODERN_CONFIG=release MODERN_ABI=aapcs -j$(nproc)
 ```
+Output lands at `build/expansion-modern/release/aapcs/fireemblem8.gba`. See
+[`docs/quickstart.md`](docs/quickstart.md) for debug builds, the compile-only
+object cohort, and other `expansion-modern-*` targets.
+
 To clean all build artifacts:
 ```bash
 make clean
@@ -49,7 +61,17 @@ To clean all build artifacts **except** the extremely slow battle animation comp
 make clean_fast
 ```
 
-### Setting up the repository manually
+### Archival/decomp agbcc build
+
+The original agbcc-based `fireemblem8.gba` target remains available for
+decomp-matching work (see [`CONTRIBUTING.md`](CONTRIBUTING.md)) and is not the
+default/supported quickstart path. `./scripts/quickstart.sh --legacy` sets it
+up automatically; to build it manually:
+```bash
+make fireemblem8.gba -j$(nproc)
+```
+
+### Setting up the repository manually (archival agbcc build)
 
 1. Install [devkitPro](https://devkitpro.org/wiki/Getting_Started) or [GNU Arm Embedded Toolchain](https://developer.arm.com/tools-and-software/open-source-software/developer-tools/gnu-toolchain/gnu-rm).
 ```

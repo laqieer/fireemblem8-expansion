@@ -3,13 +3,26 @@ set -euo pipefail
 
 usage() {
   cat <<'EOF'
-Usage: ./scripts/quickstart.sh [--rom /path/to/baserom.gba] [--refresh-agbcc]
+Usage: ./scripts/quickstart.sh [--rom /path/to/baserom.gba] [--legacy] [--refresh-agbcc]
 
 Options:
   --rom PATH        Copy the ROM from PATH to baserom.gba if it is missing.
                     Optional: baserom.gba is NOT required to build. It is only
                     used by asmdiff.sh for disassembly comparison.
-  --refresh-agbcc   Force re-clone/rebuild of agbcc even if one exists in tools/agbcc.
+  --legacy          Build the archival agbcc-based fireemblem8.gba instead of
+                    the supported modern release ROM. Installs/reuses main
+                    agbcc (and, transitively, mgfembp's own agbcc variant for
+                    the FE6 SIO sub-build). Intended for decomp-matching work
+                    (see CONTRIBUTING.md); not required for the default path.
+  --refresh-agbcc   Force re-clone/rebuild of agbcc even if one exists in
+                    tools/agbcc. Implies --legacy, since agbcc is only used
+                    by the archival legacy build.
+
+Default (no --legacy): installs/probes the modern arm-none-eabi GCC
+toolchain and the libmGBA playtest backend, then builds and boot-verifies
+the supported modern AAPCS release ROM via `make expansion-modern-boot-check
+MODERN_CONFIG=release MODERN_ABI=aapcs`. No agbcc of any kind is installed
+or invoked on this path.
 
 You can also set FIREEMBLEM8U_ROM to point to the ROM.
 EOF
@@ -22,6 +35,7 @@ AGBCC_INSTALL_DIR="${PROJECT_DIR}/tools/agbcc"
 AGBCC_BIN="${AGBCC_INSTALL_DIR}/bin/agbcc"
 BASEROM_PATH="${PROJECT_DIR}/baserom.gba"
 FORCE_AGBCC_UPDATE=0
+LEGACY_MODE=0
 ROM_SOURCE="${FIREEMBLEM8U_ROM:-}"
 
 parse_args() {
@@ -39,6 +53,10 @@ parse_args() {
         ROM_SOURCE="${1#*=}"
         shift
         ;;
+      --legacy)
+        LEGACY_MODE=1
+        shift
+        ;;
       --refresh-agbcc)
         FORCE_AGBCC_UPDATE=1
         shift
@@ -54,6 +72,11 @@ parse_args() {
         ;;
     esac
   done
+
+  if (( FORCE_AGBCC_UPDATE == 1 && LEGACY_MODE == 0 )); then
+    echo "[=] --refresh-agbcc implies --legacy (agbcc is only used by the archival legacy build)"
+    LEGACY_MODE=1
+  fi
 }
 
 # baserom.gba is OPTIONAL. It is only used by asmdiff.sh for disassembly
@@ -136,6 +159,13 @@ install_deps() {
     need_toolchain=1
   fi
 
+  # The libmGBA playtest backend is only needed by the default modern
+  # boot-check path; --legacy builds fireemblem8.gba without it.
+  local need_playtest_backend=0
+  if (( LEGACY_MODE == 0 )); then
+    need_playtest_backend=1
+  fi
+
   case "${pkg_mgr}" in
     apt)
       local sudo_cmd=""
@@ -151,6 +181,9 @@ install_deps() {
       echo "[+] Updating apt package index..."
       ${sudo_cmd} apt-get update -y >/dev/null
       local packages=(pkg-config libpng-dev python3-pip python3-numpy python3-pil)
+      if (( need_playtest_backend )); then
+        packages=("${packages[@]}" libmgba-dev)
+      fi
       if (( need_toolchain )); then
         packages=(binutils-arm-none-eabi gcc-arm-none-eabi libnewlib-arm-none-eabi "${packages[@]}")
       fi
@@ -171,6 +204,9 @@ install_deps() {
         fi
       fi
       local packages=(pkgconf libpng python-pip python-numpy python-pillow)
+      if (( need_playtest_backend )); then
+        packages=("${packages[@]}" mgba)
+      fi
       if (( need_toolchain )); then
         packages=(arm-none-eabi-binutils arm-none-eabi-gcc arm-none-eabi-newlib "${packages[@]}")
       fi
@@ -196,6 +232,14 @@ install_deps() {
       echo "[+] Installing packages via Homebrew: ${packages[*]}"
       brew update >/dev/null
       brew install "${packages[@]}"
+      if (( need_playtest_backend )); then
+        if brew list --formula mgba >/dev/null 2>&1; then
+          echo "[=] Homebrew mgba (libmGBA) already installed"
+        else
+          echo "[+] Installing mgba (libmGBA playtest backend) via Homebrew"
+          brew install mgba
+        fi
+      fi
       echo "[+] Ensuring Python modules (numpy, pillow) via pip3"
       install_python_modules
       ;;
@@ -242,14 +286,23 @@ build_project() {
   local jobs
   jobs="$(job_count)"
   pushd "${PROJECT_DIR}" >/dev/null
-    echo "[+] Fetching submodules (mgfembp FE6 SIO payload sub-build)"
+    echo "[+] Fetching submodules (mgfembp is the FE6 SIO payload source in both build paths)"
     git submodule update --init --recursive
     echo "[+] Building project-specific tools"
     ./build_tools.sh
-    echo "[+] Building fireemblem8.gba (this can take several minutes)"
-    echo "    (first build also fetches/builds the mgfembp agbcc variant for the FE6 SIO payload)"
-    make -j"${jobs}"
-    echo "[✓] Build complete: ${PROJECT_DIR}/fireemblem8.gba"
+
+    if (( LEGACY_MODE == 1 )); then
+      echo "[+] Building archival fireemblem8.gba via agbcc (this can take several minutes)"
+      echo "    (first build also fetches/builds mgfembp's own agbcc variant for its FE6 SIO sub-build)"
+      make -j"${jobs}"
+      echo "[✓] Legacy build complete: ${PROJECT_DIR}/fireemblem8.gba"
+    else
+      echo "[+] Building and boot-verifying the supported modern AAPCS release ROM"
+      echo "    (make expansion-modern-boot-check MODERN_CONFIG=release MODERN_ABI=aapcs; this can take several minutes)"
+      make expansion-modern-toolchain-check
+      make expansion-modern-boot-check MODERN_CONFIG=release MODERN_ABI=aapcs -j"${jobs}"
+      echo "[✓] Modern build complete: ${PROJECT_DIR}/build/expansion-modern/release/aapcs/fireemblem8.gba"
+    fi
   popd >/dev/null
 }
 
@@ -264,7 +317,9 @@ main() {
 
   ensure_baserom
   install_deps
-  prepare_agbcc
+  if (( LEGACY_MODE == 1 )); then
+    prepare_agbcc
+  fi
   build_project
 }
 
