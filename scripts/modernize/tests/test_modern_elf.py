@@ -209,6 +209,41 @@ class ModernElfTargetTests(unittest.TestCase):
         )
         self.assertNotIn("requires MODERN_ABI=aapcs", result.stdout)
 
+    # -- FE6 SIO dependency isolation ---------------------------------------
+
+    def test_modern_fe6sio_d_has_no_root_payload(self):
+        """Generated .d must not reference root fe6sio_payload.bin.lz."""
+        d_path = (
+            ROOT / "build" / "expansion-modern" / "debug" / "aapcs"
+            / "asm" / "fe6sio.d"
+        )
+        if not d_path.is_file():
+            self.skipTest("modern fe6sio.d not yet generated")
+        content = d_path.read_text(encoding="utf-8")
+        self.assertNotIn(
+            "fe6sio_payload.bin.lz",
+            content,
+            "root payload token must be removed from modern .d",
+        )
+        self.assertIn("gba.inc", content)
+        self.assertIn("fe6_rom_header.inc", content)
+
+    def test_dry_run_no_legacy_mgfembp(self):
+        """Dry-run must never reference legacy mgfembp Makefile."""
+        with tempfile.TemporaryDirectory() as tmp:
+            result = self.make(
+                "-n", "expansion-modern-elf",
+                f"MODERN_BUILD_ROOT={Path(tmp) / 'iso'}",
+            )
+        self.assertEqual(result.returncode, 0, result.stdout[-300:])
+        self.assertNotIn("mgfembp/tools/agbcc", result.stdout)
+        lower = result.stdout.lower()
+        self.assertNotIn(
+            "cd mgfembp && bash",
+            lower,
+            "legacy mgfembp install must not appear",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
