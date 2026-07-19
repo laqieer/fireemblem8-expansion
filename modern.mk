@@ -162,6 +162,26 @@ MODERN_ALL_ASM_SOURCES ?= \
 MODERN_PREPROC ?= tools/preproc/preproc$(EXE)
 MODERN_SCANINC ?= tools/scaninc/scaninc$(EXE)
 
+# Explicit host build rule for the default tools/scaninc/scaninc$(EXE),
+# parallel to the top-level Makefile's own $(PREPROC) rule. Without this,
+# the .assets.d rule below's own "$(MODERN_SCANINC)" prerequisite would be
+# reachable, when missing, only through GNU Make's built-in implicit rule
+# chain (%: %.o, %.o: %.cpp): that chain compiles just scaninc.cpp (missing
+# c_file.cpp/asm_file.cpp/source_file.cpp) with default host flags plus any
+# CPPFLAGS already exported for the legacy agbcc pipeline (e.g. -nostdinc),
+# producing a broken link or a "cstdio: No such file or directory" failure
+# instead of a correct scaninc binary. This exact-path explicit rule always
+# takes precedence over that implicit chain and builds scaninc the correct
+# way, using its own Makefile's host C++ flags. An overridden MODERN_SCANINC
+# pointing elsewhere never matches this literal target path, so it is
+# unaffected. The prerequisite list is $(wildcard)-based (evaluated once at
+# parse time) rather than literal filenames, so a prebuilt/stubbed scaninc
+# binary sitting next to no (or different) sources -- e.g. test fixtures --
+# is still treated as already up to date instead of failing with "No rule
+# to make target tools/scaninc/scaninc.cpp".
+tools/scaninc/scaninc$(EXE): $(wildcard tools/scaninc/*.cpp tools/scaninc/*.h tools/scaninc/Makefile)
+	$(MAKE) -C tools/scaninc
+
 MODERN_ALL_C_OBJECTS := $(addprefix $(MODERN_OUTPUT_DIR)/,$(MODERN_ALL_C_SOURCES:.c=.o))
 MODERN_ALL_DATA_PRE := $(addprefix $(MODERN_OUTPUT_DIR)/,$(MODERN_ALL_DATA_C_SOURCES:.c=.pre.c))
 MODERN_ALL_DATA_OBJECTS := $(addprefix $(MODERN_OUTPUT_DIR)/,$(MODERN_ALL_DATA_C_SOURCES:.c=.o))
@@ -370,6 +390,20 @@ endif
 # used here instead of scaninc. Same `include`d-for-real-remake-restart
 # wiring, gated by the same goal set, and equally exempt from NODEP for
 # the same first-invocation reason.
+#
+# GNU Make remakes stale/missing `include`d makefiles (this rule's own
+# targets) before it ever evaluates expansion-modern-all's own
+# "expansion-modern-toolchain-check" prerequisite -- that check runs far
+# too late to help here. Without this order-only prerequisite, a missing
+# or misconfigured MODERN_CC would instead surface as a raw
+# "$(MODERN_CC): not found"-style shell error from this recipe. Adding
+# expansion-modern-toolchain-check as an order-only prerequisite makes
+# its own actionable diagnostic run first every time any .headers.d needs
+# remaking; being .PHONY, it always runs but only once per invocation (no
+# remake-restart loop, since a successfully generated .headers.d is no
+# longer stale on the following pass).
+$(MODERN_ALL_C_HEADER_DEPS): | expansion-modern-toolchain-check
+
 $(MODERN_ALL_C_HEADER_DEPS): $(MODERN_OUTPUT_DIR)/%.headers.d: %.c
 	@mkdir -p "$(@D)"
 	@"$(MODERN_CC)" $(MODERN_CFLAGS) -MM -MG -MT "$(MODERN_OUTPUT_DIR)/$*.o" "$<" > "$@.tmp" || { \

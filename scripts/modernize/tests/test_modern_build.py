@@ -989,6 +989,128 @@ class ModernBuildTests(unittest.TestCase):
             self.assertIn("No rule to make target", result.stdout)
             self.assertIn("does_not_exist_anywhere.h", result.stdout)
 
+    def test_missing_compiler_is_actionable_before_header_dep_generation(self):
+        # GNU Make remakes stale/missing `include`d makefiles -- here, the
+        # generated .headers.d files -- before expansion-modern-all's own
+        # "expansion-modern-toolchain-check" prerequisite is ever evaluated
+        # as part of running that goal's recipe. Without an order-only
+        # dependency wiring toolchain-check into .headers.d generation, a
+        # missing/misconfigured MODERN_CC would instead surface as a raw
+        # "$(MODERN_CC): not found"-style shell error from the "-MM -MG"
+        # pre-scan recipe. This must produce the existing, actionable
+        # expansion-modern-toolchain-check diagnostic instead, on the very
+        # first invocation, with no .headers.d files pre-existing.
+        with tempfile.TemporaryDirectory() as temporary:
+            temporary_path = Path(temporary)
+            root = self.make_all_fixture(temporary_path)
+
+            all_arguments = (
+                "expansion-modern-all",
+                "MODERN_CONFIG=debug",
+                "MODERN_ABI=aapcs",
+                "MODERN_ALL_C_SOURCES=src/normal_fixture.c",
+                "MODERN_ALL_DATA_C_SOURCES=src/data/data_fixture.c",
+                "MODERN_ALL_ASM_SOURCES=asm/fixture.s",
+                "MODERN_PREPROC=tools/preproc/preproc",
+                "MODERN_SCANINC=tools/scaninc/scaninc",
+                f"MODERN_CC={temporary_path / 'missing-gcc'}",
+            )
+            result = self.make(root, *all_arguments)
+
+            header_dependency_path = (
+                root
+                / "build"
+                / "expansion-modern"
+                / "debug"
+                / "aapcs"
+                / "src"
+                / "normal_fixture.headers.d"
+            )
+
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertIn("modern compiler not found", result.stdout)
+        self.assertIn("MODERN_TOOLCHAIN_ROOT/MODERN_CC", result.stdout)
+        # The canonical diagnostic must be what is reported, not the raw
+        # shell/pre-scan failure this bug used to surface instead.
+        self.assertNotIn("failed to pre-scan", result.stdout)
+        self.assertNotIn("/bin/sh:", result.stdout)
+        self.assertFalse(header_dependency_path.is_file())
+
+    def test_default_scaninc_builds_via_explicit_host_rule(self):
+        # A missing default tools/scaninc/scaninc$(EXE) must be built by
+        # modern.mk's own explicit host rule ("$(MAKE) -C tools/scaninc",
+        # using that Makefile's real host C++ flags and all four real
+        # source files), not silently reached through GNU Make's built-in
+        # implicit "%: %.o"/"%.o: %.cpp" rule chain -- which would compile
+        # only scaninc.cpp (missing c_file.cpp/asm_file.cpp/source_file.cpp)
+        # with default host flags plus any legacy CPPFLAGS already exported
+        # for the agbcc preprocessing pipeline (e.g. -nostdinc), producing
+        # either a broken link or a "cstdio: No such file or directory"
+        # failure instead of a correct scaninc binary.
+        overrides = self.tool_overrides()
+        if overrides is None:
+            self.skipTest("arm-none-eabi GCC and objdump are not available")
+        if shutil.which("g++") is None:
+            self.skipTest("a host g++ is not available to build scaninc")
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = self.make_all_fixture(Path(temporary))
+
+            # Swap the fixture's fake python-stub scaninc for the real
+            # tool sources (no prebuilt binary), so expansion-modern-all
+            # must build the real scaninc via modern.mk's explicit rule.
+            # The fixture's data source keeps using its own fake
+            # FIXTURE_INCBIN grammar (matched by the fixture's fake
+            # preproc, not the real scaninc's INCBIN_U8/etc. identifiers):
+            # this test cares about scaninc being *built correctly and run
+            # successfully*, not about it recognizing this fixture's
+            # placeholder macro.
+            scaninc_dir = root / "tools" / "scaninc"
+            shutil.rmtree(scaninc_dir)
+            shutil.copytree(
+                ROOT / "tools" / "scaninc",
+                scaninc_dir,
+                ignore=shutil.ignore_patterns("scaninc", "scaninc.exe"),
+            )
+            self.assertFalse((scaninc_dir / "scaninc").exists())
+
+            all_arguments = (
+                "expansion-modern-all",
+                "MODERN_CONFIG=debug",
+                "MODERN_ABI=aapcs",
+                "MODERN_ALL_C_SOURCES=src/normal_fixture.c",
+                "MODERN_ALL_DATA_C_SOURCES=src/data/data_fixture.c",
+                "MODERN_ALL_ASM_SOURCES=asm/fixture.s",
+                "MODERN_PREPROC=tools/preproc/preproc",
+                # MODERN_SCANINC deliberately left at its default so the
+                # target name matches modern.mk's explicit build rule.
+            )
+            result = self.make(root, *all_arguments, *overrides)
+            self.assertEqual(result.returncode, 0, result.stdout)
+            self.assertIn("make -C tools/scaninc", result.stdout)
+            self.assertNotIn("cstdio", result.stdout)
+            self.assertNotIn("nostdinc", result.stdout)
+
+            built_scaninc = scaninc_dir / "scaninc"
+            self.assertTrue(built_scaninc.is_file())
+            self.assertTrue(os.access(built_scaninc, os.X_OK))
+
+            # A valid .assets.d proves the freshly built scaninc actually
+            # ran successfully (not just linked), and the full cohort
+            # still reaches a successful build.
+            asset_dependency_path = (
+                root
+                / "build"
+                / "expansion-modern"
+                / "debug"
+                / "aapcs"
+                / "src"
+                / "data"
+                / "data_fixture.assets.d"
+            )
+            self.assertTrue(asset_dependency_path.is_file())
+            self.assertIn("Built 3 modern relocatable objects", result.stdout)
+
     def test_spaced_toolchain_binutils_newlib_and_direct_cc_paths(self):
         overrides = self.tool_overrides()
         if overrides is None:
