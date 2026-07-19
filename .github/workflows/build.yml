@@ -31,11 +31,13 @@ jobs:
     - name: Build tools
       run: ./build_tools.sh
 
-    # Compile-only modern GCC objects/ELF are not built or gated here (see
-    # modern.mk / expansion-modern-* targets); only the legacy ROM build and
-    # the modern debug/release boot-check gate run in CI. Per repository
-    # policy, CI ends after the target ROM build -- no decomp compare,
-    # progress, report, symbol, or Pages stages follow this step.
+    # expansion-modern-boot-check (modern.mk) transitively builds and
+    # verifies the full modern object/ELF/ROM chain (expansion-modern-all ->
+    # expansion-modern-elf -> expansion-modern-rom) before running the
+    # behavior-policy boot fingerprint; it is not merely a compile-only
+    # gate. Per repository policy, CI still ends after this target-ROM
+    # step -- no decomp compare, progress, report, symbol, or Pages stages
+    # follow it.
     - name: Build and verify target ROMs
       run: |
         make fireemblem8.gba -j2
