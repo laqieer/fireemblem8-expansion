@@ -361,6 +361,78 @@ $(MODERN_ALL_DATA_OBJECTS): $(MODERN_OUTPUT_DIR)/%.o: $(MODERN_OUTPUT_DIR)/%.pre
 # Make's own actionable "No rule to make target '<asset>', needed by
 # '<pre.c>'" error, naming both the missing asset and the .pre.c that
 # needed it.
+#
+# Old-style FETSATOOL rules in graphics_file_rules.mk produce a raw
+# "<name>.feimgN.bin"/"<name>.fetsaN.bin" (N=1..4) pair from a single
+# recipe invocation, using a multi-target explicit rule (not GNU Make 4.3+
+# grouped "&:" targets). GNU Make treats each target of such a rule as an
+# independent goal with its own copy of the recipe: if two different data
+# sources' .assets.d files each list only one sibling of the pair (one
+# lists the feimg, another the fetsa) as an independent prerequisite
+# elsewhere in the graph, Make can decide both need building and invoke
+# the same recipe twice in one run, instead of once. Since neither
+# graphics_file_rules.mk nor GNU Make's grouped-target syntax may be
+# touched here, every raw/.lz "fetsaN.bin" asset scaninc reports below is
+# also given an explicit "<raw fetsaN.bin>: <sibling raw feimgN.bin>"
+# ordering edge (deduplicated and sorted for determinism), so a sequential
+# (-j1) build always resolves the feimg half of the pair first.
+#
+# That ordering edge alone is *not* sufficient once a parallel (-j>1)
+# build is in play, confirmed with an isolated GNU Make 4.3 reproduction:
+# when both siblings are still missing, Make's scheduler evaluates the
+# fetsa target's own staleness (file absent) and can dispatch its copy of
+# the shared recipe as soon as the feimg build job is merely "already
+# being made" (pruned from re-traversal), not once it has actually
+# finished writing output -- so both copies of the recipe can still run
+# concurrently even with the edge present. Since the shared recipe itself
+# (in graphics_file_rules.mk) can't be touched, FETSATOOL is redefined
+# below -- only for modern goals, so the legacy agbcc build is untouched
+# -- as a small idempotent wrapper: it takes a portable mkdir-based
+# advisory lock keyed by the pair's own feimg output path (with a stale
+# lock timeout in case a prior invocation was killed), so whichever
+# invocation loses the race blocks until the winner's real generation
+# finishes, then finds both outputs already newer than the source and
+# skips re-running the real tool. The ordering edge above still forces
+# sequential builds to resolve deterministically without ever taking the
+# lock, and remains useful documentation of the intended feimg-first
+# generation order; the wrapper is what actually makes -j builds safe.
+#
+# NOTE: a clean build already logs "make: Circular X <- X dependency
+# dropped" lines for some of these old-style multi-target rules' outputs.
+# This is pre-existing GNU Make behavior from graphics_file_rules.mk's/
+# Makefile's own multi-target recipes (confirmed unchanged in count and
+# content on baseline commit 9e938633, i.e. with neither the ordering
+# edge above nor the FETSATOOL wrapper present) and is not introduced or
+# affected by either mechanism here; Make drops the spurious self-edge
+# and proceeds, so it does not affect build correctness.
+ifneq (,$(filter $(MODERN_GOALS),$(MAKECMDGOALS)))
+  MODERN_FETSATOOL_REAL := $(FETSATOOL)
+  # $0 is "_"; $1 is the real tool path; $2.. are the tool's own args
+  # (src, feimg-out, fetsa-out, then any recipe-specific extra flags).
+  MODERN_FETSATOOL_LOCK := sh -c '\
+		real="$$1"; shift; \
+		src="$$1"; out1="$$2"; out2="$$3"; \
+		lockdir="$$out1.fetsalock.d"; \
+		tries=0; \
+		while ! mkdir "$$lockdir" 2>/dev/null; do \
+			tries=$$((tries + 1)); \
+			if [ "$$tries" -gt 5 ]; then \
+				stale=$$(find "$$lockdir" -maxdepth 0 -mmin +2 2>/dev/null); \
+				if [ -n "$$stale" ]; then rmdir "$$lockdir" 2>/dev/null; fi; \
+			fi; \
+			sleep 1; \
+		done; \
+		if [ -e "$$out1" ] && [ -e "$$out2" ] && [ "$$out1" -nt "$$src" ] && [ "$$out2" -nt "$$src" ]; then \
+			rmdir "$$lockdir" 2>/dev/null; \
+			exit 0; \
+		fi; \
+		"$$real" "$$@"; \
+		status=$$?; \
+		rmdir "$$lockdir" 2>/dev/null; \
+		exit $$status \
+	' _
+  FETSATOOL = $(MODERN_FETSATOOL_LOCK) $(MODERN_FETSATOOL_REAL)
+endif
 $(MODERN_ALL_DATA_ASSET_DEPS): $(MODERN_OUTPUT_DIR)/%.assets.d: %.c $(MODERN_SCANINC)
 	@mkdir -p "$(@D)"
 	@if [ ! -x "$(MODERN_SCANINC)" ]; then \
@@ -371,6 +443,21 @@ $(MODERN_ALL_DATA_ASSET_DEPS): $(MODERN_OUTPUT_DIR)/%.assets.d: %.c $(MODERN_SCA
 		printf '%s\n' "error: scaninc failed while scanning $< for INCBIN assets" >&2; \
 		exit 1; \
 	}; \
+	fetsa_pairs=$$(printf '%s\n' "$$assets" | while IFS= read -r asset; do \
+	    [ -n "$$asset" ] || continue; \
+	    case "$$asset" in \
+	      *.fetsa[1-9]*.bin|*.fetsa[1-9]*.bin.lz) ;; \
+	      *) continue ;; \
+	    esac; \
+	    match=$$(printf '%s\n' "$$asset" | sed -n -E 's/^(.*)\.fetsa([1-4])\.bin(\.lz)?$$/\1|\2/p'); \
+	    if [ -z "$$match" ]; then \
+	      printf '%s\n' "error: malformed FETSA asset pair name: $$asset" >&2; \
+	      exit 1; \
+	    fi; \
+	    prefix=$${match%|*}; \
+	    n=$${match#*|}; \
+	    printf '%s:%s\n' "$${prefix}.fetsa$${n}.bin" "$${prefix}.feimg$${n}.bin"; \
+	  done) || exit 1; \
 	{ printf '%s: %s' "$(MODERN_OUTPUT_DIR)/$*.pre.c" "$<"; \
 	  printf '%s\n' "$$assets" | while IFS= read -r asset; do \
 	    [ -n "$$asset" ] || continue; \
@@ -378,6 +465,12 @@ $(MODERN_ALL_DATA_ASSET_DEPS): $(MODERN_OUTPUT_DIR)/%.assets.d: %.c $(MODERN_SCA
 	    printf ' %s' "$$escaped"; \
 	  done; \
 	  printf '\n'; \
+	  printf '%s\n' "$$fetsa_pairs" | sort -u | while IFS=: read -r fetsa_raw feimg_raw; do \
+	    [ -n "$$fetsa_raw" ] || continue; \
+	    escaped_fetsa=$$(printf '%s' "$$fetsa_raw" | sed -e 's/\\/\\\\/g' -e 's/ /\\ /g'); \
+	    escaped_feimg=$$(printf '%s' "$$feimg_raw" | sed -e 's/\\/\\\\/g' -e 's/ /\\ /g'); \
+	    printf '%s: %s\n' "$$escaped_fetsa" "$$escaped_feimg"; \
+	  done; \
 	} > "$@.tmp"
 	@mv -f "$@.tmp" "$@"
 

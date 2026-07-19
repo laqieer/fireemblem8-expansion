@@ -1270,6 +1270,156 @@ class ModernBuildTests(unittest.TestCase):
                 "bmshop.o missing section .bss.gText_GoldBox",
             )
 
+    def test_fetsa_sibling_ordering_prevents_duplicate_generation(self):
+        # Old-style FETSATOOL rules (graphics_file_rules.mk) produce a
+        # "<name>.feimgN.bin"/"<name>.fetsaN.bin" pair from ONE recipe
+        # invocation, using a multi-target explicit (non-grouped "&:")
+        # rule. If two different data sources each independently list only
+        # one sibling of the pair as a prerequisite (one the feimg, another
+        # the fetsa or its .lz), GNU Make can decide both need building and
+        # run the shared recipe twice -- and a plain "fetsa: feimg" ordering
+        # edge alone does not stop this once a parallel (-j>1) build is in
+        # play (confirmed against an isolated GNU Make 4.3 reproduction),
+        # since Make can dispatch the fetsa target's own copy of the shared
+        # recipe as soon as the feimg build job is merely already scheduled,
+        # not once it has actually finished writing output. This fixture
+        # reproduces exactly that shape with a synthetic FETSATOOL standing
+        # in for the real scripts/gfxtools/tsa_generator.py, routed through
+        # the modern.mk-overridden $(FETSATOOL) so it exercises the real
+        # lock-guarded wrapper (not just the ordering edge), and exercises
+        # both a raw-fetsa reference and a compressed-fetsa (.lz) reference
+        # sourced from a THIRD, independent data file.
+        overrides = self.tool_overrides()
+        if overrides is None:
+            self.skipTest("arm-none-eabi GCC and objdump are not available")
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = self.make_all_fixture(Path(temporary))
+
+            (root / "assets" / "fixture_pair_source.src").write_text(
+                "shared-pair-payload", encoding="utf-8"
+            )
+
+            # Fixture stand-in for scripts/gfxtools/tsa_generator.py: logs
+            # one "run" line per actual invocation and copies the source
+            # payload into both sibling outputs, exactly like the real tool.
+            fake_fetsatool = root / "scripts" / "gfxtools" / "fetsatool_fixture.py"
+            fake_fetsatool.parent.mkdir(parents=True)
+            fake_fetsatool.write_text(
+                "#!/usr/bin/env python3\n"
+                "import pathlib, sys\n"
+                "src, out1, out2 = sys.argv[1:4]\n"
+                # Make always runs this recipe with cwd set to the
+                # Makefile's own directory, so a plain relative path
+                # matches the run-log path used elsewhere in the fixture.
+                "with open('assets/fetsa_generator_runs.log', 'a', encoding='utf-8') as handle:\n"
+                "    handle.write('run\\n')\n"
+                "payload = pathlib.Path(src).read_bytes()\n"
+                "pathlib.Path(out1).write_bytes(payload)\n"
+                "pathlib.Path(out2).write_bytes(payload)\n",
+                encoding="utf-8",
+            )
+            fake_fetsatool.chmod(0o755)
+
+            makefile_path = root / "Makefile"
+            makefile_path.write_text(
+                # FETSATOOL is defined before "include modern.mk", matching
+                # the real top-level Makefile, so modern.mk's lock-guarded
+                # override (only active for modern goals) takes effect.
+                "FETSATOOL := scripts/gfxtools/fetsatool_fixture.py\n"
+                + makefile_path.read_text(encoding="utf-8")
+                # Old-style two-output rule standing in for a real
+                # FETSATOOL invocation: one recipe, two sibling targets.
+                + "assets/fixture.feimg2.bin assets/fixture.fetsa2.bin: "
+                + "assets/fixture_pair_source.src\n"
+                + "\t$(FETSATOOL) $< assets/fixture.feimg2.bin assets/fixture.fetsa2.bin\n"
+                # Minimal stand-in for the top-level Makefile's real
+                # "%.lz: %" LZ-compression rule.
+                + "assets/%.bin.lz: assets/%.bin\n"
+                + "\techo run >> assets/lz_generator_runs.log\n"
+                + "\tcp $< $@\n",
+                encoding="utf-8",
+            )
+
+            # Three independent data sources, each referencing only one
+            # sibling of the pair (or its compressed variant), so each
+            # contributes an independent prerequisite edge to the shared
+            # recipe's two targets -- the exact shape that used to trigger
+            # a duplicate invocation.
+            (root / "src" / "data" / "data_fixture.c").write_text(
+                '#include "global.h"\n'
+                'FIXTURE_INCBIN("assets/fixture.feimg2.bin")\n',
+                encoding="utf-8",
+            )
+            (root / "src" / "data" / "data_fixture2.c").write_text(
+                '#include "global.h"\n'
+                'FIXTURE_INCBIN("assets/fixture.fetsa2.bin")\n',
+                encoding="utf-8",
+            )
+            (root / "src" / "data" / "data_fixture3.c").write_text(
+                '#include "global.h"\n'
+                'FIXTURE_INCBIN("assets/fixture.fetsa2.bin.lz")\n',
+                encoding="utf-8",
+            )
+
+            all_arguments = (
+                "expansion-modern-all",
+                "MODERN_CONFIG=debug",
+                "MODERN_ABI=aapcs",
+                "MODERN_ALL_C_SOURCES=src/normal_fixture.c",
+                "MODERN_ALL_DATA_C_SOURCES="
+                "src/data/data_fixture.c src/data/data_fixture2.c src/data/data_fixture3.c",
+                "MODERN_ALL_ASM_SOURCES=asm/fixture.s",
+                "MODERN_PREPROC=tools/preproc/preproc",
+                "MODERN_SCANINC=tools/scaninc/scaninc",
+                "-j4",
+            )
+
+            result = self.make(root, *all_arguments, *overrides)
+            self.assertEqual(result.returncode, 0, result.stdout)
+            self.assertIn("Built 5 modern relocatable objects", result.stdout)
+
+            feimg_path = root / "assets" / "fixture.feimg2.bin"
+            fetsa_path = root / "assets" / "fixture.fetsa2.bin"
+            fetsa_lz_path = root / "assets" / "fixture.fetsa2.bin.lz"
+            generator_log = root / "assets" / "fetsa_generator_runs.log"
+            lz_log = root / "assets" / "lz_generator_runs.log"
+
+            self.assertTrue(feimg_path.is_file())
+            self.assertTrue(fetsa_path.is_file())
+            self.assertTrue(fetsa_lz_path.is_file())
+            self.assertEqual(feimg_path.read_text(encoding="utf-8"), "shared-pair-payload")
+            self.assertEqual(fetsa_path.read_text(encoding="utf-8"), "shared-pair-payload")
+            self.assertEqual(fetsa_lz_path.read_text(encoding="utf-8"), "shared-pair-payload")
+
+            # The shared two-output recipe must have run exactly once,
+            # not twice, despite being reachable from three independent
+            # data sources' prerequisite lists.
+            self.assertEqual(
+                generator_log.read_text(encoding="utf-8").count("run"), 1,
+                "the shared feimg/fetsa recipe ran more than once",
+            )
+            self.assertEqual(
+                lz_log.read_text(encoding="utf-8").count("run"), 1,
+                "the fetsa .lz compression recipe ran more than once",
+            )
+
+            # An immediate, identical second invocation is a true no-op:
+            # no data object recompiles and neither generator re-runs.
+            second_result = self.make(root, *all_arguments, *overrides)
+            self.assertEqual(second_result.returncode, 0, second_result.stdout)
+            self.assertIn("Built 5 modern relocatable objects", second_result.stdout)
+            self.assertNotIn("-MMD -MP -MF", second_result.stdout)
+            self.assertNotIn("fixture_pair_source.src", second_result.stdout)
+            self.assertEqual(
+                generator_log.read_text(encoding="utf-8").count("run"), 1,
+                "the shared feimg/fetsa recipe re-ran on a true no-op second invocation",
+            )
+            self.assertEqual(
+                lz_log.read_text(encoding="utf-8").count("run"), 1,
+                "the fetsa .lz compression recipe re-ran on a true no-op second invocation",
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
