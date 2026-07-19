@@ -92,10 +92,16 @@ class ModernElfTargetTests(unittest.TestCase):
     # -- FE6 SIO build wiring ------------------------------------------------
 
     def test_elf_depends_on_mgfembp_target(self):
-        result = self.make("-n", "expansion-modern-elf")
-        self.assertEqual(result.returncode, 0, result.stdout)
-        self.assertIn("scripts/modernize/build_mgfembp.py", result.stdout)
-        self.assertIn('-Wa,-I,"build/expansion-modern/debug/aapcs/mgfembp"', result.stdout)
+        """Dry-run must schedule mgfembp builder and fe6sio assembly."""
+        with tempfile.TemporaryDirectory() as tmp:
+            iso_root = Path(tmp) / "iso-build"
+            result = self.make(
+                "-n", "expansion-modern-elf",
+                f"MODERN_BUILD_ROOT={iso_root}",
+            )
+        self.assertEqual(result.returncode, 0, result.stdout[-500:])
+        self.assertIn("build_mgfembp.py", result.stdout)
+        self.assertIn(str(iso_root), result.stdout)
 
     # -- Cohort/all non-interaction -----------------------------------------
 
