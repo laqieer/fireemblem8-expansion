@@ -9,20 +9,22 @@ Options:
   --rom PATH        Copy the ROM from PATH to baserom.gba if it is missing.
                     Optional: baserom.gba is NOT required to build. It is only
                     used by asmdiff.sh for disassembly comparison.
-  --legacy          Build the archival agbcc-based fireemblem8.gba instead of
-                    the supported modern release ROM. Installs/reuses main
-                    agbcc (and, transitively, mgfembp's own agbcc variant for
-                    the FE6 SIO sub-build). Intended for decomp-matching work
-                    (see CONTRIBUTING.md); not required for the default path.
-  --refresh-agbcc   Force re-clone/rebuild of agbcc even if one exists in
-                    tools/agbcc. Implies --legacy, since agbcc is only used
-                    by the archival legacy build.
+  --legacy          Build the archival fireemblem8.gba using the legacy
+                    compiler toolchain instead of the supported modern
+                    release ROM. Installs/reuses the main archival compiler
+                    (and, transitively, mgfembp's own archival compiler
+                    variant for the FE6 SIO sub-build). Intended for
+                    decomp-matching work (see CONTRIBUTING.md); not required
+                    for the default path.
+  --refresh-agbcc   Force re-clone/rebuild of agbcc even if one exists in tools/agbcc.
+                    Implies --legacy, since the archival compiler toolchain
+                    is only needed by the archival legacy build.
 
 Default (no --legacy): installs/probes the modern arm-none-eabi GCC
 toolchain and the libmGBA playtest backend, then builds and boot-verifies
 the supported modern AAPCS release ROM via `make expansion-modern-boot-check
-MODERN_CONFIG=release MODERN_ABI=aapcs`. No agbcc of any kind is installed
-or invoked on this path.
+MODERN_CONFIG=release MODERN_ABI=aapcs`. No legacy compiler toolchain of
+any kind is installed or invoked on this path.
 
 You can also set FIREEMBLEM8U_ROM to point to the ROM.
 EOF
@@ -74,7 +76,7 @@ parse_args() {
   done
 
   if (( FORCE_AGBCC_UPDATE == 1 && LEGACY_MODE == 0 )); then
-    echo "[=] --refresh-agbcc implies --legacy (agbcc is only used by the archival legacy build)"
+    echo "[=] Refreshing the archival compiler toolchain implies --legacy (only used by the archival legacy build)"
     LEGACY_MODE=1
   fi
 }
@@ -292,7 +294,7 @@ build_project() {
     ./build_tools.sh
 
     if (( LEGACY_MODE == 1 )); then
-      echo "[+] Building archival fireemblem8.gba via agbcc (this can take several minutes)"
+      echo "[+] Building archival fireemblem8.gba via the legacy compiler toolchain (this can take several minutes)"
       echo "    (first build also fetches/builds mgfembp's own agbcc variant for its FE6 SIO sub-build)"
       make -j"${jobs}"
       echo "[✓] Legacy build complete: ${PROJECT_DIR}/fireemblem8.gba"
