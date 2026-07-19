@@ -19,28 +19,43 @@ another distro/package manager, see the README.
 From the repo root, run:
 
 ```bash
-./scripts/quickstart.sh [--rom /path/to/baserom.gba] [--refresh-agbcc]
+./scripts/quickstart.sh [--rom /path/to/baserom.gba] [--legacy] [--refresh-agbcc]
 ```
 
-What the script now does:
+What the script now does by default (no `--legacy`) — **no agbcc of any kind
+is installed or invoked on this path**:
 
 1. Copies `baserom.gba` from the `--rom` path (or `FIREEMBLEM8U_ROM`) if you provided one. A missing ROM is fine — it is optional and not required to build.
 2. Detects your package manager (`apt`, `pacman`, or `brew`) and installs the prerequisites only when they’re not already available:
    - Toolchain (`arm-none-eabi-binutils`, `arm-none-eabi-gcc`, and newlib headers; the official Arm cask on macOS)
+   - The libmGBA playtest backend (`libmgba-dev` on apt, `mgba` on pacman/Homebrew) used by the boot-check step below
    - `pkg-config` / `pkgconf`
    - `libpng`
    - `python3`, `pip3`, `numpy`, `pillow`
-3. Checks whether `tools/agbcc/bin/agbcc` already exists. If it does, the script reuses it; otherwise it clones and builds [`pret/agbcc`](https://github.com/pret/agbcc) inside `.deps/agbcc` (ignored by git), installs it into `tools/agbcc`, and you can force a refresh any time with `--refresh-agbcc`.
-4. Fetches submodules (`git submodule update --init --recursive`). The FE6 SIO link payload is built from source via the [mgfembp](https://github.com/StanHash/mgfembp) submodule rather than a committed blob.
-5. Builds helper tools via `./build_tools.sh`.
-6. Runs parallel `make` to produce `fireemblem8.gba`, using `nproc`,
-   `sysctl -n hw.logicalcpu`, or 1 job in that order. The first build also
-   fetches/builds mgfembp's own agbcc variant (`010110-ThumbPatch`) for the
-   payload sub-build.
+3. Fetches submodules (`git submodule update --init --recursive`). The FE6 SIO link payload is built from source via the [mgfembp](https://github.com/StanHash/mgfembp) submodule using modern GCC — no agbcc variant of any kind is fetched/built on this path.
+4. Builds helper tools via `./build_tools.sh`.
+5. Runs `make expansion-modern-toolchain-check` then `make expansion-modern-boot-check MODERN_CONFIG=release MODERN_ABI=aapcs -j"${jobs}"` (using `nproc`, `sysctl -n hw.logicalcpu`, or 1 job in that order), which builds the full modern object/ELF/ROM chain and verifies all three boot checkpoints (frames 0/60/120).
+
 On success you’ll see:
 
 ```
-[✓] Build complete: /path/to/fireemblem8-expansion/fireemblem8.gba
+[✓] Modern build complete: /path/to/fireemblem8-expansion/build/expansion-modern/release/aapcs/fireemblem8.gba
+```
+
+### Archival `--legacy` path
+
+Pass `--legacy` (or `--refresh-agbcc`, which implies it) to build the
+archival agbcc-based `fireemblem8.gba` instead — this is the path used for
+decomp-matching work (see `CONTRIBUTING.md`), not the default/supported
+build. With `--legacy`, the script additionally:
+
+1. Checks whether `tools/agbcc/bin/agbcc` already exists. If it does, the script reuses it; otherwise it clones and builds [`pret/agbcc`](https://github.com/pret/agbcc) inside `.deps/agbcc` (ignored by git), installs it into `tools/agbcc`, and you can force a refresh any time with `--refresh-agbcc`.
+2. Runs parallel `make` to produce `fireemblem8.gba` instead of the modern boot-check. The first build also fetches/builds mgfembp's own agbcc variant (`010110-ThumbPatch`) for its FE6 SIO sub-build, which is only exercised by this archival path.
+
+On success you’ll see:
+
+```
+[✓] Legacy build complete: /path/to/fireemblem8-expansion/fireemblem8.gba
 ```
 
 ## Troubleshooting
@@ -51,21 +66,29 @@ On success you’ll see:
 - **No sudo/root** – apt/pacman installs require elevated privileges. Without
   sudo the script stops and asks you to install the prerequisites manually.
   Homebrew installs keep working without sudo.
-- **Unsupported distro** – Install the prerequisites manually (arm-none-eabi toolchain, pkg-config, libpng, python3, pip, numpy, pillow) then rerun the script; it’ll skip package installs once the tools are on your PATH.
-- **Already-installed toolchain** – The script detects `arm-none-eabi-*` binaries and skips reinstalling them. Existing `tools/agbcc` installs are reused too; run `./scripts/quickstart.sh --refresh-agbcc` if you need a fresh copy.
+- **Unsupported distro** – Install the prerequisites manually (arm-none-eabi toolchain, libmGBA, pkg-config, libpng, python3, pip, numpy, pillow) then rerun the script; it’ll skip package installs once the tools are on your PATH.
+- **Already-installed toolchain** – The script detects `arm-none-eabi-*` binaries and skips reinstalling them. `--legacy`'s existing `tools/agbcc` installs are reused too; run `./scripts/quickstart.sh --legacy --refresh-agbcc` if you need a fresh copy.
 - **Stale Arch package database** – The script never performs a partial
   `pacman` upgrade. Complete a full
   `sudo pacman --sync --refresh --sysupgrade`, then rerun it.
-- **Slower rebuilds** – Subsequent `make` runs are faster. For incremental
-  work, run `make -j4` (or choose another suitable job count) manually.
+- **Slower rebuilds** – Subsequent runs are faster. For incremental modern
+  work, run `make expansion-modern-boot-check MODERN_CONFIG=release MODERN_ABI=aapcs -j4`
+  (or choose another suitable job count) manually; for `--legacy` rebuilds, use
+  `make -j4`.
 
-After the script finishes, launch your preferred emulator with `fireemblem8.gba` or start modifying the source.
+After the script finishes, launch your preferred emulator with the printed ROM
+path or start modifying the source.
 
-## Opt-in modern GCC object cohort
+## Modern GCC compile-only object cohort
 
 The modern bootstrap compiles eighteen verified C files and three handwritten
-assembly files to ARM relocatable objects only. It does **not** link an ELF or a
-modern ROM, and it does not replace the current legacy ROM build. The modern
+assembly files to ARM relocatable objects only. This cohort target itself
+does **not** link an ELF or a ROM — the fuller modern chain
+(`expansion-modern-elf` → `expansion-modern-rom` → `expansion-modern-boot-check`,
+documented below) is what the default quickstart path now builds and
+boot-verifies as the supported release ROM, superseding the legacy ROM as the
+default/supported output; `--legacy` remains available for archival/decomp
+work. The modern
 `ap.o`, the five save objects (`bmsave-misc.o`, `bmsave-gmap.o`,
 `bmsave-lib.o`, `bmsave.o`, and `bmsave-xmap.o`), the convoy/container object
 (`bmcontainer.o`, which defines `ClearSupplyItems` and `GetConvoyItemArray` for
@@ -310,6 +333,6 @@ runtime state.
 Setting up the libmGBA playtest backend follows the same bootstrap as any
 other `tools/gba-playtest` consumer — see that tool's own documentation for
 compiler/library prerequisites. `expansion-modern-rom`/
-`expansion-modern-boot-check` share the transitional linker debt and
-mgfembp-derived pre-existing-object requirement documented above for
-`expansion-modern-elf`, since they build on top of the same modern ELF.
+`expansion-modern-boot-check` share the transitional linker debt and the
+modern-GCC-built FE6 SIO payload documented above for `expansion-modern-elf`,
+since they build on top of the same modern ELF.
