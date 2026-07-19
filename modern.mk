@@ -403,10 +403,17 @@ MODERN_MGFEMBP_C_SRCS := $(sort $(wildcard mgfembp/src/*.c))
 MODERN_MGFEMBP_S_SRCS := $(sort $(wildcard mgfembp/src/*.s))
 MODERN_MGFEMBP_HEADERS := $(sort $(wildcard mgfembp/include/*.h))
 MODERN_MGFEMBP_LDS := mgfembp/mgfembp.lds
+MODERN_MGFEMBP_EMBED_ASSETS := \
+	mgfembp/data/debug_font.png \
+	mgfembp/data/message_gfx.png \
+	mgfembp/data/message_tm_1.bin \
+	mgfembp/data/message_tm_2.bin \
+	mgfembp/data/message_tm_3.bin
 
 $(MODERN_MGFEMBP_PAYLOAD): scripts/modernize/build_mgfembp.py \
 		$(MODERN_MGFEMBP_LDS) $(MODERN_MGFEMBP_C_SRCS) \
 		$(MODERN_MGFEMBP_S_SRCS) $(MODERN_MGFEMBP_HEADERS) \
+		$(MODERN_MGFEMBP_EMBED_ASSETS) \
 		$(GBAGFX) | expansion-modern-toolchain-check
 	$(MODERN_MGFEMBP_BUILDER) \
 		--submodule-root mgfembp \
@@ -588,4 +595,4 @@ expansion-modern-boot-check: expansion-modern-boot-preflight expansion-modern-ro
 	@printf 'Modern ROM boot-check passed: %s (config=%s abi=%s)\n' \
 		"$(MODERN_ROM)" '$(MODERN_CONFIG)' '$(MODERN_ABI)'
 
--include $(wildcard $(sort $(MODERN_COHORT_DEPS) $(MODERN_ALL_DEPS)))
+-include $(wildcard $(sort $(MODERN_COHORT_DEPS) $(MODERN_ALL_DEPS) $(MODERN_FE6SIO_OBJ:.o=.d)))

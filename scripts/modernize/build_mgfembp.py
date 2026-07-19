@@ -64,6 +64,16 @@ ASFLAGS = (
 EXPECTED_ENTRY = 0x02010000
 EXPECTED_FIRST_WORD = 0xE3A00012
 
+# Source data assets consumed by the embed pipeline.  Must match the
+# MODERN_MGFEMBP_EMBED_ASSETS list in modern.mk for incremental builds.
+EXPECTED_EMBED_SOURCE_ASSETS = (
+    "data/debug_font.png",
+    "data/message_gfx.png",
+    "data/message_tm_1.bin",
+    "data/message_tm_2.bin",
+    "data/message_tm_3.bin",
+)
+
 FINAL_EMBED_ASSETS = (
     ("data/debug_font.png", "embed/debug_font.4bpp", None),
     ("embed/debug_font.4bpp", "embed/debug_font.4bpp.u32", "u32"),
