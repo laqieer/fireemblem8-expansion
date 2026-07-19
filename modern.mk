@@ -388,14 +388,35 @@ $(MODERN_ALL_DATA_OBJECTS): $(MODERN_OUTPUT_DIR)/%.o: $(MODERN_OUTPUT_DIR)/%.pre
 # (in graphics_file_rules.mk) can't be touched, FETSATOOL is redefined
 # below -- only for modern goals, so the legacy agbcc build is untouched
 # -- as a small idempotent wrapper: it takes a portable mkdir-based
-# advisory lock keyed by the pair's own feimg output path (with a stale
-# lock timeout in case a prior invocation was killed), so whichever
+# advisory lock keyed by the pair's own feimg output path, so whichever
 # invocation loses the race blocks until the winner's real generation
 # finishes, then finds both outputs already newer than the source and
 # skips re-running the real tool. The ordering edge above still forces
 # sequential builds to resolve deterministically without ever taking the
 # lock, and remains useful documentation of the intended feimg-first
 # generation order; the wrapper is what actually makes -j builds safe.
+#
+# Stale-lock recovery is PID-liveness-based, not mtime-based: the lock
+# holder writes its own shell PID into "<lockdir>/pid" immediately after
+# the mkdir succeeds, and stays alive (blocked on the real tool) for as
+# long as it holds the lock. A waiter that finds the lock already taken
+# reads that PID and checks it with "kill -0": if the PID is still alive,
+# the waiter just sleeps and rechecks, *regardless of how old the lock
+# directory is* -- a slow real generation must never have its lock stolen
+# out from under it. Only once "kill -0" confirms the PID is dead does a
+# waiter reclaim the lock (immediately, no extra age wait, since a dead
+# PID is unambiguous evidence the holder crashed mid-generation). The one
+# case a PID can't resolve liveness is the brief window between mkdir
+# succeeding and the pid file actually being written (or a holder killed
+# in exactly that window, leaving no pid file at all): a missing or
+# unparsable pid file falls back to the previous conservative mtime
+# threshold (only reclaim once the lock directory itself is older than a
+# couple of minutes), so a genuinely fresh lock is never mistaken for an
+# abandoned one just because its pid file hasn't landed yet. The holder
+# also traps EXIT/INT/TERM to remove its own lock directory and pid file
+# on any of its own exit paths (skip-if-fresh, tool success, or tool
+# failure), leaving PID-liveness/mtime reclamation only for the crash
+# case an uncatchable SIGKILL can still produce.
 #
 # NOTE: a clean build already logs "make: Circular X <- X dependency
 # dropped" lines for some of these old-style multi-target rules' outputs.
@@ -413,23 +434,42 @@ ifneq (,$(filter $(MODERN_GOALS),$(MAKECMDGOALS)))
 		real="$$1"; shift; \
 		src="$$1"; out1="$$2"; out2="$$3"; \
 		lockdir="$$out1.fetsalock.d"; \
-		tries=0; \
-		while ! mkdir "$$lockdir" 2>/dev/null; do \
-			tries=$$((tries + 1)); \
-			if [ "$$tries" -gt 5 ]; then \
-				stale=$$(find "$$lockdir" -maxdepth 0 -mmin +2 2>/dev/null); \
-				if [ -n "$$stale" ]; then rmdir "$$lockdir" 2>/dev/null; fi; \
+		pidfile="$$lockdir/pid"; \
+		while :; do \
+			if mkdir "$$lockdir" 2>/dev/null; then \
+				break; \
+			fi; \
+			lockpid=""; \
+			if [ -f "$$pidfile" ]; then \
+				lockpid=$$(cat "$$pidfile" 2>/dev/null); \
+				case "$$lockpid" in \
+					""|*[!0-9]*) lockpid="" ;; \
+				esac; \
+			fi; \
+			if [ -n "$$lockpid" ]; then \
+				if kill -0 "$$lockpid" 2>/dev/null; then \
+					sleep 1; \
+					continue; \
+				fi; \
+				rm -f "$$pidfile" 2>/dev/null; \
+				rmdir "$$lockdir" 2>/dev/null; \
+				continue; \
+			fi; \
+			stale=$$(find "$$lockdir" -maxdepth 0 -mmin +2 2>/dev/null); \
+			if [ -n "$$stale" ]; then \
+				rm -f "$$pidfile" 2>/dev/null; \
+				rmdir "$$lockdir" 2>/dev/null; \
+				continue; \
 			fi; \
 			sleep 1; \
 		done; \
+		printf "%s\n" "$$$$" > "$$pidfile"; \
+		trap "rm -f \"$$pidfile\"; rmdir \"$$lockdir\" 2>/dev/null" EXIT INT TERM; \
 		if [ -e "$$out1" ] && [ -e "$$out2" ] && [ "$$out1" -nt "$$src" ] && [ "$$out2" -nt "$$src" ]; then \
-			rmdir "$$lockdir" 2>/dev/null; \
 			exit 0; \
 		fi; \
 		"$$real" "$$@"; \
-		status=$$?; \
-		rmdir "$$lockdir" 2>/dev/null; \
-		exit $$status \
+		exit $$? \
 	' _
   FETSATOOL = $(MODERN_FETSATOOL_LOCK) $(MODERN_FETSATOOL_REAL)
 endif
@@ -492,9 +532,17 @@ endif
 # "$(MODERN_CC): not found"-style shell error from this recipe. Adding
 # expansion-modern-toolchain-check as an order-only prerequisite makes
 # its own actionable diagnostic run first every time any .headers.d needs
-# remaking; being .PHONY, it always runs but only once per invocation (no
-# remake-restart loop, since a successfully generated .headers.d is no
-# longer stale on the following pass).
+# remaking. Being .PHONY, it always runs when it's a goal or prerequisite
+# in the makefile currently being read; on a clean/first invocation this
+# means it runs *twice* -- once here during the pre-restart remake of the
+# stale .headers.d files, then again after Make's remake-restart re-reads
+# the (now up to date) makefiles and reaches expansion-modern-all's own
+# explicit prerequisite on it -- confirmed empirically (two "Modern
+# compiler: ..." lines on a clean build, one on a rebuild where no
+# .headers.d needs remaking and no restart occurs). This is a harmless,
+# cheap diagnostic re-run, not a correctness issue, so it is left as-is
+# rather than adding a persistent "already checked" stamp file, which
+# would risk hiding a real toolchain change made between the two runs.
 $(MODERN_ALL_C_HEADER_DEPS): | expansion-modern-toolchain-check
 
 $(MODERN_ALL_C_HEADER_DEPS): $(MODERN_OUTPUT_DIR)/%.headers.d: %.c

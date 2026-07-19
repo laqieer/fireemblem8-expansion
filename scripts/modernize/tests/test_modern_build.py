@@ -1,5 +1,6 @@
 import os
 import shutil
+import signal
 import subprocess
 import tempfile
 import time
@@ -216,6 +217,74 @@ class ModernBuildTests(unittest.TestCase):
             if value:
                 overrides.append(f"{variable}={value}")
         return overrides
+
+    def make_fetsatool_lock_fixture(self, destination: Path) -> Path:
+        # A minimal, no-real-toolchain-needed fixture for exercising just
+        # the FETSATOOL lock wrapper in isolation: "expansion-modern-clean"
+        # is a member of MODERN_GOALS (so listing it alongside the fixture
+        # pair target on one command line activates the wrapper override,
+        # same as any other modern goal) and its own recipe is the trivial
+        # "$(RM) -r $(MODERN_BUILD_ROOT)", so it never needs a working
+        # MODERN_CC/MODERN_OBJDUMP. This lets the lock-liveness tests run
+        # unconditionally (no self.tool_overrides()/skipTest gate).
+        root = destination / "fetsatool lock fixture"
+        (root / "assets").mkdir(parents=True)
+        shutil.copy2(MODERN_MK, root / "modern.mk")
+        fake_fetsatool = root / "fake_fetsatool.sh"
+        fake_fetsatool.write_text(
+            "#!/bin/sh\n"
+            'echo "run pid=$$" >> assets/fetsa_generator_runs.log\n'
+            "sleep 2\n"
+            'cp "$1" "$2"\n'
+            'cp "$1" "$3"\n',
+            encoding="utf-8",
+        )
+        fake_fetsatool.chmod(0o755)
+        (root / "Makefile").write_text(
+            "PREFIX ?= arm-none-eabi-\n"
+            "EXE :=\n"
+            "CLEAN_DIRS :=\n"
+            "MODERN_COHORT_SOURCES :=\n"
+            "MODERN_COHORT_ASM_SOURCES :=\n"
+            "FETSATOOL := ./fake_fetsatool.sh\n"
+            "include modern.mk\n"
+            "expansion-modern-clean: assets/fixture.feimg2.bin assets/fixture.fetsa2.bin\n"
+            "assets/fixture.feimg2.bin assets/fixture.fetsa2.bin: "
+            "assets/fixture_pair_source.src\n"
+            "\t$(FETSATOOL) $< assets/fixture.feimg2.bin assets/fixture.fetsa2.bin\n",
+            encoding="utf-8",
+        )
+        (root / "assets" / "fixture_pair_source.src").write_text(
+            "payload", encoding="utf-8"
+        )
+        return root
+
+    def run_make_in_group(
+        self, root: Path, *arguments: str
+    ) -> subprocess.Popen[str]:
+        # Launched in its own process group (not just process) so a
+        # timeout-driven kill reaches the "make" process AND every "sh -c"
+        # lock-wait/child it spawned, instead of leaving orphans behind
+        # when a test intentionally wants to observe a still-blocked wait.
+        return subprocess.Popen(
+            ["make", "--no-print-directory", *arguments],
+            cwd=root,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+        )
+
+    def wait_or_kill_group(
+        self, process: subprocess.Popen[str], timeout: float
+    ) -> tuple[int | None, str]:
+        try:
+            stdout, _ = process.communicate(timeout=timeout)
+            return process.returncode, stdout
+        except subprocess.TimeoutExpired:
+            os.killpg(os.getpgid(process.pid), signal.SIGKILL)
+            stdout, _ = process.communicate()
+            return None, stdout
 
     def test_rejects_unknown_config_and_abi(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -1418,6 +1487,136 @@ class ModernBuildTests(unittest.TestCase):
             self.assertEqual(
                 lz_log.read_text(encoding="utf-8").count("run"), 1,
                 "the fetsa .lz compression recipe re-ran on a true no-op second invocation",
+            )
+
+    def test_fetsatool_lock_dedups_single_invocation(self):
+        # Tool-free baseline: even after the PID-liveness rewrite, a
+        # normal parallel single invocation with no pre-existing lock must
+        # still produce exactly one real tool run for the shared feimg/
+        # fetsa pair, and must leave no lock directory behind afterward.
+        with tempfile.TemporaryDirectory() as temporary:
+            root = self.make_fetsatool_lock_fixture(Path(temporary))
+
+            result = self.make(root, "expansion-modern-clean", "-j4")
+
+            self.assertEqual(result.returncode, 0, result.stdout)
+            log = root / "assets" / "fetsa_generator_runs.log"
+            self.assertTrue(log.is_file())
+            self.assertEqual(
+                log.read_text(encoding="utf-8").count("run pid="), 1,
+                "the shared feimg/fetsa recipe ran more than once",
+            )
+            self.assertTrue((root / "assets" / "fixture.feimg2.bin").is_file())
+            self.assertTrue((root / "assets" / "fixture.fetsa2.bin").is_file())
+            self.assertFalse(
+                (root / "assets" / "fixture.feimg2.bin.fetsalock.d").exists(),
+                "the lock directory must be removed once the holder exits",
+            )
+
+    def test_fetsatool_lock_not_stolen_from_live_holder_regardless_of_age(self):
+        # A lock directory whose pid file names a still-running process
+        # must never be reclaimed, no matter how old the lock directory
+        # itself looks -- age alone is no longer sufficient evidence of
+        # abandonment once a live PID is recorded.
+        with tempfile.TemporaryDirectory() as temporary:
+            root = self.make_fetsatool_lock_fixture(Path(temporary))
+            lockdir = root / "assets" / "fixture.feimg2.bin.fetsalock.d"
+            lockdir.mkdir()
+
+            holder = subprocess.Popen(["sleep", "30"])
+            try:
+                (lockdir / "pid").write_text(f"{holder.pid}\n", encoding="utf-8")
+                old = time.time() - 600
+                os.utime(lockdir, (old, old))
+
+                process = self.run_make_in_group(root, "expansion-modern-clean", "-j2")
+                returncode, stdout = self.wait_or_kill_group(process, timeout=6)
+
+                self.assertIsNone(
+                    returncode,
+                    "make must still be blocked waiting on the live holder, "
+                    f"but it exited early with stdout: {stdout!r}",
+                )
+                log = root / "assets" / "fetsa_generator_runs.log"
+                self.assertFalse(
+                    log.is_file() and "run pid=" in log.read_text(encoding="utf-8"),
+                    "the lock must not be stolen from a live holder",
+                )
+            finally:
+                holder.terminate()
+                holder.wait(timeout=5)
+
+            # Once the (simulated) holder is gone and its lock directory
+            # removed, as the real holder's own trap would do, a fresh
+            # invocation must proceed normally.
+            shutil.rmtree(lockdir, ignore_errors=True)
+            result = self.make(root, "expansion-modern-clean", "-j2")
+            self.assertEqual(result.returncode, 0, result.stdout)
+            log = root / "assets" / "fetsa_generator_runs.log"
+            self.assertEqual(log.read_text(encoding="utf-8").count("run pid="), 1)
+
+    def test_fetsatool_lock_reclaims_dead_pid_immediately(self):
+        # A lock directory recording a PID that has already exited must be
+        # reclaimed right away, without waiting for the conservative mtime
+        # staleness threshold -- a confirmed-dead PID is unambiguous.
+        with tempfile.TemporaryDirectory() as temporary:
+            root = self.make_fetsatool_lock_fixture(Path(temporary))
+            lockdir = root / "assets" / "fixture.feimg2.bin.fetsalock.d"
+            lockdir.mkdir()
+
+            dead = subprocess.Popen(["true"])
+            dead_pid = dead.pid
+            dead.wait()
+            (lockdir / "pid").write_text(f"{dead_pid}\n", encoding="utf-8")
+            # Deliberately leave the lock directory's mtime fresh (just
+            # created above): reclamation must not depend on the mtime
+            # threshold at all once the PID is confirmed dead.
+
+            process = self.run_make_in_group(root, "expansion-modern-clean", "-j2")
+            returncode, stdout = self.wait_or_kill_group(process, timeout=15)
+
+            self.assertEqual(
+                returncode, 0,
+                f"make did not complete promptly after a dead-PID lock: {stdout!r}",
+            )
+            log = root / "assets" / "fetsa_generator_runs.log"
+            self.assertEqual(log.read_text(encoding="utf-8").count("run pid="), 1)
+
+    def test_fetsatool_lock_missing_pid_young_lock_waits_old_lock_reclaims(self):
+        # A lock directory with no pid file at all -- the brief window
+        # between mkdir succeeding and the pid write landing, or a holder
+        # killed in exactly that window -- must fall back to the previous
+        # conservative mtime threshold: a young such lock is NOT reclaimed
+        # (a genuinely fresh lock must not be mistaken for an abandoned
+        # one), but an old one past the threshold IS reclaimed.
+        with tempfile.TemporaryDirectory() as temporary:
+            root = self.make_fetsatool_lock_fixture(Path(temporary))
+            lockdir = root / "assets" / "fixture.feimg2.bin.fetsalock.d"
+
+            # Young, pid-less lock: must wait, not reclaim.
+            lockdir.mkdir()
+            process = self.run_make_in_group(root, "expansion-modern-clean", "-j2")
+            returncode, stdout = self.wait_or_kill_group(process, timeout=5)
+            self.assertIsNone(
+                returncode,
+                "make must wait on a young pid-less lock instead of reclaiming it, "
+                f"but it exited early with stdout: {stdout!r}",
+            )
+            log = root / "assets" / "fetsa_generator_runs.log"
+            self.assertFalse(
+                log.is_file() and "run pid=" in log.read_text(encoding="utf-8"),
+                "a young pid-less lock must not be reclaimed",
+            )
+
+            # Backdate the same pid-less lock past the staleness
+            # threshold: it must now be reclaimed and the build proceed.
+            old = time.time() - 600
+            os.utime(lockdir, (old, old))
+            result = self.make(root, "expansion-modern-clean", "-j2")
+            self.assertEqual(result.returncode, 0, result.stdout)
+            self.assertEqual(
+                log.read_text(encoding="utf-8").count("run pid="), 1,
+                "an old pid-less lock must be reclaimed and the tool run exactly once",
             )
 
 
