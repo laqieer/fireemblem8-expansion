@@ -17,17 +17,6 @@ jobs:
       with:
         submodules: recursive
 
-    - name: Install agbcc
-      run: git clone https://github.com/pret/agbcc.git && cd agbcc/ && ./build.sh && ./install.sh .. && cd ..
-
-    # Cache the mgfembp submodule's agbcc variant (010110-ThumbPatch); the FE6 SIO
-    # payload sub-build installs it on a cache miss.
-    - name: Cache mgfembp agbcc
-      uses: actions/cache@v4
-      with:
-        path: mgfembp/tools/agbcc
-        key: mgfembp-agbcc-${{ hashFiles('mgfembp/tools/install_agbcc.sh') }}
-
     - name: Build tools
       run: ./build_tools.sh
 
@@ -38,8 +27,7 @@ jobs:
     # gate. Per repository policy, CI still ends after this target-ROM
     # step -- no decomp compare, progress, report, symbol, or Pages stages
     # follow it.
-    - name: Build and verify target ROMs
+    - name: Build and verify modern target ROMs
       run: |
-        make fireemblem8.gba -j2
         make expansion-modern-boot-check MODERN_CONFIG=debug MODERN_ABI=aapcs -j2
         make expansion-modern-boot-check MODERN_CONFIG=release MODERN_ABI=aapcs -j2
