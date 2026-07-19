@@ -263,6 +263,58 @@ class ModernElfTargetTests(unittest.TestCase):
             "legacy mgfembp install must not appear",
         )
 
+    def test_modern_fe6sio_uses_modern_payload(self):
+        """Modern fe6sio.o must embed modern payload, not root legacy."""
+        overrides = self.tool_overrides()
+        if overrides is None:
+            self.skipTest("modern toolchain not available")
+        objcopy = None
+        for o in overrides:
+            if o.startswith("MODERN_CC="):
+                cc_path = Path(o.split("=", 1)[1])
+                objcopy = str(cc_path.parent / "arm-none-eabi-objcopy")
+                break
+        if not objcopy or not Path(objcopy).is_file():
+            self.skipTest("objcopy not available")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            iso = Path(tmp) / "iso-build"
+            mgfembp_dir = iso / "debug" / "aapcs" / "mgfembp"
+            mgfembp_dir.mkdir(parents=True)
+            asm_dir = iso / "debug" / "aapcs" / "asm"
+            asm_dir.mkdir(parents=True)
+
+            # Create distinguishable modern payload (magic marker)
+            modern_marker = b"\x10\xDE\xAD\xBE" + b"\xEF" * 16
+            (mgfembp_dir / "fe6sio_payload.bin.lz").write_bytes(
+                modern_marker
+            )
+
+            result = self.make(
+                f"{iso}/debug/aapcs/asm/fe6sio.o",
+                f"MODERN_BUILD_ROOT={iso}",
+                f"MODERN_MGFEMBP_PAYLOAD={mgfembp_dir}/fe6sio_payload.bin.lz",
+                f"MODERN_MGFEMBP_DIR={mgfembp_dir}",
+                *overrides,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout[-300:])
+
+            # Extract .data section and verify modern marker
+            obj = asm_dir / "fe6sio.o"
+            self.assertTrue(obj.is_file())
+            data_bin = Path(tmp) / "fe6sio_data.bin"
+            extract = subprocess.run(
+                [objcopy, "-O", "binary", "-j", ".data",
+                 str(obj), str(data_bin)],
+                capture_output=True, text=True,
+            )
+            self.assertEqual(extract.returncode, 0, extract.stderr)
+            data = data_bin.read_bytes()
+            self.assertIn(
+                modern_marker, data,
+                "modern payload marker not found in fe6sio.o .data",
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
