@@ -315,11 +315,21 @@ expansion-modern-clean:
 # docs/quickstart.md.  This target never silently invokes that build.
 # ---------------------------------------------------------------------------
 
-# Enforce AAPCS for linked outputs.
-ifneq (,$(filter expansion-modern-elf,$(MAKECMDGOALS)))
+# Enforce AAPCS for linked outputs. expansion-modern-elf is the only target
+# that actually links, but expansion-modern-rom/-boot-check both transitively
+# depend on it (via $(MODERN_ELF)) without naming "expansion-modern-elf"
+# literally in MAKECMDGOALS themselves, so the guard must recognize the
+# whole linked-output goal set, not just the elf target, or a direct
+# `make expansion-modern-rom MODERN_ABI=apcs-gnu` would silently slip past
+# this check and proceed toward an incompatible EABI link.
+MODERN_LINKED_GOALS := expansion-modern-elf expansion-modern-rom expansion-modern-boot-check
+MODERN_REQUESTED_LINKED_GOALS := $(filter $(MODERN_LINKED_GOALS),$(MAKECMDGOALS))
+ifneq (,$(MODERN_REQUESTED_LINKED_GOALS))
   ifneq ($(MODERN_ABI),aapcs)
-    $(error expansion-modern-elf requires MODERN_ABI=aapcs; \
-      apcs-gnu objects are incompatible with EABI5 newlib/libgcc)
+    $(error $(MODERN_REQUESTED_LINKED_GOALS) requires MODERN_ABI=aapcs; \
+      all modern linked outputs (expansion-modern-elf, expansion-modern-rom, \
+      expansion-modern-boot-check) require AAPCS -- apcs-gnu objects are \
+      incompatible with EABI5 newlib/libgcc)
   endif
 endif
 
