@@ -122,18 +122,23 @@ _CATCHALLS = """
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--submodule-root", required=True)
-    parser.add_argument("--output-dir", required=True)
-    parser.add_argument("--cc", required=True)
-    parser.add_argument("--ld", required=True)
-    parser.add_argument("--objcopy", required=True)
-    parser.add_argument("--gbagfx", required=True)
+    parser.add_argument("--submodule-root")
+    parser.add_argument("--output-dir")
+    parser.add_argument("--cc")
+    parser.add_argument("--ld")
+    parser.add_argument("--objcopy")
+    parser.add_argument("--gbagfx")
     parser.add_argument("--binutils-dir")
     parser.add_argument("--newlib-lib")
     parser.add_argument(
         "--embed-asset", action="append", default=[],
         help="Embed source asset path relative to submodule root "
              "(repeated; validated against EXPECTED_EMBED_SOURCE_ASSETS)",
+    )
+    parser.add_argument(
+        "--filter-depfile",
+        dest="depfile",
+        help="Filter a GAS .d file to remove the root payload token",
     )
     return parser.parse_args()
 
@@ -494,8 +499,60 @@ def build_payload(args: argparse.Namespace) -> None:
     compress_payload(args.gbagfx, bin_path, lz_path)
 
 
+_FE6SIO_DEPFILE_TOKEN = "fe6sio_payload.bin.lz"
+
+
+def filter_fe6sio_depfile(path: str) -> None:
+    """Remove the root fe6sio_payload.bin.lz token from a GAS .d file.
+
+    GNU as --MD records the bare ``.incbin`` filename even when it was
+    found via ``-I``.  This function removes exactly one standalone
+    occurrence of the token if present, preserving all other dependencies
+    and valid Make continuation syntax.  Zero occurrences is acceptable
+    (token already absent).  Fails closed on duplicate occurrences.
+    """
+    dep_path = Path(path)
+    text = dep_path.read_text(encoding="utf-8")
+
+    import re
+    pattern = re.compile(
+        r"(?<=\s)" + re.escape(_FE6SIO_DEPFILE_TOKEN) + r"(?=\s|\\|$)",
+        re.MULTILINE,
+    )
+    matches = list(pattern.finditer(text))
+    if len(matches) == 0:
+        return
+    if len(matches) > 1:
+        raise ValueError(
+            f"{dep_path}: expected 0 or 1 occurrence of"
+            f" {_FE6SIO_DEPFILE_TOKEN!r}, found {len(matches)}"
+        )
+
+    m = matches[0]
+    # Remove the token and any preceding whitespace/continuation
+    start = m.start()
+    # Walk back to consume preceding whitespace (but not past newline or :)
+    while start > 0 and text[start - 1] in " \t":
+        start -= 1
+    # If we consumed a line continuation backslash-newline, include it
+    if start >= 2 and text[start - 2 : start] == "\\\n":
+        start -= 2
+        while start > 0 and text[start - 1] in " \t":
+            start -= 1
+
+    filtered = text[:start] + text[m.end():]
+    # Clean up any resulting double-spaces or trailing backslash-newline
+    filtered = re.sub(r"[ \t]+\\\n[ \t]*\\\n", " \\\n", filtered)
+    filtered = re.sub(r"[ \t]{2,}", " ", filtered)
+
+    dep_path.write_text(filtered, encoding="utf-8")
+
+
 def main() -> int:
     args = parse_args()
+    if hasattr(args, "depfile") and args.depfile:
+        filter_fe6sio_depfile(args.depfile)
+        return 0
     build_payload(args)
     return 0
 
