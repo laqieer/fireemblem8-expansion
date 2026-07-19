@@ -247,6 +247,7 @@ class QuickstartTests(unittest.TestCase):
                     "pip3": "exit 0",
                     "arm-none-eabi-gcc": "exit 0",
                     "arm-none-eabi-as": "exit 0",
+                    "arm-none-eabi-ld": "exit 0",
                 }
                 bin_dir = self.helper_environment(commands)
                 snippet = (
@@ -282,6 +283,7 @@ class QuickstartTests(unittest.TestCase):
                     "sudo": 'exec "$@"',
                     "arm-none-eabi-gcc": "exit 0",
                     "arm-none-eabi-as": "exit 0",
+                    "arm-none-eabi-ld": "exit 0",
                 }
                 bin_dir = self.helper_environment(commands)
                 snippet = (
@@ -319,6 +321,7 @@ class QuickstartTests(unittest.TestCase):
                     "brew": brew_body,
                     "arm-none-eabi-gcc": "exit 0",
                     "arm-none-eabi-as": "exit 0",
+                    "arm-none-eabi-ld": "exit 0",
                 }
                 bin_dir = self.helper_environment(commands)
                 snippet = (
@@ -339,6 +342,164 @@ class QuickstartTests(unittest.TestCase):
                     "brew install mgba\n" in log,
                     log,
                 )
+
+    def test_install_deps_apt_legacy_skips_modern_gcc_when_absent(self):
+        # A --legacy environment with no arm-none-eabi-gcc/newlib at all
+        # (only binutils-grade tools) must install just binutils and the
+        # base packages -- never probe for or request modern GCC/newlib --
+        # and must succeed.
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        temporary = Path(self.temporary.name)
+        log_path = temporary / "invocations.log"
+        commands = {
+            "apt-get": self.logging_command(log_path, "apt-get"),
+            "sudo": 'exec "$@"',
+            "pip3": "exit 0",
+            "arm-none-eabi-as": "exit 0",
+            "arm-none-eabi-ld": "exit 0",
+        }
+        bin_dir = self.helper_environment(commands)
+        snippet = 'source "$1"; PATH="$2"; parse_args --legacy; install_deps'
+        result = subprocess.run(
+            ["/bin/bash", "-c", snippet, "quickstart-test", str(QUICKSTART), str(bin_dir)],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout)
+        log = log_path.read_text(encoding="utf-8") if log_path.exists() else ""
+        install_lines = [line for line in log.splitlines() if "install -y" in line]
+        self.assertTrue(install_lines, log)
+        self.assertFalse(any("gcc-arm-none-eabi" in line for line in install_lines), log)
+        self.assertFalse(any("libnewlib-arm-none-eabi" in line for line in install_lines), log)
+        self.assertFalse(any("libmgba-dev" in line for line in install_lines), log)
+
+    def test_install_deps_apt_legacy_installs_binutils_when_missing(self):
+        # With neither arm-none-eabi-gcc nor arm-none-eabi-as/ld present,
+        # --legacy must request binutils-arm-none-eabi (still no GCC/newlib).
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        temporary = Path(self.temporary.name)
+        log_path = temporary / "invocations.log"
+        commands = {
+            "apt-get": self.logging_command(log_path, "apt-get"),
+            "sudo": 'exec "$@"',
+            "pip3": "exit 0",
+        }
+        bin_dir = self.helper_environment(commands)
+        snippet = 'source "$1"; PATH="$2"; parse_args --legacy; install_deps'
+        result = subprocess.run(
+            ["/bin/bash", "-c", snippet, "quickstart-test", str(QUICKSTART), str(bin_dir)],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            check=False,
+        )
+        # No real binutils is ever installed by the fake apt-get, so the
+        # final have_arm_binutils re-check must fail actionably.
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn("arm-none-eabi-as/arm-none-eabi-ld are still unavailable", result.stdout)
+        log = log_path.read_text(encoding="utf-8") if log_path.exists() else ""
+        install_lines = [line for line in log.splitlines() if "install -y" in line]
+        self.assertTrue(any("binutils-arm-none-eabi" in line for line in install_lines), log)
+        self.assertFalse(any("gcc-arm-none-eabi" in line for line in install_lines), log)
+        self.assertFalse(any("libnewlib-arm-none-eabi" in line for line in install_lines), log)
+
+    def test_install_deps_pacman_legacy_skips_modern_gcc_when_absent(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        temporary = Path(self.temporary.name)
+        log_path = temporary / "invocations.log"
+        commands = {
+            "pacman": self.logging_command(log_path, "pacman"),
+            "sudo": 'exec "$@"',
+            "arm-none-eabi-as": "exit 0",
+            "arm-none-eabi-ld": "exit 0",
+        }
+        bin_dir = self.helper_environment(commands)
+        snippet = 'source "$1"; PATH="$2"; parse_args --legacy; install_deps'
+        result = subprocess.run(
+            ["/bin/bash", "-c", snippet, "quickstart-test", str(QUICKSTART), str(bin_dir)],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout)
+        log = log_path.read_text(encoding="utf-8") if log_path.exists() else ""
+        self.assertIn("pacman", log)
+        self.assertNotRegex(log, re.compile(r"\barm-none-eabi-gcc\b"))
+        self.assertNotRegex(log, re.compile(r"\barm-none-eabi-newlib\b"))
+        self.assertNotRegex(log, re.compile(r"\bmgba\b"))
+
+    def test_install_deps_brew_legacy_skips_modern_gcc_when_absent(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        temporary = Path(self.temporary.name)
+        log_path = temporary / "invocations.log"
+        brew_body = (
+            'case "$1" in\n'
+            f'  list) printf "brew %s\\n" "$*" >> "{log_path}"; exit 1 ;;\n'
+            f'  install) printf "brew %s\\n" "$*" >> "{log_path}"; exit 0 ;;\n'
+            f'  update) printf "brew %s\\n" "$*" >> "{log_path}"; exit 0 ;;\n'
+            "  *) exit 0 ;;\n"
+            "esac"
+        )
+        commands = {
+            "brew": brew_body,
+            "arm-none-eabi-as": "exit 0",
+            "arm-none-eabi-ld": "exit 0",
+        }
+        bin_dir = self.helper_environment(commands)
+        snippet = 'source "$1"; PATH="$2"; parse_args --legacy; install_deps'
+        result = subprocess.run(
+            ["/bin/bash", "-c", snippet, "quickstart-test", str(QUICKSTART), str(bin_dir)],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout)
+        log = log_path.read_text(encoding="utf-8") if log_path.exists() else ""
+        self.assertNotIn("brew install --cask gcc-arm-embedded", log)
+        self.assertNotIn("brew install mgba", log)
+
+    def test_install_deps_default_fails_actionably_when_toolchain_stays_broken(self):
+        # Default (modern) mode must still probe for and require a working
+        # arm-none-eabi-gcc/newlib; if it remains unavailable after the
+        # install attempt, install_deps must fail with the actionable
+        # diagnostic (never silently succeed or fall back to --legacy).
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        temporary = Path(self.temporary.name)
+        log_path = temporary / "invocations.log"
+        commands = {
+            "apt-get": self.logging_command(log_path, "apt-get"),
+            "sudo": 'exec "$@"',
+            "pip3": "exit 0",
+            # No arm-none-eabi-gcc/as anywhere: the fake apt-get does not
+            # actually install a working compiler, so the toolchain stays
+            # broken across both probe attempts.
+        }
+        bin_dir = self.helper_environment(commands)
+        snippet = 'source "$1"; PATH="$2"; parse_args; install_deps'
+        result = subprocess.run(
+            ["/bin/bash", "-c", snippet, "quickstart-test", str(QUICKSTART), str(bin_dir)],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn(
+            "arm-none-eabi-gcc still cannot parse <stdlib.h> and include/global.h",
+            result.stdout,
+        )
+        log = log_path.read_text(encoding="utf-8") if log_path.exists() else ""
+        install_lines = [line for line in log.splitlines() if "install -y" in line]
+        self.assertTrue(any("gcc-arm-none-eabi" in line for line in install_lines), log)
 
     def test_readme_and_docs_flags_match_script_usage(self):
         usage_snippet = 'source "$1"; usage'

@@ -142,6 +142,10 @@ install_python_modules() {
   fi
 }
 
+have_arm_binutils() {
+  have_cmd arm-none-eabi-as && have_cmd arm-none-eabi-ld
+}
+
 install_deps() {
   local pkg_mgr=""
   if have_cmd apt-get; then
@@ -152,12 +156,25 @@ install_deps() {
     pkg_mgr="brew"
   else
     echo "[!] No supported package manager detected (apt, pacman, brew)." >&2
-    echo "    Install the prerequisites manually: arm-none-eabi GCC/binutils/newlib, pkg-config, libpng, python3, pip, numpy, pillow." >&2
+    if (( LEGACY_MODE == 1 )); then
+      echo "    Install the prerequisites manually: arm-none-eabi binutils, pkg-config, libpng, python3, pip, numpy, pillow." >&2
+    else
+      echo "    Install the prerequisites manually: arm-none-eabi GCC/binutils/newlib, pkg-config, libpng, python3, pip, numpy, pillow." >&2
+    fi
     return
   fi
 
+  # --legacy builds fireemblem8.gba with agbcc (built from source by
+  # prepare_agbcc) plus the system arm-none-eabi binutils (as/ld) for
+  # assembling and linking. It does not need, and must not require or
+  # probe for, the modern arm-none-eabi GCC/newlib toolchain.
   local need_toolchain=0
-  if ! probe_arm_toolchain_headers; then
+  local need_binutils=0
+  if (( LEGACY_MODE == 1 )); then
+    if ! have_arm_binutils; then
+      need_binutils=1
+    fi
+  elif ! probe_arm_toolchain_headers; then
     need_toolchain=1
   fi
 
@@ -186,7 +203,11 @@ install_deps() {
       if (( need_playtest_backend )); then
         packages=("${packages[@]}" libmgba-dev)
       fi
-      if (( need_toolchain )); then
+      if (( LEGACY_MODE == 1 )); then
+        if (( need_binutils )); then
+          packages=(binutils-arm-none-eabi "${packages[@]}")
+        fi
+      elif (( need_toolchain )); then
         packages=(binutils-arm-none-eabi gcc-arm-none-eabi libnewlib-arm-none-eabi "${packages[@]}")
       fi
       if [[ ${#packages[@]} -gt 0 ]]; then
@@ -209,7 +230,11 @@ install_deps() {
       if (( need_playtest_backend )); then
         packages=("${packages[@]}" mgba)
       fi
-      if (( need_toolchain )); then
+      if (( LEGACY_MODE == 1 )); then
+        if (( need_binutils )); then
+          packages=(arm-none-eabi-binutils "${packages[@]}")
+        fi
+      elif (( need_toolchain )); then
         packages=(arm-none-eabi-binutils arm-none-eabi-gcc arm-none-eabi-newlib "${packages[@]}")
       fi
       echo "[+] Installing packages via pacman: ${packages[*]}"
@@ -221,7 +246,12 @@ install_deps() {
       ;;
     brew)
       local packages=(pkg-config libpng)
-      if (( need_toolchain )); then
+      if (( LEGACY_MODE == 1 )); then
+        if (( need_binutils )); then
+          echo "[+] Installing official Arm GNU toolchain cask (bundled binutils for --legacy)"
+          brew install --cask gcc-arm-embedded
+        fi
+      elif (( need_toolchain )); then
         if brew list --formula arm-none-eabi-gcc >/dev/null 2>&1; then
           echo "[!] Homebrew's arm-none-eabi-gcc formula is installed without target headers." >&2
           echo "    Run 'brew uninstall arm-none-eabi-gcc', then" >&2
@@ -248,6 +278,15 @@ install_deps() {
   esac
 
   hash -r
+  if (( LEGACY_MODE == 1 )); then
+    if ! have_arm_binutils; then
+      echo "[!] arm-none-eabi-as/arm-none-eabi-ld are still unavailable for the --legacy build." >&2
+      echo "    Install arm-none-eabi binutils (e.g. binutils-arm-none-eabi) and rerun." >&2
+      return 1
+    fi
+    return
+  fi
+
   if ! probe_arm_toolchain_headers; then
     echo "[!] arm-none-eabi-gcc still cannot parse <stdlib.h> and include/global.h." >&2
     if [[ "${pkg_mgr}" == "brew" ]]; then
