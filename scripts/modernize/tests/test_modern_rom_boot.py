@@ -1,0 +1,367 @@
+"""Tests for the expansion-modern-rom / expansion-modern-boot-check Make
+target wiring.
+
+Covers MODERN_OBJCOPY resolution (parallel to MODERN_LD/MODERN_OBJDUMP),
+ROM header-verifier wiring (pass/fail-and-delete), boot-check preflight
+(missing scenario/fingerprint, missing backend), dry-run safety, paths with
+spaces, and non-interaction with the cohort/all/elf targets.
+
+Tests using print-* and make -n run unconditionally.  Tests invoking real
+cross tools or building the actual ROM/ELF skip only when the exact required
+executable is absent.
+"""
+
+import os
+import shutil
+import subprocess
+import tempfile
+import unittest
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[3]
+
+
+class ModernRomBootTargetTests(unittest.TestCase):
+
+    def make(self, *args, cwd=None, env=None):
+        run_env = dict(os.environ)
+        if env:
+            for key, value in env.items():
+                if value is None:
+                    run_env.pop(key, None)
+                else:
+                    run_env[key] = value
+        return subprocess.run(
+            ["make", "--no-print-directory", *args],
+            cwd=cwd or ROOT,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            check=False,
+            env=run_env,
+        )
+
+    def tool_overrides(self):
+        prefix = os.environ.get("PREFIX", "arm-none-eabi-")
+        cc = os.environ.get("MODERN_CC", "")
+        if not cc:
+            root = os.environ.get("MODERN_TOOLCHAIN_ROOT", "")
+            if root:
+                cc = str(Path(root) / "bin" / f"{prefix}gcc")
+            else:
+                cc = shutil.which(f"{prefix}gcc") or ""
+        objdump = os.environ.get("MODERN_OBJDUMP", "")
+        if not objdump:
+            objdump = shutil.which(f"{prefix}objdump") or ""
+        ld = os.environ.get("MODERN_LD", "")
+        if not ld:
+            ld = shutil.which(f"{prefix}ld") or ""
+        objcopy = os.environ.get("MODERN_OBJCOPY", "")
+        if not objcopy:
+            objcopy = shutil.which(f"{prefix}objcopy") or ""
+        if not cc or not objdump or not ld or not objcopy:
+            return None
+        overrides = [
+            f"MODERN_CC={cc}",
+            f"MODERN_OBJDUMP={objdump}",
+            f"MODERN_LD={ld}",
+            f"MODERN_OBJCOPY={objcopy}",
+        ]
+        for var in ("MODERN_BINUTILS_DIR", "MODERN_NEWLIB_INCLUDE"):
+            val = os.environ.get(var)
+            if val:
+                overrides.append(f"{var}={val}")
+        return overrides
+
+    # -- MODERN_OBJCOPY resolution -------------------------------------------
+
+    def test_objcopy_defaults_to_prefix_path(self):
+        """Without a toolchain root, MODERN_OBJCOPY resolves via PREFIX.
+        MODERN_OBJCOPY/MODERN_TOOLCHAIN_ROOT must be genuinely *unset*
+        (not merely assigned an empty string) since a command-line
+        assignment, even to "", still counts as "already defined" and
+        would suppress modern.mk's own `?=` default."""
+        result = self.make(
+            "print-MODERN_OBJCOPY", "PREFIX=arm-none-eabi-",
+            env={"MODERN_TOOLCHAIN_ROOT": None, "MODERN_OBJCOPY": None},
+        )
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertIn("arm-none-eabi-objcopy", result.stdout)
+
+    def test_objcopy_honors_toolchain_root(self):
+        """With MODERN_TOOLCHAIN_ROOT set, MODERN_OBJCOPY resolves under it,
+        parallel to MODERN_LD/MODERN_OBJDUMP."""
+        with tempfile.TemporaryDirectory() as tmp:
+            result = self.make(
+                "print-MODERN_OBJCOPY", "print-MODERN_LD",
+                f"MODERN_TOOLCHAIN_ROOT={tmp}",
+                "PREFIX=arm-none-eabi-",
+                env={"MODERN_OBJCOPY": None, "MODERN_LD": None},
+            )
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertIn(f"{tmp}/bin/arm-none-eabi-objcopy", result.stdout)
+        self.assertIn(f"{tmp}/bin/arm-none-eabi-ld", result.stdout)
+
+    def test_objcopy_override_wins(self):
+        result = self.make(
+            "print-MODERN_OBJCOPY", "MODERN_OBJCOPY=/custom/objcopy",
+        )
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertIn("/custom/objcopy", result.stdout)
+
+    # -- ROM header-verifier wiring ------------------------------------------
+
+    def test_rom_rule_deletes_output_on_verifier_failure(self):
+        """A failing header verifier must delete the just-built ROM so a
+        stale/invalid image is never left behind."""
+        with tempfile.TemporaryDirectory() as tmp:
+            fake_elf = Path(tmp, "fireemblem8.elf")
+            fake_elf.write_bytes(b"\x00" * 16)
+            fake_objcopy = Path(tmp, "fake_objcopy.sh")
+            fake_objcopy.write_text(
+                "#!/bin/sh\n"
+                '# Emulate objcopy by writing an undersized (invalid) ROM.\n'
+                'for out; do :; done\n'
+                'head -c 1024 /dev/zero > "$out"\n'
+            )
+            fake_objcopy.chmod(0o755)
+            fake_verifier = Path(tmp, "fake_verify.py")
+            fake_verifier.write_text(
+                "import sys\n"
+                "print('fake verifier: rejecting', sys.argv[1])\n"
+                "sys.exit(1)\n"
+            )
+            rom_path = Path(tmp, "fireemblem8.gba")
+            # -o (--assume-old) pins the fake ELF as up to date so the real
+            # expansion-modern-link-prepare chain (whose target also happens
+            # to be $(MODERN_ELF) once overridden) never fires; only the
+            # $(MODERN_ROM) recipe itself is exercised.
+            result = self.make(
+                "-o", str(fake_elf),
+                str(rom_path),
+                f"MODERN_ELF={fake_elf}",
+                f"MODERN_OBJCOPY={fake_objcopy}",
+                f"MODERN_ROM_HEADER_VERIFIER={fake_verifier}",
+                f"MODERN_ROM={rom_path}",
+            )
+            self.assertNotEqual(result.returncode, 0, result.stdout)
+            self.assertFalse(
+                rom_path.exists(),
+                "invalid ROM must be deleted after verifier failure",
+            )
+
+    def test_rom_rule_keeps_output_on_verifier_success(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            fake_elf = Path(tmp, "fireemblem8.elf")
+            fake_elf.write_bytes(b"\x00" * 16)
+            fake_objcopy = Path(tmp, "fake_objcopy.sh")
+            fake_objcopy.write_text(
+                "#!/bin/sh\n"
+                'for out; do :; done\n'
+                'head -c 1024 /dev/zero > "$out"\n'
+            )
+            fake_objcopy.chmod(0o755)
+            fake_verifier = Path(tmp, "fake_verify.py")
+            fake_verifier.write_text(
+                "import sys\n"
+                "print('fake verifier: accepting', sys.argv[1])\n"
+                "sys.exit(0)\n"
+            )
+            rom_path = Path(tmp, "fireemblem8.gba")
+            result = self.make(
+                "-o", str(fake_elf),
+                str(rom_path),
+                f"MODERN_ELF={fake_elf}",
+                f"MODERN_OBJCOPY={fake_objcopy}",
+                f"MODERN_ROM_HEADER_VERIFIER={fake_verifier}",
+                f"MODERN_ROM={rom_path}",
+            )
+            self.assertEqual(result.returncode, 0, result.stdout)
+            self.assertTrue(rom_path.exists())
+
+    # -- Boot-check preflight -------------------------------------------------
+
+    def test_boot_preflight_fails_on_missing_scenario(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            result = self.make(
+                "expansion-modern-boot-preflight",
+                f"MODERN_BOOT_SCENARIO={tmp}/missing_scenario.json",
+                f"MODERN_BOOT_FINGERPRINT={ROOT}/tools/gba-playtest/fingerprints/boot.json",
+            )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("missing boot scenario or fingerprint", result.stdout)
+
+    def test_boot_preflight_fails_on_missing_fingerprint(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            result = self.make(
+                "expansion-modern-boot-preflight",
+                f"MODERN_BOOT_SCENARIO={ROOT}/tools/gba-playtest/scenarios/boot.json",
+                f"MODERN_BOOT_FINGERPRINT={tmp}/missing_fp.json",
+            )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("missing boot scenario or fingerprint", result.stdout)
+
+    def test_boot_preflight_fails_with_actionable_error_on_missing_backend(self):
+        """A backend-check script that always fails must produce an
+        actionable error, not a bare traceback."""
+        with tempfile.TemporaryDirectory() as tmp:
+            fake_playtest = Path(tmp, "fake_playtest.py")
+            fake_playtest.write_text(
+                "import sys\n"
+                "if sys.argv[1:2] == ['backend-check']:\n"
+                "    sys.exit(1)\n"
+                "sys.exit(0)\n"
+            )
+            result = self.make(
+                "expansion-modern-boot-preflight",
+                f"MODERN_BOOT_SCENARIO={ROOT}/tools/gba-playtest/scenarios/boot.json",
+                f"MODERN_BOOT_FINGERPRINT={ROOT}/tools/gba-playtest/fingerprints/boot.json",
+                f"MODERN_PLAYTEST={fake_playtest}",
+            )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("libmGBA playtest backend is unavailable", result.stdout)
+        self.assertIn("backend-check", result.stdout)
+
+    def test_boot_preflight_succeeds_with_stub_backend(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            fake_playtest = Path(tmp, "fake_playtest.py")
+            fake_playtest.write_text("import sys\nsys.exit(0)\n")
+            result = self.make(
+                "expansion-modern-boot-preflight",
+                f"MODERN_BOOT_SCENARIO={ROOT}/tools/gba-playtest/scenarios/boot.json",
+                f"MODERN_BOOT_FINGERPRINT={ROOT}/tools/gba-playtest/fingerprints/boot.json",
+                f"MODERN_PLAYTEST={fake_playtest}",
+            )
+        self.assertEqual(result.returncode, 0, result.stdout)
+
+    # -- Dry-run safety -------------------------------------------------------
+
+    def test_rom_dry_run_does_not_invoke_objcopy(self):
+        """make -n must echo the objcopy recipe line (expected) without
+        actually running it; a sentinel-writing fake objcopy proves no real
+        invocation happened."""
+        with tempfile.TemporaryDirectory() as tmp:
+            sentinel = Path(tmp, "invoked.marker")
+            fake_objcopy = Path(tmp, "fake_objcopy.sh")
+            fake_objcopy.write_text(
+                "#!/bin/sh\n"
+                f'touch "{sentinel}"\n'
+            )
+            fake_objcopy.chmod(0o755)
+            result = self.make(
+                "-n", "expansion-modern-rom",
+                f"MODERN_OBJCOPY={fake_objcopy}",
+            )
+            self.assertEqual(result.returncode, 0, result.stdout)
+            self.assertFalse(
+                sentinel.exists(),
+                "dry-run must not actually execute the objcopy recipe",
+            )
+
+    def test_boot_check_dry_run_does_not_invoke_playtest(self):
+        """make -n must echo the gba_playtest recipe line (expected) without
+        actually running it; a sentinel-writing fake playtest script proves
+        no real invocation happened."""
+        with tempfile.TemporaryDirectory() as tmp:
+            sentinel = Path(tmp, "invoked.marker")
+            fake_playtest = Path(tmp, "fake_playtest.py")
+            fake_playtest.write_text(
+                "import pathlib, sys\n"
+                f"pathlib.Path(r'{sentinel}').write_text('invoked')\n"
+                "sys.exit(0)\n"
+            )
+            result = self.make(
+                "-n", "expansion-modern-boot-check",
+                f"MODERN_PLAYTEST={fake_playtest}",
+            )
+            self.assertEqual(result.returncode, 0, result.stdout)
+            self.assertFalse(
+                sentinel.exists(),
+                "dry-run must not actually execute the playtest recipe",
+            )
+
+    # -- Paths with spaces ----------------------------------------------------
+
+    def test_rom_tool_paths_with_spaces(self):
+        """Tool paths (MODERN_OBJCOPY, MODERN_ROM_HEADER_VERIFIER) containing
+        spaces must work: they are only ever referenced inside quoted
+        recipe-body shell commands (never as a bare Make target/prerequisite
+        name), so embedded spaces are safe there -- mirroring the existing
+        MODERN_ELF_BANIM_SYM/MODERN_LIBGCC_DIR space-safety convention in
+        test_modern_elf.py. (A *target* name such as $(MODERN_ROM) itself
+        cannot contain literal spaces -- that is a pre-existing, unrelated
+        GNU Make rule-parsing limitation shared by every $(MODERN_OUTPUT_DIR)
+        based target in modern.mk, e.g. $(MODERN_ELF), not something specific
+        to this feature.)"""
+        with tempfile.TemporaryDirectory() as tmp:
+            space_dir = Path(tmp, "dir with spaces")
+            space_dir.mkdir()
+            fake_elf = Path(tmp, "fireemblem8.elf")
+            fake_elf.write_bytes(b"\x00" * 16)
+            fake_objcopy = space_dir / "fake objcopy.sh"
+            fake_objcopy.write_text(
+                "#!/bin/sh\n"
+                'for out; do :; done\n'
+                'head -c 1024 /dev/zero > "$out"\n'
+            )
+            fake_objcopy.chmod(0o755)
+            fake_verifier = space_dir / "fake verify.py"
+            fake_verifier.write_text("import sys\nsys.exit(0)\n")
+            rom_path = Path(tmp, "fireemblem8.gba")
+            result = self.make(
+                "-o", str(fake_elf),
+                str(rom_path),
+                f"MODERN_ELF={fake_elf}",
+                f"MODERN_OBJCOPY={fake_objcopy}",
+                f"MODERN_ROM_HEADER_VERIFIER={fake_verifier}",
+                f"MODERN_ROM={rom_path}",
+            )
+            self.assertEqual(result.returncode, 0, result.stdout)
+            self.assertTrue(rom_path.exists())
+
+    # -- Cohort/all/elf non-interaction ---------------------------------------
+
+    def test_cohort_dry_run_no_rom_or_boot_check(self):
+        overrides = self.tool_overrides()
+        if overrides is None:
+            self.skipTest("modern toolchain not available")
+        result = self.make("-n", "expansion-modern-cohort", *overrides)
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertNotIn("fireemblem8.gba", result.stdout)
+        self.assertNotIn("gba_playtest", result.stdout)
+
+    def test_all_dry_run_no_rom_or_boot_check(self):
+        overrides = self.tool_overrides()
+        if overrides is None:
+            self.skipTest("modern toolchain not available")
+        result = self.make("-n", "expansion-modern-all", *overrides)
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertNotIn("fireemblem8.gba", result.stdout)
+        self.assertNotIn("gba_playtest", result.stdout)
+
+    def test_elf_dry_run_no_rom_or_boot_check(self):
+        overrides = self.tool_overrides()
+        if overrides is None:
+            self.skipTest("modern toolchain not available")
+        result = self.make("-n", "expansion-modern-elf", *overrides)
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertNotIn("fireemblem8.gba", result.stdout)
+        self.assertNotIn("gba_playtest", result.stdout)
+
+    # -- MODERN_GOALS / NODEP wiring -------------------------------------------
+
+    def test_rom_and_boot_check_are_modern_goals(self):
+        """expansion-modern-rom/-boot-check must be in MODERN_GOALS so that
+        NODEP=1 applies to them like every other modern goal."""
+        mk = (ROOT / "modern.mk").read_text(encoding="utf-8")
+        goals_line = next(
+            line for line in mk.splitlines()
+            if line.startswith("MODERN_GOALS")
+        )
+        self.assertIn("expansion-modern-rom", goals_line)
+        self.assertIn("expansion-modern-boot-check", goals_line)
+
+
+if __name__ == "__main__":
+    unittest.main()
