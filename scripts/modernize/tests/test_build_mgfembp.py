@@ -190,6 +190,60 @@ class BuildMgfembpTests(unittest.TestCase):
         self.assertIn("--embed-asset", mk)
         self.assertIn("MODERN_MGFEMBP_EMBED_ASSETS", mk)
 
+    # -- Depfile filtering --------------------------------------------------
+
+    def test_filter_depfile_removes_root_token(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            d = Path(tmp) / "fe6sio.d"
+            d.write_text(
+                "out/fe6sio.o: fe6sio_payload.bin.lz \\\n"
+                " src/data/fe6_rom_header.inc include/gba.inc asm/fe6sio.s\n",
+                encoding="utf-8",
+            )
+            builder.filter_fe6sio_depfile(str(d))
+            result = d.read_text(encoding="utf-8")
+        self.assertNotIn("fe6sio_payload.bin.lz", result)
+        self.assertIn("gba.inc", result)
+        self.assertIn("fe6_rom_header.inc", result)
+        self.assertIn("fe6sio.s", result)
+
+    def test_filter_depfile_absent_token_is_noop(self):
+        """Zero occurrences is acceptable (already clean)."""
+        with tempfile.TemporaryDirectory() as tmp:
+            d = Path(tmp) / "test.d"
+            d.write_text(
+                "out/fe6sio.o: include/gba.inc asm/fe6sio.s\n",
+                encoding="utf-8",
+            )
+            builder.filter_fe6sio_depfile(str(d))
+            result = d.read_text(encoding="utf-8")
+        self.assertIn("gba.inc", result)
+
+    def test_filter_depfile_duplicate_token_raises(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            d = Path(tmp) / "test.d"
+            d.write_text(
+                "out/fe6sio.o: fe6sio_payload.bin.lz \\\n"
+                " fe6sio_payload.bin.lz include/gba.inc\n",
+                encoding="utf-8",
+            )
+            with self.assertRaises(ValueError) as ctx:
+                builder.filter_fe6sio_depfile(str(d))
+            self.assertIn("2", str(ctx.exception))
+
+    def test_filter_depfile_preserves_spaces_in_paths(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            d = Path(tmp) / "test.d"
+            d.write_text(
+                "out/fe6sio.o: fe6sio_payload.bin.lz \\\n"
+                " path\\ with\\ spaces/gba.inc asm/fe6sio.s\n",
+                encoding="utf-8",
+            )
+            builder.filter_fe6sio_depfile(str(d))
+            result = d.read_text(encoding="utf-8")
+        self.assertNotIn("fe6sio_payload.bin.lz", result)
+        self.assertIn("path\\ with\\ spaces/gba.inc", result)
+
 
 if __name__ == "__main__":
     unittest.main()

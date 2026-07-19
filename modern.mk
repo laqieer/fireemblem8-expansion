@@ -436,7 +436,7 @@ $(MODERN_FE6SIO_OBJ): asm/fe6sio.s $(MODERN_MGFEMBP_PAYLOAD)
 	"$(MODERN_CC)" $(MODERN_ASFLAGS) \
 		-Wa,-I,"$(MODERN_MGFEMBP_DIR)" \
 		-Wa,--MD,"$(@:.o=.d)" -c "$<" -o "$@"
-	@$(PYTHON) -c "import sys,re;p=sys.argv[1];t=open(p).read();open(p,'w').write(re.sub(r'\s*fe6sio_payload\.bin\.lz\b','',t))" "$(@:.o=.d)"
+	@$(MODERN_MGFEMBP_BUILDER) --filter-depfile "$(@:.o=.d)"
 
 # Manifest: source-relative paths of every modern-built object.
 $(MODERN_ELF_MANIFEST): $(MODERN_ALL_OBJECTS) $(MODERN_ELF_EXTRA_ASM_OBJECTS) $(MODERN_ELF_FE6SIO)

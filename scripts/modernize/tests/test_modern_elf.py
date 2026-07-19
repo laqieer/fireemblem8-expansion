@@ -212,18 +212,37 @@ class ModernElfTargetTests(unittest.TestCase):
     # -- FE6 SIO dependency isolation ---------------------------------------
 
     def test_modern_fe6sio_d_has_no_root_payload(self):
-        """Generated .d must not reference root fe6sio_payload.bin.lz."""
-        d_path = (
-            ROOT / "build" / "expansion-modern" / "debug" / "aapcs"
-            / "asm" / "fe6sio.d"
+        """Built fe6sio.d must not reference root fe6sio_payload.bin.lz."""
+        overrides = self.tool_overrides()
+        if overrides is None:
+            self.skipTest("modern toolchain not available")
+        with tempfile.TemporaryDirectory() as tmp:
+            iso = Path(tmp) / "iso-build"
+            mgfembp_dir = iso / "debug" / "aapcs" / "mgfembp"
+            mgfembp_dir.mkdir(parents=True)
+            # Create a fake payload so the assembly succeeds
+            (mgfembp_dir / "fe6sio_payload.bin.lz").write_bytes(
+                b"\x10\x00\x00\x00" + b"\x00" * 16
+            )
+            result = self.make(
+                f"{iso}/debug/aapcs/asm/fe6sio.o",
+                f"MODERN_BUILD_ROOT={iso}",
+                f"MODERN_MGFEMBP_PAYLOAD={mgfembp_dir}/fe6sio_payload.bin.lz",
+                f"MODERN_MGFEMBP_DIR={mgfembp_dir}",
+                *overrides,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout[-300:])
+            d_path = iso / "debug" / "aapcs" / "asm" / "fe6sio.d"
+            self.assertTrue(d_path.is_file(), "fe6sio.d not generated")
+            content = d_path.read_text(encoding="utf-8")
+        # Check no STANDALONE root token (full-path modern payload is OK)
+        import re
+        bare_token = re.compile(
+            r"(?<![/\\])\bfe6sio_payload\.bin\.lz\b"
         )
-        if not d_path.is_file():
-            self.skipTest("modern fe6sio.d not yet generated")
-        content = d_path.read_text(encoding="utf-8")
-        self.assertNotIn(
-            "fe6sio_payload.bin.lz",
-            content,
-            "root payload token must be removed from modern .d",
+        self.assertIsNone(
+            bare_token.search(content),
+            "bare root payload token must be removed from .d",
         )
         self.assertIn("gba.inc", content)
         self.assertIn("fe6_rom_header.inc", content)
