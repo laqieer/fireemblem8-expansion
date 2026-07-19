@@ -194,9 +194,10 @@ def generate_linker_script_text(lds_text: str, output_dir: Path) -> str:
             _ld_quote(output_dir / object_name),
         )
 
+    glue_path = _ld_quote(output_dir / "*.o")
     result = result.replace(
         "src/*.o(fake_glue)",
-        f"{output_dir.as_posix()}/*.o(fake_glue)",
+        f"{glue_path}(fake_glue)",
     )
     result = result.replace(
         "*libc.a:memcpy.o(.text)",

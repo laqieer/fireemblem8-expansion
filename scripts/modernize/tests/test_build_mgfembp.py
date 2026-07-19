@@ -64,6 +64,22 @@ class BuildMgfembpTests(unittest.TestCase):
         self.assertIn(".text.catchall", result)
         self.assertIn(".bss.catchall", result)
 
+    def test_linker_script_quotes_paths_with_spaces(self):
+        """Object and glob paths with spaces must be quoted."""
+        result = builder.generate_linker_script_text(
+            (MGFEMBP / "mgfembp.lds").read_text(encoding="utf-8"),
+            Path("build dir/out put"),
+        )
+        self.assertIn('"build dir/out put/main.o"(.text)', result)
+        self.assertIn('"build dir/out put/*.o"(fake_glue)', result)
+
+    def test_linker_script_no_quotes_without_spaces(self):
+        result = builder.generate_linker_script_text(
+            (MGFEMBP / "mgfembp.lds").read_text(encoding="utf-8"),
+            Path("build/out"),
+        )
+        self.assertNotIn('"build/out/', result)
+
     def test_structural_invariants_on_real_build(self):
         tools = self.tool_paths()
         if tools is None:
