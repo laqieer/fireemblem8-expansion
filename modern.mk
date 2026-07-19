@@ -423,7 +423,8 @@ $(MODERN_MGFEMBP_PAYLOAD): scripts/modernize/build_mgfembp.py \
 		--objcopy "$(MODERN_OBJCOPY)" \
 		--gbagfx "$(GBAGFX)" \
 		$(if $(MODERN_BINUTILS_DIR),--binutils-dir "$(MODERN_BINUTILS_DIR)") \
-		$(if $(MODERN_NEWLIB_LIB),--newlib-lib "$(MODERN_NEWLIB_LIB)")
+		$(if $(MODERN_NEWLIB_LIB),--newlib-lib "$(MODERN_NEWLIB_LIB)") \
+		$(foreach a,$(MODERN_MGFEMBP_EMBED_ASSETS),--embed-asset "$a")
 
 .PHONY: expansion-modern-mgfembp
 expansion-modern-mgfembp: $(MODERN_MGFEMBP_PAYLOAD)

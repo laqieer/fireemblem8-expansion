@@ -153,6 +153,43 @@ class BuildMgfembpTests(unittest.TestCase):
         mk = (ROOT / "modern.mk").read_text(encoding="utf-8")
         self.assertIn("MODERN_FE6SIO_OBJ:.o=.d", mk)
 
+    # -- Runtime embed manifest validation ----------------------------------
+
+    def test_validate_embed_manifest_matching(self):
+        """Correct manifest passes validation."""
+        builder.validate_embed_manifest(list(builder.EXPECTED_EMBED_SOURCE_ASSETS))
+
+    def test_validate_embed_manifest_with_prefix(self):
+        """Manifest entries with mgfembp/ prefix are normalized."""
+        prefixed = [f"mgfembp/{a}" for a in builder.EXPECTED_EMBED_SOURCE_ASSETS]
+        builder.validate_embed_manifest(prefixed)
+
+    def test_validate_embed_manifest_missing_raises(self):
+        partial = list(builder.EXPECTED_EMBED_SOURCE_ASSETS)[:-1]
+        with self.assertRaises(ValueError) as ctx:
+            builder.validate_embed_manifest(partial)
+        self.assertIn("missing from manifest", str(ctx.exception))
+
+    def test_validate_embed_manifest_extra_raises(self):
+        extended = list(builder.EXPECTED_EMBED_SOURCE_ASSETS) + ["data/extra.bin"]
+        with self.assertRaises(ValueError) as ctx:
+            builder.validate_embed_manifest(extended)
+        self.assertIn("extra in manifest", str(ctx.exception))
+
+    def test_validate_embed_manifest_duplicate_raises(self):
+        doubled = list(builder.EXPECTED_EMBED_SOURCE_ASSETS) + [
+            builder.EXPECTED_EMBED_SOURCE_ASSETS[0]
+        ]
+        with self.assertRaises(ValueError) as ctx:
+            builder.validate_embed_manifest(doubled)
+        self.assertIn("duplicate", str(ctx.exception))
+
+    def test_modern_mk_passes_embed_assets_to_builder(self):
+        """modern.mk must pass --embed-asset for each asset."""
+        mk = (ROOT / "modern.mk").read_text(encoding="utf-8")
+        self.assertIn("--embed-asset", mk)
+        self.assertIn("MODERN_MGFEMBP_EMBED_ASSETS", mk)
+
 
 if __name__ == "__main__":
     unittest.main()

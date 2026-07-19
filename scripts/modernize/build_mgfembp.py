@@ -130,6 +130,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--gbagfx", required=True)
     parser.add_argument("--binutils-dir")
     parser.add_argument("--newlib-lib")
+    parser.add_argument(
+        "--embed-asset", action="append", default=[],
+        help="Embed source asset path relative to submodule root "
+             "(repeated; validated against EXPECTED_EMBED_SOURCE_ASSETS)",
+    )
     return parser.parse_args()
 
 
@@ -193,6 +198,37 @@ def validate_source_list(submodule_root: Path) -> tuple[list[Path], list[Path]]:
 
     return ([src_dir / name for name in EXPECTED_C_SOURCES],
             [src_dir / name for name in EXPECTED_ASM_SOURCES])
+
+
+def validate_embed_manifest(declared: list[str]) -> None:
+    """Validate embed asset manifest from modern.mk against expected list.
+
+    Raises ``ValueError`` with actionable diagnostics on mismatch.
+    """
+    # Normalize: strip leading mgfembp/ prefix if present, forward slashes
+    normalized = sorted(set(
+        d.replace("\\", "/").removeprefix("mgfembp/") for d in declared
+    ))
+    expected = sorted(EXPECTED_EMBED_SOURCE_ASSETS)
+
+    if len(declared) != len(set(declared)):
+        dupes = [d for d in declared if declared.count(d) > 1]
+        raise ValueError(f"duplicate embed assets in manifest: {dupes}")
+
+    declared_set = set(normalized)
+    expected_set = set(expected)
+
+    if declared_set != expected_set:
+        missing = expected_set - declared_set
+        extra = declared_set - expected_set
+        parts = []
+        if missing:
+            parts.append(f"missing from manifest: {sorted(missing)}")
+        if extra:
+            parts.append(f"extra in manifest: {sorted(extra)}")
+        raise ValueError(
+            "embed asset manifest mismatch: " + "; ".join(parts)
+        )
 
 
 def generate_linker_script_text(lds_text: str, output_dir: Path) -> str:
@@ -427,6 +463,8 @@ def build_payload(args: argparse.Namespace) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     c_sources, asm_sources = validate_source_list(submodule_root)
+    if args.embed_asset:
+        validate_embed_manifest(args.embed_asset)
     build_embed_assets(submodule_root, output_dir, args.gbagfx)
     linker_script = write_linker_script(submodule_root, output_dir)
 
