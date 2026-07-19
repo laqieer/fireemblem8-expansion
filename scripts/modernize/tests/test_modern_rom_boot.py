@@ -349,6 +349,60 @@ class ModernRomBootTargetTests(unittest.TestCase):
         self.assertNotIn("fireemblem8.gba", result.stdout)
         self.assertNotIn("gba_playtest", result.stdout)
 
+    # -- AAPCS guard for all linked-output goals -------------------------------
+    #
+    # expansion-modern-elf is the only target that actually links, but
+    # expansion-modern-rom/-boot-check both transitively depend on it via
+    # $(MODERN_ELF) without naming "expansion-modern-elf" literally on the
+    # command line. The guard must therefore recognize the whole linked-
+    # output goal set. These assertions are genuinely tool-free: the ABI
+    # check is a top-level $(error ...) evaluated at Makefile-parse time,
+    # before any recipe (real or dry-run) is considered, so no arm-none-eabi
+    # toolchain needs to be present/discoverable for either branch.
+
+    LINKED_GOALS = (
+        "expansion-modern-elf",
+        "expansion-modern-rom",
+        "expansion-modern-boot-check",
+    )
+
+    def test_elf_rejects_apcs_gnu_early(self):
+        result = self.make("-n", "expansion-modern-elf", "MODERN_ABI=apcs-gnu")
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertIn("expansion-modern-elf", result.stdout)
+        self.assertIn("requires MODERN_ABI=aapcs", result.stdout)
+
+    def test_rom_rejects_apcs_gnu_early(self):
+        result = self.make("-n", "expansion-modern-rom", "MODERN_ABI=apcs-gnu")
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertIn("expansion-modern-rom", result.stdout)
+        self.assertIn("requires MODERN_ABI=aapcs", result.stdout)
+
+    def test_boot_check_rejects_apcs_gnu_early(self):
+        result = self.make(
+            "-n", "expansion-modern-boot-check", "MODERN_ABI=apcs-gnu",
+        )
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertIn("expansion-modern-boot-check", result.stdout)
+        self.assertIn("requires MODERN_ABI=aapcs", result.stdout)
+
+    def test_elf_accepts_aapcs_past_abi_check(self):
+        result = self.make("-n", "expansion-modern-elf", "MODERN_ABI=aapcs")
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertNotIn("requires MODERN_ABI=aapcs", result.stdout)
+
+    def test_rom_accepts_aapcs_past_abi_check(self):
+        result = self.make("-n", "expansion-modern-rom", "MODERN_ABI=aapcs")
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertNotIn("requires MODERN_ABI=aapcs", result.stdout)
+
+    def test_boot_check_accepts_aapcs_past_abi_check(self):
+        result = self.make(
+            "-n", "expansion-modern-boot-check", "MODERN_ABI=aapcs",
+        )
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertNotIn("requires MODERN_ABI=aapcs", result.stdout)
+
     # -- MODERN_GOALS / NODEP wiring -------------------------------------------
 
     def test_rom_and_boot_check_are_modern_goals(self):
