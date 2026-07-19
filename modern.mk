@@ -1,6 +1,6 @@
 # Opt-in modern GCC object cohort and transitional modern ELF target.
 
-MODERN_GOALS := expansion-modern-toolchain-check expansion-modern-cohort expansion-modern-all expansion-modern-elf expansion-modern-clean
+MODERN_GOALS := expansion-modern-toolchain-check expansion-modern-cohort expansion-modern-all expansion-modern-elf expansion-modern-rom expansion-modern-boot-check expansion-modern-clean
 ifneq (,$(filter $(MODERN_GOALS),$(MAKECMDGOALS)))
   NODEP := 1
 endif
@@ -249,7 +249,7 @@ $(MODERN_OUTPUT_DIR)/%.o: %.c
 	"$(MODERN_CC)" $(MODERN_CFLAGS) -MMD -MP -MF "$(@:.o=.d)" -MQ "$@" -c "$<" -o "$@"
 
 # IWRAM-placed symbols need per-symbol BSS sections.
-$(MODERN_OUTPUT_DIR)/src/agb_sram.o: MODERN_CFLAGS += -fdata-sections
+$(MODERN_OUTPUT_DIR)/src/agb_sram.o: MODERN_CFLAGS += -fdata-sections -fno-toplevel-reorder -fno-reorder-functions
 $(MODERN_OUTPUT_DIR)/src/m4a.o: MODERN_CFLAGS += -fdata-sections
 $(MODERN_OUTPUT_DIR)/src/bmshop.o: MODERN_CFLAGS += -fdata-sections
 
@@ -359,6 +359,14 @@ ifeq ($(MODERN_TOOLCHAIN_ROOT),)
   MODERN_LD ?= $(PREFIX)ld$(EXE)
 else
   MODERN_LD ?= $(MODERN_TOOLCHAIN_ROOT)/bin/$(PREFIX)ld$(EXE)
+endif
+
+# Resolve modern OBJCOPY consistently with the toolchain root, parallel to
+# MODERN_OBJDUMP/MODERN_LD above.
+ifeq ($(MODERN_TOOLCHAIN_ROOT),)
+  MODERN_OBJCOPY ?= $(PREFIX)objcopy$(EXE)
+else
+  MODERN_OBJCOPY ?= $(MODERN_TOOLCHAIN_ROOT)/bin/$(PREFIX)objcopy$(EXE)
 endif
 
 # Library discovery at recipe time (space-safe, no xargs).
@@ -471,5 +479,77 @@ $(MODERN_ELF): expansion-modern-link-prepare
 expansion-modern-elf: expansion-modern-all \
 		$(MODERN_ELF_EXTRA_ASM_OBJECTS) $(MODERN_ELF)
 	@printf 'Modern ELF ready: %s\n' "$(MODERN_ELF)"
+
+# ---------------------------------------------------------------------------
+# Modern ROM and deterministic boot-check targets (issue #3)
+#
+# expansion-modern-rom converts the transitional modern ELF to an isolated,
+# header-verified 16 MiB GBA ROM using the same objcopy flags as the legacy
+# %.gba rule (see Makefile). expansion-modern-boot-check runs the existing
+# gba-playtest behavior-policy verifier against that ROM and the repository's
+# boot scenario/fingerprint, proving deterministic runtime progress (not just
+# a successful link) at frames 0/60/120. Neither target claims ROM byte
+# identity with the legacy build; both remain part of issue-#3 transitional
+# infrastructure alongside expansion-modern-elf's linker debt.
+# ---------------------------------------------------------------------------
+
+MODERN_ROM := $(MODERN_OUTPUT_DIR)/fireemblem8.gba
+MODERN_ROM_HEADER_VERIFIER := scripts/modernize/verify_rom_header.py
+MODERN_BOOT_SCENARIO := tools/gba-playtest/scenarios/boot.json
+MODERN_BOOT_FINGERPRINT := tools/gba-playtest/fingerprints/boot.json
+MODERN_PLAYTEST := tools/gba-playtest/gba_playtest.py
+
+# Convert the linked ELF to a flat, padded ROM image, then verify the GBA
+# header in-place: exact 16 MiB size, title/game code/maker code/fixed byte,
+# and the checksum byte at offset 0xBD recomputed over 0xA0..0xBC. A failed
+# verification deletes the ROM so a stale, invalid image is never left behind
+# for expansion-modern-boot-check (or a caller) to pick up silently.
+$(MODERN_ROM): $(MODERN_ELF)
+	@mkdir -p "$(@D)"
+	"$(MODERN_OBJCOPY)" --strip-debug -O binary --pad-to 0x9000000 --gap-fill=0xff "$<" "$@"
+	@if ! "$(PYTHON)" "$(MODERN_ROM_HEADER_VERIFIER)" "$@"; then \
+		rm -f "$@"; \
+		exit 1; \
+	fi
+
+expansion-modern-rom: expansion-modern-elf $(MODERN_ROM)
+	@printf 'Modern ROM ready: %s (config=%s abi=%s)\n' \
+		"$(MODERN_ROM)" '$(MODERN_CONFIG)' '$(MODERN_ABI)'
+
+# Preflight the libmGBA-backed playtest backend before spending time building
+# the ROM, with an actionable error pointing at the same backend-check
+# subcommand used by tools/gba-playtest's own tests.
+.PHONY: expansion-modern-boot-preflight
+expansion-modern-boot-preflight:
+	@if [ ! -f "$(MODERN_BOOT_SCENARIO)" ] || [ ! -f "$(MODERN_BOOT_FINGERPRINT)" ]; then \
+		printf '%s\n' \
+			"error: missing boot scenario or fingerprint" >&2; \
+		printf '  scenario:    %s\n' "$(MODERN_BOOT_SCENARIO)" >&2; \
+		printf '  fingerprint: %s\n' "$(MODERN_BOOT_FINGERPRINT)" >&2; \
+		exit 1; \
+	fi
+	@if ! "$(PYTHON)" "$(MODERN_PLAYTEST)" backend-check; then \
+		printf '%s\n' \
+			"error: libmGBA playtest backend is unavailable" >&2; \
+		printf '%s\n' \
+			"Install a C compiler and libmgba-dev (or equivalent)," \
+			"then rerun: $(PYTHON) $(MODERN_PLAYTEST) backend-check" >&2; \
+		exit 1; \
+	fi
+
+# Full 3-checkpoint behavior-policy boot gate: proves the modern ROM reaches
+# the same deterministic runtime state as the legacy ROM at frames 0/60/120
+# (not merely that it links). --policy behavior is required here because the
+# modern ROM is not byte-identical to the legacy ROM referenced by the
+# checked-in fingerprint's own "rom" stanza; only --policy exact-rom would
+# additionally require ROM identity, which this target does not claim.
+expansion-modern-boot-check: expansion-modern-boot-preflight expansion-modern-rom
+	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify \
+		--rom "$(MODERN_ROM)" \
+		--scenario "$(MODERN_BOOT_SCENARIO)" \
+		--expected "$(MODERN_BOOT_FINGERPRINT)" \
+		--policy behavior
+	@printf 'Modern ROM boot-check passed: %s (config=%s abi=%s)\n' \
+		"$(MODERN_ROM)" '$(MODERN_CONFIG)' '$(MODERN_ABI)'
 
 -include $(wildcard $(sort $(MODERN_COHORT_DEPS) $(MODERN_ALL_DEPS)))

@@ -254,3 +254,60 @@ Three source files (`src/agb_sram.c`, `src/m4a.c`, `src/bmshop.c`) receive
 `-fdata-sections` so modern GCC emits the named `.bss.<symbol>` sections
 the generated linker script places at pinned offsets. This is transitional
 issue-#4 debt; the clean linker will handle IWRAM layout directly.
+`src/agb_sram.o` additionally receives `-fno-toplevel-reorder
+-fno-reorder-functions`: `SetSramFastFunc()` copies `ReadSramFast_Core`/
+`VerifySramFast_Core` into IWRAM scratch buffers at runtime by subtracting
+adjacent function addresses, a legacy-agbcc idiom that assumes those
+functions stay contiguous in source-declaration order. Modern GCC's default
+`-O2` `-freorder-functions` reorders them, corrupting the computed copy size
+and eventually crashing at runtime; the two flags restore source order.
+
+### Modern ROM and deterministic boot-check targets
+
+`expansion-modern-rom` converts the transitional modern ELF to an isolated
+16 MiB GBA ROM and verifies its header; `expansion-modern-boot-check` runs
+the repository's existing behavior-policy playtest fingerprint against that
+ROM, proving deterministic runtime progress (not just a successful link) at
+frames 0/60/120.
+
+```bash
+make expansion-modern-rom MODERN_CONFIG=debug MODERN_ABI=aapcs
+make expansion-modern-rom MODERN_CONFIG=release MODERN_ABI=aapcs
+make expansion-modern-boot-check MODERN_CONFIG=debug MODERN_ABI=aapcs
+make expansion-modern-boot-check MODERN_CONFIG=release MODERN_ABI=aapcs
+```
+
+Outputs land under `build/expansion-modern/<config>/<abi>/`:
+- `fireemblem8.gba` — flat, padded, header-verified modern ROM
+
+`expansion-modern-rom` objcopies `$(MODERN_ELF)` with the same
+`--strip-debug -O binary --pad-to 0x9000000 --gap-fill=0xff` flags as the
+legacy `%.gba` rule, then verifies the result in place with
+`scripts/modernize/verify_rom_header.py`: exact 16 MiB size, title/game
+code/maker code/fixed byte, and the checksum byte at offset `0xBD`
+recomputed over `0xA0..0xBC`. A failed verification deletes the ROM so a
+stale, invalid image is never silently reused. `MODERN_OBJCOPY` resolves
+in parallel to `MODERN_LD`/`MODERN_OBJDUMP` (`$(PREFIX)objcopy` or
+`$(MODERN_TOOLCHAIN_ROOT)/bin/$(PREFIX)objcopy`) and can be overridden
+directly.
+
+`expansion-modern-boot-check` first runs `expansion-modern-boot-preflight`,
+which checks that `tools/gba-playtest/scenarios/boot.json` and
+`tools/gba-playtest/fingerprints/boot.json` exist and that the libmGBA
+playtest backend is available (`gba_playtest.py backend-check`), failing
+with an actionable error (including the exact backend-check command to
+rerun) rather than a confusing downstream crash. It then builds the ROM and
+runs `gba_playtest.py verify --policy behavior` against all three
+checkpoints (frames 0/60/120) — never weakened to a frame-0-only check.
+`--policy behavior` is required (not `--policy exact-rom`) because the
+modern ROM is not byte-identical to the legacy ROM referenced by the
+checked-in fingerprint's own `rom` stanza; this target makes no ROM
+byte-identity claim, only that both ROMs reach the same deterministic
+runtime state.
+
+Setting up the libmGBA playtest backend follows the same bootstrap as any
+other `tools/gba-playtest` consumer — see that tool's own documentation for
+compiler/library prerequisites. `expansion-modern-rom`/
+`expansion-modern-boot-check` share the transitional linker debt and
+mgfembp-derived pre-existing-object requirement documented above for
+`expansion-modern-elf`, since they build on top of the same modern ELF.
