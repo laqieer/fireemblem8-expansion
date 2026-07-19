@@ -429,14 +429,20 @@ $(MODERN_MGFEMBP_PAYLOAD): scripts/modernize/build_mgfembp.py \
 .PHONY: expansion-modern-mgfembp
 expansion-modern-mgfembp: $(MODERN_MGFEMBP_PAYLOAD)
 
-# Assemble fe6sio.s with -I pointing to modern payload directory
-# so .incbin "fe6sio_payload.bin.lz" resolves to modern output.
+# Assemble fe6sio.s from the modern payload directory so
+# .incbin "fe6sio_payload.bin.lz" resolves to the modern payload,
+# not a potentially stale root artifact.  All paths are absolute
+# so the CWD change is transparent.
 $(MODERN_FE6SIO_OBJ): asm/fe6sio.s $(MODERN_MGFEMBP_PAYLOAD)
 	@mkdir -p "$(@D)"
-	"$(MODERN_CC)" $(MODERN_ASFLAGS) \
-		-Wa,-I,"$(MODERN_MGFEMBP_DIR)" \
-		-Wa,--MD,"$(@:.o=.d)" -c "$<" -o "$@"
-	@$(MODERN_MGFEMBP_BUILDER) --filter-depfile "$(@:.o=.d)"
+	cd "$(abspath $(MODERN_MGFEMBP_DIR))" && \
+	"$(abspath $(MODERN_CC))" \
+		$(MODERN_DRIVER_FLAGS) $(MODERN_ARCH_FLAGS) \
+		-I"$(CURDIR)/include" -I"$(CURDIR)" \
+		$(MODERN_ABI_FLAGS) \
+		-Wa,--MD,"$(abspath $(@:.o=.d))" \
+		-c "$(CURDIR)/$<" -o "$(abspath $@)"
+	@$(MODERN_MGFEMBP_BUILDER) --filter-depfile "$(abspath $(@:.o=.d))"
 
 # Manifest: source-relative paths of every modern-built object.
 $(MODERN_ELF_MANIFEST): $(MODERN_ALL_OBJECTS) $(MODERN_ELF_EXTRA_ASM_OBJECTS) $(MODERN_ELF_FE6SIO)
