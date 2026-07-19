@@ -397,17 +397,29 @@ else
   MODERN_LIBC_DIR = $(MODERN_NEWLIB_LIB)
 endif
 
-.PHONY: expansion-modern-mgfembp
-expansion-modern-mgfembp: expansion-modern-toolchain-check
+# Modern FE6 SIO payload: compile mgfembp submodule with modern GCC.
+# Prerequisites are explicit file targets for correct incrementality.
+MODERN_MGFEMBP_C_SRCS := $(sort $(wildcard mgfembp/src/*.c))
+MODERN_MGFEMBP_S_SRCS := $(sort $(wildcard mgfembp/src/*.s))
+MODERN_MGFEMBP_HEADERS := $(sort $(wildcard mgfembp/include/*.h))
+MODERN_MGFEMBP_LDS := mgfembp/mgfembp.lds
+
+$(MODERN_MGFEMBP_PAYLOAD): scripts/modernize/build_mgfembp.py \
+		$(MODERN_MGFEMBP_LDS) $(MODERN_MGFEMBP_C_SRCS) \
+		$(MODERN_MGFEMBP_S_SRCS) $(MODERN_MGFEMBP_HEADERS) \
+		$(GBAGFX) | expansion-modern-toolchain-check
 	$(MODERN_MGFEMBP_BUILDER) \
 		--submodule-root mgfembp \
 		--output-dir "$(MODERN_MGFEMBP_DIR)" \
 		--cc "$(MODERN_CC)" \
 		--ld "$(MODERN_LD)" \
-		--objcopy "$(PREFIX)objcopy$(EXE)" \
-		--gbagfx "$(GBAGFX)"
+		--objcopy "$(MODERN_OBJCOPY)" \
+		--gbagfx "$(GBAGFX)" \
+		$(if $(MODERN_BINUTILS_DIR),--binutils-dir "$(MODERN_BINUTILS_DIR)") \
+		$(if $(MODERN_NEWLIB_LIB),--newlib-lib "$(MODERN_NEWLIB_LIB)")
 
-$(MODERN_MGFEMBP_PAYLOAD): | expansion-modern-mgfembp
+.PHONY: expansion-modern-mgfembp
+expansion-modern-mgfembp: $(MODERN_MGFEMBP_PAYLOAD)
 
 # Assemble fe6sio.s with -I pointing to modern payload directory
 # so .incbin "fe6sio_payload.bin.lz" resolves to modern output.
