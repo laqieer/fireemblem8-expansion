@@ -236,11 +236,13 @@ to point at a specific newlib library directory if auto-discovery fails.
 `MODERN_LD` defaults to `$(PREFIX)ld` or
 `$(MODERN_TOOLCHAIN_ROOT)/bin/$(PREFIX)ld`.
 
-**Pre-existing object requirement**: `asm/fe6sio.o` and `banim/data_banim.o`
-must exist before running this target. Generating `asm/fe6sio.o` currently
-invokes the mgfembp submodule's own agbcc variant. Run the legacy build
-(`make fireemblem8.gba`) first to produce these objects. The modern ELF
-target never silently triggers the mgfembp build.
+The FE6 SIO multiboot payload is built from the `mgfembp` submodule source
+using modern GCC (`expansion-modern-mgfembp`). The modern binary differs from
+the historical SHA by design (different compiler/optimization) but parent boot
+behavior is verified. SIO link-cable protocol timing remains a documented
+residual risk since no automated multiboot test exists. The legacy archival
+path through mgfembp's own build system may still produce the original
+byte-matching binary separately.
 
 **No boot/ROM claim**: this ELF is not stripped, converted to GBA, or tested
 for runtime behavior. It proves the modern toolchain can link a full
