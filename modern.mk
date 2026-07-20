@@ -11,6 +11,19 @@ MODERN_ABI ?= aapcs
 MODERN_CONFIGS := debug release
 MODERN_ABIS := aapcs apcs-gnu
 
+# MODERN_TEXT_SHIFT: link-time shift padding (bytes, 4-aligned, default 0).
+# Changing this value requires a clean rebuild of the ELF/ROM.
+# It does NOT produce isolated artifact paths — rebuild from clean.
+MODERN_TEXT_SHIFT ?= 0
+MODERN_TEXT_SHIFT_IS_NUM := $(shell printf '%s\n' '$(MODERN_TEXT_SHIFT)' | python3 -c "import re, sys; v = sys.stdin.read().strip(); sys.stdout.write('ok' if re.fullmatch(r'(0x[0-9a-fA-F]+|[0-9]+)', v) else '')")
+ifeq ($(MODERN_TEXT_SHIFT_IS_NUM),)
+  $(error MODERN_TEXT_SHIFT '$(MODERN_TEXT_SHIFT)' is not a valid number)
+endif
+MODERN_TEXT_SHIFT_IS_ALIGNED := $(shell printf '%s\n' '$(MODERN_TEXT_SHIFT)' | python3 -c "import sys; v = sys.stdin.read().strip(); sys.stdout.write('ok' if int(v, 0) % 4 == 0 else '')")
+ifeq ($(MODERN_TEXT_SHIFT_IS_ALIGNED),)
+  $(error MODERN_TEXT_SHIFT '$(MODERN_TEXT_SHIFT)' must be 4-byte aligned)
+endif
+
 ifeq (,$(filter $(MODERN_CONFIG),$(MODERN_CONFIGS)))
   $(error modern.mk: unsupported MODERN_CONFIG '$(MODERN_CONFIG)'; expected debug or release)
 endif
@@ -858,6 +871,7 @@ $(MODERN_ELF): expansion-modern-link-prepare
 	"$(MODERN_LD)" \
 		--orphan-handling=error \
 		--defsym=__rom_size=$(MODERN_ROM_SIZE_BYTES) \
+		--defsym=__text_shift=$(MODERN_TEXT_SHIFT) \
 		-T "$(MODERN_CLEAN_LDSCRIPT)" \
 		-Map "$(MODERN_MAP)" \
 		@"$(MODERN_ELF_OBJECTS_LST)" \

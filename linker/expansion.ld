@@ -191,9 +191,18 @@ SECTIONS
 
     ROM __text_start : ALIGN(4)
     {
+        /* === PINNED: startup + ARM (never shift) === */
         KEEP(*src/rom_header.o(.text))
         KEEP(*src/crt0.o(.text))
         *asm/arm.o(.text)
+
+        /* === SHIFT PADDING: inserts __text_shift bytes here === */
+        . = ALIGN(4);
+        __shift_start = .;
+        . += __text_shift;
+        __shift_end = .;
+
+        /* === FLOATING: moves by shift amount === */
         *(EXCLUDE_FILE (*src/rom_header.o *src/crt0.o *asm/arm.o *asm/arm_call.o) .text .text.* .glue_7 .glue_7t)
         *asm/arm_call.o(.text)
         *(.vfp11_veneer .v4_bx .iplt)
@@ -213,7 +222,9 @@ SECTIONS
             *src/data/data_FFF000.o
         ) .data .data.*)
         *(.igot.plt)
+        __floating_end = .;
 
+        /* === PINNED: banim regions (never shift) === */
         FILL(0xFF);
         . = 0xC00000;
         *src/banim_data.o(.data)
@@ -257,6 +268,7 @@ SECTIONS
     ASSERT(SIZEOF(ROM) <= __rom_size, "ROM content exceeds configured ROM size")
     ASSERT(SIZEOF(IWRAM) <= 32K, "IWRAM overflow")
     ASSERT(SIZEOF(ewram_data) + SIZEOF(.bss) <= 256K, "EWRAM overflow")
+    ASSERT(__floating_end <= 0x08C00000, "Floating ROM content overlaps pinned banim region at 0x08C00000")
     ASSERT(SIZEOF(ewram_overlay_0) <= 256K, "ewram_overlay_0 exceeds EWRAM")
     ASSERT(SIZEOF(ewram_overlay_gameending) <= 256K, "ewram_overlay_gameending exceeds EWRAM")
     ASSERT(SIZEOF(ewram_overlay_bmstart) <= 256K, "ewram_overlay_bmstart exceeds EWRAM")
