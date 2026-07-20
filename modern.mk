@@ -45,6 +45,19 @@ ifeq (,$(filter $(MODERN_ABI),$(MODERN_ABIS)))
   $(error modern.mk: unsupported MODERN_ABI '$(MODERN_ABI)'; expected aapcs or apcs-gnu)
 endif
 
+# config.mk: the committed, central configuration surface for the
+# expansion framework's semantic version and default GBA ROM identity
+# (issue #8). It intentionally does not duplicate MODERN_CONFIG/
+# MODERN_ABI/MODERN_ROM_SIZE/MODERN_TEXT_SHIFT, which remain owned here.
+# `-include` (not `include`): this repository always commits config.mk, but
+# some existing tests build a minimal synthetic tree that copies in only
+# modern.mk (plus a throwaway Makefile) to exercise unrelated cohort/all/
+# elf/fetsatool-lock/budget behavior in isolation, without config.mk. A
+# missing config.mk there must not hard-fail an unrelated test; the
+# MODERN_EXPANSION_CONFIG_AVAILABLE gate further below skips issue #8's own
+# resolution logic gracefully in exactly that situation.
+-include config.mk
+
 MODERN_TOOLCHAIN_ROOT ?=
 MODERN_BINUTILS_DIR ?=
 
@@ -748,6 +761,221 @@ else
   $(error Unsupported MODERN_ROM_SIZE '$(MODERN_ROM_SIZE)'; expected 16M or 32M)
 endif
 
+# --- Framework configuration and ROM identity (issue #8) --------------------
+# Validates config.mk plus MODERN_CONFIG/MODERN_ABI/MODERN_ROM_SIZE/
+# MODERN_TEXT_SHIFT before any modern C/assembly compilation or linking is
+# attempted, resolves the deterministic build commit and config identity
+# fingerprint, and feeds both into modern C sources (via MODERN_CFLAGS -D
+# defines, consumed by include/expansion_config.h) and into the embedded
+# ExpansionMetadata record (include/expansion_metadata.h,
+# src/expansion_metadata.c).
+MODERN_EXPANSION_CONFIG_TOOL := scripts/modernize/expansion_config.py
+
+# Whether this checkout actually has the issue #8 framework files (config.mk
+# plus the tool itself). True for the real repository always (both are
+# committed); false only for the minimal synthetic modern.mk-only fixture
+# trees some existing tests build to exercise unrelated cohort/all/elf/
+# fetsatool-lock/budget behavior in isolation (they intentionally copy just
+# modern.mk plus a throwaway Makefile, not config.mk or scripts/). Resolution
+# below is skipped gracefully in that case -- compiled C still gets
+# expansion_config.h's own #ifndef fallback macros, just not this build's
+# live-resolved version/commit/fingerprint -- rather than hard-failing a
+# fixture that was never exercising issue #8 in the first place. A real
+# build (this repository) always has both files, so this never masks an
+# actually-missing/misconfigured config.mk there.
+MODERN_EXPANSION_CONFIG_AVAILABLE := $(and $(wildcard config.mk),$(wildcard $(MODERN_EXPANSION_CONFIG_TOOL)))
+
+# Deterministic per-build metadata (issue #8 deliverable 3), generated under
+# the build tree -- never a committed source directory -- and kept in sync
+# via the same write-if-unchanged + FORCE idiom as MODERN_ELF_LINK_SETTINGS
+# above. Declared unconditionally (like MODERN_ROM_SIZE/MODERN_PAD_TO above,
+# not gated behind MODERN_GOALS): $(MODERN_ROM) unconditionally depends on
+# this target, and tests/callers may legitimately invoke $(MODERN_ROM) (or
+# any literal path matching it) directly without MAKECMDGOALS containing a
+# MODERN_GOALS name. Because the target is unconditional, its recipe body
+# (not an outer goal-based gate, which a direct-path invocation would
+# bypass entirely) is what must branch on MODERN_EXPANSION_CONFIG_AVAILABLE:
+# a real build with config.mk + the tool present shells out to Python exactly
+# as before; a config-less synthetic fixture (see MODERN_EXPANSION_CONFIG_AVAILABLE
+# above) instead writes an inert placeholder JSON with no Python/tooling
+# invocation at all, so reaching this file's path in such a fixture no longer
+# hard-fails on missing config.mk/scripts/modernize -- while any build with
+# the framework files present still always requires and verifies the real
+# generated metadata. Uses a hardcoded `python3` (not $(PYTHON)) since this
+# may be pulled in by a minimal including Makefile that never defines
+# $(PYTHON) -- matching the existing MODERN_TEXT_SHIFT validation's own
+# convention just above.
+MODERN_GENERATED_DIR := $(MODERN_OUTPUT_DIR)/generated
+MODERN_BUILD_METADATA_JSON := $(MODERN_GENERATED_DIR)/expansion_build_metadata.json
+
+.PHONY: FORCE_MODERN_BUILD_METADATA
+FORCE_MODERN_BUILD_METADATA:
+
+$(MODERN_BUILD_METADATA_JSON): FORCE_MODERN_BUILD_METADATA
+	@mkdir -p "$(MODERN_GENERATED_DIR)"
+ifneq (,$(MODERN_EXPANSION_CONFIG_AVAILABLE))
+	@python3 "$(MODERN_EXPANSION_CONFIG_TOOL)" generate \
+		--config-mk config.mk \
+		--config "$(MODERN_CONFIG)" \
+		--abi "$(MODERN_ABI)" \
+		--rom-size "$(MODERN_ROM_SIZE)" \
+		--text-shift "$(MODERN_TEXT_SHIFT)" \
+		--build-id "$(EXPANSION_BUILD_ID)" \
+		--version-major "$(EXPANSION_VERSION_MAJOR)" \
+		--version-minor "$(EXPANSION_VERSION_MINOR)" \
+		--version-patch "$(EXPANSION_VERSION_PATCH)" \
+		--title "$(EXPANSION_ROM_TITLE)" \
+		--game-code "$(EXPANSION_ROM_GAME_CODE)" \
+		--maker-code "$(EXPANSION_ROM_MAKER_CODE)" \
+		--revision "$(EXPANSION_ROM_REVISION)" \
+		--output-dir "$(MODERN_GENERATED_DIR)"
+else
+	@printf '%s\n' '{"expansion_config_available": false}' > "$@"
+endif
+
+# The eager $(shell ...) resolution below (needed only to feed MODERN_CFLAGS
+# -D defines for actual C compilation) stays gated on
+# MODERN_CONFIG_RESOLVE_GOALS -- MODERN_GOALS with expansion-modern-clean
+# excluded -- like NODEP above (so a legacy-only invocation of `make` never
+# shells out to Python for it), and on MODERN_EXPANSION_CONFIG_AVAILABLE (so
+# the minimal synthetic modern.mk-only fixtures described above are
+# unaffected). expansion-modern-clean must be excluded from this gate: it
+# only removes build output, never compiles or embeds anything
+# expansion-config-related, so an invalid EXPANSION_* value (e.g. an
+# over-length title) must not block `make expansion-modern-clean` -- clean
+# has to keep working precisely so a bad config's build tree can be
+# recovered from without hand-deleting it.
+MODERN_CONFIG_RESOLVE_GOALS := $(filter-out expansion-modern-clean,$(MODERN_GOALS))
+
+# Whether this invocation's MODERN_CFLAGS actually receives the
+# FE8_EXPANSION_* -D defines below (both gates below hold). Used again
+# further down to keep MODERN_COMPILE_SETTINGS -- the content-addressed
+# recompilation stamp for every modern C/data object that observes
+# include/expansion_config.h -- a single source of truth with the defines
+# it is stamping, instead of re-deriving the same two gates a second time.
+MODERN_EXPANSION_DEFINES_ACTIVE :=
+ifneq (,$(filter $(MODERN_CONFIG_RESOLVE_GOALS),$(MAKECMDGOALS)))
+ ifneq (,$(MODERN_EXPANSION_CONFIG_AVAILABLE))
+  MODERN_EXPANSION_DEFINES_ACTIVE := 1
+  # Every version/ROM-identity value is passed explicitly here as the
+  # *current* Make variable value (config.mk's ?= default, or a
+  # command-line/environment override -- Make itself resolves which wins).
+  # This is what keeps this tool, the -D defines below, and the generated
+  # metadata JSON as a single source of truth: whatever `make ...
+  # EXPANSION_ROM_TITLE=...` resolves to is exactly what gets validated,
+  # embedded in the ROM, and checked by the verifier -- never re-derived
+  # from config.mk alone (which would silently ignore a command-line
+  # override and desync the compiled ROM from the generated metadata).
+  MODERN_EXPANSION_CONFIG_RESOLVE := $(shell python3 "$(MODERN_EXPANSION_CONFIG_TOOL)" resolve \
+	--config-mk config.mk \
+	--config "$(MODERN_CONFIG)" \
+	--abi "$(MODERN_ABI)" \
+	--rom-size "$(MODERN_ROM_SIZE)" \
+	--text-shift "$(MODERN_TEXT_SHIFT)" \
+	--build-id "$(EXPANSION_BUILD_ID)" \
+	--version-major "$(EXPANSION_VERSION_MAJOR)" \
+	--version-minor "$(EXPANSION_VERSION_MINOR)" \
+	--version-patch "$(EXPANSION_VERSION_PATCH)" \
+	--title "$(EXPANSION_ROM_TITLE)" \
+	--game-code "$(EXPANSION_ROM_GAME_CODE)" \
+	--maker-code "$(EXPANSION_ROM_MAKER_CODE)" \
+	--revision "$(EXPANSION_ROM_REVISION)" 2>&1)
+  ifneq (,$(filter error:%,$(MODERN_EXPANSION_CONFIG_RESOLVE)))
+    $(error $(MODERN_EXPANSION_CONFIG_RESOLVE))
+  endif
+  MODERN_BUILD_COMMIT := $(patsubst MODERN_BUILD_COMMIT=%,%,$(filter MODERN_BUILD_COMMIT=%,$(MODERN_EXPANSION_CONFIG_RESOLVE)))
+  MODERN_CONFIG_FINGERPRINT := $(patsubst MODERN_CONFIG_FINGERPRINT=%,%,$(filter MODERN_CONFIG_FINGERPRINT=%,$(MODERN_EXPANSION_CONFIG_RESOLVE)))
+  MODERN_VERSION_PACKED := $(patsubst MODERN_VERSION_PACKED=%,%,$(filter MODERN_VERSION_PACKED=%,$(MODERN_EXPANSION_CONFIG_RESOLVE)))
+  MODERN_VERSION_STRING := $(patsubst MODERN_VERSION_STRING=%,%,$(filter MODERN_VERSION_STRING=%,$(MODERN_EXPANSION_CONFIG_RESOLVE)))
+  ifeq ($(strip $(MODERN_BUILD_COMMIT)),)
+    $(error modern.mk: failed to resolve MODERN_BUILD_COMMIT from '$(MODERN_EXPANSION_CONFIG_TOOL) resolve'; got: $(MODERN_EXPANSION_CONFIG_RESOLVE))
+  endif
+
+  # Modern-only compiler defines feeding include/expansion_config.h. These
+  # are never added to the legacy Makefile's CFLAGS, so the legacy build
+  # keeps that header's hardcoded #ifndef fallbacks (today's exact ROM
+  # identity) unchanged.
+  MODERN_CFLAGS += \
+	-DFE8_EXPANSION_VERSION_MAJOR=$(EXPANSION_VERSION_MAJOR) \
+	-DFE8_EXPANSION_VERSION_MINOR=$(EXPANSION_VERSION_MINOR) \
+	-DFE8_EXPANSION_VERSION_PATCH=$(EXPANSION_VERSION_PATCH) \
+	-DFE8_EXPANSION_VERSION_STRING='"$(MODERN_VERSION_STRING)"' \
+	-DFE8_EXPANSION_BUILD_COMMIT='"$(MODERN_BUILD_COMMIT)"' \
+	-DFE8_EXPANSION_CONFIG_FINGERPRINT='"$(MODERN_CONFIG_FINGERPRINT)"' \
+	-DFE8_EXPANSION_CONFIG_PRESET='"$(MODERN_CONFIG)"' \
+	-DFE8_EXPANSION_ABI='"$(MODERN_ABI)"' \
+	-DFE8_EXPANSION_ROM_TITLE='"$(EXPANSION_ROM_TITLE)"' \
+	-DFE8_EXPANSION_ROM_GAME_CODE='"$(EXPANSION_ROM_GAME_CODE)"' \
+	-DFE8_EXPANSION_ROM_MAKER_CODE='"$(EXPANSION_ROM_MAKER_CODE)"' \
+	-DFE8_EXPANSION_ROM_REVISION=$(EXPANSION_ROM_REVISION) \
+	-DFE8_EXPANSION_ROM_SIZE_BYTES=$(MODERN_ROM_SIZE_BYTES)
+ endif
+endif
+
+# Compile-settings stamp: a content-addressed prerequisite of every modern
+# C/data object that can observe include/expansion_config.h (global.h
+# includes it unconditionally, and every MODERN_ALL_C_SOURCES/
+# MODERN_ALL_DATA_C_SOURCES file starts with #include "global.h" per this
+# repository's include-order convention -- see MODERN_ALL_C_OBJECTS/
+# MODERN_ALL_DATA_OBJECTS below), following the exact same
+# write-if-unchanged + FORCE idiom as MODERN_ELF_LINK_SETTINGS above.
+#
+# Without this, changing a config.mk/EXPANSION_* value (title, version,
+# build id, fingerprint, ROM size, ...) between two builds sharing the same
+# MODERN_OUTPUT_DIR only changes MODERN_CFLAGS's -D flag *content* -- never
+# a *file* GNU Make's dependency graph tracks -- so src/expansion_metadata.c
+# (and any other translation unit reading FE8_EXPANSION_* macros) is not
+# considered stale and keeps its previously-compiled object, silently
+# embedding the *old* values in the next ROM and failing verify_rom_header.py
+# against the freshly regenerated (and now mismatched) metadata JSON/header.
+#
+# Content mirrors MODERN_EXPANSION_DEFINES_ACTIVE exactly (the same single
+# source of truth gating the -D flags themselves above), so the stamp only
+# changes when the actual compiled defines would change: the trivial
+# constant "unsupported" whenever those defines are not being added at all
+# (config-less fixture, or a direct object-path invocation bypassing
+# MODERN_CONFIG_RESOLVE_GOALS), and the real resolved values otherwise.
+MODERN_COMPILE_SETTINGS := $(MODERN_GENERATED_DIR)/compile_settings.txt
+
+.PHONY: FORCE_MODERN_COMPILE_SETTINGS
+FORCE_MODERN_COMPILE_SETTINGS:
+
+$(MODERN_COMPILE_SETTINGS): FORCE_MODERN_COMPILE_SETTINGS
+	@mkdir -p "$(@D)"
+ifneq (,$(MODERN_EXPANSION_DEFINES_ACTIVE))
+	@{ \
+		printf '%s\n' 'version_major=$(EXPANSION_VERSION_MAJOR)'; \
+		printf '%s\n' 'version_minor=$(EXPANSION_VERSION_MINOR)'; \
+		printf '%s\n' 'version_patch=$(EXPANSION_VERSION_PATCH)'; \
+		printf '%s\n' 'version_string=$(MODERN_VERSION_STRING)'; \
+		printf '%s\n' 'build_commit=$(MODERN_BUILD_COMMIT)'; \
+		printf '%s\n' 'config_fingerprint=$(MODERN_CONFIG_FINGERPRINT)'; \
+		printf '%s\n' 'config_preset=$(MODERN_CONFIG)'; \
+		printf '%s\n' 'abi=$(MODERN_ABI)'; \
+		printf '%s\n' 'rom_title=$(EXPANSION_ROM_TITLE)'; \
+		printf '%s\n' 'rom_game_code=$(EXPANSION_ROM_GAME_CODE)'; \
+		printf '%s\n' 'rom_maker_code=$(EXPANSION_ROM_MAKER_CODE)'; \
+		printf '%s\n' 'rom_revision=$(EXPANSION_ROM_REVISION)'; \
+		printf '%s\n' 'rom_size_bytes=$(MODERN_ROM_SIZE_BYTES)'; \
+	} > "$@.tmp"
+else
+	@printf '%s\n' 'unsupported' > "$@.tmp"
+endif
+	@if [ ! -f "$@" ] || ! cmp -s "$@.tmp" "$@"; then \
+		mv -f "$@.tmp" "$@"; \
+	else \
+		rm -f "$@.tmp"; \
+	fi
+
+# Every modern C/data object depends on the stamp above as a normal (not
+# order-only) prerequisite, so a real content change bumps the object stale
+# and forces a recompile; a no-op rebuild leaves the stamp's mtime (and
+# therefore the object) untouched. Assembly objects (MODERN_ALL_ASM_OBJECTS)
+# and the self-contained mgfembp sources are intentionally excluded: neither
+# includes global.h, so neither can observe expansion_config.h.
+$(MODERN_ALL_C_OBJECTS) $(MODERN_ALL_DATA_OBJECTS): $(MODERN_COMPILE_SETTINGS)
+
+
 # Resolve modern LD consistently with the toolchain root.
 ifeq ($(MODERN_TOOLCHAIN_ROOT),)
   MODERN_LD ?= $(PREFIX)ld$(EXE)
@@ -960,21 +1188,29 @@ expansion-modern-elf: expansion-modern-mgfembp expansion-modern-all \
 
 MODERN_ROM := $(MODERN_OUTPUT_DIR)/fireemblem8.gba
 MODERN_ROM_HEADER_VERIFIER := scripts/modernize/verify_rom_header.py
+MODERN_ROM_HEADER_FINALIZER := scripts/modernize/finalize_rom_header.py
 MODERN_BOOT_SCENARIO := tools/gba-playtest/scenarios/boot.json
 MODERN_BOOT_FINGERPRINT := tools/gba-playtest/fingerprints/boot.json
 MODERN_TITLE_SCENARIO := tools/gba-playtest/scenarios/title-progression.json
 MODERN_TITLE_FINGERPRINT := tools/gba-playtest/fingerprints/title-progression-modern-$(MODERN_CONFIG).json
 MODERN_PLAYTEST := tools/gba-playtest/gba_playtest.py
 
-# Convert the linked ELF to a flat, padded ROM image, then verify the GBA
-# header in-place: configured ROM size, title/game code/maker code/fixed byte,
-# and the checksum byte at offset 0xBD recomputed over 0xA0..0xBC. A failed
+# Convert the linked ELF to a flat, padded ROM image, patch the configured
+# ROM identity (title/game code/maker code/revision -- see config.mk
+# EXPANSION_ROM_*) into the header and regenerate its checksum, then verify
+# the result in-place: configured ROM size, title/game code/maker
+# code/revision/fixed byte, the checksum byte at offset 0xBD recomputed over
+# 0xA0..0xBC, and the embedded ExpansionMetadata record (issue #8). A failed
 # verification deletes the ROM so a stale, invalid image is never left behind
 # for expansion-modern-boot-check (or a caller) to pick up silently.
-$(MODERN_ROM): $(MODERN_ELF)
+$(MODERN_ROM): $(MODERN_ELF) $(MODERN_BUILD_METADATA_JSON)
 	@mkdir -p "$(@D)"
 	"$(MODERN_OBJCOPY)" --strip-debug -O binary --pad-to $(MODERN_PAD_TO) --gap-fill=0xff "$<" "$@"
-	@if ! "$(PYTHON)" "$(MODERN_ROM_HEADER_VERIFIER)" --size "$(MODERN_ROM_SIZE)" "$@"; then \
+	@if ! "$(PYTHON)" "$(MODERN_ROM_HEADER_FINALIZER)" --metadata-json "$(MODERN_BUILD_METADATA_JSON)" "$@"; then \
+		rm -f "$@"; \
+		exit 1; \
+	fi
+	@if ! "$(PYTHON)" "$(MODERN_ROM_HEADER_VERIFIER)" --size "$(MODERN_ROM_SIZE)" --metadata-json "$(MODERN_BUILD_METADATA_JSON)" "$@"; then \
 		rm -f "$@"; \
 		exit 1; \
 	fi

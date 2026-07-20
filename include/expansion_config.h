@@ -1,0 +1,127 @@
+#ifndef GUARD_EXPANSION_CONFIG_H
+#define GUARD_EXPANSION_CONFIG_H
+
+/*
+ * Central, committed C configuration contract for the expansion framework
+ * (issue #8). This header is C89/agbcc-safe and is reachable through the
+ * normal include architecture (see include/global.h).
+ *
+ * Every FE8_EXPANSION_* value below has a hardcoded fallback definition
+ * guarded by #ifndef, matching config.mk's own defaults exactly (so the
+ * legacy agbcc/old_agbcc build -- which never receives the modern -D
+ * flags below -- keeps today's exact ROM identity and behavior). The
+ * modern build (see modern.mk's "Framework configuration and ROM
+ * identity" section) instead supplies every one of these as a `-D`
+ * command-line define computed from config.mk plus MODERN_CONFIG/
+ * MODERN_ABI/MODERN_ROM_SIZE and the resolved build commit/fingerprint,
+ * so the #ifndef fallback below is never reached for a modern build.
+ *
+ * See docs/config_identity.md for the full settings reference.
+ */
+
+/* Unconditional: any translation unit that includes global.h can use this
+ * to detect that it is part of the expansion framework. */
+#define FE8_EXPANSION 1
+
+/* --- Semantic version (see config.mk EXPANSION_VERSION_*) --------------- */
+
+#ifndef FE8_EXPANSION_VERSION_MAJOR
+#define FE8_EXPANSION_VERSION_MAJOR 0
+#endif
+
+#ifndef FE8_EXPANSION_VERSION_MINOR
+#define FE8_EXPANSION_VERSION_MINOR 1
+#endif
+
+#ifndef FE8_EXPANSION_VERSION_PATCH
+#define FE8_EXPANSION_VERSION_PATCH 0
+#endif
+
+#ifndef FE8_EXPANSION_VERSION_STRING
+#define FE8_EXPANSION_VERSION_STRING "0.1.0"
+#endif
+
+/* Packed as (major << 16) | (minor << 8) | patch, matching
+ * scripts/modernize/expansion_config.py's compute_version_packed(). */
+#ifndef FE8_EXPANSION_VERSION_PACKED
+#define FE8_EXPANSION_VERSION_PACKED \
+    (((u32)(FE8_EXPANSION_VERSION_MAJOR) << 16) | \
+     ((u32)(FE8_EXPANSION_VERSION_MINOR) << 8) | \
+     (u32)(FE8_EXPANSION_VERSION_PATCH))
+#endif
+
+/* --- Deterministic build metadata (see modern.mk / expansion_config.py) - */
+
+/* Full 40-hex-character git commit SHA the ROM was built from, or the
+ * fixed sentinel "unknown" when no git metadata is available (a source
+ * archive, or git missing). Never a timestamp or branch name. */
+#ifndef FE8_EXPANSION_BUILD_COMMIT
+#define FE8_EXPANSION_BUILD_COMMIT "unknown"
+#endif
+
+/* 16 lowercase hex characters: a SHA-256-derived fingerprint over every
+ * compatibility-relevant setting (version, ABI, ROM size, text shift, ROM
+ * identity, config preset). Two builds with the same fingerprint are
+ * guaranteed to share those settings. */
+#ifndef FE8_EXPANSION_CONFIG_FINGERPRINT
+#define FE8_EXPANSION_CONFIG_FINGERPRINT "0000000000000000"
+#endif
+
+/* "debug" or "release" (see MODERN_CONFIG in modern.mk). */
+#ifndef FE8_EXPANSION_CONFIG_PRESET
+#define FE8_EXPANSION_CONFIG_PRESET "release"
+#endif
+
+/* "aapcs" or "apcs-gnu" (see MODERN_ABI in modern.mk). */
+#ifndef FE8_EXPANSION_ABI
+#define FE8_EXPANSION_ABI "aapcs"
+#endif
+
+/* --- ROM identity (see config.mk EXPANSION_ROM_*) ------------------------ */
+
+#ifndef FE8_EXPANSION_ROM_TITLE
+#define FE8_EXPANSION_ROM_TITLE "FIREEMBLEM2E"
+#endif
+
+#ifndef FE8_EXPANSION_ROM_GAME_CODE
+#define FE8_EXPANSION_ROM_GAME_CODE "BE8E"
+#endif
+
+#ifndef FE8_EXPANSION_ROM_MAKER_CODE
+#define FE8_EXPANSION_ROM_MAKER_CODE "01"
+#endif
+
+#ifndef FE8_EXPANSION_ROM_REVISION
+#define FE8_EXPANSION_ROM_REVISION 0
+#endif
+
+/* Exact output ROM size in bytes (16 MiB or 32 MiB; see MODERN_ROM_SIZE). */
+#ifndef FE8_EXPANSION_ROM_SIZE_BYTES
+#define FE8_EXPANSION_ROM_SIZE_BYTES 0x1000000
+#endif
+
+/* --- Release-aware debug/assertion/logging switches ---------------------- */
+/*
+ * These follow the existing NDEBUG convention already used by
+ * include/gba/isagbprint.h's AGB_ASSERT/AGB_WARNING macros: a debug preset
+ * build compiles without NDEBUG, a release preset build compiles with it.
+ * Subsystems added later can gate development-only code on
+ * FE8_EXPANSION_DEBUG rather than re-deriving this from NDEBUG themselves.
+ */
+#ifndef FE8_EXPANSION_DEBUG
+#ifdef NDEBUG
+#define FE8_EXPANSION_DEBUG 0
+#else
+#define FE8_EXPANSION_DEBUG 1
+#endif
+#endif
+
+#ifndef FE8_EXPANSION_ASSERTIONS_ENABLED
+#define FE8_EXPANSION_ASSERTIONS_ENABLED FE8_EXPANSION_DEBUG
+#endif
+
+#ifndef FE8_EXPANSION_LOGGING_ENABLED
+#define FE8_EXPANSION_LOGGING_ENABLED FE8_EXPANSION_DEBUG
+#endif
+
+#endif /* GUARD_EXPANSION_CONFIG_H */

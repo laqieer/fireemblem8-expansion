@@ -10,6 +10,7 @@
 #include "prelude.h"
 
 #include "types.h"
+#include "expansion_config.h"
 #include "variables.h"
 #include "functions.h"
 

@@ -286,6 +286,77 @@ class ModernBuildTests(unittest.TestCase):
             stdout, _ = process.communicate()
             return None, stdout
 
+    def test_build_metadata_json_falls_back_without_config_mk(self):
+        """Regression test (issue #8 review finding #1, HIGH): a config-less
+        synthetic fixture (this codebase's established fixture/test-harness
+        convention -- see make_fixture -- which intentionally copies only
+        modern.mk plus a throwaway Makefile, never config.mk or
+        scripts/modernize/) must still be able to reach
+        $(MODERN_BUILD_METADATA_JSON)'s literal path without hard-failing on
+        missing config.mk/scripts/modernize/expansion_config.py. Before the
+        fix, this target's recipe unconditionally shelled out to
+        "scripts/modernize/expansion_config.py generate --config-mk
+        config.mk ...", which does not exist in this fixture, so any build
+        reaching this file's path failed hard instead of falling back
+        gracefully like MODERN_EXPANSION_CONFIG_AVAILABLE's surrounding
+        comments already promise for the rest of the framework."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = self.make_fixture(Path(temporary))
+            self.assertFalse((root / "config.mk").exists())
+            self.assertFalse((root / "scripts").exists())
+
+            metadata_json = (
+                root
+                / "build"
+                / "expansion-modern"
+                / "debug"
+                / "aapcs"
+                / "generated"
+                / "expansion_build_metadata.json"
+            )
+            result = self.make(root, str(metadata_json.relative_to(root)))
+
+            self.assertEqual(result.returncode, 0, result.stdout)
+            self.assertNotIn("expansion_config.py", result.stdout)
+            self.assertNotIn("No such file or directory", result.stdout)
+            self.assertTrue(metadata_json.exists())
+            self.assertEqual(
+                metadata_json.read_text(encoding="utf-8").strip(),
+                '{"expansion_config_available": false}',
+            )
+
+    def test_compile_settings_stamp_is_inert_without_config_mk(self):
+        """Regression test companion to the above (issue #8 review finding
+        #2's stamp mechanism must not itself reintroduce finding #1's bug):
+        the new MODERN_COMPILE_SETTINGS content-addressed recompilation
+        stamp -- a prerequisite of every MODERN_ALL_C_OBJECTS/
+        MODERN_ALL_DATA_OBJECTS entry, including this fixture's own cohort
+        sources -- must also be reachable in a config-less fixture without
+        invoking scripts/modernize/expansion_config.py, and must settle on
+        a stable placeholder value rather than churning every build."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = self.make_fixture(Path(temporary))
+
+            stamp = (
+                root
+                / "build"
+                / "expansion-modern"
+                / "debug"
+                / "aapcs"
+                / "generated"
+                / "compile_settings.txt"
+            )
+            first = self.make(root, str(stamp.relative_to(root)))
+            self.assertEqual(first.returncode, 0, first.stdout)
+            self.assertNotIn("expansion_config.py", first.stdout)
+            self.assertEqual(stamp.read_text(encoding="utf-8").strip(), "unsupported")
+
+            before = stamp.stat().st_mtime_ns
+            time.sleep(1.1)
+            second = self.make(root, str(stamp.relative_to(root)))
+            self.assertEqual(second.returncode, 0, second.stdout)
+            self.assertEqual(stamp.stat().st_mtime_ns, before)
+
     def test_rejects_unknown_config_and_abi(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = self.make_fixture(Path(temporary))

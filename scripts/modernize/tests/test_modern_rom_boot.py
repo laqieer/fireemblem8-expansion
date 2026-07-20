@@ -15,6 +15,7 @@ import os
 import shutil
 import subprocess
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -469,6 +470,86 @@ class ModernRomBootTargetTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stdout)
             self.assertTrue(rom_path.exists())
 
+    # -- Compile-settings staleness (issue #8 review finding #2) --------------
+
+    def test_expansion_metadata_recompiles_on_identity_change_without_clean(self):
+        """Regression test (issue #8 review finding #2, HIGH): changing a
+        config.mk/EXPANSION_* identity value (here EXPANSION_ROM_TITLE)
+        between two builds sharing the same MODERN_OUTPUT_DIR, with no
+        intervening `make clean`, must force src/expansion_metadata.c to
+        recompile and embed the *new* value -- not silently keep the
+        previous build's stale object.
+
+        Before the fix, FE8_EXPANSION_* values only flowed into
+        MODERN_CFLAGS's -D defines (content GNU Make's dependency graph
+        cannot observe); this test compiles the real
+        src/expansion_metadata.c with the real modern toolchain via the
+        real MODERN_ALL_C_OBJECTS pipeline (MODERN_ALL_C_SOURCES/
+        MODERN_ALL_DATA_C_SOURCES/MODERN_ALL_ASM_SOURCES overridden to just
+        this one source, so the test compiles quickly without linking a
+        full ELF), and asserts both a real recompilation (object mtime
+        strictly increases) and that the *compiled object itself* now
+        embeds the new title byte-for-byte (verified with `strings` on the
+        raw .o, independent of any linker/ROM-finalization step) while the
+        old title is no longer embedded anywhere in it.
+        """
+        overrides = self.tool_overrides()
+        if overrides is None:
+            self.skipTest("arm-none-eabi GCC/objdump/ld/objcopy are not available")
+
+        strings_tool = shutil.which("strings")
+        if strings_tool is None:
+            self.skipTest("strings(1) is not available")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp) / "out"
+            common_args = [
+                f"MODERN_OUTPUT_DIR={output_dir}",
+                "MODERN_ALL_C_SOURCES=src/expansion_metadata.c",
+                "MODERN_ALL_DATA_C_SOURCES=",
+                "MODERN_ALL_ASM_SOURCES=",
+                "MODERN_CONFIG=debug",
+                "MODERN_ABI=aapcs",
+            ]
+            metadata_object = output_dir / "src" / "expansion_metadata.o"
+
+            first = self.make(
+                "expansion-modern-all", *common_args, *overrides,
+            )
+            self.assertEqual(first.returncode, 0, first.stdout)
+            self.assertTrue(metadata_object.exists())
+            before_mtime = metadata_object.stat().st_mtime_ns
+            before_strings = subprocess.run(
+                [strings_tool, str(metadata_object)],
+                text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                check=False,
+            ).stdout
+            self.assertIn("FIREEMBLEM2E", before_strings)
+
+            time.sleep(1.1)
+
+            second = self.make(
+                "expansion-modern-all",
+                *common_args,
+                "EXPANSION_ROM_TITLE=CUSTOMTITLE1",
+                *overrides,
+            )
+            self.assertEqual(second.returncode, 0, second.stdout)
+            after_mtime = metadata_object.stat().st_mtime_ns
+            self.assertGreater(
+                after_mtime, before_mtime,
+                "src/expansion_metadata.c must recompile when "
+                "EXPANSION_ROM_TITLE changes, even without an "
+                "intervening `make clean`",
+            )
+            after_strings = subprocess.run(
+                [strings_tool, str(metadata_object)],
+                text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                check=False,
+            ).stdout
+            self.assertIn("CUSTOMTITLE1", after_strings)
+            self.assertNotIn("FIREEMBLEM2E", after_strings)
+
     # -- Cohort/all/elf non-interaction ---------------------------------------
 
     def test_cohort_dry_run_no_rom_or_boot_check(self):
@@ -563,6 +644,56 @@ class ModernRomBootTargetTests(unittest.TestCase):
         )[0]
         self.assertIn("expansion-modern-rom", goals_block)
         self.assertIn("expansion-modern-boot-check", goals_block)
+
+    # -- expansion-modern-clean must not pay the config-validation cost --------
+
+    def test_clean_succeeds_with_invalid_expansion_config(self):
+        """Regression test (issue #8 review finding #3, MEDIUM):
+        expansion-modern-clean is a member of MODERN_GOALS, but it only
+        removes build output and never compiles or embeds anything
+        expansion-config-related, so an invalid EXPANSION_* override (e.g.
+        an over-length title) must not block it from running. Before the
+        fix, the eager config resolve/validate $(shell ...) block was gated
+        on the full MODERN_GOALS list (clean included), so
+        `make expansion-modern-clean EXPANSION_ROM_TITLE=<invalid>` failed
+        at Makefile-parse time before any cleanup occurred.
+
+        Runs against the real repository root (which -- unlike the
+        config-less synthetic fixtures used elsewhere -- has a real
+        config.mk, so MODERN_EXPANSION_CONFIG_AVAILABLE is true and the
+        eager resolve block is actually reachable), but overrides
+        MODERN_BUILD_ROOT to a throwaway directory so the real build/
+        tree is never touched.
+        """
+        with tempfile.TemporaryDirectory() as temporary:
+            build_root = Path(temporary) / "expansion-modern"
+            marker_dir = build_root / "debug" / "aapcs"
+            marker_dir.mkdir(parents=True)
+            marker = marker_dir / "marker.txt"
+            marker.write_text("stale build output\n", encoding="utf-8")
+
+            result = self.make(
+                "expansion-modern-clean",
+                f"MODERN_BUILD_ROOT={build_root}",
+                "EXPANSION_ROM_TITLE="
+                "WAY_TOO_LONG_TITLE_EXCEEDING_TWELVE_BYTES",
+            )
+
+            self.assertEqual(result.returncode, 0, result.stdout)
+            self.assertNotIn("EXPANSION_ROM_TITLE", result.stdout)
+            self.assertFalse(build_root.exists())
+
+    def test_clean_dry_run_does_not_validate_expansion_config(self):
+        """A dry-run of expansion-modern-clean with an invalid config value
+        must not even report an error (mirroring the real-run assertion
+        above at Makefile-parse time, before any recipe would run)."""
+        result = self.make(
+            "-n",
+            "expansion-modern-clean",
+            "EXPANSION_ROM_GAME_CODE=TOOLONGCODE",
+        )
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertNotIn("EXPANSION_ROM_GAME_CODE", result.stdout)
 
 
 if __name__ == "__main__":
