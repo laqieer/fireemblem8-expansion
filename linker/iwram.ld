@@ -86,14 +86,12 @@
 . = ALIGN(4); *src/agb_sram.o(.bss.readSramFast_Work);
         . = ALIGN(4); *src/agb_sram.o(.bss.verifySramFast_Work);
 . = ALIGN(4);
-. = ALIGN(4);
 
 /* COMMON */
 . = 0x002C60;
         . = ALIGN(4); *src/m4a.o(.bss.code);
 PROVIDE(gUnk_62 = __iwram_start + 0x002C61);
 . = 0x003060; gUnk_63 = .;
-. = 0x003070; gOamLoPutIt = .;
 . = 0x003070; gOamLoPutIt = .;
 . = 0x003080; gLCDControlBuffer = .;
 . = 0x0030D8; gUnk_64 = .;

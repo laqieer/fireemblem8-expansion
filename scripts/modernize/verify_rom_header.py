@@ -37,6 +37,13 @@ EXPECTED_MAKER_CODE = "01"
 EXPECTED_FIXED_BYTE = 0x96
 EXPECTED_SIZE = 16 * 1024 * 1024  # 16 MiB, matching --pad-to 0x9000000
 
+# Named ROM sizes accepted by --size, matching modern.mk's MODERN_ROM_SIZE
+# values (16M -> --pad-to 0x9000000, 32M -> --pad-to 0xA000000).
+NAMED_ROM_SIZES = {
+    "16M": 16 * 1024 * 1024,
+    "32M": 32 * 1024 * 1024,
+}
+
 
 class RomHeaderError(Exception):
     """The ROM's size, header fields, or checksum do not match expectations."""
@@ -56,17 +63,43 @@ def decode_ascii_field(raw: bytes, label: str) -> str:
     return value.decode("ascii")
 
 
-def verify_rom_header(path: Path) -> dict[str, object]:
+def parse_size(value: str) -> int:
+    """Parse a --size argument: a named size ('16M', '32M') or an exact byte count.
+
+    Named sizes are matched case-insensitively against NAMED_ROM_SIZES. Any
+    other value is parsed as an integer byte count (accepts decimal or
+    0x-prefixed hex). Raises argparse.ArgumentTypeError on anything else,
+    including zero or negative byte counts.
+    """
+    named = NAMED_ROM_SIZES.get(value.strip().upper())
+    if named is not None:
+        return named
+    try:
+        size = int(value.strip(), 0)
+    except ValueError as error:
+        allowed = ", ".join(sorted(NAMED_ROM_SIZES))
+        raise argparse.ArgumentTypeError(
+            f"invalid ROM size {value!r}; expected one of [{allowed}] or an "
+            f"exact byte count"
+        ) from error
+    if size <= 0:
+        raise argparse.ArgumentTypeError(f"ROM size must be positive, got {size}")
+    return size
+
+
+def verify_rom_header(path: Path, expected_size: int = EXPECTED_SIZE) -> dict[str, object]:
     """Verify size, identity fields, and checksum; return the parsed facts.
 
-    Raises RomHeaderError on any mismatch, naming the exact field and the
-    expected vs. actual value.
+    ``expected_size`` defaults to EXPECTED_SIZE (16 MiB) so existing callers
+    that don't pass it keep verifying 16 MiB ROMs unchanged. Raises
+    RomHeaderError on any mismatch, naming the exact field and the expected
+    vs. actual value.
     """
     size = path.stat().st_size
-    if size != EXPECTED_SIZE:
+    if size != expected_size:
         raise RomHeaderError(
-            f"ROM size {size} bytes does not match expected {EXPECTED_SIZE} "
-            f"bytes (16 MiB)"
+            f"ROM size {size} bytes does not match expected {expected_size} "
+            f"bytes"
         )
 
     data = path.read_bytes()
@@ -127,10 +160,20 @@ def verify_rom_header(path: Path) -> dict[str, object]:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("rom", type=Path, help="path to the GBA ROM to verify")
+    parser.add_argument(
+        "--size",
+        type=parse_size,
+        default=EXPECTED_SIZE,
+        metavar="{16M,32M,BYTES}",
+        help=(
+            "expected ROM size: '16M' (default), '32M', or an exact byte "
+            "count (decimal or 0x-prefixed hex)"
+        ),
+    )
     args = parser.parse_args(argv)
 
     try:
-        facts = verify_rom_header(args.rom)
+        facts = verify_rom_header(args.rom, expected_size=args.size)
     except (RomHeaderError, OSError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 1

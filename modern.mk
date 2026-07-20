@@ -897,7 +897,7 @@ MODERN_PLAYTEST := tools/gba-playtest/gba_playtest.py
 $(MODERN_ROM): $(MODERN_ELF)
 	@mkdir -p "$(@D)"
 	"$(MODERN_OBJCOPY)" --strip-debug -O binary --pad-to $(MODERN_PAD_TO) --gap-fill=0xff "$<" "$@"
-	@if ! "$(PYTHON)" "$(MODERN_ROM_HEADER_VERIFIER)" "$@"; then \
+	@if ! "$(PYTHON)" "$(MODERN_ROM_HEADER_VERIFIER)" --size "$(MODERN_ROM_SIZE)" "$@"; then \
 		rm -f "$@"; \
 		exit 1; \
 	fi
