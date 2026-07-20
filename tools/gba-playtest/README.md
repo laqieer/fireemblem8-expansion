@@ -136,9 +136,13 @@ Disabled schema-ready stubs additionally use `"disabled": true` and a non-empty
 `boot.json` is a no-input early boot capture. `title-progression.json` uses the
 same deterministic six-frame A/START tap concept as
 `scripts/shiftcheck/mgba_oracle.c`, with attribution retained in `backend.c`.
-These scenarios cover boot and title/intro/menu progression only.
-The committed fingerprints were captured with libmGBA 0.10.2 from the baseline
-ROM whose project checksum is `c25b145e37456171ada4b0d440bf88a19f4d509f`.
+These scenarios cover boot and title/intro/menu progression only. Modern GCC
+uses configuration-specific `title-progression-modern-{debug,release}.json`
+fingerprints because optimization changes later title-animation timing.
+Shifted links must match the baseline for their own configuration.
+The legacy fingerprints were captured with libmGBA 0.10.2 from the baseline
+ROM whose project checksum is `c25b145e37456171ada4b0d440bf88a19f4d509f`;
+the modern title fingerprints record the debug/release ROM provenance directly.
 An emulator-version change that alters rendered pixels is intentionally reported
 as a fingerprint difference and should be reviewed rather than normalized away.
 `tests/homebrew_fixture.py` generates a tiny original homebrew ROM in a temporary

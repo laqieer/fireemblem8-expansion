@@ -18,8 +18,9 @@ FIXTURES = Path(__file__).parent / "fixtures"
 OVERLAY_AUDIT_PY = Path(__file__).parent.parent / "overlay_audit.py"
 SCRATCH_DIR = Path(__file__).parent / ".scratch"
 SCRATCH_DIR.mkdir(exist_ok=True)
-REAL_MODERN_MAP = Path(
-    "/home/laqieer/fireemblem8-expansion/build/expansion-modern/debug/aapcs/fireemblem8.map"
+ROOT = Path(__file__).resolve().parents[3]
+REAL_MODERN_MAP = (
+    ROOT / "build" / "expansion-modern" / "debug" / "aapcs" / "fireemblem8.map"
 )
 
 
@@ -107,6 +108,7 @@ ewram_overlay_beta
 
         def fake_run(args, capture_output, text, timeout):
             if args[0] == "arm-none-eabi-readelf":
+                self.assertEqual(args[1], "-rW")
                 return subprocess.CompletedProcess(
                     args=args,
                     returncode=0,
@@ -137,6 +139,129 @@ ewram_overlay_beta
         self.assertEqual(report["references"][0]["target_overlay"], "ewram_overlay_beta")
         self.assertEqual(report["references"][0]["symbol"], "betaSymbol")
 
+    def test_rom_relocation_origin_maps_through_overlay_object(self):
+        map_text = """
+Memory Configuration
+
+Name             Origin             Length             Attributes
+rom              0x08000000         0x02000000
+iwram            0x03000000         0x00008000
+ewram            0x02000000         0x00040000
+*default*        0x00000000         0xffffffff
+
+Linker script and memory map
+
+ewram_overlay_alpha
+                0x02000000       0x40
+ *(ewram_overlay_alpha)
+ ewram_overlay_alpha
+                0x02000000       0x40 build/test/alpha.o
+                0x02000000                alphaSymbol
+
+ewram_overlay_beta
+                0x02000000       0x80
+ *(ewram_overlay_beta)
+ ewram_overlay_beta
+                0x02000000       0x80 build/test/beta.o
+                0x02000000                betaSymbol
+
+ROM             0x08000000      0x100
+ .text          0x08000000       0x40 build/test/alpha.o
+ .text          0x08000040       0x40 build/test/beta.o
+"""
+        _regions, overlays, symbol_to_overlays = overlay_audit.parse_overlay_map(map_text)
+        object_ranges = overlay_audit.parse_overlay_object_ranges(map_text, overlays)
+        dummy_elf = self.make_dummy_elf("rom-origin")
+
+        def fake_run(args, capture_output, text, timeout):
+            if args[0] == "arm-none-eabi-readelf":
+                return subprocess.CompletedProcess(
+                    args=args,
+                    returncode=0,
+                    stdout=(
+                        "Relocation section '.relROM' at offset 0x0 contains 1 entry:\n"
+                        " Offset     Info    Type            Sym.Value  Sym. Name\n"
+                        "08000004  00000002 R_ARM_ABS32      02000000   betaSymbol\n"
+                    ),
+                    stderr="",
+                )
+            if args[0] == "arm-none-eabi-nm":
+                return subprocess.CompletedProcess(
+                    args=args,
+                    returncode=0,
+                    stdout="02000000 B alphaSymbol\n02000000 B betaSymbol\n",
+                    stderr="",
+                )
+            raise AssertionError(f"unexpected tool: {args[0]}")
+
+        with mock.patch("overlay_audit.subprocess.run", side_effect=fake_run):
+            report = overlay_audit.scan_cross_overlay_relocations(
+                str(dummy_elf), overlays, symbol_to_overlays, object_ranges
+            )
+
+        self.assertEqual(report["count"], 1)
+        reference = report["references"][0]
+        self.assertEqual(reference["origin_overlay"], "ewram_overlay_alpha")
+        self.assertEqual(reference["origin_object"], "build/test/alpha.o")
+        self.assertEqual(reference["target_overlay"], "ewram_overlay_beta")
+
+    def test_wide_readelf_preserves_long_overlay_symbol(self):
+        map_text = """
+Memory Configuration
+
+Name             Origin             Length             Attributes
+rom              0x08000000         0x02000000
+iwram            0x03000000         0x00008000
+ewram            0x02000000         0x00040000
+*default*        0x00000000         0xffffffff
+
+Linker script and memory map
+
+ewram_overlay_alpha
+                0x02000000       0x40
+ *(ewram_overlay_alpha)
+ ewram_overlay_alpha
+                0x02000000       0x40 build/test/alpha.o
+
+ewram_overlay_beta
+                0x02000000       0x80
+ *(ewram_overlay_beta)
+ ewram_overlay_beta
+                0x02000000       0x80 build/test/beta.o
+                0x02000000                gpBg2ScrollOffsetTableLongName
+
+ROM             0x08000000      0x100
+ .text          0x08000000       0x40 build/test/alpha.o
+"""
+        _regions, overlays, symbol_to_overlays = overlay_audit.parse_overlay_map(map_text)
+        object_ranges = overlay_audit.parse_overlay_object_ranges(map_text, overlays)
+        dummy_elf = self.make_dummy_elf("wide-symbol")
+
+        def fake_run(args, capture_output, text, timeout):
+            self.assertEqual(args[1], "-rW")
+            return subprocess.CompletedProcess(
+                args=args,
+                returncode=0,
+                stdout=(
+                    "Relocation section '.relROM' at offset 0x0 contains 1 entry:\n"
+                    " Offset     Info    Type            Sym.Value  Sym. Name\n"
+                    "08000004  00000002 R_ARM_ABS32      02000000   "
+                    "gpBg2ScrollOffsetTableLongName\n"
+                ),
+                stderr="",
+            )
+
+        with mock.patch("overlay_audit.subprocess.run", side_effect=fake_run):
+            report = overlay_audit.scan_cross_overlay_relocations(
+                str(dummy_elf), overlays, symbol_to_overlays, object_ranges
+            )
+
+        self.assertEqual(report["count"], 1)
+        self.assertEqual(
+            report["references"][0]["symbol"],
+            "gpBg2ScrollOffsetTableLongName",
+        )
+
     def test_graceful_degradation_when_readelf_unavailable(self):
         out = self.make_output_path("graceful")
         dummy_elf = self.make_dummy_elf("graceful")
@@ -157,7 +282,17 @@ ewram_overlay_beta
         report = json.loads(out.read_text())
         reloc_report = report["cross_overlay_relocations"]
         self.assertEqual(reloc_report["status"], "skipped")
-        self.assertEqual(reloc_report["reason"], "arm-none-eabi-readelf unavailable")
+        self.assertIn("unavailable or timed out", reloc_report["reason"])
+
+    def test_require_relocations_fails_closed(self):
+        out = self.make_output_path("required")
+        result = run_overlay_audit(
+            "--map", str(FIXTURES / "overlay_bounds_ok.map"),
+            "--output", str(out),
+            "--require-relocations",
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("relocation audit was skipped", result.stderr)
 
     def test_no_relocations_in_elf_is_skipped(self):
         dummy_elf = self.make_dummy_elf("noreloc")
@@ -192,6 +327,24 @@ ewram_overlay_beta
         report = json.loads(out.read_text())
         self.assertEqual(len(report["overlays"]), 8)
         self.assertFalse(report["overflow"])
+
+    @unittest.skipUnless(REAL_MODERN_MAP.exists(), "modern map artifact not available")
+    def test_real_modern_map_partitions_persistent_ewram_after_overlays(self):
+        map_text = REAL_MODERN_MAP.read_text(errors="replace")
+        _regions, sections, _assignments = overlay_audit.parse_map(map_text)
+        by_name = {section.name: section for section in sections}
+        overlays = [
+            section for section in sections if "overlay" in section.name
+        ]
+        persistent = by_name["ewram_data"]
+
+        self.assertGreater(by_name["ewram_overlay_sio"].size, 0)
+        self.assertGreater(by_name["ewram_overlay_worldmap"].size, 0)
+        self.assertGreaterEqual(by_name["ewram_overlay_worldmap"].size, 0x1CDD4)
+        self.assertGreaterEqual(
+            persistent.address,
+            max(section.address + section.size for section in overlays),
+        )
 
 
 if __name__ == "__main__":

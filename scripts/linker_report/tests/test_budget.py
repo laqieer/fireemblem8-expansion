@@ -10,8 +10,9 @@ FIXTURES = Path(__file__).parent / "fixtures"
 BUDGET_PY = Path(__file__).parent.parent / "budget.py"
 SCRATCH_DIR = Path(__file__).parent / ".scratch"
 SCRATCH_DIR.mkdir(exist_ok=True)
-REAL_MODERN_MAP = Path(
-    "/home/laqieer/fireemblem8-expansion/build/expansion-modern/debug/aapcs/fireemblem8.map"
+ROOT = Path(__file__).resolve().parents[3]
+REAL_MODERN_MAP = (
+    ROOT / "build" / "expansion-modern" / "debug" / "aapcs" / "fireemblem8.map"
 )
 
 
@@ -93,6 +94,19 @@ class TestMapParsing(unittest.TestCase):
         run_budget("--map", str(FIXTURES / "overlay.map"), "--output", str(out1))
         run_budget("--map", str(FIXTURES / "overlay.map"), "--output", str(out2))
         self.assertEqual(out1.read_text(), out2.read_text())
+
+    def test_unmapped_debug_sections_are_excluded(self):
+        map_path = SCRATCH_DIR / f"{self._testMethodName}.map"
+        map_path.write_text(
+            (FIXTURES / "basic.map").read_text()
+            + "\n.debug_info     0x00000000 0x1234\n"
+        )
+        self.addCleanup(lambda: map_path.unlink(missing_ok=True))
+        out = self.make_output_path("no-debug")
+        r = run_budget("--map", str(map_path), "--output", str(out))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        names = {section["name"] for section in json.loads(out.read_text())["sections"]}
+        self.assertNotIn(".debug_info", names)
 
     def test_check_mode_passes_on_match(self):
         """--check succeeds when report matches."""

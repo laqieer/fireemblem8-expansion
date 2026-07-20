@@ -70,6 +70,32 @@ def first_match(path, pattern):
     return None
 
 
+def find_banim_pin(path):
+    """Find a banim output-section pin even when assignment and input span lines."""
+    assignment = None
+    try:
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            for lineno, line in enumerate(fh, 1):
+                match = re.search(r"\.\s*=\s*(0x[0-9a-fA-F]+)\s*;", line)
+                if match:
+                    assignment = (lineno, match.group(1), line.rstrip())
+                    if "banim/data_banim.o(.data)" in line:
+                        return assignment
+                    continue
+
+                if assignment and "banim/data_banim.o(.data)" in line:
+                    return assignment
+
+                if line.strip() and not line.lstrip().startswith(
+                    ("#", "@", "//", "/*", "*")
+                ):
+                    assignment = None
+    except FileNotFoundError:
+        pass
+
+    return None
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--makefile", default="Makefile")
@@ -106,12 +132,10 @@ def main():
 
     # banim base (Makefile `-b 0xXXXX`) vs ldscript banim pin.
     mk_base = first_match(args.makefile, r"-b\s+(0x[0-9a-fA-F]+)")
-    ld_pin = first_match(
-        args.ldscript, r"\.\s*=\s*(0x[0-9a-fA-F]+)\s*;\s*banim/data_banim\.o\(\.data\)"
-    )
+    ld_pin = find_banim_pin(args.ldscript)
     if mk_base and ld_pin:
         base_val = int(mk_base[1].group(1), 16)
-        pin_val = int(ld_pin[1].group(1), 16)
+        pin_val = int(ld_pin[1], 16)
         expect = ROM_BASE + pin_val
         ok = base_val == expect
         status = "PASS" if ok else "FAIL"
@@ -149,18 +173,28 @@ def main():
     print("\n" + "-" * 72)
     print("Layout pins in ldscript.txt (non-shiftable BY CONSTRUCTION):")
     print("-" * 72)
-    pin_rx = re.compile(r"\.\s*=\s*(0x[0-9a-fA-F]+)\s*;\s*(\S+)")
     in_rom = False
     npins = 0
+    pending_pin = None
     with open(args.ldscript, encoding="utf-8", errors="replace") as fh:
         for lineno, line in enumerate(fh, 1):
             if "ROM __text_start" in line:
                 in_rom = True
             if in_rom:
-                m = pin_rx.search(line)
-                if m and int(m.group(1), 16) >= 0xC00000:
+                match = re.search(r"\.\s*=\s*(0x[0-9a-fA-F]+)\s*;", line)
+                if match and int(match.group(1), 16) >= 0xC00000:
+                    pending_pin = (lineno, match.group(1))
+                    continue
+
+                if pending_pin and line.strip() and not line.lstrip().startswith(
+                    ("#", "/*", "*")
+                ):
                     npins += 1
-                    print(f"  L{lineno:<5} . = {m.group(1):<10} {m.group(2)}")
+                    print(
+                        f"  L{pending_pin[0]:<5} . = {pending_pin[1]:<10} "
+                        f"{line.strip()}"
+                    )
+                    pending_pin = None
     print(
         f"\n  {npins} pinned block(s). These keep data at a fixed ROM offset; making\n"
         f"  them shiftable (un-pinning + relocating internal pointers) is separate,\n"

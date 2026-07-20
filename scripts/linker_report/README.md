@@ -1,4 +1,4 @@
-# Linker Memory-Budget Report
+# Linker Reports
 
 Deterministic memory-budget report from a GNU ld `.map` file.
 
@@ -49,3 +49,21 @@ ordering (by address then name).
 ```bash
 python3 -m unittest discover -s scripts/linker_report/tests -v
 ```
+
+## Overlay audit
+
+`overlay_audit.py` checks every overlay against EWRAM capacity and maps retained
+`.relROM` relocations back to their owning object. If an object that owns data
+in one overlay references a symbol owned by another overlay, the audit fails
+with both object and symbol names.
+
+```bash
+python3 scripts/linker_report/overlay_audit.py \
+    --map build/expansion-modern/debug/aapcs/fireemblem8.map \
+    --elf build/expansion-modern/debug/aapcs/shiftcheck/fireemblem8.relocs.elf \
+    --output build/expansion-modern/debug/aapcs/shiftcheck/overlay-audit.json \
+    --require-relocations
+```
+
+`--require-relocations` is the CI mode: missing tools, a missing retained-reloc
+ELF, timeout, or an ELF without relocations is an error rather than a skip.

@@ -10,6 +10,23 @@ moves. These tools find such hardcoded pointers.
 Nothing here touches the matching build — every target is `.PHONY` and uses a
 separate ELF / a generated ldscript, never `ldscript.txt`, `$(ROM)`, or `compare`.
 
+## Modern expansion-linker gate
+
+```bash
+make expansion-modern-linker-check MODERN_CONFIG=debug MODERN_ABI=aapcs
+make expansion-modern-linker-check MODERN_CONFIG=release MODERN_ABI=aapcs
+```
+
+The gate retains modern relocations, rejects cross-overlay references, checks
+the committed memory budget, scans source/build files for raw addresses, and
+verifies normal plus `+0x40000` shifted boot/title behavior. It also proves
+that startup and pinned battle-animation regions stay fixed while the first
+floating function moves by exactly the requested shift.
+
+Battle-animation data remains intentionally pinned: compressed data contains
+internal address assumptions, and `scan_build_addrs.py` enforces that the
+compression base `0x08C02000` still matches the linker pin.
+
 ## Layers (cheapest → strongest)
 
 | Make target | Layer | What it does |

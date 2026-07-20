@@ -1,6 +1,20 @@
 # Opt-in modern GCC object cohort and clean expansion ELF target.
 
-MODERN_GOALS := expansion-modern-toolchain-check expansion-modern-cohort expansion-modern-all expansion-modern-elf expansion-modern-rom expansion-modern-boot-check expansion-modern-clean
+MODERN_GOALS := \
+	expansion-modern-toolchain-check \
+	expansion-modern-cohort \
+	expansion-modern-all \
+	expansion-modern-elf \
+	expansion-modern-rom \
+	expansion-modern-boot-check \
+	expansion-modern-title-check \
+	expansion-modern-budget \
+	expansion-modern-budget-check \
+	expansion-modern-relocs \
+	expansion-modern-overlay-audit \
+	expansion-modern-shifted-check \
+	expansion-modern-linker-check \
+	expansion-modern-clean
 ifneq (,$(filter $(MODERN_GOALS),$(MAKECMDGOALS)))
   NODEP := 1
 endif
@@ -12,8 +26,8 @@ MODERN_CONFIGS := debug release
 MODERN_ABIS := aapcs apcs-gnu
 
 # MODERN_TEXT_SHIFT: link-time shift padding (bytes, 4-aligned, default 0).
-# Changing this value requires a clean rebuild of the ELF/ROM.
-# It does NOT produce isolated artifact paths — rebuild from clean.
+# Link settings are tracked below so changing this value invalidates the
+# ELF/ROM without requiring a clean rebuild.
 MODERN_TEXT_SHIFT ?= 0
 MODERN_TEXT_SHIFT_IS_NUM := $(shell printf '%s\n' '$(MODERN_TEXT_SHIFT)' | python3 -c "import re, sys; v = sys.stdin.read().strip(); sys.stdout.write('ok' if re.fullmatch(r'(0x[0-9a-fA-F]+|[0-9]+)', v) else '')")
 ifeq ($(MODERN_TEXT_SHIFT_IS_NUM),)
@@ -227,7 +241,18 @@ MODERN_ALL_C_HEADER_DEPS := $(addprefix $(MODERN_OUTPUT_DIR)/,$(MODERN_ALL_C_SOU
 # expansion-modern-cohort, expansion-modern-toolchain-check, and
 # expansion-modern-clean must stay untouched by (and not pay the cost of)
 # scanning sources they do not build.
-MODERN_ALL_SOURCE_GOALS := expansion-modern-all expansion-modern-elf expansion-modern-rom expansion-modern-boot-check
+MODERN_ALL_SOURCE_GOALS := \
+	expansion-modern-all \
+	expansion-modern-elf \
+	expansion-modern-rom \
+	expansion-modern-boot-check \
+	expansion-modern-title-check \
+	expansion-modern-budget \
+	expansion-modern-budget-check \
+	expansion-modern-relocs \
+	expansion-modern-overlay-audit \
+	expansion-modern-shifted-check \
+	expansion-modern-linker-check
 
 CLEAN_DIRS += $(MODERN_BUILD_ROOT)
 
@@ -650,7 +675,17 @@ expansion-modern-clean:
 # whole linked-output goal set, not just the elf target, or a direct
 # `make expansion-modern-rom MODERN_ABI=apcs-gnu` would silently slip past
 # this check and proceed toward an incompatible EABI link.
-MODERN_LINKED_GOALS := expansion-modern-elf expansion-modern-rom expansion-modern-boot-check
+MODERN_LINKED_GOALS := \
+	expansion-modern-elf \
+	expansion-modern-rom \
+	expansion-modern-boot-check \
+	expansion-modern-title-check \
+	expansion-modern-budget \
+	expansion-modern-budget-check \
+	expansion-modern-relocs \
+	expansion-modern-overlay-audit \
+	expansion-modern-shifted-check \
+	expansion-modern-linker-check
 MODERN_REQUESTED_LINKED_GOALS := $(filter $(MODERN_LINKED_GOALS),$(MAKECMDGOALS))
 ifneq (,$(MODERN_REQUESTED_LINKED_GOALS))
   ifneq ($(MODERN_ABI),aapcs)
@@ -691,6 +726,7 @@ MODERN_ELF_LEGACY_MIDI := $(MID_OBJECTS)
 MODERN_ELF_LINK_DIR := $(MODERN_OUTPUT_DIR)/link
 MODERN_ELF_MANIFEST := $(MODERN_ELF_LINK_DIR)/manifest.txt
 MODERN_ELF_OBJECTS_LST := $(MODERN_ELF_LINK_DIR)/objects.lst
+MODERN_ELF_LINK_SETTINGS := $(MODERN_ELF_LINK_DIR)/settings.txt
 MODERN_ELF := $(MODERN_OUTPUT_DIR)/fireemblem8.elf
 MODERN_MAP := $(MODERN_OUTPUT_DIR)/fireemblem8.map
 MODERN_ELF_BANIM_SYM := $(BANIM_OBJECT).sym.o
@@ -723,8 +759,12 @@ endif
 # MODERN_OBJDUMP/MODERN_LD above.
 ifeq ($(MODERN_TOOLCHAIN_ROOT),)
   MODERN_OBJCOPY ?= $(PREFIX)objcopy$(EXE)
+  MODERN_READELF ?= $(PREFIX)readelf$(EXE)
+  MODERN_NM ?= $(PREFIX)nm$(EXE)
 else
   MODERN_OBJCOPY ?= $(MODERN_TOOLCHAIN_ROOT)/bin/$(PREFIX)objcopy$(EXE)
+  MODERN_READELF ?= $(MODERN_TOOLCHAIN_ROOT)/bin/$(PREFIX)readelf$(EXE)
+  MODERN_NM ?= $(MODERN_TOOLCHAIN_ROOT)/bin/$(PREFIX)nm$(EXE)
 endif
 
 # Library discovery at recipe time (space-safe, no xargs).
@@ -814,6 +854,26 @@ $(MODERN_ELF_OBJECTS_LST): $(MODERN_ALL_OBJECTS) $(MODERN_ELF_EXTRA_ASM_OBJECTS)
 		$(MODERN_ELF_LEGACY_MIDI) \
 		$(BANIM_OBJECT)) > "$@"
 
+# Link-affecting command-line settings are a content-addressed prerequisite.
+# The FORCE recipe runs every invocation, but preserves this file's timestamp
+# when settings are unchanged, so only a real setting change relinks the ELF.
+.PHONY: FORCE_MODERN_ELF_LINK_SETTINGS
+FORCE_MODERN_ELF_LINK_SETTINGS:
+
+$(MODERN_ELF_LINK_SETTINGS): FORCE_MODERN_ELF_LINK_SETTINGS
+	@mkdir -p "$(@D)"
+	@{ \
+		printf '%s\n' 'rom_size=$(MODERN_ROM_SIZE_BYTES)'; \
+		printf '%s\n' 'text_shift=$(MODERN_TEXT_SHIFT)'; \
+		printf '%s\n' 'ld=$(MODERN_LD)'; \
+		printf '%s\n' 'ldscript=$(MODERN_CLEAN_LDSCRIPT)'; \
+	} > "$@.tmp"
+	@if [ ! -f "$@" ] || ! cmp -s "$@.tmp" "$@"; then \
+		mv -f "$@.tmp" "$@"; \
+	else \
+		rm -f "$@.tmp"; \
+	fi
+
 # Ensure legacy non-C objects are fresh with full scaninc tracking.
 # The outer expansion-modern-elf runs under NODEP=1 which disables
 # scaninc for legacy rules.  This phony step invokes a single recursive
@@ -849,7 +909,7 @@ expansion-modern-link-prepare: $(MODERN_ELF_FE6SIO) \
 
 # Link the modern ELF with the clean, section-oriented expansion linker.
 # Legacy objects and banim are owned by expansion-modern-link-prepare.
-$(MODERN_ELF): expansion-modern-link-prepare
+$(MODERN_ELF): expansion-modern-link-prepare $(MODERN_ELF_LINK_SETTINGS)
 	@set -eu; \
 	libgcc_dir="$(MODERN_LIBGCC_DIR)"; \
 	libc_dir="$(MODERN_LIBC_DIR)"; \
@@ -902,6 +962,8 @@ MODERN_ROM := $(MODERN_OUTPUT_DIR)/fireemblem8.gba
 MODERN_ROM_HEADER_VERIFIER := scripts/modernize/verify_rom_header.py
 MODERN_BOOT_SCENARIO := tools/gba-playtest/scenarios/boot.json
 MODERN_BOOT_FINGERPRINT := tools/gba-playtest/fingerprints/boot.json
+MODERN_TITLE_SCENARIO := tools/gba-playtest/scenarios/title-progression.json
+MODERN_TITLE_FINGERPRINT := tools/gba-playtest/fingerprints/title-progression-modern-$(MODERN_CONFIG).json
 MODERN_PLAYTEST := tools/gba-playtest/gba_playtest.py
 
 # Convert the linked ELF to a flat, padded ROM image, then verify the GBA
@@ -926,11 +988,16 @@ expansion-modern-rom: expansion-modern-elf $(MODERN_ROM)
 # subcommand used by tools/gba-playtest's own tests.
 .PHONY: expansion-modern-boot-preflight
 expansion-modern-boot-preflight:
-	@if [ ! -f "$(MODERN_BOOT_SCENARIO)" ] || [ ! -f "$(MODERN_BOOT_FINGERPRINT)" ]; then \
+	@if [ ! -f "$(MODERN_BOOT_SCENARIO)" ] || \
+		[ ! -f "$(MODERN_BOOT_FINGERPRINT)" ] || \
+		[ ! -f "$(MODERN_TITLE_SCENARIO)" ] || \
+		[ ! -f "$(MODERN_TITLE_FINGERPRINT)" ]; then \
 		printf '%s\n' \
-			"error: missing boot scenario or fingerprint" >&2; \
-		printf '  scenario:    %s\n' "$(MODERN_BOOT_SCENARIO)" >&2; \
-		printf '  fingerprint: %s\n' "$(MODERN_BOOT_FINGERPRINT)" >&2; \
+			"error: missing boot scenario or fingerprint (including title progression)" >&2; \
+		printf '  boot scenario:     %s\n' "$(MODERN_BOOT_SCENARIO)" >&2; \
+		printf '  boot fingerprint:  %s\n' "$(MODERN_BOOT_FINGERPRINT)" >&2; \
+		printf '  title scenario:    %s\n' "$(MODERN_TITLE_SCENARIO)" >&2; \
+		printf '  title fingerprint: %s\n' "$(MODERN_TITLE_FINGERPRINT)" >&2; \
 		exit 1; \
 	fi
 	@if ! "$(PYTHON)" "$(MODERN_PLAYTEST)" backend-check; then \
@@ -957,23 +1024,103 @@ expansion-modern-boot-check: expansion-modern-boot-preflight expansion-modern-ro
 	@printf 'Modern ROM boot-check passed: %s (config=%s abi=%s)\n' \
 		"$(MODERN_ROM)" '$(MODERN_CONFIG)' '$(MODERN_ABI)'
 
-MODERN_BUDGET_REPORT := reports/linker-budget/modern-debug.json
+expansion-modern-title-check: expansion-modern-boot-preflight expansion-modern-rom
+	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify \
+		--rom "$(MODERN_ROM)" \
+		--scenario "$(MODERN_TITLE_SCENARIO)" \
+		--expected "$(MODERN_TITLE_FINGERPRINT)" \
+		--policy behavior
+	@printf 'Modern ROM title-check passed: %s (config=%s abi=%s)\n' \
+		"$(MODERN_ROM)" '$(MODERN_CONFIG)' '$(MODERN_ABI)'
+
+MODERN_BUDGET_REPORT ?= reports/linker-budget/modern-$(MODERN_CONFIG).json
 MODERN_BUDGET_SCRIPT := scripts/linker_report/budget.py
 
 # Linker budget report and drift check (issue #4 verification)
 expansion-modern-budget: expansion-modern-elf
-	"$(PYTHON)" "$(MODERN_BUDGET_SCRIPT)" \
+	READELF="$(MODERN_READELF)" "$(PYTHON)" "$(MODERN_BUDGET_SCRIPT)" \
 		--map "$(MODERN_MAP)" \
 		--elf "$(MODERN_ELF)" \
 		--output "$(MODERN_BUDGET_REPORT)"
 
 expansion-modern-budget-check: expansion-modern-elf
-	"$(PYTHON)" "$(MODERN_BUDGET_SCRIPT)" \
+	READELF="$(MODERN_READELF)" "$(PYTHON)" "$(MODERN_BUDGET_SCRIPT)" \
 		--map "$(MODERN_MAP)" \
 		--elf "$(MODERN_ELF)" \
 		--output "$(MODERN_BUDGET_REPORT)" \
 		--check
 
-.PHONY: expansion-modern-budget expansion-modern-budget-check
+MODERN_SHIFTCHECK_DIR := $(MODERN_OUTPUT_DIR)/shiftcheck
+MODERN_RELOCS_ELF := $(MODERN_SHIFTCHECK_DIR)/fireemblem8.relocs.elf
+MODERN_OVERLAY_REPORT := $(MODERN_SHIFTCHECK_DIR)/overlay-audit.json
+MODERN_RELINK_SCRIPT := scripts/shiftcheck/modern_emit_relocs.sh
+MODERN_OVERLAY_SCRIPT := scripts/linker_report/overlay_audit.py
+MODERN_SHIFTED_SCRIPT := scripts/shiftcheck/modern_shifted_boot.sh
+MODERN_SHIFT_AMOUNT ?= 0x40000
+MODERN_SHIFTED_OUTDIR := $(MODERN_SHIFTCHECK_DIR)/shift-$(MODERN_SHIFT_AMOUNT)
+
+$(MODERN_RELOCS_ELF): $(MODERN_ELF) $(MODERN_ELF_OBJECTS_LST) \
+		$(MODERN_RELINK_SCRIPT) scripts/shiftcheck/modern_toolchain.sh
+	@mkdir -p "$(@D)"
+	MODERN_CC="$(MODERN_CC)" \
+	MODERN_LD="$(MODERN_LD)" \
+	MODERN_NEWLIB_LIB="$(MODERN_NEWLIB_LIB)" \
+	OBJECTS_LST="$(MODERN_ELF_OBJECTS_LST)" \
+	BANIM_SYM="$(MODERN_ELF_BANIM_SYM)" \
+	LDSCRIPT="$(MODERN_CLEAN_LDSCRIPT)" \
+	ROM_SIZE_BYTES="$(MODERN_ROM_SIZE_BYTES)" \
+	TEXT_SHIFT=0 \
+	"$(MODERN_RELINK_SCRIPT)" "$@"
+
+expansion-modern-relocs: $(MODERN_RELOCS_ELF)
+	@printf 'Modern retained-relocation ELF ready: %s\n' "$(MODERN_RELOCS_ELF)"
+
+expansion-modern-overlay-audit: expansion-modern-relocs
+	READELF="$(MODERN_READELF)" \
+	"$(PYTHON)" "$(MODERN_OVERLAY_SCRIPT)" \
+		--map "$(MODERN_MAP)" \
+		--elf "$(MODERN_RELOCS_ELF)" \
+		--output "$(MODERN_OVERLAY_REPORT)" \
+		--require-relocations
+	@printf 'Modern overlay audit passed: %s\n' "$(MODERN_OVERLAY_REPORT)"
+
+expansion-modern-shifted-check: expansion-modern-boot-preflight expansion-modern-rom
+	MODERN_CC="$(MODERN_CC)" \
+	MODERN_LD="$(MODERN_LD)" \
+	MODERN_OBJCOPY="$(MODERN_OBJCOPY)" \
+	MODERN_NM="$(MODERN_NM)" \
+	MODERN_NEWLIB_LIB="$(MODERN_NEWLIB_LIB)" \
+	SHIFTCHECK_OUTDIR="$(MODERN_SHIFTED_OUTDIR)" \
+	SHIFTCHECK_OBJECTS_LST="$(MODERN_ELF_OBJECTS_LST)" \
+	SHIFTCHECK_BANIM_SYM="$(MODERN_ELF_BANIM_SYM)" \
+	SHIFTCHECK_LDSCRIPT="$(MODERN_CLEAN_LDSCRIPT)" \
+	SHIFTCHECK_BASE_ELF="$(MODERN_ELF)" \
+	SHIFTCHECK_ROM_SIZE_BYTES="$(MODERN_ROM_SIZE_BYTES)" \
+	SHIFTCHECK_ROM_SIZE="$(MODERN_ROM_SIZE)" \
+	SHIFTCHECK_PAD_TO="$(MODERN_PAD_TO)" \
+	SHIFTCHECK_TITLE_EXPECTED="$(MODERN_TITLE_FINGERPRINT)" \
+	"$(MODERN_SHIFTED_SCRIPT)" "$(MODERN_SHIFT_AMOUNT)"
+
+expansion-modern-linker-check: expansion-modern-budget-check \
+		expansion-modern-overlay-audit \
+		expansion-modern-boot-check \
+		expansion-modern-title-check \
+		expansion-modern-shifted-check
+	"$(PYTHON)" scripts/shiftcheck/scan_build_addrs.py \
+		--makefile Makefile \
+		--ldscript "$(MODERN_CLEAN_LDSCRIPT)" \
+		--banim-ldscript linker_script_banim.txt
+	scripts/shiftcheck/scan_raw_casts.sh
+	@printf 'Modern expansion linker checks passed (config=%s abi=%s)\n' \
+		'$(MODERN_CONFIG)' '$(MODERN_ABI)'
+
+.PHONY: \
+	expansion-modern-title-check \
+	expansion-modern-budget \
+	expansion-modern-budget-check \
+	expansion-modern-relocs \
+	expansion-modern-overlay-audit \
+	expansion-modern-shifted-check \
+	expansion-modern-linker-check
 
 -include $(wildcard $(sort $(MODERN_COHORT_DEPS) $(MODERN_ALL_DEPS) $(MODERN_FE6SIO_OBJ:.o=.d)))

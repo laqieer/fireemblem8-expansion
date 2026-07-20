@@ -233,15 +233,14 @@ produces relocatable objects — it never links an ELF or ROM.
 so overriding one does not blank the other) default to the full supported
 source set and can be overridden the same way as the cohort variables.
 
-### Transitional modern ELF target
+### Modern expansion ELF target
 
 `expansion-modern-elf` links a full modern ELF using all 438 modern objects,
 modern runtime libraries (`-lc -lnosys -lgcc`), and no agbcc libraries.
-A transitional generated linker script transforms the legacy per-object
-`ldscript.txt` with section catchalls and library member renaming (see
-`scripts/modernize/prepare_modern_link.py`). This is issue-#3 transitional
-infrastructure; issue #4 will replace the per-object layout with a clean
-section-oriented linker.
+The clean section-oriented `linker/expansion.ld` owns ROM, IWRAM, persistent
+EWRAM, and mutually exclusive EWRAM overlays. Persistent EWRAM begins after
+the largest overlay, and linker assertions reject orphan sections, overlap,
+and memory overflow.
 
 ```bash
 make expansion-modern-elf MODERN_CONFIG=debug MODERN_ABI=aapcs
@@ -250,8 +249,7 @@ make expansion-modern-elf MODERN_CONFIG=debug MODERN_ABI=aapcs
 Outputs land under `build/expansion-modern/<config>/<abi>/`:
 - `fireemblem8.elf` — linked modern ELF (entry `Init` at `0x08000000`)
 - `fireemblem8.map` — linker map
-- `link/` — generated transitional linker script, include fragments, and
-  object list
+- `link/` — deterministic object list and link-settings stamp
 
 The target discovers modern `libgcc.a`, `libc.a`, and `libnosys.a` paths
 from the configured `MODERN_CC` at recipe time. Override `MODERN_NEWLIB_LIB`
@@ -267,9 +265,8 @@ residual risk since no automated multiboot test exists. The legacy archival
 path through mgfembp's own build system may still produce the original
 byte-matching binary separately.
 
-**No boot/ROM claim**: this ELF is not stripped, converted to GBA, or tested
-for runtime behavior. It proves the modern toolchain can link a full
-executable with zero undefined symbols.
+The ELF target alone proves a complete link with zero undefined symbols.
+Use the ROM/runtime targets below for behavior validation.
 
 **IWRAM symbol placement**: eight performance-critical symbols
 (`ReadSramFast`, `VerifySramFast`, `gSoundInfo`, `gMPlayJumpTable`,
@@ -277,8 +274,7 @@ executable with zero undefined symbols.
 are placed at their exact legacy IWRAM offsets via per-symbol BSS sections.
 Three source files (`src/agb_sram.c`, `src/m4a.c`, `src/bmshop.c`) receive
 `-fdata-sections` so modern GCC emits the named `.bss.<symbol>` sections
-the generated linker script places at pinned offsets. This is transitional
-issue-#4 debt; the clean linker will handle IWRAM layout directly.
+the clean linker places at pinned offsets.
 `src/agb_sram.o` additionally receives `-fno-toplevel-reorder
 -fno-reorder-functions`: `SetSramFastFunc()` copies `ReadSramFast_Core`/
 `VerifySramFast_Core` into IWRAM scratch buffers at runtime by subtracting
@@ -289,8 +285,8 @@ and eventually crashing at runtime; the two flags restore source order.
 
 ### Modern ROM and deterministic boot-check targets
 
-`expansion-modern-rom` converts the transitional modern ELF to an isolated
-16 MiB GBA ROM and verifies its header; `expansion-modern-boot-check` runs
+`expansion-modern-rom` converts the modern ELF to an isolated 16 MiB or
+32 MiB GBA ROM and verifies its header; `expansion-modern-boot-check` runs
 the repository's existing behavior-policy playtest fingerprint against that
 ROM, proving deterministic runtime progress (not just a successful link) at
 frames 0/60/120.
@@ -300,6 +296,8 @@ make expansion-modern-rom MODERN_CONFIG=debug MODERN_ABI=aapcs
 make expansion-modern-rom MODERN_CONFIG=release MODERN_ABI=aapcs
 make expansion-modern-boot-check MODERN_CONFIG=debug MODERN_ABI=aapcs
 make expansion-modern-boot-check MODERN_CONFIG=release MODERN_ABI=aapcs
+make expansion-modern-linker-check MODERN_CONFIG=debug MODERN_ABI=aapcs
+make expansion-modern-linker-check MODERN_CONFIG=release MODERN_ABI=aapcs
 ```
 
 Outputs land under `build/expansion-modern/<config>/<abi>/`:
@@ -332,7 +330,7 @@ runtime state.
 
 Setting up the libmGBA playtest backend follows the same bootstrap as any
 other `tools/gba-playtest` consumer — see that tool's own documentation for
-compiler/library prerequisites. `expansion-modern-rom`/
-`expansion-modern-boot-check` share the transitional linker debt and the
-modern-GCC-built FE6 SIO payload documented above for `expansion-modern-elf`,
-since they build on top of the same modern ELF.
+compiler/library prerequisites. `expansion-modern-linker-check` adds
+configuration-specific title fingerprints, deterministic budget drift,
+retained-relocation cross-overlay analysis, raw-address scans, and a shifted
+`+0x40000` boot/title run while keeping startup and battle-animation pins fixed.

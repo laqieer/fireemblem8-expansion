@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
@@ -25,6 +26,7 @@ from typing import Any
 # ---------------------------------------------------------------------------
 
 SCHEMA_VERSION = 1
+READELF = os.environ.get("READELF", "arm-none-eabi-readelf")
 
 # GBA memory regions by address prefix.
 REGION_RANGES = {
@@ -249,12 +251,12 @@ def parse_elf_sections(elf_path: str) -> list[ElfSection] | None:
     """Try to get allocatable ELF sections via readelf. Returns None on failure."""
     try:
         result = subprocess.run(
-            ["arm-none-eabi-readelf", "-W", "-S", elf_path],
+            [READELF, "-W", "-S", elf_path],
             capture_output=True, text=True, timeout=30,
         )
         if result.returncode != 0:
             return None
-    except (FileNotFoundError, subprocess.TimeoutExpired):
+    except (FileNotFoundError, PermissionError, subprocess.TimeoutExpired):
         return None
 
     sections: list[ElfSection] = []
@@ -371,9 +373,19 @@ def generate_report(
                 "region": region_name,
             })
 
+    # Only mapped memory sections belong in a memory-budget baseline.
+    # Debug/comment/attribute sections sit at address zero and their sizes can
+    # vary with absolute checkout/toolchain paths without changing the ROM.
+    budget_sections = [
+        section
+        for section in sections
+        if section.name in overlay_names
+        or _region_for_section(section, regions) is not None
+    ]
+
     # Sections list (sorted by address, then name for stability)
     section_report = []
-    for s in sorted(sections, key=lambda x: (x.address, x.name)):
+    for s in sorted(budget_sections, key=lambda x: (x.address, x.name)):
         section_report.append({
             "name": s.name,
             "address": s.address,
@@ -400,7 +412,7 @@ def generate_report(
     elf_report: dict[str, Any]
     if elf_sections is not None:
         elf_names = {es.name for es in elf_sections}
-        map_names = {s.name for s in sections}
+        map_names = {s.name for s in budget_sections}
         elf_report = {
             "available": True,
             "section_count": len(elf_sections),

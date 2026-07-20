@@ -16,6 +16,7 @@ die() { printf 'error: %s\n' "$*" >&2; exit 2; }
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 ROOT_DIR=$(CDPATH= cd -- "$SCRIPT_DIR/../.." && pwd)
+. "$SCRIPT_DIR/modern_toolchain.sh"
 cd "$ROOT_DIR"
 
 # --- Configuration (all overridable via env) ---
@@ -24,39 +25,45 @@ OUTDIR="${SHIFTCHECK_OUTDIR:-build/shiftcheck}"
 OBJECTS_LST="${SHIFTCHECK_OBJECTS_LST:-build/expansion-modern/debug/aapcs/link/objects.lst}"
 BANIM_SYM="${SHIFTCHECK_BANIM_SYM:-banim/data_banim.o.sym.o}"
 LDSCRIPT="${SHIFTCHECK_LDSCRIPT:-linker/expansion.ld}"
+BASE_ELF="${SHIFTCHECK_BASE_ELF:-build/expansion-modern/debug/aapcs/fireemblem8.elf}"
 ROM_SIZE="${SHIFTCHECK_ROM_SIZE_BYTES:-0x01000000}"
+ROM_SIZE_NAME="${SHIFTCHECK_ROM_SIZE:-16M}"
 PAD_TO="${SHIFTCHECK_PAD_TO:-0x9000000}"
-SCENARIO="${SHIFTCHECK_SCENARIO:-tools/gba-playtest/scenarios/boot.json}"
-EXPECTED="${SHIFTCHECK_EXPECTED:-tools/gba-playtest/fingerprints/boot.json}"
 PREFIX="${PREFIX:-arm-none-eabi-}"
 
 # --- Tool resolution ---
-CC="${MODERN_CC:-$(command -v ${PREFIX}gcc 2>/dev/null || true)}"
-LD="${MODERN_LD:-$(command -v ${PREFIX}ld 2>/dev/null || true)}"
-OBJCOPY="${MODERN_OBJCOPY:-$(command -v ${PREFIX}objcopy 2>/dev/null || true)}"
-
-[ -n "$CC" ] && [ -x "$CC" ] || die "cannot find ${PREFIX}gcc; set MODERN_CC or PATH"
-[ -n "$LD" ] && [ -x "$LD" ] || die "cannot find ${PREFIX}ld; set MODERN_LD or PATH"
-[ -n "$OBJCOPY" ] && [ -x "$OBJCOPY" ] || die "cannot find ${PREFIX}objcopy"
+CC=$(shiftcheck_resolve_tool \
+    "${MODERN_CC:-${CC:-${PREFIX}gcc}}" "$ROOT_DIR" "${PREFIX}gcc") ||
+    die "cannot find ${PREFIX}gcc; set MODERN_CC or PATH"
+LD=$(shiftcheck_resolve_tool \
+    "${MODERN_LD:-${LD:-${PREFIX}ld}}" "$ROOT_DIR" "${PREFIX}ld") ||
+    die "cannot find ${PREFIX}ld; set MODERN_LD or PATH"
+OBJCOPY=$(shiftcheck_resolve_tool \
+    "${MODERN_OBJCOPY:-${OBJCOPY:-${PREFIX}objcopy}}" \
+    "$ROOT_DIR" "${PREFIX}objcopy") ||
+    die "cannot find ${PREFIX}objcopy; set MODERN_OBJCOPY or PATH"
+NM=$(shiftcheck_resolve_tool \
+    "${MODERN_NM:-${NM:-${PREFIX}nm}}" "$ROOT_DIR" "${PREFIX}nm") ||
+    die "cannot find ${PREFIX}nm; set MODERN_NM or PATH"
 
 # --- Prerequisite check ---
 [ -f "$LDSCRIPT" ]    || die "missing ldscript: $LDSCRIPT"
 [ -f "$OBJECTS_LST" ] || die "missing objects list: $OBJECTS_LST (build expansion-modern-elf first)"
 [ -f "$BANIM_SYM" ]   || die "missing banim sidecar: $BANIM_SYM"
-[ -f "$SCENARIO" ]    || die "missing scenario: $SCENARIO"
-[ -f "$EXPECTED" ]    || die "missing fingerprint: $EXPECTED"
+[ -f "$BASE_ELF" ]     || die "missing base ELF: $BASE_ELF"
 
 # --- Library discovery ---
-libgcc_dir=$("$CC" -mcpu=arm7tdmi -mthumb -print-libgcc-file-name | xargs dirname) \
-    || die "cannot discover libgcc via $CC"
-libc_dir=$("$CC" -mcpu=arm7tdmi -mthumb -print-file-name=libc.a | xargs dirname) \
-    || die "cannot discover libc via $CC"
+libgcc_dir=$(shiftcheck_libgcc_dir "$CC") ||
+    die "cannot discover libgcc via $CC"
+libc_dir=$(shiftcheck_newlib_dir "$CC" "${MODERN_NEWLIB_LIB:-}") ||
+    die "cannot discover libc via $CC; set MODERN_NEWLIB_LIB"
 
 mkdir -p "$OUTDIR"
 
 # --- Link with shift ---
 printf 'Linking shifted ELF (__text_shift=%s)...\n' "$SHIFT"
 "$LD" \
+    --orphan-handling=error \
     --defsym=__rom_size="$ROM_SIZE" \
     --defsym=__text_shift="$SHIFT" \
     -T "$LDSCRIPT" \
@@ -75,18 +82,59 @@ printf 'Converting to ROM...\n'
     "$OUTDIR/shifted.elf" "$OUTDIR/shifted.gba" \
     || die "objcopy failed"
 
-# --- Verify boot behavior ---
-printf 'Verifying shifted boot (shift=%s)...\n' "$SHIFT"
-set +e
-python3 tools/gba-playtest/gba_playtest.py verify \
-    --rom "$OUTDIR/shifted.gba" \
-    --scenario "$SCENARIO" \
-    --expected "$EXPECTED" \
-    --policy behavior
-rc=$?
-set -e
+# --- Verify layout and ROM identity ---
+python3 scripts/shiftcheck/verify_shifted_layout.py \
+    --base-elf "$BASE_ELF" \
+    --shifted-elf "$OUTDIR/shifted.elf" \
+    --shift "$SHIFT" \
+    --nm "$NM" ||
+    die "shifted layout verification failed"
 
-case "$rc" in
-    0) printf 'SHIFTED BOOT: PASS (shift=%s)\n' "$SHIFT"; exit 0 ;;
-    *) printf 'SHIFTED BOOT: FAIL (shift=%s, exit=%d)\n' "$SHIFT" "$rc" >&2; exit 1 ;;
-esac
+python3 scripts/modernize/verify_rom_header.py \
+    --size "$ROM_SIZE_NAME" "$OUTDIR/shifted.gba" ||
+    die "shifted ROM header verification failed"
+
+# --- Verify boot and title behavior ---
+verify_scenario()
+{
+    label=$1
+    scenario=$2
+    expected=$3
+
+    [ -f "$scenario" ] || die "missing scenario: $scenario"
+    [ -f "$expected" ] || die "missing fingerprint: $expected"
+
+    printf 'Verifying shifted %s behavior (shift=%s)...\n' "$label" "$SHIFT"
+    if ! python3 tools/gba-playtest/gba_playtest.py verify \
+        --rom "$OUTDIR/shifted.gba" \
+        --scenario "$scenario" \
+        --expected "$expected" \
+        --policy behavior
+    then
+        printf 'SHIFTED %s: FAIL (shift=%s)\n' "$label" "$SHIFT" >&2
+        return 1
+    fi
+
+    printf 'SHIFTED %s: PASS (shift=%s)\n' "$label" "$SHIFT"
+}
+
+if [ -n "${SHIFTCHECK_SCENARIO:-}" ] || [ -n "${SHIFTCHECK_EXPECTED:-}" ]; then
+    [ -n "${SHIFTCHECK_SCENARIO:-}" ] &&
+        [ -n "${SHIFTCHECK_EXPECTED:-}" ] ||
+        die "SHIFTCHECK_SCENARIO and SHIFTCHECK_EXPECTED must be set together"
+    verify_scenario "SCENARIO" "$SHIFTCHECK_SCENARIO" "$SHIFTCHECK_EXPECTED" ||
+        exit 1
+else
+    verify_scenario \
+        "BOOT" \
+        "tools/gba-playtest/scenarios/boot.json" \
+        "tools/gba-playtest/fingerprints/boot.json" ||
+        exit 1
+    verify_scenario \
+        "TITLE" \
+        "tools/gba-playtest/scenarios/title-progression.json" \
+        "${SHIFTCHECK_TITLE_EXPECTED:-tools/gba-playtest/fingerprints/title-progression-modern-debug.json}" ||
+        exit 1
+fi
+
+exit 0

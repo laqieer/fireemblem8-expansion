@@ -4,7 +4,9 @@
 from __future__ import annotations
 
 import argparse
+import bisect
 import json
+import os
 import re
 import subprocess
 import sys
@@ -18,6 +20,8 @@ from budget import parse_map
 
 SCHEMA_VERSION = 1
 DEFAULT_EWRAM_CAPACITY = 0x40000
+READELF = os.environ.get("READELF", "arm-none-eabi-readelf")
+TOOL_TIMEOUT_SECONDS = int(os.environ.get("OVERLAY_AUDIT_TOOL_TIMEOUT", "120"))
 
 _OVERLAY_OBJECT_RE = re.compile(
     r"^\s+(0x[0-9a-fA-F]+)\s+(0x[0-9a-fA-F]+)\s+(\S+)\s*$"
@@ -25,11 +29,13 @@ _OVERLAY_OBJECT_RE = re.compile(
 _OVERLAY_SYMBOL_RE = re.compile(
     r"^\s+(0x[0-9a-fA-F]+)\s+(\S+)\s*$"
 )
+_OVERLAY_ASSIGNMENT_RE = re.compile(
+    r"^\s+(0x[0-9a-fA-F]+)\s+(?:PROVIDE\s+\()?([A-Za-z_]\w*)\s*="
+)
 _RELOCATION_SECTION_RE = re.compile(r"^Relocation section '([^']+)'")
 _RELOCATION_ENTRY_RE = re.compile(
     r"^\s*([0-9A-Fa-f]+)\s+[0-9A-Fa-f]+\s+(\S+)\s+([0-9A-Fa-f]+)\s+(.+?)\s*$"
 )
-_NM_SYMBOL_RE = re.compile(r"^([0-9A-Fa-f]+)\s+\S+\s+(\S+)$")
 
 
 @dataclass(frozen=True)
@@ -53,6 +59,14 @@ class RelocationRecord:
     type_name: str
     symbol_value: int | None
     symbol_name: str
+
+
+@dataclass(frozen=True)
+class ObjectRange:
+    start: int
+    end: int
+    object_name: str
+    overlays: tuple[str, ...]
 
 
 def _classify_region(address: int, regions: list[Any]) -> str | None:
@@ -112,6 +126,11 @@ def parse_overlay_map(
                 overlay_objects[current_overlay].add(object_name)
             continue
 
+        assignment_match = _OVERLAY_ASSIGNMENT_RE.match(line)
+        if assignment_match:
+            overlay_symbols[current_overlay].add(assignment_match.group(2))
+            continue
+
         symbol_match = _OVERLAY_SYMBOL_RE.match(line)
         if not symbol_match or "=" in line:
             continue
@@ -138,8 +157,56 @@ def parse_overlay_map(
 
         for symbol_name in overlay.symbols:
             symbol_to_overlays[symbol_name].add(overlay.name)
+        symbol_to_overlays[overlay.name].add(overlay.name)
 
     return regions, overlays, symbol_to_overlays
+
+
+def parse_overlay_object_ranges(
+    map_text: str, overlays: list[OverlayInfo]
+) -> list[ObjectRange]:
+    """Map ROM contribution ranges back to objects that own overlay data."""
+    object_to_overlays: dict[str, set[str]] = defaultdict(set)
+    for overlay in overlays:
+        for object_name in overlay.objects:
+            object_to_overlays[object_name].add(overlay.name)
+
+    ranges = []
+    contribution_patterns = (
+        re.compile(
+            r"^\s+\S+\s+(0x[0-9a-fA-F]+)\s+"
+            r"(0x[0-9a-fA-F]+)\s+(\S+)\s*$"
+        ),
+        re.compile(
+            r"^\s+(0x[0-9a-fA-F]+)\s+"
+            r"(0x[0-9a-fA-F]+)\s+(\S+)\s*$"
+        ),
+    )
+
+    for line in map_text.splitlines():
+        match = None
+        for pattern in contribution_patterns:
+            match = pattern.match(line)
+            if match:
+                break
+        if match is None:
+            continue
+
+        address = int(match.group(1), 16)
+        size = int(match.group(2), 16)
+        object_name = match.group(3).replace("\\", "/")
+        overlays_for_object = object_to_overlays.get(object_name)
+        if not overlays_for_object or size == 0 or address < 0x08000000:
+            continue
+
+        ranges.append(ObjectRange(
+            start=address,
+            end=address + size,
+            object_name=object_name,
+            overlays=tuple(sorted(overlays_for_object)),
+        ))
+
+    return sorted(ranges, key=lambda item: (item.start, item.end, item.object_name))
 
 
 def build_bounds_report(regions: list[Any], overlays: list[OverlayInfo]) -> dict[str, Any]:
@@ -206,22 +273,6 @@ def parse_readelf_relocations(text: str) -> list[RelocationRecord]:
     return records
 
 
-def parse_nm_symbols(text: str) -> dict[str, tuple[int, ...]]:
-    """Parse `arm-none-eabi-nm` output into a symbol->values map."""
-    symbol_values: dict[str, list[int]] = defaultdict(list)
-
-    for line in text.splitlines():
-        match = _NM_SYMBOL_RE.match(line.strip())
-        if not match:
-            continue
-        symbol_values[match.group(2)].append(int(match.group(1), 16))
-
-    return {
-        name: tuple(sorted(values))
-        for name, values in sorted(symbol_values.items())
-    }
-
-
 def _contains_token(haystack: str, token: str) -> bool:
     pattern = rf"(?<![A-Za-z0-9_]){re.escape(token)}(?![A-Za-z0-9_])"
     return re.search(pattern, haystack) is not None
@@ -261,34 +312,37 @@ def infer_origin_overlay(section_name: str, overlays: list[OverlayInfo]) -> str 
     return None
 
 
+def infer_origin_object(
+    offset: int,
+    object_ranges: list[ObjectRange],
+    starts: list[int] | None = None,
+) -> ObjectRange | None:
+    """Find the overlay-owning object whose linked range contains an offset."""
+    if not object_ranges:
+        return None
+
+    if starts is None:
+        starts = [entry.start for entry in object_ranges]
+    index = bisect.bisect_right(starts, offset) - 1
+    while index >= 0 and object_ranges[index].start <= offset:
+        entry = object_ranges[index]
+        if offset < entry.end:
+            return entry
+        if entry.end <= offset:
+            break
+        index -= 1
+
+    return None
+
+
 def infer_target_overlay(
     symbol_name: str,
-    symbol_value: int | None,
-    overlays: list[OverlayInfo],
     symbol_to_overlays: dict[str, set[str]],
-    nm_symbols: dict[str, tuple[int, ...]],
 ) -> str | None:
-    """Best-effort target overlay inference from map symbols and nm values."""
+    """Infer a target overlay only from explicit map ownership."""
     direct_matches = symbol_to_overlays.get(symbol_name, set())
     if len(direct_matches) == 1:
         return next(iter(direct_matches))
-
-    candidate_names = set()
-    values = list(nm_symbols.get(symbol_name, ()))
-    if symbol_value is not None:
-        values.append(symbol_value)
-
-    for value in values:
-        matches = {
-            overlay.name
-            for overlay in overlays
-            if overlay.address <= value < overlay.end
-        }
-        if len(matches) == 1:
-            candidate_names.update(matches)
-
-    if len(candidate_names) == 1:
-        return next(iter(candidate_names))
 
     return None
 
@@ -297,6 +351,7 @@ def scan_cross_overlay_relocations(
     elf_path: str | None,
     overlays: list[OverlayInfo],
     symbol_to_overlays: dict[str, set[str]],
+    object_ranges: list[ObjectRange] | None = None,
 ) -> dict[str, Any]:
     """Scan relocations for references from one overlay to another."""
     if not elf_path:
@@ -322,15 +377,15 @@ def scan_cross_overlay_relocations(
 
     try:
         readelf_result = subprocess.run(
-            ["arm-none-eabi-readelf", "-r", str(path)],
+            [READELF, "-rW", str(path)],
             capture_output=True,
             text=True,
-            timeout=30,
+            timeout=TOOL_TIMEOUT_SECONDS,
         )
-    except (FileNotFoundError, subprocess.TimeoutExpired):
+    except (FileNotFoundError, PermissionError, subprocess.TimeoutExpired):
         return {
             "status": "skipped",
-            "reason": "arm-none-eabi-readelf unavailable",
+            "reason": f"{READELF} unavailable or timed out",
             "relocation_count": 0,
             "overlay_scoped_relocation_count": 0,
             "count": 0,
@@ -358,50 +413,28 @@ def scan_cross_overlay_relocations(
             "references": [],
         }
 
-    try:
-        nm_result = subprocess.run(
-            ["arm-none-eabi-nm", "-n", "--defined-only", str(path)],
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        return {
-            "status": "skipped",
-            "reason": "arm-none-eabi-nm unavailable",
-            "relocation_count": len(relocations),
-            "overlay_scoped_relocation_count": 0,
-            "count": 0,
-            "references": [],
-        }
-
-    if nm_result.returncode != 0:
-        return {
-            "status": "skipped",
-            "reason": "arm-none-eabi-nm failed",
-            "relocation_count": len(relocations),
-            "overlay_scoped_relocation_count": 0,
-            "count": 0,
-            "references": [],
-        }
-
-    nm_symbols = parse_nm_symbols(nm_result.stdout)
-
     references = []
     overlay_scoped_count = 0
+    object_ranges = object_ranges or []
+    object_range_starts = [entry.start for entry in object_ranges]
 
     for relocation in relocations:
         origin_overlay = infer_origin_overlay(relocation.section_name, overlays)
+        origin_object = None
+        if origin_overlay is None:
+            origin_range = infer_origin_object(
+                relocation.offset, object_ranges, object_range_starts
+            )
+            if origin_range is not None and len(origin_range.overlays) == 1:
+                origin_overlay = origin_range.overlays[0]
+                origin_object = origin_range.object_name
         if origin_overlay is None:
             continue
 
         overlay_scoped_count += 1
         target_overlay = infer_target_overlay(
             relocation.symbol_name,
-            relocation.symbol_value,
-            overlays,
             symbol_to_overlays,
-            nm_symbols,
         )
 
         if target_overlay is None or target_overlay == origin_overlay:
@@ -409,6 +442,7 @@ def scan_cross_overlay_relocations(
 
         references.append({
             "origin_overlay": origin_overlay,
+            "origin_object": origin_object,
             "target_overlay": target_overlay,
             "relocation_section": relocation.section_name,
             "offset": relocation.offset,
@@ -420,6 +454,7 @@ def scan_cross_overlay_relocations(
     references.sort(
         key=lambda entry: (
             entry["origin_overlay"],
+            entry["origin_object"] or "",
             entry["target_overlay"],
             entry["symbol"],
             entry["relocation_section"],
@@ -461,6 +496,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--map", required=True, help="Path to the linker map")
     parser.add_argument("--elf", default=None, help="Path to the ELF (optional)")
     parser.add_argument("--output", required=True, help="Path to write JSON report")
+    parser.add_argument(
+        "--require-relocations",
+        action="store_true",
+        help="fail closed if relocation scanning cannot run",
+    )
     args = parser.parse_args(argv)
 
     map_path = Path(args.map)
@@ -476,18 +516,27 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         regions, overlays, symbol_to_overlays = parse_overlay_map(map_text)
+        object_ranges = parse_overlay_object_ranges(map_text, overlays)
     except ValueError as exc:
         print(f"error: malformed map file: {exc}", file=sys.stderr)
         return 2
 
     cross_overlay_report = scan_cross_overlay_relocations(
-        args.elf, overlays, symbol_to_overlays
+        args.elf, overlays, symbol_to_overlays, object_ranges
     )
     report = build_report(regions, overlays, cross_overlay_report)
 
     output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(report, indent=2) + "\n")
+
+    if args.require_relocations and cross_overlay_report["status"] == "skipped":
+        print(
+            "error: cross-overlay relocation audit was skipped: "
+            f"{cross_overlay_report['reason']}",
+            file=sys.stderr,
+        )
+        return 2
 
     has_cross_overlay_refs = cross_overlay_report["count"] > 0
     return 1 if report["overflow"] or has_cross_overlay_refs else 0

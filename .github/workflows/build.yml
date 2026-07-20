@@ -20,14 +20,11 @@ jobs:
     - name: Build tools
       run: ./build_tools.sh
 
-    # expansion-modern-boot-check (modern.mk) transitively builds and
-    # verifies the full modern object/ELF/ROM chain (expansion-modern-all ->
-    # expansion-modern-elf -> expansion-modern-rom) before running the
-    # behavior-policy boot fingerprint; it is not merely a compile-only
-    # gate. Per repository policy, CI still ends after this target-ROM
-    # step -- no decomp compare, progress, report, symbol, or Pages stages
-    # follow it.
-    - name: Build and verify modern target ROMs
+    # The linker gate builds the full modern object/ELF/ROM chain, checks
+    # deterministic memory budgets, rejects orphan/overflow/cross-overlay
+    # errors, and verifies normal plus shifted boot/title behavior.
+    # Per repository policy, CI ends after these target-ROM checks.
+    - name: Build and verify modern target ROMs and linker
       run: |
-        make expansion-modern-boot-check MODERN_CONFIG=debug MODERN_ABI=aapcs -j2
-        make expansion-modern-boot-check MODERN_CONFIG=release MODERN_ABI=aapcs -j2
+        make expansion-modern-linker-check MODERN_CONFIG=debug MODERN_ABI=aapcs -j2
+        make expansion-modern-linker-check MODERN_CONFIG=release MODERN_ABI=aapcs -j2

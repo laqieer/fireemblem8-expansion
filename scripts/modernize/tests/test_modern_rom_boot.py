@@ -558,12 +558,11 @@ class ModernRomBootTargetTests(unittest.TestCase):
         """expansion-modern-rom/-boot-check must be in MODERN_GOALS so that
         NODEP=1 applies to them like every other modern goal."""
         mk = (ROOT / "modern.mk").read_text(encoding="utf-8")
-        goals_line = next(
-            line for line in mk.splitlines()
-            if line.startswith("MODERN_GOALS")
-        )
-        self.assertIn("expansion-modern-rom", goals_line)
-        self.assertIn("expansion-modern-boot-check", goals_line)
+        goals_block = mk.split("MODERN_GOALS :=", 1)[1].split(
+            "ifneq", 1
+        )[0]
+        self.assertIn("expansion-modern-rom", goals_block)
+        self.assertIn("expansion-modern-boot-check", goals_block)
 
 
 if __name__ == "__main__":

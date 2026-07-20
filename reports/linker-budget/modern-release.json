@@ -5,9 +5,9 @@
       "name": "ewram",
       "origin": 33554432,
       "capacity_bytes": 262144,
-      "occupied_bytes": 258600,
-      "free_bytes": 3544,
-      "utilization_percent": 98.65,
+      "occupied_bytes": 258584,
+      "free_bytes": 3560,
+      "utilization_percent": 98.64,
       "overflow": false
     },
     {
@@ -40,7 +40,7 @@
     {
       "name": "ewram_overlay_banim",
       "address": 33554432,
-      "size_bytes": 131468,
+      "size_bytes": 131464,
       "is_overlay": true,
       "region": "ewram"
     },
@@ -88,14 +88,14 @@
     },
     {
       "name": "ewram_data",
-      "address": 33685900,
-      "size_bytes": 126064,
+      "address": 33685896,
+      "size_bytes": 126052,
       "is_overlay": false,
       "region": "ewram"
     },
     {
       "name": ".bss",
-      "address": 33811964,
+      "address": 33811948,
       "size_bytes": 1068,
       "is_overlay": false,
       "region": "ewram"
@@ -120,56 +120,56 @@
       "name": "ewram_overlay_0",
       "address": 33554432,
       "size_bytes": 127486,
-      "peak_bytes": 131468,
+      "peak_bytes": 131464,
       "region": "ewram"
     },
     {
       "name": "ewram_overlay_banim",
       "address": 33554432,
-      "size_bytes": 131468,
-      "peak_bytes": 131468,
+      "size_bytes": 131464,
+      "peak_bytes": 131464,
       "region": "ewram"
     },
     {
       "name": "ewram_overlay_bmstart",
       "address": 33554432,
       "size_bytes": 2048,
-      "peak_bytes": 131468,
+      "peak_bytes": 131464,
       "region": "ewram"
     },
     {
       "name": "ewram_overlay_gameending",
       "address": 33554432,
       "size_bytes": 10296,
-      "peak_bytes": 131468,
+      "peak_bytes": 131464,
       "region": "ewram"
     },
     {
       "name": "ewram_overlay_gamestart",
       "address": 33554432,
       "size_bytes": 129880,
-      "peak_bytes": 131468,
+      "peak_bytes": 131464,
       "region": "ewram"
     },
     {
       "name": "ewram_overlay_gamestartsave",
       "address": 33554432,
       "size_bytes": 32768,
-      "peak_bytes": 131468,
+      "peak_bytes": 131464,
       "region": "ewram"
     },
     {
       "name": "ewram_overlay_sio",
       "address": 33554432,
       "size_bytes": 4492,
-      "peak_bytes": 131468,
+      "peak_bytes": 131464,
       "region": "ewram"
     },
     {
       "name": "ewram_overlay_worldmap",
       "address": 33554432,
       "size_bytes": 118228,
-      "peak_bytes": 131468,
+      "peak_bytes": 131464,
       "region": "ewram"
     }
   ],
@@ -224,19 +224,19 @@
     },
     {
       "name": "__ewram_overlay_banim_end",
-      "address": 33685900,
+      "address": 33685896,
       "expression": ".",
       "region": "ewram"
     },
     {
       "name": "__ewram_persistent_start",
-      "address": 33685900,
+      "address": 33685896,
       "expression": "(__ewram_start + ((__ewram_overlay_peak_size + 0x3) & 0xfffffffffffffffc))",
       "region": "ewram"
     },
     {
       "name": "__ewram_used_end",
-      "address": 33813032,
+      "address": 33813016,
       "expression": ".",
       "region": "ewram"
     },
@@ -392,7 +392,7 @@
     },
     {
       "name": "gCurrentKeyInSeqIndex",
-      "address": 50337792,
+      "address": 50337784,
       "expression": ".",
       "region": "iwram"
     },
@@ -1005,7 +1005,7 @@
     },
     {
       "name": "__floating_end",
-      "address": 145922788,
+      "address": 145951476,
       "expression": ".",
       "region": "rom"
     },
@@ -1037,7 +1037,7 @@
         "name": "ewram_overlay_banim",
         "type": "NOBITS",
         "address": 33554432,
-        "size_bytes": 131468,
+        "size_bytes": 131464,
         "flags": "WA"
       },
       {
@@ -1085,14 +1085,14 @@
       {
         "name": "ewram_data",
         "type": "NOBITS",
-        "address": 33685900,
-        "size_bytes": 126064,
+        "address": 33685896,
+        "size_bytes": 126052,
         "flags": "WA"
       },
       {
         "name": ".bss",
         "type": "NOBITS",
-        "address": 33811964,
+        "address": 33811948,
         "size_bytes": 1068,
         "flags": "WA"
       },

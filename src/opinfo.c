@@ -21,6 +21,7 @@
 #include "constants/classes.h"
 
 EWRAM_OVERLAY(gamestart) struct AnimBuffer gOpInfoData = {0};
+EWRAM_OVERLAY(gamestart) static u8 sOpInfoImgSheetBuf[0x2000] = {0};
 
 // TODO: Move elsewhere
 void InitBanimTerrain(void *);
@@ -1119,7 +1120,7 @@ void ClassInfoDisplay_Init(struct OpInfoClassDisplayProc* proc) {
     gOpInfoData.state2 = 1;
     gOpInfoData.oam2Tile = 0x180;
     gOpInfoData.oam2Pal = 2;
-    gOpInfoData.pImgSheetBuf = &gEkrBg0QuakeVec;
+    gOpInfoData.pImgSheetBuf = sOpInfoImgSheetBuf;
     gOpInfoData.unk_24 = gUnk_0;
     gOpInfoData.unk_20 = gUnk_1;
     gOpInfoData.unk_28 = gUnk_2;

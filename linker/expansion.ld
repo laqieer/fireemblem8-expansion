@@ -20,68 +20,18 @@ ENTRY(Init)
 gNumMusicPlayers = 9;
 gMaxLines = 0;
 
-/* Sound room overlay symbols. */
-PROVIDE(gUnk_SoundRoom_0 = __ewram_start + 0x01F148);
-PROVIDE(gSoundRoomVolumeGraphBuffer = __ewram_start + 0x01F19C);
-
-/* Game start overlay symbols. */
-PROVIDE(gUnk_0 = __ewram_start + 0x002038);
-PROVIDE(gUnk_1 = __ewram_start + 0x007838);
-PROVIDE(gUnk_2 = __ewram_start + 0x0078D8);
-PROVIDE(gUnk_4 = __ewram_start + 0x00A2D8);
-PROVIDE(gUnk_5 = __ewram_start + 0x00A300);
-PROVIDE(gUnk_7 = __ewram_start + 0x00C300);
-PROVIDE(gUnk_8 = __ewram_start + 0x00CB00);
-PROVIDE(gUnk_OpSubtitle_0 = __ewram_start + 0x01CDD4);
-PROVIDE(gUnk_Opinfo_0 = __ewram_start + 0x01DB00);
-PROVIDE(gUnk_OpInfo_0 = __ewram_start + 0x01DB28);
-PROVIDE(gUnk_OpInfo_1 = __ewram_start + 0x01FB28);
-
-/* SIO overlay symbols. */
-PROVIDE(gUnk_Sio_0 = __ewram_start + 0x000000);
-PROVIDE(Font_Sio_0 = __ewram_start + 0x000C60);
-PROVIDE(gUnk_Sio_1 = __ewram_start + 0x000C78);
-PROVIDE(gUnk_Sio_2 = __ewram_start + 0x000F00);
-PROVIDE(gUnk_Sio_3 = __ewram_start + 0x001180);
-PROVIDE(gUnk_Sio_4 = __ewram_start + 0x001184);
-PROVIDE(gUnk_Sio_5 = __ewram_start + 0x001188);
-
-/* World map overlay symbols. */
-PROVIDE(gUnk_3 = __ewram_start + 0x0087A0);
-PROVIDE(gUnk_6 = __ewram_start + 0x00AF00);
-PROVIDE(gUnk_9 = __ewram_start + 0x019D00);
-PROVIDE(gFont_0 = __ewram_start + 0x01AFC0);
-PROVIDE(gUnk_10 = __ewram_start + 0x01AFF0);
-PROVIDE(gUnk_11 = __ewram_start + 0x01B0D8);
-PROVIDE(gUnk_12 = __ewram_start + 0x01B100);
-PROVIDE(gUnk_13 = __ewram_start + 0x01B104);
-PROVIDE(gUnk_14 = __ewram_start + 0x01B1E4);
-PROVIDE(gUnk_15 = __ewram_start + 0x01B3A4);
-PROVIDE(gUnk_16 = __ewram_start + 0x01B430);
-PROVIDE(gUnk_17 = __ewram_start + 0x01B458);
-PROVIDE(gUnk_18 = __ewram_start + 0x01B718);
-PROVIDE(gUnk_19 = __ewram_start + 0x01B71C);
-PROVIDE(gUnk_20 = __ewram_start + 0x01B758);
-PROVIDE(gUnk_21 = __ewram_start + 0x01B7DA);
-PROVIDE(gUnk_22 = __ewram_start + 0x01B864);
-PROVIDE(gUnk_23 = __ewram_start + 0x01B930);
-PROVIDE(gUnk_24 = __ewram_start + 0x01B958);
-PROVIDE(gUnk_25 = __ewram_start + 0x01BBD8);
-PROVIDE(gWmHblankStatus = __ewram_start + 0x01BE30);
-PROVIDE(gUnk_26 = __ewram_start + 0x01BE32);
-PROVIDE(gUnk_27 = __ewram_start + 0x01C5B4);
-PROVIDE(gUnk_28 = __ewram_start + 0x01C5C0);
-PROVIDE(gUnk_29 = __ewram_start + 0x01C5CC);
-PROVIDE(gUnk_30 = __ewram_start + 0x01C5CF);
-PROVIDE(gUnk_31 = __ewram_start + 0x01C5D0);
-PROVIDE(gUnk_32 = __ewram_start + 0x01C5D1);
-PROVIDE(gUnk_33 = __ewram_start + 0x01C5D4);
-
 SECTIONS
 {
     ewram_overlay_0 __ewram_start (NOLOAD) : ALIGN(4)
     {
         *(ewram_overlay_0)
+
+        . = 0x01F148;
+        PROVIDE(gUnk_SoundRoom_0 = .);
+        . += 0x54;
+        PROVIDE(gSoundRoomVolumeGraphBuffer = .);
+        . += 0x62;
+
         __ewram_overlay_0_end = .;
     } > ewram AT> ewram
     __ewram_overlay_0_size = __ewram_overlay_0_end - __ewram_start;
@@ -110,6 +60,20 @@ SECTIONS
     ewram_overlay_gamestart __ewram_start (NOLOAD) : ALIGN(4)
     {
         *(ewram_overlay_gamestart)
+
+        . = 0x002038; PROVIDE(gUnk_0 = .);
+        . = 0x007838; PROVIDE(gUnk_1 = .);
+        . = 0x0078D8; PROVIDE(gUnk_2 = .);
+        . = 0x00A2D8; PROVIDE(gUnk_4 = .);
+        . = 0x00A300; PROVIDE(gUnk_5 = .);
+        . = 0x00C300; PROVIDE(gUnk_7 = .);
+        . = 0x00CB00; PROVIDE(gUnk_8 = .);
+        . = 0x01CDD4; PROVIDE(gUnk_OpSubtitle_0 = .);
+        . = 0x01DB00; PROVIDE(gUnk_Opinfo_0 = .);
+        . = 0x01DB28; PROVIDE(gUnk_OpInfo_0 = .);
+        . = 0x01FB28; PROVIDE(gUnk_OpInfo_1 = .);
+        . += 0x30;
+
         __ewram_overlay_gamestart_end = .;
     } > ewram AT> ewram
     __ewram_overlay_gamestart_size = __ewram_overlay_gamestart_end - __ewram_start;
@@ -124,6 +88,16 @@ SECTIONS
     ewram_overlay_sio __ewram_start (NOLOAD) : ALIGN(4)
     {
         *(ewram_overlay_sio)
+
+        . = 0x000000; PROVIDE(gUnk_Sio_0 = .);
+        . = 0x000C60; PROVIDE(Font_Sio_0 = .);
+        . = 0x000C78; PROVIDE(gUnk_Sio_1 = .);
+        . = 0x000F00; PROVIDE(gUnk_Sio_2 = .);
+        . = 0x001180; PROVIDE(gUnk_Sio_3 = .);
+        . = 0x001184; PROVIDE(gUnk_Sio_4 = .);
+        . = 0x001188; PROVIDE(gUnk_Sio_5 = .);
+        . += 0x4;
+
         __ewram_overlay_sio_end = .;
     } > ewram AT> ewram
     __ewram_overlay_sio_size = __ewram_overlay_sio_end - __ewram_start;
@@ -131,11 +105,56 @@ SECTIONS
     ewram_overlay_worldmap __ewram_start (NOLOAD) : ALIGN(4)
     {
         *(ewram_overlay_worldmap)
+
+        . = 0x0087A0; PROVIDE(gUnk_3 = .);
+        . = 0x00AF00; PROVIDE(gUnk_6 = .);
+        . = 0x019D00; PROVIDE(gUnk_9 = .);
+        . = 0x01AFC0; PROVIDE(gFont_0 = .);
+        . = 0x01AFF0; PROVIDE(gUnk_10 = .);
+        . = 0x01B0D8; PROVIDE(gUnk_11 = .);
+        . = 0x01B100; PROVIDE(gUnk_12 = .);
+        . = 0x01B104; PROVIDE(gUnk_13 = .);
+        . = 0x01B1E4; PROVIDE(gUnk_14 = .);
+        . = 0x01B3A4; PROVIDE(gUnk_15 = .);
+        . = 0x01B430; PROVIDE(gUnk_16 = .);
+        . = 0x01B458; PROVIDE(gUnk_17 = .);
+        . = 0x01B718; PROVIDE(gUnk_18 = .);
+        . = 0x01B71C; PROVIDE(gUnk_19 = .);
+        . = 0x01B758; PROVIDE(gUnk_20 = .);
+        . = 0x01B7DA; PROVIDE(gUnk_21 = .);
+        . = 0x01B864; PROVIDE(gUnk_22 = .);
+        . = 0x01B930; PROVIDE(gUnk_23 = .);
+        . = 0x01B958; PROVIDE(gUnk_24 = .);
+        . = 0x01BBD8; PROVIDE(gUnk_25 = .);
+        . = 0x01BE30; PROVIDE(gWmHblankStatus = .);
+        . = 0x01BE32; PROVIDE(gUnk_26 = .);
+        . = 0x01C5B4; PROVIDE(gUnk_27 = .);
+        . = 0x01C5C0; PROVIDE(gUnk_28 = .);
+        . = 0x01C5CC; PROVIDE(gUnk_29 = .);
+        . = 0x01C5CF; PROVIDE(gUnk_30 = .);
+        . = 0x01C5D0; PROVIDE(gUnk_31 = .);
+        . = 0x01C5D1; PROVIDE(gUnk_32 = .);
+        . = 0x01C5D4; PROVIDE(gUnk_33 = .);
+        . += 0x800;
+
         __ewram_overlay_worldmap_end = .;
     } > ewram AT> ewram
     __ewram_overlay_worldmap_size = __ewram_overlay_worldmap_end - __ewram_start;
 
-    ewram_data __ewram_start (NOLOAD) : ALIGN(4)
+    __ewram_overlay_peak_size = MAX(
+        MAX(
+            MAX(__ewram_overlay_0_size, __ewram_overlay_gameending_size),
+            MAX(__ewram_overlay_bmstart_size, __ewram_overlay_gamestartsave_size)
+        ),
+        MAX(
+            MAX(__ewram_overlay_gamestart_size, __ewram_overlay_banim_size),
+            MAX(__ewram_overlay_sio_size, __ewram_overlay_worldmap_size)
+        )
+    );
+    __ewram_persistent_start =
+        __ewram_start + ((__ewram_overlay_peak_size + 3) & ~3);
+
+    ewram_data __ewram_persistent_start (NOLOAD) : ALIGN(4)
     {
         *(ewram_data)
 
@@ -188,6 +207,7 @@ SECTIONS
     {
         *(.bss .bss.* COMMON)
     } > ewram
+    __ewram_used_end = .;
 
     ROM __text_start : ALIGN(4)
     {
@@ -267,7 +287,9 @@ SECTIONS
 
     ASSERT(SIZEOF(ROM) <= __rom_size, "ROM content exceeds configured ROM size")
     ASSERT(SIZEOF(IWRAM) <= 32K, "IWRAM overflow")
-    ASSERT(SIZEOF(ewram_data) + SIZEOF(.bss) <= 256K, "EWRAM overflow")
+    ASSERT(__ewram_used_end <= ORIGIN(ewram) + LENGTH(ewram), "EWRAM overflow")
+    ASSERT(ADDR(ewram_data) >= __ewram_start + __ewram_overlay_peak_size,
+        "Persistent EWRAM overlaps an overlay")
     ASSERT(__floating_end <= 0x08C00000, "Floating ROM content overlaps pinned banim region at 0x08C00000")
     ASSERT(SIZEOF(ewram_overlay_0) <= 256K, "ewram_overlay_0 exceeds EWRAM")
     ASSERT(SIZEOF(ewram_overlay_gameending) <= 256K, "ewram_overlay_gameending exceeds EWRAM")

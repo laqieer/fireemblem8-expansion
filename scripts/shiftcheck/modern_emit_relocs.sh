@@ -3,6 +3,7 @@ set -eu
 
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 repo_root=$(CDPATH= cd -- "$script_dir/../.." && pwd)
+. "$script_dir/modern_toolchain.sh"
 
 default_out="$repo_root/build/shiftcheck/modern_relocs.elf"
 if [ "$#" -gt 0 ] && [ "${1#-}" = "$1" ]; then
@@ -17,12 +18,24 @@ case "$out" in
     *) map_out="$out.map" ;;
 esac
 
-LD=${LD:-arm-none-eabi-ld}
-CC=${CC:-arm-none-eabi-gcc}
+PREFIX=${PREFIX:-arm-none-eabi-}
+CC=$(shiftcheck_resolve_tool \
+    "${MODERN_CC:-${CC:-${PREFIX}gcc}}" "$repo_root" "${PREFIX}gcc") ||
+    {
+        printf 'error: cannot resolve modern compiler\n' >&2
+        exit 1
+    }
+LD=$(shiftcheck_resolve_tool \
+    "${MODERN_LD:-${LD:-${PREFIX}ld}}" "$repo_root" "${PREFIX}ld") ||
+    {
+        printf 'error: cannot resolve modern linker\n' >&2
+        exit 1
+    }
 OBJECTS_LST=${OBJECTS_LST:-$repo_root/build/expansion-modern/debug/aapcs/link/objects.lst}
 BANIM_SYM=${BANIM_SYM:-$repo_root/banim/data_banim.o.sym.o}
 LDSCRIPT=${LDSCRIPT:-$repo_root/linker/expansion.ld}
 ROM_SIZE_BYTES=${ROM_SIZE_BYTES:-0x01000000}
+TEXT_SHIFT=${TEXT_SHIFT:-0}
 
 for path in "$OBJECTS_LST" "$BANIM_SYM" "$LDSCRIPT"; do
     if [ ! -f "$path" ]; then
@@ -31,29 +44,23 @@ for path in "$OBJECTS_LST" "$BANIM_SYM" "$LDSCRIPT"; do
     fi
 done
 
-libgcc=$(
-    "$CC" -mcpu=arm7tdmi -mthumb -print-libgcc-file-name
-)
-if [ -z "$libgcc" ] || [ ! -f "$libgcc" ]; then
+libgcc_dir=$(shiftcheck_libgcc_dir "$CC") || {
     printf 'error: cannot discover libgcc via %s\n' "$CC" >&2
     exit 1
-fi
-libgcc_dir=$(dirname -- "$libgcc")
+}
 
-libc=$(
-    "$CC" -mcpu=arm7tdmi -mthumb -print-file-name=libc.a
-)
-if [ -z "$libc" ] || [ ! -f "$libc" ]; then
+libc_dir=$(shiftcheck_newlib_dir "$CC" "${MODERN_NEWLIB_LIB:-}") || {
     printf 'error: cannot discover libc.a via %s\n' "$CC" >&2
+    printf 'Set MODERN_NEWLIB_LIB to the directory containing libc.a.\n' >&2
     exit 1
-fi
-libc_dir=$(dirname -- "$libc")
+}
 
 mkdir -p "$(dirname -- "$out")"
 
 exec "$LD" \
     --orphan-handling=error \
     --defsym=__rom_size="$ROM_SIZE_BYTES" \
+    --defsym=__text_shift="$TEXT_SHIFT" \
     -T "$LDSCRIPT" \
     -Map "$map_out" \
     @"$OBJECTS_LST" \
