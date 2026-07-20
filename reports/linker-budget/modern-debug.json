@@ -1,0 +1,1183 @@
+{
+  "schema_version": 1,
+  "regions": [
+    {
+      "name": "ewram",
+      "origin": 33554432,
+      "capacity_bytes": 262144,
+      "occupied_bytes": 131468,
+      "free_bytes": 130676,
+      "utilization_percent": 50.15,
+      "overflow": false
+    },
+    {
+      "name": "iwram",
+      "origin": 50331648,
+      "capacity_bytes": 32768,
+      "occupied_bytes": 26536,
+      "free_bytes": 6232,
+      "utilization_percent": 80.98,
+      "overflow": false
+    },
+    {
+      "name": "rom",
+      "origin": 134217728,
+      "capacity_bytes": 16777216,
+      "occupied_bytes": 16776960,
+      "free_bytes": 256,
+      "utilization_percent": 100.0,
+      "overflow": false
+    }
+  ],
+  "sections": [
+    {
+      "name": ".ARM.attributes",
+      "address": 0,
+      "size_bytes": 44,
+      "is_overlay": false,
+      "region": null
+    },
+    {
+      "name": ".comment",
+      "address": 0,
+      "size_bytes": 38,
+      "is_overlay": false,
+      "region": null
+    },
+    {
+      "name": ".debug_abbrev",
+      "address": 0,
+      "size_bytes": 340190,
+      "is_overlay": false,
+      "region": null
+    },
+    {
+      "name": ".debug_aranges",
+      "address": 0,
+      "size_bytes": 15496,
+      "is_overlay": false,
+      "region": null
+    },
+    {
+      "name": ".debug_frame",
+      "address": 0,
+      "size_bytes": 226192,
+      "is_overlay": false,
+      "region": null
+    },
+    {
+      "name": ".debug_info",
+      "address": 0,
+      "size_bytes": 4117802,
+      "is_overlay": false,
+      "region": null
+    },
+    {
+      "name": ".debug_line",
+      "address": 0,
+      "size_bytes": 1370899,
+      "is_overlay": false,
+      "region": null
+    },
+    {
+      "name": ".debug_line_str",
+      "address": 0,
+      "size_bytes": 299,
+      "is_overlay": false,
+      "region": null
+    },
+    {
+      "name": ".debug_loclists",
+      "address": 0,
+      "size_bytes": 733095,
+      "is_overlay": false,
+      "region": null
+    },
+    {
+      "name": ".debug_macro",
+      "address": 0,
+      "size_bytes": 332089,
+      "is_overlay": false,
+      "region": null
+    },
+    {
+      "name": ".debug_rnglists",
+      "address": 0,
+      "size_bytes": 7373,
+      "is_overlay": false,
+      "region": null
+    },
+    {
+      "name": ".debug_str",
+      "address": 0,
+      "size_bytes": 882525,
+      "is_overlay": false,
+      "region": null
+    },
+    {
+      "name": ".rel.dyn",
+      "address": 0,
+      "size_bytes": 0,
+      "is_overlay": false,
+      "region": null
+    },
+    {
+      "name": "ewram_data",
+      "address": 33554432,
+      "size_bytes": 126064,
+      "is_overlay": false,
+      "region": "ewram"
+    },
+    {
+      "name": "ewram_overlay_0",
+      "address": 33554432,
+      "size_bytes": 101804,
+      "is_overlay": true,
+      "region": "ewram"
+    },
+    {
+      "name": "ewram_overlay_banim",
+      "address": 33554432,
+      "size_bytes": 131468,
+      "is_overlay": true,
+      "region": "ewram"
+    },
+    {
+      "name": "ewram_overlay_bmstart",
+      "address": 33554432,
+      "size_bytes": 2048,
+      "is_overlay": true,
+      "region": "ewram"
+    },
+    {
+      "name": "ewram_overlay_gameending",
+      "address": 33554432,
+      "size_bytes": 10296,
+      "is_overlay": true,
+      "region": "ewram"
+    },
+    {
+      "name": "ewram_overlay_gamestart",
+      "address": 33554432,
+      "size_bytes": 56,
+      "is_overlay": true,
+      "region": "ewram"
+    },
+    {
+      "name": "ewram_overlay_gamestartsave",
+      "address": 33554432,
+      "size_bytes": 32768,
+      "is_overlay": true,
+      "region": "ewram"
+    },
+    {
+      "name": "ewram_overlay_sio",
+      "address": 33554432,
+      "size_bytes": 0,
+      "is_overlay": true,
+      "region": "ewram"
+    },
+    {
+      "name": "ewram_overlay_worldmap",
+      "address": 33554432,
+      "size_bytes": 0,
+      "is_overlay": true,
+      "region": "ewram"
+    },
+    {
+      "name": ".bss",
+      "address": 33680496,
+      "size_bytes": 1068,
+      "is_overlay": false,
+      "region": "ewram"
+    },
+    {
+      "name": "IWRAM",
+      "address": 50331648,
+      "size_bytes": 26536,
+      "is_overlay": false,
+      "region": "iwram"
+    },
+    {
+      "name": "ROM",
+      "address": 134217728,
+      "size_bytes": 16776960,
+      "is_overlay": false,
+      "region": "rom"
+    }
+  ],
+  "overlays": [
+    {
+      "name": "ewram_overlay_0",
+      "address": 33554432,
+      "size_bytes": 101804,
+      "peak_bytes": 131468,
+      "region": "ewram"
+    },
+    {
+      "name": "ewram_overlay_banim",
+      "address": 33554432,
+      "size_bytes": 131468,
+      "peak_bytes": 131468,
+      "region": "ewram"
+    },
+    {
+      "name": "ewram_overlay_bmstart",
+      "address": 33554432,
+      "size_bytes": 2048,
+      "peak_bytes": 131468,
+      "region": "ewram"
+    },
+    {
+      "name": "ewram_overlay_gameending",
+      "address": 33554432,
+      "size_bytes": 10296,
+      "peak_bytes": 131468,
+      "region": "ewram"
+    },
+    {
+      "name": "ewram_overlay_gamestart",
+      "address": 33554432,
+      "size_bytes": 56,
+      "peak_bytes": 131468,
+      "region": "ewram"
+    },
+    {
+      "name": "ewram_overlay_gamestartsave",
+      "address": 33554432,
+      "size_bytes": 32768,
+      "peak_bytes": 131468,
+      "region": "ewram"
+    },
+    {
+      "name": "ewram_overlay_sio",
+      "address": 33554432,
+      "size_bytes": 0,
+      "peak_bytes": 131468,
+      "region": "ewram"
+    },
+    {
+      "name": "ewram_overlay_worldmap",
+      "address": 33554432,
+      "size_bytes": 0,
+      "peak_bytes": 131468,
+      "region": "ewram"
+    }
+  ],
+  "pinned_assignments": [
+    {
+      "name": "__ewram_overlay_sio_end",
+      "address": 33554432,
+      "expression": ".",
+      "region": "ewram"
+    },
+    {
+      "name": "__ewram_overlay_worldmap_end",
+      "address": 33554432,
+      "expression": ".",
+      "region": "ewram"
+    },
+    {
+      "name": "__ewram_start",
+      "address": 33554432,
+      "expression": "ORIGIN (ewram)",
+      "region": "ewram"
+    },
+    {
+      "name": "__ewram_overlay_gamestart_end",
+      "address": 33554488,
+      "expression": ".",
+      "region": "ewram"
+    },
+    {
+      "name": "__ewram_overlay_bmstart_end",
+      "address": 33556480,
+      "expression": ".",
+      "region": "ewram"
+    },
+    {
+      "name": "__ewram_overlay_gameending_end",
+      "address": 33564728,
+      "expression": ".",
+      "region": "ewram"
+    },
+    {
+      "name": "__ewram_overlay_gamestartsave_end",
+      "address": 33587200,
+      "expression": ".",
+      "region": "ewram"
+    },
+    {
+      "name": "__ewram_overlay_0_end",
+      "address": 33656236,
+      "expression": ".",
+      "region": "ewram"
+    },
+    {
+      "name": "__ewram_overlay_banim_end",
+      "address": 33685900,
+      "expression": ".",
+      "region": "ewram"
+    },
+    {
+      "name": "__iwram_start",
+      "address": 50331648,
+      "expression": "ORIGIN (iwram)",
+      "region": "iwram"
+    },
+    {
+      "name": "gKeyComboResetEN",
+      "address": 50331660,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "sModifiedBGs",
+      "address": 50331661,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "sModifiedPalette",
+      "address": 50331662,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gKeyStatusIgnoredSt",
+      "address": 50331664,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gGameClock",
+      "address": 50331668,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gUnk_34",
+      "address": 50331672,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gUnk_35",
+      "address": 50331673,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gSoftwareResetFlag",
+      "address": 50331674,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "sOamHi",
+      "address": 50331680,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "sOamLo",
+      "address": 50331696,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gUnk_36",
+      "address": 50332712,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gUnk_37",
+      "address": 50332720,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gLoadedUnitBuffer",
+      "address": 50332724,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gEventCallQueue",
+      "address": 50332728,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gEventSlots",
+      "address": 50332856,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gEventSlotQueue",
+      "address": 50332912,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gEventSlotCounter",
+      "address": 50333032,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gEventActiveQueue",
+      "address": 50333040,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gGenericProc",
+      "address": 50333104,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gUnk_38",
+      "address": 50333184,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gDebugChapterModeIndex",
+      "address": 50337664,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gUnk_39",
+      "address": 50337672,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gDungeonState",
+      "address": 50337696,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gUnk_40",
+      "address": 50337708,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gCurrentKeyInSeqIndex",
+      "address": 50337792,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gTargetKeyInSeqIndex",
+      "address": 50337804,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gUnk_41",
+      "address": 50337808,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gUnk_42",
+      "address": 50337816,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gUnk_43",
+      "address": 50337836,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gUnk_44",
+      "address": 50337840,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gUnk_45",
+      "address": 50337844,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gUnk_46",
+      "address": 50337848,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gUnk_47",
+      "address": 50337856,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gUnk_48",
+      "address": 50337872,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gUnk_49",
+      "address": 50337888,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gUnk_50",
+      "address": 50337892,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gUnk_51",
+      "address": 50338032,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gEventREDAs",
+      "address": 50338352,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gUnk_52",
+      "address": 50338868,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gUnk_53",
+      "address": 50338869,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gUnk_54",
+      "address": 50338870,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gUnitDef1",
+      "address": 50338872,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gUnk_55",
+      "address": 50338888,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gUnitDef2",
+      "address": 50338896,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gUnitDefEggHatching",
+      "address": 50338920,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gUnk_56",
+      "address": 50338932,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gUnk_57",
+      "address": 50338940,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gActiveEventRegistry",
+      "address": 50338944,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gUdefCnt",
+      "address": 50339008,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gUdefREDAs",
+      "address": 50339016,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gUdefs",
+      "address": 50339048,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gUnk_58",
+      "address": 50339152,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gUnk_59",
+      "address": 50339240,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gUnk_60",
+      "address": 50339304,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gUnk_61",
+      "address": 50339376,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gUnk_63",
+      "address": 50344032,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gOamLoPutIt",
+      "address": 50344048,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gLCDControlBuffer",
+      "address": 50344064,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gUnk_64",
+      "address": 50344152,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gIRQHandlers",
+      "address": 50344176,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gUnk_65",
+      "address": 50344232,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gOamAffinePutId",
+      "address": 50344236,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gUnk_66",
+      "address": 50344240,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "sHBlankHandler1",
+      "address": 50344244,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gOam",
+      "address": 50344256,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gUnk_67",
+      "address": 50345792,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gOamHiPutIt",
+      "address": 50345796,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "sHBlankHandler2",
+      "address": 50345800,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gUnk_68",
+      "address": 50345808,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "DecodeStringRAMFunc",
+      "address": 50348368,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gUnk_69",
+      "address": 50348372,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gOamAffinePutIt",
+      "address": 50348376,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "IntrMain_Buffer",
+      "address": 50348384,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gUnk_70",
+      "address": 50350432,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gSpriteAllocIt",
+      "address": 50350448,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gFaces",
+      "address": 50350464,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gpBgVerticalScrollSt",
+      "address": 50350480,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gWorkingBmMap",
+      "address": 50350496,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gMovMapFillStPool1",
+      "address": 50350512,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gWorkingTerrainMoveCosts",
+      "address": 50351024,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gStatGainSimUnit",
+      "address": 50351104,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gMovMapFillStPool2",
+      "address": 50351184,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gActiveUnit",
+      "address": 50351696,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gMovMapFillState",
+      "address": 50351712,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gUnk_71",
+      "address": 50351728,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gUnk_72",
+      "address": 50351732,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gUnk_73",
+      "address": 50351744,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gUnk_74",
+      "address": 50351750,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gSioStateId",
+      "address": 50351880,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gSioMsgBuf",
+      "address": 50351884,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "AiDecideMainFunc",
+      "address": 50351888,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gUnk_75",
+      "address": 50351904,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gUnk_76",
+      "address": 50352032,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gUnk_77",
+      "address": 50352036,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gEkrXQuakeOff",
+      "address": 50352040,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gBanimDebugCurrentIndex",
+      "address": 50352044,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gEkrYQuakeOff",
+      "address": 50352048,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gPermanentFlagBits",
+      "address": 50352720,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gChapterFlagBits",
+      "address": 50352752,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gGMData",
+      "address": 50352768,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gUnk_78",
+      "address": 50352932,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gUnk_79",
+      "address": 50352969,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gGmMonsterRnState",
+      "address": 50352974,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gFontClassChgMenu",
+      "address": 50352992,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gFontClassChg",
+      "address": 50353024,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gUnk_80",
+      "address": 50353048,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gUnk_81",
+      "address": 50353056,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gUnk_82",
+      "address": 50353120,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gUnk_83",
+      "address": 50353160,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gMPlayInfo_SE4_BMP2",
+      "address": 50357184,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gMPlayInfo_SE5_BMP3",
+      "address": 50357248,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gMPlayInfo_BGM1",
+      "address": 50357312,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gMPlayInfo_SE6_BMP4",
+      "address": 50357776,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gMPlayInfo_BGM2",
+      "address": 50357840,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gMPlayInfo_SE1_SYS1",
+      "address": 50357904,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gMPlayInfo_SE3_BMP1",
+      "address": 50357968,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gMPlayInfo_SE7_EVT",
+      "address": 50358048,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "gMPlayInfo_SE2_SYS2",
+      "address": 50358112,
+      "expression": ".",
+      "region": "iwram"
+    },
+    {
+      "name": "__sp_usr",
+      "address": 50363904,
+      "expression": "(__sp_irq - 0x1a0)",
+      "region": "iwram"
+    },
+    {
+      "name": "__sp_irq",
+      "address": 50364320,
+      "expression": "(__iwram_top - 0x60)",
+      "region": "iwram"
+    },
+    {
+      "name": "__irq_flags",
+      "address": 50364408,
+      "expression": "0x3007ff8",
+      "region": "iwram"
+    },
+    {
+      "name": "__iwram_top",
+      "address": 50364416,
+      "expression": "(ORIGIN (iwram) + LENGTH (iwram))",
+      "region": "iwram",
+      "boundary": true
+    },
+    {
+      "name": "__text_start",
+      "address": 134217728,
+      "expression": "ORIGIN (rom)",
+      "region": "rom"
+    },
+    {
+      "name": "_banim_pal_size",
+      "address": 134230752,
+      "expression": "(. - _banim_pal_start)",
+      "region": "rom"
+    },
+    {
+      "name": "_banim_pal_start",
+      "address": 149913600,
+      "expression": "0xef8000",
+      "region": "rom"
+    },
+    {
+      "name": "_banim_pal_end",
+      "address": 149926624,
+      "expression": ".",
+      "region": "rom"
+    }
+  ],
+  "elf": {
+    "available": true,
+    "section_count": 10,
+    "sections": [
+      {
+        "name": "ewram_data",
+        "type": "NOBITS",
+        "address": 33554432,
+        "size_bytes": 126064,
+        "flags": "WA"
+      },
+      {
+        "name": "ewram_overlay_0",
+        "type": "NOBITS",
+        "address": 33554432,
+        "size_bytes": 101804,
+        "flags": "WA"
+      },
+      {
+        "name": "ewram_overlay_banim",
+        "type": "NOBITS",
+        "address": 33554432,
+        "size_bytes": 131468,
+        "flags": "WA"
+      },
+      {
+        "name": "ewram_overlay_bmstart",
+        "type": "NOBITS",
+        "address": 33554432,
+        "size_bytes": 2048,
+        "flags": "WA"
+      },
+      {
+        "name": "ewram_overlay_gameending",
+        "type": "NOBITS",
+        "address": 33554432,
+        "size_bytes": 10296,
+        "flags": "WA"
+      },
+      {
+        "name": "ewram_overlay_gamestart",
+        "type": "NOBITS",
+        "address": 33554432,
+        "size_bytes": 56,
+        "flags": "WA"
+      },
+      {
+        "name": "ewram_overlay_gamestartsave",
+        "type": "NOBITS",
+        "address": 33554432,
+        "size_bytes": 32768,
+        "flags": "WA"
+      },
+      {
+        "name": ".bss",
+        "type": "NOBITS",
+        "address": 33680496,
+        "size_bytes": 1068,
+        "flags": "WA"
+      },
+      {
+        "name": "IWRAM",
+        "type": "NOBITS",
+        "address": 50331648,
+        "size_bytes": 26536,
+        "flags": "WA"
+      },
+      {
+        "name": "ROM",
+        "type": "PROGBITS",
+        "address": 134217728,
+        "size_bytes": 16776960,
+        "flags": "AX"
+      }
+    ],
+    "cross_validation": {
+      "in_elf_not_map": [],
+      "in_map_not_elf": [
+        ".ARM.attributes",
+        ".comment",
+        ".debug_abbrev",
+        ".debug_aranges",
+        ".debug_frame",
+        ".debug_info",
+        ".debug_line",
+        ".debug_line_str",
+        ".debug_loclists",
+        ".debug_macro",
+        ".debug_rnglists",
+        ".debug_str",
+        ".rel.dyn",
+        "ewram_overlay_sio",
+        "ewram_overlay_worldmap"
+      ]
+    }
+  },
+  "overflow": false
+}
