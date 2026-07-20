@@ -45,6 +45,16 @@ CHECK_KEYS = (
     "overflow",
 )
 
+DYNAMIC_ASSIGNMENT_NAMES = {
+    "__ewram_persistent_start",
+    "__ewram_used_end",
+    "__floating_end",
+    "__shift_end",
+    "__shift_start",
+    "_banim_pal_end",
+    "_banim_pal_size",
+}
+
 
 # ---------------------------------------------------------------------------
 # Data classes
@@ -457,7 +467,17 @@ def generate_report(
 
 def check_projection(report: dict[str, Any]) -> dict[str, Any]:
     """Return the deterministic, map-derived fields used for drift checks."""
-    return {key: report[key] for key in CHECK_KEYS}
+    projection = {key: report[key] for key in CHECK_KEYS}
+    projection["pinned_assignments"] = [
+        assignment
+        for assignment in report["pinned_assignments"]
+        if assignment["name"] not in DYNAMIC_ASSIGNMENT_NAMES
+        and not (
+            assignment["name"].startswith("__ewram_overlay_")
+            and assignment["name"].endswith("_end")
+        )
+    ]
+    return projection
 
 
 def render_check_diff(

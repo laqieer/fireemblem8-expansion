@@ -149,6 +149,23 @@ class TestMapParsing(unittest.TestCase):
         )
         self.assertEqual(r.returncode, 0, r.stderr)
 
+    def test_check_mode_ignores_derived_end_markers(self):
+        out = self.make_output_path("check-derived")
+        run_budget("--map", str(FIXTURES / "basic.map"), "--output", str(out))
+        report = json.loads(out.read_text())
+        report["pinned_assignments"].append({
+            "name": "__floating_end",
+            "address": 0x08B00000,
+            "expression": ".",
+            "region": "rom",
+        })
+        out.write_text(json.dumps(report, indent=2) + "\n")
+
+        r = run_budget(
+            "--map", str(FIXTURES / "basic.map"), "--output", str(out), "--check"
+        )
+        self.assertEqual(r.returncode, 0, r.stderr)
+
     def test_current_elf_section_mismatch_is_rejected(self):
         report = {
             "elf": {

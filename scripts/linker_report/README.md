@@ -37,9 +37,10 @@ The report is deterministic: no timestamps, no absolute host paths, stable
 ordering (by address then name).
 
 Check mode compares the map-derived regions, mapped sections, overlays, pinned
-assignments, and overflow state. Optional ELF diagnostics remain in the report
-for inspection but are not baseline fields because toolchain/host metadata may
-vary without changing the linked memory layout.
+assignments, and overflow state. Derived shift/end markers such as
+`__floating_end` are reported but not baselined because linker veneer insertion
+may move them without changing any memory boundary. Optional ELF diagnostics
+also remain inspectable without becoming host-sensitive baseline fields.
 
 ## Exit codes
 
