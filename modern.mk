@@ -856,6 +856,7 @@ $(MODERN_ELF): expansion-modern-link-prepare
 		exit 1; \
 	fi; \
 	"$(MODERN_LD)" \
+		--orphan-handling=error \
 		--defsym=__rom_size=$(MODERN_ROM_SIZE_BYTES) \
 		-T "$(MODERN_CLEAN_LDSCRIPT)" \
 		-Map "$(MODERN_MAP)" \

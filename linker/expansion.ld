@@ -82,42 +82,58 @@ SECTIONS
     ewram_overlay_0 __ewram_start (NOLOAD) : ALIGN(4)
     {
         *(ewram_overlay_0)
+        __ewram_overlay_0_end = .;
     } > ewram AT> ewram
+    __ewram_overlay_0_size = __ewram_overlay_0_end - __ewram_start;
 
     ewram_overlay_gameending __ewram_start (NOLOAD) : ALIGN(4)
     {
         *(ewram_overlay_gameending)
+        __ewram_overlay_gameending_end = .;
     } > ewram AT> ewram
+    __ewram_overlay_gameending_size = __ewram_overlay_gameending_end - __ewram_start;
 
     ewram_overlay_bmstart __ewram_start (NOLOAD) : ALIGN(4)
     {
         *(ewram_overlay_bmstart)
+        __ewram_overlay_bmstart_end = .;
     } > ewram AT> ewram
+    __ewram_overlay_bmstart_size = __ewram_overlay_bmstart_end - __ewram_start;
 
     ewram_overlay_gamestartsave __ewram_start (NOLOAD) : ALIGN(4)
     {
         *(ewram_overlay_gamestartsave)
+        __ewram_overlay_gamestartsave_end = .;
     } > ewram AT> ewram
+    __ewram_overlay_gamestartsave_size = __ewram_overlay_gamestartsave_end - __ewram_start;
 
     ewram_overlay_gamestart __ewram_start (NOLOAD) : ALIGN(4)
     {
         *(ewram_overlay_gamestart)
+        __ewram_overlay_gamestart_end = .;
     } > ewram AT> ewram
+    __ewram_overlay_gamestart_size = __ewram_overlay_gamestart_end - __ewram_start;
 
     ewram_overlay_banim __ewram_start (NOLOAD) : ALIGN(4)
     {
         *(ewram_overlay_banim)
+        __ewram_overlay_banim_end = .;
     } > ewram AT> ewram
+    __ewram_overlay_banim_size = __ewram_overlay_banim_end - __ewram_start;
 
     ewram_overlay_sio __ewram_start (NOLOAD) : ALIGN(4)
     {
         *(ewram_overlay_sio)
+        __ewram_overlay_sio_end = .;
     } > ewram AT> ewram
+    __ewram_overlay_sio_size = __ewram_overlay_sio_end - __ewram_start;
 
     ewram_overlay_worldmap __ewram_start (NOLOAD) : ALIGN(4)
     {
         *(ewram_overlay_worldmap)
+        __ewram_overlay_worldmap_end = .;
     } > ewram AT> ewram
+    __ewram_overlay_worldmap_size = __ewram_overlay_worldmap_end - __ewram_start;
 
     ewram_data __ewram_start (NOLOAD) : ALIGN(4)
     {
@@ -180,6 +196,7 @@ SECTIONS
         *asm/arm.o(.text)
         *(EXCLUDE_FILE (*src/rom_header.o *src/crt0.o *asm/arm.o *asm/arm_call.o) .text .text.* .glue_7 .glue_7t)
         *asm/arm_call.o(.text)
+        *(.vfp11_veneer .v4_bx .iplt)
 
         . = ALIGN(4);
         *(.rodata .rodata.* .rodata.str1.* .rodata.cst*)
@@ -195,9 +212,11 @@ SECTIONS
             *src/data/data_FE0000.o
             *src/data/data_FFF000.o
         ) .data .data.*)
+        *(.igot.plt)
 
         FILL(0xFF);
         . = 0xC00000;
+        *src/banim_data.o(.data)
         *src/banim_data.o(.data.banim_array_len)
         *src/banim_data.o(.data.banim_array)
 
@@ -207,6 +226,7 @@ SECTIONS
 
         FILL(0xFF);
         . = 0xEE0000;
+        *src/banim_terrain_data.o(.data)
         *src/banim_terrain_data.o(.data.banim_terrain_head)
         *src/banim_terrain_data.o(.data.banim_terrain_ptr_table)
 
@@ -217,6 +237,7 @@ SECTIONS
         FILL(0xFF);
         _banim_pal_start = 0xEF8000;
         . = _banim_pal_start;
+        *src/banim_pal_chara.o(.data)
         *src/banim_pal_chara.o(.data.banim_pal_head)
         *src/banim_pal_chara.o(.data.banim_pal_ptr_table)
 
@@ -236,6 +257,14 @@ SECTIONS
     ASSERT(SIZEOF(ROM) <= __rom_size, "ROM content exceeds configured ROM size")
     ASSERT(SIZEOF(IWRAM) <= 32K, "IWRAM overflow")
     ASSERT(SIZEOF(ewram_data) + SIZEOF(.bss) <= 256K, "EWRAM overflow")
+    ASSERT(SIZEOF(ewram_overlay_0) <= 256K, "ewram_overlay_0 exceeds EWRAM")
+    ASSERT(SIZEOF(ewram_overlay_gameending) <= 256K, "ewram_overlay_gameending exceeds EWRAM")
+    ASSERT(SIZEOF(ewram_overlay_bmstart) <= 256K, "ewram_overlay_bmstart exceeds EWRAM")
+    ASSERT(SIZEOF(ewram_overlay_gamestartsave) <= 256K, "ewram_overlay_gamestartsave exceeds EWRAM")
+    ASSERT(SIZEOF(ewram_overlay_gamestart) <= 256K, "ewram_overlay_gamestart exceeds EWRAM")
+    ASSERT(SIZEOF(ewram_overlay_banim) <= 256K, "ewram_overlay_banim exceeds EWRAM")
+    ASSERT(SIZEOF(ewram_overlay_sio) <= 256K, "ewram_overlay_sio exceeds EWRAM")
+    ASSERT(SIZEOF(ewram_overlay_worldmap) <= 256K, "ewram_overlay_worldmap exceeds EWRAM")
 
     .stab             0 : { *(.stab) }
     .stabstr          0 : { *(.stabstr) }
@@ -245,6 +274,7 @@ SECTIONS
     .stab.indexstr    0 : { *(.stab.indexstr) }
     .comment          0 : { *(.comment) }
     .gnu.build.attributes 0 : { *(.gnu.build.attributes .gnu.build.attributes.*) }
+    .rel.dyn          0 : { *(.rel.iplt .rel.dyn) }
 
     .debug            0 : { *(.debug) }
     .line             0 : { *(.line) }
@@ -279,6 +309,22 @@ SECTIONS
 
     /DISCARD/ :
     {
-        *(*)
+        *(.eh_frame)
+        *(.eh_frame_hdr)
+        *(.ARM.extab .ARM.extab.*)
+        *(.ARM.exidx .ARM.exidx.*)
+        *(.gnu.warning.*)
+        *(.init_array .init_array.*)
+        *(.fini_array .fini_array.*)
+        *(.note.GNU-stack)
+        *(.note.gnu.property)
+        *(.gnu.hash)
+        *(.interp)
+        *(.dynsym)
+        *(.dynstr)
+        *(.dynamic)
+        *(.hash)
+        *(.got .got.plt)
+        *(.plt .plt.*)
     }
 }
