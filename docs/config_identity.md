@@ -24,6 +24,7 @@ defaults (see "Legacy build path" below).
 | `EXPANSION_ROM_MAKER_CODE` | exactly 2 printable-ASCII bytes | `01` | ROM header, embedded metadata (fingerprint) |
 | `EXPANSION_ROM_REVISION` | integer, `[0, 255]` | `0` | ROM header "software version" byte (fingerprint) |
 | `EXPANSION_BUILD_ID` | empty, or 4-40 hex characters | empty | embedded build commit override |
+| `EXPANSION_SAVE_COMPAT_EPOCH` | integer, `[0, 65535]` | `1` | save-format compatibility gate (see `docs/save_format.md`); **not** part of the fingerprint above |
 
 Every value has a `?=` default, so overriding on the `make` command line
 (e.g. `make expansion-modern-rom EXPANSION_ROM_TITLE=MYHACK`) or via the
@@ -117,9 +118,14 @@ Settings that are **not** folded into the fingerprint (e.g. the resolved
 `build_commit`) are informational only: two builds from different commits
 but with identical compatibility-relevant settings share a fingerprint,
 since the commit does not by itself imply an incompatible change. Save
-data compatibility is intentionally out of scope for this fingerprint
-(see issue #2); a future save-versioning scheme should define its own
-compatibility key rather than overload this one.
+data compatibility is intentionally out of scope for this fingerprint;
+`EXPANSION_SAVE_COMPAT_EPOCH` (see table above) is issue #2 slice 1's
+independent save-compatibility key -- see `docs/save_format.md` for the
+on-media format it gates and exactly when to bump it. It is deliberately
+excluded from `fingerprint_fields()`: this fingerprint is allowed to
+contain diagnostics-only settings (like `config_preset`'s debug/release
+choice) that must never make an otherwise-identical save look
+incompatible, so save compatibility needed its own, narrower key.
 
 ## C configuration header
 

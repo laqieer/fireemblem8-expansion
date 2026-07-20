@@ -124,4 +124,21 @@
 #define FE8_EXPANSION_LOGGING_ENABLED FE8_EXPANSION_DEBUG
 #endif
 
+/* --- Save-format compatibility (see config.mk EXPANSION_SAVE_COMPAT_EPOCH,
+ * issue #2 slice 1) -------------------------------------------------------- */
+/*
+ * The explicit save-compatibility epoch/key gating include/save_format.h's
+ * raw-byte classifier's SAVE_COMPAT_SAVE_CONFIG_INCOMPATIBLE state. This is
+ * deliberately independent of FE8_EXPANSION_VERSION_* and
+ * FE8_EXPANSION_CONFIG_FINGERPRINT above: those are stored in the on-media
+ * ExpansionSaveMeta record purely as diagnostics and must never gate save
+ * compatibility by themselves (a build/title/debug/ROM-size-only change
+ * must never make an existing current save look incompatible). Bump only
+ * this value when a save-layout/serialization change requires it -- see
+ * docs/save_format.md.
+ */
+#ifndef FE8_EXPANSION_SAVE_COMPAT_EPOCH
+#define FE8_EXPANSION_SAVE_COMPAT_EPOCH 1
+#endif
+
 #endif /* GUARD_EXPANSION_CONFIG_H */

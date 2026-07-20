@@ -35,6 +35,7 @@ def write_config_mk(
     rom_maker_code="01",
     rom_revision="0",
     build_id="",
+    save_compat_epoch="1",
 ) -> Path:
     path = directory / "config.mk"
     path.write_text(
@@ -48,6 +49,7 @@ def write_config_mk(
                 f"EXPANSION_ROM_MAKER_CODE := {rom_maker_code}",
                 f"EXPANSION_ROM_REVISION := {rom_revision}",
                 f"EXPANSION_BUILD_ID := {build_id}",
+                f"EXPANSION_SAVE_COMPAT_EPOCH := {save_compat_epoch}",
                 "",
             ]
         ),
@@ -243,6 +245,7 @@ class ParseConfigMkTests(unittest.TestCase):
                         "EXPANSION_ROM_MAKER_CODE := 01",
                         "EXPANSION_ROM_REVISION := 0",
                         "EXPANSION_BUILD_ID :=",
+                        "EXPANSION_SAVE_COMPAT_EPOCH := 1",
                         "",
                     ]
                 ),
@@ -504,6 +507,52 @@ class CliTests(unittest.TestCase):
         self.assertIn("MODERN_BUILD_COMMIT=", result.stdout)
         self.assertIn("MODERN_CONFIG_FINGERPRINT=", result.stdout)
         self.assertIn("MODERN_VERSION_STRING=0.1.0", result.stdout)
+        self.assertIn("MODERN_SAVE_COMPAT_EPOCH=1", result.stdout)
+
+    def test_resolve_save_compat_epoch_override_changes_token_not_fingerprint(
+        self,
+    ):
+        """Regression test for issue #2 slice 1 review finding #4 (HIGH):
+        modern.mk threads --save-compat-epoch through this CLI's resolve
+        command to get the MODERN_SAVE_COMPAT_EPOCH token it embeds in
+        MODERN_CFLAGS's -D define and in the compile-settings stamp. This
+        proves the override changes that token while leaving
+        MODERN_CONFIG_FINGERPRINT untouched -- the save-compat epoch must
+        remain a distinct compatibility gate, never folded into the #8
+        config fingerprint (see ExpansionIdentity.fingerprint_fields)."""
+        with tempfile.TemporaryDirectory() as tmp:
+            config_mk = write_config_mk(Path(tmp))
+            baseline = self.run_cli(
+                "resolve",
+                "--config-mk", str(config_mk),
+                "--config", "debug",
+                "--abi", "aapcs",
+                "--rom-size", "16M",
+                "--repo-root", tmp,
+            )
+            overridden = self.run_cli(
+                "resolve",
+                "--config-mk", str(config_mk),
+                "--config", "debug",
+                "--abi", "aapcs",
+                "--rom-size", "16M",
+                "--repo-root", tmp,
+                "--save-compat-epoch", "2",
+            )
+        self.assertEqual(baseline.returncode, 0, baseline.stderr)
+        self.assertEqual(overridden.returncode, 0, overridden.stderr)
+        self.assertIn("MODERN_SAVE_COMPAT_EPOCH=1", baseline.stdout)
+        self.assertIn("MODERN_SAVE_COMPAT_EPOCH=2", overridden.stdout)
+
+        def fingerprint_of(stdout: str) -> str:
+            for token in stdout.split():
+                if token.startswith("MODERN_CONFIG_FINGERPRINT="):
+                    return token
+            raise AssertionError(f"no fingerprint token in: {stdout}")
+
+        self.assertEqual(
+            fingerprint_of(baseline.stdout), fingerprint_of(overridden.stdout)
+        )
 
     def test_generate_writes_metadata_files(self):
         with tempfile.TemporaryDirectory() as tmp:

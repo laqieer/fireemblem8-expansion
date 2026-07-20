@@ -50,3 +50,19 @@ EXPANSION_ROM_REVISION   ?= 0
 # fixed "unknown" sentinel when no git metadata is available at all. Never
 # a timestamp, branch name, or host path -- see docs/config_identity.md.
 EXPANSION_BUILD_ID ?=
+
+# --- Save-format compatibility (issue #2 slice 1) ---------------------------
+# An integer in [0, 65535] identifying the on-media SRAM save format's
+# compatibility generation. This is INDEPENDENT of EXPANSION_VERSION_* above:
+# the framework version can change (new features, unrelated fixes) without
+# the save format changing, and vice versa. Bump this value only when a
+# change would make an existing on-media save (include/save_format.h's
+# `struct ExpansionSaveMeta`, or any current save-block struct it gates) no
+# longer safely interpretable by the new build -- e.g. reordering/resizing a
+# current save-block struct, changing the metadata checksum domain, or
+# changing what a field means. Do NOT bump it for diagnostic-only changes
+# (build commit, config fingerprint, ABI, title, ROM size, debug/release) --
+# see docs/save_format.md for the full compatibility-vs-diagnostic field
+# list and docs/config_identity.md for how this fits the rest of the
+# identity surface.
+EXPANSION_SAVE_COMPAT_EPOCH ?= 1

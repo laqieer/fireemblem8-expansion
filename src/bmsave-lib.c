@@ -110,6 +110,150 @@ u16 Checksum16(void const * data, int size)
     return add_acc + xor_acc;
 }
 
+/*
+ * Copies at most (destCapacity - 1) bytes from a NUL-terminated src into
+ * dest, then always NUL-terminates dest. Unlike CopyString() (bmlib.c),
+ * this never writes past destCapacity bytes, which matters here because
+ * FE8_EXPANSION_BUILD_COMMIT/FE8_EXPANSION_CONFIG_FINGERPRINT are wider
+ * than the fixed diagnostic fields they are copied into below.
+ */
+static void CopyStringBounded(char *dest, const char *src, int destCapacity)
+{
+    int i;
+
+    for (i = 0; i < destCapacity - 1 && '\0' != src[i]; ++i)
+        dest[i] = src[i];
+
+    dest[i] = '\0';
+}
+
+/* Byte-for-byte compare of a fixed-size, not-necessarily-NUL-terminated
+ * region (used for the metadata magic, which is not a C string). */
+static bool BytesEqual(void const *a, void const *b, int size)
+{
+    u8 const *pa = a;
+    u8 const *pb = b;
+    int i;
+
+    for (i = 0; i < size; ++i)
+    {
+        if (pa[i] != pb[i])
+            return false;
+    }
+
+    return true;
+}
+
+/* True if every byte of the region is 0xFF, matching WipeSram()'s
+ * 0xFFFFFFFF fill pattern -- the only state ClassifySramSaveCompat() may
+ * ever report as SAVE_COMPAT_EMPTY. */
+static bool IsRegionBlank(void const *data, int size)
+{
+    u8 const *bytes = data;
+    int i;
+
+    for (i = 0; i < size; ++i)
+    {
+        if (bytes[i] != 0xFF)
+            return false;
+    }
+
+    return true;
+}
+
+void BuildCurrentExpansionSaveMeta(struct ExpansionSaveMeta *meta)
+{
+    int i;
+
+    /*
+     * Issue #2 slice 1 (review fix): zero the entire struct first,
+     * deterministically, before setting any named field. Without this,
+     * the STRUCT_PAD() alignment bytes at 0x05, 0x09-0x0B, 0x21-0x23, and
+     * 0x2D (all inside EXPANSION_SAVE_META_SIZE_FOR_CHECKSUM's checksum
+     * domain) were left holding whatever garbage was already on the
+     * stack/in the caller's buffer, making the checksummed bytes -- and
+     * therefore this metadata record -- non-deterministic across builds
+     * and potentially leaking uninitialized memory into SRAM.
+     */
+    memset(meta, 0, sizeof(*meta));
+
+    for (i = 0; i < EXPANSION_SAVE_META_MAGIC_SIZE; i++)
+        meta->magic[i] = EXPANSION_SAVE_META_MAGIC[i];
+
+    meta->formatVersion = SAVE_FORMAT_VERSION_CURRENT;
+    meta->compatEpoch = FE8_EXPANSION_SAVE_COMPAT_EPOCH;
+    meta->abiId = StringCompare(FE8_EXPANSION_ABI, "aapcs") ? SAVE_ABI_ID_AAPCS : SAVE_ABI_ID_APCS_GNU;
+    meta->frameworkVersionPacked = FE8_EXPANSION_VERSION_PACKED;
+
+    CopyStringBounded(meta->configFingerprint, FE8_EXPANSION_CONFIG_FINGERPRINT, sizeof(meta->configFingerprint));
+    CopyStringBounded(meta->buildCommitShort, FE8_EXPANSION_BUILD_COMMIT, sizeof(meta->buildCommitShort));
+
+    /* meta->reserved is already zeroed by the memset() above. */
+
+    meta->checksum = ExpansionSaveMetaChecksum(meta);
+}
+
+
+u16 ExpansionSaveMetaChecksum(struct ExpansionSaveMeta const *meta)
+{
+    return Checksum16(meta, EXPANSION_SAVE_META_SIZE_FOR_CHECKSUM);
+}
+
+enum SaveCompatState ClassifySaveCompatRaw(
+    struct GlobalSaveInfo const *header,
+    bool headerRegionBlank,
+    struct ExpansionSaveMeta const *meta,
+    bool metaRegionBlank)
+{
+    bool headerValid;
+
+    if (headerRegionBlank && metaRegionBlank)
+        return SAVE_COMPAT_EMPTY;
+
+    headerValid = (0 != StringCompare(header->name, sSaveMarker)
+                && SAVEMAGIC32 == header->magic32
+                && SAVEMAGIC16 == header->magic16
+                && header->checksum == Checksum16(header, GLOBALSIZEINFO_SIZE_FOR_CHECKSUM));
+
+    if (!headerValid)
+        return SAVE_COMPAT_HEADER_CORRUPT;
+
+    if (!BytesEqual(meta->magic, EXPANSION_SAVE_META_MAGIC, EXPANSION_SAVE_META_MAGIC_SIZE))
+        return SAVE_COMPAT_VALID_LEGACY_OR_VANILLA;
+
+    if (meta->checksum != ExpansionSaveMetaChecksum(meta))
+        return SAVE_COMPAT_METADATA_CORRUPT;
+
+    if (meta->formatVersion > SAVE_FORMAT_VERSION_CURRENT)
+        return SAVE_COMPAT_NEWER_UNSUPPORTED;
+
+    if (meta->formatVersion < SAVE_FORMAT_VERSION_CURRENT)
+        return SAVE_COMPAT_MIGRATABLE_OLDER;
+
+    if (meta->compatEpoch != FE8_EXPANSION_SAVE_COMPAT_EPOCH)
+        return SAVE_COMPAT_SAVE_CONFIG_INCOMPATIBLE;
+
+    return SAVE_COMPAT_CURRENT;
+}
+
+enum SaveCompatState ClassifySramSaveCompat(void)
+{
+    struct GlobalSaveInfo header;
+    struct ExpansionSaveMeta meta;
+
+    /* SRAM hardware not confirmed working: never treat as blank, since
+     * that would risk an automatic wipe of a cart we cannot actually
+     * read back reliably. */
+    if (!IsSramWorking())
+        return SAVE_COMPAT_HEADER_CORRUPT;
+
+    ReadSramFast(&gSram->globalSaveInfo, &header, sizeof(header));
+    ReadSramFast(&gSram->expansionSaveMeta, &meta, sizeof(meta));
+
+    return ClassifySaveCompatRaw(
+        &header, IsRegionBlank(&header, sizeof(header)),
+        &meta, IsRegionBlank(&meta, sizeof(meta)));
+}
 
 bool ReadGlobalSaveInfo(struct GlobalSaveInfo *buf)
 {
@@ -182,6 +326,46 @@ void InitGlobalSaveInfodata(void)
         info.charKnownFlags[i] = 0;
 
     WriteGlobalSaveInfo(&info);
+
+    /* Genuinely-blank SRAM is being initialized -- also stamp the current
+     * expansion save metadata record (issue #2 slice 1) so this save is
+     * classified SAVE_COMPAT_CURRENT from now on. */
+    {
+        struct ExpansionSaveMeta meta;
+
+        BuildCurrentExpansionSaveMeta(&meta);
+        WriteAndVerifySramFast(&meta, &gSram->expansionSaveMeta, sizeof(meta));
+    }
+}
+
+bool EnsureGlobalSaveInfoLoaded(struct GlobalSaveInfo *buf)
+{
+    /*
+     * Issue #2 slice 1 (review fix): shared safe-init helper for every
+     * gameplay call site that used to do:
+     *
+     *     if (!ReadGlobalSaveInfo(&info)) {
+     *         InitGlobalSaveInfodata();
+     *         ReadGlobalSaveInfo(&info);
+     *     }
+     *
+     * That pattern silently equated "ReadGlobalSaveInfo() failed" with
+     * "SRAM is blank", so it also wiped/reinitialized on top of corrupt,
+     * newer, older, or save-config-incompatible expansion data. Only a
+     * raw classification of SAVE_COMPAT_EMPTY may trigger the wipe done
+     * by InitGlobalSaveInfodata(); every other non-current state must be
+     * left byte-for-byte untouched and must not be reinterpreted as a
+     * writable struct. Returns false (with *buf left unmodified) when the
+     * caller must not proceed to read/write the global save info block.
+     */
+    if (ReadGlobalSaveInfo(buf))
+        return true;
+
+    if (SAVE_COMPAT_EMPTY != ClassifySramSaveCompat())
+        return false;
+
+    InitGlobalSaveInfodata();
+    return ReadGlobalSaveInfo(buf);
 }
 
 void EraseBonusContentData(void)
@@ -1218,7 +1402,17 @@ void ModifySaveLinkArenaStruct2B(struct bmsave_unkstruct2 * buf, int val)
 
 void EraseSramDataIfInvalid(void)
 {
-    if (!ReadGlobalSaveInfo(NULL))
+    /*
+     * Issue #2 slice 1: only the documented blank (0xFF-filled) SRAM state
+     * may trigger the full-SRAM wipe done by InitGlobalSaveInfodata().
+     * Previously this checked `!ReadGlobalSaveInfo(NULL)`, which is also
+     * true for corrupt, newer, older, or save-config-incompatible data --
+     * silently destroying all 32 KiB of valid-but-unrecognized SRAM before
+     * any UI/tooling ever gets a chance to classify it. Valid legacy/
+     * vanilla saves, corrupt saves, and every other non-blank state must
+     * be left byte-for-byte untouched here; see docs/save_format.md.
+     */
+    if (SAVE_COMPAT_EMPTY == ClassifySramSaveCompat())
         InitGlobalSaveInfodata();
 
     if (!LoadBonusContentData(NULL))

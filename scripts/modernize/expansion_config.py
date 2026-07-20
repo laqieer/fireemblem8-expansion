@@ -45,6 +45,11 @@ ROM_REVISION_MAX = 255
 VERSION_COMPONENT_MIN = 0
 VERSION_COMPONENT_MAX = 255
 
+# The save-compatibility epoch/key is stored as a u16 in
+# include/save_format.h's ExpansionSaveMeta record.
+SAVE_COMPAT_EPOCH_MIN = 0
+SAVE_COMPAT_EPOCH_MAX = 0xFFFF
+
 # Named ROM sizes, matching modern.mk's MODERN_ROM_SIZE values.
 NAMED_ROM_SIZES = {"16M": 16 * 1024 * 1024, "32M": 32 * 1024 * 1024}
 
@@ -69,6 +74,7 @@ CONFIG_MK_KEYS = (
     "EXPANSION_ROM_MAKER_CODE",
     "EXPANSION_ROM_REVISION",
     "EXPANSION_BUILD_ID",
+    "EXPANSION_SAVE_COMPAT_EPOCH",
 )
 
 _ASSIGNMENT_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)\s*[:?+]?=\s*(.*?)\s*$")
@@ -131,6 +137,26 @@ def validate_revision(value) -> int:
             f"[{ROM_REVISION_MIN}, {ROM_REVISION_MAX}]"
         )
     return revision
+
+
+def validate_save_compat_epoch(value) -> int:
+    """Validate EXPANSION_SAVE_COMPAT_EPOCH (see include/save_format.h's
+    FE8_EXPANSION_SAVE_COMPAT_EPOCH and docs/save_format.md). Deliberately a
+    separate, independent value from the framework semantic version and the
+    config fingerprint -- see config.mk's comment for exactly when to bump
+    it."""
+    try:
+        epoch = int(str(value).strip(), 0)
+    except (TypeError, ValueError) as error:
+        raise ConfigError(
+            f"EXPANSION_SAVE_COMPAT_EPOCH {value!r} is not an integer"
+        ) from error
+    if not (SAVE_COMPAT_EPOCH_MIN <= epoch <= SAVE_COMPAT_EPOCH_MAX):
+        raise ConfigError(
+            f"EXPANSION_SAVE_COMPAT_EPOCH {epoch} out of range "
+            f"[{SAVE_COMPAT_EPOCH_MIN}, {SAVE_COMPAT_EPOCH_MAX}]"
+        )
+    return epoch
 
 
 def validate_rom_size(value) -> int:
@@ -317,6 +343,7 @@ class ExpansionIdentity:
     abi: str
     text_shift: int
     build_commit: str
+    save_compat_epoch: int
     config_fingerprint: str = field(default="")
 
     @property
@@ -365,18 +392,20 @@ def load_identity(
     rom_game_code: Optional[str] = None,
     rom_maker_code: Optional[str] = None,
     rom_revision=None,
+    save_compat_epoch=None,
 ) -> ExpansionIdentity:
     """Parse, validate, and resolve a complete ExpansionIdentity.
 
-    config.mk supplies the defaults for the version/ROM-identity fields.
-    Any of version_major/version_minor/version_patch/rom_title/
-    rom_game_code/rom_maker_code/rom_revision passed as not-None override
-    the corresponding config.mk value -- this is how a `make ...
-    EXPANSION_ROM_TITLE=...` command-line override (or any other Make-level
-    override of a config.mk `?=` default) is threaded through to this tool,
-    so the generated metadata JSON/embedded ExpansionMetadata record and the
-    `-D` defines compiled into the ROM always agree: there is exactly one
-    resolved value per field, never two competing sources of truth.
+    config.mk supplies the defaults for the version/ROM-identity/save-compat
+    fields. Any of version_major/version_minor/version_patch/rom_title/
+    rom_game_code/rom_maker_code/rom_revision/save_compat_epoch passed as
+    not-None override the corresponding config.mk value -- this is how a
+    `make ... EXPANSION_ROM_TITLE=...` command-line override (or any other
+    Make-level override of a config.mk `?=` default) is threaded through to
+    this tool, so the generated metadata JSON/embedded ExpansionMetadata
+    record and the `-D` defines compiled into the ROM always agree: there is
+    exactly one resolved value per field, never two competing sources of
+    truth.
 
     Raises ConfigError (with a specific, actionable message) for any
     malformed title, game code, maker code, revision, ROM size, semantic
@@ -403,6 +432,11 @@ def load_identity(
     rom_revision = validate_revision(
         rom_revision if rom_revision not in (None, "") else cfg["EXPANSION_ROM_REVISION"]
     )
+    resolved_save_compat_epoch = validate_save_compat_epoch(
+        save_compat_epoch
+        if save_compat_epoch not in (None, "")
+        else cfg["EXPANSION_SAVE_COMPAT_EPOCH"]
+    )
     resolved_rom_size = validate_rom_size(rom_size)
     resolved_preset = validate_preset(config_preset)
     resolved_abi = validate_abi(abi)
@@ -425,6 +459,7 @@ def load_identity(
         abi=resolved_abi,
         text_shift=resolved_text_shift,
         build_commit=build_commit,
+        save_compat_epoch=resolved_save_compat_epoch,
     )
     identity.config_fingerprint = compute_fingerprint(identity.fingerprint_fields())
     return identity
@@ -464,6 +499,7 @@ def generate_metadata_files(output_dir: Path, identity: ExpansionIdentity) -> Di
         f"MODERN_CONFIG_FINGERPRINT := {identity.config_fingerprint}",
         f"MODERN_VERSION_PACKED := {identity.version_packed}",
         f"MODERN_VERSION_STRING := {identity.version_string}",
+        f"MODERN_SAVE_COMPAT_EPOCH := {identity.save_compat_epoch}",
         "",
     ]
     _write_if_changed(mk_path, "\n".join(mk_lines))
@@ -496,6 +532,9 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--game-code", default=None, help="override EXPANSION_ROM_GAME_CODE")
     parser.add_argument("--maker-code", default=None, help="override EXPANSION_ROM_MAKER_CODE")
     parser.add_argument("--revision", default=None, help="override EXPANSION_ROM_REVISION")
+    parser.add_argument(
+        "--save-compat-epoch", default=None, help="override EXPANSION_SAVE_COMPAT_EPOCH"
+    )
 
 
 def _resolve_tokens(identity: ExpansionIdentity) -> str:
@@ -503,7 +542,8 @@ def _resolve_tokens(identity: ExpansionIdentity) -> str:
         f"MODERN_BUILD_COMMIT={identity.build_commit} "
         f"MODERN_CONFIG_FINGERPRINT={identity.config_fingerprint} "
         f"MODERN_VERSION_PACKED={identity.version_packed} "
-        f"MODERN_VERSION_STRING={identity.version_string}"
+        f"MODERN_VERSION_STRING={identity.version_string} "
+        f"MODERN_SAVE_COMPAT_EPOCH={identity.save_compat_epoch}"
     )
 
 
@@ -545,6 +585,7 @@ def main(argv=None) -> int:
             rom_game_code=args.game_code,
             rom_maker_code=args.maker_code,
             rom_revision=args.revision,
+            save_compat_epoch=args.save_compat_epoch,
         )
     except ConfigError as error:
         print(f"error: {error}", file=sys.stderr)

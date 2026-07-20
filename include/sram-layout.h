@@ -86,6 +86,11 @@ enum global_sram_blocks {
     SRAM_SIZE_GAMESAVE  = GAMESAVE_OFFSET_MAX,
     SRAM_SIZE_MARENA    = sizeof(struct MultiArenaSaveBlock),
     SRAM_SIZE_XMAP      = 0xC00,
+
+    /* Issue #2 slice 1: the expansion save metadata record occupies the
+     * whole 0x5C-byte pad that immediately precedes xmap -- see
+     * struct SaveBlocks (include/bmsave.h) and docs/save_format.md. */
+    SRAM_SIZE_EXPANSION_SAVE_META = sizeof(struct ExpansionSaveMeta),
 };
 
 enum global_sram_memory_map {
@@ -103,4 +108,9 @@ enum global_sram_memory_map {
     SRAM_OFFSET_END       = SRAM_OFFSET_MARENA    + SRAM_SIZE_MARENA,
 
     SRAM_OFFSET_XMAP      = CART_SRAM_SIZE - SRAM_SIZE_XMAP,
+
+    /* Derived from SRAM_OFFSET_XMAP so it stays tied to the existing
+     * layout rather than a bare magic number: 0x7400 - 0x5C = 0x73A4,
+     * matching struct SaveBlocks.expansionSaveMeta exactly. */
+    SRAM_OFFSET_EXPANSION_SAVE_META = SRAM_OFFSET_XMAP - SRAM_SIZE_EXPANSION_SAVE_META,
 };

@@ -612,10 +612,13 @@ void SavePlayThroughData(void)
 
     isTutorial = gPlaySt.config.controller;
 
-    if (!ReadGlobalSaveInfo(&info)) {
-        InitGlobalSaveInfodata();
-        ReadGlobalSaveInfo(&info);
-    }
+    /* Issue #2 slice 1 (review fix): only genuinely blank SRAM may be
+     * auto-initialized here; corrupt/legacy/incompatible saves must be
+     * left untouched -- refuse to reinterpret/overwrite them rather than
+     * silently wiping or writing progress on top of unrecognized data.
+     * See EnsureGlobalSaveInfoLoaded() and docs/save_format.md. */
+    if (!EnsureGlobalSaveInfoLoaded(&info))
+        return;
 
     RegisterCompletedPlaythrough(&info, gPlaySt.playthroughIdentifier);
     info.completed  = true;

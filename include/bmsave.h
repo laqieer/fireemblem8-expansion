@@ -75,6 +75,10 @@ struct GlobalSaveInfo {
 
 #define GLOBALSIZEINFO_SIZE_FOR_CHECKSUM 0x50
 
+/* struct GlobalSaveInfo must already be complete before this include, since
+ * include/save_format.h's classifier prototypes take it by pointer. */
+#include "save_format.h"
+
 struct SaveBlockInfo {
     /* 00 */ u32 magic32;
     /* 04 */ u16 magic16;
@@ -390,7 +394,7 @@ struct SaveBlocks {
     /* 0x7248 */ struct bmsave_unkstruct2 unkstruct2;
     /* 0x725C */ struct BonusClaimSaveData bonusClaim;
     /* 0x73A0 */ u8 reserved[4];
-    /* 0x73A4 */ u8 _pad_[0x7400 - 0x73A4];
+    /* 0x73A4 */ struct ExpansionSaveMeta expansionSaveMeta; // see include/save_format.h, docs/save_format.md
     /* 0x7400 */ struct ExtraMapSaveHead xmap; // see bmsave-xmap.c
 };
 
@@ -446,6 +450,7 @@ bool ReadGlobalSaveInfo(struct GlobalSaveInfo *buf);
 void WriteGlobalSaveInfo(struct GlobalSaveInfo *header);
 void WriteGlobalSaveInfoNoChecksum(struct GlobalSaveInfo *header);
 void InitGlobalSaveInfodata(void);
+bool EnsureGlobalSaveInfoLoaded(struct GlobalSaveInfo *buf);
 void EraseBonusContentData(void);
 void *SramOffsetToAddr(u16 off);
 u16 SramAddrToOffset(void * addr);

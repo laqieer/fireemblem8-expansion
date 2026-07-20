@@ -879,7 +879,8 @@ ifneq (,$(filter $(MODERN_CONFIG_RESOLVE_GOALS),$(MAKECMDGOALS)))
 	--title "$(EXPANSION_ROM_TITLE)" \
 	--game-code "$(EXPANSION_ROM_GAME_CODE)" \
 	--maker-code "$(EXPANSION_ROM_MAKER_CODE)" \
-	--revision "$(EXPANSION_ROM_REVISION)" 2>&1)
+	--revision "$(EXPANSION_ROM_REVISION)" \
+	--save-compat-epoch "$(EXPANSION_SAVE_COMPAT_EPOCH)" 2>&1)
   ifneq (,$(filter error:%,$(MODERN_EXPANSION_CONFIG_RESOLVE)))
     $(error $(MODERN_EXPANSION_CONFIG_RESOLVE))
   endif
@@ -887,8 +888,18 @@ ifneq (,$(filter $(MODERN_CONFIG_RESOLVE_GOALS),$(MAKECMDGOALS)))
   MODERN_CONFIG_FINGERPRINT := $(patsubst MODERN_CONFIG_FINGERPRINT=%,%,$(filter MODERN_CONFIG_FINGERPRINT=%,$(MODERN_EXPANSION_CONFIG_RESOLVE)))
   MODERN_VERSION_PACKED := $(patsubst MODERN_VERSION_PACKED=%,%,$(filter MODERN_VERSION_PACKED=%,$(MODERN_EXPANSION_CONFIG_RESOLVE)))
   MODERN_VERSION_STRING := $(patsubst MODERN_VERSION_STRING=%,%,$(filter MODERN_VERSION_STRING=%,$(MODERN_EXPANSION_CONFIG_RESOLVE)))
+  # Issue #2 slice 1 (review fix #4): the save-compatibility epoch is a
+  # separate compatibility gate from the #8 fingerprint above (see
+  # docs/config_identity.md) -- resolved the exact same way (config.mk
+  # default, or a command-line/environment MODERN_CONFIG_RESOLVE_GOALS
+  # override) so `make ... EXPANSION_SAVE_COMPAT_EPOCH=2` changes the
+  # embedded ROM metadata without requiring `make clean` first.
+  MODERN_SAVE_COMPAT_EPOCH := $(patsubst MODERN_SAVE_COMPAT_EPOCH=%,%,$(filter MODERN_SAVE_COMPAT_EPOCH=%,$(MODERN_EXPANSION_CONFIG_RESOLVE)))
   ifeq ($(strip $(MODERN_BUILD_COMMIT)),)
     $(error modern.mk: failed to resolve MODERN_BUILD_COMMIT from '$(MODERN_EXPANSION_CONFIG_TOOL) resolve'; got: $(MODERN_EXPANSION_CONFIG_RESOLVE))
+  endif
+  ifeq ($(strip $(MODERN_SAVE_COMPAT_EPOCH)),)
+    $(error modern.mk: failed to resolve MODERN_SAVE_COMPAT_EPOCH from '$(MODERN_EXPANSION_CONFIG_TOOL) resolve'; got: $(MODERN_EXPANSION_CONFIG_RESOLVE))
   endif
 
   # Modern-only compiler defines feeding include/expansion_config.h. These
@@ -908,7 +919,8 @@ ifneq (,$(filter $(MODERN_CONFIG_RESOLVE_GOALS),$(MAKECMDGOALS)))
 	-DFE8_EXPANSION_ROM_GAME_CODE='"$(EXPANSION_ROM_GAME_CODE)"' \
 	-DFE8_EXPANSION_ROM_MAKER_CODE='"$(EXPANSION_ROM_MAKER_CODE)"' \
 	-DFE8_EXPANSION_ROM_REVISION=$(EXPANSION_ROM_REVISION) \
-	-DFE8_EXPANSION_ROM_SIZE_BYTES=$(MODERN_ROM_SIZE_BYTES)
+	-DFE8_EXPANSION_ROM_SIZE_BYTES=$(MODERN_ROM_SIZE_BYTES) \
+	-DFE8_EXPANSION_SAVE_COMPAT_EPOCH=$(MODERN_SAVE_COMPAT_EPOCH)
  endif
 endif
 
@@ -921,8 +933,9 @@ endif
 # write-if-unchanged + FORCE idiom as MODERN_ELF_LINK_SETTINGS above.
 #
 # Without this, changing a config.mk/EXPANSION_* value (title, version,
-# build id, fingerprint, ROM size, ...) between two builds sharing the same
-# MODERN_OUTPUT_DIR only changes MODERN_CFLAGS's -D flag *content* -- never
+# build id, fingerprint, ROM size, save-compat epoch, ...) between two
+# builds sharing the same MODERN_OUTPUT_DIR only changes MODERN_CFLAGS's
+# -D flag *content* -- never
 # a *file* GNU Make's dependency graph tracks -- so src/expansion_metadata.c
 # (and any other translation unit reading FE8_EXPANSION_* macros) is not
 # considered stale and keeps its previously-compiled object, silently
@@ -957,6 +970,7 @@ ifneq (,$(MODERN_EXPANSION_DEFINES_ACTIVE))
 		printf '%s\n' 'rom_maker_code=$(EXPANSION_ROM_MAKER_CODE)'; \
 		printf '%s\n' 'rom_revision=$(EXPANSION_ROM_REVISION)'; \
 		printf '%s\n' 'rom_size_bytes=$(MODERN_ROM_SIZE_BYTES)'; \
+		printf '%s\n' 'save_compat_epoch=$(MODERN_SAVE_COMPAT_EPOCH)'; \
 	} > "$@.tmp"
 else
 	@printf '%s\n' 'unsupported' > "$@.tmp"
