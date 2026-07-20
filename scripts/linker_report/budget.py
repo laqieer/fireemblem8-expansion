@@ -78,7 +78,7 @@ _MEMORY_ROW_RE = re.compile(
 
 # Output section on ONE line: "NAME  0xADDR  0xSIZE"
 _SECTION_ONELINE_RE = re.compile(
-    r"^([A-Za-z_.][A-Za-z0-9_.]*)\s+(0x[0-9a-fA-F]+)\s+(0x[0-9a-fA-F]+)\s*$"
+    r"^([A-Za-z_.][A-Za-z0-9_.]*)\s+(0x[0-9a-fA-F]+)\s+(0x[0-9a-fA-F]+)(?:\s|$)"
 )
 
 # Output section on TWO lines: name alone, then indented "0xADDR  0xSIZE"
@@ -86,7 +86,7 @@ _SECTION_NAME_RE = re.compile(
     r"^([A-Za-z_.][A-Za-z0-9_.]*)\s*$"
 )
 _SECTION_ADDR_SIZE_RE = re.compile(
-    r"^\s+(0x[0-9a-fA-F]+)\s+(0x[0-9a-fA-F]+)\s*$"
+    r"^\s+(0x[0-9a-fA-F]+)\s+(0x[0-9a-fA-F]+)(?:\s|$)"
 )
 
 # Symbol assignment: "  0xADDR  name = expression"
@@ -111,6 +111,18 @@ def _classify_region_with_boundary(address: int) -> tuple[str | None, bool]:
         if address == hi:
             return name, True
     return None, False
+
+
+def _default_empty_section_address(name: str, regions: list[MemoryRegion]) -> int | None:
+    """Infer an address for empty sections when the map omits addr/size."""
+    if "overlay" not in name:
+        return None
+
+    for region in regions:
+        if region.name == "ewram":
+            return region.origin
+
+    return REGION_RANGES["ewram"][0]
 
 
 def parse_map(text: str) -> tuple[
@@ -193,7 +205,8 @@ def parse_map(text: str) -> tuple[
         # Check for two-line output section (name, then addr+size on next)
         nm = _SECTION_NAME_RE.match(line)
         if nm and i + 1 < n:
-            next_m = _SECTION_ADDR_SIZE_RE.match(lines[i + 1])
+            next_line = lines[i + 1]
+            next_m = _SECTION_ADDR_SIZE_RE.match(next_line)
             if next_m:
                 sections.append(OutputSection(
                     name=nm.group(1),
@@ -202,6 +215,14 @@ def parse_map(text: str) -> tuple[
                 ))
                 i += 2
                 continue
+
+            name = nm.group(1)
+            if not next_line.strip() or next_line.lstrip().startswith("*("):
+                address = _default_empty_section_address(name, regions)
+                if address is not None:
+                    sections.append(OutputSection(name=name, address=address, size=0))
+                    i += 1
+                    continue
 
         i += 1
 

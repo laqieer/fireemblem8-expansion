@@ -10,6 +10,9 @@ FIXTURES = Path(__file__).parent / "fixtures"
 BUDGET_PY = Path(__file__).parent.parent / "budget.py"
 SCRATCH_DIR = Path(__file__).parent / ".scratch"
 SCRATCH_DIR.mkdir(exist_ok=True)
+REAL_MODERN_MAP = Path(
+    "/home/laqieer/fireemblem8-expansion/build/expansion-modern/debug/aapcs/fireemblem8.map"
+)
 
 
 def run_budget(*args: str) -> subprocess.CompletedProcess:
@@ -154,6 +157,33 @@ class TestMapParsing(unittest.TestCase):
         self.assertFalse(ewram["overflow"])
         self.assertEqual(ewram["occupied_bytes"], 0x3efb8)
 
+    def test_modern_map_all_overlays_parsed(self):
+        """Modern map with load-address suffixes and empty overlays parses all 8."""
+        out = self.make_output_path("modern-overlays")
+        r = run_budget("--map", str(FIXTURES / "modern_overlays.map"), "--output", str(out))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        report = json.loads(out.read_text())
+        overlays = report["overlays"]
+        self.assertEqual(len(overlays), 8)
+        self.assertTrue(all(ov["address"] == 0x02000000 for ov in overlays))
+        self.assertTrue(all(ov["peak_bytes"] == 0x2018C for ov in overlays))
+        by_name = {ov["name"]: ov for ov in overlays}
+        self.assertEqual(by_name["ewram_overlay_sio"]["size_bytes"], 0)
+        self.assertEqual(by_name["ewram_overlay_worldmap"]["size_bytes"], 0)
+        ewram = next(reg for reg in report["regions"] if reg["name"] == "ewram")
+        self.assertEqual(ewram["occupied_bytes"], 0x2018C)
+
+    def test_oneline_with_load_address(self):
+        """One-line format with 'load address' suffix is parsed."""
+        out = self.make_output_path("modern-oneline")
+        r = run_budget("--map", str(FIXTURES / "modern_overlays.map"), "--output", str(out))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        report = json.loads(out.read_text())
+        by_name = {section["name"]: section for section in report["sections"]}
+        self.assertEqual(by_name["ewram_data"]["address"], 0x02000000)
+        self.assertEqual(by_name["ewram_data"]["size_bytes"], 0x1EC70)
+        self.assertEqual(by_name["ewram_data"]["region"], "ewram")
+
     def test_dotprefixed_output_sections_are_parsed(self):
         """Dot-prefixed output sections are recognized in both map formats."""
         out = self.make_output_path("dotprefix")
@@ -164,6 +194,19 @@ class TestMapParsing(unittest.TestCase):
             {section["name"] for section in report["sections"]},
             {".text", ".data", ".bss"},
         )
+
+    @unittest.skipUnless(REAL_MODERN_MAP.exists(), "modern map artifact not available")
+    def test_real_modern_map_finds_all_overlays(self):
+        """Integration: real modern map has 8 overlay sections."""
+        out = self.make_output_path("real-modern")
+        r = run_budget("--map", str(REAL_MODERN_MAP), "--output", str(out))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        report = json.loads(out.read_text())
+        overlays = report["overlays"]
+        self.assertEqual(len(overlays), 8)
+        self.assertTrue(all(ov["address"] == 0x02000000 for ov in overlays))
+        peaks = {ov["peak_bytes"] for ov in overlays}
+        self.assertEqual(peaks, {0x2018C})
 
 
 if __name__ == "__main__":
