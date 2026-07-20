@@ -6,6 +6,10 @@ import sys
 import unittest
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+import budget
+
 FIXTURES = Path(__file__).parent / "fixtures"
 BUDGET_PY = Path(__file__).parent.parent / "budget.py"
 SCRATCH_DIR = Path(__file__).parent / ".scratch"
@@ -122,6 +126,43 @@ class TestMapParsing(unittest.TestCase):
         run_budget("--map", str(FIXTURES / "basic.map"), "--output", str(out))
         r = run_budget("--map", str(FIXTURES / "overlay.map"), "--output", str(out), "--check")
         self.assertEqual(r.returncode, 1)
+        self.assertIn("--- committed", r.stderr)
+        self.assertIn("+++ generated", r.stderr)
+
+    def test_check_mode_ignores_optional_elf_diagnostics(self):
+        out = self.make_output_path("check-elf")
+        run_budget("--map", str(FIXTURES / "basic.map"), "--output", str(out))
+        report = json.loads(out.read_text())
+        report["elf"] = {
+            "available": True,
+            "section_count": 999,
+            "sections": [{"name": "host-specific", "size_bytes": 123}],
+            "cross_validation": {
+                "in_elf_not_map": ["host-specific"],
+                "in_map_not_elf": [],
+            },
+        }
+        out.write_text(json.dumps(report, indent=2) + "\n")
+
+        r = run_budget(
+            "--map", str(FIXTURES / "basic.map"), "--output", str(out), "--check"
+        )
+        self.assertEqual(r.returncode, 0, r.stderr)
+
+    def test_current_elf_section_mismatch_is_rejected(self):
+        report = {
+            "elf": {
+                "available": True,
+                "cross_validation": {
+                    "in_elf_not_map": ["unexpected"],
+                    "in_map_not_elf": [],
+                },
+            },
+        }
+        self.assertEqual(
+            budget.elf_cross_validation_errors(report),
+            ["in_elf_not_map: unexpected"],
+        )
 
     def test_pinned_assignments_captured(self):
         """Symbol assignments at GBA addresses are recorded."""

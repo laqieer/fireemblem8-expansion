@@ -16,7 +16,7 @@ python3 scripts/linker_report/budget.py \
     --elf fireemblem8.elf \
     --output reports/linker-budget.json
 
-# Check mode (exits 1 on drift from committed report):
+# Check mode (exits 1 on map-derived memory-budget drift):
 python3 scripts/linker_report/budget.py \
     --map fireemblem8.map \
     --output reports/linker-budget.json \
@@ -35,6 +35,11 @@ A JSON report with:
 
 The report is deterministic: no timestamps, no absolute host paths, stable
 ordering (by address then name).
+
+Check mode compares the map-derived regions, mapped sections, overlays, pinned
+assignments, and overflow state. Optional ELF diagnostics remain in the report
+for inspection but are not baseline fields because toolchain/host metadata may
+vary without changing the linked memory layout.
 
 ## Exit codes
 

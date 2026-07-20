@@ -11,6 +11,7 @@ Output is deterministic: no timestamps, no absolute host paths, stable ordering.
 from __future__ import annotations
 
 import argparse
+import difflib
 import json
 import os
 import re
@@ -34,6 +35,15 @@ REGION_RANGES = {
     "iwram": (0x03000000, 0x03008000),
     "ewram": (0x02000000, 0x02040000),
 }
+
+CHECK_KEYS = (
+    "schema_version",
+    "regions",
+    "sections",
+    "overlays",
+    "pinned_assignments",
+    "overflow",
+)
 
 
 # ---------------------------------------------------------------------------
@@ -445,6 +455,45 @@ def generate_report(
     }
 
 
+def check_projection(report: dict[str, Any]) -> dict[str, Any]:
+    """Return the deterministic, map-derived fields used for drift checks."""
+    return {key: report[key] for key in CHECK_KEYS}
+
+
+def render_check_diff(
+    expected: dict[str, Any], actual: dict[str, Any]
+) -> str:
+    """Render an actionable diff for deterministic budget fields."""
+    expected_lines = json.dumps(
+        check_projection(expected), indent=2, sort_keys=True
+    ).splitlines()
+    actual_lines = json.dumps(
+        check_projection(actual), indent=2, sort_keys=True
+    ).splitlines()
+    return "\n".join(difflib.unified_diff(
+        expected_lines,
+        actual_lines,
+        fromfile="committed",
+        tofile="generated",
+        lineterm="",
+    ))
+
+
+def elf_cross_validation_errors(report: dict[str, Any]) -> list[str]:
+    """Return section-name mismatches from the current ELF diagnostics."""
+    elf_report = report.get("elf", {})
+    if not elf_report.get("available"):
+        return []
+
+    cross_validation = elf_report.get("cross_validation", {})
+    errors = []
+    for key in ("in_elf_not_map", "in_map_not_elf"):
+        values = cross_validation.get(key, [])
+        if values:
+            errors.append(f"{key}: {', '.join(values)}")
+    return errors
+
+
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
@@ -498,13 +547,26 @@ def main(argv: list[str] | None = None) -> int:
         if not output_path.is_file():
             print(f"error: expected report not found: {args.output}", file=sys.stderr)
             return 1
-        existing = output_path.read_text()
-        if existing == report_json:
+        try:
+            existing_report = json.loads(output_path.read_text())
+        except (OSError, json.JSONDecodeError) as exc:
+            print(f"error: cannot read expected report: {exc}", file=sys.stderr)
+            return 2
+
+        cross_validation_errors = elf_cross_validation_errors(report)
+        if cross_validation_errors:
+            print("check failed: ELF/map section mismatch", file=sys.stderr)
+            for error in cross_validation_errors:
+                print(f"  - {error}", file=sys.stderr)
+            return 1
+
+        if check_projection(existing_report) == check_projection(report):
             print(f"check passed: {args.output}", file=sys.stderr)
             return 0
-        else:
-            print(f"check failed: report drift detected in {args.output}", file=sys.stderr)
-            return 1
+
+        print(f"check failed: report drift detected in {args.output}", file=sys.stderr)
+        print(render_check_diff(existing_report, report), file=sys.stderr)
+        return 1
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(report_json)
