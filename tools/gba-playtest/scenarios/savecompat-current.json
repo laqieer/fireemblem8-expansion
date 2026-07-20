@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "name": "savecompat-current",
+  "description": "Deterministic A/START title/intro taps (shared with title-progression) reaching the save-menu entry point with no further input. For a CURRENT SRAM image the compat gate must never activate, so the normal save menu is reached directly -- checkpointed here purely via framebuffer/sram_hash (no raw EWRAM probes, since diagnostic-global addresses are not stable across build configs/ABIs).",
+  "frames": [
+    {
+      "start": 90,
+      "end": 95,
+      "keys": [
+        "A"
+      ]
+    },
+    {
+      "start": 155,
+      "end": 160,
+      "keys": [
+        "START"
+      ]
+    },
+    {
+      "start": 220,
+      "end": 225,
+      "keys": [
+        "A"
+      ]
+    },
+    {
+      "start": 285,
+      "end": 290,
+      "keys": [
+        "START"
+      ]
+    },
+    {
+      "start": 350,
+      "end": 355,
+      "keys": [
+        "A"
+      ]
+    },
+    {
+      "start": 415,
+      "end": 420,
+      "keys": [
+        "START"
+      ]
+    },
+    {
+      "start": 480,
+      "end": 485,
+      "keys": [
+        "A"
+      ]
+    },
+    {
+      "start": 545,
+      "end": 550,
+      "keys": [
+        "START"
+      ]
+    }
+  ],
+  "checkpoints": [
+    {
+      "frame": 900,
+      "name": "no-dialog-normal-savemenu",
+      "framebuffer": true,
+      "sram_hash": true,
+      "probes": []
+    }
+  ]
+}

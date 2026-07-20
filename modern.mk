@@ -7,6 +7,7 @@ MODERN_GOALS := \
 	expansion-modern-elf \
 	expansion-modern-rom \
 	expansion-modern-boot-check \
+	expansion-modern-savefmt-check \
 	expansion-modern-title-check \
 	expansion-modern-budget \
 	expansion-modern-budget-check \
@@ -259,6 +260,7 @@ MODERN_ALL_SOURCE_GOALS := \
 	expansion-modern-elf \
 	expansion-modern-rom \
 	expansion-modern-boot-check \
+	expansion-modern-savefmt-check \
 	expansion-modern-title-check \
 	expansion-modern-budget \
 	expansion-modern-budget-check \
@@ -692,6 +694,7 @@ MODERN_LINKED_GOALS := \
 	expansion-modern-elf \
 	expansion-modern-rom \
 	expansion-modern-boot-check \
+	expansion-modern-savefmt-check \
 	expansion-modern-title-check \
 	expansion-modern-budget \
 	expansion-modern-budget-check \
@@ -1283,6 +1286,33 @@ expansion-modern-title-check: expansion-modern-boot-preflight expansion-modern-r
 	@printf 'Modern ROM title-check passed: %s (config=%s abi=%s)\n' \
 		"$(MODERN_ROM)" '$(MODERN_CONFIG)' '$(MODERN_ABI)'
 
+# Global save-compatibility gate check (issue #2 slice 2, requirement 9).
+# Generates synthetic SRAM fixtures at check time (never committed
+# binaries), runs the host-side save-format migration checks
+# (scripts/modernize/save_format_tool.py's own CLI), then verifies the
+# committed savecompat-current/-dialog-back/-erase runtime scenarios
+# against this modern ROM via --policy behavior, matched to the
+# config-specific committed fingerprints. Runs all eight SaveCompatState
+# values (SAVE_COMPAT_CURRENT/EMPTY plus all six non-CURRENT dialog
+# states), confirmed erase, and the host-migrated v0->v1 load against
+# whichever ROM is supplied (MODERN_ABI=aapcs here, or the legacy agbcc
+# ROM when invoked directly) with no ABI carve-out: the persisted
+# struct-layout divergence that previously required scoping this check
+# has been root-caused and fixed (see
+# scripts/modernize/tests/test_save_format_layout.py and
+# include/bmdifficulty.h / include/bmsave.h), so
+# tools/gba-playtest/run_save_compat_checks.py is fully ROM/ABI-agnostic.
+MODERN_SAVEFMT_CHECKS := tools/gba-playtest/run_save_compat_checks.py
+MODERN_SAVEFMT_FIXTURE_DIR := $(MODERN_OUTPUT_DIR)/savefmt-fixtures
+
+expansion-modern-savefmt-check: expansion-modern-boot-preflight expansion-modern-rom
+	"$(PYTHON)" "$(MODERN_SAVEFMT_CHECKS)" \
+		--rom "$(MODERN_ROM)" \
+		--config "$(MODERN_CONFIG)" \
+		--fixture-dir "$(MODERN_SAVEFMT_FIXTURE_DIR)"
+	@printf 'Modern ROM savefmt-check passed: %s (config=%s abi=%s)\n' \
+		"$(MODERN_ROM)" '$(MODERN_CONFIG)' '$(MODERN_ABI)'
+
 MODERN_BUDGET_REPORT ?= reports/linker-budget/modern-$(MODERN_CONFIG).json
 MODERN_BUDGET_SCRIPT := scripts/linker_report/budget.py
 
@@ -1355,6 +1385,7 @@ expansion-modern-linker-check: expansion-modern-budget-check \
 		expansion-modern-overlay-audit \
 		expansion-modern-boot-check \
 		expansion-modern-title-check \
+		expansion-modern-savefmt-check \
 		expansion-modern-shifted-check
 	"$(PYTHON)" scripts/shiftcheck/scan_build_addrs.py \
 		--makefile Makefile \
@@ -1366,6 +1397,7 @@ expansion-modern-linker-check: expansion-modern-budget-check \
 
 .PHONY: \
 	expansion-modern-title-check \
+	expansion-modern-savefmt-check \
 	expansion-modern-budget \
 	expansion-modern-budget-check \
 	expansion-modern-relocs \

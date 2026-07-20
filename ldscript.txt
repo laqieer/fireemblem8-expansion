@@ -229,9 +229,24 @@ SECTIONS
         . = ALIGN(4); src/bmsave-multiarena.o(ewram_data);
         . = ALIGN(4); src/bmsave-xmap.o(ewram_data);
         . = ALIGN(4); src/savemenu.o(ewram_data);
+        . = ALIGN(4); src/save_compat_menu.o(ewram_data);
         . = ALIGN(4); src/bmshop.o(ewram_data);
-        . = 0x3EFB8; gLoadUnitBuffer = .;
-        . = 0x3EFB8; end = .;
+
+        /*
+         * Issue #2 slice 2: src/save_compat_menu.o(ewram_data) above added
+         * a small diagnostic probe (gSaveCompatMenuActive/
+         * gSaveCompatMenuLastState -- see include/save_compat_menu.h) that
+         * did not fit in vanilla FE8's original, fully-packed ewram_data
+         * layout ending at exactly 0x3EFB8. This repository does not
+         * require ROM/EWRAM byte-identity for expansion changes (see
+         * CONTRIBUTING.md / docs), and nothing references gLoadUnitBuffer
+         * or `end` by a hardcoded literal address (only by symbol), so the
+         * previously-fixed `. = 0x3EFB8;` assignment is replaced with a
+         * plain symbol assignment that follows however far the preceding
+         * content (including any future additions) actually extends.
+         */
+        gLoadUnitBuffer = .;
+        end = .;
     }
 
     IWRAM __iwram_start (NOLOAD) :
@@ -504,6 +519,7 @@ SECTIONS
         src/bmsave-misc.o(.text);
         src/minimap.o(.text);
         src/savemenu.o(.text);
+        src/save_compat_menu.o(.text);
         src/savedraw.o(.text);
         src/difficultymenu.o(.text);
         src/code_80AC6AC.o(.text);
@@ -790,6 +806,7 @@ SECTIONS
         . = ALIGN(4); src/bmsave-misc.o(.rodata);
         . = ALIGN(4); src/minimap.o(.rodata);
         . = ALIGN(4); src/savemenu.o(.rodata);
+        . = ALIGN(4); src/save_compat_menu.o(.rodata);
         . = ALIGN(4); src/savedraw.o(.rodata);
         . = ALIGN(4); src/sysutil.o(.rodata);
         . = ALIGN(4); src/uiconfig.o(.rodata);
@@ -1142,6 +1159,7 @@ SECTIONS
         . = ALIGN(4); src/minimap.o(.data);
         . = ALIGN(4); src/data/data_minimap.o(.data);
         . = ALIGN(4); src/savemenu.o(.data);
+        . = ALIGN(4); src/save_compat_menu.o(.data);
         . = ALIGN(4); src/savedraw.o(.data);
         . = ALIGN(4); src/savemenu_data.o(.data);
         . = ALIGN(4); src/difficultymenu.o(.data);

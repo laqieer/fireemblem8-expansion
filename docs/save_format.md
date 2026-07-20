@@ -1,15 +1,19 @@
-# Expansion save-format foundation (issue #2 slice 1)
+# Expansion save format (issue #2)
 
 This document is the single reference for the expansion-owned save
 metadata record, the raw-byte compatibility classifier, the destructive
-boot-path fix, and the host-side `scripts/modernize/save_format_tool.py`
-CLI introduced in issue #2 slice 1.
+boot-path fix, the host-side `scripts/modernize/save_format_tool.py` CLI
+(issue #2 slice 1), and the global save-menu compatibility gate/UI, its
+generated text, its diagnostic probe, and its `tools/gba-playtest`
+runtime-test coverage (issue #2 slice 2).
 
-**This slice is a foundation only.** It defines the on-media format, makes
-detection non-destructive, and ships a host-side (out-of-console)
-migration tool. It does **not** add save-menu incompatible-data UI (that
-is slice 2), and it does **not** provide automatic in-console structural
-migration of older save layouts -- see "Limitations" below.
+Slice 1 defined the on-media format and made detection non-destructive.
+Slice 2 (this document's "Save-menu compatibility gate" section) adds the
+player-facing UI that slice 1's own docs previously described as future
+work, and the deterministic runtime/host test coverage that gates it in
+CI. Neither slice provides automatic in-console structural migration of
+older *current-format* save layouts -- see "Limitations" below, which
+remains true after slice 2.
 
 ## On-media format
 
@@ -307,6 +311,215 @@ save_format_tool.py [--repo-root PATH] migrate  <source> <dest> [--force]
 | `6` | `migrate`: source and destination are the same file (refused) -- either by resolved canonical path (symlink/relative-path alias) or by device+inode identity (hard-link alias); enforced regardless of `--force` |
 | `7` | `migrate`: destination already exists (refused; pass `--force` to overwrite). Raised either by the early precondition check (step 2 above) or by the OS-enforced `os.link()` publish itself losing a race against a concurrently created destination -- either way the destination is left completely untouched. |
 
+## Save-menu compatibility gate (issue #2 slice 2)
+
+### The gate itself
+
+`StartSaveMenu()` (`src/savemenu.c`) -- the only normal entry point into
+`ProcScr_SaveMenu`, the real save menu -- classifies SRAM with
+`ClassifySramSaveCompat()` *before* doing anything else. `SAVE_COMPAT_CURRENT`
+proceeds into the existing save menu completely unchanged (same
+`Proc_StartBlocking`/init call, same behavior as before this slice). Every
+other state is diverted to `StartSaveCompatMenu()`
+(`src/save_compat_menu.c`) instead, and `StartSaveMenu()` returns
+immediately -- the real save menu proc is never started for a non-CURRENT
+state. `SAVE_COMPAT_EMPTY` cannot reach this gate as a non-CURRENT state in
+practice: `EraseSramDataIfInvalid()` (see above) already auto-converts it
+to `SAVE_COMPAT_CURRENT` at boot, before any menu is reachable.
+
+`scripts/modernize/tests/test_save_format_call_site_safety.py` and
+`tools/gba-playtest/tests/test_save_compat_gate_safety.py` both statically
+scan the shipped source (no execution required) to prove: (1)
+`StartSaveMenu()` is the sole directly-coupled entry point into
+`ProcScr_SaveMenu` reachable from any proc script, and it classifies and
+diverts before calling `Proc_StartBlocking(ProcScr_SaveMenu, ...)`; and (2)
+`src/save_compat_menu.c` never references `IsSaveValid`,
+`ReadSaveBlockInfo`, `ReadGameSave`, `ReadGameSavePlaySt`,
+`ReadGameSaveCoreGfx`, `InvalidateGameSave`, or `struct SaveBlockInfo`
+anywhere in its compiled code.
+
+### Compatibility proc / UI
+
+`StartSaveCompatMenu()` is a small, self-contained blocking `Proc`
+(`gProcScr_SaveCompatMenu`) that:
+
+1. Shows a state-specific diagnostic `HelpBox`, dismissed by A/B/R.
+2. Then shows a two-item menu, **Back** (always the default/first cursor
+   position) and **Erase All Save Data**.
+3. **Back** (or a B-press, which the menu def also treats as Back) calls
+   `SetNextGameActionId(GAME_ACTION_5)` -- the exact existing "no save data
+   selected" signal `GameControl_SwitchPostSaveMenu()` already uses -- and
+   returns to the title/game-control path byte-for-byte, with **no SRAM
+   writes performed anywhere on this branch**.
+4. **Erase All Save Data** requires an explicit Yes/No confirmation
+   submenu (a dedicated menu def, not the shared item-discard
+   `gYesNoSelectionMenuDef`, whose "Yes" handler is hardcoded to a
+   different, unrelated flow). The authored irreversible-erase warning
+   (`MSG_SAVE_COMPAT_ERASE_CONFIRM`, "Erase all save data? This cannot be
+   undone.") is rendered in its own `HelpBox` alongside the Yes/No submenu
+   (same `StartHelpBoxExt_Unk`/`LoadHelpBoxGfx` pattern used for the
+   state-specific diagnostic), closed unconditionally on either outcome.
+   Choosing **No** (or B) returns to the Back/Erase list; nothing is
+   written. Only choosing **Yes** calls `InitGlobalSaveInfodata()` -- the
+   same format-independent whole-chip wipe/current initializer
+   `EraseSramDataIfInvalid()` already uses for genuinely blank SRAM --
+   which always reclassifies as `SAVE_COMPAT_CURRENT`, and then re-invokes
+   `StartSaveMenu()`, which now falls straight through into the normal
+   save menu. No per-slot erase and no in-game migration are offered
+   anywhere in this proc (both are explicitly out of scope; see
+   "Limitations").
+
+### State-specific diagnostic messages
+
+Each non-`SAVE_COMPAT_CURRENT`, non-`SAVE_COMPAT_EMPTY` state gets its own
+generated message constant (`texts/texts.txt` -> `include/constants/msg.h`
+via the existing text-generation pipeline; no hardcoded numeric IDs):
+
+| `SaveCompatState` | Message |
+| --- | --- |
+| `SAVE_COMPAT_VALID_LEGACY_OR_VANILLA` | `MSG_SAVE_COMPAT_LEGACY` |
+| `SAVE_COMPAT_HEADER_CORRUPT` | `MSG_SAVE_COMPAT_HEADER_CORRUPT` |
+| `SAVE_COMPAT_METADATA_CORRUPT` | `MSG_SAVE_COMPAT_METADATA_CORRUPT` |
+| `SAVE_COMPAT_MIGRATABLE_OLDER` | `MSG_SAVE_COMPAT_OLDER` |
+| `SAVE_COMPAT_NEWER_UNSUPPORTED` | `MSG_SAVE_COMPAT_NEWER` |
+| `SAVE_COMPAT_SAVE_CONFIG_INCOMPATIBLE` | `MSG_SAVE_COMPAT_CONFIG_INCOMPATIBLE` |
+| (defensive fallback only; never reachable in practice) | `MSG_SAVE_COMPAT_UNKNOWN` |
+
+Menu labels (`MSG_SAVE_COMPAT_BACK`, `MSG_SAVE_COMPAT_ERASE_ALL`) and the
+confirmation prompt (`MSG_SAVE_COMPAT_ERASE_CONFIRM`) are likewise
+generated constants. All text is English-only for now; issue #18 will
+generalize this to other languages, same as every other menu in the game.
+
+### Read-only diagnostic probe
+
+`include/save_compat_menu.h` exposes two `EWRAM_DATA` bytes for
+deterministic runtime tests, without changing any persisted SRAM layout:
+
+* `gSaveCompatMenuActive` -- nonzero for exactly as long as the
+  compatibility proc is blocking the normal save menu.
+* `gSaveCompatMenuLastState` -- the `SaveCompatState` that most recently
+  triggered (or would have triggered) the proc; retained after the proc
+  ends so a test can observe which state was diagnosed.
+
+EWRAM budget: 2 bytes total, in line with existing per-slice diagnostic
+globals (e.g. `gBoolSramWorking`). Both are zero-initialized because
+`ewram_data` is a `NOLOAD` linker section (`ldscript.txt`) -- no
+EWRAM_DATA global's non-zero compile-time initializer is ever actually
+applied, on real hardware or under emulation. `gSaveCompatMenuLastState`
+therefore reads `0` (`== SAVE_COMPAT_EMPTY`) before the gate has ever run;
+callers/tests must only trust it once `gSaveCompatMenuActive` has been
+observed nonzero at least once.
+
+### Generated-fixture / runtime-test policy
+
+No binary SRAM fixture, ROM, savestate, or fingerprint containing
+copyrighted payload is ever committed. Instead:
+
+* **`tools/gba-playtest/tests/sram_fixture.py`** generates synthetic,
+  exact 0x8000-byte SRAM images for every `SaveCompatState` (plus a
+  `migrate_fixture()` helper that shells out to the real
+  `save_format_tool.py migrate` CLI) purely from Slice 1's own format
+  implementation/contracts -- never duplicated magic numbers -- and always
+  into an ignored build/temp directory, generated fresh at test/build
+  time.
+* **`tools/gba-playtest/gba_playtest.py`**/**`backend.c`** support an
+  optional `--sram-image` (exact 0x8000 bytes, validated) loaded before
+  frame 0 via the real, installed mGBA `mCoreLoadSaveFile(..., temporary=true)`
+  API (a one-time in-memory copy -- `temporary=false` would instead treat
+  the fixture file as a live backing store that all SRAM writes flush
+  back to, silently corrupting it across runs), plus SRAM bus probes
+  bounds-checked to `0x0E000000..0x0E007FFF`.
+* **Committed scenarios** (`tools/gba-playtest/scenarios/savecompat-*.json`)
+  and **committed fingerprints**
+  (`tools/gba-playtest/fingerprints/savecompat-*-{legacy,modern-debug,modern-release}.json`)
+  contain only small textual hashes (`framebuffer_hash`/`sram_hash`), never
+  raw framebuffer or SRAM payloads, matching this repository's existing
+  `boot.json`/`title-progression.json` convention. Framebuffer/SRAM symbol
+  addresses are **not** stable across build configs/toolchains (confirmed:
+  `gSaveCompatMenuActive`/`gSaveCompatMenuLastState` sit at different EWRAM
+  addresses in the legacy, modern-debug, and modern-release builds), so
+  committed scenarios never probe raw EWRAM addresses -- only
+  hash-verified framebuffer/SRAM state, which is portable.
+* **`tools/gba-playtest/run_save_compat_checks.py`** orchestrates: (1)
+  fixture generation, (2) the host migration check (a v0 vanilla fixture
+  migrated via the real CLI, proving `SAVE_COMPAT_CURRENT`), and (3) the
+  committed scenarios against a given ROM (legacy or modern AAPCS
+  debug/release, identically -- no ABI scoping), `verify --policy
+  behavior` matched against the fingerprint for that ROM's config,
+  covering all eight `SaveCompatState` values plus confirmed erase and the
+  migrated-v1 load. Every failure names the exact fixture/state/checkpoint
+  that failed.
+* **`tools/gba-playtest/tests/test_save_compat_scenarios.py`** proves the
+  same coverage as a `python3 -m unittest`-discoverable host test, run
+  independently against all three supported ROMs (legacy, modern-debug,
+  modern-release -- one `TestCase` subclass per ROM, generated
+  programmatically); each ROM's coverage skips cleanly (never a false
+  pass) if that particular ROM has not been built, or if libmGBA is
+  unavailable.
+
+### Runtime scenarios
+
+| Scenario | Proves |
+| --- | --- |
+| `savecompat-current.json` | `SAVE_COMPAT_CURRENT` (or auto-repaired `SAVE_COMPAT_EMPTY`): no compatibility dialog appears; the normal save menu is reached directly. Also reused for the migrated-v1-load proof (a host-migrated v0->v1 image classifies `CURRENT` and loads through the normal path). |
+| `savecompat-dialog-back.json` | For a given non-CURRENT state: the dialog appears with a state-specific message, dismissing it and selecting **Back** leaves the game on the title/game-control path, and SRAM is byte-for-byte unchanged across all three checkpoints (dialog-shown / after-dismiss / back-returned). |
+| `savecompat-erase.json` | Selecting **Erase All Save Data** shows the irreversible-erase warning alongside the Yes/No submenu; confirming **Yes** wipes SRAM to a fresh, valid `SAVE_COMPAT_CURRENT` image, and the normal save menu becomes reachable afterward. |
+
+Committed fingerprints exist per-scenario/state for all three supported
+ROMs -- `-legacy`, `-modern-debug`, and `-modern-release` -- covering all
+eight `SaveCompatState` values (the `CURRENT`/`EMPTY` and six non-CURRENT
+dialog states), confirmed erase, and the migrated-v1 load: 27 fingerprint
+files under `tools/gba-playtest/fingerprints/`.
+
+### Save/load acceptance status (requirement 8)
+
+`savecompat-current.json`'s `no-dialog-normal-savemenu` checkpoint (and
+its migrated-v1-load reuse) is this slice's deterministic proof that a
+generated `SAVE_COMPAT_CURRENT` save -- whether freshly erased, or
+host-migrated from a v0 vanilla/legacy image -- **is loaded into the
+intended game/save-menu state**: the checkpoint asserts both a
+`framebuffer_hash` (the normal save-menu screen is actually reached, not
+merely inferred) and a `sram_hash` (a stable, checkpointed runtime
+state, not input-playback-only evidence). This is verified against all
+three supported ROMs (legacy, modern-debug, modern-release).
+
+A full save-menu **write -> reload/read** scenario (create/select a save
+slot from a clean boot, checkpoint a written value, reboot/reload, and
+checkpoint that the same value reads back) is **not yet implemented** and
+remains genuinely blocked within this slice's scope: it requires driving
+the existing per-slot save-menu UI (slot selection, name entry, and the
+in-game state needed to have something save-worthy to write) end-to-end
+from a clean boot, which depends on general clean-boot game-state
+launchers/fixtures (issue #11's scope) that this slice does not own and
+must not implement (`config.mk`, per-slot save-menu/difficulty data
+paths, and generated-data/debug/gameplay subsystems are explicitly out of
+this slice's file domain). This is the one specific, precisely-identified
+acceptance gap this slice reports rather than falsely claims closed; the
+generated-CURRENT-save load proof above is the strongest evidence
+implementable without that dependency.
+
+### Host migration workflow (recap)
+
+The v0 (`SAVE_COMPAT_VALID_LEGACY_OR_VANILLA`) -> v1 (`SAVE_COMPAT_CURRENT`)
+migration this slice's runtime tests exercise is exactly the existing
+`save_format_tool.py migrate <source> <dest>` CLI documented above under
+"Host-side CLI" -- no changes were needed to that tool for slice 2. The
+compatibility proc itself never performs or offers in-console migration
+(see "Limitations"); a player whose save is `SAVE_COMPAT_MIGRATABLE_OLDER`
+sees `MSG_SAVE_COMPAT_OLDER` (which explains that an external tool is
+required) and their only in-console options are Back or a full erase.
+
+### Format / compatibility bump table
+
+| What changed | Bump | Player-visible effect on an old save |
+| --- | --- | --- |
+| Any `FE8_EXPANSION_*` build/title/debug/ROM-size-only setting | neither `SAVE_FORMAT_VERSION_CURRENT` nor `EXPANSION_SAVE_COMPAT_EPOCH` | none -- these never gate compatibility |
+| A save-layout/serialization-compatible addition (e.g. a new optional field with a documented default) | `SAVE_FORMAT_VERSION_CURRENT` (metadata `formatVersion`) | old saves classify `SAVE_COMPAT_MIGRATABLE_OLDER` -> `MSG_SAVE_COMPAT_OLDER`; a newer save loaded on an older build classifies `SAVE_COMPAT_NEWER_UNSUPPORTED` -> `MSG_SAVE_COMPAT_NEWER` |
+| A save-layout/serialization-incompatible change (reordered/resized/reinterpreted fields, changed checksum domain, changed packing) | `EXPANSION_SAVE_COMPAT_EPOCH` (`config.mk`) | saves built under the old epoch classify `SAVE_COMPAT_SAVE_CONFIG_INCOMPATIBLE` -> `MSG_SAVE_COMPAT_CONFIG_INCOMPATIBLE` |
+| Corrupted `GlobalSaveInfo` header | (detected, not a bump) | `SAVE_COMPAT_HEADER_CORRUPT` -> `MSG_SAVE_COMPAT_HEADER_CORRUPT` |
+| Corrupted `ExpansionSaveMeta` (bad checksum) | (detected, not a bump) | `SAVE_COMPAT_METADATA_CORRUPT` -> `MSG_SAVE_COMPAT_METADATA_CORRUPT` |
+| No metadata record at all (true vanilla, or pre-slice-1 expansion save) | (detected, not a bump) | `SAVE_COMPAT_VALID_LEGACY_OR_VANILLA` -> `MSG_SAVE_COMPAT_LEGACY` |
+
 ## Limitations
 
 * **No automatic in-console structural migration.** This slice's
@@ -320,34 +533,81 @@ save_format_tool.py [--repo-root PATH] migrate  <source> <dest> [--force]
   loss, reset) could corrupt the save beyond what any classifier can
   detect. Building that requires a future SRAM transaction/storage
   redesign, explicitly out of scope for this slice.
-* **Save-menu incompatible-data UI is slice 2**, not this slice; this
-  slice only makes the underlying classification safe and non-destructive
-  to build on.
+* **In-console incompatible-data recovery is diagnose-and-erase only, by
+  design.** Slice 2's compatibility proc (`src/save_compat_menu.c`) shows a
+  state-specific diagnostic and offers only **Back** or a fully-confirmed
+  **Erase All Save Data** -- it never offers per-slot erase and never
+  performs or offers in-game migration, for the same "no safe scratch SRAM
+  block exists today" reason as the bullet above. A player whose save is
+  `SAVE_COMPAT_MIGRATABLE_OLDER` must use the host-side `migrate` CLI (or
+  wait for a future in-console migration built on a real SRAM transaction
+  design) -- the in-console UI cannot safely do this for them yet.
 
-## Known infrastructure gaps
+## Cross-compiler persisted-struct-layout compatibility
 
-* This sandbox has no `arm-none-eabi-gcc` (the modern cross-compiler) and
-  no root/network access to install `gcc-arm-none-eabi`. The modern
-  debug/release build/link checks (`make expansion-modern-elf ...`) could
-  not be executed here; this is a pre-existing gap already reflected in
-  this repository's test suite (11 modern-toolchain-dependent tests were
-  already failing/skipping before this slice for the same reason -- e.g.
-  `test_modern_rom_boot.py`'s AAPCS-past-ABI-check tests). The vendored
-  **legacy `agbcc`** toolchain (`tools/agbcc/`) *is* available and was
-  used for all real-compiler evidence in this slice: `make fireemblem8.gba`
-  builds and links cleanly with every change here (see the slice's PR/
-  commit message for the captured build log), and
-  `scripts/modernize/tests/test_save_format_layout.py`'s
-  `test_layout_with_legacy_agbcc` compiles real
-  `_Static_assert`-equivalent (C89 negative-array-size) layout probes
-  against the real project headers with the real `agbcc` binary.
-* `test_save_format_layout.py`'s `test_layout_in_all_modern_cells` mirrors
-  `test_abi_layout.py`'s exact pattern (real `arm-none-eabi-gcc`,
-  `_Static_assert`/`offsetof`, compiled across all four debug/release x
-  AAPCS/APCS-GNU cells) and will run for real in any environment with that
-  toolchain installed or `MODERN_CC`/`MODERN_TOOLCHAIN_ROOT` set; it
-  currently skips here for the reason above, honestly reported rather than
-  silently omitted.
+Every persisted save struct (the full `struct SaveBlocks` chain, reachable
+from `gameSaveBlocks`/`suspendSaveBlocks`/`multiArenaSaveBlock`) is proven
+byte-for-byte identical -- every nested struct's `sizeof` and every direct
+member's `offsetof` -- across legacy `agbcc` (APCS) **and** all four
+modern cross-toolchain build cells (`debug`/`release` x `aapcs`/
+`apcs-gnu`), by `scripts/modernize/tests/test_save_format_layout.py`'s
+`test_layout_in_all_modern_cells`. Two distinct root causes were found and
+fixed to make this true (both are general lessons for any future
+persisted struct, not just the two structs below):
+
+1. **Bitfield storage-unit packing (`struct Dungeon`,
+   `include/bmdifficulty.h`).** Legacy `agbcc`'s old-APCS bitfield
+   allocator packs bits contiguously across a `u32` storage-unit boundary;
+   AAPCS-conformant modern GCC refuses to let a bitfield straddle a
+   storage unit sized to its declared type, so declaring 10 `u32`
+   bitfields without `BITPACKED` produced 12 bytes under `agbcc` but 16
+   bytes under modern AAPCS. Fix: add `BITPACKED` (`include/prelude.h`;
+   `aligned(4), packed`), matching the existing convention already used on
+   `PlaySt`/`PlaySt_30`/`PlaySt_OptionBits`. The `aligned(4)` half of
+   `BITPACKED` also preserves ARM7 unaligned-access safety for any
+   sub-word field within the packed struct.
+2. **Struct-size rounding (`struct BonusClaimSaveData`,
+   `include/bmsave.h`).** Legacy `agbcc` **always rounds every struct's
+   total size up to a 4-byte multiple**, regardless of member alignment
+   -- a general, previously-undocumented old-ARM-APCS convention (verified
+   with a minimal repro: `struct { char a, b, c; }` is `sizeof==4` under
+   `agbcc` but `sizeof==3` under modern GCC). Modern AAPCS GCC only rounds
+   a struct's size to its own natural (max-member) alignment; a struct
+   whose unpadded size already happens to be a multiple of that alignment
+   (as `BonusClaimSaveData`'s 0x142/322-byte natural size is, being a
+   multiple of its own 2-byte `u16` alignment) is left un-rounded, unlike
+   `agbcc`'s 0x144. Fix: add `ALIGN(4)` (`include/prelude.h`;
+   `aligned(4)`), matching the existing precedent already used for this
+   exact reason on `struct GMapSaveInfo` (`include/bmsave.h`).
+
+**General rule for any future persisted struct:** if its *unpadded* size
+(summing member sizes plus only alignment-driven internal gaps) is not
+already a multiple of 4 bytes, it will diverge between legacy `agbcc`
+(always rounds to 4) and modern AAPCS GCC (rounds only to its own natural
+alignment) -- unless its natural alignment already happens to be 4 (e.g.
+it contains a `u32`/pointer member) or `ALIGN(4)`/`BITPACKED` is applied
+explicitly. This is a **distinct** failure mode from the bitfield-boundary
+issue that `BITPACKED` was originally added for -- `ALIGN(4)` alone (no
+`packed`) is the correct minimal fix when there is no bitfield-boundary
+issue, since `packed` would also strip any inter-member alignment padding
+that may be structurally required.
+
+`test_save_format_layout.py`'s probe asserts `sizeof` for every persisted
+nested struct type and `offsetof` for every direct member of the three
+largest containers (`GameSaveBlock`, `SuspendSaveBlock`,
+`MultiArenaSaveBlock`), plus the full `SaveBlocks`/`ExpansionSaveMeta`
+top-level chain -- compiled and run under legacy `agbcc` and all four
+modern cells, wired into the repository's standard host test discovery
+(`python3 -m unittest discover -s scripts/modernize/tests`).
+
+Because the layout is now provably identical everywhere,
+`expansion-modern-savefmt-check` and
+`tools/gba-playtest/tests/test_save_compat_scenarios.py` run and verify
+**all eight** `SaveCompatState` values, confirmed erase, and the
+migrated-v1 load against the real, compiled modern AAPCS ROM (`debug` and
+`release`) exactly as they do against legacy `agbcc` -- no ABI scoping,
+no legacy-only carve-out.
+
 * The classifier's precedence logic cannot be executed as real embedded
   C in this sandbox (no GBA emulator, and the real include chain is not
   portable to a host-native compiler without heavy stubbing). Its
@@ -365,16 +625,49 @@ save_format_tool.py [--repo-root PATH] migrate  <source> <dest> [--force]
   parsing/validation/generation, extending the existing issue #8 suite.
 * `scripts/modernize/tests/test_save_format_layout.py` -- struct-offset/size
   static assertions (legacy `agbcc`, always runs; modern cross-toolchain,
-  skips gracefully if absent).
+  all four cells, skips gracefully only if the toolchain itself is
+  absent).
 * `scripts/modernize/tests/test_save_format_tool.py` -- `Checksum16` mirror,
   blank-region detection, all 8 classifier states and their precedence,
   diagnostic-field independence, CLI `inspect`/`validate`/`migrate` exit
   codes, migration source preservation on failure, and successful
   out-of-place v0 -> v1 migration.
+* `tools/gba-playtest/tests/test_save_compat_gate_safety.py` -- static
+  proof that `StartSaveMenu()` is the sole gate into `ProcScr_SaveMenu`,
+  that `src/save_compat_menu.c` never calls any slot/block/current-struct
+  accessor, and that the erase-confirm warning message
+  (`MSG_SAVE_COMPAT_ERASE_CONFIRM`) is actually rendered (not dead code)
+  strictly before the destructive erase step in script order.
+* `tools/gba-playtest/tests/test_sram_fixture.py` -- the synthetic SRAM
+  fixture generator itself (every `SaveCompatState`, plus migration).
+* `tools/gba-playtest/tests/test_save_compat_scenarios.py` -- all eight
+  `SaveCompatState` values, Back-preservation, confirmed erase, and the
+  migrated-v1 load, run independently against all three supported ROMs
+  (legacy, modern-debug, modern-release); each ROM's coverage skips
+  cleanly if that ROM is not built or libmGBA is unavailable.
+* `tools/gba-playtest/run_save_compat_checks.py` -- the orchestrator behind
+  `expansion-modern-savefmt-check` (`modern.mk`), run against the modern
+  AAPCS ROM for both `debug` and `release`; wired into
+  `expansion-modern-linker-check` and therefore into CI
+  (`.github/workflows/build.yml`).
 
-Run the whole suite:
+Run the host suite:
 
 ```sh
 cd scripts/modernize
 python3 -m unittest discover -s tests -p "test_*.py"
+```
+
+Run the playtest suite (includes the save-compat gate/scenario tests):
+
+```sh
+python3 -m unittest discover -s tools/gba-playtest/tests -p "test_*.py"
+```
+
+Run the full modern CI-equivalent check (build + fixtures + host migration
+check + runtime scenarios, both debug and release):
+
+```sh
+make expansion-modern-savefmt-check MODERN_CONFIG=debug MODERN_ABI=aapcs
+make expansion-modern-savefmt-check MODERN_CONFIG=release MODERN_ABI=aapcs
 ```

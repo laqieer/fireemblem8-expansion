@@ -137,10 +137,25 @@ struct bmsave_unkstruct2 {
     u16 magic2;
 };
 
+/*
+ * ALIGN(4) is required for cross-compiler layout agreement, not merely
+ * cosmetic: this struct's unpadded size (bonus[0x10] * 0x14 + cksum16 =
+ * 0x142) is not a multiple of 4. Legacy agbcc (old ARM APCS) always rounds
+ * a struct's size up to a 4-byte multiple regardless of its members' own
+ * alignment (verified empirically: plain `struct { char a,b,c; }` compiles
+ * to sizeof 4 under agbcc, matching the documented/authoritative 0x144
+ * gap between this struct's offset and the next field's offset in struct
+ * SaveBlocks), while AAPCS-conformant modern GCC only rounds a struct's
+ * size to its own natural alignment (here, 2, from cksum16), leaving it
+ * at 0x142 -- 2 bytes short. ALIGN(4) forces the struct's alignment
+ * (hence its tail-padding rounding) to 4 bytes under both compilers
+ * without repacking any internal member layout, following the same
+ * precedent already used for struct GMapSaveInfo above.
+ */
 struct BonusClaimSaveData {
     struct BonusClaimEnt bonus[0x10];
     u16 cksum16;
-};
+} ALIGN(4);
 
 enum
 {

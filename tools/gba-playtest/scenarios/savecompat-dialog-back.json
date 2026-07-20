@@ -1,0 +1,100 @@
+{
+  "schema_version": 1,
+  "name": "savecompat-dialog-back",
+  "description": "Reaches the global save-compatibility gate for a non-CURRENT SRAM image, dismisses the state-specific diagnostic HelpBox (A), waits, then presses A again to select the default \"Back\" control. All three checkpoints must report the identical sram_hash, proving passive display and confirmed Back both leave the entire SRAM image byte-for-byte unchanged; framebuffer_hash at dialog-shown is state-specific (differs per SaveCompatState diagnostic message) and back-returned must match the existing title/game-control framebuffer.",
+  "frames": [
+    {
+      "start": 90,
+      "end": 95,
+      "keys": [
+        "A"
+      ]
+    },
+    {
+      "start": 155,
+      "end": 160,
+      "keys": [
+        "START"
+      ]
+    },
+    {
+      "start": 220,
+      "end": 225,
+      "keys": [
+        "A"
+      ]
+    },
+    {
+      "start": 285,
+      "end": 290,
+      "keys": [
+        "START"
+      ]
+    },
+    {
+      "start": 350,
+      "end": 355,
+      "keys": [
+        "A"
+      ]
+    },
+    {
+      "start": 415,
+      "end": 420,
+      "keys": [
+        "START"
+      ]
+    },
+    {
+      "start": 480,
+      "end": 485,
+      "keys": [
+        "A"
+      ]
+    },
+    {
+      "start": 545,
+      "end": 550,
+      "keys": [
+        "START"
+      ]
+    },
+    {
+      "start": 950,
+      "end": 955,
+      "keys": [
+        "A"
+      ]
+    },
+    {
+      "start": 1100,
+      "end": 1105,
+      "keys": [
+        "A"
+      ]
+    }
+  ],
+  "checkpoints": [
+    {
+      "frame": 900,
+      "name": "dialog-shown",
+      "framebuffer": true,
+      "sram_hash": true,
+      "probes": []
+    },
+    {
+      "frame": 1050,
+      "name": "after-dismiss",
+      "framebuffer": true,
+      "sram_hash": true,
+      "probes": []
+    },
+    {
+      "frame": 1250,
+      "name": "back-returned",
+      "framebuffer": true,
+      "sram_hash": true,
+      "probes": []
+    }
+  ]
+}

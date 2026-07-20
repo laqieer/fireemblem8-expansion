@@ -20,6 +20,9 @@
 #error "gba-playtest requires libmGBA's standard 32-bit color_t build"
 #endif
 
+#define GBA_SRAM_BASE 0x0E000000u
+#define GBA_SRAM_SIZE 0x8000u
+
 struct InputRange {
 	uint32_t start;
 	uint32_t end;
@@ -35,6 +38,7 @@ struct Checkpoint {
 	uint32_t frame;
 	size_t probe_count;
 	struct Probe* probes;
+	bool sram_hash;
 };
 
 struct Plan {
@@ -110,12 +114,15 @@ static bool read_plan(const char* path, struct Plan* plan)
 	}
 	for (size_t i = 0; i < plan->checkpoint_count; ++i) {
 		struct Checkpoint* checkpoint = &plan->checkpoints[i];
-		if (fscanf(file, "%" SCNu32 " %zu", &checkpoint->frame,
-		           &checkpoint->probe_count) != 2 ||
-		    checkpoint->probe_count > 1024) {
+		unsigned sram_hash_flag;
+		if (fscanf(file, "%" SCNu32 " %zu %u", &checkpoint->frame,
+		           &checkpoint->probe_count, &sram_hash_flag) != 3 ||
+		    checkpoint->probe_count > 1024 ||
+		    (sram_hash_flag != 0 && sram_hash_flag != 1)) {
 			fprintf(stderr, "malformed checkpoint %zu\n", i);
 			goto fail;
 		}
+		checkpoint->sram_hash = sram_hash_flag != 0;
 		checkpoint->probes = calloc(checkpoint->probe_count,
 		                            sizeof(*checkpoint->probes));
 		if (checkpoint->probe_count && !checkpoint->probes) {
@@ -171,7 +178,23 @@ static uint32_t read_probe(struct mCore* core, const struct Probe* probe)
 	}
 }
 
-static int run(const char* rom_path, const struct Plan* plan)
+static uint64_t hash_sram(struct mCore* core)
+{
+	/* Same FNV-1a construction as hash_framebuffer(), applied to the raw
+	 * cart SRAM bus range (0x0E000000..0x0E007FFF): proves the *entire*
+	 * 0x8000-byte image is byte-for-byte unchanged across a checkpoint
+	 * without needing one probe per byte (the plan format caps probes
+	 * per checkpoint at 1024). */
+	uint64_t hash = UINT64_C(14695981039346656037);
+	for (uint32_t offset = 0; offset < GBA_SRAM_SIZE; ++offset) {
+		uint8_t byte = core->busRead8(core, GBA_SRAM_BASE + offset);
+		hash ^= byte;
+		hash *= UINT64_C(1099511628211);
+	}
+	return hash;
+}
+
+static int run(const char* rom_path, const struct Plan* plan, const char* sram_path)
 {
 	struct mCore* core = mCoreFind(rom_path);
 	if (!core) {
@@ -189,6 +212,32 @@ static int run(const char* rom_path, const struct Plan* plan)
 		mCoreConfigDeinit(&core->config);
 		core->deinit(core);
 		return 2;
+	}
+	if (sram_path) {
+		/*
+		 * Loaded before core->reset() so the pre-boot SRAM image is what
+		 * the game's own boot-time classifier (ClassifySramSaveCompat)
+		 * observes on the very first frame, exactly as a real cartridge
+		 * with existing save data would present it.
+		 *
+		 * `temporary=true` is required here: it maps to
+		 * GBACoreLoadTemporarySave -> GBASavedataMask(), which copies the
+		 * file's bytes into the in-memory savedata buffer once and then
+		 * detaches from the backing file. `temporary=false` instead keeps
+		 * the opened O_RDWR VFile as the live savedata backing store, so
+		 * every in-game SRAM write (including the compatibility menu's
+		 * whole-chip erase) is flushed straight back to sram_path on disk
+		 * -- silently mutating the input fixture and making repeated runs
+		 * against the same file non-reproducible (confirmed empirically:
+		 * identical re-invocations diverged once the fixture had been
+		 * quietly rewritten by a prior run).
+		 */
+		if (!mCoreLoadSaveFile(core, sram_path, true)) {
+			fprintf(stderr, "mGBA could not load SRAM image: %s\n", sram_path);
+			mCoreConfigDeinit(&core->config);
+			core->deinit(core);
+			return 2;
+		}
 	}
 	unsigned width;
 	unsigned height;
@@ -235,6 +284,11 @@ static int run(const char* rom_path, const struct Plan* plan)
 				       checkpoint_index, probe_index,
 				       read_probe(core, &checkpoint->probes[probe_index]));
 			}
+			if (checkpoint->sram_hash) {
+				uint64_t sram = hash_sram(core);
+				printf("SRAMHASH\t%zu\t%016" PRIx64 "\n",
+				       checkpoint_index, sram);
+			}
 			++checkpoint_index;
 		}
 	}
@@ -246,8 +300,8 @@ static int run(const char* rom_path, const struct Plan* plan)
 
 int main(int argc, char** argv)
 {
-	if (argc != 3) {
-		fprintf(stderr, "usage: %s <rom.gba> <plan>\n", argv[0]);
+	if (argc != 3 && argc != 4) {
+		fprintf(stderr, "usage: %s <rom.gba> <plan> [sram-image]\n", argv[0]);
 		return 2;
 	}
 	struct mLogger logger = {.log = silent_log, .filter = NULL};
@@ -255,7 +309,7 @@ int main(int argc, char** argv)
 	struct Plan plan = {0};
 	if (!read_plan(argv[2], &plan))
 		return 2;
-	int result = run(argv[1], &plan);
+	int result = run(argv[1], &plan, argc == 4 ? argv[3] : NULL);
 	free_plan(&plan);
 	return result;
 }

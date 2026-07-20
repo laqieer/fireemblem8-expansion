@@ -1,10 +1,44 @@
-"""Compile-time layout assertions for the expansion save-format metadata
-record (issue #2 slice 1).
+"""Compile-time layout assertions for every persisted save struct (issue #2
+slices 1-2).
 
-Verifies that struct ExpansionSaveMeta (include/save_format.h) is exactly
-0x5C bytes, that it replaces the old pad at SRAM offset 0x73A4 inside
-struct SaveBlocks (include/bmsave.h) without shifting any neighboring
-block's offset, and that struct SaveBlocks' total size is unchanged.
+Verifies, byte-for-byte, that the *entire* persisted struct SaveBlocks tree
+(include/bmsave.h) -- not just its top-level fields -- has identical
+sizeof/offsetof under the legacy agbcc (APCS) compiler that ships
+fireemblem8.gba and under every modern arm-none-eabi-gcc (AAPCS/APCS-GNU)
+build cell. This includes struct ExpansionSaveMeta (include/save_format.h),
+which is exactly 0x5C bytes and replaces the old pad at SRAM offset 0x73A4
+without shifting any neighboring block's offset or struct SaveBlocks' total
+size.
+
+Historical note -- two real cross-compiler layout divergences were found
+and fixed by this probe (see include/bmdifficulty.h and include/bmsave.h
+for the in-place fix commentary):
+
+1. ``struct Dungeon`` (include/bmdifficulty.h) declared ten tightly packed
+   u32 bitfields without the project's ``BITPACKED`` attribute. Legacy
+   agbcc's old-APCS bitfield allocator packs bits contiguously across a
+   u32 storage-unit boundary, yielding the documented 12-byte/96-bit
+   layout; AAPCS-conformant modern GCC refuses to let a bitfield straddle
+   a storage unit sized to its declared type, so several fields
+   (turnCount, enemiesDefeated, postgameEnemiesDefeated) started a fresh
+   4-byte unit instead, inflating the struct to 16 bytes. This cascaded
+   into every offset in struct SaveBlocks from gameSaveBlocks onward.
+   Fix: add ``BITPACKED`` (aligned(4), packed) to struct Dungeon, matching
+   the existing convention used by struct PlaySt/PlaySt_30/PlaySt_OptionBits
+   for the same reason. Both compilers now agree on 12 bytes.
+
+2. ``struct BonusClaimSaveData`` (include/bmsave.h) has an *unpadded*
+   natural size of 0x142 (bonus[0x10] * sizeof(BonusClaimEnt) + cksum16),
+   which is already a multiple of its own natural alignment (2, from
+   cksum16) -- so AAPCS-conformant modern GCC leaves it at 0x142. Legacy
+   agbcc, however, always rounds *every* struct's size up to a 4-byte
+   multiple regardless of its members' own alignment (a documented
+   old-ARM-APCS convention, verified empirically with a minimal
+   `struct { char a,b,c; }` repro compiling to sizeof 4 under agbcc), so
+   it produces 0x144 -- matching the struct's documented position
+   immediately before the `reserved` field in struct SaveBlocks. Fix: add
+   ``ALIGN(4)`` to struct BonusClaimSaveData, the same precedent already
+   used by struct GMapSaveInfo for this exact class of divergence.
 
 Two independent compilers are used so this proves the same invariants both
 "as legacy-shipped" (agbcc, the actual compiler that builds fireemblem8.gba)
@@ -18,6 +52,13 @@ and across every modern build cell:
   pattern: a C probe using _Static_assert/offsetof, compiled -- not
   executed -- with the real arm-none-eabi-gcc across all four modern
   build cells, skipped gracefully when that toolchain is unavailable.
+
+All expected byte values below were derived from -- and independently
+cross-checked against -- the legacy agbcc build (the authoritative,
+already-shipped on-media layout); the assertions merely encode that this
+compiler (a first-party, already-vendored dependency needing no network
+access) agrees with itself and with the modern toolchain, so this test
+carries no separate "trust me" magic-number risk.
 """
 
 import os
@@ -45,6 +86,9 @@ class SaveFormatLayoutTests(unittest.TestCase):
         #include <stddef.h>
         #include "global.h"
         #include "bmsave.h"
+        #include "bmmind.h"
+        #include "bmtrick.h"
+        #include "bmdifficulty.h"
         #include "sram-layout.h"
 
         /* struct ExpansionSaveMeta itself: exactly the 0x5C-byte pad,
@@ -59,6 +103,70 @@ class SaveFormatLayoutTests(unittest.TestCase):
         char probe_meta_off_buildCommitShort[offsetof(struct ExpansionSaveMeta, buildCommitShort) == 0x24 ? 1 : -1];
         char probe_meta_off_checksum[offsetof(struct ExpansionSaveMeta, checksum) == 0x2E ? 1 : -1];
         char probe_meta_off_reserved[offsetof(struct ExpansionSaveMeta, reserved) == 0x30 ? 1 : -1];
+
+        /* Every persisted nested struct type reachable from struct
+         * SaveBlocks: sizeof must be identical under both compilers, not
+         * just the top-level container's total size (two real, distinct
+         * divergences -- struct Dungeon and struct BonusClaimSaveData --
+         * were found and fixed via this exact style of assertion; see the
+         * module docstring above). */
+        char probe_sz_GlobalSaveInfo[sizeof(struct GlobalSaveInfo) == 0x64 ? 1 : -1];
+        char probe_sz_SaveBlockInfo[sizeof(struct SaveBlockInfo) == 0x10 ? 1 : -1];
+        char probe_sz_GameRankSaveData[sizeof(struct GameRankSaveData) == 0x18 ? 1 : -1];
+        char probe_sz_GameRankSaveDataPacks[sizeof(struct GameRankSaveDataPacks) == 0x94 ? 1 : -1];
+        char probe_sz_SoundRoomSaveData[sizeof(struct SoundRoomSaveData) == 0x24 ? 1 : -1];
+        char probe_sz_bmsave_unkstruct2[sizeof(struct bmsave_unkstruct2) == 0x14 ? 1 : -1];
+        char probe_sz_BonusClaimEnt[sizeof(struct BonusClaimEnt) == 0x14 ? 1 : -1];
+        char probe_sz_BonusClaimSaveData[sizeof(struct BonusClaimSaveData) == 0x144 ? 1 : -1];
+        char probe_sz_UnitUsageStats[sizeof(struct UnitUsageStats) == 0x10 ? 1 : -1];
+        char probe_sz_ChapterStats[sizeof(struct ChapterStats) == 0x4 ? 1 : -1];
+        char probe_sz_GameSavePackedUnit[sizeof(struct GameSavePackedUnit) == 0x24 ? 1 : -1];
+        char probe_sz_SuspendSavePackedUnit[sizeof(struct SuspendSavePackedUnit) == 0x34 ? 1 : -1];
+        char probe_sz_MultiArenaRankingEnt[sizeof(struct MultiArenaRankingEnt) == 0x14 ? 1 : -1];
+        char probe_sz_MultiArenaSaveTeam[sizeof(struct MultiArenaSaveTeam) == 0xC4 ? 1 : -1];
+        char probe_sz_MultiArenaSaveBlock[sizeof(struct MultiArenaSaveBlock) == 0x874 ? 1 : -1];
+        char probe_sz_ExtraMapSaveHead[sizeof(struct ExtraMapSaveHead) == 0x1C ? 1 : -1];
+        char probe_sz_GMapSaveInfo[sizeof(struct GMapSaveInfo) == 0x24 ? 1 : -1];
+        char probe_sz_Dungeon[sizeof(struct Dungeon) == 0xC ? 1 : -1];
+        char probe_sz_GameSaveBlock[sizeof(struct GameSaveBlock) == 0xDC8 ? 1 : -1];
+        char probe_sz_SuspendSaveBlock[sizeof(struct SuspendSaveBlock) == 0x1F78 ? 1 : -1];
+        char probe_sz_ActionData[sizeof(struct ActionData) == 0x38 ? 1 : -1];
+        char probe_sz_Trap[sizeof(struct Trap) == 0x8 ? 1 : -1];
+
+        /* Every direct member offset of the two largest/most complex
+         * persisted containers, so an internal field shift can never
+         * silently cancel out in a matching top-level total size. */
+        char probe_gsb_off_playSt[offsetof(struct GameSaveBlock, playSt) == 0x0 ? 1 : -1];
+        char probe_gsb_off_units[offsetof(struct GameSaveBlock, units) == 0x4C ? 1 : -1];
+        char probe_gsb_off_gmUnit[offsetof(struct GameSaveBlock, gmUnit) == 0x778 ? 1 : -1];
+        char probe_gsb_off_supplyItems[offsetof(struct GameSaveBlock, supplyItems) == 0x79C ? 1 : -1];
+        char probe_gsb_off_pidStats[offsetof(struct GameSaveBlock, pidStats) == 0x84C ? 1 : -1];
+        char probe_gsb_off_chapterStats[offsetof(struct GameSaveBlock, chapterStats) == 0xCAC ? 1 : -1];
+        char probe_gsb_off_permanentFlags[offsetof(struct GameSaveBlock, permanentFlags) == 0xD6C ? 1 : -1];
+        char probe_gsb_off_bonusClaimFlags[offsetof(struct GameSaveBlock, bonusClaimFlags) == 0xD88 ? 1 : -1];
+        char probe_gsb_off_wmStuff[offsetof(struct GameSaveBlock, wmStuff) == 0xD8C ? 1 : -1];
+        char probe_gsb_off_dungeons[offsetof(struct GameSaveBlock, dungeons) == 0xDB0 ? 1 : -1];
+
+        char probe_ssb_off_playSt[offsetof(struct SuspendSaveBlock, playSt) == 0x0 ? 1 : -1];
+        char probe_ssb_off_action[offsetof(struct SuspendSaveBlock, action) == 0x4C ? 1 : -1];
+        char probe_ssb_off_blueUnits[offsetof(struct SuspendSaveBlock, blueUnits) == 0x84 ? 1 : -1];
+        char probe_ssb_off_wmMonsterUnit[offsetof(struct SuspendSaveBlock, wmMonsterUnit) == 0xAE0 ? 1 : -1];
+        char probe_ssb_off_redUnits[offsetof(struct SuspendSaveBlock, redUnits) == 0xB14 ? 1 : -1];
+        char probe_ssb_off_greenUnits[offsetof(struct SuspendSaveBlock, greenUnits) == 0x153C ? 1 : -1];
+        char probe_ssb_off_traps[offsetof(struct SuspendSaveBlock, traps) == 0x1744 ? 1 : -1];
+        char probe_ssb_off_supplyItems[offsetof(struct SuspendSaveBlock, supplyItems) == 0x1944 ? 1 : -1];
+        char probe_ssb_off_pidStats[offsetof(struct SuspendSaveBlock, pidStats) == 0x19F4 ? 1 : -1];
+        char probe_ssb_off_chapterStats[offsetof(struct SuspendSaveBlock, chapterStats) == 0x1E54 ? 1 : -1];
+        char probe_ssb_off_menuOverride[offsetof(struct SuspendSaveBlock, menuOverride) == 0x1F14 ? 1 : -1];
+        char probe_ssb_off_permanentFlags[offsetof(struct SuspendSaveBlock, permanentFlags) == 0x1F24 ? 1 : -1];
+        char probe_ssb_off_chapterFlags[offsetof(struct SuspendSaveBlock, chapterFlags) == 0x1F3D ? 1 : -1];
+        char probe_ssb_off_wmStuff[offsetof(struct SuspendSaveBlock, wmStuff) == 0x1F44 ? 1 : -1];
+        char probe_ssb_off_dungeon[offsetof(struct SuspendSaveBlock, dungeon) == 0x1F68 ? 1 : -1];
+        char probe_ssb_off_eventSlotCnt[offsetof(struct SuspendSaveBlock, eventSlotCnt) == 0x1F74 ? 1 : -1];
+
+        char probe_mab_off_teams[offsetof(struct MultiArenaSaveBlock, teams) == 0x0 ? 1 : -1];
+        char probe_mab_off_config[offsetof(struct MultiArenaSaveBlock, config) == 0x7A8 ? 1 : -1];
+        char probe_mab_off_rankings[offsetof(struct MultiArenaSaveBlock, rankings) == 0x7AC ? 1 : -1];
 
         /* struct SaveBlocks: the new metadata field lands exactly where the
          * old pad was, and every neighboring block offset plus the total
@@ -175,12 +283,12 @@ class SaveFormatLayoutTests(unittest.TestCase):
         """The probe compiles in all four modern build cells (debug/release
         x AAPCS/APCS-GNU) when the arm-none-eabi cross toolchain is present.
 
-        Honest infrastructure gap: this sandbox has no network/root access
-        to install gcc-arm-none-eabi, so this test currently skips here --
-        see docs/save_format.md's "Known infrastructure gaps" section. It
-        is not skipped unconditionally: any environment with the toolchain
-        installed (or MODERN_CC/MODERN_TOOLCHAIN_ROOT set) will run it for
-        real, exactly like test_abi_layout.py.
+        This proves every persisted save struct (not just struct SaveBlocks'
+        top-level fields) has byte-identical sizeof/offsetof under all four
+        supported modern build cells and the legacy agbcc build. Skips
+        gracefully (not unconditionally) only when the arm-none-eabi cross
+        toolchain itself is unavailable in the current environment (or via
+        MODERN_CC/MODERN_TOOLCHAIN_ROOT), exactly like test_abi_layout.py.
         """
         overrides = self.tool_overrides()
         if overrides is None:

@@ -1,0 +1,114 @@
+{
+  "schema_version": 1,
+  "name": "savecompat-erase",
+  "description": "Reaches the global save-compatibility gate for a non-CURRENT SRAM image, dismisses the diagnostic, moves the cursor to the only destructive control (\"Erase All Save Data\"), selects it (Yes/No confirmation shown), then confirms \"Yes\". The final checkpoint must show a changed sram_hash (whole-chip wipe + fresh CURRENT initialization) and the normal save menu reached.",
+  "frames": [
+    {
+      "start": 90,
+      "end": 95,
+      "keys": [
+        "A"
+      ]
+    },
+    {
+      "start": 155,
+      "end": 160,
+      "keys": [
+        "START"
+      ]
+    },
+    {
+      "start": 220,
+      "end": 225,
+      "keys": [
+        "A"
+      ]
+    },
+    {
+      "start": 285,
+      "end": 290,
+      "keys": [
+        "START"
+      ]
+    },
+    {
+      "start": 350,
+      "end": 355,
+      "keys": [
+        "A"
+      ]
+    },
+    {
+      "start": 415,
+      "end": 420,
+      "keys": [
+        "START"
+      ]
+    },
+    {
+      "start": 480,
+      "end": 485,
+      "keys": [
+        "A"
+      ]
+    },
+    {
+      "start": 545,
+      "end": 550,
+      "keys": [
+        "START"
+      ]
+    },
+    {
+      "start": 950,
+      "end": 955,
+      "keys": [
+        "A"
+      ]
+    },
+    {
+      "start": 1000,
+      "end": 1080,
+      "keys": [
+        "DOWN"
+      ]
+    },
+    {
+      "start": 1150,
+      "end": 1155,
+      "keys": [
+        "A"
+      ]
+    },
+    {
+      "start": 1250,
+      "end": 1255,
+      "keys": [
+        "A"
+      ]
+    }
+  ],
+  "checkpoints": [
+    {
+      "frame": 1100,
+      "name": "erase-selected",
+      "framebuffer": true,
+      "sram_hash": true,
+      "probes": []
+    },
+    {
+      "frame": 1200,
+      "name": "confirm-shown",
+      "framebuffer": true,
+      "sram_hash": true,
+      "probes": []
+    },
+    {
+      "frame": 1400,
+      "name": "erased",
+      "framebuffer": true,
+      "sram_hash": true,
+      "probes": []
+    }
+  ]
+}

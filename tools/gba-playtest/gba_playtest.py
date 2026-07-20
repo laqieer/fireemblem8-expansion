@@ -38,7 +38,9 @@ KEY_BITS = {
 NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
 HEX_ADDRESS_RE = re.compile(r"^0x[0-9a-fA-F]{8}$")
 HASH_RE = re.compile(r"^fnv1a64-rgb24:[0-9a-f]{16}$")
-RAM_RANGES = ((0x02000000, 0x02040000), (0x03000000, 0x03008000))
+SRAM_HASH_RE = re.compile(r"^fnv1a64-sram:[0-9a-f]{16}$")
+RAM_RANGES = ((0x02000000, 0x02040000), (0x03000000, 0x03008000), (0x0E000000, 0x0E008000))
+SRAM_IMAGE_SIZE = 0x8000
 
 
 class PlaytestError(Exception):
@@ -110,7 +112,10 @@ def _parse_address(value: Any, size: int, path: str) -> int:
         None,
     )
     if containing is None:
-        raise PlaytestError(f"{path} must be in EWRAM 0x02000000-0x0203ffff or IWRAM 0x03000000-0x03007fff")
+        raise PlaytestError(
+            f"{path} must be in EWRAM 0x02000000-0x0203ffff, IWRAM 0x03000000-0x03007fff, "
+            "or cart SRAM 0x0e000000-0x0e007fff"
+        )
     _, end = containing
     if address + size > end:
         raise PlaytestError(f"{path} plus size {size} crosses the RAM region boundary")
@@ -139,6 +144,8 @@ class Checkpoint:
     frame: int
     framebuffer: bool
     expected_framebuffer_hash: str | None
+    sram_hash: bool
+    expected_sram_hash: str | None
     probes: tuple[Probe, ...]
 
 
@@ -229,7 +236,7 @@ def parse_scenario_data(data: Any, source: str = "<scenario>") -> Scenario:
             raw,
             path,
             {"name", "frame", "framebuffer", "probes"},
-            {"expected_framebuffer_hash"},
+            {"expected_framebuffer_hash", "sram_hash", "expected_sram_hash"},
         )
         checkpoint_name = _expect_name(item["name"], f"{path}.name")
         if checkpoint_name in checkpoint_names:
@@ -252,6 +259,20 @@ def parse_scenario_data(data: Any, source: str = "<scenario>") -> Scenario:
             )
         if expected_hash is not None and not framebuffer:
             raise PlaytestError(f"{path}.expected_framebuffer_hash requires framebuffer true")
+        sram_hash = item.get("sram_hash", False)
+        if not isinstance(sram_hash, bool):
+            raise PlaytestError(f"{path}.sram_hash must be a boolean")
+        expected_sram_hash = item.get("expected_sram_hash")
+        if expected_sram_hash is not None and (
+            not isinstance(expected_sram_hash, str)
+            or not SRAM_HASH_RE.fullmatch(expected_sram_hash)
+        ):
+            raise PlaytestError(
+                f"{path}.expected_sram_hash must look like "
+                "'fnv1a64-sram:0123456789abcdef'"
+            )
+        if expected_sram_hash is not None and not sram_hash:
+            raise PlaytestError(f"{path}.expected_sram_hash requires sram_hash true")
         probes_data = item["probes"]
         if not isinstance(probes_data, list):
             raise PlaytestError(f"{path}.probes must be an array")
@@ -278,14 +299,18 @@ def parse_scenario_data(data: Any, source: str = "<scenario>") -> Scenario:
                         f"{probe_path}.expected must be lowercase 0x plus {size * 2} hex digits"
                     )
             probes.append(Probe(address, size, expected))
-        if not framebuffer and not probes:
-            raise PlaytestError(f"{path} must capture a framebuffer or at least one probe")
+        if not framebuffer and not probes and not sram_hash:
+            raise PlaytestError(
+                f"{path} must capture a framebuffer, sram_hash, or at least one probe"
+            )
         checkpoints.append(
             Checkpoint(
                 checkpoint_name,
                 frame,
                 framebuffer,
                 expected_hash,
+                sram_hash,
+                expected_sram_hash,
                 tuple(sorted(probes, key=lambda probe: (probe.address, probe.size))),
             )
         )
@@ -414,13 +439,16 @@ def _write_plan(path: Path, scenario: Scenario) -> None:
     )
     lines.append(f"CHECKPOINTS {len(scenario.checkpoints)}")
     for checkpoint in scenario.checkpoints:
-        lines.append(f"{checkpoint.frame} {len(checkpoint.probes)}")
+        lines.append(
+            f"{checkpoint.frame} {len(checkpoint.probes)} {int(checkpoint.sram_hash)}"
+        )
         lines.extend(f"{probe.address} {probe.size}" for probe in checkpoint.probes)
     path.write_text("\n".join(lines) + "\n", encoding="ascii")
 
 
 def _parse_backend_output(stdout: str, scenario: Scenario) -> dict[str, Any]:
     hashes: dict[int, str] = {}
+    sram_hashes: dict[int, str] = {}
     values: dict[tuple[int, int], int] = {}
     for line_number, line in enumerate(stdout.splitlines(), 1):
         fields = line.split("\t")
@@ -437,6 +465,17 @@ def _parse_backend_output(stdout: str, scenario: Scenario) -> dict[str, Any]:
                 if not re.fullmatch(r"[0-9a-f]{16}", fields[3]):
                     raise ValueError("malformed hash")
                 hashes[checkpoint_index] = f"fnv1a64-rgb24:{fields[3]}"
+            elif len(fields) == 3 and fields[0] == "SRAMHASH":
+                checkpoint_index = int(fields[1])
+                if checkpoint_index in sram_hashes:
+                    raise ValueError("duplicate sram hash")
+                if not (0 <= checkpoint_index < len(scenario.checkpoints)):
+                    raise ValueError("sram hash checkpoint index out of range")
+                if not scenario.checkpoints[checkpoint_index].sram_hash:
+                    raise ValueError("unexpected sram hash for checkpoint without sram_hash")
+                if not re.fullmatch(r"[0-9a-f]{16}", fields[2]):
+                    raise ValueError("malformed sram hash")
+                sram_hashes[checkpoint_index] = f"fnv1a64-sram:{fields[2]}"
             elif len(fields) == 4 and fields[0] == "PROBE":
                 checkpoint_index = int(fields[1])
                 probe_index = int(fields[2])
@@ -459,6 +498,13 @@ def _parse_backend_output(stdout: str, scenario: Scenario) -> dict[str, Any]:
         raise PlaytestError(
             f"backend returned {len(hashes)} of {len(scenario.checkpoints)} checkpoints"
         )
+    expected_sram_hash_count = sum(
+        1 for checkpoint in scenario.checkpoints if checkpoint.sram_hash
+    )
+    if len(sram_hashes) != expected_sram_hash_count:
+        raise PlaytestError(
+            f"backend returned {len(sram_hashes)} of {expected_sram_hash_count} SRAM hashes"
+        )
     expected_probe_count = sum(len(checkpoint.probes) for checkpoint in scenario.checkpoints)
     if len(values) != expected_probe_count:
         raise PlaytestError(
@@ -473,6 +519,8 @@ def _parse_backend_output(stdout: str, scenario: Scenario) -> dict[str, Any]:
         }
         if checkpoint.framebuffer:
             captured["framebuffer_hash"] = hashes[checkpoint_index]
+        if checkpoint.sram_hash:
+            captured["sram_hash"] = sram_hashes[checkpoint_index]
         captured["probes"] = [
             {
                 "address": f"0x{probe.address:08x}",
@@ -489,11 +537,20 @@ def _parse_backend_output(stdout: str, scenario: Scenario) -> dict[str, Any]:
     }
 
 
-def capture(rom: Path, scenario: Scenario) -> dict[str, Any]:
+def capture(rom: Path, scenario: Scenario, sram_image: Path | None = None) -> dict[str, Any]:
     if scenario.disabled:
         raise PlaytestError(f"scenario {scenario.name!r} is disabled: {scenario.blocker}")
     if not rom.is_file():
         raise PlaytestError(f"ROM does not exist or is not a regular file: {rom}")
+    if sram_image is not None:
+        if not sram_image.is_file():
+            raise PlaytestError(f"SRAM image does not exist or is not a regular file: {sram_image}")
+        actual_size = sram_image.stat().st_size
+        if actual_size != SRAM_IMAGE_SIZE:
+            raise PlaytestError(
+                f"SRAM image {sram_image} must be exactly {SRAM_IMAGE_SIZE} (0x8000) bytes, "
+                f"got {actual_size}"
+            )
     with tempfile.TemporaryDirectory(prefix="gba-playtest-") as temporary:
         temporary_path = Path(temporary)
         backend = temporary_path / "gba-playtest-backend"
@@ -504,6 +561,19 @@ def capture(rom: Path, scenario: Scenario) -> dict[str, Any]:
             execution_rom.chmod(0o400)
         except OSError as exc:
             raise PlaytestError(f"cannot stage ROM {rom} for deterministic execution: {exc}") from exc
+        execution_sram: Path | None = None
+        if sram_image is not None:
+            execution_sram = temporary_path / "input.sav"
+            try:
+                shutil.copyfile(sram_image, execution_sram)
+                # Left writable (unlike the ROM copy above): libmGBA opens
+                # save data read-write since gameplay may legitimately
+                # write to it, and this is a disposable temporary copy the
+                # original sram_image is never mutated through.
+            except OSError as exc:
+                raise PlaytestError(
+                    f"cannot stage SRAM image {sram_image} for deterministic execution: {exc}"
+                ) from exc
         # The identity is computed from the immutable temporary copy passed to
         # libmGBA, avoiding a path-replacement race between hashing and loading.
         provenance = rom_provenance(execution_rom)
@@ -514,9 +584,12 @@ def capture(rom: Path, scenario: Scenario) -> dict[str, Any]:
             MAX_BACKEND_TIMEOUT_SECONDS,
             max(MIN_BACKEND_TIMEOUT_SECONDS, 10 + last_frame / 30),
         )
+        backend_args = [str(backend), str(execution_rom), str(plan)]
+        if execution_sram is not None:
+            backend_args.append(str(execution_sram))
         try:
             result = subprocess.run(
-                [str(backend), str(execution_rom), str(plan)],
+                backend_args,
                 capture_output=True,
                 text=True,
                 check=False,
@@ -558,6 +631,15 @@ def compare_inline_expectations(
                 f"{prefix} framebuffer_hash: expected "
                 f"{checkpoint.expected_framebuffer_hash!r}, actual "
                 f"{actual.get('framebuffer_hash')!r}"
+            )
+        if (
+            checkpoint.expected_sram_hash is not None
+            and actual.get("sram_hash") != checkpoint.expected_sram_hash
+        ):
+            differences.append(
+                f"{prefix} sram_hash: expected "
+                f"{checkpoint.expected_sram_hash!r}, actual "
+                f"{actual.get('sram_hash')!r}"
             )
         for probe_index, probe in enumerate(checkpoint.probes):
             if probe.expected is None:
@@ -604,7 +686,7 @@ def validate_fingerprint(data: Any, source: str) -> dict[str, Any]:
     for index, raw in enumerate(root["checkpoints"]):
         path = f"{source}.checkpoints[{index}]"
         checkpoint = _expect_object(
-            raw, path, {"frame", "name", "probes"}, {"framebuffer_hash"}
+            raw, path, {"frame", "name", "probes"}, {"framebuffer_hash", "sram_hash"}
         )
         frame = _expect_frame(checkpoint["frame"], f"{path}.frame")
         if frame <= previous_frame:
@@ -619,6 +701,11 @@ def validate_fingerprint(data: Any, source: str) -> dict[str, Any]:
             not isinstance(framebuffer_hash, str) or not HASH_RE.fullmatch(framebuffer_hash)
         ):
             raise PlaytestError(f"{path}.framebuffer_hash is malformed")
+        sram_hash = checkpoint.get("sram_hash")
+        if sram_hash is not None and (
+            not isinstance(sram_hash, str) or not SRAM_HASH_RE.fullmatch(sram_hash)
+        ):
+            raise PlaytestError(f"{path}.sram_hash is malformed")
         if not isinstance(checkpoint["probes"], list):
             raise PlaytestError(f"{path}.probes must be an array")
         previous_probe: tuple[int, int] | None = None
@@ -706,6 +793,12 @@ def _make_parser() -> argparse.ArgumentParser:
     capture_parser.add_argument("--rom", required=True, type=Path)
     capture_parser.add_argument("--scenario", required=True, type=Path)
     capture_parser.add_argument(
+        "--sram-image",
+        type=Path,
+        default=None,
+        help="optional exact 0x8000-byte raw SRAM image loaded before frame 0",
+    )
+    capture_parser.add_argument(
         "--output", "-o", default="-", help="output JSON path (default: stdout)"
     )
 
@@ -715,6 +808,12 @@ def _make_parser() -> argparse.ArgumentParser:
     verify_parser.add_argument("--rom", required=True, type=Path)
     verify_parser.add_argument("--scenario", required=True, type=Path)
     verify_parser.add_argument("--expected", required=True, type=Path)
+    verify_parser.add_argument(
+        "--sram-image",
+        type=Path,
+        default=None,
+        help="optional exact 0x8000-byte raw SRAM image loaded before frame 0",
+    )
     verify_parser.add_argument(
         "--policy",
         choices=("exact-rom", "behavior"),
@@ -740,7 +839,7 @@ def main(argv: list[str] | None = None) -> int:
             print("libmGBA backend: available")
             return 0
         scenario = load_scenario(args.scenario)
-        actual = capture(args.rom, scenario)
+        actual = capture(args.rom, scenario, args.sram_image)
         if args.mode == "capture":
             _write_output(args.output, serialize_fingerprint(actual))
             return 0

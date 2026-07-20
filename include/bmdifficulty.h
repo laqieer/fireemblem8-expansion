@@ -8,6 +8,26 @@
 #define BGPAL_BMDIFFICULTY_UNK_0 0
 #define OBPAL_BMDIFFICULTY_UNK_5 5
 
+/*
+ * BITPACKED (aligned(4), packed) is required here, not merely cosmetic:
+ * this struct's bitfields cross 4-byte (u32) storage-unit boundaries
+ * (e.g. unitsUsed:8 ends at bit 24, but turnCount:9 needs bits [24,33) --
+ * more than the 8 remaining bits in that unit). Without an explicit
+ * packed attribute, a standards-conformant AAPCS compiler (e.g. modern
+ * arm-none-eabi-gcc) starts a fresh 4-byte storage unit whenever a
+ * bitfield would overflow the current one, growing this struct to 16
+ * bytes -- 4 bytes larger than the legacy agbcc (APCS) build, which packs
+ * bits contiguously across unit boundaries and produces the intended,
+ * documented 12-byte/96-bit layout the offset comments below assume.
+ * `packed` makes both compilers agree on the same bit-exact 12-byte
+ * layout (verified via scripts/modernize/tests/test_save_format_layout.py's
+ * per-field bisection probe); `aligned(4)` preserves this struct's
+ * existing natural alignment for ARM7 unaligned-access safety wherever it
+ * is embedded (e.g. struct SaveBlocks, struct Struct030017A0) -- packed
+ * bitfield loads/stores are compiler-generated word-at-a-time accesses
+ * relative to the struct's own (4-byte-aligned) base address, so this
+ * does not introduce any unaligned access.
+ */
 struct Dungeon {
     /* 00 */ u32 expEarned:16;
 
@@ -23,7 +43,7 @@ struct Dungeon {
     /* 0A */ u32 postgameClearCount:4;
     /* 0B */ u32 unk_0B_0:4; // ??
     /* 0B */ u32 unk_0B_4:4; // ??
-};
+} BITPACKED;
 
 struct Struct030017A0 {
     /* 00 */ struct Dungeon current;

@@ -1,0 +1,19 @@
+{
+  "checkpoints": [
+    {
+      "frame": 900,
+      "framebuffer_hash": "fnv1a64-rgb24:9a0d10ad8761a13a",
+      "name": "no-dialog-normal-savemenu",
+      "probes": [],
+      "sram_hash": "fnv1a64-sram:110b1402141900f9"
+    }
+  ],
+  "format_version": 2,
+  "rom": {
+    "game_code": "BE8E",
+    "sha1": "f67049cb36e550bcad6a693e0a09f6134bc1cb22",
+    "size": 16777216,
+    "title": "FIREEMBLEM2E"
+  },
+  "scenario": "savecompat-current"
+}

@@ -22,6 +22,8 @@
 #include "savemenu.h"
 #include "uisupport.h"
 #include "gba_sprites.h"
+#include "save_format.h"
+#include "save_compat_menu.h"
 
 #include "constants/event-flags.h"
 #include "constants/characters.h"
@@ -1671,7 +1673,25 @@ PROC_LABEL(PL_SAVEMENU_EXIT),
 //! FE8U = 0x080AA4C0
 void StartSaveMenu(ProcPtr parent)
 {
-    struct SaveMenuProc * proc = Proc_StartBlocking(ProcScr_SaveMenu, parent);
+    struct SaveMenuProc * proc;
+    enum SaveCompatState compat = ClassifySramSaveCompat();
+
+    /*
+     * Issue #2 slice 2: save format/version metadata is global, so any
+     * non-CURRENT classification makes every slot/block offset potentially
+     * unsafe to interpret. Gate the *only* normal entry point into the
+     * save menu here: every non-CURRENT state is diverted to the dedicated
+     * blocking compatibility proc instead, which never calls IsSaveValid,
+     * never reads/writes SaveBlockInfo, and never interprets any current
+     * game/suspend/arena/XMap struct. See docs/save_format.md.
+     */
+    if (compat != SAVE_COMPAT_CURRENT)
+    {
+        StartSaveCompatMenu(parent, compat);
+        return;
+    }
+
+    proc = Proc_StartBlocking(ProcScr_SaveMenu, parent);
     proc->main_sel_bitfile = 0x100;
     proc->extra_sel_bitfile = 0;
 

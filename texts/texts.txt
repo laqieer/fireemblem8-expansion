@@ -40257,3 +40257,47 @@ I, too, shall search for a new path.[A][CR][LF]
 [ToggleSmile]A path that guides me to realizing the[LF]
 dreams Prince Lyon once held so dear.[.][A][X]
 
+## MSG_SAVE_COMPAT_LEGACY
+This save data predates the[.][LF]
+expansion save format and[.][LF]
+cannot be opened here.[X]
+
+## MSG_SAVE_COMPAT_HEADER_CORRUPT
+The save data appears to be[.][LF]
+corrupted and cannot be read.[X]
+
+## MSG_SAVE_COMPAT_METADATA_CORRUPT
+The save data's expansion[.][LF]
+info is corrupted and[.][LF]
+cannot be read.[X]
+
+## MSG_SAVE_COMPAT_OLDER
+This save data is from an[.][LF]
+older version of this[.][LF]
+expansion. It can be migrated[.][LF]
+using an external tool.[X]
+
+## MSG_SAVE_COMPAT_NEWER
+This save data is from a[.][LF]
+newer version of this[.][LF]
+expansion and is not[.][LF]
+supported here.[X]
+
+## MSG_SAVE_COMPAT_CONFIG_INCOMPATIBLE
+This save data was made with[.][LF]
+incompatible expansion[.][LF]
+settings and cannot be used.[X]
+
+## MSG_SAVE_COMPAT_UNKNOWN
+This save data cannot be[.][LF]
+used here.[X]
+
+## MSG_SAVE_COMPAT_BACK
+Back[X]
+
+## MSG_SAVE_COMPAT_ERASE_ALL
+Erase All Save Data[X]
+
+## MSG_SAVE_COMPAT_ERASE_CONFIRM
+Erase all save data?[.][LF]
+This cannot be undone.[X]
