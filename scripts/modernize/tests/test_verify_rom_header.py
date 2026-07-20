@@ -2,11 +2,15 @@
 
 Covers valid-header round-tripping and each individually detected mismatch:
 wrong size, title, game code, maker code, fixed byte, and checksum. Also
-covers the CLI entry point's exit codes and stderr messaging. All tests build
-a synthetic, minimal 16 MiB-sized GBA header in memory; none depend on a real
-ROM build or the modern toolchain.
+covers the CLI entry point's exit codes and stderr messaging, plus the
+--size option (named '16M'/'32M' sizes, exact byte counts, and invalid
+values) that lets callers -- e.g. modern.mk's expansion-modern-rom recipe --
+verify ROMs configured for a size other than the 16 MiB default. All tests
+build a synthetic, minimal GBA header in memory; none depend on a real ROM
+build or the modern toolchain.
 """
 
+import argparse
 import subprocess
 import sys
 import tempfile
@@ -150,6 +154,91 @@ class VerifyRomHeaderTests(unittest.TestCase):
             )
             self.assertNotEqual(bad.returncode, 0)
             self.assertIn("checksum", bad.stderr)
+
+    # -- --size CLI option / parse_size ---------------------------------------
+
+    def test_parse_size_named_16m_is_case_insensitive(self):
+        for text in ("16M", "16m"):
+            self.assertEqual(vrh.parse_size(text), 16 * 1024 * 1024)
+
+    def test_parse_size_named_32m_is_case_insensitive(self):
+        for text in ("32M", "32m"):
+            self.assertEqual(vrh.parse_size(text), 32 * 1024 * 1024)
+
+    def test_parse_size_accepts_exact_byte_counts(self):
+        self.assertEqual(vrh.parse_size("1024"), 1024)
+        self.assertEqual(vrh.parse_size("0x1000000"), 0x1000000)
+
+    def test_parse_size_rejects_non_numeric_garbage(self):
+        with self.assertRaises(argparse.ArgumentTypeError):
+            vrh.parse_size("64M")  # not one of the named sizes, not numeric
+
+    def test_parse_size_rejects_zero_and_negative(self):
+        with self.assertRaises(argparse.ArgumentTypeError):
+            vrh.parse_size("0")
+        with self.assertRaises(argparse.ArgumentTypeError):
+            vrh.parse_size("-1")
+
+    def test_verify_rom_header_accepts_explicit_expected_size(self):
+        thirty_two_mib = 32 * 1024 * 1024
+        with tempfile.TemporaryDirectory() as tmp:
+            rom = self.write_rom(Path(tmp), make_valid_header(thirty_two_mib))
+            facts = vrh.verify_rom_header(rom, expected_size=thirty_two_mib)
+        self.assertEqual(facts["size"], thirty_two_mib)
+
+    def test_verify_rom_header_rejects_16m_rom_when_32m_expected(self):
+        thirty_two_mib = 32 * 1024 * 1024
+        with tempfile.TemporaryDirectory() as tmp:
+            rom = self.write_rom(Path(tmp), make_valid_header())  # 16 MiB
+            with self.assertRaises(vrh.RomHeaderError) as ctx:
+                vrh.verify_rom_header(rom, expected_size=thirty_two_mib)
+        self.assertIn(str(thirty_two_mib), str(ctx.exception))
+
+    def test_cli_size_flag_accepts_valid_32m_rom(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            rom = self.write_rom(Path(tmp), make_valid_header(32 * 1024 * 1024))
+            result = subprocess.run(
+                [sys.executable, str(ROOT / "scripts" / "modernize" / "verify_rom_header.py"),
+                 "--size", "32M", str(rom)],
+                text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+            )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("ROM header valid", result.stdout)
+
+    def test_cli_size_flag_rejects_16m_rom_requested_as_32m(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            rom = self.write_rom(Path(tmp), make_valid_header())  # 16 MiB
+            result = subprocess.run(
+                [sys.executable, str(ROOT / "scripts" / "modernize" / "verify_rom_header.py"),
+                 "--size", "32M", str(rom)],
+                text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+            )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("size", result.stderr)
+        self.assertIn(str(32 * 1024 * 1024), result.stderr)
+
+    def test_cli_size_flag_defaults_to_16m(self):
+        """Omitting --size entirely must preserve the pre-32M-support
+        default behavior of requiring exactly 16 MiB."""
+        with tempfile.TemporaryDirectory() as tmp:
+            rom = self.write_rom(Path(tmp), make_valid_header())  # 16 MiB
+            result = subprocess.run(
+                [sys.executable, str(ROOT / "scripts" / "modernize" / "verify_rom_header.py"),
+                 str(rom)],
+                text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+            )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_cli_size_flag_rejects_invalid_value(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            rom = self.write_rom(Path(tmp), make_valid_header())
+            result = subprocess.run(
+                [sys.executable, str(ROOT / "scripts" / "modernize" / "verify_rom_header.py"),
+                 "--size", "not-a-size", str(rom)],
+                text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+            )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("invalid ROM size", result.stderr)
 
     def test_missing_rom_reports_error_not_traceback(self):
         with tempfile.TemporaryDirectory() as tmp:

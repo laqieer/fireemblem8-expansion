@@ -180,6 +180,155 @@ class ModernRomBootTargetTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stdout)
             self.assertTrue(rom_path.exists())
 
+    # -- ROM size configuration (--size wiring) --------------------------------
+
+    def test_rom_rule_passes_default_16m_size_to_verifier(self):
+        """Without MODERN_ROM_SIZE, the recipe must pass --size 16M to the
+        verifier, preserving the pre-32M-support default."""
+        with tempfile.TemporaryDirectory() as tmp:
+            fake_elf = Path(tmp, "fireemblem8.elf")
+            fake_elf.write_bytes(b"\x00" * 16)
+            fake_objcopy = Path(tmp, "fake_objcopy.sh")
+            fake_objcopy.write_text(
+                "#!/bin/sh\n"
+                'for out; do :; done\n'
+                'head -c 1024 /dev/zero > "$out"\n'
+            )
+            fake_objcopy.chmod(0o755)
+            argv_capture = Path(tmp, "verifier_argv.txt")
+            fake_verifier = Path(tmp, "fake_verify.py")
+            fake_verifier.write_text(
+                "import sys\n"
+                f"open(r'{argv_capture}', 'w').write(' '.join(sys.argv[1:]))\n"
+                "sys.exit(0)\n"
+            )
+            rom_path = Path(tmp, "fireemblem8.gba")
+            result = self.make(
+                "-o", str(fake_elf),
+                str(rom_path),
+                f"MODERN_ELF={fake_elf}",
+                f"MODERN_OBJCOPY={fake_objcopy}",
+                f"MODERN_ROM_HEADER_VERIFIER={fake_verifier}",
+                f"MODERN_ROM={rom_path}",
+            )
+            self.assertEqual(result.returncode, 0, result.stdout)
+            argv_text = argv_capture.read_text()
+            self.assertIn("--size 16M", argv_text)
+            self.assertTrue(argv_text.strip().endswith(str(rom_path)))
+
+    def test_rom_rule_passes_32m_size_to_verifier(self):
+        """MODERN_ROM_SIZE=32M must flow through to the verifier's --size,
+        proving the ROM/boot pipeline no longer hardcodes 16 MiB."""
+        with tempfile.TemporaryDirectory() as tmp:
+            fake_elf = Path(tmp, "fireemblem8.elf")
+            fake_elf.write_bytes(b"\x00" * 16)
+            fake_objcopy = Path(tmp, "fake_objcopy.sh")
+            fake_objcopy.write_text(
+                "#!/bin/sh\n"
+                'for out; do :; done\n'
+                'head -c 1024 /dev/zero > "$out"\n'
+            )
+            fake_objcopy.chmod(0o755)
+            argv_capture = Path(tmp, "verifier_argv.txt")
+            fake_verifier = Path(tmp, "fake_verify.py")
+            fake_verifier.write_text(
+                "import sys\n"
+                f"open(r'{argv_capture}', 'w').write(' '.join(sys.argv[1:]))\n"
+                "sys.exit(0)\n"
+            )
+            rom_path = Path(tmp, "fireemblem8.gba")
+            result = self.make(
+                "-o", str(fake_elf),
+                str(rom_path),
+                "MODERN_ROM_SIZE=32M",
+                f"MODERN_ELF={fake_elf}",
+                f"MODERN_OBJCOPY={fake_objcopy}",
+                f"MODERN_ROM_HEADER_VERIFIER={fake_verifier}",
+                f"MODERN_ROM={rom_path}",
+            )
+            self.assertEqual(result.returncode, 0, result.stdout)
+            argv_text = argv_capture.read_text()
+            self.assertIn("--size 32M", argv_text)
+
+    def test_rom_rule_rejects_16m_output_when_32m_requested(self):
+        """Using the real verifier: an objcopy output that is only 16 MiB
+        while MODERN_ROM_SIZE=32M was requested must be rejected and the
+        stale ROM deleted -- proving the *configured* size is enforced,
+        not a hardcoded 16 MiB constant (the bug this change fixes)."""
+        with tempfile.TemporaryDirectory() as tmp:
+            fake_elf = Path(tmp, "fireemblem8.elf")
+            fake_elf.write_bytes(b"\x00" * 16)
+            sixteen_mib = 16 * 1024 * 1024
+            fake_objcopy = Path(tmp, "fake_objcopy.sh")
+            fake_objcopy.write_text(
+                "#!/bin/sh\n"
+                'for out; do :; done\n'
+                f'head -c {sixteen_mib} /dev/zero > "$out"\n'
+            )
+            fake_objcopy.chmod(0o755)
+            rom_path = Path(tmp, "fireemblem8.gba")
+            result = self.make(
+                "-o", str(fake_elf),
+                str(rom_path),
+                "MODERN_ROM_SIZE=32M",
+                f"MODERN_ELF={fake_elf}",
+                f"MODERN_OBJCOPY={fake_objcopy}",
+                f"MODERN_ROM={rom_path}",
+            )
+            self.assertNotEqual(result.returncode, 0, result.stdout)
+            self.assertIn("does not match expected", result.stdout)
+            self.assertFalse(
+                rom_path.exists(),
+                "ROM padded to the wrong size must be deleted, not left "
+                "behind as a stale invalid image",
+            )
+
+    def test_rom_rule_size_check_passes_for_genuine_32m_padded_output(self):
+        """A real objcopy-style 32 MiB pad must satisfy the real verifier's
+        size check under MODERN_ROM_SIZE=32M (identity/checksum still fail
+        for this synthetic all-zero image, but crucially not on size)."""
+        with tempfile.TemporaryDirectory() as tmp:
+            fake_elf = Path(tmp, "fireemblem8.elf")
+            fake_elf.write_bytes(b"\x00" * 16)
+            thirty_two_mib = 32 * 1024 * 1024
+            fake_objcopy = Path(tmp, "fake_objcopy.sh")
+            fake_objcopy.write_text(
+                "#!/bin/sh\n"
+                'for out; do :; done\n'
+                f'head -c {thirty_two_mib} /dev/zero > "$out"\n'
+            )
+            fake_objcopy.chmod(0o755)
+            rom_path = Path(tmp, "fireemblem8.gba")
+            result = self.make(
+                "-o", str(fake_elf),
+                str(rom_path),
+                "MODERN_ROM_SIZE=32M",
+                f"MODERN_ELF={fake_elf}",
+                f"MODERN_OBJCOPY={fake_objcopy}",
+                f"MODERN_ROM={rom_path}",
+            )
+            self.assertNotEqual(result.returncode, 0, result.stdout)
+            self.assertNotIn(
+                "ROM size", result.stdout,
+                "size check must pass for a genuine 32 MiB image; only "
+                "the header identity/checksum checks should fail here",
+            )
+
+    def test_rom_rule_rejects_unsupported_rom_size(self):
+        """MODERN_ROM_SIZE values other than 16M/32M must fail fast at
+        Makefile-parse time, before any recipe runs."""
+        result = self.make("-n", "expansion-modern-rom", "MODERN_ROM_SIZE=64M")
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertIn("Unsupported MODERN_ROM_SIZE", result.stdout)
+
+    def test_rom_dry_run_echoes_size_flag(self):
+        """make -n must echo the --size flag matching MODERN_ROM_SIZE in the
+        verifier invocation, without actually running anything."""
+        result = self.make("-n", "expansion-modern-rom", "MODERN_ROM_SIZE=32M")
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertIn("--size", result.stdout)
+        self.assertIn("32M", result.stdout)
+
     # -- Boot-check preflight -------------------------------------------------
 
     def test_boot_preflight_fails_on_missing_scenario(self):
