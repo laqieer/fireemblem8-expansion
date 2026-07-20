@@ -1,0 +1,21 @@
+Memory Configuration
+
+Name             Origin             Length             Attributes
+rom              0x08000000         0x02000000
+iwram            0x03000000         0x00008000
+ewram            0x02000000         0x00040000
+*default*        0x00000000         0xffffffff
+
+Linker script and memory map
+
+                0x08000000                        __text_start = ORIGIN (rom)
+                0x02000000                        __ewram_start = ORIGIN (ewram)
+                0x03000000                        __iwram_start = ORIGIN (iwram)
+
+ewram_data      0x02000000     0x3000
+
+IWRAM           0x03000000     0x2000
+
+ROM             0x08000000   0x100000
+ src/crt0.o(.text)
+ .text          0x08000000       0xc0 src/crt0.o
