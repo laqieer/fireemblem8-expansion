@@ -957,4 +957,23 @@ expansion-modern-boot-check: expansion-modern-boot-preflight expansion-modern-ro
 	@printf 'Modern ROM boot-check passed: %s (config=%s abi=%s)\n' \
 		"$(MODERN_ROM)" '$(MODERN_CONFIG)' '$(MODERN_ABI)'
 
+MODERN_BUDGET_REPORT := reports/linker-budget/modern-debug.json
+MODERN_BUDGET_SCRIPT := scripts/linker_report/budget.py
+
+# Linker budget report and drift check (issue #4 verification)
+expansion-modern-budget: expansion-modern-elf
+	"$(PYTHON)" "$(MODERN_BUDGET_SCRIPT)" \
+		--map "$(MODERN_MAP)" \
+		--elf "$(MODERN_ELF)" \
+		--output "$(MODERN_BUDGET_REPORT)"
+
+expansion-modern-budget-check: expansion-modern-elf
+	"$(PYTHON)" "$(MODERN_BUDGET_SCRIPT)" \
+		--map "$(MODERN_MAP)" \
+		--elf "$(MODERN_ELF)" \
+		--output "$(MODERN_BUDGET_REPORT)" \
+		--check
+
+.PHONY: expansion-modern-budget expansion-modern-budget-check
+
 -include $(wildcard $(sort $(MODERN_COHORT_DEPS) $(MODERN_ALL_DEPS) $(MODERN_FE6SIO_OBJ:.o=.d)))
