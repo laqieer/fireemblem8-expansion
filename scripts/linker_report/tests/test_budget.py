@@ -3,12 +3,13 @@
 import json
 import subprocess
 import sys
-import tempfile
 import unittest
 from pathlib import Path
 
 FIXTURES = Path(__file__).parent / "fixtures"
 BUDGET_PY = Path(__file__).parent.parent / "budget.py"
+SCRATCH_DIR = Path(__file__).parent / ".scratch"
+SCRATCH_DIR.mkdir(exist_ok=True)
 
 
 def run_budget(*args: str) -> subprocess.CompletedProcess:
@@ -21,13 +22,18 @@ def run_budget(*args: str) -> subprocess.CompletedProcess:
 class TestMapParsing(unittest.TestCase):
     """Core map-file parsing tests."""
 
+    def make_output_path(self, suffix: str) -> Path:
+        path = SCRATCH_DIR / f"{self._testMethodName}-{suffix}.json"
+        path.unlink(missing_ok=True)
+        self.addCleanup(lambda path=path: path.unlink(missing_ok=True))
+        return path
+
     def test_basic_regions_and_sections(self):
         """Parse a minimal map and check region/section counts."""
-        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
-            out = f.name
-        r = run_budget("--map", str(FIXTURES / "basic.map"), "--output", out)
+        out = self.make_output_path("basic")
+        r = run_budget("--map", str(FIXTURES / "basic.map"), "--output", str(out))
         self.assertEqual(r.returncode, 0, r.stderr)
-        report = json.loads(Path(out).read_text())
+        report = json.loads(out.read_text())
         self.assertEqual(report["schema_version"], 1)
         # 3 non-default regions
         self.assertEqual(len(report["regions"]), 3)
@@ -41,11 +47,10 @@ class TestMapParsing(unittest.TestCase):
 
     def test_overlay_detection(self):
         """Overlays sharing an address are detected with correct peak."""
-        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
-            out = f.name
-        r = run_budget("--map", str(FIXTURES / "overlay.map"), "--output", out)
+        out = self.make_output_path("overlay")
+        r = run_budget("--map", str(FIXTURES / "overlay.map"), "--output", str(out))
         self.assertEqual(r.returncode, 0, r.stderr)
-        report = json.loads(Path(out).read_text())
+        report = json.loads(out.read_text())
         overlays = report["overlays"]
         self.assertEqual(len(overlays), 3)
         # All at same address
@@ -63,11 +68,10 @@ class TestMapParsing(unittest.TestCase):
 
     def test_region_overflow_exits_nonzero(self):
         """EWRAM exceeding capacity triggers exit code 1."""
-        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
-            out = f.name
-        r = run_budget("--map", str(FIXTURES / "overflow.map"), "--output", out)
+        out = self.make_output_path("overflow")
+        r = run_budget("--map", str(FIXTURES / "overflow.map"), "--output", str(out))
         self.assertEqual(r.returncode, 1)
-        report = json.loads(Path(out).read_text())
+        report = json.loads(out.read_text())
         self.assertTrue(report["overflow"])
         ewram = next(reg for reg in report["regions"] if reg["name"] == "ewram")
         self.assertTrue(ewram["overflow"])
@@ -75,50 +79,91 @@ class TestMapParsing(unittest.TestCase):
 
     def test_malformed_map_exits_2(self):
         """A map file with no Memory Configuration returns exit 2."""
-        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
-            out = f.name
-        r = run_budget("--map", str(FIXTURES / "malformed.map"), "--output", out)
+        out = self.make_output_path("malformed")
+        r = run_budget("--map", str(FIXTURES / "malformed.map"), "--output", str(out))
         self.assertEqual(r.returncode, 2)
 
     def test_deterministic_output(self):
         """Two runs on the same input produce byte-identical JSON."""
-        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
-            out1 = f.name
-        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
-            out2 = f.name
-        run_budget("--map", str(FIXTURES / "overlay.map"), "--output", out1)
-        run_budget("--map", str(FIXTURES / "overlay.map"), "--output", out2)
-        self.assertEqual(Path(out1).read_text(), Path(out2).read_text())
+        out1 = self.make_output_path("deterministic-1")
+        out2 = self.make_output_path("deterministic-2")
+        run_budget("--map", str(FIXTURES / "overlay.map"), "--output", str(out1))
+        run_budget("--map", str(FIXTURES / "overlay.map"), "--output", str(out2))
+        self.assertEqual(out1.read_text(), out2.read_text())
 
     def test_check_mode_passes_on_match(self):
         """--check succeeds when report matches."""
-        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
-            out = f.name
-        run_budget("--map", str(FIXTURES / "basic.map"), "--output", out)
-        r = run_budget("--map", str(FIXTURES / "basic.map"), "--output", out, "--check")
+        out = self.make_output_path("check-pass")
+        run_budget("--map", str(FIXTURES / "basic.map"), "--output", str(out))
+        r = run_budget("--map", str(FIXTURES / "basic.map"), "--output", str(out), "--check")
         self.assertEqual(r.returncode, 0)
 
     def test_check_mode_fails_on_drift(self):
         """--check exits 1 when report content differs."""
-        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
-            out = f.name
+        out = self.make_output_path("check-fail")
         # Write with basic, check against overlay (different content)
-        run_budget("--map", str(FIXTURES / "basic.map"), "--output", out)
-        r = run_budget("--map", str(FIXTURES / "overlay.map"), "--output", out, "--check")
+        run_budget("--map", str(FIXTURES / "basic.map"), "--output", str(out))
+        r = run_budget("--map", str(FIXTURES / "overlay.map"), "--output", str(out), "--check")
         self.assertEqual(r.returncode, 1)
 
     def test_pinned_assignments_captured(self):
         """Symbol assignments at GBA addresses are recorded."""
-        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
-            out = f.name
-        r = run_budget("--map", str(FIXTURES / "basic.map"), "--output", out)
+        out = self.make_output_path("pinned")
+        r = run_budget("--map", str(FIXTURES / "basic.map"), "--output", str(out))
         self.assertEqual(r.returncode, 0)
-        report = json.loads(Path(out).read_text())
+        report = json.loads(out.read_text())
         pinned = report["pinned_assignments"]
         names = {p["name"] for p in pinned}
         self.assertIn("__text_start", names)
         self.assertIn("__ewram_start", names)
         self.assertIn("__iwram_start", names)
+        self.assertIn("__sp_irq", names)
+        self.assertIn("__iwram_top", names)
+
+    def test_boundary_pinned_assignments_are_marked(self):
+        """Region-end marker assignments are tagged as boundaries."""
+        out = self.make_output_path("boundary")
+        r = run_budget("--map", str(FIXTURES / "basic.map"), "--output", str(out))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        report = json.loads(out.read_text())
+        by_name = {entry["name"]: entry for entry in report["pinned_assignments"]}
+        self.assertEqual(by_name["__sp_irq"]["region"], "iwram")
+        self.assertNotIn("boundary", by_name["__sp_irq"])
+        self.assertEqual(by_name["__iwram_top"]["region"], "iwram")
+        self.assertTrue(by_name["__iwram_top"]["boundary"])
+
+    def test_overlay_growth_detects_overflow(self):
+        """Overlay peak beyond both coverage and capacity triggers overflow."""
+        out = self.make_output_path("overlay-growth")
+        r = run_budget("--map", str(FIXTURES / "overlay_growth.map"), "--output", str(out))
+        self.assertEqual(r.returncode, 1)
+        report = json.loads(out.read_text())
+        ewram = next(reg for reg in report["regions"] if reg["name"] == "ewram")
+        self.assertTrue(report["overflow"])
+        self.assertTrue(ewram["overflow"])
+        self.assertEqual(ewram["occupied_bytes"], 0x42000)
+
+    def test_overlay_contained_does_not_double_count(self):
+        """Contained overlay peaks do not increase occupied bytes."""
+        out = self.make_output_path("overlay-contained")
+        r = run_budget("--map", str(FIXTURES / "overlay_contained.map"), "--output", str(out))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        report = json.loads(out.read_text())
+        ewram = next(reg for reg in report["regions"] if reg["name"] == "ewram")
+        self.assertFalse(report["overflow"])
+        self.assertFalse(ewram["overflow"])
+        self.assertEqual(ewram["occupied_bytes"], 0x3efb8)
+
+    def test_dotprefixed_output_sections_are_parsed(self):
+        """Dot-prefixed output sections are recognized in both map formats."""
+        out = self.make_output_path("dotprefix")
+        r = run_budget("--map", str(FIXTURES / "dotprefix.map"), "--output", str(out))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        report = json.loads(out.read_text())
+        self.assertEqual(
+            {section["name"] for section in report["sections"]},
+            {".text", ".data", ".bss"},
+        )
 
 
 if __name__ == "__main__":

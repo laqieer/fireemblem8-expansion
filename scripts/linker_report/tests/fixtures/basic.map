@@ -11,6 +11,8 @@ Linker script and memory map
                 0x08000000                        __text_start = ORIGIN (rom)
                 0x02000000                        __ewram_start = ORIGIN (ewram)
                 0x03000000                        __iwram_start = ORIGIN (iwram)
+                0x03007fa0                        __sp_irq = (ORIGIN (iwram) + LENGTH (iwram) - 0x60)
+                0x03008000                        __iwram_top = (ORIGIN (iwram) + LENGTH (iwram))
 
 ewram_data      0x02000000     0x3000
 

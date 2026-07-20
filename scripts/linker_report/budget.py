@@ -78,12 +78,12 @@ _MEMORY_ROW_RE = re.compile(
 
 # Output section on ONE line: "NAME  0xADDR  0xSIZE"
 _SECTION_ONELINE_RE = re.compile(
-    r"^([A-Za-z_][A-Za-z0-9_.]*)\s+(0x[0-9a-fA-F]+)\s+(0x[0-9a-fA-F]+)\s*$"
+    r"^([A-Za-z_.][A-Za-z0-9_.]*)\s+(0x[0-9a-fA-F]+)\s+(0x[0-9a-fA-F]+)\s*$"
 )
 
 # Output section on TWO lines: name alone, then indented "0xADDR  0xSIZE"
 _SECTION_NAME_RE = re.compile(
-    r"^([A-Za-z_][A-Za-z0-9_.]*)\s*$"
+    r"^([A-Za-z_.][A-Za-z0-9_.]*)\s*$"
 )
 _SECTION_ADDR_SIZE_RE = re.compile(
     r"^\s+(0x[0-9a-fA-F]+)\s+(0x[0-9a-fA-F]+)\s*$"
@@ -98,9 +98,19 @@ _ASSIGN_RE = re.compile(
 def _classify_region(address: int) -> str | None:
     """Map an address to its GBA memory region name."""
     for name, (lo, hi) in REGION_RANGES.items():
-        if lo <= address < hi:
+        if lo <= address < hi or address == hi:
             return name
     return None
+
+
+def _classify_region_with_boundary(address: int) -> tuple[str | None, bool]:
+    """Map an address to its GBA memory region name and boundary status."""
+    for name, (lo, hi) in REGION_RANGES.items():
+        if lo <= address < hi:
+            return name, False
+        if address == hi:
+            return name, True
+    return None, False
 
 
 def parse_map(text: str) -> tuple[
@@ -255,6 +265,20 @@ def _region_for_section(section: OutputSection, regions: list[MemoryRegion]) -> 
     return _classify_region(section.address)
 
 
+def _merge_intervals(intervals: list[tuple[int, int]]) -> list[tuple[int, int]]:
+    """Merge half-open intervals."""
+    merged: list[tuple[int, int]] = []
+
+    for start, end in sorted(interval for interval in intervals if interval[1] > interval[0]):
+        if not merged or start > merged[-1][1]:
+            merged.append((start, end))
+            continue
+
+        merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+
+    return merged
+
+
 def generate_report(
     regions: list[MemoryRegion],
     sections: list[OutputSection],
@@ -263,27 +287,43 @@ def generate_report(
 ) -> dict[str, Any]:
     """Build the deterministic JSON-serializable report."""
 
-    # Region usage: sum section sizes per region (non-overlay only)
     overlay_names: set[str] = set()
     for s in sections:
         if "overlay" in s.name:
             overlay_names.add(s.name)
 
-    region_usage: dict[str, int] = {}
+    overlays_by_base: dict[int, list[OutputSection]] = {}
+    for s in sections:
+        if s.name in overlay_names:
+            overlays_by_base.setdefault(s.address, []).append(s)
+
+    region_intervals: dict[str, list[tuple[int, int]]] = {}
     for s in sections:
         if s.name in overlay_names:
             continue
+
         rname = _region_for_section(s, regions)
         if rname:
-            region_usage[rname] = region_usage.get(rname, 0) + s.size
+            region_intervals.setdefault(rname, []).append((s.address, s.address + s.size))
+
+    for base_addr, group in overlays_by_base.items():
+        region_name = _classify_region(base_addr)
+        if region_name is None or not group:
+            continue
+
+        peak = max(section.size for section in group)
+        region_intervals.setdefault(region_name, []).append((base_addr, base_addr + peak))
 
     # Build region report
     region_report = []
     overflow = False
     for r in sorted(regions, key=lambda x: x.origin):
-        occupied = region_usage.get(r.name, 0)
+        merged = _merge_intervals(region_intervals.get(r.name, []))
+        occupied = sum(end - start for start, end in merged)
         util = round(occupied * 100.0 / r.length, 2) if r.length > 0 else 0.0
-        if occupied > r.length:
+        region_limit = r.origin + r.length
+        region_overflow = any(start < r.origin or end > region_limit for start, end in merged)
+        if region_overflow:
             overflow = True
         region_report.append({
             "name": r.name,
@@ -292,15 +332,10 @@ def generate_report(
             "occupied_bytes": occupied,
             "free_bytes": max(0, r.length - occupied),
             "utilization_percent": util,
-            "overflow": occupied > r.length,
+            "overflow": region_overflow,
         })
 
     # Overlays: group by base address
-    overlays_by_base: dict[int, list[OutputSection]] = {}
-    for s in sections:
-        if s.name in overlay_names:
-            overlays_by_base.setdefault(s.address, []).append(s)
-
     overlay_report = []
     for base_addr in sorted(overlays_by_base.keys()):
         group = sorted(overlays_by_base[base_addr], key=lambda x: x.name)
@@ -329,12 +364,16 @@ def generate_report(
     # Pinned assignments (sorted by address, then name)
     pinned_report = []
     for a in sorted(assignments, key=lambda x: (x.address, x.name)):
-        pinned_report.append({
+        region_name, is_boundary = _classify_region_with_boundary(a.address)
+        entry = {
             "name": a.name,
             "address": a.address,
             "expression": a.expression,
-            "region": _classify_region(a.address),
-        })
+            "region": region_name,
+        }
+        if is_boundary:
+            entry["boundary"] = True
+        pinned_report.append(entry)
 
     # ELF cross-validation
     elf_report: dict[str, Any]
