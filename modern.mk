@@ -1,4 +1,4 @@
-# Opt-in modern GCC object cohort and transitional modern ELF target.
+# Opt-in modern GCC object cohort and clean expansion ELF target.
 
 MODERN_GOALS := expansion-modern-toolchain-check expansion-modern-cohort expansion-modern-all expansion-modern-elf expansion-modern-rom expansion-modern-boot-check expansion-modern-clean
 ifneq (,$(filter $(MODERN_GOALS),$(MAKECMDGOALS)))
@@ -678,12 +678,26 @@ MODERN_ELF_LEGACY_MIDI := $(MID_OBJECTS)
 MODERN_ELF_LINK_DIR := $(MODERN_OUTPUT_DIR)/link
 MODERN_ELF_MANIFEST := $(MODERN_ELF_LINK_DIR)/manifest.txt
 MODERN_ELF_OBJECTS_LST := $(MODERN_ELF_LINK_DIR)/objects.lst
-MODERN_ELF_LDSCRIPT := $(MODERN_ELF_LINK_DIR)/ldscript.ld
 MODERN_ELF := $(MODERN_OUTPUT_DIR)/fireemblem8.elf
 MODERN_MAP := $(MODERN_OUTPUT_DIR)/fireemblem8.map
 MODERN_ELF_BANIM_SYM := $(BANIM_OBJECT).sym.o
 
-MODERN_LINK_GENERATOR := $(PYTHON) scripts/modernize/prepare_modern_link.py
+# Clean linker script (issue #4/#16) — replaces the transitional generator.
+MODERN_CLEAN_LDSCRIPT := linker/expansion.ld
+MODERN_CLEAN_IWRAM := linker/iwram.ld
+$(MODERN_CLEAN_LDSCRIPT) $(MODERN_CLEAN_IWRAM): ;
+
+# ROM size configuration: 16M (default) or 32M.
+MODERN_ROM_SIZE ?= 16M
+ifeq ($(MODERN_ROM_SIZE),16M)
+  MODERN_ROM_SIZE_BYTES := 0x01000000
+  MODERN_PAD_TO := 0x09000000
+else ifeq ($(MODERN_ROM_SIZE),32M)
+  MODERN_ROM_SIZE_BYTES := 0x02000000
+  MODERN_PAD_TO := 0x0A000000
+else
+  $(error Unsupported MODERN_ROM_SIZE '$(MODERN_ROM_SIZE)'; expected 16M or 32M)
+endif
 
 # Resolve modern LD consistently with the toolchain root.
 ifeq ($(MODERN_TOOLCHAIN_ROOT),)
@@ -776,6 +790,17 @@ $(MODERN_ELF_MANIFEST): $(MODERN_ALL_OBJECTS) $(MODERN_ELF_EXTRA_ASM_OBJECTS) $(
 			$(MODERN_ELF_EXTRA_ASM_OBJECTS) \
 			$(MODERN_ELF_FE6SIO))) > "$@"
 
+# Link response file for the clean, section-oriented linker path.
+$(MODERN_ELF_OBJECTS_LST): $(MODERN_ALL_OBJECTS) $(MODERN_ELF_EXTRA_ASM_OBJECTS) $(MODERN_ELF_FE6SIO)
+	@mkdir -p "$(@D)"
+	@printf '%s\n' $(sort \
+		$(MODERN_ALL_OBJECTS) \
+		$(MODERN_ELF_EXTRA_ASM_OBJECTS) \
+		$(MODERN_ELF_FE6SIO) \
+		$(MODERN_ELF_LEGACY_ASM) \
+		$(MODERN_ELF_LEGACY_MIDI) \
+		$(BANIM_OBJECT)) > "$@"
+
 # Ensure legacy non-C objects are fresh with full scaninc tracking.
 # The outer expansion-modern-elf runs under NODEP=1 which disables
 # scaninc for legacy rules.  This phony step invokes a single recursive
@@ -787,14 +812,14 @@ expansion-modern-legacy-ready:
 	+$(MAKE) NODEP=0 $(MODERN_ELF_LEGACY_ASM) $(MODERN_ELF_LEGACY_MIDI)
 
 # Link preparation: FE6 SIO build output, banim via scheduler, legacy
-# freshness, sidecar recovery, then generator.  $(BANIM_OBJECT) is a
-# normal prerequisite so the main scheduler builds it once with no
-# recursive-make race.
+# freshness, sidecar recovery, then the clean static linker inputs.
+# $(BANIM_OBJECT) is a normal prerequisite so the main scheduler builds it
+# once with no recursive-make race.
 .PHONY: expansion-modern-link-prepare
 expansion-modern-link-prepare: $(MODERN_ELF_FE6SIO) \
 		expansion-modern-legacy-ready \
-		$(MODERN_ELF_MANIFEST) $(BANIM_OBJECT) \
-		$(LDSCRIPT) $(SYM_FILES) linker_script_sound.txt
+		$(MODERN_ELF_OBJECTS_LST) $(BANIM_OBJECT) \
+		$(MODERN_CLEAN_LDSCRIPT) $(MODERN_CLEAN_IWRAM)
 	@if [ ! -f "$(MODERN_ELF_BANIM_SYM)" ]; then \
 		printf '%s\n' \
 			"Sidecar missing; forcing banim rebuild..." >&2; \
@@ -808,17 +833,8 @@ expansion-modern-link-prepare: $(MODERN_ELF_FE6SIO) \
 			"error: $(MODERN_ELF_BANIM_SYM) not produced" >&2; \
 		exit 1; \
 	fi
-	$(MODERN_LINK_GENERATOR) \
-		--root . \
-		--modern-root "$(MODERN_OUTPUT_DIR)" \
-		--manifest "$(MODERN_ELF_MANIFEST)" \
-		--output-dir "$(MODERN_ELF_LINK_DIR)" \
-		--legacy-objects \
-			$(MODERN_ELF_FE6SIO) $(BANIM_OBJECT) \
-			$(MODERN_ELF_LEGACY_ASM) \
-			$(MODERN_ELF_LEGACY_MIDI)
 
-# Link the transitional modern ELF.
+# Link the modern ELF with the clean, section-oriented expansion linker.
 # Legacy objects and banim are owned by expansion-modern-link-prepare.
 $(MODERN_ELF): expansion-modern-link-prepare
 	@set -eu; \
@@ -840,7 +856,8 @@ $(MODERN_ELF): expansion-modern-link-prepare
 		exit 1; \
 	fi; \
 	"$(MODERN_LD)" \
-		-T "$(MODERN_ELF_LDSCRIPT)" \
+		--defsym=__rom_size=$(MODERN_ROM_SIZE_BYTES) \
+		-T "$(MODERN_CLEAN_LDSCRIPT)" \
 		-Map "$(MODERN_MAP)" \
 		@"$(MODERN_ELF_OBJECTS_LST)" \
 		-R "$(MODERN_ELF_BANIM_SYM)" \
@@ -857,14 +874,13 @@ expansion-modern-elf: expansion-modern-mgfembp expansion-modern-all \
 # ---------------------------------------------------------------------------
 # Modern ROM and deterministic boot-check targets (issue #3)
 #
-# expansion-modern-rom converts the transitional modern ELF to an isolated,
-# header-verified 16 MiB GBA ROM using the same objcopy flags as the legacy
+# expansion-modern-rom converts the modern ELF to an isolated,
+# header-verified GBA ROM using the same objcopy flags as the legacy
 # %.gba rule (see Makefile). expansion-modern-boot-check runs the existing
 # gba-playtest behavior-policy verifier against that ROM and the repository's
 # boot scenario/fingerprint, proving deterministic runtime progress (not just
 # a successful link) at frames 0/60/120. Neither target claims ROM byte
-# identity with the legacy build; both remain part of issue-#3 transitional
-# infrastructure alongside expansion-modern-elf's linker debt.
+# identity with the legacy build.
 # ---------------------------------------------------------------------------
 
 MODERN_ROM := $(MODERN_OUTPUT_DIR)/fireemblem8.gba
@@ -874,13 +890,13 @@ MODERN_BOOT_FINGERPRINT := tools/gba-playtest/fingerprints/boot.json
 MODERN_PLAYTEST := tools/gba-playtest/gba_playtest.py
 
 # Convert the linked ELF to a flat, padded ROM image, then verify the GBA
-# header in-place: exact 16 MiB size, title/game code/maker code/fixed byte,
+# header in-place: configured ROM size, title/game code/maker code/fixed byte,
 # and the checksum byte at offset 0xBD recomputed over 0xA0..0xBC. A failed
 # verification deletes the ROM so a stale, invalid image is never left behind
 # for expansion-modern-boot-check (or a caller) to pick up silently.
 $(MODERN_ROM): $(MODERN_ELF)
 	@mkdir -p "$(@D)"
-	"$(MODERN_OBJCOPY)" --strip-debug -O binary --pad-to 0x9000000 --gap-fill=0xff "$<" "$@"
+	"$(MODERN_OBJCOPY)" --strip-debug -O binary --pad-to $(MODERN_PAD_TO) --gap-fill=0xff "$<" "$@"
 	@if ! "$(PYTHON)" "$(MODERN_ROM_HEADER_VERIFIER)" "$@"; then \
 		rm -f "$@"; \
 		exit 1; \

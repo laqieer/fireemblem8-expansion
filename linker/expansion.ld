@@ -1,0 +1,284 @@
+OUTPUT_ARCH(arm)
+
+MEMORY
+{
+    rom   : ORIGIN = 0x08000000, LENGTH = __rom_size
+    iwram : ORIGIN = 0x03000000, LENGTH = 32K
+    ewram : ORIGIN = 0x02000000, LENGTH = 256K
+}
+
+__text_start  = ORIGIN(rom);
+__ewram_start = ORIGIN(ewram);
+__iwram_start = ORIGIN(iwram);
+__iwram_top   = ORIGIN(iwram) + LENGTH(iwram);
+__sp_irq      = __iwram_top - 0x060;
+__sp_usr      = __sp_irq - 0x1A0;
+__irq_flags   = 0x03007ff8;
+
+ENTRY(Init)
+
+gNumMusicPlayers = 9;
+gMaxLines = 0;
+
+/* Sound room overlay symbols. */
+PROVIDE(gUnk_SoundRoom_0 = __ewram_start + 0x01F148);
+PROVIDE(gSoundRoomVolumeGraphBuffer = __ewram_start + 0x01F19C);
+
+/* Game start overlay symbols. */
+PROVIDE(gUnk_0 = __ewram_start + 0x002038);
+PROVIDE(gUnk_1 = __ewram_start + 0x007838);
+PROVIDE(gUnk_2 = __ewram_start + 0x0078D8);
+PROVIDE(gUnk_4 = __ewram_start + 0x00A2D8);
+PROVIDE(gUnk_5 = __ewram_start + 0x00A300);
+PROVIDE(gUnk_7 = __ewram_start + 0x00C300);
+PROVIDE(gUnk_8 = __ewram_start + 0x00CB00);
+PROVIDE(gUnk_OpSubtitle_0 = __ewram_start + 0x01CDD4);
+PROVIDE(gUnk_Opinfo_0 = __ewram_start + 0x01DB00);
+PROVIDE(gUnk_OpInfo_0 = __ewram_start + 0x01DB28);
+PROVIDE(gUnk_OpInfo_1 = __ewram_start + 0x01FB28);
+
+/* SIO overlay symbols. */
+PROVIDE(gUnk_Sio_0 = __ewram_start + 0x000000);
+PROVIDE(Font_Sio_0 = __ewram_start + 0x000C60);
+PROVIDE(gUnk_Sio_1 = __ewram_start + 0x000C78);
+PROVIDE(gUnk_Sio_2 = __ewram_start + 0x000F00);
+PROVIDE(gUnk_Sio_3 = __ewram_start + 0x001180);
+PROVIDE(gUnk_Sio_4 = __ewram_start + 0x001184);
+PROVIDE(gUnk_Sio_5 = __ewram_start + 0x001188);
+
+/* World map overlay symbols. */
+PROVIDE(gUnk_3 = __ewram_start + 0x0087A0);
+PROVIDE(gUnk_6 = __ewram_start + 0x00AF00);
+PROVIDE(gUnk_9 = __ewram_start + 0x019D00);
+PROVIDE(gFont_0 = __ewram_start + 0x01AFC0);
+PROVIDE(gUnk_10 = __ewram_start + 0x01AFF0);
+PROVIDE(gUnk_11 = __ewram_start + 0x01B0D8);
+PROVIDE(gUnk_12 = __ewram_start + 0x01B100);
+PROVIDE(gUnk_13 = __ewram_start + 0x01B104);
+PROVIDE(gUnk_14 = __ewram_start + 0x01B1E4);
+PROVIDE(gUnk_15 = __ewram_start + 0x01B3A4);
+PROVIDE(gUnk_16 = __ewram_start + 0x01B430);
+PROVIDE(gUnk_17 = __ewram_start + 0x01B458);
+PROVIDE(gUnk_18 = __ewram_start + 0x01B718);
+PROVIDE(gUnk_19 = __ewram_start + 0x01B71C);
+PROVIDE(gUnk_20 = __ewram_start + 0x01B758);
+PROVIDE(gUnk_21 = __ewram_start + 0x01B7DA);
+PROVIDE(gUnk_22 = __ewram_start + 0x01B864);
+PROVIDE(gUnk_23 = __ewram_start + 0x01B930);
+PROVIDE(gUnk_24 = __ewram_start + 0x01B958);
+PROVIDE(gUnk_25 = __ewram_start + 0x01BBD8);
+PROVIDE(gWmHblankStatus = __ewram_start + 0x01BE30);
+PROVIDE(gUnk_26 = __ewram_start + 0x01BE32);
+PROVIDE(gUnk_27 = __ewram_start + 0x01C5B4);
+PROVIDE(gUnk_28 = __ewram_start + 0x01C5C0);
+PROVIDE(gUnk_29 = __ewram_start + 0x01C5CC);
+PROVIDE(gUnk_30 = __ewram_start + 0x01C5CF);
+PROVIDE(gUnk_31 = __ewram_start + 0x01C5D0);
+PROVIDE(gUnk_32 = __ewram_start + 0x01C5D1);
+PROVIDE(gUnk_33 = __ewram_start + 0x01C5D4);
+
+SECTIONS
+{
+    ewram_overlay_0 __ewram_start (NOLOAD) : ALIGN(4)
+    {
+        *(ewram_overlay_0)
+    } > ewram AT> ewram
+
+    ewram_overlay_gameending __ewram_start (NOLOAD) : ALIGN(4)
+    {
+        *(ewram_overlay_gameending)
+    } > ewram AT> ewram
+
+    ewram_overlay_bmstart __ewram_start (NOLOAD) : ALIGN(4)
+    {
+        *(ewram_overlay_bmstart)
+    } > ewram AT> ewram
+
+    ewram_overlay_gamestartsave __ewram_start (NOLOAD) : ALIGN(4)
+    {
+        *(ewram_overlay_gamestartsave)
+    } > ewram AT> ewram
+
+    ewram_overlay_gamestart __ewram_start (NOLOAD) : ALIGN(4)
+    {
+        *(ewram_overlay_gamestart)
+    } > ewram AT> ewram
+
+    ewram_overlay_banim __ewram_start (NOLOAD) : ALIGN(4)
+    {
+        *(ewram_overlay_banim)
+    } > ewram AT> ewram
+
+    ewram_overlay_sio __ewram_start (NOLOAD) : ALIGN(4)
+    {
+        *(ewram_overlay_sio)
+    } > ewram AT> ewram
+
+    ewram_overlay_worldmap __ewram_start (NOLOAD) : ALIGN(4)
+    {
+        *(ewram_overlay_worldmap)
+    } > ewram AT> ewram
+
+    ewram_data __ewram_start (NOLOAD) : ALIGN(4)
+    {
+        *(ewram_data)
+
+        /* Linker-defined EWRAM scratch symbols with no owning object. */
+        . = ALIGN(4);
+        PROVIDE(gGenericBuffer = .); . += 0x2000;
+        PROVIDE(gOpAnimSt = .); . += 0x100;
+
+        . = ALIGN(4);
+        PROVIDE(gLinkArenaSt = .); . += 0x54;
+        PROVIDE(gUnk_Sio_6 = .); . += 0x10;
+        PROVIDE(gUnk_Sio_7 = .); . += 0x28;
+        PROVIDE(Texts_0 = .); . += 0x10;
+        PROVIDE(gUnk_Sio_8 = .); . += 0x5;
+        PROVIDE(gUnk_Sio_9 = .); . += 0x4B;
+        PROVIDE(gSioSaveConfig = .); . += 0x4;
+        PROVIDE(Texts_1 = .); . += 0x8;
+        PROVIDE(gUnk_Sio_10 = .); . += 0x48;
+        PROVIDE(Font_0 = .); . += 0x18;
+        PROVIDE(gLinkArenaTeamList = .); . += 0xC8;
+        PROVIDE(gSioResultRankings = .); . += 0x4;
+        PROVIDE(gUnk_Sio_11 = .); . += 0xC4;
+        PROVIDE(gSioTexts = .); . += 0x10;
+        PROVIDE(Text_0 = .); . += 0x8;
+        PROVIDE(gUnk_Sio_12 = .); . += 0x4;
+        PROVIDE(gUnk_Sio_13 = .); . += 0x4;
+        PROVIDE(gKeyInputSequenceBuffer = .); . += 0x20;
+        PROVIDE(gKeyInputSequenceTimer = .); . += 0x4;
+        PROVIDE(gUnk_Sio_14 = .); . += 0x3C;
+        PROVIDE(gUnk_Sio_15 = .); . += 0x4;
+        PROVIDE(gUnk_Sio_16 = .); . += 0x4;
+        PROVIDE(gUnk_Sio_17 = .); . += 0x1;
+        PROVIDE(gUnk_Sio_18 = .); . += 0x5;
+        PROVIDE(gUnk_Sio_19 = .); . += 0x5;
+        PROVIDE(gUnk_Sio_20 = .); . += 0x15;
+        PROVIDE(gUnk_Sio_21 = .); . += 0x28;
+        PROVIDE(gUnk_Sio_22 = .); . += 0x4;
+
+        . = ALIGN(4);
+        PROVIDE(gLoadUnitBuffer = .);
+        PROVIDE(end = .);
+    } > ewram AT> ewram
+
+    IWRAM __iwram_start (NOLOAD) : ALIGN(4)
+    {
+        INCLUDE "linker/iwram.ld"
+    } > iwram
+
+    .bss (NOLOAD) : ALIGN(4)
+    {
+        *(.bss .bss.* COMMON)
+    } > ewram
+
+    ROM __text_start : ALIGN(4)
+    {
+        KEEP(*src/rom_header.o(.text))
+        KEEP(*src/crt0.o(.text))
+        *asm/arm.o(.text)
+        *(EXCLUDE_FILE (*src/rom_header.o *src/crt0.o *asm/arm.o *asm/arm_call.o) .text .text.* .glue_7 .glue_7t)
+        *asm/arm_call.o(.text)
+
+        . = ALIGN(4);
+        *(.rodata .rodata.* .rodata.str1.* .rodata.cst*)
+
+        . = ALIGN(4);
+        *(EXCLUDE_FILE (
+            *src/banim_data.o
+            banim/data_banim.o
+            *src/banim_terrain_data.o
+            *src/data/data_banim_terrain.o
+            *src/banim_pal_chara.o
+            *src/data/data_banim_pal.o
+            *src/data/data_FE0000.o
+            *src/data/data_FFF000.o
+        ) .data .data.*)
+
+        FILL(0xFF);
+        . = 0xC00000;
+        *src/banim_data.o(.data.banim_array_len)
+        *src/banim_data.o(.data.banim_array)
+
+        FILL(0x00);
+        . = 0xC02000;
+        banim/data_banim.o(.data)
+
+        FILL(0xFF);
+        . = 0xEE0000;
+        *src/banim_terrain_data.o(.data.banim_terrain_head)
+        *src/banim_terrain_data.o(.data.banim_terrain_ptr_table)
+
+        FILL(0x00);
+        . = 0xEE0C00;
+        *src/data/data_banim_terrain.o(.data)
+
+        FILL(0xFF);
+        _banim_pal_start = 0xEF8000;
+        . = _banim_pal_start;
+        *src/banim_pal_chara.o(.data.banim_pal_head)
+        *src/banim_pal_chara.o(.data.banim_pal_ptr_table)
+
+        FILL(0x00);
+        . = _banim_pal_start + 0x1000;
+        *src/data/data_banim_pal.o(.data)
+        _banim_pal_end = .;
+        _banim_pal_size = . - _banim_pal_start;
+
+        FILL(0xFF);
+        . = 0xFE0000;
+        *src/data/data_FE0000.o(.data)
+        . = 0xFFF000;
+        *src/data/data_FFF000.o(.data)
+    } > rom = 0xFF
+
+    ASSERT(SIZEOF(ROM) <= __rom_size, "ROM content exceeds configured ROM size")
+    ASSERT(SIZEOF(IWRAM) <= 32K, "IWRAM overflow")
+    ASSERT(SIZEOF(ewram_data) + SIZEOF(.bss) <= 256K, "EWRAM overflow")
+
+    .stab             0 : { *(.stab) }
+    .stabstr          0 : { *(.stabstr) }
+    .stab.excl        0 : { *(.stab.excl) }
+    .stab.exclstr     0 : { *(.stab.exclstr) }
+    .stab.index       0 : { *(.stab.index) }
+    .stab.indexstr    0 : { *(.stab.indexstr) }
+    .comment          0 : { *(.comment) }
+    .gnu.build.attributes 0 : { *(.gnu.build.attributes .gnu.build.attributes.*) }
+
+    .debug            0 : { *(.debug) }
+    .line             0 : { *(.line) }
+    .debug_srcinfo    0 : { *(.debug_srcinfo) }
+    .debug_sfnames    0 : { *(.debug_sfnames) }
+    .debug_aranges    0 : { *(.debug_aranges) }
+    .debug_pubnames   0 : { *(.debug_pubnames) }
+    .debug_info       0 : { *(.debug_info .gnu.linkonce.wi.*) }
+    .debug_abbrev     0 : { *(.debug_abbrev) }
+    .debug_line       0 : { *(.debug_line .debug_line.* .debug_line_end) }
+    .debug_frame      0 : { *(.debug_frame) }
+    .debug_str        0 : { *(.debug_str) }
+    .debug_str_offsets 0 : { *(.debug_str_offsets) }
+    .debug_line_str   0 : { *(.debug_line_str) }
+    .debug_addr       0 : { *(.debug_addr) }
+    .debug_loc        0 : { *(.debug_loc) }
+    .debug_loclists   0 : { *(.debug_loclists) }
+    .debug_macinfo    0 : { *(.debug_macinfo) }
+    .debug_macro      0 : { *(.debug_macro) }
+    .debug_names      0 : { *(.debug_names) }
+    .debug_pubtypes   0 : { *(.debug_pubtypes) }
+    .debug_ranges     0 : { *(.debug_ranges) }
+    .debug_rnglists   0 : { *(.debug_rnglists) }
+    .debug_sup        0 : { *(.debug_sup) }
+    .debug_weaknames  0 : { *(.debug_weaknames) }
+    .debug_funcnames  0 : { *(.debug_funcnames) }
+    .debug_typenames  0 : { *(.debug_typenames) }
+    .debug_varnames   0 : { *(.debug_varnames) }
+
+    .ARM.attributes     0 : { KEEP(*(.ARM.attributes)) KEEP(*(.gnu.attributes)) }
+    .note.gnu.arm.ident 0 : { KEEP(*(.note.gnu.arm.ident)) }
+
+    /DISCARD/ :
+    {
+        *(*)
+    }
+}
