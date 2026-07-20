@@ -1,0 +1,17 @@
+Memory Configuration
+
+Name             Origin             Length             Attributes
+rom              0x08000000         0x02000000
+iwram            0x03000000         0x00008000
+ewram            0x02000000         0x00040000
+*default*        0x00000000         0xffffffff
+
+Linker script and memory map
+
+.text           0x08000000      0x100
+
+.data
+                0x02000000       0x40
+
+.bss
+                0x03000000       0x20

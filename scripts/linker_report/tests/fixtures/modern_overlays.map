@@ -1,0 +1,60 @@
+Memory Configuration
+
+Name             Origin             Length             Attributes
+rom              0x08000000         0x02000000
+iwram            0x03000000         0x00008000
+ewram            0x02000000         0x00040000
+*default*        0x00000000         0xffffffff
+
+Linker script and memory map
+
+                0x08000000                        __text_start = ORIGIN (rom)
+                0x02000000                        __ewram_start = ORIGIN (ewram)
+                0x03000000                        __iwram_start = ORIGIN (iwram)
+                0x03008000                        __iwram_top = (ORIGIN (iwram) + LENGTH (iwram))
+
+ewram_overlay_0
+                0x02000000    0x18dac
+ *(ewram_overlay_0)
+ ewram_overlay_0
+                0x02000000      0x130 build/expansion-modern/debug/aapcs/src/bksel.o
+
+ewram_overlay_gameending
+                0x02000000     0x2838 load address 0x02018dac
+ *(ewram_overlay_gameending)
+ ewram_overlay_gameending
+                0x02000000     0x2838 build/expansion-modern/debug/aapcs/src/ending_details.o
+
+ewram_overlay_bmstart
+                0x02000000      0x800 load address 0x02002838
+ *(ewram_overlay_bmstart)
+
+ewram_overlay_gamestartsave
+                0x02000000     0x8000 load address 0x02000800
+ *(ewram_overlay_gamestartsave)
+
+ewram_overlay_gamestart
+                0x02000000       0x38 load address 0x02008000
+ *(ewram_overlay_gamestart)
+
+ewram_overlay_banim
+                0x02000000    0x2018c load address 0x02000038
+ *(ewram_overlay_banim)
+ ewram_overlay_banim
+                0x02000000     0x8020 build/expansion-modern/debug/aapcs/src/ekrbattle.o
+
+ewram_overlay_sio
+ *(ewram_overlay_sio)
+
+ewram_overlay_worldmap
+ *(ewram_overlay_worldmap)
+
+ewram_data      0x02000000    0x1ec70 load address 0x0202018c
+ *(ewram_data)
+ ewram_data     0x02000000      0xe14 build/expansion-modern/debug/aapcs/src/animedrv.o
+
+IWRAM           0x03000000     0x67a8
+
+ROM             0x08000000   0xffff00
+ src/crt0.o(.text)
+ .text          0x08000000       0xc0 src/crt0.o
