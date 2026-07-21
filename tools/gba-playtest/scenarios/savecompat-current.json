@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "name": "savecompat-current",
-  "description": "Deterministic A/START title/intro taps (shared with title-progression) reaching the save-menu entry point with no further input. For a CURRENT SRAM image the compat gate must never activate, so the normal save menu is reached directly -- checkpointed here purely via framebuffer/sram_hash (no raw EWRAM probes, since diagnostic-global addresses are not stable across build configs/ABIs).",
+  "description": "Deterministic A/START title/intro taps (shared with title-progression) reaching the save-menu entry point with no further input. For a CURRENT SRAM image the compat gate must never activate, so the normal save menu is reached directly -- checkpointed here purely via framebuffer/sram_hash (no raw EWRAM probes, since diagnostic-global addresses are not stable across build configs/ABIs). Both fresh-erase and host-migrated CURRENT images embed this build's live FE8_EXPANSION_BUILD_COMMIT into ExpansionSaveMeta.buildCommitShort (include/save_format.h offset 0x24, 9 bytes) and its dependent checksum (offset 0x2E, 2 bytes) -- intentionally variable across every commit -- so sram_hash_exclude_ranges excludes exactly those two byte ranges (absolute SRAM offsets 29640..29648 and 29650..29651) from this checkpoint's sram_hash, matching docs/save_format.md's normalized-hash policy.",
   "frames": [
     {
       "start": 90,
@@ -66,6 +66,10 @@
       "name": "no-dialog-normal-savemenu",
       "framebuffer": true,
       "sram_hash": true,
+      "sram_hash_exclude_ranges": [
+        {"offset": 29640, "length": 9},
+        {"offset": 29650, "length": 2}
+      ],
       "probes": []
     }
   ]

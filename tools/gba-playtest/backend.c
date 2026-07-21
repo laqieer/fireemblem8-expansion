@@ -34,11 +34,20 @@ struct Probe {
 	unsigned size;
 };
 
+/* A [offset, offset+length) byte range within the 0x8000-byte SRAM image
+ * excluded from a checkpoint's SRAM hash (see hash_sram()). */
+struct ByteRange {
+	uint32_t offset;
+	uint32_t length;
+};
+
 struct Checkpoint {
 	uint32_t frame;
 	size_t probe_count;
 	struct Probe* probes;
 	bool sram_hash;
+	size_t exclude_range_count;
+	struct ByteRange* exclude_ranges;
 };
 
 struct Plan {
@@ -61,8 +70,10 @@ static void silent_log(struct mLogger* logger, int category,
 static void free_plan(struct Plan* plan)
 {
 	if (plan->checkpoints) {
-		for (size_t i = 0; i < plan->checkpoint_count; ++i)
+		for (size_t i = 0; i < plan->checkpoint_count; ++i) {
 			free(plan->checkpoints[i].probes);
+			free(plan->checkpoints[i].exclude_ranges);
+		}
 	}
 	free(plan->checkpoints);
 	free(plan->ranges);
@@ -79,7 +90,7 @@ static bool read_plan(const char* path, struct Plan* plan)
 	char word[32];
 	unsigned version;
 	if (fscanf(file, "%31s %u", word, &version) != 2 ||
-	    strcmp(word, "GBA_PLAYTEST_PLAN") != 0 || version != 1) {
+	    strcmp(word, "GBA_PLAYTEST_PLAN") != 0 || version != 2) {
 		fprintf(stderr, "malformed plan header\n");
 		goto fail;
 	}
@@ -115,14 +126,33 @@ static bool read_plan(const char* path, struct Plan* plan)
 	for (size_t i = 0; i < plan->checkpoint_count; ++i) {
 		struct Checkpoint* checkpoint = &plan->checkpoints[i];
 		unsigned sram_hash_flag;
-		if (fscanf(file, "%" SCNu32 " %zu %u", &checkpoint->frame,
-		           &checkpoint->probe_count, &sram_hash_flag) != 3 ||
+		if (fscanf(file, "%" SCNu32 " %zu %u %zu", &checkpoint->frame,
+		           &checkpoint->probe_count, &sram_hash_flag,
+		           &checkpoint->exclude_range_count) != 4 ||
 		    checkpoint->probe_count > 1024 ||
+		    checkpoint->exclude_range_count > 64 ||
 		    (sram_hash_flag != 0 && sram_hash_flag != 1)) {
 			fprintf(stderr, "malformed checkpoint %zu\n", i);
 			goto fail;
 		}
 		checkpoint->sram_hash = sram_hash_flag != 0;
+		checkpoint->exclude_ranges = calloc(checkpoint->exclude_range_count,
+		                                     sizeof(*checkpoint->exclude_ranges));
+		if (checkpoint->exclude_range_count && !checkpoint->exclude_ranges) {
+			fprintf(stderr, "out of memory reading exclude ranges\n");
+			goto fail;
+		}
+		for (size_t j = 0; j < checkpoint->exclude_range_count; ++j) {
+			struct ByteRange* range = &checkpoint->exclude_ranges[j];
+			if (fscanf(file, "%" SCNu32 " %" SCNu32, &range->offset,
+			           &range->length) != 2 ||
+			    range->length == 0 ||
+			    range->offset >= GBA_SRAM_SIZE ||
+			    range->length > GBA_SRAM_SIZE - range->offset) {
+				fprintf(stderr, "malformed exclude range %zu at checkpoint %zu\n", j, i);
+				goto fail;
+			}
+		}
 		checkpoint->probes = calloc(checkpoint->probe_count,
 		                            sizeof(*checkpoint->probes));
 		if (checkpoint->probe_count && !checkpoint->probes) {
@@ -178,15 +208,36 @@ static uint32_t read_probe(struct mCore* core, const struct Probe* probe)
 	}
 }
 
-static uint64_t hash_sram(struct mCore* core)
+static bool offset_excluded(const struct ByteRange* ranges, size_t range_count,
+                            uint32_t offset)
+{
+	for (size_t i = 0; i < range_count; ++i) {
+		if (offset >= ranges[i].offset && offset < ranges[i].offset + ranges[i].length)
+			return true;
+	}
+	return false;
+}
+
+static uint64_t hash_sram(struct mCore* core, const struct ByteRange* exclude_ranges,
+                           size_t exclude_range_count)
 {
 	/* Same FNV-1a construction as hash_framebuffer(), applied to the raw
-	 * cart SRAM bus range (0x0E000000..0x0E007FFF): proves the *entire*
-	 * 0x8000-byte image is byte-for-byte unchanged across a checkpoint
-	 * without needing one probe per byte (the plan format caps probes
-	 * per checkpoint at 1024). */
+	 * cart SRAM bus range (0x0E000000..0x0E007FFF): proves the entire
+	 * 0x8000-byte image -- minus any `exclude_ranges` bytes -- is
+	 * byte-for-byte unchanged across a checkpoint without needing one
+	 * probe per byte (the plan format caps probes per checkpoint at
+	 * 1024). With no exclude ranges (the common case) this proves the
+	 * *entire* image unchanged, exactly as before. `exclude_ranges` exists
+	 * only for checkpoints whose SRAM legitimately contains intentionally
+	 * build-variable diagnostic bytes (ExpansionSaveMeta's buildCommitShort
+	 * and its dependent checksum -- see docs/save_format.md's "SRAM hash
+	 * policy: exact vs. normalized"); excluded bytes are skipped entirely
+	 * (never substituted/zeroed), so the hash is still sensitive to every
+	 * other byte in the image. */
 	uint64_t hash = UINT64_C(14695981039346656037);
 	for (uint32_t offset = 0; offset < GBA_SRAM_SIZE; ++offset) {
+		if (offset_excluded(exclude_ranges, exclude_range_count, offset))
+			continue;
 		uint8_t byte = core->busRead8(core, GBA_SRAM_BASE + offset);
 		hash ^= byte;
 		hash *= UINT64_C(1099511628211);
@@ -285,7 +336,8 @@ static int run(const char* rom_path, const struct Plan* plan, const char* sram_p
 				       read_probe(core, &checkpoint->probes[probe_index]));
 			}
 			if (checkpoint->sram_hash) {
-				uint64_t sram = hash_sram(core);
+				uint64_t sram = hash_sram(core, checkpoint->exclude_ranges,
+				                           checkpoint->exclude_range_count);
 				printf("SRAMHASH\t%zu\t%016" PRIx64 "\n",
 				       checkpoint_index, sram);
 			}

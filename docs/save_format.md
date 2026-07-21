@@ -457,6 +457,99 @@ copyrighted payload is ever committed. Instead:
   pass) if that particular ROM has not been built, or if libmGBA is
   unavailable.
 
+### SRAM hash policy: exact vs. normalized
+
+`tools/gba-playtest/gba_playtest.py`/`backend.c` support two SRAM-hash
+algorithms for a checkpoint's `sram_hash`, distinguished by the algorithm
+name embedded in the hash text itself (never ambiguous downstream):
+
+* **`fnv1a64-sram:<hex>`** -- the exact, whole-0x8000-byte FNV-1a hash.
+  This is the **default** (no `sram_hash_exclude_ranges` declared) and is
+  **mandatory** for any checkpoint that must prove SRAM was preserved
+  byte-for-byte, e.g. every checkpoint in `savecompat-dialog-back.json`
+  (dismissing the compatibility dialog and selecting **Back** must be
+  fully non-destructive -- see "Runtime scenarios" below). Nothing may
+  ever declare `sram_hash_exclude_ranges` on a Back/non-destructive
+  checkpoint.
+* **`fnv1a64-sram-normalized:<hex>`** -- the same FNV-1a construction with
+  a checkpoint-declared, ordered, non-overlapping set of byte ranges
+  skipped entirely (never substituted/zeroed -- just excluded from the
+  running hash). A checkpoint opts in via the scenario schema's
+  `sram_hash_exclude_ranges` field (a non-empty array of `{"offset",
+  "length"}` objects, each within `[0, 0x8000)`, strictly ordered and
+  non-overlapping, capped at 64 ranges per checkpoint to match
+  `backend.c`'s plan-format limit). This exists only for ROM-generated
+  `SAVE_COMPAT_CURRENT` checkpoints (`savecompat-current.json`'s
+  no-dialog checkpoint, `savecompat-erase.json`'s post-erase checkpoints,
+  and the migrated-v1-load reuse of `savecompat-current.json`) whose SRAM
+  legitimately contains intentionally build-variable diagnostic bytes:
+  `ExpansionSaveMeta.buildCommitShort` (9 bytes, absolute SRAM offset
+  29640) and its dependent metadata `checksum` (2 bytes, absolute SRAM
+  offset 29650) -- see "`struct ExpansionSaveMeta` layout" above. Without
+  normalization, a committed fingerprint for one of these checkpoints
+  would break on every legitimate follow-up commit, since
+  `buildCommitShort` embeds this build's live `FE8_EXPANSION_BUILD_COMMIT`
+  (and the checksum's domain covers it).
+
+**Why every other field stays covered.** `configFingerprint` and
+`frameworkVersionPacked` are diagnostic fields too, but neither is
+excluded: `configFingerprint` is derived only from compatibility-relevant
+config settings (`scripts/modernize/expansion_config.py`'s
+`fingerprint_fields()`), so -- unlike `buildCommitShort` -- it does not
+vary per-commit in ordinary development, and a normalized hash that still
+covers it retains detection of any unexpected drift there. `magic`,
+`formatVersion`, and `compatEpoch` (the three fields that actually gate
+compatibility -- see "Compatibility vs. diagnostic fields" above) are
+never excluded either; a normalized hash must still change if any of
+those is corrupted, exactly as the exact hash does.
+
+**Excluding the checksum bytes from the hash does not weaken corruption
+detection.** `save_format_tool.py`'s `classify_image()` independently
+recomputes and compares `ExpansionSaveMeta.checksum` against the
+metadata's own `[0x00, 0x2E)` domain on every load, regardless of which
+SRAM-hash algorithm a playtest checkpoint happens to use --
+`SAVE_COMPAT_METADATA_CORRUPT` is still raised the same way either way.
+The hash and the classifier are two independent proofs: the hash proves
+"this checkpoint's persisted image is the one we expect, modulo declared
+build-variable bytes"; the classifier proves "this image's metadata is
+internally self-consistent". Excluding the checksum's storage bytes from
+the first proof has no effect on the second.
+
+**Mechanics.** The scenario parser (`gba_playtest.py`'s
+`parse_scenario_data()`) validates `sram_hash_exclude_ranges` at parse
+time -- requires `sram_hash: true`, rejects a missing/empty/non-list
+value, validates each range's `offset`/`length` as in-bounds integers
+that don't overshoot the 0x8000-byte image, rejects overlapping or
+out-of-order ranges, and rejects more than 64 ranges for a single
+checkpoint (matching `backend.c`'s `read_plan()` limit, so a scenario
+that would be silently truncated or rejected by the backend is instead
+rejected immediately with a clear `PlaytestError` naming the checkpoint
+and the 64-range limit) -- before any plan file is generated. The ranges
+are then carried through the generated plan file: plan format version 2
+adds a per-checkpoint exclude-range count and `offset length` pair list
+(before that checkpoint's probe list) that `backend.c`'s `read_plan()`
+parses into `struct ByteRange`; `hash_sram()` skips those bytes via
+`offset_excluded()` while hashing, and `run()` selects the
+`fnv1a64-sram-normalized:` vs. `fnv1a64-sram:` algorithm name purely from
+whether the checkpoint declared any exclude ranges. A malformed plan
+(oversized exclude-range count, truncated range list, or an
+out-of-bounds/zero-length range) is a `read_plan()` parse failure
+(`goto fail`), diagnosed the same way as any other malformed plan file
+-- never a silent truncation or a hash computed over the wrong bytes.
+
+**This is not a general stability escape hatch.** `sram_hash_exclude_ranges`
+exists to encode exactly two currently-known, narrowly-scoped,
+intentionally build-variable byte ranges -- it must never be used to
+paper over a genuinely non-deterministic or flaky checkpoint (that is a
+scenario-design bug to fix at its source, not something to hide behind
+an exclusion), and every exclusion must be justified in the scenario's
+`description` (as `savecompat-current.json`/`savecompat-erase.json` do)
+by naming the specific field and why it is legitimately variable. Adding
+a new exclusion range anywhere requires the same justification and, per
+`tools/gba-playtest/tests/test_sram_hash_normalization.py`, host-only test
+coverage proving the normalized hash stays invariant to that field alone
+while remaining sensitive to every other byte in the image.
+
 ### Runtime scenarios
 
 | Scenario | Proves |

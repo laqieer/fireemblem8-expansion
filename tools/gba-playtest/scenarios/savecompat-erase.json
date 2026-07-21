@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "name": "savecompat-erase",
-  "description": "Reaches the global save-compatibility gate for a non-CURRENT SRAM image, dismisses the diagnostic, moves the cursor to the only destructive control (\"Erase All Save Data\"), selects it (Yes/No confirmation shown), then confirms \"Yes\". The final checkpoint must show a changed sram_hash (whole-chip wipe + fresh CURRENT initialization) and the normal save menu reached.",
+  "description": "Reaches the global save-compatibility gate for a non-CURRENT SRAM image, dismisses the diagnostic, moves the cursor to the only destructive control (\"Erase All Save Data\"), selects it (Yes/No confirmation shown), then confirms \"Yes\". The final checkpoint must show a changed sram_hash (whole-chip wipe + fresh CURRENT initialization) and the normal save menu reached. The freshly-initialized CURRENT image embeds this build's live FE8_EXPANSION_BUILD_COMMIT into ExpansionSaveMeta.buildCommitShort (include/save_format.h offset 0x24, 9 bytes) and its dependent checksum (offset 0x2E, 2 bytes) -- intentionally variable across every commit -- so every checkpoint's sram_hash_exclude_ranges excludes exactly those two byte ranges (absolute SRAM offsets 29640..29648 and 29650..29651), keeping every checkpoint in this scenario in the same normalized hash space (the pre-erase checkpoints have no metadata record present at all, so excluding these bytes there is a no-op, never masking real corruption) per docs/save_format.md's normalized-hash policy.",
   "frames": [
     {
       "start": 90,
@@ -94,6 +94,10 @@
       "name": "erase-selected",
       "framebuffer": true,
       "sram_hash": true,
+      "sram_hash_exclude_ranges": [
+        {"offset": 29640, "length": 9},
+        {"offset": 29650, "length": 2}
+      ],
       "probes": []
     },
     {
@@ -101,6 +105,10 @@
       "name": "confirm-shown",
       "framebuffer": true,
       "sram_hash": true,
+      "sram_hash_exclude_ranges": [
+        {"offset": 29640, "length": 9},
+        {"offset": 29650, "length": 2}
+      ],
       "probes": []
     },
     {
@@ -108,6 +116,10 @@
       "name": "erased",
       "framebuffer": true,
       "sram_hash": true,
+      "sram_hash_exclude_ranges": [
+        {"offset": 29640, "length": 9},
+        {"offset": 29650, "length": 2}
+      ],
       "probes": []
     }
   ]

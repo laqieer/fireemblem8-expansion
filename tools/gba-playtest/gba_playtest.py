@@ -38,9 +38,22 @@ KEY_BITS = {
 NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
 HEX_ADDRESS_RE = re.compile(r"^0x[0-9a-fA-F]{8}$")
 HASH_RE = re.compile(r"^fnv1a64-rgb24:[0-9a-f]{16}$")
-SRAM_HASH_RE = re.compile(r"^fnv1a64-sram:[0-9a-f]{16}$")
+# "fnv1a64-sram:" is the exact whole-0x8000-byte hash (default, required for
+# any checkpoint that must prove byte-for-byte SRAM preservation, e.g. the
+# non-destructive Back scenarios). "fnv1a64-sram-normalized:" is the same
+# FNV-1a construction with `sram_hash_exclude_ranges` bytes skipped -- used
+# only for checkpoints whose SRAM is expected to contain intentionally
+# build-variable diagnostic bytes (see docs/save_format.md's "SRAM hash
+# policy: exact vs. normalized" section). The algorithm name in the hash
+# text always identifies which policy produced it.
+SRAM_HASH_RE = re.compile(r"^fnv1a64-sram(?:-normalized)?:[0-9a-f]{16}$")
 RAM_RANGES = ((0x02000000, 0x02040000), (0x03000000, 0x03008000), (0x0E000000, 0x0E008000))
 SRAM_IMAGE_SIZE = 0x8000
+# Matches backend.c's read_plan() rejection of checkpoint->exclude_range_count
+# > 64 -- validated here too so a scenario with too many ranges fails fast
+# with a clear PlaytestError instead of being rejected deep inside the
+# backend after a plan file has already been generated.
+MAX_SRAM_HASH_EXCLUDE_RANGES = 64
 
 
 class PlaytestError(Exception):
@@ -146,6 +159,12 @@ class Checkpoint:
     expected_framebuffer_hash: str | None
     sram_hash: bool
     expected_sram_hash: str | None
+    # Byte ranges within the 0x8000-byte SRAM image excluded from
+    # `sram_hash`'s computation (each an (offset, length) pair, ascending
+    # and non-overlapping). Empty means the exact whole-image hash;
+    # non-empty selects the normalized ("fnv1a64-sram-normalized:") hash --
+    # see docs/save_format.md's "SRAM hash policy: exact vs. normalized".
+    sram_hash_exclude_ranges: tuple[tuple[int, int], ...]
     probes: tuple[Probe, ...]
 
 
@@ -236,7 +255,12 @@ def parse_scenario_data(data: Any, source: str = "<scenario>") -> Scenario:
             raw,
             path,
             {"name", "frame", "framebuffer", "probes"},
-            {"expected_framebuffer_hash", "sram_hash", "expected_sram_hash"},
+            {
+                "expected_framebuffer_hash",
+                "sram_hash",
+                "expected_sram_hash",
+                "sram_hash_exclude_ranges",
+            },
         )
         checkpoint_name = _expect_name(item["name"], f"{path}.name")
         if checkpoint_name in checkpoint_names:
@@ -273,6 +297,47 @@ def parse_scenario_data(data: Any, source: str = "<scenario>") -> Scenario:
             )
         if expected_sram_hash is not None and not sram_hash:
             raise PlaytestError(f"{path}.expected_sram_hash requires sram_hash true")
+        exclude_ranges_data = item.get("sram_hash_exclude_ranges")
+        sram_hash_exclude_ranges: list[tuple[int, int]] = []
+        if exclude_ranges_data is not None:
+            if not sram_hash:
+                raise PlaytestError(f"{path}.sram_hash_exclude_ranges requires sram_hash true")
+            if not isinstance(exclude_ranges_data, list) or not exclude_ranges_data:
+                raise PlaytestError(f"{path}.sram_hash_exclude_ranges must be a non-empty array")
+            if len(exclude_ranges_data) > MAX_SRAM_HASH_EXCLUDE_RANGES:
+                raise PlaytestError(
+                    f"{path}.sram_hash_exclude_ranges for checkpoint {checkpoint_name!r} has "
+                    f"{len(exclude_ranges_data)} ranges, exceeding the "
+                    f"{MAX_SRAM_HASH_EXCLUDE_RANGES}-range limit per checkpoint "
+                    "(matches backend.c's plan-format cap)"
+                )
+            previous_range_end = -1
+            for range_index, raw_range in enumerate(exclude_ranges_data):
+                range_path = f"{path}.sram_hash_exclude_ranges[{range_index}]"
+                range_item = _expect_object(raw_range, range_path, {"offset", "length"})
+                offset = range_item["offset"]
+                length = range_item["length"]
+                if not _is_int(offset) or offset < 0 or offset >= SRAM_IMAGE_SIZE:
+                    raise PlaytestError(
+                        f"{range_path}.offset must be an integer from 0 through "
+                        f"{SRAM_IMAGE_SIZE - 1}"
+                    )
+                if not _is_int(length) or length < 1 or length > SRAM_IMAGE_SIZE:
+                    raise PlaytestError(
+                        f"{range_path}.length must be an integer from 1 through {SRAM_IMAGE_SIZE}"
+                    )
+                if offset + length > SRAM_IMAGE_SIZE:
+                    raise PlaytestError(
+                        f"{range_path} (offset {offset} + length {length}) exceeds the "
+                        f"{SRAM_IMAGE_SIZE}-byte SRAM image"
+                    )
+                if offset <= previous_range_end:
+                    raise PlaytestError(
+                        f"{range_path} overlaps or is not ordered strictly after the "
+                        "previous exclude range"
+                    )
+                previous_range_end = offset + length - 1
+                sram_hash_exclude_ranges.append((offset, length))
         probes_data = item["probes"]
         if not isinstance(probes_data, list):
             raise PlaytestError(f"{path}.probes must be an array")
@@ -311,6 +376,7 @@ def parse_scenario_data(data: Any, source: str = "<scenario>") -> Scenario:
                 expected_hash,
                 sram_hash,
                 expected_sram_hash,
+                tuple(sram_hash_exclude_ranges),
                 tuple(sorted(probes, key=lambda probe: (probe.address, probe.size))),
             )
         )
@@ -432,7 +498,14 @@ def build_backend(output: Path) -> None:
 
 
 def _write_plan(path: Path, scenario: Scenario) -> None:
-    lines = ["GBA_PLAYTEST_PLAN 1", f"RANGES {len(scenario.inputs)}"]
+    # Plan format version 2 adds a per-checkpoint SRAM-hash-exclude-range
+    # count/list (before the probe list) to support
+    # `sram_hash_exclude_ranges`. This plan file is generated and consumed
+    # within the same `capture()`/`verify` invocation only (never persisted
+    # across gba_playtest.py/backend.c versions), so there is no backward
+    # compatibility to preserve here -- backend.c's read_plan() is updated
+    # in lockstep.
+    lines = ["GBA_PLAYTEST_PLAN 2", f"RANGES {len(scenario.inputs)}"]
     lines.extend(
         f"{frame_range.start} {frame_range.end} {frame_range.key_mask}"
         for frame_range in scenario.inputs
@@ -440,7 +513,12 @@ def _write_plan(path: Path, scenario: Scenario) -> None:
     lines.append(f"CHECKPOINTS {len(scenario.checkpoints)}")
     for checkpoint in scenario.checkpoints:
         lines.append(
-            f"{checkpoint.frame} {len(checkpoint.probes)} {int(checkpoint.sram_hash)}"
+            f"{checkpoint.frame} {len(checkpoint.probes)} {int(checkpoint.sram_hash)} "
+            f"{len(checkpoint.sram_hash_exclude_ranges)}"
+        )
+        lines.extend(
+            f"{offset} {length}"
+            for offset, length in checkpoint.sram_hash_exclude_ranges
         )
         lines.extend(f"{probe.address} {probe.size}" for probe in checkpoint.probes)
     path.write_text("\n".join(lines) + "\n", encoding="ascii")
@@ -471,11 +549,20 @@ def _parse_backend_output(stdout: str, scenario: Scenario) -> dict[str, Any]:
                     raise ValueError("duplicate sram hash")
                 if not (0 <= checkpoint_index < len(scenario.checkpoints)):
                     raise ValueError("sram hash checkpoint index out of range")
-                if not scenario.checkpoints[checkpoint_index].sram_hash:
+                sram_checkpoint = scenario.checkpoints[checkpoint_index]
+                if not sram_checkpoint.sram_hash:
                     raise ValueError("unexpected sram hash for checkpoint without sram_hash")
                 if not re.fullmatch(r"[0-9a-f]{16}", fields[2]):
                     raise ValueError("malformed sram hash")
-                sram_hashes[checkpoint_index] = f"fnv1a64-sram:{fields[2]}"
+                # The algorithm name always identifies whether any bytes
+                # were excluded, so "exact" and "normalized" hashes can
+                # never be silently confused with each other downstream.
+                algorithm = (
+                    "fnv1a64-sram-normalized"
+                    if sram_checkpoint.sram_hash_exclude_ranges
+                    else "fnv1a64-sram"
+                )
+                sram_hashes[checkpoint_index] = f"{algorithm}:{fields[2]}"
             elif len(fields) == 4 and fields[0] == "PROBE":
                 checkpoint_index = int(fields[1])
                 probe_index = int(fields[2])
