@@ -1,0 +1,216 @@
+{
+  "schema_version": 1,
+  "name": "debugtools-hub-modern-release",
+  "description": "Issue #11 slice 1 (+review-fix round) release counterpart of debugtools-hub-modern-debug.json: identical frame-for-frame input script (same intro-advance taps, the same repeated SELECT+R hotkey pulse at frames 600-606 and 650-656 reproducing the reviewer's release-and-repress case, and the same follow-up A press at frame 700 that would select the built-in launcher in a debug build) is replayed against a modern release build. In release, FE8_EXPANSION_DEBUGTOOLS_ENABLED is compiled out: DebugTools_TitleHotkeyCheck/OpenHub compile to inert stubs, the hub menu table and the built-in launcher's action body do not exist in the link at all (see docs/debugtools.md), and Title_IDLE's own vanilla A/START handling is never intercepted -- so repeating the hotkey pulse cannot open a hub at all, let alone a second concurrent one. gDebugToolsProbe remains a harmless all-zero BSS struct that is never written. Every probe therefore reads 0x00000000 at every checkpoint -- proving the hotkey (single or repeated) has no effect and the hub/launcher are absent, not merely unreached.",
+  "frames": [
+    {
+      "start": 90,
+      "end": 95,
+      "keys": [
+        "A"
+      ]
+    },
+    {
+      "start": 150,
+      "end": 155,
+      "keys": [
+        "START"
+      ]
+    },
+    {
+      "start": 210,
+      "end": 215,
+      "keys": [
+        "A"
+      ]
+    },
+    {
+      "start": 270,
+      "end": 275,
+      "keys": [
+        "START"
+      ]
+    },
+    {
+      "start": 330,
+      "end": 335,
+      "keys": [
+        "A"
+      ]
+    },
+    {
+      "start": 390,
+      "end": 395,
+      "keys": [
+        "START"
+      ]
+    },
+    {
+      "start": 450,
+      "end": 455,
+      "keys": [
+        "A"
+      ]
+    },
+    {
+      "start": 600,
+      "end": 606,
+      "keys": [
+        "SELECT",
+        "R"
+      ]
+    },
+    {
+      "start": 650,
+      "end": 656,
+      "keys": [
+        "SELECT",
+        "R"
+      ]
+    },
+    {
+      "start": 700,
+      "end": 706,
+      "keys": [
+        "A"
+      ]
+    }
+  ],
+  "checkpoints": [
+    {
+      "frame": 300,
+      "framebuffer": true,
+      "name": "pre-hotkey-intro-clear",
+      "probes": [
+        {
+          "address": "0x02031504",
+          "size": 4,
+          "expected": "0x00000000"
+        },
+        {
+          "address": "0x02031508",
+          "size": 4,
+          "expected": "0x00000000"
+        },
+        {
+          "address": "0x0203150c",
+          "size": 4,
+          "expected": "0x00000000"
+        },
+        {
+          "address": "0x02031510",
+          "size": 4,
+          "expected": "0x00000000"
+        }
+      ]
+    },
+    {
+      "frame": 630,
+      "framebuffer": true,
+      "name": "hub-opened-after-first-pulse",
+      "probes": [
+        {
+          "address": "0x02031504",
+          "size": 4,
+          "expected": "0x00000000"
+        },
+        {
+          "address": "0x02031508",
+          "size": 4,
+          "expected": "0x00000000"
+        },
+        {
+          "address": "0x0203150c",
+          "size": 4,
+          "expected": "0x00000000"
+        },
+        {
+          "address": "0x02031510",
+          "size": 4,
+          "expected": "0x00000000"
+        }
+      ]
+    },
+    {
+      "frame": 680,
+      "framebuffer": true,
+      "name": "hub-still-single-after-repeated-pulse",
+      "probes": [
+        {
+          "address": "0x02031504",
+          "size": 4,
+          "expected": "0x00000000"
+        },
+        {
+          "address": "0x02031508",
+          "size": 4,
+          "expected": "0x00000000"
+        },
+        {
+          "address": "0x0203150c",
+          "size": 4,
+          "expected": "0x00000000"
+        },
+        {
+          "address": "0x02031510",
+          "size": 4,
+          "expected": "0x00000000"
+        }
+      ]
+    },
+    {
+      "frame": 950,
+      "framebuffer": true,
+      "name": "launcher-selected",
+      "probes": [
+        {
+          "address": "0x02031504",
+          "size": 4,
+          "expected": "0x00000000"
+        },
+        {
+          "address": "0x02031508",
+          "size": 4,
+          "expected": "0x00000000"
+        },
+        {
+          "address": "0x0203150c",
+          "size": 4,
+          "expected": "0x00000000"
+        },
+        {
+          "address": "0x02031510",
+          "size": 4,
+          "expected": "0x00000000"
+        }
+      ]
+    },
+    {
+      "frame": 1550,
+      "framebuffer": true,
+      "name": "prologue-stable-checkpoint",
+      "probes": [
+        {
+          "address": "0x02031504",
+          "size": 4,
+          "expected": "0x00000000"
+        },
+        {
+          "address": "0x02031508",
+          "size": 4,
+          "expected": "0x00000000"
+        },
+        {
+          "address": "0x0203150c",
+          "size": 4,
+          "expected": "0x00000000"
+        },
+        {
+          "address": "0x02031510",
+          "size": 4,
+          "expected": "0x00000000"
+        }
+      ]
+    }
+  ]
+}

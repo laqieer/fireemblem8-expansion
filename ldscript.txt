@@ -230,6 +230,8 @@ SECTIONS
         . = ALIGN(4); src/bmsave-xmap.o(ewram_data);
         . = ALIGN(4); src/savemenu.o(ewram_data);
         . = ALIGN(4); src/save_compat_menu.o(ewram_data);
+        . = ALIGN(4); src/debugtools_registry.o(ewram_data);
+        . = ALIGN(4); src/debugtools_launcher.o(ewram_data);
         . = ALIGN(4); src/bmshop.o(ewram_data);
 
         /*
@@ -520,6 +522,8 @@ SECTIONS
         src/minimap.o(.text);
         src/savemenu.o(.text);
         src/save_compat_menu.o(.text);
+        src/debugtools_registry.o(.text);
+        src/debugtools_launcher.o(.text);
         src/savedraw.o(.text);
         src/difficultymenu.o(.text);
         src/code_80AC6AC.o(.text);
@@ -807,6 +811,8 @@ SECTIONS
         . = ALIGN(4); src/minimap.o(.rodata);
         . = ALIGN(4); src/savemenu.o(.rodata);
         . = ALIGN(4); src/save_compat_menu.o(.rodata);
+        . = ALIGN(4); src/debugtools_registry.o(.rodata);
+        . = ALIGN(4); src/debugtools_launcher.o(.rodata);
         . = ALIGN(4); src/savedraw.o(.rodata);
         . = ALIGN(4); src/sysutil.o(.rodata);
         . = ALIGN(4); src/uiconfig.o(.rodata);
@@ -1160,6 +1166,8 @@ SECTIONS
         . = ALIGN(4); src/data/data_minimap.o(.data);
         . = ALIGN(4); src/savemenu.o(.data);
         . = ALIGN(4); src/save_compat_menu.o(.data);
+        . = ALIGN(4); src/debugtools_registry.o(.data);
+        . = ALIGN(4); src/debugtools_launcher.o(.data);
         . = ALIGN(4); src/savedraw.o(.data);
         . = ALIGN(4); src/savemenu_data.o(.data);
         . = ALIGN(4); src/difficultymenu.o(.data);

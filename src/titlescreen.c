@@ -5,6 +5,7 @@
 #include "m4a.h"
 #include "soundwrapper.h"
 #include "gamecontrol.h"
+#include "expansion_debugtools.h"
 #include "bmlib.h"
 #include "bm.h"
 #include "opanim.h"
@@ -858,8 +859,49 @@ void Title_EnterMainScreen(struct TitleScreenProc* proc) {
 //! FE8U = 0x080C6354
 void Title_IDLE(struct TitleScreenProc * proc)
 {
-    proc->timer_idle++;
-    proc->timer = (++proc->timer & 0x3f);
+    /* Freeze the idle/attract timer pair entirely while the hub is
+     * active (see DebugTools_IsHubActive doc, include/expansion_debugtools.h):
+     * checking hub state before incrementing means proc->timer_idle
+     * simply does not advance while blocked, so once the hub closes it
+     * resumes from exactly where it left off and will still hit the
+     * vanilla `== 815` equality exactly once, rather than having quietly
+     * sailed past that value while the hub was open (which would
+     * otherwise permanently disable the vanilla attract-mode transition
+     * for the rest of this title-screen instance -- the timer only ever
+     * increases, so a missed `== 815` frame never recurs). proc->timer
+     * (the same pair's low 6-bit phase counter) has no other reader in
+     * this IDLE state, so freezing it alongside timer_idle is safe and
+     * keeps both halves of the pair in lockstep. */
+    if (!DebugTools_IsHubActive())
+    {
+        proc->timer_idle++;
+        proc->timer = (++proc->timer & 0x3f);
+    }
+
+    /* Stable probe evidence for the freeze above: mirrors proc->timer_idle
+     * into gDebugToolsProbe every frame, hub active or not, so a
+     * playtest scenario can assert it stays byte-for-byte identical
+     * across a widely-spaced pair of checkpoints while the hub is open. */
+    DebugTools_RecordTitleIdleTimer(proc->timer_idle);
+
+    /* Issue #11 slice 1: the single supported title-screen-only debug
+     * hub entry point. No-op (nothing read, nothing reachable) in a
+     * release build -- see include/expansion_debugtools.h.
+     * DebugTools_OpenHub() itself guards against being called while the
+     * hub is already active (returns DEBUGTOOLS_ERR_ALREADY_ACTIVE), so
+     * this is always safe to call unconditionally regardless of hub
+     * state -- a release-and-repress of the hotkey can never spawn a
+     * second concurrent hub MenuProc. */
+    DebugTools_TitleHotkeyCheck();
+
+    /* While the hub is open, this proc and the hub's own menu proc are
+     * independent siblings that both still read newKeys every frame --
+     * skip the vanilla A/START handling for as long as the hub is up so
+     * an A press meant to select a hub action can never also race the
+     * normal title-to-gameplay transition below (always 0 in a release
+     * build). */
+    if (DebugTools_IsHubActive())
+        return;
 
     if (gKeyStatusPtr->newKeys & (A_BUTTON | START_BUTTON))
     {

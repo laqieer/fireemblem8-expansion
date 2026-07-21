@@ -1,0 +1,124 @@
+{
+  "schema_version": 1,
+  "name": "debugtools-timer-freeze-modern-debug",
+  "description": "Issue #11 slice 1 review-fix regression scenario for the title-idle-timer freeze fix: opens the debug hub once via the SELECT+R hotkey (600-606) and then holds it open with no further input across the vanilla `proc->timer_idle == 815` attract-mode-transition threshold (which a plain, hub-free run reaches around frame 1292 -- see probe-derived offset proc->timer_idle == frame - 477 while running). gDebugToolsProbe.titleIdleTimerSample (Title_IDLE's DebugTools_RecordTitleIdleTimer call, include/expansion_debugtools.h) is asserted byte-for-byte IDENTICAL at frame 620 (shortly after the hub opens) and again at frame 1290 (670 frames later, well past the 815 threshold) -- proving proc->timer_idle does not advance at all while the hub remains active, so the exact `== 815` equality is never silently skipped past. The hub is then closed via a B press (1300-1306, MenuCancelSelect's MENU_ACT_END path -- see include/uimenu.h), and a final checkpoint at frame 1450 asserts titleIdleTimerSample has resumed increasing (strictly greater than the frozen value), proving idle-timer progress resumes correctly once the hub closes rather than staying stuck forever. hubOpenCount is also probed at every checkpoint and must stay exactly 1 throughout (opening once, holding, and closing must never spawn or require a second hub). No release counterpart is needed: DebugTools_IsHubActive() is compiled out to a constant 0 in a release build (see docs/debugtools.md), so the freeze branch in Title_IDLE is provably dead code there and the existing debugtools-hub-modern-release.json already demonstrates gDebugToolsProbe stays all-zero throughout an identical-length input window.",
+  "frames": [
+    {
+      "start": 90,
+      "end": 95,
+      "keys": [
+        "A"
+      ]
+    },
+    {
+      "start": 150,
+      "end": 155,
+      "keys": [
+        "START"
+      ]
+    },
+    {
+      "start": 210,
+      "end": 215,
+      "keys": [
+        "A"
+      ]
+    },
+    {
+      "start": 270,
+      "end": 275,
+      "keys": [
+        "START"
+      ]
+    },
+    {
+      "start": 330,
+      "end": 335,
+      "keys": [
+        "A"
+      ]
+    },
+    {
+      "start": 390,
+      "end": 395,
+      "keys": [
+        "START"
+      ]
+    },
+    {
+      "start": 450,
+      "end": 455,
+      "keys": [
+        "A"
+      ]
+    },
+    {
+      "start": 600,
+      "end": 606,
+      "keys": [
+        "SELECT",
+        "R"
+      ]
+    },
+    {
+      "start": 1300,
+      "end": 1306,
+      "keys": [
+        "B"
+      ]
+    }
+  ],
+  "checkpoints": [
+    {
+      "frame": 620,
+      "framebuffer": false,
+      "name": "hub-open-early-sample",
+      "probes": [
+        {
+          "address": "0x0203158c",
+          "size": 4,
+          "expected": "0x00000001"
+        },
+        {
+          "address": "0x0203159c",
+          "size": 4,
+          "expected": "0x0000007b"
+        }
+      ]
+    },
+    {
+      "frame": 1290,
+      "framebuffer": false,
+      "name": "hub-open-late-frozen",
+      "probes": [
+        {
+          "address": "0x0203158c",
+          "size": 4,
+          "expected": "0x00000001"
+        },
+        {
+          "address": "0x0203159c",
+          "size": 4,
+          "expected": "0x0000007b"
+        }
+      ]
+    },
+    {
+      "frame": 1450,
+      "framebuffer": false,
+      "name": "hub-closed-resumed",
+      "probes": [
+        {
+          "address": "0x0203158c",
+          "size": 4,
+          "expected": "0x00000001"
+        },
+        {
+          "address": "0x0203159c",
+          "size": 4,
+          "expected": "0x00000111"
+        }
+      ]
+    }
+  ]
+}

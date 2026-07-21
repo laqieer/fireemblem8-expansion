@@ -1,0 +1,216 @@
+{
+  "schema_version": 1,
+  "name": "debugtools-hub-modern-debug",
+  "description": "Issue #11 slice 1 (+review-fix round): title-screen SELECT+R hotkey opens the debug hub, whose only entry is the built-in 'Fast Boot: Prologue' launcher. The intro sequence (Health & Safety screen + logos) masks all input via gKeyStatusIgnoredSt until it clears, and Title_IDLE itself only becomes reachable/interactive after the standard A/START intro-advance taps (mirrors title-progression.json's own input sequence through its 'intro-menu-progression' checkpoint) -- so the hotkey is deliberately pulsed well after those taps complete (frame 600), not immediately at boot. This scenario deliberately pulses SELECT+R TWICE (600-606, then 650-656, replicating a reviewer-reproduced release-and-repress) with the hub already open before the second pulse: hubOpenCount must stay exactly 1 across both pulses (DebugTools_OpenHub's reentrancy guard rejects the second call with DEBUGTOOLS_ERR_ALREADY_ACTIVE, a no-op) -- proving a repeated hotkey pulse can never spawn a second concurrent hub MenuProc. Only after both pulses does an A press (700-706) select the hub's one entry. Probes read gDebugToolsProbe (include/expansion_debugtools.h) directly by its modern-debug link address: hubOpenCount, registeredActionCount, lastRegisterResult, launcherArmed (DEBUGTOOLS_LAUNCHER_ARMED_MAGIC / 'DBL1'), titleIdleTimerSample -- stable state/probe evidence, not input playback alone.",
+  "frames": [
+    {
+      "start": 90,
+      "end": 95,
+      "keys": [
+        "A"
+      ]
+    },
+    {
+      "start": 150,
+      "end": 155,
+      "keys": [
+        "START"
+      ]
+    },
+    {
+      "start": 210,
+      "end": 215,
+      "keys": [
+        "A"
+      ]
+    },
+    {
+      "start": 270,
+      "end": 275,
+      "keys": [
+        "START"
+      ]
+    },
+    {
+      "start": 330,
+      "end": 335,
+      "keys": [
+        "A"
+      ]
+    },
+    {
+      "start": 390,
+      "end": 395,
+      "keys": [
+        "START"
+      ]
+    },
+    {
+      "start": 450,
+      "end": 455,
+      "keys": [
+        "A"
+      ]
+    },
+    {
+      "start": 600,
+      "end": 606,
+      "keys": [
+        "SELECT",
+        "R"
+      ]
+    },
+    {
+      "start": 650,
+      "end": 656,
+      "keys": [
+        "SELECT",
+        "R"
+      ]
+    },
+    {
+      "start": 700,
+      "end": 706,
+      "keys": [
+        "A"
+      ]
+    }
+  ],
+  "checkpoints": [
+    {
+      "frame": 300,
+      "framebuffer": true,
+      "name": "pre-hotkey-intro-clear",
+      "probes": [
+        {
+          "address": "0x0203158c",
+          "size": 4,
+          "expected": "0x00000000"
+        },
+        {
+          "address": "0x02031590",
+          "size": 4,
+          "expected": "0x00000000"
+        },
+        {
+          "address": "0x02031594",
+          "size": 4,
+          "expected": "0x00000000"
+        },
+        {
+          "address": "0x02031598",
+          "size": 4,
+          "expected": "0x00000000"
+        }
+      ]
+    },
+    {
+      "frame": 630,
+      "framebuffer": true,
+      "name": "hub-opened-after-first-pulse",
+      "probes": [
+        {
+          "address": "0x0203158c",
+          "size": 4,
+          "expected": "0x00000001"
+        },
+        {
+          "address": "0x02031590",
+          "size": 4,
+          "expected": "0x00000001"
+        },
+        {
+          "address": "0x02031594",
+          "size": 4,
+          "expected": "0x00000000"
+        },
+        {
+          "address": "0x02031598",
+          "size": 4,
+          "expected": "0x00000000"
+        }
+      ]
+    },
+    {
+      "frame": 680,
+      "framebuffer": true,
+      "name": "hub-still-single-after-repeated-pulse",
+      "probes": [
+        {
+          "address": "0x0203158c",
+          "size": 4,
+          "expected": "0x00000001"
+        },
+        {
+          "address": "0x02031590",
+          "size": 4,
+          "expected": "0x00000001"
+        },
+        {
+          "address": "0x02031594",
+          "size": 4,
+          "expected": "0x00000000"
+        },
+        {
+          "address": "0x02031598",
+          "size": 4,
+          "expected": "0x00000000"
+        }
+      ]
+    },
+    {
+      "frame": 950,
+      "framebuffer": true,
+      "name": "launcher-selected",
+      "probes": [
+        {
+          "address": "0x0203158c",
+          "size": 4,
+          "expected": "0x00000001"
+        },
+        {
+          "address": "0x02031590",
+          "size": 4,
+          "expected": "0x00000001"
+        },
+        {
+          "address": "0x02031594",
+          "size": 4,
+          "expected": "0x00000000"
+        },
+        {
+          "address": "0x02031598",
+          "size": 4,
+          "expected": "0x44424c31"
+        }
+      ]
+    },
+    {
+      "frame": 1550,
+      "framebuffer": true,
+      "name": "prologue-stable-checkpoint",
+      "probes": [
+        {
+          "address": "0x0203158c",
+          "size": 4,
+          "expected": "0x00000001"
+        },
+        {
+          "address": "0x02031590",
+          "size": 4,
+          "expected": "0x00000001"
+        },
+        {
+          "address": "0x02031594",
+          "size": 4,
+          "expected": "0x00000000"
+        },
+        {
+          "address": "0x02031598",
+          "size": 4,
+          "expected": "0x44424c31"
+        }
+      ]
+    }
+  ]
+}

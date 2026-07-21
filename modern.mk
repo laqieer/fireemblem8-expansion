@@ -9,6 +9,8 @@ MODERN_GOALS := \
 	expansion-modern-boot-check \
 	expansion-modern-savefmt-check \
 	expansion-modern-title-check \
+	expansion-modern-debugtools-check \
+	expansion-modern-debugtools-timer-check \
 	expansion-modern-budget \
 	expansion-modern-budget-check \
 	expansion-modern-relocs \
@@ -155,7 +157,9 @@ MODERN_COHORT_SOURCES ?= \
 	src/bmsave-xmap.c \
 	src/bmcontainer.c \
 	src/proc.c \
-	src/hardware.c
+	src/hardware.c \
+	src/debugtools_registry.c \
+	src/debugtools_launcher.c
 
 # Handwritten assembly that must not be decompiled (see CONTRIBUTING.md).
 # libagbsyscall.s is a self-contained set of BIOS SWI trampolines; arm.s and
@@ -262,6 +266,8 @@ MODERN_ALL_SOURCE_GOALS := \
 	expansion-modern-boot-check \
 	expansion-modern-savefmt-check \
 	expansion-modern-title-check \
+	expansion-modern-debugtools-check \
+	expansion-modern-debugtools-timer-check \
 	expansion-modern-budget \
 	expansion-modern-budget-check \
 	expansion-modern-relocs \
@@ -696,6 +702,8 @@ MODERN_LINKED_GOALS := \
 	expansion-modern-boot-check \
 	expansion-modern-savefmt-check \
 	expansion-modern-title-check \
+	expansion-modern-debugtools-check \
+	expansion-modern-debugtools-timer-check \
 	expansion-modern-budget \
 	expansion-modern-budget-check \
 	expansion-modern-relocs \
@@ -1210,6 +1218,15 @@ MODERN_BOOT_SCENARIO := tools/gba-playtest/scenarios/boot.json
 MODERN_BOOT_FINGERPRINT := tools/gba-playtest/fingerprints/boot.json
 MODERN_TITLE_SCENARIO := tools/gba-playtest/scenarios/title-progression.json
 MODERN_TITLE_FINGERPRINT := tools/gba-playtest/fingerprints/title-progression-modern-$(MODERN_CONFIG).json
+# Unlike MODERN_TITLE_SCENARIO above, the debugtools scenario path itself
+# (not just the fingerprint) is $(MODERN_CONFIG)-suffixed: the release
+# scenario probes gDebugToolsProbe expecting it to stay all-zero (issue #11
+# slice 1 requirement 7's release fingerprint), while the debug scenario
+# probes the same struct expecting the hub/launcher to actually run --
+# these are different assertions, not just different link addresses, so a
+# single shared scenario file would not correctly express both.
+MODERN_DEBUGTOOLS_SCENARIO := tools/gba-playtest/scenarios/debugtools-hub-modern-$(MODERN_CONFIG).json
+MODERN_DEBUGTOOLS_FINGERPRINT := tools/gba-playtest/fingerprints/debugtools-hub-modern-$(MODERN_CONFIG).json
 MODERN_PLAYTEST := tools/gba-playtest/gba_playtest.py
 
 # Convert the linked ELF to a flat, padded ROM image, patch the configured
@@ -1244,13 +1261,17 @@ expansion-modern-boot-preflight:
 	@if [ ! -f "$(MODERN_BOOT_SCENARIO)" ] || \
 		[ ! -f "$(MODERN_BOOT_FINGERPRINT)" ] || \
 		[ ! -f "$(MODERN_TITLE_SCENARIO)" ] || \
-		[ ! -f "$(MODERN_TITLE_FINGERPRINT)" ]; then \
+		[ ! -f "$(MODERN_TITLE_FINGERPRINT)" ] || \
+		[ ! -f "$(MODERN_DEBUGTOOLS_SCENARIO)" ] || \
+		[ ! -f "$(MODERN_DEBUGTOOLS_FINGERPRINT)" ]; then \
 		printf '%s\n' \
-			"error: missing boot scenario or fingerprint (including title progression)" >&2; \
-		printf '  boot scenario:     %s\n' "$(MODERN_BOOT_SCENARIO)" >&2; \
-		printf '  boot fingerprint:  %s\n' "$(MODERN_BOOT_FINGERPRINT)" >&2; \
-		printf '  title scenario:    %s\n' "$(MODERN_TITLE_SCENARIO)" >&2; \
-		printf '  title fingerprint: %s\n' "$(MODERN_TITLE_FINGERPRINT)" >&2; \
+			"error: missing boot scenario or fingerprint (including title progression and debugtools)" >&2; \
+		printf '  boot scenario:        %s\n' "$(MODERN_BOOT_SCENARIO)" >&2; \
+		printf '  boot fingerprint:     %s\n' "$(MODERN_BOOT_FINGERPRINT)" >&2; \
+		printf '  title scenario:       %s\n' "$(MODERN_TITLE_SCENARIO)" >&2; \
+		printf '  title fingerprint:    %s\n' "$(MODERN_TITLE_FINGERPRINT)" >&2; \
+		printf '  debugtools scenario:  %s\n' "$(MODERN_DEBUGTOOLS_SCENARIO)" >&2; \
+		printf '  debugtools fingerprint: %s\n' "$(MODERN_DEBUGTOOLS_FINGERPRINT)" >&2; \
 		exit 1; \
 	fi
 	@if ! "$(PYTHON)" "$(MODERN_PLAYTEST)" backend-check; then \
@@ -1285,6 +1306,61 @@ expansion-modern-title-check: expansion-modern-boot-preflight expansion-modern-r
 		--policy behavior
 	@printf 'Modern ROM title-check passed: %s (config=%s abi=%s)\n' \
 		"$(MODERN_ROM)" '$(MODERN_CONFIG)' '$(MODERN_ABI)'
+
+# Issue #11 slice 1: proves the title-screen SELECT+R hotkey, the debug hub,
+# and its one built-in "Fast Boot: Prologue" launcher all behave as designed
+# in a debug build (hub opens, action registers, launcher reaches a stable
+# chapter/runtime checkpoint via gDebugToolsProbe), and that the identical
+# frame-for-frame input has zero effect in a release build (hub/launcher
+# compiled out, gDebugToolsProbe stays all-zero). See docs/debugtools.md.
+expansion-modern-debugtools-check: expansion-modern-boot-preflight expansion-modern-rom
+	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify \
+		--rom "$(MODERN_ROM)" \
+		--scenario "$(MODERN_DEBUGTOOLS_SCENARIO)" \
+		--expected "$(MODERN_DEBUGTOOLS_FINGERPRINT)" \
+		--policy behavior
+	@printf 'Modern ROM debugtools-check passed: %s (config=%s abi=%s)\n' \
+		"$(MODERN_ROM)" '$(MODERN_CONFIG)' '$(MODERN_ABI)'
+
+# Issue #11 slice 1 review-fix regression check: proves proc->timer_idle
+# (mirrored into gDebugToolsProbe.titleIdleTimerSample by
+# DebugTools_RecordTitleIdleTimer, see Title_IDLE in src/titlescreen.c)
+# freezes entirely while the debug hub is active -- holding it open across
+# the vanilla `timer_idle == 815` attract-mode-transition threshold and
+# proving the sampled value is byte-for-byte identical before and after
+# that threshold -- then proving it resumes increasing once the hub is
+# closed via a B press. A release build has no separate scenario file:
+# DebugTools_IsHubActive() compiles out to a constant 0 there (see
+# docs/debugtools.md), so the freeze branch in Title_IDLE is provably dead
+# code, and debugtools-hub-modern-release.json already demonstrates
+# gDebugToolsProbe stays all-zero across an identical-length input window.
+# This target is therefore a documented no-op for MODERN_CONFIG=release
+# rather than a missing check.
+ifeq ($(MODERN_CONFIG),debug)
+MODERN_DEBUGTOOLS_TIMER_SCENARIO := tools/gba-playtest/scenarios/debugtools-timer-freeze-modern-debug.json
+MODERN_DEBUGTOOLS_TIMER_FINGERPRINT := tools/gba-playtest/fingerprints/debugtools-timer-freeze-modern-debug.json
+
+expansion-modern-debugtools-timer-check: expansion-modern-boot-preflight expansion-modern-rom
+	@if [ ! -f "$(MODERN_DEBUGTOOLS_TIMER_SCENARIO)" ] || \
+		[ ! -f "$(MODERN_DEBUGTOOLS_TIMER_FINGERPRINT)" ]; then \
+		printf '%s\n' \
+			"error: missing debugtools timer-freeze scenario or fingerprint" >&2; \
+		printf '  scenario:    %s\n' "$(MODERN_DEBUGTOOLS_TIMER_SCENARIO)" >&2; \
+		printf '  fingerprint: %s\n' "$(MODERN_DEBUGTOOLS_TIMER_FINGERPRINT)" >&2; \
+		exit 1; \
+	fi
+	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify \
+		--rom "$(MODERN_ROM)" \
+		--scenario "$(MODERN_DEBUGTOOLS_TIMER_SCENARIO)" \
+		--expected "$(MODERN_DEBUGTOOLS_TIMER_FINGERPRINT)" \
+		--policy behavior
+	@printf 'Modern ROM debugtools-timer-check passed: %s (config=%s abi=%s)\n' \
+		"$(MODERN_ROM)" '$(MODERN_CONFIG)' '$(MODERN_ABI)'
+else
+expansion-modern-debugtools-timer-check:
+	@printf 'Modern ROM debugtools-timer-check skipped: no release scenario needed (config=%s) -- DebugTools_IsHubActive() compiles out to 0, so the Title_IDLE freeze branch is dead code; see docs/debugtools.md\n' \
+		'$(MODERN_CONFIG)'
+endif
 
 # Global save-compatibility gate check (issue #2 slice 2, requirement 9).
 # Generates synthetic SRAM fixtures at check time (never committed
@@ -1385,6 +1461,8 @@ expansion-modern-linker-check: expansion-modern-budget-check \
 		expansion-modern-overlay-audit \
 		expansion-modern-boot-check \
 		expansion-modern-title-check \
+		expansion-modern-debugtools-check \
+		expansion-modern-debugtools-timer-check \
 		expansion-modern-savefmt-check \
 		expansion-modern-shifted-check
 	"$(PYTHON)" scripts/shiftcheck/scan_build_addrs.py \
@@ -1397,6 +1475,8 @@ expansion-modern-linker-check: expansion-modern-budget-check \
 
 .PHONY: \
 	expansion-modern-title-check \
+	expansion-modern-debugtools-check \
+	expansion-modern-debugtools-timer-check \
 	expansion-modern-savefmt-check \
 	expansion-modern-budget \
 	expansion-modern-budget-check \

@@ -1,0 +1,147 @@
+{
+  "checkpoints": [
+    {
+      "frame": 300,
+      "framebuffer_hash": "fnv1a64-rgb24:3855f352b10ce427",
+      "name": "pre-hotkey-intro-clear",
+      "probes": [
+        {
+          "address": "0x02031504",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x02031508",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x0203150c",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x02031510",
+          "size": 4,
+          "value": "0x00000000"
+        }
+      ]
+    },
+    {
+      "frame": 630,
+      "framebuffer_hash": "fnv1a64-rgb24:58d0b59d175916c8",
+      "name": "hub-opened-after-first-pulse",
+      "probes": [
+        {
+          "address": "0x02031504",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x02031508",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x0203150c",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x02031510",
+          "size": 4,
+          "value": "0x00000000"
+        }
+      ]
+    },
+    {
+      "frame": 680,
+      "framebuffer_hash": "fnv1a64-rgb24:46e966fa5cf45779",
+      "name": "hub-still-single-after-repeated-pulse",
+      "probes": [
+        {
+          "address": "0x02031504",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x02031508",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x0203150c",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x02031510",
+          "size": 4,
+          "value": "0x00000000"
+        }
+      ]
+    },
+    {
+      "frame": 950,
+      "framebuffer_hash": "fnv1a64-rgb24:ab3b486e832677ab",
+      "name": "launcher-selected",
+      "probes": [
+        {
+          "address": "0x02031504",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x02031508",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x0203150c",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x02031510",
+          "size": 4,
+          "value": "0x00000000"
+        }
+      ]
+    },
+    {
+      "frame": 1550,
+      "framebuffer_hash": "fnv1a64-rgb24:bef17c589b5ba3ab",
+      "name": "prologue-stable-checkpoint",
+      "probes": [
+        {
+          "address": "0x02031504",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x02031508",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x0203150c",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x02031510",
+          "size": 4,
+          "value": "0x00000000"
+        }
+      ]
+    }
+  ],
+  "format_version": 2,
+  "rom": {
+    "game_code": "BE8E",
+    "sha1": "36c0e8fa2974bddf1bc52d81a99523dc999524dc",
+    "size": 16777216,
+    "title": "FIREEMBLEM2E"
+  },
+  "scenario": "debugtools-hub-modern-release"
+}
