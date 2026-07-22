@@ -11,6 +11,7 @@ from .supports.schema import SupportsTableSchema
 from .units.schema import UnitsTableSchema
 from .shops.schema import ShopsTableSchema
 from .traps.schema import TrapsTableSchema
+from .items.schema import ItemsTableSchema
 from .eventscripts.schema import EventScriptsTableSchema
 from .eventlists.schema import EventListsTableSchema
 from .chapterbundle.schema import ChapterBundleTableSchema
@@ -19,6 +20,7 @@ REGISTRY.register(SupportsTableSchema())
 REGISTRY.register(UnitsTableSchema())
 REGISTRY.register(ShopsTableSchema())
 REGISTRY.register(TrapsTableSchema())
+REGISTRY.register(ItemsTableSchema())
 REGISTRY.register(EventScriptsTableSchema())
 REGISTRY.register(EventListsTableSchema())
 REGISTRY.register(ChapterBundleTableSchema())

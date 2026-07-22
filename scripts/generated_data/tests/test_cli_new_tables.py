@@ -289,5 +289,37 @@ class CliChapterBundleTests(unittest.TestCase):
             self.assertIn("DRIFT", err)
 
 
+class CliItemsTests(unittest.TestCase):
+    def test_validate_invalid_fixture_fails(self):
+        code, out, err = run_cli([
+            "validate", "--table", "items",
+            "--source", fixture_path("items", "bad_weapon_type.json"),
+            "--no-roundtrip",
+        ])
+        self.assertEqual(code, 1)
+        self.assertIn("undefined weapon type reference", err)
+
+    def test_real_items_source_validates_and_roundtrips_clean(self):
+        code, out, err = run_cli(["validate", "--table", "items"])
+        self.assertEqual(code, 0, msg=out + err)
+
+    def test_generate_writes_c_and_inventory(self):
+        with scratch_dir() as tmp:
+            out_dir = os.path.join(tmp, "out")
+            inventory_path = os.path.join(tmp, "inventory.md")
+            code, out, err = run_cli(["generate", "--table", "items", "--out-dir", out_dir,
+                                       "--inventory", inventory_path, "--no-roundtrip"])
+            self.assertEqual(code, 0, msg=out + err)
+            generated_file = os.path.join(out_dir, "data_items.c")
+            self.assertTrue(os.path.exists(generated_file))
+            self.assertTrue(os.path.exists(inventory_path))
+            with open(generated_file) as f:
+                self.assertIn("CONST_DATA struct ItemData gItemData[] = {", f.read())
+
+    def test_check_real_items_table_has_no_drift(self):
+        code, out, err = run_cli(["check", "--table", "items"])
+        self.assertEqual(code, 0, msg=out + err)
+
+
 if __name__ == "__main__":
     unittest.main()

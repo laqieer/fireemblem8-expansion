@@ -1,4 +1,4 @@
-# Generated-data platform (Issue #5 Chapter 2 slice -- Batch A + B + C)
+# Generated-data platform (Issue #5 Chapter 2 slice -- Batch A + B + C; global `items` Batch 1)
 
 ## Status
 
@@ -83,6 +83,16 @@ See "## chapterbundle schema (Batch C whole-bundle manifest)" below for
 the full write-up, and "Remaining Issue #5 scope" at the end of this
 document for what's still open.
 
+**Issue #5 Batch 1** (this update) adds the first **global, non-chapter-
+scoped** table: `items` (`src/data/items.json`), authoring all 206
+vanilla `gItemData[]` records (`ITEM_NONE`..`ITEM_UNK_CD`) field-for-field
+against `struct ItemData` (`include/bmitem.h`). Unlike every Batch A/B/C
+table, `items` is not part of the Chapter 2 vertical slice or the
+`chapterbundle` manifest -- it is scoped to schema/generate/round-trip
+only, per Issue #5 Batch 1's explicit "no link swap" boundary. See "##
+`items` schema (Issue #5 Batch 1: full global item table)" below for the
+full write-up.
+
 ## Source vs. generated vs. committed-public artifacts
 
 | Artifact | Path | Committed? | Linked into the ROM? |
@@ -111,6 +121,10 @@ document for what's still open.
 | Hand-written canonical C (existing) | `src/events/ch2-eventinfo.h` | Yes | **Yes** -- unchanged, still canonical |
 | Generated C89 (bulky) | `build/generated/data/data_ch2_eventlists.c` | **No** (gitignored) | No |
 | Committed inventory/summary | `reports/generated_data_eventlists_inventory.md` | Yes (small) | N/A |
+| Structured source (items, global, Issue #5 Batch 1) | `src/data/items.json` | Yes | No |
+| Hand-written canonical C (existing) | `src/data_items.c` | Yes | **Yes** -- unchanged, still canonical |
+| Generated C89 (bulky) | `build/generated/data/data_items.c` | **No** (gitignored) | No |
+| Committed inventory/summary | `reports/generated_data_items_inventory.md` | Yes (small) | N/A |
 
 Because none of the generated C is linked, this work cannot introduce
 `multiple definition` link errors and cannot silently change gameplay
@@ -179,6 +193,22 @@ scripts/generated_data/
                         tokenizer (no top-level commas between entries,
                         unlike the other tables' array literals)
     inventory.py        builds the committed inventory/summary report
+  items/
+    schema.py           ItemRecord (full struct ItemData -- 19 authored
+                        fields + derived .number), load_records(),
+                        validate() -- the first global (non-chapter-scoped)
+                        table, covering all 206 vanilla ITEM_* records
+                        with full contiguous 0..205 coverage validation
+    generate.py         C89 emission of gItemData[] matching the hand
+                        file's own default-omission convention field for
+                        field (only .weaponType/.iconId always emitted)
+    parser.py           round-trip parser for src/data_items.c + comparer
+                        (a bespoke offset-preserving entry splitter, since
+                        gItemData[] is one 206-entry array needing
+                        per-entry line numbers for diagnostics)
+    inventory.py        builds the committed inventory/summary report
+                        (weapon-type histogram, IA_* attribute usage,
+                        pStatBonuses/pEffectiveness pointer-symbol usage)
   chapterbundle/
     schema.py           ChapterBundleRecord (metadata-only whole-bundle
                         view), load_records(), validate() -- cross-checks
@@ -666,6 +696,88 @@ above -- so any drift in any of it (a symbol added/removed anywhere in
 the bundle's view, a dependency added/removed, the table graph's shape
 changing) fails `generated-data-check`.
 
+## `items` schema (Issue #5 Batch 1: full global item table)
+
+Source: `src/data/items.json` (schema `fe8.items.v1`), one object per
+`ITEM_*` record under `"items"`, mirroring `struct ItemData`
+(`include/bmitem.h`) field for field: `nameTextId`/`descTextId`/
+`useDescTextId`, `weaponType` (`ITYPE_*`), `attributes` (a validated
+`IA_*` bitmask list), nullable `statBonuses`/`effectiveness` (C-symbol
+references into `ItemBonus_*`/`ItemEffectiveness_*` via
+`CSymbolRefField`), `maxUses`/`might`/`hit`/`weight`/`crit`, `range`
+(`{min, max}` nibbles, packed into the struct's single `.encodedRange`
+byte), `costPerUse`, `requiredWexp` (a `WPN_EXP_*` symbolic threshold --
+this is the struct's misleadingly-named `.weaponRank` field; see
+`GetItemRequiredExp` in `src/bmitem.c`), `iconId`, `useEffect` (a bare
+`u8`; the codebase defines no `USE_EFFECT_*` enum for it), `weaponEffect`
+(`WPN_EFFECT_*`), and `weaponExp`. `.number` is **never authored** -- it
+always equals the record's own `[ITEM_X]` designator symbol in every one
+of the 206 vanilla records, so the generator derives it directly from
+each record's own `item` key.
+
+Unlike every Batch A/B/C table, `items` is **global, not chapter-scoped**:
+it is not part of `chapterbundle` and covers the entire vanilla `ITEM_*`
+enum (`ITEM_NONE`..`ITEM_UNK_CD`, 206 contiguous entries, indices 0..205)
+in one flat, index-designated array, rather than a per-chapter group.
+
+Validations enforced (`items/schema.py: validate()`): unique item
+entries; **full contiguous `ITEM_*` coverage** (every enum value from 0
+to the live max, no gaps or strays -- the one full-coverage check none of
+the other tables need, since they only reference a subset of their
+enums); `weaponType`/`requiredWexp`/`weaponEffect` are defined enum
+constants; `attributes` is a validated, duplicate-free `IA_*` bitmask
+list (scoped to the `IA_NONE = 0, ...` block, deliberately excluding the
+`// Helpers` combo constants `IA_REQUIRES_WEXP`/`IA_LOCK_ANY`, which no
+vanilla record references directly); nullable `statBonuses`/
+`effectiveness` via `CSymbolRefField` against `include/bmitem.h`/
+`include/variables.h` respectively; all numeric fields' widths/ranges
+(`u8`/`u16`, and the `range.min`/`range.max` nibble bounds of `[0, 15]`);
+`nameTextId`/`descTextId`/`useDescTextId` bounded by the live
+`MSG_COUNT` (read via the new generic `extract_define_constant()`
+helper, since `MSG_COUNT` is a `#define`, not an enum entry); `iconId`
+bounded by a count of `u8 item_icon_*[] = INCBIN_U8(".../*.4bpp")`
+declarations in `src/data/data_item_icon.c` -- the strongest
+deterministic *source-level* bound available, since the real built
+item-icon asset table only exists after `gbagfx` decompresses these
+tiles during the build.
+
+The generator (`items/generate.py`) matches the hand file's own
+default-omission convention field for field: only `.weaponType` and
+`.iconId` are unconditionally emitted (206/206 hand records, including an
+explicit `.iconId = 0x0` for `ITEM_NONE`); every other field is omitted
+when it equals its default (confirmed there are zero explicit-zero/
+`NONE`/`null` occurrences for any conditional field across the entire
+206-record hand file). Multi-flag `.attributes` combos are always emitted
+in ascending bit-position order, matching every one of the 25 distinct
+combos observed in the hand file (verified with zero violations),
+regardless of the JSON's own authoring order.
+
+### Round-trip checker (`items/parser.py`)
+
+`gItemData[]` is one large, single, 206-entry designated-initializer
+array (not many small per-symbol arrays like the other tables), so the
+round-trip parser uses a bespoke, offset-preserving top-level-entry
+splitter (`_split_entries_with_offsets`) to keep each `[ITEM_X] = { ... }`
+entry's own absolute character offset -- needed for accurate
+`file:line:column` diagnostics per entry, since a single offset for the
+whole array would be far too coarse. Every field is resolved to the same
+symbol-blind canonical tuple (`ItemRecord.as_tuple()`): every enum-valued
+field -- `weaponType` (`ITYPE_*`) included, alongside `attributes`/
+`requiredWexp`/`weaponEffect` -- reduces to its live integer value, so
+JSON authoring order or which of two equal-valued symbolic constants the
+hand file happens to use never cause a false mismatch -- only the actual
+encoded bytes matter.
+`python3 -m unittest scripts.generated_data.tests.test_items_roundtrip`
+proves all 206/206 records match `src/data_items.c` exactly with zero
+diagnostics.
+
+### Committed inventory (`items/inventory.py`)
+
+`reports/generated_data_items_inventory.md` is the committed, CI-checked
+report: total record count and index range, a weapon-type histogram, an
+`IA_*` attribute-usage histogram, `pStatBonuses`/`pEffectiveness`
+pointer-symbol usage tables, and the table's own dependency-graph digest.
+
 ## The C-symbol escape hatch (`escape_hatch.py`)
 
 Originally implemented and tested as a generic, reusable mechanism ahead
@@ -778,9 +890,12 @@ replaces any hand-written `src/` file), but as of Batch C,
 gate ahead of the modern debug/release linker checks -- a stale/
 inconsistent generated-data source now fails CI fast, with
 `file:line:column` diagnostics, instead of only being caught (or masked)
-by a much slower linker failure. `GENERATED_DATA_TABLES` now lists all 7
-registered tables, so the loop-based targets below cover `supports units
-shops traps eventscripts eventlists chapterbundle`:
+by a much slower linker failure. `GENERATED_DATA_TABLES` now lists all 8
+registered tables (Issue #5 Batch 1 added `items`), so the loop-based
+targets below cover `supports units shops traps items eventscripts
+eventlists chapterbundle`. `items` is **not** added to
+`GENERATED_DATA_CH2_TABLES` -- it is a global table, not part of the
+Chapter 2 bundle, so `generated-data-ch2-check` is unaffected:
 
 ```bash
 make generated-data-validate      # validate only, all tables
@@ -895,6 +1010,36 @@ Additionally covers, for Batch B (`test_eventlists_schema.py`,
   `check` against the real committed `src/data/ch2_eventlists.json`
   (drift-free) and the fixture-plus-`--dep-source` isolation path.
 
+Additionally covers, for Issue #5 Batch 1 (`test_items_schema.py`,
+`test_items_generate.py`, `test_items_roundtrip.py`, the two new generic
+`validators.py` helper tests -- `ExtractDefineConstantTests`,
+`ResolveBitmaskFlagsTests` -- and the `CliItemsTests` cases in
+`test_cli_new_tables.py`):
+
+* `items`: duplicate item entries, a gap in `ITEM_*` coverage (validated
+  against small fixture headers -- `mini_items.h`/`mini_bmitem.h`/
+  `mini_variables.h`/`mini_msg.h`/`mini_item_icon.c` -- so the mandatory
+  full-coverage check can be exercised in isolation, without every test
+  also having to author all 206 real records), undefined item/weapon-
+  type/weapon-exp-threshold/weapon-effect references, undefined and
+  duplicate `IA_*` attribute flags, out-of-range text IDs/range nibbles/
+  icon IDs/`useEffect`, undeclared `statBonuses`/`effectiveness` C-symbol
+  references, header-derived constant reads (the scoped `IA_*` block
+  excluding the `// Helpers` combos, live `MSG_COUNT`, live item-icon
+  count), deterministic C89 generation (default-field omission, ascending
+  attribute-flag ordering regardless of JSON order), fixture-based
+  round-trip match/mismatch/missing/extra-item detection, and the full
+  **206/206** hand-table round trip against the real `src/data_items.c`
+  with zero diagnostics. CLI tests cover `validate`/`generate`/`check`
+  against both an invalid fixture and the real committed
+  `src/data/items.json` (drift-free). The generated
+  `build/generated/data/data_items.c` was also compiled end-to-end
+  through the real `cpp | iconv | agbcc` pipeline (mirroring the
+  Makefile's `$(C_OBJECTS)` recipe) and assembled with `arm-none-eabi-as`
+  with zero errors/warnings, confirming it is valid, compilable C89 --
+  it is still never linked in place of `src/data_items.c` (out of Batch 1
+  scope).
+
 All fixtures and scratch directories live under
 `scripts/generated_data/tests/` (never `/tmp`).
 
@@ -915,23 +1060,33 @@ CI-gated via `generated-data-check` (now wired into
 `.github/workflows/build.yml`). Still open, and **explicitly out of
 scope** for this Batch C update:
 
-* **Global character/class/item schemas and authoring.** `chapterbundle`
-  only *references* `CHARACTER_*`/`CLASS_*`/`ITEM_*` IDs (as a
-  reference-only dependency set, cross-checked for existence against the
-  live enum headers) -- it does not model, generate, or claim authorship
-  of character/class/item data itself. A structured schema for those
-  global tables (and their own generation/round-trip/validation
-  pipeline) remains unbuilt.
+* **Global character/class schemas and authoring.** `items` (Issue #5
+  Batch 1) is the first global table with its own schema/generate/
+  round-trip pipeline, but `chapterbundle` still only *references*
+  `CHARACTER_*`/`CLASS_*` IDs (as a reference-only dependency set,
+  cross-checked for existence against the live enum headers) -- it does
+  not model, generate, or claim authorship of character/class data.
+  Structured schemas for those global tables (and their own generation/
+  round-trip/validation pipelines) remain unbuilt.
+* **Linking the `items` table itself.** Batch 1 is schema/generate/
+  round-trip only, per its own explicit scope -- `build/generated/data/
+  data_items.c` compiles cleanly through the real agbcc pipeline but is
+  never linked in place of `src/data_items.c`; that link-order migration
+  (and folding `items` into `chapterbundle`-style cross-table reachability
+  checks, if ever appropriate for a global table) remains open.
 * **Mechanics** (combat/growth/AI/etc. formulas and their own data
-  tables) are entirely untouched by Batches A/B/C.
+  tables) are entirely untouched by Batches A/B/C or Issue #5 Batch 1.
 * **Additional chapters.** This whole platform -- schemas, the
   `chapterbundle` composition pattern, the CLI, the Make targets, CI
-  wiring -- covers Chapter 2 only; every other chapter's equivalent
-  tables/bundle remain to be modeled from scratch.
+  wiring -- covers Chapter 2 only (`items` is the one exception, being
+  global by nature); every other chapter's equivalent tables/bundle
+  remain to be modeled from scratch.
 * **Actually linking any generated table** in place of its hand-written
   counterpart (requires the `ldscript.txt` link-order migration described
   in `CONTRIBUTING.md`, and is out of scope until a table is fully
   proven) -- Batch C does not link or generate any C output either (it's
-  metadata-only, like `eventscripts`).
+  metadata-only, like `eventscripts`), and neither does Issue #5 Batch 1's
+  `items` table.
 * **Migrating this pattern to other repository data domains** beyond the
-  Chapter 2 slice this Issue has scoped so far.
+  Chapter 2 slice and the `items` global table this Issue has scoped so
+  far.

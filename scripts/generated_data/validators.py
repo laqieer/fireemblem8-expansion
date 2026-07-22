@@ -16,6 +16,10 @@ _ENUM_ENTRY_RE = re.compile(
     r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(-?0[xX][0-9A-Fa-f]+|-?\d+)\s*,?\s*(//.*)?$"
 )
 
+_DEFINE_ENTRY_RE = re.compile(
+    r"^\s*#\s*define\s+([A-Za-z_][A-Za-z0-9_]*)\s+(-?0[xX][0-9A-Fa-f]+|-?\d+)\s*(?:/\*.*?\*/|//.*)?\s*$"
+)
+
 
 def extract_enum_constants(header_path, name_prefix=None):
     """Scan a C header for ``NAME = <value>,`` enum entries.
@@ -42,6 +46,72 @@ def extract_enum_constants(header_path, name_prefix=None):
             value = int(value_text, 16) if value_text.lower().startswith(("0x", "-0x")) else int(value_text)
             constants[name] = (value, line_number)
     return constants
+
+
+def extract_define_constant(header_path, name):
+    """Scan a C header for a single ``#define NAME VALUE`` object-like macro.
+
+    Unlike :func:`extract_enum_constants` (which reads ``NAME = value,``
+    enum entries), this reads plain preprocessor object-macro constants
+    such as ``#define MSG_COUNT 0x0D56`` -- the live upper bound for text
+    IDs (``items`` table's ``nameTextId``/``descTextId``/``useDescTextId``
+    fields validate against this instead of a hardcoded number so the
+    bound stays honest if the message table ever grows).
+
+    Returns ``(value, line_number)``. Raises :class:`GeneratedDataError`
+    if ``name`` is not defined as a plain integer literal anywhere in the
+    header.
+    """
+    with open(header_path, "r", encoding="utf-8") as handle:
+        for line_number, line in enumerate(handle, start=1):
+            match = _DEFINE_ENTRY_RE.match(line)
+            if not match or match.group(1) != name:
+                continue
+            value_text = match.group(2)
+            value = int(value_text, 16) if value_text.lower().startswith(("0x", "-0x")) else int(value_text)
+            return value, line_number
+    raise GeneratedDataError("could not find '#define {} ...' in {}".format(name, header_path))
+
+
+def resolve_bitmask_flags(names, flag_values, loc, reference_path, kind="flag"):
+    """Validate and resolve a list of symbolic bitmask flag names (e.g.
+    ``["IA_WEAPON", "IA_UNSELLABLE"]``) against a ``{name: int_value}``
+    mapping (typically built by a table-specific header reader, since
+    project bitmask enums are usually written as ``NAME = (1 << N)``
+    expressions that :func:`extract_enum_constants` does not parse).
+
+    Returns ``(value, errors)`` where ``value`` is the bitwise-OR of every
+    *valid* name's resolved value (unknown/duplicate names contribute
+    nothing to it, since the caller should treat a value accompanied by
+    errors as unreliable) and ``errors`` is a list of
+    :class:`GeneratedDataError` covering unknown names and names repeated
+    within the same list.
+    """
+    errors = []
+    seen = set()
+    value = 0
+    for name in names:
+        if name in seen:
+            errors.append(
+                GeneratedDataError(
+                    "duplicate {} '{}' in the same list".format(kind, name),
+                    loc,
+                    reference_path,
+                )
+            )
+            continue
+        seen.add(name)
+        if name not in flag_values:
+            errors.append(
+                GeneratedDataError(
+                    "undefined {} reference '{}'".format(kind, name),
+                    loc,
+                    reference_path,
+                )
+            )
+            continue
+        value |= flag_values[name]
+    return value, errors
 
 
 def validate_unique(entries, message_fmt, reference_path_fmt):
