@@ -213,5 +213,81 @@ class CliEventListsTests(unittest.TestCase):
         self.assertEqual(code, 0, msg=out + err)
 
 
+class CliChapterBundleTests(unittest.TestCase):
+    """chapterbundle has no dependency_tables() CLI override needed for
+    these fixtures: its 6 declared dependency tables (units/shops/traps/
+    eventscripts/eventlists/supports) all fall back to their own real,
+    committed default_source when --dep-source isn't given, so a
+    bundle-level fixture only needs to vary the bundle JSON itself (the
+    chapters.h/chapter_settings.json/gChapterDataAssetTable cross-check is
+    always against the real repo files too -- CLI validate() has no way to
+    override those paths, unlike the direct schema-level tests in
+    test_chapterbundle_schema.py)."""
+
+    def test_validate_real_ch2_bundle_passes(self):
+        code, out, err = run_cli(["validate", "--table", "chapterbundle"])
+        self.assertEqual(code, 0, msg=out + err)
+        self.assertIn("OK:", out)
+
+    def test_validate_valid_fixture_copy_passes(self):
+        code, out, err = run_cli([
+            "validate", "--table", "chapterbundle",
+            "--source", fixture_path("chapterbundle", "cli_valid.json"),
+            "--no-roundtrip",
+        ])
+        self.assertEqual(code, 0, msg=out + err)
+
+    def test_validate_invalid_fixture_fails_with_location(self):
+        code, out, err = run_cli([
+            "validate", "--table", "chapterbundle",
+            "--source", fixture_path("chapterbundle", "cli_missing_support_owner.json"),
+            "--no-roundtrip",
+        ])
+        self.assertEqual(code, 1)
+        self.assertIn("cli_missing_support_owner.json", err)
+        self.assertIn("missing from supportOwners.required", err)
+
+    def test_generate_skips_c_output_for_metadata_only_table(self):
+        with scratch_dir() as tmp:
+            out_dir = os.path.join(tmp, "out")
+            inventory_path = os.path.join(tmp, "inventory.md")
+            code, out, err = run_cli([
+                "generate", "--table", "chapterbundle",
+                "--source", fixture_path("chapterbundle", "cli_valid.json"),
+                "--out-dir", out_dir,
+                "--inventory", inventory_path,
+                "--no-roundtrip",
+            ])
+            self.assertEqual(code, 0, msg=out + err)
+            self.assertIn("skip: table 'chapterbundle' is metadata-only; no C output generated", out)
+            self.assertTrue(os.path.exists(inventory_path))
+            self.assertFalse(os.listdir(out_dir) if os.path.isdir(out_dir) else False)
+            with open(inventory_path) as f:
+                content = f.read()
+                self.assertIn("Ch2Events", content)
+
+    def test_check_real_ch2_bundle_has_no_drift(self):
+        code, out, err = run_cli(["check", "--table", "chapterbundle"])
+        self.assertEqual(code, 0, msg=out + err)
+
+    def test_check_detects_injected_drift_in_committed_inventory(self):
+        with scratch_dir() as tmp:
+            out_dir = os.path.join(tmp, "out")
+            inventory_path = os.path.join(tmp, "inventory.md")
+            common = [
+                "--table", "chapterbundle",
+                "--source", fixture_path("chapterbundle", "cli_valid.json"),
+                "--out-dir", out_dir,
+                "--inventory", inventory_path,
+                "--no-roundtrip",
+            ]
+            run_cli(["generate"] + common)
+            with open(inventory_path, "a") as f:
+                f.write("\ntampered line\n")
+            code, out, err = run_cli(["check"] + common)
+            self.assertEqual(code, 1)
+            self.assertIn("DRIFT", err)
+
+
 if __name__ == "__main__":
     unittest.main()

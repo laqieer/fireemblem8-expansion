@@ -20,6 +20,16 @@ jobs:
     - name: Build tools
       run: ./build_tools.sh
 
+    # Generated-data platform (Issue #5 Chapter 2 slice, Batch C): validates
+    # every registered table's JSON source, cross-table references, the
+    # whole-bundle chapter manifest, and committed inventory drift. Pure
+    # Python/stdlib, no generated C is linked here -- runs once, before the
+    # target-ROM linker gate below, so a stale/inconsistent data source
+    # fails fast with actionable file:line diagnostics instead of being
+    # masked by (or confused with) a much slower linker failure.
+    - name: Check generated-data tables for drift
+      run: make generated-data-check
+
     # The linker gate builds the full modern object/ELF/ROM chain, checks
     # deterministic memory budgets, rejects orphan/overflow/cross-overlay
     # errors, and verifies normal plus shifted boot/title behavior.

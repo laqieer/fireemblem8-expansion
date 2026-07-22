@@ -1,0 +1,9 @@
+{
+  "$schema": "fe8.shops.v1",
+  "shops": [
+    {
+      "symbol": "ShopList_EL_Armory",
+      "items": ["ITEM_SWORD_SLIM", "ITEM_VULNERARY"]
+    }
+  ]
+}

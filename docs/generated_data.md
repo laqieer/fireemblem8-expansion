@@ -1,4 +1,4 @@
-# Generated-data platform (Issue #5 Chapter 2 slice -- Batch A + B)
+# Generated-data platform (Issue #5 Chapter 2 slice -- Batch A + B + C)
 
 ## Status
 
@@ -43,11 +43,45 @@ None of these tables replace or link any hand-written source yet.
 `src/events/ch2-eventinfo.h` all remain the canonical, linked/
 authoritative sources. Issue #5 itself is **not closed** by Batch A/B.
 
-Still open for **Batch C** (not part of this update): a whole-bundle
-manifest tying every Chapter 2 table (`units`/`shops`/`traps`/
-`eventscripts`/`eventlists`) together, and a chapter-settings
-cross-check that the full vertical slice is internally consistent as a
-whole. See "Remaining Issue #5 scope" at the end of this document.
+**Batch C** (this update) closes that gap: a `chapterbundle` table
+(`src/data/ch2_bundle.json`) is a **metadata-only, cross-table view**
+tying every Batch A/B Chapter 2 table together into one bundle, plus the
+`chapter_settings.json`/`gChapterDataAssetTable` wiring that actually
+selects Chapter 2 at runtime:
+
+* Cross-checks `chapter.id`/`chapterSettingsIndex`/`internalName`/
+  `mapEventDataId` against `include/constants/chapters.h`,
+  `src/data/chapter_settings.json`, and `src/data/data_8B363C.c`'s
+  `gChapterDataAssetTable`, proving `mapEventDataId` really does resolve
+  to the `eventlists` table's own `Ch2Events` manifest symbol.
+* Proves every `units`/`shops`/`traps`/`eventscripts` record this bundle
+  declares is reachable -- from the `eventlists` manifest/list-entry
+  macro arguments, or from an explicitly-cited hand-written reference
+  (`externalReferences`, verified by literal whole-word search, never by
+  expanding event-script bytecode) -- so there is no orphan Ch2-owned
+  record.
+* Cross-checks Chapter 2's required `SupportData` owners (every
+  non-enemy unit character) both exist and reciprocate.
+* Declares the `CHARACTER_*`/`CLASS_*`/`ITEM_*` IDs Chapter 2's own unit/
+  shop/support data actually uses as a **reference-only** dependency set
+  -- cross-checked against the live enum headers and against exactly
+  what Chapter 2's data references (both directions: undeclared and
+  unused), but explicitly **not** claimed as authored by this slice.
+* Proves the whole multi-table dependency graph (every registered
+  table's `dependency_tables()` edges, not just this one table's own) is
+  acyclic and has a deterministic topological order.
+* Ships a committed whole-bundle inventory/report
+  (`reports/generated_data_bundle_inventory.md`) with per-table record
+  counts/digests, the external-reference table, the reference-only
+  dependency sets, the full dependency-graph digest/topo-order, and one
+  overall bundle digest.
+* `generated-data-check` is now wired into
+  `.github/workflows/build.yml`, once per job, before the modern debug/
+  release linker checks -- see "Make targets" below.
+
+See "## chapterbundle schema (Batch C whole-bundle manifest)" below for
+the full write-up, and "Remaining Issue #5 scope" at the end of this
+document for what's still open.
 
 ## Source vs. generated vs. committed-public artifacts
 
@@ -145,6 +179,23 @@ scripts/generated_data/
                         tokenizer (no top-level commas between entries,
                         unlike the other tables' array literals)
     inventory.py        builds the committed inventory/summary report
+  chapterbundle/
+    schema.py           ChapterBundleRecord (metadata-only whole-bundle
+                        view), load_records(), validate() -- cross-checks
+                        chapter_settings.json/gChapterDataAssetTable wiring,
+                        reachability/orphans, support owners, and
+                        character/class/item dependency sets across all 6
+                        other dependency_tables(); full_dependency_graph()
+                        merges every registered schema's own dependency
+                        edges to prove the whole system's table DAG is
+                        acyclic (no generate.py/parser.py -- nothing to
+                        generate or round-trip for a metadata-only,
+                        cross-table bundle)
+    inventory.py        builds the committed whole-bundle inventory/
+                        summary report (per-table counts/digests,
+                        external references, dependency sets, full
+                        dependency-graph digest/topo-order, one bundle
+                        digest)
   tests/               stdlib unittest suite (see "Testing" below)
 ```
 
@@ -168,10 +219,11 @@ line comments) -- it is not a general-purpose JSON5 parser.
 
 `schema.SchemaRegistry` maps `(table_name, version)` to a `TableSchema`.
 `registry.py` is the single place every table registers itself -- now
-`supports`, `units`, `shops`, `traps`, `eventscripts`, and `eventlists`
-(all v1); the CLI resolves `--table NAME` through this registry instead
-of hardcoding imports, so `cli.py` has zero per-table branches -- adding
-a table means adding a package + one line in `registry.py`, nothing else.
+`supports`, `units`, `shops`, `traps`, `eventscripts`, `eventlists`, and
+`chapterbundle` (all v1); the CLI resolves `--table NAME` through this
+registry instead of hardcoding imports, so `cli.py` has zero per-table
+branches -- adding a table means adding a package + one line in
+`registry.py`, nothing else.
 
 `schema.DependencyGraph` records which headers/tables a schema depends on
 (`supports` depends on `constants/characters.h` and
@@ -503,6 +555,117 @@ call, the tutorial list, and every manifest field against
 `src/events/ch2-eventinfo.h` -- **100%**, not a sample (Issue #5 Batch B
 DONE criterion).
 
+## `chapterbundle` schema (Batch C whole-bundle manifest)
+
+Source: `src/data/ch2_bundle.json`. Like `eventscripts`, this table is
+**metadata-only**: there is no single hand-written C file that *is* "the
+bundle" to round-trip against, so `default_hand_source`/
+`default_output_name` are both `None` (`generate`/`check` skip C output,
+same as `eventscripts`). The bundle is a cross-table *view* over Batch
+A/B's own tables, each of which is still independently round-tripped by
+its own schema.
+
+```json
+{
+  "$schema": "fe8.chapterbundle.v1",
+  "chapter": {
+    "id": "CHAPTER_L_2", "name": "Ch2", "chapterSettingsIndex": 2,
+    "internalName": "L02", "mapEventDataId": 13
+  },
+  "manifest": { "table": "eventlists", "symbol": "Ch2Events" },
+  "tables": {
+    "units": { "source": "src/data/ch2_units.json", "symbols": ["..."] },
+    "shops": { "source": "src/data/ch2_shops.json", "symbols": ["..."] },
+    "traps": { "source": "src/data/ch2_traps.json", "symbols": ["..."] },
+    "eventscripts": { "source": "src/data/ch2_eventscripts.json", "symbols": ["..."] },
+    "eventlists": { "source": "src/data/ch2_eventlists.json", "symbols": ["..."] }
+  },
+  "supportOwners": { "source": "src/data/supports.json", "required": ["CHARACTER_EIRIKA", "..."] },
+  "externalReferences": [
+    { "table": "units", "symbol": "UnitDef_Ch2Enemy_0", "file": "src/events/ch2-eventscript.h" }
+  ],
+  "dependencies": { "characters": ["..."], "classes": ["..."], "items": ["..."] }
+}
+```
+
+* **`chapter`** is the row this bundle claims to be: `id` must resolve
+  in `include/constants/chapters.h`'s `chapter_idx` enum, and its enum
+  value must equal `chapterSettingsIndex`; that index's
+  `chapter_settings.json` row's `internalName`/`mapEventDataId` must
+  match exactly.
+* **`manifest`** is which table/symbol `mapEventDataId` resolves to via
+  `gChapterDataAssetTable` (parsed from `src/data/data_8B363C.c` with
+  `cparse.find_c_array_blocks`/`split_top_level_entries`, the same
+  brace-depth-aware helpers `eventlists/parser.py` uses) -- and is
+  cross-checked to equal the `eventlists` dependency table's own
+  `manifest.symbol`, so the bundle and the `eventlists` table can never
+  silently disagree about which array *is* `Ch2Events`.
+* **`tables`** covers exactly the 5 registered per-symbol Chapter 2
+  tables (`units`/`shops`/`traps`/`eventscripts`/`eventlists` --
+  `supports` is chapter-agnostic and is referenced only via
+  `supportOwners`, never listed here). Each entry's `symbols` must
+  exactly match that table's real records: any declared symbol that
+  isn't a real record is an error (a bogus/renamed reference); any real
+  record missing from `symbols` is also an error ("stale bundle
+  manifest" -- content-level drift distinct from the CLI's own
+  committed-inventory drift check).
+* **Reachability / orphan check**: every declared `units`/`shops`/
+  `traps`/`eventscripts` symbol must be reachable from the `eventlists`
+  manifest -- unit/trap fields and shop/event-script macro arguments
+  (reusing `eventlists/schema.py`'s own `MACRO_SPECS`) -- or explicitly
+  declared in `externalReferences`. An `externalReferences` entry is
+  only accepted if its cited symbol literally appears (whole-word) in
+  its cited file -- proving the citation is genuine without parsing or
+  reimplementing event-script bytecode. (There is no equivalent "orphan
+  eventlist": an `eventlists` table's own list/tutorial/manifest symbols
+  *are* the manifest, so they're trivially always reachable.) The real
+  Ch2 bundle needs external references for the 6 unit groups and 3
+  world-map event scripts only reachable from hand-written event-script/
+  world-map wiring (`src/events/ch2-eventscript.h`,
+  `src/events/lordsplit-eventscript.h`, `src/events/ch2-wm.h`) rather
+  than the typed `eventlists` macros.
+* **`supportOwners.required`** must equal the *computed* set of every
+  Ch2 unit character with a symbolic `charIndex` and
+  `allegiance != FACTION_ID_RED` (i.e. every ally/NPC unit, not the red
+  faction's boss characters) -- each must have its own `SupportData`
+  record in the `supports` dependency table, and every partner that
+  record lists must itself have a `SupportData` record (reciprocal
+  support required).
+* **`dependencies`** is the `characters`/`classes`/`items` this bundle's
+  own `units`/`shops`/`supportOwners` data references -- scoped
+  deliberately narrowly (not the transitive closure of support
+  reciprocal partners or `eventlists` macro-argument characters, which
+  are already validated by their own tables) -- cross-checked for
+  uniqueness, existence in the live `characters.h`/`classes.h`/
+  `items.h` headers, and an exact two-way match against what's actually
+  used (undeclared-but-used and declared-but-unused are both errors).
+  This is explicitly **reference-only**: it does not claim these
+  characters/classes/items are themselves authored by this slice.
+* Finally, `full_dependency_graph()` merges *every* registered table
+  schema's `dependency_tables()` edges (not just `chapterbundle`'s own)
+  into one combined `DependencyGraph` and calls `topo_order()`, proving
+  the whole multi-table system -- not just this one table's direct
+  dependencies -- is acyclic and deterministic.
+
+Cross-table validation loads `units`/`shops`/`traps`/`eventscripts`/
+`eventlists`/`supports` via `dependency_tables()` (same mechanism
+`eventlists` uses); the chapter-settings/asset-table/chapters-enum
+cross-check instead reads those pre-existing, read-only repo assets
+directly (`read_chapter_settings_row()`/`read_asset_table_entries()`),
+since they're consumed, not owned, by this schema.
+
+### Committed inventory (`chapterbundle/inventory.py`)
+
+`reports/generated_data_bundle_inventory.md` is the committed,
+CI-checked whole-bundle report: per-table symbol counts and a stable
+digest of each table's declared symbol list, the `externalReferences`
+table (symbol/table/cited file), the `dependencies` sets marked
+reference-only, the `full_dependency_graph()` digest and deterministic
+topological order, and one overall bundle digest combining all of the
+above -- so any drift in any of it (a symbol added/removed anywhere in
+the bundle's view, a dependency added/removed, the table graph's shape
+changing) fails `generated-data-check`.
+
 ## The C-symbol escape hatch (`escape_hatch.py`)
 
 Originally implemented and tested as a generic, reusable mechanism ahead
@@ -568,21 +731,31 @@ python3 -m scripts.generated_data validate --table eventlists \
   --dep-source shops=scripts/generated_data/tests/fixtures/eventlists/deps_shops.json \
   --dep-source traps=scripts/generated_data/tests/fixtures/eventlists/deps_traps.json \
   --dep-source eventscripts=scripts/generated_data/tests/fixtures/eventlists/deps_eventscripts.json
+
+# chapterbundle (metadata-only, like eventscripts) cross-validates against
+# units/shops/traps/eventscripts/eventlists/supports; without --dep-source
+# each falls back to its own real, committed default_source, so validating
+# the real bundle needs no extra flags at all:
+python3 -m scripts.generated_data validate --table chapterbundle
+python3 -m scripts.generated_data generate  --table chapterbundle
+python3 -m scripts.generated_data check     --table chapterbundle
 ```
 
 Common flags: `--source PATH` (JSON source, default per-table, e.g.
 `src/data/supports.json`/`src/data/ch2_units.json`/
 `src/data/ch2_shops.json`/`src/data/ch2_traps.json`/
-`src/data/ch2_eventscripts.json`/`src/data/ch2_eventlists.json`),
-`--hand-source PATH` (round-trip comparison target, default per-table,
-e.g. `src/data_supports.c`/`src/events_udefs.c`/`src/events_shoplist.c`/
-`src/events_trapdata.c`/`src/events/ch2-eventinfo.h`; `eventscripts` has
-none -- it's metadata-only), `--no-roundtrip` (skip it), `--out-dir DIR`
+`src/data/ch2_eventscripts.json`/`src/data/ch2_eventlists.json`/
+`src/data/ch2_bundle.json`), `--hand-source PATH` (round-trip comparison
+target, default per-table, e.g. `src/data_supports.c`/
+`src/events_udefs.c`/`src/events_shoplist.c`/`src/events_trapdata.c`/
+`src/events/ch2-eventinfo.h`; `eventscripts`/`chapterbundle` have none --
+both are metadata-only), `--no-roundtrip` (skip it), `--out-dir DIR`
 (generated C output directory, default `build/generated/data`),
 `--inventory PATH` (committed inventory/summary path, default per-table
 under `reports/`), `--dep-source NAME=PATH` (repeatable; overrides one
 declared table dependency's JSON source -- only meaningful for schemas
-that declare `dependency_tables()`, currently just `eventlists`).
+that declare `dependency_tables()`, currently `eventlists` and
+`chapterbundle`).
 
 * `validate` -- load + validate; prints **every** diagnostic (not just the
   first), each with `file:line:column`.
@@ -598,18 +771,27 @@ that declare `dependency_tables()`, currently just `eventlists`).
 
 ## Make targets (`generated_data.mk`)
 
-Standalone, not wired into `all` or `.github/workflows/build.yml` (which
-is scoped to target-ROM linker/boot checks per repository policy) --
-deliberately isolated so this work can't destabilize the existing CI
-gate. `GENERATED_DATA_TABLES` now lists all 6 registered tables, so every
-target below loops over `supports units shops traps eventscripts
-eventlists`:
+Still never wired into `all` (this work never links generated C or
+replaces any hand-written `src/` file), but as of Batch C,
+`generated-data-check` **is** wired into
+`.github/workflows/build.yml`, once per job, as an actionable pre-flight
+gate ahead of the modern debug/release linker checks -- a stale/
+inconsistent generated-data source now fails CI fast, with
+`file:line:column` diagnostics, instead of only being caught (or masked)
+by a much slower linker failure. `GENERATED_DATA_TABLES` now lists all 7
+registered tables, so the loop-based targets below cover `supports units
+shops traps eventscripts eventlists chapterbundle`:
 
 ```bash
-make generated-data-validate   # validate only, all tables
-make generated-data-generate   # validate + write build/ output + inventory, all tables
-make generated-data-check      # CI-suitable: fails on drift, from a clean tree, all tables
-make generated-data-test       # python3 -m unittest discover -s scripts/generated_data/tests
+make generated-data-validate      # validate only, all tables
+make generated-data-generate      # validate + write build/ output + inventory, all tables
+make generated-data-check         # CI-suitable: fails on drift, from a clean tree, all tables (wired into CI)
+make generated-data-test          # python3 -m unittest discover -s scripts/generated_data/tests
+
+# Batch C convenience aliases:
+make generated-data-ch2-check     # check just the tables the Ch2 bundle composes + the bundle itself
+make generated-data-bundle-validate  # validate just the chapterbundle table (fast iteration)
+make generated-data-bundle-check     # check just the chapterbundle table (fast iteration)
 ```
 
 ## Testing
@@ -628,6 +810,28 @@ symbols against its own test fixtures), the full 33-record hand-table
 round trip (plus injected mismatch detection), and CLI-level drift
 detection (including against the real committed
 `src/data/supports.json` and inventory report).
+
+`test_chapterbundle_schema.py` covers, for Batch C's `chapterbundle`
+table (reusing the "EL" fixture family already established by
+`tests/fixtures/eventlists/`, plus a small `deps_supports.json` and tiny
+fixture `chapters.h`/`chapter_settings.json`/`data_8B363C.c` stand-ins):
+mismatched chapter index/internalName/mapEventDataId, a `mapEventDataId`
+resolving to the wrong manifest symbol, an unknown chapter id, a required
+support owner missing from `supportOwners.required`, a required support
+owner with no `SupportData` record of its own, a required support
+owner's un-reciprocated partner, an orphan unit/shop/trap/event-script
+record (declared but unreachable and uncited), undeclared/duplicate
+character/class/item dependencies, a stale bundle manifest (both a real
+record missing from `tables.*.symbols` and a declared symbol that isn't a
+real record), the full multi-table dependency graph's acyclic/
+deterministic topological order plus a synthetic injected-cycle
+detection test, and an end-to-end test loading all 6 real dependency
+tables + the real `chapter_settings.json` and validating the exact
+committed `src/data/ch2_bundle.json` with zero diagnostics.
+`test_cli_new_tables.py`'s `CliChapterBundleTests` covers the same
+table's `validate`/`generate`/`check` CLI subcommands (including the
+metadata-only C-output skip message and committed-inventory drift
+detection) against both a fixture copy and the real committed bundle.
 
 Additionally covers, for the Batch A tables (`test_units_schema.py`,
 `test_units_roundtrip.py`, `test_units_generate.py`,
@@ -696,32 +900,38 @@ All fixtures and scratch directories live under
 
 ## Remaining Issue #5 scope (explicitly not done here)
 
-Batch A + Batch B together are scoped to the Chapter 2 vertical slice's
-pure-data tables plus its event-list/manifest composition layer, and do
-**not** close Issue #5. Batch B closes the gap Batch A left open --
-`EventListScr_Ch2_*`/`Ch2Events` are now modeled, generated, and
-round-tripped (`eventlists` table, this doc's `## eventlists schema`
-section) -- so `eventscripts`' 43 leaf symbols are now provably wired
-into the right `ChapterEventGroup` slots via `Ch2Events`' designated
-fields and the 7 list arrays' macro-call arguments. Still open, for
-**Batch C only**:
+Batch A + Batch B + Batch C together are scoped to the Chapter 2
+vertical slice's pure-data tables, its event-list/manifest composition
+layer, and now (Batch C) proving that whole slice is internally coherent
+as one bundle against the chapter-settings row that actually selects it
+at runtime -- but this still does **not** close Issue #5. Batch C closes
+the gap Batch A/B left open -- `src/data/ch2_bundle.json` (`chapterbundle`
+table, this doc's `## chapterbundle schema` section) now proves the
+`chapter_settings.json`/`gChapterDataAssetTable` wiring, every
+`units`/`shops`/`traps`/`eventscripts` record's reachability, required
+support-owner existence/reciprocity, and the referenced character/class/
+item dependency sets are all internally consistent as a single bundle,
+CI-gated via `generated-data-check` (now wired into
+`.github/workflows/build.yml`). Still open, and **explicitly out of
+scope** for this Batch C update:
 
-* **Batch C (whole-bundle manifest + chapter cross-check)**: a manifest
-  tying all 6 Chapter 2 tables (`units`, `shops`, `traps`,
-  `eventscripts`, `eventlists`, and `supports` where relevant) together
-  into one bundle-level artifact, plus a chapter-settings cross-check
-  (e.g. that `ChapterData`/`ChapterEventGroup` wiring for Chapter 2 as a
-  whole is internally consistent, that every unit/trap/shop placement
-  referenced anywhere is reachable from the chapter's declared tables,
-  etc.) -- not attempted by Batch A or Batch B, which validate each
-  table (and, for `eventlists`, its direct cross-table references)
-  independently rather than the slice as one bundle.
-* Migrating additional gameplay tables/chapters beyond this Chapter 2
-  slice.
-* Actually linking any generated table in place of its hand-written
+* **Global character/class/item schemas and authoring.** `chapterbundle`
+  only *references* `CHARACTER_*`/`CLASS_*`/`ITEM_*` IDs (as a
+  reference-only dependency set, cross-checked for existence against the
+  live enum headers) -- it does not model, generate, or claim authorship
+  of character/class/item data itself. A structured schema for those
+  global tables (and their own generation/round-trip/validation
+  pipeline) remains unbuilt.
+* **Mechanics** (combat/growth/AI/etc. formulas and their own data
+  tables) are entirely untouched by Batches A/B/C.
+* **Additional chapters.** This whole platform -- schemas, the
+  `chapterbundle` composition pattern, the CLI, the Make targets, CI
+  wiring -- covers Chapter 2 only; every other chapter's equivalent
+  tables/bundle remain to be modeled from scratch.
+* **Actually linking any generated table** in place of its hand-written
   counterpart (requires the `ldscript.txt` link-order migration described
   in `CONTRIBUTING.md`, and is out of scope until a table is fully
-  proven).
-* Wiring `generated-data-check` into `.github/workflows/build.yml` (left
-  as a standalone target for now, per repository policy of keeping that
-  workflow scoped to target-ROM linker/boot checks).
+  proven) -- Batch C does not link or generate any C output either (it's
+  metadata-only, like `eventscripts`).
+* **Migrating this pattern to other repository data domains** beyond the
+  Chapter 2 slice this Issue has scoped so far.
