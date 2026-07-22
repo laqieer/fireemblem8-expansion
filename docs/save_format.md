@@ -557,12 +557,16 @@ while remaining sensitive to every other byte in the image.
 | `savecompat-current.json` | `SAVE_COMPAT_CURRENT` (or auto-repaired `SAVE_COMPAT_EMPTY`): no compatibility dialog appears; the normal save menu is reached directly. Also reused for the migrated-v1-load proof (a host-migrated v0->v1 image classifies `CURRENT` and loads through the normal path). |
 | `savecompat-dialog-back.json` | For a given non-CURRENT state: the dialog appears with a state-specific message, dismissing it and selecting **Back** leaves the game on the title/game-control path, and SRAM is byte-for-byte unchanged across all three checkpoints (dialog-shown / after-dismiss / back-returned). |
 | `savecompat-erase.json` | Selecting **Erase All Save Data** shows the irreversible-erase warning alongside the Yes/No submenu; confirming **Yes** wipes SRAM to a fresh, valid `SAVE_COMPAT_CURRENT` image, and the normal save menu becomes reachable afterward. |
+| `savesuspend-resume-modern-debug.json` (debug-only) | A genuine ordinary-UI manual **Suspend** (Map Menu) -> real **soft-reset** combo -> **Resume** (Save Menu) round trip, from a clean boot via #11 Slice 1's debug-only Chapter 2 launcher: proves the manual save is a distinct write from the automatic auto-save, SRAM changed and remains valid CURRENT-format, and the restored live game state matches the manually-saved one exactly. See "Save/load acceptance status" below. |
 
 Committed fingerprints exist per-scenario/state for all three supported
 ROMs -- `-legacy`, `-modern-debug`, and `-modern-release` -- covering all
 eight `SaveCompatState` values (the `CURRENT`/`EMPTY` and six non-CURRENT
 dialog states), confirmed erase, and the migrated-v1 load: 27 fingerprint
-files under `tools/gba-playtest/fingerprints/`.
+files under `tools/gba-playtest/fingerprints/`, plus one dedicated
+`savesuspend-resume-modern-debug.json` fingerprint (debug-only, no
+`-legacy`/`-modern-release` counterpart since the launcher it depends on
+is debug-only).
 
 ### Save/load acceptance status (requirement 8)
 
@@ -576,20 +580,77 @@ merely inferred) and a `sram_hash` (a stable, checkpointed runtime
 state, not input-playback-only evidence). This is verified against all
 three supported ROMs (legacy, modern-debug, modern-release).
 
-A full save-menu **write -> reload/read** scenario (create/select a save
-slot from a clean boot, checkpoint a written value, reboot/reload, and
-checkpoint that the same value reads back) is **not yet implemented** and
-remains genuinely blocked within this slice's scope: it requires driving
-the existing per-slot save-menu UI (slot selection, name entry, and the
-in-game state needed to have something save-worthy to write) end-to-end
-from a clean boot, which depends on general clean-boot game-state
-launchers/fixtures (issue #11's scope) that this slice does not own and
-must not implement (`config.mk`, per-slot save-menu/difficulty data
-paths, and generated-data/debug/gameplay subsystems are explicitly out of
-this slice's file domain). This is the one specific, precisely-identified
-acceptance gap this slice reports rather than falsely claims closed; the
-generated-CURRENT-save load proof above is the strongest evidence
-implementable without that dependency.
+A full **write -> reset -> reload/read** scenario is now implemented:
+`savesuspend-resume-modern-debug.json` (`tools/gba-playtest/scenarios/`)
+drives, from a clean boot, a genuine ordinary-UI manual **Suspend** ->
+**soft-reset** -> **Resume** round trip and checkpoints that the restored
+live game state matches exactly what was manually saved -- closing the
+acceptance gap the previous revision of this section reported.
+
+The scenario reuses #11 Slice 1's debug-only "Fast Boot: Chapter 2" title
+hotkey/launcher (see `docs/debugtools.md`) to reach a fixed, deterministic
+Chapter 2 map state from a clean boot -- this is the general clean-boot
+game-state launcher this slice previously lacked, now available and
+depended upon exactly as intended, without this slice re-implementing any
+part of it. Because that launcher is debug-only (absent from release
+builds by design; see `docs/debugtools.md`), this scenario is likewise
+debug-only: `tools/gba-playtest/run_save_compat_checks.py` only runs it
+for `MODERN_CONFIG=debug`, and release's `SaveCompatState`/migrated-load
+coverage above is completely unaffected and unchanged.
+
+After reaching the interactive map, the scenario replays only ordinary
+input -- cursor movement and `A`/`DOWN` taps -- to open the real Map Menu
+and select **Suspend** -> **Yes**, which calls the same `WriteSuspendSave()`
+the in-game Player Phase's own automatic auto-save calls; no test hook or
+direct C call was added. Two facts distinguish this from a no-op replay of
+that automatic auto-save:
+
+- `WriteSuspendSave()`'s alternating-slot mechanism
+  (`GetNextSuspendSaveId()`/`WriteSwappedSuspendSaveId()` in
+  `src/bmsave.c`) writes the manual Suspend to a **different**
+  `SaveBlockInfo` slot (`SAVE_ID_SUSPEND_ALT`) than the automatic
+  Player-Phase-start auto-save (`SAVE_ID_SUSPEND`), which the scenario's
+  `suspend-confirmed` checkpoint probes directly (both slots' magic/kind
+  bytes, proving both are valid CURRENT-format `SaveBlockInfo` records).
+- Each slot's own stored cursor-position bytes differ: the automatic
+  auto-save's stored cursor reflects wherever the cursor was at
+  Player-Phase start, while the manual Suspend's stored cursor exactly
+  matches the live cursor position at the moment Suspend was confirmed --
+  proof the manual write is the newer, distinct one.
+
+The same checkpoint also asserts the debug-only suppression probe
+(`gDebugToolsProbe.bootstrapSuppressionActive`) reads `0` and that the
+checkpoint's `sram_hash` differs from the initial synthetic fixture's own
+hash (proven by `tests/test_savesuspend_resume_scenario.py`'s runtime
+test, using the same byte-exact FNV-1a mirror the hash-normalization
+tests use) -- i.e. SRAM demonstrably changed as a result of the manual
+save, and remains valid CURRENT-format immediately afterward.
+
+The scenario then replays the real **A+B+SELECT+START** soft-reset combo
+(held long enough for `SoftResetIfKeyComboPressed()` to observe it),
+confirms genuine reboot via the boot logo, and replays the same ordinary
+cold-boot title tap cadence `savecompat-current.json` already uses. With a
+valid Suspend save present, this ordinary cadence alone navigates
+title -> save menu -> **Resume** automatically and calls the real
+`ReadSuspendSave()` path (`src/savemenu.c`'s existing
+`main_sel_bitfile & 1` UI branch -- not a test hook); no scripted "select
+Resume" input was needed or added. `IsValidSuspendSave()`/`ReadSuspendSave()`
+read the most-recently-written slot first
+(`GetLastSuspendSaveId()`/`GetNextSuspendSaveId()`), so Resume naturally
+restores the newer manual save, not the earlier automatic one.
+
+The final `resumed-chapter2` checkpoint proves the restored state reached
+the intended condition via stable, symbol-derived probes (not raw
+framebuffer similarity or input-playback alone): `gPlaySt.chapterIndex`,
+`gPlaySt.faction`, `gPlaySt.xCursor`/`yCursor` (matching the manually
+saved cursor position, not the automatic auto-save's), a unit item probe
+(`gUnitArrayBlue[1]`'s Rapier), and both `SaveBlockInfo` slots' magic/kind
+bytes (CURRENT-format validity persists post-resume).
+
+**Issue #2 acceptance is now complete.** Every previously-deferred proof
+point -- format, migration, the global compatibility gate/UI, all-state
+coverage, and this deterministic write -> reset -> reload scenario -- is
+implemented and verified against a real, ordinary UI path.
 
 ### Host migration workflow (recap)
 

@@ -1,0 +1,169 @@
+{
+  "checkpoints": [
+    {
+      "frame": 18200,
+      "framebuffer_hash": "fnv1a64-rgb24:55b17ce76de1eb3a",
+      "name": "suspend-confirmed",
+      "probes": [
+        {
+          "address": "0x020210b2",
+          "size": 1,
+          "value": "0x02"
+        },
+        {
+          "address": "0x020210b3",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "0x020210b6",
+          "size": 1,
+          "value": "0x09"
+        },
+        {
+          "address": "0x020210b7",
+          "size": 1,
+          "value": "0x04"
+        },
+        {
+          "address": "0x020315b0",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x0e000094",
+          "size": 1,
+          "value": "0x24"
+        },
+        {
+          "address": "0x0e000095",
+          "size": 1,
+          "value": "0x06"
+        },
+        {
+          "address": "0x0e000096",
+          "size": 1,
+          "value": "0x04"
+        },
+        {
+          "address": "0x0e00009a",
+          "size": 1,
+          "value": "0x01"
+        },
+        {
+          "address": "0x0e0000a4",
+          "size": 1,
+          "value": "0x24"
+        },
+        {
+          "address": "0x0e0000a5",
+          "size": 1,
+          "value": "0x06"
+        },
+        {
+          "address": "0x0e0000a6",
+          "size": 1,
+          "value": "0x04"
+        },
+        {
+          "address": "0x0e0000aa",
+          "size": 1,
+          "value": "0x01"
+        },
+        {
+          "address": "0x0e0000ac",
+          "size": 1,
+          "value": "0x4c"
+        },
+        {
+          "address": "0x0e0000ad",
+          "size": 1,
+          "value": "0x20"
+        },
+        {
+          "address": "0x0e0000e6",
+          "size": 1,
+          "value": "0x08"
+        },
+        {
+          "address": "0x0e00205e",
+          "size": 1,
+          "value": "0x09"
+        },
+        {
+          "address": "0x0e00205f",
+          "size": 1,
+          "value": "0x04"
+        }
+      ],
+      "sram_hash": "fnv1a64-sram-normalized:4cbf33fcb7353b62"
+    },
+    {
+      "frame": 18310,
+      "framebuffer_hash": "fnv1a64-rgb24:75dee992ac00157c",
+      "name": "post-soft-reset-boot",
+      "probes": []
+    },
+    {
+      "frame": 19360,
+      "framebuffer_hash": "fnv1a64-rgb24:6ca1dda94c6af57c",
+      "name": "resumed-chapter2",
+      "probes": [
+        {
+          "address": "0x020210b2",
+          "size": 1,
+          "value": "0x02"
+        },
+        {
+          "address": "0x020210b3",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "0x020210b6",
+          "size": 1,
+          "value": "0x09"
+        },
+        {
+          "address": "0x020210b7",
+          "size": 1,
+          "value": "0x04"
+        },
+        {
+          "address": "0x0202fa0a",
+          "size": 2,
+          "value": "0x2809"
+        },
+        {
+          "address": "0x0e000094",
+          "size": 1,
+          "value": "0x24"
+        },
+        {
+          "address": "0x0e00009a",
+          "size": 1,
+          "value": "0x01"
+        },
+        {
+          "address": "0x0e0000a4",
+          "size": 1,
+          "value": "0x24"
+        },
+        {
+          "address": "0x0e0000aa",
+          "size": 1,
+          "value": "0x01"
+        }
+      ],
+      "sram_hash": "fnv1a64-sram-normalized:e8d0d9428e673f81"
+    }
+  ],
+  "format_version": 2,
+  "rom": {
+    "game_code": "BE8E",
+    "sha1": "b23410673687856a73dd9cde365addbdf4238b00",
+    "size": 16777216,
+    "title": "FIREEMBLEM2E"
+  },
+  "scenario": "savesuspend-resume"
+}

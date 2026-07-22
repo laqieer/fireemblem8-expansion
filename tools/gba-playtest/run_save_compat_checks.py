@@ -28,6 +28,14 @@ script, in order:
    plus confirmed full erase (HEADER_CORRUPT -> erase -> fresh CURRENT) and
    the host-migrated v0->v1 load (migrated image classifies CURRENT and
    reaches the normal save menu with no dialog).
+4. For MODERN_CONFIG=debug only, also runs savesuspend-resume-modern-debug
+   (tools/gba-playtest/scenarios/savesuspend-resume-modern-debug.json):
+   issue #2's final slice, a deterministic ordinary-UI manual Suspend (Map
+   Menu) -> soft-reset combo -> Resume (Save Menu) proof, built on #11
+   Slice 1's debug-only "Fast Boot: Chapter 2" launcher. Omitted for
+   MODERN_CONFIG=release, since that launcher does not exist in release
+   builds (see docs/debugtools.md) -- release's checks above are
+   completely unchanged.
 
 Every failure identifies exactly which fixture/state/checkpoint it came
 from (never a bare non-zero exit code) per requirement 9's "Failures must
@@ -189,6 +197,49 @@ def run_migrated_load_check(rom: Path, suffix: str, fixture_dir: Path) -> None:
     print(f"migrated-v1 load scenario passed vs {fingerprint_path.name}")
 
 
+def run_suspend_resume_check(rom: Path, fixture_dir: Path) -> None:
+    """Issue #2's final slice: deterministic ordinary-UI Suspend ->
+    soft-reset -> Resume proof (tools/gba-playtest/scenarios/
+    savesuspend-resume-modern-debug.json). Debug-only: this scenario
+    replays #11 Slice 1's debug-only "Fast Boot: Chapter 2" title
+    hotkey/launcher (see docs/debugtools.md), which does not exist in
+    release builds, so this check is only ever called for
+    MODERN_CONFIG=debug (see main()) and release's existing
+    all-state/migrated coverage above is completely unaffected."""
+    scenario_name = "savesuspend-resume-modern-debug"
+    fingerprint_name = "savesuspend-resume-modern-debug"
+    scenario_path = SCENARIOS_DIR / f"{scenario_name}.json"
+    fingerprint_path = FINGERPRINTS_DIR / f"{fingerprint_name}.json"
+    if not scenario_path.exists():
+        raise CheckFailure(f"missing committed scenario: {scenario_path}")
+    if not fingerprint_path.exists():
+        raise CheckFailure(f"missing committed fingerprint: {fingerprint_path}")
+
+    fixture_path_ = fixture_dir / "suspend-resume-current.sav"
+    sf.write_fixture(fixture_path_, sf.STATE_CURRENT)
+
+    cmd = [
+        sys.executable, str(GBA_PLAYTEST), "verify",
+        "--rom", str(rom),
+        "--scenario", str(scenario_path),
+        "--sram-image", str(fixture_path_),
+        "--expected", str(fingerprint_path),
+        "--policy", "behavior",
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    if result.returncode != 0:
+        raise CheckFailure(
+            f"runtime scenario 'savesuspend-resume' failed "
+            f"(fixture=suspend-resume-current, state=CURRENT, "
+            f"checkpoints=suspend-confirmed/post-soft-reset-boot/"
+            f"resumed-chapter2, fingerprint={fingerprint_path.name}):\n"
+            f"  stdout: {result.stdout.strip()}\n"
+            f"  stderr: {result.stderr.strip()}"
+        )
+    print(f"runtime scenario passed: {scenario_name} "
+          f"(fixture=suspend-resume-current, state=CURRENT) vs {fingerprint_path.name}")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--rom", required=True, type=Path,
@@ -231,13 +282,21 @@ def main(argv: list[str] | None = None) -> int:
         # Host-migrated v0->v1 image classifies CURRENT and loads through
         # the normal save path (requirement 7's last bullet).
         run_migrated_load_check(args.rom, suffix, args.fixture_dir)
+
+        # Issue #2's final slice: deterministic ordinary-UI Suspend ->
+        # soft-reset -> Resume proof. Debug-only, since the launcher it
+        # depends on does not exist in release builds.
+        if args.config == "debug":
+            run_suspend_resume_check(args.rom, args.fixture_dir)
     except CheckFailure as exc:
         print(f"expansion-modern-savefmt-check FAILED: {exc}", file=sys.stderr)
         return 1
 
     print(f"expansion-modern-savefmt-check passed (config={args.config}): "
           f"all 8 SaveCompatState values, Back-preservation, confirmed erase, "
-          f"and host-migrated v1 load verified against {args.rom}")
+          f"host-migrated v1 load, "
+          + ("and Suspend/soft-reset/Resume, " if args.config == "debug" else "")
+          + f"verified against {args.rom}")
     return 0
 
 
