@@ -27,7 +27,7 @@
 
 GENERATED_DATA_PY       := $(PYTHON) -m scripts.generated_data
 GENERATED_DATA_OUT_DIR  := build/generated/data
-GENERATED_DATA_TABLES   := supports units shops traps items eventscripts eventlists chapterbundle
+GENERATED_DATA_TABLES   := supports units shops traps items classes eventscripts eventlists chapterbundle
 GENERATED_DATA_CH2_TABLES := units shops traps eventscripts eventlists chapterbundle
 
 .PHONY: generated-data-validate generated-data-generate generated-data-check generated-data-test \

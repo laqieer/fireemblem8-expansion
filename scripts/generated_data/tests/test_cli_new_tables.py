@@ -321,5 +321,37 @@ class CliItemsTests(unittest.TestCase):
         self.assertEqual(code, 0, msg=out + err)
 
 
+class CliClassesTests(unittest.TestCase):
+    def test_validate_invalid_fixture_fails(self):
+        code, out, err = run_cli([
+            "validate", "--table", "classes",
+            "--source", fixture_path("classes", "bad_class_ref.json"),
+            "--no-roundtrip",
+        ])
+        self.assertEqual(code, 1)
+        self.assertIn("undefined class reference 'CLASS_NOT_A_REAL_CLASS'", err)
+
+    def test_real_classes_source_validates_and_roundtrips_clean(self):
+        code, out, err = run_cli(["validate", "--table", "classes"])
+        self.assertEqual(code, 0, msg=out + err)
+
+    def test_generate_writes_c_and_inventory(self):
+        with scratch_dir() as tmp:
+            out_dir = os.path.join(tmp, "out")
+            inventory_path = os.path.join(tmp, "inventory.md")
+            code, out, err = run_cli(["generate", "--table", "classes", "--out-dir", out_dir,
+                                       "--inventory", inventory_path, "--no-roundtrip"])
+            self.assertEqual(code, 0, msg=out + err)
+            generated_file = os.path.join(out_dir, "data_classes.c")
+            self.assertTrue(os.path.exists(generated_file))
+            self.assertTrue(os.path.exists(inventory_path))
+            with open(generated_file) as f:
+                self.assertIn("CONST_DATA struct ClassData gClassData[] = {", f.read())
+
+    def test_check_real_classes_table_has_no_drift(self):
+        code, out, err = run_cli(["check", "--table", "classes"])
+        self.assertEqual(code, 0, msg=out + err)
+
+
 if __name__ == "__main__":
     unittest.main()

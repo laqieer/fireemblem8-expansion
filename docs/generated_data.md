@@ -1,4 +1,4 @@
-# Generated-data platform (Issue #5 Chapter 2 slice -- Batch A + B + C; global `items` Batch 1)
+# Generated-data platform (Issue #5 Chapter 2 slice -- Batch A + B + C; global `items`/`classes` Batch 1)
 
 ## Status
 
@@ -92,6 +92,15 @@ table, `items` is not part of the Chapter 2 vertical slice or the
 only, per Issue #5 Batch 1's explicit "no link swap" boundary. See "##
 `items` schema (Issue #5 Batch 1: full global item table)" below for the
 full write-up.
+
+**Issue #5 Batch 1, continued** (this update) adds the second global
+table: `classes` (`src/data/classes.json`), authoring all 127 vanilla
+`gClassData[]` records (`CLASS_EPHRAIM_LORD`..`CLASS_PUPIL_T1`)
+field-for-field against `struct ClassData` (`include/bmunit.h`). Like
+`items`, `classes` is scoped to schema/generate/round-trip only -- no
+link swap, no Chapter 2/`chapterbundle` participation. See "##
+`classes` schema (Issue #5 Batch 1: full global class table)" below for
+the full write-up.
 
 ## Source vs. generated vs. committed-public artifacts
 
@@ -209,6 +218,24 @@ scripts/generated_data/
     inventory.py        builds the committed inventory/summary report
                         (weapon-type histogram, IA_* attribute usage,
                         pStatBonuses/pEffectiveness pointer-symbol usage)
+  classes/
+    schema.py           ClassRecord (full struct ClassData -- ~20 authored
+                        fields/sub-objects + derived .number), load_records(),
+                        validate() -- the second global (non-chapter-scoped)
+                        table, covering all 127 vanilla CLASS_* records
+                        with full contiguous 1..127 coverage validation
+                        (excluding CLASS_NONE/the CLASS_OBSTACLE alias)
+    generate.py         C89 emission of gClassData[] matching the hand
+                        file's own default-omission convention field for
+                        field, including the literal (void *)0x00000000
+                        null-pointer cast for immobile classes' movCostTable
+    parser.py           round-trip parser for src/data_classes.c + comparer
+                        (reuses the same offset-preserving entry splitter
+                        pattern as items/parser.py, since gClassData[] is
+                        one 127-entry array needing per-entry line numbers)
+    inventory.py        builds the committed inventory/summary report
+                        (CA_* attribute usage, baseRanks weapon-type
+                        histogram, battleAnim symbol usage)
   chapterbundle/
     schema.py           ChapterBundleRecord (metadata-only whole-bundle
                         view), load_records(), validate() -- cross-checks
@@ -778,6 +805,116 @@ report: total record count and index range, a weapon-type histogram, an
 `IA_*` attribute-usage histogram, `pStatBonuses`/`pEffectiveness`
 pointer-symbol usage tables, and the table's own dependency-graph digest.
 
+## `classes` schema (Issue #5 Batch 1: full global class table)
+
+Source: `src/data/classes.json` (schema `fe8.classes.v1`), one object per
+`CLASS_*` record under `"classes"`, mirroring `struct ClassData`
+(`include/bmunit.h`) field for field: `nameTextId`/`descTextId`,
+`promotion` (a self-referential `CLASS_*` symbol, default `CLASS_NONE`
+meaning "does not promote"), `smsId`, `slowWalking` (authored as a JSON
+boolean -- only 2 valid states, `UNIT_WALKSPEED_FAST`/`_SLOW`),
+`defaultPortraitId`, `sortOrder`, nested `base`/`max`/`growth`/
+`promotionGain` stat sub-objects (mirroring `items`' `range: {min, max}`
+pattern), `classRelativePower`, `attributes` (a validated `CA_*` bitmask
+list), `baseRanks` (a sparse `{ITYPE_*: WPN_EXP_*}` map, keyed by weapon
+type), nullable `battleAnim` (a `CSymbolRefField` reference into
+`AnimConf_*`, `include/ekrbattle.h`), a required 3-entry `movCostTable`
+(`[normal, rain, snow]`, each either a `TerrainTable_MovCost_*`
+`CSymbolRefField` reference or JSON `null` for the 9/127 fully-immobile
+vanilla records that use a literal `(void *)0x00000000` null-pointer cast
+instead of a named table -- gorgon-egg forms, spent/empty ballistae,
+`CLASS_UNK77`), required `terrainAvoid`/`terrainDefense`/
+`terrainResistance` (`CSymbolRefField` references into
+`TerrainTable_{Avo,Def,Res}_*`), and nullable `reservedTerrainTable`
+(models the struct's unresearched `._pU50` escape-hatch field, a
+`CSymbolRefField` reference into `Unk_TerrainTable_*`). `.number` is
+**never authored** -- it always equals the record's own `[CLASS_X - 1]`
+designator symbol in every one of the 127 vanilla records, so the
+generator derives it directly from each record's own `class` key.
+
+Like `items`, `classes` is **global, not chapter-scoped**: it is not part
+of `chapterbundle` and covers the entire vanilla `CLASS_*` enum
+(`CLASS_EPHRAIM_LORD`..`CLASS_PUPIL_T1`, 127 contiguous entries, indices
+1..127) in one flat, index-designated array. `CLASS_NONE` (index 0, the
+sentinel "no class" value) and the `CLASS_OBSTACLE` alias
+(`#define`-like `CLASS_OBSTACLE = CLASS_EPHRAIM_LORD`, not its own enum
+value) are both excluded from the required-coverage set.
+
+Validations enforced (`classes/schema.py: validate()`): unique class
+entries; **full contiguous `CLASS_*` coverage** (1..127, excluding
+`CLASS_NONE`/`CLASS_OBSTACLE`); `promotion` is a defined `CLASS_*`
+constant; `attributes` is a validated, duplicate-free `CA_*` bitmask list
+(scoped to the `CA_NONE = 0, ...` block, deliberately excluding the
+`// Helpers` combo constants `CA_REFRESHER`/`CA_FLYER`/
+`CA_TRIANGLEATTACK_ANY`, which no vanilla record references directly);
+`baseRanks` entries are validated `ITYPE_*` -> `WPN_EXP_*` pairs, bounded
+to the struct's own live `baseRanks[8]` capacity (read from
+`include/bmunit.h`, not hardcoded); all numeric fields' widths/ranges at
+their **actual C type** bounds (`s8` stats validated against the full
+`[-128, 127]` range, not just the narrower all-non-negative range every
+vanilla value happens to use; `promotionGain`/`sortOrder` against `u8`'s
+`[0, 255]`); `nameTextId`/`descTextId` bounded by the live `MSG_COUNT`;
+`defaultPortraitId` bounded by the live count of numbered entries in
+`src/portrait_data.c`'s `portrait_data[]` (172 entries, 0..171) and
+`smsId` bounded by the live count of numbered entries in
+`src/unit_icon_wait_data.c`'s `unit_icon_wait_table[]` (107 entries,
+0..106) -- both the strongest deterministic *source-level* bounds
+available, and, for `smsId`, provably **stronger** than the runtime
+`GetInfo()` macro's raw 7-bit mask (`(id) & ((1<<7)-1)`, i.e. 0..127):
+indices 107..127 would read past the real table's end, so validating
+against the table's actual length (not the mask width) is the correct
+bound; the exact `movCostTable` triplet capacity (read from
+`include/bmunit.h`, not hardcoded); and every C-symbol-reference field
+(`battleAnim`, non-null `movCostTable` entries, the three terrain
+lookups, `reservedTerrainTable`) via `CSymbolRefField` against
+`include/ekrbattle.h`/`include/variables.h` -- no new header declarations
+were needed since every required symbol already has a public `extern`.
+
+The generator (`classes/generate.py`) matches the hand file's own
+default-omission convention field for field (confirmed per-field
+presence statistics across all 127 hand records): `smsId` and all
+base/max/growth/promotionGain stats, `pMovCostTable`, and the three
+terrain lookups are unconditionally emitted; every other field
+(`nameTextId`/`descTextId`, `promotion`, `slowWalking`,
+`defaultPortraitId`, `sortOrder`, `classRelativePower`, `attributes`,
+`baseRanks`, `battleAnim`, `reservedTerrainTable`) is omitted when it
+equals its default. Multi-flag `.attributes` combos and `.baseRanks`
+entries are always emitted in ascending bit-value/weapon-type-index
+order, matching the hand file's own convention regardless of the JSON's
+own authoring order. Null `movCostTable` entries emit the literal
+`(void *)0x00000000` cast back verbatim, byte-for-byte matching the hand
+file's own convention for immobile classes; `reservedTerrainTable` is the
+only pointer field emitted with an explicit `&` prefix (its C type is
+`const void*`, not `const s8*`, so a bare array-decay wouldn't have the
+right type -- exactly mirroring `items`' `pStatBonuses` (`&`-prefixed)
+vs. `pEffectiveness` (bare) asymmetry).
+
+### Round-trip checker (`classes/parser.py`)
+
+Like `items/parser.py`, `gClassData[]` is one large, single, 127-entry
+designated-initializer array, so the round-trip parser reuses the same
+offset-preserving top-level-entry splitter for accurate `file:line:column`
+diagnostics per `[CLASS_X - 1] = { ... }` entry. Every field is resolved
+to the same symbol-blind canonical tuple (`ClassRecord.as_tuple()`):
+`promotion`/`attributes`/`baseRanks` reduce to their live integer
+value(s); `battleAnim`/`movCostTable` entries/terrain lookups/
+`reservedTerrainTable` are compared as bare token strings (no further
+numeric encoding exists to resolve) -- and the literal
+`(void *)0x00000000` null-pointer cast is recognized as the same "no
+table" sentinel as JSON `null`, not a mismatched symbol.
+`python3 -m unittest scripts.generated_data.tests.test_classes_roundtrip`
+proves all 127/127 records match `src/data_classes.c` exactly with zero
+diagnostics.
+
+### Committed inventory (`classes/inventory.py`)
+
+`reports/generated_data_classes_inventory.md` is the committed,
+CI-checked report: total record count and index range, promotion/
+slow-walking/no-battle-anim/reserved-terrain-table counts, a `CA_*`
+attribute-usage histogram, a `baseRanks` weapon-type histogram,
+`battleAnim` symbol-usage table, and the table's own dependency-graph
+digest.
+
 ## The C-symbol escape hatch (`escape_hatch.py`)
 
 Originally implemented and tested as a generic, reusable mechanism ahead
@@ -890,12 +1027,13 @@ replaces any hand-written `src/` file), but as of Batch C,
 gate ahead of the modern debug/release linker checks -- a stale/
 inconsistent generated-data source now fails CI fast, with
 `file:line:column` diagnostics, instead of only being caught (or masked)
-by a much slower linker failure. `GENERATED_DATA_TABLES` now lists all 8
-registered tables (Issue #5 Batch 1 added `items`), so the loop-based
-targets below cover `supports units shops traps items eventscripts
-eventlists chapterbundle`. `items` is **not** added to
-`GENERATED_DATA_CH2_TABLES` -- it is a global table, not part of the
-Chapter 2 bundle, so `generated-data-ch2-check` is unaffected:
+by a much slower linker failure. `GENERATED_DATA_TABLES` now lists all 9
+registered tables (Issue #5 Batch 1 added `items`, then `classes`), so
+the loop-based targets below cover `supports units shops traps items
+classes eventscripts eventlists chapterbundle`. Neither `items` nor
+`classes` is added to `GENERATED_DATA_CH2_TABLES` -- both are global
+tables, not part of the Chapter 2 bundle, so `generated-data-ch2-check`
+is unaffected:
 
 ```bash
 make generated-data-validate      # validate only, all tables
@@ -1040,6 +1178,38 @@ Additionally covers, for Issue #5 Batch 1 (`test_items_schema.py`,
   it is still never linked in place of `src/data_items.c` (out of Batch 1
   scope).
 
+Additionally covers, for Issue #5 Batch 1's `classes` table
+(`test_classes_schema.py`, `test_classes_generate.py`,
+`test_classes_roundtrip.py`, and the `CliClassesTests` cases in
+`test_cli_new_tables.py`):
+
+* `classes`: duplicate class entries, a gap in `CLASS_*` coverage
+  (validated against small fixture headers -- `mini_classes.h`/
+  `mini_bmunit.h`/`mini_bmitem.h`/`mini_ekrbattle.h`/`mini_variables.h`/
+  `mini_msg.h`/`mini_portrait_data.c`/`mini_sms_data.c` -- so the
+  mandatory full-coverage check can be exercised in isolation), undefined
+  class/promotion/weapon-type/weapon-exp-threshold references, undefined
+  and duplicate `CA_*` attribute flags, out-of-range text IDs/SMS IDs/
+  portrait IDs/base-stat (`s8`) and promotion-gain (`u8`) values,
+  undeclared `battleAnim`/`movCostTable`/terrain-lookup/
+  `reservedTerrainTable` C-symbol references, an incorrect
+  `movCostTable` entry count, header-derived constant reads (the scoped
+  `CA_*` block excluding the `// Helpers` combos, live `MSG_COUNT`, live
+  portrait/SMS counts, live `baseRanks`/`pMovCostTable` array
+  capacities), deterministic C89 generation (default-field omission,
+  ascending attribute-flag/base-rank ordering regardless of JSON order,
+  the literal `(void *)0x00000000` null-pointer cast for immobile
+  classes' `movCostTable` entries), fixture-based round-trip match/
+  mismatch/missing/extra-class detection, and the full **127/127**
+  hand-table round trip against the real `src/data_classes.c` with zero
+  diagnostics. CLI tests cover `validate`/`generate`/`check` against both
+  an invalid fixture and the real committed `src/data/classes.json`
+  (drift-free). The generated `build/generated/data/data_classes.c` was
+  also compiled end-to-end through the real `cpp | iconv | agbcc`
+  pipeline and assembled with `arm-none-eabi-as` with zero errors,
+  confirming it is valid, compilable C89 -- it is still never linked in
+  place of `src/data_classes.c` (out of Batch 1 scope).
+
 All fixtures and scratch directories live under
 `scripts/generated_data/tests/` (never `/tmp`).
 
@@ -1060,33 +1230,39 @@ CI-gated via `generated-data-check` (now wired into
 `.github/workflows/build.yml`). Still open, and **explicitly out of
 scope** for this Batch C update:
 
-* **Global character/class schemas and authoring.** `items` (Issue #5
-  Batch 1) is the first global table with its own schema/generate/
-  round-trip pipeline, but `chapterbundle` still only *references*
-  `CHARACTER_*`/`CLASS_*` IDs (as a reference-only dependency set,
-  cross-checked for existence against the live enum headers) -- it does
-  not model, generate, or claim authorship of character/class data.
-  Structured schemas for those global tables (and their own generation/
-  round-trip/validation pipelines) remain unbuilt.
-* **Linking the `items` table itself.** Batch 1 is schema/generate/
-  round-trip only, per its own explicit scope -- `build/generated/data/
-  data_items.c` compiles cleanly through the real agbcc pipeline but is
-  never linked in place of `src/data_items.c`; that link-order migration
-  (and folding `items` into `chapterbundle`-style cross-table reachability
-  checks, if ever appropriate for a global table) remains open.
+* **Global character/class schemas and authoring.** `items` and now
+  `classes` (Issue #5 Batch 1) are global tables with their own schema/
+  generate/round-trip pipelines, but `chapterbundle` still only
+  *references* `CHARACTER_*`/`CLASS_*` IDs (as a reference-only
+  dependency set, cross-checked for existence against the live enum
+  headers) -- it does not model, generate, or claim authorship of
+  character data, and does not fold `classes` into its own cross-table
+  reachability checks. A structured schema for the global **character**
+  table (`gCharacterData[]`/`struct CharacterData`) remains unbuilt.
+* **Linking the `items`/`classes` tables themselves.** Batch 1 is
+  schema/generate/round-trip only, per its own explicit scope --
+  `build/generated/data/data_items.c` and `build/generated/data/
+  data_classes.c` both compile (and, for `classes`, assemble) cleanly
+  through the real agbcc pipeline but are never linked in place of
+  `src/data_items.c`/`src/data_classes.c`; that link-order migration
+  (the `ldscript.txt` `src/x.o(.text)`-before-`asm/x.o(.text)` swap
+  described in `CONTRIBUTING.md`, plus folding `items`/`classes` into
+  `chapterbundle`-style cross-table reachability checks, if ever
+  appropriate for a global table) remains **explicit Batch 2 scope**,
+  not started here.
 * **Mechanics** (combat/growth/AI/etc. formulas and their own data
   tables) are entirely untouched by Batches A/B/C or Issue #5 Batch 1.
 * **Additional chapters.** This whole platform -- schemas, the
   `chapterbundle` composition pattern, the CLI, the Make targets, CI
-  wiring -- covers Chapter 2 only (`items` is the one exception, being
-  global by nature); every other chapter's equivalent tables/bundle
+  wiring -- covers Chapter 2 only (`items`/`classes` are the exceptions,
+  being global by nature); every other chapter's equivalent tables/bundle
   remain to be modeled from scratch.
 * **Actually linking any generated table** in place of its hand-written
   counterpart (requires the `ldscript.txt` link-order migration described
   in `CONTRIBUTING.md`, and is out of scope until a table is fully
   proven) -- Batch C does not link or generate any C output either (it's
   metadata-only, like `eventscripts`), and neither does Issue #5 Batch 1's
-  `items` table.
+  `items`/`classes` tables.
 * **Migrating this pattern to other repository data domains** beyond the
-  Chapter 2 slice and the `items` global table this Issue has scoped so
-  far.
+  Chapter 2 slice and the `items`/`classes` global tables this Issue has
+  scoped so far.
