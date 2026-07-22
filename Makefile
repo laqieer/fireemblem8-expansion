@@ -238,6 +238,10 @@ include graphics/banim/assets/img/banim_img_rules.mk
 include songs.mk
 include json_data_rules.mk
 
+# Issue #5 Slice 0 canary: standalone generated-data targets (not part of
+# `all`/CI). See generated_data.mk and docs/generated_data.md.
+include generated_data.mk
+
 %.s: ;
 %.png: ;
 %.pal: ;

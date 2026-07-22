@@ -1,0 +1,136 @@
+"""Schema/version dispatch and dependency graph representation.
+
+Each generated-data table registers itself here under a stable
+``(name, version)`` key (e.g. ``("supports", 1)``). The CLI resolves a
+table name to its schema module through this registry instead of
+hardcoding imports, so additional tables (Issue #5's later Chapter 2
+slice) can be added without touching the dispatch logic.
+
+The :class:`DependencyGraph` records which tables/headers a schema reads
+(e.g. the ``supports`` table depends on the ``characters`` constants
+header for reference validation). It provides a deterministic topological
+order (for future multi-table generation) and a stable digest used in the
+committed inventory/summary report so drift in dependencies is visible.
+"""
+
+from __future__ import annotations
+
+import hashlib
+
+from .diagnostics import GeneratedDataError
+
+
+class SchemaRegistry:
+    """Maps ``(name, version)`` to a registered :class:`TableSchema`."""
+
+    def __init__(self):
+        self._schemas = {}
+
+    def register(self, schema):
+        key = (schema.name, schema.version)
+        if key in self._schemas:
+            raise GeneratedDataError(
+                "schema '{}' version {} already registered".format(schema.name, schema.version)
+            )
+        self._schemas[key] = schema
+        return schema
+
+    def resolve(self, name, version=None):
+        if version is None:
+            candidates = sorted(v for (n, v) in self._schemas if n == name)
+            if not candidates:
+                raise GeneratedDataError(
+                    "unknown schema '{}'; known tables: {}".format(name, sorted({n for n, _ in self._schemas}))
+                )
+            version = candidates[-1]
+        key = (name, version)
+        if key not in self._schemas:
+            raise GeneratedDataError(
+                "unknown schema '{}' version {}; known: {}".format(name, version, sorted(self._schemas))
+            )
+        return self._schemas[key]
+
+    def all_names(self):
+        return sorted({n for n, _ in self._schemas})
+
+
+REGISTRY = SchemaRegistry()
+
+
+class TableSchema:
+    """Base class every generated-data table schema derives from.
+
+    Subclasses provide ``name``, ``version``, and override
+    :meth:`load_records`, :meth:`validate`, and :meth:`dependencies`.
+    """
+
+    name = None
+    version = None
+
+    def dependencies(self):
+        """Return an iterable of dependency names (headers/other tables)."""
+        return ()
+
+    def load_records(self, source_path):
+        raise NotImplementedError
+
+    def validate(self, records, diagnostics):
+        raise NotImplementedError
+
+
+class DependencyGraph:
+    """A small deterministic directed graph of schema/header dependencies."""
+
+    def __init__(self):
+        self.edges = {}
+
+    def add_node(self, name):
+        self.edges.setdefault(name, set())
+
+    def add_dependency(self, node, depends_on):
+        self.add_node(node)
+        self.add_node(depends_on)
+        self.edges[node].add(depends_on)
+
+    def nodes(self):
+        return sorted(self.edges)
+
+    def topo_order(self):
+        """Kahn's algorithm with deterministic (sorted-name) tie-breaking.
+
+        An edge ``node -> dep`` means "node depends on dep", so ``dep``
+        must be ordered before ``node``.
+        """
+        # Reverse adjacency: dep -> {nodes that depend on it}
+        dependents = {n: set() for n in self.edges}
+        indegree = {n: 0 for n in self.edges}
+        for node, deps in self.edges.items():
+            indegree[node] = len(deps)
+            for dep in deps:
+                dependents[dep].add(node)
+
+        ready = sorted(n for n, deg in indegree.items() if deg == 0)
+        order = []
+        while ready:
+            node = ready.pop(0)
+            order.append(node)
+            for dependent in sorted(dependents.get(node, ())):
+                indegree[dependent] -= 1
+                if indegree[dependent] == 0:
+                    ready.append(dependent)
+                    ready.sort()
+        if len(order) != len(self.edges):
+            remaining = sorted(set(self.edges) - set(order))
+            raise GeneratedDataError(
+                "dependency graph has a cycle involving: {}".format(remaining)
+            )
+        return order
+
+    def digest(self):
+        """Stable sha256 digest of the graph shape, for drift detection."""
+        parts = []
+        for node in sorted(self.edges):
+            deps = sorted(self.edges[node])
+            parts.append("{}:{}".format(node, ",".join(deps)))
+        blob = "|".join(parts).encode("utf-8")
+        return hashlib.sha256(blob).hexdigest()

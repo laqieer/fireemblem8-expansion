@@ -982,3 +982,6 @@ scripts/shiftcheck/mgba_oracle
 
 # Local Claude Code harness state
 .claude/
+
+# scripts/generated_data unittest scratch space (repo-local, never /tmp)
+scripts/generated_data/tests/.scratch/
