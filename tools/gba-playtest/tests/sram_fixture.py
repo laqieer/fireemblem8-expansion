@@ -7,10 +7,16 @@ derived from the Slice 1 format implementation/contracts in
 scripts/modernize/save_format_tool.py (and its test helpers) rather than
 duplicating magic numbers here: this module is a thin generator shell
 around that existing, byte-exact source of truth.
+
+Also exposes a small CLI (`write-deterministic-current`) used by
+modern.mk's expansion-modern-debugtools-check to seed a debugtools-hub
+scenario's starting SRAM with a fixed SAVE_COMPAT_CURRENT image -- see
+build_deterministic_current_image()'s docstring and docs/debugtools.md.
 """
 
 from __future__ import annotations
 
+import argparse
 import sys
 from pathlib import Path
 
@@ -155,3 +161,103 @@ def migrate_fixture(source: Path, dest: Path, repo_root: Path = _REPO_ROOT) -> P
             f"{STATE_CURRENT!r}"
         )
     return dest
+
+
+# --- Deterministic (commit-invariant) SAVE_COMPAT_CURRENT fixture ----------
+#
+# build_fixture_image(STATE_CURRENT) above (via
+# sft.build_current_expansion_save_meta()) intentionally stamps the *live*
+# build commit into ExpansionSaveMeta.buildCommitShort, mirroring
+# BuildCurrentExpansionSaveMeta() (src/bmsave-lib.c) exactly -- correct for
+# the savecompat-* scenarios, which explicitly normalize that field out via
+# `sram_hash_exclude_ranges` (see tools/gba-playtest/scenarios/
+# savecompat-current.json).
+#
+# The debugtools-hub scenarios instead assert an EXACT, zero-exclusion-range
+# whole-SRAM hash (`fnv1a64-sram`), so they must never boot from genuinely
+# blank SRAM: doing so drives ClassifySramSaveCompat() to SAVE_COMPAT_EMPTY,
+# which makes EnsureGlobalSaveInfoLoaded() call InitGlobalSaveInfodata() ->
+# BuildCurrentExpansionSaveMeta(), stamping that commit's
+# FE8_EXPANSION_BUILD_COMMIT into SRAM and changing the exact hash on every
+# commit. Seeding SRAM instead with the fixed-diagnostics image below keeps
+# SRAM already SAVE_COMPAT_CURRENT, so that wipe/stamp path is never taken.
+DETERMINISTIC_BUILD_COMMIT_SHORT = b"00000000\x00"
+
+
+def build_deterministic_current_image(repo_root: Path = _REPO_ROOT) -> bytes:
+    """Builds a byte-exact 0x8000 SRAM image classified SAVE_COMPAT_CURRENT
+    whose diagnostic-only ExpansionSaveMeta.buildCommitShort field is a
+    fixed sentinel (DETERMINISTIC_BUILD_COMMIT_SHORT) instead of the live,
+    per-commit `git rev-parse HEAD`-derived value that
+    sft.build_current_expansion_save_meta()/build_fixture_image(STATE_CURRENT)
+    embed. Every compatibility-gating field (magic, formatVersion,
+    compatEpoch) and every other diagnostic field (abiId,
+    frameworkVersionPacked, configFingerprint) is left exactly as the real
+    running ROM would produce it -- only the commit-derived field is frozen,
+    so this fixture classifies identically to a genuine CURRENT save and its
+    whole-SRAM hash stays invariant across commits."""
+    epoch = resolve_epoch(repo_root)
+    meta = sft.build_current_expansion_save_meta(repo_root)
+    meta.build_commit_short = DETERMINISTIC_BUILD_COMMIT_SHORT
+    meta.checksum = 0
+    meta.checksum = meta.computed_checksum()
+
+    header = make_header(valid=True)
+    image = bytes(make_image(header, bytearray(meta.pack())))
+
+    actual_state = sft.classify_image(image, epoch)
+    if actual_state != STATE_CURRENT:
+        raise AssertionError(
+            f"deterministic-current fixture generator bug: expected "
+            f"{STATE_CURRENT!r} but classify_image() returned {actual_state!r}"
+        )
+    return image
+
+
+def write_deterministic_current_fixture(path: Path, repo_root: Path = _REPO_ROOT) -> Path:
+    """Writes build_deterministic_current_image()'s output to `path`
+    (expected to be under an ignored build/temp directory) and returns the
+    path."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(build_deterministic_current_image(repo_root))
+    return path
+
+
+def _main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        description=(
+            "Write synthetic SRAM fixtures for gba-playtest runtime scenarios."
+        ),
+    )
+    subparsers = parser.add_subparsers(dest="mode", required=True)
+
+    deterministic_current = subparsers.add_parser(
+        "write-deterministic-current",
+        help=(
+            "Write a commit-invariant SAVE_COMPAT_CURRENT 0x8000 SRAM image "
+            "(fixed diagnostic buildCommitShort) to the given path."
+        ),
+    )
+    deterministic_current.add_argument("output", type=Path)
+    deterministic_current.add_argument(
+        "--repo-root", type=Path, default=_REPO_ROOT,
+        help="Repository root used to resolve config.mk (default: %(default)s)",
+    )
+
+    args = parser.parse_args(argv)
+
+    if args.mode == "write-deterministic-current":
+        path = write_deterministic_current_fixture(args.output, args.repo_root)
+        print(
+            f"wrote deterministic SAVE_COMPAT_CURRENT SRAM fixture: {path} "
+            f"({path.stat().st_size} bytes, "
+            f"buildCommitShort={DETERMINISTIC_BUILD_COMMIT_SHORT!r})"
+        )
+        return 0
+
+    parser.error(f"unknown mode: {args.mode!r}")
+    return 2  # pragma: no cover -- parser.error() always raises SystemExit
+
+
+if __name__ == "__main__":
+    raise SystemExit(_main())

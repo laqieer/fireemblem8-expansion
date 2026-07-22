@@ -1307,16 +1307,60 @@ expansion-modern-title-check: expansion-modern-boot-preflight expansion-modern-r
 	@printf 'Modern ROM title-check passed: %s (config=%s abi=%s)\n' \
 		"$(MODERN_ROM)" '$(MODERN_CONFIG)' '$(MODERN_ABI)'
 
+# CI follow-up (issue #11 slice 1): the debugtools-hub scenario's "pre-launch"
+# and "chapter2-interactive-stable" checkpoints assert an EXACT
+# (zero-exclusion-range) whole-SRAM `fnv1a64-sram` hash. Booting from
+# genuinely blank SRAM makes ClassifySramSaveCompat() report
+# SAVE_COMPAT_EMPTY, so EnsureGlobalSaveInfoLoaded() (src/bmsave-lib.c)
+# calls InitGlobalSaveInfodata() -> BuildCurrentExpansionSaveMeta(), which
+# stamps that build's live FE8_EXPANSION_BUILD_COMMIT (see modern.mk's
+# MODERN_BUILD_COMMIT below) into ExpansionSaveMeta.buildCommitShort --
+# changing on every commit and breaking the exact hash. Seeding SRAM with
+# the fixed-diagnostics fixture below keeps SRAM already
+# SAVE_COMPAT_CURRENT, so that wipe/stamp path is never taken and the exact
+# hash stays invariant across commits. See tools/gba-playtest/tests/
+# sram_fixture.py's build_deterministic_current_image() and
+# docs/debugtools.md.
+MODERN_DEBUGTOOLS_SRAM_FIXTURE_SCRIPT := tools/gba-playtest/tests/sram_fixture.py
+MODERN_DEBUGTOOLS_SRAM_FIXTURE_DIR := $(MODERN_OUTPUT_DIR)/debugtools-fixtures
+MODERN_DEBUGTOOLS_SRAM_FIXTURE := $(MODERN_DEBUGTOOLS_SRAM_FIXTURE_DIR)/debugtools-current.sav
+
+# The fixture's actual generation logic is not confined to
+# MODERN_DEBUGTOOLS_SRAM_FIXTURE_SCRIPT: sram_fixture.py's
+# build_deterministic_current_image() is a thin shell that imports and
+# calls scripts/modernize/save_format_tool.py's
+# build_current_expansion_save_meta()/checksum logic (the byte-exact
+# source of truth for the meta layout), which in turn imports
+# scripts/modernize/expansion_config.py to parse config.mk's
+# EXPANSION_VERSION_*/EXPANSION_SAVE_COMPAT_EPOCH values, and
+# sram_fixture.py also imports scripts/modernize/tests/test_save_format_tool.py's
+# make_header()/make_image()/make_meta() struct-packing helpers. All four
+# are listed explicitly here (not just the entry-point script) so that
+# editing any one of them invalidates and regenerates the cached fixture
+# instead of silently reusing a stale build/ artifact.
+MODERN_DEBUGTOOLS_SRAM_FIXTURE_DEPS := \
+	$(MODERN_DEBUGTOOLS_SRAM_FIXTURE_SCRIPT) \
+	scripts/modernize/save_format_tool.py \
+	scripts/modernize/expansion_config.py \
+	scripts/modernize/tests/test_save_format_tool.py \
+	config.mk
+
+$(MODERN_DEBUGTOOLS_SRAM_FIXTURE): $(MODERN_DEBUGTOOLS_SRAM_FIXTURE_DEPS)
+	@mkdir -p "$(@D)"
+	"$(PYTHON)" "$(MODERN_DEBUGTOOLS_SRAM_FIXTURE_SCRIPT)" write-deterministic-current "$@"
+
 # Issue #11 slice 1: proves the title-screen SELECT+R hotkey, the debug hub,
 # and its one built-in "Fast Boot: Prologue" launcher all behave as designed
 # in a debug build (hub opens, action registers, launcher reaches a stable
 # chapter/runtime checkpoint via gDebugToolsProbe), and that the identical
 # frame-for-frame input has zero effect in a release build (hub/launcher
 # compiled out, gDebugToolsProbe stays all-zero). See docs/debugtools.md.
-expansion-modern-debugtools-check: expansion-modern-boot-preflight expansion-modern-rom
+expansion-modern-debugtools-check: expansion-modern-boot-preflight expansion-modern-rom \
+		$(MODERN_DEBUGTOOLS_SRAM_FIXTURE)
 	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify \
 		--rom "$(MODERN_ROM)" \
 		--scenario "$(MODERN_DEBUGTOOLS_SCENARIO)" \
+		--sram-image "$(MODERN_DEBUGTOOLS_SRAM_FIXTURE)" \
 		--expected "$(MODERN_DEBUGTOOLS_FINGERPRINT)" \
 		--policy behavior
 	@printf 'Modern ROM debugtools-check passed: %s (config=%s abi=%s)\n' \
@@ -1336,6 +1380,14 @@ expansion-modern-debugtools-check: expansion-modern-boot-preflight expansion-mod
 # gDebugToolsProbe stays all-zero across an identical-length input window.
 # This target is therefore a documented no-op for MODERN_CONFIG=release
 # rather than a missing check.
+#
+# Unlike expansion-modern-debugtools-check above, this scenario has no
+# `sram_hash` checkpoints at all (every checkpoint is framebuffer/probe
+# only) -- it never observes SRAM -- so it is deliberately NOT seeded with
+# MODERN_DEBUGTOOLS_SRAM_FIXTURE: doing so would risk shifting this
+# scenario's own frame-tied probe checkpoints (boot from blank SRAM takes a
+# different, WipeSram()-driven code path with different timing) for zero
+# benefit, since there is no exact-SRAM assertion here to stabilize.
 ifeq ($(MODERN_CONFIG),debug)
 MODERN_DEBUGTOOLS_TIMER_SCENARIO := tools/gba-playtest/scenarios/debugtools-timer-freeze-modern-debug.json
 MODERN_DEBUGTOOLS_TIMER_FINGERPRINT := tools/gba-playtest/fingerprints/debugtools-timer-freeze-modern-debug.json

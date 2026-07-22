@@ -29,7 +29,7 @@
     },
     {
       "frame": 630,
-      "framebuffer_hash": "fnv1a64-rgb24:5d4575634ee299c8",
+      "framebuffer_hash": "fnv1a64-rgb24:16db8bc96392d370",
       "name": "hub-opened-after-first-pulse",
       "probes": [
         {
@@ -56,7 +56,7 @@
     },
     {
       "frame": 680,
-      "framebuffer_hash": "fnv1a64-rgb24:1fee23860bbe1c89",
+      "framebuffer_hash": "fnv1a64-rgb24:0fe87d585248025d",
       "name": "hub-still-single-after-repeated-pulse",
       "probes": [
         {
@@ -262,7 +262,7 @@
           "value": "0x00"
         }
       ],
-      "sram_hash": "fnv1a64-sram:4a24138fbb564361"
+      "sram_hash": "fnv1a64-sram:d1d92c3ec98b3a1c"
     },
     {
       "frame": 950,
@@ -627,7 +627,7 @@
           "value": "0x02"
         }
       ],
-      "sram_hash": "fnv1a64-sram:4a24138fbb564361"
+      "sram_hash": "fnv1a64-sram:d1d92c3ec98b3a1c"
     },
     {
       "frame": 14900,
