@@ -23,10 +23,21 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 INCLUDE_DIRS = [REPO_ROOT / "include", REPO_ROOT / "include" / "generated"]
 C_FIXTURES_DIR = Path(__file__).resolve().parent / "c"
 REGISTRY_SRC = REPO_ROOT / "src" / "debugtools_registry.c"
+LAUNCHER_SRC = REPO_ROOT / "src" / "debugtools_launcher.c"
+GAMECONTROL_SRC = REPO_ROOT / "src" / "gamecontrol.c"
 HEADER = REPO_ROOT / "include" / "expansion_debugtools.h"
 TITLESCREEN_SRC = REPO_ROOT / "src" / "titlescreen.c"
 
 CC = shutil.which("gcc") or shutil.which("cc")
+
+
+def _strip_c_comments(text: str) -> str:
+    """Removes /* ... */ and // ... C comments so structural (regex/grep)
+    proofs below only ever match live code, never prose that merely
+    *mentions* a banned symbol/pattern while explaining its absence."""
+    text = re.sub(r"/\*.*?\*/", " ", text, flags=re.DOTALL)
+    text = re.sub(r"//[^\n]*", " ", text)
+    return text
 
 
 def _skip_if_no_host_compiler():
@@ -300,15 +311,27 @@ class DebugToolsScenarioSchemaTests(unittest.TestCase):
     def test_debug_scenario_is_schema_valid(self):
         scenario, data = self._load("debugtools-hub-modern-debug.json")
         self.assertEqual(scenario.name, "debugtools-hub-modern-debug")
-        self.assertEqual(len(data["checkpoints"]), 5)
-        last = data["checkpoints"][-1]
-        self.assertEqual(last["probes"][0]["expected"], "0x00000001")  # hubOpenCount
-        self.assertEqual(last["probes"][3]["expected"], "0x44424c31")  # launcherArmed magic
+        self.assertEqual(len(data["checkpoints"]), 7)
+        by_name = {c["name"]: c for c in data["checkpoints"]}
+        self.assertIn("pre-launch", by_name)
+        self.assertIn("chapter2-interactive-stable", by_name)
+
+        def probe(checkpoint, address):
+            for p in checkpoint["probes"]:
+                if p["address"] == address:
+                    return p
+            self.fail(f"checkpoint {checkpoint['name']} does not probe {address}")
+
+        stable = by_name["chapter2-interactive-stable"]
+        self.assertEqual(probe(stable, "0x020315a0")["expected"], "0x44424c31")  # launcherArmed magic
+        self.assertEqual(probe(stable, "0x020210b2")["expected"], "0x02")  # CHAPTER_L_2
+        self.assertEqual(probe(stable, "0x020315b0")["expected"], "0x00000000")  # suppression cleared
+        self.assertEqual(probe(stable, "0x020315b4")["expected"], "0x00000001")  # playerPhaseObservedCount
 
     def test_release_scenario_is_schema_valid(self):
         scenario, data = self._load("debugtools-hub-modern-release.json")
         self.assertEqual(scenario.name, "debugtools-hub-modern-release")
-        self.assertEqual(len(data["checkpoints"]), 5)
+        self.assertEqual(len(data["checkpoints"]), 7)
         for checkpoint in data["checkpoints"]:
             for probe in checkpoint["probes"]:
                 self.assertEqual(probe["expected"], "0x00000000")
@@ -319,10 +342,16 @@ class DebugToolsScenarioSchemaTests(unittest.TestCase):
         self.assertEqual(
             debug_data["frames"], release_data["frames"],
             "release must replay the exact same frame-for-frame input as debug "
-            "to prove the hotkey has no effect, not merely a different script",
+            "to prove the hotkey (and the rest of the Chapter 2 tap sequence) "
+            "has no debugtools effect, not merely a different script",
         )
 
     def test_debug_and_release_scenarios_probe_their_own_config_addresses(self):
+        # gDebugToolsProbe's link-time BSS address legitimately differs
+        # between debug and release (the hub/launcher code that precedes
+        # it in link order is compiled out in release), so each scenario
+        # must probe its own build's real address -- never the other
+        # build's address, which would silently read unrelated BSS.
         _, debug_data = self._load("debugtools-hub-modern-debug.json")
         _, release_data = self._load("debugtools-hub-modern-release.json")
         debug_addrs = [p["address"] for p in debug_data["checkpoints"][0]["probes"]]
@@ -335,8 +364,11 @@ class DebugToolsScenarioSchemaTests(unittest.TestCase):
         """Review-fix regression: the reviewer reproduced hubOpenCount=2 by
         releasing and re-pressing SELECT+R while the hub remained open
         (pulses at 600-606 and 650-656). The scenario's frame script must
-        replay that exact repeated-pulse shape, with the A-select occurring
-        only after both pulses complete."""
+        replay that exact repeated-pulse shape, with the launcher-selecting
+        A press occurring only after both pulses complete (the scenario
+        also replays many further ordinary A/L/RIGHT/DOWN taps afterward,
+        driving the real Chapter 2 flow -- those are not part of this
+        reentrancy proof)."""
         _, data = self._load("debugtools-hub-modern-debug.json")
         hotkey_frames = [
             f for f in data["frames"]
@@ -352,7 +384,14 @@ class DebugToolsScenarioSchemaTests(unittest.TestCase):
         # reviewer's exact repro rather than one continuous hold.
         self.assertLess(hotkey_frames[0]["end"], hotkey_frames[1]["start"])
         a_frames = [f for f in data["frames"] if f["keys"] == ["A"] and f["start"] > hotkey_frames[1]["end"]]
-        self.assertEqual(len(a_frames), 1, "the launcher-selecting A press must occur strictly after both hotkey pulses")
+        self.assertGreaterEqual(
+            len(a_frames), 1,
+            "expected at least the launcher-selecting A press strictly after both hotkey pulses",
+        )
+        self.assertEqual(
+            a_frames[0]["start"], 700,
+            "the launcher-selecting A press must be the first A press after both hotkey pulses",
+        )
 
     def test_debug_scenario_proves_hub_open_count_stays_one_after_repeated_pulse(self):
         """The critical regression-proof checkpoint: hubOpenCount must be
@@ -450,13 +489,13 @@ class DebugToolsTimerFreezeTests(unittest.TestCase):
 
         def timer_value(checkpoint):
             for probe in checkpoint["probes"]:
-                if probe["address"] == "0x0203159c":
+                if probe["address"] == "0x020315a4":
                     return int(probe["expected"], 16)
             self.fail(f"checkpoint {checkpoint['name']} does not probe titleIdleTimerSample")
 
         def hub_open_count(checkpoint):
             for probe in checkpoint["probes"]:
-                if probe["address"] == "0x0203158c":
+                if probe["address"] == "0x02031594":
                     return int(probe["expected"], 16)
             self.fail(f"checkpoint {checkpoint['name']} does not probe hubOpenCount")
 
@@ -499,6 +538,467 @@ class DebugToolsTimerFreezeTests(unittest.TestCase):
         vanilla_815_frame = 815 + 477
         self.assertLess(hotkey_frames[0]["end"], vanilla_815_frame)
         self.assertGreater(close_frames[0]["start"], vanilla_815_frame)
+
+
+class DebugToolsChapter2LaunchLifecycleHostTests(unittest.TestCase):
+    """"Fast Boot: Chapter 2" lifecycle-safe launcher host tests. Compiles
+    and executes the real, unmodified src/debugtools_launcher.c (enabled
+    and disabled paths) against small host drivers
+    (tools/gba-playtest/tests/c/debugtools_launcher_driver.c and
+    debugtools_launcher_disabled_driver.c) to prove the pending-request/
+    bootstrap-suppression lifecycle: arm-only (no proc calls), duplicate
+    requests are explicit no-ops, GameControl-side consume is one-shot,
+    and the whole subsystem is a harmless no-op when compiled out. The
+    disabled/enabled driver stub files deliberately never define
+    Proc_EndEach or any GameCtrl/BMapMain symbol -- if
+    src/debugtools_launcher.c ever referenced one, these tests would fail
+    to *link*, not just fail an assertion."""
+
+    @classmethod
+    def setUpClass(cls):
+        _skip_if_no_host_compiler()
+
+    def test_launcher_pending_request_lifecycle_host_executed(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            work = Path(tmp)
+            rc, out, registry_obj = _compile(
+                work, REGISTRY_SRC, "registry_enabled.o",
+                defines=["FE8_EXPANSION_DEBUGTOOLS_ENABLED=1"],
+            )
+            self.assertEqual(rc, 0, f"compiling src/debugtools_registry.c (enabled) failed:\n{out}")
+
+            rc, out, launcher_obj = _compile(
+                work, LAUNCHER_SRC, "launcher_enabled.o",
+                defines=["FE8_EXPANSION_DEBUGTOOLS_ENABLED=1"],
+            )
+            self.assertEqual(rc, 0, f"compiling src/debugtools_launcher.c (enabled) failed:\n{out}")
+
+            rc, out, stubs_obj = _compile(
+                work, C_FIXTURES_DIR / "debugtools_launcher_host_stubs.c", "launcher_stubs.o"
+            )
+            self.assertEqual(rc, 0, f"compiling debugtools_launcher_host_stubs.c failed:\n{out}")
+
+            rc, out, driver_obj = _compile(
+                work, C_FIXTURES_DIR / "debugtools_launcher_driver.c", "launcher_driver.o"
+            )
+            self.assertEqual(rc, 0, f"compiling debugtools_launcher_driver.c failed:\n{out}")
+
+            rc, out, exe = _link(
+                work, [registry_obj, launcher_obj, stubs_obj, driver_obj], "launcher_test_exe"
+            )
+            self.assertEqual(
+                rc, 0,
+                "linking host launcher lifecycle test failed -- an undefined reference here "
+                f"would mean src/debugtools_launcher.c touches Proc_EndEach or GameCtrl/BMapMain "
+                f"symbols that this driver deliberately never stubs:\n{out}",
+            )
+
+            rc, out = _run(exe)
+            self.assertEqual(rc, 0, f"host launcher lifecycle test failed:\n{out}")
+            self.assertIn("DEBUGTOOLS_LAUNCHER_HOST_TEST: PASS", out)
+
+    def test_launcher_disabled_path_is_noop(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            work = Path(tmp)
+            rc, out, launcher_obj = _compile(
+                work, LAUNCHER_SRC, "launcher_disabled.o",
+                defines=["FE8_EXPANSION_DEBUGTOOLS_ENABLED=0"],
+            )
+            self.assertEqual(rc, 0, f"compiling src/debugtools_launcher.c (disabled) failed:\n{out}")
+
+            # Physical omission: none of the hub-internal/proc-facing
+            # symbols may exist at all in the disabled translation unit.
+            defined = _defined_symbol_names(launcher_obj)
+            forbidden = {
+                "sChapter2LaunchPending",
+                "sBootstrapSuppressionActive",
+                "sBootstrapObserverTimer",
+                "DebugToolsLauncher_FastBootChapter2",
+                "sFastBootChapter2Action",
+                "DebugToolsObserver_WaitForStablePlayerPhase",
+                "DebugToolsObserver_OnEnd",
+                "sDebugToolsBootstrapObserverScript",
+            }
+            leaked = forbidden & defined
+            self.assertFalse(
+                leaked,
+                f"disabled build must physically omit launcher internals; found: {leaked}",
+            )
+
+            rc, out, driver_obj = _compile(
+                work, C_FIXTURES_DIR / "debugtools_launcher_disabled_driver.c", "launcher_disabled_driver.o"
+            )
+            self.assertEqual(rc, 0, f"compiling debugtools_launcher_disabled_driver.c failed:\n{out}")
+
+            # No Proc/registry stubs needed at all: the disabled path
+            # never references gDebugToolsProbe, Proc_*, or
+            # DebugTools_RegisterAction.
+            rc, out, exe = _link(work, [launcher_obj, driver_obj], "launcher_disabled_test_exe")
+            self.assertEqual(rc, 0, f"linking disabled host launcher test failed:\n{out}")
+
+            rc, out = _run(exe)
+            self.assertEqual(rc, 0, f"disabled-path host launcher test failed:\n{out}")
+            self.assertIn("DEBUGTOOLS_LAUNCHER_DISABLED_HOST_TEST: PASS", out)
+
+    def test_launcher_never_references_gamectrl_or_proc_endeach(self):
+        """Structural double-check (alongside the link-time proof above):
+        src/debugtools_launcher.c must never mention Proc_EndEach,
+        gProcScr_GameControl, or gProc_BMapMain anywhere in its *code*
+        (comments documenting their deliberate absence are fine) -- the
+        hub action only arms a pending request and closes the hub."""
+        text = _strip_c_comments(LAUNCHER_SRC.read_text(encoding="utf-8", errors="replace"))
+        for banned in ("Proc_EndEach", "gProcScr_GameControl", "gProc_BMapMain"):
+            self.assertNotIn(
+                banned, text,
+                f"src/debugtools_launcher.c must never reference {banned} in code",
+            )
+
+    def test_arm_bootstrap_suppression_cleans_up_before_starting_fresh_observer(self):
+        """Review fix (MEDIUM): DebugTools_ArmBootstrapSuppression's body
+        must call DebugTools_CleanupBootstrapObserver() strictly before
+        Proc_Start -- the fail-safe singleton property (never two
+        concurrent observers, suppression never stuck on by a repeat arm)
+        depends on cleanup always running first, not merely existing
+        somewhere in the file."""
+        text = _strip_c_comments(LAUNCHER_SRC.read_text(encoding="utf-8", errors="replace"))
+        match = re.search(r"void DebugTools_ArmBootstrapSuppression\(void\)\s*\{(.*?)\n\}", text, flags=re.DOTALL)
+        self.assertIsNotNone(match, "could not locate DebugTools_ArmBootstrapSuppression's function body")
+        body = match.group(1)
+
+        cleanup_pos = body.find("DebugTools_CleanupBootstrapObserver(")
+        start_pos = body.find("Proc_Start(")
+        self.assertNotEqual(cleanup_pos, -1, "ArmBootstrapSuppression must call DebugTools_CleanupBootstrapObserver()")
+        self.assertNotEqual(start_pos, -1, "ArmBootstrapSuppression must call Proc_Start(...) to start the observer")
+        self.assertLess(
+            cleanup_pos, start_pos,
+            "cleanup must run before Proc_Start, so a repeat arm never leaves two observers alive",
+        )
+
+    def test_observer_script_installs_end_callback_as_its_first_entry(self):
+        """The bootstrap observer's own ProcCmd script must install
+        DebugToolsObserver_OnEnd via PROC_SET_END_CB as its first entry --
+        that is what guarantees the callback fires on *every* termination
+        path (Proc_Break's PROC_END fallthrough for any of the three
+        conditions below, or an external Proc_End() call), not just the
+        ones this file happens to also clear the flag from directly."""
+        text = _strip_c_comments(LAUNCHER_SRC.read_text(encoding="utf-8", errors="replace"))
+        match = re.search(
+            r"struct ProcCmd CONST_DATA sDebugToolsBootstrapObserverScript\[\]\s*=\s*\{(.*?)\};",
+            text,
+            flags=re.DOTALL,
+        )
+        self.assertIsNotNone(match, "could not locate sDebugToolsBootstrapObserverScript's definition")
+        entries = [e.strip() for e in match.group(1).split(",\n") if e.strip()]
+        self.assertTrue(
+            entries and entries[0].startswith("PROC_SET_END_CB(DebugToolsObserver_OnEnd)"),
+            f"expected PROC_SET_END_CB(DebugToolsObserver_OnEnd) as the script's first entry, found: {entries[:1]}",
+        )
+
+    def test_observer_on_end_unconditionally_clears_suppression(self):
+        """DebugToolsObserver_OnEnd must clear both the internal flag and
+        the probe mirror unconditionally -- no `if` may guard either
+        assignment, so calling it (from any termination path) can never
+        leave suppression active."""
+        text = _strip_c_comments(LAUNCHER_SRC.read_text(encoding="utf-8", errors="replace"))
+        match = re.search(r"void DebugToolsObserver_OnEnd\(ProcPtr proc\)\s*\{(.*?)\n\}", text, flags=re.DOTALL)
+        self.assertIsNotNone(match, "could not locate DebugToolsObserver_OnEnd's function body")
+        body = match.group(1)
+
+        self.assertNotIn("if", body, "DebugToolsObserver_OnEnd must not contain any conditional")
+        self.assertIn("sBootstrapSuppressionActive = 0", body)
+        self.assertIn("gDebugToolsProbe.bootstrapSuppressionActive = 0", body)
+
+    def test_observer_has_exactly_two_poll_termination_conditions_each_ending_via_proc_break(self):
+        """DebugToolsObserver_WaitForStablePlayerPhase must check exactly
+        two conditions in its own per-frame poll -- success
+        (gProcScr_PlayerPhase) and the bounded timeout -- and every one of
+        them must end the same way, via Proc_Break(proc): there must be
+        no third, uncovered path through this function that leaves the
+        proc (and therefore the suppression it owns) running forever.
+
+        The third end condition (abandoned/returned-to-title) is
+        deliberately NOT part of this poll: it is the separate,
+        event-driven DebugTools_NotifyTitleScreenStarting, called from
+        src/titlescreen.c the moment gProcScr_TitleScreen is actually
+        (re)started, rather than polled via Proc_Find(gProcScr_TitleScreen)
+        here -- see test_wait_for_stable_player_phase_never_polls_title_
+        screen_via_proc_find below for why (FreeProcess never clears a
+        freed proc's own proc_script field, so a Proc_Find-based poll for
+        this condition cannot reliably distinguish a genuine re-start from
+        a stale freed slot)."""
+        text = _strip_c_comments(LAUNCHER_SRC.read_text(encoding="utf-8", errors="replace"))
+        match = re.search(
+            r"void DebugToolsObserver_WaitForStablePlayerPhase\(ProcPtr proc\)\s*\{(.*?)\n\}",
+            text,
+            flags=re.DOTALL,
+        )
+        self.assertIsNotNone(match, "could not locate DebugToolsObserver_WaitForStablePlayerPhase's function body")
+        body = match.group(1)
+
+        self.assertIn("Proc_Find(gProcScr_PlayerPhase)", body, "missing the success condition")
+        self.assertIn("DEBUGTOOLS_BOOTSTRAP_OBSERVER_TIMEOUT_FRAMES", body, "missing the bounded timeout condition")
+
+        proc_break_calls = len(re.findall(r"Proc_Break\s*\(\s*proc\s*\)", body))
+        self.assertEqual(
+            proc_break_calls, 2,
+            f"expected exactly 2 Proc_Break(proc) calls (one per condition), found {proc_break_calls}",
+        )
+
+    def test_wait_for_stable_player_phase_never_polls_title_screen_via_proc_find(self):
+        """DebugToolsObserver_WaitForStablePlayerPhase must never scan the
+        proc tree for gProcScr_TitleScreen: FreeProcess (src/proc.c) never
+        clears a freed proc's own proc_script field, so Proc_Find(
+        gProcScr_TitleScreen) can return a stale, already-freed match --
+        exactly the false positive that, in a real Chapter 2 boot, cleared
+        suppression on the observer's very first tick (the just-ended real
+        title screen proc's own freed slot) and let
+        BmMain_SuspendBeforePhase's WriteSuspendSave fire mid-boot,
+        corrupting/stalling the rest of Chapter 2's progression."""
+        text = _strip_c_comments(LAUNCHER_SRC.read_text(encoding="utf-8", errors="replace"))
+        match = re.search(
+            r"void DebugToolsObserver_WaitForStablePlayerPhase\(ProcPtr proc\)\s*\{(.*?)\n\}",
+            text,
+            flags=re.DOTALL,
+        )
+        self.assertIsNotNone(match, "could not locate DebugToolsObserver_WaitForStablePlayerPhase's function body")
+        body = match.group(1)
+
+        self.assertNotIn("gProcScr_TitleScreen", body,
+                          "the poll body must not reference gProcScr_TitleScreen at all")
+
+    def test_notify_title_screen_starting_is_a_noop_unless_suppression_active(self):
+        """DebugTools_NotifyTitleScreenStarting must guard its whole body
+        behind `if (!sBootstrapSuppressionActive) return;` (or the
+        logically equivalent early return) -- an ordinary title screen
+        (re)start while no deterministic boot is pending must never touch
+        observerTitleReturnCount or call cleanup."""
+        text = _strip_c_comments(LAUNCHER_SRC.read_text(encoding="utf-8", errors="replace"))
+        match = re.search(
+            r"void DebugTools_NotifyTitleScreenStarting\(void\)\s*\{(.*?)\n\}",
+            text,
+            flags=re.DOTALL,
+        )
+        self.assertIsNotNone(match, "could not locate the enabled DebugTools_NotifyTitleScreenStarting body")
+        body = match.group(1)
+
+        self.assertIn("sBootstrapSuppressionActive", body,
+                       "must check the suppression flag before doing anything")
+        self.assertIn("DebugTools_CleanupBootstrapObserver()", body,
+                       "must end the observer via the same fail-safe cleanup path as every other termination")
+        self.assertIn("observerTitleReturnCount", body,
+                       "must increment the title-return probe counter")
+
+    def test_titlescreen_calls_notify_title_screen_starting_from_all_three_start_functions(self):
+        """src/titlescreen.c's StartTitleScreen_WithMusic,
+        StartTitleScreen_FlagFalse, and StartTitleScreen_FlagTrue are the
+        only three places gProcScr_TitleScreen is ever (re)started as a
+        blocking child of gProcScr_GameControl -- each one must call
+        DebugTools_NotifyTitleScreenStarting so the bootstrap observer's
+        abandoned-run detection is never silently bypassed by one of the
+        three."""
+        titlescreen_src = REPO_ROOT / "src" / "titlescreen.c"
+        text = _strip_c_comments(titlescreen_src.read_text(encoding="utf-8", errors="replace"))
+
+        for fn_name in ("StartTitleScreen_WithMusic", "StartTitleScreen_FlagFalse", "StartTitleScreen_FlagTrue"):
+            match = re.search(
+                r"void " + fn_name + r"\(ProcPtr parent\)\s*\{(.*?)\n\}",
+                text,
+                flags=re.DOTALL,
+            )
+            self.assertIsNotNone(match, f"could not locate {fn_name}'s function body")
+            body = match.group(1)
+            self.assertIn("DebugTools_NotifyTitleScreenStarting()", body,
+                           f"{fn_name} must call DebugTools_NotifyTitleScreenStarting()")
+
+    def test_cleanup_bootstrap_observer_clears_flag_unconditionally_as_a_fail_safe(self):
+        """DebugTools_CleanupBootstrapObserver must clear the suppression
+        flag/probe mirror unconditionally, outside (after) the
+        `if (observer != NULL) Proc_End(observer);` guard -- so even the
+        (should-never-happen) case where Proc_Find fails to locate a live
+        observer this module itself started still cannot leave
+        suppression stuck on."""
+        text = _strip_c_comments(LAUNCHER_SRC.read_text(encoding="utf-8", errors="replace"))
+        match = re.search(r"void DebugTools_CleanupBootstrapObserver\(void\)\s*\{(.*?)\n\}", text, flags=re.DOTALL)
+        self.assertIsNotNone(match, "could not locate DebugTools_CleanupBootstrapObserver's function body")
+        body = match.group(1)
+
+        proc_end_guard = re.search(r"if\s*\(\s*observer\s*!=\s*NULL\s*\)\s*\n?\s*Proc_End\(observer\);", body)
+        self.assertIsNotNone(proc_end_guard, "expected a guarded `if (observer != NULL) Proc_End(observer);`")
+
+        clear_pos = body.find("sBootstrapSuppressionActive = 0")
+        self.assertNotEqual(clear_pos, -1, "expected an unconditional suppression flag clear")
+        self.assertGreater(
+            clear_pos, proc_end_guard.end(),
+            "the unconditional flag clear must appear after (outside) the observer!=NULL guard, "
+            "not nested inside it",
+        )
+
+    def test_timeout_constant_matches_host_driver_copy(self):
+        """The host driver (tools/gba-playtest/tests/c/
+        debugtools_launcher_driver.c) keeps its own literal copy of
+        DEBUGTOOLS_BOOTSTRAP_OBSERVER_TIMEOUT_FRAMES (the macro is
+        deliberately not exposed via include/expansion_debugtools.h, so it
+        cannot #include the real definition) -- this proves the two never
+        silently drift apart, which would otherwise make the timeout host
+        test loop below either not actually reach the real bound or waste
+        cycles far past it."""
+        source_text = LAUNCHER_SRC.read_text(encoding="utf-8", errors="replace")
+        source_match = re.search(
+            r"#define\s+DEBUGTOOLS_BOOTSTRAP_OBSERVER_TIMEOUT_FRAMES\s+(\d+)", source_text
+        )
+        self.assertIsNotNone(source_match, "could not find the timeout constant in src/debugtools_launcher.c")
+
+        driver_text = (C_FIXTURES_DIR / "debugtools_launcher_driver.c").read_text(
+            encoding="utf-8", errors="replace"
+        )
+        driver_match = re.search(
+            r"#define\s+DEBUGTOOLS_BOOTSTRAP_OBSERVER_TIMEOUT_FRAMES\s+(\d+)", driver_text
+        )
+        self.assertIsNotNone(driver_match, "could not find the mirrored timeout constant in the host driver")
+
+        self.assertEqual(
+            source_match.group(1), driver_match.group(1),
+            "src/debugtools_launcher.c's real timeout bound and the host driver's mirrored copy "
+            "must always match exactly",
+        )
+
+    def test_disabled_path_defines_cleanup_bootstrap_observer_as_a_plain_noop(self):
+        """The #else (FE8_EXPANSION_DEBUGTOOLS_ENABLED disabled) branch
+        must still define DebugTools_CleanupBootstrapObserver (the public
+        API surface must be identical in both configs), but as a body-less
+        no-op -- no proc/EWRAM-state reference of any kind."""
+        text = _strip_c_comments(LAUNCHER_SRC.read_text(encoding="utf-8", errors="replace"))
+        disabled_start = text.find("#else")
+        self.assertNotEqual(disabled_start, -1, "could not locate the disabled (#else) branch")
+        disabled_text = text[disabled_start:]
+
+        match = re.search(r"void DebugTools_CleanupBootstrapObserver\(void\)\s*\{(.*?)\n\}", disabled_text, flags=re.DOTALL)
+        self.assertIsNotNone(match, "disabled branch must still define DebugTools_CleanupBootstrapObserver")
+        body = match.group(1)
+        for banned in ("Proc_End", "Proc_Find", "Proc_Start", "sBootstrapSuppressionActive", "EWRAM_DATA"):
+            self.assertNotIn(banned, body, f"disabled DebugTools_CleanupBootstrapObserver must not reference {banned}")
+
+    def test_title_idle_defers_pending_request_check_until_hub_inactive(self):
+        """Title_IDLE must check DebugTools_IsHubActive() (and return early
+        while it's still active) strictly before it checks
+        DebugTools_IsChapter2LaunchPending() -- the pending request must
+        only ever be detected after the hub has fully closed, never while
+        it's still open."""
+        text = TITLESCREEN_SRC.read_text(encoding="utf-8", errors="replace")
+        match = re.search(r"void Title_IDLE\([^)]*\)\s*\{(.*?)\n\}", text, flags=re.DOTALL)
+        self.assertIsNotNone(match, "could not locate Title_IDLE's function body")
+        body = match.group(1)
+
+        hub_guard = re.search(r"if\s*\(\s*DebugTools_IsHubActive\(\)\s*\)\s*\n?\s*return;", body)
+        pending_check_pos = body.find("DebugTools_IsChapter2LaunchPending")
+        self.assertIsNotNone(
+            hub_guard,
+            "expected an `if (DebugTools_IsHubActive()) return;` early-out guard in Title_IDLE",
+        )
+        self.assertNotEqual(pending_check_pos, -1, "Title_IDLE must call DebugTools_IsChapter2LaunchPending()")
+        self.assertLess(
+            hub_guard.end(), pending_check_pos,
+            "the hub-active early-out must appear before the pending-request check, so the "
+            "request is only ever detected once the hub has fully closed",
+        )
+
+    def test_title_idle_pending_branch_never_synthesizes_input(self):
+        """The pending-request branch in Title_IDLE must react with the
+        same SetNextGameActionId/Proc_Break pair the ordinary A/START
+        handling uses, and must never write to newKeys or any key-status
+        buffer (no synthesized A/START keypress)."""
+        text = TITLESCREEN_SRC.read_text(encoding="utf-8", errors="replace")
+        match = re.search(
+            r"if\s*\(\s*DebugTools_IsChapter2LaunchPending\(\)\s*\)\s*\{([^}]*)\}",
+            text,
+            flags=re.DOTALL,
+        )
+        self.assertIsNotNone(
+            match,
+            "expected an `if (DebugTools_IsChapter2LaunchPending()) { ... }` branch in Title_IDLE",
+        )
+        body = match.group(1)
+        self.assertIn("SetNextGameActionId", body)
+        self.assertIn("Proc_Break", body)
+        self.assertNotIn("newKeys", body)
+
+    def test_gamecontrol_consumes_pending_launch_exactly_once_before_savemenu(self):
+        """src/gamecontrol.c must call DebugTools_ConsumePendingChapter2Launch
+        exactly once (a single call site), and that call must gate a
+        branch which Proc_Goto's to the ordinary LGAMECTRL_EXEC_BM state
+        (not a bespoke bypass state) and which appears, textually within
+        GameControl_PostIntro, before the ordinary
+        Proc_Goto(proc, LGAMECTRL_EXEC_SAVEMENU) ("StartSaveMenu") branch."""
+        text = GAMECONTROL_SRC.read_text(encoding="utf-8", errors="replace")
+        consume_calls = [
+            m.start() for m in re.finditer(r"DebugTools_ConsumePendingChapter2Launch\s*\(", text)
+        ]
+        self.assertEqual(
+            len(consume_calls), 1,
+            f"expected exactly one call to DebugTools_ConsumePendingChapter2Launch, found {len(consume_calls)}",
+        )
+
+        match = re.search(r"void GameControl_PostIntro\([^)]*\)\s*\{(.*?)\n\}", text, flags=re.DOTALL)
+        self.assertIsNotNone(match, "could not locate GameControl_PostIntro's function body")
+        body = match.group(1)
+
+        consume_pos = body.find("DebugTools_ConsumePendingChapter2Launch")
+        savemenu_pos = body.find("LGAMECTRL_EXEC_SAVEMENU")
+        self.assertNotEqual(consume_pos, -1)
+        self.assertNotEqual(savemenu_pos, -1)
+        self.assertLess(
+            consume_pos, savemenu_pos,
+            "the pending-launch consume must appear before the ordinary SaveMenu branch",
+        )
+
+        # The consuming branch itself (from the consume call to its own
+        # Proc_Goto) must target the ordinary LGAMECTRL_EXEC_BM state, not
+        # a bespoke/extended bypass variant such as LGAMECTRL_EXEC_BM_EXT.
+        branch_text = body[consume_pos:savemenu_pos]
+        goto_targets = re.findall(r"Proc_Goto\(\s*proc\s*,\s*(\w+)\s*\)", branch_text)
+        self.assertEqual(
+            goto_targets, ["LGAMECTRL_EXEC_BM"],
+            f"the Chapter 2 boot branch must Proc_Goto exactly LGAMECTRL_EXEC_BM once, found: {goto_targets}",
+        )
+
+    def test_gamecontrol_chapter2_boot_never_bypasses_events_or_manually_loads_units(self):
+        """The Chapter 2 boot branch in GameControl_PostIntro must never
+        directly start/skip an event or battle map itself (StartBattleMap,
+        CallEvent, StartEvent, any EventScr_* reference), and must never
+        manipulate unit arrays by hand beyond the one documented
+        NODE_CASTLE_FRELIA world-map placement -- the real
+        EventScr_Ch2_BeginningScene / world-map / battle-map flow must run
+        completely unmodified via the ordinary LGAMECTRL_EXEC_BM proc
+        script."""
+        text = _strip_c_comments(GAMECONTROL_SRC.read_text(encoding="utf-8", errors="replace"))
+        match = re.search(r"void GameControl_PostIntro\([^)]*\)\s*\{(.*?)\n\}", text, flags=re.DOTALL)
+        self.assertIsNotNone(match)
+        body = match.group(1)
+
+        consume_pos = body.find("DebugTools_ConsumePendingChapter2Launch")
+        savemenu_pos = body.find("LGAMECTRL_EXEC_SAVEMENU")
+        branch_text = body[consume_pos:savemenu_pos]
+
+        for banned in ("StartBattleMap", "CallEvent", "StartEvent", "EventScr_"):
+            self.assertNotIn(
+                banned, branch_text,
+                f"the Chapter 2 boot branch must never reference {banned} -- the real event/"
+                "battle flow must run unmodified via the ordinary proc script",
+            )
+
+        # The only unit-array write in this branch must be the single
+        # documented world-map location placement, never a direct
+        # per-unit field write (position/state/items) that would amount
+        # to manually placing battle-map units.
+        unit_array_writes = re.findall(r"gUnitArray\w+\[[^\]]*\]\s*\.\s*(\w+)", branch_text)
+        self.assertEqual(unit_array_writes, [], f"unexpected direct unit-array writes: {unit_array_writes}")
+        gmdata_unit_writes = re.findall(r"gGMData\.units\[[^\]]*\]\s*\.\s*(\w+)", branch_text)
+        self.assertEqual(
+            gmdata_unit_writes, ["location"],
+            f"the only gGMData.units[] field write in this branch must be 'location', found: {gmdata_unit_writes}",
+        )
 
 
 if __name__ == "__main__":

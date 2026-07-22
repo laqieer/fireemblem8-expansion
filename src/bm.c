@@ -31,6 +31,8 @@
 #include "constants/event-flags.h"
 #include "constants/songs.h"
 
+#include "expansion_debugtools.h"
+
 struct PalFadeSt EWRAM_DATA sPalFadeSt[0x20] = { 0 };
 struct BmSt EWRAM_DATA gBmSt = {};
 struct PlaySt EWRAM_DATA gPlaySt = {};
@@ -476,6 +478,15 @@ int BmMain_UpdateTraps(ProcPtr proc)
 //! FE8U = 0x080154F4
 void BmMain_SuspendBeforePhase(void)
 {
+    /* Skipped only while the debugtools bootstrap suppression is active
+     * (see include/expansion_debugtools.h) -- the one-shot window between
+     * the "Fast Boot: Chapter 2" debug launch committing and its
+     * bootstrap observer proc detecting the first stable Player Phase.
+     * Always 0 outside that window, so ordinary user Suspend keeps
+     * writing normally. */
+    if (DebugTools_IsBootstrapSuppressionActive())
+        return;
+
     gActionData.suspendPointType = SUSPEND_POINT_PHASECHANGE;
     WriteSuspendSave(SAVE_ID_SUSPEND);
 }

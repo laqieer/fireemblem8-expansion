@@ -168,6 +168,118 @@ void DebugTools_RegisterBuiltinActions(void);
  * release-build run, same as every other probe field). */
 void DebugTools_RecordTitleIdleTimer(u32 timerIdle);
 
+/* --- Pending Chapter 2 fast-boot launch request ---------------------------
+ * Replaces the earlier "tear down and restart GameCtrlProc from inside a
+ * MenuProc callback" launcher (proc-tree lifecycle corruption -- see
+ * docs/debugtools.md). The hub action ("Fast Boot: Chapter 2",
+ * src/debugtools_launcher.c) now only arms a pending request and closes the
+ * hub; it never touches gProcScr_GameControl, gProc_BMapMain, units, or
+ * events. The request is detected by Title_IDLE (src/titlescreen.c) only
+ * after the hub has closed, and consumed exactly once by
+ * GameControl_PostIntro (src/gamecontrol.c), which performs the actual
+ * deterministic boot and hands off to the ordinary LGAMECTRL_EXEC_BM
+ * transition -- the existing GameCtrlProc's own normal lifecycle runs
+ * unmodified throughout. */
+
+/* Arms the one pending debug launch request. Called only from the hub
+ * action's own onSelected callback. Idempotent: calling it again while a
+ * request is already pending leaves the single pending request unchanged
+ * (no queued second launch, no double-arm) -- see
+ * gDebugToolsProbe.pendingLaunchRequest for the observable evidence. No-op
+ * when the subsystem is compiled out. */
+void DebugTools_RequestChapter2Launch(void);
+
+/* True from the frame the hub action arms the request until the frame
+ * GameControl_PostIntro consumes it. Checked by Title_IDLE only after
+ * DebugTools_IsHubActive() reports the hub has closed -- Title_IDLE itself
+ * never clears this flag, it only reacts to it by setting the ordinary
+ * GAME_ACTION_EVENT_RETURN next-action and calling Proc_Break on itself
+ * (exactly the effect a real A/START press would have, without
+ * synthesizing that keypress). Always 0 when the subsystem is compiled
+ * out. */
+int DebugTools_IsChapter2LaunchPending(void);
+
+/* Consumes the pending request exactly once: returns nonzero and clears
+ * the pending flag the first time a request is pending, returns 0 (a
+ * no-op, gDebugToolsProbe.launchRequestConsumedCount left unchanged) on
+ * every subsequent call until DebugTools_RequestChapter2Launch() arms a new
+ * one. Called only from GameControl_PostIntro's GAME_ACTION_EVENT_RETURN
+ * case, before its ordinary StartSaveMenu branch. Always 0 when the
+ * subsystem is compiled out. */
+int DebugTools_ConsumePendingChapter2Launch(void);
+
+/* Arms the one-shot persistent-write suppression that skips
+ * BmMain_SuspendBeforePhase's WriteSuspendSave (src/bm.c),
+ * PlayerPhase_Suspend's WriteSuspendSave (src/playerphase.c), and
+ * UnlockSoundRoomSong's SRAM write (src/soundwrapper.c) for exactly the
+ * window between the Chapter 2 fast-boot committing and the bootstrap
+ * observer proc (src/debugtools_launcher.c) clearing it (see
+ * DebugTools_CleanupBootstrapObserver below for every way that can
+ * happen). Also starts that observer proc (a small independent
+ * PROC_TREE_3 proc -- it never redirects gProc_BMapMain or any other
+ * proc, it only polls state and clears suppression once). Fail-safe
+ * singleton: always calls DebugTools_CleanupBootstrapObserver() first, so
+ * a repeated call -- whether a genuinely new launch or one arriving while
+ * a stale observer/flag is still live from a prior aborted/incomplete
+ * boot -- can never leave two observers alive at once, nor leave
+ * suppression stuck on. gDebugToolsProbe.bootstrapObserverArmCount
+ * increments on every call (explicit, observable evidence that a repeat
+ * arm was handled, not silently ignored or silently duplicated). Called
+ * only from GameControl_PostIntro, once per consumed launch request,
+ * immediately after DebugTools_ConsumePendingChapter2Launch() returns
+ * nonzero. No-op when the subsystem is compiled out. */
+void DebugTools_ArmBootstrapSuppression(void);
+
+/* Explicit, idempotent, synchronous cleanup: ends the bootstrap observer
+ * proc (if one is currently alive -- a plain no-op otherwise) and clears
+ * the one-shot suppression flag. This is the fail-safe half of the
+ * lifecycle: the observer itself already calls the equivalent cleanup on
+ * every one of its own termination paths --
+ *   1. success (first stable Player Phase seen),
+ *   2. abandoned/failed run (DebugTools_NotifyTitleScreenStarting below
+ *      reports the title screen (re)starting while suppression is still
+ *      active, meaning the run returned to title before a stable Player
+ *      Phase was ever reached -- normal Chapter 2 flow never re-enters
+ *      the title screen), or
+ *   3. a bounded timeout (DEBUGTOOLS_BOOTSTRAP_OBSERVER_TIMEOUT_FRAMES in
+ *      src/debugtools_launcher.c, set comfortably above any normal
+ *      Chapter 2 boot's own arm-to-interactive window) --
+ * so suppression can never outlive the observer through any of those
+ * paths either. This function additionally lets DebugTools_
+ * ArmBootstrapSuppression() guarantee its own singleton property (see
+ * above), and gives host tests/tooling an explicit call site to force
+ * cleanup deterministically without waiting on any of the three
+ * conditions. No-op when the subsystem is compiled out. */
+void DebugTools_CleanupBootstrapObserver(void);
+
+/* True for as long as the bootstrap suppression above is armed. Checked by
+ * the narrow guards in BmMain_SuspendBeforePhase (src/bm.c),
+ * PlayerPhase_Suspend (src/playerphase.c), and UnlockSoundRoomSong
+ * (src/soundwrapper.c). Always 0 when the subsystem is compiled out or
+ * once the bootstrap observer has cleared it -- ordinary user-triggered
+ * suspend saves and song-room unlocks are never suppressed outside this
+ * narrow one-shot boot window. */
+int DebugTools_IsBootstrapSuppressionActive(void);
+
+/* Called only from src/titlescreen.c's StartTitleScreen_WithMusic,
+ * StartTitleScreen_FlagFalse, and StartTitleScreen_FlagTrue -- the three
+ * (and only) places gProcScr_TitleScreen is ever (re)started as a
+ * blocking child of gProcScr_GameControl. Normal Chapter 2 flow (event ->
+ * world map -> chapter-intro event -> battle map -> NPC phase -> Player
+ * Phase) never re-enters the title screen, so any one of these three
+ * being called while the bootstrap suppression above is still active
+ * means the run was abandoned/returned to title before a stable Player
+ * Phase was ever reached (soft reset, a debug/error path back to
+ * LGAMECTRL_TITLE_DIRECT, etc.). A no-op whenever suppression is not
+ * currently active (title screen starting normally, e.g. at first boot,
+ * is not a "return"). This is a genuine, unambiguous event -- unlike
+ * scanning the proc tree for a live gProcScr_TitleScreen instance, which
+ * cannot reliably distinguish "the title screen is actually running
+ * again" from "a just-freed proc slot's stale proc_script field still
+ * happens to equal that pointer" (FreeProcess, src/proc.c, never clears
+ * proc_script on free). No-op when the subsystem is compiled out. */
+void DebugTools_NotifyTitleScreenStarting(void);
+
 /* --- Playtest / host probe surface -----------------------------------
  * A small, stable, always-linked (both enabled and disabled builds)
  * diagnostic struct meant to be read directly by address by
@@ -183,10 +295,11 @@ struct DebugToolsProbe
     u32 hubOpenCount;
     u32 registeredActionCount;
     u32 lastRegisterResult;  /* enum DebugToolsResult */
-    u32 launcherArmed;       /* DEBUGTOOLS_LAUNCHER_ARMED_MAGIC once the
-                               * built-in launcher has committed to its
-                               * deterministic boot (see
-                               * src/debugtools_launcher.c) */
+    u32 launcherArmed;       /* DEBUGTOOLS_LAUNCHER_ARMED_MAGIC once
+                               * GameControl_PostIntro has consumed the
+                               * pending request and committed to the
+                               * deterministic Chapter 2 boot (see
+                               * src/gamecontrol.c) */
     u32 titleIdleTimerSample; /* mirrors Title_IDLE's proc->timer_idle
                                * every frame (see
                                * DebugTools_RecordTitleIdleTimer) --
@@ -195,11 +308,60 @@ struct DebugToolsProbe
                                * is the stable evidence that the idle/
                                * attract timer is frozen, not silently
                                * advancing, while the hub is active */
+    u32 pendingLaunchRequest;       /* DEBUGTOOLS_LAUNCH_REQUEST_MAGIC from
+                                      * the moment the hub action arms the
+                                      * request until GameControl_PostIntro
+                                      * consumes it (see
+                                      * DebugTools_RequestChapter2Launch /
+                                      * DebugTools_ConsumePendingChapter2Launch) */
+    u32 launchRequestConsumedCount; /* increments exactly once per
+                                      * consumed request -- proves
+                                      * GameControl_PostIntro never
+                                      * double-applies a single arm */
+    u32 bootstrapSuppressionActive; /* 1 while the one-shot persistent-
+                                      * write suppression armed alongside
+                                      * the Chapter 2 boot is active, 0
+                                      * once the bootstrap observer proc
+                                      * clears it -- via success, a
+                                      * detected return to title, an
+                                      * explicit DebugTools_
+                                      * CleanupBootstrapObserver() call, or
+                                      * the bounded timeout (see the three
+                                      * counters below) */
+    u32 playerPhaseObservedCount;   /* increments once per observer,
+                                      * when it detects a stable Player
+                                      * Phase and clears suppression (the
+                                      * success path) */
+    u32 bootstrapObserverArmCount;   /* increments on every
+                                      * DebugTools_ArmBootstrapSuppression()
+                                      * call, including repeats over a
+                                      * still-live or stale observer --
+                                      * explicit, observable evidence that
+                                      * a repeat arm was handled (cleaned
+                                      * up + restarted exactly one fresh
+                                      * observer), never silently ignored
+                                      * or silently duplicated */
+    u32 observerTitleReturnCount;    /* increments once per observer, if
+                                      * it ends via
+                                      * DebugTools_NotifyTitleScreenStarting
+                                      * reporting the title screen
+                                      * (re)starting while suppression was
+                                      * still active (the run was
+                                      * abandoned/returned to title before
+                                      * a stable Player Phase was ever
+                                      * reached) */
+    u32 observerTimeoutCount;        /* increments once per observer, if
+                                      * it ends via the bounded
+                                      * DEBUGTOOLS_BOOTSTRAP_OBSERVER_
+                                      * TIMEOUT_FRAMES fail-safe (neither
+                                      * success nor a detected title
+                                      * return happened in time) */
 };
 
 enum
 {
-    DEBUGTOOLS_LAUNCHER_ARMED_MAGIC = 0x44424C31 /* ASCII "DBL1" */
+    DEBUGTOOLS_LAUNCHER_ARMED_MAGIC = 0x44424C31, /* ASCII "DBL1" */
+    DEBUGTOOLS_LAUNCH_REQUEST_MAGIC = 0x44424C32  /* ASCII "DBL2" */
 };
 
 extern struct DebugToolsProbe gDebugToolsProbe;

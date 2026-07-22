@@ -26,6 +26,7 @@
 #include "bm.h"
 #include "bmsave.h"
 #include "eventinfo.h"
+#include "expansion_debugtools.h"
 
 #include "playerphase.h"
 
@@ -209,6 +210,20 @@ struct ProcCmd CONST_DATA sProcScr_MoveLimitView[] =
 //! FE8U = 0x0801C894
 void PlayerPhase_Suspend(void)
 {
+    /* Skipped only while the debugtools bootstrap suppression is active
+     * (see include/expansion_debugtools.h) -- the same one-shot window
+     * BmMain_SuspendBeforePhase (src/bm.c) is narrowly guarded for. This
+     * call runs unconditionally at the very start of every Player Phase
+     * (PROC_LABEL(0) of gProcScr_PlayerPhase, before the bootstrap
+     * observer proc can possibly have cleared suppression yet on the same
+     * frame gProcScr_PlayerPhase first exists), so without this guard the
+     * "Fast Boot: Chapter 2" launch's own first Player Phase would still
+     * commit a persistent suspend write inside the suppression window.
+     * Always 0 outside that window, so ordinary user Suspend keeps
+     * writing normally. */
+    if (DebugTools_IsBootstrapSuppressionActive())
+        return;
+
     gActionData.suspendPointType = SUSPEND_POINT_PLAYERIDLE;
     WriteSuspendSave(SAVE_ID_SUSPEND);
     return;

@@ -5,6 +5,7 @@
 #include "bmlib.h"
 #include "soundwrapper.h"
 #include "constants/songs.h"
+#include "expansion_debugtools.h"
 
 EWRAM_DATA struct SoundSt gSoundSt = {0};
 
@@ -326,7 +327,15 @@ void PlaySong(int songId, struct MusicPlayerInfo *player)
     if (songId < 128)
     {
         Sound_SetupMaxChannelsForSong(songId);
-        UnlockSoundRoomSong(0, songId);
+
+        /* Skipped only while the debugtools bootstrap suppression is
+         * active (see include/expansion_debugtools.h) -- the one-shot
+         * window between the "Fast Boot: Chapter 2" debug launch
+         * committing and its bootstrap observer proc detecting the first
+         * stable Player Phase. Always 0 outside that window, so ordinary
+         * song-room unlock tracking keeps writing normally. */
+        if (!DebugTools_IsBootstrapSuppressionActive())
+            UnlockSoundRoomSong(0, songId);
     }
 
     if (player != NULL)

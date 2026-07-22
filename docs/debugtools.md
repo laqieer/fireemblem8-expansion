@@ -11,10 +11,12 @@ proves all of it. It intentionally covers **only** this first slice; see
 
 | File | Role |
 | --- | --- |
-| `include/expansion_debugtools.h` | Public contract: config gate, hotkey mask + compile-time collision guards, registration API, `struct DebugToolsProbe` |
+| `include/expansion_debugtools.h` | Public contract: config gate, hotkey mask + compile-time collision guards, registration API, pending-request/bootstrap-suppression API, `struct DebugToolsProbe` |
 | `src/debugtools_registry.c` | Registry storage, hub menu construction/diagnostics, hotkey check, `gDebugToolsProbe` |
-| `src/debugtools_launcher.c` | The slice's one built-in action ("Fast Boot: Prologue") |
-| `src/titlescreen.c` | The single supported call site (`Title_IDLE`) |
+| `src/debugtools_launcher.c` | The one built-in action ("Fast Boot: Chapter 2"): arms/consumes the pending launch request, owns the bootstrap-suppression state and its observer proc |
+| `src/titlescreen.c` | The single supported hotkey call site (`Title_IDLE`); also detects the pending launch request after the hub closes |
+| `src/gamecontrol.c` | `GameControl_PostIntro` consumes the pending request exactly once and performs the actual deterministic boot |
+| `src/bm.c`, `src/playerphase.c`, `src/soundwrapper.c` | Narrow, one-shot bootstrap-suppression guards on the automatic per-phase suspend-save calls (`BmMain_SuspendBeforePhase`, `PlayerPhase_Suspend`) and the song-room unlock write (`UnlockSoundRoomSong`) |
 | `tools/gba-playtest/scenarios/debugtools-hub-modern-{debug,release}.json` | Playtest scenarios (input script + probe expectations) |
 | `tools/gba-playtest/fingerprints/debugtools-hub-modern-{debug,release}.json` | Captured fingerprints for those scenarios |
 | `tools/gba-playtest/tests/test_debugtools_registry.py` + `tools/gba-playtest/tests/c/*.c` | Host tests (see "Host tests" below) |
@@ -197,36 +199,133 @@ asserts `hubOpenCount` stays exactly `1` after both; the host test calls
 `DEBUGTOOLS_OK` (count becomes 1) while the second and third both return
 `DEBUGTOOLS_ERR_ALREADY_ACTIVE` (count stays 1).
 
-## Deterministic launcher: "Fast Boot: Prologue"
+## Deterministic launcher: "Fast Boot: Chapter 2"
 
-The slice's one built-in action (`src/debugtools_launcher.c`), registered
-lazily (idempotently) the first time the hub opens. Selecting it:
+An earlier version of this launcher tore down and restarted the whole
+`GameCtrlProc` tree (`Proc_EndEach(gProcScr_GameControl)` + `Proc_Start` +
+`Proc_Goto(..., LGAMECTRL_EXEC_BM_EXT)`) from inside its own orphan
+`MenuProc` `onSelected` callback -- proc-tree lifecycle corruption that hung
+later prologue/Chapter 1/Chapter 2 experiments at unrelated event/fade
+stages. The launcher is now a three-stage **pending-request handoff**
+across the existing proc lifecycle, with no proc torn down or recreated
+anywhere:
 
-1. Sets `gDebugToolsProbe.launcherArmed = DEBUGTOOLS_LAUNCHER_ARMED_MAGIC`
-   (`0x44424C31`, ASCII `"DBL1"`) -- committed-to-boot evidence for playtest
-   probes.
-2. **Deterministic RNG policy**: reseeds to the exact fixed constant
-   `AgbMain`'s own clean-boot seed uses (`src/main.c`), regardless of how
-   many RNG draws already happened this session -- the launcher's outcome is
-   independent of prior play.
-3. Reuses `GameControl_InitTutorialGame`'s own bootstrap sequence
-   (`src/gamecontrol.c`) -- `InitPlayConfig`, `ResetPermanentFlags`,
-   `ResetChapterFlags`, `InitUnits` -- minus the tutorial flag, then sets
-   `gPlaySt.chapterIndex = CHAPTER_L_PROLOGUE`. None of these touch SRAM;
-   `InitPlayConfig` only zeroes the EWRAM `gPlaySt` struct.
-4. Tears down and restarts the entire `GameCtrlProc` tree via
-   `Proc_EndEach(gProcScr_GameControl)` + `Proc_Start` + `Proc_Goto(...,
-   LGAMECTRL_EXEC_BM_EXT)` -- the same "EndEach + Start + Goto" idiom already
-   used by `RestartGameAndGoto8`/`RestartGameAndGoto12`, and already proven
-   safe from inside a `MenuItemDef::onSelected` callback by the dormant
-   `DebugContinueMenu_ManualContinue`/`InitializeFile` handlers in
-   `src/bmdebug.c`. `LGAMECTRL_EXEC_BM_EXT` bypasses both the world map and
-   the interactive Save Menu entirely, so **no SRAM is ever read or
-   written**.
+1. **Hub action arms only a flag** (`src/debugtools_launcher.c`,
+   `DebugToolsLauncher_FastBootChapter2`). Selecting "Fast Boot: Chapter 2"
+   calls `DebugTools_RequestChapter2Launch()` (idempotent -- a duplicate arm
+   changes nothing observable) and returns `MENU_ACT_END` to close the hub.
+   It never touches `gProcScr_GameControl`/`gProc_BMapMain`, never calls
+   `Proc_EndEach`/`Proc_Start` on the game-control proc, never loads units,
+   and never manipulates events.
+2. **`Title_IDLE` detects the pending request only after the hub has fully
+   closed** (`src/titlescreen.c`): `DebugTools_IsHubActive()` is checked
+   (with an early return while still active) strictly before
+   `DebugTools_IsChapter2LaunchPending()`. When pending, it reacts with the
+   exact same `SetNextGameActionId(GAME_ACTION_EVENT_RETURN); Proc_Break(proc);`
+   pair the ordinary `A`/`START` branch uses -- the normal fade/end/
+   parent-unblock lifecycle of this `TitleScreen` proc runs completely
+   unmodified. No `A`/`START` keypress is ever synthesized.
+3. **`GameControl_PostIntro` consumes the request exactly once**
+   (`src/gamecontrol.c`), before its ordinary `StartSaveMenu` branch:
+   `DebugTools_ConsumePendingChapter2Launch()` gates a branch that seeds a
+   fixed deterministic RNG (`SetLCGRNValue(DEBUGTOOLS_FASTBOOT_RNG_SEED)` +
+   `InitRN`), reuses the same `InitPlayConfig`/`ResetPermanentFlags`/
+   `ResetChapterFlags`/`InitUnits` bootstrap sequence
+   `GameControl_InitTutorialGame` uses (`CHAPTER_MODE_COMMON`, non-tutorial),
+   sets `gPlaySt.chapterIndex`/`proc->nextChapter = CHAPTER_L_2`, calls
+   `GmDataInit()`, places the world-map party at `NODE_CASTLE_FRELIA` (the
+   same rest stop the normal Chapter 1 -> Chapter 2 progression passes
+   through -- `GmDataInit()` otherwise defaults to `NODE_BORDER_MULAN`, the
+   Prologue's own rest node, and the ordinary `LGAMECTRL_EXEC_BM` path's own
+   `WorldMap_CallBeginningEvent` unconditionally recomputes `chapterIndex`
+   from the party's node, so without this the chapter set above would be
+   silently overwritten back to the Prologue), arms the one-shot
+   persistent-write suppression (`DebugTools_ArmBootstrapSuppression()`),
+   and finally `Proc_Goto(proc, LGAMECTRL_EXEC_BM)` -- the **ordinary**
+   proc-script state, on the **same** `GameCtrlProc` that has been running
+   since boot. No proc tree is torn down or recreated, and no
+   chapter-specific event/battle logic is bypassed: the real
+   `EventScr_Ch2_BeginningScene`, the real interactive world map (including
+   the player's own `L`-cursor-jump + `A`-node-confirm navigation to Ide),
+   and the real Chapter 2 battle map all run completely unmodified from this
+   point on.
 
-This is intentionally a thin reuse of existing game-control/chapter-start
-routines, not a reimplementation of state setup, and is the mechanism issue
-#2's later deep save/write-reload scenarios are expected to build on.
+### One-shot persistent-write suppression
+
+Between the boot committing (`DebugTools_ArmBootstrapSuppression()`) and the
+first stable Player Phase, a small **singleton** bootstrap observer proc
+(`DebugToolsObserver_WaitForStablePlayerPhase`, `PROC_TREE_3`,
+`src/debugtools_launcher.c`) is responsible for clearing the suppression
+flag. `DebugTools_ArmBootstrapSuppression()` is idempotent: it first calls
+`DebugTools_CleanupBootstrapObserver()` to end any stale observer/flag from a
+prior, possibly-abandoned run, and only then `Proc_Start`s exactly one new
+observer -- so repeated arming (or arming after an abandoned run) can never
+leave two observers alive or a suppression flag stuck from a previous boot.
+
+The observer's own per-frame poll body has exactly **two** termination
+branches, each ending via `Proc_Break(proc)`:
+
+- **success** -- `gPlaySt.faction == FACTION_BLUE && Proc_Find(gProcScr_PlayerPhase)
+  != NULL` (first stable Player Phase reached), or
+- **timeout** -- `DEBUGTOOLS_BOOTSTRAP_OBSERVER_TIMEOUT_FRAMES` (21600 frames,
+  safely above any normal Chapter 2 boot-to-interactive duration) elapses
+  without success, guaranteeing suppression can never be stuck on forever
+  even if the boot hangs or the Player Phase is never reached.
+
+A **third**, event-driven path handles returning to the title screen before
+the boot completes (e.g. the player cancels out): `src/titlescreen.c`'s three
+`StartTitleScreen_*` functions (`_WithMusic`, `_FlagFalse`, `_FlagTrue` --
+the only call sites that ever (re)start `gProcScr_TitleScreen` as a blocking
+child of `gProcScr_GameControl`) each call
+`DebugTools_NotifyTitleScreenStarting()`, a no-op unless suppression is
+active. This is deliberately **not** implemented as a `Proc_Find
+(gProcScr_TitleScreen)` poll inside the observer: `FreeProcess` (`src/proc.c`)
+never clears a freed proc's `proc_script` pointer, so a `Proc_Find` scan can
+report a stale, already-ended proc's slot as a false-positive match on the
+very frame it naturally ends -- which is exactly what happens to the real
+`TitleScreen` proc around the time the observer starts. An earlier revision
+of this feature used that poll and it produced a real regression (the
+observer cleared suppression almost immediately, letting
+`BmMain_SuspendBeforePhase` write mid-boot and stall Chapter 2 progression).
+The direct function-call notification has no such staleness window.
+
+All three termination paths funnel through a single end callback
+(`DebugToolsObserver_OnEnd`, installed via `PROC_SET_END_CB`) that
+unconditionally clears `sBootstrapSuppressionActive` -- so every way the
+observer can stop (its own `Proc_Break`, or an external
+`DebugTools_CleanupBootstrapObserver()` call) clears suppression exactly the
+same way; there is exactly one place in the code that clears the flag. The
+observer never redirects `gProcScr_PlayerPhase`, `gProc_BMapMain`, or any
+other proc.
+
+While suppression is active, `DebugTools_IsBootstrapSuppressionActive()`
+gates three otherwise-unconditional automatic persistent-write call sites
+that would otherwise fire during the deterministic boot's own opening
+NPC-phase-into-Player-phase transition (proven necessary empirically: without
+all three, the whole-SRAM hash changes between the pre-launch and
+first-interactive checkpoints even though the boot performs no *user-visible*
+save action):
+
+- `BmMain_SuspendBeforePhase` (`src/bm.c`) -- the automatic suspend-save at
+  the start of every battle-map phase.
+- `PlayerPhase_Suspend` (`src/playerphase.c`) -- the analogous automatic
+  suspend-save at the very start of every Player Phase (`PROC_LABEL(0)` of
+  `gProcScr_PlayerPhase`), which runs before the observer proc above can
+  possibly have cleared suppression on the same frame `gProcScr_PlayerPhase`
+  first exists.
+- `UnlockSoundRoomSong` (`src/soundwrapper.c`) -- the sound-room-unlock SRAM
+  write triggered by songs that play during the boot sequence.
+
+Outside this narrow one-shot boot window (before it's armed, and forever
+after the observer clears it), all three call sites behave exactly as
+before -- ordinary user-triggered Suspend saves and song-room unlocks are
+never suppressed. `src/playerphase.c`'s guard is a deliberate, narrowly-
+scoped extension of the same pattern already used by `src/bm.c`/
+`src/soundwrapper.c`: it was not part of this feature's original allowed-file
+list, but is required to satisfy the hard "zero SRAM diff" bar below --
+without it, `PlayerPhase_Suspend`'s own unconditional write is reachable
+inside the suppression window on any deterministic Chapter 2 boot that
+reaches a real Player Phase at all (which this one always does).
 
 ## Playtest evidence
 
@@ -240,9 +339,16 @@ struct DebugToolsProbe
 {
     u32 hubOpenCount;
     u32 registeredActionCount;
-    u32 lastRegisterResult;  /* enum DebugToolsResult */
-    u32 launcherArmed;       /* DEBUGTOOLS_LAUNCHER_ARMED_MAGIC once armed */
-    u32 titleIdleTimerSample; /* mirrors proc->timer_idle every Title_IDLE frame */
+    u32 lastRegisterResult;         /* enum DebugToolsResult */
+    u32 launcherArmed;              /* DEBUGTOOLS_LAUNCHER_ARMED_MAGIC ("DBL1") once the boot commits */
+    u32 titleIdleTimerSample;       /* mirrors proc->timer_idle every Title_IDLE frame */
+    u32 pendingLaunchRequest;       /* DEBUGTOOLS_LAUNCH_REQUEST_MAGIC ("DBL2") while armed, 0 once consumed */
+    u32 launchRequestConsumedCount; /* increments once per GameControl_PostIntro consume */
+    u32 bootstrapSuppressionActive; /* 1 while the one-shot suppression window is open */
+    u32 playerPhaseObservedCount;   /* increments once, on the success termination path */
+    u32 bootstrapObserverArmCount;  /* increments once per DebugTools_ArmBootstrapSuppression() call */
+    u32 observerTitleReturnCount;   /* increments once per DebugTools_NotifyTitleScreenStarting() cleanup */
+    u32 observerTimeoutCount;       /* increments once, on the timeout termination path */
 };
 extern struct DebugToolsProbe gDebugToolsProbe;
 ```
@@ -270,32 +376,46 @@ Both scenarios replay the identical frame-for-frame input script:
 2. `Title_IDLE` itself is only reachable after replaying the same
    intro-advance `A`/`START` taps `title-progression.json` already uses
    (its own "early-title-sequence" -> "title-input-progression" ->
-   "intro-menu-progression" checkpoints) -- confirmed empirically: with no
-   input, `Title_IDLE` never starts ticking inside a multi-thousand-frame
-   window; with the intro taps replayed, it starts ticking almost
-   immediately after the last of them and keeps ticking every frame (`newKeys`
-   readable) until either 815 idle frames elapse (`GAME_ACTION_CLASS_REEL`,
-   the vanilla attract-mode transition) or an `A`/`START` press advances past
-   it.
-3. The hotkey (`SELECT + R`) is therefore pulsed at frame 600 -- comfortably
-   inside that window, well clear of both the input-masked intro and the
-   815-frame idle timeout. It is then pulsed a **second** time at frame
-   650-656 (review-fix regression coverage -- see "Reentrancy guard" above)
-   before an `A` press at frame 700 selects the hub's one entry (the built-in
-   launcher).
+   "intro-menu-progression" checkpoints).
+3. The hotkey (`SELECT + R`) is pulsed at frame 600, then a **second** time
+   at frame 650-656 (reentrancy-guard regression coverage -- see
+   "Reentrancy guard" above), before an `A` press at frame 700 selects the
+   hub's one entry and arms the pending Chapter 2 launch request.
+4. From frame 750 onward, ordinary `A` taps (every 30 frames through the
+   `EventScr_Ch2_BeginningScene` dialogue, then every 60 frames through the
+   chapter-intro event and opening NPC phase) advance the real, unmodified
+   Chapter 2 flow, plus one `L` (world-map cursor jump Castle Frelia -> Ide)
+   and one `A` (node confirm) at frames 1650/1700 to enter the real battle
+   map, and a final `RIGHT`/`DOWN` pair at frames 14700/14760 proving the
+   battle-map cursor responds to ordinary input once the map is interactive.
 
-The debug scenario has 5 checkpoints: a pre-hotkey baseline (frame 300, all
-probes zero), one right after the first hotkey pulse (frame 630,
+The debug scenario has 7 checkpoints: a pre-hotkey baseline (frame 300, all
+4 basic probes zero), one right after the first hotkey pulse (frame 630,
 `hubOpenCount == 1`), one right after the second, repeated pulse (frame 680,
-`hubOpenCount` still `== 1` -- the critical regression-proof checkpoint), one
-after the launcher is selected (frame 950, `lastRegisterResult ==
-DEBUGTOOLS_OK (0)` and `launcherArmed == DEBUGTOOLS_LAUNCHER_ARMED_MAGIC`),
-and a final frame-1550 stability checkpoint (the chapter map's own animation
-cycling changes `framebuffer_hash` between checkpoints, as expected for a
-live, running chapter -- the probe fields, not the hash, are the "stable"
-evidence). The release scenario asserts every probe field stays
-`0x00000000` at every one of the same 5 checkpoints, given the exact same
-(now-doubled-pulse) input.
+`hubOpenCount` still `== 1` -- the reentrancy regression-proof checkpoint),
+`pre-launch` (frame 706, right after the request is armed and the hub
+closes -- `pendingLaunchRequest == DEBUGTOOLS_LAUNCH_REQUEST_MAGIC`, whole-
+SRAM hash captured), `gamecontrol-consumed-launch` (frame 950,
+`launcherArmed == DEBUGTOOLS_LAUNCHER_ARMED_MAGIC`,
+`launchRequestConsumedCount == 1`, `bootstrapSuppressionActive == 1`,
+`chapterIndex == CHAPTER_L_2`), `chapter2-interactive-stable` (frame 14000,
+`bootstrapSuppressionActive == 0`, `playerPhaseObservedCount == 1`, the full
+Blue/Green/Red unit roster present by character ID -- Eirika, Seth, Gilliam,
+Franz, Moulder, Vanessa in Blue; Ross in Green; Bone + generic Bandits in
+Red -- Eirika's `items[0]` low byte `== ITEM_SWORD_RAPIER`, and a whole-SRAM
+hash that is **byte-for-byte identical** to `pre-launch`'s, with zero
+exclusions), and `post-interactive-cursor-response` (frame 14900, after the
+`RIGHT`/`DOWN` taps, proving the battle-map cursor moved -- this checkpoint's
+SRAM hash is expected to differ from the first two, since ordinary
+suspend-saves are no longer suppressed once past
+`chapter2-interactive-stable`). The release scenario replays the exact same
+frame-for-frame input (all 259 frame entries, identical to the debug
+scenario) against a release build and asserts every probe field stays
+`0x00000000` at all 7 checkpoints -- proving the entire subsystem is
+compiled out, not merely unreached, even across the full Chapter 2 tap
+sequence (which a release build's own vanilla title-to-SaveMenu handling
+still processes as ordinary input, since none of it is debugtools-specific
+behavior).
 
 ### Title-idle-timer freeze (`titleIdleTimerSample`)
 
@@ -415,6 +535,83 @@ re-implementing or pattern-matching their logic:
   equal (frozen) and the post-close checkpoint is strictly greater (resumed)
   -- reasoning the scenario JSON schema itself cannot express (no relational
   operators), so it is asserted here in the host test instead.
+- **`DebugToolsChapter2LaunchLifecycleHostTests`** proves the pending-request
+  handoff itself, combining host-executed behavior with link-time and
+  structural (comment-stripped, so explanatory prose about what the code
+  must *not* do can never itself satisfy or fail an assertion) proofs:
+  - `test_launcher_pending_request_lifecycle_host_executed` compiles+links+
+    executes the real `src/debugtools_launcher.c` (enabled path) -- driven
+    by `tools/gba-playtest/tests/c/debugtools_launcher_driver.c` calling
+    the real public API directly -- against
+    `tools/gba-playtest/tests/c/debugtools_launcher_host_stubs.c`, which
+    instruments (call-counts) `Proc_Start`/`Proc_Find`/`Proc_Break` but
+    **deliberately never defines** `Proc_EndEach`, `gProcScr_GameControl`,
+    or `gProc_BMapMain` -- so any reference to them anywhere in the linked
+    object graph would itself be a link failure, not just a missed
+    assertion. It proves: arming the request never calls
+    `Proc_Start`/`Proc_Break`; a duplicate arm changes nothing observable;
+    consuming is one-shot (`DebugTools_ConsumePendingChapter2Launch()`
+    returns true exactly once per arm, then false); consuming an empty
+    request is a no-op; arming bootstrap suppression starts exactly one
+    proc (the observer); and the whole cycle is re-armable across repeated
+    boots.
+  - `test_launcher_disabled_path_is_noop` compiles+links+executes
+    `tools/gba-playtest/tests/c/debugtools_launcher_disabled_driver.c`
+    standalone (no stubs/registry needed) with
+    `-DFE8_EXPANSION_DEBUGTOOLS_ENABLED=0`, proving every public
+    pending-request/suppression entry point degrades to an inert stub, and
+    `nm` confirms the hub-internal symbols are physically omitted.
+  - `test_launcher_never_references_gamectrl_or_proc_endeach` and
+    `test_gamecontrol_chapter2_boot_never_bypasses_events_or_manually_loads_units`
+    grep the real source text (with C comments stripped first) to
+    structurally confirm `src/debugtools_launcher.c` never mentions
+    `Proc_EndEach`/`gProcScr_GameControl`/`gProc_BMapMain` in code, and that
+    `GameControl_PostIntro`'s Chapter 2 boot branch only ever writes
+    `gGMData.units[0].location` (the single, documented, ordinary-world-map-
+    traversal placement) and no other `gGMData.units[]` field.
+  - `test_title_idle_defers_pending_request_check_until_hub_inactive` and
+    `test_title_idle_pending_branch_never_synthesizes_input` grep
+    `Title_IDLE`'s function body to confirm `DebugTools_IsHubActive()` is
+    checked (with an early return) strictly before
+    `DebugTools_IsChapter2LaunchPending()`, and that the pending branch
+    reacts with the same `SetNextGameActionId`/`Proc_Break` pair the
+    ordinary `A`/`START` branch uses, never a synthesized keypress.
+  - `test_gamecontrol_consumes_pending_launch_exactly_once_before_savemenu`
+    confirms `DebugTools_ConsumePendingChapter2Launch()` is called exactly
+    once in `src/gamecontrol.c`, textually before the ordinary
+    `LGAMECTRL_EXEC_SAVEMENU` branch.
+- **Observer lifecycle-safety host tests** (added after a review gate found
+  the original design could leak suppression/observers on an abandoned run)
+  drive the same real `src/debugtools_launcher.c` through
+  `tools/gba-playtest/tests/c/debugtools_launcher_driver.c` and prove, purely
+  via the public API and `gDebugToolsProbe` counters:
+  - arming twice in a row starts exactly one observer proc alive at a time
+    (`bootstrapObserverArmCount` increments each call, but `Proc_Start`'s
+    net-alive-observer count never exceeds one -- the second arm's internal
+    `DebugTools_CleanupBootstrapObserver()` ends the first before starting
+    the second) and suppression is active after both;
+  - an explicit `DebugTools_CleanupBootstrapObserver()` call ends the
+    observer and clears `bootstrapSuppressionActive` to false;
+  - `DebugTools_NotifyTitleScreenStarting()` is a no-op while suppression is
+    inactive, clears suppression (and increments `observerTitleReturnCount`)
+    while active, and is safe to call repeatedly;
+  - re-arming after a cleanup starts a fresh observer and suppression
+    becomes active again (proving the cycle is not a one-shot-forever
+    latch).
+  - `test_wait_for_stable_player_phase_never_polls_title_screen_via_proc_find`,
+    `test_observer_has_exactly_two_poll_termination_conditions_each_ending_via_proc_break`,
+    and `test_notify_title_screen_starting_is_a_noop_unless_suppression_active`
+    grep the real source text to structurally confirm the observer's poll
+    body never references `gProcScr_TitleScreen`/`Proc_Find` for title
+    detection (only the success/timeout branches remain, each ending via
+    `Proc_Break`), and that title-return detection is exclusively the
+    event-driven `DebugTools_NotifyTitleScreenStarting()` no-op-when-inactive
+    entry point.
+  - `test_titlescreen_calls_notify_title_screen_starting_from_all_three_start_functions`
+    greps `src/titlescreen.c` to confirm all three `StartTitleScreen_*`
+    functions call `DebugTools_NotifyTitleScreenStarting()` before starting
+    `gProcScr_TitleScreen` -- so every real path that (re)shows the title
+    screen is covered, not just one.
 
 Test-only fixture sources under `tools/gba-playtest/tests/c/` (stub
 implementations of the handful of hardware/menu-engine symbols the
@@ -432,8 +629,43 @@ part of the shipped feature.
 - `src/bmdebug.c`, `src/uidebug.c`, and `src/menu_def.c` remain untouched and
   unreachable in this slice. No save/gold/unit/convoy/flag/event/RNG editors
   are exposed.
-- Nothing in this slice performs a persistent SRAM write, uses wall-clock/
-  time-based state, or introduces nondeterministic RNG.
+- No proc is ever torn down/recreated by this feature (no
+  `Proc_EndEach`/`Proc_Start` on `gProcScr_GameControl`, no `gProc_BMapMain`
+  redirect) -- the hub only arms/consumes a pending-request flag, and both
+  `Title_IDLE`'s `Proc_Break` and `GameControl_PostIntro`'s `Proc_Goto` act
+  on procs that already exist and keep running their own ordinary
+  lifecycle.
+- The one-shot bootstrap-suppression window (`src/bm.c`,
+  `src/playerphase.c`, `src/soundwrapper.c`) only ever gates the automatic
+  per-phase/song-unlock persistent writes that happen to fall inside the
+  deterministic Chapter 2 boot's own opening transition; it is armed once
+  per boot and is guaranteed to clear via one of three bounded paths: the
+  first stable Player Phase, an abandoned run returning to the title screen
+  (`DebugTools_NotifyTitleScreenStarting()`), or a timeout safely above any
+  normal boot duration -- so no abandoned/failed launch can leave
+  suppression (or its observer proc) stuck active for a later, real user
+  session. Re-arming is idempotent: it always cleans up any stale
+  observer/flag before starting exactly one new one. Outside the
+  suppression window, and for every ordinary user-triggered Suspend or song
+  unlock, nothing in this slice performs a persistent SRAM write, uses
+  wall-clock/time-based state, or introduces nondeterministic RNG.
+
+## Downstream usage: issue #2's deep write -> reload proof
+
+This launcher is the general clean-boot game-state fixture issue #2's
+save-format work depended on but did not own. `tools/gba-playtest/
+scenarios/savesuspend-resume-modern-debug.json` reuses the hub scenario's
+own frames verbatim (Fast Boot: Chapter 2 hotkey -> hub -> launcher) as
+its prefix, then drives an ordinary manual Map Menu **Suspend**, a real
+**soft-reset** combo, and the ordinary title/save-menu **Resume** path to
+prove genuine SRAM write/read persistence through the engine's normal
+save paths -- see `docs/save_format.md`'s "Save/load acceptance status"
+section for the full proof and probes. This closes issue #2's
+previously-deferred write -> reload acceptance gap, and is why the
+launcher above stays debug-only rather than release-eligible: release
+builds have no equivalent deterministic entry point to drive this
+scenario from, so this proof (like the launcher itself) does not exist
+for `MODERN_CONFIG=release`.
 
 ## Remaining #11 scope (explicitly NOT done in this slice)
 

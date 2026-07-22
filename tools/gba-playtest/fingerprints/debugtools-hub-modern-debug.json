@@ -3,18 +3,8 @@
     {
       "frame": 300,
       "framebuffer_hash": "fnv1a64-rgb24:3855f352b10ce427",
-      "name": "pre-hotkey-intro-clear",
+      "name": "hub-closed-before-hotkey",
       "probes": [
-        {
-          "address": "0x0203158c",
-          "size": 4,
-          "value": "0x00000000"
-        },
-        {
-          "address": "0x02031590",
-          "size": 4,
-          "value": "0x00000000"
-        },
         {
           "address": "0x02031594",
           "size": 4,
@@ -22,6 +12,16 @@
         },
         {
           "address": "0x02031598",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x0203159c",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x020315a0",
           "size": 4,
           "value": "0x00000000"
         }
@@ -29,26 +29,26 @@
     },
     {
       "frame": 630,
-      "framebuffer_hash": "fnv1a64-rgb24:3b3a14d05005e340",
+      "framebuffer_hash": "fnv1a64-rgb24:5d4575634ee299c8",
       "name": "hub-opened-after-first-pulse",
       "probes": [
         {
-          "address": "0x0203158c",
-          "size": 4,
-          "value": "0x00000001"
-        },
-        {
-          "address": "0x02031590",
-          "size": 4,
-          "value": "0x00000001"
-        },
-        {
           "address": "0x02031594",
+          "size": 4,
+          "value": "0x00000001"
+        },
+        {
+          "address": "0x02031598",
+          "size": 4,
+          "value": "0x00000001"
+        },
+        {
+          "address": "0x0203159c",
           "size": 4,
           "value": "0x00000000"
         },
         {
-          "address": "0x02031598",
+          "address": "0x020315a0",
           "size": 4,
           "value": "0x00000000"
         }
@@ -56,82 +56,758 @@
     },
     {
       "frame": 680,
-      "framebuffer_hash": "fnv1a64-rgb24:517a9aae1e43ea29",
+      "framebuffer_hash": "fnv1a64-rgb24:1fee23860bbe1c89",
       "name": "hub-still-single-after-repeated-pulse",
       "probes": [
         {
-          "address": "0x0203158c",
-          "size": 4,
-          "value": "0x00000001"
-        },
-        {
-          "address": "0x02031590",
-          "size": 4,
-          "value": "0x00000001"
-        },
-        {
           "address": "0x02031594",
           "size": 4,
-          "value": "0x00000000"
+          "value": "0x00000001"
         },
         {
           "address": "0x02031598",
           "size": 4,
+          "value": "0x00000001"
+        },
+        {
+          "address": "0x0203159c",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x020315a0",
+          "size": 4,
           "value": "0x00000000"
         }
       ]
+    },
+    {
+      "frame": 706,
+      "framebuffer_hash": "fnv1a64-rgb24:689590925f709a35",
+      "name": "pre-launch",
+      "probes": [
+        {
+          "address": "0x020210b2",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "0x020210b3",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "0x020210b6",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "0x020210b7",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "0x0202e5f4",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x0202e600",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x0202eb94",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x0202eba0",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x0202ebdc",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x0202ebe8",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x0202ec24",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x0202ec30",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x0202ec6c",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x0202ec78",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x0202f9a4",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x0202f9b0",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x0202f9ec",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x0202f9f8",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x0202fa0a",
+          "size": 2,
+          "value": "0x0000"
+        },
+        {
+          "address": "0x0202fa34",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x0202fa40",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x0202fa7c",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x0202fa88",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x0202fac4",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x0202fad0",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x0202fb0c",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x0202fb18",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x02031594",
+          "size": 4,
+          "value": "0x00000001"
+        },
+        {
+          "address": "0x0203159c",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x020315a0",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x020315a8",
+          "size": 4,
+          "value": "0x44424c32"
+        },
+        {
+          "address": "0x020315ac",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x020315b0",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x020315b4",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x03005291",
+          "size": 1,
+          "value": "0x00"
+        }
+      ],
+      "sram_hash": "fnv1a64-sram:4a24138fbb564361"
     },
     {
       "frame": 950,
-      "framebuffer_hash": "fnv1a64-rgb24:59c59f07c0244505",
-      "name": "launcher-selected",
+      "framebuffer_hash": "fnv1a64-rgb24:3baeaa7cd3337e61",
+      "name": "gamecontrol-consumed-launch",
       "probes": [
         {
-          "address": "0x0203158c",
-          "size": 4,
-          "value": "0x00000001"
+          "address": "0x020210b2",
+          "size": 1,
+          "value": "0x02"
         },
         {
-          "address": "0x02031590",
-          "size": 4,
-          "value": "0x00000001"
+          "address": "0x020210b3",
+          "size": 1,
+          "value": "0x00"
         },
         {
-          "address": "0x02031594",
+          "address": "0x020210b6",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "0x020210b7",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "0x0202e5f4",
           "size": 4,
           "value": "0x00000000"
         },
         {
-          "address": "0x02031598",
+          "address": "0x0202e600",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x0202eb94",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x0202eba0",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x0202ebdc",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x0202ebe8",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x0202ec24",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x0202ec30",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x0202ec6c",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x0202ec78",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x0202f9a4",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x0202f9b0",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x0202f9ec",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x0202f9f8",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x0202fa0a",
+          "size": 2,
+          "value": "0x0000"
+        },
+        {
+          "address": "0x0202fa34",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x0202fa40",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x0202fa7c",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x0202fa88",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x0202fac4",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x0202fad0",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x0202fb0c",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x0202fb18",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x02031594",
+          "size": 4,
+          "value": "0x00000001"
+        },
+        {
+          "address": "0x0203159c",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x020315a0",
           "size": 4,
           "value": "0x44424c31"
+        },
+        {
+          "address": "0x020315a8",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x020315ac",
+          "size": 4,
+          "value": "0x00000001"
+        },
+        {
+          "address": "0x020315b0",
+          "size": 4,
+          "value": "0x00000001"
+        },
+        {
+          "address": "0x020315b4",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x03005291",
+          "size": 1,
+          "value": "0x01"
         }
       ]
     },
     {
-      "frame": 1550,
-      "framebuffer_hash": "fnv1a64-rgb24:23040dd5cef0dd9d",
-      "name": "prologue-stable-checkpoint",
+      "frame": 14000,
+      "framebuffer_hash": "fnv1a64-rgb24:a4d143fde1ba555d",
+      "name": "chapter2-interactive-stable",
       "probes": [
         {
-          "address": "0x0203158c",
-          "size": 4,
-          "value": "0x00000001"
+          "address": "0x020210b2",
+          "size": 1,
+          "value": "0x02"
         },
         {
-          "address": "0x02031590",
-          "size": 4,
-          "value": "0x00000001"
+          "address": "0x020210b3",
+          "size": 1,
+          "value": "0x00"
         },
         {
-          "address": "0x02031594",
+          "address": "0x020210b6",
+          "size": 1,
+          "value": "0x02"
+        },
+        {
+          "address": "0x020210b7",
+          "size": 1,
+          "value": "0x02"
+        },
+        {
+          "address": "0x0202e5f4",
+          "size": 4,
+          "value": "0x088fb718"
+        },
+        {
+          "address": "0x0202e600",
           "size": 4,
           "value": "0x00000000"
         },
         {
-          "address": "0x02031598",
+          "address": "0x0202eb94",
+          "size": 4,
+          "value": "0x088fd284"
+        },
+        {
+          "address": "0x0202eba0",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x0202ebdc",
+          "size": 4,
+          "value": "0x088fd284"
+        },
+        {
+          "address": "0x0202ebe8",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x0202ec24",
+          "size": 4,
+          "value": "0x088fc418"
+        },
+        {
+          "address": "0x0202ec30",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x0202ec6c",
+          "size": 4,
+          "value": "0x088fd284"
+        },
+        {
+          "address": "0x0202ec78",
+          "size": 4,
+          "value": "0x00001000"
+        },
+        {
+          "address": "0x0202f9a4",
+          "size": 4,
+          "value": "0x088fb6e4"
+        },
+        {
+          "address": "0x0202f9b0",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x0202f9ec",
+          "size": 4,
+          "value": "0x088fb5e0"
+        },
+        {
+          "address": "0x0202f9f8",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x0202fa0a",
+          "size": 2,
+          "value": "0x2809"
+        },
+        {
+          "address": "0x0202fa34",
+          "size": 4,
+          "value": "0x088fb614"
+        },
+        {
+          "address": "0x0202fa40",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x0202fa7c",
+          "size": 4,
+          "value": "0x088fb67c"
+        },
+        {
+          "address": "0x0202fa88",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x0202fac4",
+          "size": 4,
+          "value": "0x088fb648"
+        },
+        {
+          "address": "0x0202fad0",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x0202fb0c",
+          "size": 4,
+          "value": "0x088fb6b0"
+        },
+        {
+          "address": "0x0202fb18",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x02031594",
+          "size": 4,
+          "value": "0x00000001"
+        },
+        {
+          "address": "0x0203159c",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x020315a0",
           "size": 4,
           "value": "0x44424c31"
+        },
+        {
+          "address": "0x020315a8",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x020315ac",
+          "size": 4,
+          "value": "0x00000001"
+        },
+        {
+          "address": "0x020315b0",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x020315b4",
+          "size": 4,
+          "value": "0x00000001"
+        },
+        {
+          "address": "0x03005291",
+          "size": 1,
+          "value": "0x02"
+        }
+      ],
+      "sram_hash": "fnv1a64-sram:4a24138fbb564361"
+    },
+    {
+      "frame": 14900,
+      "framebuffer_hash": "fnv1a64-rgb24:b868038280b15c48",
+      "name": "post-interactive-cursor-response",
+      "probes": [
+        {
+          "address": "0x020210b2",
+          "size": 1,
+          "value": "0x02"
+        },
+        {
+          "address": "0x020210b3",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "0x020210b6",
+          "size": 1,
+          "value": "0x09"
+        },
+        {
+          "address": "0x020210b7",
+          "size": 1,
+          "value": "0x05"
+        },
+        {
+          "address": "0x0202e5f4",
+          "size": 4,
+          "value": "0x088fb718"
+        },
+        {
+          "address": "0x0202e600",
+          "size": 4,
+          "value": "0x00000021"
+        },
+        {
+          "address": "0x0202eb94",
+          "size": 4,
+          "value": "0x088fd284"
+        },
+        {
+          "address": "0x0202eba0",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x0202ebdc",
+          "size": 4,
+          "value": "0x088fd284"
+        },
+        {
+          "address": "0x0202ebe8",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x0202ec24",
+          "size": 4,
+          "value": "0x088fc418"
+        },
+        {
+          "address": "0x0202ec30",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x0202ec6c",
+          "size": 4,
+          "value": "0x088fd284"
+        },
+        {
+          "address": "0x0202ec78",
+          "size": 4,
+          "value": "0x00001000"
+        },
+        {
+          "address": "0x0202f9a4",
+          "size": 4,
+          "value": "0x088fb6e4"
+        },
+        {
+          "address": "0x0202f9b0",
+          "size": 4,
+          "value": "0x00000051"
+        },
+        {
+          "address": "0x0202f9ec",
+          "size": 4,
+          "value": "0x088fb5e0"
+        },
+        {
+          "address": "0x0202f9f8",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x0202fa0a",
+          "size": 2,
+          "value": "0x2809"
+        },
+        {
+          "address": "0x0202fa34",
+          "size": 4,
+          "value": "0x088fb614"
+        },
+        {
+          "address": "0x0202fa40",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x0202fa7c",
+          "size": 4,
+          "value": "0x088fb67c"
+        },
+        {
+          "address": "0x0202fa88",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x0202fac4",
+          "size": 4,
+          "value": "0x088fb648"
+        },
+        {
+          "address": "0x0202fad0",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x0202fb0c",
+          "size": 4,
+          "value": "0x088fb6b0"
+        },
+        {
+          "address": "0x0202fb18",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x02031594",
+          "size": 4,
+          "value": "0x00000001"
+        },
+        {
+          "address": "0x0203159c",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x020315a0",
+          "size": 4,
+          "value": "0x44424c31"
+        },
+        {
+          "address": "0x020315a8",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x020315ac",
+          "size": 4,
+          "value": "0x00000001"
+        },
+        {
+          "address": "0x020315b0",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x020315b4",
+          "size": 4,
+          "value": "0x00000001"
+        },
+        {
+          "address": "0x03005291",
+          "size": 1,
+          "value": "0x02"
         }
       ]
     }
@@ -139,7 +815,7 @@
   "format_version": 2,
   "rom": {
     "game_code": "BE8E",
-    "sha1": "dbeafcf29a14d399c205d668a85d9b956f4182e2",
+    "sha1": "b23410673687856a73dd9cde365addbdf4238b00",
     "size": 16777216,
     "title": "FIREEMBLEM2E"
   },

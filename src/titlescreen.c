@@ -903,6 +903,20 @@ void Title_IDLE(struct TitleScreenProc * proc)
     if (DebugTools_IsHubActive())
         return;
 
+    /* Detects a pending "Fast Boot: Chapter 2" request (armed by the hub
+     * action in src/debugtools_launcher.c) only after the hub itself has
+     * fully closed. This reacts with the exact same next-action/Proc_Break
+     * pair the ordinary A/START branch below uses -- the normal
+     * fade/end/parent-unblock lifecycle of this TitleScreen proc runs
+     * unmodified -- without synthesizing an A/START keypress. Always 0 in
+     * a release build. */
+    if (DebugTools_IsChapter2LaunchPending())
+    {
+        SetNextGameActionId(GAME_ACTION_EVENT_RETURN);
+        Proc_Break(proc);
+        return;
+    }
+
     if (gKeyStatusPtr->newKeys & (A_BUTTON | START_BUTTON))
     {
         PlaySoundEffect(SONG_6D);
@@ -1027,6 +1041,12 @@ PROC_LABEL(5),
 void StartTitleScreen_WithMusic(ProcPtr parent) {
     struct TitleScreenProc* proc;
 
+    /* See include/expansion_debugtools.h: the only unambiguous, non-
+     * proc-tree-staleness-prone signal the bootstrap observer's own
+     * abandoned-run detection can rely on. No-op unless a deterministic
+     * Chapter 2 boot's own bootstrap suppression is still active. */
+    DebugTools_NotifyTitleScreenStarting();
+
     proc = Proc_StartBlocking(gProcScr_TitleScreen, parent);
     proc->mode = 0;
 
@@ -1037,6 +1057,8 @@ void StartTitleScreen_WithMusic(ProcPtr parent) {
 void StartTitleScreen_FlagFalse(ProcPtr parent) {
     struct TitleScreenProc* proc;
 
+    DebugTools_NotifyTitleScreenStarting();
+
     proc = Proc_StartBlocking(gProcScr_TitleScreen, parent);
     proc->mode = 0;
 }
@@ -1044,6 +1066,8 @@ void StartTitleScreen_FlagFalse(ProcPtr parent) {
 //! FE8U = 0x080C645C
 void StartTitleScreen_FlagTrue(ProcPtr parent) {
     struct TitleScreenProc* proc;
+
+    DebugTools_NotifyTitleScreenStarting();
 
     proc = Proc_StartBlocking(gProcScr_TitleScreen, parent);
     proc->mode = 1;

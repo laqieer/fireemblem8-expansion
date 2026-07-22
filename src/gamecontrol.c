@@ -21,6 +21,14 @@
 #include "constants/chapters.h"
 #include "constants/event-flags.h"
 #include "constants/songs.h"
+#include "expansion_debugtools.h"
+
+/* Reused verbatim from AgbMain's own clean-boot RNG seed (src/main.c) --
+ * reseeding to this exact constant immediately before the debug hub's
+ * "Fast Boot: Chapter 2" boot (see GameControl_PostIntro below) makes its
+ * outcome independent of how many frames/RNG draws already happened
+ * before the hotkey was pressed. */
+#define DEBUGTOOLS_FASTBOOT_RNG_SEED 0x42D690E9
 
 extern u16 EventScr_Ruin_83[];
 extern u16 EventScr_Ruin_84[];
@@ -406,6 +414,66 @@ void GameControl_PostIntro(struct GameCtrlProc * proc)
         break;
 
     case GAME_ACTION_EVENT_RETURN:
+        /* Debug hub "Fast Boot: Chapter 2" handoff (see
+         * src/debugtools_launcher.c, include/expansion_debugtools.h):
+         * consumed at most once per armed request, and only here, before
+         * the ordinary StartSaveMenu branch below. No proc tree is torn
+         * down or recreated -- this is the exact same GameCtrlProc,
+         * continuing its own normal lifecycle straight into the ordinary
+         * LGAMECTRL_EXEC_BM transition. */
+        if (DebugTools_ConsumePendingChapter2Launch())
+        {
+            SetLCGRNValue(DEBUGTOOLS_FASTBOOT_RNG_SEED);
+            InitRN(AdvanceGetLCGRNValue());
+
+            /* Same new-game bootstrap sequence GameControl_InitTutorialGame
+             * uses below -- InitPlayConfig, ResetPermanentFlags,
+             * ResetChapterFlags, InitUnits -- for a normal (non-tutorial)
+             * chapter boot. InitPlayConfig zeroes gPlaySt (EWRAM only);
+             * none of these calls touch SRAM. */
+            InitPlayConfig(0, 0);
+            gPlaySt.chapterModeIndex = CHAPTER_MODE_COMMON;
+            ResetPermanentFlags();
+            ResetChapterFlags();
+            InitUnits();
+            gPlaySt.chapterIndex = CHAPTER_L_2;
+            proc->nextChapter = CHAPTER_L_2;
+
+            GmDataInit();
+
+            /* GmDataInit() places the world map party at NODE_BORDER_MULAN
+             * (the Prologue rest node) by default. The normal
+             * LGAMECTRL_EXEC_BM path below runs through
+             * WorldMap_CallBeginningEvent (src/worldmap_main.c), which
+             * unconditionally recomputes gPlaySt.chapterIndex from
+             * WMLoc_GetNextLocId(gGMData.units[0].location) -- so without
+             * this, the chapterIndex/nextChapter set above would be
+             * silently overwritten back to the Prologue. Placing the party
+             * at NODE_CASTLE_FRELIA (the same rest stop the normal Chapter
+             * 1 -> Chapter 2 progression passes through) lets the ordinary
+             * world-map node traversal resolve to NODE_IDE / CHAPTER_L_2 on
+             * its own, exactly as it would for a real playthrough -- no
+             * chapter-specific event or battle logic is bypassed.
+             */
+            gGMData.units[0].location = NODE_CASTLE_FRELIA;
+
+            /* One-shot persistent-write suppression for the boot window
+             * ahead (see BmMain_SuspendBeforePhase in src/bm.c and
+             * UnlockSoundRoomSong in src/soundwrapper.c); also starts the
+             * bootstrap observer proc that clears it at the first stable
+             * Player Phase. */
+            DebugTools_ArmBootstrapSuppression();
+
+            /* Committed-to-boot evidence for playtest probes (see
+             * gDebugToolsProbe.launcherArmed, include/expansion_debugtools.h):
+             * written here, once, the same frame the pending request is
+             * consumed and this deterministic boot is committed to. */
+            gDebugToolsProbe.launcherArmed = DEBUGTOOLS_LAUNCHER_ARMED_MAGIC;
+
+            Proc_Goto(proc, LGAMECTRL_EXEC_BM);
+            break;
+        }
+
         Proc_Goto(proc, LGAMECTRL_EXEC_SAVEMENU);
         GameControl_FadeBgmVolume(proc);
         break;
