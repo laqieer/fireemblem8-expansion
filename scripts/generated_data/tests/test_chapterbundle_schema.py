@@ -262,6 +262,39 @@ class DependencySetTests(unittest.TestCase):
             _messages(diagnostics),
         )
 
+    def test_event_autoload_slot_sentinels_rejected_as_dependency(self):
+        """CHARACTER_EVT_LEADER/ACTIVE/SLOTB/SLOT2 belong to the separate
+        ``event_autoload_pid_idx`` enum (active-unit-slot indices, two of
+        them negative) -- they share the ``CHARACTER_`` textual prefix
+        with real designators but must never be accepted as a
+        ``dependencies.characters`` entry."""
+        _, diagnostics = _validate("char_evt_sentinels.json")
+        self.assertFalse(diagnostics.ok)
+        messages = _messages(diagnostics)
+        for sentinel in (
+            "CHARACTER_EVT_LEADER", "CHARACTER_EVT_ACTIVE", "CHARACTER_EVT_SLOTB", "CHARACTER_EVT_SLOT2",
+        ):
+            self.assertTrue(
+                any("undefined character reference '{}'".format(sentinel) in m for m in messages),
+                (sentinel, messages),
+            )
+
+    def test_synthetic_sibling_enum_collision_excluded(self):
+        """Wiring-level proof (not just the shared reader in isolation):
+        a ``dependencies.characters`` entry from the synthetic sibling
+        enum (``CHARACTER_SIBLING_FAKE``) must be rejected even when the
+        header override is swapped to a mini header that otherwise
+        validates the real ``CHARACTER_EIRIKA`` entry fine."""
+        _, diagnostics = _validate(
+            "synthetic_sibling_enum_dependency.json",
+            characters_header=fixture_path("character_refs", "mini_characters_sibling_enum.h"),
+        )
+        self.assertFalse(diagnostics.ok)
+        messages = _messages(diagnostics)
+        self.assertTrue(
+            any("undefined character reference 'CHARACTER_SIBLING_FAKE'" in m for m in messages), messages
+        )
+
 
 class StaleBundleManifestTests(unittest.TestCase):
     """Content-level staleness of ``tables.<name>.symbols`` vs. the actual

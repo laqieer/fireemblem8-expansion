@@ -16,6 +16,7 @@ from .eventscripts.schema import EventScriptsTableSchema
 from .eventlists.schema import EventListsTableSchema
 from .chapterbundle.schema import ChapterBundleTableSchema
 from .classes.schema import ClassesTableSchema
+from .characters.schema import CharactersTableSchema
 
 REGISTRY.register(SupportsTableSchema())
 REGISTRY.register(UnitsTableSchema())
@@ -26,3 +27,9 @@ REGISTRY.register(EventScriptsTableSchema())
 REGISTRY.register(EventListsTableSchema())
 REGISTRY.register(ChapterBundleTableSchema())
 REGISTRY.register(ClassesTableSchema())
+# Issue #5 Batch 2a: schema/dependency-validation foundation only -- see
+# characters/schema.py's module docstring. Deliberately NOT added to
+# generated_data.mk's GENERATED_DATA_TABLES (no committed real source,
+# no generate/round-trip/inventory support yet); registering it here only
+# makes `validate --table characters --source <fixture>` available.
+REGISTRY.register(CharactersTableSchema())

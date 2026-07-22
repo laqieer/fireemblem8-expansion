@@ -23,6 +23,7 @@ import re
 from ..cparse import extract_designated_fields, find_c_array_blocks, line_of, split_top_level_entries, strip_outer_braces
 from ..diagnostics import GeneratedDataError, SourceLocation
 from ..validators import extract_enum_constants
+from .. import character_refs
 from .schema import CHARACTERS_HEADER, CLASSES_HEADER
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
@@ -113,7 +114,7 @@ def _parse_unit_entry(entry_text, reda_table, path):
     if not fields:
         return None
 
-    characters = extract_enum_constants(CHARACTERS_HEADER, name_prefix="CHARACTER_")
+    characters = character_refs.read_character_designators(CHARACTERS_HEADER)
     classes = extract_enum_constants(CLASSES_HEADER, name_prefix="CLASS_")
 
     items = []
@@ -198,7 +199,7 @@ def compare_groups(generated_groups, hand_groups, hand_path):
     Returns a list of :class:`GeneratedDataError` -- empty means every
     Chapter 2 unit matches semantically.
     """
-    characters = extract_enum_constants(CHARACTERS_HEADER, name_prefix="CHARACTER_")
+    characters = character_refs.read_character_designators(CHARACTERS_HEADER)
     classes = extract_enum_constants(CLASSES_HEADER, name_prefix="CLASS_")
 
     errors = []

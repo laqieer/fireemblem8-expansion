@@ -48,6 +48,42 @@ class UnitsSchemaReferenceTests(unittest.TestCase):
         messages = [str(e) for e in diagnostics.errors]
         self.assertTrue(any("undefined class reference 'CLASS_NOT_A_REAL_CLASS'" in m for m in messages), messages)
 
+    def test_event_autoload_slot_sentinels_rejected_as_char_index(self):
+        """CHARACTER_EVT_LEADER/ACTIVE/SLOTB/SLOT2 belong to the separate
+        ``event_autoload_pid_idx`` enum (active-unit-slot indices, two of
+        them negative) -- they share the ``CHARACTER_`` textual prefix
+        with real designators but must never be accepted as a unit's
+        ``charIndex``."""
+        _, diagnostics = _validate("char_evt_sentinels.json")
+        self.assertFalse(diagnostics.ok)
+        messages = [str(e) for e in diagnostics.errors]
+        for sentinel in (
+            "CHARACTER_EVT_LEADER", "CHARACTER_EVT_ACTIVE", "CHARACTER_EVT_SLOTB", "CHARACTER_EVT_SLOT2",
+        ):
+            self.assertTrue(
+                any("undefined character reference '{}'".format(sentinel) in m for m in messages),
+                (sentinel, messages),
+            )
+
+    def test_synthetic_sibling_enum_collision_excluded(self):
+        """Wiring-level proof (not just the shared reader in isolation):
+        a unit referencing the synthetic sibling enum's
+        ``CHARACTER_SIBLING_FAKE`` must be rejected even though the
+        primary block's own ``CHARACTER_ALPHA``/``CHARACTER_BETA``
+        members (sharing the mini header's namespace) are accepted."""
+        records = units_schema.load_records(fixture_path("units", "valid.json"))
+        records[0].units[0].char_index = "CHARACTER_SIBLING_FAKE"
+        diagnostics = DiagnosticCollector()
+        units_schema.validate(
+            records, diagnostics,
+            characters_header=fixture_path("character_refs", "mini_characters_sibling_enum.h"),
+        )
+        self.assertFalse(diagnostics.ok)
+        messages = [str(e) for e in diagnostics.errors]
+        self.assertTrue(
+            any("undefined character reference 'CHARACTER_SIBLING_FAKE'" in m for m in messages), messages
+        )
+
     def test_missing_item_reference_detected(self):
         _, diagnostics = _validate("missing_item_ref.json")
         self.assertFalse(diagnostics.ok)

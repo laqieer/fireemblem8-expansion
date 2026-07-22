@@ -1,0 +1,6 @@
+{
+  "$schema": "fe8.characters.v1",
+  "characters": [
+    { "character": "CHARACTER_NONE", "defaultClass": "CLASS_MYRMIDON" }
+  ]
+}

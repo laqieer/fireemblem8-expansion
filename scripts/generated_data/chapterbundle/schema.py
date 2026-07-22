@@ -72,6 +72,7 @@ from ..diagnostics import GeneratedDataError
 from ..cparse import find_c_array_blocks, split_top_level_entries
 from ..json_loader import load_json_file
 from ..schema import DependencyGraph, TableSchema
+from .. import character_refs
 from ..validators import extract_enum_constants, validate_reference, validate_unique
 
 SCHEMA_NAME = "chapterbundle"
@@ -81,7 +82,7 @@ SCHEMA_ID = "fe8.chapterbundle.v1"
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 
 CHAPTERS_HEADER = os.path.join(REPO_ROOT, "include", "constants", "chapters.h")
-CHARACTERS_HEADER = os.path.join(REPO_ROOT, "include", "constants", "characters.h")
+CHARACTERS_HEADER = character_refs.CHARACTERS_HEADER
 CLASSES_HEADER = os.path.join(REPO_ROOT, "include", "constants", "classes.h")
 ITEMS_HEADER = os.path.join(REPO_ROOT, "include", "constants", "items.h")
 CHAPTER_SETTINGS_JSON = os.path.join(REPO_ROOT, "src", "data", "chapter_settings.json")
@@ -624,7 +625,7 @@ def validate(records, diagnostics, dependency_records=None,
                     )
 
     # -- 6. character/class/item dependency sets --
-    characters_enum = extract_enum_constants(characters_header, name_prefix="CHARACTER_")
+    characters_enum = character_refs.read_character_designators(characters_header)
     classes_enum = extract_enum_constants(classes_header, name_prefix="CLASS_")
     items_enum = extract_enum_constants(items_header, name_prefix="ITEM_")
 

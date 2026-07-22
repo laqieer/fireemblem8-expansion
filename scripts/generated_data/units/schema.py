@@ -46,6 +46,7 @@ import re
 from ..diagnostics import GeneratedDataError
 from ..json_loader import load_json_file
 from ..schema import DependencyGraph, TableSchema
+from .. import character_refs
 from ..validators import (
     extract_enum_constants,
     validate_fixed_capacity,
@@ -59,7 +60,7 @@ SCHEMA_VERSION = 1
 SCHEMA_ID = "fe8.units.v1"
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-CHARACTERS_HEADER = os.path.join(REPO_ROOT, "include", "constants", "characters.h")
+CHARACTERS_HEADER = character_refs.CHARACTERS_HEADER
 CLASSES_HEADER = os.path.join(REPO_ROOT, "include", "constants", "classes.h")
 ITEMS_HEADER = os.path.join(REPO_ROOT, "include", "constants", "items.h")
 BMUNIT_HEADER = os.path.join(REPO_ROOT, "include", "bmunit.h")
@@ -270,7 +271,7 @@ def validate(groups, diagnostics, characters_header=CHARACTERS_HEADER, classes_h
     if ai_length is None:
         ai_length = read_udef_aiidx_max()
 
-    characters = extract_enum_constants(characters_header, name_prefix="CHARACTER_")
+    characters = character_refs.read_character_designators(characters_header)
     classes = extract_enum_constants(classes_header, name_prefix="CLASS_")
     items = extract_enum_constants(items_header, name_prefix="ITEM_")
     factions = extract_enum_constants(BMUNIT_HEADER, name_prefix="FACTION_ID_")

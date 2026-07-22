@@ -36,6 +36,7 @@ import re
 from ..diagnostics import GeneratedDataError
 from ..json_loader import load_json_file
 from ..schema import DependencyGraph, TableSchema
+from .. import character_refs
 from ..validators import (
     extract_enum_constants,
     validate_fixed_capacity,
@@ -50,7 +51,7 @@ SCHEMA_VERSION = 1
 SCHEMA_ID = "fe8.supports.v1"
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-CHARACTERS_HEADER = os.path.join(REPO_ROOT, "include", "constants", "characters.h")
+CHARACTERS_HEADER = character_refs.CHARACTERS_HEADER
 TYPES_HEADER = os.path.join(REPO_ROOT, "include", "types.h")
 
 _U8_MIN, _U8_MAX = 0, 255
@@ -162,7 +163,7 @@ def validate(records, diagnostics, characters_header=CHARACTERS_HEADER, capacity
     if capacity is None:
         capacity = read_unit_support_max_count()
 
-    characters = extract_enum_constants(characters_header, name_prefix="CHARACTER_")
+    characters = character_refs.read_character_designators(characters_header)
 
     diagnostics.extend(
         validate_unique(

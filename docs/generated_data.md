@@ -1,4 +1,4 @@
-# Generated-data platform (Issue #5 Chapter 2 slice -- Batch A + B + C; global `items`/`classes` Batch 1)
+# Generated-data platform (Issue #5 Chapter 2 slice -- Batch A + B + C; global `items`/`classes` Batch 1; `characters` Batch 2a)
 
 ## Status
 
@@ -101,6 +101,29 @@ field-for-field against `struct ClassData` (`include/bmunit.h`). Like
 link swap, no Chapter 2/`chapterbundle` participation. See "##
 `classes` schema (Issue #5 Batch 1: full global class table)" below for
 the full write-up.
+
+**Issue #5 Batch 2a** (this update) adds the **schema/dependency-
+validation foundation only** for the third global table: `characters`
+(`gCharacterData[]`/`struct CharacterData`, `include/bmunit.h`). Unlike
+`items`/`classes`, this batch does **not** author any real, complete
+`src/data/characters.json` source, nor does it add `generate.py`/
+`parser.py`/`inventory.py` -- there is no C89 emission, no round-trip
+against `src/data_characters.c` (which remains the sole hand-written,
+linked source, untouched), and no committed inventory report. It is
+also **not** added to `generated_data.mk`'s `GENERATED_DATA_TABLES` or
+CI. What Batch 2a *does* provide: `CharactersTableSchema`, registered in
+`registry.py` so `python3 -m scripts.generated_data validate --table
+characters --source <path>` works end-to-end today, modeling
+`gCharacterData[]`'s unique 256-slot dual symbolic
+(`CHARACTER_*`)/raw-integer (unnamed generic-template) designator model,
+every authorable `CharacterData` field/range/reference, the
+`supportData` cross-table reference into `supports`, and a
+`dependency_tables()` cross-check against `classes` -- see "## `characters`
+schema (Issue #5 Batch 2a: schema/dependency-validation foundation)"
+below for the full write-up. Batch 2b/2c (full field-for-field
+transcription of all 256 vanilla records, `generate`/round-trip against
+`src/data_characters.c`, and any eventual link-order migration) remain
+open -- see "Remaining Issue #5 scope" at the end of this document.
 
 ## Source vs. generated vs. committed-public artifacts
 
@@ -321,10 +344,19 @@ still called with its original 2-argument signature -- Batch A's
 Generic, reusable, and covered independently of any one table:
 
 * `extract_enum_constants(header, name_prefix)` -- regex-scans a C header
-  for `NAME = <value>,` enum entries (used against
-  `include/constants/characters.h` for character references, and against
-  `include/types.h` to read `UNIT_SUPPORT_MAX_COUNT` so the fixed-capacity
-  check can't silently go stale if the struct's array size changes).
+  for `NAME = <value>,` enum entries across the *whole file*, filtered
+  only by name prefix (used against `include/types.h` to read
+  `UNIT_SUPPORT_MAX_COUNT` so the fixed-capacity check can't silently go
+  stale if the struct's array size changes, and similarly for other
+  single-enum headers). It is **not** used for `CHARACTER_*` references
+  anywhere in this framework: `include/constants/characters.h` contains a
+  second, separate `event_autoload_pid_idx` enum sharing the same
+  `CHARACTER_` textual prefix, so a whole-file prefix scan would wrongly
+  admit its event-engine slot sentinels as if they were valid
+  `CharacterData` designators. Every table that reads `CHARACTER_*`
+  symbols instead delegates to `character_refs.read_character_
+  designators()` (see "`characters` schema" below), which scopes strictly
+  to the primary designator enum block.
 * `validate_unique` -- duplicate-key detection with the first
   definition's location in the message.
 * `validate_reference` -- membership in an allowed symbol set.
@@ -915,6 +947,187 @@ attribute-usage histogram, a `baseRanks` weapon-type histogram,
 `battleAnim` symbol-usage table, and the table's own dependency-graph
 digest.
 
+## `characters` schema (Issue #5 Batch 2a: schema/dependency-validation foundation)
+
+**Scope note: schema/validation only.** This section documents what
+`characters/schema.py` provides *today* -- there is no
+`generate.py`/`parser.py`/`inventory.py`, no committed
+`src/data/characters.json`, and no entry in `generated_data.mk`'s
+`GENERATED_DATA_TABLES`/CI. `src/data_characters.c` remains the sole
+hand-written, linked source for `gCharacterData[]`, untouched. What
+*is* available today: `python3 -m scripts.generated_data validate
+--table characters --source <path>` (schema `fe8.characters.v1`,
+registered in `registry.py`), including `--dep-source
+classes=PATH`/`--dep-source supports=PATH` overrides for the two
+cross-table checks described below.
+
+`gCharacterData[]` has a model unlike every other table this platform
+covers: a fixed **256-slot** array (confirmed against
+`src/data_characters.c`, which has exactly 256 top-level designated
+initializers) addressed by a 1-based **designator** (`[designator - 1]`,
+mirroring the hand file's own `[CHARACTER_X - 1]`/`[0x1B - 1]`
+indexing), where each slot is *either*:
+
+* **symbolic** (JSON key `"character"`, a named `CHARACTER_*` constant
+  from `include/constants/characters.h`, excluding the `CHARACTER_NONE`
+  sentinel -- its implied array index would be `-1`, never a valid
+  entry) -- roughly 96 of the 256 designators have one; or
+* **raw/generic-template** (JSON key `"characterId"`, a bare integer
+  designator) for the remaining unnamed enemy/filler templates the hand
+  file indexes with a raw hex literal (e.g. `[0x1B - 1]`).
+
+Exactly one of the two keys is required per record (`load_records()`
+raises immediately, like every other table's required-key checks, if a
+record has both or neither). Designator `256` (`0x100`) is the single
+**unreachable padding slot**: no real `u8` character byte can ever equal
+256, so it can never be reached by `GetCharacterData()` at runtime, but
+it is still a real, authored 256th array entry -- only `characterId`
+(never `character`, since no `CHARACTER_*` constant is or could be
+`256`) can designate it. `.number` is **never authored**: it is always
+derived as `designator & 0xFF` -- for designators `1..255` that's the
+designator itself; for the padding slot the `u8` truncation naturally
+yields `0`, exactly matching the hand file's own explicit
+`.number = 0` for that one entry with no special case needed.
+
+`character` is deliberately **not** resolved with the generic,
+whole-file `extract_enum_constants(header, name_prefix="CHARACTER_")`
+scan every other reference field in this schema uses -- it delegates to
+`scripts/generated_data/character_refs.py`'s `read_character_designators()`,
+a dedicated reader scoped strictly to the *primary*, anonymous designator
+enum (the block that opens with `CHARACTER_NONE = 0x00` and closes with
+`CHARACTER_SNAG = 0xFF`). `include/constants/characters.h` also declares
+a wholly separate, *named* sibling enum immediately after that block,
+`event_autoload_pid_idx` (`CHARACTER_EVT_LEADER`/`ACTIVE`/`SLOTB`/`SLOT2`
+= `0`/`-1`/`-2`/`-3`) -- event-engine "active unit slot" indices that
+happen to share the same `CHARACTER_` textual prefix but are never valid
+`CharacterData` designators (two of them aren't even representable as
+one, being negative). A prefix-only scan cannot tell the two enums apart
+and would wrongly accept all four as designators; `read_character_
+designators()` instead matches only the primary block's own text
+(bounded by its own `CHARACTER_NONE =`/closing `};`), so the sibling
+enum's members -- or any other same-prefix collision -- are excluded
+structurally rather than by name, and are reported as an ordinary
+`undefined character reference` diagnostic if authored.
+
+`character_refs.py` is a **shared, cross-table module** (living directly
+under `scripts/generated_data/`, not nested in any single table's own
+package) rather than a `characters`-schema-specific helper: every table
+that references `CHARACTER_*` symbols -- `characters` (the record's own
+designator), `units` (`charIndex`/`leaderCharIndex`), `supports` (`owner`/
+`characters` partners), `eventlists` (`CHAR()` macro's `pid1`/`pid2`
+arguments), and `chapterbundle` (`dependencies.characters`) -- delegates
+to the same `read_character_designators()` to read `CHARACTERS_HEADER`,
+so the same primary-block/sibling-enum scoping fix applies everywhere a
+`CHARACTER_*` reference is validated, not just in `characters` itself.
+The reader intentionally **includes** `CHARACTER_NONE` in its returned
+mapping (it's a genuine primary-block member); each table's own
+`validate()` decides independently whether `CHARACTER_NONE` is a valid
+value for its own specific field -- only `characters`' own
+record-designator field rejects it explicitly (a record can't be *about*
+"no character"), while `units`/`supports`/`eventlists`/`chapterbundle`
+accept it exactly as they did before this fix (none of their real
+committed data uses it today, so no new nullability semantics were
+introduced by consolidating the reader).
+
+Unlike `classes`' coverage check (always on, range derived from the
+live header's max value), the full dense `1..256` coverage domain here
+is a **fixed module constant** (`DESIGNATOR_MIN`/`DESIGNATOR_MAX`, not
+derived from `characters.h`, since raw/generic-template records fill in
+every unnamed designator) and coverage enforcement itself is an
+opt-in, top-level JSON boolean, `"fullCoverage"` (default `false`):
+Batch 2a never commits a real, complete 256-record source, so every
+fixture validated so far leaves it `false` and is checked purely for
+uniqueness/reference/range correctness, not completeness. A future
+batch that authors the real, complete source would set it `true`.
+
+Every other `CharacterData` field is modeled and validated: `nameTextId`/
+`descTextId` against the live `MSG_COUNT`; `defaultClass` both as a live
+`CLASS_*` reference *and* -- when the `classes` dependency table is
+loaded (`--dep-source classes=PATH`, or the CLI's own `dependency_tables()`
+wiring) -- present among that table's own loaded `ClassData` records (two
+distinct failure modes: undefined constant vs. valid-but-unauthored
+class); `portrait` against the live count of numbered entries in
+`src/portrait_data.c`'s `portrait_data[]` (same live table `classes`
+already validates `defaultPortraitId` against); `miniPortrait` against a
+**stronger-than-`u8`** bound proven live from `src/face.c`'s
+`sGenericChibiImgLut[]` array literal (traced through
+`GetUnitMiniPortraitId()`/`GetGenericChibiImg()` in `src/bmunit.c`/
+`src/face.c`: `miniPortrait` indexes that array directly, so its entry
+count -- not the raw `u8` width -- is the real bound); `affinity` as an
+optional `UNIT_AFFIN_*` reference (read with a bespoke sequential-value
+reader, `read_unit_affinities()`, since that enum only assigns its first
+member explicitly and lets the rest auto-increment -- the generic
+`extract_enum_constants()` helper cannot parse that); signed `base` stats
+at the full `s8` range and unsigned `growth` stats at `u8`; `baseRanks`
+(a sparse `{ITYPE_*: WPN_EXP_*}` map, bounded to the struct's own live
+`baseRanks[8]` capacity, exactly like `classes`); `attributes` as a
+validated `CA_*` bitmask list (the same enum `classes` reads, shared at
+runtime via `UNIT_CATTRIBUTES()`); `visitGroup`/`baseLevel` at plain
+`u8` (no stronger invariant found for either); and the reserved
+`_u23`/`_u24`/`_u25`/`_u27` struct fields, which are **rejected outright
+if authored at all** (a new pattern for this platform -- every other
+table silently ignores unrecognized JSON keys, but these four are never
+authorable, not merely defaulted).
+
+`supportData` (optional, most records and *all* raw/generic-template
+records have none) is modeled as a genuine cross-table reference, not
+just a header-string check: when the `supports` dependency table is
+loaded, a non-null `supportData` value must match some loaded
+`SupportData` record's own `symbol`, *and* that record's `owner` must
+equal this record's own `character` (reciprocal, like `chapterbundle`'s
+support-owner check) -- raw/generic-template records referencing
+`supportData` at all is rejected unconditionally (no proven
+generic-template record has one). Both cross-table checks
+(`defaultClass`-presence and `supportData`) degrade gracefully to
+header-only/skipped when the corresponding dependency table isn't
+loaded, via `dependency_tables() = ("classes", "supports")`.
+
+### Fixtures and tests
+
+`scripts/generated_data/tests/fixtures/characters/` holds fixture
+sources using the real repository headers/enums throughout (`CHARACTER_
+EIRIKA`/`CLASS_MYRMIDON`/etc.) so they validate identically whether run
+directly (`characters_schema.validate()`) or via the CLI (which has no
+header-override mechanism for a table's own headers, only for
+`--dep-source`-loaded dependency tables) -- plus a small set of `mini_*`
+header/source fixtures used only to unit-test the individual live-source
+reader functions (`read_msg_count`, `read_portrait_count`,
+`read_mini_portrait_capacity`, `read_character_data_array_capacity`,
+`read_character_attributes`, `read_unit_affinities`) against small,
+exact expected numbers. `python3 -m unittest
+scripts.generated_data.tests.test_characters_schema` covers the record
+model, structural/duplicate/coverage/reference/range/reserved-field/
+support-data/class-dependency checks (including the
+`CHARACTER_EVT_LEADER`/`ACTIVE`/`SLOTB`/`SLOT2` sentinel-rejection
+regression and a synthetic sibling-enum-collision regression wired
+through `characters_schema.validate()`'s own `characters_header=`
+override parameter), and the header readers in isolation; `CliCharactersTests`
+in `test_cli_new_tables.py` covers the same end to end through the CLI,
+including `--dep-source` overrides and the sentinel-rejection
+regression.
+
+`scripts/generated_data/character_refs.py`'s own `read_character_
+designators()` -- being shared across five tables -- has its own
+dedicated test module, `test_character_refs.py`, independent of any
+single table's fixtures: one set of tests runs it against the real
+`characters.h` (confirming `CHARACTER_NONE`/`CHARACTER_EIRIKA`/
+`CHARACTER_SNAG` are present and all four `CHARACTER_EVT_*` sentinels
+are absent), and a second set runs it against a minimal synthetic
+fixture, `scripts/generated_data/tests/fixtures/character_refs/
+mini_characters_sibling_enum.h`, that reproduces the real header's
+primary-enum/named-sibling-enum, same-prefix collision shape in
+miniature (down to a negative-valued sibling member), proving the
+scoping mechanism itself -- anchored on the primary block's own opening/
+closing braces -- independent of the real header's current contents.
+Each of the four other affected tables (`units`, `supports`,
+`chapterbundle`, plus `eventlists` as an additional table found to share
+the same bug class) additionally carries its own `char_evt_sentinels.json`
+fixture (proving its own real-header call site rejects all four EVT_*
+sentinels) and its own synthetic-sibling-enum-collision regression test
+wired through that table's own `characters_header=` `validate()`
+parameter override -- so the fix is proven at the wiring level in each
+table, not only inside the shared reader.
+
 ## The C-symbol escape hatch (`escape_hatch.py`)
 
 Originally implemented and tested as a generic, reusable mechanism ahead
@@ -1230,15 +1443,26 @@ CI-gated via `generated-data-check` (now wired into
 `.github/workflows/build.yml`). Still open, and **explicitly out of
 scope** for this Batch C update:
 
-* **Global character/class schemas and authoring.** `items` and now
+* **Global character authoring/generation/linking.** `items` and
   `classes` (Issue #5 Batch 1) are global tables with their own schema/
-  generate/round-trip pipelines, but `chapterbundle` still only
-  *references* `CHARACTER_*`/`CLASS_*` IDs (as a reference-only
-  dependency set, cross-checked for existence against the live enum
-  headers) -- it does not model, generate, or claim authorship of
-  character data, and does not fold `classes` into its own cross-table
-  reachability checks. A structured schema for the global **character**
-  table (`gCharacterData[]`/`struct CharacterData`) remains unbuilt.
+  generate/round-trip pipelines. `characters` (Issue #5 **Batch 2a**,
+  this doc's `## characters schema` section) now has an analogous
+  schema/dependency-validation foundation -- the 256-slot symbolic/raw
+  designator model, full field/range/reference validation, and
+  cross-table checks against `classes`/`supports` -- but still only as
+  a schema, reachable via explicit `validate --table characters
+  --source ...`; there is no committed `src/data/characters.json`, no
+  `generate.py`/`parser.py`/`inventory.py`, and it is not wired into
+  `GENERATED_DATA_TABLES`/CI. `chapterbundle` still only *references*
+  `CHARACTER_*`/`CLASS_*` IDs (as a reference-only dependency set,
+  cross-checked for existence against the live enum headers) -- it does
+  not fold `characters`/`classes` into its own cross-table reachability
+  checks. Remaining: **Batch 2b** (transcribe all 256 vanilla records
+  into a real, complete `src/data/characters.json` with `fullCoverage`
+  enabled, plus `generate.py`/`parser.py`/round-trip proof) and
+  **Batch 2c** (link the generated table in place of
+  `src/data_characters.c`, and any resulting `chapterbundle`
+  cross-table wiring) remain open.
 * **Linking the `items`/`classes` tables themselves.** Batch 1 is
   schema/generate/round-trip only, per its own explicit scope --
   `build/generated/data/data_items.c` and `build/generated/data/

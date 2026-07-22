@@ -84,6 +84,45 @@ class EventListsSchemaCrossReferenceTests(unittest.TestCase):
             any("undefined event-script reference 'EventScr_EL_DoesNotExist'" in m for m in messages), messages
         )
 
+    def test_event_autoload_slot_sentinels_rejected_as_char_macro_arg(self):
+        """CHARACTER_EVT_LEADER/ACTIVE/SLOTB/SLOT2 belong to the separate
+        ``event_autoload_pid_idx`` enum (active-unit-slot indices, two of
+        them negative) -- they share the ``CHARACTER_`` textual prefix
+        with real designators but must never be accepted as a ``CHAR()``
+        macro's ``pid1``/``pid2`` argument."""
+        _, diagnostics = _validate("char_evt_sentinels.json")
+        self.assertFalse(diagnostics.ok)
+        messages = [str(e) for e in diagnostics.errors]
+        for sentinel in (
+            "CHARACTER_EVT_LEADER", "CHARACTER_EVT_ACTIVE", "CHARACTER_EVT_SLOTB", "CHARACTER_EVT_SLOT2",
+        ):
+            self.assertTrue(
+                any("undefined character reference '{}'".format(sentinel) in m for m in messages),
+                (sentinel, messages),
+            )
+
+    def test_synthetic_sibling_enum_collision_excluded(self):
+        """Wiring-level proof (not just the shared reader in isolation):
+        a ``CHAR()`` macro's ``pid1`` referencing the synthetic sibling
+        enum's ``CHARACTER_SIBLING_FAKE`` must be rejected even though
+        the primary block's own ``CHARACTER_ALPHA``/``CHARACTER_BETA``
+        members (sharing the mini header's namespace) are accepted."""
+        records = eventlists_schema.load_records(fixture_path("eventlists", "valid.json"))
+        char_list = records.lists_by_field["characterBasedEvents"]
+        char_call = char_list.entries[0]
+        char_call.args[2].value = "CHARACTER_ALPHA"
+        char_call.args[3].value = "CHARACTER_SIBLING_FAKE"
+        diagnostics = DiagnosticCollector()
+        eventlists_schema.validate(
+            records, diagnostics, _load_dependency_records(),
+            characters_header=fixture_path("character_refs", "mini_characters_sibling_enum.h"),
+        )
+        self.assertFalse(diagnostics.ok)
+        messages = [str(e) for e in diagnostics.errors]
+        self.assertTrue(
+            any("undefined character reference 'CHARACTER_SIBLING_FAKE'" in m for m in messages), messages
+        )
+
 
 class EventListsSchemaMacroArityTypeTests(unittest.TestCase):
     def test_wrong_arity_detected(self):

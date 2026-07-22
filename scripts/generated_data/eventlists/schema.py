@@ -72,6 +72,7 @@ import re
 from ..diagnostics import GeneratedDataError
 from ..json_loader import load_json_file
 from ..schema import DependencyGraph, TableSchema
+from .. import character_refs
 from ..validators import extract_enum_constants, validate_range, validate_reference, validate_unique
 
 SCHEMA_NAME = "eventlists"
@@ -79,7 +80,7 @@ SCHEMA_VERSION = 1
 SCHEMA_ID = "fe8.eventlists.v1"
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-CHARACTERS_HEADER = os.path.join(REPO_ROOT, "include", "constants", "characters.h")
+CHARACTERS_HEADER = character_refs.CHARACTERS_HEADER
 BMUNIT_HEADER = os.path.join(REPO_ROOT, "include", "bmunit.h")
 EVENT_FLAGS_HEADER = os.path.join(REPO_ROOT, "include", "constants", "event-flags.h")
 
@@ -480,7 +481,7 @@ def _validate_int_arg(arg, ref):
     return validate_range(arg.value, _U8_MIN, _U8_MAX, arg.loc, ref, field_name="value")
 
 
-def validate(records, diagnostics, dependency_records=None):
+def validate(records, diagnostics, dependency_records=None, characters_header=CHARACTERS_HEADER):
     """Validate the 7 event lists, the tutorial pointer array, and the
     ``Ch2Events`` manifest, cross-referencing ``dependency_records``
     (``{"units": [...], "shops": [...], "traps": [...], "eventscripts": [...]}``,
@@ -492,7 +493,7 @@ def validate(records, diagnostics, dependency_records=None):
     trap_symbols = {r.symbol for r in dependency_records.get("traps", ())}
     eventscripts_by_symbol = {r.symbol: r for r in dependency_records.get("eventscripts", ())}
 
-    characters = extract_enum_constants(CHARACTERS_HEADER, name_prefix="CHARACTER_")
+    characters = character_refs.read_character_designators(characters_header)
     factions = extract_enum_constants(BMUNIT_HEADER, name_prefix="FACTION_ID_")
     evflags = extract_enum_constants(EVENT_FLAGS_HEADER, name_prefix="EVFLAG_")
     evflag_tmp_low, evflag_tmp_high = read_evflag_tmp_range()

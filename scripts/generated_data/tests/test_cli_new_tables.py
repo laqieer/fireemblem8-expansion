@@ -353,5 +353,96 @@ class CliClassesTests(unittest.TestCase):
         self.assertEqual(code, 0, msg=out + err)
 
 
+class CliCharactersTests(unittest.TestCase):
+    """Issue #5 Batch 2a: schema-only -- ``characters`` has no
+    ``default_source``/committed real source yet (see
+    ``characters/schema.py``), so unlike every other table there is no
+    ``test_real_*_source_validates``/``test_generate_*``/``test_check_*``
+    counterpart in this class: ``--source`` must always be given
+    explicitly, and ``generate``/``check`` have nothing to do for a
+    schema-only table (see ``CharactersTableSchema``'s docstring).
+    """
+
+    def test_validate_valid_fixture_passes(self):
+        code, out, err = run_cli([
+            "validate", "--table", "characters",
+            "--source", fixture_path("characters", "valid.json"),
+            "--no-roundtrip",
+        ])
+        self.assertEqual(code, 0, msg=out + err)
+        self.assertIn("OK:", out)
+
+    def test_validate_invalid_fixture_fails_with_location(self):
+        code, out, err = run_cli([
+            "validate", "--table", "characters",
+            "--source", fixture_path("characters", "duplicate_symbolic.json"),
+            "--no-roundtrip",
+        ])
+        self.assertEqual(code, 1)
+        self.assertIn("duplicate_symbolic.json", err)
+        self.assertIn("duplicate character designator 1", err)
+
+    def test_validate_missing_source_table_is_registered_without_being_in_all_tables(self):
+        # characters is resolvable via --table (registered in registry.py)
+        # but must not appear in any all-tables default loop; there is no
+        # such loop in this CLI today, so this is simply confirming the
+        # schema resolves cleanly on its own.
+        code, out, err = run_cli([
+            "validate", "--table", "characters",
+            "--source", fixture_path("characters", "valid.json"),
+        ])
+        self.assertEqual(code, 0, msg=out + err)
+
+    def test_validate_with_dependency_overrides_passes(self):
+        code, out, err = run_cli([
+            "validate", "--table", "characters",
+            "--source", fixture_path("characters", "valid.json"),
+            "--dep-source", "classes=" + fixture_path("characters", "deps_classes.json"),
+            "--dep-source", "supports=" + fixture_path("characters", "deps_supports.json"),
+            "--no-roundtrip",
+        ])
+        self.assertEqual(code, 0, msg=out + err)
+        self.assertIn("OK:", out)
+
+    def test_validate_class_missing_from_dependency_table_detected(self):
+        code, out, err = run_cli([
+            "validate", "--table", "characters",
+            "--source", fixture_path("characters", "class_missing_from_table.json"),
+            "--dep-source", "classes=" + fixture_path("characters", "deps_classes.json"),
+            "--dep-source", "supports=" + fixture_path("characters", "deps_supports.json"),
+            "--no-roundtrip",
+        ])
+        self.assertEqual(code, 1)
+        self.assertIn("has no ClassData record in the loaded classes table", err)
+
+    def test_validate_support_data_owner_mismatch_detected_with_dependency_override(self):
+        code, out, err = run_cli([
+            "validate", "--table", "characters",
+            "--source", fixture_path("characters", "support_data_owner_mismatch.json"),
+            "--dep-source", "classes=" + fixture_path("characters", "deps_classes.json"),
+            "--dep-source", "supports=" + fixture_path("characters", "deps_supports.json"),
+            "--no-roundtrip",
+        ])
+        self.assertEqual(code, 1)
+        self.assertIn("belongs to owner 'CHARACTER_EIRIKA', not 'CHARACTER_SETH'", err)
+
+    def test_validate_event_autoload_slot_sentinels_rejected(self):
+        """Regression: ``CHARACTER_EVT_LEADER``/``ACTIVE``/``SLOTB``/
+        ``SLOT2`` (the separate ``event_autoload_pid_idx`` enum, sharing
+        the ``CHARACTER_`` prefix, two of them negative) must never be
+        accepted as ``CharacterData`` designators end to end through the
+        CLI."""
+        code, out, err = run_cli([
+            "validate", "--table", "characters",
+            "--source", fixture_path("characters", "character_evt_sentinels.json"),
+            "--no-roundtrip",
+        ])
+        self.assertEqual(code, 1)
+        for sentinel in (
+            "CHARACTER_EVT_LEADER", "CHARACTER_EVT_ACTIVE", "CHARACTER_EVT_SLOTB", "CHARACTER_EVT_SLOT2",
+        ):
+            self.assertIn("undefined character reference '{}'".format(sentinel), err)
+
+
 if __name__ == "__main__":
     unittest.main()
