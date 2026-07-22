@@ -13,6 +13,14 @@ Commands:
   reports drift (with a non-zero exit) if the committed inventory,
   validation, or hand-written round-trip has gone stale. Suitable for
   CI/pre-commit use.
+
+Every table is driven exclusively through the :class:`~.schema.TableSchema`
+interface (``registry.py`` registers one instance per table) -- there is no
+per-table ``if table == "...":`` dispatch here. A table that has nothing to
+generate (metadata-only, e.g. ``eventscripts``) simply leaves
+``default_output_name`` (and ``generate_c``) as ``None``; ``generate``/
+``check`` detect that and explicitly skip writing C instead of emitting a
+meaningless file.
 """
 
 from __future__ import annotations
@@ -23,72 +31,52 @@ import sys
 
 from . import registry  # noqa: F401  (import registers table schemas)
 from .cgen import write_if_changed
-from .diagnostics import DiagnosticCollector, GeneratedDataError
+from .diagnostics import GeneratedDataError, DiagnosticCollector
 from .schema import REGISTRY
-from .supports import parser as supports_roundtrip
-from .supports.generate import generate_c_source
-from .supports.inventory import build_inventory
 
-DEFAULT_SOURCES = {
-    "supports": "src/data/supports.json",
-}
-DEFAULT_HAND_SOURCES = {
-    "supports": "src/data_supports.c",
-}
-DEFAULT_OUTPUT_NAMES = {
-    "supports": "data_supports.c",
-}
-DEFAULT_INVENTORY_PATHS = {
-    "supports": "reports/generated_data_supports_inventory.md",
-}
 DEFAULT_OUT_DIR = os.path.join("build", "generated", "data")
 
 
-def _load_and_validate(table, source_path):
-    schema = REGISTRY.resolve(table)
+def _resolve_schema(table):
+    return REGISTRY.resolve(table)
+
+
+def _load_and_validate(schema, source_path):
     records = schema.load_records(source_path)
     diagnostics = DiagnosticCollector()
     schema.validate(records, diagnostics)
-    return schema, records, diagnostics
+    return records, diagnostics
 
 
-def _roundtrip_errors(table, records, hand_source):
-    if table != "supports" or not hand_source:
+def _roundtrip_errors(schema, records, hand_source, no_roundtrip):
+    if no_roundtrip or not hand_source:
         return []
     if not os.path.exists(hand_source):
         return []
-    hand_records = supports_roundtrip.parse_hand_written(hand_source)
-    return supports_roundtrip.compare_records(records, hand_records, hand_path=hand_source)
-
-
-def _generate_output(table, records, source_path):
-    if table == "supports":
-        return generate_c_source(records, source_path)
-    raise GeneratedDataError("no generator registered for table '{}'".format(table))
-
-
-def _build_inventory(table, records):
-    if table == "supports":
-        return build_inventory(records)
-    raise GeneratedDataError("no inventory builder registered for table '{}'".format(table))
+    return schema.round_trip_errors(records, hand_source)
 
 
 def cmd_validate(args):
     table = args.table
-    source_path = args.source or DEFAULT_SOURCES[table]
     try:
-        schema, records, diagnostics = _load_and_validate(table, source_path)
+        schema = _resolve_schema(table)
     except GeneratedDataError as exc:
         print(str(exc), file=sys.stderr)
         return 1
 
+    source_path = args.source or schema.default_source
+    try:
+        records, diagnostics = _load_and_validate(schema, source_path)
+    except GeneratedDataError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+
+    hand_source = args.hand_source or schema.default_hand_source
     roundtrip_errors = []
-    hand_source = args.hand_source or DEFAULT_HAND_SOURCES.get(table)
-    if not args.no_roundtrip:
-        try:
-            roundtrip_errors = _roundtrip_errors(table, records, hand_source)
-        except GeneratedDataError as exc:
-            roundtrip_errors = [exc]
+    try:
+        roundtrip_errors = _roundtrip_errors(schema, records, hand_source, args.no_roundtrip)
+    except GeneratedDataError as exc:
+        roundtrip_errors = [exc]
 
     all_errors = list(diagnostics.errors) + roundtrip_errors
     if all_errors:
@@ -103,23 +91,28 @@ def cmd_validate(args):
 
 def cmd_generate(args):
     table = args.table
-    source_path = args.source or DEFAULT_SOURCES[table]
+    try:
+        schema = _resolve_schema(table)
+    except GeneratedDataError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+
+    source_path = args.source or schema.default_source
     out_dir = args.out_dir or DEFAULT_OUT_DIR
-    inventory_path = args.inventory or DEFAULT_INVENTORY_PATHS.get(table)
-    hand_source = args.hand_source or DEFAULT_HAND_SOURCES.get(table)
+    inventory_path = args.inventory or schema.default_inventory_path
+    hand_source = args.hand_source or schema.default_hand_source
 
     try:
-        schema, records, diagnostics = _load_and_validate(table, source_path)
+        records, diagnostics = _load_and_validate(schema, source_path)
     except GeneratedDataError as exc:
         print(str(exc), file=sys.stderr)
         return 1
 
     roundtrip_errors = []
-    if not args.no_roundtrip:
-        try:
-            roundtrip_errors = _roundtrip_errors(table, records, hand_source)
-        except GeneratedDataError as exc:
-            roundtrip_errors = [exc]
+    try:
+        roundtrip_errors = _roundtrip_errors(schema, records, hand_source, args.no_roundtrip)
+    except GeneratedDataError as exc:
+        roundtrip_errors = [exc]
 
     all_errors = list(diagnostics.errors) + roundtrip_errors
     if all_errors:
@@ -128,13 +121,20 @@ def cmd_generate(args):
         print("FAILED: {} diagnostic(s); nothing written".format(len(all_errors)), file=sys.stderr)
         return 1
 
-    output_path = os.path.join(out_dir, DEFAULT_OUTPUT_NAMES[table])
-    content = _generate_output(table, records, source_path)
-    changed = write_if_changed(output_path, content)
-    print("{} {}".format("wrote" if changed else "up to date:", output_path))
+    if schema.default_output_name:
+        output_path = os.path.join(out_dir, schema.default_output_name)
+        content = schema.generate_c(records, source_path)
+        if content is None:
+            raise GeneratedDataError(
+                "schema '{}' declares an output name but generate_c() returned None".format(table)
+            )
+        changed = write_if_changed(output_path, content)
+        print("{} {}".format("wrote" if changed else "up to date:", output_path))
+    else:
+        print("skip: table '{}' is metadata-only; no C output generated".format(table))
 
     if inventory_path:
-        inventory_content = _build_inventory(table, records)
+        inventory_content = schema.build_inventory(records)
         inventory_changed = write_if_changed(inventory_path, inventory_content)
         print("{} {}".format("wrote" if inventory_changed else "up to date:", inventory_path))
 
@@ -146,23 +146,28 @@ def cmd_check(args):
     ephemeral build/ output but never touches anything outside build/.
     """
     table = args.table
-    source_path = args.source or DEFAULT_SOURCES[table]
+    try:
+        schema = _resolve_schema(table)
+    except GeneratedDataError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+
+    source_path = args.source or schema.default_source
     out_dir = args.out_dir or DEFAULT_OUT_DIR
-    inventory_path = args.inventory or DEFAULT_INVENTORY_PATHS.get(table)
-    hand_source = args.hand_source or DEFAULT_HAND_SOURCES.get(table)
+    inventory_path = args.inventory or schema.default_inventory_path
+    hand_source = args.hand_source or schema.default_hand_source
 
     try:
-        schema, records, diagnostics = _load_and_validate(table, source_path)
+        records, diagnostics = _load_and_validate(schema, source_path)
     except GeneratedDataError as exc:
         print(str(exc), file=sys.stderr)
         return 1
 
     roundtrip_errors = []
-    if not args.no_roundtrip:
-        try:
-            roundtrip_errors = _roundtrip_errors(table, records, hand_source)
-        except GeneratedDataError as exc:
-            roundtrip_errors = [exc]
+    try:
+        roundtrip_errors = _roundtrip_errors(schema, records, hand_source, args.no_roundtrip)
+    except GeneratedDataError as exc:
+        roundtrip_errors = [exc]
 
     all_errors = list(diagnostics.errors) + roundtrip_errors
     if all_errors:
@@ -176,13 +181,16 @@ def cmd_check(args):
     # The bulky C output lives only under build/ and is never committed, so
     # there is nothing to "drift" against across git history -- regenerate
     # it (write-if-changed) exactly like `generate` would, purely so
-    # incremental `make` builds stay current.
-    output_path = os.path.join(out_dir, DEFAULT_OUTPUT_NAMES[table])
-    generated_content = _generate_output(table, records, source_path)
-    write_if_changed(output_path, generated_content)
+    # incremental `make` builds stay current. Metadata-only tables (no
+    # default_output_name) have nothing to (re)generate here.
+    if schema.default_output_name:
+        output_path = os.path.join(out_dir, schema.default_output_name)
+        generated_content = schema.generate_c(records, source_path)
+        if generated_content is not None:
+            write_if_changed(output_path, generated_content)
 
     if inventory_path:
-        generated_inventory = _build_inventory(table, records)
+        generated_inventory = schema.build_inventory(records)
         existing_inventory = None
         if os.path.exists(inventory_path):
             with open(inventory_path, "r", encoding="utf-8") as handle:
@@ -204,8 +212,6 @@ def cmd_check(args):
 def build_arg_parser():
     parser = argparse.ArgumentParser(prog="python3 -m scripts.generated_data")
     subparsers = parser.add_subparsers(dest="command", required=True)
-
-    common_kwargs = dict(add_help=False)
 
     def add_common_args(sub):
         sub.add_argument("--table", required=True, choices=REGISTRY.all_names() or ["supports"])

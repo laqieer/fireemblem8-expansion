@@ -62,10 +62,26 @@ class TableSchema:
 
     Subclasses provide ``name``, ``version``, and override
     :meth:`load_records`, :meth:`validate`, and :meth:`dependencies`.
+
+    The CLI (``cli.py``) drives every table exclusively through this
+    interface -- no table-specific dispatch lives in the CLI itself. The
+    ``default_*`` class attributes replace what used to be hardcoded
+    per-table dicts in ``cli.py``; a table that has no hand-written C
+    counterpart to round-trip against (e.g. metadata-only tables) simply
+    leaves ``default_hand_source``/``default_output_name`` as ``None``.
     """
 
     name = None
     version = None
+
+    # Fallback CLI defaults, overridable per-invocation with --source/
+    # --hand-source/--out-dir/--inventory. `default_output_name = None`
+    # means "this table has no generated-C output" (metadata-only tables
+    # must leave it None rather than emit a meaningless C file).
+    default_source = None
+    default_hand_source = None
+    default_output_name = None
+    default_inventory_path = None
 
     def dependencies(self):
         """Return an iterable of dependency names (headers/other tables)."""
@@ -76,6 +92,22 @@ class TableSchema:
 
     def validate(self, records, diagnostics):
         raise NotImplementedError
+
+    def generate_c(self, records, source_path):
+        """Return generated C89 source text, or ``None`` to skip generation
+        entirely (metadata-only tables that have nothing to compile)."""
+        return None
+
+    def build_inventory(self, records):
+        """Return the committed inventory/summary report text."""
+        raise NotImplementedError
+
+    def round_trip_errors(self, records, hand_source):
+        """Compare ``records`` against a hand-written C file at
+        ``hand_source``. Returns a list of :class:`GeneratedDataError`
+        (empty if not applicable, e.g. ``hand_source`` is falsy/missing or
+        the table has no round-trip counterpart)."""
+        return []
 
 
 class DependencyGraph:

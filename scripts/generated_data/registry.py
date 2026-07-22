@@ -8,5 +8,13 @@ from __future__ import annotations
 
 from .schema import REGISTRY
 from .supports.schema import SupportsTableSchema
+from .units.schema import UnitsTableSchema
+from .shops.schema import ShopsTableSchema
+from .traps.schema import TrapsTableSchema
+from .eventscripts.schema import EventScriptsTableSchema
 
 REGISTRY.register(SupportsTableSchema())
+REGISTRY.register(UnitsTableSchema())
+REGISTRY.register(ShopsTableSchema())
+REGISTRY.register(TrapsTableSchema())
+REGISTRY.register(EventScriptsTableSchema())

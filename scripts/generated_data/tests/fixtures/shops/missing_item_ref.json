@@ -1,0 +1,11 @@
+{
+  "$schema": "fe8.shops.v1",
+  "shops": [
+    {
+      "symbol": "ShopList_Fixture_Test",
+      "items": [
+        "ITEM_NOT_A_REAL_ITEM"
+      ]
+    }
+  ]
+}

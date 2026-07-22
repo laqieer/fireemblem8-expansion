@@ -299,6 +299,11 @@ class SupportsTableSchema(TableSchema):
     name = SCHEMA_NAME
     version = SCHEMA_VERSION
 
+    default_source = "src/data/supports.json"
+    default_hand_source = "src/data_supports.c"
+    default_output_name = "data_supports.c"
+    default_inventory_path = "reports/generated_data_supports_inventory.md"
+
     def dependencies(self):
         return ("constants.characters", "types.UNIT_SUPPORT_MAX_COUNT")
 
@@ -307,6 +312,21 @@ class SupportsTableSchema(TableSchema):
 
     def validate(self, records, diagnostics):
         validate(records, diagnostics)
+
+    def generate_c(self, records, source_path):
+        from . import generate as supports_generate
+        return supports_generate.generate_c_source(records, source_path)
+
+    def build_inventory(self, records):
+        from . import inventory as supports_inventory
+        return supports_inventory.build_inventory(records)
+
+    def round_trip_errors(self, records, hand_source):
+        if not hand_source or not os.path.exists(hand_source):
+            return []
+        from . import parser as supports_roundtrip
+        hand_records = supports_roundtrip.parse_hand_written(hand_source)
+        return supports_roundtrip.compare_records(records, hand_records, hand_path=hand_source)
 
 
 def dependency_graph():
