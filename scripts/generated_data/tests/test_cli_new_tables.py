@@ -148,5 +148,70 @@ class CliEventScriptsTests(unittest.TestCase):
         self.assertEqual(code, 0, msg=out + err)
 
 
+def _eventlists_dep_source_args():
+    args = []
+    for name in ("units", "shops", "traps", "eventscripts"):
+        args += ["--dep-source", "{}={}".format(name, fixture_path("eventlists", "deps_{}.json".format(name)))]
+    return args
+
+
+class CliEventListsTests(unittest.TestCase):
+    def test_validate_valid_fixture_passes(self):
+        code, out, err = run_cli([
+            "validate", "--table", "eventlists",
+            "--source", fixture_path("eventlists", "valid.json"),
+            "--no-roundtrip",
+        ] + _eventlists_dep_source_args())
+        self.assertEqual(code, 0, msg=out + err)
+        self.assertIn("OK:", out)
+
+    def test_validate_invalid_fixture_fails_with_location(self):
+        code, out, err = run_cli([
+            "validate", "--table", "eventlists",
+            "--source", fixture_path("eventlists", "missing_unit_ref.json"),
+            "--no-roundtrip",
+        ] + _eventlists_dep_source_args())
+        self.assertEqual(code, 1)
+        self.assertIn("missing_unit_ref.json", err)
+        self.assertIn("undefined unit group reference", err)
+
+    def test_validate_tutorial_wrong_count_fails(self):
+        code, out, err = run_cli([
+            "validate", "--table", "eventlists",
+            "--source", fixture_path("eventlists", "tutorial_wrong_count.json"),
+            "--no-roundtrip",
+        ] + _eventlists_dep_source_args())
+        self.assertEqual(code, 1)
+        self.assertIn("must have exactly 30 entries", err)
+
+    def test_real_ch2_eventlists_source_validates_and_roundtrips_clean(self):
+        code, out, err = run_cli(["validate", "--table", "eventlists"])
+        self.assertEqual(code, 0, msg=out + err)
+
+    def test_generate_writes_c_and_inventory(self):
+        with scratch_dir() as tmp:
+            out_dir = os.path.join(tmp, "out")
+            inventory_path = os.path.join(tmp, "inventory.md")
+            code, out, err = run_cli([
+                "generate", "--table", "eventlists",
+                "--source", fixture_path("eventlists", "valid.json"),
+                "--out-dir", out_dir,
+                "--inventory", inventory_path,
+                "--no-roundtrip",
+            ] + _eventlists_dep_source_args())
+            self.assertEqual(code, 0, msg=out + err)
+            generated_file = os.path.join(out_dir, "data_ch2_eventlists.c")
+            self.assertTrue(os.path.exists(generated_file))
+            self.assertTrue(os.path.exists(inventory_path))
+            with open(generated_file) as f:
+                content = f.read()
+                self.assertIn("EventListScr_EL_Turn", content)
+                self.assertIn("CONST_DATA struct ChapterEventGroup ELEvents", content)
+
+    def test_check_real_ch2_eventlists_table_has_no_drift(self):
+        code, out, err = run_cli(["check", "--table", "eventlists"])
+        self.assertEqual(code, 0, msg=out + err)
+
+
 if __name__ == "__main__":
     unittest.main()

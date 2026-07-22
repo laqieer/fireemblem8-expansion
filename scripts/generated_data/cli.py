@@ -41,10 +41,41 @@ def _resolve_schema(table):
     return REGISTRY.resolve(table)
 
 
-def _load_and_validate(schema, source_path):
+def _parse_dep_source_overrides(raw_pairs):
+    """Parse repeated ``--dep-source NAME=PATH`` options into a ``dict``."""
+    overrides = {}
+    for pair in raw_pairs or ():
+        if "=" not in pair:
+            raise GeneratedDataError("--dep-source expects NAME=PATH, got '{}'".format(pair))
+        name, path = pair.split("=", 1)
+        overrides[name] = path
+    return overrides
+
+
+def _load_dependency_records(schema, dep_source_overrides):
+    """Load this schema's declared ``dependency_tables()`` deterministically
+    (in declaration order) through the schema registry, returning ``None``
+    when the table has no table-level dependencies (so callers can fall
+    back to the plain 2-argument ``validate`` signature unchanged)."""
+    dep_tables = tuple(schema.dependency_tables())
+    if not dep_tables:
+        return None
+    dependency_records = {}
+    for dep_name in dep_tables:
+        dep_schema = REGISTRY.resolve(dep_name)
+        dep_source = dep_source_overrides.get(dep_name) or dep_schema.default_source
+        dependency_records[dep_name] = dep_schema.load_records(dep_source)
+    return dependency_records
+
+
+def _load_and_validate(schema, source_path, dep_source_overrides=None):
     records = schema.load_records(source_path)
     diagnostics = DiagnosticCollector()
-    schema.validate(records, diagnostics)
+    dependency_records = _load_dependency_records(schema, dep_source_overrides or {})
+    if dependency_records is not None:
+        schema.validate(records, diagnostics, dependency_records)
+    else:
+        schema.validate(records, diagnostics)
     return records, diagnostics
 
 
@@ -66,7 +97,8 @@ def cmd_validate(args):
 
     source_path = args.source or schema.default_source
     try:
-        records, diagnostics = _load_and_validate(schema, source_path)
+        dep_source_overrides = _parse_dep_source_overrides(args.dep_source)
+        records, diagnostics = _load_and_validate(schema, source_path, dep_source_overrides)
     except GeneratedDataError as exc:
         print(str(exc), file=sys.stderr)
         return 1
@@ -103,7 +135,8 @@ def cmd_generate(args):
     hand_source = args.hand_source or schema.default_hand_source
 
     try:
-        records, diagnostics = _load_and_validate(schema, source_path)
+        dep_source_overrides = _parse_dep_source_overrides(args.dep_source)
+        records, diagnostics = _load_and_validate(schema, source_path, dep_source_overrides)
     except GeneratedDataError as exc:
         print(str(exc), file=sys.stderr)
         return 1
@@ -158,7 +191,8 @@ def cmd_check(args):
     hand_source = args.hand_source or schema.default_hand_source
 
     try:
-        records, diagnostics = _load_and_validate(schema, source_path)
+        dep_source_overrides = _parse_dep_source_overrides(args.dep_source)
+        records, diagnostics = _load_and_validate(schema, source_path, dep_source_overrides)
     except GeneratedDataError as exc:
         print(str(exc), file=sys.stderr)
         return 1
@@ -218,6 +252,11 @@ def build_arg_parser():
         sub.add_argument("--source", help="path to the table's JSON source (default: built-in per-table path)")
         sub.add_argument("--hand-source", help="path to the hand-written C file to round-trip against")
         sub.add_argument("--no-roundtrip", action="store_true", help="skip the hand-written round-trip comparison")
+        sub.add_argument(
+            "--dep-source", action="append",
+            help="override a table dependency's JSON source as NAME=PATH (repeatable); "
+                 "only meaningful for tables whose schema declares dependency_tables()",
+        )
 
     validate_parser = subparsers.add_parser("validate", help="validate a table's JSON source")
     add_common_args(validate_parser)

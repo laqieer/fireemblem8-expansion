@@ -12,9 +12,11 @@ from .units.schema import UnitsTableSchema
 from .shops.schema import ShopsTableSchema
 from .traps.schema import TrapsTableSchema
 from .eventscripts.schema import EventScriptsTableSchema
+from .eventlists.schema import EventListsTableSchema
 
 REGISTRY.register(SupportsTableSchema())
 REGISTRY.register(UnitsTableSchema())
 REGISTRY.register(ShopsTableSchema())
 REGISTRY.register(TrapsTableSchema())
 REGISTRY.register(EventScriptsTableSchema())
+REGISTRY.register(EventListsTableSchema())

@@ -84,13 +84,36 @@ class TableSchema:
     default_inventory_path = None
 
     def dependencies(self):
-        """Return an iterable of dependency names (headers/other tables)."""
+        """Return an iterable of dependency names (headers/other tables).
+
+        Purely documentational/digest input (see ``DependencyGraph``) --
+        entries here are not required to be other registered table names.
+        Use :meth:`dependency_tables` for dependencies the CLI should
+        actually load and hand to :meth:`validate`.
+        """
+        return ()
+
+    def dependency_tables(self):
+        """Return an iterable of *other registered table names* (see
+        ``registry.py``) whose records this schema needs loaded for
+        cross-table validation (e.g. ``eventlists`` resolving unit/shop/
+        trap/eventscript symbol references against Batch A's tables).
+
+        Default: empty -- most tables validate standalone against headers
+        only. When non-empty, ``cli.py`` loads each named table
+        deterministically (in the given order, via that table's own
+        ``default_source`` unless overridden with ``--dep-source
+        NAME=PATH``) and calls
+        ``validate(records, diagnostics, dependency_records)`` instead of
+        the 2-argument form, where ``dependency_records`` is a ``dict``
+        of ``{table_name: records}``.
+        """
         return ()
 
     def load_records(self, source_path):
         raise NotImplementedError
 
-    def validate(self, records, diagnostics):
+    def validate(self, records, diagnostics, dependency_records=None):
         raise NotImplementedError
 
     def generate_c(self, records, source_path):
