@@ -306,6 +306,21 @@ endif
 ifneq ($(strip $(GENERATED_DATA_CH2_TRAPS_OBJECT)),)
 MODERN_ALL_C_OBJECTS += $(MODERN_OUTPUT_DIR)/src/events_t-ch2traps.o
 endif
+
+# Issue #5 Batch 3c: $(GENERATED_DATA_CH2_SHOPS_OBJECT) (generated_data.mk)
+# is the same kind of additive object as units/traps just above --
+# src/events_shoplist.c has no "original hand path" to reuse (it stays
+# fully linked, only its single ShopList_Event_Ch2Armory array is guarded
+# out). A single synthetic path suffices here, chosen so it sorts
+# immediately before src/events_shoplist.o (same "-" < any alnum trick as
+# the units/traps slots above) and therefore doesn't shift any other
+# object's relative order. A safe no-op when GENERATED_DATA_CH2_SHOPS_OBJECT
+# is undefined (modern.mk included standalone). An explicit (non-pattern)
+# rule for this literal target path is defined further below, alongside
+# GENERATED_DATA_MODERN_OVERRIDE_RULES.
+ifneq ($(strip $(GENERATED_DATA_CH2_SHOPS_OBJECT)),)
+MODERN_ALL_C_OBJECTS += $(MODERN_OUTPUT_DIR)/src/events_sh-ch2shops.o
+endif
 MODERN_ALL_DATA_PRE := $(addprefix $(MODERN_OUTPUT_DIR)/,$(MODERN_ALL_DATA_C_SOURCES:.c=.pre.c))
 MODERN_ALL_DATA_OBJECTS := $(addprefix $(MODERN_OUTPUT_DIR)/,$(MODERN_ALL_DATA_C_SOURCES:.c=.o))
 MODERN_ALL_ASM_OBJECTS := $(addprefix $(MODERN_OUTPUT_DIR)/,$(MODERN_ALL_ASM_SOURCES:.s=.o))
@@ -474,6 +489,15 @@ $(MODERN_OUTPUT_DIR)/src/events_u-ch2units.o: $(GENERATED_DATA_CH2_UNITS_C)
 # standalone): the rule is simply never reachable, since nothing adds
 # this path to MODERN_ALL_C_OBJECTS in that case.
 $(MODERN_OUTPUT_DIR)/src/events_t-ch2traps.o: $(GENERATED_DATA_CH2_TRAPS_C)
+	@mkdir -p $(@D)
+	"$(MODERN_CC)" $(MODERN_CFLAGS) -MMD -MP -MF "$(@:.o=.d)" -MQ "$@" -c "$<" -o "$@"
+
+# Issue #5 Batch 3c: same reasoning as the units/traps synthetic-slot
+# rules above, for the shops table's synthetic slot object. A safe no-op
+# target when GENERATED_DATA_CH2_SHOPS_C is undefined (modern.mk included
+# standalone): the rule is simply never reachable, since nothing adds
+# this path to MODERN_ALL_C_OBJECTS in that case.
+$(MODERN_OUTPUT_DIR)/src/events_sh-ch2shops.o: $(GENERATED_DATA_CH2_SHOPS_C)
 	@mkdir -p $(@D)
 	"$(MODERN_CC)" $(MODERN_CFLAGS) -MMD -MP -MF "$(@:.o=.d)" -MQ "$@" -c "$<" -o "$@"
 

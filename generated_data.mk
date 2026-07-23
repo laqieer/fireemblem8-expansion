@@ -1044,3 +1044,233 @@ generated-data-ch2-traps-link-check: $(GENERATED_DATA_CH2_TRAPS_OBJECT)
 	@test -e $(GENERATED_DATA_CH2_TRAPS_OBJECT) || { echo "FAIL: parallel build did not produce the generated object for traps" >&2; exit 1; }
 	@echo 'OK: from-scratch parallel (-j4) build of traps'"'"'s generated .c/.o succeeds, no race/duplicate generation'
 	@echo 'PASS: generated-data-ch2-traps-link-check'
+
+# ---------------------------------------------------------------------------
+# Linking a single Chapter-2-owned interior symbol in a shared shop-list
+# file (Issue #5 Batch 3c)
+# ---------------------------------------------------------------------------
+# `shops` is structurally like `units` (Batch 3a, above): its one Chapter
+# 2 symbol (`ShopList_Event_Ch2Armory`) is only a slice of
+# src/events_shoplist.c, a translation unit that also defines every other
+# shop's item list, which must stay hand-linked untouched -- so this
+# slice can't be excluded from compilation by filtering a whole file out
+# of CFILES/MODERN_ALL_C_SOURCES the way GENERATED_DATA_LINKED_* does.
+#
+# Unlike `units`, `ShopList_Event_Ch2Armory` is not a *prefix* of the
+# file: it sits in the *interior*, sandwiched between still-hand
+# `ShopList_Tower*`/`ShopList_Ruin*` arrays above it and the still-hand
+# `ShopList_Event_Ch5Armory` (and every later shop) below it. The same
+# single-guard, single-section-redirect technique still applies, just
+# with both a real prefix *and* a real suffix to preserve, rather than
+# only a suffix:
+#   * src/events_shoplist.c defines
+#     `#define GENERATED_DATA_SHOPS_CH2_LINKED 1` immediately above the
+#     array, itself wrapped in
+#     `#if !GENERATED_DATA_SHOPS_CH2_LINKED / #endif` -- source preserved
+#     verbatim (never deleted), excluded from compilation, still read
+#     directly by generated-data-check's round-trip parser
+#     (scripts/generated_data/shops/parser.py), which is text-based and
+#     therefore blind to the preprocessor guard around it.
+#   * Right after the guard's closing `#endif`, `#undef CONST_DATA` /
+#     `#define CONST_DATA SECTION(".data.shopch2tail")` redirects
+#     everything from `ShopList_Event_Ch5Armory` onward (through
+#     end-of-file) into a second, distinctly-named section, splitting
+#     events_shoplist.o's .data into two independently-placeable pieces
+#     of the same object file.
+#
+# Both the array's start (0x89ED7CC) and end (0x89ED7D8) addresses fall
+# on natural 4-byte boundaries -- a 6-entry u16[] (5 items + 1
+# ITEM_NONE terminator) is always a multiple of 4 bytes -- so, unlike the
+# traps table's packed u8[] split (which required dropping internal
+# ALIGN(4) to avoid padding), this split keeps ". = ALIGN(4);" at every
+# piece, exactly like the units table's three-piece split:
+#   * legacy (ldscript.txt): src/events_shoplist.o(.data) (the still-hand
+#     Tower*/Ruin* prefix, unchanged), then
+#     build/generated/data/data_ch2_shops.o(.data) (the generated
+#     ShopList_Event_Ch2Armory), then
+#     src/events_shoplist.o(.data.shopch2tail) (Ch5Armory onward,
+#     unchanged) -- each piece lands at exactly its original address, so
+#     the ROM is byte-identical overall (verified via `cmp` against a
+#     pre-change ROM).
+#   * modern (modern.mk): same reasoning as the units/traps synthetic
+#     slots -- modern links whole objects, not per-input-section, and
+#     this object is additive (no "original hand path" to reuse), so it
+#     is reinstated at a synthetic slot path
+#     ($(MODERN_OUTPUT_DIR)/src/events_sh-ch2shops.o) chosen to sort
+#     immediately before src/events_shoplist.o -- an acceptable,
+#     already-documented divergence for the modern build (modern's
+#     requirement is a successful, shiftable build, not literal
+#     re-derivation of legacy's byte layout).
+GENERATED_DATA_CH2_SHOPS_HAND_SOURCE := src/events_shoplist.c
+GENERATED_DATA_CH2_SHOPS_GUARD_MACRO := GENERATED_DATA_SHOPS_CH2_LINKED
+GENERATED_DATA_CH2_SHOPS_C      := $(GENERATED_DATA_OUT_DIR)/data_ch2_shops.c
+GENERATED_DATA_CH2_SHOPS_OBJECT := $(GENERATED_DATA_CH2_SHOPS_C:.c=.o)
+
+# `shops`' own generator "config" inputs: include/constants/items.h (the
+# ITEM_* item designators read live by scripts/generated_data/shops/
+# schema.py's validate() to check item references).
+GENERATED_DATA_CONFIG_INPUTS_shops := \
+	include/constants/items.h
+
+# The 1 shop symbol this table's generated object must define exactly
+# once -- derived live from src/data/ch2_shops.json (the same file the
+# generator itself reads), not hardcoded here, so this list can never
+# silently drift from what the table actually authors (same technique as
+# GENERATED_DATA_CH2_UNITS_SYMBOLS above).
+GENERATED_DATA_CH2_SHOPS_SYMBOLS := $(shell $(PYTHON) -c \
+	"import json; d = json.load(open('src/data/ch2_shops.json')); print(' '.join(s['symbol'] for s in d['shops']))")
+
+$(GENERATED_DATA_CH2_SHOPS_C): src/data/ch2_shops.json $(GENERATED_DATA_SHARED_PY_SOURCES) $(wildcard scripts/generated_data/shops/*.py) $(GENERATED_DATA_CONFIG_INPUTS_shops)
+	@mkdir -p $(@D)
+	$(GENERATED_DATA_PY) generate --table shops --out-dir $(GENERATED_DATA_OUT_DIR)
+	@test -e $@ || { echo "error: generated-data table 'shops' did not produce $@ (schema default_output_name mismatch?)" >&2; exit 1; }
+
+# Same legacy compile/assemble pipeline as GENERATED_DATA_CH2_UNITS_OBJECT
+# above (see that rule's own comment for why $(@:.o=.s), not $*.s).
+$(GENERATED_DATA_CH2_SHOPS_OBJECT): $(GENERATED_DATA_CH2_SHOPS_C)
+	$(CPP) $(CPPFLAGS) $< | iconv -f UTF-8 -t CP932 | $(CC1) $(CC1FLAGS) -o $(@:.o=.s)
+	echo '.ALIGN 2, 0' >> $(@:.o=.s)
+ifeq ($(UNAME),Darwin)
+	$(SED) -f scripts/align_2_before_debug_section_for_osx.sed $(@:.o=.s)
+else
+	$(SED) '/.section	.debug_line/i\.align 2, 0' $(@:.o=.s)
+endif
+	$(AS) $(ASFLAGS) $(@:.o=.s) -o $@
+
+.PHONY: generated-data-ch2-shops-link-check
+
+# Batch 3c gate: proves the shops link-swap is wired correctly -- the
+# generated object linked exactly once, at the exact ldscript.txt
+# position, in both legacy ALL_OBJECTS and the modern cohort (at the
+# adjacency-preserving synthetic slot path); the table's 1 shop symbol
+# defined exactly once by the generated object and, critically, *zero*
+# times by a freshly rebuilt src/events_shoplist.o (the guard actually
+# excluded it, so no multiple-definition risk); the hand array's source
+# text still present verbatim (never deleted); neighboring shop symbols
+# on both sides (ShopList_Ruin10_0 immediately before, and
+# ShopList_Event_Ch5Armory immediately after, both inside/outside the
+# .data.shopch2tail redirect respectively) still defined by
+# src/events_shoplist.o, proving the guard didn't over-reach; and the
+# same touched-but-unchanged-input / from-scratch-parallel-build evidence
+# as generated-data-ch2-units-link-check, scoped to this one table.
+# Local/manual gate, same reasoning as the other ch2-*-link-check targets
+# for why it's not CI-wired (agbcc is unavailable in CI's tool install).
+generated-data-ch2-shops-link-check: $(GENERATED_DATA_CH2_SHOPS_OBJECT)
+	@echo '--- guard present in $(GENERATED_DATA_CH2_SHOPS_HAND_SOURCE), hand array preserved verbatim ---'
+	@if ! grep -qF '#define $(GENERATED_DATA_CH2_SHOPS_GUARD_MACRO) 1' $(GENERATED_DATA_CH2_SHOPS_HAND_SOURCE); then \
+		echo "FAIL: $(GENERATED_DATA_CH2_SHOPS_HAND_SOURCE) is missing '#define $(GENERATED_DATA_CH2_SHOPS_GUARD_MACRO) 1'" >&2; exit 1; \
+	fi
+	@if ! grep -qF '#if !$(GENERATED_DATA_CH2_SHOPS_GUARD_MACRO)' $(GENERATED_DATA_CH2_SHOPS_HAND_SOURCE); then \
+		echo "FAIL: $(GENERATED_DATA_CH2_SHOPS_HAND_SOURCE) is missing the '#if !$(GENERATED_DATA_CH2_SHOPS_GUARD_MACRO)' guard" >&2; exit 1; \
+	fi
+	@if ! grep -qF '#define CONST_DATA SECTION(".data.shopch2tail")' $(GENERATED_DATA_CH2_SHOPS_HAND_SOURCE); then \
+		echo "FAIL: $(GENERATED_DATA_CH2_SHOPS_HAND_SOURCE) is missing the post-guard CONST_DATA redirect to .data.shopch2tail -- without it, Ch5Armory-onward data would stay glued to the Tower/Ruin prefix in the same .data section and the generated object could not slot in between at the exact original address" >&2; exit 1; \
+	fi
+	@for symbol in $(GENERATED_DATA_CH2_SHOPS_SYMBOLS); do \
+		if [ "$$(grep -c "CONST_DATA u16 $$symbol\[\]" $(GENERATED_DATA_CH2_SHOPS_HAND_SOURCE))" != 1 ]; then \
+			echo "FAIL: hand source text for shop '$$symbol' missing or duplicated in $(GENERATED_DATA_CH2_SHOPS_HAND_SOURCE) -- must stay present verbatim as the round-trip reference" >&2; exit 1; \
+		fi; \
+	done
+	@echo 'OK: guard present, hand shop array definition preserved verbatim in source text'
+	@echo '--- ldscript.txt three-piece split (events_shoplist.o(.data), generated object, events_shoplist.o(.data.shopch2tail)) ---'
+	@linked_count=$$(grep -Fc "$(GENERATED_DATA_CH2_SHOPS_OBJECT)(.data);" ldscript.txt); \
+	if [ "$$linked_count" != 1 ]; then \
+		echo "FAIL: ldscript.txt references $(GENERATED_DATA_CH2_SHOPS_OBJECT)(.data) $$linked_count time(s) (want exactly 1)" >&2; exit 1; \
+	fi
+	@prefix_line=$$(grep -nx "        . = ALIGN(4); src/events_shoplist.o(.data);" ldscript.txt | cut -d: -f1); \
+	gen_line=$$(grep -nx "        . = ALIGN(4); build/generated/data/data_ch2_shops.o(.data);" ldscript.txt | cut -d: -f1); \
+	tail_line=$$(grep -nx "        . = ALIGN(4); src/events_shoplist.o(.data.shopch2tail);" ldscript.txt | cut -d: -f1); \
+	if [ -z "$$prefix_line" ]; then echo "FAIL: ldscript.txt no longer links src/events_shoplist.o(.data) (the Tower/Ruin prefix piece) at all" >&2; exit 1; fi; \
+	if [ -z "$$gen_line" ]; then echo "FAIL: ldscript.txt no longer links $(GENERATED_DATA_CH2_SHOPS_OBJECT)(.data) at all" >&2; exit 1; fi; \
+	if [ -z "$$tail_line" ]; then echo "FAIL: ldscript.txt no longer links src/events_shoplist.o(.data.shopch2tail) (the Ch5Armory-onward piece) at all" >&2; exit 1; fi; \
+	if [ "$$((gen_line - prefix_line))" != 1 ]; then \
+		echo "FAIL: $(GENERATED_DATA_CH2_SHOPS_OBJECT)(.data) (line $$gen_line) is not immediately after src/events_shoplist.o(.data) (line $$prefix_line)" >&2; exit 1; \
+	fi; \
+	if [ "$$((tail_line - gen_line))" != 1 ]; then \
+		echo "FAIL: src/events_shoplist.o(.data.shopch2tail) (line $$tail_line) is not immediately after $(GENERATED_DATA_CH2_SHOPS_OBJECT)(.data) (line $$gen_line)" >&2; exit 1; \
+	fi
+	@echo 'OK: ldscript.txt links, in order, src/events_shoplist.o(.data) [Tower/Ruin prefix], the generated object exactly once, then src/events_shoplist.o(.data.shopch2tail) [Ch5Armory onward]'
+	@echo '--- legacy ALL_OBJECTS ---'
+	@if [ "$(words $(filter $(GENERATED_DATA_CH2_SHOPS_OBJECT),$(ALL_OBJECTS)))" != 1 ]; then \
+		echo "FAIL: $(GENERATED_DATA_CH2_SHOPS_OBJECT) not present exactly once in legacy ALL_OBJECTS" >&2; exit 1; \
+	fi
+	@if [ "$(words $(filter $(GENERATED_DATA_CH2_SHOPS_HAND_SOURCE:.c=.o),$(ALL_OBJECTS)))" != 1 ]; then \
+		echo "FAIL: $(GENERATED_DATA_CH2_SHOPS_HAND_SOURCE:.c=.o) unexpectedly missing from legacy ALL_OBJECTS -- it must stay linked (it still defines every other shop list)" >&2; exit 1; \
+	fi
+	@echo 'OK: both the generated object and the (still-required) src/events_shoplist.o are present exactly once each in legacy ALL_OBJECTS'
+	@echo '--- modern MODERN_ALL_C_OBJECTS (synthetic adjacency-preserving slot) ---'
+	@if [ "$(words $(filter $(MODERN_OUTPUT_DIR)/src/events_sh-ch2shops.o,$(MODERN_ALL_C_OBJECTS)))" != 1 ]; then \
+		echo "FAIL: $(MODERN_OUTPUT_DIR)/src/events_sh-ch2shops.o not present exactly once in modern MODERN_ALL_C_OBJECTS" >&2; exit 1; \
+	fi
+	@sorted_slot=$$(printf '%s\n' $(sort $(MODERN_ALL_C_OBJECTS)) | grep -n -x -e "$(MODERN_OUTPUT_DIR)/src/events_sh-ch2shops.o" -e "$(MODERN_OUTPUT_DIR)/src/events_shoplist.o" | cut -d: -f1 | tr '\n' ' '); \
+	first=$$(echo $$sorted_slot | cut -d' ' -f1); second=$$(echo $$sorted_slot | cut -d' ' -f2); \
+	if [ -z "$$first" ] || [ -z "$$second" ] || [ "$$((second - first))" != 1 ]; then \
+		echo "FAIL: in the sorted modern object list, the synthetic slot is not immediately adjacent (and before) src/events_shoplist.o (positions: $$sorted_slot)" >&2; exit 1; \
+	fi
+	@echo 'OK: synthetic slot object sorts immediately before src/events_shoplist.o in the modern object list, exactly like the legacy ldscript.txt adjacency'
+	@echo '--- generated object symbols (the 1 shop symbol, exactly once) ---'
+	@nm_out=$$(arm-none-eabi-nm $(GENERATED_DATA_CH2_SHOPS_OBJECT)); \
+	for symbol in $(GENERATED_DATA_CH2_SHOPS_SYMBOLS); do \
+		symcount=$$(printf '%s\n' "$$nm_out" | grep -c " $$symbol\$$"); \
+		if [ "$$symcount" != 1 ]; then \
+			echo "FAIL: generated object for shops defines $$symbol $$symcount time(s) (want exactly 1)" >&2; exit 1; \
+		fi; \
+	done
+	@echo 'OK: exactly one definition of the expected shop symbol in the generated object'
+	@echo '--- src/events_shoplist.o no longer defines the Ch2 shop symbol, but still defines neighboring shops'"'"' ---'
+	@rm -f src/events_shoplist.o src/events_shoplist.s
+	@$(MAKE) --no-print-directory src/events_shoplist.o >/dev/null
+	@shoplist_nm=$$(arm-none-eabi-nm src/events_shoplist.o); \
+	for symbol in $(GENERATED_DATA_CH2_SHOPS_SYMBOLS); do \
+		symcount=$$(printf '%s\n' "$$shoplist_nm" | grep -c " $$symbol\$$"); \
+		if [ "$$symcount" != 0 ]; then \
+			echo "FAIL: src/events_shoplist.o still defines $$symbol $$symcount time(s) -- the guard did not exclude it (would be a multiple-definition link error against the generated object)" >&2; exit 1; \
+		fi; \
+	done; \
+	for other in ShopList_Ruin10_0 ShopList_Event_Ch5Armory; do \
+		if ! printf '%s\n' "$$shoplist_nm" | grep -q " $$other\$$"; then \
+			echo "FAIL: src/events_shoplist.o unexpectedly lost unrelated neighbor symbol $$other -- the guard over-excluded" >&2; exit 1; \
+		fi; \
+	done
+	@echo 'OK: src/events_shoplist.o defines zero Ch2 shop symbols and still defines the neighboring shops untouched'
+	@echo '--- clean coverage ---'
+	@if [ -z "$(strip $(filter $(GENERATED_DATA_OUT_DIR),$(CLEAN_DIRS)))" ]; then \
+		echo "FAIL: $(GENERATED_DATA_OUT_DIR) missing from CLEAN_DIRS -- clean/clean_fast would not remove data_ch2_shops.c/.s/.o" >&2; exit 1; \
+	fi
+	@echo 'OK: clean/clean_fast remove build/generated/data (covers data_ch2_shops.c/.s/.o)'
+	@echo '--- touched-but-unchanged input: content-preserving no-op regenerate (behavior evidence, not mtime) ---'
+	@rm -f $(GENERATED_DATA_CH2_SHOPS_C) $(GENERATED_DATA_CH2_SHOPS_OBJECT) $(GENERATED_DATA_CH2_SHOPS_C:.c=.s); \
+	$(MAKE) --no-print-directory $(GENERATED_DATA_CH2_SHOPS_OBJECT) >/dev/null; \
+	o_hash_before=$$(md5sum "$(GENERATED_DATA_CH2_SHOPS_OBJECT)" | cut -d' ' -f1); \
+	json_ref=generated-data-ch2-shops-link-check.json_ref.tmp; \
+	regen_log=generated-data-ch2-shops-link-check.regen.log; \
+	uptodate_log=generated-data-ch2-shops-link-check.uptodate.log; \
+	trap 'touch -r "$$json_ref" src/data/ch2_shops.json 2>/dev/null; rm -f "$$json_ref" "$$regen_log" "$$uptodate_log"' EXIT; \
+	touch -r src/data/ch2_shops.json "$$json_ref"; \
+	touch src/data/ch2_shops.json; \
+	$(MAKE) --no-print-directory "$(GENERATED_DATA_CH2_SHOPS_OBJECT)" >"$$regen_log" 2>&1; \
+	if ! grep -q "generate --table shops" "$$regen_log"; then \
+		echo "FAIL: touching ch2_shops.json did not trigger a shops regenerate at all" >&2; exit 1; \
+	fi; \
+	if grep -qE 'arm-none-eabi-as|agbcc' "$$regen_log"; then \
+		echo "FAIL: shops unchanged-content regenerate still ran the legacy compile/assemble pipeline (unnecessary object recompile):" >&2; cat "$$regen_log" >&2; exit 1; \
+	fi; \
+	o_hash_after=$$(md5sum "$(GENERATED_DATA_CH2_SHOPS_OBJECT)" | cut -d' ' -f1); \
+	if [ "$$o_hash_before" != "$$o_hash_after" ]; then \
+		echo "FAIL: shops object content changed even though no recompile should have run ($$o_hash_before -> $$o_hash_after)" >&2; exit 1; \
+	fi; \
+	touch -r "$$json_ref" src/data/ch2_shops.json; \
+	$(MAKE) --no-print-directory "$(GENERATED_DATA_CH2_SHOPS_OBJECT)" >"$$uptodate_log" 2>&1; \
+	if grep -qE "generate --table shops|arm-none-eabi-as|agbcc" "$$uptodate_log"; then \
+		echo "FAIL: after restoring ch2_shops.json's original timestamp, the shops object target is not fully up to date:" >&2; cat "$$uptodate_log" >&2; exit 1; \
+	fi; \
+	rm -f "$$json_ref" "$$regen_log" "$$uptodate_log"; \
+	trap - EXIT; \
+	echo 'OK: shops touched-but-unchanged JSON input re-invokes the generator but never re-runs the legacy compile/assemble pipeline, proven by captured build-log evidence and stable object content'
+	@echo '--- from-scratch parallel build ---'
+	@rm -f $(GENERATED_DATA_CH2_SHOPS_C) $(GENERATED_DATA_CH2_SHOPS_OBJECT)
+	@$(MAKE) --no-print-directory -j4 $(GENERATED_DATA_CH2_SHOPS_OBJECT) $(GENERATED_DATA_CH2_SHOPS_C) >/dev/null
+	@test -e $(GENERATED_DATA_CH2_SHOPS_C) || { echo "FAIL: parallel build did not produce the generated .c for shops" >&2; exit 1; }
+	@test -e $(GENERATED_DATA_CH2_SHOPS_OBJECT) || { echo "FAIL: parallel build did not produce the generated object for shops" >&2; exit 1; }
+	@echo 'OK: from-scratch parallel (-j4) build of shops'"'"'s generated .c/.o succeeds, no race/duplicate generation'
+	@echo 'PASS: generated-data-ch2-shops-link-check'

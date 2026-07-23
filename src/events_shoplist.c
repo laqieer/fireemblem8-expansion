@@ -158,6 +158,22 @@ CONST_DATA u8 ShopList_Ruin10_0[] = {
     ITEM_NONE, 0,
 };
 
+/* Issue #5 Batch 3c: the ShopList_Event_Ch2Armory array below (through
+ * the matching #endif) is canonically generated from
+ * src/data/ch2_shops.json -- see scripts/generated_data/shops/ and
+ * docs/generated_data.md's "shops" schema section.
+ * build/generated/data/data_ch2_shops.o(.data) is linked in its place
+ * (ldscript.txt places it immediately after this file's own (.data), so
+ * this excluded array leaves zero address gap). The array itself is
+ * deliberately left in place, verbatim, rather than deleted:
+ * generated-data-check's round-trip parser
+ * (scripts/generated_data/shops/parser.py) reads this exact source text
+ * to keep proving the generated table byte-for-byte identical in
+ * meaning to it. Never hand-edit the array below -- edit
+ * src/data/ch2_shops.json and regenerate instead. */
+#define GENERATED_DATA_SHOPS_CH2_LINKED 1
+
+#if !GENERATED_DATA_SHOPS_CH2_LINKED
 // 0x89ED7CC
 CONST_DATA u16 ShopList_Event_Ch2Armory[] = {
     ITEM_SWORD_SLIM,
@@ -168,6 +184,20 @@ CONST_DATA u16 ShopList_Event_Ch2Armory[] = {
 
     ITEM_NONE,
 };
+#endif /* !GENERATED_DATA_SHOPS_CH2_LINKED */
+
+/* The excluded array above is not actually a binary-layout prefix of
+ * this translation unit's .data -- every ShopList_Tower and
+ * ShopList_Ruin array above (still hand-written) must stay glued
+ * together, unshifted, ahead of it, while every ShopList_* array below
+ * (starting with ShopList_Event_Ch5Armory) must stay glued together,
+ * unshifted, right after it. Redirect everything from here into a
+ * distinctly named section so ldscript.txt can place the generated
+ * object's single symbol at the exact original address without moving
+ * either side. See ldscript.txt and docs/generated_data.md's "shops"
+ * section. */
+#undef CONST_DATA
+#define CONST_DATA SECTION(".data.shopch2tail")
 
 // 0x89ED7D8
 CONST_DATA u16 ShopList_Event_Ch5Armory[] = {

@@ -1135,7 +1135,28 @@ SECTIONS
         . = ALIGN(4); src/data_battlequotes.o(.data);
         . = ALIGN(4); src/data_event_trigger.o(.data);
         . = ALIGN(4); src/uidebug.o(.data);
+        /* Issue #5 Batch 3c: ShopList_Event_Ch2Armory is now canonically
+         * generated from src/data/ch2_shops.json -- see the guard/
+         * section comments around it in src/events_shoplist.c and
+         * docs/generated_data.md's "shops" section. It sits between two
+         * still-hand blocks in the same file (ShopList_Tower and
+         * ShopList_Ruin arrays above, ShopList_Event_Ch5Armory onward
+         * below), so src/events_shoplist.o(.data) now holds only the
+         * still-hand prefix, the generated object's single symbol slots
+         * in immediately after it at the exact original Chapter-2
+         * address, then src/events_shoplist.o(.data.shopch2tail) resumes
+         * with this file's own Ch5Armory-onward content (redirected to
+         * that section name right after the Ch2 #endif guard) at its
+         * exact original address. Both the array's start (0x89ED7CC) and
+         * its end (0x89ED7D8) fall on natural 4-byte boundaries (a
+         * 6-entry u16[] -- 5 items + 1 terminator -- is always a
+         * multiple of 4 bytes), so, unlike the traps table's packed
+         * u8[] split, ALIGN(4) at each internal seam below is safe and
+         * adds zero padding. This preserves byte-for-byte legacy ROM
+         * identity across the whole three-piece split. */
         . = ALIGN(4); src/events_shoplist.o(.data);
+        . = ALIGN(4); build/generated/data/data_ch2_shops.o(.data);
+        . = ALIGN(4); src/events_shoplist.o(.data.shopch2tail);
         /* Issue #5 Batch 3b: TrapData_Event_Ch2 and TrapData_Event_Ch2Hard
          * are now canonically generated from src/data/ch2_traps.json --
          * see the guard/section comments around both symbols in

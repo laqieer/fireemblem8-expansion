@@ -132,7 +132,13 @@ MID_OBJECTS  := $(MID_FILES:.mid=.o)
 # exclude only TrapData_Event_Ch2/TrapData_Event_Ch2Hard. See
 # generated_data.mk's "Linking a Chapter-2-owned partial-file table"
 # section, traps subsection.
-ALL_OBJECTS  := $(C_OBJECTS) $(DATA_SRC_C_OBJECTS) $(ASM_OBJECTS) $(BANIM_OBJECT) $(MID_OBJECTS) $(GENERATED_DATA_LINKED_OBJECTS) $(GENERATED_DATA_CH2_UNITS_OBJECT) $(GENERATED_DATA_CH2_TRAPS_OBJECT)
+# Issue #5 Batch 3c: $(GENERATED_DATA_CH2_SHOPS_OBJECT) is the same kind
+# of additive object -- src/events_shoplist.c/.o stays in CFILES/
+# C_OBJECTS untouched (it still defines every other shop list), guarded
+# internally to exclude only ShopList_Event_Ch2Armory. See
+# generated_data.mk's "Linking a Chapter-2-owned partial-file table"
+# section, shops subsection.
+ALL_OBJECTS  := $(C_OBJECTS) $(DATA_SRC_C_OBJECTS) $(ASM_OBJECTS) $(BANIM_OBJECT) $(MID_OBJECTS) $(GENERATED_DATA_LINKED_OBJECTS) $(GENERATED_DATA_CH2_UNITS_OBJECT) $(GENERATED_DATA_CH2_TRAPS_OBJECT) $(GENERATED_DATA_CH2_SHOPS_OBJECT)
 OBJECTS_LST  := objects.lst
 DEPS_DIR     := .dep
 

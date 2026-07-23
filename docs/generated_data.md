@@ -1,4 +1,4 @@
-# Generated-data platform (Issue #5 Chapter 2 slice -- Batch A + B + C; global `items`/`classes` Batch 1; `characters` Batch 2a + 2b; `classes` linked Batch 2c-1; `items` linked Batch 2c-2; `supports` linked Batch 2c-3; `characters` linked Batch 2c-4; `units`/Chapter 2 `UnitDefinition`/`REDA` linked Batch 3a; `traps`/Chapter 2 trap arrays linked Batch 3b)
+# Generated-data platform (Issue #5 Chapter 2 slice -- Batch A + B + C; global `items`/`classes` Batch 1; `characters` Batch 2a + 2b; `classes` linked Batch 2c-1; `items` linked Batch 2c-2; `supports` linked Batch 2c-3; `characters` linked Batch 2c-4; `units`/Chapter 2 `UnitDefinition`/`REDA` linked Batch 3a; `traps`/Chapter 2 trap arrays linked Batch 3b; `shops`/Chapter 2 armory linked Batch 3c)
 
 ## Status
 
@@ -161,6 +161,18 @@ per-symbol-sectioned generated object and a four-piece (not three-piece)
 `ldscript.txt` split. See "## Linking two non-adjacent Chapter-2-owned
 symbols in one partial-file table (Batch 3b: `traps`)" below for the
 full write-up.
+
+As of Issue #5 **Batch 3c**, `shops` is also linked, in place of its one
+symbol in `src/events_shoplist.c` (`ShopList_Event_Ch2Armory`), also with
+zero ROM/ELF address shift -- structurally like `units` (a single guard,
+a single `CONST_DATA` section redirect, a three-piece `ldscript.txt`
+split), except the guarded array sits in the *interior* of the shared
+shop-list file rather than a prefix: both a still-hand prefix
+(`ShopList_Tower*`/`ShopList_Ruin*`) and a still-hand suffix (starting
+with `ShopList_Event_Ch5Armory`) must stay glued together, unshifted, on
+either side of the generated symbol. See "## Linking a single
+Chapter-2-owned interior symbol in a shared shop-list file (Batch 3c:
+`shops`)" below for the full write-up.
 
 ## Source vs. generated vs. committed-public artifacts
 
@@ -551,6 +563,15 @@ author meant an early terminator or a literal item reference).
 Validations enforced (`shops/schema.py: validate()`): unique shop
 symbols; every item is a defined `ITEM_*` constant; `items[]` is
 non-empty; `ITEM_NONE` is rejected if present explicitly.
+
+As of Issue #5 **Batch 3c**, `shops` is no longer schema/round-trip
+only: `build/generated/data/data_ch2_shops.o` is linked in place of
+`ShopList_Event_Ch2Armory` -- a single interior symbol in
+`src/events_shoplist.c` (the rest of that hand file -- every other shop
+list -- stays canonical, untouched) in both the legacy ROM build and the
+modern object cohort -- see "## Linking a single Chapter-2-owned
+interior symbol in a shared shop-list file (Batch 3c: `shops`)" below
+for the full write-up.
 
 ## `traps` schema (Chapter 2 trap arrays)
 
@@ -1456,6 +1477,12 @@ make generated-data-ch2-units-link-check
 # to end against the real legacy pipeline plus both modern
 # MODERN_CONFIG values' object lists:
 make generated-data-ch2-traps-link-check
+
+# Batch 3c: local-only, proves the shops/Ch2 ShopList_Event_Ch2Armory
+# interior guard, the CONST_DATA(".data.shopch2tail") split, and
+# three-piece ldscript.txt ordering end to end against the real legacy
+# pipeline plus both modern MODERN_CONFIG values' object lists:
+make generated-data-ch2-shops-link-check
 ```
 
 ## Linking a generated table in place of its hand-written counterpart (Batch 2c-1 + 2c-2 + 2c-3 + 2c-4)
@@ -2193,6 +2220,140 @@ of legacy's byte layout).
   savefmt-check, shifted-check, `scan_build_addrs.py`,
   `scan_raw_casts.sh`).
 
+## Linking a single Chapter-2-owned interior symbol in a shared shop-list file (Batch 3c: `shops`)
+
+`shops` is structurally like `units` (Batch 3a, above): its one Chapter
+2 symbol (`ShopList_Event_Ch2Armory`) is only a slice of
+`src/events_shoplist.c`, a translation unit that also defines every
+other shop's item list, which must stay hand-linked untouched -- so this
+slice can't be excluded from compilation by filtering a whole file out
+of `CFILES`/`MODERN_ALL_C_SOURCES` the way `GENERATED_DATA_LINKED_*`
+does.
+
+**Interior, not a prefix, unlike `units`.** `ShopList_Event_Ch2Armory`
+sits in the *middle* of `src/events_shoplist.c`: still-hand
+`ShopList_Tower*`/`ShopList_Ruin*` arrays precede it, and
+`ShopList_Event_Ch5Armory` (followed by every later chapter's shop) comes
+right after it. The same single-guard, single-section-redirect technique
+as `units` still applies -- one `#if !GENERATED_DATA_SHOPS_CH2_LINKED /
+#endif` region around the array, then one `#undef CONST_DATA` /
+`#define CONST_DATA SECTION(".data.shopch2tail")` redirect right after
+the guard's closing `#endif` -- just with a real prefix *and* a real
+suffix to preserve on either side, rather than only a suffix:
+
+```c
+#define GENERATED_DATA_SHOPS_CH2_LINKED 1
+
+#if !GENERATED_DATA_SHOPS_CH2_LINKED
+CONST_DATA u16 ShopList_Event_Ch2Armory[] = {
+    ITEM_SWORD_SLIM,
+    ...
+    ITEM_NONE,
+};
+#endif /* !GENERATED_DATA_SHOPS_CH2_LINKED */
+
+#undef CONST_DATA
+#define CONST_DATA SECTION(".data.shopch2tail")
+
+CONST_DATA u16 ShopList_Event_Ch5Armory[] = {
+    ...
+```
+
+The array is left in place, verbatim -- never hand-edit it, edit
+`src/data/ch2_shops.json` and regenerate instead; `generated-data-check`'s
+round-trip parser (`shops/parser.py`) reads this exact source text
+directly (regex-based, never the compiler), so the preprocessor guard
+around it is invisible to that check and cannot desync the two.
+
+**No per-symbol sectioning needed, unlike `traps`.** `shops` currently
+has exactly one Chapter-2-owned symbol, so the generated object
+(`build/generated/data/data_ch2_shops.o`) contains only that one array,
+in the default `CONST_DATA`/`.data` section -- there is no second symbol
+requiring its own dedicated section the way `traps`' non-adjacent
+`TrapData_Event_Ch2Hard` did.
+
+**`ALIGN(4)` at every seam is safe, unlike `traps`.** Both the array's
+start (`0x89ED7CC`) and end (`0x89ED7D8`) addresses fall on natural
+4-byte boundaries: a 6-entry `u16[]` (5 items + 1 `ITEM_NONE`
+terminator) is always a multiple of 4 bytes. So, unlike the `traps`
+table's packed `u8[]` split (which required dropping internal
+`ALIGN(4)` to avoid padding), this three-piece split keeps
+`. = ALIGN(4);` at every piece, exactly like the `units` table's
+three-piece split.
+
+**Legacy (`ldscript.txt`).** Three lines, in order, in place of the
+original single `src/events_shoplist.o(.data)` line:
+
+```
+. = ALIGN(4); src/events_shoplist.o(.data);
+. = ALIGN(4); build/generated/data/data_ch2_shops.o(.data);
+. = ALIGN(4); src/events_shoplist.o(.data.shopch2tail);
+```
+
+`src/events_shoplist.o(.data)` (the still-hand Tower/Ruin prefix,
+unchanged) lands at the original address; the generated object lands
+immediately after, at the exact original Chapter 2 address;
+`src/events_shoplist.o(.data.shopch2tail)` (Ch5Armory onward, unchanged)
+resumes immediately after that, at its own original address. Verified
+via `cmp` against a saved pre-change ROM: byte-identical (zero differing
+bytes).
+
+**Modern (`modern.mk`).** Same reasoning as the `units`/`traps`
+synthetic slots -- modern links whole objects, not per-input-section,
+and this object is additive (no "original hand path" to reuse), so it
+is reinstated at a synthetic slot path
+(`$(MODERN_OUTPUT_DIR)/src/events_sh-ch2shops.o`) chosen to sort
+immediately before `src/events_shoplist.o`. Unlike `units`'/`traps`'
+slot names (`events_u-ch2units.o`, `events_t-ch2traps.o`, each the only
+`events_<letter>*` object in their respective alphabetic neighborhoods),
+`src/events_shoplist.c`'s own `events_s*` neighborhood also contains
+`events_script.o` and `events_script_utils.o`, both of which sort
+between a naively-named `events_s-ch2shops.o` and `events_shoplist.o`;
+the slot is instead named `events_sh-ch2shops.o` (matching one more
+character of the target name) so it sorts immediately after
+`events_script_utils.o` and immediately before `events_shoplist.o`,
+preserving the same adjacency `ldscript.txt` gives it in the legacy
+build with zero disruption to any other object's relative order.
+
+**Verification performed for Batch 3c:**
+
+* `generated-data-check --table shops` -- zero drift against the
+  (guard-preserved) hand array's source text (1 record).
+* `generated-data-ch2-shops-link-check` (new `generated_data.mk` target,
+  mirroring `generated-data-ch2-units-link-check`'s rigor for this
+  interior-symbol migration): guard present, hand array preserved
+  verbatim, the `CONST_DATA` `.data.shopch2tail` redirect present, the
+  three-line `ldscript.txt` ordering and adjacency, legacy
+  `ALL_OBJECTS` presence (both the generated object and the
+  still-required `events_shoplist.o`), the modern synthetic-slot
+  adjacency, the generated object's exactly-one shop symbol, a rebuild
+  of `src/events_shoplist.o` proving it now defines zero Chapter 2 shop
+  symbols while still defining its immediate neighbors
+  (`ShopList_Ruin10_0`, `ShopList_Event_Ch5Armory`) untouched, clean
+  coverage, touched-but-unchanged-input no-op-regenerate behavior, and a
+  from-scratch parallel (`-j4`) build.
+* `generated-data-ch2-units-link-check` (Batch 3a regression),
+  `generated-data-ch2-traps-link-check` (Batch 3b regression),
+  `generated-data-link-check` (Batch 2c-1..2c-4 regression), and
+  `generated-data-check` (all 10 tables) all still pass unchanged.
+* `python3 -m unittest discover -s scripts/generated_data/tests` -- all
+  400 tests pass unchanged (no new per-symbol-section test was needed,
+  since `shops` has only the one Chapter-2-owned symbol and needs no
+  section split inside the generated object itself).
+* A full legacy rebuild (`make fireemblem8.gba`, including a rebuild
+  after `generated-data-ch2-shops-link-check`'s own
+  `src/events_shoplist.o` rebuild step) is byte-identical (`cmp`, zero
+  differing bytes; MD5 match) to a saved pre-change baseline ROM.
+* `make shiftcheck` (build/static/offsets/diff layers) passes with no
+  high-confidence hardcoded-pointer findings.
+* Both modern configs (`MODERN_CONFIG=debug` and `MODERN_CONFIG=release`)
+  pass the full `expansion-modern-linker-check` (budget, overlay-audit,
+  boot-check, title-check, debugtools-check, debugtools-timer-check,
+  savefmt-check, shifted-check, `scan_build_addrs.py`,
+  `scan_raw_casts.sh`), and `objdump -h` on the modern-built
+  `src/events_shoplist.o` confirms the expected `.data`/
+  `.data.shopch2tail` section split.
+
 ## Remaining Issue #5 scope (explicitly not done here)
 
 Batch A + Batch B + Batch C together are scoped to the Chapter 2
@@ -2244,11 +2405,16 @@ scope** for this Batch C update:
   appropriate for a global table.
 * **Linking the Chapter-2-owned tables.** `units` (`UnitDefinition`/
   `REDA`, Issue #5 **Batch 3a** -- see "Linking a Chapter-2-owned
-  partial-file table" above) is now linked in place of its slice of
-  `src/events_udefs.c`, with zero ROM/ELF address shift in the legacy
-  build. `shops`, `traps`, and `eventlists` remain hand-owned and
-  unlinked -- each is a similarly Chapter-2-owned (not whole-file)
-  migration and is explicitly out of scope for Batch 3a.
+  partial-file table" above), `traps` (Issue #5 **Batch 3b** -- see
+  "Linking two non-adjacent Chapter-2-owned symbols in one partial-file
+  table" above), and `shops` (Issue #5 **Batch 3c** -- see "Linking a
+  single Chapter-2-owned interior symbol in a shared shop-list file"
+  above) are now all linked in place of their respective slices of
+  `src/events_udefs.c`, `src/events_trapdata.c`, and
+  `src/events_shoplist.c`, with zero ROM/ELF address shift in the legacy
+  build. `eventlists` remains hand-owned and unlinked -- it is a
+  similarly Chapter-2-owned (not whole-file) migration and is explicitly
+  out of scope for Batch 3a/3b/3c.
 * **Mechanics** (combat/growth/AI/etc. formulas and their own data
   tables) are entirely untouched by Batches A/B/C or Issue #5 Batch 1/2.
 * **Additional chapters.** This whole platform -- schemas, the
