@@ -29,6 +29,27 @@ class GenerateDeterminismTests(unittest.TestCase):
         content = generate_c_source(records, "src")
         self.assertIn("UnitDef_Fixture_Test", content)
 
+    def test_all_reda_arrays_precede_all_unitdefinition_arrays(self):
+        # Issue #5 Batch 3a regression: src/events_udefs.c's hand-written
+        # Chapter 2 block emits every REDA sub-array across all groups
+        # first, then every UnitDefinition group array -- it never
+        # interleaves a group's REDA arrays with its own UnitDefinition
+        # array. Getting this wrong desyncs the generated object's
+        # internal byte layout from the guarded-out hand block it
+        # replaces, breaking legacy ROM byte-identity even though the
+        # data's *meaning* round-trips fine. This fixture has two groups,
+        # each with a REDA, specifically to catch a regression back to
+        # per-group interleaving.
+        records = load_records(fixture_path("units", "multi_group_ordering.json"))
+        content = generate_c_source(records, "fixtures/units/multi_group_ordering.json")
+        last_reda_index = content.rindex("struct REDA ")
+        first_unitdef_index = content.index("struct UnitDefinition ")
+        self.assertLess(
+            last_reda_index,
+            first_unitdef_index,
+            "expected every REDA array (across all groups) before any UnitDefinition array",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

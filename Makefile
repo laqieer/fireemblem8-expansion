@@ -119,7 +119,13 @@ ASM_OBJECTS  := $(SFILES:.s=.o)
 BANIM_OBJECT := banim/data_banim.o
 MID_FILES    := $(wildcard $(MID_SUBDIR)/*.mid)
 MID_OBJECTS  := $(MID_FILES:.mid=.o)
-ALL_OBJECTS  := $(C_OBJECTS) $(DATA_SRC_C_OBJECTS) $(ASM_OBJECTS) $(BANIM_OBJECT) $(MID_OBJECTS) $(GENERATED_DATA_LINKED_OBJECTS)
+# Issue #5 Batch 3a: unlike GENERATED_DATA_LINKED_OBJECTS (whole-file
+# swaps), $(GENERATED_DATA_CH2_UNITS_OBJECT) (generated_data.mk) is
+# additive -- src/events_udefs.c/.o stays in CFILES/C_OBJECTS untouched
+# (it still defines every other chapter's units), guarded internally to
+# exclude just its Chapter 2 prefix slice. See generated_data.mk's
+# "Linking a Chapter-2-owned partial-file table" section.
+ALL_OBJECTS  := $(C_OBJECTS) $(DATA_SRC_C_OBJECTS) $(ASM_OBJECTS) $(BANIM_OBJECT) $(MID_OBJECTS) $(GENERATED_DATA_LINKED_OBJECTS) $(GENERATED_DATA_CH2_UNITS_OBJECT)
 OBJECTS_LST  := objects.lst
 DEPS_DIR     := .dep
 

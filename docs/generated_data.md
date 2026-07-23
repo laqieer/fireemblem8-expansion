@@ -1,4 +1,4 @@
-# Generated-data platform (Issue #5 Chapter 2 slice -- Batch A + B + C; global `items`/`classes` Batch 1; `characters` Batch 2a + 2b; `classes` linked Batch 2c-1; `items` linked Batch 2c-2; `supports` linked Batch 2c-3; `characters` linked Batch 2c-4)
+# Generated-data platform (Issue #5 Chapter 2 slice -- Batch A + B + C; global `items`/`classes` Batch 1; `characters` Batch 2a + 2b; `classes` linked Batch 2c-1; `items` linked Batch 2c-2; `supports` linked Batch 2c-3; `characters` linked Batch 2c-4; `units`/Chapter 2 `UnitDefinition`/`REDA` linked Batch 3a)
 
 ## Status
 
@@ -143,6 +143,13 @@ its hand-written counterpart" below). See "## `characters` schema
 full write-up. Issue #5's other remaining mechanics scope
 stays open -- see "Remaining Issue #5 scope" at the end of this
 document.
+
+As of Issue #5 **Batch 3a**, `units` -- the first Chapter-2-*owned*
+(not global) table to be linked -- is also linked, in place of its
+prefix slice of `src/events_udefs.c` (a much larger multi-chapter hand
+file, unlike Batch 2c's whole-file swaps), with zero ROM/ELF address
+shift. See "## Linking a Chapter-2-owned partial-file table (Batch 3a:
+`units`)" below for the full write-up.
 
 ## Source vs. generated vs. committed-public artifacts
 
@@ -1406,6 +1413,12 @@ make generated-data-bundle-check     # check just the chapterbundle table (fast 
 # items, supports, characters) link swap end to end against the real
 # legacy pipeline plus both modern MODERN_CONFIG values' object lists:
 make generated-data-link-check
+
+# Batch 3a: local-only, proves the units/Ch2 UnitDefinition+REDA guard,
+# CONST_DATA(".data.ch2tail") split, and three-piece ldscript.txt
+# ordering end to end against the real legacy pipeline plus both modern
+# MODERN_CONFIG values' object lists:
+make generated-data-ch2-units-link-check
 ```
 
 ## Linking a generated table in place of its hand-written counterpart (Batch 2c-1 + 2c-2 + 2c-3 + 2c-4)
@@ -1826,6 +1839,165 @@ Additionally covers, for Issue #5 Batch 1's `classes` table
 All fixtures and scratch directories live under
 `scripts/generated_data/tests/` (never `/tmp`).
 
+## Linking a Chapter-2-owned partial-file table (Batch 3a: `units`)
+
+Batch 2c-1..2c-4 each swapped out one *entire* hand-written
+`src/data_<table>.c` file, viable because each of those files contains
+nothing but that one global table. `units` (Batch 3a, the first
+Chapter-2-*owned* table to link) is structurally different: its hand
+definitions (the 7 `UnitDefinition` group symbols --
+`UnitDef_Event_Ch2Ally`/`UnitDef_Ch2Enemy_0`/`UnitDef_LordSplitAlly`/
+`UnitDef_Ch2Ally`/`UnitDef_Ch2NPC`/`UnitDef_Ch2Enemy_1`/
+`UnitDef_Ch2Enemy_2`, plus their private `REDA` sub-arrays) are only a
+*textual* prefix slice of `src/events_udefs.c` -- a 75k+ line file that
+also defines every other chapter's units and must stay hand-linked
+untouched, so this slice can't be excluded from compilation by filtering
+a whole file out of `CFILES`/`MODERN_ALL_C_SOURCES` the way
+`GENERATED_DATA_LINKED_*` does.
+
+**The in-source guard.** `src/events_udefs.c` carries its own
+self-contained guard: `#define GENERATED_DATA_UNITS_CH2_LINKED 1`
+immediately above the Chapter 2 block, which is itself wrapped in
+`#if !GENERATED_DATA_UNITS_CH2_LINKED` / `#endif`. Since the macro is
+unconditionally defined to 1 right there in the source, that block is
+permanently excluded from compilation -- but its source text is left
+completely untouched, because `generated-data-check`'s own round-trip
+parser (`units/parser.py`) reads `src/events_udefs.c`'s raw text
+directly (brace-depth-aware regex, never the compiler) to keep proving
+the generated table byte-for-byte identical in meaning to it;
+preprocessor directives are invisible to that text-based parser, so the
+guard cannot desync the two. Never hand-edit the guarded block -- edit
+`src/data/ch2_units.json` and regenerate instead.
+
+**Not a binary-layout prefix.** The excluded block is a prefix of
+`src/events_udefs.c`'s own top-level definitions, but *not* of the
+translation unit's compiled `.data` layout: the file's own
+`#include "events/prologue-eventudefs.h"` and
+`#include "events/ch1-eventudefs.h"`, just above the guard, emit
+Prologue/Chapter-1 `REDA`/`UnitDefinition` data first, ahead of Chapter
+2, all still compiled into the same `events_udefs.o`. So
+`build/generated/data/data_ch2_units.o` must land, address-wise,
+*between* that still-hand Prologue/Ch1 data and `events_udefs.c`'s own
+Chapter 3+ data -- not merely before the whole object (an earlier
+attempt at "insert before `events_udefs.o(.data)`" built successfully
+but produced a ROM that was **not** byte-identical to a pre-change
+baseline: it shifted Prologue/Ch1's addresses forward by the size of
+the inserted object, while leaving Chapter 3+ correctly placed only by
+coincidence of matching total size -- diagnosed via `cmp -l` against a
+saved baseline ROM plus `objdump -h`/`nm -S` section-size arithmetic on
+both the baseline and rebuilt `events_udefs.o`).
+
+Since a single input section is placed by the linker as one atomic
+unit, right after the guard's closing `#endif` `src/events_udefs.c`
+redirects everything from Chapter 3 onward into a second,
+distinctly-named section:
+
+```c
+#endif /* !GENERATED_DATA_UNITS_CH2_LINKED */
+
+#undef CONST_DATA
+#define CONST_DATA SECTION(".data.ch2tail")
+
+CONST_DATA struct REDA REDA_Event_Ch3Ally_EIRIKA[] = {
+    ...
+```
+
+splitting `events_udefs.o`'s `.data` into two independently-placeable
+pieces of the *same* object file (verified via `objdump -h
+src/events_udefs.o`, which shows both a `.data` section, 0x680 bytes --
+exactly the Prologue+Ch1 content -- and a `.data.ch2tail` section
+holding the rest).
+
+**Legacy (`ldscript.txt`).** Three lines, in order, in place of the
+original single `src/events_udefs.o(.data)` line:
+
+```
+. = ALIGN(4); src/events_udefs.o(.data);
+. = ALIGN(4); build/generated/data/data_ch2_units.o(.data);
+. = ALIGN(4); src/events_udefs.o(.data.ch2tail);
+```
+
+`src/events_udefs.o(.data)` (Prologue/Ch1, unchanged) lands at the
+original address; the generated object lands immediately after, at the
+exact original Chapter 2 address; `src/events_udefs.o(.data.ch2tail)`
+(Chapter 3+, unchanged) resumes immediately after that, at its own
+original address. Verified via `cmp` against a saved pre-change ROM:
+byte-identical (zero differing bytes), including after a full
+`clean_fast` + from-scratch rebuild and after the `objects.lst`
+self-heal path.
+
+**Modern (`modern.mk`).** Modern's own
+`MODERN_ELF_OBJECTS_LST`/`MANIFEST` rules `$(sort)` the full object list
+to decide floating-`.data` placement order (see the
+`GENERATED_DATA_LINKED_C` reinstatement comment in `modern.mk`) -- there
+is no "original hand path" to reuse here since this object is additive,
+not a replacement, so it is instead reinstated at a synthetic slot path
+(`$(MODERN_OUTPUT_DIR)/src/events_u-ch2units.o`) deliberately chosen to
+sort immediately between `src/events_trapdata.o` and `src/events_udefs.o`
+-- the same adjacency `ldscript.txt` gives it in the legacy build.
+Modern's per-*object* (not per-input-section) sort keeps
+`events_udefs.o`'s own two sections (`.data` and `.data.ch2tail`)
+adjacent to each other regardless of the split, so the synthetic slot
+ends up immediately before `events_udefs.o` as a whole rather than truly
+between its two pieces -- an acceptable, deliberate divergence from
+legacy's byte layout. It is also compiler-enforced rather than merely
+theoretical: `arm-none-eabi-gcc` (unlike legacy's `agbcc`/GCC 2.95) warns
+`ignoring attribute 'section (".data.ch2tail")' because it conflicts
+with previous 'section (".data")'` for every Chapter-3+ symbol that also
+has an `extern CONST_DATA ...` declaration in `include/eventcall.h`
+(declared with the *original*, unmodified `CONST_DATA` before
+`events_udefs.c`'s local redefinition takes effect) -- so modern
+compiles the whole of `events_udefs.o`'s data into a single `.data`
+section with no `.data.ch2tail` split at all (confirmed via `objdump -h`
+on the modern-built object: one `.data` section, no
+`.data.ch2tail`). This is a mere warning, not a build failure (`modern.mk`
+does not pass `-Werror` broadly, only `-Werror=strict-prototypes
+-Werror=implicit-function-declaration -Werror=incompatible-pointer-types`),
+and does not affect field *values* -- only section placement -- so it
+does not corrupt modern's build; it simply means modern's `.data` layout
+for this object differs slightly from legacy's, which is within modern's
+already-established requirement (a successful, shiftable build, not
+literal re-derivation of legacy's exact byte layout -- see
+`scripts/shiftcheck/`, which checks relocation-safety, not byte identity
+against a prior build).
+
+**Verification performed for Batch 3a:**
+
+* `generated-data-check --table units` -- zero drift against the
+  (guard-preserved) hand block's source text (7 records).
+* `generated-data-ch2-units-link-check` (new `generated_data.mk`
+  target, mirroring `generated-data-link-check`'s rigor for this
+  differently-shaped migration): guard presence, hand block preserved
+  verbatim, the `CONST_DATA` `.data.ch2tail` redirect present, the
+  three-line `ldscript.txt` ordering and adjacency, legacy
+  `ALL_OBJECTS` presence (both the generated object and the
+  still-required `events_udefs.o`), the modern synthetic-slot adjacency,
+  the generated object's exactly-one-each 7 group symbols, a rebuild of
+  `src/events_udefs.o` proving it now defines zero Chapter 2 group
+  symbols while still defining Chapter 1/3 symbols untouched, clean
+  coverage, touched-but-unchanged-input no-op-regenerate behavior, and a
+  from-scratch parallel (`-j4`) build.
+* `generated-data-link-check` (Batch 2c-1..2c-4 regression) and
+  `generated-data-check` (all 10 tables) both still pass unchanged.
+* `python3 -m unittest discover -s scripts/generated_data/tests` -- all
+  398 tests pass, including a new regression test
+  (`test_all_reda_arrays_precede_all_unitdefinition_arrays` in
+  `test_units_generate.py`) that locks in the exact hand-file emission
+  order (every `REDA` array across all groups before any
+  `UnitDefinition` group array -- getting this backwards was the actual
+  root cause of the byte-diff described above, since `generate.py`
+  originally interleaved each group's `REDA` arrays with its own
+  `UnitDefinition` array).
+* A full legacy rebuild (`make fireemblem8.gba`, including a from-clean
+  rebuild and a rebuild through a deliberately-staged stale
+  `objects.lst`) is byte-identical (`cmp`, zero differing bytes; MD5
+  match) to a saved pre-change baseline ROM.
+* Both modern configs (`MODERN_CONFIG=debug` and `MODERN_CONFIG=release`)
+  build cleanly end to end (`expansion-modern-rom`) and pass the full
+  `expansion-modern-linker-check` (budget, overlay-audit, boot-check,
+  title-check, debugtools-check, debugtools-timer-check, savefmt-check,
+  shifted-check, `scan_build_addrs.py`, `scan_raw_casts.sh`).
+
 ## Remaining Issue #5 scope (explicitly not done here)
 
 Batch A + Batch B + Batch C together are scoped to the Chapter 2
@@ -1875,6 +2047,13 @@ scope** for this Batch C update:
   `classes`/`characters` into `chapterbundle`-style cross-table
   reachability checks remains open scope for a future batch, if ever
   appropriate for a global table.
+* **Linking the Chapter-2-owned tables.** `units` (`UnitDefinition`/
+  `REDA`, Issue #5 **Batch 3a** -- see "Linking a Chapter-2-owned
+  partial-file table" above) is now linked in place of its slice of
+  `src/events_udefs.c`, with zero ROM/ELF address shift in the legacy
+  build. `shops`, `traps`, and `eventlists` remain hand-owned and
+  unlinked -- each is a similarly Chapter-2-owned (not whole-file)
+  migration and is explicitly out of scope for Batch 3a.
 * **Mechanics** (combat/growth/AI/etc. formulas and their own data
   tables) are entirely untouched by Batches A/B/C or Issue #5 Batch 1/2.
 * **Additional chapters.** This whole platform -- schemas, the

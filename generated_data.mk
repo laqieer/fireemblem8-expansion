@@ -522,3 +522,263 @@ generated-data-link-check: $(GENERATED_DATA_LINKED_OBJECTS)
 	done
 	@echo 'OK: from-scratch parallel (-j4) build of every linked table'"'"'s shared generated .c succeeds, no race/duplicate generation'
 	@echo 'PASS: generated-data-link-check'
+
+# ---------------------------------------------------------------------------
+# Linking a Chapter-2-owned partial-file table (Issue #5 Batch 3a)
+# ---------------------------------------------------------------------------
+# Batch 2c-1..2c-4 (above) each replaced one *entire* hand-written
+# src/data_<table>.c file with its generated equivalent -- viable only
+# because each of those hand files contains nothing but that one global
+# table. `units` (Batch 3a, the first Chapter-2-*owned* table to link) is
+# structurally different: its hand definitions
+# (`UnitDef_Event_Ch2Ally`/`UnitDef_Ch2Enemy_0`/`UnitDef_LordSplitAlly`/
+# `UnitDef_Ch2Ally`/`UnitDef_Ch2NPC`/`UnitDef_Ch2Enemy_1`/
+# `UnitDef_Ch2Enemy_2`, plus their private REDA sub-arrays) are only a
+# *prefix slice* of src/events_udefs.c -- lines immediately after that
+# file's own includes, ending right before Chapter 3's own REDA/
+# UnitDefinition data begins. The same translation unit also defines
+# every other chapter's units, which must stay hand-linked untouched, so
+# this slice can't be excluded from compilation by filtering a whole
+# file out of CFILES/MODERN_ALL_C_SOURCES the way GENERATED_DATA_LINKED_*
+# above does.
+#
+# Instead, src/events_udefs.c carries its own self-contained guard:
+# `#define GENERATED_DATA_UNITS_CH2_LINKED 1` immediately above the Ch2
+# prefix block, which is itself wrapped in `#if !GENERATED_DATA_UNITS_CH2_LINKED
+# / #endif`. Since the macro is unconditionally defined to 1 right there
+# in the source, that block is permanently excluded from compilation --
+# but its source text is left completely untouched, because
+# generated-data-check's own round-trip parser (units/parser.py) reads
+# src/events_udefs.c's raw text directly (brace-depth-aware regex, never
+# the compiler) to keep proving the generated table byte-for-byte
+# identical in meaning to it; preprocessor directives are invisible to
+# that text-based parser, so the guard cannot desync the two.
+#
+# The excluded Ch2 block is a prefix of src/events_udefs.c's *own*
+# top-level definitions, but NOT a prefix of the translation unit's
+# compiled .data layout: the file's own two #include's just above it
+# (src/events/prologue-eventudefs.h, src/events/ch1-eventudefs.h) emit
+# Prologue/Chapter-1 REDA/UnitDefinition data first, ahead of Chapter 2,
+# all still within the same events_udefs.o. So the generated Ch2 object
+# must land, address-wise, *between* that still-hand Prologue/Ch1 data
+# and events_udefs.c's own Chapter 3+ data -- not merely before the
+# whole object. Since a single input section is placed by the linker as
+# one atomic unit, right after the guard's closing #endif
+# src/events_udefs.c redirects everything from Chapter 3 onward into a
+# second, distinctly-named section (`#undef CONST_DATA` /
+# `#define CONST_DATA SECTION(".data.ch2tail")`), splitting
+# events_udefs.o's .data into two independently-placeable pieces of the
+# *same* object file:
+#   * legacy (ldscript.txt): src/events_udefs.o(.data) (Prologue/Ch1,
+#     unchanged), then build/generated/data/data_ch2_units.o(.data),
+#     then src/events_udefs.o(.data.ch2tail) (Chapter 3+, unchanged) --
+#     each piece lands at exactly its original address, so the ROM is
+#     byte-identical overall (verified via `cmp` against a pre-change
+#     ROM).
+#   * modern (modern.mk): modern's own MODERN_ELF_OBJECTS_LST/MANIFEST
+#     $(sort) the full object list to decide floating-.data placement
+#     order (see the GENERATED_DATA_LINKED_C reinstatement comment in
+#     modern.mk) -- there is no "original hand path" to reuse here since
+#     this object is additive, not a replacement, so it is instead
+#     reinstated at a synthetic slot path
+#     ($(MODERN_OUTPUT_DIR)/src/events_u-ch2units.o) deliberately chosen
+#     to sort immediately between src/events_trapdata.o and
+#     src/events_udefs.o. Modern's per-object (not per-input-section)
+#     sort keeps events_udefs.o's two sections (.data and .data.ch2tail)
+#     adjacent to each other regardless, so the synthetic slot ends up
+#     immediately before events_udefs.o as a whole rather than truly
+#     between its two pieces -- an acceptable, already-documented
+#     divergence for the modern build (see the "Batch 3a" docs section:
+#     modern's requirement is a successful, shiftable build, not literal
+#     re-derivation of legacy's byte layout).
+GENERATED_DATA_CH2_UNITS_HAND_SOURCE := src/events_udefs.c
+GENERATED_DATA_CH2_UNITS_GUARD_MACRO := GENERATED_DATA_UNITS_CH2_LINKED
+GENERATED_DATA_CH2_UNITS_C      := $(GENERATED_DATA_OUT_DIR)/data_ch2_units.c
+GENERATED_DATA_CH2_UNITS_OBJECT := $(GENERATED_DATA_CH2_UNITS_C:.c=.o)
+
+# `units`' own generator "config" inputs: headers
+# scripts/generated_data/units/schema.py reads live constants from -- the
+# CHARACTER_*/CLASS_*/ITEM_* designator sets (via the shared
+# character_refs.py helper plus include/constants/classes.h and
+# include/constants/items.h) used to validate charIndex/classIndex/items
+# references, and struct UnitDefinition's own field capacities/
+# UNIT_DEFINITION_ITEM_COUNT/enum udef_ai_index (include/bmunit.h) (see
+# units/schema.py's own CHARACTERS_HEADER/CLASSES_HEADER/ITEMS_HEADER/
+# BMUNIT_HEADER constants).
+GENERATED_DATA_CONFIG_INPUTS_units := \
+	include/constants/characters.h \
+	include/constants/classes.h \
+	include/constants/items.h \
+	include/bmunit.h
+
+# The 7 UnitDefinition group symbols this table's generated object must
+# define exactly once each -- derived live from src/data/ch2_units.json
+# (the same file the generator itself reads), not hardcoded here, so
+# this list can never silently drift from what the table actually
+# authors (same technique as GENERATED_DATA_LINKED_SYMBOL_supports
+# above). The generated object's own private REDA_UnitDef_*_<index>
+# sub-array symbol names are a deliberate implementation detail (see
+# scripts/generated_data/units/generate.py's own docstring) never
+# referenced from outside build/generated/data/data_ch2_units.o, so --
+# unlike the 7 group symbols below, which src/events/ch2-eventinfo.h,
+# src/events/ch2-eventscript.h, and src/events/lordsplit-eventscript.h
+# all reference by name from other translation units -- they are not
+# tracked here.
+GENERATED_DATA_CH2_UNITS_SYMBOLS := $(shell $(PYTHON) -c \
+	"import json; d = json.load(open('src/data/ch2_units.json')); print(' '.join(g['symbol'] for g in d['groups']))")
+
+$(GENERATED_DATA_CH2_UNITS_C): src/data/ch2_units.json $(GENERATED_DATA_SHARED_PY_SOURCES) $(wildcard scripts/generated_data/units/*.py) $(GENERATED_DATA_CONFIG_INPUTS_units)
+	@mkdir -p $(@D)
+	$(GENERATED_DATA_PY) generate --table units --out-dir $(GENERATED_DATA_OUT_DIR)
+	@test -e $@ || { echo "error: generated-data table 'units' did not produce $@ (schema default_output_name mismatch?)" >&2; exit 1; }
+
+# Same legacy compile/assemble pipeline as GENERATED_DATA_LINKED_OBJECTS
+# above (see that rule's own comment for why $(@:.o=.s), not $*.s).
+$(GENERATED_DATA_CH2_UNITS_OBJECT): $(GENERATED_DATA_CH2_UNITS_C)
+	$(CPP) $(CPPFLAGS) $< | iconv -f UTF-8 -t CP932 | $(CC1) $(CC1FLAGS) -o $(@:.o=.s)
+	echo '.ALIGN 2, 0' >> $(@:.o=.s)
+ifeq ($(UNAME),Darwin)
+	$(SED) -f scripts/align_2_before_debug_section_for_osx.sed $(@:.o=.s)
+else
+	$(SED) '/.section	.debug_line/i\.align 2, 0' $(@:.o=.s)
+endif
+	$(AS) $(ASFLAGS) $(@:.o=.s) -o $@
+
+.PHONY: generated-data-ch2-units-link-check
+
+# Batch 3a gate: proves the units link-swap is wired correctly -- the
+# generated object linked exactly once, at the exact ldscript.txt
+# position, in both legacy ALL_OBJECTS and the modern cohort (at the
+# adjacency-preserving synthetic slot path); every one of the table's 7
+# top-level group symbols defined exactly once by the generated object
+# and, critically, *zero* times by a freshly rebuilt src/events_udefs.o
+# (the guard actually excluded them, so no multiple-definition risk);
+# the hand block's source text still present verbatim (never deleted);
+# an unrelated chapter's symbol (Chapter 1's REDA_Ch10AAlly_0_EIRIKA,
+# Chapter 3's REDA_Event_Ch3Ally_EIRIKA) still defined by
+# src/events_udefs.o, proving the guard didn't overreach; and the same
+# touched-but-unchanged-input / from-scratch-parallel-build behavior
+# evidence as generated-data-link-check, scoped to this one table. Local/
+# manual gate, same reasoning as generated-data-link-check for why it's
+# not CI-wired (agbcc is unavailable in CI's tool install).
+generated-data-ch2-units-link-check: $(GENERATED_DATA_CH2_UNITS_OBJECT)
+	@echo '--- guard present in $(GENERATED_DATA_CH2_UNITS_HAND_SOURCE), hand block preserved verbatim ---'
+	@if ! grep -qF '#define $(GENERATED_DATA_CH2_UNITS_GUARD_MACRO) 1' $(GENERATED_DATA_CH2_UNITS_HAND_SOURCE); then \
+		echo "FAIL: $(GENERATED_DATA_CH2_UNITS_HAND_SOURCE) is missing '#define $(GENERATED_DATA_CH2_UNITS_GUARD_MACRO) 1'" >&2; exit 1; \
+	fi
+	@if ! grep -qF '#if !$(GENERATED_DATA_CH2_UNITS_GUARD_MACRO)' $(GENERATED_DATA_CH2_UNITS_HAND_SOURCE); then \
+		echo "FAIL: $(GENERATED_DATA_CH2_UNITS_HAND_SOURCE) is missing the '#if !$(GENERATED_DATA_CH2_UNITS_GUARD_MACRO)' guard" >&2; exit 1; \
+	fi
+	@if ! grep -qF '#define CONST_DATA SECTION(".data.ch2tail")' $(GENERATED_DATA_CH2_UNITS_HAND_SOURCE); then \
+		echo "FAIL: $(GENERATED_DATA_CH2_UNITS_HAND_SOURCE) is missing the post-guard CONST_DATA redirect to .data.ch2tail -- without it, Chapter 3+ data would stay glued to Prologue/Ch1 data in the same .data section and the generated object could not slot in between at the exact original address" >&2; exit 1; \
+	fi
+	@for symbol in $(GENERATED_DATA_CH2_UNITS_SYMBOLS); do \
+		if [ "$$(grep -c "struct UnitDefinition $$symbol\[\]" $(GENERATED_DATA_CH2_UNITS_HAND_SOURCE))" != 1 ]; then \
+			echo "FAIL: hand source text for group '$$symbol' missing or duplicated in $(GENERATED_DATA_CH2_UNITS_HAND_SOURCE) -- must stay present verbatim as the round-trip reference" >&2; exit 1; \
+		fi; \
+	done
+	@echo 'OK: guard present, all 7 hand group definitions preserved verbatim in source text'
+	@echo '--- ldscript.txt three-piece split (events_udefs.o(.data), generated object, events_udefs.o(.data.ch2tail)) ---'
+	@if grep -qx "        . = ALIGN(4); src/data_units.o(.data);" ldscript.txt; then \
+		echo "FAIL: ldscript.txt unexpectedly references a non-existent src/data_units.o(.data)" >&2; exit 1; \
+	fi
+	@linked_count=$$(grep -Fc "$(GENERATED_DATA_CH2_UNITS_OBJECT)(.data);" ldscript.txt); \
+	if [ "$$linked_count" != 1 ]; then \
+		echo "FAIL: ldscript.txt references $(GENERATED_DATA_CH2_UNITS_OBJECT)(.data) $$linked_count time(s) (want exactly 1)" >&2; exit 1; \
+	fi
+	@prologue_line=$$(grep -nx "        . = ALIGN(4); src/events_udefs.o(.data);" ldscript.txt | cut -d: -f1); \
+	gen_line=$$(grep -nF "$(GENERATED_DATA_CH2_UNITS_OBJECT)(.data);" ldscript.txt | cut -d: -f1); \
+	tail_line=$$(grep -nx "        . = ALIGN(4); src/events_udefs.o(.data.ch2tail);" ldscript.txt | cut -d: -f1); \
+	if [ -z "$$prologue_line" ]; then echo "FAIL: ldscript.txt no longer links src/events_udefs.o(.data) (the Prologue/Ch1 piece) at all" >&2; exit 1; fi; \
+	if [ -z "$$tail_line" ]; then echo "FAIL: ldscript.txt no longer links src/events_udefs.o(.data.ch2tail) (the Chapter 3+ piece) at all" >&2; exit 1; fi; \
+	if [ "$$((gen_line - prologue_line))" != 1 ]; then \
+		echo "FAIL: $(GENERATED_DATA_CH2_UNITS_OBJECT)(.data) (line $$gen_line) is not immediately after src/events_udefs.o(.data) (line $$prologue_line)" >&2; exit 1; \
+	fi; \
+	if [ "$$((tail_line - gen_line))" != 1 ]; then \
+		echo "FAIL: src/events_udefs.o(.data.ch2tail) (line $$tail_line) is not immediately after $(GENERATED_DATA_CH2_UNITS_OBJECT)(.data) (line $$gen_line)" >&2; exit 1; \
+	fi
+	@echo 'OK: ldscript.txt links, in order, src/events_udefs.o(.data) [Prologue/Ch1], the generated object exactly once, then src/events_udefs.o(.data.ch2tail) [Chapter 3+]'
+	@echo '--- legacy ALL_OBJECTS ---'
+	@if [ "$(words $(filter $(GENERATED_DATA_CH2_UNITS_OBJECT),$(ALL_OBJECTS)))" != 1 ]; then \
+		echo "FAIL: $(GENERATED_DATA_CH2_UNITS_OBJECT) not present exactly once in legacy ALL_OBJECTS" >&2; exit 1; \
+	fi
+	@if [ "$(words $(filter $(GENERATED_DATA_CH2_UNITS_HAND_SOURCE:.c=.o),$(ALL_OBJECTS)))" != 1 ]; then \
+		echo "FAIL: $(GENERATED_DATA_CH2_UNITS_HAND_SOURCE:.c=.o) unexpectedly missing from legacy ALL_OBJECTS -- it must stay linked (it still defines every other chapter's units)" >&2; exit 1; \
+	fi
+	@echo 'OK: both the generated object and the (still-required) src/events_udefs.o are present exactly once each in legacy ALL_OBJECTS'
+	@echo '--- modern MODERN_ALL_C_OBJECTS (synthetic adjacency-preserving slot) ---'
+	@if [ "$(words $(filter $(MODERN_OUTPUT_DIR)/src/events_u-ch2units.o,$(MODERN_ALL_C_OBJECTS)))" != 1 ]; then \
+		echo "FAIL: $(MODERN_OUTPUT_DIR)/src/events_u-ch2units.o not present exactly once in modern MODERN_ALL_C_OBJECTS" >&2; exit 1; \
+	fi
+	@sorted_slot=$$(printf '%s\n' $(sort $(MODERN_ALL_C_OBJECTS)) | grep -n -x -e "$(MODERN_OUTPUT_DIR)/src/events_u-ch2units.o" -e "$(MODERN_OUTPUT_DIR)/src/events_udefs.o" | cut -d: -f1 | tr '\n' ' '); \
+	first=$$(echo $$sorted_slot | cut -d' ' -f1); second=$$(echo $$sorted_slot | cut -d' ' -f2); \
+	if [ -z "$$first" ] || [ -z "$$second" ] || [ "$$((second - first))" != 1 ]; then \
+		echo "FAIL: in the sorted modern object list, the synthetic slot is not immediately adjacent (and before) src/events_udefs.o (positions: $$sorted_slot)" >&2; exit 1; \
+	fi
+	@echo 'OK: synthetic slot object sorts immediately before src/events_udefs.o in the modern object list, exactly like the legacy ldscript.txt adjacency'
+	@echo '--- generated object symbols (all 7 group symbols, exactly once each) ---'
+	@nm_out=$$(arm-none-eabi-nm $(GENERATED_DATA_CH2_UNITS_OBJECT)); \
+	for symbol in $(GENERATED_DATA_CH2_UNITS_SYMBOLS); do \
+		symcount=$$(printf '%s\n' "$$nm_out" | grep -c " $$symbol\$$"); \
+		if [ "$$symcount" != 1 ]; then \
+			echo "FAIL: generated object for units defines $$symbol $$symcount time(s) (want exactly 1)" >&2; exit 1; \
+		fi; \
+	done
+	@echo 'OK: exactly one definition of each of the 7 expected group symbols in the generated object'
+	@echo '--- src/events_udefs.o no longer defines any Ch2 group symbol, but still defines other chapters'"'"' ---'
+	@rm -f src/events_udefs.o src/events_udefs.s
+	@$(MAKE) --no-print-directory src/events_udefs.o >/dev/null
+	@udefs_nm=$$(arm-none-eabi-nm src/events_udefs.o); \
+	for symbol in $(GENERATED_DATA_CH2_UNITS_SYMBOLS); do \
+		symcount=$$(printf '%s\n' "$$udefs_nm" | grep -c " $$symbol\$$"); \
+		if [ "$$symcount" != 0 ]; then \
+			echo "FAIL: src/events_udefs.o still defines $$symbol $$symcount time(s) -- the guard did not exclude it (would be a multiple-definition link error against the generated object)" >&2; exit 1; \
+		fi; \
+	done; \
+	for other in REDA_Ch10AAlly_0_EIRIKA REDA_Event_Ch3Ally_EIRIKA; do \
+		if ! printf '%s\n' "$$udefs_nm" | grep -q " $$other\$$"; then \
+			echo "FAIL: src/events_udefs.o unexpectedly lost unrelated-chapter symbol $$other -- the guard over-excluded" >&2; exit 1; \
+		fi; \
+	done
+	@echo 'OK: src/events_udefs.o defines zero Ch2 group symbols and still defines Chapter 1/3 symbols untouched'
+	@echo '--- clean coverage ---'
+	@if [ -z "$(strip $(filter $(GENERATED_DATA_OUT_DIR),$(CLEAN_DIRS)))" ]; then \
+		echo "FAIL: $(GENERATED_DATA_OUT_DIR) missing from CLEAN_DIRS -- clean/clean_fast would not remove data_ch2_units.c/.s/.o" >&2; exit 1; \
+	fi
+	@echo 'OK: clean/clean_fast remove build/generated/data (covers data_ch2_units.c/.s/.o)'
+	@echo '--- touched-but-unchanged input: content-preserving no-op regenerate (behavior evidence, not mtime) ---'
+	@rm -f $(GENERATED_DATA_CH2_UNITS_C) $(GENERATED_DATA_CH2_UNITS_OBJECT) $(GENERATED_DATA_CH2_UNITS_C:.c=.s); \
+	$(MAKE) --no-print-directory $(GENERATED_DATA_CH2_UNITS_OBJECT) >/dev/null; \
+	o_hash_before=$$(md5sum "$(GENERATED_DATA_CH2_UNITS_OBJECT)" | cut -d' ' -f1); \
+	json_ref=generated-data-ch2-units-link-check.json_ref.tmp; \
+	regen_log=generated-data-ch2-units-link-check.regen.log; \
+	uptodate_log=generated-data-ch2-units-link-check.uptodate.log; \
+	trap 'touch -r "$$json_ref" src/data/ch2_units.json 2>/dev/null; rm -f "$$json_ref" "$$regen_log" "$$uptodate_log"' EXIT; \
+	touch -r src/data/ch2_units.json "$$json_ref"; \
+	touch src/data/ch2_units.json; \
+	$(MAKE) --no-print-directory "$(GENERATED_DATA_CH2_UNITS_OBJECT)" >"$$regen_log" 2>&1; \
+	if ! grep -q "generate --table units" "$$regen_log"; then \
+		echo "FAIL: touching ch2_units.json did not trigger a units regenerate at all" >&2; exit 1; \
+	fi; \
+	if grep -qE 'arm-none-eabi-as|agbcc' "$$regen_log"; then \
+		echo "FAIL: units unchanged-content regenerate still ran the legacy compile/assemble pipeline (unnecessary object recompile):" >&2; cat "$$regen_log" >&2; exit 1; \
+	fi; \
+	o_hash_after=$$(md5sum "$(GENERATED_DATA_CH2_UNITS_OBJECT)" | cut -d' ' -f1); \
+	if [ "$$o_hash_before" != "$$o_hash_after" ]; then \
+		echo "FAIL: units object content changed even though no recompile should have run ($$o_hash_before -> $$o_hash_after)" >&2; exit 1; \
+	fi; \
+	touch -r "$$json_ref" src/data/ch2_units.json; \
+	$(MAKE) --no-print-directory "$(GENERATED_DATA_CH2_UNITS_OBJECT)" >"$$uptodate_log" 2>&1; \
+	if grep -qE "generate --table units|arm-none-eabi-as|agbcc" "$$uptodate_log"; then \
+		echo "FAIL: after restoring ch2_units.json's original timestamp, the units object target is not fully up to date:" >&2; cat "$$uptodate_log" >&2; exit 1; \
+	fi; \
+	rm -f "$$json_ref" "$$regen_log" "$$uptodate_log"; \
+	trap - EXIT; \
+	echo 'OK: units touched-but-unchanged JSON input re-invokes the generator but never re-runs the legacy compile/assemble pipeline, proven by captured build-log evidence and stable object content'
+	@echo '--- from-scratch parallel build ---'
+	@rm -f $(GENERATED_DATA_CH2_UNITS_C) $(GENERATED_DATA_CH2_UNITS_OBJECT)
+	@$(MAKE) --no-print-directory -j4 $(GENERATED_DATA_CH2_UNITS_OBJECT) $(GENERATED_DATA_CH2_UNITS_C) >/dev/null
+	@test -e $(GENERATED_DATA_CH2_UNITS_C) || { echo "FAIL: parallel build did not produce the generated .c for units" >&2; exit 1; }
+	@test -e $(GENERATED_DATA_CH2_UNITS_OBJECT) || { echo "FAIL: parallel build did not produce the generated object for units" >&2; exit 1; }
+	@echo 'OK: from-scratch parallel (-j4) build of units'"'"'s generated .c/.o succeeds, no race/duplicate generation'
+	@echo 'PASS: generated-data-ch2-units-link-check'

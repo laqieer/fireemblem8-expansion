@@ -265,6 +265,27 @@ MODERN_ALL_C_OBJECTS := $(addprefix $(MODERN_OUTPUT_DIR)/,$(MODERN_ALL_C_SOURCES
 # src/data_classes.c. A safe no-op when GENERATED_DATA_LINKED_HAND_SOURCES
 # is undefined (modern.mk included standalone).
 MODERN_ALL_C_OBJECTS += $(addprefix $(MODERN_OUTPUT_DIR)/,$(GENERATED_DATA_LINKED_HAND_SOURCES:.c=.o))
+
+# Issue #5 Batch 3a: $(GENERATED_DATA_CH2_UNITS_OBJECT) (generated_data.mk)
+# is additive, not a replacement -- src/events_udefs.c has no "original
+# hand path" to reuse the way GENERATED_DATA_LINKED_HAND_SOURCES does
+# above, since it stays fully linked itself (only its Chapter 2 prefix
+# slice is guarded out, internally, by the macro described in
+# generated_data.mk). Reinstating it at its own build/generated/data/
+# path would sort ("build/..." < "src/...") before every "src/..."
+# object once $(sort) orders MODERN_ELF_OBJECTS_LST/MANIFEST (see the
+# comment above this one), shifting far more than just Chapter 2's
+# data. Instead it's reinstated at a synthetic slot path chosen so it
+# sorts immediately between src/events_trapdata.o and src/events_udefs.o
+# -- the same adjacency ldscript.txt gives it in the legacy build (see
+# generated_data.mk's own comment for the full reasoning) -- so no other
+# object's relative order changes. A safe no-op when
+# GENERATED_DATA_CH2_UNITS_OBJECT is undefined (modern.mk included
+# standalone). An explicit (non-pattern) rule for this literal target
+# path is defined further below, alongside GENERATED_DATA_MODERN_OVERRIDE_RULES.
+ifneq ($(strip $(GENERATED_DATA_CH2_UNITS_OBJECT)),)
+MODERN_ALL_C_OBJECTS += $(MODERN_OUTPUT_DIR)/src/events_u-ch2units.o
+endif
 MODERN_ALL_DATA_PRE := $(addprefix $(MODERN_OUTPUT_DIR)/,$(MODERN_ALL_DATA_C_SOURCES:.c=.pre.c))
 MODERN_ALL_DATA_OBJECTS := $(addprefix $(MODERN_OUTPUT_DIR)/,$(MODERN_ALL_DATA_C_SOURCES:.c=.o))
 MODERN_ALL_ASM_OBJECTS := $(addprefix $(MODERN_OUTPUT_DIR)/,$(MODERN_ALL_ASM_SOURCES:.s=.o))
@@ -410,6 +431,22 @@ $(MODERN_OUTPUT_DIR)/src/data_$(1).o: $(GENERATED_DATA_OUT_DIR)/data_$(1).c
 endef
 
 $(foreach t,$(GENERATED_DATA_LINKED_TABLES),$(eval $(call GENERATED_DATA_MODERN_OVERRIDE_RULES,$(t))))
+
+# Issue #5 Batch 3a: explicit (non-pattern) compile rule for the `units`
+# table's synthetic slot object (see the MODERN_ALL_C_OBJECTS +=
+# comment above for why this target's path is a synthetic
+# adjacency-preserving slot, not $(GENERATED_DATA_OUT_DIR)/data_ch2_units.o
+# reinstated at some "original" path -- there is no original path, since
+# this object is additive). GNU Make always prefers this explicit rule
+# over the generic `$(MODERN_OUTPUT_DIR)/%.o: %.c` pattern rule above for
+# the same target, so it compiles the real generated .c unconditionally
+# -- there is no on-disk src/events_u-ch2units.c for it to ever fall back
+# to. A safe no-op target when GENERATED_DATA_CH2_UNITS_C is undefined
+# (modern.mk included standalone): the rule is simply never reachable,
+# since nothing adds this path to MODERN_ALL_C_OBJECTS in that case.
+$(MODERN_OUTPUT_DIR)/src/events_u-ch2units.o: $(GENERATED_DATA_CH2_UNITS_C)
+	@mkdir -p $(@D)
+	"$(MODERN_CC)" $(MODERN_CFLAGS) -MMD -MP -MF "$(@:.o=.d)" -MQ "$@" -c "$<" -o "$@"
 
 # IWRAM-placed symbols need per-symbol BSS sections.
 $(MODERN_OUTPUT_DIR)/src/agb_sram.o: MODERN_CFLAGS += -fdata-sections -fno-toplevel-reorder -fno-reorder-functions

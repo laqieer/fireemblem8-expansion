@@ -20,6 +20,15 @@ def generate_c_source(groups, source_path):
     never referenced from outside the translation unit, so this slice does
     not try to reproduce the hand-written file's REDA naming scheme -- only
     the REDA *values* are round-tripped (see ``parser.py``).
+
+    Emission order matters for byte-for-byte ``.data`` layout identity with
+    ``src/events_udefs.c``'s Chapter 2 prefix block: the hand file emits
+    *every* REDA sub-array across *all* groups first (in group/unit order),
+    and only then emits the ``UnitDefinition`` group arrays (again in group
+    order) -- it never interleaves a group's REDA arrays with its own
+    ``UnitDefinition`` array. This function replicates that two-pass
+    ordering exactly (do not go back to a single per-group interleaved
+    pass without re-verifying byte identity).
     """
     parts = [render_banner(source=source_path, table="units")]
     parts.append('#include "global.h"\n')
@@ -29,9 +38,8 @@ def generate_c_source(groups, source_path):
     parts.append('#include "constants/classes.h"\n')
     parts.append('#include "constants/items.h"\n\n')
 
+    # Pass 1: every REDA sub-array, across all groups, in group/unit order.
     for group in groups:
-        # Emit each unit's REDA array (if any) just before the group array,
-        # exactly like the hand-written file's ordering convention.
         for index, unit in enumerate(group.units):
             if not unit.redas:
                 continue
@@ -43,8 +51,11 @@ def generate_c_source(groups, source_path):
                     % (reda.x, reda.y, reda.flags, reda.a, reda.b, reda.delay_frames)
                 )
             parts.append("};\n")
+    parts.append("\n")
 
-        parts.append("\nCONST_DATA struct UnitDefinition {}[] = {{\n".format(group.symbol))
+    # Pass 2: every UnitDefinition group array, in group order.
+    for group in groups:
+        parts.append("CONST_DATA struct UnitDefinition {}[] = {{\n".format(group.symbol))
         for index, unit in enumerate(group.units):
             parts.append("    {\n")
             parts.append("        .charIndex = {},\n".format(unit.char_index))

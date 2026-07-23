@@ -1082,7 +1082,19 @@ SECTIONS
         . = ALIGN(4); src/data_debug_creditinfo.o(.data);
         . = ALIGN(4); src/chapterdata.o(.data);
         . = ALIGN(4); src/data/data_8B363C.o(.data);
+        /* Issue #5 Batch 3a: src/events_udefs.o's own (.data) now holds
+         * only the still-hand Prologue/Ch1 data (included via headers,
+         * placed ahead of Chapter 2 in the original layout); the
+         * generated Ch2 units/REDA object slots in immediately after it,
+         * at the exact original Chapter-2 address; then
+         * src/events_udefs.o(.data.ch2tail) resumes with this file's own
+         * Chapter 3+ content (redirected to that section name in
+         * src/events_udefs.c, right after the Ch2 #endif guard) at its
+         * exact original address. This preserves byte-for-byte legacy
+         * ROM identity across the whole three-piece split. */
         . = ALIGN(4); src/events_udefs.o(.data);
+        . = ALIGN(4); build/generated/data/data_ch2_units.o(.data);
+        . = ALIGN(4); src/events_udefs.o(.data.ch2tail);
         . = ALIGN(4); src/monstergen_data.o(.data);
         . = ALIGN(4); src/data/data_bg.o(.data);
         . = ALIGN(4); src/eventscr2.o(.data);
