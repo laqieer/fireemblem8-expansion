@@ -354,13 +354,12 @@ class CliClassesTests(unittest.TestCase):
 
 
 class CliCharactersTests(unittest.TestCase):
-    """Issue #5 Batch 2a: schema-only -- ``characters`` has no
-    ``default_source``/committed real source yet (see
-    ``characters/schema.py``), so unlike every other table there is no
-    ``test_real_*_source_validates``/``test_generate_*``/``test_check_*``
-    counterpart in this class: ``--source`` must always be given
-    explicitly, and ``generate``/``check`` have nothing to do for a
-    schema-only table (see ``CharactersTableSchema``'s docstring).
+    """Issue #5 Batch 2b: ``characters`` is fully wired up (real
+    ``default_source``/``default_hand_source``/``default_output_name``/
+    ``default_inventory_path`` -- see ``CharactersTableSchema``), so this
+    class also covers the ``test_real_*_source_validates``/
+    ``test_generate_*``/``test_check_*`` counterparts every other
+    fully-registered table has.
     """
 
     def test_validate_valid_fixture_passes(self):
@@ -386,11 +385,39 @@ class CliCharactersTests(unittest.TestCase):
         # characters is resolvable via --table (registered in registry.py)
         # but must not appear in any all-tables default loop; there is no
         # such loop in this CLI today, so this is simply confirming the
-        # schema resolves cleanly on its own.
+        # schema resolves cleanly on its own. --no-roundtrip is required
+        # here because this 3-record fixture's designators (CHARACTER_EIRIKA,
+        # 27, 256) legitimately overlap the real gCharacterData[] designator
+        # space -- default_hand_source now points at the real
+        # src/data_characters.c (Batch 2b), so without --no-roundtrip the
+        # CLI would (correctly) compare this fixture's placeholder field
+        # values against the real hand-written records and fail.
         code, out, err = run_cli([
             "validate", "--table", "characters",
             "--source", fixture_path("characters", "valid.json"),
+            "--no-roundtrip",
         ])
+        self.assertEqual(code, 0, msg=out + err)
+
+    def test_real_characters_source_validates_and_roundtrips_clean(self):
+        code, out, err = run_cli(["validate", "--table", "characters"])
+        self.assertEqual(code, 0, msg=out + err)
+
+    def test_generate_writes_c_and_inventory(self):
+        with scratch_dir() as tmp:
+            out_dir = os.path.join(tmp, "out")
+            inventory_path = os.path.join(tmp, "inventory.md")
+            code, out, err = run_cli(["generate", "--table", "characters", "--out-dir", out_dir,
+                                       "--inventory", inventory_path, "--no-roundtrip"])
+            self.assertEqual(code, 0, msg=out + err)
+            generated_file = os.path.join(out_dir, "data_characters.c")
+            self.assertTrue(os.path.exists(generated_file))
+            self.assertTrue(os.path.exists(inventory_path))
+            with open(generated_file) as f:
+                self.assertIn("CONST_DATA struct CharacterData gCharacterData[] = {", f.read())
+
+    def test_check_real_characters_table_has_no_drift(self):
+        code, out, err = run_cli(["check", "--table", "characters"])
         self.assertEqual(code, 0, msg=out + err)
 
     def test_validate_with_dependency_overrides_passes(self):

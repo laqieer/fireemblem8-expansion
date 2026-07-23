@@ -1,15 +1,17 @@
-"""``CharacterData`` schema: Issue #5 Batch 2a schema/dependency-validation
-foundation for ``gCharacterData[]`` (see ``include/bmunit.h``, ``struct
-CharacterData``).
+"""``CharacterData`` schema: Issue #5 Batch 2b full 256-record authoring,
+C89 generation, and hand-source round trip for ``gCharacterData[]`` (see
+``include/bmunit.h``, ``struct CharacterData``).
 
-**Batch 2a scope only** -- this module provides the record model, loader,
-and validator so a JSON source can be checked with ``python3 -m
-scripts.generated_data validate --table characters --source <path>``. It
-deliberately does **not** provide ``generate.py``/``parser.py``/
-``inventory.py`` (no C89 emission, no round-trip against a hand-written
-file, no committed inventory report) and is **not** registered in
-``generated_data.mk``'s ``GENERATED_DATA_TABLES`` or CI -- see
-``docs/generated_data.md`` for the full rationale and remaining scope.
+Batch 2a (schema/dependency-validation foundation only) provided the
+record model, loader, and validator so a JSON source can be checked with
+``python3 -m scripts.generated_data validate --table characters --source
+<path>``. Batch 2b extends that foundation with ``generate.py``
+(C89 emission), ``parser.py`` (semantic round trip against the
+hand-written ``src/data_characters.c``), ``inventory.py`` (committed
+summary report), a real, complete ``fullCoverage: true`` source at
+``src/data/characters.json``, and registration in ``generated_data.mk``'s
+``GENERATED_DATA_TABLES``/CI drift loop -- see ``docs/generated_data.md``
+for full status.
 
 Unlike every other global table (``items``, 206 contiguous ``ITEM_*``
 records; ``classes``, 127 contiguous ``CLASS_*`` records excluding the
@@ -67,6 +69,7 @@ JSON source shape (``fe8.characters.v1``)::
           "defaultClass": "CLASS_EIRIKA_LORD",
           "portrait": 2,
           "affinity": "UNIT_AFFIN_LIGHT",
+          "sortOrder": 1,
           "visitGroup": 7,
           "baseLevel": 1,
           "base": { "lck": 5 },
@@ -89,12 +92,12 @@ JSON source shape (``fe8.characters.v1``)::
     }
 
 ``fullCoverage`` (top-level, optional, default ``false``) toggles the
-dense ``1..256`` coverage check (see :func:`validate`). Batch 2a never
-commits a real, complete ``src/data/characters.json`` (no full-coverage
-source exists yet), so every fixture in this batch leaves it ``false`` --
-partial fixtures are validated purely for uniqueness/reference/range
-correctness, not completeness. A future batch that authors the real,
-complete 256-record source would set it ``true``.
+dense ``1..256`` coverage check (see :func:`validate`). Batch 2b commits
+the real, complete ``src/data/characters.json`` with ``fullCoverage:
+true`` (all 256 designators authored); unit-test fixtures still mostly
+leave it ``false`` so partial fixtures can be validated purely for
+uniqueness/reference/range correctness without also having to satisfy
+full coverage.
 
 Optional ``CharacterData`` fields default exactly like the hand-written
 designated initializers that only set the fields they need (mirroring
@@ -107,6 +110,8 @@ designated initializers that only set the fields they need (mirroring
 * ``affinity`` -> absent means ``0``/none (``UNIT_AFFIN_*`` has no
   explicit zero-valued member -- ``0`` is the implicit "no affinity"
   sentinel, exactly like 93/256 vanilla records that omit ``.affinity``)
+* ``sortOrder`` -> ``0`` (``.sort_order`` -- omitted on the ~210/256
+  vanilla records that don't set it explicitly)
 * ``visitGroup`` -> ``0``
 * ``baseLevel`` -> ``0``
 * ``base``/``growth`` sub-objects -> all-zero when the whole object is
@@ -359,7 +364,8 @@ class CharacterRecord:
                  name_text_id, name_text_loc, desc_text_id, desc_text_loc,
                  default_class, default_class_loc,
                  portrait, portrait_loc, mini_portrait, mini_portrait_loc,
-                 affinity, affinity_loc, visit_group, visit_group_loc,
+                 affinity, affinity_loc, sort_order, sort_order_loc,
+                 visit_group, visit_group_loc,
                  base_level, base_level_loc,
                  base, base_locs, growth, growth_locs,
                  base_ranks, base_ranks_locs, base_ranks_container_loc,
@@ -382,6 +388,8 @@ class CharacterRecord:
         self.mini_portrait_loc = mini_portrait_loc
         self.affinity = affinity
         self.affinity_loc = affinity_loc
+        self.sort_order = sort_order
+        self.sort_order_loc = sort_order_loc
         self.visit_group = visit_group
         self.visit_group_loc = visit_group_loc
         self.base_level = base_level
@@ -444,6 +452,31 @@ class CharacterRecord:
             if 0 <= index < capacity:
                 slots[index] = wexp_thresholds[wexp_name][0]
         return tuple(slots)
+
+    def as_tuple(self, classes_enum, attribute_flags, weapon_types, wexp_thresholds,
+                 base_ranks_capacity, affinity_values):
+        """A fully-resolved, symbol-blind tuple for exact round-trip
+        comparison against the hand-parsed record (see ``parser.py``).
+        Mirrors ``classes.ClassRecord.as_tuple``: enum/bitmask-valued
+        fields are resolved to their live integer value; the derived
+        ``.number`` field is intentionally excluded here (the parser
+        checks it separately against the record's own designator, since
+        it is never authored -- see the module docstring)."""
+        default_class_value = classes_enum.get(self.default_class, (0, None))[0]
+        affinity_value = affinity_values.get(self.affinity, 0) if self.affinity is not None else 0
+        attributes_value, _ = resolve_bitmask_flags(self.attributes, attribute_flags, self.loc, "")
+        base_ranks_tuple = self.encoded_base_ranks(weapon_types, wexp_thresholds, base_ranks_capacity)
+        return (
+            self.name_text_id, self.desc_text_id, default_class_value,
+            self.portrait, self.mini_portrait, affinity_value, self.sort_order,
+            self.base_level,
+            tuple(self.base[k] for k in _BASE_STATS),
+            base_ranks_tuple,
+            tuple(self.growth[k] for k in _GROWTH_STATS),
+            attributes_value,
+            self.support_data,
+            self.visit_group,
+        )
 
 
 class CharacterRecordList(list):
@@ -518,6 +551,7 @@ def load_records(source_path):
         portrait, portrait_loc = _optional_int(char_node.get("portrait"))
         mini_portrait, mini_portrait_loc = _optional_int(char_node.get("miniPortrait"))
         affinity, affinity_loc = _optional_str(char_node.get("affinity"), None)
+        sort_order, sort_order_loc = _optional_int(char_node.get("sortOrder"))
         visit_group, visit_group_loc = _optional_int(char_node.get("visitGroup"))
         base_level, base_level_loc = _optional_int(char_node.get("baseLevel"))
 
@@ -558,6 +592,7 @@ def load_records(source_path):
                 portrait=portrait, portrait_loc=portrait_loc,
                 mini_portrait=mini_portrait, mini_portrait_loc=mini_portrait_loc,
                 affinity=affinity, affinity_loc=affinity_loc,
+                sort_order=sort_order, sort_order_loc=sort_order_loc,
                 visit_group=visit_group, visit_group_loc=visit_group_loc,
                 base_level=base_level, base_level_loc=base_level_loc,
                 base=base, base_locs=base_locs,
@@ -693,6 +728,10 @@ def validate(records, diagnostics, dependency_records=None,
                             "{}.miniPortrait".format(ref), field_name="miniPortrait")
         )
         diagnostics.extend(
+            validate_range(record.sort_order, _U8_MIN, _U8_MAX, record.sort_order_loc or record.loc,
+                            "{}.sortOrder".format(ref), field_name="sortOrder")
+        )
+        diagnostics.extend(
             validate_range(record.visit_group, _U8_MIN, _U8_MAX, record.visit_group_loc or record.loc,
                             "{}.visitGroup".format(ref), field_name="visitGroup")
         )
@@ -805,26 +844,18 @@ def validate(records, diagnostics, dependency_records=None,
 
 
 class CharactersTableSchema(TableSchema):
-    """Batch 2a: schema/validation only -- see the module docstring.
-
-    ``default_source``/``default_hand_source``/``default_output_name``/
-    ``default_inventory_path`` are all deliberately left ``None`` (no
-    committed real source, no hand-written C counterpart to round-trip,
-    nothing to generate, no committed inventory report yet): the CLI's
-    generic ``generate``/``check`` commands already skip each of those
-    steps cleanly when the corresponding ``default_*``/schema hook is
-    absent (see ``cli.py``), so registering this schema does not require
-    any CLI changes. ``validate --table characters --source <fixture>``
-    is the only command this batch supports end-to-end.
+    """Batch 2b: full 256-record authoring, C89 generation, and
+    hand-source semantic round trip (extends Batch 2a's schema/
+    dependency-validation foundation -- see the module docstring).
     """
 
     name = SCHEMA_NAME
     version = SCHEMA_VERSION
 
-    default_source = None
-    default_hand_source = None
-    default_output_name = None
-    default_inventory_path = None
+    default_source = "src/data/characters.json"
+    default_hand_source = "src/data_characters.c"
+    default_output_name = "data_characters.c"
+    default_inventory_path = "reports/generated_data_characters_inventory.md"
 
     def dependencies(self):
         return (
@@ -842,6 +873,25 @@ class CharactersTableSchema(TableSchema):
 
     def validate(self, records, diagnostics, dependency_records=None):
         validate(records, diagnostics, dependency_records)
+
+    def generate_c(self, records, source_path):
+        from . import generate as characters_generate
+        return characters_generate.generate_c_source(records, source_path)
+
+    def build_inventory(self, records):
+        from . import inventory as characters_inventory
+        return characters_inventory.build_inventory(records)
+
+    def round_trip_errors(self, records, hand_source):
+        if not hand_source or not os.path.exists(hand_source):
+            return []
+        from . import parser as characters_roundtrip
+        characters_enum = character_refs.read_character_designators()
+        designators = {
+            d for d in (r.designator(characters_enum) for r in records) if d is not None
+        }
+        hand_records = characters_roundtrip.parse_hand_written(hand_source, characters_enum, designators)
+        return characters_roundtrip.compare_records(records, hand_records, hand_path=hand_source)
 
 
 def dependency_graph():

@@ -1,4 +1,4 @@
-# Generated-data platform (Issue #5 Chapter 2 slice -- Batch A + B + C; global `items`/`classes` Batch 1; `characters` Batch 2a)
+# Generated-data platform (Issue #5 Chapter 2 slice -- Batch A + B + C; global `items`/`classes` Batch 1; `characters` Batch 2a + 2b)
 
 ## Status
 
@@ -102,28 +102,45 @@ link swap, no Chapter 2/`chapterbundle` participation. See "##
 `classes` schema (Issue #5 Batch 1: full global class table)" below for
 the full write-up.
 
-**Issue #5 Batch 2a** (this update) adds the **schema/dependency-
-validation foundation only** for the third global table: `characters`
-(`gCharacterData[]`/`struct CharacterData`, `include/bmunit.h`). Unlike
-`items`/`classes`, this batch does **not** author any real, complete
-`src/data/characters.json` source, nor does it add `generate.py`/
-`parser.py`/`inventory.py` -- there is no C89 emission, no round-trip
-against `src/data_characters.c` (which remains the sole hand-written,
-linked source, untouched), and no committed inventory report. It is
-also **not** added to `generated_data.mk`'s `GENERATED_DATA_TABLES` or
-CI. What Batch 2a *does* provide: `CharactersTableSchema`, registered in
-`registry.py` so `python3 -m scripts.generated_data validate --table
-characters --source <path>` works end-to-end today, modeling
-`gCharacterData[]`'s unique 256-slot dual symbolic
-(`CHARACTER_*`)/raw-integer (unnamed generic-template) designator model,
-every authorable `CharacterData` field/range/reference, the
-`supportData` cross-table reference into `supports`, and a
-`dependency_tables()` cross-check against `classes` -- see "## `characters`
-schema (Issue #5 Batch 2a: schema/dependency-validation foundation)"
-below for the full write-up. Batch 2b/2c (full field-for-field
-transcription of all 256 vanilla records, `generate`/round-trip against
-`src/data_characters.c`, and any eventual link-order migration) remain
-open -- see "Remaining Issue #5 scope" at the end of this document.
+**Issue #5 Batch 2a** added the **schema/dependency-validation
+foundation only** for the third global table: `characters`
+(`gCharacterData[]`/`struct CharacterData`, `include/bmunit.h`). That
+batch did not author any real, complete `src/data/characters.json`
+source, nor add `generate.py`/`parser.py`/`inventory.py` -- no C89
+emission, no round-trip, no committed inventory, not wired into
+`generated_data.mk`/CI. What it provided: `CharactersTableSchema`,
+registered in `registry.py`, modeling `gCharacterData[]`'s unique
+256-slot dual symbolic (`CHARACTER_*`)/raw-integer (unnamed
+generic-template) designator model, every authorable `CharacterData`
+field/range/reference, the `supportData` cross-table reference into
+`supports`, and a `dependency_tables()` cross-check against `classes`.
+
+**Issue #5 Batch 2b** (this update) completes `characters` to parity
+with `items`/`classes`: a real, committed, **all-256-record**
+`src/data/characters.json` (`fullCoverage: true` -- 94 symbolic
+`CHARACTER_*` records and 162 raw numeric-designator records, including
+the unreachable `[0x100 - 1]` padding slot), plus `generate.py`
+(deterministic C89 `gCharacterData[]` emission), `parser.py`
+(hand-written round-trip parsing, keyed by resolved designator rather
+than symbol, since raw records have no symbolic name), and
+`inventory.py` (the committed
+`reports/generated_data_characters_inventory.md` summary). `characters`
+is now in `generated_data.mk`'s `GENERATED_DATA_TABLES` (not the
+Chapter-2-scoped `GENERATED_DATA_CH2_TABLES` list, since it's a global
+table like `items`/`classes`, not chapter-scoped data), so
+`generated-data-check`/`generated-data-generate`/`generated-data-test`
+all cover it. The full **256/256** hand-table round trip against the
+real `src/data_characters.c` passes with zero diagnostics, and the
+generated `build/generated/data/data_characters.c` compiles and
+assembles cleanly through the real `cpp | iconv | agbcc | as` pipeline
+(mirroring the Makefile's own `$(C_OBJECTS)` recipe) -- like `items`/
+`classes`, it is still never linked in place of `src/data_characters.c`
+(no `ldscript.txt` change; that link-order migration is explicit
+Batch 2c scope). See "## `characters` schema (Issue #5 Batch 2a + 2b:
+full global character table)" below for the full write-up. Batch 2c
+(link-order migration) and Issue #5's other remaining mechanics scope
+stay open -- see "Remaining Issue #5 scope" at the end of this
+document.
 
 ## Source vs. generated vs. committed-public artifacts
 
@@ -157,6 +174,10 @@ open -- see "Remaining Issue #5 scope" at the end of this document.
 | Hand-written canonical C (existing) | `src/data_items.c` | Yes | **Yes** -- unchanged, still canonical |
 | Generated C89 (bulky) | `build/generated/data/data_items.c` | **No** (gitignored) | No |
 | Committed inventory/summary | `reports/generated_data_items_inventory.md` | Yes (small) | N/A |
+| Structured source (characters, global, Issue #5 Batch 2b) | `src/data/characters.json` | Yes | No |
+| Hand-written canonical C (existing) | `src/data_characters.c` | Yes | **Yes** -- unchanged, still canonical |
+| Generated C89 (bulky) | `build/generated/data/data_characters.c` | **No** (gitignored) | No |
+| Committed inventory/summary | `reports/generated_data_characters_inventory.md` | Yes (small) | N/A |
 
 Because none of the generated C is linked, this work cannot introduce
 `multiple definition` link errors and cannot silently change gameplay
@@ -259,6 +280,30 @@ scripts/generated_data/
     inventory.py        builds the committed inventory/summary report
                         (CA_* attribute usage, baseRanks weapon-type
                         histogram, battleAnim symbol usage)
+  characters/
+    schema.py           CharacterRecord (full struct CharacterData -- ~20
+                        authored fields + derived .number), load_records(),
+                        validate() -- the third global (non-chapter-scoped)
+                        table, covering all 256 vanilla designators (94
+                        symbolic CHARACTER_* + 162 raw/generic-template)
+                        with full 1..256 coverage validation via the
+                        opt-in fullCoverage flag, including the
+                        unreachable [0x100 - 1] padding slot
+    generate.py         C89 emission of gCharacterData[] matching the
+                        hand file's own default-omission convention field
+                        for field, deriving .number from the designator
+                        (symbol, lowercase-hex raw literal, or the bare
+                        wraparound 0 for the padding slot)
+    parser.py           round-trip parser for src/data_characters.c +
+                        comparer -- keyed by resolved integer designator
+                        rather than symbol name (unlike every other
+                        table's parser), since raw records have no
+                        symbol; normalizes s8 fields the hand file spells
+                        as their unsigned decimal equivalent
+    inventory.py        builds the committed inventory/summary report
+                        (symbolic/raw/reachable/dead-padding counts,
+                        defaultClass/affinity/attributes/baseRanks usage
+                        histograms, supportData usage, dependency digest)
   chapterbundle/
     schema.py           ChapterBundleRecord (metadata-only whole-bundle
                         view), load_records(), validate() -- cross-checks
@@ -947,19 +992,26 @@ attribute-usage histogram, a `baseRanks` weapon-type histogram,
 `battleAnim` symbol-usage table, and the table's own dependency-graph
 digest.
 
-## `characters` schema (Issue #5 Batch 2a: schema/dependency-validation foundation)
+## `characters` schema (Issue #5 Batch 2a + 2b: full global character table)
 
-**Scope note: schema/validation only.** This section documents what
-`characters/schema.py` provides *today* -- there is no
-`generate.py`/`parser.py`/`inventory.py`, no committed
-`src/data/characters.json`, and no entry in `generated_data.mk`'s
-`GENERATED_DATA_TABLES`/CI. `src/data_characters.c` remains the sole
-hand-written, linked source for `gCharacterData[]`, untouched. What
-*is* available today: `python3 -m scripts.generated_data validate
---table characters --source <path>` (schema `fe8.characters.v1`,
-registered in `registry.py`), including `--dep-source
-classes=PATH`/`--dep-source supports=PATH` overrides for the two
-cross-table checks described below.
+**Batch 2b completes this table to parity with `items`/`classes`.**
+Batch 2a provided the schema/dependency-validation foundation described
+throughout most of this section (the 256-slot designator model, field/
+range/reference validation, cross-table checks) with no real committed
+source and no generation/round-trip machinery. Batch 2b adds the
+missing pieces: a real, committed `src/data/characters.json` with
+`"fullCoverage": true` authoring all 256 records (94 symbolic + 162
+raw, including the `[0x100 - 1]` padding slot), `generate.py` (C89
+emission), `parser.py` (hand-file round-trip parsing keyed by resolved
+designator), `inventory.py` (the committed inventory report), and an
+entry in `generated_data.mk`'s `GENERATED_DATA_TABLES`. `src/data_
+characters.c` remains the sole hand-written, **linked** source for
+`gCharacterData[]` -- Batch 2b proves semantic parity against it but
+never links the generated file in its place (explicit Batch 2c scope).
+`python3 -m scripts.generated_data validate --table characters` (no
+`--source` override needed now) validates the full committed table,
+including `--dep-source classes=PATH`/`--dep-source supports=PATH`
+overrides for the two cross-table checks described below.
 
 `gCharacterData[]` has a model unlike every other table this platform
 covers: a fixed **256-slot** array (confirmed against
@@ -1035,10 +1087,11 @@ is a **fixed module constant** (`DESIGNATOR_MIN`/`DESIGNATOR_MAX`, not
 derived from `characters.h`, since raw/generic-template records fill in
 every unnamed designator) and coverage enforcement itself is an
 opt-in, top-level JSON boolean, `"fullCoverage"` (default `false`):
-Batch 2a never commits a real, complete 256-record source, so every
-fixture validated so far leaves it `false` and is checked purely for
-uniqueness/reference/range correctness, not completeness. A future
-batch that authors the real, complete source would set it `true`.
+the real, committed `src/data/characters.json` (Batch 2b) sets it
+`true` and authors all 256 designators; small hand-authored fixtures
+that only cover a handful of designators (used throughout this
+section's own tests) leave it `false` and are checked purely for
+uniqueness/reference/range correctness, not completeness.
 
 Every other `CharacterData` field is modeled and validated: `nameTextId`/
 `descTextId` against the live `MSG_COUNT`; `defaultClass` both as a live
@@ -1063,11 +1116,16 @@ at the full `s8` range and unsigned `growth` stats at `u8`; `baseRanks`
 `baseRanks[8]` capacity, exactly like `classes`); `attributes` as a
 validated `CA_*` bitmask list (the same enum `classes` reads, shared at
 runtime via `UNIT_CATTRIBUTES()`); `visitGroup`/`baseLevel` at plain
-`u8` (no stronger invariant found for either); and the reserved
-`_u23`/`_u24`/`_u25`/`_u27` struct fields, which are **rejected outright
-if authored at all** (a new pattern for this platform -- every other
-table silently ignores unrecognized JSON keys, but these four are never
-authorable, not merely defaulted).
+`u8` (no stronger invariant found for either); `sortOrder` (JSON key
+`sortOrder`, struct field `sort_order`) at plain `u8`, added in Batch 2b
+after transcribing the real hand file revealed it is a genuine,
+sometimes-nonzero field (46 of the 256 real records set it explicitly)
+that Batch 2a's schema had never modeled -- a real gap, not a stylistic
+omission, since without it those 46 records could never round-trip; and
+the reserved `_u23`/`_u24`/`_u25`/`_u27` struct fields, which are
+**rejected outright if authored at all** (a new pattern for this
+platform -- every other table silently ignores unrecognized JSON keys,
+but these four are never authorable, not merely defaulted).
 
 `supportData` (optional, most records and *all* raw/generic-template
 records have none) is modeled as a genuine cross-table reference, not
@@ -1081,6 +1139,63 @@ generic-template record has one). Both cross-table checks
 (`defaultClass`-presence and `supportData`) degrade gracefully to
 header-only/skipped when the corresponding dependency table isn't
 loaded, via `dependency_tables() = ("classes", "supports")`.
+
+### Generation, round trip, and compile verification (Batch 2b)
+
+`generate.py` mirrors `classes/generate.py`: it emits the C89
+`gCharacterData[]` array with symbolic (`[CHARACTER_X - 1]`) or
+lowercase-hex raw (`[0x1b - 1]`, matching the hand file's own lowercase
+convention throughout) designators, derives the required `.number`
+literal itself from the designator (the record's own symbol name for
+symbolic records, the lowercase-hex designator for raw records, or the
+bare literal `0` for the single `[0x100 - 1]` padding record -- the
+`u8` wraparound is computed once in Python and emitted directly, so the
+generated C source never relies on the target compiler to truncate an
+out-of-range `.number = 256` initializer), omits zero/default-valued
+fields, and orders every field to match the single canonical field
+order confirmed across all 256 real records (`nameTextId`, `descTextId`,
+`number`, `defaultClass`, `portraitId`, `miniPortrait`, `affinity`,
+`sort_order`, `baseLevel`, the 8 base stats, `baseRanks`, the 7 growth
+stats, `attributes`, `pSupportData`, `visit_group`).
+
+`parser.py` mirrors `classes/parser.py` but is keyed by resolved
+**designator** (an integer), not by symbol name -- unlike every other
+table's parser, raw/generic-template records have no symbol to key by.
+It parses `gCharacterData[]` entries from the hand file, validates each
+entry's `.number` literal against its own designator (symbol-name match
+for symbolic records, `& 0xFF` truncation check for raw records,
+including the `[0x100 - 1]` record's `.number = 0`), and normalizes
+signed `s8` fields the hand file spells as their unsigned-looking
+decimal equivalent (`_parse_s8_token()`: two real records write
+`.baseSkl = 255`/`.baseSpd = 253` rather than `-1`/`-3` -- both are
+legitimate C literals that truncate identically into `s8`, but must be
+normalized (`value - 256` when `value > 127`) before comparison, or a
+false round-trip mismatch would be reported against semantically
+identical data).
+
+`inventory.py` mirrors `classes/inventory.py`, reporting: total/
+symbolic/raw record counts; the reachable-designator vs. dead-padding
+count (255 vs. 1); `defaultClass`/`affinity`/`attributes`/`baseRanks`
+usage histograms; `supportData` usage count; and the table's own
+`dependency_tables()` digest (`classes`, `supports`).
+
+The real, committed `src/data/characters.json` (94 symbolic + 162 raw
+= 256 records, `fullCoverage: true`) round-trips **256/256** against
+the real `src/data_characters.c` with zero diagnostics (`python3 -m
+scripts.generated_data validate --table characters`, and
+`test_characters_roundtrip.py`'s `FullRoundTripTests`). `generate
+--table characters` writes `build/generated/data/data_characters.c`
+and the committed `reports/generated_data_characters_inventory.md`;
+`check --table characters` (and the `generated-data-check`/
+`generated-data-test` Make targets, now that `characters` is in
+`GENERATED_DATA_TABLES`) confirm no drift. The generated
+`build/generated/data/data_characters.c` was also compiled end-to-end
+through the real `cpp | iconv | agbcc` pipeline and assembled with
+`arm-none-eabi-as` with zero errors/warnings (mirroring the Makefile's
+own `$(C_OBJECTS)` recipe, same flags), confirming it is valid,
+compilable C89 -- it is still never linked in place of
+`src/data_characters.c` (no `ldscript.txt` change; explicit Batch 2c
+scope, see "Remaining Issue #5 scope" below).
 
 ### Fixtures and tests
 
@@ -1101,9 +1216,17 @@ support-data/class-dependency checks (including the
 `CHARACTER_EVT_LEADER`/`ACTIVE`/`SLOTB`/`SLOT2` sentinel-rejection
 regression and a synthetic sibling-enum-collision regression wired
 through `characters_schema.validate()`'s own `characters_header=`
-override parameter), and the header readers in isolation; `CliCharactersTests`
-in `test_cli_new_tables.py` covers the same end to end through the CLI,
-including `--dep-source` overrides and the sentinel-rejection
+override parameter), and the header readers in isolation; `test_
+characters_generate.py` covers deterministic C89 generation (default-
+field omission, ascending attribute-flag ordering regardless of JSON
+order, lowercase-hex raw designators, the `[0x100 - 1]` `.number = 0`
+wraparound with no overflow/warning); `test_characters_roundtrip.py`
+covers fixture-based round-trip match/mismatch/missing-record/extra-
+record detection plus the full **256/256** round trip against the real
+`src/data_characters.c`; `CliCharactersTests` in `test_cli_new_tables.py`
+covers `validate`/`generate`/`check` end to end through the CLI against
+both fixtures and the real committed `src/data/characters.json`
+(drift-free), `--dep-source` overrides, and the sentinel-rejection
 regression.
 
 `scripts/generated_data/character_refs.py`'s own `read_character_
@@ -1445,37 +1568,37 @@ scope** for this Batch C update:
 
 * **Global character authoring/generation/linking.** `items` and
   `classes` (Issue #5 Batch 1) are global tables with their own schema/
-  generate/round-trip pipelines. `characters` (Issue #5 **Batch 2a**,
-  this doc's `## characters schema` section) now has an analogous
-  schema/dependency-validation foundation -- the 256-slot symbolic/raw
-  designator model, full field/range/reference validation, and
-  cross-table checks against `classes`/`supports` -- but still only as
-  a schema, reachable via explicit `validate --table characters
-  --source ...`; there is no committed `src/data/characters.json`, no
-  `generate.py`/`parser.py`/`inventory.py`, and it is not wired into
-  `GENERATED_DATA_TABLES`/CI. `chapterbundle` still only *references*
-  `CHARACTER_*`/`CLASS_*` IDs (as a reference-only dependency set,
-  cross-checked for existence against the live enum headers) -- it does
-  not fold `characters`/`classes` into its own cross-table reachability
-  checks. Remaining: **Batch 2b** (transcribe all 256 vanilla records
-  into a real, complete `src/data/characters.json` with `fullCoverage`
-  enabled, plus `generate.py`/`parser.py`/round-trip proof) and
-  **Batch 2c** (link the generated table in place of
+  generate/round-trip pipelines. `characters` (Issue #5 **Batch 2a +
+  2b**, this doc's `## characters schema` section) now has full parity
+  with them: the 256-slot symbolic/raw designator model, full field/
+  range/reference validation, cross-table checks against
+  `classes`/`supports` (Batch 2a), plus a real, committed
+  `src/data/characters.json` authoring all 256 vanilla records
+  (`fullCoverage: true`), `generate.py`/`parser.py`/`inventory.py`, a
+  clean **256/256** round trip against `src/data_characters.c`, and an
+  entry in `generated_data.mk`'s `GENERATED_DATA_TABLES`/CI (Batch 2b).
+  `chapterbundle` still only *references* `CHARACTER_*`/`CLASS_*` IDs
+  (as a reference-only dependency set, cross-checked for existence
+  against the live enum headers) -- it does not fold `characters`/
+  `classes` into its own cross-table reachability checks. Remaining:
+  **Batch 2c** (link the generated `characters` table in place of
   `src/data_characters.c`, and any resulting `chapterbundle`
-  cross-table wiring) remain open.
-* **Linking the `items`/`classes` tables themselves.** Batch 1 is
-  schema/generate/round-trip only, per its own explicit scope --
-  `build/generated/data/data_items.c` and `build/generated/data/
-  data_classes.c` both compile (and, for `classes`, assemble) cleanly
-  through the real agbcc pipeline but are never linked in place of
-  `src/data_items.c`/`src/data_classes.c`; that link-order migration
-  (the `ldscript.txt` `src/x.o(.text)`-before-`asm/x.o(.text)` swap
-  described in `CONTRIBUTING.md`, plus folding `items`/`classes` into
-  `chapterbundle`-style cross-table reachability checks, if ever
-  appropriate for a global table) remains **explicit Batch 2 scope**,
-  not started here.
+  cross-table wiring) is still open.
+* **Linking the `items`/`classes`/`characters` tables themselves.**
+  Batch 1/2b are schema/generate/round-trip only, per their own
+  explicit scope -- `build/generated/data/data_items.c`,
+  `build/generated/data/data_classes.c`, and `build/generated/data/
+  data_characters.c` all compile (and, for `classes`/`characters`,
+  assemble) cleanly through the real agbcc pipeline but are never
+  linked in place of `src/data_items.c`/`src/data_classes.c`/
+  `src/data_characters.c`; that link-order migration (the
+  `ldscript.txt` `src/x.o(.text)`-before-`asm/x.o(.text)` swap
+  described in `CONTRIBUTING.md`, plus folding `items`/`classes`/
+  `characters` into `chapterbundle`-style cross-table reachability
+  checks, if ever appropriate for a global table) remains **explicit
+  Batch 2c scope**, not started here.
 * **Mechanics** (combat/growth/AI/etc. formulas and their own data
-  tables) are entirely untouched by Batches A/B/C or Issue #5 Batch 1.
+  tables) are entirely untouched by Batches A/B/C or Issue #5 Batch 1/2.
 * **Additional chapters.** This whole platform -- schemas, the
   `chapterbundle` composition pattern, the CLI, the Make targets, CI
   wiring -- covers Chapter 2 only (`items`/`classes` are the exceptions,

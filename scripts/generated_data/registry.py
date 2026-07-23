@@ -27,9 +27,8 @@ REGISTRY.register(EventScriptsTableSchema())
 REGISTRY.register(EventListsTableSchema())
 REGISTRY.register(ChapterBundleTableSchema())
 REGISTRY.register(ClassesTableSchema())
-# Issue #5 Batch 2a: schema/dependency-validation foundation only -- see
-# characters/schema.py's module docstring. Deliberately NOT added to
-# generated_data.mk's GENERATED_DATA_TABLES (no committed real source,
-# no generate/round-trip/inventory support yet); registering it here only
-# makes `validate --table characters --source <fixture>` available.
+# Issue #5 Batch 2b: full global table -- real committed
+# src/data/characters.json (fullCoverage), generate.py/parser.py/
+# inventory.py, and wired into generated_data.mk's GENERATED_DATA_TABLES/
+# CI. See characters/schema.py's module docstring for the full write-up.
 REGISTRY.register(CharactersTableSchema())
