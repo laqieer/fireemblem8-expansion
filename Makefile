@@ -375,8 +375,23 @@ endif
 $(DEPS_DIR)/%.d: %.c
 	@$(MAKEDEP)
 
-$(OBJECTS_LST): $(ALL_OBJECTS)
-	@echo $(ALL_OBJECTS) > $@
+# FORCE (not just $(ALL_OBJECTS)) makes this rule's recipe *always* run,
+# even when every object file in $(ALL_OBJECTS) already exists and is
+# older than a stale $(OBJECTS_LST) left over from a prior invocation
+# where $(ALL_OBJECTS) resolved to a different list (e.g. a hand object
+# such as src/data_characters.o that a generated-data link swap has
+# since filtered out, or a switched branch/stash) -- ordinary
+# file-mtime prerequisite tracking can never catch that case, since
+# make only re-runs a recipe when a *prerequisite file's* mtime is
+# newer than the target's, and none of the individual object files
+# changed. Regenerating into a temp file and only replacing $@ via `cmp
+# -s || mv` when the content actually differs keeps $@'s own mtime (and
+# therefore every downstream user -- $(ELF), shiftcheck-diff/-run)
+# untouched on a content-identical regenerate, so an unrelated touch
+# elsewhere can never trigger an unnecessary relink.
+$(OBJECTS_LST): $(ALL_OBJECTS) FORCE
+	@echo $(ALL_OBJECTS) > $@.tmp
+	@cmp -s $@.tmp $@ 2>/dev/null && rm -f $@.tmp || mv -f $@.tmp $@
 
 $(ELF): $(ALL_OBJECTS) $(OBJECTS_LST) $(LDSCRIPT) $(SYM_FILES)
 	$(LD) -T $(LDSCRIPT) -Map $(MAP) @$(OBJECTS_LST) -R $(BANIM_OBJECT).sym.o -L tools/agbcc/lib -o $@ -lc -lgcc

@@ -68,7 +68,7 @@ generated-data-ch2-check:
 	done
 
 # ---------------------------------------------------------------------------
-# Linked generated-data tables (Issue #5 Batch 2c-1 + 2c-2 + 2c-3)
+# Linked generated-data tables (Issue #5 Batch 2c-1 + 2c-2 + 2c-3 + 2c-4)
 # ---------------------------------------------------------------------------
 # Everything above never links generated C in place of any hand-written
 # src/ table -- see docs/generated_data.md's "Remaining Issue #5 scope"
@@ -85,17 +85,19 @@ generated-data-ch2-check:
 # `generated-data-check` keeps proving byte-for-byte identical against.
 #
 # Batch 2c-1 linked `classes`; Batch 2c-2 added `items` (the 206-record
-# global gItemData[] table); Batch 2c-3 adds `supports` (the 33-record
+# global gItemData[] table); Batch 2c-3 added `supports` (the 33-record
 # SupportData_* table -- see below, `supports` is a *multi-symbol* table,
-# unlike `classes`/`items`' single top-level array symbol). Extending
-# this list to another table also requires defining that table's own
-# GENERATED_DATA_CONFIG_INPUTS_<table> and GENERATED_DATA_LINKED_SYMBOL_
-# <table> (both below), since the generator's non-JSON, non-script
-# "config" inputs (live enum/struct-layout headers, hand data-source
-# tables read for live counts, etc.) and each table's top-level generated
-# symbol name(s) are wildly table-specific and cannot be derived
-# generically.
-GENERATED_DATA_LINKED_HAND_SOURCES := src/data_classes.c src/data_items.c src/data_supports.c
+# unlike `classes`/`items`' single top-level array symbol); Batch 2c-4
+# (this update) adds `characters` (the 256-record global gCharacterData[]
+# table -- back to a single top-level array symbol, like `classes`/
+# `items`). Extending this list to another table also requires defining
+# that table's own GENERATED_DATA_CONFIG_INPUTS_<table> and
+# GENERATED_DATA_LINKED_SYMBOL_<table> (both below), since the
+# generator's non-JSON, non-script "config" inputs (live enum/struct-
+# layout headers, hand data-source tables read for live counts, etc.)
+# and each table's top-level generated symbol name(s) are wildly
+# table-specific and cannot be derived generically.
+GENERATED_DATA_LINKED_HAND_SOURCES := src/data_classes.c src/data_items.c src/data_supports.c src/data_characters.c
 
 # Table name for each entry above, same order. Derived from the
 # `src/data_<table>.c` naming convention shared by every currently-linked
@@ -158,6 +160,27 @@ GENERATED_DATA_CONFIG_INPUTS_supports := \
 	include/constants/characters.h \
 	include/types.h
 
+# `characters`' own generator "config" inputs: headers/hand C sources
+# scripts/generated_data/characters/schema.py reads live constants from --
+# the CHARACTER_* designator set (include/constants/characters.h, via the
+# shared character_refs.py helper) used for the 256-slot symbolic/raw
+# designator model, the CLASS_*-style default-class reference
+# (include/constants/classes.h), struct CharacterData field capacities/
+# CA_*/affinity constants (include/bmunit.h), item-rank references
+# (include/bmitem.h), live MSG_COUNT (include/constants/msg.h), and the
+# live portrait/mini-portrait counts derived from src/portrait_data.c/
+# src/face.c (see characters/schema.py's own CHARACTERS_HEADER/
+# CLASSES_HEADER/BMUNIT_HEADER/BMITEM_HEADER/MSG_HEADER/
+# PORTRAIT_DATA_SOURCE/FACE_SOURCE constants).
+GENERATED_DATA_CONFIG_INPUTS_characters := \
+	include/constants/characters.h \
+	include/constants/classes.h \
+	include/bmunit.h \
+	include/bmitem.h \
+	include/constants/msg.h \
+	src/portrait_data.c \
+	src/face.c
+
 # Shared (every table) generator scripts. Test files/fixtures are
 # deliberately excluded -- they never affect generated output.
 GENERATED_DATA_SHARED_PY_SOURCES := $(wildcard scripts/generated_data/*.py)
@@ -174,6 +197,7 @@ GENERATED_DATA_SHARED_PY_SOURCES := $(wildcard scripts/generated_data/*.py)
 # generated-data-link-check checks every one of them individually.
 GENERATED_DATA_LINKED_SYMBOL_classes  := gClassData
 GENERATED_DATA_LINKED_SYMBOL_items    := gItemData
+GENERATED_DATA_LINKED_SYMBOL_characters := gCharacterData
 
 # `supports` has no single top-level symbol -- its generated object
 # defines one `SupportData_<Owner>` per record instead. The expected
@@ -251,16 +275,17 @@ endif
 
 .PHONY: generated-data-link-check
 
-# Batch 2c-1 + 2c-2 + 2c-3 gate: proves every table in
-# GENERATED_DATA_LINKED_TABLES (currently `classes`, `items`, `supports`)
-# has its link-swap wired correctly -- exactly one generated object
-# selected in place of each hand source, in both the legacy and modern
-# object lists, no other (unlinked) table affected, each table's
-# ldscript.txt swap is exact, each table's own top-level generated
-# symbol(s) (GENERATED_DATA_LINKED_SYMBOL_<table>: `gClassData`,
-# `gItemData`, or `supports`' 33 `SupportData_*` per-owner symbols) each
-# link exactly once from its generated object (and, for `supports`, no
-# extra/unexpected `SupportData_*` symbol beyond those 33 -- see
+# Batch 2c-1 + 2c-2 + 2c-3 + 2c-4 gate: proves every table in
+# GENERATED_DATA_LINKED_TABLES (currently `classes`, `items`, `supports`,
+# `characters`) has its link-swap wired correctly -- exactly one
+# generated object selected in place of each hand source, in both the
+# legacy and modern object lists, no other (unlinked) table affected,
+# each table's ldscript.txt swap is exact, each table's own top-level
+# generated symbol(s) (GENERATED_DATA_LINKED_SYMBOL_<table>:
+# `gClassData`, `gItemData`, `gCharacterData`, or `supports`' 33
+# `SupportData_*` per-owner symbols) each link exactly once from its
+# generated object (and, for `supports`, no extra/unexpected
+# `SupportData_*` symbol beyond those 33 -- see
 # GENERATED_DATA_LINKED_SYMBOL_PREFIX_supports), every hand source is
 # preserved untouched, generated artifacts are covered by `clean`, and --
 # per table
@@ -301,12 +326,12 @@ endif
 # already exercised by CI's existing expansion-modern-linker-check for
 # both MODERN_CONFIG values instead.
 generated-data-link-check: $(GENERATED_DATA_LINKED_OBJECTS)
-	@echo '--- Batch 2c-1 + 2c-2 + 2c-3 scope: exactly classes, items, and supports ---'
-	@if [ "$(strip $(GENERATED_DATA_LINKED_HAND_SOURCES))" != "src/data_classes.c src/data_items.c src/data_supports.c" ]; then \
-		echo "FAIL: GENERATED_DATA_LINKED_HAND_SOURCES changed unexpectedly ('$(GENERATED_DATA_LINKED_HAND_SOURCES)'); Batch 2c-1 + 2c-2 + 2c-3 scope is classes, items, and supports only" >&2; exit 1; \
+	@echo '--- Batch 2c-1 + 2c-2 + 2c-3 + 2c-4 scope: exactly classes, items, supports, and characters ---'
+	@if [ "$(strip $(GENERATED_DATA_LINKED_HAND_SOURCES))" != "src/data_classes.c src/data_items.c src/data_supports.c src/data_characters.c" ]; then \
+		echo "FAIL: GENERATED_DATA_LINKED_HAND_SOURCES changed unexpectedly ('$(GENERATED_DATA_LINKED_HAND_SOURCES)'); Batch 2c-1 + 2c-2 + 2c-3 + 2c-4 scope is classes, items, supports, and characters only" >&2; exit 1; \
 	fi
-	@if [ "$(strip $(GENERATED_DATA_LINKED_TABLES))" != "classes items supports" ]; then \
-		echo "FAIL: GENERATED_DATA_LINKED_TABLES changed unexpectedly ('$(GENERATED_DATA_LINKED_TABLES)'); Batch 2c-1 + 2c-2 + 2c-3 scope is classes, items, and supports only" >&2; exit 1; \
+	@if [ "$(strip $(GENERATED_DATA_LINKED_TABLES))" != "classes items supports characters" ]; then \
+		echo "FAIL: GENERATED_DATA_LINKED_TABLES changed unexpectedly ('$(GENERATED_DATA_LINKED_TABLES)'); Batch 2c-1 + 2c-2 + 2c-3 + 2c-4 scope is classes, items, supports, and characters only" >&2; exit 1; \
 	fi
 	@echo '--- bare `make` default goal is still `all` (the ROM), not generated-data validation ---'
 	@probe=$$($(MAKE) --no-print-directory -rR -p __generated_data_link_check_default_goal_probe__ 2>/dev/null); \
@@ -329,12 +354,63 @@ generated-data-link-check: $(GENERATED_DATA_LINKED_OBJECTS)
 	@if [ "$(words $(filter $(GENERATED_DATA_LINKED_OBJECTS),$(ALL_OBJECTS)))" != "$(words $(GENERATED_DATA_LINKED_TABLES))" ]; then \
 		echo "FAIL: generated object(s) not present exactly once each in legacy ALL_OBJECTS" >&2; exit 1; \
 	fi
-	@for other in src/data_characters.c; do \
+	@for other in src/data_terrains.c; do \
 		if ! printf '%s\n' $(CFILES) | grep -qx "$$other"; then \
 			echo "FAIL: unrelated hand source $$other unexpectedly filtered out of legacy CFILES" >&2; exit 1; \
 		fi; \
 	done
 	@echo 'OK: exactly $(GENERATED_DATA_LINKED_HAND_SOURCES) is filtered from the legacy build'
+	@echo '--- $(OBJECTS_LST) self-heals a stale/corrupted manifest, even when its own mtime looks fully up to date (regression: incremental multiple-definition link error) ---'
+	@backup=generated-data-link-check.objects_lst.backup.tmp; \
+	had_objects_lst=0; \
+	if [ -e $(OBJECTS_LST) ]; then had_objects_lst=1; cp -p $(OBJECTS_LST) "$$backup"; fi; \
+	trap 'if [ "$$had_objects_lst" = 1 ]; then mv -f "$$backup" $(OBJECTS_LST); else rm -f $(OBJECTS_LST); fi; rm -f "$$backup"' EXIT; \
+	stale="$(ALL_OBJECTS)"; \
+	for table in $(GENERATED_DATA_LINKED_TABLES); do \
+		hand=src/data_$$table.o; \
+		gen=$(GENERATED_DATA_OUT_DIR)/data_$$table.o; \
+		stale=$$(printf '%s' "$$stale" | sed "s#$$gen#$$hand#g"); \
+	done; \
+	printf '%s\n' "$$stale" > $(OBJECTS_LST); \
+	touch -d '+1 day' $(OBJECTS_LST); \
+	for table in $(GENERATED_DATA_LINKED_TABLES); do \
+		hand=src/data_$$table.o; \
+		gen=$(GENERATED_DATA_OUT_DIR)/data_$$table.o; \
+		if ! grep -qF "$$hand" $(OBJECTS_LST) || grep -qF "$$gen" $(OBJECTS_LST); then \
+			echo "FAIL: test setup did not actually stage a stale $(OBJECTS_LST) (still references $$gen, or missing $$hand)" >&2; exit 1; \
+		fi; \
+	done; \
+	echo 'staged stale manifest (hand objects instead of generated, manifest mtime pushed 1 day into the future):'; \
+	for table in $(GENERATED_DATA_LINKED_TABLES); do printf '  src/data_%s.o\n' "$$table"; done; \
+	$(MAKE) --no-print-directory $(OBJECTS_LST); \
+	for table in $(GENERATED_DATA_LINKED_TABLES); do \
+		hand=src/data_$$table.o; \
+		gen=$(GENERATED_DATA_OUT_DIR)/data_$$table.o; \
+		gen_count=$$(grep -oF "$$gen" $(OBJECTS_LST) | wc -l); \
+		hand_count=$$(grep -oF "$$hand" $(OBJECTS_LST) | wc -l); \
+		if [ "$$gen_count" != 1 ]; then \
+			echo "FAIL: after self-heal, $(OBJECTS_LST) references $$gen $$gen_count time(s) (want exactly 1)" >&2; exit 1; \
+		fi; \
+		if [ "$$hand_count" != 0 ]; then \
+			echo "FAIL: after self-heal, $(OBJECTS_LST) still references stale hand object $$hand $$hand_count time(s) (want 0)" >&2; exit 1; \
+		fi; \
+	done; \
+	if ! grep -qF "src/data_terrains.o" $(OBJECTS_LST); then \
+		echo "FAIL: self-heal unexpectedly dropped an unrelated object (src/data_terrains.o) from $(OBJECTS_LST)" >&2; exit 1; \
+	fi; \
+	healed_word_count=$$(wc -w < $(OBJECTS_LST)); \
+	expected_word_count=$(words $(ALL_OBJECTS)); \
+	if [ "$$healed_word_count" != "$$expected_word_count" ]; then \
+		echo "FAIL: healed $(OBJECTS_LST) has $$healed_word_count object(s), want exactly $$expected_word_count (\$$(words \$$(ALL_OBJECTS))) -- an unrelated entry was dropped or duplicated" >&2; exit 1; \
+	fi; \
+	echo 'OK: $(MAKE) $(OBJECTS_LST) self-healed the stale manifest (every generated object present exactly once, every stale hand object gone, unrelated entries preserved) despite the manifest'"'"'s own mtime being in the future'; \
+	mtime_before=$$(stat -c %Y $(OBJECTS_LST)); \
+	$(MAKE) --no-print-directory $(OBJECTS_LST); \
+	mtime_after=$$(stat -c %Y $(OBJECTS_LST)); \
+	if [ "$$mtime_before" != "$$mtime_after" ]; then \
+		echo "FAIL: a second $(OBJECTS_LST) rebuild changed its mtime ($$mtime_before -> $$mtime_after) even though content was already correct -- write-if-changed (temp+cmp+mv) is not preserving mtime on a stable manifest" >&2; exit 1; \
+	fi; \
+	echo 'OK: a second, already-correct $(OBJECTS_LST) rebuild left its mtime unchanged (content-preserving write, not touch-on-every-invocation)'
 	@echo '--- modern MODERN_ALL_C_SOURCES/MODERN_ALL_C_OBJECTS ---'
 	@if [ -n "$(strip $(filter $(GENERATED_DATA_LINKED_HAND_SOURCES),$(MODERN_ALL_C_SOURCES)))" ]; then \
 		echo "FAIL: hand source still present in modern MODERN_ALL_C_SOURCES" >&2; exit 1; \
@@ -342,7 +418,7 @@ generated-data-link-check: $(GENERATED_DATA_LINKED_OBJECTS)
 	@if [ -n "$(strip $(filter $(GENERATED_DATA_LINKED_C),$(MODERN_ALL_C_SOURCES)))" ]; then \
 		echo "FAIL: generated source(s) unexpectedly present in modern MODERN_ALL_C_SOURCES (should only be reinstated as an object, at the original hand-object path, so \$(sort) in MODERN_ELF_OBJECTS_LST/MANIFEST keeps it in the hand object's original sorted slot)" >&2; exit 1; \
 	fi
-	@for other in src/data_characters.c; do \
+	@for other in src/data_terrains.c; do \
 		if ! printf '%s\n' $(MODERN_ALL_C_SOURCES) | grep -qx "$$other"; then \
 			echo "FAIL: unrelated hand source $$other unexpectedly filtered out of modern MODERN_ALL_C_SOURCES" >&2; exit 1; \
 		fi; \
