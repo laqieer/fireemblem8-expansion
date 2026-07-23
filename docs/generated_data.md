@@ -1,4 +1,4 @@
-# Generated-data platform (Issue #5 Chapter 2 slice -- Batch A + B + C; global `items`/`classes` Batch 1; `characters` Batch 2a + 2b; `classes` linked Batch 2c-1)
+# Generated-data platform (Issue #5 Chapter 2 slice -- Batch A + B + C; global `items`/`classes` Batch 1; `characters` Batch 2a + 2b; `classes` linked Batch 2c-1; `items` linked Batch 2c-2)
 
 ## Status
 
@@ -133,12 +133,13 @@ all cover it. The full **256/256** hand-table round trip against the
 real `src/data_characters.c` passes with zero diagnostics, and the
 generated `build/generated/data/data_characters.c` compiles and
 assembles cleanly through the real `cpp | iconv | agbcc | as` pipeline
-(mirroring the Makefile's own `$(C_OBJECTS)` recipe) -- like `items`/
-`classes`, it is still never linked in place of `src/data_characters.c`
+(mirroring the Makefile's own `$(C_OBJECTS)` recipe) -- unlike `classes`/
+`items` (Issue #5 Batch 2c-1 + 2c-2), it is still never linked in place
+of `src/data_characters.c`
 (no `ldscript.txt` change; that link-order migration is explicit
 Batch 2c scope). See "## `characters` schema (Issue #5 Batch 2a + 2b:
 full global character table)" below for the full write-up. Batch 2c
-(link-order migration) and Issue #5's other remaining mechanics scope
+(link-order migration for `characters`) and Issue #5's other remaining mechanics scope
 stay open -- see "Remaining Issue #5 scope" at the end of this
 document.
 
@@ -1357,10 +1358,11 @@ that declare `dependency_tables()`, currently `eventlists` and
 ## Make targets (`generated_data.mk`)
 
 Still never wired into `all` as a link-time dependency, but as of Batch
-2c-1, `classes` **is** linked in place of `src/data_classes.c` in both
-the legacy ROM build (`ldscript.txt`) and the modern object cohort
-(`modern.mk`) -- see "Linking a generated table in place of its
-hand-written counterpart (Batch 2c-1)" below. `generated-data-check`
+2c-1 + 2c-2, `classes` and `items` **are** linked in place of
+`src/data_classes.c`/`src/data_items.c` in both the legacy ROM build
+(`ldscript.txt`) and the modern object cohort (`modern.mk`) -- see
+"Linking a generated table in place of its hand-written counterpart
+(Batch 2c-1 + 2c-2)" below. `generated-data-check`
 **is** wired into
 `.github/workflows/build.yml`, once per job, as an actionable pre-flight
 gate ahead of the modern debug/release linker checks -- a stale/
@@ -1385,26 +1387,43 @@ make generated-data-ch2-check     # check just the tables the Ch2 bundle compose
 make generated-data-bundle-validate  # validate just the chapterbundle table (fast iteration)
 make generated-data-bundle-check     # check just the chapterbundle table (fast iteration)
 
-# Batch 2c-1: local-only (not CI-wired -- CI cannot build agbcc, see
-# make_tools.mk), proves the classes link swap end to end against the
-# real legacy pipeline plus both modern MODERN_CONFIG values' object lists:
+# Batch 2c-1 + 2c-2: local-only (not CI-wired -- CI cannot build agbcc, see
+# make_tools.mk), proves every linked table's (classes, items) link swap
+# end to end against the real legacy pipeline plus both modern
+# MODERN_CONFIG values' object lists:
 make generated-data-link-check
 ```
 
-## Linking a generated table in place of its hand-written counterpart (Batch 2c-1)
+## Linking a generated table in place of its hand-written counterpart (Batch 2c-1 + 2c-2)
 
-Issue #5 Batch 2c-1 makes `classes` the first (and, for now, only)
-generated table actually **linked** into the real builds, in place of
-`src/data_classes.c` -- both the legacy agbcc ROM build and the modern
-GCC object cohort -- with zero legacy ROM byte shift and zero modern
-ELF/ROM address shift, and without editing or deleting the hand source
-(`src/data_classes.c` stays in the repo, still used for
-`generated-data-check`'s own round-trip drift proof).
+Issue #5 Batch 2c-1 made `classes` the first generated table actually
+**linked** into the real builds, in place of `src/data_classes.c`; Batch
+2c-2 extends the exact same plumbing to `items`, in place of
+`src/data_items.c` -- both the legacy agbcc ROM build and the modern GCC
+object cohort, for both tables, with zero legacy ROM byte shift and zero
+modern ELF/ROM address shift, and without editing or deleting either
+hand source (`src/data_classes.c`/`src/data_items.c` stay in the repo,
+still used for `generated-data-check`'s own round-trip drift proof).
 
 * **`GENERATED_DATA_LINKED_HAND_SOURCES`** (`generated_data.mk`) is the
   single source of truth for which hand C tables are superseded by a
-  linked generated equivalent -- currently just `src/data_classes.c`.
-  `GENERATED_DATA_LINKED_TABLES`/`_C`/`_OBJECTS` are derived from it.
+  linked generated equivalent -- now `src/data_classes.c src/data_items.c`.
+  `GENERATED_DATA_LINKED_TABLES`/`_C`/`_OBJECTS` are derived from it. Two
+  further per-table maps are required for a linked table:
+  `GENERATED_DATA_CONFIG_INPUTS_<table>` (the generator's non-JSON,
+  non-script "config" inputs -- live enum/struct-layout headers, hand
+  data-source tables read for live counts, etc.) and
+  `GENERATED_DATA_LINKED_SYMBOL_<table>` (that table's own top-level
+  generated C symbol name, e.g. `gClassData`/`gItemData` -- used by
+  `generated-data-link-check` to prove exactly one definition links from
+  the generated object; this cannot be derived generically from the
+  table name, since both are singular while the table name is plural).
+  Everything else -- the legacy generation/compile rules, the modern
+  object-cohort filtering/reinstatement, and `generated-data-link-check`
+  itself -- is fully generic over `GENERATED_DATA_LINKED_TABLES`, so
+  Batch 2c-2 required no changes beyond adding `items` to
+  `GENERATED_DATA_LINKED_HAND_SOURCES` and defining its two per-table
+  maps plus the `ldscript.txt` swap.
 * **Bare `make` still builds the ROM.** `include generated_data.mk` has
   to happen in `Makefile` before `CFILES`/`ALL_OBJECTS` (and, via
   `include modern.mk`, `MODERN_ALL_C_SOURCES`) are computed, i.e. before
@@ -1428,76 +1447,93 @@ ELF/ROM address shift, and without editing or deleting the hand source
   diff, since that only prints recipes for currently-stale targets and
   would give a false pass/fail depending on whether the tree happened
   to already be up to date.
-* **Legacy build** (`Makefile`, `ldscript.txt`): `src/data_classes.c` is
-  filtered out of `CFILES` (so it's never compiled as a hand object);
-  `build/generated/data/data_classes.o` is appended to `ALL_OBJECTS`
-  instead (compiled from the generated `.c` through the exact same
-  cpp -> CP932 (`iconv`) -> `agbcc` -> `as` pipeline as every other
-  legacy object); and `ldscript.txt`'s single
-  `src/data_classes.o(.data);` line is swapped, in place, for
-  `build/generated/data/data_classes.o(.data);`. Since the legacy ROM's
-  final section layout is controlled explicitly, entry by entry, by
-  `ldscript.txt` (not by `ALL_OBJECTS`/`objects.lst` order), this swap
-  cannot shift any other object's address.
-* **Modern build** (`modern.mk`): `src/data_classes.c` is filtered out
-  of `MODERN_ALL_C_SOURCES` (and therefore out of
+* **Legacy build** (`Makefile`, `ldscript.txt`): each linked table's hand
+  source (`src/data_classes.c`, `src/data_items.c`) is filtered out of
+  `CFILES` (so it's never compiled as a hand object);
+  `build/generated/data/data_classes.o`/`data_items.o` are appended to
+  `ALL_OBJECTS` instead (each compiled from its generated `.c` through
+  the exact same cpp -> CP932 (`iconv`) -> `agbcc` -> `as` pipeline as
+  every other legacy object); and `ldscript.txt`'s
+  `src/data_classes.o(.data);`/`src/data_items.o(.data);` lines are each
+  swapped, in place, for their
+  `build/generated/data/data_classes.o(.data);`/`data_items.o(.data);`
+  equivalents. Since the legacy ROM's final section layout is controlled
+  explicitly, entry by entry, by `ldscript.txt` (not by
+  `ALL_OBJECTS`/`objects.lst` order), these swaps cannot shift any other
+  object's address.
+* **Modern build** (`modern.mk`): each linked table's hand source is
+  filtered out of `MODERN_ALL_C_SOURCES` (and therefore out of
   `MODERN_ALL_C_HEADER_DEPS`'s `.headers.d` scan) -- but the generated
-  `.c` is **not** reinserted into that sources list. Instead, the
+  `.c` is **not** reinserted into that sources list. Instead, each
   generated table's object is reinstated directly onto
   `MODERN_ALL_C_OBJECTS`, reusing the **original hand object's own
-  path** (`$(MODERN_OUTPUT_DIR)/src/data_classes.o`), paired with an
-  explicit (non-pattern) compile rule for that exact path that compiles
-  `build/generated/data/data_classes.c` instead. This is necessary, not
-  cosmetic: `MODERN_ELF_OBJECTS_LST`/`MODERN_ELF_MANIFEST` both
-  alphabetically `$(sort)` the full object-path list before writing the
-  linker's response file, so the modern ELF's `.data`/`.bss` layout is
-  controlled purely by each object's path *string*, never by
+  path** (`$(MODERN_OUTPUT_DIR)/src/data_classes.o`,
+  `$(MODERN_OUTPUT_DIR)/src/data_items.o`), paired with an explicit
+  (non-pattern) compile rule for each exact path that compiles
+  `build/generated/data/data_classes.c`/`data_items.c` instead. This is
+  necessary, not cosmetic: `MODERN_ELF_OBJECTS_LST`/`MODERN_ELF_MANIFEST`
+  both alphabetically `$(sort)` the full object-path list before writing
+  the linker's response file, so the modern ELF's `.data`/`.bss` layout
+  is controlled purely by each object's path *string*, never by
   `MODERN_ALL_C_SOURCES`/`MODERN_ALL_C_OBJECTS` list order -- a
   `build/generated/data/...` object would sort before every `src/...`
   object regardless of list position, shifting every other object's
   address and spuriously breaking the debugtools/savefmt runtime
   checkpoint fixtures' recorded absolute addresses even though no code
-  changed. Reusing the exact original object path string keeps the
-  linked table's object in precisely the same sorted slot the hand
+  changed. Reusing the exact original object path string keeps each
+  linked table's object in precisely the same sorted slot its hand
   object always occupied, and GNU Make's explicit-rule-over-pattern-rule
   precedence guarantees that path always compiles from the generated
   source, never falling back to the (no-longer-source-listed, still
-  untouched) hand file.
+  untouched) hand file. Both the compile rule and the object
+  reinstatement already generalize over `GENERATED_DATA_LINKED_TABLES`
+  (`GENERATED_DATA_MODERN_OVERRIDE_RULES` in `modern.mk`), so Batch 2c-2
+  required no `modern.mk` changes at all.
 * **Verification**: `make generated-data-link-check` proves the swap end
-  to end -- exactly `src/data_classes.c` filtered from both the legacy
-  and modern cohorts (no other table affected), the generated object
-  present exactly once in `ALL_OBJECTS`/`MODERN_ALL_C_OBJECTS`, the
-  `ldscript.txt` swap is exact, `gClassData` links exactly once from the
-  generated object, `src/data_classes.c` is preserved untouched,
-  `clean`/`clean_fast` cover the generated output directory, a
-  touched-but-content-unchanged JSON input re-invokes the generator
-  without an unnecessary downstream recompile (checked via captured
-  build-log evidence -- the generator's own invocation must appear but
-  the legacy compile/assemble pipeline must not -- and object-content
-  MD5 stability, deliberately not filesystem mtime comparisons, which
-  proved flaky), and a from-scratch parallel (`-j4`) build of both
-  consumers of the shared generated `.c` is race-free. It is
+  to end for every linked table (`classes`, `items`) -- exactly
+  `src/data_classes.c src/data_items.c` filtered from both the legacy
+  and modern cohorts (no other table affected), each generated object
+  present exactly once in `ALL_OBJECTS`/`MODERN_ALL_C_OBJECTS`, each
+  table's own `ldscript.txt` swap is exact, each table's own top-level
+  symbol (`gClassData`, `gItemData`) links exactly once from its
+  generated object, both hand sources are preserved untouched,
+  `clean`/`clean_fast` cover the generated output directory, and, for
+  each linked table in turn (serially -- never overlapping two tables'
+  rm+touch+rebuild windows in the same `$(MAKE)` invocation), a
+  touched-but-content-unchanged JSON input re-invokes that table's
+  generator without an unnecessary downstream recompile (checked via
+  captured build-log evidence -- the generator's own invocation must
+  appear but the legacy compile/assemble pipeline must not -- and
+  object-content MD5 stability, deliberately not filesystem mtime
+  comparisons, which proved flaky), and a from-scratch parallel (`-j4`)
+  build of every linked table's shared generated `.c`/`.o` pair is
+  race-free. It is
   **local-only**, not CI-wired, because CI's tool
   install (`make_tools.mk`) deliberately excludes `tools/agbcc/Makefile`
   and cannot run the legacy pipeline; the modern half of this same swap
   is exercised automatically by CI's existing
   `expansion-modern-linker-check` for both `MODERN_CONFIG` values, no
   workflow changes required. A full clean legacy rebuild after this
-  swap reproduces the pre-batch ROM MD5 exactly, and `gClassData`'s
-  address/size are unchanged; both modern debug and release
+  swap reproduces the pre-batch ROM MD5 exactly, `gClassData`'s
+  address/size are unchanged, and the generated `gItemData` object's
+  `.data` bytes are byte-identical to the hand `src/data_items.c`
+  object's own `.data` bytes; both modern debug and release
   `expansion-modern-linker-check` runs (including
   `expansion-modern-debugtools-check`/`expansion-modern-savefmt-check`,
   which compare against address-sensitive checked-in fixtures) pass
   cleanly.
-* `items` and `characters` remain unlinked (still generate/round-trip
-  only); extending this pattern to another table means adding it to
+* `characters` remains unlinked (still generate/round-trip only);
+  extending this pattern to another table means adding it to
   `GENERATED_DATA_LINKED_HAND_SOURCES` plus its own
   `GENERATED_DATA_CONFIG_INPUTS_<table>` (the generator's non-JSON,
-  non-script "config" inputs) -- the modern-side reinstatement in
-  `modern.mk` already generalizes over `GENERATED_DATA_LINKED_TABLES`
-  via the `src/data_<table>.c`/`data_<table>.c` naming convention shared
-  by every currently-linked table, with no further `modern.mk` edits
-  needed.
+  non-script "config" inputs) and `GENERATED_DATA_LINKED_SYMBOL_<table>`
+  (that table's own top-level generated C symbol name) -- the
+  modern-side reinstatement in `modern.mk`, and
+  `generated-data-link-check` itself, already generalize over
+  `GENERATED_DATA_LINKED_TABLES` via the
+  `src/data_<table>.c`/`data_<table>.c` naming convention shared by
+  every currently-linked table, with no further `modern.mk`/
+  `generated-data-link-check` edits needed.
 
 
 
@@ -1700,19 +1736,19 @@ scope** for this Batch C update:
   **Batch 2c** (link the generated `characters` table in place of
   `src/data_characters.c`, and any resulting `chapterbundle`
   cross-table wiring) is still open.
-* **Linking the `items`/`characters` tables themselves.** `classes` is
-  now linked (Issue #5 Batch 2c-1 -- see "Linking a generated table in
-  place of its hand-written counterpart" above): `build/generated/data/
-  data_classes.c` compiles/assembles through the real agbcc pipeline
-  and is linked in place of `src/data_classes.c` in both the legacy ROM
-  build and the modern object cohort, with zero ROM/ELF address shift.
-  `build/generated/data/data_items.c` and `build/generated/data/
-  data_characters.c` still only compile (and, for `characters`,
-  assemble) cleanly through the real agbcc pipeline but are **not yet**
-  linked in place of `src/data_items.c`/`src/data_characters.c`; that
-  remains open scope for a future batch, along with folding `items`/
-  `classes`/`characters` into `chapterbundle`-style cross-table
-  reachability checks, if ever appropriate for a global table.
+* **Linking the `characters` table itself.** `classes` and `items` are
+  now both linked (Issue #5 Batch 2c-1 + 2c-2 -- see "Linking a
+  generated table in place of its hand-written counterpart" above):
+  `build/generated/data/data_classes.c`/`data_items.c` each
+  compile/assemble through the real agbcc pipeline and are linked in
+  place of `src/data_classes.c`/`src/data_items.c` in both the legacy
+  ROM build and the modern object cohort, with zero ROM/ELF address
+  shift. `build/generated/data/data_characters.c` still only compiles
+  and assembles cleanly through the real agbcc pipeline but is **not
+  yet** linked in place of `src/data_characters.c`; that remains open
+  scope for a future batch, along with folding `items`/`classes`/
+  `characters` into `chapterbundle`-style cross-table reachability
+  checks, if ever appropriate for a global table.
 * **Mechanics** (combat/growth/AI/etc. formulas and their own data
   tables) are entirely untouched by Batches A/B/C or Issue #5 Batch 1/2.
 * **Additional chapters.** This whole platform -- schemas, the
@@ -1720,10 +1756,11 @@ scope** for this Batch C update:
   wiring -- covers Chapter 2 only (`items`/`classes` are the exceptions,
   being global by nature); every other chapter's equivalent tables/bundle
   remain to be modeled from scratch.
-* **Linking `items`/`characters`** in place of their hand-written
-  counterparts (the `ldscript.txt`/`modern.mk` link-order migration
-  described in `CONTRIBUTING.md` and, above, in the Batch 2c-1
-  write-up) remains open -- `classes` is the only table linked so far.
+* **Linking `characters`** in place of its hand-written counterpart (the
+  `ldscript.txt`/`modern.mk` link-order migration described in
+  `CONTRIBUTING.md` and, above, in the Batch 2c-1 + 2c-2 write-up)
+  remains open -- `classes` and `items` are the only tables linked so
+  far.
 * **Migrating this pattern to other repository data domains** beyond the
   Chapter 2 slice and the `items`/`classes` global tables this Issue has
   scoped so far.

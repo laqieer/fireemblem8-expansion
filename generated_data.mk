@@ -68,11 +68,11 @@ generated-data-ch2-check:
 	done
 
 # ---------------------------------------------------------------------------
-# Linked generated-data tables (Issue #5 Batch 2c-1)
+# Linked generated-data tables (Issue #5 Batch 2c-1 + 2c-2)
 # ---------------------------------------------------------------------------
 # Everything above never links generated C in place of any hand-written
 # src/ table -- see docs/generated_data.md's "Remaining Issue #5 scope"
-# section. Batch 2c starts closing that gap, one table at a time.
+# section. Batch 2c is closing that gap, one table at a time.
 #
 # GENERATED_DATA_LINKED_HAND_SOURCES is the single source of truth: every
 # hand-written src/ C file listed here has its object filtered out of both
@@ -84,13 +84,15 @@ generated-data-ch2-check:
 # table's own "schema" section in docs/generated_data.md) that
 # `generated-data-check` keeps proving byte-for-byte identical against.
 #
-# Batch 2c-1 links only `classes`. Extending this list to another table
-# also requires defining that table's own
-# GENERATED_DATA_CONFIG_INPUTS_<table> (below) since the generator's
-# non-JSON, non-script "config" inputs (live enum/struct-layout headers,
-# hand data-source tables read for live counts, etc.) are wildly
-# table-specific and cannot be derived generically.
-GENERATED_DATA_LINKED_HAND_SOURCES := src/data_classes.c
+# Batch 2c-1 linked `classes`; Batch 2c-2 adds `items` (the 206-record
+# global gItemData[] table). Extending this list to another table also
+# requires defining that table's own GENERATED_DATA_CONFIG_INPUTS_<table>
+# and GENERATED_DATA_LINKED_SYMBOL_<table> (both below), since the
+# generator's non-JSON, non-script "config" inputs (live enum/struct-
+# layout headers, hand data-source tables read for live counts, etc.) and
+# each table's top-level generated symbol name are wildly table-specific
+# and cannot be derived generically.
+GENERATED_DATA_LINKED_HAND_SOURCES := src/data_classes.c src/data_items.c
 
 # Table name for each entry above, same order. Derived from the
 # `src/data_<table>.c` naming convention shared by every currently-linked
@@ -125,9 +127,35 @@ GENERATED_DATA_CONFIG_INPUTS_classes := \
 	src/portrait_data.c \
 	src/unit_icon_wait_data.c
 
+# `items`' own generator "config" inputs: headers/hand C sources
+# scripts/generated_data/items/schema.py reads live constants from -- the
+# ITEM_*/IA_*/ITYPE_*/WPN_*-style enums and struct ItemData field layout
+# (include/constants/items.h, include/bmitem.h), the live
+# `effectiveness`/`statBonuses` C-symbol-reference validation against
+# include/variables.h (`CSymbolRefField`, resolved against
+# VARIABLES_HEADER), live MSG_COUNT (include/constants/msg.h), and the
+# live item-icon graphics tile count derived from
+# src/data/data_item_icon.c (see items/schema.py's ITEMS_HEADER/
+# BMITEM_HEADER/VARIABLES_HEADER/MSG_HEADER/ITEM_ICON_SOURCE constants).
+GENERATED_DATA_CONFIG_INPUTS_items := \
+	include/constants/items.h \
+	include/bmitem.h \
+	include/variables.h \
+	include/constants/msg.h \
+	src/data/data_item_icon.c
+
 # Shared (every table) generator scripts. Test files/fixtures are
 # deliberately excluded -- they never affect generated output.
 GENERATED_DATA_SHARED_PY_SOURCES := $(wildcard scripts/generated_data/*.py)
+
+# Each linked table's top-level generated C symbol name -- used by
+# generated-data-link-check to prove exactly one definition of it links
+# from the generated object. Cannot be derived generically from the table
+# name (`classes` -> `gClassData`, `items` -> `gItemData`, both singular),
+# so each linked table defines its own entry here, the same way each
+# defines its own GENERATED_DATA_CONFIG_INPUTS_<table> above.
+GENERATED_DATA_LINKED_SYMBOL_classes := gClassData
+GENERATED_DATA_LINKED_SYMBOL_items   := gItemData
 
 # One generation rule per linked table, instantiated below via
 # GENERATED_DATA_LINK_TABLE_RULES. The .c target depends directly on its
@@ -186,29 +214,36 @@ endif
 
 .PHONY: generated-data-link-check
 
-# Batch 2c-1 gate: proves the classes link-swap is wired correctly --
-# exactly one generated object selected in place of the hand source, in
-# both the legacy and modern object lists, no other table affected, the
-# ldscript.txt swap is exact, `gClassData` links exactly once from the
-# generated object, the hand source is preserved untouched, generated
-# artifacts are covered by `clean`, a touched-but-content-unchanged input
-# re-invokes the generator but never re-runs the legacy compile/assemble
-# pipeline -- proven entirely by *behavior* evidence, deliberately not
-# filesystem mtime comparisons (an earlier mtime-based version of this
-# subtest was flaky: `.c`/`.o` mtimes can land in the same timestamp
-# window, and even nanosecond-precision `stat` couldn't fully rule out
-# races against `write_if_changed`'s own write-skip decision). Instead,
-# after a deterministic rm+rebuild baseline, the object target's own
-# `$(MAKE)` output is captured and grepped: `generate --table classes`
-# must appear (the generator did re-run against the touched JSON), but
-# none of the legacy compile/assemble markers (`agbcc`, `arm-none-eabi-
-# as`) may appear (the object was never rebuilt); the object's MD5 is
-# also asserted unchanged, and a final rebuild after restoring the
-# JSON's original timestamp (via `touch -r`, from a saved reference,
-# restored on every exit path via `trap`) must produce no generate/
-# compile output at all (fully up to date). A from-scratch parallel (-j)
-# build of both consumers of the shared generated .c is race-free, and
-# -- critically, since this whole
+# Batch 2c-1 + 2c-2 gate: proves every table in
+# GENERATED_DATA_LINKED_TABLES (currently `classes`, `items`) has its
+# link-swap wired correctly -- exactly one generated object selected in
+# place of each hand source, in both the legacy and modern object lists,
+# no other (unlinked) table affected, each table's ldscript.txt swap is
+# exact, each table's own top-level symbol
+# (GENERATED_DATA_LINKED_SYMBOL_<table>: `gClassData`, `gItemData`) links
+# exactly once from its generated object, every hand source is preserved
+# untouched, generated artifacts are covered by `clean`, and -- per table
+# -- a touched-but-content-unchanged input re-invokes that table's
+# generator but never re-runs the legacy compile/assemble pipeline --
+# proven entirely by *behavior* evidence, deliberately not filesystem
+# mtime comparisons (an earlier mtime-based version of this subtest was
+# flaky: `.c`/`.o` mtimes can land in the same timestamp window, and even
+# nanosecond-precision `stat` couldn't fully rule out races against
+# `write_if_changed`'s own write-skip decision). Instead, after a
+# deterministic rm+rebuild baseline, each table's own object-target
+# `$(MAKE)` output is captured and grepped: `generate --table <table>`
+# must appear (that table's generator did re-run against its own touched
+# JSON), but none of the legacy compile/assemble markers (`agbcc`,
+# `arm-none-eabi-as`) may appear (the object was never rebuilt); that
+# table's object MD5 is also asserted unchanged, and a final rebuild
+# after restoring that JSON's original timestamp (via `touch -r`, from a
+# saved reference, restored on every exit path via `trap`) must produce
+# no generate/compile output at all (fully up to date), for every linked
+# table serially (never overlapping two tables' rm+touch+rebuild windows
+# in the same `$(MAKE)` invocation, so each table's captured log/hash
+# evidence stays unambiguous). A from-scratch parallel (-j) build of
+# every linked table's shared generated .c/.o pair is race-free, and --
+# critically, since this whole
 # plumbing hinges on `include generated_data.mk` happening before `all:`
 # is defined in Makefile -- that a bare `make`/`make -n` still builds
 # the ROM by default, not generated-data-validate (generated_data.mk's
@@ -225,9 +260,12 @@ endif
 # already exercised by CI's existing expansion-modern-linker-check for
 # both MODERN_CONFIG values instead.
 generated-data-link-check: $(GENERATED_DATA_LINKED_OBJECTS)
-	@echo '--- Batch 2c-1 scope: exactly classes ---'
-	@if [ "$(strip $(GENERATED_DATA_LINKED_HAND_SOURCES))" != "src/data_classes.c" ]; then \
-		echo "FAIL: GENERATED_DATA_LINKED_HAND_SOURCES changed unexpectedly ('$(GENERATED_DATA_LINKED_HAND_SOURCES)'); Batch 2c-1 scope is classes only" >&2; exit 1; \
+	@echo '--- Batch 2c-1 + 2c-2 scope: exactly classes and items ---'
+	@if [ "$(strip $(GENERATED_DATA_LINKED_HAND_SOURCES))" != "src/data_classes.c src/data_items.c" ]; then \
+		echo "FAIL: GENERATED_DATA_LINKED_HAND_SOURCES changed unexpectedly ('$(GENERATED_DATA_LINKED_HAND_SOURCES)'); Batch 2c-1 + 2c-2 scope is classes and items only" >&2; exit 1; \
+	fi
+	@if [ "$(strip $(GENERATED_DATA_LINKED_TABLES))" != "classes items" ]; then \
+		echo "FAIL: GENERATED_DATA_LINKED_TABLES changed unexpectedly ('$(GENERATED_DATA_LINKED_TABLES)'); Batch 2c-1 + 2c-2 scope is classes and items only" >&2; exit 1; \
 	fi
 	@echo '--- bare `make` default goal is still `all` (the ROM), not generated-data validation ---'
 	@probe=$$($(MAKE) --no-print-directory -rR -p __generated_data_link_check_default_goal_probe__ 2>/dev/null); \
@@ -250,12 +288,12 @@ generated-data-link-check: $(GENERATED_DATA_LINKED_OBJECTS)
 	@if [ "$(words $(filter $(GENERATED_DATA_LINKED_OBJECTS),$(ALL_OBJECTS)))" != "$(words $(GENERATED_DATA_LINKED_TABLES))" ]; then \
 		echo "FAIL: generated object(s) not present exactly once each in legacy ALL_OBJECTS" >&2; exit 1; \
 	fi
-	@for other in src/data_items.c src/data_characters.c src/data_supports.c; do \
+	@for other in src/data_characters.c src/data_supports.c; do \
 		if ! printf '%s\n' $(CFILES) | grep -qx "$$other"; then \
 			echo "FAIL: unrelated hand source $$other unexpectedly filtered out of legacy CFILES" >&2; exit 1; \
 		fi; \
 	done
-	@echo 'OK: exactly src/data_classes.c is filtered from the legacy build'
+	@echo 'OK: exactly $(GENERATED_DATA_LINKED_HAND_SOURCES) is filtered from the legacy build'
 	@echo '--- modern MODERN_ALL_C_SOURCES/MODERN_ALL_C_OBJECTS ---'
 	@if [ -n "$(strip $(filter $(GENERATED_DATA_LINKED_HAND_SOURCES),$(MODERN_ALL_C_SOURCES)))" ]; then \
 		echo "FAIL: hand source still present in modern MODERN_ALL_C_SOURCES" >&2; exit 1; \
@@ -263,7 +301,7 @@ generated-data-link-check: $(GENERATED_DATA_LINKED_OBJECTS)
 	@if [ -n "$(strip $(filter $(GENERATED_DATA_LINKED_C),$(MODERN_ALL_C_SOURCES)))" ]; then \
 		echo "FAIL: generated source(s) unexpectedly present in modern MODERN_ALL_C_SOURCES (should only be reinstated as an object, at the original hand-object path, so \$(sort) in MODERN_ELF_OBJECTS_LST/MANIFEST keeps it in the hand object's original sorted slot)" >&2; exit 1; \
 	fi
-	@for other in src/data_items.c src/data_characters.c src/data_supports.c; do \
+	@for other in src/data_characters.c src/data_supports.c; do \
 		if ! printf '%s\n' $(MODERN_ALL_C_SOURCES) | grep -qx "$$other"; then \
 			echo "FAIL: unrelated hand source $$other unexpectedly filtered out of modern MODERN_ALL_C_SOURCES" >&2; exit 1; \
 		fi; \
@@ -274,59 +312,78 @@ generated-data-link-check: $(GENERATED_DATA_LINKED_OBJECTS)
 	@if [ "$(words $(filter $(addprefix $(MODERN_OUTPUT_DIR)/,$(GENERATED_DATA_LINKED_HAND_SOURCES:.c=.o)),$(MODERN_ALL_C_OBJECTS)))" != "$(words $(GENERATED_DATA_LINKED_TABLES))" ]; then \
 		echo "FAIL: generated table's object not present exactly once at the original hand-object path in MODERN_ALL_C_OBJECTS" >&2; exit 1; \
 	fi
-	@echo 'OK: exactly src/data_classes.c is filtered from the modern cohort, and its generated object is reinstated at the original object path'
-	@echo '--- ldscript.txt swap ---'
-	@if grep -qx '        . = ALIGN(4); src/data_classes.o(.data);' ldscript.txt; then \
-		echo "FAIL: ldscript.txt still references src/data_classes.o(.data)" >&2; exit 1; \
-	fi
-	@linked_count=$$(grep -Fc '$(GENERATED_DATA_OUT_DIR)/data_classes.o(.data)' ldscript.txt); \
-	if [ "$$linked_count" != 1 ]; then \
-		echo "FAIL: ldscript.txt references $(GENERATED_DATA_OUT_DIR)/data_classes.o(.data) $$linked_count time(s) (want exactly 1)" >&2; exit 1; \
-	fi
-	@echo 'OK: ldscript.txt links the generated object exactly once, in place of the hand object'
-	@echo '--- gClassData symbol ---'
-	@symcount=$$(arm-none-eabi-nm $(GENERATED_DATA_OUT_DIR)/data_classes.o | grep -c ' gClassData$$'); \
-	if [ "$$symcount" != 1 ]; then \
-		echo "FAIL: generated object defines gClassData $$symcount time(s) (want exactly 1)" >&2; exit 1; \
-	fi
-	@echo 'OK: exactly one gClassData definition in the generated object'
-	@echo '--- hand source preserved ---'
-	@test -f src/data_classes.c || { echo "FAIL: src/data_classes.c was deleted" >&2; exit 1; }
-	@echo 'OK: src/data_classes.c preserved untouched'
+	@echo 'OK: exactly $(GENERATED_DATA_LINKED_HAND_SOURCES) is filtered from the modern cohort, and each generated object is reinstated at its original object path'
+	@echo '--- ldscript.txt swap (per table) ---'
+	@for table in $(GENERATED_DATA_LINKED_TABLES); do \
+		if grep -qx "        . = ALIGN(4); src/data_$$table.o(.data);" ldscript.txt; then \
+			echo "FAIL: ldscript.txt still references src/data_$$table.o(.data)" >&2; exit 1; \
+		fi; \
+		linked_count=$$(grep -Fc "$(GENERATED_DATA_OUT_DIR)/data_$$table.o(.data)" ldscript.txt); \
+		if [ "$$linked_count" != 1 ]; then \
+			echo "FAIL: ldscript.txt references $(GENERATED_DATA_OUT_DIR)/data_$$table.o(.data) $$linked_count time(s) (want exactly 1)" >&2; exit 1; \
+		fi; \
+	done
+	@echo 'OK: ldscript.txt links each generated object exactly once, in place of its hand object'
+	@echo '--- generated table symbols (per table) ---'
+	@for table in $(GENERATED_DATA_LINKED_TABLES); do \
+		symbol=""; \
+		$(foreach t,$(GENERATED_DATA_LINKED_TABLES),if [ "$$table" = "$(t)" ]; then symbol=$(GENERATED_DATA_LINKED_SYMBOL_$(t)); fi;) \
+		test -n "$$symbol" || { echo "FAIL: no GENERATED_DATA_LINKED_SYMBOL_ entry for table $$table" >&2; exit 1; }; \
+		symcount=$$(arm-none-eabi-nm $(GENERATED_DATA_OUT_DIR)/data_$$table.o | grep -c " $$symbol\$$"); \
+		if [ "$$symcount" != 1 ]; then \
+			echo "FAIL: generated object for $$table defines $$symbol $$symcount time(s) (want exactly 1)" >&2; exit 1; \
+		fi; \
+	done
+	@echo 'OK: exactly one definition of each linked table'"'"'s own top-level symbol in its generated object'
+	@echo '--- hand sources preserved ---'
+	@for hand in $(GENERATED_DATA_LINKED_HAND_SOURCES); do \
+		test -f "$$hand" || { echo "FAIL: $$hand was deleted" >&2; exit 1; }; \
+	done
+	@echo 'OK: $(GENERATED_DATA_LINKED_HAND_SOURCES) preserved untouched'
 	@echo '--- clean coverage ---'
 	@if [ -z "$(strip $(filter $(GENERATED_DATA_OUT_DIR),$(CLEAN_DIRS)))" ]; then \
 		echo "FAIL: $(GENERATED_DATA_OUT_DIR) missing from CLEAN_DIRS -- clean/clean_fast would not remove it" >&2; exit 1; \
 	fi
-	@echo 'OK: clean/clean_fast remove build/generated/data (.c/.s/.o)'
-	@echo '--- touched-but-unchanged input: content-preserving no-op regenerate (behavior evidence, not mtime) ---'
+	@echo 'OK: clean/clean_fast remove build/generated/data (.c/.s/.o) for every linked table'
+	@echo '--- touched-but-unchanged input: content-preserving no-op regenerate (behavior evidence, not mtime), serially per table ---'
 	@rm -f $(GENERATED_DATA_LINKED_C) $(GENERATED_DATA_LINKED_OBJECTS) $(GENERATED_DATA_LINKED_C:.c=.s); \
 	$(MAKE) --no-print-directory $(GENERATED_DATA_LINKED_OBJECTS) >/dev/null; \
-	o_hash_before=$$(md5sum $(GENERATED_DATA_OUT_DIR)/data_classes.o | cut -d' ' -f1); \
-	json_ref=generated-data-link-check.json_ref.tmp; \
-	trap 'touch -r "$$json_ref" src/data/classes.json 2>/dev/null; rm -f "$$json_ref" generated-data-link-check.regen.log generated-data-link-check.uptodate.log' EXIT; \
-	touch -r src/data/classes.json "$$json_ref"; \
-	touch src/data/classes.json; \
-	$(MAKE) --no-print-directory $(GENERATED_DATA_LINKED_OBJECTS) >generated-data-link-check.regen.log 2>&1; \
-	if ! grep -q 'generate --table classes' generated-data-link-check.regen.log; then \
-		echo "FAIL: touching the JSON source did not trigger a regenerate at all" >&2; exit 1; \
-	fi; \
-	if grep -qE 'arm-none-eabi-as|agbcc' generated-data-link-check.regen.log; then \
-		echo "FAIL: unchanged-content regenerate still ran the legacy compile/assemble pipeline (unnecessary object recompile):" >&2; cat generated-data-link-check.regen.log >&2; exit 1; \
-	fi; \
-	o_hash_after=$$(md5sum $(GENERATED_DATA_OUT_DIR)/data_classes.o | cut -d' ' -f1); \
-	if [ "$$o_hash_before" != "$$o_hash_after" ]; then \
-		echo "FAIL: object content changed even though no recompile should have run ($$o_hash_before -> $$o_hash_after)" >&2; exit 1; \
-	fi; \
-	touch -r "$$json_ref" src/data/classes.json; \
-	$(MAKE) --no-print-directory $(GENERATED_DATA_LINKED_OBJECTS) >generated-data-link-check.uptodate.log 2>&1; \
-	if grep -qE 'generate --table classes|arm-none-eabi-as|agbcc' generated-data-link-check.uptodate.log; then \
-		echo "FAIL: after restoring the JSON source's original timestamp, the object target is not fully up to date:" >&2; cat generated-data-link-check.uptodate.log >&2; exit 1; \
-	fi
-	@echo 'OK: a touched-but-unchanged JSON input re-invokes the generator but never re-runs the legacy compile/assemble pipeline (no unnecessary object recompile), proven by captured build-log evidence and stable object content, not filesystem mtimes'
-	@echo '--- from-scratch parallel build (shared generated .c, two consumers) ---'
+	for table in $(GENERATED_DATA_LINKED_TABLES); do \
+		obj=$(GENERATED_DATA_OUT_DIR)/data_$$table.o; \
+		json=src/data/$$table.json; \
+		o_hash_before=$$(md5sum "$$obj" | cut -d' ' -f1); \
+		json_ref=generated-data-link-check.$$table.json_ref.tmp; \
+		regen_log=generated-data-link-check.$$table.regen.log; \
+		uptodate_log=generated-data-link-check.$$table.uptodate.log; \
+		trap 'touch -r "$$json_ref" "$$json" 2>/dev/null; rm -f "$$json_ref" "$$regen_log" "$$uptodate_log"' EXIT; \
+		touch -r "$$json" "$$json_ref"; \
+		touch "$$json"; \
+		$(MAKE) --no-print-directory "$$obj" >"$$regen_log" 2>&1; \
+		if ! grep -q "generate --table $$table" "$$regen_log"; then \
+			echo "FAIL: touching $$json did not trigger a $$table regenerate at all" >&2; exit 1; \
+		fi; \
+		if grep -qE 'arm-none-eabi-as|agbcc' "$$regen_log"; then \
+			echo "FAIL: $$table unchanged-content regenerate still ran the legacy compile/assemble pipeline (unnecessary object recompile):" >&2; cat "$$regen_log" >&2; exit 1; \
+		fi; \
+		o_hash_after=$$(md5sum "$$obj" | cut -d' ' -f1); \
+		if [ "$$o_hash_before" != "$$o_hash_after" ]; then \
+			echo "FAIL: $$table object content changed even though no recompile should have run ($$o_hash_before -> $$o_hash_after)" >&2; exit 1; \
+		fi; \
+		touch -r "$$json_ref" "$$json"; \
+		$(MAKE) --no-print-directory "$$obj" >"$$uptodate_log" 2>&1; \
+		if grep -qE "generate --table $$table|arm-none-eabi-as|agbcc" "$$uptodate_log"; then \
+			echo "FAIL: after restoring $$json's original timestamp, the $$table object target is not fully up to date:" >&2; cat "$$uptodate_log" >&2; exit 1; \
+		fi; \
+		rm -f "$$json_ref" "$$regen_log" "$$uptodate_log"; \
+		trap - EXIT; \
+		echo "OK: $$table touched-but-unchanged JSON input re-invokes the generator but never re-runs the legacy compile/assemble pipeline (no unnecessary object recompile), proven by captured build-log evidence and stable object content, not filesystem mtimes"; \
+	done
+	@echo '--- from-scratch parallel build (shared generated .c per table, two consumers each) ---'
 	@rm -f $(GENERATED_DATA_LINKED_C) $(GENERATED_DATA_LINKED_OBJECTS)
 	@$(MAKE) --no-print-directory -j4 $(GENERATED_DATA_LINKED_OBJECTS) $(GENERATED_DATA_LINKED_C) >/dev/null
-	@test -e $(GENERATED_DATA_OUT_DIR)/data_classes.c || { echo "FAIL: parallel build did not produce the generated .c" >&2; exit 1; }
-	@test -e $(GENERATED_DATA_OUT_DIR)/data_classes.o || { echo "FAIL: parallel build did not produce the generated object" >&2; exit 1; }
-	@echo 'OK: from-scratch parallel (-j4) build of both consumers of the shared generated .c succeeds, no race/duplicate generation'
+	@for table in $(GENERATED_DATA_LINKED_TABLES); do \
+		test -e $(GENERATED_DATA_OUT_DIR)/data_$$table.c || { echo "FAIL: parallel build did not produce the generated .c for $$table" >&2; exit 1; }; \
+		test -e $(GENERATED_DATA_OUT_DIR)/data_$$table.o || { echo "FAIL: parallel build did not produce the generated object for $$table" >&2; exit 1; }; \
+	done
+	@echo 'OK: from-scratch parallel (-j4) build of every linked table'"'"'s shared generated .c succeeds, no race/duplicate generation'
 	@echo 'PASS: generated-data-link-check'
