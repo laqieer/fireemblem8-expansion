@@ -90,6 +90,19 @@ are, like ``items``' ``weaponType``/``iconId``, always set explicitly by
 every one of the 127 vanilla records (confirmed field-for-field), so they
 are required JSON fields rather than defaulted/omittable ones.
 
+``terrainAvoid``/``terrainDefense``/``terrainResistance`` are validated
+against the Issue #5 Batch 1 ``terrainstats`` table (see
+``dependency_tables()`` below) rather than the generic
+``CSymbolRefField`` header-only check: each referenced symbol must be one
+of the 6 ``TerrainTable_Avo_*``/``Def_*``/``Res_*`` arrays *authored in
+terrainstats* with a matching ``field`` (``terrainAvoid``/
+``terrainDefense``/``terrainResistance``) -- common or fly mobility are
+both accepted, since ``ClassData`` itself has no separate "mobility"
+concept; the referenced symbol alone (``_Common`` vs ``_Fly``) encodes
+that. ``movCostTable`` and ``reservedTerrainTable`` are unaffected by this
+and remain plain ``CSymbolRefField`` escape hatches (movement-cost tables
+and the unresearched ``_pU50`` field are out of scope for this batch).
+
 ``reservedTerrainTable`` models the struct's ``._pU50`` field (``const
 void* _pU50``, an unresearched escape hatch -- see ``include/bmunit.h``).
 11/127 vanilla records set it, always to ``&Unk_TerrainTable_N`` (N in
@@ -525,7 +538,8 @@ def load_records(source_path):
     return ClassRecordList(records, classes_node.loc)
 
 
-def validate(records, diagnostics, classes_header=CLASSES_HEADER, bmunit_header=BMUNIT_HEADER,
+def validate(records, diagnostics, dependency_records=None, classes_header=CLASSES_HEADER,
+             bmunit_header=BMUNIT_HEADER,
              bmitem_header=BMITEM_HEADER, ekrbattle_header=EKRBATTLE_HEADER,
              variables_header=VARIABLES_HEADER, msg_header=MSG_HEADER,
              portrait_source=PORTRAIT_DATA_SOURCE, sms_source=SMS_DATA_SOURCE,
@@ -542,9 +556,19 @@ def validate(records, diagnostics, classes_header=CLASSES_HEADER, bmunit_header=
     widths, text IDs against ``MSG_COUNT``, ``defaultPortraitId``/
     ``smsId`` against their live source-derived bounds), the exact
     ``movCostTable`` triplet capacity, and every C-symbol-reference field
-    (``battleAnim``, ``movCostTable`` entries, ``terrainAvoid``/
-    ``terrainDefense``/``terrainResistance``, ``reservedTerrainTable``).
+    (``battleAnim``, ``movCostTable`` entries, ``reservedTerrainTable``).
+    ``terrainAvoid``/``terrainDefense``/``terrainResistance`` are instead
+    resolved against ``dependency_records["terrainstats"]`` (see
+    ``dependency_tables()``) -- each referenced symbol must be one of the
+    authored terrainstats arrays with a matching ``field``; when no
+    terrainstats dependency records are supplied, falls back to the
+    generic ``CSymbolRefField`` header check (standalone/unit-test use).
     """
+    dependency_records = dependency_records or {}
+    terrainstats_field_by_symbol = {
+        r.symbol: r.field for r in dependency_records.get("terrainstats", ())
+    }
+
     if msg_count is None:
         msg_count = read_msg_count(msg_header)
     if portrait_count is None:
@@ -681,9 +705,30 @@ def validate(records, diagnostics, classes_header=CLASSES_HEADER, bmunit_header=
             ("terrainDefense", record.terrain_defense, record.terrain_defense_loc),
             ("terrainResistance", record.terrain_resistance, record.terrain_resistance_loc),
         ):
-            diagnostics.extend(
-                terrain_field.validate(symbol, loc or record.loc, "{}.{}".format(ref, field_name))
-            )
+            field_loc = loc or record.loc
+            field_ref = "{}.{}".format(ref, field_name)
+            if terrainstats_field_by_symbol:
+                actual_field = terrainstats_field_by_symbol.get(symbol)
+                if actual_field is None:
+                    diagnostics.add(
+                        GeneratedDataError(
+                            "{} '{}' is not one of the arrays authored in terrainstats".format(
+                                field_name, symbol
+                            ),
+                            field_loc, field_ref,
+                        )
+                    )
+                elif actual_field != field_name:
+                    diagnostics.add(
+                        GeneratedDataError(
+                            "{} '{}' is authored in terrainstats with field '{}', expected '{}'".format(
+                                field_name, symbol, actual_field, field_name
+                            ),
+                            field_loc, field_ref,
+                        )
+                    )
+            else:
+                diagnostics.extend(terrain_field.validate(symbol, field_loc, field_ref))
 
         if record.reserved_terrain_table is not None:
             diagnostics.extend(
@@ -722,14 +767,24 @@ class ClassesTableSchema(TableSchema):
         return (
             "constants.classes.CLASS", "bmitem.ITYPE", "bmitem.WPN_EXP", "bmunit.CA",
             "ekrbattle.AnimConf", "variables.TerrainTable", "constants.msg.MSG_COUNT",
-            "data.portrait_data", "data.unit_icon_wait_data",
+            "data.portrait_data", "data.unit_icon_wait_data", "terrainstats",
         )
+
+    def dependency_tables(self):
+        # Loaded via terrainstats' own registered schema and
+        # `default_source` (overridable with `--dep-source
+        # terrainstats=PATH`) -- see `cli.py`'s `_load_dependency_records()`.
+        # Used to validate terrainAvoid/terrainDefense/terrainResistance
+        # against real authored terrainstats records instead of a generic
+        # header-presence check; movCostTable/reservedTerrainTable remain
+        # CSymbolRefField escape hatches, unaffected by this dependency.
+        return ("terrainstats",)
 
     def load_records(self, source_path):
         return load_records(source_path)
 
-    def validate(self, records, diagnostics):
-        validate(records, diagnostics)
+    def validate(self, records, diagnostics, dependency_records=None):
+        validate(records, diagnostics, dependency_records)
 
     def generate_c(self, records, source_path):
         from . import generate as classes_generate

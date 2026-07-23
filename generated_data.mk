@@ -27,7 +27,7 @@
 
 GENERATED_DATA_PY       := $(PYTHON) -m scripts.generated_data
 GENERATED_DATA_OUT_DIR  := build/generated/data
-GENERATED_DATA_TABLES   := supports units shops traps items classes characters eventscripts eventlists chapterbundle
+GENERATED_DATA_TABLES   := supports units shops traps items classes characters eventscripts eventlists chapterbundle terrainstats
 GENERATED_DATA_CH2_TABLES := units shops traps eventscripts eventlists chapterbundle
 
 .PHONY: generated-data-validate generated-data-generate generated-data-check generated-data-test \
@@ -1544,3 +1544,267 @@ generated-data-ch2-eventlists-link-check: $(GENERATED_DATA_CH2_EVENTLISTS_OBJECT
 	@test -e $(GENERATED_DATA_CH2_EVENTLISTS_OBJECT) || { echo "FAIL: parallel build did not produce the generated object for eventlists" >&2; exit 1; }
 	@echo 'OK: from-scratch parallel (-j4) build of eventlists'"'"'s generated .c/.o succeeds, no race/duplicate generation'
 	@echo 'PASS: generated-data-ch2-eventlists-link-check'
+
+# ---------------------------------------------------------------------------
+# Linking a partial-file table with two non-adjacent hand blocks, neither
+# Chapter-2-owned (Issue #5 Batch 1: mechanics terrainstats)
+# ---------------------------------------------------------------------------
+# `terrainstats` is structurally identical to `traps` (Batch 3b, above) --
+# two non-adjacent symbol groups sharing one guard macro, split across a
+# shared hand file -- but it is the first *non-chapter-scoped* table
+# linked this way: its 8 symbols (`TerrainTable_Avo_Common`/`Def_Common`/
+# `Res_Common`/`Avo_Fly`/`Def_Fly`/`Res_Fly`/`HealAmount`/`HealsStatus`)
+# are global combat/heal stat lookups consumed by every chapter's map
+# logic and by `ClassData`'s own `terrainAvoid`/`terrainDefense`/
+# `terrainResistance` pointers (see `classes/schema.py`'s dependency on
+# this table), not a single chapter's own data.
+#
+# The 6 `TerrainTable_Avo_*`/`Def_*`/`Res_*` arrays are contiguous in
+# src/data_terrains.c, immediately after `Unk_TerrainTable_2` (an
+# unresearched escape-hatch array that must stay hand-linked); 5 more
+# unresearched `Unk_TerrainTable_3`..`Unk_TerrainTable_7` escape hatches
+# then sit between that block and `TerrainTable_HealAmount`/
+# `TerrainTable_HealsStatus`, which are immediately followed by the
+# `BanimTerrainGround_*`/`gBanimBGLut*` graphics tables (also
+# hand-linked, out of scope). Both groups are wrapped in their own
+# `#if !GENERATED_DATA_TERRAINSTATS_LINKED` / `#endif` region sharing one
+# guard macro (defined once, immediately above the first region), exactly
+# like traps' `TrapData_Event_Ch2`/`TrapData_Event_Ch2Hard`.
+#
+# Since a single input section is placed by the linker as one atomic
+# unit, and the two groups must land at two addresses ~5 escape-hatch
+# arrays apart, this table's generator
+# (scripts/generated_data/terrainstats/generate.py) places
+# `TerrainTable_HealAmount`/`TerrainTable_HealsStatus` alone into their
+# own dedicated section (`.data.terrainheal`) distinct from the 6 Avo/
+# Def/Res arrays' ordinary `.data`, so the *same* generated object can be
+# spliced into ldscript.txt at two independent points. Combined with two
+# `#undef CONST_DATA` / `#define CONST_DATA SECTION(...)` redirects in
+# src/data_terrains.c (right after each guard's closing #endif -- first
+# to `.data.terrainmid` for Unk_TerrainTable_3..7, then to
+# `.data.terraintail` for BanimTerrainGroundDefault onward), this
+# produces a five-piece split with *zero* address shift anywhere:
+#   * legacy (ldscript.txt): src/data_terrains.o(.data) (movement-cost
+#     tables + Unk_TerrainTable_1/2, unchanged),
+#     build/generated/data/data_terrainstats.o(.data) (the generated 6
+#     Avo/Def/Res arrays), src/data_terrains.o(.data.terrainmid)
+#     (Unk_TerrainTable_3..7, unchanged),
+#     build/generated/data/data_terrainstats.o(.data.terrainheal) (the
+#     generated HealAmount/HealsStatus), then
+#     src/data_terrains.o(.data.terraintail) (BanimTerrainGround_*
+#     onward, unchanged) -- each piece lands at exactly its original
+#     address, so the ROM is byte-identical overall (verified via `cmp`
+#     against a pre-change ROM).
+#   * modern (modern.mk): same reasoning as traps'/units' synthetic slot
+#     -- modern links whole objects, not per-input-section, and this
+#     object is additive (no "original hand path" to reuse), so it is
+#     reinstated at a synthetic slot path
+#     ($(MODERN_OUTPUT_DIR)/src/data_t-terrainstats.o) chosen to sort
+#     immediately before src/data_terrains.o -- an acceptable,
+#     already-documented divergence for the modern build (see the
+#     "Batch 3a" docs section: modern's requirement is a successful,
+#     shiftable build, not literal re-derivation of legacy's byte
+#     layout).
+GENERATED_DATA_TERRAINSTATS_HAND_SOURCE := src/data_terrains.c
+GENERATED_DATA_TERRAINSTATS_GUARD_MACRO := GENERATED_DATA_TERRAINSTATS_LINKED
+GENERATED_DATA_TERRAINSTATS_C      := $(GENERATED_DATA_OUT_DIR)/data_terrainstats.c
+GENERATED_DATA_TERRAINSTATS_OBJECT := $(GENERATED_DATA_TERRAINSTATS_C:.c=.o)
+
+# `terrainstats`' own generator "config" inputs: include/constants/terrains.h
+# (the TERRAIN_* enum and TERRAIN_COUNT, read live by
+# scripts/generated_data/terrainstats/schema.py's
+# read_terrain_constants()/real_terrain_names()).
+GENERATED_DATA_CONFIG_INPUTS_terrainstats := \
+	include/constants/terrains.h
+
+# The 8 terrain array symbols this table's generated object must define
+# exactly once each -- derived live from src/data/terrainstats.json (the
+# same file the generator itself reads), not hardcoded here, so this
+# list can never silently drift from what the table actually authors
+# (same technique as GENERATED_DATA_CH2_TRAPS_SYMBOLS above).
+GENERATED_DATA_TERRAINSTATS_SYMBOLS := $(shell $(PYTHON) -c \
+	"import json; d = json.load(open('src/data/terrainstats.json')); print(' '.join(t['symbol'] for t in d['tables']))")
+
+$(GENERATED_DATA_TERRAINSTATS_C): src/data/terrainstats.json $(GENERATED_DATA_SHARED_PY_SOURCES) $(wildcard scripts/generated_data/terrainstats/*.py) $(GENERATED_DATA_CONFIG_INPUTS_terrainstats)
+	@mkdir -p $(@D)
+	$(GENERATED_DATA_PY) generate --table terrainstats --out-dir $(GENERATED_DATA_OUT_DIR)
+	@test -e $@ || { echo "error: generated-data table 'terrainstats' did not produce $@ (schema default_output_name mismatch?)" >&2; exit 1; }
+
+# Same legacy compile/assemble pipeline as GENERATED_DATA_CH2_TRAPS_OBJECT
+# above (see that rule's own comment for why $(@:.o=.s), not $*.s).
+$(GENERATED_DATA_TERRAINSTATS_OBJECT): $(GENERATED_DATA_TERRAINSTATS_C)
+	$(CPP) $(CPPFLAGS) $< | iconv -f UTF-8 -t CP932 | $(CC1) $(CC1FLAGS) -o $(@:.o=.s)
+	echo '.ALIGN 2, 0' >> $(@:.o=.s)
+ifeq ($(UNAME),Darwin)
+	$(SED) -f scripts/align_2_before_debug_section_for_osx.sed $(@:.o=.s)
+else
+	$(SED) '/.section	.debug_line/i\.align 2, 0' $(@:.o=.s)
+endif
+	$(AS) $(ASFLAGS) $(@:.o=.s) -o $@
+
+.PHONY: generated-data-terrainstats-link-check
+
+# Batch 1 gate: proves the terrainstats link-swap is wired correctly --
+# the generated object linked exactly once at each of its two independent
+# ldscript.txt positions (once per section), in both legacy ALL_OBJECTS
+# and the modern cohort (at the adjacency-preserving synthetic slot
+# path); all 8 of the table's symbols defined exactly once by the
+# generated object (6 in the plain section, 2 in the heal section) and,
+# critically, *zero* times by a freshly rebuilt src/data_terrains.o (both
+# guards actually excluded them, so no multiple-definition risk); both
+# hand blocks' source text still present verbatim (never deleted);
+# unrelated arrays (Unk_TerrainTable_1..7, movement-cost tables,
+# BanimTerrainGroundDefault) still defined by src/data_terrains.o,
+# proving neither guard over-reached; and the same
+# touched-but-unchanged-input / from-scratch-parallel-build evidence as
+# generated-data-ch2-traps-link-check, scoped to this one table.
+# Local/manual gate, same reasoning as the other *-link-check targets
+# for why it's not CI-wired (agbcc is unavailable in CI's tool install).
+generated-data-terrainstats-link-check: $(GENERATED_DATA_TERRAINSTATS_OBJECT)
+	@echo '--- guard present in $(GENERATED_DATA_TERRAINSTATS_HAND_SOURCE), both hand blocks preserved verbatim ---'
+	@if [ "$$(grep -cF '#define $(GENERATED_DATA_TERRAINSTATS_GUARD_MACRO) 1' $(GENERATED_DATA_TERRAINSTATS_HAND_SOURCE))" != 1 ]; then \
+		echo "FAIL: $(GENERATED_DATA_TERRAINSTATS_HAND_SOURCE) does not define '#define $(GENERATED_DATA_TERRAINSTATS_GUARD_MACRO) 1' exactly once" >&2; exit 1; \
+	fi
+	@if [ "$$(grep -cF '#if !$(GENERATED_DATA_TERRAINSTATS_GUARD_MACRO)' $(GENERATED_DATA_TERRAINSTATS_HAND_SOURCE))" != 2 ]; then \
+		echo "FAIL: $(GENERATED_DATA_TERRAINSTATS_HAND_SOURCE) does not have exactly 2 '#if !$(GENERATED_DATA_TERRAINSTATS_GUARD_MACRO)' guards (want one per non-adjacent group)" >&2; exit 1; \
+	fi
+	@if [ "$$(grep -cF '#endif /* !$(GENERATED_DATA_TERRAINSTATS_GUARD_MACRO) */' $(GENERATED_DATA_TERRAINSTATS_HAND_SOURCE))" != 2 ]; then \
+		echo "FAIL: $(GENERATED_DATA_TERRAINSTATS_HAND_SOURCE) does not have exactly 2 matching '#endif' guard closes" >&2; exit 1; \
+	fi
+	@if ! grep -qF '#define CONST_DATA SECTION(".data.terrainmid")' $(GENERATED_DATA_TERRAINSTATS_HAND_SOURCE); then \
+		echo "FAIL: $(GENERATED_DATA_TERRAINSTATS_HAND_SOURCE) is missing the post-Avo/Def/Res-guard CONST_DATA redirect to .data.terrainmid" >&2; exit 1; \
+	fi
+	@if ! grep -qF '#define CONST_DATA SECTION(".data.terraintail")' $(GENERATED_DATA_TERRAINSTATS_HAND_SOURCE); then \
+		echo "FAIL: $(GENERATED_DATA_TERRAINSTATS_HAND_SOURCE) is missing the post-heal-guard CONST_DATA redirect to .data.terraintail" >&2; exit 1; \
+	fi
+	@for symbol in $(GENERATED_DATA_TERRAINSTATS_SYMBOLS); do \
+		if [ "$$(grep -c "CONST_DATA s8 $$symbol\[\]" $(GENERATED_DATA_TERRAINSTATS_HAND_SOURCE))" != 1 ]; then \
+			echo "FAIL: hand source text for terrain array '$$symbol' missing or duplicated in $(GENERATED_DATA_TERRAINSTATS_HAND_SOURCE) -- must stay present verbatim as the round-trip reference" >&2; exit 1; \
+		fi; \
+	done
+	@echo 'OK: guard present exactly twice, all 8 hand terrain array definitions preserved verbatim in source text'
+	@echo '--- ldscript.txt five-piece split (data_terrains.o(.data), generated Avo/Def/Res, data_terrains.o(.data.terrainmid), generated heal, data_terrains.o(.data.terraintail)) ---'
+	@normal_count=$$(grep -Fc "$(GENERATED_DATA_TERRAINSTATS_OBJECT)(.data);" ldscript.txt); \
+	if [ "$$normal_count" != 1 ]; then \
+		echo "FAIL: ldscript.txt references $(GENERATED_DATA_TERRAINSTATS_OBJECT)(.data) $$normal_count time(s) (want exactly 1)" >&2; exit 1; \
+	fi
+	@heal_count=$$(grep -Fc "$(GENERATED_DATA_TERRAINSTATS_OBJECT)(.data.terrainheal);" ldscript.txt); \
+	if [ "$$heal_count" != 1 ]; then \
+		echo "FAIL: ldscript.txt references $(GENERATED_DATA_TERRAINSTATS_OBJECT)(.data.terrainheal) $$heal_count time(s) (want exactly 1)" >&2; exit 1; \
+	fi
+	@prefix_line=$$(grep -nx "        . = ALIGN(4); src/data_terrains.o(.data);" ldscript.txt | cut -d: -f1); \
+	gen1_line=$$(grep -nx "        build/generated/data/data_terrainstats.o(.data);" ldscript.txt | cut -d: -f1); \
+	mid_line=$$(grep -nx "        src/data_terrains.o(.data.terrainmid);" ldscript.txt | cut -d: -f1); \
+	gen2_line=$$(grep -nx "        build/generated/data/data_terrainstats.o(.data.terrainheal);" ldscript.txt | cut -d: -f1); \
+	tail_line=$$(grep -nx "        src/data_terrains.o(.data.terraintail);" ldscript.txt | cut -d: -f1); \
+	if [ -z "$$prefix_line" ]; then echo "FAIL: ldscript.txt no longer links src/data_terrains.o(.data) (the movement-cost prefix piece) at all" >&2; exit 1; fi; \
+	if [ -z "$$mid_line" ]; then echo "FAIL: ldscript.txt no longer links src/data_terrains.o(.data.terrainmid) (the Unk_TerrainTable_3..7 piece) at all" >&2; exit 1; fi; \
+	if [ -z "$$tail_line" ]; then echo "FAIL: ldscript.txt no longer links src/data_terrains.o(.data.terraintail) (the banim-graphics-onward piece) at all" >&2; exit 1; fi; \
+	if [ "$$((gen1_line - prefix_line))" != 1 ]; then \
+		echo "FAIL: $(GENERATED_DATA_TERRAINSTATS_OBJECT)(.data) (line $$gen1_line) is not immediately after src/data_terrains.o(.data) (line $$prefix_line)" >&2; exit 1; \
+	fi; \
+	if [ "$$((mid_line - gen1_line))" != 1 ]; then \
+		echo "FAIL: src/data_terrains.o(.data.terrainmid) (line $$mid_line) is not immediately after $(GENERATED_DATA_TERRAINSTATS_OBJECT)(.data) (line $$gen1_line)" >&2; exit 1; \
+	fi; \
+	if [ "$$((gen2_line - mid_line))" != 1 ]; then \
+		echo "FAIL: $(GENERATED_DATA_TERRAINSTATS_OBJECT)(.data.terrainheal) (line $$gen2_line) is not immediately after src/data_terrains.o(.data.terrainmid) (line $$mid_line)" >&2; exit 1; \
+	fi; \
+	if [ "$$((tail_line - gen2_line))" != 1 ]; then \
+		echo "FAIL: src/data_terrains.o(.data.terraintail) (line $$tail_line) is not immediately after $(GENERATED_DATA_TERRAINSTATS_OBJECT)(.data.terrainheal) (line $$gen2_line)" >&2; exit 1; \
+	fi
+	@echo 'OK: ldscript.txt links, in order, src/data_terrains.o(.data) [movement-cost + Unk_1/2], the generated Avo/Def/Res symbols, src/data_terrains.o(.data.terrainmid) [Unk_3..7], the generated heal symbols, then src/data_terrains.o(.data.terraintail) [banim graphics onward]'
+	@echo '--- legacy ALL_OBJECTS ---'
+	@if [ "$(words $(filter $(GENERATED_DATA_TERRAINSTATS_OBJECT),$(ALL_OBJECTS)))" != 1 ]; then \
+		echo "FAIL: $(GENERATED_DATA_TERRAINSTATS_OBJECT) not present exactly once in legacy ALL_OBJECTS" >&2; exit 1; \
+	fi
+	@if [ "$(words $(filter $(GENERATED_DATA_TERRAINSTATS_HAND_SOURCE:.c=.o),$(ALL_OBJECTS)))" != 1 ]; then \
+		echo "FAIL: $(GENERATED_DATA_TERRAINSTATS_HAND_SOURCE:.c=.o) unexpectedly missing from legacy ALL_OBJECTS -- it must stay linked (it still defines every movement-cost table/escape hatch/banim graphics array)" >&2; exit 1; \
+	fi
+	@echo 'OK: both the generated object and the (still-required) src/data_terrains.o are present exactly once each in legacy ALL_OBJECTS'
+	@echo '--- modern MODERN_ALL_C_OBJECTS (synthetic adjacency-preserving slot) ---'
+	@if [ "$(words $(filter $(MODERN_OUTPUT_DIR)/src/data_t-terrainstats.o,$(MODERN_ALL_C_OBJECTS)))" != 1 ]; then \
+		echo "FAIL: $(MODERN_OUTPUT_DIR)/src/data_t-terrainstats.o not present exactly once in modern MODERN_ALL_C_OBJECTS" >&2; exit 1; \
+	fi
+	@sorted_slot=$$(printf '%s\n' $(sort $(MODERN_ALL_C_OBJECTS)) | grep -n -x -e "$(MODERN_OUTPUT_DIR)/src/data_t-terrainstats.o" -e "$(MODERN_OUTPUT_DIR)/src/data_terrains.o" | cut -d: -f1 | tr '\n' ' '); \
+	first=$$(echo $$sorted_slot | cut -d' ' -f1); second=$$(echo $$sorted_slot | cut -d' ' -f2); \
+	if [ -z "$$first" ] || [ -z "$$second" ] || [ "$$((second - first))" != 1 ]; then \
+		echo "FAIL: in the sorted modern object list, the synthetic slot is not immediately adjacent (and before) src/data_terrains.o (positions: $$sorted_slot)" >&2; exit 1; \
+	fi
+	@echo 'OK: synthetic slot object sorts immediately before src/data_terrains.o in the modern object list, exactly like the legacy ldscript.txt adjacency'
+	@echo '--- generated object symbols (all 8 terrain symbols, exactly once each, in their respective sections) ---'
+	@nm_out=$$(arm-none-eabi-nm $(GENERATED_DATA_TERRAINSTATS_OBJECT)); \
+	for symbol in $(GENERATED_DATA_TERRAINSTATS_SYMBOLS); do \
+		symcount=$$(printf '%s\n' "$$nm_out" | grep -c " $$symbol\$$"); \
+		if [ "$$symcount" != 1 ]; then \
+			echo "FAIL: generated object for terrainstats defines $$symbol $$symcount time(s) (want exactly 1)" >&2; exit 1; \
+		fi; \
+	done
+	@objdump_out=$$(arm-none-eabi-objdump -t $(GENERATED_DATA_TERRAINSTATS_OBJECT)); \
+	for symbol in TerrainTable_HealAmount TerrainTable_HealsStatus; do \
+		if ! printf '%s\n' "$$objdump_out" | grep -q "\.data\.terrainheal.*$$symbol\$$"; then \
+			echo "FAIL: $$symbol is not defined in the .data.terrainheal section of the generated object" >&2; exit 1; \
+		fi; \
+	done; \
+	for symbol in TerrainTable_Avo_Common TerrainTable_Def_Common TerrainTable_Res_Common TerrainTable_Avo_Fly TerrainTable_Def_Fly TerrainTable_Res_Fly; do \
+		if ! printf '%s\n' "$$objdump_out" | grep -E "\.data[[:space:]].*$$symbol\$$" >/dev/null; then \
+			echo "FAIL: $$symbol is not defined in the plain .data section of the generated object" >&2; exit 1; \
+		fi; \
+	done
+	@echo 'OK: exactly one definition of each of the 8 expected terrain symbols in the generated object, each in its expected section'
+	@echo '--- src/data_terrains.o no longer defines any of the 8 guarded terrain symbols, but still defines the surrounding arrays ---'
+	@rm -f src/data_terrains.o src/data_terrains.s
+	@$(MAKE) --no-print-directory src/data_terrains.o >/dev/null
+	@terrains_nm=$$(arm-none-eabi-nm src/data_terrains.o); \
+	for symbol in $(GENERATED_DATA_TERRAINSTATS_SYMBOLS); do \
+		symcount=$$(printf '%s\n' "$$terrains_nm" | grep -c " $$symbol\$$"); \
+		if [ "$$symcount" != 0 ]; then \
+			echo "FAIL: src/data_terrains.o still defines $$symbol $$symcount time(s) -- the guard did not exclude it (would be a multiple-definition link error against the generated object)" >&2; exit 1; \
+		fi; \
+	done; \
+	for other in Unk_TerrainTable_1 Unk_TerrainTable_2 Unk_TerrainTable_3 Unk_TerrainTable_7 TerrainTable_MovCost_CommonT2Normal BanimTerrainGroundDefault; do \
+		if ! printf '%s\n' "$$terrains_nm" | grep -q " $$other\$$"; then \
+			echo "FAIL: src/data_terrains.o unexpectedly lost unrelated symbol $$other -- a guard over-excluded" >&2; exit 1; \
+		fi; \
+	done
+	@echo 'OK: src/data_terrains.o defines zero of the 8 guarded terrain symbols and still defines the surrounding movement-cost/escape-hatch/banim arrays untouched'
+	@echo '--- clean coverage ---'
+	@if [ -z "$(strip $(filter $(GENERATED_DATA_OUT_DIR),$(CLEAN_DIRS)))" ]; then \
+		echo "FAIL: $(GENERATED_DATA_OUT_DIR) missing from CLEAN_DIRS -- clean/clean_fast would not remove data_terrainstats.c/.s/.o" >&2; exit 1; \
+	fi
+	@echo 'OK: clean/clean_fast remove build/generated/data (covers data_terrainstats.c/.s/.o)'
+	@echo '--- touched-but-unchanged input: content-preserving no-op regenerate (behavior evidence, not mtime) ---'
+	@rm -f $(GENERATED_DATA_TERRAINSTATS_C) $(GENERATED_DATA_TERRAINSTATS_OBJECT) $(GENERATED_DATA_TERRAINSTATS_C:.c=.s); \
+	$(MAKE) --no-print-directory $(GENERATED_DATA_TERRAINSTATS_OBJECT) >/dev/null; \
+	o_hash_before=$$(md5sum "$(GENERATED_DATA_TERRAINSTATS_OBJECT)" | cut -d' ' -f1); \
+	json_ref=generated-data-terrainstats-link-check.json_ref.tmp; \
+	regen_log=generated-data-terrainstats-link-check.regen.log; \
+	uptodate_log=generated-data-terrainstats-link-check.uptodate.log; \
+	trap 'touch -r "$$json_ref" src/data/terrainstats.json 2>/dev/null; rm -f "$$json_ref" "$$regen_log" "$$uptodate_log"' EXIT; \
+	touch -r src/data/terrainstats.json "$$json_ref"; \
+	touch src/data/terrainstats.json; \
+	$(MAKE) --no-print-directory "$(GENERATED_DATA_TERRAINSTATS_OBJECT)" >"$$regen_log" 2>&1; \
+	if ! grep -q "generate --table terrainstats" "$$regen_log"; then \
+		echo "FAIL: touching terrainstats.json did not trigger a terrainstats regenerate at all" >&2; exit 1; \
+	fi; \
+	if grep -qE 'arm-none-eabi-as|agbcc' "$$regen_log"; then \
+		echo "FAIL: terrainstats unchanged-content regenerate still ran the legacy compile/assemble pipeline (unnecessary object recompile):" >&2; cat "$$regen_log" >&2; exit 1; \
+	fi; \
+	o_hash_after=$$(md5sum "$(GENERATED_DATA_TERRAINSTATS_OBJECT)" | cut -d' ' -f1); \
+	if [ "$$o_hash_before" != "$$o_hash_after" ]; then \
+		echo "FAIL: terrainstats object content changed even though no recompile should have run ($$o_hash_before -> $$o_hash_after)" >&2; exit 1; \
+	fi; \
+	touch -r "$$json_ref" src/data/terrainstats.json; \
+	$(MAKE) --no-print-directory "$(GENERATED_DATA_TERRAINSTATS_OBJECT)" >"$$uptodate_log" 2>&1; \
+	if grep -qE "generate --table terrainstats|arm-none-eabi-as|agbcc" "$$uptodate_log"; then \
+		echo "FAIL: after restoring terrainstats.json's original timestamp, the terrainstats object target is not fully up to date:" >&2; cat "$$uptodate_log" >&2; exit 1; \
+	fi; \
+	rm -f "$$json_ref" "$$regen_log" "$$uptodate_log"; \
+	trap - EXIT; \
+	echo 'OK: terrainstats touched-but-unchanged JSON input re-invokes the generator but never re-runs the legacy compile/assemble pipeline, proven by captured build-log evidence and stable object content'
+	@echo '--- from-scratch parallel build ---'
+	@rm -f $(GENERATED_DATA_TERRAINSTATS_C) $(GENERATED_DATA_TERRAINSTATS_OBJECT)
+	@$(MAKE) --no-print-directory -j4 $(GENERATED_DATA_TERRAINSTATS_OBJECT) $(GENERATED_DATA_TERRAINSTATS_C) >/dev/null
+	@test -e $(GENERATED_DATA_TERRAINSTATS_C) || { echo "FAIL: parallel build did not produce the generated .c for terrainstats" >&2; exit 1; }
+	@test -e $(GENERATED_DATA_TERRAINSTATS_OBJECT) || { echo "FAIL: parallel build did not produce the generated object for terrainstats" >&2; exit 1; }
+	@echo 'OK: from-scratch parallel (-j4) build of terrainstats'"'"'s generated .c/.o succeeds, no race/duplicate generation'
+	@echo 'PASS: generated-data-terrainstats-link-check'

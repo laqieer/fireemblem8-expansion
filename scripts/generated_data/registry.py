@@ -17,6 +17,7 @@ from .eventlists.schema import EventListsTableSchema
 from .chapterbundle.schema import ChapterBundleTableSchema
 from .classes.schema import ClassesTableSchema
 from .characters.schema import CharactersTableSchema
+from .terrainstats.schema import TerrainStatsTableSchema
 
 REGISTRY.register(SupportsTableSchema())
 REGISTRY.register(UnitsTableSchema())
@@ -32,3 +33,8 @@ REGISTRY.register(ClassesTableSchema())
 # inventory.py, and wired into generated_data.mk's GENERATED_DATA_TABLES/
 # CI. See characters/schema.py's module docstring for the full write-up.
 REGISTRY.register(CharactersTableSchema())
+# Issue #5 Batch 1 (mechanics): the 8 TerrainTable_* combat/heal stat
+# arrays -- src/data/terrainstats.json, generate.py/parser.py/
+# inventory.py, wired into generated_data.mk's GENERATED_DATA_TABLES/CI.
+# See terrainstats/schema.py's module docstring for the full write-up.
+REGISTRY.register(TerrainStatsTableSchema())

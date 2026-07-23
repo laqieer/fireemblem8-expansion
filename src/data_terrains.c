@@ -3334,6 +3334,24 @@ CONST_DATA s8 Unk_TerrainTable_2[] = {
     [TERRAIN_MAST] = -1,
 };
 
+/* Issue #5 Batch 1: the 6 terrainAvoid/terrainDefense/terrainResistance
+ * arrays below (through the matching #endif) are canonically generated
+ * from src/data/terrainstats.json -- see scripts/generated_data/
+ * terrainstats/ and docs/generated_data.md's "terrainstats" schema
+ * section. build/generated/data/data_terrainstats.o(.data) is linked in
+ * their place (ldscript.txt places it immediately after this file's own
+ * (.data), so this excluded block leaves zero address gap). The block
+ * itself is deliberately left in place, verbatim, rather than deleted:
+ * generated-data-check's round-trip parser (scripts/generated_data/
+ * terrainstats/parser.py) reads this exact source text to keep proving
+ * the generated table byte-for-byte identical in meaning to it. Never
+ * hand-edit the block below -- edit src/data/terrainstats.json and
+ * regenerate instead. TerrainTable_HealAmount/TerrainTable_HealsStatus
+ * (later in this file) are generated from the same JSON/object and are
+ * guarded the same way. */
+#define GENERATED_DATA_TERRAINSTATS_LINKED 1
+
+#if !GENERATED_DATA_TERRAINSTATS_LINKED
 CONST_DATA s8 TerrainTable_Avo_Common[] = {
     [TERRAIN_NONE] = 0,
     [TERRAIN_PLAINS] = 0,
@@ -3741,6 +3759,21 @@ CONST_DATA s8 TerrainTable_Res_Fly[] = {
     [TERRAIN_BRACE] = 0,
     [TERRAIN_MAST] = 0,
 };
+#endif /* !GENERATED_DATA_TERRAINSTATS_LINKED */
+
+/* The excluded block above is not actually a binary-layout prefix of
+ * this translation unit's .data -- the movement-cost tables and
+ * Unk_TerrainTable_1/Unk_TerrainTable_2 (above) still emit ahead of it,
+ * and Unk_TerrainTable_3 onward (below, through Unk_TerrainTable_7) must
+ * stay glued together, unshifted, right up to where
+ * TerrainTable_HealAmount/TerrainTable_HealsStatus are separately
+ * excluded further down. Redirect everything from here into a
+ * distinctly named section so ldscript.txt can place the generated
+ * object's terrainAvoid/terrainDefense/terrainResistance symbols at the
+ * exact original address without moving this content. See ldscript.txt
+ * and docs/generated_data.md's "terrainstats" section. */
+#undef CONST_DATA
+#define CONST_DATA SECTION(".data.terrainmid")
 
 CONST_DATA s8 Unk_TerrainTable_3[] = {
     [TERRAIN_NONE] = 0,
@@ -4082,6 +4115,15 @@ CONST_DATA s8 Unk_TerrainTable_7[] = {
     [TERRAIN_MAST] = 0,
 };
 
+/* Issue #5 Batch 1: TerrainTable_HealAmount/TerrainTable_HealsStatus
+ * (hand-mode-agnostic heal-tile stats, guarded here) are generated from
+ * the same src/data/terrainstats.json / build/generated/data/
+ * data_terrainstats.o as the terrainAvoid/terrainDefense/
+ * terrainResistance arrays guarded near the top of this file. Reuses the
+ * guard macro defined above (already 1) -- do not redefine it here. Hand
+ * text preserved verbatim for the round-trip parser; never hand-edit --
+ * regenerate instead. */
+#if !GENERATED_DATA_TERRAINSTATS_LINKED
 CONST_DATA s8 TerrainTable_HealAmount[] = {
     [TERRAIN_NONE] = 0,
     [TERRAIN_PLAINS] = 0,
@@ -4217,6 +4259,17 @@ CONST_DATA s8 TerrainTable_HealsStatus[] = {
     [TERRAIN_BRACE] = 0,
     [TERRAIN_MAST] = 0,
 };
+#endif /* !GENERATED_DATA_TERRAINSTATS_LINKED */
+
+/* Same reasoning as the .data.terrainmid redirect above: everything
+ * from here (BanimTerrainGroundDefault) to end-of-file (the
+ * BanimTerrainGround_ / gBanimBGLut graphics tables) must stay glued
+ * together, unshifted, at its exact original address, while the
+ * generated object's heal-tile symbols slot in immediately above via
+ * their own dedicated section. See ldscript.txt and
+ * docs/generated_data.md's "terrainstats" section. */
+#undef CONST_DATA
+#define CONST_DATA SECTION(".data.terraintail")
 
 CONST_DATA s8 BanimTerrainGroundDefault[] = {
     [TERRAIN_NONE] = 1,

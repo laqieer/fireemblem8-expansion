@@ -2,6 +2,7 @@ import unittest
 
 from scripts.generated_data.diagnostics import DiagnosticCollector
 from scripts.generated_data.classes import schema as classes_schema
+from scripts.generated_data.terrainstats import schema as terrainstats_schema
 from scripts.generated_data.tests._util import fixture_path
 
 _MINI_CLASSES_HEADER = fixture_path("classes", "mini_classes.h")
@@ -14,12 +15,21 @@ _MINI_PORTRAIT_SOURCE = fixture_path("classes", "mini_portrait_data.c")
 _MINI_SMS_SOURCE = fixture_path("classes", "mini_sms_data.c")
 
 
+def _deps_terrainstats():
+    return {
+        "terrainstats": terrainstats_schema.load_records(
+            fixture_path("classes", "deps_terrainstats.json")
+        )
+    }
+
+
 def _validate(fixture_name):
     records = classes_schema.load_records(fixture_path("classes", fixture_name))
     diagnostics = DiagnosticCollector()
     classes_schema.validate(
         records,
         diagnostics,
+        dependency_records=_deps_terrainstats(),
         classes_header=_MINI_CLASSES_HEADER,
         bmunit_header=_MINI_BMUNIT_HEADER,
         bmitem_header=_MINI_BMITEM_HEADER,
@@ -146,13 +156,76 @@ class ClassesSchemaReferenceTests(unittest.TestCase):
         _, diagnostics = _validate("bad_terrain_ref.json")
         self.assertFalse(diagnostics.ok)
         messages = [str(e) for e in diagnostics.errors]
-        self.assertTrue(any("TerrainTable_Avo_NotReal" in m for m in messages), messages)
+        self.assertTrue(
+            any(
+                "TerrainTable_Avo_NotReal' is not one of the arrays authored in terrainstats" in m
+                for m in messages
+            ),
+            messages,
+        )
 
     def test_bad_reserved_terrain_pointer_detected(self):
         _, diagnostics = _validate("bad_reserved_terrain_ref.json")
         self.assertFalse(diagnostics.ok)
         messages = [str(e) for e in diagnostics.errors]
         self.assertTrue(any("Unk_TerrainTable_NotReal" in m for m in messages), messages)
+
+
+class ClassesTerrainstatsDependencyTests(unittest.TestCase):
+    """Issue #5 Batch 1: terrainAvoid/terrainDefense/terrainResistance are
+    resolved against the terrainstats dependency's own field metadata,
+    not just a generic extern-symbol presence check."""
+
+    def test_field_mismatch_against_terrainstats_detected(self):
+        records = classes_schema.load_records(fixture_path("classes", "valid.json"))
+        diagnostics = DiagnosticCollector()
+        # deps_terrainstats.json tags TerrainTable_Def_Fixture with field
+        # 'terrainDefense' -- referencing it from terrainAvoid must fail
+        # even though the symbol itself is a real authored terrainstats
+        # array (just for the wrong role).
+        mismatched_deps = {
+            "terrainstats": terrainstats_schema.load_records(
+                fixture_path("classes", "deps_terrainstats_mismatch.json")
+            )
+        }
+        classes_schema.validate(
+            records,
+            diagnostics,
+            dependency_records=mismatched_deps,
+            classes_header=_MINI_CLASSES_HEADER,
+            bmunit_header=_MINI_BMUNIT_HEADER,
+            bmitem_header=_MINI_BMITEM_HEADER,
+            ekrbattle_header=_MINI_EKRBATTLE_HEADER,
+            variables_header=_MINI_VARIABLES_HEADER,
+            msg_header=_MINI_MSG_HEADER,
+            portrait_source=_MINI_PORTRAIT_SOURCE,
+            sms_source=_MINI_SMS_SOURCE,
+        )
+        self.assertFalse(diagnostics.ok)
+        messages = [str(e) for e in diagnostics.errors]
+        self.assertTrue(
+            any("authored in terrainstats with field 'terrainDefense', expected 'terrainAvoid'" in m
+                for m in messages),
+            messages,
+        )
+
+    def test_no_terrainstats_dependency_falls_back_to_symbol_ref_check(self):
+        records = classes_schema.load_records(fixture_path("classes", "valid.json"))
+        diagnostics = DiagnosticCollector()
+        classes_schema.validate(
+            records,
+            diagnostics,
+            dependency_records=None,
+            classes_header=_MINI_CLASSES_HEADER,
+            bmunit_header=_MINI_BMUNIT_HEADER,
+            bmitem_header=_MINI_BMITEM_HEADER,
+            ekrbattle_header=_MINI_EKRBATTLE_HEADER,
+            variables_header=_MINI_VARIABLES_HEADER,
+            msg_header=_MINI_MSG_HEADER,
+            portrait_source=_MINI_PORTRAIT_SOURCE,
+            sms_source=_MINI_SMS_SOURCE,
+        )
+        self.assertTrue(diagnostics.ok, msg=diagnostics.render())
 
 
 class ClassesSchemaRangeTests(unittest.TestCase):

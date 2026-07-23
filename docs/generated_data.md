@@ -1,4 +1,4 @@
-# Generated-data platform (Issue #5 Chapter 2 slice -- Batch A + B + C; global `items`/`classes` Batch 1; `characters` Batch 2a + 2b; `classes` linked Batch 2c-1; `items` linked Batch 2c-2; `supports` linked Batch 2c-3; `characters` linked Batch 2c-4; `units`/Chapter 2 `UnitDefinition`/`REDA` linked Batch 3a; `traps`/Chapter 2 trap arrays linked Batch 3b; `shops`/Chapter 2 armory linked Batch 3c; `eventlists`/Chapter 2 event-list composition linked Batch 3d)
+# Generated-data platform (Issue #5 Chapter 2 slice -- Batch A + B + C; global `items`/`classes` Batch 1; `characters` Batch 2a + 2b; `classes` linked Batch 2c-1; `items` linked Batch 2c-2; `supports` linked Batch 2c-3; `characters` linked Batch 2c-4; `units`/Chapter 2 `UnitDefinition`/`REDA` linked Batch 3a; `traps`/Chapter 2 trap arrays linked Batch 3b; `shops`/Chapter 2 armory linked Batch 3c; `eventlists`/Chapter 2 event-list composition linked Batch 3d; `terrainstats`/global terrain combat+heal stat arrays linked, Issue #5 mechanics Batch 1)
 
 ## Status
 
@@ -189,17 +189,42 @@ reference the `eventlists/parser.py` check reads. See "## Linking a
 Chapter-2-owned table with header-only content (Batch 3d:
 `eventlists`)" below for the full write-up.
 
+As of Issue #5 **mechanics Batch 1**, `terrainstats` -- the first
+**mechanics-domain** table, and the first *global* (not Chapter-2-owned)
+table to use the partial-file-splice pattern `units`/`traps`/`shops`/
+`eventlists` established -- is also linked, in place of two non-adjacent
+groups of symbols in `src/data_terrains.c` (the 6 `Avo`/`Def`/`Res`
+arrays, then, after 5 untouched `Unk_TerrainTable_N` escape-hatch
+arrays, the 2 heal arrays), also with zero ROM/ELF address shift.
+Structurally like `traps` (two non-adjacent guarded blocks sharing one
+guard macro, a per-symbol-sectioned generated object, a five-piece
+`ldscript.txt` split with no internal `ALIGN(4)`), except it is
+consumed by another authored table rather than the reverse:
+`classes/schema.py` now cross-validates its `terrainAvoid`/
+`terrainDefense`/`terrainResistance` fields against real `terrainstats`
+records instead of plain header-declaration presence. This does **not**
+close Issue #5's mechanics scope (movement costs, weapon triangle, and
+every other combat/growth/AI formula and table remain untouched) nor
+Issue #5 overall -- see "## `terrainstats` schema (Issue #5 Batch 1
+mechanics: terrain combat/heal stat arrays)" and "Linking two
+non-adjacent groups of terrain combat/heal stat arrays in one
+partial-file table (Batch 1 mechanics: `terrainstats`)" below for the
+full write-up, and "Remaining Issue #5 scope" at the end of this
+document for the explicit list of what remains open.
+
 ## Source vs. generated vs. committed-public artifacts
 
 **This table's "Linked into the ROM?" column reflects current status,
-not each table's original as-generated-only starting point.** Of the 10
-tables in `GENERATED_DATA_TABLES`, 8 produce real compiled C data and are
+not each table's original as-generated-only starting point.** Of the 11
+tables in `GENERATED_DATA_TABLES`, 9 produce real compiled C data and are
 now **canonically linked**, protected by a table-specific `*-link-check`
 Make target (`generated-data-link-check` for the 4 whole-file global
 tables, `generated-data-ch2-<table>-link-check` for the 4 Chapter-2-owned
-partial-file tables) that fails the build if the generated object and its
-ldscript/Makefile/modern.mk wiring ever drift out of sync. The remaining
-2 tables (`eventscripts`, `chapterbundle`) are **metadata/schema-only**:
+partial-file tables, `generated-data-terrainstats-link-check` for the 1
+global partial-file table) that fails the build if the generated object
+and its ldscript/Makefile/modern.mk wiring ever drift out of sync. The
+remaining 2 tables (`eventscripts`, `chapterbundle`) are
+**metadata/schema-only**:
 they validate cross-references against real symbols/headers but never
 render `struct`/array C initializers of their own, so there is no
 generated `.c` for them to link -- their existing hand-written
@@ -247,6 +272,15 @@ declaration files remain the sole, unchanged, always-canonical source.
 | Generated C89 (bulky) | `build/generated/data/data_ch2_eventlists.c` | **No** (gitignored) | **Yes** -- canonical, linked at the exact original Chapter 2 address, zero shift |
 | Committed inventory/summary | `reports/generated_data_eventlists_inventory.md` | Yes (small) | N/A |
 
+**Canonically linked, global partial-file slice (Issue #5 mechanics Batch 1: `terrainstats`):**
+
+| Artifact | Path | Committed? | Linked into the ROM? |
+|---|---|---|---|
+| Structured source (terrainstats) | `src/data/terrainstats.json` | Yes | No |
+| Hand-written C (2 non-adjacent guarded blocks, round-trip reference only) | `src/data_terrains.c` | Yes | No -- all 8 terrain combat/heal symbols superseded by the generated object (mechanics Batch 1); the 5 `Unk_TerrainTable_N` escape hatches and every movement-cost/graphics array in the same file stay hand-linked, untouched |
+| Generated C89 (bulky) | `build/generated/data/data_terrainstats.c` | **No** (gitignored) | **Yes** -- canonical, linked via a 5-piece ldscript split (2 non-adjacent symbol groups), zero shift |
+| Committed inventory/summary | `reports/generated_data_terrainstats_inventory.md` | Yes (small) | N/A |
+
 **Metadata/schema-only (no generated C ever produced; existing hand file remains the sole canonical source):**
 
 | Artifact | Path | Committed? | Linked into the ROM? |
@@ -260,7 +294,7 @@ declaration files remain the sole, unchanged, always-canonical source.
 | Generated C89 | *(none -- metadata-only table)* | N/A | N/A |
 | Committed inventory/summary | `reports/generated_data_chapterbundle_inventory.md` | Yes (small) | N/A |
 
-Because the 8 linked tables' generated C is validated byte-for-byte
+Because the 9 linked tables' generated C is validated byte-for-byte
 identical (in compiled `.data` bytes) to the hand-written file/blocks it
 replaced, *before* being wired into `ldscript.txt`/`Makefile`/`modern.mk`,
 and each stays behind its own `*-link-check` regression gate afterward,
@@ -1078,6 +1112,30 @@ lookups, `reservedTerrainTable`) via `CSymbolRefField` against
 `include/ekrbattle.h`/`include/variables.h` -- no new header declarations
 were needed since every required symbol already has a public `extern`.
 
+As of Issue #5 **Batch 1 (mechanics)**, `terrainAvoid`/`terrainDefense`/
+`terrainResistance` are validated more strongly than plain
+`CSymbolRefField` header presence: `ClassesTableSchema.validate()` now
+accepts an optional `dependency_records` map (supplied automatically by
+the CLI via the same `dependency_tables()` mechanism `eventlists`/
+`chapterbundle` already use, now returning `("terrainstats",)`) and, when
+`terrainstats` records are supplied, cross-checks each of the three
+referenced symbols against the authored `src/data/terrainstats.json`
+records: the symbol must exist as a `terrainstats` record, **and** that
+record's own `field` metadata (`terrainAvoid`/`terrainDefense`/
+`terrainResistance`) must match the `ClassData` field referencing it --
+a class cannot, for example, reference a `terrainDefense`-tagged array
+through its `terrainAvoid` field. `ClassData` records have no explicit
+"mobility" (`Common` vs. `Fly`) field of their own, so this check is
+symbol-identity-based, not role-based: it does not (and does not need
+to) know or care whether a class is a flier. `movCostTable` entries and
+`reservedTerrainTable` are **not** part of this change and remain
+plain `CSymbolRefField` escape hatches (movement-cost/reserved-table
+authoring is explicitly out of scope for this batch -- see "##
+`terrainstats` schema" below). When `dependency_records` is omitted
+(e.g. standalone unit tests), `validate()` falls back to the original
+`CSymbolRefField`-only check for all three fields, so the schema stays
+usable without wiring up the full dependency-graph machinery.
+
 The generator (`classes/generate.py`) matches the hand file's own
 default-omission convention field for field (confirmed per-field
 presence statistics across all 127 hand records): `smsId` and all
@@ -1122,6 +1180,77 @@ slow-walking/no-battle-anim/reserved-terrain-table counts, a `CA_*`
 attribute-usage histogram, a `baseRanks` weapon-type histogram,
 `battleAnim` symbol-usage table, and the table's own dependency-graph
 digest.
+
+## `terrainstats` schema (Issue #5 Batch 1 mechanics: terrain combat/heal stat arrays)
+
+Source: `src/data/terrainstats.json` (schema `fe8.terrainstats.v1`), one
+object per terrain-stat array under `"tables"`: `symbol`, `field` (one
+of `terrainAvoid`/`terrainDefense`/`terrainResistance`/`healAmount`/
+`healsStatus` -- the same `terrainAvoid`/`terrainDefense`/
+`terrainResistance` vocabulary `classes/schema.py` uses for its own
+`ClassData` pointer fields, so the two schemas share one naming axis
+without either importing the other), `mobility` (`common`/`fly`, or
+JSON `null` for the two heal arrays, which have no `_Common`/`_Fly`
+variant), and an ordered `entries[]` keyed by `TERRAIN_*` constant.
+Covers exactly 8
+vanilla arrays -- `TerrainTable_Avo_Common`/`Def_Common`/`Res_Common`,
+`TerrainTable_Avo_Fly`/`Def_Fly`/`Res_Fly`, `TerrainTable_HealAmount`,
+`TerrainTable_HealsStatus` -- deliberately excluding the 5 unrelated
+`Unk_TerrainTable_3`..`Unk_TerrainTable_7` escape-hatch arrays and every
+movement-cost/graphics table that also lives in `src/data_terrains.c`;
+none of those are part of this batch's scope (see "Remaining Issue #5
+scope" at the end of this document).
+
+Validations enforced (`terrainstats/schema.py: validate()`): unique
+array symbols; **full contiguous `TERRAIN_*` coverage** for every array
+(every terrain key from the live `TERRAIN_*` enum in
+`include/constants/terrains.h` must appear exactly once per array, in
+enum order -- no gaps, no duplicates, no keys outside the enum, and no
+array may cover a different key set than any other); the exact `s8`
+range (`[-128, 127]`) for every entry value; `field` is one of the 5
+valid enum values and matches the array's role (an `Avo_*` symbol must
+use `terrainAvoid`, etc.); `mobility` matches the symbol's own
+`_Common`/`_Fly` suffix (or `none` for the two heal arrays, which carry
+no suffix). The header read is scoped to just the plain `TERRAIN_*`
+enum block (not any `TERRAIN_COUNT`-style trailing sentinel, which is
+read separately purely to size the coverage check, mirroring `traps`'
+scoped-enum-block pattern for `TRAP_*` vs. `TRAP_MAX_COUNT`).
+
+The generator (`terrainstats/generate.py`) splits the 8 arrays across
+two storage classes, matching the hand file's own convention exactly:
+the 6 `Avo`/`Def`/`Res` arrays are `CONST_DATA` (the default `.data`
+placement `src/data_terrains.c` already uses for every other array in
+the file), while `TerrainTable_HealAmount`/`TerrainTable_HealsStatus`
+are emitted under a dedicated `SECTION(".data.terrainheal")` -- required
+so the same generated object can be spliced into two independent,
+non-adjacent `ldscript.txt` slots (see "## Linking two non-adjacent
+groups of terrain combat/heal stat arrays in one partial-file table
+(Batch 1 mechanics: `terrainstats`)" below for the full write-up). Each
+array is emitted as a flat C89 designated initializer,
+`[TERRAIN_X] = value`, in ascending declared-entry order (not
+necessarily enum-numeric order, though for this table's 8 fully-covered
+arrays the two always coincide).
+
+### Round-trip checker (`terrainstats/parser.py`)
+
+A regex-based parser scoped precisely to the 8 expected symbols (it
+never matches `Unk_TerrainTable_*` or any movement-cost/graphics array
+sharing the same file, confirmed by a dedicated non-confusion test).
+Every entry resolves to a bare `(terrain_key, value)` pair -- no symbol
+references or nested structs exist in this table, unlike `classes`/
+`items` -- so the comparison is a simple ordered-tuple-list equality per
+array. `python3 -m unittest
+scripts.generated_data.tests.test_terrainstats_roundtrip` proves all
+**8/8** arrays match the real `src/data_terrains.c` exactly with zero
+diagnostics.
+
+### Committed inventory (`terrainstats/inventory.py`)
+
+`reports/generated_data_terrainstats_inventory.md` is the committed,
+CI-checked report: total array count, the terrain-key coverage count
+per array, a `field`/`mobility` usage breakdown, and the table's own
+dependency-graph digest (this table has no dependencies of its own --
+it is a leaf that `classes` depends on, not the reverse).
 
 ## `characters` schema (Issue #5 Batch 2a + 2b: full global character table)
 
@@ -2595,6 +2724,196 @@ section split.
   chapterbundle validation path is unaffected by the eventlists link
   swap (it validates from JSON/records, not from the linked ROM).
 
+## Linking two non-adjacent groups of terrain combat/heal stat arrays in one partial-file table (Batch 1 mechanics: `terrainstats`)
+
+`terrainstats` is the first **global, not Chapter-2-owned**, table to be
+linked via the partial-file-splice pattern `units`/`traps`/`shops`/
+`eventlists` (Batch 3a-3d) established: its 8 symbols are only a slice
+of `src/data_terrains.c`, a translation unit that also defines every
+movement-cost table, the 5 `Unk_TerrainTable_3`..`Unk_TerrainTable_7`
+escape-hatch arrays, and every `BanimTerrainGround_*`/`gBanimBGLut*`
+graphics table -- all of which must stay hand-linked untouched -- so it
+can't be excluded from compilation by filtering a whole file out of
+`CFILES`/`MODERN_ALL_C_SOURCES` the way `GENERATED_DATA_LINKED_*` does.
+
+**Two non-adjacent groups, structurally like `traps` (Batch 3b).** The 6
+`Avo`/`Def`/`Res` arrays sit contiguously together (`TerrainTable_Avo_Common`
+immediately after `Unk_TerrainTable_2`, running through
+`TerrainTable_Res_Fly`), but the 5 `Unk_TerrainTable_3`..
+`Unk_TerrainTable_7` escape-hatch arrays sit immediately after them,
+followed only then by the 2 heal arrays
+(`TerrainTable_HealAmount`/`TerrainTable_HealsStatus`), immediately
+before the `BanimTerrainGround_*`/`gBanimBGLut*` graphics tables begin.
+Like `traps`, this cannot be excluded from compilation by one
+`#if !GUARD` / `#endif` region; instead `src/data_terrains.c` wraps each
+group in its own such region, sharing one guard macro
+(`GENERATED_DATA_TERRAINSTATS_LINKED`, defined once, immediately above
+the first region):
+
+```c
+#define GENERATED_DATA_TERRAINSTATS_LINKED 1
+
+#if !GENERATED_DATA_TERRAINSTATS_LINKED
+CONST_DATA s8 TerrainTable_Avo_Common[TERRAIN_COUNT] = {
+    ...
+};
+... /* Def_Common, Res_Common, Avo_Fly, Def_Fly, Res_Fly */
+#endif /* !GENERATED_DATA_TERRAINSTATS_LINKED */
+
+#undef CONST_DATA
+#define CONST_DATA SECTION(".data.terrainmid")
+
+CONST_DATA s8 Unk_TerrainTable_3[TERRAIN_COUNT] = { ... };
+... /* Unk_TerrainTable_4..7, still hand-linked, untouched */
+
+#if !GENERATED_DATA_TERRAINSTATS_LINKED
+CONST_DATA s8 TerrainTable_HealAmount[TERRAIN_COUNT] = {
+    ...
+};
+CONST_DATA s8 TerrainTable_HealsStatus[TERRAIN_COUNT] = {
+    ...
+};
+#endif /* !GENERATED_DATA_TERRAINSTATS_LINKED */
+
+#undef CONST_DATA
+#define CONST_DATA SECTION(".data.terraintail")
+
+CONST_DATA ... BanimTerrainGroundDefault ... = { ... };
+```
+
+Both guarded blocks are left in place, verbatim -- never hand-edit
+either one, edit `src/data/terrainstats.json` and regenerate instead.
+The 5 `Unk_TerrainTable_3`..`Unk_TerrainTable_7` arrays sitting *between*
+the two guarded groups are themselves completely untouched hand data
+(they stay real, uncommented-out C in the middle `#undef CONST_DATA` /
+`#define CONST_DATA SECTION(".data.terrainmid")` redirect region) --
+this batch does not model, generate, or validate them at all, exactly
+per the DON'T constraint against touching movement-cost/graphics data.
+
+**A comment-authoring pitfall hit during this migration.** An early
+version of the trailing `.data.terraintail` redirect comment described
+the following graphics tables as `BanimTerrainGround_*/gBanimBGLut*`.
+The literal three-character sequence `*/` embedded mid-sentence
+(`_*` immediately followed by `/g`) prematurely closed the enclosing
+`/* ... */` block comment, letting the remaining comment text leak into
+the preprocessed output as real (uncommented) tokens and produce a C89
+syntax error (`missing terminating ' character`, `syntax error before
+'*'`) at compile time -- a purely textual authoring hazard, not a
+semantic one, but one worth flagging for any future comment mentioning
+wildcard-style or pointer-adjacent-to-slash names in this file. Fixed by
+rewording to separate the tokens (`BanimTerrainGround_ / gBanimBGLut`).
+
+**Per-symbol sectioning for the heal arrays, structurally like `traps`.**
+Since a single input section is placed by the linker as one atomic unit,
+and the 6 Avo/Def/Res arrays must land immediately after
+`Unk_TerrainTable_2` while the 2 heal arrays must land immediately
+before `BanimTerrainGroundDefault` (a much later address), splicing in
+one generated object with all 8 symbols in the *same* default section
+would force one group to jump far from its original address. Instead,
+`scripts/generated_data/terrainstats/generate.py` places the 6 Avo/Def/
+Res arrays in the ordinary `CONST_DATA` (`.data`) section and the 2 heal
+arrays alone into a dedicated `SECTION(".data.terrainheal")`, so the
+*same* generated object
+(`build/generated/data/data_terrainstats.c`/`.o`) can be spliced into
+`ldscript.txt` at two independent points.
+
+**No `ALIGN(4)` at the internal seams, exactly like `traps`.** Every one
+of the ~50 arrays in `src/data_terrains.c` (movement-cost tables, the 8
+terrainstats arrays, the 5 `Unk_TerrainTable_N` escape hatches, and the
+graphics tables) is a flat `s8[TERRAIN_COUNT]`/similarly-sized array
+packed by the compiler with **zero** alignment padding between adjacent
+arrays, confirmed via `arm-none-eabi-nm -n src/data_terrains.o` on the
+pre-change object: `Unk_TerrainTable_2` (65 bytes) ends exactly at
+`0xc71`, where `TerrainTable_Avo_Common` begins; the 6 Avo/Def/Res
+arrays run contiguously `0xc71`-`0xdf7` (390 = 6x65 bytes, zero gaps);
+`Unk_TerrainTable_3`..`7` run `0xdf7`-`0xf3c` (325 = 5x65 bytes); the 2
+heal arrays run `0xf3c`-`0xfbe` (130 = 2x65 bytes);
+`BanimTerrainGroundDefault` begins immediately at `0xfbe`. Following the
+`traps` precedent, `. = ALIGN(4);` is kept only on the very first line
+(`src/data_terrains.o(.data)`, the section's original single entry
+point) and dropped entirely from the four new internal seams, so the
+originally-single, compiler-packed byte stream is re-spliced across the
+two objects with zero extra bytes anywhere.
+
+**Legacy (`ldscript.txt`).** Five lines, in order, in place of the
+original single `src/data_terrains.o(.data)` line:
+
+```
+. = ALIGN(4); src/data_terrains.o(.data);
+build/generated/data/data_terrainstats.o(.data);
+src/data_terrains.o(.data.terrainmid);
+build/generated/data/data_terrainstats.o(.data.terrainheal);
+src/data_terrains.o(.data.terraintail);
+```
+
+`src/data_terrains.o(.data)` (movement-cost tables + `Unk_TerrainTable_1`/
+`_2`, unchanged) lands at the original address; the generated 6 Avo/Def/
+Res arrays land immediately after, at the exact original address;
+`src/data_terrains.o(.data.terrainmid)` (`Unk_TerrainTable_3`..`_7`,
+unchanged) resumes immediately after that; the generated 2 heal arrays
+land next, at the exact original address; then
+`src/data_terrains.o(.data.terraintail)` (`BanimTerrainGroundDefault`
+onward, unchanged) resumes at its own original address. Verified via
+`cmp`/`md5sum` against a saved pre-change ROM: byte-identical (zero
+differing bytes; MD5 match).
+
+**Cross-table consumer, unique to `terrainstats`.** Unlike `units`/
+`traps`/`shops`/`eventlists` (all consumed only by their own respective
+Chapter 2 hand data), `terrainstats` is itself a **dependency** consumed
+by `classes`: `ClassesTableSchema.dependencies()` now includes
+`terrainstats`, and `ClassesTableSchema.validate()` cross-checks every
+`ClassData` record's `terrainAvoid`/`terrainDefense`/
+`terrainResistance` symbol reference against the authored
+`terrainstats` records' own `field` metadata (see "## `classes` schema"
+above for the full write-up) -- the reverse direction of `eventlists`
+depending on `units`/`shops`/`traps`/`eventscripts`.
+
+**Modern (`modern.mk`).** Same reasoning as the `units`/`traps`/`shops`/
+`eventlists` synthetic slots -- modern links whole objects, not
+per-input-section, and this object is additive (no "original hand path"
+to reuse), so it is reinstated at a synthetic slot path
+(`$(MODERN_OUTPUT_DIR)/src/data_t-terrainstats.o`) chosen to sort
+immediately before `src/data_terrains.o` (same `"-"` < any alnum trick
+as the units/traps/shops/eventlists slots above) and therefore doesn't
+shift any other object's relative order.
+
+**Verification performed for this batch:**
+
+* `generated-data-check --table terrainstats` -- zero drift against the
+  (guard-preserved) hand blocks' source text (8 records).
+* `generated-data-terrainstats-link-check` (new `generated_data.mk`
+  target, mirroring `generated-data-ch2-traps-link-check`'s rigor for
+  this two-non-adjacent-block migration): guard present exactly twice,
+  both hand blocks preserved verbatim, both `CONST_DATA` redirects
+  (`.data.terrainmid`, `.data.terraintail`) present, the five-line
+  `ldscript.txt` ordering and adjacency, legacy `ALL_OBJECTS` presence
+  (both the generated object and the still-required
+  `src/data_terrains.o`), the modern synthetic-slot adjacency, the
+  generated object's exactly-one-each 8 terrain symbols each in their
+  expected section, a rebuild of `src/data_terrains.o` proving it now
+  defines zero of the 8 guarded terrain symbols while still defining the
+  surrounding movement-cost/escape-hatch/banim arrays untouched, clean
+  coverage, touched-but-unchanged-input no-op-regenerate behavior, and a
+  from-scratch parallel (`-j4`) build.
+* `generated-data-ch2-units-link-check`/`-ch2-traps-link-check`/
+  `-ch2-shops-link-check`/`-ch2-eventlists-link-check` (Batch 3a-3d
+  regressions) and `generated-data-check` (all 11 tables) all still
+  pass unchanged.
+* `python3 -m unittest discover -s scripts/generated_data/tests` -- all
+  424 tests pass, including 22 new `terrainstats`-specific tests and 2
+  new `classes`-cross-validation tests
+  (`ClassesTerrainstatsDependencyTests` in `test_classes_schema.py`).
+* A full legacy rebuild (`make fireemblem8.gba`) is byte-identical
+  (`cmp`, zero differing bytes; MD5 match) to a saved pre-change
+  baseline ROM.
+* `make shiftcheck` (build/static/offsets/diff layers) passes with no
+  high-confidence hardcoded-pointer findings.
+* Both modern configs (`MODERN_CONFIG=debug` and `MODERN_CONFIG=release`)
+  pass the full `expansion-modern-linker-check` (budget, overlay-audit,
+  boot-check, title-check, debugtools-check, debugtools-timer-check,
+  savefmt-check, shifted-check, `scan_build_addrs.py`,
+  `scan_raw_casts.sh`).
+
 ## Remaining Issue #5 scope (explicitly not done here)
 
 Batch A + Batch B + Batch C together are scoped to the Chapter 2
@@ -2664,12 +2983,43 @@ scope** for this Batch C update:
   references them by symbol) remains hand-owned and unlinked, and is
   explicitly out of scope here.
 * **Mechanics** (combat/growth/AI/etc. formulas and their own data
-  tables) are entirely untouched by Batches A/B/C or Issue #5 Batch 1/2.
+  tables) is now **partially** started: `terrainstats` (Issue #5
+  **Batch 1 mechanics** -- see "## `terrainstats` schema" and "Linking
+  two non-adjacent groups of terrain combat/heal stat arrays in one
+  partial-file table" above) authors and canonically links exactly the 8
+  vanilla terrain combat/heal stat arrays (`TerrainTable_Avo_Common`/
+  `Def_Common`/`Res_Common`/`Avo_Fly`/`Def_Fly`/`Res_Fly`/`HealAmount`/
+  `HealsStatus`) consumed by `ClassData`'s terrain-lookup pointers and by
+  `src/bmmap.c`'s heal-tile logic, in place of their slice of
+  `src/data_terrains.c`, with zero ROM/ELF address shift, and
+  strengthens `classes/schema.py`'s cross-validation of the three
+  terrain-lookup fields to check against real authored `terrainstats`
+  records rather than plain header-declaration presence. **This does
+  not close Issue #5's mechanics scope, nor Issue #5 overall.**
+  Explicitly still open, untouched by this batch:
+  * **Movement-cost tables** (`TerrainTable_MovCost_*`, `ClassData`'s
+    `movCostTable`/`pMovCostTable` triplet) -- `classes/schema.py`
+    validates these only via `CSymbolRefField` header presence, exactly
+    as before this batch; they are not modeled, authored, or linked by
+    any schema yet.
+  * The 5 `Unk_TerrainTable_3`..`Unk_TerrainTable_7` escape-hatch
+    arrays that sit between `terrainstats`' two guarded groups inside
+    `src/data_terrains.c` -- still fully hand-owned, unresearched,
+    referenced (if at all) only via `ClassData`'s `reservedTerrainTable`
+    `CSymbolRefField` escape hatch, untouched by this batch.
+  * The `BanimTerrainGround_*`/`gBanimBGLut*` graphics tables in the
+    same file -- pure graphics data, not combat/heal mechanics, out of
+    scope by construction.
+  * **Weapon triangle**, hit/crit/damage formulas, growth-rate
+    application, AI decision logic, and every other combat/mechanics
+    system's own data tables -- none of these are modeled, authored, or
+    linked by any schema in this repository yet.
 * **Additional chapters.** This whole platform -- schemas, the
   `chapterbundle` composition pattern, the CLI, the Make targets, CI
   wiring -- covers Chapter 2 only (`items`/`classes`/`supports`/
-  `characters` are the exceptions, being global by nature); every other
-  chapter's equivalent tables/bundle remain to be modeled from scratch.
+  `characters`/`terrainstats` are the exceptions, being global by
+  nature); every other chapter's equivalent tables/bundle remain to be
+  modeled from scratch.
 * **Migrating this pattern to other repository data domains** beyond the
-  Chapter 2 slice and the `items`/`classes`/`supports`/`characters`
-  global tables this Issue has scoped so far.
+  Chapter 2 slice and the `items`/`classes`/`supports`/`characters`/
+  `terrainstats` global tables this Issue has scoped so far.

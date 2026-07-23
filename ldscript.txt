@@ -1067,7 +1067,41 @@ SECTIONS
         . = ALIGN(4); build/generated/data/data_characters.o(.data);
         . = ALIGN(4); build/generated/data/data_classes.o(.data);
         . = ALIGN(4); build/generated/data/data_items.o(.data);
+        /* Issue #5 Batch 1: TerrainTable_Avo_Common/Def_Common/
+         * Res_Common/Avo_Fly/Def_Fly/Res_Fly and
+         * TerrainTable_HealAmount/TerrainTable_HealsStatus are now
+         * canonically generated from src/data/terrainstats.json -- see
+         * the guard/section comments around both groups in
+         * src/data_terrains.c and docs/generated_data.md's
+         * "terrainstats" section. The 6 Avo/Def/Res arrays and the 2
+         * heal arrays live in non-adjacent hand-written blocks (5
+         * unresearched Unk_TerrainTable_N escape hatches sit between
+         * them), so the generated object places each group in its own
+         * dedicated section (.data for the 6 Avo/Def/Res arrays,
+         * .data.terrainheal for the 2 heal arrays) and each slots in
+         * independently, at its own exact original address:
+         * src/data_terrains.o(.data) [movement-cost tables +
+         * Unk_TerrainTable_1/2, unchanged], the generated Avo/Def/Res
+         * arrays, then src/data_terrains.o(.data.terrainmid)
+         * [Unk_TerrainTable_3..7, redirected to that section name right
+         * after the Avo/Def/Res #endif guard, unchanged
+         * content/address], then the generated heal arrays, then
+         * src/data_terrains.o(.data.terraintail) [BanimTerrainGround_*
+         * onward, redirected right after the heal #endif guard,
+         * unchanged content/address]. This preserves byte-for-byte
+         * legacy ROM identity across the whole five-piece split -- zero
+         * shift anywhere. Deliberately no ". = ALIGN(4);" before the
+         * three internal split points below: these arrays sit at
+         * consecutive (non-4-aligned) byte addresses in the original
+         * ROM, so re-splicing this originally-single, compiler-packed
+         * byte stream across two objects must not insert any alignment
+         * padding at those internal seams, only at the section's own
+         * original entry point (kept above, unchanged). */
         . = ALIGN(4); src/data_terrains.o(.data);
+        build/generated/data/data_terrainstats.o(.data);
+        src/data_terrains.o(.data.terrainmid);
+        build/generated/data/data_terrainstats.o(.data.terrainheal);
+        src/data_terrains.o(.data.terraintail);
         . = ALIGN(4); src/data/data_portrait.o(.data);
         . = ALIGN(4); src/portrait_data.o(.data);
         . = ALIGN(4); src/data_itemuse.o(.data);

@@ -144,7 +144,16 @@ MID_OBJECTS  := $(MID_FILES:.mid=.o)
 # composition), guarded internally to exclude only its (whole-header)
 # "events/ch2-eventinfo.h" include. See generated_data.mk's "Linking a
 # Chapter-2-owned partial-file table" section, eventlists subsection.
-ALL_OBJECTS  := $(C_OBJECTS) $(DATA_SRC_C_OBJECTS) $(ASM_OBJECTS) $(BANIM_OBJECT) $(MID_OBJECTS) $(GENERATED_DATA_LINKED_OBJECTS) $(GENERATED_DATA_CH2_UNITS_OBJECT) $(GENERATED_DATA_CH2_TRAPS_OBJECT) $(GENERATED_DATA_CH2_SHOPS_OBJECT) $(GENERATED_DATA_CH2_EVENTLISTS_OBJECT)
+# Issue #5 Batch 1 (mechanics): $(GENERATED_DATA_TERRAINSTATS_OBJECT) is
+# the same kind of additive object -- src/data_terrains.c/.o stays in
+# CFILES/C_OBJECTS untouched (it still defines every movement-cost table,
+# escape-hatch Unk_TerrainTable_N array, and banim graphics table), guarded
+# internally (twice, for its two non-adjacent groups of arrays) to
+# exclude only the 6 TerrainTable_Avo_*/Def_*/Res_* arrays and
+# TerrainTable_HealAmount/TerrainTable_HealsStatus. See generated_data.mk's
+# "Linking a partial-file table with two non-adjacent hand blocks, neither
+# Chapter-2-owned" section, terrainstats subsection.
+ALL_OBJECTS  := $(C_OBJECTS) $(DATA_SRC_C_OBJECTS) $(ASM_OBJECTS) $(BANIM_OBJECT) $(MID_OBJECTS) $(GENERATED_DATA_LINKED_OBJECTS) $(GENERATED_DATA_CH2_UNITS_OBJECT) $(GENERATED_DATA_CH2_TRAPS_OBJECT) $(GENERATED_DATA_CH2_SHOPS_OBJECT) $(GENERATED_DATA_CH2_EVENTLISTS_OBJECT) $(GENERATED_DATA_TERRAINSTATS_OBJECT)
 OBJECTS_LST  := objects.lst
 DEPS_DIR     := .dep
 
