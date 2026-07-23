@@ -1,4 +1,4 @@
-# Generated-data platform (Issue #5 Chapter 2 slice -- Batch A + B + C; global `items`/`classes` Batch 1; `characters` Batch 2a + 2b; `classes` linked Batch 2c-1; `items` linked Batch 2c-2; `supports` linked Batch 2c-3; `characters` linked Batch 2c-4; `units`/Chapter 2 `UnitDefinition`/`REDA` linked Batch 3a)
+# Generated-data platform (Issue #5 Chapter 2 slice -- Batch A + B + C; global `items`/`classes` Batch 1; `characters` Batch 2a + 2b; `classes` linked Batch 2c-1; `items` linked Batch 2c-2; `supports` linked Batch 2c-3; `characters` linked Batch 2c-4; `units`/Chapter 2 `UnitDefinition`/`REDA` linked Batch 3a; `traps`/Chapter 2 trap arrays linked Batch 3b)
 
 ## Status
 
@@ -150,6 +150,17 @@ prefix slice of `src/events_udefs.c` (a much larger multi-chapter hand
 file, unlike Batch 2c's whole-file swaps), with zero ROM/ELF address
 shift. See "## Linking a Chapter-2-owned partial-file table (Batch 3a:
 `units`)" below for the full write-up.
+
+As of Issue #5 **Batch 3b**, `traps` is also linked, in place of its two
+symbols in `src/events_trapdata.c` (`TrapData_Event_Ch2` and
+`TrapData_Event_Ch2Hard`), also with zero ROM/ELF address shift --
+structurally like `units` but with the added wrinkle that its two Chapter
+2 symbols live in two non-adjacent hand-written blocks (a normal-mode
+block and a hard-mode block, ~1850 lines apart), requiring a
+per-symbol-sectioned generated object and a four-piece (not three-piece)
+`ldscript.txt` split. See "## Linking two non-adjacent Chapter-2-owned
+symbols in one partial-file table (Batch 3b: `traps`)" below for the
+full write-up.
 
 ## Source vs. generated vs. committed-public artifacts
 
@@ -517,6 +528,14 @@ symbols and unique per-unit generated identifiers; every symbolic
 constant; `level`/`xPos`/`yPos`/REDA point coordinates are in range;
 `items[]`/`ai[]` never exceed their header-derived fixed capacities.
 
+As of Issue #5 **Batch 3a**, `units` is no longer schema/round-trip
+only: `build/generated/data/data_ch2_units.o` is linked in place of the
+7 `UnitDefinition`/`REDA` groups' prefix slice of `src/events_udefs.c`
+(the rest of that hand file -- every other chapter -- stays canonical,
+untouched) in both the legacy ROM build and the modern object cohort --
+see "## Linking a Chapter-2-owned partial-file table (Batch 3a:
+`units`)" below for the full write-up.
+
 ## `shops` schema (Chapter 2 armory)
 
 Source: `src/data/ch2_shops.json`, one object per shop list under
@@ -560,6 +579,15 @@ from `include/bmtrick.h`); `type` is a defined trap-type enum constant
 unrelated `TRAP_MAX_COUNT`/`TRAP_EXTDATA_*` constants sharing the
 `TRAP_` prefix); `xPosition`/`yPosition`/`subtype`(when raw)/
 `turnCounter`/`turn` are in `u8` range.
+
+As of Issue #5 **Batch 3b**, `traps` is no longer schema/round-trip
+only: `build/generated/data/data_ch2_traps.o` is linked in place of
+`TrapData_Event_Ch2` and `TrapData_Event_Ch2Hard` -- two non-adjacent
+symbols in `src/events_trapdata.c` (the rest of that hand file -- every
+other chapter/difficulty's traps -- stays canonical, untouched) in both
+the legacy ROM build and the modern object cohort -- see "## Linking two
+non-adjacent Chapter-2-owned symbols in one partial-file table (Batch
+3b: `traps`)" below for the full write-up.
 
 ## `eventscripts` schema (metadata-only; the escape-hatch consumer)
 
@@ -1419,6 +1447,15 @@ make generated-data-link-check
 # ordering end to end against the real legacy pipeline plus both modern
 # MODERN_CONFIG values' object lists:
 make generated-data-ch2-units-link-check
+
+# Batch 3b: local-only, proves the traps/Ch2 TrapData_Event_Ch2 +
+# TrapData_Event_Ch2Hard dual non-adjacent guards, the
+# CONST_DATA(".data.trapch2mid")/CONST_DATA(".data.traptail") splits,
+# the generated object's per-symbol section split
+# (.data/.data.trapch2hard), and four-piece ldscript.txt ordering end
+# to end against the real legacy pipeline plus both modern
+# MODERN_CONFIG values' object lists:
+make generated-data-ch2-traps-link-check
 ```
 
 ## Linking a generated table in place of its hand-written counterpart (Batch 2c-1 + 2c-2 + 2c-3 + 2c-4)
@@ -1997,6 +2034,164 @@ against a prior build).
   `expansion-modern-linker-check` (budget, overlay-audit, boot-check,
   title-check, debugtools-check, debugtools-timer-check, savefmt-check,
   shifted-check, `scan_build_addrs.py`, `scan_raw_casts.sh`).
+
+## Linking two non-adjacent Chapter-2-owned symbols in one partial-file table (Batch 3b: `traps`)
+
+`traps` is structurally like `units` (Batch 3a, above): its two Chapter 2
+symbols (`TrapData_Event_Ch2`, `TrapData_Event_Ch2Hard`) are only a
+slice of `src/events_trapdata.c`, a translation unit that also defines
+every other chapter's (and every other difficulty's) trap arrays, which
+must stay hand-linked untouched.
+
+**Not adjacent, unlike `units`.** `src/events_trapdata.c` is laid out as
+one normal-mode block (`TrapData_Event_Prologue` .. `TrapData_Event_Ch19B_0`,
+where `TrapData_Event_Ch2` lives, right after `TrapData_Event_Ch1`)
+followed by one hard-mode block (`TrapData_Event_PrologueHard` ..
+`TrapData_Event_DebugMap_22`, where `TrapData_Event_Ch2Hard` lives,
+~1850 lines later, right after `TrapData_Event_Ch1Hard`). Unlike
+`units`' single contiguous prefix, these two symbols cannot be excluded
+from compilation by one `#if !GUARD` / `#endif` region; instead
+`src/events_trapdata.c` wraps each in its own such region, sharing one
+guard macro (`GENERATED_DATA_TRAPS_CH2_LINKED`, defined once,
+immediately above the first region):
+
+```c
+#define GENERATED_DATA_TRAPS_CH2_LINKED 1
+
+#if !GENERATED_DATA_TRAPS_CH2_LINKED
+CONST_DATA u8 TrapData_Event_Ch2[] = {
+    TRAP_NONE
+};
+#endif /* !GENERATED_DATA_TRAPS_CH2_LINKED */
+...
+#if !GENERATED_DATA_TRAPS_CH2_LINKED
+CONST_DATA u8 TrapData_Event_Ch2Hard[] = {
+    /* type */ TRAP_NONE
+};
+#endif /* !GENERATED_DATA_TRAPS_CH2_LINKED */
+```
+
+Both blocks are left in place, verbatim -- never hand-edit either one,
+edit `src/data/ch2_traps.json` and regenerate instead.
+
+**Per-symbol sectioning (the actual structural difference from `units`).**
+Since a single input section is placed by the linker as one atomic unit,
+and the two symbols must land at addresses roughly 1850 hand-written
+trap-array lines apart, splicing in one generated object with both
+symbols in the *same* default section (the `units` approach) would force
+one of the two to jump far from its original address. Instead,
+`scripts/generated_data/traps/generate.py` places `TrapData_Event_Ch2Hard`
+alone into its own dedicated section (`.data.trapch2hard`), distinct
+from `TrapData_Event_Ch2`'s ordinary `.data`:
+
+```c
+CONST_DATA u8 TrapData_Event_Ch2[] = {
+    /* type */ TRAP_NONE
+};
+
+SECTION(".data.trapch2hard") u8 TrapData_Event_Ch2Hard[] = {
+    /* type */ TRAP_NONE
+};
+```
+
+so the *same* generated object (`build/generated/data/data_ch2_traps.o`)
+can be spliced into `ldscript.txt` at two independent points. Combined
+with two `#undef CONST_DATA` / `#define CONST_DATA SECTION(...)`
+redirects in `src/events_trapdata.c` (right after each guard's closing
+`#endif` -- first to `.data.trapch2mid` for Chapter 3 through
+`TrapData_Event_Ch1Hard`, then to `.data.traptail` for
+`TrapData_Event_Ch3Hard` through end-of-file), this produces a
+four-piece split.
+
+**No `ALIGN(4)` at the internal seams -- the actual pitfall hit during
+verification.** An initial version of this split used
+`. = ALIGN(4);` before each of the four pieces, mirroring `units`'
+three-piece split exactly. That built successfully but produced a ROM
+that was **not** byte-identical to a pre-change baseline (diagnosed via
+`cmp -l` showing ~1.18M differing bytes from a small offset onward, plus
+the ROM's own trailing `0xFF` pad region shrinking) -- because unlike
+`units`' `REDA`/`UnitDefinition` structs (which happen to land on
+naturally 4-byte-aligned boundaries), these `u8[]` trap arrays are
+packed by the compiler with **no** alignment padding between them at
+all: `TrapData_Event_Ch2Hard` sits at ROM address `0x89EDE9D` and
+`TrapData_Event_Ch3Hard` immediately follows at `0x89EDE9E` (a 1-byte
+gap, `0x9D mod 4 == 1`, nowhere near 4-aligned). Adding `. = ALIGN(4);`
+at internal split points that don't naturally fall on a 4-byte boundary
+inserts up to 3 padding bytes at *every* such seam, shifting everything
+after it. The fix: keep `. = ALIGN(4);` only on the very first line
+(`src/events_trapdata.o(.data)`, which existed before this batch, at the
+section's original single entry point) and drop it entirely from the
+three new internal seams, so the originally-single, compiler-packed byte
+stream is re-spliced across the two objects with zero extra bytes
+anywhere.
+
+**Legacy (`ldscript.txt`).** Five lines, in order, in place of the
+original single `src/events_trapdata.o(.data)` line:
+
+```
+. = ALIGN(4); src/events_trapdata.o(.data);
+build/generated/data/data_ch2_traps.o(.data);
+src/events_trapdata.o(.data.trapch2mid);
+build/generated/data/data_ch2_traps.o(.data.trapch2hard);
+src/events_trapdata.o(.data.traptail);
+```
+
+`src/events_trapdata.o(.data)` (Prologue..Ch1, unchanged) lands at the
+original address; the generated `TrapData_Event_Ch2` lands immediately
+after, at the exact original Chapter 2 address;
+`src/events_trapdata.o(.data.trapch2mid)` (Ch3..Ch1Hard, unchanged)
+resumes immediately after that; the generated `TrapData_Event_Ch2Hard`
+lands next, at the exact original Chapter 2 Hard address; then
+`src/events_trapdata.o(.data.traptail)` (Ch3Hard..EOF, unchanged) resumes
+at its own original address. Verified via `cmp` against a saved
+pre-change ROM: byte-identical (zero differing bytes).
+
+**Modern (`modern.mk`).** Same reasoning as the `units` synthetic slot --
+modern links whole objects, not per-input-section, and this object is
+additive (no "original hand path" to reuse), so it is reinstated at a
+synthetic slot path (`$(MODERN_OUTPUT_DIR)/src/events_t-ch2traps.o`)
+chosen to sort immediately before `src/events_trapdata.o` -- an
+acceptable, already-established divergence for the modern build (modern's
+requirement is a successful, shiftable build, not literal re-derivation
+of legacy's byte layout).
+
+**Verification performed for Batch 3b:**
+
+* `generated-data-check --table traps` -- zero drift against the
+  (guard-preserved) hand blocks' source text (2 records).
+* `generated-data-ch2-traps-link-check` (new `generated_data.mk` target,
+  mirroring `generated-data-ch2-units-link-check`'s rigor for this
+  two-non-adjacent-block migration): both guards present, both hand
+  blocks preserved verbatim, both `CONST_DATA` redirects
+  (`.data.trapch2mid`, `.data.traptail`) present, the five-line
+  `ldscript.txt` ordering and adjacency, legacy `ALL_OBJECTS` presence
+  (both the generated object and the still-required
+  `events_trapdata.o`), the modern synthetic-slot adjacency, the
+  generated object's exactly-one-each 2 trap symbols each in their
+  expected section, a rebuild of `src/events_trapdata.o` proving it now
+  defines zero Chapter 2 trap symbols while still defining the
+  surrounding chapters' traps untouched, clean coverage,
+  touched-but-unchanged-input no-op-regenerate behavior, and a
+  from-scratch parallel (`-j4`) build.
+* `generated-data-ch2-units-link-check` (Batch 3a regression),
+  `generated-data-link-check` (Batch 2c-1..2c-4 regression), and
+  `generated-data-check` (all 10 tables) all still pass unchanged.
+* `python3 -m unittest discover -s scripts/generated_data/tests` -- all
+  400 tests pass, including 2 new regression tests
+  (`Ch2SectionSplitTests` in `test_traps_generate.py`) that lock in
+  `TrapData_Event_Ch2` staying in the default `CONST_DATA`/`.data`
+  section while `TrapData_Event_Ch2Hard` gets its own
+  `.data.trapch2hard` section.
+* A full legacy rebuild (`make fireemblem8.gba`) is byte-identical
+  (`cmp`, zero differing bytes; MD5 match) to a saved pre-change
+  baseline ROM.
+* `make shiftcheck` (build/static/offsets/diff layers) passes with no
+  high-confidence hardcoded-pointer findings.
+* Both modern configs (`MODERN_CONFIG=debug` and `MODERN_CONFIG=release`)
+  pass the full `expansion-modern-linker-check` (budget, overlay-audit,
+  boot-check, title-check, debugtools-check, debugtools-timer-check,
+  savefmt-check, shifted-check, `scan_build_addrs.py`,
+  `scan_raw_casts.sh`).
 
 ## Remaining Issue #5 scope (explicitly not done here)
 

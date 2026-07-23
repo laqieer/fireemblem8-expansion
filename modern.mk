@@ -286,6 +286,26 @@ MODERN_ALL_C_OBJECTS += $(addprefix $(MODERN_OUTPUT_DIR)/,$(GENERATED_DATA_LINKE
 ifneq ($(strip $(GENERATED_DATA_CH2_UNITS_OBJECT)),)
 MODERN_ALL_C_OBJECTS += $(MODERN_OUTPUT_DIR)/src/events_u-ch2units.o
 endif
+
+# Issue #5 Batch 3b: $(GENERATED_DATA_CH2_TRAPS_OBJECT) (generated_data.mk)
+# is the same kind of additive object as the units one just above --
+# src/events_trapdata.c has no "original hand path" to reuse (it stays
+# fully linked, only its two non-adjacent Ch2 blocks are guarded out).
+# Unlike units, this generated object itself defines its two symbols in
+# two different sections (.data for TrapData_Event_Ch2, .data.trapch2hard
+# for TrapData_Event_Ch2Hard) so legacy's ldscript.txt can place each at
+# its own exact original address -- but modern's build links whole
+# objects (not per-input-section) and only needs a single, deterministic,
+# adjacency-preserving sort slot, so one synthetic path suffices here,
+# chosen so it sorts immediately before src/events_trapdata.o (same
+# "-" < any alnum trick as the units slot above) and therefore doesn't
+# shift any other object's relative order. A safe no-op when
+# GENERATED_DATA_CH2_TRAPS_OBJECT is undefined (modern.mk included
+# standalone). An explicit (non-pattern) rule for this literal target
+# path is defined further below, alongside GENERATED_DATA_MODERN_OVERRIDE_RULES.
+ifneq ($(strip $(GENERATED_DATA_CH2_TRAPS_OBJECT)),)
+MODERN_ALL_C_OBJECTS += $(MODERN_OUTPUT_DIR)/src/events_t-ch2traps.o
+endif
 MODERN_ALL_DATA_PRE := $(addprefix $(MODERN_OUTPUT_DIR)/,$(MODERN_ALL_DATA_C_SOURCES:.c=.pre.c))
 MODERN_ALL_DATA_OBJECTS := $(addprefix $(MODERN_OUTPUT_DIR)/,$(MODERN_ALL_DATA_C_SOURCES:.c=.o))
 MODERN_ALL_ASM_OBJECTS := $(addprefix $(MODERN_OUTPUT_DIR)/,$(MODERN_ALL_ASM_SOURCES:.s=.o))
@@ -445,6 +465,15 @@ $(foreach t,$(GENERATED_DATA_LINKED_TABLES),$(eval $(call GENERATED_DATA_MODERN_
 # (modern.mk included standalone): the rule is simply never reachable,
 # since nothing adds this path to MODERN_ALL_C_OBJECTS in that case.
 $(MODERN_OUTPUT_DIR)/src/events_u-ch2units.o: $(GENERATED_DATA_CH2_UNITS_C)
+	@mkdir -p $(@D)
+	"$(MODERN_CC)" $(MODERN_CFLAGS) -MMD -MP -MF "$(@:.o=.d)" -MQ "$@" -c "$<" -o "$@"
+
+# Issue #5 Batch 3b: same reasoning as the units synthetic-slot rule just
+# above, for the traps table's synthetic slot object. A safe no-op target
+# when GENERATED_DATA_CH2_TRAPS_C is undefined (modern.mk included
+# standalone): the rule is simply never reachable, since nothing adds
+# this path to MODERN_ALL_C_OBJECTS in that case.
+$(MODERN_OUTPUT_DIR)/src/events_t-ch2traps.o: $(GENERATED_DATA_CH2_TRAPS_C)
 	@mkdir -p $(@D)
 	"$(MODERN_CC)" $(MODERN_CFLAGS) -MMD -MP -MF "$(@:.o=.d)" -MQ "$@" -c "$<" -o "$@"
 

@@ -1136,7 +1136,38 @@ SECTIONS
         . = ALIGN(4); src/data_event_trigger.o(.data);
         . = ALIGN(4); src/uidebug.o(.data);
         . = ALIGN(4); src/events_shoplist.o(.data);
+        /* Issue #5 Batch 3b: TrapData_Event_Ch2 and TrapData_Event_Ch2Hard
+         * are now canonically generated from src/data/ch2_traps.json --
+         * see the guard/section comments around both symbols in
+         * src/events_trapdata.c and docs/generated_data.md's "traps"
+         * section. The two symbols live in non-adjacent hand-written
+         * blocks (normal-mode near the top of the file, hard-mode
+         * ~1850 lines later), so the generated object places each in its
+         * own dedicated section (.data for Ch2, .data.trapch2hard for
+         * Ch2Hard) and each slots in independently, at its own exact
+         * original address: src/events_trapdata.o(.data) [Prologue..Ch1,
+         * unchanged], the generated Ch2 symbol, then
+         * src/events_trapdata.o(.data.trapch2mid) [Ch3..Ch1Hard,
+         * redirected to that section name right after the Ch2 #endif
+         * guard, unchanged content/address], then the generated Ch2Hard
+         * symbol, then src/events_trapdata.o(.data.traptail)
+         * [Ch3Hard..EOF, redirected right after the Ch2Hard #endif guard,
+         * unchanged content/address]. This preserves byte-for-byte
+         * legacy ROM identity across the whole four-piece split -- zero
+         * shift anywhere. Deliberately no ". = ALIGN(4);" before the
+         * three internal split points below (unlike the units table's
+         * three-piece split, which happens to land on naturally-aligned
+         * struct boundaries): TrapData_Event_Ch2Hard/Ch3Hard sit at
+         * consecutive (non-4-aligned) byte addresses in the original
+         * ROM, so re-splicing this originally-single, compiler-packed
+         * byte stream across two objects must not insert any alignment
+         * padding at those internal seams, only at the section's own
+         * original entry point (kept above, unchanged). */
         . = ALIGN(4); src/events_trapdata.o(.data);
+        build/generated/data/data_ch2_traps.o(.data);
+        src/events_trapdata.o(.data.trapch2mid);
+        build/generated/data/data_ch2_traps.o(.data.trapch2hard);
+        src/events_trapdata.o(.data.traptail);
         . = ALIGN(4); src/eventcall.o(.data);
         . = ALIGN(4); src/events_script_utils.o(.data);
         . = ALIGN(4); src/events_script.o(.data);

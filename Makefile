@@ -125,7 +125,14 @@ MID_OBJECTS  := $(MID_FILES:.mid=.o)
 # (it still defines every other chapter's units), guarded internally to
 # exclude just its Chapter 2 prefix slice. See generated_data.mk's
 # "Linking a Chapter-2-owned partial-file table" section.
-ALL_OBJECTS  := $(C_OBJECTS) $(DATA_SRC_C_OBJECTS) $(ASM_OBJECTS) $(BANIM_OBJECT) $(MID_OBJECTS) $(GENERATED_DATA_LINKED_OBJECTS) $(GENERATED_DATA_CH2_UNITS_OBJECT)
+# Issue #5 Batch 3b: $(GENERATED_DATA_CH2_TRAPS_OBJECT) is the same kind
+# of additive object -- src/events_trapdata.c/.o stays in CFILES/
+# C_OBJECTS untouched (it still defines every other chapter's traps),
+# guarded internally (twice, for its two non-adjacent Ch2 blocks) to
+# exclude only TrapData_Event_Ch2/TrapData_Event_Ch2Hard. See
+# generated_data.mk's "Linking a Chapter-2-owned partial-file table"
+# section, traps subsection.
+ALL_OBJECTS  := $(C_OBJECTS) $(DATA_SRC_C_OBJECTS) $(ASM_OBJECTS) $(BANIM_OBJECT) $(MID_OBJECTS) $(GENERATED_DATA_LINKED_OBJECTS) $(GENERATED_DATA_CH2_UNITS_OBJECT) $(GENERATED_DATA_CH2_TRAPS_OBJECT)
 OBJECTS_LST  := objects.lst
 DEPS_DIR     := .dep
 

@@ -782,3 +782,265 @@ generated-data-ch2-units-link-check: $(GENERATED_DATA_CH2_UNITS_OBJECT)
 	@test -e $(GENERATED_DATA_CH2_UNITS_OBJECT) || { echo "FAIL: parallel build did not produce the generated object for units" >&2; exit 1; }
 	@echo 'OK: from-scratch parallel (-j4) build of units'"'"'s generated .c/.o succeeds, no race/duplicate generation'
 	@echo 'PASS: generated-data-ch2-units-link-check'
+
+# ---------------------------------------------------------------------------
+# Linking a Chapter-2-owned partial-file table with two non-adjacent hand
+# blocks (Issue #5 Batch 3b)
+# ---------------------------------------------------------------------------
+# `traps` is structurally like `units` (Batch 3a, above) in that its two
+# Chapter 2 symbols (`TrapData_Event_Ch2`, `TrapData_Event_Ch2Hard`) are
+# only a slice of src/events_trapdata.c, a translation unit that also
+# defines every other chapter's (and every other difficulty's) trap
+# arrays, which must stay hand-linked untouched.
+#
+# It differs from `units` in one important way: `TrapData_Event_Ch2` and
+# `TrapData_Event_Ch2Hard` are *not* adjacent to each other in the file --
+# the file is laid out as one normal-mode block (Prologue..Ch19B, which
+# is where TrapData_Event_Ch2 lives, right after Ch1) followed by one
+# hard-mode block (PrologueHard..DebugMap_22, which is where
+# TrapData_Event_Ch2Hard lives, ~1850 lines later, right after
+# Ch1Hard). Excluding both from compilation via a single `#if !GUARD /
+# #endif` region (like units' single contiguous prefix) is not possible
+# since they aren't contiguous; instead src/events_trapdata.c wraps each
+# in its own `#if !GENERATED_DATA_TRAPS_CH2_LINKED / #endif` region,
+# sharing one guard macro (defined once, immediately above the first
+# region).
+#
+# Since a single input section is placed by the linker as one atomic
+# unit, and the two symbols must land at two addresses roughly 1850
+# hand-written trap-array lines apart, splicing in one generated object
+# containing both symbols in the *same* default section (the units
+# approach) would force one of the two symbols to move far from its
+# original address -- an avoidable, unquantifiably-large single-symbol
+# jump. Instead, this table's generator
+# (scripts/generated_data/traps/generate.py) places
+# `TrapData_Event_Ch2Hard` alone into its own dedicated section
+# (`.data.trapch2hard`) distinct from `TrapData_Event_Ch2`'s ordinary
+# `.data`, so the *same* generated object can be spliced into ldscript.txt
+# at two independent points. Combined with two `#undef CONST_DATA` /
+# `#define CONST_DATA SECTION(...)` redirects in src/events_trapdata.c
+# (right after each guard's closing #endif -- first to `.data.trapch2mid`
+# for Chapter 3 through Ch1Hard, then to `.data.traptail` for Ch3Hard
+# through end-of-file), this produces a four-piece split with *zero*
+# address shift anywhere:
+#   * legacy (ldscript.txt): src/events_trapdata.o(.data) (Prologue..Ch1,
+#     unchanged), build/generated/data/data_ch2_traps.o(.data) (the
+#     generated TrapData_Event_Ch2), src/events_trapdata.o(.data.trapch2mid)
+#     (Ch3..Ch1Hard, unchanged), build/generated/data/data_ch2_traps.o
+#     (.data.trapch2hard) (the generated TrapData_Event_Ch2Hard), then
+#     src/events_trapdata.o(.data.traptail) (Ch3Hard..EOF, unchanged) --
+#     each piece lands at exactly its original address, so the ROM is
+#     byte-identical overall (verified via `cmp` against a pre-change
+#     ROM).
+#   * modern (modern.mk): same reasoning as the units table's synthetic
+#     slot -- modern links whole objects, not per-input-section, and this
+#     object is additive (no "original hand path" to reuse), so it is
+#     reinstated at a synthetic slot path
+#     ($(MODERN_OUTPUT_DIR)/src/events_t-ch2traps.o) chosen to sort
+#     immediately before src/events_trapdata.o -- an acceptable,
+#     already-documented divergence for the modern build (see the
+#     "Batch 3a" docs section: modern's requirement is a successful,
+#     shiftable build, not literal re-derivation of legacy's byte
+#     layout).
+GENERATED_DATA_CH2_TRAPS_HAND_SOURCE := src/events_trapdata.c
+GENERATED_DATA_CH2_TRAPS_GUARD_MACRO := GENERATED_DATA_TRAPS_CH2_LINKED
+GENERATED_DATA_CH2_TRAPS_C      := $(GENERATED_DATA_OUT_DIR)/data_ch2_traps.c
+GENERATED_DATA_CH2_TRAPS_OBJECT := $(GENERATED_DATA_CH2_TRAPS_C:.c=.o)
+
+# `traps`' own generator "config" inputs: include/bmtrick.h (the TRAP_*
+# trap-type enum and TRAP_MAX_COUNT, read live by
+# scripts/generated_data/traps/schema.py's read_trap_types()/
+# read_trap_max_count()) and include/constants/items.h (ITEM_* subtype
+# references).
+GENERATED_DATA_CONFIG_INPUTS_traps := \
+	include/bmtrick.h \
+	include/constants/items.h
+
+# The 2 trap array symbols this table's generated object must define
+# exactly once each -- derived live from src/data/ch2_traps.json (the
+# same file the generator itself reads), not hardcoded here, so this
+# list can never silently drift from what the table actually authors
+# (same technique as GENERATED_DATA_CH2_UNITS_SYMBOLS above).
+GENERATED_DATA_CH2_TRAPS_SYMBOLS := $(shell $(PYTHON) -c \
+	"import json; d = json.load(open('src/data/ch2_traps.json')); print(' '.join(t['symbol'] for t in d['traps']))")
+
+$(GENERATED_DATA_CH2_TRAPS_C): src/data/ch2_traps.json $(GENERATED_DATA_SHARED_PY_SOURCES) $(wildcard scripts/generated_data/traps/*.py) $(GENERATED_DATA_CONFIG_INPUTS_traps)
+	@mkdir -p $(@D)
+	$(GENERATED_DATA_PY) generate --table traps --out-dir $(GENERATED_DATA_OUT_DIR)
+	@test -e $@ || { echo "error: generated-data table 'traps' did not produce $@ (schema default_output_name mismatch?)" >&2; exit 1; }
+
+# Same legacy compile/assemble pipeline as GENERATED_DATA_CH2_UNITS_OBJECT
+# above (see that rule's own comment for why $(@:.o=.s), not $*.s).
+$(GENERATED_DATA_CH2_TRAPS_OBJECT): $(GENERATED_DATA_CH2_TRAPS_C)
+	$(CPP) $(CPPFLAGS) $< | iconv -f UTF-8 -t CP932 | $(CC1) $(CC1FLAGS) -o $(@:.o=.s)
+	echo '.ALIGN 2, 0' >> $(@:.o=.s)
+ifeq ($(UNAME),Darwin)
+	$(SED) -f scripts/align_2_before_debug_section_for_osx.sed $(@:.o=.s)
+else
+	$(SED) '/.section	.debug_line/i\.align 2, 0' $(@:.o=.s)
+endif
+	$(AS) $(ASFLAGS) $(@:.o=.s) -o $@
+
+.PHONY: generated-data-ch2-traps-link-check
+
+# Batch 3b gate: proves the traps link-swap is wired correctly -- the
+# generated object linked exactly once at each of its two independent
+# ldscript.txt positions (once per section), in both legacy ALL_OBJECTS
+# and the modern cohort (at the adjacency-preserving synthetic slot
+# path); both of the table's 2 trap symbols defined exactly once by the
+# generated object (one per section) and, critically, *zero* times by a
+# freshly rebuilt src/events_trapdata.o (both guards actually excluded
+# them, so no multiple-definition risk); both hand blocks' source text
+# still present verbatim (never deleted); unrelated chapters' symbols
+# (TrapData_Event_Ch3, TrapData_Event_Ch1Hard, both inside the
+# .data.trapch2mid redirect, plus TrapData_Event_Ch3Hard just outside the
+# .data.traptail redirect) still defined by src/events_trapdata.o, proving
+# neither guard over-reached; and the same touched-but-unchanged-input /
+# from-scratch-parallel-build evidence as generated-data-ch2-units-link-check,
+# scoped to this one table. Local/manual gate, same reasoning as the
+# other ch2-*-link-check targets for why it's not CI-wired (agbcc is
+# unavailable in CI's tool install).
+generated-data-ch2-traps-link-check: $(GENERATED_DATA_CH2_TRAPS_OBJECT)
+	@echo '--- guard present in $(GENERATED_DATA_CH2_TRAPS_HAND_SOURCE), both hand blocks preserved verbatim ---'
+	@if [ "$$(grep -cF '#define $(GENERATED_DATA_CH2_TRAPS_GUARD_MACRO) 1' $(GENERATED_DATA_CH2_TRAPS_HAND_SOURCE))" != 1 ]; then \
+		echo "FAIL: $(GENERATED_DATA_CH2_TRAPS_HAND_SOURCE) does not define '#define $(GENERATED_DATA_CH2_TRAPS_GUARD_MACRO) 1' exactly once" >&2; exit 1; \
+	fi
+	@if [ "$$(grep -cF '#if !$(GENERATED_DATA_CH2_TRAPS_GUARD_MACRO)' $(GENERATED_DATA_CH2_TRAPS_HAND_SOURCE))" != 2 ]; then \
+		echo "FAIL: $(GENERATED_DATA_CH2_TRAPS_HAND_SOURCE) does not have exactly 2 '#if !$(GENERATED_DATA_CH2_TRAPS_GUARD_MACRO)' guards (want one per non-adjacent Ch2 block)" >&2; exit 1; \
+	fi
+	@if [ "$$(grep -cF '#endif /* !$(GENERATED_DATA_CH2_TRAPS_GUARD_MACRO) */' $(GENERATED_DATA_CH2_TRAPS_HAND_SOURCE))" != 2 ]; then \
+		echo "FAIL: $(GENERATED_DATA_CH2_TRAPS_HAND_SOURCE) does not have exactly 2 matching '#endif' guard closes" >&2; exit 1; \
+	fi
+	@if ! grep -qF '#define CONST_DATA SECTION(".data.trapch2mid")' $(GENERATED_DATA_CH2_TRAPS_HAND_SOURCE); then \
+		echo "FAIL: $(GENERATED_DATA_CH2_TRAPS_HAND_SOURCE) is missing the post-Ch2-guard CONST_DATA redirect to .data.trapch2mid" >&2; exit 1; \
+	fi
+	@if ! grep -qF '#define CONST_DATA SECTION(".data.traptail")' $(GENERATED_DATA_CH2_TRAPS_HAND_SOURCE); then \
+		echo "FAIL: $(GENERATED_DATA_CH2_TRAPS_HAND_SOURCE) is missing the post-Ch2Hard-guard CONST_DATA redirect to .data.traptail" >&2; exit 1; \
+	fi
+	@for symbol in $(GENERATED_DATA_CH2_TRAPS_SYMBOLS); do \
+		if [ "$$(grep -c "CONST_DATA u8 $$symbol\[\]" $(GENERATED_DATA_CH2_TRAPS_HAND_SOURCE))" != 1 ]; then \
+			echo "FAIL: hand source text for trap array '$$symbol' missing or duplicated in $(GENERATED_DATA_CH2_TRAPS_HAND_SOURCE) -- must stay present verbatim as the round-trip reference" >&2; exit 1; \
+		fi; \
+	done
+	@echo 'OK: guard present exactly twice, both hand trap array definitions preserved verbatim in source text'
+	@echo '--- ldscript.txt four-piece split (events_trapdata.o(.data), generated Ch2, events_trapdata.o(.data.trapch2mid), generated Ch2Hard, events_trapdata.o(.data.traptail)) ---'
+	@normal_count=$$(grep -Fc "$(GENERATED_DATA_CH2_TRAPS_OBJECT)(.data);" ldscript.txt); \
+	if [ "$$normal_count" != 1 ]; then \
+		echo "FAIL: ldscript.txt references $(GENERATED_DATA_CH2_TRAPS_OBJECT)(.data) $$normal_count time(s) (want exactly 1)" >&2; exit 1; \
+	fi
+	@hard_count=$$(grep -Fc "$(GENERATED_DATA_CH2_TRAPS_OBJECT)(.data.trapch2hard);" ldscript.txt); \
+	if [ "$$hard_count" != 1 ]; then \
+		echo "FAIL: ldscript.txt references $(GENERATED_DATA_CH2_TRAPS_OBJECT)(.data.trapch2hard) $$hard_count time(s) (want exactly 1)" >&2; exit 1; \
+	fi
+	@prefix_line=$$(grep -nx "        . = ALIGN(4); src/events_trapdata.o(.data);" ldscript.txt | cut -d: -f1); \
+	gen1_line=$$(grep -nx "        build/generated/data/data_ch2_traps.o(.data);" ldscript.txt | cut -d: -f1); \
+	mid_line=$$(grep -nx "        src/events_trapdata.o(.data.trapch2mid);" ldscript.txt | cut -d: -f1); \
+	gen2_line=$$(grep -nx "        build/generated/data/data_ch2_traps.o(.data.trapch2hard);" ldscript.txt | cut -d: -f1); \
+	tail_line=$$(grep -nx "        src/events_trapdata.o(.data.traptail);" ldscript.txt | cut -d: -f1); \
+	if [ -z "$$prefix_line" ]; then echo "FAIL: ldscript.txt no longer links src/events_trapdata.o(.data) (the Prologue/Ch1 piece) at all" >&2; exit 1; fi; \
+	if [ -z "$$mid_line" ]; then echo "FAIL: ldscript.txt no longer links src/events_trapdata.o(.data.trapch2mid) (the Ch3..Ch1Hard piece) at all" >&2; exit 1; fi; \
+	if [ -z "$$tail_line" ]; then echo "FAIL: ldscript.txt no longer links src/events_trapdata.o(.data.traptail) (the Ch3Hard..EOF piece) at all" >&2; exit 1; fi; \
+	if [ "$$((gen1_line - prefix_line))" != 1 ]; then \
+		echo "FAIL: $(GENERATED_DATA_CH2_TRAPS_OBJECT)(.data) (line $$gen1_line) is not immediately after src/events_trapdata.o(.data) (line $$prefix_line)" >&2; exit 1; \
+	fi; \
+	if [ "$$((mid_line - gen1_line))" != 1 ]; then \
+		echo "FAIL: src/events_trapdata.o(.data.trapch2mid) (line $$mid_line) is not immediately after $(GENERATED_DATA_CH2_TRAPS_OBJECT)(.data) (line $$gen1_line)" >&2; exit 1; \
+	fi; \
+	if [ "$$((gen2_line - mid_line))" != 1 ]; then \
+		echo "FAIL: $(GENERATED_DATA_CH2_TRAPS_OBJECT)(.data.trapch2hard) (line $$gen2_line) is not immediately after src/events_trapdata.o(.data.trapch2mid) (line $$mid_line)" >&2; exit 1; \
+	fi; \
+	if [ "$$((tail_line - gen2_line))" != 1 ]; then \
+		echo "FAIL: src/events_trapdata.o(.data.traptail) (line $$tail_line) is not immediately after $(GENERATED_DATA_CH2_TRAPS_OBJECT)(.data.trapch2hard) (line $$gen2_line)" >&2; exit 1; \
+	fi
+	@echo 'OK: ldscript.txt links, in order, src/events_trapdata.o(.data) [Prologue/Ch1], the generated Ch2 symbol, src/events_trapdata.o(.data.trapch2mid) [Ch3..Ch1Hard], the generated Ch2Hard symbol, then src/events_trapdata.o(.data.traptail) [Ch3Hard..EOF]'
+	@echo '--- legacy ALL_OBJECTS ---'
+	@if [ "$(words $(filter $(GENERATED_DATA_CH2_TRAPS_OBJECT),$(ALL_OBJECTS)))" != 1 ]; then \
+		echo "FAIL: $(GENERATED_DATA_CH2_TRAPS_OBJECT) not present exactly once in legacy ALL_OBJECTS" >&2; exit 1; \
+	fi
+	@if [ "$(words $(filter $(GENERATED_DATA_CH2_TRAPS_HAND_SOURCE:.c=.o),$(ALL_OBJECTS)))" != 1 ]; then \
+		echo "FAIL: $(GENERATED_DATA_CH2_TRAPS_HAND_SOURCE:.c=.o) unexpectedly missing from legacy ALL_OBJECTS -- it must stay linked (it still defines every other chapter's/difficulty's traps)" >&2; exit 1; \
+	fi
+	@echo 'OK: both the generated object and the (still-required) src/events_trapdata.o are present exactly once each in legacy ALL_OBJECTS'
+	@echo '--- modern MODERN_ALL_C_OBJECTS (synthetic adjacency-preserving slot) ---'
+	@if [ "$(words $(filter $(MODERN_OUTPUT_DIR)/src/events_t-ch2traps.o,$(MODERN_ALL_C_OBJECTS)))" != 1 ]; then \
+		echo "FAIL: $(MODERN_OUTPUT_DIR)/src/events_t-ch2traps.o not present exactly once in modern MODERN_ALL_C_OBJECTS" >&2; exit 1; \
+	fi
+	@sorted_slot=$$(printf '%s\n' $(sort $(MODERN_ALL_C_OBJECTS)) | grep -n -x -e "$(MODERN_OUTPUT_DIR)/src/events_t-ch2traps.o" -e "$(MODERN_OUTPUT_DIR)/src/events_trapdata.o" | cut -d: -f1 | tr '\n' ' '); \
+	first=$$(echo $$sorted_slot | cut -d' ' -f1); second=$$(echo $$sorted_slot | cut -d' ' -f2); \
+	if [ -z "$$first" ] || [ -z "$$second" ] || [ "$$((second - first))" != 1 ]; then \
+		echo "FAIL: in the sorted modern object list, the synthetic slot is not immediately adjacent (and before) src/events_trapdata.o (positions: $$sorted_slot)" >&2; exit 1; \
+	fi
+	@echo 'OK: synthetic slot object sorts immediately before src/events_trapdata.o in the modern object list, exactly like the legacy ldscript.txt adjacency'
+	@echo '--- generated object symbols (both trap symbols, exactly once each, in their respective sections) ---'
+	@nm_out=$$(arm-none-eabi-nm $(GENERATED_DATA_CH2_TRAPS_OBJECT)); \
+	for symbol in $(GENERATED_DATA_CH2_TRAPS_SYMBOLS); do \
+		symcount=$$(printf '%s\n' "$$nm_out" | grep -c " $$symbol\$$"); \
+		if [ "$$symcount" != 1 ]; then \
+			echo "FAIL: generated object for traps defines $$symbol $$symcount time(s) (want exactly 1)" >&2; exit 1; \
+		fi; \
+	done
+	@objdump_out=$$(arm-none-eabi-objdump -t $(GENERATED_DATA_CH2_TRAPS_OBJECT)); \
+	if ! printf '%s\n' "$$objdump_out" | grep -q "\.data\.trapch2hard.*TrapData_Event_Ch2Hard\$$"; then \
+		echo "FAIL: TrapData_Event_Ch2Hard is not defined in the .data.trapch2hard section of the generated object" >&2; exit 1; \
+	fi; \
+	if ! printf '%s\n' "$$objdump_out" | grep -E "\.data[[:space:]].*TrapData_Event_Ch2\$$" >/dev/null; then \
+		echo "FAIL: TrapData_Event_Ch2 is not defined in the plain .data section of the generated object" >&2; exit 1; \
+	fi
+	@echo 'OK: exactly one definition of each of the 2 expected trap symbols in the generated object, each in its expected section'
+	@echo '--- src/events_trapdata.o no longer defines either Ch2 trap symbol, but still defines other chapters'"'"' ---'
+	@rm -f src/events_trapdata.o src/events_trapdata.s
+	@$(MAKE) --no-print-directory src/events_trapdata.o >/dev/null
+	@trapdata_nm=$$(arm-none-eabi-nm src/events_trapdata.o); \
+	for symbol in $(GENERATED_DATA_CH2_TRAPS_SYMBOLS); do \
+		symcount=$$(printf '%s\n' "$$trapdata_nm" | grep -c " $$symbol\$$"); \
+		if [ "$$symcount" != 0 ]; then \
+			echo "FAIL: src/events_trapdata.o still defines $$symbol $$symcount time(s) -- the guard did not exclude it (would be a multiple-definition link error against the generated object)" >&2; exit 1; \
+		fi; \
+	done; \
+	for other in TrapData_Event_Ch3 TrapData_Event_Ch1Hard TrapData_Event_Ch3Hard; do \
+		if ! printf '%s\n' "$$trapdata_nm" | grep -q " $$other\$$"; then \
+			echo "FAIL: src/events_trapdata.o unexpectedly lost unrelated symbol $$other -- a guard over-excluded" >&2; exit 1; \
+		fi; \
+	done
+	@echo 'OK: src/events_trapdata.o defines zero Ch2 trap symbols and still defines the surrounding chapters'"'"' traps untouched'
+	@echo '--- clean coverage ---'
+	@if [ -z "$(strip $(filter $(GENERATED_DATA_OUT_DIR),$(CLEAN_DIRS)))" ]; then \
+		echo "FAIL: $(GENERATED_DATA_OUT_DIR) missing from CLEAN_DIRS -- clean/clean_fast would not remove data_ch2_traps.c/.s/.o" >&2; exit 1; \
+	fi
+	@echo 'OK: clean/clean_fast remove build/generated/data (covers data_ch2_traps.c/.s/.o)'
+	@echo '--- touched-but-unchanged input: content-preserving no-op regenerate (behavior evidence, not mtime) ---'
+	@rm -f $(GENERATED_DATA_CH2_TRAPS_C) $(GENERATED_DATA_CH2_TRAPS_OBJECT) $(GENERATED_DATA_CH2_TRAPS_C:.c=.s); \
+	$(MAKE) --no-print-directory $(GENERATED_DATA_CH2_TRAPS_OBJECT) >/dev/null; \
+	o_hash_before=$$(md5sum "$(GENERATED_DATA_CH2_TRAPS_OBJECT)" | cut -d' ' -f1); \
+	json_ref=generated-data-ch2-traps-link-check.json_ref.tmp; \
+	regen_log=generated-data-ch2-traps-link-check.regen.log; \
+	uptodate_log=generated-data-ch2-traps-link-check.uptodate.log; \
+	trap 'touch -r "$$json_ref" src/data/ch2_traps.json 2>/dev/null; rm -f "$$json_ref" "$$regen_log" "$$uptodate_log"' EXIT; \
+	touch -r src/data/ch2_traps.json "$$json_ref"; \
+	touch src/data/ch2_traps.json; \
+	$(MAKE) --no-print-directory "$(GENERATED_DATA_CH2_TRAPS_OBJECT)" >"$$regen_log" 2>&1; \
+	if ! grep -q "generate --table traps" "$$regen_log"; then \
+		echo "FAIL: touching ch2_traps.json did not trigger a traps regenerate at all" >&2; exit 1; \
+	fi; \
+	if grep -qE 'arm-none-eabi-as|agbcc' "$$regen_log"; then \
+		echo "FAIL: traps unchanged-content regenerate still ran the legacy compile/assemble pipeline (unnecessary object recompile):" >&2; cat "$$regen_log" >&2; exit 1; \
+	fi; \
+	o_hash_after=$$(md5sum "$(GENERATED_DATA_CH2_TRAPS_OBJECT)" | cut -d' ' -f1); \
+	if [ "$$o_hash_before" != "$$o_hash_after" ]; then \
+		echo "FAIL: traps object content changed even though no recompile should have run ($$o_hash_before -> $$o_hash_after)" >&2; exit 1; \
+	fi; \
+	touch -r "$$json_ref" src/data/ch2_traps.json; \
+	$(MAKE) --no-print-directory "$(GENERATED_DATA_CH2_TRAPS_OBJECT)" >"$$uptodate_log" 2>&1; \
+	if grep -qE "generate --table traps|arm-none-eabi-as|agbcc" "$$uptodate_log"; then \
+		echo "FAIL: after restoring ch2_traps.json's original timestamp, the traps object target is not fully up to date:" >&2; cat "$$uptodate_log" >&2; exit 1; \
+	fi; \
+	rm -f "$$json_ref" "$$regen_log" "$$uptodate_log"; \
+	trap - EXIT; \
+	echo 'OK: traps touched-but-unchanged JSON input re-invokes the generator but never re-runs the legacy compile/assemble pipeline, proven by captured build-log evidence and stable object content'
+	@echo '--- from-scratch parallel build ---'
+	@rm -f $(GENERATED_DATA_CH2_TRAPS_C) $(GENERATED_DATA_CH2_TRAPS_OBJECT)
+	@$(MAKE) --no-print-directory -j4 $(GENERATED_DATA_CH2_TRAPS_OBJECT) $(GENERATED_DATA_CH2_TRAPS_C) >/dev/null
+	@test -e $(GENERATED_DATA_CH2_TRAPS_C) || { echo "FAIL: parallel build did not produce the generated .c for traps" >&2; exit 1; }
+	@test -e $(GENERATED_DATA_CH2_TRAPS_OBJECT) || { echo "FAIL: parallel build did not produce the generated object for traps" >&2; exit 1; }
+	@echo 'OK: from-scratch parallel (-j4) build of traps'"'"'s generated .c/.o succeeds, no race/duplicate generation'
+	@echo 'PASS: generated-data-ch2-traps-link-check'
