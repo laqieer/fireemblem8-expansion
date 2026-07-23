@@ -1,7 +1,10 @@
 """C89 generation for the Chapter 2 ``EventListScr_Ch2_*``/``Ch2Events``
 event-list composition (build/generated/data only -- see
-``docs/generated_data.md``: this table's generated output is deliberately
-never linked).
+``docs/generated_data.md``: as of Issue #5 Batch 3d this table's generated
+output is canonically linked into the ROM, in place of the guarded
+``#include "events/ch2-eventinfo.h"`` in ``src/events_info.c``; the hand
+header itself is left in place, verbatim, purely as this generator's
+round-trip reference).
 
 Renders the exact same macro-call C89 text the hand-written
 ``src/events/ch2-eventinfo.h`` uses (see ``schema.MACRO_SPECS``) -- no

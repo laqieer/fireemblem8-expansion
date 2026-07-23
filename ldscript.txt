@@ -1131,7 +1131,28 @@ SECTIONS
         . = ALIGN(4); src/data/mapanim/mapanim_eventcall.o(.data);
         . = ALIGN(4); src/data/mapanim/mapanim_talkbubble.o(.data);
         . = ALIGN(4); src/eventinfo.o(.data);
+        /* Issue #5 Batch 3d: the 7 EventListScr_Ch2_* event-list arrays,
+         * EventListScr_Ch2_Tutorial, and Ch2Events are now canonically
+         * generated from src/data/ch2_eventlists.json -- see the guard/
+         * section comments around the (guarded) "events/ch2-eventinfo.h"
+         * include in src/events_info.c and docs/generated_data.md's
+         * "eventlists" section. It sits between two still-hand blocks in
+         * the same file (Prologue/Ch1 data above, Chapter 3+ data
+         * below), so src/events_info.o(.data) now holds only the
+         * still-hand Prologue/Ch1 prefix, the generated object's 9
+         * symbols slot in immediately after it at the exact original
+         * Chapter-2 address (0x89E942C), then
+         * src/events_info.o(.data.ch2eventtail) resumes with this file's
+         * own Chapter 3+ content (redirected to that section name right
+         * after the Ch2 #endif guard) at its exact original address
+         * (0x89E95C4). Both boundaries fall on natural 4-byte boundaries,
+         * so, exactly like the units table's three-piece split, ALIGN(4)
+         * at each internal seam below is safe and adds zero padding.
+         * This preserves byte-for-byte legacy ROM identity across the
+         * whole three-piece split. */
         . = ALIGN(4); src/events_info.o(.data);
+        . = ALIGN(4); build/generated/data/data_ch2_eventlists.o(.data);
+        . = ALIGN(4); src/events_info.o(.data.ch2eventtail);
         . = ALIGN(4); src/data_battlequotes.o(.data);
         . = ALIGN(4); src/data_event_trigger.o(.data);
         . = ALIGN(4); src/uidebug.o(.data);

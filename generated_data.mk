@@ -1274,3 +1274,273 @@ generated-data-ch2-shops-link-check: $(GENERATED_DATA_CH2_SHOPS_OBJECT)
 	@test -e $(GENERATED_DATA_CH2_SHOPS_OBJECT) || { echo "FAIL: parallel build did not produce the generated object for shops" >&2; exit 1; }
 	@echo 'OK: from-scratch parallel (-j4) build of shops'"'"'s generated .c/.o succeeds, no race/duplicate generation'
 	@echo 'PASS: generated-data-ch2-shops-link-check'
+
+# ---------------------------------------------------------------------------
+# Linking a Chapter-2-owned table whose Chapter 2 content lives in its own
+# header, not inline in a shared hand .c file (Issue #5 Batch 3d)
+# ---------------------------------------------------------------------------
+# `eventlists` is structurally like `units`/`traps`/`shops` (Batch
+# 3a/3b/3c, above) in that its Chapter 2 content is only a slice of a
+# translation unit that also composes every other chapter's own
+# equivalent data, which must stay hand-linked untouched. It differs in
+# *where* that slice lives: `src/events_info.c` never defines any
+# EventListScr/ChapterEventGroup data directly -- it is nothing but a
+# long sequence of per-chapter `#include "events/<chapter>-eventinfo.h"`
+# directives, and Chapter 2's entire contribution
+# (`EventListScr_Ch2_Turn`/`_Character`/`_Location`/`_Misc`/
+# `_SelectUnit`/`_SelectDestination`/`_UnitMove`,
+# `EventListScr_Ch2_Tutorial`, and `struct ChapterEventGroup Ch2Events`)
+# lives entirely in its own header, `src/events/ch2-eventinfo.h`. So
+# instead of an `#if !GUARD / #endif` region wrapped around inline
+# array/struct definitions (units/traps/shops), `src/events_info.c` wraps
+# the *`#include` directive itself* in the guard -- the header file is
+# still preserved verbatim on disk (never deleted), still read directly
+# by generated-data-check's round-trip parser
+# (scripts/generated_data/eventlists/parser.py), just never actually
+# `#include`d into the compiled translation unit once the guard macro is
+# defined to 1.
+#
+# Right after the guard's closing `#endif`, `#undef CONST_DATA` /
+# `#define CONST_DATA SECTION(".data.ch2eventtail")` redirects everything
+# from Chapter 3 onward (through end-of-file) into a second, distinctly
+# named section, splitting events_info.o's .data into two
+# independently-placeable pieces of the same object file -- identical
+# technique to units' `.data.ch2tail` and shops'
+# `.data.shopch2tail`, just under its own name so as not to collide with
+# either (section names are already fully object-file-qualified in
+# ldscript.txt, so a literal name collision would not actually break the
+# link, but a distinct name keeps each split's ldscript.txt comments/
+# grep-based checks unambiguous).
+#
+# Chapter 2's block spans exactly [0x89E942C, 0x89E95C4) -- 0x198 (408)
+# bytes -- both boundaries falling on natural 4-byte boundaries (every
+# EventListScr array is terminated by an END_MAIN macro that expands to a
+# whole 4-byte-aligned struct, and Ch2Events itself is a pointer-heavy
+# struct), so, exactly like the units/shops tables' three-piece splits,
+# ". = ALIGN(4);" at each internal seam below is safe and adds zero
+# padding:
+#   * legacy (ldscript.txt): src/events_info.o(.data) (the still-hand
+#     Prologue/Ch1 prefix, unchanged), then
+#     build/generated/data/data_ch2_eventlists.o(.data) (the generated
+#     9 symbols), then src/events_info.o(.data.ch2eventtail) (Chapter 3+
+#     onward, unchanged) -- each piece lands at exactly its original
+#     address, so the ROM is byte-identical overall (verified via `cmp`
+#     against a pre-change ROM).
+#   * modern (modern.mk): same reasoning as the units/traps/shops
+#     synthetic slots -- modern links whole objects, not per-input-section,
+#     and this object is additive (no "original hand path" to reuse), so
+#     it is reinstated at a synthetic slot path
+#     ($(MODERN_OUTPUT_DIR)/src/events_i-ch2eventlists.o) chosen to sort
+#     immediately before src/events_info.o -- an acceptable,
+#     already-documented divergence for the modern build (modern's
+#     requirement is a successful, shiftable build, not literal
+#     re-derivation of legacy's byte layout).
+#
+# Unlike `units`/`traps`/`shops`, `eventlists`' own schema declares
+# `dependency_tables()` (`units`, `shops`, `traps`, `eventscripts`) --
+# see scripts/generated_data/eventlists/schema.py -- so its generated .c
+# is additionally regenerated whenever any of those tables' own
+# src/data/ch2_*.json sources change, not just its own
+# src/data/ch2_eventlists.json (mirroring the CLI's own
+# `_load_dependency_records()` behavior in scripts/generated_data/cli.py).
+GENERATED_DATA_CH2_EVENTLISTS_HAND_SOURCE := src/events_info.c
+GENERATED_DATA_CH2_EVENTLISTS_HAND_HEADER := src/events/ch2-eventinfo.h
+GENERATED_DATA_CH2_EVENTLISTS_GUARD_MACRO := GENERATED_DATA_EVENTLISTS_CH2_LINKED
+GENERATED_DATA_CH2_EVENTLISTS_C      := $(GENERATED_DATA_OUT_DIR)/data_ch2_eventlists.c
+GENERATED_DATA_CH2_EVENTLISTS_OBJECT := $(GENERATED_DATA_CH2_EVENTLISTS_C:.c=.o)
+
+# `eventlists`' own generator "config" inputs: include/constants/
+# characters.h (CHARACTER_* designators, via the shared
+# character_refs.py helper), include/bmunit.h (FACTION_ID_* constants),
+# and include/constants/event-flags.h (EVFLAG_* range, read live by
+# scripts/generated_data/eventlists/schema.py's validate()) -- plus the
+# 4 cross-table JSON sources its schema's dependency_tables() loads
+# (src/data/ch2_units.json/ch2_shops.json/ch2_traps.json/
+# ch2_eventscripts.json), so a change to any of those also triggers a
+# regenerate, exactly like a real `generate --table eventlists`
+# invocation would pick up new cross-table content.
+GENERATED_DATA_CONFIG_INPUTS_eventlists := \
+	include/constants/characters.h \
+	include/bmunit.h \
+	include/constants/event-flags.h \
+	src/data/ch2_units.json \
+	src/data/ch2_shops.json \
+	src/data/ch2_traps.json \
+	src/data/ch2_eventscripts.json
+
+# The 9 symbols this table's generated object must define exactly once
+# each -- the 7 EventListScr_Ch2_* list symbols, the
+# EventListScr_Ch2_Tutorial pointer-list symbol, and the Ch2Events
+# manifest symbol -- derived live from src/data/ch2_eventlists.json (the
+# same file the generator itself reads), not hardcoded here, so this
+# list can never silently drift from what the table actually authors
+# (same technique as GENERATED_DATA_CH2_UNITS_SYMBOLS above).
+GENERATED_DATA_CH2_EVENTLISTS_SYMBOLS := $(shell $(PYTHON) -c \
+	"import json; d = json.load(open('src/data/ch2_eventlists.json')); print(' '.join([l['symbol'] for l in d['lists']] + [d['tutorial']['symbol'], d['manifest']['symbol']]))")
+
+$(GENERATED_DATA_CH2_EVENTLISTS_C): src/data/ch2_eventlists.json $(GENERATED_DATA_SHARED_PY_SOURCES) $(wildcard scripts/generated_data/eventlists/*.py) $(GENERATED_DATA_CONFIG_INPUTS_eventlists)
+	@mkdir -p $(@D)
+	$(GENERATED_DATA_PY) generate --table eventlists --out-dir $(GENERATED_DATA_OUT_DIR)
+	@test -e $@ || { echo "error: generated-data table 'eventlists' did not produce $@ (schema default_output_name mismatch?)" >&2; exit 1; }
+
+# Same legacy compile/assemble pipeline as GENERATED_DATA_CH2_UNITS_OBJECT
+# above (see that rule's own comment for why $(@:.o=.s), not $*.s).
+$(GENERATED_DATA_CH2_EVENTLISTS_OBJECT): $(GENERATED_DATA_CH2_EVENTLISTS_C)
+	$(CPP) $(CPPFLAGS) $< | iconv -f UTF-8 -t CP932 | $(CC1) $(CC1FLAGS) -o $(@:.o=.s)
+	echo '.ALIGN 2, 0' >> $(@:.o=.s)
+ifeq ($(UNAME),Darwin)
+	$(SED) -f scripts/align_2_before_debug_section_for_osx.sed $(@:.o=.s)
+else
+	$(SED) '/.section	.debug_line/i\.align 2, 0' $(@:.o=.s)
+endif
+	$(AS) $(ASFLAGS) $(@:.o=.s) -o $@
+
+.PHONY: generated-data-ch2-eventlists-link-check
+
+# Batch 3d gate: proves the eventlists link-swap is wired correctly --
+# the generated object linked exactly once, at the exact ldscript.txt
+# position, in both legacy ALL_OBJECTS and the modern cohort (at the
+# adjacency-preserving synthetic slot path); the table's 9 symbols
+# defined exactly once by the generated object and, critically, *zero*
+# times by a freshly rebuilt src/events_info.o (the guard actually
+# excluded the whole "events/ch2-eventinfo.h" include, so no
+# multiple-definition risk); the hand header's source text still present
+# verbatim (never deleted); neighboring symbols on both sides
+# (EventListScr_Ch1_Tutorial immediately before, and
+# EventListScr_Ch3_Turn immediately after, both inside/outside the
+# .data.ch2eventtail redirect respectively) still defined by
+# src/events_info.o, proving the guard didn't over-reach; and the same
+# touched-but-unchanged-input / from-scratch-parallel-build evidence as
+# generated-data-ch2-units-link-check, scoped to this one table. Local/
+# manual gate, same reasoning as the other ch2-*-link-check targets for
+# why it's not CI-wired (agbcc is unavailable in CI's tool install).
+generated-data-ch2-eventlists-link-check: $(GENERATED_DATA_CH2_EVENTLISTS_OBJECT)
+	@echo '--- guard present in $(GENERATED_DATA_CH2_EVENTLISTS_HAND_SOURCE), guarded include preserved ---'
+	@if ! grep -qF '#define $(GENERATED_DATA_CH2_EVENTLISTS_GUARD_MACRO) 1' $(GENERATED_DATA_CH2_EVENTLISTS_HAND_SOURCE); then \
+		echo "FAIL: $(GENERATED_DATA_CH2_EVENTLISTS_HAND_SOURCE) is missing '#define $(GENERATED_DATA_CH2_EVENTLISTS_GUARD_MACRO) 1'" >&2; exit 1; \
+	fi
+	@if ! grep -qF '#if !$(GENERATED_DATA_CH2_EVENTLISTS_GUARD_MACRO)' $(GENERATED_DATA_CH2_EVENTLISTS_HAND_SOURCE); then \
+		echo "FAIL: $(GENERATED_DATA_CH2_EVENTLISTS_HAND_SOURCE) is missing the '#if !$(GENERATED_DATA_CH2_EVENTLISTS_GUARD_MACRO)' guard" >&2; exit 1; \
+	fi
+	@if ! grep -qF '#include "events/ch2-eventinfo.h"' $(GENERATED_DATA_CH2_EVENTLISTS_HAND_SOURCE); then \
+		echo "FAIL: $(GENERATED_DATA_CH2_EVENTLISTS_HAND_SOURCE) no longer includes \"events/ch2-eventinfo.h\" at all (even guarded out) -- it must stay present, verbatim, inside the guard" >&2; exit 1; \
+	fi
+	@if ! grep -qF '#define CONST_DATA SECTION(".data.ch2eventtail")' $(GENERATED_DATA_CH2_EVENTLISTS_HAND_SOURCE); then \
+		echo "FAIL: $(GENERATED_DATA_CH2_EVENTLISTS_HAND_SOURCE) is missing the post-guard CONST_DATA redirect to .data.ch2eventtail -- without it, Chapter 3+ data would stay glued to Prologue/Ch1 data in the same .data section and the generated object could not slot in between at the exact original address" >&2; exit 1; \
+	fi
+	@if [ ! -f $(GENERATED_DATA_CH2_EVENTLISTS_HAND_HEADER) ]; then \
+		echo "FAIL: $(GENERATED_DATA_CH2_EVENTLISTS_HAND_HEADER) is missing -- it must stay present, verbatim, as the round-trip reference even though it is no longer compiled" >&2; exit 1; \
+	fi
+	@for symbol in $(GENERATED_DATA_CH2_EVENTLISTS_SYMBOLS); do \
+		case "$$symbol" in \
+			Ch2Events) pattern="CONST_DATA struct ChapterEventGroup $$symbol = " ;; \
+			EventListScr_Ch2_Tutorial) pattern="CONST_DATA EventListScr \* $$symbol\[\]" ;; \
+			*) pattern="CONST_DATA EventListScr $$symbol\[\]" ;; \
+		esac; \
+		if [ "$$(grep -c "$$pattern" $(GENERATED_DATA_CH2_EVENTLISTS_HAND_HEADER))" != 1 ]; then \
+			echo "FAIL: hand header text for '$$symbol' missing or duplicated in $(GENERATED_DATA_CH2_EVENTLISTS_HAND_HEADER) -- must stay present verbatim as the round-trip reference" >&2; exit 1; \
+		fi; \
+	done
+	@echo 'OK: guard present around the "events/ch2-eventinfo.h" include, all 9 hand symbol definitions preserved verbatim in that header'"'"'s source text'
+	@echo '--- ldscript.txt three-piece split (events_info.o(.data), generated object, events_info.o(.data.ch2eventtail)) ---'
+	@linked_count=$$(grep -Fc "$(GENERATED_DATA_CH2_EVENTLISTS_OBJECT)(.data);" ldscript.txt); \
+	if [ "$$linked_count" != 1 ]; then \
+		echo "FAIL: ldscript.txt references $(GENERATED_DATA_CH2_EVENTLISTS_OBJECT)(.data) $$linked_count time(s) (want exactly 1)" >&2; exit 1; \
+	fi
+	@prefix_line=$$(grep -nx "        . = ALIGN(4); src/events_info.o(.data);" ldscript.txt | cut -d: -f1); \
+	gen_line=$$(grep -nx "        . = ALIGN(4); build/generated/data/data_ch2_eventlists.o(.data);" ldscript.txt | cut -d: -f1); \
+	tail_line=$$(grep -nx "        . = ALIGN(4); src/events_info.o(.data.ch2eventtail);" ldscript.txt | cut -d: -f1); \
+	if [ -z "$$prefix_line" ]; then echo "FAIL: ldscript.txt no longer links src/events_info.o(.data) (the Prologue/Ch1 prefix piece) at all" >&2; exit 1; fi; \
+	if [ -z "$$gen_line" ]; then echo "FAIL: ldscript.txt no longer links $(GENERATED_DATA_CH2_EVENTLISTS_OBJECT)(.data) at all" >&2; exit 1; fi; \
+	if [ -z "$$tail_line" ]; then echo "FAIL: ldscript.txt no longer links src/events_info.o(.data.ch2eventtail) (the Chapter 3+ piece) at all" >&2; exit 1; fi; \
+	if [ "$$((gen_line - prefix_line))" != 1 ]; then \
+		echo "FAIL: $(GENERATED_DATA_CH2_EVENTLISTS_OBJECT)(.data) (line $$gen_line) is not immediately after src/events_info.o(.data) (line $$prefix_line)" >&2; exit 1; \
+	fi; \
+	if [ "$$((tail_line - gen_line))" != 1 ]; then \
+		echo "FAIL: src/events_info.o(.data.ch2eventtail) (line $$tail_line) is not immediately after $(GENERATED_DATA_CH2_EVENTLISTS_OBJECT)(.data) (line $$gen_line)" >&2; exit 1; \
+	fi
+	@echo 'OK: ldscript.txt links, in order, src/events_info.o(.data) [Prologue/Ch1], the generated object exactly once, then src/events_info.o(.data.ch2eventtail) [Chapter 3+]'
+	@echo '--- legacy ALL_OBJECTS ---'
+	@if [ "$(words $(filter $(GENERATED_DATA_CH2_EVENTLISTS_OBJECT),$(ALL_OBJECTS)))" != 1 ]; then \
+		echo "FAIL: $(GENERATED_DATA_CH2_EVENTLISTS_OBJECT) not present exactly once in legacy ALL_OBJECTS" >&2; exit 1; \
+	fi
+	@if [ "$(words $(filter $(GENERATED_DATA_CH2_EVENTLISTS_HAND_SOURCE:.c=.o),$(ALL_OBJECTS)))" != 1 ]; then \
+		echo "FAIL: $(GENERATED_DATA_CH2_EVENTLISTS_HAND_SOURCE:.c=.o) unexpectedly missing from legacy ALL_OBJECTS -- it must stay linked (it still defines every other chapter's event-list composition)" >&2; exit 1; \
+	fi
+	@echo 'OK: both the generated object and the (still-required) src/events_info.o are present exactly once each in legacy ALL_OBJECTS'
+	@echo '--- modern MODERN_ALL_C_OBJECTS (synthetic adjacency-preserving slot) ---'
+	@if [ "$(words $(filter $(MODERN_OUTPUT_DIR)/src/events_i-ch2eventlists.o,$(MODERN_ALL_C_OBJECTS)))" != 1 ]; then \
+		echo "FAIL: $(MODERN_OUTPUT_DIR)/src/events_i-ch2eventlists.o not present exactly once in modern MODERN_ALL_C_OBJECTS" >&2; exit 1; \
+	fi
+	@sorted_slot=$$(printf '%s\n' $(sort $(MODERN_ALL_C_OBJECTS)) | grep -n -x -e "$(MODERN_OUTPUT_DIR)/src/events_i-ch2eventlists.o" -e "$(MODERN_OUTPUT_DIR)/src/events_info.o" | cut -d: -f1 | tr '\n' ' '); \
+	first=$$(echo $$sorted_slot | cut -d' ' -f1); second=$$(echo $$sorted_slot | cut -d' ' -f2); \
+	if [ -z "$$first" ] || [ -z "$$second" ] || [ "$$((second - first))" != 1 ]; then \
+		echo "FAIL: in the sorted modern object list, the synthetic slot is not immediately adjacent (and before) src/events_info.o (positions: $$sorted_slot)" >&2; exit 1; \
+	fi
+	@echo 'OK: synthetic slot object sorts immediately before src/events_info.o in the modern object list, exactly like the legacy ldscript.txt adjacency'
+	@echo '--- generated object symbols (all 9 expected symbols, exactly once each) ---'
+	@nm_out=$$(arm-none-eabi-nm $(GENERATED_DATA_CH2_EVENTLISTS_OBJECT)); \
+	for symbol in $(GENERATED_DATA_CH2_EVENTLISTS_SYMBOLS); do \
+		symcount=$$(printf '%s\n' "$$nm_out" | grep -c " $$symbol\$$"); \
+		if [ "$$symcount" != 1 ]; then \
+			echo "FAIL: generated object for eventlists defines $$symbol $$symcount time(s) (want exactly 1)" >&2; exit 1; \
+		fi; \
+	done
+	@echo 'OK: exactly one definition of each of the 9 expected eventlists symbols in the generated object'
+	@echo '--- src/events_info.o no longer defines any Ch2 eventlists symbol, but still defines neighboring chapters'"'"' ---'
+	@rm -f src/events_info.o src/events_info.s
+	@$(MAKE) --no-print-directory src/events_info.o >/dev/null
+	@info_nm=$$(arm-none-eabi-nm src/events_info.o); \
+	for symbol in $(GENERATED_DATA_CH2_EVENTLISTS_SYMBOLS); do \
+		symcount=$$(printf '%s\n' "$$info_nm" | grep -c " $$symbol\$$"); \
+		if [ "$$symcount" != 0 ]; then \
+			echo "FAIL: src/events_info.o still defines $$symbol $$symcount time(s) -- the guard did not exclude it (would be a multiple-definition link error against the generated object)" >&2; exit 1; \
+		fi; \
+	done; \
+	for other in EventListScr_Ch1_Tutorial EventListScr_Ch3_Turn; do \
+		if ! printf '%s\n' "$$info_nm" | grep -q " $$other\$$"; then \
+			echo "FAIL: src/events_info.o unexpectedly lost unrelated-chapter symbol $$other -- the guard over-excluded" >&2; exit 1; \
+		fi; \
+	done
+	@echo 'OK: src/events_info.o defines zero Ch2 eventlists symbols and still defines Chapter 1/3 symbols untouched'
+	@echo '--- clean coverage ---'
+	@if [ -z "$(strip $(filter $(GENERATED_DATA_OUT_DIR),$(CLEAN_DIRS)))" ]; then \
+		echo "FAIL: $(GENERATED_DATA_OUT_DIR) missing from CLEAN_DIRS -- clean/clean_fast would not remove data_ch2_eventlists.c/.s/.o" >&2; exit 1; \
+	fi
+	@echo 'OK: clean/clean_fast remove build/generated/data (covers data_ch2_eventlists.c/.s/.o)'
+	@echo '--- touched-but-unchanged input: content-preserving no-op regenerate (behavior evidence, not mtime) ---'
+	@rm -f $(GENERATED_DATA_CH2_EVENTLISTS_C) $(GENERATED_DATA_CH2_EVENTLISTS_OBJECT) $(GENERATED_DATA_CH2_EVENTLISTS_C:.c=.s); \
+	$(MAKE) --no-print-directory $(GENERATED_DATA_CH2_EVENTLISTS_OBJECT) >/dev/null; \
+	o_hash_before=$$(md5sum "$(GENERATED_DATA_CH2_EVENTLISTS_OBJECT)" | cut -d' ' -f1); \
+	json_ref=generated-data-ch2-eventlists-link-check.json_ref.tmp; \
+	regen_log=generated-data-ch2-eventlists-link-check.regen.log; \
+	uptodate_log=generated-data-ch2-eventlists-link-check.uptodate.log; \
+	trap 'touch -r "$$json_ref" src/data/ch2_eventlists.json 2>/dev/null; rm -f "$$json_ref" "$$regen_log" "$$uptodate_log"' EXIT; \
+	touch -r src/data/ch2_eventlists.json "$$json_ref"; \
+	touch src/data/ch2_eventlists.json; \
+	$(MAKE) --no-print-directory "$(GENERATED_DATA_CH2_EVENTLISTS_OBJECT)" >"$$regen_log" 2>&1; \
+	if ! grep -q "generate --table eventlists" "$$regen_log"; then \
+		echo "FAIL: touching ch2_eventlists.json did not trigger an eventlists regenerate at all" >&2; exit 1; \
+	fi; \
+	if grep -qE 'arm-none-eabi-as|agbcc' "$$regen_log"; then \
+		echo "FAIL: eventlists unchanged-content regenerate still ran the legacy compile/assemble pipeline (unnecessary object recompile):" >&2; cat "$$regen_log" >&2; exit 1; \
+	fi; \
+	o_hash_after=$$(md5sum "$(GENERATED_DATA_CH2_EVENTLISTS_OBJECT)" | cut -d' ' -f1); \
+	if [ "$$o_hash_before" != "$$o_hash_after" ]; then \
+		echo "FAIL: eventlists object content changed even though no recompile should have run ($$o_hash_before -> $$o_hash_after)" >&2; exit 1; \
+	fi; \
+	touch -r "$$json_ref" src/data/ch2_eventlists.json; \
+	$(MAKE) --no-print-directory "$(GENERATED_DATA_CH2_EVENTLISTS_OBJECT)" >"$$uptodate_log" 2>&1; \
+	if grep -qE "generate --table eventlists|arm-none-eabi-as|agbcc" "$$uptodate_log"; then \
+		echo "FAIL: after restoring ch2_eventlists.json's original timestamp, the eventlists object target is not fully up to date:" >&2; cat "$$uptodate_log" >&2; exit 1; \
+	fi; \
+	rm -f "$$json_ref" "$$regen_log" "$$uptodate_log"; \
+	trap - EXIT; \
+	echo 'OK: eventlists touched-but-unchanged JSON input re-invokes the generator but never re-runs the legacy compile/assemble pipeline, proven by captured build-log evidence and stable object content'
+	@echo '--- from-scratch parallel build ---'
+	@rm -f $(GENERATED_DATA_CH2_EVENTLISTS_C) $(GENERATED_DATA_CH2_EVENTLISTS_OBJECT)
+	@$(MAKE) --no-print-directory -j4 $(GENERATED_DATA_CH2_EVENTLISTS_OBJECT) $(GENERATED_DATA_CH2_EVENTLISTS_C) >/dev/null
+	@test -e $(GENERATED_DATA_CH2_EVENTLISTS_C) || { echo "FAIL: parallel build did not produce the generated .c for eventlists" >&2; exit 1; }
+	@test -e $(GENERATED_DATA_CH2_EVENTLISTS_OBJECT) || { echo "FAIL: parallel build did not produce the generated object for eventlists" >&2; exit 1; }
+	@echo 'OK: from-scratch parallel (-j4) build of eventlists'"'"'s generated .c/.o succeeds, no race/duplicate generation'
+	@echo 'PASS: generated-data-ch2-eventlists-link-check'

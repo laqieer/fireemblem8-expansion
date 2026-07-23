@@ -1,4 +1,4 @@
-# Generated-data platform (Issue #5 Chapter 2 slice -- Batch A + B + C; global `items`/`classes` Batch 1; `characters` Batch 2a + 2b; `classes` linked Batch 2c-1; `items` linked Batch 2c-2; `supports` linked Batch 2c-3; `characters` linked Batch 2c-4; `units`/Chapter 2 `UnitDefinition`/`REDA` linked Batch 3a; `traps`/Chapter 2 trap arrays linked Batch 3b; `shops`/Chapter 2 armory linked Batch 3c)
+# Generated-data platform (Issue #5 Chapter 2 slice -- Batch A + B + C; global `items`/`classes` Batch 1; `characters` Batch 2a + 2b; `classes` linked Batch 2c-1; `items` linked Batch 2c-2; `supports` linked Batch 2c-3; `characters` linked Batch 2c-4; `units`/Chapter 2 `UnitDefinition`/`REDA` linked Batch 3a; `traps`/Chapter 2 trap arrays linked Batch 3b; `shops`/Chapter 2 armory linked Batch 3c; `eventlists`/Chapter 2 event-list composition linked Batch 3d)
 
 ## Status
 
@@ -174,51 +174,104 @@ either side of the generated symbol. See "## Linking a single
 Chapter-2-owned interior symbol in a shared shop-list file (Batch 3c:
 `shops`)" below for the full write-up.
 
+As of Issue #5 **Batch 3d**, `eventlists` is also linked, in place of
+the entire (guarded) `#include "events/ch2-eventinfo.h"` in
+`src/events_info.c` -- its 7 `EventListScr_Ch2_*` arrays, the
+`EventListScr_Ch2_Tutorial` pointer list, and the `Ch2Events` manifest
+(9 symbols total) -- also with zero ROM/ELF address shift. Structurally
+like `units` (a single guard, a single `CONST_DATA` section redirect, a
+three-piece `ldscript.txt` split), except the guard wraps the whole
+`#include` directive rather than any inline array/struct content:
+Chapter 2's event-list composition lives entirely in its own header,
+`src/events/ch2-eventinfo.h`, never inline in `src/events_info.c`
+itself, so that header (not `src/events_info.c`) stays the round-trip
+reference the `eventlists/parser.py` check reads. See "## Linking a
+Chapter-2-owned table with header-only content (Batch 3d:
+`eventlists`)" below for the full write-up.
+
 ## Source vs. generated vs. committed-public artifacts
+
+**This table's "Linked into the ROM?" column reflects current status,
+not each table's original as-generated-only starting point.** Of the 10
+tables in `GENERATED_DATA_TABLES`, 8 produce real compiled C data and are
+now **canonically linked**, protected by a table-specific `*-link-check`
+Make target (`generated-data-link-check` for the 4 whole-file global
+tables, `generated-data-ch2-<table>-link-check` for the 4 Chapter-2-owned
+partial-file tables) that fails the build if the generated object and its
+ldscript/Makefile/modern.mk wiring ever drift out of sync. The remaining
+2 tables (`eventscripts`, `chapterbundle`) are **metadata/schema-only**:
+they validate cross-references against real symbols/headers but never
+render `struct`/array C initializers of their own, so there is no
+generated `.c` for them to link -- their existing hand-written
+declaration files remain the sole, unchanged, always-canonical source.
+
+**Canonically linked, whole-file (global tables; Issue #5 Batch 2c-1..2c-4):**
 
 | Artifact | Path | Committed? | Linked into the ROM? |
 |---|---|---|---|
-| Structured source (hand-edited) | `src/data/supports.json` | Yes | No (not compiled directly) |
-| Hand-written canonical C (existing) | `src/data_supports.c` | Yes | **Yes** -- unchanged, still canonical |
-| Generated C89 (bulky) | `build/generated/data/data_supports.c` | **No** (gitignored, `build/`) | No -- not referenced by `ldscript.txt`/Makefile |
-| Committed inventory/summary | `reports/generated_data_supports_inventory.md` | Yes (small) | N/A |
-| Structured source (units) | `src/data/ch2_units.json` | Yes | No |
-| Hand-written canonical C (existing) | `src/events_udefs.c` | Yes | **Yes** -- unchanged, still canonical |
-| Generated C89 (bulky) | `build/generated/data/data_ch2_units.c` | **No** (gitignored) | No |
-| Committed inventory/summary | `reports/generated_data_units_inventory.md` | Yes (small) | N/A |
-| Structured source (shops) | `src/data/ch2_shops.json` | Yes | No |
-| Hand-written canonical C (existing) | `src/events_shoplist.c` | Yes | **Yes** -- unchanged, still canonical |
-| Generated C89 (bulky) | `build/generated/data/data_ch2_shops.c` | **No** (gitignored) | No |
-| Committed inventory/summary | `reports/generated_data_shops_inventory.md` | Yes (small) | N/A |
-| Structured source (traps) | `src/data/ch2_traps.json` | Yes | No |
-| Hand-written canonical C (existing) | `src/events_trapdata.c` | Yes | **Yes** -- unchanged, still canonical |
-| Generated C89 (bulky) | `build/generated/data/data_ch2_traps.c` | **No** (gitignored) | No |
-| Committed inventory/summary | `reports/generated_data_traps_inventory.md` | Yes (small) | N/A |
-| Structured source (eventscripts, metadata-only) | `src/data/ch2_eventscripts.json` | Yes | No |
-| Header declaring the referenced symbols (existing) | `include/eventcall.h` | Yes | **Yes** -- unchanged, still canonical |
-| Generated C89 | *(none -- metadata-only table)* | N/A | N/A |
-| Committed inventory/summary | `reports/generated_data_eventscripts_inventory.md` | Yes (small) | N/A |
-| Structured source (eventlists) | `src/data/ch2_eventlists.json` | Yes | No |
-| Hand-written canonical C (existing) | `src/events/ch2-eventinfo.h` | Yes | **Yes** -- unchanged, still canonical |
-| Generated C89 (bulky) | `build/generated/data/data_ch2_eventlists.c` | **No** (gitignored) | No |
-| Committed inventory/summary | `reports/generated_data_eventlists_inventory.md` | Yes (small) | N/A |
-| Structured source (items, global, Issue #5 Batch 1) | `src/data/items.json` | Yes | No |
-| Hand-written canonical C (existing) | `src/data_items.c` | Yes | **Yes** -- unchanged, still canonical |
-| Generated C89 (bulky) | `build/generated/data/data_items.c` | **No** (gitignored) | No |
+| Structured source (classes) | `src/data/classes.json` | Yes | No (not compiled directly) |
+| Hand-written C (round-trip reference only, no longer linked) | `src/data_classes.c` | Yes | No -- superseded by the generated object (Batch 2c-1) |
+| Generated C89 (bulky) | `build/generated/data/data_classes.c` | **No** (gitignored, `build/`) | **Yes** -- canonical, linked in place of `src/data_classes.c` (`gClassData`) |
+| Committed inventory/summary | `reports/generated_data_classes_inventory.md` | Yes (small) | N/A |
+| Structured source (items) | `src/data/items.json` | Yes | No |
+| Hand-written C (round-trip reference only, no longer linked) | `src/data_items.c` | Yes | No -- superseded by the generated object (Batch 2c-2) |
+| Generated C89 (bulky) | `build/generated/data/data_items.c` | **No** (gitignored) | **Yes** -- canonical, linked in place of `src/data_items.c` (`gItemData`) |
 | Committed inventory/summary | `reports/generated_data_items_inventory.md` | Yes (small) | N/A |
-| Structured source (characters, global, Issue #5 Batch 2b) | `src/data/characters.json` | Yes | No |
-| Hand-written canonical C (existing) | `src/data_characters.c` | Yes | **Yes** -- unchanged, still canonical |
-| Generated C89 (bulky) | `build/generated/data/data_characters.c` | **No** (gitignored) | No |
+| Structured source (supports) | `src/data/supports.json` | Yes | No |
+| Hand-written C (round-trip reference only, no longer linked) | `src/data_supports.c` | Yes | No -- superseded by the generated object (Batch 2c-3) |
+| Generated C89 (bulky) | `build/generated/data/data_supports.c` | **No** (gitignored) | **Yes** -- canonical, linked in place of `src/data_supports.c` (33 `SupportData` symbols) |
+| Committed inventory/summary | `reports/generated_data_supports_inventory.md` | Yes (small) | N/A |
+| Structured source (characters) | `src/data/characters.json` | Yes | No |
+| Hand-written C (round-trip reference only, no longer linked) | `src/data_characters.c` | Yes | No -- superseded by the generated object (Batch 2c-4) |
+| Generated C89 (bulky) | `build/generated/data/data_characters.c` | **No** (gitignored) | **Yes** -- canonical, linked in place of `src/data_characters.c` (`gCharacterData`) |
 | Committed inventory/summary | `reports/generated_data_characters_inventory.md` | Yes (small) | N/A |
 
-Because none of the generated C is linked, this work cannot introduce
-`multiple definition` link errors and cannot silently change gameplay
-behavior -- the only committed, gameplay-visible sources of these tables
-are still the hand-written files above. Every JSON source and its
-generated output is validated to be *semantically identical* to the
-corresponding hand-written file (see "Round-trip checker" below), or (for
-`eventscripts`) that every referenced symbol genuinely exists as declared,
-so that a future slice can switch the link order with confidence.
+**Canonically linked, Chapter-2-owned partial-file slices (Issue #5 Batch 3a..3d):**
+
+| Artifact | Path | Committed? | Linked into the ROM? |
+|---|---|---|---|
+| Structured source (units) | `src/data/ch2_units.json` | Yes | No |
+| Hand-written C (guarded block, round-trip reference only) | `src/events_udefs.c` | Yes | No -- Chapter 2 slice superseded by the generated object (Batch 3a); rest of the file (other chapters) still hand-linked |
+| Generated C89 (bulky) | `build/generated/data/data_ch2_units.c` | **No** (gitignored) | **Yes** -- canonical, linked at the exact original Chapter 2 address, zero shift |
+| Committed inventory/summary | `reports/generated_data_units_inventory.md` | Yes (small) | N/A |
+| Structured source (traps) | `src/data/ch2_traps.json` | Yes | No |
+| Hand-written C (2 guarded blocks, round-trip reference only) | `src/events_trapdata.c` | Yes | No -- both Ch2 symbols (`TrapData_Event_Ch2`/`Ch2Hard`) superseded by the generated object (Batch 3b) |
+| Generated C89 (bulky) | `build/generated/data/data_ch2_traps.c` | **No** (gitignored) | **Yes** -- canonical, linked via a 4-piece ldscript split (2 non-adjacent symbols), zero shift |
+| Committed inventory/summary | `reports/generated_data_traps_inventory.md` | Yes (small) | N/A |
+| Structured source (shops) | `src/data/ch2_shops.json` | Yes | No |
+| Hand-written C (guarded block, round-trip reference only) | `src/events_shoplist.c` | Yes | No -- `ShopList_Event_Ch2Armory` superseded by the generated object (Batch 3c) |
+| Generated C89 (bulky) | `build/generated/data/data_ch2_shops.c` | **No** (gitignored) | **Yes** -- canonical, linked at the exact original interior address, zero shift |
+| Committed inventory/summary | `reports/generated_data_shops_inventory.md` | Yes (small) | N/A |
+| Structured source (eventlists) | `src/data/ch2_eventlists.json` | Yes | No |
+| Hand-written header (guarded include, round-trip reference only) | `src/events/ch2-eventinfo.h` | Yes | No -- all 9 symbols superseded by the generated object (Batch 3d); header itself left verbatim as the parser's reference |
+| Generated C89 (bulky) | `build/generated/data/data_ch2_eventlists.c` | **No** (gitignored) | **Yes** -- canonical, linked at the exact original Chapter 2 address, zero shift |
+| Committed inventory/summary | `reports/generated_data_eventlists_inventory.md` | Yes (small) | N/A |
+
+**Metadata/schema-only (no generated C ever produced; existing hand file remains the sole canonical source):**
+
+| Artifact | Path | Committed? | Linked into the ROM? |
+|---|---|---|---|
+| Structured source (eventscripts) | `src/data/ch2_eventscripts.json` | Yes | No |
+| Header declaring the referenced symbols (existing, unchanged) | `include/eventcall.h` | Yes | **Yes** -- unchanged, still canonical (no generated C exists to link) |
+| Generated C89 | *(none -- metadata-only table)* | N/A | N/A |
+| Committed inventory/summary | `reports/generated_data_eventscripts_inventory.md` | Yes (small) | N/A |
+| Structured source (chapterbundle) | `src/data/ch2_bundle.json` | Yes | No |
+| Cross-table manifest of the tables above (existing, unchanged) | *(no single dedicated hand file -- validates `units`/`shops`/`traps`/`eventscripts`/`eventlists`/`supports` reachability)* | N/A | N/A |
+| Generated C89 | *(none -- metadata-only table)* | N/A | N/A |
+| Committed inventory/summary | `reports/generated_data_chapterbundle_inventory.md` | Yes (small) | N/A |
+
+Because the 8 linked tables' generated C is validated byte-for-byte
+identical (in compiled `.data` bytes) to the hand-written file/blocks it
+replaced, *before* being wired into `ldscript.txt`/`Makefile`/`modern.mk`,
+and each stays behind its own `*-link-check` regression gate afterward,
+this work cannot introduce `multiple definition` link errors and cannot
+silently change gameplay behavior -- ROM output is unchanged (see the
+byte-identical rebuild evidence cited in each batch's own write-up
+section below). The still-unlinked `eventscripts`/`chapterbundle` tables
+have no generated C of their own to link; their validation instead proves
+every referenced symbol genuinely exists as declared, so that a future
+slice modeling their underlying data (not just references to it) could
+extend this same pattern with confidence.
 
 ## Package layout
 
@@ -756,6 +809,17 @@ call, the tutorial list, and every manifest field against
 `src/events/ch2-eventinfo.h` -- **100%**, not a sample (Issue #5 Batch B
 DONE criterion).
 
+As of Issue #5 **Batch 3d**, `eventlists` is no longer schema/round-trip
+only: `build/generated/data/data_ch2_eventlists.o` is linked in place of
+the entire (guarded) `#include "events/ch2-eventinfo.h"` in
+`src/events_info.c` -- all 9 symbols (the 7 `EventListScr_Ch2_*` arrays,
+`EventListScr_Ch2_Tutorial`, and `Ch2Events`) -- in both the legacy ROM
+build and the modern object cohort, with zero ROM/ELF address shift; the
+hand header itself stays in place, verbatim, as the round-trip
+reference `parser.py` (above) reads -- see "## Linking a Chapter-2-owned
+table with header-only content (Batch 3d: `eventlists`)" below for the
+full write-up.
+
 ## `chapterbundle` schema (Batch C whole-bundle manifest)
 
 Source: `src/data/ch2_bundle.json`. Like `eventscripts`, this table is
@@ -1071,10 +1135,16 @@ missing pieces: a real, committed `src/data/characters.json` with
 raw, including the `[0x100 - 1]` padding slot), `generate.py` (C89
 emission), `parser.py` (hand-file round-trip parsing keyed by resolved
 designator), `inventory.py` (the committed inventory report), and an
-entry in `generated_data.mk`'s `GENERATED_DATA_TABLES`. `src/data_
-characters.c` remains the sole hand-written, **linked** source for
-`gCharacterData[]` -- Batch 2b proves semantic parity against it but
-never links the generated file in its place (explicit Batch 2c scope).
+entry in `generated_data.mk`'s `GENERATED_DATA_TABLES`. At this point
+(Batch 2a + 2b), `src/data_characters.c` remained the sole hand-written,
+linked source for `gCharacterData[]` -- Batch 2b proved semantic parity
+against it but did not yet link the generated file in its place (linking
+was explicit Batch 2c scope). **It has since been linked** (Issue #5
+**Batch 2c-4**) -- the generated `build/generated/data/data_characters.c`
+is now the canonical, compiled/linked source for `gCharacterData[]`,
+with `src/data_characters.c` itself kept only as the round-trip
+reference; see "Linking a generated table in place of its hand-written
+counterpart" below.
 `python3 -m scripts.generated_data validate --table characters` (no
 `--source` override needed now) validates the full committed table,
 including `--dep-source classes=PATH`/`--dep-source supports=PATH`
@@ -1260,9 +1330,14 @@ and the committed `reports/generated_data_characters_inventory.md`;
 through the real `cpp | iconv | agbcc` pipeline and assembled with
 `arm-none-eabi-as` with zero errors/warnings (mirroring the Makefile's
 own `$(C_OBJECTS)` recipe, same flags), confirming it is valid,
-compilable C89 -- it is still never linked in place of
-`src/data_characters.c` (no `ldscript.txt` change; explicit Batch 2c
-scope, see "Remaining Issue #5 scope" below).
+compilable C89 -- at this point (Batch 2a + 2b) it was not yet linked in
+place of `src/data_characters.c` (no `ldscript.txt` change; linking was
+explicit Batch 2c scope, see "Remaining Issue #5 scope" below). **It has
+since been linked** (Issue #5 **Batch 2c-4**; see "Linking a generated
+table in place of its hand-written counterpart" below) -- `gCharacterData`
+is the single generated top-level symbol now canonically compiled/linked
+in `src/data_characters.c`'s place, with `src/data_characters.c` itself
+kept only as the round-trip reference.
 
 ### Fixtures and tests
 
@@ -1865,8 +1940,12 @@ Additionally covers, for Issue #5 Batch 1 (`test_items_schema.py`,
   through the real `cpp | iconv | agbcc` pipeline (mirroring the
   Makefile's `$(C_OBJECTS)` recipe) and assembled with `arm-none-eabi-as`
   with zero errors/warnings, confirming it is valid, compilable C89 --
-  it is still never linked in place of `src/data_items.c` (out of Batch 1
-  scope).
+  at this point (Batch 1) it was not yet linked in place of
+  `src/data_items.c` (linking was out of Batch 1 scope). **It has since
+  been linked** (Issue #5 **Batch 2c-2**; see "Linking a generated table
+  in place of its hand-written counterpart" below) -- `gItemData` is now
+  the canonical, compiled/linked symbol, with `src/data_items.c` itself
+  kept only as the round-trip reference.
 
 Additionally covers, for Issue #5 Batch 1's `classes` table
 (`test_classes_schema.py`, `test_classes_generate.py`,
@@ -1897,8 +1976,13 @@ Additionally covers, for Issue #5 Batch 1's `classes` table
   (drift-free). The generated `build/generated/data/data_classes.c` was
   also compiled end-to-end through the real `cpp | iconv | agbcc`
   pipeline and assembled with `arm-none-eabi-as` with zero errors,
-  confirming it is valid, compilable C89 -- it is still never linked in
-  place of `src/data_classes.c` (out of Batch 1 scope).
+  confirming it is valid, compilable C89 -- at this point (Batch 1) it
+  was not yet linked in place of `src/data_classes.c` (linking was out of
+  Batch 1 scope). **It has since been linked** (Issue #5 **Batch 2c-1**;
+  see "Linking a generated table in place of its hand-written
+  counterpart" below) -- `gClassData` is now the canonical,
+  compiled/linked symbol, with `src/data_classes.c` itself kept only as
+  the round-trip reference.
 
 All fixtures and scratch directories live under
 `scripts/generated_data/tests/` (never `/tmp`).
@@ -2354,6 +2438,163 @@ build with zero disruption to any other object's relative order.
   `src/events_shoplist.o` confirms the expected `.data`/
   `.data.shopch2tail` section split.
 
+## Linking a Chapter-2-owned table with header-only content (Batch 3d: `eventlists`)
+
+`eventlists` is structurally like `units`/`traps`/`shops` (Batch
+3a/3b/3c, above): its Chapter 2 content is only a slice of a
+translation unit (`src/events_info.c`) that also composes every other
+chapter's own event-list data, which must stay hand-linked untouched --
+so it can't be excluded from compilation by filtering a whole file out
+of `CFILES`/`MODERN_ALL_C_SOURCES` the way `GENERATED_DATA_LINKED_*`
+does.
+
+**A guarded `#include`, not a guarded inline block, unlike `units`/
+`traps`/`shops`.** `src/events_info.c` is nothing but a long sequence of
+per-chapter `#include "events/<chapter>-eventinfo.h"` directives -- it
+never defines any `EventListScr`/`ChapterEventGroup` data directly.
+Chapter 2's entire contribution (the 7 `EventListScr_Ch2_*` arrays, the
+`EventListScr_Ch2_Tutorial` pointer list, and the `Ch2Events` manifest --
+9 symbols total) lives entirely in its own header,
+`src/events/ch2-eventinfo.h`. So instead of wrapping inline array/struct
+definitions in `#if !GUARD / #endif` (as `units`/`traps`/`shops` do),
+`src/events_info.c` wraps the *`#include` directive itself*:
+
+```c
+#include "events/prologue-eventinfo.h"
+#include "events/ch1-eventinfo.h"
+
+#define GENERATED_DATA_EVENTLISTS_CH2_LINKED 1
+
+#if !GENERATED_DATA_EVENTLISTS_CH2_LINKED
+#include "events/ch2-eventinfo.h"
+#endif /* !GENERATED_DATA_EVENTLISTS_CH2_LINKED */
+
+#undef CONST_DATA
+#define CONST_DATA SECTION(".data.ch2eventtail")
+
+#include "events/ch3-eventinfo.h"
+...
+```
+
+`src/events/ch2-eventinfo.h` itself is left in place, verbatim, on
+disk -- never deleted, never hand-edited (edit
+`src/data/ch2_eventlists.json` and regenerate instead) -- even though it
+is no longer actually `#include`d into the compiled translation unit
+once the guard macro is defined to 1. `generated-data-check`'s
+round-trip parser (`eventlists/parser.py`) reads that header's exact
+source text directly (macro-call/brace-depth-aware parsing, never the
+compiler), so the preprocessor guard around its inclusion is invisible
+to that check and cannot desync the two.
+
+**Redirect covers Chapter 3 onward to end-of-file, exactly like
+`units`.** Right after the guard's closing `#endif`, `#undef CONST_DATA`
+/ `#define CONST_DATA SECTION(".data.ch2eventtail")` redirects
+*everything* from the `events/ch3-eventinfo.h` include onward (every
+later chapter, tower, ruin, and side-map header all the way to
+end-of-file) into a second, distinctly-named section -- not just
+Chapter 3's own data -- splitting `events_info.o`'s `.data` into two
+independently-placeable pieces of the same object file. The section is
+named `.data.ch2eventtail` rather than reusing `units`'
+`.data.ch2tail`/`shops`' `.data.shopch2tail`: section names are already
+fully object-file-qualified in `ldscript.txt` (`FILE.o(SECTION)`), so a
+literal name collision across different object files would not actually
+break the link, but a distinct name keeps each split's `ldscript.txt`
+comments/grep-based checks unambiguous.
+
+**`ALIGN(4)` at every seam is safe, exactly like `units`/`shops`.**
+Chapter 2's block spans exactly `[0x89E942C, 0x89E95C4)` -- 0x198 (408)
+bytes -- both boundaries falling on natural 4-byte boundaries (every
+`EventListScr` array is terminated by the `END_MAIN` macro, which
+expands to a whole 4-byte-aligned struct entry, and `Ch2Events` is a
+pointer-heavy `struct ChapterEventGroup`), so, unlike the `traps` table's
+packed `u8[]` split, this three-piece split keeps `. = ALIGN(4);` at
+every piece with zero padding.
+
+**Legacy (`ldscript.txt`).** Three lines, in order, in place of the
+original single `src/events_info.o(.data)` line:
+
+```
+. = ALIGN(4); src/events_info.o(.data);
+. = ALIGN(4); build/generated/data/data_ch2_eventlists.o(.data);
+. = ALIGN(4); src/events_info.o(.data.ch2eventtail);
+```
+
+`src/events_info.o(.data)` (the still-hand Prologue/Ch1 prefix,
+unchanged) lands at the original address; the generated object lands
+immediately after, at the exact original Chapter 2 address
+(`0x89E942C`); `src/events_info.o(.data.ch2eventtail)` (Chapter 3
+onward, unchanged) resumes immediately after that, at its own original
+address (`0x89E95C4`). Verified via `cmp` against a saved pre-change
+ROM: byte-identical (zero differing bytes; MD5 match).
+
+**Cross-table dependency inputs, unique to `eventlists`.** Unlike
+`units`/`traps`/`shops`, `eventlists`' own schema declares
+`dependency_tables()` (`units`, `shops`, `traps`, `eventscripts` -- see
+`scripts/generated_data/eventlists/schema.py`), so
+`GENERATED_DATA_CONFIG_INPUTS_eventlists` additionally lists
+`src/data/ch2_units.json`/`ch2_shops.json`/`ch2_traps.json`/
+`ch2_eventscripts.json` alongside the header inputs
+(`include/constants/characters.h`, `include/bmunit.h`,
+`include/constants/event-flags.h`), so a change to any of those also
+triggers a regenerate of `data_ch2_eventlists.c`, mirroring the CLI's own
+`_load_dependency_records()` behavior.
+
+**Modern (`modern.mk`).** Same reasoning as the `units`/`traps`/`shops`
+synthetic slots -- modern links whole objects, not per-input-section,
+and this object is additive (no "original hand path" to reuse), so it
+is reinstated at a synthetic slot path
+(`$(MODERN_OUTPUT_DIR)/src/events_i-ch2eventlists.o`) chosen to sort
+immediately before `src/events_info.o` (same `"-"` < any alnum trick as
+the units/traps/shops slots above) and therefore doesn't shift any other
+object's relative order. `objdump -h` on the modern-built
+`src/events_info.o` confirms the expected `.data`/`.data.ch2eventtail`
+section split.
+
+**Verification performed for Batch 3d:**
+
+* `generated-data-check --table eventlists` -- zero drift against the
+  (guard-preserved) hand header's source text (9 record(s): 7 lists,
+  1 tutorial list, 1 manifest).
+* `generated-data-ch2-eventlists-link-check` (new `generated_data.mk`
+  target, mirroring `generated-data-ch2-units-link-check`'s rigor for
+  this header-only migration): guard present around the guarded
+  `#include`, the hand header (`src/events/ch2-eventinfo.h`) preserved
+  verbatim with all 9 symbol definitions intact, the `CONST_DATA`
+  `.data.ch2eventtail` redirect present, the three-line `ldscript.txt`
+  ordering and adjacency, legacy `ALL_OBJECTS` presence (both the
+  generated object and the still-required `events_info.o`), the modern
+  synthetic-slot adjacency, the generated object's exactly-9 symbols, a
+  rebuild of `src/events_info.o` proving it now defines zero Chapter 2
+  eventlists symbols while still defining its immediate neighbors
+  (`EventListScr_Ch1_Tutorial`, `EventListScr_Ch3_Turn`) untouched, clean
+  coverage, touched-but-unchanged-input no-op-regenerate behavior, and a
+  from-scratch parallel (`-j4`) build.
+* `generated-data-ch2-units-link-check` (Batch 3a regression),
+  `generated-data-ch2-traps-link-check` (Batch 3b regression),
+  `generated-data-ch2-shops-link-check` (Batch 3c regression), and
+  `generated-data-check` (all 10 tables) all still pass unchanged.
+* `python3 -m unittest discover -s scripts/generated_data/tests` -- all
+  400 tests pass unchanged (no eventlists generator/test change was
+  needed -- the existing macro-call emission already matches the hand
+  header byte-for-byte once compiled, modulo cosmetic whitespace/
+  alignment differences that produce identical compiled bytes).
+* A full legacy rebuild (`make fireemblem8.gba`) is byte-identical
+  (`cmp`, zero differing bytes; MD5 match) to a saved pre-change
+  baseline ROM, and `Ch2Events`/`EventListScr_Ch2_Turn`/
+  `EventListScr_Ch1_Tutorial`/`EventListScr_Ch3_Turn` all resolve to
+  their exact pre-change addresses (`nm fireemblem8.elf`).
+* `make shiftcheck` (build/static/offsets/diff layers) passes with no
+  high-confidence hardcoded-pointer findings.
+* Both modern configs (`MODERN_CONFIG=debug` and `MODERN_CONFIG=release`)
+  pass the full `expansion-modern-linker-check` (budget, overlay-audit,
+  boot-check, title-check, debugtools-check, debugtools-timer-check,
+  savefmt-check, shifted-check, `scan_build_addrs.py`,
+  `scan_raw_casts.sh`).
+* `generated-data-check --table chapterbundle` still resolves
+  `Ch2Events` and the full Chapter 2 bundle with zero drift, proving the
+  chapterbundle validation path is unaffected by the eventlists link
+  swap (it validates from JSON/records, not from the linked ROM).
+
 ## Remaining Issue #5 scope (explicitly not done here)
 
 Batch A + Batch B + Batch C together are scoped to the Chapter 2
@@ -2407,14 +2648,21 @@ scope** for this Batch C update:
   `REDA`, Issue #5 **Batch 3a** -- see "Linking a Chapter-2-owned
   partial-file table" above), `traps` (Issue #5 **Batch 3b** -- see
   "Linking two non-adjacent Chapter-2-owned symbols in one partial-file
-  table" above), and `shops` (Issue #5 **Batch 3c** -- see "Linking a
+  table" above), `shops` (Issue #5 **Batch 3c** -- see "Linking a
   single Chapter-2-owned interior symbol in a shared shop-list file"
-  above) are now all linked in place of their respective slices of
-  `src/events_udefs.c`, `src/events_trapdata.c`, and
-  `src/events_shoplist.c`, with zero ROM/ELF address shift in the legacy
-  build. `eventlists` remains hand-owned and unlinked -- it is a
-  similarly Chapter-2-owned (not whole-file) migration and is explicitly
-  out of scope for Batch 3a/3b/3c.
+  above), and `eventlists` (Issue #5 **Batch 3d** -- see "Linking a
+  Chapter-2-owned table with header-only content" above) are now all
+  linked in place of their respective slices of `src/events_udefs.c`,
+  `src/events_trapdata.c`, `src/events_shoplist.c`, and
+  `src/events_info.c` (the last via a guarded `#include`, not a guarded
+  inline block, since Chapter 2's event-list composition lives entirely
+  in its own header, `src/events/ch2-eventinfo.h`), with zero ROM/ELF
+  address shift in the legacy build. Every Chapter-2-owned table
+  `eventlists`' own schema tracks (`units`/`shops`/`traps`) is now
+  linked; `eventscripts` (the underlying `EventScr_Ch2_*` script bodies
+  themselves, as opposed to the list/manifest composition that
+  references them by symbol) remains hand-owned and unlinked, and is
+  explicitly out of scope here.
 * **Mechanics** (combat/growth/AI/etc. formulas and their own data
   tables) are entirely untouched by Batches A/B/C or Issue #5 Batch 1/2.
 * **Additional chapters.** This whole platform -- schemas, the
