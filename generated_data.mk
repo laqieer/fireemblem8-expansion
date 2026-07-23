@@ -68,7 +68,7 @@ generated-data-ch2-check:
 	done
 
 # ---------------------------------------------------------------------------
-# Linked generated-data tables (Issue #5 Batch 2c-1 + 2c-2)
+# Linked generated-data tables (Issue #5 Batch 2c-1 + 2c-2 + 2c-3)
 # ---------------------------------------------------------------------------
 # Everything above never links generated C in place of any hand-written
 # src/ table -- see docs/generated_data.md's "Remaining Issue #5 scope"
@@ -84,15 +84,18 @@ generated-data-ch2-check:
 # table's own "schema" section in docs/generated_data.md) that
 # `generated-data-check` keeps proving byte-for-byte identical against.
 #
-# Batch 2c-1 linked `classes`; Batch 2c-2 adds `items` (the 206-record
-# global gItemData[] table). Extending this list to another table also
-# requires defining that table's own GENERATED_DATA_CONFIG_INPUTS_<table>
-# and GENERATED_DATA_LINKED_SYMBOL_<table> (both below), since the
-# generator's non-JSON, non-script "config" inputs (live enum/struct-
-# layout headers, hand data-source tables read for live counts, etc.) and
-# each table's top-level generated symbol name are wildly table-specific
-# and cannot be derived generically.
-GENERATED_DATA_LINKED_HAND_SOURCES := src/data_classes.c src/data_items.c
+# Batch 2c-1 linked `classes`; Batch 2c-2 added `items` (the 206-record
+# global gItemData[] table); Batch 2c-3 adds `supports` (the 33-record
+# SupportData_* table -- see below, `supports` is a *multi-symbol* table,
+# unlike `classes`/`items`' single top-level array symbol). Extending
+# this list to another table also requires defining that table's own
+# GENERATED_DATA_CONFIG_INPUTS_<table> and GENERATED_DATA_LINKED_SYMBOL_
+# <table> (both below), since the generator's non-JSON, non-script
+# "config" inputs (live enum/struct-layout headers, hand data-source
+# tables read for live counts, etc.) and each table's top-level generated
+# symbol name(s) are wildly table-specific and cannot be derived
+# generically.
+GENERATED_DATA_LINKED_HAND_SOURCES := src/data_classes.c src/data_items.c src/data_supports.c
 
 # Table name for each entry above, same order. Derived from the
 # `src/data_<table>.c` naming convention shared by every currently-linked
@@ -144,18 +147,52 @@ GENERATED_DATA_CONFIG_INPUTS_items := \
 	include/constants/msg.h \
 	src/data/data_item_icon.c
 
+# `supports`' own generator "config" inputs: headers
+# scripts/generated_data/supports/schema.py reads live constants from --
+# the CHARACTER_* designator set (include/constants/characters.h, via the
+# shared character_refs.py helper) used to validate owner/partner
+# references, and the live UNIT_SUPPORT_MAX_COUNT capacity
+# (include/types.h) used for the fixed-capacity check (see
+# supports/schema.py's own CHARACTERS_HEADER/TYPES_HEADER constants).
+GENERATED_DATA_CONFIG_INPUTS_supports := \
+	include/constants/characters.h \
+	include/types.h
+
 # Shared (every table) generator scripts. Test files/fixtures are
 # deliberately excluded -- they never affect generated output.
 GENERATED_DATA_SHARED_PY_SOURCES := $(wildcard scripts/generated_data/*.py)
 
-# Each linked table's top-level generated C symbol name -- used by
-# generated-data-link-check to prove exactly one definition of it links
+# Each linked table's top-level generated C symbol name(s) -- used by
+# generated-data-link-check to prove exactly one definition of each links
 # from the generated object. Cannot be derived generically from the table
-# name (`classes` -> `gClassData`, `items` -> `gItemData`, both singular),
-# so each linked table defines its own entry here, the same way each
-# defines its own GENERATED_DATA_CONFIG_INPUTS_<table> above.
-GENERATED_DATA_LINKED_SYMBOL_classes := gClassData
-GENERATED_DATA_LINKED_SYMBOL_items   := gItemData
+# name (`classes` -> `gClassData`, `items` -> `gItemData`, both singular;
+# `supports` -> 33 distinct `SupportData_*` per-owner symbols, since
+# unlike `classes`/`items` there is no single top-level array wrapping
+# the whole table), so each linked table defines its own entry here, the
+# same way each defines its own GENERATED_DATA_CONFIG_INPUTS_<table>
+# above. A table's entry may list more than one symbol (space-separated);
+# generated-data-link-check checks every one of them individually.
+GENERATED_DATA_LINKED_SYMBOL_classes  := gClassData
+GENERATED_DATA_LINKED_SYMBOL_items    := gItemData
+
+# `supports` has no single top-level symbol -- its generated object
+# defines one `SupportData_<Owner>` per record instead. The expected
+# symbol list is derived straight from the committed source of truth
+# (`src/data/supports.json`, the same file the generator itself reads),
+# not hardcoded here or re-derived from the generated inventory report,
+# so this list can never silently drift from what the table actually
+# authors -- see `GENERATED_DATA_LINKED_SYMBOL_PREFIX_supports` below for
+# the accompanying "no extra/unexpected symbol" check.
+GENERATED_DATA_LINKED_SYMBOL_supports := $(shell $(PYTHON) -c \
+	"import json; d = json.load(open('src/data/supports.json')); print(' '.join(sorted(r['symbol'] for r in d['records'])))")
+
+# Optional, per-table: a `SupportData_`-style symbol-family prefix used
+# to additionally prove the generated object defines *no more and no
+# fewer* than the expected symbol list above -- i.e. no leftover/rogue
+# `SupportData_*` definition beyond the exact 33 the source declares.
+# Tables with a single top-level symbol (`classes`/`items`) leave this
+# unset: a lone array symbol has no "family" to over/under-count.
+GENERATED_DATA_LINKED_SYMBOL_PREFIX_supports := SupportData_
 
 # One generation rule per linked table, instantiated below via
 # GENERATED_DATA_LINK_TABLE_RULES. The .c target depends directly on its
@@ -214,15 +251,19 @@ endif
 
 .PHONY: generated-data-link-check
 
-# Batch 2c-1 + 2c-2 gate: proves every table in
-# GENERATED_DATA_LINKED_TABLES (currently `classes`, `items`) has its
-# link-swap wired correctly -- exactly one generated object selected in
-# place of each hand source, in both the legacy and modern object lists,
-# no other (unlinked) table affected, each table's ldscript.txt swap is
-# exact, each table's own top-level symbol
-# (GENERATED_DATA_LINKED_SYMBOL_<table>: `gClassData`, `gItemData`) links
-# exactly once from its generated object, every hand source is preserved
-# untouched, generated artifacts are covered by `clean`, and -- per table
+# Batch 2c-1 + 2c-2 + 2c-3 gate: proves every table in
+# GENERATED_DATA_LINKED_TABLES (currently `classes`, `items`, `supports`)
+# has its link-swap wired correctly -- exactly one generated object
+# selected in place of each hand source, in both the legacy and modern
+# object lists, no other (unlinked) table affected, each table's
+# ldscript.txt swap is exact, each table's own top-level generated
+# symbol(s) (GENERATED_DATA_LINKED_SYMBOL_<table>: `gClassData`,
+# `gItemData`, or `supports`' 33 `SupportData_*` per-owner symbols) each
+# link exactly once from its generated object (and, for `supports`, no
+# extra/unexpected `SupportData_*` symbol beyond those 33 -- see
+# GENERATED_DATA_LINKED_SYMBOL_PREFIX_supports), every hand source is
+# preserved untouched, generated artifacts are covered by `clean`, and --
+# per table
 # -- a touched-but-content-unchanged input re-invokes that table's
 # generator but never re-runs the legacy compile/assemble pipeline --
 # proven entirely by *behavior* evidence, deliberately not filesystem
@@ -260,12 +301,12 @@ endif
 # already exercised by CI's existing expansion-modern-linker-check for
 # both MODERN_CONFIG values instead.
 generated-data-link-check: $(GENERATED_DATA_LINKED_OBJECTS)
-	@echo '--- Batch 2c-1 + 2c-2 scope: exactly classes and items ---'
-	@if [ "$(strip $(GENERATED_DATA_LINKED_HAND_SOURCES))" != "src/data_classes.c src/data_items.c" ]; then \
-		echo "FAIL: GENERATED_DATA_LINKED_HAND_SOURCES changed unexpectedly ('$(GENERATED_DATA_LINKED_HAND_SOURCES)'); Batch 2c-1 + 2c-2 scope is classes and items only" >&2; exit 1; \
+	@echo '--- Batch 2c-1 + 2c-2 + 2c-3 scope: exactly classes, items, and supports ---'
+	@if [ "$(strip $(GENERATED_DATA_LINKED_HAND_SOURCES))" != "src/data_classes.c src/data_items.c src/data_supports.c" ]; then \
+		echo "FAIL: GENERATED_DATA_LINKED_HAND_SOURCES changed unexpectedly ('$(GENERATED_DATA_LINKED_HAND_SOURCES)'); Batch 2c-1 + 2c-2 + 2c-3 scope is classes, items, and supports only" >&2; exit 1; \
 	fi
-	@if [ "$(strip $(GENERATED_DATA_LINKED_TABLES))" != "classes items" ]; then \
-		echo "FAIL: GENERATED_DATA_LINKED_TABLES changed unexpectedly ('$(GENERATED_DATA_LINKED_TABLES)'); Batch 2c-1 + 2c-2 scope is classes and items only" >&2; exit 1; \
+	@if [ "$(strip $(GENERATED_DATA_LINKED_TABLES))" != "classes items supports" ]; then \
+		echo "FAIL: GENERATED_DATA_LINKED_TABLES changed unexpectedly ('$(GENERATED_DATA_LINKED_TABLES)'); Batch 2c-1 + 2c-2 + 2c-3 scope is classes, items, and supports only" >&2; exit 1; \
 	fi
 	@echo '--- bare `make` default goal is still `all` (the ROM), not generated-data validation ---'
 	@probe=$$($(MAKE) --no-print-directory -rR -p __generated_data_link_check_default_goal_probe__ 2>/dev/null); \
@@ -288,7 +329,7 @@ generated-data-link-check: $(GENERATED_DATA_LINKED_OBJECTS)
 	@if [ "$(words $(filter $(GENERATED_DATA_LINKED_OBJECTS),$(ALL_OBJECTS)))" != "$(words $(GENERATED_DATA_LINKED_TABLES))" ]; then \
 		echo "FAIL: generated object(s) not present exactly once each in legacy ALL_OBJECTS" >&2; exit 1; \
 	fi
-	@for other in src/data_characters.c src/data_supports.c; do \
+	@for other in src/data_characters.c; do \
 		if ! printf '%s\n' $(CFILES) | grep -qx "$$other"; then \
 			echo "FAIL: unrelated hand source $$other unexpectedly filtered out of legacy CFILES" >&2; exit 1; \
 		fi; \
@@ -301,7 +342,7 @@ generated-data-link-check: $(GENERATED_DATA_LINKED_OBJECTS)
 	@if [ -n "$(strip $(filter $(GENERATED_DATA_LINKED_C),$(MODERN_ALL_C_SOURCES)))" ]; then \
 		echo "FAIL: generated source(s) unexpectedly present in modern MODERN_ALL_C_SOURCES (should only be reinstated as an object, at the original hand-object path, so \$(sort) in MODERN_ELF_OBJECTS_LST/MANIFEST keeps it in the hand object's original sorted slot)" >&2; exit 1; \
 	fi
-	@for other in src/data_characters.c src/data_supports.c; do \
+	@for other in src/data_characters.c; do \
 		if ! printf '%s\n' $(MODERN_ALL_C_SOURCES) | grep -qx "$$other"; then \
 			echo "FAIL: unrelated hand source $$other unexpectedly filtered out of modern MODERN_ALL_C_SOURCES" >&2; exit 1; \
 		fi; \
@@ -324,17 +365,35 @@ generated-data-link-check: $(GENERATED_DATA_LINKED_OBJECTS)
 		fi; \
 	done
 	@echo 'OK: ldscript.txt links each generated object exactly once, in place of its hand object'
-	@echo '--- generated table symbols (per table) ---'
+	@echo '--- generated table symbols (per table; a table may define more than one top-level symbol, e.g. supports'"'"' 33 SupportData_* records) ---'
 	@for table in $(GENERATED_DATA_LINKED_TABLES); do \
-		symbol=""; \
-		$(foreach t,$(GENERATED_DATA_LINKED_TABLES),if [ "$$table" = "$(t)" ]; then symbol=$(GENERATED_DATA_LINKED_SYMBOL_$(t)); fi;) \
-		test -n "$$symbol" || { echo "FAIL: no GENERATED_DATA_LINKED_SYMBOL_ entry for table $$table" >&2; exit 1; }; \
-		symcount=$$(arm-none-eabi-nm $(GENERATED_DATA_OUT_DIR)/data_$$table.o | grep -c " $$symbol\$$"); \
-		if [ "$$symcount" != 1 ]; then \
-			echo "FAIL: generated object for $$table defines $$symbol $$symcount time(s) (want exactly 1)" >&2; exit 1; \
+		symbols=""; prefix=""; \
+		$(foreach t,$(GENERATED_DATA_LINKED_TABLES),if [ "$$table" = "$(t)" ]; then symbols="$(GENERATED_DATA_LINKED_SYMBOL_$(t))"; prefix="$(GENERATED_DATA_LINKED_SYMBOL_PREFIX_$(t))"; fi;) \
+		test -n "$$symbols" || { echo "FAIL: no GENERATED_DATA_LINKED_SYMBOL_ entry for table $$table" >&2; exit 1; }; \
+		nm_out=$$(arm-none-eabi-nm $(GENERATED_DATA_OUT_DIR)/data_$$table.o); \
+		expected_count=0; \
+		for symbol in $$symbols; do \
+			expected_count=$$((expected_count + 1)); \
+			symcount=$$(printf '%s\n' "$$nm_out" | grep -c " $$symbol\$$"); \
+			if [ "$$symcount" != 1 ]; then \
+				echo "FAIL: generated object for $$table defines $$symbol $$symcount time(s) (want exactly 1)" >&2; exit 1; \
+			fi; \
+		done; \
+		echo "OK: exactly one definition of each of $$table's $$expected_count expected top-level symbol(s) in its generated object"; \
+		if [ -n "$$prefix" ]; then \
+			actual_family=$$(printf '%s\n' "$$nm_out" | awk '{print $$3}' | grep "^$$prefix" | sort | tr '\n' ' '); \
+			actual_family=$${actual_family% }; \
+			expected_family=$$(printf '%s\n' $$symbols | tr ' ' '\n' | sort | tr '\n' ' '); \
+			expected_family=$${expected_family% }; \
+			if [ "$$actual_family" != "$$expected_family" ]; then \
+				echo "FAIL: generated object for $$table's $${prefix}* symbol family does not exactly match the expected $$expected_count-symbol list derived from src/data/$$table.json (no hand object may remain, and no extra/unexpected $${prefix}* definition may exist)" >&2; \
+				echo "  expected: $$expected_family" >&2; \
+				echo "  actual:   $$actual_family" >&2; \
+				exit 1; \
+			fi; \
+			echo "OK: generated object for $$table defines exactly the expected $$expected_count $${prefix}* symbols, no more, no fewer"; \
 		fi; \
 	done
-	@echo 'OK: exactly one definition of each linked table'"'"'s own top-level symbol in its generated object'
 	@echo '--- hand sources preserved ---'
 	@for hand in $(GENERATED_DATA_LINKED_HAND_SOURCES); do \
 		test -f "$$hand" || { echo "FAIL: $$hand was deleted" >&2; exit 1; }; \
