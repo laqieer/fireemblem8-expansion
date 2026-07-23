@@ -50,6 +50,31 @@ CC1FLAGS := -mthumb-interwork -Wimplicit -Wparentheses -Werror -O2 -fhex-asm -ff
 CPPFLAGS := -I tools/agbcc/include -iquote include -iquote . -nostdinc -undef
 ASFLAGS  := -mcpu=arm7tdmi -mthumb-interwork -I include
 
+# Issue #5 generated-data platform: standalone targets, never wired into
+# `all` on their own (see generated_data.mk / docs/generated_data.md for
+# full scope/status). Included this early -- before the Files section
+# below and before `include modern.mk` further down -- because Batch
+# 2c-1's GENERATED_DATA_LINKED_HAND_SOURCES/GENERATED_DATA_LINKED_C
+# single-source-of-truth list (generated_data.mk) must already be defined
+# before CFILES/ALL_OBJECTS (below) and MODERN_ALL_C_SOURCES (modern.mk)
+# are computed, so a linked table's hand source can be filtered out of
+# both lists and its generated equivalent added, exactly once, in its
+# place.
+#
+# GNU Make's implicit default goal is the target of the *first* rule in
+# the *first* makefile read (ignoring special/suffix targets) -- normally
+# `all:` below, since it's the first real target this Makefile itself
+# defines. Including generated_data.mk here, before `all:` is reached,
+# means *its* first target (generated-data-validate) would otherwise
+# silently become the default goal instead, so a bare `make` would
+# validate generated-data JSON instead of building the ROM. Pin the
+# default goal explicitly, before the include, so this include-order
+# requirement can never regress bare `make`'s behavior regardless of
+# what any included makefile defines first.
+.DEFAULT_GOAL := all
+
+include generated_data.mk
+
 #### Files ####
 
 C_SUBDIR = src
@@ -70,6 +95,12 @@ CFILES       := $(wildcard $(C_SUBDIR)/*.c)
 ifeq (,$(findstring $(CFILES_GENERATED),$(CFILES)))
 CFILES       += $(CFILES_GENERATED)
 endif
+# Issue #5 Batch 2c-1: hand C tables superseded by a linked generated-data
+# equivalent are excluded from the legacy build here (their objects are
+# re-added to ALL_OBJECTS below, from build/generated/data/ instead) -- see
+# GENERATED_DATA_LINKED_HAND_SOURCES in generated_data.mk. The hand source
+# itself stays on disk untouched; it is simply not compiled/linked.
+CFILES       := $(filter-out $(GENERATED_DATA_LINKED_HAND_SOURCES),$(CFILES))
 ASM_S_FILES  := $(wildcard $(ASM_SUBDIR)/*.s)
 SRC_S_FILES  := src/rom_header.s src/crt0.s src/m4a_1.s src/libagbsyscall.s
 DATA_S_FILES := $(wildcard $(DATA_SUBDIR)/*.s)
@@ -88,7 +119,7 @@ ASM_OBJECTS  := $(SFILES:.s=.o)
 BANIM_OBJECT := banim/data_banim.o
 MID_FILES    := $(wildcard $(MID_SUBDIR)/*.mid)
 MID_OBJECTS  := $(MID_FILES:.mid=.o)
-ALL_OBJECTS  := $(C_OBJECTS) $(DATA_SRC_C_OBJECTS) $(ASM_OBJECTS) $(BANIM_OBJECT) $(MID_OBJECTS)
+ALL_OBJECTS  := $(C_OBJECTS) $(DATA_SRC_C_OBJECTS) $(ASM_OBJECTS) $(BANIM_OBJECT) $(MID_OBJECTS) $(GENERATED_DATA_LINKED_OBJECTS)
 OBJECTS_LST  := objects.lst
 DEPS_DIR     := .dep
 
@@ -165,7 +196,12 @@ shiftcheck: shiftcheck-build shiftcheck-static shiftcheck-offsets shiftcheck-dif
 .PHONY: shiftcheck shiftcheck-build shiftcheck-static shiftcheck-offsets shiftcheck-diff shiftcheck-run
 
 CLEAN_FILES := $(ROM) $(ELF) $(MAP) $(OBJECTS_LST) $(SFILES_COMPILED) $(DATA_SRC_SFILES_COMPILED) graphics/*.h $(CFILES_GENERATED) $(RELOCS_ELF) $(RELOCS_ELF:.elf=.map)
-CLEAN_DIRS := $(DEPS_DIR) $(SHIFTDIR)
+# $(GENERATED_DATA_OUT_DIR) (build/generated/data) holds every linked
+# table's stamp/.c/.s/.o (Issue #5 Batch 2c-1, generated_data.mk) -- added
+# directly to this line (rather than generated_data.mk appending to
+# CLEAN_DIRS) because generated_data.mk is included before this
+# assignment and `:=` here would clobber any earlier append anyway.
+CLEAN_DIRS := $(DEPS_DIR) $(SHIFTDIR) $(GENERATED_DATA_OUT_DIR)
 CLEAN_BINS := graphics/statscreen/*.bin $(SAMPLE_SUBDIR)/*.bin $(MAP_LAYOUT_SUBDIR)/*.bin graphics/map/*TileConfiguration*.bin $(AUTO_GEN_TARGETS)
 CLEAN_SONGS := $(MID_SUBDIR)/*.s
 
@@ -238,11 +274,12 @@ include graphics/banim/assets/img/banim_img_rules.mk
 include songs.mk
 include json_data_rules.mk
 
-# Issue #5 generated-data platform: standalone targets, not part of `all`
-# (never links generated C / replaces hand-written src/). `generated-data-check`
-# itself *is* wired into .github/workflows/build.yml as a CI gate (Batch C).
-# See generated_data.mk and docs/generated_data.md.
-include generated_data.mk
+# generated_data.mk is included earlier now (right after the Tools section,
+# before the Files section) -- see the comment there. Its
+# generated-data-* targets are standalone, not part of `all`;
+# `generated-data-check` itself *is* wired into
+# .github/workflows/build.yml as a CI gate (Batch C). See generated_data.mk
+# and docs/generated_data.md.
 
 %.s: ;
 %.png: ;

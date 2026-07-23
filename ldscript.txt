@@ -1065,7 +1065,7 @@ SECTIONS
         . = ALIGN(4); src/banim-ekrdragon-demonkingobj.o(.data);
         . = ALIGN(4); src/data/data-banimmisc.o(.data);
         . = ALIGN(4); src/data_characters.o(.data);
-        . = ALIGN(4); src/data_classes.o(.data);
+        . = ALIGN(4); build/generated/data/data_classes.o(.data);
         . = ALIGN(4); src/data_items.o(.data);
         . = ALIGN(4); src/data_terrains.o(.data);
         . = ALIGN(4); src/data/data_portrait.o(.data);

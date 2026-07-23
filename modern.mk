@@ -191,6 +191,19 @@ ifeq (,$(findstring src/msg_data.c,$(MODERN_ALL_C_SOURCES)))
 MODERN_ALL_C_SOURCES += src/msg_data.c
 endif
 
+# Issue #5 Batch 2c-1: same swap as the legacy Makefile's CFILES filtering
+# (generated_data.mk) -- a hand C table superseded by a linked
+# generated-data equivalent is filtered out of MODERN_ALL_C_SOURCES here
+# (true removal, not a rename/substitution): the generated equivalent's
+# object is reinstated afterwards below (once MODERN_ALL_C_OBJECTS exists)
+# via MODERN_ALL_C_OBJECTS +=, using the *original* hand object's own
+# output path, not one derived from the generated .c's own (differently
+# prefixed) location -- see the comment there for why. A safe no-op when
+# modern.mk is included standalone (e.g. by test fixtures that don't
+# `include generated_data.mk`): GENERATED_DATA_LINKED_HAND_SOURCES is then
+# simply empty/undefined, so this filters out nothing.
+MODERN_ALL_C_SOURCES := $(filter-out $(GENERATED_DATA_LINKED_HAND_SOURCES),$(MODERN_ALL_C_SOURCES))
+
 MODERN_ALL_DATA_C_SOURCES ?= $(wildcard src/data/*.c src/data/mapanim/*.c src/data/menu/*.c src/data/ending/*.c src/data/worldmap/*.c src/data/ui/*.c)
 
 # A separate default list from MODERN_COHORT_ASM_SOURCES (not derived from
@@ -228,6 +241,30 @@ tools/scaninc/scaninc$(EXE): $(wildcard tools/scaninc/*.cpp tools/scaninc/*.h to
 	$(MAKE) -C tools/scaninc
 
 MODERN_ALL_C_OBJECTS := $(addprefix $(MODERN_OUTPUT_DIR)/,$(MODERN_ALL_C_SOURCES:.c=.o))
+
+# Reinstate a linked table's object at exactly its *original* (hand
+# source's) output path, e.g. $(MODERN_OUTPUT_DIR)/src/data_classes.o --
+# not $(MODERN_OUTPUT_DIR)/build/generated/data/data_classes.o (which is
+# what deriving it from GENERATED_DATA_LINKED_C via the ordinary
+# addprefix/:.c=.o substitution above would give). This is deliberate, not
+# cosmetic: MODERN_ELF_OBJECTS_LST/MANIFEST (further below) both
+# alphabetically $(sort) the full object-path list before writing the
+# linker's response file, so the modern ELF's final .data/.bss placement
+# is controlled by each object's path string, not by MODERN_ALL_C_SOURCES'
+# list order -- a "build/generated/data/..." object would sort before
+# every "src/..." object regardless of position in the sources list,
+# shifting every other object's address and spuriously breaking the
+# debugtools/savefmt runtime checkpoint fixtures' recorded absolute
+# addresses even though no code changed. Reusing the exact original path
+# keeps the linked table's object in precisely the same sorted slot the
+# hand object always occupied. An explicit (non-pattern) rule for that
+# same literal path is defined further below, after $(MODERN_CC)/
+# $(MODERN_CFLAGS) exist; GNU Make always prefers an explicit rule over
+# the generic `$(MODERN_OUTPUT_DIR)/%.o: %.c` pattern rule for the same
+# target, so this never falls back to (re)compiling the real, on-disk
+# src/data_classes.c. A safe no-op when GENERATED_DATA_LINKED_HAND_SOURCES
+# is undefined (modern.mk included standalone).
+MODERN_ALL_C_OBJECTS += $(addprefix $(MODERN_OUTPUT_DIR)/,$(GENERATED_DATA_LINKED_HAND_SOURCES:.c=.o))
 MODERN_ALL_DATA_PRE := $(addprefix $(MODERN_OUTPUT_DIR)/,$(MODERN_ALL_DATA_C_SOURCES:.c=.pre.c))
 MODERN_ALL_DATA_OBJECTS := $(addprefix $(MODERN_OUTPUT_DIR)/,$(MODERN_ALL_DATA_C_SOURCES:.c=.o))
 MODERN_ALL_ASM_OBJECTS := $(addprefix $(MODERN_OUTPUT_DIR)/,$(MODERN_ALL_ASM_SOURCES:.s=.o))
@@ -353,6 +390,26 @@ $(MODERN_ALL_OBJECTS): | expansion-modern-toolchain-check
 $(MODERN_OUTPUT_DIR)/%.o: %.c
 	@mkdir -p "$(@D)"
 	"$(MODERN_CC)" $(MODERN_CFLAGS) -MMD -MP -MF "$(@:.o=.d)" -MQ "$@" -c "$<" -o "$@"
+
+# Issue #5 Batch 2c-1: explicit (non-pattern) compile rule for each linked
+# table's reinstated object (see the MODERN_ALL_C_OBJECTS += comment
+# above for why its target path is the *original* hand-source object path,
+# e.g. $(MODERN_OUTPUT_DIR)/src/data_classes.o, not one under
+# $(GENERATED_DATA_OUT_DIR)). GNU Make always prefers an explicit rule
+# over the generic `$(MODERN_OUTPUT_DIR)/%.o: %.c` pattern rule above for
+# the same target, so this compiles from the generated .c unconditionally
+# -- it is never satisfied by falling back to the pattern rule against the
+# real, on-disk (and no longer even source-listed) hand file. Reuses the
+# `src/data_<table>.c`/`data_<table>.c` naming convention already relied
+# on elsewhere in generated_data.mk, so this generalizes to any future
+# linked table without needing to pair up two parallel lists positionally.
+define GENERATED_DATA_MODERN_OVERRIDE_RULES
+$(MODERN_OUTPUT_DIR)/src/data_$(1).o: $(GENERATED_DATA_OUT_DIR)/data_$(1).c
+	@mkdir -p $$(@D)
+	"$$(MODERN_CC)" $$(MODERN_CFLAGS) -MMD -MP -MF "$$(@:.o=.d)" -MQ "$$@" -c "$$<" -o "$$@"
+endef
+
+$(foreach t,$(GENERATED_DATA_LINKED_TABLES),$(eval $(call GENERATED_DATA_MODERN_OVERRIDE_RULES,$(t))))
 
 # IWRAM-placed symbols need per-symbol BSS sections.
 $(MODERN_OUTPUT_DIR)/src/agb_sram.o: MODERN_CFLAGS += -fdata-sections -fno-toplevel-reorder -fno-reorder-functions
