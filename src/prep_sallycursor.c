@@ -37,6 +37,7 @@
 #include "bmsave.h"
 #include "bmlib.h"
 #include "eventcall.h"
+#include "expansion_debugtools.h"
 
 #include "constants/chapters.h"
 #include "constants/characters.h"
@@ -821,6 +822,16 @@ void PrepScreenProc_SetupMapIdle(struct ProcPrepSallyCursor * proc)
 //! FE8U = 0x08033978
 void PrepScreenProc_MapIdle(struct ProcPrepSallyCursor * proc)
 {
+    /* Issue #11 slice 2: the single supported prep-screen debug hub
+     * entry point (see include/expansion_debugtools.h). Checked before
+     * any of this function's own vanilla key handling, and this function
+     * returns immediately while the hub is active so a hotkey combo that
+     * completes this frame can never also be read by the L/R/B/A/START
+     * handling below on the same frame -- a no-op in a release build. */
+    DebugTools_PrepHotkeyCheck();
+    if (DebugTools_IsHubActive())
+        return;
+
     HandlePlayerCursorMovement();
     if (!DoesBMXFADEExist())
     {

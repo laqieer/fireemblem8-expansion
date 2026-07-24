@@ -24,9 +24,12 @@ INCLUDE_DIRS = [REPO_ROOT / "include", REPO_ROOT / "include" / "generated"]
 C_FIXTURES_DIR = Path(__file__).resolve().parent / "c"
 REGISTRY_SRC = REPO_ROOT / "src" / "debugtools_registry.c"
 LAUNCHER_SRC = REPO_ROOT / "src" / "debugtools_launcher.c"
+ACTIONS_SRC = REPO_ROOT / "src" / "debugtools_actions.c"
 GAMECONTROL_SRC = REPO_ROOT / "src" / "gamecontrol.c"
 HEADER = REPO_ROOT / "include" / "expansion_debugtools.h"
 TITLESCREEN_SRC = REPO_ROOT / "src" / "titlescreen.c"
+PLAYERPHASE_SRC = REPO_ROOT / "src" / "playerphase.c"
+PREP_SALLYCURSOR_SRC = REPO_ROOT / "src" / "prep_sallycursor.c"
 
 CC = shutil.which("gcc") or shutil.which("cc")
 
@@ -249,9 +252,15 @@ class DebugToolsHotkeyCollisionHostTests(unittest.TestCase):
     def test_legitimate_custom_mask_compiles(self):
         import tempfile
         with tempfile.TemporaryDirectory() as tmp:
+            # A_BUTTON | SELECT_BUTTON: distinct from the default map mask
+            # (SELECT_BUTTON | L_BUTTON, issue #11 slice 2) and the default
+            # prep mask (SELECT_BUTTON | B_BUTTON) that the header now also
+            # cross-checks the title mask against -- L_BUTTON | SELECT_BUTTON
+            # would collide with the map default and is deliberately not
+            # used here.
             rc, out = self._compile_snippet(
                 tmp,
-                "#define FE8_EXPANSION_DEBUGTOOLS_HOTKEY_MASK (L_BUTTON | SELECT_BUTTON)\n"
+                "#define FE8_EXPANSION_DEBUGTOOLS_HOTKEY_MASK (A_BUTTON | SELECT_BUTTON)\n"
                 '#include "expansion_debugtools.h"\n'
                 "int main(void) { return 0; }\n",
             )
@@ -323,10 +332,10 @@ class DebugToolsScenarioSchemaTests(unittest.TestCase):
             self.fail(f"checkpoint {checkpoint['name']} does not probe {address}")
 
         stable = by_name["chapter2-interactive-stable"]
-        self.assertEqual(probe(stable, "0x020315a0")["expected"], "0x44424c31")  # launcherArmed magic
+        self.assertEqual(probe(stable, "0x02031634")["expected"], "0x44424c31")  # launcherArmed magic
         self.assertEqual(probe(stable, "0x020210b2")["expected"], "0x02")  # CHAPTER_L_2
-        self.assertEqual(probe(stable, "0x020315b0")["expected"], "0x00000000")  # suppression cleared
-        self.assertEqual(probe(stable, "0x020315b4")["expected"], "0x00000001")  # playerPhaseObservedCount
+        self.assertEqual(probe(stable, "0x02031644")["expected"], "0x00000000")  # suppression cleared
+        self.assertEqual(probe(stable, "0x02031648")["expected"], "0x00000001")  # playerPhaseObservedCount
 
     def test_release_scenario_is_schema_valid(self):
         scenario, data = self._load("debugtools-hub-modern-release.json")
@@ -489,13 +498,13 @@ class DebugToolsTimerFreezeTests(unittest.TestCase):
 
         def timer_value(checkpoint):
             for probe in checkpoint["probes"]:
-                if probe["address"] == "0x020315a4":
+                if probe["address"] == "0x02031638":
                     return int(probe["expected"], 16)
             self.fail(f"checkpoint {checkpoint['name']} does not probe titleIdleTimerSample")
 
         def hub_open_count(checkpoint):
             for probe in checkpoint["probes"]:
-                if probe["address"] == "0x02031594":
+                if probe["address"] == "0x02031628":
                     return int(probe["expected"], 16)
             self.fail(f"checkpoint {checkpoint['name']} does not probe hubOpenCount")
 
@@ -999,6 +1008,558 @@ class DebugToolsChapter2LaunchLifecycleHostTests(unittest.TestCase):
             gmdata_unit_writes, ["location"],
             f"the only gGMData.units[] field write in this branch must be 'location', found: {gmdata_unit_writes}",
         )
+
+
+class DebugToolsMapPrepHotkeyCollisionHostTests(unittest.TestCase):
+    """Compiles small snippets against the real include/expansion_debugtools.h
+    to prove the issue #11 slice 2 map-phase and prep-screen hotkey masks'
+    compile-time #error guards fire for the same class of hazards as the
+    title mask (zero, both soft-reset combos), for a collision against
+    each phase's own bare R/L/START vanilla control, for a collision
+    against the title mask, and (prep only) for a collision against the
+    map mask -- and that a legitimate override of either still compiles
+    cleanly."""
+
+    @classmethod
+    def setUpClass(cls):
+        _skip_if_no_host_compiler()
+
+    def _compile_snippet(self, tmp_path, body: str):
+        work = Path(tmp_path)
+        src = work / "snippet.c"
+        src.write_text(body)
+        cmd = [CC, "-c", "-w"] + _include_flags() + [str(src), "-o", str(work / "snippet.o")]
+        proc = subprocess.run(cmd, cwd=str(REPO_ROOT), capture_output=True, text=True)
+        return proc.returncode, proc.stdout + proc.stderr
+
+    def _assert_rejected(self, tmp, define_line, expected_message_fragment):
+        rc, out = self._compile_snippet(
+            tmp,
+            define_line + '\n#include "expansion_debugtools.h"\nint main(void) { return 0; }\n',
+        )
+        self.assertNotEqual(rc, 0, f"expected a compile-time rejection for:\n{define_line}\ngot:\n{out}")
+        self.assertIn(expected_message_fragment, out)
+
+    def _assert_compiles(self, tmp, define_line):
+        rc, out = self._compile_snippet(
+            tmp,
+            define_line + '\n#include "expansion_debugtools.h"\nint main(void) { return 0; }\n',
+        )
+        self.assertEqual(rc, 0, f"expected a clean compile for:\n{define_line}\ngot:\n{out}")
+
+    def test_default_map_and_prep_masks_compile(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, out = self._compile_snippet(
+                tmp, '#include "expansion_debugtools.h"\nint main(void) { return 0; }\n'
+            )
+            self.assertEqual(rc, 0, f"the untouched default map/prep hotkey masks must compile cleanly:\n{out}")
+
+    def test_map_mask_zero_rejected(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            self._assert_rejected(
+                tmp, "#define FE8_EXPANSION_DEBUGTOOLS_MAP_HOTKEY_MASK (0)", "must not be 0"
+            )
+
+    def test_prep_mask_zero_rejected(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            self._assert_rejected(
+                tmp, "#define FE8_EXPANSION_DEBUGTOOLS_PREP_HOTKEY_MASK (0)", "must not be 0"
+            )
+
+    def test_map_mask_l_r_a_b_soft_reset_collision_rejected(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            self._assert_rejected(
+                tmp,
+                "#define FE8_EXPANSION_DEBUGTOOLS_MAP_HOTKEY_MASK (L_BUTTON | R_BUTTON | A_BUTTON | B_BUTTON)",
+                "L+R+A+B soft-reset combo",
+            )
+
+    def test_prep_mask_a_b_select_start_soft_reset_collision_rejected(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            self._assert_rejected(
+                tmp,
+                "#define FE8_EXPANSION_DEBUGTOOLS_PREP_HOTKEY_MASK (A_BUTTON | B_BUTTON | SELECT_BUTTON | START_BUTTON)",
+                "A+B+SELECT+START soft-reset combo",
+            )
+
+    def test_map_mask_bare_r_collision_rejected(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            self._assert_rejected(
+                tmp, "#define FE8_EXPANSION_DEBUGTOOLS_MAP_HOTKEY_MASK (R_BUTTON)",
+                "collides with bare R at the map phase",
+            )
+
+    def test_map_mask_bare_l_collision_rejected(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            self._assert_rejected(
+                tmp, "#define FE8_EXPANSION_DEBUGTOOLS_MAP_HOTKEY_MASK (L_BUTTON)",
+                "collides with bare L at the map phase",
+            )
+
+    def test_map_mask_bare_start_collision_rejected(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            self._assert_rejected(
+                tmp, "#define FE8_EXPANSION_DEBUGTOOLS_MAP_HOTKEY_MASK (START_BUTTON)",
+                "collides with bare START at the map phase",
+            )
+
+    def test_prep_mask_bare_r_collision_rejected(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            self._assert_rejected(
+                tmp, "#define FE8_EXPANSION_DEBUGTOOLS_PREP_HOTKEY_MASK (R_BUTTON)",
+                "collides with bare R at the prep screen",
+            )
+
+    def test_prep_mask_bare_l_collision_rejected(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            self._assert_rejected(
+                tmp, "#define FE8_EXPANSION_DEBUGTOOLS_PREP_HOTKEY_MASK (L_BUTTON)",
+                "collides with bare L at the prep screen",
+            )
+
+    def test_prep_mask_bare_start_collision_rejected(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            self._assert_rejected(
+                tmp, "#define FE8_EXPANSION_DEBUGTOOLS_PREP_HOTKEY_MASK (START_BUTTON)",
+                "collides with bare START at the prep screen",
+            )
+
+    def test_map_mask_collides_with_title_mask_rejected(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            # The default title mask is SELECT_BUTTON | R_BUTTON.
+            self._assert_rejected(
+                tmp, "#define FE8_EXPANSION_DEBUGTOOLS_MAP_HOTKEY_MASK (SELECT_BUTTON | R_BUTTON)",
+                "collides with the title-screen hub mask",
+            )
+
+    def test_prep_mask_collides_with_title_mask_rejected(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            self._assert_rejected(
+                tmp, "#define FE8_EXPANSION_DEBUGTOOLS_PREP_HOTKEY_MASK (SELECT_BUTTON | R_BUTTON)",
+                "collides with the title-screen hub mask",
+            )
+
+    def test_prep_mask_collides_with_map_mask_rejected(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            # The default map mask is SELECT_BUTTON | L_BUTTON.
+            self._assert_rejected(
+                tmp, "#define FE8_EXPANSION_DEBUGTOOLS_PREP_HOTKEY_MASK (SELECT_BUTTON | L_BUTTON)",
+                "collides with the map-phase hub mask",
+            )
+
+    def test_legitimate_custom_map_mask_compiles(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            self._assert_compiles(tmp, "#define FE8_EXPANSION_DEBUGTOOLS_MAP_HOTKEY_MASK (SELECT_BUTTON | A_BUTTON)")
+
+    def test_legitimate_custom_prep_mask_compiles(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            self._assert_compiles(tmp, "#define FE8_EXPANSION_DEBUGTOOLS_PREP_HOTKEY_MASK (SELECT_BUTTON | A_BUTTON)")
+
+
+class DebugToolsMapPrepOneEntryPathTests(unittest.TestCase):
+    """Structural (source-grep) proof that the map-phase and prep-screen
+    hotkeys each have exactly one call site and one enabled + one disabled
+    definition, matching the WHERE constraint that this slice adds
+    exactly one global hub entry path per phase -- mirrors
+    DebugToolsOneEntryPathTests for the title hotkey."""
+
+    def _call_sites(self, func_name):
+        call_sites = []
+        for src in (REPO_ROOT / "src").glob("*.c"):
+            text = src.read_text(encoding="utf-8", errors="replace")
+            call_sites += [
+                f"{src.name}:{i + 1}"
+                for i, line in enumerate(text.splitlines())
+                if re.search(rf"\b{re.escape(func_name)}\s*\(", line)
+                and f"void {func_name}" not in line
+            ]
+        return call_sites
+
+    def test_map_hotkey_check_has_exactly_one_call_site(self):
+        call_sites = self._call_sites("DebugTools_MapHotkeyCheck")
+        self.assertEqual(len(call_sites), 1, f"expected exactly one call site, found: {call_sites}")
+        self.assertTrue(call_sites[0].startswith("playerphase.c:"), call_sites)
+
+    def test_prep_hotkey_check_has_exactly_one_call_site(self):
+        call_sites = self._call_sites("DebugTools_PrepHotkeyCheck")
+        self.assertEqual(len(call_sites), 1, f"expected exactly one call site, found: {call_sites}")
+        self.assertTrue(call_sites[0].startswith("prep_sallycursor.c:"), call_sites)
+
+    def test_map_hotkey_check_defined_exactly_once_per_config(self):
+        text = REGISTRY_SRC.read_text(encoding="utf-8", errors="replace")
+        defs = re.findall(r"^void DebugTools_MapHotkeyCheck\(void\)$", text, flags=re.MULTILINE)
+        self.assertEqual(len(defs), 2, "expected exactly one enabled + one disabled definition")
+
+    def test_prep_hotkey_check_defined_exactly_once_per_config(self):
+        text = REGISTRY_SRC.read_text(encoding="utf-8", errors="replace")
+        defs = re.findall(r"^void DebugTools_PrepHotkeyCheck\(void\)$", text, flags=re.MULTILINE)
+        self.assertEqual(len(defs), 2, "expected exactly one enabled + one disabled definition")
+
+    def test_map_hotkey_check_is_the_first_statement_and_returns_while_hub_active(self):
+        """PlayerPhase_MainIdle must call DebugTools_MapHotkeyCheck() as
+        its first statement and immediately return while the hub is
+        active, so a triggering key press can never also reach the
+        vanilla map-phase controls in the same frame."""
+        text = _strip_c_comments(PLAYERPHASE_SRC.read_text(encoding="utf-8", errors="replace"))
+        match = re.search(r"\bPlayerPhase_MainIdle\s*\([^)]*\)\s*\{(.*?)\n\}", text, flags=re.DOTALL)
+        self.assertIsNotNone(match, "PlayerPhase_MainIdle definition not found")
+        body = match.group(1)
+        statements = [s.strip() for s in body.split(";") if s.strip()]
+        self.assertGreaterEqual(len(statements), 1)
+        self.assertIn("DebugTools_MapHotkeyCheck()", statements[0])
+        self.assertIn("DebugTools_IsHubActive()", body[: body.find("DebugTools_MapHotkeyCheck") + 400])
+
+    def test_prep_hotkey_check_is_the_first_statement_and_returns_while_hub_active(self):
+        """PrepScreenProc_MapIdle must call DebugTools_PrepHotkeyCheck() as
+        its first statement and immediately return while the hub is
+        active."""
+        text = _strip_c_comments(PREP_SALLYCURSOR_SRC.read_text(encoding="utf-8", errors="replace"))
+        match = re.search(r"\bPrepScreenProc_MapIdle\s*\([^)]*\)\s*\{(.*?)\n\}", text, flags=re.DOTALL)
+        self.assertIsNotNone(match, "PrepScreenProc_MapIdle definition not found")
+        body = match.group(1)
+        statements = [s.strip() for s in body.split(";") if s.strip()]
+        self.assertGreaterEqual(len(statements), 1)
+        self.assertIn("DebugTools_PrepHotkeyCheck()", statements[0])
+        self.assertIn("DebugTools_IsHubActive()", body[: body.find("DebugTools_PrepHotkeyCheck") + 400])
+
+    def test_dormant_tools_still_untouched(self):
+        for name in ("src/bmdebug.c", "src/uidebug.c", "src/menu_def.c"):
+            text = (REPO_ROOT / name).read_text(encoding="utf-8", errors="replace")
+            self.assertNotIn("DebugTools_", text, f"{name} must stay untouched/unreachable per issue #11 slice 2 WHERE")
+
+
+class DebugToolsWeatherFogActionsHostTests(unittest.TestCase):
+    """Compiles and executes the real, unmodified src/debugtools_actions.c
+    (enabled path) alongside the real src/debugtools_registry.c against
+    tools/gba-playtest/tests/c/debugtools_actions_driver.c, proving:
+    idempotent registration (id 2 "Weather", id 3 "Fog"), the combined
+    registry capacity boundary stays at DEBUGTOOLS_ACTION_MAX (9) when
+    counted alongside a simulated Chapter-2-launcher-sized filler set,
+    exact MenuDef/MenuItemDef sentinel and callback wiring for both
+    submenus (never a hand-rolled copy of the dormant src/bmdebug.c
+    function pointers), DebugMonitor lifecycle ownership (started only if
+    not already alive, ended only if this module started it, Fog never
+    touches it at all), and the hub-reopen-on-Back behavior. Also proves
+    the disabled build physically omits every adapter symbol down to the
+    one no-op public entry point."""
+
+    @classmethod
+    def setUpClass(cls):
+        _skip_if_no_host_compiler()
+
+    def test_actions_lifecycle_and_wiring_host_executed(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            work = Path(tmp)
+            rc, out, registry_obj = _compile(
+                work, REGISTRY_SRC, "registry_enabled.o",
+                defines=["FE8_EXPANSION_DEBUGTOOLS_ENABLED=1"],
+            )
+            self.assertEqual(rc, 0, f"compiling src/debugtools_registry.c (enabled) failed:\n{out}")
+
+            rc, out, actions_obj = _compile(
+                work, ACTIONS_SRC, "actions_enabled.o",
+                defines=["FE8_EXPANSION_DEBUGTOOLS_ENABLED=1"],
+            )
+            self.assertEqual(rc, 0, f"compiling src/debugtools_actions.c (enabled) failed:\n{out}")
+
+            rc, out, stubs_obj = _compile(
+                work, C_FIXTURES_DIR / "debugtools_actions_host_stubs.c", "actions_stubs.o"
+            )
+            self.assertEqual(rc, 0, f"compiling debugtools_actions_host_stubs.c failed:\n{out}")
+
+            rc, out, driver_obj = _compile(
+                work, C_FIXTURES_DIR / "debugtools_actions_driver.c", "actions_driver.o"
+            )
+            self.assertEqual(rc, 0, f"compiling debugtools_actions_driver.c failed:\n{out}")
+
+            rc, out, exe = _link(
+                work, [registry_obj, actions_obj, stubs_obj, driver_obj], "actions_test_exe"
+            )
+            self.assertEqual(rc, 0, f"linking host Weather/Fog actions test failed:\n{out}")
+
+            rc, out = _run(exe)
+            self.assertEqual(rc, 0, f"host Weather/Fog actions test failed:\n{out}")
+            self.assertIn("DEBUGTOOLS_ACTIONS_HOST_TEST: PASS", out)
+
+    def test_actions_disabled_path_is_noop_and_omits_every_symbol(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            work = Path(tmp)
+            rc, out, actions_obj = _compile(
+                work, ACTIONS_SRC, "actions_disabled.o",
+                defines=["FE8_EXPANSION_DEBUGTOOLS_ENABLED=0"],
+            )
+            self.assertEqual(rc, 0, f"compiling src/debugtools_actions.c (disabled) failed:\n{out}")
+
+            defined = _defined_symbol_names(actions_obj)
+            forbidden = {
+                "sWeatherAction",
+                "sFogAction",
+                "sWeatherMenuItemDefs",
+                "sFogMenuItemDefs",
+                "sWeatherMonitorStartedByUs",
+                "gDebugToolsWeatherMenuDef",
+                "gDebugToolsFogMenuDef",
+                "DebugToolsActions_WeatherSelected",
+                "DebugToolsActions_FogSelected",
+                "DebugToolsWeather_BuildMenuItems",
+                "DebugToolsFog_BuildMenuItems",
+                "DebugToolsWeather_OnEnd",
+                "DebugToolsFog_OnEnd",
+                "DebugToolsWeather_StopMonitorIfOwned",
+            }
+            leaked = forbidden & defined
+            self.assertFalse(
+                leaked,
+                f"disabled build must physically omit every adapter internal; found: {leaked}",
+            )
+            self.assertEqual(
+                defined, {"DebugTools_RegisterWeatherFogActions"},
+                f"disabled build must define exactly the one no-op public entry point, found: {defined}",
+            )
+
+            rc, out, driver_obj = _compile(
+                work, C_FIXTURES_DIR / "debugtools_actions_disabled_driver.c", "actions_disabled_driver.o"
+            )
+            self.assertEqual(rc, 0, f"compiling debugtools_actions_disabled_driver.c failed:\n{out}")
+
+            # No menu/proc/hardware stub of any kind is linked here: an
+            # undefined reference would mean the disabled path grew a
+            # real dependency on StartOrphanMenu/Proc_*/DebugMenu_*.
+            rc, out, exe = _link(work, [actions_obj, driver_obj], "actions_disabled_test_exe")
+            self.assertEqual(rc, 0, f"linking disabled host Weather/Fog actions test failed:\n{out}")
+
+            rc, out = _run(exe)
+            self.assertEqual(rc, 0, f"disabled-path host Weather/Fog actions test failed:\n{out}")
+            self.assertIn("DEBUGTOOLS_ACTIONS_DISABLED_HOST_TEST: PASS", out)
+
+    def test_actions_never_touch_dormant_files_or_persistent_apis(self):
+        """Structural double-check (alongside the link-time proofs above):
+        src/debugtools_actions.c must never mention SaveGame/Sram/write-
+        save-block APIs, must never call Proc_Break/Proc_End/Proc_EndEach
+        on anything other than the one documented ProcScr_DebugMonitor
+        teardown, and must never reference bmdebug.c/uidebug.c/menu_def.c
+        internals beyond the six documented onDraw/onSelected/onIdle
+        dormant function pointers it is explicitly allowed to reuse by
+        pointer."""
+        text = _strip_c_comments(ACTIONS_SRC.read_text(encoding="utf-8", errors="replace"))
+
+        for banned in ("SaveGame", "Sram", "WriteSaveBlock", "Proc_Break", "Proc_End(", "Proc_Delete"):
+            self.assertNotIn(
+                banned, text,
+                f"src/debugtools_actions.c must never reference {banned} -- no persistent writes or "
+                "foreign-proc teardown, only its own documented ProcScr_DebugMonitor Proc_EndEach",
+            )
+
+        proc_endeach_targets = re.findall(r"Proc_EndEach\(\s*(\w+)\s*\)", text)
+        self.assertEqual(
+            proc_endeach_targets, ["ProcScr_DebugMonitor"],
+            f"the only Proc_EndEach target in this file must be ProcScr_DebugMonitor, found: {proc_endeach_targets}",
+        )
+
+    def test_actions_source_is_wired_into_both_builds(self):
+        """The WHERE constraint requires the new source file to reach
+        both the legacy (ldscript.txt) and modern (modern.mk) build
+        outputs."""
+        ldscript_text = (REPO_ROOT / "ldscript.txt").read_text(encoding="utf-8", errors="replace")
+        self.assertIn(
+            "src/debugtools_actions.o", ldscript_text,
+            "ldscript.txt must link src/debugtools_actions.o into the legacy build",
+        )
+
+        modern_mk_text = (REPO_ROOT / "modern.mk").read_text(encoding="utf-8", errors="replace")
+        self.assertIn(
+            "src/debugtools_actions.c", modern_mk_text,
+            "modern.mk must compile src/debugtools_actions.c into the modern build",
+        )
+
+
+class DebugToolsMapPrepScenarioSchemaTests(unittest.TestCase):
+    """Validates the slice 2 map/prep playtest scenarios (map-phase debug
+    hub entry proved live against a real interactive Chapter 2, plus
+    release mirrors for both the map and prep hotkeys) against
+    gba_playtest's own schema parser -- the same validation `capture`/
+    `verify` perform -- and checks each scenario's non-trivial claims,
+    mirroring DebugToolsScenarioSchemaTests' pattern for the slice 1 title
+    hub scenarios."""
+
+    @classmethod
+    def setUpClass(cls):
+        sys.path.insert(0, str(REPO_ROOT / "tools" / "gba-playtest"))
+        global gba_playtest
+        import gba_playtest  # noqa: F401 (imported for its side effect / module ref)
+
+    def _load(self, name):
+        import json
+        path = REPO_ROOT / "tools" / "gba-playtest" / "scenarios" / name
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return gba_playtest.parse_scenario_data(data), data
+
+    def test_map_debug_scenario_is_schema_valid(self):
+        scenario, data = self._load("debugtools-map-hub-modern-debug.json")
+        self.assertEqual(scenario.name, "debugtools-map-hub-modern-debug")
+        self.assertEqual(len(data["checkpoints"]), 13)
+        by_name = {c["name"]: c for c in data["checkpoints"]}
+        for expected_name in (
+            "map-hub-opened-after-first-pulse",
+            "map-hub-still-single-after-repeat-pulse",
+            "weather-cycled-twice",
+            "fog-toggled",
+            "map-hub-closed-final",
+            "map-remains-interactive",
+        ):
+            self.assertIn(expected_name, by_name, f"missing checkpoint {expected_name!r}")
+
+    def test_map_debug_scenario_reuses_the_hub_scenarios_frame_prefix(self):
+        """The map scenario must build on top of the already-verified
+        Chapter 2 launch sequence (debugtools-hub-modern-debug.json),
+        not a fresh/independent boot script, so the interactive map
+        state it probes is proven by the same reentrancy-safe launch
+        path as slice 1."""
+        _, map_data = self._load("debugtools-map-hub-modern-debug.json")
+        _, hub_data = self._load("debugtools-hub-modern-debug.json")
+        prefix_len = len([f for f in hub_data["frames"] if f["end"] <= 14164])
+        self.assertGreater(prefix_len, 0)
+        self.assertEqual(
+            map_data["frames"][:prefix_len], hub_data["frames"][:prefix_len],
+            "map scenario's frame prefix (frames ending <= 14164) must be byte-for-byte "
+            "identical to debugtools-hub-modern-debug.json's own frames",
+        )
+
+    def test_map_debug_scenario_proves_map_hotkey_pulses_do_not_double_open(self):
+        _, data = self._load("debugtools-map-hub-modern-debug.json")
+        by_name = {c["name"]: c for c in data["checkpoints"]}
+        first = by_name["map-hub-opened-after-first-pulse"]
+        second = by_name["map-hub-still-single-after-repeat-pulse"]
+
+        def probe(checkpoint, address):
+            for p in checkpoint["probes"]:
+                if p["address"] == address:
+                    return p
+            self.fail(f"checkpoint {checkpoint['name']} does not probe {address}")
+
+        # hubOpenCount must read 2 both times (1 from the title-hub launch
+        # sequence already replayed in the shared prefix, +1 from this
+        # scenario's own first map-hotkey pulse) -- never 3.
+        self.assertEqual(probe(first, "0x02031628")["expected"], "0x00000002")
+        self.assertEqual(probe(second, "0x02031628")["expected"], "0x00000002")
+
+    def test_map_debug_scenario_proves_map_remains_interactive_after_hub_closes(self):
+        """Central DONE criterion: after the hub fully closes, the player
+        map must still respond to ordinary cursor input -- proven here by
+        the cursor's x coordinate advancing from 0x06 to 0x07 on the final
+        RIGHT press, with sHubActive staying 0 and hubOpenCount unchanged
+        (4) across both checkpoints."""
+        _, data = self._load("debugtools-map-hub-modern-debug.json")
+        by_name = {c["name"]: c for c in data["checkpoints"]}
+        closed = by_name["map-hub-closed-final"]
+        interactive = by_name["map-remains-interactive"]
+
+        def probe(checkpoint, address):
+            for p in checkpoint["probes"]:
+                if p["address"] == address:
+                    return p
+            self.fail(f"checkpoint {checkpoint['name']} does not probe {address}")
+
+        self.assertEqual(probe(closed, "0x020315b0")["expected"], "0x00000000")  # sHubActive
+        self.assertEqual(probe(interactive, "0x020315b0")["expected"], "0x00000000")
+        self.assertEqual(probe(closed, "0x02031628")["expected"], probe(interactive, "0x02031628")["expected"])
+        self.assertEqual(probe(closed, "0x02021104")["expected"], "0x06")  # cursor x, before final RIGHT
+        self.assertEqual(probe(interactive, "0x02021104")["expected"], "0x07")  # cursor x, after final RIGHT
+
+    def test_map_release_scenario_is_schema_valid(self):
+        scenario, data = self._load("debugtools-map-hub-modern-release.json")
+        self.assertEqual(scenario.name, "debugtools-map-hub-modern-release")
+        self.assertEqual(len(data["checkpoints"]), 4)
+        for checkpoint in data["checkpoints"]:
+            for probe in checkpoint["probes"]:
+                self.assertEqual(probe["expected"], "0x00000000")
+
+    def test_prep_release_scenario_is_schema_valid(self):
+        scenario, data = self._load("debugtools-prep-hub-modern-release.json")
+        self.assertEqual(scenario.name, "debugtools-prep-hub-modern-release")
+        self.assertEqual(len(data["checkpoints"]), 4)
+        for checkpoint in data["checkpoints"]:
+            for probe in checkpoint["probes"]:
+                self.assertEqual(probe["expected"], "0x00000000")
+
+    def test_map_and_prep_release_scenarios_reuse_the_hub_release_scenarios_frames(self):
+        """Both release mirrors must replay debugtools-hub-modern-release.json's
+        own exact, already-verified 259-frame input script as their prefix
+        (not the debug scenario's frames, and not a fresh script), per the
+        documented rationale that the debug-launcher hotkey never fires in
+        a release build."""
+        _, hub_release_data = self._load("debugtools-hub-modern-release.json")
+        prefix = hub_release_data["frames"]
+        for name in (
+            "debugtools-map-hub-modern-release.json",
+            "debugtools-prep-hub-modern-release.json",
+        ):
+            _, data = self._load(name)
+            self.assertEqual(
+                data["frames"][: len(prefix)], prefix,
+                f"{name} must replay debugtools-hub-modern-release.json's frames verbatim as its prefix",
+            )
+            self.assertGreater(
+                len(data["frames"]), len(prefix),
+                f"{name} must append its own hotkey tail after the shared prefix",
+            )
+
+    def test_map_and_prep_release_scenarios_use_distinct_hotkey_masks(self):
+        """The map release mirror must exercise SELECT+L and the prep
+        release mirror must exercise SELECT+B -- the two configured,
+        mutually distinct masks -- not the same key combination."""
+        _, hub_release_data = self._load("debugtools-hub-modern-release.json")
+        prefix_len = len(hub_release_data["frames"])
+
+        _, map_data = self._load("debugtools-map-hub-modern-release.json")
+        map_tail = map_data["frames"][prefix_len:]
+        map_hotkey_frames = [f for f in map_tail if set(f["keys"]) == {"SELECT", "L"}]
+        self.assertEqual(len(map_hotkey_frames), 2)
+
+        _, prep_data = self._load("debugtools-prep-hub-modern-release.json")
+        prep_tail = prep_data["frames"][prefix_len:]
+        prep_hotkey_frames = [f for f in prep_tail if set(f["keys"]) == {"SELECT", "B"}]
+        self.assertEqual(len(prep_hotkey_frames), 2)
+
+    def test_map_and_prep_release_scenarios_stay_at_the_frozen_release_frame(self):
+        """Every checkpoint in both release mirrors must assert the exact
+        same expected_framebuffer_hash as debugtools-hub-modern-release.json's
+        own final checkpoints -- proving the appended map/prep hotkey tail
+        causes zero visible change in a release build, not merely that
+        gDebugToolsProbe stays zero."""
+        # debugtools-hub-modern-release.json itself does not embed inline
+        # expected_framebuffer_hash values (only its fingerprint does), so
+        # this is the same literal hash independently captured for both
+        # new release mirrors below via `gba_playtest.py capture`.
+        frozen_hash = "fnv1a64-rgb24:d11078d0ec60076d"
+        for name in (
+            "debugtools-map-hub-modern-release.json",
+            "debugtools-prep-hub-modern-release.json",
+        ):
+            _, data = self._load(name)
+            for checkpoint in data["checkpoints"]:
+                self.assertEqual(
+                    checkpoint.get("expected_framebuffer_hash"), frozen_hash,
+                    f"{name} checkpoint {checkpoint['name']!r} must match the frozen release frame hash",
+                )
 
 
 if __name__ == "__main__":

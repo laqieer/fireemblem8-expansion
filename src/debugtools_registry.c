@@ -191,6 +191,7 @@ enum DebugToolsResult DebugTools_OpenHub(void)
         return DEBUGTOOLS_ERR_ALREADY_ACTIVE;
 
     DebugTools_RegisterBuiltinActions();
+    DebugTools_RegisterWeatherFogActions();
 
     DebugToolsHub_BuildMenuItems();
     DebugToolsHub_ShowDiagnostics();
@@ -219,6 +220,26 @@ void DebugTools_TitleHotkeyCheck(void)
      * hub is already open: DebugTools_OpenHub() itself is the
      * authoritative reentrancy guard (returns DEBUGTOOLS_ERR_ALREADY_ACTIVE,
      * a no-op, rather than starting a second concurrent MenuProc). */
+    if ((gKeyStatusPtr->heldKeys & mask) == mask && (gKeyStatusPtr->newKeys & mask) != 0)
+        DebugTools_OpenHub();
+}
+
+/* Issue #11 slice 2: map-phase and prep-screen hub entry points. Same
+ * edge-detected combo check and same DebugTools_OpenHub() reentrancy
+ * guard as DebugTools_TitleHotkeyCheck above -- only the mask and the
+ * one call site each is read from differ. */
+void DebugTools_MapHotkeyCheck(void)
+{
+    u16 mask = FE8_EXPANSION_DEBUGTOOLS_MAP_HOTKEY_MASK;
+
+    if ((gKeyStatusPtr->heldKeys & mask) == mask && (gKeyStatusPtr->newKeys & mask) != 0)
+        DebugTools_OpenHub();
+}
+
+void DebugTools_PrepHotkeyCheck(void)
+{
+    u16 mask = FE8_EXPANSION_DEBUGTOOLS_PREP_HOTKEY_MASK;
+
     if ((gKeyStatusPtr->heldKeys & mask) == mask && (gKeyStatusPtr->newKeys & mask) != 0)
         DebugTools_OpenHub();
 }
@@ -268,6 +289,16 @@ int DebugTools_IsHubActive(void)
 }
 
 void DebugTools_TitleHotkeyCheck(void)
+{
+    /* No-op: the hotkey is never read in a release build. */
+}
+
+void DebugTools_MapHotkeyCheck(void)
+{
+    /* No-op: the hotkey is never read in a release build. */
+}
+
+void DebugTools_PrepHotkeyCheck(void)
 {
     /* No-op: the hotkey is never read in a release build. */
 }

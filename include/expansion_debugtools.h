@@ -60,6 +60,77 @@
 #error "FE8_EXPANSION_DEBUGTOOLS_HOTKEY_MASK collides with the A+B+SELECT+START soft-reset combo"
 #endif
 
+/* --- Map-phase and prep-screen hub hotkeys --------------------------------
+ * Issue #11 slice 2. Separate, independently overridable masks -- one
+ * per entry point -- called from the single supported map-phase call
+ * site (PlayerPhase_MainIdle, src/playerphase.c) and the single
+ * supported prep-screen call site (PrepScreenProc_MapIdle,
+ * src/prep_sallycursor.c). Both phases already read bare L_BUTTON,
+ * R_BUTTON, and (ungated at the prep screen) START_BUTTON for their own
+ * vanilla controls (view-unit swap, stat screen, minimap), so each
+ * default below is a SELECT-qualified two-button combo distinct from
+ * every one of those bare single-button reads, from the title-screen
+ * mask above, and from each other. */
+#ifndef FE8_EXPANSION_DEBUGTOOLS_MAP_HOTKEY_MASK
+#define FE8_EXPANSION_DEBUGTOOLS_MAP_HOTKEY_MASK (SELECT_BUTTON | L_BUTTON)
+#endif
+
+#ifndef FE8_EXPANSION_DEBUGTOOLS_PREP_HOTKEY_MASK
+#define FE8_EXPANSION_DEBUGTOOLS_PREP_HOTKEY_MASK (SELECT_BUTTON | B_BUTTON)
+#endif
+
+/* Same unconditional compile-time guardrails as the title mask above,
+ * plus mutual-distinctness checks: no two of the three masks may be
+ * equal (a shared combo would make two different debug-hub entry points
+ * indistinguishable), and neither new mask may equal a single bare
+ * R/L/START read already live in the phase it gates. */
+#if (FE8_EXPANSION_DEBUGTOOLS_MAP_HOTKEY_MASK) == 0
+#error "FE8_EXPANSION_DEBUGTOOLS_MAP_HOTKEY_MASK must not be 0 (see docs/debugtools.md)"
+#endif
+#if (FE8_EXPANSION_DEBUGTOOLS_MAP_HOTKEY_MASK) == (L_BUTTON | R_BUTTON | A_BUTTON | B_BUTTON)
+#error "FE8_EXPANSION_DEBUGTOOLS_MAP_HOTKEY_MASK collides with the L+R+A+B soft-reset combo"
+#endif
+#if (FE8_EXPANSION_DEBUGTOOLS_MAP_HOTKEY_MASK) == (A_BUTTON | B_BUTTON | SELECT_BUTTON | START_BUTTON)
+#error "FE8_EXPANSION_DEBUGTOOLS_MAP_HOTKEY_MASK collides with the A+B+SELECT+START soft-reset combo"
+#endif
+#if (FE8_EXPANSION_DEBUGTOOLS_MAP_HOTKEY_MASK) == (R_BUTTON)
+#error "FE8_EXPANSION_DEBUGTOOLS_MAP_HOTKEY_MASK collides with bare R at the map phase (stat screen)"
+#endif
+#if (FE8_EXPANSION_DEBUGTOOLS_MAP_HOTKEY_MASK) == (L_BUTTON)
+#error "FE8_EXPANSION_DEBUGTOOLS_MAP_HOTKEY_MASK collides with bare L at the map phase (view-unit swap)"
+#endif
+#if (FE8_EXPANSION_DEBUGTOOLS_MAP_HOTKEY_MASK) == (START_BUTTON)
+#error "FE8_EXPANSION_DEBUGTOOLS_MAP_HOTKEY_MASK collides with bare START at the map phase (minimap)"
+#endif
+#if (FE8_EXPANSION_DEBUGTOOLS_MAP_HOTKEY_MASK) == (FE8_EXPANSION_DEBUGTOOLS_HOTKEY_MASK)
+#error "FE8_EXPANSION_DEBUGTOOLS_MAP_HOTKEY_MASK collides with the title-screen hub mask"
+#endif
+
+#if (FE8_EXPANSION_DEBUGTOOLS_PREP_HOTKEY_MASK) == 0
+#error "FE8_EXPANSION_DEBUGTOOLS_PREP_HOTKEY_MASK must not be 0 (see docs/debugtools.md)"
+#endif
+#if (FE8_EXPANSION_DEBUGTOOLS_PREP_HOTKEY_MASK) == (L_BUTTON | R_BUTTON | A_BUTTON | B_BUTTON)
+#error "FE8_EXPANSION_DEBUGTOOLS_PREP_HOTKEY_MASK collides with the L+R+A+B soft-reset combo"
+#endif
+#if (FE8_EXPANSION_DEBUGTOOLS_PREP_HOTKEY_MASK) == (A_BUTTON | B_BUTTON | SELECT_BUTTON | START_BUTTON)
+#error "FE8_EXPANSION_DEBUGTOOLS_PREP_HOTKEY_MASK collides with the A+B+SELECT+START soft-reset combo"
+#endif
+#if (FE8_EXPANSION_DEBUGTOOLS_PREP_HOTKEY_MASK) == (R_BUTTON)
+#error "FE8_EXPANSION_DEBUGTOOLS_PREP_HOTKEY_MASK collides with bare R at the prep screen (stat screen)"
+#endif
+#if (FE8_EXPANSION_DEBUGTOOLS_PREP_HOTKEY_MASK) == (L_BUTTON)
+#error "FE8_EXPANSION_DEBUGTOOLS_PREP_HOTKEY_MASK collides with bare L at the prep screen (view-unit swap)"
+#endif
+#if (FE8_EXPANSION_DEBUGTOOLS_PREP_HOTKEY_MASK) == (START_BUTTON)
+#error "FE8_EXPANSION_DEBUGTOOLS_PREP_HOTKEY_MASK collides with bare START at the prep screen (minimap)"
+#endif
+#if (FE8_EXPANSION_DEBUGTOOLS_PREP_HOTKEY_MASK) == (FE8_EXPANSION_DEBUGTOOLS_HOTKEY_MASK)
+#error "FE8_EXPANSION_DEBUGTOOLS_PREP_HOTKEY_MASK collides with the title-screen hub mask"
+#endif
+#if (FE8_EXPANSION_DEBUGTOOLS_PREP_HOTKEY_MASK) == (FE8_EXPANSION_DEBUGTOOLS_MAP_HOTKEY_MASK)
+#error "FE8_EXPANSION_DEBUGTOOLS_PREP_HOTKEY_MASK collides with the map-phase hub mask"
+#endif
+
 /* --- Registration capacity -------------------------------------------------
  * MENU_ITEM_MAX is 11 (include/uimenu.h) and StartMenuCore (src/uimenu.c)
  * has no bounds check when it appends to MenuProc::menuItems -- writing an
@@ -151,10 +222,35 @@ int DebugTools_IsHubActive(void);
  * read, no hub, nothing reachable) when the subsystem is disabled. */
 void DebugTools_TitleHotkeyCheck(void);
 
+/* Issue #11 slice 2 -- the single supported map-phase call site
+ * (PlayerPhase_MainIdle in src/playerphase.c) and the single supported
+ * prep-screen call site (PrepScreenProc_MapIdle in
+ * src/prep_sallycursor.c). Each is called as the very first statement of
+ * its caller, before any of that function's own vanilla key handling;
+ * the caller then checks DebugTools_IsHubActive() and returns immediately
+ * if true, so a combo that completes this frame can never also be read,
+ * on the same frame, by the vanilla L/R/A/B/START handling further down
+ * (both because the hub is now active, and because DebugTools_OpenHub()
+ * itself zeroes gKeyStatusPtr->newKeys the instant it starts the hub's
+ * MenuProc -- see StartMenuCore, src/uimenu.c). Same reentrancy guard and
+ * disabled-build behavior as DebugTools_TitleHotkeyCheck above: safe to
+ * call unconditionally every frame regardless of hub state, and a no-op
+ * (no key read, nothing reachable) when the subsystem is compiled out. */
+void DebugTools_MapHotkeyCheck(void);
+void DebugTools_PrepHotkeyCheck(void);
+
 /* Registers the slice's one built-in deterministic launcher action
  * (implemented in src/debugtools_launcher.c). Idempotent -- safe to call
  * more than once. */
 void DebugTools_RegisterBuiltinActions(void);
+
+/* Registers this slice's Weather and Fog built-in actions (implemented in
+ * src/debugtools_actions.c). Idempotent -- safe to call more than once.
+ * Called from DebugTools_OpenHub() (src/debugtools_registry.c) alongside
+ * DebugTools_RegisterBuiltinActions() above, so both built-in groups are
+ * always registered together regardless of which entry point (title,
+ * map, or prep) first opens the hub. A no-op in a release build. */
+void DebugTools_RegisterWeatherFogActions(void);
 
 /* Called once per frame from Title_IDLE (src/titlescreen.c) to mirror its
  * current proc->timer_idle value into gDebugToolsProbe.titleIdleTimerSample

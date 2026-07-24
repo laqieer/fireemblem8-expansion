@@ -161,6 +161,15 @@ ProcPtr Proc_Find(const struct ProcCmd* script)
     return NULL;
 }
 
+void DebugTools_RegisterWeatherFogActions(void)
+{
+    /* The real implementation (src/debugtools_actions.c, slice 2) has its
+     * own dedicated host tests (debugtools_actions_driver.c). This driver
+     * links the whole of src/debugtools_registry.c (whose DebugTools_OpenHub
+     * calls this function unconditionally), so a stub must exist here even
+     * though this launcher-lifecycle driver never itself calls OpenHub. */
+}
+
 /* DebugToolsObserver_WaitForStablePlayerPhase is a PROC_REPEAT callback:
  * this host test drives it directly (see debugtools_launcher_driver.c),
  * so gProcScr_PlayerPhase only needs to exist as a distinguishable

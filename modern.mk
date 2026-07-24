@@ -11,6 +11,8 @@ MODERN_GOALS := \
 	expansion-modern-title-check \
 	expansion-modern-debugtools-check \
 	expansion-modern-debugtools-timer-check \
+	expansion-modern-debugtools-map-check \
+	expansion-modern-debugtools-prep-check \
 	expansion-modern-budget \
 	expansion-modern-budget-check \
 	expansion-modern-relocs \
@@ -159,7 +161,8 @@ MODERN_COHORT_SOURCES ?= \
 	src/proc.c \
 	src/hardware.c \
 	src/debugtools_registry.c \
-	src/debugtools_launcher.c
+	src/debugtools_launcher.c \
+	src/debugtools_actions.c
 
 # Handwritten assembly that must not be decompiled (see CONTRIBUTING.md).
 # libagbsyscall.s is a self-contained set of BIOS SWI trampolines; arm.s and
@@ -439,6 +442,8 @@ MODERN_ALL_SOURCE_GOALS := \
 	expansion-modern-title-check \
 	expansion-modern-debugtools-check \
 	expansion-modern-debugtools-timer-check \
+	expansion-modern-debugtools-map-check \
+	expansion-modern-debugtools-prep-check \
 	expansion-modern-budget \
 	expansion-modern-budget-check \
 	expansion-modern-relocs \
@@ -969,6 +974,8 @@ MODERN_LINKED_GOALS := \
 	expansion-modern-title-check \
 	expansion-modern-debugtools-check \
 	expansion-modern-debugtools-timer-check \
+	expansion-modern-debugtools-map-check \
+	expansion-modern-debugtools-prep-check \
 	expansion-modern-budget \
 	expansion-modern-budget-check \
 	expansion-modern-relocs \
@@ -1492,6 +1499,12 @@ MODERN_TITLE_FINGERPRINT := tools/gba-playtest/fingerprints/title-progression-mo
 # single shared scenario file would not correctly express both.
 MODERN_DEBUGTOOLS_SCENARIO := tools/gba-playtest/scenarios/debugtools-hub-modern-$(MODERN_CONFIG).json
 MODERN_DEBUGTOOLS_FINGERPRINT := tools/gba-playtest/fingerprints/debugtools-hub-modern-$(MODERN_CONFIG).json
+# Issue #11 slice 2: the map-phase hub scenario also has both a debug (live,
+# on the real interactive Chapter 2 map) and release (compiled-out mirror)
+# variant, same $(MODERN_CONFIG)-suffixed-path rationale as
+# MODERN_DEBUGTOOLS_SCENARIO above.
+MODERN_DEBUGTOOLS_MAP_SCENARIO := tools/gba-playtest/scenarios/debugtools-map-hub-modern-$(MODERN_CONFIG).json
+MODERN_DEBUGTOOLS_MAP_FINGERPRINT := tools/gba-playtest/fingerprints/debugtools-map-hub-modern-$(MODERN_CONFIG).json
 MODERN_PLAYTEST := tools/gba-playtest/gba_playtest.py
 
 # Convert the linked ELF to a flat, padded ROM image, patch the configured
@@ -1528,7 +1541,9 @@ expansion-modern-boot-preflight:
 		[ ! -f "$(MODERN_TITLE_SCENARIO)" ] || \
 		[ ! -f "$(MODERN_TITLE_FINGERPRINT)" ] || \
 		[ ! -f "$(MODERN_DEBUGTOOLS_SCENARIO)" ] || \
-		[ ! -f "$(MODERN_DEBUGTOOLS_FINGERPRINT)" ]; then \
+		[ ! -f "$(MODERN_DEBUGTOOLS_FINGERPRINT)" ] || \
+		[ ! -f "$(MODERN_DEBUGTOOLS_MAP_SCENARIO)" ] || \
+		[ ! -f "$(MODERN_DEBUGTOOLS_MAP_FINGERPRINT)" ]; then \
 		printf '%s\n' \
 			"error: missing boot scenario or fingerprint (including title progression and debugtools)" >&2; \
 		printf '  boot scenario:        %s\n' "$(MODERN_BOOT_SCENARIO)" >&2; \
@@ -1537,6 +1552,8 @@ expansion-modern-boot-preflight:
 		printf '  title fingerprint:    %s\n' "$(MODERN_TITLE_FINGERPRINT)" >&2; \
 		printf '  debugtools scenario:  %s\n' "$(MODERN_DEBUGTOOLS_SCENARIO)" >&2; \
 		printf '  debugtools fingerprint: %s\n' "$(MODERN_DEBUGTOOLS_FINGERPRINT)" >&2; \
+		printf '  debugtools map scenario:  %s\n' "$(MODERN_DEBUGTOOLS_MAP_SCENARIO)" >&2; \
+		printf '  debugtools map fingerprint: %s\n' "$(MODERN_DEBUGTOOLS_MAP_FINGERPRINT)" >&2; \
 		exit 1; \
 	fi
 	@if ! "$(PYTHON)" "$(MODERN_PLAYTEST)" backend-check; then \
@@ -1630,6 +1647,61 @@ expansion-modern-debugtools-check: expansion-modern-boot-preflight expansion-mod
 		--policy behavior
 	@printf 'Modern ROM debugtools-check passed: %s (config=%s abi=%s)\n' \
 		"$(MODERN_ROM)" '$(MODERN_CONFIG)' '$(MODERN_ABI)'
+
+# Issue #11 slice 2: proves the map-phase SELECT+L hotkey opens the same hub
+# from PlayerPhase_MainIdle on the real, interactive Chapter 2 map (debug
+# build), lets Weather and Fog each be cycled through their bounded
+# one-item submenus and returned from, and leaves the map interactive after
+# the hub closes; and that the identical hotkey tail has zero effect on top
+# of debugtools-hub-modern-release.json's own frame script in a release
+# build. Unlike expansion-modern-debugtools-check, this scenario has no
+# `sram_hash` checkpoints, so it is not seeded with
+# MODERN_DEBUGTOOLS_SRAM_FIXTURE. See docs/debugtools.md.
+expansion-modern-debugtools-map-check: expansion-modern-boot-preflight expansion-modern-rom
+	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify \
+		--rom "$(MODERN_ROM)" \
+		--scenario "$(MODERN_DEBUGTOOLS_MAP_SCENARIO)" \
+		--expected "$(MODERN_DEBUGTOOLS_MAP_FINGERPRINT)" \
+		--policy behavior
+	@printf 'Modern ROM debugtools-map-check passed: %s (config=%s abi=%s)\n' \
+		"$(MODERN_ROM)" '$(MODERN_CONFIG)' '$(MODERN_ABI)'
+
+# Issue #11 slice 2: the prep-phase SELECT+B hotkey has no equivalent live
+# scenario yet -- this repository's chapter data has hasPrepScreen=FALSE
+# for every chapter (a vestigial FE7 field, see include/chapterdata.h) and
+# no in-scope, already-decompiled event script currently drives
+# PrepScreenProc_MapIdle from a deterministic boot sequence without a
+# chapter/skirmish selector (explicitly out of scope for this slice, see
+# docs/debugtools.md "Remaining #11 scope"). The release mirror below and
+# the host C test suite (mask distinctness, call-site ordering,
+# compile-time validation, idempotent registration) are the available
+# deterministic proof for the prep hotkey until a future slice adds an
+# in-scope deterministic path to a live prep screen.
+MODERN_DEBUGTOOLS_PREP_RELEASE_SCENARIO := tools/gba-playtest/scenarios/debugtools-prep-hub-modern-release.json
+MODERN_DEBUGTOOLS_PREP_RELEASE_FINGERPRINT := tools/gba-playtest/fingerprints/debugtools-prep-hub-modern-release.json
+
+ifeq ($(MODERN_CONFIG),release)
+expansion-modern-debugtools-prep-check: expansion-modern-boot-preflight expansion-modern-rom
+	@if [ ! -f "$(MODERN_DEBUGTOOLS_PREP_RELEASE_SCENARIO)" ] || \
+		[ ! -f "$(MODERN_DEBUGTOOLS_PREP_RELEASE_FINGERPRINT)" ]; then \
+		printf '%s\n' \
+			"error: missing debugtools prep-hub release scenario or fingerprint" >&2; \
+		printf '  scenario:    %s\n' "$(MODERN_DEBUGTOOLS_PREP_RELEASE_SCENARIO)" >&2; \
+		printf '  fingerprint: %s\n' "$(MODERN_DEBUGTOOLS_PREP_RELEASE_FINGERPRINT)" >&2; \
+		exit 1; \
+	fi
+	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify \
+		--rom "$(MODERN_ROM)" \
+		--scenario "$(MODERN_DEBUGTOOLS_PREP_RELEASE_SCENARIO)" \
+		--expected "$(MODERN_DEBUGTOOLS_PREP_RELEASE_FINGERPRINT)" \
+		--policy behavior
+	@printf 'Modern ROM debugtools-prep-check passed: %s (config=%s abi=%s)\n' \
+		"$(MODERN_ROM)" '$(MODERN_CONFIG)' '$(MODERN_ABI)'
+else
+expansion-modern-debugtools-prep-check:
+	@printf 'Modern ROM debugtools-prep-check skipped: no debug scenario yet for config=%s -- reaching a real prep screen deterministically needs a chapter/skirmish selector, explicitly out of scope for issue #11 slice 2 (see docs/debugtools.md "Remaining #11 scope"); host C tests cover mask/call-site/registration correctness instead\n' \
+		'$(MODERN_CONFIG)'
+endif
 
 # Issue #11 slice 1 review-fix regression check: proves proc->timer_idle
 # (mirrored into gDebugToolsProbe.titleIdleTimerSample by
@@ -1780,6 +1852,8 @@ expansion-modern-linker-check: expansion-modern-budget-check \
 		expansion-modern-title-check \
 		expansion-modern-debugtools-check \
 		expansion-modern-debugtools-timer-check \
+		expansion-modern-debugtools-map-check \
+		expansion-modern-debugtools-prep-check \
 		expansion-modern-savefmt-check \
 		expansion-modern-shifted-check
 	"$(PYTHON)" scripts/shiftcheck/scan_build_addrs.py \
@@ -1794,6 +1868,8 @@ expansion-modern-linker-check: expansion-modern-budget-check \
 	expansion-modern-title-check \
 	expansion-modern-debugtools-check \
 	expansion-modern-debugtools-timer-check \
+	expansion-modern-debugtools-map-check \
+	expansion-modern-debugtools-prep-check \
 	expansion-modern-savefmt-check \
 	expansion-modern-budget \
 	expansion-modern-budget-check \

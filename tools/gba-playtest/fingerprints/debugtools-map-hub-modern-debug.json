@@ -1,0 +1,480 @@
+{
+  "checkpoints": [
+    {
+      "frame": 14196,
+      "name": "map-hub-closed-before-hotkey",
+      "probes": [
+        {
+          "address": "0x020210b1",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "0x020210b9",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "0x02021104",
+          "size": 1,
+          "value": "0x06"
+        },
+        {
+          "address": "0x02021106",
+          "size": 1,
+          "value": "0x03"
+        },
+        {
+          "address": "0x020315b0",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x02031628",
+          "size": 4,
+          "value": "0x00000001"
+        }
+      ]
+    },
+    {
+      "frame": 14256,
+      "name": "map-hub-opened-after-first-pulse",
+      "probes": [
+        {
+          "address": "0x020210b1",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "0x020210b9",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "0x02021104",
+          "size": 1,
+          "value": "0x06"
+        },
+        {
+          "address": "0x02021106",
+          "size": 1,
+          "value": "0x03"
+        },
+        {
+          "address": "0x020315b0",
+          "size": 4,
+          "value": "0x00000001"
+        },
+        {
+          "address": "0x02031628",
+          "size": 4,
+          "value": "0x00000002"
+        }
+      ]
+    },
+    {
+      "frame": 14316,
+      "name": "map-hub-still-single-after-repeat-pulse",
+      "probes": [
+        {
+          "address": "0x020210b1",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "0x020210b9",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "0x02021104",
+          "size": 1,
+          "value": "0x06"
+        },
+        {
+          "address": "0x02021106",
+          "size": 1,
+          "value": "0x03"
+        },
+        {
+          "address": "0x020315b0",
+          "size": 4,
+          "value": "0x00000001"
+        },
+        {
+          "address": "0x02031628",
+          "size": 4,
+          "value": "0x00000002"
+        }
+      ]
+    },
+    {
+      "frame": 14376,
+      "name": "map-hub-cursor-on-weather",
+      "probes": [
+        {
+          "address": "0x020210b1",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "0x020210b9",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "0x02021104",
+          "size": 1,
+          "value": "0x06"
+        },
+        {
+          "address": "0x02021106",
+          "size": 1,
+          "value": "0x03"
+        },
+        {
+          "address": "0x020315b0",
+          "size": 4,
+          "value": "0x00000001"
+        },
+        {
+          "address": "0x02031628",
+          "size": 4,
+          "value": "0x00000002"
+        }
+      ]
+    },
+    {
+      "frame": 14436,
+      "name": "weather-submenu-opened",
+      "probes": [
+        {
+          "address": "0x020210b1",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "0x020210b9",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "0x02021104",
+          "size": 1,
+          "value": "0x06"
+        },
+        {
+          "address": "0x02021106",
+          "size": 1,
+          "value": "0x03"
+        },
+        {
+          "address": "0x020315b0",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x02031628",
+          "size": 4,
+          "value": "0x00000002"
+        }
+      ]
+    },
+    {
+      "frame": 14556,
+      "name": "weather-cycled-twice",
+      "probes": [
+        {
+          "address": "0x020210b1",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "0x020210b9",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "0x02021104",
+          "size": 1,
+          "value": "0x06"
+        },
+        {
+          "address": "0x02021106",
+          "size": 1,
+          "value": "0x03"
+        },
+        {
+          "address": "0x020315b0",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x02031628",
+          "size": 4,
+          "value": "0x00000002"
+        }
+      ]
+    },
+    {
+      "frame": 14616,
+      "name": "weather-back-reopened-hub",
+      "probes": [
+        {
+          "address": "0x020210b1",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "0x020210b9",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "0x02021104",
+          "size": 1,
+          "value": "0x06"
+        },
+        {
+          "address": "0x02021106",
+          "size": 1,
+          "value": "0x03"
+        },
+        {
+          "address": "0x020315b0",
+          "size": 4,
+          "value": "0x00000001"
+        },
+        {
+          "address": "0x02031628",
+          "size": 4,
+          "value": "0x00000003"
+        }
+      ]
+    },
+    {
+      "frame": 14736,
+      "name": "map-hub-cursor-on-fog",
+      "probes": [
+        {
+          "address": "0x020210b1",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "0x020210b9",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "0x02021104",
+          "size": 1,
+          "value": "0x06"
+        },
+        {
+          "address": "0x02021106",
+          "size": 1,
+          "value": "0x03"
+        },
+        {
+          "address": "0x020315b0",
+          "size": 4,
+          "value": "0x00000001"
+        },
+        {
+          "address": "0x02031628",
+          "size": 4,
+          "value": "0x00000003"
+        }
+      ]
+    },
+    {
+      "frame": 14796,
+      "name": "fog-submenu-opened",
+      "probes": [
+        {
+          "address": "0x020210b1",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "0x020210b9",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "0x02021104",
+          "size": 1,
+          "value": "0x06"
+        },
+        {
+          "address": "0x02021106",
+          "size": 1,
+          "value": "0x03"
+        },
+        {
+          "address": "0x020315b0",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x02031628",
+          "size": 4,
+          "value": "0x00000003"
+        }
+      ]
+    },
+    {
+      "frame": 14856,
+      "name": "fog-toggled",
+      "probes": [
+        {
+          "address": "0x020210b1",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "0x020210b9",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "0x02021104",
+          "size": 1,
+          "value": "0x06"
+        },
+        {
+          "address": "0x02021106",
+          "size": 1,
+          "value": "0x03"
+        },
+        {
+          "address": "0x020315b0",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x02031628",
+          "size": 4,
+          "value": "0x00000003"
+        }
+      ]
+    },
+    {
+      "frame": 14916,
+      "name": "fog-back-reopened-hub",
+      "probes": [
+        {
+          "address": "0x020210b1",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "0x020210b9",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "0x02021104",
+          "size": 1,
+          "value": "0x06"
+        },
+        {
+          "address": "0x02021106",
+          "size": 1,
+          "value": "0x03"
+        },
+        {
+          "address": "0x020315b0",
+          "size": 4,
+          "value": "0x00000001"
+        },
+        {
+          "address": "0x02031628",
+          "size": 4,
+          "value": "0x00000004"
+        }
+      ]
+    },
+    {
+      "frame": 14976,
+      "name": "map-hub-closed-final",
+      "probes": [
+        {
+          "address": "0x020210b1",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "0x020210b9",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "0x02021104",
+          "size": 1,
+          "value": "0x06"
+        },
+        {
+          "address": "0x02021106",
+          "size": 1,
+          "value": "0x03"
+        },
+        {
+          "address": "0x020315b0",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x02031628",
+          "size": 4,
+          "value": "0x00000004"
+        }
+      ]
+    },
+    {
+      "frame": 14990,
+      "name": "map-remains-interactive",
+      "probes": [
+        {
+          "address": "0x020210b1",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "0x020210b9",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "0x02021104",
+          "size": 1,
+          "value": "0x07"
+        },
+        {
+          "address": "0x02021106",
+          "size": 1,
+          "value": "0x03"
+        },
+        {
+          "address": "0x020315b0",
+          "size": 4,
+          "value": "0x00000000"
+        },
+        {
+          "address": "0x02031628",
+          "size": 4,
+          "value": "0x00000004"
+        }
+      ]
+    }
+  ],
+  "format_version": 2,
+  "rom": {
+    "game_code": "BE8E",
+    "sha1": "6dc5277caf86858ee3110740fc3e0d20fef1cd90",
+    "size": 16777216,
+    "title": "FIREEMBLEM2E"
+  },
+  "scenario": "debugtools-map-hub-modern-debug"
+}

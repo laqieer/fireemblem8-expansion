@@ -1,29 +1,37 @@
-# Debug-tools foundation (issue #11 slice 1)
+# Debug-tools foundation (issue #11 slices 1-2)
 
 This document is the single reference for the debug-tools subsystem added in
-issue #11 slice 1: the release-safe config gate, the fixed-capacity
-contributor action-registration API, the title-screen hub hotkey, the one
-built-in deterministic launcher, and the playtest/host-test evidence that
-proves all of it. It intentionally covers **only** this first slice; see
-"Remaining #11 scope" at the end for what is explicitly deferred.
+issue #11: slice 1's release-safe config gate, fixed-capacity contributor
+action-registration API, title-screen hub hotkey, one built-in deterministic
+launcher; and slice 2's config-gated map-phase/prep-screen hub entry points
+and the two safe, registry-backed Weather/Fog actions -- plus the
+playtest/host-test evidence that proves all of it. See "Remaining #11 scope"
+at the end for what is still explicitly deferred to later slices.
 
 ## Files
 
 | File | Role |
 | --- | --- |
-| `include/expansion_debugtools.h` | Public contract: config gate, hotkey mask + compile-time collision guards, registration API, pending-request/bootstrap-suppression API, `struct DebugToolsProbe` |
-| `src/debugtools_registry.c` | Registry storage, hub menu construction/diagnostics, hotkey check, `gDebugToolsProbe` |
-| `src/debugtools_launcher.c` | The one built-in action ("Fast Boot: Chapter 2"): arms/consumes the pending launch request, owns the bootstrap-suppression state and its observer proc |
-| `src/titlescreen.c` | The single supported hotkey call site (`Title_IDLE`); also detects the pending launch request after the hub closes |
+| `include/expansion_debugtools.h` | Public contract: config gate, title/map/prep hotkey masks + compile-time collision guards, registration API, pending-request/bootstrap-suppression API, `struct DebugToolsProbe` |
+| `src/debugtools_registry.c` | Registry storage, hub menu construction/diagnostics, title/map/prep hotkey checks, `gDebugToolsProbe` |
+| `src/debugtools_launcher.c` | The built-in "Fast Boot: Chapter 2" action: arms/consumes the pending launch request, owns the bootstrap-suppression state and its observer proc |
+| `src/debugtools_actions.c` (slice 2) | Built-in Weather/Fog actions: registers each as a bounded one-item submenu whose `MenuItemDef` reuses the dormant `DebugMenu_Weather*`/`DebugMenu_Fog*` functions in `src/bmdebug.c` by pointer, with its own Back/B handling |
+| `src/titlescreen.c` | The title-screen hotkey call site (`Title_IDLE`); also detects the pending launch request after the hub closes |
+| `src/playerphase.c` (slice 2) | The map-phase hotkey call site: `PlayerPhase_MainIdle` calls `DebugTools_MapHotkeyCheck()` and returns immediately while the hub is active, as its first statements |
+| `src/prep_sallycursor.c` (slice 2) | The prep-screen hotkey call site: `PrepScreenProc_MapIdle` calls `DebugTools_PrepHotkeyCheck()` and returns immediately while the hub is active, as its first statements |
 | `src/gamecontrol.c` | `GameControl_PostIntro` consumes the pending request exactly once and performs the actual deterministic boot |
 | `src/bm.c`, `src/playerphase.c`, `src/soundwrapper.c` | Narrow, one-shot bootstrap-suppression guards on the automatic per-phase suspend-save calls (`BmMain_SuspendBeforePhase`, `PlayerPhase_Suspend`) and the song-room unlock write (`UnlockSoundRoomSong`) |
-| `tools/gba-playtest/scenarios/debugtools-hub-modern-{debug,release}.json` | Playtest scenarios (input script + probe expectations) |
-| `tools/gba-playtest/fingerprints/debugtools-hub-modern-{debug,release}.json` | Captured fingerprints for those scenarios |
+| `tools/gba-playtest/scenarios/debugtools-hub-modern-{debug,release}.json` | Slice 1 title-hub playtest scenarios (input script + probe expectations) |
+| `tools/gba-playtest/scenarios/debugtools-map-hub-modern-debug.json` (slice 2) | Live map-phase hub scenario: opens the hub with the map mask on the real, interactive Chapter 2 map, exercises Weather then Fog, and proves the map stays interactive after the hub closes |
+| `tools/gba-playtest/scenarios/debugtools-{map,prep}-hub-modern-release.json` (slice 2) | Release mirrors proving both new hotkeys are compiled out (`gDebugToolsProbe` stays all-zero, framebuffer unchanged) |
+| `tools/gba-playtest/fingerprints/debugtools-{hub,map-hub,prep-hub}-modern-{debug,release}.json` | Captured fingerprints for the scenarios above |
 | `tools/gba-playtest/tests/test_debugtools_registry.py` + `tools/gba-playtest/tests/c/*.c` | Host tests (see "Host tests" below) |
 
-This slice deliberately does **not** touch `src/bmdebug.c`, `src/uidebug.c`,
-or `src/menu_def.c` -- those dormant tools stay unreachable (see "Remaining
-#11 scope").
+This feature deliberately does **not** touch `src/bmdebug.c`, `src/uidebug.c`,
+or `src/menu_def.c` -- those dormant tools stay unreachable, and slice 2's
+Weather/Fog actions only ever reference their existing
+`DebugMenu_WeatherDraw/Idle`/`DebugMenu_FogDraw/Idle` functions **by
+pointer** from `src/debugtools_actions.c` (see "Remaining #11 scope").
 
 ## Config gate
 
@@ -198,6 +206,105 @@ asserts `hubOpenCount` stays exactly `1` after both; the host test calls
 `DebugTools_OpenHub()` three times in a row and asserts the first returns
 `DEBUGTOOLS_OK` (count becomes 1) while the second and third both return
 `DEBUGTOOLS_ERR_ALREADY_ACTIVE` (count stays 1).
+
+## Map/prep-screen hub entry points (slice 2)
+
+Slice 2 adds two more, equally narrow, entry paths -- one per phase --
+both routed through the same `DebugTools_OpenHub()` reentrancy guard
+documented above, so no new busy-check is needed at either call site:
+
+```c
+#ifndef FE8_EXPANSION_DEBUGTOOLS_MAP_HOTKEY_MASK
+#define FE8_EXPANSION_DEBUGTOOLS_MAP_HOTKEY_MASK (SELECT_BUTTON | L_BUTTON)
+#endif
+#ifndef FE8_EXPANSION_DEBUGTOOLS_PREP_HOTKEY_MASK
+#define FE8_EXPANSION_DEBUGTOOLS_PREP_HOTKEY_MASK (SELECT_BUTTON | B_BUTTON)
+#endif
+```
+
+- `PlayerPhase_MainIdle` (`src/playerphase.c`) calls
+  `DebugTools_MapHotkeyCheck()` as its **first** statement, then
+  `if (DebugTools_IsHubActive()) return;` immediately after -- before any of
+  its own cursor/menu handling runs -- so a triggering keypress can never
+  also be seen by the ordinary map controls on the same frame.
+- `PrepScreenProc_MapIdle` (`src/prep_sallycursor.c`) follows the identical
+  pattern with `DebugTools_PrepHotkeyCheck()`, ahead of
+  `HandlePlayerCursorMovement()`.
+- Each mask has its own full set of compile-time `#error` guards, checked
+  unconditionally (even in release builds): must not be `0`; must not equal
+  either existing soft-reset combo (`L+R+A+B` or `A+B+SELECT+START`); must
+  not equal bare `R_BUTTON` (map/prep stat screen), bare `L_BUTTON`
+  (view-unit swap), or bare `START_BUTTON` (minimap) at that phase; and must
+  not equal the title mask nor **each other** -- so no two of the three
+  hotkeys can ever be confused for one another by a single keypress.
+- Both defaults (`SELECT+L`, `SELECT+B`) are deliberately distinct from the
+  title mask (`SELECT+R`) and from each other, and from both existing
+  soft-reset combos.
+- Both compile to an empty, explicit disabled/release stub -- no key read,
+  no `DebugTools_OpenHub()` call -- when the subsystem is disabled, exactly
+  like `DebugTools_TitleHotkeyCheck()`.
+- Registration remains idempotent regardless of which phase opens the hub:
+  `DebugTools_OpenHub()` calls `DebugTools_RegisterBuiltinActions()` then
+  `DebugTools_RegisterWeatherFogActions()`, both of which return
+  `DEBUGTOOLS_ERR_DUPLICATE` (not a silent no-op, and never a second
+  registration) on every subsequent hub open. Total registered actions stay
+  well under the fixed capacity of 9 (Chapter 2 launcher + Weather + Fog +
+  Back = 4 hub menu items today).
+
+## Weather/Fog debug actions (slice 2)
+
+`src/debugtools_actions.c` is a new file that registers two built-in
+actions, id `2` ("Weather") and id `3` ("Fog"), through the same public
+`DebugTools_RegisterAction()` API any contributor action uses -- no direct
+edits to `gDebugToolsHubMenuDef`/`sHubMenuItemDefs`, `src/bmdebug.c`,
+`src/menu_def.c`, or `src/uidebug.c`.
+
+Because registry actions are `onSelected`-only (a single callback fired when
+the hub's own menu selects that row), and the dormant `DebugMenu_Weather*`/
+`DebugMenu_Fog*` functions in `src/bmdebug.c` are themselves full
+`MenuItemDef` callback sets (`onDraw`/`onIdle`), each action's
+`onSelected` handler (`DebugToolsActions_WeatherSelected`/
+`DebugToolsActions_FogSelected`) opens a **bounded, one-item submenu**
+(`StartOrphanMenu` over a single-entry `MenuDef`) whose one `MenuItemDef`
+reuses the existing dormant `DebugMenu_WeatherDraw`/`DebugMenu_WeatherIdle`
+(or `DebugMenu_FogDraw`/`DebugMenu_FogIdle`) function pointers directly --
+the dormant code itself is never edited, copied, or reimplemented. Each
+submenu adds its own `B`/Back handling (`onCancel`/the submenu's own "Back"
+row) that closes the submenu and reopens the hub via `DebugTools_OpenHub()`,
+matching every other hub submenu's `onEnd` convention.
+
+### Two proven, honest, pre-existing dormant-code/data limitations
+
+Both Weather and Fog are visibly **dormant** in practice -- toggling them
+produces no on-screen change on Chapter 2 -- for two different, fully
+root-caused, pre-existing reasons that this slice does not (and, per its
+WHERE constraints, cannot) fix:
+
+- **Weather**: `DebugMenu_WeatherIdle`/`DebugMenu_WeatherDraw`
+  (`src/bmdebug.c`) both dereference `Proc_Find(ProcScr_DebugMonitor)`, a
+  proc the same file's `DebugMenu_WeatherSelected` (or, here, this slice's
+  submenu open) starts via `Proc_Start(ProcScr_DebugMonitor, PROC_TREE_3)`.
+  `ProcScr_DebugMonitor`'s own script (`src/bmdebug.c`) is a single
+  `PROC_END` command; `Proc_Start()` runs the script synchronously before
+  returning, and `PROC_END`'s handler (`ProcCmd_DELETE`, `src/proc.c`) ends
+  the proc immediately -- so the proc is created *and* destroyed within the
+  same `Proc_Start()` call, before `Proc_Find()` can ever see it non-`NULL`.
+  This is a genuine, pre-existing defect in untouchable `bmdebug.c` (the
+  identical `ProcScr_DebugMonitor` pattern is also used, and has the same
+  effect, in `src/sio_menu.c` and `src/mapanim_debug.c`) -- not something
+  this slice introduces or can fix without editing `bmdebug.c`.
+- **Fog**: `DebugMenu_FogIdle` (`src/bmdebug.c`) recomputes vision range
+  from `GetROMChapterStruct(gPlaySt.chapterIndex)->initialFogLevel` on
+  non-skirmish maps. Chapter 2's `initialFogLevel` is `0` in
+  `src/data/chapter_settings.h` (a handful of other chapters use `3`) -- so
+  toggling fog on Chapter 2 legitimately settles back to its unchanged data
+  value. This is pre-existing chapter data, not a code defect.
+
+Both are documented here, proven via the playtest evidence below (probes
+stay at their pre-toggle value across a Weather/Fog cycle, exactly as this
+root-cause analysis predicts), and left exactly as-is -- fixing either is
+out of this slice's WHERE/HOW MUCH ("Weather/Fog... dormant, non-persistent"
+was itself given as the reason these two were chosen as safe to expose).
 
 ## Deterministic launcher: "Fast Boot: Chapter 2"
 
@@ -518,6 +625,57 @@ edit. `expansion-modern-debugtools-timer-check` is a documented no-op (a
 printed skip message, not a missing/skipped-silently check) for
 `MODERN_CONFIG=release`.
 
+### Map/prep hub playtest evidence (slice 2)
+
+`tools/gba-playtest/scenarios/debugtools-map-hub-modern-debug.json` (13
+checkpoints, debug-only, live) reuses the same intro/Chapter-2-launch prefix
+as the title hub scenario, then once Chapter 2's map is interactive: pulses
+the *map* hotkey mask twice (reentrancy-guard proof, same pattern as the
+title hub), selects the Weather action, cycles it through
+`DebugMenu_WeatherEffect`/`Idle`/`Draw` and asserts the underlying weather
+state actually changes, returns (`B`) to the action list, selects Fog,
+cycles it and asserts the vision/fog state changes, returns again, closes
+the hub, and finally proves the battle map is still fully interactive
+afterward (cursor move probes identical in shape to the title-hub scenario's
+`post-interactive-cursor-response`). This is the concrete evidence that
+Weather/Fog are reachable and functional through the registry-backed
+adapters in `src/debugtools_actions.c`, and that opening/closing the map hub
+never desyncs ordinary map-phase input handling.
+
+`debugtools-map-hub-modern-release.json` and
+`debugtools-prep-hub-modern-release.json` are release-mirror scenarios: each
+replays `debugtools-hub-modern-release.json`'s own exact input script
+verbatim, then appends a hotkey tail (map mask + `B`/direction taps, or prep
+mask + `B`/direction taps respectively) and asserts every probe stays
+`0x00000000` and the framebuffer hash is identical at every checkpoint --
+proving the map/prep hotkey masks are compiled out in a release build with
+zero observable effect, exactly like the title mask. By the frame these
+tails execute, the release build's own framebuffer is already fully static
+(confirmed identical, `fnv1a64-rgb24:d11078d0ec60076d`, across every
+checkpoint in both files, matching `debugtools-hub-modern-release.json`'s
+own last two checkpoints) -- so these scenarios demonstrate the tail input
+changes nothing further, consistent with that already-accepted release
+baseline.
+
+A live prep-screen scenario mirroring the map scenario's depth is currently
+out of scope. `hasPrepScreen` is `FALSE` for all 79 chapters in
+`src/data/chapter_settings.h` (a vestigial FE7-only field), but the `PREP`
+event-script command (`src/eventscr.c`'s `EventScr_CommonPrep`) is **not**
+dead code -- it is genuinely `CALL`ed from many linked, compiled-in chapter
+scripts (e.g. `ch4`/`ch5`/`ch6`/`ch7`/`tower`/`ruin`-eventscript.h and
+others), so a real prep screen is reachable through ordinary gameplay. The
+gap is deterministic *reach*, not existence: this slice's launcher and
+in-scope evidence are Chapter 2 only, and Chapter 2's own event script
+(`src/events/ch2-eventscript.h`) never calls `EventScr_CommonPrep`.
+Reaching one of the chapters that does call it deterministically, without
+playing through several preceding chapters, would require a chapter-data
+edit or a skirmish/chapter selector, both explicitly out of this slice's
+"HOW MUCH"/"DON'T" scope. `PrepScreenProc_MapIdle`'s hotkey entry point is
+still added and unit-tested (call-site ordering, mask collision checks,
+disabled/release stubs), and its release-mirror scenario proves the hotkey
+is inert on a release build -- only the live, in-ROM debug playtest proof
+against a real prep screen is deferred.
+
 ## Host tests
 
 `tools/gba-playtest/tests/test_debugtools_registry.py` (run via
@@ -648,6 +806,69 @@ re-implementing or pattern-matching their logic:
     `gProcScr_TitleScreen` -- so every real path that (re)shows the title
     screen is covered, not just one.
 
+### Slice 2 host tests: map/prep masks and Weather/Fog actions
+
+- **`DebugToolsMapPrepHotkeyCollisionHostTests`** mirrors
+  `DebugToolsHotkeyCollisionHostTests` for the new
+  `FE8_EXPANSION_DEBUGTOOLS_MAP_HOTKEY_MASK`/`_PREP_HOTKEY_MASK` guards:
+  proves the zero-mask and both soft-reset-combo `#error`s fire for each
+  mask, proves each mask's own bare `R`/`L`/`START` collision guard fires
+  (the map/prep phases' own vanilla controls), proves both masks reject a
+  collision against the title mask, proves the prep mask additionally
+  rejects a collision against the map mask, and proves a legitimate custom
+  override of either still compiles cleanly.
+- **`DebugToolsMapPrepOneEntryPathTests`** mirrors
+  `DebugToolsOneEntryPathTests` for the two new call sites: greps for
+  exactly one call site each of `DebugTools_MapHotkeyCheck()`
+  (`src/playerphase.c`) and `DebugTools_PrepHotkeyCheck()`
+  (`src/prep_sallycursor.c`), exactly one enabled + one disabled definition
+  of each in `src/debugtools_registry.c`, and -- the WHERE constraint's
+  "first statement, immediately returning while hub active" requirement --
+  parses `PlayerPhase_MainIdle`'s and `PrepScreenProc_MapIdle`'s function
+  bodies to confirm the hotkey check is textually the first statement and
+  `DebugTools_IsHubActive()` appears in the guard immediately after it.
+  Also re-asserts `bmdebug.c`/`uidebug.c`/`menu_def.c` stay untouched.
+- **`DebugToolsWeatherFogActionsHostTests`** compiles+links+executes the
+  real, unmodified `src/debugtools_actions.c` (enabled path) together with
+  the real `src/debugtools_registry.c` against
+  `tools/gba-playtest/tests/c/debugtools_actions_driver.c`, proving:
+  idempotent registration of both actions (ids 2/3, "Weather"/"Fog"), the
+  combined registry stays within the `DEBUGTOOLS_ACTION_MAX` (9) capacity
+  alongside a simulated Chapter-2-launcher-sized filler set, exact
+  `MenuDef`/`MenuItemDef` sentinel and `onDraw`/`onIdle`/`onSelected`
+  callback wiring for both one-item submenus (reusing the real dormant
+  `DebugMenu_Weather*`/`DebugMenu_Fog*` function pointers, never a
+  hand-rolled copy), `ProcScr_DebugMonitor` lifecycle ownership (Weather
+  starts it only if not already alive and ends it only if this module
+  started it; Fog never touches it at all), and Back/`B` returning to the
+  hub's action list. A second test compiles the disabled path and proves
+  every adapter internal (both static action/menu-item tables, both
+  `MenuDef`s, both `*Selected`/`BuildMenuItems`/`OnEnd` functions, the
+  monitor-ownership flag) is physically omitted -- the disabled object
+  defines exactly the one no-op `DebugTools_RegisterWeatherFogActions()`
+  entry point, and links clean with **no** menu/proc/hardware stub at all
+  (an undefined reference there would mean the disabled path grew a real
+  runtime dependency). A third, structural test greps the real source
+  (comments stripped) to confirm it never mentions
+  `SaveGame`/`Sram`/`WriteSaveBlock`/`Proc_Break`/`Proc_End`/`Proc_Delete`,
+  and that its only `Proc_EndEach` target is `ProcScr_DebugMonitor`. A
+  fourth confirms `src/debugtools_actions.o`/`src/debugtools_actions.c`
+  are wired into both `ldscript.txt` (legacy) and `modern.mk` (modern).
+- **`DebugToolsMapPrepScenarioSchemaTests`** mirrors
+  `DebugToolsScenarioSchemaTests` for the three new scenario files:
+  validates all three against `gba_playtest`'s schema parser; confirms
+  `debugtools-map-hub-modern-debug.json`'s two hotkey pulses reuse the
+  same reentrancy-guard shape as the title hub (`hubOpenCount` unchanged
+  across the repeated pulse) and that its final checkpoints prove the map
+  remains cursor-interactive after the hub closes; confirms both
+  `-modern-release.json` mirror scenarios reuse
+  `debugtools-hub-modern-release.json`'s own frame script verbatim as a
+  prefix (not a hand-authored approximation) and assert every probe and
+  the framebuffer hash stay identical/zero across the appended hotkey
+  tail; and confirms the map/prep masks used in the input scripts match
+  the header's actual configured default masks (so the scenario can never
+  silently drift from the real compiled-in hotkey).
+
 Test-only fixture sources under `tools/gba-playtest/tests/c/` (stub
 implementations of the handful of hardware/menu-engine symbols the
 registration logic references but a registration-focused host test never
@@ -706,10 +927,13 @@ for `MODERN_CONFIG=release`.
 
 This slice does **not** close issue #11. Deferred to later slices:
 
-- Map/prep-screen debug entry points (this slice's one entry path is
-  title-screen-only).
-- Migrating the existing dormant chapter/weather/fog/BGM tools out of
-  `bmdebug.c`/`uidebug.c`/`menu_def.c` into the new registration API.
+- Chapter/skirmish selector (needed to reach a live, deterministic prep
+  screen for playtest evidence -- see "Map/prep hub playtest evidence
+  (slice 2)" above; the prep-screen hotkey entry point itself is added and
+  unit-tested, only the live in-ROM proof is deferred).
+- Migrating the remaining dormant chapter-selector/BGM-commit tools out of
+  `bmdebug.c`/`uidebug.c`/`menu_def.c` into the new registration API
+  (Weather/Fog are migrated this slice; the rest are future slices).
 - Any validated editors/viewers (save/gold/unit/convoy/flag/event/RNG or
   otherwise).
 - Full logging/assert/crash/memory-inspection tooling.

@@ -270,6 +270,16 @@ bool CanShowUnitStatScreen(struct Unit * unit)
 //! FE8U = 0x0801C940
 void PlayerPhase_MainIdle(ProcPtr proc)
 {
+    /* Issue #11 slice 2: the single supported map-phase debug hub entry
+     * point (see include/expansion_debugtools.h). Checked before any of
+     * this function's own vanilla key handling, and this function
+     * returns immediately while the hub is active so a hotkey combo that
+     * completes this frame can never also be read by the L/R/A/START
+     * handling below on the same frame -- a no-op in a release build. */
+    DebugTools_MapHotkeyCheck();
+    if (DebugTools_IsHubActive())
+        return;
+
     HandlePlayerCursorMovement();
 
     if (gKeyStatusPtr->newKeys & L_BUTTON)

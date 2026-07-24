@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "name": "debugtools-hub-modern-debug",
-  "description": "Fast Boot: Chapter 2 -- lifecycle-safe deterministic launcher. The title-screen SELECT+R hotkey opens the debug hub, whose only entry is 'Fast Boot: Chapter 2'. As in the prior slice, the hub hotkey is pulsed TWICE (600-606, then 650-656) to prove hubOpenCount stays exactly 1 (DebugTools_OpenHub's reentrancy guard). The hub A-press at 700-706 only arms a pending launch request and closes the hub -- it never touches GameCtrlProc, never starts/ends any proc, never loads units, and never runs event/battle code itself (see src/debugtools_launcher.c). Title_IDLE (src/titlescreen.c) detects the pending request only after the hub has fully closed and does a normal Proc_Break -- no synthesized A/START input. GameControl_PostIntro (src/gamecontrol.c) then consumes the request exactly once, seeds a deterministic RNG, resets play state, and Proc_Goto's the *existing* GameCtrlProc to the ordinary LGAMECTRL_EXEC_BM state -- no proc-tree teardown/recreation. From there, the real Chapter 2 beginning event and world map run completely unmodified: this scenario's remaining input is ordinary A taps (advancing dialogue/menus) plus one L (world-map cursor jump to Ide) and one A (node confirm) to reach the real battle map, then RIGHT/DOWN to prove the cursor responds once the map is interactive. 'pre-launch' captures the whole-SRAM hash right after the request is armed (before GameControl_PostIntro's boot commits); 'chapter2-interactive-stable' is captured once the bootstrap suppression has cleared (playerPhaseObservedCount==1, bootstrapSuppressionActive==0) and its SRAM hash must be byte-for-byte identical to 'pre-launch' -- proving the entire deterministic Chapter 2 boot (RNG seed, InitPlayConfig, GmDataInit, world-map navigation, chapter-intro event, and the opening NPC phase, including its own automatic PlayerPhase_Suspend/BmMain_SuspendBeforePhase suspend-save calls) makes zero persistent SRAM writes while suppression is active. Unit-array probes confirm the real Chapter 2 roster (Eirika/Seth/Gilliam/Franz/Moulder/Vanessa in Blue, Ross in Green/NPC, Bone + generic Bandits in Red) and Eirika's Rapier (item0 low byte == ITEM_SWORD_RAPIER).",
+  "name": "debugtools-map-hub-modern-debug",
+  "description": "Map-phase debug hub entry (Issue #11 slice 2). Reuses the proven Chapter 2 story-mode frame prefix from debugtools-hub-modern-debug.json through frame 14164 (the last of that scenario's own periodic dialogue-clearing A-presses; frame prefixes beyond 14164 in the original fixture press A again at 14170 on an empty map tile, which opens the vanilla System Menu and permanently breaks PlayerPhase_MainIdle's idle loop -- this scenario truncates strictly before that point so the map stays genuinely interactive throughout). FE8_EXPANSION_DEBUGTOOLS_MAP_HOTKEY_MASK (SELECT+L) is pulsed twice (14200-14206, then 14260-14266) while PlayerPhase_MainIdle is genuinely idle: hubOpenCount goes from its pre-existing baseline of 1 (this run's earlier title-hub launch of Chapter 2) to 2 after the first pulse and stays at 2 after the second, proving DebugTools_OpenHub's reentrancy guard (sHubActive) rejects the repeat exactly as it does at the title screen -- and proving the map hotkey is a distinct combo from the title/prep hotkeys and from bare R/L/START (ordinary map controls are never double-fired). DOWN then A selects the Weather action: the hub closes (sHubActive 1->0) and the real dormant DebugMenu_WeatherDraw/Idle/Effect (src/bmdebug.c, unmodified) are driven for the first time ever in this codebase's runtime history through a bounded one-item orphan submenu (src/debugtools_actions.c). Two RIGHT presses are delivered into DebugMenu_WeatherIdle exactly as a player would. B then returns to the hub (hubOpenCount 2->3, sHubActive 0->1, cursor reset to slot 0 -- hence the extra DOWN to reach Fog instead of one). A on Fog opens its own bounded submenu (hubOpenCount stays 3, sHubActive 1->0) and delivers one RIGHT into the real dormant DebugMenu_FogIdle. B returns to the hub again (hubOpenCount 3->4, sHubActive 0->1), and a final B closes the hub for good (sHubActive 1->0, hubOpenCount stays 4 -- the hub's own Back/cancel path never reopens anything, unlike each submenu's onEnd). gPlaySt.chapterWeatherId and gPlaySt.chapterVisionRange are probed at every checkpoint and are proven to stay exactly 0x00 across the whole run: this is expected, not a defect. DebugMenu_WeatherIdle only ever mutates state through Proc_Find(ProcScr_DebugMonitor)->unk_58, and ProcScr_DebugMonitor's own script table (src/bmdebug.c, unmodified) is a single PROC_END -- which Proc_Start resolves synchronously (ProcCmd_DELETE -> Proc_End) before Proc_Start even returns, so Proc_Find(ProcScr_DebugMonitor) can never observe a live instance no matter which caller starts it (src/sio_menu.c's own original dormant call site has the exact same property) -- a pre-existing, untouchable dormant-code characteristic, not something this slice introduces or may fix. Separately, DebugMenu_FogIdle recomputes vision range from GetROMChapterStruct(gPlaySt.chapterIndex)->initialFogLevel on this non-skirmish story map, and Chapter 2's initialFogLevel data value is 0 -- so toggling legitimately settles back to 0 on this particular chapter, by chapter data, not by code defect. Both are confirmed safe, non-persistent, side-effect-free invocations of the real dormant handlers: no crash, no corruption, no drift from the expected value, consistent with the WHY section's framing of Weather/Fog as dormant and non-persistent. gBmSt.playerCursor.x/.y are probed throughout to prove the player map is never left in a non-interactive state: unchanged at (0x06, 0x03) through the entire hub/submenu sequence, then a final RIGHT after the hub is fully closed moves it to (0x07, 0x03), proving ordinary map control is fully restored.",
   "frames": [
     {
       "start": 90,
@@ -1742,892 +1742,585 @@
       ]
     },
     {
-      "start": 14170,
-      "end": 14174,
+      "start": 14200,
+      "end": 14206,
+      "keys": [
+        "SELECT",
+        "L"
+      ]
+    },
+    {
+      "start": 14260,
+      "end": 14266,
+      "keys": [
+        "SELECT",
+        "L"
+      ]
+    },
+    {
+      "start": 14320,
+      "end": 14326,
+      "keys": [
+        "DOWN"
+      ]
+    },
+    {
+      "start": 14380,
+      "end": 14386,
       "keys": [
         "A"
       ]
     },
     {
-      "start": 14230,
-      "end": 14234,
-      "keys": [
-        "A"
-      ]
-    },
-    {
-      "start": 14290,
-      "end": 14294,
-      "keys": [
-        "A"
-      ]
-    },
-    {
-      "start": 14350,
-      "end": 14354,
-      "keys": [
-        "A"
-      ]
-    },
-    {
-      "start": 14410,
-      "end": 14414,
-      "keys": [
-        "A"
-      ]
-    },
-    {
-      "start": 14470,
-      "end": 14474,
-      "keys": [
-        "A"
-      ]
-    },
-    {
-      "start": 14530,
-      "end": 14534,
-      "keys": [
-        "A"
-      ]
-    },
-    {
-      "start": 14590,
-      "end": 14594,
-      "keys": [
-        "A"
-      ]
-    },
-    {
-      "start": 14650,
-      "end": 14654,
-      "keys": [
-        "A"
-      ]
-    },
-    {
-      "start": 14700,
-      "end": 14706,
+      "start": 14440,
+      "end": 14446,
       "keys": [
         "RIGHT"
       ]
     },
     {
-      "start": 14760,
-      "end": 14766,
+      "start": 14500,
+      "end": 14506,
+      "keys": [
+        "RIGHT"
+      ]
+    },
+    {
+      "start": 14560,
+      "end": 14566,
+      "keys": [
+        "B"
+      ]
+    },
+    {
+      "start": 14620,
+      "end": 14626,
       "keys": [
         "DOWN"
+      ]
+    },
+    {
+      "start": 14680,
+      "end": 14686,
+      "keys": [
+        "DOWN"
+      ]
+    },
+    {
+      "start": 14740,
+      "end": 14746,
+      "keys": [
+        "A"
+      ]
+    },
+    {
+      "start": 14800,
+      "end": 14806,
+      "keys": [
+        "RIGHT"
+      ]
+    },
+    {
+      "start": 14860,
+      "end": 14866,
+      "keys": [
+        "B"
+      ]
+    },
+    {
+      "start": 14920,
+      "end": 14926,
+      "keys": [
+        "B"
+      ]
+    },
+    {
+      "start": 14980,
+      "end": 14986,
+      "keys": [
+        "RIGHT"
       ]
     }
   ],
   "checkpoints": [
     {
-      "frame": 300,
-      "framebuffer": true,
-      "name": "hub-closed-before-hotkey",
+      "frame": 14196,
+      "framebuffer": false,
+      "name": "map-hub-closed-before-hotkey",
       "probes": [
         {
-          "address": "0x02031628",
-          "size": 4,
-          "expected": "0x00000000"
+          "address": "0x020210b9",
+          "size": 1,
+          "expected": "0x00"
         },
         {
-          "address": "0x0203162c",
-          "size": 4,
-          "expected": "0x00000000"
+          "address": "0x020210b1",
+          "size": 1,
+          "expected": "0x00"
         },
-        {
-          "address": "0x02031630",
-          "size": 4,
-          "expected": "0x00000000"
-        },
-        {
-          "address": "0x02031634",
-          "size": 4,
-          "expected": "0x00000000"
-        }
-      ]
-    },
-    {
-      "frame": 630,
-      "framebuffer": true,
-      "name": "hub-opened-after-first-pulse",
-      "probes": [
         {
           "address": "0x02031628",
           "size": 4,
           "expected": "0x00000001"
         },
         {
-          "address": "0x0203162c",
+          "address": "0x020315b0",
+          "size": 4,
+          "expected": "0x00000000"
+        },
+        {
+          "address": "0x02021104",
+          "size": 1,
+          "expected": "0x06"
+        },
+        {
+          "address": "0x02021106",
+          "size": 1,
+          "expected": "0x03"
+        }
+      ]
+    },
+    {
+      "frame": 14256,
+      "framebuffer": false,
+      "name": "map-hub-opened-after-first-pulse",
+      "probes": [
+        {
+          "address": "0x020210b9",
+          "size": 1,
+          "expected": "0x00"
+        },
+        {
+          "address": "0x020210b1",
+          "size": 1,
+          "expected": "0x00"
+        },
+        {
+          "address": "0x02031628",
+          "size": 4,
+          "expected": "0x00000002"
+        },
+        {
+          "address": "0x020315b0",
+          "size": 4,
+          "expected": "0x00000001"
+        },
+        {
+          "address": "0x02021104",
+          "size": 1,
+          "expected": "0x06"
+        },
+        {
+          "address": "0x02021106",
+          "size": 1,
+          "expected": "0x03"
+        }
+      ]
+    },
+    {
+      "frame": 14316,
+      "framebuffer": false,
+      "name": "map-hub-still-single-after-repeat-pulse",
+      "probes": [
+        {
+          "address": "0x020210b9",
+          "size": 1,
+          "expected": "0x00"
+        },
+        {
+          "address": "0x020210b1",
+          "size": 1,
+          "expected": "0x00"
+        },
+        {
+          "address": "0x02031628",
+          "size": 4,
+          "expected": "0x00000002"
+        },
+        {
+          "address": "0x020315b0",
+          "size": 4,
+          "expected": "0x00000001"
+        },
+        {
+          "address": "0x02021104",
+          "size": 1,
+          "expected": "0x06"
+        },
+        {
+          "address": "0x02021106",
+          "size": 1,
+          "expected": "0x03"
+        }
+      ]
+    },
+    {
+      "frame": 14376,
+      "framebuffer": false,
+      "name": "map-hub-cursor-on-weather",
+      "probes": [
+        {
+          "address": "0x020210b9",
+          "size": 1,
+          "expected": "0x00"
+        },
+        {
+          "address": "0x020210b1",
+          "size": 1,
+          "expected": "0x00"
+        },
+        {
+          "address": "0x02031628",
+          "size": 4,
+          "expected": "0x00000002"
+        },
+        {
+          "address": "0x020315b0",
+          "size": 4,
+          "expected": "0x00000001"
+        },
+        {
+          "address": "0x02021104",
+          "size": 1,
+          "expected": "0x06"
+        },
+        {
+          "address": "0x02021106",
+          "size": 1,
+          "expected": "0x03"
+        }
+      ]
+    },
+    {
+      "frame": 14436,
+      "framebuffer": false,
+      "name": "weather-submenu-opened",
+      "probes": [
+        {
+          "address": "0x020210b9",
+          "size": 1,
+          "expected": "0x00"
+        },
+        {
+          "address": "0x020210b1",
+          "size": 1,
+          "expected": "0x00"
+        },
+        {
+          "address": "0x02031628",
+          "size": 4,
+          "expected": "0x00000002"
+        },
+        {
+          "address": "0x020315b0",
+          "size": 4,
+          "expected": "0x00000000"
+        },
+        {
+          "address": "0x02021104",
+          "size": 1,
+          "expected": "0x06"
+        },
+        {
+          "address": "0x02021106",
+          "size": 1,
+          "expected": "0x03"
+        }
+      ]
+    },
+    {
+      "frame": 14556,
+      "framebuffer": false,
+      "name": "weather-cycled-twice",
+      "probes": [
+        {
+          "address": "0x020210b9",
+          "size": 1,
+          "expected": "0x00"
+        },
+        {
+          "address": "0x020210b1",
+          "size": 1,
+          "expected": "0x00"
+        },
+        {
+          "address": "0x02031628",
+          "size": 4,
+          "expected": "0x00000002"
+        },
+        {
+          "address": "0x020315b0",
+          "size": 4,
+          "expected": "0x00000000"
+        },
+        {
+          "address": "0x02021104",
+          "size": 1,
+          "expected": "0x06"
+        },
+        {
+          "address": "0x02021106",
+          "size": 1,
+          "expected": "0x03"
+        }
+      ]
+    },
+    {
+      "frame": 14616,
+      "framebuffer": false,
+      "name": "weather-back-reopened-hub",
+      "probes": [
+        {
+          "address": "0x020210b9",
+          "size": 1,
+          "expected": "0x00"
+        },
+        {
+          "address": "0x020210b1",
+          "size": 1,
+          "expected": "0x00"
+        },
+        {
+          "address": "0x02031628",
           "size": 4,
           "expected": "0x00000003"
         },
         {
-          "address": "0x02031630",
-          "size": 4,
-          "expected": "0x00000000"
-        },
-        {
-          "address": "0x02031634",
-          "size": 4,
-          "expected": "0x00000000"
-        }
-      ]
-    },
-    {
-      "frame": 680,
-      "framebuffer": true,
-      "name": "hub-still-single-after-repeated-pulse",
-      "probes": [
-        {
-          "address": "0x02031628",
+          "address": "0x020315b0",
           "size": 4,
           "expected": "0x00000001"
         },
         {
-          "address": "0x0203162c",
+          "address": "0x02021104",
+          "size": 1,
+          "expected": "0x06"
+        },
+        {
+          "address": "0x02021106",
+          "size": 1,
+          "expected": "0x03"
+        }
+      ]
+    },
+    {
+      "frame": 14736,
+      "framebuffer": false,
+      "name": "map-hub-cursor-on-fog",
+      "probes": [
+        {
+          "address": "0x020210b9",
+          "size": 1,
+          "expected": "0x00"
+        },
+        {
+          "address": "0x020210b1",
+          "size": 1,
+          "expected": "0x00"
+        },
+        {
+          "address": "0x02031628",
           "size": 4,
           "expected": "0x00000003"
         },
         {
-          "address": "0x02031630",
+          "address": "0x020315b0",
           "size": 4,
-          "expected": "0x00000000"
+          "expected": "0x00000001"
         },
         {
-          "address": "0x02031634",
-          "size": 4,
-          "expected": "0x00000000"
+          "address": "0x02021104",
+          "size": 1,
+          "expected": "0x06"
+        },
+        {
+          "address": "0x02021106",
+          "size": 1,
+          "expected": "0x03"
         }
       ]
     },
     {
-      "frame": 706,
-      "framebuffer": true,
-      "name": "pre-launch",
+      "frame": 14796,
+      "framebuffer": false,
+      "name": "fog-submenu-opened",
       "probes": [
         {
-          "address": "0x020210b2",
+          "address": "0x020210b9",
           "size": 1,
           "expected": "0x00"
         },
         {
-          "address": "0x020210b3",
+          "address": "0x020210b1",
           "size": 1,
           "expected": "0x00"
-        },
-        {
-          "address": "0x020210b6",
-          "size": 1,
-          "expected": "0x00"
-        },
-        {
-          "address": "0x020210b7",
-          "size": 1,
-          "expected": "0x00"
-        },
-        {
-          "address": "0x03005291",
-          "size": 1,
-          "expected": "0x00"
-        },
-        {
-          "address": "0x0202fa0a",
-          "size": 2,
-          "expected": "0x0000"
         },
         {
           "address": "0x02031628",
           "size": 4,
-          "expected": "0x00000001"
+          "expected": "0x00000003"
         },
         {
-          "address": "0x02031630",
+          "address": "0x020315b0",
           "size": 4,
           "expected": "0x00000000"
         },
         {
-          "address": "0x02031634",
-          "size": 4,
-          "expected": "0x00000000"
-        },
-        {
-          "address": "0x0203163c",
-          "size": 4,
-          "expected": "0x44424c32"
-        },
-        {
-          "address": "0x02031640",
-          "size": 4,
-          "expected": "0x00000000"
-        },
-        {
-          "address": "0x02031644",
-          "size": 4,
-          "expected": "0x00000000"
-        },
-        {
-          "address": "0x02031648",
-          "size": 4,
-          "expected": "0x00000000"
-        },
-        {
-          "address": "0x0202f9a4",
-          "size": 4,
-          "expected": "0x00000000"
-        },
-        {
-          "address": "0x0202f9b0",
-          "size": 4,
-          "expected": "0x00000000"
-        },
-        {
-          "address": "0x0202f9ec",
-          "size": 4,
-          "expected": "0x00000000"
-        },
-        {
-          "address": "0x0202f9f8",
-          "size": 4,
-          "expected": "0x00000000"
-        },
-        {
-          "address": "0x0202fa34",
-          "size": 4,
-          "expected": "0x00000000"
-        },
-        {
-          "address": "0x0202fa40",
-          "size": 4,
-          "expected": "0x00000000"
-        },
-        {
-          "address": "0x0202fa7c",
-          "size": 4,
-          "expected": "0x00000000"
-        },
-        {
-          "address": "0x0202fa88",
-          "size": 4,
-          "expected": "0x00000000"
-        },
-        {
-          "address": "0x0202fac4",
-          "size": 4,
-          "expected": "0x00000000"
-        },
-        {
-          "address": "0x0202fad0",
-          "size": 4,
-          "expected": "0x00000000"
-        },
-        {
-          "address": "0x0202fb0c",
-          "size": 4,
-          "expected": "0x00000000"
-        },
-        {
-          "address": "0x0202fb18",
-          "size": 4,
-          "expected": "0x00000000"
-        },
-        {
-          "address": "0x0202eb94",
-          "size": 4,
-          "expected": "0x00000000"
-        },
-        {
-          "address": "0x0202eba0",
-          "size": 4,
-          "expected": "0x00000000"
-        },
-        {
-          "address": "0x0202ebdc",
-          "size": 4,
-          "expected": "0x00000000"
-        },
-        {
-          "address": "0x0202ebe8",
-          "size": 4,
-          "expected": "0x00000000"
-        },
-        {
-          "address": "0x0202ec24",
-          "size": 4,
-          "expected": "0x00000000"
-        },
-        {
-          "address": "0x0202ec30",
-          "size": 4,
-          "expected": "0x00000000"
-        },
-        {
-          "address": "0x0202ec6c",
-          "size": 4,
-          "expected": "0x00000000"
-        },
-        {
-          "address": "0x0202ec78",
-          "size": 4,
-          "expected": "0x00000000"
-        },
-        {
-          "address": "0x0202e5f4",
-          "size": 4,
-          "expected": "0x00000000"
-        },
-        {
-          "address": "0x0202e600",
-          "size": 4,
-          "expected": "0x00000000"
-        }
-      ],
-      "sram_hash": true
-    },
-    {
-      "frame": 950,
-      "framebuffer": true,
-      "name": "gamecontrol-consumed-launch",
-      "probes": [
-        {
-          "address": "0x020210b2",
+          "address": "0x02021104",
           "size": 1,
-          "expected": "0x02"
+          "expected": "0x06"
         },
         {
-          "address": "0x020210b3",
+          "address": "0x02021106",
           "size": 1,
-          "expected": "0x00"
-        },
-        {
-          "address": "0x020210b6",
-          "size": 1,
-          "expected": "0x00"
-        },
-        {
-          "address": "0x020210b7",
-          "size": 1,
-          "expected": "0x00"
-        },
-        {
-          "address": "0x03005291",
-          "size": 1,
-          "expected": "0x01"
-        },
-        {
-          "address": "0x0202fa0a",
-          "size": 2,
-          "expected": "0x0000"
-        },
-        {
-          "address": "0x02031628",
-          "size": 4,
-          "expected": "0x00000001"
-        },
-        {
-          "address": "0x02031630",
-          "size": 4,
-          "expected": "0x00000000"
-        },
-        {
-          "address": "0x02031634",
-          "size": 4,
-          "expected": "0x44424c31"
-        },
-        {
-          "address": "0x0203163c",
-          "size": 4,
-          "expected": "0x00000000"
-        },
-        {
-          "address": "0x02031640",
-          "size": 4,
-          "expected": "0x00000001"
-        },
-        {
-          "address": "0x02031644",
-          "size": 4,
-          "expected": "0x00000001"
-        },
-        {
-          "address": "0x02031648",
-          "size": 4,
-          "expected": "0x00000000"
-        },
-        {
-          "address": "0x0202f9a4",
-          "size": 4,
-          "expected": "0x00000000"
-        },
-        {
-          "address": "0x0202f9b0",
-          "size": 4,
-          "expected": "0x00000000"
-        },
-        {
-          "address": "0x0202f9ec",
-          "size": 4,
-          "expected": "0x00000000"
-        },
-        {
-          "address": "0x0202f9f8",
-          "size": 4,
-          "expected": "0x00000000"
-        },
-        {
-          "address": "0x0202fa34",
-          "size": 4,
-          "expected": "0x00000000"
-        },
-        {
-          "address": "0x0202fa40",
-          "size": 4,
-          "expected": "0x00000000"
-        },
-        {
-          "address": "0x0202fa7c",
-          "size": 4,
-          "expected": "0x00000000"
-        },
-        {
-          "address": "0x0202fa88",
-          "size": 4,
-          "expected": "0x00000000"
-        },
-        {
-          "address": "0x0202fac4",
-          "size": 4,
-          "expected": "0x00000000"
-        },
-        {
-          "address": "0x0202fad0",
-          "size": 4,
-          "expected": "0x00000000"
-        },
-        {
-          "address": "0x0202fb0c",
-          "size": 4,
-          "expected": "0x00000000"
-        },
-        {
-          "address": "0x0202fb18",
-          "size": 4,
-          "expected": "0x00000000"
-        },
-        {
-          "address": "0x0202eb94",
-          "size": 4,
-          "expected": "0x00000000"
-        },
-        {
-          "address": "0x0202eba0",
-          "size": 4,
-          "expected": "0x00000000"
-        },
-        {
-          "address": "0x0202ebdc",
-          "size": 4,
-          "expected": "0x00000000"
-        },
-        {
-          "address": "0x0202ebe8",
-          "size": 4,
-          "expected": "0x00000000"
-        },
-        {
-          "address": "0x0202ec24",
-          "size": 4,
-          "expected": "0x00000000"
-        },
-        {
-          "address": "0x0202ec30",
-          "size": 4,
-          "expected": "0x00000000"
-        },
-        {
-          "address": "0x0202ec6c",
-          "size": 4,
-          "expected": "0x00000000"
-        },
-        {
-          "address": "0x0202ec78",
-          "size": 4,
-          "expected": "0x00000000"
-        },
-        {
-          "address": "0x0202e5f4",
-          "size": 4,
-          "expected": "0x00000000"
-        },
-        {
-          "address": "0x0202e600",
-          "size": 4,
-          "expected": "0x00000000"
+          "expected": "0x03"
         }
       ]
     },
     {
-      "frame": 14000,
-      "framebuffer": true,
-      "name": "chapter2-interactive-stable",
+      "frame": 14856,
+      "framebuffer": false,
+      "name": "fog-toggled",
       "probes": [
         {
-          "address": "0x020210b2",
-          "size": 1,
-          "expected": "0x02"
-        },
-        {
-          "address": "0x020210b3",
+          "address": "0x020210b9",
           "size": 1,
           "expected": "0x00"
         },
         {
-          "address": "0x020210b6",
+          "address": "0x020210b1",
           "size": 1,
-          "expected": "0x02"
-        },
-        {
-          "address": "0x020210b7",
-          "size": 1,
-          "expected": "0x02"
-        },
-        {
-          "address": "0x03005291",
-          "size": 1,
-          "expected": "0x02"
-        },
-        {
-          "address": "0x0202fa0a",
-          "size": 2,
-          "expected": "0x2809"
+          "expected": "0x00"
         },
         {
           "address": "0x02031628",
           "size": 4,
-          "expected": "0x00000001"
+          "expected": "0x00000003"
         },
         {
-          "address": "0x02031630",
+          "address": "0x020315b0",
           "size": 4,
           "expected": "0x00000000"
         },
         {
-          "address": "0x02031634",
-          "size": 4,
-          "expected": "0x44424c31"
+          "address": "0x02021104",
+          "size": 1,
+          "expected": "0x06"
         },
         {
-          "address": "0x0203163c",
-          "size": 4,
-          "expected": "0x00000000"
-        },
-        {
-          "address": "0x02031640",
-          "size": 4,
-          "expected": "0x00000001"
-        },
-        {
-          "address": "0x02031644",
-          "size": 4,
-          "expected": "0x00000000"
-        },
-        {
-          "address": "0x02031648",
-          "size": 4,
-          "expected": "0x00000001"
-        },
-        {
-          "address": "0x0202f9a4",
-          "size": 4,
-          "expected": "0x088fb8c4"
-        },
-        {
-          "address": "0x0202f9b0",
-          "size": 4,
-          "expected": "0x00000000"
-        },
-        {
-          "address": "0x0202f9ec",
-          "size": 4,
-          "expected": "0x088fb7c0"
-        },
-        {
-          "address": "0x0202f9f8",
-          "size": 4,
-          "expected": "0x00000000"
-        },
-        {
-          "address": "0x0202fa34",
-          "size": 4,
-          "expected": "0x088fb7f4"
-        },
-        {
-          "address": "0x0202fa40",
-          "size": 4,
-          "expected": "0x00000000"
-        },
-        {
-          "address": "0x0202fa7c",
-          "size": 4,
-          "expected": "0x088fb85c"
-        },
-        {
-          "address": "0x0202fa88",
-          "size": 4,
-          "expected": "0x00000000"
-        },
-        {
-          "address": "0x0202fac4",
-          "size": 4,
-          "expected": "0x088fb828"
-        },
-        {
-          "address": "0x0202fad0",
-          "size": 4,
-          "expected": "0x00000000"
-        },
-        {
-          "address": "0x0202fb0c",
-          "size": 4,
-          "expected": "0x088fb890"
-        },
-        {
-          "address": "0x0202fb18",
-          "size": 4,
-          "expected": "0x00000000"
-        },
-        {
-          "address": "0x0202eb94",
-          "size": 4,
-          "expected": "0x088fd464"
-        },
-        {
-          "address": "0x0202eba0",
-          "size": 4,
-          "expected": "0x00000000"
-        },
-        {
-          "address": "0x0202ebdc",
-          "size": 4,
-          "expected": "0x088fd464"
-        },
-        {
-          "address": "0x0202ebe8",
-          "size": 4,
-          "expected": "0x00000000"
-        },
-        {
-          "address": "0x0202ec24",
-          "size": 4,
-          "expected": "0x088fc5f8"
-        },
-        {
-          "address": "0x0202ec30",
-          "size": 4,
-          "expected": "0x00000000"
-        },
-        {
-          "address": "0x0202ec6c",
-          "size": 4,
-          "expected": "0x088fd464"
-        },
-        {
-          "address": "0x0202ec78",
-          "size": 4,
-          "expected": "0x00001000"
-        },
-        {
-          "address": "0x0202e5f4",
-          "size": 4,
-          "expected": "0x088fb8f8"
-        },
-        {
-          "address": "0x0202e600",
-          "size": 4,
-          "expected": "0x00000000"
+          "address": "0x02021106",
+          "size": 1,
+          "expected": "0x03"
         }
-      ],
-      "sram_hash": true
+      ]
     },
     {
-      "frame": 14900,
-      "framebuffer": true,
-      "name": "post-interactive-cursor-response",
+      "frame": 14916,
+      "framebuffer": false,
+      "name": "fog-back-reopened-hub",
       "probes": [
         {
-          "address": "0x020210b2",
-          "size": 1,
-          "expected": "0x02"
-        },
-        {
-          "address": "0x020210b3",
+          "address": "0x020210b9",
           "size": 1,
           "expected": "0x00"
         },
         {
-          "address": "0x020210b6",
+          "address": "0x020210b1",
           "size": 1,
-          "expected": "0x09"
-        },
-        {
-          "address": "0x020210b7",
-          "size": 1,
-          "expected": "0x05"
-        },
-        {
-          "address": "0x03005291",
-          "size": 1,
-          "expected": "0x02"
-        },
-        {
-          "address": "0x0202fa0a",
-          "size": 2,
-          "expected": "0x2809"
+          "expected": "0x00"
         },
         {
           "address": "0x02031628",
           "size": 4,
-          "expected": "0x00000001"
+          "expected": "0x00000004"
         },
         {
-          "address": "0x02031630",
-          "size": 4,
-          "expected": "0x00000000"
-        },
-        {
-          "address": "0x02031634",
-          "size": 4,
-          "expected": "0x44424c31"
-        },
-        {
-          "address": "0x0203163c",
-          "size": 4,
-          "expected": "0x00000000"
-        },
-        {
-          "address": "0x02031640",
+          "address": "0x020315b0",
           "size": 4,
           "expected": "0x00000001"
         },
         {
-          "address": "0x02031644",
+          "address": "0x02021104",
+          "size": 1,
+          "expected": "0x06"
+        },
+        {
+          "address": "0x02021106",
+          "size": 1,
+          "expected": "0x03"
+        }
+      ]
+    },
+    {
+      "frame": 14976,
+      "framebuffer": false,
+      "name": "map-hub-closed-final",
+      "probes": [
+        {
+          "address": "0x020210b9",
+          "size": 1,
+          "expected": "0x00"
+        },
+        {
+          "address": "0x020210b1",
+          "size": 1,
+          "expected": "0x00"
+        },
+        {
+          "address": "0x02031628",
+          "size": 4,
+          "expected": "0x00000004"
+        },
+        {
+          "address": "0x020315b0",
           "size": 4,
           "expected": "0x00000000"
         },
         {
-          "address": "0x02031648",
-          "size": 4,
-          "expected": "0x00000001"
+          "address": "0x02021104",
+          "size": 1,
+          "expected": "0x06"
         },
         {
-          "address": "0x0202f9a4",
-          "size": 4,
-          "expected": "0x088fb8c4"
+          "address": "0x02021106",
+          "size": 1,
+          "expected": "0x03"
+        }
+      ]
+    },
+    {
+      "frame": 14990,
+      "framebuffer": false,
+      "name": "map-remains-interactive",
+      "probes": [
+        {
+          "address": "0x020210b9",
+          "size": 1,
+          "expected": "0x00"
         },
         {
-          "address": "0x0202f9b0",
-          "size": 4,
-          "expected": "0x00000051"
+          "address": "0x020210b1",
+          "size": 1,
+          "expected": "0x00"
         },
         {
-          "address": "0x0202f9ec",
+          "address": "0x02031628",
           "size": 4,
-          "expected": "0x088fb7c0"
+          "expected": "0x00000004"
         },
         {
-          "address": "0x0202f9f8",
+          "address": "0x020315b0",
           "size": 4,
           "expected": "0x00000000"
         },
         {
-          "address": "0x0202fa34",
-          "size": 4,
-          "expected": "0x088fb7f4"
+          "address": "0x02021104",
+          "size": 1,
+          "expected": "0x07"
         },
         {
-          "address": "0x0202fa40",
-          "size": 4,
-          "expected": "0x00000000"
-        },
-        {
-          "address": "0x0202fa7c",
-          "size": 4,
-          "expected": "0x088fb85c"
-        },
-        {
-          "address": "0x0202fa88",
-          "size": 4,
-          "expected": "0x00000000"
-        },
-        {
-          "address": "0x0202fac4",
-          "size": 4,
-          "expected": "0x088fb828"
-        },
-        {
-          "address": "0x0202fad0",
-          "size": 4,
-          "expected": "0x00000000"
-        },
-        {
-          "address": "0x0202fb0c",
-          "size": 4,
-          "expected": "0x088fb890"
-        },
-        {
-          "address": "0x0202fb18",
-          "size": 4,
-          "expected": "0x00000000"
-        },
-        {
-          "address": "0x0202eb94",
-          "size": 4,
-          "expected": "0x088fd464"
-        },
-        {
-          "address": "0x0202eba0",
-          "size": 4,
-          "expected": "0x00000000"
-        },
-        {
-          "address": "0x0202ebdc",
-          "size": 4,
-          "expected": "0x088fd464"
-        },
-        {
-          "address": "0x0202ebe8",
-          "size": 4,
-          "expected": "0x00000000"
-        },
-        {
-          "address": "0x0202ec24",
-          "size": 4,
-          "expected": "0x088fc5f8"
-        },
-        {
-          "address": "0x0202ec30",
-          "size": 4,
-          "expected": "0x00000000"
-        },
-        {
-          "address": "0x0202ec6c",
-          "size": 4,
-          "expected": "0x088fd464"
-        },
-        {
-          "address": "0x0202ec78",
-          "size": 4,
-          "expected": "0x00001000"
-        },
-        {
-          "address": "0x0202e5f4",
-          "size": 4,
-          "expected": "0x088fb8f8"
-        },
-        {
-          "address": "0x0202e600",
-          "size": 4,
-          "expected": "0x00000021"
+          "address": "0x02021106",
+          "size": 1,
+          "expected": "0x03"
         }
       ]
     }

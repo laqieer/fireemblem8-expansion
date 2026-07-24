@@ -73,3 +73,11 @@ void DebugTools_RegisterBuiltinActions(void)
      * directly instead of going through DebugTools_OpenHub's lazy
      * registration path. */
 }
+
+void DebugTools_RegisterWeatherFogActions(void)
+{
+    /* The real implementation (src/debugtools_actions.c, slice 2) has its
+     * own dedicated host tests (debugtools_actions_driver.c); this
+     * registration-focused driver only needs DebugTools_OpenHub() to
+     * remain linkable, not to actually register Weather/Fog. */
+}
