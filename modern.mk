@@ -380,6 +380,25 @@ endif
 ifneq ($(strip $(GENERATED_DATA_MOVECOST_OBJECT)),)
 MODERN_ALL_C_OBJECTS += $(MODERN_OUTPUT_DIR)/src/data_t-movecost.o
 endif
+
+# Issue #5 Batch 3 (mechanics): $(GENERATED_DATA_WEAPONTRIANGLE_OBJECT)
+# (generated_data.mk) is the same kind of additive object as
+# terrainstats/movecost above -- src/bmbattle.c has no "original hand
+# path" to reuse (it stays fully linked, only its single
+# sWeaponTriangleRules[] table is guarded out). Unlike terrainstats/
+# movecost, this generated object defines just one symbol in a single
+# section, so one synthetic sort slot suffices, chosen as
+# "src/bmb-weapontriangle.o" so it sorts immediately before
+# src/bmbattle.o (the only other src/bmb*.o object; "-" < any alnum, so
+# "bmb-" sorts ahead of "bmbattle") and therefore doesn't shift any
+# other object's relative order. A safe no-op when
+# GENERATED_DATA_WEAPONTRIANGLE_OBJECT is undefined (modern.mk included
+# standalone). An explicit (non-pattern) rule for this literal target
+# path is defined further below, alongside
+# GENERATED_DATA_MODERN_OVERRIDE_RULES.
+ifneq ($(strip $(GENERATED_DATA_WEAPONTRIANGLE_OBJECT)),)
+MODERN_ALL_C_OBJECTS += $(MODERN_OUTPUT_DIR)/src/bmb-weapontriangle.o
+endif
 MODERN_ALL_DATA_PRE := $(addprefix $(MODERN_OUTPUT_DIR)/,$(MODERN_ALL_DATA_C_SOURCES:.c=.pre.c))
 MODERN_ALL_DATA_OBJECTS := $(addprefix $(MODERN_OUTPUT_DIR)/,$(MODERN_ALL_DATA_C_SOURCES:.c=.o))
 MODERN_ALL_ASM_OBJECTS := $(addprefix $(MODERN_OUTPUT_DIR)/,$(MODERN_ALL_ASM_SOURCES:.s=.o))
@@ -587,6 +606,16 @@ $(MODERN_OUTPUT_DIR)/src/data_t-terrainstats.o: $(GENERATED_DATA_TERRAINSTATS_C)
 # reachable, since nothing adds this path to MODERN_ALL_C_OBJECTS in
 # that case.
 $(MODERN_OUTPUT_DIR)/src/data_t-movecost.o: $(GENERATED_DATA_MOVECOST_C)
+	@mkdir -p $(@D)
+	"$(MODERN_CC)" $(MODERN_CFLAGS) -MMD -MP -MF "$(@:.o=.d)" -MQ "$@" -c "$<" -o "$@"
+
+# Issue #5 Batch 3 (mechanics): same reasoning as the terrainstats/
+# movecost synthetic-slot rules above, for the weapontriangle table's
+# synthetic slot object. A safe no-op target when
+# GENERATED_DATA_WEAPONTRIANGLE_C is undefined (modern.mk included
+# standalone): the rule is simply never reachable, since nothing adds
+# this path to MODERN_ALL_C_OBJECTS in that case.
+$(MODERN_OUTPUT_DIR)/src/bmb-weapontriangle.o: $(GENERATED_DATA_WEAPONTRIANGLE_C)
 	@mkdir -p $(@D)
 	"$(MODERN_CC)" $(MODERN_CFLAGS) -MMD -MP -MF "$(@:.o=.d)" -MQ "$@" -c "$<" -o "$@"
 

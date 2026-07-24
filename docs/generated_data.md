@@ -1,4 +1,4 @@
-# Generated-data platform (Issue #5 Chapter 2 slice -- Batch A + B + C; global `items`/`classes` Batch 1; `characters` Batch 2a + 2b; `classes` linked Batch 2c-1; `items` linked Batch 2c-2; `supports` linked Batch 2c-3; `characters` linked Batch 2c-4; `units`/Chapter 2 `UnitDefinition`/`REDA` linked Batch 3a; `traps`/Chapter 2 trap arrays linked Batch 3b; `shops`/Chapter 2 armory linked Batch 3c; `eventlists`/Chapter 2 event-list composition linked Batch 3d; `terrainstats`/global terrain combat+heal stat arrays linked, Issue #5 mechanics Batch 1; `movecost`/global weather-triplet movement-cost + DemonKing/Ballista tables linked, Issue #5 mechanics Batch 2)
+# Generated-data platform (Issue #5 Chapter 2 slice -- Batch A + B + C; global `items`/`classes` Batch 1; `characters` Batch 2a + 2b; `classes` linked Batch 2c-1; `items` linked Batch 2c-2; `supports` linked Batch 2c-3; `characters` linked Batch 2c-4; `units`/Chapter 2 `UnitDefinition`/`REDA` linked Batch 3a; `traps`/Chapter 2 trap arrays linked Batch 3b; `shops`/Chapter 2 armory linked Batch 3c; `eventlists`/Chapter 2 event-list composition linked Batch 3d; `terrainstats`/global terrain combat+heal stat arrays linked, Issue #5 mechanics Batch 1; `movecost`/global weather-triplet movement-cost + DemonKing/Ballista tables linked, Issue #5 mechanics Batch 2; `weapontriangle`/global `sWeaponTriangleRules[]` linked, Issue #5 mechanics Batch 3)
 
 ## Status
 
@@ -237,6 +237,40 @@ a weather-triplet movement-cost table split around one non-adjacent
 escape hatch (Issue #5 mechanics Batch 2: `movecost`)" below for the
 full write-up, and "Remaining Issue #5 scope" at the end of this
 document for the explicit list of what remains open.
+
+As of Issue #5 **mechanics Batch 3**, `weapontriangle` closes out the
+last clean vanilla mechanics *table*: the 12 directed weapon-triangle
+advantage/disadvantage rules (`sWeaponTriangleRules[]` in
+`src/bmbattle.c`) consumed by `BattleApplyWeaponTriangleEffect` -- the
+Sword/Axe/Lance physical triangle and Anima/Light/Dark magic triangle,
+2 closed 3-type groups x 3 members x 2 directions -- are authored and
+canonically linked, in place of a single guarded block at the literal
+start of `src/bmbattle.c`'s `.data` section, also with zero ROM/ELF
+address shift. Unlike `terrainstats`/`movecost` (partial-file splices
+around non-adjacent hand-owned escape hatches inside a shared data
+file), `weapontriangle` is a **single, self-contained guarded block**
+in a file that is otherwise entirely procedural code (`src/bmbattle.c`
+has no other authored data table and no escape hatches to preserve
+around it), so its `ldscript.txt` splice is the simplest two-piece
+shape yet: the generated object, then the untouched remainder of
+`src/bmbattle.o`'s `.data` (redirected to its own
+`.data.bmbattletail` section, currently just
+`sProcScr_BattleAnimSimpleLock`). The `struct WeaponTriangleRule` type
+itself moved from a private definition inside `src/bmbattle.c` to
+`include/bmbattle.h`, so both the guarded hand block and the generated
+object can share the exact same layout without redefinition -- see "##
+Linking a single-block global weapon-triangle rule table (Issue #5
+mechanics Batch 3: `weapontriangle`)" below for the full write-up.
+`BattleApplyWeaponTriangleEffect` and `BattleApplyReaverEffect`
+themselves (the procedural hit/damage-bonus application and the
+reaver-weapon inversion formula that consumes this table's *output*)
+remain untouched, hand-written code -- only the table is modeled here.
+This closes Issue #5's remaining clean-table mechanics scope; every
+other combat/growth/AI formula and its bespoke data representation
+remains explicitly out of scope -- see "## `weapontriangle` schema
+(Issue #5 mechanics Batch 3: `sWeaponTriangleRules[]`)" and "Remaining
+Issue #5 scope" at the end of this document for the explicit list of
+what remains open.
 
 ## Source vs. generated vs. committed-public artifacts
 
@@ -1451,6 +1485,117 @@ in `test_classes_schema.py` for the full set of covered cases (valid
 triplet resolution, null-triplet validity, single-variant
 weather-invariant resolution, unresolvable-symbol detection,
 mixed-profile-triplet detection, no-movecost-dependency fallback).
+
+## `weapontriangle` schema (Issue #5 mechanics Batch 3: `sWeaponTriangleRules[]`)
+
+Source: `src/data/weapontriangle.json` (schema `fe8.weapontriangle.v1`),
+one object per **directed** weapon-triangle rule under `"rules"`:
+`attacker`/`defender` (`ITYPE_*` weapon-type designators from
+`include/bmitem.h`), and `hitBonus`/`atkBonus` (the `s8` hit-rate/
+attack-power modifiers `BattleApplyWeaponTriangleEffect` applies to the
+attacker; the defender receives the exact negation of both, computed by
+that same function -- not separately authored here):
+
+```json
+{
+    "$schema": "fe8.weapontriangle.v1",
+    "rules": [
+        { "attacker": "ITYPE_SWORD", "defender": "ITYPE_LANCE", "hitBonus": -15, "atkBonus": -1 },
+        { "attacker": "ITYPE_SWORD", "defender": "ITYPE_AXE",   "hitBonus": 15,  "atkBonus": 1 },
+
+        { "attacker": "ITYPE_LANCE", "defender": "ITYPE_AXE",   "hitBonus": -15, "atkBonus": -1 },
+        { "attacker": "ITYPE_LANCE", "defender": "ITYPE_SWORD", "hitBonus": 15,  "atkBonus": 1 },
+
+        { "attacker": "ITYPE_AXE",   "defender": "ITYPE_SWORD", "hitBonus": -15, "atkBonus": -1 },
+        { "attacker": "ITYPE_AXE",   "defender": "ITYPE_LANCE", "hitBonus": 15,  "atkBonus": 1 },
+
+        { "attacker": "ITYPE_ANIMA", "defender": "ITYPE_DARK",  "hitBonus": -15, "atkBonus": -1 },
+        { "attacker": "ITYPE_ANIMA", "defender": "ITYPE_LIGHT", "hitBonus": 15,  "atkBonus": 1 },
+
+        { "attacker": "ITYPE_LIGHT", "defender": "ITYPE_ANIMA", "hitBonus": -15, "atkBonus": -1 },
+        { "attacker": "ITYPE_LIGHT", "defender": "ITYPE_DARK",  "hitBonus": 15,  "atkBonus": 1 },
+
+        { "attacker": "ITYPE_DARK",  "defender": "ITYPE_LIGHT", "hitBonus": -15, "atkBonus": -1 },
+        { "attacker": "ITYPE_DARK",  "defender": "ITYPE_ANIMA", "hitBonus": 15,  "atkBonus": 1 }
+    ]
+}
+```
+
+The generated `sWeaponTriangleRules[]` C array appends one final,
+implicit `{ -1 }` terminator record after the 12 authored rules --
+never present in the JSON itself (`BattleApplyWeaponTriangleEffect`
+scans the array until it finds `attackerWeaponType < 0`).
+
+`attacker`/`defender` are restricted to exactly the 6 weapon types that
+actually participate in a weapon triangle -- the 3 physical types
+(`ITYPE_SWORD`/`ITYPE_LANCE`/`ITYPE_AXE`) and the 3 magic types
+(`ITYPE_ANIMA`/`ITYPE_LIGHT`/`ITYPE_DARK`) -- not every `ITYPE_*`
+constant in `include/bmitem.h` (`ITYPE_BOW`/`ITYPE_STAFF`/`ITYPE_BLLST`/
+etc. never participate in a weapon triangle and are rejected, even
+though they are otherwise valid weapon-type constants). This is a
+closed list (like `movecost`'s `EXPECTED_PROFILES`), not a wildcard/
+prefix scan of the header: only these 6 names are in scope, and each
+forms one of exactly 2 closed, non-overlapping 3-type groups (the
+"physical" triangle and the "magic" triangle) -- every rule's
+`attacker`/`defender` pair must belong to the *same* group (cross-group
+pairs, e.g. `ITYPE_SWORD` vs. `ITYPE_ANIMA`, are rejected), and every
+ordered non-self pair *within* a group must be authored exactly once: 2
+groups x 3 members x 2 directions (each member beats one groupmate and
+loses to the other) = exactly **12 rules**, matching
+`sWeaponTriangleRules`' 12 real records.
+
+Validations enforced (`weapontriangle/schema.py: validate()`): unique
+directed `(attacker, defender)` pairs; every `attacker`/`defender`
+resolves to a real `ITYPE_*` constant (rejecting unknown names) *and* is
+restricted to the 6 in-scope weapon types (rejecting valid-but-out-of-
+scope ones like `ITYPE_BOW`); no self-pairs (`attacker == defender`);
+every pair belongs to the same closed 3-type group (rejecting
+cross-group pairs); the exact `s8` range (`[-128, 127]`) for both
+`hitBonus`/`atkBonus`; exactly `EXPECTED_RULE_COUNT` (12) records; and
+**full reciprocal closure** -- every `(A, B)` rule must have a matching
+`(B, A)` rule with both bonuses exactly negated (mirroring
+`BattleApplyWeaponTriangleEffect`'s own `-hitBonus`/`-atkBonus`
+computation for the defender), checked independently rather than
+derived at generation time, since the vanilla table itself authors both
+directions explicitly.
+
+The generator (`weapontriangle/generate.py`) emits
+`sWeaponTriangleRules[]` as a flat C89 array of `struct
+WeaponTriangleRule` positional initializers (`{ attacker, defender,
+hitBonus, atkBonus }`), in the JSON's own `rules` order (which matches
+the hand table's declaration order: Sword/Lance/Axe physical group
+first, then Anima/Light/Dark magic group), followed by the implicit
+`{ -1 }` terminator. `struct WeaponTriangleRule` itself lives in
+`include/bmbattle.h` (not privately in `src/bmbattle.c`), so the
+generated object and the guarded hand block in `src/bmbattle.c` can
+both reference the exact same layout without redefinition -- see "##
+Linking a single-block global weapon-triangle rule table (Issue #5
+mechanics Batch 3: `weapontriangle`)" below.
+
+### Round-trip checker (`weapontriangle/parser.py`)
+
+A regex-based parser scoped precisely to the single guarded
+`sWeaponTriangleRules[]` block in `src/bmbattle.c` -- it never matches
+`BattleApplyWeaponTriangleEffect`, `BattleApplyReaverEffect`, or any
+other procedural function in the same file, confirmed by a dedicated
+non-confusion test. Each hand entry resolves to a
+`(attacker, defender, hit_bonus, atk_bonus)` tuple; the final `{ -1 }`
+entry is recognized as the terminator (required to be the array's last
+entry) rather than compared as a data record. `python3 -m unittest
+scripts.generated_data.tests.test_weapontriangle_roundtrip` proves all
+**12/12** rules match the real `src/bmbattle.c` table exactly, with the
+terminator shape validated separately (missing terminator, wrong
+shape, extra/duplicate terminator, and data-after-terminator are all
+rejected -- see the parser's dedicated malformed-hand-file test
+fixtures).
+
+### Committed inventory (`weapontriangle/inventory.py`)
+
+`reports/generated_data_weapontriangle_inventory.md` is the committed,
+CI-checked report: total rule count, a per-group breakdown (physical/
+magic), and the table's own dependency-graph digest (`bmitem.ITYPE`;
+this table has no table dependencies of its own and no table currently
+depends on it).
 
 ## `characters` schema (Issue #5 Batch 2a + 2b: full global character table)
 
@@ -3310,6 +3455,155 @@ a pair.
   and pass `expansion-modern-boot-check`; `expansion-modern-linker-check`
   passes.
 
+## Linking a single-block global weapon-triangle rule table (Issue #5 mechanics Batch 3: `weapontriangle`)
+
+`weapontriangle` is the third global mechanics table linked via the
+guarded-block pattern (after `terrainstats`/`movecost`), but the
+simplest structurally: unlike those two (partial-file splices around
+non-adjacent hand-owned escape hatches shared with graphics/other
+mechanics data), `sWeaponTriangleRules[]` is the **literal first
+content** of `src/bmbattle.c`'s `.data` section, in a file that is
+otherwise entirely procedural battle-logic code with no other
+authored data table and no escape hatches to preserve around it.
+
+**Shared struct declaration, not a private type.** `struct
+WeaponTriangleRule` previously lived as a private type inside
+`src/bmbattle.c`. It now lives in `include/bmbattle.h` instead, so both
+the guarded hand block (still in `src/bmbattle.c`, preserved verbatim
+for the round-trip parser) and the canonically-generated
+`build/generated/data/data_weapontriangle.c` object can reference the
+exact same layout without redefining it:
+
+```c
+/* include/bmbattle.h */
+struct WeaponTriangleRule {
+    s8 attackerWeaponType;
+    s8 defenderWeaponType;
+    s8 hitBonus;
+    s8 atkBonus;
+};
+```
+
+This is the minimal shared-declaration placement the task calls for:
+the type moves to the header (already included by both consumers),
+nothing is redeclared inside the guard, and no other struct/function in
+`bmbattle.h` is touched.
+
+**Single guard, single splice -- the simplest shape yet.** `src/bmbattle.c`
+wraps the hand-written array in one `#if !GUARD` / `#else` / `#endif`
+block; the `#else` arm supplies a bare `extern` declaration so
+`BattleApplyWeaponTriangleEffect` (which follows, unguarded, later in
+the same file) keeps compiling and referencing the same symbol/type
+whether the guard is on or off:
+
+```c
+#define GENERATED_DATA_WEAPONTRIANGLE_LINKED 1
+
+#if !GENERATED_DATA_WEAPONTRIANGLE_LINKED
+static CONST_DATA struct WeaponTriangleRule sWeaponTriangleRules[] = {
+    { ITYPE_SWORD, ITYPE_LANCE, -15, -1 },
+    ... /* all 12 rules, verbatim */
+    { -1 },
+};
+#else
+/* The generated object above supplies the definition; this file only
+ * needs the declaration so BattleApplyWeaponTriangleEffect below keeps
+ * compiling and referencing the same symbol/type unchanged. */
+extern struct WeaponTriangleRule sWeaponTriangleRules[];
+#endif /* !GENERATED_DATA_WEAPONTRIANGLE_LINKED */
+
+/* Since sWeaponTriangleRules is the literal first content of this file's
+ * .data section, everything from here onward (sProcScr_BattleAnimSimpleLock
+ * is currently the only other .data symbol in this file) is redirected
+ * into its own section so the generated object above can be spliced in
+ * at sWeaponTriangleRules' exact original address with zero shift. */
+#undef CONST_DATA
+#define CONST_DATA SECTION(".data.bmbattletail")
+
+static CONST_DATA struct ProcCmd sProcScr_BattleAnimSimpleLock[] = { ... };
+```
+
+The guard only wraps the hand table's struct/array definition (never
+`BattleApplyWeaponTriangleEffect`/`BattleApplyReaverEffect` or any other
+procedural code in the file) -- exactly the "guard only struct/table
+hand block, preserve text for round-trip" requirement: the `#if
+!GENERATED_DATA_WEAPONTRIANGLE_LINKED` block is left in place, verbatim,
+so `weapontriangle/parser.py`'s round-trip checker keeps reading and
+proving it byte-for-byte identical in meaning to the generated table.
+
+**Legacy (`ldscript.txt`).** Two lines, in place of the original single
+`src/bmbattle.o(.data);` line:
+
+```
+. = ALIGN(4); build/generated/data/data_weapontriangle.o(.data);
+src/bmbattle.o(.data.bmbattletail);
+```
+
+The generated object lands at `sWeaponTriangleRules`' exact original
+address (the file's own `.data` start); `src/bmbattle.o(.data.bmbattletail)`
+(`sProcScr_BattleAnimSimpleLock` onward) resumes immediately after, at
+its own original address, with no `ALIGN(4)` needed at that internal
+seam (the two arrays are compiler-packed with zero padding between
+them in the original single-object layout).
+
+**Legacy `ALL_OBJECTS`.** `$(GENERATED_DATA_WEAPONTRIANGLE_OBJECT)` is
+appended once; `src/bmbattle.o` remains present exactly once too (it
+still defines `sProcScr_BattleAnimSimpleLock` and every procedural
+function in the file -- only `sWeaponTriangleRules` itself moved out).
+
+**Modern (`modern.mk`).** Same synthetic-slot reasoning as
+`terrainstats`/`movecost` -- modern links whole objects, not
+per-input-section, and this object is additive, so it is reinstated at
+a synthetic slot path chosen to sort immediately before
+`src/bmbattle.o` in `MODERN_ALL_C_OBJECTS`:
+`$(MODERN_OUTPUT_DIR)/src/bmb-weapontriangle.o` (`"bmb-"` sorts ahead
+of any alphanumeric continuation, and `src/bmb*.o` has exactly one
+other member, `src/bmbattle.o`, so this is a simple two-entry adjacency
+check, not a three-in-a-row cluster like `movecost`'s).
+
+**Verification performed for this batch:**
+
+* `generated-data-check --table weapontriangle` -- zero drift against
+  the (guard-preserved) hand block's source text (12 rules).
+* `generated-data-weapontriangle-link-check` (new `generated_data.mk`
+  target, mirroring `terrainstats`/`movecost`'s rigor): guard present
+  exactly once, hand block preserved verbatim, shared struct type
+  present in `include/bmbattle.h`; the two-line `ldscript.txt` ordering
+  (generated object, then `src/bmbattle.o(.data.bmbattletail)`); legacy
+  `ALL_OBJECTS` presence of both the generated object and (still
+  required) `src/bmbattle.o`; the modern synthetic-slot adjacency
+  (`src/bmb-weapontriangle.o` immediately before `src/bmbattle.o`); the
+  generated object's exactly-one definition of `sWeaponTriangleRules`;
+  a rebuild of `src/bmbattle.o` proving it now defines zero copies of
+  `sWeaponTriangleRules` while still defining
+  `sProcScr_BattleAnimSimpleLock` untouched; clean coverage;
+  touched-but-unchanged-input no-op-regenerate behavior; and a
+  from-scratch parallel (`-j4`) build.
+* `generated-data-terrainstats-link-check`/`-movecost-link-check` and
+  every Chapter-2-owned regression (`-ch2-units-link-check`/
+  `-ch2-traps-link-check`/`-ch2-shops-link-check`/
+  `-ch2-eventlists-link-check`), `generated-data-link-check` (the
+  global linked-tables gate), and `generated-data-check` (all 13
+  registered tables) -- all still pass unchanged.
+* `python3 -m unittest discover -s scripts/generated_data/tests` -- all
+  489 tests pass, including 28 new `weapontriangle`-specific tests
+  (schema/generate/roundtrip).
+* A full legacy rebuild (`make fireemblem8.gba`) was verified
+  byte-identical to an isolated before/after comparison (the
+  weapontriangle link flipped on vs. off, with every other concurrent
+  change in the tree held constant): `cmp`/`md5sum` match exactly,
+  proving zero ROM byte shift from this batch in isolation. The raw
+  `sWeaponTriangleRules` symbol address and its 52-byte (`13 * 4`,
+  including the `{ -1 }` terminator) content were also decoded directly
+  from the final ROM and confirmed to match `src/data/weapontriangle.json`
+  exactly, record for record.
+* `make shiftcheck` (build/static/offsets/diff layers) passes with no
+  high-confidence hardcoded-pointer findings; `data_weapontriangle.o`
+  does not appear in any flagged object list.
+* Both modern configs (`MODERN_CONFIG=debug` and `MODERN_CONFIG=release`)
+  build the full modern object cohort, link, produce a valid ROM header,
+  and pass `expansion-modern-boot-check`.
+
 ## Remaining Issue #5 scope (explicitly not done here)
 
 Batch A + Batch B + Batch C together are scoped to the Chapter 2
@@ -3414,16 +3708,30 @@ scope** for this Batch C update:
   * The `BanimTerrainGround_*`/`gBanimBGLut*` graphics tables in the
     same file -- pure graphics data, not combat/heal/movement mechanics,
     out of scope by construction.
-  * **Weapon triangle**, hit/crit/damage formulas, growth-rate
-    application, AI decision logic, and every other combat/mechanics
-    system's own data tables -- none of these are modeled, authored, or
-    linked by any schema in this repository yet.
+  * **Weapon triangle** is now modeled, authored, and linked (Issue #5
+    **mechanics Batch 3** -- see "## `weapontriangle` schema" and
+    "Linking a single-block global weapon-triangle rule table" above):
+    the 12 directed `sWeaponTriangleRules[]` rules (`src/bmbattle.c`)
+    consumed by `BattleApplyWeaponTriangleEffect`, with zero ROM/ELF
+    address shift. This closes Issue #5's remaining clean-table
+    mechanics scope. `BattleApplyWeaponTriangleEffect` and
+    `BattleApplyReaverEffect` themselves (the procedural hit/damage-
+    bonus application and reaver-weapon inversion formulas) remain
+    untouched, hand-written code -- only the table is modeled.
+    Explicitly still out of scope: hit/crit/damage formulas beyond the
+    triangle table itself, growth-rate application, AI decision logic,
+    and every other combat/mechanics system's own procedural formulas
+    and bespoke data representations -- none of these are modeled,
+    authored, or linked by any schema in this repository.
 * **Additional chapters.** This whole platform -- schemas, the
   `chapterbundle` composition pattern, the CLI, the Make targets, CI
   wiring -- covers Chapter 2 only (`items`/`classes`/`supports`/
-  `characters`/`terrainstats`/`movecost` are the exceptions, being
-  global by nature); every other chapter's equivalent tables/bundle
-  remain to be modeled from scratch.
+  `characters`/`terrainstats`/`movecost`/`weapontriangle` are the
+  exceptions, being global by nature); every other chapter's equivalent
+  tables/bundle remain to be modeled from scratch.
 * **Migrating this pattern to other repository data domains** beyond the
   Chapter 2 slice and the `items`/`classes`/`supports`/`characters`/
-  `terrainstats`/`movecost` global tables this Issue has scoped so far.
+  `terrainstats`/`movecost`/`weapontriangle` global tables this Issue
+  has scoped so far. Procedural combat/growth/AI formulas themselves
+  (as opposed to their clean lookup tables) are explicitly out of data
+  scope -- see the `weapontriangle` bullet above.

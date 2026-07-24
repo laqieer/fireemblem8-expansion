@@ -17,6 +17,20 @@ enum {
     BATTLE_MAX_DAMAGE = 127,
 };
 
+/* Issue #5 mechanics Batch 3: shared here (rather than staying a
+ * private type inside src/bmbattle.c) so both src/bmbattle.c's guarded
+ * sWeaponTriangleRules block and the canonically-generated
+ * build/generated/data/data_weapontriangle.c object can reference the
+ * exact same struct layout -- see the guard comment around
+ * sWeaponTriangleRules in src/bmbattle.c and docs/generated_data.md's
+ * "weapontriangle" section. */
+struct WeaponTriangleRule {
+    s8 attackerWeaponType;
+    s8 defenderWeaponType;
+    s8 hitBonus;
+    s8 atkBonus;
+};
+
 struct BattleUnit {
     /* 00 */ struct Unit unit;
 

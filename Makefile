@@ -162,7 +162,16 @@ MID_OBJECTS  := $(MID_FILES:.mid=.o)
 # canonically linked as the *first* `.data` prefix, ahead of
 # terrainstats. See generated_data.mk's "Chapter-2-owned (Issue #5 Batch
 # 2: mechanics movecost)" section.
-ALL_OBJECTS  := $(C_OBJECTS) $(DATA_SRC_C_OBJECTS) $(ASM_OBJECTS) $(BANIM_OBJECT) $(MID_OBJECTS) $(GENERATED_DATA_LINKED_OBJECTS) $(GENERATED_DATA_CH2_UNITS_OBJECT) $(GENERATED_DATA_CH2_TRAPS_OBJECT) $(GENERATED_DATA_CH2_SHOPS_OBJECT) $(GENERATED_DATA_CH2_EVENTLISTS_OBJECT) $(GENERATED_DATA_TERRAINSTATS_OBJECT) $(GENERATED_DATA_MOVECOST_OBJECT)
+# Issue #5 Batch 3 (mechanics): $(GENERATED_DATA_WEAPONTRIANGLE_OBJECT) is
+# the same kind of additive object -- src/bmbattle.c/.o stays in CFILES/
+# C_OBJECTS untouched (it still defines BattleApplyWeaponTriangleEffect/
+# BattleApplyReaverEffect and every other battle-engine symbol), guarded
+# internally (once) to exclude only the 12-rule sWeaponTriangleRules[]
+# table; it is canonically linked as the literal first `.data` prefix of
+# src/bmbattle.o, with everything else that file defines redirected into
+# src/bmbattle.o(.data.bmbattletail). See generated_data.mk's "Linking a
+# partial-file table" section, weapontriangle subsection.
+ALL_OBJECTS  := $(C_OBJECTS) $(DATA_SRC_C_OBJECTS) $(ASM_OBJECTS) $(BANIM_OBJECT) $(MID_OBJECTS) $(GENERATED_DATA_LINKED_OBJECTS) $(GENERATED_DATA_CH2_UNITS_OBJECT) $(GENERATED_DATA_CH2_TRAPS_OBJECT) $(GENERATED_DATA_CH2_SHOPS_OBJECT) $(GENERATED_DATA_CH2_EVENTLISTS_OBJECT) $(GENERATED_DATA_TERRAINSTATS_OBJECT) $(GENERATED_DATA_MOVECOST_OBJECT) $(GENERATED_DATA_WEAPONTRIANGLE_OBJECT)
 OBJECTS_LST  := objects.lst
 DEPS_DIR     := .dep
 

@@ -912,7 +912,18 @@ SECTIONS
         . = ALIGN(4); src/bmudisp.o(.data);
         . = ALIGN(4); src/bmreliance.o(.data);
         . = ALIGN(4); src/bmitemuse.o(.data);
-        . = ALIGN(4); src/bmbattle.o(.data);
+        /* Issue #5 mechanics Batch 3: the 12 sWeaponTriangleRules records
+         * plus their implicit { -1 } terminator (52 bytes total) are the
+         * literal first content of src/bmbattle.o's .data section -- see
+         * the guard comment around sWeaponTriangleRules in
+         * src/bmbattle.c and docs/generated_data.md's "weapontriangle"
+         * section. build/generated/data/data_weapontriangle.o(.data)
+         * lands at that exact original address (zero shift); everything
+         * else this file defines (sProcScr_BattleAnimSimpleLock onward)
+         * is redirected into src/bmbattle.o(.data.bmbattletail), which
+         * resumes immediately after, unchanged. */
+        . = ALIGN(4); build/generated/data/data_weapontriangle.o(.data);
+        src/bmbattle.o(.data.bmbattletail);
         . = ALIGN(4); src/bmtrade.o(.data);
         . = ALIGN(4); src/bmtrick.o(.data);
         . = ALIGN(4); src/bmusemind.o(.data);

@@ -27,7 +27,7 @@
 
 GENERATED_DATA_PY       := $(PYTHON) -m scripts.generated_data
 GENERATED_DATA_OUT_DIR  := build/generated/data
-GENERATED_DATA_TABLES   := supports units shops traps items classes characters eventscripts eventlists chapterbundle terrainstats movecost
+GENERATED_DATA_TABLES   := supports units shops traps items classes characters eventscripts eventlists chapterbundle terrainstats movecost weapontriangle
 GENERATED_DATA_CH2_TABLES := units shops traps eventscripts eventlists chapterbundle
 
 .PHONY: generated-data-validate generated-data-generate generated-data-check generated-data-test \
@@ -2064,3 +2064,211 @@ generated-data-movecost-link-check: $(GENERATED_DATA_MOVECOST_OBJECT)
 	@test -e $(GENERATED_DATA_MOVECOST_OBJECT) || { echo "FAIL: parallel build did not produce the generated object for movecost" >&2; exit 1; }
 	@echo 'OK: from-scratch parallel (-j4) build of movecost'"'"'s generated .c/.o succeeds, no race/duplicate generation'
 	@echo 'PASS: generated-data-movecost-link-check'
+
+# ---------------------------------------------------------------------------
+# Linking a partial-file table, single guard, single top-level symbol
+# (Issue #5 mechanics Batch 3: weapontriangle)
+# ---------------------------------------------------------------------------
+# `weapontriangle` is the simplest partial-file link yet: unlike
+# terrainstats/movecost (two non-adjacent groups sharing one guard) or
+# units (a guarded prefix with hand content both before *and* after it),
+# sWeaponTriangleRules is a single 12-record table (52 bytes with its
+# implicit `{ -1 }` terminator) that is the literal *first* content of
+# src/bmbattle.c's own `.data` section -- there is no hand content ahead
+# of it to worry about, only sProcScr_BattleAnimSimpleLock (a single
+# ProcCmd array) immediately after it in the same file.
+#
+# `src/bmbattle.c` defines `#define GENERATED_DATA_WEAPONTRIANGLE_LINKED 1`
+# immediately above the guarded block (`#if !GENERATED_DATA_WEAPONTRIANGLE_LINKED
+# / #endif`, with an `#else extern struct WeaponTriangleRule
+# sWeaponTriangleRules[]; #endif` so BattleApplyWeaponTriangleEffect --
+# unchanged, still in this same file -- keeps compiling/referencing the
+# same symbol/type). The shared `struct WeaponTriangleRule` type itself
+# lives in include/bmbattle.h (not src/bmbattle.c), so both the guarded
+# hand block and this generated object -- separate translation units --
+# see the exact same layout without either redefining it. Right after
+# the guard's closing #endif, `src/bmbattle.c` redirects everything else
+# it defines (`#undef CONST_DATA` / `#define CONST_DATA
+# SECTION(".data.bmbattletail")`) so sProcScr_BattleAnimSimpleLock (and
+# any future addition) lands in its own section, distinct from plain
+# `.data` -- letting the generated object take over exactly
+# sWeaponTriangleRules' original address with zero shift:
+#   * legacy (ldscript.txt): build/generated/data/data_weapontriangle.o
+#     (.data) (the generated 12 rules + terminator) lands at
+#     sWeaponTriangleRules' exact original address (zero shift);
+#     src/bmbattle.o(.data.bmbattletail) (sProcScr_BattleAnimSimpleLock)
+#     resumes immediately after, unchanged -- so the ROM is
+#     byte-identical overall (verified via `cmp` against a pre-change
+#     ROM).
+#   * modern (modern.mk): same reasoning as terrainstats'/movecost's
+#     synthetic slot -- modern links whole objects, not per-input-
+#     section, so this additive object is reinstated at a synthetic slot
+#     path ($(MODERN_OUTPUT_DIR)/src/bmb-weapontriangle.o) chosen to sort
+#     immediately before src/bmbattle.o (the only other src/bmb*.o file).
+GENERATED_DATA_WEAPONTRIANGLE_HAND_SOURCE := src/bmbattle.c
+GENERATED_DATA_WEAPONTRIANGLE_GUARD_MACRO := GENERATED_DATA_WEAPONTRIANGLE_LINKED
+GENERATED_DATA_WEAPONTRIANGLE_C      := $(GENERATED_DATA_OUT_DIR)/data_weapontriangle.c
+GENERATED_DATA_WEAPONTRIANGLE_OBJECT := $(GENERATED_DATA_WEAPONTRIANGLE_C:.c=.o)
+
+# `weapontriangle`'s own generator "config" inputs: include/bmitem.h (the
+# ITYPE_* enum read live by scripts/generated_data/weapontriangle/
+# schema.py's extract_enum_constants() to validate weapon-type refs and
+# restrict them to the physical/magic triangle groups).
+GENERATED_DATA_CONFIG_INPUTS_weapontriangle := \
+	include/bmitem.h
+
+# The single top-level array symbol this table's generated object must
+# define exactly once -- there is only ever one (sWeaponTriangleRules),
+# unlike movecost/terrainstats' many per-profile arrays, so this is not
+# derived from JSON the way GENERATED_DATA_MOVECOST_SYMBOLS is; it is
+# simply the table's one fixed symbol name.
+GENERATED_DATA_WEAPONTRIANGLE_SYMBOL := sWeaponTriangleRules
+
+$(GENERATED_DATA_WEAPONTRIANGLE_C): src/data/weapontriangle.json $(GENERATED_DATA_SHARED_PY_SOURCES) $(wildcard scripts/generated_data/weapontriangle/*.py) $(GENERATED_DATA_CONFIG_INPUTS_weapontriangle)
+	@mkdir -p $(@D)
+	$(GENERATED_DATA_PY) generate --table weapontriangle --out-dir $(GENERATED_DATA_OUT_DIR)
+	@test -e $@ || { echo "error: generated-data table 'weapontriangle' did not produce $@ (schema default_output_name mismatch?)" >&2; exit 1; }
+
+# Same legacy compile/assemble pipeline as GENERATED_DATA_MOVECOST_OBJECT
+# above (see that rule's own comment for why $(@:.o=.s), not $*.s).
+$(GENERATED_DATA_WEAPONTRIANGLE_OBJECT): $(GENERATED_DATA_WEAPONTRIANGLE_C)
+	$(CPP) $(CPPFLAGS) $< | iconv -f UTF-8 -t CP932 | $(CC1) $(CC1FLAGS) -o $(@:.o=.s)
+	echo '.ALIGN 2, 0' >> $(@:.o=.s)
+ifeq ($(UNAME),Darwin)
+	$(SED) -f scripts/align_2_before_debug_section_for_osx.sed $(@:.o=.s)
+else
+	$(SED) '/.section	.debug_line/i\.align 2, 0' $(@:.o=.s)
+endif
+	$(AS) $(ASFLAGS) $(@:.o=.s) -o $@
+
+.PHONY: generated-data-weapontriangle-link-check
+
+# Batch 3 gate: proves the weapontriangle link-swap is wired correctly --
+# the generated object linked exactly once at its exact ldscript.txt
+# position, in both legacy ALL_OBJECTS and the modern cohort (at the
+# adjacency-preserving synthetic slot path); the table's one top-level
+# symbol (sWeaponTriangleRules) defined exactly once by the generated
+# object and, critically, *zero* times by a freshly rebuilt
+# src/bmbattle.o (the guard actually excluded it, so no
+# multiple-definition link error); the hand block's source text still
+# present verbatim (never deleted); the unrelated
+# sProcScr_BattleAnimSimpleLock symbol still defined by src/bmbattle.o
+# (now in .data.bmbattletail), proving the guard didn't over-reach; and
+# the same touched-but-unchanged-input / from-scratch-parallel-build
+# evidence as the other *-link-check targets, scoped to this one table.
+# Local/manual gate, same reasoning as the other *-link-check targets
+# for why it's not CI-wired (agbcc is unavailable in CI's tool install).
+generated-data-weapontriangle-link-check: $(GENERATED_DATA_WEAPONTRIANGLE_OBJECT)
+	@echo '--- guard present in $(GENERATED_DATA_WEAPONTRIANGLE_HAND_SOURCE), hand block preserved verbatim ---'
+	@if [ "$$(grep -cF '#define $(GENERATED_DATA_WEAPONTRIANGLE_GUARD_MACRO) 1' $(GENERATED_DATA_WEAPONTRIANGLE_HAND_SOURCE))" != 1 ]; then \
+		echo "FAIL: $(GENERATED_DATA_WEAPONTRIANGLE_HAND_SOURCE) does not define '#define $(GENERATED_DATA_WEAPONTRIANGLE_GUARD_MACRO) 1' exactly once" >&2; exit 1; \
+	fi
+	@if [ "$$(grep -cF '#if !$(GENERATED_DATA_WEAPONTRIANGLE_GUARD_MACRO)' $(GENERATED_DATA_WEAPONTRIANGLE_HAND_SOURCE))" != 1 ]; then \
+		echo "FAIL: $(GENERATED_DATA_WEAPONTRIANGLE_HAND_SOURCE) does not have exactly 1 '#if !$(GENERATED_DATA_WEAPONTRIANGLE_GUARD_MACRO)' guard" >&2; exit 1; \
+	fi
+	@if [ "$$(grep -cF '#endif /* !$(GENERATED_DATA_WEAPONTRIANGLE_GUARD_MACRO) */' $(GENERATED_DATA_WEAPONTRIANGLE_HAND_SOURCE))" != 1 ]; then \
+		echo "FAIL: $(GENERATED_DATA_WEAPONTRIANGLE_HAND_SOURCE) does not have exactly 1 matching '#endif' guard close" >&2; exit 1; \
+	fi
+	@if ! grep -qF '#define CONST_DATA SECTION(".data.bmbattletail")' $(GENERATED_DATA_WEAPONTRIANGLE_HAND_SOURCE); then \
+		echo "FAIL: $(GENERATED_DATA_WEAPONTRIANGLE_HAND_SOURCE) is missing the post-guard CONST_DATA redirect to .data.bmbattletail" >&2; exit 1; \
+	fi
+	@if [ "$$(grep -c 'CONST_DATA struct WeaponTriangleRule sWeaponTriangleRules\[\]' $(GENERATED_DATA_WEAPONTRIANGLE_HAND_SOURCE))" != 1 ]; then \
+		echo "FAIL: hand source text for '$(GENERATED_DATA_WEAPONTRIANGLE_SYMBOL)' missing or duplicated in $(GENERATED_DATA_WEAPONTRIANGLE_HAND_SOURCE) -- must stay present verbatim as the round-trip reference" >&2; exit 1; \
+	fi
+	@if ! grep -qF 'struct WeaponTriangleRule {' include/bmbattle.h; then \
+		echo "FAIL: include/bmbattle.h is missing the shared 'struct WeaponTriangleRule' type declaration -- both the hand guard block and the generated object need it available outside the guard" >&2; exit 1; \
+	fi
+	@echo 'OK: guard present exactly once, hand sWeaponTriangleRules definition preserved verbatim in source text, shared struct type present in include/bmbattle.h'
+	@echo '--- ldscript.txt two-piece split (generated object, bmbattle.o(.data.bmbattletail)) ---'
+	@gen_count=$$(grep -Fc "$(GENERATED_DATA_WEAPONTRIANGLE_OBJECT)(.data);" ldscript.txt); \
+	if [ "$$gen_count" != 1 ]; then \
+		echo "FAIL: ldscript.txt references $(GENERATED_DATA_WEAPONTRIANGLE_OBJECT)(.data) $$gen_count time(s) (want exactly 1)" >&2; exit 1; \
+	fi
+	@if grep -qx "        src/bmbattle.o(.data);" ldscript.txt; then \
+		echo "FAIL: ldscript.txt unexpectedly still references a plain src/bmbattle.o(.data) -- it must be redirected to (.data.bmbattletail)" >&2; exit 1; \
+	fi
+	@gen_line=$$(grep -nF "$(GENERATED_DATA_WEAPONTRIANGLE_OBJECT)(.data);" ldscript.txt | cut -d: -f1); \
+	tail_line=$$(grep -nx "        src/bmbattle.o(.data.bmbattletail);" ldscript.txt | cut -d: -f1); \
+	if [ -z "$$tail_line" ]; then echo "FAIL: ldscript.txt no longer links src/bmbattle.o(.data.bmbattletail) (the sProcScr_BattleAnimSimpleLock piece) at all" >&2; exit 1; fi; \
+	if [ "$$((tail_line - gen_line))" != 1 ]; then \
+		echo "FAIL: src/bmbattle.o(.data.bmbattletail) (line $$tail_line) is not immediately after $(GENERATED_DATA_WEAPONTRIANGLE_OBJECT)(.data) (line $$gen_line)" >&2; exit 1; \
+	fi
+	@echo 'OK: ldscript.txt links, in order, the generated sWeaponTriangleRules object then src/bmbattle.o(.data.bmbattletail) [sProcScr_BattleAnimSimpleLock onward]'
+	@echo '--- legacy ALL_OBJECTS ---'
+	@if [ "$(words $(filter $(GENERATED_DATA_WEAPONTRIANGLE_OBJECT),$(ALL_OBJECTS)))" != 1 ]; then \
+		echo "FAIL: $(GENERATED_DATA_WEAPONTRIANGLE_OBJECT) not present exactly once in legacy ALL_OBJECTS" >&2; exit 1; \
+	fi
+	@if [ "$(words $(filter $(GENERATED_DATA_WEAPONTRIANGLE_HAND_SOURCE:.c=.o),$(ALL_OBJECTS)))" != 1 ]; then \
+		echo "FAIL: $(GENERATED_DATA_WEAPONTRIANGLE_HAND_SOURCE:.c=.o) unexpectedly missing from legacy ALL_OBJECTS -- it must stay linked (it still defines BattleApplyWeaponTriangleEffect/BattleApplyReaverEffect and every other battle-engine symbol)" >&2; exit 1; \
+	fi
+	@echo 'OK: both the generated object and the (still-required) src/bmbattle.o are present exactly once each in legacy ALL_OBJECTS'
+	@echo '--- modern MODERN_ALL_C_OBJECTS (synthetic adjacency-preserving slot) ---'
+	@if [ "$(words $(filter $(MODERN_OUTPUT_DIR)/src/bmb-weapontriangle.o,$(MODERN_ALL_C_OBJECTS)))" != 1 ]; then \
+		echo "FAIL: $(MODERN_OUTPUT_DIR)/src/bmb-weapontriangle.o not present exactly once in modern MODERN_ALL_C_OBJECTS" >&2; exit 1; \
+	fi
+	@sorted_slot=$$(printf '%s\n' $(sort $(MODERN_ALL_C_OBJECTS)) | grep -n -x -e "$(MODERN_OUTPUT_DIR)/src/bmb-weapontriangle.o" -e "$(MODERN_OUTPUT_DIR)/src/bmbattle.o" | cut -d: -f1 | tr '\n' ' '); \
+	first=$$(echo $$sorted_slot | cut -d' ' -f1); second=$$(echo $$sorted_slot | cut -d' ' -f2); \
+	if [ -z "$$first" ] || [ -z "$$second" ] || [ "$$((second - first))" != 1 ]; then \
+		echo "FAIL: in the sorted modern object list, the synthetic slot is not immediately adjacent (and before) src/bmbattle.o (positions: $$sorted_slot)" >&2; exit 1; \
+	fi
+	@echo 'OK: synthetic slot object sorts immediately before src/bmbattle.o in the modern object list, exactly like the legacy ldscript.txt adjacency'
+	@echo '--- generated object symbol (sWeaponTriangleRules, exactly once) ---'
+	@nm_out=$$(arm-none-eabi-nm $(GENERATED_DATA_WEAPONTRIANGLE_OBJECT)); \
+	symcount=$$(printf '%s\n' "$$nm_out" | grep -c "^[0-9a-fA-F]\{8\} [^Uu] $(GENERATED_DATA_WEAPONTRIANGLE_SYMBOL)\$$"); \
+	if [ "$$symcount" != 1 ]; then \
+		echo "FAIL: generated object for weapontriangle defines $(GENERATED_DATA_WEAPONTRIANGLE_SYMBOL) $$symcount time(s) (want exactly 1)" >&2; exit 1; \
+	fi
+	@echo 'OK: exactly one definition of sWeaponTriangleRules in the generated object'
+	@echo '--- src/bmbattle.o no longer defines sWeaponTriangleRules, but still defines sProcScr_BattleAnimSimpleLock ---'
+	@rm -f src/bmbattle.o src/bmbattle.s
+	@$(MAKE) --no-print-directory src/bmbattle.o >/dev/null
+	@bmbattle_nm=$$(arm-none-eabi-nm src/bmbattle.o); \
+	symcount=$$(printf '%s\n' "$$bmbattle_nm" | grep -c "^[0-9a-fA-F]\{8\} [^Uu] $(GENERATED_DATA_WEAPONTRIANGLE_SYMBOL)\$$"); \
+	if [ "$$symcount" != 0 ]; then \
+		echo "FAIL: src/bmbattle.o still defines $(GENERATED_DATA_WEAPONTRIANGLE_SYMBOL) $$symcount time(s) -- the guard did not exclude it (would be a multiple-definition link error against the generated object)" >&2; exit 1; \
+	fi; \
+	if ! printf '%s\n' "$$bmbattle_nm" | grep -q " sProcScr_BattleAnimSimpleLock\$$"; then \
+		echo "FAIL: src/bmbattle.o unexpectedly lost unrelated symbol sProcScr_BattleAnimSimpleLock -- the guard over-excluded" >&2; exit 1; \
+	fi
+	@echo 'OK: src/bmbattle.o defines zero copies of sWeaponTriangleRules and still defines sProcScr_BattleAnimSimpleLock untouched'
+	@echo '--- clean coverage ---'
+	@if [ -z "$(strip $(filter $(GENERATED_DATA_OUT_DIR),$(CLEAN_DIRS)))" ]; then \
+		echo "FAIL: $(GENERATED_DATA_OUT_DIR) missing from CLEAN_DIRS -- clean/clean_fast would not remove data_weapontriangle.c/.s/.o" >&2; exit 1; \
+	fi
+	@echo 'OK: clean/clean_fast remove build/generated/data (covers data_weapontriangle.c/.s/.o)'
+	@echo '--- touched-but-unchanged input: content-preserving no-op regenerate (behavior evidence, not mtime) ---'
+	@rm -f $(GENERATED_DATA_WEAPONTRIANGLE_C) $(GENERATED_DATA_WEAPONTRIANGLE_OBJECT) $(GENERATED_DATA_WEAPONTRIANGLE_C:.c=.s); \
+	$(MAKE) --no-print-directory $(GENERATED_DATA_WEAPONTRIANGLE_OBJECT) >/dev/null; \
+	o_hash_before=$$(md5sum "$(GENERATED_DATA_WEAPONTRIANGLE_OBJECT)" | cut -d' ' -f1); \
+	json_ref=generated-data-weapontriangle-link-check.json_ref.tmp; \
+	regen_log=generated-data-weapontriangle-link-check.regen.log; \
+	uptodate_log=generated-data-weapontriangle-link-check.uptodate.log; \
+	trap 'touch -r "$$json_ref" src/data/weapontriangle.json 2>/dev/null; rm -f "$$json_ref" "$$regen_log" "$$uptodate_log"' EXIT; \
+	touch -r src/data/weapontriangle.json "$$json_ref"; \
+	touch src/data/weapontriangle.json; \
+	$(MAKE) --no-print-directory "$(GENERATED_DATA_WEAPONTRIANGLE_OBJECT)" >"$$regen_log" 2>&1; \
+	if ! grep -q "generate --table weapontriangle" "$$regen_log"; then \
+		echo "FAIL: touching weapontriangle.json did not trigger a weapontriangle regenerate at all" >&2; exit 1; \
+	fi; \
+	if grep -qE 'arm-none-eabi-as|agbcc' "$$regen_log"; then \
+		echo "FAIL: weapontriangle unchanged-content regenerate still ran the legacy compile/assemble pipeline (unnecessary object recompile):" >&2; cat "$$regen_log" >&2; exit 1; \
+	fi; \
+	o_hash_after=$$(md5sum "$(GENERATED_DATA_WEAPONTRIANGLE_OBJECT)" | cut -d' ' -f1); \
+	if [ "$$o_hash_before" != "$$o_hash_after" ]; then \
+		echo "FAIL: weapontriangle object content changed even though no recompile should have run ($$o_hash_before -> $$o_hash_after)" >&2; exit 1; \
+	fi; \
+	touch -r "$$json_ref" src/data/weapontriangle.json; \
+	$(MAKE) --no-print-directory "$(GENERATED_DATA_WEAPONTRIANGLE_OBJECT)" >"$$uptodate_log" 2>&1; \
+	if grep -qE "generate --table weapontriangle|arm-none-eabi-as|agbcc" "$$uptodate_log"; then \
+		echo "FAIL: after restoring weapontriangle.json's original timestamp, the weapontriangle object target is not fully up to date:" >&2; cat "$$uptodate_log" >&2; exit 1; \
+	fi; \
+	rm -f "$$json_ref" "$$regen_log" "$$uptodate_log"; \
+	trap - EXIT; \
+	echo 'OK: weapontriangle touched-but-unchanged JSON input re-invokes the generator but never re-runs the legacy compile/assemble pipeline, proven by captured build-log evidence and stable object content'
+	@echo '--- from-scratch parallel build ---'
+	@rm -f $(GENERATED_DATA_WEAPONTRIANGLE_C) $(GENERATED_DATA_WEAPONTRIANGLE_OBJECT)
+	@$(MAKE) --no-print-directory -j4 $(GENERATED_DATA_WEAPONTRIANGLE_OBJECT) $(GENERATED_DATA_WEAPONTRIANGLE_C) >/dev/null
+	@test -e $(GENERATED_DATA_WEAPONTRIANGLE_C) || { echo "FAIL: parallel build did not produce the generated .c for weapontriangle" >&2; exit 1; }
+	@test -e $(GENERATED_DATA_WEAPONTRIANGLE_OBJECT) || { echo "FAIL: parallel build did not produce the generated object for weapontriangle" >&2; exit 1; }
+	@echo 'OK: from-scratch parallel (-j4) build of weapontriangle'"'"'s generated .c/.o succeeds, no race/duplicate generation'
+	@echo 'PASS: generated-data-weapontriangle-link-check'
