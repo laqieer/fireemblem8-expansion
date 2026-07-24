@@ -2,6 +2,30 @@
 #include "bmunit.h"
 #include "constants/terrains.h"
 
+/* Issue #5 Batch 2: the 32 movement-cost arrays below (through the
+ * matching #endif) -- all 15 named mobility profiles' Normal array plus
+ * TerrainTable_MovCost_DemonKing and TerrainMoveCost_Ballista -- and the
+ * 15 Rain arrays further below (second #if using this same guard) are
+ * canonically generated from src/data/movecost.json -- see
+ * scripts/generated_data/movecost/ and docs/generated_data.md's
+ * "movecost" schema section. build/generated/data/data_movecost.o(.data)
+ * is linked in this block's place (ldscript.txt places it immediately
+ * before this file's own (.data), so this excluded prefix leaves zero
+ * address gap -- it is literally the first content of this translation
+ * unit). The 15 named profiles' Snow arrays (later in this file) are
+ * generated from the same JSON/object and are guarded the same way, via
+ * their own dedicated .data.movecostsnow section (see the redirect
+ * comment around Unk_TerrainTable_1 below), since Unk_TerrainTable_1
+ * separates this Normal+Rain prefix from the Snow block. The blocks
+ * themselves are deliberately left in place, verbatim, rather than
+ * deleted: generated-data-check's round-trip parser
+ * (scripts/generated_data/movecost/parser.py) reads this exact source
+ * text to keep proving the generated tables byte-for-byte identical in
+ * meaning to it. Never hand-edit these blocks -- edit
+ * src/data/movecost.json and regenerate instead. */
+#define GENERATED_DATA_MOVECOST_LINKED 1
+
+#if !GENERATED_DATA_MOVECOST_LINKED
 CONST_DATA s8 TerrainTable_MovCost_CommonT2Normal[] = {
     [TERRAIN_NONE] = -1,
     [TERRAIN_PLAINS] = 1,
@@ -2177,6 +2201,7 @@ CONST_DATA s8 TerrainTable_MovCost_FlyRain[] = {
     [TERRAIN_BRACE] = -1,
     [TERRAIN_MAST] = -1,
 };
+#endif /* !GENERATED_DATA_MOVECOST_LINKED */
 
 CONST_DATA s8 Unk_TerrainTable_1[] = {
     [TERRAIN_NONE] = -1,
@@ -2246,6 +2271,17 @@ CONST_DATA s8 Unk_TerrainTable_1[] = {
     [TERRAIN_MAST] = -1,
 };
 
+/* Issue #5 Batch 2: Unk_TerrainTable_1 (above) must stay glued,
+ * unshifted, right after the Normal+DemonKing+Ballista+Rain prefix
+ * excluded above -- redirect the 15 named profiles' Snow arrays below
+ * into their own dedicated section so ldscript.txt can place the
+ * generated object's Snow symbols at the exact original address without
+ * moving Unk_TerrainTable_1 or Unk_TerrainTable_2 (below). See
+ * ldscript.txt and docs/generated_data.md's "movecost" section. */
+#undef CONST_DATA
+#define CONST_DATA SECTION(".data.movecostsnow")
+
+#if !GENERATED_DATA_MOVECOST_LINKED
 CONST_DATA s8 TerrainTable_MovCost_CommonT2Snow[] = {
     [TERRAIN_NONE] = -1,
     [TERRAIN_PLAINS] = 2,
@@ -3265,6 +3301,22 @@ CONST_DATA s8 TerrainTable_MovCost_FlySnow[] = {
     [TERRAIN_BRACE] = -1,
     [TERRAIN_MAST] = -1,
 };
+#endif /* !GENERATED_DATA_MOVECOST_LINKED */
+
+/* Redirect back out of .data.movecostsnow for Unk_TerrainTable_2 below,
+ * which must stay glued, unshifted, right after the Snow block excluded
+ * above -- see the matching redirect comment around Unk_TerrainTable_1.
+ * This is deliberately a third distinct section name, not a revert to
+ * plain .data: the terrainstats guard immediately below (Issue #5
+ * Batch 1) still references plain CONST_DATA for its own (permanently
+ * excluded, zero-byte) TerrainTable_Avo_Common block, and only redirects
+ * forward to its own .data.terrainmid after *its* #endif -- reverting to
+ * plain .data here first would make that zero-byte guarded block
+ * (harmlessly) inherit this section's name too, which is fine
+ * byte-wise, but a distinct .data.movecosttail name keeps each table's
+ * own redirect self-contained and easier to reason about/verify. */
+#undef CONST_DATA
+#define CONST_DATA SECTION(".data.movecosttail")
 
 CONST_DATA s8 Unk_TerrainTable_2[] = {
     [TERRAIN_NONE] = -1,

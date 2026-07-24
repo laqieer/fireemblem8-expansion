@@ -361,6 +361,25 @@ endif
 ifneq ($(strip $(GENERATED_DATA_TERRAINSTATS_OBJECT)),)
 MODERN_ALL_C_OBJECTS += $(MODERN_OUTPUT_DIR)/src/data_t-terrainstats.o
 endif
+
+# Issue #5 Batch 2 (mechanics): $(GENERATED_DATA_MOVECOST_OBJECT)
+# (generated_data.mk) is the same kind of additive object, sharing
+# src/data_terrains.c with terrainstats just above -- its two generated
+# sections (.data for the 32 Normal/DemonKing/Ballista/Rain arrays,
+# .data.movecostsnow for the 15 Snow arrays) collapse to a single
+# synthetic sort slot here, same as terrainstats' own slot. Chosen as
+# "data_t-movecost.o" so it sorts immediately before
+# "data_t-terrainstats.o" (both share the "data_t-" prefix; 'm' < 't'),
+# which itself already sorts immediately before src/data_terrains.o --
+# forming a stable three-in-a-row cluster (movecost, terrainstats,
+# terrains) that doesn't shift any other object's relative order. A safe
+# no-op when GENERATED_DATA_MOVECOST_OBJECT is undefined (modern.mk
+# included standalone). An explicit (non-pattern) rule for this literal
+# target path is defined further below, alongside
+# GENERATED_DATA_MODERN_OVERRIDE_RULES.
+ifneq ($(strip $(GENERATED_DATA_MOVECOST_OBJECT)),)
+MODERN_ALL_C_OBJECTS += $(MODERN_OUTPUT_DIR)/src/data_t-movecost.o
+endif
 MODERN_ALL_DATA_PRE := $(addprefix $(MODERN_OUTPUT_DIR)/,$(MODERN_ALL_DATA_C_SOURCES:.c=.pre.c))
 MODERN_ALL_DATA_OBJECTS := $(addprefix $(MODERN_OUTPUT_DIR)/,$(MODERN_ALL_DATA_C_SOURCES:.c=.o))
 MODERN_ALL_ASM_OBJECTS := $(addprefix $(MODERN_OUTPUT_DIR)/,$(MODERN_ALL_ASM_SOURCES:.s=.o))
@@ -558,6 +577,16 @@ $(MODERN_OUTPUT_DIR)/src/events_i-ch2eventlists.o: $(GENERATED_DATA_CH2_EVENTLIS
 # standalone): the rule is simply never reachable, since nothing adds
 # this path to MODERN_ALL_C_OBJECTS in that case.
 $(MODERN_OUTPUT_DIR)/src/data_t-terrainstats.o: $(GENERATED_DATA_TERRAINSTATS_C)
+	@mkdir -p $(@D)
+	"$(MODERN_CC)" $(MODERN_CFLAGS) -MMD -MP -MF "$(@:.o=.d)" -MQ "$@" -c "$<" -o "$@"
+
+# Issue #5 Batch 2 (mechanics): same reasoning as the terrainstats
+# synthetic-slot rule above, for the movecost table's synthetic slot
+# object. A safe no-op target when GENERATED_DATA_MOVECOST_C is
+# undefined (modern.mk included standalone): the rule is simply never
+# reachable, since nothing adds this path to MODERN_ALL_C_OBJECTS in
+# that case.
+$(MODERN_OUTPUT_DIR)/src/data_t-movecost.o: $(GENERATED_DATA_MOVECOST_C)
 	@mkdir -p $(@D)
 	"$(MODERN_CC)" $(MODERN_CFLAGS) -MMD -MP -MF "$(@:.o=.d)" -MQ "$@" -c "$<" -o "$@"
 

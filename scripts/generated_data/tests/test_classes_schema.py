@@ -3,6 +3,7 @@ import unittest
 from scripts.generated_data.diagnostics import DiagnosticCollector
 from scripts.generated_data.classes import schema as classes_schema
 from scripts.generated_data.terrainstats import schema as terrainstats_schema
+from scripts.generated_data.movecost import schema as movecost_schema
 from scripts.generated_data.tests._util import fixture_path
 
 _MINI_CLASSES_HEADER = fixture_path("classes", "mini_classes.h")
@@ -225,6 +226,107 @@ class ClassesTerrainstatsDependencyTests(unittest.TestCase):
             portrait_source=_MINI_PORTRAIT_SOURCE,
             sms_source=_MINI_SMS_SOURCE,
         )
+        self.assertTrue(diagnostics.ok, msg=diagnostics.render())
+
+
+class ClassesMovecostDependencyTests(unittest.TestCase):
+    """Issue #5 Batch 2: movCostTable is resolved against the movecost
+    dependency's per-slot symbol index -- each non-null entry must be an
+    authored movecost array for its own normal/rain/snow slot, and all
+    non-null entries in a triplet must resolve to the same movecost
+    profile (a mix is a mismatch even if every individual symbol is a
+    real authored array elsewhere)."""
+
+    def _deps(self, *, terrainstats=True, movecost=True):
+        deps = {}
+        if terrainstats:
+            deps["terrainstats"] = terrainstats_schema.load_records(
+                fixture_path("classes", "deps_terrainstats.json")
+            )
+        if movecost:
+            deps["movecost"] = movecost_schema.load_records(
+                fixture_path("classes", "deps_movecost.json")
+            )
+        return deps
+
+    def _validate_with(self, records, deps):
+        diagnostics = DiagnosticCollector()
+        classes_schema.validate(
+            records,
+            diagnostics,
+            dependency_records=deps,
+            classes_header=_MINI_CLASSES_HEADER,
+            bmunit_header=_MINI_BMUNIT_HEADER,
+            bmitem_header=_MINI_BMITEM_HEADER,
+            ekrbattle_header=_MINI_EKRBATTLE_HEADER,
+            variables_header=_MINI_VARIABLES_HEADER,
+            msg_header=_MINI_MSG_HEADER,
+            portrait_source=_MINI_PORTRAIT_SOURCE,
+            sms_source=_MINI_SMS_SOURCE,
+        )
+        return diagnostics
+
+    def test_valid_triplet_resolves_against_movecost(self):
+        records = classes_schema.load_records(fixture_path("classes", "valid.json"))
+        diagnostics = self._validate_with(records, self._deps())
+        self.assertTrue(diagnostics.ok, msg=diagnostics.render())
+
+    def test_null_triplet_remains_valid(self):
+        records = classes_schema.load_records(fixture_path("classes", "valid.json"))
+        by_class = {r.class_name: r for r in records}
+        self.assertEqual(by_class["CLASS_FIXTURE_B"].mov_cost_table, [None, None, None])
+        diagnostics = self._validate_with(records, self._deps())
+        self.assertTrue(diagnostics.ok, msg=diagnostics.render())
+
+    def test_single_variant_profile_resolves_in_every_slot(self):
+        records = classes_schema.load_records(fixture_path("classes", "valid.json"))
+        by_class = {r.class_name: r for r in records}
+        # FixtureSingle has only a 'normal' array authored (DemonKing-style
+        # single-variant profile) -- repeating its lone symbol in all 3
+        # ClassData slots must resolve cleanly, weather-invariant.
+        by_class["CLASS_FIXTURE_A"].mov_cost_table = [
+            "TerrainTable_MovCost_FixtureSingle",
+            "TerrainTable_MovCost_FixtureSingle",
+            "TerrainTable_MovCost_FixtureSingle",
+        ]
+        diagnostics = self._validate_with(records, self._deps())
+        self.assertTrue(diagnostics.ok, msg=diagnostics.render())
+
+    def test_unresolvable_symbol_detected(self):
+        records = classes_schema.load_records(fixture_path("classes", "valid.json"))
+        by_class = {r.class_name: r for r in records}
+        by_class["CLASS_FIXTURE_A"].mov_cost_table[1] = "TerrainTable_MovCost_NotReal"
+        diagnostics = self._validate_with(records, self._deps())
+        self.assertFalse(diagnostics.ok)
+        messages = [str(e) for e in diagnostics.errors]
+        self.assertTrue(
+            any(
+                "movCostTable[1] 'TerrainTable_MovCost_NotReal' is not one of the arrays "
+                "authored in movecost for the 'rain' slot" in m
+                for m in messages
+            ),
+            messages,
+        )
+
+    def test_mixed_profile_triplet_detected(self):
+        records = classes_schema.load_records(fixture_path("classes", "valid.json"))
+        by_class = {r.class_name: r for r in records}
+        # normal/rain come from 'Fixture', snow from the unrelated
+        # 'FixtureB' profile -- every individual symbol is a real
+        # authored movecost array, but the triplet must still be flagged
+        # since it does not resolve to a single consistent profile.
+        by_class["CLASS_FIXTURE_A"].mov_cost_table[2] = "TerrainTable_MovCost_FixtureBSnow"
+        diagnostics = self._validate_with(records, self._deps())
+        self.assertFalse(diagnostics.ok)
+        messages = [str(e) for e in diagnostics.errors]
+        self.assertTrue(
+            any("movCostTable mixes symbols from different movecost profiles" in m for m in messages),
+            messages,
+        )
+
+    def test_no_movecost_dependency_falls_back_to_symbol_ref_check(self):
+        records = classes_schema.load_records(fixture_path("classes", "valid.json"))
+        diagnostics = self._validate_with(records, self._deps(movecost=False))
         self.assertTrue(diagnostics.ok, msg=diagnostics.render())
 
 

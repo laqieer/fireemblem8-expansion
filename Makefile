@@ -153,7 +153,16 @@ MID_OBJECTS  := $(MID_FILES:.mid=.o)
 # TerrainTable_HealAmount/TerrainTable_HealsStatus. See generated_data.mk's
 # "Linking a partial-file table with two non-adjacent hand blocks, neither
 # Chapter-2-owned" section, terrainstats subsection.
-ALL_OBJECTS  := $(C_OBJECTS) $(DATA_SRC_C_OBJECTS) $(ASM_OBJECTS) $(BANIM_OBJECT) $(MID_OBJECTS) $(GENERATED_DATA_LINKED_OBJECTS) $(GENERATED_DATA_CH2_UNITS_OBJECT) $(GENERATED_DATA_CH2_TRAPS_OBJECT) $(GENERATED_DATA_CH2_SHOPS_OBJECT) $(GENERATED_DATA_CH2_EVENTLISTS_OBJECT) $(GENERATED_DATA_TERRAINSTATS_OBJECT)
+# Issue #5 Batch 2 (mechanics): $(GENERATED_DATA_MOVECOST_OBJECT) is the
+# same kind of additive object, sharing src/data_terrains.c/.o with
+# terrainstats above -- guarded internally (twice, for its two
+# non-adjacent groups of arrays) to exclude only the 47 movement-cost
+# arrays (15 named mobility profiles' Normal/Rain/Snow triplets,
+# TerrainTable_MovCost_DemonKing, TerrainMoveCost_Ballista); it is
+# canonically linked as the *first* `.data` prefix, ahead of
+# terrainstats. See generated_data.mk's "Chapter-2-owned (Issue #5 Batch
+# 2: mechanics movecost)" section.
+ALL_OBJECTS  := $(C_OBJECTS) $(DATA_SRC_C_OBJECTS) $(ASM_OBJECTS) $(BANIM_OBJECT) $(MID_OBJECTS) $(GENERATED_DATA_LINKED_OBJECTS) $(GENERATED_DATA_CH2_UNITS_OBJECT) $(GENERATED_DATA_CH2_TRAPS_OBJECT) $(GENERATED_DATA_CH2_SHOPS_OBJECT) $(GENERATED_DATA_CH2_EVENTLISTS_OBJECT) $(GENERATED_DATA_TERRAINSTATS_OBJECT) $(GENERATED_DATA_MOVECOST_OBJECT)
 OBJECTS_LST  := objects.lst
 DEPS_DIR     := .dep
 

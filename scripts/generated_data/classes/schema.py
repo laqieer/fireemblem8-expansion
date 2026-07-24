@@ -99,9 +99,27 @@ terrainstats* with a matching ``field`` (``terrainAvoid``/
 ``terrainDefense``/``terrainResistance``) -- common or fly mobility are
 both accepted, since ``ClassData`` itself has no separate "mobility"
 concept; the referenced symbol alone (``_Common`` vs ``_Fly``) encodes
-that. ``movCostTable`` and ``reservedTerrainTable`` are unaffected by this
-and remain plain ``CSymbolRefField`` escape hatches (movement-cost tables
-and the unresearched ``_pU50`` field are out of scope for this batch).
+that. ``reservedTerrainTable`` is unaffected by this and remains a plain
+``CSymbolRefField`` escape hatch (the unresearched ``_pU50`` field stays
+out of scope).
+
+``movCostTable`` is, since Issue #5 Batch 2, validated against the
+``movecost`` table the same way: each non-null triplet entry must be one
+of the 47 ``TerrainTable_MovCost_*``/``TerrainMoveCost_Ballista`` arrays
+*authored in movecost*, and all non-null entries across the triplet must
+resolve to the *same* movecost profile at their own matching
+normal/rain/snow slot (see ``movecost/schema.py``'s
+``build_slot_symbol_index()``) -- e.g. slot 0 (normal) must name that
+profile's own ``normal`` array, not another profile's or another slot's.
+Single-variant profiles (``DemonKing``/``Ballista``, which author only a
+``normal`` array) resolve consistently no matter which of the 3 slots
+their lone symbol is repeated in -- confirmed against ``CLASS_DEMON_KING``,
+whose 127-record ``pMovCostTable`` entry is
+``{ TerrainTable_MovCost_DemonKing, TerrainTable_MovCost_DemonKing,
+TerrainTable_MovCost_DemonKing }`` (the same symbol in all 3 slots, not a
+per-weather variant). An all-null triplet (the 9/127 fully-immobile
+vanilla records, see ``MOV_COST_NULL_LITERAL`` above) is unaffected and
+remains valid regardless of any movecost dependency.
 
 ``reservedTerrainTable`` models the struct's ``._pU50`` field (``const
 void* _pU50``, an unresearched escape hatch -- see ``include/bmunit.h``).
@@ -556,18 +574,29 @@ def validate(records, diagnostics, dependency_records=None, classes_header=CLASS
     widths, text IDs against ``MSG_COUNT``, ``defaultPortraitId``/
     ``smsId`` against their live source-derived bounds), the exact
     ``movCostTable`` triplet capacity, and every C-symbol-reference field
-    (``battleAnim``, ``movCostTable`` entries, ``reservedTerrainTable``).
+    (``battleAnim``, ``reservedTerrainTable``).
     ``terrainAvoid``/``terrainDefense``/``terrainResistance`` are instead
     resolved against ``dependency_records["terrainstats"]`` (see
     ``dependency_tables()``) -- each referenced symbol must be one of the
     authored terrainstats arrays with a matching ``field``; when no
     terrainstats dependency records are supplied, falls back to the
     generic ``CSymbolRefField`` header check (standalone/unit-test use).
+    ``movCostTable`` entries are similarly resolved against
+    ``dependency_records["movecost"]`` -- each non-null entry must be one
+    of the authored movecost arrays, and all non-null entries in a
+    triplet must resolve to the same movecost profile at their own
+    matching slot; when no movecost dependency records are supplied,
+    falls back to the generic ``CSymbolRefField`` header check.
     """
     dependency_records = dependency_records or {}
     terrainstats_field_by_symbol = {
         r.symbol: r.field for r in dependency_records.get("terrainstats", ())
     }
+    movecost_records = dependency_records.get("movecost")
+    movecost_slot_index = None
+    if movecost_records:
+        from ..movecost.schema import build_slot_symbol_index
+        movecost_slot_index = build_slot_symbol_index(movecost_records)
 
     if msg_count is None:
         msg_count = read_msg_count(msg_header)
@@ -692,12 +721,40 @@ def validate(records, diagnostics, dependency_records=None, classes_header=CLASS
                     record.loc, "{}.movCostTable".format(ref),
                 )
             )
+        resolved_profiles = {}
         for slot_index, symbol in enumerate(record.mov_cost_table):
             if symbol is None:
                 continue
             loc = record.mov_cost_table_locs[slot_index] if slot_index < len(record.mov_cost_table_locs) else record.loc
-            diagnostics.extend(
-                terrain_field.validate(symbol, loc, "{}.movCostTable[{}]".format(ref, slot_index))
+            entry_ref = "{}.movCostTable[{}]".format(ref, slot_index)
+            if movecost_slot_index is not None:
+                slot_name = _MOVCOST_SLOTS[slot_index] if slot_index < len(_MOVCOST_SLOTS) else None
+                slot_map = movecost_slot_index.get(slot_name, {}) if slot_name else {}
+                profile = slot_map.get(symbol)
+                if profile is None:
+                    diagnostics.add(
+                        GeneratedDataError(
+                            "movCostTable[{}] '{}' is not one of the arrays authored in movecost "
+                            "for the '{}' slot".format(slot_index, symbol, slot_name),
+                            loc, entry_ref,
+                        )
+                    )
+                else:
+                    resolved_profiles.setdefault(profile, []).append(slot_index)
+            else:
+                diagnostics.extend(terrain_field.validate(symbol, loc, entry_ref))
+
+        if movecost_slot_index is not None and len(resolved_profiles) > 1:
+            diagnostics.add(
+                GeneratedDataError(
+                    "movCostTable mixes symbols from different movecost profiles: {}".format(
+                        ", ".join(
+                            "{} (slot(s) {})".format(profile, ", ".join(map(str, slots)))
+                            for profile, slots in sorted(resolved_profiles.items())
+                        )
+                    ),
+                    record.loc, "{}.movCostTable".format(ref),
+                )
             )
 
         for field_name, symbol, loc in (
@@ -767,18 +824,20 @@ class ClassesTableSchema(TableSchema):
         return (
             "constants.classes.CLASS", "bmitem.ITYPE", "bmitem.WPN_EXP", "bmunit.CA",
             "ekrbattle.AnimConf", "variables.TerrainTable", "constants.msg.MSG_COUNT",
-            "data.portrait_data", "data.unit_icon_wait_data", "terrainstats",
+            "data.portrait_data", "data.unit_icon_wait_data", "terrainstats", "movecost",
         )
 
     def dependency_tables(self):
-        # Loaded via terrainstats' own registered schema and
+        # Loaded via terrainstats'/movecost's own registered schemas and
         # `default_source` (overridable with `--dep-source
-        # terrainstats=PATH`) -- see `cli.py`'s `_load_dependency_records()`.
-        # Used to validate terrainAvoid/terrainDefense/terrainResistance
-        # against real authored terrainstats records instead of a generic
-        # header-presence check; movCostTable/reservedTerrainTable remain
-        # CSymbolRefField escape hatches, unaffected by this dependency.
-        return ("terrainstats",)
+        # terrainstats=PATH`/`--dep-source movecost=PATH`) -- see
+        # `cli.py`'s `_load_dependency_records()`. Used to validate
+        # terrainAvoid/terrainDefense/terrainResistance against real
+        # authored terrainstats records and movCostTable against real
+        # authored movecost records, instead of a generic
+        # header-presence check; reservedTerrainTable remains a
+        # CSymbolRefField escape hatch, unaffected by either dependency.
+        return ("terrainstats", "movecost")
 
     def load_records(self, source_path):
         return load_records(source_path)

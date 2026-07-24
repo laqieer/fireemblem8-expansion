@@ -1,4 +1,4 @@
-# Generated-data platform (Issue #5 Chapter 2 slice -- Batch A + B + C; global `items`/`classes` Batch 1; `characters` Batch 2a + 2b; `classes` linked Batch 2c-1; `items` linked Batch 2c-2; `supports` linked Batch 2c-3; `characters` linked Batch 2c-4; `units`/Chapter 2 `UnitDefinition`/`REDA` linked Batch 3a; `traps`/Chapter 2 trap arrays linked Batch 3b; `shops`/Chapter 2 armory linked Batch 3c; `eventlists`/Chapter 2 event-list composition linked Batch 3d; `terrainstats`/global terrain combat+heal stat arrays linked, Issue #5 mechanics Batch 1)
+# Generated-data platform (Issue #5 Chapter 2 slice -- Batch A + B + C; global `items`/`classes` Batch 1; `characters` Batch 2a + 2b; `classes` linked Batch 2c-1; `items` linked Batch 2c-2; `supports` linked Batch 2c-3; `characters` linked Batch 2c-4; `units`/Chapter 2 `UnitDefinition`/`REDA` linked Batch 3a; `traps`/Chapter 2 trap arrays linked Batch 3b; `shops`/Chapter 2 armory linked Batch 3c; `eventlists`/Chapter 2 event-list composition linked Batch 3d; `terrainstats`/global terrain combat+heal stat arrays linked, Issue #5 mechanics Batch 1; `movecost`/global weather-triplet movement-cost + DemonKing/Ballista tables linked, Issue #5 mechanics Batch 2)
 
 ## Status
 
@@ -212,11 +212,37 @@ partial-file table (Batch 1 mechanics: `terrainstats`)" below for the
 full write-up, and "Remaining Issue #5 scope" at the end of this
 document for the explicit list of what remains open.
 
+As of Issue #5 **mechanics Batch 2**, `movecost` completes the other
+clean terrain-mechanics domain: all 45 named Normal/Rain/Snow mobility-
+profile arrays plus `TerrainTable_MovCost_DemonKing`/
+`TerrainMoveCost_Ballista` (47 arrays total) are authored and linked, in
+place of two non-adjacent groups of symbols in `src/data_terrains.c`
+(the 32 Normal/DemonKing/Ballista/Rain arrays that open the file, then,
+after the untouched `Unk_TerrainTable_1` escape hatch, the 15 Snow
+arrays -- immediately preceding the untouched `Unk_TerrainTable_2`
+escape hatch and `terrainstats`' own splice), also with zero ROM/ELF
+address shift. Structurally like `terrainstats` (two non-adjacent
+guarded blocks sharing one guard macro, a per-symbol-sectioned generated
+object, no internal `ALIGN(4)`), spliced in as the new canonical `.data`
+prefix immediately before `terrainstats`' own splice: `classes/schema.py`
+now also cross-validates every non-null `movCostTable` triplet entry
+against real `movecost` records (matching normal/rain/snow profile
+identity), on top of its existing `terrainstats` cross-validation. This
+still does **not** close Issue #5's mechanics scope (the 7
+`Unk_TerrainTable_N` escape hatches, weapon triangle, and every other
+combat/growth/AI formula and table remain untouched) nor Issue #5
+overall -- see "## `movecost` schema (Issue #5 mechanics Batch 2:
+weather-triplet movement-cost + DemonKing/Ballista tables)" and "Linking
+a weather-triplet movement-cost table split around one non-adjacent
+escape hatch (Issue #5 mechanics Batch 2: `movecost`)" below for the
+full write-up, and "Remaining Issue #5 scope" at the end of this
+document for the explicit list of what remains open.
+
 ## Source vs. generated vs. committed-public artifacts
 
 **This table's "Linked into the ROM?" column reflects current status,
-not each table's original as-generated-only starting point.** Of the 11
-tables in `GENERATED_DATA_TABLES`, 9 produce real compiled C data and are
+not each table's original as-generated-only starting point.** Of the 12
+tables in `GENERATED_DATA_TABLES`, 10 produce real compiled C data and are
 now **canonically linked**, protected by a table-specific `*-link-check`
 Make target (`generated-data-link-check` for the 4 whole-file global
 tables, `generated-data-ch2-<table>-link-check` for the 4 Chapter-2-owned
@@ -280,6 +306,15 @@ declaration files remain the sole, unchanged, always-canonical source.
 | Hand-written C (2 non-adjacent guarded blocks, round-trip reference only) | `src/data_terrains.c` | Yes | No -- all 8 terrain combat/heal symbols superseded by the generated object (mechanics Batch 1); the 5 `Unk_TerrainTable_N` escape hatches and every movement-cost/graphics array in the same file stay hand-linked, untouched |
 | Generated C89 (bulky) | `build/generated/data/data_terrainstats.c` | **No** (gitignored) | **Yes** -- canonical, linked via a 5-piece ldscript split (2 non-adjacent symbol groups), zero shift |
 | Committed inventory/summary | `reports/generated_data_terrainstats_inventory.md` | Yes (small) | N/A |
+
+**Canonically linked, global partial-file slice (Issue #5 mechanics Batch 2: `movecost`):**
+
+| Artifact | Path | Committed? | Linked into the ROM? |
+|---|---|---|---|
+| Structured source (movecost) | `src/data/movecost.json` | Yes | No |
+| Hand-written C (2 non-adjacent guarded blocks, round-trip reference only, same file as `terrainstats`) | `src/data_terrains.c` | Yes | No -- all 47 movement-cost symbols superseded by the generated object (mechanics Batch 2); the `Unk_TerrainTable_1`/`_2` escape hatches, `terrainstats`' own 8 symbols, and every graphics array in the same file stay hand-linked, untouched |
+| Generated C89 (bulky) | `build/generated/data/data_movecost.c` | **No** (gitignored) | **Yes** -- canonical, spliced in as the new `.data` prefix immediately before `terrainstats`' own splice, via a 4-piece ldscript split (2 non-adjacent symbol groups), zero shift |
+| Committed inventory/summary | `reports/generated_data_movecost_inventory.md` | Yes (small) | N/A |
 
 **Metadata/schema-only (no generated C ever produced; existing hand file remains the sole canonical source):**
 
@@ -1117,24 +1152,28 @@ As of Issue #5 **Batch 1 (mechanics)**, `terrainAvoid`/`terrainDefense`/
 `CSymbolRefField` header presence: `ClassesTableSchema.validate()` now
 accepts an optional `dependency_records` map (supplied automatically by
 the CLI via the same `dependency_tables()` mechanism `eventlists`/
-`chapterbundle` already use, now returning `("terrainstats",)`) and, when
-`terrainstats` records are supplied, cross-checks each of the three
-referenced symbols against the authored `src/data/terrainstats.json`
-records: the symbol must exist as a `terrainstats` record, **and** that
-record's own `field` metadata (`terrainAvoid`/`terrainDefense`/
-`terrainResistance`) must match the `ClassData` field referencing it --
-a class cannot, for example, reference a `terrainDefense`-tagged array
-through its `terrainAvoid` field. `ClassData` records have no explicit
-"mobility" (`Common` vs. `Fly`) field of their own, so this check is
-symbol-identity-based, not role-based: it does not (and does not need
-to) know or care whether a class is a flier. `movCostTable` entries and
-`reservedTerrainTable` are **not** part of this change and remain
-plain `CSymbolRefField` escape hatches (movement-cost/reserved-table
-authoring is explicitly out of scope for this batch -- see "##
-`terrainstats` schema" below). When `dependency_records` is omitted
-(e.g. standalone unit tests), `validate()` falls back to the original
-`CSymbolRefField`-only check for all three fields, so the schema stays
-usable without wiring up the full dependency-graph machinery.
+`chapterbundle` already use, now returning `("terrainstats", "movecost")`,
+extended in **Batch 2** to add `movecost`) and, when `terrainstats`
+records are supplied, cross-checks each of the three referenced symbols
+against the authored `src/data/terrainstats.json` records: the symbol
+must exist as a `terrainstats` record, **and** that record's own `field`
+metadata (`terrainAvoid`/`terrainDefense`/`terrainResistance`) must match
+the `ClassData` field referencing it -- a class cannot, for example,
+reference a `terrainDefense`-tagged array through its `terrainAvoid`
+field. `ClassData` records have no explicit "mobility" (`Common` vs.
+`Fly`) field of their own, so this check is symbol-identity-based, not
+role-based: it does not (and does not need to) know or care whether a
+class is a flier. As of Issue #5 **mechanics Batch 2**, `movCostTable`
+entries are validated the same way against authored `movecost` records
+(see "### `classes` cross-validation against `movecost`" under "##
+`movecost` schema" below for the full write-up); `reservedTerrainTable`
+remains the one field **not** covered by cross-table validation and
+stays a plain `CSymbolRefField` escape hatch (its target
+`Unk_TerrainTable_*` arrays are unresearched and explicitly out of
+scope). When `dependency_records` is omitted (e.g. standalone unit
+tests), `validate()` falls back to the original `CSymbolRefField`-only
+check for all four fields, so the schema stays usable without wiring up
+the full dependency-graph machinery.
 
 The generator (`classes/generate.py`) matches the hand file's own
 default-omission convention field for field (confirmed per-field
@@ -1251,6 +1290,167 @@ CI-checked report: total array count, the terrain-key coverage count
 per array, a `field`/`mobility` usage breakdown, and the table's own
 dependency-graph digest (this table has no dependencies of its own --
 it is a leaf that `classes` depends on, not the reverse).
+
+## `movecost` schema (Issue #5 mechanics Batch 2: weather-triplet movement-cost + DemonKing/Ballista tables)
+
+Source: `src/data/movecost.json` (schema `fe8.movecost.v1`), one object
+per named **mobility profile** under `"profiles"`: `profile` (a unique
+name -- the 15 named triplet profiles are `CommonT2`/`CommonT1`/`Armor`/
+`Fighter`/`Berserker`/`Brigand`/`Pirate`/`Thief`/`Magic`/`Civilian`/
+`HorseT1`/`HorseT2`/`AnimalT1`/`AnimalT2`/`Fly`, plus the two
+single-variant profiles `DemonKing`/`Ballista`), and three **direct**
+sibling keys -- `normal`, `rain`, `snow` -- each either JSON `null` or an
+object with `symbol` (the array's C symbol name) and `values` (an
+ordered mapping keyed by `TERRAIN_*` constant, identical shape to
+`terrainstats`' own per-array entry mapping). There is no intermediate
+`variants` wrapper -- `normal`/`rain`/`snow` sit directly on the profile
+object alongside `profile`:
+
+```json
+{
+  "$schema": "fe8.movecost.v1",
+  "profiles": [
+    {
+      "profile": "CommonT2",
+      "normal": {
+        "symbol": "TerrainTable_MovCost_CommonT2Normal",
+        "values": { "TERRAIN_NONE": -1, "...": "...", "TERRAIN_MAST": -1 }
+      },
+      "rain": {
+        "symbol": "TerrainTable_MovCost_CommonT2Rain",
+        "values": { "...": "..." }
+      },
+      "snow": {
+        "symbol": "TerrainTable_MovCost_CommonT2Snow",
+        "values": { "...": "..." }
+      }
+    },
+    {
+      "profile": "DemonKing",
+      "normal": {
+        "symbol": "TerrainTable_MovCost_DemonKing",
+        "values": { "...": "..." }
+      },
+      "rain": null,
+      "snow": null
+    },
+    {
+      "profile": "Ballista",
+      "normal": {
+        "symbol": "TerrainMoveCost_Ballista",
+        "values": { "...": "..." }
+      },
+      "rain": null,
+      "snow": null
+    }
+  ]
+}
+```
+
+The `profile` named `DemonKing`'s `normal.symbol` is
+`TerrainTable_MovCost_DemonKing` (no weather suffix, since only one
+array exists for that class); the `profile` named `Ballista`'s
+`normal.symbol` is `TerrainMoveCost_Ballista` -- note the divergent
+`TerrainMoveCost_` prefix (missing the `Table` segment every other
+symbol in this table has), confirmed verbatim against
+`src/data_terrains.c` and preserved exactly, **not** a typo to normalize
+away. Both `DemonKing` and `Ballista` are **single-variant**: they author
+only `normal` (`rain`/`snow` are JSON `null`), matching the vanilla
+source's own single array for each (no separate weather-specific
+DemonKing/Ballista tables exist). Covers exactly the 15 named
+Normal/Rain/Snow triplets (45 arrays) plus the `DemonKing`/`Ballista`
+profiles' single `normal` arrays (2 more) -- **47 arrays total** --
+deliberately excluding the 2 unrelated `Unk_TerrainTable_1`/
+`Unk_TerrainTable_2` escape-hatch arrays and every graphics/non-movement
+table that also lives in `src/data_terrains.c`; none of those are part
+of this batch's scope (see "Remaining Issue #5 scope" at the end of this
+document).
+
+Validations enforced (`movecost/schema.py: validate()`): unique profile
+names; unique symbols across the whole table (no two profiles, or two
+weather slots of the same profile, may share a symbol); **full
+contiguous `TERRAIN_*` coverage** for every authored `values` mapping
+(same enum-order, no-gap, no-duplicate rule as `terrainstats`); the
+exact `s8` range (`[-128, 127]`) for every value; `symbol` is validated
+against a closed, self-describing expectation derived from `profile` and
+slot (named profiles must spell
+`TerrainTable_MovCost_{profile}{Normal,Rain,Snow}`; `DemonKing`'s lone
+slot must be `TerrainTable_MovCost_DemonKing`; `Ballista`'s lone slot
+must be `TerrainMoveCost_Ballista`) rather than an open
+`CSymbolRefField` header scan; `DemonKing`/`Ballista` must leave
+`rain`/`snow` as JSON `null`, and no profile may reuse a name already
+claimed by another.
+
+The generator (`movecost/generate.py`) emits arrays in the hand file's
+own declaration order -- all 15 named profiles' `normal` array, then
+`TerrainTable_MovCost_DemonKing`, then `TerrainMoveCost_Ballista`, then
+all 15 named profiles' `rain` array, then all 15 named profiles' `snow`
+array -- and splits storage across two classes to match the hand file's
+own layout exactly: the 32 Normal/DemonKing/Ballista/Rain arrays are
+ordinary `CONST_DATA` (`.data`, the file's default placement, since they
+are the literal first content of `src/data_terrains.c` and need no
+redirect), while the 15 Snow arrays (separated from the first 32 by the
+hand-owned `Unk_TerrainTable_1` escape hatch) are emitted under a
+dedicated `SECTION(".data.movecostsnow")` so the same generated object
+can be spliced into `ldscript.txt` at an independent, later point (see
+"## Linking a weather-triplet movement-cost table split around one
+non-adjacent escape hatch (Issue #5 mechanics Batch 2: `movecost`)"
+below for the full write-up). Each array is emitted as a flat C89
+designated initializer, `[TERRAIN_X] = value`, in ascending
+declared-entry order.
+
+### Round-trip checker (`movecost/parser.py`)
+
+A regex-based parser scoped precisely to the 47 expected symbols (it
+never matches `Unk_TerrainTable_*` or any terrain-combat/heal/graphics
+array sharing the same file, confirmed by a dedicated non-confusion
+test). Every entry resolves to a bare `(terrain_key, value)` pair, so
+the comparison is a simple ordered-tuple-list equality per array, same
+as `terrainstats`. `python3 -m unittest
+scripts.generated_data.tests.test_movecost_roundtrip` proves all
+**47/47** arrays match the real `src/data_terrains.c` exactly with zero
+diagnostics.
+
+### Committed inventory (`movecost/inventory.py`)
+
+`reports/generated_data_movecost_inventory.md` is the committed,
+CI-checked report: total profile/array counts, the terrain-key coverage
+count per array, a single-variant-vs-triplet profile breakdown, and the
+table's own dependency-graph digest (this table has no dependencies of
+its own -- it is a leaf that `classes` depends on, not the reverse).
+
+### `classes` cross-validation against `movecost`
+
+As of this batch, `classes/schema.py`'s `dependency_tables()` returns
+`("terrainstats", "movecost")`, and `ClassesTableSchema.validate()`
+cross-checks every non-null `movCostTable` triplet entry
+(`normal`/`rain`/`snow`) against the authored `movecost` records when
+`dependency_records["movecost"]` is supplied: each non-null entry must
+resolve to a symbol that is actually one of the arrays authored in
+`movecost`, **and** all non-null entries within one `ClassData` record's
+triplet must resolve to the *same* movecost profile at their own
+matching slot -- a class cannot, for example, pair one profile's
+`normal` symbol with a different profile's `rain` symbol. The
+single-variant `DemonKing`/`Ballista` profiles register their lone
+`normal` symbol under all three slot keys in the lookup index
+(`movecost/schema.py`'s `build_slot_symbol_index()`), so a triplet that
+legitimately repeats the same weather-invariant symbol three times (as
+`CLASS_DEMON_KING` and the ballista-consuming classes do) resolves
+cleanly rather than being flagged as a cross-profile mismatch. A `null`
+triplet entry remains valid regardless (immobile classes are
+unaffected). `movCostTable` entries have no explicit "mobility profile"
+field of their own on the `ClassData` side, so -- like the
+`terrainstats` cross-check -- this is a symbol-identity/profile-identity
+check, not a semantic role check. `reservedTerrainTable` is **not** part
+of this change and remains a plain `CSymbolRefField` escape hatch. When
+`dependency_records["movecost"]` is omitted (e.g. standalone unit
+tests), `validate()` falls back to the original `CSymbolRefField`-only
+check for `movCostTable`, so the schema stays usable without wiring up
+the full dependency-graph machinery. See `ClassesMovecostDependencyTests`
+in `test_classes_schema.py` for the full set of covered cases (valid
+triplet resolution, null-triplet validity, single-variant
+weather-invariant resolution, unresolvable-symbol detection,
+mixed-profile-triplet detection, no-movecost-dependency fallback).
 
 ## `characters` schema (Issue #5 Batch 2a + 2b: full global character table)
 
@@ -2914,6 +3114,202 @@ shift any other object's relative order.
   savefmt-check, shifted-check, `scan_build_addrs.py`,
   `scan_raw_casts.sh`).
 
+## Linking a weather-triplet movement-cost table split around one non-adjacent escape hatch (Issue #5 mechanics Batch 2: `movecost`)
+
+`movecost` is the second global mechanics table linked via the
+partial-file-splice pattern (after `terrainstats`, Batch 1 mechanics):
+its 47 symbols are only a slice of `src/data_terrains.c`, which also
+defines the 8 `terrainstats` arrays (already linked), the 2
+`Unk_TerrainTable_1`/`Unk_TerrainTable_2` escape-hatch arrays, and every
+`BanimTerrainGround_*`/`gBanimBGLut*` graphics table -- all of which
+must stay hand-linked untouched.
+
+**Two groups, split by one interior escape hatch.** Unlike `terrainstats`
+(two *separate* escape hatches sitting between its two groups),
+`movecost`'s 47 arrays are the **literal first content of the file**:
+all 15 profiles' Normal variants, then `TerrainTable_MovCost_DemonKing`,
+then `TerrainMoveCost_Ballista`, then all 15 profiles' Rain variants (32
+arrays total, contiguous from file start) -- then `Unk_TerrainTable_1`
+(one hand-owned escape hatch) -- then all 15 profiles' Snow variants (15
+arrays, contiguous) -- then `Unk_TerrainTable_2` (a second hand-owned
+escape hatch, immediately preceding `terrainstats`' own already-linked
+guard). `src/data_terrains.c` wraps each of the two movecost groups in
+its own `#if !GUARD` / `#endif` region, sharing one guard macro
+(`GENERATED_DATA_MOVECOST_LINKED`, defined once, at the very top of the
+file, before the first array):
+
+```c
+#define GENERATED_DATA_MOVECOST_LINKED 1
+
+#if !GENERATED_DATA_MOVECOST_LINKED
+CONST_DATA s8 TerrainTable_MovCost_CommonT2Normal[TERRAIN_COUNT] = {
+    ...
+};
+... /* all 15 named profiles' normal array, then DemonKing, then Ballista, then all 15 named profiles' rain array */
+#endif /* !GENERATED_DATA_MOVECOST_LINKED */
+
+CONST_DATA s8 Unk_TerrainTable_1[TERRAIN_COUNT] = { ... }; /* untouched */
+
+#undef CONST_DATA
+#define CONST_DATA SECTION(".data.movecostsnow")
+
+#if !GENERATED_DATA_MOVECOST_LINKED
+CONST_DATA s8 TerrainTable_MovCost_CommonT2Snow[TERRAIN_COUNT] = {
+    ...
+};
+... /* all 15 named profiles' snow array */
+#endif /* !GENERATED_DATA_MOVECOST_LINKED */
+
+#undef CONST_DATA
+#define CONST_DATA SECTION(".data.movecosttail")
+
+CONST_DATA s8 Unk_TerrainTable_2[TERRAIN_COUNT] = { ... }; /* untouched */
+
+/* terrainstats' own pre-existing guard/redirect logic continues unchanged from here */
+```
+
+Both guarded blocks are left in place, verbatim -- never hand-edit
+either one, edit `src/data/movecost.json` and regenerate instead.
+`Unk_TerrainTable_1` sits, untouched, in the plain default `.data`
+section (unchanged from before this batch); `Unk_TerrainTable_2` is
+redirected to a **new**, uniquely-named `.data.movecosttail` section --
+not reverted to plain `.data` -- because a single named
+`(object_file, section_name)` pair can only be referenced once in
+`ldscript.txt`: `.data` is already claimed (once) by the very first
+splice line above (which now resolves to `Unk_TerrainTable_1` only,
+since the 32 arrays originally preceding it in that section are
+excluded), so `Unk_TerrainTable_2` needs its own distinct section name
+to be placed at its own, independent point later in the file. This
+choice is zero-cost (the section is a linker-only bookkeeping label, not
+a runtime construct) and self-contained per table, matching the
+`terrainstats`/`traps` precedent of never reusing a hand block's section
+tag across two different splice points.
+
+**Per-symbol sectioning for the Snow group, structurally like
+`terrainstats`' heal arrays.** Since a single input section is placed by
+the linker as one atomic unit, and the 32 Normal/DemonKing/Ballista/Rain
+arrays must land at the file's original entry point while the 15 Snow
+arrays must land immediately after `Unk_TerrainTable_1` (a much later
+address), splicing in one generated object with all 47 symbols in the
+*same* default section would force one group to jump far from its
+original address. Instead, `scripts/generated_data/movecost/generate.py`
+places the 32 Normal/DemonKing/Ballista/Rain arrays in the ordinary
+`CONST_DATA` (`.data`) section and the 15 Snow arrays alone into a
+dedicated `SECTION(".data.movecostsnow")`, so the *same* generated
+object (`build/generated/data/data_movecost.c`/`.o`) can be spliced into
+`ldscript.txt` at two independent points.
+
+**No `ALIGN(4)` at the internal seams, same reasoning as `terrainstats`.**
+All the movecost/terrainstats/`Unk_TerrainTable_N` arrays in
+`src/data_terrains.c` are flat `s8[TERRAIN_COUNT]` arrays packed by the
+compiler with zero alignment padding between adjacent arrays. Following
+the `terrainstats` precedent, `. = ALIGN(4);` is kept only on the very
+first line of the whole cluster (the file's original entry point) and
+dropped entirely from the three internal seams within the movecost
+splice and the seam between the movecost and terrainstats splices, so
+the originally-single, compiler-packed byte stream is re-spliced across
+objects with zero extra bytes anywhere.
+
+**Legacy (`ldscript.txt`).** Four lines, immediately before the existing
+`terrainstats` splice, in place of the original single
+`src/data_terrains.o(.data)` line:
+
+```
+. = ALIGN(4); build/generated/data/data_movecost.o(.data);
+src/data_terrains.o(.data);
+build/generated/data/data_movecost.o(.data.movecostsnow);
+src/data_terrains.o(.data.movecosttail);
+build/generated/data/data_terrainstats.o(.data);
+src/data_terrains.o(.data.terrainmid);
+build/generated/data/data_terrainstats.o(.data.terrainheal);
+src/data_terrains.o(.data.terraintail);
+```
+
+The generated 32 Normal/DemonKing/Ballista/Rain arrays land at the
+original file-start address; `src/data_terrains.o(.data)` (now just
+`Unk_TerrainTable_1`) resumes immediately after, at its own original
+address; the generated 15 Snow arrays land next, at the exact original
+address; `src/data_terrains.o(.data.movecosttail)` (now just
+`Unk_TerrainTable_2`, unchanged content/address) resumes immediately
+after that -- and `terrainstats`' own splice continues, unchanged,
+immediately from there. `terrainstats`' own link-check (and its
+`ldscript.txt` explanatory comment) were updated in lockstep: its
+"prefix piece" is now `src/data_terrains.o(.data.movecosttail)` (Unk_2),
+not the old bare `src/data_terrains.o(.data)`, since the movecost splice
+above it absorbed both the original `.data` symbol reference and the
+`ALIGN(4)` prefix. Verified via `cmp`/`md5sum` against the saved
+pre-change baseline ROM: byte-identical (zero differing bytes; MD5
+match).
+
+**Cross-table consumer, unique to `movecost` (alongside `terrainstats`).**
+Like `terrainstats`, `movecost` is itself a **dependency** consumed by
+`classes`: `ClassesTableSchema.dependency_tables()` now returns
+`("terrainstats", "movecost")`, and `ClassesTableSchema.validate()`
+cross-checks every non-null `ClassData.movCostTable` triplet entry
+against the authored `movecost` records (see "### `classes`
+cross-validation against `movecost`" above for the full write-up).
+`reservedTerrainTable` remains a plain `CSymbolRefField` escape hatch,
+untouched by this batch.
+
+**Modern (`modern.mk`).** Same reasoning as the `terrainstats` synthetic
+slot -- modern links whole objects, not per-input-section, and this
+object is additive, so it is reinstated at a synthetic slot path
+(`$(MODERN_OUTPUT_DIR)/src/data_t-movecost.o`). Unlike every prior
+synthetic slot (each checked only for adjacency to
+`src/data_terrains.o`), `data_t-movecost.o`'s lexical sort position
+required extra care: both `data_t-movecost.o` and
+`data_t-terrainstats.o` share the `data_t-` prefix, and `'m' < 't'`
+means `data_t-movecost.o` sorts *before* `data_t-terrainstats.o` in
+`MODERN_ALL_C_OBJECTS`, forming a **three-in-a-row cluster**
+(`data_t-movecost.o`, `data_t-terrainstats.o`, `src/data_terrains.o`),
+not a simple two-entry adjacency. The
+`generated-data-movecost-link-check` target's modern-adjacency assertion
+checks all three positions are consecutive (verified empirically via
+`printf '%s\n' ... | sort` before finalizing the check logic), not just
+a pair.
+
+**Verification performed for this batch:**
+
+* `generated-data-check --table movecost` -- zero drift against the
+  (guard-preserved) hand blocks' source text (17 profile records, 47
+  arrays).
+* `generated-data-movecost-link-check` (new `generated_data.mk` target,
+  mirroring `generated-data-terrainstats-link-check`'s rigor): guard
+  present exactly twice, both hand blocks preserved verbatim, both
+  `CONST_DATA` redirects (`.data.movecostsnow`, `.data.movecosttail`)
+  present, the four-line `ldscript.txt` ordering and adjacency, legacy
+  `ALL_OBJECTS` presence, the three-entry modern synthetic-slot
+  adjacency (`data_t-movecost.o`/`data_t-terrainstats.o`/
+  `src/data_terrains.o`), the generated object's exactly-one-each 47
+  movecost symbols each in their expected section, a rebuild of
+  `src/data_terrains.o` proving it now defines zero of the 47 guarded
+  movecost symbols while still defining the surrounding
+  escape-hatch/banim arrays untouched, clean coverage,
+  touched-but-unchanged-input no-op-regenerate behavior, and a
+  from-scratch parallel (`-j4`) build.
+* `generated-data-terrainstats-link-check` was updated (its own prefix
+  assertion and one "other unrelated symbol" check both referenced
+  content that moved into the new movecost splice) and re-verified
+  passing, alongside `generated-data-ch2-units-link-check`/
+  `-ch2-traps-link-check`/`-ch2-shops-link-check`/
+  `-ch2-eventlists-link-check` (Batch 3a-3d regressions),
+  `generated-data-link-check` (the global linked-tables gate), and
+  `generated-data-check`/`generated-data-ch2-check` (all 12 registered
+  tables) -- all still pass unchanged.
+* `python3 -m unittest discover -s scripts/generated_data/tests` -- all
+  461 tests pass, including 18 new `movecost`-specific tests
+  (schema/generate/roundtrip) and 6 new `classes`-cross-validation tests
+  (`ClassesMovecostDependencyTests` in `test_classes_schema.py`).
+* A full legacy rebuild (`make fireemblem8.gba`) is byte-identical
+  (`cmp`/`md5sum`, zero differing bytes) to a saved pre-change baseline
+  ROM.
+* `make shiftcheck` (build/static/offsets/diff layers) passes with no
+  high-confidence hardcoded-pointer findings.
+* Both modern configs (`MODERN_CONFIG=debug` and `MODERN_CONFIG=release`)
+  build the full modern object cohort, link, produce a valid ROM header,
+  and pass `expansion-modern-boot-check`; `expansion-modern-linker-check`
+  passes.
+
 ## Remaining Issue #5 scope (explicitly not done here)
 
 Batch A + Batch B + Batch C together are scoped to the Chapter 2
@@ -2994,22 +3390,30 @@ scope** for this Batch C update:
   `src/data_terrains.c`, with zero ROM/ELF address shift, and
   strengthens `classes/schema.py`'s cross-validation of the three
   terrain-lookup fields to check against real authored `terrainstats`
-  records rather than plain header-declaration presence. **This does
-  not close Issue #5's mechanics scope, nor Issue #5 overall.**
-  Explicitly still open, untouched by this batch:
-  * **Movement-cost tables** (`TerrainTable_MovCost_*`, `ClassData`'s
-    `movCostTable`/`pMovCostTable` triplet) -- `classes/schema.py`
-    validates these only via `CSymbolRefField` header presence, exactly
-    as before this batch; they are not modeled, authored, or linked by
-    any schema yet.
-  * The 5 `Unk_TerrainTable_3`..`Unk_TerrainTable_7` escape-hatch
-    arrays that sit between `terrainstats`' two guarded groups inside
-    `src/data_terrains.c` -- still fully hand-owned, unresearched,
+  records rather than plain header-declaration presence. `movecost`
+  (Issue #5 **mechanics Batch 2** -- see "## `movecost` schema" and
+  "Linking a weather-triplet movement-cost table split around one
+  non-adjacent escape hatch" above) now further authors and canonically
+  links all 45 named Normal/Rain/Snow mobility-profile arrays plus
+  `TerrainTable_MovCost_DemonKing`/`TerrainMoveCost_Ballista` (47 arrays
+  total) consumed by `ClassData`'s `movCostTable`/`pMovCostTable`
+  triplet, in place of their (non-adjacent, `Unk_TerrainTable_1`-split)
+  slice of `src/data_terrains.c`, with zero ROM/ELF address shift, and
+  further strengthens `classes/schema.py`'s cross-validation so every
+  non-null `movCostTable` triplet entry resolves against an authored
+  `movecost` profile with matching normal/rain/snow slot identity. **This
+  does not close Issue #5's mechanics scope, nor Issue #5 overall.**
+  Explicitly still open, untouched by these batches:
+  * The 2 `Unk_TerrainTable_1`/`Unk_TerrainTable_2` escape-hatch arrays
+    that sit between `movecost`'s two guarded groups, and the 5
+    `Unk_TerrainTable_3`..`Unk_TerrainTable_7` escape-hatch arrays that
+    sit between `terrainstats`' two guarded groups, inside
+    `src/data_terrains.c` -- all 7 remain fully hand-owned, unresearched,
     referenced (if at all) only via `ClassData`'s `reservedTerrainTable`
-    `CSymbolRefField` escape hatch, untouched by this batch.
+    `CSymbolRefField` escape hatch, untouched by these batches.
   * The `BanimTerrainGround_*`/`gBanimBGLut*` graphics tables in the
-    same file -- pure graphics data, not combat/heal mechanics, out of
-    scope by construction.
+    same file -- pure graphics data, not combat/heal/movement mechanics,
+    out of scope by construction.
   * **Weapon triangle**, hit/crit/damage formulas, growth-rate
     application, AI decision logic, and every other combat/mechanics
     system's own data tables -- none of these are modeled, authored, or
@@ -3017,9 +3421,9 @@ scope** for this Batch C update:
 * **Additional chapters.** This whole platform -- schemas, the
   `chapterbundle` composition pattern, the CLI, the Make targets, CI
   wiring -- covers Chapter 2 only (`items`/`classes`/`supports`/
-  `characters`/`terrainstats` are the exceptions, being global by
-  nature); every other chapter's equivalent tables/bundle remain to be
-  modeled from scratch.
+  `characters`/`terrainstats`/`movecost` are the exceptions, being
+  global by nature); every other chapter's equivalent tables/bundle
+  remain to be modeled from scratch.
 * **Migrating this pattern to other repository data domains** beyond the
   Chapter 2 slice and the `items`/`classes`/`supports`/`characters`/
-  `terrainstats` global tables this Issue has scoped so far.
+  `terrainstats`/`movecost` global tables this Issue has scoped so far.

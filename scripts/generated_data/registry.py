@@ -18,6 +18,7 @@ from .chapterbundle.schema import ChapterBundleTableSchema
 from .classes.schema import ClassesTableSchema
 from .characters.schema import CharactersTableSchema
 from .terrainstats.schema import TerrainStatsTableSchema
+from .movecost.schema import MovecostTableSchema
 
 REGISTRY.register(SupportsTableSchema())
 REGISTRY.register(UnitsTableSchema())
@@ -38,3 +39,9 @@ REGISTRY.register(CharactersTableSchema())
 # inventory.py, wired into generated_data.mk's GENERATED_DATA_TABLES/CI.
 # See terrainstats/schema.py's module docstring for the full write-up.
 REGISTRY.register(TerrainStatsTableSchema())
+# Issue #5 Batch 2 (mechanics): the 47 TerrainTable_MovCost_*/
+# TerrainMoveCost_Ballista movement-cost arrays -- src/data/
+# movecost.json, generate.py/parser.py/inventory.py, wired into
+# generated_data.mk's GENERATED_DATA_TABLES/CI. See movecost/schema.py's
+# module docstring for the full write-up.
+REGISTRY.register(MovecostTableSchema())
