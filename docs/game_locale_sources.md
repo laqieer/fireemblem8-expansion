@@ -168,9 +168,13 @@ Japanese raw providers comprise 20 literals verified directly against tracked
 FE8J-derived C table entries and 116 materialized target+symbol records in
 `ja/raw.json`. Simplified Chinese comes from the exact imported raw payload.
 Modern promotion-selector initializers are empty because their draw callback
-always supplies a localized class name; legacy keeps the original Japanese
-initializer bytes. The modern timestamp diagnostic resolves through the
-expansion locale accessor, while legacy keeps `gBuildDateTime`.
+normally supplies a localized class name. If a bounded option target or its
+name message is absent/invalid, the callback consumes the option's localized
+semantic key as a fallback; legacy keeps the original Japanese initializer
+bytes. The modern timestamp diagnostic resolves through the expansion locale
+accessor, but every runtime locale duplicates this executable's current
+`gBuildDateTime`. The imported FE8CN 2004 timestamp remains raw-source
+provenance only; legacy keeps printing `gBuildDateTime`.
 
 Build or check the machine report:
 
@@ -182,11 +186,14 @@ python3 -m scripts.localization.game_locales check-raw-closure
 The check also verifies every recorded FE8U source path and anchor still
 exists, every literal provider matches its committed symbol/key/value/context,
 every raw symbol has a matching target+symbol materialization, every semantic
-expansion key is active and translated in `en`/`ja`/`zh-Hans`, and each
-expansion-key Chinese value equals its imported raw payload. Its strict gate is
-exactly 143 total, 143 game/expansion providers, 143 materialized JA payloads,
-143 materialized ZH payloads, and zero fallback, exclusions, or unresolved
-records.
+expansion key is active and translated in `en`/`ja`/`zh-Hans`, and every
+expansion provider names a surviving runtime consumer function whose body
+contains the key-specific resolver anchors. Chinese expansion values equal
+their imported raw payload except executable-identity records, whose
+`en`/`ja`/`zh-Hans` values must all equal the referenced C string symbol. Its
+strict gate is exactly 143 total, 143 verified game/expansion providers, 143
+materialized JA payloads, 143 materialized ZH payloads, and zero fallback,
+exclusions, or unresolved records.
 
 ## Mapping validation and coverage
 

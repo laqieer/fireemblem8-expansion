@@ -1034,6 +1034,10 @@
         "address": "0x085C5058"
       },
       "providers": {
+        "en": {
+          "kind": "expansion_catalog",
+          "text_sha256": "3c890b1141fc9d73054c0dddea78b1c2719a5ab88448496b8685203aa105a2c4"
+        },
         "ja": {
           "kind": "expansion_catalog",
           "text_sha256": "ad1322ca0c1ba96c5e692220ba38474cf474594aa4e539423b1540d92f622a77"
@@ -1044,6 +1048,16 @@
         }
       },
       "rationale": "Summon shares FE8U message ID 0x0693 with a distinct command, so the modern row uses a semantic expansion key.",
+      "runtime_consumers": [
+        {
+          "anchors": [
+            "EXP_MSG_RAW_SURFACE_UNIT_ACTION_SUMMON",
+            "ExpansionLocale_ResolveCurrent"
+          ],
+          "path": "src/menu_def.c",
+          "symbol": "LocalizedRawUnitActionMenuDraw"
+        }
+      ],
       "source_text_sha256": "33cd5fd790473a195669c214372a29bfa2f49a2185a81610c47be4f6032fe833",
       "user_facing": true
     },
@@ -1064,6 +1078,10 @@
         "address": "0x085C507C"
       },
       "providers": {
+        "en": {
+          "kind": "expansion_catalog",
+          "text_sha256": "3c890b1141fc9d73054c0dddea78b1c2719a5ab88448496b8685203aa105a2c4"
+        },
         "ja": {
           "kind": "expansion_catalog",
           "text_sha256": "133f03f93432669322a116f2ce2cf7021d276177cc432d9995751915a7d52bd8"
@@ -1074,6 +1092,16 @@
         }
       },
       "rationale": "Call Monster shares FE8U message ID 0x0693 with Summon, so the modern row uses its own semantic expansion key.",
+      "runtime_consumers": [
+        {
+          "anchors": [
+            "EXP_MSG_RAW_SURFACE_UNIT_ACTION_CALL_MONSTER",
+            "ExpansionLocale_ResolveCurrent"
+          ],
+          "path": "src/menu_def.c",
+          "symbol": "LocalizedRawUnitActionMenuDraw"
+        }
+      ],
       "source_text_sha256": "133f03f93432669322a116f2ce2cf7021d276177cc432d9995751915a7d52bd8",
       "user_facing": true
     },
@@ -2026,7 +2054,8 @@
         {
           "anchors": [
             "PROMO_OPTION_1_NAME",
-            "ClassChgMenuItem_OnTextDraw"
+            "ClassChgMenuItem_OnTextDraw",
+            "ClassChgMenu_GetDisplayLabel"
           ],
           "path": "src/classchg-menuselect.c"
         }
@@ -2039,6 +2068,10 @@
         "address": "0x08BAB9A4"
       },
       "providers": {
+        "en": {
+          "kind": "expansion_catalog",
+          "text_sha256": "6b3a7967b616f762c81747f6ee3a047b18f2ba1098e03fc45573b41082a93aee"
+        },
         "ja": {
           "kind": "expansion_catalog",
           "text_sha256": "949dff3ccc97d4f69a53682b419b3fc08805cd22aa7bbf4d67a79da350d1d6da"
@@ -2048,16 +2081,27 @@
           "text_sha256": "c7b1ec47c7be8b638328c0aa9228b256a5ada458f0f3dd8f2bf99c966be2a501"
         }
       },
-      "rationale": "The raw initializer has a complete semantic expansion provider. Modern builds use an empty initializer because the row-specific onDraw callback replaces it with the locale-aware promoted class name; legacy keeps the original Japanese bytes.",
+      "rationale": "Modern rendering keeps the localized promoted class name when valid and consumes this bounded semantic provider only when the option's target class or name message is absent or invalid; legacy keeps the original Japanese initializer bytes.",
+      "runtime_consumers": [
+        {
+          "anchors": [
+            "EXP_MSG_RAW_SURFACE_CLASS_CHANGE_OPTION_1",
+            "ExpansionLocale_ResolveCurrent"
+          ],
+          "path": "src/classchg-menuselect.c",
+          "symbol": "ClassChgMenu_GetDisplayLabel"
+        }
+      ],
       "source_text_sha256": "c7b1ec47c7be8b638328c0aa9228b256a5ada458f0f3dd8f2bf99c966be2a501",
-      "user_facing": false
+      "user_facing": true
     },
     {
       "call_sites": [
         {
           "anchors": [
             "PROMO_OPTION_2_NAME",
-            "ClassChgMenuItem_OnTextDraw"
+            "ClassChgMenuItem_OnTextDraw",
+            "ClassChgMenu_GetDisplayLabel"
           ],
           "path": "src/classchg-menuselect.c"
         }
@@ -2070,6 +2114,10 @@
         "address": "0x08BAB9C8"
       },
       "providers": {
+        "en": {
+          "kind": "expansion_catalog",
+          "text_sha256": "202426b0a7b1520e1bdd881070dda8ba2a092cf7ac4e061412da42476cfa5dff"
+        },
         "ja": {
           "kind": "expansion_catalog",
           "text_sha256": "3f145d8233d207c886b449e9de7fba0ae3983ac2b6e541c434593aca18193110"
@@ -2079,16 +2127,27 @@
           "text_sha256": "cf0a1ca79e59ab7a251d812e08760b7f1a5d752e3fa4a802082f8070f9247517"
         }
       },
-      "rationale": "The raw initializer has a complete semantic expansion provider. Modern builds use an empty initializer because the row-specific onDraw callback replaces it with the locale-aware promoted class name; legacy keeps the original Japanese bytes.",
+      "rationale": "Modern rendering keeps the localized promoted class name when valid and consumes this bounded semantic provider only when the option's target class or name message is absent or invalid; legacy keeps the original Japanese initializer bytes.",
+      "runtime_consumers": [
+        {
+          "anchors": [
+            "EXP_MSG_RAW_SURFACE_CLASS_CHANGE_OPTION_2",
+            "ExpansionLocale_ResolveCurrent"
+          ],
+          "path": "src/classchg-menuselect.c",
+          "symbol": "ClassChgMenu_GetDisplayLabel"
+        }
+      ],
       "source_text_sha256": "cf0a1ca79e59ab7a251d812e08760b7f1a5d752e3fa4a802082f8070f9247517",
-      "user_facing": false
+      "user_facing": true
     },
     {
       "call_sites": [
         {
           "anchors": [
             "PROMO_OPTION_3_NAME",
-            "ClassChgMenuItem_OnTextDraw"
+            "ClassChgMenuItem_OnTextDraw",
+            "ClassChgMenu_GetDisplayLabel"
           ],
           "path": "src/classchg-menuselect.c"
         }
@@ -2101,6 +2160,10 @@
         "address": "0x08BAB9EC"
       },
       "providers": {
+        "en": {
+          "kind": "expansion_catalog",
+          "text_sha256": "72a522d7c6e594879004911130e4ca662890e3957ec49005908d356e48ce407c"
+        },
         "ja": {
           "kind": "expansion_catalog",
           "text_sha256": "23a02161c924576012ac8fb00893b80653073de8462e1741ff3b1a964b66efbd"
@@ -2110,9 +2173,19 @@
           "text_sha256": "62ec85ce075be747be754743625b7c7ced052b7beaeda1897b15232e30331252"
         }
       },
-      "rationale": "The raw initializer has a complete semantic expansion provider. Modern builds use an empty initializer because the row-specific onDraw callback replaces it with the locale-aware promoted class name; legacy keeps the original Japanese bytes.",
+      "rationale": "Modern rendering keeps the localized promoted class name when valid and consumes this bounded semantic provider only when the option's target class or name message is absent or invalid; legacy keeps the original Japanese initializer bytes.",
+      "runtime_consumers": [
+        {
+          "anchors": [
+            "EXP_MSG_RAW_SURFACE_CLASS_CHANGE_OPTION_3",
+            "ExpansionLocale_ResolveCurrent"
+          ],
+          "path": "src/classchg-menuselect.c",
+          "symbol": "ClassChgMenu_GetDisplayLabel"
+        }
+      ],
       "source_text_sha256": "62ec85ce075be747be754743625b7c7ced052b7beaeda1897b15232e30331252",
-      "user_facing": false
+      "user_facing": true
     },
     {
       "call_sites": [
@@ -4549,21 +4622,41 @@
         "address": "0x08000B04"
       },
       "providers": {
+        "en": {
+          "kind": "expansion_catalog",
+          "text_sha256": "675a0eaaa1cdea7a0fed4c6e44769eb24c2fd6f484e8e75f6002571b0321f14e"
+        },
         "ja": {
           "kind": "expansion_catalog",
           "text_sha256": "675a0eaaa1cdea7a0fed4c6e44769eb24c2fd6f484e8e75f6002571b0321f14e"
         },
         "zh-Hans": {
           "kind": "expansion_catalog",
-          "text_sha256": "d0ccef842b6c695e40b276ba41f9cdb6726b05baedfe3b682fd133ddb621a193"
+          "text_sha256": "675a0eaaa1cdea7a0fed4c6e44769eb24c2fd6f484e8e75f6002571b0321f14e"
         }
       },
-      "rationale": "The diagnostic identity has an explicit locale provider: modern builds resolve the current locale's timestamp, while legacy keeps printing gBuildDateTime unchanged.",
+      "rationale": "The diagnostic identity describes this executable, not its selected locale. Every modern locale payload is locked to the current gBuildDateTime string; the FE8CN 2004 bytes remain only in imported-source provenance, and legacy keeps printing gBuildDateTime unchanged.",
+      "runtime_consumers": [
+        {
+          "anchors": [
+            "EXP_MSG_RAW_SURFACE_DIAGNOSTIC_BUILD_TIMESTAMP",
+            "ExpansionLocale_ResolveCurrent"
+          ],
+          "path": "src/fe3_dummy.c",
+          "symbol": "PrintDebugBuildDateAndTime"
+        }
+      ],
+      "runtime_payload_source": {
+        "kind": "c_string_symbol",
+        "path": "src/main.c",
+        "symbol": "gBuildDateTime",
+        "text_sha256": "675a0eaaa1cdea7a0fed4c6e44769eb24c2fd6f484e8e75f6002571b0321f14e"
+      },
       "source_text_sha256": "d0ccef842b6c695e40b276ba41f9cdb6726b05baedfe3b682fd133ddb621a193",
       "user_facing": false
     }
   ],
-  "schema_version": 1,
+  "schema_version": 2,
   "summary": {
     "baseline_game_message_count": 114,
     "deferred_decision_count": 29,
@@ -4574,9 +4667,10 @@
     "ja_materialized_count": 143,
     "non_user_facing_exclusion_count": 0,
     "provider_count": 143,
+    "runtime_consumer_verified_count": 6,
     "total_count": 143,
     "unresolved_count": 0,
-    "user_facing_deferred_localized_count": 25,
+    "user_facing_deferred_localized_count": 28,
     "zh_hans_materialized_count": 143
   }
 }

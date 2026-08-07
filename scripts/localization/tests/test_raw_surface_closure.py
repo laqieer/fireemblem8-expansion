@@ -1,4 +1,5 @@
 import json
+import re
 import sys
 import unittest
 from copy import deepcopy
@@ -62,13 +63,14 @@ class RawSurfaceClosureTests(unittest.TestCase):
         self.assertEqual(summary["game_message_count"], 137)
         self.assertEqual(summary["expansion_message_count"], 6)
         self.assertEqual(summary["provider_count"], 143)
+        self.assertEqual(summary["runtime_consumer_verified_count"], 6)
         self.assertEqual(summary["ja_materialized_count"], 143)
         self.assertEqual(summary["zh_hans_materialized_count"], 143)
         self.assertEqual(summary["non_user_facing_exclusion_count"], 0)
         self.assertEqual(summary["diagnostic_exclusion_count"], 0)
         self.assertEqual(summary["english_fallback_count"], 0)
         self.assertEqual(summary["unresolved_count"], 0)
-        self.assertEqual(summary["user_facing_deferred_localized_count"], 25)
+        self.assertEqual(summary["user_facing_deferred_localized_count"], 28)
         self.assertEqual(
             len({row["import_id"] for row in self.closure["rows"]}), 143
         )
@@ -86,13 +88,15 @@ class RawSurfaceClosureTests(unittest.TestCase):
                     r"^[0-9a-f]{64}$",
                 )
 
-    def test_expansion_adapters_use_exact_imported_chinese_payloads(self):
+    def test_expansion_adapters_use_expected_chinese_payloads(self):
         raw_text = {
             row["import_id"]: row["text"] for row in self.raw["records"]
         }
         zh = self.catalogs["zh-Hans"]["strings"]
         for decision in self.decisions["decisions"]:
             if decision["classification"] != "expansion_message":
+                continue
+            if "runtime_payload_source" in decision:
                 continue
             self.assertEqual(
                 zh[decision["expansion_key"]],
@@ -124,8 +128,16 @@ class RawSurfaceClosureTests(unittest.TestCase):
             "GetStringFromIndex(GetClassData(gparent->jid[pmitem->itemNumber])->nameTextId)",
             source,
         )
+        self.assertIn("ClassChgMenu_GetDisplayLabel", source)
+        self.assertIn("classId <= CLASS_ID_CONFIGURED_CAP", source)
+        self.assertIn("classData->nameTextId < MSG_COUNT", source)
+        for suffix in ("OPTION_1", "OPTION_2", "OPTION_3"):
+            self.assertIn(
+                f"EXP_MSG_RAW_SURFACE_CLASS_CHANGE_{suffix}",
+                source,
+            )
 
-    def test_build_timestamp_has_locale_provider_and_legacy_path(self):
+    def test_build_timestamp_matches_executable_in_every_runtime_locale(self):
         decision = next(
             row
             for row in self.decisions["decisions"]
@@ -137,9 +149,93 @@ class RawSurfaceClosureTests(unittest.TestCase):
             "raw_surface.diagnostic.build_timestamp",
         )
         self.assertFalse(decision["user_facing"])
+        self.assertEqual(
+            decision["runtime_payload_source"],
+            {
+                "kind": "c_string_symbol",
+                "path": "src/main.c",
+                "symbol": "gBuildDateTime",
+            },
+        )
+        main_source = (ROOT / "src/main.c").read_text(encoding="utf-8")
+        match = re.search(
+            r'const char gBuildDateTime\[\]\s*=\s*"([^"]+)";',
+            main_source,
+        )
+        self.assertIsNotNone(match)
+        build_timestamp = match.group(1)
+        for locale in ("en", "ja", "zh-Hans"):
+            self.assertEqual(
+                self.catalogs[locale]["strings"][
+                    "raw_surface.diagnostic.build_timestamp"
+                ],
+                build_timestamp,
+            )
+        raw_text = next(
+            row["text"]
+            for row in self.raw["records"]
+            if row["import_id"] == "fe8cn.raw.import-0142"
+        )
+        self.assertEqual(raw_text, "2004/09/09(THU) 13:12:56")
+        self.assertNotEqual(raw_text, build_timestamp)
         source = (ROOT / "src/fe3_dummy.c").read_text(encoding="utf-8")
         self.assertIn("ExpansionLocale_ResolveCurrent", source)
         self.assertIn("PrintDebugStringToBG(bg, gBuildDateTime);", source)
+
+    def test_every_expansion_provider_has_a_verified_runtime_consumer(self):
+        rows = [
+            row
+            for row in self.closure["rows"]
+            if row["classification"] == "expansion_message"
+        ]
+        self.assertEqual(len(rows), 6)
+        for row in rows:
+            with self.subTest(import_id=row["import_id"]):
+                self.assertTrue(row["runtime_consumers"])
+                for consumer in row["runtime_consumers"]:
+                    self.assertRegex(
+                        consumer["symbol"],
+                        r"^[A-Za-z_][A-Za-z0-9_]*$",
+                    )
+                    self.assertTrue((ROOT / consumer["path"]).is_file())
+
+    def test_catalog_only_expansion_provider_fails_without_runtime_consumer(self):
+        broken = deepcopy(self.decisions)
+        decision = next(
+            row
+            for row in broken["decisions"]
+            if row["classification"] == "expansion_message"
+        )
+        del decision["runtime_consumers"]
+        with self.assertRaisesRegex(RawClosureError, "runtime_consumers"):
+            build_raw_surface_closure(
+                raw_data=self.raw,
+                mapping_data=self.mapping,
+                decisions_data=broken,
+                ja_raw_provider_data=self.ja_raw,
+                registry_data=self.registry,
+                catalog_data=self.catalogs,
+                repo_root=ROOT,
+            )
+
+    def test_runtime_consumer_anchor_must_be_inside_named_function(self):
+        broken = deepcopy(self.decisions)
+        decision = next(
+            row
+            for row in broken["decisions"]
+            if row["import_id"] == "fe8cn.raw.import-0062"
+        )
+        decision["runtime_consumers"][0]["anchors"] = ["PROMO_OPTION_1_NAME"]
+        with self.assertRaisesRegex(RawClosureError, "missing anchors"):
+            build_raw_surface_closure(
+                raw_data=self.raw,
+                mapping_data=self.mapping,
+                decisions_data=broken,
+                ja_raw_provider_data=self.ja_raw,
+                registry_data=self.registry,
+                catalog_data=self.catalogs,
+                repo_root=ROOT,
+            )
 
     def test_disappearing_call_site_anchor_fails_the_closure(self):
         broken = deepcopy(self.decisions)

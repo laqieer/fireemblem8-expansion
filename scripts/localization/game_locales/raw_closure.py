@@ -15,7 +15,7 @@ from .raw_providers import (
     resolve_ja_raw_text,
 )
 
-CLOSURE_SCHEMA_VERSION = 1
+CLOSURE_SCHEMA_VERSION = 2
 DECISIONS_KIND = "fe8cn-raw-surface-decisions"
 CLOSURE_KIND = "fe8cn-raw-surface-closure"
 DECISION_CLASSES = (
@@ -107,6 +107,122 @@ def _validate_call_sites(
     return normalized
 
 
+def _strip_c_comments(source: str) -> str:
+    source = re.sub(r"/\*.*?\*/", " ", source, flags=re.DOTALL)
+    return re.sub(r"//[^\n]*", " ", source)
+
+
+def _function_body(source: str, symbol: str, field: str) -> str:
+    source = _strip_c_comments(source)
+    match = re.search(
+        rf"\b{re.escape(symbol)}\s*\([^;{{}}]*\)\s*\{{",
+        source,
+        flags=re.DOTALL,
+    )
+    if match is None:
+        raise RawClosureError(f"{field}.symbol is not a function definition")
+
+    start = match.end() - 1
+    depth = 0
+    for index in range(start, len(source)):
+        if source[index] == "{":
+            depth += 1
+        elif source[index] == "}":
+            depth -= 1
+            if depth == 0:
+                return source[start : index + 1]
+    raise RawClosureError(f"{field}.symbol has an unterminated function body")
+
+
+def _validate_runtime_consumers(
+    consumers: Any,
+    *,
+    field: str,
+    repo_root: Path,
+) -> List[Dict[str, Any]]:
+    if not isinstance(consumers, list) or not consumers:
+        raise RawClosureError(f"{field} must be a non-empty array")
+
+    normalized = []
+    for index, raw_consumer in enumerate(consumers):
+        consumer_field = f"{field}[{index}]"
+        consumer = _require_dict(raw_consumer, consumer_field)
+        relative_path = _require_string(
+            consumer.get("path"), f"{consumer_field}.path"
+        )
+        symbol = _require_string(consumer.get("symbol"), f"{consumer_field}.symbol")
+        if not _IDENTIFIER_RE.fullmatch(symbol):
+            raise RawClosureError(f"{consumer_field}.symbol must be a C identifier")
+        anchors = consumer.get("anchors")
+        if not isinstance(anchors, list) or not anchors:
+            raise RawClosureError(
+                f"{consumer_field}.anchors must be a non-empty array"
+            )
+        if any(not isinstance(anchor, str) or not anchor for anchor in anchors):
+            raise RawClosureError(
+                f"{consumer_field}.anchors must contain non-empty strings"
+            )
+
+        path = repo_root / relative_path
+        if not path.is_file():
+            raise RawClosureError(
+                f"{consumer_field}.path disappeared: {relative_path}"
+            )
+        body = _function_body(
+            path.read_text(encoding="utf-8"),
+            symbol,
+            consumer_field,
+        )
+        missing = [anchor for anchor in anchors if anchor not in body]
+        if missing:
+            raise RawClosureError(
+                f"{consumer_field} runtime consumer {symbol} in {relative_path} "
+                f"is missing anchors: {missing}"
+            )
+        normalized.append(
+            {
+                "anchors": list(anchors),
+                "path": relative_path,
+                "symbol": symbol,
+            }
+        )
+    return normalized
+
+
+def _validate_runtime_payload_source(
+    source_data: Any,
+    *,
+    field: str,
+    repo_root: Path,
+) -> Dict[str, Any]:
+    source = _require_dict(source_data, field)
+    if source.get("kind") != "c_string_symbol":
+        raise RawClosureError(f"{field}.kind must be 'c_string_symbol'")
+    relative_path = _require_string(source.get("path"), f"{field}.path")
+    symbol = _require_string(source.get("symbol"), f"{field}.symbol")
+    if not _IDENTIFIER_RE.fullmatch(symbol):
+        raise RawClosureError(f"{field}.symbol must be a C identifier")
+
+    path = repo_root / relative_path
+    if not path.is_file():
+        raise RawClosureError(f"{field}.path disappeared: {relative_path}")
+    source_text = _strip_c_comments(path.read_text(encoding="utf-8"))
+    match = re.search(
+        rf'\bconst\s+char\s+{re.escape(symbol)}\s*\[\s*\]\s*=\s*"([^"\\]*)"\s*;',
+        source_text,
+    )
+    if match is None:
+        raise RawClosureError(
+            f"{field} cannot resolve const char {symbol}[] in {relative_path}"
+        )
+    return {
+        "kind": "c_string_symbol",
+        "path": relative_path,
+        "symbol": symbol,
+        "text": match.group(1),
+    }
+
+
 def _validate_decisions(
     data: Any,
     *,
@@ -160,6 +276,19 @@ def _validate_decisions(
                 )
         elif classification == "expansion_message":
             _require_string(decision.get("expansion_key"), f"{field}.expansion_key")
+            normalized["runtime_consumers"] = _validate_runtime_consumers(
+                decision.get("runtime_consumers"),
+                field=f"{field}.runtime_consumers",
+                repo_root=repo_root,
+            )
+            if "runtime_payload_source" in decision:
+                normalized["_runtime_payload_source"] = (
+                    _validate_runtime_payload_source(
+                        decision["runtime_payload_source"],
+                        field=f"{field}.runtime_payload_source",
+                        repo_root=repo_root,
+                    )
+                )
         elif classification == "english_fallback":
             _require_string(decision.get("fallback_reason"), f"{field}.fallback_reason")
         result[import_id] = normalized
@@ -316,11 +445,31 @@ def build_raw_surface_closure(
                         raise RawClosureError(
                             f"{import_id} expansion key {key!r} is missing in {locale}"
                         )
-                if catalogs["zh-Hans"][key] != raw_record["text"]:
-                    raise RawClosureError(
-                        f"{import_id} zh-Hans expansion text must equal imported raw payload"
-                    )
+                payload_source = decision.get("_runtime_payload_source")
+                if payload_source is None:
+                    if catalogs["zh-Hans"][key] != raw_record["text"]:
+                        raise RawClosureError(
+                            f"{import_id} zh-Hans expansion text must equal "
+                            "imported raw payload"
+                        )
+                else:
+                    for locale in ("en", "ja", "zh-Hans"):
+                        if catalogs[locale][key] != payload_source["text"]:
+                            raise RawClosureError(
+                                f"{import_id} {locale} expansion text must equal "
+                                f"{payload_source['symbol']}"
+                            )
                 closure_row["expansion_key"] = key
+                closure_row["runtime_consumers"] = decision["runtime_consumers"]
+                if payload_source is not None:
+                    closure_row["runtime_payload_source"] = {
+                        "kind": payload_source["kind"],
+                        "path": payload_source["path"],
+                        "symbol": payload_source["symbol"],
+                        "text_sha256": hashlib.sha256(
+                            payload_source["text"].encode("utf-8")
+                        ).hexdigest(),
+                    }
                 closure_row["providers"] = {
                     locale: {
                         "kind": "expansion_catalog",
@@ -328,7 +477,7 @@ def build_raw_surface_closure(
                             catalogs[locale][key].encode("utf-8")
                         ).hexdigest(),
                     }
-                    for locale in ("ja", "zh-Hans")
+                    for locale in ("en", "ja", "zh-Hans")
                 }
             elif classification == "english_fallback":
                 closure_row["fallback_reason"] = decision["fallback_reason"]
@@ -380,7 +529,13 @@ def build_raw_surface_closure(
         for classification in DECISION_CLASSES
     }
     unresolved = len(raw_records) - len(rows)
-    provider_count = counts["game_message"] + counts["expansion_message"]
+    runtime_consumer_verified_count = sum(
+        1
+        for row in rows
+        if row["classification"] == "expansion_message"
+        and row.get("runtime_consumers")
+    )
+    provider_count = counts["game_message"] + runtime_consumer_verified_count
     ja_materialized_count = sum(
         1
         for row in rows
@@ -407,6 +562,7 @@ def build_raw_surface_closure(
         "total_count": len(raw_records),
         "unresolved_count": unresolved,
         "provider_count": provider_count,
+        "runtime_consumer_verified_count": runtime_consumer_verified_count,
         "user_facing_deferred_localized_count": sum(
             1
             for row in rows
@@ -422,6 +578,7 @@ def build_raw_surface_closure(
         or counts["english_fallback"]
         or excluded
         or provider_count != len(raw_records)
+        or runtime_consumer_verified_count != counts["expansion_message"]
         or ja_materialized_count != len(raw_records)
         or zh_materialized_count != len(raw_records)
     ):

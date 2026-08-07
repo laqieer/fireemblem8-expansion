@@ -1,5 +1,6 @@
 import hashlib
 import json
+import shutil
 import struct
 import subprocess
 import sys
@@ -11,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(ROOT))
 
 from scripts.fonttools.cjk.inventory import (
+    CjkFontError,
     FONT_SOURCES,
     build_generated_files,
     read_sfnt_identity,
@@ -20,6 +22,7 @@ from scripts.fonttools.cjk.package import (
     archive_package,
     check_compact_assets,
     compact_asset_filenames,
+    refresh_compact_asset_inventory_provenance,
 )
 
 
@@ -139,6 +142,55 @@ class CjkFontTests(unittest.TestCase):
         first = check_compact_assets(ROOT)
         second = check_compact_assets(ROOT)
         self.assertEqual(first, second)
+
+    def test_inventory_provenance_refresh_requires_unchanged_font_oracle(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "fonts/cjk/reports").mkdir(parents=True)
+            shutil.copytree(
+                ROOT / "fonts/cjk/corpora",
+                root / "fonts/cjk/corpora",
+            )
+            for relative_path in (
+                "fonts/cjk/inventory.json",
+                "fonts/cjk/febuilder-manifest.json",
+                "fonts/cjk/reports/febuilder-generation-report.json",
+                "fonts/cjk/reports/febuilder-gates.json",
+            ):
+                shutil.copy2(ROOT / relative_path, root / relative_path)
+            shutil.copytree(
+                ROOT / "graphics/fonts/cjk",
+                root / "graphics/fonts/cjk",
+            )
+
+            manifest_path = root / "graphics/fonts/cjk/manifest.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["sources"]["inventory"]["sha256"] = "0" * 64
+            manifest_path.write_text(
+                json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True)
+                + "\n",
+                encoding="utf-8",
+            )
+
+            refresh_compact_asset_inventory_provenance(root)
+            refreshed = json.loads(manifest_path.read_text(encoding="utf-8"))
+            self.assertEqual(
+                refreshed["sources"]["inventory"]["sha256"],
+                hashlib.sha256(
+                    (root / "fonts/cjk/inventory.json").read_bytes()
+                ).hexdigest(),
+            )
+
+            corpus_path = root / "fonts/cjk/corpora/ja.system.txt"
+            corpus_path.write_text(
+                corpus_path.read_text(encoding="utf-8") + "追",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(
+                CjkFontError,
+                "scalars must be sorted and unique|corpus SHA-256 mismatch",
+            ):
+                refresh_compact_asset_inventory_provenance(root)
 
     def test_compact_assets_use_typed_extensions_and_existing_manifest_paths(self):
         manifest = json.loads(

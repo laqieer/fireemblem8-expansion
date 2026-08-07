@@ -28,6 +28,9 @@ from scripts.localization.catalog import DEFAULT_CATALOG_PATHS
 from scripts.localization.generate import generate
 
 DRIVER_C = Path(__file__).resolve().with_name("host_resolver_driver.c")
+BUILD_DATE_TIME_RE = re.compile(
+    r'const char gBuildDateTime\[\]\s*=\s*"([^"]+)";'
+)
 
 FORBIDDEN_VANILLA_TOKENS = (
     "GetLang",
@@ -51,6 +54,10 @@ class ResolverNativeTests(unittest.TestCase):
 
     def _build_and_run(self, tmp_path, sparse_ja_title=False):
         generated_dir = tmp_path / "generated"
+        main_source = (ROOT / "src" / "main.c").read_text(encoding="utf-8")
+        build_date_time_match = BUILD_DATE_TIME_RE.search(main_source)
+        self.assertIsNotNone(build_date_time_match)
+        build_date_time = build_date_time_match.group(1)
         catalog_paths = None
         if sparse_ja_title:
             ja_data = json.loads(
@@ -74,6 +81,10 @@ class ResolverNativeTests(unittest.TestCase):
             "-DFE8_EXPANSION_ENABLED_LOCALE_MASK=0x87u",
             "-DFE8_EXPANSION_DEFAULT_LOCALE_ID=0u",
             "-DFE8_EXPANSION_PSEUDO_LOCALE_ENABLED=1",
+            '-DTEST_BUILD_DATE_TIME="{}"'.format(build_date_time),
+            "-DMODERN=1",
+            "-ffunction-sections",
+            "-fdata-sections",
         ]
         if sparse_ja_title:
             cmd.append("-DTEST_JA_TITLE_FALLS_BACK=1")
@@ -81,7 +92,9 @@ class ResolverNativeTests(unittest.TestCase):
             [
                 str(DRIVER_C),
                 str(ROOT / "src" / "expansion_locale.c"),
+                str(ROOT / "src" / "classchg-menuselect.c"),
                 str(generated_dir / "expansion_locale_catalog.c"),
+                "-Wl,--gc-sections",
                 "-o", str(binary),
             ]
         )
@@ -99,6 +112,11 @@ class ResolverNativeTests(unittest.TestCase):
             run_result = self._build_and_run(Path(tmp))
             self.assertEqual(run_result.returncode, 0, run_result.stdout)
             self.assertIn("ALL HOST SMOKE CHECKS PASSED", run_result.stdout)
+            self.assertIn("CLASS CHANGE FALLBACK CHECKS PASSED", run_result.stdout)
+            self.assertIn(
+                "BUILD TIMESTAMP LOCALE SWITCH CHECKS PASSED",
+                run_result.stdout,
+            )
             self.assertNotIn("FAIL:", run_result.stdout)
 
     def test_resolver_run_is_repeatable(self):

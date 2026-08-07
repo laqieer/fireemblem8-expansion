@@ -703,6 +703,25 @@ def write_compact_assets(
     return outputs
 
 
+def refresh_compact_asset_inventory_provenance(root: Path) -> Dict[str, bytes]:
+    report_path = root / GENERATION_REPORT
+    report_data = report_path.read_bytes()
+    _load_report(root, report_data, "generate")
+
+    inventory_data = (root / "fonts/cjk/inventory.json").read_bytes()
+    asset_manifest_path = root / ASSET_ROOT / "manifest.json"
+    asset_manifest = json.loads(asset_manifest_path.read_text(encoding="utf-8"))
+    sources = asset_manifest.get("sources")
+    if not isinstance(sources, dict):
+        raise CjkFontError("compact asset sources are invalid")
+    sources["inventory"] = {
+        "path": "fonts/cjk/inventory.json",
+        "sha256": sha256_bytes(inventory_data),
+    }
+    asset_manifest_path.write_bytes(json_bytes(asset_manifest))
+    return check_compact_assets(root)
+
+
 def check_compact_assets(root: Path) -> Dict[str, bytes]:
     _reject_generic_compact_assets(root)
     report_path = root / GENERATION_REPORT

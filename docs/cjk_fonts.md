@@ -14,6 +14,18 @@ python3 -m scripts.fonttools.cjk generate-inventory
 python3 -m scripts.fonttools.cjk check
 ```
 
+If catalog/source provenance changes but the regenerated CJK corpora remain
+byte-identical to the committed FEBuilder oracle, refresh only the compact
+asset inventory hash with:
+
+```bash
+python3 -m scripts.fonttools.cjk refresh-provenance
+```
+
+This command first verifies the current manifest, corpora, and immutable
+generation report. It does not permit changed glyph rows or raster payloads
+to inherit stale FEBuilder evidence.
+
 The inventory reads the committed normalized sources:
 
 - `texts/locales/ja/indexed.txt`;

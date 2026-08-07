@@ -11,11 +11,11 @@
     },
     "texts/expansion/catalog.zh-Hans.json": {
       "byte_count": 1946,
-      "sha256": "903ebc94e39e083388c0c520a97d62994b3678b51a23a5851485df613984396f"
+      "sha256": "40220fd10289e21fba09d4315781c1f6f51cee59d109da18520134e34ea0a11e"
     },
     "texts/expansion/registry.json": {
-      "byte_count": 8341,
-      "sha256": "648d49d8572aa6016cb7e18b48287e0a7175382480df30c0d8816e2365efdfd5"
+      "byte_count": 8350,
+      "sha256": "68f3ef0862cc7acb645b1edece8abcf706c9abeb586c41996c24205cfb0e0eaf"
     },
     "texts/locales/ja/indexed.txt": {
       "byte_count": 1719196,

@@ -315,7 +315,7 @@
       "surface": "debug_overlay",
       "max_width": 32,
       "max_decoded_bytes": 32,
-      "notes": "Locale-aware diagnostic timestamp. English and Japanese preserve the legacy FE8J diagnostic identity; Chinese preserves the imported FE8CN identity."
+      "notes": "Locale-neutral executable identity. Every runtime locale duplicates the current gBuildDateTime string; regional raw timestamps remain source provenance only."
     }
   ]
 }
