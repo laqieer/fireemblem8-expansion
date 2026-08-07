@@ -87,7 +87,7 @@
       "source_text_sha256": "85bce767396da5ba40c76dcb6cedf98a010fb77f7bdae1cb9a1d360f23660aa5",
       "subsystem": "shop-arena",
       "target_id": "0x0738",
-      "text": "十字キーでチーム [.][HASH] を設定します[X]\n"
+      "text": "十字キー左右で参加チーム数を [.][HASH] に設定します[X]\n"
     },
     {
       "english_payload_sha256": "2325423ad97424a68523aaba1fa4732e1544a6127543275a355b4d3384e09607",
@@ -655,7 +655,7 @@
       "source_text_sha256": "7004a1e5e120ec02df8c9ca9a7b9c496647fcd1f783216d073ee4d0637522395",
       "subsystem": "help-tutorial",
       "target_id": "0x0883",
-      "text": " を転送しました[.][X]\n"
+      "text": "を転送しました[.][X]\n"
     },
     {
       "english_payload_sha256": "71a2daaeadfbfa799c1a9759759b0a305a99919fc0940cf8ae8e73ee863e2468",

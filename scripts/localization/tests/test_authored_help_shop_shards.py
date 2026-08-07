@@ -46,6 +46,19 @@ NON_CJK_LABEL_IDS = {
         "0x0884",
     },
 }
+REVIEWED_PAYLOADS = {
+    "ja": {
+        "0x0738": "十字キー左右で参加チーム数を [.][HASH] に設定します[X]\n",
+        "0x0883": "を転送しました[.][X]\n",
+    },
+    "zh-Hans": {
+        "0x0738": "按左右键设置参战小队数（[.][HASH]）[X]\n",
+        "0x0756": "每名单位额外获得30点[X]\n",
+    },
+}
+REVIEWED_LINE_EDGE_WHITESPACE = {
+    ("ja", "0x0883"): [("", "")],
+}
 
 
 def sha256(data):
@@ -157,6 +170,11 @@ class AuthoredHelpShopShardTests(unittest.TestCase):
             list(self.records["zh-Hans"]),
         )
 
+    def test_reviewed_payloads_are_exact(self):
+        for locale, payloads in REVIEWED_PAYLOADS.items():
+            for target_id, payload in payloads.items():
+                self.assertEqual(self.records[locale][target_id]["text"], payload)
+
     def test_json_is_strict_utf8_and_canonical(self):
         for locale, shard in self.shards.items():
             self.assertEqual(self.shard_bytes[locale], canonical_json_bytes(shard))
@@ -189,9 +207,13 @@ class AuthoredHelpShopShardTests(unittest.TestCase):
                     re.findall(r"\r\n|\r|\n", source),
                     f"{locale} {target_id}: newline drift",
                 )
+                expected_line_edges = REVIEWED_LINE_EDGE_WHITESPACE.get(
+                    (locale, target_id),
+                    line_edge_whitespace(source),
+                )
                 self.assertEqual(
                     line_edge_whitespace(translation),
-                    line_edge_whitespace(source),
+                    expected_line_edges,
                     f"{locale} {target_id}: leading/trailing spacing drift",
                 )
 

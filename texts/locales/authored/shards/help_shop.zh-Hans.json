@@ -87,7 +87,7 @@
       "source_text_sha256": "85bce767396da5ba40c76dcb6cedf98a010fb77f7bdae1cb9a1d360f23660aa5",
       "subsystem": "shop-arena",
       "target_id": "0x0738",
-      "text": "用十字键设置小队 [.][HASH] 号[X]\n"
+      "text": "按左右键设置参战小队数（[.][HASH]）[X]\n"
     },
     {
       "english_payload_sha256": "2325423ad97424a68523aaba1fa4732e1544a6127543275a355b4d3384e09607",
@@ -327,7 +327,7 @@
       "source_text_sha256": "efc0ff769273f3fbbbe09837e1ab0e5dd4dca501c6aa3133bfe24535a16cda32",
       "subsystem": "shop-arena",
       "target_id": "0x0756",
-      "text": "每名单位获得30点[X]\n"
+      "text": "每名单位额外获得30点[X]\n"
     },
     {
       "english_payload_sha256": "ce800f471dadcc2c76e4afe37e75380df3c0a8147972342b7a0a19f397e15d4a",
