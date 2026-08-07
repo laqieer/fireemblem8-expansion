@@ -1,0 +1,685 @@
+{
+  "kind": "fe8u-authored-translation-shard",
+  "locale": "zh-Hans",
+  "schema_version": 1,
+  "source_queue": {
+    "path": "texts/locales/mapping/authored_translation_queue.json",
+    "revision": "e6435a8e2f444f0e16cab21713fe052b543d2e6e",
+    "sha256": "ffdff913a552076928d5cb06634ed75d8983b65c05bb4ecec9aa2b610ffe6ad6"
+  },
+  "subsystem_counts": {
+    "help-tutorial": 33,
+    "shop-arena": 48
+  },
+  "target_count": 81,
+  "terminology_sources": [
+    {
+      "message_ids": [
+        "0x0045-0x0063",
+        "0x0476",
+        "0x06C0-0x06FA",
+        "0x07EC",
+        "0x0821-0x0823",
+        "0x0828",
+        "0x0835"
+      ],
+      "path": "texts/locales/zh-Hans/indexed.txt",
+      "sha256": "c139d6a16bea97da4cad85c166e1a94576e0352897a8e45fd293988d390ec790"
+    },
+    {
+      "path": "texts/locales/source/febuilder/translate_textid_FE8.txt",
+      "sha256": "d9f0fc8ede5820bb4b93299ad08286055a56037bb1fbdb6bf589ad1f7af16734",
+      "upstream_commit": "2e4396efd14638ee03ada051eedfa40b66ff0ea3"
+    }
+  ],
+  "translations": [
+    {
+      "english_payload_sha256": "ac64d9a8c9d62c7dac6b6a836e866cb98631b5b912986309831a085279d21a9c",
+      "key": "game.shop_arena.msg_146",
+      "source_text_sha256": "159aeb51d606308175e52f442f70e4e9f237ddb25384200b2b784d7358609af4",
+      "subsystem": "shop-arena",
+      "target_id": "0x0146",
+      "text": "确定[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "f197077a764793570052d5617ead70c5d7283fecf88306c3111b37096b362faa",
+      "key": "game.help_tutorial.msg_147",
+      "source_text_sha256": "beacca116c16258102ff1f9bb477438a226d0b8617f63148713e04b01db8f8bd",
+      "subsystem": "help-tutorial",
+      "target_id": "0x0147",
+      "text": "据点[X]\n"
+    },
+    {
+      "english_payload_sha256": "c2e35eaedf51d1d6f0a35353df85f22c0ba010f02c320f1317c3ab7154282881",
+      "key": "game.help_tutorial.msg_148",
+      "source_text_sha256": "0823676842dccb0debf95e8827397a79b8522194dbbb9d3759c9ecb6457a4395",
+      "subsystem": "help-tutorial",
+      "target_id": "0x0148",
+      "text": "LV[X]\n"
+    },
+    {
+      "english_payload_sha256": "e40fdfbb89842f4d5b4c27bf37d2512e706c1d72b349d4ca67532b00bd3cb76e",
+      "key": "game.shop_arena.msg_735",
+      "source_text_sha256": "43860aac1653b6e61a488aa1637d20d9160bd43593fdb624817668ae5fdab095",
+      "subsystem": "shop-arena",
+      "target_id": "0x0735",
+      "text": "选择“小队编制”来组建小队[X]\n"
+    },
+    {
+      "english_payload_sha256": "54589c864469244ba6a5c6c165c4589dd981413b453bdf72460faa852ce453e1",
+      "key": "game.shop_arena.msg_736",
+      "source_text_sha256": "32c14d7e6ff213ef2791979341cb031cac60ccd2220f92dd819e3ebe9a3a3e14",
+      "subsystem": "shop-arena",
+      "target_id": "0x0736",
+      "text": "编制或编辑通信对战小队[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "a19dc9bd755f1e0288b6d0ce3c68e0750359afe7b359f4aab9eaf6ee166621be",
+      "key": "game.shop_arena.msg_737",
+      "source_text_sha256": "b2e751c7b1d0fac718bb30e98179263777d1a09870ed23463a90b2cf21255f43",
+      "subsystem": "shop-arena",
+      "target_id": "0x0737",
+      "text": "与电脑对战[X]\n"
+    },
+    {
+      "english_payload_sha256": "2bf414d5b6f22768a63081ee3e2710fdd294749dbab2119c20086adce2634be8",
+      "key": "game.shop_arena.msg_738",
+      "source_text_sha256": "85bce767396da5ba40c76dcb6cedf98a010fb77f7bdae1cb9a1d360f23660aa5",
+      "subsystem": "shop-arena",
+      "target_id": "0x0738",
+      "text": "用十字键设置小队 [.][HASH] 号[X]\n"
+    },
+    {
+      "english_payload_sha256": "2325423ad97424a68523aaba1fa4732e1544a6127543275a355b4d3384e09607",
+      "key": "game.shop_arena.msg_739",
+      "source_text_sha256": "c83f33e205c792cbf56117172679ee3677a58781df939bf24938515e9dd8293d",
+      "subsystem": "shop-arena",
+      "target_id": "0x0739",
+      "text": "与其他玩家通信对战[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "6a1b1ed84104b236dcec9c97f88bc0db2b0f71094fc5234f2d7bf359081697df",
+      "key": "game.shop_arena.msg_73a",
+      "source_text_sha256": "ac5a03da6d52fc59e1e735c11c6cfeab4262fc88c107c37e6c264c59dc57b58a",
+      "subsystem": "shop-arena",
+      "target_id": "0x073A",
+      "text": "查看至今的对战结果[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "1d3006874701ca5a31e3141f0ae4d2b5ccdc9716061635c492359326eebcd72a",
+      "key": "game.shop_arena.msg_73b",
+      "source_text_sha256": "7098fd25a6fc5e12b2ea9287c008e19ba895ddfe00abc14ef91fcc9a6bde5348",
+      "subsystem": "shop-arena",
+      "target_id": "0x073B",
+      "text": "设置对战规则[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "352db2225634a12ca83470bdee870b86028e81c94f9a725d075a68e898c75353",
+      "key": "game.shop_arena.msg_73c",
+      "source_text_sha256": "ceed8b50105e7a74e632df2a39ef8a871285eb090c676866a8ce6ba552bf1e7b",
+      "subsystem": "shop-arena",
+      "target_id": "0x073C",
+      "text": "组建新小队[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "f1c2d3bb3af4f5a0e9bac162989f6e074c8b10a925885f3093dc60f027436a72",
+      "key": "game.shop_arena.msg_73d",
+      "source_text_sha256": "845dd78a10ba2b2374e589c8bd51e1575a399d10dcc918fffe53c7adc3cf6039",
+      "subsystem": "shop-arena",
+      "target_id": "0x073D",
+      "text": "查看小队所有单位[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "e7a386c4af5e121c1c356098adf566d3d67c934e2fba6409e5120d35241a37cb",
+      "key": "game.shop_arena.msg_73e",
+      "source_text_sha256": "56fed0c4359fd655ea909a0e8775816fc1eb509510015578031d96dc24dd605f",
+      "subsystem": "shop-arena",
+      "target_id": "0x073E",
+      "text": "交换小队[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "01a136f9df6656f4930f588fa6d1bf6e789eb6b39f1600ba3b6b7b4c76ea1abd",
+      "key": "game.shop_arena.msg_73f",
+      "source_text_sha256": "9add38534a1df7a566d91e0eeaf9525c086b95294c1f37af6244401175d4de2f",
+      "subsystem": "shop-arena",
+      "target_id": "0x073F",
+      "text": "解散小队[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "c1272868f92aaff7fcd5c33897665c0438d799f3994cd13c1d79ef3edcc8cb03",
+      "key": "game.shop_arena.msg_740",
+      "source_text_sha256": "3fc7dd524e8917e9fa89a1baa309ea85619c1b1d05f8b20cc51a1aaa7c992c04",
+      "subsystem": "shop-arena",
+      "target_id": "0x0740",
+      "text": "返回通信菜单[X]\n"
+    },
+    {
+      "english_payload_sha256": "02e2a93f30c1ed07046c506e6f1f6a640cd37d2e9ba9236a4fa43a3b5d27fcf3",
+      "key": "game.shop_arena.msg_741",
+      "source_text_sha256": "2f547535fde2e0569864e653d334bce268f8021b0d526090bcb84af4b24154ae",
+      "subsystem": "shop-arena",
+      "target_id": "0x0741",
+      "text": "选择对战使用的小队[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "2603085ae916ce0fe13758c2ed1150bb6fe6a56238b0fad86091de4cc3871c74",
+      "key": "game.shop_arena.msg_742",
+      "source_text_sha256": "606ec0f57f542a76c63eaa670937fe2cfcd04b90671b73671c57ee00aaa09df4",
+      "subsystem": "shop-arena",
+      "target_id": "0x0742",
+      "text": "选择自己的小队[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "734442531765b4baee99af93151466b246e327e7b8a30f8ae8d9c06983f73576",
+      "key": "game.shop_arena.msg_743",
+      "source_text_sha256": "415b4e76c297d3cccf45dc3b61130f4588b12aef8f2490753379729985127541",
+      "subsystem": "shop-arena",
+      "target_id": "0x0743",
+      "text": "选择对战方的小队[X]\n"
+    },
+    {
+      "english_payload_sha256": "7fc550a2d47daf0182c97b888193cd9a175480a62a010381dd87743fd99a9a48",
+      "key": "game.shop_arena.msg_744",
+      "source_text_sha256": "dbc61bc9536b64c74763d30e77773f7d9b55a1d867bb24f3fa7f715c4363657b",
+      "subsystem": "shop-arena",
+      "target_id": "0x0744",
+      "text": "十字键：移动／B键：返回[X]\n"
+    },
+    {
+      "english_payload_sha256": "029915797d34fa8dc7ca7616cefad00d4dfed480443871a0eab154e615a4aa7e",
+      "key": "game.shop_arena.msg_745",
+      "source_text_sha256": "d47466667c8644cf5baf4c98034c1815e61e9185b4a7aef42f3fbfdba19b1ec2",
+      "subsystem": "shop-arena",
+      "target_id": "0x0745",
+      "text": "设置是否隐藏对方单位[X]\n"
+    },
+    {
+      "english_payload_sha256": "d2cb4c6d44ef0b4493f2815dceb169a1950448bb7670977d79f729762b016061",
+      "key": "game.help_tutorial.msg_746",
+      "source_text_sha256": "93612d3ff04d9d2423702b63cc6614df556364a0485eab709c4676f62b25c85d",
+      "subsystem": "help-tutorial",
+      "target_id": "0x0746",
+      "text": "设置胜利条件[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "ad3ffc7f6eb1637de37fa61a95e42b600353cae11db2ff7d3b9ec27f42da29af",
+      "key": "game.help_tutorial.msg_747",
+      "source_text_sha256": "91a3519533a556a5680553935bb4ee7b77ef4a837975264cc8c4e3e21094f097",
+      "subsystem": "help-tutorial",
+      "target_id": "0x0747",
+      "text": "设置单位是否自动装备武器[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "8c9a7674a19ac959eab009b494cf6707d12c32397b838ce2677715a2a4628efb",
+      "key": "game.shop_arena.msg_748",
+      "source_text_sha256": "21a95d449cce1775e1bf9f2c2d28a19fd035274c0ccee63ccd81d28b081f0840",
+      "subsystem": "shop-arena",
+      "target_id": "0x0748",
+      "text": "准备中，请稍候...[X]\n"
+    },
+    {
+      "english_payload_sha256": "55c39fe83965eb9004759179eb0f277865b526a88de9ac4dcec015ef4f37693c",
+      "key": "game.shop_arena.msg_749",
+      "source_text_sha256": "429feca54c16f792dfdcb8ed147363b1a6f27f25137116def62f6cdb02869de1",
+      "subsystem": "shop-arena",
+      "target_id": "0x0749",
+      "text": "请稍候...[X]\n"
+    },
+    {
+      "english_payload_sha256": "d2c6f6683e2d9a0ca42e7661ff040ed9cd673c82f577c9ac0df13596671458eb",
+      "key": "game.shop_arena.msg_74a",
+      "source_text_sha256": "fd71f79151f6e60d80c8039cf29686c871e14e1787e801f2d0c1c0e56f2246a4",
+      "subsystem": "shop-arena",
+      "target_id": "0x074A",
+      "text": "按START键开始[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "395eb4113291db8adba2a6f490f614aa843c953bd5dce6c6c5b2ff3ddfeae72f",
+      "key": "game.shop_arena.msg_74b",
+      "source_text_sha256": "5e87b295063e5d851ea3059aeb223877278c81eff42b83ef961078d292712502",
+      "subsystem": "shop-arena",
+      "target_id": "0x074B",
+      "text": "本次对战规则[X]\n"
+    },
+    {
+      "english_payload_sha256": "5a1301cadabc13f809672136323d73918d2f383c485f99fc94061d2748582aef",
+      "key": "game.shop_arena.msg_74c",
+      "source_text_sha256": "c11cfdad80470f365c171acc52a22c3779068fbb98a84863e86afc4c102adfc0",
+      "subsystem": "shop-arena",
+      "target_id": "0x074C",
+      "text": "选择用于组建小队的存档[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "a1d05de93419fe0f744c87696e0d60c9d60f1cbd9b0577b0882a51de109d431c",
+      "key": "game.shop_arena.msg_74d",
+      "source_text_sha256": "4b94f9de5dc1d95bccd1d9af11324ad99792a221e4a2d974c5b5e31d7c376e45",
+      "subsystem": "shop-arena",
+      "target_id": "0x074D",
+      "text": "原存档不会改变[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "2d5bc1e626acca926f573f5e56d921a01aa078a48d8d23a3a6af9e15c30d3aec",
+      "key": "game.shop_arena.msg_74e",
+      "source_text_sha256": "0242499d8abe47d63cc3166847ae49af5df918e0e83af88b22947d99ee9d9fb4",
+      "subsystem": "shop-arena",
+      "target_id": "0x074E",
+      "text": "选择先攻的玩家[X]\n"
+    },
+    {
+      "english_payload_sha256": "6ec3b5dd0de0f3601f867259ead8e02fcc1f5d469b2c918bf7750f1ff98c1a30",
+      "key": "game.shop_arena.msg_74f",
+      "source_text_sha256": "c8559fffa9e57283708d886d6cd5f0965d5934f5a043c238c42595e8b24b59e3",
+      "subsystem": "shop-arena",
+      "target_id": "0x074F",
+      "text": "你先攻[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "81481418f4128b31584c670229266177f0cd4b0c1277bdd33c430182675840b0",
+      "key": "game.shop_arena.msg_750",
+      "source_text_sha256": "b8af48d7ecb2abd460a7918c25cd1d9fddfbe6dc6a30840c4e762de24e922148",
+      "subsystem": "shop-arena",
+      "target_id": "0x0750",
+      "text": "1P先攻[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "371905af229915bf29951a4cb073ea407c54967366a633a87da78c1df113b31b",
+      "key": "game.help_tutorial.msg_751",
+      "source_text_sha256": "9e00479ba55d28469602188ccb4f141928a92fd71fcca66d91c781a157ec4869",
+      "subsystem": "help-tutorial",
+      "target_id": "0x0751",
+      "text": "2P先攻[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "276f7fc0cc54f630efcbe300921e044f3274407ad6a2449b799e0a3fe45199d5",
+      "key": "game.help_tutorial.msg_752",
+      "source_text_sha256": "96706ea7cd1285cfaa2039878adbe7325d8365851d98971228b985d78c4a61ee",
+      "subsystem": "help-tutorial",
+      "target_id": "0x0752",
+      "text": "3P先攻[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "b4dde6bc802f01b96f00a91c12f13d56107b9e910e780db4e41f02def5df8e42",
+      "key": "game.help_tutorial.msg_753",
+      "source_text_sha256": "75562a3c93d309142e0a251a0cb801139bdca30adfcaef2f899726b1ad401df4",
+      "subsystem": "help-tutorial",
+      "target_id": "0x0753",
+      "text": "4P先攻[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "428d8bf0c2e3f42123d2ab436460ef20c5879fbf711d9f9679e77452a9a683e6",
+      "key": "game.help_tutorial.msg_754",
+      "source_text_sha256": "03e6be467d4aae94af760c1ef8b921735a605619c139d272834cd025c43eaedd",
+      "subsystem": "help-tutorial",
+      "target_id": "0x0754",
+      "text": "确定删除吗？[X]\n"
+    },
+    {
+      "english_payload_sha256": "1d8e8a2a9d14952b008e79d745e061235c3af7ed2d0d3e131dd3284ff6ae1d45",
+      "key": "game.help_tutorial.msg_755",
+      "source_text_sha256": "ea0421bde3feb157382b6971b6fd46c5feff1393ba1430b6dde1ad85b8c0c9c2",
+      "subsystem": "help-tutorial",
+      "target_id": "0x0755",
+      "text": "取消并放弃小队内容吗？[X]\n"
+    },
+    {
+      "english_payload_sha256": "09f0e229443222d092fbf457db7b3cd3b2133283317e6355f67e7fbffe903bf2",
+      "key": "game.shop_arena.msg_756",
+      "source_text_sha256": "efc0ff769273f3fbbbe09837e1ab0e5dd4dca501c6aa3133bfe24535a16cda32",
+      "subsystem": "shop-arena",
+      "target_id": "0x0756",
+      "text": "每名单位获得30点[X]\n"
+    },
+    {
+      "english_payload_sha256": "ce800f471dadcc2c76e4afe37e75380df3c0a8147972342b7a0a19f397e15d4a",
+      "key": "game.shop_arena.msg_757",
+      "source_text_sha256": "a561140a7f6e44bf89239d9f4a8b0089b24ce1c41ae5d13d3298da2e721d840c",
+      "subsystem": "shop-arena",
+      "target_id": "0x0757",
+      "text": "小队已弃权[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "879b97a7c3c6e105584d12143e17dd7973df2ff9a8880d2ef58692138458331d",
+      "key": "game.shop_arena.msg_758",
+      "source_text_sha256": "6d24c5399f6d27a1e417c46af313738de50d10cc4a89c764f16838dbe8ddb731",
+      "subsystem": "shop-arena",
+      "target_id": "0x0758",
+      "text": "本回合任何人都无法造成伤害[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "6c8da710b858319d021a4bc2eccc1eeefb47a17cf3b25a83e3b2db0e3ddd5ac9",
+      "key": "game.help_tutorial.msg_759",
+      "source_text_sha256": "86491a3658fe6f6f8a1060d674a109457613bc0706958618d8d060a4765b2616",
+      "subsystem": "help-tutorial",
+      "target_id": "0x0759",
+      "text": "将单位移动速度设为普通[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "6569285e842eed25df036bcf04688145699eb7dca2819815bd68c844a364db74",
+      "key": "game.help_tutorial.msg_75a",
+      "source_text_sha256": "867758267f62a001adb2c2c433841905faff84e79372a99fb33233444ddc66c6",
+      "subsystem": "help-tutorial",
+      "target_id": "0x075A",
+      "text": "将单位移动速度设为快速[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "a82187cc637f2589eff4c931726c0b063761596ddfb6d66950c5410708eb0132",
+      "key": "game.help_tutorial.msg_75b",
+      "source_text_sha256": "ce9272ca4977966b6833d4115594a538371b26c52d27a190972516acfbfefbc1",
+      "subsystem": "help-tutorial",
+      "target_id": "0x075B",
+      "text": "敌将[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "c5fa4fa5076d97a821e8b09365739fcd09762fe05192b9dc6935ae587acf925d",
+      "key": "game.help_tutorial.msg_75d",
+      "source_text_sha256": "d2abc950edb60d4248bd6858feaa57f807195856b25a003c3d42e173453767f8",
+      "subsystem": "help-tutorial",
+      "target_id": "0x075D",
+      "text": "通信对战最多可选[LF]\n5名单位参加[LF]\n无法作战的单位[.][LF]\n不能选择参加[.][LF]\n对战[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "c332d096280bef83847ba8fff2a2e2770eddda8fbba6f7b2cbbc385985ade9e9",
+      "key": "game.help_tutorial.msg_75e",
+      "source_text_sha256": "5ec9ace0c5a3a51fdb2d48f6aa0673a0535730d0277c9d323fe2d722cfc266bb",
+      "subsystem": "help-tutorial",
+      "target_id": "0x075E",
+      "text": "更换各单位的所持物品[X]\n"
+    },
+    {
+      "english_payload_sha256": "d66d4eefc8564f080c3041c0e1cd29a66cfcc0eb960ef7526f565c9bac014ca9",
+      "key": "game.help_tutorial.msg_75f",
+      "source_text_sha256": "ea6033ec019968655ac2eb2f957c547fe756c00379f8b4be50595d500262f1d4",
+      "subsystem": "help-tutorial",
+      "target_id": "0x075F",
+      "text": "结束通信编制[.][LF]\n并返回[.][LF]\n上一界面[X]\n"
+    },
+    {
+      "english_payload_sha256": "d42e27c6b10cae8790b375cc80d212e6f4c5ff62abff4afd2a8130624702212d",
+      "key": "game.help_tutorial.msg_760",
+      "source_text_sha256": "7ed7a90926a758e3dd0eb15fd5fa262fcfc5cff4537a1563d4bfd5c7b6347347",
+      "subsystem": "help-tutorial",
+      "target_id": "0x0760",
+      "text": "选择两名单位交换物品[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "5288ce838640e05a07d5da622d0309fa6bf9bd49c308deaf8f7222af12ec1e8c",
+      "key": "game.help_tutorial.msg_761",
+      "source_text_sha256": "ca2023b601949a2cdfbda8215c1f39b0023c9244bc87c750cca719b7c0ecc8a3",
+      "subsystem": "help-tutorial",
+      "target_id": "0x0761",
+      "text": "选择交换物品的对象[X]\n"
+    },
+    {
+      "english_payload_sha256": "3b0241c9e467e470dcde002883e868509b2114357d2b950fbc34cd9dce0e877a",
+      "key": "game.help_tutorial.msg_762",
+      "source_text_sha256": "a037e4ad9b17fcae8b1ee95f935b130c3e5b68e27e25a44971c564745ad241ef",
+      "subsystem": "help-tutorial",
+      "target_id": "0x0762",
+      "text": "丢弃不需要的物品[X]\n"
+    },
+    {
+      "english_payload_sha256": "6fca4613145a1b59d60c0394fd0d1e078cfd995b9936baecaf430a15a4efcb9c",
+      "key": "game.help_tutorial.msg_763",
+      "source_text_sha256": "d2bd7ffe35521d940ab71e8cecd6e724edb242a84efa929c392bbcb3fe431d3c",
+      "subsystem": "help-tutorial",
+      "target_id": "0x0763",
+      "text": "可与运输队交换物品[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "2d9a425d6bad45057b1ae3d84a72fbb42c1d64a4d2e374df3988a4dbaa4a9967",
+      "key": "game.help_tutorial.msg_764",
+      "source_text_sha256": "701e9272e8c425556c0c2c58ce35404343b2ae001103bf2566879eaa70ebfec6",
+      "subsystem": "help-tutorial",
+      "target_id": "0x0764",
+      "text": "可查看所有单位的物品[X]\n"
+    },
+    {
+      "english_payload_sha256": "17d6aea6cb564f41f6317422fc46213ccb8e77cc9c823b699e94e77d11c025b8",
+      "key": "game.help_tutorial.msg_765",
+      "source_text_sha256": "71ece572a6c243e907493678a1b90b16a2197b76380b50c8e42742c90f4d5545",
+      "subsystem": "help-tutorial",
+      "target_id": "0x0765",
+      "text": "可在武器店买卖物品[X]\n"
+    },
+    {
+      "english_payload_sha256": "5e675948f725b496fca73ce2ff1b92affb8b42dfe543947d9e60d6cda9141a75",
+      "key": "game.shop_arena.msg_766",
+      "source_text_sha256": "7b1869eb380a4b17057ed806b8e2beb8105a1815a48a61abd40e2c89e9db7b55",
+      "subsystem": "shop-arena",
+      "target_id": "0x0766",
+      "text": "编制小队[X]\n"
+    },
+    {
+      "english_payload_sha256": "b49570c1eb2e25ae5a5258e09ea6034f3facf91a1b3f85d19ff3d2e0e7c7e347",
+      "key": "game.shop_arena.msg_767",
+      "source_text_sha256": "01ce262b3dd54de1b4383cea746db964170bc7a5646237affe102ca9c70a7de1",
+      "subsystem": "shop-arena",
+      "target_id": "0x0767",
+      "text": "部队表[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "e2495c9433f9dc5d6029b4d59691e00a431160d4088f9230523911728e4bcc2b",
+      "key": "game.shop_arena.msg_768",
+      "source_text_sha256": "334aaa30af096d19a3486e1c8d8dd783c48f716a872990a8d91ee4534a89f93a",
+      "subsystem": "shop-arena",
+      "target_id": "0x0768",
+      "text": "交换小队[X]\n"
+    },
+    {
+      "english_payload_sha256": "5dfe783e0553254eba3a7f951bde37e338fbf2b8389b91ec9b926d91142d7f56",
+      "key": "game.shop_arena.msg_769",
+      "source_text_sha256": "f21f4e81eba24c05d83d62d1e9486d9ca30c3c6c116154f2c1271be4f30fefa4",
+      "subsystem": "shop-arena",
+      "target_id": "0x0769",
+      "text": "删除小队[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "c4b3e71683f7c04ec09ce5181f5c9edc0806025541e1c1dec2dcab072a08a8b1",
+      "key": "game.shop_arena.msg_76a",
+      "source_text_sha256": "190e192a9d50573aa80d17035468005be85f122ca700efffd2c731a394e98fcd",
+      "subsystem": "shop-arena",
+      "target_id": "0x076A",
+      "text": "通信菜单[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "ea0438b62093085354d6eb946841730592e482442b2057013afe4363e13e33d9",
+      "key": "game.shop_arena.msg_76b",
+      "source_text_sha256": "7cd61c84b7d8eb1ecaa80d0bda25c06d3002eea71096879e8d347a8a86d26263",
+      "subsystem": "shop-arena",
+      "target_id": "0x076B",
+      "text": "未选择[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "f0c2b250b06d3f89f0e2dc080b32f5d99157d2ef53100bbb566de5618e3e7a52",
+      "key": "game.shop_arena.msg_76c",
+      "source_text_sha256": "77939d3b9ffa1c5f148f6901817a6b6a81d0afbff2b99875d39e08da848a3a9d",
+      "subsystem": "shop-arena",
+      "target_id": "0x076C",
+      "text": "对战小队[X]\n"
+    },
+    {
+      "english_payload_sha256": "5ed2937bf4426757679696edd8b1d943dfe99ee198f1f06d86ee6972a4c7cdc8",
+      "key": "game.help_tutorial.msg_76d",
+      "source_text_sha256": "d8de59dcf87cc09e7f1dc8b048054ac92deae8e79a629ffd7dd68261789bddc9",
+      "subsystem": "help-tutorial",
+      "target_id": "0x076D",
+      "text": "未连接[X]\n"
+    },
+    {
+      "english_payload_sha256": "5988c854513a69fa1b73ded32401f57edd1339761dada67c3af5ecef67ae7530",
+      "key": "game.help_tutorial.msg_76e",
+      "source_text_sha256": "a4b9fec406191904207dcb50253239cfd32a829d3b8ccd8e7fe3f15e3521a0b1",
+      "subsystem": "help-tutorial",
+      "target_id": "0x076E",
+      "text": "连接中[X]\n"
+    },
+    {
+      "english_payload_sha256": "f508598767d6139ed12df476062443f5478067a620fe98fec0d914b77349e09e",
+      "key": "game.help_tutorial.msg_76f",
+      "source_text_sha256": "30008f80c2c4ba81c3c256134a118d2ba54e99e018e26aef64301e0740418d75",
+      "subsystem": "help-tutorial",
+      "target_id": "0x076F",
+      "text": "连接错误[X]\n"
+    },
+    {
+      "english_payload_sha256": "8882688380a5a2bcee52823e0e456a3038c19e518272a9b4fb61b7a323f9127d",
+      "key": "game.help_tutorial.msg_770",
+      "source_text_sha256": "e0b47df119307500af07d889f440d3f61f8c76e5b40b8f736d50ff2e21fec082",
+      "subsystem": "help-tutorial",
+      "target_id": "0x0770",
+      "text": "结束[X]\n"
+    },
+    {
+      "english_payload_sha256": "7bfb78c40b7b8cae5a22bb0c51b98e64beb4a97fb2f33f76ebc187f65d241f23",
+      "key": "game.shop_arena.msg_774",
+      "source_text_sha256": "958fc1c552178a1a565e31c3eb8cc0a4d433cfe56e69febe9bc0c051e067ea5a",
+      "subsystem": "shop-arena",
+      "target_id": "0x0774",
+      "text": "名次[X]\n"
+    },
+    {
+      "english_payload_sha256": "b8a58914040c7cbb4e87d78f3a0efd45f72add5e7c25b3b91bf196cb58eee420",
+      "key": "game.shop_arena.msg_77f",
+      "source_text_sha256": "0c348bc9e3e120c0c622b79dbed9e3d80c7203889b134821a8bbf79533541a71",
+      "subsystem": "shop-arena",
+      "target_id": "0x077F",
+      "text": "Pt.[X]\n"
+    },
+    {
+      "english_payload_sha256": "7bfb78c40b7b8cae5a22bb0c51b98e64beb4a97fb2f33f76ebc187f65d241f23",
+      "key": "game.help_tutorial.msg_780",
+      "source_text_sha256": "958fc1c552178a1a565e31c3eb8cc0a4d433cfe56e69febe9bc0c051e067ea5a",
+      "subsystem": "help-tutorial",
+      "target_id": "0x0780",
+      "text": "名次[X]\n"
+    },
+    {
+      "english_payload_sha256": "1e2bf778c769402d574e2fd6dcc7fe47590bfb300ac8c9858b517e2dbb98228c",
+      "key": "game.help_tutorial.msg_781",
+      "source_text_sha256": "0f146237fb3da7e32c56879271a09f684aa128e724a431178ef5f0da90de92d3",
+      "subsystem": "help-tutorial",
+      "target_id": "0x0781",
+      "text": "P[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "3d0623ada081ad66df1185840cfcf2ffc1f480401b2d82f69318479e59bbe348",
+      "key": "game.shop_arena.msg_782",
+      "source_text_sha256": "9f307a32253215dd729463d913aed54b37b724b5aa373d679f430a672eca758b",
+      "subsystem": "shop-arena",
+      "target_id": "0x0782",
+      "text": "第1[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "13b2c64bcbb68f3929258f2581ff9faa6297f586f05246a4672e6286b35270cb",
+      "key": "game.shop_arena.msg_783",
+      "source_text_sha256": "43bd1ea8320b7a31685c6e3b2d1f3eaec17a06a04930acfff2e27519ce5e39ec",
+      "subsystem": "shop-arena",
+      "target_id": "0x0783",
+      "text": "第2[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "a1a4cc6311acbcc7191af7c57f6580f81f45cdb3cc0713c2dcc8572d3a196ae0",
+      "key": "game.shop_arena.msg_784",
+      "source_text_sha256": "474af5ce045513fde98e7d28150ba191dc12524ba29aa882bca64b1ea6f0ee94",
+      "subsystem": "shop-arena",
+      "target_id": "0x0784",
+      "text": "第3[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "60d3526d11e8be1718f03dad629068a7fa08ea72fce1620d83b115c7e7c46320",
+      "key": "game.shop_arena.msg_785",
+      "source_text_sha256": "6635a1093f8fc6ce9559803be239b36c3fabca8a21281f39ed9e87dee1b247db",
+      "subsystem": "shop-arena",
+      "target_id": "0x0785",
+      "text": "第4[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "b95304144dba3d4aa5512c1419bc9d21f4e7ad914f1351d379cc9af3177ba83d",
+      "key": "game.shop_arena.msg_786",
+      "source_text_sha256": "d5d5cbf4d47469118c0510399237cc2a090c704c7f995b1bcf81f731db583e38",
+      "subsystem": "shop-arena",
+      "target_id": "0x0786",
+      "text": "1P[X]\n"
+    },
+    {
+      "english_payload_sha256": "c5f373f45ec78f2a9b2c6ceadb9badd8c28f4b43d5cdf80e79ec81be1c9554b5",
+      "key": "game.shop_arena.msg_787",
+      "source_text_sha256": "7d5cebc2b351b33f4062aec6adf433ac4892ea655254bfc5e5fb4c35bd75eb78",
+      "subsystem": "shop-arena",
+      "target_id": "0x0787",
+      "text": "2P[X]\n"
+    },
+    {
+      "english_payload_sha256": "588200e5093e255780f269c1dfbd667bd90d7b827afc23e3e05e03a4fcf5628a",
+      "key": "game.shop_arena.msg_788",
+      "source_text_sha256": "5f2bf85cd881d346dccefa0865c585217ece8ad52ee031262e885c59b6e8a119",
+      "subsystem": "shop-arena",
+      "target_id": "0x0788",
+      "text": "3P[X]\n"
+    },
+    {
+      "english_payload_sha256": "ff241bdcc0aee28d3d36d14384289e2bd5b2c6ebf23e649dd4debcdd7f8242cd",
+      "key": "game.shop_arena.msg_789",
+      "source_text_sha256": "d089b1e3a2f568b99a1a4d0d5ffd9eb6a5341fc16b5bf1ade471124075dbb825",
+      "subsystem": "shop-arena",
+      "target_id": "0x0789",
+      "text": "4P[X]\n"
+    },
+    {
+      "english_payload_sha256": "b11760aac5cd1c6867295dfe2557be899ff119b8fe67517d9f03bc19e3d90bf3",
+      "key": "game.shop_arena.msg_78a",
+      "source_text_sha256": "6879a2840a3f129f33624751b891394ade58b0a799356662b1c14313fff2348a",
+      "subsystem": "shop-arena",
+      "target_id": "0x078A",
+      "text": "5P[X]\n"
+    },
+    {
+      "english_payload_sha256": "81e56db9626bbbd4dd55c174868fb55153a8d3100a387eab9cbe77abe401ec1e",
+      "key": "game.help_tutorial.msg_7d0",
+      "source_text_sha256": "cef39e960f4d6b2a568856bfa77923553ff0a18b54e1f74ffa6d52fe3935d48b",
+      "subsystem": "help-tutorial",
+      "target_id": "0x07D0",
+      "text": "?????[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "d05a45e0d988b8b18eef519933e2a23bb4496ad986494efc278003fac2c5c125",
+      "key": "game.help_tutorial.msg_86e",
+      "source_text_sha256": "9cabb220d86f82d784598429551ab8e9bdbf4f899c6b42f8fdef1620c40f4ff6",
+      "subsystem": "help-tutorial",
+      "target_id": "0x086E",
+      "text": "选择要对其使用杖的单位[X]\n"
+    },
+    {
+      "english_payload_sha256": "a12cd0decb99010fe588a53928a4b48bd0744b265e05c4d1517fd41abfadfafe",
+      "key": "game.help_tutorial.msg_883",
+      "source_text_sha256": "7004a1e5e120ec02df8c9ca9a7b9c496647fcd1f783216d073ee4d0637522395",
+      "subsystem": "help-tutorial",
+      "target_id": "0x0883",
+      "text": " 已发送[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "71a2daaeadfbfa799c1a9759759b0a305a99919fc0940cf8ae8e73ee863e2468",
+      "key": "game.help_tutorial.msg_884",
+      "source_text_sha256": "e13f2fb65e70da493f15885bca11224e8adca1c168a1685f9c1b833f144352b4",
+      "subsystem": "help-tutorial",
+      "target_id": "0x0884",
+      "text": "[OpenLeft][LoadFace][FID_Anna][X]\n"
+    },
+    {
+      "english_payload_sha256": "f0835cb17f4d23932cd19a9fca65e0fd5fac2e338f72bfd70049346c18e18b89",
+      "key": "game.help_tutorial.msg_888",
+      "source_text_sha256": "23ac8af210e44ee808636184cb059dec1aac5e44cff99b96fb4a68978e8c53a6",
+      "subsystem": "help-tutorial",
+      "target_id": "0x0888",
+      "text": "[OpenLeft]备份中没有试炼地图[.][LF]\n中止发送并返回菜单[X]\n"
+    },
+    {
+      "english_payload_sha256": "2cf9fa05eab1499db09798bccad7148cd3877c27c21afdbb9b24be61b5d57c76",
+      "key": "game.help_tutorial.msg_895",
+      "source_text_sha256": "e4290e32dd3efd03349abc5d44c7d522f75f79627f9fd0e7914dbbd9b1a9a72d",
+      "subsystem": "help-tutorial",
+      "target_id": "0x0895",
+      "text": "请选择已通关的存档[.][X]\n"
+    }
+  ]
+}
