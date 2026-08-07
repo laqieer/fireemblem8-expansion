@@ -146,27 +146,42 @@ def build_combined_coverage_report(
     febuilder_conflict = febuilder_conflict_global & actionable
     febuilder_collision = febuilder_collision_global & actionable
 
-    structural_high = {
+    structural_high_global = {
         row["target_id"]
         for row in structural["proposals"]
         if row["confidence"] == "high"
     }
-    structural_reference = {
+    structural_reference_global = {
         row["target_id"]
         for row in structural["proposals"]
         if row["confidence"] == "reference"
     }
+    structural_high = structural_high_global & actionable
+    structural_reference = structural_reference_global & actionable
     structural_proposals = structural_high | structural_reference
-    structural_collisions = {
+    structural_collisions_global = {
         row["target_id"] for row in structural["collisions"]
     }
-    structural_residuals = {
+    structural_collisions = structural_collisions_global & actionable
+    structural_residuals_global = {
         row["target_id"] for row in structural["residual_targets"]
     }
+    structural_residuals = structural_residuals_global & actionable
+    structural_research_targets = (
+        structural_high_global
+        | structural_reference_global
+        | structural_residuals_global
+    )
 
-    if structural_proposals & structural_residuals:
+    if (
+        structural_high_global | structural_reference_global
+    ) & structural_residuals_global:
         raise CombinedCoverageError(
             "structural proposals and residuals are not disjoint"
+        )
+    if not actionable <= structural_research_targets:
+        raise CombinedCoverageError(
+            "current not-yet-verified targets are absent from structural research"
         )
     if structural_proposals | structural_residuals != actionable:
         raise CombinedCoverageError(
@@ -254,6 +269,9 @@ def build_combined_coverage_report(
                 febuilder_collision_global
             ),
             "febuilder_conflict_targets": sorted(febuilder_conflict_global),
+            "structural_collision_targets": sorted(
+                structural_collisions_global
+            ),
         },
         "inputs": {
             "febuilder_alignment_evidence": _input_record(
@@ -327,6 +345,9 @@ def build_combined_coverage_report(
             "residual_target_count": len(residual),
             "structural_context_collision_count": len(
                 structural_collisions
+            ),
+            "structural_global_context_collision_count": len(
+                structural_collisions_global
             ),
             "structural_high_candidate_count": len(structural_high),
             "structural_reference_candidate_count": len(

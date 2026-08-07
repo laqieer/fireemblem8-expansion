@@ -24,6 +24,13 @@ from .febuilder import (
     canonical_json_bytes as febuilder_json_bytes,
     import_febuilder_source,
 )
+from .final_mapping import (
+    FinalMappingError,
+    build_final_mapping_artifacts,
+    canonical_artifacts,
+    recover_original_rows,
+    require_no_fallback,
+)
 from .importer import (
     check_vendored_locale_sources,
     import_locale_sources,
@@ -177,6 +184,20 @@ def _cmd_harvest_crosswalk(args: argparse.Namespace) -> int:
 
 
 def _cmd_build_crosswalk(args: argparse.Namespace) -> int:
+    if args.mapping.is_file():
+        current = _load_json(args.mapping)
+        if any(
+            row.get("verification", {})
+            .get("promotion", {})
+            .get("pipeline")
+            == "fe8u-final-mapping-v1"
+            for row in current.get("rows", [])
+        ):
+            print(
+                "final promotion metadata is present; preserving the final map "
+                "and checking its structural base"
+            )
+            return _cmd_check_crosswalk(args)
     artifacts = _build_crosswalk_artifacts(args)
     for path, content in artifacts.items():
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -194,20 +215,27 @@ def _cmd_build_crosswalk(args: argparse.Namespace) -> int:
 
 def _cmd_check_crosswalk(args: argparse.Namespace) -> int:
     artifacts = _build_crosswalk_artifacts(args)
-    mismatches = [
-        str(path)
-        for path, expected in artifacts.items()
-        if not path.is_file() or path.read_bytes() != expected
-    ]
-    if mismatches:
+    committed_mapping = _load_json(args.mapping)
+    rebuilt_base = json.loads(artifacts[args.mapping].decode("utf-8"))
+    if recover_original_rows(committed_mapping) != rebuilt_base["rows"]:
         raise MappingError(
-            "crosswalk artifacts differ from deterministic rebuild: "
-            + ", ".join(mismatches)
+            "final target map does not preserve the deterministic structural base"
         )
-    mapping = json.loads(artifacts[args.mapping].decode("utf-8"))
-    report = json.loads(artifacts[args.report].decode("utf-8"))
+    target_count = len(load_fe8u_target_ids(args.target_header))
+    report = build_crosswalk_coverage_report(
+        committed_mapping,
+        target_count=target_count,
+        repo_root=args.repo_root,
+    )
+    if not args.report.is_file() or args.report.read_bytes() != canonical_json_bytes(
+        report
+    ):
+        raise MappingError(
+            f"{args.report}: final coverage differs from deterministic rebuild"
+        )
     print(
-        f"crosswalk artifacts match committed bytes: decisions={len(mapping['rows'])} "
+        "structural base is preserved by final artifacts: "
+        f"decisions={len(committed_mapping['rows'])} "
         f"translated={report['translation_coverage']['count']} "
         f"fallback={report['explicit_fallback_coverage']['count']} "
         f"unresolved={report['unresolved_count']}"
@@ -427,6 +455,79 @@ def _cmd_check_raw_closure(args: argparse.Namespace) -> int:
         f"excluded={summary['non_user_facing_exclusion_count'] + summary['diagnostic_exclusion_count']} "
         f"fallback={summary['english_fallback_count']} "
         f"unresolved={summary['unresolved_count']}"
+    )
+    return 0
+
+
+def _build_final_mapping(args: argparse.Namespace):
+    target_count = len(load_fe8u_target_ids(args.target_header))
+    return build_final_mapping_artifacts(
+        repo_root=args.repo_root,
+        target_count=target_count,
+        mapping_data=_load_json(args.mapping),
+        febuilder_data=_load_json(args.febuilder_evidence),
+        structural_data=_load_json(args.structural_completion),
+        english_texts_path=args.english_texts,
+        english_definitions_path=args.english_definitions,
+        ja_indexed_text=args.ja_indexed.read_text(encoding="utf-8"),
+        zh_indexed_text=args.zh_hans_indexed.read_text(encoding="utf-8"),
+        zh_raw_data=_load_json(args.zh_hans_raw),
+        ja_raw_data=_load_json(args.ja_raw),
+        authored_catalogs={
+            "en": _load_json(args.catalog_en),
+            "ja": _load_json(args.catalog_ja),
+            "zh-Hans": _load_json(args.catalog_zh_hans),
+        },
+    )
+
+
+def _final_mapping_paths(args: argparse.Namespace):
+    return {
+        "coverage": args.coverage,
+        "mapping": args.mapping,
+        "queue": args.queue,
+        "report": args.final_report,
+    }
+
+
+def _cmd_build_final_mapping(args: argparse.Namespace) -> int:
+    artifacts = _build_final_mapping(args)
+    encoded = canonical_artifacts(artifacts)
+    for name, path in _final_mapping_paths(args).items():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(encoded[name])
+    summary = artifacts["report"]["summary"]
+    print(
+        "built final FE8U mapping: "
+        f"translated={summary['translated_target_count']} "
+        f"fallback={summary['fallback_target_count']} "
+        f"queue={summary['authored_queue_target_count']} "
+        f"promoted={summary['promoted_target_count']}"
+    )
+    return 0
+
+
+def _cmd_check_final_mapping(args: argparse.Namespace) -> int:
+    artifacts = _build_final_mapping(args)
+    encoded = canonical_artifacts(artifacts)
+    mismatches = [
+        str(path)
+        for name, path in _final_mapping_paths(args).items()
+        if not path.is_file() or path.read_bytes() != encoded[name]
+    ]
+    if mismatches:
+        raise FinalMappingError(
+            "final mapping artifacts differ from deterministic rebuild: "
+            + ", ".join(mismatches)
+        )
+    if args.require_no_fallback:
+        require_no_fallback(artifacts["queue"])
+    summary = artifacts["report"]["summary"]
+    print(
+        "final FE8U mapping artifacts match committed bytes: "
+        f"translated={summary['translated_target_count']} "
+        f"fallback={summary['fallback_target_count']} "
+        f"queue={summary['authored_queue_target_count']}"
     )
     return 0
 
@@ -804,6 +905,114 @@ def build_parser() -> argparse.ArgumentParser:
         )
         closure_parser.set_defaults(handler=handler)
 
+    def add_final_mapping_inputs(command_parser: argparse.ArgumentParser) -> None:
+        command_parser.add_argument(
+            "--mapping",
+            type=Path,
+            default=Path("texts/locales/mapping/fe8u_target_map.json"),
+        )
+        command_parser.add_argument(
+            "--coverage",
+            type=Path,
+            default=Path("texts/locales/mapping/fe8u_target_map.coverage.json"),
+        )
+        command_parser.add_argument(
+            "--febuilder-evidence",
+            type=Path,
+            default=Path(
+                "texts/locales/mapping/febuilder_alignment_evidence.json"
+            ),
+        )
+        command_parser.add_argument(
+            "--structural-completion",
+            type=Path,
+            default=Path(
+                "texts/locales/mapping/structural_completion_evidence.json"
+            ),
+        )
+        command_parser.add_argument(
+            "--queue",
+            type=Path,
+            default=Path(
+                "texts/locales/mapping/authored_translation_queue.json"
+            ),
+        )
+        command_parser.add_argument(
+            "--final-report",
+            type=Path,
+            default=Path("texts/locales/mapping/final_mapping_report.json"),
+        )
+        command_parser.add_argument(
+            "--english-texts",
+            type=Path,
+            default=Path("texts/texts.txt"),
+        )
+        command_parser.add_argument(
+            "--english-definitions",
+            type=Path,
+            default=Path("texts/textdefs.txt"),
+        )
+        command_parser.add_argument(
+            "--ja-indexed",
+            type=Path,
+            default=Path("texts/locales/ja/indexed.txt"),
+        )
+        command_parser.add_argument(
+            "--ja-raw",
+            type=Path,
+            default=Path("texts/locales/ja/raw.json"),
+        )
+        command_parser.add_argument(
+            "--zh-hans-indexed",
+            type=Path,
+            default=Path("texts/locales/zh-Hans/indexed.txt"),
+        )
+        command_parser.add_argument(
+            "--zh-hans-raw",
+            type=Path,
+            default=Path("texts/locales/zh-Hans/raw.json"),
+        )
+        command_parser.add_argument(
+            "--catalog-en",
+            type=Path,
+            default=Path("texts/expansion/catalog.en.json"),
+        )
+        command_parser.add_argument(
+            "--catalog-ja",
+            type=Path,
+            default=Path("texts/expansion/catalog.ja.json"),
+        )
+        command_parser.add_argument(
+            "--catalog-zh-hans",
+            type=Path,
+            default=Path("texts/expansion/catalog.zh-Hans.json"),
+        )
+        command_parser.add_argument(
+            "--target-header",
+            type=Path,
+            default=Path("include/constants/msg.h"),
+        )
+        command_parser.add_argument("--repo-root", type=Path, default=Path("."))
+
+    final_build_parser = subparsers.add_parser(
+        "build-final-mapping",
+        help="promote final evidence and generate the exact authored queue",
+    )
+    add_final_mapping_inputs(final_build_parser)
+    final_build_parser.set_defaults(handler=_cmd_build_final_mapping)
+
+    final_check_parser = subparsers.add_parser(
+        "check-final-mapping",
+        help="compare final map, coverage, queue, and report with a rebuild",
+    )
+    add_final_mapping_inputs(final_check_parser)
+    final_check_parser.add_argument(
+        "--require-no-fallback",
+        action="store_true",
+        help="final-delivery gate: reject any remaining authored queue target",
+    )
+    final_check_parser.set_defaults(handler=_cmd_check_final_mapping)
+
     return parser
 
 
@@ -815,6 +1024,7 @@ def main(argv=None) -> int:
     except (
         CombinedCoverageError,
         FeBuilderEvidenceError,
+        FinalMappingError,
         LocaleSourceError,
         MappingError,
         OSError,

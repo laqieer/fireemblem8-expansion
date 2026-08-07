@@ -12,7 +12,6 @@ from scripts.localization.game_locales.crosswalk import (
     CrosswalkError,
     build_crosswalk_coverage_report,
     build_release_mapping,
-    canonical_json_bytes,
     validate_evidence_document,
 )
 from scripts.localization.game_locales.mapping import validate_mapping_document
@@ -47,11 +46,10 @@ class GameLocaleCrosswalkTests(unittest.TestCase):
 
     def test_low_system_candidate_is_not_blindly_identity_mapped(self):
         row = self.rows[0x0004]
+        self.assertEqual(row["source"]["id"], "0x0803")
         self.assertEqual(
-            row["source"],
-            {"kind": "english_fallback", "reason": "not-yet-verified"},
+            row["verification"]["promotion"]["precedence"], "c-febuilder"
         )
-        self.assertTrue(row["verification"]["candidate_seed"]["ignored"])
         self.assertNotEqual(row["source"].get("id"), "0x0004")
 
     def test_duessel_knoll_tail_uses_structural_support_pair(self):
@@ -83,10 +81,14 @@ class GameLocaleCrosswalkTests(unittest.TestCase):
                 source["regional_sources"]["zh-Hans"]["import_id"], import_id
             )
 
-    def test_region_split_menu_target_is_explicit_fallback(self):
+    def test_region_split_menu_target_reuses_exact_existing_translation(self):
         self.assertEqual(
             self.rows[0x0693]["source"],
-            {"kind": "english_fallback", "reason": "region-only"},
+            {
+                "control_suffix": "[CTRL:001F]",
+                "kind": "authored",
+                "translation_key": "raw_surface.unit_action.summon",
+            },
         )
 
     def test_candidate_rows_cannot_promote_themselves(self):
@@ -184,7 +186,7 @@ class GameLocaleCrosswalkTests(unittest.TestCase):
             if row.source.get("regional_sources", {}).get("ja", {}).get("kind")
             == "literal"
         ]
-        self.assertEqual(len(literal_rows), 20)
+        self.assertEqual(len(literal_rows), 22)
         self.assertTrue(
             all(
                 row.source["regional_sources"]["ja"]["provenance"].get(
@@ -224,7 +226,7 @@ class GameLocaleCrosswalkTests(unittest.TestCase):
             "menus": 105,
             "supports": 249,
             "terrain": 65,
-            "world-map": 32,
+            "world-map": 33,
         }
         for subsystem, expected in expected_totals.items():
             self.assertEqual(
@@ -239,14 +241,14 @@ class GameLocaleCrosswalkTests(unittest.TestCase):
             target_count=3414,
             candidate_data=self.candidates,
         )
-        rebuilt_report = build_crosswalk_coverage_report(
-            rebuilt_mapping, target_count=3414
-        )
         self.assertEqual(
-            self.MAP_PATH.read_bytes(), canonical_json_bytes(rebuilt_mapping)
-        )
-        self.assertEqual(
-            self.REPORT_PATH.read_bytes(), canonical_json_bytes(rebuilt_report)
+            [row["source"] for row in rebuilt_mapping["rows"]],
+            [
+                row["verification"].get("promotion", {}).get(
+                    "original_source", row["source"]
+                )
+                for row in self.mapping_data["rows"]
+            ],
         )
 
     def test_check_crosswalk_command_passes(self):

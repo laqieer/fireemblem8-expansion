@@ -27,6 +27,7 @@ _RAW_IMPORT_ID_RE = re.compile(r"fe8cn\.raw\.import-[0-9]{4}")
 _SHA256_RE = re.compile(r"[0-9a-f]{64}")
 _IDENTIFIER_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 _LITERAL_SOURCE_KEY_RE = re.compile(r"message_id=0x([0-9A-F]{4})")
+_CONTROL_SUFFIX_RE = re.compile(r"(?:\[CTRL:[0-9A-F]{4}\])*")
 _C_STRING_ENTRY_RE = re.compile(
     r'^\s*"((?:\\.|[^"\\])*)"\s*,\s*(0[xX][0-9A-Fa-f]+|[0-9]+)\b',
     re.DOTALL,
@@ -308,6 +309,15 @@ def validate_source_provider(
                 raise MappingError(
                     f"{field}.regional_sources.ja.kind must be 'symbol' or 'literal'"
                 )
+            provider_target_id = ja_source.get("provider_target_id")
+            parsed_provider_target_id = (
+                _parse_id(
+                    provider_target_id,
+                    f"{field}.regional_sources.ja.provider_target_id",
+                )
+                if provider_target_id is not None
+                else target_id
+            )
             if ja_kind == "symbol":
                 _require_nonempty_string(
                     ja_source.get("symbol"), f"{field}.regional_sources.ja.symbol"
@@ -327,10 +337,13 @@ def validate_source_provider(
                     field=provenance_field,
                     repo_root=repo_root,
                 )
-                if target_id is not None and source_key_id != target_id:
+                if (
+                    parsed_provider_target_id is not None
+                    and source_key_id != parsed_provider_target_id
+                ):
                     raise MappingError(
-                        f"{provenance_field}.source_key must match target "
-                        f"{format_message_id(target_id)}"
+                        f"{provenance_field}.source_key must match provider target "
+                        f"{format_message_id(parsed_provider_target_id)}"
                     )
                 context_sha256 = provenance.get("context_sha256")
                 if not isinstance(context_sha256, str) or not _SHA256_RE.fullmatch(
@@ -357,6 +370,13 @@ def validate_source_provider(
                 )
     elif kind == "authored":
         _require_nonempty_string(source.get("translation_key"), f"{field}.translation_key")
+        control_suffix = source.get("control_suffix", "")
+        if not isinstance(control_suffix, str) or not _CONTROL_SUFFIX_RE.fullmatch(
+            control_suffix
+        ):
+            raise MappingError(
+                f"{field}.control_suffix must contain only canonical [CTRL:HHHH] tokens"
+            )
     elif kind == "english_fallback":
         _require_nonempty_string(source.get("reason"), f"{field}.reason")
     return kind

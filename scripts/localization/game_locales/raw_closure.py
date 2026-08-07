@@ -312,16 +312,34 @@ def _mapped_imports(
             row.source["import_id"],
             *row.source.get("alternate_import_ids", []),
         ):
-            if import_id in result:
-                raise RawClosureError(f"{import_id} maps to more than one FE8U target")
-            result[import_id] = {
-                "row": row,
-                "target_id": f"0x{row.target_id:04X}",
-            }
+            entry = result.setdefault(import_id, {"rows": [], "target_ids": []})
+            entry["rows"].append(row)
+            entry["target_ids"].append(f"0x{row.target_id:04X}")
+    for entry in result.values():
+        paired = sorted(
+            zip(entry["target_ids"], entry["rows"]),
+            key=lambda pair: pair[0],
+        )
+        entry["target_ids"] = [target_id for target_id, _ in paired]
+        entry["rows"] = [row for _, row in paired]
     return result
 
 
-def _derived_call_sites(row: Any, repo_root: Path) -> List[Dict[str, Any]]:
+def _derived_call_sites(rows: List[Any], repo_root: Path) -> List[Dict[str, Any]]:
+    combined = []
+    for row in rows:
+        if not (row.verification or {}).get("source_paths", {}).get("fe8u"):
+            continue
+        combined.extend(_derived_row_call_sites(row, repo_root))
+    if not combined:
+        raise RawClosureError("raw mapping group lacks an FE8U call-site path")
+    unique = {
+        (site["path"], tuple(site["anchors"])): site for site in combined
+    }
+    return [unique[key] for key in sorted(unique)]
+
+
+def _derived_row_call_sites(row: Any, repo_root: Path) -> List[Dict[str, Any]]:
     verification = row.verification or {}
     source_paths = verification.get("source_paths", {})
     relative_path = source_paths.get("fe8u")
@@ -400,17 +418,18 @@ def build_raw_surface_closure(
             mapped_entry = mapped.get(import_id)
             if mapped_entry is None:
                 raise RawClosureError(f"{import_id} has no closure decision")
-            row = mapped_entry["row"]
             closure_row = {
-                "call_sites": _derived_call_sites(row, repo_root),
+                "call_sites": _derived_call_sites(mapped_entry["rows"], repo_root),
                 "classification": "game_message",
                 "decision_origin": "verified-game-map",
                 "import_id": import_id,
-                "rationale": row.verification["rationale"],
+                "rationale": mapped_entry["rows"][0].verification["rationale"],
                 "source_text_sha256": source_hash,
-                "target_id": mapped_entry["target_id"],
+                "target_ids": mapped_entry["target_ids"],
                 "user_facing": True,
             }
+            if len(mapped_entry["target_ids"]) == 1:
+                closure_row["target_id"] = mapped_entry["target_ids"][0]
         else:
             classification = decision["classification"]
             closure_row = {
@@ -428,12 +447,13 @@ def build_raw_surface_closure(
                     raise RawClosureError(
                         f"{import_id} game-message decision is absent from verified mapping"
                     )
-                if mapped_entry["target_id"] != decision["target_id"]:
+                if decision["target_id"] not in mapped_entry["target_ids"]:
                     raise RawClosureError(
-                        f"{import_id} target mismatch: {decision['target_id']} vs "
-                        f"{mapped_entry['target_id']}"
+                        f"{import_id} target mismatch: {decision['target_id']} not in "
+                        f"{mapped_entry['target_ids']}"
                     )
                 closure_row["target_id"] = decision["target_id"]
+                closure_row["target_ids"] = mapped_entry["target_ids"]
             elif classification == "expansion_message":
                 key = decision["expansion_key"]
                 if key not in active_keys:
@@ -488,7 +508,7 @@ def build_raw_surface_closure(
                 raise RawClosureError(
                     f"{import_id} game-message provider is absent from verified mapping"
                 )
-            mapping_row = mapped_entry["row"]
+            mapping_row = mapped_entry["rows"][0]
             ja_source = mapping_row.source.get("regional_sources", {}).get("ja", {})
             try:
                 ja_text = resolve_ja_raw_text(

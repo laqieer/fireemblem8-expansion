@@ -220,7 +220,7 @@ class FixtureBuildTests(unittest.TestCase):
             ja.catalog.decode_entry(0x0023),
             "　決定".encode("utf-8") + b"\x00",
         )
-        self.assertEqual(build.report["locales"]["ja"]["provider_counts"]["raw"], 136)
+        self.assertEqual(build.report["locales"]["ja"]["provider_counts"]["raw"], 142)
         self.assertEqual(
             ja.catalog.decode_entry(0x01C1),
             "残り".encode("utf-8") + b"\x00",

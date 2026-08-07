@@ -1,0 +1,33 @@
+{
+  "authoritative": false,
+  "inputs": {
+    "febuilder_alignment_evidence_sha256": "78dac548ec81979127f284927eea589c4598ee93382b450b5e674c84611ecad6",
+    "original_target_map_sha256": "6abbc956576d823de7430da267212f6c050fec5267cb7a6cb6819f77381ae4bd",
+    "structural_completion_evidence_sha256": "2ca4db089cb81f31f6a0f89415da6288a69cf0e882f956a018448ad1192aa87e"
+  },
+  "kind": "fe8u-final-mapping-report",
+  "note": "Evidence and queue report for the deterministic final-mapping promotion pass. Final delivery remains blocked until fallback=0.",
+  "policy": {
+    "final_delivery_requires_zero_fallback": true,
+    "intermediate_queue_permitted": true,
+    "numeric_or_proximity_promotion_permitted": false
+  },
+  "promotion_counts": {
+    "b-structural-high": 27,
+    "c-febuilder": 1347,
+    "c-febuilder-raw": 3,
+    "d-contextual-resolution": 21,
+    "d-existing-authored": 3,
+    "d-structural-reference-second-check": 6,
+    "e-exact-english": 139,
+    "e-exact-english-context": 1
+  },
+  "schema_version": 1,
+  "summary": {
+    "authored_queue_target_count": 259,
+    "fallback_target_count": 259,
+    "promoted_target_count": 1547,
+    "target_count": 3414,
+    "translated_target_count": 3155
+  }
+}

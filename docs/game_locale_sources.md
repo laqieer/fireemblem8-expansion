@@ -54,6 +54,11 @@ remain import provenance only and never become runtime keys.
 - `mapping/combined_fallback_coverage.json`: generated final-owner handoff that
   combines the current fallback subset with FEBuilder and structural
   candidates while preserving every conflict, collision, and residual.
+- `mapping/final_mapping_report.json`: deterministic promotion counts, input
+  fingerprints, residual count, and the zero-fallback final-delivery policy.
+- `mapping/authored_translation_queue.json`: exact residual fallback set with
+  canonical English, controls/placeholders, subsystem, reference sites,
+  no-provider reason, suggested key, and grouping.
 - `mapping/raw_surface_decisions.json`: the 29 audited records that were not
   part of the original 114 raw-to-game-ID mappings. Each has a concrete game
   message ID, semantic expansion key, explicit English fallback, or documented
@@ -245,11 +250,12 @@ IDs. Target `0x0C52` remains an explicit context collision between the
 reference-map provider and the live preparation call-site provider rather than
 choosing one arbitrarily.
 
-The committed artifact currently partitions all 1,794 `not-yet-verified`
-fallbacks into 1,381 unambiguous proposals and 413 residuals, including 20
-context-required collisions. Of the proposals, 27 have parsed high-confidence
-structure proof and 1,354 retain reference confidence. These are review
-candidates, not translations or release mappings.
+The committed artifact preserves the original 1,794-target completion research
+corpus even after final promotion: 1,381 unambiguous proposals and 413
+structural residuals, including 20 originally context-required collisions. Of
+the proposals, 27 have parsed high-confidence structure proof and 1,354 retain
+reference confidence. Final-map rows record their recoverable original
+fallback, so rebuilding this ledger remains deterministic after promotion.
 
 Harvest from the authorized read-only trees and FEBuilder reference maps:
 
@@ -273,17 +279,57 @@ paths to that command.
 The committed FE8U target report currently contains 3,414 decisions and zero
 unresolved:
 
-- 1,472 verified indexed mappings;
-- 136 verified raw target mappings, covering 137 raw import records because
-  the two Attack pointers intentionally share FE8U message ID `0x067B`;
-- 0 authored translations;
-- 1,806 explicit English fallbacks.
+- 3,010 verified indexed mappings;
+- 142 verified raw target mappings, using 140 unique imports (143 import
+  references including alternate providers and safe one-to-many reuse);
+- 3 authored mappings reusing existing expansion translations (`0x0693`,
+  `0x0D53`, and `0x0D54`);
+- 259 explicit English fallbacks.
 
-Translation coverage is therefore 1,608 targets (47.10%). Explicit fallback
-coverage is 1,806 targets (52.90%); fallback content is not translated content.
-The largest reported gap is 1,794 `not-yet-verified` targets, chiefly dialogue
-outside the proven named structures. Other fallback reasons are `dummy` (1),
-`region-only` (1), and `expansion-only` (10).
+Translation coverage is therefore 3,155 targets (92.41%). Explicit fallback
+coverage is 259 targets (7.59%); fallback content is not translated content.
+The residual reasons are `not-yet-verified` (250), `expansion-only` (8), and
+`dummy` (1).
+
+## Final mapping promotion and authored queue
+
+`build-final-mapping` is the authoritative promotion pipeline. It is
+idempotent: promoted rows retain their original fallback source and
+verification, allowing the structural base to be reconstructed before every
+run. Precedence is fixed:
+
+1. preserve existing verified structural/raw/authored providers;
+2. promote parsed structural high-confidence proof;
+3. promote payload-valid, collision-free FEBuilder indexed/raw proof;
+4. promote structural reference proof only with an independent table/call key,
+   and apply the reviewed context decisions for every former collision;
+5. reuse a mapped provider only when the normalized English bytes, including
+   control tokens, are exact and all candidate JA/ZH payloads agree.
+
+The pipeline additionally reuses the tracked legacy
+`PROMO_OPTION_{1,2,3}_NAME` literals for the three FEBuilder pointer rows. It
+does not infer by target number, offset, or proximity. The 12 FEBuilder
+structural conflicts retain their pre-existing authoritative structural
+providers; the 17 FEBuilder collision targets and four additional structural
+collision targets have explicit context decisions rather than arbitrary
+candidate selection.
+
+```bash
+python3 -m scripts.localization.game_locales build-final-mapping
+python3 -m scripts.localization.game_locales check-final-mapping
+```
+
+`mapping/authored_translation_queue.json` contains exactly the 259 remaining
+fallback targets. Every row includes canonical English text, controls,
+placeholders, subsystem, typed reference sites, the reason evidence cannot
+select a provider, a suggested semantic key, and deterministic grouping.
+Intermediate research may carry this queue; final delivery must pass the
+zero-fallback gate:
+
+```bash
+python3 -m scripts.localization.game_locales check-final-mapping \
+  --require-no-fallback
+```
 
 ## Combined fallback coverage handoff
 
@@ -293,13 +339,11 @@ coverage report, structural crosswalk evidence, FEBuilder ledger, and
 structural completion ledger. It cannot update the map and keeps every
 conflict and context collision explicit.
 
-For the 1,794 current `not-yet-verified` targets, the report records 1,382
-FEBuilder `unique-uncontested` candidates, 27 structural high-confidence
-candidates, and 1,354 structural reference candidates. After overlap and
-blockers are accounted for, 1,383 targets have an unblocked candidate, 21 are
-blocked by a conflict or collision, and 390 have no candidate or blocker. Six
-targets have candidate evidence but remain blocked and are listed as such
-rather than counted as ready.
+After final promotion the combined report covers the 250 remaining
+`not-yet-verified` targets: zero unpromoted candidates, zero unresolved
+blockers, and 250 true research residuals. It still retains the global
+exception lists (12 FEBuilder conflicts, 17 FEBuilder collisions, and 20
+structural collision targets) so resolved history cannot silently disappear.
 
 Build or verify the committed report:
 

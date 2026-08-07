@@ -45,7 +45,7 @@ _INTEGER_RE = re.compile(
     r"^(?:MSG_([0-9A-Fa-f]+)|0[xX]([0-9A-Fa-f]+)|([0-9]+))$"
 )
 _MESSAGE_FIELD_RE = re.compile(
-    r"\.(nameTextId|descTextId|helpTextId|textId|msgId|messageId|"
+    r"\.(nameTextId|descTextId|helpTextId|textId|msgId|messageId|itemName|"
     r"goalWindowTextId|goalTextId|labelTextId|optionTextId|msg)\s*=\s*"
     r"(MSG_[0-9A-Fa-f]{1,4}|0[xX][0-9A-Fa-f]+|[0-9]+)\b"
 )
@@ -55,6 +55,7 @@ _MESSAGE_CALL_ARGUMENTS = {
     "StartCgText": (4,),
     "StartHelpBox": (2,),
     "StartPrepErrorHelpbox": (2,),
+    "SetPrepScreenMenuItem": (3, 4),
 }
 _DIRECT_EVENT_MESSAGES = {
     "BROWNBOXTEXT": 0,
@@ -246,6 +247,15 @@ def _load_fallback_targets(path: Path, target_count: int) -> Tuple[int, ...]:
             )
         source = row.get("source")
         if source == {"kind": "english_fallback", "reason": "not-yet-verified"}:
+            fallback.append(expected)
+            continue
+        promotion = row.get("verification", {}).get("promotion", {})
+        original_source = promotion.get("original_source", {})
+        if (
+            promotion.get("pipeline") == "fe8u-final-mapping-v1"
+            and original_source
+            == {"kind": "english_fallback", "reason": "not-yet-verified"}
+        ):
             fallback.append(expected)
     return tuple(fallback)
 
@@ -527,20 +537,6 @@ def _canonical_event_ops(
         ):
             result.append(
                 EventOperation("MESSAGE", _parse_event_int(args[1]), line, context)
-            )
-            index += 2
-            continue
-        if (
-            opcode == "SVAL"
-            and len(args) >= 2
-            and args[0] == "EVT_SLOT_1"
-            and index + 1 < len(raw)
-            and raw[index + 1][0] == "SENQUEUE1"
-        ):
-            result.append(
-                EventOperation(
-                    "MESSAGE_QUEUE", _parse_event_int(args[1]), line, context
-                )
             )
             index += 2
             continue

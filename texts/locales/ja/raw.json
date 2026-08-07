@@ -1,8 +1,11 @@
 {
   "kind": "fe8j-raw-provider-catalog",
   "locale_id": "ja",
-  "provider_count": 116,
+  "provider_count": 119,
   "providers": {
+    "0x0032": {"symbol": "PROMO_OPTION_1_NAME", "text": "　第１兵種"},
+    "0x0033": {"symbol": "PROMO_OPTION_2_NAME", "text": "　第２兵種"},
+    "0x0034": {"symbol": "PROMO_OPTION_3_NAME", "text": "　第３兵種"},
     "0x01C1": {"symbol": "GoalString_UnitsLeft", "text": "残り"},
     "0x01C2": {"symbol": "GoalString_Turn", "text": "ターン"},
     "0x01C3": {"symbol": "GoalString_LastTurn", "text": "最終ターン"},

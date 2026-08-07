@@ -68,6 +68,10 @@ DEFAULT_ZH_INDEXED_PATH = Path("texts/locales/zh-Hans/indexed.txt")
 DEFAULT_ZH_RAW_PATH = Path("texts/locales/zh-Hans/raw.json")
 DEFAULT_MAPPING_PATH = Path("texts/locales/mapping/fe8u_target_map.json")
 DEFAULT_TARGET_HEADER_PATH = Path("include/constants/msg.h")
+DEFAULT_AUTHORED_PATHS = {
+    "ja": Path("texts/expansion/catalog.ja.json"),
+    "zh-Hans": Path("texts/expansion/catalog.zh-Hans.json"),
+}
 
 _AUTHORED_KIND = "fe8u-game-authored-catalog"
 
@@ -377,7 +381,9 @@ def _entry_for_locale(
                 f"{locale}: missing authored translation {translation_key!r} for target "
                 f"{format_message_id(row.target_id)}"
             )
-        source_text = locale_catalog[translation_key]
+        source_text = locale_catalog[translation_key] + source.get(
+            "control_suffix", ""
+        )
         return EntryPayloadMeta(
             target_id=row.target_id,
             mapping_source_kind=row.source_kind,
@@ -737,8 +743,10 @@ def build_game_catalog(
     ja_raw_records = (
         _load_ja_raw_records(ja_raw_path) if "ja" in enabled_locales else {}
     )
-    authored_records = _load_authored_catalogs(authored_paths)
     mapping_source_counts = _mapping_source_counts(mapping)
+    if authored_paths is None and mapping_source_counts["authored"]:
+        authored_paths = DEFAULT_AUTHORED_PATHS
+    authored_records = _load_authored_catalogs(authored_paths)
     locale_bundles = tuple(
         _build_locale_bundle(
             locale=locale,

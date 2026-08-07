@@ -89,10 +89,23 @@ def resolve_ja_raw_text(
         )
 
     symbol = ja_source.get("symbol")
-    provider = providers.get(target_id)
+    provider_target = ja_source.get("provider_target_id")
+    if provider_target is None:
+        provider_target_id = target_id
+    elif (
+        isinstance(provider_target, str)
+        and re.fullmatch(r"0x[0-9A-F]{4}", provider_target)
+    ):
+        provider_target_id = int(provider_target, 16)
+    else:
+        raise RawProviderError(
+            f"0x{target_id:04X} Japanese raw provider_target_id is invalid"
+        )
+    provider = providers.get(provider_target_id)
     if provider is None:
         raise RawProviderError(
-            f"0x{target_id:04X} Japanese raw symbol provider is missing"
+            f"0x{target_id:04X} Japanese raw symbol provider is missing "
+            f"at 0x{provider_target_id:04X}"
         )
     if provider.symbol != symbol:
         raise RawProviderError(

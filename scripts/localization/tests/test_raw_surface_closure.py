@@ -79,6 +79,17 @@ class RawSurfaceClosureTests(unittest.TestCase):
         path = self.MAPPING_DIR / "raw_surface_closure.json"
         self.assertEqual(path.read_bytes(), canonical_json_bytes(self.closure))
 
+    def test_one_raw_provider_can_cover_multiple_exact_targets(self):
+        rows = {row["import_id"]: row for row in self.closure["rows"]}
+        self.assertEqual(
+            rows["fe8cn.raw.import-0061"]["target_ids"],
+            ["0x0024", "0x0142", "0x075C"],
+        )
+        self.assertEqual(
+            rows["fe8cn.raw.import-0088"]["target_ids"],
+            ["0x01D2", "0x06B2"],
+        )
+
     def test_every_record_has_materialized_japanese_and_chinese_providers(self):
         for row in self.closure["rows"]:
             with self.subTest(import_id=row["import_id"]):

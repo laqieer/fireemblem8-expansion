@@ -94,7 +94,7 @@ an earlier `GetStringFromIndex` call.
 The exhaustive audit independently decodes all 3,414 English entries, checks
 source equality, renderer-valid UTF-8/control structure, and exact NUL bit
 boundaries. It separately guards `0xD4D`, `0xD4E`, `0xD4F`, `0xD50`, and
-`0xD54`, and compares all 1,806 explicit CJK fallbacks byte-for-byte with the
+`0xD54`, and compares all 259 explicit CJK fallbacks byte-for-byte with the
 corresponding shared English descriptor.
 
 The 143-record raw closure is a separate call-site audit:

@@ -29,6 +29,9 @@
       "rationale": "The menu row already uses this stable FE8U message ID; verified regional raw text now supplies Japanese and Chinese catalog payloads.",
       "source_text_sha256": "76e3439feac018deb1c3bbc28663358be6b85e11c2c9b9ea7f7c01aaafd78983",
       "target_id": "0x06B9",
+      "target_ids": [
+        "0x06B9"
+      ],
       "user_facing": true
     },
     {
@@ -59,6 +62,9 @@
       "rationale": "The menu row already uses this stable FE8U message ID; verified regional raw text now supplies Japanese and Chinese catalog payloads.",
       "source_text_sha256": "515250b5c4943ce064ec3eed0845b4242b6eb0fcd10124a2a66c28cd1e02d7a5",
       "target_id": "0x06BA",
+      "target_ids": [
+        "0x06BA"
+      ],
       "user_facing": true
     },
     {
@@ -89,6 +95,9 @@
       "rationale": "The menu row already uses this stable FE8U message ID; verified regional raw text now supplies Japanese and Chinese catalog payloads.",
       "source_text_sha256": "38f443e379a83f1ac6f7161985f191a698f89b246b3622531c11658e58add263",
       "target_id": "0x06BB",
+      "target_ids": [
+        "0x06BB"
+      ],
       "user_facing": true
     },
     {
@@ -119,6 +128,9 @@
       "rationale": "The menu row already uses this stable FE8U message ID; verified regional raw text now supplies Japanese and Chinese catalog payloads.",
       "source_text_sha256": "3d8be17eb77376c84602de7febdd69e42e9ba56100f7e7b3d3c8e2754138574d",
       "target_id": "0x06BC",
+      "target_ids": [
+        "0x06BC"
+      ],
       "user_facing": true
     },
     {
@@ -149,6 +161,9 @@
       "rationale": "The menu row already uses this stable FE8U message ID; verified regional raw text now supplies Japanese and Chinese catalog payloads.",
       "source_text_sha256": "76358345517a01aa3855a405e2cef735004ab21e2765ab7def2604023910936c",
       "target_id": "0x06BD",
+      "target_ids": [
+        "0x06BD"
+      ],
       "user_facing": true
     },
     {
@@ -179,6 +194,9 @@
       "rationale": "The menu row already uses this stable FE8U message ID; verified regional raw text now supplies Japanese and Chinese catalog payloads.",
       "source_text_sha256": "0b8a87439a80c170de31b4a93827bd23441980f75534b20deac09d1fb64f31b4",
       "target_id": "0x0026",
+      "target_ids": [
+        "0x0026"
+      ],
       "user_facing": true
     },
     {
@@ -209,6 +227,9 @@
       "rationale": "The menu row already uses this stable FE8U message ID; verified regional raw text now supplies Japanese and Chinese catalog payloads.",
       "source_text_sha256": "43fb8319313d5057c37afabe9c79a4f8cc48e92e3d92e2bc046c68d810f1546f",
       "target_id": "0x0027",
+      "target_ids": [
+        "0x0027"
+      ],
       "user_facing": true
     },
     {
@@ -239,6 +260,9 @@
       "rationale": "The menu row already uses this stable FE8U message ID; verified regional raw text now supplies Japanese and Chinese catalog payloads.",
       "source_text_sha256": "13fcef89e684fa5ec609e4db4dfd105a08a9d2e85ded5992cb40395e907499c2",
       "target_id": "0x0028",
+      "target_ids": [
+        "0x0028"
+      ],
       "user_facing": true
     },
     {
@@ -269,6 +293,9 @@
       "rationale": "The menu row already uses this stable FE8U message ID; verified regional raw text now supplies Japanese and Chinese catalog payloads.",
       "source_text_sha256": "ad95f98a8c02952e4decebec34ab1934aebfe174e1eb392cd6c1d3ed825aa0f7",
       "target_id": "0x0029",
+      "target_ids": [
+        "0x0029"
+      ],
       "user_facing": true
     },
     {
@@ -299,6 +326,9 @@
       "rationale": "The menu row already uses this stable FE8U message ID; verified regional raw text now supplies Japanese and Chinese catalog payloads.",
       "source_text_sha256": "d5b1fc040fc11922b2c6e847515029afbf07a2a061676038807eb1c4bb148086",
       "target_id": "0x06A4",
+      "target_ids": [
+        "0x06A4"
+      ],
       "user_facing": true
     },
     {
@@ -329,6 +359,9 @@
       "rationale": "The menu row already uses this stable FE8U message ID; verified regional raw text now supplies Japanese and Chinese catalog payloads.",
       "source_text_sha256": "8d414c4166459c832e6780fb3d2e1666c3b5129c1fd4d9281c87ad4c3765b11a",
       "target_id": "0x06AA",
+      "target_ids": [
+        "0x06AA"
+      ],
       "user_facing": true
     },
     {
@@ -359,6 +392,9 @@
       "rationale": "The menu row already uses this stable FE8U message ID; verified regional raw text now supplies Japanese and Chinese catalog payloads.",
       "source_text_sha256": "4213a2786be557ed5b3fa31cc3ac832161b9ad2080f37d54e9d4782137064269",
       "target_id": "0x06AB",
+      "target_ids": [
+        "0x06AB"
+      ],
       "user_facing": true
     },
     {
@@ -389,6 +425,9 @@
       "rationale": "The menu row already uses this stable FE8U message ID; verified regional raw text now supplies Japanese and Chinese catalog payloads.",
       "source_text_sha256": "7cf4992eb921180fb27dd9a70ab772f3369caad1fa6d64d0c6a7751a85ef2c4f",
       "target_id": "0x06AC",
+      "target_ids": [
+        "0x06AC"
+      ],
       "user_facing": true
     },
     {
@@ -419,6 +458,9 @@
       "rationale": "The menu row already uses this stable FE8U message ID; verified regional raw text now supplies Japanese and Chinese catalog payloads.",
       "source_text_sha256": "90c34d7448680dfecd2ac7db33a48168474ad855cbafaaea5830bfb8e07975c1",
       "target_id": "0x06AD",
+      "target_ids": [
+        "0x06AD"
+      ],
       "user_facing": true
     },
     {
@@ -449,6 +491,9 @@
       "rationale": "The menu row already uses this stable FE8U message ID; verified regional raw text now supplies Japanese and Chinese catalog payloads.",
       "source_text_sha256": "73a55f189fbea8bf26dab9c5e6600901f1cc9ba1f1e77a801762d61a6daebceb",
       "target_id": "0x06AE",
+      "target_ids": [
+        "0x06AE"
+      ],
       "user_facing": true
     },
     {
@@ -479,6 +524,9 @@
       "rationale": "The menu row already uses this stable FE8U message ID; verified regional raw text now supplies Japanese and Chinese catalog payloads.",
       "source_text_sha256": "13181dee87cb616fd21bcf5b3b2674b2ba3bb04fc8ad9744ed0e43531180ea84",
       "target_id": "0x06AF",
+      "target_ids": [
+        "0x06AF"
+      ],
       "user_facing": true
     },
     {
@@ -509,6 +557,9 @@
       "rationale": "The menu row already uses this stable FE8U message ID; verified regional raw text now supplies Japanese and Chinese catalog payloads.",
       "source_text_sha256": "ba2ea64600bbb7e4ed5d6f8aed54cccab132550c1d49c24ef5271a94393c911f",
       "target_id": "0x06B0",
+      "target_ids": [
+        "0x06B0"
+      ],
       "user_facing": true
     },
     {
@@ -543,6 +594,9 @@
       "rationale": "The shared menu row selects a direct regional string; the stable import ID is runtime identity.",
       "source_text_sha256": "aa2a331d2dcf56680e516898a4ae11aa832d2097fa7fd231b7be2c736ff15a99",
       "target_id": "0x0843",
+      "target_ids": [
+        "0x0843"
+      ],
       "user_facing": true
     },
     {
@@ -577,6 +631,9 @@
       "rationale": "The shared menu row selects a direct regional string; the stable import ID is runtime identity.",
       "source_text_sha256": "77af2f337c1d4d74e01293481a94622cd25c2fc780fba19916c0115877e82b5c",
       "target_id": "0x0844",
+      "target_ids": [
+        "0x0844"
+      ],
       "user_facing": true
     },
     {
@@ -611,6 +668,9 @@
       "rationale": "The shared menu row selects a direct regional string; the stable import ID is runtime identity.",
       "source_text_sha256": "cdfd0b34e4918648910bd74bb862cf6076871cdf7fb6c6571a8a5bda78e9b942",
       "target_id": "0x0696",
+      "target_ids": [
+        "0x0696"
+      ],
       "user_facing": true
     },
     {
@@ -645,6 +705,9 @@
       "rationale": "The shared menu row selects a direct regional string; the stable import ID is runtime identity.",
       "source_text_sha256": "144a327039fee815aaee248148a83b5553e8277e73a96440e91c2a6100efd6d4",
       "target_id": "0x0697",
+      "target_ids": [
+        "0x0697"
+      ],
       "user_facing": true
     },
     {
@@ -679,6 +742,9 @@
       "rationale": "The shared menu row selects a direct regional string; the stable import ID is runtime identity.",
       "source_text_sha256": "c9c3d2d1754925a47da20aeb98b43d7337377a4488b154953e6de03b82d7a63d",
       "target_id": "0x0698",
+      "target_ids": [
+        "0x0698"
+      ],
       "user_facing": true
     },
     {
@@ -713,6 +779,9 @@
       "rationale": "The shared menu row selects a direct regional string; the stable import ID is runtime identity.",
       "source_text_sha256": "b16f71b55691cdc3055ae0a3fb270f0222252c3c032223ae78ccc562be4f212b",
       "target_id": "0x0699",
+      "target_ids": [
+        "0x0699"
+      ],
       "user_facing": true
     },
     {
@@ -747,6 +816,9 @@
       "rationale": "The shared menu row selects a direct regional string; the stable import ID is runtime identity.",
       "source_text_sha256": "20c017ad03264bac7bb22d8742d7304cbf5a824ad93f17a215017588a723dcf3",
       "target_id": "0x067A",
+      "target_ids": [
+        "0x067A"
+      ],
       "user_facing": true
     },
     {
@@ -781,6 +853,9 @@
       "rationale": "The shared menu row selects a direct regional string; the stable import ID is runtime identity.",
       "source_text_sha256": "63fd3568dd19054a5be2b61cc37c02655d16eea9bf089cf9cc54c0ee7a190d69",
       "target_id": "0x067B",
+      "target_ids": [
+        "0x067B"
+      ],
       "user_facing": true
     },
     {
@@ -811,6 +886,9 @@
       "rationale": "This is the ballista Attack pointer, an intentional duplicate of the adjacent Attack row and the same stable FE8U message ID.",
       "source_text_sha256": "63fd3568dd19054a5be2b61cc37c02655d16eea9bf089cf9cc54c0ee7a190d69",
       "target_id": "0x067B",
+      "target_ids": [
+        "0x067B"
+      ],
       "user_facing": true
     },
     {
@@ -845,6 +923,9 @@
       "rationale": "The shared menu row selects a direct regional string; the stable import ID is runtime identity.",
       "source_text_sha256": "b3f345a8cfd47e15f8711292234f274d4d0421c00473f96274408cef0e6594ed",
       "target_id": "0x067C",
+      "target_ids": [
+        "0x067C"
+      ],
       "user_facing": true
     },
     {
@@ -879,6 +960,9 @@
       "rationale": "The shared menu row selects a direct regional string; the stable import ID is runtime identity.",
       "source_text_sha256": "00c97b51d06fe4cfb7a8ab70042186abf873bc5814a4b421b0e2755786684bbc",
       "target_id": "0x0691",
+      "target_ids": [
+        "0x0691"
+      ],
       "user_facing": true
     },
     {
@@ -913,6 +997,9 @@
       "rationale": "The shared menu row selects a direct regional string; the stable import ID is runtime identity.",
       "source_text_sha256": "56a9af0466d1695f53e5d8698f01ecb872360a7c22dd5df3ea5bfbf0eed605ee",
       "target_id": "0x0692",
+      "target_ids": [
+        "0x0692"
+      ],
       "user_facing": true
     },
     {
@@ -947,6 +1034,9 @@
       "rationale": "The shared menu row selects a direct regional string; the stable import ID is runtime identity.",
       "source_text_sha256": "35f4bbd0dd0ead8c7b9aa504735911b05e924af73d29b093b1cfd902f2b70da6",
       "target_id": "0x067D",
+      "target_ids": [
+        "0x067D"
+      ],
       "user_facing": true
     },
     {
@@ -981,6 +1071,9 @@
       "rationale": "The shared menu row selects a direct regional string; the stable import ID is runtime identity.",
       "source_text_sha256": "2a5d1a1466c896d3bb87c4aad432a4e12a1e8f099cc411e1475d4c6fa0edfa63",
       "target_id": "0x067E",
+      "target_ids": [
+        "0x067E"
+      ],
       "user_facing": true
     },
     {
@@ -1015,6 +1108,9 @@
       "rationale": "The shared menu row selects a direct regional string; the stable import ID is runtime identity.",
       "source_text_sha256": "bfcf25367435ce0f51e054fd7e0b8592a6d0191ccf6a80e4899b546abd0c0fe3",
       "target_id": "0x067F",
+      "target_ids": [
+        "0x067F"
+      ],
       "user_facing": true
     },
     {
@@ -1137,6 +1233,9 @@
       "rationale": "The shared menu row selects a direct regional string; the stable import ID is runtime identity.",
       "source_text_sha256": "f04db8b4d81328a749aa7c0de556d7c0c95c11a50a12d3e755bd02bff6d5888a",
       "target_id": "0x0694",
+      "target_ids": [
+        "0x0694"
+      ],
       "user_facing": true
     },
     {
@@ -1171,6 +1270,9 @@
       "rationale": "The shared menu row selects a direct regional string; the stable import ID is runtime identity.",
       "source_text_sha256": "ed82bed5bbcc1ed2ec98d9a02ab65a922fee87896c8a8f8c9267247d6eb98d13",
       "target_id": "0x0680",
+      "target_ids": [
+        "0x0680"
+      ],
       "user_facing": true
     },
     {
@@ -1205,6 +1307,9 @@
       "rationale": "The shared menu row selects a direct regional string; the stable import ID is runtime identity.",
       "source_text_sha256": "968f3fce70fda7a30f323e61c0c82e382070d43c18c24fbc84ab1f9704fd64f8",
       "target_id": "0x0681",
+      "target_ids": [
+        "0x0681"
+      ],
       "user_facing": true
     },
     {
@@ -1239,6 +1344,9 @@
       "rationale": "The shared menu row selects a direct regional string; the stable import ID is runtime identity.",
       "source_text_sha256": "af5999256de9a8a0afd70f2349f352be698fe3235826eb7f6408f379216c2865",
       "target_id": "0x0682",
+      "target_ids": [
+        "0x0682"
+      ],
       "user_facing": true
     },
     {
@@ -1273,6 +1381,9 @@
       "rationale": "The shared menu row selects a direct regional string; the stable import ID is runtime identity.",
       "source_text_sha256": "e7e9eb468e945b3a02c1848a1d3813c1f7654904e2743e40e3478c4af2bc4ad0",
       "target_id": "0x0683",
+      "target_ids": [
+        "0x0683"
+      ],
       "user_facing": true
     },
     {
@@ -1307,6 +1418,9 @@
       "rationale": "The shared menu row selects a direct regional string; the stable import ID is runtime identity.",
       "source_text_sha256": "e3df955899729c84d178efca02b6a6ba7389237bee045196e93349d181e17875",
       "target_id": "0x0684",
+      "target_ids": [
+        "0x0684"
+      ],
       "user_facing": true
     },
     {
@@ -1341,6 +1455,9 @@
       "rationale": "The shared menu row selects a direct regional string; the stable import ID is runtime identity.",
       "source_text_sha256": "7767498f0fdf9c3c8a3a0ae9788ed4ccc4e093ccd7eced6a2f0d4c326a8af515",
       "target_id": "0x0685",
+      "target_ids": [
+        "0x0685"
+      ],
       "user_facing": true
     },
     {
@@ -1375,6 +1492,9 @@
       "rationale": "The shared menu row selects a direct regional string; the stable import ID is runtime identity.",
       "source_text_sha256": "bdb82f9ca2995c708780769b332cc4d5424a91ec6b833c48c2f40fdf590ac424",
       "target_id": "0x0686",
+      "target_ids": [
+        "0x0686"
+      ],
       "user_facing": true
     },
     {
@@ -1409,6 +1529,9 @@
       "rationale": "The shared menu row selects a direct regional string; the stable import ID is runtime identity.",
       "source_text_sha256": "e916121704261adad2a3210cc01cbb80d096f29c7d116fa38130e18129cd047a",
       "target_id": "0x0687",
+      "target_ids": [
+        "0x0687"
+      ],
       "user_facing": true
     },
     {
@@ -1443,6 +1566,9 @@
       "rationale": "The shared menu row selects a direct regional string; the stable import ID is runtime identity.",
       "source_text_sha256": "72f1e70738b0f70db89baeb674c020699a2ba39a6bc68949e1ece5f58659389a",
       "target_id": "0x0688",
+      "target_ids": [
+        "0x0688"
+      ],
       "user_facing": true
     },
     {
@@ -1477,6 +1603,9 @@
       "rationale": "The shared menu row selects a direct regional string; the stable import ID is runtime identity.",
       "source_text_sha256": "9729eedbc25a17cdf8c96fb066d19a3faba79f024810e349127466c087602d75",
       "target_id": "0x0689",
+      "target_ids": [
+        "0x0689"
+      ],
       "user_facing": true
     },
     {
@@ -1511,6 +1640,9 @@
       "rationale": "The shared menu row selects a direct regional string; the stable import ID is runtime identity.",
       "source_text_sha256": "2b2e01539af2f070e764c807b1a0d263d47ef379b8c1f0b4fcb1e6c27a7c5335",
       "target_id": "0x068A",
+      "target_ids": [
+        "0x068A"
+      ],
       "user_facing": true
     },
     {
@@ -1545,6 +1677,9 @@
       "rationale": "The shared menu row selects a direct regional string; the stable import ID is runtime identity.",
       "source_text_sha256": "be4200e7dae7b2c53e0ca54137f65e424f7baa8d385d0089d4242dea41fe0c2f",
       "target_id": "0x068B",
+      "target_ids": [
+        "0x068B"
+      ],
       "user_facing": true
     },
     {
@@ -1579,6 +1714,9 @@
       "rationale": "The shared menu row selects a direct regional string; the stable import ID is runtime identity.",
       "source_text_sha256": "f8de5a4071c49847286b1a2e6bcb1fe9796204a46947137bb711ac1aa27ee2d2",
       "target_id": "0x068C",
+      "target_ids": [
+        "0x068C"
+      ],
       "user_facing": true
     },
     {
@@ -1613,6 +1751,9 @@
       "rationale": "The shared menu row selects a direct regional string; the stable import ID is runtime identity.",
       "source_text_sha256": "247ba8cf03fdabd7889d45cfe324013bca2ccd2d00df391cab7b5ed4829507e6",
       "target_id": "0x068D",
+      "target_ids": [
+        "0x068D"
+      ],
       "user_facing": true
     },
     {
@@ -1647,6 +1788,9 @@
       "rationale": "The shared menu row selects a direct regional string; the stable import ID is runtime identity.",
       "source_text_sha256": "28e68c7f7838a2ae9da9956424cef9b792003333806c346c2cd01b0a864599ba",
       "target_id": "0x068E",
+      "target_ids": [
+        "0x068E"
+      ],
       "user_facing": true
     },
     {
@@ -1681,6 +1825,9 @@
       "rationale": "The shared menu row selects a direct regional string; the stable import ID is runtime identity.",
       "source_text_sha256": "b548ee94a00137fdad5ec08f7165cbb543e992e137d32dcefb77a6ad2373c9e3",
       "target_id": "0x068F",
+      "target_ids": [
+        "0x068F"
+      ],
       "user_facing": true
     },
     {
@@ -1715,6 +1862,9 @@
       "rationale": "The shared menu row selects a direct regional string; the stable import ID is runtime identity.",
       "source_text_sha256": "39301f66e323fbc573317a7ac670b9a43951d42be00503653c09508c520f6b4c",
       "target_id": "0x0695",
+      "target_ids": [
+        "0x0695"
+      ],
       "user_facing": true
     },
     {
@@ -1749,6 +1899,9 @@
       "rationale": "The stable FE8CN raw import order mirrors the named map menu rows.",
       "source_text_sha256": "7ef81e4b3eb7d91e4018b3f9328c0eefb939f1820aaa27b26e4bcb87767d7a2a",
       "target_id": "0x069A",
+      "target_ids": [
+        "0x069A"
+      ],
       "user_facing": true
     },
     {
@@ -1783,6 +1936,9 @@
       "rationale": "The stable FE8CN raw import order mirrors the named map menu rows.",
       "source_text_sha256": "31fae0f7ff1752ce2a96158faaf750b9b7e38c7fc12b7edb9db6203bcae375ee",
       "target_id": "0x0690",
+      "target_ids": [
+        "0x0690"
+      ],
       "user_facing": true
     },
     {
@@ -1817,6 +1973,9 @@
       "rationale": "The stable FE8CN raw import order mirrors the named map menu rows.",
       "source_text_sha256": "10ad1e2f812c0128ebbddddcde95f42ea83a43fefccebe00e2052c5a3a769c9f",
       "target_id": "0x069C",
+      "target_ids": [
+        "0x069C"
+      ],
       "user_facing": true
     },
     {
@@ -1851,6 +2010,9 @@
       "rationale": "The stable FE8CN raw import order mirrors the named map menu rows.",
       "source_text_sha256": "28433bf4fd5986857072a5bceb67535d2d45e7bf10b00752d9ef7da7240f1f37",
       "target_id": "0x069E",
+      "target_ids": [
+        "0x069E"
+      ],
       "user_facing": true
     },
     {
@@ -1885,6 +2047,9 @@
       "rationale": "The stable FE8CN raw import order mirrors the named map menu rows.",
       "source_text_sha256": "ed647fcb24adf8cef7db3110212a4bfd2022775ffed13b2126c1e49ae745f2c6",
       "target_id": "0x069B",
+      "target_ids": [
+        "0x069B"
+      ],
       "user_facing": true
     },
     {
@@ -1919,6 +2084,9 @@
       "rationale": "The stable FE8CN raw import order mirrors the named map menu rows.",
       "source_text_sha256": "c1601a88161edb13bf85df5c04b4f9a140bcd977f915ef1fc14e8b4ba5c8e280",
       "target_id": "0x069D",
+      "target_ids": [
+        "0x069D"
+      ],
       "user_facing": true
     },
     {
@@ -1953,6 +2121,9 @@
       "rationale": "The stable FE8CN raw import order mirrors the named map menu rows.",
       "source_text_sha256": "d5b1fc040fc11922b2c6e847515029afbf07a2a061676038807eb1c4bb148086",
       "target_id": "0x069F",
+      "target_ids": [
+        "0x069F"
+      ],
       "user_facing": true
     },
     {
@@ -1987,6 +2158,9 @@
       "rationale": "The stable FE8CN raw import order mirrors the named map menu rows.",
       "source_text_sha256": "10ed603d1ad2deb9def81a60f9430943e6393e1c791f304a78962ba8069201ca",
       "target_id": "0x06A0",
+      "target_ids": [
+        "0x06A0"
+      ],
       "user_facing": true
     },
     {
@@ -2017,6 +2191,9 @@
       "rationale": "The promotion confirmation row already supports the stable FE8U Change message ID.",
       "source_text_sha256": "3490bfc74264cd9803ef64604baf6584eaa9a89f495c990c83ab4b500e141de1",
       "target_id": "0x0023",
+      "target_ids": [
+        "0x0023"
+      ],
       "user_facing": true
     },
     {
@@ -2047,6 +2224,11 @@
       "rationale": "The promotion confirmation row already supports the stable FE8U Cancel message ID.",
       "source_text_sha256": "cdad92f16686b8abf50cebd85f61ea261fe29eb97921008eadb3112ab118da67",
       "target_id": "0x0024",
+      "target_ids": [
+        "0x0024",
+        "0x0142",
+        "0x075C"
+      ],
       "user_facing": true
     },
     {
@@ -2219,6 +2401,9 @@
       "rationale": "The shared world-map menu row selects the direct regional string.",
       "source_text_sha256": "7ef81e4b3eb7d91e4018b3f9328c0eefb939f1820aaa27b26e4bcb87767d7a2a",
       "target_id": "0x0645",
+      "target_ids": [
+        "0x0645"
+      ],
       "user_facing": true
     },
     {
@@ -2253,6 +2438,9 @@
       "rationale": "The shared world-map menu row selects the direct regional string.",
       "source_text_sha256": "31fae0f7ff1752ce2a96158faaf750b9b7e38c7fc12b7edb9db6203bcae375ee",
       "target_id": "0x0646",
+      "target_ids": [
+        "0x0646"
+      ],
       "user_facing": true
     },
     {
@@ -2287,6 +2475,9 @@
       "rationale": "The shared world-map menu row selects the direct regional string.",
       "source_text_sha256": "10ad1e2f812c0128ebbddddcde95f42ea83a43fefccebe00e2052c5a3a769c9f",
       "target_id": "0x0647",
+      "target_ids": [
+        "0x0647"
+      ],
       "user_facing": true
     },
     {
@@ -2321,6 +2512,9 @@
       "rationale": "The shared world-map menu row selects the direct regional string.",
       "source_text_sha256": "ed647fcb24adf8cef7db3110212a4bfd2022775ffed13b2126c1e49ae745f2c6",
       "target_id": "0x0648",
+      "target_ids": [
+        "0x0648"
+      ],
       "user_facing": true
     },
     {
@@ -2355,6 +2549,9 @@
       "rationale": "The shared world-map menu row selects the direct regional string.",
       "source_text_sha256": "62420208894877bbb872eb1f7806ecbb6eadd0d53263f0933ed217536490b1b4",
       "target_id": "0x0649",
+      "target_ids": [
+        "0x0649"
+      ],
       "user_facing": true
     },
     {
@@ -2389,6 +2586,9 @@
       "rationale": "The shared world-map menu row selects the direct regional string.",
       "source_text_sha256": "8173af84b4d283337b5994e54a65c3580765f4c311649f4cde2482d0d2d8729c",
       "target_id": "0x066E",
+      "target_ids": [
+        "0x066E"
+      ],
       "user_facing": true
     },
     {
@@ -2423,6 +2623,9 @@
       "rationale": "The shared world-map menu row selects the direct regional string.",
       "source_text_sha256": "41a8761eb347be881e9ab12dc9271beb566871df3e51c2d0eecde684e94ea60d",
       "target_id": "0x066F",
+      "target_ids": [
+        "0x066F"
+      ],
       "user_facing": true
     },
     {
@@ -2457,6 +2660,9 @@
       "rationale": "The shared world-map menu row selects the direct regional string.",
       "source_text_sha256": "c33429cd4dbea028a61c9d974f8b238ed253eefe1f635b4e369fd8ce93f9fa0e",
       "target_id": "0x0670",
+      "target_ids": [
+        "0x0670"
+      ],
       "user_facing": true
     },
     {
@@ -2491,6 +2697,9 @@
       "rationale": "The shared world-map menu row selects the direct regional string.",
       "source_text_sha256": "e1108744ffd178d0ef407571a0081032ecb805f0adaa62421eb984a30b4db64a",
       "target_id": "0x0671",
+      "target_ids": [
+        "0x0671"
+      ],
       "user_facing": true
     },
     {
@@ -2522,6 +2731,9 @@
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "f3f3079e2ba8b15c942c7f54d01977d94ab8320118a62ace3a88d8c4eaf76bf8",
       "target_id": "0x01C4",
+      "target_ids": [
+        "0x01C4"
+      ],
       "user_facing": true
     },
     {
@@ -2553,6 +2765,9 @@
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "543401b7ea820641ec80b4196c0ba1d70151ecac5f2ba0af0865187f537a114d",
       "target_id": "0x01C5",
+      "target_ids": [
+        "0x01C5"
+      ],
       "user_facing": true
     },
     {
@@ -2584,6 +2799,9 @@
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "a44c7ba211320a43e426a37960fda386d1034270704cf38a6b1bced7feb7388a",
       "target_id": "0x01C6",
+      "target_ids": [
+        "0x01C6"
+      ],
       "user_facing": true
     },
     {
@@ -2615,6 +2833,9 @@
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "71580f54ce84a286d05e0958ce821d8cf70f9a9b057711ffca9b0c68d48c0b8f",
       "target_id": "0x01C7",
+      "target_ids": [
+        "0x01C7"
+      ],
       "user_facing": true
     },
     {
@@ -2646,6 +2867,9 @@
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "6744b4c6a9aa00381ffea2b3d229778b0724b073bd46e13f4e73868667eeb44f",
       "target_id": "0x01C8",
+      "target_ids": [
+        "0x01C8"
+      ],
       "user_facing": true
     },
     {
@@ -2677,6 +2901,9 @@
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "e17916291ffcc3d4b25d47f2405183547c92b549e0960cbb02e4556749801df8",
       "target_id": "0x01C9",
+      "target_ids": [
+        "0x01C9"
+      ],
       "user_facing": true
     },
     {
@@ -2708,6 +2935,9 @@
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "f9f6d5bc55ece896e2ce0e641a030a8dfb2c877096ba3b64f5fbceffccc25938",
       "target_id": "0x01CA",
+      "target_ids": [
+        "0x01CA"
+      ],
       "user_facing": true
     },
     {
@@ -2739,6 +2969,9 @@
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "b1cecb67c5d1478ace0ab49cc479ef7e054ba859b2b46a1474c037806a21591f",
       "target_id": "0x01CB",
+      "target_ids": [
+        "0x01CB"
+      ],
       "user_facing": true
     },
     {
@@ -2770,6 +3003,9 @@
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "624efbde770ca19434310ff51ee511e71f9f632de0ca8a05578604bed7a1e558",
       "target_id": "0x01CC",
+      "target_ids": [
+        "0x01CC"
+      ],
       "user_facing": true
     },
     {
@@ -2801,6 +3037,9 @@
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "302b64950910122710191dc494be1a22e202a518c097ea8ca57234cf34919f3e",
       "target_id": "0x01CD",
+      "target_ids": [
+        "0x01CD"
+      ],
       "user_facing": true
     },
     {
@@ -2832,6 +3071,9 @@
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "5ec7f9ec424e2146c142ace6b5a85cb18b21bf10ff089fe713d38ba37d125c9e",
       "target_id": "0x01CE",
+      "target_ids": [
+        "0x01CE"
+      ],
       "user_facing": true
     },
     {
@@ -2863,6 +3105,9 @@
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "c85e73a392baea72b7f0bb480617cb21b82212ec4f085b17c6b0fb20235b657e",
       "target_id": "0x01CF",
+      "target_ids": [
+        "0x01CF"
+      ],
       "user_facing": true
     },
     {
@@ -2894,6 +3139,9 @@
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "3bfbf21e2f002bc2dcafb5e9df5fcbb1f16ea95587716d7794fa0e5c8547bbc8",
       "target_id": "0x01D0",
+      "target_ids": [
+        "0x01D0"
+      ],
       "user_facing": true
     },
     {
@@ -2925,6 +3173,9 @@
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "408586032d138b7941b0c8463d483be28f6de6e3bd977f04cfbf4a07f1bc913d",
       "target_id": "0x01D1",
+      "target_ids": [
+        "0x01D1"
+      ],
       "user_facing": true
     },
     {
@@ -2955,7 +3206,10 @@
       },
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "7be8900dbfbfa0864f894aef5865b76c66915f6161ca7eebf436390bc5d746b0",
-      "target_id": "0x01D2",
+      "target_ids": [
+        "0x01D2",
+        "0x06B2"
+      ],
       "user_facing": true
     },
     {
@@ -2987,6 +3241,9 @@
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "4fbf406572d59250ac061331d61381e06be07bd5577aa8da4cc8616813d7911e",
       "target_id": "0x01D3",
+      "target_ids": [
+        "0x01D3"
+      ],
       "user_facing": true
     },
     {
@@ -3018,6 +3275,9 @@
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "0d7d2cdf672f34674055a7e136f4b8216891ccf500d84cfbe80c73158ed5d6de",
       "target_id": "0x01D4",
+      "target_ids": [
+        "0x01D4"
+      ],
       "user_facing": true
     },
     {
@@ -3049,6 +3309,9 @@
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "4862540a299762b3f090257ebb6976ec1d05ca460de0a1a195ee8569061ad6c0",
       "target_id": "0x01D5",
+      "target_ids": [
+        "0x01D5"
+      ],
       "user_facing": true
     },
     {
@@ -3080,6 +3343,9 @@
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "323087e57195f7cf5f6916ebcbfcaf64a2c019c7d01cbf940dca2e3934026b5c",
       "target_id": "0x01D6",
+      "target_ids": [
+        "0x01D6"
+      ],
       "user_facing": true
     },
     {
@@ -3111,6 +3377,9 @@
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "a1e218ec8e11995a65f11a42558a9c7001f25e1a93d0cf9ba2f9ed58eaf272b2",
       "target_id": "0x01D7",
+      "target_ids": [
+        "0x01D7"
+      ],
       "user_facing": true
     },
     {
@@ -3142,6 +3411,9 @@
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "4139117d7d18c45dda8174a8c18137f263ac6a06695aa5a8c5c52e4639835a0c",
       "target_id": "0x01D8",
+      "target_ids": [
+        "0x01D8"
+      ],
       "user_facing": true
     },
     {
@@ -3173,6 +3445,9 @@
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "0ac6d5192ec21d34f7d6e0b0246b06d5cbaa2600cfcbd48f2363d1e3d22e76a2",
       "target_id": "0x01D9",
+      "target_ids": [
+        "0x01D9"
+      ],
       "user_facing": true
     },
     {
@@ -3204,6 +3479,9 @@
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "3e98b56da0099e71fa0d09a3f7dc4c3269f97019409545bcd43fd7b5cfcbdcd5",
       "target_id": "0x01DA",
+      "target_ids": [
+        "0x01DA"
+      ],
       "user_facing": true
     },
     {
@@ -3235,6 +3513,9 @@
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "59a6a585ba18f342a13e9c6af01760feb60d31fd53510850d8a8dd59389490ab",
       "target_id": "0x01DB",
+      "target_ids": [
+        "0x01DB"
+      ],
       "user_facing": true
     },
     {
@@ -3266,6 +3547,9 @@
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "59a6a585ba18f342a13e9c6af01760feb60d31fd53510850d8a8dd59389490ab",
       "target_id": "0x01DC",
+      "target_ids": [
+        "0x01DC"
+      ],
       "user_facing": true
     },
     {
@@ -3297,6 +3581,9 @@
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "dcfce2730d69df0be22cd2f9020ebd7b8c3e75c513c1d6d3e1c7d72d035bea4f",
       "target_id": "0x01DD",
+      "target_ids": [
+        "0x01DD"
+      ],
       "user_facing": true
     },
     {
@@ -3328,6 +3615,9 @@
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "9dd5c564f81cb380ae18874625552af7a214e0c974eb9dad1bb568f2ed28c0c0",
       "target_id": "0x01DE",
+      "target_ids": [
+        "0x01DE"
+      ],
       "user_facing": true
     },
     {
@@ -3359,6 +3649,9 @@
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "9dd5c564f81cb380ae18874625552af7a214e0c974eb9dad1bb568f2ed28c0c0",
       "target_id": "0x01DF",
+      "target_ids": [
+        "0x01DF"
+      ],
       "user_facing": true
     },
     {
@@ -3390,6 +3683,9 @@
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "2a805a977a7660d646960d62af465802b2c9785e423e4c2da2d31a15eed905fe",
       "target_id": "0x01E0",
+      "target_ids": [
+        "0x01E0"
+      ],
       "user_facing": true
     },
     {
@@ -3421,6 +3717,9 @@
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "59e7813d7e6f4e99b7787693bd121380b61f19c2b856d00c2e4da334c234c4b1",
       "target_id": "0x01E1",
+      "target_ids": [
+        "0x01E1"
+      ],
       "user_facing": true
     },
     {
@@ -3452,6 +3751,9 @@
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "a407325e0081cb7db7869427e4faf30e0fc8dcf53c03c7c9f9b92e118ec05a6d",
       "target_id": "0x01E2",
+      "target_ids": [
+        "0x01E2"
+      ],
       "user_facing": true
     },
     {
@@ -3483,6 +3785,9 @@
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "ce76ebd34b7297b4670e8600b0b3ba3f51bc99d7281b35ac664ad2020055fccb",
       "target_id": "0x01E3",
+      "target_ids": [
+        "0x01E3"
+      ],
       "user_facing": true
     },
     {
@@ -3514,6 +3819,9 @@
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "d291455f2638f932c6909b5a953b8c636c141b1fdebdd800dce239b723bc77e4",
       "target_id": "0x01E4",
+      "target_ids": [
+        "0x01E4"
+      ],
       "user_facing": true
     },
     {
@@ -3545,6 +3853,9 @@
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "63a9d95616f935907ea0b1f67e2dd85abf7fc4aefdbe53d9d15c3bb045497cf6",
       "target_id": "0x01E5",
+      "target_ids": [
+        "0x01E5"
+      ],
       "user_facing": true
     },
     {
@@ -3576,6 +3887,9 @@
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "3c9731b77a4af5aa190ed28e620d1a4fc5e18a3ce210c478f0644be01abb7f2b",
       "target_id": "0x01E6",
+      "target_ids": [
+        "0x01E6"
+      ],
       "user_facing": true
     },
     {
@@ -3607,6 +3921,9 @@
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "577c189ba2c3960e854c3ceaf0be885d85988ca6cc8f7eedf29e6ee31b5bf5de",
       "target_id": "0x01E7",
+      "target_ids": [
+        "0x01E7"
+      ],
       "user_facing": true
     },
     {
@@ -3638,6 +3955,9 @@
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "9f008ad32e93355c0a01342f598c08d91d8d3c45888887a8b33d17a7f175a288",
       "target_id": "0x01E8",
+      "target_ids": [
+        "0x01E8"
+      ],
       "user_facing": true
     },
     {
@@ -3669,6 +3989,9 @@
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "dccb6844df3963597badedc2431d4a5feb8570234a2a1925011a130c3cba827f",
       "target_id": "0x01E9",
+      "target_ids": [
+        "0x01E9"
+      ],
       "user_facing": true
     },
     {
@@ -3700,6 +4023,9 @@
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "32f6911fabc9e5759d97e8f38c52dc1ae7b76a46fecb91489a793332b88218f9",
       "target_id": "0x01EA",
+      "target_ids": [
+        "0x01EA"
+      ],
       "user_facing": true
     },
     {
@@ -3731,6 +4057,9 @@
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "e86ef966639cc8854800a9b26f1a1e74e5465a5ac4860ff31940630cf60a9d80",
       "target_id": "0x01EB",
+      "target_ids": [
+        "0x01EB"
+      ],
       "user_facing": true
     },
     {
@@ -3762,6 +4091,9 @@
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "7ba00927dde9122f96860ec7221e00a828ad0c5bdcbf991373d7e0a9aa4a9279",
       "target_id": "0x01EC",
+      "target_ids": [
+        "0x01EC"
+      ],
       "user_facing": true
     },
     {
@@ -3793,6 +4125,9 @@
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "678fcbceb6ba37cfae7ff162d6a7f7ebe81bc32247be12b1446d6e6d2e85b091",
       "target_id": "0x01ED",
+      "target_ids": [
+        "0x01ED"
+      ],
       "user_facing": true
     },
     {
@@ -3824,6 +4159,9 @@
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "c0f0dcdb799a687e8ff4c870005370d5835d01f196888b8aa0d2435d8c52d471",
       "target_id": "0x01EE",
+      "target_ids": [
+        "0x01EE"
+      ],
       "user_facing": true
     },
     {
@@ -3855,6 +4193,9 @@
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "e568d35730b440f52e06a8e507e8a9a83b866632d35fb28be74ed00768e9de96",
       "target_id": "0x01EF",
+      "target_ids": [
+        "0x01EF"
+      ],
       "user_facing": true
     },
     {
@@ -3886,6 +4227,9 @@
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "f3f3079e2ba8b15c942c7f54d01977d94ab8320118a62ace3a88d8c4eaf76bf8",
       "target_id": "0x01F0",
+      "target_ids": [
+        "0x01F0"
+      ],
       "user_facing": true
     },
     {
@@ -3917,6 +4261,9 @@
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "66a03a3ae3a13db927b9c50e3774bfab4de9af8d61096bc5663c48bb2e014b5b",
       "target_id": "0x01F1",
+      "target_ids": [
+        "0x01F1"
+      ],
       "user_facing": true
     },
     {
@@ -3948,6 +4295,9 @@
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "f3f3079e2ba8b15c942c7f54d01977d94ab8320118a62ace3a88d8c4eaf76bf8",
       "target_id": "0x01F2",
+      "target_ids": [
+        "0x01F2"
+      ],
       "user_facing": true
     },
     {
@@ -3979,6 +4329,9 @@
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "b7c9a4940d9bfa8c20c6400f3fc2f1c36b8370e78818486fe35b9afec8c1b6e1",
       "target_id": "0x01F3",
+      "target_ids": [
+        "0x01F3"
+      ],
       "user_facing": true
     },
     {
@@ -4010,6 +4363,9 @@
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "09f9691733bad7b6f2e49ca375d4783fb153ef8d0c29248cbdb9eadb9621a81d",
       "target_id": "0x01F4",
+      "target_ids": [
+        "0x01F4"
+      ],
       "user_facing": true
     },
     {
@@ -4041,6 +4397,9 @@
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "229736ce613d7917d11844a0be05bc7f88fa3c7490d4272e13799fe34943199e",
       "target_id": "0x01F5",
+      "target_ids": [
+        "0x01F5"
+      ],
       "user_facing": true
     },
     {
@@ -4072,6 +4431,9 @@
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "dcfce2730d69df0be22cd2f9020ebd7b8c3e75c513c1d6d3e1c7d72d035bea4f",
       "target_id": "0x01F6",
+      "target_ids": [
+        "0x01F6"
+      ],
       "user_facing": true
     },
     {
@@ -4103,6 +4465,9 @@
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "e1586744eebaa42c486f3bcf48c6da82c827a9489a11a1aa1725dac976111df9",
       "target_id": "0x01F7",
+      "target_ids": [
+        "0x01F7"
+      ],
       "user_facing": true
     },
     {
@@ -4134,6 +4499,9 @@
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "34428458ccbb0c8e7f4222f72c1928f0741f42299489e44f169c8bfe2d3fa44a",
       "target_id": "0x01F8",
+      "target_ids": [
+        "0x01F8"
+      ],
       "user_facing": true
     },
     {
@@ -4165,6 +4533,9 @@
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "6c8c7a77cdfd4fd3e8d872de821ed94b78d8a967978cb3b460f06602c6e5ee67",
       "target_id": "0x01F9",
+      "target_ids": [
+        "0x01F9"
+      ],
       "user_facing": true
     },
     {
@@ -4196,6 +4567,9 @@
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "d16725cb63477eabbe872be7928d0cc1a18f3834931bb43996baab57ab4ec746",
       "target_id": "0x01FA",
+      "target_ids": [
+        "0x01FA"
+      ],
       "user_facing": true
     },
     {
@@ -4227,6 +4601,9 @@
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "2b12c4022b2dc316bdfa025d30d8719488355f2dc567215bf0d10870450665c3",
       "target_id": "0x01FB",
+      "target_ids": [
+        "0x01FB"
+      ],
       "user_facing": true
     },
     {
@@ -4258,6 +4635,9 @@
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "5c21eb3c470adac01a2ae8199fcb6e45a07d0217030551341a4fdf531f21e5fc",
       "target_id": "0x01FC",
+      "target_ids": [
+        "0x01FC"
+      ],
       "user_facing": true
     },
     {
@@ -4289,6 +4669,9 @@
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "24d1240f704af6f562eb3dc490582c61c45cf3b3fb08dc296afc63c805473e63",
       "target_id": "0x01FD",
+      "target_ids": [
+        "0x01FD"
+      ],
       "user_facing": true
     },
     {
@@ -4320,6 +4703,9 @@
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "86aaff9bad01affb1f9439ccfbfe69786ef6c4cdbeaa0b7af7b2e9640543a10c",
       "target_id": "0x01FE",
+      "target_ids": [
+        "0x01FE"
+      ],
       "user_facing": true
     },
     {
@@ -4351,6 +4737,9 @@
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "140ede26426df0505039b3d0dddb8c4a8ef9ac70a3fb1abef4a7c929ed8f08be",
       "target_id": "0x01FF",
+      "target_ids": [
+        "0x01FF"
+      ],
       "user_facing": true
     },
     {
@@ -4382,6 +4771,9 @@
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "327b54d04f71f2126114d9d61d4c3640ca0fc5b30878ad28416ff634a51a712d",
       "target_id": "0x0200",
+      "target_ids": [
+        "0x0200"
+      ],
       "user_facing": true
     },
     {
@@ -4413,6 +4805,9 @@
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "de448403dafdcf54c2f9abb1de0c2343f4db4ffe9b2a664c48aa32c90e6734cf",
       "target_id": "0x0201",
+      "target_ids": [
+        "0x0201"
+      ],
       "user_facing": true
     },
     {
@@ -4444,6 +4839,9 @@
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "9c72e22e7c03889a1adab9fe98a92fc48788e443ea19a67ecf6bdd0885f8791c",
       "target_id": "0x0202",
+      "target_ids": [
+        "0x0202"
+      ],
       "user_facing": true
     },
     {
@@ -4475,6 +4873,9 @@
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "339f0c3ba83e47847b1efb138d469565a8f69cc87769c65fdd2a24834cb6372c",
       "target_id": "0x0203",
+      "target_ids": [
+        "0x0203"
+      ],
       "user_facing": true
     },
     {
@@ -4506,6 +4907,9 @@
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "9da8bae955e3eb937e24e3c38b1a4c4c1f1df03df8e1dd63f106a31cb5f4075f",
       "target_id": "0x0204",
+      "target_ids": [
+        "0x0204"
+      ],
       "user_facing": true
     },
     {
@@ -4536,6 +4940,9 @@
       "rationale": "FE8U target 0x01C1 is bound to FE8J's inline GoalString_UnitsLeft raw provider and the exact FE8CN raw import, never to the unrelated same-number FE8J indexed message.",
       "source_text_sha256": "0ec085ed84584b2393a6c115b51363188368b1f511f492737f7bb47b09005b48",
       "target_id": "0x01C1",
+      "target_ids": [
+        "0x01C1"
+      ],
       "user_facing": true
     },
     {
@@ -4566,6 +4973,9 @@
       "rationale": "FE8U target 0x01C3 is bound to FE8J's inline GoalString_LastTurn raw provider and the exact FE8CN raw import, never to the unrelated same-number FE8J indexed message.",
       "source_text_sha256": "a63adc3884676c4cda74a7fdd29a946e7ad72ef63b52ed039a84c614f7f9cddd",
       "target_id": "0x01C3",
+      "target_ids": [
+        "0x01C3"
+      ],
       "user_facing": true
     },
     {
@@ -4596,6 +5006,9 @@
       "rationale": "FE8U target 0x01C2 is bound to FE8J's inline GoalString_Turn raw provider and the exact FE8CN raw import, never to the unrelated same-number FE8J indexed message.",
       "source_text_sha256": "9fb1d89660c28e488f979606377cfd65e01380649e060f692729c104d085085f",
       "target_id": "0x01C2",
+      "target_ids": [
+        "0x01C2"
+      ],
       "user_facing": true
     },
     {

@@ -178,6 +178,12 @@ class StructuralCompletionTests(unittest.TestCase):
         self.assertNotIn("Pal_PrepItemListSpinningArrowCycle", serialized)
         self.assertNotIn("data_banim", serialized)
 
+    def test_movement_enqueue_values_are_not_event_messages(self):
+        sites = _site_index(ROOT, {0x0089})
+        serialized = json.dumps(sites.get(0x0089, []), sort_keys=True)
+        self.assertNotIn("EventScr_Ch9a_BeginningScene", serialized)
+        self.assertNotIn("SENQUEUE1", serialized)
+
     def test_every_high_confidence_row_cites_hashed_parsed_structures(self):
         high_rows = [
             row for row in self.data["proposals"] if row["confidence"] == "high"
