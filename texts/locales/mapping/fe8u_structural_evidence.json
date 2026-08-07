@@ -1,24 +1,6 @@
 {
   "fallback_overrides": [
     {
-      "rationale": "The prior Japanese literal '残り' cited an absent source file; no committed source table binds that exact literal to this FE8U target.",
-      "reason": "not-yet-verified",
-      "subsystem": "goal-window",
-      "target_id": "0x01C1"
-    },
-    {
-      "rationale": "The prior Japanese literal 'ターン' cited an absent source file; no committed source table binds that exact literal to this FE8U target.",
-      "reason": "not-yet-verified",
-      "subsystem": "goal-window",
-      "target_id": "0x01C2"
-    },
-    {
-      "rationale": "The prior Japanese literal '最終ターン' cited an absent source file; no committed source table binds that exact literal to this FE8U target.",
-      "reason": "not-yet-verified",
-      "subsystem": "goal-window",
-      "target_id": "0x01C3"
-    },
-    {
       "rationale": "Two distinct regional raw menu strings share FE8U target 0x0693; a single target provider cannot preserve both contexts.",
       "reason": "region-only",
       "subsystem": "menus",
@@ -66,6 +48,90 @@
   ],
   "kind": "fe8u-fe8j-structural-evidence",
   "records": [
+    {
+      "confidence": "high",
+      "evidence_kind": "regional-goal-raw-provider",
+      "rationale": "FE8U GoalDisplay_Init uses target 0x01C1 for the defeat-all units-left label; FE8J uses the inline raw provider GoalString_UnitsLeft at the same semantic call site, while FE8CN import-0139 supplies the Chinese payload. This deliberately does not use unrelated FE8J indexed message 0x01C1.",
+      "source": {
+        "import_id": "fe8cn.raw.import-0139",
+        "kind": "raw",
+        "regional_sources": {
+          "ja": {
+            "kind": "symbol",
+            "symbol": "GoalString_UnitsLeft"
+          },
+          "zh-Hans": {
+            "import_id": "fe8cn.raw.import-0139",
+            "kind": "import"
+          }
+        }
+      },
+      "source_key": "GoalDisplay_Init.goal.defeat_all.units_left",
+      "source_paths": {
+        "fe8j": "src/player_interface_0808F584.c",
+        "fe8u": "src/player_interface.c"
+      },
+      "source_symbol": "GoalDisplay_Init",
+      "source_table": "GoalDisplay_Init",
+      "subsystem": "goal-window",
+      "target_id": "0x01C1"
+    },
+    {
+      "confidence": "high",
+      "evidence_kind": "regional-goal-raw-provider",
+      "rationale": "FE8U GoalDisplay_Init uses target 0x01C2 for the turn suffix; FE8J uses the inline raw provider GoalString_Turn at the same semantic call site, while FE8CN import-0141 supplies the Chinese payload. This deliberately does not use unrelated FE8J indexed message 0x01C2.",
+      "source": {
+        "import_id": "fe8cn.raw.import-0141",
+        "kind": "raw",
+        "regional_sources": {
+          "ja": {
+            "kind": "symbol",
+            "symbol": "GoalString_Turn"
+          },
+          "zh-Hans": {
+            "import_id": "fe8cn.raw.import-0141",
+            "kind": "import"
+          }
+        }
+      },
+      "source_key": "GoalDisplay_Init.goal.turn_suffix",
+      "source_paths": {
+        "fe8j": "src/player_interface_0808F584.c",
+        "fe8u": "src/player_interface.c"
+      },
+      "source_symbol": "GoalDisplay_Init",
+      "source_table": "GoalDisplay_Init",
+      "subsystem": "goal-window",
+      "target_id": "0x01C2"
+    },
+    {
+      "confidence": "high",
+      "evidence_kind": "regional-goal-raw-provider",
+      "rationale": "FE8U GoalDisplay_Init uses target 0x01C3 for the last-turn label; FE8J uses the inline raw provider GoalString_LastTurn at the same semantic call site, while FE8CN import-0140 supplies the Chinese payload. This deliberately does not use unrelated FE8J indexed message 0x01C3.",
+      "source": {
+        "import_id": "fe8cn.raw.import-0140",
+        "kind": "raw",
+        "regional_sources": {
+          "ja": {
+            "kind": "symbol",
+            "symbol": "GoalString_LastTurn"
+          },
+          "zh-Hans": {
+            "import_id": "fe8cn.raw.import-0140",
+            "kind": "import"
+          }
+        }
+      },
+      "source_key": "GoalDisplay_Init.goal.last_turn",
+      "source_paths": {
+        "fe8j": "src/player_interface_0808F584.c",
+        "fe8u": "src/player_interface.c"
+      },
+      "source_symbol": "GoalDisplay_Init",
+      "source_table": "GoalDisplay_Init",
+      "subsystem": "goal-window",
+      "target_id": "0x01C3"
+    },
     {
       "confidence": "high",
       "evidence_kind": "regional-promotion-message-id",

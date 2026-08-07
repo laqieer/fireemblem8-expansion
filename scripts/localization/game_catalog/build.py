@@ -20,6 +20,12 @@ from scripts.localization.game_locales.mapping import (
     validate_mapping_document,
 )
 from scripts.localization.game_locales.parsers import LocaleSourceError, parse_hash_indexed
+from scripts.localization.game_locales.raw_providers import (
+    RawProvider,
+    RawProviderError,
+    load_ja_raw_providers,
+    resolve_ja_raw_text,
+)
 from scripts.texttools.multilang_codec import build_catalog
 from scripts.texttools.multilang_codec.codec import SCHEMA as CODEC_SCHEMA
 
@@ -57,6 +63,7 @@ from .model import (
 DEFAULT_ENGLISH_TEXTS_PATH = Path("texts/texts.txt")
 DEFAULT_ENGLISH_DEFINITIONS_PATH = Path("texts/textdefs.txt")
 DEFAULT_JA_INDEXED_PATH = Path("texts/locales/ja/indexed.txt")
+DEFAULT_JA_RAW_PATH = Path("texts/locales/ja/raw.json")
 DEFAULT_ZH_INDEXED_PATH = Path("texts/locales/zh-Hans/indexed.txt")
 DEFAULT_ZH_RAW_PATH = Path("texts/locales/zh-Hans/raw.json")
 DEFAULT_MAPPING_PATH = Path("texts/locales/mapping/fe8u_target_map.json")
@@ -149,6 +156,13 @@ def _load_raw_records(path: Path) -> Dict[str, str]:
             raise GameCatalogError(f"{path}: duplicate raw import_id {import_id!r}")
         result[import_id] = text
     return result
+
+
+def _load_ja_raw_records(path: Path) -> Dict[int, RawProvider]:
+    try:
+        return load_ja_raw_providers(_load_json(path))
+    except RawProviderError as error:
+        raise GameCatalogError(f"{path}: {error}") from error
 
 
 def _load_authored_catalogs(paths: Optional[Mapping[str, Path]]) -> Dict[str, Dict[str, str]]:
@@ -275,6 +289,7 @@ def _entry_for_locale(
     row,
     indexed_sources: Mapping[str, Mapping[int, str]],
     raw_records: Mapping[str, str],
+    ja_raw_records: Mapping[int, RawProvider],
     authored_records: Mapping[str, Mapping[str, str]],
 ) -> EntryPayloadMeta:
     source = dict(row.source)
@@ -334,33 +349,24 @@ def _entry_for_locale(
         regional_sources = source.get("regional_sources", {})
         ja_source = regional_sources.get("ja", {}) if isinstance(regional_sources, dict) else {}
         ja_kind = ja_source.get("kind") if isinstance(ja_source, dict) else None
-        if ja_kind == "literal":
-            source_text = ja_source["text"]
-            return EntryPayloadMeta(
+        try:
+            source_text = resolve_ja_raw_text(
                 target_id=row.target_id,
-                mapping_source_kind=row.source_kind,
-                mapping_source=source,
-                locale_provider_kind="raw",
-                source_text=source_text,
-                encoded_bytes=encode_canonical_text(source_text),
-                fallback_kind=FALLBACK_KIND_NONE,
-                fallback_reason=None,
-                note=None,
+                ja_source=ja_source,
+                providers=ja_raw_records,
             )
-        symbol = ja_source.get("symbol") if ja_kind == "symbol" else None
-        note = "verified raw mapping has no committed canonical ja payload source"
-        if symbol:
-            note += f"; evidence symbol={symbol}"
+        except RawProviderError as error:
+            raise GameCatalogError(str(error)) from error
         return EntryPayloadMeta(
             target_id=row.target_id,
             mapping_source_kind=row.source_kind,
             mapping_source=source,
-            locale_provider_kind=None,
-            source_text=None,
-            encoded_bytes=None,
-            fallback_kind=FALLBACK_KIND_PROVIDER_UNAVAILABLE,
-            fallback_reason="locale-provider-unavailable",
-            note=note,
+            locale_provider_kind="raw",
+            source_text=source_text,
+            encoded_bytes=encode_canonical_text(source_text),
+            fallback_kind=FALLBACK_KIND_NONE,
+            fallback_reason=None,
+            note=None,
         )
 
     if row.source_kind == "authored":
@@ -393,6 +399,7 @@ def _build_locale_bundle(
     mapping,
     indexed_sources: Mapping[str, Mapping[int, str]],
     raw_records: Mapping[str, str],
+    ja_raw_records: Mapping[int, RawProvider],
     authored_records: Mapping[str, Mapping[str, str]],
     suffix_share: bool,
 ) -> LocaleCatalogBundle:
@@ -402,6 +409,7 @@ def _build_locale_bundle(
             row=row,
             indexed_sources=indexed_sources,
             raw_records=raw_records,
+            ja_raw_records=ja_raw_records,
             authored_records=authored_records,
         )
         for row in mapping.rows
@@ -693,6 +701,7 @@ def build_game_catalog(
     english_texts_path: Path = DEFAULT_ENGLISH_TEXTS_PATH,
     english_definitions_path: Path = DEFAULT_ENGLISH_DEFINITIONS_PATH,
     ja_indexed_path: Path = DEFAULT_JA_INDEXED_PATH,
+    ja_raw_path: Path = DEFAULT_JA_RAW_PATH,
     zh_indexed_path: Path = DEFAULT_ZH_INDEXED_PATH,
     zh_raw_path: Path = DEFAULT_ZH_RAW_PATH,
     mapping_path: Path = DEFAULT_MAPPING_PATH,
@@ -725,6 +734,9 @@ def build_game_catalog(
     raw_records = (
         _load_raw_records(zh_raw_path) if "zh-Hans" in enabled_locales else {}
     )
+    ja_raw_records = (
+        _load_ja_raw_records(ja_raw_path) if "ja" in enabled_locales else {}
+    )
     authored_records = _load_authored_catalogs(authored_paths)
     mapping_source_counts = _mapping_source_counts(mapping)
     locale_bundles = tuple(
@@ -733,6 +745,7 @@ def build_game_catalog(
             mapping=mapping,
             indexed_sources=indexed_sources,
             raw_records=raw_records,
+            ja_raw_records=ja_raw_records,
             authored_records=authored_records,
             suffix_share=suffix_share,
         )
@@ -812,6 +825,7 @@ def generate(
     english_texts_path: Path = DEFAULT_ENGLISH_TEXTS_PATH,
     english_definitions_path: Path = DEFAULT_ENGLISH_DEFINITIONS_PATH,
     ja_indexed_path: Path = DEFAULT_JA_INDEXED_PATH,
+    ja_raw_path: Path = DEFAULT_JA_RAW_PATH,
     zh_indexed_path: Path = DEFAULT_ZH_INDEXED_PATH,
     zh_raw_path: Path = DEFAULT_ZH_RAW_PATH,
     mapping_path: Path = DEFAULT_MAPPING_PATH,
@@ -824,6 +838,7 @@ def generate(
         english_texts_path=english_texts_path,
         english_definitions_path=english_definitions_path,
         ja_indexed_path=ja_indexed_path,
+        ja_raw_path=ja_raw_path,
         zh_indexed_path=zh_indexed_path,
         zh_raw_path=zh_raw_path,
         mapping_path=mapping_path,

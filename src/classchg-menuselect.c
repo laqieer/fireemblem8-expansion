@@ -9,6 +9,16 @@
 #include "scene.h"
 #include "constants/classes.h"
 
+#ifdef MODERN
+#define PROMO_OPTION_1_NAME ""
+#define PROMO_OPTION_2_NAME ""
+#define PROMO_OPTION_3_NAME ""
+#else
+#define PROMO_OPTION_1_NAME "　第１兵種"
+#define PROMO_OPTION_2_NAME "　第２兵種"
+#define PROMO_OPTION_3_NAME "　第３兵種"
+#endif
+
 u32 ClassChgMenuSelOnInit(struct MenuProc *proc)
 {
     SyncMenuBgs(proc);
@@ -165,7 +175,7 @@ u8 ClassChgMenuItem_3rdUsability(const struct MenuItemDef * _def, int _number)
 
 CONST_DATA struct MenuItemDef gMenuItem_PromoSel[] = {
     {
-        "　第１兵種",
+        PROMO_OPTION_1_NAME,
         0,
         0x6DC,  /* Discard items. Important[NL]items cannot be discarded. */
         TEXT_COLOR_SYSTEM_WHITE,
@@ -178,7 +188,7 @@ CONST_DATA struct MenuItemDef gMenuItem_PromoSel[] = {
         0
     },
     {
-        "　第２兵種",
+        PROMO_OPTION_2_NAME,
         0,
         0x6DC,  /* Discard items. Important[NL]items cannot be discarded. */
         TEXT_COLOR_SYSTEM_WHITE,
@@ -191,7 +201,7 @@ CONST_DATA struct MenuItemDef gMenuItem_PromoSel[] = {
         0
     },
     {
-        "　第３兵種",
+        PROMO_OPTION_3_NAME,
         0,
         0x6DC,  /* Discard items. Important[NL]items cannot be discarded. */
         TEXT_COLOR_SYSTEM_WHITE,

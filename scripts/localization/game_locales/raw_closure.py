@@ -9,6 +9,11 @@ from pathlib import Path
 from typing import Any, Dict, List, Mapping
 
 from .mapping import MappingError, validate_mapping_document
+from .raw_providers import (
+    RawProviderError,
+    load_ja_raw_providers,
+    resolve_ja_raw_text,
+)
 
 CLOSURE_SCHEMA_VERSION = 1
 DECISIONS_KIND = "fe8cn-raw-surface-decisions"
@@ -140,8 +145,6 @@ def _validate_decisions(
             raise RawClosureError(f"{field}.user_facing must be a boolean")
         if classification.endswith("_exclusion") and user_facing:
             raise RawClosureError(f"{field} exclusions cannot be user-facing")
-        if classification in ("game_message", "expansion_message") and not user_facing:
-            raise RawClosureError(f"{field} localized decisions must be user-facing")
         _require_string(decision.get("rationale"), f"{field}.rationale")
         normalized = dict(decision)
         normalized["call_sites"] = _validate_call_sites(
@@ -235,6 +238,7 @@ def build_raw_surface_closure(
     raw_data: Any,
     mapping_data: Any,
     decisions_data: Any,
+    ja_raw_provider_data: Any,
     registry_data: Any,
     catalog_data: Mapping[str, Any],
     repo_root: Path,
@@ -247,6 +251,10 @@ def build_raw_surface_closure(
         repo_root=repo_root,
     )
     mapped = _mapped_imports(mapping_data, repo_root=repo_root)
+    try:
+        ja_raw_providers = load_ja_raw_providers(ja_raw_provider_data)
+    except RawProviderError as error:
+        raise RawClosureError(f"Japanese raw provider catalog failed: {error}") from error
     active_keys = _active_registry_keys(registry_data)
     catalogs = {
         locale: _catalog_strings(catalog_data[locale], locale)
@@ -296,13 +304,6 @@ def build_raw_surface_closure(
                         f"{import_id} target mismatch: {decision['target_id']} vs "
                         f"{mapped_entry['target_id']}"
                     )
-                ja_source = mapped_entry["row"].source.get(
-                    "regional_sources", {}
-                ).get("ja", {})
-                if ja_source.get("kind") != "literal":
-                    raise RawClosureError(
-                        f"{import_id} deferred game-message decision lacks canonical ja text"
-                    )
                 closure_row["target_id"] = decision["target_id"]
             elif classification == "expansion_message":
                 key = decision["expansion_key"]
@@ -320,8 +321,53 @@ def build_raw_surface_closure(
                         f"{import_id} zh-Hans expansion text must equal imported raw payload"
                     )
                 closure_row["expansion_key"] = key
+                closure_row["providers"] = {
+                    locale: {
+                        "kind": "expansion_catalog",
+                        "text_sha256": hashlib.sha256(
+                            catalogs[locale][key].encode("utf-8")
+                        ).hexdigest(),
+                    }
+                    for locale in ("ja", "zh-Hans")
+                }
             elif classification == "english_fallback":
                 closure_row["fallback_reason"] = decision["fallback_reason"]
+
+        if closure_row["classification"] == "game_message":
+            mapped_entry = mapped.get(import_id)
+            if mapped_entry is None:
+                raise RawClosureError(
+                    f"{import_id} game-message provider is absent from verified mapping"
+                )
+            mapping_row = mapped_entry["row"]
+            ja_source = mapping_row.source.get("regional_sources", {}).get("ja", {})
+            try:
+                ja_text = resolve_ja_raw_text(
+                    target_id=mapping_row.target_id,
+                    ja_source=ja_source,
+                    providers=ja_raw_providers,
+                )
+            except RawProviderError as error:
+                raise RawClosureError(f"{import_id}: {error}") from error
+            zh_text = raw_record["text"]
+            if not ja_text or not zh_text:
+                raise RawClosureError(
+                    f"{import_id} game-message provider payloads must be non-empty"
+                )
+            closure_row["providers"] = {
+                "ja": {
+                    "kind": f"raw_{ja_source['kind']}",
+                    "text_sha256": hashlib.sha256(
+                        ja_text.encode("utf-8")
+                    ).hexdigest(),
+                },
+                "zh-Hans": {
+                    "kind": "raw_import",
+                    "text_sha256": hashlib.sha256(
+                        zh_text.encode("utf-8")
+                    ).hexdigest(),
+                },
+            }
         closure_row["provenance"] = {
             "address": raw_record["provenance"]["address"],
         }
@@ -334,6 +380,19 @@ def build_raw_surface_closure(
         for classification in DECISION_CLASSES
     }
     unresolved = len(raw_records) - len(rows)
+    provider_count = counts["game_message"] + counts["expansion_message"]
+    ja_materialized_count = sum(
+        1
+        for row in rows
+        if isinstance(row.get("providers", {}).get("ja", {}).get("text_sha256"), str)
+    )
+    zh_materialized_count = sum(
+        1
+        for row in rows
+        if isinstance(
+            row.get("providers", {}).get("zh-Hans", {}).get("text_sha256"), str
+        )
+    )
     summary = {
         "baseline_game_message_count": sum(
             1 for row in rows if row["decision_origin"] == "verified-game-map"
@@ -343,9 +402,11 @@ def build_raw_surface_closure(
         "english_fallback_count": counts["english_fallback"],
         "expansion_message_count": counts["expansion_message"],
         "game_message_count": counts["game_message"],
+        "ja_materialized_count": ja_materialized_count,
         "non_user_facing_exclusion_count": counts["non_user_facing_exclusion"],
         "total_count": len(raw_records),
         "unresolved_count": unresolved,
+        "provider_count": provider_count,
         "user_facing_deferred_localized_count": sum(
             1
             for row in rows
@@ -353,9 +414,24 @@ def build_raw_surface_closure(
             and row["user_facing"]
             and row["classification"] in ("game_message", "expansion_message")
         ),
+        "zh_hans_materialized_count": zh_materialized_count,
     }
-    if unresolved:
-        raise RawClosureError(f"raw closure has {unresolved} unresolved records")
+    excluded = counts["non_user_facing_exclusion"] + counts["diagnostic_exclusion"]
+    if (
+        unresolved
+        or counts["english_fallback"]
+        or excluded
+        or provider_count != len(raw_records)
+        or ja_materialized_count != len(raw_records)
+        or zh_materialized_count != len(raw_records)
+    ):
+        raise RawClosureError(
+            "raw closure strict gate failed: "
+            f"total={len(raw_records)} providers={provider_count} "
+            f"fallback={counts['english_fallback']} exclusions={excluded} "
+            f"unresolved={unresolved} ja={ja_materialized_count} "
+            f"zh-Hans={zh_materialized_count}"
+        )
     return {
         "kind": CLOSURE_KIND,
         "rows": rows,

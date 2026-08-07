@@ -142,7 +142,13 @@ def _locale_texts(root: Path, locale: str) -> Tuple[Dict[str, List[str]], Dict[s
     sources: Dict[str, List[str]] = {
         "indexed": [message.text for message in indexed],
     }
-    if locale == "zh-Hans":
+    if locale == "ja":
+        raw_path = root / "texts/locales/ja/raw.json"
+        raw = json.loads(raw_path.read_text(encoding="utf-8"))
+        sources["raw"] = [
+            provider["text"] for provider in raw["providers"].values()
+        ]
+    else:
         raw_path = root / "texts/locales/zh-Hans/raw.json"
         raw = json.loads(raw_path.read_text(encoding="utf-8"))
         seen: Set[str] = set()
@@ -441,6 +447,7 @@ def build_generated_files(root: Path) -> Dict[str, bytes]:
 
     input_paths = [
         root / "texts/locales/ja/indexed.txt",
+        root / "texts/locales/ja/raw.json",
         root / "texts/locales/zh-Hans/indexed.txt",
         root / "texts/locales/zh-Hans/raw.json",
         root / "texts/expansion/registry.json",

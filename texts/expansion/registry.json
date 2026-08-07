@@ -280,6 +280,42 @@
       "max_width": 16,
       "max_decoded_bytes": 24,
       "notes": "Modern semantic adapter for the demon call command that shares FE8U message ID 0x0693 with summon; FE8J's full-width indent is normalized to catalog-safe ASCII space."
+    },
+    {
+      "id": 35,
+      "key": "raw_surface.class_change.option_1",
+      "status": "active",
+      "surface": "framework_generic",
+      "max_width": 16,
+      "max_decoded_bytes": 24,
+      "notes": "Semantic provider for the first promotion-choice raw initializer; modern rendering uses the localized promoted class name instead."
+    },
+    {
+      "id": 36,
+      "key": "raw_surface.class_change.option_2",
+      "status": "active",
+      "surface": "framework_generic",
+      "max_width": 16,
+      "max_decoded_bytes": 24,
+      "notes": "Semantic provider for the second promotion-choice raw initializer; modern rendering uses the localized promoted class name instead."
+    },
+    {
+      "id": 37,
+      "key": "raw_surface.class_change.option_3",
+      "status": "active",
+      "surface": "framework_generic",
+      "max_width": 16,
+      "max_decoded_bytes": 24,
+      "notes": "Semantic provider for the third promotion-choice raw initializer; modern rendering uses the localized promoted class name instead."
+    },
+    {
+      "id": 38,
+      "key": "raw_surface.diagnostic.build_timestamp",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 32,
+      "max_decoded_bytes": 32,
+      "notes": "Locale-aware diagnostic timestamp. English and Japanese preserve the legacy FE8J diagnostic identity; Chinese preserves the imported FE8CN identity."
     }
   ]
 }

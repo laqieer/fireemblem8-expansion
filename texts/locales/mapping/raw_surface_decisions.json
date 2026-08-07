@@ -334,45 +334,48 @@
       "call_sites": [
         {
           "anchors": [
-            "\"　第１兵種\"",
+            "PROMO_OPTION_1_NAME",
             "ClassChgMenuItem_OnTextDraw"
           ],
           "path": "src/classchg-menuselect.c"
         }
       ],
-      "classification": "non_user_facing_exclusion",
+      "classification": "expansion_message",
+      "expansion_key": "raw_surface.class_change.option_1",
       "import_id": "fe8cn.raw.import-0062",
-      "rationale": "The initializer name is never drawn: the row-specific onDraw callback replaces it with the locale-aware promoted class name from GetStringFromIndex.",
+      "rationale": "The raw initializer has a complete semantic expansion provider. Modern builds use an empty initializer because the row-specific onDraw callback replaces it with the locale-aware promoted class name; legacy keeps the original Japanese bytes.",
       "user_facing": false
     },
     {
       "call_sites": [
         {
           "anchors": [
-            "\"　第２兵種\"",
+            "PROMO_OPTION_2_NAME",
             "ClassChgMenuItem_OnTextDraw"
           ],
           "path": "src/classchg-menuselect.c"
         }
       ],
-      "classification": "non_user_facing_exclusion",
+      "classification": "expansion_message",
+      "expansion_key": "raw_surface.class_change.option_2",
       "import_id": "fe8cn.raw.import-0063",
-      "rationale": "The initializer name is never drawn: the row-specific onDraw callback replaces it with the locale-aware promoted class name from GetStringFromIndex.",
+      "rationale": "The raw initializer has a complete semantic expansion provider. Modern builds use an empty initializer because the row-specific onDraw callback replaces it with the locale-aware promoted class name; legacy keeps the original Japanese bytes.",
       "user_facing": false
     },
     {
       "call_sites": [
         {
           "anchors": [
-            "\"　第３兵種\"",
+            "PROMO_OPTION_3_NAME",
             "ClassChgMenuItem_OnTextDraw"
           ],
           "path": "src/classchg-menuselect.c"
         }
       ],
-      "classification": "non_user_facing_exclusion",
+      "classification": "expansion_message",
+      "expansion_key": "raw_surface.class_change.option_3",
       "import_id": "fe8cn.raw.import-0064",
-      "rationale": "The initializer name is never drawn: the row-specific onDraw callback replaces it with the locale-aware promoted class name from GetStringFromIndex.",
+      "rationale": "The raw initializer has a complete semantic expansion provider. Modern builds use an empty initializer because the row-specific onDraw callback replaces it with the locale-aware promoted class name; legacy keeps the original Japanese bytes.",
       "user_facing": false
     },
     {
@@ -384,10 +387,10 @@
           "path": "src/player_interface.c"
         }
       ],
-      "classification": "english_fallback",
-      "fallback_reason": "japanese-literal-source-unverified",
+      "classification": "game_message",
       "import_id": "fe8cn.raw.import-0139",
-      "rationale": "Japanese goal-window label for FE8U 0x01C1 has no exact committed-source literal anchor.",
+      "rationale": "FE8U target 0x01C1 is bound to FE8J's inline GoalString_UnitsLeft raw provider and the exact FE8CN raw import, never to the unrelated same-number FE8J indexed message.",
+      "target_id": "0x01C1",
       "user_facing": true
     },
     {
@@ -399,10 +402,10 @@
           "path": "src/player_interface.c"
         }
       ],
-      "classification": "english_fallback",
-      "fallback_reason": "japanese-literal-source-unverified",
+      "classification": "game_message",
       "import_id": "fe8cn.raw.import-0140",
-      "rationale": "Japanese goal-window label for FE8U 0x01C3 has no exact committed-source literal anchor.",
+      "rationale": "FE8U target 0x01C3 is bound to FE8J's inline GoalString_LastTurn raw provider and the exact FE8CN raw import, never to the unrelated same-number FE8J indexed message.",
+      "target_id": "0x01C3",
       "user_facing": true
     },
     {
@@ -414,10 +417,10 @@
           "path": "src/player_interface.c"
         }
       ],
-      "classification": "english_fallback",
-      "fallback_reason": "japanese-literal-source-unverified",
+      "classification": "game_message",
       "import_id": "fe8cn.raw.import-0141",
-      "rationale": "Japanese goal-window label for FE8U 0x01C2 has no exact committed-source literal anchor.",
+      "rationale": "FE8U target 0x01C2 is bound to FE8J's inline GoalString_Turn raw provider and the exact FE8CN raw import, never to the unrelated same-number FE8J indexed message.",
+      "target_id": "0x01C2",
       "user_facing": true
     },
     {
@@ -430,14 +433,16 @@
         },
         {
           "anchors": [
-            "PrintDebugStringToBG(bg, gBuildDateTime)"
+            "EXP_MSG_RAW_SURFACE_DIAGNOSTIC_BUILD_TIMESTAMP",
+            "ExpansionLocale_ResolveCurrent"
           ],
           "path": "src/fe3_dummy.c"
         }
       ],
-      "classification": "diagnostic_exclusion",
+      "classification": "expansion_message",
+      "expansion_key": "raw_surface.diagnostic.build_timestamp",
       "import_id": "fe8cn.raw.import-0142",
-      "rationale": "This fixed build timestamp is diagnostic identity printed by PrintDebugBuildDateAndTime, not natural-language UI; translating it would corrupt the diagnostic value.",
+      "rationale": "The diagnostic identity has an explicit locale provider: modern builds resolve the current locale's timestamp, while legacy keeps printing gBuildDateTime unchanged.",
       "user_facing": false
     }
   ],

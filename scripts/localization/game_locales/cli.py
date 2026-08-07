@@ -206,6 +206,7 @@ def _build_raw_closure(args: argparse.Namespace):
         raw_data=_load_json(args.raw_source),
         mapping_data=_load_json(args.mapping),
         decisions_data=_load_json(args.decisions),
+        ja_raw_provider_data=_load_json(args.ja_raw),
         registry_data=_load_json(args.registry),
         catalog_data={
             "en": _load_json(args.catalog_en),
@@ -400,6 +401,11 @@ def build_parser() -> argparse.ArgumentParser:
             "--raw-source",
             type=Path,
             default=Path("texts/locales/zh-Hans/raw.json"),
+        )
+        closure_parser.add_argument(
+            "--ja-raw",
+            type=Path,
+            default=Path("texts/locales/ja/raw.json"),
         )
         closure_parser.add_argument(
             "--mapping",

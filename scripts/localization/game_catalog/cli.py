@@ -11,6 +11,7 @@ from .build import (
     DEFAULT_ENGLISH_DEFINITIONS_PATH,
     DEFAULT_ENGLISH_TEXTS_PATH,
     DEFAULT_JA_INDEXED_PATH,
+    DEFAULT_JA_RAW_PATH,
     DEFAULT_MAPPING_PATH,
     DEFAULT_TARGET_HEADER_PATH,
     DEFAULT_ZH_INDEXED_PATH,
@@ -45,6 +46,7 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
         default=DEFAULT_ENGLISH_DEFINITIONS_PATH,
     )
     parser.add_argument("--ja-indexed", type=Path, default=DEFAULT_JA_INDEXED_PATH)
+    parser.add_argument("--ja-raw", type=Path, default=DEFAULT_JA_RAW_PATH)
     parser.add_argument("--zh-indexed", type=Path, default=DEFAULT_ZH_INDEXED_PATH)
     parser.add_argument("--zh-raw", type=Path, default=DEFAULT_ZH_RAW_PATH)
     parser.add_argument("--mapping", type=Path, default=DEFAULT_MAPPING_PATH)
@@ -104,6 +106,7 @@ def _build_from_args(args: argparse.Namespace):
         english_texts_path=args.english_texts,
         english_definitions_path=args.english_definitions,
         ja_indexed_path=args.ja_indexed,
+        ja_raw_path=args.ja_raw,
         zh_indexed_path=args.zh_indexed,
         zh_raw_path=args.zh_raw,
         mapping_path=args.mapping,

@@ -17,6 +17,7 @@ python3 -m scripts.fonttools.cjk check
 The inventory reads the committed normalized sources:
 
 - `texts/locales/ja/indexed.txt`;
+- materialized providers in `texts/locales/ja/raw.json`;
 - `texts/locales/zh-Hans/indexed.txt`;
 - unique records in `texts/locales/zh-Hans/raw.json`;
 - active `texts/expansion` catalog strings, resolved through the English
@@ -33,7 +34,7 @@ Current deterministic counts:
 
 | Locale | Source non-ASCII | Bitmap scalars per style | Styles |
 | --- | ---: | ---: | --- |
-| `ja` | 1,849 | 1,848 | System/item, Talk/text |
+| `ja` | 1,851 | 1,850 | System/item, Talk/text |
 | `zh-Hans` | 2,460 | 2,460 | System/item, Talk/text |
 | union | 3,332 | 3,331 | U+3000 is the one spacing scalar |
 
@@ -121,7 +122,7 @@ Binary-search the codepoint table. The matching index selects one width byte
 and one fixed-stride bitmap. `graphics/fonts/cjk/manifest.json` pins every
 asset hash and all package/report provenance.
 
-The four locale/style payloads total **594,504 bytes**, or **594,504 bytes**
+The four locale/style payloads total **594,780 bytes**, or **594,784 bytes**
 when every blob is independently aligned to four bytes. This budget includes
 the bitmap, width, and Unicode index data, but not future linker/table
 wrappers.

@@ -16,6 +16,16 @@
       "provenance": {
         "address": "0x085C4320"
       },
+      "providers": {
+        "ja": {
+          "kind": "raw_literal",
+          "text_sha256": "7a105ba883fdcf1925d294c1b263b07fef6534a101603a10c7a97e264e5960cd"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "76e3439feac018deb1c3bbc28663358be6b85e11c2c9b9ea7f7c01aaafd78983"
+        }
+      },
       "rationale": "The menu row already uses this stable FE8U message ID; verified regional raw text now supplies Japanese and Chinese catalog payloads.",
       "source_text_sha256": "76e3439feac018deb1c3bbc28663358be6b85e11c2c9b9ea7f7c01aaafd78983",
       "target_id": "0x06B9",
@@ -35,6 +45,16 @@
       "import_id": "fe8cn.raw.import-0001",
       "provenance": {
         "address": "0x085C4344"
+      },
+      "providers": {
+        "ja": {
+          "kind": "raw_literal",
+          "text_sha256": "c6b28654dadcb7b94ebddda11e8babea147fa58d862e7a3c74a06c07ea1303af"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "515250b5c4943ce064ec3eed0845b4242b6eb0fcd10124a2a66c28cd1e02d7a5"
+        }
       },
       "rationale": "The menu row already uses this stable FE8U message ID; verified regional raw text now supplies Japanese and Chinese catalog payloads.",
       "source_text_sha256": "515250b5c4943ce064ec3eed0845b4242b6eb0fcd10124a2a66c28cd1e02d7a5",
@@ -56,6 +76,16 @@
       "provenance": {
         "address": "0x085C4368"
       },
+      "providers": {
+        "ja": {
+          "kind": "raw_literal",
+          "text_sha256": "c7af9b851725974e017bad6823669df839b2f3a66b4de3a884dc50dbf53984c4"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "38f443e379a83f1ac6f7161985f191a698f89b246b3622531c11658e58add263"
+        }
+      },
       "rationale": "The menu row already uses this stable FE8U message ID; verified regional raw text now supplies Japanese and Chinese catalog payloads.",
       "source_text_sha256": "38f443e379a83f1ac6f7161985f191a698f89b246b3622531c11658e58add263",
       "target_id": "0x06BB",
@@ -75,6 +105,16 @@
       "import_id": "fe8cn.raw.import-0003",
       "provenance": {
         "address": "0x085C438C"
+      },
+      "providers": {
+        "ja": {
+          "kind": "raw_literal",
+          "text_sha256": "9e6b58513ad8978c1a0db83b5e379be1a112c6dd585a0fd4e6b520c5c15ed16b"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "3d8be17eb77376c84602de7febdd69e42e9ba56100f7e7b3d3c8e2754138574d"
+        }
       },
       "rationale": "The menu row already uses this stable FE8U message ID; verified regional raw text now supplies Japanese and Chinese catalog payloads.",
       "source_text_sha256": "3d8be17eb77376c84602de7febdd69e42e9ba56100f7e7b3d3c8e2754138574d",
@@ -96,6 +136,16 @@
       "provenance": {
         "address": "0x085C43B0"
       },
+      "providers": {
+        "ja": {
+          "kind": "raw_literal",
+          "text_sha256": "e4ddb2b499812ae676a96d2fc94410f3a594a0518467359feafe92bf46253b90"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "76358345517a01aa3855a405e2cef735004ab21e2765ab7def2604023910936c"
+        }
+      },
       "rationale": "The menu row already uses this stable FE8U message ID; verified regional raw text now supplies Japanese and Chinese catalog payloads.",
       "source_text_sha256": "76358345517a01aa3855a405e2cef735004ab21e2765ab7def2604023910936c",
       "target_id": "0x06BD",
@@ -115,6 +165,16 @@
       "import_id": "fe8cn.raw.import-0005",
       "provenance": {
         "address": "0x085C4464"
+      },
+      "providers": {
+        "ja": {
+          "kind": "raw_literal",
+          "text_sha256": "25ce7da12556373e179da66e2896809fd87a417a181f8937552adfaecda41c6a"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "0b8a87439a80c170de31b4a93827bd23441980f75534b20deac09d1fb64f31b4"
+        }
       },
       "rationale": "The menu row already uses this stable FE8U message ID; verified regional raw text now supplies Japanese and Chinese catalog payloads.",
       "source_text_sha256": "0b8a87439a80c170de31b4a93827bd23441980f75534b20deac09d1fb64f31b4",
@@ -136,6 +196,16 @@
       "provenance": {
         "address": "0x085C4488"
       },
+      "providers": {
+        "ja": {
+          "kind": "raw_literal",
+          "text_sha256": "9f029f459bebed32c3e197648ae17a6841e192e9dff2379d211cc3923cf72f45"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "43fb8319313d5057c37afabe9c79a4f8cc48e92e3d92e2bc046c68d810f1546f"
+        }
+      },
       "rationale": "The menu row already uses this stable FE8U message ID; verified regional raw text now supplies Japanese and Chinese catalog payloads.",
       "source_text_sha256": "43fb8319313d5057c37afabe9c79a4f8cc48e92e3d92e2bc046c68d810f1546f",
       "target_id": "0x0027",
@@ -155,6 +225,16 @@
       "import_id": "fe8cn.raw.import-0007",
       "provenance": {
         "address": "0x085C44AC"
+      },
+      "providers": {
+        "ja": {
+          "kind": "raw_literal",
+          "text_sha256": "7c498692359a02d44d589aea2fcc814269af828632e5ae60aebe8a9a97a71c52"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "13fcef89e684fa5ec609e4db4dfd105a08a9d2e85ded5992cb40395e907499c2"
+        }
       },
       "rationale": "The menu row already uses this stable FE8U message ID; verified regional raw text now supplies Japanese and Chinese catalog payloads.",
       "source_text_sha256": "13fcef89e684fa5ec609e4db4dfd105a08a9d2e85ded5992cb40395e907499c2",
@@ -176,6 +256,16 @@
       "provenance": {
         "address": "0x085C44D0"
       },
+      "providers": {
+        "ja": {
+          "kind": "raw_literal",
+          "text_sha256": "399940aa04f791b989cfdc7ec989b7d5e804bd846b71130415b55e4478c508a8"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "ad95f98a8c02952e4decebec34ab1934aebfe174e1eb392cd6c1d3ed825aa0f7"
+        }
+      },
       "rationale": "The menu row already uses this stable FE8U message ID; verified regional raw text now supplies Japanese and Chinese catalog payloads.",
       "source_text_sha256": "ad95f98a8c02952e4decebec34ab1934aebfe174e1eb392cd6c1d3ed825aa0f7",
       "target_id": "0x0029",
@@ -195,6 +285,16 @@
       "import_id": "fe8cn.raw.import-0009",
       "provenance": {
         "address": "0x085C4518"
+      },
+      "providers": {
+        "ja": {
+          "kind": "raw_literal",
+          "text_sha256": "067b80d49102f51af1ae7e129243c4a8ec070b1fbe30f704c127cb4a75376b44"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "d5b1fc040fc11922b2c6e847515029afbf07a2a061676038807eb1c4bb148086"
+        }
       },
       "rationale": "The menu row already uses this stable FE8U message ID; verified regional raw text now supplies Japanese and Chinese catalog payloads.",
       "source_text_sha256": "d5b1fc040fc11922b2c6e847515029afbf07a2a061676038807eb1c4bb148086",
@@ -216,6 +316,16 @@
       "provenance": {
         "address": "0x085C4560"
       },
+      "providers": {
+        "ja": {
+          "kind": "raw_literal",
+          "text_sha256": "973a9d3534a1d17b36c41b4331c3bd2ea62da1f45923fbf4c307c17d0ae76928"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "8d414c4166459c832e6780fb3d2e1666c3b5129c1fd4d9281c87ad4c3765b11a"
+        }
+      },
       "rationale": "The menu row already uses this stable FE8U message ID; verified regional raw text now supplies Japanese and Chinese catalog payloads.",
       "source_text_sha256": "8d414c4166459c832e6780fb3d2e1666c3b5129c1fd4d9281c87ad4c3765b11a",
       "target_id": "0x06AA",
@@ -235,6 +345,16 @@
       "import_id": "fe8cn.raw.import-0011",
       "provenance": {
         "address": "0x085C4584"
+      },
+      "providers": {
+        "ja": {
+          "kind": "raw_literal",
+          "text_sha256": "865bbcd2fc1d65bc064a09e8b0ea90dbc534e6f1f9e419c1795eee64e34b887b"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "4213a2786be557ed5b3fa31cc3ac832161b9ad2080f37d54e9d4782137064269"
+        }
       },
       "rationale": "The menu row already uses this stable FE8U message ID; verified regional raw text now supplies Japanese and Chinese catalog payloads.",
       "source_text_sha256": "4213a2786be557ed5b3fa31cc3ac832161b9ad2080f37d54e9d4782137064269",
@@ -256,6 +376,16 @@
       "provenance": {
         "address": "0x085C45A8"
       },
+      "providers": {
+        "ja": {
+          "kind": "raw_literal",
+          "text_sha256": "b0a256fcf23a26a1095a9824970c301340fa23fb819317b52f3e328878102bd7"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "7cf4992eb921180fb27dd9a70ab772f3369caad1fa6d64d0c6a7751a85ef2c4f"
+        }
+      },
       "rationale": "The menu row already uses this stable FE8U message ID; verified regional raw text now supplies Japanese and Chinese catalog payloads.",
       "source_text_sha256": "7cf4992eb921180fb27dd9a70ab772f3369caad1fa6d64d0c6a7751a85ef2c4f",
       "target_id": "0x06AC",
@@ -275,6 +405,16 @@
       "import_id": "fe8cn.raw.import-0013",
       "provenance": {
         "address": "0x085C45CC"
+      },
+      "providers": {
+        "ja": {
+          "kind": "raw_literal",
+          "text_sha256": "3cf8466f97649d5eac64c7bd827408c091a8e82213dd8c275f58664e0a77b3c3"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "90c34d7448680dfecd2ac7db33a48168474ad855cbafaaea5830bfb8e07975c1"
+        }
       },
       "rationale": "The menu row already uses this stable FE8U message ID; verified regional raw text now supplies Japanese and Chinese catalog payloads.",
       "source_text_sha256": "90c34d7448680dfecd2ac7db33a48168474ad855cbafaaea5830bfb8e07975c1",
@@ -296,6 +436,16 @@
       "provenance": {
         "address": "0x085C45F0"
       },
+      "providers": {
+        "ja": {
+          "kind": "raw_literal",
+          "text_sha256": "9e0660c8db77ad07901ae6fb6ea2e6fe9541dc2e82c4c9346d5c607bdac4d703"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "73a55f189fbea8bf26dab9c5e6600901f1cc9ba1f1e77a801762d61a6daebceb"
+        }
+      },
       "rationale": "The menu row already uses this stable FE8U message ID; verified regional raw text now supplies Japanese and Chinese catalog payloads.",
       "source_text_sha256": "73a55f189fbea8bf26dab9c5e6600901f1cc9ba1f1e77a801762d61a6daebceb",
       "target_id": "0x06AE",
@@ -316,6 +466,16 @@
       "provenance": {
         "address": "0x085C4614"
       },
+      "providers": {
+        "ja": {
+          "kind": "raw_literal",
+          "text_sha256": "4b43c459d4d0f770d9b3907f24f39a9c9bf20af0006af224b5f047517b0e8128"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "13181dee87cb616fd21bcf5b3b2674b2ba3bb04fc8ad9744ed0e43531180ea84"
+        }
+      },
       "rationale": "The menu row already uses this stable FE8U message ID; verified regional raw text now supplies Japanese and Chinese catalog payloads.",
       "source_text_sha256": "13181dee87cb616fd21bcf5b3b2674b2ba3bb04fc8ad9744ed0e43531180ea84",
       "target_id": "0x06AF",
@@ -335,6 +495,16 @@
       "import_id": "fe8cn.raw.import-0016",
       "provenance": {
         "address": "0x085C4638"
+      },
+      "providers": {
+        "ja": {
+          "kind": "raw_literal",
+          "text_sha256": "2c967bfb008ac2254683fe12347b50b470b876fb47f68ffac1fae679c0d78181"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "ba2ea64600bbb7e4ed5d6f8aed54cccab132550c1d49c24ef5271a94393c911f"
+        }
       },
       "rationale": "The menu row already uses this stable FE8U message ID; verified regional raw text now supplies Japanese and Chinese catalog payloads.",
       "source_text_sha256": "ba2ea64600bbb7e4ed5d6f8aed54cccab132550c1d49c24ef5271a94393c911f",
@@ -360,6 +530,16 @@
       "provenance": {
         "address": "0x085C4A28"
       },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "8f90d85ec13a0b1b12d81203f2f3262ca156028a94aeaf91ae52fcd5a9de4170"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "aa2a331d2dcf56680e516898a4ae11aa832d2097fa7fd231b7be2c736ff15a99"
+        }
+      },
       "rationale": "The shared menu row selects a direct regional string; the stable import ID is runtime identity.",
       "source_text_sha256": "aa2a331d2dcf56680e516898a4ae11aa832d2097fa7fd231b7be2c736ff15a99",
       "target_id": "0x0843",
@@ -383,6 +563,16 @@
       "import_id": "fe8cn.raw.import-0018",
       "provenance": {
         "address": "0x085C4A4C"
+      },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "48ef2b674823d03d45863e46e4706682f9588ef1d13921134ae3a8508483ffb5"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "77af2f337c1d4d74e01293481a94622cd25c2fc780fba19916c0115877e82b5c"
+        }
       },
       "rationale": "The shared menu row selects a direct regional string; the stable import ID is runtime identity.",
       "source_text_sha256": "77af2f337c1d4d74e01293481a94622cd25c2fc780fba19916c0115877e82b5c",
@@ -408,6 +598,16 @@
       "provenance": {
         "address": "0x085C4A94"
       },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "12413235d333fe11016da623fa1f439425b42c22b0cb246387bb88ad546d0952"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "cdfd0b34e4918648910bd74bb862cf6076871cdf7fb6c6571a8a5bda78e9b942"
+        }
+      },
       "rationale": "The shared menu row selects a direct regional string; the stable import ID is runtime identity.",
       "source_text_sha256": "cdfd0b34e4918648910bd74bb862cf6076871cdf7fb6c6571a8a5bda78e9b942",
       "target_id": "0x0696",
@@ -431,6 +631,16 @@
       "import_id": "fe8cn.raw.import-0020",
       "provenance": {
         "address": "0x085C4AB8"
+      },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "1ae67cfcaf80a821cd0255763b8224b0743b26acd16a205b6883f8f786186cf6"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "144a327039fee815aaee248148a83b5553e8277e73a96440e91c2a6100efd6d4"
+        }
       },
       "rationale": "The shared menu row selects a direct regional string; the stable import ID is runtime identity.",
       "source_text_sha256": "144a327039fee815aaee248148a83b5553e8277e73a96440e91c2a6100efd6d4",
@@ -456,6 +666,16 @@
       "provenance": {
         "address": "0x085C4ADC"
       },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "c0be6499c92ec64e88ccf3a935d5078bf17e1071a26a905dfc6542b51912464f"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "c9c3d2d1754925a47da20aeb98b43d7337377a4488b154953e6de03b82d7a63d"
+        }
+      },
       "rationale": "The shared menu row selects a direct regional string; the stable import ID is runtime identity.",
       "source_text_sha256": "c9c3d2d1754925a47da20aeb98b43d7337377a4488b154953e6de03b82d7a63d",
       "target_id": "0x0698",
@@ -479,6 +699,16 @@
       "import_id": "fe8cn.raw.import-0022",
       "provenance": {
         "address": "0x085C4B00"
+      },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "1b30f5253a28ea0498904be6fa8b4b1b086f4f449f78d0f1f5df955d2aaabf2b"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "b16f71b55691cdc3055ae0a3fb270f0222252c3c032223ae78ccc562be4f212b"
+        }
       },
       "rationale": "The shared menu row selects a direct regional string; the stable import ID is runtime identity.",
       "source_text_sha256": "b16f71b55691cdc3055ae0a3fb270f0222252c3c032223ae78ccc562be4f212b",
@@ -504,6 +734,16 @@
       "provenance": {
         "address": "0x085C4F14"
       },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "0ca363f57f6230d80d978a3c197078bc3c1c047a5236d1cd10bce364394b00f0"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "20c017ad03264bac7bb22d8742d7304cbf5a824ad93f17a215017588a723dcf3"
+        }
+      },
       "rationale": "The shared menu row selects a direct regional string; the stable import ID is runtime identity.",
       "source_text_sha256": "20c017ad03264bac7bb22d8742d7304cbf5a824ad93f17a215017588a723dcf3",
       "target_id": "0x067A",
@@ -528,6 +768,16 @@
       "provenance": {
         "address": "0x085C4F38"
       },
+      "providers": {
+        "ja": {
+          "kind": "raw_literal",
+          "text_sha256": "3a4a2cdf551bb507e9232dd53c18870b88ec0cca33f710010cd6d8303625d268"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "63fd3568dd19054a5be2b61cc37c02655d16eea9bf089cf9cc54c0ee7a190d69"
+        }
+      },
       "rationale": "The shared menu row selects a direct regional string; the stable import ID is runtime identity.",
       "source_text_sha256": "63fd3568dd19054a5be2b61cc37c02655d16eea9bf089cf9cc54c0ee7a190d69",
       "target_id": "0x067B",
@@ -547,6 +797,16 @@
       "import_id": "fe8cn.raw.import-0025",
       "provenance": {
         "address": "0x085C4F5C"
+      },
+      "providers": {
+        "ja": {
+          "kind": "raw_literal",
+          "text_sha256": "3a4a2cdf551bb507e9232dd53c18870b88ec0cca33f710010cd6d8303625d268"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "63fd3568dd19054a5be2b61cc37c02655d16eea9bf089cf9cc54c0ee7a190d69"
+        }
       },
       "rationale": "This is the ballista Attack pointer, an intentional duplicate of the adjacent Attack row and the same stable FE8U message ID.",
       "source_text_sha256": "63fd3568dd19054a5be2b61cc37c02655d16eea9bf089cf9cc54c0ee7a190d69",
@@ -572,6 +832,16 @@
       "provenance": {
         "address": "0x085C4F80"
       },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "e7a9fdc16ce80d7ad050b4a26aaa211bd06054eacda6d0dd7be1e77dccbb26e0"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "b3f345a8cfd47e15f8711292234f274d4d0421c00473f96274408cef0e6594ed"
+        }
+      },
       "rationale": "The shared menu row selects a direct regional string; the stable import ID is runtime identity.",
       "source_text_sha256": "b3f345a8cfd47e15f8711292234f274d4d0421c00473f96274408cef0e6594ed",
       "target_id": "0x067C",
@@ -595,6 +865,16 @@
       "import_id": "fe8cn.raw.import-0027",
       "provenance": {
         "address": "0x085C4FA4"
+      },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "0d1321c93c2cabe23a5c665045bf1c67bbf58cc04b81c3d84a26eec970d50257"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "00c97b51d06fe4cfb7a8ab70042186abf873bc5814a4b421b0e2755786684bbc"
+        }
       },
       "rationale": "The shared menu row selects a direct regional string; the stable import ID is runtime identity.",
       "source_text_sha256": "00c97b51d06fe4cfb7a8ab70042186abf873bc5814a4b421b0e2755786684bbc",
@@ -620,6 +900,16 @@
       "provenance": {
         "address": "0x085C4FC8"
       },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "4e090641a45bcf986d940d529fac3ea719e1093d84a9e8c9bbe37c5b524f58a3"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "56a9af0466d1695f53e5d8698f01ecb872360a7c22dd5df3ea5bfbf0eed605ee"
+        }
+      },
       "rationale": "The shared menu row selects a direct regional string; the stable import ID is runtime identity.",
       "source_text_sha256": "56a9af0466d1695f53e5d8698f01ecb872360a7c22dd5df3ea5bfbf0eed605ee",
       "target_id": "0x0692",
@@ -643,6 +933,16 @@
       "import_id": "fe8cn.raw.import-0029",
       "provenance": {
         "address": "0x085C4FEC"
+      },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "61c6c18773e1a21da3b900c63569d9ac83588be1fb57825a0ce875a08b311f48"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "35f4bbd0dd0ead8c7b9aa504735911b05e924af73d29b093b1cfd902f2b70da6"
+        }
       },
       "rationale": "The shared menu row selects a direct regional string; the stable import ID is runtime identity.",
       "source_text_sha256": "35f4bbd0dd0ead8c7b9aa504735911b05e924af73d29b093b1cfd902f2b70da6",
@@ -668,6 +968,16 @@
       "provenance": {
         "address": "0x085C5010"
       },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "89edbc0d8efd563eb8ae1bc7aed0526bfef6dffb6519803088adeafb1039de8d"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "2a5d1a1466c896d3bb87c4aad432a4e12a1e8f099cc411e1475d4c6fa0edfa63"
+        }
+      },
       "rationale": "The shared menu row selects a direct regional string; the stable import ID is runtime identity.",
       "source_text_sha256": "2a5d1a1466c896d3bb87c4aad432a4e12a1e8f099cc411e1475d4c6fa0edfa63",
       "target_id": "0x067E",
@@ -692,6 +1002,16 @@
       "provenance": {
         "address": "0x085C5034"
       },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "9179bb54e605b6a376224065f9070c7e4268180e40cb6d91b5342ba4d40f4c6e"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "bfcf25367435ce0f51e054fd7e0b8592a6d0191ccf6a80e4899b546abd0c0fe3"
+        }
+      },
       "rationale": "The shared menu row selects a direct regional string; the stable import ID is runtime identity.",
       "source_text_sha256": "bfcf25367435ce0f51e054fd7e0b8592a6d0191ccf6a80e4899b546abd0c0fe3",
       "target_id": "0x067F",
@@ -713,6 +1033,16 @@
       "provenance": {
         "address": "0x085C5058"
       },
+      "providers": {
+        "ja": {
+          "kind": "expansion_catalog",
+          "text_sha256": "ad1322ca0c1ba96c5e692220ba38474cf474594aa4e539423b1540d92f622a77"
+        },
+        "zh-Hans": {
+          "kind": "expansion_catalog",
+          "text_sha256": "33cd5fd790473a195669c214372a29bfa2f49a2185a81610c47be4f6032fe833"
+        }
+      },
       "rationale": "Summon shares FE8U message ID 0x0693 with a distinct command, so the modern row uses a semantic expansion key.",
       "source_text_sha256": "33cd5fd790473a195669c214372a29bfa2f49a2185a81610c47be4f6032fe833",
       "user_facing": true
@@ -732,6 +1062,16 @@
       "import_id": "fe8cn.raw.import-0033",
       "provenance": {
         "address": "0x085C507C"
+      },
+      "providers": {
+        "ja": {
+          "kind": "expansion_catalog",
+          "text_sha256": "133f03f93432669322a116f2ce2cf7021d276177cc432d9995751915a7d52bd8"
+        },
+        "zh-Hans": {
+          "kind": "expansion_catalog",
+          "text_sha256": "133f03f93432669322a116f2ce2cf7021d276177cc432d9995751915a7d52bd8"
+        }
       },
       "rationale": "Call Monster shares FE8U message ID 0x0693 with Summon, so the modern row uses its own semantic expansion key.",
       "source_text_sha256": "133f03f93432669322a116f2ce2cf7021d276177cc432d9995751915a7d52bd8",
@@ -755,6 +1095,16 @@
       "import_id": "fe8cn.raw.import-0034",
       "provenance": {
         "address": "0x085C50A0"
+      },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "21de665440c98702161438043045a109f539ad8bb83d15ff52bb77e739aad885"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "f04db8b4d81328a749aa7c0de556d7c0c95c11a50a12d3e755bd02bff6d5888a"
+        }
       },
       "rationale": "The shared menu row selects a direct regional string; the stable import ID is runtime identity.",
       "source_text_sha256": "f04db8b4d81328a749aa7c0de556d7c0c95c11a50a12d3e755bd02bff6d5888a",
@@ -780,6 +1130,16 @@
       "provenance": {
         "address": "0x085C50C4"
       },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "5b07e38d133514b225e9d1e03cfff2834f9a27459a69716fff918c6a191b2b95"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "ed82bed5bbcc1ed2ec98d9a02ab65a922fee87896c8a8f8c9267247d6eb98d13"
+        }
+      },
       "rationale": "The shared menu row selects a direct regional string; the stable import ID is runtime identity.",
       "source_text_sha256": "ed82bed5bbcc1ed2ec98d9a02ab65a922fee87896c8a8f8c9267247d6eb98d13",
       "target_id": "0x0680",
@@ -803,6 +1163,16 @@
       "import_id": "fe8cn.raw.import-0036",
       "provenance": {
         "address": "0x085C50E8"
+      },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "684dc647296ed4ae7c6f7c72fe4ed59ffc89cc81a5eab69f34a265bb9d49bee1"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "968f3fce70fda7a30f323e61c0c82e382070d43c18c24fbc84ab1f9704fd64f8"
+        }
       },
       "rationale": "The shared menu row selects a direct regional string; the stable import ID is runtime identity.",
       "source_text_sha256": "968f3fce70fda7a30f323e61c0c82e382070d43c18c24fbc84ab1f9704fd64f8",
@@ -828,6 +1198,16 @@
       "provenance": {
         "address": "0x085C510C"
       },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "69bb0de60c459c1e8265cc0fbaf7de5af3c5e067cad3ce3d13ec15119fe3f998"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "af5999256de9a8a0afd70f2349f352be698fe3235826eb7f6408f379216c2865"
+        }
+      },
       "rationale": "The shared menu row selects a direct regional string; the stable import ID is runtime identity.",
       "source_text_sha256": "af5999256de9a8a0afd70f2349f352be698fe3235826eb7f6408f379216c2865",
       "target_id": "0x0682",
@@ -851,6 +1231,16 @@
       "import_id": "fe8cn.raw.import-0038",
       "provenance": {
         "address": "0x085C5130"
+      },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "f71c1f73d80555345e6a51367ff4057a28714fee825033dd0400bc587933bb2e"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "e7e9eb468e945b3a02c1848a1d3813c1f7654904e2743e40e3478c4af2bc4ad0"
+        }
       },
       "rationale": "The shared menu row selects a direct regional string; the stable import ID is runtime identity.",
       "source_text_sha256": "e7e9eb468e945b3a02c1848a1d3813c1f7654904e2743e40e3478c4af2bc4ad0",
@@ -876,6 +1266,16 @@
       "provenance": {
         "address": "0x085C5154"
       },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "0ebf86140594bf9302280098206ff108fffb6eb413e69bd801f01bc7e147acc5"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "e3df955899729c84d178efca02b6a6ba7389237bee045196e93349d181e17875"
+        }
+      },
       "rationale": "The shared menu row selects a direct regional string; the stable import ID is runtime identity.",
       "source_text_sha256": "e3df955899729c84d178efca02b6a6ba7389237bee045196e93349d181e17875",
       "target_id": "0x0684",
@@ -899,6 +1299,16 @@
       "import_id": "fe8cn.raw.import-0040",
       "provenance": {
         "address": "0x085C5178"
+      },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "ceb3f88edd3d9ce2eceaabcfd4e1eec7a20543095d12510ac3a33a68d8dfb09d"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "7767498f0fdf9c3c8a3a0ae9788ed4ccc4e093ccd7eced6a2f0d4c326a8af515"
+        }
       },
       "rationale": "The shared menu row selects a direct regional string; the stable import ID is runtime identity.",
       "source_text_sha256": "7767498f0fdf9c3c8a3a0ae9788ed4ccc4e093ccd7eced6a2f0d4c326a8af515",
@@ -924,6 +1334,16 @@
       "provenance": {
         "address": "0x085C519C"
       },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "5c1d4875acf5b7a4ae9fa2a98c99acaa26c191817ec070d17e680c44a24ec515"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "bdb82f9ca2995c708780769b332cc4d5424a91ec6b833c48c2f40fdf590ac424"
+        }
+      },
       "rationale": "The shared menu row selects a direct regional string; the stable import ID is runtime identity.",
       "source_text_sha256": "bdb82f9ca2995c708780769b332cc4d5424a91ec6b833c48c2f40fdf590ac424",
       "target_id": "0x0686",
@@ -947,6 +1367,16 @@
       "import_id": "fe8cn.raw.import-0042",
       "provenance": {
         "address": "0x085C51C0"
+      },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "7d4595bf4c13956a1ea025416712d517a122d73a45490d85c6d03bc8707ba700"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "e916121704261adad2a3210cc01cbb80d096f29c7d116fa38130e18129cd047a"
+        }
       },
       "rationale": "The shared menu row selects a direct regional string; the stable import ID is runtime identity.",
       "source_text_sha256": "e916121704261adad2a3210cc01cbb80d096f29c7d116fa38130e18129cd047a",
@@ -972,6 +1402,16 @@
       "provenance": {
         "address": "0x085C51E4"
       },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "f8dfe81412553dc13d2e5e6855df97bb673313a3303754ce40c1653fa44d05ed"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "72f1e70738b0f70db89baeb674c020699a2ba39a6bc68949e1ece5f58659389a"
+        }
+      },
       "rationale": "The shared menu row selects a direct regional string; the stable import ID is runtime identity.",
       "source_text_sha256": "72f1e70738b0f70db89baeb674c020699a2ba39a6bc68949e1ece5f58659389a",
       "target_id": "0x0688",
@@ -995,6 +1435,16 @@
       "import_id": "fe8cn.raw.import-0044",
       "provenance": {
         "address": "0x085C5208"
+      },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "4287d2ad8cba5e046dff12dee35937e9ec716db5aacb8ea2713fecddbd1649ca"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "9729eedbc25a17cdf8c96fb066d19a3faba79f024810e349127466c087602d75"
+        }
       },
       "rationale": "The shared menu row selects a direct regional string; the stable import ID is runtime identity.",
       "source_text_sha256": "9729eedbc25a17cdf8c96fb066d19a3faba79f024810e349127466c087602d75",
@@ -1020,6 +1470,16 @@
       "provenance": {
         "address": "0x085C522C"
       },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "d7c1af989c1f943ca2de2c024d05373529dc3960b2796da7948ebde7d4e59350"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "2b2e01539af2f070e764c807b1a0d263d47ef379b8c1f0b4fcb1e6c27a7c5335"
+        }
+      },
       "rationale": "The shared menu row selects a direct regional string; the stable import ID is runtime identity.",
       "source_text_sha256": "2b2e01539af2f070e764c807b1a0d263d47ef379b8c1f0b4fcb1e6c27a7c5335",
       "target_id": "0x068A",
@@ -1043,6 +1503,16 @@
       "import_id": "fe8cn.raw.import-0046",
       "provenance": {
         "address": "0x085C5250"
+      },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "a28c8651b68c55f6e0efdb9c1b5413a9de231c18b4b6e2064d9999cd03f4b320"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "be4200e7dae7b2c53e0ca54137f65e424f7baa8d385d0089d4242dea41fe0c2f"
+        }
       },
       "rationale": "The shared menu row selects a direct regional string; the stable import ID is runtime identity.",
       "source_text_sha256": "be4200e7dae7b2c53e0ca54137f65e424f7baa8d385d0089d4242dea41fe0c2f",
@@ -1068,6 +1538,16 @@
       "provenance": {
         "address": "0x085C5274"
       },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "250aa649c18f958677bf2fbb110dc554341178d17110f54023824749eaf123f6"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "f8de5a4071c49847286b1a2e6bcb1fe9796204a46947137bb711ac1aa27ee2d2"
+        }
+      },
       "rationale": "The shared menu row selects a direct regional string; the stable import ID is runtime identity.",
       "source_text_sha256": "f8de5a4071c49847286b1a2e6bcb1fe9796204a46947137bb711ac1aa27ee2d2",
       "target_id": "0x068C",
@@ -1091,6 +1571,16 @@
       "import_id": "fe8cn.raw.import-0048",
       "provenance": {
         "address": "0x085C5298"
+      },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "312b216b17a822df58bae673d3c5673f1380d57dd3bae5a346a4b58c82aa9dd8"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "247ba8cf03fdabd7889d45cfe324013bca2ccd2d00df391cab7b5ed4829507e6"
+        }
       },
       "rationale": "The shared menu row selects a direct regional string; the stable import ID is runtime identity.",
       "source_text_sha256": "247ba8cf03fdabd7889d45cfe324013bca2ccd2d00df391cab7b5ed4829507e6",
@@ -1116,6 +1606,16 @@
       "provenance": {
         "address": "0x085C52BC"
       },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "94bb186eedecf80265d87ba4ebdbd5d10064b9fde0f52f1c8d0d130b9dfca91a"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "28e68c7f7838a2ae9da9956424cef9b792003333806c346c2cd01b0a864599ba"
+        }
+      },
       "rationale": "The shared menu row selects a direct regional string; the stable import ID is runtime identity.",
       "source_text_sha256": "28e68c7f7838a2ae9da9956424cef9b792003333806c346c2cd01b0a864599ba",
       "target_id": "0x068E",
@@ -1139,6 +1639,16 @@
       "import_id": "fe8cn.raw.import-0050",
       "provenance": {
         "address": "0x085C52E0"
+      },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "f11ec61dc225f8e1467635775845a48a699e7173124908e18b0c6a95a6aeff0e"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "b548ee94a00137fdad5ec08f7165cbb543e992e137d32dcefb77a6ad2373c9e3"
+        }
       },
       "rationale": "The shared menu row selects a direct regional string; the stable import ID is runtime identity.",
       "source_text_sha256": "b548ee94a00137fdad5ec08f7165cbb543e992e137d32dcefb77a6ad2373c9e3",
@@ -1164,6 +1674,16 @@
       "provenance": {
         "address": "0x085C5304"
       },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "7b675e4bc91498eb7f2590ba3e016f3b20a2b2273fdf16aa7736150750619adc"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "39301f66e323fbc573317a7ac670b9a43951d42be00503653c09508c520f6b4c"
+        }
+      },
       "rationale": "The shared menu row selects a direct regional string; the stable import ID is runtime identity.",
       "source_text_sha256": "39301f66e323fbc573317a7ac670b9a43951d42be00503653c09508c520f6b4c",
       "target_id": "0x0695",
@@ -1187,6 +1707,16 @@
       "import_id": "fe8cn.raw.import-0052",
       "provenance": {
         "address": "0x085C534C"
+      },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "25cf44e1b786e60efabc5fac8903679f992b0440ee57c030e0daa6c64bd328b5"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "7ef81e4b3eb7d91e4018b3f9328c0eefb939f1820aaa27b26e4bcb87767d7a2a"
+        }
       },
       "rationale": "The stable FE8CN raw import order mirrors the named map menu rows.",
       "source_text_sha256": "7ef81e4b3eb7d91e4018b3f9328c0eefb939f1820aaa27b26e4bcb87767d7a2a",
@@ -1212,6 +1742,16 @@
       "provenance": {
         "address": "0x085C5370"
       },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "45ec55856092f01f6dbd4bcce4b62710686953aa9d969d4c2dc82e6f1011752c"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "31fae0f7ff1752ce2a96158faaf750b9b7e38c7fc12b7edb9db6203bcae375ee"
+        }
+      },
       "rationale": "The stable FE8CN raw import order mirrors the named map menu rows.",
       "source_text_sha256": "31fae0f7ff1752ce2a96158faaf750b9b7e38c7fc12b7edb9db6203bcae375ee",
       "target_id": "0x0690",
@@ -1235,6 +1775,16 @@
       "import_id": "fe8cn.raw.import-0054",
       "provenance": {
         "address": "0x085C5394"
+      },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "f171282c1dc7fd06a88de2deefd0b5314b8f2d823b93555452e5e717801927bc"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "10ad1e2f812c0128ebbddddcde95f42ea83a43fefccebe00e2052c5a3a769c9f"
+        }
       },
       "rationale": "The stable FE8CN raw import order mirrors the named map menu rows.",
       "source_text_sha256": "10ad1e2f812c0128ebbddddcde95f42ea83a43fefccebe00e2052c5a3a769c9f",
@@ -1260,6 +1810,16 @@
       "provenance": {
         "address": "0x085C53B8"
       },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "6164f94ba5d0c066288d6bd264720977aabca9aa1836263227513ee5fea14faa"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "28433bf4fd5986857072a5bceb67535d2d45e7bf10b00752d9ef7da7240f1f37"
+        }
+      },
       "rationale": "The stable FE8CN raw import order mirrors the named map menu rows.",
       "source_text_sha256": "28433bf4fd5986857072a5bceb67535d2d45e7bf10b00752d9ef7da7240f1f37",
       "target_id": "0x069E",
@@ -1283,6 +1843,16 @@
       "import_id": "fe8cn.raw.import-0056",
       "provenance": {
         "address": "0x085C53DC"
+      },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "1267ec57a99634b18cc9f23d016bb6f95635225f50d3bacb5d0f6a801ae39d32"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "ed647fcb24adf8cef7db3110212a4bfd2022775ffed13b2126c1e49ae745f2c6"
+        }
       },
       "rationale": "The stable FE8CN raw import order mirrors the named map menu rows.",
       "source_text_sha256": "ed647fcb24adf8cef7db3110212a4bfd2022775ffed13b2126c1e49ae745f2c6",
@@ -1308,6 +1878,16 @@
       "provenance": {
         "address": "0x085C5400"
       },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "3e87c4a896841a1668d7d736e4b92a8e57b8330bbfac77af2aa7cf00971ff80a"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "c1601a88161edb13bf85df5c04b4f9a140bcd977f915ef1fc14e8b4ba5c8e280"
+        }
+      },
       "rationale": "The stable FE8CN raw import order mirrors the named map menu rows.",
       "source_text_sha256": "c1601a88161edb13bf85df5c04b4f9a140bcd977f915ef1fc14e8b4ba5c8e280",
       "target_id": "0x069D",
@@ -1331,6 +1911,16 @@
       "import_id": "fe8cn.raw.import-0058",
       "provenance": {
         "address": "0x085C5424"
+      },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "977db0d8cdd3d81cfce5a40ce73fbd28d4c05f4295807bdaa1d51b93b244655b"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "d5b1fc040fc11922b2c6e847515029afbf07a2a061676038807eb1c4bb148086"
+        }
       },
       "rationale": "The stable FE8CN raw import order mirrors the named map menu rows.",
       "source_text_sha256": "d5b1fc040fc11922b2c6e847515029afbf07a2a061676038807eb1c4bb148086",
@@ -1356,6 +1946,16 @@
       "provenance": {
         "address": "0x085C5448"
       },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "79fd69039fc16ab50b41fcb428f9a2421bbaa0f075e0a4e390b2a0fcc9e7eb78"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "10ed603d1ad2deb9def81a60f9430943e6393e1c791f304a78962ba8069201ca"
+        }
+      },
       "rationale": "The stable FE8CN raw import order mirrors the named map menu rows.",
       "source_text_sha256": "10ed603d1ad2deb9def81a60f9430943e6393e1c791f304a78962ba8069201ca",
       "target_id": "0x06A0",
@@ -1375,6 +1975,16 @@
       "import_id": "fe8cn.raw.import-0060",
       "provenance": {
         "address": "0x08BAB914"
+      },
+      "providers": {
+        "ja": {
+          "kind": "raw_literal",
+          "text_sha256": "807b83be23e35724d6dca082d981879e464e1a4e4bca29390c8e2ac5bd4efe17"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "3490bfc74264cd9803ef64604baf6584eaa9a89f495c990c83ab4b500e141de1"
+        }
       },
       "rationale": "The promotion confirmation row already supports the stable FE8U Change message ID.",
       "source_text_sha256": "3490bfc74264cd9803ef64604baf6584eaa9a89f495c990c83ab4b500e141de1",
@@ -1396,6 +2006,16 @@
       "provenance": {
         "address": "0x08BAB938"
       },
+      "providers": {
+        "ja": {
+          "kind": "raw_literal",
+          "text_sha256": "74d124015c4278cd253c38781351c271e5f9bceb34c5f915b384cf387207722a"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "cdad92f16686b8abf50cebd85f61ea261fe29eb97921008eadb3112ab118da67"
+        }
+      },
       "rationale": "The promotion confirmation row already supports the stable FE8U Cancel message ID.",
       "source_text_sha256": "cdad92f16686b8abf50cebd85f61ea261fe29eb97921008eadb3112ab118da67",
       "target_id": "0x0024",
@@ -1405,19 +2025,30 @@
       "call_sites": [
         {
           "anchors": [
-            "\"　第１兵種\"",
+            "PROMO_OPTION_1_NAME",
             "ClassChgMenuItem_OnTextDraw"
           ],
           "path": "src/classchg-menuselect.c"
         }
       ],
-      "classification": "non_user_facing_exclusion",
+      "classification": "expansion_message",
       "decision_origin": "deferred-surface-audit",
+      "expansion_key": "raw_surface.class_change.option_1",
       "import_id": "fe8cn.raw.import-0062",
       "provenance": {
         "address": "0x08BAB9A4"
       },
-      "rationale": "The initializer name is never drawn: the row-specific onDraw callback replaces it with the locale-aware promoted class name from GetStringFromIndex.",
+      "providers": {
+        "ja": {
+          "kind": "expansion_catalog",
+          "text_sha256": "949dff3ccc97d4f69a53682b419b3fc08805cd22aa7bbf4d67a79da350d1d6da"
+        },
+        "zh-Hans": {
+          "kind": "expansion_catalog",
+          "text_sha256": "c7b1ec47c7be8b638328c0aa9228b256a5ada458f0f3dd8f2bf99c966be2a501"
+        }
+      },
+      "rationale": "The raw initializer has a complete semantic expansion provider. Modern builds use an empty initializer because the row-specific onDraw callback replaces it with the locale-aware promoted class name; legacy keeps the original Japanese bytes.",
       "source_text_sha256": "c7b1ec47c7be8b638328c0aa9228b256a5ada458f0f3dd8f2bf99c966be2a501",
       "user_facing": false
     },
@@ -1425,19 +2056,30 @@
       "call_sites": [
         {
           "anchors": [
-            "\"　第２兵種\"",
+            "PROMO_OPTION_2_NAME",
             "ClassChgMenuItem_OnTextDraw"
           ],
           "path": "src/classchg-menuselect.c"
         }
       ],
-      "classification": "non_user_facing_exclusion",
+      "classification": "expansion_message",
       "decision_origin": "deferred-surface-audit",
+      "expansion_key": "raw_surface.class_change.option_2",
       "import_id": "fe8cn.raw.import-0063",
       "provenance": {
         "address": "0x08BAB9C8"
       },
-      "rationale": "The initializer name is never drawn: the row-specific onDraw callback replaces it with the locale-aware promoted class name from GetStringFromIndex.",
+      "providers": {
+        "ja": {
+          "kind": "expansion_catalog",
+          "text_sha256": "3f145d8233d207c886b449e9de7fba0ae3983ac2b6e541c434593aca18193110"
+        },
+        "zh-Hans": {
+          "kind": "expansion_catalog",
+          "text_sha256": "cf0a1ca79e59ab7a251d812e08760b7f1a5d752e3fa4a802082f8070f9247517"
+        }
+      },
+      "rationale": "The raw initializer has a complete semantic expansion provider. Modern builds use an empty initializer because the row-specific onDraw callback replaces it with the locale-aware promoted class name; legacy keeps the original Japanese bytes.",
       "source_text_sha256": "cf0a1ca79e59ab7a251d812e08760b7f1a5d752e3fa4a802082f8070f9247517",
       "user_facing": false
     },
@@ -1445,19 +2087,30 @@
       "call_sites": [
         {
           "anchors": [
-            "\"　第３兵種\"",
+            "PROMO_OPTION_3_NAME",
             "ClassChgMenuItem_OnTextDraw"
           ],
           "path": "src/classchg-menuselect.c"
         }
       ],
-      "classification": "non_user_facing_exclusion",
+      "classification": "expansion_message",
       "decision_origin": "deferred-surface-audit",
+      "expansion_key": "raw_surface.class_change.option_3",
       "import_id": "fe8cn.raw.import-0064",
       "provenance": {
         "address": "0x08BAB9EC"
       },
-      "rationale": "The initializer name is never drawn: the row-specific onDraw callback replaces it with the locale-aware promoted class name from GetStringFromIndex.",
+      "providers": {
+        "ja": {
+          "kind": "expansion_catalog",
+          "text_sha256": "23a02161c924576012ac8fb00893b80653073de8462e1741ff3b1a964b66efbd"
+        },
+        "zh-Hans": {
+          "kind": "expansion_catalog",
+          "text_sha256": "62ec85ce075be747be754743625b7c7ced052b7beaeda1897b15232e30331252"
+        }
+      },
+      "rationale": "The raw initializer has a complete semantic expansion provider. Modern builds use an empty initializer because the row-specific onDraw callback replaces it with the locale-aware promoted class name; legacy keeps the original Japanese bytes.",
       "source_text_sha256": "62ec85ce075be747be754743625b7c7ced052b7beaeda1897b15232e30331252",
       "user_facing": false
     },
@@ -1479,6 +2132,16 @@
       "import_id": "fe8cn.raw.import-0065",
       "provenance": {
         "address": "0x08AC1A0C"
+      },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "25cf44e1b786e60efabc5fac8903679f992b0440ee57c030e0daa6c64bd328b5"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "7ef81e4b3eb7d91e4018b3f9328c0eefb939f1820aaa27b26e4bcb87767d7a2a"
+        }
       },
       "rationale": "The shared world-map menu row selects the direct regional string.",
       "source_text_sha256": "7ef81e4b3eb7d91e4018b3f9328c0eefb939f1820aaa27b26e4bcb87767d7a2a",
@@ -1504,6 +2167,16 @@
       "provenance": {
         "address": "0x08AC1A30"
       },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "45ec55856092f01f6dbd4bcce4b62710686953aa9d969d4c2dc82e6f1011752c"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "31fae0f7ff1752ce2a96158faaf750b9b7e38c7fc12b7edb9db6203bcae375ee"
+        }
+      },
       "rationale": "The shared world-map menu row selects the direct regional string.",
       "source_text_sha256": "31fae0f7ff1752ce2a96158faaf750b9b7e38c7fc12b7edb9db6203bcae375ee",
       "target_id": "0x0646",
@@ -1527,6 +2200,16 @@
       "import_id": "fe8cn.raw.import-0067",
       "provenance": {
         "address": "0x08AC1A54"
+      },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "f171282c1dc7fd06a88de2deefd0b5314b8f2d823b93555452e5e717801927bc"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "10ad1e2f812c0128ebbddddcde95f42ea83a43fefccebe00e2052c5a3a769c9f"
+        }
       },
       "rationale": "The shared world-map menu row selects the direct regional string.",
       "source_text_sha256": "10ad1e2f812c0128ebbddddcde95f42ea83a43fefccebe00e2052c5a3a769c9f",
@@ -1552,6 +2235,16 @@
       "provenance": {
         "address": "0x08AC1A78"
       },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "1267ec57a99634b18cc9f23d016bb6f95635225f50d3bacb5d0f6a801ae39d32"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "ed647fcb24adf8cef7db3110212a4bfd2022775ffed13b2126c1e49ae745f2c6"
+        }
+      },
       "rationale": "The shared world-map menu row selects the direct regional string.",
       "source_text_sha256": "ed647fcb24adf8cef7db3110212a4bfd2022775ffed13b2126c1e49ae745f2c6",
       "target_id": "0x0648",
@@ -1575,6 +2268,16 @@
       "import_id": "fe8cn.raw.import-0069",
       "provenance": {
         "address": "0x08AC1A9C"
+      },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "0c24d4ba15032c2f914dfd1c25cab778f4a5a0a9bde863badb6c5ec0e551fa21"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "62420208894877bbb872eb1f7806ecbb6eadd0d53263f0933ed217536490b1b4"
+        }
       },
       "rationale": "The shared world-map menu row selects the direct regional string.",
       "source_text_sha256": "62420208894877bbb872eb1f7806ecbb6eadd0d53263f0933ed217536490b1b4",
@@ -1600,6 +2303,16 @@
       "provenance": {
         "address": "0x08AC1B0C"
       },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "da6c5377657e654519176cf30d2e1f98e32e89ed72912a71a70177a1c822ca81"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "8173af84b4d283337b5994e54a65c3580765f4c311649f4cde2482d0d2d8729c"
+        }
+      },
       "rationale": "The shared world-map menu row selects the direct regional string.",
       "source_text_sha256": "8173af84b4d283337b5994e54a65c3580765f4c311649f4cde2482d0d2d8729c",
       "target_id": "0x066E",
@@ -1623,6 +2336,16 @@
       "import_id": "fe8cn.raw.import-0071",
       "provenance": {
         "address": "0x08AC1B30"
+      },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "e0969b4e737ab7e0fbaca05662a369ae2298af993c2e72a433414d9ddd7e15a2"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "41a8761eb347be881e9ab12dc9271beb566871df3e51c2d0eecde684e94ea60d"
+        }
       },
       "rationale": "The shared world-map menu row selects the direct regional string.",
       "source_text_sha256": "41a8761eb347be881e9ab12dc9271beb566871df3e51c2d0eecde684e94ea60d",
@@ -1648,6 +2371,16 @@
       "provenance": {
         "address": "0x08AC1B54"
       },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "435a87971cfaa709a2af850d9e2e0cbcfe2505bca4530841416451255b3eaff1"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "c33429cd4dbea028a61c9d974f8b238ed253eefe1f635b4e369fd8ce93f9fa0e"
+        }
+      },
       "rationale": "The shared world-map menu row selects the direct regional string.",
       "source_text_sha256": "c33429cd4dbea028a61c9d974f8b238ed253eefe1f635b4e369fd8ce93f9fa0e",
       "target_id": "0x0670",
@@ -1672,6 +2405,16 @@
       "provenance": {
         "address": "0x08AC1B78"
       },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "d410dc3d55bf9615eadc7cfb23f54cbe4bda178e088f4b3499489cffb28ab0ee"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "e1108744ffd178d0ef407571a0081032ecb805f0adaa62421eb984a30b4db64a"
+        }
+      },
       "rationale": "The shared world-map menu row selects the direct regional string.",
       "source_text_sha256": "e1108744ffd178d0ef407571a0081032ecb805f0adaa62421eb984a30b4db64a",
       "target_id": "0x0671",
@@ -1692,6 +2435,16 @@
       "import_id": "fe8cn.raw.import-0074",
       "provenance": {
         "address": "0x088617C8"
+      },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "e3f497312a062c35e0ec931a3d248601150c5023c19aa0826ae142e1ca5dbc58"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "f3f3079e2ba8b15c942c7f54d01977d94ab8320118a62ace3a88d8c4eaf76bf8"
+        }
       },
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "f3f3079e2ba8b15c942c7f54d01977d94ab8320118a62ace3a88d8c4eaf76bf8",
@@ -1714,6 +2467,16 @@
       "provenance": {
         "address": "0x088617CC"
       },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "543401b7ea820641ec80b4196c0ba1d70151ecac5f2ba0af0865187f537a114d"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "543401b7ea820641ec80b4196c0ba1d70151ecac5f2ba0af0865187f537a114d"
+        }
+      },
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "543401b7ea820641ec80b4196c0ba1d70151ecac5f2ba0af0865187f537a114d",
       "target_id": "0x01C5",
@@ -1734,6 +2497,16 @@
       "import_id": "fe8cn.raw.import-0076",
       "provenance": {
         "address": "0x088617D0"
+      },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "00a9d5bd97c269b44f954c91d6a2f8afd4bcd35fa8b503c4af6fd1212f619c82"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "a44c7ba211320a43e426a37960fda386d1034270704cf38a6b1bced7feb7388a"
+        }
       },
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "a44c7ba211320a43e426a37960fda386d1034270704cf38a6b1bced7feb7388a",
@@ -1756,6 +2529,16 @@
       "provenance": {
         "address": "0x088617D4"
       },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "32bd9701333184d5d730aebda18ac04e6264b8272a516758197bfd4b37e609cc"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "71580f54ce84a286d05e0958ce821d8cf70f9a9b057711ffca9b0c68d48c0b8f"
+        }
+      },
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "71580f54ce84a286d05e0958ce821d8cf70f9a9b057711ffca9b0c68d48c0b8f",
       "target_id": "0x01C7",
@@ -1776,6 +2559,16 @@
       "import_id": "fe8cn.raw.import-0078",
       "provenance": {
         "address": "0x088617D8"
+      },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "e65f32c3839982b0b7c5975b62f80ce87f3cd9dfa3c8114216dd8fe16f5c55e4"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "6744b4c6a9aa00381ffea2b3d229778b0724b073bd46e13f4e73868667eeb44f"
+        }
       },
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "6744b4c6a9aa00381ffea2b3d229778b0724b073bd46e13f4e73868667eeb44f",
@@ -1798,6 +2591,16 @@
       "provenance": {
         "address": "0x088617DC"
       },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "e17916291ffcc3d4b25d47f2405183547c92b549e0960cbb02e4556749801df8"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "e17916291ffcc3d4b25d47f2405183547c92b549e0960cbb02e4556749801df8"
+        }
+      },
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "e17916291ffcc3d4b25d47f2405183547c92b549e0960cbb02e4556749801df8",
       "target_id": "0x01C9",
@@ -1818,6 +2621,16 @@
       "import_id": "fe8cn.raw.import-0080",
       "provenance": {
         "address": "0x088617E0"
+      },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "56c1bc365a2ea472edf4be4a3eb488130e6f9295a3815e71c9276acc708306b2"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "f9f6d5bc55ece896e2ce0e641a030a8dfb2c877096ba3b64f5fbceffccc25938"
+        }
       },
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "f9f6d5bc55ece896e2ce0e641a030a8dfb2c877096ba3b64f5fbceffccc25938",
@@ -1840,6 +2653,16 @@
       "provenance": {
         "address": "0x088617E4"
       },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "0dc63cf0f51ac4f6006f7bb70d44e2c710a818d58ae5dc61369586464e82fed2"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "b1cecb67c5d1478ace0ab49cc479ef7e054ba859b2b46a1474c037806a21591f"
+        }
+      },
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "b1cecb67c5d1478ace0ab49cc479ef7e054ba859b2b46a1474c037806a21591f",
       "target_id": "0x01CB",
@@ -1860,6 +2683,16 @@
       "import_id": "fe8cn.raw.import-0082",
       "provenance": {
         "address": "0x088617E8"
+      },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "4b62965075afdf1b32743fd08a3fe494c98e3c59022178d9dd5720e03005a0ec"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "624efbde770ca19434310ff51ee511e71f9f632de0ca8a05578604bed7a1e558"
+        }
       },
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "624efbde770ca19434310ff51ee511e71f9f632de0ca8a05578604bed7a1e558",
@@ -1882,6 +2715,16 @@
       "provenance": {
         "address": "0x088617EC"
       },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "dd9c21c507bab764e27a46eeb910ed1d53ebbb0b661f9661f4a8527c00aa91d5"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "302b64950910122710191dc494be1a22e202a518c097ea8ca57234cf34919f3e"
+        }
+      },
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "302b64950910122710191dc494be1a22e202a518c097ea8ca57234cf34919f3e",
       "target_id": "0x01CD",
@@ -1902,6 +2745,16 @@
       "import_id": "fe8cn.raw.import-0084",
       "provenance": {
         "address": "0x088617F0"
+      },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "01a40c2404871bdfacdf4586f135f2008d7ad6cda5b8e44883da1e0ff2b8ddd8"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "5ec7f9ec424e2146c142ace6b5a85cb18b21bf10ff089fe713d38ba37d125c9e"
+        }
       },
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "5ec7f9ec424e2146c142ace6b5a85cb18b21bf10ff089fe713d38ba37d125c9e",
@@ -1924,6 +2777,16 @@
       "provenance": {
         "address": "0x088617F4"
       },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "2532f97a51c4b7137711c273a3b0be7f39baf1b4c23eb321e8420e05ba61bc94"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "c85e73a392baea72b7f0bb480617cb21b82212ec4f085b17c6b0fb20235b657e"
+        }
+      },
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "c85e73a392baea72b7f0bb480617cb21b82212ec4f085b17c6b0fb20235b657e",
       "target_id": "0x01CF",
@@ -1944,6 +2807,16 @@
       "import_id": "fe8cn.raw.import-0086",
       "provenance": {
         "address": "0x088617F8"
+      },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "5f8e490558897efa493cfbd5d78dfa22de2d997068ef7ab64282edef82d67351"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "3bfbf21e2f002bc2dcafb5e9df5fcbb1f16ea95587716d7794fa0e5c8547bbc8"
+        }
       },
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "3bfbf21e2f002bc2dcafb5e9df5fcbb1f16ea95587716d7794fa0e5c8547bbc8",
@@ -1966,6 +2839,16 @@
       "provenance": {
         "address": "0x088617FC"
       },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "b53db624456ae585400a912a34286d2e377cf1ccd2d310559b831a20c39a9715"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "408586032d138b7941b0c8463d483be28f6de6e3bd977f04cfbf4a07f1bc913d"
+        }
+      },
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "408586032d138b7941b0c8463d483be28f6de6e3bd977f04cfbf4a07f1bc913d",
       "target_id": "0x01D1",
@@ -1986,6 +2869,16 @@
       "import_id": "fe8cn.raw.import-0088",
       "provenance": {
         "address": "0x08861800"
+      },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "008e381b3a7927cadeeb7f50bff23545429a0cc4674809b2d956bb5bb3dfbe46"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "7be8900dbfbfa0864f894aef5865b76c66915f6161ca7eebf436390bc5d746b0"
+        }
       },
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "7be8900dbfbfa0864f894aef5865b76c66915f6161ca7eebf436390bc5d746b0",
@@ -2008,6 +2901,16 @@
       "provenance": {
         "address": "0x08861804"
       },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "901bd66136d24269cd0972fe77986d1ed25c649f7d336bb4c3c12497891e828e"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "4fbf406572d59250ac061331d61381e06be07bd5577aa8da4cc8616813d7911e"
+        }
+      },
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "4fbf406572d59250ac061331d61381e06be07bd5577aa8da4cc8616813d7911e",
       "target_id": "0x01D3",
@@ -2028,6 +2931,16 @@
       "import_id": "fe8cn.raw.import-0090",
       "provenance": {
         "address": "0x08861808"
+      },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "b5aae693581d12c80a2a190583804d097a4dc9eb092b7f8fa06262538285f54b"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "0d7d2cdf672f34674055a7e136f4b8216891ccf500d84cfbe80c73158ed5d6de"
+        }
       },
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "0d7d2cdf672f34674055a7e136f4b8216891ccf500d84cfbe80c73158ed5d6de",
@@ -2050,6 +2963,16 @@
       "provenance": {
         "address": "0x0886180C"
       },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "4862540a299762b3f090257ebb6976ec1d05ca460de0a1a195ee8569061ad6c0"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "4862540a299762b3f090257ebb6976ec1d05ca460de0a1a195ee8569061ad6c0"
+        }
+      },
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "4862540a299762b3f090257ebb6976ec1d05ca460de0a1a195ee8569061ad6c0",
       "target_id": "0x01D5",
@@ -2070,6 +2993,16 @@
       "import_id": "fe8cn.raw.import-0092",
       "provenance": {
         "address": "0x08861810"
+      },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "817f5dd418155b8c8720588db70d2587f055cfb840b319f869ac852eb976571c"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "323087e57195f7cf5f6916ebcbfcaf64a2c019c7d01cbf940dca2e3934026b5c"
+        }
       },
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "323087e57195f7cf5f6916ebcbfcaf64a2c019c7d01cbf940dca2e3934026b5c",
@@ -2092,6 +3025,16 @@
       "provenance": {
         "address": "0x08861814"
       },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "c2995d6958268e93f5a9c7209716568a49634485a970edb4659deda70f014f5a"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "a1e218ec8e11995a65f11a42558a9c7001f25e1a93d0cf9ba2f9ed58eaf272b2"
+        }
+      },
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "a1e218ec8e11995a65f11a42558a9c7001f25e1a93d0cf9ba2f9ed58eaf272b2",
       "target_id": "0x01D7",
@@ -2112,6 +3055,16 @@
       "import_id": "fe8cn.raw.import-0094",
       "provenance": {
         "address": "0x08861818"
+      },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "124fe593ca9f6eca079a3694ec1f501c967f1e2b5b955624c3e53d809a5c6ec6"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "4139117d7d18c45dda8174a8c18137f263ac6a06695aa5a8c5c52e4639835a0c"
+        }
       },
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "4139117d7d18c45dda8174a8c18137f263ac6a06695aa5a8c5c52e4639835a0c",
@@ -2134,6 +3087,16 @@
       "provenance": {
         "address": "0x0886181C"
       },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "0ac6d5192ec21d34f7d6e0b0246b06d5cbaa2600cfcbd48f2363d1e3d22e76a2"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "0ac6d5192ec21d34f7d6e0b0246b06d5cbaa2600cfcbd48f2363d1e3d22e76a2"
+        }
+      },
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "0ac6d5192ec21d34f7d6e0b0246b06d5cbaa2600cfcbd48f2363d1e3d22e76a2",
       "target_id": "0x01D9",
@@ -2154,6 +3117,16 @@
       "import_id": "fe8cn.raw.import-0096",
       "provenance": {
         "address": "0x08861820"
+      },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "3e98b56da0099e71fa0d09a3f7dc4c3269f97019409545bcd43fd7b5cfcbdcd5"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "3e98b56da0099e71fa0d09a3f7dc4c3269f97019409545bcd43fd7b5cfcbdcd5"
+        }
       },
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "3e98b56da0099e71fa0d09a3f7dc4c3269f97019409545bcd43fd7b5cfcbdcd5",
@@ -2176,6 +3149,16 @@
       "provenance": {
         "address": "0x08861824"
       },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "5cfd73078e3aaf3fc93296d4a4469864d8efebfdbaabf525af3e9b1b6940264e"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "59a6a585ba18f342a13e9c6af01760feb60d31fd53510850d8a8dd59389490ab"
+        }
+      },
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "59a6a585ba18f342a13e9c6af01760feb60d31fd53510850d8a8dd59389490ab",
       "target_id": "0x01DB",
@@ -2196,6 +3179,16 @@
       "import_id": "fe8cn.raw.import-0098",
       "provenance": {
         "address": "0x08861828"
+      },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "5cfd73078e3aaf3fc93296d4a4469864d8efebfdbaabf525af3e9b1b6940264e"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "59a6a585ba18f342a13e9c6af01760feb60d31fd53510850d8a8dd59389490ab"
+        }
       },
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "59a6a585ba18f342a13e9c6af01760feb60d31fd53510850d8a8dd59389490ab",
@@ -2218,6 +3211,16 @@
       "provenance": {
         "address": "0x0886182C"
       },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "064518bada5b33c7ba1eceb6bb3e071e1501351e6a7bc00249f62e25f7d28066"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "dcfce2730d69df0be22cd2f9020ebd7b8c3e75c513c1d6d3e1c7d72d035bea4f"
+        }
+      },
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "dcfce2730d69df0be22cd2f9020ebd7b8c3e75c513c1d6d3e1c7d72d035bea4f",
       "target_id": "0x01DD",
@@ -2238,6 +3241,16 @@
       "import_id": "fe8cn.raw.import-0100",
       "provenance": {
         "address": "0x08861830"
+      },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "b5f0f70d8d1a3e828112f48ff43cee311f122bd9f2e0f21acdc04829baa569c2"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "9dd5c564f81cb380ae18874625552af7a214e0c974eb9dad1bb568f2ed28c0c0"
+        }
       },
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "9dd5c564f81cb380ae18874625552af7a214e0c974eb9dad1bb568f2ed28c0c0",
@@ -2260,6 +3273,16 @@
       "provenance": {
         "address": "0x08861834"
       },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "b5f0f70d8d1a3e828112f48ff43cee311f122bd9f2e0f21acdc04829baa569c2"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "9dd5c564f81cb380ae18874625552af7a214e0c974eb9dad1bb568f2ed28c0c0"
+        }
+      },
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "9dd5c564f81cb380ae18874625552af7a214e0c974eb9dad1bb568f2ed28c0c0",
       "target_id": "0x01DF",
@@ -2280,6 +3303,16 @@
       "import_id": "fe8cn.raw.import-0102",
       "provenance": {
         "address": "0x08861838"
+      },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "9e9172835c8f37f5845ac3f18bacfa0a654f4f811434a8f279385a1502b3456a"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "2a805a977a7660d646960d62af465802b2c9785e423e4c2da2d31a15eed905fe"
+        }
       },
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "2a805a977a7660d646960d62af465802b2c9785e423e4c2da2d31a15eed905fe",
@@ -2302,6 +3335,16 @@
       "provenance": {
         "address": "0x0886183C"
       },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "f7324c14e23afa4711a65c27de5438daef52870da81b7aa02fdf47647dc0234a"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "59e7813d7e6f4e99b7787693bd121380b61f19c2b856d00c2e4da334c234c4b1"
+        }
+      },
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "59e7813d7e6f4e99b7787693bd121380b61f19c2b856d00c2e4da334c234c4b1",
       "target_id": "0x01E1",
@@ -2322,6 +3365,16 @@
       "import_id": "fe8cn.raw.import-0104",
       "provenance": {
         "address": "0x08861840"
+      },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "b2de419d32131a3c78611604c190068fc6366d9c294014f31f339ae3cd3f80a2"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "a407325e0081cb7db7869427e4faf30e0fc8dcf53c03c7c9f9b92e118ec05a6d"
+        }
       },
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "a407325e0081cb7db7869427e4faf30e0fc8dcf53c03c7c9f9b92e118ec05a6d",
@@ -2344,6 +3397,16 @@
       "provenance": {
         "address": "0x08861844"
       },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "28172dc5ad5bfaa88a4b9aca48c890e820d88ae36a7fbe4b0f2b0384a2c67585"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "ce76ebd34b7297b4670e8600b0b3ba3f51bc99d7281b35ac664ad2020055fccb"
+        }
+      },
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "ce76ebd34b7297b4670e8600b0b3ba3f51bc99d7281b35ac664ad2020055fccb",
       "target_id": "0x01E3",
@@ -2364,6 +3427,16 @@
       "import_id": "fe8cn.raw.import-0106",
       "provenance": {
         "address": "0x08861848"
+      },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "d291455f2638f932c6909b5a953b8c636c141b1fdebdd800dce239b723bc77e4"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "d291455f2638f932c6909b5a953b8c636c141b1fdebdd800dce239b723bc77e4"
+        }
       },
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "d291455f2638f932c6909b5a953b8c636c141b1fdebdd800dce239b723bc77e4",
@@ -2386,6 +3459,16 @@
       "provenance": {
         "address": "0x0886184C"
       },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "63a9d95616f935907ea0b1f67e2dd85abf7fc4aefdbe53d9d15c3bb045497cf6"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "63a9d95616f935907ea0b1f67e2dd85abf7fc4aefdbe53d9d15c3bb045497cf6"
+        }
+      },
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "63a9d95616f935907ea0b1f67e2dd85abf7fc4aefdbe53d9d15c3bb045497cf6",
       "target_id": "0x01E5",
@@ -2406,6 +3489,16 @@
       "import_id": "fe8cn.raw.import-0108",
       "provenance": {
         "address": "0x08861850"
+      },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "da7e0aaaa86bf0d03a1a72ccd90592f44b71129febcd7a38b081afebabe52819"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "3c9731b77a4af5aa190ed28e620d1a4fc5e18a3ce210c478f0644be01abb7f2b"
+        }
       },
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "3c9731b77a4af5aa190ed28e620d1a4fc5e18a3ce210c478f0644be01abb7f2b",
@@ -2428,6 +3521,16 @@
       "provenance": {
         "address": "0x08861854"
       },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "7a4c7a7d8dc84f1880ea79e59397c9b0de4c0f8cb8b0aceb99ccadc547f0d608"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "577c189ba2c3960e854c3ceaf0be885d85988ca6cc8f7eedf29e6ee31b5bf5de"
+        }
+      },
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "577c189ba2c3960e854c3ceaf0be885d85988ca6cc8f7eedf29e6ee31b5bf5de",
       "target_id": "0x01E7",
@@ -2448,6 +3551,16 @@
       "import_id": "fe8cn.raw.import-0110",
       "provenance": {
         "address": "0x08861858"
+      },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "9f008ad32e93355c0a01342f598c08d91d8d3c45888887a8b33d17a7f175a288"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "9f008ad32e93355c0a01342f598c08d91d8d3c45888887a8b33d17a7f175a288"
+        }
       },
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "9f008ad32e93355c0a01342f598c08d91d8d3c45888887a8b33d17a7f175a288",
@@ -2470,6 +3583,16 @@
       "provenance": {
         "address": "0x0886185C"
       },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "a7b2d228f6a90d5b24e31b315d9c61ec0f4e561a4d879f630f28ec31142735e2"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "dccb6844df3963597badedc2431d4a5feb8570234a2a1925011a130c3cba827f"
+        }
+      },
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "dccb6844df3963597badedc2431d4a5feb8570234a2a1925011a130c3cba827f",
       "target_id": "0x01E9",
@@ -2490,6 +3613,16 @@
       "import_id": "fe8cn.raw.import-0112",
       "provenance": {
         "address": "0x08861860"
+      },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "cd32aa235f4d375886bf9da57b1351702dbfb6053f83099e6facc2a1c9e4a278"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "32f6911fabc9e5759d97e8f38c52dc1ae7b76a46fecb91489a793332b88218f9"
+        }
       },
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "32f6911fabc9e5759d97e8f38c52dc1ae7b76a46fecb91489a793332b88218f9",
@@ -2512,6 +3645,16 @@
       "provenance": {
         "address": "0x08861864"
       },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "4c6a1ff1321cb7e5745193e5044130339883a1fa10337cb65e90782ee76510c1"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "e86ef966639cc8854800a9b26f1a1e74e5465a5ac4860ff31940630cf60a9d80"
+        }
+      },
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "e86ef966639cc8854800a9b26f1a1e74e5465a5ac4860ff31940630cf60a9d80",
       "target_id": "0x01EB",
@@ -2532,6 +3675,16 @@
       "import_id": "fe8cn.raw.import-0114",
       "provenance": {
         "address": "0x08861868"
+      },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "81df0d9ce445cd527635589a112edf1218d496d057925552101b484a1e8e4d51"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "7ba00927dde9122f96860ec7221e00a828ad0c5bdcbf991373d7e0a9aa4a9279"
+        }
       },
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "7ba00927dde9122f96860ec7221e00a828ad0c5bdcbf991373d7e0a9aa4a9279",
@@ -2554,6 +3707,16 @@
       "provenance": {
         "address": "0x0886186C"
       },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "e2f499a91591dd38b9309c79267a97372bd22d82191d9d9f0cab13255a8eaff7"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "678fcbceb6ba37cfae7ff162d6a7f7ebe81bc32247be12b1446d6e6d2e85b091"
+        }
+      },
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "678fcbceb6ba37cfae7ff162d6a7f7ebe81bc32247be12b1446d6e6d2e85b091",
       "target_id": "0x01ED",
@@ -2574,6 +3737,16 @@
       "import_id": "fe8cn.raw.import-0116",
       "provenance": {
         "address": "0x08861870"
+      },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "c0f0dcdb799a687e8ff4c870005370d5835d01f196888b8aa0d2435d8c52d471"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "c0f0dcdb799a687e8ff4c870005370d5835d01f196888b8aa0d2435d8c52d471"
+        }
       },
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "c0f0dcdb799a687e8ff4c870005370d5835d01f196888b8aa0d2435d8c52d471",
@@ -2596,6 +3769,16 @@
       "provenance": {
         "address": "0x08861874"
       },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "e756c77c88fe19b6c8cf18337e1a7702d740af3359b661168e169b108bcf6d17"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "e568d35730b440f52e06a8e507e8a9a83b866632d35fb28be74ed00768e9de96"
+        }
+      },
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "e568d35730b440f52e06a8e507e8a9a83b866632d35fb28be74ed00768e9de96",
       "target_id": "0x01EF",
@@ -2616,6 +3799,16 @@
       "import_id": "fe8cn.raw.import-0118",
       "provenance": {
         "address": "0x08861878"
+      },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "e3f497312a062c35e0ec931a3d248601150c5023c19aa0826ae142e1ca5dbc58"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "f3f3079e2ba8b15c942c7f54d01977d94ab8320118a62ace3a88d8c4eaf76bf8"
+        }
       },
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "f3f3079e2ba8b15c942c7f54d01977d94ab8320118a62ace3a88d8c4eaf76bf8",
@@ -2638,6 +3831,16 @@
       "provenance": {
         "address": "0x0886187C"
       },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "44ec5ddfce336444ce0f950629b3780de9306d058d15076c9ba4f0cf53e81613"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "66a03a3ae3a13db927b9c50e3774bfab4de9af8d61096bc5663c48bb2e014b5b"
+        }
+      },
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "66a03a3ae3a13db927b9c50e3774bfab4de9af8d61096bc5663c48bb2e014b5b",
       "target_id": "0x01F1",
@@ -2658,6 +3861,16 @@
       "import_id": "fe8cn.raw.import-0120",
       "provenance": {
         "address": "0x08861880"
+      },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "e3f497312a062c35e0ec931a3d248601150c5023c19aa0826ae142e1ca5dbc58"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "f3f3079e2ba8b15c942c7f54d01977d94ab8320118a62ace3a88d8c4eaf76bf8"
+        }
       },
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "f3f3079e2ba8b15c942c7f54d01977d94ab8320118a62ace3a88d8c4eaf76bf8",
@@ -2680,6 +3893,16 @@
       "provenance": {
         "address": "0x08861884"
       },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "1fcb062c0d6625d68f60df00fa770bbe629e78652152fcf1d163089f676445f6"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "b7c9a4940d9bfa8c20c6400f3fc2f1c36b8370e78818486fe35b9afec8c1b6e1"
+        }
+      },
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "b7c9a4940d9bfa8c20c6400f3fc2f1c36b8370e78818486fe35b9afec8c1b6e1",
       "target_id": "0x01F3",
@@ -2700,6 +3923,16 @@
       "import_id": "fe8cn.raw.import-0122",
       "provenance": {
         "address": "0x08861888"
+      },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "564eccc51ca41d97900e75474b6203531090b76c592c5cb5b5e85041808ca054"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "09f9691733bad7b6f2e49ca375d4783fb153ef8d0c29248cbdb9eadb9621a81d"
+        }
       },
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "09f9691733bad7b6f2e49ca375d4783fb153ef8d0c29248cbdb9eadb9621a81d",
@@ -2722,6 +3955,16 @@
       "provenance": {
         "address": "0x0886188C"
       },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "bb5edfd7deea57299afb1bcbfbbe3eb087b6f1aefed807ccc0c5cca2fb172fac"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "229736ce613d7917d11844a0be05bc7f88fa3c7490d4272e13799fe34943199e"
+        }
+      },
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "229736ce613d7917d11844a0be05bc7f88fa3c7490d4272e13799fe34943199e",
       "target_id": "0x01F5",
@@ -2742,6 +3985,16 @@
       "import_id": "fe8cn.raw.import-0124",
       "provenance": {
         "address": "0x08861890"
+      },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "064518bada5b33c7ba1eceb6bb3e071e1501351e6a7bc00249f62e25f7d28066"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "dcfce2730d69df0be22cd2f9020ebd7b8c3e75c513c1d6d3e1c7d72d035bea4f"
+        }
       },
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "dcfce2730d69df0be22cd2f9020ebd7b8c3e75c513c1d6d3e1c7d72d035bea4f",
@@ -2764,6 +4017,16 @@
       "provenance": {
         "address": "0x08861894"
       },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "76eb1c6c5aa38203c4b08a9086f040ccd22d6b957eb490900bae58414b4d46fa"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "e1586744eebaa42c486f3bcf48c6da82c827a9489a11a1aa1725dac976111df9"
+        }
+      },
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "e1586744eebaa42c486f3bcf48c6da82c827a9489a11a1aa1725dac976111df9",
       "target_id": "0x01F7",
@@ -2784,6 +4047,16 @@
       "import_id": "fe8cn.raw.import-0126",
       "provenance": {
         "address": "0x08861898"
+      },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "217e2ed8d6be7cb2af3501906cba0d46e98359f5f5480f79b9b79ad1d93a2be5"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "34428458ccbb0c8e7f4222f72c1928f0741f42299489e44f169c8bfe2d3fa44a"
+        }
       },
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "34428458ccbb0c8e7f4222f72c1928f0741f42299489e44f169c8bfe2d3fa44a",
@@ -2806,6 +4079,16 @@
       "provenance": {
         "address": "0x0886189C"
       },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "2f8267a89ad55e6b6ccc4831c09edd812a53e8086c49c33d7eb1ae014dd1ea59"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "6c8c7a77cdfd4fd3e8d872de821ed94b78d8a967978cb3b460f06602c6e5ee67"
+        }
+      },
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "6c8c7a77cdfd4fd3e8d872de821ed94b78d8a967978cb3b460f06602c6e5ee67",
       "target_id": "0x01F9",
@@ -2826,6 +4109,16 @@
       "import_id": "fe8cn.raw.import-0128",
       "provenance": {
         "address": "0x088618A0"
+      },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "d16725cb63477eabbe872be7928d0cc1a18f3834931bb43996baab57ab4ec746"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "d16725cb63477eabbe872be7928d0cc1a18f3834931bb43996baab57ab4ec746"
+        }
       },
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "d16725cb63477eabbe872be7928d0cc1a18f3834931bb43996baab57ab4ec746",
@@ -2848,6 +4141,16 @@
       "provenance": {
         "address": "0x088618A4"
       },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "9184cf271e3a0b639dc510a212408a511e24177c2ad0ded6cda3d0ed5b985be3"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "2b12c4022b2dc316bdfa025d30d8719488355f2dc567215bf0d10870450665c3"
+        }
+      },
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "2b12c4022b2dc316bdfa025d30d8719488355f2dc567215bf0d10870450665c3",
       "target_id": "0x01FB",
@@ -2868,6 +4171,16 @@
       "import_id": "fe8cn.raw.import-0130",
       "provenance": {
         "address": "0x088618A8"
+      },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "ecd8c4aed0a8e425a4668420ec1b5dc6386ebd6787194b1ccc432ac60dfe07cd"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "5c21eb3c470adac01a2ae8199fcb6e45a07d0217030551341a4fdf531f21e5fc"
+        }
       },
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "5c21eb3c470adac01a2ae8199fcb6e45a07d0217030551341a4fdf531f21e5fc",
@@ -2890,6 +4203,16 @@
       "provenance": {
         "address": "0x088618AC"
       },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "08768a9249c995d4ddf09e72116bd1e01289a7f8657737c589e5b83799e07665"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "24d1240f704af6f562eb3dc490582c61c45cf3b3fb08dc296afc63c805473e63"
+        }
+      },
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "24d1240f704af6f562eb3dc490582c61c45cf3b3fb08dc296afc63c805473e63",
       "target_id": "0x01FD",
@@ -2910,6 +4233,16 @@
       "import_id": "fe8cn.raw.import-0132",
       "provenance": {
         "address": "0x088618B0"
+      },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "86aaff9bad01affb1f9439ccfbfe69786ef6c4cdbeaa0b7af7b2e9640543a10c"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "86aaff9bad01affb1f9439ccfbfe69786ef6c4cdbeaa0b7af7b2e9640543a10c"
+        }
       },
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "86aaff9bad01affb1f9439ccfbfe69786ef6c4cdbeaa0b7af7b2e9640543a10c",
@@ -2932,6 +4265,16 @@
       "provenance": {
         "address": "0x088618B4"
       },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "f127dd07e4d9b78767442d487e185a18519eb5a85bc265f2dde6681fe3cfa548"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "140ede26426df0505039b3d0dddb8c4a8ef9ac70a3fb1abef4a7c929ed8f08be"
+        }
+      },
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "140ede26426df0505039b3d0dddb8c4a8ef9ac70a3fb1abef4a7c929ed8f08be",
       "target_id": "0x01FF",
@@ -2952,6 +4295,16 @@
       "import_id": "fe8cn.raw.import-0134",
       "provenance": {
         "address": "0x088618B8"
+      },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "327b54d04f71f2126114d9d61d4c3640ca0fc5b30878ad28416ff634a51a712d"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "327b54d04f71f2126114d9d61d4c3640ca0fc5b30878ad28416ff634a51a712d"
+        }
       },
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "327b54d04f71f2126114d9d61d4c3640ca0fc5b30878ad28416ff634a51a712d",
@@ -2974,6 +4327,16 @@
       "provenance": {
         "address": "0x088618BC"
       },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "81ef92b7df484c9ee46d478f847d810e310dd2c27e454586db824aa978a5c2ca"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "de448403dafdcf54c2f9abb1de0c2343f4db4ffe9b2a664c48aa32c90e6734cf"
+        }
+      },
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "de448403dafdcf54c2f9abb1de0c2343f4db4ffe9b2a664c48aa32c90e6734cf",
       "target_id": "0x0201",
@@ -2994,6 +4357,16 @@
       "import_id": "fe8cn.raw.import-0136",
       "provenance": {
         "address": "0x088618C0"
+      },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "9c72e22e7c03889a1adab9fe98a92fc48788e443ea19a67ecf6bdd0885f8791c"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "9c72e22e7c03889a1adab9fe98a92fc48788e443ea19a67ecf6bdd0885f8791c"
+        }
       },
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "9c72e22e7c03889a1adab9fe98a92fc48788e443ea19a67ecf6bdd0885f8791c",
@@ -3016,6 +4389,16 @@
       "provenance": {
         "address": "0x088618C4"
       },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "339f0c3ba83e47847b1efb138d469565a8f69cc87769c65fdd2a24834cb6372c"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "339f0c3ba83e47847b1efb138d469565a8f69cc87769c65fdd2a24834cb6372c"
+        }
+      },
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "339f0c3ba83e47847b1efb138d469565a8f69cc87769c65fdd2a24834cb6372c",
       "target_id": "0x0203",
@@ -3037,6 +4420,16 @@
       "provenance": {
         "address": "0x088618C8"
       },
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "19736455d8eb28034d86a355421e9d883b5f271e5138c8679ca253e116210966"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "9da8bae955e3eb937e24e3c38b1a4c4c1f1df03df8e1dd63f106a31cb5f4075f"
+        }
+      },
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "9da8bae955e3eb937e24e3c38b1a4c4c1f1df03df8e1dd63f106a31cb5f4075f",
       "target_id": "0x0204",
@@ -3051,15 +4444,25 @@
           "path": "src/player_interface.c"
         }
       ],
-      "classification": "english_fallback",
+      "classification": "game_message",
       "decision_origin": "deferred-surface-audit",
-      "fallback_reason": "japanese-literal-source-unverified",
       "import_id": "fe8cn.raw.import-0139",
       "provenance": {
         "address": "0x0808F684"
       },
-      "rationale": "Japanese goal-window label for FE8U 0x01C1 has no exact committed-source literal anchor.",
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "5f3582c102e01aca9650e4a2b508de5ba3a964a6386edfa33763d74ef5b29e17"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "0ec085ed84584b2393a6c115b51363188368b1f511f492737f7bb47b09005b48"
+        }
+      },
+      "rationale": "FE8U target 0x01C1 is bound to FE8J's inline GoalString_UnitsLeft raw provider and the exact FE8CN raw import, never to the unrelated same-number FE8J indexed message.",
       "source_text_sha256": "0ec085ed84584b2393a6c115b51363188368b1f511f492737f7bb47b09005b48",
+      "target_id": "0x01C1",
       "user_facing": true
     },
     {
@@ -3071,15 +4474,25 @@
           "path": "src/player_interface.c"
         }
       ],
-      "classification": "english_fallback",
+      "classification": "game_message",
       "decision_origin": "deferred-surface-audit",
-      "fallback_reason": "japanese-literal-source-unverified",
       "import_id": "fe8cn.raw.import-0140",
       "provenance": {
         "address": "0x0808F6EC"
       },
-      "rationale": "Japanese goal-window label for FE8U 0x01C3 has no exact committed-source literal anchor.",
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "a6c0ddd717eb539e73845bcecf82d983a9bbf8b63b1271dc21299882ef82c618"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "a63adc3884676c4cda74a7fdd29a946e7ad72ef63b52ed039a84c614f7f9cddd"
+        }
+      },
+      "rationale": "FE8U target 0x01C3 is bound to FE8J's inline GoalString_LastTurn raw provider and the exact FE8CN raw import, never to the unrelated same-number FE8J indexed message.",
       "source_text_sha256": "a63adc3884676c4cda74a7fdd29a946e7ad72ef63b52ed039a84c614f7f9cddd",
+      "target_id": "0x01C3",
       "user_facing": true
     },
     {
@@ -3091,15 +4504,25 @@
           "path": "src/player_interface.c"
         }
       ],
-      "classification": "english_fallback",
+      "classification": "game_message",
       "decision_origin": "deferred-surface-audit",
-      "fallback_reason": "japanese-literal-source-unverified",
       "import_id": "fe8cn.raw.import-0141",
       "provenance": {
         "address": "0x0808F760"
       },
-      "rationale": "Japanese goal-window label for FE8U 0x01C2 has no exact committed-source literal anchor.",
+      "providers": {
+        "ja": {
+          "kind": "raw_symbol",
+          "text_sha256": "aee7e141d60573ebeb56518432a47daa789a34d65ae04e8c4c9bf263ff31b5f7"
+        },
+        "zh-Hans": {
+          "kind": "raw_import",
+          "text_sha256": "9fb1d89660c28e488f979606377cfd65e01380649e060f692729c104d085085f"
+        }
+      },
+      "rationale": "FE8U target 0x01C2 is bound to FE8J's inline GoalString_Turn raw provider and the exact FE8CN raw import, never to the unrelated same-number FE8J indexed message.",
       "source_text_sha256": "9fb1d89660c28e488f979606377cfd65e01380649e060f692729c104d085085f",
+      "target_id": "0x01C2",
       "user_facing": true
     },
     {
@@ -3112,18 +4535,30 @@
         },
         {
           "anchors": [
-            "PrintDebugStringToBG(bg, gBuildDateTime)"
+            "EXP_MSG_RAW_SURFACE_DIAGNOSTIC_BUILD_TIMESTAMP",
+            "ExpansionLocale_ResolveCurrent"
           ],
           "path": "src/fe3_dummy.c"
         }
       ],
-      "classification": "diagnostic_exclusion",
+      "classification": "expansion_message",
       "decision_origin": "deferred-surface-audit",
+      "expansion_key": "raw_surface.diagnostic.build_timestamp",
       "import_id": "fe8cn.raw.import-0142",
       "provenance": {
         "address": "0x08000B04"
       },
-      "rationale": "This fixed build timestamp is diagnostic identity printed by PrintDebugBuildDateAndTime, not natural-language UI; translating it would corrupt the diagnostic value.",
+      "providers": {
+        "ja": {
+          "kind": "expansion_catalog",
+          "text_sha256": "675a0eaaa1cdea7a0fed4c6e44769eb24c2fd6f484e8e75f6002571b0321f14e"
+        },
+        "zh-Hans": {
+          "kind": "expansion_catalog",
+          "text_sha256": "d0ccef842b6c695e40b276ba41f9cdb6726b05baedfe3b682fd133ddb621a193"
+        }
+      },
+      "rationale": "The diagnostic identity has an explicit locale provider: modern builds resolve the current locale's timestamp, while legacy keeps printing gBuildDateTime unchanged.",
       "source_text_sha256": "d0ccef842b6c695e40b276ba41f9cdb6726b05baedfe3b682fd133ddb621a193",
       "user_facing": false
     }
@@ -3132,13 +4567,16 @@
   "summary": {
     "baseline_game_message_count": 114,
     "deferred_decision_count": 29,
-    "diagnostic_exclusion_count": 1,
-    "english_fallback_count": 3,
-    "expansion_message_count": 2,
-    "game_message_count": 134,
-    "non_user_facing_exclusion_count": 3,
+    "diagnostic_exclusion_count": 0,
+    "english_fallback_count": 0,
+    "expansion_message_count": 6,
+    "game_message_count": 137,
+    "ja_materialized_count": 143,
+    "non_user_facing_exclusion_count": 0,
+    "provider_count": 143,
     "total_count": 143,
     "unresolved_count": 0,
-    "user_facing_deferred_localized_count": 22
+    "user_facing_deferred_localized_count": 25,
+    "zh_hans_materialized_count": 143
   }
 }

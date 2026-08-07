@@ -14,6 +14,10 @@ remain import provenance only and never become runtime keys.
 - `ja/indexed.txt`: 3,339 FE8J-layout messages (`0x0000` through `0x0D0A`).
 - `ja/control_defs.txt`: FE8J source aliases mapped to canonical controls. It is
   an alias table, not normalized locale payload.
+- `ja/raw.json`: 116 materialized FE8J raw-symbol providers keyed by FE8U
+  target ID plus the verified evidence symbol. This includes the three
+  inline goal-window labels and prevents a same-number FE8J indexed message
+  from being substituted for a raw provider.
 - `zh-Hans/indexed.txt`: 3,339 FE8CN messages using the FE8J indexed layout.
 - `zh-Hans/raw.json`: 152 raw-address occurrences deduplicated to 143 stable
   `fe8cn.raw.import-NNNN` IDs. IDs are assigned by pinned source import order,
@@ -131,14 +135,14 @@ The committed FE8U target report currently contains 3,414 decisions and zero
 unresolved:
 
 - 1,472 verified indexed mappings;
-- 133 verified raw target mappings, covering 134 raw import records because
+- 136 verified raw target mappings, covering 137 raw import records because
   the two Attack pointers intentionally share FE8U message ID `0x067B`;
 - 0 authored translations;
-- 1,809 explicit English fallbacks.
+- 1,806 explicit English fallbacks.
 
-Translation coverage is therefore 1,605 targets (47.01%). Explicit fallback
-coverage is 1,809 targets (52.99%); fallback content is not translated content.
-The largest reported gap is 1,797 `not-yet-verified` targets, chiefly dialogue
+Translation coverage is therefore 1,608 targets (47.10%). Explicit fallback
+coverage is 1,806 targets (52.90%); fallback content is not translated content.
+The largest reported gap is 1,794 `not-yet-verified` targets, chiefly dialogue
 outside the proven named structures. Other fallback reasons are `dummy` (1),
 `region-only` (1), and `expansion-only` (10).
 
@@ -146,27 +150,27 @@ outside the proven named structures. Other fallback reasons are `dummy` (1),
 
 The closure ledger accounts for all 143 unique raw imports:
 
-- 134 records resolve through stable FE8U game message IDs;
-- 2 distinct commands that share FE8U ID `0x0693` use semantic expansion keys
+- 137 records resolve through stable FE8U game message IDs;
+- 6 records use semantic expansion keys: 2 distinct commands that share FE8U
+  ID `0x0693`, 3 promotion-selector initializer providers, and 1 diagnostic
+  build timestamp;
+- the command keys are
   (`raw_surface.unit_action.summon` and
   `raw_surface.unit_action.call_monster`);
-- 3 promotion-selector initializer strings are excluded because their
-  `ClassChgMenuItem_OnTextDraw` callback always replaces them with localized
-  class names;
-- 1 fixed build timestamp is excluded as non-language diagnostic identity;
-- 3 goal-window records use explicit English fallback because their former
-  Japanese provenance cited an absent source file and no committed source
-  table binds the exact literals to those IDs;
+- the goal-window records use FE8J inline raw symbols `GoalString_UnitsLeft`,
+  `GoalString_Turn`, and `GoalString_LastTurn`, bound to FE8U `0x01C1`-
+  `0x01C3`; they never use unrelated same-number FE8J indexed messages;
+- every record resolves to nonempty Japanese and Simplified Chinese payloads;
+- 0 records use fallback or exclusion;
 - 0 records remain unresolved.
 
-The 20 remaining Japanese literal providers are verified directly against
-tracked FE8J-derived C table entries with matching message IDs, exact values,
-and bounded context hashes. Simplified Chinese still comes from the exact
-imported raw payload. The expansion-key decisions keep the same provenance;
-their FE8J full-width indentation is normalized to the expansion catalog's
-allowed ASCII space, while the semantic labels remain exact. They are drawn
-with `Text_DrawString`, which is UTF-8 aware in modern localized-font profiles.
-Legacy initializer strings and callbacks remain unchanged.
+Japanese raw providers comprise 20 literals verified directly against tracked
+FE8J-derived C table entries and 116 materialized target+symbol records in
+`ja/raw.json`. Simplified Chinese comes from the exact imported raw payload.
+Modern promotion-selector initializers are empty because their draw callback
+always supplies a localized class name; legacy keeps the original Japanese
+initializer bytes. The modern timestamp diagnostic resolves through the
+expansion locale accessor, while legacy keeps `gBuildDateTime`.
 
 Build or check the machine report:
 
@@ -177,8 +181,12 @@ python3 -m scripts.localization.game_locales check-raw-closure
 
 The check also verifies every recorded FE8U source path and anchor still
 exists, every literal provider matches its committed symbol/key/value/context,
-every semantic expansion key is active and translated in `en`/`ja`/`zh-Hans`,
-and each expansion-key Chinese value equals its imported raw payload.
+every raw symbol has a matching target+symbol materialization, every semantic
+expansion key is active and translated in `en`/`ja`/`zh-Hans`, and each
+expansion-key Chinese value equals its imported raw payload. Its strict gate is
+exactly 143 total, 143 game/expansion providers, 143 materialized JA payloads,
+143 materialized ZH payloads, and zero fallback, exclusions, or unresolved
+records.
 
 ## Mapping validation and coverage
 

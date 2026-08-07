@@ -35,6 +35,10 @@
     "framework.locale_short_name.ja": "JA",
     "framework.locale_short_name.zh_hans": "ZH",
     "raw_surface.unit_action.summon": " 召唤",
-    "raw_surface.unit_action.call_monster": " 呼魔"
+    "raw_surface.unit_action.call_monster": " 呼魔",
+    "raw_surface.class_change.option_1": " 第1兵种",
+    "raw_surface.class_change.option_2": " 第2兵种",
+    "raw_surface.class_change.option_3": " 第3兵种",
+    "raw_surface.diagnostic.build_timestamp": "2004/09/09(THU) 13:12:56"
   }
 }

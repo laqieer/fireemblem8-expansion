@@ -84,6 +84,20 @@ class FixtureBuildTests(unittest.TestCase):
             '}\n',
             encoding="utf-8",
         )
+        (self.fixture_dir / "ja_raw.json").write_text(
+            "{\n"
+            '  "schema_version": 1,\n'
+            '  "kind": "fe8j-raw-provider-catalog",\n'
+            '  "locale_id": "ja",\n'
+            '  "source_layout": "FE8J-raw-symbol",\n'
+            '  "source_revision": "fixture",\n'
+            '  "provider_count": 1,\n'
+            '  "providers": {\n'
+            '    "0x0001": {"symbol": "fixture", "text": "生"}\n'
+            '  }\n'
+            '}\n',
+            encoding="utf-8",
+        )
         (self.fixture_dir / "mapping.json").write_text(
             "{\n"
             '  "schema_version": 2,\n'
@@ -161,11 +175,12 @@ class FixtureBuildTests(unittest.TestCase):
         if self.fixture_dir.exists():
             shutil.rmtree(self.fixture_dir)
 
-    def test_fixture_build_preserves_fallback_absence_and_raw_locale_gap(self):
+    def test_fixture_build_materializes_raw_providers_and_preserves_explicit_fallback(self):
         build = build_game_catalog(
             english_texts_path=self.fixture_dir / "texts.txt",
             english_definitions_path=self.fixture_dir / "textdefs.txt",
             ja_indexed_path=self.fixture_dir / "ja_indexed.txt",
+            ja_raw_path=self.fixture_dir / "ja_raw.json",
             zh_indexed_path=self.fixture_dir / "zh_indexed.txt",
             zh_raw_path=self.fixture_dir / "zh_raw.json",
             mapping_path=self.fixture_dir / "mapping.json",
@@ -183,7 +198,7 @@ class FixtureBuildTests(unittest.TestCase):
             b"English" + "\u3000".encode("utf-8") + b"twoe\x00",
         )
         self.assertEqual(ja.catalog.decode_entry(0), "日".encode("utf-8") + b"\x80\x20\x00")
-        self.assertIsNone(ja.catalog.decode_entry(1))
+        self.assertEqual(ja.catalog.decode_entry(1), "生".encode("utf-8") + b"\x00")
         self.assertEqual(zh.catalog.decode_entry(1), "原始".encode("utf-8") + b"\x00")
         self.assertIsNone(zh.catalog.decode_entry(2))
 
@@ -191,7 +206,9 @@ class FixtureBuildTests(unittest.TestCase):
         self.assertEqual(report["mapping_source_counts"]["indexed"], 1)
         self.assertEqual(report["mapping_source_counts"]["raw"], 1)
         self.assertEqual(report["mapping_source_counts"]["english_fallback"], 1)
-        self.assertEqual(report["locales"]["ja"]["provider_unavailable_count"], 1)
+        self.assertEqual(report["locales"]["ja"]["provider_counts"]["raw"], 1)
+        self.assertEqual(report["locales"]["ja"]["provider_unavailable_count"], 0)
+        self.assertEqual(report["locales"]["ja"]["explicit_fallback_count"], 1)
         self.assertEqual(report["locales"]["zh-Hans"]["provider_counts"]["raw"], 1)
         self.assertEqual(report["locales"]["zh-Hans"]["explicit_fallback_count"], 1)
 
@@ -203,9 +220,10 @@ class FixtureBuildTests(unittest.TestCase):
             ja.catalog.decode_entry(0x0023),
             "　決定".encode("utf-8") + b"\x00",
         )
+        self.assertEqual(build.report["locales"]["ja"]["provider_counts"]["raw"], 136)
         self.assertEqual(
-            build.report["locales"]["ja"]["provider_counts"]["raw"],
-            20,
+            ja.catalog.decode_entry(0x01C1),
+            "残り".encode("utf-8") + b"\x00",
         )
 
 

@@ -35,6 +35,10 @@
     "framework.locale_short_name.ja": "JA",
     "framework.locale_short_name.zh_hans": "ZH",
     "raw_surface.unit_action.summon": " Summon",
-    "raw_surface.unit_action.call_monster": " Summon"
+    "raw_surface.unit_action.call_monster": " Summon",
+    "raw_surface.class_change.option_1": " Class 1",
+    "raw_surface.class_change.option_2": " Class 2",
+    "raw_surface.class_change.option_3": " Class 3",
+    "raw_surface.diagnostic.build_timestamp": "2005/02/04(FRI) 16:55:40"
   }
 }
