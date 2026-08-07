@@ -596,7 +596,7 @@ static const char sTacticianGridZhHansFrequent[] =
     "要来也们为会可到好个吧样能以说"
     "还没下对子什真战王和过弗时斯大"
     "利事拉吗想都尔魔起然后之很国出"
-    "里话现上所去着他得如看但行艾心";
+    "里话现上所去着他得看如但行艾心";
 
 static const char sTacticianGridZhHansExtended[] =
     "力多珂瑞德内姆已军生哈中定道将"

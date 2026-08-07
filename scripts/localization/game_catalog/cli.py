@@ -27,16 +27,16 @@ from .build import (
     write_build,
 )
 from .leakage import (
-    DEFAULT_ALLOWLIST_PATH,
     DEFAULT_RAW_CLOSURE_PATH,
+    DEFAULT_REVIEW_PATH,
     DEFAULT_REPORT_PATH,
     OUTPUT_REPORT_NAME,
     build_leakage_report,
     canonical_json_bytes,
     input_record,
-    load_allowlist,
     load_expansion_catalogs,
     load_raw_closure,
+    load_review,
 )
 
 
@@ -87,9 +87,9 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
         help="comma-separated game-catalog payload locales (ja and/or zh-Hans)",
     )
     parser.add_argument(
-        "--leakage-allowlist",
+        "--latin-span-review",
         type=Path,
-        default=DEFAULT_ALLOWLIST_PATH,
+        default=DEFAULT_REVIEW_PATH,
     )
     parser.add_argument(
         "--raw-closure",
@@ -194,7 +194,7 @@ def _leakage_input_records(args: argparse.Namespace):
 
 
 def _audit_from_args(args: argparse.Namespace, build):
-    allowlist = load_allowlist(args.leakage_allowlist)
+    review = load_review(args.latin_span_review)
     raw_closure = load_raw_closure(args.raw_closure)
     expansion_catalogs = load_expansion_catalogs(
         args.expansion_catalog_root,
@@ -202,7 +202,7 @@ def _audit_from_args(args: argparse.Namespace, build):
     )
     return build_leakage_report(
         build,
-        allowlist=allowlist,
+        review=review,
         raw_closure=raw_closure,
         expansion_catalogs=expansion_catalogs,
         inputs=_leakage_input_records(args),
@@ -221,8 +221,8 @@ def cmd_validate(args: argparse.Namespace) -> int:
     print(
         "validated full-game locale catalog inputs: "
         + _build_summary(build)
-        + " leakage.unapproved={}".format(
-            leakage["summary"]["unapproved_candidate_count"]
+        + " leakage.unapproved_spans={}".format(
+            leakage["summary"]["unapproved_span_count"]
         )
     )
     return 0
@@ -269,8 +269,9 @@ def cmd_audit_leakage(args: argparse.Namespace) -> int:
         "generated runtime locale leakage audit: "
         f"game={leakage['summary']['game_payload_count']} "
         f"raw={leakage['summary']['raw_surface_payload_count']} "
-        f"approved={leakage['summary']['approved_candidate_count']} "
-        f"unapproved={leakage['summary']['unapproved_candidate_count']}"
+        f"approved_spans={leakage['summary']['approved_span_count']} "
+        f"localized_spans={leakage['summary']['localized_span_decision_count']} "
+        f"unapproved_spans={leakage['summary']['unapproved_span_count']}"
     )
     return 0
 
@@ -287,7 +288,7 @@ def cmd_check_leakage(args: argparse.Namespace) -> int:
         "runtime locale leakage audit matches committed bytes: "
         f"game={leakage['summary']['game_payload_count']} "
         f"raw={leakage['summary']['raw_surface_payload_count']} "
-        "unapproved=0"
+        "unapproved_spans=0"
     )
     return 0
 
@@ -314,12 +315,12 @@ def build_parser() -> argparse.ArgumentParser:
         (
             "audit-leakage",
             cmd_audit_leakage,
-            "write the final JA/ZH runtime English-leakage audit",
+            "write the final JA/ZH runtime Latin-span leakage audit",
         ),
         (
             "check-leakage",
             cmd_check_leakage,
-            "verify the committed final runtime English-leakage audit",
+            "verify the committed final runtime Latin-span leakage audit",
         ),
     ):
         sub_parser = sub.add_parser(command, help=help_text)

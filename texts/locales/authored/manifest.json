@@ -33,7 +33,7 @@
         },
         {
           "path": "texts/locales/authored/shards/help_shop.ja.json",
-          "sha256": "ccd0df8d051659211c72b86daede9db2acae9f9ad00e399cc7cd8ff7eac0455a",
+          "sha256": "45cfd91c6847f8b377e479fce0b2d83ef6874450b8f616445fe57469a611adff",
           "target_count": 81
         },
         {
@@ -58,7 +58,7 @@
         },
         {
           "path": "texts/locales/authored/shards/help_shop.zh-Hans.json",
-          "sha256": "41828544d9d3b12b01eac2a18d653aec4d980028b31118a0751584ff0e8de289",
+          "sha256": "86b795ffa11ea2764e05393ebf98e6a956083e3d8f987f1a34a0e8a4dd0e3696",
           "target_count": 81
         },
         {

@@ -54,8 +54,8 @@ Outputs are generated under `build/game-localization/generated/`:
 - `game_localization_report.json`: entry-level provenance and hashes;
 - `game_localization_budget.json`: coverage, storage, shared-English, and
   profile-specific ROM estimates;
-- `game_localization_leakage_report.json`: final materialized exact/near
-  English-copy and Latin-only audit with per-key approvals.
+- `game_localization_latin_span_audit.json`: final materialized Latin-span
+  audit with exact scope/locale/target/span approvals.
 
 Every present message is strict UTF-8 plus canonical engine control bytes and
 one trailing NUL. Each descriptor records both compressed byte length and
@@ -108,9 +108,12 @@ codec. Production reports require `ja.present=3414`,
 Generation also runs the leakage gate. The committed
 `texts/locales/mapping/runtime_english_leakage.json` separately proves all
 6,828 JA/ZH catalog payloads and all 286 JA/ZH raw-surface payloads were
-audited with zero unapproved exact/near English copy. Remaining Latin-only
-codes must be individually keyed in
-`texts/locales/runtime_latin_allowlist.json`; regex or category-wide
+audited with zero unapproved Latin spans. Controls are replaced by boundaries
+before NFKC tokenization, so Latin inside mixed Japanese/Chinese text cannot
+bypass the gate. The baseline 125 JA and 139 ZH mixed-script payload decisions
+are committed in `texts/locales/runtime_latin_span_review.json`; every
+remaining acronym/code is approved only for its exact target, locale, span,
+payload hash, occurrence count, reason, and source. Regex or category-wide
 whitelisting is not accepted.
 
 The 143-record raw closure is a separate call-site audit:

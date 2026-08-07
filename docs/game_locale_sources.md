@@ -61,9 +61,10 @@ remain import provenance only and never become runtime keys.
   structural history while preserving every conflict and collision ledger.
 - `mapping/final_mapping_report.json`: deterministic promotion counts, input
   fingerprints, residual count, and the zero-fallback final-delivery policy.
-- `runtime_latin_allowlist.json`: explicit per-locale/per-target approvals for
-  remaining locale-neutral abbreviations, rank/player/currency/state codes,
-  and the non-user-facing build identity. It contains no regex whitelist.
+- `runtime_latin_span_review.json`: the exact baseline review of every
+  Latin-bearing target. Each scope/locale/target/span decision pins payload
+  hashes, occurrence counts, approval or localization, factual reason, and
+  source; it contains no regex or category-wide exemption.
 - `mapping/runtime_english_leakage.json`: deterministic audit of all 3,414
   final JA payloads, all 3,414 final ZH payloads, and both 143-record
   materialized raw surfaces.
@@ -457,24 +458,30 @@ Together, the compressed 3,414-row catalog and the 143-record raw-surface
 closure have zero English fallback, zero exclusion, and zero unresolved
 user-facing strings in both Japanese and Simplified Chinese.
 
-## Final runtime English-leakage gate
+## Final runtime Latin-span leakage gate
 
 The leakage gate audits the materialized runtime payloads after mapping,
 authored resolution, raw-provider resolution, and importer overrides. It
-normalizes visible text with NFKC, detects exact English copies, detects near
-copies at a fixed similarity threshold, and flags every Latin-only payload.
-An exception is accepted only by an exact
-`game/<locale>/0xNNNN` or `raw/<locale>/fe8cn.raw.import-NNNN` key whose
-payload bytes, locale-neutral category, and factual reason match.
+replaces bracketed controls with token boundaries, normalizes visible text
+with NFKC, and tokenizes every contiguous ASCII Latin span even when it is
+embedded in Japanese or Chinese. Exact/near-copy and Latin-only
+classifications remain diagnostic signals, but every runtime span is gated.
+An approval is accepted only for an exact scope + locale + target + span with
+matching payload hash, occurrence count, category, factual reason, and source.
+Localized decisions pin the corrected payload hash and require the reviewed
+baseline span to be absent.
 
 The committed report currently proves:
 
 - 6,828/6,828 game-catalog payloads audited (3,414 per locale);
 - 286/286 raw-surface payloads audited (143 per locale);
-- 40 approved exact Latin copies, all compact codes or build identity;
+- all 125 Japanese and 139 Chinese mixed-script bypasses reviewed;
+- 25 English spans localized through hash-pinned, control-preserving
+  overrides, including the seven Japanese `MSG` placeholders;
+- 162 current Japanese and 164 current Chinese Latin-bearing game payloads;
+- 341 remaining exact approved spans across game and raw surfaces;
 - 0 near-copy candidates;
-- 75 total explicitly approved Latin-only/code candidates;
-- 0 unapproved candidates and 0 stale approvals.
+- 0 unapproved span occurrences, 0 payload mismatches, and 0 stale decisions.
 
 Generate or verify it with:
 

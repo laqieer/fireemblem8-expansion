@@ -46,7 +46,7 @@ class CliTests(unittest.TestCase):
             self.assertTrue((Path(tmp) / "game_localization_report.json").is_file())
             self.assertTrue((Path(tmp) / "game_localization_budget.json").is_file())
             self.assertTrue(
-                (Path(tmp) / "game_localization_leakage_report.json").is_file()
+                (Path(tmp) / "game_localization_latin_span_audit.json").is_file()
             )
 
     def test_budget_prints_json(self):

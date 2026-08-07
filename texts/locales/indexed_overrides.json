@@ -4,6 +4,42 @@
   "sources": {
     "fe8cn_source": {
       "entries": {
+        "0x0006": {
+          "expected_text": "地图MB",
+          "provenance": {
+            "audit": "runtime-latin-span-review-2026-08-07",
+            "context": "Exact mixed-script Latin-span correction for FE8U target 0x002B.",
+            "target_ids": [
+              "0x002B"
+            ]
+          },
+          "reason": "Replace the unexplained MB fragment with the natural Chinese viewer label requested for this exact target.",
+          "replacement_text": "地图查看器"
+        },
+        "0x0007": {
+          "expected_text": "头像MB",
+          "provenance": {
+            "audit": "runtime-latin-span-review-2026-08-07",
+            "context": "Exact mixed-script Latin-span correction for FE8U target 0x002C.",
+            "target_ids": [
+              "0x002C"
+            ]
+          },
+          "reason": "Replace the unexplained MB fragment with the natural Chinese viewer label requested for this exact target.",
+          "replacement_text": "头像查看器"
+        },
+        "0x0008": {
+          "expected_text": "会话背景MB",
+          "provenance": {
+            "audit": "runtime-latin-span-review-2026-08-07",
+            "context": "Exact mixed-script Latin-span correction for FE8U target 0x002D.",
+            "target_ids": [
+              "0x002D"
+            ]
+          },
+          "reason": "Replace the unexplained MB fragment with the natural Chinese viewer label requested for this exact target.",
+          "replacement_text": "会话背景查看器"
+        },
         "0x004D": {
           "expected_text": "NOW LOADING",
           "provenance": {
@@ -27,6 +63,78 @@
           },
           "reason": "Replace an untranslated English status with natural Simplified Chinese.",
           "replacement_text": "无数据"
+        },
+        "0x012C": {
+          "expected_text": "击破BOSS：奥尼尔",
+          "provenance": {
+            "audit": "runtime-latin-span-review-2026-08-07",
+            "context": "Exact mixed-script Latin-span correction for FE8U target 0x01A2.",
+            "target_ids": [
+              "0x01A2"
+            ]
+          },
+          "reason": "Replace untranslated BOSS with natural Simplified Chinese 首领 in this exact objective/help target.",
+          "replacement_text": "击破首领：奥尼尔"
+        },
+        "0x0131": {
+          "expected_text": "击破BOSS：萨尔",
+          "provenance": {
+            "audit": "runtime-latin-span-review-2026-08-07",
+            "context": "Exact mixed-script Latin-span correction for FE8U target 0x01A7.",
+            "target_ids": [
+              "0x01A7"
+            ]
+          },
+          "reason": "Replace untranslated BOSS with natural Simplified Chinese 首领 in this exact objective/help target.",
+          "replacement_text": "击破首领：萨尔"
+        },
+        "0x0133": {
+          "expected_text": "击破BOSS：诺贝拉",
+          "provenance": {
+            "audit": "runtime-latin-span-review-2026-08-07",
+            "context": "Exact mixed-script Latin-span correction for FE8U target 0x01A9.",
+            "target_ids": [
+              "0x01A9"
+            ]
+          },
+          "reason": "Replace untranslated BOSS with natural Simplified Chinese 首领 in this exact objective/help target.",
+          "replacement_text": "击破首领：诺贝拉"
+        },
+        "0x013E": {
+          "expected_text": "击破BOSS：利昂",
+          "provenance": {
+            "audit": "runtime-latin-span-review-2026-08-07",
+            "context": "Exact mixed-script Latin-span correction for FE8U target 0x01B4.",
+            "target_ids": [
+              "0x01B4"
+            ]
+          },
+          "reason": "Replace untranslated BOSS with natural Simplified Chinese 首领 in this exact objective/help target.",
+          "replacement_text": "击破首领：利昂"
+        },
+        "0x0147": {
+          "expected_text": "BOSS击破",
+          "provenance": {
+            "audit": "runtime-latin-span-review-2026-08-07",
+            "context": "Exact mixed-script Latin-span correction for FE8U target 0x01BD.",
+            "target_ids": [
+              "0x01BD"
+            ]
+          },
+          "reason": "Replace untranslated BOSS with natural Simplified Chinese 首领 in this exact objective/help target.",
+          "replacement_text": "击破首领"
+        },
+        "0x05C7": {
+          "expected_text": "打倒在地图上的敌军BOSS后，\n就能通过这一关。\n不需要打倒所有的敌人。",
+          "provenance": {
+            "audit": "runtime-latin-span-review-2026-08-07",
+            "context": "Exact mixed-script Latin-span correction for FE8U target 0x0635.",
+            "target_ids": [
+              "0x0635"
+            ]
+          },
+          "reason": "Replace untranslated BOSS with natural Simplified Chinese 首领 in this exact objective/help target.",
+          "replacement_text": "打倒在地图上的敌军首领后，\n就能通过这一关。\n不需要打倒所有的敌人。"
         },
         "0x0703": {
           "expected_text": "Fire Emblem Theme",
@@ -171,6 +279,114 @@
           },
           "reason": "Translate the closing-section title naturally as 尾声.",
           "replacement_text": "尾声"
+        },
+        "0x07B1": {
+          "expected_text": "FE3大米MSG[CTRL:0003]",
+          "provenance": {
+            "audit": "runtime-latin-span-review-2026-08-07",
+            "context": "Exact mixed-script Latin-span correction for FE8U target 0x0839.",
+            "target_ids": [
+              "0x0839"
+            ]
+          },
+          "reason": "Replace the internal English MSG abbreviation and mistranslated 大米 with natural Chinese 占位消息 in this exact placeholder target.",
+          "replacement_text": "FE3占位消息[CTRL:0003]"
+        },
+        "0x07B2": {
+          "expected_text": "FE3大米MSG[CTRL:0003]",
+          "provenance": {
+            "audit": "runtime-latin-span-review-2026-08-07",
+            "context": "Exact mixed-script Latin-span correction for FE8U target 0x083A.",
+            "target_ids": [
+              "0x083A"
+            ]
+          },
+          "reason": "Replace the internal English MSG abbreviation and mistranslated 大米 with natural Chinese 占位消息 in this exact placeholder target.",
+          "replacement_text": "FE3占位消息[CTRL:0003]"
+        },
+        "0x07B3": {
+          "expected_text": "FE3大米MSG[CTRL:0003]",
+          "provenance": {
+            "audit": "runtime-latin-span-review-2026-08-07",
+            "context": "Exact mixed-script Latin-span correction for FE8U target 0x083B.",
+            "target_ids": [
+              "0x083B"
+            ]
+          },
+          "reason": "Replace the internal English MSG abbreviation and mistranslated 大米 with natural Chinese 占位消息 in this exact placeholder target.",
+          "replacement_text": "FE3占位消息[CTRL:0003]"
+        },
+        "0x07B4": {
+          "expected_text": "FE3大米MSG[CTRL:0003]",
+          "provenance": {
+            "audit": "runtime-latin-span-review-2026-08-07",
+            "context": "Exact mixed-script Latin-span correction for FE8U target 0x083C.",
+            "target_ids": [
+              "0x083C"
+            ]
+          },
+          "reason": "Replace the internal English MSG abbreviation and mistranslated 大米 with natural Chinese 占位消息 in this exact placeholder target.",
+          "replacement_text": "FE3占位消息[CTRL:0003]"
+        },
+        "0x07B5": {
+          "expected_text": "FE3大米MSG[CTRL:0003]",
+          "provenance": {
+            "audit": "runtime-latin-span-review-2026-08-07",
+            "context": "Exact mixed-script Latin-span correction for FE8U target 0x083D.",
+            "target_ids": [
+              "0x083D"
+            ]
+          },
+          "reason": "Replace the internal English MSG abbreviation and mistranslated 大米 with natural Chinese 占位消息 in this exact placeholder target.",
+          "replacement_text": "FE3占位消息[CTRL:0003]"
+        },
+        "0x07B6": {
+          "expected_text": "FE3大米MSG[CTRL:0003]",
+          "provenance": {
+            "audit": "runtime-latin-span-review-2026-08-07",
+            "context": "Exact mixed-script Latin-span correction for FE8U target 0x083E.",
+            "target_ids": [
+              "0x083E"
+            ]
+          },
+          "reason": "Replace the internal English MSG abbreviation and mistranslated 大米 with natural Chinese 占位消息 in this exact placeholder target.",
+          "replacement_text": "FE3占位消息[CTRL:0003]"
+        },
+        "0x07B7": {
+          "expected_text": "FE3大米MSG[CTRL:0003]",
+          "provenance": {
+            "audit": "runtime-latin-span-review-2026-08-07",
+            "context": "Exact mixed-script Latin-span correction for FE8U target 0x083F.",
+            "target_ids": [
+              "0x083F"
+            ]
+          },
+          "reason": "Replace the internal English MSG abbreviation and mistranslated 大米 with natural Chinese 占位消息 in this exact placeholder target.",
+          "replacement_text": "FE3占位消息[CTRL:0003]"
+        },
+        "0x08E2": {
+          "expected_text": "本章只要将敌BOSS打败\n就可以过关。[CTRL:0103][CTRL:0080][CTRL:0021]过关条件[CTRL:0080][CTRL:0021]会在画面\n的一角表示出来。[CTRL:0103]希望每到新的章节时，\n大家都能够看看。[CTRL:0103]那么，开始展开[CTRL:0080][CTRL:0021]攻击[CTRL:0080][CTRL:0021]吧。[CTRL:0003]",
+          "provenance": {
+            "audit": "runtime-latin-span-review-2026-08-07",
+            "context": "Exact mixed-script Latin-span correction for FE8U target 0x0922.",
+            "target_ids": [
+              "0x0922"
+            ]
+          },
+          "reason": "Replace untranslated BOSS with natural Simplified Chinese 首领 in this exact objective/help target.",
+          "replacement_text": "本章只要将敌方首领打败\n就可以过关。[CTRL:0103][CTRL:0080][CTRL:0021]过关条件[CTRL:0080][CTRL:0021]会在画面\n的一角表示出来。[CTRL:0103]希望每到新的章节时，\n大家都能够看看。[CTRL:0103]那么，开始展开[CTRL:0080][CTRL:0021]攻击[CTRL:0080][CTRL:0021]吧。[CTRL:0003]"
+        },
+        "0x0C82": {
+          "expected_text": "[CTRL:0009][CTRL:0010][CTRL:0121][CTRL:000C][CTRL:0010][CTRL:0109][CTRL:000C]喂，你这家伙！[CTRL:0003][CTRL:0017][CTRL:0009]是罗斯啊！[CTRL:0003][CTRL:000C][CTRL:0017]我是来说之前的问题的！[CTRL:0003][CTRL:0017][CTRL:0009]真的？\n真了不起，已经知道了？[CTRL:0003][CTRL:000C][CTRL:0017]对，对。\n答案是……[CTRL:0003][CTRL:0017][CTRL:0009]嗯嗯。[CTRL:0003][CTRL:000C][CTRL:0017]4次！[CTRL:0003][CTRL:0017][CTRL:0009]了不起啊，罗斯！\n这么拼命地思考。[CTRL:0003][CTRL:000C]嘿嘿嘿！\n怎么样，看到了吧！[CTRL:0103]我并不是只懂得战斗！[CTRL:0003][CTRL:0009]可是呢，不·正·确·哦。[CTRL:0003][CTRL:000C][CTRL:0080][CTRL:000E][CTRL:000C][CTRL:0017]什，什么！？\n切！[CTRL:0103]那，那应该是几次？[CTRL:0003][CTRL:0017][CTRL:0009]真遗憾呢，是3次。[CTRL:0003][CTRL:000C][CTRL:0017]只要3次？\n怎么办到的，说一下。[CTRL:0003][CTRL:0017][CTRL:0009]嗯，那么我就告诉你算法吧。[CTRL:0103]首先呢，一开始放在天秤上的\n石头数目是重点。[CTRL:0103]一开始，左右各\n放上8块石头。[CTRL:0103]然后呢，\n注意观察两边有没轻的石头混入。[CTRL:0103]在这样的情况下，[CTRL:0103]就会明白左右两边的8块石头里，\n倾斜的那方里存在着不同的那块。[CTRL:0103]或者说，\n假如天秤没有倾斜的情况下，[CTRL:0103]在剩下的9块中，\n存在着那一块。[CTRL:0103]这样，就使用了一次。不过，之后\n只要按照同样的办法就OK了。[CTRL:0103]以这9块中有那块轻的为例\n进行说明。[CTRL:0103]这次在9块石头里面\n各取3个放在左右两边的碟子中。[CTRL:0103]这样就进行了2次。[CTRL:0103]这时候，假如天秤倾斜，就说明\n左右里的某一边，假如都没倾斜，[CTRL:0103]那么就是在\n剩下的3块当中。[CTRL:0103]然后就在这3块里各取一块\n放上去称就可以了。[CTRL:0103]倾斜的话，\n其中那块就是。[CTRL:0103]没有的话，\n就是剩下的一块。[CTRL:0103]这样，就是3次。\n明白了吧。[CTRL:0003][CTRL:000C][CTRL:0017]啊？嗯，嗯。\n似乎是明白了……[CTRL:0003][CTRL:0017][CTRL:0009]哎？都说了答案了，还不明白？\n那还真是……[CTRL:0003][CTRL:000C][CTRL:0017]真是什么？[CTRL:0003][CTRL:0017][CTRL:0009]啊啊，没什么。\n忘了这个吧，哈哈哈。[CTRL:0003][CTRL:000C][CTRL:0017]我很在意的啊！[CTRL:0003][CTRL:0017][CTRL:0009]不过，还真是有趣啊。\n下次再一起玩吧，罗斯！[CTRL:0003][CTRL:000C]我可是一点都不觉得有趣，喂！[CTRL:0003]",
+          "provenance": {
+            "audit": "runtime-latin-span-review-2026-08-07",
+            "context": "Exact mixed-script Latin-span correction for FE8U target 0x0CC3.",
+            "target_ids": [
+              "0x0CC3"
+            ]
+          },
+          "reason": "Replace conversational English OK with natural Simplified Chinese 就行 in this exact support dialogue.",
+          "replacement_text": "[CTRL:0009][CTRL:0010][CTRL:0121][CTRL:000C][CTRL:0010][CTRL:0109][CTRL:000C]喂，你这家伙！[CTRL:0003][CTRL:0017][CTRL:0009]是罗斯啊！[CTRL:0003][CTRL:000C][CTRL:0017]我是来说之前的问题的！[CTRL:0003][CTRL:0017][CTRL:0009]真的？\n真了不起，已经知道了？[CTRL:0003][CTRL:000C][CTRL:0017]对，对。\n答案是……[CTRL:0003][CTRL:0017][CTRL:0009]嗯嗯。[CTRL:0003][CTRL:000C][CTRL:0017]4次！[CTRL:0003][CTRL:0017][CTRL:0009]了不起啊，罗斯！\n这么拼命地思考。[CTRL:0003][CTRL:000C]嘿嘿嘿！\n怎么样，看到了吧！[CTRL:0103]我并不是只懂得战斗！[CTRL:0003][CTRL:0009]可是呢，不·正·确·哦。[CTRL:0003][CTRL:000C][CTRL:0080][CTRL:000E][CTRL:000C][CTRL:0017]什，什么！？\n切！[CTRL:0103]那，那应该是几次？[CTRL:0003][CTRL:0017][CTRL:0009]真遗憾呢，是3次。[CTRL:0003][CTRL:000C][CTRL:0017]只要3次？\n怎么办到的，说一下。[CTRL:0003][CTRL:0017][CTRL:0009]嗯，那么我就告诉你算法吧。[CTRL:0103]首先呢，一开始放在天秤上的\n石头数目是重点。[CTRL:0103]一开始，左右各\n放上8块石头。[CTRL:0103]然后呢，\n注意观察两边有没轻的石头混入。[CTRL:0103]在这样的情况下，[CTRL:0103]就会明白左右两边的8块石头里，\n倾斜的那方里存在着不同的那块。[CTRL:0103]或者说，\n假如天秤没有倾斜的情况下，[CTRL:0103]在剩下的9块中，\n存在着那一块。[CTRL:0103]这样，就使用了一次。不过，之后\n只要按照同样的办法就行了。[CTRL:0103]以这9块中有那块轻的为例\n进行说明。[CTRL:0103]这次在9块石头里面\n各取3个放在左右两边的碟子中。[CTRL:0103]这样就进行了2次。[CTRL:0103]这时候，假如天秤倾斜，就说明\n左右里的某一边，假如都没倾斜，[CTRL:0103]那么就是在\n剩下的3块当中。[CTRL:0103]然后就在这3块里各取一块\n放上去称就可以了。[CTRL:0103]倾斜的话，\n其中那块就是。[CTRL:0103]没有的话，\n就是剩下的一块。[CTRL:0103]这样，就是3次。\n明白了吧。[CTRL:0003][CTRL:000C][CTRL:0017]啊？嗯，嗯。\n似乎是明白了……[CTRL:0003][CTRL:0017][CTRL:0009]哎？都说了答案了，还不明白？\n那还真是……[CTRL:0003][CTRL:000C][CTRL:0017]真是什么？[CTRL:0003][CTRL:0017][CTRL:0009]啊啊，没什么。\n忘了这个吧，哈哈哈。[CTRL:0003][CTRL:000C][CTRL:0017]我很在意的啊！[CTRL:0003][CTRL:0017][CTRL:0009]不过，还真是有趣啊。\n下次再一起玩吧，罗斯！[CTRL:0003][CTRL:000C]我可是一点都不觉得有趣，喂！[CTRL:0003]"
         }
       },
       "locale_id": "zh-Hans",
@@ -333,6 +549,90 @@
           },
           "reason": "Use the conventional Japanese closing-section title.",
           "replacement_text": "終章"
+        },
+        "0x07B1": {
+          "expected_text": "ＦＥ３ダミーＭＳＧ[CTRL:0003]",
+          "provenance": {
+            "audit": "runtime-latin-span-review-2026-08-07",
+            "context": "Exact mixed-script Latin-span correction for FE8U target 0x0839.",
+            "target_ids": [
+              "0x0839"
+            ]
+          },
+          "reason": "Replace the internal English MSG abbreviation with Japanese メッセージ in this exact placeholder target.",
+          "replacement_text": "ＦＥ３ダミーメッセージ[CTRL:0003]"
+        },
+        "0x07B2": {
+          "expected_text": "ＦＥ３ダミーＭＳＧ[CTRL:0003]",
+          "provenance": {
+            "audit": "runtime-latin-span-review-2026-08-07",
+            "context": "Exact mixed-script Latin-span correction for FE8U target 0x083A.",
+            "target_ids": [
+              "0x083A"
+            ]
+          },
+          "reason": "Replace the internal English MSG abbreviation with Japanese メッセージ in this exact placeholder target.",
+          "replacement_text": "ＦＥ３ダミーメッセージ[CTRL:0003]"
+        },
+        "0x07B3": {
+          "expected_text": "ＦＥ３ダミーＭＳＧ[CTRL:0003]",
+          "provenance": {
+            "audit": "runtime-latin-span-review-2026-08-07",
+            "context": "Exact mixed-script Latin-span correction for FE8U target 0x083B.",
+            "target_ids": [
+              "0x083B"
+            ]
+          },
+          "reason": "Replace the internal English MSG abbreviation with Japanese メッセージ in this exact placeholder target.",
+          "replacement_text": "ＦＥ３ダミーメッセージ[CTRL:0003]"
+        },
+        "0x07B4": {
+          "expected_text": "ＦＥ３ダミーＭＳＧ[CTRL:0003]",
+          "provenance": {
+            "audit": "runtime-latin-span-review-2026-08-07",
+            "context": "Exact mixed-script Latin-span correction for FE8U target 0x083C.",
+            "target_ids": [
+              "0x083C"
+            ]
+          },
+          "reason": "Replace the internal English MSG abbreviation with Japanese メッセージ in this exact placeholder target.",
+          "replacement_text": "ＦＥ３ダミーメッセージ[CTRL:0003]"
+        },
+        "0x07B5": {
+          "expected_text": "ＦＥ３ダミーＭＳＧ[CTRL:0003]",
+          "provenance": {
+            "audit": "runtime-latin-span-review-2026-08-07",
+            "context": "Exact mixed-script Latin-span correction for FE8U target 0x083D.",
+            "target_ids": [
+              "0x083D"
+            ]
+          },
+          "reason": "Replace the internal English MSG abbreviation with Japanese メッセージ in this exact placeholder target.",
+          "replacement_text": "ＦＥ３ダミーメッセージ[CTRL:0003]"
+        },
+        "0x07B6": {
+          "expected_text": "ＦＥ３ダミーＭＳＧ[CTRL:0003]",
+          "provenance": {
+            "audit": "runtime-latin-span-review-2026-08-07",
+            "context": "Exact mixed-script Latin-span correction for FE8U target 0x083E.",
+            "target_ids": [
+              "0x083E"
+            ]
+          },
+          "reason": "Replace the internal English MSG abbreviation with Japanese メッセージ in this exact placeholder target.",
+          "replacement_text": "ＦＥ３ダミーメッセージ[CTRL:0003]"
+        },
+        "0x07B7": {
+          "expected_text": "ＦＥ３ダミーＭＳＧ[CTRL:0003]",
+          "provenance": {
+            "audit": "runtime-latin-span-review-2026-08-07",
+            "context": "Exact mixed-script Latin-span correction for FE8U target 0x083F.",
+            "target_ids": [
+              "0x083F"
+            ]
+          },
+          "reason": "Replace the internal English MSG abbreviation with Japanese メッセージ in this exact placeholder target.",
+          "replacement_text": "ＦＥ３ダミーメッセージ[CTRL:0003]"
         }
       },
       "locale_id": "ja",

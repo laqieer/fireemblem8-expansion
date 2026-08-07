@@ -2,8 +2,8 @@
 # Locale ID: ja
 # Source layout: FE8J; these identifiers are not FE8U target identifiers.
 # Input SHA-256: 511ce51cadd2ac94ec3f5219a81205f6aa52de3c3c659c9efd1f0f75f9079a8a
-# Override SHA-256: 28875c20f74e187d242c8c85d5f40d2faf8eaf370f8d4a2e8e1706b0eaa6a4fd
-# Applied overrides: 13
+# Override SHA-256: 51cf6fdde1d6aafa9e52631b07b5baeea94b2360686c12cc44584b6e4efa4af9
+# Applied overrides: 20
 
 #0x0000
 
@@ -3944,19 +3944,19 @@
 #0x07B0
 グラドに帰った後、デュッセルはすぐにアメリアを母親と[CTRL:0001]再会させた。アメリアとその母は心の底から喜び、涙を流[CTRL:0001]してデュッセルに感謝した。その後、デュッセルとアメリア[CTRL:0001]はグラドの復興に尽力。やがてアメリアは、かつて黒曜石[CTRL:0001]と呼ばれた男の、最も信頼する部下となったという。
 #0x07B1
-ＦＥ３ダミーＭＳＧ[CTRL:0003]
+ＦＥ３ダミーメッセージ[CTRL:0003]
 #0x07B2
-ＦＥ３ダミーＭＳＧ[CTRL:0003]
+ＦＥ３ダミーメッセージ[CTRL:0003]
 #0x07B3
-ＦＥ３ダミーＭＳＧ[CTRL:0003]
+ＦＥ３ダミーメッセージ[CTRL:0003]
 #0x07B4
-ＦＥ３ダミーＭＳＧ[CTRL:0003]
+ＦＥ３ダミーメッセージ[CTRL:0003]
 #0x07B5
-ＦＥ３ダミーＭＳＧ[CTRL:0003]
+ＦＥ３ダミーメッセージ[CTRL:0003]
 #0x07B6
-ＦＥ３ダミーＭＳＧ[CTRL:0003]
+ＦＥ３ダミーメッセージ[CTRL:0003]
 #0x07B7
-ＦＥ３ダミーＭＳＧ[CTRL:0003]
+ＦＥ３ダミーメッセージ[CTRL:0003]
 #0x07B8
 [CTRL:000A][CTRL:0010][CTRL:0165][CTRL:000A]セーブデータを全部消去します[CTRL:0001]よろしいですか？　[CTRL:0019]
 #0x07B9

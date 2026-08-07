@@ -2422,14 +2422,14 @@
     },
     "fe8j_indexed_source": {
       "path": "texts/locales/ja/indexed.txt",
-      "sha256": "4dee8ae255541e674e0285863d0797577e60f50d88654cd7b7c8dfe444e32146"
+      "sha256": "d5fd620b01a08f7e407e6062a5890759199ec532de312d12df284c0a3f477f42"
     },
     "fe8j_reference_revision": "bf424414d075789d757e2f4cd0cea823bfb2862e",
     "fe8u_reference_revision": "d727e37ba1a584b2f874bdc3662ebc45e257de23",
     "protected_artifacts": [
       {
         "path": "texts/locales/mapping/fe8u_target_map.json",
-        "sha256": "4fd2d447930f0338b365a0652a5f2742b43c2c673b3ec72e783a0c2cca2443d8"
+        "sha256": "d5f28f341338588aa72fd512a96d92d3dbf0d1b1dc58b12fb3612a62b49e2109"
       },
       {
         "path": "texts/locales/mapping/fe8u_structural_evidence.json",
@@ -69629,9 +69629,9 @@
       "validation": {
         "parsed_structural_pair": false,
         "source_in_bounds": true,
-        "source_payload_bytes": 38,
+        "source_payload_bytes": 44,
         "source_payload_nonempty": true,
-        "source_payload_sha256": "3d6157b7bbf7432f4da87a7aff69b13ece8aaaf1655d3f8e56c016585c9f0a11",
+        "source_payload_sha256": "151d87132c57d314bc8def425dcfa5f032ee1eb7b57bc1d3e2692442793a96d5",
         "target_in_bounds": true,
         "typed_source_site_count": 3,
         "typed_target_site_count": 1
@@ -69696,9 +69696,9 @@
       "validation": {
         "parsed_structural_pair": false,
         "source_in_bounds": true,
-        "source_payload_bytes": 38,
+        "source_payload_bytes": 44,
         "source_payload_nonempty": true,
-        "source_payload_sha256": "3d6157b7bbf7432f4da87a7aff69b13ece8aaaf1655d3f8e56c016585c9f0a11",
+        "source_payload_sha256": "151d87132c57d314bc8def425dcfa5f032ee1eb7b57bc1d3e2692442793a96d5",
         "target_in_bounds": true,
         "typed_source_site_count": 1,
         "typed_target_site_count": 1
@@ -69763,9 +69763,9 @@
       "validation": {
         "parsed_structural_pair": false,
         "source_in_bounds": true,
-        "source_payload_bytes": 38,
+        "source_payload_bytes": 44,
         "source_payload_nonempty": true,
-        "source_payload_sha256": "3d6157b7bbf7432f4da87a7aff69b13ece8aaaf1655d3f8e56c016585c9f0a11",
+        "source_payload_sha256": "151d87132c57d314bc8def425dcfa5f032ee1eb7b57bc1d3e2692442793a96d5",
         "target_in_bounds": true,
         "typed_source_site_count": 1,
         "typed_target_site_count": 1
@@ -69830,9 +69830,9 @@
       "validation": {
         "parsed_structural_pair": false,
         "source_in_bounds": true,
-        "source_payload_bytes": 38,
+        "source_payload_bytes": 44,
         "source_payload_nonempty": true,
-        "source_payload_sha256": "3d6157b7bbf7432f4da87a7aff69b13ece8aaaf1655d3f8e56c016585c9f0a11",
+        "source_payload_sha256": "151d87132c57d314bc8def425dcfa5f032ee1eb7b57bc1d3e2692442793a96d5",
         "target_in_bounds": true,
         "typed_source_site_count": 1,
         "typed_target_site_count": 1
@@ -69897,9 +69897,9 @@
       "validation": {
         "parsed_structural_pair": false,
         "source_in_bounds": true,
-        "source_payload_bytes": 38,
+        "source_payload_bytes": 44,
         "source_payload_nonempty": true,
-        "source_payload_sha256": "3d6157b7bbf7432f4da87a7aff69b13ece8aaaf1655d3f8e56c016585c9f0a11",
+        "source_payload_sha256": "151d87132c57d314bc8def425dcfa5f032ee1eb7b57bc1d3e2692442793a96d5",
         "target_in_bounds": true,
         "typed_source_site_count": 1,
         "typed_target_site_count": 1
@@ -69964,9 +69964,9 @@
       "validation": {
         "parsed_structural_pair": false,
         "source_in_bounds": true,
-        "source_payload_bytes": 38,
+        "source_payload_bytes": 44,
         "source_payload_nonempty": true,
-        "source_payload_sha256": "3d6157b7bbf7432f4da87a7aff69b13ece8aaaf1655d3f8e56c016585c9f0a11",
+        "source_payload_sha256": "151d87132c57d314bc8def425dcfa5f032ee1eb7b57bc1d3e2692442793a96d5",
         "target_in_bounds": true,
         "typed_source_site_count": 1,
         "typed_target_site_count": 1
@@ -70031,9 +70031,9 @@
       "validation": {
         "parsed_structural_pair": false,
         "source_in_bounds": true,
-        "source_payload_bytes": 38,
+        "source_payload_bytes": 44,
         "source_payload_nonempty": true,
-        "source_payload_sha256": "3d6157b7bbf7432f4da87a7aff69b13ece8aaaf1655d3f8e56c016585c9f0a11",
+        "source_payload_sha256": "151d87132c57d314bc8def425dcfa5f032ee1eb7b57bc1d3e2692442793a96d5",
         "target_in_bounds": true,
         "typed_source_site_count": 1,
         "typed_target_site_count": 1

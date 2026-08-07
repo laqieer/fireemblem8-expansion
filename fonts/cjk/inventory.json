@@ -19,27 +19,27 @@
     },
     "texts/locales/authored/catalog.ja.json": {
       "byte_count": 27931,
-      "sha256": "4bfb65342dfc4fe4b69c0a9413ab26acf4e050ee2a9f4c7ce7237b291bb9b728"
+      "sha256": "24ef55bc27d88e795cd93e9df1e67b7a8b018df30c70e607d43958ce65c10c99"
     },
     "texts/locales/authored/catalog.zh-Hans.json": {
       "byte_count": 24753,
-      "sha256": "dcbb6a570d50e4c332e0fef2efbbc2050f6c69d7d550343b8834c48a041341a8"
+      "sha256": "e502f9ab0c383f8b19e743a92a975c65125b095f8bd23d9d0d794f7a8439caad"
     },
     "texts/locales/authored/manifest.json": {
       "byte_count": 2723,
-      "sha256": "6a68008fc79966ff5bf2129709a0fcc1abddc8f2ec3dec4f2c651805ae00723f"
+      "sha256": "c492bf5ea1851b8ec5b6b1298b05789da0726c1cb4c8e2d4b683227c20e445f9"
     },
     "texts/locales/ja/indexed.txt": {
-      "byte_count": 1719065,
-      "sha256": "4dee8ae255541e674e0285863d0797577e60f50d88654cd7b7c8dfe444e32146"
+      "byte_count": 1719107,
+      "sha256": "d5fd620b01a08f7e407e6062a5890759199ec532de312d12df284c0a3f477f42"
     },
     "texts/locales/ja/raw.json": {
       "byte_count": 9643,
       "sha256": "3e1b2349501461297f16e52b585a5021af7daab3f5acf950a4adee64dd878eb4"
     },
     "texts/locales/zh-Hans/indexed.txt": {
-      "byte_count": 1266623,
-      "sha256": "6c6d125442e1b03f6e689c52c490bd6d80c5c9c57a16b6553bcc4047dad32023"
+      "byte_count": 1266683,
+      "sha256": "1397cfee2b5c52b9f321ec6eaea2e015abe8581cfb4787d3a33502230e8b62d7"
     },
     "texts/locales/zh-Hans/raw.json": {
       "byte_count": 45834,

@@ -1,16 +1,16 @@
 {
   "authoritative": false,
   "inputs": {
-    "current_pre_authored_target_map_sha256": "004d28defd0d2d210be3b5afd60443aeb598b6a68e52545ec00ec1ae07f43624",
-    "febuilder_alignment_evidence_sha256": "280fb3a9301cf36f4c0bceb8ed11641c82ba7b3d639e9c2fa4289aff039af8f8",
+    "current_pre_authored_target_map_sha256": "493793a6c582e77f0d036279a069ca585d5e4acc1e8dbbdb58d5509f1daf7369",
+    "febuilder_alignment_evidence_sha256": "9a7ce7a7942a0636fb745622f2b8312290080bef428b4e2879454a1722a561f8",
     "historical_pre_authored_target_map_sha256": "63b021274b7865c0d76cb1556fa84cc1dfdbcadab38037c8ccf6eeb9cdc3591a",
     "original_target_map_sha256": "6abbc956576d823de7430da267212f6c050fec5267cb7a6cb6819f77381ae4bd",
     "runtime_authored_catalog_sha256": {
-      "ja": "973cb438f756693af1b5f589bda64fc999b980f24ea230d4324643aca0a23fc8",
-      "zh-Hans": "52da7de538cea6f17b68689bb3af3cab61503a53a355a3db7ebca4b88da228af"
+      "ja": "3f5b984b28b810f6d6fca5d70c724bbb5d2df177ba07a3325d414b3df3b59c6e",
+      "zh-Hans": "6552657d7e17c88780e588562605f92e4363778bdb4e71950fd1769307c3e0b1"
     },
     "source_authored_queue_sha256": "ffdff913a552076928d5cb06634ed75d8983b65c05bb4ecec9aa2b610ffe6ad6",
-    "structural_completion_evidence_sha256": "f0f534106caf1b8ab68b3e4087479e5ec638752f42e8fb37c2dd8f29b6843e7a"
+    "structural_completion_evidence_sha256": "84f3108afc1a22147e327b9016a9e27e6d06a16274d9ca596fba71362ef0c167"
   },
   "kind": "fe8u-final-mapping-report",
   "note": "Evidence report for the deterministic final-mapping promotion pass. The source queue is retained byte-identically as fulfilled history.",
