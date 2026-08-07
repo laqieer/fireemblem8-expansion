@@ -5,7 +5,7 @@
   "shards": [
     {
       "path": "texts/locales/authored/shards/event_expansion.ja.json",
-      "sha256": "2544deace2c550d8c24a60fc182bbafcb05d938e1228a74d0053e20a8526e61a",
+      "sha256": "1be36b6bd7c1a479645b16e6d81fe2e77793992bfebe5a6ed13023353ae2af39",
       "target_count": 46
     },
     {
@@ -15,12 +15,12 @@
     },
     {
       "path": "texts/locales/authored/shards/help_shop.ja.json",
-      "sha256": "418b8e20f030adfd4af0783b98b718e0d4a6e2f938a4b80f4bea2d2d920f75ec",
+      "sha256": "4b28bbcb09331d5c645ee950bed16b55428eb4d47157d33fcd00b29c7b9d577a",
       "target_count": 81
     },
     {
       "path": "texts/locales/authored/shards/menu.ja.json",
-      "sha256": "84f542d7796bd3fdcc16523ed2c0729b71d06b9407f2dabbf59fb749d1595273",
+      "sha256": "a87848d741aa4d14e50dc7e91116911284eca419b3dda687e1b7fc5be9f4b345",
       "target_count": 132
     }
   ],
@@ -58,11 +58,11 @@
     "game.chapter_event.msg_986": "エイリークをロスの隣へ移動します。[.][LF]\n点滅した場所へカーソルを合わせ[LF]\nＡボタンを押してください。[.][A][X]\n",
     "game.chapter_event.msg_987": "今度は [.][ToggleRed]話す[ToggleRed]を選び[LF]\nＡボタンを押します。[.][A][X]\n",
     "game.chapter_event.msg_aad": "[OpenMidLeft][LoadFace][FID_Ephraim]\n[OpenMidRight][LoadFace][FID_Soldier2]\n[OpenMidRight][ToggleMouthMove]・・・・・・[ToggleMouthMove][A]\n[OpenMidLeft]質問するだけだ。答えたく[.][LF]\nなければ黙っていろ。[A][LF]\nだが早く戦争を終わらせたいなら[.][LF]\n俺に協力してもらう。[A]\n[OpenMidRight][ToggleMouthMove]・・・・・・[ToggleMouthMove][A][LF]\n[ToggleMouthMove]・・・[.][ToggleMouthMove]何が知りたい？[.][A]\n[OpenMidLeft]グラドはなぜルネスを侵略した？[.][A]\n[OpenMidRight][ToggleMouthMove]・・・[.][ToggleMouthMove]わからない。[A][LF]\n今回の戦は陛下の[.][LF]\n御命令で始まった。[.][A][LF]\n俺たち下の者には[LF]\n陛下のお考えなどわからない。[A]\n[OpenMidLeft]では教えろ。[LF]\nデュッセル将軍は今どこにいる？[.][A]\n[OpenMidRight]帝都だ。将軍は当初から[LF]\nこの戦争に反対しておられた。[.][A][LF]\n連日、陛下に献言しているが[.][LF]\n陛下は耳を貸さない。[A][LF]\n忠誠心を疑う者も[.][LF]\nいるらしい。[A][LF]\nあれほど声を上げれば、立場も[.][ToggleMouthMove]－－[ToggleMouthMove]命も[ToggleMouthMove]－－[ToggleMouthMove][LF]\n危うくなる。[A]\n[OpenMidLeft]そうか[ToggleMouthMove]・・・[.][ToggleMouthMove][A][LF]\nやはりデュッセル将軍は[LF]\n俺が知る誠実な人のままか。[A][CloseSpeechSlow]\n[OpenMidLeft]ではリオン皇子は？今まで[.][LF]\nどこで何をしていた？[A][LF]\nなぜ父ヴィガルド皇帝の[LF]\n暴挙を止めなかった？[.][A][BreakTalk]\n\n[OpenMidRight][ToggleMouthMove]・・・・・・[ToggleMouthMove][A][CR][LF]\n噂では[.][ToggleMouthMove]・・・[.][ToggleMouthMove][A][LF]\nヴィガルド皇帝にこの戦を[.][LF]\n進言したのは皇子自身だと。[A][BreakTalk]\n\n[OpenMidLeft]何だと？[.][A][CR][LF]\n馬鹿な！[A][LF]\n俺はリオンを知っている。誰より[.][LF]\n争いを嫌う男だ。[.][A][LF]\nこんな流血を招くような真似を[.][LF]\nするはずがない！[.][A]\n[OpenMidRight][ClearFace]\n[OpenMidRight][LoadFace][FID_Seth]\n[OpenMidRight]エフラム様、どうか冷静に。[.][A]\n[OpenMidLeft][ToggleMouthMove]・・・[.][ToggleMouthMove]すまん。[A][X]\n",
-    "game.chapter_event.msg_b2a": "[OpenLeft]リオンが別人のようになったのは[LF]\n【魔石】を手にしてからだという。[.][A][LF]\n俺は魔術にはうといが[ToggleMouthMove]・・・[.][ToggleMouthMove][LF]\nあの時の奴は尋常ではなかった。[A][LF]\nまるで何者かに[LF]\n操られているようだった。[A]\n[OpenFarLeft][ToggleMouthMove]・・・・・・[ToggleMouthMove][A]\n[OpenRight]二人には受け入れがたい[.][LF]\nことだろうが[ToggleMouthMove]・・・[.][ToggleMouthMove][A][LF]\nリオン皇子の本心は[LF]\n問題ではない。【魔石】を持っている。[A][LF]\nあの石こそがすべての[LF]\n元凶だ。皇子を止めねばならない。[.][A][BreakTalk]\n\n[OpenFarRight]いいえ、まだです。その前に[.][LF]\nやるべきことがありますわ。[.][A]\n[OpenFarLeft]ラーチェル？[A]\n[OpenFarRight]エフラム王子、あなたも[LF]\n感じましたでしょう？[A][LF]\nリオン皇子の持つ【魔石】[ToggleMouthMove]・・・[.][ToggleMouthMove][LF]\nあれが放つ凄まじい瘴気[ToggleMouthMove]・・・[.][ToggleMouthMove][A][LF]\nリオン皇子だけならともかく[LF]\nあの石は人がかなうものではありません。[A]\n[OpenFarLeft]では・・・どうすれば？[.][A]\n[OpenFarRight]【聖石】ですわ。[A]\n[OpenFarLeft]【聖石】？[A]\n[OpenFarRight]皆様もご存じでしょう。[.][LF]\n五つの【聖石】の伝説を。[.][A][LF]\nそれだけが魔王を[.][LF]\n永遠に封じる力を持っていました。[.][A][LF]\nならば魔の力を退けるには[LF]\n【聖石】を使うのが道理ですわ！[.][A]\n[OpenRight]戦争の行方をそんな[LF]\n愚かな伝説に託すのか？[A]\n[OpenLeft][ToggleMouthMove]・・・[.][ToggleMouthMove]伝説だけではない。[LF]\n望みもある。[A][CloseSpeechSlow]\n[OpenLeft]リオンによれば[A][LF]\nグラド、フレリア、ジャハナの[.][LF]\n【聖石】はすでに破壊された。[A]\n[OpenFarLeft]そういえば[.][ToggleMouthMove]・・・[.][ToggleMouthMove][A][LF]\nグラド軍はルネスの【聖石】を[.][LF]\n破壊するため私を襲いました。[.][A][LF]\nそれがルネスを[LF]\n侵略した理由なら[ToggleMouthMove]・・・[.][ToggleMouthMove][A][LF]\n【聖石】の力は俺たちの[LF]\n想像以上なのかもしれない。[A]\n[OpenFarRight]ええ、その通りですわ！[.][A][LF]\n【聖石】さえ手にすれば[LF]\n【魔石】の力に対抗できます！[A]\n[OpenRight]だが三つの【聖石】はすでに[.][LF]\n砕かれ、残る手段は少ない。[.][A][LF]\n最初に侵略された[.][LF]\nルネスの石も[ToggleMouthMove]・・・[.][ToggleMouthMove][A]\n[OpenLeft]いや、そうとは限らない。[.][A][LF]\nルネスの【聖石】は[LF]\n俺とエイリークの腕輪で封印されている。[.][A]\n[OpenFarLeft]グラドは何度も[LF]\n私たちの腕輪を狙いました。[A][LF]\nすべて失敗していますから[LF]\n石はまだ無事かもしれません。[A]\n[OpenLeft]もちろん確かめなければならない。[.][A][LF]\nグラドを倒した今、[.][LF]\n祖国を放ってはおけない。[A][LF]\nルネスへ帰る時だ。[A][X]\n",
+    "game.chapter_event.msg_b2a": "[OpenLeft]リオンが別人のようになったのは[LF]\n【魔石】を手にしてからだという。[.][A][LF]\n俺は魔術にはうといが[ToggleMouthMove]・・・[.][ToggleMouthMove][LF]\nあの時の奴は尋常ではなかった。[A][LF]\nまるで何者かに[LF]\n操られているようだった。[A]\n[OpenFarLeft][ToggleMouthMove]・・・・・・[ToggleMouthMove][A]\n[OpenRight]二人には受け入れがたい[.][LF]\nことだろうが[ToggleMouthMove]・・・[.][ToggleMouthMove][A][LF]\nリオン皇子の本心は[LF]\n問題ではない。【魔石】を持っている。[A][LF]\nあの石こそがすべての[LF]\n元凶だ。皇子を止めねばならない。[.][A][BreakTalk]\n\n[OpenFarRight]いいえ、まだです。その前に[.][LF]\nやるべきことがありますわ。[.][A]\n[OpenFarLeft]ラーチェル？[A]\n[OpenFarRight]エフラム王子、あなたも[LF]\n感じましたでしょう？[A][LF]\nリオン皇子の持つ【魔石】[ToggleMouthMove]・・・[.][ToggleMouthMove][LF]\nあれが放つ凄まじい瘴気[ToggleMouthMove]・・・[.][ToggleMouthMove][A][LF]\nリオン皇子だけならともかく[LF]\nあの石は人がかなうものではありません。[A]\n[OpenFarLeft]では・・・どうすれば？[.][A]\n[OpenFarRight]【聖石】ですわ。[A]\n[OpenFarLeft]【聖石】？[A]\n[OpenFarRight]皆様もご存じでしょう。[.][LF]\n五つの【聖石】の伝説を。[.][A][LF]\nそれだけが魔王を[.][LF]\n永遠に封じる力を持っていました。[.][A][LF]\nならば魔の力を退けるには[LF]\n【聖石】を使うのが道理ですわ！[.][A]\n[OpenRight]戦争の行方をそんな[LF]\n愚かな伝説に託すのか？[A]\n[OpenLeft][ToggleMouthMove]・・・[.][ToggleMouthMove]伝説だけではない。[LF]\n望みもある。[A][CloseSpeechSlow]\n[OpenLeft]リオンによれば[A][LF]\n奴はグラド、フレリア、ジャハナの[.][LF]\n【聖石】をすでに破壊した。[A]\n[OpenFarLeft]そういえば[.][ToggleMouthMove]・・・[.][ToggleMouthMove][A][LF]\nグラド軍はルネスの【聖石】を[.][LF]\n破壊するため私を襲いました。[.][A][LF]\nそれがルネスを[LF]\n侵略した理由なら[ToggleMouthMove]・・・[.][ToggleMouthMove][A][LF]\n【聖石】の力は私たちの[LF]\n想像以上なのかもしれません。[A]\n[OpenFarRight]ええ、その通りですわ！[.][A][LF]\n【聖石】さえ手にすれば[LF]\n【魔石】の力に対抗できます！[A]\n[OpenRight]だが三つの【聖石】はすでに[.][LF]\n砕かれ、残る手段は少ない。[.][A][LF]\n最初に侵略された[.][LF]\nルネスの石も[ToggleMouthMove]・・・[.][ToggleMouthMove][A]\n[OpenLeft]いや、そうとは限らない。[.][A][LF]\nルネスの【聖石】は[LF]\n俺とエイリークの腕輪で封印されている。[.][A]\n[OpenFarLeft]グラドは何度も[LF]\n私たちの腕輪を狙いました。[A][LF]\nすべて失敗していますから[LF]\n石はまだ無事かもしれません。[A]\n[OpenLeft]もちろん確かめなければならない。[.][A][LF]\nグラドを倒した今、[.][LF]\n祖国を放ってはおけない。[A][LF]\nルネスへ帰る時だ。[A][X]\n",
     "game.chapter_title.msg_539": "/[.][X]\n",
     "game.expansion.msg_save_compat_config_incompatible": "このセーブデータは[.][LF]\n互換性のない拡張設定で[.][LF]\n作成されており使用できません。[X]\n",
     "game.expansion.msg_save_compat_erase_confirm": "全セーブデータ消去を実行しますか？[.][LF]\n元に戻せません。[X]",
-    "game.expansion.msg_save_compat_header_corrupt": "セーブデータが破損しており[.][LF]\n読み込めません。[X]\n",
+    "game.expansion.msg_save_compat_header_corrupt": "セーブデータが破損しているようで[.][LF]\n読み込めません。[X]\n",
     "game.expansion.msg_save_compat_legacy": "このセーブデータは[.][LF]\n拡張セーブ形式より古く[.][LF]\nここでは開けません。[X]\n",
     "game.expansion.msg_save_compat_metadata_corrupt": "セーブデータの拡張情報が[.][LF]\n破損しており[.][LF]\n読み込めません。[X]\n",
     "game.expansion.msg_save_compat_newer": "このセーブデータは[.][LF]\n新しい拡張版のもので[.][LF]\nこの環境では[.][LF]\n使用できません。[X]\n",
@@ -102,7 +102,7 @@
     "game.help_tutorial.msg_888": "[OpenLeft]バックアップにトライアルマップがありません[.][LF]\n送信を中止してメニューへ戻ります[X]\n",
     "game.help_tutorial.msg_895": "クリアしたセーブデータを選んでください[.][X]\n",
     "game.menu_definition.msg_011": ".[.][X]\n",
-    "game.menu_definition.msg_022": ".[.][X]\n",
+    "game.menu_definition.msg_022": "にて最期をとげる。[.][X]\n",
     "game.menu_definition.msg_02e": "  モード  チュートリアル[X]\n",
     "game.menu_definition.msg_02f": "  モード  ノーマル[X]\n",
     "game.menu_definition.msg_030": "  モード  ハード[X]\n",
@@ -156,8 +156,8 @@
     "game.menu_definition.msg_065": "最弱[.][X]\n",
     "game.menu_definition.msg_066": "最強[.][X]\n",
     "game.menu_definition.msg_067": "良好[X]\n",
-    "game.menu_definition.msg_068": "毒[X]\n",
-    "game.menu_definition.msg_069": "睡眠[.][X]\n",
+    "game.menu_definition.msg_068": "ポイズン[X]\n",
+    "game.menu_definition.msg_069": "スリープ[.][X]\n",
     "game.menu_definition.msg_06a": "沈黙[.][X]\n",
     "game.menu_definition.msg_06b": "バサーク[.][X]\n",
     "game.menu_definition.msg_06c": "攻撃の舞[X]\n",
@@ -237,7 +237,7 @@
     "game.shop_arena.msg_735": "編成を選び　チームを編成してください[X]\n",
     "game.shop_arena.msg_736": "通信対戦用のチームを編成・編集します[.][X]\n",
     "game.shop_arena.msg_737": "コンピューターと対戦します[X]\n",
-    "game.shop_arena.msg_738": "十字キー左右で参加チーム数を [.][HASH] に設定します[X]\n",
+    "game.shop_arena.msg_738": "左右で参加チーム数を [.][HASH] にします[X]\n",
     "game.shop_arena.msg_739": "通信相手と対戦します[.][X]\n",
     "game.shop_arena.msg_73a": "これまでの対戦結果を確認します[.][X]\n",
     "game.shop_arena.msg_73b": "対戦ルールを設定します[.][X]\n",
@@ -255,7 +255,7 @@
     "game.shop_arena.msg_749": "しばらくお待ちください...[X]\n",
     "game.shop_arena.msg_74a": "ＳＴＡＲＴボタンで開始します[.][X]\n",
     "game.shop_arena.msg_74b": "今回の対戦ルールです[X]\n",
-    "game.shop_arena.msg_74c": "チーム作成の元にするセーブデータを選びます[.][X]\n",
+    "game.shop_arena.msg_74c": "チーム作成用のセーブデータを選びます[.][X]\n",
     "game.shop_arena.msg_74d": "元のセーブデータは変更されません[.][X]\n",
     "game.shop_arena.msg_74e": "先攻のプレイヤーを決めます[X]\n",
     "game.shop_arena.msg_74f": "あなたが先攻です[.][X]\n",

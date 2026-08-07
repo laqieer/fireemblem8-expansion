@@ -89,7 +89,7 @@
       "source_text_sha256": "85bce767396da5ba40c76dcb6cedf98a010fb77f7bdae1cb9a1d360f23660aa5",
       "subsystem": "shop-arena",
       "target_id": "0x0738",
-      "text": "十字キー左右で参加チーム数を [.][HASH] に設定します[X]\n"
+      "text": "左右で参加チーム数を [.][HASH] にします[X]\n"
     },
     {
       "english_payload_sha256": "2325423ad97424a68523aaba1fa4732e1544a6127543275a355b4d3384e09607",
@@ -249,7 +249,7 @@
       "source_text_sha256": "c11cfdad80470f365c171acc52a22c3779068fbb98a84863e86afc4c102adfc0",
       "subsystem": "shop-arena",
       "target_id": "0x074C",
-      "text": "チーム作成の元にするセーブデータを選びます[.][X]\n"
+      "text": "チーム作成用のセーブデータを選びます[.][X]\n"
     },
     {
       "english_payload_sha256": "a1d05de93419fe0f744c87696e0d60c9d60f1cbd9b0577b0882a51de109d431c",

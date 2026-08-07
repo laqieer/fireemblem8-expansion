@@ -29,7 +29,7 @@
       "source_text_sha256": "2ffbe1b843eb118ede40ed7924946a372abd53b208432688faae8d90df38995f",
       "subsystem": "menu-definition",
       "target_id": "0x0022",
-      "text": ".[.][X]\n"
+      "text": "にて最期をとげる。[.][X]\n"
     },
     {
       "english_payload_sha256": "3d810e3db2bb02136d8e00e0fd96934efa871cb087f9d2da61ba975495bf5e42",
@@ -461,7 +461,7 @@
       "source_text_sha256": "60eedf16d48873b20d77327e51a66c393e8a6e879d4ca11ea57ef2d3a51e5ce9",
       "subsystem": "menu-definition",
       "target_id": "0x0068",
-      "text": "毒[X]\n"
+      "text": "ポイズン[X]\n"
     },
     {
       "english_payload_sha256": "8ce8fd444bdf2fdf71a953606dd771634758cb3f5a66b25906055e3178517c1f",
@@ -469,7 +469,7 @@
       "source_text_sha256": "8c4bfe0e477a89e8d19298b07271d0cb79d549a849b909bde4e22ab8f685c95f",
       "subsystem": "menu-definition",
       "target_id": "0x0069",
-      "text": "睡眠[.][X]\n"
+      "text": "スリープ[.][X]\n"
     },
     {
       "english_payload_sha256": "a9539b5a299ed63dd4d3223302707bdb0e04de735163257ded4c709fb6e1fac2",

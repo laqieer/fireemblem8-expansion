@@ -18,16 +18,16 @@
       "sha256": "68f3ef0862cc7acb645b1edece8abcf706c9abeb586c41996c24205cfb0e0eaf"
     },
     "texts/locales/authored/catalog.ja.json": {
-      "byte_count": 27902,
-      "sha256": "cdcdf188b24337613b06026e0eee4a8f72bb84d74026c6d40b813af529a8889a"
+      "byte_count": 27931,
+      "sha256": "e3cd170398bd75a08275e286bc01aebb510fd5b3f8123223b452dd3185d6916a"
     },
     "texts/locales/authored/catalog.zh-Hans.json": {
-      "byte_count": 24745,
-      "sha256": "2e62fc2f8cc1a0146e36fde342a5260135e39f79ebb27f502673ce913ca7a66e"
+      "byte_count": 24753,
+      "sha256": "b836a8af3f6a20e4c5b3d2fca5a25558779881505217d3baa618678f51e3ad24"
     },
     "texts/locales/authored/manifest.json": {
       "byte_count": 2723,
-      "sha256": "c90fc582dda3d4a407aff98cc3987219feb69d549dfb2985e9ff4c4d8e7057a7"
+      "sha256": "438db3bc4572124f96c5100ce0fc32aae5606422bb43354c1d0fd5df2a0a99f1"
     },
     "texts/locales/ja/indexed.txt": {
       "byte_count": 1719196,
@@ -55,7 +55,7 @@
       },
       "contributions": {
         "authored_game": {
-          "non_ascii_scalar_count": 536,
+          "non_ascii_scalar_count": 535,
           "record_count": 262
         },
         "expansion": {
@@ -109,7 +109,7 @@
       },
       "contributions": {
         "authored_game": {
-          "non_ascii_scalar_count": 629,
+          "non_ascii_scalar_count": 631,
           "record_count": 262
         },
         "expansion": {

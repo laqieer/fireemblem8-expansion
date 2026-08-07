@@ -1,6 +1,7 @@
 import hashlib
 import json
 import re
+import struct
 import unicodedata
 import unittest
 from collections import Counter
@@ -13,6 +14,7 @@ SHARD_PATHS = {
     "ja": ROOT / "texts/locales/authored/shards/help_shop.ja.json",
     "zh-Hans": ROOT / "texts/locales/authored/shards/help_shop.zh-Hans.json",
 }
+LOCALES = tuple(SHARD_PATHS)
 SOURCE_REVISION = "e6435a8e2f444f0e16cab21713fe052b543d2e6e"
 SOURCE_QUEUE_SHA256 = "ffdff913a552076928d5cb06634ed75d8983b65c05bb4ecec9aa2b610ffe6ad6"
 SUBSYSTEM_COUNTS = {"help-tutorial": 33, "shop-arena": 48}
@@ -48,7 +50,8 @@ NON_CJK_LABEL_IDS = {
 }
 REVIEWED_PAYLOADS = {
     "ja": {
-        "0x0738": "十字キー左右で参加チーム数を [.][HASH] に設定します[X]\n",
+        "0x0738": "左右で参加チーム数を [.][HASH] にします[X]\n",
+        "0x074C": "チーム作成用のセーブデータを選びます[.][X]\n",
         "0x0883": "を転送しました[.][X]\n",
     },
     "zh-Hans": {
@@ -58,6 +61,12 @@ REVIEWED_PAYLOADS = {
 }
 REVIEWED_LINE_EDGE_WHITESPACE = {
     ("ja", "0x0883"): [("", "")],
+}
+REVIEWED_PIXEL_WIDTHS = {
+    "ja": {
+        "0x0738": 151,
+        "0x074C": 179,
+    },
 }
 
 
@@ -100,6 +109,49 @@ def display_width(text):
     )
 
 
+def load_ascii_system_widths():
+    text = (ROOT / "src/data/fonts/glyphs_1.h").read_text(encoding="utf-8")
+    glyph_widths = {
+        int(name): int(width)
+        for name, width in re.findall(
+            r"struct Glyph gFontgrp_(\d+) =\s*\{.*?\.width = (\d+),",
+            text,
+            flags=re.DOTALL,
+        )
+    }
+    table = re.search(
+        r"struct Glyph \*TextGlyphs_System\[\] =\s*\{(.*?)\n\};",
+        text,
+        flags=re.DOTALL,
+    )
+    if table is None:
+        raise AssertionError("TextGlyphs_System table is missing")
+    entries = re.findall(r"NULL|&gFontgrp_\d+", table.group(1))
+    return {
+        index: glyph_widths[int(entry.removeprefix("&gFontgrp_"))]
+        for index, entry in enumerate(entries)
+        if entry != "NULL"
+    }
+
+
+def load_cjk_system_widths(locale):
+    manifest = json.loads(
+        (ROOT / "graphics/fonts/cjk/manifest.json").read_text(encoding="utf-8")
+    )
+    asset = manifest["assets"][f"{locale}.system"]
+    codepoint_bytes = (ROOT / asset["codepoints"]["path"]).read_bytes()
+    widths = (ROOT / asset["widths"]["path"]).read_bytes()
+    codepoints = struct.unpack(f"<{len(widths)}I", codepoint_bytes)
+    return dict(zip(codepoints, widths))
+
+
+def rendered_visible_text(text):
+    return TOKEN_RE.sub(
+        lambda match: "#" if match.group(0) == "[HASH]" else "",
+        text,
+    )
+
+
 class AuthoredHelpShopShardTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -113,6 +165,10 @@ class AuthoredHelpShopShardTests(unittest.TestCase):
         cls.shard_bytes = {}
         cls.shards = {}
         cls.records = {}
+        cls.ascii_system_widths = load_ascii_system_widths()
+        cls.cjk_system_widths = {
+            locale: load_cjk_system_widths(locale) for locale in LOCALES
+        }
         for locale, path in SHARD_PATHS.items():
             cls.shard_bytes[locale], cls.shards[locale] = load_strict_json(path)
             cls.records[locale] = {
@@ -179,6 +235,28 @@ class AuthoredHelpShopShardTests(unittest.TestCase):
         for locale, payloads in REVIEWED_PAYLOADS.items():
             for target_id, payload in payloads.items():
                 self.assertEqual(self.records[locale][target_id]["text"], payload)
+
+    def test_reviewed_payloads_fit_the_192_pixel_system_text_surface(self):
+        for locale, expected_widths in REVIEWED_PIXEL_WIDTHS.items():
+            for target_id, expected_width in expected_widths.items():
+                rendered = rendered_visible_text(
+                    self.records[locale][target_id]["text"]
+                ).rstrip("\n")
+                width = 0
+                for character in rendered:
+                    scalar = ord(character)
+                    if scalar < 0x80:
+                        self.assertIn(scalar, self.ascii_system_widths)
+                        width += self.ascii_system_widths[scalar]
+                    else:
+                        self.assertIn(scalar, self.cjk_system_widths[locale])
+                        width += self.cjk_system_widths[locale][scalar]
+                self.assertEqual(width, expected_width, (locale, target_id))
+                self.assertLessEqual(
+                    width,
+                    192,
+                    f"{locale} {target_id}: system-font width {width}px exceeds 192px",
+                )
 
     def test_json_is_strict_utf8_and_canonical(self):
         for locale, shard in self.shards.items():

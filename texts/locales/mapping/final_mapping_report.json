@@ -4,8 +4,8 @@
     "febuilder_alignment_evidence_sha256": "78dac548ec81979127f284927eea589c4598ee93382b450b5e674c84611ecad6",
     "original_target_map_sha256": "6abbc956576d823de7430da267212f6c050fec5267cb7a6cb6819f77381ae4bd",
     "runtime_authored_catalog_sha256": {
-      "ja": "4872bf1ed77af887eebba4dcc180ea3899eb979866d56c34344554a29aaed76c",
-      "zh-Hans": "34855db57b4864e07a03846529877297706f59aed6f4ba61e07788f866d96cbc"
+      "ja": "fb53980f220d5a764b15131ad7e869d936c6707f34db1c87d81782305951d8f7",
+      "zh-Hans": "3b1e98a1ed80426956e2b388e222f1b489d18e7ce2f660dad64571937d7f7d0b"
     },
     "source_authored_queue_sha256": "ffdff913a552076928d5cb06634ed75d8983b65c05bb4ecec9aa2b610ffe6ad6",
     "structural_completion_evidence_sha256": "544420ef5077af43b5ccd359d331dae0bc9b9ea42959710e1d464c136999aacf"

@@ -5,7 +5,7 @@
   "shards": [
     {
       "path": "texts/locales/authored/shards/event_expansion.zh-Hans.json",
-      "sha256": "d18ddda64e8815428640a5faeafc561f6de2a3a4b57cec2cae7ff70ef9f68de6",
+      "sha256": "3c511a7ff2ba2d28a85e11825c0eb3550d0b56f465ff97cb4568dbd5d07eec74",
       "target_count": 46
     },
     {
@@ -20,7 +20,7 @@
     },
     {
       "path": "texts/locales/authored/shards/menu.zh-Hans.json",
-      "sha256": "eea7c49ba173882f147613525893900181746539a43d6321781bdd05a9e7f35f",
+      "sha256": "e126c6bd6dd7403abd990c01b471be89a82b56f4664d912a1a195df2b88b3005",
       "target_count": 132
     }
   ],
@@ -58,7 +58,7 @@
     "game.chapter_event.msg_986": "让艾瑞珂移动到罗斯身边。[.][LF]\n将光标移到闪烁的[LF]\n位置，然后按下A键。[.][A][X]\n",
     "game.chapter_event.msg_987": "选择 [.][ToggleRed]对话[ToggleRed]，[LF]\n然后按下A键。[.][A][X]\n",
     "game.chapter_event.msg_aad": "[OpenMidLeft][LoadFace][FID_Ephraim]\n[OpenMidRight][LoadFace][FID_Soldier2]\n[OpenMidRight][ToggleMouthMove]……[ToggleMouthMove][A]\n[OpenMidLeft]我只问几个问题。若不想[.][LF]\n回答，就保持沉默。[A][LF]\n若想尽快结束这场战争，[.][LF]\n就请配合我。[A]\n[OpenMidRight][ToggleMouthMove]……[ToggleMouthMove][A][LF]\n[ToggleMouthMove]……[.][ToggleMouthMove]想知道什么？[.][A]\n[OpenMidLeft]古拉德为何侵略鲁内斯？[.][A]\n[OpenMidRight][ToggleMouthMove]……[.][ToggleMouthMove]我不知道。[A][LF]\n这场战争是奉[.][LF]\n皇帝陛下之命开始的。[.][A][LF]\n我们这些士兵根本[LF]\n不明白陛下的意图。[A]\n[OpenMidLeft]那么告诉我：[LF]\n杜塞尔将军现在何处？[.][A]\n[OpenMidRight]在帝都。将军从一开始[LF]\n就反对这场战争。[.][A][LF]\n他连日劝谏陛下，[.][LF]\n陛下却不予理会。[A][LF]\n听说有人开始质疑[.][LF]\n将军的忠诚。[A][LF]\n他如此直言，地位[.][ToggleMouthMove]——[ToggleMouthMove]甚至生命[ToggleMouthMove]——[ToggleMouthMove][LF]\n都已陷入危险。[A]\n[OpenMidLeft]是吗[ToggleMouthMove]……[.][ToggleMouthMove][A][LF]\n看来杜塞尔将军仍是[LF]\n我熟悉的那位忠直之人。[A][CloseSpeechSlow]\n[OpenMidLeft]那么利昂皇子呢？这一切[.][LF]\n发生时他在哪里？[A][LF]\n为何不设法制止[LF]\n他父亲的暴行？[.][A][BreakTalk]\n\n[OpenMidRight][ToggleMouthMove]……[ToggleMouthMove][A][CR][LF]\n据传闻[.][ToggleMouthMove]……[.][ToggleMouthMove][A][LF]\n劝彼加尔德皇帝发动[.][LF]\n战争的正是皇子本人。[A][BreakTalk]\n\n[OpenMidLeft]你说什么？[.][A][CR][LF]\n荒谬！[A][LF]\n我很了解利昂。没有人[.][LF]\n比他更厌恶战争。[.][A][LF]\n他绝不会做出[.][LF]\n引发这场血战的事！[.][A]\n[OpenMidRight][ClearFace]\n[OpenMidRight][LoadFace][FID_Seth]\n[OpenMidRight]伊弗列姆王子，请冷静。[.][A]\n[OpenMidLeft][ToggleMouthMove]……[.][ToggleMouthMove]抱歉。[A][X]\n",
-    "game.chapter_event.msg_b2a": "[OpenLeft]听说利昂是在得到[LF]\n【魔石】后变了。[.][A][LF]\n我不懂魔法，可是[ToggleMouthMove]……[.][ToggleMouthMove][LF]\n当时的他实在很不寻常。[A][LF]\n仿佛他自己也正被[LF]\n某种东西操纵着。[A]\n[OpenFarLeft][ToggleMouthMove]……[ToggleMouthMove][A]\n[OpenRight]你们二位也许很难[.][LF]\n接受，但是[ToggleMouthMove]……[.][ToggleMouthMove][A][LF]\n利昂皇子的本意已不重要。[LF]\n他持有【魔石】。[A][LF]\n那块石头正是一切的[LF]\n元凶。必须阻止皇子。[.][A][BreakTalk]\n\n[OpenFarRight]不，还不行。首先有件[.][LF]\n事情必须完成。[.][A]\n[OpenFarLeft]拉切尔？[A]\n[OpenFarRight]伊弗列姆王子，您应该[LF]\n也感觉到了吧。[A][LF]\n利昂皇子持有的【魔石】[ToggleMouthMove]……[.][ToggleMouthMove][LF]\n散发着骇人的邪气[ToggleMouthMove]……[.][ToggleMouthMove][A][LF]\n若只是利昂皇子还好，[LF]\n但那石头绝非凡人可敌。[A]\n[OpenFarLeft]那么……该怎么办？[.][A]\n[OpenFarRight]【圣石】。[A]\n[OpenFarLeft]【圣石】？[A]\n[OpenFarRight]大家都听说过[.][LF]\n五颗【圣石】的传说。[.][A][LF]\n只有它们拥有[.][LF]\n永远封印魔王的力量。[.][A][LF]\n所以，要驱散邪恶的魔力，[LF]\n当然必须使用【圣石】！[.][A]\n[OpenRight]要把这场战争的结果[LF]\n寄托在愚蠢的传说上？[A]\n[OpenLeft][ToggleMouthMove]……[.][ToggleMouthMove]不只是传说。[LF]\n我们还有希望。[A][CloseSpeechSlow]\n[OpenLeft]据利昂所说，[A][LF]\n古拉德、弗雷利亚和贾哈那的[.][LF]\n【圣石】都已被毁。[A]\n[OpenFarLeft]嗯，那就说得通了[.][ToggleMouthMove]……[.][ToggleMouthMove][A][LF]\n古拉德军曾袭击我，企图[.][LF]\n破坏鲁内斯的【圣石】。[.][A][LF]\n若这正是他们[LF]\n入侵鲁内斯的原因[ToggleMouthMove]……[.][ToggleMouthMove][A][LF]\n【圣石】的力量或许[LF]\n远比我们所知的强大。[A]\n[OpenFarRight]没错，正是如此！[.][A][LF]\n只要得到一颗【圣石】，我们就能[LF]\n对抗【魔石】的力量！[A]\n[OpenRight]但已有三颗【圣石】[.][LF]\n被毁，我们选择不多。[.][A][LF]\n你是说在[.][LF]\n鲁内斯被侵略时[ToggleMouthMove]……[.][ToggleMouthMove][A]\n[OpenLeft]不，我想未必。[.][A][LF]\n鲁内斯的【圣石】由[LF]\n我和艾瑞珂的腕轮封印着。[.][A]\n[OpenFarLeft]古拉德多次试图[LF]\n夺走我们的腕轮。[A][LF]\n每一次都失败了，所以[LF]\n圣石或许仍然安全。[A]\n[OpenLeft]当然，我们必须确认。[.][A][LF]\n古拉德已被击败，我们也该[.][LF]\n把目光转向祖国了。[A][LF]\n是时候返回鲁内斯了。[A][X]\n",
+    "game.chapter_event.msg_b2a": "[OpenLeft]听说利昂是在得到[LF]\n【魔石】后变了。[.][A][LF]\n我不懂魔法，可是[ToggleMouthMove]……[.][ToggleMouthMove][LF]\n当时的他实在很不寻常。[A][LF]\n仿佛他自己也正被[LF]\n某种东西操纵着。[A]\n[OpenFarLeft][ToggleMouthMove]……[ToggleMouthMove][A]\n[OpenRight]你们二位也许很难[.][LF]\n接受，但是[ToggleMouthMove]……[.][ToggleMouthMove][A][LF]\n利昂皇子的本意已不重要。[LF]\n他持有【魔石】。[A][LF]\n那块石头正是一切的[LF]\n元凶。必须阻止皇子。[.][A][BreakTalk]\n\n[OpenFarRight]不，还不行。首先有件[.][LF]\n事情必须完成。[.][A]\n[OpenFarLeft]拉切尔？[A]\n[OpenFarRight]伊弗列姆王子，您应该[LF]\n也感觉到了吧。[A][LF]\n利昂皇子持有的【魔石】[ToggleMouthMove]……[.][ToggleMouthMove][LF]\n散发着骇人的邪气[ToggleMouthMove]……[.][ToggleMouthMove][A][LF]\n若只是利昂皇子还好，[LF]\n但那石头绝非凡人可敌。[A]\n[OpenFarLeft]那么……该怎么办？[.][A]\n[OpenFarRight]【圣石】。[A]\n[OpenFarLeft]【圣石】？[A]\n[OpenFarRight]大家都听说过[.][LF]\n五颗【圣石】的传说。[.][A][LF]\n只有它们拥有[.][LF]\n永远封印魔王的力量。[.][A][LF]\n所以，要驱散邪恶的魔力，[LF]\n当然必须使用【圣石】！[.][A]\n[OpenRight]要把这场战争的结果[LF]\n寄托在愚蠢的传说上？[A]\n[OpenLeft][ToggleMouthMove]……[.][ToggleMouthMove]不只是传说。[LF]\n我们还有希望。[A][CloseSpeechSlow]\n[OpenLeft]据利昂所说，[A][LF]\n他已毁掉古拉德、弗雷利亚和[.][LF]\n贾哈那的【圣石】。[A]\n[OpenFarLeft]嗯，那就说得通了[.][ToggleMouthMove]……[.][ToggleMouthMove][A][LF]\n古拉德军曾袭击我，企图[.][LF]\n破坏鲁内斯的【圣石】。[.][A][LF]\n若这正是他们[LF]\n入侵鲁内斯的原因[ToggleMouthMove]……[.][ToggleMouthMove][A][LF]\n【圣石】的力量或许[LF]\n远比我们所知的强大。[A]\n[OpenFarRight]没错，正是如此！[.][A][LF]\n只要得到一颗【圣石】，我们就能[LF]\n对抗【魔石】的力量！[A]\n[OpenRight]但已有三颗【圣石】[.][LF]\n被毁，我们选择不多。[.][A][LF]\n你是说在[.][LF]\n鲁内斯被侵略时[ToggleMouthMove]……[.][ToggleMouthMove][A]\n[OpenLeft]不，我想未必。[.][A][LF]\n鲁内斯的【圣石】由[LF]\n我和艾瑞珂的腕轮封印着。[.][A]\n[OpenFarLeft]古拉德多次试图[LF]\n夺走我们的腕轮。[A][LF]\n每一次都失败了，所以[LF]\n圣石或许仍然安全。[A]\n[OpenLeft]当然，我们必须确认。[.][A][LF]\n古拉德已被击败，我们也该[.][LF]\n把目光转向祖国了。[A][LF]\n是时候返回鲁内斯了。[A][X]\n",
     "game.chapter_title.msg_539": "/[.][X]\n",
     "game.expansion.msg_save_compat_config_incompatible": "此存档使用了[.][LF]\n不兼容的扩展设置，[.][LF]\n因此无法使用。[X]\n",
     "game.expansion.msg_save_compat_erase_confirm": "清除全部存档？[.][LF]\n此操作无法撤销。[X]",
@@ -102,7 +102,7 @@
     "game.help_tutorial.msg_888": "[OpenLeft]备份中没有试炼地图[.][LF]\n中止发送并返回菜单[X]\n",
     "game.help_tutorial.msg_895": "请选择已通关的存档[.][X]\n",
     "game.menu_definition.msg_011": ".[.][X]\n",
-    "game.menu_definition.msg_022": ".[.][X]\n",
+    "game.menu_definition.msg_022": "战死。[.][X]\n",
     "game.menu_definition.msg_02e": "  模式  教学[X]\n",
     "game.menu_definition.msg_02f": "  模式  普通[X]\n",
     "game.menu_definition.msg_030": "  模式  困难[X]\n",

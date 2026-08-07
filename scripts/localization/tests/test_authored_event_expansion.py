@@ -77,7 +77,7 @@ EXPECTED_EXPANSION_TEXT = {
             "拡張セーブ形式より古く[.][LF]\n"
             "ここでは開けません。[X]\n"
         ),
-        "0x0D4D": "セーブデータが破損しており[.][LF]\n読み込めません。[X]\n",
+        "0x0D4D": "セーブデータが破損しているようで[.][LF]\n読み込めません。[X]\n",
         "0x0D4E": (
             "セーブデータの拡張情報が[.][LF]\n"
             "破損しており[.][LF]\n"
@@ -190,23 +190,42 @@ EXPECTED_REVIEWED_TEXT = {
 EXPECTED_REVIEWED_PAYLOAD_SHA256 = {
     "ja": {
         "0x0AAD": "4c7c1300359df0864cab1b3d8a550b12af8181fff4f4b4f016db28d3be475bc3",
-        "0x0B2A": "7e3d7ffe0f40f5868995a551c8858b0c4f004e10fccf075c6c8a6e6baeed9b1b",
+        "0x0B2A": "2afc824ec542086137e414df5839bce4cdde30ca5393f94e2ff70c113e116ebc",
     },
     "zh-Hans": {
-        "0x0B2A": "841214b08016ad57256afe0bfc77982757ef822aec2aa250a4e436107575063f",
+        "0x0B2A": "346830110bd9ac96c09606a0aef56c6cd062380d18fd719b3a4694f0cd1c82c0",
     },
 }
 EXPECTED_REVIEWED_SNIPPETS = {
     "ja": {
-        "0x0AAD": "俺たち下の者には[LF]\n陛下のお考えなどわからない。[A]",
+        "0x0AAD": (
+            "俺たち下の者には[LF]\n陛下のお考えなどわからない。[A]",
+        ),
         "0x0B2A": (
-            "[OpenFarLeft]そういえば[.][ToggleMouthMove]・・・[.][ToggleMouthMove][A][LF]\n"
-            "グラド軍はルネスの【聖石】を[.][LF]\n"
-            "破壊するため私を襲いました。[.][A][LF]\n"
+            (
+                "[OpenLeft]リオンによれば[A][LF]\n"
+                "奴はグラド、フレリア、ジャハナの[.][LF]\n"
+                "【聖石】をすでに破壊した。[A]"
+            ),
+            (
+                "[OpenFarLeft]そういえば[.][ToggleMouthMove]・・・[.][ToggleMouthMove][A][LF]\n"
+                "グラド軍はルネスの【聖石】を[.][LF]\n"
+                "破壊するため私を襲いました。[.][A][LF]\n"
+                "それがルネスを[LF]\n"
+                "侵略した理由なら[ToggleMouthMove]・・・[.][ToggleMouthMove][A][LF]\n"
+                "【聖石】の力は私たちの[LF]\n"
+                "想像以上なのかもしれません。[A]"
+            ),
         ),
     },
     "zh-Hans": {
-        "0x0B2A": "所以，要驱散邪恶的魔力，[LF]\n当然必须使用【圣石】！[.][A]",
+        "0x0B2A": (
+            (
+                "[OpenLeft]据利昂所说，[A][LF]\n"
+                "他已毁掉古拉德、弗雷利亚和[.][LF]\n"
+                "贾哈那的【圣石】。[A]"
+            ),
+        ),
     },
 }
 
@@ -362,12 +381,13 @@ class AuthoredEventExpansionTests(unittest.TestCase):
                     (locale, target_id),
                 )
         for locale, targets in EXPECTED_REVIEWED_SNIPPETS.items():
-            for target_id, expected in targets.items():
-                self.assertIn(
-                    expected,
-                    self.entries[locale][target_id]["text"],
-                    (locale, target_id),
-                )
+            for target_id, snippets in targets.items():
+                for expected in snippets:
+                    self.assertIn(
+                        expected,
+                        self.entries[locale][target_id]["text"],
+                        (locale, target_id),
+                    )
 
     def test_established_terminology_is_used(self):
         expected = {

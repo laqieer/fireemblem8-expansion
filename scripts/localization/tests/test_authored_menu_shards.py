@@ -11,6 +11,18 @@ sys.path.insert(0, str(ROOT))
 from scripts.localization.game_locales.crosswalk import canonical_json_bytes
 
 
+REVIEWED_PAYLOADS = {
+    "ja": {
+        "0x0022": "にて最期をとげる。[.][X]\n",
+        "0x0068": "ポイズン[X]\n",
+        "0x0069": "スリープ[.][X]\n",
+    },
+    "zh-Hans": {
+        "0x0022": "战死。[.][X]\n",
+    },
+}
+
+
 class AuthoredMenuShardTests(unittest.TestCase):
     QUEUE_PATH = ROOT / "texts/locales/mapping/authored_translation_queue.json"
     SHARD_DIR = ROOT / "texts/locales/authored/shards"
@@ -131,6 +143,15 @@ class AuthoredMenuShardTests(unittest.TestCase):
                     canonical_json_bytes(self.shards[locale]),
                 )
 
+    def test_reviewed_payloads_are_exact(self):
+        for locale, payloads in REVIEWED_PAYLOADS.items():
+            records = {
+                entry["target_id"]: entry
+                for entry in self.shards[locale]["translations"]
+            }
+            for target_id, payload in payloads.items():
+                self.assertEqual(records[target_id]["text"], payload)
+
     def test_controls_placeholders_newlines_and_leading_spaces_match(self):
         for locale, shard in self.shards.items():
             for entry in shard["translations"]:
@@ -163,8 +184,10 @@ class AuthoredMenuShardTests(unittest.TestCase):
                         )
 
                     source_visible = self._visible_text(source).strip()
-                    if source_visible and not re.search(
-                        r"[A-Za-z0-9]", source_visible
+                    if (
+                        entry["target_id"] not in REVIEWED_PAYLOADS.get(locale, {})
+                        and source_visible
+                        and not re.search(r"[A-Za-z0-9]", source_visible)
                     ):
                         self.assertEqual(
                             self._visible_text(translated).strip(),
