@@ -1205,6 +1205,30 @@
       },
       "target": "0x04E9"
     },
+    "game/ja/0x04EA": {
+      "baseline_classification": "existing-payload-gate-candidate",
+      "baseline_payload_sha256": "4281fbb4488802db260a4042ee291a4edb99bc8a391b6f5f4218d1103e050213",
+      "current_payload_sha256": "4281fbb4488802db260a4042ee291a4edb99bc8a391b6f5f4218d1103e050213",
+      "english_payload_sha256": "07dd090765f1b3efa8493c6523052fda502fac7e0735f7d1fe8f672b57b22c92",
+      "locale": "ja",
+      "payload_source": {
+        "id": "0x0479",
+        "kind": "indexed",
+        "layout": "FE8J"
+      },
+      "scope": "game",
+      "spans": {
+        "MHP": {
+          "baseline_occurrences": 1,
+          "category": "standard-ui-code",
+          "current_occurrences": 1,
+          "decision": "approved",
+          "reason": "ＭＨＰ is the exact reviewed compact maximum-hit-points stat label.",
+          "source": "User-required target label and established FE/GBA status-screen abbreviation."
+        }
+      },
+      "target": "0x04EA"
+    },
     "game/ja/0x052D": {
       "baseline_classification": "existing-payload-gate-candidate",
       "baseline_payload_sha256": "9bd3f64bf1135f76d6e24ef376d28c20a3404e0425fcbdf38292b255f312d6ae",
@@ -2241,6 +2265,102 @@
       },
       "target": "0x078A"
     },
+    "game/ja/0x07A0": {
+      "baseline_classification": "existing-payload-gate-candidate",
+      "baseline_payload_sha256": "120e5ddf6cf30fc602eb9144d6eeb57a48a3319abdba32a58f1ad712f391c073",
+      "current_payload_sha256": "120e5ddf6cf30fc602eb9144d6eeb57a48a3319abdba32a58f1ad712f391c073",
+      "english_payload_sha256": "22b308cd5edd1bcabd6bad2ee59466470acce9e5b0201e6aa047a99fe54c9ff0",
+      "locale": "ja",
+      "payload_source": {
+        "id": "0x0717",
+        "kind": "indexed",
+        "layout": "FE8J"
+      },
+      "scope": "game",
+      "spans": {
+        "A": {
+          "baseline_occurrences": 1,
+          "category": "track-variant-suffix",
+          "current_occurrences": 1,
+          "decision": "approved",
+          "reason": "Fullwidth A is the required Sound Room A/B variant suffix.",
+          "source": "Exact English title semantics and user-required fullwidth Sound Room suffix."
+        }
+      },
+      "target": "0x07A0"
+    },
+    "game/ja/0x07A1": {
+      "baseline_classification": "existing-payload-gate-candidate",
+      "baseline_payload_sha256": "0f3b569739f5ebc8790e9315895c0d7f13567570acb69428acb0932340064b6b",
+      "current_payload_sha256": "0f3b569739f5ebc8790e9315895c0d7f13567570acb69428acb0932340064b6b",
+      "english_payload_sha256": "b3290e0c42428c4d4cb4a6798895b76b915198c45617b2bd20936fd79d88c2b9",
+      "locale": "ja",
+      "payload_source": {
+        "id": "0x0718",
+        "kind": "indexed",
+        "layout": "FE8J"
+      },
+      "scope": "game",
+      "spans": {
+        "B": {
+          "baseline_occurrences": 1,
+          "category": "track-variant-suffix",
+          "current_occurrences": 1,
+          "decision": "approved",
+          "reason": "Fullwidth B is the required Sound Room A/B variant suffix.",
+          "source": "Exact English title semantics and user-required fullwidth Sound Room suffix."
+        }
+      },
+      "target": "0x07A1"
+    },
+    "game/ja/0x07C8": {
+      "baseline_classification": "existing-payload-gate-candidate",
+      "baseline_payload_sha256": "8aaaba3918a725995f3e000bcc6e2dd39085a4f444c0e1ddbcdb90951cdcab20",
+      "current_payload_sha256": "8aaaba3918a725995f3e000bcc6e2dd39085a4f444c0e1ddbcdb90951cdcab20",
+      "english_payload_sha256": "053ab8c24c188da8f0e61f664a0f79fcec84e6d4152ef0ac39f73338b5a727a5",
+      "locale": "ja",
+      "payload_source": {
+        "id": "0x073F",
+        "kind": "indexed",
+        "layout": "FE8J"
+      },
+      "scope": "game",
+      "spans": {
+        "A": {
+          "baseline_occurrences": 1,
+          "category": "track-variant-suffix",
+          "current_occurrences": 1,
+          "decision": "approved",
+          "reason": "Fullwidth A is the required Sound Room A/B variant suffix.",
+          "source": "Exact English title semantics and user-required fullwidth Sound Room suffix."
+        }
+      },
+      "target": "0x07C8"
+    },
+    "game/ja/0x07C9": {
+      "baseline_classification": "existing-payload-gate-candidate",
+      "baseline_payload_sha256": "15c053ef3c43856e98057250963563e0de166510e83885d8e72c1e1125fc5aa7",
+      "current_payload_sha256": "15c053ef3c43856e98057250963563e0de166510e83885d8e72c1e1125fc5aa7",
+      "english_payload_sha256": "d9668aaa3be612eaee650a6373ad958c7a46f1e6986c758ead1de38f156d3864",
+      "locale": "ja",
+      "payload_source": {
+        "id": "0x0740",
+        "kind": "indexed",
+        "layout": "FE8J"
+      },
+      "scope": "game",
+      "spans": {
+        "B": {
+          "baseline_occurrences": 1,
+          "category": "track-variant-suffix",
+          "current_occurrences": 1,
+          "decision": "approved",
+          "reason": "Fullwidth B is the required Sound Room A/B variant suffix.",
+          "source": "Exact English title semantics and user-required fullwidth Sound Room suffix."
+        }
+      },
+      "target": "0x07C9"
+    },
     "game/ja/0x0839": {
       "baseline_classification": "mixed-script-bypass",
       "baseline_payload_sha256": "3d6157b7bbf7432f4da87a7aff69b13ece8aaaf1655d3f8e56c016585c9f0a11",
@@ -3050,6 +3170,30 @@
       },
       "target": "0x093F"
     },
+    "game/ja/0x0940": {
+      "baseline_classification": "existing-payload-gate-candidate",
+      "baseline_payload_sha256": "7da0f15a7d43d20face639447e67f0a521c147331e3734da150541dcbce91e46",
+      "current_payload_sha256": "7da0f15a7d43d20face639447e67f0a521c147331e3734da150541dcbce91e46",
+      "english_payload_sha256": "dd5acd42035e433374c06384e569bb0d4ca22af5b09a1607db34f1ab7333e5eb",
+      "locale": "ja",
+      "payload_source": {
+        "id": "0x0900",
+        "kind": "indexed",
+        "layout": "FE8J"
+      },
+      "scope": "game",
+      "spans": {
+        "A": {
+          "baseline_occurrences": 1,
+          "category": "standard-ui-control",
+          "current_occurrences": 1,
+          "decision": "approved",
+          "reason": "A is the localized Game Boy Advance A-button label in this exact tutorial step.",
+          "source": "Correct official FE8J/FE8CN tutorial payload and target call-site semantics."
+        }
+      },
+      "target": "0x0940"
+    },
     "game/ja/0x0941": {
       "baseline_classification": "mixed-script-bypass",
       "baseline_payload_sha256": "b9fa7d192e5550ad9b201330feb8a28f828f3a4f3f40193f1857eb7ac3c592ff",
@@ -3424,6 +3568,54 @@
       },
       "target": "0x0952"
     },
+    "game/ja/0x0953": {
+      "baseline_classification": "existing-payload-gate-candidate",
+      "baseline_payload_sha256": "3ed32407e957d2eb77be6b837d097b4a4716bc09352434d1abbb6711edac4ca3",
+      "current_payload_sha256": "3ed32407e957d2eb77be6b837d097b4a4716bc09352434d1abbb6711edac4ca3",
+      "english_payload_sha256": "6c413e00f9882851dbee80ebe0692dcfc7e373b5fa27545bbd9bffef157cfb10",
+      "locale": "ja",
+      "payload_source": {
+        "id": "0x0913",
+        "kind": "indexed",
+        "layout": "FE8J"
+      },
+      "scope": "game",
+      "spans": {
+        "A": {
+          "baseline_occurrences": 1,
+          "category": "standard-ui-control",
+          "current_occurrences": 1,
+          "decision": "approved",
+          "reason": "A is the localized Game Boy Advance A-button label in this exact tutorial step.",
+          "source": "Correct official FE8J/FE8CN tutorial payload and target call-site semantics."
+        }
+      },
+      "target": "0x0953"
+    },
+    "game/ja/0x0970": {
+      "baseline_classification": "existing-payload-gate-candidate",
+      "baseline_payload_sha256": "e07910c2f6a7448d52f2e00b69bae979a1310205c80698ce3a0299051213fb83",
+      "current_payload_sha256": "e07910c2f6a7448d52f2e00b69bae979a1310205c80698ce3a0299051213fb83",
+      "english_payload_sha256": "24e2bebf400bae2555e25ed79be4cba478cc5c3af5f978f09b4991b41fee605f",
+      "locale": "ja",
+      "payload_source": {
+        "id": "0x0930",
+        "kind": "indexed",
+        "layout": "FE8J"
+      },
+      "scope": "game",
+      "spans": {
+        "A": {
+          "baseline_occurrences": 1,
+          "category": "standard-ui-control",
+          "current_occurrences": 1,
+          "decision": "approved",
+          "reason": "A is the localized Game Boy Advance A-button label in this exact tutorial step.",
+          "source": "Correct official FE8J/FE8CN tutorial payload and target call-site semantics."
+        }
+      },
+      "target": "0x0970"
+    },
     "game/ja/0x0971": {
       "baseline_classification": "mixed-script-bypass",
       "baseline_payload_sha256": "a532be518b7e634a3dcf1e34728db043fe7174342277af0267220e8dde95b737",
@@ -3471,6 +3663,30 @@
         }
       },
       "target": "0x0972"
+    },
+    "game/ja/0x0974": {
+      "baseline_classification": "existing-payload-gate-candidate",
+      "baseline_payload_sha256": "3f0872ecd300b52951089d53f942babd271f5c76750d133781b61680186a7ebb",
+      "current_payload_sha256": "3f0872ecd300b52951089d53f942babd271f5c76750d133781b61680186a7ebb",
+      "english_payload_sha256": "c461247bd44959485d87cb734afbe6d1af23f338a2e7f9dfeb956ba66843ea17",
+      "locale": "ja",
+      "payload_source": {
+        "id": "0x0934",
+        "kind": "indexed",
+        "layout": "FE8J"
+      },
+      "scope": "game",
+      "spans": {
+        "A": {
+          "baseline_occurrences": 1,
+          "category": "standard-ui-control",
+          "current_occurrences": 1,
+          "decision": "approved",
+          "reason": "A is the localized Game Boy Advance A-button label in this exact tutorial step.",
+          "source": "Correct official FE8J/FE8CN tutorial payload and target call-site semantics."
+        }
+      },
+      "target": "0x0974"
     },
     "game/ja/0x0975": {
       "baseline_classification": "mixed-script-bypass",
@@ -6468,9 +6684,9 @@
       "target": "0x078A"
     },
     "game/zh-Hans/0x07A0": {
-      "baseline_classification": "mixed-script-bypass",
-      "baseline_payload_sha256": "0bc05fbdb50562f7827d4920e173e89dd422a3558e5694bab225d22e3c9a2139",
-      "current_payload_sha256": "0bc05fbdb50562f7827d4920e173e89dd422a3558e5694bab225d22e3c9a2139",
+      "baseline_classification": "existing-payload-gate-candidate",
+      "baseline_payload_sha256": "a9bf168416490782eb555c6b5135cfb0779cdbab7af9555048447e8cd59813aa",
+      "current_payload_sha256": "a9bf168416490782eb555c6b5135cfb0779cdbab7af9555048447e8cd59813aa",
       "english_payload_sha256": "22b308cd5edd1bcabd6bad2ee59466470acce9e5b0201e6aa047a99fe54c9ff0",
       "locale": "zh-Hans",
       "payload_source": {
@@ -6480,21 +6696,21 @@
       },
       "scope": "game",
       "spans": {
-        "I": {
+        "A": {
           "baseline_occurrences": 1,
-          "category": "roman-numeral",
+          "category": "track-variant-suffix",
           "current_occurrences": 1,
           "decision": "approved",
-          "reason": "The Latin letters form the conventional Roman numeral in this exact numbered Sound Room title.",
-          "source": "Exact Sound Room title payload and conventional Roman-numeral numbering."
+          "reason": "Fullwidth A is the required Sound Room A/B variant suffix.",
+          "source": "Exact English title semantics and user-required fullwidth Sound Room suffix."
         }
       },
       "target": "0x07A0"
     },
     "game/zh-Hans/0x07A1": {
-      "baseline_classification": "mixed-script-bypass",
-      "baseline_payload_sha256": "1c6a2198838d058414f1cbec3f240086ddc2c51b4b3c7dc668fbe2b67a1f5120",
-      "current_payload_sha256": "1c6a2198838d058414f1cbec3f240086ddc2c51b4b3c7dc668fbe2b67a1f5120",
+      "baseline_classification": "existing-payload-gate-candidate",
+      "baseline_payload_sha256": "4da4030c1add399ebbaa36bbcaf8dc4ef1df7ed334c2fc86075dd1ec46fee830",
+      "current_payload_sha256": "4da4030c1add399ebbaa36bbcaf8dc4ef1df7ed334c2fc86075dd1ec46fee830",
       "english_payload_sha256": "b3290e0c42428c4d4cb4a6798895b76b915198c45617b2bd20936fd79d88c2b9",
       "locale": "zh-Hans",
       "payload_source": {
@@ -6504,21 +6720,21 @@
       },
       "scope": "game",
       "spans": {
-        "II": {
+        "B": {
           "baseline_occurrences": 1,
-          "category": "roman-numeral",
+          "category": "track-variant-suffix",
           "current_occurrences": 1,
           "decision": "approved",
-          "reason": "The Latin letters form the conventional Roman numeral in this exact numbered Sound Room title.",
-          "source": "Exact Sound Room title payload and conventional Roman-numeral numbering."
+          "reason": "Fullwidth B is the required Sound Room A/B variant suffix.",
+          "source": "Exact English title semantics and user-required fullwidth Sound Room suffix."
         }
       },
       "target": "0x07A1"
     },
     "game/zh-Hans/0x07C8": {
-      "baseline_classification": "mixed-script-bypass",
-      "baseline_payload_sha256": "61fb5d90c0e1035751518d6312c3ce55c38cf7abdd47a9b91c12bd694cdd33ce",
-      "current_payload_sha256": "61fb5d90c0e1035751518d6312c3ce55c38cf7abdd47a9b91c12bd694cdd33ce",
+      "baseline_classification": "existing-payload-gate-candidate",
+      "baseline_payload_sha256": "e65ae5ae0c5be8eaa808dc31c5297669a711a6308a26448e075fe052a3f42c78",
+      "current_payload_sha256": "e65ae5ae0c5be8eaa808dc31c5297669a711a6308a26448e075fe052a3f42c78",
       "english_payload_sha256": "053ab8c24c188da8f0e61f664a0f79fcec84e6d4152ef0ac39f73338b5a727a5",
       "locale": "zh-Hans",
       "payload_source": {
@@ -6528,21 +6744,21 @@
       },
       "scope": "game",
       "spans": {
-        "I": {
+        "A": {
           "baseline_occurrences": 1,
-          "category": "roman-numeral",
+          "category": "track-variant-suffix",
           "current_occurrences": 1,
           "decision": "approved",
-          "reason": "The Latin letters form the conventional Roman numeral in this exact numbered Sound Room title.",
-          "source": "Exact Sound Room title payload and conventional Roman-numeral numbering."
+          "reason": "Fullwidth A is the required Sound Room A/B variant suffix.",
+          "source": "Exact English title semantics and user-required fullwidth Sound Room suffix."
         }
       },
       "target": "0x07C8"
     },
     "game/zh-Hans/0x07C9": {
-      "baseline_classification": "mixed-script-bypass",
-      "baseline_payload_sha256": "02dd0779f2821f174e62e9f2798a707076561f0bcdfa2456175c21b1f7b0aebf",
-      "current_payload_sha256": "02dd0779f2821f174e62e9f2798a707076561f0bcdfa2456175c21b1f7b0aebf",
+      "baseline_classification": "existing-payload-gate-candidate",
+      "baseline_payload_sha256": "5c82f7e6af763f5324d4f7a4aa6f818638d14d5d54d105ccfb8580187fd28afa",
+      "current_payload_sha256": "5c82f7e6af763f5324d4f7a4aa6f818638d14d5d54d105ccfb8580187fd28afa",
       "english_payload_sha256": "d9668aaa3be612eaee650a6373ad958c7a46f1e6986c758ead1de38f156d3864",
       "locale": "zh-Hans",
       "payload_source": {
@@ -6552,13 +6768,13 @@
       },
       "scope": "game",
       "spans": {
-        "II": {
+        "B": {
           "baseline_occurrences": 1,
-          "category": "roman-numeral",
+          "category": "track-variant-suffix",
           "current_occurrences": 1,
           "decision": "approved",
-          "reason": "The Latin letters form the conventional Roman numeral in this exact numbered Sound Room title.",
-          "source": "Exact Sound Room title payload and conventional Roman-numeral numbering."
+          "reason": "Fullwidth B is the required Sound Room A/B variant suffix.",
+          "source": "Exact English title semantics and user-required fullwidth Sound Room suffix."
         }
       },
       "target": "0x07C9"
@@ -7299,6 +7515,30 @@
       },
       "target": "0x093F"
     },
+    "game/zh-Hans/0x0940": {
+      "baseline_classification": "existing-payload-gate-candidate",
+      "baseline_payload_sha256": "90e8053f45ebd0214b21c20f5a51d69e5c90109305709a5fa8c8bdbbfedb10d9",
+      "current_payload_sha256": "90e8053f45ebd0214b21c20f5a51d69e5c90109305709a5fa8c8bdbbfedb10d9",
+      "english_payload_sha256": "dd5acd42035e433374c06384e569bb0d4ca22af5b09a1607db34f1ab7333e5eb",
+      "locale": "zh-Hans",
+      "payload_source": {
+        "id": "0x0900",
+        "kind": "indexed",
+        "layout": "FE8J"
+      },
+      "scope": "game",
+      "spans": {
+        "A": {
+          "baseline_occurrences": 1,
+          "category": "standard-ui-control",
+          "current_occurrences": 1,
+          "decision": "approved",
+          "reason": "A is the localized Game Boy Advance A-button label in this exact tutorial step.",
+          "source": "Correct official FE8J/FE8CN tutorial payload and target call-site semantics."
+        }
+      },
+      "target": "0x0940"
+    },
     "game/zh-Hans/0x0941": {
       "baseline_classification": "mixed-script-bypass",
       "baseline_payload_sha256": "4e130571b9a2ed2243e66d708ae9c3aa2bded2ab911c0483440c729eab3db3af",
@@ -7673,6 +7913,54 @@
       },
       "target": "0x0952"
     },
+    "game/zh-Hans/0x0953": {
+      "baseline_classification": "existing-payload-gate-candidate",
+      "baseline_payload_sha256": "4d117c8bc7748351d5b4210018b013ff6119dc98f6f0e5ba6d68e634de07e673",
+      "current_payload_sha256": "4d117c8bc7748351d5b4210018b013ff6119dc98f6f0e5ba6d68e634de07e673",
+      "english_payload_sha256": "6c413e00f9882851dbee80ebe0692dcfc7e373b5fa27545bbd9bffef157cfb10",
+      "locale": "zh-Hans",
+      "payload_source": {
+        "id": "0x0913",
+        "kind": "indexed",
+        "layout": "FE8J"
+      },
+      "scope": "game",
+      "spans": {
+        "A": {
+          "baseline_occurrences": 1,
+          "category": "standard-ui-control",
+          "current_occurrences": 1,
+          "decision": "approved",
+          "reason": "A is the localized Game Boy Advance A-button label in this exact tutorial step.",
+          "source": "Correct official FE8J/FE8CN tutorial payload and target call-site semantics."
+        }
+      },
+      "target": "0x0953"
+    },
+    "game/zh-Hans/0x0970": {
+      "baseline_classification": "existing-payload-gate-candidate",
+      "baseline_payload_sha256": "af9054e57f7d96c45a097baba5cc1292ad360b02e4c37c41a6d396ee203b5436",
+      "current_payload_sha256": "af9054e57f7d96c45a097baba5cc1292ad360b02e4c37c41a6d396ee203b5436",
+      "english_payload_sha256": "24e2bebf400bae2555e25ed79be4cba478cc5c3af5f978f09b4991b41fee605f",
+      "locale": "zh-Hans",
+      "payload_source": {
+        "id": "0x0930",
+        "kind": "indexed",
+        "layout": "FE8J"
+      },
+      "scope": "game",
+      "spans": {
+        "A": {
+          "baseline_occurrences": 1,
+          "category": "standard-ui-control",
+          "current_occurrences": 1,
+          "decision": "approved",
+          "reason": "A is the localized Game Boy Advance A-button label in this exact tutorial step.",
+          "source": "Correct official FE8J/FE8CN tutorial payload and target call-site semantics."
+        }
+      },
+      "target": "0x0970"
+    },
     "game/zh-Hans/0x0971": {
       "baseline_classification": "mixed-script-bypass",
       "baseline_payload_sha256": "7738174e0316b373051d01a1c4f82a9b47ba249d77509207ad0c75cd204dea79",
@@ -7720,6 +8008,30 @@
         }
       },
       "target": "0x0972"
+    },
+    "game/zh-Hans/0x0974": {
+      "baseline_classification": "existing-payload-gate-candidate",
+      "baseline_payload_sha256": "fe27cba404198dc142ee4980ed9957d78585f88e15efe821e92ac230e4cba837",
+      "current_payload_sha256": "fe27cba404198dc142ee4980ed9957d78585f88e15efe821e92ac230e4cba837",
+      "english_payload_sha256": "c461247bd44959485d87cb734afbe6d1af23f338a2e7f9dfeb956ba66843ea17",
+      "locale": "zh-Hans",
+      "payload_source": {
+        "id": "0x0934",
+        "kind": "indexed",
+        "layout": "FE8J"
+      },
+      "scope": "game",
+      "spans": {
+        "A": {
+          "baseline_occurrences": 1,
+          "category": "standard-ui-control",
+          "current_occurrences": 1,
+          "decision": "approved",
+          "reason": "A is the localized Game Boy Advance A-button label in this exact tutorial step.",
+          "source": "Correct official FE8J/FE8CN tutorial payload and target call-site semantics."
+        }
+      },
+      "target": "0x0974"
     },
     "game/zh-Hans/0x0975": {
       "baseline_classification": "mixed-script-bypass",
@@ -8199,23 +8511,22 @@
     "game/zh-Hans/0x0A15": {
       "baseline_classification": "mixed-script-bypass",
       "baseline_payload_sha256": "66be2d27794dfd9033a0ddb6cf54cfe95999830d649eafbf990ca4dbb1402a75",
-      "current_payload_sha256": "66be2d27794dfd9033a0ddb6cf54cfe95999830d649eafbf990ca4dbb1402a75",
+      "current_payload_sha256": "035549e5e430f888f8a598b04913f27853ca0957427ef604aaafb0b54aba57c4",
       "english_payload_sha256": "eee8a88090fffabbd8551137bdcb2412471f45fee271ebcf6cfc19014f29b69e",
       "locale": "zh-Hans",
       "payload_source": {
-        "id": "0x09D6",
-        "kind": "indexed",
-        "layout": "FE8J"
+        "kind": "authored",
+        "translation_key": "game.semantic_correction.msg_a15"
       },
       "scope": "game",
       "spans": {
         "LV": {
           "baseline_occurrences": 1,
-          "category": "standard-ui-acronym",
-          "current_occurrences": 1,
-          "decision": "approved",
-          "reason": "LV is the compact level-stat label used by this exact promotion/help target.",
-          "source": "FE8 level UI convention and this target payload context."
+          "category": null,
+          "current_occurrences": 0,
+          "decision": "localized",
+          "reason": "The completed authored tutorial spells out 等级 and no longer uses the LV acronym.",
+          "source": "Full semantic audit correction for the exact Knight Crest tutorial payload."
         }
       },
       "target": "0x0A15"
@@ -8291,17 +8602,17 @@
   "schema_version": 1,
   "summary": {
     "ja": {
-      "approved_span_count": 167,
-      "game_latin_bearing_payload_count": 162,
+      "approved_span_count": 176,
+      "game_latin_bearing_payload_count": 171,
       "localized_span_count": 12,
       "mixed_script_bypass_payload_count": 125,
       "raw_latin_bearing_payload_count": 1
     },
     "zh-Hans": {
-      "approved_span_count": 168,
-      "game_latin_bearing_payload_count": 175,
-      "localized_span_count": 23,
-      "mixed_script_bypass_payload_count": 139,
+      "approved_span_count": 171,
+      "game_latin_bearing_payload_count": 179,
+      "localized_span_count": 24,
+      "mixed_script_bypass_payload_count": 135,
       "raw_latin_bearing_payload_count": 1
     }
   }

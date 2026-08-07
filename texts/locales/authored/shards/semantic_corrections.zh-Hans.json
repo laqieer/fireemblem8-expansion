@@ -10,11 +10,12 @@
     "sha256": "ffdff913a552076928d5cb06634ed75d8983b65c05bb4ecec9aa2b610ffe6ad6"
   },
   "subsystem_counts": {
-    "chapter-event": 1,
+    "chapter-event": 2,
+    "ending-details": 4,
     "menu-definition": 4,
-    "menus": 1
+    "menus": 2
   },
-  "target_count": 6,
+  "target_count": 12,
   "terminology_sources": [],
   "translations": [
     {
@@ -50,6 +51,14 @@
       "text": "可使用单位：[X]\n"
     },
     {
+      "english_payload_sha256": "9ba4256a4d88821c0d44f83aaa5f84d79a4cab4832badae225aea3c4690e28b8",
+      "key": "game.semantic_correction.msg_593",
+      "source_text_sha256": "f36c4538916611bebdf0d30e69fdca2e7c40f18052eb996bf49df46955710962",
+      "subsystem": "menus",
+      "target_id": "0x0593",
+      "text": "调试[.][X]\n"
+    },
+    {
       "english_payload_sha256": "0df058ee1d0b4199726680b7b5cc8b1939fce71e3efbdff30f29be87bdee8c4b",
       "key": "game.semantic_correction.msg_679",
       "source_text_sha256": "dbf9b316f09b91b391da617fbad1ce54c8ee262a7409eec508fbfeac9e1bf666",
@@ -64,6 +73,46 @@
       "subsystem": "chapter-event",
       "target_id": "0x06A2",
       "text": " 调试[X]\n"
+    },
+    {
+      "english_payload_sha256": "6f1bff5800aacf9125a43d3c1786ec04f2beb1c002b28ef8325b28a02b851333",
+      "key": "game.semantic_correction.msg_7d1",
+      "source_text_sha256": "435d319ec016be9e8fa37e0af20d886b6b56ab008d2e47314ccada807b840a02",
+      "subsystem": "ending-details",
+      "target_id": "0x07D1",
+      "text": "战死于[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "26311e0d50109e50788aee81c265f8f4b3fe174c82a168fb9a12ae9b3087db2d",
+      "key": "game.semantic_correction.msg_7d2",
+      "source_text_sha256": "981a2b92c43c8a5a0979b8957535b1d3ea7b69dd57a36722fae6ec8333aa783b",
+      "subsystem": "ending-details",
+      "target_id": "0x07D2",
+      "text": "负伤，[LF]\n并与队伍分离。[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "798435c2733702fba4b1b99532596b2344e0ccbbd9bb8927dfc494699b120151",
+      "key": "game.semantic_correction.msg_7d3",
+      "source_text_sha256": "212421cd03f47a458907ef5fd56c096a8851adf4f3e05434a62c5edb427464da",
+      "subsystem": "ending-details",
+      "target_id": "0x07D3",
+      "text": "负伤于[X]\n"
+    },
+    {
+      "english_payload_sha256": "b795f8797cc8bebd384539493b3673c291d1a4ed0766d2d788271b1c414b834b",
+      "key": "game.semantic_correction.msg_7d4",
+      "source_text_sha256": "5b3ae4fa114676dd66b83fa650a554f385339b8088e89e42e72637964c2da204",
+      "subsystem": "ending-details",
+      "target_id": "0x07D4",
+      "text": "，[.][LF]\n但仍随队奋战至最后。[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "236f87a63330dee00d38afc5ef398e21cb50afd8966194e9bb17bcc062453e8e",
+      "key": "game.semantic_correction.msg_a15",
+      "source_text_sha256": "eee8a88090fffabbd8551137bdcb2412471f45fee271ebcf6cfc19014f29b69e",
+      "subsystem": "chapter-event",
+      "target_id": "0x0A15",
+      "text": "等级10以上的单位\n可以通过特殊道具\n转职成为\n上位职业。[CTRL:0003][CTRL:0102]比如轻骑士的凯尔\n使用『骑士勋章』就能转职成\n圣骑士或是重骑士。[CTRL:0003][CTRL:0102]进行转职时，\n请从物品栏中选择『骑士勋章』，\n再选择『使用』。[CTRL:0003]"
     }
   ]
 }

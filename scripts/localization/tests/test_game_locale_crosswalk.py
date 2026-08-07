@@ -223,7 +223,7 @@ class GameLocaleCrosswalkTests(unittest.TestCase):
             "events": 258,
             "goal-window": 3,
             "items": 392,
-            "menus": 105,
+            "menus": 106,
             "supports": 249,
             "terrain": 65,
             "world-map": 34,

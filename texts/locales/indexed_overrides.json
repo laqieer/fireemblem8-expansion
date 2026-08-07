@@ -40,6 +40,30 @@
           "reason": "Replace the unexplained MB fragment with the natural Chinese viewer label requested for this exact target.",
           "replacement_text": "会话背景查看器"
         },
+        "0x0013": {
+          "expected_text": "浮动窗口",
+          "provenance": {
+            "audit": "full-semantic-audit-2026-08-07",
+            "context": "Window Color option label.",
+            "target_ids": [
+              "0x009A"
+            ]
+          },
+          "reason": "Apply the exact reviewed Simplified Chinese correction while preserving the normalized control and newline structure.",
+          "replacement_text": "窗口颜色"
+        },
+        "0x001E": {
+          "expected_text": "单位移动速度（慢）",
+          "provenance": {
+            "audit": "full-semantic-audit-2026-08-07",
+            "context": "Normal unit movement-speed option help.",
+            "target_ids": [
+              "0x00A5"
+            ]
+          },
+          "reason": "Apply the exact reviewed Simplified Chinese correction while preserving the normalized control and newline structure.",
+          "replacement_text": "单位移动速度"
+        },
         "0x004D": {
           "expected_text": "NOW LOADING",
           "provenance": {
@@ -221,6 +245,30 @@
           "reason": "Translate the imperative naturally rather than retaining English prose.",
           "replacement_text": "跟我来！"
         },
+        "0x0717": {
+          "expected_text": "出现的异形之影Ⅰ",
+          "provenance": {
+            "audit": "full-semantic-audit-2026-08-07",
+            "context": "Sound Room title Twisted Shadows A.",
+            "target_ids": [
+              "0x07A0"
+            ]
+          },
+          "reason": "Apply the exact reviewed Simplified Chinese correction while preserving the normalized control and newline structure.",
+          "replacement_text": "扭曲之影Ａ"
+        },
+        "0x0718": {
+          "expected_text": "出现的异形之影Ⅱ",
+          "provenance": {
+            "audit": "full-semantic-audit-2026-08-07",
+            "context": "Sound Room title Twisted Shadows B.",
+            "target_ids": [
+              "0x07A1"
+            ]
+          },
+          "reason": "Apply the exact reviewed Simplified Chinese correction while preserving the normalized control and newline structure.",
+          "replacement_text": "扭曲之影Ｂ"
+        },
         "0x0722": {
           "expected_text": "Healing",
           "provenance": {
@@ -292,6 +340,30 @@
           },
           "reason": "Translate by the riddle-solving scene meaning rather than the awkward source English.",
           "replacement_text": "解开谜题"
+        },
+        "0x073F": {
+          "expected_text": "胜利之歌Ⅰ",
+          "provenance": {
+            "audit": "full-semantic-audit-2026-08-07",
+            "context": "Sound Room title Victory Song A.",
+            "target_ids": [
+              "0x07C8"
+            ]
+          },
+          "reason": "Apply the exact reviewed Simplified Chinese correction while preserving the normalized control and newline structure.",
+          "replacement_text": "胜利之歌Ａ"
+        },
+        "0x0740": {
+          "expected_text": "胜利之歌Ⅱ",
+          "provenance": {
+            "audit": "full-semantic-audit-2026-08-07",
+            "context": "Sound Room title Victory Song B.",
+            "target_ids": [
+              "0x07C9"
+            ]
+          },
+          "reason": "Apply the exact reviewed Simplified Chinese correction while preserving the normalized control and newline structure.",
+          "replacement_text": "胜利之歌Ｂ"
         },
         "0x0741": {
           "expected_text": "Game Over",
@@ -425,6 +497,18 @@
           "reason": "Replace untranslated BOSS with natural Simplified Chinese 首领 in this exact objective/help target.",
           "replacement_text": "本章只要将敌方首领打败\n就可以过关。[CTRL:0103][CTRL:0080][CTRL:0021]过关条件[CTRL:0080][CTRL:0021]会在画面\n的一角表示出来。[CTRL:0103]希望每到新的章节时，\n大家都能够看看。[CTRL:0103]那么，开始展开[CTRL:0080][CTRL:0021]攻击[CTRL:0080][CTRL:0021]吧。[CTRL:0003]"
         },
+        "0x0913": {
+          "expected_text": "在地图上没有单位的地方\n按下A键的话，\n便能够打开[CTRL:0080][CTRL:0021]地图菜单[CTRL:0080][CTRL:0021]。[CTRL:0103]请选择上数第3个指令，\n即绿色的[CTRL:0080][CTRL:0021]『辞典』[CTRL:0080][CTRL:0021]指令。[CTRL:0103]该指令中收录了\n游戏中哥哥部分的[CTRL:0080][CTRL:0021]说明[CTRL:0080][CTRL:0021]。[CTRL:0103]若不清楚[CTRL:0080][CTRL:0021]游戏玩法[CTRL:0080][CTRL:0021]的话，\n请参考[CTRL:0080][CTRL:0021]『辞典』[CTRL:0080][CTRL:0021]中的内容。[CTRL:0003]",
+          "provenance": {
+            "audit": "full-semantic-audit-2026-08-07",
+            "context": "Map Guide tutorial text.",
+            "target_ids": [
+              "0x0953"
+            ]
+          },
+          "reason": "Apply the exact reviewed Simplified Chinese correction while preserving the normalized control and newline structure.",
+          "replacement_text": "在地图上没有单位的地方\n按下A键的话，\n便能够打开[CTRL:0080][CTRL:0021]地图菜单[CTRL:0080][CTRL:0021]。[CTRL:0103]请选择上数第3个指令，\n即绿色的[CTRL:0080][CTRL:0021]『辞典』[CTRL:0080][CTRL:0021]指令。[CTRL:0103]该指令中收录了\n游戏中各个部分的[CTRL:0080][CTRL:0021]说明[CTRL:0080][CTRL:0021]。[CTRL:0103]若不清楚[CTRL:0080][CTRL:0021]游戏玩法[CTRL:0080][CTRL:0021]的话，\n请参考[CTRL:0080][CTRL:0021]『辞典』[CTRL:0080][CTRL:0021]中的内容。[CTRL:0003]"
+        },
         "0x0C82": {
           "expected_text": "[CTRL:0009][CTRL:0010][CTRL:0121][CTRL:000C][CTRL:0010][CTRL:0109][CTRL:000C]喂，你这家伙！[CTRL:0003][CTRL:0017][CTRL:0009]是罗斯啊！[CTRL:0003][CTRL:000C][CTRL:0017]我是来说之前的问题的！[CTRL:0003][CTRL:0017][CTRL:0009]真的？\n真了不起，已经知道了？[CTRL:0003][CTRL:000C][CTRL:0017]对，对。\n答案是……[CTRL:0003][CTRL:0017][CTRL:0009]嗯嗯。[CTRL:0003][CTRL:000C][CTRL:0017]4次！[CTRL:0003][CTRL:0017][CTRL:0009]了不起啊，罗斯！\n这么拼命地思考。[CTRL:0003][CTRL:000C]嘿嘿嘿！\n怎么样，看到了吧！[CTRL:0103]我并不是只懂得战斗！[CTRL:0003][CTRL:0009]可是呢，不·正·确·哦。[CTRL:0003][CTRL:000C][CTRL:0080][CTRL:000E][CTRL:000C][CTRL:0017]什，什么！？\n切！[CTRL:0103]那，那应该是几次？[CTRL:0003][CTRL:0017][CTRL:0009]真遗憾呢，是3次。[CTRL:0003][CTRL:000C][CTRL:0017]只要3次？\n怎么办到的，说一下。[CTRL:0003][CTRL:0017][CTRL:0009]嗯，那么我就告诉你算法吧。[CTRL:0103]首先呢，一开始放在天秤上的\n石头数目是重点。[CTRL:0103]一开始，左右各\n放上8块石头。[CTRL:0103]然后呢，\n注意观察两边有没轻的石头混入。[CTRL:0103]在这样的情况下，[CTRL:0103]就会明白左右两边的8块石头里，\n倾斜的那方里存在着不同的那块。[CTRL:0103]或者说，\n假如天秤没有倾斜的情况下，[CTRL:0103]在剩下的9块中，\n存在着那一块。[CTRL:0103]这样，就使用了一次。不过，之后\n只要按照同样的办法就OK了。[CTRL:0103]以这9块中有那块轻的为例\n进行说明。[CTRL:0103]这次在9块石头里面\n各取3个放在左右两边的碟子中。[CTRL:0103]这样就进行了2次。[CTRL:0103]这时候，假如天秤倾斜，就说明\n左右里的某一边，假如都没倾斜，[CTRL:0103]那么就是在\n剩下的3块当中。[CTRL:0103]然后就在这3块里各取一块\n放上去称就可以了。[CTRL:0103]倾斜的话，\n其中那块就是。[CTRL:0103]没有的话，\n就是剩下的一块。[CTRL:0103]这样，就是3次。\n明白了吧。[CTRL:0003][CTRL:000C][CTRL:0017]啊？嗯，嗯。\n似乎是明白了……[CTRL:0003][CTRL:0017][CTRL:0009]哎？都说了答案了，还不明白？\n那还真是……[CTRL:0003][CTRL:000C][CTRL:0017]真是什么？[CTRL:0003][CTRL:0017][CTRL:0009]啊啊，没什么。\n忘了这个吧，哈哈哈。[CTRL:0003][CTRL:000C][CTRL:0017]我很在意的啊！[CTRL:0003][CTRL:0017][CTRL:0009]不过，还真是有趣啊。\n下次再一起玩吧，罗斯！[CTRL:0003][CTRL:000C]我可是一点都不觉得有趣，喂！[CTRL:0003]",
           "provenance": {
@@ -436,6 +520,18 @@
           },
           "reason": "Replace conversational English OK with natural Simplified Chinese 就行 in this exact support dialogue.",
           "replacement_text": "[CTRL:0009][CTRL:0010][CTRL:0121][CTRL:000C][CTRL:0010][CTRL:0109][CTRL:000C]喂，你这家伙！[CTRL:0003][CTRL:0017][CTRL:0009]是罗斯啊！[CTRL:0003][CTRL:000C][CTRL:0017]我是来说之前的问题的！[CTRL:0003][CTRL:0017][CTRL:0009]真的？\n真了不起，已经知道了？[CTRL:0003][CTRL:000C][CTRL:0017]对，对。\n答案是……[CTRL:0003][CTRL:0017][CTRL:0009]嗯嗯。[CTRL:0003][CTRL:000C][CTRL:0017]4次！[CTRL:0003][CTRL:0017][CTRL:0009]了不起啊，罗斯！\n这么拼命地思考。[CTRL:0003][CTRL:000C]嘿嘿嘿！\n怎么样，看到了吧！[CTRL:0103]我并不是只懂得战斗！[CTRL:0003][CTRL:0009]可是呢，不·正·确·哦。[CTRL:0003][CTRL:000C][CTRL:0080][CTRL:000E][CTRL:000C][CTRL:0017]什，什么！？\n切！[CTRL:0103]那，那应该是几次？[CTRL:0003][CTRL:0017][CTRL:0009]真遗憾呢，是3次。[CTRL:0003][CTRL:000C][CTRL:0017]只要3次？\n怎么办到的，说一下。[CTRL:0003][CTRL:0017][CTRL:0009]嗯，那么我就告诉你算法吧。[CTRL:0103]首先呢，一开始放在天秤上的\n石头数目是重点。[CTRL:0103]一开始，左右各\n放上8块石头。[CTRL:0103]然后呢，\n注意观察两边有没轻的石头混入。[CTRL:0103]在这样的情况下，[CTRL:0103]就会明白左右两边的8块石头里，\n倾斜的那方里存在着不同的那块。[CTRL:0103]或者说，\n假如天秤没有倾斜的情况下，[CTRL:0103]在剩下的9块中，\n存在着那一块。[CTRL:0103]这样，就使用了一次。不过，之后\n只要按照同样的办法就行了。[CTRL:0103]以这9块中有那块轻的为例\n进行说明。[CTRL:0103]这次在9块石头里面\n各取3个放在左右两边的碟子中。[CTRL:0103]这样就进行了2次。[CTRL:0103]这时候，假如天秤倾斜，就说明\n左右里的某一边，假如都没倾斜，[CTRL:0103]那么就是在\n剩下的3块当中。[CTRL:0103]然后就在这3块里各取一块\n放上去称就可以了。[CTRL:0103]倾斜的话，\n其中那块就是。[CTRL:0103]没有的话，\n就是剩下的一块。[CTRL:0103]这样，就是3次。\n明白了吧。[CTRL:0003][CTRL:000C][CTRL:0017]啊？嗯，嗯。\n似乎是明白了……[CTRL:0003][CTRL:0017][CTRL:0009]哎？都说了答案了，还不明白？\n那还真是……[CTRL:0003][CTRL:000C][CTRL:0017]真是什么？[CTRL:0003][CTRL:0017][CTRL:0009]啊啊，没什么。\n忘了这个吧，哈哈哈。[CTRL:0003][CTRL:000C][CTRL:0017]我很在意的啊！[CTRL:0003][CTRL:0017][CTRL:0009]不过，还真是有趣啊。\n下次再一起玩吧，罗斯！[CTRL:0003][CTRL:000C]我可是一点都不觉得有趣，喂！[CTRL:0003]"
+        },
+        "0x0CB7": {
+          "expected_text": "[CTRL:0009][CTRL:0010][CTRL:012A][CTRL:0009]那么，今天的运气是……[CTRL:0103][CTRL:0009][CTRL:0080][CTRL:000B][CTRL:0009][CTRL:0006][CTRL:0002]里……啊，[CTRL:0105][CTRL:0017]哎呀哎呀，今天好象也不行嘛。[CTRL:0003][CTRL:0017][CTRL:0006][CTRL:000C][CTRL:0010][CTRL:0122][CTRL:000C]啊，\n在做什么呢？[CTRL:0003][CTRL:0009][CTRL:0017]嗯？啊。[CTRL:0103]用这玩意来算今天的运势。\n今天大概没什么好事。[CTRL:0003][CTRL:0017][CTRL:000C]啊！那是不行的。[CTRL:0103]与其用骰子，\n向神祈祷才是正确的做法。[CTRL:0103]从不怠于祈祷的我，\n向来都受到幸运的保护。[CTRL:0003][CTRL:0009][CTRL:0017]哦，还真是有理有据。[CTRL:0103]哦，让我看看\n幸运是否真的跟着你。[CTRL:0103]用这个赌一把如何？[CTRL:0003][CTRL:0017][CTRL:000C]啊！那可不行。[CTRL:0103]赌博是会遭天谴的。[CTRL:0003][CTRL:0009][CTRL:0017]这也太夸张了吧。[CTRL:0003][CTRL:0017][CTRL:000C]没有。\n赌博会使大众堕落。[CTRL:0103]神明不会原谅不辛勤劳作的人。[CTRL:0103]首先，这里不就没有赌场吗。[CTRL:0003][CTRL:0009][CTRL:0017]什么，\n不用想得那么严重吧，[CTRL:0103]好象赌博能造成\n什么严重的后果似的。[CTRL:0103][CTRL:0017][CTRL:0009][CTRL:0080][CTRL:000B][CTRL:0009][CTRL:0017]好……了。[CTRL:0003][CTRL:0102]来，表还是里？\n哪个？[CTRL:0003][CTRL:0017][CTRL:000C]既然受到挑战……\n就不得不接受了。[CTRL:0103]是表！[CTRL:0003][CTRL:0009][CTRL:0017]好。[CTRL:0017]那么……[CTRL:0103][CTRL:0017]哦，表。\n真有幸运相随啊。[CTRL:0003][CTRL:0017][CTRL:000C]哎？我赢了吗？[CTRL:0103][CTRL:0017]但仔细想是理所当然的。[CTRL:0103]就算是赌博这种事，\n本公主也是不可能会输的。[CTRL:0003][CTRL:0017][CTRL:0017][CTRL:0009]好，那么继续。\n下次赌100金币如何？[CTRL:0003][CTRL:000C]没问题。[CTRL:0103]既然你这么说了，我接受。[CTRL:0003][CTRL:0009]好好……[CTRL:0103]那么来吧，表里，哪个？[CTRL:0003][CTRL:000C]当然是表！[CTRL:0003]",
+          "provenance": {
+            "audit": "full-semantic-audit-2026-08-07",
+            "context": "Joshua and L’Arachel coin-toss support conversation.",
+            "target_ids": [
+              "0x0CF8"
+            ]
+          },
+          "reason": "Apply the exact reviewed Simplified Chinese correction while preserving the normalized control and newline structure.",
+          "replacement_text": "[CTRL:0009][CTRL:0010][CTRL:012A][CTRL:0009]那么，今天的运气是……[CTRL:0103][CTRL:0009][CTRL:0080][CTRL:000B][CTRL:0009][CTRL:0006][CTRL:0002]里……啊，[CTRL:0105][CTRL:0017]哎呀哎呀，今天好象也不行嘛。[CTRL:0003][CTRL:0017][CTRL:0006][CTRL:000C][CTRL:0010][CTRL:0122][CTRL:000C]啊，\n在做什么呢？[CTRL:0003][CTRL:0009][CTRL:0017]嗯？啊。[CTRL:0103]用这玩意来算今天的运势。\n今天大概没什么好事。[CTRL:0003][CTRL:0017][CTRL:000C]啊！那是不行的。[CTRL:0103]与其用硬币，\n向神祈祷才是正确的做法。[CTRL:0103]从不怠于祈祷的我，\n向来都受到幸运的保护。[CTRL:0003][CTRL:0009][CTRL:0017]哦，还真是有理有据。[CTRL:0103]哦，让我看看\n幸运是否真的跟着你。[CTRL:0103]用这个赌一把如何？[CTRL:0003][CTRL:0017][CTRL:000C]啊！那可不行。[CTRL:0103]赌博是会遭天谴的。[CTRL:0003][CTRL:0009][CTRL:0017]这也太夸张了吧。[CTRL:0003][CTRL:0017][CTRL:000C]没有。\n赌博会使大众堕落。[CTRL:0103]神明不会原谅不辛勤劳作的人。[CTRL:0103]首先，这里不就没有赌场吗。[CTRL:0003][CTRL:0009][CTRL:0017]什么，\n不用想得那么严重吧，[CTRL:0103]好象赌博能造成\n什么严重的后果似的。[CTRL:0103][CTRL:0017][CTRL:0009][CTRL:0080][CTRL:000B][CTRL:0009][CTRL:0017]好……了。[CTRL:0003][CTRL:0102]来，表还是里？\n哪个？[CTRL:0003][CTRL:0017][CTRL:000C]既然受到挑战……\n就不得不接受了。[CTRL:0103]是表！[CTRL:0003][CTRL:0009][CTRL:0017]好。[CTRL:0017]那么……[CTRL:0103][CTRL:0017]哦，表。\n真有幸运相随啊。[CTRL:0003][CTRL:0017][CTRL:000C]哎？我赢了吗？[CTRL:0103][CTRL:0017]但仔细想是理所当然的。[CTRL:0103]就算是赌博这种事，\n本公主也是不可能会输的。[CTRL:0003][CTRL:0017][CTRL:0017][CTRL:0009]好，那么继续。\n下次赌100金币如何？[CTRL:0003][CTRL:000C]没问题。[CTRL:0103]既然你这么说了，我接受。[CTRL:0003][CTRL:0009]好好……[CTRL:0103]那么来吧，表里，哪个？[CTRL:0003][CTRL:000C]当然是表！[CTRL:0003]"
         }
       },
       "locale_id": "zh-Hans",
@@ -443,6 +539,18 @@
     },
     "fe8j_indexed": {
       "entries": {
+        "0x0013": {
+          "expected_text": "ウィンドウパネル",
+          "provenance": {
+            "audit": "full-semantic-audit-2026-08-07",
+            "context": "Window Color option label.",
+            "target_ids": [
+              "0x009A"
+            ]
+          },
+          "reason": "Replace a decoder artifact or semantically incorrect normalized label with the exact reviewed Japanese runtime label.",
+          "replacement_text": "ウィンドウカラー"
+        },
         "0x004D": {
           "expected_text": "ＮＯＷ　ＬＯＡＤＩＮＧ",
           "provenance": {
@@ -467,6 +575,126 @@
           "reason": "Render the status in Japanese instead of copying the English payload.",
           "replacement_text": "データなし"
         },
+        "0x0254": {
+          "expected_text": "⊂⊃┌┐",
+          "provenance": {
+            "audit": "full-semantic-audit-2026-08-07",
+            "context": "Ranger class label.",
+            "target_ids": [
+              "0x02CD"
+            ]
+          },
+          "reason": "Replace a decoder artifact or semantically incorrect normalized label with the exact reviewed Japanese runtime label.",
+          "replacement_text": "フォレストナイト"
+        },
+        "0x0256": {
+          "expected_text": "абвг",
+          "provenance": {
+            "audit": "full-semantic-audit-2026-08-07",
+            "context": "Wyvern Lord class label.",
+            "target_ids": [
+              "0x02CF"
+            ]
+          },
+          "reason": "Replace a decoder artifact or semantically incorrect normalized label with the exact reviewed Japanese runtime label.",
+          "replacement_text": "ドラゴンマスター"
+        },
+        "0x0257": {
+          "expected_text": "шщъы",
+          "provenance": {
+            "audit": "full-semantic-audit-2026-08-07",
+            "context": "Wyvern Knight class label.",
+            "target_ids": [
+              "0x02D0"
+            ]
+          },
+          "reason": "Replace a decoder artifact or semantically incorrect normalized label with the exact reviewed Japanese runtime label.",
+          "replacement_text": "ワイバーンナイト"
+        },
+        "0x026F": {
+          "expected_text": "жзий",
+          "provenance": {
+            "audit": "full-semantic-audit-2026-08-07",
+            "context": "Falcoknight class label.",
+            "target_ids": [
+              "0x02E8"
+            ]
+          },
+          "reason": "Replace a decoder artifact or semantically incorrect normalized label with the exact reviewed Japanese runtime label.",
+          "replacement_text": "ファルコンナイト"
+        },
+        "0x0280": {
+          "expected_text": "∞┴∠∧",
+          "provenance": {
+            "audit": "full-semantic-audit-2026-08-07",
+            "context": "Mauthe Doog class label.",
+            "target_ids": [
+              "0x02F9"
+            ]
+          },
+          "reason": "Replace a decoder artifact or semantically incorrect normalized label with the exact reviewed Japanese runtime label.",
+          "replacement_text": "モーサドゥーグ"
+        },
+        "0x0287": {
+          "expected_text": "∪∫∬∴",
+          "provenance": {
+            "audit": "full-semantic-audit-2026-08-07",
+            "context": "Gorgon Egg class label.",
+            "target_ids": [
+              "0x0300"
+            ]
+          },
+          "reason": "Replace a decoder artifact or semantically incorrect normalized label with the exact reviewed Japanese runtime label.",
+          "replacement_text": "ゴーゴンエッグ"
+        },
+        "0x0289": {
+          "expected_text": "∇∈∋├",
+          "provenance": {
+            "audit": "full-semantic-audit-2026-08-07",
+            "context": "Deathgoyle class label.",
+            "target_ids": [
+              "0x0302"
+            ]
+          },
+          "reason": "Replace a decoder artifact or semantically incorrect normalized label with the exact reviewed Japanese runtime label.",
+          "replacement_text": "デスガーゴイル"
+        },
+        "0x028A": {
+          "expected_text": "≠≡≦≧",
+          "provenance": {
+            "audit": "full-semantic-audit-2026-08-07",
+            "context": "Draco Zombie class label.",
+            "target_ids": [
+              "0x0303"
+            ]
+          },
+          "reason": "Replace a decoder artifact or semantically incorrect normalized label with the exact reviewed Japanese runtime label.",
+          "replacement_text": "ドラゴンゾンビ"
+        },
+        "0x0334": {
+          "expected_text": "нопр",
+          "provenance": {
+            "audit": "full-semantic-audit-2026-08-07",
+            "context": "Bolting item label.",
+            "target_ids": [
+              "0x03AD"
+            ]
+          },
+          "reason": "Replace a decoder artifact or semantically incorrect normalized label with the exact reviewed Japanese runtime label.",
+          "replacement_text": "サンダーストーム"
+        },
+        "0x0479": {
+          "expected_text": "＜＞",
+          "provenance": {
+            "audit": "full-semantic-audit-2026-08-07",
+            "context": "Maximum HP status label.",
+            "target_ids": [
+              "0x04EA"
+            ]
+          },
+          "reason": "Replace a decoder artifact or semantically incorrect normalized label with the exact reviewed Japanese runtime label.",
+          "replacement_text": "ＭＨＰ"
+        },
         "0x0704": {
           "expected_text": "Ｐｒｏｌｏｇｕｅ",
           "provenance": {
@@ -490,6 +718,30 @@
           },
           "reason": "Translate the imperative naturally instead of retaining English prose.",
           "replacement_text": "ついて来い！"
+        },
+        "0x0717": {
+          "expected_text": "現れし異形の影а",
+          "provenance": {
+            "audit": "full-semantic-audit-2026-08-07",
+            "context": "Sound Room title Twisted Shadows A.",
+            "target_ids": [
+              "0x07A0"
+            ]
+          },
+          "reason": "Replace a decoder artifact or semantically incorrect normalized label with the exact reviewed Japanese runtime label.",
+          "replacement_text": "現れし異形の影Ａ"
+        },
+        "0x0718": {
+          "expected_text": "現れし異形の影б",
+          "provenance": {
+            "audit": "full-semantic-audit-2026-08-07",
+            "context": "Sound Room title Twisted Shadows B.",
+            "target_ids": [
+              "0x07A1"
+            ]
+          },
+          "reason": "Replace a decoder artifact or semantically incorrect normalized label with the exact reviewed Japanese runtime label.",
+          "replacement_text": "現れし異形の影Ｂ"
         },
         "0x0722": {
           "expected_text": "Ｈｅａｌｉｎｇ",
@@ -562,6 +814,30 @@
           },
           "reason": "Translate by the riddle-solving scene meaning rather than the awkward source English.",
           "replacement_text": "謎を解く"
+        },
+        "0x073F": {
+          "expected_text": "勝利の歌а",
+          "provenance": {
+            "audit": "full-semantic-audit-2026-08-07",
+            "context": "Sound Room title Victory Song A.",
+            "target_ids": [
+              "0x07C8"
+            ]
+          },
+          "reason": "Replace a decoder artifact or semantically incorrect normalized label with the exact reviewed Japanese runtime label.",
+          "replacement_text": "勝利の歌Ａ"
+        },
+        "0x0740": {
+          "expected_text": "勝利の歌б",
+          "provenance": {
+            "audit": "full-semantic-audit-2026-08-07",
+            "context": "Sound Room title Victory Song B.",
+            "target_ids": [
+              "0x07C9"
+            ]
+          },
+          "reason": "Replace a decoder artifact or semantically incorrect normalized label with the exact reviewed Japanese runtime label.",
+          "replacement_text": "勝利の歌Ｂ"
         },
         "0x0741": {
           "expected_text": "Ｇａｍｅ　Ｏｖｅｒ",

@@ -600,7 +600,7 @@ static const char sTacticianGridZhHansFrequent[] =
 
 static const char sTacticianGridZhHansExtended[] =
     "力多珂瑞德内姆已军生哈中定道将"
-    "鲁古法物用家哥怎自经前伊主列亚"
+    "鲁古法物用家怎哥自经前伊主列亚"
     "呢只使士回地而些被斗知请嗯公小"
     "给塞石先雷无从谢开成圣天您再发"
     "实当进敌做果身把等帝因让才动情";

@@ -68,11 +68,11 @@
   "inputs": {
     "febuilder_alignment_evidence": {
       "path": "texts/locales/mapping/febuilder_alignment_evidence.json",
-      "sha256": "617c18ee2d8f501b17d9666297ca525565932db204f5f1850906dadea9f3a58c"
+      "sha256": "801c56d372bdd113519f23423a94b6bf948dea92195df7da59344408cb1ed2fc"
     },
     "structural_completion_evidence": {
       "path": "texts/locales/mapping/structural_completion_evidence.json",
-      "sha256": "c98904afe337f7de2092219d8ffe2d00bbaaaabf34a0034ddcb98feda4b69bfa"
+      "sha256": "595996c61ca51cb7154e601498123157df7f9e009222e664b34ca0f5627d3092"
     },
     "structural_crosswalk_evidence": {
       "path": "texts/locales/mapping/fe8u_structural_evidence.json",
@@ -80,11 +80,11 @@
     },
     "target_map": {
       "path": "texts/locales/mapping/fe8u_target_map.json",
-      "sha256": "95be3e8617d2cba42d1d50641b4ac069357c65b3077230e68deb53849cff8c2b"
+      "sha256": "59899dfc4027c778c019869ecfdd662a992ee86b39618c273ab07cffe41daacf"
     },
     "target_map_coverage": {
       "path": "texts/locales/mapping/fe8u_target_map.coverage.json",
-      "sha256": "acedaf0537ef8167a8c0dacfd5e96a8aa540860acc51fd8bbd5309eb77e1f4b3"
+      "sha256": "3a5dc7ec85a0f33afb8ba1398e19e16ed4d792e79a62c4621d4e989165ffb511"
     }
   },
   "intersections": {

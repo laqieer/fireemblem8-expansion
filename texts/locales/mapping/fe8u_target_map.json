@@ -7872,12 +7872,12 @@
               "ja": {
                 "id": "0x0013",
                 "kind": "indexed",
-                "sha256": "ef38d252bf188efaa7d42feb85ecd0146a42d5454eaefb85658f7c2e1127fc62"
+                "sha256": "d3f448a3ce934f6f43016dfaee2af6577fb646eea824a2de4e3a935c5bf26087"
               },
               "zh-Hans": {
                 "id": "0x0013",
                 "kind": "indexed",
-                "sha256": "8ed6852b9b1f6e427df5ec0311520585c4634093821ffd439644ddfd7cb1ea32"
+                "sha256": "737549a84b1067a822f5c4a5d7a59a58b75dfda528447cbaded319d936fc4bfe"
               }
             },
             "structural_agreement": true
@@ -8526,7 +8526,7 @@
               "zh-Hans": {
                 "id": "0x001E",
                 "kind": "indexed",
-                "sha256": "e56ee22d2835217a80aa3d3ae56fd0eb61cfd955bbd9f859c058bf65fe60a3da"
+                "sha256": "42d396041127f33961fa4b9964f898850f378c9c0bd08a2694417cbba46a8617"
               }
             },
             "structural_agreement": true
@@ -50119,7 +50119,7 @@
               "ja": {
                 "id": "0x0479",
                 "kind": "indexed",
-                "sha256": "86c6664a2808a57818fdcc5eed978110f24f1223cecf227063bd2bf13dfd69c0"
+                "sha256": "4281fbb4488802db260a4042ee291a4edb99bc8a391b6f5f4218d1103e050213"
               },
               "zh-Hans": {
                 "id": "0x0479",
@@ -59329,32 +59329,29 @@
     },
     {
       "source": {
-        "id": "0x051E",
-        "kind": "indexed",
-        "layout": "FE8J"
+        "kind": "authored",
+        "translation_key": "game.semantic_correction.msg_593"
       },
       "state": "verified",
       "target_id": "0x0593",
       "verification": {
-        "confidence": "high",
-        "evidence": "FEBuilder line 1312 maps 0x051E to 0x0593",
-        "evidence_kind": "febuilder-structural-agreement",
+        "confidence": "explicit",
+        "evidence": "The target is the Debug menu label. Official 0x051E means Gold, and the regional sources have no exact standalone Debug label, so exact target labels are authored.",
+        "evidence_kind": "target-authored-semantic-payload",
         "method": "deterministic-final-mapping-promotion",
         "promotion": {
           "details": {
-            "candidate_payloads": {
-              "ja": {
-                "id": "0x051E",
-                "kind": "indexed",
-                "sha256": "3f73d64b759df799543cd999508c1221ed1b3269bea1fd59d2ee17dfe42af6bf"
-              },
-              "zh-Hans": {
-                "id": "0x051E",
-                "kind": "indexed",
-                "sha256": "bbece6f829af7a27bd7ed37acc0eacfdcf1f30b4c6c14cf3728a75d485a1ec6d"
-              }
+            "english_payload_sha256": "9ba4256a4d88821c0d44f83aaa5f84d79a4cab4832badae225aea3c4690e28b8",
+            "incorrect_source": {
+              "id": "0x051E",
+              "kind": "indexed",
+              "layout": "FE8J"
             },
-            "structural_agreement": true
+            "payload_sha256": {
+              "ja": "d82955e14b67b901c5355504d769e32818d3c5c4b4640a7037ff34d23a084778",
+              "zh-Hans": "65876ded77bd77a85735f4bb0df28a14840859d51ec3988715a2847e8bef900c"
+            },
+            "translation_key": "game.semantic_correction.msg_593"
           },
           "original_source": {
             "kind": "english_fallback",
@@ -59377,13 +59374,13 @@
             "subsystem": "unclassified"
           },
           "pipeline": "fe8u-final-mapping-v1",
-          "precedence": "c-febuilder"
+          "precedence": "d-semantic-correction"
         },
-        "rationale": "Independent structural evidence agrees with the FEBuilder provider.",
-        "source_key": "0x051E->0x0593",
-        "source_symbol": "translate_textid_FE8.txt",
-        "source_table": "FEBuilder translate_textid_FE8",
-        "subsystem": "menu-definition"
+        "rationale": "The target is the Debug menu label. Official 0x051E means Gold, and the regional sources have no exact standalone Debug label, so exact target labels are authored.",
+        "source_key": "MSG_593/Debug-label",
+        "source_symbol": "game.semantic_correction.msg_593",
+        "source_table": "texts/locales/authored/shards/semantic_corrections.<locale>.json",
+        "subsystem": "menus"
       }
     },
     {
@@ -81281,32 +81278,30 @@
     },
     {
       "source": {
-        "id": "0x06BB",
+        "id": "0x06BC",
         "kind": "indexed",
         "layout": "FE8J"
       },
       "state": "verified",
       "target_id": "0x0733",
       "verification": {
-        "confidence": "high",
-        "evidence": "FEBuilder line 1725 maps 0x06BB to 0x0733",
-        "evidence_kind": "febuilder-structural-agreement",
+        "confidence": "manual",
+        "evidence": "The target describes a lance-wielding winged fiend. Official 0x06BC has those Gargoyle semantics; 0x06BB describes a monster egg.",
+        "evidence_kind": "official-regional-semantic-payload",
         "method": "deterministic-final-mapping-promotion",
         "promotion": {
           "details": {
-            "candidate_payloads": {
-              "ja": {
-                "id": "0x06BB",
-                "kind": "indexed",
-                "sha256": "ad662405b2db446334a72505c39572aeed937fe57991a47149056c8106f009fc"
-              },
-              "zh-Hans": {
-                "id": "0x06BB",
-                "kind": "indexed",
-                "sha256": "b0c1663736e96d49266982d1c5bf654db9e7881f68cfa41e538902ec3f14bf27"
-              }
+            "english_payload_sha256": "93d876680aa79a257dc36b176f58dbf0dde4ba4f72e7737dfb1c3fd0d4ae3757",
+            "incorrect_source": {
+              "id": "0x06BB",
+              "kind": "indexed",
+              "layout": "FE8J"
             },
-            "structural_agreement": true
+            "payload_sha256": {
+              "ja": "5bab49a61f74fd9594ac2bd780d2bfdaa17bce6903cabad7acb5beb073edccfa",
+              "zh-Hans": "bfc031b0db58c3f5c9d5c799d135267294cc837b11ce476f6a491df24430aae3"
+            },
+            "replacement_source_id": "0x06BC"
           },
           "original_source": {
             "kind": "english_fallback",
@@ -81329,43 +81324,41 @@
             "subsystem": "unclassified"
           },
           "pipeline": "fe8u-final-mapping-v1",
-          "precedence": "c-febuilder"
+          "precedence": "d-semantic-correction"
         },
-        "rationale": "Independent structural evidence agrees with the FEBuilder provider.",
-        "source_key": "0x06BB->0x0733",
-        "source_symbol": "translate_textid_FE8.txt",
-        "source_table": "FEBuilder translate_textid_FE8",
-        "subsystem": "help-tutorial"
+        "rationale": "The target describes a lance-wielding winged fiend. Official 0x06BC has those Gargoyle semantics; 0x06BB describes a monster egg.",
+        "source_key": "MSG_733/Gargoyle-description",
+        "source_symbol": "0x06BC",
+        "source_table": "FE8J/FE8CN indexed message corpus",
+        "subsystem": "help-text"
       }
     },
     {
       "source": {
-        "id": "0x06BC",
+        "id": "0x06BD",
         "kind": "indexed",
         "layout": "FE8J"
       },
       "state": "verified",
       "target_id": "0x0734",
       "verification": {
-        "confidence": "high",
-        "evidence": "FEBuilder line 1726 maps 0x06BC to 0x0734",
-        "evidence_kind": "febuilder-structural-agreement",
+        "confidence": "manual",
+        "evidence": "The target describes a magically enhanced Gargoyle. Official 0x06BD has those Deathgoyle semantics; 0x06BC is the ordinary Gargoyle description.",
+        "evidence_kind": "official-regional-semantic-payload",
         "method": "deterministic-final-mapping-promotion",
         "promotion": {
           "details": {
-            "candidate_payloads": {
-              "ja": {
-                "id": "0x06BC",
-                "kind": "indexed",
-                "sha256": "5bab49a61f74fd9594ac2bd780d2bfdaa17bce6903cabad7acb5beb073edccfa"
-              },
-              "zh-Hans": {
-                "id": "0x06BC",
-                "kind": "indexed",
-                "sha256": "bfc031b0db58c3f5c9d5c799d135267294cc837b11ce476f6a491df24430aae3"
-              }
+            "english_payload_sha256": "10edd2e023ca3042ef942ad67ccc62d2a75df29a7873b1cfa90f5aebad8a7bf0",
+            "incorrect_source": {
+              "id": "0x06BC",
+              "kind": "indexed",
+              "layout": "FE8J"
             },
-            "structural_agreement": true
+            "payload_sha256": {
+              "ja": "bc77994eb2716f8d8cd41bdfd8aa74e2dd9a1a83c7ecc95b81aa38e584dcf72c",
+              "zh-Hans": "94eaeddb1dd33a84ff37a95d6c77de454ed7ff5793063f075788a619a7c5c8db"
+            },
+            "replacement_source_id": "0x06BD"
           },
           "original_source": {
             "kind": "english_fallback",
@@ -81388,13 +81381,13 @@
             "subsystem": "unclassified"
           },
           "pipeline": "fe8u-final-mapping-v1",
-          "precedence": "c-febuilder"
+          "precedence": "d-semantic-correction"
         },
-        "rationale": "Independent structural evidence agrees with the FEBuilder provider.",
-        "source_key": "0x06BC->0x0734",
-        "source_symbol": "translate_textid_FE8.txt",
-        "source_table": "FEBuilder translate_textid_FE8",
-        "subsystem": "help-tutorial"
+        "rationale": "The target describes a magically enhanced Gargoyle. Official 0x06BD has those Deathgoyle semantics; 0x06BC is the ordinary Gargoyle description.",
+        "source_key": "MSG_734/Deathgoyle-description",
+        "source_symbol": "0x06BD",
+        "source_table": "FE8J/FE8CN indexed message corpus",
+        "subsystem": "help-text"
       }
     },
     {
@@ -86332,12 +86325,12 @@
               "ja": {
                 "id": "0x0717",
                 "kind": "indexed",
-                "sha256": "5d7db413d7aeaef7409c9307355098b9dac15015650f838ffd003212b8ec562e"
+                "sha256": "120e5ddf6cf30fc602eb9144d6eeb57a48a3319abdba32a58f1ad712f391c073"
               },
               "zh-Hans": {
                 "id": "0x0717",
                 "kind": "indexed",
-                "sha256": "0bc05fbdb50562f7827d4920e173e89dd422a3558e5694bab225d22e3c9a2139"
+                "sha256": "a9bf168416490782eb555c6b5135cfb0779cdbab7af9555048447e8cd59813aa"
               }
             },
             "structural_agreement": true
@@ -86386,12 +86379,12 @@
               "ja": {
                 "id": "0x0718",
                 "kind": "indexed",
-                "sha256": "1c5ac90ae572618ffb6994af657bfc4fbd5cd2614988cf5bb106db29a7daa752"
+                "sha256": "0f3b569739f5ebc8790e9315895c0d7f13567570acb69428acb0932340064b6b"
               },
               "zh-Hans": {
                 "id": "0x0718",
                 "kind": "indexed",
-                "sha256": "1c6a2198838d058414f1cbec3f240086ddc2c51b4b3c7dc668fbe2b67a1f5120"
+                "sha256": "4da4030c1add399ebbaa36bbcaf8dc4ef1df7ed334c2fc86075dd1ec46fee830"
               }
             },
             "structural_agreement": true
@@ -88492,12 +88485,12 @@
               "ja": {
                 "id": "0x073F",
                 "kind": "indexed",
-                "sha256": "fc5c3a06d887f70b0c5649752a53931e8042a5fe1337f099789c16d35d1f5cb8"
+                "sha256": "8aaaba3918a725995f3e000bcc6e2dd39085a4f444c0e1ddbcdb90951cdcab20"
               },
               "zh-Hans": {
                 "id": "0x073F",
                 "kind": "indexed",
-                "sha256": "61fb5d90c0e1035751518d6312c3ce55c38cf7abdd47a9b91c12bd694cdd33ce"
+                "sha256": "e65ae5ae0c5be8eaa808dc31c5297669a711a6308a26448e075fe052a3f42c78"
               }
             },
             "structural_agreement": true
@@ -88546,12 +88539,12 @@
               "ja": {
                 "id": "0x0740",
                 "kind": "indexed",
-                "sha256": "bab1b8e81572c13a9d1bf858b79fa25910217001422cfc64a192b86a094f6bf8"
+                "sha256": "15c053ef3c43856e98057250963563e0de166510e83885d8e72c1e1125fc5aa7"
               },
               "zh-Hans": {
                 "id": "0x0740",
                 "kind": "indexed",
-                "sha256": "02dd0779f2821f174e62e9f2798a707076561f0bcdfa2456175c21b1f7b0aebf"
+                "sha256": "5c82f7e6af763f5324d4f7a4aa6f818638d14d5d54d105ccfb8580187fd28afa"
               }
             },
             "structural_agreement": true
@@ -88949,32 +88942,29 @@
     },
     {
       "source": {
-        "id": "0x0748",
-        "kind": "indexed",
-        "layout": "FE8J"
+        "kind": "authored",
+        "translation_key": "game.semantic_correction.msg_7d1"
       },
       "state": "verified",
       "target_id": "0x07D1",
       "verification": {
-        "confidence": "high",
-        "evidence": "FEBuilder line 1866 maps 0x0748 to 0x07D1",
-        "evidence_kind": "febuilder-structural-agreement",
+        "confidence": "explicit",
+        "evidence": "PrepareUnitDefeatLocationString draws this before a dynamic location and MSG_022 punctuation. Official 0x0748 is a percent sign, so a target-order death-location prefix is authored.",
+        "evidence_kind": "target-authored-semantic-payload",
         "method": "deterministic-final-mapping-promotion",
         "promotion": {
           "details": {
-            "candidate_payloads": {
-              "ja": {
-                "id": "0x0748",
-                "kind": "indexed",
-                "sha256": "0b8057215b7985c448ef92f6e4d7addbc57234cdf582287ae74947809235269b"
-              },
-              "zh-Hans": {
-                "id": "0x0748",
-                "kind": "indexed",
-                "sha256": "0b8057215b7985c448ef92f6e4d7addbc57234cdf582287ae74947809235269b"
-              }
+            "english_payload_sha256": "6f1bff5800aacf9125a43d3c1786ec04f2beb1c002b28ef8325b28a02b851333",
+            "incorrect_source": {
+              "id": "0x0748",
+              "kind": "indexed",
+              "layout": "FE8J"
             },
-            "structural_agreement": true
+            "payload_sha256": {
+              "ja": "bcec2c27aafffd0be00e5a575d2b5e6e7b1cdeca2c7458a0ea88be8723d7cc38",
+              "zh-Hans": "62cdcc7a3cea55209079ed95081c12f32202c1fc096c07b0fe5343bd7f06ef23"
+            },
+            "translation_key": "game.semantic_correction.msg_7d1"
           },
           "original_source": {
             "kind": "english_fallback",
@@ -88992,43 +88982,40 @@
             "subsystem": "unclassified"
           },
           "pipeline": "fe8u-final-mapping-v1",
-          "precedence": "c-febuilder"
+          "precedence": "d-semantic-correction"
         },
-        "rationale": "Independent structural evidence agrees with the FEBuilder provider.",
-        "source_key": "0x0748->0x07D1",
-        "source_symbol": "translate_textid_FE8.txt",
-        "source_table": "FEBuilder translate_textid_FE8",
-        "subsystem": "help-tutorial"
+        "rationale": "PrepareUnitDefeatLocationString draws this before a dynamic location and MSG_022 punctuation. Official 0x0748 is a percent sign, so a target-order death-location prefix is authored.",
+        "source_key": "GetPidDefeatedEndingString/died-at-prefix",
+        "source_symbol": "game.semantic_correction.msg_7d1",
+        "source_table": "texts/locales/authored/shards/semantic_corrections.<locale>.json",
+        "subsystem": "ending-details"
       }
     },
     {
       "source": {
-        "id": "0x0749",
-        "kind": "indexed",
-        "layout": "FE8J"
+        "kind": "authored",
+        "translation_key": "game.semantic_correction.msg_7d2"
       },
       "state": "verified",
       "target_id": "0x07D2",
       "verification": {
-        "confidence": "high",
-        "evidence": "FEBuilder line 1867 maps 0x0749 to 0x07D2",
-        "evidence_kind": "febuilder-structural-agreement",
+        "confidence": "explicit",
+        "evidence": "This unused-in-FE8 defeat fragment is the suffix for a unit wounded at a dynamic location and then parted from the company. Official 0x0749 is the death suffix, so a grammatical suffix is authored for the defined role.",
+        "evidence_kind": "target-authored-semantic-payload",
         "method": "deterministic-final-mapping-promotion",
         "promotion": {
           "details": {
-            "candidate_payloads": {
-              "ja": {
-                "id": "0x0749",
-                "kind": "indexed",
-                "sha256": "c22e5ccdf20a97d05d44653f88b63c49ed8ef25a23cff9f7c080a3043f5aa13e"
-              },
-              "zh-Hans": {
-                "id": "0x0749",
-                "kind": "indexed",
-                "sha256": "bb651e41a9bb321f59ad0accbda4cf50c419c40d97cdb0a9e130dff283f23282"
-              }
+            "english_payload_sha256": "26311e0d50109e50788aee81c265f8f4b3fe174c82a168fb9a12ae9b3087db2d",
+            "incorrect_source": {
+              "id": "0x0749",
+              "kind": "indexed",
+              "layout": "FE8J"
             },
-            "structural_agreement": true
+            "payload_sha256": {
+              "ja": "313e8b0dce303507a85e555bbd2c5d5bba846d4b920d8b5e023ead6805a3803b",
+              "zh-Hans": "f5c1c843d41f57e48d3f6bb1777571c1b27601c0a5b4a22d591e6d44864c2c4e"
+            },
+            "translation_key": "game.semantic_correction.msg_7d2"
           },
           "original_source": {
             "kind": "english_fallback",
@@ -89046,43 +89033,40 @@
             "subsystem": "unclassified"
           },
           "pipeline": "fe8u-final-mapping-v1",
-          "precedence": "c-febuilder"
+          "precedence": "d-semantic-correction"
         },
-        "rationale": "Independent structural evidence agrees with the FEBuilder provider.",
-        "source_key": "0x0749->0x07D2",
-        "source_symbol": "translate_textid_FE8.txt",
-        "source_table": "FEBuilder translate_textid_FE8",
-        "subsystem": "help-tutorial"
+        "rationale": "This unused-in-FE8 defeat fragment is the suffix for a unit wounded at a dynamic location and then parted from the company. Official 0x0749 is the death suffix, so a grammatical suffix is authored for the defined role.",
+        "source_key": "DEFEAT_WOUNDED_PARTEDWAYS/location-suffix",
+        "source_symbol": "game.semantic_correction.msg_7d2",
+        "source_table": "texts/locales/authored/shards/semantic_corrections.<locale>.json",
+        "subsystem": "ending-details"
       }
     },
     {
       "source": {
-        "id": "0x074A",
-        "kind": "indexed",
-        "layout": "FE8J"
+        "kind": "authored",
+        "translation_key": "game.semantic_correction.msg_7d3"
       },
       "state": "verified",
       "target_id": "0x07D3",
       "verification": {
-        "confidence": "high",
-        "evidence": "FEBuilder line 1868 maps 0x074A to 0x07D3",
-        "evidence_kind": "febuilder-structural-agreement",
+        "confidence": "explicit",
+        "evidence": "PrepareUnitDefeatLocationString draws this before a dynamic wound location. Official 0x074A is a complete wound-and-part suffix, so a target-order prefix is authored.",
+        "evidence_kind": "target-authored-semantic-payload",
         "method": "deterministic-final-mapping-promotion",
         "promotion": {
           "details": {
-            "candidate_payloads": {
-              "ja": {
-                "id": "0x074A",
-                "kind": "indexed",
-                "sha256": "d9987c283b985fea626ad30fdfa16684274df6e29c15c9808eb11fe82dfbce00"
-              },
-              "zh-Hans": {
-                "id": "0x074A",
-                "kind": "indexed",
-                "sha256": "d1237e645c0a09391c8d2a52eff5ecd5548cf68e779ccca312aeb8bcebc5924f"
-              }
+            "english_payload_sha256": "798435c2733702fba4b1b99532596b2344e0ccbbd9bb8927dfc494699b120151",
+            "incorrect_source": {
+              "id": "0x074A",
+              "kind": "indexed",
+              "layout": "FE8J"
             },
-            "structural_agreement": true
+            "payload_sha256": {
+              "ja": "971b2b9eabe000ab3c6665e56a6eb6f10e597f767b958b37a26a6565590614c6",
+              "zh-Hans": "072488aa619c06cf77ee94b3a3fe82f4c353f08e706a4c125202e87172770ea9"
+            },
+            "translation_key": "game.semantic_correction.msg_7d3"
           },
           "original_source": {
             "kind": "english_fallback",
@@ -89100,43 +89084,40 @@
             "subsystem": "unclassified"
           },
           "pipeline": "fe8u-final-mapping-v1",
-          "precedence": "c-febuilder"
+          "precedence": "d-semantic-correction"
         },
-        "rationale": "Independent structural evidence agrees with the FEBuilder provider.",
-        "source_key": "0x074A->0x07D3",
-        "source_symbol": "translate_textid_FE8.txt",
-        "source_table": "FEBuilder translate_textid_FE8",
-        "subsystem": "help-tutorial"
+        "rationale": "PrepareUnitDefeatLocationString draws this before a dynamic wound location. Official 0x074A is a complete wound-and-part suffix, so a target-order prefix is authored.",
+        "source_key": "GetPidDefeatedEndingString/wounded-at-prefix",
+        "source_symbol": "game.semantic_correction.msg_7d3",
+        "source_table": "texts/locales/authored/shards/semantic_corrections.<locale>.json",
+        "subsystem": "ending-details"
       }
     },
     {
       "source": {
-        "id": "0x074B",
-        "kind": "indexed",
-        "layout": "FE8J"
+        "kind": "authored",
+        "translation_key": "game.semantic_correction.msg_7d4"
       },
       "state": "verified",
       "target_id": "0x07D4",
       "verification": {
-        "confidence": "high",
-        "evidence": "FEBuilder line 1869 maps 0x074B to 0x07D4",
-        "evidence_kind": "febuilder-structural-agreement",
+        "confidence": "explicit",
+        "evidence": "PrepareUnitDefeatLocationString appends this after the dynamic wound location. Official 0x074B repeats the wound clause, so a target-order remained-until-end suffix is authored.",
+        "evidence_kind": "target-authored-semantic-payload",
         "method": "deterministic-final-mapping-promotion",
         "promotion": {
           "details": {
-            "candidate_payloads": {
-              "ja": {
-                "id": "0x074B",
-                "kind": "indexed",
-                "sha256": "71e6ae9adeb6cf80edc48c42b3617c3a3c85838dfffb888c339cdf02e4a45608"
-              },
-              "zh-Hans": {
-                "id": "0x074B",
-                "kind": "indexed",
-                "sha256": "611351c2e0ffab9dddaf71e0e7f699e26299c68dd6de4d7f645a201f2b564387"
-              }
+            "english_payload_sha256": "b795f8797cc8bebd384539493b3673c291d1a4ed0766d2d788271b1c414b834b",
+            "incorrect_source": {
+              "id": "0x074B",
+              "kind": "indexed",
+              "layout": "FE8J"
             },
-            "structural_agreement": true
+            "payload_sha256": {
+              "ja": "c13cfe39eeefdaca6df22dc6bb5917b12c701ba0f2025e6b6fb25637512a4da3",
+              "zh-Hans": "065fe0f4dbf34b766e4ace223bfcf52ee200437aef42a11483b70442bf26ecf9"
+            },
+            "translation_key": "game.semantic_correction.msg_7d4"
           },
           "original_source": {
             "kind": "english_fallback",
@@ -89154,13 +89135,13 @@
             "subsystem": "unclassified"
           },
           "pipeline": "fe8u-final-mapping-v1",
-          "precedence": "c-febuilder"
+          "precedence": "d-semantic-correction"
         },
-        "rationale": "Independent structural evidence agrees with the FEBuilder provider.",
-        "source_key": "0x074B->0x07D4",
-        "source_symbol": "translate_textid_FE8.txt",
-        "source_table": "FEBuilder translate_textid_FE8",
-        "subsystem": "help-tutorial"
+        "rationale": "PrepareUnitDefeatLocationString appends this after the dynamic wound location. Official 0x074B repeats the wound clause, so a target-order remained-until-end suffix is authored.",
+        "source_key": "GetPidDefeatedEndingString/remained-until-end-suffix",
+        "source_symbol": "game.semantic_correction.msg_7d4",
+        "source_table": "texts/locales/authored/shards/semantic_corrections.<locale>.json",
+        "subsystem": "ending-details"
       }
     },
     {
@@ -108378,32 +108359,30 @@
     },
     {
       "source": {
-        "id": "0x0908",
+        "id": "0x0900",
         "kind": "indexed",
         "layout": "FE8J"
       },
       "state": "verified",
       "target_id": "0x0940",
       "verification": {
-        "confidence": "high",
-        "evidence": "FEBuilder line 2314 maps 0x0908 to 0x0940",
-        "evidence_kind": "febuilder-structural-agreement",
+        "confidence": "manual",
+        "evidence": "The target tells the player to move Eirika to the flashing house. Official 0x0900 has that exact tutorial step; 0x0908 only asks the player to choose Trade.",
+        "evidence_kind": "official-regional-semantic-payload",
         "method": "deterministic-final-mapping-promotion",
         "promotion": {
           "details": {
-            "candidate_payloads": {
-              "ja": {
-                "id": "0x0908",
-                "kind": "indexed",
-                "sha256": "0a76a3b2e8930411a50b61f3cc7c3b5292ae5b7a08145104d80f22f0e2125c55"
-              },
-              "zh-Hans": {
-                "id": "0x0908",
-                "kind": "indexed",
-                "sha256": "b1176a7fb6a9484fb5db77011e7a859cf90cf18481ddaa5de99d7ae58ce1f1d0"
-              }
+            "english_payload_sha256": "8f485419624d7337fc7764c8c900a93665817a4268464989b6e845e8d0a91574",
+            "incorrect_source": {
+              "id": "0x0908",
+              "kind": "indexed",
+              "layout": "FE8J"
             },
-            "structural_agreement": true
+            "payload_sha256": {
+              "ja": "7da0f15a7d43d20face639447e67f0a521c147331e3734da150541dcbce91e46",
+              "zh-Hans": "90e8053f45ebd0214b21c20f5a51d69e5c90109305709a5fa8c8bdbbfedb10d9"
+            },
+            "replacement_source_id": "0x0900"
           },
           "original_source": {
             "kind": "english_fallback",
@@ -108426,12 +108405,12 @@
             "subsystem": "unclassified"
           },
           "pipeline": "fe8u-final-mapping-v1",
-          "precedence": "c-febuilder"
+          "precedence": "d-semantic-correction"
         },
-        "rationale": "Independent structural evidence agrees with the FEBuilder provider.",
-        "source_key": "0x0908->0x0940",
-        "source_symbol": "translate_textid_FE8.txt",
-        "source_table": "FEBuilder translate_textid_FE8",
+        "rationale": "The target tells the player to move Eirika to the flashing house. Official 0x0900 has that exact tutorial step; 0x0908 only asks the player to choose Trade.",
+        "source_key": "EventScr_PrologueTut_MoveEirikaToHouse",
+        "source_symbol": "0x0900",
+        "source_table": "FE8J/FE8CN indexed message corpus",
         "subsystem": "chapter-event"
       }
     },
@@ -109333,32 +109312,30 @@
     },
     {
       "source": {
-        "id": "0x0905",
+        "id": "0x0913",
         "kind": "indexed",
         "layout": "FE8J"
       },
       "state": "verified",
       "target_id": "0x0953",
       "verification": {
-        "confidence": "high",
-        "evidence": "FEBuilder line 2311 maps 0x0905 to 0x0953",
-        "evidence_kind": "febuilder-structural-agreement",
+        "confidence": "manual",
+        "evidence": "The target explains how to open the map Guide. Official 0x0913 has that exact tutorial; 0x0905 explains seizing after defeating Breguet.",
+        "evidence_kind": "official-regional-semantic-payload",
         "method": "deterministic-final-mapping-promotion",
         "promotion": {
           "details": {
-            "candidate_payloads": {
-              "ja": {
-                "id": "0x0905",
-                "kind": "indexed",
-                "sha256": "9e0b140a0f0d047c02801a67b42423d0b0c9cfe2a0682334dacf28ef106b69ad"
-              },
-              "zh-Hans": {
-                "id": "0x0905",
-                "kind": "indexed",
-                "sha256": "81d0e1b7d216623182cb887cf932f8708c40c1a7137000697265ffe7b5a6ffcb"
-              }
+            "english_payload_sha256": "bc78a952bb884d1e2e8b5cb87a30c125c5e866df7fc566eb6de451b2d94b3fa8",
+            "incorrect_source": {
+              "id": "0x0905",
+              "kind": "indexed",
+              "layout": "FE8J"
             },
-            "structural_agreement": true
+            "payload_sha256": {
+              "ja": "3ed32407e957d2eb77be6b837d097b4a4716bc09352434d1abbb6711edac4ca3",
+              "zh-Hans": "4d117c8bc7748351d5b4210018b013ff6119dc98f6f0e5ba6d68e634de07e673"
+            },
+            "replacement_source_id": "0x0913"
           },
           "original_source": {
             "kind": "english_fallback",
@@ -109381,12 +109358,12 @@
             "subsystem": "unclassified"
           },
           "pipeline": "fe8u-final-mapping-v1",
-          "precedence": "c-febuilder"
+          "precedence": "d-semantic-correction"
         },
-        "rationale": "Independent structural evidence agrees with the FEBuilder provider.",
-        "source_key": "0x0905->0x0953",
-        "source_symbol": "translate_textid_FE8.txt",
-        "source_table": "FEBuilder translate_textid_FE8",
+        "rationale": "The target explains how to open the map Guide. Official 0x0913 has that exact tutorial; 0x0905 explains seizing after defeating Breguet.",
+        "source_key": "EventScr_Tutorial_OpenGuide",
+        "source_symbol": "0x0913",
+        "source_table": "FE8J/FE8CN indexed message corpus",
         "subsystem": "chapter-event"
       }
     },
@@ -110328,32 +110305,30 @@
     },
     {
       "source": {
-        "id": "0x090D",
+        "id": "0x092F",
         "kind": "indexed",
         "layout": "FE8J"
       },
       "state": "verified",
       "target_id": "0x096F",
       "verification": {
-        "confidence": "high",
-        "evidence": "FEBuilder line 2319 maps 0x090D to 0x096F",
-        "evidence_kind": "febuilder-structural-agreement",
+        "confidence": "manual",
+        "evidence": "The target explains Pegasus Knight terrain movement and bow weakness. Official 0x092F has those semantics; 0x090D explains using a vulnerary.",
+        "evidence_kind": "official-regional-semantic-payload",
         "method": "deterministic-final-mapping-promotion",
         "promotion": {
           "details": {
-            "candidate_payloads": {
-              "ja": {
-                "id": "0x090D",
-                "kind": "indexed",
-                "sha256": "8513a4faa74dafb8b5ae245da3a4326186d6b74b3abf72980807d2c613cbe6c6"
-              },
-              "zh-Hans": {
-                "id": "0x090D",
-                "kind": "indexed",
-                "sha256": "ce4bb03f449f593479bda5ff1ba30ae0e7bc49244860d31732d004c5414f1ea7"
-              }
+            "english_payload_sha256": "1e2d9fc94f79d3a6a8db8d30a2acc4224a91a9b5be0817ace7e72c66fbc38ca6",
+            "incorrect_source": {
+              "id": "0x090D",
+              "kind": "indexed",
+              "layout": "FE8J"
             },
-            "structural_agreement": true
+            "payload_sha256": {
+              "ja": "40eabea40c09e97a3a7db8a112c2ee2ca9df601deb79c4d9b25eeef76d0c17b9",
+              "zh-Hans": "31c4fa3ce376b960d653724bc87e094528ac16771871e44f3edaeb29d874a8f7"
+            },
+            "replacement_source_id": "0x092F"
           },
           "original_source": {
             "kind": "english_fallback",
@@ -110376,43 +110351,41 @@
             "subsystem": "unclassified"
           },
           "pipeline": "fe8u-final-mapping-v1",
-          "precedence": "c-febuilder"
+          "precedence": "d-semantic-correction"
         },
-        "rationale": "Independent structural evidence agrees with the FEBuilder provider.",
-        "source_key": "0x090D->0x096F",
-        "source_symbol": "translate_textid_FE8.txt",
-        "source_table": "FEBuilder translate_textid_FE8",
+        "rationale": "The target explains Pegasus Knight terrain movement and bow weakness. Official 0x092F has those semantics; 0x090D explains using a vulnerary.",
+        "source_key": "EventScr_Tutorial_PegasusMovement",
+        "source_symbol": "0x092F",
+        "source_table": "FE8J/FE8CN indexed message corpus",
         "subsystem": "chapter-event"
       }
     },
     {
       "source": {
-        "id": "0x0909",
+        "id": "0x0930",
         "kind": "indexed",
         "layout": "FE8J"
       },
       "state": "verified",
       "target_id": "0x0970",
       "verification": {
-        "confidence": "high",
-        "evidence": "FEBuilder line 2315 maps 0x0909 to 0x0970",
-        "evidence_kind": "febuilder-structural-agreement",
+        "confidence": "manual",
+        "evidence": "The target starts Vanessa's rescue of Ross. Official 0x0930 has that exact tutorial step; 0x0909 explains moving the trade cursor to Franz.",
+        "evidence_kind": "official-regional-semantic-payload",
         "method": "deterministic-final-mapping-promotion",
         "promotion": {
           "details": {
-            "candidate_payloads": {
-              "ja": {
-                "id": "0x0909",
-                "kind": "indexed",
-                "sha256": "1e1e38be578f17e137c3051c4fbc7258e739dfc49805b8e599cefa49d88c7b44"
-              },
-              "zh-Hans": {
-                "id": "0x0909",
-                "kind": "indexed",
-                "sha256": "418d091b5ebe0cd46b92a51a118b5bd69316886529be2775dd597da34b6ef54c"
-              }
+            "english_payload_sha256": "d48084381182c581dead73524ee595c3b33178a5d039ab838a9f819d51d915a9",
+            "incorrect_source": {
+              "id": "0x0909",
+              "kind": "indexed",
+              "layout": "FE8J"
             },
-            "structural_agreement": true
+            "payload_sha256": {
+              "ja": "e07910c2f6a7448d52f2e00b69bae979a1310205c80698ce3a0299051213fb83",
+              "zh-Hans": "af9054e57f7d96c45a097baba5cc1292ad360b02e4c37c41a6d396ee203b5436"
+            },
+            "replacement_source_id": "0x0930"
           },
           "original_source": {
             "kind": "english_fallback",
@@ -110435,12 +110408,12 @@
             "subsystem": "unclassified"
           },
           "pipeline": "fe8u-final-mapping-v1",
-          "precedence": "c-febuilder"
+          "precedence": "d-semantic-correction"
         },
-        "rationale": "Independent structural evidence agrees with the FEBuilder provider.",
-        "source_key": "0x0909->0x0970",
-        "source_symbol": "translate_textid_FE8.txt",
-        "source_table": "FEBuilder translate_textid_FE8",
+        "rationale": "The target starts Vanessa's rescue of Ross. Official 0x0930 has that exact tutorial step; 0x0909 explains moving the trade cursor to Franz.",
+        "source_key": "EventScr_Tutorial_VanessaRescueRoss",
+        "source_symbol": "0x0930",
+        "source_table": "FE8J/FE8CN indexed message corpus",
         "subsystem": "chapter-event"
       }
     },
@@ -110589,32 +110562,30 @@
     },
     {
       "source": {
-        "id": "0x093D",
+        "id": "0x0934",
         "kind": "indexed",
         "layout": "FE8J"
       },
       "state": "verified",
       "target_id": "0x0974",
       "verification": {
-        "confidence": "high",
-        "evidence": "FEBuilder line 2367 maps 0x093D to 0x0974",
-        "evidence_kind": "febuilder-structural-agreement",
+        "confidence": "manual",
+        "evidence": "The target asks the player to select Vanessa. Official 0x0934 has that exact prompt; 0x093D is the later general explanation of Rescue.",
+        "evidence_kind": "official-regional-semantic-payload",
         "method": "deterministic-final-mapping-promotion",
         "promotion": {
           "details": {
-            "candidate_payloads": {
-              "ja": {
-                "id": "0x093D",
-                "kind": "indexed",
-                "sha256": "db3fee23f910c0adfd836f58af8533954c451c09ad4066e81d7360a644d1324c"
-              },
-              "zh-Hans": {
-                "id": "0x093D",
-                "kind": "indexed",
-                "sha256": "5c78435771bdebd8886ca130510b43edc5b9c2c9905cdc9abba250d02f04e8c3"
-              }
+            "english_payload_sha256": "d886c4c493b7a43ad922e2639c875bf1e9f2b934569e23a8b7282d62b60448ac",
+            "incorrect_source": {
+              "id": "0x093D",
+              "kind": "indexed",
+              "layout": "FE8J"
             },
-            "structural_agreement": true
+            "payload_sha256": {
+              "ja": "3f0872ecd300b52951089d53f942babd271f5c76750d133781b61680186a7ebb",
+              "zh-Hans": "fe27cba404198dc142ee4980ed9957d78585f88e15efe821e92ac230e4cba837"
+            },
+            "replacement_source_id": "0x0934"
           },
           "original_source": {
             "kind": "english_fallback",
@@ -110637,12 +110608,12 @@
             "subsystem": "unclassified"
           },
           "pipeline": "fe8u-final-mapping-v1",
-          "precedence": "c-febuilder"
+          "precedence": "d-semantic-correction"
         },
-        "rationale": "Independent structural evidence agrees with the FEBuilder provider.",
-        "source_key": "0x093D->0x0974",
-        "source_symbol": "translate_textid_FE8.txt",
-        "source_table": "FEBuilder translate_textid_FE8",
+        "rationale": "The target asks the player to select Vanessa. Official 0x0934 has that exact prompt; 0x093D is the later general explanation of Rescue.",
+        "source_key": "EventScr_Tutorial_SelectVanessa",
+        "source_symbol": "0x0934",
+        "source_table": "FE8J/FE8CN indexed message corpus",
         "subsystem": "chapter-event"
       }
     },
@@ -117041,32 +117012,29 @@
     },
     {
       "source": {
-        "id": "0x09D6",
-        "kind": "indexed",
-        "layout": "FE8J"
+        "kind": "authored",
+        "translation_key": "game.semantic_correction.msg_a15"
       },
       "state": "verified",
       "target_id": "0x0A15",
       "verification": {
-        "confidence": "high",
-        "evidence": "FEBuilder line 2520 maps 0x09D6 to 0x0A15",
-        "evidence_kind": "febuilder-structural-agreement",
+        "confidence": "explicit",
+        "evidence": "The Simplified Chinese official payload omits the final Knight Crest usage paragraph. A target-authored pair preserves the complete official Japanese text and restores all three paragraphs in Chinese.",
+        "evidence_kind": "target-authored-semantic-payload",
         "method": "deterministic-final-mapping-promotion",
         "promotion": {
           "details": {
-            "candidate_payloads": {
-              "ja": {
-                "id": "0x09D6",
-                "kind": "indexed",
-                "sha256": "f43deee362ae7a2f89864638b66e8a1b3036d2b8f7aeabec8edd0f061d6d6085"
-              },
-              "zh-Hans": {
-                "id": "0x09D6",
-                "kind": "indexed",
-                "sha256": "66be2d27794dfd9033a0ddb6cf54cfe95999830d649eafbf990ca4dbb1402a75"
-              }
+            "english_payload_sha256": "236f87a63330dee00d38afc5ef398e21cb50afd8966194e9bb17bcc062453e8e",
+            "incorrect_source": {
+              "id": "0x09D6",
+              "kind": "indexed",
+              "layout": "FE8J"
             },
-            "structural_agreement": true
+            "payload_sha256": {
+              "ja": "f43deee362ae7a2f89864638b66e8a1b3036d2b8f7aeabec8edd0f061d6d6085",
+              "zh-Hans": "035549e5e430f888f8a598b04913f27853ca0957427ef604aaafb0b54aba57c4"
+            },
+            "translation_key": "game.semantic_correction.msg_a15"
           },
           "original_source": {
             "kind": "english_fallback",
@@ -117089,12 +117057,12 @@
             "subsystem": "unclassified"
           },
           "pipeline": "fe8u-final-mapping-v1",
-          "precedence": "c-febuilder"
+          "precedence": "d-semantic-correction"
         },
-        "rationale": "Independent structural evidence agrees with the FEBuilder provider.",
-        "source_key": "0x09D6->0x0A15",
-        "source_symbol": "translate_textid_FE8.txt",
-        "source_table": "FEBuilder translate_textid_FE8",
+        "rationale": "The Simplified Chinese official payload omits the final Knight Crest usage paragraph. A target-authored pair preserves the complete official Japanese text and restores all three paragraphs in Chinese.",
+        "source_key": "MSG_A15/Knight-Crest-tutorial",
+        "source_symbol": "game.semantic_correction.msg_a15",
+        "source_table": "texts/locales/authored/shards/semantic_corrections.<locale>.json",
         "subsystem": "chapter-event"
       }
     },

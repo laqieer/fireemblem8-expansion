@@ -5,16 +5,16 @@
       "sha256": "329161ac60d9be4a6f4b1ce4d8fb91818a1ab5033f092fa1d9f924ec65cb72eb"
     },
     "ja/indexed.txt": {
-      "byte_count": 1719107,
-      "sha256": "a9416856a551e88322ea50a6ea80291319632216a18af42ce009026865805180"
+      "byte_count": 1719226,
+      "sha256": "49f4e4f3dfadb3387013a562b2eb8a6fa68512b5b370b6485a93434437abb841"
     },
     "mapping/fe8j_to_fe8u.candidates.json": {
       "byte_count": 752351,
       "sha256": "1ddac63340d04568d03c8356d85f488dfa1a4e7a58f0ce86e815ce7a56358b45"
     },
     "zh-Hans/indexed.txt": {
-      "byte_count": 1266685,
-      "sha256": "5389e968c7908b80590d07fd531f53327a821c0c800c8505ed8c987ce3b3f3ea"
+      "byte_count": 1266658,
+      "sha256": "200087396b9655798f2cc8ef3fc3f3b6693b4d4bc442a130167d8a666a0d68c9"
     },
     "zh-Hans/raw.json": {
       "byte_count": 45834,
@@ -66,8 +66,8 @@
         "max_utf8_payload_bytes": 7673,
         "max_utf8_payload_message_id": "0x0AEA",
         "message_count": 3339,
-        "payload_codepoint_count": 1007495,
-        "unique_payload_codepoint_count": 1849
+        "payload_codepoint_count": 1007528,
+        "unique_payload_codepoint_count": 1811
       }
     },
     "zh-Hans": {
@@ -76,8 +76,8 @@
         "max_utf8_payload_bytes": 5727,
         "max_utf8_payload_message_id": "0x0AEA",
         "message_count": 3339,
-        "payload_codepoint_count": 726367,
-        "unique_payload_codepoint_count": 2495
+        "payload_codepoint_count": 726358,
+        "unique_payload_codepoint_count": 2494
       },
       "raw": {
         "duplicate_address_count": 9,
@@ -107,18 +107,20 @@
     "verified_row_count": 0
   },
   "overrides": {
-    "byte_count": 33996,
-    "entry_count": 56,
+    "byte_count": 50448,
+    "entry_count": 79,
     "path": "texts/locales/indexed_overrides.json",
-    "sha256": "0bac8c4e394fcec34eb93b804c964a232e6d9b91d6019680ca97ffb41d8a6228",
+    "sha256": "a7a9eb3c5f891c847f3a8917ed864cd96a8fea371ae9f2e487a6fe2a91965466",
     "sources": {
       "fe8cn_source": {
-        "entry_count": 36,
+        "entry_count": 44,
         "locale_id": "zh-Hans",
         "message_ids": [
           "0x0006",
           "0x0007",
           "0x0008",
+          "0x0013",
+          "0x001E",
           "0x004D",
           "0x0061",
           "0x012C",
@@ -134,12 +136,16 @@
           "0x0703",
           "0x0704",
           "0x070C",
+          "0x0717",
+          "0x0718",
           "0x0722",
           "0x0723",
           "0x0729",
           "0x072A",
           "0x072B",
           "0x0731",
+          "0x073F",
+          "0x0740",
           "0x0741",
           "0x0745",
           "0x0746",
@@ -151,24 +157,41 @@
           "0x07B6",
           "0x07B7",
           "0x08E2",
-          "0x0C82"
+          "0x0913",
+          "0x0C82",
+          "0x0CB7"
         ],
         "source_sha256": "bef561dd5a45f81658d4f06b0b9f58bdc6fde2ed4b4c57034d17b88cb595f517"
       },
       "fe8j_indexed": {
-        "entry_count": 20,
+        "entry_count": 35,
         "locale_id": "ja",
         "message_ids": [
+          "0x0013",
           "0x004D",
           "0x0061",
+          "0x0254",
+          "0x0256",
+          "0x0257",
+          "0x026F",
+          "0x0280",
+          "0x0287",
+          "0x0289",
+          "0x028A",
+          "0x0334",
+          "0x0479",
           "0x0704",
           "0x070C",
+          "0x0717",
+          "0x0718",
           "0x0722",
           "0x0723",
           "0x0729",
           "0x072A",
           "0x072B",
           "0x0731",
+          "0x073F",
+          "0x0740",
           "0x0741",
           "0x0745",
           "0x0746",

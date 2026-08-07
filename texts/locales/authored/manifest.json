@@ -22,8 +22,18 @@
     },
     {
       "subsystem": "menus",
+      "target_id": "0x0593",
+      "translation_key": "game.semantic_correction.msg_593"
+    },
+    {
+      "subsystem": "menus",
       "target_id": "0x0679",
       "translation_key": "game.semantic_correction.msg_679"
+    },
+    {
+      "subsystem": "menus",
+      "target_id": "0x0693",
+      "translation_key": "raw_surface.unit_action.summon"
     },
     {
       "subsystem": "chapter-event",
@@ -31,9 +41,29 @@
       "translation_key": "game.semantic_correction.msg_6a2"
     },
     {
-      "subsystem": "menus",
-      "target_id": "0x0693",
-      "translation_key": "raw_surface.unit_action.summon"
+      "subsystem": "ending-details",
+      "target_id": "0x07D1",
+      "translation_key": "game.semantic_correction.msg_7d1"
+    },
+    {
+      "subsystem": "ending-details",
+      "target_id": "0x07D2",
+      "translation_key": "game.semantic_correction.msg_7d2"
+    },
+    {
+      "subsystem": "ending-details",
+      "target_id": "0x07D3",
+      "translation_key": "game.semantic_correction.msg_7d3"
+    },
+    {
+      "subsystem": "ending-details",
+      "target_id": "0x07D4",
+      "translation_key": "game.semantic_correction.msg_7d4"
+    },
+    {
+      "subsystem": "chapter-event",
+      "target_id": "0x0A15",
+      "translation_key": "game.semantic_correction.msg_a15"
     },
     {
       "subsystem": "expansion",
@@ -63,18 +93,18 @@
         },
         {
           "path": "texts/locales/authored/shards/help_shop.ja.json",
-          "sha256": "4922b799b0a50e1773d3ba17ab5642ccfaf61919c817b04d7ec9b792c6872f45",
+          "sha256": "0d5c219698bc940db18ef28d13f979899bb6d03da8f0f685510bfd2653bb724e",
           "target_count": 81
         },
         {
           "path": "texts/locales/authored/shards/menu.ja.json",
-          "sha256": "a87848d741aa4d14e50dc7e91116911284eca419b3dda687e1b7fc5be9f4b345",
+          "sha256": "7103c8b5c8668d10234a7dace4c763324747c40d8f8946e3e8729cb520ddd348",
           "target_count": 132
         },
         {
           "path": "texts/locales/authored/shards/semantic_corrections.ja.json",
-          "sha256": "3eacccedfe725c9a70d92b1032cc2bb5300ca49325ad38130b43a3fa3dc48fdc",
-          "target_count": 6
+          "sha256": "7bb16aa22c81f2bc9a00f8bed5afc9343adac2c90a77f10c47c1a20466d27807",
+          "target_count": 12
         }
       ]
     },
@@ -93,18 +123,18 @@
         },
         {
           "path": "texts/locales/authored/shards/help_shop.zh-Hans.json",
-          "sha256": "4faa47b8b845f5fd75bd61b4100f5644c5330c6737ea974b1472262c209ba692",
+          "sha256": "e6dc4ed3a99654a0fde29a7d862dccdf630bd695e77f1677175c9f31793c50cb",
           "target_count": 81
         },
         {
           "path": "texts/locales/authored/shards/menu.zh-Hans.json",
-          "sha256": "e126c6bd6dd7403abd990c01b471be89a82b56f4664d912a1a195df2b88b3005",
+          "sha256": "41a23bb5a032ac8db9f8904be5357632efec7e0535f23c70db20b01c32c0be49",
           "target_count": 132
         },
         {
           "path": "texts/locales/authored/shards/semantic_corrections.zh-Hans.json",
-          "sha256": "bd220b77611599ecca28d68bcdbcec8813a3208b828349bfbd8b643c243860cf",
-          "target_count": 6
+          "sha256": "9e75a4608ea12bbe706eb58c07ad372332563d1a8a5b327a16869bc9dd890377",
+          "target_count": 12
         }
       ]
     }

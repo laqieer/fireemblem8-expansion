@@ -1,3 +1,4 @@
+import re
 import sys
 import unittest
 from collections import Counter
@@ -99,21 +100,21 @@ class RuntimeLeakageAuditTests(unittest.TestCase):
             self.report["baseline_review"]["summary"]["zh-Hans"][
                 "mixed_script_bypass_payload_count"
             ],
-            139,
+            135,
         )
         self.assertEqual(
             self.report["game_catalog"]["mapping_source_counts"],
             {
-                "authored": 268,
+                "authored": 274,
                 "english_fallback": 0,
-                "indexed": 3004,
+                "indexed": 2998,
                 "raw": 142,
                 "unresolved": 0,
             },
         )
 
     def test_every_current_latin_span_has_an_exact_approval(self):
-        expected_payload_counts = {"ja": 159, "zh-Hans": 161}
+        expected_payload_counts = {"ja": 168, "zh-Hans": 164}
         for scope in ("game_catalog", "raw_surface"):
             for locale, report in self.report[scope]["locales"].items():
                 self.assertEqual(report["unapproved_span_count"], 0, locale)
@@ -188,6 +189,13 @@ class RuntimeLeakageAuditTests(unittest.TestCase):
         self.assertNotIn("OK", _latin_span_counts(actual_zh[0x0CC3]))
         self.assertIn("只要按照同样的办法就行了", actual_zh[0x0CC3])
         self.assertNotIn("就就行了", actual_zh[0x0CC3])
+
+    def test_active_payloads_have_no_cyrillic_math_or_box_drawing_artifacts(self):
+        artifact_re = re.compile(r"[\u0400-\u04FF\u2200-\u22FF\u2500-\u257F]")
+        for locale in ("ja", "zh-Hans"):
+            for entry in self.build.locale_bundle(locale).entries:
+                with self.subTest(locale=locale, target_id=entry.target_id):
+                    self.assertIsNone(artifact_re.search(entry.source_text))
 
     def test_missing_exact_target_locale_span_approval_fails_closed(self):
         reviews = dict(self.review.reviews)

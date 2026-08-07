@@ -15,18 +15,18 @@
     },
     {
       "path": "texts/locales/authored/shards/help_shop.zh-Hans.json",
-      "sha256": "4faa47b8b845f5fd75bd61b4100f5644c5330c6737ea974b1472262c209ba692",
+      "sha256": "e6dc4ed3a99654a0fde29a7d862dccdf630bd695e77f1677175c9f31793c50cb",
       "target_count": 81
     },
     {
       "path": "texts/locales/authored/shards/menu.zh-Hans.json",
-      "sha256": "e126c6bd6dd7403abd990c01b471be89a82b56f4664d912a1a195df2b88b3005",
+      "sha256": "41a23bb5a032ac8db9f8904be5357632efec7e0535f23c70db20b01c32c0be49",
       "target_count": 132
     },
     {
       "path": "texts/locales/authored/shards/semantic_corrections.zh-Hans.json",
-      "sha256": "bd220b77611599ecca28d68bcdbcec8813a3208b828349bfbd8b643c243860cf",
-      "target_count": 6
+      "sha256": "9e75a4608ea12bbe706eb58c07ad372332563d1a8a5b327a16869bc9dd890377",
+      "target_count": 12
     }
   ],
   "source_queue": {
@@ -107,7 +107,7 @@
     "game.help_tutorial.msg_888": "[OpenLeft]备份中没有试炼地图[.][LF]\n中止发送并返回菜单[X]\n",
     "game.help_tutorial.msg_895": "请选择已通关的存档[.][X]\n",
     "game.menu_definition.msg_011": ".[.][X]\n",
-    "game.menu_definition.msg_022": "战死。[.][X]\n",
+    "game.menu_definition.msg_022": "。[.][X]\n",
     "game.menu_definition.msg_02e": "  模式  教学[X]\n",
     "game.menu_definition.msg_02f": "  模式  普通[X]\n",
     "game.menu_definition.msg_030": "  模式  困难[X]\n",
@@ -242,8 +242,14 @@
     "game.semantic_correction.msg_006": "金币。[.][X]\n",
     "game.semantic_correction.msg_00d": "可使用：[X]\n",
     "game.semantic_correction.msg_00e": "可使用单位：[X]\n",
+    "game.semantic_correction.msg_593": "调试[.][X]\n",
     "game.semantic_correction.msg_679": "正在保存。要继续游戏，请选择[LF]\n『从记录开始』。[X]\n",
     "game.semantic_correction.msg_6a2": " 调试[X]\n",
+    "game.semantic_correction.msg_7d1": "战死于[.][X]\n",
+    "game.semantic_correction.msg_7d2": "负伤，[LF]\n并与队伍分离。[.][X]\n",
+    "game.semantic_correction.msg_7d3": "负伤于[X]\n",
+    "game.semantic_correction.msg_7d4": "，[.][LF]\n但仍随队奋战至最后。[.][X]\n",
+    "game.semantic_correction.msg_a15": "等级10以上的单位\n可以通过特殊道具\n转职成为\n上位职业。[CTRL:0003][CTRL:0102]比如轻骑士的凯尔\n使用『骑士勋章』就能转职成\n圣骑士或是重骑士。[CTRL:0003][CTRL:0102]进行转职时，\n请从物品栏中选择『骑士勋章』，\n再选择『使用』。[CTRL:0003]",
     "game.shop_arena.msg_146": "确定[.][X]\n",
     "game.shop_arena.msg_735": "选择“小队编制”来组建小队[X]\n",
     "game.shop_arena.msg_736": "编制或编辑通信对战小队[.][X]\n",
@@ -304,5 +310,5 @@
     "raw_surface.unit_action.summon": " 召唤",
     "save_compat.menu_erase_all": "清除全部存档"
   },
-  "target_count": 268
+  "target_count": 274
 }

@@ -30,9 +30,9 @@ class RealGenerateTests(unittest.TestCase):
 
             report = json.loads(written_a["report_json"].read_text(encoding="utf-8"))
             budget = json.loads(written_a["budget_json"].read_text(encoding="utf-8"))
-            self.assertEqual(report["mapping_source_counts"]["indexed"], 3004)
+            self.assertEqual(report["mapping_source_counts"]["indexed"], 2998)
             self.assertEqual(report["mapping_source_counts"]["raw"], 142)
-            self.assertEqual(report["mapping_source_counts"]["authored"], 268)
+            self.assertEqual(report["mapping_source_counts"]["authored"], 274)
             self.assertEqual(report["mapping_source_counts"]["english_fallback"], 0)
             self.assertEqual(report["mapping_source_counts"]["unresolved"], 0)
             self.assertEqual(report["shared_english"]["present_count"], 3414)

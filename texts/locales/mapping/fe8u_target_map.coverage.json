@@ -8,9 +8,9 @@
       "total": 59
     },
     "chapter-event": {
-      "authored_translation": 29,
+      "authored_translation": 30,
       "explicit_english_fallback": 0,
-      "indexed_source": 529,
+      "indexed_source": 528,
       "raw_source": 0,
       "total": 558
     },
@@ -56,6 +56,13 @@
       "raw_source": 0,
       "total": 7
     },
+    "ending-details": {
+      "authored_translation": 4,
+      "explicit_english_fallback": 0,
+      "indexed_source": 0,
+      "raw_source": 0,
+      "total": 4
+    },
     "entity-row": {
       "authored_translation": 0,
       "explicit_english_fallback": 0,
@@ -84,12 +91,19 @@
       "raw_source": 3,
       "total": 3
     },
+    "help-text": {
+      "authored_translation": 0,
+      "explicit_english_fallback": 0,
+      "indexed_source": 2,
+      "raw_source": 0,
+      "total": 2
+    },
     "help-tutorial": {
       "authored_translation": 33,
       "explicit_english_fallback": 0,
-      "indexed_source": 441,
+      "indexed_source": 435,
       "raw_source": 0,
-      "total": 474
+      "total": 468
     },
     "items": {
       "authored_translation": 0,
@@ -108,16 +122,16 @@
     "menu-definition": {
       "authored_translation": 136,
       "explicit_english_fallback": 0,
-      "indexed_source": 291,
+      "indexed_source": 290,
       "raw_source": 0,
-      "total": 427
+      "total": 426
     },
     "menus": {
-      "authored_translation": 2,
+      "authored_translation": 3,
       "explicit_english_fallback": 0,
       "indexed_source": 35,
       "raw_source": 68,
-      "total": 105
+      "total": 106
     },
     "shop-arena": {
       "authored_translation": 48,
@@ -178,9 +192,9 @@
   "mapping_authoritative": true,
   "schema_version": 1,
   "source_kind_counts": {
-    "authored_translation": 268,
+    "authored_translation": 274,
     "explicit_english_fallback": 0,
-    "indexed_source": 3004,
+    "indexed_source": 2998,
     "raw_source": 142
   },
   "target_count": 3414,

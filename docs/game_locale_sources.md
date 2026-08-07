@@ -128,7 +128,7 @@ so changing an artifact and its manifest entry together still fails. The four
 raw snapshots must also match the independent SHA-256 pins in
 `scripts/localization/game_locales/importer.py`.
 
-The current override layer applies 13 Japanese and 14 Simplified Chinese
+The current override layer applies 35 Japanese and 44 Simplified Chinese
 indexed corrections. `Healing` is the ordinary HP-restoring staff cue
 (`癒やし` / `治疗`), while `Curing` is the status-removal cue
 (`浄化` / `净化`); they are deliberately not collapsed to one generic

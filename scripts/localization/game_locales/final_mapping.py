@@ -817,6 +817,118 @@ _SEMANTIC_INDEXED_CORRECTIONS: Dict[str, Dict[str, Any]] = {
         "source_key": "gLinkArenaRuleData[1].choice[1]/Survival",
         "subsystem": "link-arena",
     },
+    "0x0733": {
+        "english_payload_sha256": "93d876680aa79a257dc36b176f58dbf0dde4ba4f72e7737dfb1c3fd0d4ae3757",
+        "incorrect_source_id": "0x06BB",
+        "payload_sha256": {
+            "ja": "5bab49a61f74fd9594ac2bd780d2bfdaa17bce6903cabad7acb5beb073edccfa",
+            "zh-Hans": "bfc031b0db58c3f5c9d5c799d135267294cc837b11ce476f6a491df24430aae3",
+        },
+        "rationale": (
+            "The target describes a lance-wielding winged fiend. Official "
+            "0x06BC has those Gargoyle semantics; 0x06BB describes a "
+            "monster egg."
+        ),
+        "source_id": "0x06BC",
+        "source_key": "MSG_733/Gargoyle-description",
+        "subsystem": "help-text",
+    },
+    "0x0734": {
+        "english_payload_sha256": "10edd2e023ca3042ef942ad67ccc62d2a75df29a7873b1cfa90f5aebad8a7bf0",
+        "incorrect_source_id": "0x06BC",
+        "payload_sha256": {
+            "ja": "bc77994eb2716f8d8cd41bdfd8aa74e2dd9a1a83c7ecc95b81aa38e584dcf72c",
+            "zh-Hans": "94eaeddb1dd33a84ff37a95d6c77de454ed7ff5793063f075788a619a7c5c8db",
+        },
+        "rationale": (
+            "The target describes a magically enhanced Gargoyle. Official "
+            "0x06BD has those Deathgoyle semantics; 0x06BC is the ordinary "
+            "Gargoyle description."
+        ),
+        "source_id": "0x06BD",
+        "source_key": "MSG_734/Deathgoyle-description",
+        "subsystem": "help-text",
+    },
+    "0x0940": {
+        "english_payload_sha256": "8f485419624d7337fc7764c8c900a93665817a4268464989b6e845e8d0a91574",
+        "incorrect_source_id": "0x0908",
+        "payload_sha256": {
+            "ja": "7da0f15a7d43d20face639447e67f0a521c147331e3734da150541dcbce91e46",
+            "zh-Hans": "90e8053f45ebd0214b21c20f5a51d69e5c90109305709a5fa8c8bdbbfedb10d9",
+        },
+        "rationale": (
+            "The target tells the player to move Eirika to the flashing "
+            "house. Official 0x0900 has that exact tutorial step; 0x0908 "
+            "only asks the player to choose Trade."
+        ),
+        "source_id": "0x0900",
+        "source_key": "EventScr_PrologueTut_MoveEirikaToHouse",
+        "subsystem": "chapter-event",
+    },
+    "0x0953": {
+        "english_payload_sha256": "bc78a952bb884d1e2e8b5cb87a30c125c5e866df7fc566eb6de451b2d94b3fa8",
+        "incorrect_source_id": "0x0905",
+        "payload_sha256": {
+            "ja": "3ed32407e957d2eb77be6b837d097b4a4716bc09352434d1abbb6711edac4ca3",
+            "zh-Hans": "4d117c8bc7748351d5b4210018b013ff6119dc98f6f0e5ba6d68e634de07e673",
+        },
+        "rationale": (
+            "The target explains how to open the map Guide. Official "
+            "0x0913 has that exact tutorial; 0x0905 explains seizing after "
+            "defeating Breguet."
+        ),
+        "source_id": "0x0913",
+        "source_key": "EventScr_Tutorial_OpenGuide",
+        "subsystem": "chapter-event",
+    },
+    "0x096F": {
+        "english_payload_sha256": "1e2d9fc94f79d3a6a8db8d30a2acc4224a91a9b5be0817ace7e72c66fbc38ca6",
+        "incorrect_source_id": "0x090D",
+        "payload_sha256": {
+            "ja": "40eabea40c09e97a3a7db8a112c2ee2ca9df601deb79c4d9b25eeef76d0c17b9",
+            "zh-Hans": "31c4fa3ce376b960d653724bc87e094528ac16771871e44f3edaeb29d874a8f7",
+        },
+        "rationale": (
+            "The target explains Pegasus Knight terrain movement and bow "
+            "weakness. Official 0x092F has those semantics; 0x090D explains "
+            "using a vulnerary."
+        ),
+        "source_id": "0x092F",
+        "source_key": "EventScr_Tutorial_PegasusMovement",
+        "subsystem": "chapter-event",
+    },
+    "0x0970": {
+        "english_payload_sha256": "d48084381182c581dead73524ee595c3b33178a5d039ab838a9f819d51d915a9",
+        "incorrect_source_id": "0x0909",
+        "payload_sha256": {
+            "ja": "e07910c2f6a7448d52f2e00b69bae979a1310205c80698ce3a0299051213fb83",
+            "zh-Hans": "af9054e57f7d96c45a097baba5cc1292ad360b02e4c37c41a6d396ee203b5436",
+        },
+        "rationale": (
+            "The target starts Vanessa's rescue of Ross. Official 0x0930 "
+            "has that exact tutorial step; 0x0909 explains moving the trade "
+            "cursor to Franz."
+        ),
+        "source_id": "0x0930",
+        "source_key": "EventScr_Tutorial_VanessaRescueRoss",
+        "subsystem": "chapter-event",
+    },
+    "0x0974": {
+        "english_payload_sha256": "d886c4c493b7a43ad922e2639c875bf1e9f2b934569e23a8b7282d62b60448ac",
+        "incorrect_source_id": "0x093D",
+        "payload_sha256": {
+            "ja": "3f0872ecd300b52951089d53f942babd271f5c76750d133781b61680186a7ebb",
+            "zh-Hans": "fe27cba404198dc142ee4980ed9957d78585f88e15efe821e92ac230e4cba837",
+        },
+        "rationale": (
+            "The target asks the player to select Vanessa. Official 0x0934 "
+            "has that exact prompt; 0x093D is the later general explanation "
+            "of Rescue."
+        ),
+        "source_id": "0x0934",
+        "source_key": "EventScr_Tutorial_SelectVanessa",
+        "subsystem": "chapter-event",
+    },
 }
 
 _SEMANTIC_AUTHORED_CORRECTIONS: Dict[str, Dict[str, Any]] = {
@@ -918,6 +1030,104 @@ _SEMANTIC_AUTHORED_CORRECTIONS: Dict[str, Dict[str, Any]] = {
         "source_key": "MSG_6A2/Debug-label",
         "subsystem": "chapter-event",
         "translation_key": "game.semantic_correction.msg_6a2",
+    },
+    "0x0593": {
+        "english_payload_sha256": "9ba4256a4d88821c0d44f83aaa5f84d79a4cab4832badae225aea3c4690e28b8",
+        "incorrect_source_id": "0x051E",
+        "payload_sha256": {
+            "ja": "d82955e14b67b901c5355504d769e32818d3c5c4b4640a7037ff34d23a084778",
+            "zh-Hans": "65876ded77bd77a85735f4bb0df28a14840859d51ec3988715a2847e8bef900c",
+        },
+        "rationale": (
+            "The target is the Debug menu label. Official 0x051E means "
+            "Gold, and the regional sources have no exact standalone Debug "
+            "label, so exact target labels are authored."
+        ),
+        "source_key": "MSG_593/Debug-label",
+        "subsystem": "menus",
+        "translation_key": "game.semantic_correction.msg_593",
+    },
+    "0x07D1": {
+        "english_payload_sha256": "6f1bff5800aacf9125a43d3c1786ec04f2beb1c002b28ef8325b28a02b851333",
+        "incorrect_source_id": "0x0748",
+        "payload_sha256": {
+            "ja": "bcec2c27aafffd0be00e5a575d2b5e6e7b1cdeca2c7458a0ea88be8723d7cc38",
+            "zh-Hans": "62cdcc7a3cea55209079ed95081c12f32202c1fc096c07b0fe5343bd7f06ef23",
+        },
+        "rationale": (
+            "PrepareUnitDefeatLocationString draws this before a dynamic "
+            "location and MSG_022 punctuation. Official 0x0748 is a percent "
+            "sign, so a target-order death-location prefix is authored."
+        ),
+        "source_key": "GetPidDefeatedEndingString/died-at-prefix",
+        "subsystem": "ending-details",
+        "translation_key": "game.semantic_correction.msg_7d1",
+    },
+    "0x07D2": {
+        "english_payload_sha256": "26311e0d50109e50788aee81c265f8f4b3fe174c82a168fb9a12ae9b3087db2d",
+        "incorrect_source_id": "0x0749",
+        "payload_sha256": {
+            "ja": "313e8b0dce303507a85e555bbd2c5d5bba846d4b920d8b5e023ead6805a3803b",
+            "zh-Hans": "f5c1c843d41f57e48d3f6bb1777571c1b27601c0a5b4a22d591e6d44864c2c4e",
+        },
+        "rationale": (
+            "This unused-in-FE8 defeat fragment is the suffix for a unit "
+            "wounded at a dynamic location and then parted from the company. "
+            "Official 0x0749 is the death suffix, so a grammatical suffix is "
+            "authored for the defined role."
+        ),
+        "source_key": "DEFEAT_WOUNDED_PARTEDWAYS/location-suffix",
+        "subsystem": "ending-details",
+        "translation_key": "game.semantic_correction.msg_7d2",
+    },
+    "0x07D3": {
+        "english_payload_sha256": "798435c2733702fba4b1b99532596b2344e0ccbbd9bb8927dfc494699b120151",
+        "incorrect_source_id": "0x074A",
+        "payload_sha256": {
+            "ja": "971b2b9eabe000ab3c6665e56a6eb6f10e597f767b958b37a26a6565590614c6",
+            "zh-Hans": "072488aa619c06cf77ee94b3a3fe82f4c353f08e706a4c125202e87172770ea9",
+        },
+        "rationale": (
+            "PrepareUnitDefeatLocationString draws this before a dynamic "
+            "wound location. Official 0x074A is a complete wound-and-part "
+            "suffix, so a target-order prefix is authored."
+        ),
+        "source_key": "GetPidDefeatedEndingString/wounded-at-prefix",
+        "subsystem": "ending-details",
+        "translation_key": "game.semantic_correction.msg_7d3",
+    },
+    "0x07D4": {
+        "english_payload_sha256": "b795f8797cc8bebd384539493b3673c291d1a4ed0766d2d788271b1c414b834b",
+        "incorrect_source_id": "0x074B",
+        "payload_sha256": {
+            "ja": "c13cfe39eeefdaca6df22dc6bb5917b12c701ba0f2025e6b6fb25637512a4da3",
+            "zh-Hans": "065fe0f4dbf34b766e4ace223bfcf52ee200437aef42a11483b70442bf26ecf9",
+        },
+        "rationale": (
+            "PrepareUnitDefeatLocationString appends this after the dynamic "
+            "wound location. Official 0x074B repeats the wound clause, so a "
+            "target-order remained-until-end suffix is authored."
+        ),
+        "source_key": "GetPidDefeatedEndingString/remained-until-end-suffix",
+        "subsystem": "ending-details",
+        "translation_key": "game.semantic_correction.msg_7d4",
+    },
+    "0x0A15": {
+        "english_payload_sha256": "236f87a63330dee00d38afc5ef398e21cb50afd8966194e9bb17bcc062453e8e",
+        "incorrect_source_id": "0x09D6",
+        "payload_sha256": {
+            "ja": "f43deee362ae7a2f89864638b66e8a1b3036d2b8f7aeabec8edd0f061d6d6085",
+            "zh-Hans": "035549e5e430f888f8a598b04913f27853ca0957427ef604aaafb0b54aba57c4",
+        },
+        "rationale": (
+            "The Simplified Chinese official payload omits the final "
+            "Knight Crest usage paragraph. A target-authored pair preserves "
+            "the complete official Japanese text and restores all three "
+            "paragraphs in Chinese."
+        ),
+        "source_key": "MSG_A15/Knight-Crest-tutorial",
+        "subsystem": "chapter-event",
+        "translation_key": "game.semantic_correction.msg_a15",
     },
 }
 

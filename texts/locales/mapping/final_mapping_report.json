@@ -1,16 +1,16 @@
 {
   "authoritative": false,
   "inputs": {
-    "current_pre_authored_target_map_sha256": "0c05ec5593c309d66054de4792a9d3b76d7bc0838b41ec7691fef9ee8818a849",
-    "febuilder_alignment_evidence_sha256": "7b3492c54141ad7c087366856650629f9014980123ed2eb1540b56156f82a37c",
+    "current_pre_authored_target_map_sha256": "484d734825fcc4605bbc50c63af6c230906fec132a54c95b3f550522652db923",
+    "febuilder_alignment_evidence_sha256": "36373e415d7936a47ba25fe544b46900ed19e40a1851ccbb1660123ba9e76f7a",
     "historical_pre_authored_target_map_sha256": "63b021274b7865c0d76cb1556fa84cc1dfdbcadab38037c8ccf6eeb9cdc3591a",
     "original_target_map_sha256": "6abbc956576d823de7430da267212f6c050fec5267cb7a6cb6819f77381ae4bd",
     "runtime_authored_catalog_sha256": {
-      "ja": "5e88c918d11501e7b12829283510a09e10f6ab728476b88f6652a0e7a2aa0996",
-      "zh-Hans": "a5ae3a592735db9a53b9bdf2b302a310dcbb789a3604a8409eb0e458b5bd99a4"
+      "ja": "b68204db54115118a686e6842d2c404db0c2603afd45e6144f04161522dae3cc",
+      "zh-Hans": "c9099ad50b17b5d567b37028af9f6153cedd7362a2aa288e26aab5eacbadfb0b"
     },
     "source_authored_queue_sha256": "ffdff913a552076928d5cb06634ed75d8983b65c05bb4ecec9aa2b610ffe6ad6",
-    "structural_completion_evidence_sha256": "d2fab1a515dd89d6071c662e9a7294e826e1f8b06845475ab926e4b2a001881e"
+    "structural_completion_evidence_sha256": "da9bb76f36d4b3824cffc3462e57fc87003927038dc6fd25e90c693ee6cd75ac"
   },
   "kind": "fe8u-final-mapping-report",
   "note": "Evidence report for the deterministic final-mapping promotion pass. The source queue is retained byte-identically as fulfilled history.",
@@ -23,11 +23,11 @@
   },
   "promotion_counts": {
     "b-structural-high": 27,
-    "c-febuilder": 1318,
+    "c-febuilder": 1305,
     "c-febuilder-raw": 3,
     "d-contextual-resolution": 21,
     "d-existing-authored": 3,
-    "d-semantic-correction": 35,
+    "d-semantic-correction": 48,
     "d-structural-reference-second-check": 6,
     "e-exact-english": 135,
     "e-exact-english-context": 1,

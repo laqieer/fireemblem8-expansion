@@ -146,11 +146,11 @@ class FinalMappingTests(unittest.TestCase):
             self.report["promotion_counts"],
             {
                 "b-structural-high": 27,
-                "c-febuilder": 1318,
+                "c-febuilder": 1305,
                 "c-febuilder-raw": 3,
                 "d-contextual-resolution": 21,
                 "d-existing-authored": 3,
-                "d-semantic-correction": 35,
+                "d-semantic-correction": 48,
                 "d-structural-reference-second-check": 6,
                 "e-exact-english": 135,
                 "e-exact-english-context": 1,
@@ -396,6 +396,13 @@ class FinalMappingTests(unittest.TestCase):
             "0x0778": "0x004A",
             "0x0779": "0x0048",
             "0x077A": "0x0049",
+            "0x0733": "0x06BC",
+            "0x0734": "0x06BD",
+            "0x0940": "0x0900",
+            "0x0953": "0x0913",
+            "0x096F": "0x092F",
+            "0x0970": "0x0930",
+            "0x0974": "0x0934",
         }
         expected_authored_keys = {
             "0x0005": "game.semantic_correction.msg_005",
@@ -404,6 +411,12 @@ class FinalMappingTests(unittest.TestCase):
             "0x000E": "game.semantic_correction.msg_00e",
             "0x0679": "game.semantic_correction.msg_679",
             "0x06A2": "game.semantic_correction.msg_6a2",
+            "0x0593": "game.semantic_correction.msg_593",
+            "0x07D1": "game.semantic_correction.msg_7d1",
+            "0x07D2": "game.semantic_correction.msg_7d2",
+            "0x07D3": "game.semantic_correction.msg_7d3",
+            "0x07D4": "game.semantic_correction.msg_7d4",
+            "0x0A15": "game.semantic_correction.msg_a15",
         }
         for target_id, source_id in expected_indexed_sources.items():
             self.assertEqual(
@@ -439,6 +452,7 @@ class FinalMappingTests(unittest.TestCase):
                 "zh-Hans": ("正在保存", "继续游戏", "从记录开始"),
             },
             "0x06A2": {"ja": ("デバッグ",), "zh-Hans": ("调试",)},
+            "0x0593": {"ja": ("デバッグ",), "zh-Hans": ("调试",)},
         }
         for target_id, terms_by_locale in exact_terms.items():
             for locale, terms in terms_by_locale.items():
@@ -458,6 +472,199 @@ class FinalMappingTests(unittest.TestCase):
         self.assertIn('MSG_5B4, // "Sell your unneeded items.', prep_items)
         self.assertIn(".helpMsgId = 0x0679", world_map)
         self.assertIn('0x58B, // TODO: msgid "Survival"', fortune)
+
+    def test_full_semantic_audit_exact_targets_and_call_sites(self):
+        exact = {
+            "0x009A": {
+                "ja": "ウィンドウカラー",
+                "zh-Hans": "窗口颜色",
+            },
+            "0x00A5": {
+                "zh-Hans": "单位移动速度",
+            },
+            "0x02CD": {"ja": "フォレストナイト"},
+            "0x02CF": {"ja": "ドラゴンマスター"},
+            "0x02D0": {"ja": "ワイバーンナイト"},
+            "0x02E8": {"ja": "ファルコンナイト"},
+            "0x02F9": {"ja": "モーサドゥーグ"},
+            "0x0300": {"ja": "ゴーゴンエッグ"},
+            "0x0302": {"ja": "デスガーゴイル"},
+            "0x0303": {"ja": "ドラゴンゾンビ"},
+            "0x03AD": {"ja": "サンダーストーム"},
+            "0x04EA": {"ja": "ＭＨＰ"},
+            "0x0593": {
+                "ja": "デバッグ[.][X]\n",
+                "zh-Hans": "调试[.][X]\n",
+            },
+            "0x07A0": {
+                "ja": "現れし異形の影Ａ",
+                "zh-Hans": "扭曲之影Ａ",
+            },
+            "0x07A1": {
+                "ja": "現れし異形の影Ｂ",
+                "zh-Hans": "扭曲之影Ｂ",
+            },
+            "0x07C8": {
+                "ja": "勝利の歌Ａ",
+                "zh-Hans": "胜利之歌Ａ",
+            },
+            "0x07C9": {
+                "ja": "勝利の歌Ｂ",
+                "zh-Hans": "胜利之歌Ｂ",
+            },
+        }
+        for target_id, payloads in exact.items():
+            for locale, payload in payloads.items():
+                self.assertEqual(
+                    self.localized_text(target_id, locale),
+                    payload,
+                    (target_id, locale),
+                )
+
+        sound_room = (self.ROOT / "src/soundroom_data.c").read_text(
+            encoding="utf-8"
+        )
+        for message_id in ("MSG_7A0", "MSG_7A1", "MSG_7C8", "MSG_7C9"):
+            self.assertIn(f".nameTextId = {message_id}", sound_room)
+
+    def test_creature_descriptions_use_verified_adjacent_sources(self):
+        expected = {
+            "0x0733": {
+                "source": "0x06BC",
+                "ja": ("鋭い槍", "凶悪な翼魔", "空中から"),
+                "zh-Hans": ("锐枪", "凶恶翼魔", "天上袭击"),
+            },
+            "0x0734": {
+                "source": "0x06BD",
+                "ja": ("魔の力", "ガーゴイル", "残忍"),
+                "zh-Hans": ("更强之力量", "石像鬼", "残忍"),
+            },
+        }
+        for target_id, spec in expected.items():
+            self.assertEqual(self.rows[target_id]["source"]["id"], spec["source"])
+            for locale in ("ja", "zh-Hans"):
+                payload = self.localized_text(target_id, locale)
+                for term in spec[locale]:
+                    self.assertIn(term, payload)
+
+    def test_tutorial_sources_match_the_target_steps(self):
+        expected_sources = {
+            "0x0940": "0x0900",
+            "0x0953": "0x0913",
+            "0x096F": "0x092F",
+            "0x0970": "0x0930",
+            "0x0974": "0x0934",
+        }
+        for target_id, source_id in expected_sources.items():
+            self.assertEqual(
+                self.rows[target_id]["source"],
+                {"id": source_id, "kind": "indexed", "layout": "FE8J"},
+            )
+        expected_terms = {
+            "0x0940": {
+                "ja": ("エイリーク", "民家", "点滅"),
+                "zh-Hans": ("艾瑞珂", "民家", "闪烁"),
+            },
+            "0x0953": {
+                "ja": ("マップメニュー", "辞書", "遊び方"),
+                "zh-Hans": ("地图菜单", "辞典", "各个部分"),
+            },
+            "0x096F": {
+                "ja": ("ペガサスナイト", "山", "弓兵"),
+                "zh-Hans": ("天马骑士", "山脉", "弓箭手"),
+            },
+            "0x0970": {
+                "ja": ("ヴァネッサ", "ロス", "救出"),
+                "zh-Hans": ("瓦内萨", "罗斯", "救出"),
+            },
+            "0x0974": {
+                "ja": ("ヴァネッサ", "Ａボタン"),
+                "zh-Hans": ("瓦内萨", "A键"),
+            },
+        }
+        for target_id, by_locale in expected_terms.items():
+            for locale, terms in by_locale.items():
+                payload = self.localized_text(target_id, locale)
+                for term in terms:
+                    self.assertIn(term, payload)
+        self.assertNotIn("哥哥部分", self.localized_text("0x0953", "zh-Hans"))
+
+    def test_knight_crest_tutorial_and_coin_payload_are_complete(self):
+        ja = self.localized_text("0x0A15", "ja")
+        zh = self.localized_text("0x0A15", "zh-Hans")
+        self.assertEqual(ja.count("騎士勲章"), 2)
+        self.assertEqual(zh.count("骑士勋章"), 2)
+        self.assertEqual(zh.count("[CTRL:0102]"), 2)
+        self.assertIn("请从物品栏中选择『骑士勋章』", zh)
+        self.assertIn("再选择『使用』", zh)
+
+        coin = self.localized_text("0x0CF8", "zh-Hans")
+        self.assertIn("硬币", coin)
+        self.assertNotIn("骰子", coin)
+
+    def test_ending_fragments_compose_with_dynamic_locations(self):
+        ending = (self.ROOT / "src/ending_details.c").read_text(
+            encoding="utf-8"
+        )
+        header = (self.ROOT / "include/ending_details.h").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn(
+            "PrepareUnitDefeatLocationString(MSG_7D1, defeatDetails, MSG_022, str)",
+            ending,
+        )
+        self.assertIn(
+            "PrepareUnitDefeatLocationString(MSG_7D3, defeatDetails, MSG_7D4, str)",
+            ending,
+        )
+        self.assertIn(
+            "DEFEAT_WOUNDED_PARTEDWAYS   = 1, // unused in FE8",
+            header,
+        )
+
+        def visible(text):
+            text = text.replace("[LF]\n", "\n").replace("[LF]", "\n")
+            return re.sub(r"\[[^\]]+\]", "", text).strip()
+
+        expected = {
+            "ja": {
+                "location": "ルネス",
+                "died": "戦死地：\nルネス。",
+                "parted": "ルネスで負傷し、\n一行と別れた。",
+                "remained": (
+                    "負傷地：\nルネス。\n"
+                    "しかし最後まで一行と旅を共にした。"
+                ),
+            },
+            "zh-Hans": {
+                "location": "雷内斯",
+                "died": "战死于\n雷内斯。",
+                "parted": "在雷内斯负伤，\n并与队伍分离。",
+                "remained": "负伤于\n雷内斯，\n但仍随队奋战至最后。",
+            },
+        }
+        for locale, sample in expected.items():
+            location = sample["location"]
+            died = (
+                visible(self.localized_text("0x07D1", locale))
+                + "\n"
+                + location
+                + visible(self.localized_text("0x0022", locale))
+            )
+            parted = (
+                ("" if locale == "ja" else "在")
+                + location
+                + visible(self.localized_text("0x07D2", locale))
+            )
+            remained = (
+                visible(self.localized_text("0x07D3", locale))
+                + "\n"
+                + location
+                + visible(self.localized_text("0x07D4", locale))
+            )
+            self.assertEqual(died, sample["died"])
+            self.assertEqual(parted, sample["parted"])
+            self.assertEqual(remained, sample["remained"])
 
     def test_dummy_labels_are_placeholders_not_rice(self):
         expected_sources = {
@@ -499,11 +706,19 @@ class FinalMappingTests(unittest.TestCase):
         self.assertIsNotNone(
             re.search(
                 r"PopupScr_NewAlly.*?POPUP_MSG\(0x00E\).*?"
-                r"POPUP_UNIT_NAME",
+                r"POPUP_UNIT_NAME.*?POPUP_MSG\(0x022\)",
                 popup,
                 re.DOTALL,
             )
         )
+        for script_name in ("PopupScr_GotItem", "PopupScr_StoleItem"):
+            self.assertIsNotNone(
+                re.search(
+                    rf"{script_name}.*?POPUP_ITEM_STR.*?POPUP_MSG\(0x022\)",
+                    popup,
+                    re.DOTALL,
+                )
+            )
 
         def visible(text):
             return re.sub(r"\[[^\]]+\]", "", text).strip()
@@ -532,6 +747,8 @@ class FinalMappingTests(unittest.TestCase):
             "zh-Hans": ("铁剑", "剑", "艾瑞珂"),
         }
         for locale, (item, weapon, unit) in samples.items():
+            punctuation = visible(self.localized_text("0x0022", locale))
+            self.assertEqual(item + punctuation, item + "。")
             composed = {
                 "gold": (
                     visible(self.localized_text("0x0005", locale))
