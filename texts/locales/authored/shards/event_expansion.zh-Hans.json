@@ -1,0 +1,346 @@
+{
+  "$schema": "fe8u-authored-translation-shard-v1",
+  "locale": "zh-Hans",
+  "shard": "event_expansion",
+  "source_map_sha256": "63b021274b7865c0d76cb1556fa84cc1dfdbcadab38037c8ccf6eeb9cdc3591a",
+  "source_queue_sha256": "ffdff913a552076928d5cb06634ed75d8983b65c05bb4ecec9aa2b610ffe6ad6",
+  "subsystem_counts": {
+    "chapter-event": 28,
+    "chapter-title": 1,
+    "expansion": 8,
+    "system": 1,
+    "trainee-prep": 8
+  },
+  "subsystems": [
+    "chapter-event",
+    "trainee-prep",
+    "expansion",
+    "system",
+    "chapter-title"
+  ],
+  "target_count": 46,
+  "translations": [
+    {
+      "english_payload_sha256": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
+      "key": "game.system.msg_0000",
+      "subsystem": "system",
+      "target_id": "0x0000",
+      "text": "[X]\n"
+    },
+    {
+      "english_payload_sha256": "2335916cae20918b452a2196574dbff79001c610b98a672cd6538ec550e38be2",
+      "key": "game.trainee_prep.msg_537",
+      "subsystem": "trainee-prep",
+      "target_id": "0x0537",
+      "text": "[DashedLine][DashedLine][DashedLine][DashedLine][X]\n"
+    },
+    {
+      "english_payload_sha256": "41f193572bfde410ed1441777cddcf2d594a8223c546e025732e21f2b8d97c47",
+      "key": "game.chapter_title.msg_539",
+      "subsystem": "chapter-title",
+      "target_id": "0x0539",
+      "text": "/[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "8deabadbbb3cab127ab7e8e42376bbf9055a89526544dbd65b7396262236602c",
+      "key": "game.chapter_event.msg_5ae",
+      "subsystem": "chapter-event",
+      "target_id": "0x05AE",
+      "text": "%[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "d36a9ee2ee28d621714383270b6a40530fcd6fdb7a55ffd50ecad2d0b5eeafac",
+      "key": "game.trainee_prep.msg_5bb",
+      "subsystem": "trainee-prep",
+      "target_id": "0x05BB",
+      "text": "查看即将战斗的地图及[.][LF]\n商店出售的物品。[X]\n"
+    },
+    {
+      "english_payload_sha256": "2219bd64f06fde11b9477aefb4235eac12b0521381acdc9d6a34499bd7eab906",
+      "key": "game.trainee_prep.msg_5bc",
+      "subsystem": "trainee-prep",
+      "target_id": "0x05BC",
+      "text": "调整我方单位的[LF]\n初始配置。[X]\n"
+    },
+    {
+      "english_payload_sha256": "5bc9b2da73ea0fa63bf3bd5b32d7ce4c8cd13bb5eb4a68b92aef4c27b15ddc66",
+      "key": "game.trainee_prep.msg_5bd",
+      "subsystem": "trainee-prep",
+      "target_id": "0x05BD",
+      "text": "设置游戏速度和[LF]\n窗口选项。[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "cba2f6ad0fb2fbaf2e8aeae29d9365c766eb162fe0f49ef976be6de57039ef44",
+      "key": "game.trainee_prep.msg_5be",
+      "subsystem": "trainee-prep",
+      "target_id": "0x05BE",
+      "text": "保存当前进度。[X]\n"
+    },
+    {
+      "english_payload_sha256": "13b2c64bcbb68f3929258f2581ff9faa6297f586f05246a4672e6286b35270cb",
+      "key": "game.chapter_event.msg_6a5",
+      "subsystem": "chapter-event",
+      "target_id": "0x06A5",
+      "text": "第2军[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "a1a4cc6311acbcc7191af7c57f6580f81f45cdb3cc0713c2dcc8572d3a196ae0",
+      "key": "game.chapter_event.msg_6a6",
+      "subsystem": "chapter-event",
+      "target_id": "0x06A6",
+      "text": "第3军[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "4e82ec5647dc231c724a2872ec611cd9747be2a3d69c58839176c6e6470b98bf",
+      "key": "game.chapter_event.msg_6a7",
+      "subsystem": "chapter-event",
+      "target_id": "0x06A7",
+      "text": "CPU[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "a25f5c98d81956977d9ee16da82f4fc941cb4490e6de118ed9c2424f16e51f72",
+      "key": "game.chapter_event.msg_6a8",
+      "subsystem": "chapter-event",
+      "target_id": "0x06A8",
+      "text": "玩家[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "9aef0af93c1a572c3fa79db72e5e33316c171a1bccfe1ee4101379e0aa83c328",
+      "key": "game.chapter_event.msg_6a9",
+      "subsystem": "chapter-event",
+      "target_id": "0x06A9",
+      "text": "禁止操作[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "b095c042d2c90355a2e5034b8511317f4a569761ddce0b73a9e89674c6037a24",
+      "key": "game.chapter_event.msg_6b1",
+      "subsystem": "chapter-event",
+      "target_id": "0x06B1",
+      "text": "晴朗[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "8c50105293e092017bd3b7ffd9f27e3bf34a5c17b4075d8957c1272d69fd5340",
+      "key": "game.chapter_event.msg_6b3",
+      "subsystem": "chapter-event",
+      "target_id": "0x06B3",
+      "text": "雪[X]\n"
+    },
+    {
+      "english_payload_sha256": "ab3a9cf536be5121b99049b581d1bd6f3a77a65369246cd4dfb01b81183cbb4d",
+      "key": "game.chapter_event.msg_6b4",
+      "subsystem": "chapter-event",
+      "target_id": "0x06B4",
+      "text": "风雪[X]\n"
+    },
+    {
+      "english_payload_sha256": "2398dfa6ffd431afa50bb17a8088f19b0bf6793178f9bc30d48c6a006a097738",
+      "key": "game.chapter_event.msg_6b5",
+      "subsystem": "chapter-event",
+      "target_id": "0x06B5",
+      "text": "雨[X]\n"
+    },
+    {
+      "english_payload_sha256": "d899050927c48778c5f238a2609a017ca9fc34ec1b211aec387306b89acfe3e8",
+      "key": "game.chapter_event.msg_6b6",
+      "subsystem": "chapter-event",
+      "target_id": "0x06B6",
+      "text": "夜晚[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "ce39b2e9e6353a24c3df9591cbe3a36ec763977e15818341aeb8b0c4fe8d6d47",
+      "key": "game.chapter_event.msg_6b7",
+      "subsystem": "chapter-event",
+      "target_id": "0x06B7",
+      "text": "熔岩[X]\n"
+    },
+    {
+      "english_payload_sha256": "5988c854513a69fa1b73ded32401f57edd1339761dada67c3af5ecef67ae7530",
+      "key": "game.chapter_event.msg_77e",
+      "subsystem": "chapter-event",
+      "target_id": "0x077E",
+      "text": "连接中[X]\n"
+    },
+    {
+      "english_payload_sha256": "571df67e87d7c43287b3afa891e8181d9a75b37753657b05e683165d9730cc6b",
+      "key": "game.trainee_prep.msg_889",
+      "subsystem": "trainee-prep",
+      "target_id": "0x0889",
+      "text": "此单位没有可用武器，[.][LF]\n因此不能出击。[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "eb72279344d1cfd1327bbba7fc7618f1fdf1676be363d5cac5e63c15221a5fef",
+      "key": "game.trainee_prep.msg_88a",
+      "subsystem": "trainee-prep",
+      "target_id": "0x088A",
+      "text": "此单位不能出击。[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "32074ec614c6f27bff423c876c13ba11a9cee9843ca5527e938005a2ae61d172",
+      "key": "game.trainee_prep.msg_88b",
+      "subsystem": "trainee-prep",
+      "target_id": "0x088B",
+      "text": "没有可用武器时，[.][LF]\n无法发动攻击。[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "fe1089e0ab1d7444265356c3a0613d11daaee19db2cb6e8846d4a7831bdc9ec6",
+      "key": "game.chapter_event.msg_944",
+      "subsystem": "chapter-event",
+      "target_id": "0x0944",
+      "text": "我方单位加入了战斗。[A][LF]\n所有蓝色的我方单位都能[LF]\n像艾瑞珂一样进行操作。[.][A][X]\n"
+    },
+    {
+      "english_payload_sha256": "ccb94a408c70cd5ef67400be2316ae5ef79428ec03e3da189b884631f7984e62",
+      "key": "game.chapter_event.msg_945",
+      "subsystem": "chapter-event",
+      "target_id": "0x0945",
+      "text": "击败了驻守缪兰城的古拉德军[.][LF]\n敌将普利肯。[.][A][LF]\n现在只需 [.][ToggleRed]占领[.][ToggleRed] 城门 [.][LF]\n即可获胜。[A][LF]\n只有部队的 [ToggleRed]首领[.][ToggleRed] 才能[LF]\n执行此操作。[A][LF]\n这支部队的首领是艾瑞珂。[LF]\n让她移动到城门并 [.][ToggleRed]占领[.][ToggleRed] [.][LF]\n那里，即可完成本关。[.][A][X]\n"
+    },
+    {
+      "english_payload_sha256": "01298b242b7381ab65902080ee4f5e8fd2a73b616a61c4ee765a727b72b2398c",
+      "key": "game.chapter_event.msg_94a",
+      "subsystem": "chapter-event",
+      "target_id": "0x094A",
+      "text": "用[ToggleRed]十字键[.][ToggleRed]选择[LF]\n[ToggleRed]伤药[.][ToggleRed]，然后按 [.][LF]\nA键。[.][A][X]\n"
+    },
+    {
+      "english_payload_sha256": "99cfa32b22eb0a740aca9a00a1710d47e15aae8453ec2b5e5f1402367dc9638c",
+      "key": "game.chapter_event.msg_94d",
+      "subsystem": "chapter-event",
+      "target_id": "0x094D",
+      "text": "刚获得的[ToggleRed]伤药[.][ToggleRed][LF]\n可以立即使用。[A][LF]\n请选中 [.][ToggleRed]伤药[.][ToggleRed]，[.][LF]\n在 [.][ToggleRed]物品[.][ToggleRed]中使用它。[A][X]\n"
+    },
+    {
+      "english_payload_sha256": "1a3911448d88e6a40b417000153fe03ef31e9fde769a1838798992f03503f8c5",
+      "key": "game.chapter_event.msg_950",
+      "subsystem": "chapter-event",
+      "target_id": "0x0950",
+      "text": "让塞思移动到敌人[.][LF]\n附近，然后按A键。[A][X]\n"
+    },
+    {
+      "english_payload_sha256": "994c9120db3c0be67b520baa3f0058d42d770acfc823cce0529c49362d70e81a",
+      "key": "game.chapter_event.msg_96b",
+      "subsystem": "chapter-event",
+      "target_id": "0x096B",
+      "text": "[OpenMidRight][LoadFace][FID_VillagerGirlBrownHair]\n[OpenMidLeft][LoadFace][FID_Active]\n[OpenMidRight]我被一个很帅的男人救了。[A][LF]\n虽然他的打扮像个佣兵，[LF]\n却有种高贵的气质[.][ToggleMouthMove]……[.][ToggleMouthMove][A][LF]\n他给了我这瓶特效药。[.][LF]\n一定会在战斗中派上用场。[.][A][X]\n"
+    },
+    {
+      "english_payload_sha256": "1fec6a185b0c47341fbac109f1d516ea77a0dcd65ad16b79bd285b115e1cbfba",
+      "key": "game.chapter_event.msg_96c",
+      "subsystem": "chapter-event",
+      "target_id": "0x096C",
+      "text": "[OpenMidRight][LoadFace][FID_VillagerMan2]\n[OpenMidLeft][LoadFace][FID_Active]\n[OpenMidRight]嗯？怎么了？[LF]\n为什么这么慌张？[.][A][LF]\n什么？山、山贼！？[.][A][LF]\n不得了，快通知大家！[LF]\n关上村门！[A][LF]\n谢谢你来报信。[.][LF]\n请收下这份小小的谢礼。[A][X]\n"
+    },
+    {
+      "english_payload_sha256": "e5ddac03afbdea675d3aceb5240f3f984c4863e9d6f7cd1789752a99a72a1cb1",
+      "key": "game.chapter_event.msg_96e",
+      "subsystem": "chapter-event",
+      "target_id": "0x096E",
+      "text": "罗斯是[ToggleRed]年轻的战士[ToggleRed]。[.][A][LF]\n[ToggleRed]年轻的战士[ToggleRed]经验不足，[LF]\n战斗能力也很低。[A][LF]\n达到[ToggleRed]10级[ToggleRed]后，[A][LF]\n可以[ToggleRed]转职[ToggleRed]，成为更强的[.][LF]\n职业，如 [.][ToggleRed]战士[ToggleRed]或[ToggleRed]海盗[.][ToggleRed]。[.][A][LF]\n请避免让 [.][ToggleRed]年轻的战士[ToggleRed][LF]\n迎战强敌。[.][A][CR][LF]\n罗斯的父亲加西亚是 [.][ToggleRed]战士[.][ToggleRed]。[.][A][LF]\n[ToggleRed]战士[ToggleRed]达到10级以上后，[.][LF]\n可用[ToggleRed]英雄之证[.][ToggleRed]进行[ToggleRed]转职[ToggleRed]，[LF]\n成为 [.][ToggleRed]勇者[ToggleRed]或[ToggleRed]勇士[ToggleRed]。[.][A][CR][LF]\n此外，[ToggleRed]轻骑士[.][ToggleRed]和 [.][ToggleRed]重甲骑士[.][ToggleRed]也可 [.][LF]\n用[ToggleRed]骑士勋章[.][ToggleRed]进行[ToggleRed]转职[ToggleRed]。[.][LF]\n可以从[ToggleRed]两种[.][ToggleRed][LF]\n[ToggleRed]兵种[.][ToggleRed]中选择。[.][A][LF]\n请好好培养自己的单位，[LF]\n并在适当时机[ToggleRed]转职[ToggleRed]。[A][X]\n"
+    },
+    {
+      "english_payload_sha256": "06942c0759243128f8c821dca8548e329e1f5456c180970aad05a49747e62ac5",
+      "key": "game.chapter_event.msg_979",
+      "subsystem": "chapter-event",
+      "target_id": "0x0979",
+      "text": "不要移动光标，[LF]\n再次按下A键。[.][A][X]\n"
+    },
+    {
+      "english_payload_sha256": "74acd29fbc38edf294b9a06f0f9e6de89e100e20aef3c6d14118c24c8f555808",
+      "key": "game.chapter_event.msg_983",
+      "subsystem": "chapter-event",
+      "target_id": "0x0983",
+      "text": "现在选择 [.][ToggleRed]访问[.][ToggleRed]，[LF]\n再次按下A键。[.][A][X]\n"
+    },
+    {
+      "english_payload_sha256": "fa7244fbf98f591d96aba780441c2526f24bd55795f102e5144f45f30d90aa03",
+      "key": "game.chapter_event.msg_984",
+      "subsystem": "chapter-event",
+      "target_id": "0x0984",
+      "text": "试着和罗斯对话。请将光标[.][LF]\n对准 [.][ToggleRed]艾瑞珂[ToggleRed]并按下A键。[A][X]\n"
+    },
+    {
+      "english_payload_sha256": "14931245e44686ba83e9bc4bcfe44feeac4eb666a108d184a562bbf0ac414a7d",
+      "key": "game.chapter_event.msg_986",
+      "subsystem": "chapter-event",
+      "target_id": "0x0986",
+      "text": "让艾瑞珂移动到罗斯身边。[.][LF]\n将光标移到闪烁的[LF]\n位置，然后按下A键。[.][A][X]\n"
+    },
+    {
+      "english_payload_sha256": "6af1519681122ac6de648d009a35de200200980c4e651adf9b8c70a7c80757fe",
+      "key": "game.chapter_event.msg_987",
+      "subsystem": "chapter-event",
+      "target_id": "0x0987",
+      "text": "选择 [.][ToggleRed]对话[ToggleRed]，[LF]\n然后按下A键。[.][A][X]\n"
+    },
+    {
+      "english_payload_sha256": "96cd002858d5b12456fb90e52fa8d6df8abda004337ce451557898ec3df375ab",
+      "key": "game.chapter_event.msg_aad",
+      "subsystem": "chapter-event",
+      "target_id": "0x0AAD",
+      "text": "[OpenMidLeft][LoadFace][FID_Ephraim]\n[OpenMidRight][LoadFace][FID_Soldier2]\n[OpenMidRight][ToggleMouthMove]……[ToggleMouthMove][A]\n[OpenMidLeft]我只问几个问题。若不想[.][LF]\n回答，就保持沉默。[A][LF]\n若想尽快结束这场战争，[.][LF]\n就请配合我。[A]\n[OpenMidRight][ToggleMouthMove]……[ToggleMouthMove][A][LF]\n[ToggleMouthMove]……[.][ToggleMouthMove]想知道什么？[.][A]\n[OpenMidLeft]古拉德为何侵略鲁内斯？[.][A]\n[OpenMidRight][ToggleMouthMove]……[.][ToggleMouthMove]我不知道。[A][LF]\n这场战争是奉[.][LF]\n皇帝陛下之命开始的。[.][A][LF]\n我们这些士兵根本[LF]\n不明白陛下的意图。[A]\n[OpenMidLeft]那么告诉我：[LF]\n杜塞尔将军现在何处？[.][A]\n[OpenMidRight]在帝都。将军从一开始[LF]\n就反对这场战争。[.][A][LF]\n他连日劝谏陛下，[.][LF]\n陛下却不予理会。[A][LF]\n听说有人开始质疑[.][LF]\n将军的忠诚。[A][LF]\n他如此直言，地位[.][ToggleMouthMove]——[ToggleMouthMove]甚至生命[ToggleMouthMove]——[ToggleMouthMove][LF]\n都已陷入危险。[A]\n[OpenMidLeft]是吗[ToggleMouthMove]……[.][ToggleMouthMove][A][LF]\n看来杜塞尔将军仍是[LF]\n我熟悉的那位忠直之人。[A][CloseSpeechSlow]\n[OpenMidLeft]那么利昂皇子呢？这一切[.][LF]\n发生时他在哪里？[A][LF]\n为何不设法制止[LF]\n他父亲的暴行？[.][A][BreakTalk]\n\n[OpenMidRight][ToggleMouthMove]……[ToggleMouthMove][A][CR][LF]\n据传闻[.][ToggleMouthMove]……[.][ToggleMouthMove][A][LF]\n劝彼加尔德皇帝发动[.][LF]\n战争的正是皇子本人。[A][BreakTalk]\n\n[OpenMidLeft]你说什么？[.][A][CR][LF]\n荒谬！[A][LF]\n我很了解利昂。没有人[.][LF]\n比他更厌恶战争。[.][A][LF]\n他绝不会做出[.][LF]\n引发这场血战的事！[.][A]\n[OpenMidRight][ClearFace]\n[OpenMidRight][LoadFace][FID_Seth]\n[OpenMidRight]伊弗列姆王子，请冷静。[.][A]\n[OpenMidLeft][ToggleMouthMove]……[.][ToggleMouthMove]抱歉。[A][X]\n"
+    },
+    {
+      "english_payload_sha256": "6578ce58b87980cc82306836f7e75d65af2a70d82ff696b02f48a48e90faad06",
+      "key": "game.chapter_event.msg_b2a",
+      "subsystem": "chapter-event",
+      "target_id": "0x0B2A",
+      "text": "[OpenLeft]听说利昂是在得到[LF]\n【魔石】后变了。[.][A][LF]\n我不懂魔法，可是[ToggleMouthMove]……[.][ToggleMouthMove][LF]\n当时的他实在很不寻常。[A][LF]\n仿佛他自己也正被[LF]\n某种东西操纵着。[A]\n[OpenFarLeft][ToggleMouthMove]……[ToggleMouthMove][A]\n[OpenRight]你们二位也许很难[.][LF]\n接受，但是[ToggleMouthMove]……[.][ToggleMouthMove][A][LF]\n利昂皇子的本意已不重要。[LF]\n他持有【魔石】。[A][LF]\n那块石头正是一切的[LF]\n元凶。必须阻止皇子。[.][A][BreakTalk]\n\n[OpenFarRight]不，还不行。首先有件[.][LF]\n事情必须完成。[.][A]\n[OpenFarLeft]拉切尔？[A]\n[OpenFarRight]伊弗列姆王子，您应该[LF]\n也感觉到了吧。[A][LF]\n利昂皇子持有的【魔石】[ToggleMouthMove]……[.][ToggleMouthMove][LF]\n散发着骇人的邪气[ToggleMouthMove]……[.][ToggleMouthMove][A][LF]\n若只是利昂皇子还好，[LF]\n但那石头绝非凡人可敌。[A]\n[OpenFarLeft]那么……该怎么办？[.][A]\n[OpenFarRight]【圣石】。[A]\n[OpenFarLeft]【圣石】？[A]\n[OpenFarRight]大家都听说过[.][LF]\n五颗【圣石】的传说。[.][A][LF]\n只有它们拥有[.][LF]\n永远封印魔王的力量。[.][A][LF]\n所以，要驱散魔力，[LF]\n当然必须使用【圣石】！[.][A]\n[OpenRight]要把这场战争的结果[LF]\n寄托在愚蠢的传说上？[A]\n[OpenLeft][ToggleMouthMove]……[.][ToggleMouthMove]不只是传说。[LF]\n我们还有希望。[A][CloseSpeechSlow]\n[OpenLeft]据利昂所说，[A][LF]\n古拉德、弗雷利亚和贾哈那的[.][LF]\n【圣石】都已被毁。[A]\n[OpenFarLeft]嗯，那就说得通了[.][ToggleMouthMove]……[.][ToggleMouthMove][A][LF]\n古拉德军曾袭击我，企图[.][LF]\n破坏鲁内斯的【圣石】。[.][A][LF]\n若这正是他们[LF]\n入侵鲁内斯的原因[ToggleMouthMove]……[.][ToggleMouthMove][A][LF]\n【圣石】的力量或许[LF]\n远比我们所知的强大。[A]\n[OpenFarRight]没错，正是如此！[.][A][LF]\n只要得到一颗【圣石】，我们就能[LF]\n对抗【魔石】的力量！[A]\n[OpenRight]但已有三颗【圣石】[.][LF]\n被毁，我们选择不多。[.][A][LF]\n你是说在[.][LF]\n鲁内斯被侵略时[ToggleMouthMove]……[.][ToggleMouthMove][A]\n[OpenLeft]不，我想未必。[.][A][LF]\n鲁内斯的【圣石】由[LF]\n我和艾瑞珂的腕轮封印着。[.][A]\n[OpenFarLeft]古拉德多次试图[LF]\n夺走我们的腕轮。[A][LF]\n每一次都失败了，所以[LF]\n圣石或许仍然安全。[A]\n[OpenLeft]当然，我们必须确认。[.][A][LF]\n古拉德已被击败，我们也该[.][LF]\n把目光转向祖国了。[A][LF]\n是时候返回鲁内斯了。[A][X]\n"
+    },
+    {
+      "english_payload_sha256": "5db600d98ac09c938da044afd2f95a6c9270cfc6da279180de911667579e5822",
+      "key": "game.expansion.msg_save_compat_legacy",
+      "subsystem": "expansion",
+      "target_id": "0x0D4C",
+      "text": "此存档早于[.][LF]\n扩展存档格式，[.][LF]\n无法在此打开。[X]\n"
+    },
+    {
+      "english_payload_sha256": "4de593065e33c2b6da2312812347545675d60a81b662637bb048355a17774522",
+      "key": "game.expansion.msg_save_compat_header_corrupt",
+      "subsystem": "expansion",
+      "target_id": "0x0D4D",
+      "text": "存档似乎已损坏，[.][LF]\n无法读取。[X]\n"
+    },
+    {
+      "english_payload_sha256": "ce6393892fa8961117a8e59a061c2e98465b8092a89891fd19d19f6b8bf048ee",
+      "key": "game.expansion.msg_save_compat_metadata_corrupt",
+      "subsystem": "expansion",
+      "target_id": "0x0D4E",
+      "text": "存档的扩展信息[.][LF]\n已经损坏，[.][LF]\n无法读取。[X]\n"
+    },
+    {
+      "english_payload_sha256": "0c70666bc408f0880088aa71c04f11287dcf29e9ca5142ec875ff3c43886d5fe",
+      "key": "game.expansion.msg_save_compat_older",
+      "subsystem": "expansion",
+      "target_id": "0x0D4F",
+      "text": "此存档来自较旧的[.][LF]\n扩展版本，[.][LF]\n可使用外部工具[.][LF]\n进行迁移。[X]\n"
+    },
+    {
+      "english_payload_sha256": "c1b996083e9cb30e8c39cc6205beb2c54b5ada2391e4244e0e074cd95877d370",
+      "key": "game.expansion.msg_save_compat_newer",
+      "subsystem": "expansion",
+      "target_id": "0x0D50",
+      "text": "此存档来自较新的[.][LF]\n扩展版本，[.][LF]\n当前版本[.][LF]\n不支持该存档。[X]\n"
+    },
+    {
+      "english_payload_sha256": "2fc82b71e2fac5cfb7c9c458f0254385719756ee48557acb5243f83d13f0de6d",
+      "key": "game.expansion.msg_save_compat_config_incompatible",
+      "subsystem": "expansion",
+      "target_id": "0x0D51",
+      "text": "此存档使用了[.][LF]\n不兼容的扩展设置，[.][LF]\n因此无法使用。[X]\n"
+    },
+    {
+      "english_payload_sha256": "1af27132226a047e2ae5a15d4b5fa118d6a4cde8574a52e3b63dd4b86af099d2",
+      "key": "game.expansion.msg_save_compat_unknown",
+      "subsystem": "expansion",
+      "target_id": "0x0D52",
+      "text": "此存档[.][LF]\n无法在此使用。[X]\n"
+    },
+    {
+      "english_payload_sha256": "f8b12d803a1a54155c2879f0219ecf5b794dcf149a497cef0f6ef307f6966e90",
+      "key": "game.expansion.msg_save_compat_erase_confirm",
+      "subsystem": "expansion",
+      "target_id": "0x0D55",
+      "text": "清除全部存档？[.][LF]\n此操作无法撤销。[X]"
+    }
+  ]
+}
