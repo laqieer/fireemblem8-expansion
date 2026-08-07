@@ -5,9 +5,6 @@
 
 #ifdef FE8_LOCALIZED_FONT_ENABLED
 
-#define LOCALIZED_FONT_JA_GLYPH_COUNT 1848u
-#define LOCALIZED_FONT_ZH_HANS_GLYPH_COUNT 2460u
-#define LOCALIZED_FONT_BITMAP_STRIDE 64u
 #define LOCALIZED_FONT_IDEOGRAPHIC_SPACE 0x3000u
 #define LOCALIZED_FONT_IDEOGRAPHIC_SPACE_WIDTH 16u
 #define LOCALIZED_FONT_MISSING_COUNT_MAX 0xFFFFu
@@ -19,24 +16,6 @@ struct LocalizedFontDescriptor
     const u8 *bitmaps;
     u32 glyphCount;
 };
-
-#if (FE8_EXPANSION_ENABLED_LOCALE_MASK & 0x02u) != 0
-extern const u8 gLocalizedFontJaSystemCodepoints[];
-extern const u8 gLocalizedFontJaSystemWidths[];
-extern const u8 gLocalizedFontJaSystemBitmaps[];
-extern const u8 gLocalizedFontJaTalkCodepoints[];
-extern const u8 gLocalizedFontJaTalkWidths[];
-extern const u8 gLocalizedFontJaTalkBitmaps[];
-#endif
-
-#if (FE8_EXPANSION_ENABLED_LOCALE_MASK & 0x04u) != 0
-extern const u8 gLocalizedFontZhHansSystemCodepoints[];
-extern const u8 gLocalizedFontZhHansSystemWidths[];
-extern const u8 gLocalizedFontZhHansSystemBitmaps[];
-extern const u8 gLocalizedFontZhHansTalkCodepoints[];
-extern const u8 gLocalizedFontZhHansTalkWidths[];
-extern const u8 gLocalizedFontZhHansTalkBitmaps[];
-#endif
 
 static EWRAM_DATA u16 sLocalizedFontMissingGlyphCount;
 static EWRAM_DATA u32 sLocalizedFontLastMissingScalar;
@@ -60,7 +39,7 @@ static bool8 LocalizedFont_GetDescriptor(
 #if (FE8_EXPANSION_ENABLED_LOCALE_MASK & 0x02u) != 0
     if (locale == EXPANSION_LOCALE_JA)
     {
-        out->glyphCount = LOCALIZED_FONT_JA_GLYPH_COUNT;
+        out->glyphCount = gLocalizedFontJaGlyphCount;
         if (style == LOCALIZED_FONT_STYLE_SYSTEM)
         {
             out->codepoints = gLocalizedFontJaSystemCodepoints;
@@ -82,7 +61,7 @@ static bool8 LocalizedFont_GetDescriptor(
 #if (FE8_EXPANSION_ENABLED_LOCALE_MASK & 0x04u) != 0
     if (locale == EXPANSION_LOCALE_ZH_HANS)
     {
-        out->glyphCount = LOCALIZED_FONT_ZH_HANS_GLYPH_COUNT;
+        out->glyphCount = gLocalizedFontZhHansGlyphCount;
         if (style == LOCALIZED_FONT_STYLE_SYSTEM)
         {
             out->codepoints = gLocalizedFontZhHansSystemCodepoints;

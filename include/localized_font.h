@@ -11,6 +11,8 @@
 
 #include "expansion_locale.h"
 
+#define LOCALIZED_FONT_BITMAP_STRIDE 64u
+
 enum LocalizedFontStyle
 {
     LOCALIZED_FONT_STYLE_SYSTEM = 0,
@@ -23,6 +25,26 @@ struct LocalizedFontGlyph
     u32 scalar;
     u8 width;
 };
+
+#if (FE8_EXPANSION_ENABLED_LOCALE_MASK & 0x02u) != 0
+extern const u8 gLocalizedFontJaSystemCodepoints[];
+extern const u8 gLocalizedFontJaSystemWidths[];
+extern const u8 gLocalizedFontJaSystemBitmaps[];
+extern const u8 gLocalizedFontJaTalkCodepoints[];
+extern const u8 gLocalizedFontJaTalkWidths[];
+extern const u8 gLocalizedFontJaTalkBitmaps[];
+extern const u32 gLocalizedFontJaGlyphCount;
+#endif
+
+#if (FE8_EXPANSION_ENABLED_LOCALE_MASK & 0x04u) != 0
+extern const u8 gLocalizedFontZhHansSystemCodepoints[];
+extern const u8 gLocalizedFontZhHansSystemWidths[];
+extern const u8 gLocalizedFontZhHansSystemBitmaps[];
+extern const u8 gLocalizedFontZhHansTalkCodepoints[];
+extern const u8 gLocalizedFontZhHansTalkWidths[];
+extern const u8 gLocalizedFontZhHansTalkBitmaps[];
+extern const u32 gLocalizedFontZhHansGlyphCount;
+#endif
 
 bool8 LocalizedFont_IsLocale(ExpansionLocaleId locale);
 

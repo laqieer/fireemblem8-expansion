@@ -1,5 +1,10 @@
 #include "global.h"
 
+#include "localized_font.h"
+
+#define LOCALIZED_FONT_DATA_STATIC_ASSERT(condition, tag) \
+    typedef char localized_font_data_static_assert_##tag[(condition) ? 1 : -1]
+
 #if defined(MODERN) && ((FE8_EXPANSION_ENABLED_LOCALE_MASK & 0x02u) != 0)
 
 const u8 gLocalizedFontJaSystemCodepoints[]
@@ -21,6 +26,30 @@ const u8 gLocalizedFontJaTalkWidths[]
 const u8 gLocalizedFontJaTalkBitmaps[]
     SECTION(".locale_data.font.ja.talk.bitmaps") __attribute__((aligned(4))) =
     INCBIN_U8("graphics/fonts/cjk/ja.talk.glyphs.2bpp");
+
+LOCALIZED_FONT_DATA_STATIC_ASSERT(
+    sizeof(gLocalizedFontJaSystemCodepoints)
+        == sizeof(gLocalizedFontJaSystemWidths) * sizeof(u32),
+    ja_system_codepoint_count);
+LOCALIZED_FONT_DATA_STATIC_ASSERT(
+    sizeof(gLocalizedFontJaSystemBitmaps)
+        == sizeof(gLocalizedFontJaSystemWidths) * LOCALIZED_FONT_BITMAP_STRIDE,
+    ja_system_bitmap_count);
+LOCALIZED_FONT_DATA_STATIC_ASSERT(
+    sizeof(gLocalizedFontJaTalkCodepoints)
+        == sizeof(gLocalizedFontJaTalkWidths) * sizeof(u32),
+    ja_talk_codepoint_count);
+LOCALIZED_FONT_DATA_STATIC_ASSERT(
+    sizeof(gLocalizedFontJaTalkBitmaps)
+        == sizeof(gLocalizedFontJaTalkWidths) * LOCALIZED_FONT_BITMAP_STRIDE,
+    ja_talk_bitmap_count);
+LOCALIZED_FONT_DATA_STATIC_ASSERT(
+    sizeof(gLocalizedFontJaSystemWidths)
+        == sizeof(gLocalizedFontJaTalkWidths),
+    ja_style_count);
+
+const u32 gLocalizedFontJaGlyphCount =
+    sizeof(gLocalizedFontJaSystemWidths) / sizeof(gLocalizedFontJaSystemWidths[0]);
 
 #endif
 
@@ -45,5 +74,30 @@ const u8 gLocalizedFontZhHansTalkWidths[]
 const u8 gLocalizedFontZhHansTalkBitmaps[]
     SECTION(".locale_data.font.zh_hans.talk.bitmaps") __attribute__((aligned(4))) =
     INCBIN_U8("graphics/fonts/cjk/zh-Hans.talk.glyphs.2bpp");
+
+LOCALIZED_FONT_DATA_STATIC_ASSERT(
+    sizeof(gLocalizedFontZhHansSystemCodepoints)
+        == sizeof(gLocalizedFontZhHansSystemWidths) * sizeof(u32),
+    zh_hans_system_codepoint_count);
+LOCALIZED_FONT_DATA_STATIC_ASSERT(
+    sizeof(gLocalizedFontZhHansSystemBitmaps)
+        == sizeof(gLocalizedFontZhHansSystemWidths) * LOCALIZED_FONT_BITMAP_STRIDE,
+    zh_hans_system_bitmap_count);
+LOCALIZED_FONT_DATA_STATIC_ASSERT(
+    sizeof(gLocalizedFontZhHansTalkCodepoints)
+        == sizeof(gLocalizedFontZhHansTalkWidths) * sizeof(u32),
+    zh_hans_talk_codepoint_count);
+LOCALIZED_FONT_DATA_STATIC_ASSERT(
+    sizeof(gLocalizedFontZhHansTalkBitmaps)
+        == sizeof(gLocalizedFontZhHansTalkWidths) * LOCALIZED_FONT_BITMAP_STRIDE,
+    zh_hans_talk_bitmap_count);
+LOCALIZED_FONT_DATA_STATIC_ASSERT(
+    sizeof(gLocalizedFontZhHansSystemWidths)
+        == sizeof(gLocalizedFontZhHansTalkWidths),
+    zh_hans_style_count);
+
+const u32 gLocalizedFontZhHansGlyphCount =
+    sizeof(gLocalizedFontZhHansSystemWidths)
+        / sizeof(gLocalizedFontZhHansSystemWidths[0]);
 
 #endif
