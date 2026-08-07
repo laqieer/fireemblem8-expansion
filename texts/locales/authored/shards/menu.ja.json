@@ -1,0 +1,670 @@
+{
+  "entries": [
+    {
+      "suggested_key": "game.menu_definition.msg_011",
+      "target_id": "0x0011",
+      "text": ".[.][X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_022",
+      "target_id": "0x0022",
+      "text": ".[.][X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_02e",
+      "target_id": "0x002E",
+      "text": "  モード  チュートリアル[X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_02f",
+      "target_id": "0x002F",
+      "text": "  モード  ノーマル[X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_030",
+      "target_id": "0x0030",
+      "text": "  モード  ハード[X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_031",
+      "target_id": "0x0031",
+      "text": "  拠点  制圧[.][X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_035",
+      "target_id": "0x0035",
+      "text": "なし[.][X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_036",
+      "target_id": "0x0036",
+      "text": "攻撃[X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_037",
+      "target_id": "0x0037",
+      "text": "移動[.][X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_038",
+      "target_id": "0x0038",
+      "text": "回復[X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_039",
+      "target_id": "0x0039",
+      "text": "状態[X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_03a",
+      "target_id": "0x003A",
+      "text": "全体100[X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_03b",
+      "target_id": "0x003B",
+      "text": "全体80[.][X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_03c",
+      "target_id": "0x003C",
+      "text": "全体50[.][X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_03d",
+      "target_id": "0x003D",
+      "text": "移動禁止100[.][X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_03e",
+      "target_id": "0x003E",
+      "text": "移動禁止80[X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_03f",
+      "target_id": "0x003F",
+      "text": "移動禁止50[X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_040",
+      "target_id": "0x0040",
+      "text": "なし[X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_041",
+      "target_id": "0x0041",
+      "text": "ナターシャなし[.][X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_042",
+      "target_id": "0x0042",
+      "text": "ダグラス[.][X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_043",
+      "target_id": "0x0043",
+      "text": "11B市民なし[.][X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_044",
+      "target_id": "0x0044",
+      "text": "リン[.][X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_045",
+      "target_id": "0x0045",
+      "text": "ロイ[.][X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_046",
+      "target_id": "0x0046",
+      "text": "門番[.][X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_047",
+      "target_id": "0x0047",
+      "text": "リーダー[X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_048",
+      "target_id": "0x0048",
+      "text": "回復[X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_049",
+      "target_id": "0x0049",
+      "text": "回復・移動なし[.][X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_04a",
+      "target_id": "0x004A",
+      "text": "盗む[.][X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_04b",
+      "target_id": "0x004B",
+      "text": "扉を開く[.][X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_04c",
+      "target_id": "0x004C",
+      "text": "ルトガーなし[X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_04d",
+      "target_id": "0x004D",
+      "text": "レイガンスなし[X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_04f",
+      "target_id": "0x004F",
+      "text": "接近[X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_050",
+      "target_id": "0x0050",
+      "text": "クラリーネに接近[X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_051",
+      "target_id": "0x0051",
+      "text": "ダグラス[.][X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_052",
+      "target_id": "0x0052",
+      "text": "なし[X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_053",
+      "target_id": "0x0053",
+      "text": "略奪[X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_054",
+      "target_id": "0x0054",
+      "text": "略奪後離脱[X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_056",
+      "target_id": "0x0056",
+      "text": "クラリーネ2[.][X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_057",
+      "target_id": "0x0057",
+      "text": "巡回[.][X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_058",
+      "target_id": "0x0058",
+      "text": "ランダム[X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_059",
+      "target_id": "0x0059",
+      "text": "エイリークへ[.][X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_05a",
+      "target_id": "0x005A",
+      "text": "エフラムへ[X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_05b",
+      "target_id": "0x005B",
+      "text": "離脱[.][X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_05c",
+      "target_id": "0x005C",
+      "text": "拠点へ[X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_05d",
+      "target_id": "0x005D",
+      "text": "壁破壊[X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_05e",
+      "target_id": "0x005E",
+      "text": "接近無視[.][X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_05f",
+      "target_id": "0x005F",
+      "text": "範囲[X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_060",
+      "target_id": "0x0060",
+      "text": "1ターン略奪待機[X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_061",
+      "target_id": "0x0061",
+      "text": "1ターン接近待機[X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_062",
+      "target_id": "0x0062",
+      "text": "弱[X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_063",
+      "target_id": "0x0063",
+      "text": "通常[X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_064",
+      "target_id": "0x0064",
+      "text": "強[X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_065",
+      "target_id": "0x0065",
+      "text": "最弱[.][X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_066",
+      "target_id": "0x0066",
+      "text": "最強[.][X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_067",
+      "target_id": "0x0067",
+      "text": "良好[X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_068",
+      "target_id": "0x0068",
+      "text": "毒[X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_069",
+      "target_id": "0x0069",
+      "text": "睡眠[.][X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_06a",
+      "target_id": "0x006A",
+      "text": "沈黙[.][X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_06b",
+      "target_id": "0x006B",
+      "text": "バサーク[.][X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_06c",
+      "target_id": "0x006C",
+      "text": "攻撃の舞[X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_06d",
+      "target_id": "0x006D",
+      "text": "守備の舞[.][X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_06e",
+      "target_id": "0x006E",
+      "text": "技の舞[.][X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_06f",
+      "target_id": "0x006F",
+      "text": "回避の舞[.][X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_070",
+      "target_id": "0x0070",
+      "text": "病気[X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_071",
+      "target_id": "0x0071",
+      "text": "回復[.][X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_072",
+      "target_id": "0x0072",
+      "text": "石化[.][X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_073",
+      "target_id": "0x0073",
+      "text": "バリア[X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_074",
+      "target_id": "0x0074",
+      "text": "石化反撃[.][X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_075",
+      "target_id": "0x0075",
+      "text": "1/4[.][X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_076",
+      "target_id": "0x0076",
+      "text": "2/4[.][X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_077",
+      "target_id": "0x0077",
+      "text": "3/4[.][X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_078",
+      "target_id": "0x0078",
+      "text": "4/4[.][X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_079",
+      "target_id": "0x0079",
+      "text": "位置[.][X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_07a",
+      "target_id": "0x007A",
+      "text": "S合計[.][X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_07b",
+      "target_id": "0x007B",
+      "text": "P合計[.][X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_07c",
+      "target_id": "0x007C",
+      "text": "CP攻撃[.][X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_07d",
+      "target_id": "0x007D",
+      "text": "CP移動[.][X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_07e",
+      "target_id": "0x007E",
+      "text": "カウンター[.][X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_07f",
+      "target_id": "0x007F",
+      "text": "信頼度[.][X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_081",
+      "target_id": "0x0081",
+      "text": "必殺回避[.][X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_082",
+      "target_id": "0x0082",
+      "text": "SRAM情報[.][X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_083",
+      "target_id": "0x0083",
+      "text": "勝利[.][X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_084",
+      "target_id": "0x0084",
+      "text": "敗北[.][X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_085",
+      "target_id": "0x0085",
+      "text": "優勢[.][X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_086",
+      "target_id": "0x0086",
+      "text": "E.D.[X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_089",
+      "target_id": "0x0089",
+      "text": "経験値[.][X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_08a",
+      "target_id": "0x008A",
+      "text": "お気に入り[X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_08b",
+      "target_id": "0x008B",
+      "text": "SRAM情報なし[.][X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_08c",
+      "target_id": "0x008C",
+      "text": "熟練度[X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_08e",
+      "target_id": "0x008E",
+      "text": "2-CP[X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_08f",
+      "target_id": "0x008F",
+      "text": "3-CP[X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_144",
+      "target_id": "0x0144",
+      "text": "コピー[X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_14c",
+      "target_id": "0x014C",
+      "text": "0[.][X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_151",
+      "target_id": "0x0151",
+      "text": "5[.][X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_152",
+      "target_id": "0x0152",
+      "text": "6[.][X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_153",
+      "target_id": "0x0153",
+      "text": "7[.][X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_154",
+      "target_id": "0x0154",
+      "text": "8[.][X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_155",
+      "target_id": "0x0155",
+      "text": "9[.][X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_156",
+      "target_id": "0x0156",
+      "text": "なし[.][X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_15b",
+      "target_id": "0x015B",
+      "text": "外伝[X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_15c",
+      "target_id": "0x015C",
+      "text": "分岐[.][X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_15f",
+      "target_id": "0x015F",
+      "text": "総合ターン[.][X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_50d",
+      "target_id": "0x050D",
+      "text": "アイテム[X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_50e",
+      "target_id": "0x050E",
+      "text": "アーチ[X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_50f",
+      "target_id": "0x050F",
+      "text": "ドラゴン[X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_51f",
+      "target_id": "0x051F",
+      "text": "戦[.][X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_520",
+      "target_id": "0x0520",
+      "text": "勝[.][X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_521",
+      "target_id": "0x0521",
+      "text": "敗[.][X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_52d",
+      "target_id": "0x052D",
+      "text": "E[.][X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_52e",
+      "target_id": "0x052E",
+      "text": "D[.][X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_52f",
+      "target_id": "0x052F",
+      "text": "C[.][X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_530",
+      "target_id": "0x0530",
+      "text": "B[.][X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_531",
+      "target_id": "0x0531",
+      "text": "A[.][X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_532",
+      "target_id": "0x0532",
+      "text": "S[.][X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_533",
+      "target_id": "0x0533",
+      "text": "専用[.][X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_53a",
+      "target_id": "0x053A",
+      "text": "-[.][X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_57f",
+      "target_id": "0x057F",
+      "text": "ユニット同士の[.][LF]\n支援関係を確認します[X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_586",
+      "target_id": "0x0586",
+      "text": "戦いの評価[X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_587",
+      "target_id": "0x0587",
+      "text": "軍師の評価[.][X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_588",
+      "target_id": "0x0588",
+      "text": "攻略占い[X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_589",
+      "target_id": "0x0589",
+      "text": "占いメニュー[.][X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_58a",
+      "target_id": "0x058A",
+      "text": "攻略評価[.][X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_58c",
+      "target_id": "0x058C",
+      "text": "資産評価[.][X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_58d",
+      "target_id": "0x058D",
+      "text": "経験評価[.][X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_58e",
+      "target_id": "0x058E",
+      "text": "戦闘評価[X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_58f",
+      "target_id": "0x058F",
+      "text": "目的評価[.][X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_5ad",
+      "target_id": "0x05AD",
+      "text": "キャラクター選択[X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_5b8",
+      "target_id": "0x05B8",
+      "text": "これまでの戦績と[.][LF]\n評価を確認します[.][X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_5b9",
+      "target_id": "0x05B9",
+      "text": "軍師の評価と[.][LF]\n人物情報を確認します[.][X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_5ba",
+      "target_id": "0x05BA",
+      "text": "次の戦いについて[.][LF]\n占います[X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_5bf",
+      "target_id": "0x05BF",
+      "text": "戦闘を開始します[.][X]\n"
+    },
+    {
+      "suggested_key": "game.menu_definition.msg_6b8",
+      "target_id": "0x06B8",
+      "text": "周回数[X]\n"
+    }
+  ],
+  "kind": "fe8-authored-translation-shard",
+  "locale_id": "ja",
+  "schema_version": 1,
+  "source_queue_sha256": "ffdff913a552076928d5cb06634ed75d8983b65c05bb4ecec9aa2b610ffe6ad6",
+  "subsystem": "menu-definition",
+  "target_count": 132
+}
