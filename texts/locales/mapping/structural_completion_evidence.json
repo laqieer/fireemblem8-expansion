@@ -2510,11 +2510,11 @@
     "protected_artifacts": [
       {
         "path": "texts/locales/mapping/fe8u_target_map.json",
-        "sha256": "dfc01d1f5b8b001fc9bacc67bf45bd4a4edeee89b22ed0f8a4225847c0fbf3d7"
+        "sha256": "4f8654b1f9526cb9a62c98fa9c3616773f35523c5bcb807868c311ac4d6c5791"
       },
       {
         "path": "texts/locales/mapping/fe8u_structural_evidence.json",
-        "sha256": "28726a36fab85d9d087a931e3d621837f8168e1ab5cab9c3ede45defcaef1dec"
+        "sha256": "24c199d24b473136d830a48319b519923f27b1bad5ef002b01e593a4c0f82097"
       }
     ],
     "reference_map": {
@@ -24957,11 +24957,11 @@
             "kind": "message-call-argument",
             "line": 1600,
             "path": "src/player_interface.c",
-            "slot": "GoalDisplay_Init/call=GetStringFromIndex/argument=0/ordinal=2",
+            "slot": "GoalDisplay_Init/call=GetStringFromIndex/argument=0/ordinal=1",
             "structure": {
               "argument_index": 0,
               "call": "GetStringFromIndex",
-              "ordinal": 2,
+              "ordinal": 1,
               "type": "message-consuming-call"
             },
             "symbol": "GoalDisplay_Init"
@@ -139367,177 +139367,6 @@
     {
       "candidate_seed": {
         "present": true,
-        "seed_tag": "interp",
-        "source_id": "0x01C1",
-        "source_line": 447
-      },
-      "nonindexed_reference_rows": [],
-      "reason": "no-bounded-reference-pair",
-      "region_markers": [
-        "U"
-      ],
-      "target_id": "0x01C1",
-      "target_sites": [
-        {
-          "context": "GetStringFromIndex(MSG_1C1)",
-          "context_sha256": "583e422b4c685f52c9fb1d697f8803d13d595463df2ea31a0e2476523d9fd4e3",
-          "kind": "message-call-argument",
-          "line": 1596,
-          "path": "src/player_interface.c",
-          "slot": "GoalDisplay_Init/call=GetStringFromIndex/argument=0/ordinal=1",
-          "structure": {
-            "argument_index": 0,
-            "call": "GetStringFromIndex",
-            "ordinal": 1,
-            "type": "message-consuming-call"
-          },
-          "symbol": "GoalDisplay_Init"
-        },
-        {
-          "context": "&proc->texts[1], 16, TEXT_COLOR_SYSTEM_WHITE, GetStringFromIndex(MSG_1C1));",
-          "context_sha256": "6456de0a4a721b762b23e55fd3a79fb569d1fb9a0272f27a20e806f4e05d5294",
-          "kind": "msg-symbol-reference",
-          "line": 1596,
-          "path": "src/player_interface.c",
-          "slot": "GoalDisplay_Init/msg-symbol=MSG_1C1",
-          "structure": {
-            "macro": "MSG_1C1",
-            "type": "macro-reference"
-          },
-          "symbol": "GoalDisplay_Init"
-        },
-        {
-          "context": "#define MSG_1C1 0x01C1",
-          "context_sha256": "fa24b5ef47f25e931316e86d27982c1382732b2cd2815e48f6a6d0cc22928427",
-          "kind": "msg-symbol-definition",
-          "line": 455,
-          "path": "include/constants/msg.h",
-          "slot": "macro=MSG_1C1",
-          "structure": {
-            "macro": "MSG_1C1",
-            "type": "macro-definition"
-          },
-          "symbol": "MSG_1C1"
-        }
-      ]
-    },
-    {
-      "candidate_seed": {
-        "present": true,
-        "seed_tag": "auto:shifted",
-        "source_id": "0x01C2",
-        "source_line": 448
-      },
-      "nonindexed_reference_rows": [],
-      "reason": "no-bounded-reference-pair",
-      "region_markers": [
-        "U"
-      ],
-      "target_id": "0x01C2",
-      "target_sites": [
-        {
-          "context": "GetStringFromIndex(MSG_1C2)",
-          "context_sha256": "57c93714d1aab65b39fdd56e39acd7d355038078872719a655c9820f779f9d32",
-          "kind": "message-call-argument",
-          "line": 1651,
-          "path": "src/player_interface.c",
-          "slot": "GoalDisplay_Init/call=GetStringFromIndex/argument=0/ordinal=5",
-          "structure": {
-            "argument_index": 0,
-            "call": "GetStringFromIndex",
-            "ordinal": 5,
-            "type": "message-consuming-call"
-          },
-          "symbol": "GoalDisplay_Init"
-        },
-        {
-          "context": "&proc->texts[1], 42, TEXT_COLOR_SYSTEM_WHITE, GetStringFromIndex(MSG_1C2));",
-          "context_sha256": "2f940b2c2e8d051aa5630d470a0c50ffd1f7a5ac1cdb555a51966c3de30ac25f",
-          "kind": "msg-symbol-reference",
-          "line": 1651,
-          "path": "src/player_interface.c",
-          "slot": "GoalDisplay_Init/msg-symbol=MSG_1C2",
-          "structure": {
-            "macro": "MSG_1C2",
-            "type": "macro-reference"
-          },
-          "symbol": "GoalDisplay_Init"
-        },
-        {
-          "context": "#define MSG_1C2 0x01C2",
-          "context_sha256": "68cfc0933cf7304fea1bd77de8e16bb5cb70ae7a201dee867fa3ed31011338a3",
-          "kind": "msg-symbol-definition",
-          "line": 456,
-          "path": "include/constants/msg.h",
-          "slot": "macro=MSG_1C2",
-          "structure": {
-            "macro": "MSG_1C2",
-            "type": "macro-definition"
-          },
-          "symbol": "MSG_1C2"
-        }
-      ]
-    },
-    {
-      "candidate_seed": {
-        "present": true,
-        "seed_tag": "interp",
-        "source_id": "0x01C3",
-        "source_line": 449
-      },
-      "nonindexed_reference_rows": [],
-      "reason": "no-bounded-reference-pair",
-      "region_markers": [
-        "U"
-      ],
-      "target_id": "0x01C3",
-      "target_sites": [
-        {
-          "context": "GetStringFromIndex(MSG_1C3)",
-          "context_sha256": "053b59f2fab38c10572d7a919b60b6a19e2c1021d14dc0fdd6516704d836a845",
-          "kind": "message-call-argument",
-          "line": 1626,
-          "path": "src/player_interface.c",
-          "slot": "GoalDisplay_Init/call=GetStringFromIndex/argument=0/ordinal=3",
-          "structure": {
-            "argument_index": 0,
-            "call": "GetStringFromIndex",
-            "ordinal": 3,
-            "type": "message-consuming-call"
-          },
-          "symbol": "GoalDisplay_Init"
-        },
-        {
-          "context": "str = GetStringFromIndex(MSG_1C3);",
-          "context_sha256": "4f89fcaf5ef4afd1b9d2238233f2f85adabfa7707efe9cd1c4a32f93329e2822",
-          "kind": "msg-symbol-reference",
-          "line": 1626,
-          "path": "src/player_interface.c",
-          "slot": "GoalDisplay_Init/msg-symbol=MSG_1C3",
-          "structure": {
-            "macro": "MSG_1C3",
-            "type": "macro-reference"
-          },
-          "symbol": "GoalDisplay_Init"
-        },
-        {
-          "context": "#define MSG_1C3 0x01C3",
-          "context_sha256": "d9e243b4c21292bbf0108cb28db885e50c9133352654d49bb7d192b90b4dc32c",
-          "kind": "msg-symbol-definition",
-          "line": 457,
-          "path": "include/constants/msg.h",
-          "slot": "macro=MSG_1C3",
-          "structure": {
-            "macro": "MSG_1C3",
-            "type": "macro-definition"
-          },
-          "symbol": "MSG_1C3"
-        }
-      ]
-    },
-    {
-      "candidate_seed": {
-        "present": true,
         "seed_tag": "extrap",
         "source_id": "0x04A0",
         "source_line": 1206
@@ -140214,11 +140043,11 @@
           "kind": "message-call-argument",
           "line": 1636,
           "path": "src/player_interface.c",
-          "slot": "GoalDisplay_Init/call=GetStringFromIndex/argument=0/ordinal=4",
+          "slot": "GoalDisplay_Init/call=GetStringFromIndex/argument=0/ordinal=2",
           "structure": {
             "argument_index": 0,
             "call": "GetStringFromIndex",
-            "ordinal": 4,
+            "ordinal": 2,
             "type": "message-consuming-call"
           },
           "symbol": "GoalDisplay_Init"
@@ -146962,7 +146791,7 @@
       "reference": 1354
     },
     "context_required_count": 20,
-    "fallback_target_count": 1797,
+    "fallback_target_count": 1794,
     "family_counts": {
       "chapter-event": 532,
       "chapter-title": 8,
@@ -146974,8 +146803,8 @@
       "trainee-prep": 87
     },
     "proposed_target_count": 1381,
-    "residual_target_count": 416,
-    "unmapped_residual_count": 396
+    "residual_target_count": 413,
+    "unmapped_residual_count": 393
   },
   "target_count": 3414
 }

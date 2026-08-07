@@ -7,6 +7,10 @@ import json
 import sys
 from pathlib import Path
 
+from .combined_coverage import (
+    CombinedCoverageError,
+    build_combined_coverage_report,
+)
 from .coverage import build_coverage_report, load_fe8u_target_ids
 from .crosswalk import (
     build_crosswalk_coverage_report,
@@ -329,6 +333,52 @@ def _cmd_check_structural_completion(args: argparse.Namespace) -> int:
     return 0
 
 
+def _build_combined_coverage(args: argparse.Namespace):
+    target_count = len(load_fe8u_target_ids(args.target_header))
+    return build_combined_coverage_report(
+        repo_root=args.repo_root,
+        target_count=target_count,
+        mapping_path=args.mapping,
+        coverage_path=args.coverage,
+        structural_crosswalk_path=args.structural_evidence,
+        febuilder_path=args.febuilder_evidence,
+        structural_completion_path=args.structural_completion,
+    )
+
+
+def _cmd_build_combined_coverage(args: argparse.Namespace) -> int:
+    report = _build_combined_coverage(args)
+    args.report.parent.mkdir(parents=True, exist_ok=True)
+    args.report.write_bytes(canonical_json_bytes(report))
+    summary = report["summary"]
+    print(
+        "built combined fallback coverage: "
+        f"translated={summary['translated_target_count']} "
+        f"candidates={summary['combined_unblocked_candidate_target_count']} "
+        f"blocked={summary['combined_blocked_target_count']} "
+        f"residual={summary['residual_target_count']}"
+    )
+    return 0
+
+
+def _cmd_check_combined_coverage(args: argparse.Namespace) -> int:
+    report = _build_combined_coverage(args)
+    expected = canonical_json_bytes(report)
+    if not args.report.is_file() or args.report.read_bytes() != expected:
+        raise CombinedCoverageError(
+            f"{args.report}: combined coverage differs from deterministic rebuild"
+        )
+    summary = report["summary"]
+    print(
+        "combined fallback coverage matches committed bytes: "
+        f"translated={summary['translated_target_count']} "
+        f"candidates={summary['combined_unblocked_candidate_target_count']} "
+        f"blocked={summary['combined_blocked_target_count']} "
+        f"residual={summary['residual_target_count']}"
+    )
+    return 0
+
+
 def _build_raw_closure(args: argparse.Namespace):
     return build_raw_surface_closure(
         raw_data=_load_json(args.raw_source),
@@ -625,6 +675,70 @@ def build_parser() -> argparse.ArgumentParser:
     completion_check_parser.add_argument("--region-map", type=Path)
     completion_check_parser.set_defaults(handler=_cmd_check_structural_completion)
 
+    def add_combined_coverage_inputs(
+        command_parser: argparse.ArgumentParser,
+    ) -> None:
+        command_parser.add_argument(
+            "--mapping",
+            type=Path,
+            default=Path("texts/locales/mapping/fe8u_target_map.json"),
+        )
+        command_parser.add_argument(
+            "--coverage",
+            type=Path,
+            default=Path(
+                "texts/locales/mapping/fe8u_target_map.coverage.json"
+            ),
+        )
+        command_parser.add_argument(
+            "--structural-evidence",
+            type=Path,
+            default=Path("texts/locales/mapping/fe8u_structural_evidence.json"),
+        )
+        command_parser.add_argument(
+            "--febuilder-evidence",
+            type=Path,
+            default=Path(
+                "texts/locales/mapping/febuilder_alignment_evidence.json"
+            ),
+        )
+        command_parser.add_argument(
+            "--structural-completion",
+            type=Path,
+            default=Path(
+                "texts/locales/mapping/structural_completion_evidence.json"
+            ),
+        )
+        command_parser.add_argument(
+            "--report",
+            type=Path,
+            default=Path(
+                "texts/locales/mapping/combined_fallback_coverage.json"
+            ),
+        )
+        command_parser.add_argument(
+            "--target-header",
+            type=Path,
+            default=Path("include/constants/msg.h"),
+        )
+        command_parser.add_argument("--repo-root", type=Path, default=Path("."))
+
+    for command, help_text, handler in (
+        (
+            "build-combined-coverage",
+            "build an evidence-only handoff report for current fallback targets",
+            _cmd_build_combined_coverage,
+        ),
+        (
+            "check-combined-coverage",
+            "compare the combined fallback report with a deterministic rebuild",
+            _cmd_check_combined_coverage,
+        ),
+    ):
+        combined_parser = subparsers.add_parser(command, help=help_text)
+        add_combined_coverage_inputs(combined_parser)
+        combined_parser.set_defaults(handler=handler)
+
     for command, help_text, handler in (
         (
             "build-raw-closure",
@@ -699,6 +813,7 @@ def main(argv=None) -> int:
     try:
         return args.handler(args)
     except (
+        CombinedCoverageError,
         FeBuilderEvidenceError,
         LocaleSourceError,
         MappingError,

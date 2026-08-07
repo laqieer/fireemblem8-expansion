@@ -51,6 +51,9 @@ remain import provenance only and never become runtime keys.
   versus pointer rows, literal substitutions, NOTFOUND rows, duplicate source
   keys, target collision groups, payload references, and structural
   comparisons without changing the release map.
+- `mapping/combined_fallback_coverage.json`: generated final-owner handoff that
+  combines the current fallback subset with FEBuilder and structural
+  candidates while preserving every conflict, collision, and residual.
 - `mapping/raw_surface_decisions.json`: the 29 audited records that were not
   part of the original 114 raw-to-game-ID mappings. Each has a concrete game
   message ID, semantic expansion key, explicit English fallback, or documented
@@ -242,8 +245,8 @@ IDs. Target `0x0C52` remains an explicit context collision between the
 reference-map provider and the live preparation call-site provider rather than
 choosing one arbitrarily.
 
-The committed artifact currently partitions all 1,797 `not-yet-verified`
-fallbacks into 1,381 unambiguous proposals and 416 residuals, including 20
+The committed artifact currently partitions all 1,794 `not-yet-verified`
+fallbacks into 1,381 unambiguous proposals and 413 residuals, including 20
 context-required collisions. Of the proposals, 27 have parsed high-confidence
 structure proof and 1,354 retain reference confidence. These are review
 candidates, not translations or release mappings.
@@ -281,6 +284,29 @@ coverage is 1,806 targets (52.90%); fallback content is not translated content.
 The largest reported gap is 1,794 `not-yet-verified` targets, chiefly dialogue
 outside the proven named structures. Other fallback reasons are `dummy` (1),
 `region-only` (1), and `expansion-only` (10).
+
+## Combined fallback coverage handoff
+
+`mapping/combined_fallback_coverage.json` is a generated, evidence-only
+handoff for the final mapping owner. It hash-pins the authoritative map,
+coverage report, structural crosswalk evidence, FEBuilder ledger, and
+structural completion ledger. It cannot update the map and keeps every
+conflict and context collision explicit.
+
+For the 1,794 current `not-yet-verified` targets, the report records 1,382
+FEBuilder `unique-uncontested` candidates, 27 structural high-confidence
+candidates, and 1,354 structural reference candidates. After overlap and
+blockers are accounted for, 1,383 targets have an unblocked candidate, 21 are
+blocked by a conflict or collision, and 390 have no candidate or blocker. Six
+targets have candidate evidence but remain blocked and are listed as such
+rather than counted as ready.
+
+Build or verify the committed report:
+
+```bash
+python3 -m scripts.localization.game_locales build-combined-coverage
+python3 -m scripts.localization.game_locales check-combined-coverage
+```
 
 ## Raw-surface closure
 

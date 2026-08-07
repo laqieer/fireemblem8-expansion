@@ -62,7 +62,7 @@ class StructuralCompletionTests(unittest.TestCase):
     def test_artifact_materially_covers_requested_structural_families(self):
         summary = self.data["summary"]
         self.assertGreaterEqual(summary["proposed_target_count"], 1300)
-        self.assertEqual(summary["fallback_target_count"], 1797)
+        self.assertEqual(summary["fallback_target_count"], 1794)
         self.assertEqual(
             summary["proposed_target_count"] + summary["residual_target_count"],
             summary["fallback_target_count"],

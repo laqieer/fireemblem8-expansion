@@ -17,6 +17,10 @@ from .controls import (
     normalize_source_controls,
     validate_canonical_text,
 )
+from .combined_coverage import (
+    CombinedCoverageError,
+    build_combined_coverage_report,
+)
 from .crosswalk import (
     CrosswalkError,
     build_crosswalk_coverage_report,
@@ -36,11 +40,13 @@ from .parsers import LocaleSourceError
 __all__ = (
     "CANONICAL_CONTROL_GRAMMAR",
     "ControlSyntaxError",
+    "CombinedCoverageError",
     "CrosswalkError",
     "FeBuilderEvidenceError",
     "LocaleSourceError",
     "MappingError",
     "build_febuilder_alignment_evidence",
+    "build_combined_coverage_report",
     "canonical_control_token",
     "build_crosswalk_coverage_report",
     "build_release_mapping",
