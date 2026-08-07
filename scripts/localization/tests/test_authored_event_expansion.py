@@ -104,7 +104,7 @@ EXPECTED_EXPANSION_TEXT = {
         "0x0D55": "全セーブデータ消去を実行しますか？[.][LF]\n元に戻せません。[X]",
     },
     "zh-Hans": {
-        "0x0D4C": "此存档早于[.][LF]\n扩展存档格式，[.][LF]\n无法在此打开。[X]\n",
+        "0x0D4C": "此存档创建于[.][LF]\n扩展存档格式启用前，[.][LF]\n无法在此打开。[X]\n",
         "0x0D4D": "存档似乎已损坏，[.][LF]\n无法读取。[X]\n",
         "0x0D4E": "存档的扩展信息[.][LF]\n已经损坏，[.][LF]\n无法读取。[X]\n",
         "0x0D4F": (
@@ -126,6 +126,87 @@ EXPECTED_EXPANSION_TEXT = {
         ),
         "0x0D52": "此存档[.][LF]\n无法在此使用。[X]\n",
         "0x0D55": "清除全部存档？[.][LF]\n此操作无法撤销。[X]",
+    },
+}
+EXPECTED_REVIEWED_TEXT = {
+    "ja": {
+        "0x0945": (
+            "ミュラン城のグラド軍を率いる[.][LF]\n"
+            "敵将ブレゲを倒しました。[.][A][LF]\n"
+            "あとは城門を[.][ToggleRed]制圧[.][ToggleRed]すれば[.][LF]\n"
+            "勝利です。[A][LF]\n"
+            "この操作は[ToggleRed]リーダー[.][ToggleRed]だけが[LF]\n"
+            "行えます。[A][LF]\n"
+            "この部隊のリーダーはエイリークです。[LF]\n"
+            "彼女を城門へ移動させ[.][ToggleRed]制圧[.][ToggleRed]すれば[.][LF]\n"
+            "このマップはクリアとなります。[.][A][X]\n"
+        ),
+        "0x094D": (
+            "受け取った[ToggleRed]きずぐすり[.][ToggleRed]は[LF]\n"
+            "すぐに使えます。[A][LF]\n"
+            "自分の[.][ToggleRed]持ち物[.][ToggleRed]から[.][LF]\n"
+            "[.][ToggleRed]きずぐすり[.][ToggleRed]を選び、使いましょう。[A][X]\n"
+        ),
+        "0x096E": (
+            "ロスは[ToggleRed]かけだし戦士[ToggleRed]です。[.][A][LF]\n"
+            "[ToggleRed]かけだし戦士[ToggleRed]は未熟で[LF]\n"
+            "まだうまく戦えません。[A][LF]\n"
+            "[ToggleRed]レベル１０[ToggleRed]になると[A][LF]\n"
+            "[ToggleRed]クラスチェンジ[ToggleRed]して強くなり[.][LF]\n"
+            "上位の[.][ToggleRed]戦士[ToggleRed]か[ToggleRed]海賊[.][ToggleRed]"
+            "になれます。[.][A][LF]\n"
+            "強敵には[.][ToggleRed]かけだし戦士[ToggleRed]を[LF]\n"
+            "向かわせないほうがよいでしょう。[.][A][CR][LF]\n"
+            "ロスの父ガルシアは[.][ToggleRed]戦士[.][ToggleRed]です。[.][A][LF]\n"
+            "[ToggleRed]戦士[ToggleRed]はレベル１０以上になると[.][LF]\n"
+            "[ToggleRed]英雄の証[.][ToggleRed]で[ToggleRed]クラスチェンジ"
+            "[ToggleRed]し[LF]\n"
+            "上位の[.][ToggleRed]勇者[ToggleRed]か[ToggleRed]ウォーリア[ToggleRed]"
+            "になれます。[.][A][CR][LF]\n"
+            "また、[ToggleRed]ソシアルナイト[.][ToggleRed]と[.][ToggleRed]"
+            "アーマーナイト[.][ToggleRed]は[.][LF]\n"
+            "[ToggleRed]騎士の勲章[.][ToggleRed]で[ToggleRed]クラスチェンジ"
+            "[ToggleRed]でき[.][LF]\n"
+            "[ToggleRed]２種類[.][ToggleRed]ある兵種から[LF]\n"
+            "[ToggleRed]一つ[.][ToggleRed]を選べます。[.][A][LF]\n"
+            "ユニットをしっかり育て[LF]\n"
+            "機会があれば[ToggleRed]クラスチェンジ[ToggleRed]しましょう。[A][X]\n"
+        ),
+        "0x0986": (
+            "エイリークをロスの隣へ移動します。[.][LF]\n"
+            "点滅した場所へカーソルを合わせ[LF]\n"
+            "Ａボタンを押してください。[.][A][X]\n"
+        ),
+    },
+    "zh-Hans": {
+        "0x094D": (
+            "刚获得的[ToggleRed]伤药[.][ToggleRed][LF]\n"
+            "可以立即使用。[A][LF]\n"
+            "请从 [.][ToggleRed]物品[.][ToggleRed]中选择[.][LF]\n"
+            "并使用 [.][ToggleRed]伤药[.][ToggleRed]。[A][X]\n"
+        ),
+    },
+}
+EXPECTED_REVIEWED_PAYLOAD_SHA256 = {
+    "ja": {
+        "0x0AAD": "4c7c1300359df0864cab1b3d8a550b12af8181fff4f4b4f016db28d3be475bc3",
+        "0x0B2A": "7e3d7ffe0f40f5868995a551c8858b0c4f004e10fccf075c6c8a6e6baeed9b1b",
+    },
+    "zh-Hans": {
+        "0x0B2A": "841214b08016ad57256afe0bfc77982757ef822aec2aa250a4e436107575063f",
+    },
+}
+EXPECTED_REVIEWED_SNIPPETS = {
+    "ja": {
+        "0x0AAD": "俺たち下の者には[LF]\n陛下のお考えなどわからない。[A]",
+        "0x0B2A": (
+            "[OpenFarLeft]そういえば[.][ToggleMouthMove]・・・[.][ToggleMouthMove][A][LF]\n"
+            "グラド軍はルネスの【聖石】を[.][LF]\n"
+            "破壊するため私を襲いました。[.][A][LF]\n"
+        ),
+    },
+    "zh-Hans": {
+        "0x0B2A": "所以，要驱散邪恶的魔力，[LF]\n当然必须使用【圣石】！[.][A]",
     },
 }
 
@@ -185,6 +266,9 @@ class AuthoredEventExpansionTests(unittest.TestCase):
             )
             self.assertEqual(
                 shard["subsystem_counts"], EXPECTED_SUBSYSTEM_COUNTS
+            )
+            self.assertTrue(
+                {"0x0738", "0x0756"}.isdisjoint(self.entries[locale])
             )
 
     def test_locale_parity_and_source_hash_order_are_pinned(self):
@@ -259,6 +343,30 @@ class AuthoredEventExpansionTests(unittest.TestCase):
                 self.assertIsNone(
                     re.search(r"[A-Za-z]{4,}", prose),
                     (locale, target_id, prose),
+                )
+
+    def test_reviewed_payloads_are_exact(self):
+        for locale, targets in EXPECTED_REVIEWED_TEXT.items():
+            for target_id, expected in targets.items():
+                self.assertEqual(
+                    self.entries[locale][target_id]["text"],
+                    expected,
+                    (locale, target_id),
+                )
+        for locale, targets in EXPECTED_REVIEWED_PAYLOAD_SHA256.items():
+            for target_id, expected in targets.items():
+                text = self.entries[locale][target_id]["text"]
+                self.assertEqual(
+                    hashlib.sha256(text.encode("utf-8")).hexdigest(),
+                    expected,
+                    (locale, target_id),
+                )
+        for locale, targets in EXPECTED_REVIEWED_SNIPPETS.items():
+            for target_id, expected in targets.items():
+                self.assertIn(
+                    expected,
+                    self.entries[locale][target_id]["text"],
+                    (locale, target_id),
                 )
 
     def test_established_terminology_is_used(self):
