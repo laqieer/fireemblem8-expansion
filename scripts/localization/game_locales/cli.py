@@ -14,6 +14,12 @@ from .crosswalk import (
     canonical_json_bytes,
     harvest_structural_evidence,
 )
+from .febuilder import (
+    FeBuilderEvidenceError,
+    build_febuilder_alignment_evidence,
+    canonical_json_bytes as febuilder_json_bytes,
+    import_febuilder_source,
+)
 from .importer import (
     check_vendored_locale_sources,
     import_locale_sources,
@@ -201,6 +207,64 @@ def _cmd_check_crosswalk(args: argparse.Namespace) -> int:
     return 0
 
 
+def _build_febuilder_evidence(args: argparse.Namespace):
+    return build_febuilder_alignment_evidence(
+        source_path=args.febuilder_source,
+        ja_indexed_path=args.ja_indexed,
+        zh_indexed_path=args.zh_hans_indexed,
+        raw_path=args.zh_hans_raw,
+        structural_path=args.structural_evidence,
+        target_header_path=args.target_header,
+        repo_root=args.repo_root,
+    )
+
+
+def _cmd_import_febuilder_evidence(args: argparse.Namespace) -> int:
+    import_febuilder_source(args.source, args.febuilder_source)
+    evidence = _build_febuilder_evidence(args)
+    args.evidence.parent.mkdir(parents=True, exist_ok=True)
+    args.evidence.write_bytes(febuilder_json_bytes(evidence))
+    summary = evidence["summary"]
+    print(
+        "imported pinned FEBuilder map and built evidence: "
+        f"targets={summary['target_candidate_count']} "
+        f"conflicts={summary['structural_conflict_count']} "
+        f"collisions={summary['unresolved_differing_payload_collision_count']}"
+    )
+    return 0
+
+
+def _cmd_build_febuilder_evidence(args: argparse.Namespace) -> int:
+    evidence = _build_febuilder_evidence(args)
+    args.evidence.parent.mkdir(parents=True, exist_ok=True)
+    args.evidence.write_bytes(febuilder_json_bytes(evidence))
+    summary = evidence["summary"]
+    print(
+        "built FEBuilder alignment evidence: "
+        f"targets={summary['target_candidate_count']} "
+        f"conflicts={summary['structural_conflict_count']} "
+        f"collisions={summary['unresolved_differing_payload_collision_count']}"
+    )
+    return 0
+
+
+def _cmd_check_febuilder_evidence(args: argparse.Namespace) -> int:
+    evidence = _build_febuilder_evidence(args)
+    expected = febuilder_json_bytes(evidence)
+    if not args.evidence.is_file() or args.evidence.read_bytes() != expected:
+        raise FeBuilderEvidenceError(
+            f"{args.evidence}: FEBuilder evidence differs from deterministic rebuild"
+        )
+    summary = evidence["summary"]
+    print(
+        "FEBuilder alignment evidence matches committed bytes: "
+        f"targets={summary['target_candidate_count']} "
+        f"conflicts={summary['structural_conflict_count']} "
+        f"collisions={summary['unresolved_differing_payload_collision_count']}"
+    )
+    return 0
+
+
 def _build_raw_closure(args: argparse.Namespace):
     return build_raw_surface_closure(
         raw_data=_load_json(args.raw_source),
@@ -384,6 +448,72 @@ def build_parser() -> argparse.ArgumentParser:
         crosswalk_parser.add_argument("--repo-root", type=Path, default=Path("."))
         crosswalk_parser.set_defaults(handler=handler)
 
+    def add_febuilder_inputs(command_parser: argparse.ArgumentParser) -> None:
+        command_parser.add_argument(
+            "--febuilder-source",
+            type=Path,
+            default=Path(
+                "texts/locales/source/febuilder/translate_textid_FE8.txt"
+            ),
+        )
+        command_parser.add_argument(
+            "--ja-indexed",
+            type=Path,
+            default=Path("texts/locales/ja/indexed.txt"),
+        )
+        command_parser.add_argument(
+            "--zh-hans-indexed",
+            type=Path,
+            default=Path("texts/locales/zh-Hans/indexed.txt"),
+        )
+        command_parser.add_argument(
+            "--zh-hans-raw",
+            type=Path,
+            default=Path("texts/locales/zh-Hans/raw.json"),
+        )
+        command_parser.add_argument(
+            "--structural-evidence",
+            type=Path,
+            default=Path("texts/locales/mapping/fe8u_structural_evidence.json"),
+        )
+        command_parser.add_argument(
+            "--target-header",
+            type=Path,
+            default=Path("include/constants/msg.h"),
+        )
+        command_parser.add_argument(
+            "--evidence",
+            type=Path,
+            default=Path(
+                "texts/locales/mapping/febuilder_alignment_evidence.json"
+            ),
+        )
+        command_parser.add_argument("--repo-root", type=Path, default=Path("."))
+
+    import_febuilder_parser = subparsers.add_parser(
+        "import-febuilder-evidence",
+        help="vendor the pinned FEBuilder map and build its evidence ledger",
+    )
+    import_febuilder_parser.add_argument("--source", type=Path, required=True)
+    add_febuilder_inputs(import_febuilder_parser)
+    import_febuilder_parser.set_defaults(handler=_cmd_import_febuilder_evidence)
+
+    for command, help_text, handler in (
+        (
+            "build-febuilder-evidence",
+            "build non-authoritative FEBuilder alignment evidence",
+            _cmd_build_febuilder_evidence,
+        ),
+        (
+            "check-febuilder-evidence",
+            "compare FEBuilder evidence with a deterministic rebuild",
+            _cmd_check_febuilder_evidence,
+        ),
+    ):
+        febuilder_parser = subparsers.add_parser(command, help=help_text)
+        add_febuilder_inputs(febuilder_parser)
+        febuilder_parser.set_defaults(handler=handler)
+
     for command, help_text, handler in (
         (
             "build-raw-closure",
@@ -457,6 +587,11 @@ def main(argv=None) -> int:
     args = parser.parse_args(argv)
     try:
         return args.handler(args)
-    except (LocaleSourceError, MappingError, OSError) as error:
+    except (
+        FeBuilderEvidenceError,
+        LocaleSourceError,
+        MappingError,
+        OSError,
+    ) as error:
         print(f"error: {error}", file=sys.stderr)
         return 1

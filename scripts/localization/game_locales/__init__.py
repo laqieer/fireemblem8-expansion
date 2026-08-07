@@ -24,6 +24,12 @@ from .crosswalk import (
     harvest_structural_evidence,
     validate_evidence_document,
 )
+from .febuilder import (
+    FeBuilderEvidenceError,
+    build_febuilder_alignment_evidence,
+    parse_febuilder_text_id_map,
+    validate_febuilder_evidence_document,
+)
 from .mapping import MappingError, validate_mapping_document
 from .parsers import LocaleSourceError
 
@@ -31,8 +37,10 @@ __all__ = (
     "CANONICAL_CONTROL_GRAMMAR",
     "ControlSyntaxError",
     "CrosswalkError",
+    "FeBuilderEvidenceError",
     "LocaleSourceError",
     "MappingError",
+    "build_febuilder_alignment_evidence",
     "canonical_control_token",
     "build_crosswalk_coverage_report",
     "build_release_mapping",
@@ -43,7 +51,9 @@ __all__ = (
     "expand_canonical_text",
     "normalize_source_controls",
     "harvest_structural_evidence",
+    "parse_febuilder_text_id_map",
     "validate_canonical_text",
     "validate_evidence_document",
+    "validate_febuilder_evidence_document",
     "validate_mapping_document",
 )

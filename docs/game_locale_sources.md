@@ -38,6 +38,14 @@ remain import provenance only and never become runtime keys.
   raw, authored, or an explicit English fallback.
 - `mapping/fe8u_target_map.coverage.json`: deterministic source-kind and
   subsystem counts plus every fallback target ID and reason.
+- `source/febuilder/translate_textid_FE8.txt`: byte-exact, hash-pinned
+  FEBuilder FE8 translator map snapshot. Normal checks never read a sibling
+  FEBuilderGBA checkout.
+- `mapping/febuilder_alignment_evidence.json`: deterministic,
+  non-authoritative FEBuilder target-candidate ledger. It preserves indexed
+  versus pointer rows, literal substitutions, NOTFOUND rows, duplicate source
+  keys, target collision groups, payload references, and structural
+  comparisons without changing the release map.
 - `mapping/raw_surface_decisions.json`: the 29 audited records that were not
   part of the original 114 raw-to-game-ID mappings. Each has a concrete game
   message ID, semantic expansion key, explicit English fallback, or documented
@@ -91,6 +99,75 @@ raw snapshots must also match the independent SHA-256 pins in
 
 The explicit `import` command remains available for checking prospective
 external replacements, but it accepts only inputs matching those pins.
+
+## FEBuilder alignment evidence
+
+FEBuilderGBA's translator consumes `translate_textid_FE8.txt` with semantics
+that are broader than a two-column TSV:
+
+- `U.IsComment` and `U.ClipComment` control whole-line and inline comments;
+- `U.atoh` accepts the leading hexadecimal prefix rather than requiring the
+  complete token to be hexadecimal;
+- source key zero and rows with fewer than two tab-separated fields are
+  skipped;
+- a source key in the FE8 ROM pointer range is dereferenced by FEBuilder, so
+  the importer preserves it as a pointer/raw key rather than treating it as an
+  indexed message ID;
+- a destination token containing `|` uses the literal suffix instead of
+  decoding the numeric destination and is therefore not an alignment
+  candidate;
+- a missing/non-positive destination creates FEBuilder's NOTFOUND entry and is
+  retained only as non-candidate evidence.
+
+The pinned source profile is 3,339 sequential indexed rows, including 3,006
+rows with a positive destination prefix, followed by 110 pointer rows. One
+indexed row has no destination column. The pointer key `0x080D29BC` occurs
+twice: once with destination `0x0001` and once as NOTFOUND. Because the current
+normalized raw import has no payload at that address, neither occurrence is
+invented as a payload reference.
+
+For every usable target candidate, the importer verifies:
+
+1. the FE8U target is inside the current 3,414-entry namespace;
+2. indexed source IDs exist in both normalized FE8J and FE8CN payloads;
+3. pointer keys resolve to a stable `fe8cn.raw.import-NNNN` address;
+4. payload SHA-256 values and all input-file hashes are recorded;
+5. the candidate identity is compared with the committed structural evidence.
+
+Target marks are evidence classifications, not release states:
+
+- `agrees-with-structural`: the exact indexed/raw source identity is already
+  independently proven;
+- `conflicts`: structural evidence has a comparable source type but a
+  different identity;
+- `unique-uncontested`: no comparable conflict and no unresolved differing
+  payload collision;
+- `collision-needs-context`: multiple FEBuilder rows offer different
+  normalized FE8CN payloads and structural identity does not select one.
+
+A target may carry both `conflicts` and `collision-needs-context`; `0x0647` is
+the pinned example. Every target has `promotion_eligible: false`, and the
+document-level promotion policy forbids automatic promotion of all candidates,
+especially conflicts and collisions. The importer pins 12 structural conflict
+targets and 17 unresolved differing-payload collision targets as drift gates.
+
+Build or verify the committed ledger:
+
+```bash
+python3 -m scripts.localization.game_locales build-febuilder-evidence
+python3 -m scripts.localization.game_locales check-febuilder-evidence
+```
+
+An intentional upstream refresh must use the explicit importer, which rejects
+any source whose SHA-256 or profile differs from the pin:
+
+```bash
+python3 -m scripts.localization.game_locales import-febuilder-evidence \
+  --source /path/to/FEBuilderGBA/config/data/translate_textid_FE8.txt
+```
+
+These commands never edit `fe8u_target_map.json`, coverage, raw closure, the
+game catalog, or runtime sources.
 
 ## Structural mapping methodology
 
