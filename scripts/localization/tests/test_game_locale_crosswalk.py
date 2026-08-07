@@ -226,7 +226,7 @@ class GameLocaleCrosswalkTests(unittest.TestCase):
             "menus": 105,
             "supports": 249,
             "terrain": 65,
-            "world-map": 33,
+            "world-map": 34,
         }
         for subsystem, expected in expected_totals.items():
             self.assertEqual(

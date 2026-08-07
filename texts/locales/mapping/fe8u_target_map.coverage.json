@@ -101,9 +101,9 @@
     "menu-definition": {
       "authored_translation": 132,
       "explicit_english_fallback": 0,
-      "indexed_source": 295,
+      "indexed_source": 294,
       "raw_source": 0,
-      "total": 427
+      "total": 426
     },
     "menus": {
       "authored_translation": 1,
@@ -157,9 +157,9 @@
     "world-map": {
       "authored_translation": 0,
       "explicit_english_fallback": 0,
-      "indexed_source": 33,
+      "indexed_source": 34,
       "raw_source": 0,
-      "total": 33
+      "total": 34
     }
   },
   "explicit_fallback_coverage": {

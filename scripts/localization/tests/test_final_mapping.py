@@ -19,6 +19,7 @@ from scripts.localization.game_locales.final_mapping import (
     recover_original_rows,
     require_no_fallback,
 )
+from scripts.localization.game_locales.parsers import parse_hash_indexed
 
 
 class FinalMappingTests(unittest.TestCase):
@@ -58,6 +59,18 @@ class FinalMappingTests(unittest.TestCase):
             ROOT / "texts/textdefs.txt",
             target_count=3414,
         )
+        cls.indexed = {
+            locale: {
+                message.id: message.text
+                for message in parse_hash_indexed(
+                    (
+                        ROOT / f"texts/locales/{locale}/indexed.txt"
+                    ).read_text(encoding="utf-8"),
+                    source_name=locale,
+                )
+            }
+            for locale in ("ja", "zh-Hans")
+        }
         cls.rebuilt = build_final_mapping_artifacts(
             repo_root=ROOT,
             target_count=3414,
@@ -116,10 +129,11 @@ class FinalMappingTests(unittest.TestCase):
             self.report["promotion_counts"],
             {
                 "b-structural-high": 27,
-                "c-febuilder": 1347,
+                "c-febuilder": 1329,
                 "c-febuilder-raw": 3,
                 "d-contextual-resolution": 21,
                 "d-existing-authored": 3,
+                "d-semantic-correction": 18,
                 "d-structural-reference-second-check": 6,
                 "e-exact-english": 139,
                 "e-exact-english-context": 1,
@@ -131,6 +145,7 @@ class FinalMappingTests(unittest.TestCase):
             "0x0004": "c-febuilder",
             "0x0032": "c-febuilder-raw",
             "0x0C52": "d-contextual-resolution",
+            "0x002A": "d-semantic-correction",
             "0x0505": "d-structural-reference-second-check",
             "0x0693": "d-existing-authored",
             "0x000E": "e-exact-english",
@@ -212,6 +227,144 @@ class FinalMappingTests(unittest.TestCase):
             ],
             "0x0535",
         )
+
+    def test_semantic_corrections_use_target_correct_official_payloads(self):
+        expected_sources = {
+            "0x002A": ("0x0005", "0x0564"),
+            "0x093F": ("0x0907", "0x08E4"),
+            "0x0946": ("0x090B", "0x0906"),
+            "0x0947": ("0x090E", "0x0907"),
+            "0x0948": ("0x090F", "0x0908"),
+            "0x0949": ("0x0931", "0x0909"),
+            "0x094B": ("0x0932", "0x090B"),
+            "0x094C": ("0x0934", "0x090C"),
+            "0x094F": ("0x0939", "0x090F"),
+            "0x0952": ("0x090C", "0x0912"),
+            "0x0971": ("0x093A", "0x0931"),
+            "0x0972": ("0x093C", "0x0932"),
+            "0x0975": ("0x090A", "0x0935"),
+            "0x0976": ("0x0941", "0x0936"),
+            "0x097A": ("0x0942", "0x093A"),
+            "0x097B": ("0x0912", "0x093B"),
+            "0x097C": ("0x0943", "0x093C"),
+            "0x0982": ("0x0947", "0x0942"),
+        }
+        english_terms = {
+            "0x093F": ("Eirika", "A Button"),
+            "0x0946": ("trade", "Gilliam", "A Button"),
+            "0x0947": ("Gilliam", "A Button"),
+            "0x0948": ("Trade",),
+            "0x0949": ("Gilliam", "Franz", "right"),
+            "0x094B": ("vulnerary", "Franz", "A Button"),
+            "0x094C": ("traded", "B Button", "finish"),
+            "0x094F": ("Seth", "A Button"),
+            "0x0952": ("axe", "sword", "Attack", "A Button"),
+            "0x0971": ("Ross", "A Button"),
+            "0x0972": ("Rescue", "A Button"),
+            "0x0975": ("Vanessa", "Ross", "Moulder", "A Button"),
+            "0x0976": ("drop", "A Button"),
+            "0x097A": ("Staff", "A Button"),
+            "0x097B": ("Ross", "Moulder", "Vanessa", "A Button"),
+            "0x097C": ("Vanessa", "flashing", "A Button"),
+            "0x0982": ("Eirika", "village", "flashing", "A Button"),
+        }
+        localized_terms = {
+            "0x093F": {
+                "ja": ("エイリーク", "Ａボタン"),
+                "zh-Hans": ("艾瑞珂", "A键"),
+            },
+            "0x0946": {
+                "ja": ("アイテム交換", "ギリアム", "Ａボタン"),
+                "zh-Hans": ("物品交换", "吉利安姆", "A键"),
+            },
+            "0x0947": {
+                "ja": ("ギリアム", "Ａボタン"),
+                "zh-Hans": ("吉利安姆", "A键"),
+            },
+            "0x0948": {
+                "ja": ("交換",),
+                "zh-Hans": ("交换",),
+            },
+            "0x0949": {
+                "ja": ("ギリアム", "フランツ", "右ボタン"),
+                "zh-Hans": ("吉利安姆", "弗朗茨", "右键"),
+            },
+            "0x094B": {
+                "ja": ("フランツ", "きずぐすり", "Ａ"),
+                "zh-Hans": ("弗朗茨", "伤药", "A键"),
+            },
+            "0x094C": {
+                "ja": ("交換", "Ｂボタン", "終了"),
+                "zh-Hans": ("交换", "B键", "结束"),
+            },
+            "0x094F": {
+                "ja": ("ゼト", "Ａボタン"),
+                "zh-Hans": ("塞思", "A键"),
+            },
+            "0x0952": {
+                "ja": ("斧", "剣", "攻撃", "Ａボタン"),
+                "zh-Hans": ("斧", "剑", "攻击", "A键"),
+            },
+            "0x0971": {
+                "ja": ("ロス", "隣", "Ａ"),
+                "zh-Hans": ("罗斯", "旁边", "A键"),
+            },
+            "0x0972": {
+                "ja": ("救出", "Ａボタン"),
+                "zh-Hans": ("救出", "A键"),
+            },
+            "0x0975": {
+                "ja": ("ヴァネッサ", "ロス", "降ろ", "Ａボタン"),
+                "zh-Hans": ("瓦内萨", "罗斯", "放下来", "A键"),
+            },
+            "0x0976": {
+                "ja": ("降ろす", "Ａボタン"),
+                "zh-Hans": ("放下", "A键"),
+            },
+            "0x097A": {
+                "ja": ("杖", "Ａボタン"),
+                "zh-Hans": ("杖", "A键"),
+            },
+            "0x097B": {
+                "ja": ("ロス", "ヴァネッサ", "モルダ", "Ａボタン"),
+                "zh-Hans": ("罗斯", "瓦内萨", "摩达", "A键"),
+            },
+            "0x097C": {
+                "ja": ("ヴァネッサ", "点滅", "Ａボタン"),
+                "zh-Hans": ("瓦内萨", "闪烁", "A键"),
+            },
+            "0x0982": {
+                "ja": ("エイリーク", "村", "点滅", "Ａボタン"),
+                "zh-Hans": ("艾瑞珂", "村庄", "闪烁", "A键"),
+            },
+        }
+
+        for target_id, (incorrect_source_id, source_id) in expected_sources.items():
+            row = self.rows[target_id]
+            self.assertEqual(row["source"], {
+                "id": source_id,
+                "kind": "indexed",
+                "layout": "FE8J",
+            })
+            promotion = row["verification"]["promotion"]
+            self.assertEqual(promotion["precedence"], "d-semantic-correction")
+            self.assertEqual(
+                promotion["details"]["incorrect_source"]["id"],
+                incorrect_source_id,
+            )
+
+        self.assertEqual(self.indexed["ja"][0x0564], "ワールドマップ")
+        self.assertEqual(self.indexed["zh-Hans"][0x0564], "世界地图")
+
+        for target_id, terms in english_terms.items():
+            source = self.english[int(target_id, 16)].source_text.casefold()
+            for term in terms:
+                self.assertIn(term.casefold(), source, (target_id, term))
+            source_id = int(expected_sources[target_id][1], 16)
+            for locale in ("ja", "zh-Hans"):
+                payload = self.indexed[locale][source_id]
+                for term in localized_terms[target_id][locale]:
+                    self.assertIn(term, payload, (target_id, locale, term))
 
     def test_raw_pointer_promotions_have_both_locale_providers(self):
         for target_id, import_id, symbol in (

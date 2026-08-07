@@ -2,16 +2,16 @@
   "baseline_review": {
     "summary": {
       "ja": {
-        "approved_span_count": 170,
+        "approved_span_count": 167,
         "game_latin_bearing_payload_count": 162,
-        "localized_span_count": 7,
+        "localized_span_count": 12,
         "mixed_script_bypass_payload_count": 125,
         "raw_latin_bearing_payload_count": 1
       },
       "zh-Hans": {
-        "approved_span_count": 171,
+        "approved_span_count": 168,
         "game_latin_bearing_payload_count": 175,
-        "localized_span_count": 18,
+        "localized_span_count": 23,
         "mixed_script_bypass_payload_count": 139,
         "raw_latin_bearing_payload_count": 1
       }
@@ -21,11 +21,11 @@
   "game_catalog": {
     "locales": {
       "ja": {
-        "approved_span_count": 169,
-        "approved_span_occurrence_count": 178,
+        "approved_span_count": 166,
+        "approved_span_occurrence_count": 175,
         "audited_count": 3414,
         "exact_copy_count": 20,
-        "latin_bearing_payload_count": 162,
+        "latin_bearing_payload_count": 159,
         "latin_bearing_payloads": [
           {
             "classifications": [],
@@ -55,38 +55,6 @@
                   "source": "FE8 status/help UI convention and this target payload context."
                 },
                 "span": "HP"
-              }
-            ],
-            "user_facing": true
-          },
-          {
-            "classifications": [],
-            "english_sha256": "74ded4d6b01b04aa4b9faca715fdc288e3ce2263f763c816da0056196b9d5ad7",
-            "id": "0x002A",
-            "metadata": {
-              "mapping_source": {
-                "id": "0x0005",
-                "kind": "indexed",
-                "layout": "FE8J"
-              },
-              "mapping_source_kind": "indexed",
-              "provider_kind": "indexed"
-            },
-            "payload_matches_review": true,
-            "payload_sha256": "c5e412706b2aa050e314d8676ffcfe4b987d769f6e5def9d9c0b0c0dab5ef518",
-            "review_key": "game/ja/0x002A",
-            "similarity": 0.333333,
-            "spans": [
-              {
-                "approved": true,
-                "occurrences": 1,
-                "review": {
-                  "category": "hardware-acronym",
-                  "decision": "approved",
-                  "reason": "SRAM is the GBA save-memory hardware acronym used by this exact diagnostic/interface target.",
-                  "source": "GBA hardware terminology and this target payload context."
-                },
-                "span": "SRAM"
               }
             ],
             "user_facing": true
@@ -4097,7 +4065,7 @@
             "id": "0x093F",
             "metadata": {
               "mapping_source": {
-                "id": "0x0907",
+                "id": "0x08E4",
                 "kind": "indexed",
                 "layout": "FE8J"
               },
@@ -4105,7 +4073,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "51eadbaeade1a3a92dc182e2fab0d069e5fa6658708e489d023656b5f8fdd836",
+            "payload_sha256": "121ee8645ad77a4c56fd1c2f3bf73d037895d72d9dc9d37dec44dcd0c4fc3119",
             "review_key": "game/ja/0x093F",
             "similarity": 0.0,
             "spans": [
@@ -4225,7 +4193,7 @@
             "id": "0x0946",
             "metadata": {
               "mapping_source": {
-                "id": "0x090B",
+                "id": "0x0906",
                 "kind": "indexed",
                 "layout": "FE8J"
               },
@@ -4233,7 +4201,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "e33b7e0e774714a4afad8544c8b1caf0d81803c8b4f541fd4b446b8ebcef06ae",
+            "payload_sha256": "c965c719176d22ef0e60634d28ae3ca60f8844054446a5dbbb089743a24a40fa",
             "review_key": "game/ja/0x0946",
             "similarity": 0.0,
             "spans": [
@@ -4257,7 +4225,7 @@
             "id": "0x0947",
             "metadata": {
               "mapping_source": {
-                "id": "0x090E",
+                "id": "0x0907",
                 "kind": "indexed",
                 "layout": "FE8J"
               },
@@ -4265,72 +4233,8 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "67e2be7c18f42749e5b89272c49ebd0c9b56f73d061c11c7e70b3ade324c4bb3",
+            "payload_sha256": "51eadbaeade1a3a92dc182e2fab0d069e5fa6658708e489d023656b5f8fdd836",
             "review_key": "game/ja/0x0947",
-            "similarity": 0.0,
-            "spans": [
-              {
-                "approved": true,
-                "occurrences": 1,
-                "review": {
-                  "category": "controller-button-label",
-                  "decision": "approved",
-                  "reason": "A is the literal GBA controller button label required by this exact tutorial/help instruction.",
-                  "source": "GBA controller labeling and this target payload context."
-                },
-                "span": "A"
-              }
-            ],
-            "user_facing": true
-          },
-          {
-            "classifications": [],
-            "english_sha256": "0152057bb77f19506a190dd0f82403118a982a32f7bda2105aa6a8a50e1a15db",
-            "id": "0x0948",
-            "metadata": {
-              "mapping_source": {
-                "id": "0x090F",
-                "kind": "indexed",
-                "layout": "FE8J"
-              },
-              "mapping_source_kind": "indexed",
-              "provider_kind": "indexed"
-            },
-            "payload_matches_review": true,
-            "payload_sha256": "cf2e81dc7a5e0069ea915e5ab9ebeeba9b37f91986c2e17c602192909971cf2d",
-            "review_key": "game/ja/0x0948",
-            "similarity": 0.0,
-            "spans": [
-              {
-                "approved": true,
-                "occurrences": 1,
-                "review": {
-                  "category": "controller-button-label",
-                  "decision": "approved",
-                  "reason": "A is the literal GBA controller button label required by this exact tutorial/help instruction.",
-                  "source": "GBA controller labeling and this target payload context."
-                },
-                "span": "A"
-              }
-            ],
-            "user_facing": true
-          },
-          {
-            "classifications": [],
-            "english_sha256": "43a996bd7b9004748ec86f9e4c3f7d6e005a40be08c2d26868211daac5fa2c07",
-            "id": "0x0949",
-            "metadata": {
-              "mapping_source": {
-                "id": "0x0931",
-                "kind": "indexed",
-                "layout": "FE8J"
-              },
-              "mapping_source_kind": "indexed",
-              "provider_kind": "indexed"
-            },
-            "payload_matches_review": true,
-            "payload_sha256": "e6da01b7737089a42522b6f70335c56fb98f0f28bf060bff1c4763df220e3b51",
-            "review_key": "game/ja/0x0949",
             "similarity": 0.0,
             "spans": [
               {
@@ -4384,7 +4288,7 @@
             "id": "0x094B",
             "metadata": {
               "mapping_source": {
-                "id": "0x0932",
+                "id": "0x090B",
                 "kind": "indexed",
                 "layout": "FE8J"
               },
@@ -4392,7 +4296,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "6bd943db2e0a14a935047a1448cf6ee6ceeb56e042d64077bb62a8adaa4d57f7",
+            "payload_sha256": "e33b7e0e774714a4afad8544c8b1caf0d81803c8b4f541fd4b446b8ebcef06ae",
             "review_key": "game/ja/0x094B",
             "similarity": 0.0,
             "spans": [
@@ -4416,7 +4320,7 @@
             "id": "0x094C",
             "metadata": {
               "mapping_source": {
-                "id": "0x0934",
+                "id": "0x090C",
                 "kind": "indexed",
                 "layout": "FE8J"
               },
@@ -4424,7 +4328,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "3f0872ecd300b52951089d53f942babd271f5c76750d133781b61680186a7ebb",
+            "payload_sha256": "0455d535574d7cebcf1ff762eaaef4c0a4c3c3d72e3c2742752078d26850dc63",
             "review_key": "game/ja/0x094C",
             "similarity": 0.0,
             "spans": [
@@ -4434,10 +4338,10 @@
                 "review": {
                   "category": "controller-button-label",
                   "decision": "approved",
-                  "reason": "A is the literal GBA controller button label required by this exact tutorial/help instruction.",
-                  "source": "GBA controller labeling and this target payload context."
+                  "reason": "B is the literal GBA controller button label required by this exact tutorial instruction.",
+                  "source": "GBA controller labeling, FE8U call-site semantics, and the target-correct official regional payload."
                 },
-                "span": "A"
+                "span": "B"
               }
             ],
             "user_facing": true
@@ -4480,7 +4384,7 @@
             "id": "0x094F",
             "metadata": {
               "mapping_source": {
-                "id": "0x0939",
+                "id": "0x090F",
                 "kind": "indexed",
                 "layout": "FE8J"
               },
@@ -4488,7 +4392,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "d9d3496778f4f74469a37639090da7a40624e65e7499824b60a485a22df7343d",
+            "payload_sha256": "cf2e81dc7a5e0069ea915e5ab9ebeeba9b37f91986c2e17c602192909971cf2d",
             "review_key": "game/ja/0x094F",
             "similarity": 0.0,
             "spans": [
@@ -4575,7 +4479,7 @@
             "id": "0x0952",
             "metadata": {
               "mapping_source": {
-                "id": "0x090C",
+                "id": "0x0912",
                 "kind": "indexed",
                 "layout": "FE8J"
               },
@@ -4583,7 +4487,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "0455d535574d7cebcf1ff762eaaef4c0a4c3c3d72e3c2742752078d26850dc63",
+            "payload_sha256": "1422be7b1b97192747a1272e4de6afe439383fad7f384238a4f55d4d8de5c795",
             "review_key": "game/ja/0x0952",
             "similarity": 0.0,
             "spans": [
@@ -4593,10 +4497,10 @@
                 "review": {
                   "category": "controller-button-label",
                   "decision": "approved",
-                  "reason": "B is the literal GBA controller button label required by this exact tutorial/help instruction.",
-                  "source": "GBA controller labeling and this target payload context."
+                  "reason": "A is the literal GBA controller button label required by this exact tutorial instruction.",
+                  "source": "GBA controller labeling, FE8U call-site semantics, and the target-correct official regional payload."
                 },
-                "span": "B"
+                "span": "A"
               }
             ],
             "user_facing": true
@@ -4607,7 +4511,7 @@
             "id": "0x0971",
             "metadata": {
               "mapping_source": {
-                "id": "0x093A",
+                "id": "0x0931",
                 "kind": "indexed",
                 "layout": "FE8J"
               },
@@ -4615,7 +4519,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "a532be518b7e634a3dcf1e34728db043fe7174342277af0267220e8dde95b737",
+            "payload_sha256": "e6da01b7737089a42522b6f70335c56fb98f0f28bf060bff1c4763df220e3b51",
             "review_key": "game/ja/0x0971",
             "similarity": 0.0,
             "spans": [
@@ -4639,7 +4543,7 @@
             "id": "0x0972",
             "metadata": {
               "mapping_source": {
-                "id": "0x093C",
+                "id": "0x0932",
                 "kind": "indexed",
                 "layout": "FE8J"
               },
@@ -4647,7 +4551,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "a9b701b7debabf3798bcc1f2146debdb8ea2d3233df92e72feeb2cb7e3d8c5a7",
+            "payload_sha256": "6bd943db2e0a14a935047a1448cf6ee6ceeb56e042d64077bb62a8adaa4d57f7",
             "review_key": "game/ja/0x0972",
             "similarity": 0.0,
             "spans": [
@@ -4671,7 +4575,7 @@
             "id": "0x0975",
             "metadata": {
               "mapping_source": {
-                "id": "0x090A",
+                "id": "0x0935",
                 "kind": "indexed",
                 "layout": "FE8J"
               },
@@ -4679,7 +4583,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "863e2c7e3eaa72ea448a86fe1c76e8c8f2a0835338d78846be494ccfcad07d22",
+            "payload_sha256": "b8bd71817753174f3938fc9b83674e41af594adac108ef0268536586f8201a16",
             "review_key": "game/ja/0x0975",
             "similarity": 0.0,
             "spans": [
@@ -4703,7 +4607,7 @@
             "id": "0x0976",
             "metadata": {
               "mapping_source": {
-                "id": "0x0941",
+                "id": "0x0936",
                 "kind": "indexed",
                 "layout": "FE8J"
               },
@@ -4711,7 +4615,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "ce3e962174d73f8e09938826f49adaa1e12f60e5468cabbdbc56362ccad9cb92",
+            "payload_sha256": "705d93d3067d9b2fed4a88392e36cf73d1909de099c8555e99f31b199179d576",
             "review_key": "game/ja/0x0976",
             "similarity": 0.0,
             "spans": [
@@ -4809,7 +4713,7 @@
             "id": "0x097A",
             "metadata": {
               "mapping_source": {
-                "id": "0x0942",
+                "id": "0x093A",
                 "kind": "indexed",
                 "layout": "FE8J"
               },
@@ -4817,7 +4721,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "d5135d4aa50dfd941dfb3d15d2a142a432b84adf8791a1931abc23fae46536d9",
+            "payload_sha256": "a532be518b7e634a3dcf1e34728db043fe7174342277af0267220e8dde95b737",
             "review_key": "game/ja/0x097A",
             "similarity": 0.0,
             "spans": [
@@ -4841,7 +4745,7 @@
             "id": "0x097B",
             "metadata": {
               "mapping_source": {
-                "id": "0x0912",
+                "id": "0x093B",
                 "kind": "indexed",
                 "layout": "FE8J"
               },
@@ -4849,7 +4753,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "1422be7b1b97192747a1272e4de6afe439383fad7f384238a4f55d4d8de5c795",
+            "payload_sha256": "046443cb415265d21803b0a1f5bade8b820780aefb406449673e00b9ea378b4c",
             "review_key": "game/ja/0x097B",
             "similarity": 0.0,
             "spans": [
@@ -4873,7 +4777,7 @@
             "id": "0x097C",
             "metadata": {
               "mapping_source": {
-                "id": "0x0943",
+                "id": "0x093C",
                 "kind": "indexed",
                 "layout": "FE8J"
               },
@@ -4881,7 +4785,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "3d0758474e745b9d93e2fdaa084ee7d1a25176fdc9bdb90464ae695baf5fa468",
+            "payload_sha256": "a9b701b7debabf3798bcc1f2146debdb8ea2d3233df92e72feeb2cb7e3d8c5a7",
             "review_key": "game/ja/0x097C",
             "similarity": 0.0,
             "spans": [
@@ -4969,7 +4873,7 @@
             "id": "0x0982",
             "metadata": {
               "mapping_source": {
-                "id": "0x0947",
+                "id": "0x0942",
                 "kind": "indexed",
                 "layout": "FE8J"
               },
@@ -4977,7 +4881,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "b0a750f268da746913b010ecb6694c304806994c362365a20cfd24a69a9a761c",
+            "payload_sha256": "d5135d4aa50dfd941dfb3d15d2a142a432b84adf8791a1931abc23fae46536d9",
             "review_key": "game/ja/0x0982",
             "similarity": 0.0,
             "spans": [
@@ -5346,19 +5250,19 @@
           }
         ],
         "latin_only_count": 37,
-        "latin_span_count": 169,
-        "latin_span_occurrence_count": 178,
+        "latin_span_count": 166,
+        "latin_span_occurrence_count": 175,
         "near_copy_count": 0,
         "payload_mismatch_count": 0,
         "unapproved_span_count": 0,
         "unapproved_span_occurrence_count": 0
       },
       "zh-Hans": {
-        "approved_span_count": 170,
-        "approved_span_occurrence_count": 179,
+        "approved_span_count": 167,
+        "approved_span_occurrence_count": 176,
         "audited_count": 3414,
         "exact_copy_count": 18,
-        "latin_bearing_payload_count": 164,
+        "latin_bearing_payload_count": 161,
         "latin_bearing_payloads": [
           {
             "classifications": [],
@@ -5388,38 +5292,6 @@
                   "source": "FE8 status/help UI convention and this target payload context."
                 },
                 "span": "HP"
-              }
-            ],
-            "user_facing": true
-          },
-          {
-            "classifications": [],
-            "english_sha256": "74ded4d6b01b04aa4b9faca715fdc288e3ce2263f763c816da0056196b9d5ad7",
-            "id": "0x002A",
-            "metadata": {
-              "mapping_source": {
-                "id": "0x0005",
-                "kind": "indexed",
-                "layout": "FE8J"
-              },
-              "mapping_source_kind": "indexed",
-              "provider_kind": "indexed"
-            },
-            "payload_matches_review": true,
-            "payload_sha256": "6833a723e37546d3e7aa55ad2ab1b1f34d7e13fcfc6c6cace07d8afc02e5f7b1",
-            "review_key": "game/zh-Hans/0x002A",
-            "similarity": 0.333333,
-            "spans": [
-              {
-                "approved": true,
-                "occurrences": 1,
-                "review": {
-                  "category": "hardware-acronym",
-                  "decision": "approved",
-                  "reason": "SRAM is the GBA save-memory hardware acronym used by this exact diagnostic/interface target.",
-                  "source": "GBA hardware terminology and this target payload context."
-                },
-                "span": "SRAM"
               }
             ],
             "user_facing": true
@@ -9490,7 +9362,7 @@
             "id": "0x093F",
             "metadata": {
               "mapping_source": {
-                "id": "0x0907",
+                "id": "0x08E4",
                 "kind": "indexed",
                 "layout": "FE8J"
               },
@@ -9498,7 +9370,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "9c4c09e07a855e528d1547ad1f047c546db4de08fa85cd23713795a922768f2d",
+            "payload_sha256": "9ca0ad0d3baf64e3d68e517398c744f0c206c0a6d599808aca94a5e0f797021d",
             "review_key": "game/zh-Hans/0x093F",
             "similarity": 0.0,
             "spans": [
@@ -9618,7 +9490,7 @@
             "id": "0x0946",
             "metadata": {
               "mapping_source": {
-                "id": "0x090B",
+                "id": "0x0906",
                 "kind": "indexed",
                 "layout": "FE8J"
               },
@@ -9626,7 +9498,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "8bbbe8585f62eaba2240de766caa5c30402458af5718f36c3d6b599b9f696c43",
+            "payload_sha256": "609abc4a80b7920547517ccece15b9760c2a046e228805d73e215a25f32907a6",
             "review_key": "game/zh-Hans/0x0946",
             "similarity": 0.0,
             "spans": [
@@ -9650,7 +9522,7 @@
             "id": "0x0947",
             "metadata": {
               "mapping_source": {
-                "id": "0x090E",
+                "id": "0x0907",
                 "kind": "indexed",
                 "layout": "FE8J"
               },
@@ -9658,72 +9530,8 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "ad3f32b58866b196f7845c53d65cffba4e0cf1fa1b7b0e4100bdf375b7f9c4cc",
+            "payload_sha256": "9c4c09e07a855e528d1547ad1f047c546db4de08fa85cd23713795a922768f2d",
             "review_key": "game/zh-Hans/0x0947",
-            "similarity": 0.0,
-            "spans": [
-              {
-                "approved": true,
-                "occurrences": 1,
-                "review": {
-                  "category": "controller-button-label",
-                  "decision": "approved",
-                  "reason": "A is the literal GBA controller button label required by this exact tutorial/help instruction.",
-                  "source": "GBA controller labeling and this target payload context."
-                },
-                "span": "A"
-              }
-            ],
-            "user_facing": true
-          },
-          {
-            "classifications": [],
-            "english_sha256": "0152057bb77f19506a190dd0f82403118a982a32f7bda2105aa6a8a50e1a15db",
-            "id": "0x0948",
-            "metadata": {
-              "mapping_source": {
-                "id": "0x090F",
-                "kind": "indexed",
-                "layout": "FE8J"
-              },
-              "mapping_source_kind": "indexed",
-              "provider_kind": "indexed"
-            },
-            "payload_matches_review": true,
-            "payload_sha256": "df78999d55b7413e681b951bd19328161a168da9365df48f1a5c3b0dffec1295",
-            "review_key": "game/zh-Hans/0x0948",
-            "similarity": 0.0,
-            "spans": [
-              {
-                "approved": true,
-                "occurrences": 1,
-                "review": {
-                  "category": "controller-button-label",
-                  "decision": "approved",
-                  "reason": "A is the literal GBA controller button label required by this exact tutorial/help instruction.",
-                  "source": "GBA controller labeling and this target payload context."
-                },
-                "span": "A"
-              }
-            ],
-            "user_facing": true
-          },
-          {
-            "classifications": [],
-            "english_sha256": "43a996bd7b9004748ec86f9e4c3f7d6e005a40be08c2d26868211daac5fa2c07",
-            "id": "0x0949",
-            "metadata": {
-              "mapping_source": {
-                "id": "0x0931",
-                "kind": "indexed",
-                "layout": "FE8J"
-              },
-              "mapping_source_kind": "indexed",
-              "provider_kind": "indexed"
-            },
-            "payload_matches_review": true,
-            "payload_sha256": "58c4ea30ab590a8720e82b7f2fad0711fa299880ad575eaeb510326e05f89a1f",
-            "review_key": "game/zh-Hans/0x0949",
             "similarity": 0.0,
             "spans": [
               {
@@ -9777,7 +9585,7 @@
             "id": "0x094B",
             "metadata": {
               "mapping_source": {
-                "id": "0x0932",
+                "id": "0x090B",
                 "kind": "indexed",
                 "layout": "FE8J"
               },
@@ -9785,7 +9593,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "31dbff1d3ff9792f8143821d9f3cb3ac1f019505b01a8fb0c71a8048d56befed",
+            "payload_sha256": "8bbbe8585f62eaba2240de766caa5c30402458af5718f36c3d6b599b9f696c43",
             "review_key": "game/zh-Hans/0x094B",
             "similarity": 0.0,
             "spans": [
@@ -9809,7 +9617,7 @@
             "id": "0x094C",
             "metadata": {
               "mapping_source": {
-                "id": "0x0934",
+                "id": "0x090C",
                 "kind": "indexed",
                 "layout": "FE8J"
               },
@@ -9817,7 +9625,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "fe27cba404198dc142ee4980ed9957d78585f88e15efe821e92ac230e4cba837",
+            "payload_sha256": "328696022144adb29b1deb5fcc42c14d7e51ed749d914ba7c66958f461b4b5e3",
             "review_key": "game/zh-Hans/0x094C",
             "similarity": 0.0,
             "spans": [
@@ -9827,10 +9635,10 @@
                 "review": {
                   "category": "controller-button-label",
                   "decision": "approved",
-                  "reason": "A is the literal GBA controller button label required by this exact tutorial/help instruction.",
-                  "source": "GBA controller labeling and this target payload context."
+                  "reason": "B is the literal GBA controller button label required by this exact tutorial instruction.",
+                  "source": "GBA controller labeling, FE8U call-site semantics, and the target-correct official regional payload."
                 },
-                "span": "A"
+                "span": "B"
               }
             ],
             "user_facing": true
@@ -9873,7 +9681,7 @@
             "id": "0x094F",
             "metadata": {
               "mapping_source": {
-                "id": "0x0939",
+                "id": "0x090F",
                 "kind": "indexed",
                 "layout": "FE8J"
               },
@@ -9881,7 +9689,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "2c37fefa17f42d428ecbc1310b398817f70c54092d1b391f5ff2bd4261addc0e",
+            "payload_sha256": "df78999d55b7413e681b951bd19328161a168da9365df48f1a5c3b0dffec1295",
             "review_key": "game/zh-Hans/0x094F",
             "similarity": 0.0,
             "spans": [
@@ -9968,7 +9776,7 @@
             "id": "0x0952",
             "metadata": {
               "mapping_source": {
-                "id": "0x090C",
+                "id": "0x0912",
                 "kind": "indexed",
                 "layout": "FE8J"
               },
@@ -9976,7 +9784,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "328696022144adb29b1deb5fcc42c14d7e51ed749d914ba7c66958f461b4b5e3",
+            "payload_sha256": "f1986fe415b5340e14f29fdc53af2b9385352a6c94b78e7e9128e699fa79b954",
             "review_key": "game/zh-Hans/0x0952",
             "similarity": 0.0,
             "spans": [
@@ -9986,10 +9794,10 @@
                 "review": {
                   "category": "controller-button-label",
                   "decision": "approved",
-                  "reason": "B is the literal GBA controller button label required by this exact tutorial/help instruction.",
-                  "source": "GBA controller labeling and this target payload context."
+                  "reason": "A is the literal GBA controller button label required by this exact tutorial instruction.",
+                  "source": "GBA controller labeling, FE8U call-site semantics, and the target-correct official regional payload."
                 },
-                "span": "B"
+                "span": "A"
               }
             ],
             "user_facing": true
@@ -10000,7 +9808,7 @@
             "id": "0x0971",
             "metadata": {
               "mapping_source": {
-                "id": "0x093A",
+                "id": "0x0931",
                 "kind": "indexed",
                 "layout": "FE8J"
               },
@@ -10008,7 +9816,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "7738174e0316b373051d01a1c4f82a9b47ba249d77509207ad0c75cd204dea79",
+            "payload_sha256": "58c4ea30ab590a8720e82b7f2fad0711fa299880ad575eaeb510326e05f89a1f",
             "review_key": "game/zh-Hans/0x0971",
             "similarity": 0.0,
             "spans": [
@@ -10032,7 +9840,7 @@
             "id": "0x0972",
             "metadata": {
               "mapping_source": {
-                "id": "0x093C",
+                "id": "0x0932",
                 "kind": "indexed",
                 "layout": "FE8J"
               },
@@ -10040,7 +9848,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "58150df0db037fbb172b83270e434a0f2f8e86aaaedd4f63fe6428d89338b2dc",
+            "payload_sha256": "31dbff1d3ff9792f8143821d9f3cb3ac1f019505b01a8fb0c71a8048d56befed",
             "review_key": "game/zh-Hans/0x0972",
             "similarity": 0.0,
             "spans": [
@@ -10064,7 +9872,7 @@
             "id": "0x0975",
             "metadata": {
               "mapping_source": {
-                "id": "0x090A",
+                "id": "0x0935",
                 "kind": "indexed",
                 "layout": "FE8J"
               },
@@ -10072,7 +9880,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "6c3d140774f26ff7416badd38e770b0289928389da903a061df74c99e36cd074",
+            "payload_sha256": "b8cd6472c00108e29dba7e768b60effb06ab2a9660c4ed15002e32094ff25661",
             "review_key": "game/zh-Hans/0x0975",
             "similarity": 0.0,
             "spans": [
@@ -10096,7 +9904,7 @@
             "id": "0x0976",
             "metadata": {
               "mapping_source": {
-                "id": "0x0941",
+                "id": "0x0936",
                 "kind": "indexed",
                 "layout": "FE8J"
               },
@@ -10104,7 +9912,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "84b91a51d950a11806e9c396cf1d31e0c112034532b99077d0067687ee10371b",
+            "payload_sha256": "618afae29260655700f6e6b609621d6457171fa09454d7cfc918bd8af795e0af",
             "review_key": "game/zh-Hans/0x0976",
             "similarity": 0.0,
             "spans": [
@@ -10202,7 +10010,7 @@
             "id": "0x097A",
             "metadata": {
               "mapping_source": {
-                "id": "0x0942",
+                "id": "0x093A",
                 "kind": "indexed",
                 "layout": "FE8J"
               },
@@ -10210,7 +10018,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "243067d1d1172c1b3a8f84b26cb0aadcd86b8721eb2fff93c1e3526fe0fa397c",
+            "payload_sha256": "7738174e0316b373051d01a1c4f82a9b47ba249d77509207ad0c75cd204dea79",
             "review_key": "game/zh-Hans/0x097A",
             "similarity": 0.0,
             "spans": [
@@ -10234,7 +10042,7 @@
             "id": "0x097B",
             "metadata": {
               "mapping_source": {
-                "id": "0x0912",
+                "id": "0x093B",
                 "kind": "indexed",
                 "layout": "FE8J"
               },
@@ -10242,7 +10050,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "f1986fe415b5340e14f29fdc53af2b9385352a6c94b78e7e9128e699fa79b954",
+            "payload_sha256": "fc8545b5c526579b4095ae5a696f49ea688fa0980f676d13b5f5f5e79787b94d",
             "review_key": "game/zh-Hans/0x097B",
             "similarity": 0.0,
             "spans": [
@@ -10266,7 +10074,7 @@
             "id": "0x097C",
             "metadata": {
               "mapping_source": {
-                "id": "0x0943",
+                "id": "0x093C",
                 "kind": "indexed",
                 "layout": "FE8J"
               },
@@ -10274,7 +10082,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "2df469983d58a16a7abe07cd141af0ec4c81e619d7d1919d63be381e76a80250",
+            "payload_sha256": "58150df0db037fbb172b83270e434a0f2f8e86aaaedd4f63fe6428d89338b2dc",
             "review_key": "game/zh-Hans/0x097C",
             "similarity": 0.0,
             "spans": [
@@ -10362,7 +10170,7 @@
             "id": "0x0982",
             "metadata": {
               "mapping_source": {
-                "id": "0x0947",
+                "id": "0x0942",
                 "kind": "indexed",
                 "layout": "FE8J"
               },
@@ -10370,7 +10178,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "5a762e77c473d59c67eca688c56dcb1ef3fa4f9033f605bf3301233ea162e983",
+            "payload_sha256": "243067d1d1172c1b3a8f84b26cb0aadcd86b8721eb2fff93c1e3526fe0fa397c",
             "review_key": "game/zh-Hans/0x0982",
             "similarity": 0.0,
             "spans": [
@@ -10728,8 +10536,8 @@
           }
         ],
         "latin_only_count": 36,
-        "latin_span_count": 170,
-        "latin_span_occurrence_count": 179,
+        "latin_span_count": 167,
+        "latin_span_occurrence_count": 176,
         "near_copy_count": 0,
         "payload_mismatch_count": 0,
         "unapproved_span_count": 0,
@@ -10783,14 +10591,14 @@
     },
     "latin_span_review": {
       "baseline_commit": "2d02ec12ddcba0640bcf1ecffcf7dc93d56deb4f",
-      "byte_count": 342548,
+      "byte_count": 344473,
       "path": "texts/locales/runtime_latin_span_review.json",
-      "sha256": "e16ce54f82cd4f8bbdc0dbd91b065e19590ea0f91b24793f47987878e76ba2db"
+      "sha256": "b75247b910eef8dc49c0b5d8e1ea9314157f53649352c6d8b9300dc7e065d6aa"
     },
     "mapping": {
-      "byte_count": 5429560,
+      "byte_count": 5432627,
       "path": "texts/locales/mapping/fe8u_target_map.json",
-      "sha256": "d5f28f341338588aa72fd512a96d92d3dbf0d1b1dc58b12fb3612a62b49e2109"
+      "sha256": "c31e6a9cdab3b68d9d6b44434622fef2ea8009cd6b31167a793ba82f21943ec1"
     },
     "raw_closure": {
       "byte_count": 156280,
@@ -10931,13 +10739,13 @@
   },
   "schema_version": 2,
   "summary": {
-    "approved_span_count": 341,
+    "approved_span_count": 335,
     "enabled_locales": [
       "ja",
       "zh-Hans"
     ],
     "game_payload_count": 6828,
-    "localized_span_decision_count": 25,
+    "localized_span_decision_count": 35,
     "payload_mismatch_count": 0,
     "raw_surface_payload_count": 286,
     "stale_decision_count": 0,

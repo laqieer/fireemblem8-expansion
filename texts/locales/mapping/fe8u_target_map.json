@@ -2352,32 +2352,30 @@
     },
     {
       "source": {
-        "id": "0x0005",
+        "id": "0x0564",
         "kind": "indexed",
         "layout": "FE8J"
       },
       "state": "verified",
       "target_id": "0x002A",
       "verification": {
-        "confidence": "high",
-        "evidence": "FEBuilder line 7 maps 0x0005 to 0x002A",
-        "evidence_kind": "febuilder-structural-agreement",
+        "confidence": "manual",
+        "evidence": "The FE8U target is the World Map title. Official FE8J/FE8CN 0x0564 is exactly World Map; 0x0005 is SRAM initialization.",
+        "evidence_kind": "official-regional-semantic-payload",
         "method": "deterministic-final-mapping-promotion",
         "promotion": {
           "details": {
-            "candidate_payloads": {
-              "ja": {
-                "id": "0x0005",
-                "kind": "indexed",
-                "sha256": "c5e412706b2aa050e314d8676ffcfe4b987d769f6e5def9d9c0b0c0dab5ef518"
-              },
-              "zh-Hans": {
-                "id": "0x0005",
-                "kind": "indexed",
-                "sha256": "6833a723e37546d3e7aa55ad2ab1b1f34d7e13fcfc6c6cace07d8afc02e5f7b1"
-              }
+            "english_payload_sha256": "39995bb1485a5b33995817a2649b4c5867d8f4bb09d3ed286762fa66419b5590",
+            "incorrect_source": {
+              "id": "0x0005",
+              "kind": "indexed",
+              "layout": "FE8J"
             },
-            "structural_agreement": true
+            "payload_sha256": {
+              "ja": "c6f08dca315e0c2a99508ebe80bce905dfa19b2497bf522f2f2f9348e3fefbbd",
+              "zh-Hans": "13fb271ef486e8bea9239079f02871f7d07f6112f69077c444501be4430fcdd9"
+            },
+            "replacement_source_id": "0x0564"
           },
           "original_source": {
             "kind": "english_fallback",
@@ -2400,13 +2398,13 @@
             "subsystem": "unclassified"
           },
           "pipeline": "fe8u-final-mapping-v1",
-          "precedence": "c-febuilder"
+          "precedence": "d-semantic-correction"
         },
-        "rationale": "Independent structural evidence agrees with the FEBuilder provider.",
-        "source_key": "0x0005->0x002A",
-        "source_symbol": "translate_textid_FE8.txt",
-        "source_table": "FEBuilder translate_textid_FE8",
-        "subsystem": "menu-definition"
+        "rationale": "The FE8U target is the World Map title. Official FE8J/FE8CN 0x0564 is exactly World Map; 0x0005 is SRAM initialization.",
+        "source_key": "MSG_02A/World Map title",
+        "source_symbol": "0x0564",
+        "source_table": "FE8J/FE8CN indexed message corpus",
+        "subsystem": "world-map"
       }
     },
     {
@@ -108273,32 +108271,30 @@
     },
     {
       "source": {
-        "id": "0x0907",
+        "id": "0x08E4",
         "kind": "indexed",
         "layout": "FE8J"
       },
       "state": "verified",
       "target_id": "0x093F",
       "verification": {
-        "confidence": "high",
-        "evidence": "FEBuilder line 2313 maps 0x0907 to 0x093F",
-        "evidence_kind": "febuilder-structural-agreement",
+        "confidence": "manual",
+        "evidence": "The selected-unit prompt is for Eirika and the A Button. Official 0x08E4 has those semantics; 0x0907 names Gilliam.",
+        "evidence_kind": "official-regional-semantic-payload",
         "method": "deterministic-final-mapping-promotion",
         "promotion": {
           "details": {
-            "candidate_payloads": {
-              "ja": {
-                "id": "0x0907",
-                "kind": "indexed",
-                "sha256": "51eadbaeade1a3a92dc182e2fab0d069e5fa6658708e489d023656b5f8fdd836"
-              },
-              "zh-Hans": {
-                "id": "0x0907",
-                "kind": "indexed",
-                "sha256": "9c4c09e07a855e528d1547ad1f047c546db4de08fa85cd23713795a922768f2d"
-              }
+            "english_payload_sha256": "de6bb8ce1d9c7dcb7d3b7bf5b822c9ce3be811177c336688f2050b5f484b336e",
+            "incorrect_source": {
+              "id": "0x0907",
+              "kind": "indexed",
+              "layout": "FE8J"
             },
-            "structural_agreement": true
+            "payload_sha256": {
+              "ja": "121ee8645ad77a4c56fd1c2f3bf73d037895d72d9dc9d37dec44dcd0c4fc3119",
+              "zh-Hans": "9ca0ad0d3baf64e3d68e517398c744f0c206c0a6d599808aca94a5e0f797021d"
+            },
+            "replacement_source_id": "0x08E4"
           },
           "original_source": {
             "kind": "english_fallback",
@@ -108321,12 +108317,12 @@
             "subsystem": "unclassified"
           },
           "pipeline": "fe8u-final-mapping-v1",
-          "precedence": "c-febuilder"
+          "precedence": "d-semantic-correction"
         },
-        "rationale": "Independent structural evidence agrees with the FEBuilder provider.",
-        "source_key": "0x0907->0x093F",
-        "source_symbol": "translate_textid_FE8.txt",
-        "source_table": "FEBuilder translate_textid_FE8",
+        "rationale": "The selected-unit prompt is for Eirika and the A Button. Official 0x08E4 has those semantics; 0x0907 names Gilliam.",
+        "source_key": "EventScr_Ch1Tut_EirikaVisitHouseIdle1/selected-Eirika",
+        "source_symbol": "0x08E4",
+        "source_table": "FE8J/FE8CN indexed message corpus",
         "subsystem": "chapter-event"
       }
     },
@@ -108602,32 +108598,30 @@
     },
     {
       "source": {
-        "id": "0x090B",
+        "id": "0x0906",
         "kind": "indexed",
         "layout": "FE8J"
       },
       "state": "verified",
       "target_id": "0x0946",
       "verification": {
-        "confidence": "high",
-        "evidence": "FEBuilder line 2317 maps 0x090B to 0x0946",
-        "evidence_kind": "febuilder-structural-agreement",
+        "confidence": "manual",
+        "evidence": "The call site starts item trading by selecting Gilliam. Official 0x0906 says trade, Gilliam, and A; 0x090B accepts a vulnerary.",
+        "evidence_kind": "official-regional-semantic-payload",
         "method": "deterministic-final-mapping-promotion",
         "promotion": {
           "details": {
-            "candidate_payloads": {
-              "ja": {
-                "id": "0x090B",
-                "kind": "indexed",
-                "sha256": "e33b7e0e774714a4afad8544c8b1caf0d81803c8b4f541fd4b446b8ebcef06ae"
-              },
-              "zh-Hans": {
-                "id": "0x090B",
-                "kind": "indexed",
-                "sha256": "8bbbe8585f62eaba2240de766caa5c30402458af5718f36c3d6b599b9f696c43"
-              }
+            "english_payload_sha256": "7f1d4ad323faf94dccf817bf0e6d933c7e1bac409f0a734b622e4ec87b87bad4",
+            "incorrect_source": {
+              "id": "0x090B",
+              "kind": "indexed",
+              "layout": "FE8J"
             },
-            "structural_agreement": true
+            "payload_sha256": {
+              "ja": "c965c719176d22ef0e60634d28ae3ca60f8844054446a5dbbb089743a24a40fa",
+              "zh-Hans": "609abc4a80b7920547517ccece15b9760c2a046e228805d73e215a25f32907a6"
+            },
+            "replacement_source_id": "0x0906"
           },
           "original_source": {
             "kind": "english_fallback",
@@ -108650,43 +108644,41 @@
             "subsystem": "unclassified"
           },
           "pipeline": "fe8u-final-mapping-v1",
-          "precedence": "c-febuilder"
+          "precedence": "d-semantic-correction"
         },
-        "rationale": "Independent structural evidence agrees with the FEBuilder provider.",
-        "source_key": "0x090B->0x0946",
-        "source_symbol": "translate_textid_FE8.txt",
-        "source_table": "FEBuilder translate_textid_FE8",
+        "rationale": "The call site starts item trading by selecting Gilliam. Official 0x0906 says trade, Gilliam, and A; 0x090B accepts a vulnerary.",
+        "source_key": "EventScr_Ch1Tut_GilliamBattle/start-trade",
+        "source_symbol": "0x0906",
+        "source_table": "FE8J/FE8CN indexed message corpus",
         "subsystem": "chapter-event"
       }
     },
     {
       "source": {
-        "id": "0x090E",
+        "id": "0x0907",
         "kind": "indexed",
         "layout": "FE8J"
       },
       "state": "verified",
       "target_id": "0x0947",
       "verification": {
-        "confidence": "high",
-        "evidence": "FEBuilder line 2320 maps 0x090E to 0x0947",
-        "evidence_kind": "febuilder-structural-agreement",
+        "confidence": "manual",
+        "evidence": "The selected-unit prompt is for Gilliam and the A Button. Official 0x0907 matches; 0x090E names Seth.",
+        "evidence_kind": "official-regional-semantic-payload",
         "method": "deterministic-final-mapping-promotion",
         "promotion": {
           "details": {
-            "candidate_payloads": {
-              "ja": {
-                "id": "0x090E",
-                "kind": "indexed",
-                "sha256": "67e2be7c18f42749e5b89272c49ebd0c9b56f73d061c11c7e70b3ade324c4bb3"
-              },
-              "zh-Hans": {
-                "id": "0x090E",
-                "kind": "indexed",
-                "sha256": "ad3f32b58866b196f7845c53d65cffba4e0cf1fa1b7b0e4100bdf375b7f9c4cc"
-              }
+            "english_payload_sha256": "5e17fead04517e766711efc5b5e79d34a3a9589e729f2a331618f3b653b13ec5",
+            "incorrect_source": {
+              "id": "0x090E",
+              "kind": "indexed",
+              "layout": "FE8J"
             },
-            "structural_agreement": true
+            "payload_sha256": {
+              "ja": "51eadbaeade1a3a92dc182e2fab0d069e5fa6658708e489d023656b5f8fdd836",
+              "zh-Hans": "9c4c09e07a855e528d1547ad1f047c546db4de08fa85cd23713795a922768f2d"
+            },
+            "replacement_source_id": "0x0907"
           },
           "original_source": {
             "kind": "english_fallback",
@@ -108709,43 +108701,41 @@
             "subsystem": "unclassified"
           },
           "pipeline": "fe8u-final-mapping-v1",
-          "precedence": "c-febuilder"
+          "precedence": "d-semantic-correction"
         },
-        "rationale": "Independent structural evidence agrees with the FEBuilder provider.",
-        "source_key": "0x090E->0x0947",
-        "source_symbol": "translate_textid_FE8.txt",
-        "source_table": "FEBuilder translate_textid_FE8",
+        "rationale": "The selected-unit prompt is for Gilliam and the A Button. Official 0x0907 matches; 0x090E names Seth.",
+        "source_key": "EventScr_Ch1Tut_TradeSelectGalliamIdle1/selected-Gilliam",
+        "source_symbol": "0x0907",
+        "source_table": "FE8J/FE8CN indexed message corpus",
         "subsystem": "chapter-event"
       }
     },
     {
       "source": {
-        "id": "0x090F",
+        "id": "0x0908",
         "kind": "indexed",
         "layout": "FE8J"
       },
       "state": "verified",
       "target_id": "0x0948",
       "verification": {
-        "confidence": "high",
-        "evidence": "FEBuilder line 2321 maps 0x090F to 0x0948",
-        "evidence_kind": "febuilder-structural-agreement",
+        "confidence": "manual",
+        "evidence": "The enabled command is Trade. Official 0x0908 selects Trade; 0x090F is a selected-Seth prompt.",
+        "evidence_kind": "official-regional-semantic-payload",
         "method": "deterministic-final-mapping-promotion",
         "promotion": {
           "details": {
-            "candidate_payloads": {
-              "ja": {
-                "id": "0x090F",
-                "kind": "indexed",
-                "sha256": "cf2e81dc7a5e0069ea915e5ab9ebeeba9b37f91986c2e17c602192909971cf2d"
-              },
-              "zh-Hans": {
-                "id": "0x090F",
-                "kind": "indexed",
-                "sha256": "df78999d55b7413e681b951bd19328161a168da9365df48f1a5c3b0dffec1295"
-              }
+            "english_payload_sha256": "00dcfe8fe14cc678a14184d3cb05354bcfe0ede9ee96cd95b376e094703028d9",
+            "incorrect_source": {
+              "id": "0x090F",
+              "kind": "indexed",
+              "layout": "FE8J"
             },
-            "structural_agreement": true
+            "payload_sha256": {
+              "ja": "0a76a3b2e8930411a50b61f3cc7c3b5292ae5b7a08145104d80f22f0e2125c55",
+              "zh-Hans": "b1176a7fb6a9484fb5db77011e7a859cf90cf18481ddaa5de99d7ae58ce1f1d0"
+            },
+            "replacement_source_id": "0x0908"
           },
           "original_source": {
             "kind": "english_fallback",
@@ -108768,43 +108758,41 @@
             "subsystem": "unclassified"
           },
           "pipeline": "fe8u-final-mapping-v1",
-          "precedence": "c-febuilder"
+          "precedence": "d-semantic-correction"
         },
-        "rationale": "Independent structural evidence agrees with the FEBuilder provider.",
-        "source_key": "0x090F->0x0948",
-        "source_symbol": "translate_textid_FE8.txt",
-        "source_table": "FEBuilder translate_textid_FE8",
+        "rationale": "The enabled command is Trade. Official 0x0908 selects Trade; 0x090F is a selected-Seth prompt.",
+        "source_key": "EventScr_Ch1Tut_TradeSelectGalliamEnd/select-Trade",
+        "source_symbol": "0x0908",
+        "source_table": "FE8J/FE8CN indexed message corpus",
         "subsystem": "chapter-event"
       }
     },
     {
       "source": {
-        "id": "0x0931",
+        "id": "0x0909",
         "kind": "indexed",
         "layout": "FE8J"
       },
       "state": "verified",
       "target_id": "0x0949",
       "verification": {
-        "confidence": "high",
-        "evidence": "FEBuilder line 2355 maps 0x0931 to 0x0949",
-        "evidence_kind": "febuilder-structural-agreement",
+        "confidence": "manual",
+        "evidence": "The trade screen shows Gilliam and Franz and requires moving right. Official 0x0909 matches; 0x0931 moves next to Ross.",
+        "evidence_kind": "official-regional-semantic-payload",
         "method": "deterministic-final-mapping-promotion",
         "promotion": {
           "details": {
-            "candidate_payloads": {
-              "ja": {
-                "id": "0x0931",
-                "kind": "indexed",
-                "sha256": "e6da01b7737089a42522b6f70335c56fb98f0f28bf060bff1c4763df220e3b51"
-              },
-              "zh-Hans": {
-                "id": "0x0931",
-                "kind": "indexed",
-                "sha256": "58c4ea30ab590a8720e82b7f2fad0711fa299880ad575eaeb510326e05f89a1f"
-              }
+            "english_payload_sha256": "c479da45f5511df7173879532d3d1db00a8c0d54482b651841aceb3c72460e8f",
+            "incorrect_source": {
+              "id": "0x0931",
+              "kind": "indexed",
+              "layout": "FE8J"
             },
-            "structural_agreement": true
+            "payload_sha256": {
+              "ja": "1e1e38be578f17e137c3051c4fbc7258e739dfc49805b8e599cefa49d88c7b44",
+              "zh-Hans": "418d091b5ebe0cd46b92a51a118b5bd69316886529be2775dd597da34b6ef54c"
+            },
+            "replacement_source_id": "0x0909"
           },
           "original_source": {
             "kind": "english_fallback",
@@ -108827,12 +108815,12 @@
             "subsystem": "unclassified"
           },
           "pipeline": "fe8u-final-mapping-v1",
-          "precedence": "c-febuilder"
+          "precedence": "d-semantic-correction"
         },
-        "rationale": "Independent structural evidence agrees with the FEBuilder provider.",
-        "source_key": "0x0931->0x0949",
-        "source_symbol": "translate_textid_FE8.txt",
-        "source_table": "FEBuilder translate_textid_FE8",
+        "rationale": "The trade screen shows Gilliam and Franz and requires moving right. Official 0x0909 matches; 0x0931 moves next to Ross.",
+        "source_key": "EventScr_TradeTutStart/right-to-Franz-items",
+        "source_symbol": "0x0909",
+        "source_table": "FE8J/FE8CN indexed message corpus",
         "subsystem": "chapter-event"
       }
     },
@@ -108885,32 +108873,30 @@
     },
     {
       "source": {
-        "id": "0x0932",
+        "id": "0x090B",
         "kind": "indexed",
         "layout": "FE8J"
       },
       "state": "verified",
       "target_id": "0x094B",
       "verification": {
-        "confidence": "high",
-        "evidence": "FEBuilder line 2356 maps 0x0932 to 0x094B",
-        "evidence_kind": "febuilder-structural-agreement",
+        "confidence": "manual",
+        "evidence": "The trade step accepts a vulnerary from Franz with A. Official 0x090B matches; 0x0932 selects Rescue.",
+        "evidence_kind": "official-regional-semantic-payload",
         "method": "deterministic-final-mapping-promotion",
         "promotion": {
           "details": {
-            "candidate_payloads": {
-              "ja": {
-                "id": "0x0932",
-                "kind": "indexed",
-                "sha256": "6bd943db2e0a14a935047a1448cf6ee6ceeb56e042d64077bb62a8adaa4d57f7"
-              },
-              "zh-Hans": {
-                "id": "0x0932",
-                "kind": "indexed",
-                "sha256": "31dbff1d3ff9792f8143821d9f3cb3ac1f019505b01a8fb0c71a8048d56befed"
-              }
+            "english_payload_sha256": "9e9c36da5c967877cbf85a98b145582b5e836ac68fe9e5a62cc5f62086ae4afe",
+            "incorrect_source": {
+              "id": "0x0932",
+              "kind": "indexed",
+              "layout": "FE8J"
             },
-            "structural_agreement": true
+            "payload_sha256": {
+              "ja": "e33b7e0e774714a4afad8544c8b1caf0d81803c8b4f541fd4b446b8ebcef06ae",
+              "zh-Hans": "8bbbe8585f62eaba2240de766caa5c30402458af5718f36c3d6b599b9f696c43"
+            },
+            "replacement_source_id": "0x090B"
           },
           "original_source": {
             "kind": "english_fallback",
@@ -108933,43 +108919,41 @@
             "subsystem": "unclassified"
           },
           "pipeline": "fe8u-final-mapping-v1",
-          "precedence": "c-febuilder"
+          "precedence": "d-semantic-correction"
         },
-        "rationale": "Independent structural evidence agrees with the FEBuilder provider.",
-        "source_key": "0x0932->0x094B",
-        "source_symbol": "translate_textid_FE8.txt",
-        "source_table": "FEBuilder translate_textid_FE8",
+        "rationale": "The trade step accepts a vulnerary from Franz with A. Official 0x090B matches; 0x0932 selects Rescue.",
+        "source_key": "EventScr_TradeTut_PressAtoGetItem/accept-vulnerary",
+        "source_symbol": "0x090B",
+        "source_table": "FE8J/FE8CN indexed message corpus",
         "subsystem": "chapter-event"
       }
     },
     {
       "source": {
-        "id": "0x0934",
+        "id": "0x090C",
         "kind": "indexed",
         "layout": "FE8J"
       },
       "state": "verified",
       "target_id": "0x094C",
       "verification": {
-        "confidence": "high",
-        "evidence": "FEBuilder line 2358 maps 0x0934 to 0x094C",
-        "evidence_kind": "febuilder-structural-agreement",
+        "confidence": "manual",
+        "evidence": "The completed trade is closed with the B Button. Official 0x090C matches; 0x0934 selects Vanessa.",
+        "evidence_kind": "official-regional-semantic-payload",
         "method": "deterministic-final-mapping-promotion",
         "promotion": {
           "details": {
-            "candidate_payloads": {
-              "ja": {
-                "id": "0x0934",
-                "kind": "indexed",
-                "sha256": "3f0872ecd300b52951089d53f942babd271f5c76750d133781b61680186a7ebb"
-              },
-              "zh-Hans": {
-                "id": "0x0934",
-                "kind": "indexed",
-                "sha256": "fe27cba404198dc142ee4980ed9957d78585f88e15efe821e92ac230e4cba837"
-              }
+            "english_payload_sha256": "30b53ce05a829e76f88a1b4a202e9b95f629362242bb49a9610b9c7f832edacf",
+            "incorrect_source": {
+              "id": "0x0934",
+              "kind": "indexed",
+              "layout": "FE8J"
             },
-            "structural_agreement": true
+            "payload_sha256": {
+              "ja": "0455d535574d7cebcf1ff762eaaef4c0a4c3c3d72e3c2742752078d26850dc63",
+              "zh-Hans": "328696022144adb29b1deb5fcc42c14d7e51ed749d914ba7c66958f461b4b5e3"
+            },
+            "replacement_source_id": "0x090C"
           },
           "original_source": {
             "kind": "english_fallback",
@@ -108992,12 +108976,12 @@
             "subsystem": "unclassified"
           },
           "pipeline": "fe8u-final-mapping-v1",
-          "precedence": "c-febuilder"
+          "precedence": "d-semantic-correction"
         },
-        "rationale": "Independent structural evidence agrees with the FEBuilder provider.",
-        "source_key": "0x0934->0x094C",
-        "source_symbol": "translate_textid_FE8.txt",
-        "source_table": "FEBuilder translate_textid_FE8",
+        "rationale": "The completed trade is closed with the B Button. Official 0x090C matches; 0x0934 selects Vanessa.",
+        "source_key": "EventScr_TradeTutDone/B-ends-trade",
+        "source_symbol": "0x090C",
+        "source_table": "FE8J/FE8CN indexed message corpus",
         "subsystem": "chapter-event"
       }
     },
@@ -109079,32 +109063,30 @@
     },
     {
       "source": {
-        "id": "0x0939",
+        "id": "0x090F",
         "kind": "indexed",
         "layout": "FE8J"
       },
       "state": "verified",
       "target_id": "0x094F",
       "verification": {
-        "confidence": "high",
-        "evidence": "FEBuilder line 2363 maps 0x0939 to 0x094F",
-        "evidence_kind": "febuilder-structural-agreement",
+        "confidence": "manual",
+        "evidence": "The selected-unit prompt is for Seth and the A Button. Official 0x090F matches; 0x0939 names Moulder.",
+        "evidence_kind": "official-regional-semantic-payload",
         "method": "deterministic-final-mapping-promotion",
         "promotion": {
           "details": {
-            "candidate_payloads": {
-              "ja": {
-                "id": "0x0939",
-                "kind": "indexed",
-                "sha256": "d9d3496778f4f74469a37639090da7a40624e65e7499824b60a485a22df7343d"
-              },
-              "zh-Hans": {
-                "id": "0x0939",
-                "kind": "indexed",
-                "sha256": "2c37fefa17f42d428ecbc1310b398817f70c54092d1b391f5ff2bd4261addc0e"
-              }
+            "english_payload_sha256": "9e4929fd1b3205184102bbd7fa49c1529caceed7e4835804ea0d4add4ec454f6",
+            "incorrect_source": {
+              "id": "0x0939",
+              "kind": "indexed",
+              "layout": "FE8J"
             },
-            "structural_agreement": true
+            "payload_sha256": {
+              "ja": "cf2e81dc7a5e0069ea915e5ab9ebeeba9b37f91986c2e17c602192909971cf2d",
+              "zh-Hans": "df78999d55b7413e681b951bd19328161a168da9365df48f1a5c3b0dffec1295"
+            },
+            "replacement_source_id": "0x090F"
           },
           "original_source": {
             "kind": "english_fallback",
@@ -109127,12 +109109,12 @@
             "subsystem": "unclassified"
           },
           "pipeline": "fe8u-final-mapping-v1",
-          "precedence": "c-febuilder"
+          "precedence": "d-semantic-correction"
         },
-        "rationale": "Independent structural evidence agrees with the FEBuilder provider.",
-        "source_key": "0x0939->0x094F",
-        "source_symbol": "translate_textid_FE8.txt",
-        "source_table": "FEBuilder translate_textid_FE8",
+        "rationale": "The selected-unit prompt is for Seth and the A Button. Official 0x090F matches; 0x0939 names Moulder.",
+        "source_key": "EventScr_Ch1Tut_SethMoveToEnemy/selected-Seth",
+        "source_symbol": "0x090F",
+        "source_table": "FE8J/FE8CN indexed message corpus",
         "subsystem": "chapter-event"
       }
     },
@@ -109244,32 +109226,30 @@
     },
     {
       "source": {
-        "id": "0x090C",
+        "id": "0x0912",
         "kind": "indexed",
         "layout": "FE8J"
       },
       "state": "verified",
       "target_id": "0x0952",
       "verification": {
-        "confidence": "high",
-        "evidence": "FEBuilder line 2318 maps 0x090C to 0x0952",
-        "evidence_kind": "febuilder-structural-agreement",
+        "confidence": "manual",
+        "evidence": "The enabled command is Attack with a sword against an axe. Official 0x0912 matches; 0x090C ends a trade with B.",
+        "evidence_kind": "official-regional-semantic-payload",
         "method": "deterministic-final-mapping-promotion",
         "promotion": {
           "details": {
-            "candidate_payloads": {
-              "ja": {
-                "id": "0x090C",
-                "kind": "indexed",
-                "sha256": "0455d535574d7cebcf1ff762eaaef4c0a4c3c3d72e3c2742752078d26850dc63"
-              },
-              "zh-Hans": {
-                "id": "0x090C",
-                "kind": "indexed",
-                "sha256": "328696022144adb29b1deb5fcc42c14d7e51ed749d914ba7c66958f461b4b5e3"
-              }
+            "english_payload_sha256": "2affa5d917e7cc50a1982a4e034cd72fb71b44a4a8da8fd83578312757a3881d",
+            "incorrect_source": {
+              "id": "0x090C",
+              "kind": "indexed",
+              "layout": "FE8J"
             },
-            "structural_agreement": true
+            "payload_sha256": {
+              "ja": "1422be7b1b97192747a1272e4de6afe439383fad7f384238a4f55d4d8de5c795",
+              "zh-Hans": "f1986fe415b5340e14f29fdc53af2b9385352a6c94b78e7e9128e699fa79b954"
+            },
+            "replacement_source_id": "0x0912"
           },
           "original_source": {
             "kind": "english_fallback",
@@ -109292,12 +109272,12 @@
             "subsystem": "unclassified"
           },
           "pipeline": "fe8u-final-mapping-v1",
-          "precedence": "c-febuilder"
+          "precedence": "d-semantic-correction"
         },
-        "rationale": "Independent structural evidence agrees with the FEBuilder provider.",
-        "source_key": "0x090C->0x0952",
-        "source_symbol": "translate_textid_FE8.txt",
-        "source_table": "FEBuilder translate_textid_FE8",
+        "rationale": "The enabled command is Attack with a sword against an axe. Official 0x0912 matches; 0x090C ends a trade with B.",
+        "source_key": "EventScr_Ch1Tut_AfterSethMoveToEnemy/select-Attack",
+        "source_symbol": "0x0912",
+        "source_table": "FE8J/FE8CN indexed message corpus",
         "subsystem": "chapter-event"
       }
     },
@@ -110416,32 +110396,30 @@
     },
     {
       "source": {
-        "id": "0x093A",
+        "id": "0x0931",
         "kind": "indexed",
         "layout": "FE8J"
       },
       "state": "verified",
       "target_id": "0x0971",
       "verification": {
-        "confidence": "high",
-        "evidence": "FEBuilder line 2364 maps 0x093A to 0x0971",
-        "evidence_kind": "febuilder-structural-agreement",
+        "confidence": "manual",
+        "evidence": "The movement prompt goes next to Ross and confirms with A. Official 0x0931 matches; 0x093A selects Staff.",
+        "evidence_kind": "official-regional-semantic-payload",
         "method": "deterministic-final-mapping-promotion",
         "promotion": {
           "details": {
-            "candidate_payloads": {
-              "ja": {
-                "id": "0x093A",
-                "kind": "indexed",
-                "sha256": "a532be518b7e634a3dcf1e34728db043fe7174342277af0267220e8dde95b737"
-              },
-              "zh-Hans": {
-                "id": "0x093A",
-                "kind": "indexed",
-                "sha256": "7738174e0316b373051d01a1c4f82a9b47ba249d77509207ad0c75cd204dea79"
-              }
+            "english_payload_sha256": "f0efabb9293779ac94754c2422fe29f981467c4799000550b9bbcc2f3cee4e8b",
+            "incorrect_source": {
+              "id": "0x093A",
+              "kind": "indexed",
+              "layout": "FE8J"
             },
-            "structural_agreement": true
+            "payload_sha256": {
+              "ja": "e6da01b7737089a42522b6f70335c56fb98f0f28bf060bff1c4763df220e3b51",
+              "zh-Hans": "58c4ea30ab590a8720e82b7f2fad0711fa299880ad575eaeb510326e05f89a1f"
+            },
+            "replacement_source_id": "0x0931"
           },
           "original_source": {
             "kind": "english_fallback",
@@ -110464,43 +110442,41 @@
             "subsystem": "unclassified"
           },
           "pipeline": "fe8u-final-mapping-v1",
-          "precedence": "c-febuilder"
+          "precedence": "d-semantic-correction"
         },
-        "rationale": "Independent structural evidence agrees with the FEBuilder provider.",
-        "source_key": "0x093A->0x0971",
-        "source_symbol": "translate_textid_FE8.txt",
-        "source_table": "FEBuilder translate_textid_FE8",
+        "rationale": "The movement prompt goes next to Ross and confirms with A. Official 0x0931 matches; 0x093A selects Staff.",
+        "source_key": "EventScr_Ch2Tutorial1/move-next-to-Ross",
+        "source_symbol": "0x0931",
+        "source_table": "FE8J/FE8CN indexed message corpus",
         "subsystem": "chapter-event"
       }
     },
     {
       "source": {
-        "id": "0x093C",
+        "id": "0x0932",
         "kind": "indexed",
         "layout": "FE8J"
       },
       "state": "verified",
       "target_id": "0x0972",
       "verification": {
-        "confidence": "high",
-        "evidence": "FEBuilder line 2366 maps 0x093C to 0x0972",
-        "evidence_kind": "febuilder-structural-agreement",
+        "confidence": "manual",
+        "evidence": "The enabled command is Rescue and confirms with A. Official 0x0932 matches; 0x093C moves near Vanessa.",
+        "evidence_kind": "official-regional-semantic-payload",
         "method": "deterministic-final-mapping-promotion",
         "promotion": {
           "details": {
-            "candidate_payloads": {
-              "ja": {
-                "id": "0x093C",
-                "kind": "indexed",
-                "sha256": "a9b701b7debabf3798bcc1f2146debdb8ea2d3233df92e72feeb2cb7e3d8c5a7"
-              },
-              "zh-Hans": {
-                "id": "0x093C",
-                "kind": "indexed",
-                "sha256": "58150df0db037fbb172b83270e434a0f2f8e86aaaedd4f63fe6428d89338b2dc"
-              }
+            "english_payload_sha256": "0b20e9aa73c07e04526f7bcbc48663cbece24b19115f4bc6cfa21e7c83fce0ca",
+            "incorrect_source": {
+              "id": "0x093C",
+              "kind": "indexed",
+              "layout": "FE8J"
             },
-            "structural_agreement": true
+            "payload_sha256": {
+              "ja": "6bd943db2e0a14a935047a1448cf6ee6ceeb56e042d64077bb62a8adaa4d57f7",
+              "zh-Hans": "31dbff1d3ff9792f8143821d9f3cb3ac1f019505b01a8fb0c71a8048d56befed"
+            },
+            "replacement_source_id": "0x0932"
           },
           "original_source": {
             "kind": "english_fallback",
@@ -110523,12 +110499,12 @@
             "subsystem": "unclassified"
           },
           "pipeline": "fe8u-final-mapping-v1",
-          "precedence": "c-febuilder"
+          "precedence": "d-semantic-correction"
         },
-        "rationale": "Independent structural evidence agrees with the FEBuilder provider.",
-        "source_key": "0x093C->0x0972",
-        "source_symbol": "translate_textid_FE8.txt",
-        "source_table": "FEBuilder translate_textid_FE8",
+        "rationale": "The enabled command is Rescue and confirms with A. Official 0x0932 matches; 0x093C moves near Vanessa.",
+        "source_key": "EventScr_Ch2Tutorial3/select-Rescue",
+        "source_symbol": "0x0932",
+        "source_table": "FE8J/FE8CN indexed message corpus",
         "subsystem": "chapter-event"
       }
     },
@@ -110622,32 +110598,30 @@
     },
     {
       "source": {
-        "id": "0x090A",
+        "id": "0x0935",
         "kind": "indexed",
         "layout": "FE8J"
       },
       "state": "verified",
       "target_id": "0x0975",
       "verification": {
-        "confidence": "high",
-        "evidence": "FEBuilder line 2316 maps 0x090A to 0x0975",
-        "evidence_kind": "febuilder-structural-agreement",
+        "confidence": "manual",
+        "evidence": "Vanessa is carrying Ross and must be selected before dropping him. Official 0x0935 matches; 0x090A selects a vulnerary.",
+        "evidence_kind": "official-regional-semantic-payload",
         "method": "deterministic-final-mapping-promotion",
         "promotion": {
           "details": {
-            "candidate_payloads": {
-              "ja": {
-                "id": "0x090A",
-                "kind": "indexed",
-                "sha256": "863e2c7e3eaa72ea448a86fe1c76e8c8f2a0835338d78846be494ccfcad07d22"
-              },
-              "zh-Hans": {
-                "id": "0x090A",
-                "kind": "indexed",
-                "sha256": "6c3d140774f26ff7416badd38e770b0289928389da903a061df74c99e36cd074"
-              }
+            "english_payload_sha256": "4782693f037423890d22aebbf19edf1304b90e63f49bb142eaa01926e8b92c35",
+            "incorrect_source": {
+              "id": "0x090A",
+              "kind": "indexed",
+              "layout": "FE8J"
             },
-            "structural_agreement": true
+            "payload_sha256": {
+              "ja": "b8bd71817753174f3938fc9b83674e41af594adac108ef0268536586f8201a16",
+              "zh-Hans": "b8cd6472c00108e29dba7e768b60effb06ab2a9660c4ed15002e32094ff25661"
+            },
+            "replacement_source_id": "0x0935"
           },
           "original_source": {
             "kind": "english_fallback",
@@ -110670,43 +110644,41 @@
             "subsystem": "unclassified"
           },
           "pipeline": "fe8u-final-mapping-v1",
-          "precedence": "c-febuilder"
+          "precedence": "d-semantic-correction"
         },
-        "rationale": "Independent structural evidence agrees with the FEBuilder provider.",
-        "source_key": "0x090A->0x0975",
-        "source_symbol": "translate_textid_FE8.txt",
-        "source_table": "FEBuilder translate_textid_FE8",
+        "rationale": "Vanessa is carrying Ross and must be selected before dropping him. Official 0x0935 matches; 0x090A selects a vulnerary.",
+        "source_key": "EventScr_Ch2_5/select-Vanessa-to-drop-Ross",
+        "source_symbol": "0x0935",
+        "source_table": "FE8J/FE8CN indexed message corpus",
         "subsystem": "chapter-event"
       }
     },
     {
       "source": {
-        "id": "0x0941",
+        "id": "0x0936",
         "kind": "indexed",
         "layout": "FE8J"
       },
       "state": "verified",
       "target_id": "0x0976",
       "verification": {
-        "confidence": "high",
-        "evidence": "FEBuilder line 2371 maps 0x0941 to 0x0976",
-        "evidence_kind": "febuilder-structural-agreement",
+        "confidence": "manual",
+        "evidence": "The enabled command is Drop and confirms with A. Official 0x0936 matches; 0x0941 selects Eirika.",
+        "evidence_kind": "official-regional-semantic-payload",
         "method": "deterministic-final-mapping-promotion",
         "promotion": {
           "details": {
-            "candidate_payloads": {
-              "ja": {
-                "id": "0x0941",
-                "kind": "indexed",
-                "sha256": "ce3e962174d73f8e09938826f49adaa1e12f60e5468cabbdbc56362ccad9cb92"
-              },
-              "zh-Hans": {
-                "id": "0x0941",
-                "kind": "indexed",
-                "sha256": "84b91a51d950a11806e9c396cf1d31e0c112034532b99077d0067687ee10371b"
-              }
+            "english_payload_sha256": "2159df5111a52abbdee2bf3baf9ed59f5a3f3a4667d420acddf72ebb3fa49d5d",
+            "incorrect_source": {
+              "id": "0x0941",
+              "kind": "indexed",
+              "layout": "FE8J"
             },
-            "structural_agreement": true
+            "payload_sha256": {
+              "ja": "705d93d3067d9b2fed4a88392e36cf73d1909de099c8555e99f31b199179d576",
+              "zh-Hans": "618afae29260655700f6e6b609621d6457171fa09454d7cfc918bd8af795e0af"
+            },
+            "replacement_source_id": "0x0936"
           },
           "original_source": {
             "kind": "english_fallback",
@@ -110729,12 +110701,12 @@
             "subsystem": "unclassified"
           },
           "pipeline": "fe8u-final-mapping-v1",
-          "precedence": "c-febuilder"
+          "precedence": "d-semantic-correction"
         },
-        "rationale": "Independent structural evidence agrees with the FEBuilder provider.",
-        "source_key": "0x0941->0x0976",
-        "source_symbol": "translate_textid_FE8.txt",
-        "source_table": "FEBuilder translate_textid_FE8",
+        "rationale": "The enabled command is Drop and confirms with A. Official 0x0936 matches; 0x0941 selects Eirika.",
+        "source_key": "EventScr_Ch2Tutorial11/select-Drop",
+        "source_symbol": "0x0936",
+        "source_table": "FE8J/FE8CN indexed message corpus",
         "subsystem": "chapter-event"
       }
     },
@@ -110875,32 +110847,30 @@
     },
     {
       "source": {
-        "id": "0x0942",
+        "id": "0x093A",
         "kind": "indexed",
         "layout": "FE8J"
       },
       "state": "verified",
       "target_id": "0x097A",
       "verification": {
-        "confidence": "high",
-        "evidence": "FEBuilder line 2372 maps 0x0942 to 0x097A",
-        "evidence_kind": "febuilder-structural-agreement",
+        "confidence": "manual",
+        "evidence": "The enabled command is Staff and confirms with A. Official 0x093A matches; 0x0942 moves Eirika to a village.",
+        "evidence_kind": "official-regional-semantic-payload",
         "method": "deterministic-final-mapping-promotion",
         "promotion": {
           "details": {
-            "candidate_payloads": {
-              "ja": {
-                "id": "0x0942",
-                "kind": "indexed",
-                "sha256": "d5135d4aa50dfd941dfb3d15d2a142a432b84adf8791a1931abc23fae46536d9"
-              },
-              "zh-Hans": {
-                "id": "0x0942",
-                "kind": "indexed",
-                "sha256": "243067d1d1172c1b3a8f84b26cb0aadcd86b8721eb2fff93c1e3526fe0fa397c"
-              }
+            "english_payload_sha256": "bfd346c4e6c5bc22779c094057a091ba6327e329b6373aeb6064b6b365b2b650",
+            "incorrect_source": {
+              "id": "0x0942",
+              "kind": "indexed",
+              "layout": "FE8J"
             },
-            "structural_agreement": true
+            "payload_sha256": {
+              "ja": "a532be518b7e634a3dcf1e34728db043fe7174342277af0267220e8dde95b737",
+              "zh-Hans": "7738174e0316b373051d01a1c4f82a9b47ba249d77509207ad0c75cd204dea79"
+            },
+            "replacement_source_id": "0x093A"
           },
           "original_source": {
             "kind": "english_fallback",
@@ -110923,43 +110893,41 @@
             "subsystem": "unclassified"
           },
           "pipeline": "fe8u-final-mapping-v1",
-          "precedence": "c-febuilder"
+          "precedence": "d-semantic-correction"
         },
-        "rationale": "Independent structural evidence agrees with the FEBuilder provider.",
-        "source_key": "0x0942->0x097A",
-        "source_symbol": "translate_textid_FE8.txt",
-        "source_table": "FEBuilder translate_textid_FE8",
+        "rationale": "The enabled command is Staff and confirms with A. Official 0x093A matches; 0x0942 moves Eirika to a village.",
+        "source_key": "EventScr_Ch2Tutorial20/select-Staff",
+        "source_symbol": "0x093A",
+        "source_table": "FE8J/FE8CN indexed message corpus",
         "subsystem": "chapter-event"
       }
     },
     {
       "source": {
-        "id": "0x0912",
+        "id": "0x093B",
         "kind": "indexed",
         "layout": "FE8J"
       },
       "state": "verified",
       "target_id": "0x097B",
       "verification": {
-        "confidence": "high",
-        "evidence": "FEBuilder line 2324 maps 0x0912 to 0x097B",
-        "evidence_kind": "febuilder-structural-agreement",
+        "confidence": "manual",
+        "evidence": "Ross has been rescued; the next unit is Moulder moving toward Vanessa. Official 0x093B matches; 0x0912 is an attack prompt.",
+        "evidence_kind": "official-regional-semantic-payload",
         "method": "deterministic-final-mapping-promotion",
         "promotion": {
           "details": {
-            "candidate_payloads": {
-              "ja": {
-                "id": "0x0912",
-                "kind": "indexed",
-                "sha256": "1422be7b1b97192747a1272e4de6afe439383fad7f384238a4f55d4d8de5c795"
-              },
-              "zh-Hans": {
-                "id": "0x0912",
-                "kind": "indexed",
-                "sha256": "f1986fe415b5340e14f29fdc53af2b9385352a6c94b78e7e9128e699fa79b954"
-              }
+            "english_payload_sha256": "bda961f5ccaa106a93197835de48c4aad377fe27652c07077dd8edd4581d2812",
+            "incorrect_source": {
+              "id": "0x0912",
+              "kind": "indexed",
+              "layout": "FE8J"
             },
-            "structural_agreement": true
+            "payload_sha256": {
+              "ja": "046443cb415265d21803b0a1f5bade8b820780aefb406449673e00b9ea378b4c",
+              "zh-Hans": "fc8545b5c526579b4095ae5a696f49ea688fa0980f676d13b5f5f5e79787b94d"
+            },
+            "replacement_source_id": "0x093B"
           },
           "original_source": {
             "kind": "english_fallback",
@@ -110982,43 +110950,41 @@
             "subsystem": "unclassified"
           },
           "pipeline": "fe8u-final-mapping-v1",
-          "precedence": "c-febuilder"
+          "precedence": "d-semantic-correction"
         },
-        "rationale": "Independent structural evidence agrees with the FEBuilder provider.",
-        "source_key": "0x0912->0x097B",
-        "source_symbol": "translate_textid_FE8.txt",
-        "source_table": "FEBuilder translate_textid_FE8",
+        "rationale": "Ross has been rescued; the next unit is Moulder moving toward Vanessa. Official 0x093B matches; 0x0912 is an attack prompt.",
+        "source_key": "EventScr_Ch2_4/select-Moulder-after-rescue",
+        "source_symbol": "0x093B",
+        "source_table": "FE8J/FE8CN indexed message corpus",
         "subsystem": "chapter-event"
       }
     },
     {
       "source": {
-        "id": "0x0943",
+        "id": "0x093C",
         "kind": "indexed",
         "layout": "FE8J"
       },
       "state": "verified",
       "target_id": "0x097C",
       "verification": {
-        "confidence": "high",
-        "evidence": "FEBuilder line 2373 maps 0x0943 to 0x097C",
-        "evidence_kind": "febuilder-structural-agreement",
+        "confidence": "manual",
+        "evidence": "The movement prompt goes to the flashing space near Vanessa and confirms with A. Official 0x093C matches; 0x0943 selects Visit.",
+        "evidence_kind": "official-regional-semantic-payload",
         "method": "deterministic-final-mapping-promotion",
         "promotion": {
           "details": {
-            "candidate_payloads": {
-              "ja": {
-                "id": "0x0943",
-                "kind": "indexed",
-                "sha256": "3d0758474e745b9d93e2fdaa084ee7d1a25176fdc9bdb90464ae695baf5fa468"
-              },
-              "zh-Hans": {
-                "id": "0x0943",
-                "kind": "indexed",
-                "sha256": "2df469983d58a16a7abe07cd141af0ec4c81e619d7d1919d63be381e76a80250"
-              }
+            "english_payload_sha256": "ef5dfb3f37dff6e67df264b9a0231a29d0eb545e73c543b827ac76ff5784d7f5",
+            "incorrect_source": {
+              "id": "0x0943",
+              "kind": "indexed",
+              "layout": "FE8J"
             },
-            "structural_agreement": true
+            "payload_sha256": {
+              "ja": "a9b701b7debabf3798bcc1f2146debdb8ea2d3233df92e72feeb2cb7e3d8c5a7",
+              "zh-Hans": "58150df0db037fbb172b83270e434a0f2f8e86aaaedd4f63fe6428d89338b2dc"
+            },
+            "replacement_source_id": "0x093C"
           },
           "original_source": {
             "kind": "english_fallback",
@@ -111041,12 +111007,12 @@
             "subsystem": "unclassified"
           },
           "pipeline": "fe8u-final-mapping-v1",
-          "precedence": "c-febuilder"
+          "precedence": "d-semantic-correction"
         },
-        "rationale": "Independent structural evidence agrees with the FEBuilder provider.",
-        "source_key": "0x0943->0x097C",
-        "source_symbol": "translate_textid_FE8.txt",
-        "source_table": "FEBuilder translate_textid_FE8",
+        "rationale": "The movement prompt goes to the flashing space near Vanessa and confirms with A. Official 0x093C matches; 0x0943 selects Visit.",
+        "source_key": "EventScr_Ch2Tutorial8/move-near-Vanessa",
+        "source_symbol": "0x093C",
+        "source_table": "FE8J/FE8CN indexed message corpus",
         "subsystem": "chapter-event"
       }
     },
@@ -111257,32 +111223,30 @@
     },
     {
       "source": {
-        "id": "0x0947",
+        "id": "0x0942",
         "kind": "indexed",
         "layout": "FE8J"
       },
       "state": "verified",
       "target_id": "0x0982",
       "verification": {
-        "confidence": "high",
-        "evidence": "FEBuilder line 2377 maps 0x0947 to 0x0982",
-        "evidence_kind": "febuilder-structural-agreement",
+        "confidence": "manual",
+        "evidence": "The movement prompt sends Eirika to the flashing village space and confirms with A. Official 0x0942 matches; 0x0947 selects Talk.",
+        "evidence_kind": "official-regional-semantic-payload",
         "method": "deterministic-final-mapping-promotion",
         "promotion": {
           "details": {
-            "candidate_payloads": {
-              "ja": {
-                "id": "0x0947",
-                "kind": "indexed",
-                "sha256": "b0a750f268da746913b010ecb6694c304806994c362365a20cfd24a69a9a761c"
-              },
-              "zh-Hans": {
-                "id": "0x0947",
-                "kind": "indexed",
-                "sha256": "5a762e77c473d59c67eca688c56dcb1ef3fa4f9033f605bf3301233ea162e983"
-              }
+            "english_payload_sha256": "0fe1fc32aa79d2760e650f7cab077435e7490b72dd12adc26e28f08abf2f4954",
+            "incorrect_source": {
+              "id": "0x0947",
+              "kind": "indexed",
+              "layout": "FE8J"
             },
-            "structural_agreement": true
+            "payload_sha256": {
+              "ja": "d5135d4aa50dfd941dfb3d15d2a142a432b84adf8791a1931abc23fae46536d9",
+              "zh-Hans": "243067d1d1172c1b3a8f84b26cb0aadcd86b8721eb2fff93c1e3526fe0fa397c"
+            },
+            "replacement_source_id": "0x0942"
           },
           "original_source": {
             "kind": "english_fallback",
@@ -111305,12 +111269,12 @@
             "subsystem": "unclassified"
           },
           "pipeline": "fe8u-final-mapping-v1",
-          "precedence": "c-febuilder"
+          "precedence": "d-semantic-correction"
         },
-        "rationale": "Independent structural evidence agrees with the FEBuilder provider.",
-        "source_key": "0x0947->0x0982",
-        "source_symbol": "translate_textid_FE8.txt",
-        "source_table": "FEBuilder translate_textid_FE8",
+        "rationale": "The movement prompt sends Eirika to the flashing village space and confirms with A. Official 0x0942 matches; 0x0947 selects Talk.",
+        "source_key": "EventScr_Ch2Tutorial23/move-Eirika-to-village",
+        "source_symbol": "0x0942",
+        "source_table": "FE8J/FE8CN indexed message corpus",
         "subsystem": "chapter-event"
       }
     },

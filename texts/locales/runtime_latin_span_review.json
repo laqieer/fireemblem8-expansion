@@ -35,11 +35,11 @@
     "game/ja/0x002A": {
       "baseline_classification": "mixed-script-bypass",
       "baseline_payload_sha256": "c5e412706b2aa050e314d8676ffcfe4b987d769f6e5def9d9c0b0c0dab5ef518",
-      "current_payload_sha256": "c5e412706b2aa050e314d8676ffcfe4b987d769f6e5def9d9c0b0c0dab5ef518",
+      "current_payload_sha256": "c6f08dca315e0c2a99508ebe80bce905dfa19b2497bf522f2f2f9348e3fefbbd",
       "english_payload_sha256": "74ded4d6b01b04aa4b9faca715fdc288e3ce2263f763c816da0056196b9d5ad7",
       "locale": "ja",
       "payload_source": {
-        "id": "0x0005",
+        "id": "0x0564",
         "kind": "indexed",
         "layout": "FE8J"
       },
@@ -47,11 +47,11 @@
       "spans": {
         "SRAM": {
           "baseline_occurrences": 1,
-          "category": "hardware-acronym",
-          "current_occurrences": 1,
-          "decision": "approved",
-          "reason": "SRAM is the GBA save-memory hardware acronym used by this exact diagnostic/interface target.",
-          "source": "GBA hardware terminology and this target payload context."
+          "category": null,
+          "current_occurrences": 0,
+          "decision": "localized",
+          "reason": "The semantically wrong provider's SRAM span is absent from the target-correct official regional payload.",
+          "source": "FE8U English target/call-site review and the corrected official FE8J/FE8CN indexed provider."
         }
       },
       "target": "0x002A"
@@ -3029,11 +3029,11 @@
     "game/ja/0x093F": {
       "baseline_classification": "mixed-script-bypass",
       "baseline_payload_sha256": "51eadbaeade1a3a92dc182e2fab0d069e5fa6658708e489d023656b5f8fdd836",
-      "current_payload_sha256": "51eadbaeade1a3a92dc182e2fab0d069e5fa6658708e489d023656b5f8fdd836",
+      "current_payload_sha256": "121ee8645ad77a4c56fd1c2f3bf73d037895d72d9dc9d37dec44dcd0c4fc3119",
       "english_payload_sha256": "23edbda60f73d8e4eb57d2894eeae069a32702b5882496d991c823838c268059",
       "locale": "ja",
       "payload_source": {
-        "id": "0x0907",
+        "id": "0x08E4",
         "kind": "indexed",
         "layout": "FE8J"
       },
@@ -3125,11 +3125,11 @@
     "game/ja/0x0946": {
       "baseline_classification": "mixed-script-bypass",
       "baseline_payload_sha256": "e33b7e0e774714a4afad8544c8b1caf0d81803c8b4f541fd4b446b8ebcef06ae",
-      "current_payload_sha256": "e33b7e0e774714a4afad8544c8b1caf0d81803c8b4f541fd4b446b8ebcef06ae",
+      "current_payload_sha256": "c965c719176d22ef0e60634d28ae3ca60f8844054446a5dbbb089743a24a40fa",
       "english_payload_sha256": "ed81f30b10170a83bba797de271d37f50477c0ca8623ca8aca0e92354cddccf7",
       "locale": "ja",
       "payload_source": {
-        "id": "0x090B",
+        "id": "0x0906",
         "kind": "indexed",
         "layout": "FE8J"
       },
@@ -3149,11 +3149,11 @@
     "game/ja/0x0947": {
       "baseline_classification": "mixed-script-bypass",
       "baseline_payload_sha256": "67e2be7c18f42749e5b89272c49ebd0c9b56f73d061c11c7e70b3ade324c4bb3",
-      "current_payload_sha256": "67e2be7c18f42749e5b89272c49ebd0c9b56f73d061c11c7e70b3ade324c4bb3",
+      "current_payload_sha256": "51eadbaeade1a3a92dc182e2fab0d069e5fa6658708e489d023656b5f8fdd836",
       "english_payload_sha256": "0924d4f952464e172d47c80db750d9492bee4e50f9138a4ef132783a74a64377",
       "locale": "ja",
       "payload_source": {
-        "id": "0x090E",
+        "id": "0x0907",
         "kind": "indexed",
         "layout": "FE8J"
       },
@@ -3173,11 +3173,11 @@
     "game/ja/0x0948": {
       "baseline_classification": "mixed-script-bypass",
       "baseline_payload_sha256": "cf2e81dc7a5e0069ea915e5ab9ebeeba9b37f91986c2e17c602192909971cf2d",
-      "current_payload_sha256": "cf2e81dc7a5e0069ea915e5ab9ebeeba9b37f91986c2e17c602192909971cf2d",
+      "current_payload_sha256": "0a76a3b2e8930411a50b61f3cc7c3b5292ae5b7a08145104d80f22f0e2125c55",
       "english_payload_sha256": "0152057bb77f19506a190dd0f82403118a982a32f7bda2105aa6a8a50e1a15db",
       "locale": "ja",
       "payload_source": {
-        "id": "0x090F",
+        "id": "0x0908",
         "kind": "indexed",
         "layout": "FE8J"
       },
@@ -3185,11 +3185,11 @@
       "spans": {
         "A": {
           "baseline_occurrences": 1,
-          "category": "controller-button-label",
-          "current_occurrences": 1,
-          "decision": "approved",
-          "reason": "A is the literal GBA controller button label required by this exact tutorial/help instruction.",
-          "source": "GBA controller labeling and this target payload context."
+          "category": null,
+          "current_occurrences": 0,
+          "decision": "localized",
+          "reason": "The semantically wrong provider's A span is absent from the target-correct official regional payload.",
+          "source": "FE8U English target/call-site review and the corrected official FE8J/FE8CN indexed provider."
         }
       },
       "target": "0x0948"
@@ -3197,11 +3197,11 @@
     "game/ja/0x0949": {
       "baseline_classification": "mixed-script-bypass",
       "baseline_payload_sha256": "e6da01b7737089a42522b6f70335c56fb98f0f28bf060bff1c4763df220e3b51",
-      "current_payload_sha256": "e6da01b7737089a42522b6f70335c56fb98f0f28bf060bff1c4763df220e3b51",
+      "current_payload_sha256": "1e1e38be578f17e137c3051c4fbc7258e739dfc49805b8e599cefa49d88c7b44",
       "english_payload_sha256": "43a996bd7b9004748ec86f9e4c3f7d6e005a40be08c2d26868211daac5fa2c07",
       "locale": "ja",
       "payload_source": {
-        "id": "0x0931",
+        "id": "0x0909",
         "kind": "indexed",
         "layout": "FE8J"
       },
@@ -3209,11 +3209,11 @@
       "spans": {
         "A": {
           "baseline_occurrences": 1,
-          "category": "controller-button-label",
-          "current_occurrences": 1,
-          "decision": "approved",
-          "reason": "A is the literal GBA controller button label required by this exact tutorial/help instruction.",
-          "source": "GBA controller labeling and this target payload context."
+          "category": null,
+          "current_occurrences": 0,
+          "decision": "localized",
+          "reason": "The semantically wrong provider's A span is absent from the target-correct official regional payload.",
+          "source": "FE8U English target/call-site review and the corrected official FE8J/FE8CN indexed provider."
         }
       },
       "target": "0x0949"
@@ -3244,11 +3244,11 @@
     "game/ja/0x094B": {
       "baseline_classification": "mixed-script-bypass",
       "baseline_payload_sha256": "6bd943db2e0a14a935047a1448cf6ee6ceeb56e042d64077bb62a8adaa4d57f7",
-      "current_payload_sha256": "6bd943db2e0a14a935047a1448cf6ee6ceeb56e042d64077bb62a8adaa4d57f7",
+      "current_payload_sha256": "e33b7e0e774714a4afad8544c8b1caf0d81803c8b4f541fd4b446b8ebcef06ae",
       "english_payload_sha256": "9a85d6929887b3d812cdf22dac775e0211eb0c0a105e6b89609455bbe407c5ab",
       "locale": "ja",
       "payload_source": {
-        "id": "0x0932",
+        "id": "0x090B",
         "kind": "indexed",
         "layout": "FE8J"
       },
@@ -3268,11 +3268,11 @@
     "game/ja/0x094C": {
       "baseline_classification": "mixed-script-bypass",
       "baseline_payload_sha256": "3f0872ecd300b52951089d53f942babd271f5c76750d133781b61680186a7ebb",
-      "current_payload_sha256": "3f0872ecd300b52951089d53f942babd271f5c76750d133781b61680186a7ebb",
+      "current_payload_sha256": "0455d535574d7cebcf1ff762eaaef4c0a4c3c3d72e3c2742752078d26850dc63",
       "english_payload_sha256": "797606ec0ca2c5faaaf4a8f29361fa9678b90c29d31c0a1f884fbd0fc81d3dcf",
       "locale": "ja",
       "payload_source": {
-        "id": "0x0934",
+        "id": "0x090C",
         "kind": "indexed",
         "layout": "FE8J"
       },
@@ -3280,11 +3280,19 @@
       "spans": {
         "A": {
           "baseline_occurrences": 1,
+          "category": null,
+          "current_occurrences": 0,
+          "decision": "localized",
+          "reason": "The semantically wrong provider's A span is absent from the target-correct official regional payload.",
+          "source": "FE8U English target/call-site review and the corrected official FE8J/FE8CN indexed provider."
+        },
+        "B": {
+          "baseline_occurrences": 1,
           "category": "controller-button-label",
           "current_occurrences": 1,
           "decision": "approved",
-          "reason": "A is the literal GBA controller button label required by this exact tutorial/help instruction.",
-          "source": "GBA controller labeling and this target payload context."
+          "reason": "B is the literal GBA controller button label required by this exact tutorial instruction.",
+          "source": "GBA controller labeling, FE8U call-site semantics, and the target-correct official regional payload."
         }
       },
       "target": "0x094C"
@@ -3316,11 +3324,11 @@
     "game/ja/0x094F": {
       "baseline_classification": "mixed-script-bypass",
       "baseline_payload_sha256": "d9d3496778f4f74469a37639090da7a40624e65e7499824b60a485a22df7343d",
-      "current_payload_sha256": "d9d3496778f4f74469a37639090da7a40624e65e7499824b60a485a22df7343d",
+      "current_payload_sha256": "cf2e81dc7a5e0069ea915e5ab9ebeeba9b37f91986c2e17c602192909971cf2d",
       "english_payload_sha256": "63651af0396a9fc05376c58c8eda4f50038b7dca12ff12c642872a5e8d3e4920",
       "locale": "ja",
       "payload_source": {
-        "id": "0x0939",
+        "id": "0x090F",
         "kind": "indexed",
         "layout": "FE8J"
       },
@@ -3387,23 +3395,31 @@
     "game/ja/0x0952": {
       "baseline_classification": "mixed-script-bypass",
       "baseline_payload_sha256": "0455d535574d7cebcf1ff762eaaef4c0a4c3c3d72e3c2742752078d26850dc63",
-      "current_payload_sha256": "0455d535574d7cebcf1ff762eaaef4c0a4c3c3d72e3c2742752078d26850dc63",
+      "current_payload_sha256": "1422be7b1b97192747a1272e4de6afe439383fad7f384238a4f55d4d8de5c795",
       "english_payload_sha256": "ba3b472c9f2e2dc6cf01a778679cc97659091f7095a458b6218e3b01ca350a0b",
       "locale": "ja",
       "payload_source": {
-        "id": "0x090C",
+        "id": "0x0912",
         "kind": "indexed",
         "layout": "FE8J"
       },
       "scope": "game",
       "spans": {
-        "B": {
+        "A": {
           "baseline_occurrences": 1,
           "category": "controller-button-label",
           "current_occurrences": 1,
           "decision": "approved",
-          "reason": "B is the literal GBA controller button label required by this exact tutorial/help instruction.",
-          "source": "GBA controller labeling and this target payload context."
+          "reason": "A is the literal GBA controller button label required by this exact tutorial instruction.",
+          "source": "GBA controller labeling, FE8U call-site semantics, and the target-correct official regional payload."
+        },
+        "B": {
+          "baseline_occurrences": 1,
+          "category": null,
+          "current_occurrences": 0,
+          "decision": "localized",
+          "reason": "The semantically wrong provider's B span is absent from the target-correct official regional payload.",
+          "source": "FE8U English target/call-site review and the corrected official FE8J/FE8CN indexed provider."
         }
       },
       "target": "0x0952"
@@ -3411,11 +3427,11 @@
     "game/ja/0x0971": {
       "baseline_classification": "mixed-script-bypass",
       "baseline_payload_sha256": "a532be518b7e634a3dcf1e34728db043fe7174342277af0267220e8dde95b737",
-      "current_payload_sha256": "a532be518b7e634a3dcf1e34728db043fe7174342277af0267220e8dde95b737",
+      "current_payload_sha256": "e6da01b7737089a42522b6f70335c56fb98f0f28bf060bff1c4763df220e3b51",
       "english_payload_sha256": "6431da66c4f1abc00676046a1570605d7a9d0aefb3048192a50a3ba8eb79ee31",
       "locale": "ja",
       "payload_source": {
-        "id": "0x093A",
+        "id": "0x0931",
         "kind": "indexed",
         "layout": "FE8J"
       },
@@ -3435,11 +3451,11 @@
     "game/ja/0x0972": {
       "baseline_classification": "mixed-script-bypass",
       "baseline_payload_sha256": "a9b701b7debabf3798bcc1f2146debdb8ea2d3233df92e72feeb2cb7e3d8c5a7",
-      "current_payload_sha256": "a9b701b7debabf3798bcc1f2146debdb8ea2d3233df92e72feeb2cb7e3d8c5a7",
+      "current_payload_sha256": "6bd943db2e0a14a935047a1448cf6ee6ceeb56e042d64077bb62a8adaa4d57f7",
       "english_payload_sha256": "385069adfe782cf6030d3605bc82aa843fcf715913796fb39dd22f91097e5508",
       "locale": "ja",
       "payload_source": {
-        "id": "0x093C",
+        "id": "0x0932",
         "kind": "indexed",
         "layout": "FE8J"
       },
@@ -3459,11 +3475,11 @@
     "game/ja/0x0975": {
       "baseline_classification": "mixed-script-bypass",
       "baseline_payload_sha256": "863e2c7e3eaa72ea448a86fe1c76e8c8f2a0835338d78846be494ccfcad07d22",
-      "current_payload_sha256": "863e2c7e3eaa72ea448a86fe1c76e8c8f2a0835338d78846be494ccfcad07d22",
+      "current_payload_sha256": "b8bd71817753174f3938fc9b83674e41af594adac108ef0268536586f8201a16",
       "english_payload_sha256": "619d548779eb46345dd15a027aecd9e11c860e124b0442b8cd62449dbc0526ac",
       "locale": "ja",
       "payload_source": {
-        "id": "0x090A",
+        "id": "0x0935",
         "kind": "indexed",
         "layout": "FE8J"
       },
@@ -3483,11 +3499,11 @@
     "game/ja/0x0976": {
       "baseline_classification": "mixed-script-bypass",
       "baseline_payload_sha256": "ce3e962174d73f8e09938826f49adaa1e12f60e5468cabbdbc56362ccad9cb92",
-      "current_payload_sha256": "ce3e962174d73f8e09938826f49adaa1e12f60e5468cabbdbc56362ccad9cb92",
+      "current_payload_sha256": "705d93d3067d9b2fed4a88392e36cf73d1909de099c8555e99f31b199179d576",
       "english_payload_sha256": "a7279ee3d583e41bd5da266692f7407af5019290226c8560a7001dd5582ab9db",
       "locale": "ja",
       "payload_source": {
-        "id": "0x0941",
+        "id": "0x0936",
         "kind": "indexed",
         "layout": "FE8J"
       },
@@ -3562,11 +3578,11 @@
     "game/ja/0x097A": {
       "baseline_classification": "mixed-script-bypass",
       "baseline_payload_sha256": "d5135d4aa50dfd941dfb3d15d2a142a432b84adf8791a1931abc23fae46536d9",
-      "current_payload_sha256": "d5135d4aa50dfd941dfb3d15d2a142a432b84adf8791a1931abc23fae46536d9",
+      "current_payload_sha256": "a532be518b7e634a3dcf1e34728db043fe7174342277af0267220e8dde95b737",
       "english_payload_sha256": "a2439e64ec95f45532b1675717709e56254b745a06c102c36e836831a75f06d6",
       "locale": "ja",
       "payload_source": {
-        "id": "0x0942",
+        "id": "0x093A",
         "kind": "indexed",
         "layout": "FE8J"
       },
@@ -3586,11 +3602,11 @@
     "game/ja/0x097B": {
       "baseline_classification": "mixed-script-bypass",
       "baseline_payload_sha256": "1422be7b1b97192747a1272e4de6afe439383fad7f384238a4f55d4d8de5c795",
-      "current_payload_sha256": "1422be7b1b97192747a1272e4de6afe439383fad7f384238a4f55d4d8de5c795",
+      "current_payload_sha256": "046443cb415265d21803b0a1f5bade8b820780aefb406449673e00b9ea378b4c",
       "english_payload_sha256": "77b861a6a3702614e02913a08b4a9fb21e6418ed15c4af5aedd252b4b5dcc86f",
       "locale": "ja",
       "payload_source": {
-        "id": "0x0912",
+        "id": "0x093B",
         "kind": "indexed",
         "layout": "FE8J"
       },
@@ -3610,11 +3626,11 @@
     "game/ja/0x097C": {
       "baseline_classification": "mixed-script-bypass",
       "baseline_payload_sha256": "3d0758474e745b9d93e2fdaa084ee7d1a25176fdc9bdb90464ae695baf5fa468",
-      "current_payload_sha256": "3d0758474e745b9d93e2fdaa084ee7d1a25176fdc9bdb90464ae695baf5fa468",
+      "current_payload_sha256": "a9b701b7debabf3798bcc1f2146debdb8ea2d3233df92e72feeb2cb7e3d8c5a7",
       "english_payload_sha256": "00aa96bf9e0d6f274338ebd47f488fdf5af593b42b0e78a3f06f9db81a3d9e8b",
       "locale": "ja",
       "payload_source": {
-        "id": "0x0943",
+        "id": "0x093C",
         "kind": "indexed",
         "layout": "FE8J"
       },
@@ -3682,11 +3698,11 @@
     "game/ja/0x0982": {
       "baseline_classification": "mixed-script-bypass",
       "baseline_payload_sha256": "b0a750f268da746913b010ecb6694c304806994c362365a20cfd24a69a9a761c",
-      "current_payload_sha256": "b0a750f268da746913b010ecb6694c304806994c362365a20cfd24a69a9a761c",
+      "current_payload_sha256": "d5135d4aa50dfd941dfb3d15d2a142a432b84adf8791a1931abc23fae46536d9",
       "english_payload_sha256": "b12ef3ca3462ef84e4ba15f7b27b5812ddee11daea4cad240dce2a3fbbee7a81",
       "locale": "ja",
       "payload_source": {
-        "id": "0x0947",
+        "id": "0x0942",
         "kind": "indexed",
         "layout": "FE8J"
       },
@@ -3990,11 +4006,11 @@
     "game/zh-Hans/0x002A": {
       "baseline_classification": "mixed-script-bypass",
       "baseline_payload_sha256": "6833a723e37546d3e7aa55ad2ab1b1f34d7e13fcfc6c6cace07d8afc02e5f7b1",
-      "current_payload_sha256": "6833a723e37546d3e7aa55ad2ab1b1f34d7e13fcfc6c6cace07d8afc02e5f7b1",
+      "current_payload_sha256": "13fb271ef486e8bea9239079f02871f7d07f6112f69077c444501be4430fcdd9",
       "english_payload_sha256": "74ded4d6b01b04aa4b9faca715fdc288e3ce2263f763c816da0056196b9d5ad7",
       "locale": "zh-Hans",
       "payload_source": {
-        "id": "0x0005",
+        "id": "0x0564",
         "kind": "indexed",
         "layout": "FE8J"
       },
@@ -4002,11 +4018,11 @@
       "spans": {
         "SRAM": {
           "baseline_occurrences": 1,
-          "category": "hardware-acronym",
-          "current_occurrences": 1,
-          "decision": "approved",
-          "reason": "SRAM is the GBA save-memory hardware acronym used by this exact diagnostic/interface target.",
-          "source": "GBA hardware terminology and this target payload context."
+          "category": null,
+          "current_occurrences": 0,
+          "decision": "localized",
+          "reason": "The semantically wrong provider's SRAM span is absent from the target-correct official regional payload.",
+          "source": "FE8U English target/call-site review and the corrected official FE8J/FE8CN indexed provider."
         }
       },
       "target": "0x002A"
@@ -7262,11 +7278,11 @@
     "game/zh-Hans/0x093F": {
       "baseline_classification": "mixed-script-bypass",
       "baseline_payload_sha256": "9c4c09e07a855e528d1547ad1f047c546db4de08fa85cd23713795a922768f2d",
-      "current_payload_sha256": "9c4c09e07a855e528d1547ad1f047c546db4de08fa85cd23713795a922768f2d",
+      "current_payload_sha256": "9ca0ad0d3baf64e3d68e517398c744f0c206c0a6d599808aca94a5e0f797021d",
       "english_payload_sha256": "23edbda60f73d8e4eb57d2894eeae069a32702b5882496d991c823838c268059",
       "locale": "zh-Hans",
       "payload_source": {
-        "id": "0x0907",
+        "id": "0x08E4",
         "kind": "indexed",
         "layout": "FE8J"
       },
@@ -7358,11 +7374,11 @@
     "game/zh-Hans/0x0946": {
       "baseline_classification": "mixed-script-bypass",
       "baseline_payload_sha256": "8bbbe8585f62eaba2240de766caa5c30402458af5718f36c3d6b599b9f696c43",
-      "current_payload_sha256": "8bbbe8585f62eaba2240de766caa5c30402458af5718f36c3d6b599b9f696c43",
+      "current_payload_sha256": "609abc4a80b7920547517ccece15b9760c2a046e228805d73e215a25f32907a6",
       "english_payload_sha256": "ed81f30b10170a83bba797de271d37f50477c0ca8623ca8aca0e92354cddccf7",
       "locale": "zh-Hans",
       "payload_source": {
-        "id": "0x090B",
+        "id": "0x0906",
         "kind": "indexed",
         "layout": "FE8J"
       },
@@ -7382,11 +7398,11 @@
     "game/zh-Hans/0x0947": {
       "baseline_classification": "mixed-script-bypass",
       "baseline_payload_sha256": "ad3f32b58866b196f7845c53d65cffba4e0cf1fa1b7b0e4100bdf375b7f9c4cc",
-      "current_payload_sha256": "ad3f32b58866b196f7845c53d65cffba4e0cf1fa1b7b0e4100bdf375b7f9c4cc",
+      "current_payload_sha256": "9c4c09e07a855e528d1547ad1f047c546db4de08fa85cd23713795a922768f2d",
       "english_payload_sha256": "0924d4f952464e172d47c80db750d9492bee4e50f9138a4ef132783a74a64377",
       "locale": "zh-Hans",
       "payload_source": {
-        "id": "0x090E",
+        "id": "0x0907",
         "kind": "indexed",
         "layout": "FE8J"
       },
@@ -7406,11 +7422,11 @@
     "game/zh-Hans/0x0948": {
       "baseline_classification": "mixed-script-bypass",
       "baseline_payload_sha256": "df78999d55b7413e681b951bd19328161a168da9365df48f1a5c3b0dffec1295",
-      "current_payload_sha256": "df78999d55b7413e681b951bd19328161a168da9365df48f1a5c3b0dffec1295",
+      "current_payload_sha256": "b1176a7fb6a9484fb5db77011e7a859cf90cf18481ddaa5de99d7ae58ce1f1d0",
       "english_payload_sha256": "0152057bb77f19506a190dd0f82403118a982a32f7bda2105aa6a8a50e1a15db",
       "locale": "zh-Hans",
       "payload_source": {
-        "id": "0x090F",
+        "id": "0x0908",
         "kind": "indexed",
         "layout": "FE8J"
       },
@@ -7418,11 +7434,11 @@
       "spans": {
         "A": {
           "baseline_occurrences": 1,
-          "category": "controller-button-label",
-          "current_occurrences": 1,
-          "decision": "approved",
-          "reason": "A is the literal GBA controller button label required by this exact tutorial/help instruction.",
-          "source": "GBA controller labeling and this target payload context."
+          "category": null,
+          "current_occurrences": 0,
+          "decision": "localized",
+          "reason": "The semantically wrong provider's A span is absent from the target-correct official regional payload.",
+          "source": "FE8U English target/call-site review and the corrected official FE8J/FE8CN indexed provider."
         }
       },
       "target": "0x0948"
@@ -7430,11 +7446,11 @@
     "game/zh-Hans/0x0949": {
       "baseline_classification": "mixed-script-bypass",
       "baseline_payload_sha256": "58c4ea30ab590a8720e82b7f2fad0711fa299880ad575eaeb510326e05f89a1f",
-      "current_payload_sha256": "58c4ea30ab590a8720e82b7f2fad0711fa299880ad575eaeb510326e05f89a1f",
+      "current_payload_sha256": "418d091b5ebe0cd46b92a51a118b5bd69316886529be2775dd597da34b6ef54c",
       "english_payload_sha256": "43a996bd7b9004748ec86f9e4c3f7d6e005a40be08c2d26868211daac5fa2c07",
       "locale": "zh-Hans",
       "payload_source": {
-        "id": "0x0931",
+        "id": "0x0909",
         "kind": "indexed",
         "layout": "FE8J"
       },
@@ -7442,11 +7458,11 @@
       "spans": {
         "A": {
           "baseline_occurrences": 1,
-          "category": "controller-button-label",
-          "current_occurrences": 1,
-          "decision": "approved",
-          "reason": "A is the literal GBA controller button label required by this exact tutorial/help instruction.",
-          "source": "GBA controller labeling and this target payload context."
+          "category": null,
+          "current_occurrences": 0,
+          "decision": "localized",
+          "reason": "The semantically wrong provider's A span is absent from the target-correct official regional payload.",
+          "source": "FE8U English target/call-site review and the corrected official FE8J/FE8CN indexed provider."
         }
       },
       "target": "0x0949"
@@ -7477,11 +7493,11 @@
     "game/zh-Hans/0x094B": {
       "baseline_classification": "mixed-script-bypass",
       "baseline_payload_sha256": "31dbff1d3ff9792f8143821d9f3cb3ac1f019505b01a8fb0c71a8048d56befed",
-      "current_payload_sha256": "31dbff1d3ff9792f8143821d9f3cb3ac1f019505b01a8fb0c71a8048d56befed",
+      "current_payload_sha256": "8bbbe8585f62eaba2240de766caa5c30402458af5718f36c3d6b599b9f696c43",
       "english_payload_sha256": "9a85d6929887b3d812cdf22dac775e0211eb0c0a105e6b89609455bbe407c5ab",
       "locale": "zh-Hans",
       "payload_source": {
-        "id": "0x0932",
+        "id": "0x090B",
         "kind": "indexed",
         "layout": "FE8J"
       },
@@ -7501,11 +7517,11 @@
     "game/zh-Hans/0x094C": {
       "baseline_classification": "mixed-script-bypass",
       "baseline_payload_sha256": "fe27cba404198dc142ee4980ed9957d78585f88e15efe821e92ac230e4cba837",
-      "current_payload_sha256": "fe27cba404198dc142ee4980ed9957d78585f88e15efe821e92ac230e4cba837",
+      "current_payload_sha256": "328696022144adb29b1deb5fcc42c14d7e51ed749d914ba7c66958f461b4b5e3",
       "english_payload_sha256": "797606ec0ca2c5faaaf4a8f29361fa9678b90c29d31c0a1f884fbd0fc81d3dcf",
       "locale": "zh-Hans",
       "payload_source": {
-        "id": "0x0934",
+        "id": "0x090C",
         "kind": "indexed",
         "layout": "FE8J"
       },
@@ -7513,11 +7529,19 @@
       "spans": {
         "A": {
           "baseline_occurrences": 1,
+          "category": null,
+          "current_occurrences": 0,
+          "decision": "localized",
+          "reason": "The semantically wrong provider's A span is absent from the target-correct official regional payload.",
+          "source": "FE8U English target/call-site review and the corrected official FE8J/FE8CN indexed provider."
+        },
+        "B": {
+          "baseline_occurrences": 1,
           "category": "controller-button-label",
           "current_occurrences": 1,
           "decision": "approved",
-          "reason": "A is the literal GBA controller button label required by this exact tutorial/help instruction.",
-          "source": "GBA controller labeling and this target payload context."
+          "reason": "B is the literal GBA controller button label required by this exact tutorial instruction.",
+          "source": "GBA controller labeling, FE8U call-site semantics, and the target-correct official regional payload."
         }
       },
       "target": "0x094C"
@@ -7549,11 +7573,11 @@
     "game/zh-Hans/0x094F": {
       "baseline_classification": "mixed-script-bypass",
       "baseline_payload_sha256": "2c37fefa17f42d428ecbc1310b398817f70c54092d1b391f5ff2bd4261addc0e",
-      "current_payload_sha256": "2c37fefa17f42d428ecbc1310b398817f70c54092d1b391f5ff2bd4261addc0e",
+      "current_payload_sha256": "df78999d55b7413e681b951bd19328161a168da9365df48f1a5c3b0dffec1295",
       "english_payload_sha256": "63651af0396a9fc05376c58c8eda4f50038b7dca12ff12c642872a5e8d3e4920",
       "locale": "zh-Hans",
       "payload_source": {
-        "id": "0x0939",
+        "id": "0x090F",
         "kind": "indexed",
         "layout": "FE8J"
       },
@@ -7620,23 +7644,31 @@
     "game/zh-Hans/0x0952": {
       "baseline_classification": "mixed-script-bypass",
       "baseline_payload_sha256": "328696022144adb29b1deb5fcc42c14d7e51ed749d914ba7c66958f461b4b5e3",
-      "current_payload_sha256": "328696022144adb29b1deb5fcc42c14d7e51ed749d914ba7c66958f461b4b5e3",
+      "current_payload_sha256": "f1986fe415b5340e14f29fdc53af2b9385352a6c94b78e7e9128e699fa79b954",
       "english_payload_sha256": "ba3b472c9f2e2dc6cf01a778679cc97659091f7095a458b6218e3b01ca350a0b",
       "locale": "zh-Hans",
       "payload_source": {
-        "id": "0x090C",
+        "id": "0x0912",
         "kind": "indexed",
         "layout": "FE8J"
       },
       "scope": "game",
       "spans": {
-        "B": {
+        "A": {
           "baseline_occurrences": 1,
           "category": "controller-button-label",
           "current_occurrences": 1,
           "decision": "approved",
-          "reason": "B is the literal GBA controller button label required by this exact tutorial/help instruction.",
-          "source": "GBA controller labeling and this target payload context."
+          "reason": "A is the literal GBA controller button label required by this exact tutorial instruction.",
+          "source": "GBA controller labeling, FE8U call-site semantics, and the target-correct official regional payload."
+        },
+        "B": {
+          "baseline_occurrences": 1,
+          "category": null,
+          "current_occurrences": 0,
+          "decision": "localized",
+          "reason": "The semantically wrong provider's B span is absent from the target-correct official regional payload.",
+          "source": "FE8U English target/call-site review and the corrected official FE8J/FE8CN indexed provider."
         }
       },
       "target": "0x0952"
@@ -7644,11 +7676,11 @@
     "game/zh-Hans/0x0971": {
       "baseline_classification": "mixed-script-bypass",
       "baseline_payload_sha256": "7738174e0316b373051d01a1c4f82a9b47ba249d77509207ad0c75cd204dea79",
-      "current_payload_sha256": "7738174e0316b373051d01a1c4f82a9b47ba249d77509207ad0c75cd204dea79",
+      "current_payload_sha256": "58c4ea30ab590a8720e82b7f2fad0711fa299880ad575eaeb510326e05f89a1f",
       "english_payload_sha256": "6431da66c4f1abc00676046a1570605d7a9d0aefb3048192a50a3ba8eb79ee31",
       "locale": "zh-Hans",
       "payload_source": {
-        "id": "0x093A",
+        "id": "0x0931",
         "kind": "indexed",
         "layout": "FE8J"
       },
@@ -7668,11 +7700,11 @@
     "game/zh-Hans/0x0972": {
       "baseline_classification": "mixed-script-bypass",
       "baseline_payload_sha256": "58150df0db037fbb172b83270e434a0f2f8e86aaaedd4f63fe6428d89338b2dc",
-      "current_payload_sha256": "58150df0db037fbb172b83270e434a0f2f8e86aaaedd4f63fe6428d89338b2dc",
+      "current_payload_sha256": "31dbff1d3ff9792f8143821d9f3cb3ac1f019505b01a8fb0c71a8048d56befed",
       "english_payload_sha256": "385069adfe782cf6030d3605bc82aa843fcf715913796fb39dd22f91097e5508",
       "locale": "zh-Hans",
       "payload_source": {
-        "id": "0x093C",
+        "id": "0x0932",
         "kind": "indexed",
         "layout": "FE8J"
       },
@@ -7692,11 +7724,11 @@
     "game/zh-Hans/0x0975": {
       "baseline_classification": "mixed-script-bypass",
       "baseline_payload_sha256": "6c3d140774f26ff7416badd38e770b0289928389da903a061df74c99e36cd074",
-      "current_payload_sha256": "6c3d140774f26ff7416badd38e770b0289928389da903a061df74c99e36cd074",
+      "current_payload_sha256": "b8cd6472c00108e29dba7e768b60effb06ab2a9660c4ed15002e32094ff25661",
       "english_payload_sha256": "619d548779eb46345dd15a027aecd9e11c860e124b0442b8cd62449dbc0526ac",
       "locale": "zh-Hans",
       "payload_source": {
-        "id": "0x090A",
+        "id": "0x0935",
         "kind": "indexed",
         "layout": "FE8J"
       },
@@ -7716,11 +7748,11 @@
     "game/zh-Hans/0x0976": {
       "baseline_classification": "mixed-script-bypass",
       "baseline_payload_sha256": "84b91a51d950a11806e9c396cf1d31e0c112034532b99077d0067687ee10371b",
-      "current_payload_sha256": "84b91a51d950a11806e9c396cf1d31e0c112034532b99077d0067687ee10371b",
+      "current_payload_sha256": "618afae29260655700f6e6b609621d6457171fa09454d7cfc918bd8af795e0af",
       "english_payload_sha256": "a7279ee3d583e41bd5da266692f7407af5019290226c8560a7001dd5582ab9db",
       "locale": "zh-Hans",
       "payload_source": {
-        "id": "0x0941",
+        "id": "0x0936",
         "kind": "indexed",
         "layout": "FE8J"
       },
@@ -7795,11 +7827,11 @@
     "game/zh-Hans/0x097A": {
       "baseline_classification": "mixed-script-bypass",
       "baseline_payload_sha256": "243067d1d1172c1b3a8f84b26cb0aadcd86b8721eb2fff93c1e3526fe0fa397c",
-      "current_payload_sha256": "243067d1d1172c1b3a8f84b26cb0aadcd86b8721eb2fff93c1e3526fe0fa397c",
+      "current_payload_sha256": "7738174e0316b373051d01a1c4f82a9b47ba249d77509207ad0c75cd204dea79",
       "english_payload_sha256": "a2439e64ec95f45532b1675717709e56254b745a06c102c36e836831a75f06d6",
       "locale": "zh-Hans",
       "payload_source": {
-        "id": "0x0942",
+        "id": "0x093A",
         "kind": "indexed",
         "layout": "FE8J"
       },
@@ -7819,11 +7851,11 @@
     "game/zh-Hans/0x097B": {
       "baseline_classification": "mixed-script-bypass",
       "baseline_payload_sha256": "f1986fe415b5340e14f29fdc53af2b9385352a6c94b78e7e9128e699fa79b954",
-      "current_payload_sha256": "f1986fe415b5340e14f29fdc53af2b9385352a6c94b78e7e9128e699fa79b954",
+      "current_payload_sha256": "fc8545b5c526579b4095ae5a696f49ea688fa0980f676d13b5f5f5e79787b94d",
       "english_payload_sha256": "77b861a6a3702614e02913a08b4a9fb21e6418ed15c4af5aedd252b4b5dcc86f",
       "locale": "zh-Hans",
       "payload_source": {
-        "id": "0x0912",
+        "id": "0x093B",
         "kind": "indexed",
         "layout": "FE8J"
       },
@@ -7843,11 +7875,11 @@
     "game/zh-Hans/0x097C": {
       "baseline_classification": "mixed-script-bypass",
       "baseline_payload_sha256": "2df469983d58a16a7abe07cd141af0ec4c81e619d7d1919d63be381e76a80250",
-      "current_payload_sha256": "2df469983d58a16a7abe07cd141af0ec4c81e619d7d1919d63be381e76a80250",
+      "current_payload_sha256": "58150df0db037fbb172b83270e434a0f2f8e86aaaedd4f63fe6428d89338b2dc",
       "english_payload_sha256": "00aa96bf9e0d6f274338ebd47f488fdf5af593b42b0e78a3f06f9db81a3d9e8b",
       "locale": "zh-Hans",
       "payload_source": {
-        "id": "0x0943",
+        "id": "0x093C",
         "kind": "indexed",
         "layout": "FE8J"
       },
@@ -7915,11 +7947,11 @@
     "game/zh-Hans/0x0982": {
       "baseline_classification": "mixed-script-bypass",
       "baseline_payload_sha256": "5a762e77c473d59c67eca688c56dcb1ef3fa4f9033f605bf3301233ea162e983",
-      "current_payload_sha256": "5a762e77c473d59c67eca688c56dcb1ef3fa4f9033f605bf3301233ea162e983",
+      "current_payload_sha256": "243067d1d1172c1b3a8f84b26cb0aadcd86b8721eb2fff93c1e3526fe0fa397c",
       "english_payload_sha256": "b12ef3ca3462ef84e4ba15f7b27b5812ddee11daea4cad240dce2a3fbbee7a81",
       "locale": "zh-Hans",
       "payload_source": {
-        "id": "0x0947",
+        "id": "0x0942",
         "kind": "indexed",
         "layout": "FE8J"
       },
@@ -8259,16 +8291,16 @@
   "schema_version": 1,
   "summary": {
     "ja": {
-      "approved_span_count": 170,
+      "approved_span_count": 167,
       "game_latin_bearing_payload_count": 162,
-      "localized_span_count": 7,
+      "localized_span_count": 12,
       "mixed_script_bypass_payload_count": 125,
       "raw_latin_bearing_payload_count": 1
     },
     "zh-Hans": {
-      "approved_span_count": 171,
+      "approved_span_count": 168,
       "game_latin_bearing_payload_count": 175,
-      "localized_span_count": 18,
+      "localized_span_count": 23,
       "mixed_script_bypass_payload_count": 139,
       "raw_latin_bearing_payload_count": 1
     }

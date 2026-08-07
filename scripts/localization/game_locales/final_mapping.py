@@ -368,6 +368,279 @@ _CONTEXTUAL_DUPLICATE_DONORS = {
     }
 }
 
+_SEMANTIC_INDEXED_CORRECTIONS: Dict[str, Dict[str, Any]] = {
+    "0x002A": {
+        "english_payload_sha256": "39995bb1485a5b33995817a2649b4c5867d8f4bb09d3ed286762fa66419b5590",
+        "incorrect_source_id": "0x0005",
+        "payload_sha256": {
+            "ja": "c6f08dca315e0c2a99508ebe80bce905dfa19b2497bf522f2f2f9348e3fefbbd",
+            "zh-Hans": "13fb271ef486e8bea9239079f02871f7d07f6112f69077c444501be4430fcdd9",
+        },
+        "rationale": (
+            "The FE8U target is the World Map title. Official FE8J/FE8CN "
+            "0x0564 is exactly World Map; 0x0005 is SRAM initialization."
+        ),
+        "source_id": "0x0564",
+        "source_key": "MSG_02A/World Map title",
+        "subsystem": "world-map",
+    },
+    "0x093F": {
+        "english_payload_sha256": "de6bb8ce1d9c7dcb7d3b7bf5b822c9ce3be811177c336688f2050b5f484b336e",
+        "incorrect_source_id": "0x0907",
+        "payload_sha256": {
+            "ja": "121ee8645ad77a4c56fd1c2f3bf73d037895d72d9dc9d37dec44dcd0c4fc3119",
+            "zh-Hans": "9ca0ad0d3baf64e3d68e517398c744f0c206c0a6d599808aca94a5e0f797021d",
+        },
+        "rationale": (
+            "The selected-unit prompt is for Eirika and the A Button. "
+            "Official 0x08E4 has those semantics; 0x0907 names Gilliam."
+        ),
+        "source_id": "0x08E4",
+        "source_key": "EventScr_Ch1Tut_EirikaVisitHouseIdle1/selected-Eirika",
+        "subsystem": "chapter-event",
+    },
+    "0x0946": {
+        "english_payload_sha256": "7f1d4ad323faf94dccf817bf0e6d933c7e1bac409f0a734b622e4ec87b87bad4",
+        "incorrect_source_id": "0x090B",
+        "payload_sha256": {
+            "ja": "c965c719176d22ef0e60634d28ae3ca60f8844054446a5dbbb089743a24a40fa",
+            "zh-Hans": "609abc4a80b7920547517ccece15b9760c2a046e228805d73e215a25f32907a6",
+        },
+        "rationale": (
+            "The call site starts item trading by selecting Gilliam. Official "
+            "0x0906 says trade, Gilliam, and A; 0x090B accepts a vulnerary."
+        ),
+        "source_id": "0x0906",
+        "source_key": "EventScr_Ch1Tut_GilliamBattle/start-trade",
+        "subsystem": "chapter-event",
+    },
+    "0x0947": {
+        "english_payload_sha256": "5e17fead04517e766711efc5b5e79d34a3a9589e729f2a331618f3b653b13ec5",
+        "incorrect_source_id": "0x090E",
+        "payload_sha256": {
+            "ja": "51eadbaeade1a3a92dc182e2fab0d069e5fa6658708e489d023656b5f8fdd836",
+            "zh-Hans": "9c4c09e07a855e528d1547ad1f047c546db4de08fa85cd23713795a922768f2d",
+        },
+        "rationale": (
+            "The selected-unit prompt is for Gilliam and the A Button. "
+            "Official 0x0907 matches; 0x090E names Seth."
+        ),
+        "source_id": "0x0907",
+        "source_key": "EventScr_Ch1Tut_TradeSelectGalliamIdle1/selected-Gilliam",
+        "subsystem": "chapter-event",
+    },
+    "0x0948": {
+        "english_payload_sha256": "00dcfe8fe14cc678a14184d3cb05354bcfe0ede9ee96cd95b376e094703028d9",
+        "incorrect_source_id": "0x090F",
+        "payload_sha256": {
+            "ja": "0a76a3b2e8930411a50b61f3cc7c3b5292ae5b7a08145104d80f22f0e2125c55",
+            "zh-Hans": "b1176a7fb6a9484fb5db77011e7a859cf90cf18481ddaa5de99d7ae58ce1f1d0",
+        },
+        "rationale": (
+            "The enabled command is Trade. Official 0x0908 selects Trade; "
+            "0x090F is a selected-Seth prompt."
+        ),
+        "source_id": "0x0908",
+        "source_key": "EventScr_Ch1Tut_TradeSelectGalliamEnd/select-Trade",
+        "subsystem": "chapter-event",
+    },
+    "0x0949": {
+        "english_payload_sha256": "c479da45f5511df7173879532d3d1db00a8c0d54482b651841aceb3c72460e8f",
+        "incorrect_source_id": "0x0931",
+        "payload_sha256": {
+            "ja": "1e1e38be578f17e137c3051c4fbc7258e739dfc49805b8e599cefa49d88c7b44",
+            "zh-Hans": "418d091b5ebe0cd46b92a51a118b5bd69316886529be2775dd597da34b6ef54c",
+        },
+        "rationale": (
+            "The trade screen shows Gilliam and Franz and requires moving "
+            "right. Official 0x0909 matches; 0x0931 moves next to Ross."
+        ),
+        "source_id": "0x0909",
+        "source_key": "EventScr_TradeTutStart/right-to-Franz-items",
+        "subsystem": "chapter-event",
+    },
+    "0x094B": {
+        "english_payload_sha256": "9e9c36da5c967877cbf85a98b145582b5e836ac68fe9e5a62cc5f62086ae4afe",
+        "incorrect_source_id": "0x0932",
+        "payload_sha256": {
+            "ja": "e33b7e0e774714a4afad8544c8b1caf0d81803c8b4f541fd4b446b8ebcef06ae",
+            "zh-Hans": "8bbbe8585f62eaba2240de766caa5c30402458af5718f36c3d6b599b9f696c43",
+        },
+        "rationale": (
+            "The trade step accepts a vulnerary from Franz with A. Official "
+            "0x090B matches; 0x0932 selects Rescue."
+        ),
+        "source_id": "0x090B",
+        "source_key": "EventScr_TradeTut_PressAtoGetItem/accept-vulnerary",
+        "subsystem": "chapter-event",
+    },
+    "0x094C": {
+        "english_payload_sha256": "30b53ce05a829e76f88a1b4a202e9b95f629362242bb49a9610b9c7f832edacf",
+        "incorrect_source_id": "0x0934",
+        "payload_sha256": {
+            "ja": "0455d535574d7cebcf1ff762eaaef4c0a4c3c3d72e3c2742752078d26850dc63",
+            "zh-Hans": "328696022144adb29b1deb5fcc42c14d7e51ed749d914ba7c66958f461b4b5e3",
+        },
+        "rationale": (
+            "The completed trade is closed with the B Button. Official "
+            "0x090C matches; 0x0934 selects Vanessa."
+        ),
+        "source_id": "0x090C",
+        "source_key": "EventScr_TradeTutDone/B-ends-trade",
+        "subsystem": "chapter-event",
+    },
+    "0x094F": {
+        "english_payload_sha256": "9e4929fd1b3205184102bbd7fa49c1529caceed7e4835804ea0d4add4ec454f6",
+        "incorrect_source_id": "0x0939",
+        "payload_sha256": {
+            "ja": "cf2e81dc7a5e0069ea915e5ab9ebeeba9b37f91986c2e17c602192909971cf2d",
+            "zh-Hans": "df78999d55b7413e681b951bd19328161a168da9365df48f1a5c3b0dffec1295",
+        },
+        "rationale": (
+            "The selected-unit prompt is for Seth and the A Button. Official "
+            "0x090F matches; 0x0939 names Moulder."
+        ),
+        "source_id": "0x090F",
+        "source_key": "EventScr_Ch1Tut_SethMoveToEnemy/selected-Seth",
+        "subsystem": "chapter-event",
+    },
+    "0x0952": {
+        "english_payload_sha256": "2affa5d917e7cc50a1982a4e034cd72fb71b44a4a8da8fd83578312757a3881d",
+        "incorrect_source_id": "0x090C",
+        "payload_sha256": {
+            "ja": "1422be7b1b97192747a1272e4de6afe439383fad7f384238a4f55d4d8de5c795",
+            "zh-Hans": "f1986fe415b5340e14f29fdc53af2b9385352a6c94b78e7e9128e699fa79b954",
+        },
+        "rationale": (
+            "The enabled command is Attack with a sword against an axe. "
+            "Official 0x0912 matches; 0x090C ends a trade with B."
+        ),
+        "source_id": "0x0912",
+        "source_key": "EventScr_Ch1Tut_AfterSethMoveToEnemy/select-Attack",
+        "subsystem": "chapter-event",
+    },
+    "0x0971": {
+        "english_payload_sha256": "f0efabb9293779ac94754c2422fe29f981467c4799000550b9bbcc2f3cee4e8b",
+        "incorrect_source_id": "0x093A",
+        "payload_sha256": {
+            "ja": "e6da01b7737089a42522b6f70335c56fb98f0f28bf060bff1c4763df220e3b51",
+            "zh-Hans": "58c4ea30ab590a8720e82b7f2fad0711fa299880ad575eaeb510326e05f89a1f",
+        },
+        "rationale": (
+            "The movement prompt goes next to Ross and confirms with A. "
+            "Official 0x0931 matches; 0x093A selects Staff."
+        ),
+        "source_id": "0x0931",
+        "source_key": "EventScr_Ch2Tutorial1/move-next-to-Ross",
+        "subsystem": "chapter-event",
+    },
+    "0x0972": {
+        "english_payload_sha256": "0b20e9aa73c07e04526f7bcbc48663cbece24b19115f4bc6cfa21e7c83fce0ca",
+        "incorrect_source_id": "0x093C",
+        "payload_sha256": {
+            "ja": "6bd943db2e0a14a935047a1448cf6ee6ceeb56e042d64077bb62a8adaa4d57f7",
+            "zh-Hans": "31dbff1d3ff9792f8143821d9f3cb3ac1f019505b01a8fb0c71a8048d56befed",
+        },
+        "rationale": (
+            "The enabled command is Rescue and confirms with A. Official "
+            "0x0932 matches; 0x093C moves near Vanessa."
+        ),
+        "source_id": "0x0932",
+        "source_key": "EventScr_Ch2Tutorial3/select-Rescue",
+        "subsystem": "chapter-event",
+    },
+    "0x0975": {
+        "english_payload_sha256": "4782693f037423890d22aebbf19edf1304b90e63f49bb142eaa01926e8b92c35",
+        "incorrect_source_id": "0x090A",
+        "payload_sha256": {
+            "ja": "b8bd71817753174f3938fc9b83674e41af594adac108ef0268536586f8201a16",
+            "zh-Hans": "b8cd6472c00108e29dba7e768b60effb06ab2a9660c4ed15002e32094ff25661",
+        },
+        "rationale": (
+            "Vanessa is carrying Ross and must be selected before dropping "
+            "him. Official 0x0935 matches; 0x090A selects a vulnerary."
+        ),
+        "source_id": "0x0935",
+        "source_key": "EventScr_Ch2_5/select-Vanessa-to-drop-Ross",
+        "subsystem": "chapter-event",
+    },
+    "0x0976": {
+        "english_payload_sha256": "2159df5111a52abbdee2bf3baf9ed59f5a3f3a4667d420acddf72ebb3fa49d5d",
+        "incorrect_source_id": "0x0941",
+        "payload_sha256": {
+            "ja": "705d93d3067d9b2fed4a88392e36cf73d1909de099c8555e99f31b199179d576",
+            "zh-Hans": "618afae29260655700f6e6b609621d6457171fa09454d7cfc918bd8af795e0af",
+        },
+        "rationale": (
+            "The enabled command is Drop and confirms with A. Official "
+            "0x0936 matches; 0x0941 selects Eirika."
+        ),
+        "source_id": "0x0936",
+        "source_key": "EventScr_Ch2Tutorial11/select-Drop",
+        "subsystem": "chapter-event",
+    },
+    "0x097A": {
+        "english_payload_sha256": "bfd346c4e6c5bc22779c094057a091ba6327e329b6373aeb6064b6b365b2b650",
+        "incorrect_source_id": "0x0942",
+        "payload_sha256": {
+            "ja": "a532be518b7e634a3dcf1e34728db043fe7174342277af0267220e8dde95b737",
+            "zh-Hans": "7738174e0316b373051d01a1c4f82a9b47ba249d77509207ad0c75cd204dea79",
+        },
+        "rationale": (
+            "The enabled command is Staff and confirms with A. Official "
+            "0x093A matches; 0x0942 moves Eirika to a village."
+        ),
+        "source_id": "0x093A",
+        "source_key": "EventScr_Ch2Tutorial20/select-Staff",
+        "subsystem": "chapter-event",
+    },
+    "0x097B": {
+        "english_payload_sha256": "bda961f5ccaa106a93197835de48c4aad377fe27652c07077dd8edd4581d2812",
+        "incorrect_source_id": "0x0912",
+        "payload_sha256": {
+            "ja": "046443cb415265d21803b0a1f5bade8b820780aefb406449673e00b9ea378b4c",
+            "zh-Hans": "fc8545b5c526579b4095ae5a696f49ea688fa0980f676d13b5f5f5e79787b94d",
+        },
+        "rationale": (
+            "Ross has been rescued; the next unit is Moulder moving toward "
+            "Vanessa. Official 0x093B matches; 0x0912 is an attack prompt."
+        ),
+        "source_id": "0x093B",
+        "source_key": "EventScr_Ch2_4/select-Moulder-after-rescue",
+        "subsystem": "chapter-event",
+    },
+    "0x097C": {
+        "english_payload_sha256": "ef5dfb3f37dff6e67df264b9a0231a29d0eb545e73c543b827ac76ff5784d7f5",
+        "incorrect_source_id": "0x0943",
+        "payload_sha256": {
+            "ja": "a9b701b7debabf3798bcc1f2146debdb8ea2d3233df92e72feeb2cb7e3d8c5a7",
+            "zh-Hans": "58150df0db037fbb172b83270e434a0f2f8e86aaaedd4f63fe6428d89338b2dc",
+        },
+        "rationale": (
+            "The movement prompt goes to the flashing space near Vanessa and "
+            "confirms with A. Official 0x093C matches; 0x0943 selects Visit."
+        ),
+        "source_id": "0x093C",
+        "source_key": "EventScr_Ch2Tutorial8/move-near-Vanessa",
+        "subsystem": "chapter-event",
+    },
+    "0x0982": {
+        "english_payload_sha256": "0fe1fc32aa79d2760e650f7cab077435e7490b72dd12adc26e28f08abf2f4954",
+        "incorrect_source_id": "0x0947",
+        "payload_sha256": {
+            "ja": "d5135d4aa50dfd941dfb3d15d2a142a432b84adf8791a1931abc23fae46536d9",
+            "zh-Hans": "243067d1d1172c1b3a8f84b26cb0aadcd86b8721eb2fff93c1e3526fe0fa397c",
+        },
+        "rationale": (
+            "The movement prompt sends Eirika to the flashing village space "
+            "and confirms with A. Official 0x0942 matches; 0x0947 selects Talk."
+        ),
+        "source_id": "0x0942",
+        "source_key": "EventScr_Ch2Tutorial23/move-Eirika-to-village",
+        "subsystem": "chapter-event",
+    },
+}
+
 
 def _sha256_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
@@ -1067,6 +1340,54 @@ def build_final_mapping_artifacts(
         )
         _promote(row_by_id[target_id], _indexed_source(accepted), verification)
         promoted[target_id] = "d-contextual-resolution"
+
+    for target_id, decision in sorted(_SEMANTIC_INDEXED_CORRECTIONS.items()):
+        target = int(target_id, 16)
+        incorrect_source = _indexed_source(decision["incorrect_source_id"])
+        if row_by_id[target_id]["source"] != incorrect_source:
+            raise FinalMappingError(
+                f"{target_id}: semantic correction no longer replaces "
+                f"{decision['incorrect_source_id']}"
+            )
+        if (
+            _sha256_bytes(english_entries[target].encoded_bytes)
+            != decision["english_payload_sha256"]
+        ):
+            raise FinalMappingError(
+                f"{target_id}: semantic correction English payload changed"
+            )
+        source = _indexed_source(decision["source_id"])
+        source_numeric = int(decision["source_id"], 16)
+        for locale in ("ja", "zh-Hans"):
+            payload = indexed[locale].get(source_numeric)
+            if (
+                payload is None
+                or _sha256_text(payload)
+                != decision["payload_sha256"][locale]
+            ):
+                raise FinalMappingError(
+                    f"{target_id}: semantic correction {locale} payload changed"
+                )
+        verification = _promotion_verification(
+            original=original_by_id[target_id],
+            precedence="d-semantic-correction",
+            confidence="manual",
+            evidence=decision["rationale"],
+            evidence_kind="official-regional-semantic-payload",
+            source_table="FE8J/FE8CN indexed message corpus",
+            source_symbol=decision["source_id"],
+            source_key=decision["source_key"],
+            subsystem=decision["subsystem"],
+            rationale=decision["rationale"],
+            details={
+                "english_payload_sha256": decision["english_payload_sha256"],
+                "incorrect_source": incorrect_source,
+                "payload_sha256": decision["payload_sha256"],
+                "replacement_source_id": decision["source_id"],
+            },
+        )
+        _promote(row_by_id[target_id], source, verification)
+        promoted[target_id] = "d-semantic-correction"
 
     for target_id, decision in sorted(_AUTHORED_PROMOTIONS.items()):
         original = original_by_id[target_id]

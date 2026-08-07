@@ -113,7 +113,7 @@ class RuntimeLeakageAuditTests(unittest.TestCase):
         )
 
     def test_every_current_latin_span_has_an_exact_approval(self):
-        expected_payload_counts = {"ja": 162, "zh-Hans": 164}
+        expected_payload_counts = {"ja": 159, "zh-Hans": 161}
         for scope in ("game_catalog", "raw_surface"):
             for locale, report in self.report[scope]["locales"].items():
                 self.assertEqual(report["unapproved_span_count"], 0, locale)
