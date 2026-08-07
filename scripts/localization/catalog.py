@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Dict, List, Mapping, Optional, Tuple
 
 from . import schema
-from .pseudo import pseudoize
+from .pseudo import apply_pseudo_policy
 
 _PLACEHOLDER_RE = re.compile(r"\{[0-9]+\}")
 
@@ -40,6 +40,7 @@ class RegistryEntry:
     surface: Optional[str] = None
     max_width: Optional[int] = None
     max_decoded_bytes: Optional[int] = None
+    pseudo_policy: str = schema.DEFAULT_PSEUDO_POLICY
     notes: Optional[str] = None
 
     @property
@@ -139,6 +140,11 @@ def parse_registry(data: dict) -> Tuple[RegistryEntry, ...]:
         previous_id = entry_id
 
         if status == schema.STATUS_TOMBSTONE:
+            if "pseudo_policy" in raw:
+                raise schema.SchemaError(
+                    f"message {key!r} (id {entry_id}) is a tombstone; "
+                    "pseudo_policy is only valid on active entries"
+                )
             entries.append(
                 RegistryEntry(
                     id=entry_id,
@@ -154,6 +160,12 @@ def parse_registry(data: dict) -> Tuple[RegistryEntry, ...]:
             raise schema.SchemaError(
                 f"message {key!r} (id {entry_id}) has invalid surface {surface!r}; "
                 f"expected one of {schema.SURFACES}"
+            )
+        pseudo_policy = raw.get("pseudo_policy", schema.DEFAULT_PSEUDO_POLICY)
+        if pseudo_policy not in schema.PSEUDO_POLICIES:
+            raise schema.SchemaError(
+                f"message {key!r} (id {entry_id}) has invalid pseudo_policy "
+                f"{pseudo_policy!r}; expected one of {schema.PSEUDO_POLICIES}"
             )
         max_width = _require_int(raw.get("max_width"), f"{key} max_width")
         if not (schema.MAX_WIDTH_MIN <= max_width <= schema.MAX_WIDTH_MAX):
@@ -175,6 +187,7 @@ def parse_registry(data: dict) -> Tuple[RegistryEntry, ...]:
                 surface=surface,
                 max_width=max_width,
                 max_decoded_bytes=max_decoded_bytes,
+                pseudo_policy=pseudo_policy,
                 notes=raw.get("notes"),
             )
         )
@@ -392,7 +405,7 @@ def pseudoize_and_validate(
     pseudo_strings: Dict[str, str] = {}
     for key, en_text in en_strings.items():
         entry = active_by_key[key]
-        pseudo_text = pseudoize(en_text)
+        pseudo_text = apply_pseudo_policy(en_text, entry.pseudo_policy)
         _check_utf8_text(pseudo_text, key, schema.PSEUDO_LOCALE)
         _check_placeholder_syntax(pseudo_text, key, schema.PSEUDO_LOCALE)
         _check_width_and_bytes(pseudo_text, key, entry, schema.PSEUDO_LOCALE)

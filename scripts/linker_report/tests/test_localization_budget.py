@@ -128,6 +128,7 @@ def source_budget(locales):
     return {
         "active_message_count": 32,
         "tombstone_count": 1,
+        "pseudo_policy_counts": {"transform": 31, "preserve": 1},
         "locales_generated": list(locales),
         "catalog_string_bytes": {"total": 0},
         "catalog_index_bytes": 0,
@@ -183,6 +184,10 @@ class CatalogSymbolBudgetTests(unittest.TestCase):
         self.assertEqual(report["rom_catalog_strings"]["total_bytes"], 512)
         self.assertEqual(report["rom_catalog_strings"]["missing"], [])
         self.assertEqual(report["rom_catalog_strings"]["unexpected"], [])
+        self.assertEqual(
+            report["source_catalog_budget"]["pseudo_policy_counts"],
+            {"transform": 31, "preserve": 1},
+        )
         self.assertEqual(lb._catalog_symbol_errors(report), [])
 
     def test_missing_required_generic_symbols_are_actionable(self):

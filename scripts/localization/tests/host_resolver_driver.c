@@ -139,6 +139,7 @@ int main(void)
             EXPANSION_LOCALE_EN,
             EXPANSION_LOCALE_JA,
             EXPANSION_LOCALE_ZH_HANS,
+            EXPANSION_LOCALE_QPS_PLOC,
         };
         static const char *const fallbackLabels[][3] = {
             {" Class 1", " Class 2", " Class 3"},
@@ -149,13 +150,16 @@ int main(void)
         int localeIndex;
         int optionIndex;
 
-        for (localeIndex = 0; localeIndex < 3; localeIndex++)
+        for (localeIndex = 0; localeIndex < 4; localeIndex++)
         {
             CHECK(ExpansionLocale_SetCurrent(locales[localeIndex]) == TRUE);
             CHECK(strcmp(
                 ExpansionLocale_ResolveCurrent(
                     EXP_MSG_RAW_SURFACE_DIAGNOSTIC_BUILD_TIMESTAMP),
                 TEST_BUILD_DATE_TIME) == 0);
+
+            if (localeIndex >= 3)
+                continue;
 
             for (optionIndex = 0; optionIndex < 3; optionIndex++)
             {
@@ -170,7 +174,7 @@ int main(void)
             ClassChgMenu_GetDisplayLabel(-1, NULL),
             "<!MISSING!>") == 0);
         CHECK(ExpansionLocale_SetCurrent(EXPANSION_LOCALE_EN) == TRUE);
-        CHECK(gameCacheInvalidations == 7);
+        CHECK(gameCacheInvalidations == 8);
         printf("CLASS CHANGE FALLBACK CHECKS PASSED\n");
         printf("BUILD TIMESTAMP LOCALE SWITCH CHECKS PASSED\n");
     }
@@ -184,7 +188,7 @@ int main(void)
     }
 
     ExpansionLocale_InvalidateCache();
-    CHECK(gameCacheInvalidations == 8);
+    CHECK(gameCacheInvalidations == 9);
 
     ExpansionLocale_GetCatalogStats(&stats);
     CHECK(stats.activeMessageCount == 38);

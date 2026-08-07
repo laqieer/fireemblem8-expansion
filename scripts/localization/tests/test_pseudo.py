@@ -5,7 +5,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
 
-from scripts.localization.pseudo import pseudoize, pseudoize_catalog
+from scripts.localization import schema
+from scripts.localization.pseudo import (
+    apply_pseudo_policy,
+    pseudoize,
+    pseudoize_catalog,
+)
+from scripts.localization.schema import SchemaError
 
 
 class PseudoizeTests(unittest.TestCase):
@@ -55,6 +61,32 @@ class PseudoizeTests(unittest.TestCase):
         self.assertEqual(set(result.keys()), set(catalog.keys()))
         for key in catalog:
             self.assertEqual(result[key], pseudoize(catalog[key]))
+
+    def test_apply_policy_defaults_to_transform(self):
+        self.assertEqual(apply_pseudo_policy("English"), pseudoize("English"))
+
+    def test_apply_policy_preserves_exact_bytes(self):
+        text = "2005/02/04(FRI) 16:55:40"
+        self.assertEqual(
+            apply_pseudo_policy(text, schema.PSEUDO_POLICY_PRESERVE),
+            text,
+        )
+
+    def test_invalid_policy_rejected(self):
+        with self.assertRaises(SchemaError):
+            apply_pseudo_policy("English", "decorate-sometimes")
+
+    def test_catalog_policy_only_changes_selected_key(self):
+        catalog = {
+            "identifier": "2005/02/04(FRI) 16:55:40",
+            "label": "English",
+        }
+        result = pseudoize_catalog(
+            catalog,
+            {"identifier": schema.PSEUDO_POLICY_PRESERVE},
+        )
+        self.assertEqual(result["identifier"], catalog["identifier"])
+        self.assertEqual(result["label"], pseudoize(catalog["label"]))
 
 
 if __name__ == "__main__":

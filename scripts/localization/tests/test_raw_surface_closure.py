@@ -8,6 +8,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
 
+from scripts.localization.catalog import load_catalog
 from scripts.localization.game_locales.raw_closure import (
     RawClosureError,
     build_raw_surface_closure,
@@ -45,6 +46,7 @@ class RawSurfaceClosureTests(unittest.TestCase):
             )
             for locale in ("en", "ja", "zh-Hans")
         }
+        cls.loaded_catalog = load_catalog()
         cls.closure = build_raw_surface_closure(
             raw_data=cls.raw,
             mapping_data=cls.mapping,
@@ -175,9 +177,15 @@ class RawSurfaceClosureTests(unittest.TestCase):
         )
         self.assertIsNotNone(match)
         build_timestamp = match.group(1)
-        for locale in ("en", "ja", "zh-Hans"):
+        registry_entry = next(
+            row
+            for row in self.registry["messages"]
+            if row["key"] == "raw_surface.diagnostic.build_timestamp"
+        )
+        self.assertEqual(registry_entry["pseudo_policy"], "preserve")
+        for locale in ("en", "ja", "zh-Hans", "qps-ploc"):
             self.assertEqual(
-                self.catalogs[locale]["strings"][
+                self.loaded_catalog.strings_for(locale)[
                     "raw_surface.diagnostic.build_timestamp"
                 ],
                 build_timestamp,

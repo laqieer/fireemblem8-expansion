@@ -30,7 +30,9 @@ The framework is layered, each layer independently testable:
    `zh-Hans`; `qps-ploc` is derived from English. Validation rejects invalid
    Unicode scalars, control/format/private-use text, whitespace controls
    other than `\n`, malformed placeholders, placeholder/newline drift,
-   surface-width overflow, and UTF-8 decoded-byte overflow.
+   surface-width overflow, UTF-8 decoded-byte overflow, and unknown pseudo
+   policies. Active registry entries default to `pseudo_policy: "transform"`;
+   locale-neutral identifiers may opt into `"preserve"`.
    `scripts/localization/generate.py` compiles this into
    `expansion_locale_catalog.c` (ROM data) and `expansion_msg_ids.h`
    (generated header), write-if-unchanged. Its descriptor table is indexed
@@ -225,8 +227,15 @@ full record, migration, no-wipe, and menu limitations are authoritative in
 mechanical transform of the English catalog (accenting/padding/bracketing
 ASCII test markers), generated at build time from `catalog.en.json` --
 **never a translation, never hand-authored foreign text, and never
-represents any real language**. Every user-facing surface that can display
-it (the selector list and the More submenu) labels it `"Pseudo (Test)"`;
+represents any real language**. The default policy for every active registry
+entry is `pseudo_policy: "transform"`. An active locale-neutral identifier may
+instead declare `"pseudo_policy": "preserve"`; the generated qps entry then
+uses the exact English bytes while all other entries keep the normal transform.
+The build timestamp diagnostic uses this policy so `en`, `ja`, `zh-Hans`,
+`qps-ploc`, and `gBuildDateTime` remain byte-identical. Unknown policies and
+policy fields on tombstones are schema errors. Every user-facing surface that
+can display it (the selector list and the More submenu) labels it
+`"Pseudo (Test)"`;
 the compact Config-row label is the cataloged code `QPS`. Locale proper
 names/codes remain resolved against `EXPANSION_LOCALE_EN`
 (`Japanese`/`Simplified Chinese`, `JA`/`ZH`) so every first-start row is
@@ -249,6 +258,9 @@ descriptor slots.
 1. Add/edit entries in `texts/expansion/registry.json` (append-only IDs,
    never renumbering or reusing a retired id) and each authored
    `texts/expansion/catalog.<locale>.json`. English is the required fallback.
+   Omit `pseudo_policy` for the default qps transform; use
+   `"pseudo_policy": "preserve"` only for active locale-neutral identifiers
+   whose qps bytes must remain exactly equal to English.
    The committed `ja`/`zh-Hans` catalogs intentionally cover every active
    key, although the generic resolver also handles a missing non-English
    entry with one deterministic English fallback.

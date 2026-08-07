@@ -77,6 +77,14 @@ STATUS_ACTIVE = "active"
 STATUS_TOMBSTONE = "tombstone"
 STATUSES = (STATUS_ACTIVE, STATUS_TOMBSTONE)
 
+# Active registry entries default to the normal qps-ploc transform. Entries
+# whose text is a locale-neutral identifier may explicitly preserve the
+# English bytes instead.
+PSEUDO_POLICY_TRANSFORM = "transform"
+PSEUDO_POLICY_PRESERVE = "preserve"
+PSEUDO_POLICIES = (PSEUDO_POLICY_TRANSFORM, PSEUDO_POLICY_PRESERVE)
+DEFAULT_PSEUDO_POLICY = PSEUDO_POLICY_TRANSFORM
+
 # Message "surface" -- which framework UI/diagnostic surface a message is
 # rendered on -- purely descriptive metadata used for width-budget
 # validation; not itself a rendering feature in this sprint.

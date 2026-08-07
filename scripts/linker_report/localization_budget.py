@@ -300,6 +300,9 @@ def build_report(
         report["source_catalog_budget"] = {
             "active_message_count": localization_budget["active_message_count"],
             "tombstone_count": localization_budget["tombstone_count"],
+            "pseudo_policy_counts": localization_budget.get(
+                "pseudo_policy_counts", {}
+            ),
             "locales_generated": localization_budget["locales_generated"],
             "catalog_string_bytes": localization_budget["catalog_string_bytes"],
             "catalog_index_bytes": localization_budget["catalog_index_bytes"],

@@ -255,6 +255,12 @@ def build_budget(catalog: LoadedCatalog) -> dict:
     return {
         "active_message_count": len(catalog.active_entries),
         "tombstone_count": len(catalog.tombstone_entries),
+        "pseudo_policy_counts": {
+            policy: sum(
+                entry.pseudo_policy == policy for entry in catalog.active_entries
+            )
+            for policy in schema.PSEUDO_POLICIES
+        },
         "locales_authored": list(catalog.authored_locales),
         "locales_generated": list(catalog.generated_locales),
         "populated_descriptor_count": len(catalog.generated_locales),

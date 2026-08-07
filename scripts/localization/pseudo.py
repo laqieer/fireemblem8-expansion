@@ -12,12 +12,17 @@ Placeholder tokens (``{0}``, ``{1}``, ...) and the single supported
 control token (``\\n``) are always copied through verbatim -- transforming
 either would break format-string/formatting parity between English and
 the pseudo locale (see validate.py's placeholder/control-token parity
-check).
+check). Active registry entries use this transform by default; a
+locale-neutral identifier may instead declare the validated ``preserve``
+policy and pass through byte-for-byte.
 """
 
 from __future__ import annotations
 
 import re
+from typing import Mapping, Optional
+
+from . import schema
 
 _PLACEHOLDER_RE = re.compile(r"\{[0-9]+\}")
 _VOWELS = set("aeiouAEIOU")
@@ -64,8 +69,31 @@ def pseudoize(text: str) -> str:
     return f"{PSEUDO_PREFIX}{''.join(pieces)}{PSEUDO_SUFFIX}"
 
 
-def pseudoize_catalog(catalog: dict) -> dict:
-    """Applies pseudoize() to every value of an English key->text catalog
-    dict, preserving key order (Python 3.7+ dicts are ordered) for
-    deterministic downstream iteration."""
-    return {key: pseudoize(text) for key, text in catalog.items()}
+def apply_pseudo_policy(
+    text: str, policy: str = schema.DEFAULT_PSEUDO_POLICY
+) -> str:
+    """Applies one validated registry pseudo policy to English text."""
+    if policy == schema.PSEUDO_POLICY_TRANSFORM:
+        return pseudoize(text)
+    if policy == schema.PSEUDO_POLICY_PRESERVE:
+        return text
+    raise schema.SchemaError(
+        f"invalid pseudo policy {policy!r}; expected one of {schema.PSEUDO_POLICIES}"
+    )
+
+
+def pseudoize_catalog(
+    catalog: dict, policies: Optional[Mapping[str, str]] = None
+) -> dict:
+    """Applies each key's pseudo policy, defaulting to the normal transform.
+
+    Key order is preserved (Python 3.7+ dicts are ordered) for deterministic
+    downstream iteration.
+    """
+    policies = {} if policies is None else policies
+    return {
+        key: apply_pseudo_policy(
+            text, policies.get(key, schema.DEFAULT_PSEUDO_POLICY)
+        )
+        for key, text in catalog.items()
+    }

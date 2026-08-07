@@ -313,6 +313,7 @@
       "key": "raw_surface.diagnostic.build_timestamp",
       "status": "active",
       "surface": "debug_overlay",
+      "pseudo_policy": "preserve",
       "max_width": 32,
       "max_decoded_bytes": 32,
       "notes": "Locale-neutral executable identity. Every runtime locale duplicates the current gBuildDateTime string; regional raw timestamps remain source provenance only."
