@@ -1,5 +1,6 @@
 import hashlib
 import json
+import os
 import subprocess
 import sys
 import unittest
@@ -11,9 +12,10 @@ sys.path.insert(0, str(ROOT))
 
 from scripts.localization.game_locales.crosswalk import canonical_json_bytes
 from scripts.localization.game_locales.structural_completion import (
-    EventMessageNode,
     StructuralCompletionError,
-    align_event_subgroups,
+    _ch14b_alignment,
+    _site_index,
+    _trainee_alignment,
     validate_structural_completion_evidence,
 )
 
@@ -34,22 +36,17 @@ class StructuralCompletionTests(unittest.TestCase):
             int(row["target_id"], 16): row for row in cls.data["collisions"]
         }
 
-    def test_opcode_subgroups_align_despite_symbol_count_mismatch(self):
-        target_nodes = (
-            EventMessageNode(0x100, ("LOAD", "MESSAGE", "END"), "u", "u.c", 10),
-            EventMessageNode(0x101, ("MOVE", "MESSAGE", "END"), "u", "u.c", 20),
-        )
-        source_nodes = (
-            EventMessageNode(0x080, ("LOAD", "MESSAGE", "END"), "j", "j.c", 10),
-            EventMessageNode(0x090, ("EXTRA", "MESSAGE", "END"), "j", "j.c", 15),
-            EventMessageNode(0x081, ("MOVE", "MESSAGE", "END"), "j", "j.c", 20),
-        )
-        aligned = align_event_subgroups(
-            target_nodes,
-            source_nodes,
-            {(0x100, 0x080), (0x101, 0x081)},
-        )
-        self.assertEqual(set(aligned), {(0x100, 0x080), (0x101, 0x081)})
+    @classmethod
+    def _fe8j_root(cls):
+        configured = os.environ.get("FE8J_REFERENCE_ROOT")
+        candidates = [
+            Path(configured) if configured else None,
+            Path.home() / "fireemblem8j",
+        ]
+        for candidate in candidates:
+            if candidate is not None and (candidate / ".git").exists():
+                return candidate
+        return None
 
     def test_committed_artifact_is_canonical_and_schema_valid(self):
         validate_structural_completion_evidence(
@@ -84,38 +81,75 @@ class StructuralCompletionTests(unittest.TestCase):
             <= set(summary["family_counts"])
         )
 
-    def test_ch14b_pins_use_event_table_opcode_slots(self):
-        expected = {
-            **{
-                target: 0x0ABB + (target - 0x0AFA)
-                for target in range(0x0AFA, 0x0B00)
-            },
-            0x0B00: 0x0AC1,
-            **{
-                target: 0x0AC6 + (target - 0x0B05)
-                for target in range(0x0B05, 0x0B11)
-            },
+    def test_ch14b_pins_parse_real_source_and_target_scripts(self):
+        fe8j_root = self._fe8j_root()
+        if fe8j_root is None:
+            self.skipTest("FE8J reference tree is unavailable")
+        event_rows = {
+            (target_id, int(row["source_id"], 16))
+            for target_id, row in self.proposals.items()
+            if row["evidence"]["basis"] == "parsed-event-structure"
         }
-        for target_id, source_id in expected.items():
-            row = self.proposals[target_id]
-            self.assertEqual(row["source_id"], f"0x{source_id:04X}")
+        parsed = _ch14b_alignment(
+            ROOT,
+            fe8j_root,
+            accepted_pairs=event_rows,
+        )
+        self.assertEqual(set(parsed), event_rows)
+        for pair, proof in parsed.items():
+            self.assertEqual(proof["basis"], "parsed-event-structure")
+            source = proof["source_structure"]
+            target = proof["target_structure"]
+            self.assertEqual(source["chapter"], target["chapter"])
             self.assertEqual(
-                row["evidence"]["basis"],
-                "pinned-event-table-opcode-path",
+                source["control_flow_path"],
+                target["control_flow_path"],
             )
-            self.assertIn("chapter=Ch14B", row["semantic_slot"]["key"])
+            self.assertEqual(source["message_ordinal"], target["message_ordinal"])
+            self.assertEqual(source["script_key"], target["script_key"])
+            self.assertEqual(
+                int(target["message_id"], 16),
+                pair[0],
+            )
+            self.assertEqual(
+                int(source["message_id"], 16),
+                pair[1],
+            )
 
-    def test_trainee_corrections_and_prep_collision_are_explicit(self):
+    def test_trainee_pins_parse_real_message_tables(self):
+        fe8j_root = self._fe8j_root()
+        if fe8j_root is None:
+            self.skipTest("FE8J reference tree is unavailable")
+        accepted = {
+            (target_id, int(row["source_id"], 16))
+            for target_id, row in self.proposals.items()
+            if 0x0C44 <= target_id <= 0x0C51
+        }
+        parsed = _trainee_alignment(
+            ROOT,
+            fe8j_root,
+            accepted_pairs=accepted,
+        )
+        self.assertEqual(
+            set(parsed),
+            {
+                (0x0C46, 0x0C06),
+                (0x0C47, 0x0C07),
+                (0x0C4A, 0x0C0A),
+                (0x0C4B, 0x0C0B),
+                (0x0C4F, 0x0C0F),
+                (0x0C50, 0x0C10),
+            },
+        )
         for target_id in range(0x0C44, 0x0C52):
             row = self.proposals[target_id]
-            self.assertEqual(
-                row["source_id"],
-                f"0x{0x0C04 + target_id - 0x0C44:04X}",
-            )
-            self.assertEqual(
-                row["evidence"]["basis"],
-                "trainee-function-message-array",
-            )
+            expected_high = any(pair[0] == target_id for pair in parsed)
+            self.assertEqual(row["confidence"] == "high", expected_high)
+            if expected_high:
+                self.assertEqual(
+                    row["evidence"]["basis"],
+                    "parsed-trainee-message-table",
+                )
         collision = self.collisions[0x0C52]
         self.assertEqual(
             {
@@ -125,6 +159,52 @@ class StructuralCompletionTests(unittest.TestCase):
         )
         self.assertTrue(collision["relation"]["context_required"])
 
+    def test_no_arbitrary_numeric_constant_is_a_semantic_site(self):
+        sites = _site_index(ROOT, {0x008D})
+        self.assertEqual(
+            [
+                (site["kind"], site["path"], site["symbol"])
+                for site in sites[0x008D]
+            ],
+            [
+                (
+                    "msg-symbol-definition",
+                    "include/constants/msg.h",
+                    "MSG_08D",
+                )
+            ],
+        )
+        serialized = json.dumps(sites[0x008D], sort_keys=True)
+        self.assertNotIn("Pal_PrepItemListSpinningArrowCycle", serialized)
+        self.assertNotIn("data_banim", serialized)
+
+    def test_every_high_confidence_row_cites_hashed_parsed_structures(self):
+        high_rows = [
+            row for row in self.data["proposals"] if row["confidence"] == "high"
+        ]
+        self.assertGreater(len(high_rows), 0)
+        for row in high_rows:
+            evidence = row["evidence"]
+            for side, expected_id in (
+                ("source_structure", row["source_id"]),
+                ("target_structure", row["target_id"]),
+            ):
+                structure = evidence[side]
+                self.assertTrue(structure["parsed"])
+                self.assertEqual(structure["message_id"], expected_id)
+                self.assertEqual(
+                    hashlib.sha256(
+                        structure["context"].encode("utf-8")
+                    ).hexdigest(),
+                    structure["context_sha256"],
+                )
+                self.assertEqual(
+                    structure["slot_key"],
+                    row["semantic_slot"]["key"],
+                )
+                self.assertTrue(structure["table_symbol"])
+                self.assertTrue(structure["path"])
+
     def test_no_proposal_uses_numeric_interpolation_as_evidence(self):
         forbidden = ("interp", "proximity", "shifted", "extrap")
         for row in self.data["proposals"]:
@@ -132,7 +212,10 @@ class StructuralCompletionTests(unittest.TestCase):
             self.assertFalse(any(word in basis for word in forbidden), row)
             self.assertTrue(row["validation"]["source_in_bounds"])
             self.assertTrue(row["validation"]["source_payload_nonempty"])
-            self.assertTrue(row["validation"]["reference_site_evidence"])
+            self.assertEqual(
+                row["validation"]["parsed_structural_pair"],
+                row["confidence"] == "high",
+            )
 
     def test_protected_final_map_and_existing_evidence_are_hash_pinned(self):
         for record in self.data["inputs"]["protected_artifacts"]:
@@ -160,6 +243,23 @@ class StructuralCompletionTests(unittest.TestCase):
         broken["proposals"][0]["evidence"]["basis"] = "numeric-interpolation"
         with self.assertRaisesRegex(
             StructuralCompletionError, "numeric interpolation"
+        ):
+            validate_structural_completion_evidence(
+                broken,
+                repo_root=ROOT,
+                target_count=3414,
+            )
+
+    def test_validator_rejects_untyped_numeric_site(self):
+        broken = deepcopy(self.data)
+        row = next(
+            row
+            for row in broken["proposals"]
+            if row["evidence"]["target_sites"]
+        )
+        row["evidence"]["target_sites"][0]["kind"] = "generic-hex-literal"
+        with self.assertRaisesRegex(
+            StructuralCompletionError, "typed message-site extractor"
         ):
             validate_structural_completion_evidence(
                 broken,

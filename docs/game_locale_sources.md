@@ -223,19 +223,30 @@ Japanese payload, an authorized reference-map row or stronger keyed evidence,
 and a stable semantic slot. Numeric interpolation, shifted ranges, and
 proximity are not accepted evidence.
 
-Slots cover chapter/event-table opcode paths, menu definitions, help/tutorial
-tables, shop and link-arena sequences, dungeon/timeline data, chapter titles,
-entity rows, and trainee/preparation tables. Event sequences are aligned by
-opcode-path subgroups, so a count mismatch does not discard the whole symbol.
-The Chapter 14B beginning/location/ending slots and trainee messages
-`0x0C44`-`0x0C51` are pinned by those structures. Target `0x0C52` remains an
-explicit context collision between the reference-map provider and the live
-preparation call-site provider rather than choosing one arbitrarily.
+Source-site discovery is typed. It accepts `MSG_*` symbols, designated
+message-ID fields, arguments at modeled message-consuming APIs, parsed event
+message operands, and explicitly modeled message tables. Bare hexadecimal
+literals are never sites, so palette, OAM, graphics, animation, and unrelated
+numeric data cannot acquire message semantics from value equality.
+
+High confidence requires parsed source and target structures with named keys,
+actual slot context hashes, and matching message ordinals. Chapter 14B is
+matched only inside the shared `Ch14B` model: the named FE8U event symbols are
+paired with parsed scripts inside the named FE8J event table using their full
+normalized message control-flow paths. There is no repository-global opcode
+window matching. Trainee evidence parses each `PromoTrainee_TalkN.msgs` table
+and its `StartCgText` consumer. Six slots in the currently pinned FE8J source
+tree prove the mapped JP IDs; the other trainee reference-map pairs remain
+reference confidence because their cited FE8J C tables do not contain those
+IDs. Target `0x0C52` remains an explicit context collision between the
+reference-map provider and the live preparation call-site provider rather than
+choosing one arbitrarily.
 
 The committed artifact currently partitions all 1,797 `not-yet-verified`
 fallbacks into 1,381 unambiguous proposals and 416 residuals, including 20
-context-required collisions. These are review candidates, not translations or
-release mappings.
+context-required collisions. Of the proposals, 27 have parsed high-confidence
+structure proof and 1,354 retain reference confidence. These are review
+candidates, not translations or release mappings.
 
 Harvest from the authorized read-only trees and FEBuilder reference maps:
 
