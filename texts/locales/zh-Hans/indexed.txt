@@ -2,8 +2,8 @@
 # Locale ID: zh-Hans
 # Source layout: FE8J; these identifiers are not FE8U target identifiers.
 # Input SHA-256: bef561dd5a45f81658d4f06b0b9f58bdc6fde2ed4b4c57034d17b88cb595f517
-# Override SHA-256: 51cf6fdde1d6aafa9e52631b07b5baeea94b2360686c12cc44584b6e4efa4af9
-# Applied overrides: 32
+# Override SHA-256: 0bac8c4e394fcec34eb93b804c964a232e6d9b91d6019680ca97ffb41d8a6228
+# Applied overrides: 36
 
 #0x0000
 
@@ -1972,7 +1972,7 @@ FY
 #0x0389
 修娜之实
 #0x038A
-大米
+占位
 #0x038B
  
 #0x038C
@@ -2116,7 +2116,7 @@ FY
 藏有神秘之力的石头
 可给予梅尔力量
 #0x03D1
-大米 
+占位　
 #0x03D2
 可将一切
 毁灭的魔之闪光
@@ -2367,7 +2367,7 @@ HP全恢复
 给喜欢的人物使用
 这颗果就会……
 #0x0433
-大米
+占位
 #0x0434
 僵尸龙专用
 #0x0435
@@ -2508,7 +2508,7 @@ HP全恢复
 #0x046B
 使用了这颗果实就会……
 #0x046C
-大米
+占位
 #0x046D
 炎
 #0x046E

@@ -1,16 +1,16 @@
 {
   "authoritative": false,
   "inputs": {
-    "current_pre_authored_target_map_sha256": "12f32c760ba3514bf68d7aa669d4162b16a1bd318fec898f837c7eb7d0db6ed0",
-    "febuilder_alignment_evidence_sha256": "9a7ce7a7942a0636fb745622f2b8312290080bef428b4e2879454a1722a561f8",
+    "current_pre_authored_target_map_sha256": "0c05ec5593c309d66054de4792a9d3b76d7bc0838b41ec7691fef9ee8818a849",
+    "febuilder_alignment_evidence_sha256": "7b3492c54141ad7c087366856650629f9014980123ed2eb1540b56156f82a37c",
     "historical_pre_authored_target_map_sha256": "63b021274b7865c0d76cb1556fa84cc1dfdbcadab38037c8ccf6eeb9cdc3591a",
     "original_target_map_sha256": "6abbc956576d823de7430da267212f6c050fec5267cb7a6cb6819f77381ae4bd",
     "runtime_authored_catalog_sha256": {
-      "ja": "3f5b984b28b810f6d6fca5d70c724bbb5d2df177ba07a3325d414b3df3b59c6e",
-      "zh-Hans": "6552657d7e17c88780e588562605f92e4363778bdb4e71950fd1769307c3e0b1"
+      "ja": "5e88c918d11501e7b12829283510a09e10f6ab728476b88f6652a0e7a2aa0996",
+      "zh-Hans": "a5ae3a592735db9a53b9bdf2b302a310dcbb789a3604a8409eb0e458b5bd99a4"
     },
     "source_authored_queue_sha256": "ffdff913a552076928d5cb06634ed75d8983b65c05bb4ecec9aa2b610ffe6ad6",
-    "structural_completion_evidence_sha256": "9b187e11a9c3bfc10988c7259668952c448ebd844d6a2483c026c6ff8768d7a4"
+    "structural_completion_evidence_sha256": "d2fab1a515dd89d6071c662e9a7294e826e1f8b06845475ab926e4b2a001881e"
   },
   "kind": "fe8u-final-mapping-report",
   "note": "Evidence report for the deterministic final-mapping promotion pass. The source queue is retained byte-identically as fulfilled history.",
@@ -23,13 +23,13 @@
   },
   "promotion_counts": {
     "b-structural-high": 27,
-    "c-febuilder": 1329,
+    "c-febuilder": 1318,
     "c-febuilder-raw": 3,
     "d-contextual-resolution": 21,
     "d-existing-authored": 3,
-    "d-semantic-correction": 18,
+    "d-semantic-correction": 35,
     "d-structural-reference-second-check": 6,
-    "e-exact-english": 139,
+    "e-exact-english": 135,
     "e-exact-english-context": 1,
     "f-authored-queue": 259
   },
@@ -38,7 +38,7 @@
     "authored_queue_target_count": 259,
     "fallback_target_count": 0,
     "fulfilled_authored_queue_target_count": 259,
-    "promoted_target_count": 1806,
+    "promoted_target_count": 1808,
     "target_count": 3414,
     "translated_target_count": 3414,
     "unfulfilled_authored_queue_target_count": 0

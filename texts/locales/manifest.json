@@ -6,15 +6,15 @@
     },
     "ja/indexed.txt": {
       "byte_count": 1719107,
-      "sha256": "d5fd620b01a08f7e407e6062a5890759199ec532de312d12df284c0a3f477f42"
+      "sha256": "a9416856a551e88322ea50a6ea80291319632216a18af42ce009026865805180"
     },
     "mapping/fe8j_to_fe8u.candidates.json": {
       "byte_count": 752351,
       "sha256": "1ddac63340d04568d03c8356d85f488dfa1a4e7a58f0ce86e815ce7a56358b45"
     },
     "zh-Hans/indexed.txt": {
-      "byte_count": 1266683,
-      "sha256": "1397cfee2b5c52b9f321ec6eaea2e015abe8581cfb4787d3a33502230e8b62d7"
+      "byte_count": 1266685,
+      "sha256": "5389e968c7908b80590d07fd531f53327a821c0c800c8505ed8c987ce3b3f3ea"
     },
     "zh-Hans/raw.json": {
       "byte_count": 45834,
@@ -77,7 +77,7 @@
         "max_utf8_payload_message_id": "0x0AEA",
         "message_count": 3339,
         "payload_codepoint_count": 726367,
-        "unique_payload_codepoint_count": 2494
+        "unique_payload_codepoint_count": 2495
       },
       "raw": {
         "duplicate_address_count": 9,
@@ -107,13 +107,13 @@
     "verified_row_count": 0
   },
   "overrides": {
-    "byte_count": 32121,
-    "entry_count": 52,
+    "byte_count": 33996,
+    "entry_count": 56,
     "path": "texts/locales/indexed_overrides.json",
-    "sha256": "51cf6fdde1d6aafa9e52631b07b5baeea94b2360686c12cc44584b6e4efa4af9",
+    "sha256": "0bac8c4e394fcec34eb93b804c964a232e6d9b91d6019680ca97ffb41d8a6228",
     "sources": {
       "fe8cn_source": {
-        "entry_count": 32,
+        "entry_count": 36,
         "locale_id": "zh-Hans",
         "message_ids": [
           "0x0006",
@@ -126,6 +126,10 @@
           "0x0133",
           "0x013E",
           "0x0147",
+          "0x038A",
+          "0x03D1",
+          "0x0433",
+          "0x046C",
           "0x05C7",
           "0x0703",
           "0x0704",

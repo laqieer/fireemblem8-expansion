@@ -10545,9 +10545,9 @@
       }
     },
     "mapping_source_counts": {
-      "authored": 262,
+      "authored": 268,
       "english_fallback": 0,
-      "indexed": 3010,
+      "indexed": 3004,
       "raw": 142,
       "unresolved": 0
     },
@@ -10570,9 +10570,9 @@
       "sha256": "abb320b4767423df3b66fe2f4309cae797becf0405b45e5fcebaccfd2241155f"
     },
     "ja_authored": {
-      "byte_count": 27931,
+      "byte_count": 28608,
       "path": "texts/locales/authored/catalog.ja.json",
-      "sha256": "24ef55bc27d88e795cd93e9df1e67b7a8b018df30c70e607d43958ce65c10c99"
+      "sha256": "4bd602c4b29151569c41f077308076bd1d1c5664c17a6e8d7fc49fd9cdbc5fb5"
     },
     "ja_expansion": {
       "byte_count": 2008,
@@ -10582,7 +10582,7 @@
     "ja_indexed": {
       "byte_count": 1719107,
       "path": "texts/locales/ja/indexed.txt",
-      "sha256": "d5fd620b01a08f7e407e6062a5890759199ec532de312d12df284c0a3f477f42"
+      "sha256": "a9416856a551e88322ea50a6ea80291319632216a18af42ce009026865805180"
     },
     "ja_raw": {
       "byte_count": 9643,
@@ -10596,9 +10596,9 @@
       "sha256": "b75247b910eef8dc49c0b5d8e1ea9314157f53649352c6d8b9300dc7e065d6aa"
     },
     "mapping": {
-      "byte_count": 5432627,
+      "byte_count": 5440564,
       "path": "texts/locales/mapping/fe8u_target_map.json",
-      "sha256": "c31e6a9cdab3b68d9d6b44434622fef2ea8009cd6b31167a793ba82f21943ec1"
+      "sha256": "95be3e8617d2cba42d1d50641b4ac069357c65b3077230e68deb53849cff8c2b"
     },
     "raw_closure": {
       "byte_count": 156280,
@@ -10611,9 +10611,9 @@
       "sha256": "fa8d8b55aa170a8b29d4950968d42e4e7673f679ddc4f0e3ae5bd5cb7abf1a0c"
     },
     "zh-Hans_authored": {
-      "byte_count": 24753,
+      "byte_count": 25379,
       "path": "texts/locales/authored/catalog.zh-Hans.json",
-      "sha256": "e502f9ab0c383f8b19e743a92a975c65125b095f8bd23d9d0d794f7a8439caad"
+      "sha256": "9c7471ff8720d99727309d2c18e97a049f7602d8611c53ad11556a1869216072"
     },
     "zh-Hans_expansion": {
       "byte_count": 1946,
@@ -10621,9 +10621,9 @@
       "sha256": "40220fd10289e21fba09d4315781c1f6f51cee59d109da18520134e34ea0a11e"
     },
     "zh_hans_indexed": {
-      "byte_count": 1266683,
+      "byte_count": 1266685,
       "path": "texts/locales/zh-Hans/indexed.txt",
-      "sha256": "1397cfee2b5c52b9f321ec6eaea2e015abe8581cfb4787d3a33502230e8b62d7"
+      "sha256": "5389e968c7908b80590d07fd531f53327a821c0c800c8505ed8c987ce3b3f3ea"
     },
     "zh_hans_raw": {
       "byte_count": 45834,

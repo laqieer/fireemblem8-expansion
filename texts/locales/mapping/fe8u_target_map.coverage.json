@@ -8,9 +8,9 @@
       "total": 59
     },
     "chapter-event": {
-      "authored_translation": 28,
+      "authored_translation": 29,
       "explicit_english_fallback": 0,
-      "indexed_source": 530,
+      "indexed_source": 529,
       "raw_source": 0,
       "total": 558
     },
@@ -87,9 +87,9 @@
     "help-tutorial": {
       "authored_translation": 33,
       "explicit_english_fallback": 0,
-      "indexed_source": 444,
+      "indexed_source": 441,
       "raw_source": 0,
-      "total": 477
+      "total": 474
     },
     "items": {
       "authored_translation": 0,
@@ -98,26 +98,33 @@
       "raw_source": 0,
       "total": 392
     },
-    "menu-definition": {
-      "authored_translation": 132,
+    "link-arena": {
+      "authored_translation": 0,
       "explicit_english_fallback": 0,
-      "indexed_source": 294,
+      "indexed_source": 6,
       "raw_source": 0,
-      "total": 426
+      "total": 6
+    },
+    "menu-definition": {
+      "authored_translation": 136,
+      "explicit_english_fallback": 0,
+      "indexed_source": 291,
+      "raw_source": 0,
+      "total": 427
     },
     "menus": {
-      "authored_translation": 1,
+      "authored_translation": 2,
       "explicit_english_fallback": 0,
-      "indexed_source": 36,
+      "indexed_source": 35,
       "raw_source": 68,
       "total": 105
     },
     "shop-arena": {
       "authored_translation": 48,
       "explicit_english_fallback": 0,
-      "indexed_source": 6,
+      "indexed_source": 5,
       "raw_source": 0,
-      "total": 54
+      "total": 53
     },
     "supports": {
       "authored_translation": 0,
@@ -143,16 +150,16 @@
     "trainee-prep": {
       "authored_translation": 8,
       "explicit_english_fallback": 0,
-      "indexed_source": 89,
+      "indexed_source": 90,
       "raw_source": 3,
-      "total": 100
+      "total": 101
     },
     "unclassified": {
       "authored_translation": 0,
       "explicit_english_fallback": 0,
-      "indexed_source": 136,
+      "indexed_source": 132,
       "raw_source": 3,
-      "total": 139
+      "total": 135
     },
     "world-map": {
       "authored_translation": 0,
@@ -171,9 +178,9 @@
   "mapping_authoritative": true,
   "schema_version": 1,
   "source_kind_counts": {
-    "authored_translation": 262,
+    "authored_translation": 268,
     "explicit_english_fallback": 0,
-    "indexed_source": 3010,
+    "indexed_source": 3004,
     "raw_source": 142
   },
   "target_count": 3414,

@@ -10,7 +10,10 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
-from scripts.localization.game_catalog.build import encode_canonical_text
+from scripts.localization.game_catalog.build import (
+    encode_authored_text,
+    encode_canonical_text,
+)
 from scripts.localization.game_catalog.english_source import (
     load_english_definitions,
     load_english_source_entries,
@@ -369,6 +372,38 @@ _CONTEXTUAL_DUPLICATE_DONORS = {
 }
 
 _SEMANTIC_INDEXED_CORRECTIONS: Dict[str, Dict[str, Any]] = {
+    "0x000B": {
+        "english_payload_sha256": "61159898e82ffa75e58dff43d369a125817b4f95afc31c9f4769024083e8f4b0",
+        "incorrect_source_id": "0x080A",
+        "payload_sha256": {
+            "ja": "82a2e4b079cae22467940d39c44cf709b4cc520b0a99b6cb708f33314e68cd47",
+            "zh-Hans": "cb67cbe8417dc1862a76877f14c008aabb8e6c26f51fb7abdfa58527177a29be",
+        },
+        "rationale": (
+            "PopupScr_ItemStolen draws the item name before this suffix. "
+            "Official 0x0809 is the matching 'was stolen' suffix; 0x080A is "
+            "the complete Support Level increased message."
+        ),
+        "source_id": "0x0809",
+        "source_key": "PopupScr_ItemStolen/item-name + stolen-suffix",
+        "subsystem": "menu-definition",
+    },
+    "0x000C": {
+        "english_payload_sha256": "e69326821ac5cdfa9a6cf0af0c9a4e7ae364be7ce0d3a1a62d525c0e64b53ff3",
+        "incorrect_source_id": "0x080B",
+        "payload_sha256": {
+            "ja": "3a4c8f47f53c56e6720397261c416313f3df7664b30c957662c7382dae1aa21d",
+            "zh-Hans": "52030c74c31c5218fe58440f26a2f1630477f1341122b4705225993fb84c0677",
+        },
+        "rationale": (
+            "The target is the complete Support Level increased popup. "
+            "Official 0x080A is that complete message; 0x080B is only the "
+            "suffix used after a weapon or unit."
+        ),
+        "source_id": "0x080A",
+        "source_key": "MSG_00C/Support-Level-increased",
+        "subsystem": "menu-definition",
+    },
     "0x002A": {
         "english_payload_sha256": "39995bb1485a5b33995817a2649b4c5867d8f4bb09d3ed286762fa66419b5590",
         "incorrect_source_id": "0x0005",
@@ -639,6 +674,251 @@ _SEMANTIC_INDEXED_CORRECTIONS: Dict[str, Dict[str, Any]] = {
         "source_key": "EventScr_Ch2Tutorial23/move-Eirika-to-village",
         "subsystem": "chapter-event",
     },
+    "0x01B8": {
+        "english_payload_sha256": "96600e3d420c6cf37bcd72f26c7ffc23c3cf424da791bb641fe72cc12b293d15",
+        "incorrect_source_id": "0x0142",
+        "payload_sha256": {
+            "ja": "913d649a48225d336df243e24ab8a7b23b924dd27640a3543b4e4d43df1e2d8f",
+            "zh-Hans": "74c3f4a6663c2fdb0c07c108a57dc2be804b15dd06ba106d57c5ae8a9d1e32d4",
+        },
+        "rationale": (
+            "The E20 objective explicitly says Defeat Lyon. Official 0x013E "
+            "names Lyon as the boss; 0x0142 instead requires defeating all "
+            "monsters."
+        ),
+        "source_id": "0x013E",
+        "source_key": "E20.statusObjectiveTextId/Defeat-Lyon",
+        "subsystem": "chapters",
+    },
+    "0x05B4": {
+        "english_payload_sha256": "ec5846e2af3ffdc9e89613f324e7c2400c06d96b38805f4bc0ccb0b3e97a23f0",
+        "incorrect_source_id": "0x06F7",
+        "payload_sha256": {
+            "ja": "bb6e2a8aa0966fe839cde39340712f0bfc935c8c59f94a792e5b1b4d964964b8",
+            "zh-Hans": "cdb6af19725e5057d52f758a0c73edc9405d98e536be9bf92eb1187dc7e875cb",
+        },
+        "rationale": (
+            "The preparation item-screen command sells unneeded items and "
+            "protects important items. Official 0x0545 states both facts; "
+            "0x06F7 is the discard-items help text."
+        ),
+        "source_id": "0x0545",
+        "source_key": "gPrepItemScreenItemMenuHelpTextIdLut/sell",
+        "subsystem": "trainee-prep",
+    },
+    "0x058B": {
+        "english_payload_sha256": "22f9ca5baced68bca88ceeb8f2647cf46843895600d5e2b5d20106fec8261caa",
+        "incorrect_source_id": "0x004A",
+        "payload_sha256": {
+            "ja": "19830cab71b81ee0698a5a24524c126d7070bb128a3bb60a0904cf310e58083b",
+            "zh-Hans": "cbd9667c3fa1225ec8b9dea5e418d78d96891a942b3bad858c18d3254d41d4c6",
+        },
+        "rationale": (
+            "gUnusedPrepFortuneSubMenuStatTextIds labels this statistic "
+            "Survival. Official 0x0049 is Survival; the exact-English donor "
+            "previously selected 0x004A, Auto Weapon."
+        ),
+        "source_id": "0x0049",
+        "source_key": "gUnusedPrepFortuneSubMenuStatTextIds[Survival]",
+        "stage_precondition": "english_fallback",
+        "subsystem": "trainee-prep",
+    },
+    "0x0771": {
+        "english_payload_sha256": "9b71f1bb5ad351955d804517bc120d3b24495af1b040cedb5d25a6a7860e2604",
+        "incorrect_source_id": "0x0049",
+        "payload_sha256": {
+            "ja": "80ebe4f118802a72d8ed2b0076434895eadf99658f50d6e162c6733fe2809485",
+            "zh-Hans": "1251e35c137ac764740b8d53aefad650e9a5f430d5967ca689e85569bf8c72d6",
+        },
+        "rationale": (
+            "StartLinkArenaShowPoints passes this label to the points box. "
+            "Official 0x0048 is Points; the exact-English donor previously "
+            "selected 0x0049, Survival."
+        ),
+        "source_id": "0x0048",
+        "source_key": "StartLinkArenaShowPoints/points-label",
+        "stage_precondition": "english_fallback",
+        "subsystem": "link-arena",
+    },
+    "0x0773": {
+        "english_payload_sha256": "9b71f1bb5ad351955d804517bc120d3b24495af1b040cedb5d25a6a7860e2604",
+        "incorrect_source_id": "0x0049",
+        "payload_sha256": {
+            "ja": "80ebe4f118802a72d8ed2b0076434895eadf99658f50d6e162c6733fe2809485",
+            "zh-Hans": "1251e35c137ac764740b8d53aefad650e9a5f430d5967ca689e85569bf8c72d6",
+        },
+        "rationale": (
+            "The result/rankings header inserts this label over the numeric "
+            "points column. Official 0x0048 is Points; 0x0049 is Survival."
+        ),
+        "source_id": "0x0048",
+        "source_key": "SioResult/column-header/Points",
+        "stage_precondition": "english_fallback",
+        "subsystem": "link-arena",
+    },
+    "0x0775": {
+        "english_payload_sha256": "ac96cbd20a9e7ba9e489397d1cd958315e74b70deb18ad54953f01d4288953ae",
+        "incorrect_source_id": "0x0045",
+        "payload_sha256": {
+            "ja": "389485a87c707afb88e93a677aa1ae599651d6455374e047805778f3e0b58da6",
+            "zh-Hans": "389485a87c707afb88e93a677aa1ae599651d6455374e047805778f3e0b58da6",
+        },
+        "rationale": (
+            "The result/rankings header inserts this label over the player "
+            "count column. Official 0x005F is Players/count; 0x0045 means "
+            "Stop building the team."
+        ),
+        "source_id": "0x005F",
+        "source_key": "SioResult/column-header/Players",
+        "subsystem": "link-arena",
+    },
+    "0x0778": {
+        "english_payload_sha256": "1bec7f8518a6b3b060200b5b6e44be2fb934d96d666343dcd3aef516ef50c87d",
+        "incorrect_source_id": "0x0048",
+        "payload_sha256": {
+            "ja": "719e235acd31cdf99609054b5931912ad72554e57bf9f0ddb2e783ba5744700f",
+            "zh-Hans": "94a3c754e00934dc5df61491d2735e310112d751a29f1e2a014a830fd1b1b25a",
+        },
+        "rationale": (
+            "gLinkArenaRuleData row 2 is the Auto Weapon on/off rule. "
+            "Official 0x004A is Auto Weapon; 0x0048 is Points."
+        ),
+        "source_id": "0x004A",
+        "source_key": "gLinkArenaRuleData[2].label/AutoWeapon",
+        "subsystem": "link-arena",
+    },
+    "0x0779": {
+        "english_payload_sha256": "9b71f1bb5ad351955d804517bc120d3b24495af1b040cedb5d25a6a7860e2604",
+        "incorrect_source_id": "0x0049",
+        "payload_sha256": {
+            "ja": "80ebe4f118802a72d8ed2b0076434895eadf99658f50d6e162c6733fe2809485",
+            "zh-Hans": "1251e35c137ac764740b8d53aefad650e9a5f430d5967ca689e85569bf8c72d6",
+        },
+        "rationale": (
+            "gLinkArenaRuleData row 1 uses this as the Points victory "
+            "condition. Official 0x0048 is Points; 0x0049 is Survival."
+        ),
+        "source_id": "0x0048",
+        "source_key": "gLinkArenaRuleData[1].choice[0]/Points",
+        "subsystem": "link-arena",
+    },
+    "0x077A": {
+        "english_payload_sha256": "22f9ca5baced68bca88ceeb8f2647cf46843895600d5e2b5d20106fec8261caa",
+        "incorrect_source_id": "0x004A",
+        "payload_sha256": {
+            "ja": "19830cab71b81ee0698a5a24524c126d7070bb128a3bb60a0904cf310e58083b",
+            "zh-Hans": "cbd9667c3fa1225ec8b9dea5e418d78d96891a942b3bad858c18d3254d41d4c6",
+        },
+        "rationale": (
+            "gLinkArenaRuleData row 1 uses this as the Survival victory "
+            "condition. Official 0x0049 is Survival; 0x004A is Auto Weapon."
+        ),
+        "source_id": "0x0049",
+        "source_key": "gLinkArenaRuleData[1].choice[1]/Survival",
+        "subsystem": "link-arena",
+    },
+}
+
+_SEMANTIC_AUTHORED_CORRECTIONS: Dict[str, Dict[str, Any]] = {
+    "0x0005": {
+        "english_payload_sha256": "6a4df7673dafecb3086aa97192e67eb3275033fc37e45a4581c8df33af9efaaf",
+        "incorrect_source_id": "0x0804",
+        "payload_sha256": {
+            "ja": "b5102d23f67b9d755825200f4f5428184e16b4a3e8cac74977fc0ef1dbdf6892",
+            "zh-Hans": "15eb3a798a78441a99e0c0a18deaf697da8341ddd1db8367d2c74d9504c0cd07",
+        },
+        "rationale": (
+            "PopupScr_GotGold draws this fragment before a dynamic number. "
+            "FE8J/FE8CN 0x0804 is a complete no-number sentence, so a "
+            "target-order prefix is authored for grammatical concatenation."
+        ),
+        "source_key": "PopupScr_GotGold/prefix-before-number",
+        "subsystem": "menu-definition",
+        "translation_key": "game.semantic_correction.msg_005",
+    },
+    "0x0006": {
+        "english_payload_sha256": "26c07bdce4f1b6eed1307593b5be21d6891cbde3312878492a66a19382d18fff",
+        "incorrect_source_id": "0x0807",
+        "payload_sha256": {
+            "ja": "90ef8e4587df1779f3fa5a8258286e4e9f99b1d2a12213356e39a2c24db2e81e",
+            "zh-Hans": "7f8b37f14142f95f5aac5f22e315c737fd771a8d86d6fe9630d2a6e8b4cc7c9f",
+        },
+        "rationale": (
+            "PopupScr_GotGold draws this fragment after a dynamic number. "
+            "FE8J/FE8CN 0x0807 says gold was stolen, so a target-order gold "
+            "suffix is authored for grammatical concatenation."
+        ),
+        "source_key": "PopupScr_GotGold/suffix-after-number",
+        "subsystem": "menu-definition",
+        "translation_key": "game.semantic_correction.msg_006",
+    },
+    "0x000D": {
+        "english_payload_sha256": "91dac270cf076055424106bcd9e16eac279d37a4870f64ff66a065eedebe0f05",
+        "incorrect_source_id": "0x080D",
+        "payload_sha256": {
+            "ja": "ec8f8ba34f40b4b2375bb54616c0683a4cd574dc4b2e4b7ac0eee38fa1cba776",
+            "zh-Hans": "16d524a128cdade4f333e939aa487d5c68b38d2e048a8ab2827999dc18e23daf",
+        },
+        "rationale": (
+            "DrawBattlePopup draws this fragment before the weapon-type icon. "
+            "Official 0x080B is a suffix and 0x080D means obtained, so a "
+            "target-order availability prefix is required."
+        ),
+        "source_key": "DrawBattlePopup/usable-weapon-prefix",
+        "subsystem": "menu-definition",
+        "translation_key": "game.semantic_correction.msg_00d",
+    },
+    "0x000E": {
+        "english_payload_sha256": "91dac270cf076055424106bcd9e16eac279d37a4870f64ff66a065eedebe0f05",
+        "incorrect_source_id": "0x080D",
+        "payload_sha256": {
+            "ja": "6baab0ec7a1e3d1ebdd51f34c6b9ae0dec04e5e4bc2153206f076657aa41c1c2",
+            "zh-Hans": "e0c03ad93fede88154d352a912cf7872585ba34210bc21eb470455d0b17ba017",
+        },
+        "rationale": (
+            "PopupScr_NewAlly draws this fragment before the new unit name. "
+            "The duplicate-English provider selected a Japanese/Chinese "
+            "obtained-item suffix, so a unit-availability prefix is authored."
+        ),
+        "source_key": "PopupScr_NewAlly/usable-unit-prefix",
+        "stage_precondition": "english_fallback",
+        "subsystem": "menu-definition",
+        "translation_key": "game.semantic_correction.msg_00e",
+    },
+    "0x0679": {
+        "english_payload_sha256": "0df058ee1d0b4199726680b7b5cc8b1939fce71e3efbdff30f29be87bdee8c4b",
+        "incorrect_source_id": "0x063F",
+        "payload_sha256": {
+            "ja": "ea7e22722680e6615d1e96d03964d4165e12a7d318c969b9609c1401c3d95cb3",
+            "zh-Hans": "8543f3d58f04def36eb381bf7d725484118db3a11e455a11e929a3a6006faf48",
+        },
+        "rationale": (
+            "The world-map Save menu help explains how to resume from the "
+            "chapter record. Official 0x063F explicitly has no help message, "
+            "so target-correct text using the established resume label is "
+            "authored."
+        ),
+        "source_key": "MenuItemDef_WMGeneralMenu.override[0x4].help",
+        "subsystem": "menus",
+        "translation_key": "game.semantic_correction.msg_679",
+    },
+    "0x06A2": {
+        "english_payload_sha256": "89fe07be1de3c43cb79f6446673044ad43a261c046ebe5d6d0564f96fc95f9da",
+        "incorrect_source_id": "0x062F",
+        "payload_sha256": {
+            "ja": "636494eff693d024343a8cdfb0b7e09a3684abeb68bb41145c23453e6e224509",
+            "zh-Hans": "e4df15ff0bbe5dbffa801d9bb2ca288ac47d2727472f121fcd64c81bfbbf9f92",
+        },
+        "rationale": (
+            "The target is the Debug label. Official 0x0633 identifies the "
+            "debug-information slot but its Japanese payload is garbled and "
+            "both regional strings add 'information'; exact target labels "
+            "are therefore authored instead of mapping to 0x062F Gold."
+        ),
+        "source_key": "MSG_6A2/Debug-label",
+        "subsystem": "chapter-event",
+        "translation_key": "game.semantic_correction.msg_6a2",
+    },
 }
 
 
@@ -648,6 +928,26 @@ def _sha256_bytes(data: bytes) -> str:
 
 def _sha256_text(text: str) -> str:
     return _sha256_bytes(text.encode("utf-8"))
+
+
+def _require_semantic_precondition(
+    row: Mapping[str, Any],
+    *,
+    target_id: str,
+    decision: Mapping[str, Any],
+) -> Dict[str, str]:
+    incorrect_source = _indexed_source(decision["incorrect_source_id"])
+    if decision.get("stage_precondition") == "english_fallback":
+        if row["source"]["kind"] != "english_fallback":
+            raise FinalMappingError(
+                f"{target_id}: semantic correction no longer starts from fallback"
+            )
+    elif row["source"] != incorrect_source:
+        raise FinalMappingError(
+            f"{target_id}: semantic correction no longer replaces "
+            f"{decision['incorrect_source_id']}"
+        )
+    return incorrect_source
 
 
 def _json_hash(data: Any) -> str:
@@ -802,6 +1102,7 @@ def _provider_payloads(
     raw_payloads: Mapping[str, str],
     ja_raw_providers: Mapping[int, Any],
     authored: Mapping[str, Mapping[str, str]],
+    definitions: Mapping[str, Tuple[int, ...]],
 ) -> Tuple[bytes, bytes]:
     kind = source["kind"]
     if kind == "indexed":
@@ -825,7 +1126,11 @@ def _provider_payloads(
         key = source["translation_key"]
         suffix = source.get("control_suffix", "")
         return tuple(
-            encode_canonical_text(authored[locale][key] + suffix)
+            encode_authored_text(
+                authored[locale][key] + suffix,
+                definitions,
+                source_name=f"{locale} authored {key!r}",
+            )
             for locale in ("ja", "zh-Hans")
         )  # type: ignore[return-value]
     raise FinalMappingError(f"cannot resolve provider payload for {kind!r}")
@@ -1114,10 +1419,14 @@ def build_final_mapping_artifacts(
         row["target_id"]: row for row in structural_data["residual_targets"]
     }
 
+    semantic_correction_ids = set(_SEMANTIC_INDEXED_CORRECTIONS) | set(
+        _SEMANTIC_AUTHORED_CORRECTIONS
+    )
     protected = {
         target_id: _json_hash(row["source"])
         for target_id, row in original_by_id.items()
         if row["source"]["kind"] != "english_fallback"
+        and target_id not in semantic_correction_ids
     }
     promoted: Dict[str, str] = {}
 
@@ -1343,12 +1652,11 @@ def build_final_mapping_artifacts(
 
     for target_id, decision in sorted(_SEMANTIC_INDEXED_CORRECTIONS.items()):
         target = int(target_id, 16)
-        incorrect_source = _indexed_source(decision["incorrect_source_id"])
-        if row_by_id[target_id]["source"] != incorrect_source:
-            raise FinalMappingError(
-                f"{target_id}: semantic correction no longer replaces "
-                f"{decision['incorrect_source_id']}"
-            )
+        incorrect_source = _require_semantic_precondition(
+            row_by_id[target_id],
+            target_id=target_id,
+            decision=decision,
+        )
         if (
             _sha256_bytes(english_entries[target].encoded_bytes)
             != decision["english_payload_sha256"]
@@ -1384,6 +1692,53 @@ def build_final_mapping_artifacts(
                 "incorrect_source": incorrect_source,
                 "payload_sha256": decision["payload_sha256"],
                 "replacement_source_id": decision["source_id"],
+            },
+        )
+        _promote(row_by_id[target_id], source, verification)
+        promoted[target_id] = "d-semantic-correction"
+
+    for target_id, decision in sorted(_SEMANTIC_AUTHORED_CORRECTIONS.items()):
+        target = int(target_id, 16)
+        incorrect_source = _require_semantic_precondition(
+            row_by_id[target_id],
+            target_id=target_id,
+            decision=decision,
+        )
+        if (
+            _sha256_bytes(english_entries[target].encoded_bytes)
+            != decision["english_payload_sha256"]
+        ):
+            raise FinalMappingError(
+                f"{target_id}: authored semantic correction English payload changed"
+            )
+        key = decision["translation_key"]
+        for locale in ("ja", "zh-Hans"):
+            payload = runtime_authored[locale].get(key)
+            if (
+                payload is None
+                or _sha256_text(payload)
+                != decision["payload_sha256"][locale]
+            ):
+                raise FinalMappingError(
+                    f"{target_id}: authored semantic correction {locale} payload changed"
+                )
+        source = {"kind": "authored", "translation_key": key}
+        verification = _promotion_verification(
+            original=original_by_id[target_id],
+            precedence="d-semantic-correction",
+            confidence="explicit",
+            evidence=decision["rationale"],
+            evidence_kind="target-authored-semantic-payload",
+            source_table="texts/locales/authored/shards/semantic_corrections.<locale>.json",
+            source_symbol=key,
+            source_key=decision["source_key"],
+            subsystem=decision["subsystem"],
+            rationale=decision["rationale"],
+            details={
+                "english_payload_sha256": decision["english_payload_sha256"],
+                "incorrect_source": incorrect_source,
+                "payload_sha256": decision["payload_sha256"],
+                "translation_key": key,
             },
         )
         _promote(row_by_id[target_id], source, verification)
@@ -1465,6 +1820,7 @@ def build_final_mapping_artifacts(
             raw_payloads=raw_payloads,
             ja_raw_providers=ja_raw_providers,
             authored=provider_authored,
+            definitions=definitions,
         )
         donors_by_english[english_entries[int(target_id, 16)].encoded_bytes].append(
             (target_id, row["source"], payloads)
@@ -1503,6 +1859,7 @@ def build_final_mapping_artifacts(
                 raw_payloads=raw_payloads,
                 ja_raw_providers=ja_raw_providers,
                 authored=provider_authored,
+                definitions=definitions,
             )
             != donor_payloads
         ):
@@ -1579,6 +1936,9 @@ def build_final_mapping_artifacts(
         row["suggested_key"] for row in queue_targets
     } | {
         decision["translation_key"] for decision in _AUTHORED_PROMOTIONS.values()
+    } | {
+        decision["translation_key"]
+        for decision in _SEMANTIC_AUTHORED_CORRECTIONS.values()
     }
     for locale in ("ja", "zh-Hans"):
         if set(runtime_authored[locale]) != expected_runtime_keys:

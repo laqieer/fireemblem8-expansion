@@ -15,13 +15,18 @@
     },
     {
       "path": "texts/locales/authored/shards/help_shop.zh-Hans.json",
-      "sha256": "86b795ffa11ea2764e05393ebf98e6a956083e3d8f987f1a34a0e8a4dd0e3696",
+      "sha256": "4faa47b8b845f5fd75bd61b4100f5644c5330c6737ea974b1472262c209ba692",
       "target_count": 81
     },
     {
       "path": "texts/locales/authored/shards/menu.zh-Hans.json",
       "sha256": "e126c6bd6dd7403abd990c01b471be89a82b56f4664d912a1a195df2b88b3005",
       "target_count": 132
+    },
+    {
+      "path": "texts/locales/authored/shards/semantic_corrections.zh-Hans.json",
+      "sha256": "bd220b77611599ecca28d68bcdbcec8813a3208b828349bfbd8b643c243860cf",
+      "target_count": 6
     }
   ],
   "source_queue": {
@@ -233,6 +238,12 @@
     "game.menu_definition.msg_5ba": "预测下一场[.][LF]\n战斗的情况[X]\n",
     "game.menu_definition.msg_5bf": "开始战斗。[.][X]\n",
     "game.menu_definition.msg_6b8": "通关次数[X]\n",
+    "game.semantic_correction.msg_005": "获得：[X]\n",
+    "game.semantic_correction.msg_006": "金币。[.][X]\n",
+    "game.semantic_correction.msg_00d": "可使用：[X]\n",
+    "game.semantic_correction.msg_00e": "可使用单位：[X]\n",
+    "game.semantic_correction.msg_679": "正在保存。要继续游戏，请选择[LF]\n『从记录开始』。[X]\n",
+    "game.semantic_correction.msg_6a2": " 调试[X]\n",
     "game.shop_arena.msg_146": "确定[.][X]\n",
     "game.shop_arena.msg_735": "选择“小队编制”来组建小队[X]\n",
     "game.shop_arena.msg_736": "编制或编辑通信对战小队[.][X]\n",
@@ -293,5 +304,5 @@
     "raw_surface.unit_action.summon": " 召唤",
     "save_compat.menu_erase_all": "清除全部存档"
   },
-  "target_count": 262
+  "target_count": 268
 }

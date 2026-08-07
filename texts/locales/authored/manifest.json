@@ -1,6 +1,36 @@
 {
   "existing_authored_targets": [
     {
+      "subsystem": "menu-definition",
+      "target_id": "0x0005",
+      "translation_key": "game.semantic_correction.msg_005"
+    },
+    {
+      "subsystem": "menu-definition",
+      "target_id": "0x0006",
+      "translation_key": "game.semantic_correction.msg_006"
+    },
+    {
+      "subsystem": "menu-definition",
+      "target_id": "0x000D",
+      "translation_key": "game.semantic_correction.msg_00d"
+    },
+    {
+      "subsystem": "menu-definition",
+      "target_id": "0x000E",
+      "translation_key": "game.semantic_correction.msg_00e"
+    },
+    {
+      "subsystem": "menus",
+      "target_id": "0x0679",
+      "translation_key": "game.semantic_correction.msg_679"
+    },
+    {
+      "subsystem": "chapter-event",
+      "target_id": "0x06A2",
+      "translation_key": "game.semantic_correction.msg_6a2"
+    },
+    {
       "subsystem": "menus",
       "target_id": "0x0693",
       "translation_key": "raw_surface.unit_action.summon"
@@ -33,13 +63,18 @@
         },
         {
           "path": "texts/locales/authored/shards/help_shop.ja.json",
-          "sha256": "45cfd91c6847f8b377e479fce0b2d83ef6874450b8f616445fe57469a611adff",
+          "sha256": "4922b799b0a50e1773d3ba17ab5642ccfaf61919c817b04d7ec9b792c6872f45",
           "target_count": 81
         },
         {
           "path": "texts/locales/authored/shards/menu.ja.json",
           "sha256": "a87848d741aa4d14e50dc7e91116911284eca419b3dda687e1b7fc5be9f4b345",
           "target_count": 132
+        },
+        {
+          "path": "texts/locales/authored/shards/semantic_corrections.ja.json",
+          "sha256": "3eacccedfe725c9a70d92b1032cc2bb5300ca49325ad38130b43a3fa3dc48fdc",
+          "target_count": 6
         }
       ]
     },
@@ -58,13 +93,18 @@
         },
         {
           "path": "texts/locales/authored/shards/help_shop.zh-Hans.json",
-          "sha256": "86b795ffa11ea2764e05393ebf98e6a956083e3d8f987f1a34a0e8a4dd0e3696",
+          "sha256": "4faa47b8b845f5fd75bd61b4100f5644c5330c6737ea974b1472262c209ba692",
           "target_count": 81
         },
         {
           "path": "texts/locales/authored/shards/menu.zh-Hans.json",
           "sha256": "e126c6bd6dd7403abd990c01b471be89a82b56f4664d912a1a195df2b88b3005",
           "target_count": 132
+        },
+        {
+          "path": "texts/locales/authored/shards/semantic_corrections.zh-Hans.json",
+          "sha256": "bd220b77611599ecca28d68bcdbcec8813a3208b828349bfbd8b643c243860cf",
+          "target_count": 6
         }
       ]
     }

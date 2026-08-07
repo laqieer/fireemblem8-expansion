@@ -32,7 +32,7 @@ class IndexedLocaleOverrideTests(unittest.TestCase):
             self.OVERRIDE_PATH,
             expected_source_hashes=PINNED_SOURCE_SHA256,
         )
-        self.assertEqual(catalog.entry_count, 52)
+        self.assertEqual(catalog.entry_count, 56)
         self.assertEqual(set(catalog.sources), {"fe8j_indexed", "fe8cn_source"})
         for source in catalog.sources.values():
             self.assertEqual(
@@ -45,7 +45,17 @@ class IndexedLocaleOverrideTests(unittest.TestCase):
                 self.assertTrue(entry.provenance["context"])
                 self.assertTrue(entry.provenance["target_ids"])
         self.assertEqual(len(catalog.sources["fe8j_indexed"].entries), 20)
-        self.assertEqual(len(catalog.sources["fe8cn_source"].entries), 32)
+        self.assertEqual(len(catalog.sources["fe8cn_source"].entries), 36)
+
+    def test_dummy_overrides_use_placeholder_wording(self):
+        catalog = load_override_catalog(
+            self.OVERRIDE_PATH,
+            expected_source_hashes=PINNED_SOURCE_SHA256,
+        )
+        entries = catalog.sources["fe8cn_source"].entries
+        for message_id in (0x038A, 0x03D1, 0x0433, 0x046C):
+            self.assertIn("占位", entries[message_id].replacement_text)
+            self.assertNotIn("大米", entries[message_id].replacement_text)
 
     def test_source_hash_drift_is_rejected(self):
         document = self._load_document()

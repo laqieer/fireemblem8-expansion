@@ -1,0 +1,69 @@
+{
+  "kind": "fe8u-authored-translation-shard",
+  "locale": "ja",
+  "schema_version": 1,
+  "shard": "semantic_corrections",
+  "source_map_sha256": "63b021274b7865c0d76cb1556fa84cc1dfdbcadab38037c8ccf6eeb9cdc3591a",
+  "source_queue": {
+    "path": "texts/locales/mapping/authored_translation_queue.json",
+    "revision": "e6435a8e2f444f0e16cab21713fe052b543d2e6e",
+    "sha256": "ffdff913a552076928d5cb06634ed75d8983b65c05bb4ecec9aa2b610ffe6ad6"
+  },
+  "subsystem_counts": {
+    "chapter-event": 1,
+    "menu-definition": 4,
+    "menus": 1
+  },
+  "target_count": 6,
+  "terminology_sources": [],
+  "translations": [
+    {
+      "english_payload_sha256": "6a4df7673dafecb3086aa97192e67eb3275033fc37e45a4581c8df33af9efaaf",
+      "key": "game.semantic_correction.msg_005",
+      "source_text_sha256": "00eb6199db3d0a275b43ebb31e3a8629f260225e0e4e5c9acd4b77d1c1920dbf",
+      "subsystem": "menu-definition",
+      "target_id": "0x0005",
+      "text": "入手：[X]\n"
+    },
+    {
+      "english_payload_sha256": "26c07bdce4f1b6eed1307593b5be21d6891cbde3312878492a66a19382d18fff",
+      "key": "game.semantic_correction.msg_006",
+      "source_text_sha256": "f09039c2fa26e4eaa0c58d32f0bdc3c66a1648e769d144ea3d55e325fb09c0e3",
+      "subsystem": "menu-definition",
+      "target_id": "0x0006",
+      "text": "ゴールド。[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "91dac270cf076055424106bcd9e16eac279d37a4870f64ff66a065eedebe0f05",
+      "key": "game.semantic_correction.msg_00d",
+      "source_text_sha256": "a645ca148faf1a98929acfa766e59e293250324bee03189228660af88601860f",
+      "subsystem": "menu-definition",
+      "target_id": "0x000D",
+      "text": "使用可能：[X]\n"
+    },
+    {
+      "english_payload_sha256": "91dac270cf076055424106bcd9e16eac279d37a4870f64ff66a065eedebe0f05",
+      "key": "game.semantic_correction.msg_00e",
+      "source_text_sha256": "a645ca148faf1a98929acfa766e59e293250324bee03189228660af88601860f",
+      "subsystem": "menu-definition",
+      "target_id": "0x000E",
+      "text": "使用可能ユニット：[X]\n"
+    },
+    {
+      "english_payload_sha256": "0df058ee1d0b4199726680b7b5cc8b1939fce71e3efbdff30f29be87bdee8c4b",
+      "key": "game.semantic_correction.msg_679",
+      "source_text_sha256": "dbf9b316f09b91b391da617fbad1ce54c8ee262a7409eec508fbfeac9e1bf666",
+      "subsystem": "menus",
+      "target_id": "0x0679",
+      "text": "記録中。ゲームを再開するには[LF]\n「記録から始める」を選んでください。[X]\n"
+    },
+    {
+      "english_payload_sha256": "89fe07be1de3c43cb79f6446673044ad43a261c046ebe5d6d0564f96fc95f9da",
+      "key": "game.semantic_correction.msg_6a2",
+      "source_text_sha256": "7f2fae6d25215d8edbea2e2e877defbda8ceaa12bbc7c461df3c7869d1a0ee98",
+      "subsystem": "chapter-event",
+      "target_id": "0x06A2",
+      "text": "　デバッグ[X]\n"
+    }
+  ]
+}

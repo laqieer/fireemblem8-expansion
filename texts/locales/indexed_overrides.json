@@ -124,6 +124,55 @@
           "reason": "Replace untranslated BOSS with natural Simplified Chinese 首领 in this exact objective/help target.",
           "replacement_text": "击破首领"
         },
+        "0x038A": {
+          "expected_text": "大米",
+          "provenance": {
+            "audit": "semantic-mapping-audit-2026-08-07",
+            "context": "Dummy placeholder labels, not the food noun produced by a phonetic mistranslation.",
+            "target_ids": [
+              "0x0025",
+              "0x0403"
+            ]
+          },
+          "reason": "Use the natural Simplified Chinese placeholder label instead of the mistranslation 大米.",
+          "replacement_text": "占位"
+        },
+        "0x03D1": {
+          "expected_text": "大米 ",
+          "provenance": {
+            "audit": "semantic-mapping-audit-2026-08-07",
+            "context": "Uppercase DUMMY placeholder label with significant trailing spacing.",
+            "target_ids": [
+              "0x0449"
+            ]
+          },
+          "reason": "Use the natural Simplified Chinese placeholder label while preserving the source spacing.",
+          "replacement_text": "占位　"
+        },
+        "0x0433": {
+          "expected_text": "大米",
+          "provenance": {
+            "audit": "semantic-mapping-audit-2026-08-07",
+            "context": "Uppercase DUMMY placeholder label.",
+            "target_ids": [
+              "0x04AB"
+            ]
+          },
+          "reason": "Use the natural Simplified Chinese placeholder label instead of the mistranslation 大米.",
+          "replacement_text": "占位"
+        },
+        "0x046C": {
+          "expected_text": "大米",
+          "provenance": {
+            "audit": "semantic-mapping-audit-2026-08-07",
+            "context": "Dummy placeholder label.",
+            "target_ids": [
+              "0x04E4"
+            ]
+          },
+          "reason": "Use the natural Simplified Chinese placeholder label instead of the mistranslation 大米.",
+          "replacement_text": "占位"
+        },
         "0x05C7": {
           "expected_text": "打倒在地图上的敌军BOSS后，\n就能通过这一关。\n不需要打倒所有的敌人。",
           "provenance": {

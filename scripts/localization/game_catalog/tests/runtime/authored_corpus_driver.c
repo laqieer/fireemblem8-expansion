@@ -102,7 +102,7 @@ int main(void)
     u32 index;
     int msgId;
 
-    if (ARRAY_COUNT(sAuthoredIds) != 262)
+    if (ARRAY_COUNT(sAuthoredIds) != 268)
         return 1;
 
     for (index = 0; index < ARRAY_COUNT(sAuthoredIds); index++)
@@ -151,6 +151,6 @@ int main(void)
         }
     }
 
-    puts("authored_corpus_driver: 262 exact Japanese streams");
+    puts("authored_corpus_driver: 268 exact Japanese streams");
     return 0;
 }

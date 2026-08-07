@@ -300,32 +300,29 @@
     },
     {
       "source": {
-        "id": "0x0804",
-        "kind": "indexed",
-        "layout": "FE8J"
+        "kind": "authored",
+        "translation_key": "game.semantic_correction.msg_005"
       },
       "state": "verified",
       "target_id": "0x0005",
       "verification": {
-        "confidence": "high",
-        "evidence": "FEBuilder line 2054 maps 0x0804 to 0x0005",
-        "evidence_kind": "febuilder-structural-agreement",
+        "confidence": "explicit",
+        "evidence": "PopupScr_GotGold draws this fragment before a dynamic number. FE8J/FE8CN 0x0804 is a complete no-number sentence, so a target-order prefix is authored for grammatical concatenation.",
+        "evidence_kind": "target-authored-semantic-payload",
         "method": "deterministic-final-mapping-promotion",
         "promotion": {
           "details": {
-            "candidate_payloads": {
-              "ja": {
-                "id": "0x0804",
-                "kind": "indexed",
-                "sha256": "019f9c7723d4277426fe037bf763b9ebb3cc785b8efcc61265388d556f2d72e3"
-              },
-              "zh-Hans": {
-                "id": "0x0804",
-                "kind": "indexed",
-                "sha256": "6add86e59c7731caa6e27d55c48207f6e83effa7883720f51d26b54c8605db7f"
-              }
+            "english_payload_sha256": "6a4df7673dafecb3086aa97192e67eb3275033fc37e45a4581c8df33af9efaaf",
+            "incorrect_source": {
+              "id": "0x0804",
+              "kind": "indexed",
+              "layout": "FE8J"
             },
-            "structural_agreement": true
+            "payload_sha256": {
+              "ja": "b5102d23f67b9d755825200f4f5428184e16b4a3e8cac74977fc0ef1dbdf6892",
+              "zh-Hans": "15eb3a798a78441a99e0c0a18deaf697da8341ddd1db8367d2c74d9504c0cd07"
+            },
+            "translation_key": "game.semantic_correction.msg_005"
           },
           "original_source": {
             "kind": "english_fallback",
@@ -348,43 +345,40 @@
             "subsystem": "unclassified"
           },
           "pipeline": "fe8u-final-mapping-v1",
-          "precedence": "c-febuilder"
+          "precedence": "d-semantic-correction"
         },
-        "rationale": "Independent structural evidence agrees with the FEBuilder provider.",
-        "source_key": "0x0804->0x0005",
-        "source_symbol": "translate_textid_FE8.txt",
-        "source_table": "FEBuilder translate_textid_FE8",
+        "rationale": "PopupScr_GotGold draws this fragment before a dynamic number. FE8J/FE8CN 0x0804 is a complete no-number sentence, so a target-order prefix is authored for grammatical concatenation.",
+        "source_key": "PopupScr_GotGold/prefix-before-number",
+        "source_symbol": "game.semantic_correction.msg_005",
+        "source_table": "texts/locales/authored/shards/semantic_corrections.<locale>.json",
         "subsystem": "menu-definition"
       }
     },
     {
       "source": {
-        "id": "0x0807",
-        "kind": "indexed",
-        "layout": "FE8J"
+        "kind": "authored",
+        "translation_key": "game.semantic_correction.msg_006"
       },
       "state": "verified",
       "target_id": "0x0006",
       "verification": {
-        "confidence": "high",
-        "evidence": "FEBuilder line 2057 maps 0x0807 to 0x0006",
-        "evidence_kind": "febuilder-structural-agreement",
+        "confidence": "explicit",
+        "evidence": "PopupScr_GotGold draws this fragment after a dynamic number. FE8J/FE8CN 0x0807 says gold was stolen, so a target-order gold suffix is authored for grammatical concatenation.",
+        "evidence_kind": "target-authored-semantic-payload",
         "method": "deterministic-final-mapping-promotion",
         "promotion": {
           "details": {
-            "candidate_payloads": {
-              "ja": {
-                "id": "0x0807",
-                "kind": "indexed",
-                "sha256": "2621fdc894a4b47536989f7abccbc3a10710518c42df1b1d1d1c8c03799145d6"
-              },
-              "zh-Hans": {
-                "id": "0x0807",
-                "kind": "indexed",
-                "sha256": "9afad9eccf69c0faa9b62a20ab5a0261361a51e1319c043fa3289951465dfc7f"
-              }
+            "english_payload_sha256": "26c07bdce4f1b6eed1307593b5be21d6891cbde3312878492a66a19382d18fff",
+            "incorrect_source": {
+              "id": "0x0807",
+              "kind": "indexed",
+              "layout": "FE8J"
             },
-            "structural_agreement": true
+            "payload_sha256": {
+              "ja": "90ef8e4587df1779f3fa5a8258286e4e9f99b1d2a12213356e39a2c24db2e81e",
+              "zh-Hans": "7f8b37f14142f95f5aac5f22e315c737fd771a8d86d6fe9630d2a6e8b4cc7c9f"
+            },
+            "translation_key": "game.semantic_correction.msg_006"
           },
           "original_source": {
             "kind": "english_fallback",
@@ -407,12 +401,12 @@
             "subsystem": "unclassified"
           },
           "pipeline": "fe8u-final-mapping-v1",
-          "precedence": "c-febuilder"
+          "precedence": "d-semantic-correction"
         },
-        "rationale": "Independent structural evidence agrees with the FEBuilder provider.",
-        "source_key": "0x0807->0x0006",
-        "source_symbol": "translate_textid_FE8.txt",
-        "source_table": "FEBuilder translate_textid_FE8",
+        "rationale": "PopupScr_GotGold draws this fragment after a dynamic number. FE8J/FE8CN 0x0807 says gold was stolen, so a target-order gold suffix is authored for grammatical concatenation.",
+        "source_key": "PopupScr_GotGold/suffix-after-number",
+        "source_symbol": "game.semantic_correction.msg_006",
+        "source_table": "texts/locales/authored/shards/semantic_corrections.<locale>.json",
         "subsystem": "menu-definition"
       }
     },
@@ -654,32 +648,30 @@
     },
     {
       "source": {
-        "id": "0x080A",
+        "id": "0x0809",
         "kind": "indexed",
         "layout": "FE8J"
       },
       "state": "verified",
       "target_id": "0x000B",
       "verification": {
-        "confidence": "high",
-        "evidence": "FEBuilder line 2060 maps 0x080A to 0x000B",
-        "evidence_kind": "febuilder-structural-agreement",
+        "confidence": "manual",
+        "evidence": "PopupScr_ItemStolen draws the item name before this suffix. Official 0x0809 is the matching 'was stolen' suffix; 0x080A is the complete Support Level increased message.",
+        "evidence_kind": "official-regional-semantic-payload",
         "method": "deterministic-final-mapping-promotion",
         "promotion": {
           "details": {
-            "candidate_payloads": {
-              "ja": {
-                "id": "0x080A",
-                "kind": "indexed",
-                "sha256": "3a4c8f47f53c56e6720397261c416313f3df7664b30c957662c7382dae1aa21d"
-              },
-              "zh-Hans": {
-                "id": "0x080A",
-                "kind": "indexed",
-                "sha256": "52030c74c31c5218fe58440f26a2f1630477f1341122b4705225993fb84c0677"
-              }
+            "english_payload_sha256": "61159898e82ffa75e58dff43d369a125817b4f95afc31c9f4769024083e8f4b0",
+            "incorrect_source": {
+              "id": "0x080A",
+              "kind": "indexed",
+              "layout": "FE8J"
             },
-            "structural_agreement": true
+            "payload_sha256": {
+              "ja": "82a2e4b079cae22467940d39c44cf709b4cc520b0a99b6cb708f33314e68cd47",
+              "zh-Hans": "cb67cbe8417dc1862a76877f14c008aabb8e6c26f51fb7abdfa58527177a29be"
+            },
+            "replacement_source_id": "0x0809"
           },
           "original_source": {
             "kind": "english_fallback",
@@ -702,43 +694,41 @@
             "subsystem": "unclassified"
           },
           "pipeline": "fe8u-final-mapping-v1",
-          "precedence": "c-febuilder"
+          "precedence": "d-semantic-correction"
         },
-        "rationale": "Independent structural evidence agrees with the FEBuilder provider.",
-        "source_key": "0x080A->0x000B",
-        "source_symbol": "translate_textid_FE8.txt",
-        "source_table": "FEBuilder translate_textid_FE8",
+        "rationale": "PopupScr_ItemStolen draws the item name before this suffix. Official 0x0809 is the matching 'was stolen' suffix; 0x080A is the complete Support Level increased message.",
+        "source_key": "PopupScr_ItemStolen/item-name + stolen-suffix",
+        "source_symbol": "0x0809",
+        "source_table": "FE8J/FE8CN indexed message corpus",
         "subsystem": "menu-definition"
       }
     },
     {
       "source": {
-        "id": "0x080B",
+        "id": "0x080A",
         "kind": "indexed",
         "layout": "FE8J"
       },
       "state": "verified",
       "target_id": "0x000C",
       "verification": {
-        "confidence": "high",
-        "evidence": "FEBuilder line 2061 maps 0x080B to 0x000C",
-        "evidence_kind": "febuilder-structural-agreement",
+        "confidence": "manual",
+        "evidence": "The target is the complete Support Level increased popup. Official 0x080A is that complete message; 0x080B is only the suffix used after a weapon or unit.",
+        "evidence_kind": "official-regional-semantic-payload",
         "method": "deterministic-final-mapping-promotion",
         "promotion": {
           "details": {
-            "candidate_payloads": {
-              "ja": {
-                "id": "0x080B",
-                "kind": "indexed",
-                "sha256": "5bc601d797abcaaadc5137b7f0437b6259909c36249821b3a1c0eed5a0f62932"
-              },
-              "zh-Hans": {
-                "id": "0x080B",
-                "kind": "indexed",
-                "sha256": "5d2800baf6b2a73ba6ea56318a73021e6ade5c95db440f05bca7d5a9ade217be"
-              }
+            "english_payload_sha256": "e69326821ac5cdfa9a6cf0af0c9a4e7ae364be7ce0d3a1a62d525c0e64b53ff3",
+            "incorrect_source": {
+              "id": "0x080B",
+              "kind": "indexed",
+              "layout": "FE8J"
             },
-            "structural_agreement": true
+            "payload_sha256": {
+              "ja": "3a4c8f47f53c56e6720397261c416313f3df7664b30c957662c7382dae1aa21d",
+              "zh-Hans": "52030c74c31c5218fe58440f26a2f1630477f1341122b4705225993fb84c0677"
+            },
+            "replacement_source_id": "0x080A"
           },
           "original_source": {
             "kind": "english_fallback",
@@ -761,43 +751,40 @@
             "subsystem": "unclassified"
           },
           "pipeline": "fe8u-final-mapping-v1",
-          "precedence": "c-febuilder"
+          "precedence": "d-semantic-correction"
         },
-        "rationale": "Independent structural evidence agrees with the FEBuilder provider.",
-        "source_key": "0x080B->0x000C",
-        "source_symbol": "translate_textid_FE8.txt",
-        "source_table": "FEBuilder translate_textid_FE8",
+        "rationale": "The target is the complete Support Level increased popup. Official 0x080A is that complete message; 0x080B is only the suffix used after a weapon or unit.",
+        "source_key": "MSG_00C/Support-Level-increased",
+        "source_symbol": "0x080A",
+        "source_table": "FE8J/FE8CN indexed message corpus",
         "subsystem": "menu-definition"
       }
     },
     {
       "source": {
-        "id": "0x080D",
-        "kind": "indexed",
-        "layout": "FE8J"
+        "kind": "authored",
+        "translation_key": "game.semantic_correction.msg_00d"
       },
       "state": "verified",
       "target_id": "0x000D",
       "verification": {
-        "confidence": "high",
-        "evidence": "FEBuilder line 2063 maps 0x080D to 0x000D",
-        "evidence_kind": "febuilder-structural-agreement",
+        "confidence": "explicit",
+        "evidence": "DrawBattlePopup draws this fragment before the weapon-type icon. Official 0x080B is a suffix and 0x080D means obtained, so a target-order availability prefix is required.",
+        "evidence_kind": "target-authored-semantic-payload",
         "method": "deterministic-final-mapping-promotion",
         "promotion": {
           "details": {
-            "candidate_payloads": {
-              "ja": {
-                "id": "0x080D",
-                "kind": "indexed",
-                "sha256": "5f62229f03cd75636e26d502cef2df184b1bfc8d347be02f147dd9c1e0d29236"
-              },
-              "zh-Hans": {
-                "id": "0x080D",
-                "kind": "indexed",
-                "sha256": "03ecfee0d013719b0575b4e1972b7a64e9fd412769f9384d80d5b0052c6a30b0"
-              }
+            "english_payload_sha256": "91dac270cf076055424106bcd9e16eac279d37a4870f64ff66a065eedebe0f05",
+            "incorrect_source": {
+              "id": "0x080D",
+              "kind": "indexed",
+              "layout": "FE8J"
             },
-            "structural_agreement": true
+            "payload_sha256": {
+              "ja": "ec8f8ba34f40b4b2375bb54616c0683a4cd574dc4b2e4b7ac0eee38fa1cba776",
+              "zh-Hans": "16d524a128cdade4f333e939aa487d5c68b38d2e048a8ab2827999dc18e23daf"
+            },
+            "translation_key": "game.semantic_correction.msg_00d"
           },
           "original_source": {
             "kind": "english_fallback",
@@ -820,38 +807,40 @@
             "subsystem": "unclassified"
           },
           "pipeline": "fe8u-final-mapping-v1",
-          "precedence": "c-febuilder"
+          "precedence": "d-semantic-correction"
         },
-        "rationale": "Independent structural evidence agrees with the FEBuilder provider.",
-        "source_key": "0x080D->0x000D",
-        "source_symbol": "translate_textid_FE8.txt",
-        "source_table": "FEBuilder translate_textid_FE8",
+        "rationale": "DrawBattlePopup draws this fragment before the weapon-type icon. Official 0x080B is a suffix and 0x080D means obtained, so a target-order availability prefix is required.",
+        "source_key": "DrawBattlePopup/usable-weapon-prefix",
+        "source_symbol": "game.semantic_correction.msg_00d",
+        "source_table": "texts/locales/authored/shards/semantic_corrections.<locale>.json",
         "subsystem": "menu-definition"
       }
     },
     {
       "source": {
-        "id": "0x080D",
-        "kind": "indexed",
-        "layout": "FE8J"
+        "kind": "authored",
+        "translation_key": "game.semantic_correction.msg_00e"
       },
       "state": "verified",
       "target_id": "0x000E",
       "verification": {
-        "confidence": "high",
-        "evidence": "Exact normalized English payload/control equality with 0x000D; all mapped donors have identical JA/ZH payloads",
-        "evidence_kind": "exact-normalized-english-and-control-equality",
+        "confidence": "explicit",
+        "evidence": "PopupScr_NewAlly draws this fragment before the new unit name. The duplicate-English provider selected a Japanese/Chinese obtained-item suffix, so a unit-availability prefix is authored.",
+        "evidence_kind": "target-authored-semantic-payload",
         "method": "deterministic-final-mapping-promotion",
         "promotion": {
           "details": {
-            "donor_target_id": "0x000D",
-            "donor_target_ids": [
-              "0x000D"
-            ],
-            "localized_payload_sha256": {
-              "ja": "f677873e54f505abbd7d496c48e23b02b50da99f0c094e3d6cd0b5854b244513",
-              "zh-Hans": "d3ff416762d4f7e61390ae8c398f73c74d162ddcb3952c99cab8a257e2eee201"
-            }
+            "english_payload_sha256": "91dac270cf076055424106bcd9e16eac279d37a4870f64ff66a065eedebe0f05",
+            "incorrect_source": {
+              "id": "0x080D",
+              "kind": "indexed",
+              "layout": "FE8J"
+            },
+            "payload_sha256": {
+              "ja": "6baab0ec7a1e3d1ebdd51f34c6b9ae0dec04e5e4bc2153206f076657aa41c1c2",
+              "zh-Hans": "e0c03ad93fede88154d352a912cf7872585ba34210bc21eb470455d0b17ba017"
+            },
+            "translation_key": "game.semantic_correction.msg_00e"
           },
           "original_source": {
             "kind": "english_fallback",
@@ -874,13 +863,13 @@
             "subsystem": "unclassified"
           },
           "pipeline": "fe8u-final-mapping-v1",
-          "precedence": "e-exact-english"
+          "precedence": "d-semantic-correction"
         },
-        "rationale": "Reuses a mapped target's identical regional provider.",
-        "source_key": "91dac270cf076055424106bcd9e16eac279d37a4870f64ff66a065eedebe0f05",
-        "source_symbol": "MSG_00E",
-        "source_table": "FE8U English message corpus",
-        "subsystem": "unclassified"
+        "rationale": "PopupScr_NewAlly draws this fragment before the new unit name. The duplicate-English provider selected a Japanese/Chinese obtained-item suffix, so a unit-availability prefix is authored.",
+        "source_key": "PopupScr_NewAlly/usable-unit-prefix",
+        "source_symbol": "game.semantic_correction.msg_00e",
+        "source_table": "texts/locales/authored/shards/semantic_corrections.<locale>.json",
+        "subsystem": "menu-definition"
       }
     },
     {
@@ -2141,7 +2130,7 @@
             ],
             "localized_payload_sha256": {
               "ja": "12a2a504a42618ca432033102484d5c1073c9e246babf4f8d295b58a70d5a629",
-              "zh-Hans": "b1c82d05bd25fd8c95772cee02aa890de320720836ae07d8aa995aa9f85d1b3f"
+              "zh-Hans": "f4d97ba6ef69d0e6164e68bc4c0e07adb6a5e327f2da8f8f36e0259c1958fa72"
             }
           },
           "original_source": {
@@ -22516,39 +22505,72 @@
     },
     {
       "source": {
-        "id": "0x0142",
+        "id": "0x013E",
         "kind": "indexed",
         "layout": "FE8J"
       },
       "state": "verified",
       "target_id": "0x01B8",
       "verification": {
-        "additional_evidence": [
-          {
+        "confidence": "manual",
+        "evidence": "The E20 objective explicitly says Defeat Lyon. Official 0x013E names Lyon as the boss; 0x0142 instead requires defeating all monsters.",
+        "evidence_kind": "official-regional-semantic-payload",
+        "method": "deterministic-final-mapping-promotion",
+        "promotion": {
+          "details": {
+            "english_payload_sha256": "96600e3d420c6cf37bcd72f26c7ffc23c3cf424da791bb641fe72cc12b293d15",
+            "incorrect_source": {
+              "id": "0x0142",
+              "kind": "indexed",
+              "layout": "FE8J"
+            },
+            "payload_sha256": {
+              "ja": "913d649a48225d336df243e24ab8a7b23b924dd27640a3543b4e4d43df1e2d8f",
+              "zh-Hans": "74c3f4a6663c2fdb0c07c108a57dc2be804b15dd06ba106d57c5ae8a9d1e32d4"
+            },
+            "replacement_source_id": "0x013E"
+          },
+          "original_source": {
+            "id": "0x0142",
+            "kind": "indexed",
+            "layout": "FE8J"
+          },
+          "original_verification": {
+            "additional_evidence": [
+              {
+                "evidence_kind": "shared-keyed-table",
+                "source_key": "I20.statusObjectiveTextId",
+                "source_symbol": "gChapterDataTable",
+                "source_table": "gChapterDataTable",
+                "subsystem": "chapters"
+              }
+            ],
+            "candidate_seed": {
+              "matched": false,
+              "seed_tag": "interp",
+              "source_line": 438
+            },
+            "confidence": "high",
+            "evidence": "shared-keyed-table: gChapterDataTable E20.statusObjectiveTextId",
             "evidence_kind": "shared-keyed-table",
-            "source_key": "I20.statusObjectiveTextId",
+            "method": "structural-crosswalk",
+            "rationale": "The shared internalName and field identify the chapter slot.",
+            "source_key": "E20.statusObjectiveTextId",
+            "source_paths": {
+              "fe8j": "src/data/chapter_settings.h",
+              "fe8u": "src/data/chapter_settings.json"
+            },
             "source_symbol": "gChapterDataTable",
             "source_table": "gChapterDataTable",
             "subsystem": "chapters"
-          }
-        ],
-        "candidate_seed": {
-          "matched": false,
-          "seed_tag": "interp",
-          "source_line": 438
+          },
+          "pipeline": "fe8u-final-mapping-v1",
+          "precedence": "d-semantic-correction"
         },
-        "confidence": "high",
-        "evidence": "shared-keyed-table: gChapterDataTable E20.statusObjectiveTextId",
-        "evidence_kind": "shared-keyed-table",
-        "method": "structural-crosswalk",
-        "rationale": "The shared internalName and field identify the chapter slot.",
-        "source_key": "E20.statusObjectiveTextId",
-        "source_paths": {
-          "fe8j": "src/data/chapter_settings.h",
-          "fe8u": "src/data/chapter_settings.json"
-        },
-        "source_symbol": "gChapterDataTable",
-        "source_table": "gChapterDataTable",
+        "rationale": "The E20 objective explicitly says Defeat Lyon. Official 0x013E names Lyon as the boss; 0x0142 instead requires defeating all monsters.",
+        "source_key": "E20.statusObjectiveTextId/Defeat-Lyon",
+        "source_symbol": "0x013E",
+        "source_table": "FE8J/FE8CN indexed message corpus",
         "subsystem": "chapters"
       }
     },
@@ -49763,7 +49785,7 @@
               "zh-Hans": {
                 "id": "0x046C",
                 "kind": "indexed",
-                "sha256": "9c4b23d6a0b97bfce516f38169de48b263a03bb68e2c0cf35a33e11a7d114e69"
+                "sha256": "064eb4483e014fdcbdf814f179cfb4a1b4309a8d4b52b4e40ddde872d0782380"
               }
             },
             "structural_agreement": true
@@ -58885,27 +58907,30 @@
     },
     {
       "source": {
-        "id": "0x004A",
+        "id": "0x0049",
         "kind": "indexed",
         "layout": "FE8J"
       },
       "state": "verified",
       "target_id": "0x058B",
       "verification": {
-        "confidence": "high",
-        "evidence": "Exact normalized English payload/control equality with 0x077A; all mapped donors have identical JA/ZH payloads",
-        "evidence_kind": "exact-normalized-english-and-control-equality",
+        "confidence": "manual",
+        "evidence": "gUnusedPrepFortuneSubMenuStatTextIds labels this statistic Survival. Official 0x0049 is Survival; the exact-English donor previously selected 0x004A, Auto Weapon.",
+        "evidence_kind": "official-regional-semantic-payload",
         "method": "deterministic-final-mapping-promotion",
         "promotion": {
           "details": {
-            "donor_target_id": "0x077A",
-            "donor_target_ids": [
-              "0x077A"
-            ],
-            "localized_payload_sha256": {
-              "ja": "5300f817a99a8b0ea6e2e79a9c9f67f06bddd27938065223c10521035e1d65d6",
-              "zh-Hans": "a6456238a255b45d01e1e5c99dec3f53064ab303c07275e14eb1fb97564fbf30"
-            }
+            "english_payload_sha256": "22f9ca5baced68bca88ceeb8f2647cf46843895600d5e2b5d20106fec8261caa",
+            "incorrect_source": {
+              "id": "0x004A",
+              "kind": "indexed",
+              "layout": "FE8J"
+            },
+            "payload_sha256": {
+              "ja": "19830cab71b81ee0698a5a24524c126d7070bb128a3bb60a0904cf310e58083b",
+              "zh-Hans": "cbd9667c3fa1225ec8b9dea5e418d78d96891a942b3bad858c18d3254d41d4c6"
+            },
+            "replacement_source_id": "0x0049"
           },
           "original_source": {
             "kind": "english_fallback",
@@ -58928,13 +58953,13 @@
             "subsystem": "unclassified"
           },
           "pipeline": "fe8u-final-mapping-v1",
-          "precedence": "e-exact-english"
+          "precedence": "d-semantic-correction"
         },
-        "rationale": "Reuses a mapped target's identical regional provider.",
-        "source_key": "22f9ca5baced68bca88ceeb8f2647cf46843895600d5e2b5d20106fec8261caa",
-        "source_symbol": "MSG_58B",
-        "source_table": "FE8U English message corpus",
-        "subsystem": "unclassified"
+        "rationale": "gUnusedPrepFortuneSubMenuStatTextIds labels this statistic Survival. Official 0x0049 is Survival; the exact-English donor previously selected 0x004A, Auto Weapon.",
+        "source_key": "gUnusedPrepFortuneSubMenuStatTextIds[Survival]",
+        "source_symbol": "0x0049",
+        "source_table": "FE8J/FE8CN indexed message corpus",
+        "subsystem": "trainee-prep"
       }
     },
     {
@@ -61222,32 +61247,30 @@
     },
     {
       "source": {
-        "id": "0x06F7",
+        "id": "0x0545",
         "kind": "indexed",
         "layout": "FE8J"
       },
       "state": "verified",
       "target_id": "0x05B4",
       "verification": {
-        "confidence": "high",
-        "evidence": "FEBuilder line 1785 maps 0x06F7 to 0x05B4",
-        "evidence_kind": "febuilder-structural-agreement",
+        "confidence": "manual",
+        "evidence": "The preparation item-screen command sells unneeded items and protects important items. Official 0x0545 states both facts; 0x06F7 is the discard-items help text.",
+        "evidence_kind": "official-regional-semantic-payload",
         "method": "deterministic-final-mapping-promotion",
         "promotion": {
           "details": {
-            "candidate_payloads": {
-              "ja": {
-                "id": "0x06F7",
-                "kind": "indexed",
-                "sha256": "168b849ca1e6d73ea7c2582fcebc0b45c1e3a5a9858c7f74c3e5ee954deb0fd5"
-              },
-              "zh-Hans": {
-                "id": "0x06F7",
-                "kind": "indexed",
-                "sha256": "2cb6a11b0e2844d2e6011016e81cac1ef45910aa4bbaafa06900fb70982be5b6"
-              }
+            "english_payload_sha256": "ec5846e2af3ffdc9e89613f324e7c2400c06d96b38805f4bc0ccb0b3e97a23f0",
+            "incorrect_source": {
+              "id": "0x06F7",
+              "kind": "indexed",
+              "layout": "FE8J"
             },
-            "structural_agreement": true
+            "payload_sha256": {
+              "ja": "bb6e2a8aa0966fe839cde39340712f0bfc935c8c59f94a792e5b1b4d964964b8",
+              "zh-Hans": "cdb6af19725e5057d52f758a0c73edc9405d98e536be9bf92eb1187dc7e875cb"
+            },
+            "replacement_source_id": "0x0545"
           },
           "original_source": {
             "kind": "english_fallback",
@@ -61270,12 +61293,12 @@
             "subsystem": "unclassified"
           },
           "pipeline": "fe8u-final-mapping-v1",
-          "precedence": "c-febuilder"
+          "precedence": "d-semantic-correction"
         },
-        "rationale": "Independent structural evidence agrees with the FEBuilder provider.",
-        "source_key": "0x06F7->0x05B4",
-        "source_symbol": "translate_textid_FE8.txt",
-        "source_table": "FEBuilder translate_textid_FE8",
+        "rationale": "The preparation item-screen command sells unneeded items and protects important items. Official 0x0545 states both facts; 0x06F7 is the discard-items help text.",
+        "source_key": "gPrepItemScreenItemMenuHelpTextIdLut/sell",
+        "source_symbol": "0x0545",
+        "source_table": "FE8J/FE8CN indexed message corpus",
         "subsystem": "trainee-prep"
       }
     },
@@ -72415,30 +72438,62 @@
     },
     {
       "source": {
-        "id": "0x063F",
-        "kind": "indexed",
-        "layout": "FE8J"
+        "kind": "authored",
+        "translation_key": "game.semantic_correction.msg_679"
       },
       "state": "verified",
       "target_id": "0x0679",
       "verification": {
-        "candidate_seed": {
-          "matched": false,
-          "seed_tag": "interp",
-          "source_line": 1502
+        "confidence": "explicit",
+        "evidence": "The world-map Save menu help explains how to resume from the chapter record. Official 0x063F explicitly has no help message, so target-correct text using the established resume label is authored.",
+        "evidence_kind": "target-authored-semantic-payload",
+        "method": "deterministic-final-mapping-promotion",
+        "promotion": {
+          "details": {
+            "english_payload_sha256": "0df058ee1d0b4199726680b7b5cc8b1939fce71e3efbdff30f29be87bdee8c4b",
+            "incorrect_source": {
+              "id": "0x063F",
+              "kind": "indexed",
+              "layout": "FE8J"
+            },
+            "payload_sha256": {
+              "ja": "ea7e22722680e6615d1e96d03964d4165e12a7d318c969b9609c1401c3d95cb3",
+              "zh-Hans": "8543f3d58f04def36eb381bf7d725484118db3a11e455a11e929a3a6006faf48"
+            },
+            "translation_key": "game.semantic_correction.msg_679"
+          },
+          "original_source": {
+            "id": "0x063F",
+            "kind": "indexed",
+            "layout": "FE8J"
+          },
+          "original_verification": {
+            "candidate_seed": {
+              "matched": false,
+              "seed_tag": "interp",
+              "source_line": 1502
+            },
+            "confidence": "high",
+            "evidence": "shared-keyed-table: MenuItemDef_WMGeneralMenu MenuItemDef_WMGeneralMenu.override[0x4].help",
+            "evidence_kind": "shared-keyed-table",
+            "method": "structural-crosswalk",
+            "rationale": "The shared world-map menu override identifies the help slot.",
+            "source_key": "MenuItemDef_WMGeneralMenu.override[0x4].help",
+            "source_paths": {
+              "fe8j": "src/data/MenuItemDef_WMGeneralMenu_ref/dat_MenuItemDef_WMGeneralMenu_ref.s",
+              "fe8u": "src/worldmap_path.c"
+            },
+            "source_symbol": "MenuItemDef_WMGeneralMenu",
+            "source_table": "MenuItemDef_WMGeneralMenu",
+            "subsystem": "menus"
+          },
+          "pipeline": "fe8u-final-mapping-v1",
+          "precedence": "d-semantic-correction"
         },
-        "confidence": "high",
-        "evidence": "shared-keyed-table: MenuItemDef_WMGeneralMenu MenuItemDef_WMGeneralMenu.override[0x4].help",
-        "evidence_kind": "shared-keyed-table",
-        "method": "structural-crosswalk",
-        "rationale": "The shared world-map menu override identifies the help slot.",
+        "rationale": "The world-map Save menu help explains how to resume from the chapter record. Official 0x063F explicitly has no help message, so target-correct text using the established resume label is authored.",
         "source_key": "MenuItemDef_WMGeneralMenu.override[0x4].help",
-        "source_paths": {
-          "fe8j": "src/data/MenuItemDef_WMGeneralMenu_ref/dat_MenuItemDef_WMGeneralMenu_ref.s",
-          "fe8u": "src/worldmap_path.c"
-        },
-        "source_symbol": "MenuItemDef_WMGeneralMenu",
-        "source_table": "MenuItemDef_WMGeneralMenu",
+        "source_symbol": "game.semantic_correction.msg_679",
+        "source_table": "texts/locales/authored/shards/semantic_corrections.<locale>.json",
         "subsystem": "menus"
       }
     },
@@ -73998,32 +74053,29 @@
     },
     {
       "source": {
-        "id": "0x062F",
-        "kind": "indexed",
-        "layout": "FE8J"
+        "kind": "authored",
+        "translation_key": "game.semantic_correction.msg_6a2"
       },
       "state": "verified",
       "target_id": "0x06A2",
       "verification": {
-        "confidence": "high",
-        "evidence": "FEBuilder line 1585 maps 0x062F to 0x06A2",
-        "evidence_kind": "febuilder-structural-agreement",
+        "confidence": "explicit",
+        "evidence": "The target is the Debug label. Official 0x0633 identifies the debug-information slot but its Japanese payload is garbled and both regional strings add 'information'; exact target labels are therefore authored instead of mapping to 0x062F Gold.",
+        "evidence_kind": "target-authored-semantic-payload",
         "method": "deterministic-final-mapping-promotion",
         "promotion": {
           "details": {
-            "candidate_payloads": {
-              "ja": {
-                "id": "0x062F",
-                "kind": "indexed",
-                "sha256": "1ae3dc58de533f74c5af2681b9a5346ac0cddd959038b512917dfb12d33f58df"
-              },
-              "zh-Hans": {
-                "id": "0x062F",
-                "kind": "indexed",
-                "sha256": "044ad9e1ca97ed6fa2d2fb4a6e2e58121a1fb7e04cc3ba4c87c66afc702a9ff6"
-              }
+            "english_payload_sha256": "89fe07be1de3c43cb79f6446673044ad43a261c046ebe5d6d0564f96fc95f9da",
+            "incorrect_source": {
+              "id": "0x062F",
+              "kind": "indexed",
+              "layout": "FE8J"
             },
-            "structural_agreement": true
+            "payload_sha256": {
+              "ja": "636494eff693d024343a8cdfb0b7e09a3684abeb68bb41145c23453e6e224509",
+              "zh-Hans": "e4df15ff0bbe5dbffa801d9bb2ca288ac47d2727472f121fcd64c81bfbbf9f92"
+            },
+            "translation_key": "game.semantic_correction.msg_6a2"
           },
           "original_source": {
             "kind": "english_fallback",
@@ -74046,12 +74098,12 @@
             "subsystem": "unclassified"
           },
           "pipeline": "fe8u-final-mapping-v1",
-          "precedence": "c-febuilder"
+          "precedence": "d-semantic-correction"
         },
-        "rationale": "Independent structural evidence agrees with the FEBuilder provider.",
-        "source_key": "0x062F->0x06A2",
-        "source_symbol": "translate_textid_FE8.txt",
-        "source_table": "FEBuilder translate_textid_FE8",
+        "rationale": "The target is the Debug label. Official 0x0633 identifies the debug-information slot but its Japanese payload is garbled and both regional strings add 'information'; exact target labels are therefore authored instead of mapping to 0x062F Gold.",
+        "source_key": "MSG_6A2/Debug-label",
+        "source_symbol": "game.semantic_correction.msg_6a2",
+        "source_table": "texts/locales/authored/shards/semantic_corrections.<locale>.json",
         "subsystem": "chapter-event"
       }
     },
@@ -83910,27 +83962,30 @@
     },
     {
       "source": {
-        "id": "0x0049",
+        "id": "0x0048",
         "kind": "indexed",
         "layout": "FE8J"
       },
       "state": "verified",
       "target_id": "0x0771",
       "verification": {
-        "confidence": "high",
-        "evidence": "Exact normalized English payload/control equality with 0x0779; all mapped donors have identical JA/ZH payloads",
-        "evidence_kind": "exact-normalized-english-and-control-equality",
+        "confidence": "manual",
+        "evidence": "StartLinkArenaShowPoints passes this label to the points box. Official 0x0048 is Points; the exact-English donor previously selected 0x0049, Survival.",
+        "evidence_kind": "official-regional-semantic-payload",
         "method": "deterministic-final-mapping-promotion",
         "promotion": {
           "details": {
-            "donor_target_id": "0x0779",
-            "donor_target_ids": [
-              "0x0779"
-            ],
-            "localized_payload_sha256": {
-              "ja": "87f0772cb74936038393c92ca73a292b0af753ec87209cbe7eda7b083e4495e7",
-              "zh-Hans": "5f9e73e925eefb92b063454ac739b2303f7872107f20d9f23224bdea31a85639"
-            }
+            "english_payload_sha256": "9b71f1bb5ad351955d804517bc120d3b24495af1b040cedb5d25a6a7860e2604",
+            "incorrect_source": {
+              "id": "0x0049",
+              "kind": "indexed",
+              "layout": "FE8J"
+            },
+            "payload_sha256": {
+              "ja": "80ebe4f118802a72d8ed2b0076434895eadf99658f50d6e162c6733fe2809485",
+              "zh-Hans": "1251e35c137ac764740b8d53aefad650e9a5f430d5967ca689e85569bf8c72d6"
+            },
+            "replacement_source_id": "0x0048"
           },
           "original_source": {
             "kind": "english_fallback",
@@ -83948,13 +84003,13 @@
             "subsystem": "unclassified"
           },
           "pipeline": "fe8u-final-mapping-v1",
-          "precedence": "e-exact-english"
+          "precedence": "d-semantic-correction"
         },
-        "rationale": "Reuses a mapped target's identical regional provider.",
-        "source_key": "9b71f1bb5ad351955d804517bc120d3b24495af1b040cedb5d25a6a7860e2604",
-        "source_symbol": "MSG_771",
-        "source_table": "FE8U English message corpus",
-        "subsystem": "unclassified"
+        "rationale": "StartLinkArenaShowPoints passes this label to the points box. Official 0x0048 is Points; the exact-English donor previously selected 0x0049, Survival.",
+        "source_key": "StartLinkArenaShowPoints/points-label",
+        "source_symbol": "0x0048",
+        "source_table": "FE8J/FE8CN indexed message corpus",
+        "subsystem": "link-arena"
       }
     },
     {
@@ -84008,27 +84063,30 @@
     },
     {
       "source": {
-        "id": "0x0049",
+        "id": "0x0048",
         "kind": "indexed",
         "layout": "FE8J"
       },
       "state": "verified",
       "target_id": "0x0773",
       "verification": {
-        "confidence": "high",
-        "evidence": "Exact normalized English payload/control equality with 0x0779; all mapped donors have identical JA/ZH payloads",
-        "evidence_kind": "exact-normalized-english-and-control-equality",
+        "confidence": "manual",
+        "evidence": "The result/rankings header inserts this label over the numeric points column. Official 0x0048 is Points; 0x0049 is Survival.",
+        "evidence_kind": "official-regional-semantic-payload",
         "method": "deterministic-final-mapping-promotion",
         "promotion": {
           "details": {
-            "donor_target_id": "0x0779",
-            "donor_target_ids": [
-              "0x0779"
-            ],
-            "localized_payload_sha256": {
-              "ja": "87f0772cb74936038393c92ca73a292b0af753ec87209cbe7eda7b083e4495e7",
-              "zh-Hans": "5f9e73e925eefb92b063454ac739b2303f7872107f20d9f23224bdea31a85639"
-            }
+            "english_payload_sha256": "9b71f1bb5ad351955d804517bc120d3b24495af1b040cedb5d25a6a7860e2604",
+            "incorrect_source": {
+              "id": "0x0049",
+              "kind": "indexed",
+              "layout": "FE8J"
+            },
+            "payload_sha256": {
+              "ja": "80ebe4f118802a72d8ed2b0076434895eadf99658f50d6e162c6733fe2809485",
+              "zh-Hans": "1251e35c137ac764740b8d53aefad650e9a5f430d5967ca689e85569bf8c72d6"
+            },
+            "replacement_source_id": "0x0048"
           },
           "original_source": {
             "kind": "english_fallback",
@@ -84046,13 +84104,13 @@
             "subsystem": "unclassified"
           },
           "pipeline": "fe8u-final-mapping-v1",
-          "precedence": "e-exact-english"
+          "precedence": "d-semantic-correction"
         },
-        "rationale": "Reuses a mapped target's identical regional provider.",
-        "source_key": "9b71f1bb5ad351955d804517bc120d3b24495af1b040cedb5d25a6a7860e2604",
-        "source_symbol": "MSG_773",
-        "source_table": "FE8U English message corpus",
-        "subsystem": "unclassified"
+        "rationale": "The result/rankings header inserts this label over the numeric points column. Official 0x0048 is Points; 0x0049 is Survival.",
+        "source_key": "SioResult/column-header/Points",
+        "source_symbol": "0x0048",
+        "source_table": "FE8J/FE8CN indexed message corpus",
+        "subsystem": "link-arena"
       }
     },
     {
@@ -84099,32 +84157,30 @@
     },
     {
       "source": {
-        "id": "0x0045",
+        "id": "0x005F",
         "kind": "indexed",
         "layout": "FE8J"
       },
       "state": "verified",
       "target_id": "0x0775",
       "verification": {
-        "confidence": "high",
-        "evidence": "FEBuilder line 71 maps 0x0045 to 0x0775",
-        "evidence_kind": "febuilder-structural-agreement",
+        "confidence": "manual",
+        "evidence": "The result/rankings header inserts this label over the player count column. Official 0x005F is Players/count; 0x0045 means Stop building the team.",
+        "evidence_kind": "official-regional-semantic-payload",
         "method": "deterministic-final-mapping-promotion",
         "promotion": {
           "details": {
-            "candidate_payloads": {
-              "ja": {
-                "id": "0x0045",
-                "kind": "indexed",
-                "sha256": "4dc9f751d5a1fe5d97481a5303c17908041d605f8f08d7ac2ca56fa154e09ea4"
-              },
-              "zh-Hans": {
-                "id": "0x0045",
-                "kind": "indexed",
-                "sha256": "ad23ff01be64da147507b2a24897f657c5908690c3fadf883ca1b00fed7985f4"
-              }
+            "english_payload_sha256": "ac96cbd20a9e7ba9e489397d1cd958315e74b70deb18ad54953f01d4288953ae",
+            "incorrect_source": {
+              "id": "0x0045",
+              "kind": "indexed",
+              "layout": "FE8J"
             },
-            "structural_agreement": true
+            "payload_sha256": {
+              "ja": "389485a87c707afb88e93a677aa1ae599651d6455374e047805778f3e0b58da6",
+              "zh-Hans": "389485a87c707afb88e93a677aa1ae599651d6455374e047805778f3e0b58da6"
+            },
+            "replacement_source_id": "0x005F"
           },
           "original_source": {
             "kind": "english_fallback",
@@ -84142,13 +84198,13 @@
             "subsystem": "unclassified"
           },
           "pipeline": "fe8u-final-mapping-v1",
-          "precedence": "c-febuilder"
+          "precedence": "d-semantic-correction"
         },
-        "rationale": "Independent structural evidence agrees with the FEBuilder provider.",
-        "source_key": "0x0045->0x0775",
-        "source_symbol": "translate_textid_FE8.txt",
-        "source_table": "FEBuilder translate_textid_FE8",
-        "subsystem": "shop-arena"
+        "rationale": "The result/rankings header inserts this label over the player count column. Official 0x005F is Players/count; 0x0045 means Stop building the team.",
+        "source_key": "SioResult/column-header/Players",
+        "source_symbol": "0x005F",
+        "source_table": "FE8J/FE8CN indexed message corpus",
+        "subsystem": "link-arena"
       }
     },
     {
@@ -84261,32 +84317,30 @@
     },
     {
       "source": {
-        "id": "0x0048",
+        "id": "0x004A",
         "kind": "indexed",
         "layout": "FE8J"
       },
       "state": "verified",
       "target_id": "0x0778",
       "verification": {
-        "confidence": "high",
-        "evidence": "FEBuilder line 74 maps 0x0048 to 0x0778",
-        "evidence_kind": "febuilder-structural-agreement",
+        "confidence": "manual",
+        "evidence": "gLinkArenaRuleData row 2 is the Auto Weapon on/off rule. Official 0x004A is Auto Weapon; 0x0048 is Points.",
+        "evidence_kind": "official-regional-semantic-payload",
         "method": "deterministic-final-mapping-promotion",
         "promotion": {
           "details": {
-            "candidate_payloads": {
-              "ja": {
-                "id": "0x0048",
-                "kind": "indexed",
-                "sha256": "80ebe4f118802a72d8ed2b0076434895eadf99658f50d6e162c6733fe2809485"
-              },
-              "zh-Hans": {
-                "id": "0x0048",
-                "kind": "indexed",
-                "sha256": "1251e35c137ac764740b8d53aefad650e9a5f430d5967ca689e85569bf8c72d6"
-              }
+            "english_payload_sha256": "1bec7f8518a6b3b060200b5b6e44be2fb934d96d666343dcd3aef516ef50c87d",
+            "incorrect_source": {
+              "id": "0x0048",
+              "kind": "indexed",
+              "layout": "FE8J"
             },
-            "structural_agreement": true
+            "payload_sha256": {
+              "ja": "719e235acd31cdf99609054b5931912ad72554e57bf9f0ddb2e783ba5744700f",
+              "zh-Hans": "94a3c754e00934dc5df61491d2735e310112d751a29f1e2a014a830fd1b1b25a"
+            },
+            "replacement_source_id": "0x004A"
           },
           "original_source": {
             "kind": "english_fallback",
@@ -84304,43 +84358,41 @@
             "subsystem": "unclassified"
           },
           "pipeline": "fe8u-final-mapping-v1",
-          "precedence": "c-febuilder"
+          "precedence": "d-semantic-correction"
         },
-        "rationale": "Independent structural evidence agrees with the FEBuilder provider.",
-        "source_key": "0x0048->0x0778",
-        "source_symbol": "translate_textid_FE8.txt",
-        "source_table": "FEBuilder translate_textid_FE8",
-        "subsystem": "help-tutorial"
+        "rationale": "gLinkArenaRuleData row 2 is the Auto Weapon on/off rule. Official 0x004A is Auto Weapon; 0x0048 is Points.",
+        "source_key": "gLinkArenaRuleData[2].label/AutoWeapon",
+        "source_symbol": "0x004A",
+        "source_table": "FE8J/FE8CN indexed message corpus",
+        "subsystem": "link-arena"
       }
     },
     {
       "source": {
-        "id": "0x0049",
+        "id": "0x0048",
         "kind": "indexed",
         "layout": "FE8J"
       },
       "state": "verified",
       "target_id": "0x0779",
       "verification": {
-        "confidence": "high",
-        "evidence": "FEBuilder line 75 maps 0x0049 to 0x0779",
-        "evidence_kind": "febuilder-structural-agreement",
+        "confidence": "manual",
+        "evidence": "gLinkArenaRuleData row 1 uses this as the Points victory condition. Official 0x0048 is Points; 0x0049 is Survival.",
+        "evidence_kind": "official-regional-semantic-payload",
         "method": "deterministic-final-mapping-promotion",
         "promotion": {
           "details": {
-            "candidate_payloads": {
-              "ja": {
-                "id": "0x0049",
-                "kind": "indexed",
-                "sha256": "19830cab71b81ee0698a5a24524c126d7070bb128a3bb60a0904cf310e58083b"
-              },
-              "zh-Hans": {
-                "id": "0x0049",
-                "kind": "indexed",
-                "sha256": "cbd9667c3fa1225ec8b9dea5e418d78d96891a942b3bad858c18d3254d41d4c6"
-              }
+            "english_payload_sha256": "9b71f1bb5ad351955d804517bc120d3b24495af1b040cedb5d25a6a7860e2604",
+            "incorrect_source": {
+              "id": "0x0049",
+              "kind": "indexed",
+              "layout": "FE8J"
             },
-            "structural_agreement": true
+            "payload_sha256": {
+              "ja": "80ebe4f118802a72d8ed2b0076434895eadf99658f50d6e162c6733fe2809485",
+              "zh-Hans": "1251e35c137ac764740b8d53aefad650e9a5f430d5967ca689e85569bf8c72d6"
+            },
+            "replacement_source_id": "0x0048"
           },
           "original_source": {
             "kind": "english_fallback",
@@ -84358,43 +84410,41 @@
             "subsystem": "unclassified"
           },
           "pipeline": "fe8u-final-mapping-v1",
-          "precedence": "c-febuilder"
+          "precedence": "d-semantic-correction"
         },
-        "rationale": "Independent structural evidence agrees with the FEBuilder provider.",
-        "source_key": "0x0049->0x0779",
-        "source_symbol": "translate_textid_FE8.txt",
-        "source_table": "FEBuilder translate_textid_FE8",
-        "subsystem": "help-tutorial"
+        "rationale": "gLinkArenaRuleData row 1 uses this as the Points victory condition. Official 0x0048 is Points; 0x0049 is Survival.",
+        "source_key": "gLinkArenaRuleData[1].choice[0]/Points",
+        "source_symbol": "0x0048",
+        "source_table": "FE8J/FE8CN indexed message corpus",
+        "subsystem": "link-arena"
       }
     },
     {
       "source": {
-        "id": "0x004A",
+        "id": "0x0049",
         "kind": "indexed",
         "layout": "FE8J"
       },
       "state": "verified",
       "target_id": "0x077A",
       "verification": {
-        "confidence": "high",
-        "evidence": "FEBuilder line 76 maps 0x004A to 0x077A",
-        "evidence_kind": "febuilder-structural-agreement",
+        "confidence": "manual",
+        "evidence": "gLinkArenaRuleData row 1 uses this as the Survival victory condition. Official 0x0049 is Survival; 0x004A is Auto Weapon.",
+        "evidence_kind": "official-regional-semantic-payload",
         "method": "deterministic-final-mapping-promotion",
         "promotion": {
           "details": {
-            "candidate_payloads": {
-              "ja": {
-                "id": "0x004A",
-                "kind": "indexed",
-                "sha256": "719e235acd31cdf99609054b5931912ad72554e57bf9f0ddb2e783ba5744700f"
-              },
-              "zh-Hans": {
-                "id": "0x004A",
-                "kind": "indexed",
-                "sha256": "94a3c754e00934dc5df61491d2735e310112d751a29f1e2a014a830fd1b1b25a"
-              }
+            "english_payload_sha256": "22f9ca5baced68bca88ceeb8f2647cf46843895600d5e2b5d20106fec8261caa",
+            "incorrect_source": {
+              "id": "0x004A",
+              "kind": "indexed",
+              "layout": "FE8J"
             },
-            "structural_agreement": true
+            "payload_sha256": {
+              "ja": "19830cab71b81ee0698a5a24524c126d7070bb128a3bb60a0904cf310e58083b",
+              "zh-Hans": "cbd9667c3fa1225ec8b9dea5e418d78d96891a942b3bad858c18d3254d41d4c6"
+            },
+            "replacement_source_id": "0x0049"
           },
           "original_source": {
             "kind": "english_fallback",
@@ -84412,13 +84462,13 @@
             "subsystem": "unclassified"
           },
           "pipeline": "fe8u-final-mapping-v1",
-          "precedence": "c-febuilder"
+          "precedence": "d-semantic-correction"
         },
-        "rationale": "Independent structural evidence agrees with the FEBuilder provider.",
-        "source_key": "0x004A->0x077A",
-        "source_symbol": "translate_textid_FE8.txt",
-        "source_table": "FEBuilder translate_textid_FE8",
-        "subsystem": "help-tutorial"
+        "rationale": "gLinkArenaRuleData row 1 uses this as the Survival victory condition. Official 0x0049 is Survival; 0x004A is Auto Weapon.",
+        "source_key": "gLinkArenaRuleData[1].choice[1]/Survival",
+        "source_symbol": "0x0049",
+        "source_table": "FE8J/FE8CN indexed message corpus",
+        "subsystem": "link-arena"
       }
     },
     {
