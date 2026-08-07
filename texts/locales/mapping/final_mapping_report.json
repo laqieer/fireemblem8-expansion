@@ -3,13 +3,18 @@
   "inputs": {
     "febuilder_alignment_evidence_sha256": "78dac548ec81979127f284927eea589c4598ee93382b450b5e674c84611ecad6",
     "original_target_map_sha256": "6abbc956576d823de7430da267212f6c050fec5267cb7a6cb6819f77381ae4bd",
-    "structural_completion_evidence_sha256": "2ca4db089cb81f31f6a0f89415da6288a69cf0e882f956a018448ad1192aa87e"
+    "runtime_authored_catalog_sha256": {
+      "ja": "4872bf1ed77af887eebba4dcc180ea3899eb979866d56c34344554a29aaed76c",
+      "zh-Hans": "34855db57b4864e07a03846529877297706f59aed6f4ba61e07788f866d96cbc"
+    },
+    "source_authored_queue_sha256": "ffdff913a552076928d5cb06634ed75d8983b65c05bb4ecec9aa2b610ffe6ad6",
+    "structural_completion_evidence_sha256": "544420ef5077af43b5ccd359d331dae0bc9b9ea42959710e1d464c136999aacf"
   },
   "kind": "fe8u-final-mapping-report",
-  "note": "Evidence and queue report for the deterministic final-mapping promotion pass. Final delivery remains blocked until fallback=0.",
+  "note": "Evidence report for the deterministic final-mapping promotion pass. The source queue is retained byte-identically as fulfilled history.",
   "policy": {
     "final_delivery_requires_zero_fallback": true,
-    "intermediate_queue_permitted": true,
+    "historical_fulfilled_queue_retained": true,
     "numeric_or_proximity_promotion_permitted": false
   },
   "promotion_counts": {
@@ -20,14 +25,17 @@
     "d-existing-authored": 3,
     "d-structural-reference-second-check": 6,
     "e-exact-english": 139,
-    "e-exact-english-context": 1
+    "e-exact-english-context": 1,
+    "f-authored-queue": 259
   },
   "schema_version": 1,
   "summary": {
     "authored_queue_target_count": 259,
-    "fallback_target_count": 259,
-    "promoted_target_count": 1547,
+    "fallback_target_count": 0,
+    "fulfilled_authored_queue_target_count": 259,
+    "promoted_target_count": 1806,
     "target_count": 3414,
-    "translated_target_count": 3155
+    "translated_target_count": 3414,
+    "unfulfilled_authored_queue_target_count": 0
   }
 }

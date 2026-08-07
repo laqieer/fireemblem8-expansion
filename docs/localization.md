@@ -84,7 +84,7 @@ The framework is layered, each layer independently testable:
    never a raw/arbitrary pointer oracle.
 
    Host-native tests resolve exact Japanese/Chinese expansion strings,
-   sparse-entry English fallback, invalid/unpopulated slots, and both
+   generic sparse-entry English fallback, invalid/unpopulated slots, and both
    expansion/full-game cache invalidation. Production CJK profiles use the
    upper bank at 32 MiB. Captured CJK scenarios cover first start,
    Japanese/Chinese choice, Config switching, and soft-reset persistence.
@@ -258,6 +258,24 @@ descriptor slots.
 2. `make localization-generate` (or let any modern build target
    depend on it) regenerates `expansion_locale_catalog.c`/
    `expansion_msg_ids.h`/the localization budget JSON, write-if-unchanged.
+   Full-game authored translations use the separate normalized shard platform
+   at `texts/locales/authored/`. Its manifest pins the historical 259-row
+   source queue and every shard hash; the merger produces canonical 262-key
+   JA/ZH runtime catalogs (259 fulfilled queue rows plus 3 existing
+   expansion-backed rows):
+
+   ```bash
+   python3 -m scripts.localization.game_locales build-authored-catalogs
+   python3 -m scripts.localization.game_locales check-authored-catalogs
+   python3 -m scripts.localization.game_locales check-final-mapping \
+     --require-no-fallback
+   ```
+
+   The production compressed catalog is 3,414/3,414 present for both `ja` and
+   `zh-Hans`, with zero English fallback and zero unresolved rows. The
+   independent 143-record raw-surface closure also has zero fallback,
+   exclusion, and unresolved record. The shared modern English bundle remains
+   the real `en` locale; zero CJK fallback does not remove or duplicate it.
 3. `python3 -m unittest discover -s scripts/localization/tests -p
    'test_*.py' -v` (or `make localization-test`) re-validates schema,
    strict UTF-8/control, surface-width and UTF-8 byte budgets, placeholder/

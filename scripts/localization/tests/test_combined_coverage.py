@@ -52,15 +52,15 @@ class CombinedCoverageTests(unittest.TestCase):
             canonical_json_bytes(self.rebuilt),
         )
 
-    def test_summary_accounts_for_current_fallback_partition(self):
+    def test_summary_accounts_for_zero_fallback_partition(self):
         summary = self.report["summary"]
         self.assertEqual(summary["target_count"], 3414)
-        self.assertEqual(summary["translated_target_count"], 3155)
-        self.assertEqual(summary["explicit_fallback_target_count"], 259)
+        self.assertEqual(summary["translated_target_count"], 3414)
+        self.assertEqual(summary["explicit_fallback_target_count"], 0)
         self.assertEqual(
-            summary["actionable_not_yet_verified_target_count"], 250
+            summary["actionable_not_yet_verified_target_count"], 0
         )
-        self.assertEqual(summary["non_actionable_fallback_target_count"], 9)
+        self.assertEqual(summary["non_actionable_fallback_target_count"], 0)
         self.assertEqual(
             summary["febuilder_unique_uncontested_candidate_count"], 0
         )
@@ -71,7 +71,7 @@ class CombinedCoverageTests(unittest.TestCase):
             summary["combined_unblocked_candidate_target_count"], 0
         )
         self.assertEqual(summary["combined_blocked_target_count"], 0)
-        self.assertEqual(summary["residual_target_count"], 250)
+        self.assertEqual(summary["residual_target_count"], 0)
         self.assertEqual(
             summary["combined_unblocked_candidate_target_count"]
             + summary["combined_blocked_target_count"]
@@ -120,7 +120,7 @@ class CombinedCoverageTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stdout)
         self.assertIn(
-            "translated=3155 candidates=0 blocked=0 residual=250",
+            "translated=3414 candidates=0 blocked=0 residual=0",
             result.stdout,
         )
 

@@ -23,7 +23,7 @@ ENGLISH_PROBE = TEST_DIR / "layout_english_probe.c"
 CJK_FLOOR_PROBE = TEST_DIR / "layout_cjk_floor_probe.c"
 CJK_GROWTH_PROBE = TEST_DIR / "layout_cjk_growth_probe.c"
 FUNCTION_MACRO_PROBE = TEST_DIR / "function_macro_probe.c"
-FALLBACK_CORPUS_DRIVER = TEST_DIR / "fallback_corpus_driver.c"
+AUTHORED_CORPUS_DRIVER = TEST_DIR / "authored_corpus_driver.c"
 
 JA_MESSAGES = (
     "猫\x1f\x00".encode("utf-8"),
@@ -321,8 +321,8 @@ class LocalizedGameTextRuntimeTests(unittest.TestCase):
         run_result = self._run([str(binary)])
         self.assertEqual(run_result.stdout.strip(), "localized_game_text_runtime_driver: ok")
 
-    def test_committed_fallback_corpus_through_c_runtime(self):
-        build_dir = BUILD_ROOT / "fallback-corpus"
+    def test_committed_authored_corpus_through_c_runtime(self):
+        build_dir = BUILD_ROOT / "authored-corpus"
         build_dir.mkdir()
         written = generate_game_catalog(
             output_dir=build_dir, enabled_locales=("ja",)
@@ -332,21 +332,21 @@ class LocalizedGameTextRuntimeTests(unittest.TestCase):
                 encoding="utf-8"
             )
         )
-        fallback_ids = [
+        authored_ids = [
             int(row["target_id"], 16)
             for row in mapping["rows"]
-            if row["source"]["kind"] == "english_fallback"
+            if row["source"]["kind"] == "authored"
         ]
-        self.assertEqual(len(fallback_ids), 259)
-        (build_dir / "fallback_corpus_ids.h").write_text(
-            "static const int sFallbackIds[] = {\n"
+        self.assertEqual(len(authored_ids), 262)
+        (build_dir / "authored_corpus_ids.h").write_text(
+            "static const int sAuthoredIds[] = {\n"
             + "".join(
-                "    0x{:03X},\n".format(msg_id) for msg_id in fallback_ids
+                "    0x{:03X},\n".format(msg_id) for msg_id in authored_ids
             )
             + "};\n",
             encoding="ascii",
         )
-        binary = build_dir / "fallback_corpus_driver"
+        binary = build_dir / "authored_corpus_driver"
 
         self._run(
             [
@@ -368,7 +368,7 @@ class LocalizedGameTextRuntimeTests(unittest.TestCase):
                 str(ROOT / "src" / "localized_text_codec.c"),
                 str(ROOT / "src" / "localized_game_text.c"),
                 str(written["source"]),
-                str(FALLBACK_CORPUS_DRIVER),
+                str(AUTHORED_CORPUS_DRIVER),
                 "-o",
                 str(binary),
             ]
@@ -376,7 +376,7 @@ class LocalizedGameTextRuntimeTests(unittest.TestCase):
         run_result = self._run([str(binary)])
         self.assertEqual(
             run_result.stdout.strip(),
-            "fallback_corpus_driver: 259 exact shared-English streams",
+            "authored_corpus_driver: 262 exact Japanese streams",
         )
 
     def test_profile_compiles_and_layout_probes(self):

@@ -2429,7 +2429,7 @@
     "protected_artifacts": [
       {
         "path": "texts/locales/mapping/fe8u_target_map.json",
-        "sha256": "d0a3fb06611c2ef209de448ebc6d47ad3f16fedb38a600308c7ab91eff5f8da4"
+        "sha256": "9638b8e716d15238b651c7f1d0084b0ba745a1d8b397844f0893b1914c007616"
       },
       {
         "path": "texts/locales/mapping/fe8u_structural_evidence.json",

@@ -1,0 +1,79 @@
+{
+  "existing_authored_targets": [
+    {
+      "subsystem": "menus",
+      "target_id": "0x0693",
+      "translation_key": "raw_surface.unit_action.summon"
+    },
+    {
+      "subsystem": "expansion",
+      "target_id": "0x0D53",
+      "translation_key": "framework.back"
+    },
+    {
+      "subsystem": "expansion",
+      "target_id": "0x0D54",
+      "translation_key": "save_compat.menu_erase_all"
+    }
+  ],
+  "kind": "fe8u-authored-translation-manifest",
+  "locales": {
+    "ja": {
+      "catalog_path": "texts/locales/authored/catalog.ja.json",
+      "shards": [
+        {
+          "path": "texts/locales/authored/shards/event_expansion.ja.json",
+          "sha256": "2544deace2c550d8c24a60fc182bbafcb05d938e1228a74d0053e20a8526e61a",
+          "target_count": 46
+        },
+        {
+          "path": "texts/locales/authored/shards/existing_expansion.ja.json",
+          "sha256": "b0a70dde064518a595cf350ba0e49847c84be3539b6ff1e4f7371cf282a51ab5",
+          "target_count": 3
+        },
+        {
+          "path": "texts/locales/authored/shards/help_shop.ja.json",
+          "sha256": "418b8e20f030adfd4af0783b98b718e0d4a6e2f938a4b80f4bea2d2d920f75ec",
+          "target_count": 81
+        },
+        {
+          "path": "texts/locales/authored/shards/menu.ja.json",
+          "sha256": "84f542d7796bd3fdcc16523ed2c0729b71d06b9407f2dabbf59fb749d1595273",
+          "target_count": 132
+        }
+      ]
+    },
+    "zh-Hans": {
+      "catalog_path": "texts/locales/authored/catalog.zh-Hans.json",
+      "shards": [
+        {
+          "path": "texts/locales/authored/shards/event_expansion.zh-Hans.json",
+          "sha256": "d18ddda64e8815428640a5faeafc561f6de2a3a4b57cec2cae7ff70ef9f68de6",
+          "target_count": 46
+        },
+        {
+          "path": "texts/locales/authored/shards/existing_expansion.zh-Hans.json",
+          "sha256": "1b842c48a8fa0f8588afcebcad7e04ed0c0c73a4987880f90d7709c04722f241",
+          "target_count": 3
+        },
+        {
+          "path": "texts/locales/authored/shards/help_shop.zh-Hans.json",
+          "sha256": "66bb1a1ab338759f0a34c3fc5cd3a147285c7b714888f089a6fd51dca1b972b7",
+          "target_count": 81
+        },
+        {
+          "path": "texts/locales/authored/shards/menu.zh-Hans.json",
+          "sha256": "eea7c49ba173882f147613525893900181746539a43d6321781bdd05a9e7f35f",
+          "target_count": 132
+        }
+      ]
+    }
+  },
+  "mapping_path": "texts/locales/mapping/fe8u_target_map.json",
+  "schema_version": 1,
+  "source_queue": {
+    "path": "texts/locales/mapping/authored_translation_queue.json",
+    "revision": "e6435a8e2f444f0e16cab21713fe052b543d2e6e",
+    "sha256": "ffdff913a552076928d5cb06634ed75d8983b65c05bb4ecec9aa2b610ffe6ad6"
+  }
+}

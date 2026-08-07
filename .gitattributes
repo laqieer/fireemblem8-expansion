@@ -2,6 +2,9 @@
 * text=auto
 
 *.bin binary
+graphics/fonts/cjk/*.codepoints.u32le binary
+graphics/fonts/cjk/*.glyphs.2bpp binary
+graphics/fonts/cjk/*.widths.u8 binary
 
 # .pal palette files must keep CRLF line endings on checkout to stay byte-identical.
 *.pal text eol=crlf

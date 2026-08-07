@@ -71,6 +71,7 @@ Markdown library, so it stays stdlib-parseable and diff-friendly.
 - docs/localization.md | laqieer | current | Stable locale/message IDs, catalog authoring, prefs/UI, budgets, and runtime matrices (issue #18)
 - docs/game_localization_catalog.md | laqieer | current | Full-game FE8U-indexed CJK catalog generation, bounded runtime, and synthetic link gate
 - docs/game_locale_sources.md | laqieer | current | Maintainer reference for pinned FE8J/FE8CN imports, verified FE8U mappings, fallbacks, and regeneration gates
+- texts/locales/source/febuilder/README.md | laqieer | current | Provenance note for the pinned FEBuilder text-ID source snapshot
 - docs/cjk_fonts.md | laqieer | current | Maintainer reference for licensed Noto inputs, deterministic CJK font assets, budgets, and verification
 - docs/upstream-porting.md | laqieer | current | Canonical upstream-port tracking tooling reference (issue #12)
 - docs/issue-resolution-policy.md | laqieer | current | Wave 0 issue closure / review / legal-boundary governance baseline

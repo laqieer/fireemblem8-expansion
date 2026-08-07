@@ -25,7 +25,10 @@ English bundle remains present once.
 
 The generator reads committed `texts/texts.txt` plus `texts/textdefs.txt` for
 English, and the canonical `texts/locales/` sources plus verified
-`texts/locales/mapping/fe8u_target_map.json` decisions for CJK. The English
+`texts/locales/mapping/fe8u_target_map.json` decisions for CJK. Authored rows
+resolve through `texts/locales/authored/catalog.{ja,zh-Hans}.json` by default;
+those catalogs are byte-identical deterministic merges of queue/hash-pinned
+reviewed shards. The English
 parser handles explicit `#` IDs, `##` macro IDs, relative includes, named
 controls/FIDs, and source comments deterministically. It encodes literal text
 as UTF-8 while preserving engine control payload bytes. Legacy printable
@@ -33,12 +36,13 @@ tokens are normalized during generation: `DashedLine` to `-`, `TAB` to UTF-8
 U+3000, `LQuote`/`RQuote` to `"`, and `AccentedE` to `e`. An unknown high-byte
 printable token is rejected rather than emitted as invalid UTF-8.
 
-The CJK mapping never infers a positional match. Explicit English fallback
-decisions produce absent CJK entries. Evidence-backed regional raw mappings
+The CJK mapping never infers a positional match. The generic schema still
+supports explicit fallback fixtures, but the production map contains none.
+Evidence-backed regional raw mappings
 may commit an authorized FE8J literal as the Japanese provider while retaining
 the FE8CN import as the Chinese provider, but only when a tracked C source
 table's symbol, message-ID key, exact literal, and bounded context hash all
-verify. Unprovable Japanese text remains an explicit English fallback.
+verify. The remaining reviewed targets resolve through stable authored keys.
 
 Outputs are generated under `build/game-localization/generated/`:
 
@@ -94,8 +98,10 @@ an earlier `GetStringFromIndex` call.
 The exhaustive audit independently decodes all 3,414 English entries, checks
 source equality, renderer-valid UTF-8/control structure, and exact NUL bit
 boundaries. It separately guards `0xD4D`, `0xD4E`, `0xD4F`, `0xD50`, and
-`0xD54`, and compares all 259 explicit CJK fallbacks byte-for-byte with the
-corresponding shared English descriptor.
+`0xD54`, and runs all 262 authored Japanese streams through the C resolver and
+codec. Production reports require `ja.present=3414`,
+`zh-Hans.present=3414`, `english_fallback=0`, and `unresolved=0`; the shared
+3,414-entry English bundle remains linked for the actual English locale.
 
 The 143-record raw closure is a separate call-site audit:
 
@@ -103,8 +109,9 @@ The 143-record raw closure is a separate call-site audit:
 python3 -m scripts.localization.game_locales check-raw-closure
 ```
 
-See `docs/game_locale_sources.md` for its 134 game-ID, 2 semantic-key, 4
-exclusion, and 3 explicit English-fallback decisions.
+See `docs/game_locale_sources.md` for its 137 game-ID and 6 semantic expansion
+providers. All 143 raw records have Japanese and Chinese payloads with zero
+fallback, exclusion, or unresolved record.
 
 `StringInsertSpecialPrefixByCtrl`, `StrInsertTact`, and other renderer-side
 walkers remain byte-oriented. They must not process long UTF-8 overlay content

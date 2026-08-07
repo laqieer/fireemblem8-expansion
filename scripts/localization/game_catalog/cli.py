@@ -7,6 +7,11 @@ import json
 import sys
 from pathlib import Path
 
+from scripts.localization.game_locales.authored import (
+    AuthoredCatalogError,
+    check_authored_catalogs,
+)
+
 from .build import (
     DEFAULT_ENGLISH_DEFINITIONS_PATH,
     DEFAULT_ENGLISH_TEXTS_PATH,
@@ -102,6 +107,8 @@ def _build_summary(build) -> str:
 
 
 def _build_from_args(args: argparse.Namespace):
+    if args.authored is None:
+        check_authored_catalogs(Path("."))
     return build_game_catalog(
         english_texts_path=args.english_texts,
         english_definitions_path=args.english_definitions,
@@ -172,6 +179,6 @@ def main(argv=None) -> int:
     args = parser.parse_args(argv)
     try:
         return args.handler(args)
-    except (GameCatalogError, OSError) as error:
+    except (AuthoredCatalogError, GameCatalogError, OSError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 1

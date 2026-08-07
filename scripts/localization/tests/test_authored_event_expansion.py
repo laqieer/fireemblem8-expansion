@@ -298,7 +298,7 @@ class AuthoredEventExpansionTests(unittest.TestCase):
             self.assertEqual(shard["locale"], locale)
             self.assertEqual(shard["shard"], "event_expansion")
             self.assertEqual(
-                shard["source_queue_sha256"], EXPECTED_QUEUE_SHA256
+                shard["source_queue"]["sha256"], EXPECTED_QUEUE_SHA256
             )
             self.assertEqual(
                 shard["source_map_sha256"],

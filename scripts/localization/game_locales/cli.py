@@ -7,6 +7,11 @@ import json
 import sys
 from pathlib import Path
 
+from .authored import (
+    AuthoredCatalogError,
+    check_authored_catalogs,
+    write_authored_catalogs,
+)
 from .combined_coverage import (
     CombinedCoverageError,
     build_combined_coverage_report,
@@ -45,6 +50,7 @@ from .raw_closure import (
 from .structural_completion import (
     build_structural_completion_evidence,
     check_structural_completion_evidence,
+    refresh_structural_completion_protected_inputs,
 )
 
 
@@ -115,6 +121,34 @@ def _cmd_check(args: argparse.Namespace) -> int:
         f"CN={manifest['locales']['zh-Hans']['indexed']['message_count']} "
         f"raw={manifest['locales']['zh-Hans']['raw']['record_count']}/"
         f"{manifest['locales']['zh-Hans']['raw']['unique_import_count']}"
+    )
+    return 0
+
+
+def _cmd_build_authored_catalogs(args: argparse.Namespace) -> int:
+    written = write_authored_catalogs(
+        args.repo_root,
+        manifest_path=args.authored_manifest,
+    )
+    print(
+        "built canonical authored catalogs: "
+        + " ".join(
+            f"{locale}={path}" for locale, path in sorted(written.items())
+        )
+    )
+    return 0
+
+
+def _cmd_check_authored_catalogs(args: argparse.Namespace) -> int:
+    checked = check_authored_catalogs(
+        args.repo_root,
+        manifest_path=args.authored_manifest,
+    )
+    print(
+        "authored catalogs match deterministic shard merge: "
+        + " ".join(
+            f"{locale}={path}" for locale, path in sorted(checked.items())
+        )
     )
     return 0
 
@@ -478,6 +512,11 @@ def _build_final_mapping(args: argparse.Namespace):
             "ja": _load_json(args.catalog_ja),
             "zh-Hans": _load_json(args.catalog_zh_hans),
         },
+        runtime_authored_catalogs={
+            "ja": _load_json(args.runtime_authored_ja),
+            "zh-Hans": _load_json(args.runtime_authored_zh_hans),
+        },
+        authored_queue_data=_load_json(args.queue),
     )
 
 
@@ -491,10 +530,25 @@ def _final_mapping_paths(args: argparse.Namespace):
 
 
 def _cmd_build_final_mapping(args: argparse.Namespace) -> int:
+    target_count = len(load_fe8u_target_ids(args.target_header))
+    refresh_structural_completion_protected_inputs(
+        args.structural_completion,
+        repo_root=args.repo_root,
+        target_count=target_count,
+    )
     artifacts = _build_final_mapping(args)
     encoded = canonical_artifacts(artifacts)
     for name, path in _final_mapping_paths(args).items():
         path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(encoded[name])
+    refresh_structural_completion_protected_inputs(
+        args.structural_completion,
+        repo_root=args.repo_root,
+        target_count=target_count,
+    )
+    artifacts = _build_final_mapping(args)
+    encoded = canonical_artifacts(artifacts)
+    for name, path in _final_mapping_paths(args).items():
         path.write_bytes(encoded[name])
     summary = artifacts["report"]["summary"]
     print(
@@ -521,7 +575,7 @@ def _cmd_check_final_mapping(args: argparse.Namespace) -> int:
             + ", ".join(mismatches)
         )
     if args.require_no_fallback:
-        require_no_fallback(artifacts["queue"])
+        require_no_fallback(artifacts["queue"], mapping=artifacts["mapping"])
     summary = artifacts["report"]["summary"]
     print(
         "final FE8U mapping artifacts match committed bytes: "
@@ -535,6 +589,27 @@ def _cmd_check_final_mapping(args: argparse.Namespace) -> int:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
+
+    for command, handler, help_text in (
+        (
+            "build-authored-catalogs",
+            _cmd_build_authored_catalogs,
+            "merge pinned authored shards into canonical runtime catalogs",
+        ),
+        (
+            "check-authored-catalogs",
+            _cmd_check_authored_catalogs,
+            "verify canonical authored catalogs against pinned shards",
+        ),
+    ):
+        authored_parser = subparsers.add_parser(command, help=help_text)
+        authored_parser.add_argument(
+            "--authored-manifest",
+            type=Path,
+            default=Path("texts/locales/authored/manifest.json"),
+        )
+        authored_parser.add_argument("--repo-root", type=Path, default=Path("."))
+        authored_parser.set_defaults(handler=handler)
 
     import_parser = subparsers.add_parser(
         "import",
@@ -988,6 +1063,16 @@ def build_parser() -> argparse.ArgumentParser:
             default=Path("texts/expansion/catalog.zh-Hans.json"),
         )
         command_parser.add_argument(
+            "--runtime-authored-ja",
+            type=Path,
+            default=Path("texts/locales/authored/catalog.ja.json"),
+        )
+        command_parser.add_argument(
+            "--runtime-authored-zh-hans",
+            type=Path,
+            default=Path("texts/locales/authored/catalog.zh-Hans.json"),
+        )
+        command_parser.add_argument(
             "--target-header",
             type=Path,
             default=Path("include/constants/msg.h"),
@@ -1022,6 +1107,7 @@ def main(argv=None) -> int:
     try:
         return args.handler(args)
     except (
+        AuthoredCatalogError,
         CombinedCoverageError,
         FeBuilderEvidenceError,
         FinalMappingError,

@@ -31,7 +31,8 @@ class CliTests(unittest.TestCase):
     def test_validate_reports_committed_counts(self):
         result = run_cli(["validate"])
         self.assertEqual(result.returncode, 0, result.stdout)
-        self.assertIn("fallback=259", result.stdout)
+        self.assertIn("authored=262", result.stdout)
+        self.assertIn("fallback=0", result.stdout)
         self.assertIn("unresolved=0", result.stdout)
         self.assertIn("en.present=3414", result.stdout)
 
@@ -50,7 +51,8 @@ class CliTests(unittest.TestCase):
             result = run_cli(["budget", "--out-dir", tmp])
             self.assertEqual(result.returncode, 0, result.stdout)
             data = json.loads(result.stdout)
-            self.assertEqual(data["mapping_source_counts"]["english_fallback"], 259)
+            self.assertEqual(data["mapping_source_counts"]["authored"], 262)
+            self.assertEqual(data["mapping_source_counts"]["english_fallback"], 0)
             self.assertEqual(data["shared_english"]["present_count"], 3414)
 
     def test_validate_rejects_duplicate_authored_mapping(self):

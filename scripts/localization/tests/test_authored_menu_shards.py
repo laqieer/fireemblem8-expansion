@@ -60,37 +60,66 @@ class AuthoredMenuShardTests(unittest.TestCase):
         expected_ids = [row["target_id"] for row in self.expected]
         for locale, shard in self.shards.items():
             with self.subTest(locale=locale):
+                self.assertEqual(shard["kind"], "fe8u-authored-translation-shard")
+                self.assertEqual(shard["locale"], locale)
+                self.assertEqual(shard["schema_version"], 1)
+                self.assertEqual(shard["shard"], "menu")
                 self.assertEqual(
-                    shard,
-                    {
-                        "entries": shard["entries"],
-                        "kind": "fe8-authored-translation-shard",
-                        "locale_id": locale,
-                        "schema_version": 1,
-                        "source_queue_sha256": self.EXPECTED_QUEUE_SHA256,
-                        "subsystem": "menu-definition",
-                        "target_count": 132,
-                    },
+                    shard["source_queue"]["sha256"],
+                    self.EXPECTED_QUEUE_SHA256,
                 )
                 self.assertEqual(
-                    [entry["target_id"] for entry in shard["entries"]],
+                    shard["source_map_sha256"],
+                    self.queue["authoritative_target_map_sha256"],
+                )
+                self.assertEqual(
+                    shard["subsystem_counts"], {"menu-definition": 132}
+                )
+                self.assertEqual(shard["terminology_sources"], [])
+                self.assertEqual(shard["target_count"], 132)
+                self.assertEqual(
+                    [entry["target_id"] for entry in shard["translations"]],
                     expected_ids,
                 )
                 self.assertEqual(
-                    len({entry["target_id"] for entry in shard["entries"]}),
+                    len(
+                        {
+                            entry["target_id"]
+                            for entry in shard["translations"]
+                        }
+                    ),
                     132,
                 )
 
     def test_entries_have_only_the_deterministic_authored_schema(self):
         for locale, shard in self.shards.items():
             with self.subTest(locale=locale):
-                for entry in shard["entries"]:
+                for entry in shard["translations"]:
                     self.assertEqual(
-                        set(entry), {"target_id", "suggested_key", "text"}
+                        set(entry),
+                        {
+                            "english_payload_sha256",
+                            "key",
+                            "source_text_sha256",
+                            "subsystem",
+                            "target_id",
+                            "text",
+                        },
                     )
                     expected = self.expected_by_id[entry["target_id"]]
                     self.assertEqual(
-                        entry["suggested_key"], expected["suggested_key"]
+                        entry["key"], expected["suggested_key"]
+                    )
+                    self.assertEqual(entry["subsystem"], "menu-definition")
+                    self.assertEqual(
+                        entry["english_payload_sha256"],
+                        expected["english_payload_sha256"],
+                    )
+                    self.assertEqual(
+                        entry["source_text_sha256"],
+                        hashlib.sha256(
+                            expected["source_text"].encode("utf-8")
+                        ).hexdigest(),
                     )
 
     def test_shards_are_canonical_utf8(self):
@@ -104,7 +133,7 @@ class AuthoredMenuShardTests(unittest.TestCase):
 
     def test_controls_placeholders_newlines_and_leading_spaces_match(self):
         for locale, shard in self.shards.items():
-            for entry in shard["entries"]:
+            for entry in shard["translations"]:
                 expected = self.expected_by_id[entry["target_id"]]
                 source = expected["source_text"]
                 translated = entry["text"]
@@ -148,7 +177,7 @@ class AuthoredMenuShardTests(unittest.TestCase):
             "zh-Hans": re.compile(r"[\u3400-\u9fff]"),
         }
         for locale, shard in self.shards.items():
-            for entry in shard["entries"]:
+            for entry in shard["translations"]:
                 translated_visible = self._visible_text(entry["text"])
                 unexpected = set(
                     self.ASCII_WORD_RE.findall(translated_visible)

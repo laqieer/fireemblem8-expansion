@@ -1,0 +1,49 @@
+{
+  "kind": "fe8u-authored-translation-shard",
+  "locale": "zh-Hans",
+  "schema_version": 1,
+  "shard": "existing_expansion",
+  "source_map_sha256": "63b021274b7865c0d76cb1556fa84cc1dfdbcadab38037c8ccf6eeb9cdc3591a",
+  "source_queue": {
+    "path": "texts/locales/mapping/authored_translation_queue.json",
+    "revision": "e6435a8e2f444f0e16cab21713fe052b543d2e6e",
+    "sha256": "ffdff913a552076928d5cb06634ed75d8983b65c05bb4ecec9aa2b610ffe6ad6"
+  },
+  "subsystem_counts": {
+    "expansion": 2,
+    "menus": 1
+  },
+  "target_count": 3,
+  "terminology_sources": [
+    {
+      "path": "texts/expansion/catalog.zh-Hans.json",
+      "sha256": "40220fd10289e21fba09d4315781c1f6f51cee59d109da18520134e34ea0a11e"
+    }
+  ],
+  "translations": [
+    {
+      "english_payload_sha256": "b8e0185d7760b215fcfb88a69b6a39159047004589560d3562dd11acc64447e2",
+      "key": "raw_surface.unit_action.summon",
+      "source_text_sha256": "a4cb064ad91627647416099e44a680b85f1abc7525785410535a2fe7920004f5",
+      "subsystem": "menus",
+      "target_id": "0x0693",
+      "text": " 召唤"
+    },
+    {
+      "english_payload_sha256": "b6238c9e719608fe7b85a6ab37d918e248681d1e2d0828c260f8a1bb4b7e9db8",
+      "key": "framework.back",
+      "source_text_sha256": "944a316c137cd3259d1700e0bce17ef2206ccc70feb358fd8342d546c0ca3e7d",
+      "subsystem": "expansion",
+      "target_id": "0x0D53",
+      "text": "返回"
+    },
+    {
+      "english_payload_sha256": "141800ab666e3d443b778124a8bd0ff71088e9f6e70597f0f999e6be16fb8aa9",
+      "key": "save_compat.menu_erase_all",
+      "source_text_sha256": "54dd239c9ed8062e927380e4a959d2ba67af986d33713d7e27237e6d1585a43d",
+      "subsystem": "expansion",
+      "target_id": "0x0D54",
+      "text": "清除全部存档"
+    }
+  ]
+}

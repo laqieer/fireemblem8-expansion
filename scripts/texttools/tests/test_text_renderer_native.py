@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 import unittest
@@ -13,7 +14,9 @@ TEST_DIR = Path(__file__).resolve().parent
 BUILD_DIR = TEST_DIR / ".text_renderer_host_build"
 HOST_INCLUDE = TEST_DIR / "renderer_host_include"
 DATA_SOURCE = ROOT / "src" / "data" / "localized_font_data.c"
-EXPECTED_LOCALE_DATA_SIZE = 594_784
+EXPECTED_LOCALE_DATA_SIZE = json.loads(
+    (ROOT / "graphics/fonts/cjk/manifest.json").read_text(encoding="utf-8")
+)["rom_budget"]["four_byte_aligned_blob_bytes"]
 
 
 class TextRendererNativeTests(unittest.TestCase):

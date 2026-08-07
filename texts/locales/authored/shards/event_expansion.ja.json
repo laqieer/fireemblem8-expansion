@@ -1,9 +1,14 @@
 {
-  "$schema": "fe8u-authored-translation-shard-v1",
+  "kind": "fe8u-authored-translation-shard",
   "locale": "ja",
+  "schema_version": 1,
   "shard": "event_expansion",
   "source_map_sha256": "63b021274b7865c0d76cb1556fa84cc1dfdbcadab38037c8ccf6eeb9cdc3591a",
-  "source_queue_sha256": "ffdff913a552076928d5cb06634ed75d8983b65c05bb4ecec9aa2b610ffe6ad6",
+  "source_queue": {
+    "path": "texts/locales/mapping/authored_translation_queue.json",
+    "revision": "e6435a8e2f444f0e16cab21713fe052b543d2e6e",
+    "sha256": "ffdff913a552076928d5cb06634ed75d8983b65c05bb4ecec9aa2b610ffe6ad6"
+  },
   "subsystem_counts": {
     "chapter-event": 28,
     "chapter-title": 1,
@@ -11,18 +16,13 @@
     "system": 1,
     "trainee-prep": 8
   },
-  "subsystems": [
-    "chapter-event",
-    "trainee-prep",
-    "expansion",
-    "system",
-    "chapter-title"
-  ],
   "target_count": 46,
+  "terminology_sources": [],
   "translations": [
     {
       "english_payload_sha256": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
       "key": "game.system.msg_0000",
+      "source_text_sha256": "bd6e9ce94e9fc318f915295570e471591a468753c01b98d01df7abc1b5a1e3a7",
       "subsystem": "system",
       "target_id": "0x0000",
       "text": "[X]\n"
@@ -30,6 +30,7 @@
     {
       "english_payload_sha256": "2335916cae20918b452a2196574dbff79001c610b98a672cd6538ec550e38be2",
       "key": "game.trainee_prep.msg_537",
+      "source_text_sha256": "0718dab81b40d1a3d1395e5965e066b0e89f58f0ece4e8dbbb7dd2b5e6ce1f4c",
       "subsystem": "trainee-prep",
       "target_id": "0x0537",
       "text": "[DashedLine][DashedLine][DashedLine][DashedLine][X]\n"
@@ -37,6 +38,7 @@
     {
       "english_payload_sha256": "41f193572bfde410ed1441777cddcf2d594a8223c546e025732e21f2b8d97c47",
       "key": "game.chapter_title.msg_539",
+      "source_text_sha256": "66319d3579b1480567cd5f39837c1fa4610efb154c65f899b851d2554bc69e26",
       "subsystem": "chapter-title",
       "target_id": "0x0539",
       "text": "/[.][X]\n"
@@ -44,6 +46,7 @@
     {
       "english_payload_sha256": "8deabadbbb3cab127ab7e8e42376bbf9055a89526544dbd65b7396262236602c",
       "key": "game.chapter_event.msg_5ae",
+      "source_text_sha256": "c0c9e6149b584181eed1d63f6c1c0e17f19dadc48292bb8c7844cfd16ebe8f54",
       "subsystem": "chapter-event",
       "target_id": "0x05AE",
       "text": "%[.][X]\n"
@@ -51,6 +54,7 @@
     {
       "english_payload_sha256": "d36a9ee2ee28d621714383270b6a40530fcd6fdb7a55ffd50ecad2d0b5eeafac",
       "key": "game.trainee_prep.msg_5bb",
+      "source_text_sha256": "708bfcfb5de0251b236b36d50290bf8ba1244d0b7092481db3b2879df9211f3a",
       "subsystem": "trainee-prep",
       "target_id": "0x05BB",
       "text": "これから戦うマップや[.][LF]\n店で売っている品を見ます。[X]\n"
@@ -58,6 +62,7 @@
     {
       "english_payload_sha256": "2219bd64f06fde11b9477aefb4235eac12b0521381acdc9d6a34499bd7eab906",
       "key": "game.trainee_prep.msg_5bc",
+      "source_text_sha256": "eb20271f902c687595e252bca17e592dff879213a375244b273553bdd19b24d4",
       "subsystem": "trainee-prep",
       "target_id": "0x05BC",
       "text": "自軍ユニットの[LF]\n初期配置を並べ替えます。[X]\n"
@@ -65,6 +70,7 @@
     {
       "english_payload_sha256": "5bc9b2da73ea0fa63bf3bd5b32d7ce4c8cd13bb5eb4a68b92aef4c27b15ddc66",
       "key": "game.trainee_prep.msg_5bd",
+      "source_text_sha256": "b9022b8b0f872b98272e692749861d99cc78866fe4e12dc4a1e1660a2b5d2990",
       "subsystem": "trainee-prep",
       "target_id": "0x05BD",
       "text": "ゲームの速度や[LF]\nウィンドウを設定します。[.][X]\n"
@@ -72,6 +78,7 @@
     {
       "english_payload_sha256": "cba2f6ad0fb2fbaf2e8aeae29d9365c766eb162fe0f49ef976be6de57039ef44",
       "key": "game.trainee_prep.msg_5be",
+      "source_text_sha256": "8133a1da9f82ea97b6eace33cf7983d731581dcaa3cf65f9a925679a00a38263",
       "subsystem": "trainee-prep",
       "target_id": "0x05BE",
       "text": "現在の進行状況をセーブします。[X]\n"
@@ -79,6 +86,7 @@
     {
       "english_payload_sha256": "13b2c64bcbb68f3929258f2581ff9faa6297f586f05246a4672e6286b35270cb",
       "key": "game.chapter_event.msg_6a5",
+      "source_text_sha256": "43bd1ea8320b7a31685c6e3b2d1f3eaec17a06a04930acfff2e27519ce5e39ec",
       "subsystem": "chapter-event",
       "target_id": "0x06A5",
       "text": "第２軍[.][X]\n"
@@ -86,6 +94,7 @@
     {
       "english_payload_sha256": "a1a4cc6311acbcc7191af7c57f6580f81f45cdb3cc0713c2dcc8572d3a196ae0",
       "key": "game.chapter_event.msg_6a6",
+      "source_text_sha256": "474af5ce045513fde98e7d28150ba191dc12524ba29aa882bca64b1ea6f0ee94",
       "subsystem": "chapter-event",
       "target_id": "0x06A6",
       "text": "第３軍[.][X]\n"
@@ -93,6 +102,7 @@
     {
       "english_payload_sha256": "4e82ec5647dc231c724a2872ec611cd9747be2a3d69c58839176c6e6470b98bf",
       "key": "game.chapter_event.msg_6a7",
+      "source_text_sha256": "5895c824a8b4bdde1f2d0ad92cc9d9cbc138211053ad41a67cce66082d702ee6",
       "subsystem": "chapter-event",
       "target_id": "0x06A7",
       "text": "ＣＰＵ[.][X]\n"
@@ -100,6 +110,7 @@
     {
       "english_payload_sha256": "a25f5c98d81956977d9ee16da82f4fc941cb4490e6de118ed9c2424f16e51f72",
       "key": "game.chapter_event.msg_6a8",
+      "source_text_sha256": "06728774578e112bc4c0cee6e904fbca9553e52b4d935bed8f31f84e7b33b905",
       "subsystem": "chapter-event",
       "target_id": "0x06A8",
       "text": "人間[.][X]\n"
@@ -107,6 +118,7 @@
     {
       "english_payload_sha256": "9aef0af93c1a572c3fa79db72e5e33316c171a1bccfe1ee4101379e0aa83c328",
       "key": "game.chapter_event.msg_6a9",
+      "source_text_sha256": "3f0cbbaecea609bfc5861ad7174077b2acb95bf2952ff4b432d9134668c36674",
       "subsystem": "chapter-event",
       "target_id": "0x06A9",
       "text": "操作不可[.][X]\n"
@@ -114,6 +126,7 @@
     {
       "english_payload_sha256": "b095c042d2c90355a2e5034b8511317f4a569761ddce0b73a9e89674c6037a24",
       "key": "game.chapter_event.msg_6b1",
+      "source_text_sha256": "22b02cfa17e8b5b1ee5b44659446e72ff7d3b4e2bd84e42a0f5431bb234ff354",
       "subsystem": "chapter-event",
       "target_id": "0x06B1",
       "text": "晴れ[.][X]\n"
@@ -121,6 +134,7 @@
     {
       "english_payload_sha256": "8c50105293e092017bd3b7ffd9f27e3bf34a5c17b4075d8957c1272d69fd5340",
       "key": "game.chapter_event.msg_6b3",
+      "source_text_sha256": "894467ee93f8839b55f7d85b4fdcb83a093e9cd59a866d11ea3af94cd29be0e9",
       "subsystem": "chapter-event",
       "target_id": "0x06B3",
       "text": "雪[X]\n"
@@ -128,6 +142,7 @@
     {
       "english_payload_sha256": "ab3a9cf536be5121b99049b581d1bd6f3a77a65369246cd4dfb01b81183cbb4d",
       "key": "game.chapter_event.msg_6b4",
+      "source_text_sha256": "a3ab9ce7b504f1ef7c8f049bc281c8e94cc607a5ee362a651ca7b7b74939597f",
       "subsystem": "chapter-event",
       "target_id": "0x06B4",
       "text": "吹雪[X]\n"
@@ -135,6 +150,7 @@
     {
       "english_payload_sha256": "2398dfa6ffd431afa50bb17a8088f19b0bf6793178f9bc30d48c6a006a097738",
       "key": "game.chapter_event.msg_6b5",
+      "source_text_sha256": "1a954116f04cd76de462402e3553da3ca465f4b360524668c3fe7d671d7791a2",
       "subsystem": "chapter-event",
       "target_id": "0x06B5",
       "text": "雨[X]\n"
@@ -142,6 +158,7 @@
     {
       "english_payload_sha256": "d899050927c48778c5f238a2609a017ca9fc34ec1b211aec387306b89acfe3e8",
       "key": "game.chapter_event.msg_6b6",
+      "source_text_sha256": "c84ecf5121879bb712de7a0651f1f47feca133833272708f3e212de2cc7b03c7",
       "subsystem": "chapter-event",
       "target_id": "0x06B6",
       "text": "夜[.][X]\n"
@@ -149,6 +166,7 @@
     {
       "english_payload_sha256": "ce39b2e9e6353a24c3df9591cbe3a36ec763977e15818341aeb8b0c4fe8d6d47",
       "key": "game.chapter_event.msg_6b7",
+      "source_text_sha256": "e52a0879a914e2b7580b96731f66a461c857d5eebe3ad43756490239a7477800",
       "subsystem": "chapter-event",
       "target_id": "0x06B7",
       "text": "溶岩[X]\n"
@@ -156,6 +174,7 @@
     {
       "english_payload_sha256": "5988c854513a69fa1b73ded32401f57edd1339761dada67c3af5ecef67ae7530",
       "key": "game.chapter_event.msg_77e",
+      "source_text_sha256": "a4b9fec406191904207dcb50253239cfd32a829d3b8ccd8e7fe3f15e3521a0b1",
       "subsystem": "chapter-event",
       "target_id": "0x077E",
       "text": "通信中[X]\n"
@@ -163,6 +182,7 @@
     {
       "english_payload_sha256": "571df67e87d7c43287b3afa891e8181d9a75b37753657b05e683165d9730cc6b",
       "key": "game.trainee_prep.msg_889",
+      "source_text_sha256": "9c3f73de6e35b6115eb1fae22fc3cc360e4a42ef4380011d58e437c1195f07e8",
       "subsystem": "trainee-prep",
       "target_id": "0x0889",
       "text": "使える武器がないため[.][LF]\nこのユニットは出撃できません。[.][X]\n"
@@ -170,6 +190,7 @@
     {
       "english_payload_sha256": "eb72279344d1cfd1327bbba7fc7618f1fdf1676be363d5cac5e63c15221a5fef",
       "key": "game.trainee_prep.msg_88a",
+      "source_text_sha256": "efa0276e19c8c496325f1caba5cca71e76b796ab27894a1e3881fb8e9acf5aec",
       "subsystem": "trainee-prep",
       "target_id": "0x088A",
       "text": "このユニットは出撃できません。[.][X]\n"
@@ -177,6 +198,7 @@
     {
       "english_payload_sha256": "32074ec614c6f27bff423c876c13ba11a9cee9843ca5527e938005a2ae61d172",
       "key": "game.trainee_prep.msg_88b",
+      "source_text_sha256": "ab0927a70df4ac0539ecd6b5d6ed728c30c128abc67c2a0a8e8ec32b961e3e93",
       "subsystem": "trainee-prep",
       "target_id": "0x088B",
       "text": "使える武器がなければ[.][LF]\n攻撃できません。[.][X]\n"
@@ -184,6 +206,7 @@
     {
       "english_payload_sha256": "fe1089e0ab1d7444265356c3a0613d11daaee19db2cb6e8846d4a7831bdc9ec6",
       "key": "game.chapter_event.msg_944",
+      "source_text_sha256": "9a275ce69714c8fe9c16c78eb08fcde3343e70ded8a9e1420c35fa86f41c8a70",
       "subsystem": "chapter-event",
       "target_id": "0x0944",
       "text": "味方ユニットが戦闘に加わりました。[A][LF]\n青色の味方ユニットはすべて[LF]\nエイリークと同じように動かせます。[.][A][X]\n"
@@ -191,6 +214,7 @@
     {
       "english_payload_sha256": "ccb94a408c70cd5ef67400be2316ae5ef79428ec03e3da189b884631f7984e62",
       "key": "game.chapter_event.msg_945",
+      "source_text_sha256": "4ac5f79cd449724f833c21d1444fb1fa17c9f5684e0a86805ca15b2c78b1e09b",
       "subsystem": "chapter-event",
       "target_id": "0x0945",
       "text": "ミュラン城のグラド軍を率いる[.][LF]\n敵将ブレゲを倒しました。[.][A][LF]\nあとは城門を[.][ToggleRed]制圧[.][ToggleRed]すれば[.][LF]\n勝利です。[A][LF]\nこの操作は[ToggleRed]リーダー[.][ToggleRed]だけが[LF]\n行えます。[A][LF]\nこの部隊のリーダーはエイリークです。[LF]\n彼女を城門へ移動させ[.][ToggleRed]制圧[.][ToggleRed]すれば[.][LF]\nこのマップはクリアとなります。[.][A][X]\n"
@@ -198,6 +222,7 @@
     {
       "english_payload_sha256": "01298b242b7381ab65902080ee4f5e8fd2a73b616a61c4ee765a727b72b2398c",
       "key": "game.chapter_event.msg_94a",
+      "source_text_sha256": "74009585456ef55e5da3a4ccc2b7184f94b692e2b448fcfa443a8bb877b15dce",
       "subsystem": "chapter-event",
       "target_id": "0x094A",
       "text": "[ToggleRed]十字ボタン[.][ToggleRed]で[LF]\n[ToggleRed]きずぐすり[.][ToggleRed]を選び [.][LF]\nＡボタンを押してください。[.][A][X]\n"
@@ -205,6 +230,7 @@
     {
       "english_payload_sha256": "99cfa32b22eb0a740aca9a00a1710d47e15aae8453ec2b5e5f1402367dc9638c",
       "key": "game.chapter_event.msg_94d",
+      "source_text_sha256": "6a98aba18c5a2fd7f269eb4ee5289320a3198b2587c90b1d1de45e5aac06d8e3",
       "subsystem": "chapter-event",
       "target_id": "0x094D",
       "text": "受け取った[ToggleRed]きずぐすり[.][ToggleRed]は[LF]\nすぐに使えます。[A][LF]\n自分の[.][ToggleRed]持ち物[.][ToggleRed]から[.][LF]\n[.][ToggleRed]きずぐすり[.][ToggleRed]を選び、使いましょう。[A][X]\n"
@@ -212,6 +238,7 @@
     {
       "english_payload_sha256": "1a3911448d88e6a40b417000153fe03ef31e9fde769a1838798992f03503f8c5",
       "key": "game.chapter_event.msg_950",
+      "source_text_sha256": "3fdf8392c764e44c0030d97375489c3b67fbe64702ce76ad833944f45e3aa7c0",
       "subsystem": "chapter-event",
       "target_id": "0x0950",
       "text": "ゼトを敵のそばへ[.][LF]\n移動させ、Ａボタンを押します。[A][X]\n"
@@ -219,6 +246,7 @@
     {
       "english_payload_sha256": "994c9120db3c0be67b520baa3f0058d42d770acfc823cce0529c49362d70e81a",
       "key": "game.chapter_event.msg_96b",
+      "source_text_sha256": "4d99093f489530acaf464625fa17ea823d944ad53dded5b7a17328a1e43c872c",
       "subsystem": "chapter-event",
       "target_id": "0x096B",
       "text": "[OpenMidRight][LoadFace][FID_VillagerGirlBrownHair]\n[OpenMidLeft][LoadFace][FID_Active]\n[OpenMidRight]かっこいい男の人に助けてもらったの。[A][LF]\n傭兵のような服装だったけれど[LF]\nどこか気品のある人だったわ[.][ToggleMouthMove]・・・[.][ToggleMouthMove][A][LF]\nその人から、とっこうやくをもらったの。[.][LF]\nきっと戦いの役に立つはずよ。[.][A][X]\n"
@@ -226,6 +254,7 @@
     {
       "english_payload_sha256": "1fec6a185b0c47341fbac109f1d516ea77a0dcd65ad16b79bd285b115e1cbfba",
       "key": "game.chapter_event.msg_96c",
+      "source_text_sha256": "fb2a7573e54a2c9e4c62a8a2af140ce2be84d18f08f4b66b8652e4085dbfd61d",
       "subsystem": "chapter-event",
       "target_id": "0x096C",
       "text": "[OpenMidRight][LoadFace][FID_VillagerMan2]\n[OpenMidLeft][LoadFace][FID_Active]\n[OpenMidRight]ん？どうしたんだい？[LF]\nそんなに慌てて何を？[.][A][LF]\nえ？さ、山賊だって！？[.][A][LF]\n大変だ、みんなに知らせろ！[LF]\n村の門を閉じるんだ！[A][LF]\n知らせてくれてありがとう。[.][LF]\nこれはささやかなお礼だ。[A][X]\n"
@@ -233,6 +262,7 @@
     {
       "english_payload_sha256": "e5ddac03afbdea675d3aceb5240f3f984c4863e9d6f7cd1789752a99a72a1cb1",
       "key": "game.chapter_event.msg_96e",
+      "source_text_sha256": "ee48698296feb7cd4e9d515d2ea985ac52e3cea5b4aac6d40e47ada026c298b8",
       "subsystem": "chapter-event",
       "target_id": "0x096E",
       "text": "ロスは[ToggleRed]かけだし戦士[ToggleRed]です。[.][A][LF]\n[ToggleRed]かけだし戦士[ToggleRed]は未熟で[LF]\nまだうまく戦えません。[A][LF]\n[ToggleRed]レベル１０[ToggleRed]になると[A][LF]\n[ToggleRed]クラスチェンジ[ToggleRed]して強くなり[.][LF]\n上位の[.][ToggleRed]戦士[ToggleRed]か[ToggleRed]海賊[.][ToggleRed]になれます。[.][A][LF]\n強敵には[.][ToggleRed]かけだし戦士[ToggleRed]を[LF]\n向かわせないほうがよいでしょう。[.][A][CR][LF]\nロスの父ガルシアは[.][ToggleRed]戦士[.][ToggleRed]です。[.][A][LF]\n[ToggleRed]戦士[ToggleRed]はレベル１０以上になると[.][LF]\n[ToggleRed]英雄の証[.][ToggleRed]で[ToggleRed]クラスチェンジ[ToggleRed]し[LF]\n上位の[.][ToggleRed]勇者[ToggleRed]か[ToggleRed]ウォーリア[ToggleRed]になれます。[.][A][CR][LF]\nまた、[ToggleRed]ソシアルナイト[.][ToggleRed]と[.][ToggleRed]アーマーナイト[.][ToggleRed]は[.][LF]\n[ToggleRed]騎士の勲章[.][ToggleRed]で[ToggleRed]クラスチェンジ[ToggleRed]でき[.][LF]\n[ToggleRed]２種類[.][ToggleRed]ある兵種から[LF]\n[ToggleRed]一つ[.][ToggleRed]を選べます。[.][A][LF]\nユニットをしっかり育て[LF]\n機会があれば[ToggleRed]クラスチェンジ[ToggleRed]しましょう。[A][X]\n"
@@ -240,6 +270,7 @@
     {
       "english_payload_sha256": "06942c0759243128f8c821dca8548e329e1f5456c180970aad05a49747e62ac5",
       "key": "game.chapter_event.msg_979",
+      "source_text_sha256": "7acfbb20ec59c4a0fa725bb28aa63994462baf0343ecd0091035bee26c69c0a7",
       "subsystem": "chapter-event",
       "target_id": "0x0979",
       "text": "カーソルを動かさず[LF]\nもう一度Ａボタンを押します。[.][A][X]\n"
@@ -247,6 +278,7 @@
     {
       "english_payload_sha256": "74acd29fbc38edf294b9a06f0f9e6de89e100e20aef3c6d14118c24c8f555808",
       "key": "game.chapter_event.msg_983",
+      "source_text_sha256": "424de784f654e520a8a50a8b83bc65009c4e8c83a58013316ec75975c1eeb4d3",
       "subsystem": "chapter-event",
       "target_id": "0x0983",
       "text": "今度は [.][ToggleRed]訪問[.][ToggleRed]を選び[LF]\nもう一度Ａボタンを押します。[.][A][X]\n"
@@ -254,6 +286,7 @@
     {
       "english_payload_sha256": "fa7244fbf98f591d96aba780441c2526f24bd55795f102e5144f45f30d90aa03",
       "key": "game.chapter_event.msg_984",
+      "source_text_sha256": "43ee88284d421b38a21593b5ce9e4237293640f4354fff2a7db3cda4ab57d5a4",
       "subsystem": "chapter-event",
       "target_id": "0x0984",
       "text": "ロスに話しかけましょう。まず[.][LF]\n[.][ToggleRed]エイリーク[ToggleRed]にカーソルを合わせ、Ａボタンを押します。[A][X]\n"
@@ -261,6 +294,7 @@
     {
       "english_payload_sha256": "14931245e44686ba83e9bc4bcfe44feeac4eb666a108d184a562bbf0ac414a7d",
       "key": "game.chapter_event.msg_986",
+      "source_text_sha256": "5809fafeb3fb7723347884d4e30fb8b9d66e4757873305d146ab95a99fa4d884",
       "subsystem": "chapter-event",
       "target_id": "0x0986",
       "text": "エイリークをロスの隣へ移動します。[.][LF]\n点滅した場所へカーソルを合わせ[LF]\nＡボタンを押してください。[.][A][X]\n"
@@ -268,6 +302,7 @@
     {
       "english_payload_sha256": "6af1519681122ac6de648d009a35de200200980c4e651adf9b8c70a7c80757fe",
       "key": "game.chapter_event.msg_987",
+      "source_text_sha256": "2b2f148612224c63233d98069c0e462b29d23f1027d8348f3f4ed1e7e444918d",
       "subsystem": "chapter-event",
       "target_id": "0x0987",
       "text": "今度は [.][ToggleRed]話す[ToggleRed]を選び[LF]\nＡボタンを押します。[.][A][X]\n"
@@ -275,6 +310,7 @@
     {
       "english_payload_sha256": "96cd002858d5b12456fb90e52fa8d6df8abda004337ce451557898ec3df375ab",
       "key": "game.chapter_event.msg_aad",
+      "source_text_sha256": "cf53a117cb2619a1837754890f6796621d02c1d35143ec610c9dabeb4c5b5920",
       "subsystem": "chapter-event",
       "target_id": "0x0AAD",
       "text": "[OpenMidLeft][LoadFace][FID_Ephraim]\n[OpenMidRight][LoadFace][FID_Soldier2]\n[OpenMidRight][ToggleMouthMove]・・・・・・[ToggleMouthMove][A]\n[OpenMidLeft]質問するだけだ。答えたく[.][LF]\nなければ黙っていろ。[A][LF]\nだが早く戦争を終わらせたいなら[.][LF]\n俺に協力してもらう。[A]\n[OpenMidRight][ToggleMouthMove]・・・・・・[ToggleMouthMove][A][LF]\n[ToggleMouthMove]・・・[.][ToggleMouthMove]何が知りたい？[.][A]\n[OpenMidLeft]グラドはなぜルネスを侵略した？[.][A]\n[OpenMidRight][ToggleMouthMove]・・・[.][ToggleMouthMove]わからない。[A][LF]\n今回の戦は陛下の[.][LF]\n御命令で始まった。[.][A][LF]\n俺たち下の者には[LF]\n陛下のお考えなどわからない。[A]\n[OpenMidLeft]では教えろ。[LF]\nデュッセル将軍は今どこにいる？[.][A]\n[OpenMidRight]帝都だ。将軍は当初から[LF]\nこの戦争に反対しておられた。[.][A][LF]\n連日、陛下に献言しているが[.][LF]\n陛下は耳を貸さない。[A][LF]\n忠誠心を疑う者も[.][LF]\nいるらしい。[A][LF]\nあれほど声を上げれば、立場も[.][ToggleMouthMove]－－[ToggleMouthMove]命も[ToggleMouthMove]－－[ToggleMouthMove][LF]\n危うくなる。[A]\n[OpenMidLeft]そうか[ToggleMouthMove]・・・[.][ToggleMouthMove][A][LF]\nやはりデュッセル将軍は[LF]\n俺が知る誠実な人のままか。[A][CloseSpeechSlow]\n[OpenMidLeft]ではリオン皇子は？今まで[.][LF]\nどこで何をしていた？[A][LF]\nなぜ父ヴィガルド皇帝の[LF]\n暴挙を止めなかった？[.][A][BreakTalk]\n\n[OpenMidRight][ToggleMouthMove]・・・・・・[ToggleMouthMove][A][CR][LF]\n噂では[.][ToggleMouthMove]・・・[.][ToggleMouthMove][A][LF]\nヴィガルド皇帝にこの戦を[.][LF]\n進言したのは皇子自身だと。[A][BreakTalk]\n\n[OpenMidLeft]何だと？[.][A][CR][LF]\n馬鹿な！[A][LF]\n俺はリオンを知っている。誰より[.][LF]\n争いを嫌う男だ。[.][A][LF]\nこんな流血を招くような真似を[.][LF]\nするはずがない！[.][A]\n[OpenMidRight][ClearFace]\n[OpenMidRight][LoadFace][FID_Seth]\n[OpenMidRight]エフラム様、どうか冷静に。[.][A]\n[OpenMidLeft][ToggleMouthMove]・・・[.][ToggleMouthMove]すまん。[A][X]\n"
@@ -282,6 +318,7 @@
     {
       "english_payload_sha256": "6578ce58b87980cc82306836f7e75d65af2a70d82ff696b02f48a48e90faad06",
       "key": "game.chapter_event.msg_b2a",
+      "source_text_sha256": "542c6b90fd33d2d7bbb1ca216a9137a01ff4e7e7db16b255cf2a2a54f2e723b9",
       "subsystem": "chapter-event",
       "target_id": "0x0B2A",
       "text": "[OpenLeft]リオンが別人のようになったのは[LF]\n【魔石】を手にしてからだという。[.][A][LF]\n俺は魔術にはうといが[ToggleMouthMove]・・・[.][ToggleMouthMove][LF]\nあの時の奴は尋常ではなかった。[A][LF]\nまるで何者かに[LF]\n操られているようだった。[A]\n[OpenFarLeft][ToggleMouthMove]・・・・・・[ToggleMouthMove][A]\n[OpenRight]二人には受け入れがたい[.][LF]\nことだろうが[ToggleMouthMove]・・・[.][ToggleMouthMove][A][LF]\nリオン皇子の本心は[LF]\n問題ではない。【魔石】を持っている。[A][LF]\nあの石こそがすべての[LF]\n元凶だ。皇子を止めねばならない。[.][A][BreakTalk]\n\n[OpenFarRight]いいえ、まだです。その前に[.][LF]\nやるべきことがありますわ。[.][A]\n[OpenFarLeft]ラーチェル？[A]\n[OpenFarRight]エフラム王子、あなたも[LF]\n感じましたでしょう？[A][LF]\nリオン皇子の持つ【魔石】[ToggleMouthMove]・・・[.][ToggleMouthMove][LF]\nあれが放つ凄まじい瘴気[ToggleMouthMove]・・・[.][ToggleMouthMove][A][LF]\nリオン皇子だけならともかく[LF]\nあの石は人がかなうものではありません。[A]\n[OpenFarLeft]では・・・どうすれば？[.][A]\n[OpenFarRight]【聖石】ですわ。[A]\n[OpenFarLeft]【聖石】？[A]\n[OpenFarRight]皆様もご存じでしょう。[.][LF]\n五つの【聖石】の伝説を。[.][A][LF]\nそれだけが魔王を[.][LF]\n永遠に封じる力を持っていました。[.][A][LF]\nならば魔の力を退けるには[LF]\n【聖石】を使うのが道理ですわ！[.][A]\n[OpenRight]戦争の行方をそんな[LF]\n愚かな伝説に託すのか？[A]\n[OpenLeft][ToggleMouthMove]・・・[.][ToggleMouthMove]伝説だけではない。[LF]\n望みもある。[A][CloseSpeechSlow]\n[OpenLeft]リオンによれば[A][LF]\nグラド、フレリア、ジャハナの[.][LF]\n【聖石】はすでに破壊された。[A]\n[OpenFarLeft]そういえば[.][ToggleMouthMove]・・・[.][ToggleMouthMove][A][LF]\nグラド軍はルネスの【聖石】を[.][LF]\n破壊するため私を襲いました。[.][A][LF]\nそれがルネスを[LF]\n侵略した理由なら[ToggleMouthMove]・・・[.][ToggleMouthMove][A][LF]\n【聖石】の力は俺たちの[LF]\n想像以上なのかもしれない。[A]\n[OpenFarRight]ええ、その通りですわ！[.][A][LF]\n【聖石】さえ手にすれば[LF]\n【魔石】の力に対抗できます！[A]\n[OpenRight]だが三つの【聖石】はすでに[.][LF]\n砕かれ、残る手段は少ない。[.][A][LF]\n最初に侵略された[.][LF]\nルネスの石も[ToggleMouthMove]・・・[.][ToggleMouthMove][A]\n[OpenLeft]いや、そうとは限らない。[.][A][LF]\nルネスの【聖石】は[LF]\n俺とエイリークの腕輪で封印されている。[.][A]\n[OpenFarLeft]グラドは何度も[LF]\n私たちの腕輪を狙いました。[A][LF]\nすべて失敗していますから[LF]\n石はまだ無事かもしれません。[A]\n[OpenLeft]もちろん確かめなければならない。[.][A][LF]\nグラドを倒した今、[.][LF]\n祖国を放ってはおけない。[A][LF]\nルネスへ帰る時だ。[A][X]\n"
@@ -289,6 +326,7 @@
     {
       "english_payload_sha256": "5db600d98ac09c938da044afd2f95a6c9270cfc6da279180de911667579e5822",
       "key": "game.expansion.msg_save_compat_legacy",
+      "source_text_sha256": "af9234d53ad646f49dfba9fccd60dd14deefd9575dcd80aae68e45546a9be33f",
       "subsystem": "expansion",
       "target_id": "0x0D4C",
       "text": "このセーブデータは[.][LF]\n拡張セーブ形式より古く[.][LF]\nここでは開けません。[X]\n"
@@ -296,6 +334,7 @@
     {
       "english_payload_sha256": "4de593065e33c2b6da2312812347545675d60a81b662637bb048355a17774522",
       "key": "game.expansion.msg_save_compat_header_corrupt",
+      "source_text_sha256": "ff654e845ee30feb94ff951640dc1ab4a278248307a731a625f198e930a79955",
       "subsystem": "expansion",
       "target_id": "0x0D4D",
       "text": "セーブデータが破損しており[.][LF]\n読み込めません。[X]\n"
@@ -303,6 +342,7 @@
     {
       "english_payload_sha256": "ce6393892fa8961117a8e59a061c2e98465b8092a89891fd19d19f6b8bf048ee",
       "key": "game.expansion.msg_save_compat_metadata_corrupt",
+      "source_text_sha256": "783fcb9c077fb8319bf6321cdc21e8ecb1b97ab725676e7e5c698aaed22befe6",
       "subsystem": "expansion",
       "target_id": "0x0D4E",
       "text": "セーブデータの拡張情報が[.][LF]\n破損しており[.][LF]\n読み込めません。[X]\n"
@@ -310,6 +350,7 @@
     {
       "english_payload_sha256": "0c70666bc408f0880088aa71c04f11287dcf29e9ca5142ec875ff3c43886d5fe",
       "key": "game.expansion.msg_save_compat_older",
+      "source_text_sha256": "60c586e4ef468c402612dd0b91fc0357e3e526e7763a20a7df6a241d2d1facb7",
       "subsystem": "expansion",
       "target_id": "0x0D4F",
       "text": "このセーブデータは[.][LF]\n古い拡張版のものです。[.][LF]\n外部ツールを使って[.][LF]\n移行できます。[X]\n"
@@ -317,6 +358,7 @@
     {
       "english_payload_sha256": "c1b996083e9cb30e8c39cc6205beb2c54b5ada2391e4244e0e074cd95877d370",
       "key": "game.expansion.msg_save_compat_newer",
+      "source_text_sha256": "cedd91242c5399e4f6d0717393592754f656c58fb00077eea31f6eec6b5aba97",
       "subsystem": "expansion",
       "target_id": "0x0D50",
       "text": "このセーブデータは[.][LF]\n新しい拡張版のもので[.][LF]\nこの環境では[.][LF]\n使用できません。[X]\n"
@@ -324,6 +366,7 @@
     {
       "english_payload_sha256": "2fc82b71e2fac5cfb7c9c458f0254385719756ee48557acb5243f83d13f0de6d",
       "key": "game.expansion.msg_save_compat_config_incompatible",
+      "source_text_sha256": "dfcfa995dc99ee7c1ae5759cf9c4d8512b5700b0963b1d3eaad8b6eaadd0b228",
       "subsystem": "expansion",
       "target_id": "0x0D51",
       "text": "このセーブデータは[.][LF]\n互換性のない拡張設定で[.][LF]\n作成されており使用できません。[X]\n"
@@ -331,6 +374,7 @@
     {
       "english_payload_sha256": "1af27132226a047e2ae5a15d4b5fa118d6a4cde8574a52e3b63dd4b86af099d2",
       "key": "game.expansion.msg_save_compat_unknown",
+      "source_text_sha256": "f3b7c2258dbf722b4ffdfa8b2756a3d0c83e8fbecabdc572186a90f72e1a4016",
       "subsystem": "expansion",
       "target_id": "0x0D52",
       "text": "このセーブデータは[.][LF]\nここでは使用できません。[X]\n"
@@ -338,6 +382,7 @@
     {
       "english_payload_sha256": "f8b12d803a1a54155c2879f0219ecf5b794dcf149a497cef0f6ef307f6966e90",
       "key": "game.expansion.msg_save_compat_erase_confirm",
+      "source_text_sha256": "974ae477e15300124d99ab6cf40a9e464f8ddb6cea63773bb33ca8986e4811dd",
       "subsystem": "expansion",
       "target_id": "0x0D55",
       "text": "全セーブデータ消去を実行しますか？[.][LF]\n元に戻せません。[X]"

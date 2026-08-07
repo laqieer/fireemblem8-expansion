@@ -411,6 +411,22 @@ def _catalog_strings(data: Any, locale: str) -> Dict[str, str]:
     return strings
 
 
+def _runtime_authored_strings(data: Any, locale: str) -> Dict[str, str]:
+    if (
+        not isinstance(data, dict)
+        or data.get("kind") != "fe8u-game-authored-catalog"
+        or data.get("locale") != locale
+        or data.get("schema_version") != 1
+    ):
+        raise FinalMappingError(f"{locale} runtime authored catalog is malformed")
+    strings = data.get("strings")
+    if not isinstance(strings, dict) or data.get("target_count") != len(strings):
+        raise FinalMappingError(
+            f"{locale} runtime authored catalog strings are malformed"
+        )
+    return strings
+
+
 def _original_row(row: Mapping[str, Any]) -> Dict[str, Any]:
     promotion = row.get("verification", {}).get("promotion", {})
     if promotion.get("pipeline") != FINAL_MAPPING_PIPELINE:
@@ -607,6 +623,7 @@ def _authored_source(
     *,
     english_entry: Any,
     authored: Mapping[str, Mapping[str, str]],
+    runtime_authored: Mapping[str, Mapping[str, str]],
 ) -> Dict[str, Any]:
     key = decision["translation_key"]
     suffix = decision["control_suffix"]
@@ -624,6 +641,17 @@ def _authored_source(
         raise FinalMappingError(
             f"{target_id}: expansion English text/control payload is not exact"
         )
+    for locale in ("ja", "zh-Hans"):
+        if key not in runtime_authored[locale]:
+            raise FinalMappingError(
+                f"{target_id}: runtime authored translation {key!r} is missing"
+            )
+        if encode_canonical_text(
+            runtime_authored[locale][key] + suffix
+        ) != encode_canonical_text(authored[locale][key] + suffix):
+            raise FinalMappingError(
+                f"{target_id}: runtime authored translation {key!r} changed payload"
+            )
     source: Dict[str, Any] = {"kind": "authored", "translation_key": key}
     if suffix:
         source["control_suffix"] = suffix
@@ -753,6 +781,8 @@ def build_final_mapping_artifacts(
     zh_raw_data: Any,
     ja_raw_data: Any,
     authored_catalogs: Mapping[str, Any],
+    runtime_authored_catalogs: Mapping[str, Any],
+    authored_queue_data: Any,
 ) -> Dict[str, Dict[str, Any]]:
     """Promote only independently supported providers, then queue every residual."""
 
@@ -781,6 +811,18 @@ def build_final_mapping_artifacts(
         locale: _catalog_strings(authored_catalogs[locale], locale)
         for locale in ("en", "ja", "zh-Hans")
     }
+    runtime_authored = {
+        locale: _runtime_authored_strings(runtime_authored_catalogs[locale], locale)
+        for locale in ("ja", "zh-Hans")
+    }
+    provider_authored = {
+        locale: {**authored[locale], **runtime_authored[locale]}
+        for locale in ("ja", "zh-Hans")
+    }
+    if not isinstance(authored_queue_data, dict) or not isinstance(
+        authored_queue_data.get("targets"), list
+    ):
+        raise FinalMappingError("historical authored queue is malformed")
 
     original_rows = recover_original_rows(mapping_data)
     rows = deepcopy(original_rows)
@@ -1037,6 +1079,7 @@ def build_final_mapping_artifacts(
             decision,
             english_entry=english_entries[int(target_id, 16)],
             authored=authored,
+            runtime_authored=runtime_authored,
         )
         verification = _promotion_verification(
             original=original,
@@ -1100,7 +1143,7 @@ def build_final_mapping_artifacts(
             indexed=indexed,
             raw_payloads=raw_payloads,
             ja_raw_providers=ja_raw_providers,
-            authored=authored,
+            authored=provider_authored,
         )
         donors_by_english[english_entries[int(target_id, 16)].encoded_bytes].append(
             (target_id, row["source"], payloads)
@@ -1138,7 +1181,7 @@ def build_final_mapping_artifacts(
                 indexed=indexed,
                 raw_payloads=raw_payloads,
                 ja_raw_providers=ja_raw_providers,
-                authored=authored,
+                authored=provider_authored,
             )
             != donor_payloads
         ):
@@ -1174,6 +1217,101 @@ def build_final_mapping_artifacts(
         _promote(row, source, verification)
         promoted[target_id] = "e-exact-english"
 
+    interim_mapping = {
+        "authoritative": True,
+        "authority": "verified",
+        "kind": "fe8u-locale-mapping",
+        "locale_ids": ["ja", "zh-Hans"],
+        "note": (
+            "Authoritative FE8U decisions after deterministic evidence promotion. "
+            "Every promoted row records its precedence and recoverable original "
+            "fallback; remaining rows are the authored-translation queue."
+        ),
+        "rows": deepcopy(
+            [
+                row_by_id[format_message_id(target)]
+                for target in range(target_count)
+            ]
+        ),
+        "schema_version": 2,
+    }
+    source_map_sha256 = authored_queue_data.get("authoritative_target_map_sha256")
+    if source_map_sha256 != _json_hash(interim_mapping):
+        raise FinalMappingError(
+            "historical authored queue does not match the pre-authored target map"
+        )
+    queue_targets = authored_queue_data["targets"]
+    queue_by_id = {
+        row["target_id"]: row
+        for row in queue_targets
+        if isinstance(row, dict) and isinstance(row.get("target_id"), str)
+    }
+    if len(queue_by_id) != len(queue_targets):
+        raise FinalMappingError("historical authored queue target IDs are malformed")
+    remaining_fallback_ids = {
+        target_id
+        for target_id, row in row_by_id.items()
+        if row["source"]["kind"] == "english_fallback"
+    }
+    if set(queue_by_id) != remaining_fallback_ids:
+        raise FinalMappingError(
+            "historical authored queue does not equal the pre-authored fallback set"
+        )
+    expected_runtime_keys = {
+        row["suggested_key"] for row in queue_targets
+    } | {
+        decision["translation_key"] for decision in _AUTHORED_PROMOTIONS.values()
+    }
+    for locale in ("ja", "zh-Hans"):
+        if set(runtime_authored[locale]) != expected_runtime_keys:
+            raise FinalMappingError(
+                f"{locale}: runtime authored catalog has missing or extra keys"
+            )
+
+    for target_id in sorted(queue_by_id):
+        queue_row = queue_by_id[target_id]
+        key = queue_row.get("suggested_key")
+        if not isinstance(key, str) or not key:
+            raise FinalMappingError(f"{target_id}: authored queue key is malformed")
+        english_payload_sha256 = queue_row.get("english_payload_sha256")
+        if english_payload_sha256 != _sha256_bytes(
+            english_entries[int(target_id, 16)].encoded_bytes
+        ):
+            raise FinalMappingError(
+                f"{target_id}: authored queue English payload hash drifted"
+            )
+        for locale in ("ja", "zh-Hans"):
+            if not runtime_authored[locale].get(key):
+                raise FinalMappingError(
+                    f"{target_id}: {locale} authored translation {key!r} is missing"
+                )
+        source = {"kind": "authored", "translation_key": key}
+        verification = _promotion_verification(
+            original=original_by_id[target_id],
+            precedence="f-authored-queue",
+            confidence="explicit",
+            evidence=(
+                f"Reviewed JA/ZH authored shard payloads fulfill queue key {key}"
+            ),
+            evidence_kind="reviewed-authored-translation-shard",
+            source_table="texts/locales/authored/catalog.<locale>.json",
+            source_symbol=key,
+            source_key=key,
+            subsystem=queue_row["subsystem"],
+            rationale=(
+                "Promotes one exact historical queue target after deterministic "
+                "shard validation and locale-parity checks."
+            ),
+            details={
+                "english_payload_sha256": english_payload_sha256,
+                "source_queue_sha256": _sha256_bytes(
+                    canonical_json_bytes(authored_queue_data)
+                ),
+            },
+        )
+        _promote(row_by_id[target_id], source, verification)
+        promoted[target_id] = "f-authored-queue"
+
     for target_id, expected_hash in protected.items():
         if _json_hash(row_by_id[target_id]["source"]) != expected_hash:
             raise FinalMappingError(
@@ -1186,9 +1324,9 @@ def build_final_mapping_artifacts(
         "kind": "fe8u-locale-mapping",
         "locale_ids": ["ja", "zh-Hans"],
         "note": (
-            "Authoritative FE8U decisions after deterministic evidence promotion. "
-            "Every promoted row records its precedence and recoverable original "
-            "fallback; remaining rows are the authored-translation queue."
+            "Authoritative FE8U decisions after deterministic evidence and "
+            "reviewed authored-shard promotion. Every promoted row records its "
+            "precedence and recoverable original source."
         ),
         "rows": [row_by_id[format_message_id(target)] for target in range(target_count)],
         "schema_version": 2,
@@ -1203,7 +1341,12 @@ def build_final_mapping_artifacts(
     fallback_rows = [
         row for row in final_mapping["rows"] if row["source"]["kind"] == "english_fallback"
     ]
-    fallback_ids = {row["target_id"] for row in fallback_rows}
+    historical_fallback_rows = [
+        row
+        for row in interim_mapping["rows"]
+        if row["source"]["kind"] == "english_fallback"
+    ]
+    fallback_ids = {row["target_id"] for row in historical_fallback_rows}
     fallback_payload_groups: Dict[str, List[str]] = defaultdict(list)
     for target_id in sorted(fallback_ids):
         payload_hash = _sha256_bytes(
@@ -1212,7 +1355,7 @@ def build_final_mapping_artifacts(
         fallback_payload_groups[payload_hash].append(target_id)
 
     queue_targets = []
-    for row in fallback_rows:
+    for row in historical_fallback_rows:
         target_id = row["target_id"]
         structural = residual_by_id.get(target_id)
         sites: List[Mapping[str, Any]] = []
@@ -1264,7 +1407,7 @@ def build_final_mapping_artifacts(
     )
     queue_subsystem_counts = Counter(row["subsystem"] for row in queue_targets)
     queue = {
-        "authoritative_target_map_sha256": _json_hash(final_mapping),
+        "authoritative_target_map_sha256": _json_hash(interim_mapping),
         "kind": AUTHORED_QUEUE_KIND,
         "note": (
             "Intermediate authored-translation queue. It contains exactly every "
@@ -1279,7 +1422,15 @@ def build_final_mapping_artifacts(
         "targets": queue_targets,
     }
     if {row["target_id"] for row in queue_targets} != fallback_ids:
-        raise FinalMappingError("authored queue does not equal final fallback targets")
+        raise FinalMappingError(
+            "authored queue does not equal historical pre-authored fallback targets"
+        )
+    if canonical_json_bytes(queue) != canonical_json_bytes(authored_queue_data):
+        raise FinalMappingError(
+            "historical authored queue differs from deterministic rebuild: "
+            f"rebuilt={_sha256_bytes(canonical_json_bytes(queue))} "
+            f"committed={_sha256_bytes(canonical_json_bytes(authored_queue_data))}"
+        )
 
     precedence_counts = Counter(promoted.values())
     report = {
@@ -1289,16 +1440,23 @@ def build_final_mapping_artifacts(
             "original_target_map_sha256": _json_hash(
                 {"rows": original_rows, "target_count": target_count}
             ),
+            "runtime_authored_catalog_sha256": {
+                locale: _json_hash(runtime_authored_catalogs[locale])
+                for locale in ("ja", "zh-Hans")
+            },
+            "source_authored_queue_sha256": _sha256_bytes(
+                canonical_json_bytes(authored_queue_data)
+            ),
             "structural_completion_evidence_sha256": _json_hash(structural_data),
         },
         "kind": FINAL_REPORT_KIND,
         "note": (
-            "Evidence and queue report for the deterministic final-mapping "
-            "promotion pass. Final delivery remains blocked until fallback=0."
+            "Evidence report for the deterministic final-mapping promotion pass. "
+            "The source queue is retained byte-identically as fulfilled history."
         ),
         "policy": {
             "final_delivery_requires_zero_fallback": True,
-            "intermediate_queue_permitted": True,
+            "historical_fulfilled_queue_retained": True,
             "numeric_or_proximity_promotion_permitted": False,
         },
         "promotion_counts": dict(sorted(precedence_counts.items())),
@@ -1306,9 +1464,11 @@ def build_final_mapping_artifacts(
         "summary": {
             "authored_queue_target_count": len(queue_targets),
             "fallback_target_count": len(fallback_rows),
+            "fulfilled_authored_queue_target_count": len(queue_targets),
             "promoted_target_count": len(promoted),
             "target_count": target_count,
             "translated_target_count": target_count - len(fallback_rows),
+            "unfulfilled_authored_queue_target_count": len(fallback_rows),
         },
     }
     return {
@@ -1319,13 +1479,47 @@ def build_final_mapping_artifacts(
     }
 
 
-def require_no_fallback(queue: Mapping[str, Any]) -> None:
+def require_no_fallback(
+    queue: Mapping[str, Any],
+    *,
+    mapping: Optional[Mapping[str, Any]] = None,
+) -> None:
     targets = queue.get("targets")
     if not isinstance(targets, list):
         raise FinalMappingError("authored queue targets are malformed")
-    if targets:
+    if mapping is None:
+        if not targets:
+            return
         raise FinalMappingError(
             f"final delivery blocked: {len(targets)} fallback targets remain"
+        )
+    rows = mapping.get("rows")
+    if not isinstance(rows, list):
+        raise FinalMappingError("final mapping rows are malformed")
+    row_by_id = {
+        row.get("target_id"): row
+        for row in rows
+        if isinstance(row, dict) and isinstance(row.get("target_id"), str)
+    }
+    fallback_rows = [
+        row for row in rows if row.get("source", {}).get("kind") == "english_fallback"
+    ]
+    unfulfilled = []
+    for target in targets:
+        if not isinstance(target, dict):
+            raise FinalMappingError("authored queue target is malformed")
+        row = row_by_id.get(target.get("target_id"))
+        source = row.get("source", {}) if isinstance(row, dict) else {}
+        if (
+            source.get("kind") != "authored"
+            or source.get("translation_key") != target.get("suggested_key")
+        ):
+            unfulfilled.append(target.get("target_id"))
+    if fallback_rows or unfulfilled:
+        raise FinalMappingError(
+            "final delivery blocked: "
+            f"{len(fallback_rows)} fallback targets and "
+            f"{len(unfulfilled)} unfulfilled authored queue targets remain"
         )
 
 

@@ -88,6 +88,16 @@ class FinalMappingTests(unittest.TestCase):
                 )
                 for locale in ("en", "ja", "zh-Hans")
             },
+            runtime_authored_catalogs={
+                locale: json.loads(
+                    (
+                        ROOT
+                        / f"texts/locales/authored/catalog.{locale}.json"
+                    ).read_text(encoding="utf-8")
+                )
+                for locale in ("ja", "zh-Hans")
+            },
+            authored_queue_data=cls.queue,
         )
 
     def test_committed_artifacts_match_deterministic_rebuild(self):
@@ -113,6 +123,7 @@ class FinalMappingTests(unittest.TestCase):
                 "d-structural-reference-second-check": 6,
                 "e-exact-english": 139,
                 "e-exact-english-context": 1,
+                "f-authored-queue": 259,
             },
         )
         samples = {
@@ -124,6 +135,7 @@ class FinalMappingTests(unittest.TestCase):
             "0x0693": "d-existing-authored",
             "0x000E": "e-exact-english",
             "0x0579": "e-exact-english-context",
+            "0x0011": "f-authored-queue",
         }
         for target_id, precedence in samples.items():
             self.assertEqual(
@@ -217,14 +229,14 @@ class FinalMappingTests(unittest.TestCase):
                 source["regional_sources"]["zh-Hans"]["import_id"], import_id
             )
 
-    def test_queue_is_complete_precise_and_canonical(self):
+    def test_historical_queue_is_complete_fulfilled_and_canonical(self):
         fallback_ids = [
             row["target_id"]
             for row in self.mapping["rows"]
             if row["source"]["kind"] == "english_fallback"
         ]
         queue_ids = [row["target_id"] for row in self.queue["targets"]]
-        self.assertEqual(queue_ids, fallback_ids)
+        self.assertEqual(fallback_ids, [])
         self.assertEqual(len(queue_ids), 259)
         for row in self.queue["targets"]:
             self.assertTrue(row["english_canonical_text"] is not None)
@@ -235,16 +247,18 @@ class FinalMappingTests(unittest.TestCase):
             self.assertTrue(row["reason_no_source_mapping"])
             self.assertTrue(row["suggested_key"])
             self.assertTrue(row["grouping"]["english_payload_group"])
+            mapped = self.rows[row["target_id"]]["source"]
+            self.assertEqual(mapped["kind"], "authored")
+            self.assertEqual(
+                mapped["translation_key"], row["suggested_key"]
+            )
         self.assertEqual(
             (self.MAPPING_DIR / "authored_translation_queue.json").read_bytes(),
             canonical_json_bytes(self.queue),
         )
 
-    def test_final_delivery_gate_rejects_intermediate_queue(self):
-        with self.assertRaisesRegex(
-            FinalMappingError, "259 fallback targets remain"
-        ):
-            require_no_fallback(self.queue)
+    def test_final_delivery_gate_accepts_fulfilled_historical_queue(self):
+        require_no_fallback(self.queue, mapping=self.mapping)
         result = subprocess.run(
             [
                 sys.executable,
@@ -259,8 +273,11 @@ class FinalMappingTests(unittest.TestCase):
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
         )
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("259 fallback targets remain", result.stdout)
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertIn(
+            "translated=3414 fallback=0 queue=259",
+            result.stdout,
+        )
 
 
 if __name__ == "__main__":

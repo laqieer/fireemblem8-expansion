@@ -133,6 +133,11 @@ class AuthoredHelpShopShardTests(unittest.TestCase):
             self.assertEqual(shard["kind"], "fe8u-authored-translation-shard")
             self.assertEqual(shard["schema_version"], 1)
             self.assertEqual(shard["locale"], locale)
+            self.assertEqual(shard["shard"], "help_shop")
+            self.assertEqual(
+                shard["source_map_sha256"],
+                self.queue["authoritative_target_map_sha256"],
+            )
             self.assertEqual(shard["target_count"], 81)
             self.assertEqual(shard["subsystem_counts"], SUBSYSTEM_COUNTS)
             self.assertEqual(

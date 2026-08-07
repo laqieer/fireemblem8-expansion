@@ -3,7 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "fallback_corpus_ids.h"
+#include "authored_corpus_ids.h"
 #include "game_localization_catalog.h"
 #include "localized_text_codec.h"
 
@@ -102,12 +102,12 @@ int main(void)
     u32 index;
     int msgId;
 
-    if (ARRAY_COUNT(sFallbackIds) != 259)
+    if (ARRAY_COUNT(sAuthoredIds) != 262)
         return 1;
 
-    for (index = 0; index < ARRAY_COUNT(sFallbackIds); index++)
+    for (index = 0; index < ARRAY_COUNT(sAuthoredIds); index++)
     {
-        msgId = sFallbackIds[index];
+        msgId = sAuthoredIds[index];
         memset(actual, 0xA5, sizeof(actual));
         memset(expected, 0x5A, sizeof(expected));
         actualLength = 0;
@@ -115,17 +115,17 @@ int main(void)
 
         status = LocalizedGameText_ResolveCurrentToBuffer(
             msgId, actual, (u32)sizeof(actual), &actualLength);
-        if (status != LOCALIZED_GAME_TEXT_STATUS_ENGLISH_FALLBACK_ABSENT)
+        if (status != LOCALIZED_GAME_TEXT_STATUS_OK)
         {
-            printf("fallback status MSG_%03X=%d\n", msgId, status);
+            printf("authored status MSG_%03X=%d\n", msgId, status);
             return 2;
         }
 
-        entry = &gGameLocalizationEnglishEntries[msgId];
+        entry = &gGameLocalizationJaEntries[msgId];
         codecStatus = LocalizedTextCodec_Decode(
-            gGameLocalizationEnglishCatalog.nodes,
-            gGameLocalizationEnglishCatalog.nodeCount,
-            gGameLocalizationEnglishCatalog.rootIndex,
+            gGameLocalizationCatalogJa.nodes,
+            gGameLocalizationCatalogJa.nodeCount,
+            gGameLocalizationCatalogJa.rootIndex,
             entry->data,
             entry->compressedSize,
             entry->bitLength,
@@ -134,14 +134,14 @@ int main(void)
             &expectedLength);
         if (codecStatus != LOCALIZED_TEXT_CODEC_OK)
         {
-            printf("English decode MSG_%03X=%d\n", msgId, codecStatus);
+            printf("Japanese decode MSG_%03X=%d\n", msgId, codecStatus);
             return 3;
         }
 
         if (actualLength != expectedLength
             || memcmp(actual, expected, actualLength) != 0)
         {
-            printf("fallback mismatch MSG_%03X\n", msgId);
+            printf("authored mismatch MSG_%03X\n", msgId);
             return 4;
         }
         if (!IsRendererValid((const u8 *)actual, actualLength))
@@ -151,6 +151,6 @@ int main(void)
         }
     }
 
-    puts("fallback_corpus_driver: 259 exact shared-English streams");
+    puts("authored_corpus_driver: 262 exact Japanese streams");
     return 0;
 }

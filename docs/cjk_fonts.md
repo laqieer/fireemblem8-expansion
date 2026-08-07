@@ -32,10 +32,14 @@ The inventory reads the committed normalized sources:
 - materialized providers in `texts/locales/ja/raw.json`;
 - `texts/locales/zh-Hans/indexed.txt`;
 - unique records in `texts/locales/zh-Hans/raw.json`;
+- canonical 262-string full-game authored catalogs under
+  `texts/locales/authored/`, whose manifest pins the source queue and every
+  reviewed shard;
 - active `texts/expansion` catalog strings, resolved through the English
   fallback catalog when a locale catalog is absent.
 
-`[CTRL:HHHH]` controls and `{N}` expansion placeholders are not glyphs.
+Bracketed game controls (named or `[CTRL:HHHH]`) and `{N}` expansion
+placeholders are not glyphs.
 Visible text is normalized with NFC only. ASCII remains in the existing
 runtime fonts. The source contains one non-ASCII spacing scalar, U+3000
 IDEOGRAPHIC SPACE; FEBuilder schema v1 rejects whitespace, so U+3000 is
@@ -46,9 +50,9 @@ Current deterministic counts:
 
 | Locale | Source non-ASCII | Bitmap scalars per style | Styles |
 | --- | ---: | ---: | --- |
-| `ja` | 1,851 | 1,850 | System/item, Talk/text |
-| `zh-Hans` | 2,460 | 2,460 | System/item, Talk/text |
-| union | 3,332 | 3,331 | U+3000 is the one spacing scalar |
+| `ja` | 1,857 | 1,856 | System/item, Talk/text |
+| `zh-Hans` | 2,468 | 2,468 | System/item, Talk/text |
+| union | 3,344 | 3,343 | U+3000 is the one spacing scalar |
 
 The sorted corpora are in `fonts/cjk/corpora/`; human-readable scalar maps are
 in `fonts/cjk/maps/`; counts, input hashes, output hashes, token rules, and

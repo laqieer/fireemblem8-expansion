@@ -2,6 +2,8 @@
   "kind": "fe8u-authored-translation-shard",
   "locale": "ja",
   "schema_version": 1,
+  "shard": "help_shop",
+  "source_map_sha256": "63b021274b7865c0d76cb1556fa84cc1dfdbcadab38037c8ccf6eeb9cdc3591a",
   "source_queue": {
     "path": "texts/locales/mapping/authored_translation_queue.json",
     "revision": "e6435a8e2f444f0e16cab21713fe052b543d2e6e",

@@ -118,25 +118,28 @@ class ModernEnglishBundleTests(unittest.TestCase):
                 self.assertEqual(decoded.count(b"\x00"), 1)
                 self.assertEqual(decoded[-1:], b"\x00")
 
-    def test_every_explicit_cjk_fallback_is_the_shared_english_entry(self):
+    def test_zero_cjk_fallback_preserves_the_shared_english_bundle(self):
         rows = json.loads(MAPPING.read_text(encoding="utf-8"))["rows"]
         fallback_ids = [
             int(row["target_id"], 16)
             for row in rows
             if row["source"]["kind"] == "english_fallback"
         ]
-        self.assertEqual(len(fallback_ids), 259)
-
-        for msg_id in fallback_ids:
-            with self.subTest(msg_id=f"0x{msg_id:04X}"):
-                expected = self.english.catalog.decode_entry(msg_id)
-                self.assertIsNone(
-                    self.build.locale_bundle("ja").catalog.decode_entry(msg_id)
-                )
-                self.assertIsNone(
-                    self.build.locale_bundle("zh-Hans").catalog.decode_entry(msg_id)
-                )
-                self.assertEqual(expected, self.english.entries[msg_id].encoded_bytes)
+        self.assertEqual(fallback_ids, [])
+        self.assertEqual(len(self.english.entries), 3414)
+        self.assertEqual(
+            self.build.report["shared_english"]["present_count"], 3414
+        )
+        for locale in ("ja", "zh-Hans"):
+            self.assertEqual(
+                self.build.report["locales"][locale]["present_count"], 3414
+            )
+            self.assertEqual(
+                self.build.report["locales"][locale][
+                    "explicit_fallback_count"
+                ],
+                0,
+            )
 
     def test_parser_handles_explicit_ids_macros_includes_controls_and_comments(self):
         with tempfile.TemporaryDirectory(dir=TEST_DIR) as tmp:

@@ -7,6 +7,7 @@ import json
 import re
 import subprocess
 from collections import Counter, defaultdict
+from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
@@ -2017,3 +2018,28 @@ def check_structural_completion_evidence(
     if path.read_bytes() != canonical_json_bytes(data):
         raise StructuralCompletionError(f"{path}: JSON is not canonical")
     return data
+
+
+def refresh_structural_completion_protected_inputs(
+    path: Path,
+    *,
+    repo_root: Path,
+    target_count: int,
+) -> Dict[str, Any]:
+    path = Path(path)
+    repo_root = Path(repo_root)
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as error:
+        raise StructuralCompletionError(f"{path}: invalid JSON: {error}") from error
+    if not isinstance(data, dict) or not isinstance(data.get("inputs"), dict):
+        raise StructuralCompletionError("completion evidence inputs are malformed")
+    refreshed = deepcopy(data)
+    refreshed["inputs"]["protected_artifacts"] = _protected_inputs(repo_root)
+    validate_structural_completion_evidence(
+        refreshed,
+        repo_root=repo_root,
+        target_count=target_count,
+    )
+    path.write_bytes(canonical_json_bytes(refreshed))
+    return refreshed

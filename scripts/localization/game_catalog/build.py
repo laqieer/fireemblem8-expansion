@@ -51,7 +51,11 @@ from .constants import (
     SOURCE_KINDS,
     TARGET_STORAGE_BYTES,
 )
-from .english_source import load_english_source_entries
+from .english_source import (
+    encode_english_source_text,
+    load_english_definitions,
+    load_english_source_entries,
+)
 from .model import (
     EnglishCatalogBundle,
     EntryPayloadMeta,
@@ -69,11 +73,12 @@ DEFAULT_ZH_RAW_PATH = Path("texts/locales/zh-Hans/raw.json")
 DEFAULT_MAPPING_PATH = Path("texts/locales/mapping/fe8u_target_map.json")
 DEFAULT_TARGET_HEADER_PATH = Path("include/constants/msg.h")
 DEFAULT_AUTHORED_PATHS = {
-    "ja": Path("texts/expansion/catalog.ja.json"),
-    "zh-Hans": Path("texts/expansion/catalog.zh-Hans.json"),
+    "ja": Path("texts/locales/authored/catalog.ja.json"),
+    "zh-Hans": Path("texts/locales/authored/catalog.zh-Hans.json"),
 }
 
 _AUTHORED_KIND = "fe8u-game-authored-catalog"
+_TEXT_TOKEN_RE = re.compile(r"\[([^\[\]\r\n]+)\]")
 
 
 def canonical_json_bytes(data: Any) -> bytes:
@@ -258,6 +263,27 @@ def encode_canonical_text(text: str) -> bytes:
     return bytes(payload)
 
 
+def encode_authored_text(
+    text: str,
+    definitions: Mapping[str, Tuple[int, ...]],
+    *,
+    source_name: str,
+) -> bytes:
+    token_names = _TEXT_TOKEN_RE.findall(text)
+    named_tokens = [name for name in token_names if not name.startswith("CTRL:")]
+    if named_tokens:
+        if len(named_tokens) != len(token_names):
+            raise GameCatalogError(
+                f"{source_name}: named and canonical control tokens must not mix"
+            )
+        return encode_english_source_text(
+            text,
+            definitions,
+            source_name=source_name,
+        )
+    return encode_canonical_text(text)
+
+
 def _mapping_source_counts(mapping) -> Dict[str, int]:
     counts = Counter(row.source_kind for row in mapping.rows)
     return {kind: counts.get(kind, 0) for kind in SOURCE_KINDS}
@@ -295,6 +321,7 @@ def _entry_for_locale(
     raw_records: Mapping[str, str],
     ja_raw_records: Mapping[int, RawProvider],
     authored_records: Mapping[str, Mapping[str, str]],
+    english_definitions: Mapping[str, Tuple[int, ...]],
 ) -> EntryPayloadMeta:
     source = dict(row.source)
     if row.source_kind == "english_fallback":
@@ -390,7 +417,14 @@ def _entry_for_locale(
             mapping_source=source,
             locale_provider_kind="authored",
             source_text=source_text,
-            encoded_bytes=encode_canonical_text(source_text),
+            encoded_bytes=encode_authored_text(
+                source_text,
+                english_definitions,
+                source_name=(
+                    f"{locale} authored {translation_key!r} for "
+                    f"{format_message_id(row.target_id)}"
+                ),
+            ),
             fallback_kind=FALLBACK_KIND_NONE,
             fallback_reason=None,
             note=None,
@@ -407,6 +441,7 @@ def _build_locale_bundle(
     raw_records: Mapping[str, str],
     ja_raw_records: Mapping[int, RawProvider],
     authored_records: Mapping[str, Mapping[str, str]],
+    english_definitions: Mapping[str, Tuple[int, ...]],
     suffix_share: bool,
 ) -> LocaleCatalogBundle:
     entries = tuple(
@@ -417,6 +452,7 @@ def _build_locale_bundle(
             raw_records=raw_records,
             ja_raw_records=ja_raw_records,
             authored_records=authored_records,
+            english_definitions=english_definitions,
         )
         for row in mapping.rows
     )
@@ -723,6 +759,7 @@ def build_game_catalog(
         english_definitions_path,
         target_count=target_count,
     )
+    english_definitions = load_english_definitions(english_definitions_path)
     english_bundle = EnglishCatalogBundle(
         locale="en",
         entries=english_entries,
@@ -755,6 +792,7 @@ def build_game_catalog(
             raw_records=raw_records,
             ja_raw_records=ja_raw_records,
             authored_records=authored_records,
+            english_definitions=english_definitions,
             suffix_share=suffix_share,
         )
         for locale in enabled_locales

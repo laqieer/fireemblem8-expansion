@@ -34,13 +34,12 @@ remain import provenance only and never become runtime keys.
   context SHA-256. Validation opens the source and requires the keyed entry's
   exact literal and fingerprint to match.
 - `mapping/structural_completion_evidence.json`: separate, non-authoritative
-  evidence for targets that are still explicit English fallbacks in the final
-  map. It records bounded FE8J proposals, source-payload hashes, stable semantic
-  slots, split/merge collisions, and residual targets. It is never consumed by
-  `build-crosswalk` and cannot promote a fallback by itself.
+  historical evidence for targets that were explicit English fallbacks before
+  final promotion. It records bounded FE8J proposals, source-payload hashes,
+  stable semantic slots, split/merge collisions, and residual targets.
 - `mapping/fe8u_target_map.json`: the authoritative 3,414-row FE8U target
-  decision ledger generated from the committed evidence. Every row is indexed,
-  raw, authored, or an explicit English fallback.
+  decision ledger generated from committed evidence and reviewed authored
+  shards. Every production row is indexed, raw, or authored.
 - `mapping/fe8u_target_map.coverage.json`: deterministic source-kind and
   subsystem counts plus every fallback target ID and reason.
 - `source/febuilder/translate_textid_FE8.txt`: byte-exact, hash-pinned
@@ -52,13 +51,19 @@ remain import provenance only and never become runtime keys.
   keys, target collision groups, payload references, and structural
   comparisons without changing the release map.
 - `mapping/combined_fallback_coverage.json`: generated final-owner handoff that
-  combines the current fallback subset with FEBuilder and structural
-  candidates while preserving every conflict, collision, and residual.
+  recomputes the current (now empty) fallback subset against FEBuilder and
+  structural history while preserving every conflict and collision ledger.
 - `mapping/final_mapping_report.json`: deterministic promotion counts, input
   fingerprints, residual count, and the zero-fallback final-delivery policy.
-- `mapping/authored_translation_queue.json`: exact residual fallback set with
-  canonical English, controls/placeholders, subsystem, reference sites,
-  no-provider reason, suggested key, and grouping.
+- `mapping/authored_translation_queue.json`: byte-identical historical source
+  queue for the 259 reviewed targets, with canonical English,
+  controls/placeholders, subsystem, reference sites, no-provider reason,
+  suggested key, and grouping. The final report proves all rows fulfilled.
+- `authored/manifest.json`: pins the source queue revision/SHA-256 and every
+  reviewed shard SHA-256.
+- `authored/shards/*.json`: normalized, locale-paired reviewed translations.
+- `authored/catalog.{ja,zh-Hans}.json`: deterministic canonical runtime
+  catalogs generated from the pinned shard union.
 - `mapping/raw_surface_decisions.json`: the 29 audited records that were not
   part of the original 114 raw-to-game-ID mappings. Each has a concrete game
   message ID, semantic expansion key, explicit English fallback, or documented
@@ -276,20 +281,17 @@ python3 -m scripts.localization.game_locales check-structural-completion
 For a byte-for-byte rebuild check, add `--rebuild` and the four harvest input
 paths to that command.
 
-The committed FE8U target report currently contains 3,414 decisions and zero
-unresolved:
+The committed FE8U target report contains 3,414 decisions, zero fallback, and
+zero unresolved:
 
 - 3,010 verified indexed mappings;
 - 142 verified raw target mappings, using 140 unique imports (143 import
   references including alternate providers and safe one-to-many reuse);
-- 3 authored mappings reusing existing expansion translations (`0x0693`,
-  `0x0D53`, and `0x0D54`);
-- 259 explicit English fallbacks.
+- 262 authored mappings: 3 existing expansion translations plus exactly 259
+  fulfilled historical queue rows.
 
-Translation coverage is therefore 3,155 targets (92.41%). Explicit fallback
-coverage is 259 targets (7.59%); fallback content is not translated content.
-The residual reasons are `not-yet-verified` (250), `expansion-only` (8), and
-`dummy` (1).
+Translation coverage is 3,414/3,414 (100%). Explicit English fallback and
+unresolved coverage are both zero for Japanese and Simplified Chinese.
 
 ## Final mapping promotion and authored queue
 
@@ -305,6 +307,9 @@ run. Precedence is fixed:
    and apply the reviewed context decisions for every former collision;
 5. reuse a mapped provider only when the normalized English bytes, including
    control tokens, are exact and all candidate JA/ZH payloads agree.
+6. promote exactly the 259 historical queue rows from the canonical authored
+   catalogs after queue hash, shard hash, target/key union, locale parity,
+   control/newline/placeholder, and English-prose gates pass.
 
 The pipeline additionally reuses the tracked legacy
 `PROMO_OPTION_{1,2,3}_NAME` literals for the three FEBuilder pointer rows. It
@@ -319,12 +324,18 @@ python3 -m scripts.localization.game_locales build-final-mapping
 python3 -m scripts.localization.game_locales check-final-mapping
 ```
 
-`mapping/authored_translation_queue.json` contains exactly the 259 remaining
-fallback targets. Every row includes canonical English text, controls,
-placeholders, subsystem, typed reference sites, the reason evidence cannot
-select a provider, a suggested semantic key, and deterministic grouping.
-Intermediate research may carry this queue; final delivery must pass the
-zero-fallback gate:
+`mapping/authored_translation_queue.json` retains exactly the original 259
+targets byte-for-byte so every shard continues to pin the same source queue.
+It is historical fulfilled input, not a residual runtime queue. Canonical
+catalogs are generated and checked with:
+
+```bash
+python3 -m scripts.localization.game_locales build-authored-catalogs
+python3 -m scripts.localization.game_locales check-authored-catalogs
+```
+
+Final delivery proves that every historical target is mapped to its stable
+authored key and that no fallback remains:
 
 ```bash
 python3 -m scripts.localization.game_locales check-final-mapping \
@@ -339,11 +350,10 @@ coverage report, structural crosswalk evidence, FEBuilder ledger, and
 structural completion ledger. It cannot update the map and keeps every
 conflict and context collision explicit.
 
-After final promotion the combined report covers the 250 remaining
-`not-yet-verified` targets: zero unpromoted candidates, zero unresolved
-blockers, and 250 true research residuals. It still retains the global
-exception lists (12 FEBuilder conflicts, 17 FEBuilder collisions, and 20
-structural collision targets) so resolved history cannot silently disappear.
+After authored promotion the combined report has zero actionable fallback,
+zero blocked target, and zero residual. It still retains the global exception
+lists (12 FEBuilder conflicts, 17 FEBuilder collisions, and 20 structural
+collision targets) so resolved history cannot silently disappear.
 
 Build or verify the committed report:
 
@@ -400,6 +410,10 @@ their imported raw payload except executable-identity records, whose
 strict gate is exactly 143 total, 143 verified game/expansion providers, 143
 materialized JA payloads, 143 materialized ZH payloads, and zero fallback,
 exclusions, or unresolved records.
+
+Together, the compressed 3,414-row catalog and the 143-record raw-surface
+closure have zero English fallback, zero exclusion, and zero unresolved
+user-facing strings in both Japanese and Simplified Chinese.
 
 ## Mapping validation and coverage
 

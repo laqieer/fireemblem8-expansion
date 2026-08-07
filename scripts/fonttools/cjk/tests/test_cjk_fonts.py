@@ -68,6 +68,70 @@ class CjkFontTests(unittest.TestCase):
             )
             self.assertEqual(expansion["catalogs"], expected_catalogs)
 
+    def test_canonical_authored_catalogs_are_inventory_inputs_and_fully_covered(self):
+        inventory = json.loads((ROOT / "fonts/cjk/inventory.json").read_text())
+        manifest_path = ROOT / "texts/locales/authored/manifest.json"
+        input_paths = [
+            manifest_path,
+            *(
+                ROOT / f"texts/locales/authored/catalog.{locale}.json"
+                for locale in ("ja", "zh-Hans")
+            ),
+        ]
+        for path in input_paths:
+            relative = path.relative_to(ROOT).as_posix()
+            data = path.read_bytes()
+            self.assertEqual(
+                inventory["inputs"][relative],
+                {
+                    "byte_count": len(data),
+                    "sha256": hashlib.sha256(data).hexdigest(),
+                },
+            )
+
+        for locale in ("ja", "zh-Hans"):
+            catalog_path = (
+                ROOT / f"texts/locales/authored/catalog.{locale}.json"
+            )
+            catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
+            metadata = inventory["locales"][locale]["authored_game"]
+            self.assertEqual(metadata["string_count"], 262)
+            self.assertEqual(
+                metadata["catalog"],
+                catalog_path.relative_to(ROOT).as_posix(),
+            )
+            corpus = set(
+                (ROOT / f"fonts/cjk/corpora/{locale}.system.txt").read_text(
+                    encoding="utf-8"
+                )
+            )
+            authored_scalars = {
+                character
+                for text in catalog["strings"].values()
+                for character in text
+                if ord(character) > 0x7F and not character.isspace()
+            }
+            self.assertTrue(authored_scalars)
+            self.assertTrue(authored_scalars <= corpus)
+            compact_manifest = json.loads(
+                (ROOT / "graphics/fonts/cjk/manifest.json").read_text()
+            )
+            for style in ("system", "talk"):
+                asset = compact_manifest["assets"][f"{locale}.{style}"]
+                codepoints = (
+                    ROOT / asset["codepoints"]["path"]
+                ).read_bytes()
+                values = set(
+                    struct.unpack(
+                        f"<{asset['glyph_count']}I",
+                        codepoints,
+                    )
+                )
+                self.assertTrue(
+                    set(map(ord, authored_scalars)) <= values,
+                    (locale, style),
+                )
+
     def test_inventory_counts_tokens_and_spacing_contract(self):
         inventory = json.loads((ROOT / "fonts/cjk/inventory.json").read_text())
         self.assertEqual(inventory["union"]["spacing_scalars"], ["U+3000"])
