@@ -31,6 +31,10 @@ from .raw_closure import (
     build_raw_surface_closure,
     canonical_json_bytes as closure_json_bytes,
 )
+from .structural_completion import (
+    build_structural_completion_evidence,
+    check_structural_completion_evidence,
+)
 
 
 def _load_mapping(path: Path, target_count: int, *, repo_root: Path):
@@ -234,6 +238,32 @@ def _cmd_import_febuilder_evidence(args: argparse.Namespace) -> int:
     return 0
 
 
+def _build_structural_completion(args: argparse.Namespace):
+    target_count = len(load_fe8u_target_ids(args.target_header))
+    return build_structural_completion_evidence(
+        repo_root=args.repo_root,
+        fe8u_root=args.fe8u_root,
+        fe8j_root=args.fe8j_root,
+        reference_map_path=args.reference_map,
+        region_map_path=args.region_map,
+        target_count=target_count,
+    )
+
+
+def _cmd_harvest_structural_completion(args: argparse.Namespace) -> int:
+    evidence = _build_structural_completion(args)
+    args.evidence.parent.mkdir(parents=True, exist_ok=True)
+    args.evidence.write_bytes(canonical_json_bytes(evidence))
+    summary = evidence["summary"]
+    print(
+        "harvested structural completion evidence: "
+        f"proposed={summary['proposed_target_count']} "
+        f"context={summary['context_required_count']} "
+        f"residual={summary['unmapped_residual_count']}"
+    )
+    return 0
+
+
 def _cmd_build_febuilder_evidence(args: argparse.Namespace) -> int:
     evidence = _build_febuilder_evidence(args)
     args.evidence.parent.mkdir(parents=True, exist_ok=True)
@@ -261,6 +291,40 @@ def _cmd_check_febuilder_evidence(args: argparse.Namespace) -> int:
         f"targets={summary['target_candidate_count']} "
         f"conflicts={summary['structural_conflict_count']} "
         f"collisions={summary['unresolved_differing_payload_collision_count']}"
+    )
+    return 0
+
+
+def _cmd_check_structural_completion(args: argparse.Namespace) -> int:
+    target_count = len(load_fe8u_target_ids(args.target_header))
+    evidence = check_structural_completion_evidence(
+        args.evidence,
+        repo_root=args.repo_root,
+        target_count=target_count,
+    )
+    if args.rebuild:
+        missing = [
+            name
+            for name in ("fe8u_root", "fe8j_root", "reference_map", "region_map")
+            if getattr(args, name) is None
+        ]
+        if missing:
+            raise MappingError(
+                "--rebuild requires --fe8u-root, --fe8j-root, "
+                "--reference-map, and --region-map"
+            )
+        rebuilt = _build_structural_completion(args)
+        if args.evidence.read_bytes() != canonical_json_bytes(rebuilt):
+            raise MappingError(
+                f"{args.evidence}: differs from deterministic structural rebuild"
+            )
+    summary = evidence["summary"]
+    print(
+        "valid structural completion evidence: "
+        f"proposed={summary['proposed_target_count']} "
+        f"context={summary['context_required_count']} "
+        f"residual={summary['unmapped_residual_count']}"
+        + (" rebuilt=match" if args.rebuild else "")
     )
     return 0
 
@@ -513,6 +577,53 @@ def build_parser() -> argparse.ArgumentParser:
         febuilder_parser = subparsers.add_parser(command, help=help_text)
         add_febuilder_inputs(febuilder_parser)
         febuilder_parser.set_defaults(handler=handler)
+
+    completion_parser = subparsers.add_parser(
+        "harvest-structural-completion",
+        help="harvest evidence-only completion proposals from authorized references",
+    )
+    completion_parser.add_argument("--fe8u-root", type=Path, required=True)
+    completion_parser.add_argument("--fe8j-root", type=Path, required=True)
+    completion_parser.add_argument("--reference-map", type=Path, required=True)
+    completion_parser.add_argument("--region-map", type=Path, required=True)
+    completion_parser.add_argument(
+        "--evidence",
+        type=Path,
+        default=Path(
+            "texts/locales/mapping/structural_completion_evidence.json"
+        ),
+    )
+    completion_parser.add_argument(
+        "--target-header",
+        type=Path,
+        default=Path("include/constants/msg.h"),
+    )
+    completion_parser.add_argument("--repo-root", type=Path, default=Path("."))
+    completion_parser.set_defaults(handler=_cmd_harvest_structural_completion)
+
+    completion_check_parser = subparsers.add_parser(
+        "check-structural-completion",
+        help="validate the committed completion artifact, optionally rebuilding it",
+    )
+    completion_check_parser.add_argument(
+        "--evidence",
+        type=Path,
+        default=Path(
+            "texts/locales/mapping/structural_completion_evidence.json"
+        ),
+    )
+    completion_check_parser.add_argument(
+        "--target-header",
+        type=Path,
+        default=Path("include/constants/msg.h"),
+    )
+    completion_check_parser.add_argument("--repo-root", type=Path, default=Path("."))
+    completion_check_parser.add_argument("--rebuild", action="store_true")
+    completion_check_parser.add_argument("--fe8u-root", type=Path)
+    completion_check_parser.add_argument("--fe8j-root", type=Path)
+    completion_check_parser.add_argument("--reference-map", type=Path)
+    completion_check_parser.add_argument("--region-map", type=Path)
+    completion_check_parser.set_defaults(handler=_cmd_check_structural_completion)
 
     for command, help_text, handler in (
         (

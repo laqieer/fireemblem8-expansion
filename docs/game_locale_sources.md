@@ -33,6 +33,11 @@ remain import provenance only and never become runtime keys.
   source file, table symbol, `message_id=0xNNNN` key, and bounded initializer
   context SHA-256. Validation opens the source and requires the keyed entry's
   exact literal and fingerprint to match.
+- `mapping/structural_completion_evidence.json`: separate, non-authoritative
+  evidence for targets that are still explicit English fallbacks in the final
+  map. It records bounded FE8J proposals, source-payload hashes, stable semantic
+  slots, split/merge collisions, and residual targets. It is never consumed by
+  `build-crosswalk` and cannot promote a fallback by itself.
 - `mapping/fe8u_target_map.json`: the authoritative 3,414-row FE8U target
   decision ledger generated from the committed evidence. Every row is indexed,
   raw, authored, or an explicit English fallback.
@@ -207,6 +212,49 @@ evidence and compares the release artifacts byte-for-byte:
 python3 -m scripts.localization.game_locales build-crosswalk
 python3 -m scripts.localization.game_locales check-crosswalk
 ```
+
+## Structural completion evidence
+
+The completion harvester is deliberately a separate evidence domain. It reads
+the current authoritative map only to select `not-yet-verified` targets and
+hash-pins both that map and `fe8u_structural_evidence.json`; it never writes
+either file. Proposed pairs require bounded FE8U/FE8J IDs, a non-empty indexed
+Japanese payload, an authorized reference-map row or stronger keyed evidence,
+and a stable semantic slot. Numeric interpolation, shifted ranges, and
+proximity are not accepted evidence.
+
+Slots cover chapter/event-table opcode paths, menu definitions, help/tutorial
+tables, shop and link-arena sequences, dungeon/timeline data, chapter titles,
+entity rows, and trainee/preparation tables. Event sequences are aligned by
+opcode-path subgroups, so a count mismatch does not discard the whole symbol.
+The Chapter 14B beginning/location/ending slots and trainee messages
+`0x0C44`-`0x0C51` are pinned by those structures. Target `0x0C52` remains an
+explicit context collision between the reference-map provider and the live
+preparation call-site provider rather than choosing one arbitrarily.
+
+The committed artifact currently partitions all 1,797 `not-yet-verified`
+fallbacks into 1,381 unambiguous proposals and 416 residuals, including 20
+context-required collisions. These are review candidates, not translations or
+release mappings.
+
+Harvest from the authorized read-only trees and FEBuilder reference maps:
+
+```bash
+python3 -m scripts.localization.game_locales harvest-structural-completion \
+  --fe8u-root /path/to/fireemblem8u \
+  --fe8j-root /path/to/fireemblem8j \
+  --reference-map /path/to/FEBuilderGBA/config/data/translate_textid_FE8.txt \
+  --region-map /path/to/FEBuilderGBA/config/data/textid_FE8.txt
+```
+
+Normal checks need no external trees:
+
+```bash
+python3 -m scripts.localization.game_locales check-structural-completion
+```
+
+For a byte-for-byte rebuild check, add `--rebuild` and the four harvest input
+paths to that command.
 
 The committed FE8U target report currently contains 3,414 decisions and zero
 unresolved:
