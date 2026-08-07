@@ -1,0 +1,2178 @@
+{
+  "game_catalog": {
+    "locales": {
+      "ja": {
+        "approved_count": 37,
+        "audited_count": 3414,
+        "candidate_count": 37,
+        "candidates": [
+          {
+            "approval": {
+              "category": "locale-neutral-abbreviation",
+              "payload_matches": true,
+              "reason": "E.D. is a compact dotted interface abbreviation, not an English prose payload."
+            },
+            "approval_key": "game/ja/0x0086",
+            "approved": true,
+            "classifications": [
+              "exact-english-copy",
+              "latin-only-payload"
+            ],
+            "english_visible": "E.D.",
+            "id": "0x0086",
+            "metadata": {
+              "mapping_source": {
+                "kind": "authored",
+                "translation_key": "game.menu_definition.msg_086"
+              },
+              "mapping_source_kind": "authored",
+              "provider_kind": "authored"
+            },
+            "payload": "E.D.[X]\n",
+            "payload_visible": "E.D.",
+            "similarity": 1.0,
+            "user_facing": true
+          },
+          {
+            "approval": {
+              "category": "locale-neutral-abbreviation",
+              "payload_matches": true,
+              "reason": "2-CP is an opaque numbered mode code whose letters are not user-facing English words."
+            },
+            "approval_key": "game/ja/0x008E",
+            "approved": true,
+            "classifications": [
+              "exact-english-copy",
+              "latin-only-payload"
+            ],
+            "english_visible": "2-CP",
+            "id": "0x008E",
+            "metadata": {
+              "mapping_source": {
+                "kind": "authored",
+                "translation_key": "game.menu_definition.msg_08e"
+              },
+              "mapping_source_kind": "authored",
+              "provider_kind": "authored"
+            },
+            "payload": "2-CP[X]\n",
+            "payload_visible": "2-CP",
+            "similarity": 1.0,
+            "user_facing": true
+          },
+          {
+            "approval": {
+              "category": "locale-neutral-abbreviation",
+              "payload_matches": true,
+              "reason": "3-CP is an opaque numbered mode code whose letters are not user-facing English words."
+            },
+            "approval_key": "game/ja/0x008F",
+            "approved": true,
+            "classifications": [
+              "exact-english-copy",
+              "latin-only-payload"
+            ],
+            "english_visible": "3-CP",
+            "id": "0x008F",
+            "metadata": {
+              "mapping_source": {
+                "kind": "authored",
+                "translation_key": "game.menu_definition.msg_08f"
+              },
+              "mapping_source_kind": "authored",
+              "provider_kind": "authored"
+            },
+            "payload": "3-CP[X]\n",
+            "payload_visible": "3-CP",
+            "similarity": 1.0,
+            "user_facing": true
+          },
+          {
+            "approval": {
+              "category": "locale-neutral-abbreviation",
+              "payload_matches": true,
+              "reason": "BGM is the established technical acronym for background music in Japanese game UI."
+            },
+            "approval_key": "game/ja/0x0098",
+            "approved": true,
+            "classifications": [
+              "latin-only-payload"
+            ],
+            "english_visible": "Music",
+            "id": "0x0098",
+            "metadata": {
+              "mapping_source": {
+                "id": "0x0011",
+                "kind": "indexed",
+                "layout": "FE8J"
+              },
+              "mapping_source_kind": "indexed",
+              "provider_kind": "indexed"
+            },
+            "payload": "ＢＧＭ",
+            "payload_visible": "BGM",
+            "similarity": 0.0,
+            "user_facing": true
+          },
+          {
+            "approval": {
+              "category": "locale-neutral-abbreviation",
+              "payload_matches": true,
+              "reason": "LV is the compact level-stat label used alongside numeric values."
+            },
+            "approval_key": "game/ja/0x0148",
+            "approved": true,
+            "classifications": [
+              "exact-english-copy",
+              "latin-only-payload"
+            ],
+            "english_visible": "LV",
+            "id": "0x0148",
+            "metadata": {
+              "mapping_source": {
+                "kind": "authored",
+                "translation_key": "game.help_tutorial.msg_148"
+              },
+              "mapping_source_kind": "authored",
+              "provider_kind": "authored"
+            },
+            "payload": "ＬＶ[X]\n",
+            "payload_visible": "LV",
+            "similarity": 1.0,
+            "user_facing": true
+          },
+          {
+            "approval": {
+              "category": "locale-neutral-currency-code",
+              "payload_matches": true,
+              "reason": "G is the game's one-letter gold currency unit attached to a numeric amount."
+            },
+            "approval_key": "game/ja/0x03F9",
+            "approved": true,
+            "classifications": [
+              "latin-only-payload"
+            ],
+            "english_visible": "1 Gold",
+            "id": "0x03F9",
+            "metadata": {
+              "mapping_source": {
+                "id": "0x0380",
+                "kind": "indexed",
+                "layout": "FE8J"
+              },
+              "mapping_source_kind": "indexed",
+              "provider_kind": "indexed"
+            },
+            "payload": "１Ｇ",
+            "payload_visible": "1G",
+            "similarity": 0.0,
+            "user_facing": true
+          },
+          {
+            "approval": {
+              "category": "locale-neutral-currency-code",
+              "payload_matches": true,
+              "reason": "G is the game's one-letter gold currency unit attached to a numeric amount."
+            },
+            "approval_key": "game/ja/0x03FA",
+            "approved": true,
+            "classifications": [
+              "latin-only-payload"
+            ],
+            "english_visible": "5 Gold",
+            "id": "0x03FA",
+            "metadata": {
+              "mapping_source": {
+                "id": "0x0381",
+                "kind": "indexed",
+                "layout": "FE8J"
+              },
+              "mapping_source_kind": "indexed",
+              "provider_kind": "indexed"
+            },
+            "payload": "５Ｇ",
+            "payload_visible": "5G",
+            "similarity": 0.0,
+            "user_facing": true
+          },
+          {
+            "approval": {
+              "category": "locale-neutral-currency-code",
+              "payload_matches": true,
+              "reason": "G is the game's one-letter gold currency unit attached to a numeric amount."
+            },
+            "approval_key": "game/ja/0x03FB",
+            "approved": true,
+            "classifications": [
+              "latin-only-payload"
+            ],
+            "english_visible": "10 Gold",
+            "id": "0x03FB",
+            "metadata": {
+              "mapping_source": {
+                "id": "0x0382",
+                "kind": "indexed",
+                "layout": "FE8J"
+              },
+              "mapping_source_kind": "indexed",
+              "provider_kind": "indexed"
+            },
+            "payload": "１０Ｇ",
+            "payload_visible": "10G",
+            "similarity": 0.0,
+            "user_facing": true
+          },
+          {
+            "approval": {
+              "category": "locale-neutral-currency-code",
+              "payload_matches": true,
+              "reason": "G is the game's one-letter gold currency unit attached to a numeric amount."
+            },
+            "approval_key": "game/ja/0x03FC",
+            "approved": true,
+            "classifications": [
+              "latin-only-payload"
+            ],
+            "english_visible": "50 Gold",
+            "id": "0x03FC",
+            "metadata": {
+              "mapping_source": {
+                "id": "0x0383",
+                "kind": "indexed",
+                "layout": "FE8J"
+              },
+              "mapping_source_kind": "indexed",
+              "provider_kind": "indexed"
+            },
+            "payload": "５０Ｇ",
+            "payload_visible": "50G",
+            "similarity": 0.0,
+            "user_facing": true
+          },
+          {
+            "approval": {
+              "category": "locale-neutral-currency-code",
+              "payload_matches": true,
+              "reason": "G is the game's one-letter gold currency unit attached to a numeric amount."
+            },
+            "approval_key": "game/ja/0x03FD",
+            "approved": true,
+            "classifications": [
+              "latin-only-payload"
+            ],
+            "english_visible": "100 Gold",
+            "id": "0x03FD",
+            "metadata": {
+              "mapping_source": {
+                "id": "0x0384",
+                "kind": "indexed",
+                "layout": "FE8J"
+              },
+              "mapping_source_kind": "indexed",
+              "provider_kind": "indexed"
+            },
+            "payload": "１００Ｇ",
+            "payload_visible": "100G",
+            "similarity": 0.0,
+            "user_facing": true
+          },
+          {
+            "approval": {
+              "category": "locale-neutral-currency-code",
+              "payload_matches": true,
+              "reason": "G is the game's one-letter gold currency unit attached to a numeric amount."
+            },
+            "approval_key": "game/ja/0x03FE",
+            "approved": true,
+            "classifications": [
+              "latin-only-payload"
+            ],
+            "english_visible": "150 Gold",
+            "id": "0x03FE",
+            "metadata": {
+              "mapping_source": {
+                "id": "0x0385",
+                "kind": "indexed",
+                "layout": "FE8J"
+              },
+              "mapping_source_kind": "indexed",
+              "provider_kind": "indexed"
+            },
+            "payload": "１５０Ｇ",
+            "payload_visible": "150G",
+            "similarity": 0.0,
+            "user_facing": true
+          },
+          {
+            "approval": {
+              "category": "locale-neutral-currency-code",
+              "payload_matches": true,
+              "reason": "G is the game's one-letter gold currency unit attached to a numeric amount."
+            },
+            "approval_key": "game/ja/0x03FF",
+            "approved": true,
+            "classifications": [
+              "latin-only-payload"
+            ],
+            "english_visible": "200 Gold",
+            "id": "0x03FF",
+            "metadata": {
+              "mapping_source": {
+                "id": "0x0386",
+                "kind": "indexed",
+                "layout": "FE8J"
+              },
+              "mapping_source_kind": "indexed",
+              "provider_kind": "indexed"
+            },
+            "payload": "２００Ｇ",
+            "payload_visible": "200G",
+            "similarity": 0.0,
+            "user_facing": true
+          },
+          {
+            "approval": {
+              "category": "locale-neutral-currency-code",
+              "payload_matches": true,
+              "reason": "G is the game's one-letter gold currency unit attached to a numeric amount."
+            },
+            "approval_key": "game/ja/0x0400",
+            "approved": true,
+            "classifications": [
+              "latin-only-payload"
+            ],
+            "english_visible": "3,000 Gold",
+            "id": "0x0400",
+            "metadata": {
+              "mapping_source": {
+                "id": "0x0387",
+                "kind": "indexed",
+                "layout": "FE8J"
+              },
+              "mapping_source_kind": "indexed",
+              "provider_kind": "indexed"
+            },
+            "payload": "３０００Ｇ",
+            "payload_visible": "3000G",
+            "similarity": 0.0,
+            "user_facing": true
+          },
+          {
+            "approval": {
+              "category": "locale-neutral-currency-code",
+              "payload_matches": true,
+              "reason": "G is the game's one-letter gold currency unit attached to a numeric amount."
+            },
+            "approval_key": "game/ja/0x0401",
+            "approved": true,
+            "classifications": [
+              "latin-only-payload"
+            ],
+            "english_visible": "5,000 Gold",
+            "id": "0x0401",
+            "metadata": {
+              "mapping_source": {
+                "id": "0x0388",
+                "kind": "indexed",
+                "layout": "FE8J"
+              },
+              "mapping_source_kind": "indexed",
+              "provider_kind": "indexed"
+            },
+            "payload": "５０００Ｇ",
+            "payload_visible": "5000G",
+            "similarity": 0.0,
+            "user_facing": true
+          },
+          {
+            "approval": {
+              "category": "locale-neutral-abbreviation",
+              "payload_matches": true,
+              "reason": "LV is the compact level-stat label used alongside numeric values."
+            },
+            "approval_key": "game/ja/0x04E7",
+            "approved": true,
+            "classifications": [
+              "exact-english-copy",
+              "latin-only-payload"
+            ],
+            "english_visible": "Lv",
+            "id": "0x04E7",
+            "metadata": {
+              "mapping_source": {
+                "id": "0x0476",
+                "kind": "indexed",
+                "layout": "FE8J"
+              },
+              "mapping_source_kind": "indexed",
+              "provider_kind": "indexed"
+            },
+            "payload": "ＬＶ",
+            "payload_visible": "LV",
+            "similarity": 1.0,
+            "user_facing": true
+          },
+          {
+            "approval": {
+              "category": "locale-neutral-abbreviation",
+              "payload_matches": true,
+              "reason": "EX is the compact experience-stat column code, not an English word or sentence."
+            },
+            "approval_key": "game/ja/0x04E8",
+            "approved": true,
+            "classifications": [
+              "latin-only-payload"
+            ],
+            "english_visible": "Exp",
+            "id": "0x04E8",
+            "metadata": {
+              "mapping_source": {
+                "id": "0x0477",
+                "kind": "indexed",
+                "layout": "FE8J"
+              },
+              "mapping_source_kind": "indexed",
+              "provider_kind": "indexed"
+            },
+            "payload": "ＥＸ",
+            "payload_visible": "EX",
+            "similarity": 0.0,
+            "user_facing": true
+          },
+          {
+            "approval": {
+              "category": "locale-neutral-abbreviation",
+              "payload_matches": true,
+              "reason": "HP is the established hit-point stat acronym used with numeric values."
+            },
+            "approval_key": "game/ja/0x04E9",
+            "approved": true,
+            "classifications": [
+              "exact-english-copy",
+              "latin-only-payload"
+            ],
+            "english_visible": "HP",
+            "id": "0x04E9",
+            "metadata": {
+              "mapping_source": {
+                "id": "0x0478",
+                "kind": "indexed",
+                "layout": "FE8J"
+              },
+              "mapping_source_kind": "indexed",
+              "provider_kind": "indexed"
+            },
+            "payload": "ＨＰ",
+            "payload_visible": "HP",
+            "similarity": 1.0,
+            "user_facing": true
+          },
+          {
+            "approval": {
+              "category": "locale-neutral-rank-code",
+              "payload_matches": true,
+              "reason": "E is one member of the fixed E/D/C/B/A/S rank scale."
+            },
+            "approval_key": "game/ja/0x052D",
+            "approved": true,
+            "classifications": [
+              "exact-english-copy",
+              "latin-only-payload"
+            ],
+            "english_visible": "E",
+            "id": "0x052D",
+            "metadata": {
+              "mapping_source": {
+                "kind": "authored",
+                "translation_key": "game.menu_definition.msg_52d"
+              },
+              "mapping_source_kind": "authored",
+              "provider_kind": "authored"
+            },
+            "payload": "E[.][X]\n",
+            "payload_visible": "E",
+            "similarity": 1.0,
+            "user_facing": true
+          },
+          {
+            "approval": {
+              "category": "locale-neutral-rank-code",
+              "payload_matches": true,
+              "reason": "D is one member of the fixed E/D/C/B/A/S rank scale."
+            },
+            "approval_key": "game/ja/0x052E",
+            "approved": true,
+            "classifications": [
+              "exact-english-copy",
+              "latin-only-payload"
+            ],
+            "english_visible": "D",
+            "id": "0x052E",
+            "metadata": {
+              "mapping_source": {
+                "kind": "authored",
+                "translation_key": "game.menu_definition.msg_52e"
+              },
+              "mapping_source_kind": "authored",
+              "provider_kind": "authored"
+            },
+            "payload": "D[.][X]\n",
+            "payload_visible": "D",
+            "similarity": 1.0,
+            "user_facing": true
+          },
+          {
+            "approval": {
+              "category": "locale-neutral-rank-code",
+              "payload_matches": true,
+              "reason": "C is one member of the fixed E/D/C/B/A/S rank scale."
+            },
+            "approval_key": "game/ja/0x052F",
+            "approved": true,
+            "classifications": [
+              "exact-english-copy",
+              "latin-only-payload"
+            ],
+            "english_visible": "C",
+            "id": "0x052F",
+            "metadata": {
+              "mapping_source": {
+                "kind": "authored",
+                "translation_key": "game.menu_definition.msg_52f"
+              },
+              "mapping_source_kind": "authored",
+              "provider_kind": "authored"
+            },
+            "payload": "C[.][X]\n",
+            "payload_visible": "C",
+            "similarity": 1.0,
+            "user_facing": true
+          },
+          {
+            "approval": {
+              "category": "locale-neutral-rank-code",
+              "payload_matches": true,
+              "reason": "B is one member of the fixed E/D/C/B/A/S rank scale."
+            },
+            "approval_key": "game/ja/0x0530",
+            "approved": true,
+            "classifications": [
+              "exact-english-copy",
+              "latin-only-payload"
+            ],
+            "english_visible": "B",
+            "id": "0x0530",
+            "metadata": {
+              "mapping_source": {
+                "kind": "authored",
+                "translation_key": "game.menu_definition.msg_530"
+              },
+              "mapping_source_kind": "authored",
+              "provider_kind": "authored"
+            },
+            "payload": "B[.][X]\n",
+            "payload_visible": "B",
+            "similarity": 1.0,
+            "user_facing": true
+          },
+          {
+            "approval": {
+              "category": "locale-neutral-rank-code",
+              "payload_matches": true,
+              "reason": "A is one member of the fixed E/D/C/B/A/S rank scale."
+            },
+            "approval_key": "game/ja/0x0531",
+            "approved": true,
+            "classifications": [
+              "exact-english-copy",
+              "latin-only-payload"
+            ],
+            "english_visible": "A",
+            "id": "0x0531",
+            "metadata": {
+              "mapping_source": {
+                "kind": "authored",
+                "translation_key": "game.menu_definition.msg_531"
+              },
+              "mapping_source_kind": "authored",
+              "provider_kind": "authored"
+            },
+            "payload": "A[.][X]\n",
+            "payload_visible": "A",
+            "similarity": 1.0,
+            "user_facing": true
+          },
+          {
+            "approval": {
+              "category": "locale-neutral-rank-code",
+              "payload_matches": true,
+              "reason": "S is one member of the fixed E/D/C/B/A/S rank scale."
+            },
+            "approval_key": "game/ja/0x0532",
+            "approved": true,
+            "classifications": [
+              "exact-english-copy",
+              "latin-only-payload"
+            ],
+            "english_visible": "S",
+            "id": "0x0532",
+            "metadata": {
+              "mapping_source": {
+                "kind": "authored",
+                "translation_key": "game.menu_definition.msg_532"
+              },
+              "mapping_source_kind": "authored",
+              "provider_kind": "authored"
+            },
+            "payload": "S[.][X]\n",
+            "payload_visible": "S",
+            "similarity": 1.0,
+            "user_facing": true
+          },
+          {
+            "approval": {
+              "category": "locale-neutral-abbreviation",
+              "payload_matches": true,
+              "reason": "E09 is an opaque alphanumeric scenario identifier, not English prose."
+            },
+            "approval_key": "game/ja/0x064C",
+            "approved": true,
+            "classifications": [
+              "exact-english-copy",
+              "latin-only-payload"
+            ],
+            "english_visible": "E09",
+            "id": "0x064C",
+            "metadata": {
+              "mapping_source": {
+                "id": "0x05DE",
+                "kind": "indexed",
+                "layout": "FE8J"
+              },
+              "mapping_source_kind": "indexed",
+              "provider_kind": "indexed"
+            },
+            "payload": "Ｅ０９",
+            "payload_visible": "E09",
+            "similarity": 1.0,
+            "user_facing": true
+          },
+          {
+            "approval": {
+              "category": "locale-neutral-abbreviation",
+              "payload_matches": true,
+              "reason": "I09 is an opaque alphanumeric scenario identifier, not English prose."
+            },
+            "approval_key": "game/ja/0x064D",
+            "approved": true,
+            "classifications": [
+              "exact-english-copy",
+              "latin-only-payload"
+            ],
+            "english_visible": "I09",
+            "id": "0x064D",
+            "metadata": {
+              "mapping_source": {
+                "id": "0x05DF",
+                "kind": "indexed",
+                "layout": "FE8J"
+              },
+              "mapping_source_kind": "indexed",
+              "provider_kind": "indexed"
+            },
+            "payload": "Ｉ０９",
+            "payload_visible": "I09",
+            "similarity": 1.0,
+            "user_facing": true
+          },
+          {
+            "approval": {
+              "category": "locale-neutral-abbreviation",
+              "payload_matches": true,
+              "reason": "E14 is an opaque alphanumeric scenario identifier, not English prose."
+            },
+            "approval_key": "game/ja/0x064E",
+            "approved": true,
+            "classifications": [
+              "exact-english-copy",
+              "latin-only-payload"
+            ],
+            "english_visible": "E14",
+            "id": "0x064E",
+            "metadata": {
+              "mapping_source": {
+                "id": "0x05E0",
+                "kind": "indexed",
+                "layout": "FE8J"
+              },
+              "mapping_source_kind": "indexed",
+              "provider_kind": "indexed"
+            },
+            "payload": "Ｅ１４",
+            "payload_visible": "E14",
+            "similarity": 1.0,
+            "user_facing": true
+          },
+          {
+            "approval": {
+              "category": "locale-neutral-abbreviation",
+              "payload_matches": true,
+              "reason": "I14 is an opaque alphanumeric scenario identifier, not English prose."
+            },
+            "approval_key": "game/ja/0x064F",
+            "approved": true,
+            "classifications": [
+              "exact-english-copy",
+              "latin-only-payload"
+            ],
+            "english_visible": "I14",
+            "id": "0x064F",
+            "metadata": {
+              "mapping_source": {
+                "id": "0x05E1",
+                "kind": "indexed",
+                "layout": "FE8J"
+              },
+              "mapping_source_kind": "indexed",
+              "provider_kind": "indexed"
+            },
+            "payload": "Ｉ１４",
+            "payload_visible": "I14",
+            "similarity": 1.0,
+            "user_facing": true
+          },
+          {
+            "approval": {
+              "category": "locale-neutral-abbreviation",
+              "payload_matches": true,
+              "reason": "CPU is the established acronym for the computer-controlled participant."
+            },
+            "approval_key": "game/ja/0x06A7",
+            "approved": true,
+            "classifications": [
+              "exact-english-copy",
+              "latin-only-payload"
+            ],
+            "english_visible": "CPU",
+            "id": "0x06A7",
+            "metadata": {
+              "mapping_source": {
+                "kind": "authored",
+                "translation_key": "game.chapter_event.msg_6a7"
+              },
+              "mapping_source_kind": "authored",
+              "provider_kind": "authored"
+            },
+            "payload": "ＣＰＵ[.][X]\n",
+            "payload_visible": "CPU",
+            "similarity": 1.0,
+            "user_facing": true
+          },
+          {
+            "approval": {
+              "category": "locale-neutral-abbreviation",
+              "payload_matches": true,
+              "reason": "Pt. is a compact points-unit abbreviation displayed beside a score."
+            },
+            "approval_key": "game/ja/0x077F",
+            "approved": true,
+            "classifications": [
+              "latin-only-payload"
+            ],
+            "english_visible": "Pts.",
+            "id": "0x077F",
+            "metadata": {
+              "mapping_source": {
+                "kind": "authored",
+                "translation_key": "game.shop_arena.msg_77f"
+              },
+              "mapping_source_kind": "authored",
+              "provider_kind": "authored"
+            },
+            "payload": "Ｐｔ．[X]\n",
+            "payload_visible": "Pt.",
+            "similarity": 0.0,
+            "user_facing": true
+          },
+          {
+            "approval": {
+              "category": "locale-neutral-player-code",
+              "payload_matches": true,
+              "reason": "P is the compact player/participant code used in multiplayer labels."
+            },
+            "approval_key": "game/ja/0x0781",
+            "approved": true,
+            "classifications": [
+              "exact-english-copy",
+              "latin-only-payload"
+            ],
+            "english_visible": "P",
+            "id": "0x0781",
+            "metadata": {
+              "mapping_source": {
+                "kind": "authored",
+                "translation_key": "game.help_tutorial.msg_781"
+              },
+              "mapping_source_kind": "authored",
+              "provider_kind": "authored"
+            },
+            "payload": "Ｐ[.][X]\n",
+            "payload_visible": "P",
+            "similarity": 1.0,
+            "user_facing": true
+          },
+          {
+            "approval": {
+              "category": "locale-neutral-player-code",
+              "payload_matches": true,
+              "reason": "1P is the fixed first-player identifier."
+            },
+            "approval_key": "game/ja/0x0786",
+            "approved": true,
+            "classifications": [
+              "latin-only-payload"
+            ],
+            "english_visible": "P1",
+            "id": "0x0786",
+            "metadata": {
+              "mapping_source": {
+                "kind": "authored",
+                "translation_key": "game.shop_arena.msg_786"
+              },
+              "mapping_source_kind": "authored",
+              "provider_kind": "authored"
+            },
+            "payload": "１Ｐ[X]\n",
+            "payload_visible": "1P",
+            "similarity": 0.0,
+            "user_facing": true
+          },
+          {
+            "approval": {
+              "category": "locale-neutral-player-code",
+              "payload_matches": true,
+              "reason": "2P is the fixed second-player identifier."
+            },
+            "approval_key": "game/ja/0x0787",
+            "approved": true,
+            "classifications": [
+              "latin-only-payload"
+            ],
+            "english_visible": "P2",
+            "id": "0x0787",
+            "metadata": {
+              "mapping_source": {
+                "kind": "authored",
+                "translation_key": "game.shop_arena.msg_787"
+              },
+              "mapping_source_kind": "authored",
+              "provider_kind": "authored"
+            },
+            "payload": "２Ｐ[X]\n",
+            "payload_visible": "2P",
+            "similarity": 0.0,
+            "user_facing": true
+          },
+          {
+            "approval": {
+              "category": "locale-neutral-player-code",
+              "payload_matches": true,
+              "reason": "3P is the fixed third-player identifier."
+            },
+            "approval_key": "game/ja/0x0788",
+            "approved": true,
+            "classifications": [
+              "latin-only-payload"
+            ],
+            "english_visible": "P3",
+            "id": "0x0788",
+            "metadata": {
+              "mapping_source": {
+                "kind": "authored",
+                "translation_key": "game.shop_arena.msg_788"
+              },
+              "mapping_source_kind": "authored",
+              "provider_kind": "authored"
+            },
+            "payload": "３Ｐ[X]\n",
+            "payload_visible": "3P",
+            "similarity": 0.0,
+            "user_facing": true
+          },
+          {
+            "approval": {
+              "category": "locale-neutral-player-code",
+              "payload_matches": true,
+              "reason": "4P is the fixed fourth-player identifier."
+            },
+            "approval_key": "game/ja/0x0789",
+            "approved": true,
+            "classifications": [
+              "latin-only-payload"
+            ],
+            "english_visible": "P4",
+            "id": "0x0789",
+            "metadata": {
+              "mapping_source": {
+                "kind": "authored",
+                "translation_key": "game.shop_arena.msg_789"
+              },
+              "mapping_source_kind": "authored",
+              "provider_kind": "authored"
+            },
+            "payload": "４Ｐ[X]\n",
+            "payload_visible": "4P",
+            "similarity": 0.0,
+            "user_facing": true
+          },
+          {
+            "approval": {
+              "category": "locale-neutral-player-code",
+              "payload_matches": true,
+              "reason": "5P is the fixed fifth-player identifier."
+            },
+            "approval_key": "game/ja/0x078A",
+            "approved": true,
+            "classifications": [
+              "latin-only-payload"
+            ],
+            "english_visible": "P5",
+            "id": "0x078A",
+            "metadata": {
+              "mapping_source": {
+                "kind": "authored",
+                "translation_key": "game.shop_arena.msg_78a"
+              },
+              "mapping_source_kind": "authored",
+              "provider_kind": "authored"
+            },
+            "payload": "５Ｐ[X]\n",
+            "payload_visible": "5P",
+            "similarity": 0.0,
+            "user_facing": true
+          },
+          {
+            "approval": {
+              "category": "locale-neutral-state-code",
+              "payload_matches": true,
+              "reason": "ON is the compact binary state label paired directly with OFF."
+            },
+            "approval_key": "game/ja/0x0849",
+            "approved": true,
+            "classifications": [
+              "exact-english-copy",
+              "latin-only-payload"
+            ],
+            "english_visible": "ON",
+            "id": "0x0849",
+            "metadata": {
+              "mapping_source": {
+                "id": "0x07C4",
+                "kind": "indexed",
+                "layout": "FE8J"
+              },
+              "mapping_source_kind": "indexed",
+              "provider_kind": "indexed"
+            },
+            "payload": "ＯＮ",
+            "payload_visible": "ON",
+            "similarity": 1.0,
+            "user_facing": true
+          },
+          {
+            "approval": {
+              "category": "locale-neutral-state-code",
+              "payload_matches": true,
+              "reason": "OFF is the compact binary state label paired directly with ON."
+            },
+            "approval_key": "game/ja/0x084A",
+            "approved": true,
+            "classifications": [
+              "exact-english-copy",
+              "latin-only-payload"
+            ],
+            "english_visible": "OFF",
+            "id": "0x084A",
+            "metadata": {
+              "mapping_source": {
+                "id": "0x07C5",
+                "kind": "indexed",
+                "layout": "FE8J"
+              },
+              "mapping_source_kind": "indexed",
+              "provider_kind": "indexed"
+            },
+            "payload": "ＯＦＦ",
+            "payload_visible": "OFF",
+            "similarity": 1.0,
+            "user_facing": true
+          }
+        ],
+        "exact_copy_count": 20,
+        "latin_only_count": 37,
+        "near_copy_count": 0,
+        "unapproved_count": 0
+      },
+      "zh-Hans": {
+        "approved_count": 36,
+        "audited_count": 3414,
+        "candidate_count": 36,
+        "candidates": [
+          {
+            "approval": {
+              "category": "locale-neutral-abbreviation",
+              "payload_matches": true,
+              "reason": "E.D. is a compact dotted interface abbreviation, not an English prose payload."
+            },
+            "approval_key": "game/zh-Hans/0x0086",
+            "approved": true,
+            "classifications": [
+              "exact-english-copy",
+              "latin-only-payload"
+            ],
+            "english_visible": "E.D.",
+            "id": "0x0086",
+            "metadata": {
+              "mapping_source": {
+                "kind": "authored",
+                "translation_key": "game.menu_definition.msg_086"
+              },
+              "mapping_source_kind": "authored",
+              "provider_kind": "authored"
+            },
+            "payload": "E.D.[X]\n",
+            "payload_visible": "E.D.",
+            "similarity": 1.0,
+            "user_facing": true
+          },
+          {
+            "approval": {
+              "category": "locale-neutral-abbreviation",
+              "payload_matches": true,
+              "reason": "2-CP is an opaque numbered mode code whose letters are not user-facing English words."
+            },
+            "approval_key": "game/zh-Hans/0x008E",
+            "approved": true,
+            "classifications": [
+              "exact-english-copy",
+              "latin-only-payload"
+            ],
+            "english_visible": "2-CP",
+            "id": "0x008E",
+            "metadata": {
+              "mapping_source": {
+                "kind": "authored",
+                "translation_key": "game.menu_definition.msg_08e"
+              },
+              "mapping_source_kind": "authored",
+              "provider_kind": "authored"
+            },
+            "payload": "2-CP[X]\n",
+            "payload_visible": "2-CP",
+            "similarity": 1.0,
+            "user_facing": true
+          },
+          {
+            "approval": {
+              "category": "locale-neutral-abbreviation",
+              "payload_matches": true,
+              "reason": "3-CP is an opaque numbered mode code whose letters are not user-facing English words."
+            },
+            "approval_key": "game/zh-Hans/0x008F",
+            "approved": true,
+            "classifications": [
+              "exact-english-copy",
+              "latin-only-payload"
+            ],
+            "english_visible": "3-CP",
+            "id": "0x008F",
+            "metadata": {
+              "mapping_source": {
+                "kind": "authored",
+                "translation_key": "game.menu_definition.msg_08f"
+              },
+              "mapping_source_kind": "authored",
+              "provider_kind": "authored"
+            },
+            "payload": "3-CP[X]\n",
+            "payload_visible": "3-CP",
+            "similarity": 1.0,
+            "user_facing": true
+          },
+          {
+            "approval": {
+              "category": "locale-neutral-abbreviation",
+              "payload_matches": true,
+              "reason": "BGM is the established technical acronym for background music in game UI."
+            },
+            "approval_key": "game/zh-Hans/0x0098",
+            "approved": true,
+            "classifications": [
+              "latin-only-payload"
+            ],
+            "english_visible": "Music",
+            "id": "0x0098",
+            "metadata": {
+              "mapping_source": {
+                "id": "0x0011",
+                "kind": "indexed",
+                "layout": "FE8J"
+              },
+              "mapping_source_kind": "indexed",
+              "provider_kind": "indexed"
+            },
+            "payload": "BGM",
+            "payload_visible": "BGM",
+            "similarity": 0.0,
+            "user_facing": true
+          },
+          {
+            "approval": {
+              "category": "locale-neutral-abbreviation",
+              "payload_matches": true,
+              "reason": "LV is the compact level-stat label used alongside numeric values."
+            },
+            "approval_key": "game/zh-Hans/0x0148",
+            "approved": true,
+            "classifications": [
+              "exact-english-copy",
+              "latin-only-payload"
+            ],
+            "english_visible": "LV",
+            "id": "0x0148",
+            "metadata": {
+              "mapping_source": {
+                "kind": "authored",
+                "translation_key": "game.help_tutorial.msg_148"
+              },
+              "mapping_source_kind": "authored",
+              "provider_kind": "authored"
+            },
+            "payload": "LV[X]\n",
+            "payload_visible": "LV",
+            "similarity": 1.0,
+            "user_facing": true
+          },
+          {
+            "approval": {
+              "category": "locale-neutral-currency-code",
+              "payload_matches": true,
+              "reason": "G is the game's one-letter gold currency unit attached to a numeric amount."
+            },
+            "approval_key": "game/zh-Hans/0x03F9",
+            "approved": true,
+            "classifications": [
+              "latin-only-payload"
+            ],
+            "english_visible": "1 Gold",
+            "id": "0x03F9",
+            "metadata": {
+              "mapping_source": {
+                "id": "0x0380",
+                "kind": "indexed",
+                "layout": "FE8J"
+              },
+              "mapping_source_kind": "indexed",
+              "provider_kind": "indexed"
+            },
+            "payload": "1G",
+            "payload_visible": "1G",
+            "similarity": 0.0,
+            "user_facing": true
+          },
+          {
+            "approval": {
+              "category": "locale-neutral-currency-code",
+              "payload_matches": true,
+              "reason": "G is the game's one-letter gold currency unit attached to a numeric amount."
+            },
+            "approval_key": "game/zh-Hans/0x03FA",
+            "approved": true,
+            "classifications": [
+              "latin-only-payload"
+            ],
+            "english_visible": "5 Gold",
+            "id": "0x03FA",
+            "metadata": {
+              "mapping_source": {
+                "id": "0x0381",
+                "kind": "indexed",
+                "layout": "FE8J"
+              },
+              "mapping_source_kind": "indexed",
+              "provider_kind": "indexed"
+            },
+            "payload": "5G",
+            "payload_visible": "5G",
+            "similarity": 0.0,
+            "user_facing": true
+          },
+          {
+            "approval": {
+              "category": "locale-neutral-currency-code",
+              "payload_matches": true,
+              "reason": "G is the game's one-letter gold currency unit attached to a numeric amount."
+            },
+            "approval_key": "game/zh-Hans/0x03FB",
+            "approved": true,
+            "classifications": [
+              "latin-only-payload"
+            ],
+            "english_visible": "10 Gold",
+            "id": "0x03FB",
+            "metadata": {
+              "mapping_source": {
+                "id": "0x0382",
+                "kind": "indexed",
+                "layout": "FE8J"
+              },
+              "mapping_source_kind": "indexed",
+              "provider_kind": "indexed"
+            },
+            "payload": "10G",
+            "payload_visible": "10G",
+            "similarity": 0.0,
+            "user_facing": true
+          },
+          {
+            "approval": {
+              "category": "locale-neutral-currency-code",
+              "payload_matches": true,
+              "reason": "G is the game's one-letter gold currency unit attached to a numeric amount."
+            },
+            "approval_key": "game/zh-Hans/0x03FC",
+            "approved": true,
+            "classifications": [
+              "latin-only-payload"
+            ],
+            "english_visible": "50 Gold",
+            "id": "0x03FC",
+            "metadata": {
+              "mapping_source": {
+                "id": "0x0383",
+                "kind": "indexed",
+                "layout": "FE8J"
+              },
+              "mapping_source_kind": "indexed",
+              "provider_kind": "indexed"
+            },
+            "payload": "50G",
+            "payload_visible": "50G",
+            "similarity": 0.0,
+            "user_facing": true
+          },
+          {
+            "approval": {
+              "category": "locale-neutral-currency-code",
+              "payload_matches": true,
+              "reason": "G is the game's one-letter gold currency unit attached to a numeric amount."
+            },
+            "approval_key": "game/zh-Hans/0x03FD",
+            "approved": true,
+            "classifications": [
+              "latin-only-payload"
+            ],
+            "english_visible": "100 Gold",
+            "id": "0x03FD",
+            "metadata": {
+              "mapping_source": {
+                "id": "0x0384",
+                "kind": "indexed",
+                "layout": "FE8J"
+              },
+              "mapping_source_kind": "indexed",
+              "provider_kind": "indexed"
+            },
+            "payload": "100G",
+            "payload_visible": "100G",
+            "similarity": 0.0,
+            "user_facing": true
+          },
+          {
+            "approval": {
+              "category": "locale-neutral-currency-code",
+              "payload_matches": true,
+              "reason": "G is the game's one-letter gold currency unit attached to a numeric amount."
+            },
+            "approval_key": "game/zh-Hans/0x03FE",
+            "approved": true,
+            "classifications": [
+              "latin-only-payload"
+            ],
+            "english_visible": "150 Gold",
+            "id": "0x03FE",
+            "metadata": {
+              "mapping_source": {
+                "id": "0x0385",
+                "kind": "indexed",
+                "layout": "FE8J"
+              },
+              "mapping_source_kind": "indexed",
+              "provider_kind": "indexed"
+            },
+            "payload": "150G",
+            "payload_visible": "150G",
+            "similarity": 0.0,
+            "user_facing": true
+          },
+          {
+            "approval": {
+              "category": "locale-neutral-currency-code",
+              "payload_matches": true,
+              "reason": "G is the game's one-letter gold currency unit attached to a numeric amount."
+            },
+            "approval_key": "game/zh-Hans/0x03FF",
+            "approved": true,
+            "classifications": [
+              "latin-only-payload"
+            ],
+            "english_visible": "200 Gold",
+            "id": "0x03FF",
+            "metadata": {
+              "mapping_source": {
+                "id": "0x0386",
+                "kind": "indexed",
+                "layout": "FE8J"
+              },
+              "mapping_source_kind": "indexed",
+              "provider_kind": "indexed"
+            },
+            "payload": "200G",
+            "payload_visible": "200G",
+            "similarity": 0.0,
+            "user_facing": true
+          },
+          {
+            "approval": {
+              "category": "locale-neutral-currency-code",
+              "payload_matches": true,
+              "reason": "G is the game's one-letter gold currency unit attached to a numeric amount."
+            },
+            "approval_key": "game/zh-Hans/0x0400",
+            "approved": true,
+            "classifications": [
+              "latin-only-payload"
+            ],
+            "english_visible": "3,000 Gold",
+            "id": "0x0400",
+            "metadata": {
+              "mapping_source": {
+                "id": "0x0387",
+                "kind": "indexed",
+                "layout": "FE8J"
+              },
+              "mapping_source_kind": "indexed",
+              "provider_kind": "indexed"
+            },
+            "payload": "3000G",
+            "payload_visible": "3000G",
+            "similarity": 0.0,
+            "user_facing": true
+          },
+          {
+            "approval": {
+              "category": "locale-neutral-currency-code",
+              "payload_matches": true,
+              "reason": "G is the game's one-letter gold currency unit attached to a numeric amount."
+            },
+            "approval_key": "game/zh-Hans/0x0401",
+            "approved": true,
+            "classifications": [
+              "latin-only-payload"
+            ],
+            "english_visible": "5,000 Gold",
+            "id": "0x0401",
+            "metadata": {
+              "mapping_source": {
+                "id": "0x0388",
+                "kind": "indexed",
+                "layout": "FE8J"
+              },
+              "mapping_source_kind": "indexed",
+              "provider_kind": "indexed"
+            },
+            "payload": "5000G",
+            "payload_visible": "5000G",
+            "similarity": 0.0,
+            "user_facing": true
+          },
+          {
+            "approval": {
+              "category": "locale-neutral-abbreviation",
+              "payload_matches": true,
+              "reason": "LV is the compact level-stat label used alongside numeric values."
+            },
+            "approval_key": "game/zh-Hans/0x04E7",
+            "approved": true,
+            "classifications": [
+              "exact-english-copy",
+              "latin-only-payload"
+            ],
+            "english_visible": "Lv",
+            "id": "0x04E7",
+            "metadata": {
+              "mapping_source": {
+                "id": "0x0476",
+                "kind": "indexed",
+                "layout": "FE8J"
+              },
+              "mapping_source_kind": "indexed",
+              "provider_kind": "indexed"
+            },
+            "payload": "LV",
+            "payload_visible": "LV",
+            "similarity": 1.0,
+            "user_facing": true
+          },
+          {
+            "approval": {
+              "category": "locale-neutral-abbreviation",
+              "payload_matches": true,
+              "reason": "EX is the compact experience-stat column code, not an English word or sentence."
+            },
+            "approval_key": "game/zh-Hans/0x04E8",
+            "approved": true,
+            "classifications": [
+              "latin-only-payload"
+            ],
+            "english_visible": "Exp",
+            "id": "0x04E8",
+            "metadata": {
+              "mapping_source": {
+                "id": "0x0477",
+                "kind": "indexed",
+                "layout": "FE8J"
+              },
+              "mapping_source_kind": "indexed",
+              "provider_kind": "indexed"
+            },
+            "payload": "EX",
+            "payload_visible": "EX",
+            "similarity": 0.0,
+            "user_facing": true
+          },
+          {
+            "approval": {
+              "category": "locale-neutral-abbreviation",
+              "payload_matches": true,
+              "reason": "HP is the established hit-point stat acronym used with numeric values."
+            },
+            "approval_key": "game/zh-Hans/0x04E9",
+            "approved": true,
+            "classifications": [
+              "exact-english-copy",
+              "latin-only-payload"
+            ],
+            "english_visible": "HP",
+            "id": "0x04E9",
+            "metadata": {
+              "mapping_source": {
+                "id": "0x0478",
+                "kind": "indexed",
+                "layout": "FE8J"
+              },
+              "mapping_source_kind": "indexed",
+              "provider_kind": "indexed"
+            },
+            "payload": "HP",
+            "payload_visible": "HP",
+            "similarity": 1.0,
+            "user_facing": true
+          },
+          {
+            "approval": {
+              "category": "locale-neutral-abbreviation",
+              "payload_matches": true,
+              "reason": "MHP is the compact maximum-hit-points stat acronym."
+            },
+            "approval_key": "game/zh-Hans/0x04EA",
+            "approved": true,
+            "classifications": [
+              "latin-only-payload"
+            ],
+            "english_visible": "Max",
+            "id": "0x04EA",
+            "metadata": {
+              "mapping_source": {
+                "id": "0x0479",
+                "kind": "indexed",
+                "layout": "FE8J"
+              },
+              "mapping_source_kind": "indexed",
+              "provider_kind": "indexed"
+            },
+            "payload": "MHP",
+            "payload_visible": "MHP",
+            "similarity": 0.0,
+            "user_facing": true
+          },
+          {
+            "approval": {
+              "category": "locale-neutral-rank-code",
+              "payload_matches": true,
+              "reason": "E is one member of the fixed E/D/C/B/A/S rank scale."
+            },
+            "approval_key": "game/zh-Hans/0x052D",
+            "approved": true,
+            "classifications": [
+              "exact-english-copy",
+              "latin-only-payload"
+            ],
+            "english_visible": "E",
+            "id": "0x052D",
+            "metadata": {
+              "mapping_source": {
+                "kind": "authored",
+                "translation_key": "game.menu_definition.msg_52d"
+              },
+              "mapping_source_kind": "authored",
+              "provider_kind": "authored"
+            },
+            "payload": "E[.][X]\n",
+            "payload_visible": "E",
+            "similarity": 1.0,
+            "user_facing": true
+          },
+          {
+            "approval": {
+              "category": "locale-neutral-rank-code",
+              "payload_matches": true,
+              "reason": "D is one member of the fixed E/D/C/B/A/S rank scale."
+            },
+            "approval_key": "game/zh-Hans/0x052E",
+            "approved": true,
+            "classifications": [
+              "exact-english-copy",
+              "latin-only-payload"
+            ],
+            "english_visible": "D",
+            "id": "0x052E",
+            "metadata": {
+              "mapping_source": {
+                "kind": "authored",
+                "translation_key": "game.menu_definition.msg_52e"
+              },
+              "mapping_source_kind": "authored",
+              "provider_kind": "authored"
+            },
+            "payload": "D[.][X]\n",
+            "payload_visible": "D",
+            "similarity": 1.0,
+            "user_facing": true
+          },
+          {
+            "approval": {
+              "category": "locale-neutral-rank-code",
+              "payload_matches": true,
+              "reason": "C is one member of the fixed E/D/C/B/A/S rank scale."
+            },
+            "approval_key": "game/zh-Hans/0x052F",
+            "approved": true,
+            "classifications": [
+              "exact-english-copy",
+              "latin-only-payload"
+            ],
+            "english_visible": "C",
+            "id": "0x052F",
+            "metadata": {
+              "mapping_source": {
+                "kind": "authored",
+                "translation_key": "game.menu_definition.msg_52f"
+              },
+              "mapping_source_kind": "authored",
+              "provider_kind": "authored"
+            },
+            "payload": "C[.][X]\n",
+            "payload_visible": "C",
+            "similarity": 1.0,
+            "user_facing": true
+          },
+          {
+            "approval": {
+              "category": "locale-neutral-rank-code",
+              "payload_matches": true,
+              "reason": "B is one member of the fixed E/D/C/B/A/S rank scale."
+            },
+            "approval_key": "game/zh-Hans/0x0530",
+            "approved": true,
+            "classifications": [
+              "exact-english-copy",
+              "latin-only-payload"
+            ],
+            "english_visible": "B",
+            "id": "0x0530",
+            "metadata": {
+              "mapping_source": {
+                "kind": "authored",
+                "translation_key": "game.menu_definition.msg_530"
+              },
+              "mapping_source_kind": "authored",
+              "provider_kind": "authored"
+            },
+            "payload": "B[.][X]\n",
+            "payload_visible": "B",
+            "similarity": 1.0,
+            "user_facing": true
+          },
+          {
+            "approval": {
+              "category": "locale-neutral-rank-code",
+              "payload_matches": true,
+              "reason": "A is one member of the fixed E/D/C/B/A/S rank scale."
+            },
+            "approval_key": "game/zh-Hans/0x0531",
+            "approved": true,
+            "classifications": [
+              "exact-english-copy",
+              "latin-only-payload"
+            ],
+            "english_visible": "A",
+            "id": "0x0531",
+            "metadata": {
+              "mapping_source": {
+                "kind": "authored",
+                "translation_key": "game.menu_definition.msg_531"
+              },
+              "mapping_source_kind": "authored",
+              "provider_kind": "authored"
+            },
+            "payload": "A[.][X]\n",
+            "payload_visible": "A",
+            "similarity": 1.0,
+            "user_facing": true
+          },
+          {
+            "approval": {
+              "category": "locale-neutral-rank-code",
+              "payload_matches": true,
+              "reason": "S is one member of the fixed E/D/C/B/A/S rank scale."
+            },
+            "approval_key": "game/zh-Hans/0x0532",
+            "approved": true,
+            "classifications": [
+              "exact-english-copy",
+              "latin-only-payload"
+            ],
+            "english_visible": "S",
+            "id": "0x0532",
+            "metadata": {
+              "mapping_source": {
+                "kind": "authored",
+                "translation_key": "game.menu_definition.msg_532"
+              },
+              "mapping_source_kind": "authored",
+              "provider_kind": "authored"
+            },
+            "payload": "S[.][X]\n",
+            "payload_visible": "S",
+            "similarity": 1.0,
+            "user_facing": true
+          },
+          {
+            "approval": {
+              "category": "locale-neutral-abbreviation",
+              "payload_matches": true,
+              "reason": "E09 is an opaque alphanumeric scenario identifier, not English prose."
+            },
+            "approval_key": "game/zh-Hans/0x064C",
+            "approved": true,
+            "classifications": [
+              "exact-english-copy",
+              "latin-only-payload"
+            ],
+            "english_visible": "E09",
+            "id": "0x064C",
+            "metadata": {
+              "mapping_source": {
+                "id": "0x05DE",
+                "kind": "indexed",
+                "layout": "FE8J"
+              },
+              "mapping_source_kind": "indexed",
+              "provider_kind": "indexed"
+            },
+            "payload": "E09",
+            "payload_visible": "E09",
+            "similarity": 1.0,
+            "user_facing": true
+          },
+          {
+            "approval": {
+              "category": "locale-neutral-abbreviation",
+              "payload_matches": true,
+              "reason": "I09 is an opaque alphanumeric scenario identifier, not English prose."
+            },
+            "approval_key": "game/zh-Hans/0x064D",
+            "approved": true,
+            "classifications": [
+              "exact-english-copy",
+              "latin-only-payload"
+            ],
+            "english_visible": "I09",
+            "id": "0x064D",
+            "metadata": {
+              "mapping_source": {
+                "id": "0x05DF",
+                "kind": "indexed",
+                "layout": "FE8J"
+              },
+              "mapping_source_kind": "indexed",
+              "provider_kind": "indexed"
+            },
+            "payload": "I09",
+            "payload_visible": "I09",
+            "similarity": 1.0,
+            "user_facing": true
+          },
+          {
+            "approval": {
+              "category": "locale-neutral-abbreviation",
+              "payload_matches": true,
+              "reason": "E14 is an opaque alphanumeric scenario identifier, not English prose."
+            },
+            "approval_key": "game/zh-Hans/0x064E",
+            "approved": true,
+            "classifications": [
+              "exact-english-copy",
+              "latin-only-payload"
+            ],
+            "english_visible": "E14",
+            "id": "0x064E",
+            "metadata": {
+              "mapping_source": {
+                "id": "0x05E0",
+                "kind": "indexed",
+                "layout": "FE8J"
+              },
+              "mapping_source_kind": "indexed",
+              "provider_kind": "indexed"
+            },
+            "payload": "E14",
+            "payload_visible": "E14",
+            "similarity": 1.0,
+            "user_facing": true
+          },
+          {
+            "approval": {
+              "category": "locale-neutral-abbreviation",
+              "payload_matches": true,
+              "reason": "I14 is an opaque alphanumeric scenario identifier, not English prose."
+            },
+            "approval_key": "game/zh-Hans/0x064F",
+            "approved": true,
+            "classifications": [
+              "exact-english-copy",
+              "latin-only-payload"
+            ],
+            "english_visible": "I14",
+            "id": "0x064F",
+            "metadata": {
+              "mapping_source": {
+                "id": "0x05E1",
+                "kind": "indexed",
+                "layout": "FE8J"
+              },
+              "mapping_source_kind": "indexed",
+              "provider_kind": "indexed"
+            },
+            "payload": "I14",
+            "payload_visible": "I14",
+            "similarity": 1.0,
+            "user_facing": true
+          },
+          {
+            "approval": {
+              "category": "locale-neutral-abbreviation",
+              "payload_matches": true,
+              "reason": "CPU is the established acronym for the computer-controlled participant."
+            },
+            "approval_key": "game/zh-Hans/0x06A7",
+            "approved": true,
+            "classifications": [
+              "exact-english-copy",
+              "latin-only-payload"
+            ],
+            "english_visible": "CPU",
+            "id": "0x06A7",
+            "metadata": {
+              "mapping_source": {
+                "kind": "authored",
+                "translation_key": "game.chapter_event.msg_6a7"
+              },
+              "mapping_source_kind": "authored",
+              "provider_kind": "authored"
+            },
+            "payload": "CPU[.][X]\n",
+            "payload_visible": "CPU",
+            "similarity": 1.0,
+            "user_facing": true
+          },
+          {
+            "approval": {
+              "category": "locale-neutral-abbreviation",
+              "payload_matches": true,
+              "reason": "Pt. is a compact points-unit abbreviation displayed beside a score."
+            },
+            "approval_key": "game/zh-Hans/0x077F",
+            "approved": true,
+            "classifications": [
+              "latin-only-payload"
+            ],
+            "english_visible": "Pts.",
+            "id": "0x077F",
+            "metadata": {
+              "mapping_source": {
+                "kind": "authored",
+                "translation_key": "game.shop_arena.msg_77f"
+              },
+              "mapping_source_kind": "authored",
+              "provider_kind": "authored"
+            },
+            "payload": "Pt.[X]\n",
+            "payload_visible": "Pt.",
+            "similarity": 0.0,
+            "user_facing": true
+          },
+          {
+            "approval": {
+              "category": "locale-neutral-player-code",
+              "payload_matches": true,
+              "reason": "P is the compact player/participant code used in multiplayer labels."
+            },
+            "approval_key": "game/zh-Hans/0x0781",
+            "approved": true,
+            "classifications": [
+              "exact-english-copy",
+              "latin-only-payload"
+            ],
+            "english_visible": "P",
+            "id": "0x0781",
+            "metadata": {
+              "mapping_source": {
+                "kind": "authored",
+                "translation_key": "game.help_tutorial.msg_781"
+              },
+              "mapping_source_kind": "authored",
+              "provider_kind": "authored"
+            },
+            "payload": "P[.][X]\n",
+            "payload_visible": "P",
+            "similarity": 1.0,
+            "user_facing": true
+          },
+          {
+            "approval": {
+              "category": "locale-neutral-player-code",
+              "payload_matches": true,
+              "reason": "1P is the fixed first-player identifier."
+            },
+            "approval_key": "game/zh-Hans/0x0786",
+            "approved": true,
+            "classifications": [
+              "latin-only-payload"
+            ],
+            "english_visible": "P1",
+            "id": "0x0786",
+            "metadata": {
+              "mapping_source": {
+                "kind": "authored",
+                "translation_key": "game.shop_arena.msg_786"
+              },
+              "mapping_source_kind": "authored",
+              "provider_kind": "authored"
+            },
+            "payload": "1P[X]\n",
+            "payload_visible": "1P",
+            "similarity": 0.0,
+            "user_facing": true
+          },
+          {
+            "approval": {
+              "category": "locale-neutral-player-code",
+              "payload_matches": true,
+              "reason": "2P is the fixed second-player identifier."
+            },
+            "approval_key": "game/zh-Hans/0x0787",
+            "approved": true,
+            "classifications": [
+              "latin-only-payload"
+            ],
+            "english_visible": "P2",
+            "id": "0x0787",
+            "metadata": {
+              "mapping_source": {
+                "kind": "authored",
+                "translation_key": "game.shop_arena.msg_787"
+              },
+              "mapping_source_kind": "authored",
+              "provider_kind": "authored"
+            },
+            "payload": "2P[X]\n",
+            "payload_visible": "2P",
+            "similarity": 0.0,
+            "user_facing": true
+          },
+          {
+            "approval": {
+              "category": "locale-neutral-player-code",
+              "payload_matches": true,
+              "reason": "3P is the fixed third-player identifier."
+            },
+            "approval_key": "game/zh-Hans/0x0788",
+            "approved": true,
+            "classifications": [
+              "latin-only-payload"
+            ],
+            "english_visible": "P3",
+            "id": "0x0788",
+            "metadata": {
+              "mapping_source": {
+                "kind": "authored",
+                "translation_key": "game.shop_arena.msg_788"
+              },
+              "mapping_source_kind": "authored",
+              "provider_kind": "authored"
+            },
+            "payload": "3P[X]\n",
+            "payload_visible": "3P",
+            "similarity": 0.0,
+            "user_facing": true
+          },
+          {
+            "approval": {
+              "category": "locale-neutral-player-code",
+              "payload_matches": true,
+              "reason": "4P is the fixed fourth-player identifier."
+            },
+            "approval_key": "game/zh-Hans/0x0789",
+            "approved": true,
+            "classifications": [
+              "latin-only-payload"
+            ],
+            "english_visible": "P4",
+            "id": "0x0789",
+            "metadata": {
+              "mapping_source": {
+                "kind": "authored",
+                "translation_key": "game.shop_arena.msg_789"
+              },
+              "mapping_source_kind": "authored",
+              "provider_kind": "authored"
+            },
+            "payload": "4P[X]\n",
+            "payload_visible": "4P",
+            "similarity": 0.0,
+            "user_facing": true
+          },
+          {
+            "approval": {
+              "category": "locale-neutral-player-code",
+              "payload_matches": true,
+              "reason": "5P is the fixed fifth-player identifier."
+            },
+            "approval_key": "game/zh-Hans/0x078A",
+            "approved": true,
+            "classifications": [
+              "latin-only-payload"
+            ],
+            "english_visible": "P5",
+            "id": "0x078A",
+            "metadata": {
+              "mapping_source": {
+                "kind": "authored",
+                "translation_key": "game.shop_arena.msg_78a"
+              },
+              "mapping_source_kind": "authored",
+              "provider_kind": "authored"
+            },
+            "payload": "5P[X]\n",
+            "payload_visible": "5P",
+            "similarity": 0.0,
+            "user_facing": true
+          }
+        ],
+        "exact_copy_count": 18,
+        "latin_only_count": 36,
+        "near_copy_count": 0,
+        "unapproved_count": 0
+      }
+    },
+    "mapping_source_counts": {
+      "authored": 262,
+      "english_fallback": 0,
+      "indexed": 3010,
+      "raw": 142,
+      "unresolved": 0
+    },
+    "target_count": 3414
+  },
+  "inputs": {
+    "allowlist": {
+      "byte_count": 14854,
+      "path": "texts/locales/runtime_latin_allowlist.json",
+      "sha256": "826c0b4b3b6b5f21c76bbf877803c2bb804b73d3c3a1ae8b4fb708c1882f3329"
+    },
+    "en_expansion": {
+      "byte_count": 1940,
+      "path": "texts/expansion/catalog.en.json",
+      "sha256": "fc12758142457edaddaf7d1d2d8ef5983b5b10c8ee5dc2ccff535f49dfb67a50"
+    },
+    "english_definitions": {
+      "byte_count": 4648,
+      "path": "texts/textdefs.txt",
+      "sha256": "9777cb1c1bbf1a908692575a5cb8cafec47e175dfc88d3639a2d05fb9dce1012"
+    },
+    "english_texts": {
+      "byte_count": 1470206,
+      "path": "texts/texts.txt",
+      "sha256": "abb320b4767423df3b66fe2f4309cae797becf0405b45e5fcebaccfd2241155f"
+    },
+    "ja_authored": {
+      "byte_count": 27931,
+      "path": "texts/locales/authored/catalog.ja.json",
+      "sha256": "4bfb65342dfc4fe4b69c0a9413ab26acf4e050ee2a9f4c7ce7237b291bb9b728"
+    },
+    "ja_expansion": {
+      "byte_count": 2008,
+      "path": "texts/expansion/catalog.ja.json",
+      "sha256": "04c2b6e90d8f2bffcc78f53a89641068ff3cbcb34978ae53c686e4d4bf79c740"
+    },
+    "ja_indexed": {
+      "byte_count": 1719065,
+      "path": "texts/locales/ja/indexed.txt",
+      "sha256": "4dee8ae255541e674e0285863d0797577e60f50d88654cd7b7c8dfe444e32146"
+    },
+    "ja_raw": {
+      "byte_count": 9643,
+      "path": "texts/locales/ja/raw.json",
+      "sha256": "3e1b2349501461297f16e52b585a5021af7daab3f5acf950a4adee64dd878eb4"
+    },
+    "mapping": {
+      "byte_count": 5429560,
+      "path": "texts/locales/mapping/fe8u_target_map.json",
+      "sha256": "4fd2d447930f0338b365a0652a5f2742b43c2c673b3ec72e783a0c2cca2443d8"
+    },
+    "raw_closure": {
+      "byte_count": 156280,
+      "path": "texts/locales/mapping/raw_surface_closure.json",
+      "sha256": "5fd1e08fde1f0dd75c9e4fbc30da1d7d0dbefbc1bd922d1f545fc39108aac138"
+    },
+    "target_header": {
+      "byte_count": 78840,
+      "path": "include/constants/msg.h",
+      "sha256": "fa8d8b55aa170a8b29d4950968d42e4e7673f679ddc4f0e3ae5bd5cb7abf1a0c"
+    },
+    "zh-Hans_authored": {
+      "byte_count": 24753,
+      "path": "texts/locales/authored/catalog.zh-Hans.json",
+      "sha256": "dcbb6a570d50e4c332e0fef2efbbc2050f6c69d7d550343b8834c48a041341a8"
+    },
+    "zh-Hans_expansion": {
+      "byte_count": 1946,
+      "path": "texts/expansion/catalog.zh-Hans.json",
+      "sha256": "40220fd10289e21fba09d4315781c1f6f51cee59d109da18520134e34ea0a11e"
+    },
+    "zh_hans_indexed": {
+      "byte_count": 1266623,
+      "path": "texts/locales/zh-Hans/indexed.txt",
+      "sha256": "6c6d125442e1b03f6e689c52c490bd6d80c5c9c57a16b6553bcc4047dad32023"
+    },
+    "zh_hans_raw": {
+      "byte_count": 45834,
+      "path": "texts/locales/zh-Hans/raw.json",
+      "sha256": "2c2f3ac5fef9117a01d92cdc0098c1b83903719507048c8b5541f4cccc50b6ff"
+    }
+  },
+  "kind": "runtime-locale-english-leakage-audit",
+  "policy": {
+    "allowlist_is_explicit_per_payload": true,
+    "broad_regex_whitelist": false,
+    "exact_copy_detection": "NFKC/casefold/alphanumeric equality",
+    "latin_only_detection": "Latin present and no Han/kana in visible payload",
+    "near_copy_detection": "SequenceMatcher >= 0.80 with >=4 Latin letters"
+  },
+  "raw_surface": {
+    "locales": {
+      "ja": {
+        "approved_count": 1,
+        "audited_count": 143,
+        "candidate_count": 1,
+        "candidates": [
+          {
+            "approval": {
+              "category": "locale-neutral-build-identity",
+              "payload_matches": true,
+              "reason": "This non-user-facing diagnostic is the executable build timestamp and is intentionally identical for every locale."
+            },
+            "approval_key": "raw/ja/fe8cn.raw.import-0142",
+            "approved": true,
+            "classifications": [
+              "exact-english-copy",
+              "latin-only-payload"
+            ],
+            "english_visible": "2005/02/04(FRI) 16:55:40",
+            "id": "fe8cn.raw.import-0142",
+            "metadata": {
+              "expansion_key": "raw_surface.diagnostic.build_timestamp"
+            },
+            "payload": "2005/02/04(FRI) 16:55:40",
+            "payload_visible": "2005/02/04(FRI) 16:55:40",
+            "similarity": 1.0,
+            "user_facing": false
+          }
+        ],
+        "exact_copy_count": 1,
+        "latin_only_count": 1,
+        "near_copy_count": 0,
+        "unapproved_count": 0
+      },
+      "zh-Hans": {
+        "approved_count": 1,
+        "audited_count": 143,
+        "candidate_count": 1,
+        "candidates": [
+          {
+            "approval": {
+              "category": "locale-neutral-build-identity",
+              "payload_matches": true,
+              "reason": "This non-user-facing diagnostic is the executable build timestamp and is intentionally identical for every locale."
+            },
+            "approval_key": "raw/zh-Hans/fe8cn.raw.import-0142",
+            "approved": true,
+            "classifications": [
+              "exact-english-copy",
+              "latin-only-payload"
+            ],
+            "english_visible": "2005/02/04(FRI) 16:55:40",
+            "id": "fe8cn.raw.import-0142",
+            "metadata": {
+              "expansion_key": "raw_surface.diagnostic.build_timestamp"
+            },
+            "payload": "2005/02/04(FRI) 16:55:40",
+            "payload_visible": "2005/02/04(FRI) 16:55:40",
+            "similarity": 1.0,
+            "user_facing": false
+          }
+        ],
+        "exact_copy_count": 1,
+        "latin_only_count": 1,
+        "near_copy_count": 0,
+        "unapproved_count": 0
+      }
+    },
+    "provider_count": 143
+  },
+  "schema_version": 1,
+  "summary": {
+    "approved_candidate_count": 75,
+    "enabled_locales": [
+      "ja",
+      "zh-Hans"
+    ],
+    "game_payload_count": 6828,
+    "raw_surface_payload_count": 286,
+    "stale_approval_count": 0,
+    "stale_approvals": [],
+    "unapproved_candidate_count": 0
+  }
+}

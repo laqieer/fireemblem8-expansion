@@ -1195,6 +1195,55 @@ def _record_source_validation(source_id: int, payload: str) -> Dict[str, Any]:
     }
 
 
+def refresh_structural_completion_payloads(
+    data: Any,
+    *,
+    repo_root: Path,
+    target_count: int,
+) -> Dict[str, Any]:
+    """Refresh only normalized FE8J input and payload-derived hash fields."""
+
+    if not isinstance(data, dict):
+        raise StructuralCompletionError("completion evidence must be an object")
+    refreshed = deepcopy(data)
+    indexed_input = refreshed.get("inputs", {}).get("fe8j_indexed_source")
+    if not isinstance(indexed_input, dict):
+        raise StructuralCompletionError(
+            "completion.inputs.fe8j_indexed_source must be an object"
+        )
+    indexed_path = Path(repo_root) / indexed_input.get("path", "")
+    if not indexed_path.is_file():
+        raise StructuralCompletionError(
+            "completion FE8J indexed-source path does not exist"
+        )
+    indexed_input["sha256"] = _sha256_file(indexed_path)
+    payloads = _message_payloads(indexed_path)
+
+    for proposal in refreshed.get("proposals", []):
+        source_id = int(proposal["source_id"], 16)
+        validation = proposal.get("validation")
+        if not isinstance(validation, dict):
+            raise StructuralCompletionError(
+                f"{proposal['target_id']}: proposal validation is missing"
+            )
+        validation.update(_record_source_validation(source_id, payloads[source_id]))
+
+    for collision in refreshed.get("collisions", []):
+        for option in collision.get("source_options", []):
+            source_id = int(option["source_id"], 16)
+            option["validation"] = _record_source_validation(
+                source_id,
+                payloads[source_id],
+            )
+
+    validate_structural_completion_evidence(
+        refreshed,
+        repo_root=repo_root,
+        target_count=target_count,
+    )
+    return refreshed
+
+
 def build_structural_completion_evidence(
     *,
     repo_root: Path,
@@ -2036,7 +2085,7 @@ def refresh_structural_completion_protected_inputs(
         raise StructuralCompletionError("completion evidence inputs are malformed")
     refreshed = deepcopy(data)
     refreshed["inputs"]["protected_artifacts"] = _protected_inputs(repo_root)
-    validate_structural_completion_evidence(
+    refreshed = refresh_structural_completion_payloads(
         refreshed,
         repo_root=repo_root,
         target_count=target_count,

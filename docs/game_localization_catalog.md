@@ -12,6 +12,7 @@ make game-localization-generate
 make game-localization-check
 make game-localization-test
 make game-localization-budget
+make game-localization-leakage-check
 ```
 
 These targets generate both CJK bundles by default. Every generated CJK
@@ -52,7 +53,9 @@ Outputs are generated under `build/game-localization/generated/`:
   in `.locale_data`;
 - `game_localization_report.json`: entry-level provenance and hashes;
 - `game_localization_budget.json`: coverage, storage, shared-English, and
-  profile-specific ROM estimates.
+  profile-specific ROM estimates;
+- `game_localization_leakage_report.json`: final materialized exact/near
+  English-copy and Latin-only audit with per-key approvals.
 
 Every present message is strict UTF-8 plus canonical engine control bytes and
 one trailing NUL. Each descriptor records both compressed byte length and
@@ -102,6 +105,13 @@ boundaries. It separately guards `0xD4D`, `0xD4E`, `0xD4F`, `0xD50`, and
 codec. Production reports require `ja.present=3414`,
 `zh-Hans.present=3414`, `english_fallback=0`, and `unresolved=0`; the shared
 3,414-entry English bundle remains linked for the actual English locale.
+Generation also runs the leakage gate. The committed
+`texts/locales/mapping/runtime_english_leakage.json` separately proves all
+6,828 JA/ZH catalog payloads and all 286 JA/ZH raw-surface payloads were
+audited with zero unapproved exact/near English copy. Remaining Latin-only
+codes must be individually keyed in
+`texts/locales/runtime_latin_allowlist.json`; regex or category-wide
+whitelisting is not accepted.
 
 The 143-record raw closure is a separate call-site audit:
 

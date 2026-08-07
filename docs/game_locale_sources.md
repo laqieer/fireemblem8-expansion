@@ -11,6 +11,12 @@ remain import provenance only and never become runtime keys.
   `source/fe8j/msg_map.tsv`, and `source/fe8cn/FE8CN.txt`: byte-exact,
   hash-pinned authorized input snapshots. These committed raw files are the
   independent regeneration source.
+- `indexed_overrides.json`: source-hash-pinned corrections applied only after
+  control normalization. Every entry pins the exact normalized source text,
+  replacement, FE8U target IDs, context, provenance audit, and reason. The
+  importer rejects source-hash drift, stale expected text, or any change to
+  control/newline/placeholder placement. The raw FE8J/FE8CN snapshots remain
+  byte-exact.
 - `ja/indexed.txt`: 3,339 FE8J-layout messages (`0x0000` through `0x0D0A`).
 - `ja/control_defs.txt`: FE8J source aliases mapped to canonical controls. It is
   an alias table, not normalized locale payload.
@@ -55,6 +61,12 @@ remain import provenance only and never become runtime keys.
   structural history while preserving every conflict and collision ledger.
 - `mapping/final_mapping_report.json`: deterministic promotion counts, input
   fingerprints, residual count, and the zero-fallback final-delivery policy.
+- `runtime_latin_allowlist.json`: explicit per-locale/per-target approvals for
+  remaining locale-neutral abbreviations, rank/player/currency/state codes,
+  and the non-user-facing build identity. It contains no regex whitelist.
+- `mapping/runtime_english_leakage.json`: deterministic audit of all 3,414
+  final JA payloads, all 3,414 final ZH payloads, and both 143-record
+  materialized raw surfaces.
 - `mapping/authored_translation_queue.json`: byte-identical historical source
   queue for the 259 reviewed targets, with canonical English,
   controls/placeholders, subsystem, reference sites, no-provider reason,
@@ -114,6 +126,35 @@ This check does not trust artifact hashes recorded by the committed manifest,
 so changing an artifact and its manifest entry together still fails. The four
 raw snapshots must also match the independent SHA-256 pins in
 `scripts/localization/game_locales/importer.py`.
+
+The current override layer applies 13 Japanese and 14 Simplified Chinese
+indexed corrections. `Healing` is the ordinary HP-restoring staff cue
+(`癒やし` / `治疗`), while `Curing` is the status-removal cue
+(`浄化` / `净化`); they are deliberately not collapsed to one generic
+machine translation. Other corrected Sound Room/UI titles include
+`NOW LOADING`, `NO DATA`, `Fire Emblem Theme`, `Prologue`, `Follow me!`,
+`Indignation`, `Sadness time`, `Comical time`, `Work out a plot`,
+`Game Over`, `Fly with the Breeze`, and `Epilogue`.
+
+After changing an override, refresh every derived evidence/report layer:
+
+```bash
+python3 -m scripts.localization.game_locales regenerate
+python3 -m scripts.localization.game_locales refresh-authored-provenance
+python3 -m scripts.localization.game_locales build-authored-catalogs
+python3 -m scripts.localization.game_locales build-febuilder-evidence
+python3 -m scripts.localization.game_locales build-final-mapping
+python3 -m scripts.localization.game_locales build-combined-coverage
+python3 -m scripts.localization.game_locales build-raw-closure
+python3 -m scripts.localization.game_catalog audit-leakage
+python3 -m scripts.fonttools.cjk generate-inventory
+```
+
+`build-final-mapping` refreshes only normalized FE8J/payload-derived fields in
+the structural evidence before revalidating the full evidence object. The
+fulfilled authored queue remains byte-identical historical provenance; the
+final report records both its historical pre-authored map hash and the current
+hash when later payload-only evidence changes make them differ.
 
 The explicit `import` command remains available for checking prospective
 external replacements, but it accepts only inputs matching those pins.
@@ -330,6 +371,7 @@ It is historical fulfilled input, not a residual runtime queue. Canonical
 catalogs are generated and checked with:
 
 ```bash
+python3 -m scripts.localization.game_locales refresh-authored-provenance
 python3 -m scripts.localization.game_locales build-authored-catalogs
 python3 -m scripts.localization.game_locales check-authored-catalogs
 ```
@@ -414,6 +456,32 @@ exclusions, or unresolved records.
 Together, the compressed 3,414-row catalog and the 143-record raw-surface
 closure have zero English fallback, zero exclusion, and zero unresolved
 user-facing strings in both Japanese and Simplified Chinese.
+
+## Final runtime English-leakage gate
+
+The leakage gate audits the materialized runtime payloads after mapping,
+authored resolution, raw-provider resolution, and importer overrides. It
+normalizes visible text with NFKC, detects exact English copies, detects near
+copies at a fixed similarity threshold, and flags every Latin-only payload.
+An exception is accepted only by an exact
+`game/<locale>/0xNNNN` or `raw/<locale>/fe8cn.raw.import-NNNN` key whose
+payload bytes, locale-neutral category, and factual reason match.
+
+The committed report currently proves:
+
+- 6,828/6,828 game-catalog payloads audited (3,414 per locale);
+- 286/286 raw-surface payloads audited (143 per locale);
+- 40 approved exact Latin copies, all compact codes or build identity;
+- 0 near-copy candidates;
+- 75 total explicitly approved Latin-only/code candidates;
+- 0 unapproved candidates and 0 stale approvals.
+
+Generate or verify it with:
+
+```bash
+python3 -m scripts.localization.game_catalog audit-leakage
+python3 -m scripts.localization.game_catalog check-leakage
+```
 
 ## Mapping validation and coverage
 

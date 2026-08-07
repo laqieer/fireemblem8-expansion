@@ -1,0 +1,342 @@
+{
+  "kind": "indexed-locale-source-overrides",
+  "schema_version": 1,
+  "sources": {
+    "fe8cn_source": {
+      "entries": {
+        "0x004D": {
+          "expected_text": "NOW LOADING",
+          "provenance": {
+            "audit": "runtime-english-leakage-2026-08-07",
+            "context": "Save/link UI loading status.",
+            "target_ids": [
+              "0x077D"
+            ]
+          },
+          "reason": "Replace an untranslated English status with natural Simplified Chinese.",
+          "replacement_text": "正在载入"
+        },
+        "0x0061": {
+          "expected_text": "NO DATA",
+          "provenance": {
+            "audit": "runtime-english-leakage-2026-08-07",
+            "context": "Save/link UI empty-data status.",
+            "target_ids": [
+              "0x00CC"
+            ]
+          },
+          "reason": "Replace an untranslated English status with natural Simplified Chinese.",
+          "replacement_text": "无数据"
+        },
+        "0x0703": {
+          "expected_text": "Fire Emblem Theme",
+          "provenance": {
+            "audit": "runtime-english-leakage-2026-08-07",
+            "context": "Sound Room title for the series main theme.",
+            "target_ids": [
+              "0x078C"
+            ]
+          },
+          "reason": "Use the established Chinese series name in the Sound Room title.",
+          "replacement_text": "火焰之纹章主题曲"
+        },
+        "0x0704": {
+          "expected_text": "Prologue",
+          "provenance": {
+            "audit": "runtime-english-leakage-2026-08-07",
+            "context": "Sound Room title for the opening piece.",
+            "target_ids": [
+              "0x078D"
+            ]
+          },
+          "reason": "Translate the Sound Room title as the conventional opening-section term.",
+          "replacement_text": "序章"
+        },
+        "0x070C": {
+          "expected_text": "Follow me！",
+          "provenance": {
+            "audit": "runtime-english-leakage-2026-08-07",
+            "context": "Sound Room title written as a direct command.",
+            "target_ids": [
+              "0x0795"
+            ]
+          },
+          "reason": "Translate the imperative naturally rather than retaining English prose.",
+          "replacement_text": "跟我来！"
+        },
+        "0x0722": {
+          "expected_text": "Healing",
+          "provenance": {
+            "audit": "runtime-english-leakage-2026-08-07",
+            "context": "Sound Room cue for ordinary HP-restoring staff use.",
+            "target_ids": [
+              "0x07AB"
+            ]
+          },
+          "reason": "Use 治疗 for HP restoration, distinct from status removal.",
+          "replacement_text": "治疗"
+        },
+        "0x0723": {
+          "expected_text": "Curing",
+          "provenance": {
+            "audit": "runtime-english-leakage-2026-08-07",
+            "context": "Sound Room cue for removing status ailments with restorative staves.",
+            "target_ids": [
+              "0x07AC"
+            ]
+          },
+          "reason": "Use 净化 for status removal, distinct from ordinary HP healing.",
+          "replacement_text": "净化"
+        },
+        "0x0729": {
+          "expected_text": "Indignation",
+          "provenance": {
+            "audit": "runtime-english-leakage-2026-08-07",
+            "context": "Sound Room dramatic event title.",
+            "target_ids": [
+              "0x07B2"
+            ]
+          },
+          "reason": "Translate the emotional title with the established concise term 愤怒.",
+          "replacement_text": "愤怒"
+        },
+        "0x072A": {
+          "expected_text": "Sadness time",
+          "provenance": {
+            "audit": "runtime-english-leakage-2026-08-07",
+            "context": "Sound Room sorrowful scene title.",
+            "target_ids": [
+              "0x07B3"
+            ]
+          },
+          "reason": "Replace awkward untranslated English with a natural Chinese title.",
+          "replacement_text": "悲伤时刻"
+        },
+        "0x072B": {
+          "expected_text": "Comical time",
+          "provenance": {
+            "audit": "runtime-english-leakage-2026-08-07",
+            "context": "Sound Room comic-scene title.",
+            "target_ids": [
+              "0x07B4"
+            ]
+          },
+          "reason": "Replace awkward untranslated English with a natural Chinese title.",
+          "replacement_text": "诙谐时刻"
+        },
+        "0x0731": {
+          "expected_text": "Work out a plot",
+          "provenance": {
+            "audit": "runtime-english-leakage-2026-08-07",
+            "context": "Sound Room puzzle/riddle scene title; the FE8U title is Solve the Riddle.",
+            "target_ids": [
+              "0x07BA"
+            ]
+          },
+          "reason": "Translate by the riddle-solving scene meaning rather than the awkward source English.",
+          "replacement_text": "解开谜题"
+        },
+        "0x0741": {
+          "expected_text": "Game Over",
+          "provenance": {
+            "audit": "runtime-english-leakage-2026-08-07",
+            "context": "Sound Room game-over cue title.",
+            "target_ids": [
+              "0x07CA"
+            ]
+          },
+          "reason": "Use the standard Simplified Chinese game-over wording.",
+          "replacement_text": "游戏结束"
+        },
+        "0x0745": {
+          "expected_text": "Fly with the Breeze",
+          "provenance": {
+            "audit": "runtime-english-leakage-2026-08-07",
+            "context": "Sound Room ending/title piece with a light wind motif.",
+            "target_ids": [
+              "0x07CE"
+            ]
+          },
+          "reason": "Translate the lyrical title naturally as 随风而行.",
+          "replacement_text": "随风而行"
+        },
+        "0x0746": {
+          "expected_text": "Epilogue",
+          "provenance": {
+            "audit": "runtime-english-leakage-2026-08-07",
+            "context": "Sound Room closing piece.",
+            "target_ids": [
+              "0x07CF"
+            ]
+          },
+          "reason": "Translate the closing-section title naturally as 尾声.",
+          "replacement_text": "尾声"
+        }
+      },
+      "locale_id": "zh-Hans",
+      "source_sha256": "bef561dd5a45f81658d4f06b0b9f58bdc6fde2ed4b4c57034d17b88cb595f517"
+    },
+    "fe8j_indexed": {
+      "entries": {
+        "0x004D": {
+          "expected_text": "ＮＯＷ　ＬＯＡＤＩＮＧ",
+          "provenance": {
+            "audit": "runtime-english-leakage-2026-08-07",
+            "context": "Save/link UI loading status.",
+            "target_ids": [
+              "0x077D"
+            ]
+          },
+          "reason": "Render the status in Japanese instead of copying the English payload.",
+          "replacement_text": "ロード中"
+        },
+        "0x0061": {
+          "expected_text": "ＮＯ　ＤＡＴＡ",
+          "provenance": {
+            "audit": "runtime-english-leakage-2026-08-07",
+            "context": "Save/link UI empty-data status.",
+            "target_ids": [
+              "0x00CC"
+            ]
+          },
+          "reason": "Render the status in Japanese instead of copying the English payload.",
+          "replacement_text": "データなし"
+        },
+        "0x0704": {
+          "expected_text": "Ｐｒｏｌｏｇｕｅ",
+          "provenance": {
+            "audit": "runtime-english-leakage-2026-08-07",
+            "context": "Sound Room title for the opening piece.",
+            "target_ids": [
+              "0x078D"
+            ]
+          },
+          "reason": "Use the conventional Japanese opening-section title.",
+          "replacement_text": "序章"
+        },
+        "0x070C": {
+          "expected_text": "Ｆｏｌｌｏｗ　ｍｅ！",
+          "provenance": {
+            "audit": "runtime-english-leakage-2026-08-07",
+            "context": "Sound Room title written as a direct command.",
+            "target_ids": [
+              "0x0795"
+            ]
+          },
+          "reason": "Translate the imperative naturally instead of retaining English prose.",
+          "replacement_text": "ついて来い！"
+        },
+        "0x0722": {
+          "expected_text": "Ｈｅａｌｉｎｇ",
+          "provenance": {
+            "audit": "runtime-english-leakage-2026-08-07",
+            "context": "Sound Room cue for ordinary HP-restoring staff use.",
+            "target_ids": [
+              "0x07AB"
+            ]
+          },
+          "reason": "Use a Japanese title for HP-restoring staff use, distinct from status removal.",
+          "replacement_text": "癒やし"
+        },
+        "0x0723": {
+          "expected_text": "Ｃｕｒｉｎｇ",
+          "provenance": {
+            "audit": "runtime-english-leakage-2026-08-07",
+            "context": "Sound Room cue for removing status ailments with restorative staves.",
+            "target_ids": [
+              "0x07AC"
+            ]
+          },
+          "reason": "Use 浄化 for status removal, distinct from ordinary HP healing.",
+          "replacement_text": "浄化"
+        },
+        "0x0729": {
+          "expected_text": "Ｉｎｄｉｇｎａｔｉｏｎ",
+          "provenance": {
+            "audit": "runtime-english-leakage-2026-08-07",
+            "context": "Sound Room dramatic event title.",
+            "target_ids": [
+              "0x07B2"
+            ]
+          },
+          "reason": "Translate the emotional title with the concise Japanese term 憤怒.",
+          "replacement_text": "憤怒"
+        },
+        "0x072A": {
+          "expected_text": "Ｓａｄｎｅｓｓ　ｔｉｍｅ",
+          "provenance": {
+            "audit": "runtime-english-leakage-2026-08-07",
+            "context": "Sound Room sorrowful scene title.",
+            "target_ids": [
+              "0x07B3"
+            ]
+          },
+          "reason": "Replace awkward untranslated English with a natural Japanese title.",
+          "replacement_text": "悲しみの時"
+        },
+        "0x072B": {
+          "expected_text": "Ｃｏｍｉｃａｌ　ｔｉｍｅ",
+          "provenance": {
+            "audit": "runtime-english-leakage-2026-08-07",
+            "context": "Sound Room comic-scene title.",
+            "target_ids": [
+              "0x07B4"
+            ]
+          },
+          "reason": "Replace awkward untranslated English with a natural Japanese title.",
+          "replacement_text": "おどけたひととき"
+        },
+        "0x0731": {
+          "expected_text": "Ｗｏｒｋ　ｏｕｔ　ａ　ｐｌｏｔ",
+          "provenance": {
+            "audit": "runtime-english-leakage-2026-08-07",
+            "context": "Sound Room puzzle/riddle scene title; the FE8U title is Solve the Riddle.",
+            "target_ids": [
+              "0x07BA"
+            ]
+          },
+          "reason": "Translate by the riddle-solving scene meaning rather than the awkward source English.",
+          "replacement_text": "謎を解く"
+        },
+        "0x0741": {
+          "expected_text": "Ｇａｍｅ　Ｏｖｅｒ",
+          "provenance": {
+            "audit": "runtime-english-leakage-2026-08-07",
+            "context": "Sound Room game-over cue title.",
+            "target_ids": [
+              "0x07CA"
+            ]
+          },
+          "reason": "Use the established Japanese game-over wording in kana.",
+          "replacement_text": "ゲームオーバー"
+        },
+        "0x0745": {
+          "expected_text": "Ｆｌｙ　ｗｉｔｈ　ｔｈｅ　Ｂｒｅｅｚｅ",
+          "provenance": {
+            "audit": "runtime-english-leakage-2026-08-07",
+            "context": "Sound Room ending/title piece with a light wind motif.",
+            "target_ids": [
+              "0x07CE"
+            ]
+          },
+          "reason": "Translate the lyrical title naturally as 風とともに.",
+          "replacement_text": "風とともに"
+        },
+        "0x0746": {
+          "expected_text": "Ｅｐｉｌｏｇｕｅ",
+          "provenance": {
+            "audit": "runtime-english-leakage-2026-08-07",
+            "context": "Sound Room closing piece.",
+            "target_ids": [
+              "0x07CF"
+            ]
+          },
+          "reason": "Use the conventional Japanese closing-section title.",
+          "replacement_text": "終章"
+        }
+      },
+      "locale_id": "ja",
+      "source_sha256": "511ce51cadd2ac94ec3f5219a81205f6aa52de3c3c659c9efd1f0f75f9079a8a"
+    }
+  }
+}

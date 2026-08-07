@@ -10,6 +10,7 @@ from pathlib import Path
 from .authored import (
     AuthoredCatalogError,
     check_authored_catalogs,
+    refresh_authored_terminology_provenance,
     write_authored_catalogs,
 )
 from .combined_coverage import (
@@ -80,6 +81,7 @@ def _cmd_import(args: argparse.Namespace) -> int:
         cn_text_path=args.cn_text,
         mapping_seed_path=args.mapping_seed,
         output_dir=args.out_dir,
+        override_path=args.overrides,
     )
     manifest = json.loads(written["manifest.json"].read_text(encoding="utf-8"))
     print(
@@ -97,6 +99,7 @@ def _cmd_regenerate(args: argparse.Namespace) -> int:
     written = regenerate_vendored_locale_sources(
         source_dir=args.source_dir,
         output_dir=args.out_dir,
+        override_path=args.overrides,
     )
     manifest = json.loads(written["manifest.json"].read_text(encoding="utf-8"))
     print(
@@ -113,6 +116,7 @@ def _cmd_check(args: argparse.Namespace) -> int:
     artifacts = check_vendored_locale_sources(
         source_dir=args.source_dir,
         output_dir=args.out_dir,
+        override_path=args.overrides,
     )
     manifest = json.loads(artifacts["manifest.json"].decode("utf-8"))
     print(
@@ -149,6 +153,18 @@ def _cmd_check_authored_catalogs(args: argparse.Namespace) -> int:
         + " ".join(
             f"{locale}={path}" for locale, path in sorted(checked.items())
         )
+    )
+    return 0
+
+
+def _cmd_refresh_authored_provenance(args: argparse.Namespace) -> int:
+    written = refresh_authored_terminology_provenance(
+        args.repo_root,
+        manifest_path=args.authored_manifest,
+    )
+    print(
+        "refreshed authored terminology provenance: "
+        f"files={len(written)}"
     )
     return 0
 
@@ -601,6 +617,11 @@ def build_parser() -> argparse.ArgumentParser:
             _cmd_check_authored_catalogs,
             "verify canonical authored catalogs against pinned shards",
         ),
+        (
+            "refresh-authored-provenance",
+            _cmd_refresh_authored_provenance,
+            "refresh terminology-source hashes without changing translations",
+        ),
     ):
         authored_parser = subparsers.add_parser(command, help=help_text)
         authored_parser.add_argument(
@@ -619,6 +640,11 @@ def build_parser() -> argparse.ArgumentParser:
     import_parser.add_argument("--jp-controls", type=Path, required=True)
     import_parser.add_argument("--cn-text", type=Path, required=True)
     import_parser.add_argument("--mapping-seed", type=Path, required=True)
+    import_parser.add_argument(
+        "--overrides",
+        type=Path,
+        default=Path("texts/locales/indexed_overrides.json"),
+    )
     import_parser.add_argument("--out-dir", type=Path, required=True)
     import_parser.set_defaults(handler=_cmd_import)
 
@@ -644,6 +670,11 @@ def build_parser() -> argparse.ArgumentParser:
             "--out-dir",
             type=Path,
             default=Path("texts/locales"),
+        )
+        source_parser.add_argument(
+            "--overrides",
+            type=Path,
+            default=Path("texts/locales/indexed_overrides.json"),
         )
         source_parser.set_defaults(handler=handler)
 

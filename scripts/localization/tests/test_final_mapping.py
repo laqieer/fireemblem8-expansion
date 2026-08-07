@@ -256,6 +256,21 @@ class FinalMappingTests(unittest.TestCase):
             (self.MAPPING_DIR / "authored_translation_queue.json").read_bytes(),
             canonical_json_bytes(self.queue),
         )
+        report = self.rebuilt["report"]
+        self.assertTrue(
+            report["policy"]["historical_queue_map_hash_is_immutable_provenance"]
+        )
+        self.assertFalse(
+            report["policy"]["historical_queue_map_hash_matches_current"]
+        )
+        self.assertEqual(
+            self.queue["authoritative_target_map_sha256"],
+            report["inputs"]["historical_pre_authored_target_map_sha256"],
+        )
+        self.assertNotEqual(
+            report["inputs"]["historical_pre_authored_target_map_sha256"],
+            report["inputs"]["current_pre_authored_target_map_sha256"],
+        )
 
     def test_final_delivery_gate_accepts_fulfilled_historical_queue(self):
         require_no_fallback(self.queue, mapping=self.mapping)

@@ -2,6 +2,8 @@
 # Locale ID: zh-Hans
 # Source layout: FE8J; these identifiers are not FE8U target identifiers.
 # Input SHA-256: bef561dd5a45f81658d4f06b0b9f58bdc6fde2ed4b4c57034d17b88cb595f517
+# Override SHA-256: 28875c20f74e187d242c8c85d5f40d2faf8eaf370f8d4a2e8e1706b0eaa6a4fd
+# Applied overrides: 14
 
 #0x0000
 
@@ -158,7 +160,7 @@ CP等级
 #0x004C
 关
 #0x004D
-NOW LOADING
+正在载入
 #0x004E
 未 连 接
 #0x004F
@@ -198,7 +200,7 @@ Pt．
 #0x0060
 人
 #0x0061
-NO DATA
+无数据
 #0x0062
 正在通信，请稍等
 #0x0063
@@ -4325,9 +4327,9 @@ HP的上限
 #0x0702
 勇敢的人们
 #0x0703
-Fire Emblem Theme
+火焰之纹章主题曲
 #0x0704
-Prologue
+序章
 #0x0705
 一切开始的时候
 #0x0706
@@ -4343,7 +4345,7 @@ Prologue
 #0x070B
 克服艰难险阻
 #0x070C
-Follow me！
+跟我来！
 #0x070D
 不动的意志
 #0x070E
@@ -4387,9 +4389,9 @@ Follow me！
 #0x0721
 特缇斯
 #0x0722
-Healing
+治疗
 #0x0723
-Curing
+净化
 #0x0724
 迈向更高层次
 #0x0725
@@ -4401,11 +4403,11 @@ Curing
 #0x0728
 再会
 #0x0729
-Indignation
+愤怒
 #0x072A
-Sadness time
+悲伤时刻
 #0x072B
-Comical time
+诙谐时刻
 #0x072C
 流传下来的传说
 #0x072D
@@ -4417,7 +4419,7 @@ Comical time
 #0x0730
 最后的战斗
 #0x0731
-Work out a plot
+解开谜题
 #0x0732
 面对黑暗的光辉
 #0x0733
@@ -4449,7 +4451,7 @@ Work out a plot
 #0x0740
 胜利之歌Ⅱ
 #0x0741
-Game Over
+游戏结束
 #0x0742
 沉浸在悲伤中
 #0x0743
@@ -4457,9 +4459,9 @@ Game Over
 #0x0744
 胜利，并朝着未来
 #0x0745
-Fly with the Breeze
+随风而行
 #0x0746
-Epilogue
+尾声
 #0x0747
 ？？？？？
 #0x0748

@@ -68,11 +68,11 @@
   "inputs": {
     "febuilder_alignment_evidence": {
       "path": "texts/locales/mapping/febuilder_alignment_evidence.json",
-      "sha256": "6c6348b8ca903b0106c7ef3a9452ff3700b994d7a3e4ae5e5a13b3703866941a"
+      "sha256": "e7d985705b522a639d6593d36bc1b3af3c3498e5a38932eb8b0d8b6a18c94151"
     },
     "structural_completion_evidence": {
       "path": "texts/locales/mapping/structural_completion_evidence.json",
-      "sha256": "20b7f6d22425eea640d937ccdd597ea0a1945c87afe8019148c7bfaff29d0692"
+      "sha256": "c9520c5625a29a75c6665ae9bd569c8588b3b29485a639f85751ff59fd5019f6"
     },
     "structural_crosswalk_evidence": {
       "path": "texts/locales/mapping/fe8u_structural_evidence.json",
@@ -80,7 +80,7 @@
     },
     "target_map": {
       "path": "texts/locales/mapping/fe8u_target_map.json",
-      "sha256": "9638b8e716d15238b651c7f1d0084b0ba745a1d8b397844f0893b1914c007616"
+      "sha256": "4fd2d447930f0338b365a0652a5f2742b43c2c673b3ec72e783a0c2cca2443d8"
     },
     "target_map_coverage": {
       "path": "texts/locales/mapping/fe8u_target_map.coverage.json",

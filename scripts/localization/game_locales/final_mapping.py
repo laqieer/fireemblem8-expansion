@@ -1236,10 +1236,7 @@ def build_final_mapping_artifacts(
         "schema_version": 2,
     }
     source_map_sha256 = authored_queue_data.get("authoritative_target_map_sha256")
-    if source_map_sha256 != _json_hash(interim_mapping):
-        raise FinalMappingError(
-            "historical authored queue does not match the pre-authored target map"
-        )
+    current_interim_map_sha256 = _json_hash(interim_mapping)
     queue_targets = authored_queue_data["targets"]
     queue_by_id = {
         row["target_id"]: row
@@ -1406,8 +1403,8 @@ def build_final_mapping_artifacts(
         row["grouping"]["reason_class"] for row in queue_targets
     )
     queue_subsystem_counts = Counter(row["subsystem"] for row in queue_targets)
-    queue = {
-        "authoritative_target_map_sha256": _json_hash(interim_mapping),
+    rebuilt_queue = {
+        "authoritative_target_map_sha256": current_interim_map_sha256,
         "kind": AUTHORED_QUEUE_KIND,
         "note": (
             "Intermediate authored-translation queue. It contains exactly every "
@@ -1425,12 +1422,17 @@ def build_final_mapping_artifacts(
         raise FinalMappingError(
             "authored queue does not equal historical pre-authored fallback targets"
         )
-    if canonical_json_bytes(queue) != canonical_json_bytes(authored_queue_data):
+    historical_rebuild = deepcopy(rebuilt_queue)
+    historical_rebuild["authoritative_target_map_sha256"] = source_map_sha256
+    if canonical_json_bytes(historical_rebuild) != canonical_json_bytes(
+        authored_queue_data
+    ):
         raise FinalMappingError(
             "historical authored queue differs from deterministic rebuild: "
-            f"rebuilt={_sha256_bytes(canonical_json_bytes(queue))} "
+            f"rebuilt={_sha256_bytes(canonical_json_bytes(historical_rebuild))} "
             f"committed={_sha256_bytes(canonical_json_bytes(authored_queue_data))}"
         )
+    queue = deepcopy(authored_queue_data)
 
     precedence_counts = Counter(promoted.values())
     report = {
@@ -1447,6 +1449,8 @@ def build_final_mapping_artifacts(
             "source_authored_queue_sha256": _sha256_bytes(
                 canonical_json_bytes(authored_queue_data)
             ),
+            "historical_pre_authored_target_map_sha256": source_map_sha256,
+            "current_pre_authored_target_map_sha256": current_interim_map_sha256,
             "structural_completion_evidence_sha256": _json_hash(structural_data),
         },
         "kind": FINAL_REPORT_KIND,
@@ -1457,6 +1461,10 @@ def build_final_mapping_artifacts(
         "policy": {
             "final_delivery_requires_zero_fallback": True,
             "historical_fulfilled_queue_retained": True,
+            "historical_queue_map_hash_is_immutable_provenance": True,
+            "historical_queue_map_hash_matches_current": (
+                source_map_sha256 == current_interim_map_sha256
+            ),
             "numeric_or_proximity_promotion_permitted": False,
         },
         "promotion_counts": dict(sorted(precedence_counts.items())),

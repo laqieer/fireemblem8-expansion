@@ -7,11 +7,11 @@
     },
     "normalized_ja": {
       "logical_path": "texts/locales/ja/indexed.txt",
-      "sha256": "1267e2ac0b1bc13febb21104513649cb7f7740b32ae4934f6348b73438a8633d"
+      "sha256": "4dee8ae255541e674e0285863d0797577e60f50d88654cd7b7c8dfe444e32146"
     },
     "normalized_zh_hans": {
       "logical_path": "texts/locales/zh-Hans/indexed.txt",
-      "sha256": "c139d6a16bea97da4cad85c166e1a94576e0352897a8e45fd293988d390ec790"
+      "sha256": "6c6d125442e1b03f6e689c52c490bd6d80c5c9c57a16b6553bcc4047dad32023"
     },
     "raw_zh_hans": {
       "logical_path": "texts/locales/zh-Hans/raw.json",
@@ -8416,19 +8416,19 @@
         {
           "alignment_payload": {
             "locale_id": "zh-Hans",
-            "sha256": "775d6f99bdddbd9ced6c132a93407a767da7f1eec0fe0ee8138012ec9794cf91"
+            "sha256": "ab9ba6d10394a425481881b2217c3a73eec02750d25356e1d78b2b46340e7ce3"
           },
           "parser_action": "decode-target",
           "payloads": {
             "ja": {
               "id": "0x0061",
               "kind": "indexed",
-              "sha256": "d77e64c340b0d0bc577d68d5d21b0a4fbaab59adc770b09135e48ea1808456c6"
+              "sha256": "2303063bb76d5f142b1306423864e00970da4a4f682a9329085f3f6deb93adf2"
             },
             "zh-Hans": {
               "id": "0x0061",
               "kind": "indexed",
-              "sha256": "775d6f99bdddbd9ced6c132a93407a767da7f1eec0fe0ee8138012ec9794cf91"
+              "sha256": "ab9ba6d10394a425481881b2217c3a73eec02750d25356e1d78b2b46340e7ce3"
             }
           },
           "row_type": "indexed",
@@ -96530,19 +96530,19 @@
         {
           "alignment_payload": {
             "locale_id": "zh-Hans",
-            "sha256": "297061350f0c0521826f6c05ce334dedd2086a1f3088dd305d5540ffaecb0ba6"
+            "sha256": "d0676d8f2eb99579718d9acd426fbe41450bb568e302b8d572a875850a0c7580"
           },
           "parser_action": "decode-target",
           "payloads": {
             "ja": {
               "id": "0x004D",
               "kind": "indexed",
-              "sha256": "8d4bfbe1088b26cb2a07bdffa14c75e3b43aa2ed5289b331a552621dd9486289"
+              "sha256": "489880af0dd0b7e36fbe506a1f0bd1ba3605e562e4b7bc9c51258b9470f0feb5"
             },
             "zh-Hans": {
               "id": "0x004D",
               "kind": "indexed",
-              "sha256": "297061350f0c0521826f6c05ce334dedd2086a1f3088dd305d5540ffaecb0ba6"
+              "sha256": "d0676d8f2eb99579718d9acd426fbe41450bb568e302b8d572a875850a0c7580"
             }
           },
           "row_type": "indexed",
@@ -96620,7 +96620,7 @@
         {
           "alignment_payload": {
             "locale_id": "zh-Hans",
-            "sha256": "cfc187e0964a9288a22e6a5d6314e6ecd5c1a3659db0a65545735a73e3fd0212"
+            "sha256": "f8f180a5e571e35077e71eaffd47d188851757806b238f83114291c25224da11"
           },
           "parser_action": "decode-target",
           "payloads": {
@@ -96632,7 +96632,7 @@
             "zh-Hans": {
               "id": "0x0703",
               "kind": "indexed",
-              "sha256": "cfc187e0964a9288a22e6a5d6314e6ecd5c1a3659db0a65545735a73e3fd0212"
+              "sha256": "f8f180a5e571e35077e71eaffd47d188851757806b238f83114291c25224da11"
             }
           },
           "row_type": "indexed",
@@ -96665,19 +96665,19 @@
         {
           "alignment_payload": {
             "locale_id": "zh-Hans",
-            "sha256": "eb7f661e0d35afaf03a56278d2f5fa34012445f759914e0bd818612fd7411a2b"
+            "sha256": "0b8f1e79e9491b1004e861a40e8e8a55672277cff9fefa8aeead17e51c65aa04"
           },
           "parser_action": "decode-target",
           "payloads": {
             "ja": {
               "id": "0x0704",
               "kind": "indexed",
-              "sha256": "589180ca9799d90b709e798ec8237506ccdacc12c26d2056eb9b30bea95b8e65"
+              "sha256": "0b8f1e79e9491b1004e861a40e8e8a55672277cff9fefa8aeead17e51c65aa04"
             },
             "zh-Hans": {
               "id": "0x0704",
               "kind": "indexed",
-              "sha256": "eb7f661e0d35afaf03a56278d2f5fa34012445f759914e0bd818612fd7411a2b"
+              "sha256": "0b8f1e79e9491b1004e861a40e8e8a55672277cff9fefa8aeead17e51c65aa04"
             }
           },
           "row_type": "indexed",
@@ -97025,19 +97025,19 @@
         {
           "alignment_payload": {
             "locale_id": "zh-Hans",
-            "sha256": "8bf7592e840daa98d79c3258c0c56f701423516b726a9d5f828c75a52e10851c"
+            "sha256": "12e869afcccbd6123ce11a6787d0f4feffba49c2d6417ddddc063a04604fd903"
           },
           "parser_action": "decode-target",
           "payloads": {
             "ja": {
               "id": "0x070C",
               "kind": "indexed",
-              "sha256": "e54ab218e9990cd8b38c85b606c8664ce2d4616ab8c89d6b7dc4731415330312"
+              "sha256": "97069b7efb14df8bb6136b2d97433531426471776efa82c5768fed065bfff676"
             },
             "zh-Hans": {
               "id": "0x070C",
               "kind": "indexed",
-              "sha256": "8bf7592e840daa98d79c3258c0c56f701423516b726a9d5f828c75a52e10851c"
+              "sha256": "12e869afcccbd6123ce11a6787d0f4feffba49c2d6417ddddc063a04604fd903"
             }
           },
           "row_type": "indexed",
@@ -98015,19 +98015,19 @@
         {
           "alignment_payload": {
             "locale_id": "zh-Hans",
-            "sha256": "44bc3799892c50fad1f4f76100cd74ebf28f922da6f977a772352d3291b92fdf"
+            "sha256": "c81995fafdc22cd7c31600663c9acce9c34a25ce7593b6d64243b68bd38ff9f6"
           },
           "parser_action": "decode-target",
           "payloads": {
             "ja": {
               "id": "0x0722",
               "kind": "indexed",
-              "sha256": "10ca27470e34a7f6a4aeb94c52ded9c468494d80686e9ec433a6dbca73485ab5"
+              "sha256": "9bd882791841d7673ceb54a605e0715584dfdbb70555b4566164b5d7a5dbc0cd"
             },
             "zh-Hans": {
               "id": "0x0722",
               "kind": "indexed",
-              "sha256": "44bc3799892c50fad1f4f76100cd74ebf28f922da6f977a772352d3291b92fdf"
+              "sha256": "c81995fafdc22cd7c31600663c9acce9c34a25ce7593b6d64243b68bd38ff9f6"
             }
           },
           "row_type": "indexed",
@@ -98060,19 +98060,19 @@
         {
           "alignment_payload": {
             "locale_id": "zh-Hans",
-            "sha256": "8add9279518ece76ee25ecd4df3e06de330e7686b50f97f10e30986cc2ce27b8"
+            "sha256": "e3c59b93a8e25b725500491c770a7158c188eb7edcac2c5eb9e30448dd3e02d8"
           },
           "parser_action": "decode-target",
           "payloads": {
             "ja": {
               "id": "0x0723",
               "kind": "indexed",
-              "sha256": "1f18eebb7b934bda662f25ac713e34265dcaf2095c3196cd681bb90aaf6676b1"
+              "sha256": "caa038872424cc7518dacdb4178bf6780c73da79c6bb1281fa5112d36c5e361c"
             },
             "zh-Hans": {
               "id": "0x0723",
               "kind": "indexed",
-              "sha256": "8add9279518ece76ee25ecd4df3e06de330e7686b50f97f10e30986cc2ce27b8"
+              "sha256": "e3c59b93a8e25b725500491c770a7158c188eb7edcac2c5eb9e30448dd3e02d8"
             }
           },
           "row_type": "indexed",
@@ -98330,19 +98330,19 @@
         {
           "alignment_payload": {
             "locale_id": "zh-Hans",
-            "sha256": "998968b9286a4b425f4e7889fc0fcf9e4c51da47a699716f3ce3eef9689b946d"
+            "sha256": "3b637c63dece5a118c021ab53e00c374dfa5351c6a503a6ae0214ffb36e646f7"
           },
           "parser_action": "decode-target",
           "payloads": {
             "ja": {
               "id": "0x0729",
               "kind": "indexed",
-              "sha256": "e917c05c788af47d34e55e760bbdb731fda2045934590cf466ba95f0e8f4f31b"
+              "sha256": "354b9680284ad963b14998761f95322a530a53b0548dc6b3e29af8412af1b329"
             },
             "zh-Hans": {
               "id": "0x0729",
               "kind": "indexed",
-              "sha256": "998968b9286a4b425f4e7889fc0fcf9e4c51da47a699716f3ce3eef9689b946d"
+              "sha256": "3b637c63dece5a118c021ab53e00c374dfa5351c6a503a6ae0214ffb36e646f7"
             }
           },
           "row_type": "indexed",
@@ -98375,19 +98375,19 @@
         {
           "alignment_payload": {
             "locale_id": "zh-Hans",
-            "sha256": "d7614029377654053ec60165736e4eb4b3f834a0c6fcb5dc1cef1395c5307dac"
+            "sha256": "293e18d6a63292ee42d99387784f36525661bf94633f227984bb32acfaa026b4"
           },
           "parser_action": "decode-target",
           "payloads": {
             "ja": {
               "id": "0x072A",
               "kind": "indexed",
-              "sha256": "cbc84cb9ca4623c4fd4ef323680cf603b81cf4d11e991b3c63311ffb83093246"
+              "sha256": "e8d891a02357765610159b5f582a43905f97a077ddcf9436a7fc01f55e577d0a"
             },
             "zh-Hans": {
               "id": "0x072A",
               "kind": "indexed",
-              "sha256": "d7614029377654053ec60165736e4eb4b3f834a0c6fcb5dc1cef1395c5307dac"
+              "sha256": "293e18d6a63292ee42d99387784f36525661bf94633f227984bb32acfaa026b4"
             }
           },
           "row_type": "indexed",
@@ -98420,19 +98420,19 @@
         {
           "alignment_payload": {
             "locale_id": "zh-Hans",
-            "sha256": "280c486b1b0832ca30186fc2066bafaca82e4678958d37a04883fcbc40f2107f"
+            "sha256": "4e13fdae1c26cccf77628ed28719fa7155c62800c7ba593ee98a5cb6b001ecb7"
           },
           "parser_action": "decode-target",
           "payloads": {
             "ja": {
               "id": "0x072B",
               "kind": "indexed",
-              "sha256": "9362ccaf700c96e9aff8bcf0a08449bb842d38170f7463e96abe6ece53e6265f"
+              "sha256": "c5cc4fd599e47e2c7f1303624ff7d0ba5913f2c1b4182c967a7fe1c25817dd8d"
             },
             "zh-Hans": {
               "id": "0x072B",
               "kind": "indexed",
-              "sha256": "280c486b1b0832ca30186fc2066bafaca82e4678958d37a04883fcbc40f2107f"
+              "sha256": "4e13fdae1c26cccf77628ed28719fa7155c62800c7ba593ee98a5cb6b001ecb7"
             }
           },
           "row_type": "indexed",
@@ -98690,19 +98690,19 @@
         {
           "alignment_payload": {
             "locale_id": "zh-Hans",
-            "sha256": "1ab870bc9695e13e9af22c1cef70f39895d0817e37293cbd9619991b44b8663e"
+            "sha256": "511a7984f350a6b476fc99c98ceb419d3d6b94e42b783d731ec7d86776de4496"
           },
           "parser_action": "decode-target",
           "payloads": {
             "ja": {
               "id": "0x0731",
               "kind": "indexed",
-              "sha256": "36c30c602ebd94e4a05f73eda68df743972358cbfad4f2f06d6b979a1846791b"
+              "sha256": "8e95e4711ffb97d32c2edd5fa0d24a84e95994384289158ebd418c0b1ce30d19"
             },
             "zh-Hans": {
               "id": "0x0731",
               "kind": "indexed",
-              "sha256": "1ab870bc9695e13e9af22c1cef70f39895d0817e37293cbd9619991b44b8663e"
+              "sha256": "511a7984f350a6b476fc99c98ceb419d3d6b94e42b783d731ec7d86776de4496"
             }
           },
           "row_type": "indexed",
@@ -99410,19 +99410,19 @@
         {
           "alignment_payload": {
             "locale_id": "zh-Hans",
-            "sha256": "71f10eb014cbdf8bd8d800a3e244226b92197ed0137371cddf77f5e18224b1d1"
+            "sha256": "9113fed68dd53ff92f7d691b13c454ff496b2091a1ba83ef3cf6074157a3a1c6"
           },
           "parser_action": "decode-target",
           "payloads": {
             "ja": {
               "id": "0x0741",
               "kind": "indexed",
-              "sha256": "5f35045a4ff57e38073adf5741072e863b7ba93728613cb8e1cef0b5792749da"
+              "sha256": "e32bff6578a90b9a7d1d0b8cf8ef66c4faa4b62381e5cfae4fb6cd91f546de4b"
             },
             "zh-Hans": {
               "id": "0x0741",
               "kind": "indexed",
-              "sha256": "71f10eb014cbdf8bd8d800a3e244226b92197ed0137371cddf77f5e18224b1d1"
+              "sha256": "9113fed68dd53ff92f7d691b13c454ff496b2091a1ba83ef3cf6074157a3a1c6"
             }
           },
           "row_type": "indexed",
@@ -99590,19 +99590,19 @@
         {
           "alignment_payload": {
             "locale_id": "zh-Hans",
-            "sha256": "5a839b3190ec188c5bf865bd3230f7d9195f158a15a4db90c198ecda5f0508f0"
+            "sha256": "bdb8844afdf36a895b22fc497d5744702d444fda0a389cccf0588ffca3d66170"
           },
           "parser_action": "decode-target",
           "payloads": {
             "ja": {
               "id": "0x0745",
               "kind": "indexed",
-              "sha256": "84865f0e985df90c298d9c9cf158f1277b862e3017129a1de2f6c41c6dd0e3f3"
+              "sha256": "de477c87358d4581c728f5af1c23a4be4bf6467e3ca41f3593a7538f43695644"
             },
             "zh-Hans": {
               "id": "0x0745",
               "kind": "indexed",
-              "sha256": "5a839b3190ec188c5bf865bd3230f7d9195f158a15a4db90c198ecda5f0508f0"
+              "sha256": "bdb8844afdf36a895b22fc497d5744702d444fda0a389cccf0588ffca3d66170"
             }
           },
           "row_type": "indexed",
@@ -99635,19 +99635,19 @@
         {
           "alignment_payload": {
             "locale_id": "zh-Hans",
-            "sha256": "64186d3a47fa48395ca92bc8cf24deb55eb59497bbfc14753195928ef292da66"
+            "sha256": "48a88d877a9fbebf84125711f36632977bab6464611dffc8f9ceaf192dea33ce"
           },
           "parser_action": "decode-target",
           "payloads": {
             "ja": {
               "id": "0x0746",
               "kind": "indexed",
-              "sha256": "25e5714107709246373716fe40eb1a92195f5caab5a03d8c20592377d2529c23"
+              "sha256": "68f79827180d109cd2a221bf579d02ed8eee594149d58e4a54f332b601cc6bc8"
             },
             "zh-Hans": {
               "id": "0x0746",
               "kind": "indexed",
-              "sha256": "64186d3a47fa48395ca92bc8cf24deb55eb59497bbfc14753195928ef292da66"
+              "sha256": "48a88d877a9fbebf84125711f36632977bab6464611dffc8f9ceaf192dea33ce"
             }
           },
           "row_type": "indexed",

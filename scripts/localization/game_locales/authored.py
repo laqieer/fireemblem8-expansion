@@ -23,6 +23,12 @@ AUTHORED_SHARD_KIND = "fe8u-authored-translation-shard"
 AUTHORED_SHARD_SCHEMA_VERSION = 1
 DEFAULT_MANIFEST_PATH = Path("texts/locales/authored/manifest.json")
 LOCALES = ("ja", "zh-Hans")
+_REFRESHABLE_TERMINOLOGY_PATHS = frozenset(
+    (
+        "texts/locales/ja/indexed.txt",
+        "texts/locales/zh-Hans/indexed.txt",
+    )
+)
 
 _SHARD_FIELDS = {
     "kind",
@@ -62,6 +68,83 @@ def canonical_json_bytes(data: Any) -> bytes:
 
 def sha256_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
+
+
+def refresh_authored_terminology_provenance(
+    repo_root: Path,
+    *,
+    manifest_path: Path = DEFAULT_MANIFEST_PATH,
+) -> Dict[str, Path]:
+    """Refresh only terminology-source and enclosing shard provenance hashes."""
+
+    repo_root = Path(repo_root)
+    manifest_path = repo_root / manifest_path
+    manifest_raw, manifest = _load_json(manifest_path)
+    if manifest_raw != canonical_json_bytes(manifest):
+        raise AuthoredCatalogError(f"{manifest_path}: manifest JSON is not canonical")
+    if (
+        not isinstance(manifest, dict)
+        or manifest.get("schema_version") != AUTHORED_MANIFEST_SCHEMA_VERSION
+        or manifest.get("kind") != AUTHORED_MANIFEST_KIND
+    ):
+        raise AuthoredCatalogError(f"{manifest_path}: authored manifest is malformed")
+
+    written = {}
+    for locale in LOCALES:
+        locale_data = manifest.get("locales", {}).get(locale)
+        shards = locale_data.get("shards") if isinstance(locale_data, dict) else None
+        if not isinstance(shards, list):
+            raise AuthoredCatalogError(
+                f"{manifest_path}: locale {locale!r} shards are malformed"
+            )
+        for descriptor in shards:
+            if not isinstance(descriptor, dict) or not isinstance(
+                descriptor.get("path"), str
+            ):
+                raise AuthoredCatalogError(
+                    f"{manifest_path}: locale {locale!r} shard descriptor is malformed"
+                )
+            shard_path = repo_root / descriptor["path"]
+            shard_raw, shard = _load_json(shard_path)
+            if sha256_bytes(shard_raw) != descriptor.get("sha256"):
+                raise AuthoredCatalogError(
+                    f"{shard_path}: shard changed outside provenance refresh"
+                )
+            terminology_sources = shard.get("terminology_sources")
+            if not isinstance(terminology_sources, list):
+                raise AuthoredCatalogError(
+                    f"{shard_path}: terminology_sources must be an array"
+                )
+            for source in terminology_sources:
+                if not isinstance(source, dict) or not isinstance(
+                    source.get("path"), str
+                ):
+                    raise AuthoredCatalogError(
+                        f"{shard_path}: terminology source is malformed"
+                    )
+                source_path = repo_root / source["path"]
+                if not source_path.is_file():
+                    raise AuthoredCatalogError(
+                        f"{shard_path}: terminology source {source_path} is missing"
+                    )
+                current_sha256 = sha256_bytes(source_path.read_bytes())
+                if source["path"] in _REFRESHABLE_TERMINOLOGY_PATHS:
+                    source["sha256"] = current_sha256
+                elif source.get("sha256") != current_sha256:
+                    raise AuthoredCatalogError(
+                        f"{shard_path}: non-indexed terminology source drifted"
+                    )
+            encoded = canonical_json_bytes(shard)
+            if shard_raw != encoded:
+                shard_path.write_bytes(encoded)
+            descriptor["sha256"] = sha256_bytes(encoded)
+            written[descriptor["path"]] = shard_path
+
+    encoded_manifest = canonical_json_bytes(manifest)
+    if manifest_raw != encoded_manifest:
+        manifest_path.write_bytes(encoded_manifest)
+    written[manifest_path.relative_to(repo_root).as_posix()] = manifest_path
+    return written
 
 
 def _load_json(path: Path) -> Tuple[bytes, Any]:

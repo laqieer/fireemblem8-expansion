@@ -138,7 +138,7 @@ Binary-search the codepoint table. The matching index selects one width byte
 and one fixed-stride bitmap. `graphics/fonts/cjk/manifest.json` pins every
 asset hash and all package/report provenance.
 
-The four locale/style payloads total **594,780 bytes**, or **594,784 bytes**
+The four locale/style payloads total **594,090 bytes**, or **594,096 bytes**
 when every blob is independently aligned to four bytes. This budget includes
 the bitmap, width, and Unicode index data, but not future linker/table
 wrappers.

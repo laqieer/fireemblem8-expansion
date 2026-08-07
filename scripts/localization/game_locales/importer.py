@@ -19,6 +19,7 @@ from .controls import (
     validate_canonical_text,
 )
 from .mapping import MAPPING_KIND, MAPPING_SCHEMA_VERSION, validate_mapping_document
+from .overrides import apply_indexed_overrides, load_override_catalog
 from .parsers import (
     FE8J_INDEXED_COUNT,
     FE8J_MAX_INDEXED_ID,
@@ -39,6 +40,7 @@ JP_SOURCE_ID = "fe8j_indexed"
 JP_CONTROLS_SOURCE_ID = "fe8j_controls"
 CN_SOURCE_ID = "fe8cn_source"
 MAPPING_SOURCE_ID = "fe8j_mapping_seed"
+DEFAULT_OVERRIDE_PATH = Path("texts/locales/indexed_overrides.json")
 
 PINNED_SOURCE_SHA256 = {
     JP_SOURCE_ID: "511ce51cadd2ac94ec3f5219a81205f6aa52de3c3c659c9efd1f0f75f9079a8a",
@@ -229,12 +231,16 @@ def _write_indexed(
     locale: str,
     messages: Iterable[IndexedMessage],
     source_sha256: str,
+    override_sha256: str,
+    override_count: int,
 ) -> bytes:
     lines = [
         "# Normalized UTF-8 indexed locale source.",
         f"# Locale ID: {locale}",
         "# Source layout: FE8J; these identifiers are not FE8U target identifiers.",
         f"# Input SHA-256: {source_sha256}",
+        f"# Override SHA-256: {override_sha256}",
+        f"# Applied overrides: {override_count}",
         "",
     ]
     for message in messages:
@@ -405,6 +411,7 @@ def build_locale_artifacts(
     jp_controls_path: Path,
     cn_text_path: Path,
     mapping_seed_path: Path,
+    override_path: Path = DEFAULT_OVERRIDE_PATH,
     expected_hashes: Mapping[str, str] = PINNED_SOURCE_SHA256,
 ) -> Dict[str, bytes]:
     paths = {
@@ -414,6 +421,18 @@ def build_locale_artifacts(
         MAPPING_SOURCE_ID: Path(mapping_seed_path),
     }
     source_texts, source_metadata = _load_sources(paths, expected_hashes)
+    overrides = load_override_catalog(
+        override_path,
+        expected_source_hashes=expected_hashes,
+    )
+    if set(overrides.sources) != {JP_SOURCE_ID, CN_SOURCE_ID}:
+        raise LocaleSourceError(
+            "override catalog must define exactly the FE8J and FE8CN indexed sources"
+        )
+    if overrides.sources[JP_SOURCE_ID].locale_id != "ja":
+        raise LocaleSourceError("FE8J indexed overrides must target locale ja")
+    if overrides.sources[CN_SOURCE_ID].locale_id != "zh-Hans":
+        raise LocaleSourceError("FE8CN indexed overrides must target locale zh-Hans")
 
     japanese_source = parse_hash_indexed(
         source_texts[JP_SOURCE_ID],
@@ -439,6 +458,19 @@ def build_locale_artifacts(
         ),
         aliases=chinese_aliases,
         source_name=SOURCE_LOGICAL_PATHS[CN_SOURCE_ID],
+    )
+    japanese, applied_japanese_overrides = apply_indexed_overrides(
+        japanese,
+        source=overrides.sources[JP_SOURCE_ID],
+    )
+    chinese_indexed, applied_chinese_overrides = apply_indexed_overrides(
+        chinese.indexed,
+        source=overrides.sources[CN_SOURCE_ID],
+    )
+    chinese = ChineseSource(
+        chinese_indexed,
+        chinese.raw_occurrences,
+        chinese.raw_strings,
     )
     mapping_rows = parse_mapping_seed_tsv(
         source_texts[MAPPING_SOURCE_ID],
@@ -473,6 +505,8 @@ def build_locale_artifacts(
             "ja",
             japanese,
             source_metadata[JP_SOURCE_ID]["sha256"],
+            overrides.sha256,
+            len(applied_japanese_overrides),
         ),
         "ja/control_defs.txt": _write_controls(
             controls,
@@ -482,6 +516,8 @@ def build_locale_artifacts(
             "zh-Hans",
             chinese.indexed,
             source_metadata[CN_SOURCE_ID]["sha256"],
+            overrides.sha256,
+            len(applied_chinese_overrides),
         ),
         "zh-Hans/raw.json": _json_bytes(_raw_document(chinese.raw_strings)),
         "mapping/fe8j_to_fe8u.candidates.json": _json_bytes(
@@ -515,6 +551,23 @@ def build_locale_artifacts(
             ),
         },
         "inputs": source_metadata,
+        "overrides": {
+            "path": overrides.path,
+            "sha256": overrides.sha256,
+            "byte_count": overrides.byte_count,
+            "entry_count": overrides.entry_count,
+            "sources": {
+                source_id: {
+                    "locale_id": source.locale_id,
+                    "source_sha256": source.source_sha256,
+                    "entry_count": len(source.entries),
+                    "message_ids": [
+                        f"0x{message_id:04X}" for message_id in sorted(source.entries)
+                    ],
+                }
+                for source_id, source in sorted(overrides.sources.items())
+            },
+        },
         "locales": {
             "ja": {
                 "indexed": _payload_statistics(japanese),
@@ -562,6 +615,7 @@ def import_locale_sources(
     cn_text_path: Path,
     mapping_seed_path: Path,
     output_dir: Path,
+    override_path: Path = DEFAULT_OVERRIDE_PATH,
     expected_hashes: Mapping[str, str] = PINNED_SOURCE_SHA256,
 ) -> Dict[str, Path]:
     artifacts = build_locale_artifacts(
@@ -569,6 +623,7 @@ def import_locale_sources(
         jp_controls_path=jp_controls_path,
         cn_text_path=cn_text_path,
         mapping_seed_path=mapping_seed_path,
+        override_path=override_path,
         expected_hashes=expected_hashes,
     )
     return write_locale_artifacts(artifacts, output_dir)
@@ -578,6 +633,7 @@ def regenerate_vendored_locale_sources(
     *,
     source_dir: Path,
     output_dir: Path,
+    override_path: Path = DEFAULT_OVERRIDE_PATH,
 ) -> Dict[str, Path]:
     paths = vendored_source_paths(source_dir)
     return import_locale_sources(
@@ -586,6 +642,7 @@ def regenerate_vendored_locale_sources(
         cn_text_path=paths[CN_SOURCE_ID],
         mapping_seed_path=paths[MAPPING_SOURCE_ID],
         output_dir=output_dir,
+        override_path=override_path,
     )
 
 
@@ -593,6 +650,7 @@ def check_vendored_locale_sources(
     *,
     source_dir: Path,
     output_dir: Path,
+    override_path: Path = DEFAULT_OVERRIDE_PATH,
 ) -> Dict[str, bytes]:
     paths = vendored_source_paths(source_dir)
     expected = build_locale_artifacts(
@@ -600,6 +658,7 @@ def check_vendored_locale_sources(
         jp_controls_path=paths[JP_CONTROLS_SOURCE_ID],
         cn_text_path=paths[CN_SOURCE_ID],
         mapping_seed_path=paths[MAPPING_SOURCE_ID],
+        override_path=override_path,
     )
     mismatches = []
     output_dir = Path(output_dir)
