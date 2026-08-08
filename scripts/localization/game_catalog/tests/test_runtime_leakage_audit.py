@@ -105,10 +105,10 @@ class RuntimeLeakageAuditTests(unittest.TestCase):
         self.assertEqual(
             self.report["game_catalog"]["mapping_source_counts"],
             {
-                "authored": 274,
+                "authored": 289,
                 "english_fallback": 0,
-                "indexed": 2998,
-                "raw": 142,
+                "indexed": 2993,
+                "raw": 132,
                 "unresolved": 0,
             },
         )

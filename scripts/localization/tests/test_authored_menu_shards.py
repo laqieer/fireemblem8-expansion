@@ -13,11 +13,13 @@ from scripts.localization.game_locales.crosswalk import canonical_json_bytes
 
 REVIEWED_PAYLOADS = {
     "ja": {
+        "0x0011": "。[.][X]\n",
         "0x0022": "。[.][X]\n",
         "0x0068": "ポイズン[X]\n",
         "0x0069": "スリープ[.][X]\n",
     },
     "zh-Hans": {
+        "0x0011": "。[.][X]\n",
         "0x0022": "。[.][X]\n",
     },
 }

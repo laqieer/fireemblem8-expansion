@@ -146,13 +146,13 @@ class FinalMappingTests(unittest.TestCase):
             self.report["promotion_counts"],
             {
                 "b-structural-high": 27,
-                "c-febuilder": 1305,
+                "c-febuilder": 1301,
                 "c-febuilder-raw": 3,
-                "d-contextual-resolution": 21,
+                "d-contextual-resolution": 20,
                 "d-existing-authored": 3,
-                "d-semantic-correction": 48,
+                "d-semantic-correction": 63,
                 "d-structural-reference-second-check": 6,
-                "e-exact-english": 135,
+                "e-exact-english": 134,
                 "e-exact-english-context": 1,
                 "f-authored-queue": 259,
             },
@@ -193,7 +193,7 @@ class FinalMappingTests(unittest.TestCase):
             .get("precedence")
             == "d-contextual-resolution"
         ]
-        self.assertEqual(len(resolved), 21)
+        self.assertEqual(len(resolved), 20)
         for row in resolved:
             details = row["verification"]["promotion"]["details"]
             self.assertEqual(row["source"]["id"], details["accepted_source_id"])
@@ -210,7 +210,7 @@ class FinalMappingTests(unittest.TestCase):
             .get("precedence")
             in ("e-exact-english", "e-exact-english-context")
         ]
-        self.assertEqual(len(dedup_rows), 136)
+        self.assertEqual(len(dedup_rows), 135)
         for row in dedup_rows:
             target = int(row["target_id"], 16)
             donor = int(
@@ -407,10 +407,25 @@ class FinalMappingTests(unittest.TestCase):
         expected_authored_keys = {
             "0x0005": "game.semantic_correction.msg_005",
             "0x0006": "game.semantic_correction.msg_006",
+            "0x0008": "game.semantic_correction.msg_008",
+            "0x000A": "game.semantic_correction.msg_00a",
             "0x000D": "game.semantic_correction.msg_00d",
             "0x000E": "game.semantic_correction.msg_00e",
+            "0x000F": "game.semantic_correction.msg_00f",
+            "0x0010": "game.semantic_correction.msg_010",
+            "0x01C8": "game.semantic_correction.msg_1c8",
+            "0x01EE": "game.semantic_correction.msg_1ee",
+            "0x01EF": "game.semantic_correction.msg_1ef",
+            "0x03A8": "game.semantic_correction.msg_3a8",
             "0x0679": "game.semantic_correction.msg_679",
             "0x06A2": "game.semantic_correction.msg_6a2",
+            "0x06AE": "game.semantic_correction.msg_6ae",
+            "0x06AF": "game.semantic_correction.msg_6af",
+            "0x06B2": "game.semantic_correction.msg_6b2",
+            "0x06B9": "game.semantic_correction.msg_6b9",
+            "0x06BA": "game.semantic_correction.msg_6ba",
+            "0x06BB": "game.semantic_correction.msg_6bb",
+            "0x06BC": "game.semantic_correction.msg_6bc",
             "0x0593": "game.semantic_correction.msg_593",
             "0x07D1": "game.semantic_correction.msg_7d1",
             "0x07D2": "game.semantic_correction.msg_7d2",
@@ -436,6 +451,106 @@ class FinalMappingTests(unittest.TestCase):
                 self.rows[target_id]["verification"]["promotion"]["precedence"],
                 "d-semantic-correction",
             )
+
+    def test_blue_team_followup_payloads_match_slots_and_semantics(self):
+        expected = {
+            "0x0008": ("入手：[X]\n", "获得：[X]\n"),
+            "0x000A": ("盗品：[X]\n", "盗取：[X]\n"),
+            "0x000F": ("廃棄：[X]\n", "丢弃：[X]\n"),
+            "0x0010": ("輸送隊へ送付：[X]\n", "送往运输队：[X]\n"),
+            "0x0011": ("。[.][X]\n", "。[.][X]\n"),
+            "0x01C8": ("閉じた村[.][X]\n", "关闭村庄[.][X]\n"),
+            "0x01EE": ("船板[X]\n", "船板[X]\n"),
+            "0x01EF": ("難破船[.][X]\n", "沉船[.][X]\n"),
+            "0x0205": ("今回", "本次"),
+            "0x03A8": (
+                "エンブレムシール[.][X]\n",
+                "纹章之印[.][X]\n",
+            ),
+            "0x04FB": ("相手", "伙伴"),
+            "0x0542": (
+                "ユニットのレベルです[CTRL:0001]上がると強くなります",
+                "人物的等级\n等级越高，能力越强",
+            ),
+            "0x06AE": ("　周回数[.][X]\n", " 通关次数[.][X]\n"),
+            "0x06AF": ("　クリア登録[.][X]\n", " 标记通关[.][X]\n"),
+            "0x06B2": ("砂嵐[X]\n", "沙暴[X]\n"),
+            "0x06B9": (
+                "ファイルをクリア済みに[X]\n",
+                "将存档标记为已通关[X]\n",
+            ),
+            "0x06BA": ("しますか？[X]\n", "确定吗？[X]\n"),
+            "0x06BB": (
+                "クリア済みファイルは[.][X]\n",
+                "标记后，该存档[.][X]\n",
+            ),
+            "0x06BC": (
+                "以後プレイできません[X]\n",
+                "将无法继续游玩[X]\n",
+            ),
+            "0x0867": (
+                "持ち物がいっぱいです　　輸送隊へ送るアイテムを選んでください",
+                "所持物品已满，请选择要送往运输队的物品",
+            ),
+            "0x0878": (
+                "修復したい武器を持っている相手を選んでください",
+                "请选择持有待修复武器的角色",
+            ),
+            "0x08BC": (
+                "それは買い取りできないわ[CTRL:0003]",
+                "这件物品无法出售。[CTRL:0003]",
+            ),
+            "0x08BD": (
+                "フフフ・・・[CTRL:0001]それは買い取りできないわ[CTRL:0003]",
+                "呵呵……等一下。\n这件物品无法出售！[CTRL:0003]",
+            ),
+            "0x08CA": (
+                "残念だ　輸送隊さえいれば[CTRL:0001]送ることもできたのに[CTRL:0003]",
+                "真遗憾，你还没有运输队，\n无法送过去。[CTRL:0003]",
+            ),
+            "0x08CB": (
+                "残念ね　輸送隊さえいれば[CTRL:0001]送ることもできたのに[CTRL:0003]",
+                "可惜你还没有运输队，\n不然我就能替你送过去……[CTRL:0003]",
+            ),
+        }
+        for target_id, (ja, zh_hans) in expected.items():
+            self.assertEqual(self.localized_text(target_id, "ja"), ja)
+            self.assertEqual(
+                self.localized_text(target_id, "zh-Hans"), zh_hans
+            )
+
+        self.assertLessEqual(
+            len(self.localized_text("0x00CC", "ja").encode("utf-8")),
+            14,
+        )
+        self.assertEqual(self.localized_text("0x00CC", "ja"), "なし")
+
+        terrain_slots = {
+            "0x01C8": "TERRAIN_VILLAGE_CLOSED",
+            "0x01EE": "TERRAIN_SHIP_FLAT",
+            "0x01EF": "TERRAIN_SHIP_WRECK",
+        }
+        for target_id, slot in terrain_slots.items():
+            self.assertEqual(
+                self.rows[target_id]["verification"]["source_key"],
+                f"gTerrainNames[{slot}]",
+            )
+
+        zh_payloads = "\n".join(
+            self.localized_text(target_id, "zh-Hans")
+            for target_id in expected
+        )
+        for leaked in (
+            "今回",
+            "配合",
+            "最高为等级20",
+            "删除",
+            "买不起",
+            "无发",
+            "[CTRL:0080]",
+            "[CTRL:0020]",
+        ):
+            self.assertNotIn(leaked, zh_payloads)
 
         exact_terms = {
             "0x01B8": {

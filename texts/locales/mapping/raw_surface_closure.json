@@ -18,12 +18,12 @@
       },
       "providers": {
         "ja": {
-          "kind": "raw_literal",
-          "text_sha256": "7a105ba883fdcf1925d294c1b263b07fef6534a101603a10c7a97e264e5960cd"
+          "kind": "authored_semantic_correction",
+          "text_sha256": "551ccca0c167ca6acb65e6d47bc2673f1ee4bb79ce1c57a8179339b05fde5d28"
         },
         "zh-Hans": {
-          "kind": "raw_import",
-          "text_sha256": "76e3439feac018deb1c3bbc28663358be6b85e11c2c9b9ea7f7c01aaafd78983"
+          "kind": "authored_semantic_correction",
+          "text_sha256": "341f7c425975de67339d9665d67483207291bd71ab87b8f97bc3ef10e8c67e8e"
         }
       },
       "rationale": "The menu row already uses this stable FE8U message ID; verified regional raw text now supplies Japanese and Chinese catalog payloads.",
@@ -51,12 +51,12 @@
       },
       "providers": {
         "ja": {
-          "kind": "raw_literal",
-          "text_sha256": "c6b28654dadcb7b94ebddda11e8babea147fa58d862e7a3c74a06c07ea1303af"
+          "kind": "authored_semantic_correction",
+          "text_sha256": "f4e8af0302f76aa5214451e3cbdf4511abc0058c46c27ff98ad44d9fd32db661"
         },
         "zh-Hans": {
-          "kind": "raw_import",
-          "text_sha256": "515250b5c4943ce064ec3eed0845b4242b6eb0fcd10124a2a66c28cd1e02d7a5"
+          "kind": "authored_semantic_correction",
+          "text_sha256": "e77b21c5fbd67ce9d57f1dc128f41762731eae67014a2c53b0bc7a989a864a0a"
         }
       },
       "rationale": "The menu row already uses this stable FE8U message ID; verified regional raw text now supplies Japanese and Chinese catalog payloads.",
@@ -84,12 +84,12 @@
       },
       "providers": {
         "ja": {
-          "kind": "raw_literal",
-          "text_sha256": "c7af9b851725974e017bad6823669df839b2f3a66b4de3a884dc50dbf53984c4"
+          "kind": "authored_semantic_correction",
+          "text_sha256": "65a334d51c4ca66174bd97cb5f9f2136470d314a9f54ac6c01b7cb1f3e842b75"
         },
         "zh-Hans": {
-          "kind": "raw_import",
-          "text_sha256": "38f443e379a83f1ac6f7161985f191a698f89b246b3622531c11658e58add263"
+          "kind": "authored_semantic_correction",
+          "text_sha256": "97c477a6df13f64fb686c0787396632b104f159225d9d36a410c138f1e8601a5"
         }
       },
       "rationale": "The menu row already uses this stable FE8U message ID; verified regional raw text now supplies Japanese and Chinese catalog payloads.",
@@ -117,12 +117,12 @@
       },
       "providers": {
         "ja": {
-          "kind": "raw_literal",
-          "text_sha256": "9e6b58513ad8978c1a0db83b5e379be1a112c6dd585a0fd4e6b520c5c15ed16b"
+          "kind": "authored_semantic_correction",
+          "text_sha256": "88562c12b5ea0c944fbafe8b606fba6f52f58cdf1e279a02fae149c8b71b145f"
         },
         "zh-Hans": {
-          "kind": "raw_import",
-          "text_sha256": "3d8be17eb77376c84602de7febdd69e42e9ba56100f7e7b3d3c8e2754138574d"
+          "kind": "authored_semantic_correction",
+          "text_sha256": "45a5b980bbc0d406d5a350ee153a4172572a0e07537f06fb76e061d2c4aa2ace"
         }
       },
       "rationale": "The menu row already uses this stable FE8U message ID; verified regional raw text now supplies Japanese and Chinese catalog payloads.",
@@ -480,12 +480,12 @@
       },
       "providers": {
         "ja": {
-          "kind": "raw_literal",
-          "text_sha256": "9e0660c8db77ad07901ae6fb6ea2e6fe9541dc2e82c4c9346d5c607bdac4d703"
+          "kind": "authored_semantic_correction",
+          "text_sha256": "fb5829531165d809f61c250f0ecb8d7b017b1dcdc397525e75f82e399da53815"
         },
         "zh-Hans": {
-          "kind": "raw_import",
-          "text_sha256": "73a55f189fbea8bf26dab9c5e6600901f1cc9ba1f1e77a801762d61a6daebceb"
+          "kind": "authored_semantic_correction",
+          "text_sha256": "93ea6bf83489d1887448ebe2abdeab203af51118f89cb04530e6338ca67bad4d"
         }
       },
       "rationale": "The menu row already uses this stable FE8U message ID; verified regional raw text now supplies Japanese and Chinese catalog payloads.",
@@ -513,12 +513,12 @@
       },
       "providers": {
         "ja": {
-          "kind": "raw_literal",
-          "text_sha256": "4b43c459d4d0f770d9b3907f24f39a9c9bf20af0006af224b5f047517b0e8128"
+          "kind": "authored_semantic_correction",
+          "text_sha256": "996a3e2f7afdd73a353e08d86ab2eda17afda62a5876796781f32dafe7468efd"
         },
         "zh-Hans": {
-          "kind": "raw_import",
-          "text_sha256": "13181dee87cb616fd21bcf5b3b2674b2ba3bb04fc8ad9744ed0e43531180ea84"
+          "kind": "authored_semantic_correction",
+          "text_sha256": "4930977b94a023404bbf4e71f1006f56adef2b3e2000c876b2a78b3dcb70a3f0"
         }
       },
       "rationale": "The menu row already uses this stable FE8U message ID; verified regional raw text now supplies Japanese and Chinese catalog payloads.",
@@ -2856,15 +2856,15 @@
       },
       "providers": {
         "ja": {
-          "kind": "raw_symbol",
-          "text_sha256": "e65f32c3839982b0b7c5975b62f80ce87f3cd9dfa3c8114216dd8fe16f5c55e4"
+          "kind": "authored_semantic_correction",
+          "text_sha256": "6ab6ed3d24937bd256d1bb46835a4a0231d49403889bc70837e5694f402ed407"
         },
         "zh-Hans": {
-          "kind": "raw_import",
-          "text_sha256": "6744b4c6a9aa00381ffea2b3d229778b0724b073bd46e13f4e73868667eeb44f"
+          "kind": "authored_semantic_correction",
+          "text_sha256": "4f7a5c4cd6fdfcdedc5bfa0866512bff51a24360048674b20cc4f4b98f143bc6"
         }
       },
-      "rationale": "The shared terrain enum index selects a direct regional string.",
+      "rationale": "gTerrainNames[TERRAIN_VILLAGE_CLOSED] must still identify a village. The raw regional labels only say closed, so exact closed-village names are authored without altering snapshots.",
       "source_text_sha256": "6744b4c6a9aa00381ffea2b3d229778b0724b073bd46e13f4e73868667eeb44f",
       "target_id": "0x01C8",
       "target_ids": [
@@ -3206,9 +3206,9 @@
       },
       "rationale": "The shared terrain enum index selects a direct regional string.",
       "source_text_sha256": "7be8900dbfbfa0864f894aef5865b76c66915f6161ca7eebf436390bc5d746b0",
+      "target_id": "0x01D2",
       "target_ids": [
-        "0x01D2",
-        "0x06B2"
+        "0x01D2"
       ],
       "user_facing": true
     },
@@ -4148,15 +4148,15 @@
       },
       "providers": {
         "ja": {
-          "kind": "raw_symbol",
-          "text_sha256": "c0f0dcdb799a687e8ff4c870005370d5835d01f196888b8aa0d2435d8c52d471"
+          "kind": "authored_semantic_correction",
+          "text_sha256": "895703d6691cc11b548bbf9d573328808769aed0751344f8cafd7f54ff1e4a5a"
         },
         "zh-Hans": {
-          "kind": "raw_import",
-          "text_sha256": "c0f0dcdb799a687e8ff4c870005370d5835d01f196888b8aa0d2435d8c52d471"
+          "kind": "authored_semantic_correction",
+          "text_sha256": "895703d6691cc11b548bbf9d573328808769aed0751344f8cafd7f54ff1e4a5a"
         }
       },
-      "rationale": "The shared terrain enum index selects a direct regional string.",
+      "rationale": "The terrain enum slot is TERRAIN_SHIP_FLAT, not generic wasteland. Ship-planking terminology is authored for both locales while the imported raw records remain immutable.",
       "source_text_sha256": "c0f0dcdb799a687e8ff4c870005370d5835d01f196888b8aa0d2435d8c52d471",
       "target_id": "0x01EE",
       "target_ids": [
@@ -4182,15 +4182,15 @@
       },
       "providers": {
         "ja": {
-          "kind": "raw_symbol",
-          "text_sha256": "e756c77c88fe19b6c8cf18337e1a7702d740af3359b661168e169b108bcf6d17"
+          "kind": "authored_semantic_correction",
+          "text_sha256": "1470df92d4e7e52bdac9c48463abee632e9fe01c1c0fbe70b5c556502efe6455"
         },
         "zh-Hans": {
-          "kind": "raw_import",
-          "text_sha256": "e568d35730b440f52e06a8e507e8a9a83b866632d35fb28be74ed00768e9de96"
+          "kind": "authored_semantic_correction",
+          "text_sha256": "93df1ce3aeb62eac9dd942e7d948afc97a63182f4d34922f74e0cccdbca86f1a"
         }
       },
-      "rationale": "The shared terrain enum index selects a direct regional string.",
+      "rationale": "The terrain enum slot is TERRAIN_SHIP_WRECK, not a ruined house. Exact ship-wreck terminology is authored for both locales while preserving the raw source snapshots.",
       "source_text_sha256": "e568d35730b440f52e06a8e507e8a9a83b866632d35fb28be74ed00768e9de96",
       "target_id": "0x01EF",
       "target_ids": [

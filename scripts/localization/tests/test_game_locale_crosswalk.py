@@ -186,7 +186,7 @@ class GameLocaleCrosswalkTests(unittest.TestCase):
             if row.source.get("regional_sources", {}).get("ja", {}).get("kind")
             == "literal"
         ]
-        self.assertEqual(len(literal_rows), 22)
+        self.assertEqual(len(literal_rows), 16)
         self.assertTrue(
             all(
                 row.source["regional_sources"]["ja"]["provenance"].get(
@@ -220,10 +220,11 @@ class GameLocaleCrosswalkTests(unittest.TestCase):
             "characters": 145,
             "classes": 142,
             "defeat-quotes": 64,
+            "debug-menu": 7,
             "events": 258,
             "goal-window": 3,
-            "items": 392,
-            "menus": 106,
+            "items": 393,
+            "menus": 100,
             "supports": 249,
             "terrain": 65,
             "world-map": 34,

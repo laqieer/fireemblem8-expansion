@@ -10931,10 +10931,10 @@
       }
     },
     "mapping_source_counts": {
-      "authored": 274,
+      "authored": 289,
       "english_fallback": 0,
-      "indexed": 2998,
-      "raw": 142,
+      "indexed": 2993,
+      "raw": 132,
       "unresolved": 0
     },
     "target_count": 3414
@@ -10956,9 +10956,9 @@
       "sha256": "abb320b4767423df3b66fe2f4309cae797becf0405b45e5fcebaccfd2241155f"
     },
     "ja_authored": {
-      "byte_count": 29630,
+      "byte_count": 30628,
       "path": "texts/locales/authored/catalog.ja.json",
-      "sha256": "d6254959158ffb0b1af6321ffeaba87ee6bd59438d29b76b36c8ef2fa6a29499"
+      "sha256": "9b5e1bf98c1ec53c0867b38d5804695f7cd7dcc0caa28ccf38892c6d51a33720"
     },
     "ja_expansion": {
       "byte_count": 2008,
@@ -10966,9 +10966,9 @@
       "sha256": "04c2b6e90d8f2bffcc78f53a89641068ff3cbcb34978ae53c686e4d4bf79c740"
     },
     "ja_indexed": {
-      "byte_count": 1719226,
+      "byte_count": 1719217,
       "path": "texts/locales/ja/indexed.txt",
-      "sha256": "49f4e4f3dfadb3387013a562b2eb8a6fa68512b5b370b6485a93434437abb841"
+      "sha256": "d1ba0a928133b9980aa23b524b116c3e1d5ab57011a84a20d001b2835d05d4b1"
     },
     "ja_raw": {
       "byte_count": 9643,
@@ -10982,14 +10982,14 @@
       "sha256": "1f73facaae6d6478d3cc4aa7df005f7eab306571014fc82b7b5343018dd0f953"
     },
     "mapping": {
-      "byte_count": 5444505,
+      "byte_count": 5467466,
       "path": "texts/locales/mapping/fe8u_target_map.json",
-      "sha256": "59899dfc4027c778c019869ecfdd662a992ee86b39618c273ab07cffe41daacf"
+      "sha256": "6739fcd5c109453bfa8770f34fa7b351d73995e96cf86ee046066890ba344302"
     },
     "raw_closure": {
-      "byte_count": 156280,
+      "byte_count": 156935,
       "path": "texts/locales/mapping/raw_surface_closure.json",
-      "sha256": "5fd1e08fde1f0dd75c9e4fbc30da1d7d0dbefbc1bd922d1f545fc39108aac138"
+      "sha256": "e91f932534d2f3cd2a6e83edf1faae60a40f059d9b5d1568c18f2c855d9d08ec"
     },
     "target_header": {
       "byte_count": 78840,
@@ -10997,9 +10997,9 @@
       "sha256": "fa8d8b55aa170a8b29d4950968d42e4e7673f679ddc4f0e3ae5bd5cb7abf1a0c"
     },
     "zh-Hans_authored": {
-      "byte_count": 26097,
+      "byte_count": 27046,
       "path": "texts/locales/authored/catalog.zh-Hans.json",
-      "sha256": "3c2c193e6841e3ffd2db052945569f1fba4131e20be06013dd014f1473bb2ee1"
+      "sha256": "6603161675f73e93ed1ad9da416c4558d9084c6e4bd4b280c63661912b7ed922"
     },
     "zh-Hans_expansion": {
       "byte_count": 1946,
@@ -11007,9 +11007,9 @@
       "sha256": "40220fd10289e21fba09d4315781c1f6f51cee59d109da18520134e34ea0a11e"
     },
     "zh_hans_indexed": {
-      "byte_count": 1266658,
+      "byte_count": 1266710,
       "path": "texts/locales/zh-Hans/indexed.txt",
-      "sha256": "200087396b9655798f2cc8ef3fc3f3b6693b4d4bc442a130167d8a666a0d68c9"
+      "sha256": "652c9c6ae8b1eb6b3657af66c5f203a5aa109bf988120d366cdd0e2062c0644a"
     },
     "zh_hans_raw": {
       "byte_count": 45834,

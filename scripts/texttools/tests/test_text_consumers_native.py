@@ -214,6 +214,111 @@ class TextConsumerNativeTests(unittest.TestCase):
             result.stdout.strip(), "item_popup_article_host_test: ok"
         )
 
+    def test_popup_prefixes_compose_before_actual_item_names(self):
+        common = [
+            "cc",
+            "-std=gnu89",
+            "-Wall",
+            "-Wextra",
+            "-Werror=implicit-function-declaration",
+            "-Werror=declaration-after-statement",
+            "-Wno-int-to-pointer-cast",
+            "-Wno-pointer-to-int-cast",
+            "-Wno-unused-parameter",
+            "-no-pie",
+            "-fsigned-char",
+            "-ffunction-sections",
+            "-fdata-sections",
+            "-DMODERN=1",
+            "-DNONMATCHING=1",
+            "-DFE8_EXPANSION_ENABLED_LOCALE_MASK=0x07u",
+            "-DFE8_TEXT_CONSUMER_HOST_TEST=1",
+            "-I",
+            ROOT / "include",
+        ]
+        objects = []
+        for source in ("popup.c", "popup2.c"):
+            output = BUILD_DIR / f"{Path(source).stem}.composition.o"
+            self._run(
+                common
+                + [
+                    "-c",
+                    ROOT / "src" / source,
+                    "-o",
+                    output,
+                ]
+            )
+            objects.append(output)
+
+        binary = BUILD_DIR / "popup_composition_host_test"
+        self._run(
+            common
+            + [
+                TEST_DIR / "popup_composition_host_test.c",
+            ]
+            + objects
+            + [
+                "-Wl,--gc-sections",
+                "-Wl,--unresolved-symbols=ignore-all",
+                "-o",
+                binary,
+            ]
+        )
+        result = self._run([binary])
+        self.assertEqual(
+            result.stdout.strip(), "popup_composition_host_test: ok"
+        )
+
+    def test_sio_empty_team_name_uses_actual_bounded_field(self):
+        common = [
+            "cc",
+            "-std=gnu89",
+            "-Wall",
+            "-Wextra",
+            "-Werror=implicit-function-declaration",
+            "-Werror=declaration-after-statement",
+            "-Wno-int-to-pointer-cast",
+            "-Wno-pointer-to-int-cast",
+            "-Wno-unused-parameter",
+            "-no-pie",
+            "-fsigned-char",
+            "-ffunction-sections",
+            "-fdata-sections",
+            "-DMODERN=1",
+            "-DNONMATCHING=1",
+            "-DFE8_EXPANSION_ENABLED_LOCALE_MASK=0x07u",
+            "-DFE8_TEXT_CONSUMER_HOST_TEST=1",
+            "-I",
+            ROOT / "include",
+        ]
+        teamlist_object = BUILD_DIR / "sio_teamlist.bounded.o"
+        self._run(
+            common
+            + [
+                "-c",
+                ROOT / "src" / "sio_teamlist.c",
+                "-o",
+                teamlist_object,
+            ]
+        )
+
+        binary = BUILD_DIR / "sio_teamlist_host_test"
+        self._run(
+            common
+            + [
+                TEST_DIR / "sio_teamlist_host_test.c",
+                teamlist_object,
+                "-Wl,--gc-sections",
+                "-Wl,--unresolved-symbols=ignore-all",
+                "-o",
+                binary,
+            ]
+        )
+        result = self._run([binary])
+        self.assertEqual(
+            result.stdout.strip(), "sio_teamlist_host_test: ok"
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

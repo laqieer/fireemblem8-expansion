@@ -10,9 +10,9 @@
     "chapter-event": {
       "authored_translation": 30,
       "explicit_english_fallback": 0,
-      "indexed_source": 528,
+      "indexed_source": 527,
       "raw_source": 0,
-      "total": 558
+      "total": 557
     },
     "chapter-title": {
       "authored_translation": 1,
@@ -41,6 +41,13 @@
       "indexed_source": 142,
       "raw_source": 0,
       "total": 142
+    },
+    "debug-menu": {
+      "authored_translation": 7,
+      "explicit_english_fallback": 0,
+      "indexed_source": 0,
+      "raw_source": 0,
+      "total": 7
     },
     "defeat-quotes": {
       "authored_translation": 0,
@@ -106,11 +113,11 @@
       "total": 468
     },
     "items": {
-      "authored_translation": 0,
+      "authored_translation": 1,
       "explicit_english_fallback": 0,
       "indexed_source": 392,
       "raw_source": 0,
-      "total": 392
+      "total": 393
     },
     "link-arena": {
       "authored_translation": 0,
@@ -120,9 +127,9 @@
       "total": 6
     },
     "menu-definition": {
-      "authored_translation": 136,
+      "authored_translation": 140,
       "explicit_english_fallback": 0,
-      "indexed_source": 290,
+      "indexed_source": 286,
       "raw_source": 0,
       "total": 426
     },
@@ -130,8 +137,8 @@
       "authored_translation": 3,
       "explicit_english_fallback": 0,
       "indexed_source": 35,
-      "raw_source": 68,
-      "total": 106
+      "raw_source": 62,
+      "total": 100
     },
     "shop-arena": {
       "authored_translation": 48,
@@ -155,10 +162,10 @@
       "total": 1
     },
     "terrain": {
-      "authored_translation": 0,
+      "authored_translation": 3,
       "explicit_english_fallback": 0,
       "indexed_source": 0,
-      "raw_source": 65,
+      "raw_source": 62,
       "total": 65
     },
     "trainee-prep": {
@@ -172,8 +179,8 @@
       "authored_translation": 0,
       "explicit_english_fallback": 0,
       "indexed_source": 132,
-      "raw_source": 3,
-      "total": 135
+      "raw_source": 2,
+      "total": 134
     },
     "world-map": {
       "authored_translation": 0,
@@ -192,10 +199,10 @@
   "mapping_authoritative": true,
   "schema_version": 1,
   "source_kind_counts": {
-    "authored_translation": 274,
+    "authored_translation": 289,
     "explicit_english_fallback": 0,
-    "indexed_source": 2998,
-    "raw_source": 142
+    "indexed_source": 2993,
+    "raw_source": 132
   },
   "target_count": 3414,
   "translation_coverage": {

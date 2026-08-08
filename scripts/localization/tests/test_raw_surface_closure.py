@@ -89,8 +89,38 @@ class RawSurfaceClosureTests(unittest.TestCase):
         )
         self.assertEqual(
             rows["fe8cn.raw.import-0088"]["target_ids"],
-            ["0x01D2", "0x06B2"],
+            ["0x01D2"],
         )
+
+    def test_raw_snapshots_remain_pinned_behind_authored_corrections(self):
+        raw_text = {
+            row["import_id"]: row["text"] for row in self.raw["records"]
+        }
+        self.assertEqual(raw_text["fe8cn.raw.import-0000"], "你确定要将存档")
+        self.assertEqual(raw_text["fe8cn.raw.import-0078"], "已关闭")
+        self.assertEqual(raw_text["fe8cn.raw.import-0116"], "荒地")
+        self.assertEqual(raw_text["fe8cn.raw.import-0117"], "破屋")
+
+        rows = {row["import_id"]: row for row in self.closure["rows"]}
+        for import_id in (
+            "fe8cn.raw.import-0000",
+            "fe8cn.raw.import-0001",
+            "fe8cn.raw.import-0002",
+            "fe8cn.raw.import-0003",
+            "fe8cn.raw.import-0014",
+            "fe8cn.raw.import-0015",
+            "fe8cn.raw.import-0078",
+            "fe8cn.raw.import-0116",
+            "fe8cn.raw.import-0117",
+        ):
+            self.assertEqual(
+                rows[import_id]["providers"]["ja"]["kind"],
+                "authored_semantic_correction",
+            )
+            self.assertEqual(
+                rows[import_id]["providers"]["zh-Hans"]["kind"],
+                "authored_semantic_correction",
+            )
 
     def test_every_record_has_materialized_japanese_and_chinese_providers(self):
         for row in self.closure["rows"]:

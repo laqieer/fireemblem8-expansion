@@ -11,11 +11,14 @@
   },
   "subsystem_counts": {
     "chapter-event": 2,
+    "debug-menu": 7,
     "ending-details": 4,
-    "menu-definition": 4,
-    "menus": 2
+    "items": 1,
+    "menu-definition": 8,
+    "menus": 2,
+    "terrain": 3
   },
-  "target_count": 12,
+  "target_count": 27,
   "terminology_sources": [],
   "translations": [
     {
@@ -35,6 +38,22 @@
       "text": "金币。[.][X]\n"
     },
     {
+      "english_payload_sha256": "6a4df7673dafecb3086aa97192e67eb3275033fc37e45a4581c8df33af9efaaf",
+      "key": "game.semantic_correction.msg_008",
+      "source_text_sha256": "00eb6199db3d0a275b43ebb31e3a8629f260225e0e4e5c9acd4b77d1c1920dbf",
+      "subsystem": "menu-definition",
+      "target_id": "0x0008",
+      "text": "获得：[X]\n"
+    },
+    {
+      "english_payload_sha256": "75802b11feb604cba988bea4a2d2bc5f76c7ab577a93c721e303568e447dfd1f",
+      "key": "game.semantic_correction.msg_00a",
+      "source_text_sha256": "a1cfe29d079b293941cd74bcd2d625bb77be482eb3d48a8a38fdea628c3ee9da",
+      "subsystem": "menu-definition",
+      "target_id": "0x000A",
+      "text": "盗取：[X]\n"
+    },
+    {
       "english_payload_sha256": "91dac270cf076055424106bcd9e16eac279d37a4870f64ff66a065eedebe0f05",
       "key": "game.semantic_correction.msg_00d",
       "source_text_sha256": "a645ca148faf1a98929acfa766e59e293250324bee03189228660af88601860f",
@@ -49,6 +68,54 @@
       "subsystem": "menu-definition",
       "target_id": "0x000E",
       "text": "可使用单位：[X]\n"
+    },
+    {
+      "english_payload_sha256": "64cfb2bd09e94ff669cecb1cf7f27bf2e193884df92200d999c1f66c2dca191a",
+      "key": "game.semantic_correction.msg_00f",
+      "source_text_sha256": "ddadb9a8879f4272ed41135a0eb501e792d21e7e67273b62cb1bf77e723b90c7",
+      "subsystem": "menu-definition",
+      "target_id": "0x000F",
+      "text": "丢弃：[X]\n"
+    },
+    {
+      "english_payload_sha256": "b6cceaa99d8ca1d4c05f15266afb33ee086ced77c75ab24c4abd8cd8c6ce503e",
+      "key": "game.semantic_correction.msg_010",
+      "source_text_sha256": "f32242c1cbd683b7344b087de95917fb3d99018e02518c038839fff92d59b98d",
+      "subsystem": "menu-definition",
+      "target_id": "0x0010",
+      "text": "送往运输队：[X]\n"
+    },
+    {
+      "english_payload_sha256": "2616bfdbc2b799d737b26c98ac5a775f058be6a223462d5c321750e2e87e942a",
+      "key": "game.semantic_correction.msg_1c8",
+      "source_text_sha256": "d696c2f84c47e152c74f88f84d88ff9eacefee87694c43f3e4316764b6c15d6f",
+      "subsystem": "terrain",
+      "target_id": "0x01C8",
+      "text": "关闭村庄[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "a776cf705b291186fbfb42afb2e14aef767e468ea15db628dfadfd25cffaa74f",
+      "key": "game.semantic_correction.msg_1ee",
+      "source_text_sha256": "6dec14339c7969fce9cda28a33f5c24038744bc7ba6dc907471726b76538ed8c",
+      "subsystem": "terrain",
+      "target_id": "0x01EE",
+      "text": "船板[X]\n"
+    },
+    {
+      "english_payload_sha256": "c926b3b5e36445ab1aac93932d7c293b7733f6b015b2da49c5cb292cf165481e",
+      "key": "game.semantic_correction.msg_1ef",
+      "source_text_sha256": "2242a2c4a7cd3f4a9557186d88f83b850fc2e4e4c5f155c0eaf3668e638fc3f2",
+      "subsystem": "terrain",
+      "target_id": "0x01EF",
+      "text": "沉船[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "709585d1d3c3a2f67607d5c62883834c16efa4d6cffcee730640f32333105a72",
+      "key": "game.semantic_correction.msg_3a8",
+      "source_text_sha256": "51b11d2cbbb847de84b2fa1e76149211ad40fcbd4cf6ca1fc41be8a6845456e2",
+      "subsystem": "items",
+      "target_id": "0x03A8",
+      "text": "纹章之印[.][X]\n"
     },
     {
       "english_payload_sha256": "9ba4256a4d88821c0d44f83aaa5f84d79a4cab4832badae225aea3c4690e28b8",
@@ -73,6 +140,62 @@
       "subsystem": "chapter-event",
       "target_id": "0x06A2",
       "text": " 调试[X]\n"
+    },
+    {
+      "english_payload_sha256": "bd470203e349109c5c111ea91e03e35413b5fc8310856f32a53cfc237f0e928a",
+      "key": "game.semantic_correction.msg_6ae",
+      "source_text_sha256": "da226cc9bf30ac51d54dc7ed610f15ce2946fe58d34400cfb7f5b05b0801a0ab",
+      "subsystem": "debug-menu",
+      "target_id": "0x06AE",
+      "text": " 通关次数[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "1095a953b01f2b2f3f5fd4457ffddb0a7b6ca648ee1f36e60914df85cadbe35a",
+      "key": "game.semantic_correction.msg_6af",
+      "source_text_sha256": "9828c490ddec8686d762111010b77c05fb604706b23e6511f7c3641788f27d06",
+      "subsystem": "debug-menu",
+      "target_id": "0x06AF",
+      "text": " 标记通关[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "44c6cc2d3d95bc07464c7e9b6ba41a17e4e8e383b80eb3280bf205bd799caae8",
+      "key": "game.semantic_correction.msg_6b2",
+      "source_text_sha256": "f7cc8c92c98757ed0f83f0c33cca40b8de1b8b5d53ecee83b441fe3fe61dba27",
+      "subsystem": "debug-menu",
+      "target_id": "0x06B2",
+      "text": "沙暴[X]\n"
+    },
+    {
+      "english_payload_sha256": "a7176f9242be570405a7a05039134f7d89d8f61dc3e5c7adf284bcafe7e03d54",
+      "key": "game.semantic_correction.msg_6b9",
+      "source_text_sha256": "0da8f01be8cd29600fc8120965eec1b7c79b37db855c15a18776c7c414db772c",
+      "subsystem": "debug-menu",
+      "target_id": "0x06B9",
+      "text": "将存档标记为已通关[X]\n"
+    },
+    {
+      "english_payload_sha256": "f67aac0af256f4dd3dd9042096f112269aaea447450898d3f350f6f20f1f2bd7",
+      "key": "game.semantic_correction.msg_6ba",
+      "source_text_sha256": "6ab9a662bf51d1340d448db8db766da99190ce491f1a76cf4f01d63921a726b6",
+      "subsystem": "debug-menu",
+      "target_id": "0x06BA",
+      "text": "确定吗？[X]\n"
+    },
+    {
+      "english_payload_sha256": "181424d6ebecf9ad0c7611713bf65f2d735f7c2d024d0aaad489da0f27d02c97",
+      "key": "game.semantic_correction.msg_6bb",
+      "source_text_sha256": "a8d3c2e884891204dbd8c3309d3457351fdcb446ead38a832b15b58a26d72a7c",
+      "subsystem": "debug-menu",
+      "target_id": "0x06BB",
+      "text": "标记后，该存档[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "88def947b12d071f41e5b0d2e41fe7283d2bd3836cd0a554978aaf86019f51e9",
+      "key": "game.semantic_correction.msg_6bc",
+      "source_text_sha256": "204fffd1eec22f10423099df3036cea860b46c4b85a301d0d96c86b5e072e737",
+      "subsystem": "debug-menu",
+      "target_id": "0x06BC",
+      "text": "将无法继续游玩[X]\n"
     },
     {
       "english_payload_sha256": "6f1bff5800aacf9125a43d3c1786ec04f2beb1c002b28ef8325b28a02b851333",

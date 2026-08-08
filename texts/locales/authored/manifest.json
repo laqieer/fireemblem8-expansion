@@ -12,6 +12,16 @@
     },
     {
       "subsystem": "menu-definition",
+      "target_id": "0x0008",
+      "translation_key": "game.semantic_correction.msg_008"
+    },
+    {
+      "subsystem": "menu-definition",
+      "target_id": "0x000A",
+      "translation_key": "game.semantic_correction.msg_00a"
+    },
+    {
+      "subsystem": "menu-definition",
       "target_id": "0x000D",
       "translation_key": "game.semantic_correction.msg_00d"
     },
@@ -19,6 +29,36 @@
       "subsystem": "menu-definition",
       "target_id": "0x000E",
       "translation_key": "game.semantic_correction.msg_00e"
+    },
+    {
+      "subsystem": "menu-definition",
+      "target_id": "0x000F",
+      "translation_key": "game.semantic_correction.msg_00f"
+    },
+    {
+      "subsystem": "menu-definition",
+      "target_id": "0x0010",
+      "translation_key": "game.semantic_correction.msg_010"
+    },
+    {
+      "subsystem": "terrain",
+      "target_id": "0x01C8",
+      "translation_key": "game.semantic_correction.msg_1c8"
+    },
+    {
+      "subsystem": "terrain",
+      "target_id": "0x01EE",
+      "translation_key": "game.semantic_correction.msg_1ee"
+    },
+    {
+      "subsystem": "terrain",
+      "target_id": "0x01EF",
+      "translation_key": "game.semantic_correction.msg_1ef"
+    },
+    {
+      "subsystem": "items",
+      "target_id": "0x03A8",
+      "translation_key": "game.semantic_correction.msg_3a8"
     },
     {
       "subsystem": "menus",
@@ -39,6 +79,41 @@
       "subsystem": "chapter-event",
       "target_id": "0x06A2",
       "translation_key": "game.semantic_correction.msg_6a2"
+    },
+    {
+      "subsystem": "debug-menu",
+      "target_id": "0x06AE",
+      "translation_key": "game.semantic_correction.msg_6ae"
+    },
+    {
+      "subsystem": "debug-menu",
+      "target_id": "0x06AF",
+      "translation_key": "game.semantic_correction.msg_6af"
+    },
+    {
+      "subsystem": "debug-menu",
+      "target_id": "0x06B2",
+      "translation_key": "game.semantic_correction.msg_6b2"
+    },
+    {
+      "subsystem": "debug-menu",
+      "target_id": "0x06B9",
+      "translation_key": "game.semantic_correction.msg_6b9"
+    },
+    {
+      "subsystem": "debug-menu",
+      "target_id": "0x06BA",
+      "translation_key": "game.semantic_correction.msg_6ba"
+    },
+    {
+      "subsystem": "debug-menu",
+      "target_id": "0x06BB",
+      "translation_key": "game.semantic_correction.msg_6bb"
+    },
+    {
+      "subsystem": "debug-menu",
+      "target_id": "0x06BC",
+      "translation_key": "game.semantic_correction.msg_6bc"
     },
     {
       "subsystem": "ending-details",
@@ -93,18 +168,18 @@
         },
         {
           "path": "texts/locales/authored/shards/help_shop.ja.json",
-          "sha256": "0d5c219698bc940db18ef28d13f979899bb6d03da8f0f685510bfd2653bb724e",
+          "sha256": "c4df99e5fb25d6e1bf06813fb102ffee46958432877003f2afe0eac1a1de7729",
           "target_count": 81
         },
         {
           "path": "texts/locales/authored/shards/menu.ja.json",
-          "sha256": "7103c8b5c8668d10234a7dace4c763324747c40d8f8946e3e8729cb520ddd348",
+          "sha256": "ba998542f28507dfb34f37aeca363b5af7b2c6586d09df1a80841bcad678c353",
           "target_count": 132
         },
         {
           "path": "texts/locales/authored/shards/semantic_corrections.ja.json",
-          "sha256": "7bb16aa22c81f2bc9a00f8bed5afc9343adac2c90a77f10c47c1a20466d27807",
-          "target_count": 12
+          "sha256": "18971fdd6d4ac0fcd4ee0e287891e8d01457ffb2ce804dbe1c7d270807e72ace",
+          "target_count": 27
         }
       ]
     },
@@ -123,18 +198,18 @@
         },
         {
           "path": "texts/locales/authored/shards/help_shop.zh-Hans.json",
-          "sha256": "e6dc4ed3a99654a0fde29a7d862dccdf630bd695e77f1677175c9f31793c50cb",
+          "sha256": "5c4d1f69c7799c6a60369c1366daaf49202368419152c88f52917c2714c104c8",
           "target_count": 81
         },
         {
           "path": "texts/locales/authored/shards/menu.zh-Hans.json",
-          "sha256": "41a23bb5a032ac8db9f8904be5357632efec7e0535f23c70db20b01c32c0be49",
+          "sha256": "2335ea7abe1fb933a73734833bee15bbd2de9518c9240ec0c15555e43c783a97",
           "target_count": 132
         },
         {
           "path": "texts/locales/authored/shards/semantic_corrections.zh-Hans.json",
-          "sha256": "9e75a4608ea12bbe706eb58c07ad372332563d1a8a5b327a16869bc9dd890377",
-          "target_count": 12
+          "sha256": "4e065de9216e74894d1c0f20edaa0a99db6299544594d1981fb31b64f98a401c",
+          "target_count": 27
         }
       ]
     }

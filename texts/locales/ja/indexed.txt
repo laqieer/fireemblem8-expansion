@@ -2,7 +2,7 @@
 # Locale ID: ja
 # Source layout: FE8J; these identifiers are not FE8U target identifiers.
 # Input SHA-256: 511ce51cadd2ac94ec3f5219a81205f6aa52de3c3c659c9efd1f0f75f9079a8a
-# Override SHA-256: a7a9eb3c5f891c847f3a8917ed864cd96a8fea371ae9f2e487a6fe2a91965466
+# Override SHA-256: 080269a2359881abeb1c6ffddabfdfdef97a72e0c0b0104f9527aa57921ccf9c
 # Applied overrides: 35
 
 #0x0000
@@ -200,7 +200,7 @@
 #0x0060
 人
 #0x0061
-データなし
+なし
 #0x0062
 通信中です、しばらくお待ち下さい
 #0x0063

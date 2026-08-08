@@ -30,9 +30,9 @@ class RealGenerateTests(unittest.TestCase):
 
             report = json.loads(written_a["report_json"].read_text(encoding="utf-8"))
             budget = json.loads(written_a["budget_json"].read_text(encoding="utf-8"))
-            self.assertEqual(report["mapping_source_counts"]["indexed"], 2998)
-            self.assertEqual(report["mapping_source_counts"]["raw"], 142)
-            self.assertEqual(report["mapping_source_counts"]["authored"], 274)
+            self.assertEqual(report["mapping_source_counts"]["indexed"], 2993)
+            self.assertEqual(report["mapping_source_counts"]["raw"], 132)
+            self.assertEqual(report["mapping_source_counts"]["authored"], 289)
             self.assertEqual(report["mapping_source_counts"]["english_fallback"], 0)
             self.assertEqual(report["mapping_source_counts"]["unresolved"], 0)
             self.assertEqual(report["shared_english"]["present_count"], 3414)
@@ -41,7 +41,7 @@ class RealGenerateTests(unittest.TestCase):
                 report["shared_english"]["storage"]["required_bytes"], 4000
             )
             self.assertEqual(report["locales"]["ja"]["present_count"], 3414)
-            self.assertEqual(report["locales"]["ja"]["provider_counts"]["raw"], 142)
+            self.assertEqual(report["locales"]["ja"]["provider_counts"]["raw"], 132)
             self.assertEqual(report["locales"]["ja"]["provider_unavailable_count"], 0)
             self.assertEqual(report["locales"]["zh-Hans"]["present_count"], 3414)
             self.assertEqual(report["locales"]["zh-Hans"]["explicit_fallback_count"], 0)
@@ -112,17 +112,32 @@ class RealGenerateTests(unittest.TestCase):
         ja_raw = json.loads(
             (ROOT / "texts/locales/ja/raw.json").read_text(encoding="utf-8")
         )["providers"]
+        authored = {
+            locale: json.loads(
+                (
+                    ROOT / f"texts/locales/authored/catalog.{locale}.json"
+                ).read_text(encoding="utf-8")
+            )["strings"]
+            for locale in ("ja", "zh-Hans")
+        }
 
         for decision in decisions["decisions"]:
             if decision["classification"] != "game_message":
                 continue
             target_id = int(decision["target_id"], 16)
-            ja_source = mapping[decision["target_id"]]["regional_sources"]["ja"]
-            expected_ja = (
-                ja_source["text"]
-                if ja_source["kind"] == "literal"
-                else ja_raw[decision["target_id"]]["text"]
-            )
+            source = mapping[decision["target_id"]]
+            if source["kind"] == "authored":
+                key = source["translation_key"]
+                expected_ja = authored["ja"][key]
+                expected_zh = authored["zh-Hans"][key]
+            else:
+                ja_source = source["regional_sources"]["ja"]
+                expected_ja = (
+                    ja_source["text"]
+                    if ja_source["kind"] == "literal"
+                    else ja_raw[decision["target_id"]]["text"]
+                )
+                expected_zh = raw[decision["import_id"]]
             with self.subTest(import_id=decision["import_id"]):
                 self.assertEqual(
                     ja.entries[target_id].source_text,
@@ -130,7 +145,7 @@ class RealGenerateTests(unittest.TestCase):
                 )
                 self.assertEqual(
                     zh.entries[target_id].source_text,
-                    raw[decision["import_id"]],
+                    expected_zh,
                 )
 
     def test_transformed_messages_fit_dedicated_runtime_scratch(self):

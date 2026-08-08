@@ -32,7 +32,7 @@ class IndexedLocaleOverrideTests(unittest.TestCase):
             self.OVERRIDE_PATH,
             expected_source_hashes=PINNED_SOURCE_SHA256,
         )
-        self.assertEqual(catalog.entry_count, 79)
+        self.assertEqual(catalog.entry_count, 88)
         self.assertEqual(set(catalog.sources), {"fe8j_indexed", "fe8cn_source"})
         for source in catalog.sources.values():
             self.assertEqual(
@@ -45,7 +45,7 @@ class IndexedLocaleOverrideTests(unittest.TestCase):
                 self.assertTrue(entry.provenance["context"])
                 self.assertTrue(entry.provenance["target_ids"])
         self.assertEqual(len(catalog.sources["fe8j_indexed"].entries), 35)
-        self.assertEqual(len(catalog.sources["fe8cn_source"].entries), 44)
+        self.assertEqual(len(catalog.sources["fe8cn_source"].entries), 53)
 
     def test_full_semantic_audit_overrides_are_exact(self):
         catalog = load_override_catalog(
@@ -87,6 +87,42 @@ class IndexedLocaleOverrideTests(unittest.TestCase):
         self.assertNotIn("哥哥部分", zh[0x0913].replacement_text)
         self.assertIn("硬币", zh[0x0CB7].replacement_text)
         self.assertNotIn("骰子", zh[0x0CB7].replacement_text)
+
+    def test_blue_team_followup_overrides_are_exact(self):
+        catalog = load_override_catalog(
+            self.OVERRIDE_PATH,
+            expected_source_hashes=PINNED_SOURCE_SHA256,
+        )
+        ja = catalog.sources["fe8j_indexed"].entries
+        zh = catalog.sources["fe8cn_source"].entries
+
+        self.assertEqual(ja[0x0061].replacement_text, "なし")
+        self.assertLessEqual(
+            len(ja[0x0061].replacement_text.encode("utf-8")), 14
+        )
+        expected_zh = {
+            0x018C: "本次",
+            0x048A: "伙伴",
+            0x04D7: "人物的等级\n等级越高，能力越强",
+            0x07E5: "所持物品已满，请选择要送往运输队的物品",
+            0x07F6: "请选择持有待修复武器的角色",
+            0x085C: "这件物品无法出售。[CTRL:0003]",
+            0x085D: "呵呵……等一下。\n这件物品无法出售！[CTRL:0003]",
+            0x086A: "真遗憾，你还没有运输队，\n无法送过去。[CTRL:0003]",
+            0x086B: (
+                "可惜你还没有运输队，\n"
+                "不然我就能替你送过去……[CTRL:0003]"
+            ),
+        }
+        for message_id, payload in expected_zh.items():
+            self.assertEqual(zh[message_id].replacement_text, payload)
+
+        forbidden = ("今回", "配合", "等级20", "买不起", "无发")
+        active_payload = "\n".join(
+            zh[message_id].replacement_text for message_id in expected_zh
+        )
+        for fragment in forbidden:
+            self.assertNotIn(fragment, active_payload)
 
     def test_dummy_overrides_use_placeholder_wording(self):
         catalog = load_override_catalog(

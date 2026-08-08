@@ -254,7 +254,10 @@ int LoadLinkArenaTeamList(int activeOption, u8 mode)
                 }
                 else
                 {
-                    SioStrCpy(GetStringFromIndex(MSG_0CC), gLinkArenaTeamList[i].name); // "NO DATA"
+                    GetStringFromIndexInBufferWithLimit(
+                        MSG_0CC,
+                        gLinkArenaTeamList[i].name,
+                        (u32)sizeof(gLinkArenaTeamList[i].name));
                     gLinkArenaTeamList[i].unk_10 = ptr[activeOption].unk_05;
                     gLinkArenaTeamList[i].unk_0f = i | 0x80;
                 }

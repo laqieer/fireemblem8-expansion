@@ -471,32 +471,29 @@
     },
     {
       "source": {
-        "id": "0x0805",
-        "kind": "indexed",
-        "layout": "FE8J"
+        "kind": "authored",
+        "translation_key": "game.semantic_correction.msg_008"
       },
       "state": "verified",
       "target_id": "0x0008",
       "verification": {
-        "confidence": "high",
-        "evidence": "FEBuilder line 2055 maps 0x0805 to 0x0008",
-        "evidence_kind": "febuilder-structural-agreement",
+        "confidence": "explicit",
+        "evidence": "PopupScr_GotItem draws this fragment before the dynamic item name. The regional 0x0805 payload is a suffix, so target-order prefixes are authored for actual popup composition.",
+        "evidence_kind": "target-authored-semantic-payload",
         "method": "deterministic-final-mapping-promotion",
         "promotion": {
           "details": {
-            "candidate_payloads": {
-              "ja": {
-                "id": "0x0805",
-                "kind": "indexed",
-                "sha256": "5f62229f03cd75636e26d502cef2df184b1bfc8d347be02f147dd9c1e0d29236"
-              },
-              "zh-Hans": {
-                "id": "0x0805",
-                "kind": "indexed",
-                "sha256": "03ecfee0d013719b0575b4e1972b7a64e9fd412769f9384d80d5b0052c6a30b0"
-              }
+            "english_payload_sha256": "6a4df7673dafecb3086aa97192e67eb3275033fc37e45a4581c8df33af9efaaf",
+            "incorrect_source": {
+              "id": "0x0805",
+              "kind": "indexed",
+              "layout": "FE8J"
             },
-            "structural_agreement": true
+            "payload_sha256": {
+              "ja": "b5102d23f67b9d755825200f4f5428184e16b4a3e8cac74977fc0ef1dbdf6892",
+              "zh-Hans": "15eb3a798a78441a99e0c0a18deaf697da8341ddd1db8367d2c74d9504c0cd07"
+            },
+            "translation_key": "game.semantic_correction.msg_008"
           },
           "original_source": {
             "kind": "english_fallback",
@@ -519,12 +516,12 @@
             "subsystem": "unclassified"
           },
           "pipeline": "fe8u-final-mapping-v1",
-          "precedence": "c-febuilder"
+          "precedence": "d-semantic-correction"
         },
-        "rationale": "Independent structural evidence agrees with the FEBuilder provider.",
-        "source_key": "0x0805->0x0008",
-        "source_symbol": "translate_textid_FE8.txt",
-        "source_table": "FEBuilder translate_textid_FE8",
+        "rationale": "PopupScr_GotItem draws this fragment before the dynamic item name. The regional 0x0805 payload is a suffix, so target-order prefixes are authored for actual popup composition.",
+        "source_key": "PopupScr_GotItem/prefix-before-item-name",
+        "source_symbol": "game.semantic_correction.msg_008",
+        "source_table": "texts/locales/authored/shards/semantic_corrections.<locale>.json",
         "subsystem": "menu-definition"
       }
     },
@@ -589,32 +586,29 @@
     },
     {
       "source": {
-        "id": "0x0806",
-        "kind": "indexed",
-        "layout": "FE8J"
+        "kind": "authored",
+        "translation_key": "game.semantic_correction.msg_00a"
       },
       "state": "verified",
       "target_id": "0x000A",
       "verification": {
-        "confidence": "high",
-        "evidence": "FEBuilder line 2056 maps 0x0806 to 0x000A",
-        "evidence_kind": "febuilder-structural-agreement",
+        "confidence": "explicit",
+        "evidence": "PopupScr_StoleItem draws this fragment before the dynamic item name. The regional 0x0806 payload is a completed suffix, so a target-order stolen-item prefix is authored.",
+        "evidence_kind": "target-authored-semantic-payload",
         "method": "deterministic-final-mapping-promotion",
         "promotion": {
           "details": {
-            "candidate_payloads": {
-              "ja": {
-                "id": "0x0806",
-                "kind": "indexed",
-                "sha256": "6ef77cf6994dd3dcad6c33dca77ce9aa6b7f09121daf8b9054f789c16ebabedc"
-              },
-              "zh-Hans": {
-                "id": "0x0806",
-                "kind": "indexed",
-                "sha256": "5bc6f2a662750a89a0bb1096fe29e1d0ca56cd7d354b0954eb6c73e1e8955e47"
-              }
+            "english_payload_sha256": "75802b11feb604cba988bea4a2d2bc5f76c7ab577a93c721e303568e447dfd1f",
+            "incorrect_source": {
+              "id": "0x0806",
+              "kind": "indexed",
+              "layout": "FE8J"
             },
-            "structural_agreement": true
+            "payload_sha256": {
+              "ja": "3cfb1e6284fc54f64d77adee96df9dc2430f4c04fbd53d72949fbc845d2872f3",
+              "zh-Hans": "52727118b44b641eb1e2311cbaad0cae7dc80786a848cd01771ab1083ef6c0a5"
+            },
+            "translation_key": "game.semantic_correction.msg_00a"
           },
           "original_source": {
             "kind": "english_fallback",
@@ -637,12 +631,12 @@
             "subsystem": "unclassified"
           },
           "pipeline": "fe8u-final-mapping-v1",
-          "precedence": "c-febuilder"
+          "precedence": "d-semantic-correction"
         },
-        "rationale": "Independent structural evidence agrees with the FEBuilder provider.",
-        "source_key": "0x0806->0x000A",
-        "source_symbol": "translate_textid_FE8.txt",
-        "source_table": "FEBuilder translate_textid_FE8",
+        "rationale": "PopupScr_StoleItem draws this fragment before the dynamic item name. The regional 0x0806 payload is a completed suffix, so a target-order stolen-item prefix is authored.",
+        "source_key": "PopupScr_StoleItem/prefix-before-item-name",
+        "source_symbol": "game.semantic_correction.msg_00a",
+        "source_table": "texts/locales/authored/shards/semantic_corrections.<locale>.json",
         "subsystem": "menu-definition"
       }
     },
@@ -832,9 +826,8 @@
           "details": {
             "english_payload_sha256": "91dac270cf076055424106bcd9e16eac279d37a4870f64ff66a065eedebe0f05",
             "incorrect_source": {
-              "id": "0x080D",
-              "kind": "indexed",
-              "layout": "FE8J"
+              "kind": "english_fallback",
+              "reason": "not-yet-verified"
             },
             "payload_sha256": {
               "ja": "6baab0ec7a1e3d1ebdd51f34c6b9ae0dec04e5e4bc2153206f076657aa41c1c2",
@@ -874,32 +867,29 @@
     },
     {
       "source": {
-        "id": "0x080E",
-        "kind": "indexed",
-        "layout": "FE8J"
+        "kind": "authored",
+        "translation_key": "game.semantic_correction.msg_00f"
       },
       "state": "verified",
       "target_id": "0x000F",
       "verification": {
-        "confidence": "high",
-        "evidence": "FEBuilder line 2064 maps 0x080E to 0x000F",
-        "evidence_kind": "febuilder-structural-agreement",
+        "confidence": "explicit",
+        "evidence": "NewPopup2_DropItem passes this as msg0 before the dynamic item name. The regional 0x080E payload is a suffix, so target-order discard prefixes are authored.",
+        "evidence_kind": "target-authored-semantic-payload",
         "method": "deterministic-final-mapping-promotion",
         "promotion": {
           "details": {
-            "candidate_payloads": {
-              "ja": {
-                "id": "0x080E",
-                "kind": "indexed",
-                "sha256": "d808d51c2457f39813eecf0e0b5549e9c76e52155e829c628dbbb7c47668aa4b"
-              },
-              "zh-Hans": {
-                "id": "0x080E",
-                "kind": "indexed",
-                "sha256": "b16f71b55691cdc3055ae0a3fb270f0222252c3c032223ae78ccc562be4f212b"
-              }
+            "english_payload_sha256": "64cfb2bd09e94ff669cecb1cf7f27bf2e193884df92200d999c1f66c2dca191a",
+            "incorrect_source": {
+              "id": "0x080E",
+              "kind": "indexed",
+              "layout": "FE8J"
             },
-            "structural_agreement": true
+            "payload_sha256": {
+              "ja": "858abe00ed6f3f813843ad9e0b7ce7ea401b8fbc05f890600dbe69d2c735f111",
+              "zh-Hans": "70228fcf3390ae94cc9806b18982a6fea7e7e1181470d2180335cd836afa3044"
+            },
+            "translation_key": "game.semantic_correction.msg_00f"
           },
           "original_source": {
             "kind": "english_fallback",
@@ -922,35 +912,40 @@
             "subsystem": "unclassified"
           },
           "pipeline": "fe8u-final-mapping-v1",
-          "precedence": "c-febuilder"
+          "precedence": "d-semantic-correction"
         },
-        "rationale": "Independent structural evidence agrees with the FEBuilder provider.",
-        "source_key": "0x080E->0x000F",
-        "source_symbol": "translate_textid_FE8.txt",
-        "source_table": "FEBuilder translate_textid_FE8",
+        "rationale": "NewPopup2_DropItem passes this as msg0 before the dynamic item name. The regional 0x080E payload is a suffix, so target-order discard prefixes are authored.",
+        "source_key": "NewPopup2_DropItem/msg0-before-item-name",
+        "source_symbol": "game.semantic_correction.msg_00f",
+        "source_table": "texts/locales/authored/shards/semantic_corrections.<locale>.json",
         "subsystem": "menu-definition"
       }
     },
     {
       "source": {
-        "id": "0x080F",
-        "kind": "indexed",
-        "layout": "FE8J"
+        "kind": "authored",
+        "translation_key": "game.semantic_correction.msg_010"
       },
       "state": "verified",
       "target_id": "0x0010",
       "verification": {
-        "confidence": "manual",
-        "evidence": "The FE8U popup is the completed 'Sent' state; FE8J 0x080F is the completed convoy sentence while 0x080C is the in-progress fragment.",
-        "evidence_kind": "popup-state-semantic-split",
+        "confidence": "explicit",
+        "evidence": "NewPopup2_SendItem passes this as msg0 before the dynamic item name and uses 0x0011 afterward for punctuation. The regional 0x080F sentence is therefore replaced by a target-order prefix.",
+        "evidence_kind": "target-authored-semantic-payload",
         "method": "deterministic-final-mapping-promotion",
         "promotion": {
           "details": {
-            "accepted_source_id": "0x080F",
-            "reviewed_source_options": [
-              "0x080C",
-              "0x080F"
-            ]
+            "english_payload_sha256": "b6cceaa99d8ca1d4c05f15266afb33ee086ced77c75ab24c4abd8cd8c6ce503e",
+            "incorrect_source": {
+              "id": "0x080F",
+              "kind": "indexed",
+              "layout": "FE8J"
+            },
+            "payload_sha256": {
+              "ja": "2050064119bcb3e520bdb7b6b8e3aa41f3fd8c19b8723a1b035b41baf8fb5289",
+              "zh-Hans": "93ba09a7bfca2b2abc3f7c127914b9e524baa1aa55f0877a99030124ae0a56a9"
+            },
+            "translation_key": "game.semantic_correction.msg_010"
           },
           "original_source": {
             "kind": "english_fallback",
@@ -973,12 +968,12 @@
             "subsystem": "unclassified"
           },
           "pipeline": "fe8u-final-mapping-v1",
-          "precedence": "d-contextual-resolution"
+          "precedence": "d-semantic-correction"
         },
-        "rationale": "The FE8U popup is the completed 'Sent' state; FE8J 0x080F is the completed convoy sentence while 0x080C is the in-progress fragment.",
-        "source_key": "NewPopup2 convoy result/past-tense state",
-        "source_symbol": "NewPopup2 convoy result/past-tense state",
-        "source_table": "NewPopup2 convoy result/past-tense state",
+        "rationale": "NewPopup2_SendItem passes this as msg0 before the dynamic item name and uses 0x0011 afterward for punctuation. The regional 0x080F sentence is therefore replaced by a target-order prefix.",
+        "source_key": "NewPopup2_SendItem/msg0-before-item-name",
+        "source_symbol": "game.semantic_correction.msg_010",
+        "source_table": "texts/locales/authored/shards/semantic_corrections.<locale>.json",
         "subsystem": "menu-definition"
       }
     },
@@ -10822,7 +10817,7 @@
               "ja": {
                 "id": "0x0061",
                 "kind": "indexed",
-                "sha256": "2303063bb76d5f142b1306423864e00970da4a4f682a9329085f3f6deb93adf2"
+                "sha256": "868310e193d1af0b9a0a16b18d5826a5490fe3f9410defa30dc115829fc1db4a"
               },
               "zh-Hans": {
                 "id": "0x0061",
@@ -23232,39 +23227,80 @@
     },
     {
       "source": {
-        "import_id": "fe8cn.raw.import-0078",
-        "kind": "raw",
-        "regional_sources": {
-          "ja": {
-            "kind": "symbol",
-            "symbol": "gTerrainNames[TERRAIN_VILLAGE_CLOSED]"
-          },
-          "zh-Hans": {
-            "import_id": "fe8cn.raw.import-0078",
-            "kind": "import"
-          }
-        }
+        "kind": "authored",
+        "translation_key": "game.semantic_correction.msg_1c8"
       },
       "state": "verified",
       "target_id": "0x01C8",
       "verification": {
-        "candidate_seed": {
-          "matched": false,
-          "seed_tag": "interp",
-          "source_line": 454
+        "confidence": "explicit",
+        "evidence": "gTerrainNames[TERRAIN_VILLAGE_CLOSED] must still identify a village. The raw regional labels only say closed, so exact closed-village names are authored without altering snapshots.",
+        "evidence_kind": "target-authored-semantic-payload",
+        "method": "deterministic-final-mapping-promotion",
+        "promotion": {
+          "details": {
+            "english_payload_sha256": "2616bfdbc2b799d737b26c98ac5a775f058be6a223462d5c321750e2e87e942a",
+            "incorrect_source": {
+              "import_id": "fe8cn.raw.import-0078",
+              "kind": "raw",
+              "regional_sources": {
+                "ja": {
+                  "kind": "symbol",
+                  "symbol": "gTerrainNames[TERRAIN_VILLAGE_CLOSED]"
+                },
+                "zh-Hans": {
+                  "import_id": "fe8cn.raw.import-0078",
+                  "kind": "import"
+                }
+              }
+            },
+            "payload_sha256": {
+              "ja": "6ab6ed3d24937bd256d1bb46835a4a0231d49403889bc70837e5694f402ed407",
+              "zh-Hans": "4f7a5c4cd6fdfcdedc5bfa0866512bff51a24360048674b20cc4f4b98f143bc6"
+            },
+            "translation_key": "game.semantic_correction.msg_1c8"
+          },
+          "original_source": {
+            "import_id": "fe8cn.raw.import-0078",
+            "kind": "raw",
+            "regional_sources": {
+              "ja": {
+                "kind": "symbol",
+                "symbol": "gTerrainNames[TERRAIN_VILLAGE_CLOSED]"
+              },
+              "zh-Hans": {
+                "import_id": "fe8cn.raw.import-0078",
+                "kind": "import"
+              }
+            }
+          },
+          "original_verification": {
+            "candidate_seed": {
+              "matched": false,
+              "seed_tag": "interp",
+              "source_line": 454
+            },
+            "confidence": "high",
+            "evidence": "regional-raw-table: gTerrainNames TERRAIN_VILLAGE_CLOSED",
+            "evidence_kind": "regional-raw-table",
+            "method": "structural-crosswalk",
+            "rationale": "The shared terrain enum index selects a direct regional string.",
+            "source_key": "TERRAIN_VILLAGE_CLOSED",
+            "source_paths": {
+              "fe8j": "src/data/data_088617C8/data_088617C8.s",
+              "fe8u": "src/data_terrains.c"
+            },
+            "source_symbol": "gTerrainNames",
+            "source_table": "gTerrains_0/gTerrainNames",
+            "subsystem": "terrain"
+          },
+          "pipeline": "fe8u-final-mapping-v1",
+          "precedence": "d-semantic-correction"
         },
-        "confidence": "high",
-        "evidence": "regional-raw-table: gTerrainNames TERRAIN_VILLAGE_CLOSED",
-        "evidence_kind": "regional-raw-table",
-        "method": "structural-crosswalk",
-        "rationale": "The shared terrain enum index selects a direct regional string.",
-        "source_key": "TERRAIN_VILLAGE_CLOSED",
-        "source_paths": {
-          "fe8j": "src/data/data_088617C8/data_088617C8.s",
-          "fe8u": "src/data_terrains.c"
-        },
-        "source_symbol": "gTerrainNames",
-        "source_table": "gTerrains_0/gTerrainNames",
+        "rationale": "gTerrainNames[TERRAIN_VILLAGE_CLOSED] must still identify a village. The raw regional labels only say closed, so exact closed-village names are authored without altering snapshots.",
+        "source_key": "gTerrainNames[TERRAIN_VILLAGE_CLOSED]",
+        "source_symbol": "game.semantic_correction.msg_1c8",
+        "source_table": "texts/locales/authored/shards/semantic_corrections.<locale>.json",
         "subsystem": "terrain"
       }
     },
@@ -24676,77 +24712,159 @@
     },
     {
       "source": {
-        "import_id": "fe8cn.raw.import-0116",
-        "kind": "raw",
-        "regional_sources": {
-          "ja": {
-            "kind": "symbol",
-            "symbol": "gTerrainNames[TERRAIN_SHIP_FLAT]"
-          },
-          "zh-Hans": {
-            "import_id": "fe8cn.raw.import-0116",
-            "kind": "import"
-          }
-        }
+        "kind": "authored",
+        "translation_key": "game.semantic_correction.msg_1ee"
       },
       "state": "verified",
       "target_id": "0x01EE",
       "verification": {
-        "candidate_seed": {
-          "matched": false,
-          "seed_tag": "interp",
-          "source_line": 492
+        "confidence": "explicit",
+        "evidence": "The terrain enum slot is TERRAIN_SHIP_FLAT, not generic wasteland. Ship-planking terminology is authored for both locales while the imported raw records remain immutable.",
+        "evidence_kind": "target-authored-semantic-payload",
+        "method": "deterministic-final-mapping-promotion",
+        "promotion": {
+          "details": {
+            "english_payload_sha256": "a776cf705b291186fbfb42afb2e14aef767e468ea15db628dfadfd25cffaa74f",
+            "incorrect_source": {
+              "import_id": "fe8cn.raw.import-0116",
+              "kind": "raw",
+              "regional_sources": {
+                "ja": {
+                  "kind": "symbol",
+                  "symbol": "gTerrainNames[TERRAIN_SHIP_FLAT]"
+                },
+                "zh-Hans": {
+                  "import_id": "fe8cn.raw.import-0116",
+                  "kind": "import"
+                }
+              }
+            },
+            "payload_sha256": {
+              "ja": "895703d6691cc11b548bbf9d573328808769aed0751344f8cafd7f54ff1e4a5a",
+              "zh-Hans": "895703d6691cc11b548bbf9d573328808769aed0751344f8cafd7f54ff1e4a5a"
+            },
+            "translation_key": "game.semantic_correction.msg_1ee"
+          },
+          "original_source": {
+            "import_id": "fe8cn.raw.import-0116",
+            "kind": "raw",
+            "regional_sources": {
+              "ja": {
+                "kind": "symbol",
+                "symbol": "gTerrainNames[TERRAIN_SHIP_FLAT]"
+              },
+              "zh-Hans": {
+                "import_id": "fe8cn.raw.import-0116",
+                "kind": "import"
+              }
+            }
+          },
+          "original_verification": {
+            "candidate_seed": {
+              "matched": false,
+              "seed_tag": "interp",
+              "source_line": 492
+            },
+            "confidence": "high",
+            "evidence": "regional-raw-table: gTerrainNames TERRAIN_SHIP_FLAT",
+            "evidence_kind": "regional-raw-table",
+            "method": "structural-crosswalk",
+            "rationale": "The shared terrain enum index selects a direct regional string.",
+            "source_key": "TERRAIN_SHIP_FLAT",
+            "source_paths": {
+              "fe8j": "src/data/data_088617C8/data_088617C8.s",
+              "fe8u": "src/data_terrains.c"
+            },
+            "source_symbol": "gTerrainNames",
+            "source_table": "gTerrains_0/gTerrainNames",
+            "subsystem": "terrain"
+          },
+          "pipeline": "fe8u-final-mapping-v1",
+          "precedence": "d-semantic-correction"
         },
-        "confidence": "high",
-        "evidence": "regional-raw-table: gTerrainNames TERRAIN_SHIP_FLAT",
-        "evidence_kind": "regional-raw-table",
-        "method": "structural-crosswalk",
-        "rationale": "The shared terrain enum index selects a direct regional string.",
-        "source_key": "TERRAIN_SHIP_FLAT",
-        "source_paths": {
-          "fe8j": "src/data/data_088617C8/data_088617C8.s",
-          "fe8u": "src/data_terrains.c"
-        },
-        "source_symbol": "gTerrainNames",
-        "source_table": "gTerrains_0/gTerrainNames",
+        "rationale": "The terrain enum slot is TERRAIN_SHIP_FLAT, not generic wasteland. Ship-planking terminology is authored for both locales while the imported raw records remain immutable.",
+        "source_key": "gTerrainNames[TERRAIN_SHIP_FLAT]",
+        "source_symbol": "game.semantic_correction.msg_1ee",
+        "source_table": "texts/locales/authored/shards/semantic_corrections.<locale>.json",
         "subsystem": "terrain"
       }
     },
     {
       "source": {
-        "import_id": "fe8cn.raw.import-0117",
-        "kind": "raw",
-        "regional_sources": {
-          "ja": {
-            "kind": "symbol",
-            "symbol": "gTerrainNames[TERRAIN_SHIP_WRECK]"
-          },
-          "zh-Hans": {
-            "import_id": "fe8cn.raw.import-0117",
-            "kind": "import"
-          }
-        }
+        "kind": "authored",
+        "translation_key": "game.semantic_correction.msg_1ef"
       },
       "state": "verified",
       "target_id": "0x01EF",
       "verification": {
-        "candidate_seed": {
-          "matched": false,
-          "seed_tag": "interp",
-          "source_line": 493
+        "confidence": "explicit",
+        "evidence": "The terrain enum slot is TERRAIN_SHIP_WRECK, not a ruined house. Exact ship-wreck terminology is authored for both locales while preserving the raw source snapshots.",
+        "evidence_kind": "target-authored-semantic-payload",
+        "method": "deterministic-final-mapping-promotion",
+        "promotion": {
+          "details": {
+            "english_payload_sha256": "c926b3b5e36445ab1aac93932d7c293b7733f6b015b2da49c5cb292cf165481e",
+            "incorrect_source": {
+              "import_id": "fe8cn.raw.import-0117",
+              "kind": "raw",
+              "regional_sources": {
+                "ja": {
+                  "kind": "symbol",
+                  "symbol": "gTerrainNames[TERRAIN_SHIP_WRECK]"
+                },
+                "zh-Hans": {
+                  "import_id": "fe8cn.raw.import-0117",
+                  "kind": "import"
+                }
+              }
+            },
+            "payload_sha256": {
+              "ja": "1470df92d4e7e52bdac9c48463abee632e9fe01c1c0fbe70b5c556502efe6455",
+              "zh-Hans": "93df1ce3aeb62eac9dd942e7d948afc97a63182f4d34922f74e0cccdbca86f1a"
+            },
+            "translation_key": "game.semantic_correction.msg_1ef"
+          },
+          "original_source": {
+            "import_id": "fe8cn.raw.import-0117",
+            "kind": "raw",
+            "regional_sources": {
+              "ja": {
+                "kind": "symbol",
+                "symbol": "gTerrainNames[TERRAIN_SHIP_WRECK]"
+              },
+              "zh-Hans": {
+                "import_id": "fe8cn.raw.import-0117",
+                "kind": "import"
+              }
+            }
+          },
+          "original_verification": {
+            "candidate_seed": {
+              "matched": false,
+              "seed_tag": "interp",
+              "source_line": 493
+            },
+            "confidence": "high",
+            "evidence": "regional-raw-table: gTerrainNames TERRAIN_SHIP_WRECK",
+            "evidence_kind": "regional-raw-table",
+            "method": "structural-crosswalk",
+            "rationale": "The shared terrain enum index selects a direct regional string.",
+            "source_key": "TERRAIN_SHIP_WRECK",
+            "source_paths": {
+              "fe8j": "src/data/data_088617C8/data_088617C8.s",
+              "fe8u": "src/data_terrains.c"
+            },
+            "source_symbol": "gTerrainNames",
+            "source_table": "gTerrains_0/gTerrainNames",
+            "subsystem": "terrain"
+          },
+          "pipeline": "fe8u-final-mapping-v1",
+          "precedence": "d-semantic-correction"
         },
-        "confidence": "high",
-        "evidence": "regional-raw-table: gTerrainNames TERRAIN_SHIP_WRECK",
-        "evidence_kind": "regional-raw-table",
-        "method": "structural-crosswalk",
-        "rationale": "The shared terrain enum index selects a direct regional string.",
-        "source_key": "TERRAIN_SHIP_WRECK",
-        "source_paths": {
-          "fe8j": "src/data/data_088617C8/data_088617C8.s",
-          "fe8u": "src/data_terrains.c"
-        },
-        "source_symbol": "gTerrainNames",
-        "source_table": "gTerrains_0/gTerrainNames",
+        "rationale": "The terrain enum slot is TERRAIN_SHIP_WRECK, not a ruined house. Exact ship-wreck terminology is authored for both locales while preserving the raw source snapshots.",
+        "source_key": "gTerrainNames[TERRAIN_SHIP_WRECK]",
+        "source_symbol": "game.semantic_correction.msg_1ef",
+        "source_table": "texts/locales/authored/shards/semantic_corrections.<locale>.json",
         "subsystem": "terrain"
       }
     },
@@ -25572,7 +25690,7 @@
               "zh-Hans": {
                 "id": "0x018C",
                 "kind": "indexed",
-                "sha256": "63858527d15db213ae284bc1ad41ae37cc4ff2e82c8211e5df0653baabb27c28"
+                "sha256": "049bc88d2bf1149259635becc43545ae7bbfc2090dacd2ee791daa8c1a111a6e"
               }
             },
             "structural_agreement": true
@@ -39756,32 +39874,29 @@
     },
     {
       "source": {
-        "id": "0x032F",
-        "kind": "indexed",
-        "layout": "FE8J"
+        "kind": "authored",
+        "translation_key": "game.semantic_correction.msg_3a8"
       },
       "state": "verified",
       "target_id": "0x03A8",
       "verification": {
-        "confidence": "high",
-        "evidence": "FEBuilder line 817 maps 0x032F to 0x03A8",
-        "evidence_kind": "febuilder-structural-agreement",
+        "confidence": "explicit",
+        "evidence": "MSG_3A8 is the Emblem Seal item name. Regional 0x032F is a dynamic tactician-name book label, so exact standalone item names are authored without the tactician control sequence.",
+        "evidence_kind": "target-authored-semantic-payload",
         "method": "deterministic-final-mapping-promotion",
         "promotion": {
           "details": {
-            "candidate_payloads": {
-              "ja": {
-                "id": "0x032F",
-                "kind": "indexed",
-                "sha256": "334fa2fb683ffd01a44480b2c48753bbeea39b2566061e6cfd491edfd9f056c2"
-              },
-              "zh-Hans": {
-                "id": "0x032F",
-                "kind": "indexed",
-                "sha256": "915c692627d5bdc97fcd3522ee1a80ac3b0fc7d120c259b47da332d383a0f957"
-              }
+            "english_payload_sha256": "709585d1d3c3a2f67607d5c62883834c16efa4d6cffcee730640f32333105a72",
+            "incorrect_source": {
+              "id": "0x032F",
+              "kind": "indexed",
+              "layout": "FE8J"
             },
-            "structural_agreement": true
+            "payload_sha256": {
+              "ja": "60527d4ea84e21c6a45d3ccc29e8a12bb0ad4ba22d0cd1eb87656d5438606bc9",
+              "zh-Hans": "608ad52d76335ca25f96258c637a7a68b45e04c7acd57fc2d1bc412a6c99f44b"
+            },
+            "translation_key": "game.semantic_correction.msg_3a8"
           },
           "original_source": {
             "kind": "english_fallback",
@@ -39804,13 +39919,13 @@
             "subsystem": "unclassified"
           },
           "pipeline": "fe8u-final-mapping-v1",
-          "precedence": "c-febuilder"
+          "precedence": "d-semantic-correction"
         },
-        "rationale": "Independent structural evidence agrees with the FEBuilder provider.",
-        "source_key": "0x032F->0x03A8",
-        "source_symbol": "translate_textid_FE8.txt",
-        "source_table": "FEBuilder translate_textid_FE8",
-        "subsystem": "chapter-event"
+        "rationale": "MSG_3A8 is the Emblem Seal item name. Regional 0x032F is a dynamic tactician-name book label, so exact standalone item names are authored without the tactician control sequence.",
+        "source_key": "MSG_3A8/Emblem-Seal-item-name",
+        "source_symbol": "game.semantic_correction.msg_3a8",
+        "source_table": "texts/locales/authored/shards/semantic_corrections.<locale>.json",
+        "subsystem": "items"
       }
     },
     {
@@ -51115,7 +51230,7 @@
               "zh-Hans": {
                 "id": "0x048A",
                 "kind": "indexed",
-                "sha256": "67289968caee276b15017278cfef613ceaf0ffaf6e00f1929331614c6c79a35f"
+                "sha256": "bfaa81614aa9c1d874e1755f9191f3c4ef3cbf573433fe161746d05c92ce083a"
               }
             },
             "structural_agreement": true
@@ -54977,7 +55092,7 @@
               "zh-Hans": {
                 "id": "0x04D7",
                 "kind": "indexed",
-                "sha256": "5486f1d96fbfe3b576d5228dc27c1903e1175f0e4081bd703a23d7f4c736f180"
+                "sha256": "8163228d14980c81ad59a3cd8ac79d49c08ca3c3f396dd317bc27b9420dba72f"
               }
             },
             "structural_agreement": true
@@ -58922,9 +59037,8 @@
           "details": {
             "english_payload_sha256": "22f9ca5baced68bca88ceeb8f2647cf46843895600d5e2b5d20106fec8261caa",
             "incorrect_source": {
-              "id": "0x004A",
-              "kind": "indexed",
-              "layout": "FE8J"
+              "kind": "english_fallback",
+              "reason": "not-yet-verified"
             },
             "payload_sha256": {
               "ja": "19830cab71b81ee0698a5a24524c126d7070bb128a3bb60a0904cf310e58083b",
@@ -74620,90 +74734,184 @@
     },
     {
       "source": {
-        "import_id": "fe8cn.raw.import-0014",
-        "kind": "raw",
-        "regional_sources": {
-          "ja": {
-            "kind": "literal",
-            "provenance": {
-              "context_sha256": "3adaaf05612029d72f6cda561c5667d48857564b5fcf4f6d8569de6536fd2df3",
-              "source_key": "message_id=0x06AE",
-              "source_path": "src/menu_def.c",
-              "source_symbol": "gDebugMenuItems"
-            },
-            "text": "　周回数"
-          },
-          "zh-Hans": {
-            "import_id": "fe8cn.raw.import-0014",
-            "kind": "import"
-          }
-        }
+        "kind": "authored",
+        "translation_key": "game.semantic_correction.msg_6ae"
       },
       "state": "verified",
       "target_id": "0x06AE",
       "verification": {
-        "candidate_seed": {
-          "matched": false,
-          "seed_tag": "interp",
-          "source_line": 1555
+        "confidence": "explicit",
+        "evidence": "DebugMenu_ClearDraw edits GetGlobalCompletionCount and cleared_playthroughs. The menu label therefore names the playthrough clear count rather than an erase operation.",
+        "evidence_kind": "target-authored-semantic-payload",
+        "method": "deterministic-final-mapping-promotion",
+        "promotion": {
+          "details": {
+            "english_payload_sha256": "bd470203e349109c5c111ea91e03e35413b5fc8310856f32a53cfc237f0e928a",
+            "incorrect_source": {
+              "import_id": "fe8cn.raw.import-0014",
+              "kind": "raw",
+              "regional_sources": {
+                "ja": {
+                  "kind": "literal",
+                  "provenance": {
+                    "context_sha256": "3adaaf05612029d72f6cda561c5667d48857564b5fcf4f6d8569de6536fd2df3",
+                    "source_key": "message_id=0x06AE",
+                    "source_path": "src/menu_def.c",
+                    "source_symbol": "gDebugMenuItems"
+                  },
+                  "text": "　周回数"
+                },
+                "zh-Hans": {
+                  "import_id": "fe8cn.raw.import-0014",
+                  "kind": "import"
+                }
+              }
+            },
+            "payload_sha256": {
+              "ja": "fb5829531165d809f61c250f0ecb8d7b017b1dcdc397525e75f82e399da53815",
+              "zh-Hans": "93ea6bf83489d1887448ebe2abdeab203af51118f89cb04530e6338ca67bad4d"
+            },
+            "translation_key": "game.semantic_correction.msg_6ae"
+          },
+          "original_source": {
+            "import_id": "fe8cn.raw.import-0014",
+            "kind": "raw",
+            "regional_sources": {
+              "ja": {
+                "kind": "literal",
+                "provenance": {
+                  "context_sha256": "3adaaf05612029d72f6cda561c5667d48857564b5fcf4f6d8569de6536fd2df3",
+                  "source_key": "message_id=0x06AE",
+                  "source_path": "src/menu_def.c",
+                  "source_symbol": "gDebugMenuItems"
+                },
+                "text": "　周回数"
+              },
+              "zh-Hans": {
+                "import_id": "fe8cn.raw.import-0014",
+                "kind": "import"
+              }
+            }
+          },
+          "original_verification": {
+            "candidate_seed": {
+              "matched": false,
+              "seed_tag": "interp",
+              "source_line": 1555
+            },
+            "confidence": "high",
+            "evidence": "regional-direct-message-id: gDebugMenuItems gDebugMenuItems.override[0x15].name",
+            "evidence_kind": "regional-direct-message-id",
+            "method": "structural-crosswalk",
+            "rationale": "The FE8U menu row already resolves this stable message ID, while the matching authorized FE8J row and FE8CN raw record provide regional text.",
+            "source_key": "gDebugMenuItems.override[0x15].name",
+            "source_paths": {
+              "fe8j": "src/menu_def.c",
+              "fe8u": "src/menu_def.c"
+            },
+            "source_symbol": "gDebugMenuItems",
+            "source_table": "gDebugMenuItems",
+            "subsystem": "menus"
+          },
+          "pipeline": "fe8u-final-mapping-v1",
+          "precedence": "d-semantic-correction"
         },
-        "confidence": "high",
-        "evidence": "regional-direct-message-id: gDebugMenuItems gDebugMenuItems.override[0x15].name",
-        "evidence_kind": "regional-direct-message-id",
-        "method": "structural-crosswalk",
-        "rationale": "The FE8U menu row already resolves this stable message ID, while the matching authorized FE8J row and FE8CN raw record provide regional text.",
-        "source_key": "gDebugMenuItems.override[0x15].name",
-        "source_paths": {
-          "fe8j": "src/menu_def.c",
-          "fe8u": "src/menu_def.c"
-        },
-        "source_symbol": "gDebugMenuItems",
-        "source_table": "gDebugMenuItems",
-        "subsystem": "menus"
+        "rationale": "DebugMenu_ClearDraw edits GetGlobalCompletionCount and cleared_playthroughs. The menu label therefore names the playthrough clear count rather than an erase operation.",
+        "source_key": "gDebugMenuItems[4]/playthrough-clear-count",
+        "source_symbol": "game.semantic_correction.msg_6ae",
+        "source_table": "texts/locales/authored/shards/semantic_corrections.<locale>.json",
+        "subsystem": "debug-menu"
       }
     },
     {
       "source": {
-        "import_id": "fe8cn.raw.import-0015",
-        "kind": "raw",
-        "regional_sources": {
-          "ja": {
-            "kind": "literal",
-            "provenance": {
-              "context_sha256": "e2b3546d0a9dd815ef28a36e503cf2dfbba2853c1d25054b79481b3754ded73a",
-              "source_key": "message_id=0x06AF",
-              "source_path": "src/menu_def.c",
-              "source_symbol": "gDebugMenuItems"
-            },
-            "text": "　クリアずみ"
-          },
-          "zh-Hans": {
-            "import_id": "fe8cn.raw.import-0015",
-            "kind": "import"
-          }
-        }
+        "kind": "authored",
+        "translation_key": "game.semantic_correction.msg_6af"
       },
       "state": "verified",
       "target_id": "0x06AF",
       "verification": {
-        "candidate_seed": {
-          "matched": false,
-          "seed_tag": "interp",
-          "source_line": 1556
+        "confidence": "explicit",
+        "evidence": "gDebugMenuItems routes this row to DebugMenu_ErasedEffect, whose confirmation action calls SavePlayThroughData and writes a completed save. The label must say mark/register clear.",
+        "evidence_kind": "target-authored-semantic-payload",
+        "method": "deterministic-final-mapping-promotion",
+        "promotion": {
+          "details": {
+            "english_payload_sha256": "1095a953b01f2b2f3f5fd4457ffddb0a7b6ca648ee1f36e60914df85cadbe35a",
+            "incorrect_source": {
+              "import_id": "fe8cn.raw.import-0015",
+              "kind": "raw",
+              "regional_sources": {
+                "ja": {
+                  "kind": "literal",
+                  "provenance": {
+                    "context_sha256": "e2b3546d0a9dd815ef28a36e503cf2dfbba2853c1d25054b79481b3754ded73a",
+                    "source_key": "message_id=0x06AF",
+                    "source_path": "src/menu_def.c",
+                    "source_symbol": "gDebugMenuItems"
+                  },
+                  "text": "　クリアずみ"
+                },
+                "zh-Hans": {
+                  "import_id": "fe8cn.raw.import-0015",
+                  "kind": "import"
+                }
+              }
+            },
+            "payload_sha256": {
+              "ja": "996a3e2f7afdd73a353e08d86ab2eda17afda62a5876796781f32dafe7468efd",
+              "zh-Hans": "4930977b94a023404bbf4e71f1006f56adef2b3e2000c876b2a78b3dcb70a3f0"
+            },
+            "translation_key": "game.semantic_correction.msg_6af"
+          },
+          "original_source": {
+            "import_id": "fe8cn.raw.import-0015",
+            "kind": "raw",
+            "regional_sources": {
+              "ja": {
+                "kind": "literal",
+                "provenance": {
+                  "context_sha256": "e2b3546d0a9dd815ef28a36e503cf2dfbba2853c1d25054b79481b3754ded73a",
+                  "source_key": "message_id=0x06AF",
+                  "source_path": "src/menu_def.c",
+                  "source_symbol": "gDebugMenuItems"
+                },
+                "text": "　クリアずみ"
+              },
+              "zh-Hans": {
+                "import_id": "fe8cn.raw.import-0015",
+                "kind": "import"
+              }
+            }
+          },
+          "original_verification": {
+            "candidate_seed": {
+              "matched": false,
+              "seed_tag": "interp",
+              "source_line": 1556
+            },
+            "confidence": "high",
+            "evidence": "regional-direct-message-id: gDebugMenuItems gDebugMenuItems.override[0x16].name",
+            "evidence_kind": "regional-direct-message-id",
+            "method": "structural-crosswalk",
+            "rationale": "The FE8U menu row already resolves this stable message ID, while the matching authorized FE8J row and FE8CN raw record provide regional text.",
+            "source_key": "gDebugMenuItems.override[0x16].name",
+            "source_paths": {
+              "fe8j": "src/menu_def.c",
+              "fe8u": "src/menu_def.c"
+            },
+            "source_symbol": "gDebugMenuItems",
+            "source_table": "gDebugMenuItems",
+            "subsystem": "menus"
+          },
+          "pipeline": "fe8u-final-mapping-v1",
+          "precedence": "d-semantic-correction"
         },
-        "confidence": "high",
-        "evidence": "regional-direct-message-id: gDebugMenuItems gDebugMenuItems.override[0x16].name",
-        "evidence_kind": "regional-direct-message-id",
-        "method": "structural-crosswalk",
-        "rationale": "The FE8U menu row already resolves this stable message ID, while the matching authorized FE8J row and FE8CN raw record provide regional text.",
-        "source_key": "gDebugMenuItems.override[0x16].name",
-        "source_paths": {
-          "fe8j": "src/menu_def.c",
-          "fe8u": "src/menu_def.c"
-        },
-        "source_symbol": "gDebugMenuItems",
-        "source_table": "gDebugMenuItems",
-        "subsystem": "menus"
+        "rationale": "gDebugMenuItems routes this row to DebugMenu_ErasedEffect, whose confirmation action calls SavePlayThroughData and writes a completed save. The label must say mark/register clear.",
+        "source_key": "gDebugMenuItems[5]/mark-save-cleared",
+        "source_symbol": "game.semantic_correction.msg_6af",
+        "source_table": "texts/locales/authored/shards/semantic_corrections.<locale>.json",
+        "subsystem": "debug-menu"
       }
     },
     {
@@ -74799,37 +75007,28 @@
     },
     {
       "source": {
-        "import_id": "fe8cn.raw.import-0088",
-        "kind": "raw",
-        "regional_sources": {
-          "ja": {
-            "kind": "symbol",
-            "provider_target_id": "0x01D2",
-            "symbol": "gTerrainNames[TERRAIN_SAND]"
-          },
-          "zh-Hans": {
-            "import_id": "fe8cn.raw.import-0088",
-            "kind": "import"
-          }
-        }
+        "kind": "authored",
+        "translation_key": "game.semantic_correction.msg_6b2"
       },
       "state": "verified",
       "target_id": "0x06B2",
       "verification": {
-        "confidence": "high",
-        "evidence": "Exact normalized English payload/control equality with 0x01D2; all mapped donors have identical JA/ZH payloads",
-        "evidence_kind": "exact-normalized-english-and-control-equality",
+        "confidence": "explicit",
+        "evidence": "DebugMenu_WeatherDraw indexes MSG_6B2 for WEATHER_SANDSTORM. Exact-English reuse of the terrain Sand label loses the weather meaning, so Sandstorm is authored.",
+        "evidence_kind": "target-authored-semantic-payload",
         "method": "deterministic-final-mapping-promotion",
         "promotion": {
           "details": {
-            "donor_target_id": "0x01D2",
-            "donor_target_ids": [
-              "0x01D2"
-            ],
-            "localized_payload_sha256": {
-              "ja": "54b0892a0c1c362f86445733643d5f62007f29a094238dc2d4c06700399db0fe",
-              "zh-Hans": "400497c3ef88809f1d8036de1c774d55bd6bd7d29f52461f0dc7b429c9d99489"
-            }
+            "english_payload_sha256": "44c6cc2d3d95bc07464c7e9b6ba41a17e4e8e383b80eb3280bf205bd799caae8",
+            "incorrect_source": {
+              "kind": "english_fallback",
+              "reason": "not-yet-verified"
+            },
+            "payload_sha256": {
+              "ja": "5209a50c8e4ba8e140daa8e975020b356852229b6b95cd8e75f965506f50662c",
+              "zh-Hans": "9cfef6cf3568a7f8cc517dc3ce8af11195a22239a8604d4abdb4d84e4f27ba99"
+            },
+            "translation_key": "game.semantic_correction.msg_6b2"
           },
           "original_source": {
             "kind": "english_fallback",
@@ -74852,13 +75051,13 @@
             "subsystem": "unclassified"
           },
           "pipeline": "fe8u-final-mapping-v1",
-          "precedence": "e-exact-english"
+          "precedence": "d-semantic-correction"
         },
-        "rationale": "Reuses a mapped target's identical regional provider.",
-        "source_key": "44c6cc2d3d95bc07464c7e9b6ba41a17e4e8e383b80eb3280bf205bd799caae8",
-        "source_symbol": "MSG_6B2",
-        "source_table": "FE8U English message corpus",
-        "subsystem": "unclassified"
+        "rationale": "DebugMenu_WeatherDraw indexes MSG_6B2 for WEATHER_SANDSTORM. Exact-English reuse of the terrain Sand label loses the weather meaning, so Sandstorm is authored.",
+        "source_key": "DebugMenu_WeatherDraw/weatherTextIds[WEATHER_SANDSTORM]",
+        "source_symbol": "game.semantic_correction.msg_6b2",
+        "source_table": "texts/locales/authored/shards/semantic_corrections.<locale>.json",
+        "subsystem": "debug-menu"
       }
     },
     {
@@ -75145,178 +75344,366 @@
     },
     {
       "source": {
-        "import_id": "fe8cn.raw.import-0000",
-        "kind": "raw",
-        "regional_sources": {
-          "ja": {
-            "kind": "literal",
-            "provenance": {
-              "context_sha256": "d6fc4f6b1e2eced517d9c4b237b82e3dec36fc62d0504ffeb99a6005d045f039",
-              "source_key": "message_id=0x06B9",
-              "source_path": "src/menu_def.c",
-              "source_symbol": "gDebugClearMenuItems"
-            },
-            "text": "ファイルをクリアずみに"
-          },
-          "zh-Hans": {
-            "import_id": "fe8cn.raw.import-0000",
-            "kind": "import"
-          }
-        }
+        "kind": "authored",
+        "translation_key": "game.semantic_correction.msg_6b9"
       },
       "state": "verified",
       "target_id": "0x06B9",
       "verification": {
-        "candidate_seed": {
-          "matched": false,
-          "seed_tag": "interp",
-          "source_line": 1566
+        "confidence": "explicit",
+        "evidence": "The first confirmation row describes marking the save as cleared. DebugClearMenu_ClearFile records playthrough completion and rewrites the save; it does not delete the file.",
+        "evidence_kind": "target-authored-semantic-payload",
+        "method": "deterministic-final-mapping-promotion",
+        "promotion": {
+          "details": {
+            "english_payload_sha256": "a7176f9242be570405a7a05039134f7d89d8f61dc3e5c7adf284bcafe7e03d54",
+            "incorrect_source": {
+              "import_id": "fe8cn.raw.import-0000",
+              "kind": "raw",
+              "regional_sources": {
+                "ja": {
+                  "kind": "literal",
+                  "provenance": {
+                    "context_sha256": "d6fc4f6b1e2eced517d9c4b237b82e3dec36fc62d0504ffeb99a6005d045f039",
+                    "source_key": "message_id=0x06B9",
+                    "source_path": "src/menu_def.c",
+                    "source_symbol": "gDebugClearMenuItems"
+                  },
+                  "text": "ファイルをクリアずみに"
+                },
+                "zh-Hans": {
+                  "import_id": "fe8cn.raw.import-0000",
+                  "kind": "import"
+                }
+              }
+            },
+            "payload_sha256": {
+              "ja": "551ccca0c167ca6acb65e6d47bc2673f1ee4bb79ce1c57a8179339b05fde5d28",
+              "zh-Hans": "341f7c425975de67339d9665d67483207291bd71ab87b8f97bc3ef10e8c67e8e"
+            },
+            "translation_key": "game.semantic_correction.msg_6b9"
+          },
+          "original_source": {
+            "import_id": "fe8cn.raw.import-0000",
+            "kind": "raw",
+            "regional_sources": {
+              "ja": {
+                "kind": "literal",
+                "provenance": {
+                  "context_sha256": "d6fc4f6b1e2eced517d9c4b237b82e3dec36fc62d0504ffeb99a6005d045f039",
+                  "source_key": "message_id=0x06B9",
+                  "source_path": "src/menu_def.c",
+                  "source_symbol": "gDebugClearMenuItems"
+                },
+                "text": "ファイルをクリアずみに"
+              },
+              "zh-Hans": {
+                "import_id": "fe8cn.raw.import-0000",
+                "kind": "import"
+              }
+            }
+          },
+          "original_verification": {
+            "candidate_seed": {
+              "matched": false,
+              "seed_tag": "interp",
+              "source_line": 1566
+            },
+            "confidence": "high",
+            "evidence": "regional-direct-message-id: gDebugClearMenuItems gDebugClearMenuItems.override[0x3].name",
+            "evidence_kind": "regional-direct-message-id",
+            "method": "structural-crosswalk",
+            "rationale": "The FE8U menu row already resolves this stable message ID, while the matching authorized FE8J row and FE8CN raw record provide regional text.",
+            "source_key": "gDebugClearMenuItems.override[0x3].name",
+            "source_paths": {
+              "fe8j": "src/menu_def.c",
+              "fe8u": "src/menu_def.c"
+            },
+            "source_symbol": "gDebugClearMenuItems",
+            "source_table": "gDebugClearMenuItems",
+            "subsystem": "menus"
+          },
+          "pipeline": "fe8u-final-mapping-v1",
+          "precedence": "d-semantic-correction"
         },
-        "confidence": "high",
-        "evidence": "regional-direct-message-id: gDebugClearMenuItems gDebugClearMenuItems.override[0x3].name",
-        "evidence_kind": "regional-direct-message-id",
-        "method": "structural-crosswalk",
-        "rationale": "The FE8U menu row already resolves this stable message ID, while the matching authorized FE8J row and FE8CN raw record provide regional text.",
-        "source_key": "gDebugClearMenuItems.override[0x3].name",
-        "source_paths": {
-          "fe8j": "src/menu_def.c",
-          "fe8u": "src/menu_def.c"
-        },
-        "source_symbol": "gDebugClearMenuItems",
-        "source_table": "gDebugClearMenuItems",
-        "subsystem": "menus"
+        "rationale": "The first confirmation row describes marking the save as cleared. DebugClearMenu_ClearFile records playthrough completion and rewrites the save; it does not delete the file.",
+        "source_key": "gDebugClearMenuItems[0]/mark-save-cleared",
+        "source_symbol": "game.semantic_correction.msg_6b9",
+        "source_table": "texts/locales/authored/shards/semantic_corrections.<locale>.json",
+        "subsystem": "debug-menu"
       }
     },
     {
       "source": {
-        "import_id": "fe8cn.raw.import-0001",
-        "kind": "raw",
-        "regional_sources": {
-          "ja": {
-            "kind": "literal",
-            "provenance": {
-              "context_sha256": "be93dafe1ac9a5b7a64624db449a60bd083dc796cbc3d91f4500a0264050366c",
-              "source_key": "message_id=0x06BA",
-              "source_path": "src/menu_def.c",
-              "source_symbol": "gDebugClearMenuItems"
-            },
-            "text": "しますか？"
-          },
-          "zh-Hans": {
-            "import_id": "fe8cn.raw.import-0001",
-            "kind": "import"
-          }
-        }
+        "kind": "authored",
+        "translation_key": "game.semantic_correction.msg_6ba"
       },
       "state": "verified",
       "target_id": "0x06BA",
       "verification": {
-        "candidate_seed": {
-          "matched": false,
-          "seed_tag": "interp",
-          "source_line": 1567
+        "confidence": "explicit",
+        "evidence": "This row completes the mark-cleared confirmation question and must not describe deleting the save.",
+        "evidence_kind": "target-authored-semantic-payload",
+        "method": "deterministic-final-mapping-promotion",
+        "promotion": {
+          "details": {
+            "english_payload_sha256": "f67aac0af256f4dd3dd9042096f112269aaea447450898d3f350f6f20f1f2bd7",
+            "incorrect_source": {
+              "import_id": "fe8cn.raw.import-0001",
+              "kind": "raw",
+              "regional_sources": {
+                "ja": {
+                  "kind": "literal",
+                  "provenance": {
+                    "context_sha256": "be93dafe1ac9a5b7a64624db449a60bd083dc796cbc3d91f4500a0264050366c",
+                    "source_key": "message_id=0x06BA",
+                    "source_path": "src/menu_def.c",
+                    "source_symbol": "gDebugClearMenuItems"
+                  },
+                  "text": "しますか？"
+                },
+                "zh-Hans": {
+                  "import_id": "fe8cn.raw.import-0001",
+                  "kind": "import"
+                }
+              }
+            },
+            "payload_sha256": {
+              "ja": "f4e8af0302f76aa5214451e3cbdf4511abc0058c46c27ff98ad44d9fd32db661",
+              "zh-Hans": "e77b21c5fbd67ce9d57f1dc128f41762731eae67014a2c53b0bc7a989a864a0a"
+            },
+            "translation_key": "game.semantic_correction.msg_6ba"
+          },
+          "original_source": {
+            "import_id": "fe8cn.raw.import-0001",
+            "kind": "raw",
+            "regional_sources": {
+              "ja": {
+                "kind": "literal",
+                "provenance": {
+                  "context_sha256": "be93dafe1ac9a5b7a64624db449a60bd083dc796cbc3d91f4500a0264050366c",
+                  "source_key": "message_id=0x06BA",
+                  "source_path": "src/menu_def.c",
+                  "source_symbol": "gDebugClearMenuItems"
+                },
+                "text": "しますか？"
+              },
+              "zh-Hans": {
+                "import_id": "fe8cn.raw.import-0001",
+                "kind": "import"
+              }
+            }
+          },
+          "original_verification": {
+            "candidate_seed": {
+              "matched": false,
+              "seed_tag": "interp",
+              "source_line": 1567
+            },
+            "confidence": "high",
+            "evidence": "regional-direct-message-id: gDebugClearMenuItems gDebugClearMenuItems.override[0x4].name",
+            "evidence_kind": "regional-direct-message-id",
+            "method": "structural-crosswalk",
+            "rationale": "The FE8U menu row already resolves this stable message ID, while the matching authorized FE8J row and FE8CN raw record provide regional text.",
+            "source_key": "gDebugClearMenuItems.override[0x4].name",
+            "source_paths": {
+              "fe8j": "src/menu_def.c",
+              "fe8u": "src/menu_def.c"
+            },
+            "source_symbol": "gDebugClearMenuItems",
+            "source_table": "gDebugClearMenuItems",
+            "subsystem": "menus"
+          },
+          "pipeline": "fe8u-final-mapping-v1",
+          "precedence": "d-semantic-correction"
         },
-        "confidence": "high",
-        "evidence": "regional-direct-message-id: gDebugClearMenuItems gDebugClearMenuItems.override[0x4].name",
-        "evidence_kind": "regional-direct-message-id",
-        "method": "structural-crosswalk",
-        "rationale": "The FE8U menu row already resolves this stable message ID, while the matching authorized FE8J row and FE8CN raw record provide regional text.",
-        "source_key": "gDebugClearMenuItems.override[0x4].name",
-        "source_paths": {
-          "fe8j": "src/menu_def.c",
-          "fe8u": "src/menu_def.c"
-        },
-        "source_symbol": "gDebugClearMenuItems",
-        "source_table": "gDebugClearMenuItems",
-        "subsystem": "menus"
+        "rationale": "This row completes the mark-cleared confirmation question and must not describe deleting the save.",
+        "source_key": "gDebugClearMenuItems[1]/confirmation-question",
+        "source_symbol": "game.semantic_correction.msg_6ba",
+        "source_table": "texts/locales/authored/shards/semantic_corrections.<locale>.json",
+        "subsystem": "debug-menu"
       }
     },
     {
       "source": {
-        "import_id": "fe8cn.raw.import-0002",
-        "kind": "raw",
-        "regional_sources": {
-          "ja": {
-            "kind": "literal",
-            "provenance": {
-              "context_sha256": "0f21151397c31fec0e48d9f2b5a100eeb36371fc55a44e2064b718e890666c2f",
-              "source_key": "message_id=0x06BB",
-              "source_path": "src/menu_def.c",
-              "source_symbol": "gDebugClearMenuItems"
-            },
-            "text": "クリアずみファイルでは"
-          },
-          "zh-Hans": {
-            "import_id": "fe8cn.raw.import-0002",
-            "kind": "import"
-          }
-        }
+        "kind": "authored",
+        "translation_key": "game.semantic_correction.msg_6bb"
       },
       "state": "verified",
       "target_id": "0x06BB",
       "verification": {
-        "candidate_seed": {
-          "matched": false,
-          "seed_tag": "interp",
-          "source_line": 1568
+        "confidence": "explicit",
+        "evidence": "This warning names the resulting cleared-save state. The regional deletion wording contradicts the menu action.",
+        "evidence_kind": "target-authored-semantic-payload",
+        "method": "deterministic-final-mapping-promotion",
+        "promotion": {
+          "details": {
+            "english_payload_sha256": "181424d6ebecf9ad0c7611713bf65f2d735f7c2d024d0aaad489da0f27d02c97",
+            "incorrect_source": {
+              "import_id": "fe8cn.raw.import-0002",
+              "kind": "raw",
+              "regional_sources": {
+                "ja": {
+                  "kind": "literal",
+                  "provenance": {
+                    "context_sha256": "0f21151397c31fec0e48d9f2b5a100eeb36371fc55a44e2064b718e890666c2f",
+                    "source_key": "message_id=0x06BB",
+                    "source_path": "src/menu_def.c",
+                    "source_symbol": "gDebugClearMenuItems"
+                  },
+                  "text": "クリアずみファイルでは"
+                },
+                "zh-Hans": {
+                  "import_id": "fe8cn.raw.import-0002",
+                  "kind": "import"
+                }
+              }
+            },
+            "payload_sha256": {
+              "ja": "65a334d51c4ca66174bd97cb5f9f2136470d314a9f54ac6c01b7cb1f3e842b75",
+              "zh-Hans": "97c477a6df13f64fb686c0787396632b104f159225d9d36a410c138f1e8601a5"
+            },
+            "translation_key": "game.semantic_correction.msg_6bb"
+          },
+          "original_source": {
+            "import_id": "fe8cn.raw.import-0002",
+            "kind": "raw",
+            "regional_sources": {
+              "ja": {
+                "kind": "literal",
+                "provenance": {
+                  "context_sha256": "0f21151397c31fec0e48d9f2b5a100eeb36371fc55a44e2064b718e890666c2f",
+                  "source_key": "message_id=0x06BB",
+                  "source_path": "src/menu_def.c",
+                  "source_symbol": "gDebugClearMenuItems"
+                },
+                "text": "クリアずみファイルでは"
+              },
+              "zh-Hans": {
+                "import_id": "fe8cn.raw.import-0002",
+                "kind": "import"
+              }
+            }
+          },
+          "original_verification": {
+            "candidate_seed": {
+              "matched": false,
+              "seed_tag": "interp",
+              "source_line": 1568
+            },
+            "confidence": "high",
+            "evidence": "regional-direct-message-id: gDebugClearMenuItems gDebugClearMenuItems.override[0x5].name",
+            "evidence_kind": "regional-direct-message-id",
+            "method": "structural-crosswalk",
+            "rationale": "The FE8U menu row already resolves this stable message ID, while the matching authorized FE8J row and FE8CN raw record provide regional text.",
+            "source_key": "gDebugClearMenuItems.override[0x5].name",
+            "source_paths": {
+              "fe8j": "src/menu_def.c",
+              "fe8u": "src/menu_def.c"
+            },
+            "source_symbol": "gDebugClearMenuItems",
+            "source_table": "gDebugClearMenuItems",
+            "subsystem": "menus"
+          },
+          "pipeline": "fe8u-final-mapping-v1",
+          "precedence": "d-semantic-correction"
         },
-        "confidence": "high",
-        "evidence": "regional-direct-message-id: gDebugClearMenuItems gDebugClearMenuItems.override[0x5].name",
-        "evidence_kind": "regional-direct-message-id",
-        "method": "structural-crosswalk",
-        "rationale": "The FE8U menu row already resolves this stable message ID, while the matching authorized FE8J row and FE8CN raw record provide regional text.",
-        "source_key": "gDebugClearMenuItems.override[0x5].name",
-        "source_paths": {
-          "fe8j": "src/menu_def.c",
-          "fe8u": "src/menu_def.c"
-        },
-        "source_symbol": "gDebugClearMenuItems",
-        "source_table": "gDebugClearMenuItems",
-        "subsystem": "menus"
+        "rationale": "This warning names the resulting cleared-save state. The regional deletion wording contradicts the menu action.",
+        "source_key": "gDebugClearMenuItems[2]/cleared-save-warning",
+        "source_symbol": "game.semantic_correction.msg_6bb",
+        "source_table": "texts/locales/authored/shards/semantic_corrections.<locale>.json",
+        "subsystem": "debug-menu"
       }
     },
     {
       "source": {
-        "import_id": "fe8cn.raw.import-0003",
-        "kind": "raw",
-        "regional_sources": {
-          "ja": {
-            "kind": "literal",
-            "provenance": {
-              "context_sha256": "c6fec9f72fabc0894789f6407a5536fa13297d7e164b2d7b9c6676692efc2709",
-              "source_key": "message_id=0x06BC",
-              "source_path": "src/menu_def.c",
-              "source_symbol": "gDebugClearMenuItems"
-            },
-            "text": "以後プレイできません"
-          },
-          "zh-Hans": {
-            "import_id": "fe8cn.raw.import-0003",
-            "kind": "import"
-          }
-        }
+        "kind": "authored",
+        "translation_key": "game.semantic_correction.msg_6bc"
       },
       "state": "verified",
       "target_id": "0x06BC",
       "verification": {
-        "candidate_seed": {
-          "matched": false,
-          "seed_tag": "interp",
-          "source_line": 1569
+        "confidence": "explicit",
+        "evidence": "The final warning says the completed save cannot continue normal play afterward. It must not claim that the file is deleted or gone.",
+        "evidence_kind": "target-authored-semantic-payload",
+        "method": "deterministic-final-mapping-promotion",
+        "promotion": {
+          "details": {
+            "english_payload_sha256": "88def947b12d071f41e5b0d2e41fe7283d2bd3836cd0a554978aaf86019f51e9",
+            "incorrect_source": {
+              "import_id": "fe8cn.raw.import-0003",
+              "kind": "raw",
+              "regional_sources": {
+                "ja": {
+                  "kind": "literal",
+                  "provenance": {
+                    "context_sha256": "c6fec9f72fabc0894789f6407a5536fa13297d7e164b2d7b9c6676692efc2709",
+                    "source_key": "message_id=0x06BC",
+                    "source_path": "src/menu_def.c",
+                    "source_symbol": "gDebugClearMenuItems"
+                  },
+                  "text": "以後プレイできません"
+                },
+                "zh-Hans": {
+                  "import_id": "fe8cn.raw.import-0003",
+                  "kind": "import"
+                }
+              }
+            },
+            "payload_sha256": {
+              "ja": "88562c12b5ea0c944fbafe8b606fba6f52f58cdf1e279a02fae149c8b71b145f",
+              "zh-Hans": "45a5b980bbc0d406d5a350ee153a4172572a0e07537f06fb76e061d2c4aa2ace"
+            },
+            "translation_key": "game.semantic_correction.msg_6bc"
+          },
+          "original_source": {
+            "import_id": "fe8cn.raw.import-0003",
+            "kind": "raw",
+            "regional_sources": {
+              "ja": {
+                "kind": "literal",
+                "provenance": {
+                  "context_sha256": "c6fec9f72fabc0894789f6407a5536fa13297d7e164b2d7b9c6676692efc2709",
+                  "source_key": "message_id=0x06BC",
+                  "source_path": "src/menu_def.c",
+                  "source_symbol": "gDebugClearMenuItems"
+                },
+                "text": "以後プレイできません"
+              },
+              "zh-Hans": {
+                "import_id": "fe8cn.raw.import-0003",
+                "kind": "import"
+              }
+            }
+          },
+          "original_verification": {
+            "candidate_seed": {
+              "matched": false,
+              "seed_tag": "interp",
+              "source_line": 1569
+            },
+            "confidence": "high",
+            "evidence": "regional-direct-message-id: gDebugClearMenuItems gDebugClearMenuItems.override[0x6].name",
+            "evidence_kind": "regional-direct-message-id",
+            "method": "structural-crosswalk",
+            "rationale": "The FE8U menu row already resolves this stable message ID, while the matching authorized FE8J row and FE8CN raw record provide regional text.",
+            "source_key": "gDebugClearMenuItems.override[0x6].name",
+            "source_paths": {
+              "fe8j": "src/menu_def.c",
+              "fe8u": "src/menu_def.c"
+            },
+            "source_symbol": "gDebugClearMenuItems",
+            "source_table": "gDebugClearMenuItems",
+            "subsystem": "menus"
+          },
+          "pipeline": "fe8u-final-mapping-v1",
+          "precedence": "d-semantic-correction"
         },
-        "confidence": "high",
-        "evidence": "regional-direct-message-id: gDebugClearMenuItems gDebugClearMenuItems.override[0x6].name",
-        "evidence_kind": "regional-direct-message-id",
-        "method": "structural-crosswalk",
-        "rationale": "The FE8U menu row already resolves this stable message ID, while the matching authorized FE8J row and FE8CN raw record provide regional text.",
-        "source_key": "gDebugClearMenuItems.override[0x6].name",
-        "source_paths": {
-          "fe8j": "src/menu_def.c",
-          "fe8u": "src/menu_def.c"
-        },
-        "source_symbol": "gDebugClearMenuItems",
-        "source_table": "gDebugClearMenuItems",
-        "subsystem": "menus"
+        "rationale": "The final warning says the completed save cannot continue normal play afterward. It must not claim that the file is deleted or gone.",
+        "source_key": "gDebugClearMenuItems[3]/completed-save-warning",
+        "source_symbol": "game.semantic_correction.msg_6bc",
+        "source_table": "texts/locales/authored/shards/semantic_corrections.<locale>.json",
+        "subsystem": "debug-menu"
       }
     },
     {
@@ -83970,9 +84357,8 @@
           "details": {
             "english_payload_sha256": "9b71f1bb5ad351955d804517bc120d3b24495af1b040cedb5d25a6a7860e2604",
             "incorrect_source": {
-              "id": "0x0049",
-              "kind": "indexed",
-              "layout": "FE8J"
+              "kind": "english_fallback",
+              "reason": "not-yet-verified"
             },
             "payload_sha256": {
               "ja": "80ebe4f118802a72d8ed2b0076434895eadf99658f50d6e162c6733fe2809485",
@@ -84071,9 +84457,8 @@
           "details": {
             "english_payload_sha256": "9b71f1bb5ad351955d804517bc120d3b24495af1b040cedb5d25a6a7860e2604",
             "incorrect_source": {
-              "id": "0x0049",
-              "kind": "indexed",
-              "layout": "FE8J"
+              "kind": "english_fallback",
+              "reason": "not-yet-verified"
             },
             "payload_sha256": {
               "ja": "80ebe4f118802a72d8ed2b0076434895eadf99658f50d6e162c6733fe2809485",
@@ -97730,7 +98115,7 @@
               "zh-Hans": {
                 "id": "0x07E5",
                 "kind": "indexed",
-                "sha256": "3f32bbcadf6a83eb01b695679f6a55d5b1b93d0966933e7d73c2b07502d8167b"
+                "sha256": "9251a1b6c9dd9c25b494fafe3098dabe8d766393854c589e84ae2698a623ae94"
               }
             },
             "structural_agreement": true
@@ -98721,7 +99106,7 @@
               "zh-Hans": {
                 "id": "0x07F6",
                 "kind": "indexed",
-                "sha256": "3fe97e11b95f5d9bf2eaf2ba6d9053d53a656e260cd1763dfb3037a10e5c4fad"
+                "sha256": "8e2c11c5d583e40068c2187ff99fa1dc4bad2bd7c7e6d0130bd170a09c0411a5"
               }
             },
             "structural_agreement": true
@@ -102649,7 +103034,7 @@
               "zh-Hans": {
                 "id": "0x085C",
                 "kind": "indexed",
-                "sha256": "56cac7b7fdb487bcb885599615efcf9f7f0064e39f611f5d4502a42500dc8855"
+                "sha256": "5dbc8ea5fb977b99c237ecf49274ab233b505af622562bb3b1a99393c37f720a"
               }
             },
             "structural_agreement": true
@@ -102708,7 +103093,7 @@
               "zh-Hans": {
                 "id": "0x085D",
                 "kind": "indexed",
-                "sha256": "e3f22a3500967cad2f294e85a89f365f700f91d7931cef5aaf0d5c93c0c54ba2"
+                "sha256": "717efc613cebfaadfc5803c51a641ae1c77119ccb83f35801da15a0f5f4b3da8"
               }
             },
             "structural_agreement": true
@@ -103475,7 +103860,7 @@
               "zh-Hans": {
                 "id": "0x086A",
                 "kind": "indexed",
-                "sha256": "6be9f45f2d0a193c3f08e0d58f77360ce741d793fa25b07d2f2a67e982582de3"
+                "sha256": "e25bc80bcbfbb593552d89e1f12f524104bd7ffcf33e5497e6b2a8b4e2ae0140"
               }
             },
             "structural_agreement": true
@@ -103534,7 +103919,7 @@
               "zh-Hans": {
                 "id": "0x086B",
                 "kind": "indexed",
-                "sha256": "1cacf51da3989c9257bbe4dd5b7ace55c3b6a70c9de78d28a6250acf34057ae3"
+                "sha256": "244a54f854ffb02e1e6845963b60f7e499e3d1d5a5d6aa629b3bceadc6dc9aed"
               }
             },
             "structural_agreement": true

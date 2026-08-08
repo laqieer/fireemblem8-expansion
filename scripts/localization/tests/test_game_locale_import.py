@@ -65,12 +65,12 @@ class GameLocaleImportTests(unittest.TestCase):
             },
         )
         self.assertEqual(manifest["overrides"]["path"], DEFAULT_OVERRIDE_PATH.as_posix())
-        self.assertEqual(manifest["overrides"]["entry_count"], 79)
+        self.assertEqual(manifest["overrides"]["entry_count"], 88)
         self.assertEqual(
             manifest["overrides"]["sources"]["fe8j_indexed"]["entry_count"], 35
         )
         self.assertEqual(
-            manifest["overrides"]["sources"]["fe8cn_source"]["entry_count"], 44
+            manifest["overrides"]["sources"]["fe8cn_source"]["entry_count"], 53
         )
         self.assertEqual(
             manifest["overrides"]["sources"]["fe8j_indexed"]["source_sha256"],
@@ -138,7 +138,7 @@ class GameLocaleImportTests(unittest.TestCase):
         expected = {
             "ja": {
                 0x004D: "ロード中",
-                0x0061: "データなし",
+                0x0061: "なし",
                 0x0704: "序章",
                 0x070C: "ついて来い！",
                 0x0722: "癒やし",

@@ -15,18 +15,18 @@
     },
     {
       "path": "texts/locales/authored/shards/help_shop.zh-Hans.json",
-      "sha256": "e6dc4ed3a99654a0fde29a7d862dccdf630bd695e77f1677175c9f31793c50cb",
+      "sha256": "5c4d1f69c7799c6a60369c1366daaf49202368419152c88f52917c2714c104c8",
       "target_count": 81
     },
     {
       "path": "texts/locales/authored/shards/menu.zh-Hans.json",
-      "sha256": "41a23bb5a032ac8db9f8904be5357632efec7e0535f23c70db20b01c32c0be49",
+      "sha256": "2335ea7abe1fb933a73734833bee15bbd2de9518c9240ec0c15555e43c783a97",
       "target_count": 132
     },
     {
       "path": "texts/locales/authored/shards/semantic_corrections.zh-Hans.json",
-      "sha256": "9e75a4608ea12bbe706eb58c07ad372332563d1a8a5b327a16869bc9dd890377",
-      "target_count": 12
+      "sha256": "4e065de9216e74894d1c0f20edaa0a99db6299544594d1981fb31b64f98a401c",
+      "target_count": 27
     }
   ],
   "source_queue": {
@@ -106,7 +106,7 @@
     "game.help_tutorial.msg_884": "[OpenLeft][LoadFace][FID_Anna][X]\n",
     "game.help_tutorial.msg_888": "[OpenLeft]备份中没有试炼地图[.][LF]\n中止发送并返回菜单[X]\n",
     "game.help_tutorial.msg_895": "请选择已通关的存档[.][X]\n",
-    "game.menu_definition.msg_011": ".[.][X]\n",
+    "game.menu_definition.msg_011": "。[.][X]\n",
     "game.menu_definition.msg_022": "。[.][X]\n",
     "game.menu_definition.msg_02e": "  模式  教学[X]\n",
     "game.menu_definition.msg_02f": "  模式  普通[X]\n",
@@ -240,11 +240,26 @@
     "game.menu_definition.msg_6b8": "通关次数[X]\n",
     "game.semantic_correction.msg_005": "获得：[X]\n",
     "game.semantic_correction.msg_006": "金币。[.][X]\n",
+    "game.semantic_correction.msg_008": "获得：[X]\n",
+    "game.semantic_correction.msg_00a": "盗取：[X]\n",
     "game.semantic_correction.msg_00d": "可使用：[X]\n",
     "game.semantic_correction.msg_00e": "可使用单位：[X]\n",
+    "game.semantic_correction.msg_00f": "丢弃：[X]\n",
+    "game.semantic_correction.msg_010": "送往运输队：[X]\n",
+    "game.semantic_correction.msg_1c8": "关闭村庄[.][X]\n",
+    "game.semantic_correction.msg_1ee": "船板[X]\n",
+    "game.semantic_correction.msg_1ef": "沉船[.][X]\n",
+    "game.semantic_correction.msg_3a8": "纹章之印[.][X]\n",
     "game.semantic_correction.msg_593": "调试[.][X]\n",
     "game.semantic_correction.msg_679": "正在保存。要继续游戏，请选择[LF]\n『从记录开始』。[X]\n",
     "game.semantic_correction.msg_6a2": " 调试[X]\n",
+    "game.semantic_correction.msg_6ae": " 通关次数[.][X]\n",
+    "game.semantic_correction.msg_6af": " 标记通关[.][X]\n",
+    "game.semantic_correction.msg_6b2": "沙暴[X]\n",
+    "game.semantic_correction.msg_6b9": "将存档标记为已通关[X]\n",
+    "game.semantic_correction.msg_6ba": "确定吗？[X]\n",
+    "game.semantic_correction.msg_6bb": "标记后，该存档[.][X]\n",
+    "game.semantic_correction.msg_6bc": "将无法继续游玩[X]\n",
     "game.semantic_correction.msg_7d1": "战死于[.][X]\n",
     "game.semantic_correction.msg_7d2": "负伤，[LF]\n并与队伍分离。[.][X]\n",
     "game.semantic_correction.msg_7d3": "负伤于[X]\n",
@@ -310,5 +325,5 @@
     "raw_surface.unit_action.summon": " 召唤",
     "save_compat.menu_erase_all": "清除全部存档"
   },
-  "target_count": 274
+  "target_count": 289
 }

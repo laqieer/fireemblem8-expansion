@@ -148,6 +148,18 @@
           "reason": "Replace untranslated BOSS with natural Simplified Chinese 首领 in this exact objective/help target.",
           "replacement_text": "击破首领"
         },
+        "0x018C": {
+          "expected_text": "今回",
+          "provenance": {
+            "audit": "blue-team-followup-2026-08-08",
+            "context": "Current statistic label.",
+            "target_ids": [
+              "0x0205"
+            ]
+          },
+          "reason": "Remove the leaked Japanese payload and use natural Simplified Chinese for Current.",
+          "replacement_text": "本次"
+        },
         "0x038A": {
           "expected_text": "大米",
           "provenance": {
@@ -196,6 +208,30 @@
           },
           "reason": "Use the natural Simplified Chinese placeholder label instead of the mistranslation 大米.",
           "replacement_text": "占位"
+        },
+        "0x048A": {
+          "expected_text": "配合",
+          "provenance": {
+            "audit": "blue-team-followup-2026-08-08",
+            "context": "Support-screen partner label.",
+            "target_ids": [
+              "0x04FB"
+            ]
+          },
+          "reason": "Use the reviewed support-partner noun instead of the unrelated coordination verb.",
+          "replacement_text": "伙伴"
+        },
+        "0x04D7": {
+          "expected_text": "人物的等级\n最高为等级20",
+          "provenance": {
+            "audit": "blue-team-followup-2026-08-08",
+            "context": "Unit-level help text.",
+            "target_ids": [
+              "0x0542"
+            ]
+          },
+          "reason": "Describe level-based growth without making a universal level-20 claim.",
+          "replacement_text": "人物的等级\n等级越高，能力越强"
         },
         "0x05C7": {
           "expected_text": "打倒在地图上的敌军BOSS后，\n就能通过这一关。\n不需要打倒所有的敌人。",
@@ -485,6 +521,78 @@
           "reason": "Replace the internal English MSG abbreviation and mistranslated 大米 with natural Chinese 占位消息 in this exact placeholder target.",
           "replacement_text": "FE3占位消息[CTRL:0003]"
         },
+        "0x07E5": {
+          "expected_text": "所持物品满了请选择送往运输队",
+          "provenance": {
+            "audit": "blue-team-followup-2026-08-08",
+            "context": "Full-inventory convoy prompt.",
+            "target_ids": [
+              "0x0867"
+            ]
+          },
+          "reason": "Explicitly instruct the player to select the item that will be sent to the convoy.",
+          "replacement_text": "所持物品已满，请选择要送往运输队的物品"
+        },
+        "0x07F6": {
+          "expected_text": "选择要修复的所持武器",
+          "provenance": {
+            "audit": "blue-team-followup-2026-08-08",
+            "context": "Repair target-selection prompt.",
+            "target_ids": [
+              "0x0878"
+            ]
+          },
+          "reason": "Select the unit carrying the weapon to repair, not the weapon itself.",
+          "replacement_text": "请选择持有待修复武器的角色"
+        },
+        "0x085C": {
+          "expected_text": "这东西我们买不起。[CTRL:0003]",
+          "provenance": {
+            "audit": "blue-team-followup-2026-08-08",
+            "context": "Shop rejection for an unsellable item.",
+            "target_ids": [
+              "0x08BC"
+            ]
+          },
+          "reason": "State that the item cannot be sold rather than implying the shop lacks money.",
+          "replacement_text": "这件物品无法出售。[CTRL:0003]"
+        },
+        "0x085D": {
+          "expected_text": "哼哼哼……\n这东西可是不能卖得啊。[CTRL:0003]",
+          "provenance": {
+            "audit": "blue-team-followup-2026-08-08",
+            "context": "Alternate shop rejection for an unsellable item.",
+            "target_ids": [
+              "0x08BD"
+            ]
+          },
+          "reason": "Use natural reviewer-approved unsellable-item semantics.",
+          "replacement_text": "呵呵……等一下。\n这件物品无法出售！[CTRL:0003]"
+        },
+        "0x086A": {
+          "expected_text": "不好你现在还没运输队，\n无法送去啊。[CTRL:0003]",
+          "provenance": {
+            "audit": "blue-team-followup-2026-08-08",
+            "context": "Shop full-inventory response when no convoy exists.",
+            "target_ids": [
+              "0x08CA"
+            ]
+          },
+          "reason": "Clearly explain that the item cannot be sent because the player has no convoy.",
+          "replacement_text": "真遗憾，你还没有运输队，\n无法送过去。[CTRL:0003]"
+        },
+        "0x086B": {
+          "expected_text": "抱歉啊您还没有运输队，\n货物无发输送。[CTRL:0003]",
+          "provenance": {
+            "audit": "blue-team-followup-2026-08-08",
+            "context": "Alternate shop full-inventory response when no convoy exists.",
+            "target_ids": [
+              "0x08CB"
+            ]
+          },
+          "reason": "Fix the typo and clearly express the missing-convoy condition.",
+          "replacement_text": "可惜你还没有运输队，\n不然我就能替你送过去……[CTRL:0003]"
+        },
         "0x08E2": {
           "expected_text": "本章只要将敌BOSS打败\n就可以过关。[CTRL:0103][CTRL:0080][CTRL:0021]过关条件[CTRL:0080][CTRL:0021]会在画面\n的一角表示出来。[CTRL:0103]希望每到新的章节时，\n大家都能够看看。[CTRL:0103]那么，开始展开[CTRL:0080][CTRL:0021]攻击[CTRL:0080][CTRL:0021]吧。[CTRL:0003]",
           "provenance": {
@@ -566,14 +674,14 @@
         "0x0061": {
           "expected_text": "ＮＯ　ＤＡＴＡ",
           "provenance": {
-            "audit": "runtime-english-leakage-2026-08-07",
-            "context": "Save/link UI empty-data status.",
+            "audit": "blue-team-followup-2026-08-08",
+            "context": "LoadLinkArenaTeamList empty-slot label copied into a 15-byte team-name field.",
             "target_ids": [
               "0x00CC"
             ]
           },
-          "reason": "Render the status in Japanese instead of copying the English payload.",
-          "replacement_text": "データなし"
+          "reason": "Use a natural Japanese empty label whose UTF-8 payload is at most 14 bytes and fits the bounded SIO field with its terminator.",
+          "replacement_text": "なし"
         },
         "0x0254": {
           "expected_text": "⊂⊃┌┐",

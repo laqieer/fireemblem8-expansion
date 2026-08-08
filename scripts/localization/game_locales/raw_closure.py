@@ -306,11 +306,23 @@ def _mapped_imports(
         raise RawClosureError(f"mapping literal evidence failed: {error}") from error
     result: Dict[str, Dict[str, Any]] = {}
     for row in mapping.rows:
-        if row.source_kind != "raw":
+        source = row.source
+        if row.source_kind == "raw":
+            raw_source = source
+        elif row.source_kind == "authored":
+            raw_source = (
+                (row.verification or {})
+                .get("promotion", {})
+                .get("details", {})
+                .get("incorrect_source", {})
+            )
+            if raw_source.get("kind") != "raw":
+                continue
+        else:
             continue
         for import_id in (
-            row.source["import_id"],
-            *row.source.get("alternate_import_ids", []),
+            raw_source["import_id"],
+            *raw_source.get("alternate_import_ids", []),
         ):
             entry = result.setdefault(import_id, {"rows": [], "target_ids": []})
             entry["rows"].append(row)
@@ -328,8 +340,6 @@ def _mapped_imports(
 def _derived_call_sites(rows: List[Any], repo_root: Path) -> List[Dict[str, Any]]:
     combined = []
     for row in rows:
-        if not (row.verification or {}).get("source_paths", {}).get("fe8u"):
-            continue
         combined.extend(_derived_row_call_sites(row, repo_root))
     if not combined:
         raise RawClosureError("raw mapping group lacks an FE8U call-site path")
@@ -341,6 +351,14 @@ def _derived_call_sites(rows: List[Any], repo_root: Path) -> List[Dict[str, Any]
 
 def _derived_row_call_sites(row: Any, repo_root: Path) -> List[Dict[str, Any]]:
     verification = row.verification or {}
+    if row.source_kind == "authored":
+        incorrect_source = (
+            verification.get("promotion", {})
+            .get("details", {})
+            .get("incorrect_source", {})
+        )
+        if incorrect_source.get("kind") == "raw":
+            verification = verification["promotion"]["original_verification"]
     source_paths = verification.get("source_paths", {})
     relative_path = source_paths.get("fe8u")
     if not relative_path:
@@ -509,34 +527,50 @@ def build_raw_surface_closure(
                     f"{import_id} game-message provider is absent from verified mapping"
                 )
             mapping_row = mapped_entry["rows"][0]
-            ja_source = mapping_row.source.get("regional_sources", {}).get("ja", {})
-            try:
-                ja_text = resolve_ja_raw_text(
-                    target_id=mapping_row.target_id,
-                    ja_source=ja_source,
-                    providers=ja_raw_providers,
+            if mapping_row.source_kind == "authored":
+                payload_sha256 = (
+                    mapping_row.verification["promotion"]["details"][
+                        "payload_sha256"
+                    ]
                 )
-            except RawProviderError as error:
-                raise RawClosureError(f"{import_id}: {error}") from error
-            zh_text = raw_record["text"]
-            if not ja_text or not zh_text:
-                raise RawClosureError(
-                    f"{import_id} game-message provider payloads must be non-empty"
-                )
-            closure_row["providers"] = {
-                "ja": {
-                    "kind": f"raw_{ja_source['kind']}",
-                    "text_sha256": hashlib.sha256(
-                        ja_text.encode("utf-8")
-                    ).hexdigest(),
-                },
-                "zh-Hans": {
-                    "kind": "raw_import",
-                    "text_sha256": hashlib.sha256(
-                        zh_text.encode("utf-8")
-                    ).hexdigest(),
-                },
-            }
+                closure_row["providers"] = {
+                    locale: {
+                        "kind": "authored_semantic_correction",
+                        "text_sha256": payload_sha256[locale],
+                    }
+                    for locale in ("ja", "zh-Hans")
+                }
+            else:
+                ja_source = mapping_row.source.get(
+                    "regional_sources", {}
+                ).get("ja", {})
+                try:
+                    ja_text = resolve_ja_raw_text(
+                        target_id=mapping_row.target_id,
+                        ja_source=ja_source,
+                        providers=ja_raw_providers,
+                    )
+                except RawProviderError as error:
+                    raise RawClosureError(f"{import_id}: {error}") from error
+                zh_text = raw_record["text"]
+                if not ja_text or not zh_text:
+                    raise RawClosureError(
+                        f"{import_id} game-message provider payloads must be non-empty"
+                    )
+                closure_row["providers"] = {
+                    "ja": {
+                        "kind": f"raw_{ja_source['kind']}",
+                        "text_sha256": hashlib.sha256(
+                            ja_text.encode("utf-8")
+                        ).hexdigest(),
+                    },
+                    "zh-Hans": {
+                        "kind": "raw_import",
+                        "text_sha256": hashlib.sha256(
+                            zh_text.encode("utf-8")
+                        ).hexdigest(),
+                    },
+                }
         closure_row["provenance"] = {
             "address": raw_record["provenance"]["address"],
         }

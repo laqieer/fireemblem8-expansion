@@ -326,11 +326,10 @@ paths to that command.
 The committed FE8U target report contains 3,414 decisions, zero fallback, and
 zero unresolved:
 
-- 3,010 verified indexed mappings;
-- 142 verified raw target mappings, using 140 unique imports (143 import
-  references including alternate providers and safe one-to-many reuse);
-- 262 authored mappings: 3 existing expansion translations plus exactly 259
-  fulfilled historical queue rows.
+- 2,993 verified indexed mappings;
+- 132 verified raw target mappings;
+- 289 authored mappings: 259 fulfilled historical queue rows plus 30
+  existing expansion-backed or target-specific semantic corrections.
 
 Translation coverage is 3,414/3,414 (100%). Explicit English fallback and
 unresolved coverage are both zero for Japanese and Simplified Chinese.

@@ -5,16 +5,16 @@
       "sha256": "329161ac60d9be4a6f4b1ce4d8fb91818a1ab5033f092fa1d9f924ec65cb72eb"
     },
     "ja/indexed.txt": {
-      "byte_count": 1719226,
-      "sha256": "49f4e4f3dfadb3387013a562b2eb8a6fa68512b5b370b6485a93434437abb841"
+      "byte_count": 1719217,
+      "sha256": "d1ba0a928133b9980aa23b524b116c3e1d5ab57011a84a20d001b2835d05d4b1"
     },
     "mapping/fe8j_to_fe8u.candidates.json": {
       "byte_count": 752351,
       "sha256": "1ddac63340d04568d03c8356d85f488dfa1a4e7a58f0ce86e815ce7a56358b45"
     },
     "zh-Hans/indexed.txt": {
-      "byte_count": 1266658,
-      "sha256": "200087396b9655798f2cc8ef3fc3f3b6693b4d4bc442a130167d8a666a0d68c9"
+      "byte_count": 1266710,
+      "sha256": "652c9c6ae8b1eb6b3657af66c5f203a5aa109bf988120d366cdd0e2062c0644a"
     },
     "zh-Hans/raw.json": {
       "byte_count": 45834,
@@ -66,7 +66,7 @@
         "max_utf8_payload_bytes": 7673,
         "max_utf8_payload_message_id": "0x0AEA",
         "message_count": 3339,
-        "payload_codepoint_count": 1007528,
+        "payload_codepoint_count": 1007525,
         "unique_payload_codepoint_count": 1811
       }
     },
@@ -76,7 +76,7 @@
         "max_utf8_payload_bytes": 5727,
         "max_utf8_payload_message_id": "0x0AEA",
         "message_count": 3339,
-        "payload_codepoint_count": 726358,
+        "payload_codepoint_count": 726374,
         "unique_payload_codepoint_count": 2494
       },
       "raw": {
@@ -107,13 +107,13 @@
     "verified_row_count": 0
   },
   "overrides": {
-    "byte_count": 50448,
-    "entry_count": 79,
+    "byte_count": 55010,
+    "entry_count": 88,
     "path": "texts/locales/indexed_overrides.json",
-    "sha256": "a7a9eb3c5f891c847f3a8917ed864cd96a8fea371ae9f2e487a6fe2a91965466",
+    "sha256": "080269a2359881abeb1c6ffddabfdfdef97a72e0c0b0104f9527aa57921ccf9c",
     "sources": {
       "fe8cn_source": {
-        "entry_count": 44,
+        "entry_count": 53,
         "locale_id": "zh-Hans",
         "message_ids": [
           "0x0006",
@@ -128,10 +128,13 @@
           "0x0133",
           "0x013E",
           "0x0147",
+          "0x018C",
           "0x038A",
           "0x03D1",
           "0x0433",
           "0x046C",
+          "0x048A",
+          "0x04D7",
           "0x05C7",
           "0x0703",
           "0x0704",
@@ -156,6 +159,12 @@
           "0x07B5",
           "0x07B6",
           "0x07B7",
+          "0x07E5",
+          "0x07F6",
+          "0x085C",
+          "0x085D",
+          "0x086A",
+          "0x086B",
           "0x08E2",
           "0x0913",
           "0x0C82",

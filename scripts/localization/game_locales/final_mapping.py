@@ -931,6 +931,39 @@ _SEMANTIC_INDEXED_CORRECTIONS: Dict[str, Dict[str, Any]] = {
     },
 }
 
+def _authored_semantic_correction(
+    *,
+    english_payload_sha256: str,
+    ja_payload_sha256: str,
+    zh_hans_payload_sha256: str,
+    rationale: str,
+    source_key: str,
+    subsystem: str,
+    translation_key: str,
+    incorrect_source_id: Optional[str] = None,
+    incorrect_raw_import_id: Optional[str] = None,
+    stage_precondition: Optional[str] = None,
+) -> Dict[str, Any]:
+    result = {
+        "english_payload_sha256": english_payload_sha256,
+        "payload_sha256": {
+            "ja": ja_payload_sha256,
+            "zh-Hans": zh_hans_payload_sha256,
+        },
+        "rationale": rationale,
+        "source_key": source_key,
+        "subsystem": subsystem,
+        "translation_key": translation_key,
+    }
+    if incorrect_source_id is not None:
+        result["incorrect_source_id"] = incorrect_source_id
+    if incorrect_raw_import_id is not None:
+        result["incorrect_raw_import_id"] = incorrect_raw_import_id
+    if stage_precondition is not None:
+        result["stage_precondition"] = stage_precondition
+    return result
+
+
 _SEMANTIC_AUTHORED_CORRECTIONS: Dict[str, Dict[str, Any]] = {
     "0x0005": {
         "english_payload_sha256": "6a4df7673dafecb3086aa97192e67eb3275033fc37e45a4581c8df33af9efaaf",
@@ -964,6 +997,62 @@ _SEMANTIC_AUTHORED_CORRECTIONS: Dict[str, Dict[str, Any]] = {
         "subsystem": "menu-definition",
         "translation_key": "game.semantic_correction.msg_006",
     },
+    "0x0008": _authored_semantic_correction(
+        english_payload_sha256="6a4df7673dafecb3086aa97192e67eb3275033fc37e45a4581c8df33af9efaaf",
+        incorrect_source_id="0x0805",
+        ja_payload_sha256="b5102d23f67b9d755825200f4f5428184e16b4a3e8cac74977fc0ef1dbdf6892",
+        zh_hans_payload_sha256="15eb3a798a78441a99e0c0a18deaf697da8341ddd1db8367d2c74d9504c0cd07",
+        rationale=(
+            "PopupScr_GotItem draws this fragment before the dynamic item "
+            "name. The regional 0x0805 payload is a suffix, so target-order "
+            "prefixes are authored for actual popup composition."
+        ),
+        source_key="PopupScr_GotItem/prefix-before-item-name",
+        subsystem="menu-definition",
+        translation_key="game.semantic_correction.msg_008",
+    ),
+    "0x000A": _authored_semantic_correction(
+        english_payload_sha256="75802b11feb604cba988bea4a2d2bc5f76c7ab577a93c721e303568e447dfd1f",
+        incorrect_source_id="0x0806",
+        ja_payload_sha256="3cfb1e6284fc54f64d77adee96df9dc2430f4c04fbd53d72949fbc845d2872f3",
+        zh_hans_payload_sha256="52727118b44b641eb1e2311cbaad0cae7dc80786a848cd01771ab1083ef6c0a5",
+        rationale=(
+            "PopupScr_StoleItem draws this fragment before the dynamic item "
+            "name. The regional 0x0806 payload is a completed suffix, so a "
+            "target-order stolen-item prefix is authored."
+        ),
+        source_key="PopupScr_StoleItem/prefix-before-item-name",
+        subsystem="menu-definition",
+        translation_key="game.semantic_correction.msg_00a",
+    ),
+    "0x000F": _authored_semantic_correction(
+        english_payload_sha256="64cfb2bd09e94ff669cecb1cf7f27bf2e193884df92200d999c1f66c2dca191a",
+        incorrect_source_id="0x080E",
+        ja_payload_sha256="858abe00ed6f3f813843ad9e0b7ce7ea401b8fbc05f890600dbe69d2c735f111",
+        zh_hans_payload_sha256="70228fcf3390ae94cc9806b18982a6fea7e7e1181470d2180335cd836afa3044",
+        rationale=(
+            "NewPopup2_DropItem passes this as msg0 before the dynamic item "
+            "name. The regional 0x080E payload is a suffix, so target-order "
+            "discard prefixes are authored."
+        ),
+        source_key="NewPopup2_DropItem/msg0-before-item-name",
+        subsystem="menu-definition",
+        translation_key="game.semantic_correction.msg_00f",
+    ),
+    "0x0010": _authored_semantic_correction(
+        english_payload_sha256="b6cceaa99d8ca1d4c05f15266afb33ee086ced77c75ab24c4abd8cd8c6ce503e",
+        incorrect_source_id="0x080F",
+        ja_payload_sha256="2050064119bcb3e520bdb7b6b8e3aa41f3fd8c19b8723a1b035b41baf8fb5289",
+        zh_hans_payload_sha256="93ba09a7bfca2b2abc3f7c127914b9e524baa1aa55f0877a99030124ae0a56a9",
+        rationale=(
+            "NewPopup2_SendItem passes this as msg0 before the dynamic item "
+            "name and uses 0x0011 afterward for punctuation. The regional "
+            "0x080F sentence is therefore replaced by a target-order prefix."
+        ),
+        source_key="NewPopup2_SendItem/msg0-before-item-name",
+        subsystem="menu-definition",
+        translation_key="game.semantic_correction.msg_010",
+    ),
     "0x000D": {
         "english_payload_sha256": "91dac270cf076055424106bcd9e16eac279d37a4870f64ff66a065eedebe0f05",
         "incorrect_source_id": "0x080D",
@@ -997,6 +1086,62 @@ _SEMANTIC_AUTHORED_CORRECTIONS: Dict[str, Dict[str, Any]] = {
         "subsystem": "menu-definition",
         "translation_key": "game.semantic_correction.msg_00e",
     },
+    "0x01C8": _authored_semantic_correction(
+        english_payload_sha256="2616bfdbc2b799d737b26c98ac5a775f058be6a223462d5c321750e2e87e942a",
+        incorrect_raw_import_id="fe8cn.raw.import-0078",
+        ja_payload_sha256="6ab6ed3d24937bd256d1bb46835a4a0231d49403889bc70837e5694f402ed407",
+        zh_hans_payload_sha256="4f7a5c4cd6fdfcdedc5bfa0866512bff51a24360048674b20cc4f4b98f143bc6",
+        rationale=(
+            "gTerrainNames[TERRAIN_VILLAGE_CLOSED] must still identify a "
+            "village. The raw regional labels only say closed, so exact "
+            "closed-village names are authored without altering snapshots."
+        ),
+        source_key="gTerrainNames[TERRAIN_VILLAGE_CLOSED]",
+        subsystem="terrain",
+        translation_key="game.semantic_correction.msg_1c8",
+    ),
+    "0x01EE": _authored_semantic_correction(
+        english_payload_sha256="a776cf705b291186fbfb42afb2e14aef767e468ea15db628dfadfd25cffaa74f",
+        incorrect_raw_import_id="fe8cn.raw.import-0116",
+        ja_payload_sha256="895703d6691cc11b548bbf9d573328808769aed0751344f8cafd7f54ff1e4a5a",
+        zh_hans_payload_sha256="895703d6691cc11b548bbf9d573328808769aed0751344f8cafd7f54ff1e4a5a",
+        rationale=(
+            "The terrain enum slot is TERRAIN_SHIP_FLAT, not generic "
+            "wasteland. Ship-planking terminology is authored for both "
+            "locales while the imported raw records remain immutable."
+        ),
+        source_key="gTerrainNames[TERRAIN_SHIP_FLAT]",
+        subsystem="terrain",
+        translation_key="game.semantic_correction.msg_1ee",
+    ),
+    "0x01EF": _authored_semantic_correction(
+        english_payload_sha256="c926b3b5e36445ab1aac93932d7c293b7733f6b015b2da49c5cb292cf165481e",
+        incorrect_raw_import_id="fe8cn.raw.import-0117",
+        ja_payload_sha256="1470df92d4e7e52bdac9c48463abee632e9fe01c1c0fbe70b5c556502efe6455",
+        zh_hans_payload_sha256="93df1ce3aeb62eac9dd942e7d948afc97a63182f4d34922f74e0cccdbca86f1a",
+        rationale=(
+            "The terrain enum slot is TERRAIN_SHIP_WRECK, not a ruined "
+            "house. Exact ship-wreck terminology is authored for both "
+            "locales while preserving the raw source snapshots."
+        ),
+        source_key="gTerrainNames[TERRAIN_SHIP_WRECK]",
+        subsystem="terrain",
+        translation_key="game.semantic_correction.msg_1ef",
+    ),
+    "0x03A8": _authored_semantic_correction(
+        english_payload_sha256="709585d1d3c3a2f67607d5c62883834c16efa4d6cffcee730640f32333105a72",
+        incorrect_source_id="0x032F",
+        ja_payload_sha256="60527d4ea84e21c6a45d3ccc29e8a12bb0ad4ba22d0cd1eb87656d5438606bc9",
+        zh_hans_payload_sha256="608ad52d76335ca25f96258c637a7a68b45e04c7acd57fc2d1bc412a6c99f44b",
+        rationale=(
+            "MSG_3A8 is the Emblem Seal item name. Regional 0x032F is a "
+            "dynamic tactician-name book label, so exact standalone item "
+            "names are authored without the tactician control sequence."
+        ),
+        source_key="MSG_3A8/Emblem-Seal-item-name",
+        subsystem="items",
+        translation_key="game.semantic_correction.msg_3a8",
+    ),
     "0x0679": {
         "english_payload_sha256": "0df058ee1d0b4199726680b7b5cc8b1939fce71e3efbdff30f29be87bdee8c4b",
         "incorrect_source_id": "0x063F",
@@ -1031,6 +1176,102 @@ _SEMANTIC_AUTHORED_CORRECTIONS: Dict[str, Dict[str, Any]] = {
         "subsystem": "chapter-event",
         "translation_key": "game.semantic_correction.msg_6a2",
     },
+    "0x06AE": _authored_semantic_correction(
+        english_payload_sha256="bd470203e349109c5c111ea91e03e35413b5fc8310856f32a53cfc237f0e928a",
+        incorrect_raw_import_id="fe8cn.raw.import-0014",
+        ja_payload_sha256="fb5829531165d809f61c250f0ecb8d7b017b1dcdc397525e75f82e399da53815",
+        zh_hans_payload_sha256="93ea6bf83489d1887448ebe2abdeab203af51118f89cb04530e6338ca67bad4d",
+        rationale=(
+            "DebugMenu_ClearDraw edits GetGlobalCompletionCount and "
+            "cleared_playthroughs. The menu label therefore names the "
+            "playthrough clear count rather than an erase operation."
+        ),
+        source_key="gDebugMenuItems[4]/playthrough-clear-count",
+        subsystem="debug-menu",
+        translation_key="game.semantic_correction.msg_6ae",
+    ),
+    "0x06AF": _authored_semantic_correction(
+        english_payload_sha256="1095a953b01f2b2f3f5fd4457ffddb0a7b6ca648ee1f36e60914df85cadbe35a",
+        incorrect_raw_import_id="fe8cn.raw.import-0015",
+        ja_payload_sha256="996a3e2f7afdd73a353e08d86ab2eda17afda62a5876796781f32dafe7468efd",
+        zh_hans_payload_sha256="4930977b94a023404bbf4e71f1006f56adef2b3e2000c876b2a78b3dcb70a3f0",
+        rationale=(
+            "gDebugMenuItems routes this row to DebugMenu_ErasedEffect, "
+            "whose confirmation action calls SavePlayThroughData and writes "
+            "a completed save. The label must say mark/register clear."
+        ),
+        source_key="gDebugMenuItems[5]/mark-save-cleared",
+        subsystem="debug-menu",
+        translation_key="game.semantic_correction.msg_6af",
+    ),
+    "0x06B2": _authored_semantic_correction(
+        english_payload_sha256="44c6cc2d3d95bc07464c7e9b6ba41a17e4e8e383b80eb3280bf205bd799caae8",
+        stage_precondition="english_fallback",
+        ja_payload_sha256="5209a50c8e4ba8e140daa8e975020b356852229b6b95cd8e75f965506f50662c",
+        zh_hans_payload_sha256="9cfef6cf3568a7f8cc517dc3ce8af11195a22239a8604d4abdb4d84e4f27ba99",
+        rationale=(
+            "DebugMenu_WeatherDraw indexes MSG_6B2 for "
+            "WEATHER_SANDSTORM. Exact-English reuse of the terrain Sand "
+            "label loses the weather meaning, so Sandstorm is authored."
+        ),
+        source_key="DebugMenu_WeatherDraw/weatherTextIds[WEATHER_SANDSTORM]",
+        subsystem="debug-menu",
+        translation_key="game.semantic_correction.msg_6b2",
+    ),
+    "0x06B9": _authored_semantic_correction(
+        english_payload_sha256="a7176f9242be570405a7a05039134f7d89d8f61dc3e5c7adf284bcafe7e03d54",
+        incorrect_raw_import_id="fe8cn.raw.import-0000",
+        ja_payload_sha256="551ccca0c167ca6acb65e6d47bc2673f1ee4bb79ce1c57a8179339b05fde5d28",
+        zh_hans_payload_sha256="341f7c425975de67339d9665d67483207291bd71ab87b8f97bc3ef10e8c67e8e",
+        rationale=(
+            "The first confirmation row describes marking the save as "
+            "cleared. DebugClearMenu_ClearFile records playthrough completion "
+            "and rewrites the save; it does not delete the file."
+        ),
+        source_key="gDebugClearMenuItems[0]/mark-save-cleared",
+        subsystem="debug-menu",
+        translation_key="game.semantic_correction.msg_6b9",
+    ),
+    "0x06BA": _authored_semantic_correction(
+        english_payload_sha256="f67aac0af256f4dd3dd9042096f112269aaea447450898d3f350f6f20f1f2bd7",
+        incorrect_raw_import_id="fe8cn.raw.import-0001",
+        ja_payload_sha256="f4e8af0302f76aa5214451e3cbdf4511abc0058c46c27ff98ad44d9fd32db661",
+        zh_hans_payload_sha256="e77b21c5fbd67ce9d57f1dc128f41762731eae67014a2c53b0bc7a989a864a0a",
+        rationale=(
+            "This row completes the mark-cleared confirmation question and "
+            "must not describe deleting the save."
+        ),
+        source_key="gDebugClearMenuItems[1]/confirmation-question",
+        subsystem="debug-menu",
+        translation_key="game.semantic_correction.msg_6ba",
+    ),
+    "0x06BB": _authored_semantic_correction(
+        english_payload_sha256="181424d6ebecf9ad0c7611713bf65f2d735f7c2d024d0aaad489da0f27d02c97",
+        incorrect_raw_import_id="fe8cn.raw.import-0002",
+        ja_payload_sha256="65a334d51c4ca66174bd97cb5f9f2136470d314a9f54ac6c01b7cb1f3e842b75",
+        zh_hans_payload_sha256="97c477a6df13f64fb686c0787396632b104f159225d9d36a410c138f1e8601a5",
+        rationale=(
+            "This warning names the resulting cleared-save state. The "
+            "regional deletion wording contradicts the menu action."
+        ),
+        source_key="gDebugClearMenuItems[2]/cleared-save-warning",
+        subsystem="debug-menu",
+        translation_key="game.semantic_correction.msg_6bb",
+    ),
+    "0x06BC": _authored_semantic_correction(
+        english_payload_sha256="88def947b12d071f41e5b0d2e41fe7283d2bd3836cd0a554978aaf86019f51e9",
+        incorrect_raw_import_id="fe8cn.raw.import-0003",
+        ja_payload_sha256="88562c12b5ea0c944fbafe8b606fba6f52f58cdf1e279a02fae149c8b71b145f",
+        zh_hans_payload_sha256="45a5b980bbc0d406d5a350ee153a4172572a0e07537f06fb76e061d2c4aa2ace",
+        rationale=(
+            "The final warning says the completed save cannot continue "
+            "normal play afterward. It must not claim that the file is "
+            "deleted or gone."
+        ),
+        source_key="gDebugClearMenuItems[3]/completed-save-warning",
+        subsystem="debug-menu",
+        translation_key="game.semantic_correction.msg_6bc",
+    ),
     "0x0593": {
         "english_payload_sha256": "9ba4256a4d88821c0d44f83aaa5f84d79a4cab4832badae225aea3c4690e28b8",
         "incorrect_source_id": "0x051E",
@@ -1145,14 +1386,33 @@ def _require_semantic_precondition(
     *,
     target_id: str,
     decision: Mapping[str, Any],
-) -> Dict[str, str]:
-    incorrect_source = _indexed_source(decision["incorrect_source_id"])
+) -> Dict[str, Any]:
     if decision.get("stage_precondition") == "english_fallback":
-        if row["source"]["kind"] != "english_fallback":
+        incorrect_source = {
+            "kind": "english_fallback",
+            "reason": "not-yet-verified",
+        }
+        if row["source"] != incorrect_source:
             raise FinalMappingError(
                 f"{target_id}: semantic correction no longer starts from fallback"
             )
-    elif row["source"] != incorrect_source:
+        return incorrect_source
+
+    incorrect_raw_import_id = decision.get("incorrect_raw_import_id")
+    if incorrect_raw_import_id is not None:
+        incorrect_source = deepcopy(row["source"])
+        if (
+            incorrect_source.get("kind") != "raw"
+            or incorrect_source.get("import_id") != incorrect_raw_import_id
+        ):
+            raise FinalMappingError(
+                f"{target_id}: semantic correction no longer replaces raw "
+                f"{incorrect_raw_import_id}"
+            )
+        return incorrect_source
+
+    incorrect_source = _indexed_source(decision["incorrect_source_id"])
+    if row["source"] != incorrect_source:
         raise FinalMappingError(
             f"{target_id}: semantic correction no longer replaces "
             f"{decision['incorrect_source_id']}"

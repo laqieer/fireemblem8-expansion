@@ -15,18 +15,18 @@
     },
     {
       "path": "texts/locales/authored/shards/help_shop.ja.json",
-      "sha256": "0d5c219698bc940db18ef28d13f979899bb6d03da8f0f685510bfd2653bb724e",
+      "sha256": "c4df99e5fb25d6e1bf06813fb102ffee46958432877003f2afe0eac1a1de7729",
       "target_count": 81
     },
     {
       "path": "texts/locales/authored/shards/menu.ja.json",
-      "sha256": "7103c8b5c8668d10234a7dace4c763324747c40d8f8946e3e8729cb520ddd348",
+      "sha256": "ba998542f28507dfb34f37aeca363b5af7b2c6586d09df1a80841bcad678c353",
       "target_count": 132
     },
     {
       "path": "texts/locales/authored/shards/semantic_corrections.ja.json",
-      "sha256": "7bb16aa22c81f2bc9a00f8bed5afc9343adac2c90a77f10c47c1a20466d27807",
-      "target_count": 12
+      "sha256": "18971fdd6d4ac0fcd4ee0e287891e8d01457ffb2ce804dbe1c7d270807e72ace",
+      "target_count": 27
     }
   ],
   "source_queue": {
@@ -106,7 +106,7 @@
     "game.help_tutorial.msg_884": "[OpenLeft][LoadFace][FID_Anna][X]\n",
     "game.help_tutorial.msg_888": "[OpenLeft]バックアップにトライアルマップがありません[.][LF]\n送信を中止してメニューへ戻ります[X]\n",
     "game.help_tutorial.msg_895": "クリアしたセーブデータを選んでください[.][X]\n",
-    "game.menu_definition.msg_011": ".[.][X]\n",
+    "game.menu_definition.msg_011": "。[.][X]\n",
     "game.menu_definition.msg_022": "。[.][X]\n",
     "game.menu_definition.msg_02e": "  モード  チュートリアル[X]\n",
     "game.menu_definition.msg_02f": "  モード  ノーマル[X]\n",
@@ -240,11 +240,26 @@
     "game.menu_definition.msg_6b8": "周回数[X]\n",
     "game.semantic_correction.msg_005": "入手：[X]\n",
     "game.semantic_correction.msg_006": "ゴールド。[.][X]\n",
+    "game.semantic_correction.msg_008": "入手：[X]\n",
+    "game.semantic_correction.msg_00a": "盗品：[X]\n",
     "game.semantic_correction.msg_00d": "使用可能：[X]\n",
     "game.semantic_correction.msg_00e": "使用可能ユニット：[X]\n",
+    "game.semantic_correction.msg_00f": "廃棄：[X]\n",
+    "game.semantic_correction.msg_010": "輸送隊へ送付：[X]\n",
+    "game.semantic_correction.msg_1c8": "閉じた村[.][X]\n",
+    "game.semantic_correction.msg_1ee": "船板[X]\n",
+    "game.semantic_correction.msg_1ef": "難破船[.][X]\n",
+    "game.semantic_correction.msg_3a8": "エンブレムシール[.][X]\n",
     "game.semantic_correction.msg_593": "デバッグ[.][X]\n",
     "game.semantic_correction.msg_679": "記録中。ゲームを再開するには[LF]\n「記録から始める」を選んでください。[X]\n",
     "game.semantic_correction.msg_6a2": "　デバッグ[X]\n",
+    "game.semantic_correction.msg_6ae": "　周回数[.][X]\n",
+    "game.semantic_correction.msg_6af": "　クリア登録[.][X]\n",
+    "game.semantic_correction.msg_6b2": "砂嵐[X]\n",
+    "game.semantic_correction.msg_6b9": "ファイルをクリア済みに[X]\n",
+    "game.semantic_correction.msg_6ba": "しますか？[X]\n",
+    "game.semantic_correction.msg_6bb": "クリア済みファイルは[.][X]\n",
+    "game.semantic_correction.msg_6bc": "以後プレイできません[X]\n",
     "game.semantic_correction.msg_7d1": "戦死地：[.][X]\n",
     "game.semantic_correction.msg_7d2": "で負傷し、[LF]\n一行と別れた。[.][X]\n",
     "game.semantic_correction.msg_7d3": "負傷地：[X]\n",
@@ -310,5 +325,5 @@
     "raw_surface.unit_action.summon": " 召喚",
     "save_compat.menu_erase_all": "全セーブデータ消去"
   },
-  "target_count": 274
+  "target_count": 289
 }
