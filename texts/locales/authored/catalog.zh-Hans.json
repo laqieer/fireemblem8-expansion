@@ -15,12 +15,12 @@
     },
     {
       "path": "texts/locales/authored/shards/existing_expansion.zh-Hans.json",
-      "sha256": "1b842c48a8fa0f8588afcebcad7e04ed0c0c73a4987880f90d7709c04722f241",
+      "sha256": "52a05046a2ca55fe26fbd11d38997a809fcd202ed51efffdc2378db0009e0580",
       "target_count": 3
     },
     {
       "path": "texts/locales/authored/shards/help_shop.zh-Hans.json",
-      "sha256": "bc07d238486fb53b3a139c0aa9dd5e17a26f7e1106a5411d6b521b7f29af5421",
+      "sha256": "28dc84e5fa246712cc6f4d8d93a0bef54f750746bc226b886f76e2228e6beaef",
       "target_count": 81
     },
     {

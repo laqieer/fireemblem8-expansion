@@ -7734,7 +7734,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "ec469811a9d963b33240fd65790bcb8485eb1ca7f327813e4727651846387fd6",
+            "payload_sha256": "49a15de6c78a864b42818ee5c0d05cf4260785f9e13c45892d0e82b461270c28",
             "review_key": "game/zh-Hans/0x061D",
             "similarity": 0.0,
             "spans": [
@@ -10958,7 +10958,7 @@
     "ja_authored": {
       "byte_count": 46018,
       "path": "texts/locales/authored/catalog.ja.json",
-      "sha256": "c82cc3af1c73dcce063a6468c4bc09d093f9f6d2fcd100c85d70fbd230f4395b"
+      "sha256": "174ecd700212ab9fe9356682c37415d5b68775a969abd55d5667f63588ecb8c2"
     },
     "ja_expansion": {
       "byte_count": 2693,
@@ -10966,9 +10966,9 @@
       "sha256": "ad47b7912ee40a42f2f31448e4a1cf3f9783ff16231f4fc66c48a3af37f78e9f"
     },
     "ja_indexed": {
-      "byte_count": 1719190,
+      "byte_count": 1719177,
       "path": "texts/locales/ja/indexed.txt",
-      "sha256": "646470228ad24878266de41d825724d7d70d02c85c1c02626feec37e71b31fe6"
+      "sha256": "47bcc1c25fd717578a4c7aacd7801151f5e85253c325c32e115d2e23c66ebf45"
     },
     "ja_raw": {
       "byte_count": 11811,
@@ -10979,12 +10979,12 @@
       "baseline_commit": "2d02ec12ddcba0640bcf1ecffcf7dc93d56deb4f",
       "byte_count": 357213,
       "path": "texts/locales/runtime_latin_span_review.json",
-      "sha256": "f467718000c001867d73a919844e457141fc5842d5e690013db72b34cec60035"
+      "sha256": "ef0b8abeba07f0c6dc934d54909efa9ff6e01d914e867dea3ad4d9c9747ecb97"
     },
     "mapping": {
-      "byte_count": 5495880,
+      "byte_count": 5496815,
       "path": "texts/locales/mapping/fe8u_target_map.json",
-      "sha256": "8ce908acac0604af6f1e73c7b73c487b571637732d3544ccef7d0c09bc5126ef"
+      "sha256": "518131dbc2a6c7d8e471d2f282c68415ff478bdb9ee27b4298d1de6954ad30b3"
     },
     "raw_closure": {
       "byte_count": 153460,
@@ -10999,7 +10999,7 @@
     "zh-Hans_authored": {
       "byte_count": 40185,
       "path": "texts/locales/authored/catalog.zh-Hans.json",
-      "sha256": "7ff35da9815cdd819a2dfcb75ab799e6e81e0291680a99a556e1a79e00a91e78"
+      "sha256": "ad5255753a0909b3e595f9250356a4210d01c3906fd58ca981512a7d150a17e6"
     },
     "zh-Hans_expansion": {
       "byte_count": 2604,
@@ -11007,9 +11007,9 @@
       "sha256": "9b555ccd6aef10aa7247e877334094a8d0c96ed910b2a64a9821456714fc4eb6"
     },
     "zh_hans_indexed": {
-      "byte_count": 1374727,
+      "byte_count": 1375136,
       "path": "texts/locales/zh-Hans/indexed.txt",
-      "sha256": "9f3013edccc6e735dc2a5788502ec7621653b8beac0f40c034b22eaea66f0e69"
+      "sha256": "d1e334b7983974300b848be770f623bd2f821e8ff67e189d2a7f6af46f4002e8"
     },
     "zh_hans_raw": {
       "byte_count": 45834,

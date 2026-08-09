@@ -36,7 +36,7 @@ class IndexedLocaleOverrideTests(unittest.TestCase):
             self.OVERRIDE_PATH,
             expected_source_hashes=PINNED_SOURCE_SHA256,
         )
-        self.assertEqual(catalog.entry_count, 135)
+        self.assertEqual(catalog.entry_count, 186)
         self.assertEqual(set(catalog.sources), {"fe8j_indexed", "fe8cn_source"})
         for source in catalog.sources.values():
             self.assertEqual(
@@ -48,8 +48,8 @@ class IndexedLocaleOverrideTests(unittest.TestCase):
                 self.assertTrue(entry.provenance["audit"])
                 self.assertTrue(entry.provenance["context"])
                 self.assertTrue(entry.provenance["target_ids"])
-        self.assertEqual(len(catalog.sources["fe8j_indexed"].entries), 49)
-        self.assertEqual(len(catalog.sources["fe8cn_source"].entries), 86)
+        self.assertEqual(len(catalog.sources["fe8j_indexed"].entries), 63)
+        self.assertEqual(len(catalog.sources["fe8cn_source"].entries), 123)
 
     def test_full_semantic_audit_overrides_are_exact(self):
         catalog = load_override_catalog(
@@ -229,6 +229,7 @@ class IndexedLocaleOverrideTests(unittest.TestCase):
 
     def test_control_or_newline_structure_change_is_rejected(self):
         document = copy.deepcopy(self._load_document())
+        document["supplements"] = []
         entry = document["sources"]["fe8cn_source"]["entries"]["0x004D"]
         entry["expected_text"] = "NOW[CTRL:0004]\nLOADING"
         entry["replacement_text"] = "正在载入[CTRL:0004]"
@@ -246,6 +247,37 @@ class IndexedLocaleOverrideTests(unittest.TestCase):
                     path,
                     expected_source_hashes=PINNED_SOURCE_SHA256,
                 )
+
+    def test_hash_pinned_audited_control_change_is_allowed(self):
+        document = copy.deepcopy(self._load_document())
+        document["supplements"] = []
+        entry = document["sources"]["fe8cn_source"]["entries"]["0x004D"]
+        expected_text = entry.pop("expected_text")
+        entry["expected_text_sha256"] = hashlib.sha256(
+            expected_text.encode("utf-8")
+        ).hexdigest()
+        entry["replacement_text"] = "正在[CTRL:0001]载入"
+        entry["preserve_structure"] = False
+        document["sources"]["fe8cn_source"]["entries"] = {"0x004D": entry}
+        test_dir = Path(__file__).resolve().parent
+        with tempfile.TemporaryDirectory(
+            prefix=".indexed_override_control_change_",
+            dir=test_dir,
+        ) as temporary:
+            path = self._write_fixture(temporary, document)
+            catalog = load_override_catalog(
+                path,
+                expected_source_hashes=PINNED_SOURCE_SHA256,
+            )
+            messages = (
+                IndexedMessage(0x004D, expected_text, 1),
+            )
+            updated, applied = apply_indexed_overrides(
+                messages,
+                source=catalog.sources["fe8cn_source"],
+            )
+        self.assertEqual(updated[0].text, "正在[CTRL:0001]载入")
+        self.assertFalse(applied[0].preserve_structure)
 
 
 if __name__ == "__main__":

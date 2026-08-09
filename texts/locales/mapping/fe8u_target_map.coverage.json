@@ -10,9 +10,9 @@
     "chapter-event": {
       "authored_translation": 30,
       "explicit_english_fallback": 0,
-      "indexed_source": 527,
+      "indexed_source": 526,
       "raw_source": 0,
-      "total": 557
+      "total": 556
     },
     "chapter-title": {
       "authored_translation": 1,
@@ -66,9 +66,9 @@
     "ending-details": {
       "authored_translation": 38,
       "explicit_english_fallback": 0,
-      "indexed_source": 0,
+      "indexed_source": 2,
       "raw_source": 0,
-      "total": 38
+      "total": 40
     },
     "entity-row": {
       "authored_translation": 0,
@@ -171,9 +171,9 @@
     "trainee-prep": {
       "authored_translation": 8,
       "explicit_english_fallback": 0,
-      "indexed_source": 90,
+      "indexed_source": 89,
       "raw_source": 3,
-      "total": 101
+      "total": 100
     },
     "unclassified": {
       "authored_translation": 0,

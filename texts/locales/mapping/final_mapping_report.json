@@ -2,17 +2,17 @@
   "authoritative": false,
   "inputs": {
     "audit_semantic_corrections_sha256": "898cfce0d2c4d480b9318d975bfa1dda9ec44a3dbad749d6f890ada47e7d9891",
-    "current_pre_authored_target_map_sha256": "a96de3110fa433f593b60654a61b4c1fbc78a7268d7ddda3030765dd9607c341",
-    "ending_layout_metrics_sha256": "2a6c1bf79ca8b8a6c06bdde196cd36fc00dd32029c43b7dc01dfb103e26a3890",
-    "febuilder_alignment_evidence_sha256": "abf3f30c5557c7555eb7c13b7356e08297563ac261a97d263d6a9052462f0cab",
+    "current_pre_authored_target_map_sha256": "2e1f7e31339e1aaaa3ce8dba69bbe412aeec608b3ba3df692c0b5e4faabcce00",
+    "ending_layout_metrics_sha256": "61caf11cd5d20eb19fdf30666e3c3cf8b8ebae113e76cbe262510af4ad4c15a3",
+    "febuilder_alignment_evidence_sha256": "2e1c26e69940387e0bf268242dd973bb53dd7fd14c7c5279e7ab386829319d5a",
     "historical_pre_authored_target_map_sha256": "63b021274b7865c0d76cb1556fa84cc1dfdbcadab38037c8ccf6eeb9cdc3591a",
     "original_target_map_sha256": "a4c13fb79ba1df1e8996f0781d115a1f278f3ca3f994a3b8c7fe3392bf6c6ad8",
     "runtime_authored_catalog_sha256": {
-      "ja": "f163bb37210b08916849a1972484b39aeb9a78f1d60950ca0653b772236e15e7",
-      "zh-Hans": "ca9d4c9b0d96e50ea35f4bcadbe8568e656e98b7b2eee89af078b409b956f7c5"
+      "ja": "d282e0d9892d97ee8d22793c042d150646e2af0ab5834ca98e73087845fd05aa",
+      "zh-Hans": "f6da4eb9377e9dc590b3a589cbb12f3ba92fc78a6170fbbd4eed4fe342ce3c76"
     },
     "source_authored_queue_sha256": "ffdff913a552076928d5cb06634ed75d8983b65c05bb4ecec9aa2b610ffe6ad6",
-    "structural_completion_evidence_sha256": "d13d66746d014511479fe93661c05d5d70d4c65c6c1969a2dbb5ab7922b92b85"
+    "structural_completion_evidence_sha256": "379379aa8c9db1e1ab9d808f4dbf3d013aec567fe7e76f04e03fb421c4dffcc6"
   },
   "kind": "fe8u-final-mapping-report",
   "note": "Evidence report for the deterministic final-mapping promotion pass. The source queue is retained byte-identically as fulfilled history.",
@@ -24,12 +24,12 @@
     "numeric_or_proximity_promotion_permitted": false
   },
   "promotion_counts": {
-    "b-structural-high": 27,
-    "c-febuilder": 1267,
+    "b-structural-high": 26,
+    "c-febuilder": 1266,
     "c-febuilder-raw": 3,
     "d-contextual-resolution": 20,
     "d-existing-authored": 3,
-    "d-semantic-correction": 100,
+    "d-semantic-correction": 102,
     "d-structural-reference-second-check": 6,
     "e-exact-english": 134,
     "e-exact-english-context": 1,

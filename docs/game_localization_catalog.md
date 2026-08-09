@@ -45,6 +45,15 @@ the FE8CN import as the Chinese provider, but only when a tracked C source
 table's symbol, message-ID key, exact literal, and bounded context hash all
 verify. The remaining reviewed targets resolve through stable authored keys.
 
+Provider metadata also defines the control-operand domain. Indexed and raw
+regional providers are FE8J-domain streams; authored target translations are
+already FE8U-domain streams. During final composition only FE8J-domain
+`LoadFace` operands are remapped through the hash-pinned named portrait-table
+crosswalk in
+`texts/locales/mapping/fe8j_to_fe8u_portrait_operands.json`. This prevents
+double-remapping authored controls and covers named characters, eye-closed
+variants, shop/debug portraits, and reviewed target-specific portrait context.
+
 Outputs are generated under `build/game-localization/generated/`:
 
 - `localized_game_text_data.h`: target count and maximum decoded bytes;
@@ -61,7 +70,11 @@ Every present message is strict UTF-8 plus canonical engine control bytes and
 one trailing NUL. Each descriptor records both compressed byte length and
 exact meaningful bit length; the standalone NUL is the final Huffman symbol at
 that bit boundary. Generation rejects unknown controls, embedded NUL bytes,
-unresolved mapping decisions, and codec round-trip mismatches.
+unresolved mapping decisions, and codec round-trip mismatches. A bounded final
+stream tokenizer also rejects truncated extended controls and FIDs, FIDs that
+do not match the FE8U English target context, unmatched consecutive newlines,
+and localized `BreakTalk` counts incompatible with the statically modeled
+event `TEXTCONT` sequence.
 
 ## Runtime and build gating
 

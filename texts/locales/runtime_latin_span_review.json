@@ -5981,7 +5981,7 @@
     "game/zh-Hans/0x061D": {
       "baseline_classification": "mixed-script-bypass",
       "baseline_payload_sha256": "2fe5740b47497bf5f6e89d1bef6ee53ad6bd6f69321e4853a36f553dc16a312d",
-      "current_payload_sha256": "ec469811a9d963b33240fd65790bcb8485eb1ca7f327813e4727651846387fd6",
+      "current_payload_sha256": "49a15de6c78a864b42818ee5c0d05cf4260785f9e13c45892d0e82b461270c28",
       "english_payload_sha256": "040ccfa52b436e392e265e1edbf7471213bc704b66b887be58da5fc35060dd81",
       "locale": "zh-Hans",
       "payload_source": {

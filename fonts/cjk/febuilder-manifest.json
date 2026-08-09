@@ -75,7 +75,7 @@
     {
       "corpus": {
         "path": "corpora/zh-Hans.system.txt",
-        "sha256": "c72209d9840be1bba9687c2a62260b4c811af8ea23e48aa535209fc1bb161cda"
+        "sha256": "f48b8bcf3c83fedd5e3f18db8eba7013b3e1e1c2609c4fd5769066157238246a"
       },
       "font": {
         "byteLength": 8331336,
@@ -111,7 +111,7 @@
     {
       "corpus": {
         "path": "corpora/zh-Hans.talk.txt",
-        "sha256": "c72209d9840be1bba9687c2a62260b4c811af8ea23e48aa535209fc1bb161cda"
+        "sha256": "f48b8bcf3c83fedd5e3f18db8eba7013b3e1e1c2609c4fd5769066157238246a"
       },
       "font": {
         "byteLength": 8331336,

@@ -28,9 +28,9 @@
     },
     "zh-Hans": {
       "codepoints_path": "graphics/fonts/cjk/zh-Hans.system.codepoints.u32le",
-      "codepoints_sha256": "09287f0b1a05346502da7cfd9ef2480f02b4002a0b474633236cb5152136f333",
+      "codepoints_sha256": "3e01fd6a972056cf7bb9fd855cb95cca904e0b7afbececf8cd4013ce25827c30",
       "widths_path": "graphics/fonts/cjk/zh-Hans.system.widths.u8",
-      "widths_sha256": "40d1dffca613bceea6a1904b26d09eee2086b23db67bcff10b8038d5063fc2c8"
+      "widths_sha256": "d47ac456e7bb33eb6441d53e5eec1106a0e8336ca93bdf3b59946c0f832e5d25"
     }
   },
   "kind": "fe8u-ending-layout-metrics",

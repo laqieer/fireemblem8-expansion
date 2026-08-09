@@ -52,6 +52,18 @@
           "reason": "Apply the reviewed target-semantic correction without modifying the pinned raw regional snapshot.",
           "replacement_text": "掌握【魔石】之力[CTRL:0001]以最高位暗魔法操纵尸骸"
         },
+        "0x02D9": {
+          "expected_text_sha256": "199966f33536bf5d8f42163e6c431cf949d8de1835aec5d21a619ddefe048145",
+          "provenance": {
+            "audit": "dialogue-control-semantic-audit-2026-08-09",
+            "context": "FE8U target 0x0352 composed from unique regional source 0x02D9.",
+            "target_ids": [
+              "0x0352"
+            ]
+          },
+          "reason": "Apply the reviewed target-specific dialogue/control correction without modifying the pinned regional snapshot.",
+          "replacement_text": "统领所有教会的最高位圣职者[CTRL:0001]据说是圣女拉特娜的后裔"
+        },
         "0x0418": {
           "expected_text_sha256": "4ddb240eadd9a67a4565bff61ecf09e2f36670095ab976b1b71ffa5ffb0ce6ce",
           "provenance": {
@@ -124,6 +136,30 @@
           "reason": "Apply the reviewed target-semantic correction without modifying the pinned raw regional snapshot.",
           "replacement_text": "选择单位时显示的[CTRL:0001]红色区域是攻击范围。[CTRL:0001]将光标移到敌方单位上时，[CTRL:0001]也会显示该敌人的攻击范围。[CTRL:0001]接近敌人前请先确认。"
         },
+        "0x05AF": {
+          "expected_text_sha256": "ec469811a9d963b33240fd65790bcb8485eb1ca7f327813e4727651846387fd6",
+          "provenance": {
+            "audit": "dialogue-control-semantic-audit-2026-08-09",
+            "context": "FE8U target 0x061D composed from unique regional source 0x05AF.",
+            "target_ids": [
+              "0x061D"
+            ]
+          },
+          "reason": "Apply the reviewed target-specific dialogue/control correction without modifying the pinned regional snapshot.",
+          "replacement_text": "可以救出邻接的蓝色和绿色[CTRL:0001]人物。[CTRL:0001]只是，自己的『救出』值必须[CTRL:0001]不低于对方的『体格』值。[CTRL:0001]救出后，救出方的人物[CTRL:0001]『速度』、『技』的数值会半减。[CTRL:0001]而被救出的人物[CTRL:0001]则不会受到敌军攻击。[CTRL:0001]假如有再次受到敌人攻击会使HP[CTRL:0001]降到0的人物的话，[CTRL:0001]就使用救出指令吧。[CTRL:0001]也就是说从敌人手中救下同伴。"
+        },
+        "0x05CA": {
+          "expected_text_sha256": "91e4541d7e32513535dbc36a0b0b92617f7b2001ca06fce4b1a070b6983f572e",
+          "provenance": {
+            "audit": "dialogue-control-semantic-audit-2026-08-09",
+            "context": "FE8U target 0x0638 composed from unique regional source 0x05CA.",
+            "target_ids": [
+              "0x0638"
+            ]
+          },
+          "reason": "Apply the reviewed target-specific dialogue/control correction without modifying the pinned regional snapshot.",
+          "replacement_text": "在规定的回合数内[CTRL:0001]抵挡敌军并生存下来，就能够[CTRL:0001]通过该版面。"
+        },
         "0x05D2": {
           "expected_text_sha256": "d2de248a82114bb6cdc04ded133d652c2ec6ac1a5269a6e93ac11e130d9ac016",
           "provenance": {
@@ -189,6 +225,32 @@
             }
           ]
         },
+        "0x0891": {
+          "expected_text_sha256": "99e9b07fdb73d1d4a2ef6c0b160debc7696f6f027eb74b594c3012637fd811b7",
+          "preserve_structure": false,
+          "provenance": {
+            "audit": "dialogue-control-semantic-audit-2026-08-09",
+            "context": "FE8U target 0x08E7 composed from unique regional source 0x0891.",
+            "target_ids": [
+              "0x08E7"
+            ]
+          },
+          "reason": "Restore the fourth world-map BreakTalk required by the FE8U WM_TEXT continuation sequence.",
+          "replacement_text": "卡尔奇诺共和国背叛了弗雷利亚，[CTRL:0001]投靠了古拉德。[CTRL:0103][CTRL:0080][CTRL:0004]正想要通过卡尔奇诺前往贾哈那[CTRL:0001]的弗雷利亚王子希尼亚斯。[CTRL:0103][CTRL:0080][CTRL:0004]他被卡尔奇诺军包围，[CTRL:0001]陷入了绝望的状态中……[CTRL:0103][CTRL:0080][CTRL:0004]艾瑞珂一行[CTRL:0001]急忙前去救援希尼亚斯王子。[CTRL:0103][CTRL:0080][CTRL:0004]"
+        },
+        "0x0893": {
+          "expected_text_sha256": "0abee682de6e334b9108d74d097c4cd9550db83e41dbfa61b0d783e6b92dd192",
+          "preserve_structure": false,
+          "provenance": {
+            "audit": "dialogue-control-semantic-audit-2026-08-09",
+            "context": "FE8U target 0x08E8 composed from unique regional source 0x0893.",
+            "target_ids": [
+              "0x08E8"
+            ]
+          },
+          "reason": "Restore the fourth world-map BreakTalk and its narration boundary required by the FE8U WM_TEXT continuation sequence.",
+          "replacement_text": "珀卡拉山脈……[CTRL:0103][CTRL:0001]充满裂缝的红色岩壁，[CTRL:0001]如剑一般耸立的悬崖。[CTRL:0103][CTRL:0001]尤恩所说的『里』，[CTRL:0001]就是在如此人迹罕至的地方。[CTRL:0103][CTRL:0080][CTRL:0004]为了在前往贾哈那的路上避免和[CTRL:0001]卡尔奇诺发生冲突，[CTRL:0103][CTRL:0080][CTRL:0004]艾瑞珂一行选择了[CTRL:0001]翻越如此险峻的群山。[CTRL:0103][CTRL:0080][CTRL:0004]可是途中在浓雾弥漫的山间[CTRL:0001]也隐藏着异形之物……[CTRL:0103][CTRL:0080][CTRL:0004]"
+        },
         "0x0897": {
           "expected_text_sha256": "ebfe19fcc6594d97cedda3256d8a47aee34a52469901b7fe804d65a499e34cdc",
           "provenance": {
@@ -206,6 +268,31 @@
             }
           ]
         },
+        "0x089F": {
+          "expected_text_sha256": "fde3baa16196e312833557196b383f995388107e9993d34e92c9fa61e901025b",
+          "preserve_structure": false,
+          "provenance": {
+            "audit": "dialogue-control-semantic-audit-2026-08-09",
+            "context": "FE8U target 0x08EE composed from unique regional source 0x089F.",
+            "target_ids": [
+              "0x08EE"
+            ]
+          },
+          "reason": "Apply the reviewed target-specific dialogue/control correction without modifying the pinned regional snapshot.",
+          "replacement_text": "众人追寻着消失的古拉德皇子利昂。[CTRL:0103]奉希尼亚斯之命，[CTRL:0103]在附近搜索的弗雷利亚兵传来了[CTRL:0103]利昂往北方去了的报告。[CTRL:0103][CTRL:0080][CTRL:0004]艾瑞珂一行迅速追随其后来到了[CTRL:0001]包围暗之树海的火山内雷拉斯。[CTRL:0103][CTRL:0001]火山的热气和硫磺的气味，[CTRL:0001]无人居住的绝境……[CTRL:0103][CTRL:0080][CTRL:0004]这里，[CTRL:0001]无数的魔物之卵在吐息着。[CTRL:0103][CTRL:0080][CTRL:0004]"
+        },
+        "0x08A1": {
+          "expected_text_sha256": "a640adc047141c894f32559ff9cc64cd71a52baeb2abc12d3a89399970ce3938",
+          "provenance": {
+            "audit": "dialogue-control-semantic-audit-2026-08-09",
+            "context": "FE8U target 0x08EF composed from unique regional source 0x08A1.",
+            "target_ids": [
+              "0x08EF"
+            ]
+          },
+          "reason": "Apply the reviewed target-specific dialogue/control correction without modifying the pinned regional snapshot.",
+          "replacement_text": "鲁内斯的【圣石】被粉碎了。[CTRL:0103]由于和魔物的激战而[CTRL:0001]使追踪行动变得异常困难。[CTRL:0103][CTRL:0080][CTRL:0004]在罗斯顿圣教国的公主拉切尔[CTRL:0001]提议下，一行人准备前往罗斯顿。[CTRL:0103][CTRL:0001][CTRL:0080][CTRL:0004]在对祖国领内路线了如指掌的[CTRL:0001]拉切尔的指引下，[CTRL:0103]一行人来到了罗斯顿的王宫。[CTRL:0001]最后一块【圣石】就封印在罗斯顿。[CTRL:0103][CTRL:0080][CTRL:0004]"
+        },
         "0x08A3": {
           "expected_text_sha256": "449fab3bbf348e2062fa93c485be9e441dcc8bbec217294abd175b32defb1fa1",
           "provenance": {
@@ -222,6 +309,56 @@
               "replacement": "必须守护最后的【圣石】，[CTRL:0001]以阻止魔王复活。"
             }
           ]
+        },
+        "0x08A9": {
+          "expected_text_sha256": "2486f6393e1686a5bb4b33c8abc1017777670716425aac5ad3a3c2f3f28ec7a6",
+          "preserve_structure": false,
+          "provenance": {
+            "audit": "dialogue-control-semantic-audit-2026-08-09",
+            "context": "FE8U target 0x08F2 composed from unique regional source 0x08A9.",
+            "target_ids": [
+              "0x08F2"
+            ]
+          },
+          "reason": "Remove regional A+NL sequences that create blank lines beyond the FE8U target layout.",
+          "replacement_text": "古拉德帝国将军杜塞尔是[CTRL:0001]伊弗列姆的枪术老师。[CTRL:0103][CTRL:0001]过去作为国家使节屡次出访鲁内斯[CTRL:0001]王国的杜塞尔将军[CTRL:0103][CTRL:0080][CTRL:0004]在伊弗列姆小时候就和他[CTRL:0001]一直有来往。[CTRL:0003][CTRL:0001]意气相投的二人彼此不分身份和[CTRL:0001]国界，建立起了师徒关系。[CTRL:0103][CTRL:0080][CTRL:0004]为何古拉德皇帝要发动战争……[CTRL:0103]散发在古拉德领内的[CTRL:0001]魔之瘴气又是怎么回事……[CTRL:0003][CTRL:0001]和杜塞尔见面后，说不定能从[CTRL:0001]他的口中获得一些线索。[CTRL:0103][CTRL:0080][CTRL:0004]伊弗列姆抱着这样的希望，[CTRL:0001]率军向着古拉德境内进发了。[CTRL:0103][CTRL:0080][CTRL:0004]"
+        },
+        "0x08AF": {
+          "expected_text_sha256": "0c65f1dbf749583702f17a7f30a7c0c0c720fa5946a55c73b95453fce58f8f92",
+          "provenance": {
+            "audit": "dialogue-control-semantic-audit-2026-08-09",
+            "context": "FE8U target 0x08F5 composed from unique regional source 0x08AF.",
+            "target_ids": [
+              "0x08F5"
+            ]
+          },
+          "reason": "Apply the reviewed target-specific dialogue/control correction without modifying the pinned regional snapshot.",
+          "replacement_text": "梅尔平安回到了伊弗列姆军中。[CTRL:0103][CTRL:0080][CTRL:0004]塞莱娜并没有将她当做人质，[CTRL:0103]而是作为古拉德骑士[CTRL:0001]战斗到了最后一刻。[CTRL:0103][CTRL:0080][CTRL:0004]为了不辜负她的心意，[CTRL:0103]伊弗列姆更坚定了决心要解开[CTRL:0001]古拉德皇帝身上的谜团。[CTRL:0103][CTRL:0080][CTRL:0004]伊弗列姆他们赶往帝都。[CTRL:0103][CTRL:0080][CTRL:0004]古拉德帝都。皇帝彼加尔德[CTRL:0001]本应就在这里，可是……[CTRL:0103][CTRL:0080][CTRL:0004]"
+        },
+        "0x08B7": {
+          "expected_text_sha256": "37d692ce3ea4f338072a07159f765ba36930f12e8719a30bcd1c750f31a6ec68",
+          "preserve_structure": false,
+          "provenance": {
+            "audit": "dialogue-control-semantic-audit-2026-08-09",
+            "context": "FE8U target 0x08F9 composed from unique regional source 0x08B7.",
+            "target_ids": [
+              "0x08F9"
+            ]
+          },
+          "reason": "Apply the reviewed target-specific dialogue/control correction without modifying the pinned regional snapshot.",
+          "replacement_text": "众人追寻着消失的古拉德皇子利昂。[CTRL:0103]奉希尼亚斯之命，[CTRL:0103]在附近搜索的弗雷利亚兵传来了[CTRL:0001]利昂往北方去了的报告。[CTRL:0103][CTRL:0080][CTRL:0004]伊弗列姆一行迅速追随其后来到了[CTRL:0001]包围暗之树海的火山内雷拉斯。[CTRL:0103][CTRL:0001]火山的热气和硫磺的气味，[CTRL:0001]无人居住的绝境……[CTRL:0103][CTRL:0080][CTRL:0004]这里，[CTRL:0001]无数的魔物之卵在吐息着。[CTRL:0103][CTRL:0080][CTRL:0004]"
+        },
+        "0x08B9": {
+          "expected_text_sha256": "a640adc047141c894f32559ff9cc64cd71a52baeb2abc12d3a89399970ce3938",
+          "provenance": {
+            "audit": "dialogue-control-semantic-audit-2026-08-09",
+            "context": "FE8U target 0x08FA composed from unique regional source 0x08B9.",
+            "target_ids": [
+              "0x08FA"
+            ]
+          },
+          "reason": "Apply the reviewed target-specific dialogue/control correction without modifying the pinned regional snapshot.",
+          "replacement_text": "鲁内斯的【圣石】被粉碎了。[CTRL:0103]由于和魔物的激战而[CTRL:0001]使追踪行动变得异常困难。[CTRL:0103][CTRL:0080][CTRL:0004]在罗斯顿圣教国的公主拉切尔[CTRL:0001]提议下，一行人准备前往罗斯顿。[CTRL:0103][CTRL:0001][CTRL:0080][CTRL:0004]在对祖国领内路线了如指掌的[CTRL:0001]拉切尔的指引下，[CTRL:0103]一行人来到了罗斯顿的王宫。[CTRL:0001]最后一块【圣石】就封印在罗斯顿。[CTRL:0103][CTRL:0080][CTRL:0004]"
         },
         "0x08BB": {
           "expected_text_sha256": "0826f612c3358ff5060187ddf9f72e4f1cbf0dbe6ad3c260b03ba623dfcd53b0",
@@ -257,6 +394,32 @@
             }
           ]
         },
+        "0x08CD": {
+          "expected_text_sha256": "d27b5b4eff8d4d0ec72abff348183d49e46c8dbbb07ff64a95c1dfe5b8b54103",
+          "preserve_structure": false,
+          "provenance": {
+            "audit": "dialogue-control-semantic-audit-2026-08-09",
+            "context": "FE8U target 0x090D composed from unique regional source 0x08CD.",
+            "target_ids": [
+              "0x090D"
+            ]
+          },
+          "reason": "Remove the source-composition duplicate NL and restore the closing line to Seth.",
+          "replacement_text": "[CTRL:000C][CTRL:0010][CTRL:0102][CTRL:0009][CTRL:0010][CTRL:0104][CTRL:0009]艾瑞珂公主，这边。[CTRL:0001]看不到古拉德的士兵了。[CTRL:0103]逃到这里的话，[CTRL:0001]暂时应该平安无事了吧。[CTRL:0103]请原谅我一路上的失礼之处。[CTRL:0003][CTRL:000C]没这回事，塞思。[CTRL:0103]如果没有你在的话，[CTRL:0001]我根本逃不出王宫……[CTRL:0103]我现在能活着，都是多亏了你。[CTRL:0001]真的非常感谢。[CTRL:0003][CTRL:000C][CTRL:0080][CTRL:000D][CTRL:000B]再说，你为了保护我[CTRL:0001]受了这么重的伤……[CTRL:0103]要赶快找个地方治疗……[CTRL:0003][CTRL:0009]这种程度的伤[CTRL:0001]不碍事。[CTRL:0103]不过艾瑞珂公主，[CTRL:0001]我们必须赶快前往弗雷利亚。[CTRL:0103]绝不能白费了法德[CTRL:0001]陛下的好意……[CTRL:0003][CTRL:000B][CTRL:0016]……[CTRL:0016][CTRL:0103]父王他留在城里……[CTRL:0001]不会出事吧？[CTRL:0103]另外，已经断了联系的[CTRL:0001]哥哥他也……[CTRL:0003][CTRL:0009]法德陛下和伊弗列姆王子都是[CTRL:0001]非常坚强的人。[CTRL:0103]就算对手是古拉德皇帝，[CTRL:0001]那两人应该也不会有什么事的。[CTRL:0003][CTRL:0102]艾瑞珂公主，[CTRL:0103]您现在与其担心他们[CTRL:0001]还不如为自己担心。[CTRL:0103]要是您有个万一，[CTRL:0001]那两人会有多难过啊……[CTRL:0103]为了能在将来再见到他们，[CTRL:0001]我们现在必须尽快赶到弗雷利亚。[CTRL:0003][CTRL:000B]你说的对……[CTRL:0003][CTRL:0001]我必须要振作起来，[CTRL:0001]直到再次见到父王和哥哥为止。[CTRL:0003][CTRL:0001]走吧，塞思。[CTRL:0003]"
+        },
+        "0x08ED": {
+          "expected_text_sha256": "3ad4eeae1d7c82ea866e412a2bdad0ca39ed8e94c2a15b754ebd71ec3dae976f",
+          "preserve_structure": false,
+          "provenance": {
+            "audit": "dialogue-control-semantic-audit-2026-08-09",
+            "context": "FE8U target 0x092D composed from unique regional source 0x08ED.",
+            "target_ids": [
+              "0x092D"
+            ]
+          },
+          "reason": "Apply the reviewed target-specific dialogue/control correction without modifying the pinned regional snapshot.",
+          "replacement_text": "[CTRL:000C][CTRL:0010][CTRL:0102][CTRL:0009][CTRL:0010][CTRL:0104][CTRL:000C]塞思！[CTRL:0001]看那个……[CTRL:0003][CTRL:0009]古拉德终于开始向[CTRL:0001]弗雷利亚动手了……[CTRL:0103]艾瑞珂公主，这里很危险。[CTRL:0103]我们绕过缪兰城[CTRL:0001]直接去弗雷利亚王都吧。[CTRL:0003][CTRL:000C]但是，就这样放任他们不管……[CTRL:0003][CTRL:0102]鲁内斯遭到古拉德军进攻时……[CTRL:0001]你也和我一样亲眼看见了[CTRL:0103]古拉德士兵如何残害百姓。[CTRL:0103]他们还掠夺财物，[CTRL:0001]抓走了许多女性，[CTRL:0103]抵抗的人也全部被处以了极刑。[CTRL:0003][CTRL:0009][CTRL:0016]……[CTRL:0016][CTRL:0003][CTRL:000C]求求你，塞思。[CTRL:0103]我不想再看到古拉德军[CTRL:0001]残害无辜的人们了……[CTRL:0003][CTRL:0009][CTRL:0016]……[CTRL:0016]我明白了。[CTRL:0103]那么，[CTRL:0001]我们先将缪兰城夺回来吧。[CTRL:0103]不过公主，[CTRL:0001]请您不要勉强自己。[CTRL:0003][CTRL:000C]我明白，塞思。[CTRL:0001]走吧！[CTRL:0003]"
+        },
         "0x091A": {
           "expected_text_sha256": "cb0ec2bddd68494fe9bf9005b54afc0473a32b80717672722d923e63ae87bb52",
           "provenance": {
@@ -273,6 +436,18 @@
               "replacement": "这是我们遇到的第一个两难。[CTRL:0103]我们必须尽快行动，尽量避免[CTRL:0001]引人注目，可是……"
             }
           ]
+        },
+        "0x0922": {
+          "expected_text_sha256": "ce33d13f8bce33483e953a5d9f5e9b51e1471a4ce6eb761d74f4afae78d6445b",
+          "provenance": {
+            "audit": "dialogue-control-semantic-audit-2026-08-09",
+            "context": "FE8U target 0x0962 composed from unique regional source 0x0922.",
+            "target_ids": [
+              "0x0962"
+            ]
+          },
+          "reason": "Apply the reviewed target-specific dialogue/control correction without modifying the pinned regional snapshot.",
+          "replacement_text": "[CTRL:000C][CTRL:0010][CTRL:010E][CTRL:000A][CTRL:0010][CTRL:0104][CTRL:0008][CTRL:0010][CTRL:0102][CTRL:001C][CTRL:000C]我儿子真是给你们添麻烦了。[CTRL:0001]我要向你们道谢。[CTRL:0003][CTRL:0008]不，怎么会……[CTRL:0003][CTRL:000A][CTRL:0016]……[CTRL:0016]失礼了，[CTRL:0103]请问你是原鲁内斯军的[CTRL:0001]加西亚先生吗？[CTRL:0003][CTRL:000C][CTRL:0016]……[CTRL:0016][CTRL:0003][CTRL:0008]塞思，你认识他吗？[CTRL:0003][CTRL:000A]在十年前，他原本在鲁内斯军中[CTRL:0001]担任部队长的职位。[CTRL:0103]早在我还是个骑士候补的时候，[CTRL:0001]就已经经常听到不畏恐惧、[CTRL:0103]勇敢的鲁内斯战士的事情了。[CTRL:0003][CTRL:0102]加西亚先生，相信你也知道，[CTRL:0001]如今鲁内斯正面临着极大的危机。[CTRL:0103]能否请您助鲁内斯王国一臂之力？[CTRL:0003][CTRL:000C][CTRL:0016]……[CTRL:0016]抱歉。[CTRL:0001]我早已退役了。[CTRL:0103]那时候，我就已经决定，[CTRL:0001]不再参加战斗了。[CTRL:0003][CTRL:000A]加西亚先生……[CTRL:0003][CTRL:000C][CTRL:0016]……[CTRL:0016]以前我为了国家的荣誉而奋勇作战，[CTRL:0001]所以几乎顾不上自己的家事。[CTRL:0103]却一直为那些素不相识的贵族而战，[CTRL:0001]却连自己儿子长什么样都不知道。[CTRL:0003][CTRL:0102]在我妻子早年病逝后，[CTRL:0001]我身边就只剩下年幼的儿子了……[CTRL:0103]那时，我第一次察觉[CTRL:0001]到了自己做错了。[CTRL:0003][CTRL:0008][CTRL:0016]……[CTRL:0016][CTRL:0003][CTRL:000C]我在妻子的坟前发誓，[CTRL:0001]将作为这孩子的父亲好好活下去。[CTRL:0103]所以我才辞去了军务，[CTRL:0001]舍弃了战斗。[CTRL:0103]我并不后悔。[CTRL:0001]因为我是那孩子的父亲。[CTRL:0003][CTRL:000A][CTRL:0016]……[CTRL:0016][CTRL:0003][CTRL:000E][CTRL:0010][CTRL:0109][CTRL:0008][CTRL:0011][CTRL:000A][CTRL:0011][CTRL:001D][CTRL:000E][CTRL:0080][CTRL:000B][CTRL:0009]你是个傻瓜！老爸！[CTRL:0103]你在说什么傻话啊！[CTRL:0003][CTRL:000C]罗斯？[CTRL:0003][CTRL:0009]老爸不去的话，我去！[CTRL:0103]我是个战士！[CTRL:0001]我也能够战斗！[CTRL:0003][CTRL:000C][CTRL:0080][CTRL:000D][CTRL:000B]罗斯，说什么傻话！[CTRL:0001]我是…[CTRL:0003][CTRL:0009]老爸！[CTRL:0103]我比任何人都尊敬老爸！[CTRL:0103]我也知道老爸是为了[CTRL:0001]我才放弃的战斗！[CTRL:0103]但是，你真的愿意[CTRL:0001]一直这样下去吗？[CTRL:0103]你真的愿意舍弃战士的生涯，[CTRL:0001]就这么一直生活下去吗？[CTRL:0003][CTRL:000B][CTRL:0016]……[CTRL:0016][CTRL:0003][CTRL:0009]你好好看着我的战斗吧！[CTRL:0001]老爸！[CTRL:0103]我已经不是个孩子了。[CTRL:0001]我和老爸一样也是名战士！[CTRL:0103]就算没有老爸你的关心，[CTRL:0001]我一个人也能够战斗！[CTRL:0003][CTRL:000B][CTRL:0016]……[CTRL:0016]罗斯。[CTRL:0103][CTRL:0009][CTRL:0080][CTRL:000B][CTRL:0009]来和我一决胜负吧，老爸！[CTRL:0103]我是个战士！[CTRL:0001]依姆村最强的战士！[CTRL:0103]我才不会输给老爸！[CTRL:0001]不会输给任何人！[CTRL:0003][CTRL:0117][CTRL:000B][CTRL:0016]……[CTRL:0016]是吗……[CTRL:0103]罗斯，你是个勇敢的战士。[CTRL:0103][CTRL:0009][CTRL:0011][CTRL:000A][CTRL:0010][CTRL:0102][CTRL:0008][CTRL:0010][CTRL:0104][CTRL:000B]塞思先生……[CTRL:0103]如果您还瞧得起我这把老骨头，[CTRL:0001]就让我也一起参加战斗吧。[CTRL:0103][CTRL:000D][CTRL:0010][CTRL:0109][CTRL:000D]老爸……[CTRL:0103][CTRL:000B]不知不觉间，我儿子似乎[CTRL:0001]已经变成了一位战士。[CTRL:0103]变成了一位不用再借助我的力量[CTRL:0001]也能战斗的出色的战士了……[CTRL:0103]我心里也再没有什么遗憾了。[CTRL:0001]已经没有什么可担心的了。[CTRL:0103]我也要战斗，再一次参加战斗！[CTRL:0003][CTRL:000D]老爸！[CTRL:0003]"
         },
         "0x0929": {
           "expected_text_sha256": "9e605a504d7af7f2e16270d336535af1f6214f962f85af5244fd426866effc49",
@@ -329,6 +504,57 @@
             }
           ]
         },
+        "0x0973": {
+          "expected_text_sha256": "3177a2b28cf1739433a9a8248fa719f1e2edf65899802552646f33f7178dd69c",
+          "preserve_structure": false,
+          "provenance": {
+            "audit": "dialogue-control-semantic-audit-2026-08-09",
+            "context": "FE8U target 0x09B3 composed from unique regional source 0x0973.",
+            "target_ids": [
+              "0x09B3"
+            ]
+          },
+          "reason": "Apply the reviewed target-specific dialogue/control correction without modifying the pinned regional snapshot.",
+          "replacement_text": "[CTRL:000C][CTRL:0010][CTRL:0102][CTRL:0009][CTRL:0010][CTRL:0110][CTRL:000C]你是？[CTRL:0003][CTRL:0009][CTRL:0016]…[CTRL:0016][CTRL:0003][CTRL:000C]那个……[CTRL:0003][CTRL:0009]依我来看，[CTRL:0001]你是个非常新奇的生物。[CTRL:0103]看样子似乎不是僵尸呢。[CTRL:0003][CTRL:000C]这、这是当然啊。[CTRL:0103]你是旅者吗？[CTRL:0103]现在外面还有魔物。[CTRL:0001]请你暂时先待在这里……[CTRL:0003][CTRL:0009]不，我叫露忒。[CTRL:0103]是拥有卓越才能，[CTRL:0001]百年不遇的魔法师。[CTRL:0103]书上说僵尸只是低级魔物，[CTRL:0001]凭我的魔法很容易打倒它们。[CTRL:0103]它们根本不是我的对手。[CTRL:0103][CTRL:0017]因为我很优秀。[CTRL:0003][CTRL:0017][CTRL:000C]真是个奇怪的人啊……[CTRL:0003]"
+        },
+        "0x0974": {
+          "expected_text_sha256": "750baed432ac67f3faf6eb3d2ee5fd525493e01ca669b712a29e9b84fe0b7e90",
+          "preserve_structure": false,
+          "provenance": {
+            "audit": "dialogue-control-semantic-audit-2026-08-09",
+            "context": "FE8U target 0x09B4 composed from unique regional source 0x0974.",
+            "target_ids": [
+              "0x09B4"
+            ]
+          },
+          "reason": "Apply the reviewed target-specific dialogue/control correction without modifying the pinned regional snapshot.",
+          "replacement_text": "[CTRL:000C][CTRL:0010][CTRL:FFFF][CTRL:0009][CTRL:0010][CTRL:0110][CTRL:0009][CTRL:0016]……[CTRL:0016][CTRL:0003][CTRL:000C]？[CTRL:0003][CTRL:0009]依我来看，[CTRL:0001]你是个非常新奇的生物。[CTRL:0103]看样子似乎不是僵尸呢。[CTRL:0103]那么我也参战吧。[CTRL:0103]我叫露忒。[CTRL:0103]是拥有卓越才能，[CTRL:0001]百年不遇的魔法师。[CTRL:0103]书上说僵尸只是低级魔物，[CTRL:0001]凭我的魔法很容易打倒它们。[CTRL:0103]它们根本不是我的对手。[CTRL:0103][CTRL:0017]因为我很优秀。[CTRL:0003][CTRL:0017]"
+        },
+        "0x0975": {
+          "expected_text_sha256": "8f81fc72e79e425a23fc0f0be46452c5d42efbe9651d43ebcd41168c49d224d0",
+          "provenance": {
+            "audit": "dialogue-control-semantic-audit-2026-08-09",
+            "context": "FE8U target 0x09B5 composed from unique regional source 0x0975.",
+            "target_ids": [
+              "0x09B5"
+            ]
+          },
+          "reason": "Apply the reviewed target-specific dialogue/control correction without modifying the pinned regional snapshot.",
+          "replacement_text": "[CTRL:0009][CTRL:0010][CTRL:FFFF][CTRL:000C][CTRL:0010][CTRL:015C][CTRL:000C]你看到南面有一棵古树了吧？[CTRL:0103]只要把它砍倒，[CTRL:0001]就能够当桥使用了……[CTRL:0103]不过凭我们的力量没办法砍倒它。[CTRL:0103]我相信你们可以办到。[CTRL:0103]这个送给你们，拿去试试看吧。[CTRL:0003]"
+        },
+        "0x098E": {
+          "expected_text_sha256": "058cc8ac4d5984ddf989c28c71751527a178dc32790f2ddf4111b00a46f0f79a",
+          "preserve_structure": false,
+          "provenance": {
+            "audit": "dialogue-control-semantic-audit-2026-08-09",
+            "context": "FE8U target 0x09CE composed from unique regional source 0x098E.",
+            "target_ids": [
+              "0x09CE"
+            ]
+          },
+          "reason": "Complete the truncated extended Wink payload at the dialogue ending.",
+          "replacement_text": "[CTRL:0017][CTRL:0009][CTRL:0010][CTRL:011C][CTRL:000C][CTRL:0010][CTRL:FFFF][CTRL:0009]啊，你好。[CTRL:0001]你是来看我跳舞的吧？[CTRL:0103]真对不起呢。[CTRL:0001]舞蹈刚刚结束。[CTRL:0003][CTRL:0102]啊对了……你要不要收下[CTRL:0001]这东西呢？[CTRL:0103]刚才一个似乎很有钱的[CTRL:0001]客人给了许多东西在这里。[CTRL:0103]把这些卖了的话，[CTRL:0001]可以赚到不少钱，[CTRL:0103]使用的话，可以让身体更加强壮。[CTRL:0103]我一个人实在带不了这么多。[CTRL:0103]所以就给你一个吧。[CTRL:0103]遇到好事时，[CTRL:0001]也要与周围的人一起分享嘛。[CTRL:0103]那么，[CTRL:0001]有缘的话以后我们还会再见的吧。[CTRL:0003][CTRL:0009][CTRL:0080][CTRL:001F]"
+        },
         "0x09B3": {
           "expected_text_sha256": "9acf9585e1a3b9406b98b55ae5e7d71571e16261ffd83b01dff5303a404fc11b",
           "provenance": {
@@ -350,6 +576,68 @@
             }
           ]
         },
+        "0x09C5": {
+          "expected_text_sha256": "d1da5f0ddf20fefbc0a8afdc6ca1378b875598e8a3d38a436a6deb61abd88254",
+          "preserve_structure": false,
+          "provenance": {
+            "audit": "dialogue-control-semantic-audit-2026-08-09",
+            "context": "FE8U target 0x0A04 composed from unique regional source 0x09C5.",
+            "target_ids": [
+              "0x0A04"
+            ]
+          },
+          "reason": "Restore Seth dialogue to the FE8U right-hand slot after the face move.",
+          "replacement_text": "[CTRL:000A][CTRL:0010][CTRL:0102][CTRL:0008][CTRL:0010][CTRL:0104][CTRL:000A]哥哥就在这座城里的[CTRL:0001]某个地方……[CTRL:0103]塞思，我们准备冲进去吧！[CTRL:0003][CTRL:0008][CTRL:0080][CTRL:000D][CTRL:000B]城内有人过来了……[CTRL:0003][CTRL:000A]是敌兵吗！[CTRL:0003]"
+        },
+        "0x0A01": {
+          "expected_text_sha256": "12aef875b097ab6a29450b58c018edc941b512fe33e827cf62cf9ca65920ce52",
+          "preserve_structure": false,
+          "provenance": {
+            "audit": "dialogue-control-semantic-audit-2026-08-09",
+            "context": "FE8U target 0x0A40 composed from unique regional source 0x0A01.",
+            "target_ids": [
+              "0x0A40"
+            ]
+          },
+          "reason": "Complete Wink before the five-dot pause.",
+          "replacement_text": "[CTRL:0009][CTRL:0010][CTRL:011B][CTRL:000C][CTRL:0010][CTRL:011C][CTRL:0009]哟，特缇斯。[CTRL:0001]似乎老天来拯救我们了。[CTRL:0003][CTRL:000C]嘿！神果然还是存在的啊。[CTRL:0103]虽说到现在也没相信过[CTRL:0001]偶尔也祈祷一下吧。[CTRL:0003][CTRL:0009]祈祷？[CTRL:0001]那倒好，许什么愿呢？[CTRL:0003][CTRL:000C][CTRL:0017]呵呵……保密。[CTRL:0003][CTRL:0017][CTRL:000C][CTRL:0080][CTRL:001F][CTRL:0005]"
+        },
+        "0x0A06": {
+          "expected_text_sha256": "c9e25fe9d6b6d6b5a8c4b98e372a1a26f9313078a1837501aafba193deff1f0c",
+          "provenance": {
+            "audit": "dialogue-control-semantic-audit-2026-08-09",
+            "context": "FE8U target 0x0A45 composed from unique regional source 0x0A06.",
+            "target_ids": [
+              "0x0A45"
+            ]
+          },
+          "reason": "Apply the reviewed target-specific dialogue/control correction without modifying the pinned regional snapshot.",
+          "replacement_text": "[CTRL:0009][CTRL:0010][CTRL:015E][CTRL:000C][CTRL:0010][CTRL:FFFF][CTRL:0009]听说弗雷利亚的王子希尼亚斯是[CTRL:0001]相当厉害的谋略家。[CTRL:0103]将鲁内斯轻易攻下的古拉德帝国却[CTRL:0001]未攻下弗雷利亚。[CTRL:0103]似乎是因为希尼亚斯王子到处散布[CTRL:0001]密探时常了解古拉德的动向。[CTRL:0103]同时，潜入弗雷利亚的敌方密探[CTRL:0001]都会被迅速识破并处决，机密也不会传回帝国。[CTRL:0103]我虽然没见过他……[CTRL:0001]但也不想和他成为敌人啊。[CTRL:0003]"
+        },
+        "0x0A11": {
+          "expected_text_sha256": "68f67779f422b758ca9fcd68411e7cb0173a07becf28274ed5e79d8c94381c64",
+          "provenance": {
+            "audit": "dialogue-control-semantic-audit-2026-08-09",
+            "context": "FE8U target 0x0A50 composed from unique regional source 0x0A11.",
+            "target_ids": [
+              "0x0A50"
+            ]
+          },
+          "reason": "Apply the reviewed target-specific dialogue/control correction without modifying the pinned regional snapshot.",
+          "replacement_text": "[CTRL:0009][CTRL:0010][CTRL:014C][CTRL:000C][CTRL:0010][CTRL:0142][CTRL:000C]格伦啊，想去哪里？[CTRL:0003][CTRL:0009]沃尔塔……[CTRL:0003][CTRL:000C]哦呀哦呀，这是怎么一回事？[CTRL:0103]刚才消失在山里的[CTRL:0001]不是艾瑞珂一行吗？[CTRL:0103]我要是说出这件事[CTRL:0001]你的立场会怎样变化呢？[CTRL:0003][CTRL:0009]……随你喜欢吧。[CTRL:0103]我要回到帝都。[CTRL:0001]再次询问陛下的真意。[CTRL:0103]沃尔塔！让开。[CTRL:0003][CTRL:000C]等一等嘛。[CTRL:0001]也不用这么着急吧？[CTRL:0103]反正你也要[CTRL:0001]死在这里……呀？[CTRL:0003][CTRL:0009][CTRL:0016]……[CTRL:0016]什么意思？[CTRL:0003][CTRL:000C]呼呼……[CTRL:0103]以前的帝国三骑是[CTRL:0001]杜塞尔、你还有我。[CTRL:0103]但是我被剥夺了三骑的宝座，[CTRL:0001]还被流放出古拉德……[CTRL:0003][CTRL:0009]因为你虐杀了[CTRL:0001]没有战斗能力的平民们。[CTRL:0103]陛下所下达的决断[CTRL:0001]是理所当然的事情。[CTRL:0003][CTRL:000C]呼呼……呼呼呼……[CTRL:0103]那时起我的身体就被屈辱所焦灼，[CTRL:0001]发誓要为了复仇而生。[CTRL:0103]我正处在被无尽的憎恶所支配[CTRL:0001]将要发狂的边缘。[CTRL:0103]直到今天，那份憎恨仍然[CTRL:0001]在我的心中熊熊燃烧……[CTRL:0003][CTRL:0009][CTRL:0016]……[CTRL:0016][CTRL:0003][CTRL:0080][CTRL:0004][CTRL:000C]我说格伦啊。[CTRL:0001]帝国三骑的龙骑士啊。[CTRL:0103]我想要战斗。[CTRL:0001]和平什么的根本不需要。[CTRL:0103]所以你去死吧。[CTRL:0003]"
+        },
+        "0x0A29": {
+          "expected_text_sha256": "1bd28962ea955cccddcad9c374d04443d550cf238059bb9b2cf7d055093689fd",
+          "provenance": {
+            "audit": "dialogue-control-semantic-audit-2026-08-09",
+            "context": "FE8U target 0x0A68 composed from unique regional source 0x0A29.",
+            "target_ids": [
+              "0x0A68"
+            ]
+          },
+          "reason": "Apply the reviewed target-specific dialogue/control correction without modifying the pinned regional snapshot.",
+          "replacement_text": "[CTRL:0009][CTRL:0010][CTRL:0113][CTRL:000C][CTRL:0010][CTRL:0142][CTRL:0009]大哥他……死了……？[CTRL:0103]胡说！[CTRL:0001]怎么可能！[CTRL:0003][CTRL:000C]可惜这是真的。[CTRL:0001]我把他的尸骸都带回来了。[CTRL:0103]喂，快看看吧。[CTRL:0001]就放在那边……[CTRL:0003][CTRL:0009]啊……[CTRL:0103]大……哥……[CTRL:0003][CTRL:000C]哎呀呀，死的可真惨哪。[CTRL:0001]这样葬礼应该很难办吧。[CTRL:0103]不过库格啊，[CTRL:0001]也用不着那么悲伤嘛。[CTRL:0103]看样子陛下将会把[CTRL:0001]空出来的将军位子给你。[CTRL:0103]这样你就是新的帝国将军[CTRL:0001]【日长石】库格了。[CTRL:0003][CTRL:0009]是谁……[CTRL:0103]究竟是谁……是谁……[CTRL:0003][CTRL:000C]格伦是奉陛下之命[CTRL:0001]前去讨伐艾瑞珂一行人。[CTRL:0103]等我赶到的时候，[CTRL:0001]胜负已分。[CTRL:0103]艾瑞珂用剑贯穿了格伦的胸口，[CTRL:0001]后就逃掉了。[CTRL:0003][CTRL:0009]艾瑞珂！[CTRL:0103]她现在在哪？[CTRL:0003][CTRL:000C]嗯？你就算知道了又怎样？[CTRL:0001]假如没有陛下的命令……[CTRL:0003][CTRL:0009]快说！[CTRL:0003][CTRL:000C][CTRL:0016]……[CTRL:0016]在卡尔奇诺东边的山里。[CTRL:0103]那一带的森林十分茂密。[CTRL:0001]一般来说是很难找的……[CTRL:0003]"
+        },
         "0x0A2B": {
           "expected_text_sha256": "73dde374da3e8f2d913970a0f76cfe430b79f29ee7bb8c5f3f308332b7bf1e0d",
           "provenance": {
@@ -367,6 +655,90 @@
             }
           ]
         },
+        "0x0A50": {
+          "expected_text_sha256": "079bbc85ce84a4f619e20cc2fe3c75688c9099b1270c7011d61c9f6ecea7a524",
+          "provenance": {
+            "audit": "dialogue-control-semantic-audit-2026-08-09",
+            "context": "FE8U target 0x0A8F composed from unique regional source 0x0A50.",
+            "target_ids": [
+              "0x0A8F"
+            ]
+          },
+          "reason": "Apply the reviewed target-specific dialogue/control correction without modifying the pinned regional snapshot.",
+          "replacement_text": "[CTRL:0008][CTRL:0010][CTRL:0102][CTRL:000B][CTRL:0010][CTRL:0146][CTRL:000B]啊……[CTRL:0003][CTRL:0008]利昂！[CTRL:0003][CTRL:000B]艾瑞珂……[CTRL:0003][CTRL:000B][CTRL:0080][CTRL:000E][CTRL:0008][CTRL:0080][CTRL:000B][CTRL:0009]等等！ 利昂！[CTRL:0001]不要逃啊！[CTRL:0103]哥哥和我[CTRL:0001]都很担心你……[CTRL:0103]我们最了解利昂[CTRL:0001]你那善良的性格。[CTRL:0103]你父亲已经失去理智了吧？[CTRL:0001]所以古拉德才会侵略鲁内斯，对吗？[CTRL:0103]所以利昂……[CTRL:0001]请告诉我到底发生了什么事情。[CTRL:0003][CTRL:000C]对不起……艾瑞珂。[CTRL:0103]我也一直[CTRL:0001]想去见你们……[CTRL:0103]想去跟你们两人道歉。[CTRL:0103]因为我无法阻止[CTRL:0001]对鲁内斯的侵略……[CTRL:0103]可是，我现在[CTRL:0001]还不能去见你们……[CTRL:0003][CTRL:0009]你是不是……有什么苦衷啊。[CTRL:0003][CTRL:000C]嗯……[CTRL:0103]虽然现在还不能告诉你……[CTRL:0103]可是总有一天[CTRL:0001]我会把一切都告诉你的……[CTRL:0003][CTRL:0009]好吧。[CTRL:0001]我相信利昂。[CTRL:0003][CTRL:0102]可是，我真是松了一口气。[CTRL:0103]利昂没有变，[CTRL:0001]还是以前的那个利昂……[CTRL:0003][CTRL:000C]艾瑞珂也是……[CTRL:0103]不，艾瑞珂你变了，[CTRL:0103]变得比以前更漂亮了。[CTRL:0003][CTRL:0009]利、利昂……[CTRL:0003][CTRL:000C]对不起，我必须要走了。[CTRL:0001]可是我希望你能记得，[CTRL:0103]虽然因为我的弱小[CTRL:0001]导致这场战争的爆发……[CTRL:0103]可是，我永远都是[CTRL:0001]站在你这边的……[CTRL:0003][CTRL:000C][CTRL:0011][CTRL:0009]利昂……[CTRL:0003]"
+        },
+        "0x0A5E": {
+          "expected_text_sha256": "a60a7ff0aa4bd027c4b3ca5ab1a6996d40241847fd1fc74a58e5d75f49fe5b6b",
+          "provenance": {
+            "audit": "dialogue-control-semantic-audit-2026-08-09",
+            "context": "FE8U target 0x0A9D composed from unique regional source 0x0A5E.",
+            "target_ids": [
+              "0x0A9D"
+            ]
+          },
+          "reason": "Apply the reviewed target-specific dialogue/control correction without modifying the pinned regional snapshot.",
+          "replacement_text": "[CTRL:000C]仔细想想……[CTRL:0103]你根本不值那么多钱。[CTRL:0001]还是算了。[CTRL:0003][CTRL:0009]哎呀呀……[CTRL:0001]这就没办法了。[CTRL:0103]要是改变心意的话，[CTRL:0001]别忘了再来找我啊。[CTRL:0003]"
+        },
+        "0x0A62": {
+          "expected_text_sha256": "e5d8a1f7c1ae6b142de5c69705913e1c31514866b853df55ec3f21c0f7fa1ab7",
+          "provenance": {
+            "audit": "dialogue-control-semantic-audit-2026-08-09",
+            "context": "FE8U target 0x0AA1 composed from unique regional source 0x0A62.",
+            "target_ids": [
+              "0x0AA1"
+            ]
+          },
+          "reason": "Apply the reviewed target-specific dialogue/control correction without modifying the pinned regional snapshot.",
+          "replacement_text": "[CTRL:000D][CTRL:0010][CTRL:0146][CTRL:000B][CTRL:0010][CTRL:0140][CTRL:0009][CTRL:0010][CTRL:0125][CTRL:001C][CTRL:0009]请等一下，陛下！[CTRL:0103]实在是抱歉，可是请您一定[CTRL:0001]要回答我！[CTRL:0003][CTRL:000B][CTRL:0016]……[CTRL:0116][CTRL:0016]……[CTRL:0016]真啰嗦。[CTRL:0003][CTRL:0009]如果是拥有大义的战争，[CTRL:0001]我是粉身碎骨，在所不惜！[CTRL:0103]可是，现在我是无论如何[CTRL:0001]都无法接受！[CTRL:0103]为了古拉德的国家利益而去[CTRL:0001]攻打鲁内斯，这我明白！[CTRL:0103]可我听说现在鲁内斯没有人打理，[CTRL:0001]整个国家变得极其混乱。[CTRL:0103]既然如此，那又是为了什么[CTRL:0001]而发动这场战争呢？士兵们毫无意义地战死，这不是战争，而是屠杀！[CTRL:0003][CTRL:000B][CTRL:0016]……[CTRL:0016]杜塞尔。[CTRL:0103]这一切都是我的决定。[CTRL:0103]还轮不到你来插嘴。[CTRL:0003][CTRL:0009]我早就做好了接受处罚的准备。[CTRL:0001]但我还是要进言！[CTRL:0103]陛下，请务必再考虑一下！[CTRL:0001]这样下去古拉德也！[CTRL:0003][CTRL:000B]杜塞尔……[CTRL:0001]你率军前往弗雷利亚。[CTRL:0103]将率领弗雷利亚军的……[CTRL:0001]伊弗列姆杀死……[CTRL:0003][CTRL:0009]陛下！[CTRL:0003][CTRL:000B]没听到吗？[CTRL:0003][CTRL:0102]杜塞尔……[CTRL:0001]你率军前往弗雷利亚。[CTRL:0103]将率领弗雷利亚军的……[CTRL:0001]伊弗列姆杀死……[CTRL:0003][CTRL:0009][CTRL:0016]……[CTRL:0016][CTRL:0103]明白……[CTRL:0003][CTRL:0009][CTRL:0011][CTRL:000D][CTRL:0016]……[CTRL:0016][CTRL:0003]"
+        },
+        "0x0A63": {
+          "expected_text_sha256": "7cb9b142cfde9ae55c253d87e9a62699f11b19663cf5b459e1dc16368e31d129",
+          "provenance": {
+            "audit": "dialogue-control-semantic-audit-2026-08-09",
+            "context": "FE8U target 0x0AA2 composed from unique regional source 0x0A63.",
+            "target_ids": [
+              "0x0AA2"
+            ]
+          },
+          "reason": "Apply the reviewed target-specific dialogue/control correction without modifying the pinned regional snapshot.",
+          "replacement_text": "[CTRL:0009][CTRL:0010][CTRL:013D][CTRL:000C][CTRL:0010][CTRL:016C][CTRL:000C]格布将军！[CTRL:0103]抓住了在要塞外部转悠的[CTRL:0001]弗雷利亚天马骑士。[CTRL:0003][CTRL:000C][CTRL:0011][CTRL:000B][CTRL:0010][CTRL:012C][CTRL:000D][CTRL:0010][CTRL:016C][CTRL:000B][CTRL:0080][CTRL:000D][CTRL:000B]放，放开我！[CTRL:0001]反对暴力！[CTRL:0003][CTRL:0009][CTRL:0017]哦哦哦……[CTRL:0103]这可真是[CTRL:0001]不错的女人啊。[CTRL:0103]呜呼呼……[CTRL:0001]这下可有乐子了。[CTRL:0003][CTRL:0017][CTRL:000B]我，我可是来帮助[CTRL:0001]伊弗列姆的。[CTRL:0103]如果对我有什么不轨的行为的话，[CTRL:0001]伊弗列姆是绝对不会饶了你的。[CTRL:0003][CTRL:0009][CTRL:0017]呜呼呼呼……对你很满意哦。[CTRL:0001]将她关到牢里。[CTRL:0103]老子要花一整晚[CTRL:0001]好好问问她。[CTRL:0103]呜呼呼呼呼……[CTRL:0003][CTRL:0017][CTRL:000B][CTRL:0080][CTRL:000D][CTRL:000B]禽，禽兽！[CTRL:0003]"
+        },
+        "0x0A64": {
+          "expected_text_sha256": "d1e70607ed2732a842c0671caf710943571e0dc56cd95e3bb7d9d0eeb02f7953",
+          "provenance": {
+            "audit": "dialogue-control-semantic-audit-2026-08-09",
+            "context": "FE8U target 0x0AA3 composed from unique regional source 0x0A64.",
+            "target_ids": [
+              "0x0AA3"
+            ]
+          },
+          "reason": "Apply the reviewed target-specific dialogue/control correction without modifying the pinned regional snapshot.",
+          "replacement_text": "[CTRL:0009][CTRL:0010][CTRL:0114][CTRL:000C][CTRL:0010][CTRL:0104][CTRL:000C]那就是利库巴鲁德要塞。[CTRL:0103]长年来守护着古拉德领土的[CTRL:0001]难攻不落的要塞。[CTRL:0103]据说在过去，不要说攻下它，[CTRL:0001]就连侵入内部都没有成功过。[CTRL:0003][CTRL:0009]但是，如果不攻下它的话，[CTRL:0001]就不可能发动对古拉德的进攻。[CTRL:0103]塞思，在你看来情况怎么样？[CTRL:0001]凭这样的战力能不能攻下呢？[CTRL:0003][CTRL:000C]很困难，只能这么说。[CTRL:0103]地利在敌人那边，[CTRL:0001]军队的士兵数也是敌方的多。[CTRL:0003][CTRL:0009]不过，人心又怎么样呢？[CTRL:0003][CTRL:000C]你是指古拉德兵的士气低下？[CTRL:0003][CTRL:0009]对！[CTRL:0103]因为古拉德帝国的突然进攻，[CTRL:0001]使我们现在和古拉德是战争状态。[CTRL:0103]但之前还是同盟关系……不，[CTRL:0001]应该是在此以上的亲密关系。[CTRL:0003][CTRL:0102]就算是皇帝彼加尔德下的命令，[CTRL:0001]人心也不是这么快会发生变化的。[CTRL:0003][CTRL:0102]比如，被称为帝国三骑【黑曜石】[CTRL:0001]的杜塞尔将军……[CTRL:0103]我的枪术就是他教授的。[CTRL:0103]假如杜塞尔还是[CTRL:0001]我所认识的他的话……[CTRL:0103]他一定不希望发生这样的战争。[CTRL:0001]我说的话，他一定会听进去的。[CTRL:0003][CTRL:000C][CTRL:0016]……[CTRL:0016][CTRL:0003][CTRL:0009]而且皇子利昂还是[CTRL:0001]我小时候的玩伴。[CTRL:0103]那家伙性格软弱，应该是无法[CTRL:0001]阻止身为皇帝的父亲吧……[CTRL:0103]他理应和我一样，[CTRL:0001]对这场战争感到很痛心。[CTRL:0003][CTRL:000C]伊弗列姆王子……[CTRL:0003][CTRL:0009]堡垒里的帝国兵中，[CTRL:0001]应该也有不少不希望发动战争的。[CTRL:0103]迅速突入，占领宝座的话，[CTRL:0001]剩下的人都会降服了吧。[CTRL:0003][CTRL:000C][CTRL:0016]……[CTRL:0016]过于乐观是大敌哦。[CTRL:0103]不过，这仍然比从正面挑战敌方主力军，[CTRL:0001]要好得多。[CTRL:0003][CTRL:0009]艾瑞珂为了完结战争，[CTRL:0001]已经前往罗斯顿圣教国了。[CTRL:0103]我也不能老是[CTRL:0001]停留在这里。[CTRL:0103]一定要突破这里，阻止驻留在[CTRL:0001]帝都的皇帝彼加尔德才行。[CTRL:0103]走吧！[CTRL:0003]"
+        },
+        "0x0A66": {
+          "expected_text_sha256": "2fe37da5558d62d3c6bbcde6c333f0604bd4079b509787ce4c801d8694b27d39",
+          "provenance": {
+            "audit": "dialogue-control-semantic-audit-2026-08-09",
+            "context": "FE8U target 0x0AA5 composed from unique regional source 0x0A66.",
+            "target_ids": [
+              "0x0AA5"
+            ]
+          },
+          "reason": "Apply the reviewed target-specific dialogue/control correction without modifying the pinned regional snapshot.",
+          "replacement_text": "[CTRL:0009][CTRL:0010][CTRL:016C][CTRL:000C][CTRL:0010][CTRL:013D][CTRL:000C]我可听到咯。[CTRL:0001]你是不是说了反对战争的话了？[CTRL:0103]这可是造反的迹象哦。[CTRL:0003][CTRL:0009]可，可是！[CTRL:0103]这次的战争连杜塞尔将军都[CTRL:0001]反对……[CTRL:0003][CTRL:000C]杜塞尔？[CTRL:0001]你这家伙是那胆小鬼的同伙？[CTRL:0103]你的指挥官是谁？[CTRL:0001]你说啊你？[CTRL:0003][CTRL:0009]是肯……格布大人。[CTRL:0003][CTRL:000C]哼。那你应该明白了吧？[CTRL:0001]你应该听话的。[CTRL:0003][CTRL:0102]明白了吗？无能的家伙！[CTRL:0001]听明白了就快回自己的岗位去。[CTRL:0103]反正你们这些杂鱼[CTRL:0001]根本就没有什么生存的价值。[CTRL:0003]"
+        },
+        "0x0A67": {
+          "expected_text_sha256": "2b640cc387c4e78c1a211de91706fc63f6ebb3bb9bb85152a1335bd50084da68",
+          "provenance": {
+            "audit": "dialogue-control-semantic-audit-2026-08-09",
+            "context": "FE8U target 0x0AA6 composed from unique regional source 0x0A67.",
+            "target_ids": [
+              "0x0AA6"
+            ]
+          },
+          "reason": "Apply the reviewed target-specific dialogue/control correction without modifying the pinned regional snapshot.",
+          "replacement_text": "[CTRL:0009][CTRL:0010][CTRL:0119][CTRL:000C][CTRL:0010][CTRL:013D][CTRL:0009][CTRL:0080][CTRL:000B][CTRL:0009]等，等一下！[CTRL:0103]这样说[CTRL:0001]实在是太过分了！[CTRL:0003][CTRL:000C]你这家伙说什么？[CTRL:0103]报上名来！[CTRL:0003][CTRL:0009]我，我叫阿米莉娅……[CTRL:0103]今天才刚配属到这个[CTRL:0001]堡垒来的！[CTRL:0103]我们是古拉德的兵士，[CTRL:0001]可不是将军的奴隶！[CTRL:0003][CTRL:000C][CTRL:0080][CTRL:000D][CTRL:000B][CTRL:0017]哦……[CTRL:0001]你是女的？[CTRL:0103]就你一介新兵，还敢和老子[CTRL:0001]这么说话，胆子可不小啊。[CTRL:0103]看来，我得给你的身体好好上一节[CTRL:0001]关于军队上下级关系处理的课呢。[CTRL:0003][CTRL:0017][CTRL:0009][CTRL:0080][CTRL:000A][CTRL:0008]唔……[CTRL:0003][CTRL:000F][CTRL:0010][CTRL:016C][CTRL:000F][CTRL:0080][CTRL:000F][CTRL:000D]格布大人！[CTRL:0001]敌军正在接近！[CTRL:0003][CTRL:000B]呃，真麻烦……[CTRL:0103]废物们，快点配置。[CTRL:0001]别让敌人接近老子的宝座。[CTRL:0003][CTRL:0102]对古拉德而言，像老子这样[CTRL:0001]有才能的将军是很重要的！[CTRL:0103]你们这些杂鱼就算死多少[CTRL:0001]也不会有人来管的！[CTRL:0103]为了老子的战功，[CTRL:0001]你们都去战死好了！[CTRL:0003]"
+        },
         "0x0A7B": {
           "expected_text_sha256": "0bcb6c0caf95e74e70f3ee69d33e5b2dc56b57fc00947e5f6bc2f78d3ca28ad0",
           "provenance": {
@@ -377,12 +749,7 @@
             ]
           },
           "reason": "Apply the reviewed target-semantic correction without modifying the pinned raw regional snapshot.",
-          "replacements": [
-            {
-              "expected": "可是，愉快的时间[CTRL:0001]不能延长很久啊……",
-              "replacement": "这份乐趣[CTRL:0001]必须尽量延长才行……"
-            }
-          ]
+          "replacement_text": "[CTRL:000C][CTRL:0010][CTRL:0142][CTRL:0009][CTRL:0010][CTRL:013E][CTRL:000C]哼哼……愚蠢的女人。[CTRL:0103]古拉德要是太轻松地获胜，[CTRL:0001]就不会再有流血了。[CTRL:0103]这份乐趣[CTRL:0001]必须尽量延长才行……[CTRL:0003][CTRL:0102]好了，我先回到我那亲爱的[CTRL:0001]艾瑞珂那边去了。[CTRL:0103]绝对不能让格伦[CTRL:0001]抢先了。[CTRL:0003][CTRL:0102]那么，贝鲁奈，交给你了。[CTRL:0103]在我规定的限定时间内，[CTRL:0001]一定要把那些家伙解决。明白吗？[CTRL:0003][CTRL:0009]是。[CTRL:0003]"
         },
         "0x0A94": {
           "expected_text_sha256": "88bd4dc345ddc23f8c2e6488fb47b85b2b1b6195dfe98563ae64cba611781438",
@@ -435,6 +802,82 @@
             }
           ]
         },
+        "0x0ACE": {
+          "expected_text_sha256": "77561b4948c025cfe8cdb7c88eb05326595edf7beeb0cd6cd2ce9c393d887337",
+          "provenance": {
+            "audit": "dialogue-control-semantic-audit-2026-08-09",
+            "context": "FE8U target 0x0B0D composed from unique regional source 0x0ACE.",
+            "target_ids": [
+              "0x0B0D"
+            ]
+          },
+          "reason": "Apply the reviewed target-specific dialogue/control correction without modifying the pinned regional snapshot.",
+          "replacement_text": "[CTRL:0009][CTRL:0010][CTRL:0129][CTRL:000C][CTRL:0010][CTRL:0114][CTRL:000C][CTRL:0016]……[CTRL:0016][CTRL:0003][CTRL:0009]这之后……[CTRL:0103]陛下就如利昂皇子所期望的那样[CTRL:0001]开始侵略鲁内斯了。[CTRL:0003][CTRL:0102]玛克利卡司祭很担心[CTRL:0001]利昂皇子的状态，[CTRL:0103]曾数次试着劝说，[CTRL:0001]最后却被利昂皇子亲手处死。[CTRL:0003][CTRL:0102]我也因为反逆罪被关押……[CTRL:0001]本来明天就要处刑的。[CTRL:0003][CTRL:000C]利昂他……[CTRL:0103]利昂他现在在哪？[CTRL:0003][CTRL:0009]不知道……[CTRL:0103]利昂皇子现在非常可怕。[CTRL:0103]现在的他……简直……[CTRL:0003][CTRL:000C]利昂……[CTRL:0003][CTRL:0102]利昂他是我的朋友。[CTRL:0003]"
+        },
+        "0x0ADC": {
+          "expected_text_sha256": "e861ac3f706bc3613c02b88ae3e0f27dec429a2a8498d176c8c2c8439aa56deb",
+          "provenance": {
+            "audit": "dialogue-control-semantic-audit-2026-08-09",
+            "context": "FE8U target 0x0B1B composed from unique regional source 0x0ADC.",
+            "target_ids": [
+              "0x0B1B"
+            ]
+          },
+          "reason": "Apply the reviewed target-specific dialogue/control correction without modifying the pinned regional snapshot.",
+          "replacement_text": "[CTRL:0009][CTRL:0010][CTRL:0114][CTRL:0009]那个沙漠后面的是[CTRL:0001]贾哈那王宫吧。[CTRL:0103]艾瑞珂他们应该[CTRL:0001]就在那儿。[CTRL:0003][CTRL:0102]杜塞尔，诺鲁，[CTRL:0001]我要救出艾瑞珂。[CTRL:0103]助我一臂之力吧。[CTRL:0003][CTRL:000B][CTRL:0010][CTRL:0125][CTRL:000B]遵命。[CTRL:0103]赴汤蹈火，[CTRL:0001]在所不辞。[CTRL:0003][CTRL:000D][CTRL:0010][CTRL:0129][CTRL:000D]艾瑞珂公主……[CTRL:0001]她是利昂皇子的朋友。[CTRL:0103]我会尽我所能[CTRL:0001]帮助你。[CTRL:0103]这应该也是[CTRL:0001]利昂皇子所期待的……[CTRL:0003][CTRL:0009]敌人数量相当庞大。[CTRL:0103]我们先行和艾瑞珂们汇合。[CTRL:0103]塞思和希尼亚斯他们应该[CTRL:0001]也在那儿等着我们。[CTRL:0103]出发吧！[CTRL:0003]"
+        },
+        "0x0AF5": {
+          "expected_text_sha256": "04a30f780d2588c3651805569d7ea1ebf58437c6a331d4146d74a1b26535dbaf",
+          "preserve_structure": false,
+          "provenance": {
+            "audit": "dialogue-control-semantic-audit-2026-08-09",
+            "context": "FE8U target 0x0B35 composed from unique regional source 0x0AF5.",
+            "target_ids": [
+              "0x0B35"
+            ]
+          },
+          "reason": "Remove the regional BreakTalk because EventScr_Ch15B_7 has no TEXTCONT.",
+          "replacement_text": "[CTRL:000C][CTRL:0010][CTRL:0120][CTRL:0009][CTRL:0010][CTRL:0121][CTRL:0009]啊，师傅。[CTRL:0003][CTRL:000C]尤恩吗……[CTRL:0103]为什么你会来这儿？[CTRL:0003][CTRL:0009]我是跟着伊弗列姆哥哥他们[CTRL:0001]一起来的。[CTRL:0103]师傅，[CTRL:0001]我可是很努力的哦。[CTRL:0003][CTRL:000C]是嘛……[CTRL:0103]要是你们不来，[CTRL:0001]我们的性命可能就不保了。[CTRL:0103]你救了我一命，尤恩[CTRL:0001]谢谢了。[CTRL:0003][CTRL:0009]啊？真的？[CTRL:0103]那么，师傅[CTRL:0001]你会教我更厉害的魔法吗？[CTRL:0003][CTRL:000C][CTRL:0016]……[CTRL:0016]是啊。[CTRL:0001]会的吧。[CTRL:0003][CTRL:0009]太棒了！[CTRL:0003]"
+        },
+        "0x0B3B": {
+          "expected_text_sha256": "1478cec60cc11b29cd36df5d8a8c5e8f7873710048fad56b65066493e956f758",
+          "preserve_structure": false,
+          "provenance": {
+            "audit": "dialogue-control-semantic-audit-2026-08-09",
+            "context": "FE8U target 0x0B7B composed from unique regional source 0x0B3B.",
+            "target_ids": [
+              "0x0B7B"
+            ]
+          },
+          "reason": "Restore the second BreakTalk and reaction pause required by EventScr_Ch18A_BeginningScene.",
+          "replacement_text": "[CTRL:0009][CTRL:0010][CTRL:0114][CTRL:000C][CTRL:0010][CTRL:0122][CTRL:000C]伊、伊弗列姆……[CTRL:0001]等一下。[CTRL:0103]这么急的话，[CTRL:0001]大家会跟不上的。[CTRL:0003][CTRL:0009]我要走快一点。[CTRL:0001]现在可没时间磨磨蹭蹭。[CTRL:0103]我要快一点[CTRL:0001]追上魔王……[CTRL:0003][CTRL:000C]追上魔王……[CTRL:0001]你想怎样？[CTRL:0003][CTRL:0080][CTRL:0004][CTRL:0009][CTRL:0016]……[CTRL:0016][CTRL:0003][CTRL:0102][CTRL:0016]……[CTRL:0016]拉切尔。[CTRL:0103]你是罗斯顿圣教国的公主。[CTRL:0001]你应该对魔王的传说很熟悉。[CTRL:0103]我不要安慰和一时的安心[CTRL:0001]我只希望你把事实告诉我。[CTRL:0003][CTRL:0102]如何才能……[CTRL:0001]救利昂？[CTRL:0003][CTRL:000C]很遗憾……伊弗列姆……[CTRL:0103]在我所知道的传说中……[CTRL:0001]没有可以救他的方法。[CTRL:0003][CTRL:0009][CTRL:0016]……[CTRL:0016][CTRL:0103][CTRL:0080][CTRL:0004]他已经被魔王附体了。[CTRL:0103]事已如此……[CTRL:0001]我们已经无能为力。[CTRL:0103]被魔王所支配的人……[CTRL:0001]他的心会一点不剩被吃光殆尽。[CTRL:0103]即使变回来……[CTRL:0001]也跟死了没什么分别。[CTRL:0103]即使是罗斯顿圣教国的力量……[CTRL:0103]不，哪怕是【圣石】[CTRL:0001]也不可能做到。[CTRL:0003][CTRL:0009]是吗……[CTRL:0103]我明白了。[CTRL:0001]走吧，拉切尔。[CTRL:0003][CTRL:000C]等、等一下！[CTRL:0001]真是的，你在听别人说话吗？[CTRL:0103]真遗憾，那个人已经……[CTRL:0003][CTRL:0009][CTRL:0016]……[CTRL:0016]啊，我明白。[CTRL:0103]已经没有救利昂的方法了。[CTRL:0103]如果这样的话……[CTRL:0103]至少要我亲手[CTRL:0001]让他安息。[CTRL:0003][CTRL:000C][CTRL:0016]……[CTRL:0016][CTRL:0103]但是……[CTRL:0001]你能做到吗？[CTRL:0103]即使做到了[CTRL:0001]你的心也会受到很深的伤害……[CTRL:0103]你们兄妹还是在这里休息[CTRL:0001]这件事就交给我们去做，如何？[CTRL:0003][CTRL:0009]不……我去做。[CTRL:0103]我是利昂的朋友。[CTRL:0103]夺走我朋友的魔王[CTRL:0001]要由我亲自打倒。[CTRL:0003][CTRL:000C]如果你那么说的话[CTRL:0001]那我就不劝你了。[CTRL:0103]我们走吧。[CTRL:0003][CTRL:0009]对不起，拉切尔。[CTRL:0003][CTRL:000C]怎、怎么会……[CTRL:0001]没关系。[CTRL:0103]你既然这么说了[CTRL:0001]我就原谅你吧。[CTRL:0003]"
+        },
+        "0x0B6C": {
+          "expected_text_sha256": "14365319cc9b63a8a501c10ec41ba2a7359d9768dc6e11fae2366547b1c6a6ec",
+          "preserve_structure": false,
+          "provenance": {
+            "audit": "dialogue-control-semantic-audit-2026-08-09",
+            "context": "FE8U target 0x0BAC composed from unique regional source 0x0B6C.",
+            "target_ids": [
+              "0x0BAC"
+            ]
+          },
+          "reason": "Restore Eirika dialogue to the FE8U left-hand slot after the continuation.",
+          "replacement_text": "[CTRL:000A][CTRL:0010][CTRL:0114][CTRL:0008][CTRL:0010][CTRL:0102][CTRL:000B][CTRL:0010][CTRL:0104][CTRL:000D][CTRL:0010][CTRL:0126][CTRL:000A]这股黑色的瘴气……[CTRL:0003][CTRL:0008]不错……[CTRL:0001]我也清楚地感受到了。[CTRL:0003][CTRL:000B]这就是暗之树海……[CTRL:0103]曾经魔王被手持【圣石】的英雄们[CTRL:0001]所毁灭的地方……[CTRL:0103]听说现在瘴气已刮起漩涡[CTRL:0001]魔物们也倾巢而出。[CTRL:0103]不过没想到会如此强烈……[CTRL:0003][CTRL:000D]不错……这股扭曲的感觉……[CTRL:0001]比以前更强烈了。[CTRL:0103]连站在这里[CTRL:0001]也是件痛苦的事。[CTRL:0103]但是没关系。[CTRL:0103]有我父亲在这里。[CTRL:0003][CTRL:0008]你父亲？[CTRL:0003][CTRL:000D]在那边。[CTRL:0103]在那片沼泽的对面。[CTRL:0001]魔王的魔殿就在那里。[CTRL:0103]我的父亲就住在附近。[CTRL:0103]我和父亲是生活在这里的。[CTRL:0003][CTRL:000A]是吗。对于你而言[CTRL:0001]这里就是生你养你的故乡啊。[CTRL:0003][CTRL:000D]是的……[CTRL:0103]能够再见到父亲[CTRL:0001]真的好高兴。[CTRL:0103]我父亲是龙族之长。[CTRL:0103]在之前的战争中……[CTRL:0001]我父亲和母亲死了之后[CTRL:0001]他就成为了我的父亲……[CTRL:0103]并抚养我长大。[CTRL:0003][CTRL:0008]原来发生了[CTRL:0001]那样的事啊……[CTRL:0003][CTRL:000D]从暗之树海出来的魔物[CTRL:0001]都被父亲所消灭。[CTRL:0103]父亲他可是很强的哦。[CTRL:0001]而且又很温柔。[CTRL:0103]我也想像他那样……[CTRL:0003][CTRL:0102][CTRL:0016]……[CTRL:0016]！[CTRL:0003][CTRL:0008]怎么了？[CTRL:0001]梅尔……[CTRL:0003][CTRL:0080][CTRL:0004][CTRL:000B]艾瑞珂公主，伊弗列姆王子！[CTRL:0001]是敌人！[CTRL:0103]那些蠢蠢欲动的魔物[CTRL:0001]已经向这里袭来了……[CTRL:0003][CTRL:000D][CTRL:0016]……[CTRL:0016][CTRL:0003][CTRL:000A]梅尔，怎么了？[CTRL:0001]是不是有点不舒服？[CTRL:0003][CTRL:000D]没、没什么。[CTRL:0103]我会努力的。[CTRL:0103]我会努力………[CTRL:0001]打倒魔物的。[CTRL:0003]"
+        },
+        "0x0B86": {
+          "expected_text_sha256": "4d66947d65c620a77983d91c38299bf8e30718c846b0a77c099ae8123cb7bf05",
+          "preserve_structure": false,
+          "provenance": {
+            "audit": "dialogue-control-semantic-audit-2026-08-09",
+            "context": "FE8U target 0x0BC6 composed from unique regional source 0x0B86.",
+            "target_ids": [
+              "0x0BC6"
+            ]
+          },
+          "reason": "Remove the duplicate NL introduced by source composition while preserving Lyon dialogue meaning.",
+          "replacement_text": "[CTRL:0009][CTRL:0010][CTRL:0114][CTRL:000C][CTRL:0010][CTRL:0146][CTRL:000C]果然……[CTRL:0103]还是伊弗列姆强大……[CTRL:0103]我的……[CTRL:0001]偶像啊……[CTRL:0003][CTRL:0009]利昂！[CTRL:0003][CTRL:0080][CTRL:0004][CTRL:000C]伊弗列姆……[CTRL:0103]我一直想成为你那样的强者。[CTRL:0003][CTRL:0015][CTRL:000C]像你一样强真好啊……[CTRL:0103]身边还有艾瑞珂为伴……[CTRL:0103]我真想也像你那样。[CTRL:0103]可是我……[CTRL:0001]什么也没有……[CTRL:0003][CTRL:0009]利昂你说什么傻话！[CTRL:0103]是谁教我历史？[CTRL:0001]又是谁一直在帮助我？[CTRL:0103]我也一直羡慕你，希望能成为[CTRL:0103]和你一样温和善良的人！[CTRL:0003][CTRL:000C][CTRL:0017]啊……[CTRL:0103]以前……[CTRL:0001]也有那些事啊。[CTRL:0103]能再想起来。[CTRL:0001]真是高兴……[CTRL:0003][CTRL:0017][CTRL:0009]利昂……[CTRL:0001]等等……不要闭上眼！[CTRL:0103]我要救你！[CTRL:0001]我一定会找到方法救你！[CTRL:0003][CTRL:000C][CTRL:0017]谢谢了……[CTRL:0001]不过够了。[CTRL:0103]这也是我的错……[CTRL:0001]不要露出那么悲伤的表情。[CTRL:0003][CTRL:0017][CTRL:0015][CTRL:000C][CTRL:0017]笑一下，伊弗列姆。[CTRL:0001]像以前那样……[CTRL:0003][CTRL:0017][CTRL:000C][CTRL:0011][CTRL:0009][CTRL:0016]……[CTRL:0016]利昂……[CTRL:0003]"
+        },
         "0x0BA3": {
           "expected_text_sha256": "d2421e7819a34f123baf99e108ebe0af730f387f6abd4490e0b830283bdc87e1",
           "provenance": {
@@ -457,16 +900,7 @@
             ]
           },
           "reason": "Apply the reviewed target-semantic correction without modifying the pinned raw regional snapshot.",
-          "replacements": [
-            {
-              "expected": "尽管，现在没有危险，[CTRL:0001]那也只是暂时的。",
-              "replacement": "只是我也不知道[CTRL:0001]他现在是否平安。"
-            },
-            {
-              "expected": "但是，我双保胎的哥哥，[CTRL:0001]他现在随时都会有生命危险。",
-              "replacement": "但是，我的双胞胎哥哥[CTRL:0001]如今正身陷险境。"
-            }
-          ]
+          "replacement_text": "[CTRL:0017][CTRL:0009][CTRL:0010][CTRL:0153][CTRL:000D][CTRL:0010][CTRL:012C][CTRL:0009]塔娜……[CTRL:0001]你能平安回来太好了。[CTRL:0103]听到你在缪兰城被古拉德兵[CTRL:0001]袭击时我很是担心……[CTRL:0103]以后要记住没有我的命令[CTRL:0001]不准再出城，明白吗？[CTRL:0003][CTRL:000D]可是父王，[CTRL:0001]我带回来了好消息呀。[CTRL:0103]艾瑞珂！快快！[CTRL:0003][CTRL:000B][CTRL:0010][CTRL:0102][CTRL:000B]海登陛下，好久不见了。[CTRL:0003][CTRL:0009]哦！艾瑞珂！[CTRL:0001]你也平安无事啊。[CTRL:0003][CTRL:0017][CTRL:000B]是的。在鲁内斯城被攻陷之前[CTRL:0001]逃了出来。但是……父王他……[CTRL:0003][CTRL:0009]哦……[CTRL:0103]我们弗雷利亚[CTRL:0001]多少对此也了解一些。[CTRL:0003][CTRL:000B]请告诉我！海登陛下。[CTRL:0001]我父王他怎么样了？[CTRL:0003][CTRL:0080][CTRL:0004][CTRL:0009][CTRL:0016]我的挚友鲁内斯国王法德，[CTRL:0103]在鲁内斯城陷落时不幸身亡……[CTRL:0003][CTRL:000B][CTRL:0016]……[CTRL:0016]怎么会……[CTRL:0003][CTRL:000D][CTRL:0011][CTRL:000D][CTRL:0010][CTRL:0104][CTRL:000D][CTRL:0016]……[CTRL:0016][CTRL:0003][CTRL:001C][CTRL:0080][CTRL:0004][CTRL:0009]卑劣的古拉德帝国……[CTRL:0001]我们弗雷利亚一定要向其报仇。[CTRL:0103]艾瑞珂，你也累了。[CTRL:0001]还是先去王宫休息一下吧。[CTRL:0003][CTRL:000B][CTRL:0016]……[CTRL:0016][CTRL:0003][CTRL:000D][CTRL:0016]……[CTRL:0016]海登陛下。您那里[CTRL:0001]有没有伊弗列姆王子的消息？[CTRL:0003][CTRL:0009]哦。听说伊弗列姆王子和残存的[CTRL:0001]部下们正与古拉德军交战。[CTRL:0103]并且突破了国境线，[CTRL:0103]孤军向着古拉德的雷巴尔城[CTRL:0001]前进。[CTRL:0003][CTRL:001D][CTRL:000B]兄长他……[CTRL:0001]现在还在战斗着？[CTRL:0003][CTRL:0009]哦。根据天马队的报告[CTRL:0001]来说。[CTRL:0103]虽然祖国鲁内斯已灭亡，[CTRL:0001]但还是一个人攻入了敌人领地内。[CTRL:0103]不愧是法德的儿子……[CTRL:0001]真是勇猛的年轻人啊。[CTRL:0103]只是我也不知道[CTRL:0001]他现在是否平安。[CTRL:0103][CTRL:000B]海登陛下。[CTRL:0001]我想做兄长的援军。[CTRL:0003][CTRL:0009]不行。[CTRL:0001]你的心情我了解。[CTRL:0001]但这实在太乱来了[CTRL:0103]万一你有什么意外，我怎么[CTRL:0001]对得起法德的在天之灵。[CTRL:0103]你就在王宫中一边休息，[CTRL:0001]一边等着战争结束吧……[CTRL:0003][CTRL:000B]您的好意我心领了。[CTRL:0103]但是，我的双胞胎哥哥[CTRL:0001]如今正身陷险境。[CTRL:0003][CTRL:0102]哥哥他……有如我的另一半……[CTRL:0103]我无法……[CTRL:0001]一个人安稳的在此避难。[CTRL:0003][CTRL:0009]但是……[CTRL:0001]听说鲁内斯军已基本上全被歼灭。[CTRL:0103]我们弗雷利亚现在一时[CTRL:0001]也无法抽出太多的兵力……[CTRL:0003][CTRL:0102]我儿子希尼亚斯正带着弗雷利亚[CTRL:0001]主力军在前线和古拉德军交战。[CTRL:0103]现在的确无富裕的兵力……[CTRL:0103]但是，就凭你和那些骑士，[CTRL:0001]是不能和古拉德军交战的。[CTRL:0103]这样你还是要去？[CTRL:0003][CTRL:000B]是。[CTRL:0103][CTRL:0016]……[CTRL:0016]十分抱歉。[CTRL:0003][CTRL:0009][CTRL:0016]……[CTRL:0103]已在心中种下了如你父亲[CTRL:0001]般坚强的种子啊。[CTRL:0103]既然你已下定决心，[CTRL:0001]那没办法了……[CTRL:0103]瓦内萨。[CTRL:0003][CTRL:000D][CTRL:0011][CTRL:000D][CTRL:0010][CTRL:0108][CTRL:000D]是！[CTRL:0003][CTRL:0009]摩达。[CTRL:0003][CTRL:000D][CTRL:0011][CTRL:000D][CTRL:0010][CTRL:0107][CTRL:000D]国王陛下，您叫我啊。[CTRL:0003][CTRL:0009]你们和鲁内斯公主艾瑞珂[CTRL:0001]一起前往古拉德，[CTRL:0103]作为伊弗列姆王子的援军。[CTRL:0103]听明白了么。[CTRL:0003][CTRL:000D][CTRL:0010][CTRL:0107][CTRL:000D]嗯。[CTRL:0001]这可是个大任务啊。[CTRL:0003][CTRL:000D][CTRL:0011][CTRL:000D][CTRL:0010][CTRL:0108][CTRL:000D]不管有多困难！[CTRL:0001]我一定会完成的。[CTRL:0003][CTRL:000D][CTRL:0011][CTRL:0009]这些人，[CTRL:0001]都是我特别信任的部下。[CTRL:0103]一定会对你的旅行有帮助的。[CTRL:0003][CTRL:0102]此次是潜入敌人本国，[CTRL:0103]军用资金和战斗必要的物资[CTRL:0001]将由运输队负责。[CTRL:0003][CTRL:0102]运输队是不会脱队的，[CTRL:0001]平常随时准备接受命令。[CTRL:0003][CTRL:0017][CTRL:000B]海登陛下……[CTRL:0001]真是太感谢您了……[CTRL:0003][CTRL:0009]一定要平安回来。[CTRL:0001]和伊弗列姆王子两个人一起。[CTRL:0003][CTRL:000B]是！[CTRL:0003]"
         },
         "0x0BDC": {
           "expected_text_sha256": "7387ff3f3058070582d47b82c2334dd4e8f4a9a1fff98a07b746ef0b916a7353",
@@ -478,12 +912,7 @@
             ]
           },
           "reason": "Apply the reviewed target-semantic correction without modifying the pinned raw regional snapshot.",
-          "replacements": [
-            {
-              "expected": "虽然我基本上是不相信[CTRL:0001]以利益为纽带的人际关系的……",
-              "replacement": "虽然我基本不相信[CTRL:0001]没有利害关系的人际关系……"
-            }
-          ]
+          "replacement_text": "[CTRL:0009][CTRL:0010][CTRL:010F][CTRL:0009]为了鲁内斯的复兴[CTRL:0001]我们弗雷利亚将会尽力帮忙的。[CTRL:0103]有什么需要的，不用多虑，[CTRL:0001]尽管开口。[CTRL:0103]虽然我基本不相信[CTRL:0001]没有利害关系的人际关系……[CTRL:0103][CTRL:0017]不过，朋友之间的情谊[CTRL:0001]值得成为例外。[CTRL:0003][CTRL:0017]"
         },
         "0x0CA4": {
           "expected_text_sha256": "bb70d877b099e1d7a5c2f593e0d9556ccde80fb82624141b66c64a983ce8e9da",
@@ -495,12 +924,20 @@
             ]
           },
           "reason": "Apply the reviewed target-semantic correction without modifying the pinned raw regional snapshot.",
-          "replacements": [
-            {
-              "expected": "你真正的战绩是15胜16败，",
-              "replacement": "你真正的战绩是21战11胜10败，"
-            }
-          ]
+          "replacement_text": "[CTRL:0017][CTRL:0009][CTRL:0010][CTRL:011A][CTRL:000C][CTRL:0010][CTRL:012A][CTRL:000C]哟，阿斯雷。[CTRL:0001]今天的精神不错嘛，[CTRL:0103]那么有精神，就跟我赌一局吧，[CTRL:0001]若我赢了，今晚也来训练。[CTRL:0003][CTRL:0009]约书亚，即使不赌，[CTRL:0001]我也一样十分愿意陪你练习。[CTRL:0003][CTRL:000C]你竟然主动想要训练，[CTRL:0001]怎么了？发烧吗？[CTRL:0003][CTRL:0009]我想我体温大概正常。[CTRL:0001]我之所以主动向你邀请练习，[CTRL:0103]并非因发烧而导致思考能力迟缓。[CTRL:0103]为什么你会那样擅赌，[CTRL:0001]我也曾思考过。[CTRL:0003][CTRL:000C]哦……[CTRL:0003][CTRL:0009]与你相遇以来，包括在战场之外，[CTRL:0001]常常被你挑起赌赛，[CTRL:0103]战绩是21战2胜19败。[CTRL:0001]我的胜率就连十分之一都不到。[CTRL:0103]无论怎么想，那种程度的准确率[CTRL:0001]在猜硬币表里时是不可能出现的，[CTRL:0103]你一定是个受到神明青睐的人，[CTRL:0001]因此在赌输赢时才会那么高强。[CTRL:0103]若能对你这样的人略尽绵力，[CTRL:0001]无论赌博抑或练习我均愿奉陪。[CTRL:0003][CTRL:0017][CTRL:000C]这样啊……[CTRL:0001]但是，这可就没意思了。[CTRL:0103]如果说不必赌的话，[CTRL:0001]那不再陪我练习也无所谓。[CTRL:0003][CTRL:0009]哎？[CTRL:0003][CTRL:000C][CTRL:0017]我并非什么被神钟爱有加，[CTRL:0001]你真正的战绩是21战11胜10败，[CTRL:0103]不过是被我出千蒙蔽了而已。[CTRL:0001]正确的说，胜率基本对半。[CTRL:0003][CTRL:0017][CTRL:0009]出千……吗？[CTRL:0001]我一点都没有发觉……[CTRL:0103]那么说，我始终……[CTRL:0003][CTRL:000C][CTRL:0017]呵，就是这么回事了。[CTRL:0103]你出于职业习惯，凡事都信任，[CTRL:0001]然而战场上怀疑也是非常重要的。[CTRL:0103]过去的赌局，[CTRL:0001]倘若需要以性命作为赌注的话，[CTRL:0103]你输多少次就等于会死多少次。[CTRL:0103]嗨，实际上人也就能死一回而已。[CTRL:0003][CTRL:0017][CTRL:0009][CTRL:0016]……[CTRL:0016][CTRL:0105]无可反驳……[CTRL:0003][CTRL:000C][CTRL:0017]哈哈哈，幸亏我是好人，[CTRL:0001]不会造成实际危害，学到了吗？[CTRL:0003][CTRL:0017][CTRL:0009]是……[CTRL:0003][CTRL:000C][CTRL:0017]好。那么从今往后也要陪我啊。[CTRL:0001]这次由我来教你一些赌局的门道。[CTRL:0003][CTRL:0017][CTRL:0009]约书亚先生……[CTRL:0105]赌博和训练，哪一个更重要？[CTRL:0103][CTRL:0017]看来根本不用问。[CTRL:0001]但是，不要再出千了。[CTRL:0003][CTRL:0017]"
+        },
+        "0x0CD9": {
+          "expected_text_sha256": "ce6b9063711f5a9285b6487a3e720b61dd54bd5de4b0f7b78e2a83aa7749407d",
+          "preserve_structure": false,
+          "provenance": {
+            "audit": "dialogue-control-semantic-audit-2026-08-09",
+            "context": "FE8U target 0x0D1A composed from unique regional source 0x0CD9.",
+            "target_ids": [
+              "0x0D1A"
+            ]
+          },
+          "reason": "Complete Wink before the five-dot pause.",
+          "replacement_text": "[CTRL:0009][CTRL:0010][CTRL:011C][CTRL:000C][CTRL:0010][CTRL:011B][CTRL:0009]队长。[CTRL:0001][CTRL:0016]……[CTRL:0016][CTRL:0103]我和尤恩……[CTRL:0001]其实是被双亲抛弃的孩子。[CTRL:0003][CTRL:000C][CTRL:0016]……[CTRL:0016][CTRL:0105]……[CTRL:0003][CTRL:0009]嗯……[CTRL:0103]带着当时还不懂事的尤恩，[CTRL:0001]我流浪到了许多地方。[CTRL:0103]那时的我也只是一个孩子，[CTRL:0001]一点活也干不了……[CTRL:0103]每天只能饿着肚子，[CTRL:0001]衣服也破破烂烂的……[CTRL:0003][CTRL:000C][CTRL:0016]……[CTRL:0016][CTRL:0003][CTRL:0009][CTRL:0017]但是，那时我就每天都在想，[CTRL:0001]绝对不能如此下去！[CTRL:0103]所以呢，一次我在[CTRL:0001]街角看见一个舞者在跳舞，[CTRL:0103]我就努力去学。[CTRL:0103]可能是我没天赋，[CTRL:0001]学的过程中吃了许多苦。[CTRL:0103]没有一双像样的鞋，[CTRL:0001]脚也常划破。[CTRL:0103]练习转身时，[CTRL:0001]身体也常常扭伤。[CTRL:0103]也没人来可怜，[CTRL:0001]当时那日子真的很苦。[CTRL:0103]不过，我没有哭。[CTRL:0103]因为我哭了的话，[CTRL:0001]那孩子也会跟着哭。[CTRL:0103]我喜欢看到尤恩的笑容。[CTRL:0103]为了让那孩子过得更好，[CTRL:0103]让他一直笑下去，[CTRL:0001]我拼命地努力。[CTRL:0003][CTRL:000C]特缇斯……[CTRL:0003][CTRL:0009][CTRL:0017]呵呵。[CTRL:0001]说了这么多，真不好意思。[CTRL:0103]现在一想起这些，[CTRL:0001]就感觉那时真是辛酸啊……[CTRL:0103]不过，通过这样的磨练，[CTRL:0103]我也终于有了这般出色的舞艺[CTRL:0001]和性感的身材。[CTRL:0103]过去吃了那么多苦，[CTRL:0001]才有了现在如此妩媚的我。[CTRL:0003][CTRL:0017][CTRL:0009][CTRL:0080][CTRL:001F][CTRL:0005][CTRL:0009][CTRL:0080][CTRL:001C][CTRL:0009][CTRL:0017]如何呢？[CTRL:0003][CTRL:0017][CTRL:000C][CTRL:0016]……[CTRL:0016][CTRL:0103]这样啊，在和我们认识之前，[CTRL:0103]你们竟吃过这么多的苦……[CTRL:0003][CTRL:0009][CTRL:0017]讨厌啊。过去的，已经是过去的！[CTRL:0001]你可不要跟别人说哦？[CTRL:0103]这个，我跟谁都没说的，[CTRL:0001]也只能和队长说。[CTRL:0103]这种经历才和充满了神秘色彩[CTRL:0001]的我更加相配啊。[CTRL:0003][CTRL:0102]下次，[CTRL:0105]我要听队长的经历。[CTRL:0003][CTRL:0017][CTRL:0017][CTRL:000C]啊啊，我知道了。[CTRL:0003][CTRL:0009]那，[CTRL:0103]我一定要努力努力再努力。[CTRL:0103]发现更多好事以及更好的事情。[CTRL:0103]对吧，队长。[CTRL:0003][CTRL:000C]啊，特缇斯[CTRL:0001]除此之外，你也要小心啊。[CTRL:0003][CTRL:0009]嗯。[CTRL:0001]队长也是！[CTRL:0003]"
         }
       }
     },
@@ -578,6 +1015,18 @@
           "reason": "Apply the reviewed target-semantic correction without modifying the pinned raw regional snapshot.",
           "replacement_text": "ユニットを選択した時に表示される[CTRL:0001]赤色の部分が攻撃範囲です。[CTRL:0001]敵ユニットにカーソルを合わせても[CTRL:0001]その敵の攻撃範囲が表示されます。[CTRL:0001]接近する前に確認してください。"
         },
+        "0x05CA": {
+          "expected_text_sha256": "5eb401aca4e6d8b0d0fb6e7eb1aeaab1793111fc4f41e2fe64ab1d734f5598ff",
+          "provenance": {
+            "audit": "dialogue-control-semantic-audit-2026-08-09",
+            "context": "FE8U target 0x0638 composed from unique regional source 0x05CA.",
+            "target_ids": [
+              "0x0638"
+            ]
+          },
+          "reason": "Apply the reviewed target-specific dialogue/control correction without modifying the pinned regional snapshot.",
+          "replacement_text": "決められたターン数の間[CTRL:0001]敵の攻撃をしのいで生存すれば、マップを[CTRL:0001]クリアできます。"
+        },
         "0x05D2": {
           "expected_text_sha256": "22517107529b541b68d211bf6c374fa9b65ec2ee880a1aad5616462e0253c071",
           "provenance": {
@@ -643,6 +1092,144 @@
             }
           ]
         },
+        "0x088F": {
+          "expected_text_sha256": "40e505c210a71d8960acdb2d835ca6d4ef7107b271e936b93b8e2ea36d2fda3b",
+          "preserve_structure": false,
+          "provenance": {
+            "audit": "dialogue-control-semantic-audit-2026-08-09",
+            "context": "FE8U target 0x08E6 composed from unique regional source 0x088F.",
+            "target_ids": [
+              "0x08E6"
+            ]
+          },
+          "reason": "Remove only regional blank-line controls that exceed the FE8U target layout while preserving the localized narration.",
+          "replacement_text": "海路でロストン聖教国を目指す[CTRL:0001]エイリークたちは[CTRL:0003][CTRL:0001][CTRL:0080][CTRL:0004]ロストン行きの船を探すため[CTRL:0001]カルチノ共和国領の[CTRL:0001]貿易港キリスに向かった。[CTRL:0003][CTRL:0001][CTRL:0080][CTRL:0004]カルチノはフレリアの同盟国[CTRL:0001]豪商たちが治める新興の国家である。[CTRL:0003][CTRL:0001][CTRL:0080][CTRL:0004]カルチノの代表者である長老クリムトは[CTRL:0001]フレリア王国とは同盟関係を結び[CTRL:0003][CTRL:0001][CTRL:0080][CTRL:0004]今回の戦争においても[CTRL:0001]フレリアに支援を約束していた。[CTRL:0003][CTRL:0001][CTRL:0080][CTRL:0004]先行するフレリア王子ヒーニアスも[CTRL:0001]カルチノ領を通り[CTRL:0003][CTRL:0001][CTRL:0001]ジャハナ王国へと向かっている。[CTRL:0003][CTRL:0001]カルチノ領に危険はない・・・[CTRL:0001]エイリークはそう信じていた。[CTRL:0003][CTRL:0001][CTRL:0080][CTRL:0004]"
+        },
+        "0x089B": {
+          "expected_text_sha256": "355bb502d34fc4c14d4a85c5db64e32fd18a0273713984451cdf9994eada7065",
+          "preserve_structure": false,
+          "provenance": {
+            "audit": "dialogue-control-semantic-audit-2026-08-09",
+            "context": "FE8U target 0x08EC composed from unique regional source 0x089B.",
+            "target_ids": [
+              "0x08EC"
+            ]
+          },
+          "reason": "Remove only regional blank-line controls that exceed the FE8U target layout while preserving the localized narration.",
+          "replacement_text": "王都ルネス。[CTRL:0003][CTRL:0001][CTRL:0001]久々に戻った故郷は戦争のあとも生々しく[CTRL:0001]エイリークとエフラムの心に痛みを与えた。[CTRL:0003][CTRL:0001][CTRL:0080][CTRL:0004]王都を守るのは[CTRL:0001]元ルネス騎士オルソン。[CTRL:0003][CTRL:0001]ルネスを裏切り[CTRL:0001]エイリークを罠にかけた裏切り者・・・[CTRL:0003][CTRL:0001][CTRL:0080][CTRL:0004]祖国再興を心に誓い[CTRL:0001]エイリークは王都ルネスへ帰還する。[CTRL:0003][CTRL:0001][CTRL:0080][CTRL:0004]"
+        },
+        "0x089F": {
+          "expected_text_sha256": "fd4975e9e23f864b030ebb98f54bc64ef578eb2582acfde17a570212a773b953",
+          "preserve_structure": false,
+          "provenance": {
+            "audit": "dialogue-control-semantic-audit-2026-08-09",
+            "context": "FE8U target 0x08EE composed from unique regional source 0x089F.",
+            "target_ids": [
+              "0x08EE"
+            ]
+          },
+          "reason": "Remove only regional blank-line controls that exceed the FE8U target layout while preserving the localized narration.",
+          "replacement_text": "姿を消したグラド皇子リオンの[CTRL:0001]行方を追う一行。[CTRL:0003][CTRL:0001][CTRL:0001]ヒーニアスの命を受けて[CTRL:0001]付近を捜索するフレリア兵から[CTRL:0003][CTRL:0001][CTRL:0001]リオンが北方へ向かったとの[CTRL:0001]報告が入った。[CTRL:0003][CTRL:0001][CTRL:0080][CTRL:0004]エイリークたちはその後を追い[CTRL:0001]闇の樹海を取り囲む峰火山ネレラスへ。[CTRL:0003][CTRL:0001]火山の熱気と硫黄の匂いが[CTRL:0001]立ちこめる人外の地・・・[CTRL:0003][CTRL:0001][CTRL:0080][CTRL:0004]そこには[CTRL:0001]無数の魔物の卵が息づいていた。[CTRL:0003][CTRL:0001][CTRL:0080][CTRL:0004]"
+        },
+        "0x08A9": {
+          "expected_text_sha256": "1f31f78d32fe9303532b7d8f40cf6487d5ef79f6894a984de8efdabbd30d3b1a",
+          "preserve_structure": false,
+          "provenance": {
+            "audit": "dialogue-control-semantic-audit-2026-08-09",
+            "context": "FE8U target 0x08F2 composed from unique regional source 0x08A9.",
+            "target_ids": [
+              "0x08F2"
+            ]
+          },
+          "reason": "Remove only regional blank-line controls that exceed the FE8U target layout while preserving the localized narration.",
+          "replacement_text": "グラド帝国将軍デュッセルは[CTRL:0001]エフラムの槍の師である。[CTRL:0003][CTRL:0001][CTRL:0001]過去　度々国使としてルネス王国を[CTRL:0001]訪れていたデュッセル将軍と[CTRL:0003][CTRL:0001][CTRL:0080][CTRL:0004]エフラムは幼い頃より面識があり[CTRL:0003][CTRL:0001]気性のあった二人は身分と国は違えども[CTRL:0001]師弟のような関係を築いていた。[CTRL:0003][CTRL:0001][CTRL:0080][CTRL:0004]何故グラド皇帝は戦争を起こしたのか・・・[CTRL:0001]グラドが発する魔の瘴気は何なのか・・・[CTRL:0003][CTRL:0001]デュッセルと会えば　彼の口から[CTRL:0001]その手がかりを聞けるかもしれない。[CTRL:0003][CTRL:0001][CTRL:0080][CTRL:0004]エフラムはそう信じ[CTRL:0001]グラド領へと軍を進めた。[CTRL:0003][CTRL:0001][CTRL:0080][CTRL:0004]"
+        },
+        "0x08B3": {
+          "expected_text_sha256": "46c1ce4129460028cc82de191db0b6b195eebeadad33f61ae18f769833000419",
+          "preserve_structure": false,
+          "provenance": {
+            "audit": "dialogue-control-semantic-audit-2026-08-09",
+            "context": "FE8U target 0x08F7 composed from unique regional source 0x08B3.",
+            "target_ids": [
+              "0x08F7"
+            ]
+          },
+          "reason": "Remove only regional blank-line controls that exceed the FE8U target layout while preserving the localized narration.",
+          "replacement_text": "王都ルネス。[CTRL:0003][CTRL:0001][CTRL:0001]久々に戻った故郷は戦争のあとも生々しく[CTRL:0001]エイリークとエフラムの心に痛みを与えた。[CTRL:0003][CTRL:0001][CTRL:0080][CTRL:0004]王都を守るのは[CTRL:0001]元ルネス騎士オルソン。[CTRL:0003][CTRL:0001]ルネスを裏切り[CTRL:0001]エイリークを罠にかけた裏切り者・・・[CTRL:0003][CTRL:0001][CTRL:0080][CTRL:0004]祖国再興を心に誓い[CTRL:0001]エフラムは王都ルネスへ帰還する。[CTRL:0003][CTRL:0001][CTRL:0080][CTRL:0004]"
+        },
+        "0x08B7": {
+          "expected_text_sha256": "503322d6aa964c51daa5a7986c14b2bc23765e522018332dbb969d73f6aa08fc",
+          "preserve_structure": false,
+          "provenance": {
+            "audit": "dialogue-control-semantic-audit-2026-08-09",
+            "context": "FE8U target 0x08F9 composed from unique regional source 0x08B7.",
+            "target_ids": [
+              "0x08F9"
+            ]
+          },
+          "reason": "Remove only regional blank-line controls that exceed the FE8U target layout while preserving the localized narration.",
+          "replacement_text": "姿を消したグラド皇子リオンの[CTRL:0001]行方を追う一行。[CTRL:0003][CTRL:0001][CTRL:0001]ヒーニアスの命を受けて[CTRL:0001]付近を捜索するフレリア兵から[CTRL:0003][CTRL:0001][CTRL:0001]リオンが北方へ向かったとの[CTRL:0001]報告が入った。[CTRL:0003][CTRL:0001][CTRL:0080][CTRL:0004]エフラムたちはその後を追い[CTRL:0001]闇の樹海を取り囲む峰火山ネレラスへ。[CTRL:0003][CTRL:0001]火山の熱気と硫黄の匂いが[CTRL:0001]立ちこめる人外の地・・・[CTRL:0003][CTRL:0001][CTRL:0080][CTRL:0004]そこには[CTRL:0001]無数の魔物の卵が息づいていた。[CTRL:0003][CTRL:0001][CTRL:0080][CTRL:0004]"
+        },
+        "0x08ED": {
+          "expected_text_sha256": "3156a094b69863a7a2b148ea07a65eb55e5ec02807fbf30a506705e18763a19a",
+          "provenance": {
+            "audit": "dialogue-control-semantic-audit-2026-08-09",
+            "context": "FE8U target 0x092D composed from unique regional source 0x08ED.",
+            "target_ids": [
+              "0x092D"
+            ]
+          },
+          "reason": "Apply the reviewed target-specific dialogue/control correction without modifying the pinned regional snapshot.",
+          "replacement_text": "[CTRL:000C][CTRL:0010][CTRL:0102][CTRL:0009][CTRL:0010][CTRL:0104][CTRL:000C]ゼト！[CTRL:0001]あれを・・・[CTRL:0003][CTRL:0009]ついにフレリアにもグラドの手が・・・[CTRL:0003][CTRL:0001]エイリーク様　ここは危険です。[CTRL:0003][CTRL:0001]ミュラン城は迂回して[CTRL:0001]フレリア王都に向かいましょう。[CTRL:0003][CTRL:000C]でも　このまま見過ごすわけには・・・[CTRL:0003][CTRL:0002][CTRL:0001]私たちのルネスが[CTRL:0001]グラド軍に侵攻された時・・・[CTRL:0003][CTRL:0001]あなたも私と同じ光景を見たはずです。民たちは　グラドの兵士に[CTRL:0001]それは酷い目に遭わされました。[CTRL:0003][CTRL:0001]家々は壊され　物は奪われ　女性はさらわれ[CTRL:0003][CTRL:0001]抵抗した者はことごとく処刑されたと・・・[CTRL:0003][CTRL:0009][CTRL:0016]・・・・・・[CTRL:0016][CTRL:0003][CTRL:000C]お願いします　ゼト。[CTRL:0003][CTRL:0001]私はこれ以上　人々がグラド軍の暴虐に[CTRL:0001]さらされるさまを見たくないのです・・・[CTRL:0003][CTRL:0009][CTRL:0016]・・・[CTRL:0016]わかりました。[CTRL:0001]では　まずミュラン城を取り戻しましょう。[CTRL:0003][CTRL:0001]ですがエイリーク様[CTRL:0001]くれぐれも無理はなさいませんよう。[CTRL:0003][CTRL:000C]わかっています　ゼト。[CTRL:0001]行きましょう！[CTRL:0003]"
+        },
+        "0x0922": {
+          "expected_text_sha256": "96145f3a82ee3dacd1705411d8c7244e68e7a43078014a1ec9148dbc92521427",
+          "provenance": {
+            "audit": "dialogue-control-semantic-audit-2026-08-09",
+            "context": "FE8U target 0x0962 composed from unique regional source 0x0922.",
+            "target_ids": [
+              "0x0962"
+            ]
+          },
+          "reason": "Apply the reviewed target-specific dialogue/control correction without modifying the pinned regional snapshot.",
+          "replacement_text": "[CTRL:000C][CTRL:0010][CTRL:010E][CTRL:000A][CTRL:0010][CTRL:0104][CTRL:0008][CTRL:0010][CTRL:0102][CTRL:001C][CTRL:000C]息子が世話になったな。[CTRL:0001]礼を言わせてくれ。[CTRL:0003][CTRL:0008]いえ　そんな・・・[CTRL:0003][CTRL:000A][CTRL:0016]・・・[CTRL:0016]失礼だが[CTRL:0003][CTRL:0001]あなたは元ルネス軍の[CTRL:0001]ガルシア殿では？[CTRL:0003][CTRL:000C][CTRL:0016]・・・・・・[CTRL:0016][CTRL:0003][CTRL:0008]ゼト　この方のことを？[CTRL:0003][CTRL:000A]十年前までルネス軍で[CTRL:0001]部隊長をつとめておられた方です。[CTRL:0003][CTRL:0001]恐れを知らぬ[CTRL:0001]勇猛なルネスの戦士として[CTRL:0003][CTRL:0001]私が騎士見習いだった頃[CTRL:0001]よく噂を耳にする機会がありました。[CTRL:0003][CTRL:0002][CTRL:0001]ガルシア殿　あなたもご存知のとおり[CTRL:0001]ルネスは今危機的な状況にある。[CTRL:0003][CTRL:0001]あなたのお力を今一度ルネスに[CTRL:0001]貸していただけないだろうか？[CTRL:0003][CTRL:000C][CTRL:0016]・・・[CTRL:0016]すまんが[CTRL:0001]わしはもう引退した身だ。[CTRL:0003][CTRL:0001]わしはもう戦わぬ。[CTRL:0001]そう決めたのだ。[CTRL:0003][CTRL:000A]ガルシア殿・・・[CTRL:0003][CTRL:000C][CTRL:0016]・・・[CTRL:0016]昔のわしは国の名誉のために戦うあまり[CTRL:0001]家を顧みることをしてこなかった。[CTRL:0003][CTRL:0001]顔も知らぬ貴族たちのために戦いながら[CTRL:0001]わが子の顔さえろくに知らなかった。[CTRL:0003][CTRL:0002][CTRL:0001]そうして妻を早くに病で亡くし[CTRL:0001]残された幼い息子を目の前にして・・・[CTRL:0003][CTRL:0001]わしははじめて自分の過ちに気づいたのだ。[CTRL:0003][CTRL:0008][CTRL:0016]・・・・・・[CTRL:0016][CTRL:0003][CTRL:000C]わしは妻の墓の前で[CTRL:0001]この子の父として生きると誓った。[CTRL:0003][CTRL:0001]そのために軍を辞め[CTRL:0001]戦いを捨てた。[CTRL:0003][CTRL:0001]悔いはない。[CTRL:0001]わしは　あの子の父親なのだ。[CTRL:0003][CTRL:000A][CTRL:0016]・・・・・・[CTRL:0016][CTRL:0003][CTRL:000E][CTRL:0010][CTRL:0109][CTRL:0008][CTRL:0011][CTRL:000A][CTRL:0011][CTRL:001D][CTRL:000E][CTRL:0080][CTRL:000B][CTRL:0009]ばかやろーっ！[CTRL:0003][CTRL:0001]父ちゃん！[CTRL:0001]何馬鹿なこと言ってんだよ！[CTRL:0003][CTRL:000C]ロス！？[CTRL:0003][CTRL:0009]父ちゃんが行かないなら俺が行く！[CTRL:0003][CTRL:0001]俺は戦士だ！[CTRL:0001]俺だって戦えるんだ！[CTRL:0003][CTRL:000C][CTRL:0080][CTRL:000D][CTRL:000B]ロス　何を言う！[CTRL:0001]わしは・・・[CTRL:0003][CTRL:0009]父ちゃん！[CTRL:0003][CTRL:0001]俺は父ちゃんのこと[CTRL:0001]誰より尊敬してる！[CTRL:0003][CTRL:0001]父ちゃんが俺のために[CTRL:0001]戦いをやめたのも知ってる！[CTRL:0003][CTRL:0001]けど父ちゃんはそれでいいのかよ！[CTRL:0003][CTRL:0001]戦士の自分を捨てちまって[CTRL:0001]それで本当にいいのかよ！[CTRL:0003][CTRL:000B][CTRL:0016]・・・・・・[CTRL:0016][CTRL:0003][CTRL:0009]俺の戦い見たろ！[CTRL:0001]父ちゃん！[CTRL:0003][CTRL:0001]俺はもう子供じゃない。[CTRL:0001]父ちゃんと同じ戦士なんだ！[CTRL:0003][CTRL:0001]父ちゃんに心配してもらわなくたって[CTRL:0001]一人でちゃんと戦えるんだ！[CTRL:0003][CTRL:000B][CTRL:0016]・・・[CTRL:0016]ロス。[CTRL:0003][CTRL:0009][CTRL:0080][CTRL:000B][CTRL:0009]俺と勝負しろ　父ちゃん！[CTRL:0003][CTRL:0001]俺は戦士だ！[CTRL:0001]イム村一番の戦士だ！[CTRL:0003][CTRL:0001]父ちゃんなんかに負けない！[CTRL:0001]誰にも負けない！[CTRL:0003][CTRL:0017][CTRL:000B][CTRL:0016]・・・[CTRL:0016]そうだな。[CTRL:0003][CTRL:0001]ロス　お前は勇敢な戦士だ。[CTRL:0003][CTRL:0009][CTRL:0011][CTRL:000A][CTRL:0010][CTRL:0102][CTRL:0008][CTRL:0010][CTRL:0104][CTRL:000B]ゼト殿・・・[CTRL:0003][CTRL:0001]この老骨でよければ[CTRL:0001]わしも戦わせてもらいたい。[CTRL:0003][CTRL:000D][CTRL:0010][CTRL:0109][CTRL:000D]父ちゃん・・・[CTRL:0003][CTRL:000B]わしの知らぬ間に[CTRL:0001]わが子は戦士になっていたようだ。[CTRL:0003][CTRL:0001]わしの力など借りずとも[CTRL:0001]一人で立派に戦える戦士に・・・[CTRL:0003][CTRL:0001]ならば　わしにもう心残りはない。[CTRL:0001]何も恐れるものなどない。[CTRL:0003][CTRL:0001]わしは戦う。もう一度戦うぞ。[CTRL:0003][CTRL:000D]父ちゃん！[CTRL:0003]"
+        },
+        "0x0A06": {
+          "expected_text_sha256": "47eed5e705abba331bb648db6b45c5045460126a2b64aacfb09956d273c5e813",
+          "provenance": {
+            "audit": "dialogue-control-semantic-audit-2026-08-09",
+            "context": "FE8U target 0x0A45 composed from unique regional source 0x0A06.",
+            "target_ids": [
+              "0x0A45"
+            ]
+          },
+          "reason": "Apply the reviewed target-specific dialogue/control correction without modifying the pinned regional snapshot.",
+          "replacement_text": "[CTRL:0009][CTRL:0010][CTRL:015E][CTRL:000C][CTRL:0010][CTRL:FFFF][CTRL:0009]フレリア王子ヒーニアス様は[CTRL:0001]かなりの策略家って噂だ。[CTRL:0003][CTRL:0001]ルネスをあっさり落としたグラド帝国が[CTRL:0001]フレリアをいまだ攻め切れないのは[CTRL:0003][CTRL:0001]ヒーニアス王子があちこちに密偵を放って[CTRL:0001]常にグラドの動きを察知してるかららしい。[CTRL:0003][CTRL:0001]そのくせ　フレリアに潜入してくる[CTRL:0001]他国の密偵は徹底的に暴き出し、すぐに処刑する。[CTRL:0003][CTRL:0001]敵側には一切[CTRL:0001]情報をもらさないんだとさ。[CTRL:0003][CTRL:0001]俺は会ったことないけど・・・[CTRL:0001]敵に回したくない感じだよな？[CTRL:0003]"
+        },
+        "0x0A11": {
+          "expected_text_sha256": "af86d002f86e1ca235e4d1f86a441711192ec72909b90a92798d0ed7a1319dd7",
+          "provenance": {
+            "audit": "dialogue-control-semantic-audit-2026-08-09",
+            "context": "FE8U target 0x0A50 composed from unique regional source 0x0A11.",
+            "target_ids": [
+              "0x0A50"
+            ]
+          },
+          "reason": "Apply the reviewed target-specific dialogue/control correction without modifying the pinned regional snapshot.",
+          "replacement_text": "[CTRL:0009][CTRL:0010][CTRL:014C][CTRL:000C][CTRL:0010][CTRL:0142][CTRL:000C]グレンよ　どこへ行く気だ？[CTRL:0003][CTRL:0009]ヴァルター・・・[CTRL:0003][CTRL:000C]おやおや　これはどういうことだ？[CTRL:0003][CTRL:0001]さきほど　山中に消えたのは[CTRL:0001]エイリーク一行ではないのか？[CTRL:0003][CTRL:0001]私がこのことを喋れば[CTRL:0001]お前の立場はどうなるかな？[CTRL:0003][CTRL:0009]・・・好きにするがいい。[CTRL:0003][CTRL:0001]私は帝都へ戻る。[CTRL:0001]今一度陛下に真意を問うつもりだ。[CTRL:0003][CTRL:0001]ヴァルター　そこをどけ。[CTRL:0003][CTRL:000C]まあ待て。[CTRL:0001]そう急くこともあるまい？[CTRL:0003][CTRL:0001]どうせお前は[CTRL:0001]ここで死ぬのだから・・・な？[CTRL:0003][CTRL:0009][CTRL:0016]・・・[CTRL:0016]どういう意味だ？[CTRL:0003][CTRL:000C]くく・・・[CTRL:0003][CTRL:0001]かつての帝国三騎は[CTRL:0001]デュッセル　貴様　そして私。[CTRL:0003][CTRL:0001]だが　私は三騎の座を奪われ[CTRL:0001]グラドから追放された・・・[CTRL:0003][CTRL:0009]お前は戦う意志を持たぬ[CTRL:0001]民たちを虐殺した。[CTRL:0003][CTRL:0001]陛下がくだされた処断は[CTRL:0001]当然のことだ。[CTRL:0003][CTRL:000C]くく・・・くくく・・・[CTRL:0003][CTRL:0001]私はあれから屈辱に身を焦がし[CTRL:0001]復讐を誓って生きてきた。[CTRL:0003][CTRL:0001]あまりの憎悪に危うく[CTRL:0001]気が狂うところだったよ。[CTRL:0003][CTRL:0001]だが　その憎しみは今もなお[CTRL:0001]私を熱く燃やしている・・・[CTRL:0003][CTRL:0009][CTRL:0016]・・・・・・[CTRL:0016][CTRL:0003][CTRL:0080][CTRL:0004][CTRL:000C]なあグレンよ。[CTRL:0001]帝国三騎の竜騎士よ。[CTRL:0003][CTRL:0001]私は戦いが欲しいのだ。[CTRL:0001]平和などいらんのだ。[CTRL:0003][CTRL:0001]だから[CTRL:0001]お前は死ね。[CTRL:0003]"
+        },
+        "0x0A29": {
+          "expected_text_sha256": "bde9a095e990619d28f004477c04e8c9e135069ca3ff9c7d8d32da84b16670c3",
+          "provenance": {
+            "audit": "dialogue-control-semantic-audit-2026-08-09",
+            "context": "FE8U target 0x0A68 composed from unique regional source 0x0A29.",
+            "target_ids": [
+              "0x0A68"
+            ]
+          },
+          "reason": "Apply the reviewed target-specific dialogue/control correction without modifying the pinned regional snapshot.",
+          "replacement_text": "[CTRL:0009][CTRL:0010][CTRL:0113][CTRL:000C][CTRL:0010][CTRL:0142][CTRL:0009]兄貴が・・・死んだ・・・？[CTRL:0003][CTRL:0001]馬鹿な！[CTRL:0001]そんなはずは・・・！[CTRL:0003][CTRL:000C]残念だが　間違いない。[CTRL:0001]俺が骸を持って帰ってやった。[CTRL:0003][CTRL:0001]ほら　見てみるがいい。[CTRL:0001]そこに置いてあるだろう・・・？[CTRL:0003][CTRL:0009]あ・・・[CTRL:0003][CTRL:0001]兄・・・貴・・・！[CTRL:0003][CTRL:000C]いやはや　むごい死に様だな？[CTRL:0001]これは葬儀もさぞ苦労しそうだ。[CTRL:0003][CTRL:0001]だがクーガーよ[CTRL:0001]そう嘆くこともあるまい。[CTRL:0003][CTRL:0001]陛下は空位となった将軍の座に[CTRL:0001]お前を任命されるそうだ。[CTRL:0003][CTRL:0001]お前が新しい帝国将軍[CTRL:0001]【日長石】のクーガーというわけだ。[CTRL:0003][CTRL:0009]誰が・・・[CTRL:0003][CTRL:0001]誰がやった・・・誰が・・・[CTRL:0003][CTRL:000C]グレンは陛下の命を受け[CTRL:0001]エイリーク一行の討伐に向かった。[CTRL:0003][CTRL:0001]俺が追いついた時には[CTRL:0001]決着はついていた。[CTRL:0003][CTRL:0001]エイリークは剣でグレンの胸を貫き[CTRL:0001]その場から逃げ去った。[CTRL:0003][CTRL:0009]エイリーク・・・！[CTRL:0003][CTRL:0001]今　どこにいる！？[CTRL:0003][CTRL:000C]ん？　聞いてどうするというのだ？[CTRL:0001]陛下から命令がない限りは・・・[CTRL:0003][CTRL:0009]答えろ！[CTRL:0003][CTRL:000C][CTRL:0016]・・・[CTRL:0016]カルチノ東部の山中だ。[CTRL:0003][CTRL:0001]あのあたりは森が深い。[CTRL:0001]たやすくは見つけられんだろうが・・・[CTRL:0003]"
+        },
         "0x0ABA": {
           "expected_text_sha256": "423e1cf2f18cc805c760651db78cc13b8bbbe18ba7acf21517e9878c54839558",
           "provenance": {
@@ -659,6 +1246,19 @@
               "replacement": "お願いします。セライナさんを[CTRL:0001]傷つけないでください。"
             }
           ]
+        },
+        "0x0ABD": {
+          "expected_text_sha256": "f9cd641a697c6930fdd5b25ea730aa9bb0c7a45e1fb4a215a69158a00598c72a",
+          "preserve_structure": false,
+          "provenance": {
+            "audit": "dialogue-control-semantic-audit-2026-08-09",
+            "context": "FE8U target 0x0AFC composed from unique regional source 0x0ABD.",
+            "target_ids": [
+              "0x0AFC"
+            ]
+          },
+          "reason": "Restore the FE8U page advance before the earthquake face movement.",
+          "replacement_text": "[CTRL:000C][CTRL:0010][CTRL:0114][CTRL:0008][CTRL:0010][CTRL:0126][CTRL:0008]エフラム・・・[CTRL:0003][CTRL:0001]きゃっ[CTRL:0003][CTRL:0008][CTRL:0080][CTRL:000A][CTRL:000C][CTRL:0080][CTRL:000E][CTRL:0015][CTRL:0080][CTRL:0004][CTRL:000C]また地揺れか・・・[CTRL:0001]よく起こるな。[CTRL:0003][CTRL:0015][CTRL:000C][CTRL:0080][CTRL:000D][CTRL:000B]大丈夫か　ミルラ？[CTRL:0003][CTRL:0008]はい・・・びっくりしました。[CTRL:0003][CTRL:0001]エフラム　このあたりは・・・[CTRL:0001]前からこんなふうに揺れるのですか？[CTRL:0003][CTRL:000B]ああ　昔からの[CTRL:0001]グラドの土地柄らしい。[CTRL:0003][CTRL:0001]今みたいに弱い揺ればかりだから[CTRL:0001]あまり気にしない方がいいぞ。[CTRL:0003][CTRL:0008]そうですか・・・[CTRL:0003][CTRL:0001]あ　エフラム・・・[CTRL:0003][CTRL:0008][CTRL:0080][CTRL:000B][CTRL:000B]どうした？[CTRL:0003][CTRL:0009]お城の中から・・・[CTRL:0001]まがまがしい気配を感じます。[CTRL:0003][CTRL:0001]とても奥の[CTRL:0001]とても広いところからです。[CTRL:0003][CTRL:000B]おそらく玉座の間だな。[CTRL:0003][CTRL:0001]あそこに皇帝ヴィガルドが・・・[CTRL:0001]今回の戦争を招いた男がいる。[CTRL:0003][CTRL:0001]行くぞ。[CTRL:0003]"
         },
         "0x0AC7": {
           "expected_text_sha256": "724059cdb0936e4aebbd82c38dad9514e45d8ce9af8d2da6babb377c4674ff8e",
@@ -677,6 +1277,19 @@
             }
           ]
         },
+        "0x0AF5": {
+          "expected_text_sha256": "0412fb15bb4d078c9fd187ec9c3a094aa75ef60b8b7e69e3812f908fe00883d6",
+          "preserve_structure": false,
+          "provenance": {
+            "audit": "dialogue-control-semantic-audit-2026-08-09",
+            "context": "FE8U target 0x0B35 composed from unique regional source 0x0AF5.",
+            "target_ids": [
+              "0x0B35"
+            ]
+          },
+          "reason": "Remove the regional BreakTalk because EventScr_Ch15B_7 has no TEXTCONT.",
+          "replacement_text": "[CTRL:000C][CTRL:0010][CTRL:0120][CTRL:0009][CTRL:0010][CTRL:0121][CTRL:0009]あ　お師匠さま。[CTRL:0003][CTRL:000C]ユアンか・・・[CTRL:0003][CTRL:0001]なぜここに来た？[CTRL:0003][CTRL:0009]僕　エフラムさんたちに[CTRL:0001]ついてきたんだ。[CTRL:0003][CTRL:0001]お師匠さま　僕[CTRL:0001]がんばったんだよ。[CTRL:0003][CTRL:000C]そうか・・・[CTRL:0003][CTRL:0001]お前たちがここへ来なければ[CTRL:0001]我々の命はなかった。[CTRL:0003][CTRL:0001]お前に助けられたな　ユアン[CTRL:0001]感謝する。[CTRL:0003][CTRL:0009]え？　ほんと？[CTRL:0003][CTRL:0001]じゃあお師匠さま[CTRL:0001]もっとすごい魔法教えてくれる？[CTRL:0003][CTRL:000C][CTRL:0016]・・・[CTRL:0016]そうだな。[CTRL:0001]いずれそうしよう。[CTRL:0003][CTRL:0009]やったぁ！[CTRL:0003]"
+        },
         "0x0CA4": {
           "expected_text_sha256": "34e45d71d3d53fb886ca19707d98e0a6c6c235f7fb79a5ef72dd14fd4e3ec9c7",
           "provenance": {
@@ -687,12 +1300,7 @@
             ]
           },
           "reason": "Apply the reviewed target-semantic correction without modifying the pinned raw regional snapshot.",
-          "replacements": [
-            {
-              "expected": "お前の本当の戦績は、２１戦１５勝１６敗。",
-              "replacement": "お前の本当の戦績は、２１戦１１勝１０敗。"
-            }
-          ]
+          "replacement_text": "[CTRL:0017][CTRL:0009][CTRL:0010][CTRL:011A][CTRL:000C][CTRL:0010][CTRL:012A][CTRL:000C]よぉ、アスレイ。[CTRL:0001]今日はえらく表情が晴れやかだな。[CTRL:0003][CTRL:0001]そんなに元気そうなら、賭けをしようか。[CTRL:0001]俺が勝ったら、今夜も稽古だ。[CTRL:0003][CTRL:0009]ヨシュアさん、賭けなどしなくても、[CTRL:0001]喜んで稽古にお付き合いしますよ。[CTRL:0003][CTRL:000C]お前のほうから稽古しようだなんて、[CTRL:0001]急にどうした？　熱でもあるのか？[CTRL:0003][CTRL:0009]多分、平熱だと思います。[CTRL:0001]・・・私がヨシュアさんを[CTRL:0003][CTRL:0001]自ら稽古にお誘いしたのは、[CTRL:0001]熱で思考能力が鈍っているからではなく、[CTRL:0003][CTRL:0001]どうしてあなたがそんなに賭けに強いか、[CTRL:0001]私なりに考えてみたからです。[CTRL:0003][CTRL:000C]・・・ほう・・・[CTRL:0003][CTRL:0009]あなたとお会いして以来、この戦場以外でも、[CTRL:0001]しょっちゅう賭けを挑まれましたが、[CTRL:0003][CTRL:0001]戦績は、２１戦２勝１９敗。私の勝率は、[CTRL:0001]たった１割程度にしか満たないのです。[CTRL:0003][CTRL:0001]どう考えても、あれほどの確率で[CTRL:0001]コインの裏表を当てる事は不可能です。[CTRL:0003][CTRL:0001]あなたはきっと神に愛されているんですよ。[CTRL:0001]だから、あんなに賭けにお強いのです。[CTRL:0003][CTRL:0001]そのあなたのお役に立てるのなら、[CTRL:0001]賭けなどせずとも稽古にお付き合いします。[CTRL:0003][CTRL:0017][CTRL:000C]そうか・・・[CTRL:0001]しかし、それはおもしろくないな。[CTRL:0003][CTRL:0001]賭けをしないって言うなら、[CTRL:0001]もう稽古に付き合わなくてもいいぜ。[CTRL:0003][CTRL:0009]・・・えっ？[CTRL:0003][CTRL:000C][CTRL:0017]俺は神に愛されてるわけでも何でもない。[CTRL:0001]お前の本当の戦績は、２１戦１１勝１０敗。[CTRL:0003][CTRL:0001]イカサマでちょっとからかってただけだ。[CTRL:0001]正確には、ほぼ五分五分の勝率さ。[CTRL:0003][CTRL:0017][CTRL:0009]イカサマ・・・でしたか？[CTRL:0001]全然、気付きませんでした・・・[CTRL:0003][CTRL:0001]じゃあ、私はずっと・・・[CTRL:0003][CTRL:000C][CTRL:0017]フッ、そういう訳さ。[CTRL:0003][CTRL:0001]お前は職業柄、信じる事が大事だろうけど、[CTRL:0001]こういった戦場じゃ疑う事も大事だぜ。[CTRL:0003][CTRL:0001]これまでの賭けが、仮に命のやりとりの[CTRL:0001]かかったものだったとしたら、[CTRL:0003][CTRL:0001]お前は負けの数だけ死んでいる事になる。[CTRL:0003][CTRL:0001]・・・まぁ、実際に人間が死ねるのは[CTRL:0001]１回だけだけどな。[CTRL:0003][CTRL:0017][CTRL:0009][CTRL:0016]・・・・・・[CTRL:0016][CTRL:0005][CTRL:0001]返す言葉もありません・・・[CTRL:0003][CTRL:000C][CTRL:0017]ははは。俺が善人で良かったな。[CTRL:0001]実害はなかったし、勉強になったろ？[CTRL:0003][CTRL:0017][CTRL:0009]はい・・・[CTRL:0003][CTRL:000C][CTRL:0017]よし。じゃあ、これからも俺に付き合えよ。[CTRL:0001]今度は賭けのやり方も少し教えてやる。[CTRL:0003][CTRL:0017][CTRL:0009]・・・ヨシュアさん・・・[CTRL:0005][CTRL:0001]賭けと稽古とどちらが大事・・・[CTRL:0003][CTRL:0001][CTRL:0017]・・・聞くまでもありませんね。[CTRL:0001]でも、もうイカサマはなしですよ。[CTRL:0003][CTRL:0017]"
         }
       }
     }

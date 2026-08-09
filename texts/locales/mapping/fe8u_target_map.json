@@ -67511,7 +67511,7 @@
               "zh-Hans": {
                 "id": "0x05AF",
                 "kind": "indexed",
-                "sha256": "ec469811a9d963b33240fd65790bcb8485eb1ca7f327813e4727651846387fd6"
+                "sha256": "49a15de6c78a864b42818ee5c0d05cf4260785f9e13c45892d0e82b461270c28"
               }
             },
             "structural_agreement": true
@@ -69099,12 +69099,12 @@
               "ja": {
                 "id": "0x05CA",
                 "kind": "indexed",
-                "sha256": "5eb401aca4e6d8b0d0fb6e7eb1aeaab1793111fc4f41e2fe64ab1d734f5598ff"
+                "sha256": "bbfd4c54f3f56932369a052c76fdf61d2296cfb4d9f9e68a9efb94417bf8d457"
               },
               "zh-Hans": {
                 "id": "0x05CA",
                 "kind": "indexed",
-                "sha256": "91e4541d7e32513535dbc36a0b0b92617f7b2001ca06fce4b1a070b6983f572e"
+                "sha256": "f377e1c40ce952536c1f62c952760f00d7bc89e260844dcf2199fe73fdca57e7"
               }
             },
             "structural_agreement": true
@@ -113736,7 +113736,7 @@
               "zh-Hans": {
                 "id": "0x0975",
                 "kind": "indexed",
-                "sha256": "8f81fc72e79e425a23fc0f0be46452c5d42efbe9651d43ebcd41168c49d224d0"
+                "sha256": "b9b1bdb95ede3b5572babcffd6d66d597e66a326614860170809dba102f298b9"
               }
             },
             "structural_agreement": true
@@ -114620,7 +114620,7 @@
               "zh-Hans": {
                 "id": "0x098E",
                 "kind": "indexed",
-                "sha256": "058cc8ac4d5984ddf989c28c71751527a178dc32790f2ddf4111b00a46f0f79a"
+                "sha256": "ade2ff2fe99698be3428812e6c581f98ccee1ae77b6d417ab22d5674b6e6eea8"
               }
             },
             "structural_agreement": true
@@ -119207,7 +119207,7 @@
               "zh-Hans": {
                 "id": "0x0A01",
                 "kind": "indexed",
-                "sha256": "12aef875b097ab6a29450b58c018edc941b512fe33e827cf62cf9ca65920ce52"
+                "sha256": "39113fd5f73264fc9f2091fa59714bc7bf852cdb64cb478fec35af738a477133"
               }
             },
             "structural_agreement": true
@@ -119497,12 +119497,12 @@
               "ja": {
                 "id": "0x0A06",
                 "kind": "indexed",
-                "sha256": "47eed5e705abba331bb648db6b45c5045460126a2b64aacfb09956d273c5e813"
+                "sha256": "2c4a2a1267576da7ec5096f44de5f2cdccbd601f0b11d235f2ce11970656fbee"
               },
               "zh-Hans": {
                 "id": "0x0A06",
                 "kind": "indexed",
-                "sha256": "c9e25fe9d6b6d6b5a8c4b98e372a1a26f9313078a1837501aafba193deff1f0c"
+                "sha256": "55b584d71f265a2cdf664dd4c19393532632368d98d33d5a173d661a080683f0"
               }
             },
             "structural_agreement": true
@@ -121262,12 +121262,12 @@
               "ja": {
                 "id": "0x0A29",
                 "kind": "indexed",
-                "sha256": "bde9a095e990619d28f004477c04e8c9e135069ca3ff9c7d8d32da84b16670c3"
+                "sha256": "f09b7733a787fb4650666a8d5b497f8850208a79192ca33f6a506b49d0d35a72"
               },
               "zh-Hans": {
                 "id": "0x0A29",
                 "kind": "indexed",
-                "sha256": "1bd28962ea955cccddcad9c374d04443d550cf238059bb9b2cf7d055093689fd"
+                "sha256": "66ca215eee6615361f81f10ebcde09c3a8216ce047ab6771c92bc68a2a9e28d6"
               }
             },
             "structural_agreement": true
@@ -122965,7 +122965,7 @@
               "zh-Hans": {
                 "id": "0x0A50",
                 "kind": "indexed",
-                "sha256": "079bbc85ce84a4f619e20cc2fe3c75688c9099b1270c7011d61c9f6ecea7a524"
+                "sha256": "5a24b25adbed00851a221c5edc0e163a7ac685653984fa934ad40132abff2400"
               }
             },
             "structural_agreement": true
@@ -123791,7 +123791,7 @@
               "zh-Hans": {
                 "id": "0x0A5E",
                 "kind": "indexed",
-                "sha256": "a60a7ff0aa4bd027c4b3ca5ab1a6996d40241847fd1fc74a58e5d75f49fe5b6b"
+                "sha256": "2dfc95624120fe4e69a8b9af1a8c21471889ddd4c5916568b660de620a8fbb10"
               }
             },
             "structural_agreement": true
@@ -124027,7 +124027,7 @@
               "zh-Hans": {
                 "id": "0x0A62",
                 "kind": "indexed",
-                "sha256": "e5d8a1f7c1ae6b142de5c69705913e1c31514866b853df55ec3f21c0f7fa1ab7"
+                "sha256": "dc921ff56dd1162bb8e027b027d4c9b4b3e0881c1fba5736dc8594d89e4ad8cc"
               }
             },
             "structural_agreement": true
@@ -124086,7 +124086,7 @@
               "zh-Hans": {
                 "id": "0x0A63",
                 "kind": "indexed",
-                "sha256": "7cb9b142cfde9ae55c253d87e9a62699f11b19663cf5b459e1dc16368e31d129"
+                "sha256": "b59f86f5ab98cd49c348c387a6bfaa0a60253b1a9784449fc8acd82a9834fd96"
               }
             },
             "structural_agreement": true
@@ -124145,7 +124145,7 @@
               "zh-Hans": {
                 "id": "0x0A64",
                 "kind": "indexed",
-                "sha256": "d1e70607ed2732a842c0671caf710943571e0dc56cd95e3bb7d9d0eeb02f7953"
+                "sha256": "7882150b05992b792c303c5330dd2d82cff46d2646c0c82d057ac78205aa623d"
               }
             },
             "structural_agreement": true
@@ -124263,7 +124263,7 @@
               "zh-Hans": {
                 "id": "0x0A66",
                 "kind": "indexed",
-                "sha256": "2fe37da5558d62d3c6bbcde6c333f0604bd4079b509787ce4c801d8694b27d39"
+                "sha256": "27041030ac171d8df191dc4817a5d4dc089e70d3871d817fc84400e62cd3786f"
               }
             },
             "structural_agreement": true
@@ -124322,7 +124322,7 @@
               "zh-Hans": {
                 "id": "0x0A67",
                 "kind": "indexed",
-                "sha256": "2b640cc387c4e78c1a211de91706fc63f6ebb3bb9bb85152a1335bd50084da68"
+                "sha256": "0a8be458cefe643eff0fe6670e9784e564503acebc9c1a1516ac8b793e04e92d"
               }
             },
             "structural_agreement": true
@@ -131432,12 +131432,12 @@
               "ja": {
                 "id": "0x0AF5",
                 "kind": "indexed",
-                "sha256": "0412fb15bb4d078c9fd187ec9c3a094aa75ef60b8b7e69e3812f908fe00883d6"
+                "sha256": "de25132913caac3591ef7234de364b178ddbbc15cd3c4876227bf3affda7838a"
               },
               "zh-Hans": {
                 "id": "0x0AF5",
                 "kind": "indexed",
-                "sha256": "04a30f780d2588c3651805569d7ea1ebf58437c6a331d4146d74a1b26535dbaf"
+                "sha256": "81a8d5f1e6d18f9a0d9ff5dc9a668b8c641470307a2702d383d0fdb717e67569"
               }
             },
             "structural_agreement": true
@@ -136605,7 +136605,7 @@
               "zh-Hans": {
                 "id": "0x0B6C",
                 "kind": "indexed",
-                "sha256": "14365319cc9b63a8a501c10ec41ba2a7359d9768dc6e11fae2366547b1c6a6ec"
+                "sha256": "ce4c61ad2d0d541bf3a088ad623bdd9a0be768eef1103188d12d8807c14f7832"
               }
             },
             "structural_agreement": true
@@ -141029,7 +141029,7 @@
               "zh-Hans": {
                 "id": "0x0BC0",
                 "kind": "indexed",
-                "sha256": "0b8cbf7c8cbdd6b7e9b340cca7af41c6131f47988bd36ff2674d0f27b573718d"
+                "sha256": "2ef92a3420def839cdb0ca14b4b0fd0a703d96764646b70125b113d08a15c54b"
               }
             },
             "structural_agreement": true
@@ -142551,7 +142551,7 @@
               "zh-Hans": {
                 "id": "0x0BDC",
                 "kind": "indexed",
-                "sha256": "fa6cbe1e7723b9d8c7c0d5c038ab66e37b57e6368a62d16083adb55020296366"
+                "sha256": "ca9796e717ffdb1a6801a1233feb07645c557702060aa495d6ea4559318b9818"
               }
             },
             "structural_agreement": true
@@ -143921,32 +143921,30 @@
     },
     {
       "source": {
-        "id": "0x0C05",
+        "id": "0x0C06",
         "kind": "indexed",
         "layout": "FE8J"
       },
       "state": "verified",
       "target_id": "0x0C45",
       "verification": {
-        "confidence": "high",
-        "evidence": "FEBuilder line 3079 maps 0x0C05 to 0x0C45",
-        "evidence_kind": "febuilder-structural-agreement",
+        "confidence": "manual",
+        "evidence": "Ross first reflects on how much stronger he became during the journey. FE8J/FE8CN 0x0C06 carries that line; 0x0C05 is the following boast about taking on his father or anyone else.",
+        "evidence_kind": "official-regional-semantic-payload",
         "method": "deterministic-final-mapping-promotion",
         "promotion": {
           "details": {
-            "candidate_payloads": {
-              "ja": {
-                "id": "0x0C05",
-                "kind": "indexed",
-                "sha256": "46f85b3e95ca260d7f96458901c5934031b0127b878cff988eddf4f83152e640"
-              },
-              "zh-Hans": {
-                "id": "0x0C05",
-                "kind": "indexed",
-                "sha256": "84159369a6ef4acce945f1e7fa3ddfeb7b916b213845f312d8dcd121a5e38a2e"
-              }
+            "english_payload_sha256": "17a5420fa4f74362c726ff8471ec1883d056d3a8d78378d8c9e4476324b79e34",
+            "incorrect_source": {
+              "id": "0x0C05",
+              "kind": "indexed",
+              "layout": "FE8J"
             },
-            "structural_agreement": true
+            "payload_sha256": {
+              "ja": "8fe06b620b37c62b070ee0d6c2dcf19a808da422d3c3224484e8e7d8e55c4111",
+              "zh-Hans": "1a8548ac02cb140bc92290a898d36bea691e61d3b706261875a4a03177e3b07d"
+            },
+            "replacement_source_id": "0x0C06"
           },
           "original_source": {
             "kind": "english_fallback",
@@ -143964,31 +143962,41 @@
             "subsystem": "unclassified"
           },
           "pipeline": "fe8u-final-mapping-v1",
-          "precedence": "c-febuilder"
+          "precedence": "d-semantic-correction"
         },
-        "rationale": "Independent structural evidence agrees with the FEBuilder provider.",
-        "source_key": "0x0C05->0x0C45",
-        "source_symbol": "translate_textid_FE8.txt",
-        "source_table": "FEBuilder translate_textid_FE8",
-        "subsystem": "chapter-event"
+        "rationale": "Ross first reflects on how much stronger he became during the journey. FE8J/FE8CN 0x0C06 carries that line; 0x0C05 is the following boast about taking on his father or anyone else.",
+        "source_key": "CharacterEnding_Ross/strength-reflection",
+        "source_symbol": "0x0C06",
+        "source_table": "FE8J/FE8CN indexed message corpus",
+        "subsystem": "ending-details"
       }
     },
     {
       "source": {
-        "id": "0x0C06",
+        "id": "0x0C05",
         "kind": "indexed",
         "layout": "FE8J"
       },
       "state": "verified",
       "target_id": "0x0C46",
       "verification": {
-        "confidence": "high",
-        "evidence": "parsed-trainee-message-table: trainee/function=PromoTrainee_Talk3/character=ross",
-        "evidence_kind": "parsed-trainee-message-table",
+        "confidence": "manual",
+        "evidence": "Ross then boasts that he can take on his father or anyone. FE8J/FE8CN 0x0C05 carries that line; 0x0C06 is the preceding reflection on growth during the journey.",
+        "evidence_kind": "official-regional-semantic-payload",
         "method": "deterministic-final-mapping-promotion",
         "promotion": {
           "details": {
-            "structural_source_id": "0x0C06"
+            "english_payload_sha256": "46259f4c916ee1af567a5fd4c7682fa0923502235512e67e4a38ea37aae987ed",
+            "incorrect_source": {
+              "id": "0x0C06",
+              "kind": "indexed",
+              "layout": "FE8J"
+            },
+            "payload_sha256": {
+              "ja": "46f85b3e95ca260d7f96458901c5934031b0127b878cff988eddf4f83152e640",
+              "zh-Hans": "84159369a6ef4acce945f1e7fa3ddfeb7b916b213845f312d8dcd121a5e38a2e"
+            },
+            "replacement_source_id": "0x0C05"
           },
           "original_source": {
             "kind": "english_fallback",
@@ -144006,13 +144014,13 @@
             "subsystem": "unclassified"
           },
           "pipeline": "fe8u-final-mapping-v1",
-          "precedence": "b-structural-high"
+          "precedence": "d-semantic-correction"
         },
-        "rationale": "Parsed named/keyed source and target structures prove this slot.",
-        "source_key": "trainee/function=PromoTrainee_Talk3/character=ross",
-        "source_symbol": "trainee/function=PromoTrainee_Talk3/character=ross",
-        "source_table": "trainee-prep",
-        "subsystem": "trainee-prep"
+        "rationale": "Ross then boasts that he can take on his father or anyone. FE8J/FE8CN 0x0C05 carries that line; 0x0C06 is the preceding reflection on growth during the journey.",
+        "source_key": "CharacterEnding_Ross/father-boast",
+        "source_symbol": "0x0C05",
+        "source_table": "FE8J/FE8CN indexed message corpus",
+        "subsystem": "ending-details"
       }
     },
     {

@@ -50,9 +50,9 @@ Current deterministic counts:
 
 | Locale | Source non-ASCII | Bitmap scalars per style | Styles |
 | --- | ---: | ---: | --- |
-| `ja` | 1,857 | 1,856 | System/item, Talk/text |
-| `zh-Hans` | 2,468 | 2,468 | System/item, Talk/text |
-| union | 3,344 | 3,343 | U+3000 is the one spacing scalar |
+| `ja` | 1,798 | 1,797 | System/item, Talk/text |
+| `zh-Hans` | 2,470 | 2,469 | System/item, Talk/text |
+| union | 3,284 | 3,283 | U+3000 is the one spacing scalar |
 
 The sorted corpora are in `fonts/cjk/corpora/`; human-readable scalar maps are
 in `fonts/cjk/maps/`; counts, input hashes, output hashes, token rules, and

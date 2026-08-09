@@ -933,6 +933,38 @@ _SEMANTIC_INDEXED_CORRECTIONS: Dict[str, Dict[str, Any]] = {
         "source_key": "EventScr_Tutorial_SelectVanessa",
         "subsystem": "chapter-event",
     },
+    "0x0C45": {
+        "english_payload_sha256": "17a5420fa4f74362c726ff8471ec1883d056d3a8d78378d8c9e4476324b79e34",
+        "incorrect_source_id": "0x0C05",
+        "payload_sha256": {
+            "ja": "8fe06b620b37c62b070ee0d6c2dcf19a808da422d3c3224484e8e7d8e55c4111",
+            "zh-Hans": "1a8548ac02cb140bc92290a898d36bea691e61d3b706261875a4a03177e3b07d",
+        },
+        "rationale": (
+            "Ross first reflects on how much stronger he became during the "
+            "journey. FE8J/FE8CN 0x0C06 carries that line; 0x0C05 is the "
+            "following boast about taking on his father or anyone else."
+        ),
+        "source_id": "0x0C06",
+        "source_key": "CharacterEnding_Ross/strength-reflection",
+        "subsystem": "ending-details",
+    },
+    "0x0C46": {
+        "english_payload_sha256": "46259f4c916ee1af567a5fd4c7682fa0923502235512e67e4a38ea37aae987ed",
+        "incorrect_source_id": "0x0C06",
+        "payload_sha256": {
+            "ja": "46f85b3e95ca260d7f96458901c5934031b0127b878cff988eddf4f83152e640",
+            "zh-Hans": "84159369a6ef4acce945f1e7fa3ddfeb7b916b213845f312d8dcd121a5e38a2e",
+        },
+        "rationale": (
+            "Ross then boasts that he can take on his father or anyone. "
+            "FE8J/FE8CN 0x0C05 carries that line; 0x0C06 is the preceding "
+            "reflection on growth during the journey."
+        ),
+        "source_id": "0x0C05",
+        "source_key": "CharacterEnding_Ross/father-boast",
+        "subsystem": "ending-details",
+    },
 }
 
 def _authored_semantic_correction(

@@ -19,27 +19,27 @@
     },
     "texts/locales/authored/catalog.ja.json": {
       "byte_count": 46018,
-      "sha256": "c82cc3af1c73dcce063a6468c4bc09d093f9f6d2fcd100c85d70fbd230f4395b"
+      "sha256": "174ecd700212ab9fe9356682c37415d5b68775a969abd55d5667f63588ecb8c2"
     },
     "texts/locales/authored/catalog.zh-Hans.json": {
       "byte_count": 40185,
-      "sha256": "7ff35da9815cdd819a2dfcb75ab799e6e81e0291680a99a556e1a79e00a91e78"
+      "sha256": "ad5255753a0909b3e595f9250356a4210d01c3906fd58ca981512a7d150a17e6"
     },
     "texts/locales/authored/manifest.json": {
       "byte_count": 12398,
-      "sha256": "7696d0a3936c7e386834e792fef2046e4d3162b8c843b9f15aeb5dbde1874611"
+      "sha256": "80e62ce9f435ecedeab5b946d2427d50112ed051f588292dff3193465b3d33f5"
     },
     "texts/locales/ja/indexed.txt": {
-      "byte_count": 1719190,
-      "sha256": "646470228ad24878266de41d825724d7d70d02c85c1c02626feec37e71b31fe6"
+      "byte_count": 1719177,
+      "sha256": "47bcc1c25fd717578a4c7aacd7801151f5e85253c325c32e115d2e23c66ebf45"
     },
     "texts/locales/ja/raw.json": {
       "byte_count": 11811,
       "sha256": "f140dfe4dd1e97545cf8afd4f0308e954e4a539bdc1eb59ddded3dc402cb03fe"
     },
     "texts/locales/zh-Hans/indexed.txt": {
-      "byte_count": 1374727,
-      "sha256": "9f3013edccc6e735dc2a5788502ec7621653b8beac0f40c034b22eaea66f0e69"
+      "byte_count": 1375136,
+      "sha256": "d1e334b7983974300b848be770f623bd2f821e8ff67e189d2a7f6af46f4002e8"
     },
     "texts/locales/zh-Hans/raw.json": {
       "byte_count": 45834,
@@ -117,7 +117,7 @@
           "record_count": 53
         },
         "indexed": {
-          "non_ascii_scalar_count": 2457,
+          "non_ascii_scalar_count": 2458,
           "record_count": 3339
         },
         "raw": {
@@ -136,21 +136,21 @@
         "fallback_string_count": 0,
         "placeholder_count": 2
       },
-      "glyph_scalar_count": 2468,
+      "glyph_scalar_count": 2469,
       "nonrendering_scalars": [],
-      "source_non_ascii_scalar_count": 2469,
+      "source_non_ascii_scalar_count": 2470,
       "spacing_scalars": [
         "U+3000"
       ],
       "styles": {
         "system": {
           "corpus": "fonts/cjk/corpora/zh-Hans.system.txt",
-          "glyph_scalar_count": 2468,
+          "glyph_scalar_count": 2469,
           "runtime_contract": "system/item"
         },
         "talk": {
           "corpus": "fonts/cjk/corpora/zh-Hans.talk.txt",
-          "glyph_scalar_count": 2468,
+          "glyph_scalar_count": 2469,
           "runtime_contract": "talk/text"
         }
       }
@@ -167,20 +167,20 @@
       "sha256": "4c94cc13249d50b069857ef6e419cd79b5129f6eebe4bfc58eb0991bae021e15"
     },
     "fonts/cjk/corpora/union.txt": {
-      "byte_count": 9844,
-      "sha256": "0b19513dfc0ccb5daabfff6a65a3c63cbcffa1e04603586b8b9685d96455b2aa"
+      "byte_count": 9847,
+      "sha256": "d4badffd54950785e7ea84167539037c7f1f855b6644831c683cb99ea60d4eb0"
     },
     "fonts/cjk/corpora/zh-Hans.system.txt": {
-      "byte_count": 7402,
-      "sha256": "c72209d9840be1bba9687c2a62260b4c811af8ea23e48aa535209fc1bb161cda"
+      "byte_count": 7405,
+      "sha256": "f48b8bcf3c83fedd5e3f18db8eba7013b3e1e1c2609c4fd5769066157238246a"
     },
     "fonts/cjk/corpora/zh-Hans.talk.txt": {
-      "byte_count": 7402,
-      "sha256": "c72209d9840be1bba9687c2a62260b4c811af8ea23e48aa535209fc1bb161cda"
+      "byte_count": 7405,
+      "sha256": "f48b8bcf3c83fedd5e3f18db8eba7013b3e1e1c2609c4fd5769066157238246a"
     },
     "fonts/cjk/febuilder-manifest.json": {
       "byte_count": 5363,
-      "sha256": "8273757c46609920d5ce7c6864aaf7818bc0d60fe3d21e0ac56f0894b74d7d3a"
+      "sha256": "cf58bb55f39dc5224c9d4dc3dc094abde3959965fd47a44a9c965c10daede6f9"
     },
     "fonts/cjk/font-sources.json": {
       "byte_count": 2491,
@@ -191,12 +191,12 @@
       "sha256": "3ff6fe03817048b2e868f8a9aee9124f9f40665b8f72a4cff088fe65cb4d565f"
     },
     "fonts/cjk/maps/union.txt": {
-      "byte_count": 123441,
-      "sha256": "2f1253ceb2b1bb646e7e180233e3ed7930d77d30331b95157aa27274ae13a64a"
+      "byte_count": 123479,
+      "sha256": "875de4b078ca853de6643a97215e39763eed598538eef8ce4883b6c1e4a34b3f"
     },
     "fonts/cjk/maps/zh-Hans.txt": {
-      "byte_count": 93632,
-      "sha256": "f1a291fd1abdae5806cab18c374ef0181f301526cdaaf5c3bf33ef6e7ad47228"
+      "byte_count": 93670,
+      "sha256": "74d7f5242b05fced9e675f46f2ff5874b2053a4f830756e4afc18479659794ff"
     }
   },
   "schema_version": 1,
@@ -209,9 +209,9 @@
   "union": {
     "astral_scalar_count": 0,
     "corpus": "fonts/cjk/corpora/union.txt",
-    "glyph_scalar_count": 3282,
+    "glyph_scalar_count": 3283,
     "maximum_scalar": "U+FF5E",
-    "source_non_ascii_scalar_count": 3283,
+    "source_non_ascii_scalar_count": 3284,
     "spacing_scalars": [
       "U+3000"
     ]

@@ -1,0 +1,2492 @@
+{
+  "derivation": {
+    "duplicate_resolution": [
+      "FE8J 0x01 and inserted 0x48 are the early Mystery portrait and map to FE8U 0x01.",
+      "FE8J tail Mystery 0xAC/0xAE map to FE8U tail Mystery 0xAC; FE8J faded 0xAD maps to FE8U faded 0xAB."
+    ],
+    "method": "Match complete named portrait table signatures (tileset, palette, blink mode); resolve only duplicate Mystery signatures by named table role and tail placement.",
+    "no_numeric_offset_assumption": true,
+    "sources": {
+      "fe8j": {
+        "path": "src/data/frontier_df4_banim_b/frontier_df4_banim_b.c",
+        "revision": "76048d4603b48bb90cf3d6ddedc0c091491e15a7",
+        "sha256": "e7e427c27201eaa862afbba13bbd5ab444e77a4b4a2048188a02c3cbb6645273",
+        "table_address": "0x08901138",
+        "table_symbol": "frontier_df4_banim_b_070_901138"
+      },
+      "fe8u": {
+        "path": "src/portrait_data.c",
+        "revision": "6e76046609cc3074c6b7c12e8767b005b14854ce",
+        "sha256": "6f44d1cc2a237eb8c62765030a4c14c37bd0dd635e16130b34e8766f8778fe2a",
+        "table_symbol": "portrait_data"
+      }
+    }
+  },
+  "entries": [
+    {
+      "match_kind": "named-duplicate-resolution",
+      "name": "Mystery_1",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Mystery_1_palette",
+        "tileset": "portrait_Mystery_1_tileset"
+      },
+      "source_fid": "0x01",
+      "source_operand": "0x0101",
+      "target_fid": "0x01",
+      "target_name": "Mystery_1",
+      "target_operand": "0x0101"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Eirika",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Eirika_palette",
+        "tileset": "portrait_Eirika_tileset"
+      },
+      "source_fid": "0x02",
+      "source_operand": "0x0102",
+      "target_fid": "0x02",
+      "target_name": "Eirika",
+      "target_operand": "0x0102"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "EirikaEyeClosed",
+      "signature": {
+        "blink": 6,
+        "palette": "portrait_Eirika_palette",
+        "tileset": "portrait_Eirika_tileset"
+      },
+      "source_fid": "0x03",
+      "source_operand": "0x0103",
+      "target_fid": "0x03",
+      "target_name": "EirikaEyeClosed",
+      "target_operand": "0x0103"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Seth",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Seth_palette",
+        "tileset": "portrait_Seth_tileset"
+      },
+      "source_fid": "0x04",
+      "source_operand": "0x0104",
+      "target_fid": "0x04",
+      "target_name": "Seth",
+      "target_operand": "0x0104"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Gilliam",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Gilliam_palette",
+        "tileset": "portrait_Gilliam_tileset"
+      },
+      "source_fid": "0x05",
+      "source_operand": "0x0105",
+      "target_fid": "0x05",
+      "target_name": "Gilliam",
+      "target_operand": "0x0105"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Franz",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Franz_palette",
+        "tileset": "portrait_Franz_tileset"
+      },
+      "source_fid": "0x06",
+      "source_operand": "0x0106",
+      "target_fid": "0x06",
+      "target_name": "Franz",
+      "target_operand": "0x0106"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Moulder",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Moulder_palette",
+        "tileset": "portrait_Moulder_tileset"
+      },
+      "source_fid": "0x07",
+      "source_operand": "0x0107",
+      "target_fid": "0x07",
+      "target_name": "Moulder",
+      "target_operand": "0x0107"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Vanessa",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Vanessa_palette",
+        "tileset": "portrait_Vanessa_tileset"
+      },
+      "source_fid": "0x08",
+      "source_operand": "0x0108",
+      "target_fid": "0x08",
+      "target_name": "Vanessa",
+      "target_operand": "0x0108"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Ross",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Ross_palette",
+        "tileset": "portrait_Ross_tileset"
+      },
+      "source_fid": "0x09",
+      "source_operand": "0x0109",
+      "target_fid": "0x09",
+      "target_name": "Ross",
+      "target_operand": "0x0109"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Neimi",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Neimi_palette",
+        "tileset": "portrait_Neimi_tileset"
+      },
+      "source_fid": "0x0A",
+      "source_operand": "0x010A",
+      "target_fid": "0x0A",
+      "target_name": "Neimi",
+      "target_operand": "0x010A"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "NeimiEyeClosed",
+      "signature": {
+        "blink": 6,
+        "palette": "portrait_Neimi_palette",
+        "tileset": "portrait_Neimi_tileset"
+      },
+      "source_fid": "0x0B",
+      "source_operand": "0x010B",
+      "target_fid": "0x0B",
+      "target_name": "NeimiEyeClosed",
+      "target_operand": "0x010B"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Colm",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Colm_palette",
+        "tileset": "portrait_Colm_tileset"
+      },
+      "source_fid": "0x0C",
+      "source_operand": "0x010C",
+      "target_fid": "0x0C",
+      "target_name": "Colm",
+      "target_operand": "0x010C"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "ColmEyeClosed",
+      "signature": {
+        "blink": 6,
+        "palette": "portrait_Colm_palette",
+        "tileset": "portrait_Colm_tileset"
+      },
+      "source_fid": "0x0D",
+      "source_operand": "0x010D",
+      "target_fid": "0x0D",
+      "target_name": "ColmEyeClosed",
+      "target_operand": "0x010D"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Garcia",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Garcia_palette",
+        "tileset": "portrait_Garcia_tileset"
+      },
+      "source_fid": "0x0E",
+      "source_operand": "0x010E",
+      "target_fid": "0x0E",
+      "target_name": "Garcia",
+      "target_operand": "0x010E"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Innes",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Innes_palette",
+        "tileset": "portrait_Innes_tileset"
+      },
+      "source_fid": "0x0F",
+      "source_operand": "0x010F",
+      "target_fid": "0x0F",
+      "target_name": "Innes",
+      "target_operand": "0x010F"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Lute",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Lute_palette",
+        "tileset": "portrait_Lute_tileset"
+      },
+      "source_fid": "0x10",
+      "source_operand": "0x0110",
+      "target_fid": "0x10",
+      "target_name": "Lute",
+      "target_operand": "0x0110"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Natasha",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Natasha_palette",
+        "tileset": "portrait_Natasha_tileset"
+      },
+      "source_fid": "0x11",
+      "source_operand": "0x0111",
+      "target_fid": "0x11",
+      "target_name": "Natasha",
+      "target_operand": "0x0111"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "NatashaEyeClosed",
+      "signature": {
+        "blink": 6,
+        "palette": "portrait_Natasha_palette",
+        "tileset": "portrait_Natasha_tileset"
+      },
+      "source_fid": "0x12",
+      "source_operand": "0x0112",
+      "target_fid": "0x12",
+      "target_name": "NatashaEyeClosed",
+      "target_operand": "0x0112"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Cormag",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Cormag_palette",
+        "tileset": "portrait_Cormag_tileset"
+      },
+      "source_fid": "0x13",
+      "source_operand": "0x0113",
+      "target_fid": "0x13",
+      "target_name": "Cormag",
+      "target_operand": "0x0113"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Ephraim",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Ephraim_palette",
+        "tileset": "portrait_Ephraim_tileset"
+      },
+      "source_fid": "0x14",
+      "source_operand": "0x0114",
+      "target_fid": "0x14",
+      "target_name": "Ephraim",
+      "target_operand": "0x0114"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "EphraimEyeClosed",
+      "signature": {
+        "blink": 6,
+        "palette": "portrait_Ephraim_palette",
+        "tileset": "portrait_Ephraim_tileset"
+      },
+      "source_fid": "0x15",
+      "source_operand": "0x0115",
+      "target_fid": "0x15",
+      "target_name": "EphraimEyeClosed",
+      "target_operand": "0x0115"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Forde",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Forde_palette",
+        "tileset": "portrait_Forde_tileset"
+      },
+      "source_fid": "0x16",
+      "source_operand": "0x0116",
+      "target_fid": "0x16",
+      "target_name": "Forde",
+      "target_operand": "0x0116"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "FordeEyeClosed",
+      "signature": {
+        "blink": 6,
+        "palette": "portrait_Forde_palette",
+        "tileset": "portrait_Forde_tileset"
+      },
+      "source_fid": "0x17",
+      "source_operand": "0x0117",
+      "target_fid": "0x17",
+      "target_name": "FordeEyeClosed",
+      "target_operand": "0x0117"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Kyle",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Kyle_palette",
+        "tileset": "portrait_Kyle_tileset"
+      },
+      "source_fid": "0x18",
+      "source_operand": "0x0118",
+      "target_fid": "0x18",
+      "target_name": "Kyle",
+      "target_operand": "0x0118"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Amelia",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Amelia_palette",
+        "tileset": "portrait_Amelia_tileset"
+      },
+      "source_fid": "0x19",
+      "source_operand": "0x0119",
+      "target_fid": "0x19",
+      "target_name": "Amelia",
+      "target_operand": "0x0119"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Artur",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Artur_palette",
+        "tileset": "portrait_Artur_tileset"
+      },
+      "source_fid": "0x1A",
+      "source_operand": "0x011A",
+      "target_fid": "0x1A",
+      "target_name": "Artur",
+      "target_operand": "0x011A"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Gerik",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Gerik_palette",
+        "tileset": "portrait_Gerik_tileset"
+      },
+      "source_fid": "0x1B",
+      "source_operand": "0x011B",
+      "target_fid": "0x1B",
+      "target_name": "Gerik",
+      "target_operand": "0x011B"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Tethys",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Tethys_palette",
+        "tileset": "portrait_Tethys_tileset"
+      },
+      "source_fid": "0x1C",
+      "source_operand": "0x011C",
+      "target_fid": "0x1C",
+      "target_name": "Tethys",
+      "target_operand": "0x011C"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "TethysEyeClosed",
+      "signature": {
+        "blink": 6,
+        "palette": "portrait_Tethys_palette",
+        "tileset": "portrait_Tethys_tileset"
+      },
+      "source_fid": "0x1D",
+      "source_operand": "0x011D",
+      "target_fid": "0x1D",
+      "target_name": "TethysEyeClosed",
+      "target_operand": "0x011D"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Marisa",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Marisa_palette",
+        "tileset": "portrait_Marisa_tileset"
+      },
+      "source_fid": "0x1E",
+      "source_operand": "0x011E",
+      "target_fid": "0x1E",
+      "target_name": "Marisa",
+      "target_operand": "0x011E"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "MarisaEyeClosed",
+      "signature": {
+        "blink": 6,
+        "palette": "portrait_Marisa_palette",
+        "tileset": "portrait_Marisa_tileset"
+      },
+      "source_fid": "0x1F",
+      "source_operand": "0x011F",
+      "target_fid": "0x1F",
+      "target_name": "MarisaEyeClosed",
+      "target_operand": "0x011F"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Saleh",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Saleh_palette",
+        "tileset": "portrait_Saleh_tileset"
+      },
+      "source_fid": "0x20",
+      "source_operand": "0x0120",
+      "target_fid": "0x20",
+      "target_name": "Saleh",
+      "target_operand": "0x0120"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Ewan",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Ewan_palette",
+        "tileset": "portrait_Ewan_tileset"
+      },
+      "source_fid": "0x21",
+      "source_operand": "0x0121",
+      "target_fid": "0x21",
+      "target_name": "Ewan",
+      "target_operand": "0x0121"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "L_Arachel",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_L_Arachel_palette",
+        "tileset": "portrait_L_Arachel_tileset"
+      },
+      "source_fid": "0x22",
+      "source_operand": "0x0122",
+      "target_fid": "0x22",
+      "target_name": "L_Arachel",
+      "target_operand": "0x0122"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Dozla",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Dozla_palette",
+        "tileset": "portrait_Dozla_tileset"
+      },
+      "source_fid": "0x23",
+      "source_operand": "0x0123",
+      "target_fid": "0x23",
+      "target_name": "Dozla",
+      "target_operand": "0x0123"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Rennac",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Rennac_palette",
+        "tileset": "portrait_Rennac_tileset"
+      },
+      "source_fid": "0x24",
+      "source_operand": "0x0124",
+      "target_fid": "0x24",
+      "target_name": "Rennac",
+      "target_operand": "0x0124"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Duessel",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Duessel_palette",
+        "tileset": "portrait_Duessel_tileset"
+      },
+      "source_fid": "0x25",
+      "source_operand": "0x0125",
+      "target_fid": "0x25",
+      "target_name": "Duessel",
+      "target_operand": "0x0125"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Myrrh",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Myrrh_palette",
+        "tileset": "portrait_Myrrh_tileset"
+      },
+      "source_fid": "0x26",
+      "source_operand": "0x0126",
+      "target_fid": "0x26",
+      "target_name": "Myrrh",
+      "target_operand": "0x0126"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "MyrrhEyeClosed",
+      "signature": {
+        "blink": 6,
+        "palette": "portrait_Myrrh_palette",
+        "tileset": "portrait_Myrrh_tileset"
+      },
+      "source_fid": "0x27",
+      "source_operand": "0x0127",
+      "target_fid": "0x27",
+      "target_name": "MyrrhEyeClosed",
+      "target_operand": "0x0127"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Myrrh_with_wing",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Myrrh_with_wing_palette",
+        "tileset": "portrait_Myrrh_with_wing_tileset"
+      },
+      "source_fid": "0x28",
+      "source_operand": "0x0128",
+      "target_fid": "0x28",
+      "target_name": "Myrrh_with_wing",
+      "target_operand": "0x0128"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Knoll",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Knoll_palette",
+        "tileset": "portrait_Knoll_tileset"
+      },
+      "source_fid": "0x29",
+      "source_operand": "0x0129",
+      "target_fid": "0x29",
+      "target_name": "Knoll",
+      "target_operand": "0x0129"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Joshua",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Joshua_palette",
+        "tileset": "portrait_Joshua_tileset"
+      },
+      "source_fid": "0x2A",
+      "source_operand": "0x012A",
+      "target_fid": "0x2A",
+      "target_name": "Joshua",
+      "target_operand": "0x012A"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Syrene",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Syrene_palette",
+        "tileset": "portrait_Syrene_tileset"
+      },
+      "source_fid": "0x2B",
+      "source_operand": "0x012B",
+      "target_fid": "0x2B",
+      "target_name": "Syrene",
+      "target_operand": "0x012B"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Tana",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Tana_palette",
+        "tileset": "portrait_Tana_tileset"
+      },
+      "source_fid": "0x2C",
+      "source_operand": "0x012C",
+      "target_fid": "0x2C",
+      "target_name": "Tana",
+      "target_operand": "0x012C"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Eirika",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Eirika_flashback_palette",
+        "tileset": "portrait_Eirika_tileset"
+      },
+      "source_fid": "0x2D",
+      "source_operand": "0x012D",
+      "target_fid": "0x2D",
+      "target_name": "Eirika",
+      "target_operand": "0x012D"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Ephraim",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Ephraim_flashback_palette",
+        "tileset": "portrait_Ephraim_tileset"
+      },
+      "source_fid": "0x2E",
+      "source_operand": "0x012E",
+      "target_fid": "0x2E",
+      "target_name": "Ephraim",
+      "target_operand": "0x012E"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Knoll",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Knoll_flashback_palette",
+        "tileset": "portrait_Knoll_tileset"
+      },
+      "source_fid": "0x2F",
+      "source_operand": "0x012F",
+      "target_fid": "0x2F",
+      "target_name": "Knoll",
+      "target_operand": "0x012F"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "O_Neill",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_O_Neill_palette",
+        "tileset": "portrait_O_Neill_tileset"
+      },
+      "source_fid": "0x30",
+      "source_operand": "0x0130",
+      "target_fid": "0x30",
+      "target_name": "O_Neill",
+      "target_operand": "0x0130"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Breguet",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Breguet_palette",
+        "tileset": "portrait_Breguet_tileset"
+      },
+      "source_fid": "0x31",
+      "source_operand": "0x0131",
+      "target_fid": "0x31",
+      "target_name": "Breguet",
+      "target_operand": "0x0131"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Bone",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Bone_palette",
+        "tileset": "portrait_Bone_tileset"
+      },
+      "source_fid": "0x32",
+      "source_operand": "0x0132",
+      "target_fid": "0x32",
+      "target_name": "Bone",
+      "target_operand": "0x0132"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Bazba",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Bazba_palette",
+        "tileset": "portrait_Bazba_tileset"
+      },
+      "source_fid": "0x33",
+      "source_operand": "0x0133",
+      "target_fid": "0x33",
+      "target_name": "Bazba",
+      "target_operand": "0x0133"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Saar",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Saar_palette",
+        "tileset": "portrait_Saar_tileset"
+      },
+      "source_fid": "0x34",
+      "source_operand": "0x0134",
+      "target_fid": "0x34",
+      "target_name": "Saar",
+      "target_operand": "0x0134"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Zonta",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Zonta_palette",
+        "tileset": "portrait_Zonta_tileset"
+      },
+      "source_fid": "0x35",
+      "source_operand": "0x0135",
+      "target_fid": "0x35",
+      "target_name": "Zonta",
+      "target_operand": "0x0135"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Novala",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Novala_palette",
+        "tileset": "portrait_Novala_tileset"
+      },
+      "source_fid": "0x36",
+      "source_operand": "0x0136",
+      "target_fid": "0x36",
+      "target_name": "Novala",
+      "target_operand": "0x0136"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Murray",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Murray_palette",
+        "tileset": "portrait_Murray_tileset"
+      },
+      "source_fid": "0x37",
+      "source_operand": "0x0137",
+      "target_fid": "0x37",
+      "target_name": "Murray",
+      "target_operand": "0x0137"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Tirado",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Tirado_palette",
+        "tileset": "portrait_Tirado_tileset"
+      },
+      "source_fid": "0x38",
+      "source_operand": "0x0138",
+      "target_fid": "0x38",
+      "target_name": "Tirado",
+      "target_operand": "0x0138"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Binks",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Binks_palette",
+        "tileset": "portrait_Binks_tileset"
+      },
+      "source_fid": "0x39",
+      "source_operand": "0x0139",
+      "target_fid": "0x39",
+      "target_name": "Binks",
+      "target_operand": "0x0139"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Pablo",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Pablo_palette",
+        "tileset": "portrait_Pablo_tileset"
+      },
+      "source_fid": "0x3A",
+      "source_operand": "0x013A",
+      "target_fid": "0x3A",
+      "target_name": "Pablo",
+      "target_operand": "0x013A"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Aias",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Aias_palette",
+        "tileset": "portrait_Aias_tileset"
+      },
+      "source_fid": "0x3B",
+      "source_operand": "0x013B",
+      "target_fid": "0x3B",
+      "target_name": "Aias",
+      "target_operand": "0x013B"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Carlyle",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Carlyle_palette",
+        "tileset": "portrait_Carlyle_tileset"
+      },
+      "source_fid": "0x3C",
+      "source_operand": "0x013C",
+      "target_fid": "0x3C",
+      "target_name": "Carlyle",
+      "target_operand": "0x013C"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Gheb",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Gheb_palette",
+        "tileset": "portrait_Gheb_tileset"
+      },
+      "source_fid": "0x3D",
+      "source_operand": "0x013D",
+      "target_fid": "0x3D",
+      "target_name": "Gheb",
+      "target_operand": "0x013D"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Beran",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Beran_palette",
+        "tileset": "portrait_Beran_tileset"
+      },
+      "source_fid": "0x3E",
+      "source_operand": "0x013E",
+      "target_fid": "0x3E",
+      "target_name": "Beran",
+      "target_operand": "0x013E"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Selena",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Selena_palette",
+        "tileset": "portrait_Selena_tileset"
+      },
+      "source_fid": "0x3F",
+      "source_operand": "0x013F",
+      "target_fid": "0x3F",
+      "target_name": "Selena",
+      "target_operand": "0x013F"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Vigarde_dead",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Vigarde_dead_palette",
+        "tileset": "portrait_Vigarde_dead_tileset"
+      },
+      "source_fid": "0x40",
+      "source_operand": "0x0140",
+      "target_fid": "0x40",
+      "target_name": "Vigarde_dead",
+      "target_operand": "0x0140"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Vigarde_healthy",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Vigarde_healthy_palette",
+        "tileset": "portrait_Vigarde_healthy_tileset"
+      },
+      "source_fid": "0x41",
+      "source_operand": "0x0141",
+      "target_fid": "0x41",
+      "target_name": "Vigarde_healthy",
+      "target_operand": "0x0141"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Valter",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Valter_palette",
+        "tileset": "portrait_Valter_tileset"
+      },
+      "source_fid": "0x42",
+      "source_operand": "0x0142",
+      "target_fid": "0x42",
+      "target_name": "Valter",
+      "target_operand": "0x0142"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Caellach",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Caellach_palette",
+        "tileset": "portrait_Caellach_tileset"
+      },
+      "source_fid": "0x43",
+      "source_operand": "0x0143",
+      "target_fid": "0x43",
+      "target_name": "Caellach",
+      "target_operand": "0x0143"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Orson_drugged",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Orson_drugged_palette",
+        "tileset": "portrait_Orson_drugged_tileset"
+      },
+      "source_fid": "0x44",
+      "source_operand": "0x0144",
+      "target_fid": "0x44",
+      "target_name": "Orson_drugged",
+      "target_operand": "0x0144"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Orson",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Orson_palette",
+        "tileset": "portrait_Orson_tileset"
+      },
+      "source_fid": "0x45",
+      "source_operand": "0x0145",
+      "target_fid": "0x45",
+      "target_name": "Orson",
+      "target_operand": "0x0145"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Lyon",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Lyon_palette",
+        "tileset": "portrait_Lyon_tileset"
+      },
+      "source_fid": "0x46",
+      "source_operand": "0x0146",
+      "target_fid": "0x46",
+      "target_name": "Lyon",
+      "target_operand": "0x0146"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "LyonEyeClosed",
+      "signature": {
+        "blink": 6,
+        "palette": "portrait_Lyon_palette",
+        "tileset": "portrait_Lyon_tileset"
+      },
+      "source_fid": "0x47",
+      "source_operand": "0x0147",
+      "target_fid": "0x47",
+      "target_name": "LyonEyeClosed",
+      "target_operand": "0x0147"
+    },
+    {
+      "match_kind": "named-duplicate-resolution",
+      "name": "MysteryUnusedRegional",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Mystery_1_palette",
+        "tileset": "portrait_Mystery_1_tileset"
+      },
+      "source_fid": "0x48",
+      "source_operand": "0x0148",
+      "target_fid": "0x01",
+      "target_name": "Mystery_1",
+      "target_operand": "0x0101"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Riev",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Riev_palette",
+        "tileset": "portrait_Riev_tileset"
+      },
+      "source_fid": "0x49",
+      "source_operand": "0x0149",
+      "target_fid": "0x48",
+      "target_name": "Riev",
+      "target_operand": "0x0148"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Morva",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Morva_palette",
+        "tileset": "portrait_Morva_tileset"
+      },
+      "source_fid": "0x4A",
+      "source_operand": "0x014A",
+      "target_fid": "0x49",
+      "target_name": "Morva",
+      "target_operand": "0x0149"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Lyon_evil",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Lyon_evil_palette",
+        "tileset": "portrait_Lyon_evil_tileset"
+      },
+      "source_fid": "0x4B",
+      "source_operand": "0x014B",
+      "target_fid": "0x4A",
+      "target_name": "Lyon_evil",
+      "target_operand": "0x014A"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Glen",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Glen_palette",
+        "tileset": "portrait_Glen_tileset"
+      },
+      "source_fid": "0x4C",
+      "source_operand": "0x014C",
+      "target_fid": "0x4B",
+      "target_name": "Glen",
+      "target_operand": "0x014B"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Bandit_1",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Bandit_1_palette",
+        "tileset": "portrait_Bandit_1_tileset"
+      },
+      "source_fid": "0x4D",
+      "source_operand": "0x014D",
+      "target_fid": "0x4C",
+      "target_name": "Bandit_1",
+      "target_operand": "0x014C"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Man_Unused",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Man_Unused_palette",
+        "tileset": "portrait_Man_Unused_tileset"
+      },
+      "source_fid": "0x4E",
+      "source_operand": "0x014E",
+      "target_fid": "0x4D",
+      "target_name": "Man_Unused",
+      "target_operand": "0x014D"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Vigarde_dead",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Vigarde_flashback_palette",
+        "tileset": "portrait_Vigarde_dead_tileset"
+      },
+      "source_fid": "0x4F",
+      "source_operand": "0x014F",
+      "target_fid": "0x4E",
+      "target_name": "Vigarde_dead",
+      "target_operand": "0x014E"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Vigarde_deadEyeClosed",
+      "signature": {
+        "blink": 6,
+        "palette": "portrait_Vigarde_flashback_palette",
+        "tileset": "portrait_Vigarde_dead_tileset"
+      },
+      "source_fid": "0x50",
+      "source_operand": "0x0150",
+      "target_fid": "0x4F",
+      "target_name": "Vigarde_deadEyeClosed",
+      "target_operand": "0x014F"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Lyon",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Lyon_flashback_palette",
+        "tileset": "portrait_Lyon_tileset"
+      },
+      "source_fid": "0x51",
+      "source_operand": "0x0151",
+      "target_fid": "0x50",
+      "target_name": "Lyon",
+      "target_operand": "0x0150"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Fado",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Fado_palette",
+        "tileset": "portrait_Fado_tileset"
+      },
+      "source_fid": "0x52",
+      "source_operand": "0x0152",
+      "target_fid": "0x51",
+      "target_name": "Fado",
+      "target_operand": "0x0151"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Hayden",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Hayden_palette",
+        "tileset": "portrait_Hayden_tileset"
+      },
+      "source_fid": "0x53",
+      "source_operand": "0x0153",
+      "target_fid": "0x52",
+      "target_name": "Hayden",
+      "target_operand": "0x0152"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Mansel",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Mansel_palette",
+        "tileset": "portrait_Mansel_tileset"
+      },
+      "source_fid": "0x54",
+      "source_operand": "0x0154",
+      "target_fid": "0x53",
+      "target_name": "Mansel",
+      "target_operand": "0x0153"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Klimt",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Klimt_palette",
+        "tileset": "portrait_Klimt_tileset"
+      },
+      "source_fid": "0x55",
+      "source_operand": "0x0155",
+      "target_fid": "0x54",
+      "target_name": "Klimt",
+      "target_operand": "0x0154"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Saleh_Grandma",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Saleh_Grandma_palette",
+        "tileset": "portrait_Saleh_Grandma_tileset"
+      },
+      "source_fid": "0x56",
+      "source_operand": "0x0156",
+      "target_fid": "0x55",
+      "target_name": "Saleh_Grandma",
+      "target_operand": "0x0155"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Ismaire",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Ismaire_palette",
+        "tileset": "portrait_Ismaire_tileset"
+      },
+      "source_fid": "0x57",
+      "source_operand": "0x0157",
+      "target_fid": "0x56",
+      "target_name": "Ismaire",
+      "target_operand": "0x0156"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "IsmaireEyeClosed",
+      "signature": {
+        "blink": 6,
+        "palette": "portrait_Ismaire_palette",
+        "tileset": "portrait_Ismaire_tileset"
+      },
+      "source_fid": "0x58",
+      "source_operand": "0x0158",
+      "target_fid": "0x57",
+      "target_name": "IsmaireEyeClosed",
+      "target_operand": "0x0157"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Villager_Man_1",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Villager_Man_1_palette",
+        "tileset": "portrait_Villager_Man_1_tileset"
+      },
+      "source_fid": "0x59",
+      "source_operand": "0x0159",
+      "target_fid": "0x58",
+      "target_name": "Villager_Man_1",
+      "target_operand": "0x0158"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Villager_Old_Man",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Villager_Old_Man_palette",
+        "tileset": "portrait_Villager_Old_Man_tileset"
+      },
+      "source_fid": "0x5A",
+      "source_operand": "0x015A",
+      "target_fid": "0x59",
+      "target_name": "Villager_Old_Man",
+      "target_operand": "0x0159"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Villager_Man_2",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Villager_Man_2_palette",
+        "tileset": "portrait_Villager_Man_2_tileset"
+      },
+      "source_fid": "0x5B",
+      "source_operand": "0x015B",
+      "target_fid": "0x5A",
+      "target_name": "Villager_Man_2",
+      "target_operand": "0x015A"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Villager_Man_3",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Villager_Man_3_palette",
+        "tileset": "portrait_Villager_Man_3_tileset"
+      },
+      "source_fid": "0x5C",
+      "source_operand": "0x015C",
+      "target_fid": "0x5B",
+      "target_name": "Villager_Man_3",
+      "target_operand": "0x015B"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Villager_Man_4",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Villager_Man_4_palette",
+        "tileset": "portrait_Villager_Man_4_tileset"
+      },
+      "source_fid": "0x5D",
+      "source_operand": "0x015D",
+      "target_fid": "0x5C",
+      "target_name": "Villager_Man_4",
+      "target_operand": "0x015C"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Villager_Young_Man",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Villager_Young_Man_palette",
+        "tileset": "portrait_Villager_Young_Man_tileset"
+      },
+      "source_fid": "0x5E",
+      "source_operand": "0x015E",
+      "target_fid": "0x5D",
+      "target_name": "Villager_Young_Man",
+      "target_operand": "0x015D"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Villager_Young_Boy",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Villager_Young_Boy_palette",
+        "tileset": "portrait_Villager_Young_Boy_tileset"
+      },
+      "source_fid": "0x5F",
+      "source_operand": "0x015F",
+      "target_fid": "0x5E",
+      "target_name": "Villager_Young_Boy",
+      "target_operand": "0x015E"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Villager_Old_Woman",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Villager_Old_Woman_palette",
+        "tileset": "portrait_Villager_Old_Woman_tileset"
+      },
+      "source_fid": "0x60",
+      "source_operand": "0x0160",
+      "target_fid": "0x5F",
+      "target_name": "Villager_Old_Woman",
+      "target_operand": "0x015F"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Villager_Woman",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Villager_Woman_palette",
+        "tileset": "portrait_Villager_Woman_tileset"
+      },
+      "source_fid": "0x61",
+      "source_operand": "0x0161",
+      "target_fid": "0x60",
+      "target_name": "Villager_Woman",
+      "target_operand": "0x0160"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Villager_Girl_Brown_Hair",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Villager_Girl_Brown_Hair_palette",
+        "tileset": "portrait_Villager_Girl_Brown_Hair_tileset"
+      },
+      "source_fid": "0x62",
+      "source_operand": "0x0162",
+      "target_fid": "0x61",
+      "target_name": "Villager_Girl_Brown_Hair",
+      "target_operand": "0x0161"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Villager_Girl_Black_Hair",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Villager_Girl_Black_Hair_palette",
+        "tileset": "portrait_Villager_Girl_Black_Hair_tileset"
+      },
+      "source_fid": "0x63",
+      "source_operand": "0x0163",
+      "target_fid": "0x62",
+      "target_name": "Villager_Girl_Black_Hair",
+      "target_operand": "0x0162"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Villager_Girl_Young",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Villager_Girl_Young_palette",
+        "tileset": "portrait_Villager_Girl_Young_tileset"
+      },
+      "source_fid": "0x64",
+      "source_operand": "0x0164",
+      "target_fid": "0x63",
+      "target_name": "Villager_Girl_Young",
+      "target_operand": "0x0163"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Anna",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Anna_palette",
+        "tileset": "portrait_Anna_tileset"
+      },
+      "source_fid": "0x65",
+      "source_operand": "0x0165",
+      "target_fid": "0x64",
+      "target_name": "Anna",
+      "target_operand": "0x0164"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Armoury",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Armoury_palette",
+        "tileset": "portrait_Armoury_tileset"
+      },
+      "source_fid": "0x66",
+      "source_operand": "0x0166",
+      "target_fid": "0x65",
+      "target_name": "Armoury",
+      "target_operand": "0x0165"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Vendor",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Vendor_palette",
+        "tileset": "portrait_Vendor_tileset"
+      },
+      "source_fid": "0x67",
+      "source_operand": "0x0167",
+      "target_fid": "0x66",
+      "target_name": "Vendor",
+      "target_operand": "0x0166"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Arena",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Arena_palette",
+        "tileset": "portrait_Arena_tileset"
+      },
+      "source_fid": "0x68",
+      "source_operand": "0x0168",
+      "target_fid": "0x67",
+      "target_name": "Arena",
+      "target_operand": "0x0167"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Secret_Shop",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Secret_Shop_palette",
+        "tileset": "portrait_Secret_Shop_tileset"
+      },
+      "source_fid": "0x69",
+      "source_operand": "0x0169",
+      "target_fid": "0x68",
+      "target_name": "Secret_Shop",
+      "target_operand": "0x0168"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Frelia_Knight",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Frelia_Knight_palette",
+        "tileset": "portrait_Frelia_Knight_tileset"
+      },
+      "source_fid": "0x6A",
+      "source_operand": "0x016A",
+      "target_fid": "0x69",
+      "target_name": "Frelia_Knight",
+      "target_operand": "0x0169"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Soldier_1",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Soldier_1_palette",
+        "tileset": "portrait_Soldier_1_tileset"
+      },
+      "source_fid": "0x6B",
+      "source_operand": "0x016B",
+      "target_fid": "0x6A",
+      "target_name": "Soldier_1",
+      "target_operand": "0x016A"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Soldier_1",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Soldier_2_palette",
+        "tileset": "portrait_Soldier_1_tileset"
+      },
+      "source_fid": "0x6C",
+      "source_operand": "0x016C",
+      "target_fid": "0x6B",
+      "target_name": "Soldier_1",
+      "target_operand": "0x016B"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "O_Neill",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_O_Neill_Clone_palette",
+        "tileset": "portrait_O_Neill_tileset"
+      },
+      "source_fid": "0x6D",
+      "source_operand": "0x016D",
+      "target_fid": "0x6C",
+      "target_name": "O_Neill",
+      "target_operand": "0x016C"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "O_Neill",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_O_Neill_Clone_2_palette",
+        "tileset": "portrait_O_Neill_tileset"
+      },
+      "source_fid": "0x6E",
+      "source_operand": "0x016E",
+      "target_fid": "0x6D",
+      "target_name": "O_Neill",
+      "target_operand": "0x016D"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Novala",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Novala_Clone_palette",
+        "tileset": "portrait_Novala_tileset"
+      },
+      "source_fid": "0x6F",
+      "source_operand": "0x016F",
+      "target_fid": "0x6E",
+      "target_name": "Novala",
+      "target_operand": "0x016E"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Soldier_1",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Rausten_Soldier_palette",
+        "tileset": "portrait_Soldier_1_tileset"
+      },
+      "source_fid": "0x70",
+      "source_operand": "0x0170",
+      "target_fid": "0x6F",
+      "target_name": "Soldier_1",
+      "target_operand": "0x016F"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Soldier_1",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Purple_Soldier_palette",
+        "tileset": "portrait_Soldier_1_tileset"
+      },
+      "source_fid": "0x71",
+      "source_operand": "0x0171",
+      "target_fid": "0x70",
+      "target_name": "Soldier_1",
+      "target_operand": "0x0170"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Soldier_1",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Another_Soldier_palette",
+        "tileset": "portrait_Soldier_1_tileset"
+      },
+      "source_fid": "0x72",
+      "source_operand": "0x0172",
+      "target_fid": "0x71",
+      "target_name": "Soldier_1",
+      "target_operand": "0x0171"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Myrmidon",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Myrmidon_palette",
+        "tileset": "0"
+      },
+      "source_fid": "0x73",
+      "source_operand": "0x0173",
+      "target_fid": "0x72",
+      "target_name": "Myrmidon",
+      "target_operand": "0x0172"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Swordmaster",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Swordmaster_palette",
+        "tileset": "0"
+      },
+      "source_fid": "0x74",
+      "source_operand": "0x0174",
+      "target_fid": "0x73",
+      "target_name": "Swordmaster",
+      "target_operand": "0x0173"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Fighter",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Fighter_palette",
+        "tileset": "0"
+      },
+      "source_fid": "0x75",
+      "source_operand": "0x0175",
+      "target_fid": "0x74",
+      "target_name": "Fighter",
+      "target_operand": "0x0174"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Warrior",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Warrior_palette",
+        "tileset": "0"
+      },
+      "source_fid": "0x76",
+      "source_operand": "0x0176",
+      "target_fid": "0x75",
+      "target_name": "Warrior",
+      "target_operand": "0x0175"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Knight",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Knight_palette",
+        "tileset": "0"
+      },
+      "source_fid": "0x77",
+      "source_operand": "0x0177",
+      "target_fid": "0x76",
+      "target_name": "Knight",
+      "target_operand": "0x0176"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "General",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_General_palette",
+        "tileset": "0"
+      },
+      "source_fid": "0x78",
+      "source_operand": "0x0178",
+      "target_fid": "0x77",
+      "target_name": "General",
+      "target_operand": "0x0177"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Archer",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Archer_palette",
+        "tileset": "0"
+      },
+      "source_fid": "0x79",
+      "source_operand": "0x0179",
+      "target_fid": "0x78",
+      "target_name": "Archer",
+      "target_operand": "0x0178"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Sniper",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Sniper_palette",
+        "tileset": "0"
+      },
+      "source_fid": "0x7A",
+      "source_operand": "0x017A",
+      "target_fid": "0x79",
+      "target_name": "Sniper",
+      "target_operand": "0x0179"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Priest",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Priest_palette",
+        "tileset": "0"
+      },
+      "source_fid": "0x7B",
+      "source_operand": "0x017B",
+      "target_fid": "0x7A",
+      "target_name": "Priest",
+      "target_operand": "0x017A"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Bishop",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Bishop_palette",
+        "tileset": "0"
+      },
+      "source_fid": "0x7C",
+      "source_operand": "0x017C",
+      "target_fid": "0x7B",
+      "target_name": "Bishop",
+      "target_operand": "0x017B"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Mage",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Mage_palette",
+        "tileset": "0"
+      },
+      "source_fid": "0x7D",
+      "source_operand": "0x017D",
+      "target_fid": "0x7C",
+      "target_name": "Mage",
+      "target_operand": "0x017C"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Sage",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Sage_palette",
+        "tileset": "0"
+      },
+      "source_fid": "0x7E",
+      "source_operand": "0x017E",
+      "target_fid": "0x7D",
+      "target_name": "Sage",
+      "target_operand": "0x017D"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Shaman",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Shaman_palette",
+        "tileset": "0"
+      },
+      "source_fid": "0x7F",
+      "source_operand": "0x017F",
+      "target_fid": "0x7E",
+      "target_name": "Shaman",
+      "target_operand": "0x017E"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Druid",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Druid_palette",
+        "tileset": "0"
+      },
+      "source_fid": "0x80",
+      "source_operand": "0x0180",
+      "target_fid": "0x7F",
+      "target_name": "Druid",
+      "target_operand": "0x017F"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Cavalier",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Cavalier_palette",
+        "tileset": "0"
+      },
+      "source_fid": "0x81",
+      "source_operand": "0x0181",
+      "target_fid": "0x80",
+      "target_name": "Cavalier",
+      "target_operand": "0x0180"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Paladin",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Paladin_palette",
+        "tileset": "0"
+      },
+      "source_fid": "0x82",
+      "source_operand": "0x0182",
+      "target_fid": "0x81",
+      "target_name": "Paladin",
+      "target_operand": "0x0181"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Troubadour",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Troubadour_palette",
+        "tileset": "0"
+      },
+      "source_fid": "0x83",
+      "source_operand": "0x0183",
+      "target_fid": "0x82",
+      "target_name": "Troubadour",
+      "target_operand": "0x0182"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Valkyrie",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Valkyrie_palette",
+        "tileset": "0"
+      },
+      "source_fid": "0x84",
+      "source_operand": "0x0184",
+      "target_fid": "0x83",
+      "target_name": "Valkyrie",
+      "target_operand": "0x0183"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Nomad",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Nomad_palette",
+        "tileset": "0"
+      },
+      "source_fid": "0x85",
+      "source_operand": "0x0185",
+      "target_fid": "0x84",
+      "target_name": "Nomad",
+      "target_operand": "0x0184"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Nomadic_Trooper",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Nomadic_Trooper_palette",
+        "tileset": "0"
+      },
+      "source_fid": "0x86",
+      "source_operand": "0x0186",
+      "target_fid": "0x85",
+      "target_name": "Nomadic_Trooper",
+      "target_operand": "0x0185"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Pegasus_Knight",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Pegasus_Knight_palette",
+        "tileset": "0"
+      },
+      "source_fid": "0x87",
+      "source_operand": "0x0187",
+      "target_fid": "0x86",
+      "target_name": "Pegasus_Knight",
+      "target_operand": "0x0186"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Falcon_Knight",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Falcon_Knight_palette",
+        "tileset": "0"
+      },
+      "source_fid": "0x88",
+      "source_operand": "0x0188",
+      "target_fid": "0x87",
+      "target_name": "Falcon_Knight",
+      "target_operand": "0x0187"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Wyvern_Rider",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Wyvern_Rider_palette",
+        "tileset": "0"
+      },
+      "source_fid": "0x89",
+      "source_operand": "0x0189",
+      "target_fid": "0x88",
+      "target_name": "Wyvern_Rider",
+      "target_operand": "0x0188"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Wyvern_Lord",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Wyvern_Lord_palette",
+        "tileset": "0"
+      },
+      "source_fid": "0x8A",
+      "source_operand": "0x018A",
+      "target_fid": "0x89",
+      "target_name": "Wyvern_Lord",
+      "target_operand": "0x0189"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Soldier",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Soldier_palette",
+        "tileset": "0"
+      },
+      "source_fid": "0x8B",
+      "source_operand": "0x018B",
+      "target_fid": "0x8A",
+      "target_name": "Soldier",
+      "target_operand": "0x018A"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Bandit",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Bandit_palette",
+        "tileset": "0"
+      },
+      "source_fid": "0x8C",
+      "source_operand": "0x018C",
+      "target_fid": "0x8B",
+      "target_name": "Bandit",
+      "target_operand": "0x018B"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Pirate",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Pirate_palette",
+        "tileset": "0"
+      },
+      "source_fid": "0x8D",
+      "source_operand": "0x018D",
+      "target_fid": "0x8C",
+      "target_name": "Pirate",
+      "target_operand": "0x018C"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Berserker",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Berserker_palette",
+        "tileset": "0"
+      },
+      "source_fid": "0x8E",
+      "source_operand": "0x018E",
+      "target_fid": "0x8D",
+      "target_name": "Berserker",
+      "target_operand": "0x018D"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Thief",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Thief_palette",
+        "tileset": "0"
+      },
+      "source_fid": "0x8F",
+      "source_operand": "0x018F",
+      "target_fid": "0x8E",
+      "target_name": "Thief",
+      "target_operand": "0x018E"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Manakete",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Manakete_palette",
+        "tileset": "0"
+      },
+      "source_fid": "0x90",
+      "source_operand": "0x0190",
+      "target_fid": "0x8F",
+      "target_name": "Manakete",
+      "target_operand": "0x018F"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Mercenary",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Mercenary_palette",
+        "tileset": "0"
+      },
+      "source_fid": "0x91",
+      "source_operand": "0x0191",
+      "target_fid": "0x90",
+      "target_name": "Mercenary",
+      "target_operand": "0x0190"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Hero",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Hero_palette",
+        "tileset": "0"
+      },
+      "source_fid": "0x92",
+      "source_operand": "0x0192",
+      "target_fid": "0x91",
+      "target_name": "Hero",
+      "target_operand": "0x0191"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Fleet",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Fleet_palette",
+        "tileset": "0"
+      },
+      "source_fid": "0x93",
+      "source_operand": "0x0193",
+      "target_fid": "0x92",
+      "target_name": "Fleet",
+      "target_operand": "0x0192"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Wyvern_Knight",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Wyvern_Knight_palette",
+        "tileset": "0"
+      },
+      "source_fid": "0x94",
+      "source_operand": "0x0194",
+      "target_fid": "0x93",
+      "target_name": "Wyvern_Knight",
+      "target_operand": "0x0193"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Rogue",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Rogue_palette",
+        "tileset": "0"
+      },
+      "source_fid": "0x95",
+      "source_operand": "0x0195",
+      "target_fid": "0x94",
+      "target_name": "Rogue",
+      "target_operand": "0x0194"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Mage_Knight",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Mage_Knight_palette",
+        "tileset": "0"
+      },
+      "source_fid": "0x96",
+      "source_operand": "0x0196",
+      "target_fid": "0x95",
+      "target_name": "Mage_Knight",
+      "target_operand": "0x0195"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Great_Knight",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Great_Knight_palette",
+        "tileset": "0"
+      },
+      "source_fid": "0x97",
+      "source_operand": "0x0197",
+      "target_fid": "0x96",
+      "target_name": "Great_Knight",
+      "target_operand": "0x0196"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Ranger",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Ranger_palette",
+        "tileset": "0"
+      },
+      "source_fid": "0x98",
+      "source_operand": "0x0198",
+      "target_fid": "0x97",
+      "target_name": "Ranger",
+      "target_operand": "0x0197"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Phantom",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Phantom_palette",
+        "tileset": "0"
+      },
+      "source_fid": "0x99",
+      "source_operand": "0x0199",
+      "target_fid": "0x98",
+      "target_name": "Phantom",
+      "target_operand": "0x0198"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Revenant",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Revenant_palette",
+        "tileset": "0"
+      },
+      "source_fid": "0x9A",
+      "source_operand": "0x019A",
+      "target_fid": "0x99",
+      "target_name": "Revenant",
+      "target_operand": "0x0199"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Entombed",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Entombed_palette",
+        "tileset": "0"
+      },
+      "source_fid": "0x9B",
+      "source_operand": "0x019B",
+      "target_fid": "0x9A",
+      "target_name": "Entombed",
+      "target_operand": "0x019A"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Bonewalker",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Bonewalker_palette",
+        "tileset": "0"
+      },
+      "source_fid": "0x9C",
+      "source_operand": "0x019C",
+      "target_fid": "0x9B",
+      "target_name": "Bonewalker",
+      "target_operand": "0x019B"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Wight",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Wight_palette",
+        "tileset": "0"
+      },
+      "source_fid": "0x9D",
+      "source_operand": "0x019D",
+      "target_fid": "0x9C",
+      "target_name": "Wight",
+      "target_operand": "0x019C"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Bael",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Bael_palette",
+        "tileset": "0"
+      },
+      "source_fid": "0x9E",
+      "source_operand": "0x019E",
+      "target_fid": "0x9D",
+      "target_name": "Bael",
+      "target_operand": "0x019D"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Elder_Bael",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Elder_Bael_palette",
+        "tileset": "0"
+      },
+      "source_fid": "0x9F",
+      "source_operand": "0x019F",
+      "target_fid": "0x9E",
+      "target_name": "Elder_Bael",
+      "target_operand": "0x019E"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Cyclops",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Cyclops_palette",
+        "tileset": "0"
+      },
+      "source_fid": "0xA0",
+      "source_operand": "0x01A0",
+      "target_fid": "0x9F",
+      "target_name": "Cyclops",
+      "target_operand": "0x019F"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Mauthedoog",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Mauthedoog_palette",
+        "tileset": "0"
+      },
+      "source_fid": "0xA1",
+      "source_operand": "0x01A1",
+      "target_fid": "0xA0",
+      "target_name": "Mauthedoog",
+      "target_operand": "0x01A0"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Gwyllgi",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Gwyllgi_palette",
+        "tileset": "0"
+      },
+      "source_fid": "0xA2",
+      "source_operand": "0x01A2",
+      "target_fid": "0xA1",
+      "target_name": "Gwyllgi",
+      "target_operand": "0x01A1"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Tarvos",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Tarvos_palette",
+        "tileset": "0"
+      },
+      "source_fid": "0xA3",
+      "source_operand": "0x01A3",
+      "target_fid": "0xA2",
+      "target_name": "Tarvos",
+      "target_operand": "0x01A2"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Maelduin",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Maelduin_palette",
+        "tileset": "0"
+      },
+      "source_fid": "0xA4",
+      "source_operand": "0x01A4",
+      "target_fid": "0xA3",
+      "target_name": "Maelduin",
+      "target_operand": "0x01A3"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Mogall",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Mogall_palette",
+        "tileset": "0"
+      },
+      "source_fid": "0xA5",
+      "source_operand": "0x01A5",
+      "target_fid": "0xA4",
+      "target_name": "Mogall",
+      "target_operand": "0x01A4"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Arch_Mogall",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Arch_Mogall_palette",
+        "tileset": "0"
+      },
+      "source_fid": "0xA6",
+      "source_operand": "0x01A6",
+      "target_fid": "0xA5",
+      "target_name": "Arch_Mogall",
+      "target_operand": "0x01A5"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Gorgon",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Gorgon_palette",
+        "tileset": "0"
+      },
+      "source_fid": "0xA7",
+      "source_operand": "0x01A7",
+      "target_fid": "0xA6",
+      "target_name": "Gorgon",
+      "target_operand": "0x01A6"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Gargoyle",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Gargoyle_palette",
+        "tileset": "0"
+      },
+      "source_fid": "0xA8",
+      "source_operand": "0x01A8",
+      "target_fid": "0xA7",
+      "target_name": "Gargoyle",
+      "target_operand": "0x01A7"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Deathgoyle",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Deathgoyle_palette",
+        "tileset": "0"
+      },
+      "source_fid": "0xA9",
+      "source_operand": "0x01A9",
+      "target_fid": "0xA8",
+      "target_name": "Deathgoyle",
+      "target_operand": "0x01A8"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Manakete_Zombie",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Manakete_Zombie_palette",
+        "tileset": "0"
+      },
+      "source_fid": "0xAA",
+      "source_operand": "0x01AA",
+      "target_fid": "0xA9",
+      "target_name": "Manakete_Zombie",
+      "target_operand": "0x01A9"
+    },
+    {
+      "match_kind": "unique-named-signature",
+      "name": "Demon_King",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Demon_King_palette",
+        "tileset": "0"
+      },
+      "source_fid": "0xAB",
+      "source_operand": "0x01AB",
+      "target_fid": "0xAA",
+      "target_name": "Demon_King",
+      "target_operand": "0x01AA"
+    },
+    {
+      "match_kind": "named-duplicate-resolution",
+      "name": "MysteryTail",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Mystery_1_palette",
+        "tileset": "portrait_Mystery_1_tileset"
+      },
+      "source_fid": "0xAC",
+      "source_operand": "0x01AC",
+      "target_fid": "0xAC",
+      "target_name": "Mystery_1",
+      "target_operand": "0x01AC"
+    },
+    {
+      "match_kind": "named-duplicate-resolution",
+      "name": "MysteryFaded",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Mystery_faded_palette",
+        "tileset": "portrait_Mystery_faded_tileset"
+      },
+      "source_fid": "0xAD",
+      "source_operand": "0x01AD",
+      "target_fid": "0xAB",
+      "target_name": "Mystery_faded",
+      "target_operand": "0x01AB"
+    },
+    {
+      "match_kind": "named-duplicate-resolution",
+      "name": "MysteryTailDuplicate",
+      "signature": {
+        "blink": 1,
+        "palette": "portrait_Mystery_1_palette",
+        "tileset": "portrait_Mystery_1_tileset"
+      },
+      "source_fid": "0xAE",
+      "source_operand": "0x01AE",
+      "target_fid": "0xAC",
+      "target_name": "Mystery_1",
+      "target_operand": "0x01AC"
+    },
+    {
+      "match_kind": "engine-sentinel",
+      "name": "Active",
+      "signature": null,
+      "source_fid": "0xFFFF",
+      "source_operand": "0xFFFF",
+      "target_fid": "0xFFFF",
+      "target_name": "Active",
+      "target_operand": "0xFFFF"
+    }
+  ],
+  "expected": {
+    "affected_target_count": 187,
+    "entry_count": 175,
+    "regional_provider_domains": [
+      "indexed",
+      "raw"
+    ]
+  },
+  "kind": "fe8j-to-fe8u-portrait-operands",
+  "schema_version": 1,
+  "target_overrides": [
+    {
+      "mapped_operand": "0x016A",
+      "rationale": "FE8J provider 0x0B53 uses generic Soldier1, but FE8U target 0x0B93 explicitly loads the Rausten Soldier portrait; target context overrides the generic signature map.",
+      "source_operand": "0x016B",
+      "target_id": "0x0B93",
+      "target_operand": "0x016F"
+    }
+  ]
+}

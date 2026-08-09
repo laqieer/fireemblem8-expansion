@@ -2422,14 +2422,14 @@
     },
     "fe8j_indexed_source": {
       "path": "texts/locales/ja/indexed.txt",
-      "sha256": "646470228ad24878266de41d825724d7d70d02c85c1c02626feec37e71b31fe6"
+      "sha256": "47bcc1c25fd717578a4c7aacd7801151f5e85253c325c32e115d2e23c66ebf45"
     },
     "fe8j_reference_revision": "bf424414d075789d757e2f4cd0cea823bfb2862e",
     "fe8u_reference_revision": "d727e37ba1a584b2f874bdc3662ebc45e257de23",
     "protected_artifacts": [
       {
         "path": "texts/locales/mapping/fe8u_target_map.json",
-        "sha256": "8ce908acac0604af6f1e73c7b73c487b571637732d3544ccef7d0c09bc5126ef"
+        "sha256": "518131dbc2a6c7d8e471d2f282c68415ff478bdb9ee27b4298d1de6954ad30b3"
       },
       {
         "path": "texts/locales/mapping/fe8u_structural_evidence.json",
@@ -40964,9 +40964,9 @@
       "validation": {
         "parsed_structural_pair": false,
         "source_in_bounds": true,
-        "source_payload_bytes": 148,
+        "source_payload_bytes": 136,
         "source_payload_nonempty": true,
-        "source_payload_sha256": "5eb401aca4e6d8b0d0fb6e7eb1aeaab1793111fc4f41e2fe64ab1d734f5598ff",
+        "source_payload_sha256": "bbfd4c54f3f56932369a052c76fdf61d2296cfb4d9f9e68a9efb94417bf8d457",
         "target_in_bounds": true,
         "typed_source_site_count": 1,
         "typed_target_site_count": 1
@@ -90776,9 +90776,9 @@
       "validation": {
         "parsed_structural_pair": false,
         "source_in_bounds": true,
-        "source_payload_bytes": 801,
+        "source_payload_bytes": 816,
         "source_payload_nonempty": true,
-        "source_payload_sha256": "47eed5e705abba331bb648db6b45c5045460126a2b64aacfb09956d273c5e813",
+        "source_payload_sha256": "2c4a2a1267576da7ec5096f44de5f2cdccbd601f0b11d235f2ce11970656fbee",
         "target_in_bounds": true,
         "typed_source_site_count": 1,
         "typed_target_site_count": 2
@@ -93663,7 +93663,7 @@
         "source_in_bounds": true,
         "source_payload_bytes": 1819,
         "source_payload_nonempty": true,
-        "source_payload_sha256": "bde9a095e990619d28f004477c04e8c9e135069ca3ff9c7d8d32da84b16670c3",
+        "source_payload_sha256": "f09b7733a787fb4650666a8d5b497f8850208a79192ca33f6a506b49d0d35a72",
         "target_in_bounds": true,
         "typed_source_site_count": 2,
         "typed_target_site_count": 2
@@ -105973,9 +105973,9 @@
       "validation": {
         "parsed_structural_pair": true,
         "source_in_bounds": true,
-        "source_payload_bytes": 1362,
+        "source_payload_bytes": 1373,
         "source_payload_nonempty": true,
-        "source_payload_sha256": "f9cd641a697c6930fdd5b25ea730aa9bb0c7a45e1fb4a215a69158a00598c72a",
+        "source_payload_sha256": "272dd11bcf8635a80fd156e132377c450ad2b7a686a5a055204d2d15dca00b1c",
         "target_in_bounds": true,
         "typed_source_site_count": 2,
         "typed_target_site_count": 2
@@ -111153,9 +111153,9 @@
       "validation": {
         "parsed_structural_pair": false,
         "source_in_bounds": true,
-        "source_payload_bytes": 911,
+        "source_payload_bytes": 889,
         "source_payload_nonempty": true,
-        "source_payload_sha256": "0412fb15bb4d078c9fd187ec9c3a094aa75ef60b8b7e69e3812f908fe00883d6",
+        "source_payload_sha256": "de25132913caac3591ef7234de364b178ddbbc15cd3c4876227bf3affda7838a",
         "target_in_bounds": true,
         "typed_source_site_count": 2,
         "typed_target_site_count": 2

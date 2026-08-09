@@ -353,12 +353,12 @@
         },
         {
           "path": "texts/locales/authored/shards/existing_expansion.ja.json",
-          "sha256": "b0a70dde064518a595cf350ba0e49847c84be3539b6ff1e4f7371cf282a51ab5",
+          "sha256": "f5217dc8dc6948ed9aa39f1925e973b79ad3f91dd9871381e05cf27566cb9917",
           "target_count": 3
         },
         {
           "path": "texts/locales/authored/shards/help_shop.ja.json",
-          "sha256": "79b1e89bb40851aba2e13c6799cdba626214e1e625a1298476a843877c19d7cb",
+          "sha256": "d88198379af7bcf5f98e901c85a9d64c881b709e8e776b7df5daf1ffc87d8c14",
           "target_count": 81
         },
         {
@@ -388,12 +388,12 @@
         },
         {
           "path": "texts/locales/authored/shards/existing_expansion.zh-Hans.json",
-          "sha256": "1b842c48a8fa0f8588afcebcad7e04ed0c0c73a4987880f90d7709c04722f241",
+          "sha256": "52a05046a2ca55fe26fbd11d38997a809fcd202ed51efffdc2378db0009e0580",
           "target_count": 3
         },
         {
           "path": "texts/locales/authored/shards/help_shop.zh-Hans.json",
-          "sha256": "bc07d238486fb53b3a139c0aa9dd5e17a26f7e1106a5411d6b521b7f29af5421",
+          "sha256": "28dc84e5fa246712cc6f4d8d93a0bef54f750746bc226b886f76e2228e6beaef",
           "target_count": 81
         },
         {

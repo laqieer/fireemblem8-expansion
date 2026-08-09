@@ -25,6 +25,7 @@ class IndexedOverride:
     expected_text_sha256: str
     replacement_text: Optional[str]
     replacements: Tuple[Tuple[str, str], ...]
+    preserve_structure: bool
     reason: str
     provenance: Mapping[str, Any]
 
@@ -99,6 +100,7 @@ def _load_entry(source_id: str, message_id: str, data: Any) -> IndexedOverride:
     expected_text_sha256 = data.get("expected_text_sha256")
     replacement_text = data.get("replacement_text")
     raw_replacements = data.get("replacements")
+    preserve_structure = data.get("preserve_structure", True)
     reason = data.get("reason")
     provenance = data.get("provenance")
     if expected_text is None and expected_text_sha256 is None:
@@ -127,6 +129,17 @@ def _load_entry(source_id: str, message_id: str, data: Any) -> IndexedOverride:
     if replacement_text is None and raw_replacements is None:
         raise LocaleSourceError(
             f"{source_id}:{message_id}: replacement_text or replacements is required"
+        )
+    if not isinstance(preserve_structure, bool):
+        raise LocaleSourceError(
+            f"{source_id}:{message_id}: preserve_structure must be a boolean"
+        )
+    if not preserve_structure and (
+        expected_text_sha256 is None or replacement_text is None
+    ):
+        raise LocaleSourceError(
+            f"{source_id}:{message_id}: audited control changes require "
+            "expected_text_sha256 and replacement_text"
         )
     if replacement_text is not None and raw_replacements is not None:
         raise LocaleSourceError(
@@ -223,7 +236,8 @@ def _load_entry(source_id: str, message_id: str, data: Any) -> IndexedOverride:
     except ControlSyntaxError as error:
         raise LocaleSourceError(f"{source_id}:{message_id}: {error}") from error
     if (
-        expected_text is not None
+        preserve_structure
+        and expected_text is not None
         and resolved_replacement is not None
         and _payload_structure(expected_text) != _payload_structure(resolved_replacement)
     ):
@@ -242,6 +256,7 @@ def _load_entry(source_id: str, message_id: str, data: Any) -> IndexedOverride:
         ),
         replacement_text=replacement_text,
         replacements=replacements,
+        preserve_structure=preserve_structure,
         reason=reason,
         provenance=provenance,
     )
@@ -459,7 +474,10 @@ def apply_indexed_overrides(
             raise LocaleSourceError(
                 f"{source.source_id}:0x{message.id:04X}: {error}"
             ) from error
-        if _payload_structure(message.text) != _payload_structure(replacement_text):
+        if (
+            override.preserve_structure
+            and _payload_structure(message.text) != _payload_structure(replacement_text)
+        ):
             raise LocaleSourceError(
                 f"{source.source_id}:0x{message.id:04X}: replacement must preserve "
                 "controls, newlines, placeholders, and their placement"

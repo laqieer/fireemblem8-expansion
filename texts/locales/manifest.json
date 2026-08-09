@@ -5,16 +5,16 @@
       "sha256": "329161ac60d9be4a6f4b1ce4d8fb91818a1ab5033f092fa1d9f924ec65cb72eb"
     },
     "ja/indexed.txt": {
-      "byte_count": 1719190,
-      "sha256": "646470228ad24878266de41d825724d7d70d02c85c1c02626feec37e71b31fe6"
+      "byte_count": 1719177,
+      "sha256": "47bcc1c25fd717578a4c7aacd7801151f5e85253c325c32e115d2e23c66ebf45"
     },
     "mapping/fe8j_to_fe8u.candidates.json": {
       "byte_count": 752351,
       "sha256": "1ddac63340d04568d03c8356d85f488dfa1a4e7a58f0ce86e815ce7a56358b45"
     },
     "zh-Hans/indexed.txt": {
-      "byte_count": 1374727,
-      "sha256": "9f3013edccc6e735dc2a5788502ec7621653b8beac0f40c034b22eaea66f0e69"
+      "byte_count": 1375136,
+      "sha256": "d1e334b7983974300b848be770f623bd2f821e8ff67e189d2a7f6af46f4002e8"
     },
     "zh-Hans/raw.json": {
       "byte_count": 45834,
@@ -66,7 +66,7 @@
         "max_utf8_payload_bytes": 7673,
         "max_utf8_payload_message_id": "0x0AEA",
         "message_count": 3339,
-        "payload_codepoint_count": 1007516,
+        "payload_codepoint_count": 1007453,
         "unique_payload_codepoint_count": 1810
       }
     },
@@ -76,8 +76,8 @@
         "max_utf8_payload_bytes": 6197,
         "max_utf8_payload_message_id": "0x0AEA",
         "message_count": 3339,
-        "payload_codepoint_count": 834464,
-        "unique_payload_codepoint_count": 2490
+        "payload_codepoint_count": 834688,
+        "unique_payload_codepoint_count": 2491
       },
       "raw": {
         "duplicate_address_count": 9,
@@ -107,13 +107,13 @@
     "verified_row_count": 0
   },
   "overrides": {
-    "byte_count": 88868,
-    "entry_count": 135,
+    "byte_count": 186441,
+    "entry_count": 186,
     "path": "texts/locales/indexed_overrides.json",
-    "sha256": "d9b659e08255c1e938a02077a91ce6ddbbd74d81db453958541afe81e1cbb3d7",
+    "sha256": "7238b4b941c910f51097ceea51b3b68ff61b63bc9f4af5ddce275f7eb056f955",
     "sources": {
       "fe8cn_source": {
-        "entry_count": 86,
+        "entry_count": 123,
         "locale_id": "zh-Hans",
         "message_ids": [
           "0x0006",
@@ -133,6 +133,7 @@
           "0x02A4",
           "0x02B1",
           "0x02C2",
+          "0x02D9",
           "0x038A",
           "0x03D1",
           "0x0418",
@@ -145,7 +146,9 @@
           "0x0505",
           "0x053A",
           "0x05A4",
+          "0x05AF",
           "0x05C7",
+          "0x05CA",
           "0x05D2",
           "0x06E2",
           "0x0703",
@@ -180,33 +183,67 @@
           "0x086A",
           "0x086B",
           "0x088E",
+          "0x0891",
+          "0x0893",
           "0x0897",
+          "0x089F",
+          "0x08A1",
           "0x08A3",
+          "0x08A9",
+          "0x08AF",
+          "0x08B7",
+          "0x08B9",
           "0x08BB",
           "0x08C7",
+          "0x08CD",
           "0x08E2",
+          "0x08ED",
           "0x0913",
           "0x091A",
+          "0x0922",
           "0x0929",
           "0x093F",
           "0x094F",
+          "0x0973",
+          "0x0974",
+          "0x0975",
+          "0x098E",
           "0x09B3",
+          "0x09C5",
+          "0x0A01",
+          "0x0A06",
+          "0x0A11",
+          "0x0A29",
           "0x0A2B",
+          "0x0A50",
+          "0x0A5E",
+          "0x0A62",
+          "0x0A63",
+          "0x0A64",
+          "0x0A66",
+          "0x0A67",
           "0x0A7B",
           "0x0A94",
           "0x0ABA",
           "0x0AC7",
+          "0x0ACE",
+          "0x0ADC",
+          "0x0AF5",
+          "0x0B3B",
+          "0x0B6C",
+          "0x0B86",
           "0x0BA3",
           "0x0BC0",
           "0x0BDC",
           "0x0C82",
           "0x0CA4",
-          "0x0CB7"
+          "0x0CB7",
+          "0x0CD9"
         ],
         "source_sha256": "bef561dd5a45f81658d4f06b0b9f58bdc6fde2ed4b4c57034d17b88cb595f517"
       },
       "fe8j_indexed": {
-        "entry_count": 49,
+        "entry_count": 63,
         "locale_id": "ja",
         "message_ids": [
           "0x0013",
@@ -228,6 +265,7 @@
           "0x0479",
           "0x053A",
           "0x05A4",
+          "0x05CA",
           "0x05D2",
           "0x06E2",
           "0x0704",
@@ -255,8 +293,21 @@
           "0x07B6",
           "0x07B7",
           "0x088E",
+          "0x088F",
+          "0x089B",
+          "0x089F",
+          "0x08A9",
+          "0x08B3",
+          "0x08B7",
+          "0x08ED",
+          "0x0922",
+          "0x0A06",
+          "0x0A11",
+          "0x0A29",
           "0x0ABA",
+          "0x0ABD",
           "0x0AC7",
+          "0x0AF5",
           "0x0CA4"
         ],
         "source_sha256": "511ce51cadd2ac94ec3f5219a81205f6aa52de3c3c659c9efd1f0f75f9079a8a"

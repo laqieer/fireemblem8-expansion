@@ -15,12 +15,12 @@
     },
     {
       "path": "texts/locales/authored/shards/existing_expansion.ja.json",
-      "sha256": "b0a70dde064518a595cf350ba0e49847c84be3539b6ff1e4f7371cf282a51ab5",
+      "sha256": "f5217dc8dc6948ed9aa39f1925e973b79ad3f91dd9871381e05cf27566cb9917",
       "target_count": 3
     },
     {
       "path": "texts/locales/authored/shards/help_shop.ja.json",
-      "sha256": "79b1e89bb40851aba2e13c6799cdba626214e1e625a1298476a843877c19d7cb",
+      "sha256": "d88198379af7bcf5f98e901c85a9d64c881b709e8e776b7df5daf1ffc87d8c14",
       "target_count": 81
     },
     {

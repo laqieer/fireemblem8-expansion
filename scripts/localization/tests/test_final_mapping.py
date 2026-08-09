@@ -156,12 +156,12 @@ class FinalMappingTests(unittest.TestCase):
         self.assertEqual(
             self.report["promotion_counts"],
             {
-                "b-structural-high": 27,
-                "c-febuilder": 1267,
+                "b-structural-high": 26,
+                "c-febuilder": 1266,
                 "c-febuilder-raw": 3,
                 "d-contextual-resolution": 20,
                 "d-existing-authored": 3,
-                "d-semantic-correction": 100,
+                "d-semantic-correction": 102,
                 "d-structural-reference-second-check": 6,
                 "e-exact-english": 134,
                 "e-exact-english-context": 1,
@@ -169,7 +169,7 @@ class FinalMappingTests(unittest.TestCase):
             },
         )
         samples = {
-            "0x0C46": "b-structural-high",
+            "0x0C46": "d-semantic-correction",
             "0x0004": "c-febuilder",
             "0x0032": "c-febuilder-raw",
             "0x0C52": "d-contextual-resolution",
@@ -185,6 +185,14 @@ class FinalMappingTests(unittest.TestCase):
                 self.rows[target_id]["verification"]["promotion"]["precedence"],
                 precedence,
             )
+        self.assertEqual(
+            self.rows["0x0C45"]["source"],
+            {"id": "0x0C06", "kind": "indexed", "layout": "FE8J"},
+        )
+        self.assertEqual(
+            self.rows["0x0C46"]["source"],
+            {"id": "0x0C05", "kind": "indexed", "layout": "FE8J"},
+        )
 
     def test_conflicts_are_preserved_and_collisions_are_context_resolved(self):
         conflicts = self.febuilder["summary"]["structural_conflict_targets"]
