@@ -48,6 +48,10 @@ from .raw_closure import (
     build_raw_surface_closure,
     canonical_json_bytes as closure_json_bytes,
 )
+from .raw_providers import (
+    RawProviderError,
+    verify_ja_raw_provider_git_source,
+)
 from .structural_completion import (
     build_structural_completion_evidence,
     check_structural_completion_evidence,
@@ -505,6 +509,19 @@ def _cmd_check_raw_closure(args: argparse.Namespace) -> int:
         f"excluded={summary['non_user_facing_exclusion_count'] + summary['diagnostic_exclusion_count']} "
         f"fallback={summary['english_fallback_count']} "
         f"unresolved={summary['unresolved_count']}"
+    )
+    return 0
+
+
+def _cmd_check_ja_raw_origin(args: argparse.Namespace) -> int:
+    data = _load_json(args.ja_raw)
+    verify_ja_raw_provider_git_source(
+        data,
+        source_root=args.ja_raw.parent,
+        repository=args.repository,
+    )
+    print(
+        "Japanese raw provider Git origin matches pinned commit and source blobs"
     )
     return 0
 
@@ -1012,6 +1029,23 @@ def build_parser() -> argparse.ArgumentParser:
         )
         closure_parser.set_defaults(handler=handler)
 
+    origin_parser = subparsers.add_parser(
+        "check-ja-raw-origin",
+        help="verify Japanese raw provider metadata against a local Git source",
+    )
+    origin_parser.add_argument(
+        "--ja-raw",
+        type=Path,
+        default=Path("texts/locales/ja/raw.json"),
+    )
+    origin_parser.add_argument(
+        "--repository",
+        type=Path,
+        required=True,
+        help="local checkout/object database for the pinned FE8J repository",
+    )
+    origin_parser.set_defaults(handler=_cmd_check_ja_raw_origin)
+
     def add_final_mapping_inputs(command_parser: argparse.ArgumentParser) -> None:
         command_parser.add_argument(
             "--mapping",
@@ -1153,6 +1187,7 @@ def main(argv=None) -> int:
         LocaleSourceError,
         MappingError,
         OSError,
+        RawProviderError,
     ) as error:
         print(f"error: {error}", file=sys.stderr)
         return 1

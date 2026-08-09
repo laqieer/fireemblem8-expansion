@@ -1,727 +1,1008 @@
 {
   "kind": "fe8j-raw-symbol-source-snapshot",
   "provider_count": 119,
+  "provider_values_artifact": {
+    "encoding": "cp932-nul-terminated",
+    "generated_from_paths": [
+      "src/player_interface_0808F584.c",
+      "src/data/data_081F6D00/data_081F6D00.s",
+      "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
+      "src/menu_def.c",
+      "src/data/data_081F64C0/data_081F64C0.c"
+    ],
+    "path": "raw_provider_values.cp932.bin",
+    "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+  },
   "providers": {
     "0x0032": {
       "byte_length": 11,
       "offset": 0,
+      "source_anchor": "data_081F6D7C",
+      "source_path": "src/data/data_081F6D00/data_081F6D00.s",
       "symbol": "PROMO_OPTION_1_NAME",
       "value_sha256": "74286390e599131361069a637fcc29cc142104c2b750cf4892a897429bf6d658"
     },
     "0x0033": {
       "byte_length": 11,
       "offset": 11,
+      "source_anchor": "data_081F6D7C",
+      "source_path": "src/data/data_081F6D00/data_081F6D00.s",
       "symbol": "PROMO_OPTION_2_NAME",
       "value_sha256": "493b73121573a9e035a481a9c572206248c73afd6ad734e725bdd43450cf49bd"
     },
     "0x0034": {
       "byte_length": 11,
       "offset": 22,
+      "source_anchor": "data_081F6D7C",
+      "source_path": "src/data/data_081F6D00/data_081F6D00.s",
       "symbol": "PROMO_OPTION_3_NAME",
       "value_sha256": "32160af0f996df8102bbb14dd410d41eb442012cf022c5286d8ae4064d5b40b0"
     },
     "0x01C1": {
       "byte_length": 5,
       "offset": 33,
+      "source_anchor": "GoalString_UnitsLeft",
+      "source_path": "src/player_interface_0808F584.c",
       "symbol": "GoalString_UnitsLeft",
       "value_sha256": "4042ff58570ad607525ff9dc190de55038764f6999f4f06d486cb16602f8f8e6"
     },
     "0x01C2": {
       "byte_length": 7,
       "offset": 38,
+      "source_anchor": "GoalString_Turn",
+      "source_path": "src/player_interface_0808F584.c",
       "symbol": "GoalString_Turn",
       "value_sha256": "7bc2fa80d7f7c1c271c529a75c64328b5d7c92fd1df72fcae650ed3fa3064ad1"
     },
     "0x01C3": {
       "byte_length": 11,
       "offset": 45,
+      "source_anchor": "GoalString_LastTurn",
+      "source_path": "src/player_interface_0808F584.c",
       "symbol": "GoalString_LastTurn",
       "value_sha256": "55ded65087def01737f9f7d8b44ccafe7f09fb400dd11abb540643287ad01cf3"
     },
     "0x01C4": {
       "byte_length": 5,
       "offset": 56,
+      "source_anchor": "JapaneseTerrainNames",
+      "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "symbol": "gTerrains_0[TERRAIN_NONE]",
       "value_sha256": "3327941a4982a4e61edb93bc85890693ff8084e3cfcd22e69227bf4630e9adc4"
     },
     "0x01C5": {
       "byte_length": 5,
       "offset": 61,
+      "source_anchor": "JapaneseTerrainNames",
+      "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "symbol": "gTerrains_0[TERRAIN_PLAINS]",
       "value_sha256": "15c2d0232064711ff3c3a1cb4ee73b4be600cd0e6f371e4839753ce047c8ebff"
     },
     "0x01C6": {
       "byte_length": 3,
       "offset": 66,
+      "source_anchor": "JapaneseTerrainNames",
+      "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "symbol": "gTerrains_0[TERRAIN_ROAD]",
       "value_sha256": "8ecc4db1de26c7eeb74374a187ffbb9528d0b56eb2b70446af3523927c681a8b"
     },
     "0x01C7": {
       "byte_length": 3,
       "offset": 69,
+      "source_anchor": "JapaneseTerrainNames",
+      "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "symbol": "gTerrains_0[TERRAIN_VILLAGE_REGULAR]",
       "value_sha256": "8262232997e7bd70ebbf10b781960f304afc28cf6a9bf4a8e7120217c6c21a36"
     },
     "0x01C8": {
       "byte_length": 7,
       "offset": 72,
+      "source_anchor": "JapaneseTerrainNames",
+      "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "symbol": "gTerrains_0[TERRAIN_VILLAGE_CLOSED]",
       "value_sha256": "90132899603050d1285e9b15e0a223fe8bf1974e0f7902b6202ecb7b347903f0"
     },
     "0x01C9": {
       "byte_length": 5,
       "offset": 79,
+      "source_anchor": "JapaneseTerrainNames",
+      "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "symbol": "gTerrains_0[TERRAIN_HOUSE]",
       "value_sha256": "72c85b3b62d2645a1dc2e549d51a969d5d993e741c89932cb3dcd7709ddf3f29"
     },
     "0x01CA": {
       "byte_length": 7,
       "offset": 84,
+      "source_anchor": "JapaneseTerrainNames",
+      "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "symbol": "gTerrains_0[TERRAIN_ARMORY]",
       "value_sha256": "a0f354db4e1f1eb060273e8bbf9b1bbb4bc69641ac287d6457fa9ef81ba61cae"
     },
     "0x01CB": {
       "byte_length": 7,
       "offset": 91,
+      "source_anchor": "JapaneseTerrainNames",
+      "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "symbol": "gTerrains_0[TERRAIN_VENDOR]",
       "value_sha256": "b8c096a2ef1ab674cd7371e27ec6eb1751fd7e1679e0643deded91dcd5a060cd"
     },
     "0x01CC": {
       "byte_length": 7,
       "offset": 98,
+      "source_anchor": "JapaneseTerrainNames",
+      "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "symbol": "gTerrains_0[TERRAIN_ARENA_REGULAR]",
       "value_sha256": "fa40e776987b1343f461ef464a5ec6ac096bc62ba79272f48b2961fba9dfd2f2"
     },
     "0x01CD": {
       "byte_length": 7,
       "offset": 105,
+      "source_anchor": "JapaneseTerrainNames",
+      "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "symbol": "gTerrains_0[TERRAIN_C_ROOM_09]",
       "value_sha256": "0d7cbceee4de8a8e70d36cb973b012991b9d35e826db01560292e7a8edc88dd8"
     },
     "0x01CE": {
       "byte_length": 3,
       "offset": 112,
+      "source_anchor": "JapaneseTerrainNames",
+      "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "symbol": "gTerrains_0[TERRAIN_FORT]",
       "value_sha256": "b52db8ef0578c8b671855a3eea71a68dbb5390c14f5ef18048ca0159bb88975a"
     },
     "0x01CF": {
       "byte_length": 5,
       "offset": 115,
+      "source_anchor": "JapaneseTerrainNames",
+      "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "symbol": "gTerrains_0[TERRAIN_GATE_CASTLE]",
       "value_sha256": "28c3773c4c20bf7024a95369866841bc52f4c01164ae69dd40172c745b166152"
     },
     "0x01D0": {
       "byte_length": 3,
       "offset": 120,
+      "source_anchor": "JapaneseTerrainNames",
+      "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "symbol": "gTerrains_0[TERRAIN_FOREST]",
       "value_sha256": "599ac1cce18104bcbcb7a41150cc198cf63d029c7a46fcd794673d2e0c9d851f"
     },
     "0x01D1": {
       "byte_length": 7,
       "offset": 123,
+      "source_anchor": "JapaneseTerrainNames",
+      "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "symbol": "gTerrains_0[TERRAIN_THICKET]",
       "value_sha256": "3294aecdbb5494aed9c3c9b1e4bec5c3acd021a29b42941b0474d47e00e7e555"
     },
     "0x01D2": {
       "byte_length": 5,
       "offset": 130,
+      "source_anchor": "JapaneseTerrainNames",
+      "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "symbol": "gTerrains_0[TERRAIN_SAND]",
       "value_sha256": "a9c75966c5826b7fb82e761ab9f6d0ccc3745db5f769fb69021fb085d5fbbfe1"
     },
     "0x01D3": {
       "byte_length": 5,
       "offset": 135,
+      "source_anchor": "JapaneseTerrainNames",
+      "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "symbol": "gTerrains_0[TERRAIN_DESERT]",
       "value_sha256": "48c2a71ee01169e2293975ba9e4e9426905c18822cc36771eea4bdae4bf7992f"
     },
     "0x01D4": {
       "byte_length": 3,
       "offset": 140,
+      "source_anchor": "JapaneseTerrainNames",
+      "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "symbol": "gTerrains_0[TERRAIN_RIVER]",
       "value_sha256": "131d8403f3f2a2bbd27703c5fbecdb25f9b03e9740b7b6fdb8f16cfb37e52682"
     },
     "0x01D5": {
       "byte_length": 3,
       "offset": 143,
+      "source_anchor": "JapaneseTerrainNames",
+      "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "symbol": "gTerrains_0[TERRAIN_MOUNTAIN]",
       "value_sha256": "3f642ba468ee451729955927971618b41fb138c0a53b30ec25325ebc60f5f734"
     },
     "0x01D6": {
       "byte_length": 7,
       "offset": 146,
+      "source_anchor": "JapaneseTerrainNames",
+      "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "symbol": "gTerrains_0[TERRAIN_PEAK]",
       "value_sha256": "aad34a43d6c6aa730dd3579d5675f70313787e8315b8cb0522aec1fe9b3a96f6"
     },
     "0x01D7": {
       "byte_length": 3,
       "offset": 153,
+      "source_anchor": "JapaneseTerrainNames",
+      "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "symbol": "gTerrains_0[TERRAIN_BRIDGE_REGULAR]",
       "value_sha256": "6d58ce66e8ea6c2c84d54352b4e5b375bb69dbc73a905a5ab3986b94aad4117c"
     },
     "0x01D8": {
       "byte_length": 7,
       "offset": 156,
+      "source_anchor": "JapaneseTerrainNames",
+      "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "symbol": "gTerrains_0[TERRAIN_BRIDGE_14]",
       "value_sha256": "96cf732a60f85d7542abbfa5705e20a130f3ff2d8d63f438cf5b88e3c0935e0f"
     },
     "0x01D9": {
       "byte_length": 3,
       "offset": 163,
+      "source_anchor": "JapaneseTerrainNames",
+      "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "symbol": "gTerrains_0[TERRAIN_SEA]",
       "value_sha256": "51f2b0863c9d4cf8fa6a4a1b15f223c9d7876c0c24b23ca0abf4d0f792b7cd0c"
     },
     "0x01DA": {
       "byte_length": 3,
       "offset": 166,
+      "source_anchor": "JapaneseTerrainNames",
+      "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "symbol": "gTerrains_0[TERRAIN_LAKE]",
       "value_sha256": "8761a57e41f8852efae89070e1a81fc98c287034ee79bfe473d00bbbd8e485ee"
     },
     "0x01DB": {
       "byte_length": 3,
       "offset": 169,
+      "source_anchor": "JapaneseTerrainNames",
+      "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "symbol": "gTerrains_0[TERRAIN_FLOOR_REGULAR]",
       "value_sha256": "560012a75e125777a116545c1c0b038dbdcfcf52a6a9a4738731d2ba2edc6859"
     },
     "0x01DC": {
       "byte_length": 3,
       "offset": 172,
+      "source_anchor": "JapaneseTerrainNames",
+      "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "symbol": "gTerrains_0[TERRAIN_FLOOR_MAGIC]",
       "value_sha256": "560012a75e125777a116545c1c0b038dbdcfcf52a6a9a4738731d2ba2edc6859"
     },
     "0x01DD": {
       "byte_length": 3,
       "offset": 175,
+      "source_anchor": "JapaneseTerrainNames",
+      "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "symbol": "gTerrains_0[TERRAIN_FENCE_REGULAR]",
       "value_sha256": "3a1b34dd4de04818384fc4bd2715d1909bc9de3aaa33416b983d809a443dac0d"
     },
     "0x01DE": {
       "byte_length": 3,
       "offset": 178,
+      "source_anchor": "JapaneseTerrainNames",
+      "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "symbol": "gTerrains_0[TERRAIN_WALL_REGULAR]",
       "value_sha256": "332b21628e04010399e3adb7e5674c82698d42cc08f7deeda3daa0d302b70f93"
     },
     "0x01DF": {
       "byte_length": 3,
       "offset": 181,
+      "source_anchor": "JapaneseTerrainNames",
+      "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "symbol": "gTerrains_0[TERRAIN_WALL_DAMAGED]",
       "value_sha256": "332b21628e04010399e3adb7e5674c82698d42cc08f7deeda3daa0d302b70f93"
     },
     "0x01E0": {
       "byte_length": 9,
       "offset": 184,
+      "source_anchor": "JapaneseTerrainNames",
+      "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "symbol": "gTerrains_0[TERRAIN_RUBBLE]",
       "value_sha256": "d83aa73f4d7d3b88858411df5a10e94da78888b1078e1359bc1a5e552762131c"
     },
     "0x01E1": {
       "byte_length": 3,
       "offset": 193,
+      "source_anchor": "JapaneseTerrainNames",
+      "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "symbol": "gTerrains_0[TERRAIN_PILLAR]",
       "value_sha256": "3913a955a6ed843e168de714e8ef9591eba122f1c853b237e2c923f905adcda7"
     },
     "0x01E2": {
       "byte_length": 3,
       "offset": 196,
+      "source_anchor": "JapaneseTerrainNames",
+      "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "symbol": "gTerrains_0[TERRAIN_DOOR]",
       "value_sha256": "749b64c6642372ff4d6af62e084556fca6ed4fea5a172176036aa82dd1ca0078"
     },
     "0x01E3": {
       "byte_length": 5,
       "offset": 199,
+      "source_anchor": "JapaneseTerrainNames",
+      "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "symbol": "gTerrains_0[TERRAIN_THRONE]",
       "value_sha256": "c0a14fd75c353edb285677b5206771924453fd1aea519e8a4d6886576035595e"
     },
     "0x01E4": {
       "byte_length": 7,
       "offset": 204,
+      "source_anchor": "JapaneseTerrainNames",
+      "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "symbol": "gTerrains_0[TERRAIN_CHEST_EMPTY]",
       "value_sha256": "6d7eadb39c490592930e5fa4ded4f98af7308f29644d530228b619e426c103dc"
     },
     "0x01E5": {
       "byte_length": 5,
       "offset": 211,
+      "source_anchor": "JapaneseTerrainNames",
+      "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "symbol": "gTerrains_0[TERRAIN_CHEST_FULL]",
       "value_sha256": "db5d698acde28f69479fc78492c9f178edda616fa76ab1289f893c1232f27ee2"
     },
     "0x01E6": {
       "byte_length": 5,
       "offset": 216,
+      "source_anchor": "JapaneseTerrainNames",
+      "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "symbol": "gTerrains_0[TERRAIN_ROOF]",
       "value_sha256": "d97e4f5534b77e17e6ca8742ec1ca433042b97a50436c5298308be106cd4781a"
     },
     "0x01E7": {
       "byte_length": 3,
       "offset": 221,
+      "source_anchor": "JapaneseTerrainNames",
+      "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "symbol": "gTerrains_0[TERRAIN_GATE_REGULAR]",
       "value_sha256": "306b06ed28cd32665f17131f8c8aee4e3bcdb21a07e321a84cd77348b4a85c87"
     },
     "0x01E8": {
       "byte_length": 5,
       "offset": 224,
+      "source_anchor": "JapaneseTerrainNames",
+      "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "symbol": "gTerrains_0[TERRAIN_CHURCH]",
       "value_sha256": "b0715b58ce6003bb360925fbec21108bc14631a4c2d300cb436914e71de47349"
     },
     "0x01E9": {
       "byte_length": 5,
       "offset": 229,
+      "source_anchor": "JapaneseTerrainNames",
+      "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "symbol": "gTerrains_0[TERRAIN_RUINS_REGULAR]",
       "value_sha256": "2c610b4357351485bccdba6b9408f8ccdcddfd03ced4341d85b5a114536e35d9"
     },
     "0x01EA": {
       "byte_length": 5,
       "offset": 234,
+      "source_anchor": "JapaneseTerrainNames",
+      "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "symbol": "gTerrains_0[TERRAIN_CLIFF]",
       "value_sha256": "db32211b92ebc292fac8e347d65737f1534b60831ea86538df3932807ff64bd8"
     },
     "0x01EB": {
       "byte_length": 7,
       "offset": 239,
+      "source_anchor": "JapaneseTerrainNames",
+      "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "symbol": "gTerrains_0[TERRAIN_BALLISTA_REGULAR]",
       "value_sha256": "c205ec8f3be5cb85373053cfe9bf7292babe24a3e877593ef1020dbb397cd76f"
     },
     "0x01EC": {
       "byte_length": 7,
       "offset": 246,
+      "source_anchor": "JapaneseTerrainNames",
+      "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "symbol": "gTerrains_0[TERRAIN_BALLISTA_LONG]",
       "value_sha256": "e8695e37a5b4d48ab44b1c4fe6186f4643d8f6cfa535a6f75421ffb3ea12179c"
     },
     "0x01ED": {
       "byte_length": 7,
       "offset": 253,
+      "source_anchor": "JapaneseTerrainNames",
+      "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "symbol": "gTerrains_0[TERRAIN_BALLISTA_KILLER]",
       "value_sha256": "19649119493c38343f848ba67db2f0098bab9b8ba65c85aec043261c934e5ba9"
     },
     "0x01EE": {
       "byte_length": 5,
       "offset": 260,
+      "source_anchor": "JapaneseTerrainNames",
+      "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "symbol": "gTerrains_0[TERRAIN_SHIP_FLAT]",
       "value_sha256": "467b09c9a7561db41322f97d0df180f9ca4c7c08c4e6148312857414e277ed0e"
     },
     "0x01EF": {
       "byte_length": 9,
       "offset": 265,
+      "source_anchor": "JapaneseTerrainNames",
+      "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "symbol": "gTerrains_0[TERRAIN_SHIP_WRECK]",
       "value_sha256": "1d06d0c0ee8ffde7474802f0f215e60db581dfa68868e6b663ef9417c01a00d1"
     },
     "0x01F0": {
       "byte_length": 5,
       "offset": 274,
+      "source_anchor": "JapaneseTerrainNames",
+      "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "symbol": "gTerrains_0[TERRAIN_TILE_2C]",
       "value_sha256": "3327941a4982a4e61edb93bc85890693ff8084e3cfcd22e69227bf4630e9adc4"
     },
     "0x01F1": {
       "byte_length": 5,
       "offset": 279,
+      "source_anchor": "JapaneseTerrainNames",
+      "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "symbol": "gTerrains_0[TERRAIN_STAIRS]",
       "value_sha256": "a2363c0ddff53bb76cfbe841b9196a53b3a919a09feb40cee900145c7e719e48"
     },
     "0x01F2": {
       "byte_length": 5,
       "offset": 284,
+      "source_anchor": "JapaneseTerrainNames",
+      "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "symbol": "gTerrains_0[TERRAIN_TILE_2E]",
       "value_sha256": "3327941a4982a4e61edb93bc85890693ff8084e3cfcd22e69227bf4630e9adc4"
     },
     "0x01F3": {
       "byte_length": 5,
       "offset": 289,
+      "source_anchor": "JapaneseTerrainNames",
+      "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "symbol": "gTerrains_0[TERRAIN_GLACIER]",
       "value_sha256": "41e9ae5c5f53f71dce8168c0a1b0b9bce3b6b9830cfb33f22c9421e207352639"
     },
     "0x01F4": {
       "byte_length": 9,
       "offset": 294,
+      "source_anchor": "JapaneseTerrainNames",
+      "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "symbol": "gTerrains_0[TERRAIN_ARENA_30]",
       "value_sha256": "94a0c1ced42b401178fafb3c7e491debdffb58b7f03e3176e51d0ad167ebf82e"
     },
     "0x01F5": {
       "byte_length": 3,
       "offset": 303,
+      "source_anchor": "JapaneseTerrainNames",
+      "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "symbol": "gTerrains_0[TERRAIN_VALLEY]",
       "value_sha256": "01b07ef5d2a9d37b6b6700a0b3c11fee022d5e8b5ca9ea75ad9a2f9ab00c8a96"
     },
     "0x01F6": {
       "byte_length": 3,
       "offset": 306,
+      "source_anchor": "JapaneseTerrainNames",
+      "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "symbol": "gTerrains_0[TERRAIN_FENCE_32]",
       "value_sha256": "3a1b34dd4de04818384fc4bd2715d1909bc9de3aaa33416b983d809a443dac0d"
     },
     "0x01F7": {
       "byte_length": 5,
       "offset": 309,
+      "source_anchor": "JapaneseTerrainNames",
+      "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "symbol": "gTerrains_0[TERRAIN_SNAG]",
       "value_sha256": "09d815061606be801e1d397564b008736d0754f32930c09db5423035a8db4341"
     },
     "0x01F8": {
       "byte_length": 7,
       "offset": 314,
+      "source_anchor": "JapaneseTerrainNames",
+      "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "symbol": "gTerrains_0[TERRAIN_BRIDGE_SNAG]",
       "value_sha256": "4f4be347cba01b7fbbb0e8ac43fa6f3c1a3a754a9b56984bea05c3f773843d59"
     },
     "0x01F9": {
       "byte_length": 3,
       "offset": 321,
+      "source_anchor": "JapaneseTerrainNames",
+      "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "symbol": "gTerrains_0[TERRAIN_SKY]",
       "value_sha256": "e3df29191ebac508f7ff2e7aecf38119321dc91f4bad812b301d65d1a930a837"
     },
     "0x01FA": {
       "byte_length": 5,
       "offset": 324,
+      "source_anchor": "JapaneseTerrainNames",
+      "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "symbol": "gTerrains_0[TERRAIN_DEEPS]",
       "value_sha256": "bd68571157fbcdf31b05b09838a86a8b643da02229293dde5bf21331d057350a"
     },
     "0x01FB": {
       "byte_length": 5,
       "offset": 329,
+      "source_anchor": "JapaneseTerrainNames",
+      "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "symbol": "gTerrains_0[TERRAIN_RUINS_VILLAGE]",
       "value_sha256": "50d3c05e91d06ff83fa17f6e01c4b76554436e126d8339a715cf78a0d2d1ddef"
     },
     "0x01FC": {
       "byte_length": 5,
       "offset": 334,
+      "source_anchor": "JapaneseTerrainNames",
+      "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "symbol": "gTerrains_0[TERRAIN_INN]",
       "value_sha256": "0d5d5fbd5cb93397372f2f398ffce6ee32e228314673db2a5f4b2d97fdaaf387"
     },
     "0x01FD": {
       "byte_length": 5,
       "offset": 339,
+      "source_anchor": "JapaneseTerrainNames",
+      "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "symbol": "gTerrains_0[TERRAIN_BARREL]",
       "value_sha256": "9078c33b8e6b76631fde50c5e4233a97f31879276fadf89c313f91e71029f615"
     },
     "0x01FE": {
       "byte_length": 3,
       "offset": 344,
+      "source_anchor": "JapaneseTerrainNames",
+      "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "symbol": "gTerrains_0[TERRAIN_BONE]",
       "value_sha256": "52059a66c187bd28a78e9a85e9f28cc97d1b054a18563407524403bf97e74308"
     },
     "0x01FF": {
       "byte_length": 3,
       "offset": 347,
+      "source_anchor": "JapaneseTerrainNames",
+      "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "symbol": "gTerrains_0[TERRAIN_DARK]",
       "value_sha256": "4e3fccddbb9d94eae2be6ddc380d2f96c6431e654f4bcd94595a56141ea7a2e6"
     },
     "0x0200": {
       "byte_length": 3,
       "offset": 350,
+      "source_anchor": "JapaneseTerrainNames",
+      "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "symbol": "gTerrains_0[TERRAIN_WATER]",
       "value_sha256": "102b2614da40ab26d2732e87e7c571aebc40d41fe31a6a2037104fe8f855a33c"
     },
     "0x0201": {
       "byte_length": 3,
       "offset": 353,
+      "source_anchor": "JapaneseTerrainNames",
+      "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "symbol": "gTerrains_0[TERRAIN_GUNNELS]",
       "value_sha256": "b11de42ba9410c0f5d50b4a4ef1f9e89573a7427b579c6fa52880c5b493314d8"
     },
     "0x0202": {
       "byte_length": 5,
       "offset": 356,
+      "source_anchor": "JapaneseTerrainNames",
+      "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "symbol": "gTerrains_0[TERRAIN_DECK]",
       "value_sha256": "cfe5ab60962853c6102c54176c6d0d06e8a6e941da7277c361b0ff32affb73dc"
     },
     "0x0203": {
       "byte_length": 5,
       "offset": 361,
+      "source_anchor": "JapaneseTerrainNames",
+      "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "symbol": "gTerrains_0[TERRAIN_BRACE]",
       "value_sha256": "051b24c549c93f8cbf42c7160d11115529e5f3c00eed7cf99aba13cf8cdd192d"
     },
     "0x0204": {
       "byte_length": 7,
       "offset": 366,
+      "source_anchor": "JapaneseTerrainNames",
+      "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "symbol": "gTerrains_0[TERRAIN_MAST]",
       "value_sha256": "e394953e4b2b3757d3d69da1990fa0c266c93a216a89ee9ce4128bc8f43cb63d"
     },
     "0x0645": {
       "byte_length": 7,
       "offset": 373,
+      "source_anchor": "sGmapRouteMenuText",
+      "source_path": "src/data/data_081F64C0/data_081F64C0.c",
       "symbol": "sGmapRouteMenuText:MenuItemDef_WMGeneralMenu[0]",
       "value_sha256": "1d1bc2be996b75a5d48d072fefe258fa3d28d3c517f161b502e79350c41cda8e"
     },
     "0x0646": {
       "byte_length": 7,
       "offset": 380,
+      "source_anchor": "sGmapRouteMenuText",
+      "source_path": "src/data/data_081F64C0/data_081F64C0.c",
       "symbol": "sGmapRouteMenuText:MenuItemDef_WMGeneralMenu[1]",
       "value_sha256": "7badc9abe894d7150cb9506f96301ebd9f5591d24fadbc8b0eab40857ce40494"
     },
     "0x0647": {
       "byte_length": 7,
       "offset": 387,
+      "source_anchor": "sGmapRouteMenuText",
+      "source_path": "src/data/data_081F64C0/data_081F64C0.c",
       "symbol": "sGmapRouteMenuText:MenuItemDef_WMGeneralMenu[2]",
       "value_sha256": "823c3c8a19ef27236bf5e1ee84621e09abf19b8bfd0e54618c06130167f47697"
     },
     "0x0648": {
       "byte_length": 7,
       "offset": 394,
+      "source_anchor": "sGmapRouteMenuText",
+      "source_path": "src/data/data_081F64C0/data_081F64C0.c",
       "symbol": "sGmapRouteMenuText:MenuItemDef_WMGeneralMenu[3]",
       "value_sha256": "e1e9370d1ebdedc53354b8ba838ac4ec1d0014fd9bd03a670b1a40819e69cf78"
     },
     "0x0649": {
       "byte_length": 7,
       "offset": 401,
+      "source_anchor": "sGmapRouteMenuText",
+      "source_path": "src/data/data_081F64C0/data_081F64C0.c",
       "symbol": "sGmapRouteMenuText:MenuItemDef_WMGeneralMenu[4]",
       "value_sha256": "a13ffd740daf48d6799ab4e54fd5626e39fe58d489b59344dd594d32afe1cb60"
     },
     "0x066E": {
       "byte_length": 15,
       "offset": 408,
+      "source_anchor": "sGmapRouteMenuText",
+      "source_path": "src/data/data_081F64C0/data_081F64C0.c",
       "symbol": "sGmapRouteMenuText:MenuItemDef_WMNodeMenu[0]",
       "value_sha256": "25ea4caa03aeccb5b88be425937ab1bffd4262c7f1b7d0d3eb2e4168d229c2bf"
     },
     "0x066F": {
       "byte_length": 15,
       "offset": 423,
+      "source_anchor": "sGmapRouteMenuText",
+      "source_path": "src/data/data_081F64C0/data_081F64C0.c",
       "symbol": "sGmapRouteMenuText:MenuItemDef_WMNodeMenu[1]",
       "value_sha256": "79a025b980a1d8f75db0e147f6f96c0ee691119e981e1dde0d8e30b3f9db6424"
     },
     "0x0670": {
       "byte_length": 15,
       "offset": 438,
+      "source_anchor": "sGmapRouteMenuText",
+      "source_path": "src/data/data_081F64C0/data_081F64C0.c",
       "symbol": "sGmapRouteMenuText:MenuItemDef_WMNodeMenu[2]",
       "value_sha256": "432984993eeee1ec2d4775042c109cc29eae05badb42cc80e8ef91ea835498dc"
     },
     "0x0671": {
       "byte_length": 15,
       "offset": 453,
+      "source_anchor": "sGmapRouteMenuText",
+      "source_path": "src/data/data_081F64C0/data_081F64C0.c",
       "symbol": "sGmapRouteMenuText:MenuItemDef_WMNodeMenu[3]",
       "value_sha256": "24adecf2fa21a72a567e09c232f6d93f601ed800957797b08ae2037ae22dd714"
     },
     "0x067A": {
       "byte_length": 7,
       "offset": 468,
+      "source_anchor": "gMenuStr_25C",
+      "source_path": "src/menu_def.c",
       "symbol": "gMenuStr_25C..gMenuStr_154",
       "value_sha256": "20a605624684f7546900217fb374ec6df2e3c32629f9c4f9344e40af8b976fee"
     },
     "0x067C": {
       "byte_length": 5,
       "offset": 475,
+      "source_anchor": "gMenuStr_24C",
+      "source_path": "src/menu_def.c",
       "symbol": "gMenuStr_25C..gMenuStr_154",
       "value_sha256": "7fc4ed285711d7e10c05848855b4b7497b41d08d83463fa60a4465fc384b97a5"
     },
     "0x067D": {
       "byte_length": 9,
       "offset": 480,
+      "source_anchor": "gMenuStr_22C",
+      "source_path": "src/menu_def.c",
       "symbol": "gMenuStr_25C..gMenuStr_154",
       "value_sha256": "759ea4e6ef37d1dd3eb3e0bcd7b7550effaa45e9403bee13d8a306481901851b"
     },
     "0x067E": {
       "byte_length": 7,
       "offset": 489,
+      "source_anchor": "gMenuStr_224",
+      "source_path": "src/menu_def.c",
       "symbol": "gMenuStr_25C..gMenuStr_154",
       "value_sha256": "2ee35932cff6d95ce007c487ba7d7568b2131bd78048c455dd34f3ca595454be"
     },
     "0x067F": {
       "byte_length": 7,
       "offset": 496,
+      "source_anchor": "gMenuStr_21C",
+      "source_path": "src/menu_def.c",
       "symbol": "gMenuStr_25C..gMenuStr_154",
       "value_sha256": "525da0cbf42ce4cda98eb82fa9444f7218eace3f41d5c3cb2a89b13fdffe1c05"
     },
     "0x0680": {
       "byte_length": 7,
       "offset": 503,
+      "source_anchor": "gMenuStr_1F8",
+      "source_path": "src/menu_def.c",
       "symbol": "gMenuStr_25C..gMenuStr_154",
       "value_sha256": "9d25efac5d46c786e90936fd950f6c87a1d6a05ec5c75dc4e19f3197c004af57"
     },
     "0x0681": {
       "byte_length": 7,
       "offset": 510,
+      "source_anchor": "gMenuStr_1F0",
+      "source_path": "src/menu_def.c",
       "symbol": "gMenuStr_25C..gMenuStr_154",
       "value_sha256": "080ceecb93ef7d18f240121845e61d2fe07f0b12edde0b93f75a13b97746bd04"
     },
     "0x0682": {
       "byte_length": 7,
       "offset": 517,
+      "source_anchor": "gMenuStr_1E8",
+      "source_path": "src/menu_def.c",
       "symbol": "gMenuStr_25C..gMenuStr_154",
       "value_sha256": "11601995bdcf236ff86c7e4d80d1196d3cca3bf79e89720394336ed8ae38dfdb"
     },
     "0x0683": {
       "byte_length": 7,
       "offset": 524,
+      "source_anchor": "gMenuStr_1E0",
+      "source_path": "src/menu_def.c",
       "symbol": "gMenuStr_25C..gMenuStr_154",
       "value_sha256": "bf6380fdc144ac7fa8cc0ad26ef7a5a2f397cac265defdebe059d714705c8738"
     },
     "0x0684": {
       "byte_length": 5,
       "offset": 531,
+      "source_anchor": "gMenuStr_1D8",
+      "source_path": "src/menu_def.c",
       "symbol": "gMenuStr_25C..gMenuStr_154",
       "value_sha256": "e6e6fb8a01d1d9d215341d99a636842e0c4a6a489488bc936912bfbd4dcd3f0d"
     },
     "0x0685": {
       "byte_length": 9,
       "offset": 536,
+      "source_anchor": "gMenuStr_1CC",
+      "source_path": "src/menu_def.c",
       "symbol": "gMenuStr_25C..gMenuStr_154",
       "value_sha256": "03ece6da337f2a4bc94a67be402c0ddca646f25190c5c91adc2df03cb53de2f5"
     },
     "0x0686": {
       "byte_length": 9,
       "offset": 545,
+      "source_anchor": "gMenuStr_1C0",
+      "source_path": "src/menu_def.c",
       "symbol": "gMenuStr_25C..gMenuStr_154",
       "value_sha256": "3115a48b2b92e83842d7051bc127bb5525199eb14e799c101fbc07a251cb69bc"
     },
     "0x0687": {
       "byte_length": 9,
       "offset": 554,
+      "source_anchor": "gMenuStr_1B4",
+      "source_path": "src/menu_def.c",
       "symbol": "gMenuStr_25C..gMenuStr_154",
       "value_sha256": "dd2ed3cbbdb7d8fadc2803da5a589ed089b3897e6e00bcede2925622849dd97e"
     },
     "0x0688": {
       "byte_length": 9,
       "offset": 563,
+      "source_anchor": "gMenuStr_1A8",
+      "source_path": "src/menu_def.c",
       "symbol": "gMenuStr_25C..gMenuStr_154",
       "value_sha256": "729db3e570b20278a9e2f446d58c545852c03b1643f79ee70c53e83d42df0cb0"
     },
     "0x0689": {
       "byte_length": 7,
       "offset": 572,
+      "source_anchor": "gMenuStr_1A0",
+      "source_path": "src/menu_def.c",
       "symbol": "gMenuStr_25C..gMenuStr_154",
       "value_sha256": "59aa3318f73235b5cc800aec36d43f920c70e1df7e46c64bf84f5046ca66a853"
     },
     "0x068A": {
       "byte_length": 9,
       "offset": 579,
+      "source_anchor": "gMenuStr_194",
+      "source_path": "src/menu_def.c",
       "symbol": "gMenuStr_25C..gMenuStr_154",
       "value_sha256": "ea8c3e6e1ad3492a24d0b2861e089a0ee4aa4fdb66c363ad259d2def83513df3"
     },
     "0x068B": {
       "byte_length": 9,
       "offset": 588,
+      "source_anchor": "gMenuStr_188",
+      "source_path": "src/menu_def.c",
       "symbol": "gMenuStr_25C..gMenuStr_154",
       "value_sha256": "02d178d757790726f5eea776e495419682b90f7262008e1d0d44650e9a535d5d"
     },
     "0x068C": {
       "byte_length": 9,
       "offset": 597,
+      "source_anchor": "gMenuStr_17C",
+      "source_path": "src/menu_def.c",
       "symbol": "gMenuStr_25C..gMenuStr_154",
       "value_sha256": "b854024cc29d589a6db5259a6ea6b5eff956213d2dc265bf11c2044b6232b837"
     },
     "0x068D": {
       "byte_length": 9,
       "offset": 606,
+      "source_anchor": "gMenuStr_170",
+      "source_path": "src/menu_def.c",
       "symbol": "gMenuStr_25C..gMenuStr_154",
       "value_sha256": "6a19b798f9da955c4381dcb0a0a13c1bf788ff27e72f18db21cb8da1b9ef61aa"
     },
     "0x068E": {
       "byte_length": 7,
       "offset": 615,
+      "source_anchor": "gMenuStr_168",
+      "source_path": "src/menu_def.c",
       "symbol": "gMenuStr_25C..gMenuStr_154",
       "value_sha256": "13ccbbf61cc71d29d3fece4267a5bcc25fd645e56c3c7460d0d869596b4c3f55"
     },
     "0x068F": {
       "byte_length": 9,
       "offset": 622,
+      "source_anchor": "gMenuStr_15C",
+      "source_path": "src/menu_def.c",
       "symbol": "gMenuStr_25C..gMenuStr_154",
       "value_sha256": "c1b5cdd4d9b0010c2e0f610612494b326f9256828721824a2ff44f9e732ce0a4"
     },
     "0x0690": {
       "byte_length": 7,
       "offset": 631,
+      "source_anchor": "gMenuStr_294",
+      "source_path": "src/menu_def.c",
       "symbol": "gMapMenuItems[1].name",
       "value_sha256": "7badc9abe894d7150cb9506f96301ebd9f5591d24fadbc8b0eab40857ce40494"
     },
     "0x0691": {
       "byte_length": 7,
       "offset": 638,
+      "source_anchor": "gMenuStr_244",
+      "source_path": "src/menu_def.c",
       "symbol": "gMenuStr_25C..gMenuStr_154",
       "value_sha256": "56152e3f6ef6c3a43f0f06907c8cf8f5bea8088f96124b15d31094f023f5b56e"
     },
     "0x0692": {
       "byte_length": 9,
       "offset": 645,
+      "source_anchor": "gMenuStr_238",
+      "source_path": "src/menu_def.c",
       "symbol": "gMenuStr_25C..gMenuStr_154",
       "value_sha256": "0fba5948163bb508381167ac0644777cecbcfa5c26cbf4f6d238ae4d9ada1631"
     },
     "0x0694": {
       "byte_length": 9,
       "offset": 654,
+      "source_anchor": "gMenuStr_200",
+      "source_path": "src/menu_def.c",
       "symbol": "gMenuStr_25C..gMenuStr_154",
       "value_sha256": "3bde0c3e34c7ae9da56be679724a53a190b019210d5998bb1fe73f83cf87e810"
     },
     "0x0695": {
       "byte_length": 7,
       "offset": 663,
+      "source_anchor": "gMenuStr_154",
+      "source_path": "src/menu_def.c",
       "symbol": "gMenuStr_25C..gMenuStr_154",
       "value_sha256": "3ba296351f1af1431e0f3d853d67655d21cae2075ab68217672d69f3a343669f"
     },
     "0x0696": {
       "byte_length": 5,
       "offset": 670,
+      "source_anchor": "gMenuStr_14C",
+      "source_path": "src/menu_def.c",
       "symbol": "gMenuStr_14C..gMenuStr_134",
       "value_sha256": "1f1ac347ffe92f44a828d84dd9ebb9a03e9539a6417c9e19a95b64a5fd6f90a7"
     },
     "0x0697": {
       "byte_length": 5,
       "offset": 675,
+      "source_anchor": "gMenuStr_144",
+      "source_path": "src/menu_def.c",
       "symbol": "gMenuStr_14C..gMenuStr_134",
       "value_sha256": "12089326ee2f5ecd9c28da011bb9c7d3328452b5e42577d49b7b8672efbf9c4e"
     },
     "0x0698": {
       "byte_length": 5,
       "offset": 680,
+      "source_anchor": "gMenuStr_13C",
+      "source_path": "src/menu_def.c",
       "symbol": "gMenuStr_14C..gMenuStr_134",
       "value_sha256": "1c8a7514c9a51a80a806b2e6abeff31c9a8144a9de98dd8a046cf69c2fab1180"
     },
     "0x0699": {
       "byte_length": 7,
       "offset": 685,
+      "source_anchor": "gMenuStr_134",
+      "source_path": "src/menu_def.c",
       "symbol": "gMenuStr_14C..gMenuStr_134",
       "value_sha256": "70376a313532e3505475d2f05acefb334e80bf3b524006aac3f9347cdb630670"
     },
     "0x069A": {
       "byte_length": 7,
       "offset": 692,
+      "source_anchor": "gMenuStr_29C",
+      "source_path": "src/menu_def.c",
       "symbol": "gMapMenuItems[0].name",
       "value_sha256": "1d1bc2be996b75a5d48d072fefe258fa3d28d3c517f161b502e79350c41cda8e"
     },
     "0x069B": {
       "byte_length": 7,
       "offset": 699,
+      "source_anchor": "gMenuStr_27C",
+      "source_path": "src/menu_def.c",
       "symbol": "gMapMenuItems[4].name",
       "value_sha256": "e1e9370d1ebdedc53354b8ba838ac4ec1d0014fd9bd03a670b1a40819e69cf78"
     },
     "0x069C": {
       "byte_length": 7,
       "offset": 706,
+      "source_anchor": "gMenuStr_28C",
+      "source_path": "src/menu_def.c",
       "symbol": "gMapMenuItems[2].name",
       "value_sha256": "823c3c8a19ef27236bf5e1ee84621e09abf19b8bfd0e54618c06130167f47697"
     },
     "0x069D": {
       "byte_length": 7,
       "offset": 713,
+      "source_anchor": "gMenuStr_274",
+      "source_path": "src/menu_def.c",
       "symbol": "gMapMenuItems[5].name",
       "value_sha256": "a2a75524254e8c5ba0793541749bb4c58c6b787c174db70b63351975e251d37c"
     },
     "0x069E": {
       "byte_length": 7,
       "offset": 720,
+      "source_anchor": "gMenuStr_284",
+      "source_path": "src/menu_def.c",
       "symbol": "gMapMenuItems[3].name",
       "value_sha256": "0a0af358d29b05fa3a626bfab445cbf64c26db0c4eb26580ac3daf6c61b45f55"
     },
     "0x069F": {
       "byte_length": 7,
       "offset": 727,
+      "source_anchor": "gMenuStr_26C",
+      "source_path": "src/menu_def.c",
       "symbol": "gMapMenuItems[6].name",
       "value_sha256": "7b46a7d8d8c72c44e2925ce71713636c84c9f6b9a30a482155c08145691e88af"
     },
     "0x06A0": {
       "byte_length": 7,
       "offset": 734,
+      "source_anchor": "gMenuStr_264",
+      "source_path": "src/menu_def.c",
       "symbol": "gMapMenuItems[7].name",
       "value_sha256": "7df12a0e4754de95d983cecc284d43b3d79579d0ced20f95fec7809a409d8517"
     },
     "0x0843": {
       "byte_length": 5,
       "offset": 741,
+      "source_anchor": "gMenuStr_12C",
+      "source_path": "src/menu_def.c",
       "symbol": "gMenuStr_12C/gMenuStr_124",
       "value_sha256": "7017897ce9b520fe6fbec52fbf8b4c692ae6871232252e47b889f376848d823c"
     },
     "0x0844": {
       "byte_length": 7,
       "offset": 746,
+      "source_anchor": "gMenuStr_124",
+      "source_path": "src/menu_def.c",
       "symbol": "gMenuStr_12C/gMenuStr_124",
       "value_sha256": "994caed121f428d33bb71973ea63274c195a077b15e1d3474004dc01ef30b6cd"
     }
   },
-  "schema_version": 2,
-  "source_blob": {
-    "encoding": "cp932-nul-terminated",
-    "path": "raw_provider_values.cp932.bin",
-    "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+  "schema_version": 3,
+  "source_blobs": [
+    {
+      "oid": "1c0f8efd141f52ae77a9c23a6631f8401ba7a36a",
+      "path": "src/player_interface_0808F584.c",
+      "sha256": "87a9bfce30c2009afc4173229252e5968622c9a16c85c9bbe106c9b649f1517a",
+      "vendored_path": "upstream/src/player_interface_0808F584.c"
+    },
+    {
+      "oid": "5c305d88069e72358a13b57d5ffb69f5e9a13910",
+      "path": "src/data/data_081F6D00/data_081F6D00.s",
+      "sha256": "4fa7ea7c3b0a808b3aee88b55a5ce2d8d6ec99fd8bbc7286d0484d3a54902697",
+      "vendored_path": "upstream/src/data/data_081F6D00/data_081F6D00.s"
+    },
+    {
+      "oid": "e7fffaafb31d0b46dbd98e1497bbdf528b0deb9d",
+      "path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
+      "sha256": "14ed5290dc04a490a8f158fcfa6fa6cd7e8fc0ae843c97002c18ebfeb4abf1d5",
+      "vendored_path": "upstream/src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c"
+    },
+    {
+      "oid": "fe15c60493b9f8b3387fc086c85bdd1ec51214c8",
+      "path": "src/menu_def.c",
+      "sha256": "30cc532531cc641d3b3eccb0a3c338447ac61b9a7aa3d775ab70834a9974ebc1",
+      "vendored_path": "upstream/src/menu_def.c"
+    },
+    {
+      "oid": "ee2c937488d07f45861ddaaa11138be5eee15384",
+      "path": "src/data/data_081F64C0/data_081F64C0.c",
+      "sha256": "9295371b0c644828b70868a1115ed78d0aaa3cff496d8dca293921f4f8a1727f",
+      "vendored_path": "upstream/src/data/data_081F64C0/data_081F64C0.c"
+    }
+  ],
+  "source_commit": {
+    "path": "upstream/commit.txt",
+    "sha256": "b4b7acd0f24e30ffa6ac41a3280486e9cc6484dd42aae13703422125be41d586"
   },
   "source_repository": "https://github.com/laqieer/fireemblem8j",
   "source_revision": "bf424414d075789d757e2f4cd0cea823bfb2862e",

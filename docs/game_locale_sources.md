@@ -441,11 +441,26 @@ The closure ledger accounts for all 143 unique raw imports:
 
 Japanese closure rows comprise tracked C literals, reviewed authored
 corrections/expansion catalog entries, and raw symbols resolved from the 119
-materialized target+symbol records in `ja/raw.json`. Raw symbols are checked
-against the committed exact CP932 source blob; tracked literals retain their
-source path/symbol/key/context hash; authored rows retain their catalog/shard
-key, evidence kind, method, and payload hash. The closure manifest records one
-of those explicit provenance forms on every one of its 143 Japanese providers.
+materialized target+symbol records in `ja/raw.json`. Raw-symbol schema v3 pins
+the FE8J repository URL and nonzero commit OID, vendors that commit object plus
+the five exact upstream source blobs used by the extraction, and records each
+upstream path and Git blob OID. Normal offline checks recompute the vendored
+commit/blob Git object IDs, SHA-256 hashes, source anchors, CP932 artifact
+ranges, and decoded values. To independently verify the repository relation
+with `git cat-file`, point the origin gate at a local FE8J checkout or object
+database containing the pinned commit:
+
+```bash
+python3 -m scripts.localization.game_locales check-ja-raw-origin \
+  --repository /path/to/fireemblem8j
+```
+
+This rejects an all-zero or mismatched commit, a nonexistent commit in the
+selected repository, a path whose blob OID differs at that commit, and
+arbitrary vendored bytes. Tracked literals retain their source
+path/symbol/key/context hash; authored rows retain their catalog/shard key,
+evidence kind, method, and payload hash. The closure manifest records one of
+those explicit provenance forms on every one of its 143 Japanese providers.
 Simplified Chinese comes from the exact imported raw payload.
 Modern promotion-selector initializers are empty because their draw callback
 normally supplies a localized class name. If a bounded option target or its
@@ -464,11 +479,18 @@ python3 -m scripts.localization.game_locales check-raw-closure
 ```
 
 The check also verifies every recorded FE8U source path and every declared
-anchor still exists in the declared order. Scoped call sites must keep all
-anchors inside the named function/initializer, and declared provider anchors
-must equal the mapped provider rather than merely finding an unrelated live
-identifier elsewhere in the file. It verifies every literal provider against
-its committed symbol/key/value/context,
+anchor still exists in the declared order. Scoped call sites keep all anchors
+inside the named function, initializer, or standalone symbol. Every explicit
+decision backed by a mapped Japanese symbol must declare a nonempty
+`provider_anchor`; omitting it is a hard error. A cross-source
+`provider_scope` can bind that anchor to the independently pinned FE8J source
+while the target anchors remain scoped to FE8U. In particular, imports
+0139-0141 bind `MSG_1C1`/`MSG_1C3`/`MSG_1C2` and
+`GoalString_UnitsLeft`/`GoalString_LastTurn`/`GoalString_Turn` inside the two
+regional `GoalDisplay_Init` function bodies, never merely elsewhere in either
+file. Declared provider anchors must equal the mapped provider rather than
+finding an unrelated live identifier. The check verifies every literal
+provider against its committed symbol/key/value/context,
 every raw symbol has a matching target+symbol materialization, every semantic
 expansion key is active and translated in `en`/`ja`/`zh-Hans`, and every
 expansion provider names a surviving runtime consumer function whose body

@@ -467,7 +467,18 @@
           "anchors": [
             "GetStringFromIndex(MSG_1C1)"
           ],
-          "path": "src/player_interface.c"
+          "path": "src/player_interface.c",
+          "provider_anchor": "GoalString_UnitsLeft",
+          "provider_scope": {
+            "anchors": [
+              "GoalString_UnitsLeft"
+            ],
+            "path": "texts/locales/source/fe8j/upstream/src/player_interface_0808F584.c",
+            "scope_kind": "function",
+            "symbol": "GoalDisplay_Init"
+          },
+          "scope_kind": "function",
+          "symbol": "GoalDisplay_Init"
         }
       ],
       "classification": "game_message",
@@ -482,7 +493,18 @@
           "anchors": [
             "GetStringFromIndex(MSG_1C3)"
           ],
-          "path": "src/player_interface.c"
+          "path": "src/player_interface.c",
+          "provider_anchor": "GoalString_LastTurn",
+          "provider_scope": {
+            "anchors": [
+              "GoalString_LastTurn"
+            ],
+            "path": "texts/locales/source/fe8j/upstream/src/player_interface_0808F584.c",
+            "scope_kind": "function",
+            "symbol": "GoalDisplay_Init"
+          },
+          "scope_kind": "function",
+          "symbol": "GoalDisplay_Init"
         }
       ],
       "classification": "game_message",
@@ -497,7 +519,18 @@
           "anchors": [
             "GetStringFromIndex(MSG_1C2)"
           ],
-          "path": "src/player_interface.c"
+          "path": "src/player_interface.c",
+          "provider_anchor": "GoalString_Turn",
+          "provider_scope": {
+            "anchors": [
+              "GoalString_Turn"
+            ],
+            "path": "texts/locales/source/fe8j/upstream/src/player_interface_0808F584.c",
+            "scope_kind": "function",
+            "symbol": "GoalDisplay_Init"
+          },
+          "scope_kind": "function",
+          "symbol": "GoalDisplay_Init"
         }
       ],
       "classification": "game_message",
@@ -512,7 +545,9 @@
           "anchors": [
             "const char gBuildDateTime[]"
           ],
-          "path": "src/main.c"
+          "path": "src/main.c",
+          "scope_kind": "symbol",
+          "symbol": "gBuildDateTime"
         },
         {
           "anchors": [
@@ -548,5 +583,5 @@
   ],
   "deferred_record_count": 29,
   "kind": "fe8cn-raw-surface-decisions",
-  "schema_version": 2
+  "schema_version": 3
 }

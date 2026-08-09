@@ -5,15 +5,16 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Mapping
 
 JA_RAW_PROVIDER_KIND = "fe8j-raw-provider-catalog"
-JA_RAW_PROVIDER_SCHEMA_VERSION = 2
+JA_RAW_PROVIDER_SCHEMA_VERSION = 3
 _TARGET_ID_RE = re.compile(r"0x[0-9A-F]{4}")
 _SHA256_RE = re.compile(r"[0-9a-f]{64}")
-_REVISION_RE = re.compile(r"[0-9a-f]{40}")
+_GIT_OID_RE = re.compile(r"[0-9a-f]{40}")
 
 
 class RawProviderError(ValueError):
@@ -24,11 +25,60 @@ class RawProviderError(ValueError):
 class RawProvider:
     symbol: str
     text: str
-    source_blob_path: str
-    source_blob_sha256: str
+    source_repository: str
+    source_revision: str
+    source_path: str
+    source_blob_oid: str
+    source_anchor: str
+    source_artifact_path: str
+    source_artifact_sha256: str
     value_offset: int
     value_length: int
     value_sha256: str
+
+
+@dataclass(frozen=True)
+class GitSourceBlob:
+    path: str
+    oid: str
+    vendored_path: str
+    sha256: str
+    raw: bytes
+
+
+@dataclass(frozen=True)
+class GitSource:
+    repository: str
+    revision: str
+    blobs: Mapping[str, GitSourceBlob]
+    generated_from_paths: tuple[str, ...]
+    artifact_path: str
+    artifact_sha256: str
+    artifact_raw: bytes
+
+
+def _git_object_oid(kind: str, raw: bytes) -> str:
+    header = f"{kind} {len(raw)}\0".encode("ascii")
+    return hashlib.sha1(header + raw).hexdigest()
+
+
+def _require_git_oid(value: Any, field: str) -> str:
+    if (
+        not isinstance(value, str)
+        or not _GIT_OID_RE.fullmatch(value)
+        or value == "0" * 40
+    ):
+        raise RawProviderError(f"{field} must be a nonzero full Git OID")
+    return value
+
+
+def _require_relative_path(value: Any, field: str) -> str:
+    if not isinstance(value, str) or not value:
+        raise RawProviderError(f"{field} must be a non-empty relative path")
+    path = Path(value)
+    if path.is_absolute() or ".." in path.parts or ":" in value:
+        raise RawProviderError(f"{field} must be a safe relative path")
+    return value
 
 
 def _load_source_snapshot(
@@ -70,20 +120,21 @@ def _load_source_snapshot(
         )
     if not isinstance(snapshot, dict):
         raise RawProviderError("ja raw provider source snapshot must be an object")
-    if snapshot.get("schema_version") != 2:
+    if snapshot.get("schema_version") != JA_RAW_PROVIDER_SCHEMA_VERSION:
         raise RawProviderError(
-            "ja raw provider source snapshot schema_version must be 2"
+            "ja raw provider source snapshot schema_version must be "
+            f"{JA_RAW_PROVIDER_SCHEMA_VERSION}"
         )
     if snapshot.get("kind") != "fe8j-raw-symbol-source-snapshot":
         raise RawProviderError("ja raw provider source snapshot kind is invalid")
     return snapshot, path
 
 
-def _load_source_blob(
+def _load_git_source(
     snapshot: Mapping[str, Any],
     *,
     snapshot_path: Path,
-) -> tuple[bytes, str, str]:
+) -> GitSource:
     repository = snapshot.get("source_repository")
     revision = snapshot.get("source_revision")
     source_url = snapshot.get("source_url")
@@ -94,52 +145,178 @@ def _load_source_blob(
         raise RawProviderError(
             "ja raw provider source snapshot repository must be a GitHub URL"
         )
-    if not isinstance(revision, str) or not _REVISION_RE.fullmatch(revision):
+    revision = _require_git_oid(
+        revision,
+        "ja raw provider source snapshot revision",
+    )
+    expected_source_url = (
+        f"{repository.removesuffix('.git').rstrip('/')}/tree/{revision}"
+    )
+    if source_url != expected_source_url:
         raise RawProviderError(
-            "ja raw provider source snapshot revision must be a full commit SHA"
-        )
-    if (
-        not isinstance(source_url, str)
-        or revision not in source_url
-        or not source_url.startswith(repository)
-    ):
-        raise RawProviderError(
-            "ja raw provider source snapshot URL must pin the full revision"
+            "ja raw provider source snapshot URL must exactly pin the full revision"
         )
 
-    blob_specification = snapshot.get("source_blob")
-    if not isinstance(blob_specification, dict) or set(blob_specification) != {
-        "encoding",
+    commit_specification = snapshot.get("source_commit")
+    if not isinstance(commit_specification, dict) or set(commit_specification) != {
         "path",
         "sha256",
     }:
         raise RawProviderError(
-            "ja raw provider source_blob must contain encoding, path, and sha256"
+            "ja raw provider source_commit must contain path and sha256"
         )
-    if blob_specification["encoding"] != "cp932-nul-terminated":
+    commit_path = _require_relative_path(
+        commit_specification["path"],
+        "ja raw provider source_commit.path",
+    )
+    commit_sha256 = commit_specification["sha256"]
+    if not isinstance(commit_sha256, str) or not _SHA256_RE.fullmatch(
+        commit_sha256
+    ):
         raise RawProviderError(
-            "ja raw provider source_blob encoding must be cp932-nul-terminated"
+            "ja raw provider source_commit.sha256 must be a lowercase SHA-256"
         )
-    relative_path = blob_specification["path"]
-    expected_sha256 = blob_specification["sha256"]
-    if not isinstance(relative_path, str) or not relative_path:
-        raise RawProviderError("ja raw provider source_blob.path is invalid")
+    try:
+        commit_raw = (snapshot_path.parent / commit_path).read_bytes()
+    except OSError as error:
+        raise RawProviderError(
+            "ja raw provider vendored commit object is unavailable"
+        ) from error
+    if hashlib.sha256(commit_raw).hexdigest() != commit_sha256:
+        raise RawProviderError(
+            "ja raw provider vendored commit object SHA-256 mismatch"
+        )
+    if _git_object_oid("commit", commit_raw) != revision:
+        raise RawProviderError(
+            "ja raw provider vendored commit object does not match revision"
+        )
+
+    raw_source_blobs = snapshot.get("source_blobs")
+    if not isinstance(raw_source_blobs, list) or not raw_source_blobs:
+        raise RawProviderError(
+            "ja raw provider source_blobs must be a non-empty array"
+        )
+    source_blobs: Dict[str, GitSourceBlob] = {}
+    for index, raw_blob in enumerate(raw_source_blobs):
+        field = f"ja raw provider source_blobs[{index}]"
+        if not isinstance(raw_blob, dict) or set(raw_blob) != {
+            "oid",
+            "path",
+            "sha256",
+            "vendored_path",
+        }:
+            raise RawProviderError(
+                f"{field} must contain oid, path, sha256, and vendored_path"
+            )
+        source_path = _require_relative_path(raw_blob["path"], f"{field}.path")
+        vendored_path = _require_relative_path(
+            raw_blob["vendored_path"],
+            f"{field}.vendored_path",
+        )
+        oid = _require_git_oid(raw_blob["oid"], f"{field}.oid")
+        sha256 = raw_blob["sha256"]
+        if not isinstance(sha256, str) or not _SHA256_RE.fullmatch(sha256):
+            raise RawProviderError(
+                f"{field}.sha256 must be a lowercase SHA-256"
+            )
+        if source_path in source_blobs:
+            raise RawProviderError(
+                f"duplicate ja raw provider source blob path {source_path}"
+            )
+        try:
+            raw = (snapshot_path.parent / vendored_path).read_bytes()
+        except OSError as error:
+            raise RawProviderError(
+                f"ja raw provider vendored source blob is unavailable: "
+                f"{vendored_path}"
+            ) from error
+        if hashlib.sha256(raw).hexdigest() != sha256:
+            raise RawProviderError(
+                f"ja raw provider vendored source blob SHA-256 mismatch: "
+                f"{source_path}"
+            )
+        if _git_object_oid("blob", raw) != oid:
+            raise RawProviderError(
+                f"ja raw provider vendored source blob Git OID mismatch: "
+                f"{source_path}"
+            )
+        source_blobs[source_path] = GitSourceBlob(
+            path=source_path,
+            oid=oid,
+            vendored_path=vendored_path,
+            sha256=sha256,
+            raw=raw,
+        )
+
+    artifact_specification = snapshot.get("provider_values_artifact")
+    if not isinstance(artifact_specification, dict) or set(
+        artifact_specification
+    ) != {
+        "encoding",
+        "generated_from_paths",
+        "path",
+        "sha256",
+    }:
+        raise RawProviderError(
+            "ja raw provider provider_values_artifact must contain encoding, "
+            "generated_from_paths, path, and sha256"
+        )
+    if artifact_specification["encoding"] != "cp932-nul-terminated":
+        raise RawProviderError(
+            "ja raw provider provider_values_artifact encoding must be "
+            "cp932-nul-terminated"
+        )
+    artifact_path = _require_relative_path(
+        artifact_specification["path"],
+        "ja raw provider provider_values_artifact.path",
+    )
+    expected_sha256 = artifact_specification["sha256"]
     if not isinstance(expected_sha256, str) or not _SHA256_RE.fullmatch(
         expected_sha256
     ):
         raise RawProviderError(
-            "ja raw provider source_blob.sha256 must be a lowercase SHA-256"
+            "ja raw provider provider_values_artifact.sha256 must be a "
+            "lowercase SHA-256"
         )
-    path = snapshot_path.parent / relative_path
+    generated_from_paths = artifact_specification["generated_from_paths"]
+    if (
+        not isinstance(generated_from_paths, list)
+        or not generated_from_paths
+        or any(
+            not isinstance(path, str) or path not in source_blobs
+            for path in generated_from_paths
+        )
+        or len(set(generated_from_paths)) != len(generated_from_paths)
+    ):
+        raise RawProviderError(
+            "ja raw provider provider_values_artifact.generated_from_paths "
+            "must uniquely reference pinned source blobs"
+        )
+    if set(generated_from_paths) != set(source_blobs):
+        raise RawProviderError(
+            "ja raw provider provider_values_artifact.generated_from_paths "
+            "must cover every pinned source blob"
+        )
+    path = snapshot_path.parent / artifact_path
     try:
         raw = path.read_bytes()
     except OSError as error:
         raise RawProviderError(
-            f"ja raw provider exact source blob is unavailable: {path}"
+            f"ja raw provider values artifact is unavailable: {path}"
         ) from error
     if hashlib.sha256(raw).hexdigest() != expected_sha256:
-        raise RawProviderError("ja raw provider exact source blob SHA-256 mismatch")
-    return raw, relative_path, expected_sha256
+        raise RawProviderError(
+            "ja raw provider values artifact SHA-256 mismatch"
+        )
+    return GitSource(
+        repository=repository,
+        revision=revision,
+        blobs=source_blobs,
+        generated_from_paths=tuple(generated_from_paths),
+        artifact_path=artifact_path,
+        artifact_sha256=expected_sha256,
+        artifact_raw=raw,
+    )
 
 
 def load_ja_raw_providers(
@@ -164,12 +341,10 @@ def load_ja_raw_providers(
             "ja raw provider source_layout must be 'FE8J-raw-symbol'"
         )
     source_revision = data.get("source_revision")
-    if not isinstance(source_revision, str) or not _REVISION_RE.fullmatch(
-        source_revision
-    ):
-        raise RawProviderError(
-            "ja raw provider source_revision must be a full commit SHA"
-        )
+    source_revision = _require_git_oid(
+        source_revision,
+        "ja raw provider source_revision",
+    )
     snapshot, snapshot_path = _load_source_snapshot(
         data,
         source_root=source_root,
@@ -178,10 +353,15 @@ def load_ja_raw_providers(
         raise RawProviderError(
             "ja raw provider source snapshot revision does not match catalog"
         )
-    source_blob, source_blob_path, source_blob_sha256 = _load_source_blob(
+    git_source = _load_git_source(
         snapshot,
         snapshot_path=snapshot_path,
     )
+    if git_source.revision != source_revision:
+        raise RawProviderError(
+            "ja raw provider Git source revision does not match catalog"
+        )
+    source_blob = git_source.artifact_raw
 
     raw_providers = data.get("providers")
     if not isinstance(raw_providers, dict):
@@ -204,6 +384,7 @@ def load_ja_raw_providers(
 
     providers: Dict[int, RawProvider] = {}
     source_ranges = []
+    used_source_paths = set()
     for target, raw_provider in raw_providers.items():
         if not isinstance(target, str) or not _TARGET_ID_RE.fullmatch(target):
             raise RawProviderError(
@@ -221,12 +402,15 @@ def load_ja_raw_providers(
         if not isinstance(snapshot_provider, dict) or set(snapshot_provider) != {
             "byte_length",
             "offset",
+            "source_anchor",
+            "source_path",
             "symbol",
             "value_sha256",
         }:
             raise RawProviderError(
                 f"ja raw provider source snapshot {target} must contain "
-                "byte_length, offset, symbol, and value_sha256"
+                "byte_length, offset, source_anchor, source_path, symbol, "
+                "and value_sha256"
             )
         if snapshot_provider["symbol"] != symbol:
             raise RawProviderError(
@@ -235,6 +419,8 @@ def load_ja_raw_providers(
         offset = snapshot_provider["offset"]
         byte_length = snapshot_provider["byte_length"]
         value_sha256 = snapshot_provider["value_sha256"]
+        source_path = snapshot_provider["source_path"]
+        source_anchor = snapshot_provider["source_anchor"]
         if (
             not isinstance(offset, int)
             or isinstance(offset, bool)
@@ -251,6 +437,21 @@ def load_ja_raw_providers(
         ):
             raise RawProviderError(
                 f"ja raw provider {target} value_sha256 is invalid"
+            )
+        if not isinstance(source_path, str) or source_path not in git_source.blobs:
+            raise RawProviderError(
+                f"ja raw provider {target} source_path is not pinned"
+            )
+        if not isinstance(source_anchor, str) or not source_anchor:
+            raise RawProviderError(
+                f"ja raw provider {target} source_anchor must be non-empty"
+            )
+        source_git_blob = git_source.blobs[source_path]
+        used_source_paths.add(source_path)
+        if source_anchor.encode("utf-8") not in source_git_blob.raw:
+            raise RawProviderError(
+                f"ja raw provider {target} source_anchor is absent from "
+                f"{source_path}"
             )
         end = offset + byte_length
         if end > len(source_blob):
@@ -282,8 +483,13 @@ def load_ja_raw_providers(
         providers[target_id] = RawProvider(
             symbol=symbol,
             text=text,
-            source_blob_path=source_blob_path,
-            source_blob_sha256=source_blob_sha256,
+            source_repository=git_source.repository,
+            source_revision=git_source.revision,
+            source_path=source_path,
+            source_blob_oid=source_git_blob.oid,
+            source_anchor=source_anchor,
+            source_artifact_path=git_source.artifact_path,
+            source_artifact_sha256=git_source.artifact_sha256,
             value_offset=offset,
             value_length=byte_length,
             value_sha256=value_sha256,
@@ -300,7 +506,88 @@ def load_ja_raw_providers(
         raise RawProviderError(
             "ja raw provider source blob has unreferenced trailing bytes"
         )
+    if used_source_paths != set(git_source.generated_from_paths):
+        raise RawProviderError(
+            "ja raw provider entries do not use every generated source path"
+        )
     return providers
+
+
+def _git_output(repository: Path, *args: str) -> bytes:
+    command = ["git", "-C", str(repository), *args]
+    try:
+        result = subprocess.run(
+            command,
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+    except OSError as error:
+        raise RawProviderError("git is unavailable for source verification") from error
+    if result.returncode != 0:
+        diagnostic = result.stderr.decode("utf-8", errors="replace").strip()
+        raise RawProviderError(
+            f"git source verification failed for {' '.join(args)}: {diagnostic}"
+        )
+    return result.stdout
+
+
+def verify_ja_raw_provider_git_source(
+    data: Any,
+    *,
+    source_root: Path,
+    repository: Path,
+) -> None:
+    if not isinstance(data, dict):
+        raise RawProviderError("ja raw provider catalog root must be an object")
+    snapshot, snapshot_path = _load_source_snapshot(
+        data,
+        source_root=source_root,
+    )
+    git_source = _load_git_source(snapshot, snapshot_path=snapshot_path)
+    catalog_revision = _require_git_oid(
+        data.get("source_revision"),
+        "ja raw provider source_revision",
+    )
+    if catalog_revision != git_source.revision:
+        raise RawProviderError(
+            "ja raw provider Git source revision does not match catalog"
+        )
+
+    revision = git_source.revision
+    _git_output(Path(repository), "cat-file", "-e", f"{revision}^{{commit}}")
+    actual_commit = _git_output(
+        Path(repository),
+        "cat-file",
+        "commit",
+        revision,
+    )
+    if _git_object_oid("commit", actual_commit) != revision:
+        raise RawProviderError(
+            "git source repository returned a mismatched commit object"
+        )
+
+    for source_path, source_blob in sorted(git_source.blobs.items()):
+        actual_oid = _git_output(
+            Path(repository),
+            "rev-parse",
+            f"{revision}:{source_path}",
+        ).decode("ascii", errors="strict").strip()
+        if actual_oid != source_blob.oid:
+            raise RawProviderError(
+                f"git source blob OID mismatch for {source_path}: "
+                f"{actual_oid} != {source_blob.oid}"
+            )
+        actual_blob = _git_output(
+            Path(repository),
+            "cat-file",
+            "blob",
+            source_blob.oid,
+        )
+        if actual_blob != source_blob.raw:
+            raise RawProviderError(
+                f"git source blob bytes mismatch for {source_path}"
+            )
 
 
 def resolve_ja_raw_provider(

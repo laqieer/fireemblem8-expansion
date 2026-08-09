@@ -480,11 +480,11 @@
       "text": "いいえ"
     }
   },
-  "schema_version": 2,
+  "schema_version": 3,
   "source_layout": "FE8J-raw-symbol",
   "source_revision": "bf424414d075789d757e2f4cd0cea823bfb2862e",
   "source_snapshot": {
     "path": "../source/fe8j/raw_symbols.json",
-    "sha256": "a6012726ecde8e42fac978f515c45f1ccc73afbdc3313482380f26f65f8db560"
+    "sha256": "851a57b140c177aea5423035f17fcc6b27168b64a26923f0a58645931ef56795"
   }
 }

@@ -16,7 +16,7 @@ from .raw_providers import (
     resolve_ja_raw_text,
 )
 
-CLOSURE_SCHEMA_VERSION = 2
+CLOSURE_SCHEMA_VERSION = 3
 DECISIONS_KIND = "fe8cn-raw-surface-decisions"
 CLOSURE_KIND = "fe8cn-raw-surface-closure"
 DECISION_CLASSES = (
@@ -97,14 +97,42 @@ def _validate_call_sites(
                 f"{site_field}.anchors must contain non-empty strings"
             )
         provider_anchor = site.get("provider_anchor")
+        provider_scope = site.get("provider_scope")
+        normalized_provider_scope = None
+        if provider_scope is not None:
+            if provider_anchor is None:
+                raise RawClosureError(
+                    f"{site_field}.provider_scope requires provider_anchor"
+                )
+            provider_scope = _require_dict(
+                provider_scope,
+                f"{site_field}.provider_scope",
+            )
+            if "provider_scope" in provider_scope:
+                raise RawClosureError(
+                    f"{site_field}.provider_scope cannot be nested"
+                )
+            normalized_provider_scope = _validate_call_sites(
+                [provider_scope],
+                field=f"{site_field}.provider_scope",
+                repo_root=repo_root,
+            )[0]
         if provider_anchor is not None:
             provider_anchor = _require_string(
                 provider_anchor,
                 f"{site_field}.provider_anchor",
             )
-            if provider_anchor not in anchors:
+            if (
+                provider_anchor not in anchors
+                and (
+                    normalized_provider_scope is None
+                    or provider_anchor
+                    not in normalized_provider_scope["anchors"]
+                )
+            ):
                 raise RawClosureError(
-                    f"{site_field}.provider_anchor must also be a declared anchor"
+                    f"{site_field}.provider_anchor must be an identifying anchor "
+                    "in the target or provider scope"
                 )
         path = repo_root / relative_path
         if not path.is_file():
@@ -126,9 +154,12 @@ def _validate_call_sites(
                 source = _function_body(source, symbol, site_field)
             elif scope_kind == "initializer":
                 source = _initializer_body(source, symbol, site_field)
+            elif scope_kind == "symbol":
+                source = _symbol_body(source, symbol, site_field)
             else:
                 raise RawClosureError(
-                    f"{site_field}.scope_kind must be 'function' or 'initializer'"
+                    f"{site_field}.scope_kind must be 'function', "
+                    "'initializer', or 'symbol'"
                 )
         cursor = 0
         missing = []
@@ -149,6 +180,8 @@ def _validate_call_sites(
             normalized_site["symbol"] = symbol
         if provider_anchor is not None:
             normalized_site["provider_anchor"] = provider_anchor
+        if normalized_provider_scope is not None:
+            normalized_site["provider_scope"] = normalized_provider_scope
         normalized.append(normalized_site)
     return normalized
 
@@ -192,6 +225,18 @@ def _initializer_body(source: str, symbol: str, field: str) -> str:
     if match is None:
         raise RawClosureError(f"{field}.symbol is not an array initializer")
     return _brace_body(source, match.end() - 1, field)
+
+
+def _symbol_body(source: str, symbol: str, field: str) -> str:
+    source = _strip_c_comments(source)
+    match = re.search(
+        rf"[^;{{}}]*\b{re.escape(symbol)}\b[^;{{}}]*;",
+        source,
+        flags=re.DOTALL,
+    )
+    if match is None:
+        raise RawClosureError(f"{field}.symbol is not a standalone declaration")
+    return match.group(0)
 
 
 def _scope_kind(source: str, symbol: str) -> str:
@@ -452,9 +497,6 @@ def _validate_declared_provider_anchors(
         for site in call_sites
         if "provider_anchor" in site
     }
-    if not declared:
-        return
-
     expected = set()
     for row in rows:
         source = row.source
@@ -469,6 +511,11 @@ def _validate_declared_provider_anchors(
         if ja_source.get("kind") == "symbol":
             expected.add(ja_source.get("symbol"))
     expected.discard(None)
+    if expected and not declared:
+        raise RawClosureError(
+            f"{field} must declare provider_anchor for mapped Japanese "
+            f"providers: expected={sorted(expected)}"
+        )
     if declared != expected:
         raise RawClosureError(
             f"{field} provider anchors do not match mapped Japanese providers: "
@@ -779,10 +826,17 @@ def build_raw_surface_closure(
                     )
                     ja_provenance = {
                         "byte_length": raw_provider.value_length,
-                        "kind": "exact_cp932_source_blob",
+                        "kind": "pinned_git_source_artifact",
                         "offset": raw_provider.value_offset,
-                        "path": raw_provider.source_blob_path,
-                        "source_blob_sha256": raw_provider.source_blob_sha256,
+                        "provider_values_artifact": {
+                            "path": raw_provider.source_artifact_path,
+                            "sha256": raw_provider.source_artifact_sha256,
+                        },
+                        "source_anchor": raw_provider.source_anchor,
+                        "source_blob_oid": raw_provider.source_blob_oid,
+                        "source_path": raw_provider.source_path,
+                        "source_repository": raw_provider.source_repository,
+                        "source_revision": raw_provider.source_revision,
                         "symbol": raw_provider.symbol,
                         "value_sha256": raw_provider.value_sha256,
                     }

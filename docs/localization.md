@@ -292,8 +292,13 @@ descriptor slots.
    The production compressed catalog is 3,414/3,414 present for both `ja` and
    `zh-Hans`, with zero English fallback and zero unresolved rows. The
    independent 143-record raw-surface closure also has zero fallback,
-   exclusion, and unresolved record. The shared modern English bundle remains
-   the real `en` locale; zero CJK fallback does not remove or duplicate it.
+   exclusion, and unresolved record. Its Japanese raw-symbol providers are
+   fail-closed against a nonzero pinned FE8J commit, vendored commit/source
+   Git objects, per-provider source paths/anchors, and the exact CP932
+   extraction artifact; symbol-backed decisions cannot omit
+   `provider_anchor`. See `docs/game_locale_sources.md` for the offline and
+   `git cat-file` origin gates. The shared modern English bundle remains the
+   real `en` locale; zero CJK fallback does not remove or duplicate it.
    `build-final-mapping` also regenerates
    `texts/locales/mapping/ending_layout_metrics.json`. That gate reads the
    real `InitText` allocations in `src/ending_details.c` (120 pixels for all

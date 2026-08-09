@@ -1,6 +1,8 @@
 import json
 import hashlib
 import re
+import shutil
+import subprocess
 import sys
 import unittest
 from collections import Counter
@@ -15,6 +17,11 @@ from scripts.localization.game_locales.raw_closure import (
     RawClosureError,
     build_raw_surface_closure,
     canonical_json_bytes,
+)
+from scripts.localization.game_locales.raw_providers import (
+    RawProviderError,
+    load_ja_raw_providers,
+    verify_ja_raw_provider_git_source,
 )
 
 
@@ -134,6 +141,23 @@ class RawSurfaceClosureTests(unittest.TestCase):
                 provenance_kinds[
                     row["providers"]["ja"]["provenance"]["kind"]
                 ] += 1
+                provenance = row["providers"]["ja"]["provenance"]
+                if provenance["kind"] == "pinned_git_source_artifact":
+                    self.assertRegex(
+                        provenance["source_revision"],
+                        r"^(?!0{40})[0-9a-f]{40}$",
+                    )
+                    self.assertRegex(
+                        provenance["source_blob_oid"],
+                        r"^(?!0{40})[0-9a-f]{40}$",
+                    )
+                    self.assertTrue(provenance["source_repository"])
+                    self.assertTrue(provenance["source_path"])
+                    self.assertTrue(provenance["source_anchor"])
+                    self.assertRegex(
+                        provenance["provider_values_artifact"]["sha256"],
+                        r"^[0-9a-f]{64}$",
+                    )
                 self.assertRegex(
                     row["providers"]["zh-Hans"]["text_sha256"],
                     r"^[0-9a-f]{64}$",
@@ -142,7 +166,7 @@ class RawSurfaceClosureTests(unittest.TestCase):
             provenance_kinds,
             Counter(
                 {
-                    "exact_cp932_source_blob": 113,
+                    "pinned_git_source_artifact": 113,
                     "tracked_source_literal": 13,
                     "reviewed_authored_translation": 11,
                     "authored_expansion_catalog": 6,
@@ -381,6 +405,88 @@ class RawSurfaceClosureTests(unittest.TestCase):
                 repo_root=ROOT,
             )
 
+    def test_symbol_backed_decision_requires_provider_anchor(self):
+        broken = deepcopy(self.decisions)
+        decision = next(
+            row
+            for row in broken["decisions"]
+            if row["import_id"] == "fe8cn.raw.import-0062"
+        )
+        del decision["call_sites"][0]["provider_anchor"]
+        with self.assertRaisesRegex(
+            RawClosureError,
+            "must declare provider_anchor",
+        ):
+            build_raw_surface_closure(
+                raw_data=self.raw,
+                mapping_data=self.mapping,
+                decisions_data=broken,
+                ja_raw_provider_data=self.ja_raw,
+                registry_data=self.registry,
+                catalog_data=self.catalogs,
+                repo_root=ROOT,
+            )
+
+    def test_symbol_backed_decision_rejects_empty_provider_anchor(self):
+        broken = deepcopy(self.decisions)
+        decision = next(
+            row
+            for row in broken["decisions"]
+            if row["import_id"] == "fe8cn.raw.import-0139"
+        )
+        decision["call_sites"][0]["provider_anchor"] = ""
+        with self.assertRaisesRegex(RawClosureError, "non-empty string"):
+            build_raw_surface_closure(
+                raw_data=self.raw,
+                mapping_data=self.mapping,
+                decisions_data=broken,
+                ja_raw_provider_data=self.ja_raw,
+                registry_data=self.registry,
+                catalog_data=self.catalogs,
+                repo_root=ROOT,
+            )
+
+    def test_goal_target_anchor_must_remain_inside_goal_display_init(self):
+        broken = deepcopy(self.decisions)
+        decision = next(
+            row
+            for row in broken["decisions"]
+            if row["import_id"] == "fe8cn.raw.import-0139"
+        )
+        decision["call_sites"][0]["anchors"].append("BmMapFill")
+        with self.assertRaisesRegex(RawClosureError, "missing ordered anchors"):
+            build_raw_surface_closure(
+                raw_data=self.raw,
+                mapping_data=self.mapping,
+                decisions_data=broken,
+                ja_raw_provider_data=self.ja_raw,
+                registry_data=self.registry,
+                catalog_data=self.catalogs,
+                repo_root=ROOT,
+            )
+
+    def test_goal_provider_anchor_must_remain_inside_pinned_goal_function(self):
+        broken = deepcopy(self.decisions)
+        decision = next(
+            row
+            for row in broken["decisions"]
+            if row["import_id"] == "fe8cn.raw.import-0139"
+        )
+        decision["call_sites"][0]["provider_scope"]["anchors"] = [
+            "GoalString_UnitsLeft",
+            "ClassChgMenuItem_OnTextDraw",
+        ]
+        with self.assertRaisesRegex(RawClosureError, "missing ordered anchors"):
+            build_raw_surface_closure(
+                raw_data=self.raw,
+                mapping_data=self.mapping,
+                decisions_data=broken,
+                ja_raw_provider_data=self.ja_raw,
+                registry_data=self.registry,
+                catalog_data=self.catalogs,
+                repo_root=ROOT,
+            )
+
     def test_stale_terrain_provider_symbol_fails_closed(self):
         broken = deepcopy(self.mapping)
         row = next(row for row in broken["rows"] if row["target_id"] == "0x01C4")
@@ -529,6 +635,32 @@ class RawSurfaceClosureTests(unittest.TestCase):
                     self.ja_raw["providers"][target_id],
                     {"symbol": symbol, "text": text},
                 )
+        decisions = {
+            row["target_id"]: row
+            for row in self.decisions["decisions"]
+            if row.get("target_id") in expected
+        }
+        for target_id, (symbol, _) in expected.items():
+            site = decisions[target_id]["call_sites"][0]
+            self.assertEqual(site["scope_kind"], "function")
+            self.assertEqual(site["symbol"], "GoalDisplay_Init")
+            self.assertEqual(
+                site["anchors"],
+                [f"GetStringFromIndex(MSG_{int(target_id, 16):X})"],
+            )
+            self.assertEqual(site["provider_anchor"], symbol)
+            self.assertEqual(
+                site["provider_scope"],
+                {
+                    "anchors": [symbol],
+                    "path": (
+                        "texts/locales/source/fe8j/upstream/"
+                        "src/player_interface_0808F584.c"
+                    ),
+                    "scope_kind": "function",
+                    "symbol": "GoalDisplay_Init",
+                },
+            )
 
     def test_japanese_raw_provider_snapshot_is_accessible_and_exact(self):
         specification = self.ja_raw["source_snapshot"]
@@ -536,19 +668,57 @@ class RawSurfaceClosureTests(unittest.TestCase):
         snapshot = json.loads(path.read_text(encoding="utf-8"))
         self.assertEqual(snapshot["source_revision"], self.ja_raw["source_revision"])
         self.assertRegex(snapshot["source_revision"], r"^[0-9a-f]{40}$")
+        self.assertNotEqual(snapshot["source_revision"], "0" * 40)
         self.assertIn(snapshot["source_revision"], snapshot["source_url"])
         self.assertEqual(snapshot["provider_count"], 119)
-        blob_path = path.parent / snapshot["source_blob"]["path"]
+        commit_path = path.parent / snapshot["source_commit"]["path"]
+        commit = commit_path.read_bytes()
+        self.assertEqual(
+            hashlib.sha256(commit).hexdigest(),
+            snapshot["source_commit"]["sha256"],
+        )
+        self.assertEqual(
+            hashlib.sha1(
+                f"commit {len(commit)}\0".encode("ascii") + commit
+            ).hexdigest(),
+            snapshot["source_revision"],
+        )
+        pinned_blobs = {}
+        for source_blob in snapshot["source_blobs"]:
+            source_path = path.parent / source_blob["vendored_path"]
+            raw = source_path.read_bytes()
+            self.assertEqual(
+                hashlib.sha256(raw).hexdigest(),
+                source_blob["sha256"],
+            )
+            self.assertEqual(
+                hashlib.sha1(
+                    f"blob {len(raw)}\0".encode("ascii") + raw
+                ).hexdigest(),
+                source_blob["oid"],
+            )
+            pinned_blobs[source_blob["path"]] = raw
+        artifact = snapshot["provider_values_artifact"]
+        self.assertEqual(
+            set(artifact["generated_from_paths"]),
+            set(pinned_blobs),
+        )
+        blob_path = path.parent / artifact["path"]
         blob = blob_path.read_bytes()
         self.assertEqual(
             hashlib.sha256(blob).hexdigest(),
-            snapshot["source_blob"]["sha256"],
+            artifact["sha256"],
         )
-        self.assertEqual(snapshot["source_blob"]["encoding"], "cp932-nul-terminated")
+        self.assertEqual(artifact["encoding"], "cp932-nul-terminated")
         for target, source in snapshot["providers"].items():
             with self.subTest(target=target):
                 provider = self.ja_raw["providers"][target]
                 self.assertEqual(source["symbol"], provider["symbol"])
+                self.assertIn(source["source_path"], pinned_blobs)
+                self.assertIn(
+                    source["source_anchor"].encode("utf-8"),
+                    pinned_blobs[source["source_path"]],
+                )
                 raw_value = blob[
                     source["offset"] : source["offset"] + source["byte_length"]
                 ]
@@ -575,6 +745,187 @@ class RawSurfaceClosureTests(unittest.TestCase):
                 self.ja_raw["providers"]["0x01C4"]["symbol"],
                 "gTerrains_0[TERRAIN_NONE]",
         )
+
+    def test_git_origin_fixture_rejects_zero_missing_commit_and_arbitrary_blob(self):
+        fixture = ROOT / "build/tests/raw-provider-origin"
+        if fixture.exists():
+                shutil.rmtree(fixture)
+        fixture.mkdir(parents=True)
+        repository = fixture / "repository"
+        repository.mkdir()
+        subprocess.run(["git", "init", "-q", str(repository)], check=True)
+        subprocess.run(
+                ["git", "-C", str(repository), "config", "user.name", "Fixture"],
+                check=True,
+        )
+        subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    str(repository),
+                    "config",
+                    "user.email",
+                    "fixture@example.com",
+                ],
+                check=True,
+        )
+        source_path = repository / "src/provider.c"
+        source_path.parent.mkdir()
+        source_path.write_text(
+                'const char FixtureProvider[] = "fixture";\n',
+                encoding="utf-8",
+        )
+        subprocess.run(["git", "-C", str(repository), "add", "."], check=True)
+        subprocess.run(
+                ["git", "-C", str(repository), "commit", "-q", "-m", "fixture"],
+                check=True,
+        )
+        revision = subprocess.check_output(
+                ["git", "-C", str(repository), "rev-parse", "HEAD"],
+                text=True,
+        ).strip()
+        source_oid = subprocess.check_output(
+                ["git", "-C", str(repository), "rev-parse", f"{revision}:src/provider.c"],
+                text=True,
+        ).strip()
+        source_raw = source_path.read_bytes()
+        commit_raw = subprocess.check_output(
+                ["git", "-C", str(repository), "cat-file", "commit", revision]
+        )
+
+        catalog_root = fixture / "catalog"
+        catalog_root.mkdir()
+        (catalog_root / "source.c").write_bytes(source_raw)
+        (catalog_root / "commit.txt").write_bytes(commit_raw)
+        value_raw = "値".encode("cp932") + b"\0"
+        (catalog_root / "values.bin").write_bytes(value_raw)
+        snapshot = {
+                "kind": "fe8j-raw-symbol-source-snapshot",
+                "provider_count": 1,
+                "provider_values_artifact": {
+                    "encoding": "cp932-nul-terminated",
+                    "generated_from_paths": ["src/provider.c"],
+                    "path": "values.bin",
+                    "sha256": hashlib.sha256(value_raw).hexdigest(),
+                },
+                "providers": {
+                    "0x0001": {
+                        "byte_length": len(value_raw),
+                        "offset": 0,
+                        "source_anchor": "FixtureProvider",
+                        "source_path": "src/provider.c",
+                        "symbol": "FixtureProvider",
+                        "value_sha256": hashlib.sha256(value_raw).hexdigest(),
+                    }
+                },
+                "schema_version": 3,
+                "source_blobs": [
+                    {
+                        "oid": source_oid,
+                        "path": "src/provider.c",
+                        "sha256": hashlib.sha256(source_raw).hexdigest(),
+                        "vendored_path": "source.c",
+                    }
+                ],
+                "source_commit": {
+                    "path": "commit.txt",
+                    "sha256": hashlib.sha256(commit_raw).hexdigest(),
+                },
+                "source_repository": "https://github.com/example/fixture",
+                "source_revision": revision,
+                "source_url": f"https://github.com/example/fixture/tree/{revision}",
+        }
+
+        def catalog_for(source_snapshot):
+                snapshot_bytes = (
+                    json.dumps(
+                        source_snapshot,
+                        ensure_ascii=False,
+                        indent=2,
+                        sort_keys=True,
+                    )
+                    + "\n"
+                ).encode("utf-8")
+                (catalog_root / "snapshot.json").write_bytes(snapshot_bytes)
+                return {
+                    "kind": "fe8j-raw-provider-catalog",
+                    "locale_id": "ja",
+                    "provider_count": 1,
+                    "providers": {
+                        "0x0001": {
+                            "symbol": "FixtureProvider",
+                            "text": "値",
+                        }
+                    },
+                    "schema_version": 3,
+                    "source_layout": "FE8J-raw-symbol",
+                    "source_revision": source_snapshot["source_revision"],
+                    "source_snapshot": {
+                        "path": "snapshot.json",
+                        "sha256": hashlib.sha256(snapshot_bytes).hexdigest(),
+                    },
+                }
+
+        try:
+                catalog = catalog_for(snapshot)
+                load_ja_raw_providers(catalog, source_root=catalog_root)
+                verify_ja_raw_provider_git_source(
+                    catalog,
+                    source_root=catalog_root,
+                    repository=repository,
+                )
+
+                zero = deepcopy(snapshot)
+                zero["source_revision"] = "0" * 40
+                zero_catalog = catalog_for(zero)
+                with self.assertRaisesRegex(RawProviderError, "nonzero full Git OID"):
+                    load_ja_raw_providers(zero_catalog, source_root=catalog_root)
+
+                missing = deepcopy(snapshot)
+                fake_commit = commit_raw + b"\nmissing\n"
+                fake_revision = hashlib.sha1(
+                    f"commit {len(fake_commit)}\0".encode("ascii") + fake_commit
+                ).hexdigest()
+                (catalog_root / "commit.txt").write_bytes(fake_commit)
+                missing["source_revision"] = fake_revision
+                missing["source_url"] = (
+                    f"https://github.com/example/fixture/tree/{fake_revision}"
+                )
+                missing["source_commit"]["sha256"] = hashlib.sha256(
+                    fake_commit
+                ).hexdigest()
+                missing_catalog = catalog_for(missing)
+                load_ja_raw_providers(missing_catalog, source_root=catalog_root)
+                with self.assertRaisesRegex(
+                    RawProviderError,
+                    "git source verification failed",
+                ):
+                    verify_ja_raw_provider_git_source(
+                        missing_catalog,
+                        source_root=catalog_root,
+                        repository=repository,
+                    )
+
+                (catalog_root / "commit.txt").write_bytes(commit_raw)
+                arbitrary = deepcopy(snapshot)
+                arbitrary_raw = source_raw + b"/* arbitrary FixtureProvider */\n"
+                (catalog_root / "source.c").write_bytes(arbitrary_raw)
+                arbitrary["source_blobs"][0]["oid"] = hashlib.sha1(
+                    f"blob {len(arbitrary_raw)}\0".encode("ascii") + arbitrary_raw
+                ).hexdigest()
+                arbitrary["source_blobs"][0]["sha256"] = hashlib.sha256(
+                    arbitrary_raw
+                ).hexdigest()
+                arbitrary_catalog = catalog_for(arbitrary)
+                load_ja_raw_providers(arbitrary_catalog, source_root=catalog_root)
+                with self.assertRaisesRegex(RawProviderError, "blob OID mismatch"):
+                    verify_ja_raw_provider_git_source(
+                        arbitrary_catalog,
+                        source_root=catalog_root,
+                        repository=repository,
+                    )
+        finally:
+                shutil.rmtree(fixture)
 
 
 if __name__ == "__main__":
