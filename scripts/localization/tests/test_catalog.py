@@ -9,7 +9,7 @@ sys.path.insert(0, str(ROOT))
 
 from scripts.localization import schema
 from scripts.localization.catalog import load_catalog, parse_registry
-from scripts.localization.pseudo import pseudoize
+from scripts.localization.pseudo import apply_pseudo_policy, pseudoize
 from scripts.localization.schema import SchemaError
 
 
@@ -480,11 +480,7 @@ class LoadCatalogTests(unittest.TestCase):
         )
         for entry in loaded.active_entries:
             en_text = loaded.en_strings[entry.key]
-            expected = (
-                en_text
-                if entry.pseudo_policy == schema.PSEUDO_POLICY_PRESERVE
-                else pseudoize(en_text)
-            )
+            expected = apply_pseudo_policy(en_text, entry.pseudo_policy)
             self.assertEqual(loaded.pseudo_strings[entry.key], expected)
 
 

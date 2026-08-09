@@ -9,6 +9,7 @@ from scripts.localization import schema
 from scripts.localization.pseudo import (
     apply_pseudo_policy,
     pseudoize,
+    pseudoize_compact,
     pseudoize_catalog,
 )
 from scripts.localization.schema import SchemaError
@@ -71,6 +72,16 @@ class PseudoizeTests(unittest.TestCase):
             apply_pseudo_policy(text, schema.PSEUDO_POLICY_PRESERVE),
             text,
         )
+
+    def test_compact_policy_keeps_pseudo_signal_without_expansion(self):
+        text = "Receiving {0}\nNow"
+        result = pseudoize_compact(text)
+        self.assertEqual(result, "ReCeIvInG {0}\nnOw")
+        self.assertEqual(
+            apply_pseudo_policy(text, schema.PSEUDO_POLICY_COMPACT),
+            result,
+        )
+        self.assertEqual(len(result), len(text))
 
     def test_invalid_policy_rejected(self):
         with self.assertRaises(SchemaError):

@@ -27,9 +27,13 @@ remain import provenance only and never become runtime keys.
 - `ja/raw.json`: 119 materialized FE8J raw-symbol providers keyed by FE8U
   target ID plus the verified evidence symbol. This includes the three
   inline goal-window labels and prevents a same-number FE8J indexed message
-  from being substituted for a raw provider. The catalog pins and must exactly
-  match the committed `source/fe8j/raw_symbols.json` symbol/value extraction;
-  a revision name alone is not accepted as provenance.
+  from being substituted for a raw provider. The catalog pins the full
+  `fireemblem8j` commit SHA and must exactly match the committed
+  `source/fe8j/raw_symbols.json` symbol/range/hash manifest plus its
+  `raw_provider_values.cp932.bin` exact NUL-terminated CP932 source blob.
+  Validation checks the snapshot hash, blob hash, every symbol, every bounded
+  byte range, every per-value hash, and the decoded value; an unavailable
+  revision name or a second JSON copy of the catalog is not provenance.
 - `zh-Hans/indexed.txt`: 3,339 FE8CN messages using the FE8J indexed layout.
 - `zh-Hans/raw.json`: 152 raw-address occurrences deduplicated to 143 stable
   `fe8cn.raw.import-NNNN` IDs. IDs are assigned by pinned source import order,
@@ -435,9 +439,13 @@ The closure ledger accounts for all 143 unique raw imports:
 - 0 records use fallback or exclusion;
 - 0 records remain unresolved.
 
-Japanese raw providers comprise 20 literals verified directly against tracked
-FE8J-derived C table entries and 119 materialized target+symbol records in
-`ja/raw.json`, all checked against the committed raw-symbol source snapshot.
+Japanese closure rows comprise tracked C literals, reviewed authored
+corrections/expansion catalog entries, and raw symbols resolved from the 119
+materialized target+symbol records in `ja/raw.json`. Raw symbols are checked
+against the committed exact CP932 source blob; tracked literals retain their
+source path/symbol/key/context hash; authored rows retain their catalog/shard
+key, evidence kind, method, and payload hash. The closure manifest records one
+of those explicit provenance forms on every one of its 143 Japanese providers.
 Simplified Chinese comes from the exact imported raw payload.
 Modern promotion-selector initializers are empty because their draw callback
 normally supplies a localized class name. If a bounded option target or its
@@ -456,8 +464,11 @@ python3 -m scripts.localization.game_locales check-raw-closure
 ```
 
 The check also verifies every recorded FE8U source path and every declared
-anchor still exists in the declared order, every literal provider matches its
-committed symbol/key/value/context,
+anchor still exists in the declared order. Scoped call sites must keep all
+anchors inside the named function/initializer, and declared provider anchors
+must equal the mapped provider rather than merely finding an unrelated live
+identifier elsewhere in the file. It verifies every literal provider against
+its committed symbol/key/value/context,
 every raw symbol has a matching target+symbol materialization, every semantic
 expansion key is active and translated in `en`/`ja`/`zh-Hans`, and every
 expansion provider names a surviving runtime consumer function whose body
@@ -465,8 +476,8 @@ contains the key-specific resolver anchors. Chinese expansion values equal
 their imported raw payload except executable-identity records, whose
 `en`/`ja`/`zh-Hans` values must all equal the referenced C string symbol. Its
 strict gate is exactly 143 total, 143 verified game/expansion providers, 143
-materialized JA payloads, 143 materialized ZH payloads, and zero fallback,
-exclusions, or unresolved records.
+materialized JA payloads, 143 explicit JA provenance records, 143 materialized
+ZH payloads, and zero fallback, exclusions, or unresolved records.
 
 Together, the compressed 3,414-row catalog and the 143-record raw-surface
 closure have zero English fallback, zero exclusion, and zero unresolved

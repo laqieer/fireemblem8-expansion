@@ -77,7 +77,7 @@ static void DebugToolsHub_OnEnd(struct MenuProc* proc)
 }
 
 CONST_DATA struct MenuDef gDebugToolsHubMenuDef = {
-    {1, 1, 15, 0},
+    {1, 1, DEBUGTOOLS_MENU_WIDTH_TILES, 0},
     0,
     sHubMenuItemDefs,
     0,
@@ -225,7 +225,7 @@ static void DebugToolsHub_ShowDiagnostics(void)
             BG_GetMapBuffer(2) + TILEMAP_INDEX(1, 1),
             TEXT_COLOR_SYSTEM_WHITE,
             0,
-            24,
+            DEBUGTOOLS_STATUS_TEXT_WIDTH_TILES,
             buf);
         BG_EnableSyncByMask(BG2_SYNC_BIT);
         gLCDControlBuffer.dispcnt.bg2_on = 1;

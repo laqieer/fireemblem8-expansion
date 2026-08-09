@@ -77,12 +77,17 @@ STATUS_ACTIVE = "active"
 STATUS_TOMBSTONE = "tombstone"
 STATUSES = (STATUS_ACTIVE, STATUS_TOMBSTONE)
 
-# Active registry entries default to the normal qps-ploc transform. Entries
-# whose text is a locale-neutral identifier may explicitly preserve the
-# English bytes instead.
+# Active registry entries default to the normal qps-ploc transform. A
+# width-critical fixed row may use the compact transform, while a
+# locale-neutral identifier may explicitly preserve the English bytes.
 PSEUDO_POLICY_TRANSFORM = "transform"
+PSEUDO_POLICY_COMPACT = "compact"
 PSEUDO_POLICY_PRESERVE = "preserve"
-PSEUDO_POLICIES = (PSEUDO_POLICY_TRANSFORM, PSEUDO_POLICY_PRESERVE)
+PSEUDO_POLICIES = (
+    PSEUDO_POLICY_TRANSFORM,
+    PSEUDO_POLICY_COMPACT,
+    PSEUDO_POLICY_PRESERVE,
+)
 DEFAULT_PSEUDO_POLICY = PSEUDO_POLICY_TRANSFORM
 
 # Message "surface" -- which framework UI/diagnostic surface a message is

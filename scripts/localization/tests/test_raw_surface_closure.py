@@ -3,6 +3,7 @@ import hashlib
 import re
 import sys
 import unittest
+from collections import Counter
 from copy import deepcopy
 from pathlib import Path
 
@@ -68,6 +69,7 @@ class RawSurfaceClosureTests(unittest.TestCase):
         self.assertEqual(summary["provider_count"], 143)
         self.assertEqual(summary["runtime_consumer_verified_count"], 6)
         self.assertEqual(summary["ja_materialized_count"], 143)
+        self.assertEqual(summary["ja_provenance_count"], 143)
         self.assertEqual(summary["zh_hans_materialized_count"], 143)
         self.assertEqual(summary["non_user_facing_exclusion_count"], 0)
         self.assertEqual(summary["diagnostic_exclusion_count"], 0)
@@ -124,13 +126,29 @@ class RawSurfaceClosureTests(unittest.TestCase):
             )
 
     def test_every_record_has_materialized_japanese_and_chinese_providers(self):
+        provenance_kinds = Counter()
         for row in self.closure["rows"]:
             with self.subTest(import_id=row["import_id"]):
                 self.assertRegex(row["providers"]["ja"]["text_sha256"], r"^[0-9a-f]{64}$")
+                self.assertIsInstance(row["providers"]["ja"]["provenance"], dict)
+                provenance_kinds[
+                    row["providers"]["ja"]["provenance"]["kind"]
+                ] += 1
                 self.assertRegex(
                     row["providers"]["zh-Hans"]["text_sha256"],
                     r"^[0-9a-f]{64}$",
                 )
+        self.assertEqual(
+            provenance_kinds,
+            Counter(
+                {
+                    "exact_cp932_source_blob": 113,
+                    "tracked_source_literal": 13,
+                    "reviewed_authored_translation": 11,
+                    "authored_expansion_catalog": 6,
+                }
+            ),
+        )
 
     def test_expansion_adapters_use_expected_chinese_payloads(self):
         raw_text = {
@@ -324,6 +342,63 @@ class RawSurfaceClosureTests(unittest.TestCase):
                 repo_root=ROOT,
             )
 
+    def test_stale_scoped_call_site_symbol_fails_closed(self):
+        broken = deepcopy(self.decisions)
+        decision = next(
+            row
+            for row in broken["decisions"]
+            if row["import_id"] == "fe8cn.raw.import-0062"
+        )
+        decision["call_sites"][0]["symbol"] = "gMenuItem_PromoSel_Stale"
+        with self.assertRaisesRegex(RawClosureError, "array initializer"):
+            build_raw_surface_closure(
+                raw_data=self.raw,
+                mapping_data=self.mapping,
+                decisions_data=broken,
+                ja_raw_provider_data=self.ja_raw,
+                registry_data=self.registry,
+                catalog_data=self.catalogs,
+                repo_root=ROOT,
+            )
+
+    def test_unrelated_surviving_provider_anchor_fails_closed(self):
+        broken = deepcopy(self.decisions)
+        decision = next(
+            row
+            for row in broken["decisions"]
+            if row["import_id"] == "fe8cn.raw.import-0062"
+        )
+        decision["call_sites"][0]["anchors"][0] = "PROMO_OPTION_2_NAME"
+        decision["call_sites"][0]["provider_anchor"] = "PROMO_OPTION_2_NAME"
+        with self.assertRaisesRegex(RawClosureError, "provider anchors do not match"):
+            build_raw_surface_closure(
+                raw_data=self.raw,
+                mapping_data=self.mapping,
+                decisions_data=broken,
+                ja_raw_provider_data=self.ja_raw,
+                registry_data=self.registry,
+                catalog_data=self.catalogs,
+                repo_root=ROOT,
+            )
+
+    def test_stale_terrain_provider_symbol_fails_closed(self):
+        broken = deepcopy(self.mapping)
+        row = next(row for row in broken["rows"] if row["target_id"] == "0x01C4")
+        row["verification"]["source_symbol"] = "gTerrainNames"
+        with self.assertRaisesRegex(
+            RawClosureError,
+            "gTerrainNames is not a scoped function or array provider",
+        ):
+            build_raw_surface_closure(
+                raw_data=self.raw,
+                mapping_data=broken,
+                decisions_data=self.decisions,
+                ja_raw_provider_data=self.ja_raw,
+                registry_data=self.registry,
+                catalog_data=self.catalogs,
+                repo_root=ROOT,
+            )
+
     def test_reversed_call_site_anchor_relationship_fails_closed(self):
         broken = deepcopy(self.decisions)
         decision = next(
@@ -391,6 +466,51 @@ class RawSurfaceClosureTests(unittest.TestCase):
                 repo_root=ROOT,
             )
 
+    def test_tampered_japanese_provider_symbol_fails_source_verification(self):
+        broken = deepcopy(self.ja_raw)
+        broken["providers"]["0x01C1"]["symbol"] = "GoalString_UnitsLeft_Stale"
+        with self.assertRaisesRegex(RawClosureError, "source symbol mismatch"):
+            build_raw_surface_closure(
+                raw_data=self.raw,
+                mapping_data=self.mapping,
+                decisions_data=self.decisions,
+                ja_raw_provider_data=broken,
+                registry_data=self.registry,
+                catalog_data=self.catalogs,
+                repo_root=ROOT,
+            )
+
+    def test_tampered_japanese_provider_value_fails_source_verification(self):
+        broken = deepcopy(self.ja_raw)
+        broken["providers"]["0x01C1"]["text"] = "残"
+        with self.assertRaisesRegex(
+            RawClosureError,
+            "source value does not match catalog text",
+        ):
+            build_raw_surface_closure(
+                raw_data=self.raw,
+                mapping_data=self.mapping,
+                decisions_data=self.decisions,
+                ja_raw_provider_data=broken,
+                registry_data=self.registry,
+                catalog_data=self.catalogs,
+                repo_root=ROOT,
+            )
+
+    def test_tampered_japanese_source_snapshot_hash_fails_closed(self):
+        broken = deepcopy(self.ja_raw)
+        broken["source_snapshot"]["sha256"] = "0" * 64
+        with self.assertRaisesRegex(RawClosureError, "snapshot SHA-256 mismatch"):
+            build_raw_surface_closure(
+                raw_data=self.raw,
+                mapping_data=self.mapping,
+                decisions_data=self.decisions,
+                ja_raw_provider_data=broken,
+                registry_data=self.registry,
+                catalog_data=self.catalogs,
+                repo_root=ROOT,
+            )
+
     def test_goal_labels_use_raw_symbols_not_same_id_indexed_messages(self):
         expected = {
             "0x01C1": ("GoalString_UnitsLeft", "残り"),
@@ -415,12 +535,36 @@ class RawSurfaceClosureTests(unittest.TestCase):
         path = ROOT / "texts/locales/ja" / specification["path"]
         snapshot = json.loads(path.read_text(encoding="utf-8"))
         self.assertEqual(snapshot["source_revision"], self.ja_raw["source_revision"])
+        self.assertRegex(snapshot["source_revision"], r"^[0-9a-f]{40}$")
+        self.assertIn(snapshot["source_revision"], snapshot["source_url"])
         self.assertEqual(snapshot["provider_count"], 119)
-        self.assertEqual(snapshot["providers"], self.ja_raw["providers"])
+        blob_path = path.parent / snapshot["source_blob"]["path"]
+        blob = blob_path.read_bytes()
+        self.assertEqual(
+            hashlib.sha256(blob).hexdigest(),
+            snapshot["source_blob"]["sha256"],
+        )
+        self.assertEqual(snapshot["source_blob"]["encoding"], "cp932-nul-terminated")
+        for target, source in snapshot["providers"].items():
+            with self.subTest(target=target):
+                provider = self.ja_raw["providers"][target]
+                self.assertEqual(source["symbol"], provider["symbol"])
+                raw_value = blob[
+                    source["offset"] : source["offset"] + source["byte_length"]
+                ]
+                self.assertEqual(
+                    hashlib.sha256(raw_value).hexdigest(),
+                    source["value_sha256"],
+                )
+                self.assertTrue(raw_value.endswith(b"\0"))
+                self.assertEqual(
+                    raw_value[:-1].decode("cp932"),
+                    provider["text"],
+                )
         self.assertTrue(
                 all(
                     not provider["symbol"].startswith("gTerrainNames[")
-                    for provider in snapshot["providers"].values()
+                    for provider in self.ja_raw["providers"].values()
                 )
         )
         self.assertEqual(
@@ -428,7 +572,7 @@ class RawSurfaceClosureTests(unittest.TestCase):
                 specification["sha256"],
         )
         self.assertEqual(
-                snapshot["providers"]["0x01C4"]["symbol"],
+                self.ja_raw["providers"]["0x01C4"]["symbol"],
                 "gTerrains_0[TERRAIN_NONE]",
         )
 

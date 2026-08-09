@@ -1058,6 +1058,14 @@ new `DebugToolsResult` codes), and `DebugToolsCh4PrepLaunchScenarioSchemaTests`
 see "Fast Boot: Chapter 4 (Prep)"/"Diagnostics"/"Five bounded validated
 tools" above for what each proves.
 
+- `scripts/localization/tests/test_debugtools_localization.py` loads the
+  generated `en`/`ja`/`zh-Hans`/`qps-ploc` catalogs and committed system-font
+  metrics, then checks every hub/confirmation/Back label against the actual
+  `(MenuDef.rect.w - 1) * 8` Text allocation. It also checks composed status
+  lines against their real BG geometry and the localized Weather/Fog
+  label/value columns. The shared debug menu width is 19 tiles (18 text
+  tiles); the CJK status allocation is 24 tiles, both still within the
+  30-tile GBA screen.
 - **`DebugToolsRegistryHostTests`** compiles+links+executes the real
   `src/debugtools_registry.c` (enabled path) against a small driver
   (`tools/gba-playtest/tests/c/debugtools_registry_driver.c`) through the

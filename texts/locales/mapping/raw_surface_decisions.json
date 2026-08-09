@@ -355,10 +355,20 @@
         {
           "anchors": [
             "PROMO_OPTION_1_NAME",
-            "ClassChgMenu_GetDisplayLabel",
             "ClassChgMenuItem_OnTextDraw"
           ],
-          "path": "src/classchg-menuselect.c"
+          "path": "src/classchg-menuselect.c",
+          "provider_anchor": "PROMO_OPTION_1_NAME",
+          "scope_kind": "initializer",
+          "symbol": "gMenuItem_PromoSel"
+        },
+        {
+          "anchors": [
+            "ClassChgMenu_GetDisplayLabel"
+          ],
+          "path": "src/classchg-menuselect.c",
+          "scope_kind": "function",
+          "symbol": "ClassChgMenuItem_OnTextDraw"
         }
       ],
       "classification": "expansion_message",
@@ -382,10 +392,20 @@
         {
           "anchors": [
             "PROMO_OPTION_2_NAME",
-            "ClassChgMenu_GetDisplayLabel",
             "ClassChgMenuItem_OnTextDraw"
           ],
-          "path": "src/classchg-menuselect.c"
+          "path": "src/classchg-menuselect.c",
+          "provider_anchor": "PROMO_OPTION_2_NAME",
+          "scope_kind": "initializer",
+          "symbol": "gMenuItem_PromoSel"
+        },
+        {
+          "anchors": [
+            "ClassChgMenu_GetDisplayLabel"
+          ],
+          "path": "src/classchg-menuselect.c",
+          "scope_kind": "function",
+          "symbol": "ClassChgMenuItem_OnTextDraw"
         }
       ],
       "classification": "expansion_message",
@@ -409,10 +429,20 @@
         {
           "anchors": [
             "PROMO_OPTION_3_NAME",
-            "ClassChgMenu_GetDisplayLabel",
             "ClassChgMenuItem_OnTextDraw"
           ],
-          "path": "src/classchg-menuselect.c"
+          "path": "src/classchg-menuselect.c",
+          "provider_anchor": "PROMO_OPTION_3_NAME",
+          "scope_kind": "initializer",
+          "symbol": "gMenuItem_PromoSel"
+        },
+        {
+          "anchors": [
+            "ClassChgMenu_GetDisplayLabel"
+          ],
+          "path": "src/classchg-menuselect.c",
+          "scope_kind": "function",
+          "symbol": "ClassChgMenuItem_OnTextDraw"
         }
       ],
       "classification": "expansion_message",
@@ -489,7 +519,9 @@
             "ExpansionLocale_ResolveCurrent",
             "EXP_MSG_RAW_SURFACE_DIAGNOSTIC_BUILD_TIMESTAMP"
           ],
-          "path": "src/fe3_dummy.c"
+          "path": "src/fe3_dummy.c",
+          "scope_kind": "function",
+          "symbol": "PrintDebugBuildDateAndTime"
         }
       ],
       "classification": "expansion_message",

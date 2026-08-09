@@ -13,8 +13,9 @@ control token (``\\n``) are always copied through verbatim -- transforming
 either would break format-string/formatting parity between English and
 the pseudo locale (see validate.py's placeholder/control-token parity
 check). Active registry entries use this transform by default; a
-locale-neutral identifier may instead declare the validated ``preserve``
-policy and pass through byte-for-byte.
+width-critical fixed-row label may instead declare ``compact`` (alternating
+case without padding), while a locale-neutral identifier may declare
+``preserve`` and pass through byte-for-byte.
 """
 
 from __future__ import annotations
@@ -51,6 +52,18 @@ def _transform_span(text: str, start_index: int) -> str:
     return "".join(out), alpha_index
 
 
+def _compact_transform_span(text: str, start_index: int) -> str:
+    out = []
+    alpha_index = start_index
+    for ch in text:
+        if ch.isalpha():
+            out.append(ch.upper() if alpha_index % 2 == 0 else ch.lower())
+            alpha_index += 1
+        else:
+            out.append(ch)
+    return "".join(out), alpha_index
+
+
 def pseudoize(text: str) -> str:
     """Deterministically transforms one English catalog string into its
     ASCII pseudo-locale form, preserving every ``{N}`` placeholder and
@@ -69,12 +82,35 @@ def pseudoize(text: str) -> str:
     return f"{PSEUDO_PREFIX}{''.join(pieces)}{PSEUDO_SUFFIX}"
 
 
+def pseudoize_compact(text: str) -> str:
+    """Alternates ASCII case without padding for width-critical surfaces."""
+    pieces = []
+    alpha_index = 0
+    last_end = 0
+    for match in _PLACEHOLDER_RE.finditer(text):
+        span_text, alpha_index = _compact_transform_span(
+            text[last_end:match.start()],
+            alpha_index,
+        )
+        pieces.append(span_text)
+        pieces.append(match.group(0))
+        last_end = match.end()
+    span_text, alpha_index = _compact_transform_span(
+        text[last_end:],
+        alpha_index,
+    )
+    pieces.append(span_text)
+    return "".join(pieces)
+
+
 def apply_pseudo_policy(
     text: str, policy: str = schema.DEFAULT_PSEUDO_POLICY
 ) -> str:
     """Applies one validated registry pseudo policy to English text."""
     if policy == schema.PSEUDO_POLICY_TRANSFORM:
         return pseudoize(text)
+    if policy == schema.PSEUDO_POLICY_COMPACT:
+        return pseudoize_compact(text)
     if policy == schema.PSEUDO_POLICY_PRESERVE:
         return text
     raise schema.SchemaError(

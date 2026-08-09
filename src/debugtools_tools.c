@@ -135,7 +135,7 @@ static void DebugToolsTools_DrawCjkStatusLine(const char* text)
         BG_GetMapBuffer(2) + TILEMAP_INDEX(1, 1),
         TEXT_COLOR_SYSTEM_WHITE,
         0,
-        24,
+        DEBUGTOOLS_STATUS_TEXT_WIDTH_TILES,
         text);
     BG_EnableSyncByMask(BG2_SYNC_BIT);
     gLCDControlBuffer.dispcnt.bg2_on = 1;
@@ -258,7 +258,7 @@ static void DebugToolsUnit_OnEnd(struct MenuProc* menu)
 }
 
 CONST_DATA struct MenuDef gDebugToolsUnitMenuDef = {
-    {1, 1, 15, 0},
+    {1, 1, DEBUGTOOLS_MENU_WIDTH_TILES, 0},
     0,
     sUnitMenuItemDefs,
     DEBUGTOOLS_UNIT_MENU_ON_INIT,
@@ -373,7 +373,7 @@ static void DebugToolsConvoy_OnEnd(struct MenuProc* menu)
 }
 
 CONST_DATA struct MenuDef gDebugToolsConvoyMenuDef = {
-    {1, 1, 15, 0},
+    {1, 1, DEBUGTOOLS_MENU_WIDTH_TILES, 0},
     0,
     sConvoyMenuItemDefs,
     DEBUGTOOLS_CONVOY_MENU_ON_INIT,
@@ -472,7 +472,7 @@ static void DebugToolsFlag_OnEnd(struct MenuProc* menu)
 }
 
 CONST_DATA struct MenuDef gDebugToolsFlagMenuDef = {
-    {1, 1, 15, 0},
+    {1, 1, DEBUGTOOLS_MENU_WIDTH_TILES, 0},
     0,
     sFlagMenuItemDefs,
     DEBUGTOOLS_FLAG_MENU_ON_INIT,
@@ -589,7 +589,7 @@ static void DebugToolsRng_OnEnd(struct MenuProc* menu)
 }
 
 CONST_DATA struct MenuDef gDebugToolsRngMenuDef = {
-    {1, 1, 15, 0},
+    {1, 1, DEBUGTOOLS_MENU_WIDTH_TILES, 0},
     0,
     sRngMenuItemDefs,
     DEBUGTOOLS_RNG_MENU_ON_INIT,
@@ -677,7 +677,7 @@ static void DebugToolsSaveState_OnEnd(struct MenuProc* menu)
 }
 
 CONST_DATA struct MenuDef gDebugToolsSaveStateMenuDef = {
-    {1, 1, 15, 0},
+    {1, 1, DEBUGTOOLS_MENU_WIDTH_TILES, 0},
     0,
     sSaveStateMenuItemDefs,
     DEBUGTOOLS_SAVE_MENU_ON_INIT,

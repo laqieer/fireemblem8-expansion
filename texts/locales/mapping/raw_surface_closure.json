@@ -19,10 +19,26 @@
       "providers": {
         "ja": {
           "kind": "authored_semantic_correction",
+          "provenance": {
+            "evidence_kind": "target-authored-semantic-payload",
+            "kind": "reviewed_authored_translation",
+            "method": "deterministic-final-mapping-promotion",
+            "source_key": "gDebugClearMenuItems[0]/mark-save-cleared",
+            "source_table": "texts/locales/authored/shards/semantic_corrections.<locale>.json",
+            "translation_key": "game.semantic_correction.msg_6b9"
+          },
           "text_sha256": "551ccca0c167ca6acb65e6d47bc2673f1ee4bb79ce1c57a8179339b05fde5d28"
         },
         "zh-Hans": {
           "kind": "authored_semantic_correction",
+          "provenance": {
+            "evidence_kind": "target-authored-semantic-payload",
+            "kind": "reviewed_authored_translation",
+            "method": "deterministic-final-mapping-promotion",
+            "source_key": "gDebugClearMenuItems[0]/mark-save-cleared",
+            "source_table": "texts/locales/authored/shards/semantic_corrections.<locale>.json",
+            "translation_key": "game.semantic_correction.msg_6b9"
+          },
           "text_sha256": "341f7c425975de67339d9665d67483207291bd71ab87b8f97bc3ef10e8c67e8e"
         }
       },
@@ -52,10 +68,26 @@
       "providers": {
         "ja": {
           "kind": "authored_semantic_correction",
+          "provenance": {
+            "evidence_kind": "target-authored-semantic-payload",
+            "kind": "reviewed_authored_translation",
+            "method": "deterministic-final-mapping-promotion",
+            "source_key": "gDebugClearMenuItems[1]/confirmation-question",
+            "source_table": "texts/locales/authored/shards/semantic_corrections.<locale>.json",
+            "translation_key": "game.semantic_correction.msg_6ba"
+          },
           "text_sha256": "f4e8af0302f76aa5214451e3cbdf4511abc0058c46c27ff98ad44d9fd32db661"
         },
         "zh-Hans": {
           "kind": "authored_semantic_correction",
+          "provenance": {
+            "evidence_kind": "target-authored-semantic-payload",
+            "kind": "reviewed_authored_translation",
+            "method": "deterministic-final-mapping-promotion",
+            "source_key": "gDebugClearMenuItems[1]/confirmation-question",
+            "source_table": "texts/locales/authored/shards/semantic_corrections.<locale>.json",
+            "translation_key": "game.semantic_correction.msg_6ba"
+          },
           "text_sha256": "e77b21c5fbd67ce9d57f1dc128f41762731eae67014a2c53b0bc7a989a864a0a"
         }
       },
@@ -85,10 +117,26 @@
       "providers": {
         "ja": {
           "kind": "authored_semantic_correction",
+          "provenance": {
+            "evidence_kind": "target-authored-semantic-payload",
+            "kind": "reviewed_authored_translation",
+            "method": "deterministic-final-mapping-promotion",
+            "source_key": "gDebugClearMenuItems[2]/cleared-save-warning",
+            "source_table": "texts/locales/authored/shards/semantic_corrections.<locale>.json",
+            "translation_key": "game.semantic_correction.msg_6bb"
+          },
           "text_sha256": "65a334d51c4ca66174bd97cb5f9f2136470d314a9f54ac6c01b7cb1f3e842b75"
         },
         "zh-Hans": {
           "kind": "authored_semantic_correction",
+          "provenance": {
+            "evidence_kind": "target-authored-semantic-payload",
+            "kind": "reviewed_authored_translation",
+            "method": "deterministic-final-mapping-promotion",
+            "source_key": "gDebugClearMenuItems[2]/cleared-save-warning",
+            "source_table": "texts/locales/authored/shards/semantic_corrections.<locale>.json",
+            "translation_key": "game.semantic_correction.msg_6bb"
+          },
           "text_sha256": "97c477a6df13f64fb686c0787396632b104f159225d9d36a410c138f1e8601a5"
         }
       },
@@ -118,10 +166,26 @@
       "providers": {
         "ja": {
           "kind": "authored_semantic_correction",
+          "provenance": {
+            "evidence_kind": "target-authored-semantic-payload",
+            "kind": "reviewed_authored_translation",
+            "method": "deterministic-final-mapping-promotion",
+            "source_key": "gDebugClearMenuItems[3]/completed-save-warning",
+            "source_table": "texts/locales/authored/shards/semantic_corrections.<locale>.json",
+            "translation_key": "game.semantic_correction.msg_6bc"
+          },
           "text_sha256": "88562c12b5ea0c944fbafe8b606fba6f52f58cdf1e279a02fae149c8b71b145f"
         },
         "zh-Hans": {
           "kind": "authored_semantic_correction",
+          "provenance": {
+            "evidence_kind": "target-authored-semantic-payload",
+            "kind": "reviewed_authored_translation",
+            "method": "deterministic-final-mapping-promotion",
+            "source_key": "gDebugClearMenuItems[3]/completed-save-warning",
+            "source_table": "texts/locales/authored/shards/semantic_corrections.<locale>.json",
+            "translation_key": "game.semantic_correction.msg_6bc"
+          },
           "text_sha256": "45a5b980bbc0d406d5a350ee153a4172572a0e07537f06fb76e061d2c4aa2ace"
         }
       },
@@ -151,6 +215,13 @@
       "providers": {
         "ja": {
           "kind": "raw_literal",
+          "provenance": {
+            "context_sha256": "78ce29be5b85aadc50c3f04323784c32965622fdfd93eacf65ff583caf96faff",
+            "kind": "tracked_source_literal",
+            "source_key": "message_id=0x06BD",
+            "source_path": "src/menu_def.c",
+            "source_symbol": "gDebugClearMenuItems"
+          },
           "text_sha256": "e4ddb2b499812ae676a96d2fc94410f3a594a0518467359feafe92bf46253b90"
         },
         "zh-Hans": {
@@ -184,6 +255,13 @@
       "providers": {
         "ja": {
           "kind": "raw_literal",
+          "provenance": {
+            "context_sha256": "a5affa6867e7f1cbb126a50b9357f87902d996f2c0a249506d44da5d60c7e406",
+            "kind": "tracked_source_literal",
+            "source_key": "message_id=0x0026",
+            "source_path": "src/menu_def.c",
+            "source_symbol": "gDebugContinueMenuItems"
+          },
           "text_sha256": "25ce7da12556373e179da66e2896809fd87a417a181f8937552adfaecda41c6a"
         },
         "zh-Hans": {
@@ -217,6 +295,13 @@
       "providers": {
         "ja": {
           "kind": "raw_literal",
+          "provenance": {
+            "context_sha256": "e85517e27fd6fa5503f1d3f058e61260b597dc128af1bc23db458ed8d142d4f7",
+            "kind": "tracked_source_literal",
+            "source_key": "message_id=0x0027",
+            "source_path": "src/menu_def.c",
+            "source_symbol": "gDebugContinueMenuItems"
+          },
           "text_sha256": "9f029f459bebed32c3e197648ae17a6841e192e9dff2379d211cc3923cf72f45"
         },
         "zh-Hans": {
@@ -250,10 +335,26 @@
       "providers": {
         "ja": {
           "kind": "authored_semantic_correction",
+          "provenance": {
+            "evidence_kind": "target-authored-semantic-payload",
+            "kind": "reviewed_authored_translation",
+            "method": "deterministic-final-mapping-promotion",
+            "source_key": "gDebugContinueMenuItems.override[0xc].name",
+            "source_table": "texts/locales/authored/shards/semantic_corrections.<locale>.json",
+            "translation_key": "game.semantic_correction.msg_28"
+          },
           "text_sha256": "7c498692359a02d44d589aea2fcc814269af828632e5ae60aebe8a9a97a71c52"
         },
         "zh-Hans": {
           "kind": "authored_semantic_correction",
+          "provenance": {
+            "evidence_kind": "target-authored-semantic-payload",
+            "kind": "reviewed_authored_translation",
+            "method": "deterministic-final-mapping-promotion",
+            "source_key": "gDebugContinueMenuItems.override[0xc].name",
+            "source_table": "texts/locales/authored/shards/semantic_corrections.<locale>.json",
+            "translation_key": "game.semantic_correction.msg_28"
+          },
           "text_sha256": "5b744ce80a2cfa017d9e736a2cd61a3ab3e2b9a1622e241b39770240c1158d1e"
         }
       },
@@ -283,6 +384,13 @@
       "providers": {
         "ja": {
           "kind": "raw_literal",
+          "provenance": {
+            "context_sha256": "faca0ce8dd3fedae2f4b560482043dbbe2c5c7baa9e3a4b5951fef61448e8e47",
+            "kind": "tracked_source_literal",
+            "source_key": "message_id=0x0029",
+            "source_path": "src/menu_def.c",
+            "source_symbol": "gDebugContinueMenuItems"
+          },
           "text_sha256": "399940aa04f791b989cfdc7ec989b7d5e804bd846b71130415b55e4478c508a8"
         },
         "zh-Hans": {
@@ -316,6 +424,13 @@
       "providers": {
         "ja": {
           "kind": "raw_literal",
+          "provenance": {
+            "context_sha256": "d9313e085970750d09c7d556d55b343888ad3f5badef293c22a261af6bd3ad53",
+            "kind": "tracked_source_literal",
+            "source_key": "message_id=0x06A4",
+            "source_path": "src/menu_def.c",
+            "source_symbol": "gDebugChuudanMenuItems"
+          },
           "text_sha256": "067b80d49102f51af1ae7e129243c4a8ec070b1fbe30f704c127cb4a75376b44"
         },
         "zh-Hans": {
@@ -349,6 +464,13 @@
       "providers": {
         "ja": {
           "kind": "raw_literal",
+          "provenance": {
+            "context_sha256": "0a1ea40c63e3ff188e3fad11d48b375b44e685414db3a67866411b5f1862cfbb",
+            "kind": "tracked_source_literal",
+            "source_key": "message_id=0x06AA",
+            "source_path": "src/menu_def.c",
+            "source_symbol": "gDebugMenuItems"
+          },
           "text_sha256": "973a9d3534a1d17b36c41b4331c3bd2ea62da1f45923fbf4c307c17d0ae76928"
         },
         "zh-Hans": {
@@ -382,10 +504,26 @@
       "providers": {
         "ja": {
           "kind": "authored_semantic_correction",
+          "provenance": {
+            "evidence_kind": "target-authored-semantic-payload",
+            "kind": "reviewed_authored_translation",
+            "method": "deterministic-final-mapping-promotion",
+            "source_key": "gDebugMenuItems.override[0x12].name",
+            "source_table": "texts/locales/authored/shards/semantic_corrections.<locale>.json",
+            "translation_key": "game.semantic_correction.msg_6ab"
+          },
           "text_sha256": "0db79528dae4f88bbf3ae0f8803db2a1c87877543e67c8f384643651e20ad734"
         },
         "zh-Hans": {
           "kind": "authored_semantic_correction",
+          "provenance": {
+            "evidence_kind": "target-authored-semantic-payload",
+            "kind": "reviewed_authored_translation",
+            "method": "deterministic-final-mapping-promotion",
+            "source_key": "gDebugMenuItems.override[0x12].name",
+            "source_table": "texts/locales/authored/shards/semantic_corrections.<locale>.json",
+            "translation_key": "game.semantic_correction.msg_6ab"
+          },
           "text_sha256": "4213a2786be557ed5b3fa31cc3ac832161b9ad2080f37d54e9d4782137064269"
         }
       },
@@ -415,6 +553,13 @@
       "providers": {
         "ja": {
           "kind": "raw_literal",
+          "provenance": {
+            "context_sha256": "2aba3723828092f5ee3cde8b534bdd91ac12f188daf5011743e28c4ebc93a558",
+            "kind": "tracked_source_literal",
+            "source_key": "message_id=0x06AC",
+            "source_path": "src/menu_def.c",
+            "source_symbol": "gDebugMenuItems"
+          },
           "text_sha256": "b0a256fcf23a26a1095a9824970c301340fa23fb819317b52f3e328878102bd7"
         },
         "zh-Hans": {
@@ -448,6 +593,13 @@
       "providers": {
         "ja": {
           "kind": "raw_literal",
+          "provenance": {
+            "context_sha256": "07bb77bc1cbae243a2c1aef82613b0f6454700bf17cb34cc28f06040b90af828",
+            "kind": "tracked_source_literal",
+            "source_key": "message_id=0x06AD",
+            "source_path": "src/menu_def.c",
+            "source_symbol": "gDebugMenuItems"
+          },
           "text_sha256": "3cf8466f97649d5eac64c7bd827408c091a8e82213dd8c275f58664e0a77b3c3"
         },
         "zh-Hans": {
@@ -481,10 +633,26 @@
       "providers": {
         "ja": {
           "kind": "authored_semantic_correction",
+          "provenance": {
+            "evidence_kind": "target-authored-semantic-payload",
+            "kind": "reviewed_authored_translation",
+            "method": "deterministic-final-mapping-promotion",
+            "source_key": "gDebugMenuItems[4]/playthrough-clear-count",
+            "source_table": "texts/locales/authored/shards/semantic_corrections.<locale>.json",
+            "translation_key": "game.semantic_correction.msg_6ae"
+          },
           "text_sha256": "fb5829531165d809f61c250f0ecb8d7b017b1dcdc397525e75f82e399da53815"
         },
         "zh-Hans": {
           "kind": "authored_semantic_correction",
+          "provenance": {
+            "evidence_kind": "target-authored-semantic-payload",
+            "kind": "reviewed_authored_translation",
+            "method": "deterministic-final-mapping-promotion",
+            "source_key": "gDebugMenuItems[4]/playthrough-clear-count",
+            "source_table": "texts/locales/authored/shards/semantic_corrections.<locale>.json",
+            "translation_key": "game.semantic_correction.msg_6ae"
+          },
           "text_sha256": "93ea6bf83489d1887448ebe2abdeab203af51118f89cb04530e6338ca67bad4d"
         }
       },
@@ -514,10 +682,26 @@
       "providers": {
         "ja": {
           "kind": "authored_semantic_correction",
+          "provenance": {
+            "evidence_kind": "target-authored-semantic-payload",
+            "kind": "reviewed_authored_translation",
+            "method": "deterministic-final-mapping-promotion",
+            "source_key": "gDebugMenuItems[5]/mark-save-cleared",
+            "source_table": "texts/locales/authored/shards/semantic_corrections.<locale>.json",
+            "translation_key": "game.semantic_correction.msg_6af"
+          },
           "text_sha256": "996a3e2f7afdd73a353e08d86ab2eda17afda62a5876796781f32dafe7468efd"
         },
         "zh-Hans": {
           "kind": "authored_semantic_correction",
+          "provenance": {
+            "evidence_kind": "target-authored-semantic-payload",
+            "kind": "reviewed_authored_translation",
+            "method": "deterministic-final-mapping-promotion",
+            "source_key": "gDebugMenuItems[5]/mark-save-cleared",
+            "source_table": "texts/locales/authored/shards/semantic_corrections.<locale>.json",
+            "translation_key": "game.semantic_correction.msg_6af"
+          },
           "text_sha256": "4930977b94a023404bbf4e71f1006f56adef2b3e2000c876b2a78b3dcb70a3f0"
         }
       },
@@ -547,6 +731,13 @@
       "providers": {
         "ja": {
           "kind": "raw_literal",
+          "provenance": {
+            "context_sha256": "281a5818743b41e2a13bd906eda33f73555892c759aca1b035efaeea9ebf707c",
+            "kind": "tracked_source_literal",
+            "source_key": "message_id=0x06B0",
+            "source_path": "src/menu_def.c",
+            "source_symbol": "gDebugMenuItems"
+          },
           "text_sha256": "2c967bfb008ac2254683fe12347b50b470b876fb47f68ffac1fae679c0d78181"
         },
         "zh-Hans": {
@@ -566,11 +757,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gYesNoSelectionMenuItems",
             "0x843",
             "0x32"
           ],
-          "path": "src/menu_def.c"
+          "path": "src/menu_def.c",
+          "scope_kind": "initializer",
+          "symbol": "gYesNoSelectionMenuItems"
         }
       ],
       "classification": "game_message",
@@ -582,6 +774,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 5,
+            "kind": "exact_cp932_source_blob",
+            "offset": 741,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gMenuStr_12C/gMenuStr_124",
+            "value_sha256": "7017897ce9b520fe6fbec52fbf8b4c692ae6871232252e47b889f376848d823c"
+          },
           "text_sha256": "8f90d85ec13a0b1b12d81203f2f3262ca156028a94aeaf91ae52fcd5a9de4170"
         },
         "zh-Hans": {
@@ -601,11 +802,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gYesNoSelectionMenuItems",
             "0x844",
             "0x33"
           ],
-          "path": "src/menu_def.c"
+          "path": "src/menu_def.c",
+          "scope_kind": "initializer",
+          "symbol": "gYesNoSelectionMenuItems"
         }
       ],
       "classification": "game_message",
@@ -617,6 +819,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 7,
+            "kind": "exact_cp932_source_blob",
+            "offset": 746,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gMenuStr_12C/gMenuStr_124",
+            "value_sha256": "994caed121f428d33bb71973ea63274c195a077b15e1d3474004dc01ef30b6cd"
+          },
           "text_sha256": "48ef2b674823d03d45863e46e4706682f9588ef1d13921134ae3a8508483ffb5"
         },
         "zh-Hans": {
@@ -636,11 +847,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gItemSubMenuItems",
             "0x696",
             "0x34"
           ],
-          "path": "src/menu_def.c"
+          "path": "src/menu_def.c",
+          "scope_kind": "initializer",
+          "symbol": "gItemSubMenuItems"
         }
       ],
       "classification": "game_message",
@@ -652,6 +864,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 5,
+            "kind": "exact_cp932_source_blob",
+            "offset": 670,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gMenuStr_14C..gMenuStr_134",
+            "value_sha256": "1f1ac347ffe92f44a828d84dd9ebb9a03e9539a6417c9e19a95b64a5fd6f90a7"
+          },
           "text_sha256": "12413235d333fe11016da623fa1f439425b42c22b0cb246387bb88ad546d0952"
         },
         "zh-Hans": {
@@ -671,11 +892,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gItemSubMenuItems",
             "0x697",
             "0x35"
           ],
-          "path": "src/menu_def.c"
+          "path": "src/menu_def.c",
+          "scope_kind": "initializer",
+          "symbol": "gItemSubMenuItems"
         }
       ],
       "classification": "game_message",
@@ -687,6 +909,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 5,
+            "kind": "exact_cp932_source_blob",
+            "offset": 675,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gMenuStr_14C..gMenuStr_134",
+            "value_sha256": "12089326ee2f5ecd9c28da011bb9c7d3328452b5e42577d49b7b8672efbf9c4e"
+          },
           "text_sha256": "1ae67cfcaf80a821cd0255763b8224b0743b26acd16a205b6883f8f786186cf6"
         },
         "zh-Hans": {
@@ -706,11 +937,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gItemSubMenuItems",
             "0x698",
             "0x36"
           ],
-          "path": "src/menu_def.c"
+          "path": "src/menu_def.c",
+          "scope_kind": "initializer",
+          "symbol": "gItemSubMenuItems"
         }
       ],
       "classification": "game_message",
@@ -722,6 +954,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 5,
+            "kind": "exact_cp932_source_blob",
+            "offset": 680,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gMenuStr_14C..gMenuStr_134",
+            "value_sha256": "1c8a7514c9a51a80a806b2e6abeff31c9a8144a9de98dd8a046cf69c2fab1180"
+          },
           "text_sha256": "c0be6499c92ec64e88ccf3a935d5078bf17e1071a26a905dfc6542b51912464f"
         },
         "zh-Hans": {
@@ -741,11 +982,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gItemSubMenuItems",
             "0x699",
             "0x37"
           ],
-          "path": "src/menu_def.c"
+          "path": "src/menu_def.c",
+          "scope_kind": "initializer",
+          "symbol": "gItemSubMenuItems"
         }
       ],
       "classification": "game_message",
@@ -757,6 +999,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 7,
+            "kind": "exact_cp932_source_blob",
+            "offset": 685,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gMenuStr_14C..gMenuStr_134",
+            "value_sha256": "70376a313532e3505475d2f05acefb334e80bf3b524006aac3f9347cdb630670"
+          },
           "text_sha256": "1b30f5253a28ea0498904be6fa8b4b1b086f4f449f78d0f1f5df955d2aaabf2b"
         },
         "zh-Hans": {
@@ -776,11 +1027,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gUnitActionMenuItems",
             "0x67A",
             "0x4E"
           ],
-          "path": "src/menu_def.c"
+          "path": "src/menu_def.c",
+          "scope_kind": "initializer",
+          "symbol": "gUnitActionMenuItems"
         }
       ],
       "classification": "game_message",
@@ -792,6 +1044,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 7,
+            "kind": "exact_cp932_source_blob",
+            "offset": 468,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gMenuStr_25C..gMenuStr_154",
+            "value_sha256": "20a605624684f7546900217fb374ec6df2e3c32629f9c4f9344e40af8b976fee"
+          },
           "text_sha256": "0ca363f57f6230d80d978a3c197078bc3c1c047a5236d1cd10bce364394b00f0"
         },
         "zh-Hans": {
@@ -811,11 +1072,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gUnitActionMenuItems",
             "0x67B",
             "0x4F"
           ],
-          "path": "src/menu_def.c"
+          "path": "src/menu_def.c",
+          "scope_kind": "initializer",
+          "symbol": "gUnitActionMenuItems"
         }
       ],
       "classification": "game_message",
@@ -827,6 +1089,13 @@
       "providers": {
         "ja": {
           "kind": "raw_literal",
+          "provenance": {
+            "context_sha256": "676d5a31e9afca62dfccdf6b0047051c6bd38692f0f5ea2c2b450ae008661cf6",
+            "kind": "tracked_source_literal",
+            "source_key": "message_id=0x067B",
+            "source_path": "src/menu_def.c",
+            "source_symbol": "gUnitActionMenuItems"
+          },
           "text_sha256": "3a4a2cdf551bb507e9232dd53c18870b88ec0cca33f710010cd6d8303625d268"
         },
         "zh-Hans": {
@@ -860,6 +1129,13 @@
       "providers": {
         "ja": {
           "kind": "raw_literal",
+          "provenance": {
+            "context_sha256": "676d5a31e9afca62dfccdf6b0047051c6bd38692f0f5ea2c2b450ae008661cf6",
+            "kind": "tracked_source_literal",
+            "source_key": "message_id=0x067B",
+            "source_path": "src/menu_def.c",
+            "source_symbol": "gUnitActionMenuItems"
+          },
           "text_sha256": "3a4a2cdf551bb507e9232dd53c18870b88ec0cca33f710010cd6d8303625d268"
         },
         "zh-Hans": {
@@ -879,11 +1155,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gUnitActionMenuItems",
             "0x67C",
             "0x51"
           ],
-          "path": "src/menu_def.c"
+          "path": "src/menu_def.c",
+          "scope_kind": "initializer",
+          "symbol": "gUnitActionMenuItems"
         }
       ],
       "classification": "game_message",
@@ -895,6 +1172,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 5,
+            "kind": "exact_cp932_source_blob",
+            "offset": 475,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gMenuStr_25C..gMenuStr_154",
+            "value_sha256": "7fc4ed285711d7e10c05848855b4b7497b41d08d83463fa60a4465fc384b97a5"
+          },
           "text_sha256": "e7a9fdc16ce80d7ad050b4a26aaa211bd06054eacda6d0dd7be1e77dccbb26e0"
         },
         "zh-Hans": {
@@ -914,11 +1200,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gUnitActionMenuItems",
             "0x691",
             "0x52"
           ],
-          "path": "src/menu_def.c"
+          "path": "src/menu_def.c",
+          "scope_kind": "initializer",
+          "symbol": "gUnitActionMenuItems"
         }
       ],
       "classification": "game_message",
@@ -930,6 +1217,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 7,
+            "kind": "exact_cp932_source_blob",
+            "offset": 638,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gMenuStr_25C..gMenuStr_154",
+            "value_sha256": "56152e3f6ef6c3a43f0f06907c8cf8f5bea8088f96124b15d31094f023f5b56e"
+          },
           "text_sha256": "0d1321c93c2cabe23a5c665045bf1c67bbf58cc04b81c3d84a26eec970d50257"
         },
         "zh-Hans": {
@@ -949,11 +1245,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gUnitActionMenuItems",
             "0x692",
             "0x53"
           ],
-          "path": "src/menu_def.c"
+          "path": "src/menu_def.c",
+          "scope_kind": "initializer",
+          "symbol": "gUnitActionMenuItems"
         }
       ],
       "classification": "game_message",
@@ -965,6 +1262,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 9,
+            "kind": "exact_cp932_source_blob",
+            "offset": 645,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gMenuStr_25C..gMenuStr_154",
+            "value_sha256": "0fba5948163bb508381167ac0644777cecbcfa5c26cbf4f6d238ae4d9ada1631"
+          },
           "text_sha256": "4e090641a45bcf986d940d529fac3ea719e1093d84a9e8c9bbe37c5b524f58a3"
         },
         "zh-Hans": {
@@ -984,11 +1290,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gUnitActionMenuItems",
             "0x67D",
             "0x54"
           ],
-          "path": "src/menu_def.c"
+          "path": "src/menu_def.c",
+          "scope_kind": "initializer",
+          "symbol": "gUnitActionMenuItems"
         }
       ],
       "classification": "game_message",
@@ -1000,6 +1307,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 9,
+            "kind": "exact_cp932_source_blob",
+            "offset": 480,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gMenuStr_25C..gMenuStr_154",
+            "value_sha256": "759ea4e6ef37d1dd3eb3e0bcd7b7550effaa45e9403bee13d8a306481901851b"
+          },
           "text_sha256": "61c6c18773e1a21da3b900c63569d9ac83588be1fb57825a0ce875a08b311f48"
         },
         "zh-Hans": {
@@ -1019,11 +1335,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gUnitActionMenuItems",
             "0x67E",
             "0x55"
           ],
-          "path": "src/menu_def.c"
+          "path": "src/menu_def.c",
+          "scope_kind": "initializer",
+          "symbol": "gUnitActionMenuItems"
         }
       ],
       "classification": "game_message",
@@ -1035,6 +1352,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 7,
+            "kind": "exact_cp932_source_blob",
+            "offset": 489,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gMenuStr_25C..gMenuStr_154",
+            "value_sha256": "2ee35932cff6d95ce007c487ba7d7568b2131bd78048c455dd34f3ca595454be"
+          },
           "text_sha256": "89edbc0d8efd563eb8ae1bc7aed0526bfef6dffb6519803088adeafb1039de8d"
         },
         "zh-Hans": {
@@ -1054,11 +1380,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gUnitActionMenuItems",
             "0x67F",
             "0x56"
           ],
-          "path": "src/menu_def.c"
+          "path": "src/menu_def.c",
+          "scope_kind": "initializer",
+          "symbol": "gUnitActionMenuItems"
         }
       ],
       "classification": "game_message",
@@ -1070,6 +1397,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 7,
+            "kind": "exact_cp932_source_blob",
+            "offset": 496,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gMenuStr_25C..gMenuStr_154",
+            "value_sha256": "525da0cbf42ce4cda98eb82fa9444f7218eace3f41d5c3cb2a89b13fdffe1c05"
+          },
           "text_sha256": "9179bb54e605b6a376224065f9070c7e4268180e40cb6d91b5342ba4d40f4c6e"
         },
         "zh-Hans": {
@@ -1104,14 +1440,29 @@
       "providers": {
         "en": {
           "kind": "expansion_catalog",
+          "provenance": {
+            "key": "raw_surface.unit_action.summon",
+            "kind": "authored_expansion_catalog",
+            "path": "texts/expansion/catalog.en.json"
+          },
           "text_sha256": "3c890b1141fc9d73054c0dddea78b1c2719a5ab88448496b8685203aa105a2c4"
         },
         "ja": {
           "kind": "expansion_catalog",
+          "provenance": {
+            "key": "raw_surface.unit_action.summon",
+            "kind": "authored_expansion_catalog",
+            "path": "texts/expansion/catalog.ja.json"
+          },
           "text_sha256": "ad1322ca0c1ba96c5e692220ba38474cf474594aa4e539423b1540d92f622a77"
         },
         "zh-Hans": {
           "kind": "expansion_catalog",
+          "provenance": {
+            "key": "raw_surface.unit_action.summon",
+            "kind": "authored_expansion_catalog",
+            "path": "texts/expansion/catalog.zh-Hans.json"
+          },
           "text_sha256": "33cd5fd790473a195669c214372a29bfa2f49a2185a81610c47be4f6032fe833"
         }
       },
@@ -1148,14 +1499,29 @@
       "providers": {
         "en": {
           "kind": "expansion_catalog",
+          "provenance": {
+            "key": "raw_surface.unit_action.call_monster",
+            "kind": "authored_expansion_catalog",
+            "path": "texts/expansion/catalog.en.json"
+          },
           "text_sha256": "3c890b1141fc9d73054c0dddea78b1c2719a5ab88448496b8685203aa105a2c4"
         },
         "ja": {
           "kind": "expansion_catalog",
+          "provenance": {
+            "key": "raw_surface.unit_action.call_monster",
+            "kind": "authored_expansion_catalog",
+            "path": "texts/expansion/catalog.ja.json"
+          },
           "text_sha256": "133f03f93432669322a116f2ce2cf7021d276177cc432d9995751915a7d52bd8"
         },
         "zh-Hans": {
           "kind": "expansion_catalog",
+          "provenance": {
+            "key": "raw_surface.unit_action.call_monster",
+            "kind": "authored_expansion_catalog",
+            "path": "texts/expansion/catalog.zh-Hans.json"
+          },
           "text_sha256": "133f03f93432669322a116f2ce2cf7021d276177cc432d9995751915a7d52bd8"
         }
       },
@@ -1177,11 +1543,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gUnitActionMenuItems",
             "0x694",
             "0x59"
           ],
-          "path": "src/menu_def.c"
+          "path": "src/menu_def.c",
+          "scope_kind": "initializer",
+          "symbol": "gUnitActionMenuItems"
         }
       ],
       "classification": "game_message",
@@ -1193,6 +1560,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 9,
+            "kind": "exact_cp932_source_blob",
+            "offset": 654,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gMenuStr_25C..gMenuStr_154",
+            "value_sha256": "3bde0c3e34c7ae9da56be679724a53a190b019210d5998bb1fe73f83cf87e810"
+          },
           "text_sha256": "21de665440c98702161438043045a109f539ad8bb83d15ff52bb77e739aad885"
         },
         "zh-Hans": {
@@ -1212,11 +1588,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gUnitActionMenuItems",
             "0x680",
             "0x5A"
           ],
-          "path": "src/menu_def.c"
+          "path": "src/menu_def.c",
+          "scope_kind": "initializer",
+          "symbol": "gUnitActionMenuItems"
         }
       ],
       "classification": "game_message",
@@ -1228,6 +1605,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 7,
+            "kind": "exact_cp932_source_blob",
+            "offset": 503,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gMenuStr_25C..gMenuStr_154",
+            "value_sha256": "9d25efac5d46c786e90936fd950f6c87a1d6a05ec5c75dc4e19f3197c004af57"
+          },
           "text_sha256": "5b07e38d133514b225e9d1e03cfff2834f9a27459a69716fff918c6a191b2b95"
         },
         "zh-Hans": {
@@ -1247,11 +1633,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gUnitActionMenuItems",
             "0x681",
             "0x5B"
           ],
-          "path": "src/menu_def.c"
+          "path": "src/menu_def.c",
+          "scope_kind": "initializer",
+          "symbol": "gUnitActionMenuItems"
         }
       ],
       "classification": "game_message",
@@ -1263,6 +1650,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 7,
+            "kind": "exact_cp932_source_blob",
+            "offset": 510,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gMenuStr_25C..gMenuStr_154",
+            "value_sha256": "080ceecb93ef7d18f240121845e61d2fe07f0b12edde0b93f75a13b97746bd04"
+          },
           "text_sha256": "684dc647296ed4ae7c6f7c72fe4ed59ffc89cc81a5eab69f34a265bb9d49bee1"
         },
         "zh-Hans": {
@@ -1282,11 +1678,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gUnitActionMenuItems",
             "0x682",
             "0x5C"
           ],
-          "path": "src/menu_def.c"
+          "path": "src/menu_def.c",
+          "scope_kind": "initializer",
+          "symbol": "gUnitActionMenuItems"
         }
       ],
       "classification": "game_message",
@@ -1298,6 +1695,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 7,
+            "kind": "exact_cp932_source_blob",
+            "offset": 517,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gMenuStr_25C..gMenuStr_154",
+            "value_sha256": "11601995bdcf236ff86c7e4d80d1196d3cca3bf79e89720394336ed8ae38dfdb"
+          },
           "text_sha256": "69bb0de60c459c1e8265cc0fbaf7de5af3c5e067cad3ce3d13ec15119fe3f998"
         },
         "zh-Hans": {
@@ -1317,11 +1723,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gUnitActionMenuItems",
             "0x683",
             "0x5D"
           ],
-          "path": "src/menu_def.c"
+          "path": "src/menu_def.c",
+          "scope_kind": "initializer",
+          "symbol": "gUnitActionMenuItems"
         }
       ],
       "classification": "game_message",
@@ -1333,6 +1740,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 7,
+            "kind": "exact_cp932_source_blob",
+            "offset": 524,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gMenuStr_25C..gMenuStr_154",
+            "value_sha256": "bf6380fdc144ac7fa8cc0ad26ef7a5a2f397cac265defdebe059d714705c8738"
+          },
           "text_sha256": "f71c1f73d80555345e6a51367ff4057a28714fee825033dd0400bc587933bb2e"
         },
         "zh-Hans": {
@@ -1352,11 +1768,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gUnitActionMenuItems",
             "0x684",
             "0x5E"
           ],
-          "path": "src/menu_def.c"
+          "path": "src/menu_def.c",
+          "scope_kind": "initializer",
+          "symbol": "gUnitActionMenuItems"
         }
       ],
       "classification": "game_message",
@@ -1368,6 +1785,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 5,
+            "kind": "exact_cp932_source_blob",
+            "offset": 531,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gMenuStr_25C..gMenuStr_154",
+            "value_sha256": "e6e6fb8a01d1d9d215341d99a636842e0c4a6a489488bc936912bfbd4dcd3f0d"
+          },
           "text_sha256": "0ebf86140594bf9302280098206ff108fffb6eb413e69bd801f01bc7e147acc5"
         },
         "zh-Hans": {
@@ -1387,11 +1813,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gUnitActionMenuItems",
             "0x685",
             "0x5F"
           ],
-          "path": "src/menu_def.c"
+          "path": "src/menu_def.c",
+          "scope_kind": "initializer",
+          "symbol": "gUnitActionMenuItems"
         }
       ],
       "classification": "game_message",
@@ -1403,6 +1830,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 9,
+            "kind": "exact_cp932_source_blob",
+            "offset": 536,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gMenuStr_25C..gMenuStr_154",
+            "value_sha256": "03ece6da337f2a4bc94a67be402c0ddca646f25190c5c91adc2df03cb53de2f5"
+          },
           "text_sha256": "ceb3f88edd3d9ce2eceaabcfd4e1eec7a20543095d12510ac3a33a68d8dfb09d"
         },
         "zh-Hans": {
@@ -1422,11 +1858,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gUnitActionMenuItems",
             "0x686",
             "0x60"
           ],
-          "path": "src/menu_def.c"
+          "path": "src/menu_def.c",
+          "scope_kind": "initializer",
+          "symbol": "gUnitActionMenuItems"
         }
       ],
       "classification": "game_message",
@@ -1438,6 +1875,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 9,
+            "kind": "exact_cp932_source_blob",
+            "offset": 545,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gMenuStr_25C..gMenuStr_154",
+            "value_sha256": "3115a48b2b92e83842d7051bc127bb5525199eb14e799c101fbc07a251cb69bc"
+          },
           "text_sha256": "5c1d4875acf5b7a4ae9fa2a98c99acaa26c191817ec070d17e680c44a24ec515"
         },
         "zh-Hans": {
@@ -1457,11 +1903,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gUnitActionMenuItems",
             "0x687",
             "0x61"
           ],
-          "path": "src/menu_def.c"
+          "path": "src/menu_def.c",
+          "scope_kind": "initializer",
+          "symbol": "gUnitActionMenuItems"
         }
       ],
       "classification": "game_message",
@@ -1473,6 +1920,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 9,
+            "kind": "exact_cp932_source_blob",
+            "offset": 554,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gMenuStr_25C..gMenuStr_154",
+            "value_sha256": "dd2ed3cbbdb7d8fadc2803da5a589ed089b3897e6e00bcede2925622849dd97e"
+          },
           "text_sha256": "7d4595bf4c13956a1ea025416712d517a122d73a45490d85c6d03bc8707ba700"
         },
         "zh-Hans": {
@@ -1492,11 +1948,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gUnitActionMenuItems",
             "0x688",
             "0x62"
           ],
-          "path": "src/menu_def.c"
+          "path": "src/menu_def.c",
+          "scope_kind": "initializer",
+          "symbol": "gUnitActionMenuItems"
         }
       ],
       "classification": "game_message",
@@ -1508,6 +1965,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 9,
+            "kind": "exact_cp932_source_blob",
+            "offset": 563,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gMenuStr_25C..gMenuStr_154",
+            "value_sha256": "729db3e570b20278a9e2f446d58c545852c03b1643f79ee70c53e83d42df0cb0"
+          },
           "text_sha256": "f8dfe81412553dc13d2e5e6855df97bb673313a3303754ce40c1653fa44d05ed"
         },
         "zh-Hans": {
@@ -1527,11 +1993,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gUnitActionMenuItems",
             "0x689",
             "0x63"
           ],
-          "path": "src/menu_def.c"
+          "path": "src/menu_def.c",
+          "scope_kind": "initializer",
+          "symbol": "gUnitActionMenuItems"
         }
       ],
       "classification": "game_message",
@@ -1543,6 +2010,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 7,
+            "kind": "exact_cp932_source_blob",
+            "offset": 572,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gMenuStr_25C..gMenuStr_154",
+            "value_sha256": "59aa3318f73235b5cc800aec36d43f920c70e1df7e46c64bf84f5046ca66a853"
+          },
           "text_sha256": "4287d2ad8cba5e046dff12dee35937e9ec716db5aacb8ea2713fecddbd1649ca"
         },
         "zh-Hans": {
@@ -1562,11 +2038,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gUnitActionMenuItems",
             "0x68A",
             "0x64"
           ],
-          "path": "src/menu_def.c"
+          "path": "src/menu_def.c",
+          "scope_kind": "initializer",
+          "symbol": "gUnitActionMenuItems"
         }
       ],
       "classification": "game_message",
@@ -1578,6 +2055,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 9,
+            "kind": "exact_cp932_source_blob",
+            "offset": 579,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gMenuStr_25C..gMenuStr_154",
+            "value_sha256": "ea8c3e6e1ad3492a24d0b2861e089a0ee4aa4fdb66c363ad259d2def83513df3"
+          },
           "text_sha256": "d7c1af989c1f943ca2de2c024d05373529dc3960b2796da7948ebde7d4e59350"
         },
         "zh-Hans": {
@@ -1597,11 +2083,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gUnitActionMenuItems",
             "0x68B",
             "0x65"
           ],
-          "path": "src/menu_def.c"
+          "path": "src/menu_def.c",
+          "scope_kind": "initializer",
+          "symbol": "gUnitActionMenuItems"
         }
       ],
       "classification": "game_message",
@@ -1613,6 +2100,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 9,
+            "kind": "exact_cp932_source_blob",
+            "offset": 588,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gMenuStr_25C..gMenuStr_154",
+            "value_sha256": "02d178d757790726f5eea776e495419682b90f7262008e1d0d44650e9a535d5d"
+          },
           "text_sha256": "a28c8651b68c55f6e0efdb9c1b5413a9de231c18b4b6e2064d9999cd03f4b320"
         },
         "zh-Hans": {
@@ -1632,11 +2128,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gUnitActionMenuItems",
             "0x68C",
             "0x66"
           ],
-          "path": "src/menu_def.c"
+          "path": "src/menu_def.c",
+          "scope_kind": "initializer",
+          "symbol": "gUnitActionMenuItems"
         }
       ],
       "classification": "game_message",
@@ -1648,6 +2145,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 9,
+            "kind": "exact_cp932_source_blob",
+            "offset": 597,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gMenuStr_25C..gMenuStr_154",
+            "value_sha256": "b854024cc29d589a6db5259a6ea6b5eff956213d2dc265bf11c2044b6232b837"
+          },
           "text_sha256": "250aa649c18f958677bf2fbb110dc554341178d17110f54023824749eaf123f6"
         },
         "zh-Hans": {
@@ -1667,11 +2173,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gUnitActionMenuItems",
             "0x68D",
             "0x67"
           ],
-          "path": "src/menu_def.c"
+          "path": "src/menu_def.c",
+          "scope_kind": "initializer",
+          "symbol": "gUnitActionMenuItems"
         }
       ],
       "classification": "game_message",
@@ -1683,6 +2190,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 9,
+            "kind": "exact_cp932_source_blob",
+            "offset": 606,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gMenuStr_25C..gMenuStr_154",
+            "value_sha256": "6a19b798f9da955c4381dcb0a0a13c1bf788ff27e72f18db21cb8da1b9ef61aa"
+          },
           "text_sha256": "312b216b17a822df58bae673d3c5673f1380d57dd3bae5a346a4b58c82aa9dd8"
         },
         "zh-Hans": {
@@ -1702,11 +2218,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gUnitActionMenuItems",
             "0x68E",
             "0x68"
           ],
-          "path": "src/menu_def.c"
+          "path": "src/menu_def.c",
+          "scope_kind": "initializer",
+          "symbol": "gUnitActionMenuItems"
         }
       ],
       "classification": "game_message",
@@ -1718,6 +2235,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 7,
+            "kind": "exact_cp932_source_blob",
+            "offset": 615,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gMenuStr_25C..gMenuStr_154",
+            "value_sha256": "13ccbbf61cc71d29d3fece4267a5bcc25fd645e56c3c7460d0d869596b4c3f55"
+          },
           "text_sha256": "94bb186eedecf80265d87ba4ebdbd5d10064b9fde0f52f1c8d0d130b9dfca91a"
         },
         "zh-Hans": {
@@ -1737,11 +2263,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gUnitActionMenuItems",
             "0x68F",
             "0x69"
           ],
-          "path": "src/menu_def.c"
+          "path": "src/menu_def.c",
+          "scope_kind": "initializer",
+          "symbol": "gUnitActionMenuItems"
         }
       ],
       "classification": "game_message",
@@ -1753,6 +2280,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 9,
+            "kind": "exact_cp932_source_blob",
+            "offset": 622,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gMenuStr_25C..gMenuStr_154",
+            "value_sha256": "c1b5cdd4d9b0010c2e0f610612494b326f9256828721824a2ff44f9e732ce0a4"
+          },
           "text_sha256": "f11ec61dc225f8e1467635775845a48a699e7173124908e18b0c6a95a6aeff0e"
         },
         "zh-Hans": {
@@ -1772,11 +2308,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gUnitActionMenuItems",
             "0x695",
             "0x6B"
           ],
-          "path": "src/menu_def.c"
+          "path": "src/menu_def.c",
+          "scope_kind": "initializer",
+          "symbol": "gUnitActionMenuItems"
         }
       ],
       "classification": "game_message",
@@ -1788,6 +2325,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 7,
+            "kind": "exact_cp932_source_blob",
+            "offset": 663,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gMenuStr_25C..gMenuStr_154",
+            "value_sha256": "3ba296351f1af1431e0f3d853d67655d21cae2075ab68217672d69f3a343669f"
+          },
           "text_sha256": "7b675e4bc91498eb7f2590ba3e016f3b20a2b2273fdf16aa7736150750619adc"
         },
         "zh-Hans": {
@@ -1807,11 +2353,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gMapMenuItems",
             "0x69A",
             "0x6e"
           ],
-          "path": "src/menu_def.c"
+          "path": "src/menu_def.c",
+          "scope_kind": "initializer",
+          "symbol": "gMapMenuItems"
         }
       ],
       "classification": "game_message",
@@ -1823,6 +2370,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 7,
+            "kind": "exact_cp932_source_blob",
+            "offset": 692,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gMapMenuItems[0].name",
+            "value_sha256": "1d1bc2be996b75a5d48d072fefe258fa3d28d3c517f161b502e79350c41cda8e"
+          },
           "text_sha256": "25cf44e1b786e60efabc5fac8903679f992b0440ee57c030e0daa6c64bd328b5"
         },
         "zh-Hans": {
@@ -1842,11 +2398,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gMapMenuItems",
             "0x690",
             "0x6f"
           ],
-          "path": "src/menu_def.c"
+          "path": "src/menu_def.c",
+          "scope_kind": "initializer",
+          "symbol": "gMapMenuItems"
         }
       ],
       "classification": "game_message",
@@ -1858,6 +2415,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 7,
+            "kind": "exact_cp932_source_blob",
+            "offset": 631,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gMapMenuItems[1].name",
+            "value_sha256": "7badc9abe894d7150cb9506f96301ebd9f5591d24fadbc8b0eab40857ce40494"
+          },
           "text_sha256": "45ec55856092f01f6dbd4bcce4b62710686953aa9d969d4c2dc82e6f1011752c"
         },
         "zh-Hans": {
@@ -1877,11 +2443,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gMapMenuItems",
             "0x69C",
             "0x74"
           ],
-          "path": "src/menu_def.c"
+          "path": "src/menu_def.c",
+          "scope_kind": "initializer",
+          "symbol": "gMapMenuItems"
         }
       ],
       "classification": "game_message",
@@ -1893,6 +2460,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 7,
+            "kind": "exact_cp932_source_blob",
+            "offset": 706,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gMapMenuItems[2].name",
+            "value_sha256": "823c3c8a19ef27236bf5e1ee84621e09abf19b8bfd0e54618c06130167f47697"
+          },
           "text_sha256": "f171282c1dc7fd06a88de2deefd0b5314b8f2d823b93555452e5e717801927bc"
         },
         "zh-Hans": {
@@ -1912,11 +2488,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gMapMenuItems",
             "0x69E",
             "0x70"
           ],
-          "path": "src/menu_def.c"
+          "path": "src/menu_def.c",
+          "scope_kind": "initializer",
+          "symbol": "gMapMenuItems"
         }
       ],
       "classification": "game_message",
@@ -1928,6 +2505,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 7,
+            "kind": "exact_cp932_source_blob",
+            "offset": 720,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gMapMenuItems[3].name",
+            "value_sha256": "0a0af358d29b05fa3a626bfab445cbf64c26db0c4eb26580ac3daf6c61b45f55"
+          },
           "text_sha256": "6164f94ba5d0c066288d6bd264720977aabca9aa1836263227513ee5fea14faa"
         },
         "zh-Hans": {
@@ -1947,11 +2533,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gMapMenuItems",
             "0x69B",
             "0x71"
           ],
-          "path": "src/menu_def.c"
+          "path": "src/menu_def.c",
+          "scope_kind": "initializer",
+          "symbol": "gMapMenuItems"
         }
       ],
       "classification": "game_message",
@@ -1963,6 +2550,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 7,
+            "kind": "exact_cp932_source_blob",
+            "offset": 699,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gMapMenuItems[4].name",
+            "value_sha256": "e1e9370d1ebdedc53354b8ba838ac4ec1d0014fd9bd03a670b1a40819e69cf78"
+          },
           "text_sha256": "1267ec57a99634b18cc9f23d016bb6f95635225f50d3bacb5d0f6a801ae39d32"
         },
         "zh-Hans": {
@@ -1982,11 +2578,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gMapMenuItems",
             "0x69D",
             "0x72"
           ],
-          "path": "src/menu_def.c"
+          "path": "src/menu_def.c",
+          "scope_kind": "initializer",
+          "symbol": "gMapMenuItems"
         }
       ],
       "classification": "game_message",
@@ -1998,6 +2595,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 7,
+            "kind": "exact_cp932_source_blob",
+            "offset": 713,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gMapMenuItems[5].name",
+            "value_sha256": "a2a75524254e8c5ba0793541749bb4c58c6b787c174db70b63351975e251d37c"
+          },
           "text_sha256": "3e87c4a896841a1668d7d736e4b92a8e57b8330bbfac77af2aa7cf00971ff80a"
         },
         "zh-Hans": {
@@ -2017,11 +2623,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gMapMenuItems",
             "0x69F",
             "0x73"
           ],
-          "path": "src/menu_def.c"
+          "path": "src/menu_def.c",
+          "scope_kind": "initializer",
+          "symbol": "gMapMenuItems"
         }
       ],
       "classification": "game_message",
@@ -2033,6 +2640,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 7,
+            "kind": "exact_cp932_source_blob",
+            "offset": 727,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gMapMenuItems[6].name",
+            "value_sha256": "7b46a7d8d8c72c44e2925ce71713636c84c9f6b9a30a482155c08145691e88af"
+          },
           "text_sha256": "977db0d8cdd3d81cfce5a40ce73fbd28d4c05f4295807bdaa1d51b93b244655b"
         },
         "zh-Hans": {
@@ -2052,11 +2668,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gMapMenuItems",
             "0x6A0",
             "0x78"
           ],
-          "path": "src/menu_def.c"
+          "path": "src/menu_def.c",
+          "scope_kind": "initializer",
+          "symbol": "gMapMenuItems"
         }
       ],
       "classification": "game_message",
@@ -2068,6 +2685,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 7,
+            "kind": "exact_cp932_source_blob",
+            "offset": 734,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gMapMenuItems[7].name",
+            "value_sha256": "7df12a0e4754de95d983cecc284d43b3d79579d0ced20f95fec7809a409d8517"
+          },
           "text_sha256": "79fd69039fc16ab50b41fcb428f9a2421bbaa0f075e0a4e390b2a0fcc9e7eb78"
         },
         "zh-Hans": {
@@ -2101,6 +2727,13 @@
       "providers": {
         "ja": {
           "kind": "raw_literal",
+          "provenance": {
+            "context_sha256": "c3abd9c697c949116e2d47fe7718605d8c7f01143171697f524a79ea2c83fbe0",
+            "kind": "tracked_source_literal",
+            "source_key": "message_id=0x0023",
+            "source_path": "src/classchg-menuconfirm.c",
+            "source_symbol": "MenuItem_PromoSubConfirm"
+          },
           "text_sha256": "807b83be23e35724d6dca082d981879e464e1a4e4bca29390c8e2ac5bd4efe17"
         },
         "zh-Hans": {
@@ -2134,6 +2767,13 @@
       "providers": {
         "ja": {
           "kind": "raw_literal",
+          "provenance": {
+            "context_sha256": "b5d6d01a1c52801e0b811911b9834a994abc4eccfd91a6c91b805d7f4ff5611d",
+            "kind": "tracked_source_literal",
+            "source_key": "message_id=0x0024",
+            "source_path": "src/classchg-menuconfirm.c",
+            "source_symbol": "MenuItem_PromoSubConfirm"
+          },
           "text_sha256": "74d124015c4278cd253c38781351c271e5f9bceb34c5f915b384cf387207722a"
         },
         "zh-Hans": {
@@ -2156,10 +2796,20 @@
         {
           "anchors": [
             "PROMO_OPTION_1_NAME",
-            "ClassChgMenu_GetDisplayLabel",
             "ClassChgMenuItem_OnTextDraw"
           ],
-          "path": "src/classchg-menuselect.c"
+          "path": "src/classchg-menuselect.c",
+          "provider_anchor": "PROMO_OPTION_1_NAME",
+          "scope_kind": "initializer",
+          "symbol": "gMenuItem_PromoSel"
+        },
+        {
+          "anchors": [
+            "ClassChgMenu_GetDisplayLabel"
+          ],
+          "path": "src/classchg-menuselect.c",
+          "scope_kind": "function",
+          "symbol": "ClassChgMenuItem_OnTextDraw"
         }
       ],
       "classification": "expansion_message",
@@ -2172,14 +2822,29 @@
       "providers": {
         "en": {
           "kind": "expansion_catalog",
+          "provenance": {
+            "key": "raw_surface.class_change.option_1",
+            "kind": "authored_expansion_catalog",
+            "path": "texts/expansion/catalog.en.json"
+          },
           "text_sha256": "6b3a7967b616f762c81747f6ee3a047b18f2ba1098e03fc45573b41082a93aee"
         },
         "ja": {
           "kind": "expansion_catalog",
+          "provenance": {
+            "key": "raw_surface.class_change.option_1",
+            "kind": "authored_expansion_catalog",
+            "path": "texts/expansion/catalog.ja.json"
+          },
           "text_sha256": "949dff3ccc97d4f69a53682b419b3fc08805cd22aa7bbf4d67a79da350d1d6da"
         },
         "zh-Hans": {
           "kind": "expansion_catalog",
+          "provenance": {
+            "key": "raw_surface.class_change.option_1",
+            "kind": "authored_expansion_catalog",
+            "path": "texts/expansion/catalog.zh-Hans.json"
+          },
           "text_sha256": "c7b1ec47c7be8b638328c0aa9228b256a5ada458f0f3dd8f2bf99c966be2a501"
         }
       },
@@ -2202,10 +2867,20 @@
         {
           "anchors": [
             "PROMO_OPTION_2_NAME",
-            "ClassChgMenu_GetDisplayLabel",
             "ClassChgMenuItem_OnTextDraw"
           ],
-          "path": "src/classchg-menuselect.c"
+          "path": "src/classchg-menuselect.c",
+          "provider_anchor": "PROMO_OPTION_2_NAME",
+          "scope_kind": "initializer",
+          "symbol": "gMenuItem_PromoSel"
+        },
+        {
+          "anchors": [
+            "ClassChgMenu_GetDisplayLabel"
+          ],
+          "path": "src/classchg-menuselect.c",
+          "scope_kind": "function",
+          "symbol": "ClassChgMenuItem_OnTextDraw"
         }
       ],
       "classification": "expansion_message",
@@ -2218,14 +2893,29 @@
       "providers": {
         "en": {
           "kind": "expansion_catalog",
+          "provenance": {
+            "key": "raw_surface.class_change.option_2",
+            "kind": "authored_expansion_catalog",
+            "path": "texts/expansion/catalog.en.json"
+          },
           "text_sha256": "202426b0a7b1520e1bdd881070dda8ba2a092cf7ac4e061412da42476cfa5dff"
         },
         "ja": {
           "kind": "expansion_catalog",
+          "provenance": {
+            "key": "raw_surface.class_change.option_2",
+            "kind": "authored_expansion_catalog",
+            "path": "texts/expansion/catalog.ja.json"
+          },
           "text_sha256": "3f145d8233d207c886b449e9de7fba0ae3983ac2b6e541c434593aca18193110"
         },
         "zh-Hans": {
           "kind": "expansion_catalog",
+          "provenance": {
+            "key": "raw_surface.class_change.option_2",
+            "kind": "authored_expansion_catalog",
+            "path": "texts/expansion/catalog.zh-Hans.json"
+          },
           "text_sha256": "cf0a1ca79e59ab7a251d812e08760b7f1a5d752e3fa4a802082f8070f9247517"
         }
       },
@@ -2248,10 +2938,20 @@
         {
           "anchors": [
             "PROMO_OPTION_3_NAME",
-            "ClassChgMenu_GetDisplayLabel",
             "ClassChgMenuItem_OnTextDraw"
           ],
-          "path": "src/classchg-menuselect.c"
+          "path": "src/classchg-menuselect.c",
+          "provider_anchor": "PROMO_OPTION_3_NAME",
+          "scope_kind": "initializer",
+          "symbol": "gMenuItem_PromoSel"
+        },
+        {
+          "anchors": [
+            "ClassChgMenu_GetDisplayLabel"
+          ],
+          "path": "src/classchg-menuselect.c",
+          "scope_kind": "function",
+          "symbol": "ClassChgMenuItem_OnTextDraw"
         }
       ],
       "classification": "expansion_message",
@@ -2264,14 +2964,29 @@
       "providers": {
         "en": {
           "kind": "expansion_catalog",
+          "provenance": {
+            "key": "raw_surface.class_change.option_3",
+            "kind": "authored_expansion_catalog",
+            "path": "texts/expansion/catalog.en.json"
+          },
           "text_sha256": "72a522d7c6e594879004911130e4ca662890e3957ec49005908d356e48ce407c"
         },
         "ja": {
           "kind": "expansion_catalog",
+          "provenance": {
+            "key": "raw_surface.class_change.option_3",
+            "kind": "authored_expansion_catalog",
+            "path": "texts/expansion/catalog.ja.json"
+          },
           "text_sha256": "23a02161c924576012ac8fb00893b80653073de8462e1741ff3b1a964b66efbd"
         },
         "zh-Hans": {
           "kind": "expansion_catalog",
+          "provenance": {
+            "key": "raw_surface.class_change.option_3",
+            "kind": "authored_expansion_catalog",
+            "path": "texts/expansion/catalog.zh-Hans.json"
+          },
           "text_sha256": "62ec85ce075be747be754743625b7c7ced052b7beaeda1897b15232e30331252"
         }
       },
@@ -2293,11 +3008,12 @@
       "call_sites": [
         {
           "anchors": [
-            "MenuItemDef_WMGeneralMenu",
             ".nameMsgId = 0x0645",
             ".overrideId = 0,"
           ],
-          "path": "src/worldmap_path.c"
+          "path": "src/worldmap_path.c",
+          "scope_kind": "initializer",
+          "symbol": "MenuItemDef_WMGeneralMenu"
         }
       ],
       "classification": "game_message",
@@ -2309,6 +3025,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 7,
+            "kind": "exact_cp932_source_blob",
+            "offset": 373,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "sGmapRouteMenuText:MenuItemDef_WMGeneralMenu[0]",
+            "value_sha256": "1d1bc2be996b75a5d48d072fefe258fa3d28d3c517f161b502e79350c41cda8e"
+          },
           "text_sha256": "25cf44e1b786e60efabc5fac8903679f992b0440ee57c030e0daa6c64bd328b5"
         },
         "zh-Hans": {
@@ -2328,11 +3053,12 @@
       "call_sites": [
         {
           "anchors": [
-            "MenuItemDef_WMGeneralMenu",
             ".nameMsgId = 0x0646",
             ".overrideId = 1,"
           ],
-          "path": "src/worldmap_path.c"
+          "path": "src/worldmap_path.c",
+          "scope_kind": "initializer",
+          "symbol": "MenuItemDef_WMGeneralMenu"
         }
       ],
       "classification": "game_message",
@@ -2344,6 +3070,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 7,
+            "kind": "exact_cp932_source_blob",
+            "offset": 380,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "sGmapRouteMenuText:MenuItemDef_WMGeneralMenu[1]",
+            "value_sha256": "7badc9abe894d7150cb9506f96301ebd9f5591d24fadbc8b0eab40857ce40494"
+          },
           "text_sha256": "45ec55856092f01f6dbd4bcce4b62710686953aa9d969d4c2dc82e6f1011752c"
         },
         "zh-Hans": {
@@ -2363,11 +3098,12 @@
       "call_sites": [
         {
           "anchors": [
-            "MenuItemDef_WMGeneralMenu",
             ".nameMsgId = 0x0647",
             ".overrideId = 2,"
           ],
-          "path": "src/worldmap_path.c"
+          "path": "src/worldmap_path.c",
+          "scope_kind": "initializer",
+          "symbol": "MenuItemDef_WMGeneralMenu"
         }
       ],
       "classification": "game_message",
@@ -2379,6 +3115,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 7,
+            "kind": "exact_cp932_source_blob",
+            "offset": 387,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "sGmapRouteMenuText:MenuItemDef_WMGeneralMenu[2]",
+            "value_sha256": "823c3c8a19ef27236bf5e1ee84621e09abf19b8bfd0e54618c06130167f47697"
+          },
           "text_sha256": "f171282c1dc7fd06a88de2deefd0b5314b8f2d823b93555452e5e717801927bc"
         },
         "zh-Hans": {
@@ -2398,11 +3143,12 @@
       "call_sites": [
         {
           "anchors": [
-            "MenuItemDef_WMGeneralMenu",
             ".nameMsgId = 0x0648",
             ".overrideId = 3,"
           ],
-          "path": "src/worldmap_path.c"
+          "path": "src/worldmap_path.c",
+          "scope_kind": "initializer",
+          "symbol": "MenuItemDef_WMGeneralMenu"
         }
       ],
       "classification": "game_message",
@@ -2414,6 +3160,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 7,
+            "kind": "exact_cp932_source_blob",
+            "offset": 394,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "sGmapRouteMenuText:MenuItemDef_WMGeneralMenu[3]",
+            "value_sha256": "e1e9370d1ebdedc53354b8ba838ac4ec1d0014fd9bd03a670b1a40819e69cf78"
+          },
           "text_sha256": "1267ec57a99634b18cc9f23d016bb6f95635225f50d3bacb5d0f6a801ae39d32"
         },
         "zh-Hans": {
@@ -2433,11 +3188,12 @@
       "call_sites": [
         {
           "anchors": [
-            "MenuItemDef_WMGeneralMenu",
             ".nameMsgId = 0x0649",
             ".overrideId = 4,"
           ],
-          "path": "src/worldmap_path.c"
+          "path": "src/worldmap_path.c",
+          "scope_kind": "initializer",
+          "symbol": "MenuItemDef_WMGeneralMenu"
         }
       ],
       "classification": "game_message",
@@ -2449,6 +3205,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 7,
+            "kind": "exact_cp932_source_blob",
+            "offset": 401,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "sGmapRouteMenuText:MenuItemDef_WMGeneralMenu[4]",
+            "value_sha256": "a13ffd740daf48d6799ab4e54fd5626e39fe58d489b59344dd594d32afe1cb60"
+          },
           "text_sha256": "0c24d4ba15032c2f914dfd1c25cab778f4a5a0a9bde863badb6c5ec0e551fa21"
         },
         "zh-Hans": {
@@ -2468,11 +3233,12 @@
       "call_sites": [
         {
           "anchors": [
-            "MenuItemDef_WMNodeMenu",
             ".nameMsgId = 0x066E",
             ".overrideId = 0,"
           ],
-          "path": "src/worldmap_path.c"
+          "path": "src/worldmap_path.c",
+          "scope_kind": "initializer",
+          "symbol": "MenuItemDef_WMNodeMenu"
         }
       ],
       "classification": "game_message",
@@ -2484,6 +3250,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 15,
+            "kind": "exact_cp932_source_blob",
+            "offset": 408,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "sGmapRouteMenuText:MenuItemDef_WMNodeMenu[0]",
+            "value_sha256": "25ea4caa03aeccb5b88be425937ab1bffd4262c7f1b7d0d3eb2e4168d229c2bf"
+          },
           "text_sha256": "da6c5377657e654519176cf30d2e1f98e32e89ed72912a71a70177a1c822ca81"
         },
         "zh-Hans": {
@@ -2503,11 +3278,12 @@
       "call_sites": [
         {
           "anchors": [
-            "MenuItemDef_WMNodeMenu",
             ".nameMsgId = 0x066F",
             ".overrideId = 1,"
           ],
-          "path": "src/worldmap_path.c"
+          "path": "src/worldmap_path.c",
+          "scope_kind": "initializer",
+          "symbol": "MenuItemDef_WMNodeMenu"
         }
       ],
       "classification": "game_message",
@@ -2519,6 +3295,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 15,
+            "kind": "exact_cp932_source_blob",
+            "offset": 423,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "sGmapRouteMenuText:MenuItemDef_WMNodeMenu[1]",
+            "value_sha256": "79a025b980a1d8f75db0e147f6f96c0ee691119e981e1dde0d8e30b3f9db6424"
+          },
           "text_sha256": "e0969b4e737ab7e0fbaca05662a369ae2298af993c2e72a433414d9ddd7e15a2"
         },
         "zh-Hans": {
@@ -2538,11 +3323,12 @@
       "call_sites": [
         {
           "anchors": [
-            "MenuItemDef_WMNodeMenu",
             ".nameMsgId = 0x0670",
             ".overrideId = 2,"
           ],
-          "path": "src/worldmap_path.c"
+          "path": "src/worldmap_path.c",
+          "scope_kind": "initializer",
+          "symbol": "MenuItemDef_WMNodeMenu"
         }
       ],
       "classification": "game_message",
@@ -2554,6 +3340,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 15,
+            "kind": "exact_cp932_source_blob",
+            "offset": 438,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "sGmapRouteMenuText:MenuItemDef_WMNodeMenu[2]",
+            "value_sha256": "432984993eeee1ec2d4775042c109cc29eae05badb42cc80e8ef91ea835498dc"
+          },
           "text_sha256": "435a87971cfaa709a2af850d9e2e0cbcfe2505bca4530841416451255b3eaff1"
         },
         "zh-Hans": {
@@ -2573,11 +3368,12 @@
       "call_sites": [
         {
           "anchors": [
-            "MenuItemDef_WMNodeMenu",
             ".nameMsgId = 0x0671",
             ".overrideId = 3,"
           ],
-          "path": "src/worldmap_path.c"
+          "path": "src/worldmap_path.c",
+          "scope_kind": "initializer",
+          "symbol": "MenuItemDef_WMNodeMenu"
         }
       ],
       "classification": "game_message",
@@ -2589,6 +3385,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 15,
+            "kind": "exact_cp932_source_blob",
+            "offset": 453,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "sGmapRouteMenuText:MenuItemDef_WMNodeMenu[3]",
+            "value_sha256": "24adecf2fa21a72a567e09c232f6d93f601ed800957797b08ae2037ae22dd714"
+          },
           "text_sha256": "d410dc3d55bf9615eadc7cfb23f54cbe4bda178e088f4b3499489cffb28ab0ee"
         },
         "zh-Hans": {
@@ -2608,10 +3413,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrains_0",
-            "[TERRAIN_NONE]"
+            "[TERRAIN_NONE]",
+            "0x1c4"
           ],
-          "path": "src/data_terrains.c"
+          "path": "src/data_terrains.c",
+          "scope_kind": "initializer",
+          "symbol": "gTerrains_0"
         }
       ],
       "classification": "game_message",
@@ -2623,6 +3430,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 5,
+            "kind": "exact_cp932_source_blob",
+            "offset": 56,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gTerrains_0[TERRAIN_NONE]",
+            "value_sha256": "3327941a4982a4e61edb93bc85890693ff8084e3cfcd22e69227bf4630e9adc4"
+          },
           "text_sha256": "e3f497312a062c35e0ec931a3d248601150c5023c19aa0826ae142e1ca5dbc58"
         },
         "zh-Hans": {
@@ -2642,10 +3458,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrains_0",
-            "[TERRAIN_PLAINS]"
+            "[TERRAIN_PLAINS]",
+            "0x1c5"
           ],
-          "path": "src/data_terrains.c"
+          "path": "src/data_terrains.c",
+          "scope_kind": "initializer",
+          "symbol": "gTerrains_0"
         }
       ],
       "classification": "game_message",
@@ -2657,6 +3475,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 5,
+            "kind": "exact_cp932_source_blob",
+            "offset": 61,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gTerrains_0[TERRAIN_PLAINS]",
+            "value_sha256": "15c2d0232064711ff3c3a1cb4ee73b4be600cd0e6f371e4839753ce047c8ebff"
+          },
           "text_sha256": "543401b7ea820641ec80b4196c0ba1d70151ecac5f2ba0af0865187f537a114d"
         },
         "zh-Hans": {
@@ -2676,10 +3503,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrains_0",
-            "[TERRAIN_ROAD]"
+            "[TERRAIN_ROAD]",
+            "0x1c6"
           ],
-          "path": "src/data_terrains.c"
+          "path": "src/data_terrains.c",
+          "scope_kind": "initializer",
+          "symbol": "gTerrains_0"
         }
       ],
       "classification": "game_message",
@@ -2691,6 +3520,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 3,
+            "kind": "exact_cp932_source_blob",
+            "offset": 66,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gTerrains_0[TERRAIN_ROAD]",
+            "value_sha256": "8ecc4db1de26c7eeb74374a187ffbb9528d0b56eb2b70446af3523927c681a8b"
+          },
           "text_sha256": "00a9d5bd97c269b44f954c91d6a2f8afd4bcd35fa8b503c4af6fd1212f619c82"
         },
         "zh-Hans": {
@@ -2710,10 +3548,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrains_0",
-            "[TERRAIN_VILLAGE_REGULAR]"
+            "[TERRAIN_VILLAGE_REGULAR]",
+            "0x1c7"
           ],
-          "path": "src/data_terrains.c"
+          "path": "src/data_terrains.c",
+          "scope_kind": "initializer",
+          "symbol": "gTerrains_0"
         }
       ],
       "classification": "game_message",
@@ -2725,6 +3565,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 3,
+            "kind": "exact_cp932_source_blob",
+            "offset": 69,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gTerrains_0[TERRAIN_VILLAGE_REGULAR]",
+            "value_sha256": "8262232997e7bd70ebbf10b781960f304afc28cf6a9bf4a8e7120217c6c21a36"
+          },
           "text_sha256": "32bd9701333184d5d730aebda18ac04e6264b8272a516758197bfd4b37e609cc"
         },
         "zh-Hans": {
@@ -2744,10 +3593,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrains_0",
-            "[TERRAIN_VILLAGE_CLOSED]"
+            "[TERRAIN_VILLAGE_CLOSED]",
+            "0x1c8"
           ],
-          "path": "src/data_terrains.c"
+          "path": "src/data_terrains.c",
+          "scope_kind": "initializer",
+          "symbol": "gTerrains_0"
         }
       ],
       "classification": "game_message",
@@ -2759,10 +3610,26 @@
       "providers": {
         "ja": {
           "kind": "authored_semantic_correction",
+          "provenance": {
+            "evidence_kind": "target-authored-semantic-payload",
+            "kind": "reviewed_authored_translation",
+            "method": "deterministic-final-mapping-promotion",
+            "source_key": "gTerrains_0[TERRAIN_VILLAGE_CLOSED]",
+            "source_table": "texts/locales/authored/shards/semantic_corrections.<locale>.json",
+            "translation_key": "game.semantic_correction.msg_1c8"
+          },
           "text_sha256": "6ab6ed3d24937bd256d1bb46835a4a0231d49403889bc70837e5694f402ed407"
         },
         "zh-Hans": {
           "kind": "authored_semantic_correction",
+          "provenance": {
+            "evidence_kind": "target-authored-semantic-payload",
+            "kind": "reviewed_authored_translation",
+            "method": "deterministic-final-mapping-promotion",
+            "source_key": "gTerrains_0[TERRAIN_VILLAGE_CLOSED]",
+            "source_table": "texts/locales/authored/shards/semantic_corrections.<locale>.json",
+            "translation_key": "game.semantic_correction.msg_1c8"
+          },
           "text_sha256": "4f7a5c4cd6fdfcdedc5bfa0866512bff51a24360048674b20cc4f4b98f143bc6"
         }
       },
@@ -2778,10 +3645,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrains_0",
-            "[TERRAIN_HOUSE]"
+            "[TERRAIN_HOUSE]",
+            "0x1c9"
           ],
-          "path": "src/data_terrains.c"
+          "path": "src/data_terrains.c",
+          "scope_kind": "initializer",
+          "symbol": "gTerrains_0"
         }
       ],
       "classification": "game_message",
@@ -2793,6 +3662,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 5,
+            "kind": "exact_cp932_source_blob",
+            "offset": 79,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gTerrains_0[TERRAIN_HOUSE]",
+            "value_sha256": "72c85b3b62d2645a1dc2e549d51a969d5d993e741c89932cb3dcd7709ddf3f29"
+          },
           "text_sha256": "e17916291ffcc3d4b25d47f2405183547c92b549e0960cbb02e4556749801df8"
         },
         "zh-Hans": {
@@ -2812,10 +3690,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrains_0",
-            "[TERRAIN_ARMORY]"
+            "[TERRAIN_ARMORY]",
+            "0x1ca"
           ],
-          "path": "src/data_terrains.c"
+          "path": "src/data_terrains.c",
+          "scope_kind": "initializer",
+          "symbol": "gTerrains_0"
         }
       ],
       "classification": "game_message",
@@ -2827,6 +3707,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 7,
+            "kind": "exact_cp932_source_blob",
+            "offset": 84,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gTerrains_0[TERRAIN_ARMORY]",
+            "value_sha256": "a0f354db4e1f1eb060273e8bbf9b1bbb4bc69641ac287d6457fa9ef81ba61cae"
+          },
           "text_sha256": "56c1bc365a2ea472edf4be4a3eb488130e6f9295a3815e71c9276acc708306b2"
         },
         "zh-Hans": {
@@ -2846,10 +3735,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrains_0",
-            "[TERRAIN_VENDOR]"
+            "[TERRAIN_VENDOR]",
+            "0x1cb"
           ],
-          "path": "src/data_terrains.c"
+          "path": "src/data_terrains.c",
+          "scope_kind": "initializer",
+          "symbol": "gTerrains_0"
         }
       ],
       "classification": "game_message",
@@ -2861,6 +3752,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 7,
+            "kind": "exact_cp932_source_blob",
+            "offset": 91,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gTerrains_0[TERRAIN_VENDOR]",
+            "value_sha256": "b8c096a2ef1ab674cd7371e27ec6eb1751fd7e1679e0643deded91dcd5a060cd"
+          },
           "text_sha256": "0dc63cf0f51ac4f6006f7bb70d44e2c710a818d58ae5dc61369586464e82fed2"
         },
         "zh-Hans": {
@@ -2880,10 +3780,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrains_0",
-            "[TERRAIN_ARENA_REGULAR]"
+            "[TERRAIN_ARENA_REGULAR]",
+            "0x1cc"
           ],
-          "path": "src/data_terrains.c"
+          "path": "src/data_terrains.c",
+          "scope_kind": "initializer",
+          "symbol": "gTerrains_0"
         }
       ],
       "classification": "game_message",
@@ -2895,6 +3797,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 7,
+            "kind": "exact_cp932_source_blob",
+            "offset": 98,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gTerrains_0[TERRAIN_ARENA_REGULAR]",
+            "value_sha256": "fa40e776987b1343f461ef464a5ec6ac096bc62ba79272f48b2961fba9dfd2f2"
+          },
           "text_sha256": "4b62965075afdf1b32743fd08a3fe494c98e3c59022178d9dd5720e03005a0ec"
         },
         "zh-Hans": {
@@ -2914,10 +3825,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrains_0",
-            "[TERRAIN_C_ROOM_09]"
+            "[TERRAIN_C_ROOM_09]",
+            "0x1cd"
           ],
-          "path": "src/data_terrains.c"
+          "path": "src/data_terrains.c",
+          "scope_kind": "initializer",
+          "symbol": "gTerrains_0"
         }
       ],
       "classification": "game_message",
@@ -2929,6 +3842,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 7,
+            "kind": "exact_cp932_source_blob",
+            "offset": 105,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gTerrains_0[TERRAIN_C_ROOM_09]",
+            "value_sha256": "0d7cbceee4de8a8e70d36cb973b012991b9d35e826db01560292e7a8edc88dd8"
+          },
           "text_sha256": "dd9c21c507bab764e27a46eeb910ed1d53ebbb0b661f9661f4a8527c00aa91d5"
         },
         "zh-Hans": {
@@ -2948,10 +3870,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrains_0",
-            "[TERRAIN_FORT]"
+            "[TERRAIN_FORT]",
+            "0x1ce"
           ],
-          "path": "src/data_terrains.c"
+          "path": "src/data_terrains.c",
+          "scope_kind": "initializer",
+          "symbol": "gTerrains_0"
         }
       ],
       "classification": "game_message",
@@ -2963,6 +3887,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 3,
+            "kind": "exact_cp932_source_blob",
+            "offset": 112,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gTerrains_0[TERRAIN_FORT]",
+            "value_sha256": "b52db8ef0578c8b671855a3eea71a68dbb5390c14f5ef18048ca0159bb88975a"
+          },
           "text_sha256": "01a40c2404871bdfacdf4586f135f2008d7ad6cda5b8e44883da1e0ff2b8ddd8"
         },
         "zh-Hans": {
@@ -2982,10 +3915,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrains_0",
-            "[TERRAIN_GATE_CASTLE]"
+            "[TERRAIN_GATE_CASTLE]",
+            "0x1cf"
           ],
-          "path": "src/data_terrains.c"
+          "path": "src/data_terrains.c",
+          "scope_kind": "initializer",
+          "symbol": "gTerrains_0"
         }
       ],
       "classification": "game_message",
@@ -2997,6 +3932,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 5,
+            "kind": "exact_cp932_source_blob",
+            "offset": 115,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gTerrains_0[TERRAIN_GATE_CASTLE]",
+            "value_sha256": "28c3773c4c20bf7024a95369866841bc52f4c01164ae69dd40172c745b166152"
+          },
           "text_sha256": "2532f97a51c4b7137711c273a3b0be7f39baf1b4c23eb321e8420e05ba61bc94"
         },
         "zh-Hans": {
@@ -3016,10 +3960,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrains_0",
-            "[TERRAIN_FOREST]"
+            "[TERRAIN_FOREST]",
+            "0x1d0"
           ],
-          "path": "src/data_terrains.c"
+          "path": "src/data_terrains.c",
+          "scope_kind": "initializer",
+          "symbol": "gTerrains_0"
         }
       ],
       "classification": "game_message",
@@ -3031,6 +3977,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 3,
+            "kind": "exact_cp932_source_blob",
+            "offset": 120,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gTerrains_0[TERRAIN_FOREST]",
+            "value_sha256": "599ac1cce18104bcbcb7a41150cc198cf63d029c7a46fcd794673d2e0c9d851f"
+          },
           "text_sha256": "5f8e490558897efa493cfbd5d78dfa22de2d997068ef7ab64282edef82d67351"
         },
         "zh-Hans": {
@@ -3050,10 +4005,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrains_0",
-            "[TERRAIN_THICKET]"
+            "[TERRAIN_THICKET]",
+            "0x1d1"
           ],
-          "path": "src/data_terrains.c"
+          "path": "src/data_terrains.c",
+          "scope_kind": "initializer",
+          "symbol": "gTerrains_0"
         }
       ],
       "classification": "game_message",
@@ -3065,6 +4022,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 7,
+            "kind": "exact_cp932_source_blob",
+            "offset": 123,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gTerrains_0[TERRAIN_THICKET]",
+            "value_sha256": "3294aecdbb5494aed9c3c9b1e4bec5c3acd021a29b42941b0474d47e00e7e555"
+          },
           "text_sha256": "b53db624456ae585400a912a34286d2e377cf1ccd2d310559b831a20c39a9715"
         },
         "zh-Hans": {
@@ -3084,10 +4050,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrains_0",
-            "[TERRAIN_SAND]"
+            "[TERRAIN_SAND]",
+            "0x1d2"
           ],
-          "path": "src/data_terrains.c"
+          "path": "src/data_terrains.c",
+          "scope_kind": "initializer",
+          "symbol": "gTerrains_0"
         }
       ],
       "classification": "game_message",
@@ -3099,6 +4067,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 5,
+            "kind": "exact_cp932_source_blob",
+            "offset": 130,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gTerrains_0[TERRAIN_SAND]",
+            "value_sha256": "a9c75966c5826b7fb82e761ab9f6d0ccc3745db5f769fb69021fb085d5fbbfe1"
+          },
           "text_sha256": "008e381b3a7927cadeeb7f50bff23545429a0cc4674809b2d956bb5bb3dfbe46"
         },
         "zh-Hans": {
@@ -3118,10 +4095,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrains_0",
-            "[TERRAIN_DESERT]"
+            "[TERRAIN_DESERT]",
+            "0x1d3"
           ],
-          "path": "src/data_terrains.c"
+          "path": "src/data_terrains.c",
+          "scope_kind": "initializer",
+          "symbol": "gTerrains_0"
         }
       ],
       "classification": "game_message",
@@ -3133,6 +4112,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 5,
+            "kind": "exact_cp932_source_blob",
+            "offset": 135,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gTerrains_0[TERRAIN_DESERT]",
+            "value_sha256": "48c2a71ee01169e2293975ba9e4e9426905c18822cc36771eea4bdae4bf7992f"
+          },
           "text_sha256": "901bd66136d24269cd0972fe77986d1ed25c649f7d336bb4c3c12497891e828e"
         },
         "zh-Hans": {
@@ -3152,10 +4140,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrains_0",
-            "[TERRAIN_RIVER]"
+            "[TERRAIN_RIVER]",
+            "0x1d4"
           ],
-          "path": "src/data_terrains.c"
+          "path": "src/data_terrains.c",
+          "scope_kind": "initializer",
+          "symbol": "gTerrains_0"
         }
       ],
       "classification": "game_message",
@@ -3167,6 +4157,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 3,
+            "kind": "exact_cp932_source_blob",
+            "offset": 140,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gTerrains_0[TERRAIN_RIVER]",
+            "value_sha256": "131d8403f3f2a2bbd27703c5fbecdb25f9b03e9740b7b6fdb8f16cfb37e52682"
+          },
           "text_sha256": "b5aae693581d12c80a2a190583804d097a4dc9eb092b7f8fa06262538285f54b"
         },
         "zh-Hans": {
@@ -3186,10 +4185,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrains_0",
-            "[TERRAIN_MOUNTAIN]"
+            "[TERRAIN_MOUNTAIN]",
+            "0x1d5"
           ],
-          "path": "src/data_terrains.c"
+          "path": "src/data_terrains.c",
+          "scope_kind": "initializer",
+          "symbol": "gTerrains_0"
         }
       ],
       "classification": "game_message",
@@ -3201,6 +4202,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 3,
+            "kind": "exact_cp932_source_blob",
+            "offset": 143,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gTerrains_0[TERRAIN_MOUNTAIN]",
+            "value_sha256": "3f642ba468ee451729955927971618b41fb138c0a53b30ec25325ebc60f5f734"
+          },
           "text_sha256": "4862540a299762b3f090257ebb6976ec1d05ca460de0a1a195ee8569061ad6c0"
         },
         "zh-Hans": {
@@ -3220,10 +4230,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrains_0",
-            "[TERRAIN_PEAK]"
+            "[TERRAIN_PEAK]",
+            "0x1d6"
           ],
-          "path": "src/data_terrains.c"
+          "path": "src/data_terrains.c",
+          "scope_kind": "initializer",
+          "symbol": "gTerrains_0"
         }
       ],
       "classification": "game_message",
@@ -3235,6 +4247,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 7,
+            "kind": "exact_cp932_source_blob",
+            "offset": 146,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gTerrains_0[TERRAIN_PEAK]",
+            "value_sha256": "aad34a43d6c6aa730dd3579d5675f70313787e8315b8cb0522aec1fe9b3a96f6"
+          },
           "text_sha256": "817f5dd418155b8c8720588db70d2587f055cfb840b319f869ac852eb976571c"
         },
         "zh-Hans": {
@@ -3254,10 +4275,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrains_0",
-            "[TERRAIN_BRIDGE_REGULAR]"
+            "[TERRAIN_BRIDGE_REGULAR]",
+            "0x1d7"
           ],
-          "path": "src/data_terrains.c"
+          "path": "src/data_terrains.c",
+          "scope_kind": "initializer",
+          "symbol": "gTerrains_0"
         }
       ],
       "classification": "game_message",
@@ -3269,6 +4292,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 3,
+            "kind": "exact_cp932_source_blob",
+            "offset": 153,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gTerrains_0[TERRAIN_BRIDGE_REGULAR]",
+            "value_sha256": "6d58ce66e8ea6c2c84d54352b4e5b375bb69dbc73a905a5ab3986b94aad4117c"
+          },
           "text_sha256": "c2995d6958268e93f5a9c7209716568a49634485a970edb4659deda70f014f5a"
         },
         "zh-Hans": {
@@ -3288,10 +4320,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrains_0",
-            "[TERRAIN_BRIDGE_14]"
+            "[TERRAIN_BRIDGE_14]",
+            "0x1d8"
           ],
-          "path": "src/data_terrains.c"
+          "path": "src/data_terrains.c",
+          "scope_kind": "initializer",
+          "symbol": "gTerrains_0"
         }
       ],
       "classification": "game_message",
@@ -3303,6 +4337,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 7,
+            "kind": "exact_cp932_source_blob",
+            "offset": 156,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gTerrains_0[TERRAIN_BRIDGE_14]",
+            "value_sha256": "96cf732a60f85d7542abbfa5705e20a130f3ff2d8d63f438cf5b88e3c0935e0f"
+          },
           "text_sha256": "124fe593ca9f6eca079a3694ec1f501c967f1e2b5b955624c3e53d809a5c6ec6"
         },
         "zh-Hans": {
@@ -3322,10 +4365,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrains_0",
-            "[TERRAIN_SEA]"
+            "[TERRAIN_SEA]",
+            "0x1d9"
           ],
-          "path": "src/data_terrains.c"
+          "path": "src/data_terrains.c",
+          "scope_kind": "initializer",
+          "symbol": "gTerrains_0"
         }
       ],
       "classification": "game_message",
@@ -3337,6 +4382,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 3,
+            "kind": "exact_cp932_source_blob",
+            "offset": 163,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gTerrains_0[TERRAIN_SEA]",
+            "value_sha256": "51f2b0863c9d4cf8fa6a4a1b15f223c9d7876c0c24b23ca0abf4d0f792b7cd0c"
+          },
           "text_sha256": "0ac6d5192ec21d34f7d6e0b0246b06d5cbaa2600cfcbd48f2363d1e3d22e76a2"
         },
         "zh-Hans": {
@@ -3356,10 +4410,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrains_0",
-            "[TERRAIN_LAKE]"
+            "[TERRAIN_LAKE]",
+            "0x1da"
           ],
-          "path": "src/data_terrains.c"
+          "path": "src/data_terrains.c",
+          "scope_kind": "initializer",
+          "symbol": "gTerrains_0"
         }
       ],
       "classification": "game_message",
@@ -3371,6 +4427,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 3,
+            "kind": "exact_cp932_source_blob",
+            "offset": 166,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gTerrains_0[TERRAIN_LAKE]",
+            "value_sha256": "8761a57e41f8852efae89070e1a81fc98c287034ee79bfe473d00bbbd8e485ee"
+          },
           "text_sha256": "3e98b56da0099e71fa0d09a3f7dc4c3269f97019409545bcd43fd7b5cfcbdcd5"
         },
         "zh-Hans": {
@@ -3390,10 +4455,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrains_0",
-            "[TERRAIN_FLOOR_REGULAR]"
+            "[TERRAIN_FLOOR_REGULAR]",
+            "0x1db"
           ],
-          "path": "src/data_terrains.c"
+          "path": "src/data_terrains.c",
+          "scope_kind": "initializer",
+          "symbol": "gTerrains_0"
         }
       ],
       "classification": "game_message",
@@ -3405,6 +4472,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 3,
+            "kind": "exact_cp932_source_blob",
+            "offset": 169,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gTerrains_0[TERRAIN_FLOOR_REGULAR]",
+            "value_sha256": "560012a75e125777a116545c1c0b038dbdcfcf52a6a9a4738731d2ba2edc6859"
+          },
           "text_sha256": "5cfd73078e3aaf3fc93296d4a4469864d8efebfdbaabf525af3e9b1b6940264e"
         },
         "zh-Hans": {
@@ -3424,10 +4500,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrains_0",
-            "[TERRAIN_FLOOR_MAGIC]"
+            "[TERRAIN_FLOOR_MAGIC]",
+            "0x1dc"
           ],
-          "path": "src/data_terrains.c"
+          "path": "src/data_terrains.c",
+          "scope_kind": "initializer",
+          "symbol": "gTerrains_0"
         }
       ],
       "classification": "game_message",
@@ -3439,6 +4517,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 3,
+            "kind": "exact_cp932_source_blob",
+            "offset": 172,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gTerrains_0[TERRAIN_FLOOR_MAGIC]",
+            "value_sha256": "560012a75e125777a116545c1c0b038dbdcfcf52a6a9a4738731d2ba2edc6859"
+          },
           "text_sha256": "5cfd73078e3aaf3fc93296d4a4469864d8efebfdbaabf525af3e9b1b6940264e"
         },
         "zh-Hans": {
@@ -3458,10 +4545,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrains_0",
-            "[TERRAIN_FENCE_REGULAR]"
+            "[TERRAIN_FENCE_REGULAR]",
+            "0x1dd"
           ],
-          "path": "src/data_terrains.c"
+          "path": "src/data_terrains.c",
+          "scope_kind": "initializer",
+          "symbol": "gTerrains_0"
         }
       ],
       "classification": "game_message",
@@ -3473,6 +4562,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 3,
+            "kind": "exact_cp932_source_blob",
+            "offset": 175,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gTerrains_0[TERRAIN_FENCE_REGULAR]",
+            "value_sha256": "3a1b34dd4de04818384fc4bd2715d1909bc9de3aaa33416b983d809a443dac0d"
+          },
           "text_sha256": "064518bada5b33c7ba1eceb6bb3e071e1501351e6a7bc00249f62e25f7d28066"
         },
         "zh-Hans": {
@@ -3492,10 +4590,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrains_0",
-            "[TERRAIN_WALL_REGULAR]"
+            "[TERRAIN_WALL_REGULAR]",
+            "0x1de"
           ],
-          "path": "src/data_terrains.c"
+          "path": "src/data_terrains.c",
+          "scope_kind": "initializer",
+          "symbol": "gTerrains_0"
         }
       ],
       "classification": "game_message",
@@ -3507,6 +4607,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 3,
+            "kind": "exact_cp932_source_blob",
+            "offset": 178,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gTerrains_0[TERRAIN_WALL_REGULAR]",
+            "value_sha256": "332b21628e04010399e3adb7e5674c82698d42cc08f7deeda3daa0d302b70f93"
+          },
           "text_sha256": "b5f0f70d8d1a3e828112f48ff43cee311f122bd9f2e0f21acdc04829baa569c2"
         },
         "zh-Hans": {
@@ -3526,10 +4635,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrains_0",
-            "[TERRAIN_WALL_DAMAGED]"
+            "[TERRAIN_WALL_DAMAGED]",
+            "0x1df"
           ],
-          "path": "src/data_terrains.c"
+          "path": "src/data_terrains.c",
+          "scope_kind": "initializer",
+          "symbol": "gTerrains_0"
         }
       ],
       "classification": "game_message",
@@ -3541,6 +4652,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 3,
+            "kind": "exact_cp932_source_blob",
+            "offset": 181,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gTerrains_0[TERRAIN_WALL_DAMAGED]",
+            "value_sha256": "332b21628e04010399e3adb7e5674c82698d42cc08f7deeda3daa0d302b70f93"
+          },
           "text_sha256": "b5f0f70d8d1a3e828112f48ff43cee311f122bd9f2e0f21acdc04829baa569c2"
         },
         "zh-Hans": {
@@ -3560,10 +4680,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrains_0",
-            "[TERRAIN_RUBBLE]"
+            "[TERRAIN_RUBBLE]",
+            "0x1e0"
           ],
-          "path": "src/data_terrains.c"
+          "path": "src/data_terrains.c",
+          "scope_kind": "initializer",
+          "symbol": "gTerrains_0"
         }
       ],
       "classification": "game_message",
@@ -3575,6 +4697,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 9,
+            "kind": "exact_cp932_source_blob",
+            "offset": 184,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gTerrains_0[TERRAIN_RUBBLE]",
+            "value_sha256": "d83aa73f4d7d3b88858411df5a10e94da78888b1078e1359bc1a5e552762131c"
+          },
           "text_sha256": "9e9172835c8f37f5845ac3f18bacfa0a654f4f811434a8f279385a1502b3456a"
         },
         "zh-Hans": {
@@ -3594,10 +4725,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrains_0",
-            "[TERRAIN_PILLAR]"
+            "[TERRAIN_PILLAR]",
+            "0x1e1"
           ],
-          "path": "src/data_terrains.c"
+          "path": "src/data_terrains.c",
+          "scope_kind": "initializer",
+          "symbol": "gTerrains_0"
         }
       ],
       "classification": "game_message",
@@ -3609,6 +4742,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 3,
+            "kind": "exact_cp932_source_blob",
+            "offset": 193,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gTerrains_0[TERRAIN_PILLAR]",
+            "value_sha256": "3913a955a6ed843e168de714e8ef9591eba122f1c853b237e2c923f905adcda7"
+          },
           "text_sha256": "f7324c14e23afa4711a65c27de5438daef52870da81b7aa02fdf47647dc0234a"
         },
         "zh-Hans": {
@@ -3628,10 +4770,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrains_0",
-            "[TERRAIN_DOOR]"
+            "[TERRAIN_DOOR]",
+            "0x1e2"
           ],
-          "path": "src/data_terrains.c"
+          "path": "src/data_terrains.c",
+          "scope_kind": "initializer",
+          "symbol": "gTerrains_0"
         }
       ],
       "classification": "game_message",
@@ -3643,6 +4787,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 3,
+            "kind": "exact_cp932_source_blob",
+            "offset": 196,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gTerrains_0[TERRAIN_DOOR]",
+            "value_sha256": "749b64c6642372ff4d6af62e084556fca6ed4fea5a172176036aa82dd1ca0078"
+          },
           "text_sha256": "b2de419d32131a3c78611604c190068fc6366d9c294014f31f339ae3cd3f80a2"
         },
         "zh-Hans": {
@@ -3662,10 +4815,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrains_0",
-            "[TERRAIN_THRONE]"
+            "[TERRAIN_THRONE]",
+            "0x1e3"
           ],
-          "path": "src/data_terrains.c"
+          "path": "src/data_terrains.c",
+          "scope_kind": "initializer",
+          "symbol": "gTerrains_0"
         }
       ],
       "classification": "game_message",
@@ -3677,6 +4832,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 5,
+            "kind": "exact_cp932_source_blob",
+            "offset": 199,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gTerrains_0[TERRAIN_THRONE]",
+            "value_sha256": "c0a14fd75c353edb285677b5206771924453fd1aea519e8a4d6886576035595e"
+          },
           "text_sha256": "28172dc5ad5bfaa88a4b9aca48c890e820d88ae36a7fbe4b0f2b0384a2c67585"
         },
         "zh-Hans": {
@@ -3696,10 +4860,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrains_0",
-            "[TERRAIN_CHEST_EMPTY]"
+            "[TERRAIN_CHEST_EMPTY]",
+            "0x1e4"
           ],
-          "path": "src/data_terrains.c"
+          "path": "src/data_terrains.c",
+          "scope_kind": "initializer",
+          "symbol": "gTerrains_0"
         }
       ],
       "classification": "game_message",
@@ -3711,6 +4877,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 7,
+            "kind": "exact_cp932_source_blob",
+            "offset": 204,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gTerrains_0[TERRAIN_CHEST_EMPTY]",
+            "value_sha256": "6d7eadb39c490592930e5fa4ded4f98af7308f29644d530228b619e426c103dc"
+          },
           "text_sha256": "d291455f2638f932c6909b5a953b8c636c141b1fdebdd800dce239b723bc77e4"
         },
         "zh-Hans": {
@@ -3730,10 +4905,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrains_0",
-            "[TERRAIN_CHEST_FULL]"
+            "[TERRAIN_CHEST_FULL]",
+            "0x1e5"
           ],
-          "path": "src/data_terrains.c"
+          "path": "src/data_terrains.c",
+          "scope_kind": "initializer",
+          "symbol": "gTerrains_0"
         }
       ],
       "classification": "game_message",
@@ -3745,6 +4922,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 5,
+            "kind": "exact_cp932_source_blob",
+            "offset": 211,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gTerrains_0[TERRAIN_CHEST_FULL]",
+            "value_sha256": "db5d698acde28f69479fc78492c9f178edda616fa76ab1289f893c1232f27ee2"
+          },
           "text_sha256": "63a9d95616f935907ea0b1f67e2dd85abf7fc4aefdbe53d9d15c3bb045497cf6"
         },
         "zh-Hans": {
@@ -3764,10 +4950,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrains_0",
-            "[TERRAIN_ROOF]"
+            "[TERRAIN_ROOF]",
+            "0x1e6"
           ],
-          "path": "src/data_terrains.c"
+          "path": "src/data_terrains.c",
+          "scope_kind": "initializer",
+          "symbol": "gTerrains_0"
         }
       ],
       "classification": "game_message",
@@ -3779,6 +4967,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 5,
+            "kind": "exact_cp932_source_blob",
+            "offset": 216,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gTerrains_0[TERRAIN_ROOF]",
+            "value_sha256": "d97e4f5534b77e17e6ca8742ec1ca433042b97a50436c5298308be106cd4781a"
+          },
           "text_sha256": "da7e0aaaa86bf0d03a1a72ccd90592f44b71129febcd7a38b081afebabe52819"
         },
         "zh-Hans": {
@@ -3798,10 +4995,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrains_0",
-            "[TERRAIN_GATE_REGULAR]"
+            "[TERRAIN_GATE_REGULAR]",
+            "0x1e7"
           ],
-          "path": "src/data_terrains.c"
+          "path": "src/data_terrains.c",
+          "scope_kind": "initializer",
+          "symbol": "gTerrains_0"
         }
       ],
       "classification": "game_message",
@@ -3813,6 +5012,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 3,
+            "kind": "exact_cp932_source_blob",
+            "offset": 221,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gTerrains_0[TERRAIN_GATE_REGULAR]",
+            "value_sha256": "306b06ed28cd32665f17131f8c8aee4e3bcdb21a07e321a84cd77348b4a85c87"
+          },
           "text_sha256": "7a4c7a7d8dc84f1880ea79e59397c9b0de4c0f8cb8b0aceb99ccadc547f0d608"
         },
         "zh-Hans": {
@@ -3832,10 +5040,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrains_0",
-            "[TERRAIN_CHURCH]"
+            "[TERRAIN_CHURCH]",
+            "0x1e8"
           ],
-          "path": "src/data_terrains.c"
+          "path": "src/data_terrains.c",
+          "scope_kind": "initializer",
+          "symbol": "gTerrains_0"
         }
       ],
       "classification": "game_message",
@@ -3847,6 +5057,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 5,
+            "kind": "exact_cp932_source_blob",
+            "offset": 224,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gTerrains_0[TERRAIN_CHURCH]",
+            "value_sha256": "b0715b58ce6003bb360925fbec21108bc14631a4c2d300cb436914e71de47349"
+          },
           "text_sha256": "9f008ad32e93355c0a01342f598c08d91d8d3c45888887a8b33d17a7f175a288"
         },
         "zh-Hans": {
@@ -3866,10 +5085,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrains_0",
-            "[TERRAIN_RUINS_REGULAR]"
+            "[TERRAIN_RUINS_REGULAR]",
+            "0x1e9"
           ],
-          "path": "src/data_terrains.c"
+          "path": "src/data_terrains.c",
+          "scope_kind": "initializer",
+          "symbol": "gTerrains_0"
         }
       ],
       "classification": "game_message",
@@ -3881,6 +5102,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 5,
+            "kind": "exact_cp932_source_blob",
+            "offset": 229,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gTerrains_0[TERRAIN_RUINS_REGULAR]",
+            "value_sha256": "2c610b4357351485bccdba6b9408f8ccdcddfd03ced4341d85b5a114536e35d9"
+          },
           "text_sha256": "a7b2d228f6a90d5b24e31b315d9c61ec0f4e561a4d879f630f28ec31142735e2"
         },
         "zh-Hans": {
@@ -3900,10 +5130,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrains_0",
-            "[TERRAIN_CLIFF]"
+            "[TERRAIN_CLIFF]",
+            "0x1ea"
           ],
-          "path": "src/data_terrains.c"
+          "path": "src/data_terrains.c",
+          "scope_kind": "initializer",
+          "symbol": "gTerrains_0"
         }
       ],
       "classification": "game_message",
@@ -3915,6 +5147,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 5,
+            "kind": "exact_cp932_source_blob",
+            "offset": 234,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gTerrains_0[TERRAIN_CLIFF]",
+            "value_sha256": "db32211b92ebc292fac8e347d65737f1534b60831ea86538df3932807ff64bd8"
+          },
           "text_sha256": "cd32aa235f4d375886bf9da57b1351702dbfb6053f83099e6facc2a1c9e4a278"
         },
         "zh-Hans": {
@@ -3934,10 +5175,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrains_0",
-            "[TERRAIN_BALLISTA_REGULAR]"
+            "[TERRAIN_BALLISTA_REGULAR]",
+            "0x1eb"
           ],
-          "path": "src/data_terrains.c"
+          "path": "src/data_terrains.c",
+          "scope_kind": "initializer",
+          "symbol": "gTerrains_0"
         }
       ],
       "classification": "game_message",
@@ -3949,6 +5192,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 7,
+            "kind": "exact_cp932_source_blob",
+            "offset": 239,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gTerrains_0[TERRAIN_BALLISTA_REGULAR]",
+            "value_sha256": "c205ec8f3be5cb85373053cfe9bf7292babe24a3e877593ef1020dbb397cd76f"
+          },
           "text_sha256": "4c6a1ff1321cb7e5745193e5044130339883a1fa10337cb65e90782ee76510c1"
         },
         "zh-Hans": {
@@ -3968,10 +5220,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrains_0",
-            "[TERRAIN_BALLISTA_LONG]"
+            "[TERRAIN_BALLISTA_LONG]",
+            "0x1ec"
           ],
-          "path": "src/data_terrains.c"
+          "path": "src/data_terrains.c",
+          "scope_kind": "initializer",
+          "symbol": "gTerrains_0"
         }
       ],
       "classification": "game_message",
@@ -3983,6 +5237,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 7,
+            "kind": "exact_cp932_source_blob",
+            "offset": 246,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gTerrains_0[TERRAIN_BALLISTA_LONG]",
+            "value_sha256": "e8695e37a5b4d48ab44b1c4fe6186f4643d8f6cfa535a6f75421ffb3ea12179c"
+          },
           "text_sha256": "81df0d9ce445cd527635589a112edf1218d496d057925552101b484a1e8e4d51"
         },
         "zh-Hans": {
@@ -4002,10 +5265,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrains_0",
-            "[TERRAIN_BALLISTA_KILLER]"
+            "[TERRAIN_BALLISTA_KILLER]",
+            "0x1ed"
           ],
-          "path": "src/data_terrains.c"
+          "path": "src/data_terrains.c",
+          "scope_kind": "initializer",
+          "symbol": "gTerrains_0"
         }
       ],
       "classification": "game_message",
@@ -4017,6 +5282,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 7,
+            "kind": "exact_cp932_source_blob",
+            "offset": 253,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gTerrains_0[TERRAIN_BALLISTA_KILLER]",
+            "value_sha256": "19649119493c38343f848ba67db2f0098bab9b8ba65c85aec043261c934e5ba9"
+          },
           "text_sha256": "e2f499a91591dd38b9309c79267a97372bd22d82191d9d9f0cab13255a8eaff7"
         },
         "zh-Hans": {
@@ -4036,10 +5310,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrains_0",
-            "[TERRAIN_SHIP_FLAT]"
+            "[TERRAIN_SHIP_FLAT]",
+            "0x1ee"
           ],
-          "path": "src/data_terrains.c"
+          "path": "src/data_terrains.c",
+          "scope_kind": "initializer",
+          "symbol": "gTerrains_0"
         }
       ],
       "classification": "game_message",
@@ -4051,10 +5327,26 @@
       "providers": {
         "ja": {
           "kind": "authored_semantic_correction",
+          "provenance": {
+            "evidence_kind": "target-authored-semantic-payload",
+            "kind": "reviewed_authored_translation",
+            "method": "deterministic-final-mapping-promotion",
+            "source_key": "gTerrains_0[TERRAIN_SHIP_FLAT]",
+            "source_table": "texts/locales/authored/shards/semantic_corrections.<locale>.json",
+            "translation_key": "game.semantic_correction.msg_1ee"
+          },
           "text_sha256": "895703d6691cc11b548bbf9d573328808769aed0751344f8cafd7f54ff1e4a5a"
         },
         "zh-Hans": {
           "kind": "authored_semantic_correction",
+          "provenance": {
+            "evidence_kind": "target-authored-semantic-payload",
+            "kind": "reviewed_authored_translation",
+            "method": "deterministic-final-mapping-promotion",
+            "source_key": "gTerrains_0[TERRAIN_SHIP_FLAT]",
+            "source_table": "texts/locales/authored/shards/semantic_corrections.<locale>.json",
+            "translation_key": "game.semantic_correction.msg_1ee"
+          },
           "text_sha256": "895703d6691cc11b548bbf9d573328808769aed0751344f8cafd7f54ff1e4a5a"
         }
       },
@@ -4070,10 +5362,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrains_0",
-            "[TERRAIN_SHIP_WRECK]"
+            "[TERRAIN_SHIP_WRECK]",
+            "0x1ef"
           ],
-          "path": "src/data_terrains.c"
+          "path": "src/data_terrains.c",
+          "scope_kind": "initializer",
+          "symbol": "gTerrains_0"
         }
       ],
       "classification": "game_message",
@@ -4085,10 +5379,26 @@
       "providers": {
         "ja": {
           "kind": "authored_semantic_correction",
+          "provenance": {
+            "evidence_kind": "target-authored-semantic-payload",
+            "kind": "reviewed_authored_translation",
+            "method": "deterministic-final-mapping-promotion",
+            "source_key": "gTerrains_0[TERRAIN_SHIP_WRECK]",
+            "source_table": "texts/locales/authored/shards/semantic_corrections.<locale>.json",
+            "translation_key": "game.semantic_correction.msg_1ef"
+          },
           "text_sha256": "1470df92d4e7e52bdac9c48463abee632e9fe01c1c0fbe70b5c556502efe6455"
         },
         "zh-Hans": {
           "kind": "authored_semantic_correction",
+          "provenance": {
+            "evidence_kind": "target-authored-semantic-payload",
+            "kind": "reviewed_authored_translation",
+            "method": "deterministic-final-mapping-promotion",
+            "source_key": "gTerrains_0[TERRAIN_SHIP_WRECK]",
+            "source_table": "texts/locales/authored/shards/semantic_corrections.<locale>.json",
+            "translation_key": "game.semantic_correction.msg_1ef"
+          },
           "text_sha256": "93df1ce3aeb62eac9dd942e7d948afc97a63182f4d34922f74e0cccdbca86f1a"
         }
       },
@@ -4104,10 +5414,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrains_0",
-            "[TERRAIN_TILE_2C]"
+            "[TERRAIN_TILE_2C]",
+            "0x1f0"
           ],
-          "path": "src/data_terrains.c"
+          "path": "src/data_terrains.c",
+          "scope_kind": "initializer",
+          "symbol": "gTerrains_0"
         }
       ],
       "classification": "game_message",
@@ -4119,6 +5431,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 5,
+            "kind": "exact_cp932_source_blob",
+            "offset": 274,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gTerrains_0[TERRAIN_TILE_2C]",
+            "value_sha256": "3327941a4982a4e61edb93bc85890693ff8084e3cfcd22e69227bf4630e9adc4"
+          },
           "text_sha256": "e3f497312a062c35e0ec931a3d248601150c5023c19aa0826ae142e1ca5dbc58"
         },
         "zh-Hans": {
@@ -4138,10 +5459,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrains_0",
-            "[TERRAIN_STAIRS]"
+            "[TERRAIN_STAIRS]",
+            "0x1f1"
           ],
-          "path": "src/data_terrains.c"
+          "path": "src/data_terrains.c",
+          "scope_kind": "initializer",
+          "symbol": "gTerrains_0"
         }
       ],
       "classification": "game_message",
@@ -4153,6 +5476,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 5,
+            "kind": "exact_cp932_source_blob",
+            "offset": 279,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gTerrains_0[TERRAIN_STAIRS]",
+            "value_sha256": "a2363c0ddff53bb76cfbe841b9196a53b3a919a09feb40cee900145c7e719e48"
+          },
           "text_sha256": "44ec5ddfce336444ce0f950629b3780de9306d058d15076c9ba4f0cf53e81613"
         },
         "zh-Hans": {
@@ -4172,10 +5504,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrains_0",
-            "[TERRAIN_TILE_2E]"
+            "[TERRAIN_TILE_2E]",
+            "0x1f2"
           ],
-          "path": "src/data_terrains.c"
+          "path": "src/data_terrains.c",
+          "scope_kind": "initializer",
+          "symbol": "gTerrains_0"
         }
       ],
       "classification": "game_message",
@@ -4187,6 +5521,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 5,
+            "kind": "exact_cp932_source_blob",
+            "offset": 284,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gTerrains_0[TERRAIN_TILE_2E]",
+            "value_sha256": "3327941a4982a4e61edb93bc85890693ff8084e3cfcd22e69227bf4630e9adc4"
+          },
           "text_sha256": "e3f497312a062c35e0ec931a3d248601150c5023c19aa0826ae142e1ca5dbc58"
         },
         "zh-Hans": {
@@ -4206,10 +5549,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrains_0",
-            "[TERRAIN_GLACIER]"
+            "[TERRAIN_GLACIER]",
+            "0x1f3"
           ],
-          "path": "src/data_terrains.c"
+          "path": "src/data_terrains.c",
+          "scope_kind": "initializer",
+          "symbol": "gTerrains_0"
         }
       ],
       "classification": "game_message",
@@ -4221,6 +5566,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 5,
+            "kind": "exact_cp932_source_blob",
+            "offset": 289,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gTerrains_0[TERRAIN_GLACIER]",
+            "value_sha256": "41e9ae5c5f53f71dce8168c0a1b0b9bce3b6b9830cfb33f22c9421e207352639"
+          },
           "text_sha256": "1fcb062c0d6625d68f60df00fa770bbe629e78652152fcf1d163089f676445f6"
         },
         "zh-Hans": {
@@ -4240,10 +5594,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrains_0",
-            "[TERRAIN_ARENA_30]"
+            "[TERRAIN_ARENA_30]",
+            "0x1f4"
           ],
-          "path": "src/data_terrains.c"
+          "path": "src/data_terrains.c",
+          "scope_kind": "initializer",
+          "symbol": "gTerrains_0"
         }
       ],
       "classification": "game_message",
@@ -4255,6 +5611,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 9,
+            "kind": "exact_cp932_source_blob",
+            "offset": 294,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gTerrains_0[TERRAIN_ARENA_30]",
+            "value_sha256": "94a0c1ced42b401178fafb3c7e491debdffb58b7f03e3176e51d0ad167ebf82e"
+          },
           "text_sha256": "564eccc51ca41d97900e75474b6203531090b76c592c5cb5b5e85041808ca054"
         },
         "zh-Hans": {
@@ -4274,10 +5639,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrains_0",
-            "[TERRAIN_VALLEY]"
+            "[TERRAIN_VALLEY]",
+            "0x1f5"
           ],
-          "path": "src/data_terrains.c"
+          "path": "src/data_terrains.c",
+          "scope_kind": "initializer",
+          "symbol": "gTerrains_0"
         }
       ],
       "classification": "game_message",
@@ -4289,6 +5656,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 3,
+            "kind": "exact_cp932_source_blob",
+            "offset": 303,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gTerrains_0[TERRAIN_VALLEY]",
+            "value_sha256": "01b07ef5d2a9d37b6b6700a0b3c11fee022d5e8b5ca9ea75ad9a2f9ab00c8a96"
+          },
           "text_sha256": "bb5edfd7deea57299afb1bcbfbbe3eb087b6f1aefed807ccc0c5cca2fb172fac"
         },
         "zh-Hans": {
@@ -4308,10 +5684,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrains_0",
-            "[TERRAIN_FENCE_32]"
+            "[TERRAIN_FENCE_32]",
+            "0x1f6"
           ],
-          "path": "src/data_terrains.c"
+          "path": "src/data_terrains.c",
+          "scope_kind": "initializer",
+          "symbol": "gTerrains_0"
         }
       ],
       "classification": "game_message",
@@ -4323,6 +5701,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 3,
+            "kind": "exact_cp932_source_blob",
+            "offset": 306,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gTerrains_0[TERRAIN_FENCE_32]",
+            "value_sha256": "3a1b34dd4de04818384fc4bd2715d1909bc9de3aaa33416b983d809a443dac0d"
+          },
           "text_sha256": "064518bada5b33c7ba1eceb6bb3e071e1501351e6a7bc00249f62e25f7d28066"
         },
         "zh-Hans": {
@@ -4342,10 +5729,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrains_0",
-            "[TERRAIN_SNAG]"
+            "[TERRAIN_SNAG]",
+            "0x1f7"
           ],
-          "path": "src/data_terrains.c"
+          "path": "src/data_terrains.c",
+          "scope_kind": "initializer",
+          "symbol": "gTerrains_0"
         }
       ],
       "classification": "game_message",
@@ -4357,6 +5746,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 5,
+            "kind": "exact_cp932_source_blob",
+            "offset": 309,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gTerrains_0[TERRAIN_SNAG]",
+            "value_sha256": "09d815061606be801e1d397564b008736d0754f32930c09db5423035a8db4341"
+          },
           "text_sha256": "76eb1c6c5aa38203c4b08a9086f040ccd22d6b957eb490900bae58414b4d46fa"
         },
         "zh-Hans": {
@@ -4376,10 +5774,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrains_0",
-            "[TERRAIN_BRIDGE_SNAG]"
+            "[TERRAIN_BRIDGE_SNAG]",
+            "0x1f8"
           ],
-          "path": "src/data_terrains.c"
+          "path": "src/data_terrains.c",
+          "scope_kind": "initializer",
+          "symbol": "gTerrains_0"
         }
       ],
       "classification": "game_message",
@@ -4391,6 +5791,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 7,
+            "kind": "exact_cp932_source_blob",
+            "offset": 314,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gTerrains_0[TERRAIN_BRIDGE_SNAG]",
+            "value_sha256": "4f4be347cba01b7fbbb0e8ac43fa6f3c1a3a754a9b56984bea05c3f773843d59"
+          },
           "text_sha256": "217e2ed8d6be7cb2af3501906cba0d46e98359f5f5480f79b9b79ad1d93a2be5"
         },
         "zh-Hans": {
@@ -4410,10 +5819,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrains_0",
-            "[TERRAIN_SKY]"
+            "[TERRAIN_SKY]",
+            "0x1f9"
           ],
-          "path": "src/data_terrains.c"
+          "path": "src/data_terrains.c",
+          "scope_kind": "initializer",
+          "symbol": "gTerrains_0"
         }
       ],
       "classification": "game_message",
@@ -4425,6 +5836,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 3,
+            "kind": "exact_cp932_source_blob",
+            "offset": 321,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gTerrains_0[TERRAIN_SKY]",
+            "value_sha256": "e3df29191ebac508f7ff2e7aecf38119321dc91f4bad812b301d65d1a930a837"
+          },
           "text_sha256": "2f8267a89ad55e6b6ccc4831c09edd812a53e8086c49c33d7eb1ae014dd1ea59"
         },
         "zh-Hans": {
@@ -4444,10 +5864,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrains_0",
-            "[TERRAIN_DEEPS]"
+            "[TERRAIN_DEEPS]",
+            "0x1fa"
           ],
-          "path": "src/data_terrains.c"
+          "path": "src/data_terrains.c",
+          "scope_kind": "initializer",
+          "symbol": "gTerrains_0"
         }
       ],
       "classification": "game_message",
@@ -4459,6 +5881,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 5,
+            "kind": "exact_cp932_source_blob",
+            "offset": 324,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gTerrains_0[TERRAIN_DEEPS]",
+            "value_sha256": "bd68571157fbcdf31b05b09838a86a8b643da02229293dde5bf21331d057350a"
+          },
           "text_sha256": "d16725cb63477eabbe872be7928d0cc1a18f3834931bb43996baab57ab4ec746"
         },
         "zh-Hans": {
@@ -4478,10 +5909,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrains_0",
-            "[TERRAIN_RUINS_VILLAGE]"
+            "[TERRAIN_RUINS_VILLAGE]",
+            "0x1fb"
           ],
-          "path": "src/data_terrains.c"
+          "path": "src/data_terrains.c",
+          "scope_kind": "initializer",
+          "symbol": "gTerrains_0"
         }
       ],
       "classification": "game_message",
@@ -4493,6 +5926,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 5,
+            "kind": "exact_cp932_source_blob",
+            "offset": 329,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gTerrains_0[TERRAIN_RUINS_VILLAGE]",
+            "value_sha256": "50d3c05e91d06ff83fa17f6e01c4b76554436e126d8339a715cf78a0d2d1ddef"
+          },
           "text_sha256": "9184cf271e3a0b639dc510a212408a511e24177c2ad0ded6cda3d0ed5b985be3"
         },
         "zh-Hans": {
@@ -4512,10 +5954,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrains_0",
-            "[TERRAIN_INN]"
+            "[TERRAIN_INN]",
+            "0x1fc"
           ],
-          "path": "src/data_terrains.c"
+          "path": "src/data_terrains.c",
+          "scope_kind": "initializer",
+          "symbol": "gTerrains_0"
         }
       ],
       "classification": "game_message",
@@ -4527,6 +5971,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 5,
+            "kind": "exact_cp932_source_blob",
+            "offset": 334,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gTerrains_0[TERRAIN_INN]",
+            "value_sha256": "0d5d5fbd5cb93397372f2f398ffce6ee32e228314673db2a5f4b2d97fdaaf387"
+          },
           "text_sha256": "ecd8c4aed0a8e425a4668420ec1b5dc6386ebd6787194b1ccc432ac60dfe07cd"
         },
         "zh-Hans": {
@@ -4546,10 +5999,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrains_0",
-            "[TERRAIN_BARREL]"
+            "[TERRAIN_BARREL]",
+            "0x1fd"
           ],
-          "path": "src/data_terrains.c"
+          "path": "src/data_terrains.c",
+          "scope_kind": "initializer",
+          "symbol": "gTerrains_0"
         }
       ],
       "classification": "game_message",
@@ -4561,6 +6016,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 5,
+            "kind": "exact_cp932_source_blob",
+            "offset": 339,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gTerrains_0[TERRAIN_BARREL]",
+            "value_sha256": "9078c33b8e6b76631fde50c5e4233a97f31879276fadf89c313f91e71029f615"
+          },
           "text_sha256": "08768a9249c995d4ddf09e72116bd1e01289a7f8657737c589e5b83799e07665"
         },
         "zh-Hans": {
@@ -4580,10 +6044,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrains_0",
-            "[TERRAIN_BONE]"
+            "[TERRAIN_BONE]",
+            "0x1fe"
           ],
-          "path": "src/data_terrains.c"
+          "path": "src/data_terrains.c",
+          "scope_kind": "initializer",
+          "symbol": "gTerrains_0"
         }
       ],
       "classification": "game_message",
@@ -4595,6 +6061,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 3,
+            "kind": "exact_cp932_source_blob",
+            "offset": 344,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gTerrains_0[TERRAIN_BONE]",
+            "value_sha256": "52059a66c187bd28a78e9a85e9f28cc97d1b054a18563407524403bf97e74308"
+          },
           "text_sha256": "86aaff9bad01affb1f9439ccfbfe69786ef6c4cdbeaa0b7af7b2e9640543a10c"
         },
         "zh-Hans": {
@@ -4614,10 +6089,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrains_0",
-            "[TERRAIN_DARK]"
+            "[TERRAIN_DARK]",
+            "0x1ff"
           ],
-          "path": "src/data_terrains.c"
+          "path": "src/data_terrains.c",
+          "scope_kind": "initializer",
+          "symbol": "gTerrains_0"
         }
       ],
       "classification": "game_message",
@@ -4629,6 +6106,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 3,
+            "kind": "exact_cp932_source_blob",
+            "offset": 347,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gTerrains_0[TERRAIN_DARK]",
+            "value_sha256": "4e3fccddbb9d94eae2be6ddc380d2f96c6431e654f4bcd94595a56141ea7a2e6"
+          },
           "text_sha256": "f127dd07e4d9b78767442d487e185a18519eb5a85bc265f2dde6681fe3cfa548"
         },
         "zh-Hans": {
@@ -4648,10 +6134,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrains_0",
-            "[TERRAIN_WATER]"
+            "[TERRAIN_WATER]",
+            "0x200"
           ],
-          "path": "src/data_terrains.c"
+          "path": "src/data_terrains.c",
+          "scope_kind": "initializer",
+          "symbol": "gTerrains_0"
         }
       ],
       "classification": "game_message",
@@ -4663,6 +6151,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 3,
+            "kind": "exact_cp932_source_blob",
+            "offset": 350,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gTerrains_0[TERRAIN_WATER]",
+            "value_sha256": "102b2614da40ab26d2732e87e7c571aebc40d41fe31a6a2037104fe8f855a33c"
+          },
           "text_sha256": "327b54d04f71f2126114d9d61d4c3640ca0fc5b30878ad28416ff634a51a712d"
         },
         "zh-Hans": {
@@ -4682,10 +6179,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrains_0",
-            "[TERRAIN_GUNNELS]"
+            "[TERRAIN_GUNNELS]",
+            "0x201"
           ],
-          "path": "src/data_terrains.c"
+          "path": "src/data_terrains.c",
+          "scope_kind": "initializer",
+          "symbol": "gTerrains_0"
         }
       ],
       "classification": "game_message",
@@ -4697,6 +6196,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 3,
+            "kind": "exact_cp932_source_blob",
+            "offset": 353,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gTerrains_0[TERRAIN_GUNNELS]",
+            "value_sha256": "b11de42ba9410c0f5d50b4a4ef1f9e89573a7427b579c6fa52880c5b493314d8"
+          },
           "text_sha256": "81ef92b7df484c9ee46d478f847d810e310dd2c27e454586db824aa978a5c2ca"
         },
         "zh-Hans": {
@@ -4716,10 +6224,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrains_0",
-            "[TERRAIN_DECK]"
+            "[TERRAIN_DECK]",
+            "0x202"
           ],
-          "path": "src/data_terrains.c"
+          "path": "src/data_terrains.c",
+          "scope_kind": "initializer",
+          "symbol": "gTerrains_0"
         }
       ],
       "classification": "game_message",
@@ -4731,6 +6241,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 5,
+            "kind": "exact_cp932_source_blob",
+            "offset": 356,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gTerrains_0[TERRAIN_DECK]",
+            "value_sha256": "cfe5ab60962853c6102c54176c6d0d06e8a6e941da7277c361b0ff32affb73dc"
+          },
           "text_sha256": "9c72e22e7c03889a1adab9fe98a92fc48788e443ea19a67ecf6bdd0885f8791c"
         },
         "zh-Hans": {
@@ -4750,10 +6269,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrains_0",
-            "[TERRAIN_BRACE]"
+            "[TERRAIN_BRACE]",
+            "0x203"
           ],
-          "path": "src/data_terrains.c"
+          "path": "src/data_terrains.c",
+          "scope_kind": "initializer",
+          "symbol": "gTerrains_0"
         }
       ],
       "classification": "game_message",
@@ -4765,6 +6286,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 5,
+            "kind": "exact_cp932_source_blob",
+            "offset": 361,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gTerrains_0[TERRAIN_BRACE]",
+            "value_sha256": "051b24c549c93f8cbf42c7160d11115529e5f3c00eed7cf99aba13cf8cdd192d"
+          },
           "text_sha256": "339f0c3ba83e47847b1efb138d469565a8f69cc87769c65fdd2a24834cb6372c"
         },
         "zh-Hans": {
@@ -4784,10 +6314,12 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrains_0",
-            "[TERRAIN_MAST]"
+            "[TERRAIN_MAST]",
+            "0x204"
           ],
-          "path": "src/data_terrains.c"
+          "path": "src/data_terrains.c",
+          "scope_kind": "initializer",
+          "symbol": "gTerrains_0"
         }
       ],
       "classification": "game_message",
@@ -4799,6 +6331,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 7,
+            "kind": "exact_cp932_source_blob",
+            "offset": 366,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "gTerrains_0[TERRAIN_MAST]",
+            "value_sha256": "e394953e4b2b3757d3d69da1990fa0c266c93a216a89ee9ce4128bc8f43cb63d"
+          },
           "text_sha256": "19736455d8eb28034d86a355421e9d883b5f271e5138c8679ca253e116210966"
         },
         "zh-Hans": {
@@ -4832,6 +6373,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 5,
+            "kind": "exact_cp932_source_blob",
+            "offset": 33,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "GoalString_UnitsLeft",
+            "value_sha256": "4042ff58570ad607525ff9dc190de55038764f6999f4f06d486cb16602f8f8e6"
+          },
           "text_sha256": "5f3582c102e01aca9650e4a2b508de5ba3a964a6386edfa33763d74ef5b29e17"
         },
         "zh-Hans": {
@@ -4865,6 +6415,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 11,
+            "kind": "exact_cp932_source_blob",
+            "offset": 45,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "GoalString_LastTurn",
+            "value_sha256": "55ded65087def01737f9f7d8b44ccafe7f09fb400dd11abb540643287ad01cf3"
+          },
           "text_sha256": "a6c0ddd717eb539e73845bcecf82d983a9bbf8b63b1271dc21299882ef82c618"
         },
         "zh-Hans": {
@@ -4898,6 +6457,15 @@
       "providers": {
         "ja": {
           "kind": "raw_symbol",
+          "provenance": {
+            "byte_length": 7,
+            "kind": "exact_cp932_source_blob",
+            "offset": 38,
+            "path": "raw_provider_values.cp932.bin",
+            "source_blob_sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
+            "symbol": "GoalString_Turn",
+            "value_sha256": "7bc2fa80d7f7c1c271c529a75c64328b5d7c92fd1df72fcae650ed3fa3064ad1"
+          },
           "text_sha256": "aee7e141d60573ebeb56518432a47daa789a34d65ae04e8c4c9bf263ff31b5f7"
         },
         "zh-Hans": {
@@ -4926,7 +6494,9 @@
             "ExpansionLocale_ResolveCurrent",
             "EXP_MSG_RAW_SURFACE_DIAGNOSTIC_BUILD_TIMESTAMP"
           ],
-          "path": "src/fe3_dummy.c"
+          "path": "src/fe3_dummy.c",
+          "scope_kind": "function",
+          "symbol": "PrintDebugBuildDateAndTime"
         }
       ],
       "classification": "expansion_message",
@@ -4939,14 +6509,29 @@
       "providers": {
         "en": {
           "kind": "expansion_catalog",
+          "provenance": {
+            "key": "raw_surface.diagnostic.build_timestamp",
+            "kind": "authored_expansion_catalog",
+            "path": "texts/expansion/catalog.en.json"
+          },
           "text_sha256": "675a0eaaa1cdea7a0fed4c6e44769eb24c2fd6f484e8e75f6002571b0321f14e"
         },
         "ja": {
           "kind": "expansion_catalog",
+          "provenance": {
+            "key": "raw_surface.diagnostic.build_timestamp",
+            "kind": "authored_expansion_catalog",
+            "path": "texts/expansion/catalog.ja.json"
+          },
           "text_sha256": "675a0eaaa1cdea7a0fed4c6e44769eb24c2fd6f484e8e75f6002571b0321f14e"
         },
         "zh-Hans": {
           "kind": "expansion_catalog",
+          "provenance": {
+            "key": "raw_surface.diagnostic.build_timestamp",
+            "kind": "authored_expansion_catalog",
+            "path": "texts/expansion/catalog.zh-Hans.json"
+          },
           "text_sha256": "675a0eaaa1cdea7a0fed4c6e44769eb24c2fd6f484e8e75f6002571b0321f14e"
         }
       },
@@ -4980,6 +6565,7 @@
     "expansion_message_count": 6,
     "game_message_count": 137,
     "ja_materialized_count": 143,
+    "ja_provenance_count": 143,
     "non_user_facing_exclusion_count": 0,
     "provider_count": 143,
     "runtime_consumer_verified_count": 6,

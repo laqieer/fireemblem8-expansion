@@ -4,6 +4,14 @@ import unittest
 from collections import Counter
 from pathlib import Path
 
+from scripts.localization.catalog import load_catalog
+from scripts.localization.game_catalog.build import build_game_catalog
+from scripts.localization.game_locales.ending_metrics import (
+    _ascii_widths,
+    _cjk_widths,
+    _line_width,
+)
+
 
 ROOT = Path(__file__).resolve().parents[3]
 
@@ -70,6 +78,35 @@ class DebugToolsLocalizationTests(unittest.TestCase):
             )["strings"]
             for locale in ("en", "ja", "zh-Hans")
         }
+        cls.loaded_catalog = load_catalog()
+        cls.game_catalog = build_game_catalog(
+            enabled_locales=("ja", "zh-Hans")
+        )
+        cls.header = (ROOT / "include/expansion_debugtools.h").read_text(
+            encoding="utf-8"
+        )
+        cls.uimenu = (ROOT / "src/uimenu.c").read_text(encoding="utf-8")
+        cls.ascii_widths = _ascii_widths(ROOT)
+        cls.cjk_widths = {
+            locale: _cjk_widths(ROOT, locale)[0]
+            for locale in ("ja", "zh-Hans")
+        }
+
+    @classmethod
+    def _pixel_width(cls, text, locale):
+        return _line_width(
+            text,
+            locale=locale,
+            ascii_widths=cls.ascii_widths,
+            cjk_widths=cls.cjk_widths.get(locale, {}),
+        )
+
+    @classmethod
+    def _constant(cls, name):
+        match = re.search(rf"\b{name}\s*=\s*(\d+)", cls.header)
+        if match is None:
+            raise AssertionError(f"{name} is missing from expansion_debugtools.h")
+        return int(match.group(1))
 
     def test_direct_debug_ui_literal_inventory_is_exact_and_closed(self):
         action_labels = []
@@ -174,6 +211,140 @@ class DebugToolsLocalizationTests(unittest.TestCase):
                     self.catalogs["zh-Hans"][key],
                     self.catalogs["en"][key],
                 )
+
+    def test_every_generated_debug_menu_label_fits_actual_text_allocation(self):
+        menu_width_tiles = self._constant("DEBUGTOOLS_MENU_WIDTH_TILES")
+        allocation_pixels = (menu_width_tiles - 1) * 8
+        self.assertIn("InitText(&item->text, rect.w - 1);", self.uimenu)
+
+        menu_sources = "\n".join(
+            self.sources[name]
+            for name in (
+                "debugtools_registry.c",
+                "debugtools_actions.c",
+                "debugtools_tools.c",
+            )
+        )
+        menu_width_tokens = re.findall(
+            r"CONST_DATA struct MenuDef gDebugTools\w+MenuDef\s*=\s*\{\s*"
+            r"\{\s*1\s*,\s*1\s*,\s*([^,\s]+)\s*,\s*0\s*\}",
+            menu_sources,
+            flags=re.DOTALL,
+        )
+        self.assertEqual(len(menu_width_tokens), 8)
+        self.assertEqual(
+            set(menu_width_tokens),
+            {"DEBUGTOOLS_MENU_WIDTH_TILES"},
+        )
+        self.assertLessEqual(1 + menu_width_tiles, 30)
+
+        menu_keys = {
+            "framework.back",
+            *self.ACTION_LABELS.values(),
+            *(
+                key
+                for key in self.EXPANSION_ADAPTERS.values()
+                if key.startswith("debug.confirm.")
+            ),
+        }
+        for locale in ("en", "ja", "zh-Hans", "qps-ploc"):
+            strings = self.loaded_catalog.strings_for(locale)
+            for key in sorted(menu_keys):
+                with self.subTest(locale=locale, key=key):
+                    self.assertLessEqual(
+                        self._pixel_width(strings[key], locale),
+                        allocation_pixels,
+                    )
+
+    def test_every_generated_debug_status_row_fits_actual_surface_geometry(self):
+        status_width_tiles = self._constant(
+            "DEBUGTOOLS_STATUS_TEXT_WIDTH_TILES"
+        )
+        self.assertEqual(
+            self.sources["debugtools_registry.c"].count(
+                "DEBUGTOOLS_STATUS_TEXT_WIDTH_TILES"
+            ),
+            1,
+        )
+        self.assertEqual(
+            self.sources["debugtools_tools.c"].count(
+                "DEBUGTOOLS_STATUS_TEXT_WIDTH_TILES"
+            ),
+            1,
+        )
+
+        suffixes = {
+            "debug.status.hub": " 9/9",
+            "debug.status.hub_error": " -99",
+            "debug.status.unit_hp": " 255/255",
+            "debug.status.unit_unavailable": "",
+            "debug.status.convoy": " 100/100",
+            "debug.status.rng_seed": " FFFF",
+            "debug.status.save_state": " -99",
+        }
+        for locale in ("en", "ja", "zh-Hans", "qps-ploc"):
+            strings = self.loaded_catalog.strings_for(locale)
+            allocation_pixels = (
+                status_width_tiles * 8
+                if locale in ("ja", "zh-Hans")
+                else 29 * 8
+            )
+            for key, suffix in suffixes.items():
+                text = strings[key] + suffix
+                width = (
+                    self._pixel_width(text, locale)
+                    if locale in ("ja", "zh-Hans")
+                    else len(text) * 8
+                )
+                with self.subTest(locale=locale, key=key):
+                    self.assertLessEqual(width, allocation_pixels)
+
+            combined = (
+                strings["debug.status.chapter"]
+                + " 255 "
+                + strings["debug.status.flag"]
+                + " 1"
+            )
+            combined_width = (
+                self._pixel_width(combined, locale)
+                if locale in ("ja", "zh-Hans")
+                else len(combined) * 8
+            )
+            with self.subTest(locale=locale, key="chapter+flag"):
+                self.assertLessEqual(combined_width, allocation_pixels)
+
+    def test_weather_and_fog_rows_fit_the_same_actual_menu_geometry(self):
+        allocation_pixels = (
+            self._constant("DEBUGTOOLS_MENU_WIDTH_TILES") - 1
+        ) * 8
+        rows = (
+            (0x06AC, range(0x06B1, 0x06B8)),
+            (0x06AD, (0x0849, 0x084A)),
+        )
+        for locale in ("en", "ja", "zh-Hans", "qps-ploc"):
+            game_locale = "en" if locale == "qps-ploc" else locale
+            catalog = (
+                self.game_catalog.english.catalog
+                if game_locale == "en"
+                else self.game_catalog.locale_bundle(game_locale).catalog
+            )
+            for label_id, value_ids in rows:
+                label = catalog.decode_entry(label_id)[:-1].decode("utf-8")
+                label_width = self._pixel_width(label, game_locale)
+                with self.subTest(
+                    locale=locale,
+                    label_id=f"0x{label_id:04X}",
+                ):
+                    self.assertLessEqual(8 + label_width, 64)
+                for value_id in value_ids:
+                    value = catalog.decode_entry(value_id)[:-1].decode("utf-8")
+                    value_width = self._pixel_width(value, game_locale)
+                    with self.subTest(
+                        locale=locale,
+                        label_id=f"0x{label_id:04X}",
+                        value_id=f"0x{value_id:04X}",
+                    ):
+                        self.assertLessEqual(64 + value_width, allocation_pixels)
 
 
 if __name__ == "__main__":

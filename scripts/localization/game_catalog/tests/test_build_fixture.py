@@ -88,12 +88,28 @@ class FixtureBuildTests(unittest.TestCase):
         ja_providers = {
             "0x0001": {"symbol": "fixture", "text": "生"},
         }
+        ja_blob = "生".encode("cp932") + b"\0"
+        (self.fixture_dir / "ja_raw_values.cp932.bin").write_bytes(ja_blob)
         ja_snapshot = {
             "kind": "fe8j-raw-symbol-source-snapshot",
             "provider_count": 1,
-            "providers": ja_providers,
-            "schema_version": 1,
-            "source_revision": "fixture",
+            "providers": {
+                "0x0001": {
+                    "byte_length": len(ja_blob),
+                    "offset": 0,
+                    "symbol": "fixture",
+                    "value_sha256": hashlib.sha256(ja_blob).hexdigest(),
+                }
+            },
+            "schema_version": 2,
+            "source_blob": {
+                "encoding": "cp932-nul-terminated",
+                "path": "ja_raw_values.cp932.bin",
+                "sha256": hashlib.sha256(ja_blob).hexdigest(),
+            },
+            "source_repository": "https://github.com/example/fixture",
+            "source_revision": "0" * 40,
+            "source_url": "https://github.com/example/fixture/tree/" + "0" * 40,
         }
         ja_snapshot_bytes = (
             json.dumps(ja_snapshot, ensure_ascii=False, indent=2, sort_keys=True)
@@ -107,9 +123,9 @@ class FixtureBuildTests(unittest.TestCase):
                     "locale_id": "ja",
                     "provider_count": 1,
                     "providers": ja_providers,
-                    "schema_version": 1,
+                    "schema_version": 2,
                     "source_layout": "FE8J-raw-symbol",
-                    "source_revision": "fixture",
+                    "source_revision": "0" * 40,
                     "source_snapshot": {
                         "path": "ja_raw_source.json",
                         "sha256": hashlib.sha256(ja_snapshot_bytes).hexdigest(),

@@ -32,6 +32,7 @@ The framework is layered, each layer independently testable:
    other than `\n`, malformed placeholders, placeholder/newline drift,
    surface-width overflow, UTF-8 decoded-byte overflow, and unknown pseudo
    policies. Active registry entries default to `pseudo_policy: "transform"`;
+   width-critical fixed-row labels may opt into `"compact"`, while
    locale-neutral identifiers may opt into `"preserve"`.
    `scripts/localization/generate.py` compiles this into
    `expansion_locale_catalog.c` (ROM data) and `expansion_msg_ids.h`
@@ -231,6 +232,9 @@ represents any real language**. The default policy for every active registry
 entry is `pseudo_policy: "transform"`. An active locale-neutral identifier may
 instead declare `"pseudo_policy": "preserve"`; the generated qps entry then
 uses the exact English bytes while all other entries keep the normal transform.
+An active fixed-row label may declare `"pseudo_policy": "compact"` to keep the
+alternating-case pseudo signal without brackets or vowel expansion; its actual
+runtime geometry must still be validated.
 The build timestamp diagnostic uses this policy so `en`, `ja`, `zh-Hans`,
 `qps-ploc`, and `gBuildDateTime` remain byte-identical. Unknown policies and
 policy fields on tombstones are schema errors. Every user-facing surface that
@@ -259,8 +263,10 @@ descriptor slots.
    never renumbering or reusing a retired id) and each authored
    `texts/expansion/catalog.<locale>.json`. English is the required fallback.
    Omit `pseudo_policy` for the default qps transform; use
-   `"pseudo_policy": "preserve"` only for active locale-neutral identifiers
-   whose qps bytes must remain exactly equal to English.
+   `"pseudo_policy": "compact"` only for fixed-row labels whose generated qps
+   width is checked against the real allocation, and use `"preserve"` only for
+   active locale-neutral identifiers whose qps bytes must remain exactly equal
+   to English.
    The committed `ja`/`zh-Hans` catalogs intentionally cover every active
    key, although the generic resolver also handles a missing non-English
    entry with one deterministic English fallback.

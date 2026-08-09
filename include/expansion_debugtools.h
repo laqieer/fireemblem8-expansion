@@ -145,6 +145,8 @@ enum
 {
     DEBUGTOOLS_ACTION_MAX = 9,
     DEBUGTOOLS_HUB_MENU_SLOTS = DEBUGTOOLS_ACTION_MAX + 2, /* actions + Back + terminator */
+    DEBUGTOOLS_MENU_WIDTH_TILES = 19,
+    DEBUGTOOLS_STATUS_TEXT_WIDTH_TILES = 24,
 
     /* Issue #11 closure: explicit policy bound on a contributor label's
      * length (excluding the NUL terminator). Not a hard memory-safety

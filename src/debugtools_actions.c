@@ -78,7 +78,7 @@ static void DebugToolsWeather_OnEnd(struct MenuProc* menu)
 }
 
 CONST_DATA struct MenuDef gDebugToolsWeatherMenuDef = {
-    {1, 1, 15, 0},
+    {1, 1, DEBUGTOOLS_MENU_WIDTH_TILES, 0},
     0,
     sWeatherMenuItemDefs,
     0,
@@ -157,7 +157,7 @@ static void DebugToolsFog_OnEnd(struct MenuProc* menu)
 }
 
 CONST_DATA struct MenuDef gDebugToolsFogMenuDef = {
-    {1, 1, 15, 0},
+    {1, 1, DEBUGTOOLS_MENU_WIDTH_TILES, 0},
     0,
     sFogMenuItemDefs,
     0,
