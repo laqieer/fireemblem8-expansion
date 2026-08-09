@@ -12,9 +12,10 @@
   "subsystem_counts": {
     "ending-details": 34,
     "events": 1,
-    "menus": 2
+    "menus": 2,
+    "supports": 3
   },
-  "target_count": 37,
+  "target_count": 40,
   "terminology_sources": [],
   "translations": [
     {
@@ -32,14 +33,6 @@
       "subsystem": "menus",
       "target_id": "0x06AB",
       "text": "　デバッグ情報"
-    },
-    {
-      "english_payload_sha256": "07f5ef1a6ec69f44ffd9a2ef66d25a4f642b404fa274bba6e27324e1f7b4ef0c",
-      "key": "game.semantic_correction.msg_b29",
-      "source_text_sha256": "f0c751f2f6129f73b4d0071c01c6e72f708f863ce7a4494196c51cd70017b07b",
-      "subsystem": "events",
-      "target_id": "0x0B29",
-      "text": "[CTRL:0008][CTRL:0010][CTRL:0102][CTRL:000A][CTRL:0010][CTRL:0114][CTRL:000B][CTRL:0010][CTRL:010F][CTRL:000D][CTRL:0010][CTRL:0122][CTRL:000A]初めて顔をあわす者もいるな。[CTRL:0001]まず名乗っておこうか。[CTRL:0003][CTRL:0001]俺はルネス王子エフラム[CTRL:0001]エイリークの兄だ。[CTRL:0003][CTRL:000D]ロストン聖教国王女ラーチェルですわ。[CTRL:0001]お見知り置きくださいませ。[CTRL:0003][CTRL:000A]ではまず　俺から報告しよう。[CTRL:0003][CTRL:0001]俺たちはグラド帝都を陥落させ[CTRL:0001]皇帝ヴィガルドを倒した。[CTRL:0003][CTRL:0001]帝都のグラド兵はすでに降伏している。[CTRL:0003][CTRL:0001]散発的な抵抗はあるだろうが[CTRL:0001]これでこの戦争は終わったと考えていい。[CTRL:0003][CTRL:000B]そうか。[CTRL:0003][CTRL:000A]だが気になることがある。[CTRL:0003][CTRL:0001]俺は帝都で　ノールという[CTRL:0001]男から【魔石】の話を聞いた。[CTRL:0003][CTRL:0015][CTRL:000A]研究の末に【聖石】から生み出された[CTRL:0001]【聖石】以上の力を持つ石・・・。[CTRL:0003][CTRL:0001]グラドの異変は　【魔石】と呼ばれる[CTRL:0001]その石に原因があるらしい。[CTRL:0003][CTRL:0001]ミルラが言っていた[CTRL:0001]帝都のまがまがしい気配もそれだ。[CTRL:0003][CTRL:0015][CTRL:000A]皇帝はすでに死去し　その【魔石】の魔力で[CTRL:0001]くぐつとして動かされていたという。[CTRL:0003][CTRL:0001]今回の戦争もすべて　【魔石】・・・[CTRL:0001]それを持つ者によって画策されていた。[CTRL:0003][CTRL:000B]誰なのだ　それは？[CTRL:0003][CTRL:0080][CTRL:0004][CTRL:000A][CTRL:0016]・・・[CTRL:0016]俺は信じていない。[CTRL:0001]だが報告はしよう。[CTRL:0003][CTRL:0001]皇子リオンこそが黒幕だと[CTRL:0001]ノールは言った。[CTRL:0003][CTRL:0001]【魔石】は今　リオンが持っていると。[CTRL:0003][CTRL:000B]やはり　グラド皇子リオンが・・・[CTRL:0003][CTRL:0008]いえ　待ってください。[CTRL:0003][CTRL:0001]私と兄上はリオンをよく知っています。[CTRL:0001]彼は私たちの幼馴染なんです。[CTRL:0003][CTRL:0001]リオンはこんな戦争を[CTRL:0001]起こしたりする人ではありません。[CTRL:0003][CTRL:000B]だが　エイリーク・・・[CTRL:0003][CTRL:0008]私はリオンに会いました。[CTRL:0003][CTRL:0001]兄上もすでにご存知かと思いますが[CTRL:0003][CTRL:0001]私は海路でのロストン行きをあきらめ[CTRL:0003][CTRL:0001]ヒーニアス王子と共に陸路で[CTRL:0001]ジャハナまで進んで来ました。[CTRL:0003][CTRL:0001]そして　ジャハナ王宮で[CTRL:0001]グラド軍を率いるリオンと対面しました。[CTRL:0003][CTRL:0001]彼は詳しいことは[CTRL:0001]話してくれませんでしたが・・・[CTRL:0003][CTRL:0001]でもリオンは私たちの味方だと[CTRL:0001]そう言ってくれました。[CTRL:0003][CTRL:0001]だから　リオンは・・・[CTRL:0003][CTRL:000A]エイリーク[CTRL:0001]俺も・・・リオンに会った。[CTRL:0003][CTRL:0008]本当ですか？[CTRL:0003][CTRL:000A]ああ。だが[CTRL:0001]リオンはまるで別人のように・・・。[CTRL:0003][CTRL:0001]いや・・・[CTRL:0001]人でさえないように見えた。[CTRL:0003][CTRL:0008]あ　兄上・・・[CTRL:0001]どういうことですか？[CTRL:0003][CTRL:000A]・・・見たままを話そう。[CTRL:0003][CTRL:0001]俺は帝都で　リオンと会った。[CTRL:0003][CTRL:0001]リオンは俺に言った。[CTRL:0001]自分が　この戦争を引き起こしたのだと。[CTRL:0003][CTRL:0001]俺たち兄妹と親しくなったのも[CTRL:0001]ルネスを侵略するためだと・・・[CTRL:0003][CTRL:0001]父上を手にかけたのも　自分だと・・・[CTRL:0003][CTRL:0008]そんな　そんなこと・・・[CTRL:0003][CTRL:000A]・・・ああ　俺も信じられない。[CTRL:0001]信じたくはない。[CTRL:0003][CTRL:0001]第一　あのリオンがそんなことを[CTRL:0001]考えていたとは・・・。[CTRL:0003][CTRL:0001]俺にはどうしても思えない。[CTRL:0003][CTRL:0015]"
     },
     {
       "english_payload_sha256": "868c86f2afa3d965ca4d230224c9961f0c2602f09e856b78a956b71fe7226922",
@@ -312,6 +305,38 @@
       "subsystem": "ending-details",
       "target_id": "0x0838",
       "text": "グラドに戻ると、デュッセルは[CTRL:0001]アメリアを母と再会させた。[CTRL:0001]母娘は喜びの涙を流して彼に感謝した。[CTRL:0001]その後アメリアは、かつて黒曜石と[CTRL:0001]呼ばれた男の最も信頼する部下となった。"
+    },
+    {
+      "english_payload_sha256": "07f5ef1a6ec69f44ffd9a2ef66d25a4f642b404fa274bba6e27324e1f7b4ef0c",
+      "key": "game.semantic_correction.msg_b29",
+      "source_text_sha256": "f0c751f2f6129f73b4d0071c01c6e72f708f863ce7a4494196c51cd70017b07b",
+      "subsystem": "events",
+      "target_id": "0x0B29",
+      "text": "[CTRL:0008][CTRL:0010][CTRL:0102][CTRL:000A][CTRL:0010][CTRL:0114][CTRL:000B][CTRL:0010][CTRL:010F][CTRL:000D][CTRL:0010][CTRL:0122][CTRL:000A]初めて顔をあわす者もいるな。[CTRL:0001]まず名乗っておこうか。[CTRL:0003][CTRL:0001]俺はルネス王子エフラム[CTRL:0001]エイリークの兄だ。[CTRL:0003][CTRL:000D]ロストン聖教国王女ラーチェルですわ。[CTRL:0001]お見知り置きくださいませ。[CTRL:0003][CTRL:000A]ではまず　俺から報告しよう。[CTRL:0003][CTRL:0001]俺たちはグラド帝都を陥落させ[CTRL:0001]皇帝ヴィガルドを倒した。[CTRL:0003][CTRL:0001]帝都のグラド兵はすでに降伏している。[CTRL:0003][CTRL:0001]散発的な抵抗はあるだろうが[CTRL:0001]これでこの戦争は終わったと考えていい。[CTRL:0003][CTRL:000B]そうか。[CTRL:0003][CTRL:000A]だが気になることがある。[CTRL:0003][CTRL:0001]俺は帝都で　ノールという[CTRL:0001]男から【魔石】の話を聞いた。[CTRL:0003][CTRL:0015][CTRL:000A]研究の末に【聖石】から生み出された[CTRL:0001]【聖石】以上の力を持つ石・・・。[CTRL:0003][CTRL:0001]グラドの異変は　【魔石】と呼ばれる[CTRL:0001]その石に原因があるらしい。[CTRL:0003][CTRL:0001]ミルラが言っていた[CTRL:0001]帝都のまがまがしい気配もそれだ。[CTRL:0003][CTRL:0015][CTRL:000A]皇帝はすでに死去し　その【魔石】の魔力で[CTRL:0001]くぐつとして動かされていたという。[CTRL:0003][CTRL:0001]今回の戦争もすべて　【魔石】・・・[CTRL:0001]それを持つ者によって画策されていた。[CTRL:0003][CTRL:000B]誰なのだ　それは？[CTRL:0003][CTRL:0080][CTRL:0004][CTRL:000A][CTRL:0016]・・・[CTRL:0016]俺は信じていない。[CTRL:0001]だが報告はしよう。[CTRL:0003][CTRL:0001]皇子リオンこそが黒幕だと[CTRL:0001]ノールは言った。[CTRL:0003][CTRL:0001]【魔石】は今　リオンが持っていると。[CTRL:0003][CTRL:000B]やはり　グラド皇子リオンが・・・[CTRL:0003][CTRL:0008]いえ　待ってください。[CTRL:0003][CTRL:0001]私と兄上はリオンをよく知っています。[CTRL:0001]彼は私たちの幼馴染なんです。[CTRL:0003][CTRL:0001]リオンはこんな戦争を[CTRL:0001]起こしたりする人ではありません。[CTRL:0003][CTRL:000B]だが　エイリーク・・・[CTRL:0003][CTRL:0008]私はリオンに会いました。[CTRL:0003][CTRL:0001]兄上もすでにご存知かと思いますが[CTRL:0003][CTRL:0001]私は海路でのロストン行きをあきらめ[CTRL:0003][CTRL:0001]ヒーニアス王子と共に陸路で[CTRL:0001]ジャハナまで進んで来ました。[CTRL:0003][CTRL:0001]そして　ジャハナ王宮で[CTRL:0001]グラド軍を率いるリオンと対面しました。[CTRL:0003][CTRL:0001]彼は詳しいことは[CTRL:0001]話してくれませんでしたが・・・[CTRL:0003][CTRL:0001]でもリオンは私たちの味方だと[CTRL:0001]そう言ってくれました。[CTRL:0003][CTRL:0001]だから　リオンは・・・[CTRL:0003][CTRL:000A]エイリーク[CTRL:0001]俺も・・・リオンに会った。[CTRL:0003][CTRL:0008]本当ですか？[CTRL:0003][CTRL:000A]ああ。だが[CTRL:0001]リオンはまるで別人のように・・・。[CTRL:0003][CTRL:0001]いや・・・[CTRL:0001]人でさえないように見えた。[CTRL:0003][CTRL:0008]あ　兄上・・・[CTRL:0001]どういうことですか？[CTRL:0003][CTRL:000A]・・・見たままを話そう。[CTRL:0003][CTRL:0001]俺は帝都で　リオンと会った。[CTRL:0003][CTRL:0001]リオンは俺に言った。[CTRL:0001]自分が　この戦争を引き起こしたのだと。[CTRL:0003][CTRL:0001]俺たち兄妹と親しくなったのも[CTRL:0001]ルネスを侵略するためだと・・・[CTRL:0003][CTRL:0001]父上を手にかけたのも　自分だと・・・[CTRL:0003][CTRL:0008]そんな　そんなこと・・・[CTRL:0003][CTRL:000A]・・・ああ　俺も信じられない。[CTRL:0001]信じたくはない。[CTRL:0003][CTRL:0001]第一　あのリオンがそんなことを[CTRL:0001]考えていたとは・・・。[CTRL:0003][CTRL:0001]俺にはどうしても思えない。[CTRL:0003][CTRL:0015]"
+    },
+    {
+      "english_payload_sha256": "d8b9029143bb40d52becaa60772cfcec641bfea6b3e234d9b46c2fc47827a804",
+      "key": "game.semantic_correction.msg_cb6",
+      "source_text_sha256": "58c5f14a414f886cde588d158a22e6c3fa39c9dd7be8f78d6de2655f809208f4",
+      "subsystem": "supports",
+      "target_id": "0x0CB6",
+      "text": "[OpenMidLeft][LoadFace][FID_Dozla]\n[OpenMidRight][LoadFace][FID_Garcia]\n[OpenMidRight]あなたがドズラ殿だな。[A]\n[OpenMidLeft]そうじゃ！ おぬしは誰じゃ？[A][ToggleSmile]\n[OpenMidRight]俺はガルシア。ドズラ殿の噂は[.][LF]\n近ごろよく耳にしている。[.][A]\n[OpenMidLeft][MoveMidLeft]\n[OpenMidLeft]よい噂ばかりじゃろうな！ ガハハ！[.][LF]\nわしもガルシア殿の噂は聞いておる。[.][A][LF]\nとくにその怪力についてな！[LF]\n試しにこの岩を持ち上げてくれんか？[.][A][LF]\n冗談じゃ！ ガハハ！[.][A]\n[OpenMidRight]はは、大したことではない。[.][LF]\nいつもそんなに[.][ToggleMouthMove]...[.][ToggleMouthMove]元気なのか？[A]\n[OpenMidLeft]腹いっぱい食べたからのう。[.][LF]\n気分は最高じゃ！[.][A]\n[OpenMidRight]空腹では戦えないからな。[A][LF]\n力を保つには食事が大切だ。[LF]\nとくに朝食はな。[A][LF]\n文化によっては朝食を[.][LF]\n[LQuote]最初の休み[RQuote]と呼ぶそうだ。[A]\n[OpenMidLeft]何じゃと？ 何を休ませるんじゃ？[A]\n[OpenMidRight]断食だ。[.][A]\n[OpenMidLeft][ToggleSmile]断食の何を？ 回りくどいぞ！[LF]\nもっと分かりやすく話せ！[.][A][ToggleSmile]\n[OpenMidRight]眠っている間は何も食べない。[.][LF]\nつまり断食しているようなものだ。[.][A][LF]\n朝に食べる食事が[.][LF]\nその断食を終わらせる。[.][A][LF]\nだから朝食は[LF]\nとくに大切な食事なんだ。[A]\n[OpenMidLeft][ToggleSmile]ほう。誰が考えたんじゃろうな？[.][A][LF]\n[ToggleSmile]今朝わしが腹に入れたのは[LF]\n知識だけじゃった！[A]\n[OpenMidRight]どういう意味だ？[.][A]\n[OpenMidLeft]ほかの技も必ず学ぶように[.][LF]\nしておるということじゃ。[.][A][LF]\n戦士として成長したければ[LF]\n必要なことじゃからな。[A]\n[OpenMidRight]まったく同感だ。[.][A][LF]\nこの軍の若者は専門の技には[.][LF]\n強いが、ほかの分野には弱い。[A][LF]\n総合的に鍛える教えは[.][LF]\n若い世代から失われつつある。[.][A]\n[OpenMidLeft]その通りじゃ！ わしらの頃は[.][LF]\n戦士が多くの技を学んだものじゃ。[A][LF]\n仲間が負傷した時には[LF]\n代わりを務めねばならんからな。[.][A][LF]\nわしは昔から弓を学びたかった。[A][LF]\n繊細な狙いは斧で戦うのとは[.][LF]\n正反対じゃからな。[.][A]\n[OpenMidRight]俺もだ。今度会って[.][LF]\n一緒に学んでみないか？[A]\n[OpenMidLeft]よい考えじゃ！[A][X]\n"
+    },
+    {
+      "english_payload_sha256": "6c068943f8a57bccb6e943e5e040df35d9161dd29dc8f406197f5be9a8df1e6c",
+      "key": "game.semantic_correction.msg_cb7",
+      "source_text_sha256": "3ed1ac8cf7f898bc36ae36ca9fd098fd40738967e7af769dce3c15407cb0fa25",
+      "subsystem": "supports",
+      "target_id": "0x0CB7",
+      "text": "[OpenMidLeft][LoadFace][FID_Garcia]\n[OpenMidRight][LoadFace][FID_Dozla][ToggleSmile]\n[OpenMidRight]ガルシア！[.][A]\n[OpenMidLeft]やあ、ドズラ！[.][A]\n[OpenMidRight]この前は実に楽しかったぞ！[.][A]\n[OpenMidLeft]ああ、そうだな。[A]\n[OpenMidRight]手合わせは大好きじゃ！ 武器で[LF]\n語り合っているようなものじゃ！[A]\n[OpenMidLeft]弓を斧のように振り回しては[.][LF]\nいけないと知っているな？ はは！[A]\n[OpenMidRight]ふざけていただけじゃ！[.][A][LF]\nそういえば誰かさんは矢を逆向きに[LF]\nつがえて肩を射抜きかけたな。[.][A][LF]\nさて、誰じゃったかのう？[LF]\nううむ、思い出せんぞ？[A]\n[OpenMidLeft]あれは矢に欠陥があったんだ！[.][A]\n[OpenMidRight][MoveMidRight]\n[OpenMidRight][ToggleSmile]ガハハハハ！ そうじゃろうな！[.][A][ToggleSmile]\n[OpenMidLeft][ToggleSmile]年寄りに新しい芸を教えるのは[LF]\n無理なのかもしれんな。[A][ToggleSmile]\n[OpenMidRight]そんなことはないぞ。[.][A][LF]\nおぬしは斧の達人じゃ。[LF]\n新しい技もすぐ覚えられる！[A]\n[OpenMidLeft]いや、すごいのはお前だ。[LF]\n敵にとっては脅威そのものだ！[.][A][ToggleSmile]\n[OpenMidRight]どこでその戦い方を学んだんじゃ？[.][A]\n[OpenMidLeft]昔ルネスで部隊を率いていた。[LF]\nそこで基礎を学んだ[ToggleMouthMove]...[.][ToggleMouthMove][A][LF]\n退役してからは山で暮らしていた。[.][A][LF]\n毎日斧を振るってはいたが、[.][LF]\n薪を割るためだった。[.][A]\n[OpenMidRight]ほら、技を別の分野に[.][LF]\n生かすことを学んだではないか。[A][LF]\n弓は向いていないのかもしれん。[LF]\nほかのものを試そうぞ。[A]\n[OpenMidLeft]何がいい？[A]\n[OpenMidRight]魔法はどうじゃ？[A]\n[OpenMidLeft]ううむ[ToggleMouthMove]...[.][ToggleMouthMove][A]\n[OpenMidRight]そう難しくはないはずじゃ。[A][LF]\n見たところ、腕を振り回して[.][LF]\n意味不明な言葉を叫ぶだけじゃ。[.][A][ToggleSmile]\n[OpenMidLeft]一理あるな。[A]\n[OpenMidRight]近いうちに練習しようぞ。[.][A]\n[OpenMidLeft]楽しみにしているぞ[.][ToggleMouthMove]...[.][ToggleMouthMove]魔道士殿！[.][A]\n[OpenMidRight][MoveMidRight]\n[OpenMidRight][ToggleSmile]ガハハハハ！ その通りじゃ！[.][A][ToggleSmile][X]\n"
+    },
+    {
+      "english_payload_sha256": "bf850f4e478093e66490a9efe55f643e7df2b14be671299834363450a8987309",
+      "key": "game.semantic_correction.msg_cb8",
+      "source_text_sha256": "7d294d5d05396a1876fbc1ba542863423191976485b0e5b8d712272dfc02102b",
+      "subsystem": "supports",
+      "target_id": "0x0CB8",
+      "text": "[OpenMidLeft][LoadFace][FID_Dozla]\n[OpenMidRight][LoadFace][FID_Garcia]\n[OpenMidRight]思ったほどうまくいかなかったな。[.][A]\n[OpenMidLeft]いや、全部が失敗ではなかろう。[A]\n[OpenMidRight]杖で頭を叩かれなければ[LF]\nもう少しましだったがな。[A]\n[OpenMidLeft]当てるつもりはなかったんじゃ！[LF]\nわしが[.][ToggleMouthMove]...[.][ToggleMouthMove]術をかけている時に入ってきた。[A]\n[OpenMidRight]まだ頭にこぶが残っている。[.][A]\n[OpenMidLeft]悪かったと思っておるわい！[.][A][LF]\nそれに、あの杖でおぬしを[LF]\n治してもやったではないか！[.][A]\n[OpenMidRight]治していない！[LF]\n俺のひげを全部焼いたんだ！[A]\n[OpenMidLeft]おお、そうじゃった。[.....][LF]\nすまん。[A]\n[OpenMidRight]ふん。[.][A]\n[OpenMidLeft][MoveMidLeft][ToggleSmile]\n[OpenMidLeft]だが、ひげのないおぬしも[.][LF]\nなかなか男前じゃったぞ。[.][A][LF]\n十歳は若く見えた。[LF]\nいや、二十歳は若返った！[A]\n[OpenMidRight]本当か？[.....][LF]\n焦げた毛の臭いが離れん。[.][A]\n[OpenMidLeft]待て！ すぐ元どおりに生やした[.][LF]\nことくらい評価してくれんか。[.][A]\n[OpenMidRight][ToggleMouthMove]...[.][ToggleMouthMove][.....][LF]\n分かった。[A][LF]\nきれいに生えそろった。ありがとう。[.][A]\n[OpenMidLeft]どういたしましてじゃ！[.][A]\n[OpenMidRight]ほかの技を試したことで[.][LF]\n実に多くを学べたな。[A]\n[OpenMidLeft][ToggleSmile]わしもじゃ！[A][LF]\nここまで来れば剣術など[LF]\n朝飯前じゃろう！[A][ToggleSmile][X]\n"
     }
   ]
 }

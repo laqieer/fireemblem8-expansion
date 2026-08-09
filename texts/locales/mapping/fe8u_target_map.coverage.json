@@ -148,9 +148,9 @@
       "total": 53
     },
     "supports": {
-      "authored_translation": 0,
+      "authored_translation": 3,
       "explicit_english_fallback": 0,
-      "indexed_source": 249,
+      "indexed_source": 246,
       "raw_source": 0,
       "total": 249
     },
@@ -199,9 +199,9 @@
   "mapping_authoritative": true,
   "schema_version": 1,
   "source_kind_counts": {
-    "authored_translation": 326,
+    "authored_translation": 329,
     "explicit_english_fallback": 0,
-    "indexed_source": 2958,
+    "indexed_source": 2955,
     "raw_source": 130
   },
   "target_count": 3414,

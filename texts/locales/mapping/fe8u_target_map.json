@@ -124263,7 +124263,7 @@
               "zh-Hans": {
                 "id": "0x0A66",
                 "kind": "indexed",
-                "sha256": "27041030ac171d8df191dc4817a5d4dc089e70d3871d817fc84400e62cd3786f"
+                "sha256": "301350c296e641ea3cd8f0428989f13f1a573c8b86cec6aaca93e192ec1ee2c5"
               }
             },
             "structural_agreement": true
@@ -136428,7 +136428,7 @@
               "zh-Hans": {
                 "id": "0x0B69",
                 "kind": "indexed",
-                "sha256": "87a7a22024bbfeff0853a3e2457c62a9373308c3d0fe5092e25eda0e412642ff"
+                "sha256": "3ce4b2cce717b6afc4141e6ec6a37033000c3d6775537562ff580723f87201fb"
               }
             },
             "structural_agreement": true
@@ -140970,7 +140970,7 @@
               "zh-Hans": {
                 "id": "0x0BBF",
                 "kind": "indexed",
-                "sha256": "df6a476c91adf77f31bae1528f76782a28459564b2c4e8cef47a75e9c051256a"
+                "sha256": "ee66292faef0afcc1334bf693f33bfd2506f536356ac0135e411892c53849397"
               }
             },
             "structural_agreement": true
@@ -141029,7 +141029,7 @@
               "zh-Hans": {
                 "id": "0x0BC0",
                 "kind": "indexed",
-                "sha256": "2ef92a3420def839cdb0ca14b4b0fd0a703d96764646b70125b113d08a15c54b"
+                "sha256": "5213e7d7c7bd7eb0992bd0deec47ad2dfb652423c765ed48e10184dfd447c177"
               }
             },
             "structural_agreement": true
@@ -141843,7 +141843,7 @@
               "zh-Hans": {
                 "id": "0x0BD0",
                 "kind": "indexed",
-                "sha256": "7a2fd52e459f185a3dc8f40a3739eb05a4e51d8ec0d09c8754c94b9e5c26c2fe"
+                "sha256": "9d9642038b972d6e52bb3fa2bdafcdf6b576313e0ecfd521f83c9fd2eec98831"
               }
             },
             "structural_agreement": true
@@ -144143,7 +144143,7 @@
               "zh-Hans": {
                 "id": "0x0C09",
                 "kind": "indexed",
-                "sha256": "f79defa63df1e82a6274911b0df09868d5f9bb6c3dad74b0e805d8f1d1dc3a4f"
+                "sha256": "6ac17af4aa3e9af8487d306eb86f64df15ede8029613b52ccf9ce3bc716da8ef"
               }
             },
             "structural_agreement": true
@@ -147036,73 +147036,181 @@
     },
     {
       "source": {
-        "id": "0x0C75",
-        "kind": "indexed",
-        "layout": "FE8J"
+        "kind": "authored",
+        "translation_key": "game.semantic_correction.msg_cb6"
       },
       "state": "verified",
       "target_id": "0x0CB6",
       "verification": {
-        "confidence": "high",
-        "evidence": "shared-keyed-table: gSupportTalkList CHARACTER_DOZLA+CHARACTER_GARCIA.C",
-        "evidence_kind": "shared-keyed-table",
-        "method": "structural-crosswalk",
-        "rationale": "The shared character pair and support rank identify the dialogue.",
-        "source_key": "CHARACTER_DOZLA+CHARACTER_GARCIA.C",
-        "source_paths": {
-          "fe8j": "src/data/gSupportTalkList_ref/dat_gSupportTalkList_ref.c",
-          "fe8u": "src/data_event_trigger.c"
+        "confidence": "explicit",
+        "evidence": "The regional provider belongs to a different support arc. This authored FE8U-targeted translation preserves the Garcia-Dozla C support portraits, controls, line breaks, and English target meaning.",
+        "evidence_kind": "target-authored-semantic-payload",
+        "method": "deterministic-final-mapping-promotion",
+        "promotion": {
+          "details": {
+            "english_payload_sha256": "d8b9029143bb40d52becaa60772cfcec641bfea6b3e234d9b46c2fc47827a804",
+            "incorrect_payload_sha256": {
+              "ja": "b4d45d6ad226d0363edbb4ac3c99b3f5c92e58dd7a00df5e79bf10aec84639cd",
+              "zh-Hans": "d2c713d39c3685a83601d2410b186c66f491bc4c857cad6dd69eeea063756232"
+            },
+            "incorrect_source": {
+              "id": "0x0C75",
+              "kind": "indexed",
+              "layout": "FE8J"
+            },
+            "payload_sha256": {
+              "ja": "072a1c23ae3251da41324cb0971f0be50945d31ecffc27902af53da381b98d26",
+              "zh-Hans": "5f64b81b57c49ced12b0b9f5217b399921422d29a400e664439eb9be449d381a"
+            },
+            "translation_key": "game.semantic_correction.msg_cb6"
+          },
+          "original_source": {
+            "id": "0x0C75",
+            "kind": "indexed",
+            "layout": "FE8J"
+          },
+          "original_verification": {
+            "confidence": "high",
+            "evidence": "shared-keyed-table: gSupportTalkList CHARACTER_DOZLA+CHARACTER_GARCIA.C",
+            "evidence_kind": "shared-keyed-table",
+            "method": "structural-crosswalk",
+            "rationale": "The shared character pair and support rank identify the dialogue.",
+            "source_key": "CHARACTER_DOZLA+CHARACTER_GARCIA.C",
+            "source_paths": {
+              "fe8j": "src/data/gSupportTalkList_ref/dat_gSupportTalkList_ref.c",
+              "fe8u": "src/data_event_trigger.c"
+            },
+            "source_symbol": "gSupportTalkList",
+            "source_table": "gSupportTalkList",
+            "subsystem": "supports"
+          },
+          "pipeline": "fe8u-final-mapping-v1",
+          "precedence": "d-semantic-correction"
         },
-        "source_symbol": "gSupportTalkList",
-        "source_table": "gSupportTalkList",
+        "rationale": "The regional provider belongs to a different support arc. This authored FE8U-targeted translation preserves the Garcia-Dozla C support portraits, controls, line breaks, and English target meaning.",
+        "source_key": "CHARACTER_DOZLA+CHARACTER_GARCIA.C",
+        "source_symbol": "game.semantic_correction.msg_cb6",
+        "source_table": "texts/locales/authored/shards/semantic_corrections.<locale>.json",
         "subsystem": "supports"
       }
     },
     {
       "source": {
-        "id": "0x0C76",
-        "kind": "indexed",
-        "layout": "FE8J"
+        "kind": "authored",
+        "translation_key": "game.semantic_correction.msg_cb7"
       },
       "state": "verified",
       "target_id": "0x0CB7",
       "verification": {
-        "confidence": "high",
-        "evidence": "shared-keyed-table: gSupportTalkList CHARACTER_DOZLA+CHARACTER_GARCIA.B",
-        "evidence_kind": "shared-keyed-table",
-        "method": "structural-crosswalk",
-        "rationale": "The shared character pair and support rank identify the dialogue.",
-        "source_key": "CHARACTER_DOZLA+CHARACTER_GARCIA.B",
-        "source_paths": {
-          "fe8j": "src/data/gSupportTalkList_ref/dat_gSupportTalkList_ref.c",
-          "fe8u": "src/data_event_trigger.c"
+        "confidence": "explicit",
+        "evidence": "The regional provider belongs to a different support arc. This authored FE8U-targeted translation preserves the Garcia-Dozla B support portraits, controls, line breaks, and English target meaning.",
+        "evidence_kind": "target-authored-semantic-payload",
+        "method": "deterministic-final-mapping-promotion",
+        "promotion": {
+          "details": {
+            "english_payload_sha256": "6c068943f8a57bccb6e943e5e040df35d9161dd29dc8f406197f5be9a8df1e6c",
+            "incorrect_payload_sha256": {
+              "ja": "5085dc7a1551a2917cdd320ab13395b7c8fa54c72fa347fab8ce48ab4df980df",
+              "zh-Hans": "c3f22d77e72a146f53db74438afb7c6e350160ad6ab5804e4eec8f26a61a94d7"
+            },
+            "incorrect_source": {
+              "id": "0x0C76",
+              "kind": "indexed",
+              "layout": "FE8J"
+            },
+            "payload_sha256": {
+              "ja": "7225fc9067b9a966f22886a7bb7bdb9decc6edbf421fa781a75644a0884b4d15",
+              "zh-Hans": "34666c566b34984da94e111ad94f00ed0c504a34c3bf7e5972da4120681b4167"
+            },
+            "translation_key": "game.semantic_correction.msg_cb7"
+          },
+          "original_source": {
+            "id": "0x0C76",
+            "kind": "indexed",
+            "layout": "FE8J"
+          },
+          "original_verification": {
+            "confidence": "high",
+            "evidence": "shared-keyed-table: gSupportTalkList CHARACTER_DOZLA+CHARACTER_GARCIA.B",
+            "evidence_kind": "shared-keyed-table",
+            "method": "structural-crosswalk",
+            "rationale": "The shared character pair and support rank identify the dialogue.",
+            "source_key": "CHARACTER_DOZLA+CHARACTER_GARCIA.B",
+            "source_paths": {
+              "fe8j": "src/data/gSupportTalkList_ref/dat_gSupportTalkList_ref.c",
+              "fe8u": "src/data_event_trigger.c"
+            },
+            "source_symbol": "gSupportTalkList",
+            "source_table": "gSupportTalkList",
+            "subsystem": "supports"
+          },
+          "pipeline": "fe8u-final-mapping-v1",
+          "precedence": "d-semantic-correction"
         },
-        "source_symbol": "gSupportTalkList",
-        "source_table": "gSupportTalkList",
+        "rationale": "The regional provider belongs to a different support arc. This authored FE8U-targeted translation preserves the Garcia-Dozla B support portraits, controls, line breaks, and English target meaning.",
+        "source_key": "CHARACTER_DOZLA+CHARACTER_GARCIA.B",
+        "source_symbol": "game.semantic_correction.msg_cb7",
+        "source_table": "texts/locales/authored/shards/semantic_corrections.<locale>.json",
         "subsystem": "supports"
       }
     },
     {
       "source": {
-        "id": "0x0C77",
-        "kind": "indexed",
-        "layout": "FE8J"
+        "kind": "authored",
+        "translation_key": "game.semantic_correction.msg_cb8"
       },
       "state": "verified",
       "target_id": "0x0CB8",
       "verification": {
-        "confidence": "high",
-        "evidence": "shared-keyed-table: gSupportTalkList CHARACTER_DOZLA+CHARACTER_GARCIA.A",
-        "evidence_kind": "shared-keyed-table",
-        "method": "structural-crosswalk",
-        "rationale": "The shared character pair and support rank identify the dialogue.",
-        "source_key": "CHARACTER_DOZLA+CHARACTER_GARCIA.A",
-        "source_paths": {
-          "fe8j": "src/data/gSupportTalkList_ref/dat_gSupportTalkList_ref.c",
-          "fe8u": "src/data_event_trigger.c"
+        "confidence": "explicit",
+        "evidence": "The regional provider belongs to a different support arc. This authored FE8U-targeted translation preserves the Garcia-Dozla A support portraits, controls, line breaks, and English target meaning.",
+        "evidence_kind": "target-authored-semantic-payload",
+        "method": "deterministic-final-mapping-promotion",
+        "promotion": {
+          "details": {
+            "english_payload_sha256": "bf850f4e478093e66490a9efe55f643e7df2b14be671299834363450a8987309",
+            "incorrect_payload_sha256": {
+              "ja": "b404d55e47a54dcca10640c2e339eeaec29969d4f03940f78d9a4c9dfd5d1154",
+              "zh-Hans": "09c23bfbcbb9093ce3164d0657d51a29555a1e0d69691ba4d0db230281e2ffa4"
+            },
+            "incorrect_source": {
+              "id": "0x0C77",
+              "kind": "indexed",
+              "layout": "FE8J"
+            },
+            "payload_sha256": {
+              "ja": "50c6d6dcb9dd0a5e90ffef7cb4707c8663ea639f67aecacef7a056b3d1ea1553",
+              "zh-Hans": "f97e9b2ee4e38bfe5aabad686780aed24b120f468ba140941ba6f3ce109bd6d7"
+            },
+            "translation_key": "game.semantic_correction.msg_cb8"
+          },
+          "original_source": {
+            "id": "0x0C77",
+            "kind": "indexed",
+            "layout": "FE8J"
+          },
+          "original_verification": {
+            "confidence": "high",
+            "evidence": "shared-keyed-table: gSupportTalkList CHARACTER_DOZLA+CHARACTER_GARCIA.A",
+            "evidence_kind": "shared-keyed-table",
+            "method": "structural-crosswalk",
+            "rationale": "The shared character pair and support rank identify the dialogue.",
+            "source_key": "CHARACTER_DOZLA+CHARACTER_GARCIA.A",
+            "source_paths": {
+              "fe8j": "src/data/gSupportTalkList_ref/dat_gSupportTalkList_ref.c",
+              "fe8u": "src/data_event_trigger.c"
+            },
+            "source_symbol": "gSupportTalkList",
+            "source_table": "gSupportTalkList",
+            "subsystem": "supports"
+          },
+          "pipeline": "fe8u-final-mapping-v1",
+          "precedence": "d-semantic-correction"
         },
-        "source_symbol": "gSupportTalkList",
-        "source_table": "gSupportTalkList",
+        "rationale": "The regional provider belongs to a different support arc. This authored FE8U-targeted translation preserves the Garcia-Dozla A support portraits, controls, line breaks, and English target meaning.",
+        "source_key": "CHARACTER_DOZLA+CHARACTER_GARCIA.A",
+        "source_symbol": "game.semantic_correction.msg_cb8",
+        "source_table": "texts/locales/authored/shards/semantic_corrections.<locale>.json",
         "subsystem": "supports"
       }
     },

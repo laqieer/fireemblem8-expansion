@@ -278,8 +278,8 @@ descriptor slots.
    `expansion_msg_ids.h`/the localization budget JSON, write-if-unchanged.
    Full-game authored translations use the separate normalized shard platform
    at `texts/locales/authored/`. Its manifest pins the historical 259-row
-   source queue and every shard hash; the merger produces canonical 326-key
-   JA/ZH runtime catalogs (259 fulfilled queue rows plus 67 existing
+   source queue and every shard hash; the merger produces canonical 329-key
+   JA/ZH runtime catalogs (259 fulfilled queue rows plus 70 existing
    expansion-backed or target-specific semantic corrections):
 
    ```bash

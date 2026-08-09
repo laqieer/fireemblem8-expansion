@@ -18,28 +18,28 @@
       "sha256": "4f92033c197bc0276a77e8483baed63e9031084fa51c91505425ca7e69c3efdc"
     },
     "texts/locales/authored/catalog.ja.json": {
-      "byte_count": 46018,
-      "sha256": "174ecd700212ab9fe9356682c37415d5b68775a969abd55d5667f63588ecb8c2"
+      "byte_count": 53068,
+      "sha256": "0b9aa8f2052a85cade8959ea8b38f70257de5d4beff35f48297ee0c885996e6b"
     },
     "texts/locales/authored/catalog.zh-Hans.json": {
-      "byte_count": 40185,
-      "sha256": "ad5255753a0909b3e595f9250356a4210d01c3906fd58ca981512a7d150a17e6"
+      "byte_count": 46144,
+      "sha256": "1e155b9ad7802eb0501852d9b8c368b733791dc90fe91845760068719a753b24"
     },
     "texts/locales/authored/manifest.json": {
-      "byte_count": 12398,
-      "sha256": "80e62ce9f435ecedeab5b946d2427d50112ed051f588292dff3193465b3d33f5"
+      "byte_count": 12797,
+      "sha256": "f29ffa38c9338eab01a8f06651b53c4c5582918e106c8047a218b999108aa285"
     },
     "texts/locales/ja/indexed.txt": {
       "byte_count": 1719177,
-      "sha256": "47bcc1c25fd717578a4c7aacd7801151f5e85253c325c32e115d2e23c66ebf45"
+      "sha256": "11ddf858b7e74c7bd064e19c9f730ef9ece599d792cef78208f933ecc8b8ca06"
     },
     "texts/locales/ja/raw.json": {
       "byte_count": 11842,
       "sha256": "7e62d213a527c191749a67046c7a07288c7447d8dad29b315b5874725fb1dc30"
     },
     "texts/locales/zh-Hans/indexed.txt": {
-      "byte_count": 1375136,
-      "sha256": "d1e334b7983974300b848be770f623bd2f821e8ff67e189d2a7f6af46f4002e8"
+      "byte_count": 1375406,
+      "sha256": "ed0994f9576aca551a727bb2c5ddcc03c96cc63392926bc93cb30b80796f9142"
     },
     "texts/locales/zh-Hans/raw.json": {
       "byte_count": 45834,
@@ -51,12 +51,12 @@
       "authored_game": {
         "catalog": "texts/locales/authored/catalog.ja.json",
         "source_queue_sha256": "ffdff913a552076928d5cb06634ed75d8983b65c05bb4ecec9aa2b610ffe6ad6",
-        "string_count": 326
+        "string_count": 329
       },
       "contributions": {
         "authored_game": {
-          "non_ascii_scalar_count": 753,
-          "record_count": 326
+          "non_ascii_scalar_count": 818,
+          "record_count": 329
         },
         "expansion": {
           "non_ascii_scalar_count": 107,
@@ -105,12 +105,12 @@
       "authored_game": {
         "catalog": "texts/locales/authored/catalog.zh-Hans.json",
         "source_queue_sha256": "ffdff913a552076928d5cb06634ed75d8983b65c05bb4ecec9aa2b610ffe6ad6",
-        "string_count": 326
+        "string_count": 329
       },
       "contributions": {
         "authored_game": {
-          "non_ascii_scalar_count": 931,
-          "record_count": 326
+          "non_ascii_scalar_count": 998,
+          "record_count": 329
         },
         "expansion": {
           "non_ascii_scalar_count": 103,

@@ -2422,14 +2422,14 @@
     },
     "fe8j_indexed_source": {
       "path": "texts/locales/ja/indexed.txt",
-      "sha256": "47bcc1c25fd717578a4c7aacd7801151f5e85253c325c32e115d2e23c66ebf45"
+      "sha256": "11ddf858b7e74c7bd064e19c9f730ef9ece599d792cef78208f933ecc8b8ca06"
     },
     "fe8j_reference_revision": "bf424414d075789d757e2f4cd0cea823bfb2862e",
     "fe8u_reference_revision": "d727e37ba1a584b2f874bdc3662ebc45e257de23",
     "protected_artifacts": [
       {
         "path": "texts/locales/mapping/fe8u_target_map.json",
-        "sha256": "518131dbc2a6c7d8e471d2f282c68415ff478bdb9ee27b4298d1de6954ad30b3"
+        "sha256": "d976494cefef812d6f64f2ffda45b8d631abe04f014defff173dbe9e64b929a6"
       },
       {
         "path": "texts/locales/mapping/fe8u_structural_evidence.json",

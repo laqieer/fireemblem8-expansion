@@ -161,7 +161,7 @@ class FinalMappingTests(unittest.TestCase):
                 "c-febuilder-raw": 3,
                 "d-contextual-resolution": 20,
                 "d-existing-authored": 3,
-                "d-semantic-correction": 102,
+                "d-semantic-correction": 105,
                 "d-structural-reference-second-check": 6,
                 "e-exact-english": 134,
                 "e-exact-english-context": 1,
@@ -1196,6 +1196,49 @@ class FinalMappingTests(unittest.TestCase):
             self.rows["0x0B2A"]["verification"]["source_key"],
             "game.chapter_event.msg_b2a",
         )
+
+    def test_garcia_dozla_support_pair_and_rank_map_to_authored_targets(self):
+        expected = {
+            "0x0CB6": (
+                "C",
+                "game.semantic_correction.msg_cb6",
+            ),
+            "0x0CB7": (
+                "B",
+                "game.semantic_correction.msg_cb7",
+            ),
+            "0x0CB8": (
+                "A",
+                "game.semantic_correction.msg_cb8",
+            ),
+        }
+        for target_id, (rank, translation_key) in expected.items():
+            row = self.rows[target_id]
+            self.assertEqual(
+                row["source"],
+                {
+                    "kind": "authored",
+                    "translation_key": translation_key,
+                },
+            )
+            verification = row["verification"]
+            self.assertEqual(
+                verification["source_key"],
+                f"CHARACTER_DOZLA+CHARACTER_GARCIA.{rank}",
+            )
+            self.assertEqual(verification["subsystem"], "supports")
+            self.assertEqual(
+                verification["promotion"]["precedence"],
+                "d-semantic-correction",
+            )
+            self.assertEqual(
+                verification["promotion"]["original_source"],
+                {
+                    "id": f"0x{int(target_id, 16) - 0x41:04X}",
+                    "kind": "indexed",
+                    "layout": "FE8J",
+                },
+            )
 
     def test_all_ending_titles_solo_and_paired_lines_fit_real_text_allocations(self):
         metrics = self.ending_metrics

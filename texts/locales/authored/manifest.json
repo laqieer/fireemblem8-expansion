@@ -326,6 +326,21 @@
       "translation_key": "game.semantic_correction.msg_b29"
     },
     {
+      "subsystem": "supports",
+      "target_id": "0x0CB6",
+      "translation_key": "game.semantic_correction.msg_cb6"
+    },
+    {
+      "subsystem": "supports",
+      "target_id": "0x0CB7",
+      "translation_key": "game.semantic_correction.msg_cb7"
+    },
+    {
+      "subsystem": "supports",
+      "target_id": "0x0CB8",
+      "translation_key": "game.semantic_correction.msg_cb8"
+    },
+    {
       "subsystem": "expansion",
       "target_id": "0x0D53",
       "translation_key": "framework.back"
@@ -343,8 +358,8 @@
       "shards": [
         {
           "path": "texts/locales/authored/shards/audit_corrections.ja.json",
-          "sha256": "24d7b388ab96404449f5ad385e9d2474a6cda30daabdf029c2e39fc20722a81e",
-          "target_count": 37
+          "sha256": "e979bbcd64f23929cedf1c0ab7d9a39827102ae7dc2b2d8a8d82076b3d3bc66c",
+          "target_count": 40
         },
         {
           "path": "texts/locales/authored/shards/event_expansion.ja.json",
@@ -358,7 +373,7 @@
         },
         {
           "path": "texts/locales/authored/shards/help_shop.ja.json",
-          "sha256": "d88198379af7bcf5f98e901c85a9d64c881b709e8e776b7df5daf1ffc87d8c14",
+          "sha256": "d2af97ec45a6a86647b3191d35e63a014d72c1fd6b4df3b8a076a3c1a77ccef9",
           "target_count": 81
         },
         {
@@ -378,8 +393,8 @@
       "shards": [
         {
           "path": "texts/locales/authored/shards/audit_corrections.zh-Hans.json",
-          "sha256": "ae16267f6c8e43c01c4472a3c0f19e4c76c6fb538f328ac4f7de620bd8d344ca",
-          "target_count": 37
+          "sha256": "8e45ec22b89dba601474111f63714cd0103221349722db8222fe854db3e5090a",
+          "target_count": 40
         },
         {
           "path": "texts/locales/authored/shards/event_expansion.zh-Hans.json",
@@ -393,7 +408,7 @@
         },
         {
           "path": "texts/locales/authored/shards/help_shop.zh-Hans.json",
-          "sha256": "28dc84e5fa246712cc6f4d8d93a0bef54f750746bc226b886f76e2228e6beaef",
+          "sha256": "c2fd792df9af542cdb941b030cc98e37524b5c911dd1bac6f2ca023e7d99db68",
           "target_count": 81
         },
         {

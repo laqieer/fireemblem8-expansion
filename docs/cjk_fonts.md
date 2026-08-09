@@ -32,7 +32,7 @@ The inventory reads the committed normalized sources:
 - materialized providers in `texts/locales/ja/raw.json`;
 - `texts/locales/zh-Hans/indexed.txt`;
 - unique records in `texts/locales/zh-Hans/raw.json`;
-- canonical 262-string full-game authored catalogs under
+- canonical 329-string full-game authored catalogs under
   `texts/locales/authored/`, whose manifest pins the source queue and every
   reviewed shard;
 - active `texts/expansion` catalog strings, resolved through the English

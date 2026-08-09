@@ -1075,7 +1075,7 @@
   "supplements": [
     {
       "path": "texts/locales/indexed_audit_overrides.json",
-      "sha256": "77f77c7a9f51e7e18ce187400177a5899530b284f99d115ba71e3c5909ee4ee0"
+      "sha256": "d469a8c8c9e3febb5890d6beeaa0d7f7db1adc52bd1ab494d62753438fb971ab"
     }
   ]
 }

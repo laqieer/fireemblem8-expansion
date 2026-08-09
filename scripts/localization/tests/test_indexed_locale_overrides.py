@@ -36,7 +36,7 @@ class IndexedLocaleOverrideTests(unittest.TestCase):
             self.OVERRIDE_PATH,
             expected_source_hashes=PINNED_SOURCE_SHA256,
         )
-        self.assertEqual(catalog.entry_count, 186)
+        self.assertEqual(catalog.entry_count, 198)
         self.assertEqual(set(catalog.sources), {"fe8j_indexed", "fe8cn_source"})
         for source in catalog.sources.values():
             self.assertEqual(
@@ -49,7 +49,7 @@ class IndexedLocaleOverrideTests(unittest.TestCase):
                 self.assertTrue(entry.provenance["context"])
                 self.assertTrue(entry.provenance["target_ids"])
         self.assertEqual(len(catalog.sources["fe8j_indexed"].entries), 63)
-        self.assertEqual(len(catalog.sources["fe8cn_source"].entries), 123)
+        self.assertEqual(len(catalog.sources["fe8cn_source"].entries), 135)
 
     def test_full_semantic_audit_overrides_are_exact(self):
         catalog = load_override_catalog(
@@ -89,8 +89,19 @@ class IndexedLocaleOverrideTests(unittest.TestCase):
             self.assertEqual(zh[message_id].replacement_text, payload)
         self.assertIn("游戏中各个部分", zh[0x0913].replacement_text)
         self.assertNotIn("哥哥部分", zh[0x0913].replacement_text)
-        self.assertIn("硬币", zh[0x0CB7].replacement_text)
-        self.assertNotIn("骰子", zh[0x0CB7].replacement_text)
+        self.assertEqual(
+            zh[0x029E].replacement_text,
+            "使用弓从远处攻击敌人的战士[CTRL:0001]装备『弓』",
+        )
+        self.assertTrue(
+            zh[0x08B1].replacement_text.startswith(
+                "伊弗列姆的妹妹陷入了危机。"
+            )
+        )
+        for fragment in ("叛国", "火刑柱", "烧死"):
+            self.assertIn(fragment, zh[0x0A66].replacement_text)
+        self.assertIn("是否平安", zh[0x0BBF].replacement_text)
+        self.assertIn("我一定不会放过你", zh[0x0C1C].replacement_text)
 
     def test_blue_team_followup_overrides_are_exact(self):
         catalog = load_override_catalog(

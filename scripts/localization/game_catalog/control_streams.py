@@ -15,6 +15,9 @@ DEFAULT_PORTRAIT_MAP_PATH = Path(
     "texts/locales/mapping/fe8j_to_fe8u_portrait_operands.json"
 )
 DEFAULT_EVENT_ROOT = Path("src/events")
+AUDITED_MOUTH_BALANCE_TARGETS = frozenset(
+    (0x0BA9, 0x0BC0, 0x0BFF, 0x0C00, 0x0C10, 0x0CB6, 0x0CB7, 0x0CB8)
+)
 
 _MESSAGE_START_RE = re.compile(
     r"\b(?P<kind>TEXTSHOW|WM_TEXT|EvtTextShow2)\s*\(\s*"
@@ -314,6 +317,67 @@ def _consecutive_newline_count(tokens: Sequence[StreamToken]) -> int:
     return sum(left == 0x01 and right == 0x01 for left, right in zip(controls, controls[1:]))
 
 
+def _speakers_after_break_talk(
+    tokens: Sequence[StreamToken],
+) -> Tuple[Optional[int], ...]:
+    speakers = []
+    for index, token in enumerate(tokens):
+        if token.kind != "extended" or token.scalar != 0x04:
+            continue
+        speaker = None
+        for following in tokens[index + 1 :]:
+            if (
+                following.kind == "control"
+                and following.control in (0x01, 0x02, 0x03, 0x1F)
+            ):
+                continue
+            if (
+                following.kind == "control"
+                and following.control is not None
+                and 0x08 <= following.control <= 0x0D
+            ):
+                speaker = following.control
+            break
+        speakers.append(speaker)
+    return tuple(speakers)
+
+
+def validate_mouth_toggle_balance(payload: bytes, *, source_name: str) -> None:
+    tokens = tokenize_payload(payload, source_name=source_name)
+    active_offset = None
+    for token in tokens:
+        if token.kind == "control" and token.control == 0x16:
+            active_offset = None if active_offset is not None else token.offset
+            continue
+        boundary = (
+            token.kind == "end"
+            or (
+                token.kind == "extended"
+                and token.scalar == 0x04
+            )
+            or (
+                token.kind == "control"
+                and token.control in (
+                    0x03,
+                    0x08,
+                    0x09,
+                    0x0A,
+                    0x0B,
+                    0x0C,
+                    0x0D,
+                    0x10,
+                    0x11,
+                    0x15,
+                )
+            )
+        )
+        if active_offset is not None and boundary:
+            raise ControlStreamError(
+                f"{source_name}: ToggleMouthMove at byte {active_offset} "
+                f"is not paired before byte {token.offset}"
+            )
+
+
 def remap_fe8j_portrait_operands(
     payload: bytes,
     *,
@@ -376,6 +440,15 @@ def validate_final_payload(
             f"{tuple(f'0x{x:04X}' for x in faces)} != "
             f"{tuple(f'0x{x:04X}' for x in english_faces)}"
         )
+    speakers_after_break = _speakers_after_break_talk(tokens)
+    english_speakers_after_break = _speakers_after_break_talk(english_tokens)
+    if speakers_after_break != english_speakers_after_break:
+        raise ControlStreamError(
+            f"{name}: speakers after BreakTalk do not match FE8U target: "
+            f"{speakers_after_break} != {english_speakers_after_break}"
+        )
+    if target_id in AUDITED_MOUTH_BALANCE_TARGETS:
+        validate_mouth_toggle_balance(payload, source_name=name)
     localized_double_nl = _consecutive_newline_count(tokens)
     english_double_nl = _consecutive_newline_count(english_tokens)
     if localized_double_nl > english_double_nl:

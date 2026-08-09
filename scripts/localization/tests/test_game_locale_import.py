@@ -65,12 +65,12 @@ class GameLocaleImportTests(unittest.TestCase):
             },
         )
         self.assertEqual(manifest["overrides"]["path"], DEFAULT_OVERRIDE_PATH.as_posix())
-        self.assertEqual(manifest["overrides"]["entry_count"], 186)
+        self.assertEqual(manifest["overrides"]["entry_count"], 198)
         self.assertEqual(
             manifest["overrides"]["sources"]["fe8j_indexed"]["entry_count"], 63
         )
         self.assertEqual(
-            manifest["overrides"]["sources"]["fe8cn_source"]["entry_count"], 123
+            manifest["overrides"]["sources"]["fe8cn_source"]["entry_count"], 135
         )
         self.assertEqual(
             manifest["overrides"]["sources"]["fe8j_indexed"]["source_sha256"],

@@ -593,17 +593,17 @@ static const char sTacticianGridJaKatakana[] =
 #if (FE8_EXPANSION_ENABLED_LOCALE_MASK & 0x04u) != 0
 static const char sTacticianGridZhHansFrequent[] =
     "的是我了不你这一在那么人有就啊"
-    "要来们也为会可到好个吧样能以说"
-    "还没下对子战什真王和过弗时斯大"
-    "利事拉吗想都尔魔然后起之很国里"
-    "出话现上去所着他得看如但艾行心";
+    "要来也们为会可到好个吧样能以说"
+    "还没下对子战什真王和过弗时斯利"
+    "大事拉吗想都尔魔然起后之很国里"
+    "出话现上去所着他得看如但行艾心";
 
 static const char sTacticianGridZhHansExtended[] =
     "力多珂瑞德内姆已军生中哈定道将"
-    "古法鲁物用家怎哥自经前伊主列亚"
-    "呢只士使回地而被些斗知请嗯公小"
-    "给塞石先雷无开谢从成天圣您再实"
-    "当敌发进做身把果等帝因让才情动";
+    "古鲁法物用家哥怎自经前伊主列亚"
+    "呢只士使回地而被些知斗请嗯公小"
+    "给塞石先雷无谢从开成天圣您再实"
+    "当敌发进做身把果等帝因让情才动";
 #endif
 
 static int TacticianName_UsesLocaleGrid(void)

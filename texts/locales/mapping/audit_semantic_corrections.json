@@ -37,23 +37,6 @@
       "translation_key": "game.semantic_correction.msg_6ab"
     },
     {
-      "english_payload_sha256": "07f5ef1a6ec69f44ffd9a2ef66d25a4f642b404fa274bba6e27324e1f7b4ef0c",
-      "incorrect_payload_sha256": {
-        "ja": "f3f7f552ef74e194f9fa6d95cad9cdb3d02ed01603e79fd6e9b345aef63690b8",
-        "zh-Hans": "eb09c7e548b6944cca64d9aa3ecda8b515f8bee2e74abb482bc34e51815ba0fd"
-      },
-      "incorrect_source_id": "0x0AEA",
-      "payload_sha256": {
-        "ja": "4e15a798c4de7c069a34e3c014bf77003f18ac3c70b27a4c1f6b96dc43881dc2",
-        "zh-Hans": "6e557122c690c7e47aa9602b2a9827bfd309362cb4451e7ea17668a24bc89997"
-      },
-      "rationale": "The source payload includes the following scene as a duplicate; the authored correction ends at the FE8U 0x0B29 close-speech boundary before 0x0B2A begins.",
-      "source_key": "EventScr_Ch15A_26.text[3]",
-      "subsystem": "events",
-      "target_id": "0x0B29",
-      "translation_key": "game.semantic_correction.msg_b29"
-    },
-    {
       "english_payload_sha256": "868c86f2afa3d965ca4d230224c9961f0c2602f09e856b78a956b71fe7226922",
       "incorrect_payload_sha256": {
         "ja": "6ed2c20487c7d9d94bf990ffd50e0ef4d3f24d892472a325304c82910411d1fa",
@@ -630,6 +613,74 @@
       "subsystem": "ending-details",
       "target_id": "0x0838",
       "translation_key": "game.semantic_correction.msg_838"
+    },
+    {
+      "english_payload_sha256": "07f5ef1a6ec69f44ffd9a2ef66d25a4f642b404fa274bba6e27324e1f7b4ef0c",
+      "incorrect_payload_sha256": {
+        "ja": "f3f7f552ef74e194f9fa6d95cad9cdb3d02ed01603e79fd6e9b345aef63690b8",
+        "zh-Hans": "eb09c7e548b6944cca64d9aa3ecda8b515f8bee2e74abb482bc34e51815ba0fd"
+      },
+      "incorrect_source_id": "0x0AEA",
+      "payload_sha256": {
+        "ja": "4e15a798c4de7c069a34e3c014bf77003f18ac3c70b27a4c1f6b96dc43881dc2",
+        "zh-Hans": "6e557122c690c7e47aa9602b2a9827bfd309362cb4451e7ea17668a24bc89997"
+      },
+      "rationale": "The source payload includes the following scene as a duplicate; the authored correction ends at the FE8U 0x0B29 close-speech boundary before 0x0B2A begins.",
+      "source_key": "EventScr_Ch15A_26.text[3]",
+      "subsystem": "events",
+      "target_id": "0x0B29",
+      "translation_key": "game.semantic_correction.msg_b29"
+    },
+    {
+      "english_payload_sha256": "d8b9029143bb40d52becaa60772cfcec641bfea6b3e234d9b46c2fc47827a804",
+      "incorrect_payload_sha256": {
+        "ja": "b4d45d6ad226d0363edbb4ac3c99b3f5c92e58dd7a00df5e79bf10aec84639cd",
+        "zh-Hans": "d2c713d39c3685a83601d2410b186c66f491bc4c857cad6dd69eeea063756232"
+      },
+      "incorrect_source_id": "0x0C75",
+      "payload_sha256": {
+        "ja": "072a1c23ae3251da41324cb0971f0be50945d31ecffc27902af53da381b98d26",
+        "zh-Hans": "5f64b81b57c49ced12b0b9f5217b399921422d29a400e664439eb9be449d381a"
+      },
+      "rationale": "The regional provider belongs to a different support arc. This authored FE8U-targeted translation preserves the Garcia-Dozla C support portraits, controls, line breaks, and English target meaning.",
+      "source_key": "CHARACTER_DOZLA+CHARACTER_GARCIA.C",
+      "subsystem": "supports",
+      "target_id": "0x0CB6",
+      "translation_key": "game.semantic_correction.msg_cb6"
+    },
+    {
+      "english_payload_sha256": "6c068943f8a57bccb6e943e5e040df35d9161dd29dc8f406197f5be9a8df1e6c",
+      "incorrect_payload_sha256": {
+        "ja": "5085dc7a1551a2917cdd320ab13395b7c8fa54c72fa347fab8ce48ab4df980df",
+        "zh-Hans": "c3f22d77e72a146f53db74438afb7c6e350160ad6ab5804e4eec8f26a61a94d7"
+      },
+      "incorrect_source_id": "0x0C76",
+      "payload_sha256": {
+        "ja": "7225fc9067b9a966f22886a7bb7bdb9decc6edbf421fa781a75644a0884b4d15",
+        "zh-Hans": "34666c566b34984da94e111ad94f00ed0c504a34c3bf7e5972da4120681b4167"
+      },
+      "rationale": "The regional provider belongs to a different support arc. This authored FE8U-targeted translation preserves the Garcia-Dozla B support portraits, controls, line breaks, and English target meaning.",
+      "source_key": "CHARACTER_DOZLA+CHARACTER_GARCIA.B",
+      "subsystem": "supports",
+      "target_id": "0x0CB7",
+      "translation_key": "game.semantic_correction.msg_cb7"
+    },
+    {
+      "english_payload_sha256": "bf850f4e478093e66490a9efe55f643e7df2b14be671299834363450a8987309",
+      "incorrect_payload_sha256": {
+        "ja": "b404d55e47a54dcca10640c2e339eeaec29969d4f03940f78d9a4c9dfd5d1154",
+        "zh-Hans": "09c23bfbcbb9093ce3164d0657d51a29555a1e0d69691ba4d0db230281e2ffa4"
+      },
+      "incorrect_source_id": "0x0C77",
+      "payload_sha256": {
+        "ja": "50c6d6dcb9dd0a5e90ffef7cb4707c8663ea639f67aecacef7a056b3d1ea1553",
+        "zh-Hans": "f97e9b2ee4e38bfe5aabad686780aed24b120f468ba140941ba6f3ce109bd6d7"
+      },
+      "rationale": "The regional provider belongs to a different support arc. This authored FE8U-targeted translation preserves the Garcia-Dozla A support portraits, controls, line breaks, and English target meaning.",
+      "source_key": "CHARACTER_DOZLA+CHARACTER_GARCIA.A",
+      "subsystem": "supports",
+      "target_id": "0x0CB8",
+      "translation_key": "game.semantic_correction.msg_cb8"
     }
   ]
 }

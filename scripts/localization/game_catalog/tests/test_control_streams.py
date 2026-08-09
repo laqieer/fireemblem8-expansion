@@ -1,4 +1,5 @@
 import json
+import re
 import sys
 import unittest
 from pathlib import Path
@@ -14,6 +15,7 @@ from scripts.localization.game_catalog.control_streams import (
     build_event_continuation_models,
     load_portrait_operand_map,
     tokenize_payload,
+    validate_mouth_toggle_balance,
 )
 
 
@@ -30,6 +32,10 @@ def break_talk_count(payload):
         token.kind == "extended" and token.scalar == 0x04
         for token in tokenize_payload(payload, source_name="test payload")
     )
+
+
+def structural_sequence(text):
+    return re.findall(r"\[[^\]\n]+\]|\n", text)
 
 
 class FinalControlStreamTests(unittest.TestCase):
@@ -126,6 +132,20 @@ class FinalControlStreamTests(unittest.TestCase):
         self.assertEqual(tokens[0].argument, 0x0164)
         self.assertEqual(tokens[1].scalar, 0x1F)
 
+    def test_mouth_balance_validator_rejects_open_state_at_dialogue_boundary(self):
+        with self.assertRaisesRegex(
+            ControlStreamError,
+            "ToggleMouthMove.*is not paired",
+        ):
+            validate_mouth_toggle_balance(
+                b"\x16\xe2\x80\xa6\x03\x00",
+                source_name="unbalanced mouth fixture",
+            )
+        validate_mouth_toggle_balance(
+            b"\x16\xe2\x80\xa6\x16\x03\x00",
+            source_name="balanced mouth fixture",
+        )
+
     def test_breaktalk_counts_follow_fe8u_and_event_continuations(self):
         expected = {
             0x08E7: 4,
@@ -155,6 +175,11 @@ class FinalControlStreamTests(unittest.TestCase):
                     count,
                     (locale, target_id),
                 )
+        zh_b7b = self.build.locale_bundle("zh-Hans").entries[0x0B7B].source_text
+        self.assertEqual(
+            zh_b7b.split("[CTRL:0080][CTRL:0004]")[2][:11],
+            "[CTRL:000C]",
+        )
 
     def test_requested_control_and_semantic_regressions(self):
         ja = self.build.locale_bundle("ja").entries
@@ -166,6 +191,40 @@ class FinalControlStreamTests(unittest.TestCase):
         self.assertIn("[CTRL:0080][CTRL:000D][CTRL:000B]城内", zh[0x0A04].source_text)
         self.assertIn("[CTRL:0003][CTRL:000A]梅尔，怎么了？", zh[0x0BAC].source_text)
         self.assertIn("きゃっ[CTRL:0003][CTRL:0008]", ja[0x0AFC].source_text)
+
+        self.assertEqual(
+            zh[0x0317].source_text,
+            "使用弓从远处攻击敌人的战士[CTRL:0001]装备『弓』",
+        )
+        self.assertTrue(
+            zh[0x08F6].source_text.startswith(
+                "伊弗列姆的妹妹陷入了危机。"
+                "[CTRL:0103][CTRL:0080][CTRL:0004]"
+            )
+        )
+        self.assertIn("[CTRL:0009]遵命！[CTRL:0003]", zh[0x0929].source_text)
+        self.assertIn("帮助外面的旅行者", zh[0x09A5].source_text)
+        self.assertNotIn("去救助那些村民", zh[0x09A5].source_text)
+        self.assertNotIn(
+            "[CTRL:0003][CTRL:0003]",
+            zh[0x09C0].source_text,
+        )
+        for fragment in ("叛国", "火刑柱", "烧死"):
+            self.assertIn(fragment, zh[0x0AA5].source_text)
+        for fragment in ("伊弗列姆", "杜塞尔", "两件", "战利品"):
+            self.assertIn(fragment, zh[0x0ABE].source_text)
+        self.assertIn("不知道", zh[0x0BFF].source_text)
+        self.assertIn("是否平安", zh[0x0BFF].source_text)
+        self.assertNotIn("现在没有危险", zh[0x0BFF].source_text)
+        self.assertIn("以前太沉重", zh[0x0C49].source_text)
+        self.assertIn("根本穿不了", zh[0x0C49].source_text)
+        self.assertIn("我一定不会放过你", zh[0x0C5D].source_text)
+
+        for target_id in (0x0BA9, 0x0BC0, 0x0BFF, 0x0C00, 0x0C10):
+            validate_mouth_toggle_balance(
+                zh[target_id].encoded_bytes,
+                source_name=f"zh-Hans target 0x{target_id:04X}",
+            )
 
         self.assertIn("不低于对方", zh[0x061D].source_text)
         self.assertIn("決められたターン数", ja[0x0638].source_text)
@@ -205,3 +264,43 @@ class FinalControlStreamTests(unittest.TestCase):
         self.assertIn("值得成为例外", zh[0x0C1C].source_text)
         self.assertIn("赌局的门道", zh[0x0CE5].source_text)
         self.assertIn("賭けのやり方", ja[0x0CE5].source_text)
+
+    def test_garcia_dozla_support_arc_is_target_authored_and_structural(self):
+        expected_keys = {
+            0x0CB6: "game.semantic_correction.msg_cb6",
+            0x0CB7: "game.semantic_correction.msg_cb7",
+            0x0CB8: "game.semantic_correction.msg_cb8",
+        }
+        for locale in ("ja", "zh-Hans"):
+            entries = self.build.locale_bundle(locale).entries
+            for target_id, key in expected_keys.items():
+                entry = entries[target_id]
+                self.assertEqual(entry.mapping_source_kind, "authored")
+                self.assertEqual(entry.locale_provider_kind, "authored")
+                self.assertEqual(entry.mapping_source["translation_key"], key)
+                self.assertEqual(entry.fallback_kind, "none")
+                self.assertEqual(
+                    structural_sequence(entry.source_text),
+                    structural_sequence(
+                        self.build.english.entries[target_id].source_text
+                    ),
+                    (locale, target_id),
+                )
+                validate_mouth_toggle_balance(
+                    entry.encoded_bytes,
+                    source_name=f"{locale} target 0x{target_id:04X}",
+                )
+
+        ja = self.build.locale_bundle("ja").entries
+        zh = self.build.locale_bundle("zh-Hans").entries
+        self.assertIn("弓を学びたかった", ja[0x0CB6].source_text)
+        self.assertIn("一緒に学んで", ja[0x0CB6].source_text)
+        self.assertIn("魔法はどうじゃ", ja[0x0CB7].source_text)
+        self.assertIn("ひげを全部焼いた", ja[0x0CB8].source_text)
+        self.assertIn("学习弓术", zh[0x0CB6].source_text)
+        self.assertIn("一起练习", zh[0x0CB6].source_text)
+        self.assertIn("魔法怎么样", zh[0x0CB7].source_text)
+        self.assertIn("胡子全烧光", zh[0x0CB8].source_text)
+        for fragment in ("硬币", "骰子", "喝酒", "父亲"):
+            for target_id in expected_keys:
+                self.assertNotIn(fragment, zh[target_id].source_text)
