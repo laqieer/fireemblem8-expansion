@@ -22,6 +22,10 @@ PAIRED_ENTRY_RE = re.compile(
     r"\{\s*CHARACTER_ENDING_PAIRED,\s*CHARACTER_[A-Z0-9_]+,\s*"
     r"CHARACTER_[A-Z0-9_]+,\s*MSG_([0-9A-F]+),\s*\}"
 )
+SOLO_ENTRY_RE = re.compile(
+    r"\{\s*CHARACTER_ENDING_SOLO,\s*CHARACTER_[A-Z0-9_]+,\s*"
+    r"CHARACTER_NONE,\s*MSG_([0-9A-F]+),\s*\}"
+)
 MESSAGE_ID_RE = re.compile(r"MSG_([0-9A-F]+)")
 CONTROL_RE = re.compile(r"\[CTRL:([0-9A-F]{4})\]")
 
@@ -62,8 +66,18 @@ def _ending_contract(repo_root: Path) -> Dict[str, Any]:
             }
         )
     )
+    solo_ids = tuple(
+        sorted(
+            {
+                int(message_id, 16)
+                for message_id in SOLO_ENTRY_RE.findall(source)
+            }
+        )
+    )
     if len(title_ids) != 33 or len(set(title_ids)) != len(title_ids):
         raise EndingLayoutError(f"{path}: ending title IDs drifted")
+    if solo_ids != tuple(range(0x07D6, 0x0817, 2)):
+        raise EndingLayoutError(f"{path}: solo ending IDs drifted")
     if paired_ids != tuple(range(0x0817, 0x0839)):
         raise EndingLayoutError(f"{path}: paired ending IDs drifted")
 
@@ -82,6 +96,7 @@ def _ending_contract(repo_root: Path) -> Dict[str, Any]:
             "path": ENDING_SOURCE_PATH.as_posix(),
             "sha256": _sha256(source_bytes),
         },
+        "solo_ids": solo_ids,
         "title_ids": title_ids,
         "paired_ids": paired_ids,
         "title": {
@@ -91,6 +106,12 @@ def _ending_contract(repo_root: Path) -> Dict[str, Any]:
             "pixel_width": title_tiles * 8,
         },
         "paired": {
+            "text_count": 5,
+            "text_index_start": 0,
+            "tile_width": paired_tiles,
+            "pixel_width": paired_tiles * 8,
+        },
+        "solo": {
             "text_count": 5,
             "text_index_start": 0,
             "tile_width": paired_tiles,
@@ -144,7 +165,12 @@ def _cjk_widths(repo_root: Path, locale: str) -> Tuple[Dict[int, int], Dict[str,
     }
 
 
-def _runtime_lines(text: str, *, paired: bool) -> Tuple[str, ...]:
+def _runtime_lines(
+    text: str,
+    *,
+    minimum_lines: int,
+    maximum_lines: int,
+) -> Tuple[str, ...]:
     lines = [""]
     cursor = 0
     for match in CONTROL_RE.finditer(text):
@@ -158,10 +184,10 @@ def _runtime_lines(text: str, *, paired: bool) -> Tuple[str, ...]:
         raise EndingLayoutError(
             "ending text contains a physical newline instead of runtime control 0x0001"
         )
-    expected_lines = 5 if paired else 1
-    if len(lines) != expected_lines:
+    if not minimum_lines <= len(lines) <= maximum_lines:
         raise EndingLayoutError(
-            f"ending text renders {len(lines)} lines; expected {expected_lines}"
+            f"ending text renders {len(lines)} lines; expected "
+            f"{minimum_lines}..{maximum_lines}"
         )
     return tuple(lines)
 
@@ -200,7 +226,8 @@ def _records(
     *,
     locale: str,
     payloads: Mapping[int, str],
-    paired: bool,
+    minimum_lines: int,
+    maximum_lines: int,
     allocation_pixels: int,
     ascii_widths: Mapping[int, int],
     cjk_widths: Mapping[int, int],
@@ -211,7 +238,16 @@ def _records(
             raise EndingLayoutError(
                 f"{locale}: ending target 0x{message_id:04X} has no payload"
             )
-        lines = _runtime_lines(payloads[message_id], paired=paired)
+        try:
+            lines = _runtime_lines(
+                payloads[message_id],
+                minimum_lines=minimum_lines,
+                maximum_lines=maximum_lines,
+            )
+        except EndingLayoutError as error:
+            raise EndingLayoutError(
+                f"{locale} 0x{message_id:04X}: {error}"
+            ) from error
         widths = [
             _line_width(
                 line,
@@ -254,8 +290,19 @@ def build_ending_layout_metrics(
             contract["title_ids"],
             locale=locale,
             payloads=localized_payloads[locale],
-            paired=False,
+            minimum_lines=1,
+            maximum_lines=1,
             allocation_pixels=contract["title"]["pixel_width"],
+            ascii_widths=ascii_widths,
+            cjk_widths=cjk_widths,
+        )
+        solo = _records(
+            contract["solo_ids"],
+            locale=locale,
+            payloads=localized_payloads[locale],
+            minimum_lines=1,
+            maximum_lines=5,
+            allocation_pixels=contract["solo"]["pixel_width"],
             ascii_widths=ascii_widths,
             cjk_widths=cjk_widths,
         )
@@ -263,22 +310,28 @@ def build_ending_layout_metrics(
             contract["paired_ids"],
             locale=locale,
             payloads=localized_payloads[locale],
-            paired=True,
+            minimum_lines=5,
+            maximum_lines=5,
             allocation_pixels=contract["paired"]["pixel_width"],
             ascii_widths=ascii_widths,
             cjk_widths=cjk_widths,
         )
         locales[locale] = {
             "paired": list(paired),
+            "solo": list(solo),
             "summary": {
                 "max_paired_line_width": max(
                     record["max_line_width"] for record in paired
+                ),
+                "max_solo_line_width": max(
+                    record["max_line_width"] for record in solo
                 ),
                 "max_title_width": max(
                     record["max_line_width"] for record in titles
                 ),
                 "overflow_count": 0,
                 "paired_target_count": len(paired),
+                "solo_target_count": len(solo),
                 "title_target_count": len(titles),
             },
             "titles": list(titles),
@@ -286,6 +339,7 @@ def build_ending_layout_metrics(
     return {
         "allocations": {
             "paired": contract["paired"],
+            "solo": contract["solo"],
             "title": contract["title"],
         },
         "font_inputs": font_inputs,
@@ -297,6 +351,7 @@ def build_ending_layout_metrics(
             "locale_count": len(locales),
             "overflow_count": 0,
             "paired_target_count": len(contract["paired_ids"]),
+            "solo_target_count": len(contract["solo_ids"]),
             "title_target_count": len(contract["title_ids"]),
         },
     }

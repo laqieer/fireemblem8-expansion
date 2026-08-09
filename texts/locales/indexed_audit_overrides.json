@@ -17,7 +17,7 @@
           "replacement_text": "这是陷阱！"
         },
         "0x02A4": {
-          "expected_text_sha256": "2b9743b429a3aa80bd8c10d8be62cb2678445c3727b3a1df863b47d33db07f9a",
+          "expected_text_sha256": "d3d08503c6a7f17edf00bea1c97cfae2097a3ae3ea1edc56f8b38f3f1d146335",
           "provenance": {
             "audit": "semantic-composition-width-audit-2026-08-09",
             "context": "CLASS_MAGE.descTextId",
@@ -26,10 +26,10 @@
             ]
           },
           "reason": "Apply the reviewed target-semantic correction without modifying the pinned raw regional snapshot.",
-          "replacement_text": "体力较弱，但魔法能力稳定\n装备『理』"
+          "replacement_text": "体力较弱，但魔法能力稳定[CTRL:0001]装备『理』"
         },
         "0x02B1": {
-          "expected_text_sha256": "2b43e49b27ff6a7329a5ef898125e6b358de5e1dc59d262a84c962130c2d7260",
+          "expected_text_sha256": "cf3a07a4dcb9487ae39a4b3aaaa264e078525e9c80db69d0c696238c2598bc86",
           "provenance": {
             "audit": "semantic-composition-width-audit-2026-08-09",
             "context": "CLASS_BERSERKER.descTextId",
@@ -38,10 +38,10 @@
             ]
           },
           "reason": "Apply the reviewed target-semantic correction without modifying the pinned raw regional snapshot.",
-          "replacement_text": "擅长在山地和海上移动，且容易暴击\n装备『斧』"
+          "replacement_text": "擅长在山地和海上移动，且容易暴击[CTRL:0001]装备『斧』"
         },
         "0x02C2": {
-          "expected_text_sha256": "9fb2af0f56e69098fc06ca10c2286712f3a81baee6fe6d71b1226706160a0182",
+          "expected_text_sha256": "5134c476e77a89e1f4115a86d2a68bc8447b7d45c27c8498f5776d197dc389fc",
           "provenance": {
             "audit": "semantic-composition-width-audit-2026-08-09",
             "context": "CLASS_NECROMANCER.descTextId",
@@ -50,10 +50,10 @@
             ]
           },
           "reason": "Apply the reviewed target-semantic correction without modifying the pinned raw regional snapshot.",
-          "replacement_text": "掌握【魔石】之力\n以最高位暗魔法操纵尸骸"
+          "replacement_text": "掌握【魔石】之力[CTRL:0001]以最高位暗魔法操纵尸骸"
         },
         "0x0418": {
-          "expected_text_sha256": "a1c68fdb8ce66b2b0a2bd4c155e597c4dc8e43099bb242d75ff3898f2adc3d4f",
+          "expected_text_sha256": "4ddb240eadd9a67a4565bff61ecf09e2f36670095ab976b1b71ffa5ffb0ce6ce",
           "provenance": {
             "audit": "semantic-composition-width-audit-2026-08-09",
             "context": "ITEM_GUIDINGRING.descTextId",
@@ -62,10 +62,10 @@
             ]
           },
           "reason": "Apply the reviewed target-semantic correction without modifying the pinned raw regional snapshot.",
-          "replacement_text": "供10级以上的僧侣、魔法师、神官骑士、\n修道士和巫师使用"
+          "replacement_text": "供10级以上的僧侣、魔法师、神官骑士、[CTRL:0001]修道士和巫师使用"
         },
         "0x0466": {
-          "expected_text_sha256": "6db4acffa5e0ccbd1a63fe63c11e605f4bbe3f7f16867157c5c9f7c907f0635b",
+          "expected_text_sha256": "0d904d901cbb20c959d5242400ecbd4e79b51522633c3a4beaeccd0a5e6afc9e",
           "provenance": {
             "audit": "semantic-composition-width-audit-2026-08-09",
             "context": "ITEM_MASTERSEAL.useDescTextId",
@@ -74,10 +74,10 @@
             ]
           },
           "reason": "Apply the reviewed target-semantic correction without modifying the pinned raw regional snapshot.",
-          "replacement_text": "使10级以上尚未转职的\n下位职业单位转职"
+          "replacement_text": "使10级以上尚未转职的[CTRL:0001]下位职业单位转职"
         },
         "0x04F5": {
-          "expected_text_sha256": "0ca3297516a986c1c8b45a4650dba82dc1257a0c295ecd5485565391ca92cd26",
+          "expected_text_sha256": "c52bdf8f5632be91e78f1daf069d78db97f89d4b3221da9410ec2aa9c214d963",
           "provenance": {
             "audit": "semantic-composition-width-audit-2026-08-09",
             "context": "0x04F5->0x0560",
@@ -86,10 +86,10 @@
             ]
           },
           "reason": "Apply the reviewed target-semantic correction without modifying the pinned raw regional snapshot.",
-          "replacement_text": "回避敌人攻击的能力\n会降低敌人的命中率"
+          "replacement_text": "回避敌人攻击的能力[CTRL:0001]会降低敌人的命中率"
         },
         "0x0505": {
-          "expected_text_sha256": "f94ada80b1cc7d2b8a132fa249315bd3b18a25fb42fb6e664cfddb772ed760e2",
+          "expected_text_sha256": "0d5c1f3c9f4eaa612760661aba1842b1c8c204a60877d1b6ab62978fb201c088",
           "provenance": {
             "audit": "semantic-composition-width-audit-2026-08-09",
             "context": "0x0505->0x0570",
@@ -98,10 +98,10 @@
             ]
           },
           "reason": "Apply the reviewed target-semantic correction without modifying the pinned raw regional snapshot.",
-          "replacement_text": "被对手的武器相克\n命中率与威力会下降\n但仍会对敌人造成较高伤害"
+          "replacement_text": "被对手的武器相克[CTRL:0001]命中率与威力会下降[CTRL:0001]但仍会对敌人造成较高伤害"
         },
         "0x053A": {
-          "expected_text_sha256": "5e9a906afbef1c36ddbdc02a7cf9f4121d03e8c1c8006b910b9d9ad80466c6c2",
+          "expected_text_sha256": "c7ec28d2e3a14c0b8b94b06bf83554a5fda570e5813342dbd772f8754edd36b1",
           "provenance": {
             "audit": "semantic-composition-width-audit-2026-08-09",
             "context": "0x053A->0x057B",
@@ -110,10 +110,10 @@
             ]
           },
           "reason": "Apply the reviewed target-semantic correction without modifying the pinned raw regional snapshot.",
-          "replacement_text": "可以整理单位的\n所持物品\n名称显示为灰色的物品\n该单位无法使用"
+          "replacement_text": "可以整理单位的[CTRL:0001]所持物品[CTRL:0001]名称显示为灰色的物品[CTRL:0001]该单位无法使用"
         },
         "0x05A4": {
-          "expected_text_sha256": "897a966989bca07ced3fb8b89d76ad56e0c0395cefcc5938534abe60f464642a",
+          "expected_text_sha256": "30ade13ee469f6ec6614e8fb935f71dbda35544356128a3a4483a12270079f67",
           "provenance": {
             "audit": "semantic-composition-width-audit-2026-08-09",
             "context": "0x05A4->0x0612",
@@ -122,10 +122,10 @@
             ]
           },
           "reason": "Apply the reviewed target-semantic correction without modifying the pinned raw regional snapshot.",
-          "replacement_text": "选择单位时显示的\n红色区域是攻击范围。\n将光标移到敌方单位上时，\n也会显示该敌人的攻击范围。\n接近敌人前请先确认。"
+          "replacement_text": "选择单位时显示的[CTRL:0001]红色区域是攻击范围。[CTRL:0001]将光标移到敌方单位上时，[CTRL:0001]也会显示该敌人的攻击范围。[CTRL:0001]接近敌人前请先确认。"
         },
         "0x05D2": {
-          "expected_text_sha256": "67d8fc9957da3e27b9338e8151ed3fffd917d470fe9bd33a16905a72011a162e",
+          "expected_text_sha256": "d2de248a82114bb6cdc04ded133d652c2ec6ac1a5269a6e93ac11e130d9ac016",
           "provenance": {
             "audit": "semantic-composition-width-audit-2026-08-09",
             "context": "0x05D2->0x0640",
@@ -134,7 +134,7 @@
             ]
           },
           "reason": "Apply the reviewed target-semantic correction without modifying the pinned raw regional snapshot.",
-          "replacement_text": "进行战斗或使用杖可获得EXP。\nEXP达到100时等级提升1。\n升级时，『力』、『技』等\n能力数值可能会上升，\n使单位变得更强。\n等级上限为20。"
+          "replacement_text": "进行战斗或使用杖可获得EXP。[CTRL:0001]EXP达到100时等级提升1。[CTRL:0001]升级时，『力』、『技』等[CTRL:0001]能力数值可能会上升，[CTRL:0001]使单位变得更强。[CTRL:0001]等级上限为20。"
         },
         "0x06E2": {
           "expected_text_sha256": "e10029757243a8f5bbe8ca2581fa1c07b60af2a94ec7a405feee7966bdebe1b2",
@@ -173,7 +173,7 @@
           "replacement_text": "退出"
         },
         "0x088E": {
-          "expected_text_sha256": "0daa056553357e26bb0267293da9deff48fbcf7ef3e5b1a8fb6b2d9fd57d18b6",
+          "expected_text_sha256": "e75da1b02580910e4f75a2b3a1c684021bd8ee95015bfc7d4d769527d206fcff",
           "provenance": {
             "audit": "semantic-composition-width-audit-2026-08-09",
             "context": "EventScrWM_MessedEventscr_0.text[1]",
@@ -184,14 +184,13 @@
           "reason": "Apply the reviewed target-semantic correction without modifying the pinned raw regional snapshot.",
           "replacements": [
             {
-              "expected": "塔会随着每结束一章\n而自动增加1层。",
-              "replacement": "每通关一张塔内地图\n即可进入下一层。"
+              "expected": "塔会随着每结束一章[CTRL:0001]而自动增加1层。",
+              "replacement": "每通关一张塔内地图[CTRL:0001]即可进入下一层。"
             }
-
           ]
         },
         "0x0897": {
-          "expected_text_sha256": "da92c0b8e5892137c61758768bcd0657bfc2431c71ecda96d45bd631a64008cb",
+          "expected_text_sha256": "ebfe19fcc6594d97cedda3256d8a47aee34a52469901b7fe804d65a499e34cdc",
           "provenance": {
             "audit": "semantic-composition-width-audit-2026-08-09",
             "context": "EventScrWM_MessedEventscr_4.text[1]",
@@ -202,13 +201,13 @@
           "reason": "Apply the reviewed target-semantic correction without modifying the pinned raw regional snapshot.",
           "replacements": [
             {
-              "expected": "但是，贾哈那王宫受到了古拉德\n军的攻击后，目前也已经陷落。",
-              "replacement": "但是，贾哈那王宫仍遭古拉德\n军围攻，眼看就要陷落。"
+              "expected": "但是，贾哈那王宫受到了古拉德[CTRL:0001]军的攻击后，目前也已经陷落。",
+              "replacement": "但是，贾哈那王宫仍遭古拉德[CTRL:0001]军围攻，眼看就要陷落。"
             }
           ]
         },
         "0x08A3": {
-          "expected_text_sha256": "fac8238c5475616ce1d7118459282632d078217b58f58409266c4becc8f10b83",
+          "expected_text_sha256": "449fab3bbf348e2062fa93c485be9e441dcc8bbec217294abd175b32defb1fa1",
           "provenance": {
             "audit": "semantic-composition-width-audit-2026-08-09",
             "context": "EventScrWM_MessedEventscr_42.text[1]",
@@ -219,13 +218,13 @@
           "reason": "Apply the reviewed target-semantic correction without modifying the pinned raw regional snapshot.",
           "replacements": [
             {
-              "expected": "只要能够守住最后的【圣石】，\n还是能够成功打倒魔物的。",
-              "replacement": "必须守护最后的【圣石】，\n以阻止魔王复活。"
+              "expected": "只要能够守住最后的【圣石】，[CTRL:0001]还是能够成功打倒魔物的。",
+              "replacement": "必须守护最后的【圣石】，[CTRL:0001]以阻止魔王复活。"
             }
           ]
         },
         "0x08BB": {
-          "expected_text_sha256": "c92c61517bd912038de6275b87417020b963c32946559fc57a8179d37216a2c4",
+          "expected_text_sha256": "0826f612c3358ff5060187ddf9f72e4f1cbf0dbe6ad3c260b03ba623dfcd53b0",
           "provenance": {
             "audit": "semantic-composition-width-audit-2026-08-09",
             "context": "EventScrWM_MessedEventscr_49.text[1]",
@@ -236,13 +235,13 @@
           "reason": "Apply the reviewed target-semantic correction without modifying the pinned raw regional snapshot.",
           "replacements": [
             {
-              "expected": "只要能够守住最后的【圣石】，\n还是能够成功打倒魔物的。",
-              "replacement": "必须守护最后的【圣石】，\n以阻止魔王复活。"
+              "expected": "只要能够守住最后的【圣石】，[CTRL:0001]还是能够成功打倒魔物的。",
+              "replacement": "必须守护最后的【圣石】，[CTRL:0001]以阻止魔王复活。"
             }
           ]
         },
         "0x08C7": {
-          "expected_text_sha256": "ef09c918bf8f282c92c3375791a5b92ef8829eff8e4eea3f8c60ce2bec510ef2",
+          "expected_text_sha256": "f6401cc22fc47a07455941215c57e693cb7ab42f0e06ba6b9606db999db142e2",
           "provenance": {
             "audit": "semantic-composition-width-audit-2026-08-09",
             "context": "EventScr_Prologue_RenaisThroneCutscene.text[6]",
@@ -253,13 +252,13 @@
           "reason": "Apply the reviewed target-semantic correction without modifying the pinned raw regional snapshot.",
           "replacements": [
             {
-              "expected": "你一人的话不容易遭到敌人\n的袭击，同时也能立下大功。",
-              "replacement": "单骑行动更容易避开古拉德军\n的耳目。"
+              "expected": "你一人的话不容易遭到敌人[CTRL:0001]的袭击，同时也能立下大功。",
+              "replacement": "单骑行动更容易避开古拉德军[CTRL:0001]的耳目。"
             }
           ]
         },
         "0x091A": {
-          "expected_text_sha256": "22b1f0c38efa0a5aef860122c999fedea5b4ab0e4cf4783f5ff6688688ab0d13",
+          "expected_text_sha256": "cb0ec2bddd68494fe9bf9005b54afc0473a32b80717672722d923e63ae87bb52",
           "provenance": {
             "audit": "semantic-composition-width-audit-2026-08-09",
             "context": "EventScr_Ch2_BeginningScene.text[7]",
@@ -270,13 +269,13 @@
           "reason": "Apply the reviewed target-semantic correction without modifying the pinned raw regional snapshot.",
           "replacements": [
             {
-              "expected": "国力也衰弱得不成样了……[CTRL:0103]虽然现在我们应该尽量避免\n做些引人注目的举动……",
-              "replacement": "这是我们遇到的第一个两难。[CTRL:0103]我们必须尽快行动，尽量避免\n引人注目，可是……"
+              "expected": "国力也衰弱得不成样了……[CTRL:0103]虽然现在我们应该尽量避免[CTRL:0001]做些引人注目的举动……",
+              "replacement": "这是我们遇到的第一个两难。[CTRL:0103]我们必须尽快行动，尽量避免[CTRL:0001]引人注目，可是……"
             }
           ]
         },
         "0x0929": {
-          "expected_text_sha256": "755af8b92cea550306bde418c345220492e3053579ed07298ba194658cabc15b",
+          "expected_text_sha256": "9e605a504d7af7f2e16270d336535af1f6214f962f85af5244fd426866effc49",
           "provenance": {
             "audit": "semantic-composition-width-audit-2026-08-09",
             "context": "EventScr_Ch2_Village1.text[1]",
@@ -291,13 +290,13 @@
               "replacement": "我叫艾莉娜。"
             },
             {
-              "expected": "佣兵团的艾莉斯？[CTRL:0103]看来你们现在没什么事情，\n那么就可以放心了。",
-              "replacement": "佣兵团的艾莉娜？[CTRL:0103]我觉得你似乎还隐瞒着什么，\n不过别担心，我无意干涉。"
+              "expected": "佣兵团的艾莉斯？[CTRL:0103]看来你们现在没什么事情，[CTRL:0001]那么就可以放心了。",
+              "replacement": "佣兵团的艾莉娜？[CTRL:0103]我觉得你似乎还隐瞒着什么，[CTRL:0001]不过别担心，我无意干涉。"
             }
           ]
         },
         "0x093F": {
-          "expected_text_sha256": "1c685e366d5eb54ca099d23a69001b511a0158d5e525f548d2a41a8e4ae80617",
+          "expected_text_sha256": "18f9c6d7a40875e47fb4f081fb9fabaf67202cea7bbdedee5b3419136e3f43f8",
           "provenance": {
             "audit": "semantic-composition-width-audit-2026-08-09",
             "context": "0x093F->0x097F",
@@ -314,7 +313,7 @@
           ]
         },
         "0x094F": {
-          "expected_text_sha256": "b5f67f401e57925b628ea506eac75b7e20c8cadd48c3a90148df1134e0f8b33d",
+          "expected_text_sha256": "11d2efeca7bcf3bb7223755b090169d3e4285f39fa48a0f35e7d736569c257c5",
           "provenance": {
             "audit": "semantic-composition-width-audit-2026-08-09",
             "context": "EventScr_Ch3_5.text[1]",
@@ -325,13 +324,13 @@
           "reason": "Apply the reviewed target-semantic correction without modifying the pinned raw regional snapshot.",
           "replacements": [
             {
-              "expected": "我从小时候起就经常与叔叔一起\n外出打猎……",
-              "replacement": "我小时候常和祖父一起\n外出打猎……"
+              "expected": "我从小时候起就经常与叔叔一起[CTRL:0001]外出打猎……",
+              "replacement": "我小时候常和祖父一起[CTRL:0001]外出打猎……"
             }
           ]
         },
         "0x09B3": {
-          "expected_text_sha256": "d4df0ebcd7ba21d953361d6eb019cf259d61c6f0bf5c789968900517a6dddec8",
+          "expected_text_sha256": "9acf9585e1a3b9406b98b55ae5e7d71571e16261ffd83b01dff5303a404fc11b",
           "provenance": {
             "audit": "semantic-composition-width-audit-2026-08-09",
             "context": "EventScr_Ch6_EndingScene.text[2]",
@@ -342,17 +341,17 @@
           "reason": "Apply the reviewed target-semantic correction without modifying the pinned raw regional snapshot.",
           "replacements": [
             {
-              "expected": "我必须告诉艾瑞珂公主\n您不可了。",
-              "replacement": "我必须把一切都告诉\n艾瑞珂公主您了。"
+              "expected": "我必须告诉艾瑞珂公主[CTRL:0001]您不可了。",
+              "replacement": "我必须把一切都告诉[CTRL:0001]艾瑞珂公主您了。"
             },
             {
-              "expected": "这么说的话，拥有相同【圣石】的\n哥哥他现在……",
-              "replacement": "这么说，戴着另一只腕轮的\n哥哥现在……"
+              "expected": "这么说的话，拥有相同【圣石】的[CTRL:0001]哥哥他现在……",
+              "replacement": "这么说，戴着另一只腕轮的[CTRL:0001]哥哥现在……"
             }
           ]
         },
         "0x0A2B": {
-          "expected_text_sha256": "4c328bf70c17b9c087302403866e82c0cf484d32f163c3ec27d3f3fd37109ddf",
+          "expected_text_sha256": "73dde374da3e8f2d913970a0f76cfe430b79f29ee7bb8c5f3f308332b7bf1e0d",
           "provenance": {
             "audit": "semantic-composition-width-audit-2026-08-09",
             "context": "0x0A2B->0x0A6A",
@@ -369,7 +368,7 @@
           ]
         },
         "0x0A7B": {
-          "expected_text_sha256": "957291e5fea9475729a36fa3fe96eec1afac9bf16e8eacf3fbe4f6df49e3785d",
+          "expected_text_sha256": "0bcb6c0caf95e74e70f3ee69d33e5b2dc56b57fc00947e5f6bc2f78d3ca28ad0",
           "provenance": {
             "audit": "semantic-composition-width-audit-2026-08-09",
             "context": "EventScr_Ch10B_0.text[2]",
@@ -380,13 +379,13 @@
           "reason": "Apply the reviewed target-semantic correction without modifying the pinned raw regional snapshot.",
           "replacements": [
             {
-              "expected": "可是，愉快的时间\n不能延长很久啊……",
-              "replacement": "这份乐趣\n必须尽量延长才行……"
+              "expected": "可是，愉快的时间[CTRL:0001]不能延长很久啊……",
+              "replacement": "这份乐趣[CTRL:0001]必须尽量延长才行……"
             }
           ]
         },
         "0x0A94": {
-          "expected_text_sha256": "773ef6ecf7e7f064b62ef1d6b95d5911b21b9ac2f256c8caeaf96d98a2a47198",
+          "expected_text_sha256": "88bd4dc345ddc23f8c2e6488fb47b85b2b1b6195dfe98563ae64cba611781438",
           "provenance": {
             "audit": "semantic-composition-width-audit-2026-08-09",
             "context": "EventScr_Ch11B_1.text[1]",
@@ -397,13 +396,13 @@
           "reason": "Apply the reviewed target-semantic correction without modifying the pinned raw regional snapshot.",
           "replacements": [
             {
-              "expected": "我们也能够\n掌握敌人的行动了！",
-              "replacement": "我们也登上敌船，\n把它夺过来！"
+              "expected": "我们也能够[CTRL:0001]掌握敌人的行动了！",
+              "replacement": "我们也登上敌船，[CTRL:0001]把它夺过来！"
             }
           ]
         },
         "0x0ABA": {
-          "expected_text_sha256": "cb1bb48369b8105bd985ba0013e3c4579ce3c09a70320a504bef7581bc9f6de4",
+          "expected_text_sha256": "ad46b1875689a82c8d108f7059e6a7d3f8e726c5942bf0baef394e428855f585",
           "provenance": {
             "audit": "semantic-composition-width-audit-2026-08-09",
             "context": "EventScr_Ch13B_6.Selena-village",
@@ -414,13 +413,13 @@
           "reason": "Apply the reviewed target-semantic correction without modifying the pinned raw regional snapshot.",
           "replacements": [
             {
-              "expected": "拜托了。请你们\n救救塞莱娜。",
-              "replacement": "拜托了。请不要\n伤害塞莱娜。"
+              "expected": "拜托了。请你们[CTRL:0001]救救塞莱娜。",
+              "replacement": "拜托了。请不要[CTRL:0001]伤害塞莱娜。"
             }
           ]
         },
         "0x0AC7": {
-          "expected_text_sha256": "56f3a32a9abfaf1f587d8dd9196b85d5498693841b7145a68eff52447a064ee8",
+          "expected_text_sha256": "b778ddd9255c0ce1ef2e4d85bc85d497894c43bad9ab66cf901c4f45004cb4c7",
           "provenance": {
             "audit": "semantic-composition-width-audit-2026-08-09",
             "context": "chapter=Ch14B/script=ending/message-ordinal=2",
@@ -431,13 +430,25 @@
           "reason": "Apply the reviewed target-semantic correction without modifying the pinned raw regional snapshot.",
           "replacements": [
             {
-              "expected": "古拉德和弗雷利亚的\n【圣石】都完蛋了。[CTRL:0103]贾哈那的【圣石】也是如此……",
-              "replacement": "弗雷利亚和鲁内斯的\n【圣石】已经化为尘埃。[CTRL:0103]贾哈那的【圣石】也即将步其后尘……"
+              "expected": "古拉德和弗雷利亚的[CTRL:0001]【圣石】都完蛋了。[CTRL:0103]贾哈那的【圣石】也是如此……",
+              "replacement": "弗雷利亚和鲁内斯的[CTRL:0001]【圣石】已经化为尘埃。[CTRL:0103]贾哈那的【圣石】也即将步其后尘……"
             }
           ]
         },
+        "0x0BA3": {
+          "expected_text_sha256": "d2421e7819a34f123baf99e108ebe0af730f387f6abd4490e0b830283bdc87e1",
+          "provenance": {
+            "audit": "semantic-composition-width-audit-2026-08-09",
+            "context": "0x0BA3->0x0BE3 support-conversation line",
+            "target_ids": [
+              "0x0BE3"
+            ]
+          },
+          "reason": "Correct the reviewed Chinese meaning while preserving every face, pause, line, and scene control.",
+          "replacement_text": "[CTRL:0009][CTRL:0010][CTRL:011C][CTRL:0009][CTRL:0017]大家不要紧张，[CTRL:0001]放松点……[CTRL:0003][CTRL:0017]"
+        },
         "0x0BC0": {
-          "expected_text_sha256": "f43ac9e867f418ad594f9cd8073761e70a3ee4708ac4dac2c4c14b2710bc84ee",
+          "expected_text_sha256": "1148c4f58beccb8648a522ef4ed298103d8055c1050b67040f37a7a60d2d43db",
           "provenance": {
             "audit": "semantic-composition-width-audit-2026-08-09",
             "context": "0x0BC0->0x0C00",
@@ -448,17 +459,17 @@
           "reason": "Apply the reviewed target-semantic correction without modifying the pinned raw regional snapshot.",
           "replacements": [
             {
-              "expected": "尽管，现在没有危险，\n那也只是暂时的。",
-              "replacement": "只是我也不知道\n他现在是否平安。"
+              "expected": "尽管，现在没有危险，[CTRL:0001]那也只是暂时的。",
+              "replacement": "只是我也不知道[CTRL:0001]他现在是否平安。"
             },
             {
-              "expected": "但是，我双保胎的哥哥，\n他现在随时都会有生命危险。",
-              "replacement": "但是，我的双胞胎哥哥\n如今正身陷险境。"
+              "expected": "但是，我双保胎的哥哥，[CTRL:0001]他现在随时都会有生命危险。",
+              "replacement": "但是，我的双胞胎哥哥[CTRL:0001]如今正身陷险境。"
             }
           ]
         },
         "0x0BDC": {
-          "expected_text_sha256": "a322518494ce03d00ad0cb1d3d78c155704bac6ce20a7a52e76da80fe322a9d6",
+          "expected_text_sha256": "7387ff3f3058070582d47b82c2334dd4e8f4a9a1fff98a07b746ef0b916a7353",
           "provenance": {
             "audit": "semantic-composition-width-audit-2026-08-09",
             "context": "0x0BDC->0x0C1C",
@@ -469,13 +480,13 @@
           "reason": "Apply the reviewed target-semantic correction without modifying the pinned raw regional snapshot.",
           "replacements": [
             {
-              "expected": "虽然我基本上是不相信\n以利益为纽带的人际关系的……",
-              "replacement": "虽然我基本不相信\n没有利害关系的人际关系……"
+              "expected": "虽然我基本上是不相信[CTRL:0001]以利益为纽带的人际关系的……",
+              "replacement": "虽然我基本不相信[CTRL:0001]没有利害关系的人际关系……"
             }
           ]
         },
         "0x0CA4": {
-          "expected_text_sha256": "1a4d0e304174911239632daef5fcfa9d01cc29207b9a2d2341987b3c2922f737",
+          "expected_text_sha256": "bb70d877b099e1d7a5c2f593e0d9556ccde80fb82624141b66c64a983ce8e9da",
           "provenance": {
             "audit": "semantic-composition-width-audit-2026-08-09",
             "context": "CHARACTER_ARTUR+CHARACTER_JOSHUA.A",
@@ -495,6 +506,18 @@
     },
     "fe8j_indexed": {
       "entries": {
+        "0x0046": {
+          "expected_text_sha256": "4642a3ce5b84075d2067a8144fca5cfe202a006a074a4f7cf69debe734cde6bf",
+          "provenance": {
+            "audit": "semantic-composition-width-audit-2026-08-09",
+            "context": "gLinkArenaRuleData[0].labelTextId, 64px before first option",
+            "target_ids": [
+              "0x0776"
+            ]
+          },
+          "reason": "Use a concise natural Japanese rule label that fits the fixed 64-pixel allocation.",
+          "replacement_text": "敵を隠す"
+        },
         "0x00F1": {
           "expected_text_sha256": "387fc100f494854505caae5ab65791fecc033dc49eed7188f54d6ec846aaffa7",
           "provenance": {

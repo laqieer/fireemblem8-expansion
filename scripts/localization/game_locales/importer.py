@@ -15,6 +15,7 @@ from .controls import (
     SOURCE_DIALECT_JAPANESE,
     ControlSyntaxError,
     canonical_control_token,
+    normalize_physical_line_separators,
     normalize_source_controls,
     validate_canonical_text,
 )
@@ -175,6 +176,19 @@ def _normalize_indexed_messages(
                 source_name=source_name,
                 source_line=message.marker_line + 1,
             ),
+            message.marker_line,
+        )
+        for message in messages
+    )
+
+
+def _normalize_canonical_line_separators(
+    messages: Iterable[IndexedMessage],
+) -> Tuple[IndexedMessage, ...]:
+    return tuple(
+        IndexedMessage(
+            message.id,
+            normalize_physical_line_separators(message.text),
             message.marker_line,
         )
         for message in messages
@@ -463,10 +477,12 @@ def build_locale_artifacts(
         japanese,
         source=overrides.sources[JP_SOURCE_ID],
     )
+    japanese = _normalize_canonical_line_separators(japanese)
     chinese_indexed, applied_chinese_overrides = apply_indexed_overrides(
         chinese.indexed,
         source=overrides.sources[CN_SOURCE_ID],
     )
+    chinese_indexed = _normalize_canonical_line_separators(chinese_indexed)
     chinese = ChineseSource(
         chinese_indexed,
         chinese.raw_occurrences,

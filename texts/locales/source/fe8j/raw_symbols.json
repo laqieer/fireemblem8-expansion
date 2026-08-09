@@ -1,6 +1,5 @@
 {
-  "kind": "fe8j-raw-provider-catalog",
-  "locale_id": "ja",
+  "kind": "fe8j-raw-symbol-source-snapshot",
   "provider_count": 119,
   "providers": {
     "0x0032": {
@@ -481,10 +480,5 @@
     }
   },
   "schema_version": 1,
-  "source_layout": "FE8J-raw-symbol",
-  "source_revision": "bf424414d",
-  "source_snapshot": {
-    "path": "../source/fe8j/raw_symbols.json",
-    "sha256": "6d14610ba6a3f8284a7e9501534f6c1ebd44696f0d4c0f5371d3b57a0756e8e2"
-  }
+  "source_revision": "bf424414d"
 }

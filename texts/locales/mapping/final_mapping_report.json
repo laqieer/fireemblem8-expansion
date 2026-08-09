@@ -1,18 +1,18 @@
 {
   "authoritative": false,
   "inputs": {
-    "audit_semantic_corrections_sha256": "0d492ac578c469483eef56963d762f50a37cb3e0bfa9896adff82e9ced5cd574",
-    "current_pre_authored_target_map_sha256": "7191302ac8838b18efd989471eb83282c332ed4162f0099987517f49e8455fa2",
-    "ending_layout_metrics_sha256": "98e82d2c0716d6457d121a1393568bc39c8b29bd8df0f17d1b298d2f6a407f7d",
-    "febuilder_alignment_evidence_sha256": "b224b3ba52d61546cddb9cef37b4e9c07a8ad35ac7f2c68e047656db68a68589",
+    "audit_semantic_corrections_sha256": "898cfce0d2c4d480b9318d975bfa1dda9ec44a3dbad749d6f890ada47e7d9891",
+    "current_pre_authored_target_map_sha256": "a96de3110fa433f593b60654a61b4c1fbc78a7268d7ddda3030765dd9607c341",
+    "ending_layout_metrics_sha256": "2a6c1bf79ca8b8a6c06bdde196cd36fc00dd32029c43b7dc01dfb103e26a3890",
+    "febuilder_alignment_evidence_sha256": "abf3f30c5557c7555eb7c13b7356e08297563ac261a97d263d6a9052462f0cab",
     "historical_pre_authored_target_map_sha256": "63b021274b7865c0d76cb1556fa84cc1dfdbcadab38037c8ccf6eeb9cdc3591a",
-    "original_target_map_sha256": "6abbc956576d823de7430da267212f6c050fec5267cb7a6cb6819f77381ae4bd",
+    "original_target_map_sha256": "a4c13fb79ba1df1e8996f0781d115a1f278f3ca3f994a3b8c7fe3392bf6c6ad8",
     "runtime_authored_catalog_sha256": {
-      "ja": "767960fa8cbcc1e5522180f442821ee0195b8d8f46e99b7c3d36154f9bc381de",
-      "zh-Hans": "cb6d74106386784f7c0bf7d1620ac3dc56fd42f129855ed8b21989d26f2079c8"
+      "ja": "f163bb37210b08916849a1972484b39aeb9a78f1d60950ca0653b772236e15e7",
+      "zh-Hans": "ca9d4c9b0d96e50ea35f4bcadbe8568e656e98b7b2eee89af078b409b956f7c5"
     },
     "source_authored_queue_sha256": "ffdff913a552076928d5cb06634ed75d8983b65c05bb4ecec9aa2b610ffe6ad6",
-    "structural_completion_evidence_sha256": "58ef1d2faf9bb9ee4f35e069f156f07774a9f19d82f59e1ed8f4eea22f105f44"
+    "structural_completion_evidence_sha256": "d13d66746d014511479fe93661c05d5d70d4c65c6c1969a2dbb5ab7922b92b85"
   },
   "kind": "fe8u-final-mapping-report",
   "note": "Evidence report for the deterministic final-mapping promotion pass. The source queue is retained byte-identically as fulfilled history.",

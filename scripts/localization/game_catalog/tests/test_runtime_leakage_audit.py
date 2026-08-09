@@ -185,7 +185,10 @@ class RuntimeLeakageAuditTests(unittest.TestCase):
             self.assertEqual(actual_ja[target_id], payload)
             self.assertNotIn("MSG", _latin_span_counts(payload))
         for target_id, payload in expected_zh.items():
-            self.assertEqual(actual_zh[target_id], payload)
+            self.assertEqual(
+                actual_zh[target_id],
+                payload.replace("\n", "[CTRL:0001]"),
+            )
         self.assertNotIn("OK", _latin_span_counts(actual_zh[0x0CC3]))
         self.assertIn("只要按照同样的办法就行了", actual_zh[0x0CC3])
         self.assertNotIn("就就行了", actual_zh[0x0CC3])

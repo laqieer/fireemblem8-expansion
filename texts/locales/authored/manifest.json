@@ -358,7 +358,7 @@
         },
         {
           "path": "texts/locales/authored/shards/help_shop.ja.json",
-          "sha256": "8ff3bfb674cd987c9b1d0b42b73561e1c1ca55d51210458c0eb337862fa5d4ab",
+          "sha256": "79b1e89bb40851aba2e13c6799cdba626214e1e625a1298476a843877c19d7cb",
           "target_count": 81
         },
         {
@@ -378,7 +378,7 @@
       "shards": [
         {
           "path": "texts/locales/authored/shards/audit_corrections.zh-Hans.json",
-          "sha256": "12ab048832356029f35ee2a4ded08a9d88313eec1e50f67d3d56d3a8ebe8b810",
+          "sha256": "ae16267f6c8e43c01c4472a3c0f19e4c76c6fb538f328ac4f7de620bd8d344ca",
           "target_count": 37
         },
         {
@@ -393,7 +393,7 @@
         },
         {
           "path": "texts/locales/authored/shards/help_shop.zh-Hans.json",
-          "sha256": "21cddb576ed0ecac0a03843021c86c3477db3f7ade03e50be3a87f615e521b0b",
+          "sha256": "bc07d238486fb53b3a139c0aa9dd5e17a26f7e1106a5411d6b521b7f29af5421",
           "target_count": 81
         },
         {
@@ -403,7 +403,7 @@
         },
         {
           "path": "texts/locales/authored/shards/semantic_corrections.zh-Hans.json",
-          "sha256": "4e065de9216e74894d1c0f20edaa0a99db6299544594d1981fb31b64f98a401c",
+          "sha256": "1feaf0785e6809c8d1ec2b5ac6c72468bede21f5ec1519b168d3293a6ff6bdde",
           "target_count": 27
         }
       ]

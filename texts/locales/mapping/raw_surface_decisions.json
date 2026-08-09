@@ -355,8 +355,8 @@
         {
           "anchors": [
             "PROMO_OPTION_1_NAME",
-            "ClassChgMenuItem_OnTextDraw",
-            "ClassChgMenu_GetDisplayLabel"
+            "ClassChgMenu_GetDisplayLabel",
+            "ClassChgMenuItem_OnTextDraw"
           ],
           "path": "src/classchg-menuselect.c"
         }
@@ -382,8 +382,8 @@
         {
           "anchors": [
             "PROMO_OPTION_2_NAME",
-            "ClassChgMenuItem_OnTextDraw",
-            "ClassChgMenu_GetDisplayLabel"
+            "ClassChgMenu_GetDisplayLabel",
+            "ClassChgMenuItem_OnTextDraw"
           ],
           "path": "src/classchg-menuselect.c"
         }
@@ -409,8 +409,8 @@
         {
           "anchors": [
             "PROMO_OPTION_3_NAME",
-            "ClassChgMenuItem_OnTextDraw",
-            "ClassChgMenu_GetDisplayLabel"
+            "ClassChgMenu_GetDisplayLabel",
+            "ClassChgMenuItem_OnTextDraw"
           ],
           "path": "src/classchg-menuselect.c"
         }
@@ -486,8 +486,8 @@
         },
         {
           "anchors": [
-            "EXP_MSG_RAW_SURFACE_DIAGNOSTIC_BUILD_TIMESTAMP",
-            "ExpansionLocale_ResolveCurrent"
+            "ExpansionLocale_ResolveCurrent",
+            "EXP_MSG_RAW_SURFACE_DIAGNOSTIC_BUILD_TIMESTAMP"
           ],
           "path": "src/fe3_dummy.c"
         }
@@ -499,8 +499,8 @@
       "runtime_consumers": [
         {
           "anchors": [
-            "EXP_MSG_RAW_SURFACE_DIAGNOSTIC_BUILD_TIMESTAMP",
-            "ExpansionLocale_ResolveCurrent"
+            "ExpansionLocale_ResolveCurrent",
+            "EXP_MSG_RAW_SURFACE_DIAGNOSTIC_BUILD_TIMESTAMP"
           ],
           "path": "src/fe3_dummy.c",
           "symbol": "PrintDebugBuildDateAndTime"

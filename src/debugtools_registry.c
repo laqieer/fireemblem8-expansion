@@ -120,6 +120,13 @@ static ExpansionMsgId DebugToolsHub_ResolveBuiltinLabelMsgId(u16 id)
     return sBuiltinActionLabelMsgIds[id];
 }
 
+static int DebugToolsHub_UsesCjkText(void)
+{
+    ExpansionLocaleId locale = ExpansionLocale_GetCurrent();
+
+    return locale == EXPANSION_LOCALE_JA || locale == EXPANSION_LOCALE_ZH_HANS;
+}
+
 /* onDraw for a builtin action's hub row only -- resolved fresh every
  * redraw (menu redraws happen on every hub open/locale-settings
  * round-trip), so a locale switch is picked up on the very next render
@@ -185,6 +192,11 @@ static void DebugToolsHub_BuildMenuItems(void)
     /* Reserved Back/Exit entry -- always the entry right after the last
      * registered action, never edited by contributors. */
     sHubMenuItemDefs[sActionCount].name = "Back";
+#ifdef MODERN
+    sHubMenuItemDefs[sActionCount].helpMsgId = EXP_MSG_FRAMEWORK_BACK;
+    sHubMenuItemDefs[sActionCount].onDraw =
+        DebugToolsHub_BuiltinActionRowDraw;
+#endif
     sHubMenuItemDefs[sActionCount].isAvailable = MenuAlwaysEnabled;
     sHubMenuItemDefs[sActionCount].onSelected = DebugToolsHub_BackSelected;
 
@@ -193,15 +205,40 @@ static void DebugToolsHub_BuildMenuItems(void)
 
 static void DebugToolsHub_ShowDiagnostics(void)
 {
-    char buf[24];
+    char buf[64];
 
-    SetupDebugFontForBG(2, 0);
+#ifdef MODERN
+    if (sLastResult != DEBUGTOOLS_OK)
+        sprintf(buf, "%s %d",
+            ExpansionLocale_ResolveCurrent(EXP_MSG_DEBUG_STATUS_HUB_ERROR),
+            (int)sLastResult);
+    else
+        sprintf(buf, "%s %d/%d",
+            ExpansionLocale_ResolveCurrent(EXP_MSG_DEBUG_STATUS_HUB),
+            sActionCount, DEBUGTOOLS_ACTION_MAX);
 
+    if (DebugToolsHub_UsesCjkText())
+    {
+        BG_Fill(BG_GetMapBuffer(2), 0);
+        PutDrawText(
+            NULL,
+            BG_GetMapBuffer(2) + TILEMAP_INDEX(1, 1),
+            TEXT_COLOR_SYSTEM_WHITE,
+            0,
+            24,
+            buf);
+        BG_EnableSyncByMask(BG2_SYNC_BIT);
+        gLCDControlBuffer.dispcnt.bg2_on = 1;
+        return;
+    }
+#else
     if (sLastResult != DEBUGTOOLS_OK)
         sprintf(buf, "DBGTOOLS ERR %d", (int)sLastResult);
     else
         sprintf(buf, "DBGTOOLS %d/%d", sActionCount, DEBUGTOOLS_ACTION_MAX);
+#endif
 
+    SetupDebugFontForBG(2, 0);
     PrintDebugStringToBG(BG_GetMapBuffer(2) + TILEMAP_INDEX(1, 1), buf);
 
     gLCDControlBuffer.dispcnt.bg2_on = 1;
@@ -313,11 +350,19 @@ enum DebugToolsResult DebugTools_OpenHub(void)
     DebugTools_RegisterExtendedToolActions();
 
     DebugToolsHub_BuildMenuItems();
-    DebugToolsHub_ShowDiagnostics();
-
     gDebugToolsProbe.hubOpenCount++;
     sHubActive = 1;
 
+#ifdef MODERN
+    if (DebugToolsHub_UsesCjkText())
+    {
+        StartOrphanMenu(&gDebugToolsHubMenuDef);
+        DebugToolsHub_ShowDiagnostics();
+        return DEBUGTOOLS_OK;
+    }
+#endif
+
+    DebugToolsHub_ShowDiagnostics();
     StartOrphanMenu(&gDebugToolsHubMenuDef);
 
     return DEBUGTOOLS_OK;

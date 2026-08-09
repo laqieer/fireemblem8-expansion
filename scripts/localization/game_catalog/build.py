@@ -169,7 +169,10 @@ def _load_raw_records(path: Path) -> Dict[str, str]:
 
 def _load_ja_raw_records(path: Path) -> Dict[int, RawProvider]:
     try:
-        return load_ja_raw_providers(_load_json(path))
+        return load_ja_raw_providers(
+            _load_json(path),
+            source_root=Path(path).parent,
+        )
     except RawProviderError as error:
         raise GameCatalogError(f"{path}: {error}") from error
 
@@ -251,6 +254,10 @@ def encode_canonical_text(text: str) -> bytes:
     payload = bytearray()
     for unit in units:
         if isinstance(unit, str):
+            if "\r" in unit or "\n" in unit:
+                raise GameCatalogError(
+                    "literal text contains a physical newline; use [CTRL:0001]"
+                )
             encoded = unit.encode("utf-8")
             if b"\x00" in encoded:
                 raise GameCatalogError("literal UTF-8 payload contains an embedded NUL byte")

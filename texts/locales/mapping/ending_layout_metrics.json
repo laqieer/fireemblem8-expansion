@@ -6,6 +6,12 @@
       "text_index_start": 0,
       "tile_width": 26
     },
+    "solo": {
+      "pixel_width": 208,
+      "text_count": 5,
+      "text_index_start": 0,
+      "tile_width": 26
+    },
     "title": {
       "pixel_width": 120,
       "text_count": 2,
@@ -440,11 +446,409 @@
           "target_id": "0x0838"
         }
       ],
+      "solo": [
+        {
+          "line_count": 5,
+          "line_widths": [
+            103,
+            151,
+            129,
+            122,
+            131
+          ],
+          "max_line_width": 151,
+          "target_id": "0x07D6"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            131,
+            82,
+            129,
+            157,
+            152
+          ],
+          "max_line_width": 157,
+          "target_id": "0x07D8"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            99,
+            140,
+            101,
+            126,
+            142
+          ],
+          "max_line_width": 142,
+          "target_id": "0x07DA"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            150,
+            123,
+            111,
+            88,
+            98
+          ],
+          "max_line_width": 150,
+          "target_id": "0x07DC"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            110,
+            123,
+            131,
+            110,
+            149
+          ],
+          "max_line_width": 149,
+          "target_id": "0x07DE"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            43,
+            138,
+            98,
+            128,
+            153
+          ],
+          "max_line_width": 153,
+          "target_id": "0x07E0"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            92,
+            87,
+            55,
+            88,
+            135
+          ],
+          "max_line_width": 135,
+          "target_id": "0x07E2"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            132,
+            120,
+            130,
+            144,
+            148
+          ],
+          "max_line_width": 148,
+          "target_id": "0x07E4"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            98,
+            129,
+            125,
+            113,
+            148
+          ],
+          "max_line_width": 148,
+          "target_id": "0x07E6"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            129,
+            105,
+            154,
+            90,
+            138
+          ],
+          "max_line_width": 154,
+          "target_id": "0x07E8"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            123,
+            98,
+            112,
+            94,
+            120
+          ],
+          "max_line_width": 123,
+          "target_id": "0x07EA"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            136,
+            99,
+            128,
+            101,
+            89
+          ],
+          "max_line_width": 136,
+          "target_id": "0x07EC"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            121,
+            84,
+            136,
+            102,
+            150
+          ],
+          "max_line_width": 150,
+          "target_id": "0x07EE"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            149,
+            141,
+            140,
+            156,
+            140
+          ],
+          "max_line_width": 156,
+          "target_id": "0x07F0"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            130,
+            141,
+            132,
+            135,
+            145
+          ],
+          "max_line_width": 145,
+          "target_id": "0x07F2"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            83,
+            125,
+            135,
+            91,
+            138
+          ],
+          "max_line_width": 138,
+          "target_id": "0x07F4"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            103,
+            125,
+            119,
+            82,
+            109
+          ],
+          "max_line_width": 125,
+          "target_id": "0x07F6"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            110,
+            94,
+            138,
+            113,
+            140
+          ],
+          "max_line_width": 140,
+          "target_id": "0x07F8"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            91,
+            90,
+            150,
+            134,
+            148
+          ],
+          "max_line_width": 150,
+          "target_id": "0x07FA"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            117,
+            84,
+            137,
+            143,
+            150
+          ],
+          "max_line_width": 150,
+          "target_id": "0x07FC"
+        },
+        {
+          "line_count": 4,
+          "line_widths": [
+            144,
+            88,
+            117,
+            138
+          ],
+          "max_line_width": 144,
+          "target_id": "0x07FE"
+        },
+        {
+          "line_count": 4,
+          "line_widths": [
+            125,
+            82,
+            145,
+            120
+          ],
+          "max_line_width": 145,
+          "target_id": "0x0800"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            116,
+            154,
+            117,
+            99,
+            138
+          ],
+          "max_line_width": 154,
+          "target_id": "0x0802"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            115,
+            104,
+            88,
+            75,
+            140
+          ],
+          "max_line_width": 140,
+          "target_id": "0x0804"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            132,
+            82,
+            82,
+            152,
+            139
+          ],
+          "max_line_width": 152,
+          "target_id": "0x0806"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            89,
+            100,
+            130,
+            136,
+            149
+          ],
+          "max_line_width": 149,
+          "target_id": "0x0808"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            138,
+            131,
+            119,
+            116,
+            139
+          ],
+          "max_line_width": 139,
+          "target_id": "0x080A"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            101,
+            124,
+            120,
+            131,
+            140
+          ],
+          "max_line_width": 140,
+          "target_id": "0x080C"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            152,
+            152,
+            152,
+            151,
+            146
+          ],
+          "max_line_width": 152,
+          "target_id": "0x080E"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            90,
+            110,
+            94,
+            134,
+            133
+          ],
+          "max_line_width": 134,
+          "target_id": "0x0810"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            99,
+            100,
+            133,
+            152,
+            151
+          ],
+          "max_line_width": 152,
+          "target_id": "0x0812"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            110,
+            120,
+            118,
+            138,
+            125
+          ],
+          "max_line_width": 138,
+          "target_id": "0x0814"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            45,
+            164,
+            62,
+            126,
+            149
+          ],
+          "max_line_width": 164,
+          "target_id": "0x0816"
+        }
+      ],
       "summary": {
         "max_paired_line_width": 190,
+        "max_solo_line_width": 164,
         "max_title_width": 117,
         "overflow_count": 0,
         "paired_target_count": 34,
+        "solo_target_count": 33,
         "title_target_count": 33
       },
       "titles": [
@@ -1125,11 +1529,402 @@
           "target_id": "0x0838"
         }
       ],
+      "solo": [
+        {
+          "line_count": 5,
+          "line_widths": [
+            116,
+            122,
+            113,
+            105,
+            102
+          ],
+          "max_line_width": 122,
+          "target_id": "0x07D6"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            124,
+            83,
+            94,
+            95,
+            113
+          ],
+          "max_line_width": 124,
+          "target_id": "0x07D8"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            119,
+            114,
+            120,
+            106,
+            85
+          ],
+          "max_line_width": 120,
+          "target_id": "0x07DA"
+        },
+        {
+          "line_count": 4,
+          "line_widths": [
+            107,
+            122,
+            105,
+            86
+          ],
+          "max_line_width": 122,
+          "target_id": "0x07DC"
+        },
+        {
+          "line_count": 4,
+          "line_widths": [
+            93,
+            105,
+            119,
+            84
+          ],
+          "max_line_width": 119,
+          "target_id": "0x07DE"
+        },
+        {
+          "line_count": 4,
+          "line_widths": [
+            121,
+            103,
+            112,
+            105
+          ],
+          "max_line_width": 121,
+          "target_id": "0x07E0"
+        },
+        {
+          "line_count": 4,
+          "line_widths": [
+            84,
+            85,
+            117,
+            73
+          ],
+          "max_line_width": 117,
+          "target_id": "0x07E2"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            116,
+            106,
+            114,
+            113,
+            115
+          ],
+          "max_line_width": 116,
+          "target_id": "0x07E4"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            119,
+            103,
+            113,
+            116,
+            63
+          ],
+          "max_line_width": 119,
+          "target_id": "0x07E6"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            116,
+            116,
+            93,
+            119,
+            73
+          ],
+          "max_line_width": 119,
+          "target_id": "0x07E8"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            114,
+            113,
+            113,
+            104,
+            33
+          ],
+          "max_line_width": 114,
+          "target_id": "0x07EA"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            121,
+            118,
+            113,
+            120,
+            44
+          ],
+          "max_line_width": 121,
+          "target_id": "0x07EC"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            104,
+            102,
+            122,
+            114,
+            104
+          ],
+          "max_line_width": 122,
+          "target_id": "0x07EE"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            119,
+            114,
+            113,
+            116,
+            107
+          ],
+          "max_line_width": 119,
+          "target_id": "0x07F0"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            114,
+            116,
+            123,
+            113,
+            83
+          ],
+          "max_line_width": 123,
+          "target_id": "0x07F2"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            113,
+            119,
+            105,
+            86,
+            114
+          ],
+          "max_line_width": 119,
+          "target_id": "0x07F4"
+        },
+        {
+          "line_count": 4,
+          "line_widths": [
+            122,
+            113,
+            113,
+            76
+          ],
+          "max_line_width": 122,
+          "target_id": "0x07F6"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            84,
+            103,
+            121,
+            107,
+            116
+          ],
+          "max_line_width": 121,
+          "target_id": "0x07F8"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            113,
+            114,
+            121,
+            115,
+            43
+          ],
+          "max_line_width": 121,
+          "target_id": "0x07FA"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            120,
+            106,
+            117,
+            53,
+            104
+          ],
+          "max_line_width": 120,
+          "target_id": "0x07FC"
+        },
+        {
+          "line_count": 4,
+          "line_widths": [
+            85,
+            120,
+            113,
+            33
+          ],
+          "max_line_width": 120,
+          "target_id": "0x07FE"
+        },
+        {
+          "line_count": 4,
+          "line_widths": [
+            122,
+            43,
+            107,
+            94
+          ],
+          "max_line_width": 122,
+          "target_id": "0x0800"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            104,
+            123,
+            114,
+            125,
+            93
+          ],
+          "max_line_width": 125,
+          "target_id": "0x0802"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            124,
+            113,
+            121,
+            93,
+            104
+          ],
+          "max_line_width": 124,
+          "target_id": "0x0804"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            115,
+            93,
+            93,
+            84,
+            103
+          ],
+          "max_line_width": 115,
+          "target_id": "0x0806"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            91,
+            53,
+            103,
+            94,
+            103
+          ],
+          "max_line_width": 103,
+          "target_id": "0x0808"
+        },
+        {
+          "line_count": 4,
+          "line_widths": [
+            120,
+            94,
+            122,
+            44
+          ],
+          "max_line_width": 122,
+          "target_id": "0x080A"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            113,
+            113,
+            123,
+            113,
+            92
+          ],
+          "max_line_width": 123,
+          "target_id": "0x080C"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            107,
+            107,
+            123,
+            106,
+            114
+          ],
+          "max_line_width": 123,
+          "target_id": "0x080E"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            83,
+            92,
+            105,
+            120,
+            77
+          ],
+          "max_line_width": 120,
+          "target_id": "0x0810"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            114,
+            117,
+            102,
+            115,
+            104
+          ],
+          "max_line_width": 117,
+          "target_id": "0x0812"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            114,
+            114,
+            114,
+            105,
+            77
+          ],
+          "max_line_width": 114,
+          "target_id": "0x0814"
+        },
+        {
+          "line_count": 4,
+          "line_widths": [
+            121,
+            115,
+            94,
+            83
+          ],
+          "max_line_width": 121,
+          "target_id": "0x0816"
+        }
+      ],
       "summary": {
         "max_paired_line_width": 167,
+        "max_solo_line_width": 125,
         "max_title_width": 115,
         "overflow_count": 0,
         "paired_target_count": 34,
+        "solo_target_count": 33,
         "title_target_count": 33
       },
       "titles": [
@@ -1409,6 +2204,7 @@
     "locale_count": 2,
     "overflow_count": 0,
     "paired_target_count": 34,
+    "solo_target_count": 33,
     "title_target_count": 33
   }
 }

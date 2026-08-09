@@ -6094,7 +6094,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "e23a370a7300186cb56e4a6a4b6b924f2028b3134b4b6bc46aa4e5b6bd07c383",
+            "payload_sha256": "14bc7a1ff2e42e61c5e5043873a860c45c22b8295fc2d47404f9452f09a44a79",
             "review_key": "game/zh-Hans/0x014B",
             "similarity": 0.076923,
             "spans": [
@@ -6496,7 +6496,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "79c8ddae51609912ff0ffae436990650910e54e209aa90a2bc5653c20351cddc",
+            "payload_sha256": "840201b0623322e5af4f42be0cdeca116e46fb894d25894c1b5f5d2e49ccab7c",
             "review_key": "game/zh-Hans/0x0471",
             "similarity": 0.0,
             "spans": [
@@ -6528,7 +6528,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "7a69e27a3e5a270b1deb9a726d96e1efcbe549f7da003e0d3c6327a3edf80272",
+            "payload_sha256": "67d646662eae20948dabb8766155435f7de3a330b21be40487229d47365cc106",
             "review_key": "game/zh-Hans/0x0472",
             "similarity": 0.0,
             "spans": [
@@ -6560,7 +6560,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "6555b4f79f5d6e8e6b5c8e1a3e69d2f06dc9568973b03b5060dfd9b94925a96b",
+            "payload_sha256": "36ecdd9fdf06e82335631226095d58904e2bca38f66c8d3e13051d8ca7febb86",
             "review_key": "game/zh-Hans/0x0473",
             "similarity": 0.0,
             "spans": [
@@ -6592,7 +6592,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "cf9a389d48997bb06409131d0659788b217150d0d4f1567e8e62a102aa69ce3f",
+            "payload_sha256": "c71dc4bdfdc6078e517e296d58f90e51a950f58cc318a306041a66957b7d1148",
             "review_key": "game/zh-Hans/0x0474",
             "similarity": 0.0,
             "spans": [
@@ -6624,7 +6624,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "69dcd03f57a8d5c8177be9389277fa10618d39c12bef34e8141f515433a65162",
+            "payload_sha256": "854ef09246508d888a3b13ffdf40fc886378541f97473d3f29f46895464d8819",
             "review_key": "game/zh-Hans/0x0475",
             "similarity": 0.0,
             "spans": [
@@ -6656,7 +6656,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "68d7bd735ddcf8ff0ecf2445d0645868131844b5023c498e3693dec317136bad",
+            "payload_sha256": "8d529a072becbda24edc89f82ac3a2c0e7de98f7f0d57bbf9bf384e670df2765",
             "review_key": "game/zh-Hans/0x0483",
             "similarity": 0.0,
             "spans": [
@@ -6720,7 +6720,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "14a242d578a3b30a2f1a0692cbf51c83f2001ee6649c9b696bfc52e7e5f765c9",
+            "payload_sha256": "e4820d58dbd3f25cd38d361760a7f79baa1e713900c9ee96e8f9c954878a0a63",
             "review_key": "game/zh-Hans/0x0495",
             "similarity": 0.0,
             "spans": [
@@ -6752,7 +6752,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "65eae23b6b40cb7f8541a17174bda34b761b223f16a5d5f7d961c047aeb047cb",
+            "payload_sha256": "3927a571acaede0deb9798e4cef516fc9740428bd6b67bfbf2ae57f5e595894b",
             "review_key": "game/zh-Hans/0x049C",
             "similarity": 0.0,
             "spans": [
@@ -6784,7 +6784,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "f09e15d3b23a908fec41332f0f259d19c1d7f99d454f7c29f419a3bdd9c3d703",
+            "payload_sha256": "a555f1b2145aab9e7aab576b130a236ded9b644abc7aef8ddce041bb60bc039d",
             "review_key": "game/zh-Hans/0x049D",
             "similarity": 0.0,
             "spans": [
@@ -6816,7 +6816,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "99b70542d2a7e8c252a1255d27a83571b84011cb6eb2288706d02e5c85db3716",
+            "payload_sha256": "a212e6d1078e105988b2f8d71a48827375b6cec19c61b7ce88c2936e200f607b",
             "review_key": "game/zh-Hans/0x049E",
             "similarity": 0.0,
             "spans": [
@@ -6848,7 +6848,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "b82a895976e7587f7d4bf8113525c7598448719c8583a2a4d0af9aef445a084b",
+            "payload_sha256": "20a94f8dbcc805d5044b59fe55878259892196122e06b546b2075779c0b99986",
             "review_key": "game/zh-Hans/0x049F",
             "similarity": 0.0,
             "spans": [
@@ -6976,7 +6976,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "032881d9275cc9853a697c200322668968f28f89c3958d0321f2d9f046d6e8f3",
+            "payload_sha256": "9a2fbae6043b6d3ae065ee3557926390d303cc2f6f6fea041db3dd02c4ebc8e2",
             "review_key": "game/zh-Hans/0x04BE",
             "similarity": 0.0,
             "spans": [
@@ -7446,7 +7446,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "7fc7805d21512fb883e9d27102fc541f2da1f07183468004c75e89083bf0cabd",
+            "payload_sha256": "5412a56283ccadfddafe3f7e7e8e6892481890bb38cd81a65756a6cfe7877f1e",
             "review_key": "game/zh-Hans/0x0544",
             "similarity": 0.0,
             "spans": [
@@ -7478,7 +7478,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "7f036a897b36385833a7eff8350c34626bc9ecfde2af6288f43e4ebfcf0605ed",
+            "payload_sha256": "abccaa55083625a23cc6a611d765b9c608210578364690bde9a8bfa9d0adf1a4",
             "review_key": "game/zh-Hans/0x0553",
             "similarity": 0.0,
             "spans": [
@@ -7510,7 +7510,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "954bd98578078f16e84e7689dd24bf546d1c479da36fc7ffcd43061f7d053872",
+            "payload_sha256": "b87a5c26a4abeca68a1813a9f05fe8bea555f5e3339644efbb1d824e80f10ce6",
             "review_key": "game/zh-Hans/0x0582",
             "similarity": 0.2,
             "spans": [
@@ -7606,7 +7606,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "b45022c65b20139616d0202dad5fda99c125f94bc6e357becf1436325c3217aa",
+            "payload_sha256": "dd97df9521e4161bd3e587a1908358d0b751b09f202d7d425b23c58bac002a6a",
             "review_key": "game/zh-Hans/0x060F",
             "similarity": 0.0,
             "spans": [
@@ -7638,7 +7638,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "da295dc1a0a94870ab042c5f089fc314b29d724af364909ec262674a058de4dc",
+            "payload_sha256": "e89a31f5a6077dfa5c1404617fd76ed5fa10ea25e6a66142dd7402d0ef20690c",
             "review_key": "game/zh-Hans/0x0619",
             "similarity": 0.0,
             "spans": [
@@ -7670,7 +7670,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "c1760cf6669e48eecfcb8fc20ffee350ff214acbac6a683487d3c7f8f63c6b15",
+            "payload_sha256": "bf52ac605d086cda0ec7cd892c000693ffbc22a98b33111fa1ef44908c5511c6",
             "review_key": "game/zh-Hans/0x061B",
             "similarity": 0.040201,
             "spans": [
@@ -7702,7 +7702,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "9144d6148d02c0f07c3bec768f5097a7c15876f71eb7137975171bb8c447f9f8",
+            "payload_sha256": "a15c759852a5a48b07dbe7f62ae1e251163213c1bbdaaf3e496d5ff031597110",
             "review_key": "game/zh-Hans/0x061C",
             "similarity": 0.025974,
             "spans": [
@@ -7734,7 +7734,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "2fe5740b47497bf5f6e89d1bef6ee53ad6bd6f69321e4853a36f553dc16a312d",
+            "payload_sha256": "ec469811a9d963b33240fd65790bcb8485eb1ca7f327813e4727651846387fd6",
             "review_key": "game/zh-Hans/0x061D",
             "similarity": 0.0,
             "spans": [
@@ -7766,7 +7766,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "5c54c797d9b4ddb4bf3abdc8d2a1f039d4f19e6dd837b192540662a320034f80",
+            "payload_sha256": "230c1bb23e0a86b725500dfe2974c19e016d577fe39dc040f4c99d8a3c15d8dd",
             "review_key": "game/zh-Hans/0x0620",
             "similarity": 0.0,
             "spans": [
@@ -7798,7 +7798,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "9614a8272bbdff3d6d6ea0e96f4b3ab7636e1a3f217fc4f5f786a0388272c9e0",
+            "payload_sha256": "7d28c61e95f1a7a36799aab6c90cd7999a21df8c6ddc828238fb56ba791e20d9",
             "review_key": "game/zh-Hans/0x0621",
             "similarity": 0.0,
             "spans": [
@@ -7830,7 +7830,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "f326048066352a5cd19d3fc4c11b0ddbb9c0e7f72fc50735dcb0bd00f5f172b6",
+            "payload_sha256": "74f22310d402638af7157e4d2e748d1cea6d66c1398cd2c8be0f34cd16d13e44",
             "review_key": "game/zh-Hans/0x0627",
             "similarity": 0.0,
             "spans": [
@@ -7862,7 +7862,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "c2439bf68655b6aded71b799d7ea4ccd7f3affb83e27a595ace519dab752ca81",
+            "payload_sha256": "d5213e696cad4971ce564545ac7c1de28da9eeb60672d23392221f4768c509bc",
             "review_key": "game/zh-Hans/0x0630",
             "similarity": 0.0,
             "spans": [
@@ -7894,7 +7894,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "cb06624540376191fc99c5be32498c7cd1bd253269c9a2a7582975a683a71fe5",
+            "payload_sha256": "9e3deead1f97bb2bed7f068223a9571c365f5dd74e36b6556f139ad6a58aa4fb",
             "review_key": "game/zh-Hans/0x063B",
             "similarity": 0.0,
             "spans": [
@@ -7926,7 +7926,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "b0882f684757496f457b0b550d20877a71da85982199964590e2a833f16b818c",
+            "payload_sha256": "0e5abdd5899d82f5044fbb44d905743a76dfb96047083cf1966284b676e8cd71",
             "review_key": "game/zh-Hans/0x063D",
             "similarity": 0.0,
             "spans": [
@@ -7958,7 +7958,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "78a8d821460c748c8fcce5e1c6b9128eace7c90b55a6799d911f109069cae4d7",
+            "payload_sha256": "bb599b7b7c18ec899acba77b26a2964905ce442742450611fea4bbf116a85afc",
             "review_key": "game/zh-Hans/0x063F",
             "similarity": 0.065359,
             "spans": [
@@ -7990,7 +7990,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "ab8335af1dd6e10595faa7d60b68c9006cbf41e76044387d098c7895d9775cd4",
+            "payload_sha256": "0992062934fed8f1a2554947c797630fe24c68a634be6abcd7e41fbb4513113a",
             "review_key": "game/zh-Hans/0x0640",
             "similarity": 0.124294,
             "spans": [
@@ -8022,7 +8022,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "c92a24e0b77fb456b88fc79422c7b356b2320e8c7d6efdd6f1b0d5075616b300",
+            "payload_sha256": "c1f3c52bc8e8694a0f80f74bb3670cb119bf4b1d2ebc858e89960440dc4051dd",
             "review_key": "game/zh-Hans/0x0642",
             "similarity": 0.0,
             "spans": [
@@ -8228,7 +8228,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "61be9f66c6f7e872ea88798c74edec0ac298862bdfcc93602e5d87695d65e580",
+            "payload_sha256": "6b22967bb59535aafbea0e0db4ae23b78565527e172de1de651307b0a13c6a06",
             "review_key": "game/zh-Hans/0x06E9",
             "similarity": 0.25,
             "spans": [
@@ -9062,7 +9062,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "a175e27ba0ea0634005fea9f1fd90edd9230d9d6f9dd24668a2078c6afdfa7e3",
+            "payload_sha256": "44be9d114db8059af518d475bcbc9dbf81b9b4a5ef1db0e13415a7e3cb6ba8c8",
             "review_key": "game/zh-Hans/0x08D5",
             "similarity": 0.0,
             "spans": [
@@ -9094,7 +9094,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "f5a3e32273e6e93931ef068ed3ef256e5a0006b738ae4ca8304d1da5809eef04",
+            "payload_sha256": "392affed3888a396be940f30a8161bf01cef593395df72ffe728c539f1872db6",
             "review_key": "game/zh-Hans/0x08DD",
             "similarity": 0.0,
             "spans": [
@@ -9126,7 +9126,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "43cf4da24c57c799ad8d4ba2c0efe8c8d5953a50f5f81f446539885a870638bd",
+            "payload_sha256": "71b0276363a95a238b1ea815d5c3956643707af64b45182a7dfaff2caef12891",
             "review_key": "game/zh-Hans/0x08DF",
             "similarity": 0.0,
             "spans": [
@@ -9158,7 +9158,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "76a9c2219b72e0834b4cb5ac2053abb12c21a569bc9422e370121c5191750616",
+            "payload_sha256": "cf5f925970f9220b28abfc6a3eb186b99d7e2d940c6090f44fd5546f0e81a5c1",
             "review_key": "game/zh-Hans/0x08E5",
             "similarity": 0.0,
             "spans": [
@@ -9190,7 +9190,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "dc5143422524714cecdd1bf1f60e42f3d326f77c1e7a57f1c3757ee1283b5942",
+            "payload_sha256": "4c25e35e38c2d4202ced6cdf033629e68f996d1d68191574c7b39948adbb8c53",
             "review_key": "game/zh-Hans/0x0919",
             "similarity": 0.0,
             "spans": [
@@ -9222,7 +9222,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "4a72b3c2d01aa35c8352284a651d8db742a9552f310a82d35259d2050477f9f2",
+            "payload_sha256": "4de965b71f574493dc434f8130f672c32b4344eeb8d5e92e1f51914936d21f97",
             "review_key": "game/zh-Hans/0x091A",
             "similarity": 0.0,
             "spans": [
@@ -9254,7 +9254,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "b8299f8d0ebb641343ba9c4d589d995fbf7065839ecf3363ddac59bb332c7665",
+            "payload_sha256": "c9cc171dfe7a4d68173a13cf931729d9c2df97be60638822267b480c7bea91a5",
             "review_key": "game/zh-Hans/0x091B",
             "similarity": 0.0,
             "spans": [
@@ -9318,7 +9318,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "df8f7ae272af1b80c203f1b0f2da02a5681fd87f4b96ed95cef1464847c98725",
+            "payload_sha256": "8a2c90d5c17433a2f2fa09175a735199377dbcd335e29886299eec0f8a3db8ee",
             "review_key": "game/zh-Hans/0x091E",
             "similarity": 0.0,
             "spans": [
@@ -9350,7 +9350,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "9f6d60565a87fa433de74b0c7236482f0c0239c43e4bde69527f2e7e695824fb",
+            "payload_sha256": "32e68f73213d140708d400d8bccca87f65b24e21cb2311838769361f29b35060",
             "review_key": "game/zh-Hans/0x091F",
             "similarity": 0.0,
             "spans": [
@@ -9382,7 +9382,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "344c39190af0cc589ae451ac4be6edf4f6d64a137db1180a05a44d5969718b46",
+            "payload_sha256": "6ebb2999c0a081e8d20523a559ecd57bdeb6fa07ed65f82efe9a0a1f06d90b56",
             "review_key": "game/zh-Hans/0x0920",
             "similarity": 0.0,
             "spans": [
@@ -9414,7 +9414,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "915bc3dfb21bedee9d34f509d4250d2ad2f11f93d0b8f2b8abcc1f047f3c3c99",
+            "payload_sha256": "6d5f11005c9964ad58bac0f64cb67cbd5398d3ccb32207a2ffa7b01b6bbdd770",
             "review_key": "game/zh-Hans/0x0921",
             "similarity": 0.0,
             "spans": [
@@ -9489,7 +9489,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "9ca0ad0d3baf64e3d68e517398c744f0c206c0a6d599808aca94a5e0f797021d",
+            "payload_sha256": "908d91ba09ae3f3a7bd5259ce6915d10c38cc2bdf251a586f447e6698a937b49",
             "review_key": "game/zh-Hans/0x0924",
             "similarity": 0.0,
             "spans": [
@@ -9521,7 +9521,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "6c85e686d024cf44505167c6fc1f3f06c6b1618d9a8a01bc7c40dbd411d95a9d",
+            "payload_sha256": "bf0f87b49ec827c1785b45de03ca3a2f80a04e8474c00c7019757bd8335b480d",
             "review_key": "game/zh-Hans/0x0925",
             "similarity": 0.0,
             "spans": [
@@ -9553,7 +9553,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "d4bdfcf9ecd80d0f52baab8b8d64526486a4501a45b74cab717dd4abb652bf1e",
+            "payload_sha256": "de4566fbf0fd642c30ab29d28c9a039860d073594d3ec2782b38a80368e1a4cc",
             "review_key": "game/zh-Hans/0x0926",
             "similarity": 0.0,
             "spans": [
@@ -9596,7 +9596,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "70751cf85067772cc02439d02045aae1be3f471866d80c908f7ec88e09cccab9",
+            "payload_sha256": "e53fd08160e347f6893efc0a470ec839ee55a1ec1b9f9e4904398aeff5ca51d9",
             "review_key": "game/zh-Hans/0x0927",
             "similarity": 0.0,
             "spans": [
@@ -9628,7 +9628,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "6b24ca8983c178f172cb2cc17d1c694e58eb4fb14f15d61712780c4324e9c688",
+            "payload_sha256": "2e90858832509f09fada50210bc550f692e60c2f014a73b6cdbc9502c050a92f",
             "review_key": "game/zh-Hans/0x093E",
             "similarity": 0.0,
             "spans": [
@@ -9660,7 +9660,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "9ca0ad0d3baf64e3d68e517398c744f0c206c0a6d599808aca94a5e0f797021d",
+            "payload_sha256": "908d91ba09ae3f3a7bd5259ce6915d10c38cc2bdf251a586f447e6698a937b49",
             "review_key": "game/zh-Hans/0x093F",
             "similarity": 0.0,
             "spans": [
@@ -9692,7 +9692,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "90e8053f45ebd0214b21c20f5a51d69e5c90109305709a5fa8c8bdbbfedb10d9",
+            "payload_sha256": "ae6b439ff6cc359424565bce495f0d343c600329a4067b7780b428d5b663a2fa",
             "review_key": "game/zh-Hans/0x0940",
             "similarity": 0.0,
             "spans": [
@@ -9724,7 +9724,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "4e130571b9a2ed2243e66d708ae9c3aa2bded2ab911c0483440c729eab3db3af",
+            "payload_sha256": "44cd45bd5aa6d4c88f00f8d827c5d054f81b70e6d0e2b6a7fdf893540655f85a",
             "review_key": "game/zh-Hans/0x0941",
             "similarity": 0.0,
             "spans": [
@@ -9756,7 +9756,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "67be3736b765e45bb3015fda055b56e4f34d9412c70a756f6de4eaa712ceb681",
+            "payload_sha256": "c8d66f08418d2664d94fb3da869cea4c092dbed988fc4886f031367311aa1540",
             "review_key": "game/zh-Hans/0x0942",
             "similarity": 0.032609,
             "spans": [
@@ -9788,7 +9788,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "9ea74a316d1fdce2b57d321b73dfd241de967bee166e41c34b699f2a5a3801b7",
+            "payload_sha256": "d45e3f9254582b77c8ac12f33406fc15a951e898f3cd761544132482c3ac6dec",
             "review_key": "game/zh-Hans/0x0943",
             "similarity": 0.0,
             "spans": [
@@ -9820,7 +9820,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "609abc4a80b7920547517ccece15b9760c2a046e228805d73e215a25f32907a6",
+            "payload_sha256": "b799cdb96c8296e1833064c6d87eb09358409c1ae318e4be32b1a7c46cad8df7",
             "review_key": "game/zh-Hans/0x0946",
             "similarity": 0.0,
             "spans": [
@@ -9852,7 +9852,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "9c4c09e07a855e528d1547ad1f047c546db4de08fa85cd23713795a922768f2d",
+            "payload_sha256": "fdefee4fc4049adaa620ca846932557055e2ec71d9f75fb7a573c49c9ef003cc",
             "review_key": "game/zh-Hans/0x0947",
             "similarity": 0.0,
             "spans": [
@@ -9915,7 +9915,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "8bbbe8585f62eaba2240de766caa5c30402458af5718f36c3d6b599b9f696c43",
+            "payload_sha256": "bdbaf506c769bbdc60cb0e012df5365cc43e7e7bc9a52c1da237c0d702b87387",
             "review_key": "game/zh-Hans/0x094B",
             "similarity": 0.0,
             "spans": [
@@ -9947,7 +9947,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "328696022144adb29b1deb5fcc42c14d7e51ed749d914ba7c66958f461b4b5e3",
+            "payload_sha256": "c6049505a69de575ea7b3c3a90cdd98514d2f45b5facdc674126fc60d1438d4e",
             "review_key": "game/zh-Hans/0x094C",
             "similarity": 0.0,
             "spans": [
@@ -9979,7 +9979,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "ad3f32b58866b196f7845c53d65cffba4e0cf1fa1b7b0e4100bdf375b7f9c4cc",
+            "payload_sha256": "c384cf2b97f52406e589a94645b4f3f448df9853ff76ee5cd7f4f970cd618809",
             "review_key": "game/zh-Hans/0x094E",
             "similarity": 0.0,
             "spans": [
@@ -10011,7 +10011,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "df78999d55b7413e681b951bd19328161a168da9365df48f1a5c3b0dffec1295",
+            "payload_sha256": "96852224bf661b1de02b8e06d7879bae8a1bdb329d7cbf84bd94355b82307fb3",
             "review_key": "game/zh-Hans/0x094F",
             "similarity": 0.0,
             "spans": [
@@ -10074,7 +10074,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "6316f40d49c188ebcf0fb759a5d6bc9dd6e29695282d4651bc078d09f728343d",
+            "payload_sha256": "17031fe694ce5bb7c6ab7eccc21e2684b76e2777ffa00e2a898bd1149ad22139",
             "review_key": "game/zh-Hans/0x0951",
             "similarity": 0.0,
             "spans": [
@@ -10106,7 +10106,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "f1986fe415b5340e14f29fdc53af2b9385352a6c94b78e7e9128e699fa79b954",
+            "payload_sha256": "73cb93a9698374360a7f9fa830c630b951428da50795edbc1d7510f65bdb8fa2",
             "review_key": "game/zh-Hans/0x0952",
             "similarity": 0.0,
             "spans": [
@@ -10138,7 +10138,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "4d117c8bc7748351d5b4210018b013ff6119dc98f6f0e5ba6d68e634de07e673",
+            "payload_sha256": "d26d5a4dd642cd2e6206a6a18613b62db8abe46130eb2232d0fbe4713a68358b",
             "review_key": "game/zh-Hans/0x0953",
             "similarity": 0.0,
             "spans": [
@@ -10170,7 +10170,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "af9054e57f7d96c45a097baba5cc1292ad360b02e4c37c41a6d396ee203b5436",
+            "payload_sha256": "075dfbf482258194ab99d80e7c3fc3046eaf80f2fba6e31f436169f5406bd048",
             "review_key": "game/zh-Hans/0x0970",
             "similarity": 0.0,
             "spans": [
@@ -10202,7 +10202,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "58c4ea30ab590a8720e82b7f2fad0711fa299880ad575eaeb510326e05f89a1f",
+            "payload_sha256": "8791ca0b8c82379fc273bd0cea577b5f755ae9a40333ea305e5364dc01e017bd",
             "review_key": "game/zh-Hans/0x0971",
             "similarity": 0.0,
             "spans": [
@@ -10234,7 +10234,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "31dbff1d3ff9792f8143821d9f3cb3ac1f019505b01a8fb0c71a8048d56befed",
+            "payload_sha256": "75f5ba6a0225fee506f31c6cb6f529310fef4948ea251092e395a8bc8dbda2da",
             "review_key": "game/zh-Hans/0x0972",
             "similarity": 0.0,
             "spans": [
@@ -10266,7 +10266,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "fe27cba404198dc142ee4980ed9957d78585f88e15efe821e92ac230e4cba837",
+            "payload_sha256": "78415e7c93e88e71a6c1e4d6cac0560fa9190d7600a2c5f3a48d4967218d8680",
             "review_key": "game/zh-Hans/0x0974",
             "similarity": 0.0,
             "spans": [
@@ -10298,7 +10298,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "b8cd6472c00108e29dba7e768b60effb06ab2a9660c4ed15002e32094ff25661",
+            "payload_sha256": "1582bd8a785bf6878359a55e714d0bfe0b19c6b5b9ed105c5162cf9459482334",
             "review_key": "game/zh-Hans/0x0975",
             "similarity": 0.0,
             "spans": [
@@ -10330,7 +10330,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "618afae29260655700f6e6b609621d6457171fa09454d7cfc918bd8af795e0af",
+            "payload_sha256": "3a5e75a960607148daf6e9d7d24db8009c19c5360de00c1e0d63e858c2bcae65",
             "review_key": "game/zh-Hans/0x0976",
             "similarity": 0.0,
             "spans": [
@@ -10436,7 +10436,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "7738174e0316b373051d01a1c4f82a9b47ba249d77509207ad0c75cd204dea79",
+            "payload_sha256": "fa45b3b1a5f95d711d4e30f66aa2e147a85a4ac2e6eb0414010826258ea30e1c",
             "review_key": "game/zh-Hans/0x097A",
             "similarity": 0.0,
             "spans": [
@@ -10468,7 +10468,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "fc8545b5c526579b4095ae5a696f49ea688fa0980f676d13b5f5f5e79787b94d",
+            "payload_sha256": "71987d9627268f953b470de7b59a3f8ca013cef54e4ba6444b17b0ed77c45a29",
             "review_key": "game/zh-Hans/0x097B",
             "similarity": 0.0,
             "spans": [
@@ -10500,7 +10500,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "58150df0db037fbb172b83270e434a0f2f8e86aaaedd4f63fe6428d89338b2dc",
+            "payload_sha256": "7fb8da6dff48ea515a985f78735812cf4b7c330f1e229027da725b2d1f621cb2",
             "review_key": "game/zh-Hans/0x097C",
             "similarity": 0.0,
             "spans": [
@@ -10532,7 +10532,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "520de0812125777117c2fc6a062f45003384e68610cb20dc0cd256a1d2b6c41a",
+            "payload_sha256": "a40f3249c26f5695062be211f71cad6b723dbd899549fbc36c5939a34b0750e9",
             "review_key": "game/zh-Hans/0x0980",
             "similarity": 0.0,
             "spans": [
@@ -10564,7 +10564,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "8177fc2303b2b9e710883cd2cdc7698184b229d83f37e5c38117fb981f14e19b",
+            "payload_sha256": "67370dd3f6fb843f8599ad2c7a35fc657e698d05ed6a25cbe71b48eeebe41970",
             "review_key": "game/zh-Hans/0x0981",
             "similarity": 0.0,
             "spans": [
@@ -10596,7 +10596,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "243067d1d1172c1b3a8f84b26cb0aadcd86b8721eb2fff93c1e3526fe0fa397c",
+            "payload_sha256": "f8726f88923cf39e4163938647f337a0ede2d748ed4a03abe458541ecafc3e39",
             "review_key": "game/zh-Hans/0x0982",
             "similarity": 0.0,
             "spans": [
@@ -10690,7 +10690,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "8177fc2303b2b9e710883cd2cdc7698184b229d83f37e5c38117fb981f14e19b",
+            "payload_sha256": "67370dd3f6fb843f8599ad2c7a35fc657e698d05ed6a25cbe71b48eeebe41970",
             "review_key": "game/zh-Hans/0x0985",
             "similarity": 0.0,
             "spans": [
@@ -10784,7 +10784,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "eb2fd31b9c71f85cb8c480e85f80eb353aace2b3bad0bc286bf83acc15944b9a",
+            "payload_sha256": "31f1e071f1132cab5e4dfc7cb2818f0a285e9051f6b2e3a702d2546a1ed4af86",
             "review_key": "game/zh-Hans/0x099E",
             "similarity": 0.0,
             "spans": [
@@ -10816,7 +10816,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "a2b25166b2c1f6d7cfb7ad6993ea3ff9a5bf7be98a3173bf15a8b23fd98f9972",
+            "payload_sha256": "d555b759d730c74dcacadf6c3f294f6f4c5414d724d8399c0df6b4de51a1f456",
             "review_key": "game/zh-Hans/0x09A1",
             "similarity": 0.0,
             "spans": [
@@ -10870,7 +10870,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "95c8985a6d6cb3c66f7f1e66c92aa23795be9b69f4116bf95b1667c51a4e8f39",
+            "payload_sha256": "c945803415a85157128d0753e60b918d714cc2054f7b2b71b2cf491475574bdd",
             "review_key": "game/zh-Hans/0x09A2",
             "similarity": 0.0,
             "spans": [
@@ -10902,7 +10902,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "769dcc4a014e0bb1e51b53d903bfa63e77b51d25a75b3eea507a27d51be8ec79",
+            "payload_sha256": "0787e79b0ac9049e3c016d89b306ff981dde58f04477bbcb809a5c3950f9b06d",
             "review_key": "game/zh-Hans/0x09D6",
             "similarity": 0.0,
             "spans": [
@@ -10941,9 +10941,9 @@
   },
   "inputs": {
     "en_expansion": {
-      "byte_count": 1940,
+      "byte_count": 2589,
       "path": "texts/expansion/catalog.en.json",
-      "sha256": "fc12758142457edaddaf7d1d2d8ef5983b5b10c8ee5dc2ccff535f49dfb67a50"
+      "sha256": "28b63dc7939319e59056cc5444ab966e1aea4339e437324f3cf50fa5252dfcbb"
     },
     "english_definitions": {
       "byte_count": 4648,
@@ -10956,40 +10956,40 @@
       "sha256": "abb320b4767423df3b66fe2f4309cae797becf0405b45e5fcebaccfd2241155f"
     },
     "ja_authored": {
-      "byte_count": 46027,
+      "byte_count": 46018,
       "path": "texts/locales/authored/catalog.ja.json",
-      "sha256": "79bd29cf44bee096ee053538c084276bbc4676dbc1b1024dbff626b7fb40b7b8"
+      "sha256": "c82cc3af1c73dcce063a6468c4bc09d093f9f6d2fcd100c85d70fbd230f4395b"
     },
     "ja_expansion": {
-      "byte_count": 2008,
+      "byte_count": 2693,
       "path": "texts/expansion/catalog.ja.json",
-      "sha256": "04c2b6e90d8f2bffcc78f53a89641068ff3cbcb34978ae53c686e4d4bf79c740"
+      "sha256": "ad47b7912ee40a42f2f31448e4a1cf3f9783ff16231f4fc66c48a3af37f78e9f"
     },
     "ja_indexed": {
-      "byte_count": 1719199,
+      "byte_count": 1719190,
       "path": "texts/locales/ja/indexed.txt",
-      "sha256": "01f5cf58b95cb9c9994718f1eb7f5eaba6f84bfe5d13add16cfa2624a39c97e9"
+      "sha256": "646470228ad24878266de41d825724d7d70d02c85c1c02626feec37e71b31fe6"
     },
     "ja_raw": {
-      "byte_count": 9643,
+      "byte_count": 11811,
       "path": "texts/locales/ja/raw.json",
-      "sha256": "3e1b2349501461297f16e52b585a5021af7daab3f5acf950a4adee64dd878eb4"
+      "sha256": "f140dfe4dd1e97545cf8afd4f0308e954e4a539bdc1eb59ddded3dc402cb03fe"
     },
     "latin_span_review": {
       "baseline_commit": "2d02ec12ddcba0640bcf1ecffcf7dc93d56deb4f",
       "byte_count": 357213,
       "path": "texts/locales/runtime_latin_span_review.json",
-      "sha256": "85d939decc27f3c1dba15c8f71ab2d6f4950118fdd9b371aac5e0a7daeaf1805"
+      "sha256": "f467718000c001867d73a919844e457141fc5842d5e690013db72b34cec60035"
     },
     "mapping": {
-      "byte_count": 5497196,
+      "byte_count": 5495880,
       "path": "texts/locales/mapping/fe8u_target_map.json",
-      "sha256": "bd987230f42277d5d93b0fc037bb52e34fceb57ace955f652514b96013b2735d"
+      "sha256": "8ce908acac0604af6f1e73c7b73c487b571637732d3544ccef7d0c09bc5126ef"
     },
     "raw_closure": {
-      "byte_count": 157005,
+      "byte_count": 153460,
       "path": "texts/locales/mapping/raw_surface_closure.json",
-      "sha256": "0f5b7ea3ff313f01ac0e83786b8346573f539d5a7a5d37f067ad8fdb04e40ad4"
+      "sha256": "5dda5b4cb7788c93eec6ae45aa6257867bfe26eae5e87d666c5a59f3f5d45e94"
     },
     "target_header": {
       "byte_count": 78840,
@@ -10997,19 +10997,19 @@
       "sha256": "fa8d8b55aa170a8b29d4950968d42e4e7673f679ddc4f0e3ae5bd5cb7abf1a0c"
     },
     "zh-Hans_authored": {
-      "byte_count": 39879,
+      "byte_count": 40185,
       "path": "texts/locales/authored/catalog.zh-Hans.json",
-      "sha256": "c83638f7597f1e7a9a2d69ab69e5a0c8e3550c44c1129e8058aecc0ea6a75436"
+      "sha256": "7ff35da9815cdd819a2dfcb75ab799e6e81e0291680a99a556e1a79e00a91e78"
     },
     "zh-Hans_expansion": {
-      "byte_count": 1946,
+      "byte_count": 2604,
       "path": "texts/expansion/catalog.zh-Hans.json",
-      "sha256": "40220fd10289e21fba09d4315781c1f6f51cee59d109da18520134e34ea0a11e"
+      "sha256": "9b555ccd6aef10aa7247e877334094a8d0c96ed910b2a64a9821456714fc4eb6"
     },
     "zh_hans_indexed": {
-      "byte_count": 1266610,
+      "byte_count": 1374727,
       "path": "texts/locales/zh-Hans/indexed.txt",
-      "sha256": "7bbc6bff11de766318bc2aa4202572e61afd709e19faad69f12b07e59191828e"
+      "sha256": "9f3013edccc6e735dc2a5788502ec7621653b8beac0f40c034b22eaea66f0e69"
     },
     "zh_hans_raw": {
       "byte_count": 45834,

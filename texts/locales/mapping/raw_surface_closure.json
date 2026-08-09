@@ -567,10 +567,8 @@
         {
           "anchors": [
             "gYesNoSelectionMenuItems",
-            "gYesNoSelectionMenuItems.override[0x32].name",
-            "override",
-            "x32",
-            "name"
+            "0x843",
+            "0x32"
           ],
           "path": "src/menu_def.c"
         }
@@ -604,10 +602,8 @@
         {
           "anchors": [
             "gYesNoSelectionMenuItems",
-            "gYesNoSelectionMenuItems.override[0x33].name",
-            "override",
-            "x33",
-            "name"
+            "0x844",
+            "0x33"
           ],
           "path": "src/menu_def.c"
         }
@@ -641,10 +637,8 @@
         {
           "anchors": [
             "gItemSubMenuItems",
-            "gItemSubMenuItems.override[0x34].name",
-            "override",
-            "x34",
-            "name"
+            "0x696",
+            "0x34"
           ],
           "path": "src/menu_def.c"
         }
@@ -678,10 +672,8 @@
         {
           "anchors": [
             "gItemSubMenuItems",
-            "gItemSubMenuItems.override[0x35].name",
-            "override",
-            "x35",
-            "name"
+            "0x697",
+            "0x35"
           ],
           "path": "src/menu_def.c"
         }
@@ -715,10 +707,8 @@
         {
           "anchors": [
             "gItemSubMenuItems",
-            "gItemSubMenuItems.override[0x36].name",
-            "override",
-            "x36",
-            "name"
+            "0x698",
+            "0x36"
           ],
           "path": "src/menu_def.c"
         }
@@ -752,10 +742,8 @@
         {
           "anchors": [
             "gItemSubMenuItems",
-            "gItemSubMenuItems.override[0x37].name",
-            "override",
-            "x37",
-            "name"
+            "0x699",
+            "0x37"
           ],
           "path": "src/menu_def.c"
         }
@@ -789,10 +777,8 @@
         {
           "anchors": [
             "gUnitActionMenuItems",
-            "gUnitActionMenuItems.override[0x4e].name",
-            "override",
-            "x4e",
-            "name"
+            "0x67A",
+            "0x4E"
           ],
           "path": "src/menu_def.c"
         }
@@ -826,10 +812,8 @@
         {
           "anchors": [
             "gUnitActionMenuItems",
-            "gUnitActionMenuItems.override[0x4f].name",
-            "override",
-            "x4f",
-            "name"
+            "0x67B",
+            "0x4F"
           ],
           "path": "src/menu_def.c"
         }
@@ -896,10 +880,8 @@
         {
           "anchors": [
             "gUnitActionMenuItems",
-            "gUnitActionMenuItems.override[0x51].name",
-            "override",
-            "x51",
-            "name"
+            "0x67C",
+            "0x51"
           ],
           "path": "src/menu_def.c"
         }
@@ -933,10 +915,8 @@
         {
           "anchors": [
             "gUnitActionMenuItems",
-            "gUnitActionMenuItems.override[0x52].name",
-            "override",
-            "x52",
-            "name"
+            "0x691",
+            "0x52"
           ],
           "path": "src/menu_def.c"
         }
@@ -970,10 +950,8 @@
         {
           "anchors": [
             "gUnitActionMenuItems",
-            "gUnitActionMenuItems.override[0x53].name",
-            "override",
-            "x53",
-            "name"
+            "0x692",
+            "0x53"
           ],
           "path": "src/menu_def.c"
         }
@@ -1007,10 +985,8 @@
         {
           "anchors": [
             "gUnitActionMenuItems",
-            "gUnitActionMenuItems.override[0x54].name",
-            "override",
-            "x54",
-            "name"
+            "0x67D",
+            "0x54"
           ],
           "path": "src/menu_def.c"
         }
@@ -1044,10 +1020,8 @@
         {
           "anchors": [
             "gUnitActionMenuItems",
-            "gUnitActionMenuItems.override[0x55].name",
-            "override",
-            "x55",
-            "name"
+            "0x67E",
+            "0x55"
           ],
           "path": "src/menu_def.c"
         }
@@ -1081,10 +1055,8 @@
         {
           "anchors": [
             "gUnitActionMenuItems",
-            "gUnitActionMenuItems.override[0x56].name",
-            "override",
-            "x56",
-            "name"
+            "0x67F",
+            "0x56"
           ],
           "path": "src/menu_def.c"
         }
@@ -1206,10 +1178,8 @@
         {
           "anchors": [
             "gUnitActionMenuItems",
-            "gUnitActionMenuItems.override[0x59].name",
-            "override",
-            "x59",
-            "name"
+            "0x694",
+            "0x59"
           ],
           "path": "src/menu_def.c"
         }
@@ -1243,10 +1213,8 @@
         {
           "anchors": [
             "gUnitActionMenuItems",
-            "gUnitActionMenuItems.override[0x5a].name",
-            "override",
-            "x5a",
-            "name"
+            "0x680",
+            "0x5A"
           ],
           "path": "src/menu_def.c"
         }
@@ -1280,10 +1248,8 @@
         {
           "anchors": [
             "gUnitActionMenuItems",
-            "gUnitActionMenuItems.override[0x5b].name",
-            "override",
-            "x5b",
-            "name"
+            "0x681",
+            "0x5B"
           ],
           "path": "src/menu_def.c"
         }
@@ -1317,10 +1283,8 @@
         {
           "anchors": [
             "gUnitActionMenuItems",
-            "gUnitActionMenuItems.override[0x5c].name",
-            "override",
-            "x5c",
-            "name"
+            "0x682",
+            "0x5C"
           ],
           "path": "src/menu_def.c"
         }
@@ -1354,10 +1318,8 @@
         {
           "anchors": [
             "gUnitActionMenuItems",
-            "gUnitActionMenuItems.override[0x5d].name",
-            "override",
-            "x5d",
-            "name"
+            "0x683",
+            "0x5D"
           ],
           "path": "src/menu_def.c"
         }
@@ -1391,10 +1353,8 @@
         {
           "anchors": [
             "gUnitActionMenuItems",
-            "gUnitActionMenuItems.override[0x5e].name",
-            "override",
-            "x5e",
-            "name"
+            "0x684",
+            "0x5E"
           ],
           "path": "src/menu_def.c"
         }
@@ -1428,10 +1388,8 @@
         {
           "anchors": [
             "gUnitActionMenuItems",
-            "gUnitActionMenuItems.override[0x5f].name",
-            "override",
-            "x5f",
-            "name"
+            "0x685",
+            "0x5F"
           ],
           "path": "src/menu_def.c"
         }
@@ -1465,10 +1423,8 @@
         {
           "anchors": [
             "gUnitActionMenuItems",
-            "gUnitActionMenuItems.override[0x60].name",
-            "override",
-            "x60",
-            "name"
+            "0x686",
+            "0x60"
           ],
           "path": "src/menu_def.c"
         }
@@ -1502,10 +1458,8 @@
         {
           "anchors": [
             "gUnitActionMenuItems",
-            "gUnitActionMenuItems.override[0x61].name",
-            "override",
-            "x61",
-            "name"
+            "0x687",
+            "0x61"
           ],
           "path": "src/menu_def.c"
         }
@@ -1539,10 +1493,8 @@
         {
           "anchors": [
             "gUnitActionMenuItems",
-            "gUnitActionMenuItems.override[0x62].name",
-            "override",
-            "x62",
-            "name"
+            "0x688",
+            "0x62"
           ],
           "path": "src/menu_def.c"
         }
@@ -1576,10 +1528,8 @@
         {
           "anchors": [
             "gUnitActionMenuItems",
-            "gUnitActionMenuItems.override[0x63].name",
-            "override",
-            "x63",
-            "name"
+            "0x689",
+            "0x63"
           ],
           "path": "src/menu_def.c"
         }
@@ -1613,10 +1563,8 @@
         {
           "anchors": [
             "gUnitActionMenuItems",
-            "gUnitActionMenuItems.override[0x64].name",
-            "override",
-            "x64",
-            "name"
+            "0x68A",
+            "0x64"
           ],
           "path": "src/menu_def.c"
         }
@@ -1650,10 +1598,8 @@
         {
           "anchors": [
             "gUnitActionMenuItems",
-            "gUnitActionMenuItems.override[0x65].name",
-            "override",
-            "x65",
-            "name"
+            "0x68B",
+            "0x65"
           ],
           "path": "src/menu_def.c"
         }
@@ -1687,10 +1633,8 @@
         {
           "anchors": [
             "gUnitActionMenuItems",
-            "gUnitActionMenuItems.override[0x66].name",
-            "override",
-            "x66",
-            "name"
+            "0x68C",
+            "0x66"
           ],
           "path": "src/menu_def.c"
         }
@@ -1724,10 +1668,8 @@
         {
           "anchors": [
             "gUnitActionMenuItems",
-            "gUnitActionMenuItems.override[0x67].name",
-            "override",
-            "x67",
-            "name"
+            "0x68D",
+            "0x67"
           ],
           "path": "src/menu_def.c"
         }
@@ -1761,10 +1703,8 @@
         {
           "anchors": [
             "gUnitActionMenuItems",
-            "gUnitActionMenuItems.override[0x68].name",
-            "override",
-            "x68",
-            "name"
+            "0x68E",
+            "0x68"
           ],
           "path": "src/menu_def.c"
         }
@@ -1798,10 +1738,8 @@
         {
           "anchors": [
             "gUnitActionMenuItems",
-            "gUnitActionMenuItems.override[0x69].name",
-            "override",
-            "x69",
-            "name"
+            "0x68F",
+            "0x69"
           ],
           "path": "src/menu_def.c"
         }
@@ -1835,10 +1773,8 @@
         {
           "anchors": [
             "gUnitActionMenuItems",
-            "gUnitActionMenuItems.override[0x6b].name",
-            "override",
-            "x6b",
-            "name"
+            "0x695",
+            "0x6B"
           ],
           "path": "src/menu_def.c"
         }
@@ -1872,10 +1808,8 @@
         {
           "anchors": [
             "gMapMenuItems",
-            "gMapMenuItems.override[0x6e].name",
-            "override",
-            "x6e",
-            "name"
+            "0x69A",
+            "0x6e"
           ],
           "path": "src/menu_def.c"
         }
@@ -1909,10 +1843,8 @@
         {
           "anchors": [
             "gMapMenuItems",
-            "gMapMenuItems.override[0x6f].name",
-            "override",
-            "x6f",
-            "name"
+            "0x690",
+            "0x6f"
           ],
           "path": "src/menu_def.c"
         }
@@ -1946,10 +1878,8 @@
         {
           "anchors": [
             "gMapMenuItems",
-            "gMapMenuItems.override[0x74].name",
-            "override",
-            "x74",
-            "name"
+            "0x69C",
+            "0x74"
           ],
           "path": "src/menu_def.c"
         }
@@ -1983,10 +1913,8 @@
         {
           "anchors": [
             "gMapMenuItems",
-            "gMapMenuItems.override[0x70].name",
-            "override",
-            "x70",
-            "name"
+            "0x69E",
+            "0x70"
           ],
           "path": "src/menu_def.c"
         }
@@ -2020,10 +1948,8 @@
         {
           "anchors": [
             "gMapMenuItems",
-            "gMapMenuItems.override[0x71].name",
-            "override",
-            "x71",
-            "name"
+            "0x69B",
+            "0x71"
           ],
           "path": "src/menu_def.c"
         }
@@ -2057,10 +1983,8 @@
         {
           "anchors": [
             "gMapMenuItems",
-            "gMapMenuItems.override[0x72].name",
-            "override",
-            "x72",
-            "name"
+            "0x69D",
+            "0x72"
           ],
           "path": "src/menu_def.c"
         }
@@ -2094,10 +2018,8 @@
         {
           "anchors": [
             "gMapMenuItems",
-            "gMapMenuItems.override[0x73].name",
-            "override",
-            "x73",
-            "name"
+            "0x69F",
+            "0x73"
           ],
           "path": "src/menu_def.c"
         }
@@ -2131,10 +2053,8 @@
         {
           "anchors": [
             "gMapMenuItems",
-            "gMapMenuItems.override[0x78].name",
-            "override",
-            "x78",
-            "name"
+            "0x6A0",
+            "0x78"
           ],
           "path": "src/menu_def.c"
         }
@@ -2236,8 +2156,8 @@
         {
           "anchors": [
             "PROMO_OPTION_1_NAME",
-            "ClassChgMenuItem_OnTextDraw",
-            "ClassChgMenu_GetDisplayLabel"
+            "ClassChgMenu_GetDisplayLabel",
+            "ClassChgMenuItem_OnTextDraw"
           ],
           "path": "src/classchg-menuselect.c"
         }
@@ -2282,8 +2202,8 @@
         {
           "anchors": [
             "PROMO_OPTION_2_NAME",
-            "ClassChgMenuItem_OnTextDraw",
-            "ClassChgMenu_GetDisplayLabel"
+            "ClassChgMenu_GetDisplayLabel",
+            "ClassChgMenuItem_OnTextDraw"
           ],
           "path": "src/classchg-menuselect.c"
         }
@@ -2328,8 +2248,8 @@
         {
           "anchors": [
             "PROMO_OPTION_3_NAME",
-            "ClassChgMenuItem_OnTextDraw",
-            "ClassChgMenu_GetDisplayLabel"
+            "ClassChgMenu_GetDisplayLabel",
+            "ClassChgMenuItem_OnTextDraw"
           ],
           "path": "src/classchg-menuselect.c"
         }
@@ -2374,10 +2294,8 @@
         {
           "anchors": [
             "MenuItemDef_WMGeneralMenu",
-            "MenuItemDef_WMGeneralMenu.override[0x0].name",
-            "override",
-            "x0",
-            "name"
+            ".nameMsgId = 0x0645",
+            ".overrideId = 0,"
           ],
           "path": "src/worldmap_path.c"
         }
@@ -2411,10 +2329,8 @@
         {
           "anchors": [
             "MenuItemDef_WMGeneralMenu",
-            "MenuItemDef_WMGeneralMenu.override[0x1].name",
-            "override",
-            "x1",
-            "name"
+            ".nameMsgId = 0x0646",
+            ".overrideId = 1,"
           ],
           "path": "src/worldmap_path.c"
         }
@@ -2448,10 +2364,8 @@
         {
           "anchors": [
             "MenuItemDef_WMGeneralMenu",
-            "MenuItemDef_WMGeneralMenu.override[0x2].name",
-            "override",
-            "x2",
-            "name"
+            ".nameMsgId = 0x0647",
+            ".overrideId = 2,"
           ],
           "path": "src/worldmap_path.c"
         }
@@ -2485,10 +2399,8 @@
         {
           "anchors": [
             "MenuItemDef_WMGeneralMenu",
-            "MenuItemDef_WMGeneralMenu.override[0x3].name",
-            "override",
-            "x3",
-            "name"
+            ".nameMsgId = 0x0648",
+            ".overrideId = 3,"
           ],
           "path": "src/worldmap_path.c"
         }
@@ -2522,10 +2434,8 @@
         {
           "anchors": [
             "MenuItemDef_WMGeneralMenu",
-            "MenuItemDef_WMGeneralMenu.override[0x4].name",
-            "override",
-            "x4",
-            "name"
+            ".nameMsgId = 0x0649",
+            ".overrideId = 4,"
           ],
           "path": "src/worldmap_path.c"
         }
@@ -2559,10 +2469,8 @@
         {
           "anchors": [
             "MenuItemDef_WMNodeMenu",
-            "MenuItemDef_WMNodeMenu.override[0x0].name",
-            "override",
-            "x0",
-            "name"
+            ".nameMsgId = 0x066E",
+            ".overrideId = 0,"
           ],
           "path": "src/worldmap_path.c"
         }
@@ -2596,10 +2504,8 @@
         {
           "anchors": [
             "MenuItemDef_WMNodeMenu",
-            "MenuItemDef_WMNodeMenu.override[0x1].name",
-            "override",
-            "x1",
-            "name"
+            ".nameMsgId = 0x066F",
+            ".overrideId = 1,"
           ],
           "path": "src/worldmap_path.c"
         }
@@ -2633,10 +2539,8 @@
         {
           "anchors": [
             "MenuItemDef_WMNodeMenu",
-            "MenuItemDef_WMNodeMenu.override[0x2].name",
-            "override",
-            "x2",
-            "name"
+            ".nameMsgId = 0x0670",
+            ".overrideId = 2,"
           ],
           "path": "src/worldmap_path.c"
         }
@@ -2670,10 +2574,8 @@
         {
           "anchors": [
             "MenuItemDef_WMNodeMenu",
-            "MenuItemDef_WMNodeMenu.override[0x3].name",
-            "override",
-            "x3",
-            "name"
+            ".nameMsgId = 0x0671",
+            ".overrideId = 3,"
           ],
           "path": "src/worldmap_path.c"
         }
@@ -2706,8 +2608,8 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrainNames",
-            "TERRAIN_NONE"
+            "gTerrains_0",
+            "[TERRAIN_NONE]"
           ],
           "path": "src/data_terrains.c"
         }
@@ -2740,8 +2642,8 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrainNames",
-            "TERRAIN_PLAINS"
+            "gTerrains_0",
+            "[TERRAIN_PLAINS]"
           ],
           "path": "src/data_terrains.c"
         }
@@ -2774,8 +2676,8 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrainNames",
-            "TERRAIN_ROAD"
+            "gTerrains_0",
+            "[TERRAIN_ROAD]"
           ],
           "path": "src/data_terrains.c"
         }
@@ -2808,8 +2710,8 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrainNames",
-            "TERRAIN_VILLAGE_REGULAR"
+            "gTerrains_0",
+            "[TERRAIN_VILLAGE_REGULAR]"
           ],
           "path": "src/data_terrains.c"
         }
@@ -2842,8 +2744,8 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrainNames",
-            "TERRAIN_VILLAGE_CLOSED"
+            "gTerrains_0",
+            "[TERRAIN_VILLAGE_CLOSED]"
           ],
           "path": "src/data_terrains.c"
         }
@@ -2864,7 +2766,7 @@
           "text_sha256": "4f7a5c4cd6fdfcdedc5bfa0866512bff51a24360048674b20cc4f4b98f143bc6"
         }
       },
-      "rationale": "gTerrainNames[TERRAIN_VILLAGE_CLOSED] must still identify a village. The raw regional labels only say closed, so exact closed-village names are authored without altering snapshots.",
+      "rationale": "gTerrains_0[TERRAIN_VILLAGE_CLOSED] must still identify a village. The raw regional labels only say closed, so exact closed-village names are authored without altering snapshots.",
       "source_text_sha256": "6744b4c6a9aa00381ffea2b3d229778b0724b073bd46e13f4e73868667eeb44f",
       "target_id": "0x01C8",
       "target_ids": [
@@ -2876,8 +2778,8 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrainNames",
-            "TERRAIN_HOUSE"
+            "gTerrains_0",
+            "[TERRAIN_HOUSE]"
           ],
           "path": "src/data_terrains.c"
         }
@@ -2910,8 +2812,8 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrainNames",
-            "TERRAIN_ARMORY"
+            "gTerrains_0",
+            "[TERRAIN_ARMORY]"
           ],
           "path": "src/data_terrains.c"
         }
@@ -2944,8 +2846,8 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrainNames",
-            "TERRAIN_VENDOR"
+            "gTerrains_0",
+            "[TERRAIN_VENDOR]"
           ],
           "path": "src/data_terrains.c"
         }
@@ -2978,8 +2880,8 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrainNames",
-            "TERRAIN_ARENA_REGULAR"
+            "gTerrains_0",
+            "[TERRAIN_ARENA_REGULAR]"
           ],
           "path": "src/data_terrains.c"
         }
@@ -3012,8 +2914,8 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrainNames",
-            "TERRAIN_C_ROOM_09"
+            "gTerrains_0",
+            "[TERRAIN_C_ROOM_09]"
           ],
           "path": "src/data_terrains.c"
         }
@@ -3046,8 +2948,8 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrainNames",
-            "TERRAIN_FORT"
+            "gTerrains_0",
+            "[TERRAIN_FORT]"
           ],
           "path": "src/data_terrains.c"
         }
@@ -3080,8 +2982,8 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrainNames",
-            "TERRAIN_GATE_CASTLE"
+            "gTerrains_0",
+            "[TERRAIN_GATE_CASTLE]"
           ],
           "path": "src/data_terrains.c"
         }
@@ -3114,8 +3016,8 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrainNames",
-            "TERRAIN_FOREST"
+            "gTerrains_0",
+            "[TERRAIN_FOREST]"
           ],
           "path": "src/data_terrains.c"
         }
@@ -3148,8 +3050,8 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrainNames",
-            "TERRAIN_THICKET"
+            "gTerrains_0",
+            "[TERRAIN_THICKET]"
           ],
           "path": "src/data_terrains.c"
         }
@@ -3182,8 +3084,8 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrainNames",
-            "TERRAIN_SAND"
+            "gTerrains_0",
+            "[TERRAIN_SAND]"
           ],
           "path": "src/data_terrains.c"
         }
@@ -3216,8 +3118,8 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrainNames",
-            "TERRAIN_DESERT"
+            "gTerrains_0",
+            "[TERRAIN_DESERT]"
           ],
           "path": "src/data_terrains.c"
         }
@@ -3250,8 +3152,8 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrainNames",
-            "TERRAIN_RIVER"
+            "gTerrains_0",
+            "[TERRAIN_RIVER]"
           ],
           "path": "src/data_terrains.c"
         }
@@ -3284,8 +3186,8 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrainNames",
-            "TERRAIN_MOUNTAIN"
+            "gTerrains_0",
+            "[TERRAIN_MOUNTAIN]"
           ],
           "path": "src/data_terrains.c"
         }
@@ -3318,8 +3220,8 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrainNames",
-            "TERRAIN_PEAK"
+            "gTerrains_0",
+            "[TERRAIN_PEAK]"
           ],
           "path": "src/data_terrains.c"
         }
@@ -3352,8 +3254,8 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrainNames",
-            "TERRAIN_BRIDGE_REGULAR"
+            "gTerrains_0",
+            "[TERRAIN_BRIDGE_REGULAR]"
           ],
           "path": "src/data_terrains.c"
         }
@@ -3386,8 +3288,8 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrainNames",
-            "TERRAIN_BRIDGE_14"
+            "gTerrains_0",
+            "[TERRAIN_BRIDGE_14]"
           ],
           "path": "src/data_terrains.c"
         }
@@ -3420,8 +3322,8 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrainNames",
-            "TERRAIN_SEA"
+            "gTerrains_0",
+            "[TERRAIN_SEA]"
           ],
           "path": "src/data_terrains.c"
         }
@@ -3454,8 +3356,8 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrainNames",
-            "TERRAIN_LAKE"
+            "gTerrains_0",
+            "[TERRAIN_LAKE]"
           ],
           "path": "src/data_terrains.c"
         }
@@ -3488,8 +3390,8 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrainNames",
-            "TERRAIN_FLOOR_REGULAR"
+            "gTerrains_0",
+            "[TERRAIN_FLOOR_REGULAR]"
           ],
           "path": "src/data_terrains.c"
         }
@@ -3522,8 +3424,8 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrainNames",
-            "TERRAIN_FLOOR_MAGIC"
+            "gTerrains_0",
+            "[TERRAIN_FLOOR_MAGIC]"
           ],
           "path": "src/data_terrains.c"
         }
@@ -3556,8 +3458,8 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrainNames",
-            "TERRAIN_FENCE_REGULAR"
+            "gTerrains_0",
+            "[TERRAIN_FENCE_REGULAR]"
           ],
           "path": "src/data_terrains.c"
         }
@@ -3590,8 +3492,8 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrainNames",
-            "TERRAIN_WALL_REGULAR"
+            "gTerrains_0",
+            "[TERRAIN_WALL_REGULAR]"
           ],
           "path": "src/data_terrains.c"
         }
@@ -3624,8 +3526,8 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrainNames",
-            "TERRAIN_WALL_DAMAGED"
+            "gTerrains_0",
+            "[TERRAIN_WALL_DAMAGED]"
           ],
           "path": "src/data_terrains.c"
         }
@@ -3658,8 +3560,8 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrainNames",
-            "TERRAIN_RUBBLE"
+            "gTerrains_0",
+            "[TERRAIN_RUBBLE]"
           ],
           "path": "src/data_terrains.c"
         }
@@ -3692,8 +3594,8 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrainNames",
-            "TERRAIN_PILLAR"
+            "gTerrains_0",
+            "[TERRAIN_PILLAR]"
           ],
           "path": "src/data_terrains.c"
         }
@@ -3726,8 +3628,8 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrainNames",
-            "TERRAIN_DOOR"
+            "gTerrains_0",
+            "[TERRAIN_DOOR]"
           ],
           "path": "src/data_terrains.c"
         }
@@ -3760,8 +3662,8 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrainNames",
-            "TERRAIN_THRONE"
+            "gTerrains_0",
+            "[TERRAIN_THRONE]"
           ],
           "path": "src/data_terrains.c"
         }
@@ -3794,8 +3696,8 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrainNames",
-            "TERRAIN_CHEST_EMPTY"
+            "gTerrains_0",
+            "[TERRAIN_CHEST_EMPTY]"
           ],
           "path": "src/data_terrains.c"
         }
@@ -3828,8 +3730,8 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrainNames",
-            "TERRAIN_CHEST_FULL"
+            "gTerrains_0",
+            "[TERRAIN_CHEST_FULL]"
           ],
           "path": "src/data_terrains.c"
         }
@@ -3862,8 +3764,8 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrainNames",
-            "TERRAIN_ROOF"
+            "gTerrains_0",
+            "[TERRAIN_ROOF]"
           ],
           "path": "src/data_terrains.c"
         }
@@ -3896,8 +3798,8 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrainNames",
-            "TERRAIN_GATE_REGULAR"
+            "gTerrains_0",
+            "[TERRAIN_GATE_REGULAR]"
           ],
           "path": "src/data_terrains.c"
         }
@@ -3930,8 +3832,8 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrainNames",
-            "TERRAIN_CHURCH"
+            "gTerrains_0",
+            "[TERRAIN_CHURCH]"
           ],
           "path": "src/data_terrains.c"
         }
@@ -3964,8 +3866,8 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrainNames",
-            "TERRAIN_RUINS_REGULAR"
+            "gTerrains_0",
+            "[TERRAIN_RUINS_REGULAR]"
           ],
           "path": "src/data_terrains.c"
         }
@@ -3998,8 +3900,8 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrainNames",
-            "TERRAIN_CLIFF"
+            "gTerrains_0",
+            "[TERRAIN_CLIFF]"
           ],
           "path": "src/data_terrains.c"
         }
@@ -4032,8 +3934,8 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrainNames",
-            "TERRAIN_BALLISTA_REGULAR"
+            "gTerrains_0",
+            "[TERRAIN_BALLISTA_REGULAR]"
           ],
           "path": "src/data_terrains.c"
         }
@@ -4066,8 +3968,8 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrainNames",
-            "TERRAIN_BALLISTA_LONG"
+            "gTerrains_0",
+            "[TERRAIN_BALLISTA_LONG]"
           ],
           "path": "src/data_terrains.c"
         }
@@ -4100,8 +4002,8 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrainNames",
-            "TERRAIN_BALLISTA_KILLER"
+            "gTerrains_0",
+            "[TERRAIN_BALLISTA_KILLER]"
           ],
           "path": "src/data_terrains.c"
         }
@@ -4134,8 +4036,8 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrainNames",
-            "TERRAIN_SHIP_FLAT"
+            "gTerrains_0",
+            "[TERRAIN_SHIP_FLAT]"
           ],
           "path": "src/data_terrains.c"
         }
@@ -4168,8 +4070,8 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrainNames",
-            "TERRAIN_SHIP_WRECK"
+            "gTerrains_0",
+            "[TERRAIN_SHIP_WRECK]"
           ],
           "path": "src/data_terrains.c"
         }
@@ -4202,8 +4104,8 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrainNames",
-            "TERRAIN_TILE_2C"
+            "gTerrains_0",
+            "[TERRAIN_TILE_2C]"
           ],
           "path": "src/data_terrains.c"
         }
@@ -4236,8 +4138,8 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrainNames",
-            "TERRAIN_STAIRS"
+            "gTerrains_0",
+            "[TERRAIN_STAIRS]"
           ],
           "path": "src/data_terrains.c"
         }
@@ -4270,8 +4172,8 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrainNames",
-            "TERRAIN_TILE_2E"
+            "gTerrains_0",
+            "[TERRAIN_TILE_2E]"
           ],
           "path": "src/data_terrains.c"
         }
@@ -4304,8 +4206,8 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrainNames",
-            "TERRAIN_GLACIER"
+            "gTerrains_0",
+            "[TERRAIN_GLACIER]"
           ],
           "path": "src/data_terrains.c"
         }
@@ -4338,8 +4240,8 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrainNames",
-            "TERRAIN_ARENA_30"
+            "gTerrains_0",
+            "[TERRAIN_ARENA_30]"
           ],
           "path": "src/data_terrains.c"
         }
@@ -4372,8 +4274,8 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrainNames",
-            "TERRAIN_VALLEY"
+            "gTerrains_0",
+            "[TERRAIN_VALLEY]"
           ],
           "path": "src/data_terrains.c"
         }
@@ -4406,8 +4308,8 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrainNames",
-            "TERRAIN_FENCE_32"
+            "gTerrains_0",
+            "[TERRAIN_FENCE_32]"
           ],
           "path": "src/data_terrains.c"
         }
@@ -4440,8 +4342,8 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrainNames",
-            "TERRAIN_SNAG"
+            "gTerrains_0",
+            "[TERRAIN_SNAG]"
           ],
           "path": "src/data_terrains.c"
         }
@@ -4474,8 +4376,8 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrainNames",
-            "TERRAIN_BRIDGE_SNAG"
+            "gTerrains_0",
+            "[TERRAIN_BRIDGE_SNAG]"
           ],
           "path": "src/data_terrains.c"
         }
@@ -4508,8 +4410,8 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrainNames",
-            "TERRAIN_SKY"
+            "gTerrains_0",
+            "[TERRAIN_SKY]"
           ],
           "path": "src/data_terrains.c"
         }
@@ -4542,8 +4444,8 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrainNames",
-            "TERRAIN_DEEPS"
+            "gTerrains_0",
+            "[TERRAIN_DEEPS]"
           ],
           "path": "src/data_terrains.c"
         }
@@ -4576,8 +4478,8 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrainNames",
-            "TERRAIN_RUINS_VILLAGE"
+            "gTerrains_0",
+            "[TERRAIN_RUINS_VILLAGE]"
           ],
           "path": "src/data_terrains.c"
         }
@@ -4610,8 +4512,8 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrainNames",
-            "TERRAIN_INN"
+            "gTerrains_0",
+            "[TERRAIN_INN]"
           ],
           "path": "src/data_terrains.c"
         }
@@ -4644,8 +4546,8 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrainNames",
-            "TERRAIN_BARREL"
+            "gTerrains_0",
+            "[TERRAIN_BARREL]"
           ],
           "path": "src/data_terrains.c"
         }
@@ -4678,8 +4580,8 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrainNames",
-            "TERRAIN_BONE"
+            "gTerrains_0",
+            "[TERRAIN_BONE]"
           ],
           "path": "src/data_terrains.c"
         }
@@ -4712,8 +4614,8 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrainNames",
-            "TERRAIN_DARK"
+            "gTerrains_0",
+            "[TERRAIN_DARK]"
           ],
           "path": "src/data_terrains.c"
         }
@@ -4746,8 +4648,8 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrainNames",
-            "TERRAIN_WATER"
+            "gTerrains_0",
+            "[TERRAIN_WATER]"
           ],
           "path": "src/data_terrains.c"
         }
@@ -4780,8 +4682,8 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrainNames",
-            "TERRAIN_GUNNELS"
+            "gTerrains_0",
+            "[TERRAIN_GUNNELS]"
           ],
           "path": "src/data_terrains.c"
         }
@@ -4814,8 +4716,8 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrainNames",
-            "TERRAIN_DECK"
+            "gTerrains_0",
+            "[TERRAIN_DECK]"
           ],
           "path": "src/data_terrains.c"
         }
@@ -4848,8 +4750,8 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrainNames",
-            "TERRAIN_BRACE"
+            "gTerrains_0",
+            "[TERRAIN_BRACE]"
           ],
           "path": "src/data_terrains.c"
         }
@@ -4882,8 +4784,8 @@
       "call_sites": [
         {
           "anchors": [
-            "gTerrainNames",
-            "TERRAIN_MAST"
+            "gTerrains_0",
+            "[TERRAIN_MAST]"
           ],
           "path": "src/data_terrains.c"
         }
@@ -5021,8 +4923,8 @@
         },
         {
           "anchors": [
-            "EXP_MSG_RAW_SURFACE_DIAGNOSTIC_BUILD_TIMESTAMP",
-            "ExpansionLocale_ResolveCurrent"
+            "ExpansionLocale_ResolveCurrent",
+            "EXP_MSG_RAW_SURFACE_DIAGNOSTIC_BUILD_TIMESTAMP"
           ],
           "path": "src/fe3_dummy.c"
         }
@@ -5052,8 +4954,8 @@
       "runtime_consumers": [
         {
           "anchors": [
-            "EXP_MSG_RAW_SURFACE_DIAGNOSTIC_BUILD_TIMESTAMP",
-            "ExpansionLocale_ResolveCurrent"
+            "ExpansionLocale_ResolveCurrent",
+            "EXP_MSG_RAW_SURFACE_DIAGNOSTIC_BUILD_TIMESTAMP"
           ],
           "path": "src/fe3_dummy.c",
           "symbol": "PrintDebugBuildDateAndTime"

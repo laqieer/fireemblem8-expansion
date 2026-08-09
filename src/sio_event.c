@@ -18,6 +18,18 @@
 #include "sio.h"
 #include "constants/songs.h"
 
+#ifdef MODERN
+#include "expansion_locale.h"
+#include "expansion_msg_ids.h"
+#define SIO_TRANSFER_SENDING_TEXT \
+    ExpansionLocale_ResolveCurrent(EXP_MSG_SIO_TRANSFER_SENDING)
+#define SIO_TRANSFER_RECEIVING_TEXT \
+    ExpansionLocale_ResolveCurrent(EXP_MSG_SIO_TRANSFER_RECEIVING)
+#else
+#define SIO_TRANSFER_SENDING_TEXT "送信中"
+#define SIO_TRANSFER_RECEIVING_TEXT "受信中"
+#endif
+
 /**
  * Contains Link Arena functions that are called by events
  */
@@ -227,7 +239,7 @@ void DrawXMapSendProgress(struct SioBigSendProc * proc)
         PlaySoundEffect(SONG_7D);
         proc->unk_3C++;
 
-        PutXMapProgressPercent(&gUnk_Sio_7[0], "送信中" /* "Sending" */, proc->unk_3C);
+        PutXMapProgressPercent(&gUnk_Sio_7[0], SIO_TRANSFER_SENDING_TEXT, proc->unk_3C);
         DrawStatBarGfx(
             0x100, 0xe, TILEMAP_LOCATED(gBG0TilemapBuffer, 14, 15), 0x6000, 100, proc->unk_3C, 100 - proc->unk_3C);
         BG_EnableSyncByMask(BG0_SYNC_BIT);
@@ -244,7 +256,7 @@ void DrawXMapReceiveProgress(struct SioBigReceiveProc * proc)
         PlaySoundEffect(SONG_7D);
         proc->unk_3C++;
 
-        PutXMapProgressPercent(&gUnk_Sio_7[0], "受信中" /* "Receiving" */, proc->unk_3C);
+        PutXMapProgressPercent(&gUnk_Sio_7[0], SIO_TRANSFER_RECEIVING_TEXT, proc->unk_3C);
         DrawStatBarGfx(
             0x100, 0xe, TILEMAP_LOCATED(gBG0TilemapBuffer, 14, 15), 0x6000, 100, proc->unk_3C, 100 - proc->unk_3C);
         BG_EnableSyncByMask(BG0_SYNC_BIT);

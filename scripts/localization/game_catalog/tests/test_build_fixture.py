@@ -1,4 +1,5 @@
 import shutil
+import hashlib
 import json
 import sys
 import unittest
@@ -84,18 +85,41 @@ class FixtureBuildTests(unittest.TestCase):
             '}\n',
             encoding="utf-8",
         )
+        ja_providers = {
+            "0x0001": {"symbol": "fixture", "text": "生"},
+        }
+        ja_snapshot = {
+            "kind": "fe8j-raw-symbol-source-snapshot",
+            "provider_count": 1,
+            "providers": ja_providers,
+            "schema_version": 1,
+            "source_revision": "fixture",
+        }
+        ja_snapshot_bytes = (
+            json.dumps(ja_snapshot, ensure_ascii=False, indent=2, sort_keys=True)
+            + "\n"
+        ).encode("utf-8")
+        (self.fixture_dir / "ja_raw_source.json").write_bytes(ja_snapshot_bytes)
         (self.fixture_dir / "ja_raw.json").write_text(
-            "{\n"
-            '  "schema_version": 1,\n'
-            '  "kind": "fe8j-raw-provider-catalog",\n'
-            '  "locale_id": "ja",\n'
-            '  "source_layout": "FE8J-raw-symbol",\n'
-            '  "source_revision": "fixture",\n'
-            '  "provider_count": 1,\n'
-            '  "providers": {\n'
-            '    "0x0001": {"symbol": "fixture", "text": "生"}\n'
-            '  }\n'
-            '}\n',
+            json.dumps(
+                {
+                    "kind": "fe8j-raw-provider-catalog",
+                    "locale_id": "ja",
+                    "provider_count": 1,
+                    "providers": ja_providers,
+                    "schema_version": 1,
+                    "source_layout": "FE8J-raw-symbol",
+                    "source_revision": "fixture",
+                    "source_snapshot": {
+                        "path": "ja_raw_source.json",
+                        "sha256": hashlib.sha256(ja_snapshot_bytes).hexdigest(),
+                    },
+                },
+                ensure_ascii=False,
+                indent=2,
+                sort_keys=True,
+            )
+            + "\n",
             encoding="utf-8",
         )
         (self.fixture_dir / "mapping.json").write_text(

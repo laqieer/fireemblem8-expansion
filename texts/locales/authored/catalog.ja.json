@@ -20,7 +20,7 @@
     },
     {
       "path": "texts/locales/authored/shards/help_shop.ja.json",
-      "sha256": "8ff3bfb674cd987c9b1d0b42b73561e1c1ca55d51210458c0eb337862fa5d4ab",
+      "sha256": "79b1e89bb40851aba2e13c6799cdba626214e1e625a1298476a843877c19d7cb",
       "target_count": 81
     },
     {
@@ -339,9 +339,9 @@
     "game.shop_arena.msg_758": "このターンは誰もダメージを与えられません[.][X]\n",
     "game.shop_arena.msg_766": "チーム作成[X]\n",
     "game.shop_arena.msg_767": "部隊表[.][X]\n",
-    "game.shop_arena.msg_768": "チーム入替え[X]\n",
+    "game.shop_arena.msg_768": "チーム交換[X]\n",
     "game.shop_arena.msg_769": "チーム削除[.][X]\n",
-    "game.shop_arena.msg_76a": "通信メニュー[.][X]\n",
+    "game.shop_arena.msg_76a": "通信画面[.][X]\n",
     "game.shop_arena.msg_76b": "未選択[.][X]\n",
     "game.shop_arena.msg_76c": "対戦チーム[X]\n",
     "game.shop_arena.msg_774": "順位[X]\n",

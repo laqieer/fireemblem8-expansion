@@ -291,10 +291,10 @@ descriptor slots.
    `build-final-mapping` also regenerates
    `texts/locales/mapping/ending_layout_metrics.json`. That gate reads the
    real `InitText` allocations in `src/ending_details.c` (120 pixels for all
-   33 character titles and five 208-pixel lines for all 34 paired endings)
-   and measures every JA/ZH line with the committed runtime system-font
-   widths. A missing glyph, physical newline, wrong line count, or overflow
-   fails generation.
+   33 character titles and up to five 208-pixel lines for all 33 solo and 34
+   paired endings) and measures every JA/ZH line with the committed runtime
+   system-font widths. A missing glyph, physical newline, invalid line count,
+   or overflow fails generation.
 3. `python3 -m unittest discover -s scripts/localization/tests -p
    'test_*.py' -v` (or `make localization-test`) re-validates schema,
    strict UTF-8/control, surface-width and UTF-8 byte budgets, placeholder/

@@ -39,6 +39,21 @@
     "raw_surface.class_change.option_1": " 第1兵种",
     "raw_surface.class_change.option_2": " 第2兵种",
     "raw_surface.class_change.option_3": " 第3兵种",
-    "raw_surface.diagnostic.build_timestamp": "2005/02/04(FRI) 16:55:40"
+    "raw_surface.diagnostic.build_timestamp": "2005/02/04(FRI) 16:55:40",
+    "sio.transfer.sending": "发送中",
+    "sio.transfer.receiving": "接收中",
+    "debug.confirm.heal_full": "完全恢复",
+    "debug.confirm.add_item": "添加物品",
+    "debug.confirm.toggle_flag": "切换标记",
+    "debug.confirm.reseed": "重设随机数",
+    "debug.status.hub": "调试工具",
+    "debug.status.hub_error": "调试错误",
+    "debug.status.unit_hp": "单位生命",
+    "debug.status.unit_unavailable": "无单位",
+    "debug.status.convoy": "运输队",
+    "debug.status.chapter": "章节",
+    "debug.status.flag": "标记",
+    "debug.status.rng_seed": "随机种子",
+    "debug.status.save_state": "存档状态"
   }
 }

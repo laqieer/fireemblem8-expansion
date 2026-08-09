@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Dict, Mapping
 
 JA_RAW_PROVIDER_KIND = "fe8j-raw-provider-catalog"
@@ -21,7 +24,59 @@ class RawProvider:
     text: str
 
 
-def load_ja_raw_providers(data: Any) -> Dict[int, RawProvider]:
+def _load_source_snapshot(
+    data: Mapping[str, Any],
+    *,
+    source_root: Path,
+) -> Mapping[str, Any]:
+    specification = data.get("source_snapshot")
+    if not isinstance(specification, dict) or set(specification) != {
+        "path",
+        "sha256",
+    }:
+        raise RawProviderError(
+            "ja raw provider source_snapshot must contain path and sha256"
+        )
+    relative_path = specification["path"]
+    expected_sha256 = specification["sha256"]
+    if not isinstance(relative_path, str) or not relative_path:
+        raise RawProviderError("ja raw provider source_snapshot.path is invalid")
+    if (
+        not isinstance(expected_sha256, str)
+        or not re.fullmatch(r"[0-9a-f]{64}", expected_sha256)
+    ):
+        raise RawProviderError(
+            "ja raw provider source_snapshot.sha256 must be a lowercase SHA-256"
+        )
+    path = Path(source_root) / relative_path
+    try:
+        raw = path.read_bytes()
+        snapshot = json.loads(raw.decode("utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise RawProviderError(
+            f"ja raw provider source snapshot is unavailable: {path}"
+        ) from error
+    actual_sha256 = hashlib.sha256(raw).hexdigest()
+    if actual_sha256 != expected_sha256:
+        raise RawProviderError(
+            "ja raw provider source snapshot SHA-256 mismatch"
+        )
+    if not isinstance(snapshot, dict):
+        raise RawProviderError("ja raw provider source snapshot must be an object")
+    if snapshot.get("schema_version") != 1:
+        raise RawProviderError(
+            "ja raw provider source snapshot schema_version must be 1"
+        )
+    if snapshot.get("kind") != "fe8j-raw-symbol-source-snapshot":
+        raise RawProviderError("ja raw provider source snapshot kind is invalid")
+    return snapshot
+
+
+def load_ja_raw_providers(
+    data: Any,
+    *,
+    source_root: Path = Path("."),
+) -> Dict[int, RawProvider]:
     if not isinstance(data, dict):
         raise RawProviderError("ja raw provider catalog root must be an object")
     if data.get("schema_version") != JA_RAW_PROVIDER_SCHEMA_VERSION:
@@ -41,12 +96,25 @@ def load_ja_raw_providers(data: Any) -> Dict[int, RawProvider]:
     source_revision = data.get("source_revision")
     if not isinstance(source_revision, str) or not source_revision:
         raise RawProviderError("ja raw provider source_revision must be non-empty")
+    snapshot = _load_source_snapshot(data, source_root=source_root)
+    if snapshot.get("source_revision") != source_revision:
+        raise RawProviderError(
+            "ja raw provider source snapshot revision does not match catalog"
+        )
 
     raw_providers = data.get("providers")
     if not isinstance(raw_providers, dict):
         raise RawProviderError("ja raw provider providers must be an object")
     if data.get("provider_count") != len(raw_providers):
         raise RawProviderError("ja raw provider provider_count does not match providers")
+    if snapshot.get("provider_count") != len(raw_providers):
+        raise RawProviderError(
+            "ja raw provider source snapshot provider_count does not match providers"
+        )
+    if snapshot.get("providers") != raw_providers:
+        raise RawProviderError(
+            "ja raw provider catalog symbol/value payloads do not match source snapshot"
+        )
 
     providers: Dict[int, RawProvider] = {}
     for target, raw_provider in raw_providers.items():

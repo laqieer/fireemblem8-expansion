@@ -15,6 +15,7 @@ from .controls import (
     expand_canonical_controls_bytes,
     expand_canonical_text,
     normalize_source_controls,
+    normalize_physical_line_separators,
     validate_canonical_text,
 )
 from .combined_coverage import (
@@ -56,6 +57,7 @@ __all__ = (
     "expand_canonical_controls_bytes",
     "expand_canonical_text",
     "normalize_source_controls",
+    "normalize_physical_line_separators",
     "harvest_structural_evidence",
     "parse_febuilder_text_id_map",
     "validate_canonical_text",

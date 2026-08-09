@@ -85,7 +85,7 @@ class BuildOutputsTests(unittest.TestCase):
         budget = build_budget(self.catalog)
         self.assertEqual(
             budget["pseudo_policy_counts"],
-            {"transform": 37, "preserve": 1},
+            {"transform": 52, "preserve": 1},
         )
 
     def test_generated_qps_catalog_preserves_build_timestamp(self):

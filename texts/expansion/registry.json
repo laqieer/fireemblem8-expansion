@@ -317,6 +317,126 @@
       "max_width": 32,
       "max_decoded_bytes": 32,
       "notes": "Locale-neutral executable identity. Every runtime locale duplicates the current gBuildDateTime string; regional raw timestamps remain source provenance only."
+    },
+    {
+      "id": 39,
+      "key": "sio.transfer.sending",
+      "status": "active",
+      "surface": "framework_generic",
+      "max_width": 48,
+      "max_decoded_bytes": 80
+    },
+    {
+      "id": 40,
+      "key": "sio.transfer.receiving",
+      "status": "active",
+      "surface": "framework_generic",
+      "max_width": 48,
+      "max_decoded_bytes": 80
+    },
+    {
+      "id": 41,
+      "key": "debug.confirm.heal_full",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 48,
+      "max_decoded_bytes": 80
+    },
+    {
+      "id": 42,
+      "key": "debug.confirm.add_item",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 48,
+      "max_decoded_bytes": 80
+    },
+    {
+      "id": 43,
+      "key": "debug.confirm.toggle_flag",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 48,
+      "max_decoded_bytes": 80
+    },
+    {
+      "id": 44,
+      "key": "debug.confirm.reseed",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 48,
+      "max_decoded_bytes": 80
+    },
+    {
+      "id": 45,
+      "key": "debug.status.hub",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 48,
+      "max_decoded_bytes": 80
+    },
+    {
+      "id": 46,
+      "key": "debug.status.hub_error",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 48,
+      "max_decoded_bytes": 80
+    },
+    {
+      "id": 47,
+      "key": "debug.status.unit_hp",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 48,
+      "max_decoded_bytes": 80
+    },
+    {
+      "id": 48,
+      "key": "debug.status.unit_unavailable",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 48,
+      "max_decoded_bytes": 80
+    },
+    {
+      "id": 49,
+      "key": "debug.status.convoy",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 48,
+      "max_decoded_bytes": 80
+    },
+    {
+      "id": 50,
+      "key": "debug.status.chapter",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 48,
+      "max_decoded_bytes": 80
+    },
+    {
+      "id": 51,
+      "key": "debug.status.flag",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 48,
+      "max_decoded_bytes": 80
+    },
+    {
+      "id": 52,
+      "key": "debug.status.rng_seed",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 48,
+      "max_decoded_bytes": 80
+    },
+    {
+      "id": 53,
+      "key": "debug.status.save_state",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 48,
+      "max_decoded_bytes": 80
     }
   ]
 }

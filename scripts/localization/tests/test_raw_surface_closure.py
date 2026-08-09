@@ -1,4 +1,5 @@
 import json
+import hashlib
 import re
 import sys
 import unittest
@@ -275,7 +276,7 @@ class RawSurfaceClosureTests(unittest.TestCase):
             if row["import_id"] == "fe8cn.raw.import-0062"
         )
         decision["runtime_consumers"][0]["anchors"] = ["PROMO_OPTION_1_NAME"]
-        with self.assertRaisesRegex(RawClosureError, "missing anchors"):
+        with self.assertRaisesRegex(RawClosureError, "missing ordered anchors"):
             build_raw_surface_closure(
                 raw_data=self.raw,
                 mapping_data=self.mapping,
@@ -291,7 +292,49 @@ class RawSurfaceClosureTests(unittest.TestCase):
         broken["decisions"][0]["call_sites"][0]["anchors"] = [
             "__missing_raw_surface_anchor__"
         ]
-        with self.assertRaisesRegex(RawClosureError, "no surviving anchor"):
+        with self.assertRaisesRegex(RawClosureError, "missing ordered anchors"):
+            build_raw_surface_closure(
+                raw_data=self.raw,
+                mapping_data=self.mapping,
+                decisions_data=broken,
+                ja_raw_provider_data=self.ja_raw,
+                registry_data=self.registry,
+                catalog_data=self.catalogs,
+                repo_root=ROOT,
+            )
+
+    def test_one_surviving_call_site_anchor_cannot_hide_a_missing_anchor(self):
+        broken = deepcopy(self.decisions)
+        decision = next(
+            row
+            for row in broken["decisions"]
+            if row["import_id"] == "fe8cn.raw.import-0062"
+        )
+        decision["call_sites"][0]["anchors"].append(
+            "__missing_relationship_anchor__"
+        )
+        with self.assertRaisesRegex(RawClosureError, "missing ordered anchors"):
+            build_raw_surface_closure(
+                raw_data=self.raw,
+                mapping_data=self.mapping,
+                decisions_data=broken,
+                ja_raw_provider_data=self.ja_raw,
+                registry_data=self.registry,
+                catalog_data=self.catalogs,
+                repo_root=ROOT,
+            )
+
+    def test_reversed_call_site_anchor_relationship_fails_closed(self):
+        broken = deepcopy(self.decisions)
+        decision = next(
+            row
+            for row in broken["decisions"]
+            if row["import_id"] == "fe8cn.raw.import-0142"
+        )
+        decision["call_sites"][1]["anchors"] = list(
+            reversed(decision["call_sites"][1]["anchors"])
+        )
+        with self.assertRaisesRegex(RawClosureError, "missing ordered anchors"):
             build_raw_surface_closure(
                 raw_data=self.raw,
                 mapping_data=self.mapping,
@@ -336,7 +379,7 @@ class RawSurfaceClosureTests(unittest.TestCase):
         broken["provider_count"] -= 1
         with self.assertRaisesRegex(
             RawClosureError,
-            "Japanese raw symbol provider is missing",
+            "source snapshot provider_count does not match providers",
         ):
             build_raw_surface_closure(
                 raw_data=self.raw,
@@ -366,6 +409,28 @@ class RawSurfaceClosureTests(unittest.TestCase):
                     self.ja_raw["providers"][target_id],
                     {"symbol": symbol, "text": text},
                 )
+
+    def test_japanese_raw_provider_snapshot_is_accessible_and_exact(self):
+        specification = self.ja_raw["source_snapshot"]
+        path = ROOT / "texts/locales/ja" / specification["path"]
+        snapshot = json.loads(path.read_text(encoding="utf-8"))
+        self.assertEqual(snapshot["source_revision"], self.ja_raw["source_revision"])
+        self.assertEqual(snapshot["provider_count"], 119)
+        self.assertEqual(snapshot["providers"], self.ja_raw["providers"])
+        self.assertTrue(
+                all(
+                    not provider["symbol"].startswith("gTerrainNames[")
+                    for provider in snapshot["providers"].values()
+                )
+        )
+        self.assertEqual(
+                hashlib.sha256(path.read_bytes()).hexdigest(),
+                specification["sha256"],
+        )
+        self.assertEqual(
+                snapshot["providers"]["0x01C4"]["symbol"],
+                "gTerrains_0[TERRAIN_NONE]",
+        )
 
 
 if __name__ == "__main__":

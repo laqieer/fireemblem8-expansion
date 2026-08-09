@@ -2,8 +2,8 @@
 # Locale ID: ja
 # Source layout: FE8J; these identifiers are not FE8U target identifiers.
 # Input SHA-256: 511ce51cadd2ac94ec3f5219a81205f6aa52de3c3c659c9efd1f0f75f9079a8a
-# Override SHA-256: 5fdaa450d22dedbf3fce562de3b53cc5e7a9bbe9b45ff6c8a5fe892b3ca3075c
-# Applied overrides: 48
+# Override SHA-256: d9b659e08255c1e938a02077a91ce6ddbbd74d81db453958541afe81e1cbb3d7
+# Applied overrides: 49
 
 #0x0000
 
@@ -146,7 +146,7 @@
 #0x0045
 編成をやめる
 #0x0046
-ユニットを隠す
+敵を隠す
 #0x0047
 対戦勝利条件
 #0x0048

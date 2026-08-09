@@ -428,7 +428,7 @@ _SEMANTIC_INDEXED_CORRECTIONS: Dict[str, Dict[str, Any]] = {
         "incorrect_source_id": "0x0907",
         "payload_sha256": {
             "ja": "121ee8645ad77a4c56fd1c2f3bf73d037895d72d9dc9d37dec44dcd0c4fc3119",
-            "zh-Hans": "9ca0ad0d3baf64e3d68e517398c744f0c206c0a6d599808aca94a5e0f797021d",
+            "zh-Hans": "908d91ba09ae3f3a7bd5259ce6915d10c38cc2bdf251a586f447e6698a937b49",
         },
         "rationale": (
             "The selected-unit prompt is for Eirika and the A Button. "
@@ -443,7 +443,7 @@ _SEMANTIC_INDEXED_CORRECTIONS: Dict[str, Dict[str, Any]] = {
         "incorrect_source_id": "0x090B",
         "payload_sha256": {
             "ja": "c965c719176d22ef0e60634d28ae3ca60f8844054446a5dbbb089743a24a40fa",
-            "zh-Hans": "609abc4a80b7920547517ccece15b9760c2a046e228805d73e215a25f32907a6",
+            "zh-Hans": "b799cdb96c8296e1833064c6d87eb09358409c1ae318e4be32b1a7c46cad8df7",
         },
         "rationale": (
             "The call site starts item trading by selecting Gilliam. Official "
@@ -458,7 +458,7 @@ _SEMANTIC_INDEXED_CORRECTIONS: Dict[str, Dict[str, Any]] = {
         "incorrect_source_id": "0x090E",
         "payload_sha256": {
             "ja": "51eadbaeade1a3a92dc182e2fab0d069e5fa6658708e489d023656b5f8fdd836",
-            "zh-Hans": "9c4c09e07a855e528d1547ad1f047c546db4de08fa85cd23713795a922768f2d",
+            "zh-Hans": "fdefee4fc4049adaa620ca846932557055e2ec71d9f75fb7a573c49c9ef003cc",
         },
         "rationale": (
             "The selected-unit prompt is for Gilliam and the A Button. "
@@ -488,7 +488,7 @@ _SEMANTIC_INDEXED_CORRECTIONS: Dict[str, Dict[str, Any]] = {
         "incorrect_source_id": "0x0931",
         "payload_sha256": {
             "ja": "1e1e38be578f17e137c3051c4fbc7258e739dfc49805b8e599cefa49d88c7b44",
-            "zh-Hans": "418d091b5ebe0cd46b92a51a118b5bd69316886529be2775dd597da34b6ef54c",
+            "zh-Hans": "693521e7511b993e05c063fbf9126a08e7ffe22b0c6749608163b3898e9b12c4",
         },
         "rationale": (
             "The trade screen shows Gilliam and Franz and requires moving "
@@ -503,7 +503,7 @@ _SEMANTIC_INDEXED_CORRECTIONS: Dict[str, Dict[str, Any]] = {
         "incorrect_source_id": "0x0932",
         "payload_sha256": {
             "ja": "e33b7e0e774714a4afad8544c8b1caf0d81803c8b4f541fd4b446b8ebcef06ae",
-            "zh-Hans": "8bbbe8585f62eaba2240de766caa5c30402458af5718f36c3d6b599b9f696c43",
+            "zh-Hans": "bdbaf506c769bbdc60cb0e012df5365cc43e7e7bc9a52c1da237c0d702b87387",
         },
         "rationale": (
             "The trade step accepts a vulnerary from Franz with A. Official "
@@ -518,7 +518,7 @@ _SEMANTIC_INDEXED_CORRECTIONS: Dict[str, Dict[str, Any]] = {
         "incorrect_source_id": "0x0934",
         "payload_sha256": {
             "ja": "0455d535574d7cebcf1ff762eaaef4c0a4c3c3d72e3c2742752078d26850dc63",
-            "zh-Hans": "328696022144adb29b1deb5fcc42c14d7e51ed749d914ba7c66958f461b4b5e3",
+            "zh-Hans": "c6049505a69de575ea7b3c3a90cdd98514d2f45b5facdc674126fc60d1438d4e",
         },
         "rationale": (
             "The completed trade is closed with the B Button. Official "
@@ -533,7 +533,7 @@ _SEMANTIC_INDEXED_CORRECTIONS: Dict[str, Dict[str, Any]] = {
         "incorrect_source_id": "0x0939",
         "payload_sha256": {
             "ja": "cf2e81dc7a5e0069ea915e5ab9ebeeba9b37f91986c2e17c602192909971cf2d",
-            "zh-Hans": "df78999d55b7413e681b951bd19328161a168da9365df48f1a5c3b0dffec1295",
+            "zh-Hans": "96852224bf661b1de02b8e06d7879bae8a1bdb329d7cbf84bd94355b82307fb3",
         },
         "rationale": (
             "The selected-unit prompt is for Seth and the A Button. Official "
@@ -548,7 +548,7 @@ _SEMANTIC_INDEXED_CORRECTIONS: Dict[str, Dict[str, Any]] = {
         "incorrect_source_id": "0x090C",
         "payload_sha256": {
             "ja": "1422be7b1b97192747a1272e4de6afe439383fad7f384238a4f55d4d8de5c795",
-            "zh-Hans": "f1986fe415b5340e14f29fdc53af2b9385352a6c94b78e7e9128e699fa79b954",
+            "zh-Hans": "73cb93a9698374360a7f9fa830c630b951428da50795edbc1d7510f65bdb8fa2",
         },
         "rationale": (
             "The enabled command is Attack with a sword against an axe. "
@@ -563,7 +563,7 @@ _SEMANTIC_INDEXED_CORRECTIONS: Dict[str, Dict[str, Any]] = {
         "incorrect_source_id": "0x093A",
         "payload_sha256": {
             "ja": "e6da01b7737089a42522b6f70335c56fb98f0f28bf060bff1c4763df220e3b51",
-            "zh-Hans": "58c4ea30ab590a8720e82b7f2fad0711fa299880ad575eaeb510326e05f89a1f",
+            "zh-Hans": "8791ca0b8c82379fc273bd0cea577b5f755ae9a40333ea305e5364dc01e017bd",
         },
         "rationale": (
             "The movement prompt goes next to Ross and confirms with A. "
@@ -578,7 +578,7 @@ _SEMANTIC_INDEXED_CORRECTIONS: Dict[str, Dict[str, Any]] = {
         "incorrect_source_id": "0x093C",
         "payload_sha256": {
             "ja": "6bd943db2e0a14a935047a1448cf6ee6ceeb56e042d64077bb62a8adaa4d57f7",
-            "zh-Hans": "31dbff1d3ff9792f8143821d9f3cb3ac1f019505b01a8fb0c71a8048d56befed",
+            "zh-Hans": "75f5ba6a0225fee506f31c6cb6f529310fef4948ea251092e395a8bc8dbda2da",
         },
         "rationale": (
             "The enabled command is Rescue and confirms with A. Official "
@@ -593,7 +593,7 @@ _SEMANTIC_INDEXED_CORRECTIONS: Dict[str, Dict[str, Any]] = {
         "incorrect_source_id": "0x090A",
         "payload_sha256": {
             "ja": "b8bd71817753174f3938fc9b83674e41af594adac108ef0268536586f8201a16",
-            "zh-Hans": "b8cd6472c00108e29dba7e768b60effb06ab2a9660c4ed15002e32094ff25661",
+            "zh-Hans": "1582bd8a785bf6878359a55e714d0bfe0b19c6b5b9ed105c5162cf9459482334",
         },
         "rationale": (
             "Vanessa is carrying Ross and must be selected before dropping "
@@ -608,7 +608,7 @@ _SEMANTIC_INDEXED_CORRECTIONS: Dict[str, Dict[str, Any]] = {
         "incorrect_source_id": "0x0941",
         "payload_sha256": {
             "ja": "705d93d3067d9b2fed4a88392e36cf73d1909de099c8555e99f31b199179d576",
-            "zh-Hans": "618afae29260655700f6e6b609621d6457171fa09454d7cfc918bd8af795e0af",
+            "zh-Hans": "3a5e75a960607148daf6e9d7d24db8009c19c5360de00c1e0d63e858c2bcae65",
         },
         "rationale": (
             "The enabled command is Drop and confirms with A. Official "
@@ -623,7 +623,7 @@ _SEMANTIC_INDEXED_CORRECTIONS: Dict[str, Dict[str, Any]] = {
         "incorrect_source_id": "0x0942",
         "payload_sha256": {
             "ja": "a532be518b7e634a3dcf1e34728db043fe7174342277af0267220e8dde95b737",
-            "zh-Hans": "7738174e0316b373051d01a1c4f82a9b47ba249d77509207ad0c75cd204dea79",
+            "zh-Hans": "fa45b3b1a5f95d711d4e30f66aa2e147a85a4ac2e6eb0414010826258ea30e1c",
         },
         "rationale": (
             "The enabled command is Staff and confirms with A. Official "
@@ -638,7 +638,7 @@ _SEMANTIC_INDEXED_CORRECTIONS: Dict[str, Dict[str, Any]] = {
         "incorrect_source_id": "0x0912",
         "payload_sha256": {
             "ja": "046443cb415265d21803b0a1f5bade8b820780aefb406449673e00b9ea378b4c",
-            "zh-Hans": "fc8545b5c526579b4095ae5a696f49ea688fa0980f676d13b5f5f5e79787b94d",
+            "zh-Hans": "71987d9627268f953b470de7b59a3f8ca013cef54e4ba6444b17b0ed77c45a29",
         },
         "rationale": (
             "Ross has been rescued; the next unit is Moulder moving toward "
@@ -653,7 +653,7 @@ _SEMANTIC_INDEXED_CORRECTIONS: Dict[str, Dict[str, Any]] = {
         "incorrect_source_id": "0x0943",
         "payload_sha256": {
             "ja": "a9b701b7debabf3798bcc1f2146debdb8ea2d3233df92e72feeb2cb7e3d8c5a7",
-            "zh-Hans": "58150df0db037fbb172b83270e434a0f2f8e86aaaedd4f63fe6428d89338b2dc",
+            "zh-Hans": "7fb8da6dff48ea515a985f78735812cf4b7c330f1e229027da725b2d1f621cb2",
         },
         "rationale": (
             "The movement prompt goes to the flashing space near Vanessa and "
@@ -668,7 +668,7 @@ _SEMANTIC_INDEXED_CORRECTIONS: Dict[str, Dict[str, Any]] = {
         "incorrect_source_id": "0x0947",
         "payload_sha256": {
             "ja": "d5135d4aa50dfd941dfb3d15d2a142a432b84adf8791a1931abc23fae46536d9",
-            "zh-Hans": "243067d1d1172c1b3a8f84b26cb0aadcd86b8721eb2fff93c1e3526fe0fa397c",
+            "zh-Hans": "f8726f88923cf39e4163938647f337a0ede2d748ed4a03abe458541ecafc3e39",
         },
         "rationale": (
             "The movement prompt sends Eirika to the flashing village space "
@@ -699,7 +699,7 @@ _SEMANTIC_INDEXED_CORRECTIONS: Dict[str, Dict[str, Any]] = {
         "incorrect_source_id": "0x06F7",
         "payload_sha256": {
             "ja": "bb6e2a8aa0966fe839cde39340712f0bfc935c8c59f94a792e5b1b4d964964b8",
-            "zh-Hans": "cdb6af19725e5057d52f758a0c73edc9405d98e536be9bf92eb1187dc7e875cb",
+            "zh-Hans": "9e104267b32c5be42cdc59ee769df8fcdec53dad44bb4ccf2a2d2098dc5821b0",
         },
         "rationale": (
             "The preparation item-screen command sells unneeded items and "
@@ -826,7 +826,7 @@ _SEMANTIC_INDEXED_CORRECTIONS: Dict[str, Dict[str, Any]] = {
         "incorrect_source_id": "0x06BB",
         "payload_sha256": {
             "ja": "5bab49a61f74fd9594ac2bd780d2bfdaa17bce6903cabad7acb5beb073edccfa",
-            "zh-Hans": "bfc031b0db58c3f5c9d5c799d135267294cc837b11ce476f6a491df24430aae3",
+            "zh-Hans": "e4fb4c788b5ac94d244a110af205804fec30b3628c5cbb55ddbdd2210a77c47a",
         },
         "rationale": (
             "The target describes a lance-wielding winged fiend. Official "
@@ -842,7 +842,7 @@ _SEMANTIC_INDEXED_CORRECTIONS: Dict[str, Dict[str, Any]] = {
         "incorrect_source_id": "0x06BC",
         "payload_sha256": {
             "ja": "bc77994eb2716f8d8cd41bdfd8aa74e2dd9a1a83c7ecc95b81aa38e584dcf72c",
-            "zh-Hans": "94eaeddb1dd33a84ff37a95d6c77de454ed7ff5793063f075788a619a7c5c8db",
+            "zh-Hans": "9e7bb520037167b89ffb97303228f6f7809dd918c22fd6805919daa2461356b8",
         },
         "rationale": (
             "The target describes a magically enhanced Gargoyle. Official "
@@ -858,7 +858,7 @@ _SEMANTIC_INDEXED_CORRECTIONS: Dict[str, Dict[str, Any]] = {
         "incorrect_source_id": "0x0908",
         "payload_sha256": {
             "ja": "7da0f15a7d43d20face639447e67f0a521c147331e3734da150541dcbce91e46",
-            "zh-Hans": "90e8053f45ebd0214b21c20f5a51d69e5c90109305709a5fa8c8bdbbfedb10d9",
+            "zh-Hans": "ae6b439ff6cc359424565bce495f0d343c600329a4067b7780b428d5b663a2fa",
         },
         "rationale": (
             "The target tells the player to move Eirika to the flashing "
@@ -874,7 +874,7 @@ _SEMANTIC_INDEXED_CORRECTIONS: Dict[str, Dict[str, Any]] = {
         "incorrect_source_id": "0x0905",
         "payload_sha256": {
             "ja": "3ed32407e957d2eb77be6b837d097b4a4716bc09352434d1abbb6711edac4ca3",
-            "zh-Hans": "4d117c8bc7748351d5b4210018b013ff6119dc98f6f0e5ba6d68e634de07e673",
+            "zh-Hans": "d26d5a4dd642cd2e6206a6a18613b62db8abe46130eb2232d0fbe4713a68358b",
         },
         "rationale": (
             "The target explains how to open the map Guide. Official "
@@ -890,7 +890,7 @@ _SEMANTIC_INDEXED_CORRECTIONS: Dict[str, Dict[str, Any]] = {
         "incorrect_source_id": "0x090D",
         "payload_sha256": {
             "ja": "40eabea40c09e97a3a7db8a112c2ee2ca9df601deb79c4d9b25eeef76d0c17b9",
-            "zh-Hans": "31c4fa3ce376b960d653724bc87e094528ac16771871e44f3edaeb29d874a8f7",
+            "zh-Hans": "987bac52f9fa0ebbbbd4024e7869d5c016bf107e022704e14af66dc28d0b732c",
         },
         "rationale": (
             "The target explains Pegasus Knight terrain movement and bow "
@@ -906,7 +906,7 @@ _SEMANTIC_INDEXED_CORRECTIONS: Dict[str, Dict[str, Any]] = {
         "incorrect_source_id": "0x0909",
         "payload_sha256": {
             "ja": "e07910c2f6a7448d52f2e00b69bae979a1310205c80698ce3a0299051213fb83",
-            "zh-Hans": "af9054e57f7d96c45a097baba5cc1292ad360b02e4c37c41a6d396ee203b5436",
+            "zh-Hans": "075dfbf482258194ab99d80e7c3fc3046eaf80f2fba6e31f436169f5406bd048",
         },
         "rationale": (
             "The target starts Vanessa's rescue of Ross. Official 0x0930 "
@@ -922,7 +922,7 @@ _SEMANTIC_INDEXED_CORRECTIONS: Dict[str, Dict[str, Any]] = {
         "incorrect_source_id": "0x093D",
         "payload_sha256": {
             "ja": "3f0872ecd300b52951089d53f942babd271f5c76750d133781b61680186a7ebb",
-            "zh-Hans": "fe27cba404198dc142ee4980ed9957d78585f88e15efe821e92ac230e4cba837",
+            "zh-Hans": "78415e7c93e88e71a6c1e4d6cac0560fa9190d7600a2c5f3a48d4967218d8680",
         },
         "rationale": (
             "The target asks the player to select Vanessa. Official 0x0934 "
@@ -1189,11 +1189,11 @@ _SEMANTIC_AUTHORED_CORRECTIONS: Dict[str, Dict[str, Any]] = {
         ja_payload_sha256="6ab6ed3d24937bd256d1bb46835a4a0231d49403889bc70837e5694f402ed407",
         zh_hans_payload_sha256="4f7a5c4cd6fdfcdedc5bfa0866512bff51a24360048674b20cc4f4b98f143bc6",
         rationale=(
-            "gTerrainNames[TERRAIN_VILLAGE_CLOSED] must still identify a "
+            "gTerrains_0[TERRAIN_VILLAGE_CLOSED] must still identify a "
             "village. The raw regional labels only say closed, so exact "
             "closed-village names are authored without altering snapshots."
         ),
-        source_key="gTerrainNames[TERRAIN_VILLAGE_CLOSED]",
+        source_key="gTerrains_0[TERRAIN_VILLAGE_CLOSED]",
         subsystem="terrain",
         translation_key="game.semantic_correction.msg_1c8",
     ),
@@ -1207,7 +1207,7 @@ _SEMANTIC_AUTHORED_CORRECTIONS: Dict[str, Dict[str, Any]] = {
             "wasteland. Ship-planking terminology is authored for both "
             "locales while the imported raw records remain immutable."
         ),
-        source_key="gTerrainNames[TERRAIN_SHIP_FLAT]",
+        source_key="gTerrains_0[TERRAIN_SHIP_FLAT]",
         subsystem="terrain",
         translation_key="game.semantic_correction.msg_1ee",
     ),
@@ -1221,7 +1221,7 @@ _SEMANTIC_AUTHORED_CORRECTIONS: Dict[str, Dict[str, Any]] = {
             "house. Exact ship-wreck terminology is authored for both "
             "locales while preserving the raw source snapshots."
         ),
-        source_key="gTerrainNames[TERRAIN_SHIP_WRECK]",
+        source_key="gTerrains_0[TERRAIN_SHIP_WRECK]",
         subsystem="terrain",
         translation_key="game.semantic_correction.msg_1ef",
     ),
@@ -1455,7 +1455,7 @@ _SEMANTIC_AUTHORED_CORRECTIONS: Dict[str, Dict[str, Any]] = {
         "incorrect_source_id": "0x09D6",
         "payload_sha256": {
             "ja": "f43deee362ae7a2f89864638b66e8a1b3036d2b8f7aeabec8edd0f061d6d6085",
-            "zh-Hans": "035549e5e430f888f8a598b04913f27853ca0957427ef604aaafb0b54aba57c4",
+            "zh-Hans": "9de0b4cb5264b0923bc97a2e4a095e0552d549b21bdf666f14f003e4d9a26c7b",
         },
         "rationale": (
             "The Simplified Chinese official payload omits the final "
@@ -1951,7 +1951,10 @@ def build_final_mapping_artifacts(
         "zh-Hans": _indexed_payloads(zh_indexed_text, "zh-Hans indexed"),
     }
     raw_payloads = _raw_payloads(zh_raw_data)
-    ja_raw_providers = load_ja_raw_providers(ja_raw_data)
+    ja_raw_providers = load_ja_raw_providers(
+        ja_raw_data,
+        source_root=repo_root / "texts/locales/ja",
+    )
     authored = {
         locale: _catalog_strings(authored_catalogs[locale], locale)
         for locale in ("en", "ja", "zh-Hans")

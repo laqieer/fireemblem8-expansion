@@ -180,10 +180,10 @@ enum DebugToolsResult
     DEBUGTOOLS_ERR_LABEL_INVALID    /* label is empty, or longer than DEBUGTOOLS_LABEL_MAX_LENGTH */
 };
 
-/* A single contributor-registered debug action. label is a raw C string
- * (no msg-id/text-asset system involved -- see MenuItemDef::name /
- * Text_DrawString in src/uimenu.c, which already draws nameMsgId==0 items
- * directly from a raw string). onSelected has the exact MenuItemDef
+/* A single contributor-registered debug action. label remains a raw C string
+ * for ABI compatibility and third-party actions. The nine built-in IDs have
+ * render-time expansion-message adapters; unknown contributor IDs keep the
+ * original MenuItemDef::name/Text_DrawString raw path. onSelected has the exact MenuItemDef
  * onSelected signature, so a registered action can drive the hub menu
  * (e.g. return MENU_ACT_END | MENU_ACT_CLEAR | ... ) exactly like any
  * other MenuItemDef handler. */

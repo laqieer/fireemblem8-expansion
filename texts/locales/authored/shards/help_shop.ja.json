@@ -26,7 +26,7 @@
         "0x0835"
       ],
       "path": "texts/locales/ja/indexed.txt",
-      "sha256": "01f5cf58b95cb9c9994718f1eb7f5eaba6f84bfe5d13add16cfa2624a39c97e9"
+      "sha256": "646470228ad24878266de41d825724d7d70d02c85c1c02626feec37e71b31fe6"
     },
     {
       "path": "texts/locales/source/febuilder/translate_textid_FE8.txt",
@@ -465,7 +465,7 @@
       "source_text_sha256": "334aaa30af096d19a3486e1c8d8dd783c48f716a872990a8d91ee4534a89f93a",
       "subsystem": "shop-arena",
       "target_id": "0x0768",
-      "text": "チーム入替え[X]\n"
+      "text": "チーム交換[X]\n"
     },
     {
       "english_payload_sha256": "5dfe783e0553254eba3a7f951bde37e338fbf2b8389b91ec9b926d91142d7f56",
@@ -481,7 +481,7 @@
       "source_text_sha256": "190e192a9d50573aa80d17035468005be85f122ca700efffd2c731a394e98fcd",
       "subsystem": "shop-arena",
       "target_id": "0x076A",
-      "text": "通信メニュー[.][X]\n"
+      "text": "通信画面[.][X]\n"
     },
     {
       "english_payload_sha256": "ea0438b62093085354d6eb946841730592e482442b2057013afe4363e13e33d9",

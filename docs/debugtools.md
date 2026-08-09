@@ -93,9 +93,11 @@ Fits the existing `MenuProc`/`MenuItemDef` engine (`include/uimenu.h`,
   never edit an engine-owned `const MenuItemDef` table. A RAM-resident
   `MenuItemDef` adapter (`sHubMenuItemDefs`, sized
   `DEBUGTOOLS_HUB_MENU_SLOTS = DEBUGTOOLS_ACTION_MAX + 2`) is rebuilt from
-  the registry every time the hub opens; raw string labels are supported
-  directly (`nameMsgId == 0`, the same path `Text_DrawString` already takes
-  for other raw-string menu items -- no text-asset/msg-id involvement).
+  the registry every time the hub opens. Built-in actions, Back/Confirm rows,
+  transfer progress, and status diagnostics resolve stable expansion message
+  IDs for `en`/`ja`/`zh-Hans`; CJK diagnostics use the UTF-8-aware system text
+  renderer. Contributor actions keep the original raw-string ABI and rendering
+  path unchanged.
 - The array is fully zeroed before every rebuild, so the first unused slot
   (and everything after it) reads as an all-zero `MenuItemsEnd` -- exactly
   what stops `StartMenuCore`'s scan loop. The reserved Back entry is always

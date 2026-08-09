@@ -14,6 +14,7 @@ _JAPANESE_RE = re.compile(r"\[\$([0-9A-F]{4})\]")
 _CHINESE_RE = re.compile(r"\[0x([0-9A-F]{3,4})\]")
 
 CanonicalTextUnit = Union[str, int]
+DEFAULT_PHYSICAL_LINE_CONTROL = 0x0001
 
 FE8CN_NAMED_CONTROL_ALIASES = {
     "Buy/Sell": (0x001A,),
@@ -98,17 +99,31 @@ def _alias_tokens(
     return "".join(canonical_control_token(value) for value in values)
 
 
+def normalize_physical_line_separators(
+    text: str,
+    *,
+    control: int = DEFAULT_PHYSICAL_LINE_CONTROL,
+) -> str:
+    """Map source-file line separators to an explicit runtime control."""
+
+    token = canonical_control_token(control)
+    return text.replace("\r\n", "\n").replace("\r", "\n").replace("\n", token)
+
+
 def normalize_source_controls(
     text: str,
     *,
     dialect: str,
     aliases: Mapping[str, Sequence[int]],
+    physical_line_control: int = DEFAULT_PHYSICAL_LINE_CONTROL,
 ) -> str:
     """Normalize authorized source controls into the canonical grammar.
 
     Japanese numeric controls must use ``[$HHHH]``. FE8CN numeric controls
     use the authorized legacy ``[0xHHH]`` or ``[0xHHHH]`` forms. Named aliases
-    must be present in the pinned FE8J control-definition snapshot.
+    must be present in the pinned FE8J control-definition snapshot. Physical
+    source lines are formatting for an in-game line break and therefore become
+    the format's explicit runtime control, never literal U+000A text.
     """
 
     if dialect not in (SOURCE_DIALECT_JAPANESE, SOURCE_DIALECT_CHINESE):
@@ -129,7 +144,10 @@ def normalize_source_controls(
             output.append(_alias_tokens(token, aliases))
         cursor = end
     output.append(text[cursor:])
-    return "".join(output)
+    return normalize_physical_line_separators(
+        "".join(output),
+        control=physical_line_control,
+    )
 
 
 def validate_canonical_text(text: str) -> None:

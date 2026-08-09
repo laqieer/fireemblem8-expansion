@@ -8,7 +8,18 @@ ROOT = Path(__file__).resolve().parents[4]
 TEST_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
 
-from scripts.localization.game_catalog.build import build_game_catalog, generate
+from scripts.localization.game_catalog.build import (
+    _TEXT_TOKEN_RE,
+    _encode_control_unit,
+    build_game_catalog,
+    generate,
+)
+from scripts.localization.game_catalog.english_source import (
+    _encode_named_token,
+    _strip_comments,
+    load_english_definitions,
+)
+from scripts.localization.game_locales.controls import expand_canonical_text
 
 
 class RealGenerateTests(unittest.TestCase):
@@ -181,6 +192,87 @@ class RealGenerateTests(unittest.TestCase):
 
         self.assertTrue(bounds)
         self.assertLessEqual(max(bounds), 0x400)
+
+    def test_every_0a_byte_in_final_localized_streams_comes_from_an_explicit_control(self):
+        build = build_game_catalog()
+        definitions = load_english_definitions(ROOT / "texts/textdefs.txt")
+
+        def explicit_0a_count(text):
+            token_names = _TEXT_TOKEN_RE.findall(text)
+            named_tokens = [
+                name for name in token_names if not name.startswith("CTRL:")
+            ]
+            if named_tokens:
+                normalized = _strip_comments(
+                    text,
+                    source_name="localized encoded-stream audit",
+                ).replace("\r", "").replace("\n", "")
+                return sum(
+                    _encode_named_token(
+                        match.group(1),
+                        definitions,
+                        source_name="localized encoded-stream audit",
+                    ).count(b"\x0A")
+                    for match in _TEXT_TOKEN_RE.finditer(normalized)
+                )
+
+            count = 0
+            for unit in expand_canonical_text(text):
+                if isinstance(unit, str):
+                    self.assertNotIn("\r", unit)
+                    self.assertNotIn("\n", unit)
+                    self.assertNotIn(0x0A, unit.encode("utf-8"))
+                else:
+                    count += _encode_control_unit(unit).count(b"\x0A")
+            return count
+
+        for locale in ("ja", "zh-Hans"):
+            entries = build.locale_bundle(locale).entries
+            for entry in entries:
+                with self.subTest(locale=locale, target_id=entry.target_id):
+                    self.assertEqual(
+                        entry.encoded_bytes.count(b"\x0A"),
+                        explicit_0a_count(entry.source_text),
+                    )
+
+            beginner = entries[0x0149]
+            self.assertNotIn("\n", beginner.source_text)
+            self.assertEqual(beginner.encoded_bytes.count(b"\x0A"), 0)
+            self.assertEqual(beginner.encoded_bytes.count(b"\x01"), 4)
+
+            for target_id, prefix in (
+                (
+                    0x0B4A,
+                    "[CTRL:000B][CTRL:0010][CTRL:0114][CTRL:000D]"
+                    "[CTRL:0010][CTRL:0102][CTRL:000E][CTRL:0110]"
+                    "[CTRL:0001][CTRL:000E]",
+                ),
+                (
+                    0x0B91,
+                    "[CTRL:000C][CTRL:0010][CTRL:0170][CTRL:000E]"
+                    "[CTRL:0010][CTRL:0149][CTRL:000F][CTRL:0110]"
+                    "[CTRL:0001][CTRL:000E]",
+                ),
+            ):
+                entry = entries[target_id]
+                if locale == "zh-Hans":
+                    self.assertTrue(entry.source_text.startswith(prefix))
+                self.assertNotIn("\n", entry.source_text)
+                self.assertEqual(
+                    entry.encoded_bytes.count(b"\x0A"),
+                    explicit_0a_count(entry.source_text),
+                )
+
+            explicit_face_control = entries[0x0884]
+            self.assertTrue(explicit_face_control.source_text.startswith("[OpenLeft]"))
+            self.assertGreater(
+                explicit_face_control.encoded_bytes.count(b"\x0A"),
+                0,
+            )
+            self.assertEqual(
+                explicit_face_control.encoded_bytes.count(b"\x0A"),
+                explicit_0a_count(explicit_face_control.source_text),
+            )
 
     def test_profile_specific_outputs_exclude_disabled_payloads_and_size_capacity(self):
         with (

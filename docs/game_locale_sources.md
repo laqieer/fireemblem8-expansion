@@ -17,15 +17,19 @@ remain import provenance only and never become runtime keys.
   or its SHA-256, plus a full replacement or exact one-occurrence fragment
   replacements, FE8U target IDs, context, provenance audit, and reason. The
   importer rejects source/supplement/payload drift, stale fragments, or any
-  change to control/newline/placeholder placement. The raw FE8J/FE8CN
-  snapshots remain byte-exact.
+  change to control/newline/placeholder placement. Physical FE8CN payload
+  lines normalize to canonical `[CTRL:0001]` runtime line controls; they are
+  never emitted as literal UTF-8 `0x0A`. The raw FE8J/FE8CN snapshots remain
+  byte-exact.
 - `ja/indexed.txt`: 3,339 FE8J-layout messages (`0x0000` through `0x0D0A`).
 - `ja/control_defs.txt`: FE8J source aliases mapped to canonical controls. It is
   an alias table, not normalized locale payload.
-- `ja/raw.json`: 116 materialized FE8J raw-symbol providers keyed by FE8U
+- `ja/raw.json`: 119 materialized FE8J raw-symbol providers keyed by FE8U
   target ID plus the verified evidence symbol. This includes the three
   inline goal-window labels and prevents a same-number FE8J indexed message
-  from being substituted for a raw provider.
+  from being substituted for a raw provider. The catalog pins and must exactly
+  match the committed `source/fe8j/raw_symbols.json` symbol/value extraction;
+  a revision name alone is not accepted as provenance.
 - `zh-Hans/indexed.txt`: 3,339 FE8CN messages using the FE8J indexed layout.
 - `zh-Hans/raw.json`: 152 raw-address occurrences deduplicated to 143 stable
   `fe8cn.raw.import-NNNN` IDs. IDs are assigned by pinned source import order,
@@ -66,8 +70,8 @@ remain import provenance only and never become runtime keys.
 - `mapping/audit_semantic_corrections.json`: target/call-site keyed authored
   corrections with English, incorrect-provider, and replacement payload
   SHA-256 pins; raw snapshots stay immutable.
-- `mapping/ending_layout_metrics.json`: generated all-title/all-paired-ending
-  metric report using the real 15-tile/26-tile `Text` allocations and
+- `mapping/ending_layout_metrics.json`: generated all-title/all-solo/all-paired
+  ending metric report using the real 15-tile/26-tile `Text` allocations and
   committed runtime CJK widths.
 - `runtime_latin_span_review.json`: the exact baseline review of every
   Latin-bearing target. Each scope/locale/target/span decision pins payload
@@ -432,8 +436,9 @@ The closure ledger accounts for all 143 unique raw imports:
 - 0 records remain unresolved.
 
 Japanese raw providers comprise 20 literals verified directly against tracked
-FE8J-derived C table entries and 116 materialized target+symbol records in
-`ja/raw.json`. Simplified Chinese comes from the exact imported raw payload.
+FE8J-derived C table entries and 119 materialized target+symbol records in
+`ja/raw.json`, all checked against the committed raw-symbol source snapshot.
+Simplified Chinese comes from the exact imported raw payload.
 Modern promotion-selector initializers are empty because their draw callback
 normally supplies a localized class name. If a bounded option target or its
 name message is absent/invalid, the callback consumes the option's localized
@@ -450,8 +455,9 @@ python3 -m scripts.localization.game_locales build-raw-closure
 python3 -m scripts.localization.game_locales check-raw-closure
 ```
 
-The check also verifies every recorded FE8U source path and anchor still
-exists, every literal provider matches its committed symbol/key/value/context,
+The check also verifies every recorded FE8U source path and every declared
+anchor still exists in the declared order, every literal provider matches its
+committed symbol/key/value/context,
 every raw symbol has a matching target+symbol materialization, every semantic
 expansion key is active and translated in `en`/`ja`/`zh-Hans`, and every
 expansion provider names a surviving runtime consumer function whose body

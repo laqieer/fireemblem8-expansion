@@ -4355,7 +4355,7 @@
         "regional_sources": {
           "ja": {
             "kind": "symbol",
-            "symbol": "gTerrainNames[TERRAIN_NONE]"
+            "symbol": "gTerrains_0[TERRAIN_NONE]"
           },
           "zh-Hans": {
             "import_id": "fe8cn.raw.import-0074",
@@ -4368,8 +4368,8 @@
         "fe8j": "src/data/data_088617C8/data_088617C8.s",
         "fe8u": "src/data_terrains.c"
       },
-      "source_symbol": "gTerrainNames",
-      "source_table": "gTerrains_0/gTerrainNames",
+      "source_symbol": "gTerrains_0",
+      "source_table": "gTerrains_0",
       "subsystem": "terrain",
       "target_id": "0x01C4"
     },
@@ -4383,7 +4383,7 @@
         "regional_sources": {
           "ja": {
             "kind": "symbol",
-            "symbol": "gTerrainNames[TERRAIN_PLAINS]"
+            "symbol": "gTerrains_0[TERRAIN_PLAINS]"
           },
           "zh-Hans": {
             "import_id": "fe8cn.raw.import-0075",
@@ -4396,8 +4396,8 @@
         "fe8j": "src/data/data_088617C8/data_088617C8.s",
         "fe8u": "src/data_terrains.c"
       },
-      "source_symbol": "gTerrainNames",
-      "source_table": "gTerrains_0/gTerrainNames",
+      "source_symbol": "gTerrains_0",
+      "source_table": "gTerrains_0",
       "subsystem": "terrain",
       "target_id": "0x01C5"
     },
@@ -4411,7 +4411,7 @@
         "regional_sources": {
           "ja": {
             "kind": "symbol",
-            "symbol": "gTerrainNames[TERRAIN_ROAD]"
+            "symbol": "gTerrains_0[TERRAIN_ROAD]"
           },
           "zh-Hans": {
             "import_id": "fe8cn.raw.import-0076",
@@ -4424,8 +4424,8 @@
         "fe8j": "src/data/data_088617C8/data_088617C8.s",
         "fe8u": "src/data_terrains.c"
       },
-      "source_symbol": "gTerrainNames",
-      "source_table": "gTerrains_0/gTerrainNames",
+      "source_symbol": "gTerrains_0",
+      "source_table": "gTerrains_0",
       "subsystem": "terrain",
       "target_id": "0x01C6"
     },
@@ -4439,7 +4439,7 @@
         "regional_sources": {
           "ja": {
             "kind": "symbol",
-            "symbol": "gTerrainNames[TERRAIN_VILLAGE_REGULAR]"
+            "symbol": "gTerrains_0[TERRAIN_VILLAGE_REGULAR]"
           },
           "zh-Hans": {
             "import_id": "fe8cn.raw.import-0077",
@@ -4452,8 +4452,8 @@
         "fe8j": "src/data/data_088617C8/data_088617C8.s",
         "fe8u": "src/data_terrains.c"
       },
-      "source_symbol": "gTerrainNames",
-      "source_table": "gTerrains_0/gTerrainNames",
+      "source_symbol": "gTerrains_0",
+      "source_table": "gTerrains_0",
       "subsystem": "terrain",
       "target_id": "0x01C7"
     },
@@ -4467,7 +4467,7 @@
         "regional_sources": {
           "ja": {
             "kind": "symbol",
-            "symbol": "gTerrainNames[TERRAIN_VILLAGE_CLOSED]"
+            "symbol": "gTerrains_0[TERRAIN_VILLAGE_CLOSED]"
           },
           "zh-Hans": {
             "import_id": "fe8cn.raw.import-0078",
@@ -4480,8 +4480,8 @@
         "fe8j": "src/data/data_088617C8/data_088617C8.s",
         "fe8u": "src/data_terrains.c"
       },
-      "source_symbol": "gTerrainNames",
-      "source_table": "gTerrains_0/gTerrainNames",
+      "source_symbol": "gTerrains_0",
+      "source_table": "gTerrains_0",
       "subsystem": "terrain",
       "target_id": "0x01C8"
     },
@@ -4495,7 +4495,7 @@
         "regional_sources": {
           "ja": {
             "kind": "symbol",
-            "symbol": "gTerrainNames[TERRAIN_HOUSE]"
+            "symbol": "gTerrains_0[TERRAIN_HOUSE]"
           },
           "zh-Hans": {
             "import_id": "fe8cn.raw.import-0079",
@@ -4508,8 +4508,8 @@
         "fe8j": "src/data/data_088617C8/data_088617C8.s",
         "fe8u": "src/data_terrains.c"
       },
-      "source_symbol": "gTerrainNames",
-      "source_table": "gTerrains_0/gTerrainNames",
+      "source_symbol": "gTerrains_0",
+      "source_table": "gTerrains_0",
       "subsystem": "terrain",
       "target_id": "0x01C9"
     },
@@ -4523,7 +4523,7 @@
         "regional_sources": {
           "ja": {
             "kind": "symbol",
-            "symbol": "gTerrainNames[TERRAIN_ARMORY]"
+            "symbol": "gTerrains_0[TERRAIN_ARMORY]"
           },
           "zh-Hans": {
             "import_id": "fe8cn.raw.import-0080",
@@ -4536,8 +4536,8 @@
         "fe8j": "src/data/data_088617C8/data_088617C8.s",
         "fe8u": "src/data_terrains.c"
       },
-      "source_symbol": "gTerrainNames",
-      "source_table": "gTerrains_0/gTerrainNames",
+      "source_symbol": "gTerrains_0",
+      "source_table": "gTerrains_0",
       "subsystem": "terrain",
       "target_id": "0x01CA"
     },
@@ -4551,7 +4551,7 @@
         "regional_sources": {
           "ja": {
             "kind": "symbol",
-            "symbol": "gTerrainNames[TERRAIN_VENDOR]"
+            "symbol": "gTerrains_0[TERRAIN_VENDOR]"
           },
           "zh-Hans": {
             "import_id": "fe8cn.raw.import-0081",
@@ -4564,8 +4564,8 @@
         "fe8j": "src/data/data_088617C8/data_088617C8.s",
         "fe8u": "src/data_terrains.c"
       },
-      "source_symbol": "gTerrainNames",
-      "source_table": "gTerrains_0/gTerrainNames",
+      "source_symbol": "gTerrains_0",
+      "source_table": "gTerrains_0",
       "subsystem": "terrain",
       "target_id": "0x01CB"
     },
@@ -4579,7 +4579,7 @@
         "regional_sources": {
           "ja": {
             "kind": "symbol",
-            "symbol": "gTerrainNames[TERRAIN_ARENA_REGULAR]"
+            "symbol": "gTerrains_0[TERRAIN_ARENA_REGULAR]"
           },
           "zh-Hans": {
             "import_id": "fe8cn.raw.import-0082",
@@ -4592,8 +4592,8 @@
         "fe8j": "src/data/data_088617C8/data_088617C8.s",
         "fe8u": "src/data_terrains.c"
       },
-      "source_symbol": "gTerrainNames",
-      "source_table": "gTerrains_0/gTerrainNames",
+      "source_symbol": "gTerrains_0",
+      "source_table": "gTerrains_0",
       "subsystem": "terrain",
       "target_id": "0x01CC"
     },
@@ -4607,7 +4607,7 @@
         "regional_sources": {
           "ja": {
             "kind": "symbol",
-            "symbol": "gTerrainNames[TERRAIN_C_ROOM_09]"
+            "symbol": "gTerrains_0[TERRAIN_C_ROOM_09]"
           },
           "zh-Hans": {
             "import_id": "fe8cn.raw.import-0083",
@@ -4620,8 +4620,8 @@
         "fe8j": "src/data/data_088617C8/data_088617C8.s",
         "fe8u": "src/data_terrains.c"
       },
-      "source_symbol": "gTerrainNames",
-      "source_table": "gTerrains_0/gTerrainNames",
+      "source_symbol": "gTerrains_0",
+      "source_table": "gTerrains_0",
       "subsystem": "terrain",
       "target_id": "0x01CD"
     },
@@ -4635,7 +4635,7 @@
         "regional_sources": {
           "ja": {
             "kind": "symbol",
-            "symbol": "gTerrainNames[TERRAIN_FORT]"
+            "symbol": "gTerrains_0[TERRAIN_FORT]"
           },
           "zh-Hans": {
             "import_id": "fe8cn.raw.import-0084",
@@ -4648,8 +4648,8 @@
         "fe8j": "src/data/data_088617C8/data_088617C8.s",
         "fe8u": "src/data_terrains.c"
       },
-      "source_symbol": "gTerrainNames",
-      "source_table": "gTerrains_0/gTerrainNames",
+      "source_symbol": "gTerrains_0",
+      "source_table": "gTerrains_0",
       "subsystem": "terrain",
       "target_id": "0x01CE"
     },
@@ -4663,7 +4663,7 @@
         "regional_sources": {
           "ja": {
             "kind": "symbol",
-            "symbol": "gTerrainNames[TERRAIN_GATE_CASTLE]"
+            "symbol": "gTerrains_0[TERRAIN_GATE_CASTLE]"
           },
           "zh-Hans": {
             "import_id": "fe8cn.raw.import-0085",
@@ -4676,8 +4676,8 @@
         "fe8j": "src/data/data_088617C8/data_088617C8.s",
         "fe8u": "src/data_terrains.c"
       },
-      "source_symbol": "gTerrainNames",
-      "source_table": "gTerrains_0/gTerrainNames",
+      "source_symbol": "gTerrains_0",
+      "source_table": "gTerrains_0",
       "subsystem": "terrain",
       "target_id": "0x01CF"
     },
@@ -4691,7 +4691,7 @@
         "regional_sources": {
           "ja": {
             "kind": "symbol",
-            "symbol": "gTerrainNames[TERRAIN_FOREST]"
+            "symbol": "gTerrains_0[TERRAIN_FOREST]"
           },
           "zh-Hans": {
             "import_id": "fe8cn.raw.import-0086",
@@ -4704,8 +4704,8 @@
         "fe8j": "src/data/data_088617C8/data_088617C8.s",
         "fe8u": "src/data_terrains.c"
       },
-      "source_symbol": "gTerrainNames",
-      "source_table": "gTerrains_0/gTerrainNames",
+      "source_symbol": "gTerrains_0",
+      "source_table": "gTerrains_0",
       "subsystem": "terrain",
       "target_id": "0x01D0"
     },
@@ -4719,7 +4719,7 @@
         "regional_sources": {
           "ja": {
             "kind": "symbol",
-            "symbol": "gTerrainNames[TERRAIN_THICKET]"
+            "symbol": "gTerrains_0[TERRAIN_THICKET]"
           },
           "zh-Hans": {
             "import_id": "fe8cn.raw.import-0087",
@@ -4732,8 +4732,8 @@
         "fe8j": "src/data/data_088617C8/data_088617C8.s",
         "fe8u": "src/data_terrains.c"
       },
-      "source_symbol": "gTerrainNames",
-      "source_table": "gTerrains_0/gTerrainNames",
+      "source_symbol": "gTerrains_0",
+      "source_table": "gTerrains_0",
       "subsystem": "terrain",
       "target_id": "0x01D1"
     },
@@ -4747,7 +4747,7 @@
         "regional_sources": {
           "ja": {
             "kind": "symbol",
-            "symbol": "gTerrainNames[TERRAIN_SAND]"
+            "symbol": "gTerrains_0[TERRAIN_SAND]"
           },
           "zh-Hans": {
             "import_id": "fe8cn.raw.import-0088",
@@ -4760,8 +4760,8 @@
         "fe8j": "src/data/data_088617C8/data_088617C8.s",
         "fe8u": "src/data_terrains.c"
       },
-      "source_symbol": "gTerrainNames",
-      "source_table": "gTerrains_0/gTerrainNames",
+      "source_symbol": "gTerrains_0",
+      "source_table": "gTerrains_0",
       "subsystem": "terrain",
       "target_id": "0x01D2"
     },
@@ -4775,7 +4775,7 @@
         "regional_sources": {
           "ja": {
             "kind": "symbol",
-            "symbol": "gTerrainNames[TERRAIN_DESERT]"
+            "symbol": "gTerrains_0[TERRAIN_DESERT]"
           },
           "zh-Hans": {
             "import_id": "fe8cn.raw.import-0089",
@@ -4788,8 +4788,8 @@
         "fe8j": "src/data/data_088617C8/data_088617C8.s",
         "fe8u": "src/data_terrains.c"
       },
-      "source_symbol": "gTerrainNames",
-      "source_table": "gTerrains_0/gTerrainNames",
+      "source_symbol": "gTerrains_0",
+      "source_table": "gTerrains_0",
       "subsystem": "terrain",
       "target_id": "0x01D3"
     },
@@ -4803,7 +4803,7 @@
         "regional_sources": {
           "ja": {
             "kind": "symbol",
-            "symbol": "gTerrainNames[TERRAIN_RIVER]"
+            "symbol": "gTerrains_0[TERRAIN_RIVER]"
           },
           "zh-Hans": {
             "import_id": "fe8cn.raw.import-0090",
@@ -4816,8 +4816,8 @@
         "fe8j": "src/data/data_088617C8/data_088617C8.s",
         "fe8u": "src/data_terrains.c"
       },
-      "source_symbol": "gTerrainNames",
-      "source_table": "gTerrains_0/gTerrainNames",
+      "source_symbol": "gTerrains_0",
+      "source_table": "gTerrains_0",
       "subsystem": "terrain",
       "target_id": "0x01D4"
     },
@@ -4831,7 +4831,7 @@
         "regional_sources": {
           "ja": {
             "kind": "symbol",
-            "symbol": "gTerrainNames[TERRAIN_MOUNTAIN]"
+            "symbol": "gTerrains_0[TERRAIN_MOUNTAIN]"
           },
           "zh-Hans": {
             "import_id": "fe8cn.raw.import-0091",
@@ -4844,8 +4844,8 @@
         "fe8j": "src/data/data_088617C8/data_088617C8.s",
         "fe8u": "src/data_terrains.c"
       },
-      "source_symbol": "gTerrainNames",
-      "source_table": "gTerrains_0/gTerrainNames",
+      "source_symbol": "gTerrains_0",
+      "source_table": "gTerrains_0",
       "subsystem": "terrain",
       "target_id": "0x01D5"
     },
@@ -4859,7 +4859,7 @@
         "regional_sources": {
           "ja": {
             "kind": "symbol",
-            "symbol": "gTerrainNames[TERRAIN_PEAK]"
+            "symbol": "gTerrains_0[TERRAIN_PEAK]"
           },
           "zh-Hans": {
             "import_id": "fe8cn.raw.import-0092",
@@ -4872,8 +4872,8 @@
         "fe8j": "src/data/data_088617C8/data_088617C8.s",
         "fe8u": "src/data_terrains.c"
       },
-      "source_symbol": "gTerrainNames",
-      "source_table": "gTerrains_0/gTerrainNames",
+      "source_symbol": "gTerrains_0",
+      "source_table": "gTerrains_0",
       "subsystem": "terrain",
       "target_id": "0x01D6"
     },
@@ -4887,7 +4887,7 @@
         "regional_sources": {
           "ja": {
             "kind": "symbol",
-            "symbol": "gTerrainNames[TERRAIN_BRIDGE_REGULAR]"
+            "symbol": "gTerrains_0[TERRAIN_BRIDGE_REGULAR]"
           },
           "zh-Hans": {
             "import_id": "fe8cn.raw.import-0093",
@@ -4900,8 +4900,8 @@
         "fe8j": "src/data/data_088617C8/data_088617C8.s",
         "fe8u": "src/data_terrains.c"
       },
-      "source_symbol": "gTerrainNames",
-      "source_table": "gTerrains_0/gTerrainNames",
+      "source_symbol": "gTerrains_0",
+      "source_table": "gTerrains_0",
       "subsystem": "terrain",
       "target_id": "0x01D7"
     },
@@ -4915,7 +4915,7 @@
         "regional_sources": {
           "ja": {
             "kind": "symbol",
-            "symbol": "gTerrainNames[TERRAIN_BRIDGE_14]"
+            "symbol": "gTerrains_0[TERRAIN_BRIDGE_14]"
           },
           "zh-Hans": {
             "import_id": "fe8cn.raw.import-0094",
@@ -4928,8 +4928,8 @@
         "fe8j": "src/data/data_088617C8/data_088617C8.s",
         "fe8u": "src/data_terrains.c"
       },
-      "source_symbol": "gTerrainNames",
-      "source_table": "gTerrains_0/gTerrainNames",
+      "source_symbol": "gTerrains_0",
+      "source_table": "gTerrains_0",
       "subsystem": "terrain",
       "target_id": "0x01D8"
     },
@@ -4943,7 +4943,7 @@
         "regional_sources": {
           "ja": {
             "kind": "symbol",
-            "symbol": "gTerrainNames[TERRAIN_SEA]"
+            "symbol": "gTerrains_0[TERRAIN_SEA]"
           },
           "zh-Hans": {
             "import_id": "fe8cn.raw.import-0095",
@@ -4956,8 +4956,8 @@
         "fe8j": "src/data/data_088617C8/data_088617C8.s",
         "fe8u": "src/data_terrains.c"
       },
-      "source_symbol": "gTerrainNames",
-      "source_table": "gTerrains_0/gTerrainNames",
+      "source_symbol": "gTerrains_0",
+      "source_table": "gTerrains_0",
       "subsystem": "terrain",
       "target_id": "0x01D9"
     },
@@ -4971,7 +4971,7 @@
         "regional_sources": {
           "ja": {
             "kind": "symbol",
-            "symbol": "gTerrainNames[TERRAIN_LAKE]"
+            "symbol": "gTerrains_0[TERRAIN_LAKE]"
           },
           "zh-Hans": {
             "import_id": "fe8cn.raw.import-0096",
@@ -4984,8 +4984,8 @@
         "fe8j": "src/data/data_088617C8/data_088617C8.s",
         "fe8u": "src/data_terrains.c"
       },
-      "source_symbol": "gTerrainNames",
-      "source_table": "gTerrains_0/gTerrainNames",
+      "source_symbol": "gTerrains_0",
+      "source_table": "gTerrains_0",
       "subsystem": "terrain",
       "target_id": "0x01DA"
     },
@@ -4999,7 +4999,7 @@
         "regional_sources": {
           "ja": {
             "kind": "symbol",
-            "symbol": "gTerrainNames[TERRAIN_FLOOR_REGULAR]"
+            "symbol": "gTerrains_0[TERRAIN_FLOOR_REGULAR]"
           },
           "zh-Hans": {
             "import_id": "fe8cn.raw.import-0097",
@@ -5012,8 +5012,8 @@
         "fe8j": "src/data/data_088617C8/data_088617C8.s",
         "fe8u": "src/data_terrains.c"
       },
-      "source_symbol": "gTerrainNames",
-      "source_table": "gTerrains_0/gTerrainNames",
+      "source_symbol": "gTerrains_0",
+      "source_table": "gTerrains_0",
       "subsystem": "terrain",
       "target_id": "0x01DB"
     },
@@ -5027,7 +5027,7 @@
         "regional_sources": {
           "ja": {
             "kind": "symbol",
-            "symbol": "gTerrainNames[TERRAIN_FLOOR_MAGIC]"
+            "symbol": "gTerrains_0[TERRAIN_FLOOR_MAGIC]"
           },
           "zh-Hans": {
             "import_id": "fe8cn.raw.import-0098",
@@ -5040,8 +5040,8 @@
         "fe8j": "src/data/data_088617C8/data_088617C8.s",
         "fe8u": "src/data_terrains.c"
       },
-      "source_symbol": "gTerrainNames",
-      "source_table": "gTerrains_0/gTerrainNames",
+      "source_symbol": "gTerrains_0",
+      "source_table": "gTerrains_0",
       "subsystem": "terrain",
       "target_id": "0x01DC"
     },
@@ -5055,7 +5055,7 @@
         "regional_sources": {
           "ja": {
             "kind": "symbol",
-            "symbol": "gTerrainNames[TERRAIN_FENCE_REGULAR]"
+            "symbol": "gTerrains_0[TERRAIN_FENCE_REGULAR]"
           },
           "zh-Hans": {
             "import_id": "fe8cn.raw.import-0099",
@@ -5068,8 +5068,8 @@
         "fe8j": "src/data/data_088617C8/data_088617C8.s",
         "fe8u": "src/data_terrains.c"
       },
-      "source_symbol": "gTerrainNames",
-      "source_table": "gTerrains_0/gTerrainNames",
+      "source_symbol": "gTerrains_0",
+      "source_table": "gTerrains_0",
       "subsystem": "terrain",
       "target_id": "0x01DD"
     },
@@ -5083,7 +5083,7 @@
         "regional_sources": {
           "ja": {
             "kind": "symbol",
-            "symbol": "gTerrainNames[TERRAIN_WALL_REGULAR]"
+            "symbol": "gTerrains_0[TERRAIN_WALL_REGULAR]"
           },
           "zh-Hans": {
             "import_id": "fe8cn.raw.import-0100",
@@ -5096,8 +5096,8 @@
         "fe8j": "src/data/data_088617C8/data_088617C8.s",
         "fe8u": "src/data_terrains.c"
       },
-      "source_symbol": "gTerrainNames",
-      "source_table": "gTerrains_0/gTerrainNames",
+      "source_symbol": "gTerrains_0",
+      "source_table": "gTerrains_0",
       "subsystem": "terrain",
       "target_id": "0x01DE"
     },
@@ -5111,7 +5111,7 @@
         "regional_sources": {
           "ja": {
             "kind": "symbol",
-            "symbol": "gTerrainNames[TERRAIN_WALL_DAMAGED]"
+            "symbol": "gTerrains_0[TERRAIN_WALL_DAMAGED]"
           },
           "zh-Hans": {
             "import_id": "fe8cn.raw.import-0101",
@@ -5124,8 +5124,8 @@
         "fe8j": "src/data/data_088617C8/data_088617C8.s",
         "fe8u": "src/data_terrains.c"
       },
-      "source_symbol": "gTerrainNames",
-      "source_table": "gTerrains_0/gTerrainNames",
+      "source_symbol": "gTerrains_0",
+      "source_table": "gTerrains_0",
       "subsystem": "terrain",
       "target_id": "0x01DF"
     },
@@ -5139,7 +5139,7 @@
         "regional_sources": {
           "ja": {
             "kind": "symbol",
-            "symbol": "gTerrainNames[TERRAIN_RUBBLE]"
+            "symbol": "gTerrains_0[TERRAIN_RUBBLE]"
           },
           "zh-Hans": {
             "import_id": "fe8cn.raw.import-0102",
@@ -5152,8 +5152,8 @@
         "fe8j": "src/data/data_088617C8/data_088617C8.s",
         "fe8u": "src/data_terrains.c"
       },
-      "source_symbol": "gTerrainNames",
-      "source_table": "gTerrains_0/gTerrainNames",
+      "source_symbol": "gTerrains_0",
+      "source_table": "gTerrains_0",
       "subsystem": "terrain",
       "target_id": "0x01E0"
     },
@@ -5167,7 +5167,7 @@
         "regional_sources": {
           "ja": {
             "kind": "symbol",
-            "symbol": "gTerrainNames[TERRAIN_PILLAR]"
+            "symbol": "gTerrains_0[TERRAIN_PILLAR]"
           },
           "zh-Hans": {
             "import_id": "fe8cn.raw.import-0103",
@@ -5180,8 +5180,8 @@
         "fe8j": "src/data/data_088617C8/data_088617C8.s",
         "fe8u": "src/data_terrains.c"
       },
-      "source_symbol": "gTerrainNames",
-      "source_table": "gTerrains_0/gTerrainNames",
+      "source_symbol": "gTerrains_0",
+      "source_table": "gTerrains_0",
       "subsystem": "terrain",
       "target_id": "0x01E1"
     },
@@ -5195,7 +5195,7 @@
         "regional_sources": {
           "ja": {
             "kind": "symbol",
-            "symbol": "gTerrainNames[TERRAIN_DOOR]"
+            "symbol": "gTerrains_0[TERRAIN_DOOR]"
           },
           "zh-Hans": {
             "import_id": "fe8cn.raw.import-0104",
@@ -5208,8 +5208,8 @@
         "fe8j": "src/data/data_088617C8/data_088617C8.s",
         "fe8u": "src/data_terrains.c"
       },
-      "source_symbol": "gTerrainNames",
-      "source_table": "gTerrains_0/gTerrainNames",
+      "source_symbol": "gTerrains_0",
+      "source_table": "gTerrains_0",
       "subsystem": "terrain",
       "target_id": "0x01E2"
     },
@@ -5223,7 +5223,7 @@
         "regional_sources": {
           "ja": {
             "kind": "symbol",
-            "symbol": "gTerrainNames[TERRAIN_THRONE]"
+            "symbol": "gTerrains_0[TERRAIN_THRONE]"
           },
           "zh-Hans": {
             "import_id": "fe8cn.raw.import-0105",
@@ -5236,8 +5236,8 @@
         "fe8j": "src/data/data_088617C8/data_088617C8.s",
         "fe8u": "src/data_terrains.c"
       },
-      "source_symbol": "gTerrainNames",
-      "source_table": "gTerrains_0/gTerrainNames",
+      "source_symbol": "gTerrains_0",
+      "source_table": "gTerrains_0",
       "subsystem": "terrain",
       "target_id": "0x01E3"
     },
@@ -5251,7 +5251,7 @@
         "regional_sources": {
           "ja": {
             "kind": "symbol",
-            "symbol": "gTerrainNames[TERRAIN_CHEST_EMPTY]"
+            "symbol": "gTerrains_0[TERRAIN_CHEST_EMPTY]"
           },
           "zh-Hans": {
             "import_id": "fe8cn.raw.import-0106",
@@ -5264,8 +5264,8 @@
         "fe8j": "src/data/data_088617C8/data_088617C8.s",
         "fe8u": "src/data_terrains.c"
       },
-      "source_symbol": "gTerrainNames",
-      "source_table": "gTerrains_0/gTerrainNames",
+      "source_symbol": "gTerrains_0",
+      "source_table": "gTerrains_0",
       "subsystem": "terrain",
       "target_id": "0x01E4"
     },
@@ -5279,7 +5279,7 @@
         "regional_sources": {
           "ja": {
             "kind": "symbol",
-            "symbol": "gTerrainNames[TERRAIN_CHEST_FULL]"
+            "symbol": "gTerrains_0[TERRAIN_CHEST_FULL]"
           },
           "zh-Hans": {
             "import_id": "fe8cn.raw.import-0107",
@@ -5292,8 +5292,8 @@
         "fe8j": "src/data/data_088617C8/data_088617C8.s",
         "fe8u": "src/data_terrains.c"
       },
-      "source_symbol": "gTerrainNames",
-      "source_table": "gTerrains_0/gTerrainNames",
+      "source_symbol": "gTerrains_0",
+      "source_table": "gTerrains_0",
       "subsystem": "terrain",
       "target_id": "0x01E5"
     },
@@ -5307,7 +5307,7 @@
         "regional_sources": {
           "ja": {
             "kind": "symbol",
-            "symbol": "gTerrainNames[TERRAIN_ROOF]"
+            "symbol": "gTerrains_0[TERRAIN_ROOF]"
           },
           "zh-Hans": {
             "import_id": "fe8cn.raw.import-0108",
@@ -5320,8 +5320,8 @@
         "fe8j": "src/data/data_088617C8/data_088617C8.s",
         "fe8u": "src/data_terrains.c"
       },
-      "source_symbol": "gTerrainNames",
-      "source_table": "gTerrains_0/gTerrainNames",
+      "source_symbol": "gTerrains_0",
+      "source_table": "gTerrains_0",
       "subsystem": "terrain",
       "target_id": "0x01E6"
     },
@@ -5335,7 +5335,7 @@
         "regional_sources": {
           "ja": {
             "kind": "symbol",
-            "symbol": "gTerrainNames[TERRAIN_GATE_REGULAR]"
+            "symbol": "gTerrains_0[TERRAIN_GATE_REGULAR]"
           },
           "zh-Hans": {
             "import_id": "fe8cn.raw.import-0109",
@@ -5348,8 +5348,8 @@
         "fe8j": "src/data/data_088617C8/data_088617C8.s",
         "fe8u": "src/data_terrains.c"
       },
-      "source_symbol": "gTerrainNames",
-      "source_table": "gTerrains_0/gTerrainNames",
+      "source_symbol": "gTerrains_0",
+      "source_table": "gTerrains_0",
       "subsystem": "terrain",
       "target_id": "0x01E7"
     },
@@ -5363,7 +5363,7 @@
         "regional_sources": {
           "ja": {
             "kind": "symbol",
-            "symbol": "gTerrainNames[TERRAIN_CHURCH]"
+            "symbol": "gTerrains_0[TERRAIN_CHURCH]"
           },
           "zh-Hans": {
             "import_id": "fe8cn.raw.import-0110",
@@ -5376,8 +5376,8 @@
         "fe8j": "src/data/data_088617C8/data_088617C8.s",
         "fe8u": "src/data_terrains.c"
       },
-      "source_symbol": "gTerrainNames",
-      "source_table": "gTerrains_0/gTerrainNames",
+      "source_symbol": "gTerrains_0",
+      "source_table": "gTerrains_0",
       "subsystem": "terrain",
       "target_id": "0x01E8"
     },
@@ -5391,7 +5391,7 @@
         "regional_sources": {
           "ja": {
             "kind": "symbol",
-            "symbol": "gTerrainNames[TERRAIN_RUINS_REGULAR]"
+            "symbol": "gTerrains_0[TERRAIN_RUINS_REGULAR]"
           },
           "zh-Hans": {
             "import_id": "fe8cn.raw.import-0111",
@@ -5404,8 +5404,8 @@
         "fe8j": "src/data/data_088617C8/data_088617C8.s",
         "fe8u": "src/data_terrains.c"
       },
-      "source_symbol": "gTerrainNames",
-      "source_table": "gTerrains_0/gTerrainNames",
+      "source_symbol": "gTerrains_0",
+      "source_table": "gTerrains_0",
       "subsystem": "terrain",
       "target_id": "0x01E9"
     },
@@ -5419,7 +5419,7 @@
         "regional_sources": {
           "ja": {
             "kind": "symbol",
-            "symbol": "gTerrainNames[TERRAIN_CLIFF]"
+            "symbol": "gTerrains_0[TERRAIN_CLIFF]"
           },
           "zh-Hans": {
             "import_id": "fe8cn.raw.import-0112",
@@ -5432,8 +5432,8 @@
         "fe8j": "src/data/data_088617C8/data_088617C8.s",
         "fe8u": "src/data_terrains.c"
       },
-      "source_symbol": "gTerrainNames",
-      "source_table": "gTerrains_0/gTerrainNames",
+      "source_symbol": "gTerrains_0",
+      "source_table": "gTerrains_0",
       "subsystem": "terrain",
       "target_id": "0x01EA"
     },
@@ -5447,7 +5447,7 @@
         "regional_sources": {
           "ja": {
             "kind": "symbol",
-            "symbol": "gTerrainNames[TERRAIN_BALLISTA_REGULAR]"
+            "symbol": "gTerrains_0[TERRAIN_BALLISTA_REGULAR]"
           },
           "zh-Hans": {
             "import_id": "fe8cn.raw.import-0113",
@@ -5460,8 +5460,8 @@
         "fe8j": "src/data/data_088617C8/data_088617C8.s",
         "fe8u": "src/data_terrains.c"
       },
-      "source_symbol": "gTerrainNames",
-      "source_table": "gTerrains_0/gTerrainNames",
+      "source_symbol": "gTerrains_0",
+      "source_table": "gTerrains_0",
       "subsystem": "terrain",
       "target_id": "0x01EB"
     },
@@ -5475,7 +5475,7 @@
         "regional_sources": {
           "ja": {
             "kind": "symbol",
-            "symbol": "gTerrainNames[TERRAIN_BALLISTA_LONG]"
+            "symbol": "gTerrains_0[TERRAIN_BALLISTA_LONG]"
           },
           "zh-Hans": {
             "import_id": "fe8cn.raw.import-0114",
@@ -5488,8 +5488,8 @@
         "fe8j": "src/data/data_088617C8/data_088617C8.s",
         "fe8u": "src/data_terrains.c"
       },
-      "source_symbol": "gTerrainNames",
-      "source_table": "gTerrains_0/gTerrainNames",
+      "source_symbol": "gTerrains_0",
+      "source_table": "gTerrains_0",
       "subsystem": "terrain",
       "target_id": "0x01EC"
     },
@@ -5503,7 +5503,7 @@
         "regional_sources": {
           "ja": {
             "kind": "symbol",
-            "symbol": "gTerrainNames[TERRAIN_BALLISTA_KILLER]"
+            "symbol": "gTerrains_0[TERRAIN_BALLISTA_KILLER]"
           },
           "zh-Hans": {
             "import_id": "fe8cn.raw.import-0115",
@@ -5516,8 +5516,8 @@
         "fe8j": "src/data/data_088617C8/data_088617C8.s",
         "fe8u": "src/data_terrains.c"
       },
-      "source_symbol": "gTerrainNames",
-      "source_table": "gTerrains_0/gTerrainNames",
+      "source_symbol": "gTerrains_0",
+      "source_table": "gTerrains_0",
       "subsystem": "terrain",
       "target_id": "0x01ED"
     },
@@ -5531,7 +5531,7 @@
         "regional_sources": {
           "ja": {
             "kind": "symbol",
-            "symbol": "gTerrainNames[TERRAIN_SHIP_FLAT]"
+            "symbol": "gTerrains_0[TERRAIN_SHIP_FLAT]"
           },
           "zh-Hans": {
             "import_id": "fe8cn.raw.import-0116",
@@ -5544,8 +5544,8 @@
         "fe8j": "src/data/data_088617C8/data_088617C8.s",
         "fe8u": "src/data_terrains.c"
       },
-      "source_symbol": "gTerrainNames",
-      "source_table": "gTerrains_0/gTerrainNames",
+      "source_symbol": "gTerrains_0",
+      "source_table": "gTerrains_0",
       "subsystem": "terrain",
       "target_id": "0x01EE"
     },
@@ -5559,7 +5559,7 @@
         "regional_sources": {
           "ja": {
             "kind": "symbol",
-            "symbol": "gTerrainNames[TERRAIN_SHIP_WRECK]"
+            "symbol": "gTerrains_0[TERRAIN_SHIP_WRECK]"
           },
           "zh-Hans": {
             "import_id": "fe8cn.raw.import-0117",
@@ -5572,8 +5572,8 @@
         "fe8j": "src/data/data_088617C8/data_088617C8.s",
         "fe8u": "src/data_terrains.c"
       },
-      "source_symbol": "gTerrainNames",
-      "source_table": "gTerrains_0/gTerrainNames",
+      "source_symbol": "gTerrains_0",
+      "source_table": "gTerrains_0",
       "subsystem": "terrain",
       "target_id": "0x01EF"
     },
@@ -5587,7 +5587,7 @@
         "regional_sources": {
           "ja": {
             "kind": "symbol",
-            "symbol": "gTerrainNames[TERRAIN_TILE_2C]"
+            "symbol": "gTerrains_0[TERRAIN_TILE_2C]"
           },
           "zh-Hans": {
             "import_id": "fe8cn.raw.import-0118",
@@ -5600,8 +5600,8 @@
         "fe8j": "src/data/data_088617C8/data_088617C8.s",
         "fe8u": "src/data_terrains.c"
       },
-      "source_symbol": "gTerrainNames",
-      "source_table": "gTerrains_0/gTerrainNames",
+      "source_symbol": "gTerrains_0",
+      "source_table": "gTerrains_0",
       "subsystem": "terrain",
       "target_id": "0x01F0"
     },
@@ -5615,7 +5615,7 @@
         "regional_sources": {
           "ja": {
             "kind": "symbol",
-            "symbol": "gTerrainNames[TERRAIN_STAIRS]"
+            "symbol": "gTerrains_0[TERRAIN_STAIRS]"
           },
           "zh-Hans": {
             "import_id": "fe8cn.raw.import-0119",
@@ -5628,8 +5628,8 @@
         "fe8j": "src/data/data_088617C8/data_088617C8.s",
         "fe8u": "src/data_terrains.c"
       },
-      "source_symbol": "gTerrainNames",
-      "source_table": "gTerrains_0/gTerrainNames",
+      "source_symbol": "gTerrains_0",
+      "source_table": "gTerrains_0",
       "subsystem": "terrain",
       "target_id": "0x01F1"
     },
@@ -5643,7 +5643,7 @@
         "regional_sources": {
           "ja": {
             "kind": "symbol",
-            "symbol": "gTerrainNames[TERRAIN_TILE_2E]"
+            "symbol": "gTerrains_0[TERRAIN_TILE_2E]"
           },
           "zh-Hans": {
             "import_id": "fe8cn.raw.import-0120",
@@ -5656,8 +5656,8 @@
         "fe8j": "src/data/data_088617C8/data_088617C8.s",
         "fe8u": "src/data_terrains.c"
       },
-      "source_symbol": "gTerrainNames",
-      "source_table": "gTerrains_0/gTerrainNames",
+      "source_symbol": "gTerrains_0",
+      "source_table": "gTerrains_0",
       "subsystem": "terrain",
       "target_id": "0x01F2"
     },
@@ -5671,7 +5671,7 @@
         "regional_sources": {
           "ja": {
             "kind": "symbol",
-            "symbol": "gTerrainNames[TERRAIN_GLACIER]"
+            "symbol": "gTerrains_0[TERRAIN_GLACIER]"
           },
           "zh-Hans": {
             "import_id": "fe8cn.raw.import-0121",
@@ -5684,8 +5684,8 @@
         "fe8j": "src/data/data_088617C8/data_088617C8.s",
         "fe8u": "src/data_terrains.c"
       },
-      "source_symbol": "gTerrainNames",
-      "source_table": "gTerrains_0/gTerrainNames",
+      "source_symbol": "gTerrains_0",
+      "source_table": "gTerrains_0",
       "subsystem": "terrain",
       "target_id": "0x01F3"
     },
@@ -5699,7 +5699,7 @@
         "regional_sources": {
           "ja": {
             "kind": "symbol",
-            "symbol": "gTerrainNames[TERRAIN_ARENA_30]"
+            "symbol": "gTerrains_0[TERRAIN_ARENA_30]"
           },
           "zh-Hans": {
             "import_id": "fe8cn.raw.import-0122",
@@ -5712,8 +5712,8 @@
         "fe8j": "src/data/data_088617C8/data_088617C8.s",
         "fe8u": "src/data_terrains.c"
       },
-      "source_symbol": "gTerrainNames",
-      "source_table": "gTerrains_0/gTerrainNames",
+      "source_symbol": "gTerrains_0",
+      "source_table": "gTerrains_0",
       "subsystem": "terrain",
       "target_id": "0x01F4"
     },
@@ -5727,7 +5727,7 @@
         "regional_sources": {
           "ja": {
             "kind": "symbol",
-            "symbol": "gTerrainNames[TERRAIN_VALLEY]"
+            "symbol": "gTerrains_0[TERRAIN_VALLEY]"
           },
           "zh-Hans": {
             "import_id": "fe8cn.raw.import-0123",
@@ -5740,8 +5740,8 @@
         "fe8j": "src/data/data_088617C8/data_088617C8.s",
         "fe8u": "src/data_terrains.c"
       },
-      "source_symbol": "gTerrainNames",
-      "source_table": "gTerrains_0/gTerrainNames",
+      "source_symbol": "gTerrains_0",
+      "source_table": "gTerrains_0",
       "subsystem": "terrain",
       "target_id": "0x01F5"
     },
@@ -5755,7 +5755,7 @@
         "regional_sources": {
           "ja": {
             "kind": "symbol",
-            "symbol": "gTerrainNames[TERRAIN_FENCE_32]"
+            "symbol": "gTerrains_0[TERRAIN_FENCE_32]"
           },
           "zh-Hans": {
             "import_id": "fe8cn.raw.import-0124",
@@ -5768,8 +5768,8 @@
         "fe8j": "src/data/data_088617C8/data_088617C8.s",
         "fe8u": "src/data_terrains.c"
       },
-      "source_symbol": "gTerrainNames",
-      "source_table": "gTerrains_0/gTerrainNames",
+      "source_symbol": "gTerrains_0",
+      "source_table": "gTerrains_0",
       "subsystem": "terrain",
       "target_id": "0x01F6"
     },
@@ -5783,7 +5783,7 @@
         "regional_sources": {
           "ja": {
             "kind": "symbol",
-            "symbol": "gTerrainNames[TERRAIN_SNAG]"
+            "symbol": "gTerrains_0[TERRAIN_SNAG]"
           },
           "zh-Hans": {
             "import_id": "fe8cn.raw.import-0125",
@@ -5796,8 +5796,8 @@
         "fe8j": "src/data/data_088617C8/data_088617C8.s",
         "fe8u": "src/data_terrains.c"
       },
-      "source_symbol": "gTerrainNames",
-      "source_table": "gTerrains_0/gTerrainNames",
+      "source_symbol": "gTerrains_0",
+      "source_table": "gTerrains_0",
       "subsystem": "terrain",
       "target_id": "0x01F7"
     },
@@ -5811,7 +5811,7 @@
         "regional_sources": {
           "ja": {
             "kind": "symbol",
-            "symbol": "gTerrainNames[TERRAIN_BRIDGE_SNAG]"
+            "symbol": "gTerrains_0[TERRAIN_BRIDGE_SNAG]"
           },
           "zh-Hans": {
             "import_id": "fe8cn.raw.import-0126",
@@ -5824,8 +5824,8 @@
         "fe8j": "src/data/data_088617C8/data_088617C8.s",
         "fe8u": "src/data_terrains.c"
       },
-      "source_symbol": "gTerrainNames",
-      "source_table": "gTerrains_0/gTerrainNames",
+      "source_symbol": "gTerrains_0",
+      "source_table": "gTerrains_0",
       "subsystem": "terrain",
       "target_id": "0x01F8"
     },
@@ -5839,7 +5839,7 @@
         "regional_sources": {
           "ja": {
             "kind": "symbol",
-            "symbol": "gTerrainNames[TERRAIN_SKY]"
+            "symbol": "gTerrains_0[TERRAIN_SKY]"
           },
           "zh-Hans": {
             "import_id": "fe8cn.raw.import-0127",
@@ -5852,8 +5852,8 @@
         "fe8j": "src/data/data_088617C8/data_088617C8.s",
         "fe8u": "src/data_terrains.c"
       },
-      "source_symbol": "gTerrainNames",
-      "source_table": "gTerrains_0/gTerrainNames",
+      "source_symbol": "gTerrains_0",
+      "source_table": "gTerrains_0",
       "subsystem": "terrain",
       "target_id": "0x01F9"
     },
@@ -5867,7 +5867,7 @@
         "regional_sources": {
           "ja": {
             "kind": "symbol",
-            "symbol": "gTerrainNames[TERRAIN_DEEPS]"
+            "symbol": "gTerrains_0[TERRAIN_DEEPS]"
           },
           "zh-Hans": {
             "import_id": "fe8cn.raw.import-0128",
@@ -5880,8 +5880,8 @@
         "fe8j": "src/data/data_088617C8/data_088617C8.s",
         "fe8u": "src/data_terrains.c"
       },
-      "source_symbol": "gTerrainNames",
-      "source_table": "gTerrains_0/gTerrainNames",
+      "source_symbol": "gTerrains_0",
+      "source_table": "gTerrains_0",
       "subsystem": "terrain",
       "target_id": "0x01FA"
     },
@@ -5895,7 +5895,7 @@
         "regional_sources": {
           "ja": {
             "kind": "symbol",
-            "symbol": "gTerrainNames[TERRAIN_RUINS_VILLAGE]"
+            "symbol": "gTerrains_0[TERRAIN_RUINS_VILLAGE]"
           },
           "zh-Hans": {
             "import_id": "fe8cn.raw.import-0129",
@@ -5908,8 +5908,8 @@
         "fe8j": "src/data/data_088617C8/data_088617C8.s",
         "fe8u": "src/data_terrains.c"
       },
-      "source_symbol": "gTerrainNames",
-      "source_table": "gTerrains_0/gTerrainNames",
+      "source_symbol": "gTerrains_0",
+      "source_table": "gTerrains_0",
       "subsystem": "terrain",
       "target_id": "0x01FB"
     },
@@ -5923,7 +5923,7 @@
         "regional_sources": {
           "ja": {
             "kind": "symbol",
-            "symbol": "gTerrainNames[TERRAIN_INN]"
+            "symbol": "gTerrains_0[TERRAIN_INN]"
           },
           "zh-Hans": {
             "import_id": "fe8cn.raw.import-0130",
@@ -5936,8 +5936,8 @@
         "fe8j": "src/data/data_088617C8/data_088617C8.s",
         "fe8u": "src/data_terrains.c"
       },
-      "source_symbol": "gTerrainNames",
-      "source_table": "gTerrains_0/gTerrainNames",
+      "source_symbol": "gTerrains_0",
+      "source_table": "gTerrains_0",
       "subsystem": "terrain",
       "target_id": "0x01FC"
     },
@@ -5951,7 +5951,7 @@
         "regional_sources": {
           "ja": {
             "kind": "symbol",
-            "symbol": "gTerrainNames[TERRAIN_BARREL]"
+            "symbol": "gTerrains_0[TERRAIN_BARREL]"
           },
           "zh-Hans": {
             "import_id": "fe8cn.raw.import-0131",
@@ -5964,8 +5964,8 @@
         "fe8j": "src/data/data_088617C8/data_088617C8.s",
         "fe8u": "src/data_terrains.c"
       },
-      "source_symbol": "gTerrainNames",
-      "source_table": "gTerrains_0/gTerrainNames",
+      "source_symbol": "gTerrains_0",
+      "source_table": "gTerrains_0",
       "subsystem": "terrain",
       "target_id": "0x01FD"
     },
@@ -5979,7 +5979,7 @@
         "regional_sources": {
           "ja": {
             "kind": "symbol",
-            "symbol": "gTerrainNames[TERRAIN_BONE]"
+            "symbol": "gTerrains_0[TERRAIN_BONE]"
           },
           "zh-Hans": {
             "import_id": "fe8cn.raw.import-0132",
@@ -5992,8 +5992,8 @@
         "fe8j": "src/data/data_088617C8/data_088617C8.s",
         "fe8u": "src/data_terrains.c"
       },
-      "source_symbol": "gTerrainNames",
-      "source_table": "gTerrains_0/gTerrainNames",
+      "source_symbol": "gTerrains_0",
+      "source_table": "gTerrains_0",
       "subsystem": "terrain",
       "target_id": "0x01FE"
     },
@@ -6007,7 +6007,7 @@
         "regional_sources": {
           "ja": {
             "kind": "symbol",
-            "symbol": "gTerrainNames[TERRAIN_DARK]"
+            "symbol": "gTerrains_0[TERRAIN_DARK]"
           },
           "zh-Hans": {
             "import_id": "fe8cn.raw.import-0133",
@@ -6020,8 +6020,8 @@
         "fe8j": "src/data/data_088617C8/data_088617C8.s",
         "fe8u": "src/data_terrains.c"
       },
-      "source_symbol": "gTerrainNames",
-      "source_table": "gTerrains_0/gTerrainNames",
+      "source_symbol": "gTerrains_0",
+      "source_table": "gTerrains_0",
       "subsystem": "terrain",
       "target_id": "0x01FF"
     },
@@ -6035,7 +6035,7 @@
         "regional_sources": {
           "ja": {
             "kind": "symbol",
-            "symbol": "gTerrainNames[TERRAIN_WATER]"
+            "symbol": "gTerrains_0[TERRAIN_WATER]"
           },
           "zh-Hans": {
             "import_id": "fe8cn.raw.import-0134",
@@ -6048,8 +6048,8 @@
         "fe8j": "src/data/data_088617C8/data_088617C8.s",
         "fe8u": "src/data_terrains.c"
       },
-      "source_symbol": "gTerrainNames",
-      "source_table": "gTerrains_0/gTerrainNames",
+      "source_symbol": "gTerrains_0",
+      "source_table": "gTerrains_0",
       "subsystem": "terrain",
       "target_id": "0x0200"
     },
@@ -6063,7 +6063,7 @@
         "regional_sources": {
           "ja": {
             "kind": "symbol",
-            "symbol": "gTerrainNames[TERRAIN_GUNNELS]"
+            "symbol": "gTerrains_0[TERRAIN_GUNNELS]"
           },
           "zh-Hans": {
             "import_id": "fe8cn.raw.import-0135",
@@ -6076,8 +6076,8 @@
         "fe8j": "src/data/data_088617C8/data_088617C8.s",
         "fe8u": "src/data_terrains.c"
       },
-      "source_symbol": "gTerrainNames",
-      "source_table": "gTerrains_0/gTerrainNames",
+      "source_symbol": "gTerrains_0",
+      "source_table": "gTerrains_0",
       "subsystem": "terrain",
       "target_id": "0x0201"
     },
@@ -6091,7 +6091,7 @@
         "regional_sources": {
           "ja": {
             "kind": "symbol",
-            "symbol": "gTerrainNames[TERRAIN_DECK]"
+            "symbol": "gTerrains_0[TERRAIN_DECK]"
           },
           "zh-Hans": {
             "import_id": "fe8cn.raw.import-0136",
@@ -6104,8 +6104,8 @@
         "fe8j": "src/data/data_088617C8/data_088617C8.s",
         "fe8u": "src/data_terrains.c"
       },
-      "source_symbol": "gTerrainNames",
-      "source_table": "gTerrains_0/gTerrainNames",
+      "source_symbol": "gTerrains_0",
+      "source_table": "gTerrains_0",
       "subsystem": "terrain",
       "target_id": "0x0202"
     },
@@ -6119,7 +6119,7 @@
         "regional_sources": {
           "ja": {
             "kind": "symbol",
-            "symbol": "gTerrainNames[TERRAIN_BRACE]"
+            "symbol": "gTerrains_0[TERRAIN_BRACE]"
           },
           "zh-Hans": {
             "import_id": "fe8cn.raw.import-0137",
@@ -6132,8 +6132,8 @@
         "fe8j": "src/data/data_088617C8/data_088617C8.s",
         "fe8u": "src/data_terrains.c"
       },
-      "source_symbol": "gTerrainNames",
-      "source_table": "gTerrains_0/gTerrainNames",
+      "source_symbol": "gTerrains_0",
+      "source_table": "gTerrains_0",
       "subsystem": "terrain",
       "target_id": "0x0203"
     },
@@ -6147,7 +6147,7 @@
         "regional_sources": {
           "ja": {
             "kind": "symbol",
-            "symbol": "gTerrainNames[TERRAIN_MAST]"
+            "symbol": "gTerrains_0[TERRAIN_MAST]"
           },
           "zh-Hans": {
             "import_id": "fe8cn.raw.import-0138",
@@ -6160,8 +6160,8 @@
         "fe8j": "src/data/data_088617C8/data_088617C8.s",
         "fe8u": "src/data_terrains.c"
       },
-      "source_symbol": "gTerrainNames",
-      "source_table": "gTerrains_0/gTerrainNames",
+      "source_symbol": "gTerrains_0",
+      "source_table": "gTerrains_0",
       "subsystem": "terrain",
       "target_id": "0x0204"
     },

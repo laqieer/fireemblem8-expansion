@@ -20,6 +20,11 @@ from scripts.localization.game_locales.final_mapping import (
     recover_original_rows,
     require_no_fallback,
 )
+from scripts.localization.game_locales.ending_metrics import (
+    _ascii_widths,
+    _cjk_widths,
+    _line_width,
+)
 from scripts.localization.game_locales.parsers import parse_hash_indexed
 
 
@@ -520,6 +525,9 @@ class FinalMappingTests(unittest.TestCase):
             ),
         }
         for target_id, (ja, zh_hans) in expected.items():
+            if self.rows[target_id]["source"]["kind"] == "indexed":
+                ja = ja.replace("\n", "[CTRL:0001]")
+                zh_hans = zh_hans.replace("\n", "[CTRL:0001]")
             self.assertEqual(self.localized_text(target_id, "ja"), ja)
             self.assertEqual(
                 self.localized_text(target_id, "zh-Hans"), zh_hans
@@ -539,7 +547,7 @@ class FinalMappingTests(unittest.TestCase):
         for target_id, slot in terrain_slots.items():
             self.assertEqual(
                 self.rows[target_id]["verification"]["source_key"],
-                f"gTerrainNames[{slot}]",
+                f"gTerrains_0[{slot}]",
             )
 
         zh_payloads = "\n".join(
@@ -1063,6 +1071,8 @@ class FinalMappingTests(unittest.TestCase):
         }
         for target_id, by_locale in exact.items():
             for locale, payload in by_locale.items():
+                if self.rows[target_id]["source"]["kind"] == "indexed":
+                    payload = payload.replace("\n", "[CTRL:0001]")
                 self.assertEqual(
                     self.localized_text(target_id, locale),
                     payload,
@@ -1179,13 +1189,19 @@ class FinalMappingTests(unittest.TestCase):
             "game.chapter_event.msg_b2a",
         )
 
-    def test_all_ending_titles_and_paired_lines_fit_real_text_allocations(self):
+    def test_all_ending_titles_solo_and_paired_lines_fit_real_text_allocations(self):
         metrics = self.ending_metrics
         self.assertEqual(metrics["kind"], "fe8u-ending-layout-metrics")
         self.assertEqual(
             metrics["allocations"],
             {
                 "paired": {
+                    "pixel_width": 208,
+                    "text_count": 5,
+                    "text_index_start": 0,
+                    "tile_width": 26,
+                },
+                "solo": {
                     "pixel_width": 208,
                     "text_count": 5,
                     "text_index_start": 0,
@@ -1216,13 +1232,19 @@ class FinalMappingTests(unittest.TestCase):
                 "locale_count": 2,
                 "overflow_count": 0,
                 "paired_target_count": 34,
+                "solo_target_count": 33,
                 "title_target_count": 33,
             },
         )
         for locale in ("ja", "zh-Hans"):
             locale_metrics = metrics["locales"][locale]
             self.assertEqual(len(locale_metrics["titles"]), 33)
+            self.assertEqual(len(locale_metrics["solo"]), 33)
             self.assertEqual(len(locale_metrics["paired"]), 34)
+            self.assertEqual(
+                [record["target_id"] for record in locale_metrics["solo"]],
+                [f"0x{message_id:04X}" for message_id in range(0x07D6, 0x0817, 2)],
+            )
             self.assertEqual(
                 [record["target_id"] for record in locale_metrics["paired"]],
                 [f"0x{message_id:04X}" for message_id in range(0x0817, 0x0839)],
@@ -1234,11 +1256,64 @@ class FinalMappingTests(unittest.TestCase):
                 self.assertEqual(record["line_count"], 5)
                 self.assertEqual(len(record["line_widths"]), 5)
                 self.assertLessEqual(record["max_line_width"], 208)
+            for record in locale_metrics["solo"]:
+                self.assertGreaterEqual(record["line_count"], 1)
+                self.assertLessEqual(record["line_count"], 5)
+                self.assertEqual(
+                    len(record["line_widths"]),
+                    record["line_count"],
+                )
+                self.assertLessEqual(record["max_line_width"], 208)
 
         self.assertEqual(
             self.localized_text("0x0801", "zh-Hans"),
             "智泉·塞勒夫",
         )
+
+    def test_link_arena_labels_fit_their_actual_pixel_allocations(self):
+        allocations = {
+            "0x0768": 56,
+            "0x076A": 56,
+            "0x0776": 64,
+            "0x0777": 80,
+            "0x0778": 64,
+        }
+        expected_ja = {
+            "0x0768": "チーム交換[X]\n",
+            "0x076A": "通信画面[.][X]\n",
+            "0x0776": "敵を隠す",
+        }
+        ascii_widths = _ascii_widths(self.ROOT)
+        for locale in ("ja", "zh-Hans"):
+            cjk_widths, _ = _cjk_widths(self.ROOT, locale)
+            for target_id, allocation in allocations.items():
+                payload = self.localized_text(target_id, locale)
+                visible = re.sub(r"\[[^\[\]\r\n]+\]", "", payload).strip()
+                width = _line_width(
+                    visible,
+                    locale=locale,
+                    ascii_widths=ascii_widths,
+                    cjk_widths=cjk_widths,
+                )
+                self.assertLessEqual(
+                    width,
+                    allocation,
+                    f"{locale} {target_id}: {width}px exceeds {allocation}px",
+                )
+        for target_id, payload in expected_ja.items():
+            self.assertEqual(self.localized_text(target_id, "ja"), payload)
+
+        team_list = (self.ROOT / "src/sio_teamlist.c").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn(
+            "GetStringFromIndex(ptr[i].menuTextId), 7)",
+            team_list,
+        )
+        for path in ("src/sio_rulesettings.c", "src/sio_bat.c"):
+            source = (self.ROOT / path).read_text(encoding="utf-8")
+            self.assertIn("TILEMAP_LOCATED(gBG0TilemapBuffer, 6,", source)
+            self.assertIn("gLinkArenaRuleData[i].labelTextId", source)
 
     def test_historical_queue_is_complete_fulfilled_and_canonical(self):
         fallback_ids = [

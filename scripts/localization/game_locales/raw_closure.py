@@ -99,9 +99,18 @@ def _validate_call_sites(
         if not path.is_file():
             raise RawClosureError(f"{site_field}.path disappeared: {relative_path}")
         source = path.read_text(encoding="utf-8")
-        if not any(anchor in source for anchor in anchors):
+        cursor = 0
+        missing = []
+        for anchor in anchors:
+            position = source.find(anchor, cursor)
+            if position < 0:
+                missing.append(anchor)
+                continue
+            cursor = position + len(anchor)
+        if missing:
             raise RawClosureError(
-                f"{site_field} has no surviving anchor in {relative_path}: {anchors}"
+                f"{site_field} is missing ordered anchors in {relative_path}: "
+                f"{missing}"
             )
         normalized.append({"anchors": list(anchors), "path": relative_path})
     return normalized
@@ -173,11 +182,18 @@ def _validate_runtime_consumers(
             symbol,
             consumer_field,
         )
-        missing = [anchor for anchor in anchors if anchor not in body]
+        missing = []
+        cursor = 0
+        for anchor in anchors:
+            position = body.find(anchor, cursor)
+            if position < 0:
+                missing.append(anchor)
+                continue
+            cursor = position + len(anchor)
         if missing:
             raise RawClosureError(
                 f"{consumer_field} runtime consumer {symbol} in {relative_path} "
-                f"is missing anchors: {missing}"
+                f"is missing ordered anchors: {missing}"
             )
         normalized.append(
             {
@@ -366,9 +382,59 @@ def _derived_row_call_sites(row: Any, repo_root: Path) -> List[Dict[str, Any]]:
             f"0x{row.target_id:04X} raw mapping lacks an FE8U call-site path"
         )
     source_key = verification.get("source_key", "")
-    anchors = [verification.get("source_symbol", ""), source_key]
-    anchors.extend(_IDENTIFIER_RE.findall(source_key))
-    anchors = list(dict.fromkeys(anchor for anchor in anchors if anchor))
+    source_symbol = verification.get("source_symbol", "")
+    source = (repo_root / relative_path).read_text(encoding="utf-8")
+    target_match = re.search(
+        rf"0x0*{row.target_id:X}\b",
+        source,
+        flags=re.IGNORECASE,
+    )
+    target_token = target_match.group(0) if target_match is not None else ""
+    if source_symbol == "gTerrains_0":
+        anchors = [source_symbol, f"[{source_key}]"]
+    elif source_symbol == "GoalDisplay_Init":
+        anchors = [source_symbol, f"GetStringFromIndex(MSG_{row.target_id:X})"]
+    elif source_key and source_key in source:
+        anchors = [source_symbol, source_key]
+    else:
+        override_match = re.search(r"override\[(0x[0-9a-fA-F]+)\]", source_key)
+        if override_match is not None:
+            override_value = int(override_match.group(1), 16)
+            designated_target = f".nameMsgId = 0x{row.target_id:04X}"
+            if designated_target in source:
+                anchors = [
+                    source_symbol,
+                    designated_target,
+                    f".overrideId = {override_value},",
+                ]
+            else:
+                override_token_match = re.search(
+                    rf"0x0*{override_value:X}\b",
+                    source,
+                    flags=re.IGNORECASE,
+                )
+                if not target_token or override_token_match is None:
+                    raise RawClosureError(
+                        f"0x{row.target_id:04X} raw mapping cannot resolve "
+                        "its menu target/override relationship"
+                    )
+                anchors = [
+                    source_symbol,
+                    target_token,
+                    override_token_match.group(0),
+                ]
+        elif re.search(r"\[[0-9]+\]\.name$", source_key):
+            if not target_token:
+                raise RawClosureError(
+                    f"0x{row.target_id:04X} raw mapping cannot resolve "
+                    "its menu target relationship"
+                )
+            anchors = [source_symbol, target_token]
+        else:
+            raise RawClosureError(
+                f"0x{row.target_id:04X} raw mapping lacks a verifiable "
+                "call-site relationship"
+            )
     return _validate_call_sites(
         [{"path": relative_path, "anchors": anchors}],
         field=f"mapping.0x{row.target_id:04X}.call_sites",
@@ -417,7 +483,10 @@ def build_raw_surface_closure(
     )
     mapped = _mapped_imports(mapping_data, repo_root=repo_root)
     try:
-        ja_raw_providers = load_ja_raw_providers(ja_raw_provider_data)
+        ja_raw_providers = load_ja_raw_providers(
+            ja_raw_provider_data,
+            source_root=repo_root / "texts/locales/ja",
+        )
     except RawProviderError as error:
         raise RawClosureError(f"Japanese raw provider catalog failed: {error}") from error
     active_keys = _active_registry_keys(registry_data)
