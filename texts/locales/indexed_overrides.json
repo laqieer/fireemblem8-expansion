@@ -1,6 +1,12 @@
 {
   "kind": "indexed-locale-source-overrides",
   "schema_version": 1,
+  "supplements": [
+    {
+      "path": "texts/locales/indexed_audit_overrides.json",
+      "sha256": "2edc1b6bcda26a24a8335e442d604c916a485f435455f22f0de736140177b3a8"
+    }
+  ],
   "sources": {
     "fe8cn_source": {
       "entries": {

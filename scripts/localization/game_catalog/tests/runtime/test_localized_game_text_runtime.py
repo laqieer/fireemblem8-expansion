@@ -337,7 +337,7 @@ class LocalizedGameTextRuntimeTests(unittest.TestCase):
             for row in mapping["rows"]
             if row["source"]["kind"] == "authored"
         ]
-        self.assertEqual(len(authored_ids), 289)
+        self.assertEqual(len(authored_ids), 326)
         (build_dir / "authored_corpus_ids.h").write_text(
             "static const int sAuthoredIds[] = {\n"
             + "".join(
@@ -376,7 +376,7 @@ class LocalizedGameTextRuntimeTests(unittest.TestCase):
         run_result = self._run([str(binary)])
         self.assertEqual(
             run_result.stdout.strip(),
-            "authored_corpus_driver: 289 exact Japanese streams",
+            "authored_corpus_driver: 326 exact Japanese streams",
         )
 
     def test_profile_compiles_and_layout_probes(self):

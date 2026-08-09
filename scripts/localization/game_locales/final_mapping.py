@@ -20,6 +20,7 @@ from scripts.localization.game_catalog.english_source import (
 )
 
 from .crosswalk import build_crosswalk_coverage_report, canonical_json_bytes
+from .ending_metrics import EndingLayoutError, build_ending_layout_metrics
 from .febuilder import validate_febuilder_evidence_document
 from .mapping import format_message_id, validate_mapping_document
 from .parsers import parse_hash_indexed
@@ -34,6 +35,9 @@ FINAL_REPORT_SCHEMA_VERSION = 1
 FINAL_REPORT_KIND = "fe8u-final-mapping-report"
 AUTHORED_QUEUE_SCHEMA_VERSION = 1
 AUTHORED_QUEUE_KIND = "fe8u-authored-translation-queue"
+AUDIT_CORRECTIONS_PATH = Path(
+    "texts/locales/mapping/audit_semantic_corrections.json"
+)
 
 _TOKEN_RE = re.compile(r"\[([^\[\]\r\n]+)\]")
 _C_COMMENT_RE = re.compile(r"/\*.*?\*/|//[^\n]*", re.DOTALL)
@@ -964,6 +968,99 @@ def _authored_semantic_correction(
     return result
 
 
+def _load_audit_semantic_corrections(
+    repo_root: Path,
+) -> Tuple[Dict[str, Dict[str, Any]], str]:
+    path = repo_root / AUDIT_CORRECTIONS_PATH
+    data_bytes = path.read_bytes()
+    try:
+        data = json.loads(data_bytes.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise FinalMappingError(
+            f"{path}: audit semantic corrections must be valid UTF-8 JSON"
+        ) from error
+    if (
+        not isinstance(data, dict)
+        or data.get("kind") != "fe8u-audit-semantic-corrections"
+        or data.get("schema_version") != 1
+        or set(data) != {"kind", "schema_version", "targets"}
+        or not isinstance(data["targets"], list)
+    ):
+        raise FinalMappingError(f"{path}: audit semantic correction schema is invalid")
+
+    corrections = {}
+    for record in data["targets"]:
+        if not isinstance(record, dict):
+            raise FinalMappingError(f"{path}: correction record must be an object")
+        target_id = record.get("target_id")
+        if (
+            not isinstance(target_id, str)
+            or not re.fullmatch(r"0x[0-9A-F]{4}", target_id)
+            or target_id in corrections
+        ):
+            raise FinalMappingError(
+                f"{path}: correction target IDs must be unique 0xNNNN values"
+            )
+        expected_fields = {
+            "english_payload_sha256",
+            "incorrect_payload_sha256",
+            "payload_sha256",
+            "rationale",
+            "source_key",
+            "subsystem",
+            "target_id",
+            "translation_key",
+        }
+        source_fields = {
+            field
+            for field in ("incorrect_source_id", "incorrect_raw_import_id")
+            if field in record
+        }
+        if len(source_fields) != 1 or set(record) != expected_fields | source_fields:
+            raise FinalMappingError(f"{path}: {target_id} correction fields drifted")
+        digests = [record["english_payload_sha256"]]
+        for field in ("incorrect_payload_sha256", "payload_sha256"):
+            payload_sha256 = record[field]
+            if (
+                not isinstance(payload_sha256, dict)
+                or set(payload_sha256) != {"ja", "zh-Hans"}
+            ):
+                raise FinalMappingError(
+                    f"{path}: {target_id} {field} hashes are malformed"
+                )
+            digests.extend(payload_sha256.values())
+        if any(
+            not isinstance(digest, str)
+            or len(digest) != 64
+            or any(character not in "0123456789abcdef" for character in digest)
+            for digest in digests
+        ):
+            raise FinalMappingError(f"{path}: {target_id} has an invalid SHA-256")
+        for field in ("rationale", "source_key", "subsystem", "translation_key"):
+            if not isinstance(record[field], str) or not record[field]:
+                raise FinalMappingError(
+                    f"{path}: {target_id} {field} must be non-empty"
+                )
+        incorrect_field = next(iter(source_fields))
+        incorrect_value = record[incorrect_field]
+        if incorrect_field == "incorrect_source_id":
+            valid_source = isinstance(incorrect_value, str) and re.fullmatch(
+                r"0x[0-9A-F]{4}", incorrect_value
+            )
+        else:
+            valid_source = isinstance(incorrect_value, str) and bool(
+                incorrect_value
+            )
+        if not valid_source:
+            raise FinalMappingError(
+                f"{path}: {target_id} incorrect source identifier is invalid"
+            )
+        corrections[target_id] = {
+            key: value for key, value in record.items() if key != "target_id"
+        }
+    return corrections, _sha256_bytes(data_bytes)
+
+
 _SEMANTIC_AUTHORED_CORRECTIONS: Dict[str, Dict[str, Any]] = {
     "0x0005": {
         "english_payload_sha256": "6a4df7673dafecb3086aa97192e67eb3275033fc37e45a4581c8df33af9efaaf",
@@ -1863,6 +1960,48 @@ def build_final_mapping_artifacts(
         locale: _runtime_authored_strings(runtime_authored_catalogs[locale], locale)
         for locale in ("ja", "zh-Hans")
     }
+    audit_authored_corrections, audit_corrections_sha256 = (
+        _load_audit_semantic_corrections(repo_root)
+    )
+    overlap = set(_SEMANTIC_AUTHORED_CORRECTIONS) & set(
+        audit_authored_corrections
+    )
+    if overlap:
+        raise FinalMappingError(
+            "audit semantic corrections duplicate built-in targets: "
+            + ", ".join(sorted(overlap))
+        )
+    semantic_authored_corrections = {
+        **_SEMANTIC_AUTHORED_CORRECTIONS,
+        **audit_authored_corrections,
+    }
+
+    def original_payload_hashes(target_id: str) -> Dict[str, str]:
+        row = row_by_id[target_id]
+        source = row["source"]
+        if source["kind"] == "indexed":
+            source_id = int(source["id"], 16)
+            return {
+                locale: _sha256_text(indexed[locale][source_id])
+                for locale in ("ja", "zh-Hans")
+            }
+        if source["kind"] == "raw":
+            ja_source = source.get("regional_sources", {}).get("ja", {})
+            try:
+                ja_text = resolve_ja_raw_text(
+                    target_id=int(target_id, 16),
+                    ja_source=ja_source,
+                    providers=ja_raw_providers,
+                )
+            except RawProviderError as error:
+                raise FinalMappingError(f"{target_id}: {error}") from error
+            return {
+                "ja": _sha256_text(ja_text),
+                "zh-Hans": _sha256_text(raw_payloads[source["import_id"]]),
+            }
+        raise FinalMappingError(
+            f"{target_id}: audit correction source must be indexed or raw"
+        )
     provider_authored = {
         locale: {**authored[locale], **runtime_authored[locale]}
         for locale in ("ja", "zh-Hans")
@@ -1890,7 +2029,7 @@ def build_final_mapping_artifacts(
     }
 
     semantic_correction_ids = set(_SEMANTIC_INDEXED_CORRECTIONS) | set(
-        _SEMANTIC_AUTHORED_CORRECTIONS
+        semantic_authored_corrections
     )
     protected = {
         target_id: _json_hash(row["source"])
@@ -2167,7 +2306,7 @@ def build_final_mapping_artifacts(
         _promote(row_by_id[target_id], source, verification)
         promoted[target_id] = "d-semantic-correction"
 
-    for target_id, decision in sorted(_SEMANTIC_AUTHORED_CORRECTIONS.items()):
+    for target_id, decision in sorted(semantic_authored_corrections.items()):
         target = int(target_id, 16)
         incorrect_source = _require_semantic_precondition(
             row_by_id[target_id],
@@ -2180,6 +2319,13 @@ def build_final_mapping_artifacts(
         ):
             raise FinalMappingError(
                 f"{target_id}: authored semantic correction English payload changed"
+            )
+        if "incorrect_payload_sha256" in decision and (
+            original_payload_hashes(target_id)
+            != decision["incorrect_payload_sha256"]
+        ):
+            raise FinalMappingError(
+                f"{target_id}: authored semantic correction source payload changed"
             )
         key = decision["translation_key"]
         for locale in ("ja", "zh-Hans"):
@@ -2207,6 +2353,15 @@ def build_final_mapping_artifacts(
             details={
                 "english_payload_sha256": decision["english_payload_sha256"],
                 "incorrect_source": incorrect_source,
+                **(
+                    {
+                        "incorrect_payload_sha256": decision[
+                            "incorrect_payload_sha256"
+                        ]
+                    }
+                    if "incorrect_payload_sha256" in decision
+                    else {}
+                ),
                 "payload_sha256": decision["payload_sha256"],
                 "translation_key": key,
             },
@@ -2408,7 +2563,7 @@ def build_final_mapping_artifacts(
         decision["translation_key"] for decision in _AUTHORED_PROMOTIONS.values()
     } | {
         decision["translation_key"]
-        for decision in _SEMANTIC_AUTHORED_CORRECTIONS.values()
+        for decision in semantic_authored_corrections.values()
     }
     for locale in ("ja", "zh-Hans"):
         if set(runtime_authored[locale]) != expected_runtime_keys:
@@ -2485,6 +2640,52 @@ def build_final_mapping_artifacts(
     coverage = build_crosswalk_coverage_report(
         final_mapping, target_count=target_count, repo_root=repo_root
     )
+
+    localized_payloads: Dict[str, Dict[int, str]] = {
+        "ja": {},
+        "zh-Hans": {},
+    }
+    for row in final_mapping["rows"]:
+        target = int(row["target_id"], 16)
+        source = row["source"]
+        for locale in ("ja", "zh-Hans"):
+            if source["kind"] == "indexed":
+                payload = indexed[locale][int(source["id"], 16)]
+            elif source["kind"] == "raw":
+                if locale == "zh-Hans":
+                    payload = raw_payloads[source["import_id"]]
+                else:
+                    try:
+                        payload = resolve_ja_raw_text(
+                            target_id=target,
+                            ja_source=source.get("regional_sources", {}).get(
+                                "ja", {}
+                            ),
+                            providers=ja_raw_providers,
+                        )
+                    except RawProviderError as error:
+                        raise FinalMappingError(
+                            f"{row['target_id']}: {error}"
+                        ) from error
+            elif source["kind"] == "authored":
+                key = source["translation_key"]
+                if key not in provider_authored[locale]:
+                    raise FinalMappingError(
+                        f"{row['target_id']}: missing {locale} authored payload"
+                    )
+                payload = provider_authored[locale][key] + source.get(
+                    "control_suffix", ""
+                )
+            else:
+                continue
+            localized_payloads[locale][target] = payload
+    try:
+        ending_metrics = build_ending_layout_metrics(
+            repo_root,
+            localized_payloads=localized_payloads,
+        )
+    except EndingLayoutError as error:
+        raise FinalMappingError(str(error)) from error
 
     fallback_rows = [
         row for row in final_mapping["rows"] if row["source"]["kind"] == "english_fallback"
@@ -2590,6 +2791,8 @@ def build_final_mapping_artifacts(
         "authoritative": False,
         "inputs": {
             "febuilder_alignment_evidence_sha256": _json_hash(febuilder_data),
+            "audit_semantic_corrections_sha256": audit_corrections_sha256,
+            "ending_layout_metrics_sha256": _json_hash(ending_metrics),
             "original_target_map_sha256": _json_hash(
                 {"rows": original_rows, "target_count": target_count}
             ),
@@ -2632,6 +2835,7 @@ def build_final_mapping_artifacts(
     }
     return {
         "coverage": coverage,
+        "ending_metrics": ending_metrics,
         "mapping": final_mapping,
         "queue": queue,
         "report": report,

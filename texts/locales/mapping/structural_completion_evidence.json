@@ -2221,7 +2221,7 @@
             "source_in_bounds": true,
             "source_payload_bytes": 461,
             "source_payload_nonempty": true,
-            "source_payload_sha256": "423e1cf2f18cc805c760651db78cc13b8bbbe18ba7acf21517e9878c54839558"
+            "source_payload_sha256": "ff8056f0879784574a12f9636897dd8a33fe40932f54c80a03ca45ef63dc288d"
           }
         }
       ],
@@ -2422,14 +2422,14 @@
     },
     "fe8j_indexed_source": {
       "path": "texts/locales/ja/indexed.txt",
-      "sha256": "d1ba0a928133b9980aa23b524b116c3e1d5ab57011a84a20d001b2835d05d4b1"
+      "sha256": "01f5cf58b95cb9c9994718f1eb7f5eaba6f84bfe5d13add16cfa2624a39c97e9"
     },
     "fe8j_reference_revision": "bf424414d075789d757e2f4cd0cea823bfb2862e",
     "fe8u_reference_revision": "d727e37ba1a584b2f874bdc3662ebc45e257de23",
     "protected_artifacts": [
       {
         "path": "texts/locales/mapping/fe8u_target_map.json",
-        "sha256": "6739fcd5c109453bfa8770f34fa7b351d73995e96cf86ee046066890ba344302"
+        "sha256": "bd987230f42277d5d93b0fc037bb52e34fceb57ace955f652514b96013b2735d"
       },
       {
         "path": "texts/locales/mapping/fe8u_structural_evidence.json",
@@ -3565,9 +3565,9 @@
       "validation": {
         "parsed_structural_pair": false,
         "source_in_bounds": true,
-        "source_payload_bytes": 24,
+        "source_payload_bytes": 21,
         "source_payload_nonempty": true,
-        "source_payload_sha256": "1f83356404061cdcbbd447555ba5f0d8bd7ea317d442bdc11fb5f48910f69fbc",
+        "source_payload_sha256": "6957880021846f3b638ee949f85316075e9f677e083de80f689a880c130bee66",
         "target_in_bounds": true,
         "typed_source_site_count": 1,
         "typed_target_site_count": 1
@@ -27915,9 +27915,9 @@
       "validation": {
         "parsed_structural_pair": false,
         "source_in_bounds": true,
-        "source_payload_bytes": 203,
+        "source_payload_bytes": 188,
         "source_payload_nonempty": true,
-        "source_payload_sha256": "0a224a030d095a922c90a0b4ec6a246a7329385c31f23efc93c12e646ef1b375",
+        "source_payload_sha256": "d9f0eef95d999c658fcea2a7fe7258af416a471db7f6fb54683fa4aedab520f0",
         "target_in_bounds": true,
         "typed_source_site_count": 1,
         "typed_target_site_count": 1
@@ -38418,9 +38418,9 @@
       "validation": {
         "parsed_structural_pair": false,
         "source_in_bounds": true,
-        "source_payload_bytes": 281,
+        "source_payload_bytes": 272,
         "source_payload_nonempty": true,
-        "source_payload_sha256": "c8f82bccbd004bb6e06da04aa64549823e845126136405d9cf9b6697261fdb54",
+        "source_payload_sha256": "070daf6e65164090cff043492c7e402bb18f5212bbbf3a404316d0299329e595",
         "target_in_bounds": true,
         "typed_source_site_count": 1,
         "typed_target_site_count": 1
@@ -41500,9 +41500,9 @@
       "validation": {
         "parsed_structural_pair": false,
         "source_in_bounds": true,
-        "source_payload_bytes": 414,
+        "source_payload_bytes": 369,
         "source_payload_nonempty": true,
-        "source_payload_sha256": "22517107529b541b68d211bf6c374fa9b65ec2ee880a1aad5616462e0253c071",
+        "source_payload_sha256": "246e6230fb10eb27866be14467076d76c5c4b23d4b4ebfe33fccb8ffecfa60d3",
         "target_in_bounds": true,
         "typed_source_site_count": 1,
         "typed_target_site_count": 1
@@ -60641,9 +60641,9 @@
       "validation": {
         "parsed_structural_pair": false,
         "source_in_bounds": true,
-        "source_payload_bytes": 36,
+        "source_payload_bytes": 33,
         "source_payload_nonempty": true,
-        "source_payload_sha256": "55ec224af10144daf171f304c503cb7f1ea0e284a44be0290eb06b55b3f62d54",
+        "source_payload_sha256": "938e119b9a48de643aef485b632e7c0e2982e19f7cb5d11a645365555d4582c3",
         "target_in_bounds": true,
         "typed_source_site_count": 1,
         "typed_target_site_count": 2
@@ -65412,9 +65412,9 @@
       "validation": {
         "parsed_structural_pair": false,
         "source_in_bounds": true,
-        "source_payload_bytes": 36,
+        "source_payload_bytes": 33,
         "source_payload_nonempty": true,
-        "source_payload_sha256": "664800d5a8d5f851d402dff2f8bb53eed0d30aa80ca01c8e19647393ca9ed47c",
+        "source_payload_sha256": "97c357051cd53902818e4240a3db4fa4fb3720214cf0273f5d6e8f7d73e1ce93",
         "target_in_bounds": true,
         "typed_source_site_count": 1,
         "typed_target_site_count": 2
@@ -107135,9 +107135,9 @@
       "validation": {
         "parsed_structural_pair": true,
         "source_in_bounds": true,
-        "source_payload_bytes": 4007,
+        "source_payload_bytes": 4016,
         "source_payload_nonempty": true,
-        "source_payload_sha256": "724059cdb0936e4aebbd82c38dad9514e45d8ce9af8d2da6babb377c4674ff8e",
+        "source_payload_sha256": "9253c8513b59d4c61ee79cb492ee607b2c6d113d8083acbc7b4cd9d1d10bde7f",
         "target_in_bounds": true,
         "typed_source_site_count": 2,
         "typed_target_site_count": 2

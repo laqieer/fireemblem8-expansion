@@ -11,12 +11,14 @@ remain import provenance only and never become runtime keys.
   `source/fe8j/msg_map.tsv`, and `source/fe8cn/FE8CN.txt`: byte-exact,
   hash-pinned authorized input snapshots. These committed raw files are the
   independent regeneration source.
-- `indexed_overrides.json`: source-hash-pinned corrections applied only after
-  control normalization. Every entry pins the exact normalized source text,
-  replacement, FE8U target IDs, context, provenance audit, and reason. The
-  importer rejects source-hash drift, stale expected text, or any change to
-  control/newline/placeholder placement. The raw FE8J/FE8CN snapshots remain
-  byte-exact.
+- `indexed_overrides.json` and its hash-pinned
+  `indexed_audit_overrides.json` supplement: corrections applied only after
+  control normalization. Entries pin either the exact normalized source text
+  or its SHA-256, plus a full replacement or exact one-occurrence fragment
+  replacements, FE8U target IDs, context, provenance audit, and reason. The
+  importer rejects source/supplement/payload drift, stale fragments, or any
+  change to control/newline/placeholder placement. The raw FE8J/FE8CN
+  snapshots remain byte-exact.
 - `ja/indexed.txt`: 3,339 FE8J-layout messages (`0x0000` through `0x0D0A`).
 - `ja/control_defs.txt`: FE8J source aliases mapped to canonical controls. It is
   an alias table, not normalized locale payload.
@@ -61,6 +63,12 @@ remain import provenance only and never become runtime keys.
   structural history while preserving every conflict and collision ledger.
 - `mapping/final_mapping_report.json`: deterministic promotion counts, input
   fingerprints, residual count, and the zero-fallback final-delivery policy.
+- `mapping/audit_semantic_corrections.json`: target/call-site keyed authored
+  corrections with English, incorrect-provider, and replacement payload
+  SHA-256 pins; raw snapshots stay immutable.
+- `mapping/ending_layout_metrics.json`: generated all-title/all-paired-ending
+  metric report using the real 15-tile/26-tile `Text` allocations and
+  committed runtime CJK widths.
 - `runtime_latin_span_review.json`: the exact baseline review of every
   Latin-bearing target. Each scope/locale/target/span decision pins payload
   hashes, occurrence counts, approval or localization, factual reason, and
@@ -128,7 +136,7 @@ so changing an artifact and its manifest entry together still fails. The four
 raw snapshots must also match the independent SHA-256 pins in
 `scripts/localization/game_locales/importer.py`.
 
-The current override layer applies 35 Japanese and 44 Simplified Chinese
+The current override layer applies 48 Japanese and 85 Simplified Chinese
 indexed corrections. `Healing` is the ordinary HP-restoring staff cue
 (`癒やし` / `治疗`), while `Curing` is the status-removal cue
 (`浄化` / `净化`); they are deliberately not collapsed to one generic
@@ -148,7 +156,8 @@ python3 -m scripts.localization.game_locales build-final-mapping
 python3 -m scripts.localization.game_locales build-combined-coverage
 python3 -m scripts.localization.game_locales build-raw-closure
 python3 -m scripts.localization.game_catalog audit-leakage
-python3 -m scripts.fonttools.cjk generate-inventory
+make -f cjk_fonts.mk cjk-fonts-febuilder-all \
+  FEBUILDER_CLI="/path/to/dotnet /path/to/FEBuilderGBA.CLI.dll"
 ```
 
 `build-final-mapping` refreshes only normalized FE8J/payload-derived fields in
@@ -326,9 +335,9 @@ paths to that command.
 The committed FE8U target report contains 3,414 decisions, zero fallback, and
 zero unresolved:
 
-- 2,993 verified indexed mappings;
-- 132 verified raw target mappings;
-- 289 authored mappings: 259 fulfilled historical queue rows plus 30
+- 2,958 verified indexed mappings;
+- 130 verified raw target mappings;
+- 326 authored mappings: 259 fulfilled historical queue rows plus 67
   existing expansion-backed or target-specific semantic corrections.
 
 Translation coverage is 3,414/3,414 (100%). Explicit English fallback and

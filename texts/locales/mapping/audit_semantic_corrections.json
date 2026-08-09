@@ -1,0 +1,635 @@
+{
+  "kind": "fe8u-audit-semantic-corrections",
+  "schema_version": 1,
+  "targets": [
+    {
+      "english_payload_sha256": "3bf0db140adc7f6e185862a1e47fe2e092e67abb513467cb807cc71f57cbddea",
+      "incorrect_payload_sha256": {
+        "ja": "7c498692359a02d44d589aea2fcc814269af828632e5ae60aebe8a9a97a71c52",
+        "zh-Hans": "13fcef89e684fa5ec609e4db4dfd105a08a9d2e85ded5992cb40395e907499c2"
+      },
+      "incorrect_raw_import_id": "fe8cn.raw.import-0007",
+      "payload_sha256": {
+        "ja": "7c498692359a02d44d589aea2fcc814269af828632e5ae60aebe8a9a97a71c52",
+        "zh-Hans": "5b744ce80a2cfa017d9e736a2cd61a3ab3e2b9a1622e241b39770240c1158d1e"
+      },
+      "rationale": "The raw regional snapshot is immutable; this target-specific authored correction supplies the reviewed menu meaning at the verified call site.",
+      "source_key": "gDebugContinueMenuItems.override[0xc].name",
+      "subsystem": "menus",
+      "target_id": "0x0028",
+      "translation_key": "game.semantic_correction.msg_28"
+    },
+    {
+      "english_payload_sha256": "66fd0f47b20c42e60c1c22843ef962dfd736d99980a88acaccfd5c44721b09ea",
+      "incorrect_payload_sha256": {
+        "ja": "865bbcd2fc1d65bc064a09e8b0ea90dbc534e6f1f9e419c1795eee64e34b887b",
+        "zh-Hans": "4213a2786be557ed5b3fa31cc3ac832161b9ad2080f37d54e9d4782137064269"
+      },
+      "incorrect_raw_import_id": "fe8cn.raw.import-0011",
+      "payload_sha256": {
+        "ja": "0db79528dae4f88bbf3ae0f8803db2a1c87877543e67c8f384643651e20ad734",
+        "zh-Hans": "4213a2786be557ed5b3fa31cc3ac832161b9ad2080f37d54e9d4782137064269"
+      },
+      "rationale": "The raw regional snapshot is immutable; this target-specific authored correction supplies the reviewed menu meaning at the verified call site.",
+      "source_key": "gDebugMenuItems.override[0x12].name",
+      "subsystem": "menus",
+      "target_id": "0x06AB",
+      "translation_key": "game.semantic_correction.msg_6ab"
+    },
+    {
+      "english_payload_sha256": "07f5ef1a6ec69f44ffd9a2ef66d25a4f642b404fa274bba6e27324e1f7b4ef0c",
+      "incorrect_payload_sha256": {
+        "ja": "f3f7f552ef74e194f9fa6d95cad9cdb3d02ed01603e79fd6e9b345aef63690b8",
+        "zh-Hans": "db65e1440b233de1c54fb03dfad85dcc34cf2cc148a35a840fbaca645ab3ada4"
+      },
+      "incorrect_source_id": "0x0AEA",
+      "payload_sha256": {
+        "ja": "4e15a798c4de7c069a34e3c014bf77003f18ac3c70b27a4c1f6b96dc43881dc2",
+        "zh-Hans": "54b610381ec16f19a7925def7fb1de7274393e17454fbc9b755e3fa891042f42"
+      },
+      "rationale": "The source payload includes the following scene as a duplicate; the authored correction ends at the FE8U 0x0B29 close-speech boundary before 0x0B2A begins.",
+      "source_key": "EventScr_Ch15A_26.text[3]",
+      "subsystem": "events",
+      "target_id": "0x0B29",
+      "translation_key": "game.semantic_correction.msg_b29"
+    },
+    {
+      "english_payload_sha256": "868c86f2afa3d965ca4d230224c9961f0c2602f09e856b78a956b71fe7226922",
+      "incorrect_payload_sha256": {
+        "ja": "6ed2c20487c7d9d94bf990ffd50e0ef4d3f24d892472a325304c82910411d1fa",
+        "zh-Hans": "fd0b30bb052c6a1e1e2abe302cec23e64785a18222c71fbfa79f3e8f9fb4f696"
+      },
+      "incorrect_source_id": "0x078F",
+      "payload_sha256": {
+        "ja": "8bd4ac403272bde47441c76b33fb3bd4d4dc01d1c68b43df76069312b32a8d2a",
+        "zh-Hans": "5095b3a338091322775b352d807bbb1fdb74d9f5c2832e8e687dc0554678ffe7"
+      },
+      "rationale": "The paired-ending renderer owns five 26-tile Text lines; this reviewed authored payload preserves the complete ending meaning in exactly five runtime lines within the 208-pixel allocation.",
+      "source_key": "gCharacterEndingsByRoute/0x0817/paired-ending-text",
+      "subsystem": "ending-details",
+      "target_id": "0x0817",
+      "translation_key": "game.semantic_correction.msg_817"
+    },
+    {
+      "english_payload_sha256": "23227ee1ded0d5d37883a6f10aa85e6d0e3fba6cf6e5beaa9d7a3d4beb2c1261",
+      "incorrect_payload_sha256": {
+        "ja": "1c54c7c61e90de548ac038b0ffa45cccda1948407b135bcbdc3001c743a6497d",
+        "zh-Hans": "38adce2389a6c522aa11e38bca8dab891c12ea82c6d369085ea5a771d7c321b5"
+      },
+      "incorrect_source_id": "0x0790",
+      "payload_sha256": {
+        "ja": "d8b029729cbf0fce2324950bc292d893f8635674fe549f9eff2bc86cf94f7b7e",
+        "zh-Hans": "8e2a9c43ffec9a19ab266f196c5edc3d3c629d58df17ee4c5df068266e58a3a7"
+      },
+      "rationale": "The paired-ending renderer owns five 26-tile Text lines; this reviewed authored payload preserves the complete ending meaning in exactly five runtime lines within the 208-pixel allocation.",
+      "source_key": "gCharacterEndingsByRoute/0x0818/paired-ending-text",
+      "subsystem": "ending-details",
+      "target_id": "0x0818",
+      "translation_key": "game.semantic_correction.msg_818"
+    },
+    {
+      "english_payload_sha256": "fb1b2aead1e58a443846fbb8fa1f92b97e8d76c1d80ad170b10223c5767df9a7",
+      "incorrect_payload_sha256": {
+        "ja": "b478882e4982fd1daa305ec54d66f29b6ae0741a2ddf656171fbe09ef66f3d1c",
+        "zh-Hans": "684e7bfef520133aae71ef9dc589e54395cc93b2a74d020e16b82659a2240f91"
+      },
+      "incorrect_source_id": "0x0791",
+      "payload_sha256": {
+        "ja": "6c7cc10a96cdb6d52f24e8a2940ed7914868c86be6a61fc66b04d68cf9090588",
+        "zh-Hans": "5b25e24cceea4a8ef4b6de32d7603de679af778f6264b8490f16a68a60214fb2"
+      },
+      "rationale": "The paired-ending renderer owns five 26-tile Text lines; this reviewed authored payload preserves the complete ending meaning in exactly five runtime lines within the 208-pixel allocation.",
+      "source_key": "gCharacterEndingsByRoute/0x0819/paired-ending-text",
+      "subsystem": "ending-details",
+      "target_id": "0x0819",
+      "translation_key": "game.semantic_correction.msg_819"
+    },
+    {
+      "english_payload_sha256": "292056fbd72e8ae2ca16cd087d867fe520d7709752ed90544c77f3332b8c4d7f",
+      "incorrect_payload_sha256": {
+        "ja": "edaaedf3ddd5c57096e6e4584351164ab75fb9a843d2ae55afba44d9eeefd802",
+        "zh-Hans": "d5abc61897a2b04f45415979024b167c9e22b5baae2ecb52b651697b5e6909be"
+      },
+      "incorrect_source_id": "0x0792",
+      "payload_sha256": {
+        "ja": "7ce0b46edd3860cf6cb66c5184f3f7e3b8fa71ef6b19cee3fb2e4b38abd3925e",
+        "zh-Hans": "b4f73ce4fb24cdcfcdf5910000980824e890c864a45255ea4665f61069c9beaa"
+      },
+      "rationale": "The paired-ending renderer owns five 26-tile Text lines; this reviewed authored payload preserves the complete ending meaning in exactly five runtime lines within the 208-pixel allocation.",
+      "source_key": "gCharacterEndingsByRoute/0x081A/paired-ending-text",
+      "subsystem": "ending-details",
+      "target_id": "0x081A",
+      "translation_key": "game.semantic_correction.msg_81a"
+    },
+    {
+      "english_payload_sha256": "b9c51d58aee5491987dc1c70dd3613925ea1de43446b89b9bbb0a5b7dae332c6",
+      "incorrect_payload_sha256": {
+        "ja": "9dd77d69e6aafa1eb1c19a707bbeea0cc8ec0a3ff37d4b6af9c855ef97e2eacc",
+        "zh-Hans": "971b37d8681685b70f3eafd3fcbac2eaee4dbb91a61fdb5c547f5001cb8cd100"
+      },
+      "incorrect_source_id": "0x0793",
+      "payload_sha256": {
+        "ja": "970dc00b8ed72cf0bd245485b7f1ef86969f1f085c5cca65b816b53b7a80a34b",
+        "zh-Hans": "e31f3fbffa79a5346a1b863d87c87911e3e3d7a161b484273bb0d9cabbcd8f6a"
+      },
+      "rationale": "The paired-ending renderer owns five 26-tile Text lines; this reviewed authored payload preserves the complete ending meaning in exactly five runtime lines within the 208-pixel allocation.",
+      "source_key": "gCharacterEndingsByRoute/0x081B/paired-ending-text",
+      "subsystem": "ending-details",
+      "target_id": "0x081B",
+      "translation_key": "game.semantic_correction.msg_81b"
+    },
+    {
+      "english_payload_sha256": "a567942092358c748fd83dd954fdcd1acbb679ea74b940d3d569c780d5e6c288",
+      "incorrect_payload_sha256": {
+        "ja": "17c52101382b111135de7d48da4f2a82f2d2b6c6968bdf7de0c23b639c8e7b1c",
+        "zh-Hans": "bd490b0715fcb3e0604494b08dca8a8979dec414e867ce22568a537cc0d65eaf"
+      },
+      "incorrect_source_id": "0x0794",
+      "payload_sha256": {
+        "ja": "99d13ffbed8d595e4fd5f2b81ecbc643d1d790904ece6487e7ba7d2741d32e0c",
+        "zh-Hans": "35f1f1a4daa1408ab293bd0f3a1eac72c1b7bc2e1946bb425bcf40212e7092cc"
+      },
+      "rationale": "The paired-ending renderer owns five 26-tile Text lines; this reviewed authored payload preserves the complete ending meaning in exactly five runtime lines within the 208-pixel allocation.",
+      "source_key": "gCharacterEndingsByRoute/0x081C/paired-ending-text",
+      "subsystem": "ending-details",
+      "target_id": "0x081C",
+      "translation_key": "game.semantic_correction.msg_81c"
+    },
+    {
+      "english_payload_sha256": "2efb2a76aeb25fdd6ea980b6a8dea2a87e69415a7f721c080e60a2a491991e5e",
+      "incorrect_payload_sha256": {
+        "ja": "a383e9bc9b8cbdb53d8e9f50ab6c1c6f9904db8f320af98ad1a463d714a6ded1",
+        "zh-Hans": "00a610484d46fd8d0c2ffabcb2492319edee56495c5a3e1d087fa27e818f8676"
+      },
+      "incorrect_source_id": "0x0795",
+      "payload_sha256": {
+        "ja": "bcbc3b7f6049af0b90111e4abca38e2154444c64193f17241f6bf7651df5c598",
+        "zh-Hans": "a280f46696b6c0b4b99f594efaa10829fdc27d934bff27dddc7e63ced14cba2e"
+      },
+      "rationale": "The paired-ending renderer owns five 26-tile Text lines; this reviewed authored payload preserves the complete ending meaning in exactly five runtime lines within the 208-pixel allocation.",
+      "source_key": "gCharacterEndingsByRoute/0x081D/paired-ending-text",
+      "subsystem": "ending-details",
+      "target_id": "0x081D",
+      "translation_key": "game.semantic_correction.msg_81d"
+    },
+    {
+      "english_payload_sha256": "4d578f7c00cfcd69b78a75834d909753f58815613ffd87892595702bef278041",
+      "incorrect_payload_sha256": {
+        "ja": "fc6ec97fc7304143989ae25fa9a1e9c2fc20168546d28d20aba0459798bb25f7",
+        "zh-Hans": "40804283015682e8890e84ff3cef31eb7a361cb774e553d40fb12d5d35dd3300"
+      },
+      "incorrect_source_id": "0x0796",
+      "payload_sha256": {
+        "ja": "9fa11159b08530a0e844f89468cafa5f856900cb451c8968f85175002aa02e8e",
+        "zh-Hans": "1a1bd34eef1d1f38adfc350a0c0111ffd6e64cbc6617b596661d748b62eab894"
+      },
+      "rationale": "The paired-ending renderer owns five 26-tile Text lines; this reviewed authored payload preserves the complete ending meaning in exactly five runtime lines within the 208-pixel allocation.",
+      "source_key": "gCharacterEndingsByRoute/0x081E/paired-ending-text",
+      "subsystem": "ending-details",
+      "target_id": "0x081E",
+      "translation_key": "game.semantic_correction.msg_81e"
+    },
+    {
+      "english_payload_sha256": "8f2638a17d9ecef26e4c63560971e2916fc57ce38ec204bee34ee8fd67239fb3",
+      "incorrect_payload_sha256": {
+        "ja": "aba559ea1d72247f664d2aa8bc4b59341474c7eaafa7beb010d8893fb0198880",
+        "zh-Hans": "e52a0220ca4e3b917e4dab7c65cca93f84fc42bf185792c054f8251045f290d5"
+      },
+      "incorrect_source_id": "0x0797",
+      "payload_sha256": {
+        "ja": "afc01309a8ac39ca6ca956731bfda2a4db1df22551ac08b61eaf34a77b890501",
+        "zh-Hans": "22aadfd1c07d771821def00f75c6c12ff69db349516098074b1fdc642ae4fb48"
+      },
+      "rationale": "The paired-ending renderer owns five 26-tile Text lines; this reviewed authored payload preserves the complete ending meaning in exactly five runtime lines within the 208-pixel allocation.",
+      "source_key": "gCharacterEndingsByRoute/0x081F/paired-ending-text",
+      "subsystem": "ending-details",
+      "target_id": "0x081F",
+      "translation_key": "game.semantic_correction.msg_81f"
+    },
+    {
+      "english_payload_sha256": "c7c051fe08d48a2ec2b67508464223cf1d3ed034377184242709995734bb3e98",
+      "incorrect_payload_sha256": {
+        "ja": "3d647a25647a009cc706b8616d59844b094cf3941c1f40804d8353eb608e800c",
+        "zh-Hans": "aca428825bbf278a9d58486384e97278714f7fe7342bc20928b736cdbda134e4"
+      },
+      "incorrect_source_id": "0x0798",
+      "payload_sha256": {
+        "ja": "e07678f834e715213f1e7798466e4ae1785b40b82780ce0bec897717aceb0586",
+        "zh-Hans": "5359baaddd5bb4d4958004d676acbfd12447c0bca6f9a1924731b7a1fd9e92c7"
+      },
+      "rationale": "The paired-ending renderer owns five 26-tile Text lines; this reviewed authored payload preserves the complete ending meaning in exactly five runtime lines within the 208-pixel allocation.",
+      "source_key": "gCharacterEndingsByRoute/0x0820/paired-ending-text",
+      "subsystem": "ending-details",
+      "target_id": "0x0820",
+      "translation_key": "game.semantic_correction.msg_820"
+    },
+    {
+      "english_payload_sha256": "b04ea26d729cb9efc55e5f3a15728a7331dee146b43ede6899a7845c3d91d429",
+      "incorrect_payload_sha256": {
+        "ja": "aa0c55d87b3ecbda9ca125a6fd49edc9453291b146d61a9673ed93f73c400005",
+        "zh-Hans": "0cbc89245d9e9547d383de8200e705e71e09f6bd45fcab7f4cbc11170611a37a"
+      },
+      "incorrect_source_id": "0x0799",
+      "payload_sha256": {
+        "ja": "640e5627d38775d335aeaeb2eee1e18ec4b4e05aa91e41de627fbec7dfd8d1e2",
+        "zh-Hans": "c63ceff4ff846840b25107f13dd021ec063dc51862cc5ebbece8ee34a69f9493"
+      },
+      "rationale": "The paired-ending renderer owns five 26-tile Text lines; this reviewed authored payload preserves the complete ending meaning in exactly five runtime lines within the 208-pixel allocation.",
+      "source_key": "gCharacterEndingsByRoute/0x0821/paired-ending-text",
+      "subsystem": "ending-details",
+      "target_id": "0x0821",
+      "translation_key": "game.semantic_correction.msg_821"
+    },
+    {
+      "english_payload_sha256": "69bcd8e62ead1c59ac3dae5d023c1b6b9a7108ad1d5e850c6c9ebe095060837c",
+      "incorrect_payload_sha256": {
+        "ja": "4862376c5dcfba67b6fd75fb72daa31df3f19acb044b0b14f8830535e82b1c74",
+        "zh-Hans": "b0bcc0427f378ae836278c3d81fd94dcd4621e803d8e319e2b3454026636f86d"
+      },
+      "incorrect_source_id": "0x079A",
+      "payload_sha256": {
+        "ja": "1a87faa943e32f726790aaba2cc578772f05dbbbd8efc4389bee9e5df12e63f6",
+        "zh-Hans": "452e912e401e16f5eddce5a6884c84c18dd6e8e4325c9425eb7f1641a2ffc648"
+      },
+      "rationale": "The paired-ending renderer owns five 26-tile Text lines; this reviewed authored payload preserves the complete ending meaning in exactly five runtime lines within the 208-pixel allocation.",
+      "source_key": "gCharacterEndingsByRoute/0x0822/paired-ending-text",
+      "subsystem": "ending-details",
+      "target_id": "0x0822",
+      "translation_key": "game.semantic_correction.msg_822"
+    },
+    {
+      "english_payload_sha256": "dd542874c0ad68af15a1ab69e0088bfdb8fe43d29e96f312174d7f725cac61a4",
+      "incorrect_payload_sha256": {
+        "ja": "1d45b05c48846284860e40c3310eed261f1239d3729996db6df271d767f97ed5",
+        "zh-Hans": "279b5c4ad06c7aabf6df3fc282484492c4d47f10cfbd44dfa9f1a8b2fd526a24"
+      },
+      "incorrect_source_id": "0x079B",
+      "payload_sha256": {
+        "ja": "fd96a18165f062ef8b831bb2523cbeb75e5671ae912561dfe56c5663971e84bb",
+        "zh-Hans": "4ab117f98854767029df6a640b899e051458e9033faf88e414f83f93a788be10"
+      },
+      "rationale": "The paired-ending renderer owns five 26-tile Text lines; this reviewed authored payload preserves the complete ending meaning in exactly five runtime lines within the 208-pixel allocation.",
+      "source_key": "gCharacterEndingsByRoute/0x0823/paired-ending-text",
+      "subsystem": "ending-details",
+      "target_id": "0x0823",
+      "translation_key": "game.semantic_correction.msg_823"
+    },
+    {
+      "english_payload_sha256": "7da5c6f0753930b4ca66fb1d0e38dee42998657d2a3762afbbf51170ec85b75e",
+      "incorrect_payload_sha256": {
+        "ja": "745ea20aa87711493f7dcafb279530d55acde7371428eee561cf011b694ca2bb",
+        "zh-Hans": "0bbc6aefdc1870e6a79e7c9b13995a53cc0d730e5713f2e3392a844fb9946996"
+      },
+      "incorrect_source_id": "0x079C",
+      "payload_sha256": {
+        "ja": "93b477f532b905c0f28a5428713a6ebe23bf00e156d2ad9ab7a18823b5155693",
+        "zh-Hans": "c1192006ff31502c5ccc1fc90ef51ece9d8ee011597822dcf48c55cbecbcd0e9"
+      },
+      "rationale": "The paired-ending renderer owns five 26-tile Text lines; this reviewed authored payload preserves the complete ending meaning in exactly five runtime lines within the 208-pixel allocation.",
+      "source_key": "gCharacterEndingsByRoute/0x0824/paired-ending-text",
+      "subsystem": "ending-details",
+      "target_id": "0x0824",
+      "translation_key": "game.semantic_correction.msg_824"
+    },
+    {
+      "english_payload_sha256": "d77e7fcde531f5bbfa2fdd75dc70c9693e65f5662cda80a503579033e548695d",
+      "incorrect_payload_sha256": {
+        "ja": "478c6db9b997d561f6b7fdd7ae57952217a978e1c232816fafc5946a40712e34",
+        "zh-Hans": "1ce13cb8811860e14c2ae9e4bcf0cc59ac5e95a9e49c9fdf02aa6b4d85c0402e"
+      },
+      "incorrect_source_id": "0x079D",
+      "payload_sha256": {
+        "ja": "1af22b40945648371571ec60a4f01c9cc81f5bcacd28ae1335932bbac79c6526",
+        "zh-Hans": "19baa9d9488f1ebf0ed883c4e2ac6a1f1c597b79f069fb1c47c832be8ba859b2"
+      },
+      "rationale": "The paired-ending renderer owns five 26-tile Text lines; this reviewed authored payload preserves the complete ending meaning in exactly five runtime lines within the 208-pixel allocation.",
+      "source_key": "gCharacterEndingsByRoute/0x0825/paired-ending-text",
+      "subsystem": "ending-details",
+      "target_id": "0x0825",
+      "translation_key": "game.semantic_correction.msg_825"
+    },
+    {
+      "english_payload_sha256": "0e820fd48c5b6652d1219ccf05f1d6035cc774ddf3bb77221b5c34e48b295399",
+      "incorrect_payload_sha256": {
+        "ja": "23345dcb3d35391a69248accd3f0c9d1c3145f110bc6e85689f3e6cfdd8005b5",
+        "zh-Hans": "caec145e6685256a79efd239246ef8c396bf61f9100bb41867aa094262bf7f40"
+      },
+      "incorrect_source_id": "0x079E",
+      "payload_sha256": {
+        "ja": "48cec28f647e59b3acf6e3038cbdac84d86f0af3fe4795c7853efda34c3ad218",
+        "zh-Hans": "adabc6aa5434b84f3ae480136d813a432fb0659c16468aa77cb1d2791878b2bf"
+      },
+      "rationale": "The paired-ending renderer owns five 26-tile Text lines; this reviewed authored payload preserves the complete ending meaning in exactly five runtime lines within the 208-pixel allocation.",
+      "source_key": "gCharacterEndingsByRoute/0x0826/paired-ending-text",
+      "subsystem": "ending-details",
+      "target_id": "0x0826",
+      "translation_key": "game.semantic_correction.msg_826"
+    },
+    {
+      "english_payload_sha256": "3bdf05e39145eb78d6a9cf301a4dfc7a781849604b108afcc6481aff8a866c3f",
+      "incorrect_payload_sha256": {
+        "ja": "08e223617ccc0fb6e67f087f89d87aa4a25cab2b71779db33bbcd11a7754c096",
+        "zh-Hans": "6485026f3afbc7e00402f5520d90d23bf2b5ec291912009365b96feff3b69d35"
+      },
+      "incorrect_source_id": "0x079F",
+      "payload_sha256": {
+        "ja": "13800d253a030a425899f617458513bb7393e66253efc13d7c6680fe11a106cd",
+        "zh-Hans": "faeac160ba676f5381ca302cc8b41cbdd5c3a3163d36b23fc407fa0dc598d157"
+      },
+      "rationale": "The paired-ending renderer owns five 26-tile Text lines; this reviewed authored payload preserves the complete ending meaning in exactly five runtime lines within the 208-pixel allocation.",
+      "source_key": "gCharacterEndingsByRoute/0x0827/paired-ending-text",
+      "subsystem": "ending-details",
+      "target_id": "0x0827",
+      "translation_key": "game.semantic_correction.msg_827"
+    },
+    {
+      "english_payload_sha256": "8b8556b61caf267358e72e52c9ecdc48973df5ce812f6f8fa270862469fe0ba9",
+      "incorrect_payload_sha256": {
+        "ja": "902bad20b161c52ea07582da200ba8ae0e86650d0896564b179d996840fe13c7",
+        "zh-Hans": "0e16810cbf687d5c75b122c1649bf89b62676234f64ab7c753d7530fffa4b7bc"
+      },
+      "incorrect_source_id": "0x07A0",
+      "payload_sha256": {
+        "ja": "fa7c15100bc3341a5139b6fdf9338cd7070df9fa1d2c0e9a102a2bcfea1dc59c",
+        "zh-Hans": "742cb5be3b72f5f66430acf0d22ad00b8dd73495d3ccf18313c76dbd59d749d2"
+      },
+      "rationale": "The paired-ending renderer owns five 26-tile Text lines; this reviewed authored payload preserves the complete ending meaning in exactly five runtime lines within the 208-pixel allocation.",
+      "source_key": "gCharacterEndingsByRoute/0x0828/paired-ending-text",
+      "subsystem": "ending-details",
+      "target_id": "0x0828",
+      "translation_key": "game.semantic_correction.msg_828"
+    },
+    {
+      "english_payload_sha256": "d8f4ad997d9fb36f22d92946db577cc7068530996965b5836aadc5deb9d3937c",
+      "incorrect_payload_sha256": {
+        "ja": "144a87adf196341626bd758d1ad1a2dc4410a69f8a864b712fb3f9b3c42b64d4",
+        "zh-Hans": "d8e5e93af3879677d9d342ad3455085ffdfd14d9d0d2c6ee9319adcfb8248c87"
+      },
+      "incorrect_source_id": "0x07A1",
+      "payload_sha256": {
+        "ja": "63f9ccd7dcde68fe8329676185137b7e521ba214f8f55dc50ed0d2fdf0ab61f9",
+        "zh-Hans": "89a23d6214a20c1431384f6b777e40e92f9f12bc226a8e465e0fb4af6f7d8fc0"
+      },
+      "rationale": "The paired-ending renderer owns five 26-tile Text lines; this reviewed authored payload preserves the complete ending meaning in exactly five runtime lines within the 208-pixel allocation.",
+      "source_key": "gCharacterEndingsByRoute/0x0829/paired-ending-text",
+      "subsystem": "ending-details",
+      "target_id": "0x0829",
+      "translation_key": "game.semantic_correction.msg_829"
+    },
+    {
+      "english_payload_sha256": "6d4f177cdf0e8b80d1d702308ed4e52e8f0ecd260141e56006a6edb58417affa",
+      "incorrect_payload_sha256": {
+        "ja": "05c7134dc40c13f08acb03711de93a1884e5652aee7c4d83e99e9f169b57282f",
+        "zh-Hans": "d5a11813e8b2bf202db42e741ae4e05a740b7bb255203576ecf9192dc477ff8e"
+      },
+      "incorrect_source_id": "0x07A2",
+      "payload_sha256": {
+        "ja": "4b504e4a1602e2a50fac4b11a150e4f99f4fcb503a54b6b65ac9beb29fcf8d75",
+        "zh-Hans": "43933fef8eeab53067d157683e3a8d404a1a8bd45ac2b9916d436358c1dbe411"
+      },
+      "rationale": "The paired-ending renderer owns five 26-tile Text lines; this reviewed authored payload preserves the complete ending meaning in exactly five runtime lines within the 208-pixel allocation.",
+      "source_key": "gCharacterEndingsByRoute/0x082A/paired-ending-text",
+      "subsystem": "ending-details",
+      "target_id": "0x082A",
+      "translation_key": "game.semantic_correction.msg_82a"
+    },
+    {
+      "english_payload_sha256": "199b00942cc42754bd733a003dde4328d401664a0eacc730dbc2b3d10eb3aed4",
+      "incorrect_payload_sha256": {
+        "ja": "158d9b3fe715e2878b5b6a6ef1d8b787f79ae4536d69cbffb05a60d4b0343c98",
+        "zh-Hans": "3e758d12231e1418eb53f4993de5ab3abeb2d13f8338475043ee63bdb9fa6001"
+      },
+      "incorrect_source_id": "0x07A3",
+      "payload_sha256": {
+        "ja": "6b82e671435868b9a7dcadb332e2bd83be9b2a922bb5542565e9c1198262050a",
+        "zh-Hans": "8e03d0ec989f5aef52ad5bf4aea6dad22eb715aa498ebbf81c65d844fcad1c43"
+      },
+      "rationale": "The paired-ending renderer owns five 26-tile Text lines; this reviewed authored payload preserves the complete ending meaning in exactly five runtime lines within the 208-pixel allocation.",
+      "source_key": "gCharacterEndingsByRoute/0x082B/paired-ending-text",
+      "subsystem": "ending-details",
+      "target_id": "0x082B",
+      "translation_key": "game.semantic_correction.msg_82b"
+    },
+    {
+      "english_payload_sha256": "ad20f0617b56c0cda6a93b0737fc85e2443c886280a13fc8eabb6e043746bec9",
+      "incorrect_payload_sha256": {
+        "ja": "2d6f7d20cac18b884d4d26dcac5a8a1a47c4f5abd8954b00a6e91df97f6e138b",
+        "zh-Hans": "55fa75379176135b9604cf204ae885741000a6982074c976a693659a45fa96df"
+      },
+      "incorrect_source_id": "0x07A4",
+      "payload_sha256": {
+        "ja": "1a5dcdc8d446536dc6344a094d132181e7cda84ee099c23e9b825be5564e3a0a",
+        "zh-Hans": "a9b432447d3eb080bea5426bb2b252a961e817f376c40fcd111c9e8416c2fad0"
+      },
+      "rationale": "The paired-ending renderer owns five 26-tile Text lines; this reviewed authored payload preserves the complete ending meaning in exactly five runtime lines within the 208-pixel allocation.",
+      "source_key": "gCharacterEndingsByRoute/0x082C/paired-ending-text",
+      "subsystem": "ending-details",
+      "target_id": "0x082C",
+      "translation_key": "game.semantic_correction.msg_82c"
+    },
+    {
+      "english_payload_sha256": "7954d15b0cf5a6cccb2475667280c45f302011ecdd8923cac1ea0a59895b2800",
+      "incorrect_payload_sha256": {
+        "ja": "c3b7de81e52277191abf4a9e7f7eb6ed8625d5b4b6baa9ce928a2024acdf6bf5",
+        "zh-Hans": "df6b7c9eaafe1a27c4ef67706c3e44ee9f9ed79ef12a99a0b48dcb9b5add7458"
+      },
+      "incorrect_source_id": "0x07A5",
+      "payload_sha256": {
+        "ja": "72305b493dc2fdefc227be9d293a36bfcb8539e44e586b846d8e00e2f63fbe36",
+        "zh-Hans": "33ba2e284a42c38de3df7ca571228595a2133a227245070c4e043e3c379b7ca1"
+      },
+      "rationale": "The paired-ending renderer owns five 26-tile Text lines; this reviewed authored payload preserves the complete ending meaning in exactly five runtime lines within the 208-pixel allocation.",
+      "source_key": "gCharacterEndingsByRoute/0x082D/paired-ending-text",
+      "subsystem": "ending-details",
+      "target_id": "0x082D",
+      "translation_key": "game.semantic_correction.msg_82d"
+    },
+    {
+      "english_payload_sha256": "3640c6cc1f0225ffd9606718eb5b4b1d48e8429679f76b6e1e88ccaa8ca1570b",
+      "incorrect_payload_sha256": {
+        "ja": "83acccf6c04819953d000a252272871f50e8b4557d20a3d00a162dc93d26bb01",
+        "zh-Hans": "9d237a35af8404b3b66d64c4568114b8192b3999c2e5f7b8506e97691546a276"
+      },
+      "incorrect_source_id": "0x07A6",
+      "payload_sha256": {
+        "ja": "743e99d7916d8c808b24284b60c67074fdfe20d3c10b384cfb0b04f307b0a3d5",
+        "zh-Hans": "ffa73cdc260b0ff71dd9e71f3ae8b7bc1675e55496786a0036f68cbf4f907bb4"
+      },
+      "rationale": "The paired-ending renderer owns five 26-tile Text lines; this reviewed authored payload preserves the complete ending meaning in exactly five runtime lines within the 208-pixel allocation.",
+      "source_key": "gCharacterEndingsByRoute/0x082E/paired-ending-text",
+      "subsystem": "ending-details",
+      "target_id": "0x082E",
+      "translation_key": "game.semantic_correction.msg_82e"
+    },
+    {
+      "english_payload_sha256": "3cd13746fbb3562851915cda90f454a3cd4bd2fb26ca55fe06db05289b76d175",
+      "incorrect_payload_sha256": {
+        "ja": "b635401d7ba853d74689d38fdbe9749fb0f13546d2d82b13679f3f2d11323341",
+        "zh-Hans": "31af456589c9ef19f04d0ff5759b0096f3aa0578b126a52a24a11f401008e202"
+      },
+      "incorrect_source_id": "0x07A7",
+      "payload_sha256": {
+        "ja": "c4af44307fef91544d353786dd1da45807c2df55fce8d1ebae7d6c1e1c2599a0",
+        "zh-Hans": "e82b48da4e39ba6ea54da81afc3d08eb15b7cd440adfb72817a97c3d69b96389"
+      },
+      "rationale": "The paired-ending renderer owns five 26-tile Text lines; this reviewed authored payload preserves the complete ending meaning in exactly five runtime lines within the 208-pixel allocation.",
+      "source_key": "gCharacterEndingsByRoute/0x082F/paired-ending-text",
+      "subsystem": "ending-details",
+      "target_id": "0x082F",
+      "translation_key": "game.semantic_correction.msg_82f"
+    },
+    {
+      "english_payload_sha256": "d6f1275be4db0fcb99b99ec2b57372cbe6dcacfeb9c1ee64e5049a57a8a7e2ff",
+      "incorrect_payload_sha256": {
+        "ja": "d7ab44a55640a61698632b114c9747a80f62a62359b13c799f2f6c13fb7a5f4d",
+        "zh-Hans": "b5b0b2111a288f69b5603a350a6c195fbad6754729c7ef848da3dfabe0017507"
+      },
+      "incorrect_source_id": "0x07A8",
+      "payload_sha256": {
+        "ja": "b018a3dff14c020d48fefb5b4cc21e9630fd4fc55dfa58fb25bc9baee47e693f",
+        "zh-Hans": "31069c15b5363ea8a7aaf0d8d11fbf2017369558ad80d3bd4eaca129cce01b47"
+      },
+      "rationale": "The paired-ending renderer owns five 26-tile Text lines; this reviewed authored payload preserves the complete ending meaning in exactly five runtime lines within the 208-pixel allocation.",
+      "source_key": "gCharacterEndingsByRoute/0x0830/paired-ending-text",
+      "subsystem": "ending-details",
+      "target_id": "0x0830",
+      "translation_key": "game.semantic_correction.msg_830"
+    },
+    {
+      "english_payload_sha256": "6ab1ad3c77cab6631cc797e070816b83cf0f70bb46b948ac0af8b72ab0727957",
+      "incorrect_payload_sha256": {
+        "ja": "47f07955af5f200dbac5128aa5461124989e718c6bc5531043bc0369529ac6b2",
+        "zh-Hans": "4ad8faef01d04e6d53c2d0a60e251537cad0214890db731bf5e8487044a65bb4"
+      },
+      "incorrect_source_id": "0x07A9",
+      "payload_sha256": {
+        "ja": "88c48ae30a4a289d2ce7c384ff445e24b2d72c56184d4b04b0a55dde10525afe",
+        "zh-Hans": "90b3f67d5b1114f9e07ec1108ae36b4ad75bf36b325c2bf991739a7ec014d754"
+      },
+      "rationale": "The paired-ending renderer owns five 26-tile Text lines; this reviewed authored payload preserves the complete ending meaning in exactly five runtime lines within the 208-pixel allocation.",
+      "source_key": "gCharacterEndingsByRoute/0x0831/paired-ending-text",
+      "subsystem": "ending-details",
+      "target_id": "0x0831",
+      "translation_key": "game.semantic_correction.msg_831"
+    },
+    {
+      "english_payload_sha256": "5e851d2094805e59d3368638e75b780e400b04202fb20563a44520ab9deb903c",
+      "incorrect_payload_sha256": {
+        "ja": "2843b91324ca128e5813c4628a97dd3b6885bd11e7519294003ea15713eaca7c",
+        "zh-Hans": "4aa7ae782575be372a0435061acb9ed1908a12410e5ec5c8069fce858afdbf3c"
+      },
+      "incorrect_source_id": "0x07AA",
+      "payload_sha256": {
+        "ja": "de7a1c704208faa4e96df911d680a665c6f4a96bb6e2fc86c7b72cbb3d04db7b",
+        "zh-Hans": "e5a13a6ad0be221c4e9e6fff6c921eae99935a5cff9cf748cfb824c7f9eae659"
+      },
+      "rationale": "The paired-ending renderer owns five 26-tile Text lines; this reviewed authored payload preserves the complete ending meaning in exactly five runtime lines within the 208-pixel allocation.",
+      "source_key": "gCharacterEndingsByRoute/0x0832/paired-ending-text",
+      "subsystem": "ending-details",
+      "target_id": "0x0832",
+      "translation_key": "game.semantic_correction.msg_832"
+    },
+    {
+      "english_payload_sha256": "160d28881a250640b476a8f7c277ecec88e8097295cad9f7140c6fc43ac2a279",
+      "incorrect_payload_sha256": {
+        "ja": "a86461933b6bfb9ef11371a901cbeb1847c557c588aadbf0fda8e3f24025759f",
+        "zh-Hans": "dd3b7003dfcad040c2bb6464acd45681422d0ab15ffa208645940c517af6a8f3"
+      },
+      "incorrect_source_id": "0x07AB",
+      "payload_sha256": {
+        "ja": "16a9aae187c79260ee682a3ebb55109a4f890a7974ff0330e01d3124f9e18d58",
+        "zh-Hans": "43142aef6557b7f692037ba76ac0e2218ec9f72713914758a71f0bc86c4f6a3e"
+      },
+      "rationale": "The paired-ending renderer owns five 26-tile Text lines; this reviewed authored payload preserves the complete ending meaning in exactly five runtime lines within the 208-pixel allocation.",
+      "source_key": "gCharacterEndingsByRoute/0x0833/paired-ending-text",
+      "subsystem": "ending-details",
+      "target_id": "0x0833",
+      "translation_key": "game.semantic_correction.msg_833"
+    },
+    {
+      "english_payload_sha256": "53f573503d0d3ba2a00fc9a5dac59ae5bc910e2b8a8b355168a46156d67ebc98",
+      "incorrect_payload_sha256": {
+        "ja": "d9f2e991633b516f3742052728257033fd0b06dc6ebdaab48954e4a0601ae024",
+        "zh-Hans": "45ceb27afbddd484b43e0697aa1843d1dfbdb5145fdb4383bce17608d68677ca"
+      },
+      "incorrect_source_id": "0x07AC",
+      "payload_sha256": {
+        "ja": "771e43470d54f5d6d2f15368dd8bb89766e704420d805f2b4588b6fe43eb15ef",
+        "zh-Hans": "c64eb83660d682f3f8d8ceca68b01f71060ca857f3ecc381b00c097355c171c7"
+      },
+      "rationale": "The paired-ending renderer owns five 26-tile Text lines; this reviewed authored payload preserves the complete ending meaning in exactly five runtime lines within the 208-pixel allocation.",
+      "source_key": "gCharacterEndingsByRoute/0x0834/paired-ending-text",
+      "subsystem": "ending-details",
+      "target_id": "0x0834",
+      "translation_key": "game.semantic_correction.msg_834"
+    },
+    {
+      "english_payload_sha256": "412630086283d83b011ed664cc35d65af13ce691afc84a11f7b974916c8a8ae7",
+      "incorrect_payload_sha256": {
+        "ja": "ab388e7ffc5c63550730d99d28e04ce5a005576de8e6f43d9cc0ac2a638878c4",
+        "zh-Hans": "fab8e75cc8c234d433f689f628a18bce8035068d1b607767a496efa1c5e1d87d"
+      },
+      "incorrect_source_id": "0x07AD",
+      "payload_sha256": {
+        "ja": "351bb92f89903e3bb53fb90f2800ac0b1730dd0f544127e662fae9dbb2d8adfe",
+        "zh-Hans": "512e31232e6f8f6c6fad1570132a667f4821b2a4addbfa8edb5dbcacab047a1d"
+      },
+      "rationale": "The paired-ending renderer owns five 26-tile Text lines; this reviewed authored payload preserves the complete ending meaning in exactly five runtime lines within the 208-pixel allocation.",
+      "source_key": "gCharacterEndingsByRoute/0x0835/paired-ending-text",
+      "subsystem": "ending-details",
+      "target_id": "0x0835",
+      "translation_key": "game.semantic_correction.msg_835"
+    },
+    {
+      "english_payload_sha256": "3f7bb43267641d899c3bc4b76b7d970166e1ef607ffbbc3a2d4360e0491679c8",
+      "incorrect_payload_sha256": {
+        "ja": "ba3cb29bfc76c661e0df1bbadb3c72eda8492e770dda0fe47d9a681c5ad1c313",
+        "zh-Hans": "881c135218652387090c7802e54b5763141b87ad532aa2a07191d50a5d9e7440"
+      },
+      "incorrect_source_id": "0x07AE",
+      "payload_sha256": {
+        "ja": "c3f3afdc7613ca9d71a48461f163839c436d43ff2941f2aad74f57805bb62019",
+        "zh-Hans": "c726c6edd7e0bc8a1ac7e481537847aa1dd325ff06348abaca4cb4b906d499a7"
+      },
+      "rationale": "The paired-ending renderer owns five 26-tile Text lines; this reviewed authored payload preserves the complete ending meaning in exactly five runtime lines within the 208-pixel allocation.",
+      "source_key": "gCharacterEndingsByRoute/0x0836/paired-ending-text",
+      "subsystem": "ending-details",
+      "target_id": "0x0836",
+      "translation_key": "game.semantic_correction.msg_836"
+    },
+    {
+      "english_payload_sha256": "c0b6859456db5a2ee797bead5645fbe899149d28974b585516f6a5928457cdd9",
+      "incorrect_payload_sha256": {
+        "ja": "cc9e7646d7acd321eabb566469b9a224bdff3494f3f68d8592a08f5410f8fb53",
+        "zh-Hans": "1b9430a6981f22b22407ea2fbc98669f15a646a46abdb646d2d62a6728f86184"
+      },
+      "incorrect_source_id": "0x07AF",
+      "payload_sha256": {
+        "ja": "e5d0eecc6714ce8477d9a7a0ce45c546a9538bba908e733e7fba3a0181c0e147",
+        "zh-Hans": "e50740b514fc66467a320d1ba7d501d63e79debf978909bbe92dcd5af39be1e5"
+      },
+      "rationale": "The paired-ending renderer owns five 26-tile Text lines; this reviewed authored payload preserves the complete ending meaning in exactly five runtime lines within the 208-pixel allocation.",
+      "source_key": "gCharacterEndingsByRoute/0x0837/paired-ending-text",
+      "subsystem": "ending-details",
+      "target_id": "0x0837",
+      "translation_key": "game.semantic_correction.msg_837"
+    },
+    {
+      "english_payload_sha256": "c80c1c186ddbfe8bcf1be63b529961c10a5cd73f43c19f300059c7a5dc2ed750",
+      "incorrect_payload_sha256": {
+        "ja": "186ec1d50bc2ace50007a2fac5db968a39aecaffec627a9c73292a7ddccdc31a",
+        "zh-Hans": "2b23e8c4fabfb0b5862069619a1c6f614f631590a80a3dcf58b0fbe5f561cbae"
+      },
+      "incorrect_source_id": "0x07B0",
+      "payload_sha256": {
+        "ja": "479a72997d4736537a45c265c34411d9082b19372010e9344e9f8b75fd511e30",
+        "zh-Hans": "e08d778ee78e1100b1e19970c3e5c7c786d9278aaf8fe397325f6be6336a0d69"
+      },
+      "rationale": "The paired-ending renderer owns five 26-tile Text lines; this reviewed authored payload preserves the complete ending meaning in exactly five runtime lines within the 208-pixel allocation.",
+      "source_key": "gCharacterEndingsByRoute/0x0838/paired-ending-text",
+      "subsystem": "ending-details",
+      "target_id": "0x0838",
+      "translation_key": "game.semantic_correction.msg_838"
+    }
+  ]
+}

@@ -95,7 +95,7 @@ class CjkFontTests(unittest.TestCase):
             )
             catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
             metadata = inventory["locales"][locale]["authored_game"]
-            self.assertEqual(metadata["string_count"], 289)
+            self.assertEqual(metadata["string_count"], 326)
             self.assertEqual(
                 metadata["catalog"],
                 catalog_path.relative_to(ROOT).as_posix(),

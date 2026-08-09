@@ -1778,7 +1778,7 @@
     "game/ja/0x0640": {
       "baseline_classification": "mixed-script-bypass",
       "baseline_payload_sha256": "22517107529b541b68d211bf6c374fa9b65ec2ee880a1aad5616462e0253c071",
-      "current_payload_sha256": "22517107529b541b68d211bf6c374fa9b65ec2ee880a1aad5616462e0253c071",
+      "current_payload_sha256": "246e6230fb10eb27866be14467076d76c5c4b23d4b4ebfe33fccb8ffecfa60d3",
       "english_payload_sha256": "3d43bfb57e4c547c79e379e0ee9ad62b549cc3d0cd6d7c403d34a28509caa5cf",
       "locale": "ja",
       "payload_source": {
@@ -2773,7 +2773,7 @@
     "game/ja/0x08E5": {
       "baseline_classification": "mixed-script-bypass",
       "baseline_payload_sha256": "97e6e53315ad52cc00f2b37a961f9af245834aaf808e47bc8ac03ce793008c67",
-      "current_payload_sha256": "97e6e53315ad52cc00f2b37a961f9af245834aaf808e47bc8ac03ce793008c67",
+      "current_payload_sha256": "4cff6a7d6873b4ef365a14460419f8f551dabc35d8e61d78fdd116a357c08304",
       "english_payload_sha256": "5ec865997683bba916a4523d6108a1313b4b0864a0cf8ebec1f1238bd231bfbc",
       "locale": "ja",
       "payload_source": {
@@ -6196,7 +6196,7 @@
     "game/zh-Hans/0x0640": {
       "baseline_classification": "mixed-script-bypass",
       "baseline_payload_sha256": "67d8fc9957da3e27b9338e8151ed3fffd917d470fe9bd33a16905a72011a162e",
-      "current_payload_sha256": "67d8fc9957da3e27b9338e8151ed3fffd917d470fe9bd33a16905a72011a162e",
+      "current_payload_sha256": "ab8335af1dd6e10595faa7d60b68c9006cbf41e76044387d098c7895d9775cd4",
       "english_payload_sha256": "3d43bfb57e4c547c79e379e0ee9ad62b549cc3d0cd6d7c403d34a28509caa5cf",
       "locale": "zh-Hans",
       "payload_source": {
@@ -6209,7 +6209,7 @@
         "EXP": {
           "baseline_occurrences": 1,
           "category": "standard-ui-acronym",
-          "current_occurrences": 1,
+          "current_occurrences": 2,
           "decision": "approved",
           "reason": "EXP is the established experience-point stat acronym used by this exact level/help target.",
           "source": "FE8 experience/level UI convention and this target payload context."
@@ -7095,7 +7095,7 @@
     "game/zh-Hans/0x08E5": {
       "baseline_classification": "mixed-script-bypass",
       "baseline_payload_sha256": "0daa056553357e26bb0267293da9deff48fbcf7ef3e5b1a8fb6b2d9fd57d18b6",
-      "current_payload_sha256": "0daa056553357e26bb0267293da9deff48fbcf7ef3e5b1a8fb6b2d9fd57d18b6",
+      "current_payload_sha256": "76a9c2219b72e0834b4cb5ac2053abb12c21a569bc9422e370121c5191750616",
       "english_payload_sha256": "5ec865997683bba916a4523d6108a1313b4b0864a0cf8ebec1f1238bd231bfbc",
       "locale": "zh-Hans",
       "payload_source": {

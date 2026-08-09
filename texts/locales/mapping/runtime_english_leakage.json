@@ -2431,7 +2431,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "22517107529b541b68d211bf6c374fa9b65ec2ee880a1aad5616462e0253c071",
+            "payload_sha256": "246e6230fb10eb27866be14467076d76c5c4b23d4b4ebfe33fccb8ffecfa60d3",
             "review_key": "game/ja/0x0640",
             "similarity": 0.0,
             "spans": [
@@ -3733,7 +3733,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "97e6e53315ad52cc00f2b37a961f9af245834aaf808e47bc8ac03ce793008c67",
+            "payload_sha256": "4cff6a7d6873b4ef365a14460419f8f551dabc35d8e61d78fdd116a357c08304",
             "review_key": "game/ja/0x08E5",
             "similarity": 0.0,
             "spans": [
@@ -5549,7 +5549,7 @@
       },
       "zh-Hans": {
         "approved_span_count": 170,
-        "approved_span_occurrence_count": 179,
+        "approved_span_occurrence_count": 180,
         "audited_count": 3414,
         "exact_copy_count": 18,
         "latin_bearing_payload_count": 164,
@@ -7990,13 +7990,13 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "67d8fc9957da3e27b9338e8151ed3fffd917d470fe9bd33a16905a72011a162e",
+            "payload_sha256": "ab8335af1dd6e10595faa7d60b68c9006cbf41e76044387d098c7895d9775cd4",
             "review_key": "game/zh-Hans/0x0640",
-            "similarity": 0.0,
+            "similarity": 0.124294,
             "spans": [
               {
                 "approved": true,
-                "occurrences": 1,
+                "occurrences": 2,
                 "review": {
                   "category": "standard-ui-acronym",
                   "decision": "approved",
@@ -9158,7 +9158,7 @@
               "provider_kind": "indexed"
             },
             "payload_matches_review": true,
-            "payload_sha256": "0daa056553357e26bb0267293da9deff48fbcf7ef3e5b1a8fb6b2d9fd57d18b6",
+            "payload_sha256": "76a9c2219b72e0834b4cb5ac2053abb12c21a569bc9422e370121c5191750616",
             "review_key": "game/zh-Hans/0x08E5",
             "similarity": 0.0,
             "spans": [
@@ -10923,7 +10923,7 @@
         ],
         "latin_only_count": 36,
         "latin_span_count": 170,
-        "latin_span_occurrence_count": 179,
+        "latin_span_occurrence_count": 180,
         "near_copy_count": 0,
         "payload_mismatch_count": 0,
         "unapproved_span_count": 0,
@@ -10931,10 +10931,10 @@
       }
     },
     "mapping_source_counts": {
-      "authored": 289,
+      "authored": 326,
       "english_fallback": 0,
-      "indexed": 2993,
-      "raw": 132,
+      "indexed": 2958,
+      "raw": 130,
       "unresolved": 0
     },
     "target_count": 3414
@@ -10956,9 +10956,9 @@
       "sha256": "abb320b4767423df3b66fe2f4309cae797becf0405b45e5fcebaccfd2241155f"
     },
     "ja_authored": {
-      "byte_count": 30628,
+      "byte_count": 46027,
       "path": "texts/locales/authored/catalog.ja.json",
-      "sha256": "9b5e1bf98c1ec53c0867b38d5804695f7cd7dcc0caa28ccf38892c6d51a33720"
+      "sha256": "79bd29cf44bee096ee053538c084276bbc4676dbc1b1024dbff626b7fb40b7b8"
     },
     "ja_expansion": {
       "byte_count": 2008,
@@ -10966,9 +10966,9 @@
       "sha256": "04c2b6e90d8f2bffcc78f53a89641068ff3cbcb34978ae53c686e4d4bf79c740"
     },
     "ja_indexed": {
-      "byte_count": 1719217,
+      "byte_count": 1719199,
       "path": "texts/locales/ja/indexed.txt",
-      "sha256": "d1ba0a928133b9980aa23b524b116c3e1d5ab57011a84a20d001b2835d05d4b1"
+      "sha256": "01f5cf58b95cb9c9994718f1eb7f5eaba6f84bfe5d13add16cfa2624a39c97e9"
     },
     "ja_raw": {
       "byte_count": 9643,
@@ -10979,17 +10979,17 @@
       "baseline_commit": "2d02ec12ddcba0640bcf1ecffcf7dc93d56deb4f",
       "byte_count": 357213,
       "path": "texts/locales/runtime_latin_span_review.json",
-      "sha256": "1f73facaae6d6478d3cc4aa7df005f7eab306571014fc82b7b5343018dd0f953"
+      "sha256": "85d939decc27f3c1dba15c8f71ab2d6f4950118fdd9b371aac5e0a7daeaf1805"
     },
     "mapping": {
-      "byte_count": 5467466,
+      "byte_count": 5497196,
       "path": "texts/locales/mapping/fe8u_target_map.json",
-      "sha256": "6739fcd5c109453bfa8770f34fa7b351d73995e96cf86ee046066890ba344302"
+      "sha256": "bd987230f42277d5d93b0fc037bb52e34fceb57ace955f652514b96013b2735d"
     },
     "raw_closure": {
-      "byte_count": 156935,
+      "byte_count": 157005,
       "path": "texts/locales/mapping/raw_surface_closure.json",
-      "sha256": "e91f932534d2f3cd2a6e83edf1faae60a40f059d9b5d1568c18f2c855d9d08ec"
+      "sha256": "0f5b7ea3ff313f01ac0e83786b8346573f539d5a7a5d37f067ad8fdb04e40ad4"
     },
     "target_header": {
       "byte_count": 78840,
@@ -10997,9 +10997,9 @@
       "sha256": "fa8d8b55aa170a8b29d4950968d42e4e7673f679ddc4f0e3ae5bd5cb7abf1a0c"
     },
     "zh-Hans_authored": {
-      "byte_count": 27046,
+      "byte_count": 39879,
       "path": "texts/locales/authored/catalog.zh-Hans.json",
-      "sha256": "6603161675f73e93ed1ad9da416c4558d9084c6e4bd4b280c63661912b7ed922"
+      "sha256": "c83638f7597f1e7a9a2d69ab69e5a0c8e3550c44c1129e8058aecc0ea6a75436"
     },
     "zh-Hans_expansion": {
       "byte_count": 1946,
@@ -11007,9 +11007,9 @@
       "sha256": "40220fd10289e21fba09d4315781c1f6f51cee59d109da18520134e34ea0a11e"
     },
     "zh_hans_indexed": {
-      "byte_count": 1266710,
+      "byte_count": 1266610,
       "path": "texts/locales/zh-Hans/indexed.txt",
-      "sha256": "652c9c6ae8b1eb6b3657af66c5f203a5aa109bf988120d366cdd0e2062c0644a"
+      "sha256": "7bbc6bff11de766318bc2aa4202572e61afd709e19faad69f12b07e59191828e"
     },
     "zh_hans_raw": {
       "byte_count": 45834,

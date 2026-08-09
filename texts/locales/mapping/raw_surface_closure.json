@@ -249,12 +249,12 @@
       },
       "providers": {
         "ja": {
-          "kind": "raw_literal",
+          "kind": "authored_semantic_correction",
           "text_sha256": "7c498692359a02d44d589aea2fcc814269af828632e5ae60aebe8a9a97a71c52"
         },
         "zh-Hans": {
-          "kind": "raw_import",
-          "text_sha256": "13fcef89e684fa5ec609e4db4dfd105a08a9d2e85ded5992cb40395e907499c2"
+          "kind": "authored_semantic_correction",
+          "text_sha256": "5b744ce80a2cfa017d9e736a2cd61a3ab3e2b9a1622e241b39770240c1158d1e"
         }
       },
       "rationale": "The menu row already uses this stable FE8U message ID; verified regional raw text now supplies Japanese and Chinese catalog payloads.",
@@ -381,11 +381,11 @@
       },
       "providers": {
         "ja": {
-          "kind": "raw_literal",
-          "text_sha256": "865bbcd2fc1d65bc064a09e8b0ea90dbc534e6f1f9e419c1795eee64e34b887b"
+          "kind": "authored_semantic_correction",
+          "text_sha256": "0db79528dae4f88bbf3ae0f8803db2a1c87877543e67c8f384643651e20ad734"
         },
         "zh-Hans": {
-          "kind": "raw_import",
+          "kind": "authored_semantic_correction",
           "text_sha256": "4213a2786be557ed5b3fa31cc3ac832161b9ad2080f37d54e9d4782137064269"
         }
       },

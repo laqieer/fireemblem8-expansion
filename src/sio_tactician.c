@@ -600,10 +600,10 @@ static const char sTacticianGridZhHansFrequent[] =
 
 static const char sTacticianGridZhHansExtended[] =
     "力多珂瑞德内姆已军生哈中定道将"
-    "鲁法古物用家怎哥自经前伊主列亚"
-    "呢只使士回地而些被斗知请嗯公小"
-    "给塞石先雷无从谢开成圣天您再实"
-    "当发进敌做果身把等帝因让才动情";
+    "法鲁古物用家怎哥自经前伊主列亚"
+    "呢只士使回地而被些斗知请嗯公小"
+    "给塞石先雷无开谢从成天圣您再实"
+    "当发进敌做身果把等帝因才让动情";
 #endif
 
 static int TacticianName_UsesLocaleGrid(void)

@@ -1,4 +1,5 @@
 import copy
+import hashlib
 import json
 import sys
 import tempfile
@@ -9,8 +10,11 @@ ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
 
 from scripts.localization.game_locales.importer import PINNED_SOURCE_SHA256
-from scripts.localization.game_locales.overrides import load_override_catalog
-from scripts.localization.game_locales.parsers import LocaleSourceError
+from scripts.localization.game_locales.overrides import (
+    apply_indexed_overrides,
+    load_override_catalog,
+)
+from scripts.localization.game_locales.parsers import IndexedMessage, LocaleSourceError
 
 
 class IndexedLocaleOverrideTests(unittest.TestCase):
@@ -32,7 +36,7 @@ class IndexedLocaleOverrideTests(unittest.TestCase):
             self.OVERRIDE_PATH,
             expected_source_hashes=PINNED_SOURCE_SHA256,
         )
-        self.assertEqual(catalog.entry_count, 88)
+        self.assertEqual(catalog.entry_count, 133)
         self.assertEqual(set(catalog.sources), {"fe8j_indexed", "fe8cn_source"})
         for source in catalog.sources.values():
             self.assertEqual(
@@ -44,8 +48,8 @@ class IndexedLocaleOverrideTests(unittest.TestCase):
                 self.assertTrue(entry.provenance["audit"])
                 self.assertTrue(entry.provenance["context"])
                 self.assertTrue(entry.provenance["target_ids"])
-        self.assertEqual(len(catalog.sources["fe8j_indexed"].entries), 35)
-        self.assertEqual(len(catalog.sources["fe8cn_source"].entries), 53)
+        self.assertEqual(len(catalog.sources["fe8j_indexed"].entries), 48)
+        self.assertEqual(len(catalog.sources["fe8cn_source"].entries), 85)
 
     def test_full_semantic_audit_overrides_are_exact(self):
         catalog = load_override_catalog(
@@ -147,6 +151,77 @@ class IndexedLocaleOverrideTests(unittest.TestCase):
                 load_override_catalog(
                     path,
                     expected_source_hashes=PINNED_SOURCE_SHA256,
+                )
+
+    def test_supplement_hash_drift_is_rejected(self):
+        document = self._load_document()
+        document["supplements"][0]["sha256"] = "0" * 64
+        test_dir = Path(__file__).resolve().parent
+        with tempfile.TemporaryDirectory(
+            prefix=".indexed_override_supplement_hash_",
+            dir=test_dir,
+        ) as temporary:
+            path = self._write_fixture(temporary, document)
+            with self.assertRaisesRegex(
+                LocaleSourceError,
+                "override supplement SHA-256 drift",
+            ):
+                load_override_catalog(
+                    path,
+                    expected_source_hashes=PINNED_SOURCE_SHA256,
+                )
+
+    def test_per_payload_hash_pin_is_checked_before_structure(self):
+        document = copy.deepcopy(self._load_document())
+        document["supplements"] = []
+        entry = document["sources"]["fe8cn_source"]["entries"]["0x004D"]
+        document["sources"]["fe8cn_source"]["entries"] = {"0x004D": entry}
+        expected_text = entry.pop("expected_text")
+        replacement_text = entry.pop("replacement_text")
+        entry["expected_text_sha256"] = hashlib.sha256(
+            expected_text.encode("utf-8")
+        ).hexdigest()
+        entry["replacements"] = [
+            {
+                "expected": expected_text,
+                "replacement": replacement_text,
+            }
+        ]
+        test_dir = Path(__file__).resolve().parent
+        with tempfile.TemporaryDirectory(
+            prefix=".indexed_override_payload_hash_",
+            dir=test_dir,
+        ) as temporary:
+            path = self._write_fixture(temporary, document)
+            catalog = load_override_catalog(
+                path,
+                expected_source_hashes=PINNED_SOURCE_SHA256,
+            )
+            source = catalog.sources["fe8cn_source"]
+            messages = (IndexedMessage(0x004D, expected_text, 1),)
+            applied, overrides = apply_indexed_overrides(
+                messages,
+                source=source,
+            )
+            self.assertEqual(len(overrides), len(source.entries))
+            self.assertEqual(
+                {message.id: message.text for message in applied}[0x004D],
+                "正在载入",
+            )
+
+            entry["expected_text_sha256"] = "0" * 64
+            bad_path = self._write_fixture(temporary, document)
+            bad_catalog = load_override_catalog(
+                bad_path,
+                expected_source_hashes=PINNED_SOURCE_SHA256,
+            )
+            with self.assertRaisesRegex(
+                LocaleSourceError,
+                "does not match override expected text hash",
+            ):
+                apply_indexed_overrides(
+                    messages,
+                    source=bad_catalog.sources["fe8cn_source"],
                 )
 
     def test_control_or_newline_structure_change_is_rejected(self):

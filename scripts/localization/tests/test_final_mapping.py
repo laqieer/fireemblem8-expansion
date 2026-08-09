@@ -52,6 +52,11 @@ class FinalMappingTests(unittest.TestCase):
                 encoding="utf-8"
             )
         )
+        cls.ending_metrics = json.loads(
+            (cls.MAPPING_DIR / "ending_layout_metrics.json").read_text(
+                encoding="utf-8"
+            )
+        )
         cls.rows = {row["target_id"]: row for row in cls.mapping["rows"]}
         cls.original_rows = {
             row["target_id"]: row for row in recover_original_rows(cls.mapping)
@@ -134,6 +139,7 @@ class FinalMappingTests(unittest.TestCase):
         encoded = canonical_artifacts(self.rebuilt)
         paths = {
             "coverage": self.MAPPING_DIR / "fe8u_target_map.coverage.json",
+            "ending_metrics": self.MAPPING_DIR / "ending_layout_metrics.json",
             "mapping": self.MAPPING_DIR / "fe8u_target_map.json",
             "queue": self.MAPPING_DIR / "authored_translation_queue.json",
             "report": self.MAPPING_DIR / "final_mapping_report.json",
@@ -146,11 +152,11 @@ class FinalMappingTests(unittest.TestCase):
             self.report["promotion_counts"],
             {
                 "b-structural-high": 27,
-                "c-febuilder": 1301,
+                "c-febuilder": 1267,
                 "c-febuilder-raw": 3,
                 "d-contextual-resolution": 20,
                 "d-existing-authored": 3,
-                "d-semantic-correction": 63,
+                "d-semantic-correction": 100,
                 "d-structural-reference-second-check": 6,
                 "e-exact-english": 134,
                 "e-exact-english-context": 1,
@@ -933,6 +939,306 @@ class FinalMappingTests(unittest.TestCase):
             self.assertEqual(
                 source["regional_sources"]["zh-Hans"]["import_id"], import_id
             )
+
+    def test_latest_semantic_audit_payloads_match_verified_call_sites(self):
+        call_sites = {
+            "0x0028": "gDebugContinueMenuItems.override[0xc].name",
+            "0x0169": "L08.chapTitleTextId",
+            "0x031D": "CLASS_MAGE.descTextId",
+            "0x032A": "CLASS_BERSERKER.descTextId",
+            "0x033B": "CLASS_NECROMANCER.descTextId",
+            "0x0490": "ITEM_GUIDINGRING.descTextId",
+            "0x04DE": "ITEM_MASTERSEAL.useDescTextId",
+            "0x06AB": "gDebugMenuItems.override[0x12].name",
+            "0x08E5": "EventScrWM_MessedEventscr_0.text[1]",
+            "0x08EA": "EventScrWM_MessedEventscr_4.text[1]",
+            "0x08F0": "EventScrWM_MessedEventscr_42.text[1]",
+            "0x08FB": "EventScrWM_MessedEventscr_49.text[1]",
+            "0x0907": "EventScr_Prologue_RenaisThroneCutscene.text[6]",
+            "0x095A": "EventScr_Ch2_BeginningScene.text[7]",
+            "0x0969": "EventScr_Ch2_Village1.text[1]",
+            "0x098F": "EventScr_Ch3_5.text[1]",
+            "0x09F2": "EventScr_Ch6_EndingScene.text[2]",
+            "0x0ABA": "EventScr_Ch10B_0.text[2]",
+            "0x0AD3": "EventScr_Ch11B_1.text[1]",
+            "0x0AF9": "EventScr_Ch13B_6.Selena-village",
+            "0x0B06": "chapter=Ch14B/script=ending/message-ordinal=2",
+            "0x0B29": "EventScr_Ch15A_26.text[3]",
+            "0x0CE5": "CHARACTER_ARTUR+CHARACTER_JOSHUA.A",
+        }
+        for target_id, source_key in call_sites.items():
+            self.assertEqual(
+                self.rows[target_id]["verification"]["source_key"],
+                source_key,
+                target_id,
+            )
+
+        exact = {
+            "0x0012": {
+                "ja": "村が破壊された",
+                "zh-Hans": "村子被毁了",
+            },
+            "0x0028": {"zh-Hans": " 手动继续"},
+            "0x0169": {"ja": "罠だ！", "zh-Hans": "这是陷阱！"},
+            "0x031D": {
+                "zh-Hans": "体力较弱，但魔法能力稳定\n装备『理』"
+            },
+            "0x032A": {
+                "zh-Hans": "擅长在山地和海上移动，且容易暴击\n装备『斧』"
+            },
+            "0x033B": {
+                "zh-Hans": "掌握【魔石】之力\n以最高位暗魔法操纵尸骸"
+            },
+            "0x0490": {
+                "ja": (
+                    "レベル１０以上の神官・魔道士・トルバドール"
+                    "[CTRL:0001]修道士・シャーマンが使います"
+                ),
+                "zh-Hans": (
+                    "供10级以上的僧侣、魔法师、神官骑士、\n"
+                    "修道士和巫师使用"
+                ),
+            },
+            "0x04DE": {
+                "ja": (
+                    "レベル１０以上の未転職[CTRL:0001]"
+                    "下位クラスユニットを転職させます"
+                ),
+                "zh-Hans": "使10级以上尚未转职的\n下位职业单位转职",
+            },
+            "0x0560": {
+                "zh-Hans": "回避敌人攻击的能力\n会降低敌人的命中率"
+            },
+            "0x0570": {
+                "zh-Hans": (
+                    "被对手的武器相克\n命中率与威力会下降\n"
+                    "但仍会对敌人造成较高伤害"
+                )
+            },
+            "0x057B": {
+                "ja": (
+                    "ユニットの持ち物を[CTRL:0001]整理することができます。"
+                    "[CTRL:0001]名前が灰色のアイテムは[CTRL:0001]"
+                    "そのユニットには[CTRL:0001]使用できません。"
+                ),
+                "zh-Hans": (
+                    "可以整理单位的\n所持物品\n名称显示为灰色的物品\n"
+                    "该单位无法使用"
+                ),
+            },
+            "0x0612": {
+                "ja": (
+                    "ユニットを選択した時に表示される[CTRL:0001]"
+                    "赤色の部分が攻撃範囲です。[CTRL:0001]"
+                    "敵ユニットにカーソルを合わせても[CTRL:0001]"
+                    "その敵の攻撃範囲が表示されます。[CTRL:0001]"
+                    "接近する前に確認してください。"
+                ),
+                "zh-Hans": (
+                    "选择单位时显示的\n红色区域是攻击范围。\n"
+                    "将光标移到敌方单位上时，\n"
+                    "也会显示该敌人的攻击范围。\n接近敌人前请先确认。"
+                ),
+            },
+            "0x0640": {
+                "ja": (
+                    "戦闘や杖の使用で[CTRL:0001]"
+                    "ＥＸＰ（経験値）を得られます。[CTRL:0001]"
+                    "１００に達するとレベルが１上がります。[CTRL:0001]"
+                    "レベルアップの際、【力】【技】などの[CTRL:0001]"
+                    "パラメータが上昇することで、[CTRL:0001]"
+                    "ユニットは強くなっていきます。[CTRL:0001]"
+                    "レベルの上限は２０です。"
+                ),
+                "zh-Hans": (
+                    "进行战斗或使用杖可获得EXP。\n"
+                    "EXP达到100时等级提升1。\n"
+                    "升级时，『力』、『技』等\n"
+                    "能力数值可能会上升，\n"
+                    "使单位变得更强。\n等级上限为20。"
+                ),
+            },
+            "0x06AB": {"ja": "　デバッグ情報"},
+            "0x0848": {"zh-Hans": "退出"},
+        }
+        for target_id, by_locale in exact.items():
+            for locale, payload in by_locale.items():
+                self.assertEqual(
+                    self.localized_text(target_id, locale),
+                    payload,
+                    (target_id, locale),
+                )
+
+        contains = {
+            "0x08E5": {
+                "ja": ("塔のマップをひとつクリア", "次の階"),
+                "zh-Hans": ("每通关一张塔内地图", "进入下一层"),
+            },
+            "0x08EA": {
+                "zh-Hans": ("王宫仍遭古拉德", "围攻", "眼看就要陷落")
+            },
+            "0x08F0": {
+                "zh-Hans": ("守护最后的【圣石】", "阻止魔王复活")
+            },
+            "0x08FB": {
+                "zh-Hans": ("守护最后的【圣石】", "阻止魔王复活")
+            },
+            "0x0907": {
+                "zh-Hans": ("单骑行动", "避开古拉德军", "耳目")
+            },
+            "0x095A": {
+                "zh-Hans": ("第一个两难", "尽快行动", "避免", "引人注目")
+            },
+            "0x0969": {
+                "zh-Hans": ("艾莉娜", "隐瞒着什么", "无意干涉")
+            },
+            "0x097F": {"zh-Hans": ("中立军",)},
+            "0x098F": {"zh-Hans": ("祖父", "外出打猎")},
+            "0x09F2": {
+                "zh-Hans": ("把一切都告诉", "戴着另一只腕轮", "哥哥")
+            },
+            "0x0A6A": {"zh-Hans": ("克里姆特长老",)},
+            "0x0ABA": {"zh-Hans": ("乐趣", "必须尽量延长")},
+            "0x0AD3": {"zh-Hans": ("登上敌船", "夺过来")},
+            "0x0AF9": {
+                "ja": ("セライナさんを", "傷つけないで"),
+                "zh-Hans": ("不要", "伤害塞莱娜"),
+            },
+            "0x0B06": {
+                "ja": (
+                    "フレリアとルネスの【聖石】はすでに潰え",
+                    "ジャハナの【聖石】もまもなく",
+                ),
+                "zh-Hans": (
+                    "弗雷利亚和鲁内斯",
+                    "【圣石】已经化为尘埃",
+                    "贾哈那的【圣石】也即将",
+                ),
+            },
+            "0x0C00": {
+                "zh-Hans": ("不知道", "是否平安", "双胞胎哥哥", "身陷险境")
+            },
+            "0x0C1C": {
+                "zh-Hans": ("不相信", "没有利害关系", "人际关系")
+            },
+            "0x0CE5": {
+                "ja": ("２１戦１１勝１０敗",),
+                "zh-Hans": ("21战11胜10败",),
+            },
+        }
+        for target_id, by_locale in contains.items():
+            for locale, terms in by_locale.items():
+                payload = self.localized_text(target_id, locale)
+                for term in terms:
+                    self.assertIn(term, payload, (target_id, locale, term))
+
+        forbidden = {
+            ("0x08E5", "ja"): ("章をひとつクリア",),
+            ("0x08E5", "zh-Hans"): ("每结束一章",),
+            ("0x08EA", "zh-Hans"): ("目前也已经陷落",),
+            ("0x0907", "zh-Hans"): ("同时也能立下大功",),
+            ("0x0969", "zh-Hans"): ("艾莉斯", "可以放心"),
+            ("0x097F", "zh-Hans"): ("友军",),
+            ("0x098F", "zh-Hans"): ("叔叔",),
+            ("0x09F2", "zh-Hans"): ("您不可了", "拥有相同【圣石】"),
+            ("0x0A6A", "zh-Hans"): ("安娜议长",),
+            ("0x0ABA", "zh-Hans"): ("不能延长",),
+            ("0x0AF9", "ja"): ("救ってあげて",),
+            ("0x0AF9", "zh-Hans"): ("救救塞莱娜",),
+            ("0x0B06", "ja"): ("グラドとフレリア",),
+            ("0x0B06", "zh-Hans"): ("古拉德和弗雷利亚",),
+            ("0x0C00", "zh-Hans"): ("双保胎", "现在没有危险"),
+            ("0x0C1C", "zh-Hans"): ("以利益为纽带",),
+            ("0x0CE5", "ja"): ("２１戦１５勝１６敗",),
+            ("0x0CE5", "zh-Hans"): ("15胜16败",),
+        }
+        for (target_id, locale), fragments in forbidden.items():
+            payload = self.localized_text(target_id, locale)
+            for fragment in fragments:
+                self.assertNotIn(fragment, payload, (target_id, locale, fragment))
+
+    def test_ch15_scene_boundary_does_not_duplicate_0b2a(self):
+        expected_end = "[CTRL:0003][CTRL:0015]"
+        b29_ja = self.localized_text("0x0B29", "ja")
+        b29_zh = self.localized_text("0x0B29", "zh-Hans")
+        self.assertTrue(b29_ja.endswith(expected_end))
+        self.assertTrue(b29_zh.endswith(expected_end))
+        self.assertNotIn("リオンが別人のようになったのは", b29_ja)
+        self.assertNotIn("据说，利昂判若两人", b29_zh)
+
+        b2a_ja = self.localized_text("0x0B2A", "ja")
+        b2a_zh = self.localized_text("0x0B2A", "zh-Hans")
+        self.assertTrue(b2a_ja.startswith("[OpenLeft]リオンが別人のよう"))
+        self.assertTrue(b2a_zh.startswith("[OpenLeft]听说利昂是在得到"))
+        self.assertEqual(
+            self.rows["0x0B29"]["verification"]["source_key"],
+            "EventScr_Ch15A_26.text[3]",
+        )
+        self.assertEqual(
+            self.rows["0x0B2A"]["verification"]["source_key"],
+            "game.chapter_event.msg_b2a",
+        )
+
+    def test_all_ending_titles_and_paired_lines_fit_real_text_allocations(self):
+        metrics = self.ending_metrics
+        self.assertEqual(metrics["kind"], "fe8u-ending-layout-metrics")
+        self.assertEqual(
+            metrics["allocations"],
+            {
+                "paired": {
+                    "pixel_width": 208,
+                    "text_count": 5,
+                    "text_index_start": 0,
+                    "tile_width": 26,
+                },
+                "title": {
+                    "pixel_width": 120,
+                    "text_count": 2,
+                    "text_index_start": 5,
+                    "tile_width": 15,
+                },
+            },
+        )
+        ending_source = (self.ROOT / "src/ending_details.c").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn(
+            "InitText(gpCharacterEndingTexts + 5 + i, 15)",
+            ending_source,
+        )
+        self.assertIn(
+            "InitText(gpCharacterEndingTexts + i, 26)",
+            ending_source,
+        )
+        self.assertEqual(
+            metrics["summary"],
+            {
+                "locale_count": 2,
+                "overflow_count": 0,
+                "paired_target_count": 34,
+                "title_target_count": 33,
+            },
+        )
+        for locale in ("ja", "zh-Hans"):
+            locale_metrics = metrics["locales"][locale]
+            self.assertEqual(len(locale_metrics["titles"]), 33)
+            self.assertEqual(len(locale_metrics["paired"]), 34)
+            self.assertEqual(
+                [record["target_id"] for record in locale_metrics["paired"]],
+                [f"0x{message_id:04X}" for message_id in range(0x0817, 0x0839)],
+            )
+            for record in locale_metrics["titles"]:
+                self.assertEqual(record["line_count"], 1)
+                self.assertLessEqual(record["max_line_width"], 120)
+            for record in locale_metrics["paired"]:
+                self.assertEqual(record["line_count"], 5)
+                self.assertEqual(len(record["line_widths"]), 5)
+                self.assertLessEqual(record["max_line_width"], 208)
+
+        self.assertEqual(
+            self.localized_text("0x0801", "zh-Hans"),
+            "智泉·塞勒夫",
+        )
 
     def test_historical_queue_is_complete_fulfilled_and_canonical(self):
         fallback_ids = [

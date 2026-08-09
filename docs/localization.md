@@ -272,8 +272,8 @@ descriptor slots.
    `expansion_msg_ids.h`/the localization budget JSON, write-if-unchanged.
    Full-game authored translations use the separate normalized shard platform
    at `texts/locales/authored/`. Its manifest pins the historical 259-row
-   source queue and every shard hash; the merger produces canonical 289-key
-   JA/ZH runtime catalogs (259 fulfilled queue rows plus 30 existing
+   source queue and every shard hash; the merger produces canonical 326-key
+   JA/ZH runtime catalogs (259 fulfilled queue rows plus 67 existing
    expansion-backed or target-specific semantic corrections):
 
    ```bash
@@ -288,6 +288,13 @@ descriptor slots.
    independent 143-record raw-surface closure also has zero fallback,
    exclusion, and unresolved record. The shared modern English bundle remains
    the real `en` locale; zero CJK fallback does not remove or duplicate it.
+   `build-final-mapping` also regenerates
+   `texts/locales/mapping/ending_layout_metrics.json`. That gate reads the
+   real `InitText` allocations in `src/ending_details.c` (120 pixels for all
+   33 character titles and five 208-pixel lines for all 34 paired endings)
+   and measures every JA/ZH line with the committed runtime system-font
+   widths. A missing glyph, physical newline, wrong line count, or overflow
+   fails generation.
 3. `python3 -m unittest discover -s scripts/localization/tests -p
    'test_*.py' -v` (or `make localization-test`) re-validates schema,
    strict UTF-8/control, surface-width and UTF-8 byte budgets, placeholder/

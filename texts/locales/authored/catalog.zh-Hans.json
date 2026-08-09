@@ -4,6 +4,11 @@
   "schema_version": 1,
   "shards": [
     {
+      "path": "texts/locales/authored/shards/audit_corrections.zh-Hans.json",
+      "sha256": "12ab048832356029f35ee2a4ded08a9d88313eec1e50f67d3d56d3a8ebe8b810",
+      "target_count": 37
+    },
+    {
       "path": "texts/locales/authored/shards/event_expansion.zh-Hans.json",
       "sha256": "3c511a7ff2ba2d28a85e11825c0eb3550d0b56f465ff97cb4568dbd5d07eec74",
       "target_count": 46
@@ -15,7 +20,7 @@
     },
     {
       "path": "texts/locales/authored/shards/help_shop.zh-Hans.json",
-      "sha256": "5c4d1f69c7799c6a60369c1366daaf49202368419152c88f52917c2714c104c8",
+      "sha256": "21cddb576ed0ecac0a03843021c86c3477db3f7ade03e50be3a87f615e521b0b",
       "target_count": 81
     },
     {
@@ -249,10 +254,12 @@
     "game.semantic_correction.msg_1c8": "关闭村庄[.][X]\n",
     "game.semantic_correction.msg_1ee": "船板[X]\n",
     "game.semantic_correction.msg_1ef": "沉船[.][X]\n",
+    "game.semantic_correction.msg_28": " 手动继续",
     "game.semantic_correction.msg_3a8": "纹章之印[.][X]\n",
     "game.semantic_correction.msg_593": "调试[.][X]\n",
     "game.semantic_correction.msg_679": "正在保存。要继续游戏，请选择[LF]\n『从记录开始』。[X]\n",
     "game.semantic_correction.msg_6a2": " 调试[X]\n",
+    "game.semantic_correction.msg_6ab": " 调试信息",
     "game.semantic_correction.msg_6ae": " 通关次数[.][X]\n",
     "game.semantic_correction.msg_6af": " 标记通关[.][X]\n",
     "game.semantic_correction.msg_6b2": "沙暴[X]\n",
@@ -264,7 +271,42 @@
     "game.semantic_correction.msg_7d2": "负伤，[LF]\n并与队伍分离。[.][X]\n",
     "game.semantic_correction.msg_7d3": "负伤于[X]\n",
     "game.semantic_correction.msg_7d4": "，[.][LF]\n但仍随队奋战至最后。[.][X]\n",
+    "game.semantic_correction.msg_817": "战后，伊弗列姆和艾瑞珂[CTRL:0001]全力重建鲁内斯。[CTRL:0001]他们的努力让饱受战火的人们[CTRL:0001]重燃希望。伊弗列姆成为贤王，[CTRL:0001]艾瑞珂始终在旁辅佐兄长。",
+    "game.semantic_correction.msg_818": "回到鲁内斯后，艾瑞珂和塞思[CTRL:0001]在伊弗列姆与众骑士的祝福下成婚。[CTRL:0001]公主与忠诚骑士之间[CTRL:0001]逐渐萌生的爱情故事，[CTRL:0001]成为鲁内斯传颂不衰的佳话。",
+    "game.semantic_correction.msg_819": "战后，艾瑞珂与塞勒夫各自返乡。[CTRL:0001]她常抽空造访珀卡拉之里，[CTRL:0001]后来把鲁内斯托付给兄长，[CTRL:0001]与塞勒夫成婚。两人的女儿[CTRL:0001]据说很像传说中的娜塔·库亚。",
+    "game.semantic_correction.msg_81a": "战后，塔娜与艾瑞珂仍是挚友，[CTRL:0001]一有空便互相探望。[CTRL:0001]多年以后，她们的孩子之间[CTRL:0001]也结下了深厚情谊，[CTRL:0001]一如两位母亲当年的友情。",
+    "game.semantic_correction.msg_81b": "战后，艾瑞珂和弗鲁迪返回鲁内斯。[CTRL:0001]艾瑞珂日夜投身重建，[CTRL:0001]弗鲁迪则始终忠实地支持她。[CTRL:0001]他为她画下的肖像，[CTRL:0001]留住了曾以为再也看不到的笑容。",
+    "game.semantic_correction.msg_81c": "战后，伊弗列姆返回鲁内斯，[CTRL:0001]梅尔则回到暗之树海。[CTRL:0001]两人各尽职责，却从未忘记彼此。[CTRL:0001]梅尔不再离开树海，[CTRL:0001]伊弗列姆却常去探望她。",
+    "game.semantic_correction.msg_81d": "战后，两人各自回国，[CTRL:0001]拉切尔却常常造访鲁内斯，[CTRL:0001]最终与伊弗列姆成婚。[CTRL:0001]罗斯顿为此陷入一片混乱，[CTRL:0001]但最后还是拉切尔任性取胜。",
+    "game.semantic_correction.msg_81e": "鲁内斯重建稳定后，[CTRL:0001]伊弗列姆与塔娜成婚。[CTRL:0001]希尼亚斯虽曾大声反对，[CTRL:0001]见妹妹幸福后也送上祝福。[CTRL:0001]两国从此以友情与血缘相连。",
+    "game.semantic_correction.msg_81f": "娜塔莎随塞思返回鲁内斯，[CTRL:0001]两人随后成婚。[CTRL:0001]重建鲁内斯让他们忙碌不已，[CTRL:0001]待一切工作完成后，[CTRL:0001]两人过上了平静幸福的生活。",
+    "game.semantic_correction.msg_820": "弗朗茨带阿米莉娅回到鲁内斯。[CTRL:0001]她在军中短暂服役后，[CTRL:0001]与弗朗茨成婚并退役。[CTRL:0001]两人后来生下一个女儿，[CTRL:0001]她长大后也成为了杰出的骑士。",
+    "game.semantic_correction.msg_821": "吉利安姆和西蕾尼返回弗雷利亚，[CTRL:0001]并在那里成婚。人人都认为[CTRL:0001]他们十分般配，王室与骑士团[CTRL:0001]也一同献上祝福。婚后两人[CTRL:0001]仍并肩忠诚地为国家效力。",
+    "game.semantic_correction.msg_822": "应希尼亚斯之请，瓦内萨入住王城，[CTRL:0001]继续履行王国骑士的职责。[CTRL:0001]后来两人有了一个孩子，[CTRL:0001]并在所有人的祝福下，[CTRL:0001]过着幸福的生活。",
+    "game.semantic_correction.msg_823": "战后，弗鲁迪更加深爱瓦内萨。[CTRL:0001]她虽也爱他，却把对国家的职责[CTRL:0001]放在首位。弗鲁迪并未放弃，[CTRL:0001]而是亲自移居弗雷利亚，[CTRL:0001]最终与她结为夫妻。",
+    "game.semantic_correction.msg_824": "父子二人回到依姆村，[CTRL:0001]合力重建故乡。罗斯逐渐成长，[CTRL:0001]成为超越父亲的战士。[CTRL:0001]后来他也有了一个儿子，[CTRL:0001]继续传承家族的武勇。",
+    "game.semantic_correction.msg_825": "青梅竹马的两人先成为恋人，[CTRL:0001]后来结为夫妻。科曼担心梅米，[CTRL:0001]不再从事危险的冒险工作。[CTRL:0001]梅米把祖父传下的箭术，[CTRL:0001]教给了自己的儿子和女儿。",
+    "game.semantic_correction.msg_826": "阿斯雷与露忒返乡后成婚。[CTRL:0001]除了家务由阿斯雷负责，[CTRL:0001]两人的生活几乎没有改变。[CTRL:0001]儿子出生后，露忒的研究兴趣[CTRL:0001]转向了他令人费解的习性。",
+    "game.semantic_correction.msg_827": "战后，凯尔与露忒在鲁内斯成婚。[CTRL:0001]朋友们虽对这位意外的新娘[CTRL:0001]感到困惑，却无法否认两人的幸福。[CTRL:0001]不久他们有了儿子，[CTRL:0001]凯尔从此专心将他抚养成人。",
+    "game.semantic_correction.msg_828": "约书亚带娜塔莎返回贾哈那，[CTRL:0001]娶她为妻，并以正统继承人身份[CTRL:0001]登上王位。娜塔莎是最好的伴侣，[CTRL:0001]两人齐心协力，使强盛的沙漠之国[CTRL:0001]迎来了光辉的时代。",
+    "game.semantic_correction.msg_829": "再好的朋友，性格也可能截然不同。[CTRL:0001]凯尔与弗鲁迪归国后，[CTRL:0001]他们的功绩被写入歌曲与故事。[CTRL:0001]两人既是最亲密的朋友，[CTRL:0001]也是最强的对手，幸福地度过一生。",
+    "game.semantic_correction.msg_82a": "库格回国协助古拉德重建后，[CTRL:0001]不久便独自踏上流浪之旅。[CTRL:0001]塔娜寻找了他许多年，[CTRL:0001]终于将他找到，并带回弗雷利亚，[CTRL:0001]任命为王国骑士。",
+    "game.semantic_correction.msg_82b": "据说拉切尔与希尼亚斯初次相遇时，[CTRL:0001]两人之间便火花四溅。[CTRL:0001]随着他们的爱情逐渐开花，[CTRL:0001]各自国家之间的纽带[CTRL:0001]也变得愈发牢固。",
+    "game.semantic_correction.msg_82c": "杰斯特与特缇斯不受国家束缚，[CTRL:0001]也不听命于任何权势，[CTRL:0001]过上了悠闲的退隐生活。[CTRL:0001]杰斯特教城中青年剑术，[CTRL:0001]特缇斯则在许多舞台上起舞。",
+    "game.semantic_correction.msg_82d": "杰斯特继续当佣兵，玛莉卡则成为[CTRL:0001]佣兵团的剑术教官。[CTRL:0001]杰斯特也回应了她的感情，[CTRL:0001]但发现她除了战斗以外什么都不擅长，[CTRL:0001]不免为此有些苦恼。",
+    "game.semantic_correction.msg_82e": "梅尔回到暗之树海后，[CTRL:0001]应塞勒夫之请移居珀卡拉之里。[CTRL:0001]渐渐地，村民不再把她当作巨龙，[CTRL:0001]而是视为普通少女，[CTRL:0001]梅尔也因此过得十分幸福。",
+    "game.semantic_correction.msg_82f": "师徒二人返回珀卡拉之里，[CTRL:0001]平静地继续研究。尤恩勤奋修行，[CTRL:0001]实力最终足以与塞勒夫比肩。[CTRL:0001]成为同等伙伴的两人继续钻研，[CTRL:0001]不断拓展彼此的魔法知识。",
+    "game.semantic_correction.msg_830": "约书亚带玛莉卡返回贾哈那。[CTRL:0001]她宣誓效忠王室，[CTRL:0001]成为全国第一的剑士。[CTRL:0001]约书亚依旧爱赌，但只要对手是玛莉卡，[CTRL:0001]获胜的便总是她。",
+    "game.semantic_correction.msg_831": "拉切尔后来成为罗斯顿女王，[CTRL:0001]多兹拉仍一如既往地守在身边。[CTRL:0001]拉切尔成婚时，多兹拉哭得[CTRL:0001]像个孩子。人们对这场痛哭的记忆，[CTRL:0001]甚至不亚于婚礼本身。",
+    "game.semantic_correction.msg_832": "阿米莉娅来到罗斯的故乡，[CTRL:0001]并决定留下。两人逐渐相爱成婚，[CTRL:0001]多年后有了一个儿子。[CTRL:0001]他成长为一名战士，[CTRL:0001]最终在技巧和力量上都超越父亲。",
+    "game.semantic_correction.msg_833": "战后，尤恩与阿米莉娅依照约定，[CTRL:0001]踏上环游世界的旅程。[CTRL:0001]沿途的事迹在各地化为小小传说。[CTRL:0001]后来阿米莉娅生下女儿，[CTRL:0001]两人便结束旅行，定居下来。",
+    "game.semantic_correction.msg_834": "战后，约书亚为劝杰斯特移居贾哈那，[CTRL:0001]向他发起决斗。比赛以平局结束，[CTRL:0001]杰斯特却被约书亚的豪迈气概打动。[CTRL:0001]从那一天起，[CTRL:0001]他再也没有离开约书亚身边。",
+    "game.semantic_correction.msg_835": "战后，西蕾尼与瓦内萨返回弗雷利亚，[CTRL:0001]姐妹二人久违地彻夜长谈。[CTRL:0001]她们谈爱情、战争和逝去的朋友，[CTRL:0001]重新确认彼此的姐妹情谊，[CTRL:0001]并发誓再也不让这份纽带破裂。",
+    "game.semantic_correction.msg_836": "鲁内斯重建完成后，[CTRL:0001]希尼亚斯向伊弗列姆挑战，[CTRL:0001]决斗以平局告终。战斗结束后，[CTRL:0001]艾瑞珂坦承对希尼亚斯的爱意，[CTRL:0001]两人在伊弗列姆的祝福下成婚。",
+    "game.semantic_correction.msg_837": "战后，凯尔造访弗雷利亚，[CTRL:0001]受到西蕾尼的热情款待。[CTRL:0001]两人退役后成婚，并育有一女。[CTRL:0001]女儿长大后，无论武艺还是礼仪，[CTRL:0001]都展现出过人的才华。",
+    "game.semantic_correction.msg_838": "回到古拉德后，杜塞尔让阿米莉娅[CTRL:0001]与母亲重逢。母女喜极而泣，[CTRL:0001]向杜塞尔表达感谢。[CTRL:0001]此后，阿米莉娅成为昔日【黑曜石】[CTRL:0001]最信赖的伙伴。",
     "game.semantic_correction.msg_a15": "等级10以上的单位\n可以通过特殊道具\n转职成为\n上位职业。[CTRL:0003][CTRL:0102]比如轻骑士的凯尔\n使用『骑士勋章』就能转职成\n圣骑士或是重骑士。[CTRL:0003][CTRL:0102]进行转职时，\n请从物品栏中选择『骑士勋章』，\n再选择『使用』。[CTRL:0003]",
+    "game.semantic_correction.msg_b29": "[CTRL:0008][CTRL:0010][CTRL:0102][CTRL:000A][CTRL:0010][CTRL:0114][CTRL:000B][CTRL:0010][CTRL:010F][CTRL:000D][CTRL:0010][CTRL:0122][CTRL:000A]这里还有些生面孔啊。\n那么先自报下家门吧。[CTRL:0103]我是鲁内斯王子伊弗列姆，\n艾瑞珂的兄长。[CTRL:0003][CTRL:000D]我是罗斯顿圣教国\n公主拉切尔。[CTRL:0103]今后请多指教。[CTRL:0003][CTRL:000A]那么，首先由我来汇报下情况吧。[CTRL:0103]我们攻陷了古拉德帝都，\n打倒了皇帝彼加尔德。[CTRL:0103]帝都的古拉德兵已经投降。[CTRL:0103]虽然还有些零星抵抗，但我想\n帝都的战斗可以算是结束了。[CTRL:0003][CTRL:000B]是吗。[CTRL:0003][CTRL:000A]不过，有一点我很在意。[CTRL:0103]我在帝都从一个叫诺鲁的男子\n那儿听到了关于【魔石】的事。[CTRL:0003][CTRL:0015][CTRL:000A]它是【圣石】研究后期，\n由【圣石】所产生出来的。[CTRL:0103]其力量比【圣石】还要强大……。[CTRL:0103]古拉德的异变的原因很可能\n就是这种被称作【魔石】的石头。[CTRL:0103]梅尔所说的帝都上方笼罩的\n异样之气可能就是这个。[CTRL:0003][CTRL:0015][CTRL:000A]据说皇帝早就已经死去，[CTRL:0103]是有人依靠【魔石】的力量\n把他当做傀儡来使用。[CTRL:0103]这次的战争也全部是由【魔石】\n的拥有者一手策划的。[CTRL:0003][CTRL:000B]那人是谁？[CTRL:0003][CTRL:0080][CTRL:0004][CTRL:000A][CTRL:0016]……[CTRL:0016]其实我并不相信。\n但是，权且报告一下吧。[CTRL:0103]据诺鲁所言，\n皇子利昂才是幕后主使。[CTRL:0103]【魔石】现在就在利昂那儿。[CTRL:0003][CTRL:000B]果然是古拉德皇子利昂……[CTRL:0003][CTRL:0008]不，请等一下。[CTRL:0103]我和兄长都十分了解利昂。\n我们是从小一起长大的。[CTRL:0103]利昂绝对不是\n会发动这种战争的人。[CTRL:0003][CTRL:000B]可是，艾瑞珂……[CTRL:0003][CTRL:0008]我见过利昂。[CTRL:0103]我想兄长你可能也知道，[CTRL:0103]我放弃了由海路去罗斯顿的行程，[CTRL:0103]和希尼亚斯王子一起由陆路\n前进，来到了贾哈那。[CTRL:0103]之后，我在贾哈那王宫\n与率领古拉德军的利昂碰面了。[CTRL:0103]他并没有告诉我\n详细的情况……[CTRL:0103]但是，利昂对我说过\n他是站在我们一边的。[CTRL:0103]所以，利昂他……[CTRL:0003][CTRL:000A]艾瑞珂……\n我也……见过利昂。[CTRL:0003][CTRL:0008]真的吗？[CTRL:0003][CTRL:000A]是的。只不过\n他完全像是另外一个人……[CTRL:0103]不……\n看起来连人都不是。[CTRL:0003][CTRL:0008]啊，兄长……\n这是怎么回事？[CTRL:0003][CTRL:000A]我就说说我所看到的吧。[CTRL:0103]我在帝都见到了利昂。[CTRL:0103]他对我说。\n是他发动了这场战争。[CTRL:0103]而且，与我们兄妹搞好关系\n也只是为了侵略鲁内斯做准备……[CTRL:0103]杀害父王的也是他……[CTRL:0003][CTRL:0008]这，这……[CTRL:0003][CTRL:000A]是的……我也无法相信。\n根本也不愿意相信。[CTRL:0103]利昂会有如此城府\n能考虑到这些事情……[CTRL:0103]这点我首先就无法相信。[CTRL:0003][CTRL:0015]",
     "game.shop_arena.msg_146": "确定[.][X]\n",
     "game.shop_arena.msg_735": "选择“小队编制”来组建小队[X]\n",
     "game.shop_arena.msg_736": "编制或编辑通信对战小队[.][X]\n",
@@ -325,5 +367,5 @@
     "raw_surface.unit_action.summon": " 召唤",
     "save_compat.menu_erase_all": "清除全部存档"
   },
-  "target_count": 289
+  "target_count": 326
 }

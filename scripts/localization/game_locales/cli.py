@@ -539,6 +539,7 @@ def _build_final_mapping(args: argparse.Namespace):
 def _final_mapping_paths(args: argparse.Namespace):
     return {
         "coverage": args.coverage,
+        "ending_metrics": args.ending_metrics,
         "mapping": args.mapping,
         "queue": args.queue,
         "report": args.final_report,
@@ -1047,6 +1048,13 @@ def build_parser() -> argparse.ArgumentParser:
             "--final-report",
             type=Path,
             default=Path("texts/locales/mapping/final_mapping_report.json"),
+        )
+        command_parser.add_argument(
+            "--ending-metrics",
+            type=Path,
+            default=Path(
+                "texts/locales/mapping/ending_layout_metrics.json"
+            ),
         )
         command_parser.add_argument(
             "--english-texts",

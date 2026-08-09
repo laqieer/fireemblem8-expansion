@@ -79,7 +79,7 @@ class AuthoredCatalogMergeTests(unittest.TestCase):
         }
         expected_ids = set(self.queue_by_id) | existing_ids
         self.assertEqual(len(self.queue_by_id), 259)
-        self.assertEqual(len(expected_ids), 289)
+        self.assertEqual(len(expected_ids), 326)
 
         for locale in LOCALES:
             observed = set()
@@ -105,7 +105,7 @@ class AuthoredCatalogMergeTests(unittest.TestCase):
         for locale in LOCALES:
             catalog = self.catalogs[locale]
             self.assertEqual(catalog["kind"], AUTHORED_CATALOG_KIND)
-            self.assertEqual(catalog["target_count"], 289)
+            self.assertEqual(catalog["target_count"], 326)
             self.assertEqual(set(catalog["strings"]), expected_keys)
             self.assertEqual(catalog, rebuilt[locale])
             self.assertEqual(

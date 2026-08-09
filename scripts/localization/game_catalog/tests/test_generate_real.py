@@ -30,9 +30,9 @@ class RealGenerateTests(unittest.TestCase):
 
             report = json.loads(written_a["report_json"].read_text(encoding="utf-8"))
             budget = json.loads(written_a["budget_json"].read_text(encoding="utf-8"))
-            self.assertEqual(report["mapping_source_counts"]["indexed"], 2993)
-            self.assertEqual(report["mapping_source_counts"]["raw"], 132)
-            self.assertEqual(report["mapping_source_counts"]["authored"], 289)
+            self.assertEqual(report["mapping_source_counts"]["indexed"], 2958)
+            self.assertEqual(report["mapping_source_counts"]["raw"], 130)
+            self.assertEqual(report["mapping_source_counts"]["authored"], 326)
             self.assertEqual(report["mapping_source_counts"]["english_fallback"], 0)
             self.assertEqual(report["mapping_source_counts"]["unresolved"], 0)
             self.assertEqual(report["shared_english"]["present_count"], 3414)
@@ -41,14 +41,14 @@ class RealGenerateTests(unittest.TestCase):
                 report["shared_english"]["storage"]["required_bytes"], 4000
             )
             self.assertEqual(report["locales"]["ja"]["present_count"], 3414)
-            self.assertEqual(report["locales"]["ja"]["provider_counts"]["raw"], 132)
+            self.assertEqual(report["locales"]["ja"]["provider_counts"]["raw"], 130)
             self.assertEqual(report["locales"]["ja"]["provider_unavailable_count"], 0)
             self.assertEqual(report["locales"]["zh-Hans"]["present_count"], 3414)
             self.assertEqual(report["locales"]["zh-Hans"]["explicit_fallback_count"], 0)
             self.assertTrue(report["locales"]["ja"]["storage"]["target_fits"])
             self.assertTrue(report["locales"]["zh-Hans"]["storage"]["target_fits"])
-            self.assertEqual(report["locales"]["ja"]["storage"]["required_bytes"], 5328)
-            self.assertEqual(report["locales"]["zh-Hans"]["storage"]["required_bytes"], 4260)
+            self.assertEqual(report["locales"]["ja"]["storage"]["required_bytes"], 4725)
+            self.assertEqual(report["locales"]["zh-Hans"]["storage"]["required_bytes"], 3729)
             self.assertEqual(
                 report["locales"]["ja"]["hashes"]["source_framed_sha256"],
                 report["locales"]["ja"]["hashes"]["round_trip_framed_sha256"],
@@ -74,7 +74,7 @@ class RealGenerateTests(unittest.TestCase):
             self.assertIn("GAME_LOCALIZATION_TARGET_COUNT 3414u", header)
             self.assertIn("FE8_GAME_LOCALIZATION_DATA_PRESENT 1", config_header)
             self.assertIn(
-                "FE8_GAME_LOCALIZATION_MAX_DECODED_BYTES 5328u",
+                "FE8_GAME_LOCALIZATION_MAX_DECODED_BYTES 4725u",
                 config_header,
             )
             self.assertIn("gGameLocalizationEnglishEntries[]", source)
@@ -237,10 +237,10 @@ class RealGenerateTests(unittest.TestCase):
             self.assertIn("GAME_LOCALIZATION_ZH_HANS_ENABLED 1u", zh_header)
             self.assertNotIn("extern const u32 gGameLocalizationJaNodes[];", zh_header)
             self.assertIn(
-                "FE8_GAME_LOCALIZATION_MAX_DECODED_BYTES 5328u", ja_config
+                "FE8_GAME_LOCALIZATION_MAX_DECODED_BYTES 4725u", ja_config
             )
             self.assertIn(
-                "FE8_GAME_LOCALIZATION_MAX_DECODED_BYTES 4260u", zh_config
+                "FE8_GAME_LOCALIZATION_MAX_DECODED_BYTES 4000u", zh_config
             )
 
             ja_report = json.loads(ja["report_json"].read_text(encoding="utf-8"))
@@ -276,9 +276,9 @@ class RealGenerateTests(unittest.TestCase):
                 ja_budget["shared_english"]["estimated_total_c_bytes"],
                 both_budget["shared_english"]["estimated_total_c_bytes"],
             )
-            self.assertEqual(ja_budget["locales"]["ja"]["max_decoded_bytes"], 5328)
+            self.assertEqual(ja_budget["locales"]["ja"]["max_decoded_bytes"], 4725)
             self.assertEqual(
-                zh_budget["locales"]["zh-Hans"]["max_decoded_bytes"], 4260
+                zh_budget["locales"]["zh-Hans"]["max_decoded_bytes"], 3729
             )
             self.assertLess(
                 ja_budget["totals"]["estimated_total_c_bytes"],

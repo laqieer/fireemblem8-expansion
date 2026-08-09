@@ -186,7 +186,7 @@ class GameLocaleCrosswalkTests(unittest.TestCase):
             if row.source.get("regional_sources", {}).get("ja", {}).get("kind")
             == "literal"
         ]
-        self.assertEqual(len(literal_rows), 16)
+        self.assertEqual(len(literal_rows), 14)
         self.assertTrue(
             all(
                 row.source["regional_sources"]["ja"]["provenance"].get(
