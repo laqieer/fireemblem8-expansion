@@ -7269,14 +7269,14 @@
             "kind": "pinned_git_source_artifact",
             "offset": 33,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "texts/locales/source/fe8j/raw_provider_values.cp932.bin",
               "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
             },
-            "source_anchor": "GoalString_UnitsLeft",
-            "source_blob_oid": "1c0f8efd141f52ae77a9c23a6631f8401ba7a36a",
-            "source_path": "src/player_interface_0808F584.c",
-            "source_repository": "https://github.com/laqieer/fireemblem8j",
-            "source_revision": "bf424414d075789d757e2f4cd0cea823bfb2862e",
+            "source_anchor": "0x01C1",
+            "source_blob_oid": "c45d9d9d1dbe219a12a7cfca9ce62084f3c389ab",
+            "source_path": "texts/locales/source/fe8j/raw_symbols.json",
+            "source_repository": "https://github.com/laqieer/fireemblem8-expansion",
+            "source_revision": "548b240d0a553add88897927049b7f5ce25657a8",
             "source_value_index": 0,
             "symbol": "GoalString_UnitsLeft",
             "value_sha256": "4042ff58570ad607525ff9dc190de55038764f6999f4f06d486cb16602f8f8e6"
@@ -7330,14 +7330,14 @@
             "kind": "pinned_git_source_artifact",
             "offset": 45,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "texts/locales/source/fe8j/raw_provider_values.cp932.bin",
               "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
             },
-            "source_anchor": "GoalString_LastTurn",
-            "source_blob_oid": "1c0f8efd141f52ae77a9c23a6631f8401ba7a36a",
-            "source_path": "src/player_interface_0808F584.c",
-            "source_repository": "https://github.com/laqieer/fireemblem8j",
-            "source_revision": "bf424414d075789d757e2f4cd0cea823bfb2862e",
+            "source_anchor": "0x01C3",
+            "source_blob_oid": "c45d9d9d1dbe219a12a7cfca9ce62084f3c389ab",
+            "source_path": "texts/locales/source/fe8j/raw_symbols.json",
+            "source_repository": "https://github.com/laqieer/fireemblem8-expansion",
+            "source_revision": "548b240d0a553add88897927049b7f5ce25657a8",
             "source_value_index": 0,
             "symbol": "GoalString_LastTurn",
             "value_sha256": "55ded65087def01737f9f7d8b44ccafe7f09fb400dd11abb540643287ad01cf3"
@@ -7391,14 +7391,14 @@
             "kind": "pinned_git_source_artifact",
             "offset": 38,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "texts/locales/source/fe8j/raw_provider_values.cp932.bin",
               "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
             },
-            "source_anchor": "GoalString_Turn",
-            "source_blob_oid": "1c0f8efd141f52ae77a9c23a6631f8401ba7a36a",
-            "source_path": "src/player_interface_0808F584.c",
-            "source_repository": "https://github.com/laqieer/fireemblem8j",
-            "source_revision": "bf424414d075789d757e2f4cd0cea823bfb2862e",
+            "source_anchor": "0x01C2",
+            "source_blob_oid": "c45d9d9d1dbe219a12a7cfca9ce62084f3c389ab",
+            "source_path": "texts/locales/source/fe8j/raw_symbols.json",
+            "source_repository": "https://github.com/laqieer/fireemblem8-expansion",
+            "source_revision": "548b240d0a553add88897927049b7f5ce25657a8",
             "source_value_index": 0,
             "symbol": "GoalString_Turn",
             "value_sha256": "7bc2fa80d7f7c1c271c529a75c64328b5d7c92fd1df72fcae650ed3fa3064ad1"

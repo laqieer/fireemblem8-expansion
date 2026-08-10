@@ -13,9 +13,15 @@ from pathlib import Path
 from typing import Any, Dict, Mapping
 
 JA_RAW_PROVIDER_KIND = "fe8j-raw-provider-catalog"
-JA_RAW_PROVIDER_SCHEMA_VERSION = 4
+JA_RAW_PROVIDER_SCHEMA_VERSION = 5
 PINNED_SOURCE_REPOSITORY = "https://github.com/laqieer/fireemblem8j"
 PINNED_SOURCE_REVISION = "bf424414d075789d757e2f4cd0cea823bfb2862e"
+PINNED_GOAL_SOURCE_ID = "expansion-fe8j-raw-v4"
+PINNED_GOAL_SOURCE_REPOSITORY = (
+    "https://github.com/laqieer/fireemblem8-expansion"
+)
+PINNED_GOAL_SOURCE_REVISION = "548b240d0a553add88897927049b7f5ce25657a8"
+PINNED_GOAL_TARGETS = frozenset({"0x01C1", "0x01C2", "0x01C3"})
 _TARGET_ID_RE = re.compile(r"0x[0-9A-F]{4}")
 _SHA256_RE = re.compile(r"[0-9a-f]{64}")
 _GIT_OID_RE = re.compile(r"[0-9a-f]{40}")
@@ -75,6 +81,85 @@ class GitSource:
 _C_STRING_RE = re.compile(r'"(?:\\.|[^"\\])*"', re.DOTALL)
 
 
+def _strip_c_comments(source: str) -> str:
+    output = []
+    index = 0
+    state = "code"
+    while index < len(source):
+        char = source[index]
+        following = source[index + 1] if index + 1 < len(source) else ""
+        if state == "code":
+            if char == '"':
+                state = "string"
+                output.append(char)
+                index += 1
+                continue
+            if char == "'":
+                state = "character"
+                output.append(char)
+                index += 1
+                continue
+            if char == "/" and following == "*":
+                state = "block_comment"
+                output.extend((" ", " "))
+                index += 2
+                continue
+            if char == "/" and following == "/":
+                state = "line_comment"
+                output.extend((" ", " "))
+                index += 2
+                continue
+            output.append(char)
+            index += 1
+            continue
+        if state in ("string", "character"):
+            output.append(char)
+            if char == "\\" and index + 1 < len(source):
+                output.append(source[index + 1])
+                index += 2
+                continue
+            if (state == "string" and char == '"') or (
+                state == "character" and char == "'"
+            ):
+                state = "code"
+            index += 1
+            continue
+        if state == "block_comment":
+            if char == "*" and following == "/":
+                output.extend((" ", " "))
+                index += 2
+                state = "code"
+                continue
+            output.append("\n" if char == "\n" else " ")
+            index += 1
+            continue
+        output.append("\n" if char == "\n" else " ")
+        index += 1
+        if char == "\n":
+            state = "code"
+    return "".join(output)
+
+
+def _strip_asm_line_comment(line: str) -> str:
+    in_string = False
+    escaped = False
+    for index, char in enumerate(line):
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
+        if char == '"':
+            in_string = True
+            continue
+        if char == "@" or line.startswith("//", index):
+            return line[:index]
+    return line
+
+
 def _decode_c_string(token: str, *, source_path: str) -> bytes:
     try:
         value = ast.literal_eval(token)
@@ -104,14 +189,29 @@ def _extract_c_anchor_bytes(
     source_path: str,
     source_anchor: str,
 ) -> bytes | None:
+    source = _strip_c_comments(source)
     anchor = re.escape(source_anchor)
     initializer = re.search(
-        rf"\b{anchor}\b[^;]*=\s*(.*?);",
+        rf"(?:^|[;{{}}])\s*"
+        rf"(?P<declaration>[^;{{}}]*\b{anchor}\b[^;{{}}]*?)"
+        rf"=\s*(?P<body>.*?);",
         source,
-        flags=re.DOTALL,
+        flags=re.DOTALL | re.MULTILINE,
     )
     if initializer is not None:
-        body = initializer.group(1)
+        declaration = initializer.group("declaration")
+        if re.search(r"\bextern\b", declaration):
+            return None
+        declaration_without_strings = _C_STRING_RE.sub('""', declaration)
+        anchor_match = re.search(rf"\b{anchor}\b", declaration_without_strings)
+        if anchor_match is None:
+            return None
+        declaration_prefix = declaration_without_strings[: anchor_match.start()]
+        if not re.search(r"\b[A-Za-z_][A-Za-z0-9_]*\b", declaration_prefix):
+            return None
+        if re.search(r"(?:\.|->)\s*$", declaration_prefix):
+            return None
+        body = initializer.group("body")
         string_tokens = _C_STRING_RE.findall(body)
         if string_tokens:
             return b"".join(
@@ -127,16 +227,6 @@ def _extract_c_anchor_bytes(
                     f"{source_path}"
                 )
             return b"".join(struct.pack("<I", value) for value in values)
-
-    for line in source.splitlines():
-        if re.search(rf"\b{anchor}\b", line) is None:
-            continue
-        string_tokens = _C_STRING_RE.findall(line)
-        if string_tokens:
-            return b"".join(
-                _decode_c_string(token, source_path=source_path)
-                for token in string_tokens
-            )
     return None
 
 
@@ -146,6 +236,10 @@ def _extract_asm_anchor_bytes(
     source_path: str,
     source_anchor: str,
 ) -> bytes | None:
+    source = "\n".join(
+        _strip_asm_line_comment(line)
+        for line in _strip_c_comments(source).splitlines()
+    )
     label = re.search(
         rf"(?m)^[ \t]*{re.escape(source_anchor)}:[ \t]*$",
         source,
@@ -164,7 +258,7 @@ def _extract_asm_anchor_bytes(
     body = source[label.end() : end]
     output = bytearray()
     for line in body.splitlines():
-        byte_directive = re.search(r"\.byte\s+([^/]+)", line)
+        byte_directive = re.match(r"^[ \t]*\.byte\s+(.+?)\s*$", line)
         if byte_directive is not None:
             for token in byte_directive.group(1).split(","):
                 token = token.strip()
@@ -183,7 +277,10 @@ def _extract_asm_anchor_bytes(
                         f"{source_path}"
                     )
                 output.append(value)
-        asciz = re.search(r"\.asciz\s+(" + _C_STRING_RE.pattern + r")", line)
+        asciz = re.match(
+            r"^[ \t]*\.asciz\s+(" + _C_STRING_RE.pattern + r")\s*$",
+            line,
+        )
         if asciz is not None:
             output.extend(
                 _decode_c_string(asciz.group(1), source_path=source_path)
@@ -673,6 +770,137 @@ def _load_git_source(
     )
 
 
+def _load_additional_git_sources(
+    snapshot: Mapping[str, Any],
+    *,
+    snapshot_path: Path,
+) -> Dict[str, GitSource]:
+    specifications = snapshot.get("additional_git_sources", {})
+    if not isinstance(specifications, dict):
+        raise RawProviderError(
+            "ja raw provider additional_git_sources must be an object"
+        )
+    sources: Dict[str, GitSource] = {}
+    for source_id, specification in specifications.items():
+        if (
+            not isinstance(source_id, str)
+            or not re.fullmatch(r"[a-z0-9][a-z0-9-]*", source_id)
+            or not isinstance(specification, dict)
+        ):
+            raise RawProviderError(
+                "ja raw provider additional_git_sources entries are invalid"
+            )
+        if source_id == PINNED_GOAL_SOURCE_ID:
+            expected_repository = PINNED_GOAL_SOURCE_REPOSITORY
+            expected_revision = PINNED_GOAL_SOURCE_REVISION
+        else:
+            raise RawProviderError(
+                f"ja raw provider additional source {source_id!r} is not "
+                "independently pinned"
+            )
+        sources[source_id] = _load_git_source(
+            specification,
+            snapshot_path=snapshot_path,
+            expected_repository=expected_repository,
+            expected_revision=expected_revision,
+        )
+    return sources
+
+
+def _extract_raw_provider_manifest_value(
+    git_source: GitSource,
+    source_blob: GitSourceBlob,
+    *,
+    source_anchor: str,
+    expected_symbol: str,
+) -> tuple[tuple[bytes, ...], str]:
+    if not _TARGET_ID_RE.fullmatch(source_anchor):
+        raise RawProviderError(
+            "ja raw provider manifest source_anchor must be a canonical target ID"
+        )
+    try:
+        manifest = json.loads(source_blob.raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise RawProviderError(
+            f"ja raw provider source manifest is malformed: {source_blob.path}"
+        ) from error
+    if (
+        not isinstance(manifest, dict)
+        or manifest.get("kind") != "fe8j-raw-symbol-source-snapshot"
+        or not isinstance(manifest.get("providers"), dict)
+    ):
+        raise RawProviderError(
+            f"ja raw provider source manifest is invalid: {source_blob.path}"
+        )
+    provider = manifest["providers"].get(source_anchor)
+    if not isinstance(provider, dict):
+        raise RawProviderError(
+            f"ja raw provider source manifest has no slot {source_anchor}"
+        )
+    if provider.get("symbol") != expected_symbol:
+        raise RawProviderError(
+            f"ja raw provider source manifest {source_anchor} symbol mismatch"
+        )
+    offset = provider.get("offset")
+    byte_length = provider.get("byte_length")
+    value_sha256 = provider.get("value_sha256")
+    if (
+        not isinstance(offset, int)
+        or isinstance(offset, bool)
+        or offset < 0
+        or not isinstance(byte_length, int)
+        or isinstance(byte_length, bool)
+        or byte_length < 2
+        or not isinstance(value_sha256, str)
+        or not _SHA256_RE.fullmatch(value_sha256)
+    ):
+        raise RawProviderError(
+            f"ja raw provider source manifest {source_anchor} range is invalid"
+        )
+    artifact = manifest.get("provider_values_artifact")
+    if (
+        not isinstance(artifact, dict)
+        or artifact.get("encoding") != "cp932-nul-terminated"
+        or not isinstance(artifact.get("path"), str)
+        or not isinstance(artifact.get("sha256"), str)
+        or not _SHA256_RE.fullmatch(artifact["sha256"])
+    ):
+        raise RawProviderError(
+            "ja raw provider source manifest artifact metadata is invalid"
+        )
+    artifact_relative_path = _require_relative_path(
+        artifact["path"],
+        "ja raw provider source manifest artifact path",
+    )
+    artifact_path = (
+        Path(source_blob.path).parent / artifact_relative_path
+    ).as_posix()
+    artifact_blob = git_source.blobs.get(artifact_path)
+    if artifact_blob is None:
+        raise RawProviderError(
+            "ja raw provider source manifest artifact blob is not pinned"
+        )
+    if hashlib.sha256(artifact_blob.raw).hexdigest() != artifact["sha256"]:
+        raise RawProviderError(
+            "ja raw provider source manifest artifact SHA-256 mismatch"
+        )
+    end = offset + byte_length
+    if end > len(artifact_blob.raw):
+        raise RawProviderError(
+            f"ja raw provider source manifest {source_anchor} range is out of bounds"
+        )
+    raw_value = artifact_blob.raw[offset:end]
+    if hashlib.sha256(raw_value).hexdigest() != value_sha256:
+        raise RawProviderError(
+            f"ja raw provider source manifest {source_anchor} value mismatch"
+        )
+    if not raw_value.endswith(b"\0") or b"\0" in raw_value[:-1]:
+        raise RawProviderError(
+            f"ja raw provider source manifest {source_anchor} is not one string"
+        )
+    return (raw_value,), artifact_path
+
+
 def load_ja_raw_providers(
     data: Any,
     *,
@@ -715,6 +943,10 @@ def load_ja_raw_providers(
         expected_repository=expected_repository,
         expected_revision=expected_revision,
     )
+    additional_git_sources = _load_additional_git_sources(
+        snapshot,
+        snapshot_path=snapshot_path,
+    )
     if git_source.revision != source_revision:
         raise RawProviderError(
             "ja raw provider Git source revision does not match catalog"
@@ -743,6 +975,9 @@ def load_ja_raw_providers(
     providers: Dict[int, RawProvider] = {}
     source_ranges = []
     used_source_paths = set()
+    used_additional_source_paths: Dict[str, set[str]] = {
+        source_id: set() for source_id in additional_git_sources
+    }
     for target, raw_provider in raw_providers.items():
         if not isinstance(target, str) or not _TARGET_ID_RE.fullmatch(target):
             raise RawProviderError(
@@ -757,7 +992,7 @@ def load_ja_raw_providers(
         if not isinstance(text, str) or not text:
             raise RawProviderError(f"ja raw provider {target}.text must be non-empty")
         snapshot_provider = snapshot_providers[target]
-        if not isinstance(snapshot_provider, dict) or set(snapshot_provider) != {
+        base_provider_fields = {
             "byte_length",
             "offset",
             "source_anchor",
@@ -765,11 +1000,16 @@ def load_ja_raw_providers(
             "source_value_index",
             "symbol",
             "value_sha256",
-        }:
+        }
+        if not isinstance(snapshot_provider, dict) or set(snapshot_provider) not in (
+            base_provider_fields,
+            base_provider_fields | {"source_format", "source_id"},
+        ):
             raise RawProviderError(
                 f"ja raw provider source snapshot {target} must contain "
                 "byte_length, offset, source_anchor, source_path, "
-                "source_value_index, symbol, and value_sha256"
+                "source_value_index, symbol, and value_sha256, with optional "
+                "source_format and source_id"
             )
         if snapshot_provider["symbol"] != symbol:
             raise RawProviderError(
@@ -781,6 +1021,8 @@ def load_ja_raw_providers(
         source_path = snapshot_provider["source_path"]
         source_anchor = snapshot_provider["source_anchor"]
         source_value_index = snapshot_provider["source_value_index"]
+        source_id = snapshot_provider.get("source_id")
+        source_format = snapshot_provider.get("source_format")
         if (
             not isinstance(offset, int)
             or isinstance(offset, bool)
@@ -798,7 +1040,40 @@ def load_ja_raw_providers(
             raise RawProviderError(
                 f"ja raw provider {target} value_sha256 is invalid"
             )
-        if not isinstance(source_path, str) or source_path not in git_source.blobs:
+        if source_id is None:
+            provider_git_source = git_source
+        elif (
+            isinstance(source_id, str)
+            and source_id in additional_git_sources
+        ):
+            provider_git_source = additional_git_sources[source_id]
+        else:
+            raise RawProviderError(
+                f"ja raw provider {target} source_id is not pinned"
+            )
+        if (
+            source_format is not None
+            and source_format != "raw-provider-manifest"
+        ):
+            raise RawProviderError(
+                f"ja raw provider {target} source_format is unsupported"
+            )
+        if target in PINNED_GOAL_TARGETS:
+            if (
+                source_id != PINNED_GOAL_SOURCE_ID
+                or source_format != "raw-provider-manifest"
+            ):
+                raise RawProviderError(
+                    f"ja raw provider {target} must use the pinned goal manifest"
+                )
+        elif source_id is not None or source_format is not None:
+            raise RawProviderError(
+                f"ja raw provider {target} cannot use goal-only source metadata"
+            )
+        if (
+            not isinstance(source_path, str)
+            or source_path not in provider_git_source.blobs
+        ):
             raise RawProviderError(
                 f"ja raw provider {target} source_path is not pinned"
             )
@@ -815,8 +1090,11 @@ def load_ja_raw_providers(
                 f"ja raw provider {target} source_value_index must be "
                 "a non-negative integer"
             )
-        source_git_blob = git_source.blobs[source_path]
-        used_source_paths.add(source_path)
+        source_git_blob = provider_git_source.blobs[source_path]
+        if source_id is None:
+            used_source_paths.add(source_path)
+        else:
+            used_additional_source_paths[source_id].add(source_path)
         if source_anchor.encode("utf-8") not in source_git_blob.raw:
             raise RawProviderError(
                 f"ja raw provider {target} source_anchor is absent from "
@@ -846,10 +1124,27 @@ def load_ja_raw_providers(
             raise RawProviderError(
                 f"ja raw provider {target} source value does not match catalog text"
             )
-        source_values = _extract_source_anchor_values(
-            source_git_blob,
-            source_anchor=source_anchor,
-        )
+        provider_artifact_path = git_source.artifact_path
+        provider_artifact_sha256 = git_source.artifact_sha256
+        if source_format == "raw-provider-manifest":
+            source_values, artifact_source_path = (
+                _extract_raw_provider_manifest_value(
+                    provider_git_source,
+                    source_git_blob,
+                    source_anchor=source_anchor,
+                    expected_symbol=symbol,
+                )
+            )
+            used_additional_source_paths[source_id].add(artifact_source_path)
+            provider_artifact_path = artifact_source_path
+            provider_artifact_sha256 = provider_git_source.blobs[
+                artifact_source_path
+            ].sha256
+        else:
+            source_values = _extract_source_anchor_values(
+                source_git_blob,
+                source_anchor=source_anchor,
+            )
         if source_value_index >= len(source_values):
             raise RawProviderError(
                 f"ja raw provider {target} source_value_index is out of range "
@@ -866,13 +1161,13 @@ def load_ja_raw_providers(
         providers[target_id] = RawProvider(
             symbol=symbol,
             text=text,
-            source_repository=git_source.repository,
-            source_revision=git_source.revision,
+            source_repository=provider_git_source.repository,
+            source_revision=provider_git_source.revision,
             source_path=source_path,
             source_blob_oid=source_git_blob.oid,
             source_anchor=source_anchor,
-            source_artifact_path=git_source.artifact_path,
-            source_artifact_sha256=git_source.artifact_sha256,
+            source_artifact_path=provider_artifact_path,
+            source_artifact_sha256=provider_artifact_sha256,
             source_value_index=source_value_index,
             value_offset=offset,
             value_length=byte_length,
@@ -894,6 +1189,11 @@ def load_ja_raw_providers(
         raise RawProviderError(
             "ja raw provider entries do not use every generated source path"
         )
+    for source_id, source in additional_git_sources.items():
+        if used_additional_source_paths[source_id] != set(source.blobs):
+            raise RawProviderError(
+                f"ja raw provider entries do not use every {source_id} source path"
+            )
     return providers
 
 

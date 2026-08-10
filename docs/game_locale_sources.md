@@ -27,15 +27,18 @@ remain import provenance only and never become runtime keys.
 - `ja/raw.json`: 119 materialized FE8J raw-symbol providers keyed by FE8U
   target ID plus the verified evidence symbol. This includes the three
   inline goal-window labels and prevents a same-number FE8J indexed message
-  from being substituted for a raw provider. The catalog pins the full
-  `fireemblem8j` commit SHA and must exactly match the committed
-  `source/fe8j/raw_symbols.json` symbol/slot/range/hash manifest plus its
-  `raw_provider_values.cp932.bin` exact NUL-terminated CP932 source blob.
-  Validation checks the snapshot hash, commit/root/subtree/blob Git object
-  identities, every exact source path, every declared symbol and value slot,
-  every bounded
-  byte range, every per-value hash, and the decoded value; an unavailable
-  revision name or a second JSON copy of the catalog is not provenance.
+  from being substituted for a raw provider. Raw-symbol schema v5 pins the
+  full `fireemblem8j` commit SHA for real C initializers and assembly label
+  bodies. The three goal labels instead pin the immutable
+  `548b240d0a553add88897927049b7f5ce25657a8` expansion commit's FE8J
+  symbol/slot/range manifest and exact CP932 byte blob because the upstream
+  `src/player_interface_0808F584.c` contains only extern references and usage
+  sites, not emitted definitions. Validation checks both commits'
+  root/subtree/blob Git object identities, every exact source path, declared
+  symbol and value slot, bounded byte range, per-value hash, and decoded
+  value. C and assembly comments are removed before extraction, extern-only
+  declarations are never providers, and an unavailable revision name or a
+  second unpinned JSON copy is not provenance.
 - `zh-Hans/indexed.txt`: 3,339 FE8CN messages using the FE8J indexed layout.
 - `zh-Hans/raw.json`: 152 raw-address occurrences deduplicated to 143 stable
   `fe8cn.raw.import-NNNN` IDs. IDs are assigned by pinned source import order,
@@ -449,16 +452,22 @@ The closure ledger accounts for all 143 unique raw imports:
 
 Japanese closure rows comprise tracked C literals, reviewed authored
 corrections/expansion catalog entries, and raw symbols resolved from the 119
-materialized target+symbol records in `ja/raw.json`. Raw-symbol schema v4 pins
-the FE8J repository URL and independently pinned nonzero commit OID, vendors
-that commit object, the exact root/subtree Git objects needed to traverse all
-five upstream paths, and the five exact source blobs used by extraction.
+materialized target+symbol records in `ja/raw.json`. Raw-symbol schema v5
+vendors and verifies two immutable Git sources: four real initializer/data
+blobs from the independently pinned FE8J commit, and the prior expansion
+commit's FE8J raw manifest plus byte blob for `0x01C1`-`0x01C3`. The latter
+commit-tree pair supplies the exact goal symbol, target slot, byte
+offset/length/hash, and value; the extern declarations and quoted comments in
+`src/player_interface_0808F584.c` remain call-site evidence only.
+
 Normal `check-raw-closure` verification is fully offline and mandatory: it
-recomputes commit/tree/blob Git object IDs and SHA-256 hashes, traverses every
-path from the commit root tree to the declared blob OID, and extracts each
-provider from its exact declared source symbol plus `source_value_index`.
-The exact NUL-terminated CP932 value must match both the extraction artifact
-range and decoded catalog text. A shared object such as
+recomputes both commits' commit/tree/blob Git object IDs and SHA-256 hashes,
+traverses every path from each commit root tree to the declared blob OID, and
+extracts each provider from an actual C initializer, assembly label/data body,
+or the pinned manifest byte range. Comments are lexically stripped and
+extern-only declarations cannot materialize values. The exact NUL-terminated
+CP932 value must match both the extraction artifact range and decoded catalog
+text. A shared object such as
 `JapaneseTerrainNames` therefore cannot authorize swapping one terrain value
 into another target. Fabricated commits, altered blobs, wrong paths, wrong
 slots, and reassigned values fail the normal closure check. Tracked literals

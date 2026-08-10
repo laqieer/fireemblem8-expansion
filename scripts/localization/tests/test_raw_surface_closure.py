@@ -8,6 +8,7 @@ import unittest
 from collections import Counter
 from copy import deepcopy
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
@@ -19,7 +20,9 @@ from scripts.localization.game_locales.raw_closure import (
     canonical_json_bytes,
 )
 from scripts.localization.game_locales.raw_providers import (
+    GitSourceBlob,
     RawProviderError,
+    _extract_source_anchor_values,
     load_ja_raw_providers,
     verify_ja_raw_provider_git_source,
 )
@@ -661,6 +664,91 @@ class RawSurfaceClosureTests(unittest.TestCase):
                     "symbol": "GoalDisplay_Init",
                 },
             )
+        providers = load_ja_raw_providers(
+            self.ja_raw,
+            source_root=ROOT / "texts/locales/ja",
+        )
+        for target_id, (symbol, text) in expected.items():
+            provider = providers[int(target_id, 16)]
+            with self.subTest(source_target_id=target_id):
+                self.assertEqual(provider.symbol, symbol)
+                self.assertEqual(provider.text, text)
+                self.assertEqual(
+                    provider.source_repository,
+                    "https://github.com/laqieer/fireemblem8-expansion",
+                )
+                self.assertEqual(
+                    provider.source_revision,
+                    "548b240d0a553add88897927049b7f5ce25657a8",
+                )
+                self.assertEqual(
+                    provider.source_path,
+                    "texts/locales/source/fe8j/raw_symbols.json",
+                )
+                self.assertEqual(provider.source_anchor, target_id)
+
+    def test_comment_only_extern_and_wrong_definition_are_not_source_data(self):
+        fixtures = {
+            "comment-only.c": (
+                b'extern const char GoalString_UnitsLeft[]; '
+                b'/* 081F5528 "residual" */\n'
+            ),
+            "wrong-definition.c": (
+                b'extern const char GoalString_UnitsLeft[];\n'
+                b'const char DifferentGoalString[] = "residual";\n'
+            ),
+            "assignment-only.c": (
+                b'GoalString_UnitsLeft = "residual";\n'
+            ),
+            "line-comment-only.c": (
+                b'extern const char GoalString_UnitsLeft[]; '
+                b'// "residual"\n'
+            ),
+            "asm-comment-only.s": (
+                b'GoalString_UnitsLeft:\n'
+                b'    @ .asciz "residual"\n'
+            ),
+        }
+        for source_path, raw in fixtures.items():
+            with self.subTest(source_path=source_path):
+                source_blob = GitSourceBlob(
+                    path=source_path,
+                    oid="1" * 40,
+                    vendored_path=source_path,
+                    sha256=hashlib.sha256(raw).hexdigest(),
+                    raw=raw,
+                )
+                with self.assertRaisesRegex(
+                    RawProviderError,
+                    "cannot be materialized",
+                ):
+                    _extract_source_anchor_values(
+                        source_blob,
+                        source_anchor="GoalString_UnitsLeft",
+                    )
+
+    def test_normal_raw_closure_checks_vendored_git_objects_offline(self):
+        with mock.patch(
+            "scripts.localization.game_locales.raw_providers._git_output",
+            side_effect=AssertionError(
+                "normal raw closure must use vendored objects offline"
+            ),
+        ):
+            providers = load_ja_raw_providers(
+                self.ja_raw,
+                source_root=ROOT / "texts/locales/ja",
+            )
+            closure = build_raw_surface_closure(
+                raw_data=self.raw,
+                mapping_data=self.mapping,
+                decisions_data=self.decisions,
+                ja_raw_provider_data=self.ja_raw,
+                registry_data=self.registry,
+                catalog_data=self.catalogs,
+                repo_root=ROOT,
+            )
+        self.assertEqual(len(providers), 119)
+        self.assertEqual(closure["summary"]["provider_count"], 143)
 
     def test_japanese_raw_provider_snapshot_is_accessible_and_exact(self):
         specification = self.ja_raw["source_snapshot"]
@@ -683,7 +771,7 @@ class RawSurfaceClosureTests(unittest.TestCase):
             ).hexdigest(),
             snapshot["source_revision"],
         )
-        self.assertEqual(snapshot["schema_version"], 4)
+        self.assertEqual(snapshot["schema_version"], 5)
         self.assertTrue(snapshot["source_trees"])
         pinned_blobs = {}
         for source_blob in snapshot["source_blobs"]:
@@ -705,6 +793,36 @@ class RawSurfaceClosureTests(unittest.TestCase):
             set(artifact["generated_from_paths"]),
             set(pinned_blobs),
         )
+        additional_blobs = {}
+        for source_id, source in snapshot["additional_git_sources"].items():
+            source_commit_path = path.parent / source["source_commit"]["path"]
+            source_commit = source_commit_path.read_bytes()
+            self.assertEqual(
+                hashlib.sha256(source_commit).hexdigest(),
+                source["source_commit"]["sha256"],
+            )
+            self.assertEqual(
+                hashlib.sha1(
+                    f"commit {len(source_commit)}\0".encode("ascii")
+                    + source_commit
+                ).hexdigest(),
+                source["source_revision"],
+            )
+            additional_blobs[source_id] = {}
+            for source_blob in source["source_blobs"]:
+                source_path = path.parent / source_blob["vendored_path"]
+                raw = source_path.read_bytes()
+                self.assertEqual(
+                    hashlib.sha256(raw).hexdigest(),
+                    source_blob["sha256"],
+                )
+                self.assertEqual(
+                    hashlib.sha1(
+                        f"blob {len(raw)}\0".encode("ascii") + raw
+                    ).hexdigest(),
+                    source_blob["oid"],
+                )
+                additional_blobs[source_id][source_blob["path"]] = raw
         blob_path = path.parent / artifact["path"]
         blob = blob_path.read_bytes()
         self.assertEqual(
@@ -716,10 +834,16 @@ class RawSurfaceClosureTests(unittest.TestCase):
             with self.subTest(target=target):
                 provider = self.ja_raw["providers"][target]
                 self.assertEqual(source["symbol"], provider["symbol"])
-                self.assertIn(source["source_path"], pinned_blobs)
+                source_id = source.get("source_id")
+                source_blob_map = (
+                    pinned_blobs
+                    if source_id is None
+                    else additional_blobs[source_id]
+                )
+                self.assertIn(source["source_path"], source_blob_map)
                 self.assertIn(
                     source["source_anchor"].encode("utf-8"),
-                    pinned_blobs[source["source_path"]],
+                    source_blob_map[source["source_path"]],
                 )
                 raw_value = blob[
                     source["offset"] : source["offset"] + source["byte_length"]
@@ -735,6 +859,12 @@ class RawSurfaceClosureTests(unittest.TestCase):
                 )
                 self.assertIsInstance(source["source_value_index"], int)
                 self.assertGreaterEqual(source["source_value_index"], 0)
+        for target in ("0x01C1", "0x01C2", "0x01C3"):
+            source = snapshot["providers"][target]
+            self.assertEqual(source["source_id"], "expansion-fe8j-raw-v4")
+            self.assertEqual(source["source_format"], "raw-provider-manifest")
+            self.assertEqual(source["source_anchor"], target)
+            self.assertEqual(source["source_value_index"], 0)
         self.assertTrue(
                 all(
                     not provider["symbol"].startswith("gTerrainNames[")
@@ -827,6 +957,21 @@ class RawSurfaceClosureTests(unittest.TestCase):
             ):
                 load_ja_raw_providers(
                     wrong_index_catalog,
+                    source_root=fixture,
+                )
+
+            wrong_goal_index_catalog = deepcopy(self.ja_raw)
+            wrong_goal_index_snapshot = deepcopy(original_snapshot)
+            wrong_goal_index_snapshot["providers"]["0x01C1"][
+                "source_value_index"
+            ] = 1
+            write_catalog(wrong_goal_index_catalog, wrong_goal_index_snapshot)
+            with self.assertRaisesRegex(
+                RawProviderError,
+                "source_value_index is out of range",
+            ):
+                load_ja_raw_providers(
+                    wrong_goal_index_catalog,
                     source_root=fixture,
                 )
 
@@ -1001,7 +1146,7 @@ class RawSurfaceClosureTests(unittest.TestCase):
                         "value_sha256": hashlib.sha256(value_raw).hexdigest(),
                     }
                 },
-                "schema_version": 4,
+                "schema_version": 5,
                 "source_blobs": [
                     {
                         "oid": source_oid,
@@ -1054,7 +1199,7 @@ class RawSurfaceClosureTests(unittest.TestCase):
                             "text": "fixture",
                         }
                     },
-                    "schema_version": 4,
+                    "schema_version": 5,
                     "source_layout": "FE8J-raw-symbol",
                     "source_revision": source_snapshot["source_revision"],
                     "source_snapshot": {

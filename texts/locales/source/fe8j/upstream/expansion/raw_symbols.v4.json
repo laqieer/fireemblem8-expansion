@@ -1,75 +1,10 @@
 {
-  "additional_git_sources": {
-    "expansion-fe8j-raw-v4": {
-      "provider_values_artifact": {
-        "encoding": "cp932-nul-terminated",
-        "generated_from_paths": [
-          "texts/locales/source/fe8j/raw_symbols.json",
-          "texts/locales/source/fe8j/raw_provider_values.cp932.bin"
-        ],
-        "path": "upstream/expansion/raw_provider_values.v4.cp932.bin",
-        "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
-      },
-      "source_blobs": [
-        {
-          "oid": "c45d9d9d1dbe219a12a7cfca9ce62084f3c389ab",
-          "path": "texts/locales/source/fe8j/raw_symbols.json",
-          "sha256": "f058c682dc73aef576f79e9e32c011908fa1a7e04c5414f7a4eacc3aee058a61",
-          "vendored_path": "upstream/expansion/raw_symbols.v4.json"
-        },
-        {
-          "oid": "ee4b82cac7ca3fd72a3145847c729c471fd699d0",
-          "path": "texts/locales/source/fe8j/raw_provider_values.cp932.bin",
-          "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
-          "vendored_path": "upstream/expansion/raw_provider_values.v4.cp932.bin"
-        }
-      ],
-      "source_commit": {
-        "path": "upstream/expansion/commit.txt",
-        "sha256": "dab2dcb279cd49247c3b5ba6e9c6934e002a5d0f0c22d6acecc5aedca36e7822"
-      },
-      "source_repository": "https://github.com/laqieer/fireemblem8-expansion",
-      "source_revision": "548b240d0a553add88897927049b7f5ce25657a8",
-      "source_trees": [
-        {
-          "oid": "efbc2347882f00122061d236a1561918dec0102f",
-          "path": "",
-          "sha256": "33736df4368e888ed5e2be66be2d365422097d670b6af54079aa50d6d73d5421",
-          "vendored_path": "upstream/expansion/trees/efbc2347882f00122061d236a1561918dec0102f.tree"
-        },
-        {
-          "oid": "7c790dbc410382ef36ea613a26ea59cc4ef475d2",
-          "path": "texts",
-          "sha256": "eb172bd9c05880a8afba9b77ff6b249724e1451e0dc0bd76b0cc0b9b991fafbc",
-          "vendored_path": "upstream/expansion/trees/7c790dbc410382ef36ea613a26ea59cc4ef475d2.tree"
-        },
-        {
-          "oid": "83744b1068ab43bce519892bce0625a6f776225e",
-          "path": "texts/locales",
-          "sha256": "eaf8fb92fd28fadad97067d2b2fcffb1030c07d20193d7fc63c40b24c866eff4",
-          "vendored_path": "upstream/expansion/trees/83744b1068ab43bce519892bce0625a6f776225e.tree"
-        },
-        {
-          "oid": "23943a26d7f301f8624c3440810a88d611453904",
-          "path": "texts/locales/source",
-          "sha256": "52ffa991f4fb817d4da67a6ab867a75849fa06c6d0aea79654daa11c18323225",
-          "vendored_path": "upstream/expansion/trees/23943a26d7f301f8624c3440810a88d611453904.tree"
-        },
-        {
-          "oid": "6085924753b58d678bdb94d8acb8a2fbc35fc06e",
-          "path": "texts/locales/source/fe8j",
-          "sha256": "6474325734efaaee93901d9cb555b3eeea1842aed3e6a76a61246df28c596196",
-          "vendored_path": "upstream/expansion/trees/6085924753b58d678bdb94d8acb8a2fbc35fc06e.tree"
-        }
-      ],
-      "source_url": "https://github.com/laqieer/fireemblem8-expansion/tree/548b240d0a553add88897927049b7f5ce25657a8"
-    }
-  },
   "kind": "fe8j-raw-symbol-source-snapshot",
   "provider_count": 119,
   "provider_values_artifact": {
     "encoding": "cp932-nul-terminated",
     "generated_from_paths": [
+      "src/player_interface_0808F584.c",
       "src/data/data_081F6D00/data_081F6D00.s",
       "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "src/menu_def.c",
@@ -109,10 +44,8 @@
     "0x01C1": {
       "byte_length": 5,
       "offset": 33,
-      "source_anchor": "0x01C1",
-      "source_format": "raw-provider-manifest",
-      "source_id": "expansion-fe8j-raw-v4",
-      "source_path": "texts/locales/source/fe8j/raw_symbols.json",
+      "source_anchor": "GoalString_UnitsLeft",
+      "source_path": "src/player_interface_0808F584.c",
       "source_value_index": 0,
       "symbol": "GoalString_UnitsLeft",
       "value_sha256": "4042ff58570ad607525ff9dc190de55038764f6999f4f06d486cb16602f8f8e6"
@@ -120,10 +53,8 @@
     "0x01C2": {
       "byte_length": 7,
       "offset": 38,
-      "source_anchor": "0x01C2",
-      "source_format": "raw-provider-manifest",
-      "source_id": "expansion-fe8j-raw-v4",
-      "source_path": "texts/locales/source/fe8j/raw_symbols.json",
+      "source_anchor": "GoalString_Turn",
+      "source_path": "src/player_interface_0808F584.c",
       "source_value_index": 0,
       "symbol": "GoalString_Turn",
       "value_sha256": "7bc2fa80d7f7c1c271c529a75c64328b5d7c92fd1df72fcae650ed3fa3064ad1"
@@ -131,10 +62,8 @@
     "0x01C3": {
       "byte_length": 11,
       "offset": 45,
-      "source_anchor": "0x01C3",
-      "source_format": "raw-provider-manifest",
-      "source_id": "expansion-fe8j-raw-v4",
-      "source_path": "texts/locales/source/fe8j/raw_symbols.json",
+      "source_anchor": "GoalString_LastTurn",
+      "source_path": "src/player_interface_0808F584.c",
       "source_value_index": 0,
       "symbol": "GoalString_LastTurn",
       "value_sha256": "55ded65087def01737f9f7d8b44ccafe7f09fb400dd11abb540643287ad01cf3"
@@ -1157,8 +1086,14 @@
       "value_sha256": "994caed121f428d33bb71973ea63274c195a077b15e1d3474004dc01ef30b6cd"
     }
   },
-  "schema_version": 5,
+  "schema_version": 4,
   "source_blobs": [
+    {
+      "oid": "1c0f8efd141f52ae77a9c23a6631f8401ba7a36a",
+      "path": "src/player_interface_0808F584.c",
+      "sha256": "87a9bfce30c2009afc4173229252e5968622c9a16c85c9bbe106c9b649f1517a",
+      "vendored_path": "upstream/src/player_interface_0808F584.c"
+    },
     {
       "oid": "5c305d88069e72358a13b57d5ffb69f5e9a13910",
       "path": "src/data/data_081F6D00/data_081F6D00.s",

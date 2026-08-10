@@ -1,0 +1,12 @@
+tree efbc2347882f00122061d236a1561918dec0102f
+parent d552186f7d7fc16d8e037b9ea2d4212f38e7867f
+author laqieer <laqieer@126.com> 1786364207 +0000
+committer laqieer <laqieer@126.com> 1786364207 +0000
+
+Fix reviewed localization dataproof gaps
+
+Bind raw providers to pinned Git trees and exact source slots, scope compact aliases to audited CJK widths, and reject disallowed Unicode scripts in final payloads.
+
+Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
+
+Copilot-Session: b67e9428-f731-4851-a4e6-fe930b288e4f
