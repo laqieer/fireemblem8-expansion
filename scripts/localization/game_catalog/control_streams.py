@@ -9,14 +9,25 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
 
+from scripts.localization.game_locales.ending_metrics import (
+    EndingLayoutError,
+    _ascii_widths,
+    _cjk_widths,
+)
+
 CONTROL_DOMAIN_FE8J = "fe8j"
 CONTROL_DOMAIN_FE8U = "fe8u"
 DEFAULT_PORTRAIT_MAP_PATH = Path(
     "texts/locales/mapping/fe8j_to_fe8u_portrait_operands.json"
 )
 DEFAULT_EVENT_ROOT = Path("src/events")
-AUDITED_MOUTH_BALANCE_TARGETS = frozenset(
-    (0x0BA9, 0x0BC0, 0x0BFF, 0x0C00, 0x0C10, 0x0CB6, 0x0CB7, 0x0CB8)
+TALK_LINE_WIDTH_PIXELS = 240
+_TALK_FACE_CONTROLS = frozenset(range(0x08, 0x12))
+_TALK_LINE_BOUNDARY_CONTROLS = _TALK_FACE_CONTROLS | frozenset(
+    (0x01, 0x02, 0x03, 0x14, 0x15)
+)
+_MOUTH_TOPOLOGY_BOUNDARY_CONTROLS = _TALK_FACE_CONTROLS | frozenset(
+    (0x03, 0x14, 0x15)
 )
 
 _MESSAGE_START_RE = re.compile(
@@ -63,6 +74,14 @@ class EventContinuationModel:
     start_kind: str
     continuation_count: int
     source_path: str
+
+
+@dataclass(frozen=True)
+class TalkFontMetrics:
+    locale: str
+    ascii_widths: Mapping[int, int]
+    cjk_widths: Mapping[int, int]
+    allocation_pixels: int = TALK_LINE_WIDTH_PIXELS
 
 
 def _require_hex_u16(value: object, *, field: str) -> int:
@@ -357,18 +376,7 @@ def validate_mouth_toggle_balance(payload: bytes, *, source_name: str) -> None:
             )
             or (
                 token.kind == "control"
-                and token.control in (
-                    0x03,
-                    0x08,
-                    0x09,
-                    0x0A,
-                    0x0B,
-                    0x0C,
-                    0x0D,
-                    0x10,
-                    0x11,
-                    0x15,
-                )
+                and token.control in _MOUTH_TOPOLOGY_BOUNDARY_CONTROLS
             )
         )
         if active_offset is not None and boundary:
@@ -376,6 +384,132 @@ def validate_mouth_toggle_balance(payload: bytes, *, source_name: str) -> None:
                 f"{source_name}: ToggleMouthMove at byte {active_offset} "
                 f"is not paired before byte {token.offset}"
             )
+
+
+def load_talk_font_metrics(
+    locale: str,
+    *,
+    repo_root: Path = Path("."),
+) -> TalkFontMetrics:
+    try:
+        ascii_widths = _ascii_widths(repo_root)
+        cjk_widths, _ = _cjk_widths(repo_root, locale)
+    except (EndingLayoutError, OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ControlStreamError(
+            f"{locale}: runtime system-font metrics are unavailable"
+        ) from error
+    return TalkFontMetrics(
+        locale=locale,
+        ascii_widths=ascii_widths,
+        cjk_widths=cjk_widths,
+    )
+
+
+def _is_talk_payload(tokens: Sequence[StreamToken]) -> bool:
+    return any(
+        token.kind == "control" and token.control in _TALK_FACE_CONTROLS
+        for token in tokens
+    )
+
+
+def _scalar_width(scalar: int, *, metrics: TalkFontMetrics) -> int:
+    if scalar < 0x20:
+        return 0
+    if scalar < 0x80:
+        try:
+            return metrics.ascii_widths[scalar]
+        except KeyError as error:
+            raise ControlStreamError(
+                f"{metrics.locale}: ASCII U+{scalar:04X} is absent from the system font"
+            ) from error
+    if scalar == 0x3000:
+        return 16
+    try:
+        return metrics.cjk_widths[scalar]
+    except KeyError as error:
+        raise ControlStreamError(
+            f"{metrics.locale}: U+{scalar:04X} is absent from committed system metrics"
+        ) from error
+
+
+def validate_talk_line_widths(
+    tokens: Sequence[StreamToken],
+    *,
+    source_name: str,
+    metrics: TalkFontMetrics,
+) -> Dict[str, int]:
+    if not _is_talk_payload(tokens):
+        return {
+            "talk_line_count": 0,
+            "talk_payload_count": 0,
+            "max_talk_line_width": 0,
+        }
+
+    line_width = 0
+    line_scalars: List[int] = []
+    line_count = 0
+    max_line_width = 0
+    for token in tokens:
+        if token.kind == "scalar":
+            assert token.scalar is not None
+            line_width += _scalar_width(token.scalar, metrics=metrics)
+            line_scalars.append(token.scalar)
+            continue
+        boundary = (
+            token.kind == "end"
+            or (token.kind == "extended" and token.scalar == 0x04)
+            or (
+                token.kind == "control"
+                and token.control in _TALK_LINE_BOUNDARY_CONTROLS
+            )
+        )
+        if not boundary:
+            continue
+        if line_scalars:
+            line_count += 1
+            max_line_width = max(max_line_width, line_width)
+            if line_width > metrics.allocation_pixels:
+                preview = "".join(chr(scalar) for scalar in line_scalars)
+                raise ControlStreamError(
+                    f"{source_name}: talk line {preview!r} is {line_width}px, "
+                    f"exceeding the {metrics.allocation_pixels}px allocation"
+                )
+        line_width = 0
+        line_scalars = []
+
+    return {
+        "talk_line_count": line_count,
+        "talk_payload_count": 1,
+        "max_talk_line_width": max_line_width,
+    }
+
+
+def _mouth_topology(
+    tokens: Sequence[StreamToken],
+) -> Tuple[Tuple[Tuple[str, int], ...], Tuple[int, ...]]:
+    boundaries = []
+    toggle_counts = []
+    toggles = 0
+    for token in tokens:
+        if token.kind == "control" and token.control == 0x16:
+            toggles += 1
+            continue
+        boundary = None
+        if token.kind == "end":
+            boundary = ("end", 0)
+        elif token.kind == "extended" and token.scalar == 0x04:
+            boundary = ("extended", 0x04)
+        elif (
+            token.kind == "control"
+            and token.control in _MOUTH_TOPOLOGY_BOUNDARY_CONTROLS
+        ):
+            assert token.control is not None
+            boundary = ("control", token.control)
+        if boundary is not None:
+            boundaries.append(boundary)
+            toggle_counts.append(toggles)
+            toggles = 0
+    return tuple(boundaries), tuple(toggle_counts)
 
 
 def remap_fe8j_portrait_operands(
@@ -415,7 +549,9 @@ def validate_final_payload(
     english_payload: bytes,
     target_id: int,
     locale: str,
+    control_domain: str,
     portrait_map: PortraitOperandMap,
+    talk_metrics: TalkFontMetrics,
 ) -> Dict[str, int]:
     name = f"{locale} target 0x{target_id:04X}"
     tokens = tokenize_payload(payload, source_name=name)
@@ -447,8 +583,18 @@ def validate_final_payload(
             f"{name}: speakers after BreakTalk do not match FE8U target: "
             f"{speakers_after_break} != {english_speakers_after_break}"
         )
-    if target_id in AUDITED_MOUTH_BALANCE_TARGETS:
-        validate_mouth_toggle_balance(payload, source_name=name)
+    validate_mouth_toggle_balance(payload, source_name=name)
+    mouth_topology_comparable = 0
+    if control_domain == CONTROL_DOMAIN_FE8U:
+        localized_topology = _mouth_topology(tokens)
+        english_topology = _mouth_topology(english_tokens)
+        if localized_topology[0] == english_topology[0]:
+            mouth_topology_comparable = 1
+            if localized_topology[1] != english_topology[1]:
+                raise ControlStreamError(
+                    f"{name}: ToggleMouthMove topology does not match the "
+                    "FE8U target control structure"
+                )
     localized_double_nl = _consecutive_newline_count(tokens)
     english_double_nl = _consecutive_newline_count(english_tokens)
     if localized_double_nl > english_double_nl:
@@ -456,10 +602,18 @@ def validate_final_payload(
             f"{name}: {localized_double_nl} consecutive-NL pair(s) exceed "
             f"English target context count {english_double_nl}"
         )
+    talk_stats = validate_talk_line_widths(
+        tokens,
+        source_name=name,
+        metrics=talk_metrics,
+    )
     return {
         "break_talk_count": _break_talk_count(tokens),
+        "fe8u_mouth_topology_validated_payload_count": mouth_topology_comparable,
         "face_operand_count": len(faces),
+        "mouth_balance_validated_payload_count": 1,
         "token_count": len(tokens),
+        **talk_stats,
     }
 
 

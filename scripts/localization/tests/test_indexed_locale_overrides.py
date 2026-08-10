@@ -36,7 +36,7 @@ class IndexedLocaleOverrideTests(unittest.TestCase):
             self.OVERRIDE_PATH,
             expected_source_hashes=PINNED_SOURCE_SHA256,
         )
-        self.assertEqual(catalog.entry_count, 198)
+        self.assertEqual(catalog.entry_count, 211)
         self.assertEqual(set(catalog.sources), {"fe8j_indexed", "fe8cn_source"})
         for source in catalog.sources.values():
             self.assertEqual(
@@ -48,8 +48,8 @@ class IndexedLocaleOverrideTests(unittest.TestCase):
                 self.assertTrue(entry.provenance["audit"])
                 self.assertTrue(entry.provenance["context"])
                 self.assertTrue(entry.provenance["target_ids"])
-        self.assertEqual(len(catalog.sources["fe8j_indexed"].entries), 63)
-        self.assertEqual(len(catalog.sources["fe8cn_source"].entries), 135)
+        self.assertEqual(len(catalog.sources["fe8j_indexed"].entries), 64)
+        self.assertEqual(len(catalog.sources["fe8cn_source"].entries), 147)
 
     def test_full_semantic_audit_overrides_are_exact(self):
         catalog = load_override_catalog(
@@ -102,6 +102,13 @@ class IndexedLocaleOverrideTests(unittest.TestCase):
             self.assertIn(fragment, zh[0x0A66].replacement_text)
         self.assertIn("是否平安", zh[0x0BBF].replacement_text)
         self.assertIn("我一定不会放过你", zh[0x0C1C].replacement_text)
+
+        self.assertFalse(ja[0x0C24].preserve_structure)
+        self.assertFalse(zh[0x098A].preserve_structure)
+        self.assertEqual(
+            zh[0x0C69].replacements,
+            (("天马……[CTRL:0016][CTRL:0003]", "天马……[CTRL:0003]"),),
+        )
 
     def test_blue_team_followup_overrides_are_exact(self):
         catalog = load_override_catalog(
@@ -267,7 +274,13 @@ class IndexedLocaleOverrideTests(unittest.TestCase):
         entry["expected_text_sha256"] = hashlib.sha256(
             expected_text.encode("utf-8")
         ).hexdigest()
-        entry["replacement_text"] = "正在[CTRL:0001]载入"
+        entry.pop("replacement_text")
+        entry["replacements"] = [
+            {
+                "expected": expected_text,
+                "replacement": "正在[CTRL:0001]载入",
+            }
+        ]
         entry["preserve_structure"] = False
         document["sources"]["fe8cn_source"]["entries"] = {"0x004D": entry}
         test_dir = Path(__file__).resolve().parent

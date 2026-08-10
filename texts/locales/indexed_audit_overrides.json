@@ -604,6 +604,24 @@
           "reason": "Apply the reviewed FE8U target-specific semantic/control correction without modifying the pinned regional snapshot.",
           "replacement_text": "[CTRL:0009][CTRL:0010][CTRL:0111][CTRL:000C][CTRL:0010][CTRL:016C][CTRL:000C]背叛者娜塔莎，[CTRL:0001]老实投降吧。[CTRL:0103]若你投降，我们也许会给你[CTRL:0001]在陛下面前解释的机会。[CTRL:0003][CTRL:0009]请等一下。[CTRL:0001]请你们听听我说的话吧！[CTRL:0003][CTRL:000C]把她抓起来。[CTRL:0003][CTRL:0009]等等，请你们相信我！[CTRL:0103]现在的皇帝陛下和以前不一样了。[CTRL:0001]你们大家应该也知道……[CTRL:0003][CTRL:000C]敢对陛下不敬的人应处于极刑。[CTRL:0103]上面已经有令，若还要抵抗的话，[CTRL:0001]当场将背叛者处刑也无所谓。[CTRL:0103]我们上！[CTRL:0003]"
         },
+        "0x098A": {
+          "expected_text_sha256": "6b8d8d7e19118fcfd31666b7102f933e424c0481fd0c0438e865ca5f2b32f0ee",
+          "preserve_structure": false,
+          "provenance": {
+            "audit": "final-dialogue-payload-audit-2026-08-09",
+            "context": "FE8U target 0x09CA composed from regional source 0x098A.",
+            "target_ids": [
+              "0x09CA"
+            ]
+          },
+          "reason": "Pair the second dying-breath pause before the dialogue boundary.",
+          "replacements": [
+            {
+              "expected": "[CTRL:0016]……[CTRL:0016]呃……[CTRL:0016][CTRL:0003]",
+              "replacement": "[CTRL:0016]……[CTRL:0016]呃[CTRL:0016]……[CTRL:0016][CTRL:0003]"
+            }
+          ]
+        },
         "0x098E": {
           "expected_text_sha256": "058cc8ac4d5984ddf989c28c71751527a178dc32790f2ddf4111b00a46f0f79a",
           "preserve_structure": false,
@@ -743,6 +761,7 @@
         },
         "0x0A62": {
           "expected_text_sha256": "e5d8a1f7c1ae6b142de5c69705913e1c31514866b853df55ec3f21c0f7fa1ab7",
+          "preserve_structure": false,
           "provenance": {
             "audit": "dialogue-control-semantic-audit-2026-08-09",
             "context": "FE8U target 0x0AA1 composed from unique regional source 0x0A62.",
@@ -751,7 +770,7 @@
             ]
           },
           "reason": "Apply the reviewed target-specific dialogue/control correction without modifying the pinned regional snapshot.",
-          "replacement_text": "[CTRL:000D][CTRL:0010][CTRL:0146][CTRL:000B][CTRL:0010][CTRL:0140][CTRL:0009][CTRL:0010][CTRL:0125][CTRL:001C][CTRL:0009]请等一下，陛下！[CTRL:0103]实在是抱歉，可是请您一定[CTRL:0001]要回答我！[CTRL:0003][CTRL:000B][CTRL:0016]……[CTRL:0116][CTRL:0016]……[CTRL:0016]真啰嗦。[CTRL:0003][CTRL:0009]如果是拥有大义的战争，[CTRL:0001]我是粉身碎骨，在所不惜！[CTRL:0103]可是，现在我是无论如何[CTRL:0001]都无法接受！[CTRL:0103]为了古拉德的国家利益而去[CTRL:0001]攻打鲁内斯，这我明白！[CTRL:0103]可我听说现在鲁内斯没有人打理，[CTRL:0001]整个国家变得极其混乱。[CTRL:0103]既然如此，那又是为了什么[CTRL:0001]而发动这场战争呢？士兵们毫无意义地战死，这不是战争，而是屠杀！[CTRL:0003][CTRL:000B][CTRL:0016]……[CTRL:0016]杜塞尔。[CTRL:0103]这一切都是我的决定。[CTRL:0103]还轮不到你来插嘴。[CTRL:0003][CTRL:0009]我早就做好了接受处罚的准备。[CTRL:0001]但我还是要进言！[CTRL:0103]陛下，请务必再考虑一下！[CTRL:0001]这样下去古拉德也！[CTRL:0003][CTRL:000B]杜塞尔……[CTRL:0001]你率军前往弗雷利亚。[CTRL:0103]将率领弗雷利亚军的……[CTRL:0001]伊弗列姆杀死……[CTRL:0003][CTRL:0009]陛下！[CTRL:0003][CTRL:000B]没听到吗？[CTRL:0003][CTRL:0102]杜塞尔……[CTRL:0001]你率军前往弗雷利亚。[CTRL:0103]将率领弗雷利亚军的……[CTRL:0001]伊弗列姆杀死……[CTRL:0003][CTRL:0009][CTRL:0016]……[CTRL:0016][CTRL:0103]明白……[CTRL:0003][CTRL:0009][CTRL:0011][CTRL:000D][CTRL:0016]……[CTRL:0016][CTRL:0003]"
+          "replacement_text": "[CTRL:000D][CTRL:0010][CTRL:0146][CTRL:000B][CTRL:0010][CTRL:0140][CTRL:0009][CTRL:0010][CTRL:0125][CTRL:001C][CTRL:0009]请等一下，陛下！[CTRL:0103]实在是抱歉，可是请您一定[CTRL:0001]要回答我！[CTRL:0003][CTRL:000B][CTRL:0016]……[CTRL:0116][CTRL:0016]……[CTRL:0016]真啰嗦。[CTRL:0003][CTRL:0009]如果是拥有大义的战争，[CTRL:0001]我是粉身碎骨，在所不惜！[CTRL:0103]可是，现在我是无论如何[CTRL:0001]都无法接受！[CTRL:0103]为了古拉德的国家利益而去[CTRL:0001]攻打鲁内斯，这我明白！[CTRL:0103]可我听说现在鲁内斯没有人打理，[CTRL:0001]整个国家变得极其混乱。[CTRL:0103]既然如此，那又是为了什么[CTRL:0001]而发动这场战争呢？[CTRL:0103]士兵们毫无意义地战死，[CTRL:0001]这不是战争，而是屠杀！[CTRL:0003][CTRL:000B][CTRL:0016]……[CTRL:0016]杜塞尔。[CTRL:0103]这一切都是我的决定。[CTRL:0103]还轮不到你来插嘴。[CTRL:0003][CTRL:0009]我早就做好了接受处罚的准备。[CTRL:0001]但我还是要进言！[CTRL:0103]陛下，请务必再考虑一下！[CTRL:0001]这样下去古拉德也！[CTRL:0003][CTRL:000B]杜塞尔……[CTRL:0001]你率军前往弗雷利亚。[CTRL:0103]将率领弗雷利亚军的……[CTRL:0001]伊弗列姆杀死……[CTRL:0003][CTRL:0009]陛下！[CTRL:0003][CTRL:000B]没听到吗？[CTRL:0003][CTRL:0102]杜塞尔……[CTRL:0001]你率军前往弗雷利亚。[CTRL:0103]将率领弗雷利亚军的……[CTRL:0001]伊弗列姆杀死……[CTRL:0003][CTRL:0009][CTRL:0016]……[CTRL:0016][CTRL:0103]明白……[CTRL:0003][CTRL:0009][CTRL:0011][CTRL:000D][CTRL:0016]……[CTRL:0016][CTRL:0003]"
         },
         "0x0A63": {
           "expected_text_sha256": "7cb9b142cfde9ae55c253d87e9a62699f11b19663cf5b459e1dc16368e31d129",
@@ -860,6 +879,24 @@
             }
           ]
         },
+        "0x0ABC": {
+          "expected_text_sha256": "b7bf08aedeb5a3464c00b2acda44ab8c0c74546ed62e10fdc777d07002137f74",
+          "preserve_structure": false,
+          "provenance": {
+            "audit": "final-dialogue-payload-audit-2026-08-09",
+            "context": "FE8U target 0x0AFB composed from regional source 0x0ABC.",
+            "target_ids": [
+              "0x0AFB"
+            ]
+          },
+          "reason": "Restore the FE8U opening pause pair before the history lesson.",
+          "replacements": [
+            {
+              "expected": "[CTRL:000C][CTRL:0016]然后，",
+              "replacement": "[CTRL:000C][CTRL:0016]……[CTRL:0016]然后，"
+            }
+          ]
+        },
         "0x0AC7": {
           "expected_text_sha256": "b778ddd9255c0ce1ef2e4d85bc85d497894c43bad9ab66cf901c4f45004cb4c7",
           "provenance": {
@@ -913,6 +950,46 @@
           },
           "reason": "Remove the regional BreakTalk because EventScr_Ch15B_7 has no TEXTCONT.",
           "replacement_text": "[CTRL:000C][CTRL:0010][CTRL:0120][CTRL:0009][CTRL:0010][CTRL:0121][CTRL:0009]啊，师傅。[CTRL:0003][CTRL:000C]尤恩吗……[CTRL:0103]为什么你会来这儿？[CTRL:0003][CTRL:0009]我是跟着伊弗列姆哥哥他们[CTRL:0001]一起来的。[CTRL:0103]师傅，[CTRL:0001]我可是很努力的哦。[CTRL:0003][CTRL:000C]是嘛……[CTRL:0103]要是你们不来，[CTRL:0001]我们的性命可能就不保了。[CTRL:0103]你救了我一命，尤恩[CTRL:0001]谢谢了。[CTRL:0003][CTRL:0009]啊？真的？[CTRL:0103]那么，师傅[CTRL:0001]你会教我更厉害的魔法吗？[CTRL:0003][CTRL:000C][CTRL:0016]……[CTRL:0016]是啊。[CTRL:0001]会的吧。[CTRL:0003][CTRL:0009]太棒了！[CTRL:0003]"
+        },
+        "0x0B07": {
+          "expected_text_sha256": "d2c5bfaf60c82d84211cf4fb65270ed3062d45650bf861ecf23d8bdd1bc8f15d",
+          "preserve_structure": false,
+          "provenance": {
+            "audit": "final-dialogue-payload-audit-2026-08-09",
+            "context": "FE8U target 0x0B47 composed from regional source 0x0B07.",
+            "target_ids": [
+              "0x0B47"
+            ]
+          },
+          "reason": "Close the opening pause before the next talk line.",
+          "replacements": [
+            {
+              "expected": "[CTRL:0009][CTRL:0016]……[CTRL:0103]我决不",
+              "replacement": "[CTRL:0009][CTRL:0016]……[CTRL:0016][CTRL:0103]我决不"
+            }
+          ]
+        },
+        "0x0B11": {
+          "expected_text_sha256": "4307f11f14beed2f8d084323271212b8a91fb9d8cd31e43093dad65a5df3e435",
+          "preserve_structure": false,
+          "provenance": {
+            "audit": "final-dialogue-payload-audit-2026-08-09",
+            "context": "FE8U target 0x0B51 composed from regional source 0x0B11.",
+            "target_ids": [
+              "0x0B51"
+            ]
+          },
+          "reason": "Move the mouth-stop pair to the FE8U target pause at the end of King Fado’s message.",
+          "replacements": [
+            {
+              "expected": "[CTRL:0102][CTRL:0016]“寝宫内",
+              "replacement": "[CTRL:0102]“寝宫内"
+            },
+            {
+              "expected": "圣石现……”。",
+              "replacement": "圣石现[CTRL:0016]……[CTRL:0016]”。"
+            }
+          ]
         },
         "0x0B3B": {
           "expected_text_sha256": "1478cec60cc11b29cd36df5d8a8c5e8f7873710048fad56b65066493e956f758",
@@ -1067,6 +1144,118 @@
           "reason": "Apply the reviewed FE8U target-specific semantic/control correction without modifying the pinned regional snapshot.",
           "replacement_text": "[CTRL:0009][CTRL:0010][CTRL:012C][CTRL:0009]哥哥[CTRL:0016]……[CTRL:0016][CTRL:0103]我一定不会放过你，[CTRL:0001]哥哥[CTRL:0016]……[CTRL:0016][CTRL:0003][CTRL:000C][CTRL:0010][CTRL:0102][CTRL:000C]怎么回事？[CTRL:0103]希尼亚斯王子他怎么了？[CTRL:0003][CTRL:0009]啊，你就听我说吧！[CTRL:0001]哥哥他也太过分了。[CTRL:0103]他说我在这里只会成为累赘，[CTRL:0103]总是对我指手画脚的，[CTRL:0001]想把我弄回弗雷利亚去……[CTRL:0003][CTRL:000C]是吗……[CTRL:0003][CTRL:0009]我觉得真的是很窝火……[CTRL:0103]哥哥他总是这样，[CTRL:0103]好像把我当成傻瓜似的，[CTRL:0001]老是故意刁难我。[CTRL:0103]我最讨厌哥哥了。[CTRL:0003][CTRL:000C]可是呀，塔娜。王子他[CTRL:0001]真是的很关心你呢。[CTRL:0103]塔娜你一定要[CTRL:0001]认识到这一点呀。[CTRL:0003][CTRL:0009]话虽然是这么说……[CTRL:0003][CTRL:000C]要是我的哥哥的话，当我一个人[CTRL:0001]去面对危险时他一定会十分生气。[CTRL:0103]王子他是不想让塔娜遭遇危险，[CTRL:0001]所以说话才会刻薄，你明白了吗？[CTRL:0003][CTRL:0009]这个……[CTRL:0001]也许是那样的吧。[CTRL:0003][CTRL:000C][CTRL:0017]接下来到王子那儿去吧，[CTRL:0103]我也跟你一起去，怎么样？[CTRL:0003][CTRL:0017][CTRL:0009]嗯……好吧。[CTRL:0103][CTRL:0017]可是，艾瑞珂……[CTRL:0001]我真是很羡慕你……[CTRL:0003][CTRL:0017][CTRL:000C]羡慕我？[CTRL:0003][CTRL:0009][CTRL:0017]怎么说呢，艾瑞珂和伊弗列姆[CTRL:0001]关系真的是很要好呢。[CTRL:0103]就像彼此之间能心领神会似的，[CTRL:0001]看到你们我还真的有点儿嫉妒呢。[CTRL:0017][CTRL:0103]我和哥哥要是也能[CTRL:0001]像你们两个人那样就好了。[CTRL:0003][CTRL:000C]没、没这回事的。[CTRL:0103]我们是孪生兄妹，这很正常吧？[CTRL:0003][CTRL:0009][CTRL:0017]可是，你们兄妹俩从来[CTRL:0001]也没有吵过架吧？[CTRL:0103]到底怎样做才能像[CTRL:0001]你们兄妹俩那样呢？[CTRL:0003][CTRL:0017][CTRL:000C]这、这样说的话……[CTRL:0103]孪生兄妹的话这很普通吧？[CTRL:0003]"
         },
+        "0x0C24": {
+          "expected_text_sha256": "65cb73015cddad1d4a4e3f9f16c939457cb24018c8be10e84aa8bc8b8a770ce8",
+          "preserve_structure": false,
+          "provenance": {
+            "audit": "final-dialogue-payload-audit-2026-08-09",
+            "context": "FE8U target 0x0C65 composed from regional source 0x0C24.",
+            "target_ids": [
+              "0x0C65"
+            ]
+          },
+          "reason": "Pair both interrupted pauses before their dialogue boundaries, matching the FE8U target mouth-state semantics.",
+          "replacements": [
+            {
+              "expected": "[CTRL:000C][CTRL:0016]……[CTRL:0103]……[CTRL:0016]抱歉",
+              "replacement": "[CTRL:000C][CTRL:0016]……[CTRL:0016][CTRL:0103][CTRL:0016]……[CTRL:0016]抱歉"
+            }
+          ]
+        },
+        "0x0C69": {
+          "expected_text_sha256": "3786fe8a9dc20fa15d51e049e7d0b89a8b4b7058325ed10d5bf35b0244bf18ee",
+          "preserve_structure": false,
+          "provenance": {
+            "audit": "final-dialogue-payload-audit-2026-08-09",
+            "context": "FE8U target 0x0CAA composed from regional source 0x0C69.",
+            "target_ids": [
+              "0x0CAA"
+            ]
+          },
+          "reason": "Remove the unmatched mouth toggle from the FE8U target’s plain Pegasus exclamation.",
+          "replacements": [
+            {
+              "expected": "天马……[CTRL:0016][CTRL:0003]",
+              "replacement": "天马……[CTRL:0003]"
+            }
+          ]
+        },
+        "0x0C6A": {
+          "expected_text_sha256": "035dab17733b437ca1d233eeccea8302392c3f0675037b84f0d0edab4b7ddf59",
+          "preserve_structure": false,
+          "provenance": {
+            "audit": "final-dialogue-payload-audit-2026-08-09",
+            "context": "FE8U target 0x0CAB composed from regional source 0x0C6A.",
+            "target_ids": [
+              "0x0CAB"
+            ]
+          },
+          "reason": "Pair the Vanessa-name pause and remove the unrelated unmatched affirmative toggle.",
+          "replacements": [
+            {
+              "expected": "[CTRL:000C]啊……[CTRL:0001][CTRL:0016]是瓦内萨……[CTRL:0003]",
+              "replacement": "[CTRL:000C]啊[CTRL:0016]……[CTRL:0016][CTRL:0001]是瓦内萨……[CTRL:0003]"
+            },
+            {
+              "expected": "[CTRL:0017][CTRL:000C][CTRL:0016]是啊……[CTRL:0003]",
+              "replacement": "[CTRL:0017][CTRL:000C]是啊……[CTRL:0003]"
+            }
+          ]
+        },
+        "0x0C83": {
+          "expected_text_sha256": "14b9df8167c12ce1816ab6aee66d92b18277f90a8ec88b397b3ba05904a1e691",
+          "preserve_structure": false,
+          "provenance": {
+            "audit": "final-dialogue-payload-audit-2026-08-09",
+            "context": "FE8U target 0x0CC4 composed from regional source 0x0C83.",
+            "target_ids": [
+              "0x0CC4"
+            ]
+          },
+          "reason": "Place one complete mouth-stop pair around the FE8U target’s “I see” pause.",
+          "replacements": [
+            {
+              "expected": "[CTRL:000C][CTRL:0016]是嘛……[CTRL:0001][CTRL:0016]……[CTRL:0016][CTRL:0103]",
+              "replacement": "[CTRL:000C]是嘛[CTRL:0016]……[CTRL:0016][CTRL:0001]……[CTRL:0103]"
+            }
+          ]
+        },
+        "0x0C96": {
+          "expected_text_sha256": "e8ef0f0738bb25aebdfbd883dd788a4dd81343ea826c7f1b212916f97b68d210",
+          "preserve_structure": false,
+          "provenance": {
+            "audit": "final-dialogue-payload-audit-2026-08-09",
+            "context": "FE8U target 0x0CD7 composed from regional source 0x0C96.",
+            "target_ids": [
+              "0x0CD7"
+            ]
+          },
+          "reason": "Close the mirror-inspection pause before the next talk line.",
+          "replacements": [
+            {
+              "expected": "[CTRL:000B][CTRL:0016]……[CTRL:0103]果然",
+              "replacement": "[CTRL:000B][CTRL:0016]……[CTRL:0016][CTRL:0103]果然"
+            }
+          ]
+        },
+        "0x0C97": {
+          "expected_text_sha256": "8019a69604c6739282c7887233fe1ffa6147520a79bdd0dea72160da18dce3f1",
+          "preserve_structure": false,
+          "provenance": {
+            "audit": "final-dialogue-payload-audit-2026-08-09",
+            "context": "FE8U target 0x0CD8 composed from regional source 0x0C97.",
+            "target_ids": [
+              "0x0CD8"
+            ]
+          },
+          "reason": "Restore the FE8U target’s complete Neimi pause and sigh mouth-stop pairs.",
+          "replacements": [
+            {
+              "expected": "[CTRL:000A]梅米……[CTRL:0001][CTRL:0016]……[CTRL:0103]",
+              "replacement": "[CTRL:000A]啊，梅米[CTRL:0016]……[CTRL:0016][CTRL:0001]唉[CTRL:0016]……[CTRL:0016][CTRL:0103]"
+            }
+          ]
+        },
         "0x0CA4": {
           "expected_text_sha256": "bb70d877b099e1d7a5c2f593e0d9556ccde80fb82624141b66c64a983ce8e9da",
           "provenance": {
@@ -1078,6 +1267,24 @@
           },
           "reason": "Apply the reviewed target-semantic correction without modifying the pinned raw regional snapshot.",
           "replacement_text": "[CTRL:0017][CTRL:0009][CTRL:0010][CTRL:011A][CTRL:000C][CTRL:0010][CTRL:012A][CTRL:000C]哟，阿斯雷。[CTRL:0001]今天的精神不错嘛，[CTRL:0103]那么有精神，就跟我赌一局吧，[CTRL:0001]若我赢了，今晚也来训练。[CTRL:0003][CTRL:0009]约书亚，即使不赌，[CTRL:0001]我也一样十分愿意陪你练习。[CTRL:0003][CTRL:000C]你竟然主动想要训练，[CTRL:0001]怎么了？发烧吗？[CTRL:0003][CTRL:0009]我想我体温大概正常。[CTRL:0001]我之所以主动向你邀请练习，[CTRL:0103]并非因发烧而导致思考能力迟缓。[CTRL:0103]为什么你会那样擅赌，[CTRL:0001]我也曾思考过。[CTRL:0003][CTRL:000C]哦……[CTRL:0003][CTRL:0009]与你相遇以来，包括在战场之外，[CTRL:0001]常常被你挑起赌赛，[CTRL:0103]战绩是21战2胜19败。[CTRL:0001]我的胜率就连十分之一都不到。[CTRL:0103]无论怎么想，那种程度的准确率[CTRL:0001]在猜硬币表里时是不可能出现的，[CTRL:0103]你一定是个受到神明青睐的人，[CTRL:0001]因此在赌输赢时才会那么高强。[CTRL:0103]若能对你这样的人略尽绵力，[CTRL:0001]无论赌博抑或练习我均愿奉陪。[CTRL:0003][CTRL:0017][CTRL:000C]这样啊……[CTRL:0001]但是，这可就没意思了。[CTRL:0103]如果说不必赌的话，[CTRL:0001]那不再陪我练习也无所谓。[CTRL:0003][CTRL:0009]哎？[CTRL:0003][CTRL:000C][CTRL:0017]我并非什么被神钟爱有加，[CTRL:0001]你真正的战绩是21战11胜10败，[CTRL:0103]不过是被我出千蒙蔽了而已。[CTRL:0001]正确的说，胜率基本对半。[CTRL:0003][CTRL:0017][CTRL:0009]出千……吗？[CTRL:0001]我一点都没有发觉……[CTRL:0103]那么说，我始终……[CTRL:0003][CTRL:000C][CTRL:0017]呵，就是这么回事了。[CTRL:0103]你出于职业习惯，凡事都信任，[CTRL:0001]然而战场上怀疑也是非常重要的。[CTRL:0103]过去的赌局，[CTRL:0001]倘若需要以性命作为赌注的话，[CTRL:0103]你输多少次就等于会死多少次。[CTRL:0103]嗨，实际上人也就能死一回而已。[CTRL:0003][CTRL:0017][CTRL:0009][CTRL:0016]……[CTRL:0016][CTRL:0105]无可反驳……[CTRL:0003][CTRL:000C][CTRL:0017]哈哈哈，幸亏我是好人，[CTRL:0001]不会造成实际危害，学到了吗？[CTRL:0003][CTRL:0017][CTRL:0009]是……[CTRL:0003][CTRL:000C][CTRL:0017]好。那么从今往后也要陪我啊。[CTRL:0001]这次由我来教你一些赌局的门道。[CTRL:0003][CTRL:0017][CTRL:0009]约书亚先生……[CTRL:0105]赌博和训练，哪一个更重要？[CTRL:0103][CTRL:0017]看来根本不用问。[CTRL:0001]但是，不要再出千了。[CTRL:0003][CTRL:0017]"
+        },
+        "0x0CAD": {
+          "expected_text_sha256": "b98521dfd074c9fb28b014843de43aa8df529795491ff911d271ced0f58d35a4",
+          "preserve_structure": false,
+          "provenance": {
+            "audit": "final-dialogue-payload-audit-2026-08-09",
+            "context": "FE8U target 0x0CEE composed from regional source 0x0CAD.",
+            "target_ids": [
+              "0x0CEE"
+            ]
+          },
+          "reason": "Close the healing pause before the speaker changes.",
+          "replacements": [
+            {
+              "expected": "[CTRL:0009][CTRL:0016]……[CTRL:0003][CTRL:000C]",
+              "replacement": "[CTRL:0009][CTRL:0016]……[CTRL:0016][CTRL:0003][CTRL:000C]"
+            }
+          ]
         },
         "0x0CD9": {
           "expected_text_sha256": "ce6b9063711f5a9285b6487a3e720b61dd54bd5de4b0f7b78e2a83aa7749407d",
@@ -1091,6 +1298,24 @@
           },
           "reason": "Complete Wink before the five-dot pause.",
           "replacement_text": "[CTRL:0009][CTRL:0010][CTRL:011C][CTRL:000C][CTRL:0010][CTRL:011B][CTRL:0009]队长。[CTRL:0001][CTRL:0016]……[CTRL:0016][CTRL:0103]我和尤恩……[CTRL:0001]其实是被双亲抛弃的孩子。[CTRL:0003][CTRL:000C][CTRL:0016]……[CTRL:0016][CTRL:0105]……[CTRL:0003][CTRL:0009]嗯……[CTRL:0103]带着当时还不懂事的尤恩，[CTRL:0001]我流浪到了许多地方。[CTRL:0103]那时的我也只是一个孩子，[CTRL:0001]一点活也干不了……[CTRL:0103]每天只能饿着肚子，[CTRL:0001]衣服也破破烂烂的……[CTRL:0003][CTRL:000C][CTRL:0016]……[CTRL:0016][CTRL:0003][CTRL:0009][CTRL:0017]但是，那时我就每天都在想，[CTRL:0001]绝对不能如此下去！[CTRL:0103]所以呢，一次我在[CTRL:0001]街角看见一个舞者在跳舞，[CTRL:0103]我就努力去学。[CTRL:0103]可能是我没天赋，[CTRL:0001]学的过程中吃了许多苦。[CTRL:0103]没有一双像样的鞋，[CTRL:0001]脚也常划破。[CTRL:0103]练习转身时，[CTRL:0001]身体也常常扭伤。[CTRL:0103]也没人来可怜，[CTRL:0001]当时那日子真的很苦。[CTRL:0103]不过，我没有哭。[CTRL:0103]因为我哭了的话，[CTRL:0001]那孩子也会跟着哭。[CTRL:0103]我喜欢看到尤恩的笑容。[CTRL:0103]为了让那孩子过得更好，[CTRL:0103]让他一直笑下去，[CTRL:0001]我拼命地努力。[CTRL:0003][CTRL:000C]特缇斯……[CTRL:0003][CTRL:0009][CTRL:0017]呵呵。[CTRL:0001]说了这么多，真不好意思。[CTRL:0103]现在一想起这些，[CTRL:0001]就感觉那时真是辛酸啊……[CTRL:0103]不过，通过这样的磨练，[CTRL:0103]我也终于有了这般出色的舞艺[CTRL:0001]和性感的身材。[CTRL:0103]过去吃了那么多苦，[CTRL:0001]才有了现在如此妩媚的我。[CTRL:0003][CTRL:0017][CTRL:0009][CTRL:0080][CTRL:001F][CTRL:0005][CTRL:0009][CTRL:0080][CTRL:001C][CTRL:0009][CTRL:0017]如何呢？[CTRL:0003][CTRL:0017][CTRL:000C][CTRL:0016]……[CTRL:0016][CTRL:0103]这样啊，在和我们认识之前，[CTRL:0103]你们竟吃过这么多的苦……[CTRL:0003][CTRL:0009][CTRL:0017]讨厌啊。过去的，已经是过去的！[CTRL:0001]你可不要跟别人说哦？[CTRL:0103]这个，我跟谁都没说的，[CTRL:0001]也只能和队长说。[CTRL:0103]这种经历才和充满了神秘色彩[CTRL:0001]的我更加相配啊。[CTRL:0003][CTRL:0102]下次，[CTRL:0105]我要听队长的经历。[CTRL:0003][CTRL:0017][CTRL:0017][CTRL:000C]啊啊，我知道了。[CTRL:0003][CTRL:0009]那，[CTRL:0103]我一定要努力努力再努力。[CTRL:0103]发现更多好事以及更好的事情。[CTRL:0103]对吧，队长。[CTRL:0003][CTRL:000C]啊，特缇斯[CTRL:0001]除此之外，你也要小心啊。[CTRL:0003][CTRL:0009]嗯。[CTRL:0001]队长也是！[CTRL:0003]"
+        },
+        "0x0CE0": {
+          "expected_text_sha256": "8783f19c9ae80ba115625ebaf9162c365858019b2f6b50d92f05b24a9391173d",
+          "preserve_structure": false,
+          "provenance": {
+            "audit": "final-dialogue-payload-audit-2026-08-09",
+            "context": "FE8U target 0x0D21 composed from regional source 0x0CE0.",
+            "target_ids": [
+              "0x0D21"
+            ]
+          },
+          "reason": "Close Saleh’s opening pause before the next talk line.",
+          "replacements": [
+            {
+              "expected": "[CTRL:000C][CTRL:0016]……[CTRL:0103]杰斯特。",
+              "replacement": "[CTRL:000C][CTRL:0016]……[CTRL:0016][CTRL:0103]杰斯特。"
+            }
+          ]
         }
       }
     },
@@ -1325,6 +1550,7 @@
         },
         "0x08ED": {
           "expected_text_sha256": "3156a094b69863a7a2b148ea07a65eb55e5ec02807fbf30a506705e18763a19a",
+          "preserve_structure": false,
           "provenance": {
             "audit": "dialogue-control-semantic-audit-2026-08-09",
             "context": "FE8U target 0x092D composed from unique regional source 0x08ED.",
@@ -1333,7 +1559,7 @@
             ]
           },
           "reason": "Apply the reviewed target-specific dialogue/control correction without modifying the pinned regional snapshot.",
-          "replacement_text": "[CTRL:000C][CTRL:0010][CTRL:0102][CTRL:0009][CTRL:0010][CTRL:0104][CTRL:000C]ゼト！[CTRL:0001]あれを・・・[CTRL:0003][CTRL:0009]ついにフレリアにもグラドの手が・・・[CTRL:0003][CTRL:0001]エイリーク様　ここは危険です。[CTRL:0003][CTRL:0001]ミュラン城は迂回して[CTRL:0001]フレリア王都に向かいましょう。[CTRL:0003][CTRL:000C]でも　このまま見過ごすわけには・・・[CTRL:0003][CTRL:0002][CTRL:0001]私たちのルネスが[CTRL:0001]グラド軍に侵攻された時・・・[CTRL:0003][CTRL:0001]あなたも私と同じ光景を見たはずです。民たちは　グラドの兵士に[CTRL:0001]それは酷い目に遭わされました。[CTRL:0003][CTRL:0001]家々は壊され　物は奪われ　女性はさらわれ[CTRL:0003][CTRL:0001]抵抗した者はことごとく処刑されたと・・・[CTRL:0003][CTRL:0009][CTRL:0016]・・・・・・[CTRL:0016][CTRL:0003][CTRL:000C]お願いします　ゼト。[CTRL:0003][CTRL:0001]私はこれ以上　人々がグラド軍の暴虐に[CTRL:0001]さらされるさまを見たくないのです・・・[CTRL:0003][CTRL:0009][CTRL:0016]・・・[CTRL:0016]わかりました。[CTRL:0001]では　まずミュラン城を取り戻しましょう。[CTRL:0003][CTRL:0001]ですがエイリーク様[CTRL:0001]くれぐれも無理はなさいませんよう。[CTRL:0003][CTRL:000C]わかっています　ゼト。[CTRL:0001]行きましょう！[CTRL:0003]"
+          "replacement_text": "[CTRL:000C][CTRL:0010][CTRL:0102][CTRL:0009][CTRL:0010][CTRL:0104][CTRL:000C]ゼト！[CTRL:0001]あれを・・・[CTRL:0003][CTRL:0009]ついにフレリアにもグラドの手が・・・[CTRL:0003][CTRL:0001]エイリーク様　ここは危険です。[CTRL:0003][CTRL:0001]ミュラン城は迂回して[CTRL:0001]フレリア王都に向かいましょう。[CTRL:0003][CTRL:000C]でも　このまま見過ごすわけには・・・[CTRL:0003][CTRL:0002][CTRL:0001]私たちのルネスが[CTRL:0001]グラド軍に侵攻された時・・・[CTRL:0003][CTRL:0001]あなたも私と同じ光景を見たはずです。[CTRL:0001]民たちは　グラドの兵士に[CTRL:0001]それは酷い目に遭わされました。[CTRL:0003][CTRL:0001]家々は壊され　物は奪われ　女性はさらわれ[CTRL:0003][CTRL:0001]抵抗した者はことごとく処刑されたと・・・[CTRL:0003][CTRL:0009][CTRL:0016]・・・・・・[CTRL:0016][CTRL:0003][CTRL:000C]お願いします　ゼト。[CTRL:0003][CTRL:0001]私はこれ以上　人々がグラド軍の暴虐に[CTRL:0001]さらされるさまを見たくないのです・・・[CTRL:0003][CTRL:0009][CTRL:0016]・・・[CTRL:0016]わかりました。[CTRL:0001]では　まずミュラン城を取り戻しましょう。[CTRL:0003][CTRL:0001]ですがエイリーク様[CTRL:0001]くれぐれも無理はなさいませんよう。[CTRL:0003][CTRL:000C]わかっています　ゼト。[CTRL:0001]行きましょう！[CTRL:0003]"
         },
         "0x0922": {
           "expected_text_sha256": "96145f3a82ee3dacd1705411d8c7244e68e7a43078014a1ec9148dbc92521427",
@@ -1442,6 +1668,24 @@
           },
           "reason": "Remove the regional BreakTalk because EventScr_Ch15B_7 has no TEXTCONT.",
           "replacement_text": "[CTRL:000C][CTRL:0010][CTRL:0120][CTRL:0009][CTRL:0010][CTRL:0121][CTRL:0009]あ　お師匠さま。[CTRL:0003][CTRL:000C]ユアンか・・・[CTRL:0003][CTRL:0001]なぜここに来た？[CTRL:0003][CTRL:0009]僕　エフラムさんたちに[CTRL:0001]ついてきたんだ。[CTRL:0003][CTRL:0001]お師匠さま　僕[CTRL:0001]がんばったんだよ。[CTRL:0003][CTRL:000C]そうか・・・[CTRL:0003][CTRL:0001]お前たちがここへ来なければ[CTRL:0001]我々の命はなかった。[CTRL:0003][CTRL:0001]お前に助けられたな　ユアン[CTRL:0001]感謝する。[CTRL:0003][CTRL:0009]え？　ほんと？[CTRL:0003][CTRL:0001]じゃあお師匠さま[CTRL:0001]もっとすごい魔法教えてくれる？[CTRL:0003][CTRL:000C][CTRL:0016]・・・[CTRL:0016]そうだな。[CTRL:0001]いずれそうしよう。[CTRL:0003][CTRL:0009]やったぁ！[CTRL:0003]"
+        },
+        "0x0C24": {
+          "expected_text_sha256": "9cdbb3186a82b529f1695bf18d9b260127f76cc6a0467938beb07cf048649539",
+          "preserve_structure": false,
+          "provenance": {
+            "audit": "final-dialogue-payload-audit-2026-08-09",
+            "context": "FE8U target 0x0C65 composed from regional source 0x0C24.",
+            "target_ids": [
+              "0x0C65"
+            ]
+          },
+          "reason": "Pair both interrupted pauses before their dialogue boundaries, matching the FE8U target mouth-state semantics.",
+          "replacements": [
+            {
+              "expected": "[CTRL:000C][CTRL:0016]・・・・・・・[CTRL:0003][CTRL:0001]・・・[CTRL:0016]失礼した",
+              "replacement": "[CTRL:000C][CTRL:0016]・・・・・・・[CTRL:0016][CTRL:0003][CTRL:0001][CTRL:0016]・・・[CTRL:0016]失礼した"
+            }
+          ]
         },
         "0x0CA4": {
           "expected_text_sha256": "34e45d71d3d53fb886ca19707d98e0a6c6c235f7fb79a5ef72dd14fd4e3ec9c7",

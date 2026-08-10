@@ -134,12 +134,10 @@ def _load_entry(source_id: str, message_id: str, data: Any) -> IndexedOverride:
         raise LocaleSourceError(
             f"{source_id}:{message_id}: preserve_structure must be a boolean"
         )
-    if not preserve_structure and (
-        expected_text_sha256 is None or replacement_text is None
-    ):
+    if not preserve_structure and expected_text_sha256 is None:
         raise LocaleSourceError(
             f"{source_id}:{message_id}: audited control changes require "
-            "expected_text_sha256 and replacement_text"
+            "expected_text_sha256"
         )
     if replacement_text is not None and raw_replacements is not None:
         raise LocaleSourceError(

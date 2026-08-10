@@ -306,6 +306,15 @@ descriptor slots.
    paired endings) and measures every JA/ZH line with the committed runtime
    system-font widths. A missing glyph, physical newline, invalid line count,
    or overflow fails generation.
+   The final full-game catalog validator independently checks every present
+   JA/ZH payload rather than a target allowlist. Every `ToggleMouthMove` must
+   be paired before a dialogue boundary; FE8U-domain payloads whose dialogue
+   boundary topology matches the FE8U target must also match its mouth-toggle
+   topology. Every rendered line in all face-bearing talk payloads is measured
+   with the committed runtime system-font widths and must fit the 240-pixel
+   talk allocation. Controls, page boundaries, and face-segment boundaries do
+   not contribute visible width and reset the measured line as the runtime
+   does.
 3. `python3 -m unittest discover -s scripts/localization/tests -p
    'test_*.py' -v` (or `make localization-test`) re-validates schema,
    strict UTF-8/control, surface-width and UTF-8 byte budgets, placeholder/

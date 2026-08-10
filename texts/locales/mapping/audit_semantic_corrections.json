@@ -639,8 +639,8 @@
       },
       "incorrect_source_id": "0x0C75",
       "payload_sha256": {
-        "ja": "072a1c23ae3251da41324cb0971f0be50945d31ecffc27902af53da381b98d26",
-        "zh-Hans": "5f64b81b57c49ced12b0b9f5217b399921422d29a400e664439eb9be449d381a"
+        "ja": "f9042b8799ae307c136136bbd794b4a71bba9bb9707c419b72ba8fd552b2fc6f",
+        "zh-Hans": "c83e61a514c0ca4bb99961c0ef3acfb7aa627cd85a57a63301647e701c9f1c34"
       },
       "rationale": "The regional provider belongs to a different support arc. This authored FE8U-targeted translation preserves the Garcia-Dozla C support portraits, controls, line breaks, and English target meaning.",
       "source_key": "CHARACTER_DOZLA+CHARACTER_GARCIA.C",

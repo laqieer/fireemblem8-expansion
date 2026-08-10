@@ -12,10 +12,12 @@ from scripts.localization.game_catalog.control_streams import (
     CONTROL_DOMAIN_FE8J,
     CONTROL_DOMAIN_FE8U,
     ControlStreamError,
+    TalkFontMetrics,
     build_event_continuation_models,
     load_portrait_operand_map,
     tokenize_payload,
     validate_mouth_toggle_balance,
+    validate_talk_line_widths,
 )
 
 
@@ -48,9 +50,14 @@ class FinalControlStreamTests(unittest.TestCase):
         self.assertEqual(
             self.build.report["control_stream_validation"],
             {
+                "fe8u_mouth_topology_validated_payload_count": 656,
+                "max_talk_line_width": 224,
                 "model_count": 286,
                 "modeled_target_count": 275,
+                "mouth_balance_validated_payload_count": 6828,
                 "portrait_remapped_target_count": 187,
+                "talk_line_count": 50795,
+                "talk_payload_count": 1976,
                 "validated_payload_count": 6828,
             },
         )
@@ -63,6 +70,10 @@ class FinalControlStreamTests(unittest.TestCase):
                     source_name=f"{bundle.locale} 0x{entry.target_id:04X}",
                 )
                 self.assertEqual(tokens[-1].kind, "end")
+                validate_mouth_toggle_balance(
+                    entry.encoded_bytes,
+                    source_name=f"{bundle.locale} 0x{entry.target_id:04X}",
+                )
                 self.assertEqual(
                     face_operands(entry.encoded_bytes),
                     face_operands(
@@ -133,18 +144,61 @@ class FinalControlStreamTests(unittest.TestCase):
         self.assertEqual(tokens[1].scalar, 0x1F)
 
     def test_mouth_balance_validator_rejects_open_state_at_dialogue_boundary(self):
-        with self.assertRaisesRegex(
-            ControlStreamError,
-            "ToggleMouthMove.*is not paired",
-        ):
-            validate_mouth_toggle_balance(
-                b"\x16\xe2\x80\xa6\x03\x00",
-                source_name="unbalanced mouth fixture",
-            )
+        for boundary in (b"\x03", b"\x0e", b"\x0f", b"\x14", b"\x15", b"\x80\x04"):
+            with self.subTest(boundary=boundary):
+                with self.assertRaisesRegex(
+                    ControlStreamError,
+                    "ToggleMouthMove.*is not paired",
+                ):
+                    validate_mouth_toggle_balance(
+                        b"\x16\xe2\x80\xa6" + boundary + b"\x00",
+                        source_name="unbalanced mouth fixture",
+                    )
         validate_mouth_toggle_balance(
             b"\x16\xe2\x80\xa6\x16\x03\x00",
             source_name="balanced mouth fixture",
         )
+
+    def test_talk_line_gate_honors_face_segments_and_rejects_overflow(self):
+        metrics = TalkFontMetrics(
+            locale="fixture",
+            ascii_widths={},
+            cjk_widths={ord("界"): 16},
+        )
+        fitting = (
+            b"\x09"
+            + ("界" * 15).encode("utf-8")
+            + b"\x03\x0c"
+            + ("界" * 15).encode("utf-8")
+            + b"\x03\x00"
+        )
+        self.assertEqual(
+            validate_talk_line_widths(
+                tokenize_payload(fitting, source_name="fitting talk fixture"),
+                source_name="fitting talk fixture",
+                metrics=metrics,
+            ),
+            {
+                "max_talk_line_width": 240,
+                "talk_line_count": 2,
+                "talk_payload_count": 1,
+            },
+        )
+        overflowing = (
+            b"\x09" + ("界" * 16).encode("utf-8") + b"\x03\x00"
+        )
+        with self.assertRaisesRegex(
+            ControlStreamError,
+            "256px.*240px",
+        ):
+            validate_talk_line_widths(
+                tokenize_payload(
+                    overflowing,
+                    source_name="overflowing talk fixture",
+                ),
+                source_name="overflowing talk fixture",
+                metrics=metrics,
+            )
 
     def test_breaktalk_counts_follow_fe8u_and_event_continuations(self):
         expected = {
@@ -295,12 +349,59 @@ class FinalControlStreamTests(unittest.TestCase):
         zh = self.build.locale_bundle("zh-Hans").entries
         self.assertIn("弓を学びたかった", ja[0x0CB6].source_text)
         self.assertIn("一緒に学んで", ja[0x0CB6].source_text)
+        self.assertIn("断食を破る食事", ja[0x0CB6].source_text)
+        self.assertIn("朝食とは、", ja[0x0CB6].source_text)
+        self.assertIn("断食だ。", ja[0x0CB6].source_text)
         self.assertIn("魔法はどうじゃ", ja[0x0CB7].source_text)
         self.assertIn("ひげを全部焼いた", ja[0x0CB8].source_text)
         self.assertIn("学习弓术", zh[0x0CB6].source_text)
         self.assertIn("一起练习", zh[0x0CB6].source_text)
+        self.assertIn("打破断食的一餐", zh[0x0CB6].source_text)
+        self.assertIn("早餐要“打破”什么？", zh[0x0CB6].source_text)
+        self.assertIn("断食。", zh[0x0CB6].source_text)
         self.assertIn("魔法怎么样", zh[0x0CB7].source_text)
         self.assertIn("胡子全烧光", zh[0x0CB8].source_text)
         for fragment in ("硬币", "骰子", "喝酒", "父亲"):
             for target_id in expected_keys:
                 self.assertNotIn(fragment, zh[target_id].source_text)
+
+    def test_audited_mouth_streams_and_rewrapped_lines_are_final(self):
+        requests = {
+            "ja": (0x0C65,),
+            "zh-Hans": (
+                0x09CA,
+                0x0AFB,
+                0x0B47,
+                0x0B51,
+                0x0C65,
+                0x0CAA,
+                0x0CAB,
+                0x0CC4,
+                0x0CD7,
+                0x0CD8,
+                0x0CEE,
+                0x0D21,
+            ),
+        }
+        for locale, target_ids in requests.items():
+            entries = self.build.locale_bundle(locale).entries
+            for target_id in target_ids:
+                self.assertEqual(entries[target_id].locale_provider_kind, "indexed")
+                validate_mouth_toggle_balance(
+                    entries[target_id].encoded_bytes,
+                    source_name=f"{locale} target 0x{target_id:04X}",
+                )
+
+        ja = self.build.locale_bundle("ja").entries
+        zh = self.build.locale_bundle("zh-Hans").entries
+        self.assertIn(
+            "あなたも私と同じ光景を見たはずです。"
+            "[CTRL:0001]民たちは　グラドの兵士に",
+            ja[0x092D].source_text,
+        )
+        self.assertIn(
+            "而发动这场战争呢？"
+            "[CTRL:0103]士兵们毫无意义地战死，"
+            "[CTRL:0001]这不是战争，而是屠杀！",
+            zh[0x0AA1].source_text,
+        )

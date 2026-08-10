@@ -7,11 +7,11 @@
     },
     "normalized_ja": {
       "logical_path": "texts/locales/ja/indexed.txt",
-      "sha256": "11ddf858b7e74c7bd064e19c9f730ef9ece599d792cef78208f933ecc8b8ca06"
+      "sha256": "0318c2601b77a82f6f2fc5cc19dfa212dbbe2d429c8eb21e3dbf819726e5c696"
     },
     "normalized_zh_hans": {
       "logical_path": "texts/locales/zh-Hans/indexed.txt",
-      "sha256": "ed0994f9576aca551a727bb2c5ddcc03c96cc63392926bc93cb30b80796f9142"
+      "sha256": "4eb4d299d8b801c3dda53a619e6f5b2378f702c6c57117a3b46bf3ae235fd35a"
     },
     "raw_zh_hans": {
       "logical_path": "texts/locales/zh-Hans/raw.json",
@@ -116447,7 +116447,7 @@
             "ja": {
               "id": "0x08ED",
               "kind": "indexed",
-              "sha256": "18a8efbd8037882fb9f018325463add338c17911ab0b95a5123180f1e38916f2"
+              "sha256": "7a23268cadd9a5948c98ab2cff08b342a0f1a1653db77fdb5c7091abddf573c3"
             },
             "zh-Hans": {
               "id": "0x08ED",
@@ -124696,7 +124696,7 @@
         {
           "alignment_payload": {
             "locale_id": "zh-Hans",
-            "sha256": "6b8d8d7e19118fcfd31666b7102f933e424c0481fd0c0438e865ca5f2b32f0ee"
+            "sha256": "51f345d2efb56403d9c1522891842e6075eac570e17396949d91ec9c881aed4e"
           },
           "parser_action": "decode-target",
           "payloads": {
@@ -124708,7 +124708,7 @@
             "zh-Hans": {
               "id": "0x098A",
               "kind": "indexed",
-              "sha256": "6b8d8d7e19118fcfd31666b7102f933e424c0481fd0c0438e865ca5f2b32f0ee"
+              "sha256": "51f345d2efb56403d9c1522891842e6075eac570e17396949d91ec9c881aed4e"
             }
           },
           "row_type": "indexed",
@@ -136705,7 +136705,7 @@
         {
           "alignment_payload": {
             "locale_id": "zh-Hans",
-            "sha256": "dc921ff56dd1162bb8e027b027d4c9b4b3e0881c1fba5736dc8594d89e4ad8cc"
+            "sha256": "86f31132e192a57704d82ca0bfdc43940e8efc0a105b278c0f1a11ad93ff3001"
           },
           "parser_action": "decode-target",
           "payloads": {
@@ -136717,7 +136717,7 @@
             "zh-Hans": {
               "id": "0x0A62",
               "kind": "indexed",
-              "sha256": "dc921ff56dd1162bb8e027b027d4c9b4b3e0881c1fba5736dc8594d89e4ad8cc"
+              "sha256": "86f31132e192a57704d82ca0bfdc43940e8efc0a105b278c0f1a11ad93ff3001"
             }
           },
           "row_type": "indexed",
@@ -141265,7 +141265,7 @@
         {
           "alignment_payload": {
             "locale_id": "zh-Hans",
-            "sha256": "b7bf08aedeb5a3464c00b2acda44ab8c0c74546ed62e10fdc777d07002137f74"
+            "sha256": "550ba2b39b6ba1a9e6204533d4de3e64901d5b115bda0869123c6ee82dc0e7e2"
           },
           "parser_action": "decode-target",
           "payloads": {
@@ -141277,7 +141277,7 @@
             "zh-Hans": {
               "id": "0x0ABC",
               "kind": "indexed",
-              "sha256": "b7bf08aedeb5a3464c00b2acda44ab8c0c74546ed62e10fdc777d07002137f74"
+              "sha256": "550ba2b39b6ba1a9e6204533d4de3e64901d5b115bda0869123c6ee82dc0e7e2"
             }
           },
           "row_type": "indexed",
@@ -145394,7 +145394,7 @@
         {
           "alignment_payload": {
             "locale_id": "zh-Hans",
-            "sha256": "d2c5bfaf60c82d84211cf4fb65270ed3062d45650bf861ecf23d8bdd1bc8f15d"
+            "sha256": "ed6bceb21432ee114fd9fda794be1101c9ecff90ae6c6ebd7e85a35635edc437"
           },
           "parser_action": "decode-target",
           "payloads": {
@@ -145406,7 +145406,7 @@
             "zh-Hans": {
               "id": "0x0B07",
               "kind": "indexed",
-              "sha256": "d2c5bfaf60c82d84211cf4fb65270ed3062d45650bf861ecf23d8bdd1bc8f15d"
+              "sha256": "ed6bceb21432ee114fd9fda794be1101c9ecff90ae6c6ebd7e85a35635edc437"
             }
           },
           "row_type": "indexed",
@@ -146072,7 +146072,7 @@
         {
           "alignment_payload": {
             "locale_id": "zh-Hans",
-            "sha256": "4307f11f14beed2f8d084323271212b8a91fb9d8cd31e43093dad65a5df3e435"
+            "sha256": "cfafc7fdadc9c879555b52066dadff3da8aa31fdfa05a405abaac9ccee1ac545"
           },
           "parser_action": "decode-target",
           "payloads": {
@@ -146084,7 +146084,7 @@
             "zh-Hans": {
               "id": "0x0B11",
               "kind": "indexed",
-              "sha256": "4307f11f14beed2f8d084323271212b8a91fb9d8cd31e43093dad65a5df3e435"
+              "sha256": "cfafc7fdadc9c879555b52066dadff3da8aa31fdfa05a405abaac9ccee1ac545"
             }
           },
           "row_type": "indexed",
@@ -160906,19 +160906,19 @@
         {
           "alignment_payload": {
             "locale_id": "zh-Hans",
-            "sha256": "65cb73015cddad1d4a4e3f9f16c939457cb24018c8be10e84aa8bc8b8a770ce8"
+            "sha256": "2fba29b3ea2d7d60de99b1c8b6d669a8c157f73182174c819f0c9b187d5b703c"
           },
           "parser_action": "decode-target",
           "payloads": {
             "ja": {
               "id": "0x0C24",
               "kind": "indexed",
-              "sha256": "9cdbb3186a82b529f1695bf18d9b260127f76cc6a0467938beb07cf048649539"
+              "sha256": "5641b0df64e64532bf95b0abe3fd7d25f1c7a4223289e8ecac0cbabc4114d1d4"
             },
             "zh-Hans": {
               "id": "0x0C24",
               "kind": "indexed",
-              "sha256": "65cb73015cddad1d4a4e3f9f16c939457cb24018c8be10e84aa8bc8b8a770ce8"
+              "sha256": "2fba29b3ea2d7d60de99b1c8b6d669a8c157f73182174c819f0c9b187d5b703c"
             }
           },
           "row_type": "indexed",
@@ -165529,7 +165529,7 @@
         {
           "alignment_payload": {
             "locale_id": "zh-Hans",
-            "sha256": "3786fe8a9dc20fa15d51e049e7d0b89a8b4b7058325ed10d5bf35b0244bf18ee"
+            "sha256": "fbf5af6aa8a94e4470b32f9aa5fb993bf886101b88f9e0ce1bd7abb2e5c69a8f"
           },
           "parser_action": "decode-target",
           "payloads": {
@@ -165541,7 +165541,7 @@
             "zh-Hans": {
               "id": "0x0C69",
               "kind": "indexed",
-              "sha256": "3786fe8a9dc20fa15d51e049e7d0b89a8b4b7058325ed10d5bf35b0244bf18ee"
+              "sha256": "fbf5af6aa8a94e4470b32f9aa5fb993bf886101b88f9e0ce1bd7abb2e5c69a8f"
             }
           },
           "row_type": "indexed",
@@ -165596,7 +165596,7 @@
         {
           "alignment_payload": {
             "locale_id": "zh-Hans",
-            "sha256": "035dab17733b437ca1d233eeccea8302392c3f0675037b84f0d0edab4b7ddf59"
+            "sha256": "0e67e242949767418725d7dde5c1cf1cdfe2c7f54bd8fd7bf0dc13ea8c88b4f1"
           },
           "parser_action": "decode-target",
           "payloads": {
@@ -165608,7 +165608,7 @@
             "zh-Hans": {
               "id": "0x0C6A",
               "kind": "indexed",
-              "sha256": "035dab17733b437ca1d233eeccea8302392c3f0675037b84f0d0edab4b7ddf59"
+              "sha256": "0e67e242949767418725d7dde5c1cf1cdfe2c7f54bd8fd7bf0dc13ea8c88b4f1"
             }
           },
           "row_type": "indexed",
@@ -167271,7 +167271,7 @@
         {
           "alignment_payload": {
             "locale_id": "zh-Hans",
-            "sha256": "14b9df8167c12ce1816ab6aee66d92b18277f90a8ec88b397b3ba05904a1e691"
+            "sha256": "308b94db81294e59e0cf2718d810c7dae412cf4501cf049a4be5ec35315df01c"
           },
           "parser_action": "decode-target",
           "payloads": {
@@ -167283,7 +167283,7 @@
             "zh-Hans": {
               "id": "0x0C83",
               "kind": "indexed",
-              "sha256": "14b9df8167c12ce1816ab6aee66d92b18277f90a8ec88b397b3ba05904a1e691"
+              "sha256": "308b94db81294e59e0cf2718d810c7dae412cf4501cf049a4be5ec35315df01c"
             }
           },
           "row_type": "indexed",
@@ -168544,7 +168544,7 @@
         {
           "alignment_payload": {
             "locale_id": "zh-Hans",
-            "sha256": "e8ef0f0738bb25aebdfbd883dd788a4dd81343ea826c7f1b212916f97b68d210"
+            "sha256": "4ca9d7ccac708758731a5ab1377dae8ba1fb605bf84a5d086ad87dbba4304a05"
           },
           "parser_action": "decode-target",
           "payloads": {
@@ -168556,7 +168556,7 @@
             "zh-Hans": {
               "id": "0x0C96",
               "kind": "indexed",
-              "sha256": "e8ef0f0738bb25aebdfbd883dd788a4dd81343ea826c7f1b212916f97b68d210"
+              "sha256": "4ca9d7ccac708758731a5ab1377dae8ba1fb605bf84a5d086ad87dbba4304a05"
             }
           },
           "row_type": "indexed",
@@ -168611,7 +168611,7 @@
         {
           "alignment_payload": {
             "locale_id": "zh-Hans",
-            "sha256": "8019a69604c6739282c7887233fe1ffa6147520a79bdd0dea72160da18dce3f1"
+            "sha256": "a4e394b1aaebe55a20e4fa1327665e0bba82e57850496f0f8ee46f6a42958e34"
           },
           "parser_action": "decode-target",
           "payloads": {
@@ -168623,7 +168623,7 @@
             "zh-Hans": {
               "id": "0x0C97",
               "kind": "indexed",
-              "sha256": "8019a69604c6739282c7887233fe1ffa6147520a79bdd0dea72160da18dce3f1"
+              "sha256": "a4e394b1aaebe55a20e4fa1327665e0bba82e57850496f0f8ee46f6a42958e34"
             }
           },
           "row_type": "indexed",
@@ -170085,7 +170085,7 @@
         {
           "alignment_payload": {
             "locale_id": "zh-Hans",
-            "sha256": "b98521dfd074c9fb28b014843de43aa8df529795491ff911d271ced0f58d35a4"
+            "sha256": "1439f7f6b9fbb8ab2dc105aa8b5ed377de244f63bb1460f6a3c1c212e9ac28c7"
           },
           "parser_action": "decode-target",
           "payloads": {
@@ -170097,7 +170097,7 @@
             "zh-Hans": {
               "id": "0x0CAD",
               "kind": "indexed",
-              "sha256": "b98521dfd074c9fb28b014843de43aa8df529795491ff911d271ced0f58d35a4"
+              "sha256": "1439f7f6b9fbb8ab2dc105aa8b5ed377de244f63bb1460f6a3c1c212e9ac28c7"
             }
           },
           "row_type": "indexed",
@@ -173502,7 +173502,7 @@
         {
           "alignment_payload": {
             "locale_id": "zh-Hans",
-            "sha256": "8783f19c9ae80ba115625ebaf9162c365858019b2f6b50d92f05b24a9391173d"
+            "sha256": "ba92a785a9e64105ae21d44e09b22c83bb226c2903a532f42cf89adf9142a08f"
           },
           "parser_action": "decode-target",
           "payloads": {
@@ -173514,7 +173514,7 @@
             "zh-Hans": {
               "id": "0x0CE0",
               "kind": "indexed",
-              "sha256": "8783f19c9ae80ba115625ebaf9162c365858019b2f6b50d92f05b24a9391173d"
+              "sha256": "ba92a785a9e64105ae21d44e09b22c83bb226c2903a532f42cf89adf9142a08f"
             }
           },
           "row_type": "indexed",

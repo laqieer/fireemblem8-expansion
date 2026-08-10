@@ -67,6 +67,7 @@ from .control_streams import (
     CONTROL_DOMAIN_FE8J,
     CONTROL_DOMAIN_FE8U,
     ControlStreamError,
+    load_talk_font_metrics,
     load_portrait_operand_map,
     remap_fe8j_portrait_operands,
     validate_event_continuations,
@@ -503,7 +504,6 @@ def _build_locale_bundle(
     ja_raw_records: Mapping[int, RawProvider],
     authored_records: Mapping[str, Mapping[str, str]],
     english_definitions: Mapping[str, Tuple[int, ...]],
-    english_entries: Sequence[EnglishSourceEntry],
     portrait_map,
     suffix_share: bool,
 ) -> LocaleCatalogBundle:
@@ -521,21 +521,55 @@ def _build_locale_bundle(
         for row in mapping.rows
     )
     messages = tuple(entry.encoded_bytes for entry in entries)
-    for entry in entries:
-        if entry.encoded_bytes is None:
-            continue
-        try:
-            validate_final_payload(
-                entry.encoded_bytes,
-                english_payload=english_entries[entry.target_id].encoded_bytes,
-                target_id=entry.target_id,
-                locale=locale,
-                portrait_map=portrait_map,
-            )
-        except ControlStreamError as error:
-            raise GameCatalogError(str(error)) from error
     catalog = build_catalog(messages, suffix_share=suffix_share)
     return LocaleCatalogBundle(locale=locale, entries=entries, catalog=catalog)
+
+
+def _validate_final_catalog_payloads(
+    *,
+    locale_bundles: Sequence[LocaleCatalogBundle],
+    english_entries,
+    portrait_map,
+) -> Dict[str, int]:
+    totals = Counter()
+    max_talk_line_width = 0
+    for bundle in locale_bundles:
+        try:
+            talk_metrics = load_talk_font_metrics(bundle.locale)
+        except ControlStreamError as error:
+            raise GameCatalogError(str(error)) from error
+        for entry in bundle.entries:
+            if entry.encoded_bytes is None:
+                continue
+            assert entry.control_domain is not None
+            try:
+                stats = validate_final_payload(
+                    entry.encoded_bytes,
+                    english_payload=english_entries[entry.target_id].encoded_bytes,
+                    target_id=entry.target_id,
+                    locale=bundle.locale,
+                    control_domain=entry.control_domain,
+                    portrait_map=portrait_map,
+                    talk_metrics=talk_metrics,
+                )
+            except ControlStreamError as error:
+                raise GameCatalogError(str(error)) from error
+            totals.update(stats)
+            max_talk_line_width = max(
+                max_talk_line_width,
+                stats["max_talk_line_width"],
+            )
+    return {
+        "fe8u_mouth_topology_validated_payload_count": totals[
+            "fe8u_mouth_topology_validated_payload_count"
+        ],
+        "max_talk_line_width": max_talk_line_width,
+        "mouth_balance_validated_payload_count": totals[
+            "mouth_balance_validated_payload_count"
+        ],
+        "talk_line_count": totals["talk_line_count"],
+        "talk_payload_count": totals["talk_payload_count"],
+    }
 
 
 def _entry_report(meta: EntryPayloadMeta, entry) -> Dict[str, Any]:
@@ -884,7 +918,6 @@ def build_game_catalog(
             ja_raw_records=ja_raw_records,
             authored_records=authored_records,
             english_definitions=english_definitions,
-            english_entries=english_entries,
             portrait_map=portrait_map,
             suffix_share=suffix_share,
         )
@@ -895,6 +928,11 @@ def build_game_catalog(
         for bundle in locale_bundles
     }
     english_report = _english_report(english_bundle, suffix_share=suffix_share)
+    final_payload_validation = _validate_final_catalog_payloads(
+        locale_bundles=locale_bundles,
+        english_entries=english_entries,
+        portrait_map=portrait_map,
+    )
     try:
         control_validation = validate_event_continuations(
             english_payloads=tuple(entry.encoded_bytes for entry in english_entries),
@@ -935,6 +973,7 @@ def build_game_catalog(
         )
     report["control_stream_validation"] = {
         **control_validation,
+        **final_payload_validation,
         "portrait_remapped_target_count": len(remapped_targets),
         "validated_payload_count": sum(
             entry.encoded_bytes is not None
