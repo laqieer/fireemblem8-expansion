@@ -12231,7 +12231,7 @@
     "ja_raw": {
       "byte_count": 11842,
       "path": "texts/locales/ja/raw.json",
-      "sha256": "0b4a0bcbef7ba95e940293edae655988059c2f7cb2f599ebe80e728866343161"
+      "sha256": "50f91df424836808adf0c60828487e9de94d793cb675dbad08118d2fa79c93dd"
     },
     "latin_span_review": {
       "baseline_commit": "2d02ec12ddcba0640bcf1ecffcf7dc93d56deb4f",
@@ -12240,14 +12240,14 @@
       "sha256": "a19a0e620ea524c2aa15d7662a207340d7da3d7f299ffc0be7b305eafe3252c7"
     },
     "mapping": {
-      "byte_count": 5502911,
+      "byte_count": 5503061,
       "path": "texts/locales/mapping/fe8u_target_map.json",
-      "sha256": "5641b3d3000e1a45182422886c98dc1c4d990156e062067f9cb43aef7335c0b8"
+      "sha256": "0ec770175b42fc5f5babe2bd1af7a27597f5e0f1dc75d0a2d3ff18f32c821313"
     },
     "raw_closure": {
-      "byte_count": 279819,
+      "byte_count": 280833,
       "path": "texts/locales/mapping/raw_surface_closure.json",
-      "sha256": "09ff3b9542cf54265b8bd37858501ab28b8086201b3fffe5d8549abc89f02335"
+      "sha256": "583b7cfffbbd35c72562d4a36d4224a0f2178f3998f92c1268fbc587de904801"
     },
     "target_header": {
       "byte_count": 78840,

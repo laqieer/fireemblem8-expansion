@@ -1,68 +1,49 @@
 {
-  "additional_git_sources": {
-    "expansion-fe8j-raw-v4": {
-      "provider_values_artifact": {
-        "encoding": "cp932-nul-terminated",
-        "generated_from_paths": [
-          "texts/locales/source/fe8j/raw_symbols.json",
-          "texts/locales/source/fe8j/raw_provider_values.cp932.bin"
-        ],
-        "path": "upstream/expansion/raw_provider_values.v4.cp932.bin",
-        "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+  "baserom_source": {
+    "artifact": {
+      "encoding": "cp932-nul-terminated",
+      "path": "goal_strings.cp932.bin",
+      "sha256": "3353330b5642569520fcef4ab0656b35459ba15bfa1cd0d9633fe7af06ae677e"
+    },
+    "offset_source": {
+      "blob_oid": "4325b593a941ce95e3821e3746564b2311fe8142",
+      "path": "layout/baseline_syms.d/GoalDisplay_Init-134e6b42.tsv",
+      "repository": "https://github.com/laqieer/fireemblem8j",
+      "revision": "bf424414d075789d757e2f4cd0cea823bfb2862e",
+      "sha256": "2bc7b7f0b4df0d1f8310b8fbe5179f1374a79a4e6cf0124d21c81429e7d8279f"
+    },
+    "records": {
+      "0x01C1": {
+        "artifact_offset": 0,
+        "bytes_sha256": "4042ff58570ad607525ff9dc190de55038764f6999f4f06d486cb16602f8f8e6",
+        "decoded_value": "残り",
+        "length": 5,
+        "rom_address": "0x081F5528",
+        "rom_offset": 2053416,
+        "symbol": "GoalString_UnitsLeft"
       },
-      "source_blobs": [
-        {
-          "oid": "c45d9d9d1dbe219a12a7cfca9ce62084f3c389ab",
-          "path": "texts/locales/source/fe8j/raw_symbols.json",
-          "sha256": "f058c682dc73aef576f79e9e32c011908fa1a7e04c5414f7a4eacc3aee058a61",
-          "vendored_path": "upstream/expansion/raw_symbols.v4.json"
-        },
-        {
-          "oid": "ee4b82cac7ca3fd72a3145847c729c471fd699d0",
-          "path": "texts/locales/source/fe8j/raw_provider_values.cp932.bin",
-          "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262",
-          "vendored_path": "upstream/expansion/raw_provider_values.v4.cp932.bin"
-        }
-      ],
-      "source_commit": {
-        "path": "upstream/expansion/commit.txt",
-        "sha256": "dab2dcb279cd49247c3b5ba6e9c6934e002a5d0f0c22d6acecc5aedca36e7822"
+      "0x01C2": {
+        "artifact_offset": 5,
+        "bytes_sha256": "7bc2fa80d7f7c1c271c529a75c64328b5d7c92fd1df72fcae650ed3fa3064ad1",
+        "decoded_value": "ターン",
+        "length": 7,
+        "rom_address": "0x081F553C",
+        "rom_offset": 2053436,
+        "symbol": "GoalString_Turn"
       },
-      "source_repository": "https://github.com/laqieer/fireemblem8-expansion",
-      "source_revision": "548b240d0a553add88897927049b7f5ce25657a8",
-      "source_trees": [
-        {
-          "oid": "efbc2347882f00122061d236a1561918dec0102f",
-          "path": "",
-          "sha256": "33736df4368e888ed5e2be66be2d365422097d670b6af54079aa50d6d73d5421",
-          "vendored_path": "upstream/expansion/trees/efbc2347882f00122061d236a1561918dec0102f.tree"
-        },
-        {
-          "oid": "7c790dbc410382ef36ea613a26ea59cc4ef475d2",
-          "path": "texts",
-          "sha256": "eb172bd9c05880a8afba9b77ff6b249724e1451e0dc0bd76b0cc0b9b991fafbc",
-          "vendored_path": "upstream/expansion/trees/7c790dbc410382ef36ea613a26ea59cc4ef475d2.tree"
-        },
-        {
-          "oid": "83744b1068ab43bce519892bce0625a6f776225e",
-          "path": "texts/locales",
-          "sha256": "eaf8fb92fd28fadad97067d2b2fcffb1030c07d20193d7fc63c40b24c866eff4",
-          "vendored_path": "upstream/expansion/trees/83744b1068ab43bce519892bce0625a6f776225e.tree"
-        },
-        {
-          "oid": "23943a26d7f301f8624c3440810a88d611453904",
-          "path": "texts/locales/source",
-          "sha256": "52ffa991f4fb817d4da67a6ab867a75849fa06c6d0aea79654daa11c18323225",
-          "vendored_path": "upstream/expansion/trees/23943a26d7f301f8624c3440810a88d611453904.tree"
-        },
-        {
-          "oid": "6085924753b58d678bdb94d8acb8a2fbc35fc06e",
-          "path": "texts/locales/source/fe8j",
-          "sha256": "6474325734efaaee93901d9cb555b3eeea1842aed3e6a76a61246df28c596196",
-          "vendored_path": "upstream/expansion/trees/6085924753b58d678bdb94d8acb8a2fbc35fc06e.tree"
-        }
-      ],
-      "source_url": "https://github.com/laqieer/fireemblem8-expansion/tree/548b240d0a553add88897927049b7f5ce25657a8"
+      "0x01C3": {
+        "artifact_offset": 12,
+        "bytes_sha256": "55ded65087def01737f9f7d8b44ccafe7f09fb400dd11abb540643287ad01cf3",
+        "decoded_value": "最終ターン",
+        "length": 11,
+        "rom_address": "0x081F5530",
+        "rom_offset": 2053424,
+        "symbol": "GoalString_LastTurn"
+      }
+    },
+    "rom": {
+      "sha256": "44fd343625ab9e6b90f63a80758c15066d526e6873fae91474006314a5ead464",
+      "size": 16777216
     }
   },
   "kind": "fe8j-raw-symbol-source-snapshot",
@@ -76,7 +57,7 @@
       "src/data/data_081F64C0/data_081F64C0.c"
     ],
     "path": "raw_provider_values.cp932.bin",
-    "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+    "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
   },
   "providers": {
     "0x0032": {
@@ -108,40 +89,37 @@
     },
     "0x01C1": {
       "byte_length": 5,
-      "offset": 33,
-      "source_anchor": "0x01C1",
-      "source_format": "raw-provider-manifest",
-      "source_id": "expansion-fe8j-raw-v4",
-      "source_path": "texts/locales/source/fe8j/raw_symbols.json",
+      "offset": 0,
+      "source_anchor": "GoalString_UnitsLeft",
+      "source_format": "baserom-slice",
+      "source_path": "layout/baseline_syms.d/GoalDisplay_Init-134e6b42.tsv",
       "source_value_index": 0,
       "symbol": "GoalString_UnitsLeft",
       "value_sha256": "4042ff58570ad607525ff9dc190de55038764f6999f4f06d486cb16602f8f8e6"
     },
     "0x01C2": {
       "byte_length": 7,
-      "offset": 38,
-      "source_anchor": "0x01C2",
-      "source_format": "raw-provider-manifest",
-      "source_id": "expansion-fe8j-raw-v4",
-      "source_path": "texts/locales/source/fe8j/raw_symbols.json",
+      "offset": 5,
+      "source_anchor": "GoalString_Turn",
+      "source_format": "baserom-slice",
+      "source_path": "layout/baseline_syms.d/GoalDisplay_Init-134e6b42.tsv",
       "source_value_index": 0,
       "symbol": "GoalString_Turn",
       "value_sha256": "7bc2fa80d7f7c1c271c529a75c64328b5d7c92fd1df72fcae650ed3fa3064ad1"
     },
     "0x01C3": {
       "byte_length": 11,
-      "offset": 45,
-      "source_anchor": "0x01C3",
-      "source_format": "raw-provider-manifest",
-      "source_id": "expansion-fe8j-raw-v4",
-      "source_path": "texts/locales/source/fe8j/raw_symbols.json",
+      "offset": 12,
+      "source_anchor": "GoalString_LastTurn",
+      "source_format": "baserom-slice",
+      "source_path": "layout/baseline_syms.d/GoalDisplay_Init-134e6b42.tsv",
       "source_value_index": 0,
       "symbol": "GoalString_LastTurn",
       "value_sha256": "55ded65087def01737f9f7d8b44ccafe7f09fb400dd11abb540643287ad01cf3"
     },
     "0x01C4": {
       "byte_length": 5,
-      "offset": 56,
+      "offset": 33,
       "source_anchor": "JapaneseTerrainNames",
       "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "source_value_index": 59,
@@ -150,7 +128,7 @@
     },
     "0x01C5": {
       "byte_length": 5,
-      "offset": 61,
+      "offset": 38,
       "source_anchor": "JapaneseTerrainNames",
       "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "source_value_index": 58,
@@ -159,7 +137,7 @@
     },
     "0x01C6": {
       "byte_length": 3,
-      "offset": 66,
+      "offset": 43,
       "source_anchor": "JapaneseTerrainNames",
       "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "source_value_index": 57,
@@ -168,7 +146,7 @@
     },
     "0x01C7": {
       "byte_length": 3,
-      "offset": 69,
+      "offset": 46,
       "source_anchor": "JapaneseTerrainNames",
       "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "source_value_index": 56,
@@ -177,7 +155,7 @@
     },
     "0x01C8": {
       "byte_length": 7,
-      "offset": 72,
+      "offset": 49,
       "source_anchor": "JapaneseTerrainNames",
       "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "source_value_index": 55,
@@ -186,7 +164,7 @@
     },
     "0x01C9": {
       "byte_length": 5,
-      "offset": 79,
+      "offset": 56,
       "source_anchor": "JapaneseTerrainNames",
       "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "source_value_index": 54,
@@ -195,7 +173,7 @@
     },
     "0x01CA": {
       "byte_length": 7,
-      "offset": 84,
+      "offset": 61,
       "source_anchor": "JapaneseTerrainNames",
       "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "source_value_index": 53,
@@ -204,7 +182,7 @@
     },
     "0x01CB": {
       "byte_length": 7,
-      "offset": 91,
+      "offset": 68,
       "source_anchor": "JapaneseTerrainNames",
       "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "source_value_index": 52,
@@ -213,7 +191,7 @@
     },
     "0x01CC": {
       "byte_length": 7,
-      "offset": 98,
+      "offset": 75,
       "source_anchor": "JapaneseTerrainNames",
       "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "source_value_index": 51,
@@ -222,7 +200,7 @@
     },
     "0x01CD": {
       "byte_length": 7,
-      "offset": 105,
+      "offset": 82,
       "source_anchor": "JapaneseTerrainNames",
       "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "source_value_index": 50,
@@ -231,7 +209,7 @@
     },
     "0x01CE": {
       "byte_length": 3,
-      "offset": 112,
+      "offset": 89,
       "source_anchor": "JapaneseTerrainNames",
       "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "source_value_index": 49,
@@ -240,7 +218,7 @@
     },
     "0x01CF": {
       "byte_length": 5,
-      "offset": 115,
+      "offset": 92,
       "source_anchor": "JapaneseTerrainNames",
       "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "source_value_index": 48,
@@ -249,7 +227,7 @@
     },
     "0x01D0": {
       "byte_length": 3,
-      "offset": 120,
+      "offset": 97,
       "source_anchor": "JapaneseTerrainNames",
       "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "source_value_index": 47,
@@ -258,7 +236,7 @@
     },
     "0x01D1": {
       "byte_length": 7,
-      "offset": 123,
+      "offset": 100,
       "source_anchor": "JapaneseTerrainNames",
       "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "source_value_index": 46,
@@ -267,7 +245,7 @@
     },
     "0x01D2": {
       "byte_length": 5,
-      "offset": 130,
+      "offset": 107,
       "source_anchor": "JapaneseTerrainNames",
       "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "source_value_index": 45,
@@ -276,7 +254,7 @@
     },
     "0x01D3": {
       "byte_length": 5,
-      "offset": 135,
+      "offset": 112,
       "source_anchor": "JapaneseTerrainNames",
       "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "source_value_index": 44,
@@ -285,7 +263,7 @@
     },
     "0x01D4": {
       "byte_length": 3,
-      "offset": 140,
+      "offset": 117,
       "source_anchor": "JapaneseTerrainNames",
       "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "source_value_index": 43,
@@ -294,7 +272,7 @@
     },
     "0x01D5": {
       "byte_length": 3,
-      "offset": 143,
+      "offset": 120,
       "source_anchor": "JapaneseTerrainNames",
       "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "source_value_index": 42,
@@ -303,7 +281,7 @@
     },
     "0x01D6": {
       "byte_length": 7,
-      "offset": 146,
+      "offset": 123,
       "source_anchor": "JapaneseTerrainNames",
       "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "source_value_index": 41,
@@ -312,7 +290,7 @@
     },
     "0x01D7": {
       "byte_length": 3,
-      "offset": 153,
+      "offset": 130,
       "source_anchor": "JapaneseTerrainNames",
       "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "source_value_index": 40,
@@ -321,7 +299,7 @@
     },
     "0x01D8": {
       "byte_length": 7,
-      "offset": 156,
+      "offset": 133,
       "source_anchor": "JapaneseTerrainNames",
       "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "source_value_index": 39,
@@ -330,7 +308,7 @@
     },
     "0x01D9": {
       "byte_length": 3,
-      "offset": 163,
+      "offset": 140,
       "source_anchor": "JapaneseTerrainNames",
       "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "source_value_index": 38,
@@ -339,7 +317,7 @@
     },
     "0x01DA": {
       "byte_length": 3,
-      "offset": 166,
+      "offset": 143,
       "source_anchor": "JapaneseTerrainNames",
       "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "source_value_index": 37,
@@ -348,7 +326,7 @@
     },
     "0x01DB": {
       "byte_length": 3,
-      "offset": 169,
+      "offset": 146,
       "source_anchor": "JapaneseTerrainNames",
       "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "source_value_index": 36,
@@ -357,7 +335,7 @@
     },
     "0x01DC": {
       "byte_length": 3,
-      "offset": 172,
+      "offset": 149,
       "source_anchor": "JapaneseTerrainNames",
       "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "source_value_index": 36,
@@ -366,7 +344,7 @@
     },
     "0x01DD": {
       "byte_length": 3,
-      "offset": 175,
+      "offset": 152,
       "source_anchor": "JapaneseTerrainNames",
       "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "source_value_index": 35,
@@ -375,7 +353,7 @@
     },
     "0x01DE": {
       "byte_length": 3,
-      "offset": 178,
+      "offset": 155,
       "source_anchor": "JapaneseTerrainNames",
       "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "source_value_index": 34,
@@ -384,7 +362,7 @@
     },
     "0x01DF": {
       "byte_length": 3,
-      "offset": 181,
+      "offset": 158,
       "source_anchor": "JapaneseTerrainNames",
       "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "source_value_index": 34,
@@ -393,7 +371,7 @@
     },
     "0x01E0": {
       "byte_length": 9,
-      "offset": 184,
+      "offset": 161,
       "source_anchor": "JapaneseTerrainNames",
       "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "source_value_index": 33,
@@ -402,7 +380,7 @@
     },
     "0x01E1": {
       "byte_length": 3,
-      "offset": 193,
+      "offset": 170,
       "source_anchor": "JapaneseTerrainNames",
       "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "source_value_index": 32,
@@ -411,7 +389,7 @@
     },
     "0x01E2": {
       "byte_length": 3,
-      "offset": 196,
+      "offset": 173,
       "source_anchor": "JapaneseTerrainNames",
       "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "source_value_index": 31,
@@ -420,7 +398,7 @@
     },
     "0x01E3": {
       "byte_length": 5,
-      "offset": 199,
+      "offset": 176,
       "source_anchor": "JapaneseTerrainNames",
       "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "source_value_index": 30,
@@ -429,7 +407,7 @@
     },
     "0x01E4": {
       "byte_length": 7,
-      "offset": 204,
+      "offset": 181,
       "source_anchor": "JapaneseTerrainNames",
       "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "source_value_index": 29,
@@ -438,7 +416,7 @@
     },
     "0x01E5": {
       "byte_length": 5,
-      "offset": 211,
+      "offset": 188,
       "source_anchor": "JapaneseTerrainNames",
       "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "source_value_index": 28,
@@ -447,7 +425,7 @@
     },
     "0x01E6": {
       "byte_length": 5,
-      "offset": 216,
+      "offset": 193,
       "source_anchor": "JapaneseTerrainNames",
       "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "source_value_index": 27,
@@ -456,7 +434,7 @@
     },
     "0x01E7": {
       "byte_length": 3,
-      "offset": 221,
+      "offset": 198,
       "source_anchor": "JapaneseTerrainNames",
       "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "source_value_index": 26,
@@ -465,7 +443,7 @@
     },
     "0x01E8": {
       "byte_length": 5,
-      "offset": 224,
+      "offset": 201,
       "source_anchor": "JapaneseTerrainNames",
       "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "source_value_index": 25,
@@ -474,7 +452,7 @@
     },
     "0x01E9": {
       "byte_length": 5,
-      "offset": 229,
+      "offset": 206,
       "source_anchor": "JapaneseTerrainNames",
       "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "source_value_index": 24,
@@ -483,7 +461,7 @@
     },
     "0x01EA": {
       "byte_length": 5,
-      "offset": 234,
+      "offset": 211,
       "source_anchor": "JapaneseTerrainNames",
       "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "source_value_index": 23,
@@ -492,7 +470,7 @@
     },
     "0x01EB": {
       "byte_length": 7,
-      "offset": 239,
+      "offset": 216,
       "source_anchor": "JapaneseTerrainNames",
       "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "source_value_index": 22,
@@ -501,7 +479,7 @@
     },
     "0x01EC": {
       "byte_length": 7,
-      "offset": 246,
+      "offset": 223,
       "source_anchor": "JapaneseTerrainNames",
       "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "source_value_index": 21,
@@ -510,7 +488,7 @@
     },
     "0x01ED": {
       "byte_length": 7,
-      "offset": 253,
+      "offset": 230,
       "source_anchor": "JapaneseTerrainNames",
       "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "source_value_index": 20,
@@ -519,7 +497,7 @@
     },
     "0x01EE": {
       "byte_length": 5,
-      "offset": 260,
+      "offset": 237,
       "source_anchor": "JapaneseTerrainNames",
       "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "source_value_index": 19,
@@ -528,7 +506,7 @@
     },
     "0x01EF": {
       "byte_length": 9,
-      "offset": 265,
+      "offset": 242,
       "source_anchor": "JapaneseTerrainNames",
       "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "source_value_index": 18,
@@ -537,7 +515,7 @@
     },
     "0x01F0": {
       "byte_length": 5,
-      "offset": 274,
+      "offset": 251,
       "source_anchor": "JapaneseTerrainNames",
       "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "source_value_index": 59,
@@ -546,7 +524,7 @@
     },
     "0x01F1": {
       "byte_length": 5,
-      "offset": 279,
+      "offset": 256,
       "source_anchor": "JapaneseTerrainNames",
       "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "source_value_index": 17,
@@ -555,7 +533,7 @@
     },
     "0x01F2": {
       "byte_length": 5,
-      "offset": 284,
+      "offset": 261,
       "source_anchor": "JapaneseTerrainNames",
       "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "source_value_index": 59,
@@ -564,7 +542,7 @@
     },
     "0x01F3": {
       "byte_length": 5,
-      "offset": 289,
+      "offset": 266,
       "source_anchor": "JapaneseTerrainNames",
       "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "source_value_index": 16,
@@ -573,7 +551,7 @@
     },
     "0x01F4": {
       "byte_length": 9,
-      "offset": 294,
+      "offset": 271,
       "source_anchor": "JapaneseTerrainNames",
       "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "source_value_index": 15,
@@ -582,7 +560,7 @@
     },
     "0x01F5": {
       "byte_length": 3,
-      "offset": 303,
+      "offset": 280,
       "source_anchor": "JapaneseTerrainNames",
       "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "source_value_index": 14,
@@ -591,7 +569,7 @@
     },
     "0x01F6": {
       "byte_length": 3,
-      "offset": 306,
+      "offset": 283,
       "source_anchor": "JapaneseTerrainNames",
       "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "source_value_index": 35,
@@ -600,7 +578,7 @@
     },
     "0x01F7": {
       "byte_length": 5,
-      "offset": 309,
+      "offset": 286,
       "source_anchor": "JapaneseTerrainNames",
       "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "source_value_index": 13,
@@ -609,7 +587,7 @@
     },
     "0x01F8": {
       "byte_length": 7,
-      "offset": 314,
+      "offset": 291,
       "source_anchor": "JapaneseTerrainNames",
       "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "source_value_index": 12,
@@ -618,7 +596,7 @@
     },
     "0x01F9": {
       "byte_length": 3,
-      "offset": 321,
+      "offset": 298,
       "source_anchor": "JapaneseTerrainNames",
       "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "source_value_index": 11,
@@ -627,7 +605,7 @@
     },
     "0x01FA": {
       "byte_length": 5,
-      "offset": 324,
+      "offset": 301,
       "source_anchor": "JapaneseTerrainNames",
       "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "source_value_index": 10,
@@ -636,7 +614,7 @@
     },
     "0x01FB": {
       "byte_length": 5,
-      "offset": 329,
+      "offset": 306,
       "source_anchor": "JapaneseTerrainNames",
       "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "source_value_index": 9,
@@ -645,7 +623,7 @@
     },
     "0x01FC": {
       "byte_length": 5,
-      "offset": 334,
+      "offset": 311,
       "source_anchor": "JapaneseTerrainNames",
       "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "source_value_index": 8,
@@ -654,7 +632,7 @@
     },
     "0x01FD": {
       "byte_length": 5,
-      "offset": 339,
+      "offset": 316,
       "source_anchor": "JapaneseTerrainNames",
       "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "source_value_index": 7,
@@ -663,7 +641,7 @@
     },
     "0x01FE": {
       "byte_length": 3,
-      "offset": 344,
+      "offset": 321,
       "source_anchor": "JapaneseTerrainNames",
       "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "source_value_index": 6,
@@ -672,7 +650,7 @@
     },
     "0x01FF": {
       "byte_length": 3,
-      "offset": 347,
+      "offset": 324,
       "source_anchor": "JapaneseTerrainNames",
       "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "source_value_index": 5,
@@ -681,7 +659,7 @@
     },
     "0x0200": {
       "byte_length": 3,
-      "offset": 350,
+      "offset": 327,
       "source_anchor": "JapaneseTerrainNames",
       "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "source_value_index": 4,
@@ -690,7 +668,7 @@
     },
     "0x0201": {
       "byte_length": 3,
-      "offset": 353,
+      "offset": 330,
       "source_anchor": "JapaneseTerrainNames",
       "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "source_value_index": 3,
@@ -699,7 +677,7 @@
     },
     "0x0202": {
       "byte_length": 5,
-      "offset": 356,
+      "offset": 333,
       "source_anchor": "JapaneseTerrainNames",
       "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "source_value_index": 2,
@@ -708,7 +686,7 @@
     },
     "0x0203": {
       "byte_length": 5,
-      "offset": 361,
+      "offset": 338,
       "source_anchor": "JapaneseTerrainNames",
       "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "source_value_index": 1,
@@ -717,7 +695,7 @@
     },
     "0x0204": {
       "byte_length": 7,
-      "offset": 366,
+      "offset": 343,
       "source_anchor": "JapaneseTerrainNames",
       "source_path": "src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c",
       "source_value_index": 0,
@@ -726,7 +704,7 @@
     },
     "0x0645": {
       "byte_length": 7,
-      "offset": 373,
+      "offset": 350,
       "source_anchor": "sGmapRouteMenuText",
       "source_path": "src/data/data_081F64C0/data_081F64C0.c",
       "source_value_index": 5,
@@ -735,7 +713,7 @@
     },
     "0x0646": {
       "byte_length": 7,
-      "offset": 380,
+      "offset": 357,
       "source_anchor": "sGmapRouteMenuText",
       "source_path": "src/data/data_081F64C0/data_081F64C0.c",
       "source_value_index": 4,
@@ -744,7 +722,7 @@
     },
     "0x0647": {
       "byte_length": 7,
-      "offset": 387,
+      "offset": 364,
       "source_anchor": "sGmapRouteMenuText",
       "source_path": "src/data/data_081F64C0/data_081F64C0.c",
       "source_value_index": 3,
@@ -753,7 +731,7 @@
     },
     "0x0648": {
       "byte_length": 7,
-      "offset": 394,
+      "offset": 371,
       "source_anchor": "sGmapRouteMenuText",
       "source_path": "src/data/data_081F64C0/data_081F64C0.c",
       "source_value_index": 2,
@@ -762,7 +740,7 @@
     },
     "0x0649": {
       "byte_length": 7,
-      "offset": 401,
+      "offset": 378,
       "source_anchor": "sGmapRouteMenuText",
       "source_path": "src/data/data_081F64C0/data_081F64C0.c",
       "source_value_index": 1,
@@ -771,7 +749,7 @@
     },
     "0x066E": {
       "byte_length": 15,
-      "offset": 408,
+      "offset": 385,
       "source_anchor": "sGmapRouteMenuText",
       "source_path": "src/data/data_081F64C0/data_081F64C0.c",
       "source_value_index": 9,
@@ -780,7 +758,7 @@
     },
     "0x066F": {
       "byte_length": 15,
-      "offset": 423,
+      "offset": 400,
       "source_anchor": "sGmapRouteMenuText",
       "source_path": "src/data/data_081F64C0/data_081F64C0.c",
       "source_value_index": 8,
@@ -789,7 +767,7 @@
     },
     "0x0670": {
       "byte_length": 15,
-      "offset": 438,
+      "offset": 415,
       "source_anchor": "sGmapRouteMenuText",
       "source_path": "src/data/data_081F64C0/data_081F64C0.c",
       "source_value_index": 7,
@@ -798,7 +776,7 @@
     },
     "0x0671": {
       "byte_length": 15,
-      "offset": 453,
+      "offset": 430,
       "source_anchor": "sGmapRouteMenuText",
       "source_path": "src/data/data_081F64C0/data_081F64C0.c",
       "source_value_index": 6,
@@ -807,7 +785,7 @@
     },
     "0x067A": {
       "byte_length": 7,
-      "offset": 468,
+      "offset": 445,
       "source_anchor": "gMenuStr_25C",
       "source_path": "src/menu_def.c",
       "source_value_index": 0,
@@ -816,7 +794,7 @@
     },
     "0x067C": {
       "byte_length": 5,
-      "offset": 475,
+      "offset": 452,
       "source_anchor": "gMenuStr_24C",
       "source_path": "src/menu_def.c",
       "source_value_index": 0,
@@ -825,7 +803,7 @@
     },
     "0x067D": {
       "byte_length": 9,
-      "offset": 480,
+      "offset": 457,
       "source_anchor": "gMenuStr_22C",
       "source_path": "src/menu_def.c",
       "source_value_index": 0,
@@ -834,7 +812,7 @@
     },
     "0x067E": {
       "byte_length": 7,
-      "offset": 489,
+      "offset": 466,
       "source_anchor": "gMenuStr_224",
       "source_path": "src/menu_def.c",
       "source_value_index": 0,
@@ -843,7 +821,7 @@
     },
     "0x067F": {
       "byte_length": 7,
-      "offset": 496,
+      "offset": 473,
       "source_anchor": "gMenuStr_21C",
       "source_path": "src/menu_def.c",
       "source_value_index": 0,
@@ -852,7 +830,7 @@
     },
     "0x0680": {
       "byte_length": 7,
-      "offset": 503,
+      "offset": 480,
       "source_anchor": "gMenuStr_1F8",
       "source_path": "src/menu_def.c",
       "source_value_index": 0,
@@ -861,7 +839,7 @@
     },
     "0x0681": {
       "byte_length": 7,
-      "offset": 510,
+      "offset": 487,
       "source_anchor": "gMenuStr_1F0",
       "source_path": "src/menu_def.c",
       "source_value_index": 0,
@@ -870,7 +848,7 @@
     },
     "0x0682": {
       "byte_length": 7,
-      "offset": 517,
+      "offset": 494,
       "source_anchor": "gMenuStr_1E8",
       "source_path": "src/menu_def.c",
       "source_value_index": 0,
@@ -879,7 +857,7 @@
     },
     "0x0683": {
       "byte_length": 7,
-      "offset": 524,
+      "offset": 501,
       "source_anchor": "gMenuStr_1E0",
       "source_path": "src/menu_def.c",
       "source_value_index": 0,
@@ -888,7 +866,7 @@
     },
     "0x0684": {
       "byte_length": 5,
-      "offset": 531,
+      "offset": 508,
       "source_anchor": "gMenuStr_1D8",
       "source_path": "src/menu_def.c",
       "source_value_index": 0,
@@ -897,7 +875,7 @@
     },
     "0x0685": {
       "byte_length": 9,
-      "offset": 536,
+      "offset": 513,
       "source_anchor": "gMenuStr_1CC",
       "source_path": "src/menu_def.c",
       "source_value_index": 0,
@@ -906,7 +884,7 @@
     },
     "0x0686": {
       "byte_length": 9,
-      "offset": 545,
+      "offset": 522,
       "source_anchor": "gMenuStr_1C0",
       "source_path": "src/menu_def.c",
       "source_value_index": 0,
@@ -915,7 +893,7 @@
     },
     "0x0687": {
       "byte_length": 9,
-      "offset": 554,
+      "offset": 531,
       "source_anchor": "gMenuStr_1B4",
       "source_path": "src/menu_def.c",
       "source_value_index": 0,
@@ -924,7 +902,7 @@
     },
     "0x0688": {
       "byte_length": 9,
-      "offset": 563,
+      "offset": 540,
       "source_anchor": "gMenuStr_1A8",
       "source_path": "src/menu_def.c",
       "source_value_index": 0,
@@ -933,7 +911,7 @@
     },
     "0x0689": {
       "byte_length": 7,
-      "offset": 572,
+      "offset": 549,
       "source_anchor": "gMenuStr_1A0",
       "source_path": "src/menu_def.c",
       "source_value_index": 0,
@@ -942,7 +920,7 @@
     },
     "0x068A": {
       "byte_length": 9,
-      "offset": 579,
+      "offset": 556,
       "source_anchor": "gMenuStr_194",
       "source_path": "src/menu_def.c",
       "source_value_index": 0,
@@ -951,7 +929,7 @@
     },
     "0x068B": {
       "byte_length": 9,
-      "offset": 588,
+      "offset": 565,
       "source_anchor": "gMenuStr_188",
       "source_path": "src/menu_def.c",
       "source_value_index": 0,
@@ -960,7 +938,7 @@
     },
     "0x068C": {
       "byte_length": 9,
-      "offset": 597,
+      "offset": 574,
       "source_anchor": "gMenuStr_17C",
       "source_path": "src/menu_def.c",
       "source_value_index": 0,
@@ -969,7 +947,7 @@
     },
     "0x068D": {
       "byte_length": 9,
-      "offset": 606,
+      "offset": 583,
       "source_anchor": "gMenuStr_170",
       "source_path": "src/menu_def.c",
       "source_value_index": 0,
@@ -978,7 +956,7 @@
     },
     "0x068E": {
       "byte_length": 7,
-      "offset": 615,
+      "offset": 592,
       "source_anchor": "gMenuStr_168",
       "source_path": "src/menu_def.c",
       "source_value_index": 0,
@@ -987,7 +965,7 @@
     },
     "0x068F": {
       "byte_length": 9,
-      "offset": 622,
+      "offset": 599,
       "source_anchor": "gMenuStr_15C",
       "source_path": "src/menu_def.c",
       "source_value_index": 0,
@@ -996,7 +974,7 @@
     },
     "0x0690": {
       "byte_length": 7,
-      "offset": 631,
+      "offset": 608,
       "source_anchor": "gMenuStr_294",
       "source_path": "src/menu_def.c",
       "source_value_index": 0,
@@ -1005,7 +983,7 @@
     },
     "0x0691": {
       "byte_length": 7,
-      "offset": 638,
+      "offset": 615,
       "source_anchor": "gMenuStr_244",
       "source_path": "src/menu_def.c",
       "source_value_index": 0,
@@ -1014,7 +992,7 @@
     },
     "0x0692": {
       "byte_length": 9,
-      "offset": 645,
+      "offset": 622,
       "source_anchor": "gMenuStr_238",
       "source_path": "src/menu_def.c",
       "source_value_index": 0,
@@ -1023,7 +1001,7 @@
     },
     "0x0694": {
       "byte_length": 9,
-      "offset": 654,
+      "offset": 631,
       "source_anchor": "gMenuStr_200",
       "source_path": "src/menu_def.c",
       "source_value_index": 0,
@@ -1032,7 +1010,7 @@
     },
     "0x0695": {
       "byte_length": 7,
-      "offset": 663,
+      "offset": 640,
       "source_anchor": "gMenuStr_154",
       "source_path": "src/menu_def.c",
       "source_value_index": 0,
@@ -1041,7 +1019,7 @@
     },
     "0x0696": {
       "byte_length": 5,
-      "offset": 670,
+      "offset": 647,
       "source_anchor": "gMenuStr_14C",
       "source_path": "src/menu_def.c",
       "source_value_index": 0,
@@ -1050,7 +1028,7 @@
     },
     "0x0697": {
       "byte_length": 5,
-      "offset": 675,
+      "offset": 652,
       "source_anchor": "gMenuStr_144",
       "source_path": "src/menu_def.c",
       "source_value_index": 0,
@@ -1059,7 +1037,7 @@
     },
     "0x0698": {
       "byte_length": 5,
-      "offset": 680,
+      "offset": 657,
       "source_anchor": "gMenuStr_13C",
       "source_path": "src/menu_def.c",
       "source_value_index": 0,
@@ -1068,7 +1046,7 @@
     },
     "0x0699": {
       "byte_length": 7,
-      "offset": 685,
+      "offset": 662,
       "source_anchor": "gMenuStr_134",
       "source_path": "src/menu_def.c",
       "source_value_index": 0,
@@ -1077,7 +1055,7 @@
     },
     "0x069A": {
       "byte_length": 7,
-      "offset": 692,
+      "offset": 669,
       "source_anchor": "gMenuStr_29C",
       "source_path": "src/menu_def.c",
       "source_value_index": 0,
@@ -1086,7 +1064,7 @@
     },
     "0x069B": {
       "byte_length": 7,
-      "offset": 699,
+      "offset": 676,
       "source_anchor": "gMenuStr_27C",
       "source_path": "src/menu_def.c",
       "source_value_index": 0,
@@ -1095,7 +1073,7 @@
     },
     "0x069C": {
       "byte_length": 7,
-      "offset": 706,
+      "offset": 683,
       "source_anchor": "gMenuStr_28C",
       "source_path": "src/menu_def.c",
       "source_value_index": 0,
@@ -1104,7 +1082,7 @@
     },
     "0x069D": {
       "byte_length": 7,
-      "offset": 713,
+      "offset": 690,
       "source_anchor": "gMenuStr_274",
       "source_path": "src/menu_def.c",
       "source_value_index": 0,
@@ -1113,7 +1091,7 @@
     },
     "0x069E": {
       "byte_length": 7,
-      "offset": 720,
+      "offset": 697,
       "source_anchor": "gMenuStr_284",
       "source_path": "src/menu_def.c",
       "source_value_index": 0,
@@ -1122,7 +1100,7 @@
     },
     "0x069F": {
       "byte_length": 7,
-      "offset": 727,
+      "offset": 704,
       "source_anchor": "gMenuStr_26C",
       "source_path": "src/menu_def.c",
       "source_value_index": 0,
@@ -1131,7 +1109,7 @@
     },
     "0x06A0": {
       "byte_length": 7,
-      "offset": 734,
+      "offset": 711,
       "source_anchor": "gMenuStr_264",
       "source_path": "src/menu_def.c",
       "source_value_index": 0,
@@ -1140,7 +1118,7 @@
     },
     "0x0843": {
       "byte_length": 5,
-      "offset": 741,
+      "offset": 718,
       "source_anchor": "gMenuStr_12C",
       "source_path": "src/menu_def.c",
       "source_value_index": 0,
@@ -1149,7 +1127,7 @@
     },
     "0x0844": {
       "byte_length": 7,
-      "offset": 746,
+      "offset": 723,
       "source_anchor": "gMenuStr_124",
       "source_path": "src/menu_def.c",
       "source_value_index": 0,
@@ -1157,13 +1135,13 @@
       "value_sha256": "994caed121f428d33bb71973ea63274c195a077b15e1d3474004dc01ef30b6cd"
     }
   },
-  "schema_version": 5,
+  "schema_version": 6,
   "source_blobs": [
     {
-      "oid": "5c305d88069e72358a13b57d5ffb69f5e9a13910",
-      "path": "src/data/data_081F6D00/data_081F6D00.s",
-      "sha256": "4fa7ea7c3b0a808b3aee88b55a5ce2d8d6ec99fd8bbc7286d0484d3a54902697",
-      "vendored_path": "upstream/src/data/data_081F6D00/data_081F6D00.s"
+      "oid": "4325b593a941ce95e3821e3746564b2311fe8142",
+      "path": "layout/baseline_syms.d/GoalDisplay_Init-134e6b42.tsv",
+      "sha256": "2bc7b7f0b4df0d1f8310b8fbe5179f1374a79a4e6cf0124d21c81429e7d8279f",
+      "vendored_path": "upstream/layout/baseline_syms.d/GoalDisplay_Init-134e6b42.tsv"
     },
     {
       "oid": "e7fffaafb31d0b46dbd98e1497bbdf528b0deb9d",
@@ -1172,16 +1150,22 @@
       "vendored_path": "upstream/src/data/const_data_1C0AFC/dat_const_data_1C0AFC.c"
     },
     {
-      "oid": "fe15c60493b9f8b3387fc086c85bdd1ec51214c8",
-      "path": "src/menu_def.c",
-      "sha256": "30cc532531cc641d3b3eccb0a3c338447ac61b9a7aa3d775ab70834a9974ebc1",
-      "vendored_path": "upstream/src/menu_def.c"
-    },
-    {
       "oid": "ee2c937488d07f45861ddaaa11138be5eee15384",
       "path": "src/data/data_081F64C0/data_081F64C0.c",
       "sha256": "9295371b0c644828b70868a1115ed78d0aaa3cff496d8dca293921f4f8a1727f",
       "vendored_path": "upstream/src/data/data_081F64C0/data_081F64C0.c"
+    },
+    {
+      "oid": "5c305d88069e72358a13b57d5ffb69f5e9a13910",
+      "path": "src/data/data_081F6D00/data_081F6D00.s",
+      "sha256": "4fa7ea7c3b0a808b3aee88b55a5ce2d8d6ec99fd8bbc7286d0484d3a54902697",
+      "vendored_path": "upstream/src/data/data_081F6D00/data_081F6D00.s"
+    },
+    {
+      "oid": "fe15c60493b9f8b3387fc086c85bdd1ec51214c8",
+      "path": "src/menu_def.c",
+      "sha256": "30cc532531cc641d3b3eccb0a3c338447ac61b9a7aa3d775ab70834a9974ebc1",
+      "vendored_path": "upstream/src/menu_def.c"
     }
   ],
   "source_commit": {
@@ -1198,10 +1182,22 @@
       "vendored_path": "upstream/trees/645b768fcf7b2993282cf109481ba51296e2e697.tree"
     },
     {
+      "oid": "a9b4ce0c0a253a1aa4f32fbe3973f6401e8e1afc",
+      "path": "layout",
+      "sha256": "1e97dbffb869df42847ef72516d87a2beb0942d25107ddbe92720d4dbf7952ab",
+      "vendored_path": "upstream/trees/a9b4ce0c0a253a1aa4f32fbe3973f6401e8e1afc.tree"
+    },
+    {
       "oid": "1a2751edba6ad4d76eda409d9f9f9d28ae8d03b2",
       "path": "src",
       "sha256": "6f1b33a0c1f5e03ce18630666c715d42c10961128761f11745f5da0d2868c17a",
       "vendored_path": "upstream/trees/1a2751edba6ad4d76eda409d9f9f9d28ae8d03b2.tree"
+    },
+    {
+      "oid": "e89809c720a01bd272a85da34ec7faf49955b1a1",
+      "path": "layout/baseline_syms.d",
+      "sha256": "96b74f0c93230a9d0d4bf927c65f51f93b98d0e2b7954b2b8ee24d7b59fdb591",
+      "vendored_path": "upstream/trees/e89809c720a01bd272a85da34ec7faf49955b1a1.tree"
     },
     {
       "oid": "5775712cd696bc810105a36bff50d9a96c590bfb",

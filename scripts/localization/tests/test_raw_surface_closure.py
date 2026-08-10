@@ -169,7 +169,8 @@ class RawSurfaceClosureTests(unittest.TestCase):
             provenance_kinds,
             Counter(
                 {
-                    "pinned_git_source_artifact": 113,
+                    "pinned_git_source_artifact": 110,
+                    "pinned_baserom_slice": 3,
                     "tracked_source_literal": 13,
                     "reviewed_authored_translation": 11,
                     "authored_expansion_catalog": 6,
@@ -655,13 +656,23 @@ class RawSurfaceClosureTests(unittest.TestCase):
             self.assertEqual(
                 site["provider_scope"],
                 {
-                    "anchors": [symbol],
+                    "anchors": [
+                        symbol,
+                        {
+                            "0x01C1": "081F5528",
+                            "0x01C2": "081F553C",
+                            "0x01C3": "081F5530",
+                        }[target_id],
+                        "data",
+                        "GoalDisplay_Init",
+                    ],
                     "path": (
                         "texts/locales/source/fe8j/upstream/"
-                        "src/player_interface_0808F584.c"
+                        "layout/baseline_syms.d/"
+                        "GoalDisplay_Init-134e6b42.tsv"
                     ),
-                    "scope_kind": "function",
-                    "symbol": "GoalDisplay_Init",
+                    "scope_kind": "line",
+                    "symbol": symbol,
                 },
             )
         providers = load_ja_raw_providers(
@@ -675,17 +686,26 @@ class RawSurfaceClosureTests(unittest.TestCase):
                 self.assertEqual(provider.text, text)
                 self.assertEqual(
                     provider.source_repository,
-                    "https://github.com/laqieer/fireemblem8-expansion",
+                    "https://github.com/laqieer/fireemblem8j",
                 )
                 self.assertEqual(
                     provider.source_revision,
-                    "548b240d0a553add88897927049b7f5ce25657a8",
+                    "bf424414d075789d757e2f4cd0cea823bfb2862e",
                 )
                 self.assertEqual(
                     provider.source_path,
-                    "texts/locales/source/fe8j/raw_symbols.json",
+                    (
+                        "layout/baseline_syms.d/"
+                        "GoalDisplay_Init-134e6b42.tsv"
+                    ),
                 )
-                self.assertEqual(provider.source_anchor, target_id)
+                self.assertEqual(provider.source_anchor, symbol)
+                self.assertEqual(provider.provenance_kind, "pinned_baserom_slice")
+                self.assertEqual(
+                    provider.rom_sha256,
+                    "44fd343625ab9e6b90f63a80758c15066d526e6873fae91474006314a5ead464",
+                )
+                self.assertEqual(provider.decoded_value, text)
 
     def test_comment_only_extern_and_wrong_definition_are_not_source_data(self):
         fixtures = {
@@ -771,7 +791,7 @@ class RawSurfaceClosureTests(unittest.TestCase):
             ).hexdigest(),
             snapshot["source_revision"],
         )
-        self.assertEqual(snapshot["schema_version"], 5)
+        self.assertEqual(snapshot["schema_version"], 6)
         self.assertTrue(snapshot["source_trees"])
         pinned_blobs = {}
         for source_blob in snapshot["source_blobs"]:
@@ -791,38 +811,14 @@ class RawSurfaceClosureTests(unittest.TestCase):
         artifact = snapshot["provider_values_artifact"]
         self.assertEqual(
             set(artifact["generated_from_paths"]),
-            set(pinned_blobs),
+            set(pinned_blobs)
+            - {
+                (
+                    "layout/baseline_syms.d/"
+                    "GoalDisplay_Init-134e6b42.tsv"
+                )
+            },
         )
-        additional_blobs = {}
-        for source_id, source in snapshot["additional_git_sources"].items():
-            source_commit_path = path.parent / source["source_commit"]["path"]
-            source_commit = source_commit_path.read_bytes()
-            self.assertEqual(
-                hashlib.sha256(source_commit).hexdigest(),
-                source["source_commit"]["sha256"],
-            )
-            self.assertEqual(
-                hashlib.sha1(
-                    f"commit {len(source_commit)}\0".encode("ascii")
-                    + source_commit
-                ).hexdigest(),
-                source["source_revision"],
-            )
-            additional_blobs[source_id] = {}
-            for source_blob in source["source_blobs"]:
-                source_path = path.parent / source_blob["vendored_path"]
-                raw = source_path.read_bytes()
-                self.assertEqual(
-                    hashlib.sha256(raw).hexdigest(),
-                    source_blob["sha256"],
-                )
-                self.assertEqual(
-                    hashlib.sha1(
-                        f"blob {len(raw)}\0".encode("ascii") + raw
-                    ).hexdigest(),
-                    source_blob["oid"],
-                )
-                additional_blobs[source_id][source_blob["path"]] = raw
         blob_path = path.parent / artifact["path"]
         blob = blob_path.read_bytes()
         self.assertEqual(
@@ -830,22 +826,49 @@ class RawSurfaceClosureTests(unittest.TestCase):
             artifact["sha256"],
         )
         self.assertEqual(artifact["encoding"], "cp932-nul-terminated")
+        baserom_source = snapshot["baserom_source"]
+        self.assertEqual(
+            baserom_source["rom"],
+            {
+                "sha256": (
+                    "44fd343625ab9e6b90f63a80758c15066d526e6873fae91474006314a5ead464"
+                ),
+                "size": 0x1000000,
+            },
+        )
+        self.assertEqual(
+            baserom_source["offset_source"]["path"],
+            (
+                "layout/baseline_syms.d/"
+                "GoalDisplay_Init-134e6b42.tsv"
+            ),
+        )
+        self.assertEqual(
+            baserom_source["offset_source"]["blob_oid"],
+            "4325b593a941ce95e3821e3746564b2311fe8142",
+        )
+        goal_artifact = (
+            path.parent / baserom_source["artifact"]["path"]
+        ).read_bytes()
+        self.assertEqual(
+            hashlib.sha256(goal_artifact).hexdigest(),
+            baserom_source["artifact"]["sha256"],
+        )
         for target, source in snapshot["providers"].items():
             with self.subTest(target=target):
                 provider = self.ja_raw["providers"][target]
                 self.assertEqual(source["symbol"], provider["symbol"])
-                source_id = source.get("source_id")
-                source_blob_map = (
-                    pinned_blobs
-                    if source_id is None
-                    else additional_blobs[source_id]
-                )
-                self.assertIn(source["source_path"], source_blob_map)
+                self.assertIn(source["source_path"], pinned_blobs)
                 self.assertIn(
                     source["source_anchor"].encode("utf-8"),
-                    source_blob_map[source["source_path"]],
+                    pinned_blobs[source["source_path"]],
                 )
-                raw_value = blob[
+                source_artifact = (
+                    goal_artifact
+                    if source.get("source_format") == "baserom-slice"
+                    else blob
+                )
+                raw_value = source_artifact[
                     source["offset"] : source["offset"] + source["byte_length"]
                 ]
                 self.assertEqual(
@@ -861,10 +884,18 @@ class RawSurfaceClosureTests(unittest.TestCase):
                 self.assertGreaterEqual(source["source_value_index"], 0)
         for target in ("0x01C1", "0x01C2", "0x01C3"):
             source = snapshot["providers"][target]
-            self.assertEqual(source["source_id"], "expansion-fe8j-raw-v4")
-            self.assertEqual(source["source_format"], "raw-provider-manifest")
-            self.assertEqual(source["source_anchor"], target)
+            record = baserom_source["records"][target]
+            self.assertEqual(source["source_format"], "baserom-slice")
+            self.assertEqual(source["source_anchor"], source["symbol"])
             self.assertEqual(source["source_value_index"], 0)
+            self.assertEqual(source["offset"], record["artifact_offset"])
+            self.assertEqual(source["byte_length"], record["length"])
+            self.assertEqual(source["value_sha256"], record["bytes_sha256"])
+            value = goal_artifact[
+                record["artifact_offset"] :
+                record["artifact_offset"] + record["length"]
+            ]
+            self.assertEqual(value[:-1].decode("cp932"), record["decoded_value"])
         self.assertTrue(
                 all(
                     not provider["symbol"].startswith("gTerrainNames[")
@@ -968,10 +999,73 @@ class RawSurfaceClosureTests(unittest.TestCase):
             write_catalog(wrong_goal_index_catalog, wrong_goal_index_snapshot)
             with self.assertRaisesRegex(
                 RawProviderError,
-                "source_value_index is out of range",
+                "baserom metadata differs",
             ):
                 load_ja_raw_providers(
                     wrong_goal_index_catalog,
+                    source_root=fixture,
+                )
+
+            goal_artifact_path = (
+                fixture
+                / original_snapshot["baserom_source"]["artifact"]["path"]
+            )
+            goal_artifact = goal_artifact_path.read_bytes()
+            goal_artifact_path.write_bytes(
+                bytes([goal_artifact[0] ^ 1]) + goal_artifact[1:]
+            )
+            altered_byte_catalog = deepcopy(self.ja_raw)
+            write_catalog(altered_byte_catalog, deepcopy(original_snapshot))
+            with self.assertRaisesRegex(
+                RawProviderError,
+                "baserom artifact SHA-256 mismatch",
+            ):
+                load_ja_raw_providers(
+                    altered_byte_catalog,
+                    source_root=fixture,
+                )
+            goal_artifact_path.write_bytes(goal_artifact)
+
+            altered_offset_catalog = deepcopy(self.ja_raw)
+            altered_offset_snapshot = deepcopy(original_snapshot)
+            altered_offset_snapshot["baserom_source"]["records"]["0x01C1"][
+                "rom_offset"
+            ] += 1
+            write_catalog(altered_offset_catalog, altered_offset_snapshot)
+            with self.assertRaisesRegex(
+                RawProviderError,
+                "ROM offset differs from the pinned baseline map",
+            ):
+                load_ja_raw_providers(
+                    altered_offset_catalog,
+                    source_root=fixture,
+                )
+
+            altered_rom_catalog = deepcopy(self.ja_raw)
+            altered_rom_snapshot = deepcopy(original_snapshot)
+            altered_rom_snapshot["baserom_source"]["rom"]["sha256"] = "0" * 64
+            write_catalog(altered_rom_catalog, altered_rom_snapshot)
+            with self.assertRaisesRegex(
+                RawProviderError,
+                "independently pinned FE8J ROM",
+            ):
+                load_ja_raw_providers(
+                    altered_rom_catalog,
+                    source_root=fixture,
+                )
+
+            nested_manifest_catalog = deepcopy(self.ja_raw)
+            nested_manifest_snapshot = deepcopy(original_snapshot)
+            nested_manifest_snapshot["additional_git_sources"] = {
+                "fake-generated-manifest": {}
+            }
+            write_catalog(nested_manifest_catalog, nested_manifest_snapshot)
+            with self.assertRaisesRegex(
+                RawProviderError,
+                "nested generated manifests are not accepted",
+            ):
+                load_ja_raw_providers(
+                    nested_manifest_catalog,
                     source_root=fixture,
                 )
 
@@ -1146,7 +1240,7 @@ class RawSurfaceClosureTests(unittest.TestCase):
                         "value_sha256": hashlib.sha256(value_raw).hexdigest(),
                     }
                 },
-                "schema_version": 5,
+                "schema_version": 6,
                 "source_blobs": [
                     {
                         "oid": source_oid,
@@ -1199,7 +1293,7 @@ class RawSurfaceClosureTests(unittest.TestCase):
                             "text": "fixture",
                         }
                     },
-                    "schema_version": 5,
+                    "schema_version": 6,
                     "source_layout": "FE8J-raw-symbol",
                     "source_revision": source_snapshot["source_revision"],
                     "source_snapshot": {

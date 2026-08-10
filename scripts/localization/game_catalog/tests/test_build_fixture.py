@@ -138,7 +138,7 @@ class FixtureBuildTests(unittest.TestCase):
                 "path": "ja_raw_values.cp932.bin",
                 "sha256": hashlib.sha256(ja_blob).hexdigest(),
             },
-            "schema_version": 5,
+            "schema_version": 6,
             "source_blobs": [
                 {
                     "oid": ja_origin_oid,
@@ -181,7 +181,7 @@ class FixtureBuildTests(unittest.TestCase):
                     "locale_id": "ja",
                     "provider_count": 1,
                     "providers": ja_providers,
-                    "schema_version": 5,
+                    "schema_version": 6,
                     "source_layout": "FE8J-raw-symbol",
                     "source_revision": ja_revision,
                     "source_snapshot": {

@@ -777,10 +777,10 @@
           "provenance": {
             "byte_length": 5,
             "kind": "pinned_git_source_artifact",
-            "offset": 741,
+            "offset": 718,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "gMenuStr_12C",
             "source_blob_oid": "fe15c60493b9f8b3387fc086c85bdd1ec51214c8",
@@ -830,10 +830,10 @@
           "provenance": {
             "byte_length": 7,
             "kind": "pinned_git_source_artifact",
-            "offset": 746,
+            "offset": 723,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "gMenuStr_124",
             "source_blob_oid": "fe15c60493b9f8b3387fc086c85bdd1ec51214c8",
@@ -883,10 +883,10 @@
           "provenance": {
             "byte_length": 5,
             "kind": "pinned_git_source_artifact",
-            "offset": 670,
+            "offset": 647,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "gMenuStr_14C",
             "source_blob_oid": "fe15c60493b9f8b3387fc086c85bdd1ec51214c8",
@@ -936,10 +936,10 @@
           "provenance": {
             "byte_length": 5,
             "kind": "pinned_git_source_artifact",
-            "offset": 675,
+            "offset": 652,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "gMenuStr_144",
             "source_blob_oid": "fe15c60493b9f8b3387fc086c85bdd1ec51214c8",
@@ -989,10 +989,10 @@
           "provenance": {
             "byte_length": 5,
             "kind": "pinned_git_source_artifact",
-            "offset": 680,
+            "offset": 657,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "gMenuStr_13C",
             "source_blob_oid": "fe15c60493b9f8b3387fc086c85bdd1ec51214c8",
@@ -1042,10 +1042,10 @@
           "provenance": {
             "byte_length": 7,
             "kind": "pinned_git_source_artifact",
-            "offset": 685,
+            "offset": 662,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "gMenuStr_134",
             "source_blob_oid": "fe15c60493b9f8b3387fc086c85bdd1ec51214c8",
@@ -1095,10 +1095,10 @@
           "provenance": {
             "byte_length": 7,
             "kind": "pinned_git_source_artifact",
-            "offset": 468,
+            "offset": 445,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "gMenuStr_25C",
             "source_blob_oid": "fe15c60493b9f8b3387fc086c85bdd1ec51214c8",
@@ -1231,10 +1231,10 @@
           "provenance": {
             "byte_length": 5,
             "kind": "pinned_git_source_artifact",
-            "offset": 475,
+            "offset": 452,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "gMenuStr_24C",
             "source_blob_oid": "fe15c60493b9f8b3387fc086c85bdd1ec51214c8",
@@ -1284,10 +1284,10 @@
           "provenance": {
             "byte_length": 7,
             "kind": "pinned_git_source_artifact",
-            "offset": 638,
+            "offset": 615,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "gMenuStr_244",
             "source_blob_oid": "fe15c60493b9f8b3387fc086c85bdd1ec51214c8",
@@ -1337,10 +1337,10 @@
           "provenance": {
             "byte_length": 9,
             "kind": "pinned_git_source_artifact",
-            "offset": 645,
+            "offset": 622,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "gMenuStr_238",
             "source_blob_oid": "fe15c60493b9f8b3387fc086c85bdd1ec51214c8",
@@ -1390,10 +1390,10 @@
           "provenance": {
             "byte_length": 9,
             "kind": "pinned_git_source_artifact",
-            "offset": 480,
+            "offset": 457,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "gMenuStr_22C",
             "source_blob_oid": "fe15c60493b9f8b3387fc086c85bdd1ec51214c8",
@@ -1443,10 +1443,10 @@
           "provenance": {
             "byte_length": 7,
             "kind": "pinned_git_source_artifact",
-            "offset": 489,
+            "offset": 466,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "gMenuStr_224",
             "source_blob_oid": "fe15c60493b9f8b3387fc086c85bdd1ec51214c8",
@@ -1496,10 +1496,10 @@
           "provenance": {
             "byte_length": 7,
             "kind": "pinned_git_source_artifact",
-            "offset": 496,
+            "offset": 473,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "gMenuStr_21C",
             "source_blob_oid": "fe15c60493b9f8b3387fc086c85bdd1ec51214c8",
@@ -1667,10 +1667,10 @@
           "provenance": {
             "byte_length": 9,
             "kind": "pinned_git_source_artifact",
-            "offset": 654,
+            "offset": 631,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "gMenuStr_200",
             "source_blob_oid": "fe15c60493b9f8b3387fc086c85bdd1ec51214c8",
@@ -1720,10 +1720,10 @@
           "provenance": {
             "byte_length": 7,
             "kind": "pinned_git_source_artifact",
-            "offset": 503,
+            "offset": 480,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "gMenuStr_1F8",
             "source_blob_oid": "fe15c60493b9f8b3387fc086c85bdd1ec51214c8",
@@ -1773,10 +1773,10 @@
           "provenance": {
             "byte_length": 7,
             "kind": "pinned_git_source_artifact",
-            "offset": 510,
+            "offset": 487,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "gMenuStr_1F0",
             "source_blob_oid": "fe15c60493b9f8b3387fc086c85bdd1ec51214c8",
@@ -1826,10 +1826,10 @@
           "provenance": {
             "byte_length": 7,
             "kind": "pinned_git_source_artifact",
-            "offset": 517,
+            "offset": 494,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "gMenuStr_1E8",
             "source_blob_oid": "fe15c60493b9f8b3387fc086c85bdd1ec51214c8",
@@ -1879,10 +1879,10 @@
           "provenance": {
             "byte_length": 7,
             "kind": "pinned_git_source_artifact",
-            "offset": 524,
+            "offset": 501,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "gMenuStr_1E0",
             "source_blob_oid": "fe15c60493b9f8b3387fc086c85bdd1ec51214c8",
@@ -1932,10 +1932,10 @@
           "provenance": {
             "byte_length": 5,
             "kind": "pinned_git_source_artifact",
-            "offset": 531,
+            "offset": 508,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "gMenuStr_1D8",
             "source_blob_oid": "fe15c60493b9f8b3387fc086c85bdd1ec51214c8",
@@ -1985,10 +1985,10 @@
           "provenance": {
             "byte_length": 9,
             "kind": "pinned_git_source_artifact",
-            "offset": 536,
+            "offset": 513,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "gMenuStr_1CC",
             "source_blob_oid": "fe15c60493b9f8b3387fc086c85bdd1ec51214c8",
@@ -2038,10 +2038,10 @@
           "provenance": {
             "byte_length": 9,
             "kind": "pinned_git_source_artifact",
-            "offset": 545,
+            "offset": 522,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "gMenuStr_1C0",
             "source_blob_oid": "fe15c60493b9f8b3387fc086c85bdd1ec51214c8",
@@ -2091,10 +2091,10 @@
           "provenance": {
             "byte_length": 9,
             "kind": "pinned_git_source_artifact",
-            "offset": 554,
+            "offset": 531,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "gMenuStr_1B4",
             "source_blob_oid": "fe15c60493b9f8b3387fc086c85bdd1ec51214c8",
@@ -2144,10 +2144,10 @@
           "provenance": {
             "byte_length": 9,
             "kind": "pinned_git_source_artifact",
-            "offset": 563,
+            "offset": 540,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "gMenuStr_1A8",
             "source_blob_oid": "fe15c60493b9f8b3387fc086c85bdd1ec51214c8",
@@ -2197,10 +2197,10 @@
           "provenance": {
             "byte_length": 7,
             "kind": "pinned_git_source_artifact",
-            "offset": 572,
+            "offset": 549,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "gMenuStr_1A0",
             "source_blob_oid": "fe15c60493b9f8b3387fc086c85bdd1ec51214c8",
@@ -2250,10 +2250,10 @@
           "provenance": {
             "byte_length": 9,
             "kind": "pinned_git_source_artifact",
-            "offset": 579,
+            "offset": 556,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "gMenuStr_194",
             "source_blob_oid": "fe15c60493b9f8b3387fc086c85bdd1ec51214c8",
@@ -2303,10 +2303,10 @@
           "provenance": {
             "byte_length": 9,
             "kind": "pinned_git_source_artifact",
-            "offset": 588,
+            "offset": 565,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "gMenuStr_188",
             "source_blob_oid": "fe15c60493b9f8b3387fc086c85bdd1ec51214c8",
@@ -2356,10 +2356,10 @@
           "provenance": {
             "byte_length": 9,
             "kind": "pinned_git_source_artifact",
-            "offset": 597,
+            "offset": 574,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "gMenuStr_17C",
             "source_blob_oid": "fe15c60493b9f8b3387fc086c85bdd1ec51214c8",
@@ -2409,10 +2409,10 @@
           "provenance": {
             "byte_length": 9,
             "kind": "pinned_git_source_artifact",
-            "offset": 606,
+            "offset": 583,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "gMenuStr_170",
             "source_blob_oid": "fe15c60493b9f8b3387fc086c85bdd1ec51214c8",
@@ -2462,10 +2462,10 @@
           "provenance": {
             "byte_length": 7,
             "kind": "pinned_git_source_artifact",
-            "offset": 615,
+            "offset": 592,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "gMenuStr_168",
             "source_blob_oid": "fe15c60493b9f8b3387fc086c85bdd1ec51214c8",
@@ -2515,10 +2515,10 @@
           "provenance": {
             "byte_length": 9,
             "kind": "pinned_git_source_artifact",
-            "offset": 622,
+            "offset": 599,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "gMenuStr_15C",
             "source_blob_oid": "fe15c60493b9f8b3387fc086c85bdd1ec51214c8",
@@ -2568,10 +2568,10 @@
           "provenance": {
             "byte_length": 7,
             "kind": "pinned_git_source_artifact",
-            "offset": 663,
+            "offset": 640,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "gMenuStr_154",
             "source_blob_oid": "fe15c60493b9f8b3387fc086c85bdd1ec51214c8",
@@ -2621,10 +2621,10 @@
           "provenance": {
             "byte_length": 7,
             "kind": "pinned_git_source_artifact",
-            "offset": 692,
+            "offset": 669,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "gMenuStr_29C",
             "source_blob_oid": "fe15c60493b9f8b3387fc086c85bdd1ec51214c8",
@@ -2674,10 +2674,10 @@
           "provenance": {
             "byte_length": 7,
             "kind": "pinned_git_source_artifact",
-            "offset": 631,
+            "offset": 608,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "gMenuStr_294",
             "source_blob_oid": "fe15c60493b9f8b3387fc086c85bdd1ec51214c8",
@@ -2727,10 +2727,10 @@
           "provenance": {
             "byte_length": 7,
             "kind": "pinned_git_source_artifact",
-            "offset": 706,
+            "offset": 683,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "gMenuStr_28C",
             "source_blob_oid": "fe15c60493b9f8b3387fc086c85bdd1ec51214c8",
@@ -2780,10 +2780,10 @@
           "provenance": {
             "byte_length": 7,
             "kind": "pinned_git_source_artifact",
-            "offset": 720,
+            "offset": 697,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "gMenuStr_284",
             "source_blob_oid": "fe15c60493b9f8b3387fc086c85bdd1ec51214c8",
@@ -2833,10 +2833,10 @@
           "provenance": {
             "byte_length": 7,
             "kind": "pinned_git_source_artifact",
-            "offset": 699,
+            "offset": 676,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "gMenuStr_27C",
             "source_blob_oid": "fe15c60493b9f8b3387fc086c85bdd1ec51214c8",
@@ -2886,10 +2886,10 @@
           "provenance": {
             "byte_length": 7,
             "kind": "pinned_git_source_artifact",
-            "offset": 713,
+            "offset": 690,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "gMenuStr_274",
             "source_blob_oid": "fe15c60493b9f8b3387fc086c85bdd1ec51214c8",
@@ -2939,10 +2939,10 @@
           "provenance": {
             "byte_length": 7,
             "kind": "pinned_git_source_artifact",
-            "offset": 727,
+            "offset": 704,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "gMenuStr_26C",
             "source_blob_oid": "fe15c60493b9f8b3387fc086c85bdd1ec51214c8",
@@ -2992,10 +2992,10 @@
           "provenance": {
             "byte_length": 7,
             "kind": "pinned_git_source_artifact",
-            "offset": 734,
+            "offset": 711,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "gMenuStr_264",
             "source_blob_oid": "fe15c60493b9f8b3387fc086c85bdd1ec51214c8",
@@ -3340,10 +3340,10 @@
           "provenance": {
             "byte_length": 7,
             "kind": "pinned_git_source_artifact",
-            "offset": 373,
+            "offset": 350,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "sGmapRouteMenuText",
             "source_blob_oid": "ee2c937488d07f45861ddaaa11138be5eee15384",
@@ -3393,10 +3393,10 @@
           "provenance": {
             "byte_length": 7,
             "kind": "pinned_git_source_artifact",
-            "offset": 380,
+            "offset": 357,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "sGmapRouteMenuText",
             "source_blob_oid": "ee2c937488d07f45861ddaaa11138be5eee15384",
@@ -3446,10 +3446,10 @@
           "provenance": {
             "byte_length": 7,
             "kind": "pinned_git_source_artifact",
-            "offset": 387,
+            "offset": 364,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "sGmapRouteMenuText",
             "source_blob_oid": "ee2c937488d07f45861ddaaa11138be5eee15384",
@@ -3499,10 +3499,10 @@
           "provenance": {
             "byte_length": 7,
             "kind": "pinned_git_source_artifact",
-            "offset": 394,
+            "offset": 371,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "sGmapRouteMenuText",
             "source_blob_oid": "ee2c937488d07f45861ddaaa11138be5eee15384",
@@ -3552,10 +3552,10 @@
           "provenance": {
             "byte_length": 7,
             "kind": "pinned_git_source_artifact",
-            "offset": 401,
+            "offset": 378,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "sGmapRouteMenuText",
             "source_blob_oid": "ee2c937488d07f45861ddaaa11138be5eee15384",
@@ -3605,10 +3605,10 @@
           "provenance": {
             "byte_length": 15,
             "kind": "pinned_git_source_artifact",
-            "offset": 408,
+            "offset": 385,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "sGmapRouteMenuText",
             "source_blob_oid": "ee2c937488d07f45861ddaaa11138be5eee15384",
@@ -3658,10 +3658,10 @@
           "provenance": {
             "byte_length": 15,
             "kind": "pinned_git_source_artifact",
-            "offset": 423,
+            "offset": 400,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "sGmapRouteMenuText",
             "source_blob_oid": "ee2c937488d07f45861ddaaa11138be5eee15384",
@@ -3711,10 +3711,10 @@
           "provenance": {
             "byte_length": 15,
             "kind": "pinned_git_source_artifact",
-            "offset": 438,
+            "offset": 415,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "sGmapRouteMenuText",
             "source_blob_oid": "ee2c937488d07f45861ddaaa11138be5eee15384",
@@ -3764,10 +3764,10 @@
           "provenance": {
             "byte_length": 15,
             "kind": "pinned_git_source_artifact",
-            "offset": 453,
+            "offset": 430,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "sGmapRouteMenuText",
             "source_blob_oid": "ee2c937488d07f45861ddaaa11138be5eee15384",
@@ -3817,10 +3817,10 @@
           "provenance": {
             "byte_length": 5,
             "kind": "pinned_git_source_artifact",
-            "offset": 56,
+            "offset": 33,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
             "source_blob_oid": "e7fffaafb31d0b46dbd98e1497bbdf528b0deb9d",
@@ -3870,10 +3870,10 @@
           "provenance": {
             "byte_length": 5,
             "kind": "pinned_git_source_artifact",
-            "offset": 61,
+            "offset": 38,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
             "source_blob_oid": "e7fffaafb31d0b46dbd98e1497bbdf528b0deb9d",
@@ -3923,10 +3923,10 @@
           "provenance": {
             "byte_length": 3,
             "kind": "pinned_git_source_artifact",
-            "offset": 66,
+            "offset": 43,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
             "source_blob_oid": "e7fffaafb31d0b46dbd98e1497bbdf528b0deb9d",
@@ -3976,10 +3976,10 @@
           "provenance": {
             "byte_length": 3,
             "kind": "pinned_git_source_artifact",
-            "offset": 69,
+            "offset": 46,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
             "source_blob_oid": "e7fffaafb31d0b46dbd98e1497bbdf528b0deb9d",
@@ -4081,10 +4081,10 @@
           "provenance": {
             "byte_length": 5,
             "kind": "pinned_git_source_artifact",
-            "offset": 79,
+            "offset": 56,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
             "source_blob_oid": "e7fffaafb31d0b46dbd98e1497bbdf528b0deb9d",
@@ -4134,10 +4134,10 @@
           "provenance": {
             "byte_length": 7,
             "kind": "pinned_git_source_artifact",
-            "offset": 84,
+            "offset": 61,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
             "source_blob_oid": "e7fffaafb31d0b46dbd98e1497bbdf528b0deb9d",
@@ -4187,10 +4187,10 @@
           "provenance": {
             "byte_length": 7,
             "kind": "pinned_git_source_artifact",
-            "offset": 91,
+            "offset": 68,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
             "source_blob_oid": "e7fffaafb31d0b46dbd98e1497bbdf528b0deb9d",
@@ -4240,10 +4240,10 @@
           "provenance": {
             "byte_length": 7,
             "kind": "pinned_git_source_artifact",
-            "offset": 98,
+            "offset": 75,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
             "source_blob_oid": "e7fffaafb31d0b46dbd98e1497bbdf528b0deb9d",
@@ -4293,10 +4293,10 @@
           "provenance": {
             "byte_length": 7,
             "kind": "pinned_git_source_artifact",
-            "offset": 105,
+            "offset": 82,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
             "source_blob_oid": "e7fffaafb31d0b46dbd98e1497bbdf528b0deb9d",
@@ -4346,10 +4346,10 @@
           "provenance": {
             "byte_length": 3,
             "kind": "pinned_git_source_artifact",
-            "offset": 112,
+            "offset": 89,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
             "source_blob_oid": "e7fffaafb31d0b46dbd98e1497bbdf528b0deb9d",
@@ -4399,10 +4399,10 @@
           "provenance": {
             "byte_length": 5,
             "kind": "pinned_git_source_artifact",
-            "offset": 115,
+            "offset": 92,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
             "source_blob_oid": "e7fffaafb31d0b46dbd98e1497bbdf528b0deb9d",
@@ -4452,10 +4452,10 @@
           "provenance": {
             "byte_length": 3,
             "kind": "pinned_git_source_artifact",
-            "offset": 120,
+            "offset": 97,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
             "source_blob_oid": "e7fffaafb31d0b46dbd98e1497bbdf528b0deb9d",
@@ -4505,10 +4505,10 @@
           "provenance": {
             "byte_length": 7,
             "kind": "pinned_git_source_artifact",
-            "offset": 123,
+            "offset": 100,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
             "source_blob_oid": "e7fffaafb31d0b46dbd98e1497bbdf528b0deb9d",
@@ -4558,10 +4558,10 @@
           "provenance": {
             "byte_length": 5,
             "kind": "pinned_git_source_artifact",
-            "offset": 130,
+            "offset": 107,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
             "source_blob_oid": "e7fffaafb31d0b46dbd98e1497bbdf528b0deb9d",
@@ -4611,10 +4611,10 @@
           "provenance": {
             "byte_length": 5,
             "kind": "pinned_git_source_artifact",
-            "offset": 135,
+            "offset": 112,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
             "source_blob_oid": "e7fffaafb31d0b46dbd98e1497bbdf528b0deb9d",
@@ -4664,10 +4664,10 @@
           "provenance": {
             "byte_length": 3,
             "kind": "pinned_git_source_artifact",
-            "offset": 140,
+            "offset": 117,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
             "source_blob_oid": "e7fffaafb31d0b46dbd98e1497bbdf528b0deb9d",
@@ -4717,10 +4717,10 @@
           "provenance": {
             "byte_length": 3,
             "kind": "pinned_git_source_artifact",
-            "offset": 143,
+            "offset": 120,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
             "source_blob_oid": "e7fffaafb31d0b46dbd98e1497bbdf528b0deb9d",
@@ -4770,10 +4770,10 @@
           "provenance": {
             "byte_length": 7,
             "kind": "pinned_git_source_artifact",
-            "offset": 146,
+            "offset": 123,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
             "source_blob_oid": "e7fffaafb31d0b46dbd98e1497bbdf528b0deb9d",
@@ -4823,10 +4823,10 @@
           "provenance": {
             "byte_length": 3,
             "kind": "pinned_git_source_artifact",
-            "offset": 153,
+            "offset": 130,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
             "source_blob_oid": "e7fffaafb31d0b46dbd98e1497bbdf528b0deb9d",
@@ -4876,10 +4876,10 @@
           "provenance": {
             "byte_length": 7,
             "kind": "pinned_git_source_artifact",
-            "offset": 156,
+            "offset": 133,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
             "source_blob_oid": "e7fffaafb31d0b46dbd98e1497bbdf528b0deb9d",
@@ -4929,10 +4929,10 @@
           "provenance": {
             "byte_length": 3,
             "kind": "pinned_git_source_artifact",
-            "offset": 163,
+            "offset": 140,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
             "source_blob_oid": "e7fffaafb31d0b46dbd98e1497bbdf528b0deb9d",
@@ -4982,10 +4982,10 @@
           "provenance": {
             "byte_length": 3,
             "kind": "pinned_git_source_artifact",
-            "offset": 166,
+            "offset": 143,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
             "source_blob_oid": "e7fffaafb31d0b46dbd98e1497bbdf528b0deb9d",
@@ -5035,10 +5035,10 @@
           "provenance": {
             "byte_length": 3,
             "kind": "pinned_git_source_artifact",
-            "offset": 169,
+            "offset": 146,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
             "source_blob_oid": "e7fffaafb31d0b46dbd98e1497bbdf528b0deb9d",
@@ -5088,10 +5088,10 @@
           "provenance": {
             "byte_length": 3,
             "kind": "pinned_git_source_artifact",
-            "offset": 172,
+            "offset": 149,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
             "source_blob_oid": "e7fffaafb31d0b46dbd98e1497bbdf528b0deb9d",
@@ -5141,10 +5141,10 @@
           "provenance": {
             "byte_length": 3,
             "kind": "pinned_git_source_artifact",
-            "offset": 175,
+            "offset": 152,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
             "source_blob_oid": "e7fffaafb31d0b46dbd98e1497bbdf528b0deb9d",
@@ -5194,10 +5194,10 @@
           "provenance": {
             "byte_length": 3,
             "kind": "pinned_git_source_artifact",
-            "offset": 178,
+            "offset": 155,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
             "source_blob_oid": "e7fffaafb31d0b46dbd98e1497bbdf528b0deb9d",
@@ -5247,10 +5247,10 @@
           "provenance": {
             "byte_length": 3,
             "kind": "pinned_git_source_artifact",
-            "offset": 181,
+            "offset": 158,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
             "source_blob_oid": "e7fffaafb31d0b46dbd98e1497bbdf528b0deb9d",
@@ -5300,10 +5300,10 @@
           "provenance": {
             "byte_length": 9,
             "kind": "pinned_git_source_artifact",
-            "offset": 184,
+            "offset": 161,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
             "source_blob_oid": "e7fffaafb31d0b46dbd98e1497bbdf528b0deb9d",
@@ -5353,10 +5353,10 @@
           "provenance": {
             "byte_length": 3,
             "kind": "pinned_git_source_artifact",
-            "offset": 193,
+            "offset": 170,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
             "source_blob_oid": "e7fffaafb31d0b46dbd98e1497bbdf528b0deb9d",
@@ -5406,10 +5406,10 @@
           "provenance": {
             "byte_length": 3,
             "kind": "pinned_git_source_artifact",
-            "offset": 196,
+            "offset": 173,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
             "source_blob_oid": "e7fffaafb31d0b46dbd98e1497bbdf528b0deb9d",
@@ -5459,10 +5459,10 @@
           "provenance": {
             "byte_length": 5,
             "kind": "pinned_git_source_artifact",
-            "offset": 199,
+            "offset": 176,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
             "source_blob_oid": "e7fffaafb31d0b46dbd98e1497bbdf528b0deb9d",
@@ -5512,10 +5512,10 @@
           "provenance": {
             "byte_length": 7,
             "kind": "pinned_git_source_artifact",
-            "offset": 204,
+            "offset": 181,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
             "source_blob_oid": "e7fffaafb31d0b46dbd98e1497bbdf528b0deb9d",
@@ -5565,10 +5565,10 @@
           "provenance": {
             "byte_length": 5,
             "kind": "pinned_git_source_artifact",
-            "offset": 211,
+            "offset": 188,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
             "source_blob_oid": "e7fffaafb31d0b46dbd98e1497bbdf528b0deb9d",
@@ -5618,10 +5618,10 @@
           "provenance": {
             "byte_length": 5,
             "kind": "pinned_git_source_artifact",
-            "offset": 216,
+            "offset": 193,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
             "source_blob_oid": "e7fffaafb31d0b46dbd98e1497bbdf528b0deb9d",
@@ -5671,10 +5671,10 @@
           "provenance": {
             "byte_length": 3,
             "kind": "pinned_git_source_artifact",
-            "offset": 221,
+            "offset": 198,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
             "source_blob_oid": "e7fffaafb31d0b46dbd98e1497bbdf528b0deb9d",
@@ -5724,10 +5724,10 @@
           "provenance": {
             "byte_length": 5,
             "kind": "pinned_git_source_artifact",
-            "offset": 224,
+            "offset": 201,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
             "source_blob_oid": "e7fffaafb31d0b46dbd98e1497bbdf528b0deb9d",
@@ -5777,10 +5777,10 @@
           "provenance": {
             "byte_length": 5,
             "kind": "pinned_git_source_artifact",
-            "offset": 229,
+            "offset": 206,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
             "source_blob_oid": "e7fffaafb31d0b46dbd98e1497bbdf528b0deb9d",
@@ -5830,10 +5830,10 @@
           "provenance": {
             "byte_length": 5,
             "kind": "pinned_git_source_artifact",
-            "offset": 234,
+            "offset": 211,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
             "source_blob_oid": "e7fffaafb31d0b46dbd98e1497bbdf528b0deb9d",
@@ -5883,10 +5883,10 @@
           "provenance": {
             "byte_length": 7,
             "kind": "pinned_git_source_artifact",
-            "offset": 239,
+            "offset": 216,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
             "source_blob_oid": "e7fffaafb31d0b46dbd98e1497bbdf528b0deb9d",
@@ -5936,10 +5936,10 @@
           "provenance": {
             "byte_length": 7,
             "kind": "pinned_git_source_artifact",
-            "offset": 246,
+            "offset": 223,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
             "source_blob_oid": "e7fffaafb31d0b46dbd98e1497bbdf528b0deb9d",
@@ -5989,10 +5989,10 @@
           "provenance": {
             "byte_length": 7,
             "kind": "pinned_git_source_artifact",
-            "offset": 253,
+            "offset": 230,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
             "source_blob_oid": "e7fffaafb31d0b46dbd98e1497bbdf528b0deb9d",
@@ -6146,10 +6146,10 @@
           "provenance": {
             "byte_length": 5,
             "kind": "pinned_git_source_artifact",
-            "offset": 274,
+            "offset": 251,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
             "source_blob_oid": "e7fffaafb31d0b46dbd98e1497bbdf528b0deb9d",
@@ -6199,10 +6199,10 @@
           "provenance": {
             "byte_length": 5,
             "kind": "pinned_git_source_artifact",
-            "offset": 279,
+            "offset": 256,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
             "source_blob_oid": "e7fffaafb31d0b46dbd98e1497bbdf528b0deb9d",
@@ -6252,10 +6252,10 @@
           "provenance": {
             "byte_length": 5,
             "kind": "pinned_git_source_artifact",
-            "offset": 284,
+            "offset": 261,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
             "source_blob_oid": "e7fffaafb31d0b46dbd98e1497bbdf528b0deb9d",
@@ -6305,10 +6305,10 @@
           "provenance": {
             "byte_length": 5,
             "kind": "pinned_git_source_artifact",
-            "offset": 289,
+            "offset": 266,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
             "source_blob_oid": "e7fffaafb31d0b46dbd98e1497bbdf528b0deb9d",
@@ -6358,10 +6358,10 @@
           "provenance": {
             "byte_length": 9,
             "kind": "pinned_git_source_artifact",
-            "offset": 294,
+            "offset": 271,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
             "source_blob_oid": "e7fffaafb31d0b46dbd98e1497bbdf528b0deb9d",
@@ -6411,10 +6411,10 @@
           "provenance": {
             "byte_length": 3,
             "kind": "pinned_git_source_artifact",
-            "offset": 303,
+            "offset": 280,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
             "source_blob_oid": "e7fffaafb31d0b46dbd98e1497bbdf528b0deb9d",
@@ -6464,10 +6464,10 @@
           "provenance": {
             "byte_length": 3,
             "kind": "pinned_git_source_artifact",
-            "offset": 306,
+            "offset": 283,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
             "source_blob_oid": "e7fffaafb31d0b46dbd98e1497bbdf528b0deb9d",
@@ -6517,10 +6517,10 @@
           "provenance": {
             "byte_length": 5,
             "kind": "pinned_git_source_artifact",
-            "offset": 309,
+            "offset": 286,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
             "source_blob_oid": "e7fffaafb31d0b46dbd98e1497bbdf528b0deb9d",
@@ -6570,10 +6570,10 @@
           "provenance": {
             "byte_length": 7,
             "kind": "pinned_git_source_artifact",
-            "offset": 314,
+            "offset": 291,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
             "source_blob_oid": "e7fffaafb31d0b46dbd98e1497bbdf528b0deb9d",
@@ -6623,10 +6623,10 @@
           "provenance": {
             "byte_length": 3,
             "kind": "pinned_git_source_artifact",
-            "offset": 321,
+            "offset": 298,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
             "source_blob_oid": "e7fffaafb31d0b46dbd98e1497bbdf528b0deb9d",
@@ -6676,10 +6676,10 @@
           "provenance": {
             "byte_length": 5,
             "kind": "pinned_git_source_artifact",
-            "offset": 324,
+            "offset": 301,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
             "source_blob_oid": "e7fffaafb31d0b46dbd98e1497bbdf528b0deb9d",
@@ -6729,10 +6729,10 @@
           "provenance": {
             "byte_length": 5,
             "kind": "pinned_git_source_artifact",
-            "offset": 329,
+            "offset": 306,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
             "source_blob_oid": "e7fffaafb31d0b46dbd98e1497bbdf528b0deb9d",
@@ -6782,10 +6782,10 @@
           "provenance": {
             "byte_length": 5,
             "kind": "pinned_git_source_artifact",
-            "offset": 334,
+            "offset": 311,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
             "source_blob_oid": "e7fffaafb31d0b46dbd98e1497bbdf528b0deb9d",
@@ -6835,10 +6835,10 @@
           "provenance": {
             "byte_length": 5,
             "kind": "pinned_git_source_artifact",
-            "offset": 339,
+            "offset": 316,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
             "source_blob_oid": "e7fffaafb31d0b46dbd98e1497bbdf528b0deb9d",
@@ -6888,10 +6888,10 @@
           "provenance": {
             "byte_length": 3,
             "kind": "pinned_git_source_artifact",
-            "offset": 344,
+            "offset": 321,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
             "source_blob_oid": "e7fffaafb31d0b46dbd98e1497bbdf528b0deb9d",
@@ -6941,10 +6941,10 @@
           "provenance": {
             "byte_length": 3,
             "kind": "pinned_git_source_artifact",
-            "offset": 347,
+            "offset": 324,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
             "source_blob_oid": "e7fffaafb31d0b46dbd98e1497bbdf528b0deb9d",
@@ -6994,10 +6994,10 @@
           "provenance": {
             "byte_length": 3,
             "kind": "pinned_git_source_artifact",
-            "offset": 350,
+            "offset": 327,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
             "source_blob_oid": "e7fffaafb31d0b46dbd98e1497bbdf528b0deb9d",
@@ -7047,10 +7047,10 @@
           "provenance": {
             "byte_length": 3,
             "kind": "pinned_git_source_artifact",
-            "offset": 353,
+            "offset": 330,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
             "source_blob_oid": "e7fffaafb31d0b46dbd98e1497bbdf528b0deb9d",
@@ -7100,10 +7100,10 @@
           "provenance": {
             "byte_length": 5,
             "kind": "pinned_git_source_artifact",
-            "offset": 356,
+            "offset": 333,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
             "source_blob_oid": "e7fffaafb31d0b46dbd98e1497bbdf528b0deb9d",
@@ -7153,10 +7153,10 @@
           "provenance": {
             "byte_length": 5,
             "kind": "pinned_git_source_artifact",
-            "offset": 361,
+            "offset": 338,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
             "source_blob_oid": "e7fffaafb31d0b46dbd98e1497bbdf528b0deb9d",
@@ -7206,10 +7206,10 @@
           "provenance": {
             "byte_length": 7,
             "kind": "pinned_git_source_artifact",
-            "offset": 366,
+            "offset": 343,
             "provider_values_artifact": {
               "path": "raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
             "source_blob_oid": "e7fffaafb31d0b46dbd98e1497bbdf528b0deb9d",
@@ -7245,11 +7245,14 @@
           "provider_anchor": "GoalString_UnitsLeft",
           "provider_scope": {
             "anchors": [
-              "GoalString_UnitsLeft"
+              "GoalString_UnitsLeft",
+              "081F5528",
+              "data",
+              "GoalDisplay_Init"
             ],
-            "path": "texts/locales/source/fe8j/upstream/src/player_interface_0808F584.c",
-            "scope_kind": "function",
-            "symbol": "GoalDisplay_Init"
+            "path": "texts/locales/source/fe8j/upstream/layout/baseline_syms.d/GoalDisplay_Init-134e6b42.tsv",
+            "scope_kind": "line",
+            "symbol": "GoalString_UnitsLeft"
           },
           "scope_kind": "function",
           "symbol": "GoalDisplay_Init"
@@ -7266,17 +7269,21 @@
           "kind": "raw_symbol",
           "provenance": {
             "byte_length": 5,
-            "kind": "pinned_git_source_artifact",
-            "offset": 33,
+            "decoded_value": "残り",
+            "kind": "pinned_baserom_slice",
+            "offset": 0,
             "provider_values_artifact": {
-              "path": "texts/locales/source/fe8j/raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "path": "goal_strings.cp932.bin",
+              "sha256": "3353330b5642569520fcef4ab0656b35459ba15bfa1cd0d9633fe7af06ae677e"
             },
-            "source_anchor": "0x01C1",
-            "source_blob_oid": "c45d9d9d1dbe219a12a7cfca9ce62084f3c389ab",
-            "source_path": "texts/locales/source/fe8j/raw_symbols.json",
-            "source_repository": "https://github.com/laqieer/fireemblem8-expansion",
-            "source_revision": "548b240d0a553add88897927049b7f5ce25657a8",
+            "rom_address": "0x081F5528",
+            "rom_offset": 2053416,
+            "rom_sha256": "44fd343625ab9e6b90f63a80758c15066d526e6873fae91474006314a5ead464",
+            "source_anchor": "GoalString_UnitsLeft",
+            "source_blob_oid": "4325b593a941ce95e3821e3746564b2311fe8142",
+            "source_path": "layout/baseline_syms.d/GoalDisplay_Init-134e6b42.tsv",
+            "source_repository": "https://github.com/laqieer/fireemblem8j",
+            "source_revision": "bf424414d075789d757e2f4cd0cea823bfb2862e",
             "source_value_index": 0,
             "symbol": "GoalString_UnitsLeft",
             "value_sha256": "4042ff58570ad607525ff9dc190de55038764f6999f4f06d486cb16602f8f8e6"
@@ -7288,7 +7295,7 @@
           "text_sha256": "0ec085ed84584b2393a6c115b51363188368b1f511f492737f7bb47b09005b48"
         }
       },
-      "rationale": "FE8U target 0x01C1 is bound to FE8J's inline GoalString_UnitsLeft raw provider and the exact FE8CN raw import, never to the unrelated same-number FE8J indexed message.",
+      "rationale": "FE8U target 0x01C1 is bound to FE8J's baserom-backed GoalString_UnitsLeft raw provider pinned by the committed baseline symbol map and the exact FE8CN raw import, never to the unrelated same-number FE8J indexed message.",
       "source_text_sha256": "0ec085ed84584b2393a6c115b51363188368b1f511f492737f7bb47b09005b48",
       "target_id": "0x01C1",
       "target_ids": [
@@ -7306,11 +7313,14 @@
           "provider_anchor": "GoalString_LastTurn",
           "provider_scope": {
             "anchors": [
-              "GoalString_LastTurn"
+              "GoalString_LastTurn",
+              "081F5530",
+              "data",
+              "GoalDisplay_Init"
             ],
-            "path": "texts/locales/source/fe8j/upstream/src/player_interface_0808F584.c",
-            "scope_kind": "function",
-            "symbol": "GoalDisplay_Init"
+            "path": "texts/locales/source/fe8j/upstream/layout/baseline_syms.d/GoalDisplay_Init-134e6b42.tsv",
+            "scope_kind": "line",
+            "symbol": "GoalString_LastTurn"
           },
           "scope_kind": "function",
           "symbol": "GoalDisplay_Init"
@@ -7327,17 +7337,21 @@
           "kind": "raw_symbol",
           "provenance": {
             "byte_length": 11,
-            "kind": "pinned_git_source_artifact",
-            "offset": 45,
+            "decoded_value": "最終ターン",
+            "kind": "pinned_baserom_slice",
+            "offset": 12,
             "provider_values_artifact": {
-              "path": "texts/locales/source/fe8j/raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "path": "goal_strings.cp932.bin",
+              "sha256": "3353330b5642569520fcef4ab0656b35459ba15bfa1cd0d9633fe7af06ae677e"
             },
-            "source_anchor": "0x01C3",
-            "source_blob_oid": "c45d9d9d1dbe219a12a7cfca9ce62084f3c389ab",
-            "source_path": "texts/locales/source/fe8j/raw_symbols.json",
-            "source_repository": "https://github.com/laqieer/fireemblem8-expansion",
-            "source_revision": "548b240d0a553add88897927049b7f5ce25657a8",
+            "rom_address": "0x081F5530",
+            "rom_offset": 2053424,
+            "rom_sha256": "44fd343625ab9e6b90f63a80758c15066d526e6873fae91474006314a5ead464",
+            "source_anchor": "GoalString_LastTurn",
+            "source_blob_oid": "4325b593a941ce95e3821e3746564b2311fe8142",
+            "source_path": "layout/baseline_syms.d/GoalDisplay_Init-134e6b42.tsv",
+            "source_repository": "https://github.com/laqieer/fireemblem8j",
+            "source_revision": "bf424414d075789d757e2f4cd0cea823bfb2862e",
             "source_value_index": 0,
             "symbol": "GoalString_LastTurn",
             "value_sha256": "55ded65087def01737f9f7d8b44ccafe7f09fb400dd11abb540643287ad01cf3"
@@ -7349,7 +7363,7 @@
           "text_sha256": "a63adc3884676c4cda74a7fdd29a946e7ad72ef63b52ed039a84c614f7f9cddd"
         }
       },
-      "rationale": "FE8U target 0x01C3 is bound to FE8J's inline GoalString_LastTurn raw provider and the exact FE8CN raw import, never to the unrelated same-number FE8J indexed message.",
+      "rationale": "FE8U target 0x01C3 is bound to FE8J's baserom-backed GoalString_LastTurn raw provider pinned by the committed baseline symbol map and the exact FE8CN raw import, never to the unrelated same-number FE8J indexed message.",
       "source_text_sha256": "a63adc3884676c4cda74a7fdd29a946e7ad72ef63b52ed039a84c614f7f9cddd",
       "target_id": "0x01C3",
       "target_ids": [
@@ -7367,11 +7381,14 @@
           "provider_anchor": "GoalString_Turn",
           "provider_scope": {
             "anchors": [
-              "GoalString_Turn"
+              "GoalString_Turn",
+              "081F553C",
+              "data",
+              "GoalDisplay_Init"
             ],
-            "path": "texts/locales/source/fe8j/upstream/src/player_interface_0808F584.c",
-            "scope_kind": "function",
-            "symbol": "GoalDisplay_Init"
+            "path": "texts/locales/source/fe8j/upstream/layout/baseline_syms.d/GoalDisplay_Init-134e6b42.tsv",
+            "scope_kind": "line",
+            "symbol": "GoalString_Turn"
           },
           "scope_kind": "function",
           "symbol": "GoalDisplay_Init"
@@ -7388,17 +7405,21 @@
           "kind": "raw_symbol",
           "provenance": {
             "byte_length": 7,
-            "kind": "pinned_git_source_artifact",
-            "offset": 38,
+            "decoded_value": "ターン",
+            "kind": "pinned_baserom_slice",
+            "offset": 5,
             "provider_values_artifact": {
-              "path": "texts/locales/source/fe8j/raw_provider_values.cp932.bin",
-              "sha256": "39cf06ea9224edd4759287affaac4bbed02b1a0cf774d57d230fc9f8e82e3262"
+              "path": "goal_strings.cp932.bin",
+              "sha256": "3353330b5642569520fcef4ab0656b35459ba15bfa1cd0d9633fe7af06ae677e"
             },
-            "source_anchor": "0x01C2",
-            "source_blob_oid": "c45d9d9d1dbe219a12a7cfca9ce62084f3c389ab",
-            "source_path": "texts/locales/source/fe8j/raw_symbols.json",
-            "source_repository": "https://github.com/laqieer/fireemblem8-expansion",
-            "source_revision": "548b240d0a553add88897927049b7f5ce25657a8",
+            "rom_address": "0x081F553C",
+            "rom_offset": 2053436,
+            "rom_sha256": "44fd343625ab9e6b90f63a80758c15066d526e6873fae91474006314a5ead464",
+            "source_anchor": "GoalString_Turn",
+            "source_blob_oid": "4325b593a941ce95e3821e3746564b2311fe8142",
+            "source_path": "layout/baseline_syms.d/GoalDisplay_Init-134e6b42.tsv",
+            "source_repository": "https://github.com/laqieer/fireemblem8j",
+            "source_revision": "bf424414d075789d757e2f4cd0cea823bfb2862e",
             "source_value_index": 0,
             "symbol": "GoalString_Turn",
             "value_sha256": "7bc2fa80d7f7c1c271c529a75c64328b5d7c92fd1df72fcae650ed3fa3064ad1"
@@ -7410,7 +7431,7 @@
           "text_sha256": "9fb1d89660c28e488f979606377cfd65e01380649e060f692729c104d085085f"
         }
       },
-      "rationale": "FE8U target 0x01C2 is bound to FE8J's inline GoalString_Turn raw provider and the exact FE8CN raw import, never to the unrelated same-number FE8J indexed message.",
+      "rationale": "FE8U target 0x01C2 is bound to FE8J's baserom-backed GoalString_Turn raw provider pinned by the committed baseline symbol map and the exact FE8CN raw import, never to the unrelated same-number FE8J indexed message.",
       "source_text_sha256": "9fb1d89660c28e488f979606377cfd65e01380649e060f692729c104d085085f",
       "target_id": "0x01C2",
       "target_ids": [

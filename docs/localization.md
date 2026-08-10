@@ -293,11 +293,14 @@ descriptor slots.
    `zh-Hans`, with zero English fallback and zero unresolved rows. The
    independent 143-record raw-surface closure also has zero fallback,
    exclusion, and unresolved record. Its Japanese raw-symbol providers are
-   fail-closed against vendored commit/tree/blob objects for both the pinned
-   FE8J source commit and the prior immutable FE8J byte snapshot. Only real C
-   initializers, assembly label/data bodies, or exact manifest-bound byte
-   ranges are accepted; comments and extern-only declarations are not data.
-   Per-provider source paths, symbols, slots, and CP932 bytes are exact, and
+   fail-closed against vendored commit/tree/blob objects for the pinned FE8J
+   source commit. Only real C initializers, assembly label/data bodies, or
+   exact authorized-ROM slices whose offsets come from the committed FE8J
+   baseline map are accepted; comments, extern-only declarations, and nested
+   generated manifests are not data. The goal-slice manifest pins the FE8J
+   ROM SHA-256, map blob, ROM offsets, lengths, byte hashes, decoded values,
+   and the minimal 23-byte CP932 artifact. Per-provider source paths, symbols,
+   slots, and CP932 bytes are exact, and
    symbol-backed decisions cannot omit
    `provider_anchor`. See `docs/game_locale_sources.md` for the offline and
    mandatory raw-closure gate. The shared modern English bundle remains the

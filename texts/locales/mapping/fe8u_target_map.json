@@ -23037,10 +23037,10 @@
         "evidence": "regional-goal-raw-provider: GoalDisplay_Init GoalDisplay_Init.goal.defeat_all.units_left",
         "evidence_kind": "regional-goal-raw-provider",
         "method": "structural-crosswalk",
-        "rationale": "FE8U GoalDisplay_Init uses target 0x01C1 for the defeat-all units-left label; FE8J uses the inline raw provider GoalString_UnitsLeft at the same semantic call site, while FE8CN import-0139 supplies the Chinese payload. This deliberately does not use unrelated FE8J indexed message 0x01C1.",
+        "rationale": "FE8U GoalDisplay_Init uses target 0x01C1 for the defeat-all units-left label; FE8J assigns the baserom data symbol GoalString_UnitsLeft to GoalDisplay_Init in its committed baseline symbol map, while FE8CN import-0139 supplies the Chinese payload. This deliberately does not use unrelated FE8J indexed message 0x01C1.",
         "source_key": "GoalDisplay_Init.goal.defeat_all.units_left",
         "source_paths": {
-          "fe8j": "src/player_interface_0808F584.c",
+          "fe8j": "layout/baseline_syms.d/GoalDisplay_Init-134e6b42.tsv",
           "fe8u": "src/player_interface.c"
         },
         "source_symbol": "GoalDisplay_Init",
@@ -23075,10 +23075,10 @@
         "evidence": "regional-goal-raw-provider: GoalDisplay_Init GoalDisplay_Init.goal.turn_suffix",
         "evidence_kind": "regional-goal-raw-provider",
         "method": "structural-crosswalk",
-        "rationale": "FE8U GoalDisplay_Init uses target 0x01C2 for the turn suffix; FE8J uses the inline raw provider GoalString_Turn at the same semantic call site, while FE8CN import-0141 supplies the Chinese payload. This deliberately does not use unrelated FE8J indexed message 0x01C2.",
+        "rationale": "FE8U GoalDisplay_Init uses target 0x01C2 for the turn suffix; FE8J assigns the baserom data symbol GoalString_Turn to GoalDisplay_Init in its committed baseline symbol map, while FE8CN import-0141 supplies the Chinese payload. This deliberately does not use unrelated FE8J indexed message 0x01C2.",
         "source_key": "GoalDisplay_Init.goal.turn_suffix",
         "source_paths": {
-          "fe8j": "src/player_interface_0808F584.c",
+          "fe8j": "layout/baseline_syms.d/GoalDisplay_Init-134e6b42.tsv",
           "fe8u": "src/player_interface.c"
         },
         "source_symbol": "GoalDisplay_Init",
@@ -23113,10 +23113,10 @@
         "evidence": "regional-goal-raw-provider: GoalDisplay_Init GoalDisplay_Init.goal.last_turn",
         "evidence_kind": "regional-goal-raw-provider",
         "method": "structural-crosswalk",
-        "rationale": "FE8U GoalDisplay_Init uses target 0x01C3 for the last-turn label; FE8J uses the inline raw provider GoalString_LastTurn at the same semantic call site, while FE8CN import-0140 supplies the Chinese payload. This deliberately does not use unrelated FE8J indexed message 0x01C3.",
+        "rationale": "FE8U GoalDisplay_Init uses target 0x01C3 for the last-turn label; FE8J assigns the baserom data symbol GoalString_LastTurn to GoalDisplay_Init in its committed baseline symbol map, while FE8CN import-0140 supplies the Chinese payload. This deliberately does not use unrelated FE8J indexed message 0x01C3.",
         "source_key": "GoalDisplay_Init.goal.last_turn",
         "source_paths": {
-          "fe8j": "src/player_interface_0808F584.c",
+          "fe8j": "layout/baseline_syms.d/GoalDisplay_Init-134e6b42.tsv",
           "fe8u": "src/player_interface.c"
         },
         "source_symbol": "GoalDisplay_Init",

@@ -156,10 +156,12 @@ def _validate_call_sites(
                 source = _initializer_body(source, symbol, site_field)
             elif scope_kind == "symbol":
                 source = _symbol_body(source, symbol, site_field)
+            elif scope_kind == "line":
+                source = _line_body(source, symbol, site_field)
             else:
                 raise RawClosureError(
                     f"{site_field}.scope_kind must be 'function', "
-                    "'initializer', or 'symbol'"
+                    "'initializer', 'symbol', or 'line'"
                 )
         cursor = 0
         missing = []
@@ -237,6 +239,19 @@ def _symbol_body(source: str, symbol: str, field: str) -> str:
     if match is None:
         raise RawClosureError(f"{field}.symbol is not a standalone declaration")
     return match.group(0)
+
+
+def _line_body(source: str, symbol: str, field: str) -> str:
+    matches = [
+        line
+        for line in source.splitlines()
+        if line.split("\t", 1)[0] == symbol
+    ]
+    if len(matches) != 1:
+        raise RawClosureError(
+            f"{field}.symbol is not one exact tabular record"
+        )
+    return matches[0]
 
 
 def _scope_kind(source: str, symbol: str) -> str:
@@ -826,7 +841,7 @@ def build_raw_surface_closure(
                     )
                     ja_provenance = {
                         "byte_length": raw_provider.value_length,
-                        "kind": "pinned_git_source_artifact",
+                        "kind": raw_provider.provenance_kind,
                         "offset": raw_provider.value_offset,
                         "provider_values_artifact": {
                             "path": raw_provider.source_artifact_path,
@@ -843,6 +858,15 @@ def build_raw_surface_closure(
                         "symbol": raw_provider.symbol,
                         "value_sha256": raw_provider.value_sha256,
                     }
+                    if raw_provider.provenance_kind == "pinned_baserom_slice":
+                        ja_provenance.update(
+                            {
+                                "decoded_value": raw_provider.decoded_value,
+                                "rom_address": raw_provider.rom_address,
+                                "rom_offset": raw_provider.rom_offset,
+                                "rom_sha256": raw_provider.rom_sha256,
+                            }
+                        )
                 else:
                     ja_provenance = {
                         "kind": "tracked_source_literal",

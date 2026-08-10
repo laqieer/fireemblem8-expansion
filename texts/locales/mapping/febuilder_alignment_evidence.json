@@ -19,7 +19,7 @@
     },
     "structural_evidence": {
       "logical_path": "texts/locales/mapping/fe8u_structural_evidence.json",
-      "sha256": "259a457c3b75d9774491e932df82138dd8c84a0cd782f5f525cd636053cc0662"
+      "sha256": "83b8faa7ae25bd2d7489a9949fb4fe5ba9aa4d4b8b0270d8ea9496ff241fd4fc"
     },
     "target_header": {
       "logical_path": "include/constants/msg.h",

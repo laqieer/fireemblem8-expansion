@@ -2429,11 +2429,11 @@
     "protected_artifacts": [
       {
         "path": "texts/locales/mapping/fe8u_target_map.json",
-        "sha256": "5641b3d3000e1a45182422886c98dc1c4d990156e062067f9cb43aef7335c0b8"
+        "sha256": "0ec770175b42fc5f5babe2bd1af7a27597f5e0f1dc75d0a2d3ff18f32c821313"
       },
       {
         "path": "texts/locales/mapping/fe8u_structural_evidence.json",
-        "sha256": "259a457c3b75d9774491e932df82138dd8c84a0cd782f5f525cd636053cc0662"
+        "sha256": "83b8faa7ae25bd2d7489a9949fb4fe5ba9aa4d4b8b0270d8ea9496ff241fd4fc"
       }
     ],
     "reference_map": {

@@ -26,19 +26,22 @@ remain import provenance only and never become runtime keys.
   an alias table, not normalized locale payload.
 - `ja/raw.json`: 119 materialized FE8J raw-symbol providers keyed by FE8U
   target ID plus the verified evidence symbol. This includes the three
-  inline goal-window labels and prevents a same-number FE8J indexed message
-  from being substituted for a raw provider. Raw-symbol schema v5 pins the
+  baserom-backed goal-window labels and prevents a same-number FE8J indexed
+  message from being substituted for a raw provider. Raw-symbol schema v6 pins the
   full `fireemblem8j` commit SHA for real C initializers and assembly label
-  bodies. The three goal labels instead pin the immutable
-  `548b240d0a553add88897927049b7f5ce25657a8` expansion commit's FE8J
-  symbol/slot/range manifest and exact CP932 byte blob because the upstream
-  `src/player_interface_0808F584.c` contains only extern references and usage
-  sites, not emitted definitions. Validation checks both commits'
-  root/subtree/blob Git object identities, every exact source path, declared
-  symbol and value slot, bounded byte range, per-value hash, and decoded
-  value. C and assembly comments are removed before extraction, extern-only
-  declarations are never providers, and an unavailable revision name or a
-  second unpinned JSON copy is not provenance.
+  bodies. No committed emitted definition exists for the three goal labels,
+  so their 23 exact NUL-terminated CP932 bytes are sliced from the authorized
+  FE8J ROM whose SHA-256 is
+  `44fd343625ab9e6b90f63a80758c15066d526e6873fae91474006314a5ead464`.
+  ROM offsets come only from the committed FE8J baseline map
+  `layout/baseline_syms.d/GoalDisplay_Init-134e6b42.tsv`, pinned at blob
+  `4325b593a941ce95e3821e3746564b2311fe8142`. The manifest records ROM
+  address/offset, length, byte hash, decoded value, artifact offset, and the
+  offset-source identity for every goal label. Validation checks the FE8J
+  commit/tree/blob chain, map-derived offsets, artifact ranges and hashes,
+  CP932 decoding, and the independently pinned ROM hash. C/assembly comments,
+  extern-only declarations, and nested generated manifests are never
+  providers.
 - `zh-Hans/indexed.txt`: 3,339 FE8CN messages using the FE8J indexed layout.
 - `zh-Hans/raw.json`: 152 raw-address occurrences deduplicated to 143 stable
   `fe8cn.raw.import-NNNN` IDs. IDs are assigned by pinned source import order,
@@ -443,35 +446,38 @@ The closure ledger accounts for all 143 unique raw imports:
 - the command keys are
   (`raw_surface.unit_action.summon` and
   `raw_surface.unit_action.call_monster`);
-- the goal-window records use FE8J inline raw symbols `GoalString_UnitsLeft`,
-  `GoalString_Turn`, and `GoalString_LastTurn`, bound to FE8U `0x01C1`-
-  `0x01C3`; they never use unrelated same-number FE8J indexed messages;
+- the goal-window records use FE8J baserom-backed raw symbols
+  `GoalString_UnitsLeft`, `GoalString_Turn`, and `GoalString_LastTurn`, bound
+  to FE8U `0x01C1`-`0x01C3`; they never use unrelated same-number FE8J
+  indexed messages;
 - every record resolves to nonempty Japanese and Simplified Chinese payloads;
 - 0 records use fallback or exclusion;
 - 0 records remain unresolved.
 
 Japanese closure rows comprise tracked C literals, reviewed authored
 corrections/expansion catalog entries, and raw symbols resolved from the 119
-materialized target+symbol records in `ja/raw.json`. Raw-symbol schema v5
-vendors and verifies two immutable Git sources: four real initializer/data
-blobs from the independently pinned FE8J commit, and the prior expansion
-commit's FE8J raw manifest plus byte blob for `0x01C1`-`0x01C3`. The latter
-commit-tree pair supplies the exact goal symbol, target slot, byte
-offset/length/hash, and value; the extern declarations and quoted comments in
-`src/player_interface_0808F584.c` remain call-site evidence only.
+materialized target+symbol records in `ja/raw.json`. Raw-symbol schema v6
+vendors and verifies one immutable FE8J Git source: four real
+initializer/data blobs plus the committed baseline-symbol map used only to
+derive the goal-string ROM offsets. `goal_strings.cp932.bin` contains only the
+three NUL-terminated goal labels (23 bytes); the source manifest pins the
+authorized 16 MiB FE8J ROM SHA-256, each ROM address/offset and length, each
+slice hash and decoded value, and the exact map blob that supplied the
+addresses.
 
 Normal `check-raw-closure` verification is fully offline and mandatory: it
-recomputes both commits' commit/tree/blob Git object IDs and SHA-256 hashes,
-traverses every path from each commit root tree to the declared blob OID, and
+recomputes the FE8J commit/tree/blob Git object IDs and SHA-256 hashes,
+traverses every path from the commit root tree to the declared blob OID, and
 extracts each provider from an actual C initializer, assembly label/data body,
-or the pinned manifest byte range. Comments are lexically stripped and
-extern-only declarations cannot materialize values. The exact NUL-terminated
-CP932 value must match both the extraction artifact range and decoded catalog
-text. A shared object such as
+or a baserom slice whose offset is recomputed from the pinned baseline map.
+Comments are lexically stripped, extern-only declarations cannot materialize
+values, and nested generated manifests are rejected. The exact
+NUL-terminated CP932 value must match the artifact range, per-slice hash,
+manifest decode, and catalog text. A shared object such as
 `JapaneseTerrainNames` therefore cannot authorize swapping one terrain value
 into another target. Fabricated commits, altered blobs, wrong paths, wrong
-slots, and reassigned values fail the normal closure check. Tracked literals
-retain their source
+slots, ROM hashes, ROM offsets, bytes, and reassigned values fail the normal
+closure check. Tracked literals retain their source
 path/symbol/key/context hash; authored rows retain their catalog/shard key,
 evidence kind, method, and payload hash. The closure manifest records one of
 those explicit provenance forms on every one of its 143 Japanese providers.
@@ -490,6 +496,10 @@ Build or check the machine report:
 ```bash
 python3 -m scripts.localization.game_locales build-raw-closure
 python3 -m scripts.localization.game_locales check-raw-closure
+
+# Optional live confirmation when an authorized FE8J baserom is present:
+python3 -m scripts.localization.game_locales verify-ja-raw-baserom \
+  --baserom /path/to/fe8j/baserom.gba
 ```
 
 The check also verifies every recorded FE8U source path and every declared
@@ -500,10 +510,10 @@ decision backed by a mapped Japanese symbol must declare a nonempty
 `provider_scope` can bind that anchor to the independently pinned FE8J source
 while the target anchors remain scoped to FE8U. In particular, imports
 0139-0141 bind `MSG_1C1`/`MSG_1C3`/`MSG_1C2` and
-`GoalString_UnitsLeft`/`GoalString_LastTurn`/`GoalString_Turn` inside the two
-regional `GoalDisplay_Init` function bodies, never merely elsewhere in either
-file. Declared provider anchors must equal the mapped provider rather than
-finding an unrelated live identifier. The check verifies every literal
+`GoalString_UnitsLeft`/`GoalString_LastTurn`/`GoalString_Turn` to exact
+`data` rows owned by `GoalDisplay_Init` in the pinned FE8J baseline map, never
+to a quoted comment or unrelated identifier. Declared provider anchors must
+equal the mapped provider. The check verifies every literal
 provider against its committed symbol/key/value/context,
 every raw symbol has a matching target+symbol materialization, every semantic
 expansion key is active and translated in `en`/`ja`/`zh-Hans`, and every

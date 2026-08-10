@@ -48,7 +48,10 @@ from .raw_closure import (
     build_raw_surface_closure,
     canonical_json_bytes as closure_json_bytes,
 )
-from .raw_providers import RawProviderError
+from .raw_providers import (
+    RawProviderError,
+    verify_ja_raw_provider_baserom,
+)
 from .structural_completion import (
     build_structural_completion_evidence,
     check_structural_completion_evidence,
@@ -507,6 +510,16 @@ def _cmd_check_raw_closure(args: argparse.Namespace) -> int:
         f"fallback={summary['english_fallback_count']} "
         f"unresolved={summary['unresolved_count']}"
     )
+    return 0
+
+
+def _cmd_verify_ja_raw_baserom(args: argparse.Namespace) -> int:
+    verify_ja_raw_provider_baserom(
+        _load_json(args.ja_raw),
+        source_root=args.ja_raw.parent,
+        baserom_path=args.baserom,
+    )
+    print(f"verified pinned FE8J baserom slices: {args.baserom}")
     return 0
 
 
@@ -1126,6 +1139,22 @@ def build_parser() -> argparse.ArgumentParser:
             default=Path("include/constants/msg.h"),
         )
         command_parser.add_argument("--repo-root", type=Path, default=Path("."))
+
+    baserom_parser = subparsers.add_parser(
+        "verify-ja-raw-baserom",
+        help="verify pinned Japanese raw slices against an authorized FE8J ROM",
+    )
+    baserom_parser.add_argument(
+        "--ja-raw",
+        type=Path,
+        default=Path("texts/locales/ja/raw.json"),
+    )
+    baserom_parser.add_argument(
+        "--baserom",
+        type=Path,
+        default=Path("baserom.gba"),
+    )
+    baserom_parser.set_defaults(handler=_cmd_verify_ja_raw_baserom)
 
     final_build_parser = subparsers.add_parser(
         "build-final-mapping",

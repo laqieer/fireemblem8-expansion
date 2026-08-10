@@ -13,15 +13,26 @@ from pathlib import Path
 from typing import Any, Dict, Mapping
 
 JA_RAW_PROVIDER_KIND = "fe8j-raw-provider-catalog"
-JA_RAW_PROVIDER_SCHEMA_VERSION = 5
+JA_RAW_PROVIDER_SCHEMA_VERSION = 6
 PINNED_SOURCE_REPOSITORY = "https://github.com/laqieer/fireemblem8j"
 PINNED_SOURCE_REVISION = "bf424414d075789d757e2f4cd0cea823bfb2862e"
-PINNED_GOAL_SOURCE_ID = "expansion-fe8j-raw-v4"
-PINNED_GOAL_SOURCE_REPOSITORY = (
-    "https://github.com/laqieer/fireemblem8-expansion"
+PINNED_FE8J_ROM_SHA256 = (
+    "44fd343625ab9e6b90f63a80758c15066d526e6873fae91474006314a5ead464"
 )
-PINNED_GOAL_SOURCE_REVISION = "548b240d0a553add88897927049b7f5ce25657a8"
+PINNED_FE8J_ROM_SIZE = 0x1000000
+PINNED_GOAL_SOURCE_FORMAT = "baserom-slice"
+PINNED_GOAL_OFFSET_SOURCE_PATH = (
+    "layout/baseline_syms.d/GoalDisplay_Init-134e6b42.tsv"
+)
+PINNED_GOAL_OFFSET_SOURCE_BLOB_OID = (
+    "4325b593a941ce95e3821e3746564b2311fe8142"
+)
 PINNED_GOAL_TARGETS = frozenset({"0x01C1", "0x01C2", "0x01C3"})
+PINNED_GOAL_SYMBOLS = {
+    "0x01C1": "GoalString_UnitsLeft",
+    "0x01C2": "GoalString_Turn",
+    "0x01C3": "GoalString_LastTurn",
+}
 _TARGET_ID_RE = re.compile(r"0x[0-9A-F]{4}")
 _SHA256_RE = re.compile(r"[0-9a-f]{64}")
 _GIT_OID_RE = re.compile(r"[0-9a-f]{40}")
@@ -46,6 +57,11 @@ class RawProvider:
     value_offset: int
     value_length: int
     value_sha256: str
+    provenance_kind: str = "pinned_git_source_artifact"
+    rom_sha256: str | None = None
+    rom_address: str | None = None
+    rom_offset: int | None = None
+    decoded_value: str | None = None
 
 
 @dataclass(frozen=True)
@@ -76,6 +92,31 @@ class GitSource:
     artifact_path: str
     artifact_sha256: str
     artifact_raw: bytes
+
+
+@dataclass(frozen=True)
+class BaseromSlice:
+    target: str
+    symbol: str
+    rom_address: str
+    rom_offset: int
+    artifact_offset: int
+    length: int
+    bytes_sha256: str
+    decoded_value: str
+    raw: bytes
+
+
+@dataclass(frozen=True)
+class BaseromSource:
+    rom_sha256: str
+    rom_size: int
+    offset_source_path: str
+    offset_source_blob_oid: str
+    artifact_path: str
+    artifact_sha256: str
+    artifact_raw: bytes
+    slices: Mapping[str, BaseromSlice]
 
 
 _C_STRING_RE = re.compile(r'"(?:\\.|[^"\\])*"', re.DOTALL)
@@ -742,11 +783,6 @@ def _load_git_source(
             "ja raw provider provider_values_artifact.generated_from_paths "
             "must uniquely reference pinned source blobs"
         )
-    if set(generated_from_paths) != set(source_blobs):
-        raise RawProviderError(
-            "ja raw provider provider_values_artifact.generated_from_paths "
-            "must cover every pinned source blob"
-        )
     path = snapshot_path.parent / artifact_path
     try:
         raw = path.read_bytes()
@@ -770,135 +806,332 @@ def _load_git_source(
     )
 
 
-def _load_additional_git_sources(
+def _baseline_symbols(
+    raw: bytes,
+    *,
+    source_path: str,
+) -> Mapping[str, tuple[int, str, str]]:
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise RawProviderError(
+            f"ja raw provider baseline symbol map is not UTF-8: {source_path}"
+        ) from error
+    symbols: Dict[str, tuple[int, str, str]] = {}
+    for line_number, line in enumerate(text.splitlines(), start=1):
+        fields = line.split("\t")
+        if len(fields) != 4 or not fields[0] or not re.fullmatch(
+            r"[0-9A-F]{8}", fields[1]
+        ):
+            raise RawProviderError(
+                f"ja raw provider baseline symbol map is malformed at "
+                f"{source_path}:{line_number}"
+            )
+        symbol, address, symbol_kind, owner = fields
+        if symbol in symbols:
+            raise RawProviderError(
+                f"ja raw provider baseline symbol map duplicates {symbol}"
+            )
+        symbols[symbol] = (int(address, 16), symbol_kind, owner)
+    return symbols
+
+
+def _load_baserom_source(
     snapshot: Mapping[str, Any],
     *,
     snapshot_path: Path,
-) -> Dict[str, GitSource]:
-    specifications = snapshot.get("additional_git_sources", {})
-    if not isinstance(specifications, dict):
+) -> BaseromSource | None:
+    if "additional_git_sources" in snapshot:
         raise RawProviderError(
-            "ja raw provider additional_git_sources must be an object"
+            "ja raw provider nested generated manifests are not accepted"
         )
-    sources: Dict[str, GitSource] = {}
-    for source_id, specification in specifications.items():
-        if (
-            not isinstance(source_id, str)
-            or not re.fullmatch(r"[a-z0-9][a-z0-9-]*", source_id)
-            or not isinstance(specification, dict)
-        ):
+    snapshot_providers = snapshot.get("providers")
+    has_goal_targets = isinstance(snapshot_providers, dict) and bool(
+        PINNED_GOAL_TARGETS.intersection(snapshot_providers)
+    )
+    if not has_goal_targets:
+        if "baserom_source" in snapshot:
             raise RawProviderError(
-                "ja raw provider additional_git_sources entries are invalid"
+                "ja raw provider baserom_source is only valid for goal targets"
             )
-        if source_id == PINNED_GOAL_SOURCE_ID:
-            expected_repository = PINNED_GOAL_SOURCE_REPOSITORY
-            expected_revision = PINNED_GOAL_SOURCE_REVISION
-        else:
-            raise RawProviderError(
-                f"ja raw provider additional source {source_id!r} is not "
-                "independently pinned"
-            )
-        sources[source_id] = _load_git_source(
-            specification,
-            snapshot_path=snapshot_path,
-            expected_repository=expected_repository,
-            expected_revision=expected_revision,
-        )
-    return sources
-
-
-def _extract_raw_provider_manifest_value(
-    git_source: GitSource,
-    source_blob: GitSourceBlob,
-    *,
-    source_anchor: str,
-    expected_symbol: str,
-) -> tuple[tuple[bytes, ...], str]:
-    if not _TARGET_ID_RE.fullmatch(source_anchor):
+        return None
+    specification = snapshot.get("baserom_source")
+    if not isinstance(specification, dict) or set(specification) != {
+        "artifact",
+        "offset_source",
+        "records",
+        "rom",
+    }:
         raise RawProviderError(
-            "ja raw provider manifest source_anchor must be a canonical target ID"
+            "ja raw provider baserom_source must contain artifact, "
+            "offset_source, records, and rom"
         )
-    try:
-        manifest = json.loads(source_blob.raw.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+    rom = specification["rom"]
+    if not isinstance(rom, dict) or set(rom) != {"sha256", "size"}:
         raise RawProviderError(
-            f"ja raw provider source manifest is malformed: {source_blob.path}"
-        ) from error
-    if (
-        not isinstance(manifest, dict)
-        or manifest.get("kind") != "fe8j-raw-symbol-source-snapshot"
-        or not isinstance(manifest.get("providers"), dict)
-    ):
-        raise RawProviderError(
-            f"ja raw provider source manifest is invalid: {source_blob.path}"
+            "ja raw provider baserom_source.rom must contain sha256 and size"
         )
-    provider = manifest["providers"].get(source_anchor)
-    if not isinstance(provider, dict):
+    if rom["sha256"] != PINNED_FE8J_ROM_SHA256:
         raise RawProviderError(
-            f"ja raw provider source manifest has no slot {source_anchor}"
+            "ja raw provider baserom SHA-256 differs from the independently "
+            "pinned FE8J ROM"
         )
-    if provider.get("symbol") != expected_symbol:
+    if rom["size"] != PINNED_FE8J_ROM_SIZE:
         raise RawProviderError(
-            f"ja raw provider source manifest {source_anchor} symbol mismatch"
+            "ja raw provider baserom size differs from the pinned FE8J ROM"
         )
-    offset = provider.get("offset")
-    byte_length = provider.get("byte_length")
-    value_sha256 = provider.get("value_sha256")
-    if (
-        not isinstance(offset, int)
-        or isinstance(offset, bool)
-        or offset < 0
-        or not isinstance(byte_length, int)
-        or isinstance(byte_length, bool)
-        or byte_length < 2
-        or not isinstance(value_sha256, str)
-        or not _SHA256_RE.fullmatch(value_sha256)
-    ):
+    offset_source = specification["offset_source"]
+    if not isinstance(offset_source, dict) or set(offset_source) != {
+        "blob_oid",
+        "path",
+        "repository",
+        "revision",
+        "sha256",
+    }:
         raise RawProviderError(
-            f"ja raw provider source manifest {source_anchor} range is invalid"
+            "ja raw provider baserom offset_source metadata is invalid"
         )
-    artifact = manifest.get("provider_values_artifact")
+    if offset_source["repository"] != PINNED_SOURCE_REPOSITORY:
+        raise RawProviderError(
+            "ja raw provider baserom offset source repository is not pinned"
+        )
+    if offset_source["revision"] != PINNED_SOURCE_REVISION:
+        raise RawProviderError(
+            "ja raw provider baserom offset source revision is not pinned"
+        )
+    if offset_source["path"] != PINNED_GOAL_OFFSET_SOURCE_PATH:
+        raise RawProviderError(
+            "ja raw provider baserom offset source path is not pinned"
+        )
+    if offset_source["blob_oid"] != PINNED_GOAL_OFFSET_SOURCE_BLOB_OID:
+        raise RawProviderError(
+            "ja raw provider baserom offset source blob OID is not pinned"
+        )
+    artifact = specification["artifact"]
     if (
         not isinstance(artifact, dict)
-        or artifact.get("encoding") != "cp932-nul-terminated"
-        or not isinstance(artifact.get("path"), str)
-        or not isinstance(artifact.get("sha256"), str)
-        or not _SHA256_RE.fullmatch(artifact["sha256"])
+        or set(artifact) != {"encoding", "path", "sha256"}
+        or artifact["encoding"] != "cp932-nul-terminated"
     ):
         raise RawProviderError(
-            "ja raw provider source manifest artifact metadata is invalid"
+            "ja raw provider baserom artifact metadata is invalid"
         )
-    artifact_relative_path = _require_relative_path(
+    artifact_path = _require_relative_path(
         artifact["path"],
-        "ja raw provider source manifest artifact path",
+        "ja raw provider baserom artifact path",
     )
-    artifact_path = (
-        Path(source_blob.path).parent / artifact_relative_path
-    ).as_posix()
-    artifact_blob = git_source.blobs.get(artifact_path)
-    if artifact_blob is None:
+    artifact_sha256 = artifact["sha256"]
+    if not isinstance(artifact_sha256, str) or not _SHA256_RE.fullmatch(
+        artifact_sha256
+    ):
         raise RawProviderError(
-            "ja raw provider source manifest artifact blob is not pinned"
+            "ja raw provider baserom artifact SHA-256 is invalid"
         )
-    if hashlib.sha256(artifact_blob.raw).hexdigest() != artifact["sha256"]:
+    try:
+        artifact_raw = (snapshot_path.parent / artifact_path).read_bytes()
+    except OSError as error:
         raise RawProviderError(
-            "ja raw provider source manifest artifact SHA-256 mismatch"
-        )
-    end = offset + byte_length
-    if end > len(artifact_blob.raw):
+            "ja raw provider baserom artifact is unavailable"
+        ) from error
+    if hashlib.sha256(artifact_raw).hexdigest() != artifact_sha256:
         raise RawProviderError(
-            f"ja raw provider source manifest {source_anchor} range is out of bounds"
+            "ja raw provider baserom artifact SHA-256 mismatch"
         )
-    raw_value = artifact_blob.raw[offset:end]
-    if hashlib.sha256(raw_value).hexdigest() != value_sha256:
+
+    source_blob = next(
+        (
+            raw_blob
+            for raw_blob in snapshot.get("source_blobs", [])
+            if isinstance(raw_blob, dict)
+            and raw_blob.get("path") == PINNED_GOAL_OFFSET_SOURCE_PATH
+        ),
+        None,
+    )
+    if not isinstance(source_blob, dict):
         raise RawProviderError(
-            f"ja raw provider source manifest {source_anchor} value mismatch"
+            "ja raw provider pinned baseline symbol map is missing"
         )
-    if not raw_value.endswith(b"\0") or b"\0" in raw_value[:-1]:
+    if (
+        source_blob.get("oid") != offset_source["blob_oid"]
+        or source_blob.get("sha256") != offset_source["sha256"]
+    ):
         raise RawProviderError(
-            f"ja raw provider source manifest {source_anchor} is not one string"
+            "ja raw provider baserom offset source metadata does not match "
+            "the pinned Git blob"
         )
-    return (raw_value,), artifact_path
+    try:
+        offset_source_raw = (
+            snapshot_path.parent / source_blob["vendored_path"]
+        ).read_bytes()
+    except (KeyError, OSError) as error:
+        raise RawProviderError(
+            "ja raw provider pinned baseline symbol map is unavailable"
+        ) from error
+    if hashlib.sha256(offset_source_raw).hexdigest() != offset_source["sha256"]:
+        raise RawProviderError(
+            "ja raw provider baserom offset source SHA-256 mismatch"
+        )
+    symbols = _baseline_symbols(
+        offset_source_raw,
+        source_path=PINNED_GOAL_OFFSET_SOURCE_PATH,
+    )
+
+    raw_records = specification["records"]
+    if not isinstance(raw_records, dict) or set(raw_records) != PINNED_GOAL_TARGETS:
+        raise RawProviderError(
+            "ja raw provider baserom records must exactly cover goal targets"
+        )
+    slices: Dict[str, BaseromSlice] = {}
+    expected_artifact_offset = 0
+    for target in sorted(PINNED_GOAL_TARGETS):
+        record = raw_records[target]
+        if not isinstance(record, dict) or set(record) != {
+            "artifact_offset",
+            "bytes_sha256",
+            "decoded_value",
+            "length",
+            "rom_address",
+            "rom_offset",
+            "symbol",
+        }:
+            raise RawProviderError(
+                f"ja raw provider baserom record {target} metadata is invalid"
+            )
+        symbol = record["symbol"]
+        if symbol != PINNED_GOAL_SYMBOLS[target]:
+            raise RawProviderError(
+                f"ja raw provider baserom record {target} symbol mismatch"
+            )
+        baseline = symbols.get(symbol)
+        if baseline is None:
+            raise RawProviderError(
+                f"ja raw provider baseline symbol map has no {symbol}"
+            )
+        baseline_address, symbol_kind, owner = baseline
+        if symbol_kind != "data" or owner != "GoalDisplay_Init":
+            raise RawProviderError(
+                f"ja raw provider baseline symbol {symbol} metadata is invalid"
+            )
+        rom_address = record["rom_address"]
+        if (
+            not isinstance(rom_address, str)
+            or not re.fullmatch(r"0x08[0-9A-F]{6}", rom_address)
+            or int(rom_address, 16) != baseline_address
+        ):
+            raise RawProviderError(
+                f"ja raw provider baserom record {target} ROM address "
+                "differs from the pinned baseline map"
+            )
+        rom_offset = record["rom_offset"]
+        if (
+            not isinstance(rom_offset, int)
+            or isinstance(rom_offset, bool)
+            or rom_offset != baseline_address - 0x08000000
+        ):
+            raise RawProviderError(
+                f"ja raw provider baserom record {target} ROM offset "
+                "differs from the pinned baseline map"
+            )
+        artifact_offset = record["artifact_offset"]
+        length = record["length"]
+        if (
+            not isinstance(artifact_offset, int)
+            or isinstance(artifact_offset, bool)
+            or artifact_offset != expected_artifact_offset
+            or not isinstance(length, int)
+            or isinstance(length, bool)
+            or length < 2
+            or rom_offset + length > PINNED_FE8J_ROM_SIZE
+        ):
+            raise RawProviderError(
+                f"ja raw provider baserom record {target} range is invalid"
+            )
+        end = artifact_offset + length
+        if end > len(artifact_raw):
+            raise RawProviderError(
+                f"ja raw provider baserom record {target} artifact range "
+                "is out of bounds"
+            )
+        raw_value = artifact_raw[artifact_offset:end]
+        bytes_sha256 = record["bytes_sha256"]
+        if (
+            not isinstance(bytes_sha256, str)
+            or not _SHA256_RE.fullmatch(bytes_sha256)
+            or hashlib.sha256(raw_value).hexdigest() != bytes_sha256
+        ):
+            raise RawProviderError(
+                f"ja raw provider baserom record {target} bytes hash mismatch"
+            )
+        if not raw_value.endswith(b"\0") or b"\0" in raw_value[:-1]:
+            raise RawProviderError(
+                f"ja raw provider baserom record {target} is not one "
+                "NUL-terminated string"
+            )
+        try:
+            decoded_value = raw_value[:-1].decode("cp932")
+        except UnicodeDecodeError as error:
+            raise RawProviderError(
+                f"ja raw provider baserom record {target} is not valid CP932"
+            ) from error
+        if (
+            not isinstance(record["decoded_value"], str)
+            or record["decoded_value"] != decoded_value
+        ):
+            raise RawProviderError(
+                f"ja raw provider baserom record {target} decoded value mismatch"
+            )
+        slices[target] = BaseromSlice(
+            target=target,
+            symbol=symbol,
+            rom_address=rom_address,
+            rom_offset=rom_offset,
+            artifact_offset=artifact_offset,
+            length=length,
+            bytes_sha256=bytes_sha256,
+            decoded_value=decoded_value,
+            raw=raw_value,
+        )
+        expected_artifact_offset = end
+    if expected_artifact_offset != len(artifact_raw):
+        raise RawProviderError(
+            "ja raw provider baserom artifact has unreferenced trailing bytes"
+        )
+    return BaseromSource(
+        rom_sha256=rom["sha256"],
+        rom_size=rom["size"],
+        offset_source_path=offset_source["path"],
+        offset_source_blob_oid=offset_source["blob_oid"],
+        artifact_path=artifact_path,
+        artifact_sha256=artifact_sha256,
+        artifact_raw=artifact_raw,
+        slices=slices,
+    )
+
+
+def _verify_baserom_bytes(
+    baserom_source: BaseromSource,
+    *,
+    baserom_path: Path,
+) -> None:
+    try:
+        raw = Path(baserom_path).read_bytes()
+    except OSError as error:
+        raise RawProviderError(
+            f"FE8J baserom is unavailable: {baserom_path}"
+        ) from error
+    if len(raw) != baserom_source.rom_size:
+        raise RawProviderError("FE8J baserom size mismatch")
+    if hashlib.sha256(raw).hexdigest() != baserom_source.rom_sha256:
+        raise RawProviderError("FE8J baserom SHA-256 mismatch")
+    for target, source_slice in baserom_source.slices.items():
+        actual = raw[
+            source_slice.rom_offset : source_slice.rom_offset
+            + source_slice.length
+        ]
+        if actual != source_slice.raw:
+            raise RawProviderError(
+                f"FE8J baserom bytes mismatch for {target}"
+            )
 
 
 def load_ja_raw_providers(
@@ -907,6 +1140,7 @@ def load_ja_raw_providers(
     source_root: Path = Path("."),
     expected_repository: str | None = PINNED_SOURCE_REPOSITORY,
     expected_revision: str | None = PINNED_SOURCE_REVISION,
+    baserom_path: Path | None = None,
 ) -> Dict[int, RawProvider]:
     if not isinstance(data, dict):
         raise RawProviderError("ja raw provider catalog root must be an object")
@@ -943,16 +1177,23 @@ def load_ja_raw_providers(
         expected_repository=expected_repository,
         expected_revision=expected_revision,
     )
-    additional_git_sources = _load_additional_git_sources(
+    baserom_source = _load_baserom_source(
         snapshot,
         snapshot_path=snapshot_path,
     )
+    if baserom_path is not None:
+        if baserom_source is None:
+            raise RawProviderError(
+                "ja raw provider catalog has no baserom-backed targets"
+            )
+        _verify_baserom_bytes(
+            baserom_source,
+            baserom_path=baserom_path,
+        )
     if git_source.revision != source_revision:
         raise RawProviderError(
             "ja raw provider Git source revision does not match catalog"
         )
-    source_blob = git_source.artifact_raw
-
     raw_providers = data.get("providers")
     if not isinstance(raw_providers, dict):
         raise RawProviderError("ja raw provider providers must be an object")
@@ -973,11 +1214,13 @@ def load_ja_raw_providers(
         )
 
     providers: Dict[int, RawProvider] = {}
-    source_ranges = []
-    used_source_paths = set()
-    used_additional_source_paths: Dict[str, set[str]] = {
-        source_id: set() for source_id in additional_git_sources
+    source_ranges: Dict[str, list[tuple[int, int, str]]] = {
+        git_source.artifact_path: [],
     }
+    if baserom_source is not None:
+        source_ranges[baserom_source.artifact_path] = []
+    used_source_paths = set()
+    used_generated_source_paths = set()
     for target, raw_provider in raw_providers.items():
         if not isinstance(target, str) or not _TARGET_ID_RE.fullmatch(target):
             raise RawProviderError(
@@ -1003,13 +1246,13 @@ def load_ja_raw_providers(
         }
         if not isinstance(snapshot_provider, dict) or set(snapshot_provider) not in (
             base_provider_fields,
-            base_provider_fields | {"source_format", "source_id"},
+            base_provider_fields | {"source_format"},
         ):
             raise RawProviderError(
                 f"ja raw provider source snapshot {target} must contain "
                 "byte_length, offset, source_anchor, source_path, "
                 "source_value_index, symbol, and value_sha256, with optional "
-                "source_format and source_id"
+                "source_format"
             )
         if snapshot_provider["symbol"] != symbol:
             raise RawProviderError(
@@ -1021,7 +1264,6 @@ def load_ja_raw_providers(
         source_path = snapshot_provider["source_path"]
         source_anchor = snapshot_provider["source_anchor"]
         source_value_index = snapshot_provider["source_value_index"]
-        source_id = snapshot_provider.get("source_id")
         source_format = snapshot_provider.get("source_format")
         if (
             not isinstance(offset, int)
@@ -1040,39 +1282,22 @@ def load_ja_raw_providers(
             raise RawProviderError(
                 f"ja raw provider {target} value_sha256 is invalid"
             )
-        if source_id is None:
-            provider_git_source = git_source
-        elif (
-            isinstance(source_id, str)
-            and source_id in additional_git_sources
-        ):
-            provider_git_source = additional_git_sources[source_id]
-        else:
-            raise RawProviderError(
-                f"ja raw provider {target} source_id is not pinned"
-            )
-        if (
-            source_format is not None
-            and source_format != "raw-provider-manifest"
-        ):
+        if source_format not in (None, PINNED_GOAL_SOURCE_FORMAT):
             raise RawProviderError(
                 f"ja raw provider {target} source_format is unsupported"
             )
         if target in PINNED_GOAL_TARGETS:
-            if (
-                source_id != PINNED_GOAL_SOURCE_ID
-                or source_format != "raw-provider-manifest"
-            ):
+            if source_format != PINNED_GOAL_SOURCE_FORMAT:
                 raise RawProviderError(
-                    f"ja raw provider {target} must use the pinned goal manifest"
+                    f"ja raw provider {target} must use the pinned baserom slice"
                 )
-        elif source_id is not None or source_format is not None:
+        elif source_format is not None:
             raise RawProviderError(
                 f"ja raw provider {target} cannot use goal-only source metadata"
             )
         if (
             not isinstance(source_path, str)
-            or source_path not in provider_git_source.blobs
+            or source_path not in git_source.blobs
         ):
             raise RawProviderError(
                 f"ja raw provider {target} source_path is not pinned"
@@ -1090,11 +1315,46 @@ def load_ja_raw_providers(
                 f"ja raw provider {target} source_value_index must be "
                 "a non-negative integer"
             )
-        source_git_blob = provider_git_source.blobs[source_path]
-        if source_id is None:
-            used_source_paths.add(source_path)
+        source_git_blob = git_source.blobs[source_path]
+        used_source_paths.add(source_path)
+        if source_format is None:
+            used_generated_source_paths.add(source_path)
+            source_blob = git_source.artifact_raw
+            provider_artifact_path = git_source.artifact_path
+            provider_artifact_sha256 = git_source.artifact_sha256
+            provenance_kind = "pinned_git_source_artifact"
+            rom_sha256 = None
+            rom_address = None
+            rom_offset = None
+            decoded_value = None
         else:
-            used_additional_source_paths[source_id].add(source_path)
+            if baserom_source is None:
+                raise RawProviderError(
+                    f"ja raw provider {target} has no pinned baserom source"
+                )
+            source_slice = baserom_source.slices[target]
+            if (
+                source_path != baserom_source.offset_source_path
+                or source_git_blob.oid
+                != baserom_source.offset_source_blob_oid
+                or source_anchor != source_slice.symbol
+                or source_value_index != 0
+                or offset != source_slice.artifact_offset
+                or byte_length != source_slice.length
+                or value_sha256 != source_slice.bytes_sha256
+            ):
+                raise RawProviderError(
+                    f"ja raw provider {target} baserom metadata differs "
+                    "from the pinned source manifest"
+                )
+            source_blob = baserom_source.artifact_raw
+            provider_artifact_path = baserom_source.artifact_path
+            provider_artifact_sha256 = baserom_source.artifact_sha256
+            provenance_kind = "pinned_baserom_slice"
+            rom_sha256 = baserom_source.rom_sha256
+            rom_address = source_slice.rom_address
+            rom_offset = source_slice.rom_offset
+            decoded_value = source_slice.decoded_value
         if source_anchor.encode("utf-8") not in source_git_blob.raw:
             raise RawProviderError(
                 f"ja raw provider {target} source_anchor is absent from "
@@ -1124,22 +1384,9 @@ def load_ja_raw_providers(
             raise RawProviderError(
                 f"ja raw provider {target} source value does not match catalog text"
             )
-        provider_artifact_path = git_source.artifact_path
-        provider_artifact_sha256 = git_source.artifact_sha256
-        if source_format == "raw-provider-manifest":
-            source_values, artifact_source_path = (
-                _extract_raw_provider_manifest_value(
-                    provider_git_source,
-                    source_git_blob,
-                    source_anchor=source_anchor,
-                    expected_symbol=symbol,
-                )
-            )
-            used_additional_source_paths[source_id].add(artifact_source_path)
-            provider_artifact_path = artifact_source_path
-            provider_artifact_sha256 = provider_git_source.blobs[
-                artifact_source_path
-            ].sha256
+        if source_format == PINNED_GOAL_SOURCE_FORMAT:
+            assert baserom_source is not None
+            source_values = (baserom_source.slices[target].raw,)
         else:
             source_values = _extract_source_anchor_values(
                 source_git_blob,
@@ -1161,8 +1408,8 @@ def load_ja_raw_providers(
         providers[target_id] = RawProvider(
             symbol=symbol,
             text=text,
-            source_repository=provider_git_source.repository,
-            source_revision=provider_git_source.revision,
+            source_repository=git_source.repository,
+            source_revision=git_source.revision,
             source_path=source_path,
             source_blob_oid=source_git_blob.oid,
             source_anchor=source_anchor,
@@ -1172,28 +1419,42 @@ def load_ja_raw_providers(
             value_offset=offset,
             value_length=byte_length,
             value_sha256=value_sha256,
+            provenance_kind=provenance_kind,
+            rom_sha256=rom_sha256,
+            rom_address=rom_address,
+            rom_offset=rom_offset,
+            decoded_value=decoded_value,
         )
-        source_ranges.append((offset, end, target))
-    expected_offset = 0
-    for offset, end, target in sorted(source_ranges):
-        if offset != expected_offset:
+        source_ranges[provider_artifact_path].append((offset, end, target))
+    artifact_lengths = {
+        git_source.artifact_path: len(git_source.artifact_raw),
+    }
+    if baserom_source is not None:
+        artifact_lengths[baserom_source.artifact_path] = len(
+            baserom_source.artifact_raw
+        )
+    for artifact_path, ranges in source_ranges.items():
+        expected_offset = 0
+        for offset, end, target in sorted(ranges):
+            if offset != expected_offset:
+                raise RawProviderError(
+                    f"ja raw provider {target} source blob ranges overlap "
+                    f"or leave gaps in {artifact_path}"
+                )
+            expected_offset = end
+        if expected_offset != artifact_lengths[artifact_path]:
             raise RawProviderError(
-                f"ja raw provider {target} source blob ranges overlap or leave gaps"
+                f"ja raw provider source blob has unreferenced trailing "
+                f"bytes: {artifact_path}"
             )
-        expected_offset = end
-    if expected_offset != len(source_blob):
-        raise RawProviderError(
-            "ja raw provider source blob has unreferenced trailing bytes"
-        )
-    if used_source_paths != set(git_source.generated_from_paths):
+    if used_generated_source_paths != set(git_source.generated_from_paths):
         raise RawProviderError(
             "ja raw provider entries do not use every generated source path"
         )
-    for source_id, source in additional_git_sources.items():
-        if used_additional_source_paths[source_id] != set(source.blobs):
-            raise RawProviderError(
-                f"ja raw provider entries do not use every {source_id} source path"
-            )
+    if used_source_paths != set(git_source.blobs):
+        raise RawProviderError(
+            "ja raw provider entries do not use every pinned source blob"
+        )
     return providers
 
 
@@ -1277,6 +1538,19 @@ def verify_ja_raw_provider_git_source(
             raise RawProviderError(
                 f"git source blob bytes mismatch for {source_path}"
             )
+
+
+def verify_ja_raw_provider_baserom(
+    data: Any,
+    *,
+    source_root: Path,
+    baserom_path: Path,
+) -> None:
+    load_ja_raw_providers(
+        data,
+        source_root=source_root,
+        baserom_path=baserom_path,
+    )
 
 
 def resolve_ja_raw_provider(
