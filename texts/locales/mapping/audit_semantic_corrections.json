@@ -623,7 +623,7 @@
       "incorrect_source_id": "0x0AEA",
       "payload_sha256": {
         "ja": "4e15a798c4de7c069a34e3c014bf77003f18ac3c70b27a4c1f6b96dc43881dc2",
-        "zh-Hans": "6e557122c690c7e47aa9602b2a9827bfd309362cb4451e7ea17668a24bc89997"
+        "zh-Hans": "5a6cff19d548d04f0bdccc36df6fd126bcfcf430f1cbef5cf16ac3db81902b85"
       },
       "rationale": "The source payload includes the following scene as a duplicate; the authored correction ends at the FE8U 0x0B29 close-speech boundary before 0x0B2A begins.",
       "source_key": "EventScr_Ch15A_26.text[3]",

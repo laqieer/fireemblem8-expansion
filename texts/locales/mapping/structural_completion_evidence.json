@@ -2422,14 +2422,14 @@
     },
     "fe8j_indexed_source": {
       "path": "texts/locales/ja/indexed.txt",
-      "sha256": "0318c2601b77a82f6f2fc5cc19dfa212dbbe2d429c8eb21e3dbf819726e5c696"
+      "sha256": "3f8af2b2ca4d6e1ec664841fc3cb8fb1c553cfe316e81682067db94b080b01b5"
     },
     "fe8j_reference_revision": "bf424414d075789d757e2f4cd0cea823bfb2862e",
     "fe8u_reference_revision": "d727e37ba1a584b2f874bdc3662ebc45e257de23",
     "protected_artifacts": [
       {
         "path": "texts/locales/mapping/fe8u_target_map.json",
-        "sha256": "2bd43b48796f76701b698606dd4ba4d56946b0e5928b67283c34b4e134dac2f2"
+        "sha256": "e97734e5e2149caa18c8e199f09a37e95adbc70393e16cb9db7bdf86cd90d703"
       },
       {
         "path": "texts/locales/mapping/fe8u_structural_evidence.json",
@@ -60643,7 +60643,7 @@
         "source_in_bounds": true,
         "source_payload_bytes": 33,
         "source_payload_nonempty": true,
-        "source_payload_sha256": "938e119b9a48de643aef485b632e7c0e2982e19f7cb5d11a645365555d4582c3",
+        "source_payload_sha256": "132551dc5dc581c4c2cad5efaf3a662204c82cca93ad45b355e01ada9a39d23c",
         "target_in_bounds": true,
         "typed_source_site_count": 1,
         "typed_target_site_count": 2
@@ -60730,9 +60730,9 @@
       "validation": {
         "parsed_structural_pair": false,
         "source_in_bounds": true,
-        "source_payload_bytes": 248,
+        "source_payload_bytes": 254,
         "source_payload_nonempty": true,
-        "source_payload_sha256": "45372d35d282ee8b37b6af15312b641accc906799fd78ab88dd8df58f02024c1",
+        "source_payload_sha256": "3882e1ae5093e336b2b1c05ea1f8ab603972c0dc6e1f2e61e3eff9310aad6858",
         "target_in_bounds": true,
         "typed_source_site_count": 1,
         "typed_target_site_count": 3
@@ -62367,9 +62367,9 @@
       "validation": {
         "parsed_structural_pair": false,
         "source_in_bounds": true,
-        "source_payload_bytes": 33,
+        "source_payload_bytes": 30,
         "source_payload_nonempty": true,
-        "source_payload_sha256": "0317f9081a5ce846ff9c7a06a5b1ce52ab3baea0de905aaa7852f7142c85ff6f",
+        "source_payload_sha256": "5a4d1695ae56323c900ccbcc483986b1ac819bd94d92c4f4a80b644a66cd7ca9",
         "target_in_bounds": true,
         "typed_source_site_count": 1,
         "typed_target_site_count": 2
@@ -63948,9 +63948,9 @@
       "validation": {
         "parsed_structural_pair": false,
         "source_in_bounds": true,
-        "source_payload_bytes": 242,
+        "source_payload_bytes": 260,
         "source_payload_nonempty": true,
-        "source_payload_sha256": "77b78e99ac0807b04e93e6e2ac86a99a2b67f88f319f9870be5065c9cfc4ed20",
+        "source_payload_sha256": "d34bfcd1a5cb09fe83d9d82b23ae7147c66b8d4dbd0f5de1560c461b817998d8",
         "target_in_bounds": true,
         "typed_source_site_count": 1,
         "typed_target_site_count": 3
@@ -64121,9 +64121,9 @@
       "validation": {
         "parsed_structural_pair": false,
         "source_in_bounds": true,
-        "source_payload_bytes": 242,
+        "source_payload_bytes": 257,
         "source_payload_nonempty": true,
-        "source_payload_sha256": "235a194b212f102c9b74f667b30481688615f51d80f49dea138694186b9e5e0e",
+        "source_payload_sha256": "81f485b7fd50e0ff493f378de58f502a2e27cfce7bf84e46eb800ca84fb5360f",
         "target_in_bounds": true,
         "typed_source_site_count": 1,
         "typed_target_site_count": 3
@@ -66279,7 +66279,7 @@
         "source_in_bounds": true,
         "source_payload_bytes": 30,
         "source_payload_nonempty": true,
-        "source_payload_sha256": "60d66c110e24bbdd17a27fbdd5e2ed042de8f94c0f708606171c9dce7a1d64dc",
+        "source_payload_sha256": "c0d698b94365902a29f236eea0e7df900a271adb2766811ecd0d6caa7bb38083",
         "target_in_bounds": true,
         "typed_source_site_count": 1,
         "typed_target_site_count": 2

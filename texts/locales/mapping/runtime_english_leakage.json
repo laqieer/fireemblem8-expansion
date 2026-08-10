@@ -10958,7 +10958,7 @@
     "ja_authored": {
       "byte_count": 53073,
       "path": "texts/locales/authored/catalog.ja.json",
-      "sha256": "8bc84159c79ddd70c6d4d137842778442e64d635a6051d9dfdb1c44278cada42"
+      "sha256": "757776fa8ace99131ce3e4520e3f1bcb1e4fab5b7107bc3e334f1e9b89f65db5"
     },
     "ja_expansion": {
       "byte_count": 2693,
@@ -10966,9 +10966,9 @@
       "sha256": "ad47b7912ee40a42f2f31448e4a1cf3f9783ff16231f4fc66c48a3af37f78e9f"
     },
     "ja_indexed": {
-      "byte_count": 1719210,
+      "byte_count": 1719246,
       "path": "texts/locales/ja/indexed.txt",
-      "sha256": "0318c2601b77a82f6f2fc5cc19dfa212dbbe2d429c8eb21e3dbf819726e5c696"
+      "sha256": "3f8af2b2ca4d6e1ec664841fc3cb8fb1c553cfe316e81682067db94b080b01b5"
     },
     "ja_raw": {
       "byte_count": 11842,
@@ -10984,7 +10984,7 @@
     "mapping": {
       "byte_count": 5502911,
       "path": "texts/locales/mapping/fe8u_target_map.json",
-      "sha256": "2bd43b48796f76701b698606dd4ba4d56946b0e5928b67283c34b4e134dac2f2"
+      "sha256": "e97734e5e2149caa18c8e199f09a37e95adbc70393e16cb9db7bdf86cd90d703"
     },
     "raw_closure": {
       "byte_count": 275484,
@@ -10997,9 +10997,9 @@
       "sha256": "fa8d8b55aa170a8b29d4950968d42e4e7673f679ddc4f0e3ae5bd5cb7abf1a0c"
     },
     "zh-Hans_authored": {
-      "byte_count": 46147,
+      "byte_count": 46138,
       "path": "texts/locales/authored/catalog.zh-Hans.json",
-      "sha256": "48eb1188f3173b214398e717e7b166611eaf6a59f6c7ea1d853d301d9277057b"
+      "sha256": "7a3b8ae84ed6b6ab6c08c1bc7e7c8191707bc043e5985e3d5561260e2411fc2b"
     },
     "zh-Hans_expansion": {
       "byte_count": 2604,
@@ -11007,9 +11007,9 @@
       "sha256": "9b555ccd6aef10aa7247e877334094a8d0c96ed910b2a64a9821456714fc4eb6"
     },
     "zh_hans_indexed": {
-      "byte_count": 1375553,
+      "byte_count": 1375618,
       "path": "texts/locales/zh-Hans/indexed.txt",
-      "sha256": "4eb4d299d8b801c3dda53a619e6f5b2378f702c6c57117a3b46bf3ae235fd35a"
+      "sha256": "6c5e8324b63a3e734c779e187df069c6d8741e6924af443fcaeeb4da140f0758"
     },
     "zh_hans_raw": {
       "byte_count": 45834,

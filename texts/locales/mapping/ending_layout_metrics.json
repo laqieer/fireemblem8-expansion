@@ -22,15 +22,15 @@
   "font_inputs": {
     "ja": {
       "codepoints_path": "graphics/fonts/cjk/ja.system.codepoints.u32le",
-      "codepoints_sha256": "b810c8c3f36a5ec6b42d37963b7106884c82a51985e3d4a6515b78039da66141",
+      "codepoints_sha256": "762ef5a72e03b934ecc6f475d8fa69eb9ba0585508d38acd824ad1d052bb1a02",
       "widths_path": "graphics/fonts/cjk/ja.system.widths.u8",
-      "widths_sha256": "abbaa19c8846c9ec17babbda02bb39782d59e165313e35f8e6a11d51b0731b6e"
+      "widths_sha256": "429a0bfba5d9e60b9028cacb49616df80fc4e4bd2e8eff6febfb2d6590c938d5"
     },
     "zh-Hans": {
       "codepoints_path": "graphics/fonts/cjk/zh-Hans.system.codepoints.u32le",
-      "codepoints_sha256": "3e01fd6a972056cf7bb9fd855cb95cca904e0b7afbececf8cd4013ce25827c30",
+      "codepoints_sha256": "7964ddc4fe2ffc23b6414589e0c0298485e3083818f2d889ace0b88fec67f354",
       "widths_path": "graphics/fonts/cjk/zh-Hans.system.widths.u8",
-      "widths_sha256": "d47ac456e7bb33eb6441d53e5eec1106a0e8336ca93bdf3b59946c0f832e5d25"
+      "widths_sha256": "6a4d03fbad4d085069b9559fb26ba361845a387835c7ab87cda31b7999bf4190"
     }
   },
   "kind": "fe8u-ending-layout-metrics",
@@ -451,12 +451,12 @@
           "line_count": 5,
           "line_widths": [
             103,
-            151,
-            129,
+            161,
+            140,
             122,
             131
           ],
-          "max_line_width": 151,
+          "max_line_width": 161,
           "target_id": "0x07D6"
         },
         {
@@ -666,25 +666,25 @@
         {
           "line_count": 5,
           "line_widths": [
-            91,
-            90,
-            150,
-            134,
-            148
+            151,
+            145,
+            132,
+            144,
+            111
           ],
-          "max_line_width": 150,
+          "max_line_width": 151,
           "target_id": "0x07FA"
         },
         {
           "line_count": 5,
           "line_widths": [
-            117,
-            84,
-            137,
-            143,
-            150
+            124,
+            108,
+            154,
+            151,
+            118
           ],
-          "max_line_width": 150,
+          "max_line_width": 154,
           "target_id": "0x07FC"
         },
         {
@@ -983,9 +983,9 @@
         {
           "line_count": 1,
           "line_widths": [
-            115
+            105
           ],
-          "max_line_width": 115,
+          "max_line_width": 105,
           "target_id": "0x07E9"
         },
         {
@@ -1534,12 +1534,12 @@
           "line_count": 5,
           "line_widths": [
             116,
-            122,
+            116,
             113,
-            105,
+            115,
             102
           ],
-          "max_line_width": 122,
+          "max_line_width": 116,
           "target_id": "0x07D6"
         },
         {
@@ -1744,25 +1744,25 @@
         {
           "line_count": 5,
           "line_widths": [
-            113,
-            114,
-            121,
+            122,
+            127,
             115,
-            43
+            124,
+            93
           ],
-          "max_line_width": 121,
+          "max_line_width": 127,
           "target_id": "0x07FA"
         },
         {
           "line_count": 5,
           "line_widths": [
-            120,
+            114,
             106,
+            108,
             117,
-            53,
-            104
+            53
           ],
-          "max_line_width": 120,
+          "max_line_width": 117,
           "target_id": "0x07FC"
         },
         {
@@ -1920,8 +1920,8 @@
       ],
       "summary": {
         "max_paired_line_width": 167,
-        "max_solo_line_width": 125,
-        "max_title_width": 115,
+        "max_solo_line_width": 127,
+        "max_title_width": 104,
         "overflow_count": 0,
         "paired_target_count": 34,
         "solo_target_count": 33,
@@ -2051,17 +2051,17 @@
         {
           "line_count": 1,
           "line_widths": [
-            113
+            63
           ],
-          "max_line_width": 113,
+          "max_line_width": 63,
           "target_id": "0x0815"
         },
         {
           "line_count": 1,
           "line_widths": [
-            114
+            85
           ],
-          "max_line_width": 114,
+          "max_line_width": 85,
           "target_id": "0x07E9"
         },
         {
@@ -2187,9 +2187,9 @@
         {
           "line_count": 1,
           "line_widths": [
-            115
+            73
           ],
-          "max_line_width": 115,
+          "max_line_width": 73,
           "target_id": "0x07D5"
         }
       ]

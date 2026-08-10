@@ -196,6 +196,66 @@
           "reason": "Apply the reviewed target-semantic correction without modifying the pinned raw regional snapshot.",
           "replacement_text": "村子被毁了"
         },
+        "0x074D": {
+          "expected_text_sha256": "dedb907e7c2bdf4af9d212e576c841c96b08d2a613e20df2e5a0d147d7f3fdc3",
+          "provenance": {
+            "audit": "ending-dialogue-audit-2026-08-10",
+            "context": "FE8U ending title 0x07D5.",
+            "target_ids": [
+              "0x07D5"
+            ]
+          },
+          "reason": "Restore Eirika's final queen rank in the localized ending title.",
+          "replacement_text": "复兴女王 艾瑞珂"
+        },
+        "0x074E": {
+          "expected_text_sha256": "a251daee0a843a6c1e2d5323ab265ef213857a8e4b95bb70a80507f87eea45f8",
+          "provenance": {
+            "audit": "ending-dialogue-audit-2026-08-10",
+            "context": "FE8U solo ending 0x07D6.",
+            "target_ids": [
+              "0x07D6"
+            ]
+          },
+          "reason": "Preserve the FE8U outcome that Eirika rebuilds Renais rather than the continent.",
+          "replacement_text": "战争结束后，她回到鲁内斯[CTRL:0001]与伊弗列姆一同重建祖国。[CTRL:0001]和平终于回到人民的生活，[CTRL:0001]这令她无比幸福。她的笑容[CTRL:0001]成为了人民喜悦的象征。"
+        },
+        "0x0761": {
+          "expected_text_sha256": "82ff8a199e3e64e27cef69627842ac8545f5682d9f0bc15805530174239df75e",
+          "provenance": {
+            "audit": "ending-dialogue-audit-2026-08-10",
+            "context": "FE8U ending title 0x07E9.",
+            "target_ids": [
+              "0x07E9"
+            ]
+          },
+          "reason": "Restore Innes's final king rank in the localized ending title.",
+          "replacement_text": "谋略之王 希尼亚斯"
+        },
+        "0x0772": {
+          "expected_text_sha256": "6f0cbdbeeccde549d46784afefc7411ad3c7af7e9b8b4c5a3c08fb75fdee4e3e",
+          "provenance": {
+            "audit": "ending-dialogue-audit-2026-08-10",
+            "context": "FE8U solo ending 0x07FA.",
+            "target_ids": [
+              "0x07FA"
+            ]
+          },
+          "reason": "Preserve Artur's self-sacrifice and folk-hero outcome.",
+          "replacement_text": "为了重建满目疮痍的鲁内斯，[CTRL:0001]他移居王都，不眠不休地抚慰[CTRL:0001]战争受难者的痛苦与悲伤。[CTRL:0001]他的自我牺牲精神，使他成为[CTRL:0001]百姓传颂的民间英雄。"
+        },
+        "0x0774": {
+          "expected_text_sha256": "f05197d72be56ad761e09ae7b0e04a0f52d5cd2be731febfd886c15ae923ca43",
+          "provenance": {
+            "audit": "ending-dialogue-audit-2026-08-10",
+            "context": "FE8U solo ending 0x07FC.",
+            "target_ids": [
+              "0x07FC"
+            ]
+          },
+          "reason": "Preserve Gerik's unexplained permanent disappearance rather than an ordinary retirement.",
+          "replacement_text": "此后他继续从事佣兵生涯。[CTRL:0001]多年后，他声名远扬，委托[CTRL:0001]多得令他应接不暇。一天，[CTRL:0001]他毫无预兆地离去，从此再[CTRL:0001]也没有回来。"
+        },
         "0x0779": {
           "expected_text_sha256": "46bde6fb67ce74c25b2d70a2a9a3da5085edd241770a05a7843277d34a390fa9",
           "provenance": {
@@ -207,6 +267,18 @@
           },
           "reason": "Apply the reviewed target-semantic correction without modifying the pinned raw regional snapshot.",
           "replacement_text": "智泉·塞勒夫"
+        },
+        "0x078D": {
+          "expected_text_sha256": "43fbf019565c81c063133126788386964055137fe660da64f5454d27eb0db62a",
+          "provenance": {
+            "audit": "ending-dialogue-audit-2026-08-10",
+            "context": "FE8U ending title 0x0815.",
+            "target_ids": [
+              "0x0815"
+            ]
+          },
+          "reason": "Restore Tana's final queen rank in the localized ending title.",
+          "replacement_text": "飞翼女王 塔娜"
         },
         "0x07C3": {
           "expected_text_sha256": "77af2f337c1d4d74e01293481a94622cd25c2fc780fba19916c0115877e82b5c",
@@ -1027,8 +1099,8 @@
               "0x0BAC"
             ]
           },
-          "reason": "Restore Eirika dialogue to the FE8U left-hand slot after the continuation.",
-          "replacement_text": "[CTRL:000A][CTRL:0010][CTRL:0114][CTRL:0008][CTRL:0010][CTRL:0102][CTRL:000B][CTRL:0010][CTRL:0104][CTRL:000D][CTRL:0010][CTRL:0126][CTRL:000A]这股黑色的瘴气……[CTRL:0003][CTRL:0008]不错……[CTRL:0001]我也清楚地感受到了。[CTRL:0003][CTRL:000B]这就是暗之树海……[CTRL:0103]曾经魔王被手持【圣石】的英雄们[CTRL:0001]所毁灭的地方……[CTRL:0103]听说现在瘴气已刮起漩涡[CTRL:0001]魔物们也倾巢而出。[CTRL:0103]不过没想到会如此强烈……[CTRL:0003][CTRL:000D]不错……这股扭曲的感觉……[CTRL:0001]比以前更强烈了。[CTRL:0103]连站在这里[CTRL:0001]也是件痛苦的事。[CTRL:0103]但是没关系。[CTRL:0103]有我父亲在这里。[CTRL:0003][CTRL:0008]你父亲？[CTRL:0003][CTRL:000D]在那边。[CTRL:0103]在那片沼泽的对面。[CTRL:0001]魔王的魔殿就在那里。[CTRL:0103]我的父亲就住在附近。[CTRL:0103]我和父亲是生活在这里的。[CTRL:0003][CTRL:000A]是吗。对于你而言[CTRL:0001]这里就是生你养你的故乡啊。[CTRL:0003][CTRL:000D]是的……[CTRL:0103]能够再见到父亲[CTRL:0001]真的好高兴。[CTRL:0103]我父亲是龙族之长。[CTRL:0103]在之前的战争中……[CTRL:0001]我父亲和母亲死了之后[CTRL:0001]他就成为了我的父亲……[CTRL:0103]并抚养我长大。[CTRL:0003][CTRL:0008]原来发生了[CTRL:0001]那样的事啊……[CTRL:0003][CTRL:000D]从暗之树海出来的魔物[CTRL:0001]都被父亲所消灭。[CTRL:0103]父亲他可是很强的哦。[CTRL:0001]而且又很温柔。[CTRL:0103]我也想像他那样……[CTRL:0003][CTRL:0102][CTRL:0016]……[CTRL:0016]！[CTRL:0003][CTRL:0008]怎么了？[CTRL:0001]梅尔……[CTRL:0003][CTRL:0080][CTRL:0004][CTRL:000B]艾瑞珂公主，伊弗列姆王子！[CTRL:0001]是敌人！[CTRL:0103]那些蠢蠢欲动的魔物[CTRL:0001]已经向这里袭来了……[CTRL:0003][CTRL:000D][CTRL:0016]……[CTRL:0016][CTRL:0003][CTRL:000A]梅尔，怎么了？[CTRL:0001]是不是有点不舒服？[CTRL:0003][CTRL:000D]没、没什么。[CTRL:0103]我会努力的。[CTRL:0103]我会努力………[CTRL:0001]打倒魔物的。[CTRL:0003]"
+          "reason": "Restore both Ephraim lines to the FE8U left-hand slot across the continuation.",
+          "replacement_text": "[CTRL:000A][CTRL:0010][CTRL:0114][CTRL:0008][CTRL:0010][CTRL:0102][CTRL:000B][CTRL:0010][CTRL:0104][CTRL:000D][CTRL:0010][CTRL:0126][CTRL:000A]这股黑色的瘴气……[CTRL:0003][CTRL:0008]不错……[CTRL:0001]我也清楚地感受到了。[CTRL:0003][CTRL:000B]这就是暗之树海……[CTRL:0103]曾经魔王被手持【圣石】的英雄们[CTRL:0001]所毁灭的地方……[CTRL:0103]听说现在瘴气已刮起漩涡[CTRL:0001]魔物们也倾巢而出。[CTRL:0103]不过没想到会如此强烈……[CTRL:0003][CTRL:000D]不错……这股扭曲的感觉……[CTRL:0001]比以前更强烈了。[CTRL:0103]连站在这里[CTRL:0001]也是件痛苦的事。[CTRL:0103]但是没关系。[CTRL:0103]有我父亲在这里。[CTRL:0003][CTRL:0008]你父亲？[CTRL:0003][CTRL:000D]在那边。[CTRL:0103]在那片沼泽的对面。[CTRL:0001]魔王的魔殿就在那里。[CTRL:0103]我的父亲就住在附近。[CTRL:0103]我和父亲是生活在这里的。[CTRL:0003][CTRL:000A]是吗。对于你而言[CTRL:0001]这里就是生你养你的故乡啊。[CTRL:0003][CTRL:000D]是的……[CTRL:0103]能够再见到父亲[CTRL:0001]真的好高兴。[CTRL:0103]我父亲是龙族之长。[CTRL:0103]在之前的战争中……[CTRL:0001]我父亲和母亲死了之后[CTRL:0001]他就成为了我的父亲……[CTRL:0103]并抚养我长大。[CTRL:0003][CTRL:0008]原来发生了[CTRL:0001]那样的事啊……[CTRL:0003][CTRL:000D]从暗之树海出来的魔物[CTRL:0001]都被父亲所消灭。[CTRL:0103]父亲他可是很强的哦。[CTRL:0001]而且又很温柔。[CTRL:0103]我也想像他那样……[CTRL:0003][CTRL:0102][CTRL:0016]……[CTRL:0016]！[CTRL:0003][CTRL:000A]怎么了？[CTRL:0001]梅尔……[CTRL:0003][CTRL:0080][CTRL:0004][CTRL:000B]艾瑞珂公主，伊弗列姆王子！[CTRL:0001]是敌人！[CTRL:0103]那些蠢蠢欲动的魔物[CTRL:0001]已经向这里袭来了……[CTRL:0003][CTRL:000D][CTRL:0016]……[CTRL:0016][CTRL:0003][CTRL:000A]梅尔，怎么了？[CTRL:0001]是不是有点不舒服？[CTRL:0003][CTRL:000D]没、没什么。[CTRL:0103]我会努力的。[CTRL:0103]我会努力………[CTRL:0001]打倒魔物的。[CTRL:0003]"
         },
         "0x0B80": {
           "expected_text_sha256": "c6d1ffa5e339f4cccef78d1500e6509c9f5dc21d3b5c0cc8b1c3798180944ae3",
@@ -1286,6 +1358,19 @@
             }
           ]
         },
+        "0x0CC4": {
+          "expected_text_sha256": "dadd40eb283dedd312a4d169a3c17a0c6c47b7e887967d212b87a4ed51712975",
+          "preserve_structure": false,
+          "provenance": {
+            "audit": "ending-dialogue-audit-2026-08-10",
+            "context": "FE8U support target 0x0D05 composed from regional source 0x0CC4.",
+            "target_ids": [
+              "0x0D05"
+            ]
+          },
+          "reason": "Restore Syrene's opening MidRight smiling question before Kyle's response.",
+          "replacement_text": "[CTRL:0009][CTRL:0010][CTRL:0118][CTRL:000C][CTRL:0010][CTRL:012B][CTRL:000C][CTRL:0017]凯尔，你还撑得住吗？[CTRL:0003][CTRL:0017][CTRL:0009]战况很艰苦。[CTRL:0001]我自己今天倒是一直在努力。[CTRL:0003][CTRL:000C]一点没变啊。还是这么认真正经。[CTRL:0003][CTRL:0009]这，这样吗？[CTRL:0001]我只是想认真回答问题而已……[CTRL:0103]比起这个来……西蕾尼。[CTRL:0001]那个答案，我怎么也想不起来啊。[CTRL:0003][CTRL:000C]你一直在想吗，凯尔？[CTRL:0001]你真是个认真的人啊……[CTRL:0103][CTRL:0017]这么说起来，10年前，[CTRL:0001]你就是这样子的了。[CTRL:0103]我说带你观光弗雷利亚城的时候，[CTRL:0001]你说：『我不是来观光的』，[CTRL:0103]连弗雷利亚的名产大鱼都没吃[CTRL:0001]就回城了。[CTRL:0103]你走了后，因为没能好好招待你，[CTRL:0001]我还被海登王训了一顿呢。[CTRL:0003][CTRL:0017][CTRL:0009]哎……这样啊……[CTRL:0001]对不起，西蕾尼……[CTRL:0103]不过那时候，我是给海登王[CTRL:0001]送书信来的，[CTRL:0103]不是能悠悠闲闲[CTRL:0001]逛街的时候。[CTRL:0003][CTRL:000C][CTRL:0017]那么久的事了，[CTRL:0001]你还这么认真的道歉啊。[CTRL:0103]本来也没有什么解释的必要嘛。[CTRL:0003][CTRL:0017][CTRL:0017][CTRL:0009]哈哈哈……[CTRL:0001]说起来，好像是这样。[CTRL:0103]不过在弗雷利亚停留的那段时间，[CTRL:0001]虽然只有三天，却让我印象深刻。[CTRL:0103]而且，就是你让一直在内陆[CTRL:0001]长大的我看到了大海。[CTRL:0003][CTRL:000C]凯尔对观光、好吃的东西，[CTRL:0001]都不怎么关心，[CTRL:0103]只有我说：『去看海吗？』[CTRL:0001]的时候，才连忙答应着跟过来。[CTRL:0003][CTRL:0009]弗雷利亚的海那么波澜壮阔，[CTRL:0001]波涛翻涌的时候，[CTRL:0103]站在海边有种被压倒的感觉。[CTRL:0001]我站在海边时就一直想，[CTRL:0103]要成为一个像海一样，[CTRL:0001]胸怀广阔的坚强男子汉。[CTRL:0003][CTRL:000C]现在想起来，去海边的那天，[CTRL:0001]是我唯一见到你真正感情的时候。[CTRL:0103]虽然只有半天，[CTRL:0001]不过跟凯尔在一起非常快乐……[CTRL:0003][CTRL:0009][CTRL:0017]这，这样啊……[CTRL:0001][CTRL:0017]那真是太好了……[CTRL:0003][CTRL:000C]下次，还一起出去吧。[CTRL:0003][CTRL:0009]啊啊……好。[CTRL:0001]为了那一天，现在只好先战斗了。[CTRL:0103]等到和平到来的时候，[CTRL:0001]一定还会去看弗雷利亚的海。[CTRL:0003][CTRL:000C]哎哎，一定要去呀。[CTRL:0003]"
+        },
         "0x0CD9": {
           "expected_text_sha256": "ce6b9063711f5a9285b6487a3e720b61dd54bd5de4b0f7b78e2a83aa7749407d",
           "preserve_structure": false,
@@ -1432,14 +1517,62 @@
         "0x074D": {
           "expected_text_sha256": "55ec224af10144daf171f304c503cb7f1ea0e284a44be0290eb06b55b3f62d54",
           "provenance": {
-            "audit": "semantic-composition-width-audit-2026-08-09",
-            "context": "0x074D->0x07D5",
+            "audit": "ending-dialogue-audit-2026-08-10",
+            "context": "FE8U ending title 0x07D5.",
             "target_ids": [
               "0x07D5"
             ]
           },
-          "reason": "Apply the reviewed target-semantic correction without modifying the pinned raw regional snapshot.",
-          "replacement_text": "復興の王女　エイリーク"
+          "reason": "Restore Eirika's final queen rank in the localized ending title.",
+          "replacement_text": "復興の女王　エイリーク"
+        },
+        "0x074E": {
+          "expected_text_sha256": "45372d35d282ee8b37b6af15312b641accc906799fd78ab88dd8df58f02024c1",
+          "provenance": {
+            "audit": "ending-dialogue-audit-2026-08-10",
+            "context": "FE8U solo ending 0x07D6.",
+            "target_ids": [
+              "0x07D6"
+            ]
+          },
+          "reason": "Preserve the FE8U outcome that Eirika rebuilds Renais rather than the continent.",
+          "replacement_text": "戦いの後、ルネスに戻り[CTRL:0001]エフラムと共にルネス復興に努めた。[CTRL:0001]やがてルネスは平和を取り戻し、[CTRL:0001]喜びにみちた王女の笑顔は、[CTRL:0001]民たちの幸せの象徴となった。"
+        },
+        "0x0761": {
+          "expected_text_sha256": "0317f9081a5ce846ff9c7a06a5b1ce52ab3baea0de905aaa7852f7142c85ff6f",
+          "provenance": {
+            "audit": "ending-dialogue-audit-2026-08-10",
+            "context": "FE8U ending title 0x07E9.",
+            "target_ids": [
+              "0x07E9"
+            ]
+          },
+          "reason": "Restore Innes's final king rank in the localized ending title.",
+          "replacement_text": "策謀の王　ヒーニアス"
+        },
+        "0x0772": {
+          "expected_text_sha256": "77b78e99ac0807b04e93e6e2ac86a99a2b67f88f319f9870be5065c9cfc4ed20",
+          "provenance": {
+            "audit": "ending-dialogue-audit-2026-08-10",
+            "context": "FE8U solo ending 0x07FA.",
+            "target_ids": [
+              "0x07FA"
+            ]
+          },
+          "reason": "Preserve Artur's self-sacrifice and folk-hero outcome.",
+          "replacement_text": "ルネス復興のため王都へ移り住み、[CTRL:0001]休むことなく戦禍に苦しむ人々の[CTRL:0001]痛みと悲しみを癒やし続けた。[CTRL:0001]その献身は民の間で語り継がれ、[CTRL:0001]彼は民衆の英雄となった。"
+        },
+        "0x0774": {
+          "expected_text_sha256": "235a194b212f102c9b74f667b30481688615f51d80f49dea138694186b9e5e0e",
+          "provenance": {
+            "audit": "ending-dialogue-audit-2026-08-10",
+            "context": "FE8U solo ending 0x07FC.",
+            "target_ids": [
+              "0x07FC"
+            ]
+          },
+          "reason": "Preserve Gerik's unexplained permanent disappearance rather than an ordinary retirement.",
+          "replacement_text": "その後も傭兵稼業を続けた。[CTRL:0001]年月と共に名声は高まり、[CTRL:0001]依頼はさばき切れぬほど殺到した。[CTRL:0001]ある日、何の前触れもなく姿を消し、[CTRL:0001]二度と戻ることはなかった。"
         },
         "0x0783": {
           "expected_text_sha256": "664800d5a8d5f851d402dff2f8bb53eed0d30aa80ca01c8e19647393ca9ed47c",
@@ -1452,6 +1585,18 @@
           },
           "reason": "Apply the reviewed target-semantic correction without modifying the pinned raw regional snapshot.",
           "replacement_text": "黒曜石将軍　デュッセル"
+        },
+        "0x078D": {
+          "expected_text_sha256": "60d66c110e24bbdd17a27fbdd5e2ed042de8f94c0f708606171c9dce7a1d64dc",
+          "provenance": {
+            "audit": "ending-dialogue-audit-2026-08-10",
+            "context": "FE8U ending title 0x0815.",
+            "target_ids": [
+              "0x0815"
+            ]
+          },
+          "reason": "Restore Tana's final queen rank in the localized ending title.",
+          "replacement_text": "天翔ける女王　ターナ"
         },
         "0x088E": {
           "expected_text_sha256": "97e6e53315ad52cc00f2b37a961f9af245834aaf808e47bc8ac03ce793008c67",

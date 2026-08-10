@@ -23,6 +23,14 @@ DEFAULT_PORTRAIT_MAP_PATH = Path(
 DEFAULT_EVENT_ROOT = Path("src/events")
 TALK_LINE_WIDTH_PIXELS = 240
 _TALK_FACE_CONTROLS = frozenset(range(0x08, 0x12))
+_TALK_SPEAKER_CONTROLS = frozenset(range(0x08, 0x10))
+_TALK_SPEAKER_RESET_CONTROLS = frozenset((0x11, 0x14, 0x15))
+_TALK_TRANSPARENT_EXTENDED_CONTROLS = (
+    frozenset(range(0x0A, 0x12))
+    | frozenset(range(0x16, 0x1A))
+    | frozenset(range(0x1B, 0x20))
+    | frozenset((0x21, 0x25))
+)
 _TALK_LINE_BOUNDARY_CONTROLS = _TALK_FACE_CONTROLS | frozenset(
     (0x01, 0x02, 0x03, 0x14, 0x15)
 )
@@ -336,28 +344,41 @@ def _consecutive_newline_count(tokens: Sequence[StreamToken]) -> int:
     return sum(left == 0x01 and right == 0x01 for left, right in zip(controls, controls[1:]))
 
 
-def _speakers_after_break_talk(
+def _continuation_speakers(
     tokens: Sequence[StreamToken],
 ) -> Tuple[Optional[int], ...]:
-    speakers = []
-    for index, token in enumerate(tokens):
-        if token.kind != "extended" or token.scalar != 0x04:
+    speakers: List[Optional[int]] = []
+    active_slot = None
+    pending_continuation = False
+    for token in tokens:
+        if token.kind == "extended" and token.scalar == 0x04:
+            if pending_continuation:
+                speakers.append(None)
+            pending_continuation = True
             continue
-        speaker = None
-        for following in tokens[index + 1 :]:
-            if (
-                following.kind == "control"
-                and following.control in (0x01, 0x02, 0x03, 0x1F)
-            ):
-                continue
-            if (
-                following.kind == "control"
-                and following.control is not None
-                and 0x08 <= following.control <= 0x0D
-            ):
-                speaker = following.control
+
+        if token.kind == "control":
+            if token.control in _TALK_SPEAKER_CONTROLS:
+                active_slot = token.control
+            elif token.control in _TALK_SPEAKER_RESET_CONTROLS:
+                active_slot = None
+            continue
+
+        if (
+            token.kind == "extended"
+            and token.scalar in _TALK_TRANSPARENT_EXTENDED_CONTROLS
+        ):
+            continue
+
+        if token.kind == "end":
+            if pending_continuation:
+                speakers.append(None)
             break
-        speakers.append(speaker)
+
+        if pending_continuation:
+            speakers.append(active_slot)
+            pending_continuation = False
+
     return tuple(speakers)
 
 
@@ -576,11 +597,12 @@ def validate_final_payload(
             f"{tuple(f'0x{x:04X}' for x in faces)} != "
             f"{tuple(f'0x{x:04X}' for x in english_faces)}"
         )
-    speakers_after_break = _speakers_after_break_talk(tokens)
-    english_speakers_after_break = _speakers_after_break_talk(english_tokens)
+    speakers_after_break = _continuation_speakers(tokens)
+    english_speakers_after_break = _continuation_speakers(english_tokens)
     if speakers_after_break != english_speakers_after_break:
         raise ControlStreamError(
-            f"{name}: speakers after BreakTalk do not match FE8U target: "
+            f"{name}: continuation speakers after BreakTalk do not match "
+            "FE8U target: "
             f"{speakers_after_break} != {english_speakers_after_break}"
         )
     validate_mouth_toggle_balance(payload, source_name=name)

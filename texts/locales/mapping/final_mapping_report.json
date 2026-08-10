@@ -1,18 +1,18 @@
 {
   "authoritative": false,
   "inputs": {
-    "audit_semantic_corrections_sha256": "11c7273e20376a0c29bc9914af54c6acf0a6db7f49d3fe6e2b54843595ca83c4",
-    "current_pre_authored_target_map_sha256": "c1f06a74a814459298dd3ec8f227235dc39b379f4c03bab2dca3c9140a3b3ff4",
-    "ending_layout_metrics_sha256": "61caf11cd5d20eb19fdf30666e3c3cf8b8ebae113e76cbe262510af4ad4c15a3",
-    "febuilder_alignment_evidence_sha256": "a6502d99ae69e85d2af5c9adb85df2286be9b0d46acbfd345121300ec42dda9a",
+    "audit_semantic_corrections_sha256": "0e75498919a1a984e6e3217c73a46de3289053789b48ceb601a0d7998e352352",
+    "current_pre_authored_target_map_sha256": "0d4f001c66eb9cb7b9c6db6939fbd447cd6110d17af142121cbbb9b3049f1aa9",
+    "ending_layout_metrics_sha256": "14dbe2d4e43489418e151ff1f195274152632502fba852f88c0a70e6a5740d49",
+    "febuilder_alignment_evidence_sha256": "3b205c993aea5994f6e13a6aa2a81ebb13fcdff0dacc893be2614e40e4e0c5e7",
     "historical_pre_authored_target_map_sha256": "63b021274b7865c0d76cb1556fa84cc1dfdbcadab38037c8ccf6eeb9cdc3591a",
     "original_target_map_sha256": "a4c13fb79ba1df1e8996f0781d115a1f278f3ca3f994a3b8c7fe3392bf6c6ad8",
     "runtime_authored_catalog_sha256": {
-      "ja": "d73b5c232a869bd174b62cdb079c91d6edfc503d4dfc4989d50e8d5b2941e8bf",
-      "zh-Hans": "6a1a67f7db025dee48948dcc50e99b485435d1cabc2a2f931ee104e056b15534"
+      "ja": "fc91a4ad8f52cd8260ef41a95745a8b841869ad6d238b8ee4d1363175991046e",
+      "zh-Hans": "dd61c357bde3371da749efe1024ee45ff711feee585f02a11a6fb5e1e87a4378"
     },
     "source_authored_queue_sha256": "ffdff913a552076928d5cb06634ed75d8983b65c05bb4ecec9aa2b610ffe6ad6",
-    "structural_completion_evidence_sha256": "ef3f2a88db4e8949836de3dc8bd99ac80fd53a0a2b043b94e38842a1f77cf084"
+    "structural_completion_evidence_sha256": "3d571fc1db774fef38fb55afeb088cced016bb6e33e9ff3d7e0e3ada807851c3"
   },
   "kind": "fe8u-final-mapping-report",
   "note": "Evidence report for the deterministic final-mapping promotion pass. The source queue is retained byte-identically as fulfilled history.",

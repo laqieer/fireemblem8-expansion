@@ -13,9 +13,11 @@ from scripts.localization.game_catalog.control_streams import (
     CONTROL_DOMAIN_FE8U,
     ControlStreamError,
     TalkFontMetrics,
+    _continuation_speakers,
     build_event_continuation_models,
     load_portrait_operand_map,
     tokenize_payload,
+    validate_final_payload,
     validate_mouth_toggle_balance,
     validate_talk_line_widths,
 )
@@ -56,7 +58,7 @@ class FinalControlStreamTests(unittest.TestCase):
                 "modeled_target_count": 275,
                 "mouth_balance_validated_payload_count": 6828,
                 "portrait_remapped_target_count": 187,
-                "talk_line_count": 50795,
+                "talk_line_count": 50796,
                 "talk_payload_count": 1976,
                 "validated_payload_count": 6828,
             },
@@ -70,6 +72,11 @@ class FinalControlStreamTests(unittest.TestCase):
                     source_name=f"{bundle.locale} 0x{entry.target_id:04X}",
                 )
                 self.assertEqual(tokens[-1].kind, "end")
+                self.assertEqual(
+                    len(_continuation_speakers(tokens)),
+                    break_talk_count(entry.encoded_bytes),
+                    (bundle.locale, entry.target_id),
+                )
                 validate_mouth_toggle_balance(
                     entry.encoded_bytes,
                     source_name=f"{bundle.locale} 0x{entry.target_id:04X}",
@@ -235,15 +242,156 @@ class FinalControlStreamTests(unittest.TestCase):
             "[CTRL:000C]",
         )
 
+    def test_breaktalk_speaker_state_covers_all_slots_and_transparent_controls(self):
+        expected = {
+            0x09BE: (0x0F,),
+            0x09BF: (0x0F,),
+            0x0B89: (0x09,),
+            0x09CC: (0x0C,),
+            0x0B66: (0x0C, 0x0C, 0x0C),
+            0x0B67: (0x0C, 0x0C, 0x0C),
+            0x0B82: (0x0C, 0x0C),
+        }
+        for target_id, speakers in expected.items():
+            for locale, entry in (
+                ("en", self.build.english.entries[target_id]),
+                ("ja", self.build.locale_bundle("ja").entries[target_id]),
+                (
+                    "zh-Hans",
+                    self.build.locale_bundle("zh-Hans").entries[target_id],
+                ),
+            ):
+                self.assertEqual(
+                    _continuation_speakers(
+                        tokenize_payload(
+                            entry.encoded_bytes,
+                            source_name=f"{locale} target 0x{target_id:04X}",
+                        )
+                    ),
+                    speakers,
+                    (locale, target_id),
+                )
+
+        for slot in range(0x08, 0x10):
+            payload = bytes((slot,)) + b"A\x80\x04\x17\x16\x16\x80\x16\x80\x21B\x00"
+            self.assertEqual(
+                _continuation_speakers(
+                    tokenize_payload(payload, source_name=f"slot 0x{slot:02X}")
+                ),
+                (slot,),
+            )
+
+        payload_controls = (
+            b"\x0fA\x80\x04\x0e\x10\x08\x01\x80\x01\x0aB\x00"
+        )
+        self.assertEqual(
+            _continuation_speakers(
+                tokenize_payload(
+                    payload_controls,
+                    source_name="payload-control speaker fixture",
+                )
+            ),
+            (0x0E,),
+        )
+
+    def test_breaktalk_speaker_validator_rejects_injected_mismatches(self):
+        metrics = TalkFontMetrics(
+            locale="fixture",
+            ascii_widths={ord("A"): 8, ord("B"): 8},
+            cjk_widths={},
+        )
+        mismatches = (
+            (
+                b"\x0fA\x80\x04\x17B\x00",
+                b"\x0eA\x80\x04\x17B\x00",
+            ),
+            (
+                b"\x0cA\x80\x04\x17\x16\x16\x80\x16\x80\x21B\x00",
+                b"\x09A\x80\x04\x17\x16\x16\x80\x16\x80\x21B\x00",
+            ),
+            (
+                b"\x0fA\x80\x04\x0f\x10\x08\x01B\x00",
+                b"\x0eA\x80\x04\x0e\x10\x08\x01B\x00",
+            ),
+        )
+        for english_payload, localized_payload in mismatches:
+            with self.subTest(
+                english_payload=english_payload,
+                localized_payload=localized_payload,
+            ):
+                with self.assertRaisesRegex(
+                    ControlStreamError,
+                    "continuation speakers after BreakTalk",
+                ):
+                    validate_final_payload(
+                        localized_payload,
+                        english_payload=english_payload,
+                        target_id=0xFFFF,
+                        locale="fixture",
+                        control_domain=CONTROL_DOMAIN_FE8U,
+                        portrait_map=self.portrait_map,
+                        talk_metrics=metrics,
+                    )
+
     def test_requested_control_and_semantic_regressions(self):
         ja = self.build.locale_bundle("ja").entries
         zh = self.build.locale_bundle("zh-Hans").entries
+
+        self.assertEqual(ja[0x07D5].source_text, "復興の女王　エイリーク")
+        self.assertEqual(zh[0x07D5].source_text, "复兴女王 艾瑞珂")
+        self.assertEqual(ja[0x07E9].source_text, "策謀の王　ヒーニアス")
+        self.assertEqual(zh[0x07E9].source_text, "谋略之王 希尼亚斯")
+        self.assertEqual(ja[0x0815].source_text, "天翔ける女王　ターナ")
+        self.assertEqual(zh[0x0815].source_text, "飞翼女王 塔娜")
+
+        self.assertIn("ルネス復興", ja[0x07D6].source_text)
+        self.assertNotIn("大陸復興", ja[0x07D6].source_text)
+        self.assertIn("重建祖国", zh[0x07D6].source_text)
+        self.assertNotIn("复兴大陆", zh[0x07D6].source_text)
+        self.assertIn("その献身", ja[0x07FA].source_text)
+        self.assertIn("民衆の英雄", ja[0x07FA].source_text)
+        self.assertIn("自我牺牲", zh[0x07FA].source_text)
+        self.assertIn("民间英雄", zh[0x07FA].source_text)
+        self.assertIn("二度と戻ることはなかった", ja[0x07FC].source_text)
+        self.assertIn("从此再[CTRL:0001]也没有回来", zh[0x07FC].source_text)
+        self.assertNotIn("休業", ja[0x07FC].source_text)
+        self.assertNotIn("退意", zh[0x07FC].source_text)
+
+        self.assertIn(
+            "虽然还有些零星抵抗，但我想"
+            "[CTRL:0001]战争本身已经结束了。"
+            "[CTRL:0003]",
+            zh[0x0B29].source_text,
+        )
+        self.assertNotIn("帝都的战斗可以算是结束了", zh[0x0B29].source_text)
 
         self.assertIn("[CTRL:0080][CTRL:001F]", zh[0x09CE].source_text)
         self.assertIn("[CTRL:0080][CTRL:001F][CTRL:0005]", zh[0x0A40].source_text)
         self.assertIn("[CTRL:0080][CTRL:001F][CTRL:0005]", zh[0x0D1A].source_text)
         self.assertIn("[CTRL:0080][CTRL:000D][CTRL:000B]城内", zh[0x0A04].source_text)
-        self.assertIn("[CTRL:0003][CTRL:000A]梅尔，怎么了？", zh[0x0BAC].source_text)
+        bac_payload = zh[0x0BAC].encoded_bytes
+        self.assertEqual(bac_payload[1065], 0x0A)
+        self.assertEqual(
+            bac_payload[1066 : 1066 + len("怎么了？".encode("utf-8"))],
+            "怎么了？".encode("utf-8"),
+        )
+        self.assertEqual(bac_payload[1218], 0x0A)
+        self.assertEqual(
+            bac_payload[1219 : 1219 + len("梅尔，怎么了？".encode("utf-8"))],
+            "梅尔，怎么了？".encode("utf-8"),
+        )
+        self.assertTrue(
+            zh[0x0D05].source_text.startswith(
+                "[CTRL:0009][CTRL:0010][CTRL:0118]"
+                "[CTRL:000C][CTRL:0010][CTRL:012B]"
+                "[CTRL:000C][CTRL:0017]"
+                "凯尔，你还撑得住吗？"
+                "[CTRL:0003][CTRL:0017][CTRL:0009]"
+                "战况很艰苦。"
+            )
+        )
+        self.assertIn("一定还会去看弗雷利亚的海", zh[0x0D05].source_text)
+        self.assertTrue(zh[0x0D05].source_text.endswith("[CTRL:0003]"))
         self.assertIn("きゃっ[CTRL:0003][CTRL:0008]", ja[0x0AFC].source_text)
 
         self.assertEqual(
