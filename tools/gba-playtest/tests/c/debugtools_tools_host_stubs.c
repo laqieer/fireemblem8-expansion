@@ -75,6 +75,14 @@ u8 MenuCancelSelect(struct MenuProc* menu, struct MenuItemProc* item)
     return 0;
 }
 
+struct Proc* EndMenu(struct MenuProc* proc)
+{
+    if (proc != NULL && proc->def != NULL && proc->def->onEnd != NULL)
+        proc->def->onEnd(proc);
+
+    return (struct Proc*)proc;
+}
+
 int gDebugToolsToolsHostStub_StartOrphanMenuCallCount = 0;
 const struct MenuDef* gDebugToolsToolsHostStub_LastMenuDef = NULL;
 static struct Proc sDebugToolsToolsTransitionProc;

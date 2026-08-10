@@ -32,6 +32,8 @@ HEADER = REPO_ROOT / "include" / "expansion_debugtools.h"
 TITLESCREEN_SRC = REPO_ROOT / "src" / "titlescreen.c"
 PLAYERPHASE_SRC = REPO_ROOT / "src" / "playerphase.c"
 PREP_SALLYCURSOR_SRC = REPO_ROOT / "src" / "prep_sallycursor.c"
+LEGACY_LDSCRIPT = REPO_ROOT / "ldscript.txt"
+MODERN_LDSCRIPT = REPO_ROOT / "linker" / "expansion.ld"
 
 CC = shutil.which("gcc") or shutil.which("cc")
 
@@ -101,7 +103,8 @@ def _defined_symbol_names(obj: Path) -> set:
 class DebugToolsRegistryHostTests(unittest.TestCase):
     """Compiles and executes the real src/debugtools_registry.c (enabled
     path) against tools/gba-playtest/tests/c/debugtools_registry_driver.c,
-    proving capacity (max 9), deterministic append order, duplicate
+    proving contributor capacity (9 beside the separate built-in storage),
+    deterministic append order, duplicate
     id/label rejection, invalid-action rejection, capacity-full rejection,
     and out-of-range NULL reads -- all through the exact public API
     (include/expansion_debugtools.h) contributor code uses.
@@ -139,7 +142,9 @@ class DebugToolsRegistryHostTests(unittest.TestCase):
             )
             self.assertEqual(rc, 0, f"host registry test failed:\n{out}")
             self.assertIn("DEBUGTOOLS_HOST_TEST: PASS", out)
-            self.assertIn("DEBUGTOOLS_ACTION_MAX=9", out)
+            self.assertIn("DEBUGTOOLS_BUILTIN_ACTION_MAX=9", out)
+            self.assertIn("DEBUGTOOLS_CONTRIBUTOR_ACTION_MAX=9", out)
+            self.assertIn("DEBUGTOOLS_ACTION_MAX=18", out)
             self.assertIn("DEBUGTOOLS_HUB_MENU_SLOTS=11", out)
 
     def test_registry_id_and_label_validation(self):
@@ -163,11 +168,12 @@ class DebugToolsRegistryHostTests(unittest.TestCase):
             self.assertIn("DEBUGTOOLS_LABEL_VALIDATION_HOST_TEST: PASS", out)
 
     def test_builtin_identity_and_text_allocator_lifecycle(self):
-        """A contributor-before-init collision must not steal IDs 1-9,
-        and 64 maximum-row hub/submenu cycles must reuse one bounded text
-        allocation scope. The real registry/transition code runs here;
-        the host stub only models StartMenuCore's documented per-row
-        InitText(rect.w - 1) allocation."""
+        """A valid contributor-before-init registration must coexist with
+        identity-safe IDs 1-9. The ninth contributor succeeds, the tenth
+        fails, R pages between the two full action pages, and 64 maximum
+        page/submenu cycles reuse one bounded text allocation scope. The
+        real registry/transition code runs here; the host stub only models
+        StartMenuCore's documented per-row InitText(rect.w - 1) allocation."""
         import tempfile
         with tempfile.TemporaryDirectory() as tmp:
             work = Path(tmp)
@@ -217,7 +223,7 @@ class DebugToolsRegistryHostTests(unittest.TestCase):
             registry,
         )
         self.assertIn(
-            "DebugToolsHub_ResolveBuiltinLabelMsgId(i)",
+            "DebugToolsHub_ResolveBuiltinLabelMsgId(action)",
             registry,
         )
         self.assertIn(
@@ -236,6 +242,36 @@ class DebugToolsRegistryHostTests(unittest.TestCase):
                 )
             ),
             9,
+        )
+
+    def test_contributor_storage_is_appended_after_stable_ewram_layout(self):
+        """The additional nine-action storage must not move the established
+        gDebugToolsProbe or later runtime symbols. Both linker lanes append
+        its dedicated input section only after their pre-existing EWRAM
+        content."""
+        registry = REGISTRY_SRC.read_text(encoding="utf-8")
+        modern = _strip_c_comments(MODERN_LDSCRIPT.read_text(encoding="utf-8"))
+        legacy = _strip_c_comments(LEGACY_LDSCRIPT.read_text(encoding="utf-8"))
+
+        self.assertIn(
+            'SECTION("debugtools_contributor_data") static struct DebugToolsAction',
+            registry,
+        )
+        self.assertLess(
+            modern.index("PROVIDE(gUnk_Sio_22"),
+            modern.index("*(debugtools_contributor_data)"),
+        )
+        self.assertLess(
+            modern.index("*(debugtools_contributor_data)"),
+            modern.index("PROVIDE(gLoadUnitBuffer"),
+        )
+        self.assertLess(
+            legacy.index("src/bmshop.o(ewram_data)"),
+            legacy.index("src/debugtools_registry.o(debugtools_contributor_data)"),
+        )
+        self.assertLess(
+            legacy.index("src/debugtools_registry.o(debugtools_contributor_data)"),
+            legacy.index("gLoadUnitBuffer = ."),
         )
 
     def test_registry_disabled_path_behavior_and_symbol_omission(self):
@@ -1500,8 +1536,8 @@ class DebugToolsWeatherFogActionsHostTests(unittest.TestCase):
     (enabled path) alongside the real src/debugtools_registry.c against
     tools/gba-playtest/tests/c/debugtools_actions_driver.c, proving:
     idempotent registration (id 2 "Weather", id 3 "Fog"), the combined
-    registry capacity boundary stays at DEBUGTOOLS_ACTION_MAX (9) when
-    counted alongside a simulated Chapter-2-launcher-sized filler set,
+    built-in registration remains bounded and idempotent when counted
+    alongside a simulated Chapter-2-launcher-sized filler set,
     exact MenuDef/MenuItemDef sentinel and callback wiring for both
     submenus (never a hand-rolled copy of the dormant src/bmdebug.c
     function pointers), DebugMonitor lifecycle ownership (started only if

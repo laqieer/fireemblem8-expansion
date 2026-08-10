@@ -41,22 +41,32 @@ int main(void)
     int i;
     int rc;
 
+    printf("DEBUGTOOLS_BUILTIN_ACTION_MAX=%d\n", (int)DEBUGTOOLS_BUILTIN_ACTION_MAX);
+    printf("DEBUGTOOLS_CONTRIBUTOR_ACTION_MAX=%d\n", (int)DEBUGTOOLS_CONTRIBUTOR_ACTION_MAX);
     printf("DEBUGTOOLS_ACTION_MAX=%d\n", (int)DEBUGTOOLS_ACTION_MAX);
     printf("DEBUGTOOLS_HUB_MENU_SLOTS=%d\n", (int)DEBUGTOOLS_HUB_MENU_SLOTS);
 
-    CHECK(DEBUGTOOLS_ACTION_MAX == 9, "DEBUGTOOLS_ACTION_MAX must be 9");
-    CHECK(DEBUGTOOLS_HUB_MENU_SLOTS == DEBUGTOOLS_ACTION_MAX + 2,
-          "DEBUGTOOLS_HUB_MENU_SLOTS must reserve exactly one Back slot "
-          "and one terminator slot beyond DEBUGTOOLS_ACTION_MAX");
+    CHECK(DEBUGTOOLS_BUILTIN_ACTION_MAX == 9,
+          "DEBUGTOOLS_BUILTIN_ACTION_MAX must be 9");
+    CHECK(DEBUGTOOLS_CONTRIBUTOR_ACTION_MAX == 9,
+          "DEBUGTOOLS_CONTRIBUTOR_ACTION_MAX must preserve nine public registrations");
+    CHECK(DEBUGTOOLS_ACTION_MAX == 18,
+          "DEBUGTOOLS_ACTION_MAX must cover all built-ins and contributors");
+    CHECK(DEBUGTOOLS_HUB_PAGE_ACTION_MAX == 9,
+          "each hub page must render at most nine actions");
+    CHECK(DEBUGTOOLS_HUB_PAGE_MAX == 2,
+          "the full registry must fit exactly two bounded pages");
+    CHECK(DEBUGTOOLS_HUB_MENU_SLOTS == 11,
+          "each page must reserve nine action rows, Back, and a terminator");
 
     CHECK(DebugTools_GetRegisteredCount() == 0,
           "registry must start empty");
     CHECK(DebugTools_GetRegisteredAction(0) == NULL,
           "GetRegisteredAction must return NULL on an empty registry");
 
-    /* --- Fill to capacity (DEBUGTOOLS_ACTION_MAX = 9), asserting
+    /* --- Fill contributor capacity (9), asserting
      * deterministic append-order and DEBUGTOOLS_OK every time. --- */
-    for (i = 0; i < DEBUGTOOLS_ACTION_MAX; ++i)
+    for (i = 0; i < DEBUGTOOLS_CONTRIBUTOR_ACTION_MAX; ++i)
     {
         static const char* labels[9] = {
             "Action0", "Action1", "Action2", "Action3", "Action4",
@@ -77,7 +87,7 @@ int main(void)
 
     /* --- Deterministic ordering: registration order must be preserved
      * exactly, not reordered/sorted/compacted. --- */
-    for (i = 0; i < DEBUGTOOLS_ACTION_MAX; ++i)
+    for (i = 0; i < DEBUGTOOLS_CONTRIBUTOR_ACTION_MAX; ++i)
     {
         static const char* labels[9] = {
             "Action0", "Action1", "Action2", "Action3", "Action4",
@@ -92,13 +102,11 @@ int main(void)
 
     /* Out-of-range reads must return NULL (no sentinel/garbage reads). */
     CHECK(DebugTools_GetRegisteredAction(-1) == NULL, "negative index must return NULL");
-    CHECK(DebugTools_GetRegisteredAction(DEBUGTOOLS_ACTION_MAX) == NULL,
+    CHECK(DebugTools_GetRegisteredAction(DEBUGTOOLS_CONTRIBUTOR_ACTION_MAX) == NULL,
           "index at exactly the capacity (first unused slot) must return NULL");
 
-    /* --- Capacity-full: the 10th registration must fail explicitly, and
-     * must not silently drop into an 11th MenuItemDef live slot (that
-     * would overflow MENU_ITEM_MAX=11 with no room for the reserved Back
-     * entry -- see docs/debugtools.md). --- */
+    /* --- Contributor capacity-full: the 10th registration must fail
+     * explicitly even though built-ins live in separate storage. --- */
     action.id = 999;
     action.label = "Overflow";
     action.onSelected = DummyOnSelected;
@@ -107,7 +115,7 @@ int main(void)
           "the 10th registration attempt must return DEBUGTOOLS_ERR_CAPACITY_FULL");
     CHECK(DebugTools_GetLastRegistrationResult() == DEBUGTOOLS_ERR_CAPACITY_FULL,
           "GetLastRegistrationResult must mirror DEBUGTOOLS_ERR_CAPACITY_FULL");
-    CHECK(DebugTools_GetRegisteredCount() == DEBUGTOOLS_ACTION_MAX,
+    CHECK(DebugTools_GetRegisteredCount() == DEBUGTOOLS_CONTRIBUTOR_ACTION_MAX,
           "a rejected registration must not change the registered count");
 
     /* --- Duplicate id (different label) must be rejected. --- */
@@ -116,7 +124,7 @@ int main(void)
     action.onSelected = DummyOnSelected;
     rc = DebugTools_RegisterAction(&action);
     CHECK(rc == DEBUGTOOLS_ERR_DUPLICATE, "duplicate id must return DEBUGTOOLS_ERR_DUPLICATE");
-    CHECK(DebugTools_GetRegisteredCount() == DEBUGTOOLS_ACTION_MAX,
+    CHECK(DebugTools_GetRegisteredCount() == DEBUGTOOLS_CONTRIBUTOR_ACTION_MAX,
           "a rejected duplicate registration must not change the registered count");
 
     /* --- Duplicate label (different id) must also be rejected. --- */
@@ -146,8 +154,8 @@ int main(void)
     /* Final sanity: none of the rejected attempts leaked into the
      * registry, and the original 9 entries are still exactly as
      * registered. */
-    CHECK(DebugTools_GetRegisteredCount() == DEBUGTOOLS_ACTION_MAX,
-          "final registered count must still be exactly DEBUGTOOLS_ACTION_MAX");
+    CHECK(DebugTools_GetRegisteredCount() == DEBUGTOOLS_CONTRIBUTOR_ACTION_MAX,
+          "final registered count must still equal contributor capacity");
     got = DebugTools_GetRegisteredAction(0);
     CHECK(got != NULL && got->id == 100 && strcmp(got->label, "Action0") == 0,
           "the first registered action must be unchanged by every later rejected attempt");

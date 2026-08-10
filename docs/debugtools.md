@@ -85,15 +85,15 @@ Fits the existing `MenuProc`/`MenuItemDef` engine (`include/uimenu.h`,
 
 - `MENU_ITEM_MAX` is 11, and `StartMenuCore` has **no bounds check** when it
   appends to `MenuProc::menuItems` -- writing a 12th live item would corrupt
-  adjacent `MenuProc` fields. The hub menu therefore reserves one live slot
-  for a Back/Exit entry, leaving exactly `DEBUGTOOLS_ACTION_MAX` (9) total
-  action slots, with 1 of the 11 total live slots kept as an untouched
-  safety margin. The shipped profile fills those nine slots with built-ins.
+  adjacent `MenuProc` fields. Each hub page therefore renders at most
+  `DEBUGTOOLS_HUB_PAGE_ACTION_MAX` (9) actions plus Back/Exit, leaving 1 of
+  the 11 live slots as an untouched safety margin. The shipped built-ins
+  occupy page one; pressing R cycles to the contributor page when present.
 - Contributors register through `DebugTools_RegisterAction()` only -- they
   never edit an engine-owned `const MenuItemDef` table. A RAM-resident
   `MenuItemDef` adapter (`sHubMenuItemDefs`, sized
-  `DEBUGTOOLS_HUB_MENU_SLOTS = DEBUGTOOLS_ACTION_MAX + 2`) is rebuilt from
-  the registry every time the hub opens. Built-in actions, Back/Confirm rows,
+  `DEBUGTOOLS_HUB_MENU_SLOTS = 11`) is rebuilt from the current registry page
+  every time the hub opens. Built-in actions, Back/Confirm rows,
   transfer progress, and status diagnostics resolve stable expansion message
   IDs for `en`/`ja`/`zh-Hans`; CJK diagnostics use the UTF-8-aware system text
   renderer. IDs 1-9 are reserved built-in identities and can only enter
@@ -104,12 +104,16 @@ Fits the existing `MenuProc`/`MenuItemDef` engine (`include/uimenu.h`,
 - The array is fully zeroed before every rebuild, so the first unused slot
   (and everything after it) reads as an all-zero `MenuItemsEnd` -- exactly
   what stops `StartMenuCore`'s scan loop. The reserved Back entry is always
-  written at `sHubMenuItemDefs[sActionCount]`, immediately after the last
-  registered action; the terminator is the slot after that.
-- Storage is a fixed-size EWRAM array (`sActions[DEBUGTOOLS_ACTION_MAX]`) --
-  no heap allocation anywhere in this subsystem.
-- Registration order is preserved exactly (append-only, no sorting/
-  compaction) -- deterministic ordering.
+  written immediately after the last action visible on that page; the
+  terminator is the slot after Back.
+- Storage is two fixed-size EWRAM arrays: nine immutable-identity built-in
+  slots (`DEBUGTOOLS_BUILTIN_ACTION_MAX`) and nine public contributor slots
+  (`DEBUGTOOLS_CONTRIBUTOR_ACTION_MAX`). `DEBUGTOOLS_ACTION_MAX` is their
+  combined introspection capacity (18). The added contributor/page state is
+  linked at the end of the existing EWRAM layout so public probes and later
+  runtime state keep their established addresses. There is no heap allocation.
+- Combined ordering is deterministic: built-ins stay first in ID/menu order
+  1-9, followed by contributors in append-only registration order.
 
 ### Result codes
 
@@ -122,7 +126,7 @@ a registration failure is never silently dropped:
 | `DEBUGTOOLS_ERR_DISABLED` | Subsystem compiled out (release build) |
 | `DEBUGTOOLS_ERR_INVALID_ACTION` | `NULL` action pointer, `label`, or `onSelected` |
 | `DEBUGTOOLS_ERR_DUPLICATE` | `id` or `label` already registered |
-| `DEBUGTOOLS_ERR_CAPACITY_FULL` | `DEBUGTOOLS_ACTION_MAX` (9) already reached |
+| `DEBUGTOOLS_ERR_CAPACITY_FULL` | The nine-slot contributor storage (or private built-in storage) is already full |
 | `DEBUGTOOLS_ERR_ALREADY_ACTIVE` | `DebugTools_OpenHub()` called while the hub is already open |
 | `DEBUGTOOLS_ERR_ID_INVALID` (closure) | `action->id == 0` (reserved/uninitialized-looking sentinel; every shipped action uses ids 1-9) |
 | `DEBUGTOOLS_ERR_LABEL_INVALID` (closure) | `label` is empty (`""`) or longer than `DEBUGTOOLS_LABEL_MAX_LENGTH` (24) |
@@ -133,8 +137,9 @@ All added closure codes are appended at the **end** of `enum DebugToolsResult` s
 every pre-existing named value keeps its original integer -- several
 scenario JSON files probe `gDebugToolsProbe.lastRegisterResult` by raw
 integer, so no existing value may ever be renumbered. Label validation does
-not copy or retain any bytes beyond the pointer itself (`sActions[sActionCount]
-= *action` in `src/debugtools_registry.c` still only stores the pointer) --
+not copy or retain any bytes beyond the pointer itself
+(`sContributorActions[sContributorActionCount] = *action` in
+`src/debugtools_registry.c` still only stores the pointer) --
 contributors remain responsible for passing a label with static/persistent
 storage duration, which every action in this codebase already does by using
 a plain C string literal; the length bound is a rendering/policy contract,
@@ -152,10 +157,9 @@ Built-ins are initialized exactly once, in menu/ID order 1-9, before a
 valid public contributor registration is admitted. A contributor call made
 before the first hub open therefore cannot occupy a built-in slot and later
 acquire that built-in's localized label while retaining a different
-callback. In the shipped profile all nine action slots are already
-occupied; a valid contributor ID receives the ordinary
-`DEBUGTOOLS_ERR_CAPACITY_FULL` result unless a custom profile deliberately
-removes built-ins or adds pagination/capacity.
+callback. The first valid contributor ID (10 or greater) succeeds, all nine
+documented contributor slots can coexist with all nine built-ins, and only
+the tenth contributor receives `DEBUGTOOLS_ERR_CAPACITY_FULL`.
 
 ## Text allocator lifecycle
 
@@ -176,19 +180,20 @@ the title/map/prep input guard remains active across submenus and the
 one-frame transition.
 
 The default BG font has 448 allocator columns available from tile `0x80`
-through tile index `0x3FF` (two 8x8 tiles per text column). A maximum hub
-uses `10 * 18 = 180` columns for nine actions plus Back; the largest CJK
-status line adds 24, for a checked worst-case budget of 204. Opening is
+through tile index `0x3FF` (two 8x8 tiles per text column). Each maximum hub
+page uses `10 * 18 = 180` columns for nine actions plus Back; the largest
+CJK status line adds 24, for a checked worst-case budget of 204. Opening is
 rejected with `DEBUGTOOLS_ERR_TEXT_CAPACITY` if the current baseline plus
-that budget would exceed the active font's capacity. Host tests execute 64
-maximum hub→submenu→hub cycles and prove every reopened hub returns to the
-same 204-column peak and final cleanup restores the original baseline.
+that budget would exceed the active font's capacity. Host tests fill all
+18 registrations, page between both full rows, execute 64
+hub→submenu→hub/page cycles, and prove every reopened page returns to the
+same 204-column peak while final cleanup restores the original baseline.
 
 ### Introspection
 
 `DebugTools_GetRegisteredCount()` / `DebugTools_GetRegisteredAction(index)`
-(bounds-checked, `NULL` outside `[0, count)`) let host tests and future
-contributor code inspect the registry without touching its internals.
+(bounds-checked, `NULL` outside `[0, count)`) expose the combined sequence:
+the nine built-ins first, then contributors in registration order.
 
 ## Diagnostics / visible feedback
 
@@ -196,8 +201,10 @@ Registration/input failures are not silent: `DebugToolsHub_ShowDiagnostics()`
 reuses the existing on-screen debug font (`SetupDebugFontForBG`/
 `PrintDebugStringToBG`, `src/fontgrp.c` -- the same mechanism already proven
 by the dormant debug menus) to print either `"DBGTOOLS ERR <code>"` (last
-registration result was not `DEBUGTOOLS_OK`) or `"DBGTOOLS <n>/<max>"` on BG2
-every time the hub opens. A full `mgba_printf`/AGB print-protocol
+registration result was not `DEBUGTOOLS_OK`) or the count/page form
+`"DBGTOOLS <n>/18 <page>/2"` when contributors are present. The built-in-only
+profile retains its existing `"DBGTOOLS 9/9"` line. A full
+`mgba_printf`/AGB print-protocol
 implementation was judged too broad for this slice and is explicitly
 deferred (see "Remaining #11 scope"); this on-screen line is the retained,
 always-visible feedback mechanism for now.
@@ -841,9 +848,11 @@ early after the extra registration). Registering in this order keeps
 Weather/Fog at their pre-existing indices 1/2, so every already-committed
 map/prep-hub scenario's own input script keeps working unmodified; "Fast
 Boot: Ch4 Prep" and the five bounded tools below land at indices 3-8. The
-final hub menu order is: Chapter 2 (0), Weather (1), Fog (2), Ch4 Prep (3),
+first hub page remains: Chapter 2 (0), Weather (1), Fog (2), Ch4 Prep (3),
 Unit Inspect (4), Convoy Inspect (5), Flag/Chapter (6), RNG Inspect (7),
-Save State (8), Back (9) -- exactly `DEBUGTOOLS_ACTION_MAX` (9) actions.
+Save State (8), Back (9). Up to nine contributors occupy page two in their
+registration order; R cycles pages without changing any action's label or
+callback identity.
 
 ### Playtest evidence and its explicit, honest scope boundary
 
@@ -949,11 +958,10 @@ it provides instead:
   only read surface; there is no address parameter anywhere in this API,
   so it is structurally impossible to use it as an arbitrary memory reader.
 
-No dedicated hub menu row is spent on a "Diagnostics" viewer: doing so would
-have consumed one of the fixed `DEBUGTOOLS_ACTION_MAX` (9) slots (already
-exactly filled by the nine actions listed in "Hub menu ordering" above) and
-would have changed the hub's own rendered content at moments several
-already-committed scenarios assert an exact framebuffer hash. The ring/
+No dedicated hub menu row is spent on a "Diagnostics" viewer: the first page
+remains the nine built-ins listed in "Hub menu ordering" above, preserving
+their established row identities and existing framebuffer/navigation
+expectations. The ring/
 assert state is instead exposed purely through `gDebugToolsProbe` fields and
 the plain introspection functions above, which is sufficient for both host
 tests (`DebugToolsDiagHostTests`, `tools/gba-playtest/tests/test_debugtools_registry.py`)
@@ -1109,11 +1117,12 @@ tools" above for what each proves.
 - **`DebugToolsRegistryHostTests`** compiles+links+executes the real
   `src/debugtools_registry.c` (enabled path) against a small driver
   (`tools/gba-playtest/tests/c/debugtools_registry_driver.c`) through the
-  exact public API (`include/expansion_debugtools.h`), proving: capacity is
-  exactly 9, deterministic append order, `NULL`-out-of-range reads,
-  duplicate id/label rejection, invalid-action (`NULL` action/label/callback)
-  rejection, and capacity-full rejection on the 10th attempt -- all without
-  silently dropping a registration or changing the count on a rejected call.
+  exact public API (`include/expansion_debugtools.h`), proving: contributor
+  capacity is exactly 9 beside separate built-in storage, deterministic
+  append order, `NULL`-out-of-range reads, duplicate id/label rejection,
+  invalid-action (`NULL` action/label/callback) rejection, and capacity-full
+  rejection on the 10th contributor attempt -- all without silently dropping
+  a registration or changing the count on a rejected call.
   A second test compiles the same source with
   `-DFE8_EXPANSION_DEBUGTOOLS_ENABLED=0` and proves both behavior (every
   entry point degrades to its disabled stub, `gDebugToolsProbe` stays
@@ -1256,8 +1265,8 @@ tools" above for what each proves.
   the real `src/debugtools_registry.c` against
   `tools/gba-playtest/tests/c/debugtools_actions_driver.c`, proving:
   idempotent registration of both actions (ids 2/3, "Weather"/"Fog"), the
-  combined registry stays within the `DEBUGTOOLS_ACTION_MAX` (9) capacity
-  alongside a simulated Chapter-2-launcher-sized filler set, exact
+  private built-in registry remains bounded alongside a simulated
+  Chapter-2-launcher-sized filler set, exact
   `MenuDef`/`MenuItemDef` sentinel and `onDraw`/`onIdle`/`onSelected`
   callback wiring for both one-item submenus (reusing the real dormant
   `DebugMenu_Weather*`/`DebugMenu_Fog*` function pointers, never a

@@ -80,6 +80,14 @@ u8 MenuCancelSelect(struct MenuProc* menu, struct MenuItemProc* item)
     return 0;
 }
 
+struct Proc* EndMenu(struct MenuProc* proc)
+{
+    if (proc != NULL && proc->def != NULL && proc->def->onEnd != NULL)
+        proc->def->onEnd(proc);
+
+    return (struct Proc*)proc;
+}
+
 /* --- StartOrphanMenu: captures the def pointer instead of discarding it,
  * so the driver can prove Weather/Fog's onSelected wired up exactly the
  * gDebugToolsWeatherMenuDef/gDebugToolsFogMenuDef sentinel -- never a

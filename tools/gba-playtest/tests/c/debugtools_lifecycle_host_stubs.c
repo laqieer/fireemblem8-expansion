@@ -78,6 +78,14 @@ u8 MenuCancelSelect(struct MenuProc* menu, struct MenuItemProc* item)
     return 0;
 }
 
+struct Proc* EndMenu(struct MenuProc* proc)
+{
+    if (proc != NULL && proc->def != NULL && proc->def->onEnd != NULL)
+        proc->def->onEnd(proc);
+
+    return (struct Proc*)proc;
+}
+
 struct MenuProc* StartOrphanMenu(const struct MenuDef* def)
 {
     int i;

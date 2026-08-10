@@ -45,8 +45,18 @@ EWRAM_DATA struct DebugToolsProbe gDebugToolsProbe = {0};
 
 #if FE8_EXPANSION_DEBUGTOOLS_ENABLED
 
-EWRAM_DATA static struct DebugToolsAction sActions[DEBUGTOOLS_ACTION_MAX] = {0};
-EWRAM_DATA static int sActionCount = 0;
+/* Keep added contributor/page state in a dedicated input section that the
+ * linker appends after the pre-existing EWRAM layout. This adds bounded
+ * capacity without moving gDebugToolsProbe or any later probe/state symbol
+ * whose address is consumed by runtime scenarios. */
+SECTION("debugtools_contributor_data") static struct DebugToolsAction
+    sContributorActions[DEBUGTOOLS_CONTRIBUTOR_ACTION_MAX] = {0};
+SECTION("debugtools_contributor_data") static int sContributorActionCount = 0;
+SECTION("debugtools_contributor_data") static int sHubPage = 0;
+
+EWRAM_DATA static struct DebugToolsAction
+    sBuiltinActions[DEBUGTOOLS_BUILTIN_ACTION_MAX] = {0};
+EWRAM_DATA static int sBuiltinActionCount = 0;
 EWRAM_DATA static enum DebugToolsResult sLastResult = DEBUGTOOLS_OK;
 EWRAM_DATA static u32 sDebugMenuState = 0;
 
@@ -81,21 +91,43 @@ static void DebugTools_StartMenuTransition(
     struct MenuProc* menu,
     int target,
     const struct MenuDef* menuDef);
+static int DebugTools_GetActionCount(void);
+static const struct DebugToolsAction* DebugTools_GetAction(int index);
 
-/* RAM-resident MenuItemDef adapter (rebuilt from sActions[] every time the
- * hub is opened) -- this is how contributor actions reach the existing
- * MenuProc engine without any contributor ever editing an engine-owned
- * const MenuItemDef table. Sized DEBUGTOOLS_HUB_MENU_SLOTS (actions + one
- * reserved Back entry + one MenuItemsEnd-equivalent terminator); zeroing
- * the whole array before every rebuild guarantees the first unused slot
- * (and everything after it) reads as an all-zero MenuItemsEnd, since
- * isAvailable == NULL is exactly what stops StartMenuCore's scan loop
- * (src/uimenu.c). */
+/* RAM-resident MenuItemDef adapter, rebuilt from one bounded registry page
+ * every time the hub opens. Nine action rows plus Back leave one
+ * MenuProc::menuItems slot unused; the final all-zero slot is the
+ * MenuItemsEnd-equivalent terminator. */
 EWRAM_DATA static struct MenuItemDef sHubMenuItemDefs[DEBUGTOOLS_HUB_MENU_SLOTS] = {0};
 
 static u8 DebugToolsHub_BackSelected(struct MenuProc* menu, struct MenuItemProc* item)
 {
     return MenuCancelSelect(menu, item);
+}
+
+static int DebugToolsHub_GetPageCount(void)
+{
+    int count = DebugTools_GetActionCount();
+
+    if (count == 0)
+        return 1;
+
+    return (count + DEBUGTOOLS_HUB_PAGE_ACTION_MAX - 1)
+        / DEBUGTOOLS_HUB_PAGE_ACTION_MAX;
+}
+
+static u8 DebugToolsHub_NextPage(struct MenuProc* menu)
+{
+    int pageCount = DebugToolsHub_GetPageCount();
+
+    if (pageCount <= 1)
+        return 0;
+
+    sHubPage = (sHubPage + 1) % pageCount;
+    DebugTools_StartMenuTransition(menu, DEBUGTOOLS_TRANSITION_HUB, NULL);
+    EndMenu(menu);
+
+    return 0;
 }
 
 static void DebugToolsHub_OnEnd(struct MenuProc* proc)
@@ -119,7 +151,7 @@ CONST_DATA struct MenuDef gDebugToolsHubMenuDef = {
     DebugToolsHub_OnEnd,
     0,
     MenuCancelSelect,
-    0,
+    DebugToolsHub_NextPage,
     0
 };
 
@@ -130,7 +162,7 @@ CONST_DATA struct MenuDef gDebugToolsHubMenuDef = {
  * contributor/third-party registration always uses some other id and
  * therefore is never looked up in this table (see
  * DebugToolsHub_ResolveBuiltinLabelMsgId below). */
-static const ExpansionMsgId sBuiltinActionLabelMsgIds[DEBUGTOOLS_ACTION_MAX + 1] =
+static const ExpansionMsgId sBuiltinActionLabelMsgIds[DEBUGTOOLS_BUILTIN_ACTION_MAX + 1] =
 {
     EXPANSION_MSG_ID_INVALID,               /* id 0: never a real action */
     EXP_MSG_DEBUG_ACTION_FASTBOOT_CH2,      /* id 1 */
@@ -147,11 +179,12 @@ static const ExpansionMsgId sBuiltinActionLabelMsgIds[DEBUGTOOLS_ACTION_MAX + 1]
 /* Returns EXPANSION_MSG_ID_INVALID for any id outside the builtin
  * 1-9 range (every third-party/contributor id included) -- never an
  * out-of-bounds table read. */
-static ExpansionMsgId DebugToolsHub_ResolveBuiltinLabelMsgId(int index)
+static ExpansionMsgId DebugToolsHub_ResolveBuiltinLabelMsgId(
+    const struct DebugToolsAction* action)
 {
     u16 id;
 
-    id = sActions[index].id;
+    id = action->id;
 
     if (id < DEBUGTOOLS_BUILTIN_ID_MIN || id > DEBUGTOOLS_BUILTIN_ID_MAX)
         return EXPANSION_MSG_ID_INVALID;
@@ -192,25 +225,42 @@ static int DebugToolsHub_BuiltinActionRowDraw(struct MenuProc* proc, struct Menu
 
 static void DebugToolsHub_BuildMenuItems(void)
 {
+    const struct DebugToolsAction* action;
+#ifdef MODERN
+    ExpansionMsgId builtinMsgId;
+#endif
+    int actionCount;
+    int firstAction;
+    int visibleCount;
     int i;
 
     memset(sHubMenuItemDefs, 0, sizeof(sHubMenuItemDefs));
 
-    for (i = 0; i < sActionCount; ++i)
+    actionCount = DebugTools_GetActionCount();
+    if (sHubPage >= DebugToolsHub_GetPageCount())
+        sHubPage = 0;
+
+    firstAction = sHubPage * DEBUGTOOLS_HUB_PAGE_ACTION_MAX;
+    visibleCount = actionCount - firstAction;
+    if (visibleCount > DEBUGTOOLS_HUB_PAGE_ACTION_MAX)
+        visibleCount = DEBUGTOOLS_HUB_PAGE_ACTION_MAX;
+
+    for (i = 0; i < visibleCount; ++i)
     {
         struct MenuItemDef* def = &sHubMenuItemDefs[i];
+        action = DebugTools_GetAction(firstAction + i);
 #ifdef MODERN
-        ExpansionMsgId builtinMsgId = DebugToolsHub_ResolveBuiltinLabelMsgId(i);
+        builtinMsgId = DebugToolsHub_ResolveBuiltinLabelMsgId(action);
 #endif
 
-        def->name = sActions[i].label;
+        def->name = action->label;
         def->nameMsgId = 0;
         def->helpMsgId = 0;
         def->color = 0;
         def->overrideId = 0;
         def->isAvailable = MenuAlwaysEnabled;
         def->onDraw = NULL;
-        def->onSelected = sActions[i].onSelected;
+        def->onSelected = action->onSelected;
         def->onIdle = NULL;
         def->onSwitchIn = NULL;
         def->onSwitchOut = NULL;
@@ -230,31 +280,37 @@ static void DebugToolsHub_BuildMenuItems(void)
 
     /* Reserved Back/Exit entry -- always the entry right after the last
      * registered action, never edited by contributors. */
-    sHubMenuItemDefs[sActionCount].name = "Back";
+    sHubMenuItemDefs[visibleCount].name = "Back";
 #ifdef MODERN
-    sHubMenuItemDefs[sActionCount].helpMsgId = EXP_MSG_FRAMEWORK_BACK;
-    sHubMenuItemDefs[sActionCount].onDraw =
+    sHubMenuItemDefs[visibleCount].helpMsgId = EXP_MSG_FRAMEWORK_BACK;
+    sHubMenuItemDefs[visibleCount].onDraw =
         DebugToolsHub_BuiltinActionRowDraw;
 #endif
-    sHubMenuItemDefs[sActionCount].isAvailable = MenuAlwaysEnabled;
-    sHubMenuItemDefs[sActionCount].onSelected = DebugToolsHub_BackSelected;
+    sHubMenuItemDefs[visibleCount].isAvailable = MenuAlwaysEnabled;
+    sHubMenuItemDefs[visibleCount].onSelected = DebugToolsHub_BackSelected;
 
-    /* sHubMenuItemDefs[sActionCount + 1] stays all-zero: the terminator. */
+    /* sHubMenuItemDefs[visibleCount + 1] stays all-zero: the terminator. */
 }
 
 static void DebugToolsHub_ShowDiagnostics(void)
 {
     char buf[64];
+    int actionCount = DebugTools_GetActionCount();
+    int pageCount = DebugToolsHub_GetPageCount();
 
 #ifdef MODERN
     if (sLastResult != DEBUGTOOLS_OK)
         sprintf(buf, "%s %d",
             ExpansionLocale_ResolveCurrent(EXP_MSG_DEBUG_STATUS_HUB_ERROR),
             (int)sLastResult);
-    else
+    else if (sContributorActionCount == 0)
         sprintf(buf, "%s %d/%d",
             ExpansionLocale_ResolveCurrent(EXP_MSG_DEBUG_STATUS_HUB),
-            sActionCount, DEBUGTOOLS_ACTION_MAX);
+            sBuiltinActionCount, DEBUGTOOLS_BUILTIN_ACTION_MAX);
+    else
+        sprintf(buf, "%s %d/%d %d/%d",
+            ExpansionLocale_ResolveCurrent(EXP_MSG_DEBUG_STATUS_HUB),
+            actionCount, DEBUGTOOLS_ACTION_MAX, sHubPage + 1, pageCount);
 
     if (DebugToolsHub_UsesCjkText())
     {
@@ -273,8 +329,12 @@ static void DebugToolsHub_ShowDiagnostics(void)
 #else
     if (sLastResult != DEBUGTOOLS_OK)
         sprintf(buf, "DBGTOOLS ERR %d", (int)sLastResult);
+    else if (sContributorActionCount == 0)
+        sprintf(buf, "DBGTOOLS %d/%d",
+            sBuiltinActionCount, DEBUGTOOLS_BUILTIN_ACTION_MAX);
     else
-        sprintf(buf, "DBGTOOLS %d/%d", sActionCount, DEBUGTOOLS_ACTION_MAX);
+        sprintf(buf, "DBGTOOLS %d/%d %d/%d",
+            actionCount, DEBUGTOOLS_ACTION_MAX, sHubPage + 1, pageCount);
 #endif
 
     SetupDebugFontForBG(2, 0);
@@ -290,8 +350,26 @@ static int DebugTools_SetLastResult(enum DebugToolsResult result)
     return result;
 }
 
+static int DebugTools_GetActionCount(void)
+{
+    return sBuiltinActionCount + sContributorActionCount;
+}
+
+static const struct DebugToolsAction* DebugTools_GetAction(int index)
+{
+    if (index < 0 || index >= DebugTools_GetActionCount())
+        return NULL;
+
+    if (index < sBuiltinActionCount)
+        return &sBuiltinActions[index];
+
+    return &sContributorActions[index - sBuiltinActionCount];
+}
+
 static int DebugTools_RegisterActionCore(const struct DebugToolsAction* action, int isBuiltin)
 {
+    const struct DebugToolsAction* registered;
+    int actionCount;
     int i;
 
     if (action == NULL || action->label == NULL || action->onSelected == NULL)
@@ -315,27 +393,42 @@ static int DebugTools_RegisterActionCore(const struct DebugToolsAction* action, 
     /* Issue #11 closure: label must be non-empty and within the
      * documented DEBUGTOOLS_LABEL_MAX_LENGTH policy bound. This does not
      * copy or retain any bytes beyond the pointer itself (see
-     * sActions[sActionCount] = *action below) -- contributors are
-     * responsible for passing a label with static/persistent storage
-     * duration (every action in this file uses a plain string literal,
-     * which always satisfies this); this length check is a rendering/
-     * policy bound, not a lifetime check C89 can perform at runtime. */
+     * sContributorActions[sContributorActionCount] = *action below) --
+     * contributors are responsible for passing a label with static/
+     * persistent storage duration (every action in this file uses a plain
+     * string literal, which always satisfies this); this length check is a
+     * rendering/policy bound, not a lifetime check C89 can perform at
+     * runtime. */
     if (action->label[0] == '\0' || strlen(action->label) > DEBUGTOOLS_LABEL_MAX_LENGTH)
         return DebugTools_SetLastResult(DEBUGTOOLS_ERR_LABEL_INVALID);
 
-    for (i = 0; i < sActionCount; ++i)
+    actionCount = DebugTools_GetActionCount();
+    for (i = 0; i < actionCount; ++i)
     {
-        if (sActions[i].id == action->id || strcmp(sActions[i].label, action->label) == 0)
+        registered = DebugTools_GetAction(i);
+        if (registered->id == action->id
+            || strcmp(registered->label, action->label) == 0)
             return DebugTools_SetLastResult(DEBUGTOOLS_ERR_DUPLICATE);
     }
 
-    if (sActionCount >= DEBUGTOOLS_ACTION_MAX)
-        return DebugTools_SetLastResult(DEBUGTOOLS_ERR_CAPACITY_FULL);
+    if (isBuiltin)
+    {
+        if (sBuiltinActionCount >= DEBUGTOOLS_BUILTIN_ACTION_MAX)
+            return DebugTools_SetLastResult(DEBUGTOOLS_ERR_CAPACITY_FULL);
 
-    sActions[sActionCount] = *action;
-    sActionCount++;
+        sBuiltinActions[sBuiltinActionCount] = *action;
+        sBuiltinActionCount++;
+    }
+    else
+    {
+        if (sContributorActionCount >= DEBUGTOOLS_CONTRIBUTOR_ACTION_MAX)
+            return DebugTools_SetLastResult(DEBUGTOOLS_ERR_CAPACITY_FULL);
 
-    gDebugToolsProbe.registeredActionCount = (u32)sActionCount;
+        sContributorActions[sContributorActionCount] = *action;
+        sContributorActionCount++;
+    }
+
+    gDebugToolsProbe.registeredActionCount = (u32)DebugTools_GetActionCount();
 
     return DebugTools_SetLastResult(DEBUGTOOLS_OK);
 }
@@ -378,15 +471,12 @@ int DebugTools_RegisterAction(const struct DebugToolsAction* action)
 
 int DebugTools_GetRegisteredCount(void)
 {
-    return sActionCount;
+    return DebugTools_GetActionCount();
 }
 
 const struct DebugToolsAction* DebugTools_GetRegisteredAction(int index)
 {
-    if (index < 0 || index >= sActionCount)
-        return NULL;
-
-    return &sActions[index];
+    return DebugTools_GetAction(index);
 }
 
 enum DebugToolsResult DebugTools_GetLastRegistrationResult(void)
@@ -502,6 +592,7 @@ void DebugTools_RunMenuTransition(ProcPtr proc)
         return;
     }
 
+    sHubPage = 0;
     sDebugMenuState &= ~(DEBUGTOOLS_STATE_SESSION_ACTIVE | DEBUGTOOLS_STATE_HUB_ACTIVE);
 }
 
@@ -530,6 +621,7 @@ enum DebugToolsResult DebugTools_OpenHub(void)
     if (!DebugTools_HasTextCapacity())
         return DebugTools_SetLastResult(DEBUGTOOLS_ERR_TEXT_CAPACITY);
 
+    sHubPage = 0;
     sDebugMenuState |= DEBUGTOOLS_STATE_SESSION_ACTIVE;
     return DebugTools_OpenHubInternal();
 }

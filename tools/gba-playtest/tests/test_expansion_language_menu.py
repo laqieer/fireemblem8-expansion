@@ -686,10 +686,9 @@ class SaveCompatMenuLegacyPathUnchangedTests(unittest.TestCase):
 
 
 class DebugToolsRegistryAbiUnchangedAfterLocalizationTests(unittest.TestCase):
-    """struct DebugToolsAction/DEBUGTOOLS_ACTION_MAX/
-    DebugTools_RegisterAction's ABI must stay completely unchanged --
-    this sprint only adds a render-time label lookup table, never a new
-    field/enum value affecting registration."""
+    """Localization must not change DebugToolsAction's ABI or permit
+    contributor IDs to select built-in labels. Capacity may grow only via
+    separate bounded storage and paginated rendering."""
 
     @classmethod
     def setUpClass(cls):
@@ -710,8 +709,12 @@ class DebugToolsRegistryAbiUnchangedAfterLocalizationTests(unittest.TestCase):
             ],
         )
 
-    def test_debugtools_action_max_unchanged(self):
-        self.assertIn("DEBUGTOOLS_ACTION_MAX = 9,", self.header_text)
+    def test_debugtools_capacity_is_separate_and_paginated(self):
+        self.assertIn("DEBUGTOOLS_BUILTIN_ACTION_MAX = 9,", self.header_text)
+        self.assertIn("DEBUGTOOLS_CONTRIBUTOR_ACTION_MAX = 9,", self.header_text)
+        self.assertIn("DEBUGTOOLS_ACTION_MAX = 18,", self.header_text)
+        self.assertIn("DEBUGTOOLS_HUB_PAGE_ACTION_MAX = 9,", self.header_text)
+        self.assertIn("DEBUGTOOLS_HUB_PAGE_MAX = 2,", self.header_text)
 
     def test_builtin_label_mapping_is_modern_guarded_and_third_party_fallback_intact(self):
         guard_match = re.search(
@@ -729,7 +732,7 @@ class DebugToolsRegistryAbiUnchangedAfterLocalizationTests(unittest.TestCase):
         )
         self.assertIsNotNone(build_match)
         body = build_match.group(1)
-        name_idx = body.index("def->name = sActions[i].label;")
+        name_idx = body.index("def->name = action->label;")
         ondraw_null_idx = body.index("def->onDraw = NULL;")
         guarded_override_idx = body.index("def->onDraw = DebugToolsHub_BuiltinActionRowDraw;")
         self.assertLess(name_idx, guarded_override_idx)

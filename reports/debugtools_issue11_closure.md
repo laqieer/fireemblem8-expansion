@@ -56,8 +56,15 @@ python3 tools/gba-playtest/gba_playtest.py verify \
   -> `DEBUGTOOLS_ERR_CAPACITY_FULL`. Both new codes appended at the *end*
   of `enum DebugToolsResult` (`include/expansion_debugtools.h`) so no
   existing scenario-hardcoded raw-integer probe value is renumbered.
-  Label lifetime: the registry only ever stores the pointer
-  (`sActions[sActionCount] = *action`), never copies bytes; the contract
+  Built-ins and contributors use separate nine-entry EWRAM arrays, so all
+  reserved IDs 1-9 coexist with the originally documented nine public
+  registrations; the tenth contributor receives the capacity error. The
+  hub renders nine actions plus Back per page and R cycles the two bounded
+  pages. Added storage is appended after the existing EWRAM layout so probe
+  and downstream state addresses remain stable. Label lifetime: the registry
+  only ever stores the pointer
+  (`sContributorActions[sContributorActionCount] = *action`), never copies
+  bytes; the contract
   (label must have static/persistent storage duration -- every shipped
   action already passes a string literal) is documented at the struct/
   function declaration and re-stated at the result-code table in

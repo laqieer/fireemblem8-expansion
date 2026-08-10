@@ -132,19 +132,24 @@
 #endif
 
 /* --- Registration capacity -------------------------------------------------
+ * Built-ins and contributors use separate bounded EWRAM arrays. IDs 1-9
+ * occupy the nine built-in slots; contributors retain the originally
+ * documented nine successful registrations in their own slots.
+ *
  * MENU_ITEM_MAX is 11 (include/uimenu.h) and StartMenuCore (src/uimenu.c)
- * has no bounds check when it appends to MenuProc::menuItems -- writing an
- * 12th live item would corrupt adjacent MenuProc fields. The hub menu
- * therefore reserves one live slot for a Back/Exit entry, leaving exactly
- * DEBUGTOOLS_ACTION_MAX (9) total action slots, with 1 of the 11 total
- * live slots kept as an untouched safety margin. The
- * DEBUGTOOLS_HUB_MENU_SLOTS def-array additionally needs a MenuItemsEnd
- * terminator, which StartMenuCore's scan loop stops at and therefore never
- * turns into a live MenuItemProc/menuItems[] slot. */
+ * has no bounds check when it appends to MenuProc::menuItems. The hub
+ * therefore renders at most nine actions per page plus Back (10 live rows),
+ * leaving one MenuProc::menuItems slot as a safety margin. Pressing R cycles
+ * through the bounded pages. DEBUGTOOLS_HUB_MENU_SLOTS includes the
+ * all-zero MenuItemsEnd terminator, which is not a live row. */
 enum
 {
-    DEBUGTOOLS_ACTION_MAX = 9,
-    DEBUGTOOLS_HUB_MENU_SLOTS = DEBUGTOOLS_ACTION_MAX + 2, /* actions + Back + terminator */
+    DEBUGTOOLS_BUILTIN_ACTION_MAX = 9,
+    DEBUGTOOLS_CONTRIBUTOR_ACTION_MAX = 9,
+    DEBUGTOOLS_ACTION_MAX = 18,
+    DEBUGTOOLS_HUB_PAGE_ACTION_MAX = 9,
+    DEBUGTOOLS_HUB_PAGE_MAX = 2,
+    DEBUGTOOLS_HUB_MENU_SLOTS = 11, /* nine actions + Back + terminator */
     DEBUGTOOLS_MENU_WIDTH_TILES = 19,
     DEBUGTOOLS_STATUS_TEXT_WIDTH_TILES = 24,
     DEBUGTOOLS_BUILTIN_ID_MIN = 1,
@@ -155,7 +160,7 @@ enum
     /* The default BG text font starts at tile 0x80 and Text uses two
      * 8x8 tiles per allocated text column. Tile indices are 10 bits, so
      * the allocator has (0x400 - 0x80) / 2 == 448 columns available.
-     * A maximum-size hub uses ten 18-column rows (nine actions + Back)
+     * Each maximum-size page uses ten 18-column rows (nine actions + Back)
      * plus one 24-column localized status line. Transitions reclaim this
      * bounded 204-column scope only after the old menu has ended. */
     DEBUGTOOLS_TEXT_ALLOC_CAPACITY = 448,
@@ -183,7 +188,7 @@ enum DebugToolsResult
     DEBUGTOOLS_ERR_DISABLED,        /* subsystem compiled out (release build) */
     DEBUGTOOLS_ERR_INVALID_ACTION,  /* NULL action, label, or callback */
     DEBUGTOOLS_ERR_DUPLICATE,       /* id already registered */
-    DEBUGTOOLS_ERR_CAPACITY_FULL,   /* DEBUGTOOLS_ACTION_MAX already reached */
+    DEBUGTOOLS_ERR_CAPACITY_FULL,   /* the relevant built-in/contributor storage is full */
     DEBUGTOOLS_ERR_ALREADY_ACTIVE,  /* DebugTools_OpenHub called while the hub is already open */
 
     /* Issue #11 closure: appended at the end so every existing named
@@ -215,9 +220,11 @@ struct DebugToolsAction
 
 /* Registers a new contributor debug action. IDs 1-9 are rejected with
  * DEBUGTOOLS_ERR_ID_RESERVED; ID 0 remains DEBUGTOOLS_ERR_ID_INVALID.
- * Valid contributor IDs are 10-65535. Before accepting one, the shipped
- * built-ins are initialized once in deterministic ID/menu order so an
- * early contributor call can never displace a built-in. Returns
+ * Valid contributor IDs are 10-65535. Exactly
+ * DEBUGTOOLS_CONTRIBUTOR_ACTION_MAX contributor registrations can coexist
+ * with all DEBUGTOOLS_BUILTIN_ACTION_MAX built-ins. Before accepting one,
+ * the shipped built-ins are initialized once in deterministic ID/menu order
+ * so an early contributor call can never displace a built-in. Returns
  * DEBUGTOOLS_OK on success, or an explicit DebugToolsResult error code
  * otherwise. Never silently drops a registration. Registration order is
  * preserved (deterministic ordering), and no heap allocation is used
@@ -225,6 +232,10 @@ struct DebugToolsAction
 int DebugTools_RegisterAction(const struct DebugToolsAction* action);
 
 /* Introspection, primarily for host tests and playtest probes. */
+/* Returns the combined built-in-plus-contributor count. Indexed access lists
+ * built-ins first in stable ID/menu order, then contributors in registration
+ * order. The hub presents that same order in DEBUGTOOLS_HUB_PAGE_ACTION_MAX
+ * rows per page; R cycles pages without growing the live menu. */
 int DebugTools_GetRegisteredCount(void);
 const struct DebugToolsAction* DebugTools_GetRegisteredAction(int index);
 enum DebugToolsResult DebugTools_GetLastRegistrationResult(void);

@@ -258,12 +258,18 @@ class DebugToolsLocalizationTests(unittest.TestCase):
 
     def test_maximum_hub_rows_and_qps_labels_fit_allocator_budget(self):
         action_max = self._constant("DEBUGTOOLS_ACTION_MAX")
+        contributor_max = self._constant("DEBUGTOOLS_CONTRIBUTOR_ACTION_MAX")
+        page_action_max = self._constant("DEBUGTOOLS_HUB_PAGE_ACTION_MAX")
+        page_max = self._constant("DEBUGTOOLS_HUB_PAGE_MAX")
         menu_width = self._constant("DEBUGTOOLS_MENU_WIDTH_TILES")
         status_width = self._constant("DEBUGTOOLS_STATUS_TEXT_WIDTH_TILES")
         capacity = self._constant("DEBUGTOOLS_TEXT_ALLOC_CAPACITY")
 
-        expected_budget = (action_max + 1) * (menu_width - 1) + status_width
-        self.assertEqual(action_max, 9)
+        expected_budget = (page_action_max + 1) * (menu_width - 1) + status_width
+        self.assertEqual(action_max, 18)
+        self.assertEqual(contributor_max, 9)
+        self.assertEqual(page_action_max, 9)
+        self.assertEqual(page_max, 2)
         self.assertEqual(expected_budget, 204)
         self.assertLessEqual(expected_budget, capacity)
 
@@ -294,7 +300,7 @@ class DebugToolsLocalizationTests(unittest.TestCase):
         )
 
         suffixes = {
-            "debug.status.hub": " 9/9",
+            "debug.status.hub": " 18/18 2/2",
             "debug.status.hub_error": " -99",
             "debug.status.unit_hp": " 255/255",
             "debug.status.unit_unavailable": "",
