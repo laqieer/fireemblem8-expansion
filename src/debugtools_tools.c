@@ -722,7 +722,7 @@ void DebugTools_RegisterExtendedToolActions(void)
 {
     /* Internal built-in registration keeps ids 5-9 unavailable to the
      * contributor API and marks these rows as localized built-ins.
-     * Repeated calls remain idempotent through duplicate rejection. */
+     * Exact repeats are successful no-ops. */
     DebugTools_RegisterBuiltinAction(&sUnitInspectAction);
     DebugTools_RegisterBuiltinAction(&sConvoyInspectAction);
     DebugTools_RegisterBuiltinAction(&sFlagInspectAction);

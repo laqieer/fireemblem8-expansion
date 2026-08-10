@@ -895,6 +895,18 @@ void Title_IDLE(struct TitleScreenProc * proc)
      * second concurrent hub MenuProc. */
     DebugTools_TitleHotkeyCheck();
 
+    /* The Chapter 2 action sets this request from its menu callback before
+     * MENU_ACT_END tears down the hub. Check it before the broader session
+     * guard: deferred Text cleanup intentionally retains session ownership
+     * for one yield after the hub MenuProc is gone, but must not delay the
+     * established deterministic launch/input timeline by another frame. */
+    if (DebugTools_IsChapter2LaunchPending())
+    {
+        SetNextGameActionId(GAME_ACTION_EVENT_RETURN);
+        Proc_Break(proc);
+        return;
+    }
+
     /* While the hub is open, this proc and the hub's own menu proc are
      * independent siblings that both still read newKeys every frame --
      * skip the vanilla A/START handling for as long as the hub is up so
@@ -903,20 +915,6 @@ void Title_IDLE(struct TitleScreenProc * proc)
      * build). */
     if (DebugTools_IsHubActive())
         return;
-
-    /* Detects a pending "Fast Boot: Chapter 2" request (armed by the hub
-     * action in src/debugtools_launcher.c) only after the hub itself has
-     * fully closed. This reacts with the exact same next-action/Proc_Break
-     * pair the ordinary A/START branch below uses -- the normal
-     * fade/end/parent-unblock lifecycle of this TitleScreen proc runs
-     * unmodified -- without synthesizing an A/START keypress. Always 0 in
-     * a release build. */
-    if (DebugTools_IsChapter2LaunchPending())
-    {
-        SetNextGameActionId(GAME_ACTION_EVENT_RETURN);
-        Proc_Break(proc);
-        return;
-    }
 
 #if FE8_EXPANSION_ITEMTEST_ENABLED
     /* Issue #10 opt-in runtime item-expansion probe (compiled out, and

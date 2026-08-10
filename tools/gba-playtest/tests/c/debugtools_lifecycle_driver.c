@@ -5,7 +5,6 @@
 #include "fontgrp.h"
 #include "uimenu.h"
 #include "expansion_debugtools.h"
-#include "debugtools_internal.h"
 
 #define CHECK(cond, msg) \
     do { \
@@ -43,12 +42,7 @@ static u8 ContributorCollisionSelected(struct MenuProc* menu, struct MenuItemPro
     return 0;
 }
 
-static u8 Contributor0Selected(struct MenuProc* menu, struct MenuItemProc* item)
-{
-    (void)menu;
-    (void)item;
-    return 10;
-}
+static u8 Contributor0Selected(struct MenuProc* menu, struct MenuItemProc* item);
 
 static u8 Contributor1Selected(struct MenuProc* menu, struct MenuItemProc* item)
 {
@@ -130,6 +124,15 @@ static CONST_DATA struct MenuDef sFakeSubmenuDef =
     0
 };
 
+static u8 Contributor0Selected(struct MenuProc* menu, struct MenuItemProc* item)
+{
+    (void)item;
+
+    DebugTools_QueueSubmenuTransition(menu, &sFakeSubmenuDef);
+
+    return MENU_ACT_SKIPCURSOR | MENU_ACT_END | MENU_ACT_SND6A | MENU_ACT_CLEAR;
+}
+
 int main(void)
 {
     static const char* const expectedLabels[9] =
@@ -185,6 +188,7 @@ int main(void)
     struct Text statusText;
     const struct DebugToolsAction* action;
     const u16 textBase = 17;
+    u8 menuResult;
     int i;
     int cycle;
 
@@ -344,12 +348,24 @@ int main(void)
         u16 hubCounter = DebugToolsLifecycle_GetTextCounter();
         int startsBefore = gDebugToolsLifecycleStartMenuCount;
 
-        DebugTools_QueueSubmenuTransition(
+        action = DebugTools_GetRegisteredAction(DEBUGTOOLS_BUILTIN_ACTION_MAX);
+        CHECK(action != NULL && action->onSelected == Contributor0Selected,
+              "the first contributor row must expose the real submenu callback");
+        CHECK(gDebugToolsLifecycleLastMenuDef->menuItems[0].onSelected
+              == Contributor0Selected,
+              "the rendered contributor row must retain the registered callback");
+        menuResult = gDebugToolsLifecycleLastMenuDef->menuItems[0].onSelected(
             gDebugToolsLifecycleLastMenuProc,
-            &sFakeSubmenuDef);
-        gDebugToolsHubMenuDef.onEnd(gDebugToolsLifecycleLastMenuProc);
+            gDebugToolsLifecycleLastMenuProc->menuItems[0]);
+        CHECK(menuResult & MENU_ACT_END,
+              "the contributor submenu callback must use the ordinary MENU_ACT_END contract");
         CHECK(DebugToolsLifecycle_GetTextCounter() == hubCounter,
-              "hub onEnd must not rewind while its Text rows are still live");
+              "queueing from an ordinary callback must not rewind live hub Text");
+
+        if (menuResult & MENU_ACT_END)
+            EndMenu(gDebugToolsLifecycleLastMenuProc);
+        CHECK(DebugToolsLifecycle_GetTextCounter() == hubCounter,
+              "MENU_ACT_END hub cleanup must not rewind after the public handoff");
         CHECK(gDebugToolsLifecycleStartMenuCount == startsBefore,
               "hub onEnd must not start the submenu before the old menu dies");
         CHECK(DebugTools_IsHubActive() != 0,
@@ -362,10 +378,12 @@ int main(void)
               == textBase + (DEBUGTOOLS_MENU_WIDTH_TILES - 1),
               "submenu allocation must restart from the saved text base");
 
-        sFakeSubmenuDef.onEnd(gDebugToolsLifecycleLastMenuProc);
+        EndMenu(gDebugToolsLifecycleLastMenuProc);
         CHECK(DebugToolsLifecycle_GetTextCounter()
               == textBase + (DEBUGTOOLS_MENU_WIDTH_TILES - 1),
-              "submenu onEnd must not rewind while its Text row is still live");
+              "the public submenu onEnd callback must not rewind its live Text row");
+        CHECK(DebugTools_IsHubActive() != 0,
+              "ending a contributor submenu must retain session ownership until return");
 
         DebugToolsLifecycle_RunPendingTransition();
         CHECK(gDebugToolsLifecycleLastMenuDef == &gDebugToolsHubMenuDef,
@@ -405,7 +423,7 @@ int main(void)
     CHECK(gDebugToolsLifecycleTransitionProcCount == 1 + 64 * 4,
           "initial paging plus each page/submenu cycle must schedule exact deferred transitions");
 
-    gDebugToolsHubMenuDef.onEnd(gDebugToolsLifecycleLastMenuProc);
+    EndMenu(gDebugToolsLifecycleLastMenuProc);
     CHECK(DebugToolsLifecycle_GetTextCounter()
           == textBase + DEBUGTOOLS_HUB_TEXT_ALLOC_BUDGET,
           "final hub cleanup must also defer rewind until live Text rows end");
@@ -417,6 +435,12 @@ int main(void)
 
     {
         int startsBefore = gDebugToolsLifecycleStartMenuCount;
+        int transitionsBefore = gDebugToolsLifecycleTransitionProcCount;
+
+        DebugTools_QueueSubmenuTransition(gDebugToolsLifecycleLastMenuProc, &sFakeSubmenuDef);
+        DebugTools_ReturnToHubAfterMenuEnd(gDebugToolsLifecycleLastMenuProc);
+        CHECK(gDebugToolsLifecycleTransitionProcCount == transitionsBefore,
+              "public submenu lifecycle calls outside a debug session must be no-ops");
 
         DebugToolsLifecycle_SetTextCounter(
             DEBUGTOOLS_TEXT_ALLOC_CAPACITY - DEBUGTOOLS_HUB_TEXT_ALLOC_BUDGET + 1);

@@ -73,14 +73,9 @@ CONST_DATA static struct DebugToolsAction sFastBootChapter4PrepAction = {
 
 void DebugTools_RegisterBuiltinActions(void)
 {
-    /* Idempotent: a repeat call reports DEBUGTOOLS_ERR_DUPLICATE (same
-     * id/label) -- an expected, non-silent result that this one-shot
-     * lazy-init call site deliberately ignores. Registers *only* the
-     * Chapter 2 launcher -- unchanged from before issue #11 closure, so
-     * Weather/Fog's own hub-menu row indices (registered right after
-     * this call, from DebugTools_RegisterWeatherFogActions) stay exactly
-     * where every pre-existing scenario's own input script already
-     * expects them. */
+    /* Exact repeats are successful no-ops. Registers only the Chapter 2
+     * launcher; ID-indexed storage keeps Weather/Fog at rows 1/2 no matter
+     * which public initializer ran first. */
     DebugTools_RegisterBuiltinAction(&sFastBootChapter2Action);
 }
 

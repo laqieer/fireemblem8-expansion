@@ -194,8 +194,8 @@ CONST_DATA static struct DebugToolsAction sFogAction = {
 void DebugTools_RegisterWeatherFogActions(void)
 {
     /* Internal built-in registration keeps immutable built-in identity
-     * separate from the public contributor path. Repeated calls remain
-     * idempotent through duplicate rejection. */
+     * separate from the public contributor path. Exact repeats are
+     * successful no-ops. */
     DebugTools_RegisterBuiltinAction(&sWeatherAction);
     DebugTools_RegisterBuiltinAction(&sFogAction);
 }

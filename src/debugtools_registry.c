@@ -53,12 +53,32 @@ SECTION("debugtools_contributor_data") static struct DebugToolsAction
     sContributorActions[DEBUGTOOLS_CONTRIBUTOR_ACTION_MAX] = {0};
 SECTION("debugtools_contributor_data") static int sContributorActionCount = 0;
 SECTION("debugtools_contributor_data") static int sHubPage = 0;
+SECTION("debugtools_contributor_data") static u32 sDebugMenuState = 0;
 
-EWRAM_DATA static struct DebugToolsAction
-    sBuiltinActions[DEBUGTOOLS_BUILTIN_ACTION_MAX] = {0};
-EWRAM_DATA static int sBuiltinActionCount = 0;
-EWRAM_DATA static enum DebugToolsResult sLastResult = DEBUGTOOLS_OK;
-EWRAM_DATA static u32 sDebugMenuState = 0;
+/* Preserve the established registry EWRAM layout as one explicit object.
+ * Separate top-level statics are compiler-reordered in modern builds, so
+ * renaming sActions to sBuiltinActions moved the old sHubActive byte away
+ * from the address consumed by existing runtime scenarios even though total
+ * size was unchanged. These fields reproduce the original active/result/
+ * count/actions/menu order while making built-in action slot N-1
+ * deterministic. The richer session state lives in the appended contributor
+ * section above, so the established one-byte hub probe remains 0/1. */
+struct DebugToolsRegistryState
+{
+    /* 000 */ u32 hubActive;
+    /* 004 */ enum DebugToolsResult lastResult;
+    /* 008 */ int builtinActionCount;
+    /* 00C */ struct DebugToolsAction builtinActions[DEBUGTOOLS_BUILTIN_ACTION_MAX];
+    /* 078 */ struct MenuItemDef hubMenuItemDefs[DEBUGTOOLS_HUB_MENU_SLOTS];
+};
+
+EWRAM_DATA static struct DebugToolsRegistryState sRegistryState = {0};
+
+#define sHubActive sRegistryState.hubActive
+#define sLastResult sRegistryState.lastResult
+#define sBuiltinActionCount sRegistryState.builtinActionCount
+#define sBuiltinActions sRegistryState.builtinActions
+#define sHubMenuItemDefs sRegistryState.hubMenuItemDefs
 
 extern struct Font* gActiveFont;
 
@@ -93,12 +113,6 @@ static void DebugTools_StartMenuTransition(
     const struct MenuDef* menuDef);
 static int DebugTools_GetActionCount(void);
 static const struct DebugToolsAction* DebugTools_GetAction(int index);
-
-/* RAM-resident MenuItemDef adapter, rebuilt from one bounded registry page
- * every time the hub opens. Nine action rows plus Back leave one
- * MenuProc::menuItems slot unused; the final all-zero slot is the
- * MenuItemsEnd-equivalent terminator. */
-EWRAM_DATA static struct MenuItemDef sHubMenuItemDefs[DEBUGTOOLS_HUB_MENU_SLOTS] = {0};
 
 static u8 DebugToolsHub_BackSelected(struct MenuProc* menu, struct MenuItemProc* item)
 {
@@ -137,6 +151,7 @@ static void DebugToolsHub_OnEnd(struct MenuProc* proc)
      * that ever turns it on while the hub is the active menu. */
     gLCDControlBuffer.dispcnt.bg2_on = 0;
 
+    sHubActive = 0;
     sDebugMenuState &= ~DEBUGTOOLS_STATE_HUB_ACTIVE;
 
     if (!(sDebugMenuState & DEBUGTOOLS_STATE_TRANSITION_SCHEDULED))
@@ -355,13 +370,34 @@ static int DebugTools_GetActionCount(void)
     return sBuiltinActionCount + sContributorActionCount;
 }
 
+static const struct DebugToolsAction* DebugTools_GetBuiltinAction(int index)
+{
+    int slot;
+
+    if (index < 0 || index >= sBuiltinActionCount)
+        return NULL;
+
+    for (slot = 0; slot < DEBUGTOOLS_BUILTIN_ACTION_MAX; ++slot)
+    {
+        if (sBuiltinActions[slot].id == 0)
+            continue;
+
+        if (index == 0)
+            return &sBuiltinActions[slot];
+
+        index--;
+    }
+
+    return NULL;
+}
+
 static const struct DebugToolsAction* DebugTools_GetAction(int index)
 {
     if (index < 0 || index >= DebugTools_GetActionCount())
         return NULL;
 
     if (index < sBuiltinActionCount)
-        return &sBuiltinActions[index];
+        return DebugTools_GetBuiltinAction(index);
 
     return &sContributorActions[index - sBuiltinActionCount];
 }
@@ -402,6 +438,22 @@ static int DebugTools_RegisterActionCore(const struct DebugToolsAction* action, 
     if (action->label[0] == '\0' || strlen(action->label) > DEBUGTOOLS_LABEL_MAX_LENGTH)
         return DebugTools_SetLastResult(DEBUGTOOLS_ERR_LABEL_INVALID);
 
+    if (isBuiltin)
+    {
+        int slot = action->id - DEBUGTOOLS_BUILTIN_ID_MIN;
+
+        registered = &sBuiltinActions[slot];
+        if (registered->id != 0)
+        {
+            if (registered->id == action->id
+                && strcmp(registered->label, action->label) == 0
+                && registered->onSelected == action->onSelected)
+                return DebugTools_SetLastResult(DEBUGTOOLS_OK);
+
+            return DebugTools_SetLastResult(DEBUGTOOLS_ERR_DUPLICATE);
+        }
+    }
+
     actionCount = DebugTools_GetActionCount();
     for (i = 0; i < actionCount; ++i)
     {
@@ -413,10 +465,12 @@ static int DebugTools_RegisterActionCore(const struct DebugToolsAction* action, 
 
     if (isBuiltin)
     {
+        int slot = action->id - DEBUGTOOLS_BUILTIN_ID_MIN;
+
         if (sBuiltinActionCount >= DEBUGTOOLS_BUILTIN_ACTION_MAX)
             return DebugTools_SetLastResult(DEBUGTOOLS_ERR_CAPACITY_FULL);
 
-        sBuiltinActions[sBuiltinActionCount] = *action;
+        sBuiltinActions[slot] = *action;
         sBuiltinActionCount++;
     }
     else
@@ -530,7 +584,9 @@ static void DebugTools_StartMenuTransition(
 
 void DebugTools_QueueSubmenuTransition(struct MenuProc* menu, const struct MenuDef* menuDef)
 {
-    if (menuDef == NULL)
+    if (menuDef == NULL
+        || !(sDebugMenuState & DEBUGTOOLS_STATE_SESSION_ACTIVE)
+        || !(sDebugMenuState & DEBUGTOOLS_STATE_HUB_ACTIVE))
         return;
 
     DebugTools_StartMenuTransition(menu, DEBUGTOOLS_TRANSITION_SUBMENU, menuDef);
@@ -538,8 +594,10 @@ void DebugTools_QueueSubmenuTransition(struct MenuProc* menu, const struct MenuD
 
 void DebugTools_ReturnToHubAfterMenuEnd(struct MenuProc* menu)
 {
-    if (sDebugMenuState
+    if (!(sDebugMenuState & DEBUGTOOLS_STATE_SESSION_ACTIVE)
+        || (sDebugMenuState
         & (DEBUGTOOLS_STATE_HUB_ACTIVE | DEBUGTOOLS_STATE_TRANSITION_SCHEDULED))
+    )
         return;
 
     DebugTools_StartMenuTransition(menu, DEBUGTOOLS_TRANSITION_HUB, NULL);
@@ -549,6 +607,7 @@ static enum DebugToolsResult DebugTools_OpenHubInternal(void)
 {
     DebugToolsHub_BuildMenuItems();
     gDebugToolsProbe.hubOpenCount++;
+    sHubActive = 1;
     sDebugMenuState |= DEBUGTOOLS_STATE_HUB_ACTIVE;
 
 #ifdef MODERN
@@ -717,6 +776,17 @@ enum DebugToolsResult DebugTools_OpenHub(void)
 {
     /* No-op: no hub, no menu construction, nothing reachable. */
     return DEBUGTOOLS_ERR_DISABLED;
+}
+
+void DebugTools_QueueSubmenuTransition(struct MenuProc* menu, const struct MenuDef* menuDef)
+{
+    (void)menu;
+    (void)menuDef;
+}
+
+void DebugTools_ReturnToHubAfterMenuEnd(struct MenuProc* menu)
+{
+    (void)menu;
 }
 
 int DebugTools_IsHubActive(void)

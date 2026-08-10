@@ -240,6 +240,31 @@ int DebugTools_GetRegisteredCount(void);
 const struct DebugToolsAction* DebugTools_GetRegisteredAction(int index);
 enum DebugToolsResult DebugTools_GetLastRegistrationResult(void);
 
+/* Contributor submenu handoff contract.
+ *
+ * A registered action that opens another MenuDef must NOT call
+ * StartOrphanMenu directly. Its onSelected callback must first call
+ * DebugTools_QueueSubmenuTransition(menu, submenuDef), then return a result
+ * containing MENU_ACT_END. Queueing marks the handoff before the ordinary
+ * menu callback result ends the hub, so the hub's onEnd does not perform
+ * final session cleanup or rewind Text storage while its MenuItemProc
+ * objects are still live.
+ *
+ * The contributor submenu's MenuDef::onEnd callback must call
+ * DebugTools_ReturnToHubAfterMenuEnd(menu). That schedules the matching
+ * deferred rewind only after the submenu and its Text objects have ended,
+ * then reopens the hub while retaining the same debug session/reentrancy
+ * ownership. The session is finally released only when the reopened hub
+ * itself ends without another queued transition.
+ *
+ * Both functions are inert when debug tools are disabled. Calls outside an
+ * active hub/submenu session, duplicate transition requests, and a NULL
+ * submenuDef are also safe no-ops. */
+void DebugTools_QueueSubmenuTransition(
+    struct MenuProc* menu,
+    const struct MenuDef* submenuDef);
+void DebugTools_ReturnToHubAfterMenuEnd(struct MenuProc* menu);
+
 /* Opens the debug hub menu (a StartOrphanMenu-based menu, same idiom as
  * the existing dormant debug menus in src/menu_def.c). Lazily registers
  * all shipped built-in actions on first call.
@@ -323,8 +348,9 @@ void DebugTools_RecordTitleIdleTimer(u32 timerIdle);
  * docs/debugtools.md). The hub action ("Fast Boot: Chapter 2",
  * src/debugtools_launcher.c) now only arms a pending request and closes the
  * hub; it never touches gProcScr_GameControl, gProc_BMapMain, units, or
- * events. The request is detected by Title_IDLE (src/titlescreen.c) only
- * after the hub has closed, and consumed exactly once by
+ * events. The request is detected by Title_IDLE (src/titlescreen.c) after
+ * the hub MenuProc has closed (even while the one-yield allocator cleanup
+ * still retains session ownership), and consumed exactly once by
  * GameControl_PostIntro (src/gamecontrol.c), which performs the actual
  * deterministic boot and hands off to the ordinary LGAMECTRL_EXEC_BM
  * transition -- the existing GameCtrlProc's own normal lifecycle runs
@@ -339,9 +365,12 @@ void DebugTools_RecordTitleIdleTimer(u32 timerIdle);
 void DebugTools_RequestChapter2Launch(void);
 
 /* True from the frame the hub action arms the request until the frame
- * GameControl_PostIntro consumes it. Checked by Title_IDLE only after
- * DebugTools_IsHubActive() reports the hub has closed -- Title_IDLE itself
- * never clears this flag, it only reacts to it by setting the ordinary
+ * GameControl_PostIntro consumes it. Title_IDLE checks this before the
+ * broader DebugTools_IsHubActive() session guard so the deliberate
+ * one-yield allocator cleanup cannot delay the deterministic launch. The
+ * request is armed only by the hub action immediately before that callback
+ * returns MENU_ACT_END. Title_IDLE itself never clears this flag; it only
+ * reacts to it by setting the ordinary
  * GAME_ACTION_EVENT_RETURN next-action and calling Proc_Break on itself
  * (exactly the effect a real A/START press would have, without
  * synthesizing that keypress). Always 0 when the subsystem is compiled

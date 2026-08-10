@@ -21,7 +21,7 @@ non-goals -- `mgba_printf`/full debugger/arbitrary memory editor).
 | `src/debugtools_registry.c` | Registry storage, hub menu construction/diagnostics, title/map/prep hotkey checks, `gDebugToolsProbe` |
 | `src/debugtools_launcher.c` | The built-in "Fast Boot: Chapter 2" action: arms/consumes the pending launch request, owns the bootstrap-suppression state and its observer proc |
 | `src/debugtools_actions.c` (slice 2) | Built-in Weather/Fog actions: registers each as a bounded one-item submenu whose `MenuItemDef` reuses the dormant `DebugMenu_Weather*`/`DebugMenu_Fog*` functions in `src/bmdebug.c` by pointer, with its own Back/B handling |
-| `src/titlescreen.c` | The title-screen hotkey call site (`Title_IDLE`); also detects the pending launch request after the hub closes |
+| `src/titlescreen.c` | The title-screen hotkey call site (`Title_IDLE`); also detects the pending launch request after the hub MenuProc closes, before deferred allocator cleanup releases session ownership |
 | `src/playerphase.c` (slice 2) | The map-phase hotkey call site: `PlayerPhase_MainIdle` calls `DebugTools_MapHotkeyCheck()` and returns immediately while the hub is active, as its first statements |
 | `src/prep_sallycursor.c` (slice 2) | The prep-screen hotkey call site: `PrepScreenProc_MapIdle` calls `DebugTools_PrepHotkeyCheck()` and returns immediately while the hub is active, as its first statements |
 | `src/gamecontrol.c` | `GameControl_PostIntro` consumes the pending request exactly once and performs the actual deterministic boot |
@@ -112,8 +112,16 @@ Fits the existing `MenuProc`/`MenuItemDef` engine (`include/uimenu.h`,
   combined introspection capacity (18). The added contributor/page state is
   linked at the end of the existing EWRAM layout so public probes and later
   runtime state keep their established addresses. There is no heap allocation.
-- Combined ordering is deterministic: built-ins stay first in ID/menu order
-  1-9, followed by contributors in append-only registration order.
+- Built-in storage is ID-indexed: ID `N` always occupies slot `N-1`.
+  Introspection scans sparse slots in ascending ID order, so built-ins stay in
+  ID/menu order 1-9 even when any public built-in initializer
+  (`DebugTools_RegisterBuiltinActions`, `DebugTools_RegisterWeatherFogActions`,
+  `DebugTools_RegisterChapter4PrepAction`, or
+  `DebugTools_RegisterExtendedToolActions`) is called first. Weather and Fog
+  therefore remain hub row indices 1 and 2. Repeating any initializer is a
+  successful no-op that preserves the current count, result, labels, and
+  callbacks. Contributors follow in append-only registration order on their
+  separate page.
 
 ### Result codes
 
@@ -188,6 +196,39 @@ that budget would exceed the active font's capacity. Host tests fill all
 18 registrations, page between both full rows, execute 64
 hub→submenu→hub/page cycles, and prove every reopened page returns to the
 same 204-column peak while final cleanup restores the original baseline.
+
+### Contributor submenu contract
+
+A contributor action that needs its own `MenuDef` must use the public handoff
+pair in `include/expansion_debugtools.h`; directly calling `StartOrphanMenu`
+from the action callback is unsupported because it bypasses allocator/session
+ownership:
+
+```c
+static void MyDebugSubmenu_OnEnd(struct MenuProc* menu)
+{
+    DebugTools_ReturnToHubAfterMenuEnd(menu);
+}
+
+static u8 MyDebugAction_Selected(struct MenuProc* menu, struct MenuItemProc* item)
+{
+    (void)item;
+
+    MyDebugSubmenu_BuildMenuItems();
+    DebugTools_QueueSubmenuTransition(menu, &gMyDebugSubmenuDef);
+
+    return MENU_ACT_SKIPCURSOR | MENU_ACT_END | MENU_ACT_SND6A | MENU_ACT_CLEAR;
+}
+```
+
+The action must queue the submenu **before** returning a result containing
+`MENU_ACT_END`. That queued ownership marker makes the hub's ordinary
+`MenuDef::onEnd` skip final cleanup, so no live hub `Text` is rewound
+prematurely. The submenu's own `MenuDef::onEnd` must call
+`DebugTools_ReturnToHubAfterMenuEnd`; this waits one yield for the submenu
+objects to die, reclaims the same bounded allocation scope, and reopens the
+hub without releasing the session/reentrancy guard. Disabled builds expose
+inert stubs, and calls outside an active debug session are safe no-ops.
 
 ### Introspection
 
@@ -404,10 +445,13 @@ anywhere:
    It never touches `gProcScr_GameControl`/`gProc_BMapMain`, never calls
    `Proc_EndEach`/`Proc_Start` on the game-control proc, never loads units,
    and never manipulates events.
-2. **`Title_IDLE` detects the pending request only after the hub has fully
-   closed** (`src/titlescreen.c`): `DebugTools_IsHubActive()` is checked
-   (with an early return while still active) strictly before
-   `DebugTools_IsChapter2LaunchPending()`. When pending, it reacts with the
+2. **`Title_IDLE` detects the request without waiting an extra cleanup
+   frame** (`src/titlescreen.c`): the action can only arm the request
+   immediately before returning `MENU_ACT_END`, so the hub `MenuProc` has
+   ended by the next `Title_IDLE` turn. The pending check intentionally
+   precedes the broader `DebugTools_IsHubActive()` session guard because
+   deferred text cleanup retains allocator/reentrancy ownership for one
+   additional yield. When pending, `Title_IDLE` reacts with the
    exact same `SetNextGameActionId(GAME_ACTION_EVENT_RETURN); Proc_Break(proc);`
    pair the ordinary `A`/`START` branch uses -- the normal fade/end/
    parent-unblock lifecycle of this `TitleScreen` proc runs completely
@@ -1194,13 +1238,13 @@ tools" above for what each proves.
     `GameControl_PostIntro`'s Chapter 2 boot branch only ever writes
     `gGMData.units[0].location` (the single, documented, ordinary-world-map-
     traversal placement) and no other `gGMData.units[]` field.
-  - `test_title_idle_defers_pending_request_check_until_hub_inactive` and
+  - `test_title_idle_consumes_pending_request_before_session_guard` and
     `test_title_idle_pending_branch_never_synthesizes_input` grep
-    `Title_IDLE`'s function body to confirm `DebugTools_IsHubActive()` is
-    checked (with an early return) strictly before
-    `DebugTools_IsChapter2LaunchPending()`, and that the pending branch
-    reacts with the same `SetNextGameActionId`/`Proc_Break` pair the
-    ordinary `A`/`START` branch uses, never a synthesized keypress.
+    `Title_IDLE`'s function body to confirm the pending request is consumed
+    before the broader session guard can defer it by one allocator-cleanup
+    yield, and that the pending branch reacts with the same
+    `SetNextGameActionId`/`Proc_Break` pair the ordinary `A`/`START` branch
+    uses, never a synthesized keypress.
   - `test_gamecontrol_consumes_pending_launch_exactly_once_before_savemenu`
     confirms `DebugTools_ConsumePendingChapter2Launch()` is called exactly
     once in `src/gamecontrol.c`, textually before the ordinary

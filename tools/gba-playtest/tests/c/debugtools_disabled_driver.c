@@ -54,12 +54,14 @@ int main(void)
 
     /* Safe no-ops: must not crash, must not change any observable state. */
     DebugTools_TitleHotkeyCheck();
+    DebugTools_QueueSubmenuTransition(NULL, NULL);
+    DebugTools_ReturnToHubAfterMenuEnd(NULL);
     rc = DebugTools_OpenHub();
     CHECK(rc == DEBUGTOOLS_ERR_DISABLED,
           "OpenHub must return DEBUGTOOLS_ERR_DISABLED explicitly in a disabled build, "
           "never silently succeed");
     CHECK(DebugTools_IsHubActive() == 0,
-          "OpenHub/TitleHotkeyCheck must remain no-ops in a disabled build");
+          "hub, hotkey, and contributor submenu APIs must remain no-ops in a disabled build");
     CHECK(DebugTools_GetRegisteredCount() == 0,
           "OpenHub must not lazily register the built-in launcher in a disabled build");
 

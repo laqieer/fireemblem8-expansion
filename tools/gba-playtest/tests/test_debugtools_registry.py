@@ -171,9 +171,12 @@ class DebugToolsRegistryHostTests(unittest.TestCase):
         """A valid contributor-before-init registration must coexist with
         identity-safe IDs 1-9. The ninth contributor succeeds, the tenth
         fails, R pages between the two full action pages, and 64 maximum
-        page/submenu cycles reuse one bounded text allocation scope. The
-        real registry/transition code runs here; the host stub only models
-        StartMenuCore's documented per-row InitText(rect.w - 1) allocation."""
+        page/contributor-submenu cycles reuse one bounded text allocation
+        scope. The contributor callback uses only the public submenu handoff
+        API, returns ordinary MENU_ACT_END, and its real MenuDef::onEnd uses
+        the public return API. The real registry/transition code runs here;
+        the host stub only models StartMenuCore's documented per-row
+        InitText(rect.w - 1) allocation."""
         import tempfile
         with tempfile.TemporaryDirectory() as tmp:
             work = Path(tmp)
@@ -209,6 +212,73 @@ class DebugToolsRegistryHostTests(unittest.TestCase):
             rc, out = _run(exe)
             self.assertEqual(rc, 0, f"host lifecycle test failed:\n{out}")
             self.assertIn("DEBUGTOOLS_LIFECYCLE_HOST_TEST: PASS", out)
+
+    def test_public_builtin_initializers_preserve_stable_id_and_row_order(self):
+        """Each public built-in initializer may be the first entry point.
+        Four fresh host processes cover every possible first group, then
+        register the remaining groups in reverse order. Sparse and complete
+        introspection must stay ID-sorted, Weather/Fog must remain hub rows
+        1/2, and contributor storage must remain separately usable."""
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+
+            for first in range(1, 5):
+                with self.subTest(first_initializer=first):
+                    work = root / f"first-{first}"
+                    work.mkdir()
+
+                    rc, out, registry_obj = _compile(
+                        work,
+                        REGISTRY_SRC,
+                        "registry_initializer_order.o",
+                        defines=["FE8_EXPANSION_DEBUGTOOLS_ENABLED=1"],
+                    )
+                    self.assertEqual(
+                        rc, 0,
+                        f"compiling initializer-order registry failed:\n{out}",
+                    )
+
+                    rc, out, stubs_obj = _compile(
+                        work,
+                        C_FIXTURES_DIR / "debugtools_lifecycle_host_stubs.c",
+                        "initializer_order_stubs.o",
+                    )
+                    self.assertEqual(
+                        rc, 0,
+                        f"compiling initializer-order stubs failed:\n{out}",
+                    )
+
+                    rc, out, driver_obj = _compile(
+                        work,
+                        C_FIXTURES_DIR / "debugtools_initializer_order_driver.c",
+                        "initializer_order_driver.o",
+                        defines=[f"DEBUGTOOLS_INITIALIZER_FIRST={first}"],
+                    )
+                    self.assertEqual(
+                        rc, 0,
+                        f"compiling initializer-order driver failed:\n{out}",
+                    )
+
+                    rc, out, exe = _link(
+                        work,
+                        [registry_obj, stubs_obj, driver_obj],
+                        "initializer_order_test",
+                    )
+                    self.assertEqual(
+                        rc, 0,
+                        f"linking initializer-order test failed:\n{out}",
+                    )
+
+                    rc, out = _run(exe)
+                    self.assertEqual(
+                        rc, 0,
+                        f"initializer-order test failed for first={first}:\n{out}",
+                    )
+                    self.assertIn(
+                        f"DEBUGTOOLS_INITIALIZER_ORDER_HOST_TEST: PASS first={first}",
+                        out,
+                    )
 
     def test_localized_builtin_rows_require_reserved_id_identity(self):
         registry = _strip_c_comments(REGISTRY_SRC.read_text(encoding="utf-8"))
@@ -1091,12 +1161,12 @@ class DebugToolsChapter2LaunchLifecycleHostTests(unittest.TestCase):
         for banned in ("Proc_End", "Proc_Find", "Proc_Start", "sBootstrapSuppressionActive", "EWRAM_DATA"):
             self.assertNotIn(banned, body, f"disabled DebugTools_CleanupBootstrapObserver must not reference {banned}")
 
-    def test_title_idle_defers_pending_request_check_until_hub_inactive(self):
-        """Title_IDLE must check DebugTools_IsHubActive() (and return early
-        while it's still active) strictly before it checks
-        DebugTools_IsChapter2LaunchPending() -- the pending request must
-        only ever be detected after the hub has fully closed, never while
-        it's still open."""
+    def test_title_idle_consumes_pending_request_before_session_guard(self):
+        """Title_IDLE must consume an already-armed Chapter 2 request before
+        the broader debug-session guard. The hub callback arms the request
+        while returning MENU_ACT_END; deferred text cleanup deliberately
+        keeps session ownership for one more yield, and must not add a frame
+        to the established launch timeline."""
         text = TITLESCREEN_SRC.read_text(encoding="utf-8", errors="replace")
         match = re.search(r"void Title_IDLE\([^)]*\)\s*\{(.*?)\n\}", text, flags=re.DOTALL)
         self.assertIsNotNone(match, "could not locate Title_IDLE's function body")
@@ -1110,9 +1180,9 @@ class DebugToolsChapter2LaunchLifecycleHostTests(unittest.TestCase):
         )
         self.assertNotEqual(pending_check_pos, -1, "Title_IDLE must call DebugTools_IsChapter2LaunchPending()")
         self.assertLess(
-            hub_guard.end(), pending_check_pos,
-            "the hub-active early-out must appear before the pending-request check, so the "
-            "request is only ever detected once the hub has fully closed",
+            pending_check_pos, hub_guard.start(),
+            "the pending-request check must precede the broad session guard so deferred "
+            "allocator cleanup cannot delay the deterministic launch timeline",
         )
 
     def test_title_idle_pending_branch_never_synthesizes_input(self):

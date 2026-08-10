@@ -60,8 +60,13 @@ python3 tools/gba-playtest/gba_playtest.py verify \
   reserved IDs 1-9 coexist with the originally documented nine public
   registrations; the tenth contributor receives the capacity error. The
   hub renders nine actions plus Back per page and R cycles the two bounded
-  pages. Added storage is appended after the existing EWRAM layout so probe
-  and downstream state addresses remain stable. Label lifetime: the registry
+  pages. Built-in slots are ID-indexed, so any public built-in initializer
+  may run first while sparse/full introspection and rendering remain in stable
+  ID order 1-9 (Weather/Fog stay rows 1/2); exact duplicate initialization is
+  a successful no-op; contributors remain append-only on their separate page.
+  Added storage is appended after the existing EWRAM
+  layout so probe and downstream state addresses remain stable. Label lifetime:
+  the registry
   only ever stores the pointer
   (`sContributorActions[sContributorActionCount] = *action`), never copies
   bytes; the contract
@@ -84,10 +89,20 @@ python3 tools/gba-playtest/gba_playtest.py verify \
   reentrancy guard (`DebugTools_OpenHub()` called three times in a row:
   first `DEBUGTOOLS_OK`, second/third `DEBUGTOOLS_ERR_ALREADY_ACTIVE`,
   `hubOpenCount` stays 1).
+- Contributor submenus use the public
+  `DebugTools_QueueSubmenuTransition`/`DebugTools_ReturnToHubAfterMenuEnd`
+  contract. The lifecycle host test drives a real registered contributor
+  callback returning ordinary `MENU_ACT_END`, proves the hub does not rewind
+  early, runs the real submenu `MenuDef::onEnd`, and repeats the bounded
+  lifecycle 64 times before proving final cleanup restores the original
+  allocator baseline. A separate four-process test makes each public built-in
+  initializer the first caller and proves stable IDs/rows plus contributor
+  capacity.
 - Evidence command: `python3 -m unittest discover -s tools/gba-playtest/tests -v`
-  -> `Ran 196 tests ... OK (skipped=1)` (the one skip is the *legacy*
-  agbcc-toolchain-dependent save-compat suite, unrelated to this item --
-  see "DONE evidence" below).
+  -> `Ran 448 tests ... OK (skipped=2)`. The two optional starter-feature
+  live tests skip when `STARTER_HOOK_ROM`/`STARTER_HOOK_NEGATIVE_ROM` are
+  unset; the corresponding positive/negative ROM scenarios passed through
+  `expansion-modern-linker-check` (see "DONE evidence" below).
 
 ### 2. Title/map/prep entry points: debug-safe, release-inert, release+behavior negatives
 - Title/map hotkeys and their compile-time collision guards, disabled-path
@@ -429,7 +444,31 @@ python3 tools/gba-playtest/gba_playtest.py capture \
   --rom build/expansion-modern/debug/aapcs/fireemblem8.gba \
   --scenario tools/gba-playtest/scenarios/debugtools-timer-freeze-modern-debug.json \
   -o tools/gba-playtest/fingerprints/debugtools-timer-freeze-modern-debug.json
+
+python3 tools/gba-playtest/gba_playtest.py capture \
+  --rom build/expansion-modern/debug/aapcs/fireemblem8.gba \
+  --scenario tools/gba-playtest/scenarios/debugtools-ch4-prep-launch-modern-debug.json \
+  --sram-image build/expansion-modern/debug/aapcs/debugtools-fixtures/debugtools-current.sav \
+  -o tools/gba-playtest/fingerprints/debugtools-ch4-prep-launch-modern-debug.json
 ```
+
+The registry-lifecycle follow-up re-captured these reviewed oracle changes:
+
+- title hub frame 630: `c01548bf8c87ebaf` -> `23ac325083e916f8`;
+- title hub frame 680: `03ccf4dbe307795a` -> `25590613f1befdb5`;
+- Ch4 launcher's shared title-hub frame 630:
+  `c01548bf8c87ebaf` -> `23ac325083e916f8`;
+- timer checkpoint frame 1450:
+  `titleIdleTimerSample 0x00000111` -> `0x00000110`.
+
+These were investigated before capture. A clean `fbe047ece` worktree, with
+only the necessary `Title_IDLE` pending-request timing fix applied so the
+scenario could finish, reproduced both title-hub hashes and the one-frame
+timer value exactly. The visual drift therefore predates this follow-up.
+The timer delta is the intended one-yield allocator cleanup: session ownership
+remains active until the old menu's text allocation is safely rewound. The
+Ch4 scenario uses the same title-hub frame prefix and therefore observes the
+same reviewed frame-630 hash. No semantic probe was removed or weakened.
 
 Two scenario *source* files (not just fingerprints) also needed address
 corrections for the same reason (`debugtools-map-hub-modern-debug.json`'s
@@ -454,30 +493,29 @@ clean afterward (see "DONE evidence").
 
 ## DONE evidence
 
-### Host tests (full suite; 196 debugtools-relevant + other pre-existing gba-playtest tests)
+### Host tests (full gba-playtest suite)
 
 ```
 $ python3 -m unittest discover -s tools/gba-playtest/tests -v
 ...
-Ran 196 tests in ~105-120s
-OK (skipped=1)
+Ran 448 tests in 184.159s
+OK (skipped=2)
 ```
 
-The one skip: `SaveCompatScenarioTests_legacy.setUpClass` --
-`skipped "ROM not built for 'legacy': .../fireemblem8.gba"`. This is the
-*legacy* (agbcc) archival ROM, unrelated to this closure's scope
-(modern-build-only per this task's WHERE); `./scripts/quickstart.sh --legacy`
-requires interactive `sudo apt` package installation unavailable
-non-interactively in this sandbox (confirmed: it stopped at
-`sudo: a password is required`). This is an environment limitation, not a
-silently-skipped debugtools requirement -- every debugtools-focused host
-test class ran and passed.
+The two skips are optional starter-feature live tests whose
+`STARTER_HOOK_ROM`/`STARTER_HOOK_NEGATIVE_ROM` environment variables were not
+set. Their corresponding positive/negative runtime scenarios passed through
+the full modern linker gate below. Every debugtools-focused host test ran.
 
 ### Modern debug/release build + link
 
 ```
-$ make expansion-modern-rom PREFIX=arm-none-eabi- MODERN_CONFIG=debug   -> exit 0, "Modern ROM ready"
-$ make expansion-modern-rom PREFIX=arm-none-eabi- MODERN_CONFIG=release -> exit 0, "Modern ROM ready"
+$ make expansion-modern-linker-check MODERN_CONFIG=debug MODERN_ABI=aapcs -j1
+  -> exit 0, "Modern expansion linker checks passed"
+$ make
+  -> exit 0, release ROM boot-check passed
+$ make legacy -j$(nproc)
+  -> exit 0, "Archival legacy build complete"
 ```
 
 Release symbol omission (`arm-none-eabi-nm` on the linked release ELF):
@@ -512,6 +550,20 @@ scenario and passes; the one remaining intentional skip
 (`debugtools-timer-check` release) is documented dead-code-in-release, not
 a silent pass.
 
+### Budget and localization profiles
+
+```
+$ make expansion-modern-budget MODERN_CONFIG=debug MODERN_ABI=aapcs -j1
+$ make expansion-modern-budget-check MODERN_CONFIG=debug MODERN_ABI=aapcs -j1
+  -> check passed: reports/linker-budget/modern-debug.json
+$ make expansion-modern-localization-profile-en-ja-zh-hans-qps MODERN_CONFIG=debug MODERN_ABI=aapcs -j1
+  -> 32 MiB QPS/CJK profile ROM ready
+$ make expansion-modern-localization-runtime-multi-check MODERN_CONFIG=debug MODERN_ABI=aapcs -j1
+  -> QPS multi-locale runtime check passed
+$ make expansion-modern-localization-runtime-cjk-check MODERN_CONFIG=debug MODERN_ABI=aapcs -j1
+  -> all four CJK runtime fingerprints passed
+```
+
 ### Artifact guard / copyright
 
 ```
@@ -528,13 +580,11 @@ $ git diff --name-only -- '*.c' '*.h' | xargs -I{} git diff -- {} | grep -n '^\+
 (no output -- no added C++-style comments in any changed C source/header)
 ```
 
-### Working tree / push
+### Working tree / commit
 
 ```
 $ git status --short           # clean after commit
 $ git log --oneline -1         # HEAD == this closure's commit
-$ git ls-remote --heads origin agent/issues11-13-runtime   # SHA == HEAD
 ```
 
-(Exact SHAs recorded at commit time; see the commit trailer/push output in
-the session transcript for this task.)
+(Exact SHA recorded at commit time; no push is part of this follow-up.)
