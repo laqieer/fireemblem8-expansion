@@ -24,6 +24,7 @@
 #include "global.h"
 #include "uimenu.h"
 #include "expansion_debugtools.h"
+#include "debugtools_internal.h"
 #include "save_format.h"
 
 #define CHECK(cond, msg) \
@@ -42,12 +43,14 @@ extern void DebugToolsHostStub_SetFakeUnit(int present, int curHp, int maxHp);
 extern void DebugToolsHostStub_SetFakeConvoy(int count, int full);
 extern void DebugToolsHostStub_ClearFakeFlags(void);
 extern void DebugToolsHostStub_SetFakeSaveCompatState(enum SaveCompatState state);
+extern void DebugToolsHostStub_RunPendingTransition(void);
 
 extern struct MenuDef CONST_DATA gDebugToolsUnitMenuDef;
 extern struct MenuDef CONST_DATA gDebugToolsConvoyMenuDef;
 extern struct MenuDef CONST_DATA gDebugToolsFlagMenuDef;
 extern struct MenuDef CONST_DATA gDebugToolsRngMenuDef;
 extern struct MenuDef CONST_DATA gDebugToolsSaveStateMenuDef;
+extern struct MenuDef CONST_DATA gDebugToolsHubMenuDef;
 
 int main(void)
 {
@@ -57,6 +60,9 @@ int main(void)
     /* --- Registration: five actions, ids 5-9, deterministic order. ---- */
     DebugTools_RegisterExtendedToolActions();
     CHECK(DebugTools_GetRegisteredCount() == 5, "expected exactly 5 extended tool actions registered");
+    CHECK(DebugTools_OpenHub() == DEBUGTOOLS_OK, "opening the tools-focused hub must succeed");
+    CHECK(gDebugToolsToolsHostStub_LastMenuDef == &gDebugToolsHubMenuDef,
+          "the initial menu must be the real debug hub");
 
     action = DebugTools_GetRegisteredAction(0);
     CHECK(action != NULL && action->id == 5 && strcmp(action->label, "Unit Inspect") == 0, "action 0 must be Unit Inspect (id 5)");
@@ -80,6 +86,12 @@ int main(void)
     action = DebugTools_GetRegisteredAction(0);
     rc = action->onSelected(NULL, NULL);
     CHECK(rc == CLOSE_HUB_FLAGS, "Unit Inspect onSelected must close the hub");
+    CHECK(gDebugToolsToolsHostStub_LastMenuDef == &gDebugToolsHubMenuDef,
+          "Unit Inspect must not allocate its submenu before the hub ends");
+    gDebugToolsHubMenuDef.onEnd(NULL);
+    CHECK(gDebugToolsToolsHostStub_LastMenuDef == &gDebugToolsHubMenuDef,
+          "hub onEnd must only schedule the Unit submenu transition");
+    DebugToolsHostStub_RunPendingTransition();
     CHECK(gDebugToolsToolsHostStub_LastMenuDef == &gDebugToolsUnitMenuDef, "Unit Inspect must open gDebugToolsUnitMenuDef");
     CHECK(gDebugToolsProbe.unitInspectTargetFound == 1, "valid target must set unitInspectTargetFound");
     CHECK(gDebugToolsProbe.unitInspectLastCurHp == 5, "inspect must sample curHP");
@@ -95,12 +107,19 @@ int main(void)
     CHECK(gDebugToolsProbe.unitHealTransactionCount == 1, "confirming heal on a valid target must apply exactly one transaction");
     CHECK(DebugTools_GetAssertFailureCount() == 0, "healing a valid target must never record an assert failure");
 
+    gDebugToolsUnitMenuDef.onEnd(NULL);
+    DebugToolsHostStub_RunPendingTransition();
+    CHECK(gDebugToolsToolsHostStub_LastMenuDef == &gDebugToolsHubMenuDef,
+          "Unit submenu onEnd must return to the hub after the deferred transition");
+
     /* --- Invalid target: inspect reports not-found, confirm is a safe,
      * logged, assert-recorded no-op -- never a crash, never a silent
      * mutation of an invalid pointer. */
     DebugToolsHostStub_SetFakeUnit(0, 0, 0);
     rc = DebugTools_GetRegisteredAction(0)->onSelected(NULL, NULL);
     (void)rc;
+    gDebugToolsHubMenuDef.onEnd(NULL);
+    DebugToolsHostStub_RunPendingTransition();
     CHECK(gDebugToolsProbe.unitInspectTargetFound == 0, "missing target must clear unitInspectTargetFound");
     CHECK(gDebugToolsProbe.unitInspectLastCurHp == 0, "missing target must sample curHP as 0");
 
@@ -115,11 +134,16 @@ int main(void)
         CHECK(DebugTools_GetLastAssertCode() == DEBUGTOOLS_ASSERT_UNIT_TARGET_INVALID, "the recorded assert code must be DEBUGTOOLS_ASSERT_UNIT_TARGET_INVALID");
     }
 
+    gDebugToolsUnitMenuDef.onEnd(NULL);
+    DebugToolsHostStub_RunPendingTransition();
+
     /* ================= 2. Convoy inspect/add ========================= */
 
     DebugToolsHostStub_SetFakeConvoy(3, 0);
     rc = DebugTools_GetRegisteredAction(1)->onSelected(NULL, NULL);
     CHECK(rc == CLOSE_HUB_FLAGS, "Convoy Inspect onSelected must close the hub");
+    gDebugToolsHubMenuDef.onEnd(NULL);
+    DebugToolsHostStub_RunPendingTransition();
     CHECK(gDebugToolsToolsHostStub_LastMenuDef == &gDebugToolsConvoyMenuDef, "Convoy Inspect must open gDebugToolsConvoyMenuDef");
     CHECK(gDebugToolsProbe.convoyLastItemCount == 3, "inspect must sample the convoy item count");
     CHECK(gDebugToolsProbe.convoyAddTransactionCount == 0, "inspect alone must never apply an add transaction");
@@ -128,9 +152,14 @@ int main(void)
     CHECK(rc == CLOSE_HUB_FLAGS, "Convoy confirm must close its submenu");
     CHECK(gDebugToolsProbe.convoyAddTransactionCount == 1, "confirming add with room available must apply exactly one transaction");
 
+    gDebugToolsConvoyMenuDef.onEnd(NULL);
+    DebugToolsHostStub_RunPendingTransition();
+
     /* --- Full convoy: confirm must be a safe, logged no-op. ----------- */
     DebugToolsHostStub_SetFakeConvoy(100, 1);
     DebugTools_GetRegisteredAction(1)->onSelected(NULL, NULL);
+    gDebugToolsHubMenuDef.onEnd(NULL);
+    DebugToolsHostStub_RunPendingTransition();
     {
         u32 addCountBefore = gDebugToolsProbe.convoyAddTransactionCount;
 
@@ -139,6 +168,9 @@ int main(void)
         CHECK(gDebugToolsProbe.convoyAddTransactionCount == addCountBefore, "confirming add on a full convoy must never apply a transaction");
     }
 
+    gDebugToolsConvoyMenuDef.onEnd(NULL);
+    DebugToolsHostStub_RunPendingTransition();
+
     /* ================= 3. Flag/chapter/event state =================== */
 
     DebugToolsHostStub_ClearFakeFlags();
@@ -146,6 +178,8 @@ int main(void)
 
     rc = DebugTools_GetRegisteredAction(2)->onSelected(NULL, NULL);
     CHECK(rc == CLOSE_HUB_FLAGS, "Flag/Chapter Inspect onSelected must close the hub");
+    gDebugToolsHubMenuDef.onEnd(NULL);
+    DebugToolsHostStub_RunPendingTransition();
     CHECK(gDebugToolsToolsHostStub_LastMenuDef == &gDebugToolsFlagMenuDef, "Flag/Chapter Inspect must open gDebugToolsFlagMenuDef");
     CHECK(gDebugToolsProbe.chapterIndexSample == 2, "inspect must sample gPlaySt.chapterIndex");
     CHECK(gDebugToolsProbe.debugFlagLastValue == 0, "a freshly cleared debug flag must sample as 0");
@@ -166,10 +200,15 @@ int main(void)
     CHECK(gDebugToolsProbe.debugFlagToggleCount == 2, "a second confirm must apply a second transaction");
     CHECK(gDebugToolsProbe.debugFlagLastValue == 0, "toggling a set flag must clear it back");
 
+    gDebugToolsFlagMenuDef.onEnd(NULL);
+    DebugToolsHostStub_RunPendingTransition();
+
     /* ================= 4. RNG inspect/control ========================= */
 
     rc = DebugTools_GetRegisteredAction(3)->onSelected(NULL, NULL);
     CHECK(rc == CLOSE_HUB_FLAGS, "RNG Inspect onSelected must close the hub");
+    gDebugToolsHubMenuDef.onEnd(NULL);
+    DebugToolsHostStub_RunPendingTransition();
     CHECK(gDebugToolsToolsHostStub_LastMenuDef == &gDebugToolsRngMenuDef, "RNG Inspect must open gDebugToolsRngMenuDef");
     CHECK(gDebugToolsProbe.rngInspectSeedSample0 == 0x1111, "inspect must sample the current seed state (fake initial seed)");
     CHECK(gDebugToolsProbe.rngReseedTransactionCount == 0, "inspect alone must never apply a reseed transaction");
@@ -178,14 +217,23 @@ int main(void)
     CHECK(rc == CLOSE_HUB_FLAGS, "RNG confirm must close its submenu");
     CHECK(gDebugToolsProbe.rngReseedTransactionCount == 1, "confirming reseed must apply exactly one transaction");
 
+    gDebugToolsRngMenuDef.onEnd(NULL);
+    DebugToolsHostStub_RunPendingTransition();
     DebugTools_GetRegisteredAction(3)->onSelected(NULL, NULL);
+    gDebugToolsHubMenuDef.onEnd(NULL);
+    DebugToolsHostStub_RunPendingTransition();
     CHECK(gDebugToolsProbe.rngInspectSeedSample0 != 0x1111, "a re-inspect after reseeding must observe a changed seed state");
+
+    gDebugToolsRngMenuDef.onEnd(NULL);
+    DebugToolsHostStub_RunPendingTransition();
 
     /* ================= 5. Save compatibility/state (read-only) ======== */
 
     DebugToolsHostStub_SetFakeSaveCompatState(SAVE_COMPAT_CURRENT);
     rc = DebugTools_GetRegisteredAction(4)->onSelected(NULL, NULL);
     CHECK(rc == CLOSE_HUB_FLAGS, "Save State Inspect onSelected must close the hub");
+    gDebugToolsHubMenuDef.onEnd(NULL);
+    DebugToolsHostStub_RunPendingTransition();
     CHECK(gDebugToolsToolsHostStub_LastMenuDef == &gDebugToolsSaveStateMenuDef, "Save State Inspect must open gDebugToolsSaveStateMenuDef");
     CHECK(gDebugToolsProbe.saveCompatLastState == (u32)SAVE_COMPAT_CURRENT, "inspect must sample the current save-compat state");
     CHECK(gDebugToolsProbe.saveCompatInspectCount == 1, "inspect must increment the inspect counter exactly once");
@@ -196,8 +244,12 @@ int main(void)
     CHECK(strcmp(gDebugToolsSaveStateMenuDef.menuItems[0].name, "Back") == 0, "save-state submenu's only item must be Back");
     CHECK(gDebugToolsSaveStateMenuDef.menuItems[0].onSelected == MenuCancelSelect, "save-state submenu Back must use MenuCancelSelect");
 
+    gDebugToolsSaveStateMenuDef.onEnd(NULL);
+    DebugToolsHostStub_RunPendingTransition();
     DebugToolsHostStub_SetFakeSaveCompatState(SAVE_COMPAT_MIGRATABLE_OLDER);
     DebugTools_GetRegisteredAction(4)->onSelected(NULL, NULL);
+    gDebugToolsHubMenuDef.onEnd(NULL);
+    DebugToolsHostStub_RunPendingTransition();
     CHECK(gDebugToolsProbe.saveCompatLastState == (u32)SAVE_COMPAT_MIGRATABLE_OLDER, "a re-inspect must resample a changed save-compat state");
     CHECK(gDebugToolsProbe.saveCompatInspectCount == 2, "a second inspect must increment the counter again");
 

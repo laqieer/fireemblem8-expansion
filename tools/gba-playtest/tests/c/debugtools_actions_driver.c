@@ -23,6 +23,7 @@
 #include "uimenu.h"
 #include "proc.h"
 #include "expansion_debugtools.h"
+#include "debugtools_internal.h"
 
 #define CHECK(cond, msg) \
     do { \
@@ -50,6 +51,7 @@ extern u8 gDebugToolsActionsHostStub_FogEffectCallCount;
 extern u8 gDebugToolsActionsHostStub_FogIdleCallCount;
 extern struct ProcCmd CONST_DATA ProcScr_DebugMonitor[];
 extern void DebugToolsHostStub_SetMonitorAlive(int alive);
+extern void DebugToolsHostStub_RunPendingTransition(void);
 
 extern int DebugMenu_WeatherDraw(struct MenuProc*, struct MenuItemProc*);
 extern u8 DebugMenu_WeatherEffect(struct MenuProc*, struct MenuItemProc*);
@@ -63,13 +65,6 @@ extern u8 DebugMenu_FogIdle(struct MenuProc*, struct MenuItemProc*);
 extern struct MenuDef CONST_DATA gDebugToolsWeatherMenuDef;
 extern struct MenuDef CONST_DATA gDebugToolsFogMenuDef;
 extern struct MenuDef CONST_DATA gDebugToolsHubMenuDef;
-
-static u8 DummyOnSelected(struct MenuProc* menu, struct MenuItemProc* item)
-{
-    (void)menu;
-    (void)item;
-    return 0;
-}
 
 static int AllZero(const void* p, size_t n)
 {
@@ -85,59 +80,35 @@ static int AllZero(const void* p, size_t n)
 
 int main(void)
 {
-    struct DebugToolsAction filler;
     const struct DebugToolsAction* got;
-    int i;
     u8 rc;
 
-    /* --- Capacity boundary, "including Chapter 2 launcher" ------------
-     * Simulate the launcher's own exactly-one-slot contribution plus six
-     * more fillers (7 total), then register Weather/Fog on top: the
-     * combined total must land at exactly DEBUGTOOLS_ACTION_MAX (9), not
-     * silently overflow past it. */
-    static const char* const fillerLabels[7] = {
-        "FastBootChapter2Sim", "D1", "D2", "D3", "D4", "D5", "D6"
-    };
+    CHECK(DebugTools_OpenHub() == DEBUGTOOLS_OK, "opening the hub must succeed");
+    CHECK(DebugTools_GetRegisteredCount() == 2,
+          "lazy initialization must register exactly Weather and Fog in this focused link");
+    CHECK(gDebugToolsActionsHostStub_StartOrphanMenuCallCount == 1,
+          "opening the hub must start exactly one hub menu");
+    CHECK(gDebugToolsActionsHostStub_LastMenuDef == &gDebugToolsHubMenuDef,
+          "the first opened menu must be the real hub");
 
-    for (i = 0; i < 7; ++i)
-    {
-        filler.id = (u16)(10 + i);
-        filler.label = fillerLabels[i];
-        filler.onSelected = DummyOnSelected;
-
-        CHECK(DebugTools_RegisterAction(&filler) == DEBUGTOOLS_OK, "filler action registration must succeed");
-    }
-    CHECK(DebugTools_GetRegisteredCount() == 7, "expected 7 filler actions registered");
-
-    DebugTools_RegisterWeatherFogActions();
-    CHECK(DebugTools_GetRegisteredCount() == 9, "Weather+Fog must bring the total to exactly DEBUGTOOLS_ACTION_MAX (9)");
-
-    got = DebugTools_GetRegisteredAction(7);
+    got = DebugTools_GetRegisteredAction(0);
     CHECK(got != NULL, "expected a registered action at index 7");
     CHECK(got->id == 2, "Weather must register with id 2");
     CHECK(strcmp(got->label, "Weather") == 0, "Weather must register with label \"Weather\"");
 
-    got = DebugTools_GetRegisteredAction(8);
+    got = DebugTools_GetRegisteredAction(1);
     CHECK(got != NULL, "expected a registered action at index 8");
     CHECK(got->id == 3, "Fog must register with id 3");
     CHECK(strcmp(got->label, "Fog") == 0, "Fog must register with label \"Fog\"");
 
     /* --- Idempotency: a repeat call must not grow the registry. ------- */
     DebugTools_RegisterWeatherFogActions();
-    CHECK(DebugTools_GetRegisteredCount() == 9, "a repeat DebugTools_RegisterWeatherFogActions call must not grow the registry");
-
-    /* --- Capacity-full boundary: one more registration past 9 must be
-     * explicitly rejected, never silently dropped or overflowing. ----- */
-    filler.id = 99;
-    filler.label = "Overflow";
-    filler.onSelected = DummyOnSelected;
-    CHECK(DebugTools_RegisterAction(&filler) == DEBUGTOOLS_ERR_CAPACITY_FULL,
-          "a 10th registration attempt must fail with DEBUGTOOLS_ERR_CAPACITY_FULL");
-    CHECK(DebugTools_GetRegisteredCount() == 9, "registered count must stay at 9 after a rejected overflow attempt");
+    CHECK(DebugTools_GetRegisteredCount() == 2,
+          "a repeat DebugTools_RegisterWeatherFogActions call must not grow the registry");
 
     /* --- Weather: MenuDef sentinel/callback wiring, DebugMonitor
      * lifecycle ownership. ---------------------------------------------- */
-    got = DebugTools_GetRegisteredAction(7);
+    got = DebugTools_GetRegisteredAction(0);
     DebugToolsHostStub_SetMonitorAlive(0);
     rc = got->onSelected(NULL, NULL);
     CHECK(rc == (MENU_ACT_SKIPCURSOR | MENU_ACT_END | MENU_ACT_SND6A | MENU_ACT_CLEAR),
@@ -145,7 +116,15 @@ int main(void)
     CHECK(gDebugToolsActionsHostStub_ProcFindCallCount == 1, "Weather onSelected must probe ProcScr_DebugMonitor exactly once");
     CHECK(gDebugToolsActionsHostStub_ProcStartCallCount == 1, "Weather onSelected must start ProcScr_DebugMonitor when none is alive");
     CHECK(gDebugToolsActionsHostStub_LastStartedScript == ProcScr_DebugMonitor, "Weather onSelected must start exactly ProcScr_DebugMonitor");
-    CHECK(gDebugToolsActionsHostStub_StartOrphanMenuCallCount == 1, "Weather onSelected must open exactly one orphan submenu");
+    CHECK(gDebugToolsActionsHostStub_StartOrphanMenuCallCount == 1,
+          "Weather onSelected must defer submenu allocation until the hub has ended");
+
+    gDebugToolsHubMenuDef.onEnd(NULL);
+    CHECK(gDebugToolsActionsHostStub_StartOrphanMenuCallCount == 1,
+          "hub onEnd must only schedule the transition, not invalidate live hub text");
+    DebugToolsHostStub_RunPendingTransition();
+    CHECK(gDebugToolsActionsHostStub_StartOrphanMenuCallCount == 2,
+          "the deferred transition must open exactly one Weather submenu");
     CHECK(gDebugToolsActionsHostStub_LastMenuDef == &gDebugToolsWeatherMenuDef,
           "Weather onSelected must open gDebugToolsWeatherMenuDef, never a hand-rolled copy");
 
@@ -161,16 +140,16 @@ int main(void)
     CHECK(gDebugToolsWeatherMenuDef.onBPress == MenuCancelSelect, "weather submenu must close on B via MenuCancelSelect, same idiom as the hub");
 
     CHECK(gDebugToolsWeatherMenuDef.onEnd != NULL, "weather MenuDef must define onEnd");
-    CHECK(DebugTools_IsHubActive() == 0, "hub must not be active before weather's onEnd reopens it");
+    CHECK(DebugTools_IsHubActive() != 0,
+          "the debug-menu session guard must stay active while the Weather submenu is open");
     gDebugToolsWeatherMenuDef.onEnd(NULL);
     CHECK(gDebugToolsActionsHostStub_ProcEndEachCallCount == 1, "weather onEnd must Proc_EndEach the monitor it started");
     CHECK(gDebugToolsActionsHostStub_LastEndEachScript == ProcScr_DebugMonitor, "weather onEnd must Proc_EndEach exactly ProcScr_DebugMonitor");
-    CHECK(DebugTools_IsHubActive() != 0, "weather onEnd must reopen the hub");
-    /* DebugTools_OpenHub() (the real function, src/debugtools_registry.c)
-     * itself calls StartOrphanMenu(&gDebugToolsHubMenuDef) -- so the
-     * reopen bumps the same instrumented call count/last-def capture
-     * this driver already uses for the submenus themselves. */
-    CHECK(gDebugToolsActionsHostStub_StartOrphanMenuCallCount == 2, "weather's onEnd reopening the hub must call StartOrphanMenu exactly once more");
+    CHECK(gDebugToolsActionsHostStub_StartOrphanMenuCallCount == 2,
+          "weather onEnd must defer hub allocation until its own text is dead");
+    DebugToolsHostStub_RunPendingTransition();
+    CHECK(gDebugToolsActionsHostStub_StartOrphanMenuCallCount == 3,
+          "weather's deferred onEnd transition must reopen the hub exactly once");
     CHECK(gDebugToolsActionsHostStub_LastMenuDef == &gDebugToolsHubMenuDef, "weather's onEnd must reopen the real hub MenuDef, not some other menu");
 
     /* A second call must be a no-op for the monitor teardown (ownership
@@ -182,16 +161,21 @@ int main(void)
     gDebugToolsWeatherMenuDef.onEnd(NULL);
     CHECK(gDebugToolsActionsHostStub_ProcEndEachCallCount == 1,
           "a second weather onEnd call must not re-issue Proc_EndEach (ownership already released)");
-    CHECK(gDebugToolsActionsHostStub_StartOrphanMenuCallCount == 2,
+    CHECK(gDebugToolsActionsHostStub_StartOrphanMenuCallCount == 3,
           "a second weather onEnd call must not reopen an already-active hub");
 
     /* --- Fog: MenuDef sentinel/callback wiring, no DebugMonitor
      * dependency at all. --------------------------------------------- */
-    got = DebugTools_GetRegisteredAction(8);
+    got = DebugTools_GetRegisteredAction(1);
     rc = got->onSelected(NULL, NULL);
     CHECK(rc == (MENU_ACT_SKIPCURSOR | MENU_ACT_END | MENU_ACT_SND6A | MENU_ACT_CLEAR),
           "Fog onSelected must return SKIPCURSOR|END|SND6A|CLEAR to close the hub");
-    CHECK(gDebugToolsActionsHostStub_StartOrphanMenuCallCount == 3, "Fog onSelected must open exactly one more orphan submenu");
+    CHECK(gDebugToolsActionsHostStub_StartOrphanMenuCallCount == 3,
+          "Fog onSelected must defer its submenu until the hub has ended");
+    gDebugToolsHubMenuDef.onEnd(NULL);
+    DebugToolsHostStub_RunPendingTransition();
+    CHECK(gDebugToolsActionsHostStub_StartOrphanMenuCallCount == 4,
+          "Fog's deferred transition must open exactly one more orphan submenu");
     CHECK(gDebugToolsActionsHostStub_LastMenuDef == &gDebugToolsFogMenuDef,
           "Fog onSelected must open gDebugToolsFogMenuDef, never a hand-rolled copy");
 
@@ -207,6 +191,11 @@ int main(void)
     gDebugToolsFogMenuDef.onEnd(NULL);
     CHECK(gDebugToolsActionsHostStub_ProcEndEachCallCount == 1,
           "fog onEnd must never touch ProcScr_DebugMonitor/Proc_EndEach (no such dependency)");
+    CHECK(gDebugToolsActionsHostStub_StartOrphanMenuCallCount == 4,
+          "fog onEnd must defer hub allocation until its own text is dead");
+    DebugToolsHostStub_RunPendingTransition();
+    CHECK(gDebugToolsActionsHostStub_StartOrphanMenuCallCount == 5,
+          "fog's deferred onEnd transition must reopen the hub exactly once");
 
     /* Weather and Fog's MenuDefs must never be aliases of each other or
      * of the hub's own item storage -- two genuinely separate bounded

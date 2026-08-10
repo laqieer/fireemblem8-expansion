@@ -256,6 +256,26 @@ class DebugToolsLocalizationTests(unittest.TestCase):
                         allocation_pixels,
                     )
 
+    def test_maximum_hub_rows_and_qps_labels_fit_allocator_budget(self):
+        action_max = self._constant("DEBUGTOOLS_ACTION_MAX")
+        menu_width = self._constant("DEBUGTOOLS_MENU_WIDTH_TILES")
+        status_width = self._constant("DEBUGTOOLS_STATUS_TEXT_WIDTH_TILES")
+        capacity = self._constant("DEBUGTOOLS_TEXT_ALLOC_CAPACITY")
+
+        expected_budget = (action_max + 1) * (menu_width - 1) + status_width
+        self.assertEqual(action_max, 9)
+        self.assertEqual(expected_budget, 204)
+        self.assertLessEqual(expected_budget, capacity)
+
+        qps = self.loaded_catalog.strings_for("qps-ploc")
+        allocation_pixels = (menu_width - 1) * 8
+        for key in sorted({"framework.back", *self.ACTION_LABELS.values()}):
+            with self.subTest(key=key):
+                self.assertLessEqual(
+                    self._pixel_width(qps[key], "qps-ploc"),
+                    allocation_pixels,
+                )
+
     def test_every_generated_debug_status_row_fits_actual_surface_geometry(self):
         status_width_tiles = self._constant(
             "DEBUGTOOLS_STATUS_TEXT_WIDTH_TILES"

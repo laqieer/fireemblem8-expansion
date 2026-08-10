@@ -30,6 +30,7 @@
 #include "bmsave.h"
 #include "save_format.h"
 #include "expansion_debugtools.h"
+#include "debugtools_internal.h"
 
 /* --- Hardware/menu stand-ins (mirrors debugtools_actions_host_stubs.c) - */
 
@@ -37,6 +38,8 @@ struct KeyStatusBuffer gDebugToolsToolsTestKeyStatus = {0};
 struct KeyStatusBuffer * CONST_DATA gKeyStatusPtr = &gDebugToolsToolsTestKeyStatus;
 
 struct LCDControlBuffer gLCDControlBuffer = {0};
+static struct Font sDebugToolsToolsTestFont = {0};
+struct Font* gActiveFont = &sDebugToolsToolsTestFont;
 
 static u16 sToolsStubBgMap[32 * 32];
 
@@ -74,6 +77,8 @@ u8 MenuCancelSelect(struct MenuProc* menu, struct MenuItemProc* item)
 
 int gDebugToolsToolsHostStub_StartOrphanMenuCallCount = 0;
 const struct MenuDef* gDebugToolsToolsHostStub_LastMenuDef = NULL;
+static struct Proc sDebugToolsToolsTransitionProc;
+static ProcPtr sDebugToolsToolsPendingTransition;
 
 struct MenuProc* StartOrphanMenu(const struct MenuDef* def)
 {
@@ -82,9 +87,30 @@ struct MenuProc* StartOrphanMenu(const struct MenuDef* def)
     return NULL;
 }
 
+ProcPtr Proc_Start(const struct ProcCmd* script, ProcPtr parent)
+{
+    (void)parent;
+
+    if (script == gProcScr_DebugToolsMenuTransition)
+    {
+        sDebugToolsToolsPendingTransition = &sDebugToolsToolsTransitionProc;
+        return &sDebugToolsToolsTransitionProc;
+    }
+
+    return (ProcPtr)1;
+}
+
+void DebugToolsHostStub_RunPendingTransition(void)
+{
+    ProcPtr proc = sDebugToolsToolsPendingTransition;
+
+    sDebugToolsToolsPendingTransition = NULL;
+    DebugTools_RunMenuTransition(proc);
+}
+
 /* This driver links the real src/debugtools_registry.c alongside
- * src/debugtools_tools.c so DebugTools_OpenHub() (called from each tool
- * submenu's real onEnd) is the real implementation -- but neither the
+ * src/debugtools_tools.c so the shared deferred return-to-hub path is the
+ * real implementation -- but neither the
  * real launcher (src/debugtools_launcher.c) nor the real Weather/Fog
  * adapter (src/debugtools_actions.c) is linked here (out of scope for
  * this tools-focused driver), so their lazy-registration call sites still

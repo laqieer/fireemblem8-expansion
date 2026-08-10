@@ -86,9 +86,9 @@ Fits the existing `MenuProc`/`MenuItemDef` engine (`include/uimenu.h`,
 - `MENU_ITEM_MAX` is 11, and `StartMenuCore` has **no bounds check** when it
   appends to `MenuProc::menuItems` -- writing a 12th live item would corrupt
   adjacent `MenuProc` fields. The hub menu therefore reserves one live slot
-  for a Back/Exit entry, leaving exactly `DEBUGTOOLS_ACTION_MAX` (9) slots
-  for contributor actions, with 1 of the 11 total live slots kept as an
-  untouched safety margin.
+  for a Back/Exit entry, leaving exactly `DEBUGTOOLS_ACTION_MAX` (9) total
+  action slots, with 1 of the 11 total live slots kept as an untouched
+  safety margin. The shipped profile fills those nine slots with built-ins.
 - Contributors register through `DebugTools_RegisterAction()` only -- they
   never edit an engine-owned `const MenuItemDef` table. A RAM-resident
   `MenuItemDef` adapter (`sHubMenuItemDefs`, sized
@@ -96,8 +96,11 @@ Fits the existing `MenuProc`/`MenuItemDef` engine (`include/uimenu.h`,
   the registry every time the hub opens. Built-in actions, Back/Confirm rows,
   transfer progress, and status diagnostics resolve stable expansion message
   IDs for `en`/`ja`/`zh-Hans`; CJK diagnostics use the UTF-8-aware system text
-  renderer. Contributor actions keep the original raw-string ABI and rendering
-  path unchanged.
+  renderer. IDs 1-9 are reserved built-in identities and can only enter
+  through the private built-in registration path, so localized label lookup
+  cannot be selected by a contributor-controlled ID. Contributor IDs are
+  explicitly limited to 10-65535 and keep the original raw-string
+  ABI/rendering path.
 - The array is fully zeroed before every rebuild, so the first unused slot
   (and everything after it) reads as an all-zero `MenuItemsEnd` -- exactly
   what stops `StartMenuCore`'s scan loop. The reserved Back entry is always
@@ -123,8 +126,10 @@ a registration failure is never silently dropped:
 | `DEBUGTOOLS_ERR_ALREADY_ACTIVE` | `DebugTools_OpenHub()` called while the hub is already open |
 | `DEBUGTOOLS_ERR_ID_INVALID` (closure) | `action->id == 0` (reserved/uninitialized-looking sentinel; every shipped action uses ids 1-9) |
 | `DEBUGTOOLS_ERR_LABEL_INVALID` (closure) | `label` is empty (`""`) or longer than `DEBUGTOOLS_LABEL_MAX_LENGTH` (24) |
+| `DEBUGTOOLS_ERR_ID_RESERVED` | Public contributor attempted to claim built-in ID 1-9; valid contributor IDs are 10-65535 |
+| `DEBUGTOOLS_ERR_TEXT_CAPACITY` | The active font cannot fit one maximum hub/status allocation |
 
-Both closure codes are appended at the **end** of `enum DebugToolsResult` so
+All added closure codes are appended at the **end** of `enum DebugToolsResult` so
 every pre-existing named value keeps its original integer -- several
 scenario JSON files probe `gDebugToolsProbe.lastRegisterResult` by raw
 integer, so no existing value may ever be renumbered. Label validation does
@@ -142,6 +147,42 @@ accepted, one character over is rejected).
 `DebugTools_GetLastRegistrationResult()` always mirrors the most recent call.
 `gDebugToolsProbe.lastRegisterResult` mirrors the same value for playtest
 probes.
+
+Built-ins are initialized exactly once, in menu/ID order 1-9, before a
+valid public contributor registration is admitted. A contributor call made
+before the first hub open therefore cannot occupy a built-in slot and later
+acquire that built-in's localized label while retaining a different
+callback. In the shipped profile all nine action slots are already
+occupied; a valid contributor ID receives the ordinary
+`DEBUGTOOLS_ERR_CAPACITY_FULL` result unless a custom profile deliberately
+removes built-ins or adds pagination/capacity.
+
+## Text allocator lifecycle
+
+`StartMenuCore()` calls `InitText(&item->text, rect.w - 1)` for every live
+row, and `InitText` monotonically advances the active font's
+`chr_counter`. The debug hub used to start each submenu before the hub had
+ended and reopen a fresh hub from the submenu's `onEnd`; repeated
+hub→submenu→hub cycles therefore accumulated allocations indefinitely.
+
+Each transition captures the current font and the first live menu row's
+`Text::chr_position` (the allocation baseline) in its Proc fields. Selecting
+a submenu starts `gProcScr_DebugToolsMenuTransition`; Back starts the same
+helper from `onEnd`. Its leading `PROC_YIELD` guarantees the old `MenuProc`
+and child `MenuItemProc::text` objects have ended before the captured counter
+is restored and the next menu allocates. Final Back uses the same deferred
+path before releasing the session guard. No live Text is rewound early, and
+the title/map/prep input guard remains active across submenus and the
+one-frame transition.
+
+The default BG font has 448 allocator columns available from tile `0x80`
+through tile index `0x3FF` (two 8x8 tiles per text column). A maximum hub
+uses `10 * 18 = 180` columns for nine actions plus Back; the largest CJK
+status line adds 24, for a checked worst-case budget of 204. Opening is
+rejected with `DEBUGTOOLS_ERR_TEXT_CAPACITY` if the current baseline plus
+that budget would exceed the active font's capacity. Host tests execute 64
+maximum hub→submenu→hub cycles and prove every reopened hub returns to the
+same 204-column peak and final cleanup restores the original baseline.
 
 ### Introspection
 
@@ -214,10 +255,11 @@ returns 0 in a release build.
 ### Reentrancy guard: a repeated hotkey pulse can never spawn a second hub
 
 `DebugTools_OpenHub()` is the single authoritative reentrancy guard for the
-whole hub-entry surface: it checks `sHubActive` at the very top, before any
-side effect (builtin-action registration, menu-item construction,
-diagnostics, `hubOpenCount` increment, or `StartOrphanMenu()`), and returns
-`DEBUGTOOLS_ERR_ALREADY_ACTIVE` as a pure no-op if the hub is already open.
+whole hub-entry surface: it checks the complete debug-menu session state at
+the very top, before any side effect (built-in initialization, menu-item
+construction, diagnostics, `hubOpenCount` increment, or
+`StartOrphanMenu()`), and returns `DEBUGTOOLS_ERR_ALREADY_ACTIVE` as a pure
+no-op if the hub, a submenu, or an allocator transition is already active.
 
 This matters because `DebugTools_TitleHotkeyCheck()`'s edge-detection only
 requires the mask to be *newly completed* -- releasing and re-pressing
@@ -276,21 +318,19 @@ documented above, so no new busy-check is needed at either call site:
 - Both compile to an empty, explicit disabled/release stub -- no key read,
   no `DebugTools_OpenHub()` call -- when the subsystem is disabled, exactly
   like `DebugTools_TitleHotkeyCheck()`.
-- Registration remains idempotent regardless of which phase opens the hub:
-  `DebugTools_OpenHub()` calls `DebugTools_RegisterBuiltinActions()` then
-  `DebugTools_RegisterWeatherFogActions()`, both of which return
-  `DEBUGTOOLS_ERR_DUPLICATE` (not a silent no-op, and never a second
-  registration) on every subsequent hub open. Total registered actions stay
-  well under the fixed capacity of 9 (Chapter 2 launcher + Weather + Fog +
-  Back = 4 hub menu items today).
+- Registration remains deterministic regardless of which phase opens the
+  hub: the registry runs the built-in initialization sequence exactly once,
+  in final menu order. Subsequent hub opens do not re-register or perturb
+  `lastRegisterResult`; total registered actions remain exactly the fixed
+  capacity of 9.
 
 ## Weather/Fog debug actions (slice 2)
 
-`src/debugtools_actions.c` is a new file that registers two built-in
-actions, id `2` ("Weather") and id `3` ("Fog"), through the same public
-`DebugTools_RegisterAction()` API any contributor action uses -- no direct
-edits to `gDebugToolsHubMenuDef`/`sHubMenuItemDefs`, `src/bmdebug.c`,
-`src/menu_def.c`, or `src/uidebug.c`.
+`src/debugtools_actions.c` registers two built-in actions, id `2`
+("Weather") and id `3` ("Fog"), through the internal built-in path; the
+public API rejects those reserved IDs, keeping their label/callback identity
+immutable to contributors -- no direct edits to `gDebugToolsHubMenuDef`/
+`sHubMenuItemDefs`, `src/bmdebug.c`, `src/menu_def.c`, or `src/uidebug.c`.
 
 Because registry actions are `onSelected`-only (a single callback fired when
 the hub's own menu selects that row), and the dormant `DebugMenu_Weather*`/
@@ -303,8 +343,8 @@ reuses the existing dormant `DebugMenu_WeatherDraw`/`DebugMenu_WeatherIdle`
 (or `DebugMenu_FogDraw`/`DebugMenu_FogIdle`) function pointers directly --
 the dormant code itself is never edited, copied, or reimplemented. Each
 submenu adds its own `B`/Back handling (`onCancel`/the submenu's own "Back"
-row) that closes the submenu and reopens the hub via `DebugTools_OpenHub()`,
-matching every other hub submenu's `onEnd` convention.
+row). Its `onEnd` schedules the shared one-yield transition, which reclaims
+text only after the submenu dies and then reopens the hub.
 
 ### Two proven, honest, pre-existing dormant-code/data limitations
 
@@ -789,8 +829,8 @@ logic is bypassed.
 
 ### Hub menu ordering: Weather/Fog keep their pre-existing row indices
 
-`DebugTools_RegisterChapter4PrepAction()` is registered from its own call in
-`DebugTools_OpenHub()`, deliberately **after** `DebugTools_RegisterWeatherFogActions()`
+`DebugTools_RegisterChapter4PrepAction()` is invoked from the one-shot
+built-in initializer, deliberately **after** `DebugTools_RegisterWeatherFogActions()`
 and **not** bundled into `DebugTools_RegisterBuiltinActions()` (which
 continues to register only the Chapter 2 launcher, completely unchanged).
 An earlier revision of this closure bundled both launchers into one
@@ -934,9 +974,9 @@ translation unit defines exactly the six public entry points, no
 ## Five bounded validated tools (issue #11 closure)
 
 Issue #11 closure requirement 5. Each is a single registry action
-(`src/debugtools_tools.c`) registered through the same public
-`DebugTools_RegisterAction()` API every other action uses -- no direct
-edits to `gDebugToolsHubMenuDef`/`sHubMenuItemDefs`. Each samples/displays
+(`src/debugtools_tools.c`) registered through the internal built-in path
+(ids 5-9) -- no direct edits to `gDebugToolsHubMenuDef`/
+`sHubMenuItemDefs`. Each samples/displays
 read-only state immediately on selection (logged via
 `DEBUGTOOLS_LOG_*_INSPECT`), then -- for the four that can mutate anything
 -- opens a bounded two-item "Confirm `<action>`" / "Back" submenu (the
@@ -1266,16 +1306,19 @@ part of the shipped feature.
 ## Safety boundaries / extension rules
 
 - Contributors add debug actions **exclusively** through
-  `DebugTools_RegisterAction()`. Never edit `gDebugToolsHubMenuDef` or
+  `DebugTools_RegisterAction()` using IDs 10-65535; IDs 1-9 are reserved
+  built-ins and return `DEBUGTOOLS_ERR_ID_RESERVED`. Never edit
+  `gDebugToolsHubMenuDef` or
   `sHubMenuItemDefs` directly, and never add a second title-screen (or any
   other) hotkey call site -- this slice's one entry path is a hard
   constraint, not a starting convention.
 - `src/bmdebug.c`, `src/uidebug.c`, and `src/menu_def.c` remain untouched and
   unreachable in this slice. No save/gold/unit/convoy/flag/event/RNG editors
   are exposed.
-- No proc is ever torn down/recreated by this feature (no
+- No gameplay proc is ever torn down/recreated by this feature (no
   `Proc_EndEach`/`Proc_Start` on `gProcScr_GameControl`, no `gProc_BMapMain`
-  redirect) -- the hub only arms/consumes a pending-request flag, and both
+  redirect). The only added proc is the bounded one-yield menu-transition
+  helper described above. The hub only arms/consumes a pending-request flag, and both
   `Title_IDLE`'s `Proc_Break` and `GameControl_PostIntro`'s `Proc_Goto` act
   on procs that already exist and keep running their own ordinary
   lifecycle.

@@ -5,6 +5,7 @@
 #include "bmunit.h"
 #include "playerphase.h"
 #include "expansion_debugtools.h"
+#include "debugtools_internal.h"
 
 /*
  * Lifecycle-safe deterministic Chapter 2 launcher.
@@ -80,7 +81,7 @@ void DebugTools_RegisterBuiltinActions(void)
      * this call, from DebugTools_RegisterWeatherFogActions) stay exactly
      * where every pre-existing scenario's own input script already
      * expects them. */
-    DebugTools_RegisterAction(&sFastBootChapter2Action);
+    DebugTools_RegisterBuiltinAction(&sFastBootChapter2Action);
 }
 
 /* Issue #11 closure: registered from its own call, deliberately *after*
@@ -92,7 +93,7 @@ void DebugTools_RegisterBuiltinActions(void)
  * own cursor-navigation input script already depends on. */
 void DebugTools_RegisterChapter4PrepAction(void)
 {
-    DebugTools_RegisterAction(&sFastBootChapter4PrepAction);
+    DebugTools_RegisterBuiltinAction(&sFastBootChapter4PrepAction);
 }
 
 void DebugTools_RequestChapter2Launch(void)

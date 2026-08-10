@@ -14,6 +14,7 @@
 #include "bmsave.h"
 #include "save_format.h"
 #include "expansion_debugtools.h"
+#include "debugtools_internal.h"
 
 #include "constants/characters.h"
 #include "constants/items.h"
@@ -252,9 +253,7 @@ EWRAM_DATA static struct MenuItemDef sUnitMenuItemDefs[3] = {{0}}; /* confirm + 
 
 static void DebugToolsUnit_OnEnd(struct MenuProc* menu)
 {
-    (void)menu;
-
-    DebugTools_OpenHub();
+    DebugTools_ReturnToHubAfterMenuEnd(menu);
 }
 
 CONST_DATA struct MenuDef gDebugToolsUnitMenuDef = {
@@ -273,7 +272,6 @@ static u8 DebugToolsUnit_ConfirmSelected(struct MenuProc* menu, struct MenuItemP
 {
     struct Unit* unit;
 
-    (void)menu;
     (void)item;
 
     unit = GetUnitFromCharId(DEBUGTOOLS_UNIT_TARGET_CHARACTER);
@@ -324,7 +322,6 @@ static u8 DebugToolsActions_UnitInspectSelected(struct MenuProc* menu, struct Me
     struct Unit* unit;
     char buf[64];
 
-    (void)menu;
     (void)item;
 
     unit = GetUnitFromCharId(DEBUGTOOLS_UNIT_TARGET_CHARACTER);
@@ -352,7 +349,7 @@ static u8 DebugToolsActions_UnitInspectSelected(struct MenuProc* menu, struct Me
     DebugToolsTools_ShowStatusLine(buf);
 
     DebugToolsUnit_BuildMenuItems();
-    StartOrphanMenu(&gDebugToolsUnitMenuDef);
+    DebugTools_QueueSubmenuTransition(menu, &gDebugToolsUnitMenuDef);
 
     return MENU_ACT_SKIPCURSOR | MENU_ACT_END | MENU_ACT_SND6A | MENU_ACT_CLEAR;
 }
@@ -367,9 +364,7 @@ EWRAM_DATA static struct MenuItemDef sConvoyMenuItemDefs[3] = {{0}};
 
 static void DebugToolsConvoy_OnEnd(struct MenuProc* menu)
 {
-    (void)menu;
-
-    DebugTools_OpenHub();
+    DebugTools_ReturnToHubAfterMenuEnd(menu);
 }
 
 CONST_DATA struct MenuDef gDebugToolsConvoyMenuDef = {
@@ -388,7 +383,6 @@ static u8 DebugToolsConvoy_ConfirmSelected(struct MenuProc* menu, struct MenuIte
 {
     int slot;
 
-    (void)menu;
     (void)item;
 
     /* AddItemToConvoy (src/bmcontainer.c) already bounds-checks capacity
@@ -438,7 +432,6 @@ static u8 DebugToolsActions_ConvoyInspectSelected(struct MenuProc* menu, struct 
     int count;
     char buf[64];
 
-    (void)menu;
     (void)item;
 
     count = GetConvoyItemCount();
@@ -451,7 +444,7 @@ static u8 DebugToolsActions_ConvoyInspectSelected(struct MenuProc* menu, struct 
     DebugToolsTools_ShowStatusLine(buf);
 
     DebugToolsConvoy_BuildMenuItems();
-    StartOrphanMenu(&gDebugToolsConvoyMenuDef);
+    DebugTools_QueueSubmenuTransition(menu, &gDebugToolsConvoyMenuDef);
 
     return MENU_ACT_SKIPCURSOR | MENU_ACT_END | MENU_ACT_SND6A | MENU_ACT_CLEAR;
 }
@@ -466,9 +459,7 @@ EWRAM_DATA static struct MenuItemDef sFlagMenuItemDefs[3] = {{0}};
 
 static void DebugToolsFlag_OnEnd(struct MenuProc* menu)
 {
-    (void)menu;
-
-    DebugTools_OpenHub();
+    DebugTools_ReturnToHubAfterMenuEnd(menu);
 }
 
 CONST_DATA struct MenuDef gDebugToolsFlagMenuDef = {
@@ -487,7 +478,6 @@ static u8 DebugToolsFlag_ConfirmSelected(struct MenuProc* menu, struct MenuItemP
 {
     int inRange;
 
-    (void)menu;
     (void)item;
 
     /* Defense in depth: SetFlag/ClearFlag (src/eventinfo.c) do not
@@ -544,7 +534,6 @@ static u8 DebugToolsActions_FlagInspectSelected(struct MenuProc* menu, struct Me
     char chapterLabel[24];
 #endif
 
-    (void)menu;
     (void)item;
 
     gDebugToolsProbe.chapterIndexSample = (u32)(u8)gPlaySt.chapterIndex;
@@ -568,7 +557,7 @@ static u8 DebugToolsActions_FlagInspectSelected(struct MenuProc* menu, struct Me
     DebugToolsTools_ShowStatusLine(buf);
 
     DebugToolsFlag_BuildMenuItems();
-    StartOrphanMenu(&gDebugToolsFlagMenuDef);
+    DebugTools_QueueSubmenuTransition(menu, &gDebugToolsFlagMenuDef);
 
     return MENU_ACT_SKIPCURSOR | MENU_ACT_END | MENU_ACT_SND6A | MENU_ACT_CLEAR;
 }
@@ -583,9 +572,7 @@ EWRAM_DATA static struct MenuItemDef sRngMenuItemDefs[3] = {{0}};
 
 static void DebugToolsRng_OnEnd(struct MenuProc* menu)
 {
-    (void)menu;
-
-    DebugTools_OpenHub();
+    DebugTools_ReturnToHubAfterMenuEnd(menu);
 }
 
 CONST_DATA struct MenuDef gDebugToolsRngMenuDef = {
@@ -643,7 +630,6 @@ static u8 DebugToolsActions_RngInspectSelected(struct MenuProc* menu, struct Men
     u16 seeds[3];
     char buf[64];
 
-    (void)menu;
     (void)item;
 
     StoreRNState(seeds);
@@ -656,7 +642,7 @@ static u8 DebugToolsActions_RngInspectSelected(struct MenuProc* menu, struct Men
     DebugToolsTools_ShowStatusLine(buf);
 
     DebugToolsRng_BuildMenuItems();
-    StartOrphanMenu(&gDebugToolsRngMenuDef);
+    DebugTools_QueueSubmenuTransition(menu, &gDebugToolsRngMenuDef);
 
     return MENU_ACT_SKIPCURSOR | MENU_ACT_END | MENU_ACT_SND6A | MENU_ACT_CLEAR;
 }
@@ -671,9 +657,7 @@ EWRAM_DATA static struct MenuItemDef sSaveStateMenuItemDefs[2] = {{0}}; /* back 
 
 static void DebugToolsSaveState_OnEnd(struct MenuProc* menu)
 {
-    (void)menu;
-
-    DebugTools_OpenHub();
+    DebugTools_ReturnToHubAfterMenuEnd(menu);
 }
 
 CONST_DATA struct MenuDef gDebugToolsSaveStateMenuDef = {
@@ -705,7 +689,6 @@ static u8 DebugToolsActions_SaveStateInspectSelected(struct MenuProc* menu, stru
     enum SaveCompatState state;
     char buf[64];
 
-    (void)menu;
     (void)item;
 
     /* Read-only: ClassifySramSaveCompat (src/bmsave-lib.c) only inspects
@@ -724,7 +707,7 @@ static u8 DebugToolsActions_SaveStateInspectSelected(struct MenuProc* menu, stru
     DebugToolsTools_ShowStatusLine(buf);
 
     DebugToolsSaveState_BuildMenuItems();
-    StartOrphanMenu(&gDebugToolsSaveStateMenuDef);
+    DebugTools_QueueSubmenuTransition(menu, &gDebugToolsSaveStateMenuDef);
 
     return MENU_ACT_SKIPCURSOR | MENU_ACT_END | MENU_ACT_SND6A | MENU_ACT_CLEAR;
 }
@@ -737,16 +720,14 @@ CONST_DATA static struct DebugToolsAction sSaveStateInspectAction = {
 
 void DebugTools_RegisterExtendedToolActions(void)
 {
-    /* Idempotent: a repeat call reports DEBUGTOOLS_ERR_DUPLICATE (same
-     * id/label) for each action -- an expected, non-silent result this
-     * one-shot lazy-init call site (DebugTools_OpenHub,
-     * src/debugtools_registry.c) deliberately ignores, same as
-     * DebugTools_RegisterBuiltinActions/DebugTools_RegisterWeatherFogActions. */
-    DebugTools_RegisterAction(&sUnitInspectAction);
-    DebugTools_RegisterAction(&sConvoyInspectAction);
-    DebugTools_RegisterAction(&sFlagInspectAction);
-    DebugTools_RegisterAction(&sRngInspectAction);
-    DebugTools_RegisterAction(&sSaveStateInspectAction);
+    /* Internal built-in registration keeps ids 5-9 unavailable to the
+     * contributor API and marks these rows as localized built-ins.
+     * Repeated calls remain idempotent through duplicate rejection. */
+    DebugTools_RegisterBuiltinAction(&sUnitInspectAction);
+    DebugTools_RegisterBuiltinAction(&sConvoyInspectAction);
+    DebugTools_RegisterBuiltinAction(&sFlagInspectAction);
+    DebugTools_RegisterBuiltinAction(&sRngInspectAction);
+    DebugTools_RegisterBuiltinAction(&sSaveStateInspectAction);
 }
 
 #else /* !FE8_EXPANSION_DEBUGTOOLS_ENABLED */

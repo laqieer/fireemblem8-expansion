@@ -31,11 +31,14 @@
 #include "proc.h"
 #include "bmdebug.h"
 #include "expansion_debugtools.h"
+#include "debugtools_internal.h"
 
 struct KeyStatusBuffer gDebugToolsActionsTestKeyStatus = {0};
 struct KeyStatusBuffer * CONST_DATA gKeyStatusPtr = &gDebugToolsActionsTestKeyStatus;
 
 struct LCDControlBuffer gLCDControlBuffer = {0};
+static struct Font sDebugToolsActionsTestFont = {0};
+struct Font* gActiveFont = &sDebugToolsActionsTestFont;
 
 /* Issue #11 closure: DebugTools_PrepHotkeyCheck (src/debugtools_registry.c)
  * now reads gPlaySt.chapterStateBits to observe a live prep screen --
@@ -103,6 +106,8 @@ const struct ProcCmd* gDebugToolsActionsHostStub_LastStartedScript = NULL;
 const struct ProcCmd* gDebugToolsActionsHostStub_LastEndEachScript = NULL;
 
 static int sMonitorAlive = 0;
+static struct Proc sTransitionProc;
+static ProcPtr sPendingTransition;
 
 void DebugToolsHostStub_SetMonitorAlive(int alive)
 {
@@ -127,10 +132,25 @@ ProcPtr Proc_Find(const struct ProcCmd* script)
 ProcPtr Proc_Start(const struct ProcCmd* script, ProcPtr parent)
 {
     (void)parent;
+
+    if (script == gProcScr_DebugToolsMenuTransition)
+    {
+        sPendingTransition = &sTransitionProc;
+        return &sTransitionProc;
+    }
+
     gDebugToolsActionsHostStub_ProcStartCallCount++;
     gDebugToolsActionsHostStub_LastStartedScript = script;
     sMonitorAlive = 1;
     return (ProcPtr)1;
+}
+
+void DebugToolsHostStub_RunPendingTransition(void)
+{
+    ProcPtr proc = sPendingTransition;
+
+    sPendingTransition = NULL;
+    DebugTools_RunMenuTransition(proc);
 }
 
 void Proc_EndEach(const struct ProcCmd* script)

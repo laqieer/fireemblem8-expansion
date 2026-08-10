@@ -43,6 +43,8 @@ struct KeyStatusBuffer gDebugToolsLauncherTestKeyStatus = {0};
 struct KeyStatusBuffer * CONST_DATA gKeyStatusPtr = &gDebugToolsLauncherTestKeyStatus;
 
 struct LCDControlBuffer gLCDControlBuffer = {0};
+static struct Font sDebugToolsLauncherTestFont = {0};
+struct Font* gActiveFont = &sDebugToolsLauncherTestFont;
 
 static u16 sDebugToolsLauncherStubBgMap[32 * 32];
 

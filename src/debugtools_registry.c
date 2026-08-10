@@ -5,8 +5,10 @@
 
 #include "hardware.h"
 #include "fontgrp.h"
+#include "proc.h"
 #include "uimenu.h"
 #include "expansion_debugtools.h"
+#include "debugtools_internal.h"
 
 #ifdef MODERN
 /* Issue #18 sprint 3: render-time-only ExpansionMsgId mapping for the
@@ -46,7 +48,39 @@ EWRAM_DATA struct DebugToolsProbe gDebugToolsProbe = {0};
 EWRAM_DATA static struct DebugToolsAction sActions[DEBUGTOOLS_ACTION_MAX] = {0};
 EWRAM_DATA static int sActionCount = 0;
 EWRAM_DATA static enum DebugToolsResult sLastResult = DEBUGTOOLS_OK;
-EWRAM_DATA static u8 sHubActive = 0;
+EWRAM_DATA static u32 sDebugMenuState = 0;
+
+extern struct Font* gActiveFont;
+
+enum
+{
+    DEBUGTOOLS_TRANSITION_CLEANUP,
+    DEBUGTOOLS_TRANSITION_SUBMENU,
+    DEBUGTOOLS_TRANSITION_HUB
+};
+
+enum
+{
+    DEBUGTOOLS_STATE_SESSION_ACTIVE = (1 << 0),
+    DEBUGTOOLS_STATE_HUB_ACTIVE = (1 << 1),
+    DEBUGTOOLS_STATE_TRANSITION_SCHEDULED = (1 << 2),
+    DEBUGTOOLS_STATE_BUILTINS_INITIALIZED = (1 << 3)
+};
+
+struct DebugToolsMenuTransitionProc
+{
+    PROC_HEADER;
+
+    /* 2C */ const struct MenuDef* menuDef;
+    /* 30 */ struct Font* font;
+    /* 34 */ u16 textBase;
+    /* 36 */ u8 target;
+};
+
+static void DebugTools_StartMenuTransition(
+    struct MenuProc* menu,
+    int target,
+    const struct MenuDef* menuDef);
 
 /* RAM-resident MenuItemDef adapter (rebuilt from sActions[] every time the
  * hub is opened) -- this is how contributor actions reach the existing
@@ -66,14 +100,15 @@ static u8 DebugToolsHub_BackSelected(struct MenuProc* menu, struct MenuItemProc*
 
 static void DebugToolsHub_OnEnd(struct MenuProc* proc)
 {
-    (void)proc;
-
     /* Restore bg2 to the off state Title_EnableMainScreenDisplay left it
      * in (src/titlescreen.c) -- our diagnostics line is the only thing
      * that ever turns it on while the hub is the active menu. */
     gLCDControlBuffer.dispcnt.bg2_on = 0;
 
-    sHubActive = 0;
+    sDebugMenuState &= ~DEBUGTOOLS_STATE_HUB_ACTIVE;
+
+    if (!(sDebugMenuState & DEBUGTOOLS_STATE_TRANSITION_SCHEDULED))
+        DebugTools_StartMenuTransition(proc, DEBUGTOOLS_TRANSITION_CLEANUP, NULL);
 }
 
 CONST_DATA struct MenuDef gDebugToolsHubMenuDef = {
@@ -112,9 +147,13 @@ static const ExpansionMsgId sBuiltinActionLabelMsgIds[DEBUGTOOLS_ACTION_MAX + 1]
 /* Returns EXPANSION_MSG_ID_INVALID for any id outside the builtin
  * 1-9 range (every third-party/contributor id included) -- never an
  * out-of-bounds table read. */
-static ExpansionMsgId DebugToolsHub_ResolveBuiltinLabelMsgId(u16 id)
+static ExpansionMsgId DebugToolsHub_ResolveBuiltinLabelMsgId(int index)
 {
-    if (id == 0 || id > DEBUGTOOLS_ACTION_MAX)
+    u16 id;
+
+    id = sActions[index].id;
+
+    if (id < DEBUGTOOLS_BUILTIN_ID_MIN || id > DEBUGTOOLS_BUILTIN_ID_MAX)
         return EXPANSION_MSG_ID_INVALID;
 
     return sBuiltinActionLabelMsgIds[id];
@@ -161,7 +200,7 @@ static void DebugToolsHub_BuildMenuItems(void)
     {
         struct MenuItemDef* def = &sHubMenuItemDefs[i];
 #ifdef MODERN
-        ExpansionMsgId builtinMsgId = DebugToolsHub_ResolveBuiltinLabelMsgId(sActions[i].id);
+        ExpansionMsgId builtinMsgId = DebugToolsHub_ResolveBuiltinLabelMsgId(i);
 #endif
 
         def->name = sActions[i].label;
@@ -244,26 +283,33 @@ static void DebugToolsHub_ShowDiagnostics(void)
     gLCDControlBuffer.dispcnt.bg2_on = 1;
 }
 
-int DebugTools_RegisterAction(const struct DebugToolsAction* action)
+static int DebugTools_SetLastResult(enum DebugToolsResult result)
+{
+    sLastResult = result;
+    gDebugToolsProbe.lastRegisterResult = result;
+    return result;
+}
+
+static int DebugTools_RegisterActionCore(const struct DebugToolsAction* action, int isBuiltin)
 {
     int i;
 
     if (action == NULL || action->label == NULL || action->onSelected == NULL)
-    {
-        sLastResult = DEBUGTOOLS_ERR_INVALID_ACTION;
-        gDebugToolsProbe.lastRegisterResult = DEBUGTOOLS_ERR_INVALID_ACTION;
-        return DEBUGTOOLS_ERR_INVALID_ACTION;
-    }
+        return DebugTools_SetLastResult(DEBUGTOOLS_ERR_INVALID_ACTION);
 
-    /* Issue #11 closure: id==0 is treated as a reserved/uninitialized-
-     * looking sentinel, not a legitimate contributor id -- every action
-     * in this file (including the five extended tools,
-     * src/debugtools_tools.c) uses ids 1-9. */
     if (action->id == 0)
+        return DebugTools_SetLastResult(DEBUGTOOLS_ERR_ID_INVALID);
+
+    if (isBuiltin)
     {
-        sLastResult = DEBUGTOOLS_ERR_ID_INVALID;
-        gDebugToolsProbe.lastRegisterResult = DEBUGTOOLS_ERR_ID_INVALID;
-        return DEBUGTOOLS_ERR_ID_INVALID;
+        if (action->id < DEBUGTOOLS_BUILTIN_ID_MIN
+            || action->id > DEBUGTOOLS_BUILTIN_ID_MAX)
+            return DebugTools_SetLastResult(DEBUGTOOLS_ERR_ID_INVALID);
+    }
+    else if (action->id >= DEBUGTOOLS_BUILTIN_ID_MIN
+        && action->id <= DEBUGTOOLS_BUILTIN_ID_MAX)
+    {
+        return DebugTools_SetLastResult(DEBUGTOOLS_ERR_ID_RESERVED);
     }
 
     /* Issue #11 closure: label must be non-empty and within the
@@ -275,37 +321,59 @@ int DebugTools_RegisterAction(const struct DebugToolsAction* action)
      * which always satisfies this); this length check is a rendering/
      * policy bound, not a lifetime check C89 can perform at runtime. */
     if (action->label[0] == '\0' || strlen(action->label) > DEBUGTOOLS_LABEL_MAX_LENGTH)
-    {
-        sLastResult = DEBUGTOOLS_ERR_LABEL_INVALID;
-        gDebugToolsProbe.lastRegisterResult = DEBUGTOOLS_ERR_LABEL_INVALID;
-        return DEBUGTOOLS_ERR_LABEL_INVALID;
-    }
+        return DebugTools_SetLastResult(DEBUGTOOLS_ERR_LABEL_INVALID);
 
     for (i = 0; i < sActionCount; ++i)
     {
         if (sActions[i].id == action->id || strcmp(sActions[i].label, action->label) == 0)
-        {
-            sLastResult = DEBUGTOOLS_ERR_DUPLICATE;
-            gDebugToolsProbe.lastRegisterResult = DEBUGTOOLS_ERR_DUPLICATE;
-            return DEBUGTOOLS_ERR_DUPLICATE;
-        }
+            return DebugTools_SetLastResult(DEBUGTOOLS_ERR_DUPLICATE);
     }
 
     if (sActionCount >= DEBUGTOOLS_ACTION_MAX)
-    {
-        sLastResult = DEBUGTOOLS_ERR_CAPACITY_FULL;
-        gDebugToolsProbe.lastRegisterResult = DEBUGTOOLS_ERR_CAPACITY_FULL;
-        return DEBUGTOOLS_ERR_CAPACITY_FULL;
-    }
+        return DebugTools_SetLastResult(DEBUGTOOLS_ERR_CAPACITY_FULL);
 
     sActions[sActionCount] = *action;
     sActionCount++;
 
-    sLastResult = DEBUGTOOLS_OK;
-    gDebugToolsProbe.lastRegisterResult = DEBUGTOOLS_OK;
     gDebugToolsProbe.registeredActionCount = (u32)sActionCount;
 
-    return DEBUGTOOLS_OK;
+    return DebugTools_SetLastResult(DEBUGTOOLS_OK);
+}
+
+int DebugTools_RegisterBuiltinAction(const struct DebugToolsAction* action)
+{
+    return DebugTools_RegisterActionCore(action, 1);
+}
+
+static void DebugTools_EnsureBuiltinActionsRegistered(void)
+{
+    if (sDebugMenuState & DEBUGTOOLS_STATE_BUILTINS_INITIALIZED)
+        return;
+
+    DebugTools_RegisterBuiltinActions();
+    DebugTools_RegisterWeatherFogActions();
+    DebugTools_RegisterChapter4PrepAction();
+    DebugTools_RegisterExtendedToolActions();
+    sDebugMenuState |= DEBUGTOOLS_STATE_BUILTINS_INITIALIZED;
+}
+
+int DebugTools_RegisterAction(const struct DebugToolsAction* action)
+{
+    if (action == NULL || action->label == NULL || action->onSelected == NULL)
+        return DebugTools_SetLastResult(DEBUGTOOLS_ERR_INVALID_ACTION);
+
+    if (action->id == 0)
+        return DebugTools_SetLastResult(DEBUGTOOLS_ERR_ID_INVALID);
+
+    if (action->id >= DEBUGTOOLS_BUILTIN_ID_MIN
+        && action->id <= DEBUGTOOLS_BUILTIN_ID_MAX)
+        return DebugTools_SetLastResult(DEBUGTOOLS_ERR_ID_RESERVED);
+
+    if (action->label[0] == '\0' || strlen(action->label) > DEBUGTOOLS_LABEL_MAX_LENGTH)
+        return DebugTools_SetLastResult(DEBUGTOOLS_ERR_LABEL_INVALID);
+
+    DebugTools_EnsureBuiltinActionsRegistered();
+    return DebugTools_RegisterActionCore(action, 0);
 }
 
 int DebugTools_GetRegisteredCount(void)
@@ -326,32 +394,72 @@ enum DebugToolsResult DebugTools_GetLastRegistrationResult(void)
     return sLastResult;
 }
 
-enum DebugToolsResult DebugTools_OpenHub(void)
+static int DebugTools_HasTextCapacity(void)
 {
-    /* Single authoritative reentrancy guard. A release-and-repress of
-     * the title hotkey (or any other future caller) while the hub is
-     * already open must never start a second concurrent MenuProc:
-     * without this, the title hotkey check's edge-detected newKeys
-     * condition re-fires on every subsequent complete press/release/
-     * press cycle, each of which would otherwise call StartOrphanMenu()
-     * again. Guarding here -- rather than in each caller -- protects
-     * every current and future entry path. */
-    if (sHubActive)
-        return DEBUGTOOLS_ERR_ALREADY_ACTIVE;
+    int firstTile;
+    int capacity;
 
-    /* Order matters here: Weather/Fog must register immediately after
-     * the Chapter 2 launcher (preserving their pre-existing hub-menu row
-     * indices 1/2, which every debugtools-map-hub-modern-*.json
-     * scenario's own cursor-navigation input script already depends on),
-     * before either of issue #11 closure's own additions. */
-    DebugTools_RegisterBuiltinActions();
-    DebugTools_RegisterWeatherFogActions();
-    DebugTools_RegisterChapter4PrepAction();
-    DebugTools_RegisterExtendedToolActions();
+    if (gActiveFont == NULL)
+        return 0;
 
+    firstTile = gActiveFont->tileref & 0x3FF;
+    capacity = (0x400 - firstTile) / 2;
+
+    if (gActiveFont->chr_counter + DEBUGTOOLS_HUB_TEXT_ALLOC_BUDGET > capacity)
+        return 0;
+
+    return 1;
+}
+
+static u16 DebugTools_GetMenuTextBase(struct MenuProc* menu)
+{
+    if (menu != NULL && menu->itemCount != 0 && menu->menuItems[0] != NULL)
+        return menu->menuItems[0]->text.chr_position;
+
+    return gActiveFont == NULL ? 0 : gActiveFont->chr_counter;
+}
+
+static void DebugTools_StartMenuTransition(
+    struct MenuProc* menu,
+    int target,
+    const struct MenuDef* menuDef)
+{
+    struct DebugToolsMenuTransitionProc* proc;
+
+    if (sDebugMenuState & DEBUGTOOLS_STATE_TRANSITION_SCHEDULED)
+        return;
+
+    proc = Proc_Start(gProcScr_DebugToolsMenuTransition, PROC_TREE_3);
+    proc->menuDef = menuDef;
+    proc->font = gActiveFont;
+    proc->textBase = DebugTools_GetMenuTextBase(menu);
+    proc->target = target;
+
+    sDebugMenuState |= DEBUGTOOLS_STATE_TRANSITION_SCHEDULED;
+}
+
+void DebugTools_QueueSubmenuTransition(struct MenuProc* menu, const struct MenuDef* menuDef)
+{
+    if (menuDef == NULL)
+        return;
+
+    DebugTools_StartMenuTransition(menu, DEBUGTOOLS_TRANSITION_SUBMENU, menuDef);
+}
+
+void DebugTools_ReturnToHubAfterMenuEnd(struct MenuProc* menu)
+{
+    if (sDebugMenuState
+        & (DEBUGTOOLS_STATE_HUB_ACTIVE | DEBUGTOOLS_STATE_TRANSITION_SCHEDULED))
+        return;
+
+    DebugTools_StartMenuTransition(menu, DEBUGTOOLS_TRANSITION_HUB, NULL);
+}
+
+static enum DebugToolsResult DebugTools_OpenHubInternal(void)
+{
     DebugToolsHub_BuildMenuItems();
     gDebugToolsProbe.hubOpenCount++;
-    sHubActive = 1;
+    sDebugMenuState |= DEBUGTOOLS_STATE_HUB_ACTIVE;
 
 #ifdef MODERN
     if (DebugToolsHub_UsesCjkText())
@@ -368,9 +476,67 @@ enum DebugToolsResult DebugTools_OpenHub(void)
     return DEBUGTOOLS_OK;
 }
 
+void DebugTools_RunMenuTransition(ProcPtr proc)
+{
+    struct DebugToolsMenuTransitionProc* transition = proc;
+    const struct MenuDef* submenuDef = transition->menuDef;
+    int target = transition->target;
+
+    sDebugMenuState &= ~DEBUGTOOLS_STATE_TRANSITION_SCHEDULED;
+
+    if (transition->font != NULL)
+    {
+        gActiveFont = transition->font;
+        transition->font->chr_counter = transition->textBase;
+    }
+
+    if (target == DEBUGTOOLS_TRANSITION_SUBMENU && submenuDef != NULL)
+    {
+        StartOrphanMenu(submenuDef);
+        return;
+    }
+
+    if (target == DEBUGTOOLS_TRANSITION_HUB)
+    {
+        DebugTools_OpenHubInternal();
+        return;
+    }
+
+    sDebugMenuState &= ~(DEBUGTOOLS_STATE_SESSION_ACTIVE | DEBUGTOOLS_STATE_HUB_ACTIVE);
+}
+
+struct ProcCmd CONST_DATA gProcScr_DebugToolsMenuTransition[] =
+{
+    PROC_YIELD,
+    PROC_CALL(DebugTools_RunMenuTransition),
+    PROC_END
+};
+
+enum DebugToolsResult DebugTools_OpenHub(void)
+{
+    /* Single authoritative reentrancy guard. A release-and-repress of
+     * the title hotkey (or any other future caller) while the hub is
+     * already open must never start a second concurrent MenuProc:
+     * without this, the title hotkey check's edge-detected newKeys
+     * condition re-fires on every subsequent complete press/release/
+     * press cycle, each of which would otherwise call StartOrphanMenu()
+     * again. Guarding here -- rather than in each caller -- protects
+     * every current and future entry path. */
+    if (sDebugMenuState & DEBUGTOOLS_STATE_SESSION_ACTIVE)
+        return DEBUGTOOLS_ERR_ALREADY_ACTIVE;
+
+    DebugTools_EnsureBuiltinActionsRegistered();
+
+    if (!DebugTools_HasTextCapacity())
+        return DebugTools_SetLastResult(DEBUGTOOLS_ERR_TEXT_CAPACITY);
+
+    sDebugMenuState |= DEBUGTOOLS_STATE_SESSION_ACTIVE;
+    return DebugTools_OpenHubInternal();
+}
+
 int DebugTools_IsHubActive(void)
 {
-    return sHubActive;
+    return sDebugMenuState & DEBUGTOOLS_STATE_SESSION_ACTIVE;
 }
 
 void DebugTools_TitleHotkeyCheck(void)

@@ -162,6 +162,82 @@ class DebugToolsRegistryHostTests(unittest.TestCase):
             self.assertEqual(rc, 0, f"host label-validation test failed:\n{out}")
             self.assertIn("DEBUGTOOLS_LABEL_VALIDATION_HOST_TEST: PASS", out)
 
+    def test_builtin_identity_and_text_allocator_lifecycle(self):
+        """A contributor-before-init collision must not steal IDs 1-9,
+        and 64 maximum-row hub/submenu cycles must reuse one bounded text
+        allocation scope. The real registry/transition code runs here;
+        the host stub only models StartMenuCore's documented per-row
+        InitText(rect.w - 1) allocation."""
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            work = Path(tmp)
+            rc, out, registry_obj = _compile(
+                work,
+                REGISTRY_SRC,
+                "registry_lifecycle_enabled.o",
+                defines=["FE8_EXPANSION_DEBUGTOOLS_ENABLED=1"],
+            )
+            self.assertEqual(rc, 0, f"compiling lifecycle registry failed:\n{out}")
+
+            rc, out, stubs_obj = _compile(
+                work,
+                C_FIXTURES_DIR / "debugtools_lifecycle_host_stubs.c",
+                "lifecycle_stubs.o",
+            )
+            self.assertEqual(rc, 0, f"compiling lifecycle stubs failed:\n{out}")
+
+            rc, out, driver_obj = _compile(
+                work,
+                C_FIXTURES_DIR / "debugtools_lifecycle_driver.c",
+                "lifecycle_driver.o",
+            )
+            self.assertEqual(rc, 0, f"compiling lifecycle driver failed:\n{out}")
+
+            rc, out, exe = _link(
+                work,
+                [registry_obj, stubs_obj, driver_obj],
+                "lifecycle_test",
+            )
+            self.assertEqual(rc, 0, f"linking lifecycle test failed:\n{out}")
+
+            rc, out = _run(exe)
+            self.assertEqual(rc, 0, f"host lifecycle test failed:\n{out}")
+            self.assertIn("DEBUGTOOLS_LIFECYCLE_HOST_TEST: PASS", out)
+
+    def test_localized_builtin_rows_require_reserved_id_identity(self):
+        registry = _strip_c_comments(REGISTRY_SRC.read_text(encoding="utf-8"))
+        builtin_sources = "\n".join(
+            _strip_c_comments(path.read_text(encoding="utf-8"))
+            for path in (LAUNCHER_SRC, ACTIONS_SRC, TOOLS_SRC)
+        )
+
+        self.assertIn(
+            "if (id < DEBUGTOOLS_BUILTIN_ID_MIN || "
+            "id > DEBUGTOOLS_BUILTIN_ID_MAX)",
+            registry,
+        )
+        self.assertIn(
+            "DebugToolsHub_ResolveBuiltinLabelMsgId(i)",
+            registry,
+        )
+        self.assertIn(
+            "DEBUGTOOLS_ERR_ID_RESERVED",
+            registry,
+        )
+        self.assertNotRegex(
+            builtin_sources,
+            r"DebugTools_RegisterAction\s*\(\s*&s\w+Action\s*\)",
+        )
+        self.assertEqual(
+            len(
+                re.findall(
+                    r"DebugTools_RegisterBuiltinAction\s*\(\s*&s\w+Action\s*\)",
+                    builtin_sources,
+                )
+            ),
+            9,
+        )
+
     def test_registry_disabled_path_behavior_and_symbol_omission(self):
         import tempfile
         with tempfile.TemporaryDirectory() as tmp:
