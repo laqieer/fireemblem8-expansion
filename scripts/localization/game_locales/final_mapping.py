@@ -21,6 +21,10 @@ from scripts.localization.game_catalog.english_source import (
 
 from .crosswalk import build_crosswalk_coverage_report, canonical_json_bytes
 from .ending_metrics import EndingLayoutError, build_ending_layout_metrics
+from .fixed_width_labels import (
+    FixedWidthLabelError,
+    build_fixed_width_label_metrics,
+)
 from .febuilder import validate_febuilder_evidence_document
 from .mapping import format_message_id, validate_mapping_document
 from .parsers import parse_hash_indexed
@@ -2721,6 +2725,13 @@ def build_final_mapping_artifacts(
         )
     except EndingLayoutError as error:
         raise FinalMappingError(str(error)) from error
+    try:
+        fixed_width_metrics = build_fixed_width_label_metrics(
+            repo_root,
+            localized_payloads=localized_payloads,
+        )
+    except FixedWidthLabelError as error:
+        raise FinalMappingError(str(error)) from error
 
     fallback_rows = [
         row for row in final_mapping["rows"] if row["source"]["kind"] == "english_fallback"
@@ -2828,6 +2839,9 @@ def build_final_mapping_artifacts(
             "febuilder_alignment_evidence_sha256": _json_hash(febuilder_data),
             "audit_semantic_corrections_sha256": audit_corrections_sha256,
             "ending_layout_metrics_sha256": _json_hash(ending_metrics),
+            "fixed_width_label_metrics_sha256": _json_hash(
+                fixed_width_metrics
+            ),
             "original_target_map_sha256": _json_hash(
                 {"rows": original_rows, "target_count": target_count}
             ),
@@ -2871,6 +2885,7 @@ def build_final_mapping_artifacts(
     return {
         "coverage": coverage,
         "ending_metrics": ending_metrics,
+        "fixed_width_metrics": fixed_width_metrics,
         "mapping": final_mapping,
         "queue": queue,
         "report": report,

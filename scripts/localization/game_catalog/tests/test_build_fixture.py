@@ -90,7 +90,7 @@ class FixtureBuildTests(unittest.TestCase):
         }
         ja_blob = "生".encode("cp932") + b"\0"
         (self.fixture_dir / "ja_raw_values.cp932.bin").write_bytes(ja_blob)
-        ja_origin = b'const char fixture[] = "source";\n'
+        ja_origin = 'const char fixture[] = "生";\n'.encode("utf-8")
         (self.fixture_dir / "ja_origin.c").write_bytes(ja_origin)
         ja_origin_oid = hashlib.sha1(
             f"blob {len(ja_origin)}\0".encode("ascii") + ja_origin

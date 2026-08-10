@@ -168,6 +168,12 @@ make -f cjk_fonts.mk cjk-fonts-febuilder-all \
   FEBUILDER_CLI="/path/to/dotnet /path/to/FEBuilderGBA.CLI.dll"
 ```
 
+`build-final-mapping` emits both ending and fixed-width label metric
+manifests. Compact aliases live in
+`texts/locales/fixed_width_display_aliases.json`; they are selected only by
+fixed-width character/class/item UI helpers and never replace canonical
+localized names globally.
+
 `build-final-mapping` refreshes only normalized FE8J/payload-derived fields in
 the structural evidence before revalidating the full evidence object. The
 fulfilled authored queue remains byte-identical historical provenance; the

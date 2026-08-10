@@ -272,4 +272,45 @@ enum LocalizedGameTextStatus LocalizedGameText_ResolveCurrentToUnboundedBuffer(
         outDecodedLength);
 }
 
+const char * LocalizedGameText_GetDisplayAlias(
+    int msgIndex,
+    enum LocalizedGameTextDisplaySurface surface)
+{
+    const struct GameLocalizationDisplayAlias *aliases;
+    u32 aliasCount;
+    u32 i;
+    ExpansionLocaleId locale;
+
+    locale = ExpansionLocale_GetCurrent();
+    if (locale == EXPANSION_LOCALE_JA)
+    {
+#if GAME_LOCALIZATION_JA_ENABLED
+        aliases = gGameLocalizationJaDisplayAliases;
+        aliasCount = GAME_LOCALIZATION_JA_DISPLAY_ALIAS_COUNT;
+#else
+        return 0;
+#endif
+    }
+    else if (locale == EXPANSION_LOCALE_ZH_HANS)
+    {
+#if GAME_LOCALIZATION_ZH_HANS_ENABLED
+        aliases = gGameLocalizationZhHansDisplayAliases;
+        aliasCount = GAME_LOCALIZATION_ZH_HANS_DISPLAY_ALIAS_COUNT;
+#else
+        return 0;
+#endif
+    }
+    else
+    {
+        return 0;
+    }
+
+    for (i = 0; i < aliasCount; i++)
+    {
+        if (aliases[i].targetId == msgIndex && aliases[i].surface == surface)
+            return aliases[i].text;
+    }
+    return 0;
+}
+
 #endif /* FE8_LOCALIZED_GAME_TEXT_CJK_PROFILE_ENABLED */

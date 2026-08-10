@@ -62,6 +62,7 @@ class GameCatalogBuild:
     locales: Tuple[LocaleCatalogBundle, ...]
     report: Dict[str, Any]
     budget: Dict[str, Any]
+    display_aliases: Mapping[str, Mapping[str, Mapping[int, str]]]
     suffix_share: bool
 
     @property

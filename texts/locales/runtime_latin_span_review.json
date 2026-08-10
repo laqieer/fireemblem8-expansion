@@ -2773,7 +2773,7 @@
     "game/ja/0x08E5": {
       "baseline_classification": "mixed-script-bypass",
       "baseline_payload_sha256": "97e6e53315ad52cc00f2b37a961f9af245834aaf808e47bc8ac03ce793008c67",
-      "current_payload_sha256": "4cff6a7d6873b4ef365a14460419f8f551dabc35d8e61d78fdd116a357c08304",
+      "current_payload_sha256": "44f3299fb937f0baf11f2784f58e8864c06dabacc82989d026fd199fba5f7013",
       "english_payload_sha256": "5ec865997683bba916a4523d6108a1313b4b0864a0cf8ebec1f1238bd231bfbc",
       "locale": "ja",
       "payload_source": {
@@ -7095,7 +7095,7 @@
     "game/zh-Hans/0x08E5": {
       "baseline_classification": "mixed-script-bypass",
       "baseline_payload_sha256": "0daa056553357e26bb0267293da9deff48fbcf7ef3e5b1a8fb6b2d9fd57d18b6",
-      "current_payload_sha256": "cf5f925970f9220b28abfc6a3eb186b99d7e2d940c6090f44fd5546f0e81a5c1",
+      "current_payload_sha256": "1895684ba1c884d61719a61a4e68e6bcc731320179453c3ea6230c296df891d2",
       "english_payload_sha256": "5ec865997683bba916a4523d6108a1313b4b0864a0cf8ebec1f1238bd231bfbc",
       "locale": "zh-Hans",
       "payload_source": {

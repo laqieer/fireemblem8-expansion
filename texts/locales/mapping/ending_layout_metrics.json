@@ -1031,9 +1031,9 @@
         {
           "line_count": 1,
           "line_widths": [
-            115
+            105
           ],
-          "max_line_width": 115,
+          "max_line_width": 105,
           "target_id": "0x0805"
         },
         {
@@ -2107,9 +2107,9 @@
         {
           "line_count": 1,
           "line_widths": [
-            84
+            75
           ],
-          "max_line_width": 84,
+          "max_line_width": 75,
           "target_id": "0x0805"
         },
         {

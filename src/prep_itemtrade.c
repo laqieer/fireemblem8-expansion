@@ -168,7 +168,7 @@ void DrawPrepScreenItems(u16 * tm, struct Text* th, struct Unit* unit, u8 checkP
             !isUsable ? TEXT_COLOR_SYSTEM_GRAY : TEXT_COLOR_SYSTEM_WHITE,
             0,
             0,
-            GetItemName(item)
+            GetItemDisplayName(item)
         );
 
         PutNumberOrBlank(tm + i * 0x40 + 0xB, isUsable ? TEXT_COLOR_SYSTEM_BLUE : TEXT_COLOR_SYSTEM_GRAY, GetItemUses(item));
@@ -261,10 +261,10 @@ void PrepItemTrade_Init(struct PrepMenuTradeProc * proc)
 
     BG_EnableSyncByMask(7);
 
-    str = GetStringFromIndex(proc->units[0]->pCharacterData->nameTextId);
+    str = GetCharacterDisplayName(proc->units[0]->pCharacterData);
     PutDrawText(0, gBG0TilemapBuffer, 0, ((48 - GetStringTextLen(str)) / 2), 6, str);
 
-    str = GetStringFromIndex(proc->units[1]->pCharacterData->nameTextId);
+    str = GetCharacterDisplayName(proc->units[1]->pCharacterData);
     PutDrawText(0, gBG0TilemapBuffer + 0x18, 0, ((48 - GetStringTextLen(str)) / 2), 6, str);
 
     DrawPrepScreenItems(gBG0TilemapBuffer + 0x122, gPrepItemTexts + 15, proc->units[0], 0);

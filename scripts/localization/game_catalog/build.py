@@ -19,6 +19,12 @@ from scripts.localization.game_locales.mapping import (
     format_message_id,
     validate_mapping_document,
 )
+from scripts.localization.game_locales.fixed_width_labels import (
+    ALIASES_PATH as FIXED_WIDTH_ALIASES_PATH,
+    FixedWidthLabelError,
+    build_fixed_width_label_metrics,
+    load_fixed_width_aliases,
+)
 from scripts.localization.game_locales.parsers import LocaleSourceError, parse_hash_indexed
 from scripts.localization.game_locales.raw_providers import (
     RawProvider,
@@ -870,6 +876,7 @@ def build_game_catalog(
     mapping_path: Path = DEFAULT_MAPPING_PATH,
     target_header_path: Path = DEFAULT_TARGET_HEADER_PATH,
     authored_paths: Optional[Mapping[str, Path]] = None,
+    fixed_width_aliases_path: Path = FIXED_WIDTH_ALIASES_PATH,
     enabled_locales: Sequence[str] = LOCALE_IDS,
     suffix_share: bool = True,
 ) -> GameCatalogBuild:
@@ -923,6 +930,33 @@ def build_game_catalog(
         )
         for locale in enabled_locales
     )
+    display_aliases: Mapping[str, Mapping[str, Mapping[int, str]]] = {}
+    fixed_width_metrics = None
+    if target_count == 3414:
+        mapping_absolute = Path(mapping_path).resolve()
+        repo_root = mapping_absolute.parents[3]
+        alias_path = Path(fixed_width_aliases_path)
+        if not alias_path.is_absolute():
+            alias_path = repo_root / alias_path
+        try:
+            fixed_width_metrics = build_fixed_width_label_metrics(
+                repo_root,
+                localized_payloads={
+                    bundle.locale: {
+                        entry.target_id: entry.source_text
+                        for entry in bundle.entries
+                        if entry.source_text is not None
+                    }
+                    for bundle in locale_bundles
+                },
+                aliases_path=alias_path,
+            )
+            all_aliases = load_fixed_width_aliases(alias_path)
+        except FixedWidthLabelError as error:
+            raise GameCatalogError(str(error)) from error
+        display_aliases = {
+            locale: all_aliases[locale] for locale in enabled_locales
+        }
     locale_reports = {
         bundle.locale: _locale_report(bundle, suffix_share=suffix_share)
         for bundle in locale_bundles
@@ -981,10 +1015,32 @@ def build_game_catalog(
             for entry in bundle.entries
         ),
     }
+    if fixed_width_metrics is not None:
+        report["fixed_width_labels"] = fixed_width_metrics
     budget = _build_budget(
         mapping_source_counts=mapping_source_counts,
         english_bundle=english_bundle,
         locale_bundles=locale_bundles,
+    )
+    alias_count = sum(
+        len(entries)
+        for surfaces in display_aliases.values()
+        for entries in surfaces.values()
+    )
+    alias_text_bytes = sum(
+        len(text.encode("utf-8")) + 1
+        for surfaces in display_aliases.values()
+        for entries in surfaces.values()
+        for text in entries.values()
+    )
+    budget["display_aliases"] = {
+        "alias_count": alias_count,
+        "entry_bytes": alias_count * 8,
+        "text_bytes": alias_text_bytes,
+        "estimated_total_c_bytes": alias_count * 8 + alias_text_bytes,
+    }
+    budget["totals"]["estimated_total_c_bytes"] += (
+        alias_count * 8 + alias_text_bytes
     )
     return GameCatalogBuild(
         target_count=target_count,
@@ -994,6 +1050,7 @@ def build_game_catalog(
         locales=locale_bundles,
         report=report,
         budget=budget,
+        display_aliases=display_aliases,
         suffix_share=suffix_share,
     )
 

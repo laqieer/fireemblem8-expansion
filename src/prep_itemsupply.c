@@ -97,7 +97,7 @@ void PrepItemSupply_DrawItemList(struct Text * textBase, u16 * tm, int yLines, s
             th,
             0,
             unusable,
-            GetItemName(item)
+            GetItemDisplayName(item)
         );
 
         DrawIcon(tm + TILEMAP_INDEX(1, i*2 & 0x1f), GetItemIconId(item), 0x4000);
@@ -135,7 +135,7 @@ void PrepItemSupply_DrawItemListRow(struct Text * textBase, u16 * tm, int yLines
         TileMap_FillRect(tm + offset, 12, 1, 0);
 
         ClearText(th);
-        Text_InsertDrawString(th, 0, unusable, GetItemName(item));
+        Text_InsertDrawString(th, 0, unusable, GetItemDisplayName(item));
         DrawIcon(tm + offset + 1, GetItemIconId(item), 0x4000);
         PutText(th, tm + offset + 3);
 
@@ -390,7 +390,7 @@ void PrepItemSupply_InitGfx(struct PrepItemSupplyProc * proc)
 
     StartSysBrownBox(0xd, 0xe00, 0xf, 0xc00, 0, proc);
     EnableSysBrownBox(0, 0x90, 6, 2);
-    GetStringFromIndex(proc->unit->pCharacterData->nameTextId);
+    GetCharacterDisplayName(proc->unit->pCharacterData);
     StartUiCursorHand(proc);
     ResetSysHandCursor(proc);
     DisplaySysHandCursorTextShadow(0x600, 1);

@@ -242,7 +242,7 @@ void EfxPrepareScreenFx(void)
     if (gBanimValid[EKR_POS_L] == false)
         str = gNopStr;
     else
-        str = GetStringFromIndex(gpEkrBattleUnitLeft->unit.pCharacterData->nameTextId);
+        str = GetCharacterDisplayName(gpEkrBattleUnitLeft->unit.pCharacterData);
 
     InitText(&gBanimText[0], 7);
     Text_SetCursor(&gBanimText[0], GetStringTextCenteredPos(0x38, str));
@@ -253,7 +253,7 @@ void EfxPrepareScreenFx(void)
     if (gBanimValid[EKR_POS_L] == false)
         str = gNopStr;
     else
-        str = GetItemName(gpEkrBattleUnitLeft->weaponBefore);
+        str = GetItemDisplayName(gpEkrBattleUnitLeft->weaponBefore);
 
     InitText(&gBanimText[2], 8);
     Text_SetCursor(&gBanimText[2], GetStringTextCenteredPos(0x40, str));
@@ -264,7 +264,7 @@ void EfxPrepareScreenFx(void)
     if (gBanimValid[EKR_POS_R] == false)
         str = gNopStr;
     else
-        str = GetStringFromIndex(gpEkrBattleUnitRight->unit.pCharacterData->nameTextId);
+        str = GetCharacterDisplayName(gpEkrBattleUnitRight->unit.pCharacterData);
 
     InitText(&gBanimText[3], 7);
     Text_SetCursor(&gBanimText[3], GetStringTextCenteredPos(0x38, str));
@@ -275,7 +275,7 @@ void EfxPrepareScreenFx(void)
     if (gBanimValid[EKR_POS_R] == false)
         str = gNopStr;
     else
-        str = GetItemName(gpEkrBattleUnitRight->weaponBefore);
+        str = GetItemDisplayName(gpEkrBattleUnitRight->weaponBefore);
 
     InitText(&gBanimText[1], 8);
     Text_SetCursor(&gBanimText[1], GetStringTextCenteredPos(0x3E, str));

@@ -62,6 +62,11 @@ class FinalMappingTests(unittest.TestCase):
                 encoding="utf-8"
             )
         )
+        cls.fixed_width_metrics = json.loads(
+            (
+                cls.MAPPING_DIR / "fixed_width_label_metrics.json"
+            ).read_text(encoding="utf-8")
+        )
         cls.rows = {row["target_id"]: row for row in cls.mapping["rows"]}
         cls.original_rows = {
             row["target_id"]: row for row in recover_original_rows(cls.mapping)
@@ -145,6 +150,9 @@ class FinalMappingTests(unittest.TestCase):
         paths = {
             "coverage": self.MAPPING_DIR / "fe8u_target_map.coverage.json",
             "ending_metrics": self.MAPPING_DIR / "ending_layout_metrics.json",
+            "fixed_width_metrics": (
+                self.MAPPING_DIR / "fixed_width_label_metrics.json"
+            ),
             "mapping": self.MAPPING_DIR / "fe8u_target_map.json",
             "queue": self.MAPPING_DIR / "authored_translation_queue.json",
             "report": self.MAPPING_DIR / "final_mapping_report.json",
@@ -612,6 +620,10 @@ class FinalMappingTests(unittest.TestCase):
 
     def test_full_semantic_audit_exact_targets_and_call_sites(self):
         exact = {
+            "0x0805": {
+                "ja": "光の女王　ラーチェル",
+                "zh-Hans": "光之女王 拉切尔",
+            },
             "0x009A": {
                 "ja": "ウィンドウカラー",
                 "zh-Hans": "窗口颜色",
@@ -1089,8 +1101,16 @@ class FinalMappingTests(unittest.TestCase):
 
         contains = {
             "0x08E5": {
-                "ja": ("塔のマップをひとつクリア", "次の階"),
-                "zh-Hans": ("每通关一张塔内地图", "进入下一层"),
+                "ja": (
+                    "塔のマップをひとつクリア",
+                    "次の階",
+                    "上の階へ進むほど敵は強く",
+                ),
+                "zh-Hans": (
+                    "每通关一张塔内地图",
+                    "进入下一层",
+                    "塔层越高，敌人就会越强",
+                ),
             },
             "0x08EA": {
                 "zh-Hans": ("王宫仍遭古拉德", "围攻", "眼看就要陷落")
@@ -1133,6 +1153,19 @@ class FinalMappingTests(unittest.TestCase):
                     "贾哈那的【圣石】也即将",
                 ),
             },
+            "0x0BA9": {
+                "zh-Hans": ("梅尔早已追寻魔王的气息", "离开了这片土地")
+            },
+            "0x0C10": {
+                "zh-Hans": ("到了需要的时候", "我会把事情办妥")
+            },
+            "0x0C12": {
+                "zh-Hans": (
+                    "但王子身边还有弗雷利亚正规军",
+                    "到了需要的时候",
+                    "我会把事情办妥",
+                )
+            },
             "0x0C00": {
                 "zh-Hans": ("不知道", "是否平安", "双胞胎哥哥", "身陷险境")
             },
@@ -1141,7 +1174,7 @@ class FinalMappingTests(unittest.TestCase):
             },
             "0x0CE5": {
                 "ja": ("２１戦１１勝１０敗",),
-                "zh-Hans": ("21战11胜10败",),
+                "zh-Hans": ("21战11胜10败", "但不想再打赌了"),
             },
         }
         for target_id, by_locale in contains.items():
@@ -1152,7 +1185,7 @@ class FinalMappingTests(unittest.TestCase):
 
         forbidden = {
             ("0x08E5", "ja"): ("章をひとつクリア",),
-            ("0x08E5", "zh-Hans"): ("每结束一章",),
+            ("0x08E5", "zh-Hans"): ("每结束一章", "随着故事的进行"),
             ("0x08EA", "zh-Hans"): ("目前也已经陷落",),
             ("0x0907", "zh-Hans"): ("同时也能立下大功",),
             ("0x0969", "zh-Hans"): ("艾莉斯", "可以放心"),
@@ -1165,15 +1198,53 @@ class FinalMappingTests(unittest.TestCase):
             ("0x0AF9", "zh-Hans"): ("救救塞莱娜",),
             ("0x0B06", "ja"): ("グラドとフレリア",),
             ("0x0B06", "zh-Hans"): ("古拉德和弗雷利亚",),
+            ("0x0BA9", "zh-Hans"): ("感觉到你的栖息离开了这里",),
+            ("0x0BAC", "zh-Hans"): ("能够再见到父亲",),
+            ("0x0C10", "zh-Hans"): ("随时的散散步",),
+            ("0x0C12", "zh-Hans"): ("不和我们一", "随时的散散步"),
             ("0x0C00", "zh-Hans"): ("双保胎", "现在没有危险"),
             ("0x0C1C", "zh-Hans"): ("以利益为纽带",),
             ("0x0CE5", "ja"): ("２１戦１５勝１６敗",),
-            ("0x0CE5", "zh-Hans"): ("15胜16败",),
+            ("0x0CE5", "zh-Hans"): (
+                "15胜16败",
+                "无论赌博抑或练习我均愿奉陪",
+            ),
         }
         for (target_id, locale), fragments in forbidden.items():
             payload = self.localized_text(target_id, locale)
             for fragment in fragments:
                 self.assertNotIn(fragment, payload, (target_id, locale, fragment))
+
+    def test_fixed_width_alias_metrics_cover_every_final_name_label(self):
+        metrics = self.fixed_width_metrics
+        self.assertEqual(metrics["kind"], "fe8u-fixed-width-label-metrics")
+        self.assertEqual(
+            metrics["summary"],
+            {
+                "alias_count": 120,
+                "label_count": 664,
+                "locale_count": 2,
+                "overflow_count": 0,
+                "surface_count": 3,
+            },
+        )
+        ja = metrics["locales"]["ja"]["surfaces"]
+        bolting = next(
+            record
+            for record in ja["item_name_56"]["records"]
+            if record["target_id"] == "0x03AD"
+        )
+        ranger = next(
+            record
+            for record in ja["class_name_64"]["records"]
+            if record["target_id"] == "0x02CD"
+        )
+        self.assertEqual(bolting["canonical_text"], "サンダーストーム")
+        self.assertEqual(bolting["display_text"], "遠雷")
+        self.assertLessEqual(bolting["display_width"], 56)
+        self.assertEqual(ranger["canonical_text"], "フォレストナイト")
+        self.assertEqual(ranger["display_text"], "森騎士")
+        self.assertLessEqual(ranger["display_width"], 64)
 
     def test_ch15_scene_boundary_does_not_duplicate_0b2a(self):
         expected_end = "[CTRL:0003][CTRL:0015]"

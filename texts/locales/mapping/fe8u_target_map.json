@@ -92472,12 +92472,12 @@
               "ja": {
                 "id": "0x077D",
                 "kind": "indexed",
-                "sha256": "b0902db7b9b8d7d966bfca941057f0e63fb1f52edb6c4383472e2cc694a869b3"
+                "sha256": "abef630c890aeef493ebd8ddba7088a502cb23fadc5110f802c60979b4799501"
               },
               "zh-Hans": {
                 "id": "0x077D",
                 "kind": "indexed",
-                "sha256": "606bcbe8e10f9aa8acdb107d286a1a269710d55b46c9bcd62f94fe863d96bbe8"
+                "sha256": "9f66128a2ee800d28e398c989ef164be89b786f0d909e6b4cd34167dcc521db6"
               }
             },
             "structural_agreement": true
@@ -136428,7 +136428,7 @@
               "zh-Hans": {
                 "id": "0x0B69",
                 "kind": "indexed",
-                "sha256": "3ce4b2cce717b6afc4141e6ec6a37033000c3d6775537562ff580723f87201fb"
+                "sha256": "380695fe33aee9470919946e603667f6d35e0ffb79a564f90b8c740043501e3f"
               }
             },
             "structural_agreement": true
@@ -136605,7 +136605,7 @@
               "zh-Hans": {
                 "id": "0x0B6C",
                 "kind": "indexed",
-                "sha256": "1b79b6a1f9f31b7ea26b9e21e477fc3b2f82b73ef9bccd8acad6d514fa8f04b6"
+                "sha256": "5e4f005fb1719673a8db5d969f70546548c8bb1177b3b35997c522415bfe6bce"
               }
             },
             "structural_agreement": true
@@ -141843,7 +141843,7 @@
               "zh-Hans": {
                 "id": "0x0BD0",
                 "kind": "indexed",
-                "sha256": "9d9642038b972d6e52bb3fa2bdafcdf6b576313e0ecfd521f83c9fd2eec98831"
+                "sha256": "a9c30476d2854bc1143104fe2ff7c9e821780443e9cf68aee620a7863802fc8a"
               }
             },
             "structural_agreement": true
@@ -141961,7 +141961,7 @@
               "zh-Hans": {
                 "id": "0x0BD2",
                 "kind": "indexed",
-                "sha256": "9fb2380c266331c1a806f2e558b69a77b6341d05ac9c71d380223bb66429f5c5"
+                "sha256": "1cdf0fa902197a84d07b7edf2708d53d62d08e1436667b7418b9ce7b6b8d47ad"
               }
             },
             "structural_agreement": true

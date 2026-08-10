@@ -399,6 +399,8 @@ MODERN_GAME_LOCALIZATION_CATALOG_LOCALES := $(MODERN_GAME_LOCALIZATION_CATALOG_L
 endif
 MODERN_GAME_LOCALIZATION_AVAILABLE := $(and \
 	$(wildcard scripts/localization/game_catalog/cli.py),\
+	$(wildcard scripts/localization/game_locales/fixed_width_labels.py),\
+	$(wildcard texts/locales/fixed_width_display_aliases.json),\
 	$(wildcard texts/locales/mapping/fe8u_target_map.json))
 MODERN_GAME_LOCALIZATION_ROOT := $(MODERN_BUILD_ROOT)/game-localization
 MODERN_GAME_LOCALIZATION_GENERATED_DIR := $(MODERN_GAME_LOCALIZATION_ROOT)/generated

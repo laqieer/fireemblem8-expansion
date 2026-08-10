@@ -23,7 +23,7 @@ void PutManimLevelUpFrame(int actor_id, int x, int y)
     PutString(
         TILEMAP_LOCATED(gBG0TilemapBuffer, x + 2, y),
         TEXT_COLOR_SYSTEM_WHITE,
-        GetStringFromIndex(gManimSt.actor[actor_id].unit->pClassData->nameTextId));
+        GetClassDisplayName(gManimSt.actor[actor_id].unit->pClassData));
 
     for (i = 0; gManimLevelUpLabelInfoList[i].x != 0xFF; i++) {
         PutStringCentered(

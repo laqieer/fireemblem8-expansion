@@ -2422,14 +2422,14 @@
     },
     "fe8j_indexed_source": {
       "path": "texts/locales/ja/indexed.txt",
-      "sha256": "3f8af2b2ca4d6e1ec664841fc3cb8fb1c553cfe316e81682067db94b080b01b5"
+      "sha256": "ab7663afedf7a1c4cd7cf5b64ce6dc0d851a896ec7338c0d78750a342d8b4708"
     },
     "fe8j_reference_revision": "bf424414d075789d757e2f4cd0cea823bfb2862e",
     "fe8u_reference_revision": "d727e37ba1a584b2f874bdc3662ebc45e257de23",
     "protected_artifacts": [
       {
         "path": "texts/locales/mapping/fe8u_target_map.json",
-        "sha256": "e97734e5e2149caa18c8e199f09a37e95adbc70393e16cb9db7bdf86cd90d703"
+        "sha256": "5641b3d3000e1a45182422886c98dc1c4d990156e062067f9cb43aef7335c0b8"
       },
       {
         "path": "texts/locales/mapping/fe8u_structural_evidence.json",
@@ -64893,9 +64893,9 @@
       "validation": {
         "parsed_structural_pair": false,
         "source_in_bounds": true,
-        "source_payload_bytes": 33,
+        "source_payload_bytes": 30,
         "source_payload_nonempty": true,
-        "source_payload_sha256": "b0902db7b9b8d7d966bfca941057f0e63fb1f52edb6c4383472e2cc694a869b3",
+        "source_payload_sha256": "abef630c890aeef493ebd8ddba7088a502cb23fadc5110f802c60979b4799501",
         "target_in_bounds": true,
         "typed_source_site_count": 1,
         "typed_target_site_count": 2

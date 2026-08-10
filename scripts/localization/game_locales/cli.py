@@ -557,6 +557,7 @@ def _final_mapping_paths(args: argparse.Namespace):
     return {
         "coverage": args.coverage,
         "ending_metrics": args.ending_metrics,
+        "fixed_width_metrics": args.fixed_width_metrics,
         "mapping": args.mapping,
         "queue": args.queue,
         "report": args.final_report,
@@ -1088,6 +1089,13 @@ def build_parser() -> argparse.ArgumentParser:
             type=Path,
             default=Path(
                 "texts/locales/mapping/ending_layout_metrics.json"
+            ),
+        )
+        command_parser.add_argument(
+            "--fixed-width-metrics",
+            type=Path,
+            default=Path(
+                "texts/locales/mapping/fixed_width_label_metrics.json"
             ),
         )
         command_parser.add_argument(

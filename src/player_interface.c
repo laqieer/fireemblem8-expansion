@@ -869,7 +869,7 @@ void DrawUnitMapUi(struct PlayerInterfaceProc * proc, struct Unit * unit)
 
     CpuFastFill(0, gUiTmScratchA, 6 * CHR_SIZE * sizeof(u16));
 
-    str = GetStringFromIndex(unit->pCharacterData->nameTextId);
+    str = GetCharacterDisplayName(unit->pCharacterData);
     pos = GetStringTextCenteredPos(56, str);
 
     ClearText(proc->texts);
@@ -964,7 +964,7 @@ void DrawUnitBurstMapUi(struct PlayerInterfaceProc * proc, struct Unit * unit)
     proc->wBurst = 8;
     proc->hBurst = 5;
 
-    nameStr = GetStringFromIndex(unit->pCharacterData->nameTextId);
+    nameStr = GetCharacterDisplayName(unit->pCharacterData);
     pos = GetStringTextCenteredPos(56, nameStr);
 
     ClearText(proc->texts);

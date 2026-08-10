@@ -173,6 +173,21 @@ inline char* GetItemName(int item) {
     return result;
 }
 
+char* GetItemDisplayName(int item)
+{
+    const struct ItemData* itemData;
+    const char* alias;
+
+    itemData = GetItemData(ITEM_INDEX(item));
+    alias = LocalizedGameText_GetDisplayAlias(
+        itemData->nameTextId,
+        LOCALIZED_GAME_TEXT_DISPLAY_ITEM_NAME_56);
+    if (alias != NULL)
+        return (char*)alias;
+
+    return GetItemName(item);
+}
+
 inline int GetItemDescId(int item) {
     return GetItemData(ITEM_INDEX(item))->descTextId;
 }
@@ -487,7 +502,7 @@ s8 CanUnitUseStaffNow(struct Unit* unit, int item) {
 
 void DrawItemMenuLine(struct Text* text, int item, s8 isUsable, u16* mapOut) {
     Text_SetParams(text, 0, (isUsable ? TEXT_COLOR_SYSTEM_WHITE : TEXT_COLOR_SYSTEM_GRAY));
-    Text_DrawString(text, GetItemName(item));
+    Text_DrawString(text, GetItemDisplayName(item));
 
     PutText(text, mapOut + 2);
 
@@ -498,7 +513,7 @@ void DrawItemMenuLine(struct Text* text, int item, s8 isUsable, u16* mapOut) {
 
 void DrawItemMenuLineLong(struct Text* text, int item, s8 isUsable, u16* mapOut) {
     Text_SetParams(text, 0, (isUsable ? TEXT_COLOR_SYSTEM_WHITE : TEXT_COLOR_SYSTEM_GRAY));
-    Text_DrawString(text, GetItemName(item));
+    Text_DrawString(text, GetItemDisplayName(item));
 
     PutText(text, mapOut + 2);
 
@@ -511,7 +526,7 @@ void DrawItemMenuLineLong(struct Text* text, int item, s8 isUsable, u16* mapOut)
 
 void DrawItemMenuLineNoColor(struct Text* text, int item, u16* mapOut) {
     Text_SetCursor(text, 0);
-    Text_DrawString(text, GetItemName(item));
+    Text_DrawString(text, GetItemDisplayName(item));
 
     PutText(text, mapOut + 2);
 
@@ -528,7 +543,7 @@ void DrawItemStatScreenLine(struct Text* text, int item, int nameColor, u16* map
     color = nameColor;
     Text_SetColor(text, color);
 
-    Text_DrawString(text, GetItemName(item));
+    Text_DrawString(text, GetItemDisplayName(item));
 
     color = (nameColor == TEXT_COLOR_SYSTEM_GRAY) ? TEXT_COLOR_SYSTEM_GRAY : TEXT_COLOR_SYSTEM_WHITE;
     PutSpecialChar(mapOut + 12, color, TEXT_SPECIAL_SLASH);

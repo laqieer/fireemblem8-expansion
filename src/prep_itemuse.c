@@ -164,7 +164,7 @@ void DrawPrepScreenItemUseStatLabels(struct Unit *unit)
         GetStringFromIndex(0x4F7)
     );
 
-    str = GetStringFromIndex(unit->pClassData->nameTextId);
+    str = GetClassDisplayName(unit->pClassData);
     PutDrawText(
         text++,
         TILEMAP_LOCATED(gBG2TilemapBuffer, 21, 1),
@@ -426,7 +426,7 @@ void PrepItemUse_InitDisplay(struct ProcPrepItemUse *proc)
     StartSysBrownBox(0xD, 0xE00, 0xF, 0xC00, 0, proc);
     EnableSysBrownBox(0, -0x28, -1, 1);
 
-    str = GetStringFromIndex(proc->unit->pCharacterData->nameTextId);
+    str = GetCharacterDisplayName(proc->unit->pCharacterData);
     PutDrawText(
         0, gBG0TilemapBuffer, 
         TEXT_COLOR_SYSTEM_WHITE, 

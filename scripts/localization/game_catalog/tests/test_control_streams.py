@@ -58,7 +58,7 @@ class FinalControlStreamTests(unittest.TestCase):
                 "modeled_target_count": 275,
                 "mouth_balance_validated_payload_count": 6828,
                 "portrait_remapped_target_count": 187,
-                "talk_line_count": 50796,
+                "talk_line_count": 50794,
                 "talk_payload_count": 1976,
                 "validated_payload_count": 6828,
             },
@@ -370,15 +370,10 @@ class FinalControlStreamTests(unittest.TestCase):
         self.assertIn("[CTRL:0080][CTRL:001F][CTRL:0005]", zh[0x0D1A].source_text)
         self.assertIn("[CTRL:0080][CTRL:000D][CTRL:000B]城内", zh[0x0A04].source_text)
         bac_payload = zh[0x0BAC].encoded_bytes
-        self.assertEqual(bac_payload[1065], 0x0A)
+        self.assertEqual(bac_payload.count(b"\x0A" + "怎么了？".encode("utf-8")), 1)
         self.assertEqual(
-            bac_payload[1066 : 1066 + len("怎么了？".encode("utf-8"))],
-            "怎么了？".encode("utf-8"),
-        )
-        self.assertEqual(bac_payload[1218], 0x0A)
-        self.assertEqual(
-            bac_payload[1219 : 1219 + len("梅尔，怎么了？".encode("utf-8"))],
-            "梅尔，怎么了？".encode("utf-8"),
+            bac_payload.count(b"\x0A" + "梅尔，怎么了？".encode("utf-8")),
+            1,
         )
         self.assertTrue(
             zh[0x0D05].source_text.startswith(
@@ -464,7 +459,8 @@ class FinalControlStreamTests(unittest.TestCase):
         self.assertIn("艾瑞珂公主", zh[0x0B1B].source_text)
         self.assertIn("不幸身亡", zh[0x0C00].source_text)
         self.assertIn("值得成为例外", zh[0x0C1C].source_text)
-        self.assertIn("赌局的门道", zh[0x0CE5].source_text)
+        self.assertIn("但不想再打赌了", zh[0x0CE5].source_text)
+        self.assertNotIn("无论赌博抑或练习我均愿奉陪", zh[0x0CE5].source_text)
         self.assertIn("賭けのやり方", ja[0x0CE5].source_text)
 
     def test_garcia_dozla_support_arc_is_target_authored_and_structural(self):

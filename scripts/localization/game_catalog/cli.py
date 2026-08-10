@@ -11,6 +11,7 @@ from scripts.localization.game_locales.authored import (
     AuthoredCatalogError,
     check_authored_catalogs,
 )
+from scripts.localization.game_locales.fixed_width_labels import ALIASES_PATH
 
 from .build import (
     DEFAULT_AUTHORED_PATHS,
@@ -165,6 +166,7 @@ def _leakage_input_records(args: argparse.Namespace):
     paths = {
         "english_definitions": args.english_definitions,
         "english_texts": args.english_texts,
+        "fixed_width_display_aliases": ALIASES_PATH,
         "mapping": args.mapping,
         "raw_closure": args.raw_closure,
         "target_header": args.target_header,

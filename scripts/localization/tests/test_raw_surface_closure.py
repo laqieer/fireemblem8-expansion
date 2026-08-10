@@ -797,7 +797,7 @@ class RawSurfaceClosureTests(unittest.TestCase):
         catalog_root.mkdir()
         (catalog_root / "source.c").write_bytes(source_raw)
         (catalog_root / "commit.txt").write_bytes(commit_raw)
-        value_raw = "値".encode("cp932") + b"\0"
+        value_raw = b"fixture\0"
         (catalog_root / "values.bin").write_bytes(value_raw)
         snapshot = {
                 "kind": "fe8j-raw-symbol-source-snapshot",
@@ -854,7 +854,7 @@ class RawSurfaceClosureTests(unittest.TestCase):
                     "providers": {
                         "0x0001": {
                             "symbol": "FixtureProvider",
-                            "text": "値",
+                            "text": "fixture",
                         }
                     },
                     "schema_version": 3,
@@ -874,6 +874,30 @@ class RawSurfaceClosureTests(unittest.TestCase):
                     source_root=catalog_root,
                     repository=repository,
                 )
+
+                mismatch = deepcopy(snapshot)
+                mismatch_value = "値".encode("cp932") + b"\0"
+                (catalog_root / "values.bin").write_bytes(mismatch_value)
+                mismatch["provider_values_artifact"]["sha256"] = hashlib.sha256(
+                    mismatch_value
+                ).hexdigest()
+                mismatch["providers"]["0x0001"]["byte_length"] = len(
+                    mismatch_value
+                )
+                mismatch["providers"]["0x0001"]["value_sha256"] = hashlib.sha256(
+                    mismatch_value
+                ).hexdigest()
+                mismatch_catalog = catalog_for(mismatch)
+                mismatch_catalog["providers"]["0x0001"]["text"] = "値"
+                with self.assertRaisesRegex(
+                    RawProviderError,
+                    "artifact value is not extractable",
+                ):
+                    load_ja_raw_providers(
+                        mismatch_catalog,
+                        source_root=catalog_root,
+                    )
+                (catalog_root / "values.bin").write_bytes(value_raw)
 
                 zero = deepcopy(snapshot)
                 zero["source_revision"] = "0" * 40

@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import ast
 import hashlib
 import json
 import re
+import struct
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -55,6 +57,162 @@ class GitSource:
     artifact_path: str
     artifact_sha256: str
     artifact_raw: bytes
+
+
+_C_STRING_RE = re.compile(r'"(?:\\.|[^"\\])*"', re.DOTALL)
+
+
+def _decode_c_string(token: str, *, source_path: str) -> bytes:
+    try:
+        value = ast.literal_eval(token)
+    except (SyntaxError, ValueError) as error:
+        raise RawProviderError(
+            f"ja raw provider source string is malformed in {source_path}"
+        ) from error
+    if not isinstance(value, str):
+        raise RawProviderError(
+            f"ja raw provider source string is not text in {source_path}"
+        )
+    try:
+        return value.encode("cp932")
+    except UnicodeEncodeError as error:
+        raise RawProviderError(
+            f"ja raw provider source string is not CP932 in {source_path}"
+        ) from error
+
+
+def _nul_terminated_values(raw: bytes) -> tuple[bytes, ...]:
+    return tuple(value + b"\0" for value in raw.split(b"\0") if value)
+
+
+def _extract_c_anchor_bytes(
+    source: str,
+    *,
+    source_path: str,
+    source_anchor: str,
+) -> bytes | None:
+    anchor = re.escape(source_anchor)
+    initializer = re.search(
+        rf"\b{anchor}\b[^;]*=\s*(.*?);",
+        source,
+        flags=re.DOTALL,
+    )
+    if initializer is not None:
+        body = initializer.group(1)
+        string_tokens = _C_STRING_RE.findall(body)
+        if string_tokens:
+            return b"".join(
+                _decode_c_string(token, source_path=source_path)
+                for token in string_tokens
+            )
+        numeric_tokens = re.findall(r"0x[0-9A-Fa-f]+|\b\d+\b", body)
+        if numeric_tokens:
+            values = [int(token, 0) for token in numeric_tokens]
+            if any(value < 0 or value > 0xFFFFFFFF for value in values):
+                raise RawProviderError(
+                    f"ja raw provider source integer is out of range in "
+                    f"{source_path}"
+                )
+            return b"".join(struct.pack("<I", value) for value in values)
+
+    for line in source.splitlines():
+        if re.search(rf"\b{anchor}\b", line) is None:
+            continue
+        string_tokens = _C_STRING_RE.findall(line)
+        if string_tokens:
+            return b"".join(
+                _decode_c_string(token, source_path=source_path)
+                for token in string_tokens
+            )
+    return None
+
+
+def _extract_asm_anchor_bytes(
+    source: str,
+    *,
+    source_path: str,
+    source_anchor: str,
+) -> bytes | None:
+    label = re.search(
+        rf"(?m)^[ \t]*{re.escape(source_anchor)}:[ \t]*$",
+        source,
+    )
+    if label is None:
+        return None
+    next_label = re.search(
+        r"(?m)^[ \t]*[A-Za-z_.][A-Za-z0-9_.$]*:[ \t]*$",
+        source[label.end() :],
+    )
+    end = (
+        len(source)
+        if next_label is None
+        else label.end() + next_label.start()
+    )
+    body = source[label.end() : end]
+    output = bytearray()
+    for line in body.splitlines():
+        byte_directive = re.search(r"\.byte\s+([^/]+)", line)
+        if byte_directive is not None:
+            for token in byte_directive.group(1).split(","):
+                token = token.strip()
+                if not token:
+                    continue
+                try:
+                    value = int(token, 0)
+                except ValueError as error:
+                    raise RawProviderError(
+                        f"ja raw provider .byte value is malformed in "
+                        f"{source_path}"
+                    ) from error
+                if value < 0 or value > 0xFF:
+                    raise RawProviderError(
+                        f"ja raw provider .byte value is out of range in "
+                        f"{source_path}"
+                    )
+                output.append(value)
+        asciz = re.search(r"\.asciz\s+(" + _C_STRING_RE.pattern + r")", line)
+        if asciz is not None:
+            output.extend(
+                _decode_c_string(asciz.group(1), source_path=source_path)
+            )
+            output.append(0)
+    return bytes(output) if output else None
+
+
+def _extract_source_anchor_values(
+    source_blob: GitSourceBlob,
+    *,
+    source_anchor: str,
+) -> tuple[bytes, ...]:
+    try:
+        source = source_blob.raw.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise RawProviderError(
+            f"ja raw provider source blob is not UTF-8: {source_blob.path}"
+        ) from error
+    extracted = _extract_c_anchor_bytes(
+        source,
+        source_path=source_blob.path,
+        source_anchor=source_anchor,
+    )
+    if extracted is None:
+        extracted = _extract_asm_anchor_bytes(
+            source,
+            source_path=source_blob.path,
+            source_anchor=source_anchor,
+        )
+    if extracted is None:
+        raise RawProviderError(
+            f"ja raw provider source_anchor {source_anchor!r} cannot be "
+            f"materialized from {source_blob.path}"
+        )
+    values = _nul_terminated_values(extracted)
+    if not values:
+        raise RawProviderError(
+            f"ja raw provider source_anchor {source_anchor!r} has no "
+            f"extractable values in {source_blob.path}"
+        )
+    return values
 
 
 def _git_object_oid(kind: str, raw: bytes) -> str:
@@ -476,6 +634,15 @@ def load_ja_raw_providers(
         if source_text != text:
             raise RawProviderError(
                 f"ja raw provider {target} source value does not match catalog text"
+            )
+        source_values = _extract_source_anchor_values(
+            source_git_blob,
+            source_anchor=source_anchor,
+        )
+        if raw_value not in source_values:
+            raise RawProviderError(
+                f"ja raw provider {target} artifact value is not extractable "
+                f"from {source_path}:{source_anchor}"
             )
         target_id = int(target, 16)
         if target_id in providers:

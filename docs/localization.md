@@ -306,6 +306,13 @@ descriptor slots.
    paired endings) and measures every JA/ZH line with the committed runtime
    system-font widths. A missing glyph, physical newline, invalid line count,
    or overflow fails generation.
+   It also regenerates
+   `texts/locales/mapping/fixed_width_label_metrics.json`. That manifest
+   enumerates every final JA/ZH character, class, and item name from
+   `gCharacterData`, `gClassData`, and `gItemData`; pins the real 40/64/56
+   pixel UI call sites and font metrics; and requires a surface-specific
+   compact alias for every canonical overflow. The canonical catalog names
+   remain unchanged.
    The final full-game catalog validator independently checks every present
    JA/ZH payload rather than a target allowlist. Every `ToggleMouthMove` must
    be paired before a dialogue boundary; FE8U-domain payloads whose dialogue

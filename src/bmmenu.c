@@ -1849,9 +1849,9 @@ u8 StealMapSelect_Select(ProcPtr proc, struct SelectTarget* target) {
 
     CallARM_FillTileRect(gBG1TilemapBuffer + 0x42, gBattleForecast_2, 0x1000);
 
-    pos = (56 - GetStringTextLen(GetStringFromIndex(GetUnit(gActionData.targetIndex)->pCharacterData->nameTextId))) / 2;
+    pos = (56 - GetStringTextLen(GetCharacterDisplayName(GetUnit(gActionData.targetIndex)->pCharacterData))) / 2;
 
-    PutDrawText(0, gBG0TilemapBuffer + 0x63, 0, pos, 7, GetStringFromIndex(GetUnit(gActionData.targetIndex)->pCharacterData->nameTextId));
+    PutDrawText(0, gBG0TilemapBuffer + 0x63, 0, pos, 7, GetCharacterDisplayName(GetUnit(gActionData.targetIndex)->pCharacterData));
 
     PutFace80x72_Core(gBG0TilemapBuffer + 0x63 + 0x40, GetUnitPortraitId(GetUnit(gActionData.targetIndex)), 0x200, 5);
 
@@ -2341,7 +2341,7 @@ u8 ItemMenu_Is1stCommandAvailable(const struct MenuItemDef* def, int number) {
 }
 
 int ItemMenu_Draw1stCommand(struct MenuProc* menu, struct MenuItemProc* menuItem) {
-    Text_InsertDrawString(&menuItem->text, 16, 0, GetItemName(gBmSt.um_tmp_item));
+    Text_InsertDrawString(&menuItem->text, 16, 0, GetItemDisplayName(gBmSt.um_tmp_item));
     PutText(&menuItem->text, gBG0TilemapBuffer + TILEMAP_INDEX(menuItem->xTile, menuItem->yTile));
 
     return 0;

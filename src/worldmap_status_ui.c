@@ -206,14 +206,14 @@ void PutWorldmapStatusDetails(struct WorldmapStatusProc * proc)
     const char * nodeName;
     int x;
 
-    charName = GetStringFromIndex(proc->unit->pCharacterData->nameTextId);
+    charName = GetCharacterDisplayName(proc->unit->pCharacterData);
     x = GetStringTextCenteredPos(64, charName);
     BattleGenerateUiStats(proc->unit, GetUnitEquippedWeaponSlot(proc->unit));
     PutDrawText(&proc->text[0], TILEMAP_LOCATED(gBG0TilemapBuffer, 19, 10), TEXT_COLOR_SYSTEM_WHITE, x, 0, charName);
 
     PutDrawText(
         NULL, TILEMAP_LOCATED(gBG0TilemapBuffer, 17, 13), TEXT_COLOR_SYSTEM_WHITE, 0, 7,
-        GetStringFromIndex(proc->unit->pClassData->nameTextId));
+        GetClassDisplayName(proc->unit->pClassData));
 
     PutTwoSpecialChar(
         TILEMAP_LOCATED(gBG0TilemapBuffer, 17, 15), TEXT_COLOR_SYSTEM_GOLD, TEXT_SPECIAL_LV_A, TEXT_SPECIAL_LV_B);

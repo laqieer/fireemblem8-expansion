@@ -106,7 +106,7 @@ void InitBattleForecastLabels(void)
 
 void PutBattleForecastUnitName(u16 * dest, struct Text * text, struct Unit * unit)
 {
-    char* str = GetStringFromIndex(unit->pCharacterData->nameTextId);
+    char* str = GetCharacterDisplayName(unit->pCharacterData);
     int position = GetStringTextCenteredPos(48, str);
 
     ClearText(text);
@@ -115,7 +115,7 @@ void PutBattleForecastUnitName(u16 * dest, struct Text * text, struct Unit * uni
 
 void PutBattleForecastItemName(u16* dest, struct Text * text, int itemIdx)
 {
-    char* str = GetItemName(itemIdx);
+    char* str = GetItemDisplayName(itemIdx);
     int position = GetStringTextCenteredPos(56, str);
 
     ClearText(text);

@@ -2172,7 +2172,7 @@ void UnitList_PutRow(struct UnitListScreenProc * proc, u8 unitNum, u16 * tm, u8 
         }
 
         Text_DrawString(
-            &gUnitlistscreen_2[row], GetStringFromIndex(gSortedUnits[unitNum]->unit->pCharacterData->nameTextId));
+            &gUnitlistscreen_2[row], GetCharacterDisplayName(gSortedUnits[unitNum]->unit->pCharacterData));
         PutText(&gUnitlistscreen_2[row], tm + y * 0x20 + 3);
     }
 
@@ -2186,7 +2186,7 @@ void UnitList_PutRow(struct UnitListScreenProc * proc, u8 unitNum, u16 * tm, u8 
         case UNITLIST_PAGE_SOLOANIM:
             PutDrawText(
                 &gUnitlistscreen_3[row][0], tm + y * 0x20 + 8, 0, 0, 0,
-                GetStringFromIndex(gSortedUnits[unitNum]->unit->pClassData->nameTextId));
+                GetClassDisplayName(gSortedUnits[unitNum]->unit->pClassData));
             Text_SetColor(&gUnitlistscreen_3[row][1], inactive ? TEXT_COLOR_SYSTEM_GRAY : TEXT_COLOR_SYSTEM_WHITE);
 
             if (GetUnitEquippedWeapon(gSortedUnits[unitNum]->unit) == 0)
@@ -2200,7 +2200,7 @@ void UnitList_PutRow(struct UnitListScreenProc * proc, u8 unitNum, u16 * tm, u8 
                 PutDrawText(
                     &gUnitlistscreen_3[row][1], tm + y * 0x20 + 17,
                     inactive ? TEXT_COLOR_SYSTEM_GRAY : TEXT_COLOR_SYSTEM_WHITE, 0, 0,
-                    GetItemName(GetUnitEquippedWeapon(gSortedUnits[unitNum]->unit)));
+                    GetItemDisplayName(GetUnitEquippedWeapon(gSortedUnits[unitNum]->unit)));
                 DrawIcon(
                     tm + y * 0x20 + 15, GetItemIconId(GetUnitEquippedWeapon(gSortedUnits[unitNum]->unit)),
                     TILEREF(0, 4));
@@ -2231,7 +2231,7 @@ void UnitList_PutRow(struct UnitListScreenProc * proc, u8 unitNum, u16 * tm, u8 
             PutDrawText(
                 &gUnitlistscreen_3[row][0], tm + y * 0x20 + 8,
                 inactive ? TEXT_COLOR_SYSTEM_GRAY : TEXT_COLOR_SYSTEM_WHITE, 4, 0,
-                GetStringFromIndex(gSortedUnits[unitNum]->unit->pClassData->nameTextId));
+                GetClassDisplayName(gSortedUnits[unitNum]->unit->pClassData));
 
             // level
             PutNumberOrBlank(
@@ -2302,7 +2302,7 @@ void UnitList_PutRow(struct UnitListScreenProc * proc, u8 unitNum, u16 * tm, u8 
             }
             else
             {
-                char const * name = GetItemName(GetUnitEquippedWeapon(gSortedUnits[unitNum]->unit));
+                char const * name = GetItemDisplayName(GetUnitEquippedWeapon(gSortedUnits[unitNum]->unit));
 
                 PutDrawText(
                     &gUnitlistscreen_3[row][0], tm + y * 0x20 + 10,

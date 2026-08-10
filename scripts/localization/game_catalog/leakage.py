@@ -14,7 +14,7 @@ from typing import Any, Dict, Iterable, Mapping, Optional, Sequence, Tuple
 
 from .model import GameCatalogBuild, GameCatalogError
 
-LEAKAGE_SCHEMA_VERSION = 2
+LEAKAGE_SCHEMA_VERSION = 3
 LEAKAGE_KIND = "runtime-locale-latin-span-audit"
 REVIEW_SCHEMA_VERSION = 1
 REVIEW_KIND = "runtime-locale-latin-span-review"
@@ -28,8 +28,6 @@ DEFAULT_REPORT_PATH = Path(
 OUTPUT_REPORT_NAME = "game_localization_latin_span_audit.json"
 
 _BRACKET_TOKEN_RE = re.compile(r"\[[^\[\]\r\n]+\]")
-_LATIN_RE = re.compile(r"[A-Za-z]")
-_LATIN_SPAN_RE = re.compile(r"[A-Za-z]+")
 _LOCALIZED_SCRIPT_RE = re.compile(
     r"[\u3040-\u30FF\u3400-\u9FFF\uF900-\uFAFF]"
 )
@@ -93,7 +91,32 @@ def _load_json(path: Path) -> Tuple[Any, bytes]:
 
 
 def _latin_span_counts(text: str) -> Counter:
-    return Counter(_LATIN_SPAN_RE.findall(_visible_text(text)))
+    return Counter(_latin_spans(_visible_text(text)))
+
+
+def _is_latin_letter(character: str) -> bool:
+    return (
+        unicodedata.category(character).startswith("L")
+        and "LATIN" in unicodedata.name(character, "")
+    )
+
+
+def _latin_spans(text: str) -> Tuple[str, ...]:
+    spans = []
+    current = []
+    for character in text:
+        if _is_latin_letter(character):
+            current.append(character)
+        elif current:
+            spans.append("".join(current))
+            current = []
+    if current:
+        spans.append("".join(current))
+    return tuple(spans)
+
+
+def _is_single_latin_span(value: str) -> bool:
+    return bool(value) and _latin_spans(value) == (value,)
 
 
 def _span_decision_key(target_key: str, span: str) -> str:
@@ -192,7 +215,7 @@ def load_review(path: Path = DEFAULT_REVIEW_PATH) -> ReviewCatalog:
         for span, span_raw in sorted(raw_spans.items()):
             if (
                 not isinstance(span, str)
-                or not _LATIN_SPAN_RE.fullmatch(span)
+                or not _is_single_latin_span(span)
                 or not isinstance(span_raw, dict)
             ):
                 raise GameCatalogError(
@@ -296,17 +319,59 @@ def _visible_text(text: str) -> str:
 
 
 def _copy_key(text: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "", _visible_text(text).casefold())
+    normalized = unicodedata.normalize("NFKD", _visible_text(text).casefold())
+    return "".join(
+        character
+        for character in normalized
+        if character.isdigit() or _is_latin_letter(character)
+    )
 
 
-def _ascii_letter_count(text: str) -> int:
-    return sum(character.isascii() and character.isalpha() for character in text)
+def _latin_letter_count(text: str) -> int:
+    return sum(_is_latin_letter(character) for character in text)
+
+
+def _mojibake_spans(text: str) -> Tuple[str, ...]:
+    spans = []
+    seen = set()
+    for start in range(len(text)):
+        for end in range(start + 2, min(len(text), start + 4) + 1):
+            candidate = text[start:end]
+            try:
+                raw = candidate.encode("cp1252")
+                decoded = raw.decode("utf-8")
+            except (UnicodeEncodeError, UnicodeDecodeError):
+                continue
+            if decoded == candidate or not any(ord(character) > 0x7F for character in decoded):
+                continue
+            if candidate not in seen:
+                spans.append(candidate)
+                seen.add(candidate)
+    return tuple(spans)
+
+
+def _payload_artifacts(text: str) -> Dict[str, Any]:
+    visible = _BRACKET_TOKEN_RE.sub("", text)
+    replacement_count = visible.count("\uFFFD")
+    c1_controls = tuple(
+        f"U+{ord(character):04X}"
+        for character in visible
+        if 0x80 <= ord(character) <= 0x9F
+    )
+    mojibake = _mojibake_spans(visible)
+    return {
+        "c1_control_count": len(c1_controls),
+        "c1_controls": list(c1_controls),
+        "mojibake_occurrence_count": len(mojibake),
+        "mojibake_spans": list(mojibake),
+        "replacement_character_count": replacement_count,
+    }
 
 
 def _classify_candidate(payload: str, english: str) -> Tuple[Tuple[str, ...], float]:
     visible = _visible_text(payload)
     english_visible = _visible_text(english)
-    if not _LATIN_RE.search(visible):
+    if not _latin_spans(visible):
         return (), 0.0
 
     classifications = []
@@ -317,8 +382,8 @@ def _classify_candidate(payload: str, english: str) -> Tuple[Tuple[str, ...], fl
         classifications.append("exact-english-copy")
         similarity = 1.0
     elif (
-        _ascii_letter_count(visible) >= 4
-        and _ascii_letter_count(english_visible) >= 4
+        _latin_letter_count(visible) >= 4
+        and _latin_letter_count(english_visible) >= 4
         and payload_key
         and english_key
     ):
@@ -351,6 +416,10 @@ def _audit_entries(
     unapproved_span_count = 0
     unapproved_span_occurrence_count = 0
     payload_mismatch_count = 0
+    artifact_payloads = []
+    replacement_character_count = 0
+    c1_control_count = 0
+    mojibake_occurrence_count = 0
     for entry in entries:
         audited_count += 1
         payload = entry["payload"]
@@ -360,6 +429,23 @@ def _audit_entries(
         near_count += "near-english-copy" in classifications
         latin_only_count += "latin-only-payload" in classifications
         target_key = f"{scope}/{locale}/{entry['id']}"
+        artifacts = _payload_artifacts(payload)
+        replacement_character_count += artifacts["replacement_character_count"]
+        c1_control_count += artifacts["c1_control_count"]
+        mojibake_occurrence_count += artifacts["mojibake_occurrence_count"]
+        if (
+            artifacts["replacement_character_count"]
+            or artifacts["c1_control_count"]
+            or artifacts["mojibake_occurrence_count"]
+        ):
+            artifact_payloads.append(
+                {
+                    **artifacts,
+                    "id": entry["id"],
+                    "payload_sha256": sha256_bytes(payload.encode("utf-8")),
+                    "user_facing": entry["user_facing"],
+                }
+            )
         target_review = review.reviews.get(target_key)
         payload_matches = (
             target_review is not None
@@ -448,6 +534,11 @@ def _audit_entries(
             "unapproved_span_count": unapproved_span_count,
             "unapproved_span_occurrence_count": unapproved_span_occurrence_count,
             "payload_mismatch_count": payload_mismatch_count,
+            "artifact_payload_count": len(artifact_payloads),
+            "replacement_character_count": replacement_character_count,
+            "c1_control_count": c1_control_count,
+            "mojibake_occurrence_count": mojibake_occurrence_count,
+            "artifact_payloads": artifact_payloads,
             "latin_bearing_payloads": latin_payloads,
         },
         tuple(used_decisions),
@@ -538,6 +629,30 @@ def _raw_entries(
         }
 
 
+def _display_alias_entries(
+    build: GameCatalogBuild,
+    locale: str,
+) -> Iterable[Dict[str, Any]]:
+    english_by_id = {entry.target_id: entry for entry in build.english.entries}
+    for surface, entries in sorted(
+        build.display_aliases.get(locale, {}).items()
+    ):
+        for target_id, payload in sorted(entries.items()):
+            yield {
+                "english": english_by_id[target_id].source_text,
+                "id": f"{surface}:0x{target_id:04X}",
+                "metadata": {
+                    "canonical_payload": build.locale_bundle(locale)
+                    .entries[target_id]
+                    .source_text,
+                    "surface": surface,
+                    "target_id": f"0x{target_id:04X}",
+                },
+                "payload": payload,
+                "user_facing": True,
+            }
+
+
 def _validate_raw_closure(raw_closure: Any) -> Mapping[str, Any]:
     if not isinstance(raw_closure, dict):
         raise GameCatalogError("raw closure root must be an object")
@@ -579,6 +694,7 @@ def build_leakage_report(
     raw_closure = _validate_raw_closure(raw_closure)
     game_reports = {}
     raw_reports = {}
+    display_alias_reports = {}
     used_decisions = set()
     for locale in build.enabled_locales:
         game_report, game_used = _audit_entries(
@@ -598,10 +714,18 @@ def build_leakage_report(
             scope="raw",
             review=review,
         )
+        display_alias_report, display_alias_used = _audit_entries(
+            _display_alias_entries(build, locale),
+            locale=locale,
+            scope="display",
+            review=review,
+        )
         game_reports[locale] = game_report
         raw_reports[locale] = raw_report
+        display_alias_reports[locale] = display_alias_report
         used_decisions.update(game_used)
         used_decisions.update(raw_used)
+        used_decisions.update(display_alias_used)
 
     relevant_decisions = {
         decision.key
@@ -612,19 +736,67 @@ def build_leakage_report(
     stale_decisions = sorted(relevant_decisions - used_decisions)
     unapproved_spans = sum(
         report["unapproved_span_count"]
-        for report in (*game_reports.values(), *raw_reports.values())
+        for report in (
+            *game_reports.values(),
+            *raw_reports.values(),
+            *display_alias_reports.values(),
+        )
     )
     unapproved_occurrences = sum(
         report["unapproved_span_occurrence_count"]
-        for report in (*game_reports.values(), *raw_reports.values())
+        for report in (
+            *game_reports.values(),
+            *raw_reports.values(),
+            *display_alias_reports.values(),
+        )
     )
     payload_mismatches = sum(
         report["payload_mismatch_count"]
-        for report in (*game_reports.values(), *raw_reports.values())
+        for report in (
+            *game_reports.values(),
+            *raw_reports.values(),
+            *display_alias_reports.values(),
+        )
+    )
+    artifact_payloads = sum(
+        report["artifact_payload_count"]
+        for report in (
+            *game_reports.values(),
+            *raw_reports.values(),
+            *display_alias_reports.values(),
+        )
+    )
+    replacement_characters = sum(
+        report["replacement_character_count"]
+        for report in (
+            *game_reports.values(),
+            *raw_reports.values(),
+            *display_alias_reports.values(),
+        )
+    )
+    c1_controls = sum(
+        report["c1_control_count"]
+        for report in (
+            *game_reports.values(),
+            *raw_reports.values(),
+            *display_alias_reports.values(),
+        )
+    )
+    mojibake_occurrences = sum(
+        report["mojibake_occurrence_count"]
+        for report in (
+            *game_reports.values(),
+            *raw_reports.values(),
+            *display_alias_reports.values(),
+        )
     )
     approved_spans = sum(
         report["approved_span_count"]
-        for report in (*game_reports.values(), *raw_reports.values())
+        for report in (
+            *game_reports.values(),
+            *raw_reports.values(),
+            *display_alias_reports.values(),
+        )
     )
     localized_decisions = sum(
         decision.decision == "localized"
@@ -639,10 +811,18 @@ def build_leakage_report(
             "approval_is_exact_target_locale_span": True,
             "broad_category_or_regex_exemption": False,
             "control_stripping_preserves_token_boundaries": True,
-            "latin_span_tokenization": "NFKC then contiguous ASCII A-Z/a-z",
-            "exact_copy_detection": "NFKC/casefold/alphanumeric equality",
-            "near_copy_detection": "SequenceMatcher >= 0.80 with >=4 Latin letters",
+            "latin_span_tokenization": (
+                "NFKC then contiguous Unicode letters whose names contain LATIN"
+            ),
+            "exact_copy_detection": (
+                "NFKC/casefold/NFKD Latin-letter and digit equality"
+            ),
+            "near_copy_detection": "SequenceMatcher >= 0.80 with >=4 Latin-script letters",
             "latin_only_detection": "Latin present and no Han/kana in visible payload",
+            "replacement_c1_mojibake_policy": "correction required; no broad exemption",
+            "mojibake_detection": (
+                "2..4 scalar CP1252 runs that decode as distinct valid UTF-8"
+            ),
             "localized_decision_contract": (
                 "exact current payload match and reviewed baseline span absent"
             ),
@@ -672,6 +852,10 @@ def build_leakage_report(
             "provider_count": 143,
             "locales": raw_reports,
         },
+        "display_aliases": {
+            "locales": display_alias_reports,
+            "policy": "Latin/artifact-bearing aliases require correction",
+        },
         "summary": {
             "enabled_locales": list(build.enabled_locales),
             "game_payload_count": sum(
@@ -680,16 +864,29 @@ def build_leakage_report(
             "raw_surface_payload_count": sum(
                 report["audited_count"] for report in raw_reports.values()
             ),
+            "display_alias_payload_count": sum(
+                report["audited_count"]
+                for report in display_alias_reports.values()
+            ),
             "approved_span_count": approved_spans,
             "localized_span_decision_count": localized_decisions,
             "unapproved_span_count": unapproved_spans,
             "unapproved_span_occurrence_count": unapproved_occurrences,
             "payload_mismatch_count": payload_mismatches,
+            "artifact_payload_count": artifact_payloads,
+            "replacement_character_count": replacement_characters,
+            "c1_control_count": c1_controls,
+            "mojibake_occurrence_count": mojibake_occurrences,
             "stale_decision_count": len(stale_decisions),
             "stale_decisions": stale_decisions,
         },
     }
-    if unapproved_spans or payload_mismatches or stale_decisions:
+    if (
+        unapproved_spans
+        or payload_mismatches
+        or artifact_payloads
+        or stale_decisions
+    ):
         problems = []
         if unapproved_spans:
             problems.append(
@@ -698,6 +895,10 @@ def build_leakage_report(
             )
         if payload_mismatches:
             problems.append(f"{payload_mismatches} review payload mismatch(es)")
+        if artifact_payloads:
+            problems.append(
+                f"{artifact_payloads} replacement/C1/mojibake payload(s)"
+            )
         if stale_decisions:
             problems.append(f"{len(stale_decisions)} stale span decision(s)")
         raise GameCatalogError("runtime locale leakage gate failed: " + ", ".join(problems))

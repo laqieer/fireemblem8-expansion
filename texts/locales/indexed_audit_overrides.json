@@ -268,6 +268,18 @@
           "reason": "Apply the reviewed target-semantic correction without modifying the pinned raw regional snapshot.",
           "replacement_text": "智泉·塞勒夫"
         },
+        "0x077D": {
+          "expected_text_sha256": "606bcbe8e10f9aa8acdb107d286a1a269710d55b46c9bcd62f94fe863d96bbe8",
+          "provenance": {
+            "audit": "semantic-width-followup-2026-08-10",
+            "context": "FE8U ending title 0x0805.",
+            "target_ids": [
+              "0x0805"
+            ]
+          },
+          "reason": "Restore L’Arachel’s final Queen of Light rank instead of the regional princess title.",
+          "replacement_text": "光之女王 拉切尔"
+        },
         "0x078D": {
           "expected_text_sha256": "43fbf019565c81c063133126788386964055137fe660da64f5454d27eb0db62a",
           "provenance": {
@@ -306,6 +318,10 @@
             {
               "expected": "塔会随着每结束一章[CTRL:0001]而自动增加1层。",
               "replacement": "每通关一张塔内地图[CTRL:0001]即可进入下一层。"
+            },
+            {
+              "expected": "随着故事的进行，战斗将会变得[CTRL:0001]漫长而严峻，所以如果要想闯塔，[CTRL:0103]要做好[CTRL:0080][CTRL:0021]万全的准备[CTRL:0080][CTRL:0021]后再进行挑战。",
+              "replacement": "塔层越高，敌人就会越强。[CTRL:0001]所以如果要想闯塔，[CTRL:0103]要做好[CTRL:0080][CTRL:0021]万全的准备[CTRL:0080][CTRL:0021]后再进行挑战。"
             }
           ]
         },
@@ -1087,7 +1103,7 @@
             ]
           },
           "reason": "Apply the reviewed FE8U target-specific semantic/control correction without modifying the pinned regional snapshot.",
-          "replacement_text": "[CTRL:000C][CTRL:0010][CTRL:014B][CTRL:0080][CTRL:0025][CTRL:000C][CTRL:0017]哼哼……哼哼……[CTRL:0103]还有一会儿[CTRL:0001]我就要再临于世了。[CTRL:0103]已经没有谁[CTRL:0001]能阻止我了……[CTRL:0003][CTRL:0017][CTRL:0080][CTRL:0025][CTRL:0009][CTRL:0010][CTRL:014A][CTRL:0009][CTRL:0016]你果然还是回来了……[CTRL:0016][CTRL:0003][CTRL:0080][CTRL:0025][CTRL:000C]嗯？[CTRL:0003][CTRL:0080][CTRL:0025][CTRL:0009]虽然你披了一件人皮外衣，[CTRL:0103]但你掩饰不了你身上[CTRL:0001]所散发出来的黑暗。[CTRL:0103]我们已经有八百年不见了，魔王。[CTRL:0003][CTRL:0080][CTRL:0025][CTRL:000C]是龙族的家伙吗？[CTRL:0103]不对，你那张脸[CTRL:0001]我还有点印象。[CTRL:0103]不错，在那场被诅咒的[CTRL:0001]古代战争中……[CTRL:0103]可恶人类[CTRL:0001]将我封印……[CTRL:0103]而有一个龙族的男人[CTRL:0001]加入了他们一方……[CTRL:0103]而他的名字确实叫穆尔瓦。[CTRL:0003][CTRL:0080][CTRL:0025][CTRL:0009]大地失去了【圣石】的守护，[CTRL:0001]现在已充满了魔物。[CTRL:0103]从烂泥中诞生的魔物，[CTRL:0001]现在正在愉悦中疯狂。[CTRL:0103]像是在等候……[CTRL:0001]古代的魔王的归来。[CTRL:0003][CTRL:0080][CTRL:0025][CTRL:000C]不错。而且[CTRL:0001]我已经来到这里了。[CTRL:0103]为了告诉你[CTRL:0001]我已经重生。[CTRL:0103]退下去，龙！[CTRL:0103]现在你是[CTRL:0001]不可能阻止我的。[CTRL:0003][CTRL:0080][CTRL:0025][CTRL:0009]守护人类是我的使命。[CTRL:0001]我不会放任你不管。[CTRL:0103]就像那时的那场战斗一样……[CTRL:0001]你就在这片大地消失吧！[CTRL:0003][CTRL:0080][CTRL:0025][CTRL:000C]哦……要动手？[CTRL:0003][CTRL:0102]对了，说起龙……[CTRL:0103]在追我的那帮人当中[CTRL:0001]有一个龙族的女孩。[CTRL:0103]穆尔瓦，她是你的女儿吧？[CTRL:0003][CTRL:0080][CTRL:0025][CTRL:0009][CTRL:0016]……[CTRL:0016]梅尔……[CTRL:0001]感觉到你的栖息离开了这里。[CTRL:0103]难道……[CTRL:0003][CTRL:0080][CTRL:0025][CTRL:000C]嗯？[CTRL:0001]呵呵，谁知道呢……[CTRL:0003][CTRL:0080][CTRL:0025][CTRL:0009]回答我！[CTRL:0001]我会根据你的回答……[CTRL:0003][CTRL:0080][CTRL:0025][CTRL:000C][CTRL:0017]哼哼哼哼哼哼哼……[CTRL:0103]你即使知道[CTRL:0001]也没什么意义了。[CTRL:0103]你挑战我……对于你而言[CTRL:0001]已经没什么喜悦和叹息的了。[CTRL:0103]我会让你死得很惨，[CTRL:0001]我会让你后悔。[CTRL:0103]我会让你知道，[CTRL:0001]长命有时候并不是件好事！[CTRL:0003][CTRL:0017][CTRL:0080][CTRL:0025]"
+          "replacement_text": "[CTRL:000C][CTRL:0010][CTRL:014B][CTRL:0080][CTRL:0025][CTRL:000C][CTRL:0017]哼哼……哼哼……[CTRL:0103]还有一会儿[CTRL:0001]我就要再临于世了。[CTRL:0103]已经没有谁[CTRL:0001]能阻止我了……[CTRL:0003][CTRL:0017][CTRL:0080][CTRL:0025][CTRL:0009][CTRL:0010][CTRL:014A][CTRL:0009][CTRL:0016]你果然还是回来了……[CTRL:0016][CTRL:0003][CTRL:0080][CTRL:0025][CTRL:000C]嗯？[CTRL:0003][CTRL:0080][CTRL:0025][CTRL:0009]虽然你披了一件人皮外衣，[CTRL:0103]但你掩饰不了你身上[CTRL:0001]所散发出来的黑暗。[CTRL:0103]我们已经有八百年不见了，魔王。[CTRL:0003][CTRL:0080][CTRL:0025][CTRL:000C]是龙族的家伙吗？[CTRL:0103]不对，你那张脸[CTRL:0001]我还有点印象。[CTRL:0103]不错，在那场被诅咒的[CTRL:0001]古代战争中……[CTRL:0103]可恶人类[CTRL:0001]将我封印……[CTRL:0103]而有一个龙族的男人[CTRL:0001]加入了他们一方……[CTRL:0103]而他的名字确实叫穆尔瓦。[CTRL:0003][CTRL:0080][CTRL:0025][CTRL:0009]大地失去了【圣石】的守护，[CTRL:0001]现在已充满了魔物。[CTRL:0103]从烂泥中诞生的魔物，[CTRL:0001]现在正在愉悦中疯狂。[CTRL:0103]像是在等候……[CTRL:0001]古代的魔王的归来。[CTRL:0003][CTRL:0080][CTRL:0025][CTRL:000C]不错。而且[CTRL:0001]我已经来到这里了。[CTRL:0103]为了告诉你[CTRL:0001]我已经重生。[CTRL:0103]退下去，龙！[CTRL:0103]现在你是[CTRL:0001]不可能阻止我的。[CTRL:0003][CTRL:0080][CTRL:0025][CTRL:0009]守护人类是我的使命。[CTRL:0001]我不会放任你不管。[CTRL:0103]就像那时的那场战斗一样……[CTRL:0001]你就在这片大地消失吧！[CTRL:0003][CTRL:0080][CTRL:0025][CTRL:000C]哦……要动手？[CTRL:0003][CTRL:0102]对了，说起龙……[CTRL:0103]在追我的那帮人当中[CTRL:0001]有一个龙族的女孩。[CTRL:0103]穆尔瓦，她是你的女儿吧？[CTRL:0003][CTRL:0080][CTRL:0025][CTRL:0009][CTRL:0016]……[CTRL:0016]梅尔早已追寻魔王的气息，[CTRL:0001]离开了这片土地。[CTRL:0103]难道……[CTRL:0003][CTRL:0080][CTRL:0025][CTRL:000C]嗯？[CTRL:0001]呵呵，谁知道呢……[CTRL:0003][CTRL:0080][CTRL:0025][CTRL:0009]回答我！[CTRL:0001]我会根据你的回答……[CTRL:0003][CTRL:0080][CTRL:0025][CTRL:000C][CTRL:0017]哼哼哼哼哼哼哼……[CTRL:0103]你即使知道[CTRL:0001]也没什么意义了。[CTRL:0103]你挑战我……对于你而言[CTRL:0001]已经没什么喜悦和叹息的了。[CTRL:0103]我会让你死得很惨，[CTRL:0001]我会让你后悔。[CTRL:0103]我会让你知道，[CTRL:0001]长命有时候并不是件好事！[CTRL:0003][CTRL:0017][CTRL:0080][CTRL:0025]"
         },
         "0x0B6C": {
           "expected_text_sha256": "14365319cc9b63a8a501c10ec41ba2a7359d9768dc6e11fae2366547b1c6a6ec",
@@ -1100,7 +1116,7 @@
             ]
           },
           "reason": "Restore both Ephraim lines to the FE8U left-hand slot across the continuation.",
-          "replacement_text": "[CTRL:000A][CTRL:0010][CTRL:0114][CTRL:0008][CTRL:0010][CTRL:0102][CTRL:000B][CTRL:0010][CTRL:0104][CTRL:000D][CTRL:0010][CTRL:0126][CTRL:000A]这股黑色的瘴气……[CTRL:0003][CTRL:0008]不错……[CTRL:0001]我也清楚地感受到了。[CTRL:0003][CTRL:000B]这就是暗之树海……[CTRL:0103]曾经魔王被手持【圣石】的英雄们[CTRL:0001]所毁灭的地方……[CTRL:0103]听说现在瘴气已刮起漩涡[CTRL:0001]魔物们也倾巢而出。[CTRL:0103]不过没想到会如此强烈……[CTRL:0003][CTRL:000D]不错……这股扭曲的感觉……[CTRL:0001]比以前更强烈了。[CTRL:0103]连站在这里[CTRL:0001]也是件痛苦的事。[CTRL:0103]但是没关系。[CTRL:0103]有我父亲在这里。[CTRL:0003][CTRL:0008]你父亲？[CTRL:0003][CTRL:000D]在那边。[CTRL:0103]在那片沼泽的对面。[CTRL:0001]魔王的魔殿就在那里。[CTRL:0103]我的父亲就住在附近。[CTRL:0103]我和父亲是生活在这里的。[CTRL:0003][CTRL:000A]是吗。对于你而言[CTRL:0001]这里就是生你养你的故乡啊。[CTRL:0003][CTRL:000D]是的……[CTRL:0103]能够再见到父亲[CTRL:0001]真的好高兴。[CTRL:0103]我父亲是龙族之长。[CTRL:0103]在之前的战争中……[CTRL:0001]我父亲和母亲死了之后[CTRL:0001]他就成为了我的父亲……[CTRL:0103]并抚养我长大。[CTRL:0003][CTRL:0008]原来发生了[CTRL:0001]那样的事啊……[CTRL:0003][CTRL:000D]从暗之树海出来的魔物[CTRL:0001]都被父亲所消灭。[CTRL:0103]父亲他可是很强的哦。[CTRL:0001]而且又很温柔。[CTRL:0103]我也想像他那样……[CTRL:0003][CTRL:0102][CTRL:0016]……[CTRL:0016]！[CTRL:0003][CTRL:000A]怎么了？[CTRL:0001]梅尔……[CTRL:0003][CTRL:0080][CTRL:0004][CTRL:000B]艾瑞珂公主，伊弗列姆王子！[CTRL:0001]是敌人！[CTRL:0103]那些蠢蠢欲动的魔物[CTRL:0001]已经向这里袭来了……[CTRL:0003][CTRL:000D][CTRL:0016]……[CTRL:0016][CTRL:0003][CTRL:000A]梅尔，怎么了？[CTRL:0001]是不是有点不舒服？[CTRL:0003][CTRL:000D]没、没什么。[CTRL:0103]我会努力的。[CTRL:0103]我会努力………[CTRL:0001]打倒魔物的。[CTRL:0003]"
+          "replacement_text": "[CTRL:000A][CTRL:0010][CTRL:0114][CTRL:0008][CTRL:0010][CTRL:0102][CTRL:000B][CTRL:0010][CTRL:0104][CTRL:000D][CTRL:0010][CTRL:0126][CTRL:000A]这股黑色的瘴气……[CTRL:0003][CTRL:0008]不错……[CTRL:0001]我也清楚地感受到了。[CTRL:0003][CTRL:000B]这就是暗之树海……[CTRL:0103]曾经魔王被手持【圣石】的英雄们[CTRL:0001]所毁灭的地方……[CTRL:0103]听说现在瘴气已刮起漩涡[CTRL:0001]魔物们也倾巢而出。[CTRL:0103]不过没想到会如此强烈……[CTRL:0003][CTRL:000D]不错……这股扭曲的感觉……[CTRL:0001]比以前更强烈了。[CTRL:0103]连站在这里[CTRL:0001]也是件痛苦的事。[CTRL:0103]但是没关系。[CTRL:0103]有我父亲在这里。[CTRL:0003][CTRL:0008]你父亲？[CTRL:0003][CTRL:000D]在那边。[CTRL:0103]在那片沼泽的对面。[CTRL:0001]魔王的魔殿就在那里。[CTRL:0103]我的父亲就住在附近。[CTRL:0103]我和父亲是生活在这里的。[CTRL:0003][CTRL:000A]是吗。对于你而言[CTRL:0001]这里就是生你养你的故乡啊。[CTRL:0003][CTRL:000D]是的……[CTRL:0103]我父亲是龙族之长。[CTRL:0103]在之前的战争中……[CTRL:0001]我父亲和母亲死了之后[CTRL:0001]他就成为了我的父亲……[CTRL:0103]并抚养我长大。[CTRL:0003][CTRL:0008]原来发生了[CTRL:0001]那样的事啊……[CTRL:0003][CTRL:000D]从暗之树海出来的魔物[CTRL:0001]都被父亲所消灭。[CTRL:0103]父亲他可是很强的哦。[CTRL:0001]而且又很温柔。[CTRL:0103]我也想像他那样……[CTRL:0003][CTRL:0102][CTRL:0016]……[CTRL:0016]！[CTRL:0003][CTRL:000A]怎么了？[CTRL:0001]梅尔……[CTRL:0003][CTRL:0080][CTRL:0004][CTRL:000B]艾瑞珂公主，伊弗列姆王子！[CTRL:0001]是敌人！[CTRL:0103]那些蠢蠢欲动的魔物[CTRL:0001]已经向这里袭来了……[CTRL:0003][CTRL:000D][CTRL:0016]……[CTRL:0016][CTRL:0003][CTRL:000A]梅尔，怎么了？[CTRL:0001]是不是有点不舒服？[CTRL:0003][CTRL:000D]没、没什么。[CTRL:0103]我会努力的。[CTRL:0103]我会努力………[CTRL:0001]打倒魔物的。[CTRL:0003]"
         },
         "0x0B80": {
           "expected_text_sha256": "c6d1ffa5e339f4cccef78d1500e6509c9f5dc21d3b5c0cc8b1c3798180944ae3",
@@ -1177,7 +1193,32 @@
             ]
           },
           "reason": "Apply the reviewed FE8U target-specific semantic/control correction without modifying the pinned regional snapshot.",
-          "replacement_text": "[CTRL:000D][CTRL:0010][CTRL:0118][CTRL:000D]艾瑞珂公主！[CTRL:0003][CTRL:000B][CTRL:0010][CTRL:0116][CTRL:000B]哦，这就要出发了？[CTRL:0003][CTRL:000E][CTRL:0010][CTRL:0102][CTRL:000E][CTRL:0080][CTRL:000A][CTRL:0008]哎。[CTRL:0103]凯尔、弗鲁迪，[CTRL:0001]我就要去罗斯顿了。[CTRL:0103]哥哥，[CTRL:0001]就拜托你们照顾了。[CTRL:0003][CTRL:000B]不，稍等一下，[CTRL:0001]计划有所变动的。[CTRL:0003][CTRL:000D]我们来帮助[CTRL:0001]艾瑞珂公主。[CTRL:0003][CTRL:001C][CTRL:0008]哎？[CTRL:0001]这是怎么回事……[CTRL:0003][CTRL:000D]伊弗列姆王子是和弗雷利亚正规军[CTRL:0001]一同出发。[CTRL:0003][CTRL:000B]所以抱歉。伊弗列姆王子[CTRL:0001]下令说，[CTRL:0103]不要担心他，[CTRL:0001]让我们好好保护公主……[CTRL:0103]这就要和古拉德正面交战了，[CTRL:0001]还说这种话，他真是的。[CTRL:0003][CTRL:0008]是啊！和古拉德战斗[CTRL:0001]的哥哥那边是会更危险的……[CTRL:0103]我去和哥哥说……[CTRL:0003][CTRL:000D]艾瑞珂公主。[CTRL:0103]伊弗列姆王子会保重自己的。[CTRL:0001]这个请您放心。[CTRL:0103]我们主公所说的话，[CTRL:0001]我们是一定会相信的。[CTRL:0003][CTRL:000B]嘛，就是这样了。[CTRL:0103]不要担心了。[CTRL:0001]艾瑞珂公主。[CTRL:0103]伊弗列姆王子有多厉害，[CTRL:0001]我们是知道的。[CTRL:0103]不管有多少艰难险阻，[CTRL:0001]他都不会死的。[CTRL:0003][CTRL:0008][CTRL:0016]凯尔、弗鲁迪……[CTRL:0016][CTRL:0103]好吧。[CTRL:0001]那拜托了。[CTRL:0103]哥哥一直信赖的双骑士。[CTRL:0103]请从现在开始，[CTRL:0001]帮助我吧。[CTRL:0003][CTRL:000D]遵命。[CTRL:0103]为了祖国鲁内斯和[CTRL:0001]艾瑞珂公主！[CTRL:0003][CTRL:0017][CTRL:000B]嘛，在这边[CTRL:0001]就可以轻松一些了。[CTRL:0103]现在我就可以[CTRL:0001]随时的散散步了。[CTRL:0003][CTRL:0008]哎。[CTRL:0001]拜托了，两位。[CTRL:0003]"
+          "replacement_text": "[CTRL:000D][CTRL:0010][CTRL:0118][CTRL:000D]艾瑞珂公主！[CTRL:0003][CTRL:000B][CTRL:0010][CTRL:0116][CTRL:000B]哦，这就要出发了？[CTRL:0003][CTRL:000E][CTRL:0010][CTRL:0102][CTRL:000E][CTRL:0080][CTRL:000A][CTRL:0008]哎。[CTRL:0103]凯尔、弗鲁迪，[CTRL:0001]我就要去罗斯顿了。[CTRL:0103]哥哥，[CTRL:0001]就拜托你们照顾了。[CTRL:0003][CTRL:000B]不，稍等一下，[CTRL:0001]计划有所变动的。[CTRL:0003][CTRL:000D]我们来帮助[CTRL:0001]艾瑞珂公主。[CTRL:0003][CTRL:001C][CTRL:0008]哎？[CTRL:0001]这是怎么回事……[CTRL:0003][CTRL:000D]伊弗列姆王子是和弗雷利亚正规军[CTRL:0001]一同出发。[CTRL:0003][CTRL:000B]所以抱歉。伊弗列姆王子[CTRL:0001]下令说，[CTRL:0103]不要担心他，[CTRL:0001]让我们好好保护公主……[CTRL:0103]这就要和古拉德正面交战了，[CTRL:0001]还说这种话，他真是的。[CTRL:0003][CTRL:0008]是啊！和古拉德战斗[CTRL:0001]的哥哥那边是会更危险的……[CTRL:0103]我去和哥哥说……[CTRL:0003][CTRL:000D]艾瑞珂公主。[CTRL:0103]伊弗列姆王子会保重自己的。[CTRL:0001]这个请您放心。[CTRL:0103]我们主公所说的话，[CTRL:0001]我们是一定会相信的。[CTRL:0003][CTRL:000B]嘛，就是这样了。[CTRL:0103]不要担心了。[CTRL:0001]艾瑞珂公主。[CTRL:0103]伊弗列姆王子有多厉害，[CTRL:0001]我们是知道的。[CTRL:0103]不管有多少艰难险阻，[CTRL:0001]他都不会死的。[CTRL:0003][CTRL:0008][CTRL:0016]凯尔、弗鲁迪……[CTRL:0016][CTRL:0103]好吧。[CTRL:0001]那拜托了。[CTRL:0103]你们是哥哥最信赖的优秀双骑士。[CTRL:0103]请从现在开始，[CTRL:0001]帮助我吧。[CTRL:0003][CTRL:000D]遵命。[CTRL:0103]为了祖国鲁内斯和[CTRL:0001]艾瑞珂公主！[CTRL:0003][CTRL:0017][CTRL:000B]平时在这边[CTRL:0001]就放轻松一些吧。[CTRL:0103]到了需要的时候，[CTRL:0001]我会把事情办妥。[CTRL:0003][CTRL:0008]哎。[CTRL:0001]拜托了，两位。[CTRL:0003]"
+        },
+        "0x0BD2": {
+          "expected_text_sha256": "9fb2380c266331c1a806f2e558b69a77b6341d05ac9c71d380223bb66429f5c5",
+          "provenance": {
+            "audit": "semantic-width-followup-2026-08-10",
+            "context": "FE8U target 0x0C12 Forde route dialogue.",
+            "target_ids": [
+              "0x0C12"
+            ]
+          },
+          "reason": "Complete the truncated Frelian-army sentence and restore Forde’s promise to handle matters when needed.",
+          "replacements": [
+            {
+              "expected": "不和我们一，[CTRL:0001]那边还有弗雷利亚正规军嘛。",
+              "replacement": "虽然比不上我们同行，[CTRL:0001]但王子身边还有弗雷利亚正规军。"
+            },
+            {
+              "expected": "哥哥[CTRL:0001]一直信赖的骑士。",
+              "replacement": "你是哥哥[CTRL:0001]最信赖的优秀骑士。"
+            },
+            {
+              "expected": "嘛，在这边[CTRL:0001]就可以轻松一些了。[CTRL:0103]现在我就可以[CTRL:0001]随时的散散步了。",
+              "replacement": "平时在这边[CTRL:0001]就放轻松一些吧。[CTRL:0103]到了需要的时候，[CTRL:0001]我会把事情办妥。"
+            }
+          ]
         },
         "0x0BDC": {
           "expected_text_sha256": "7387ff3f3058070582d47b82c2334dd4e8f4a9a1fff98a07b746ef0b916a7353",
@@ -1338,7 +1379,7 @@
             ]
           },
           "reason": "Apply the reviewed target-semantic correction without modifying the pinned raw regional snapshot.",
-          "replacement_text": "[CTRL:0017][CTRL:0009][CTRL:0010][CTRL:011A][CTRL:000C][CTRL:0010][CTRL:012A][CTRL:000C]哟，阿斯雷。[CTRL:0001]今天的精神不错嘛，[CTRL:0103]那么有精神，就跟我赌一局吧，[CTRL:0001]若我赢了，今晚也来训练。[CTRL:0003][CTRL:0009]约书亚，即使不赌，[CTRL:0001]我也一样十分愿意陪你练习。[CTRL:0003][CTRL:000C]你竟然主动想要训练，[CTRL:0001]怎么了？发烧吗？[CTRL:0003][CTRL:0009]我想我体温大概正常。[CTRL:0001]我之所以主动向你邀请练习，[CTRL:0103]并非因发烧而导致思考能力迟缓。[CTRL:0103]为什么你会那样擅赌，[CTRL:0001]我也曾思考过。[CTRL:0003][CTRL:000C]哦……[CTRL:0003][CTRL:0009]与你相遇以来，包括在战场之外，[CTRL:0001]常常被你挑起赌赛，[CTRL:0103]战绩是21战2胜19败。[CTRL:0001]我的胜率就连十分之一都不到。[CTRL:0103]无论怎么想，那种程度的准确率[CTRL:0001]在猜硬币表里时是不可能出现的，[CTRL:0103]你一定是个受到神明青睐的人，[CTRL:0001]因此在赌输赢时才会那么高强。[CTRL:0103]若能对你这样的人略尽绵力，[CTRL:0001]无论赌博抑或练习我均愿奉陪。[CTRL:0003][CTRL:0017][CTRL:000C]这样啊……[CTRL:0001]但是，这可就没意思了。[CTRL:0103]如果说不必赌的话，[CTRL:0001]那不再陪我练习也无所谓。[CTRL:0003][CTRL:0009]哎？[CTRL:0003][CTRL:000C][CTRL:0017]我并非什么被神钟爱有加，[CTRL:0001]你真正的战绩是21战11胜10败，[CTRL:0103]不过是被我出千蒙蔽了而已。[CTRL:0001]正确的说，胜率基本对半。[CTRL:0003][CTRL:0017][CTRL:0009]出千……吗？[CTRL:0001]我一点都没有发觉……[CTRL:0103]那么说，我始终……[CTRL:0003][CTRL:000C][CTRL:0017]呵，就是这么回事了。[CTRL:0103]你出于职业习惯，凡事都信任，[CTRL:0001]然而战场上怀疑也是非常重要的。[CTRL:0103]过去的赌局，[CTRL:0001]倘若需要以性命作为赌注的话，[CTRL:0103]你输多少次就等于会死多少次。[CTRL:0103]嗨，实际上人也就能死一回而已。[CTRL:0003][CTRL:0017][CTRL:0009][CTRL:0016]……[CTRL:0016][CTRL:0105]无可反驳……[CTRL:0003][CTRL:000C][CTRL:0017]哈哈哈，幸亏我是好人，[CTRL:0001]不会造成实际危害，学到了吗？[CTRL:0003][CTRL:0017][CTRL:0009]是……[CTRL:0003][CTRL:000C][CTRL:0017]好。那么从今往后也要陪我啊。[CTRL:0001]这次由我来教你一些赌局的门道。[CTRL:0003][CTRL:0017][CTRL:0009]约书亚先生……[CTRL:0105]赌博和训练，哪一个更重要？[CTRL:0103][CTRL:0017]看来根本不用问。[CTRL:0001]但是，不要再出千了。[CTRL:0003][CTRL:0017]"
+          "replacement_text": "[CTRL:0017][CTRL:0009][CTRL:0010][CTRL:011A][CTRL:000C][CTRL:0010][CTRL:012A][CTRL:000C]哟，阿斯雷。[CTRL:0001]今天的精神不错嘛，[CTRL:0103]那么有精神，就跟我赌一局吧，[CTRL:0001]若我赢了，今晚也来训练。[CTRL:0003][CTRL:0009]约书亚，即使不赌，[CTRL:0001]我也一样十分愿意陪你练习。[CTRL:0003][CTRL:000C]你竟然主动想要训练，[CTRL:0001]怎么了？发烧吗？[CTRL:0003][CTRL:0009]我想我体温大概正常。[CTRL:0001]我之所以主动向你邀请练习，[CTRL:0103]并非因发烧而导致思考能力迟缓。[CTRL:0103]为什么你会那样擅赌，[CTRL:0001]我也曾思考过。[CTRL:0003][CTRL:000C]哦……[CTRL:0003][CTRL:0009]与你相遇以来，包括在战场之外，[CTRL:0001]常常被你挑起赌赛，[CTRL:0103]战绩是21战2胜19败。[CTRL:0001]我的胜率就连十分之一都不到。[CTRL:0103]无论怎么想，那种程度的准确率[CTRL:0001]在猜硬币表里时是不可能出现的，[CTRL:0103]你一定是个受到神明青睐的人，[CTRL:0001]因此在赌输赢时才会那么高强。[CTRL:0103]我愿意陪你练习，[CTRL:0001]但不想再打赌了。[CTRL:0003][CTRL:0017][CTRL:000C]这样啊……[CTRL:0001]但是，这可就没意思了。[CTRL:0103]如果说不必赌的话，[CTRL:0001]那不再陪我练习也无所谓。[CTRL:0003][CTRL:0009]哎？[CTRL:0003][CTRL:000C][CTRL:0017]我并非什么被神钟爱有加，[CTRL:0001]你真正的战绩是21战11胜10败，[CTRL:0103]不过是被我出千蒙蔽了而已。[CTRL:0001]正确的说，胜率基本对半。[CTRL:0003][CTRL:0017][CTRL:0009]出千……吗？[CTRL:0001]我一点都没有发觉……[CTRL:0103]那么说，我始终……[CTRL:0003][CTRL:000C][CTRL:0017]呵，就是这么回事了。[CTRL:0103]你出于职业习惯，凡事都信任，[CTRL:0001]然而战场上怀疑也是非常重要的。[CTRL:0103]过去的赌局，[CTRL:0001]倘若需要以性命作为赌注的话，[CTRL:0103]你输多少次就等于会死多少次。[CTRL:0103]嗨，实际上人也就能死一回而已。[CTRL:0003][CTRL:0017][CTRL:0009][CTRL:0016]……[CTRL:0016][CTRL:0105]无可反驳……[CTRL:0003][CTRL:000C][CTRL:0017]哈哈哈，幸亏我是好人，[CTRL:0001]不会造成实际危害，学到了吗？[CTRL:0003][CTRL:0017][CTRL:0009]是……[CTRL:0003][CTRL:000C][CTRL:0017]好。那么从今往后也要陪我啊。[CTRL:0001]这次由我来教你一些赌局的门道。[CTRL:0003][CTRL:0017][CTRL:0009]约书亚先生……[CTRL:0105]赌博和训练，哪一个更重要？[CTRL:0103][CTRL:0017]看来根本不用问。[CTRL:0001]但是，不要再出千了。[CTRL:0003][CTRL:0017]"
         },
         "0x0CAD": {
           "expected_text_sha256": "b98521dfd074c9fb28b014843de43aa8df529795491ff911d271ced0f58d35a4",
@@ -1574,6 +1615,18 @@
           "reason": "Preserve Gerik's unexplained permanent disappearance rather than an ordinary retirement.",
           "replacement_text": "その後も傭兵稼業を続けた。[CTRL:0001]年月と共に名声は高まり、[CTRL:0001]依頼はさばき切れぬほど殺到した。[CTRL:0001]ある日、何の前触れもなく姿を消し、[CTRL:0001]二度と戻ることはなかった。"
         },
+        "0x077D": {
+          "expected_text_sha256": "b0902db7b9b8d7d966bfca941057f0e63fb1f52edb6c4383472e2cc694a869b3",
+          "provenance": {
+            "audit": "semantic-width-followup-2026-08-10",
+            "context": "FE8U ending title 0x0805.",
+            "target_ids": [
+              "0x0805"
+            ]
+          },
+          "reason": "Restore L’Arachel’s final Queen of Light rank instead of the regional princess title.",
+          "replacement_text": "光の女王　ラーチェル"
+        },
         "0x0783": {
           "expected_text_sha256": "664800d5a8d5f851d402dff2f8bb53eed0d30aa80ca01c8e19647393ca9ed47c",
           "provenance": {
@@ -1612,6 +1665,10 @@
             {
               "expected": "塔は章をひとつクリアするごとに[CTRL:0001]１階ずつ増えていきます。",
               "replacement": "塔のマップをひとつクリアするごとに[CTRL:0001]次の階へ進めるようになります。"
+            },
+            {
+              "expected": "物語を進めるごとに長く厳しい戦いに[CTRL:0001]なりますので　塔に入る場合は[CTRL:0001][CTRL:0080][CTRL:0021]万全の準備[CTRL:0080][CTRL:0021]を整えて挑戦して下さい。",
+              "replacement": "上の階へ進むほど敵は強くなります。[CTRL:0001]塔に入る場合は[CTRL:0001][CTRL:0080][CTRL:0021]万全の準備[CTRL:0080][CTRL:0021]を整えて挑戦して下さい。"
             }
           ]
         },

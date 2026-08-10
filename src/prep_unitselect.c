@@ -62,7 +62,7 @@ void PrepUnit_DrawUnitListNames(struct ProcPrepUnit *proc, int line)
             TILEMAP_LOCATED( gBG2TilemapBuffer, 0x10 + i * 7, val % 0x20),
             color,
             0, 0,
-            GetStringFromIndex(unit->pCharacterData->nameTextId) );
+            GetCharacterDisplayName(unit->pCharacterData) );
     }
 
     BG_EnableSyncByMask(BG2_SYNC_BIT);
@@ -173,9 +173,9 @@ void PrepUnit_DrawLeftUnitName(struct Unit *unit)
         &gPrepUnitTexts[0x13],
         TILEMAP_LOCATED(gBG0TilemapBuffer, 5, 1),
         TEXT_COLOR_SYSTEM_WHITE,
-        GetStringTextCenteredPos(0x38, GetStringFromIndex(unit->pCharacterData->nameTextId)),
+        GetStringTextCenteredPos(0x38, GetCharacterDisplayName(unit->pCharacterData)),
         0,
-        GetStringFromIndex(unit->pCharacterData->nameTextId)
+        GetCharacterDisplayName(unit->pCharacterData)
     );
 
     PutTwoSpecialChar(TILEMAP_LOCATED(gBG0TilemapBuffer, 5, 3), TEXT_COLOR_SYSTEM_GOLD, TEXT_SPECIAL_LV_A, TEXT_SPECIAL_LV_B);
@@ -216,7 +216,7 @@ void PrepUnit_DrawUnitItems(struct Unit *unit)
             IsItemDisplayUsable(unit, item)
                 ? TEXT_COLOR_SYSTEM_WHITE
                 : TEXT_COLOR_SYSTEM_GRAY,
-            0, 0, GetItemName(item)
+            0, 0, GetItemDisplayName(item)
         );
 
         PutNumberOrBlank(

@@ -23,6 +23,7 @@
 #include "bmsave.h"
 #include "muctrl.h"
 #include "bmmind.h"
+#include "localized_game_text.h"
 #include "eventcall.h"
 
 EWRAM_DATA u8 gActiveUnitId = 0;
@@ -948,11 +949,37 @@ s8 UnitGive(struct Unit* actor, struct Unit* target) {
     // return couldGive; // devs probably forgot to add this
 }
 
+char* GetCharacterDisplayName(const struct CharacterData* character)
+{
+    const char* alias;
+
+    alias = LocalizedGameText_GetDisplayAlias(
+        character->nameTextId,
+        LOCALIZED_GAME_TEXT_DISPLAY_CHARACTER_NAME_40);
+    if (alias != NULL)
+        return (char*)alias;
+
+    return GetStringFromIndex(character->nameTextId);
+}
+
+char* GetClassDisplayName(const struct ClassData* classData)
+{
+    const char* alias;
+
+    alias = LocalizedGameText_GetDisplayAlias(
+        classData->nameTextId,
+        LOCALIZED_GAME_TEXT_DISPLAY_CLASS_NAME_64);
+    if (alias != NULL)
+        return (char*)alias;
+
+    return GetStringFromIndex(classData->nameTextId);
+}
+
 inline char* GetUnitRescueName(struct Unit* unit) {
     if (!unit->rescue)
         return GetStringFromIndex(sStatusNameTextIdLookup[0]);
 
-    return GetStringFromIndex(GetUnit(unit->rescue)->pCharacterData->nameTextId);
+    return GetCharacterDisplayName(GetUnit(unit->rescue)->pCharacterData);
 }
 
 void UnitKill(struct Unit* unit) {

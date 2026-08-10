@@ -463,6 +463,8 @@ int GetUnitLeaderCharId(struct Unit* unit);
 void SetUnitLeaderCharId(struct Unit* unit, int charId);
 void SetUnitHp(struct Unit* unit, int value);
 void AddUnitHp(struct Unit* unit, int amount);
+char* GetCharacterDisplayName(const struct CharacterData* character);
+char* GetClassDisplayName(const struct ClassData* classData);
 char* GetUnitRescueName(struct Unit* unit);
 char* GetUnitStatusName(struct Unit* unit);
 struct Unit* GetUnit(int id);
