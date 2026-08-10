@@ -82,7 +82,7 @@ struct UnitInfoWindowProc* NewUnitInfoWindow(ProcPtr parent) {
 
 //! FE8U = 0x080347D4
 void UnitInfoWindow_PositionUnitName(struct UnitInfoWindowProc* proc) {
-    if (GetStringTextLen(GetCharacterDisplayName(proc->unit->pCharacterData)) < 40) {
+    if (GetStringTextLen(GetStringFromIndex(proc->unit->pCharacterData->nameTextId)) < 40) {
         proc->xUnitSprite = 4;
         proc->xNameText = 24;
     } else {
@@ -162,7 +162,7 @@ struct UnitInfoWindowProc* UnitInfoWindow_DrawBase(struct UnitInfoWindowProc* pr
     UnitInfoWindow_PositionUnitName(proc);
 
     Text_SetCursor(&proc->name, proc->xNameText);
-    Text_DrawString(&proc->name, GetCharacterDisplayName(unit->pCharacterData));
+    Text_DrawString(&proc->name, GetStringFromIndex(unit->pCharacterData->nameTextId));
 
     PutText(&proc->name, gBG0TilemapBuffer + TILEMAP_INDEX(x+3, y+1));
 
@@ -312,7 +312,7 @@ void RefreshUnitInventoryInfoWindow(struct Unit* unit) {
         int item = unit->items[i];
 
         ClearText(proc->lines + i);
-        Text_DrawString(proc->lines + i, GetItemDisplayName(item));
+        Text_DrawString(proc->lines + i, GetItemName(item));
 
         PutText(proc->lines + i, gBG0TilemapBuffer + TILEMAP_INDEX(xPos+3, yPos));
         PutNumberOrBlank(gBG0TilemapBuffer + TILEMAP_INDEX(xPos+11, yPos), 2, GetItemUses(item));
@@ -344,7 +344,7 @@ void RefreshUnitStealInventoryInfoWindow(struct Unit* unit) {
         ClearText(proc->lines + i);
 
         Text_SetColor(proc->lines + i, stealable ? 0 : 1);
-        Text_DrawString(proc->lines + i, GetItemDisplayName(item));
+        Text_DrawString(proc->lines + i, GetItemName(item));
 
         PutText(proc->lines + i, gBG0TilemapBuffer + TILEMAP_INDEX(xPos + 3, yPos));
 
@@ -379,7 +379,7 @@ void RefreshHammerneUnitInfoWindow(struct Unit* unit) {
         ClearText(proc->lines + i);
 
         Text_SetColor(proc->lines + i, color);
-        Text_DrawString(proc->lines + i, GetItemDisplayName(item));
+        Text_DrawString(proc->lines + i, GetItemName(item));
 
         PutText(proc->lines + i, gBG0TilemapBuffer + TILEMAP_INDEX(xPos + 3, yPos));
         PutSpecialChar(gBG0TilemapBuffer + TILEMAP_INDEX(xPos + 12, yPos), color, TEXT_SPECIAL_SLASH);

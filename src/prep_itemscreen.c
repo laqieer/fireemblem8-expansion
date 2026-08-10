@@ -974,7 +974,7 @@ void PrepItemScreen_DrawSelectedUnitDetails(struct PrepItemScreenProc * proc)
 
     ClearText(&gPrepItemTexts[31]);
 
-    str = GetCharacterDisplayName(unit->pCharacterData);
+    str = GetStringFromIndex(unit->pCharacterData->nameTextId);
     x = GetStringTextCenteredPos(40, str);
 
     PutDrawText(&gPrepItemTexts[31], TILEMAP_LOCATED(gBG0TilemapBuffer, 8, 4), TEXT_COLOR_SYSTEM_WHITE, x, 0, str);
@@ -1774,7 +1774,7 @@ void PrepItemScreen_DrawUnitItems(struct Text * text, u16 * tilemap, struct Unit
             ClearText(text);
             Text_SetColor(text, isUnusable);
             Text_SetCursor(text, 0);
-            Text_DrawString(text, GetItemDisplayName(item));
+            Text_DrawString(text, GetItemName(item));
         }
 
         DrawIcon(TILEMAP_LOCATED(tilemap, 0, i * 2), GetItemIconId(item), OAM2_PAL(4));
@@ -1885,7 +1885,7 @@ void PrepItem_DrawUnitNameRow(struct PrepItemScreenProc * proc, u8 row, s8 flag)
                 Text_SetColor(text, TEXT_COLOR_SYSTEM_WHITE);
             }
 
-            Text_DrawString(text, GetCharacterDisplayName(unit->pCharacterData));
+            Text_DrawString(text, GetStringFromIndex(unit->pCharacterData->nameTextId));
         }
 
         PutText(text, TILEMAP_LOCATED(gBG2TilemapBuffer, x, y));

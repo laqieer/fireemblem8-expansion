@@ -272,14 +272,38 @@ enum LocalizedGameTextStatus LocalizedGameText_ResolveCurrentToUnboundedBuffer(
         outDecodedLength);
 }
 
-const char * LocalizedGameText_GetDisplayAlias(
+const char * LocalizedGameText_GetDisplayAliasForWidth(
     int msgIndex,
-    enum LocalizedGameTextDisplaySurface surface)
+    enum LocalizedGameTextDisplaySurface surface,
+    int maxPixels,
+    int canonicalPixels)
 {
     const struct GameLocalizationDisplayAlias *aliases;
     u32 aliasCount;
     u32 i;
     ExpansionLocaleId locale;
+    int surfacePixels;
+
+    switch (surface)
+    {
+    case LOCALIZED_GAME_TEXT_DISPLAY_CHARACTER_NAME_40:
+        surfacePixels = 40;
+        break;
+
+    case LOCALIZED_GAME_TEXT_DISPLAY_CLASS_NAME_64:
+        surfacePixels = 64;
+        break;
+
+    case LOCALIZED_GAME_TEXT_DISPLAY_ITEM_NAME_56:
+        surfacePixels = 56;
+        break;
+
+    default:
+        return 0;
+    }
+
+    if (maxPixels != surfacePixels || canonicalPixels <= maxPixels)
+        return 0;
 
     locale = ExpansionLocale_GetCurrent();
     if (locale == EXPANSION_LOCALE_JA)

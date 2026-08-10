@@ -121,13 +121,18 @@ codec. Production reports require `ja.present=3414`,
 Generation also runs the leakage gate. The committed
 `texts/locales/mapping/runtime_english_leakage.json` separately proves all
 6,828 JA/ZH catalog payloads and all 286 JA/ZH raw-surface payloads were
-audited with zero unapproved Latin spans. Controls are replaced by boundaries
+audited with zero unapproved Latin spans or disallowed Unicode scripts.
+Controls are replaced by boundaries
 before NFKC tokenization, so Latin inside mixed Japanese/Chinese text cannot
 bypass the gate. The baseline 125 JA and 139 ZH mixed-script payload decisions
 are committed in `texts/locales/runtime_latin_span_review.json`; every
 remaining acronym/code is approved only for its exact target, locale, span,
 payload hash, occurrence count, reason, and source. Regex or category-wide
 whitelisting is not accepted.
+The companion exact-target
+`texts/locales/runtime_unicode_script_review.json` permits only reviewed
+Greek/math notation; Cyrillic confusables and other non-allowlisted scripts
+cannot be approved.
 
 The 143-record raw closure is a separate call-site audit:
 
@@ -136,8 +141,9 @@ python3 -m scripts.localization.game_locales check-raw-closure
 ```
 
 See `docs/game_locale_sources.md` for its 137 game-ID and 6 semantic expansion
-providers. All 143 raw records have Japanese and Chinese payloads with zero
-fallback, exclusion, or unresolved record.
+providers. The normal command also performs the offline commit/tree/path/blob,
+exact-symbol, and exact-slot checks. All 143 raw records have Japanese and
+Chinese payloads with zero fallback, exclusion, or unresolved record.
 
 `StringInsertSpecialPrefixByCtrl`, `StrInsertTact`, and other renderer-side
 walkers remain byte-oriented. They must not process long UTF-8 overlay content

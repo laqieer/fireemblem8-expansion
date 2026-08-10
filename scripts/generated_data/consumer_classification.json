@@ -261,10 +261,6 @@
       "category": "external-interface",
       "reason": null
     },
-    "include/bmitem.h|function-signature|item|GetItemDisplayName": {
-      "category": "external-interface",
-      "reason": null
-    },
     "include/bmitem.h|function-signature|item|GetItemDisplayRangeString": {
       "category": "external-interface",
       "reason": null
@@ -797,10 +793,6 @@
       "category": "external-interface",
       "reason": null
     },
-    "include/bmunit.h|function-signature|character|GetCharacterDisplayName": {
-      "category": "external-interface",
-      "reason": null
-    },
     "include/bmunit.h|function-signature|character|GetUnitFromCharId": {
       "category": "external-interface",
       "reason": null
@@ -822,10 +814,6 @@
       "reason": null
     },
     "include/bmunit.h|function-signature|class|GetClassData": {
-      "category": "external-interface",
-      "reason": null
-    },
-    "include/bmunit.h|function-signature|class|GetClassDisplayName": {
       "category": "external-interface",
       "reason": null
     },
@@ -2371,6 +2359,18 @@
     },
     "include/id_space.h|macro|unit|UNIT_ID_TECHNICAL_MAX": {
       "category": "runtime-macro",
+      "reason": null
+    },
+    "include/localized_game_text.h|function-signature|character|GetCharacterDisplayNameForWidth": {
+      "category": "external-interface",
+      "reason": null
+    },
+    "include/localized_game_text.h|function-signature|class|GetClassDisplayNameForWidth": {
+      "category": "external-interface",
+      "reason": null
+    },
+    "include/localized_game_text.h|function-signature|item|GetItemDisplayNameForWidth": {
+      "category": "external-interface",
       "reason": null
     },
     "include/menuitempanel.h|struct-field|item|MenuItemPanelProc.ItemSlotIndex": {

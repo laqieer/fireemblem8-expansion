@@ -77,7 +77,7 @@ void PrepItemList_DrawCurrentOwnerText(struct PrepItemListProc* proc) {
         if (pid == 0) {
             PutDrawText(PrepItemSuppyTexts.th + 1, gBG0TilemapBuffer + 0x38, 3, 0, 0, GetStringFromIndex(0x598)); // TODO: msgid "Supply"
         } else {
-            PutDrawText(PrepItemSuppyTexts.th + 1, gBG0TilemapBuffer + 0x38, 0, 0, 0, GetCharacterDisplayName(GetUnitFromCharId(pid)->pCharacterData));
+            PutDrawText(PrepItemSuppyTexts.th + 1, gBG0TilemapBuffer + 0x38, 0, 0, 0, GetStringFromIndex(GetUnitFromCharId(pid)->pCharacterData->nameTextId));
         }
     }
 
@@ -218,7 +218,7 @@ void PrepItemList_InitGfx(struct PrepItemListProc * proc)
 
     StartFace2(0, GetUnitPortraitId(proc->unit), 64, -4, FACE_DISP_KIND(FACE_96x80_FLIPPED) | FACE_DISP_HLAYER(FACE_HLAYER_3));
 
-    str = GetCharacterDisplayName(proc->unit->pCharacterData);
+    str = GetStringFromIndex(proc->unit->pCharacterData->nameTextId);
 
     StartSysBrownBox(0xd, 0xe00, 0xf, 0xc00, 0x400, proc);
 

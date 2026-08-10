@@ -14,11 +14,16 @@ from typing import Any, Dict, Iterable, Mapping, Optional, Sequence, Tuple
 
 from .model import GameCatalogBuild, GameCatalogError
 
-LEAKAGE_SCHEMA_VERSION = 3
+LEAKAGE_SCHEMA_VERSION = 4
 LEAKAGE_KIND = "runtime-locale-latin-span-audit"
 REVIEW_SCHEMA_VERSION = 1
 REVIEW_KIND = "runtime-locale-latin-span-review"
+SCRIPT_REVIEW_SCHEMA_VERSION = 1
+SCRIPT_REVIEW_KIND = "runtime-locale-unicode-script-review"
 DEFAULT_REVIEW_PATH = Path("texts/locales/runtime_latin_span_review.json")
+DEFAULT_SCRIPT_REVIEW_PATH = Path(
+    "texts/locales/runtime_unicode_script_review.json"
+)
 DEFAULT_RAW_CLOSURE_PATH = Path(
     "texts/locales/mapping/raw_surface_closure.json"
 )
@@ -36,6 +41,19 @@ _REVIEW_KEY_RE = re.compile(
     r"|(raw)/(ja|zh-Hans)/(fe8cn\.raw\.import-[0-9]{4})"
 )
 _COMMIT_RE = re.compile(r"[0-9a-f]{40}")
+_SHA256_RE = re.compile(r"[0-9a-f]{64}")
+_SCRIPT_REVIEW_KEY_RE = re.compile(
+    r"(game|raw|display)/(ja|zh-Hans)/([^/\r\n]+)"
+)
+_CODEPOINT_RE = re.compile(r"U\+[0-9A-F]{4,6}")
+_ALLOWED_SCRIPTS = {
+    "ja": frozenset(
+        {"Bopomofo", "Common", "Han", "Hiragana", "Inherited", "Katakana", "Latin"}
+    ),
+    "zh-Hans": frozenset(
+        {"Bopomofo", "Common", "Han", "Hiragana", "Inherited", "Katakana", "Latin"}
+    ),
+}
 
 
 @dataclass(frozen=True)
@@ -71,6 +89,31 @@ class ReviewCatalog:
     reviews: Mapping[str, TargetReview]
 
 
+@dataclass(frozen=True)
+class ScriptSymbolApproval:
+    key: str
+    character: str
+    codepoint: str
+    occurrences: int
+    reason: str
+    source: str
+
+
+@dataclass(frozen=True)
+class ScriptTargetApproval:
+    key: str
+    current_payload_sha256: str
+    symbols: Mapping[str, ScriptSymbolApproval]
+
+
+@dataclass(frozen=True)
+class ScriptReviewCatalog:
+    path: str
+    sha256: str
+    byte_count: int
+    approvals: Mapping[str, ScriptTargetApproval]
+
+
 def canonical_json_bytes(data: Any) -> bytes:
     return (
         json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
@@ -98,6 +141,169 @@ def _is_latin_letter(character: str) -> bool:
     return (
         unicodedata.category(character).startswith("L")
         and "LATIN" in unicodedata.name(character, "")
+    )
+
+
+def _unicode_script(character: str) -> str:
+    value = ord(character)
+    name = unicodedata.name(character, "")
+    if "CYRILLIC" in name:
+        return "Cyrillic"
+    if "GREEK" in name:
+        return "Greek"
+    if (
+        0x3400 <= value <= 0x4DBF
+        or 0x4E00 <= value <= 0x9FFF
+        or 0xF900 <= value <= 0xFAFF
+        or 0x20000 <= value <= 0x3134F
+        or "IDEOGRAPH" in name
+    ):
+        return "Han"
+    if 0x3040 <= value <= 0x309F or "HIRAGANA" in name:
+        return "Hiragana"
+    if (
+        0x30A0 <= value <= 0x30FF
+        or 0x31F0 <= value <= 0x31FF
+        or "KATAKANA" in name
+    ):
+        return "Katakana"
+    if (
+        0x3100 <= value <= 0x312F
+        or 0x31A0 <= value <= 0x31BF
+        or "BOPOMOFO" in name
+    ):
+        return "Bopomofo"
+    if "LATIN" in name:
+        return "Latin"
+    category = unicodedata.category(character)
+    if category.startswith("M"):
+        return "Inherited"
+    if not category.startswith("L"):
+        return "Common"
+    return "Other"
+
+
+def _script_approval_required(character: str) -> bool:
+    return (
+        _unicode_script(character) == "Greek"
+        or unicodedata.category(character) == "Sm"
+    )
+
+
+def load_script_review(
+    path: Path = DEFAULT_SCRIPT_REVIEW_PATH,
+) -> ScriptReviewCatalog:
+    path = Path(path)
+    data, data_bytes = _load_json(path)
+    if not isinstance(data, dict):
+        raise GameCatalogError(f"{path}: script review root must be an object")
+    if data.get("schema_version") != SCRIPT_REVIEW_SCHEMA_VERSION:
+        raise GameCatalogError(
+            f"{path}: script review schema_version must be "
+            f"{SCRIPT_REVIEW_SCHEMA_VERSION}"
+        )
+    if data.get("kind") != SCRIPT_REVIEW_KIND:
+        raise GameCatalogError(
+            f"{path}: script review kind must be {SCRIPT_REVIEW_KIND!r}"
+        )
+    if data.get("policy") != {
+        "cyrillic_approvals_forbidden": True,
+        "greek_and_math_require_exact_target_approval": True,
+        "script_allowlist_is_locale_scoped": True,
+    }:
+        raise GameCatalogError(f"{path}: script review policy drifted")
+    raw_approvals = data.get("approvals")
+    if not isinstance(raw_approvals, dict):
+        raise GameCatalogError(f"{path}: script approvals must be an object")
+
+    approvals: Dict[str, ScriptTargetApproval] = {}
+    for key, raw in sorted(raw_approvals.items()):
+        if not isinstance(key, str) or not _SCRIPT_REVIEW_KEY_RE.fullmatch(key):
+            raise GameCatalogError(
+                f"{path}: script approval key {key!r} is invalid"
+            )
+        if not isinstance(raw, dict):
+            raise GameCatalogError(
+                f"{path}: script approval {key!r} must be an object"
+            )
+        scope, locale, target = key.split("/", 2)
+        if (
+            raw.get("scope") != scope
+            or raw.get("locale") != locale
+            or raw.get("target") != target
+        ):
+            raise GameCatalogError(
+                f"{path}: script approval {key!r} must repeat exact scope, "
+                "locale, and target"
+            )
+        current_payload_sha256 = raw.get("current_payload_sha256")
+        raw_symbols = raw.get("symbols")
+        if (
+            not isinstance(current_payload_sha256, str)
+            or not _SHA256_RE.fullmatch(current_payload_sha256)
+            or not isinstance(raw_symbols, dict)
+            or not raw_symbols
+        ):
+            raise GameCatalogError(
+                f"{path}: script approval {key!r} has invalid payload pin "
+                "or symbols"
+            )
+        symbols: Dict[str, ScriptSymbolApproval] = {}
+        for codepoint, symbol_raw in sorted(raw_symbols.items()):
+            if (
+                not isinstance(codepoint, str)
+                or not _CODEPOINT_RE.fullmatch(codepoint)
+                or not isinstance(symbol_raw, dict)
+            ):
+                raise GameCatalogError(
+                    f"{path}: script approval {key!r}/{codepoint!r} is malformed"
+                )
+            character = symbol_raw.get("character")
+            occurrences = symbol_raw.get("occurrences")
+            reason = symbol_raw.get("reason")
+            source = symbol_raw.get("source")
+            if (
+                not isinstance(character, str)
+                or len(character) != 1
+                or codepoint != f"U+{ord(character):04X}"
+                or not isinstance(occurrences, int)
+                or isinstance(occurrences, bool)
+                or occurrences < 1
+                or not isinstance(reason, str)
+                or not reason.strip()
+                or not isinstance(source, str)
+                or not source.strip()
+            ):
+                raise GameCatalogError(
+                    f"{path}: script approval {key!r}/{codepoint} is invalid"
+                )
+            if _unicode_script(character) == "Cyrillic":
+                raise GameCatalogError(
+                    f"{path}: Cyrillic approval is forbidden for "
+                    f"{key}/{codepoint}"
+                )
+            if not _script_approval_required(character):
+                raise GameCatalogError(
+                    f"{path}: {key}/{codepoint} is not Greek or mathematical"
+                )
+            symbols[codepoint] = ScriptSymbolApproval(
+                key=f"{key}#{codepoint}",
+                character=character,
+                codepoint=codepoint,
+                occurrences=occurrences,
+                reason=reason,
+                source=source,
+            )
+        approvals[key] = ScriptTargetApproval(
+            key=key,
+            current_payload_sha256=current_payload_sha256,
+            symbols=symbols,
+        )
+    return ScriptReviewCatalog(
+        path=path.as_posix(),
+        sha256=sha256_bytes(data_bytes),
+        byte_count=len(data_bytes),
+        approvals=approvals,
     )
 
 
@@ -396,13 +602,110 @@ def _classify_candidate(payload: str, english: str) -> Tuple[Tuple[str, ...], fl
     return tuple(classifications), similarity
 
 
+def _audit_script_payload(
+    payload: str,
+    *,
+    locale: str,
+    target_key: str,
+    review: ScriptReviewCatalog,
+) -> Tuple[Dict[str, Any], Tuple[str, ...]]:
+    visible = _BRACKET_TOKEN_RE.sub("", payload)
+    counts = Counter(visible)
+    payload_sha256 = sha256_bytes(payload.encode("utf-8"))
+    target_review = review.approvals.get(target_key)
+    payload_matches = (
+        target_review is not None
+        and target_review.current_payload_sha256 == payload_sha256
+    )
+    findings = []
+    used_approvals = []
+    approved_count = 0
+    approved_occurrences = 0
+    disallowed_count = 0
+    disallowed_occurrences = 0
+    unapproved_count = 0
+    unapproved_occurrences = 0
+    for character, occurrences in sorted(
+        counts.items(),
+        key=lambda item: ord(item[0]),
+    ):
+        codepoint = f"U+{ord(character):04X}"
+        script = _unicode_script(character)
+        category = unicodedata.category(character)
+        disallowed = (
+            script == "Cyrillic"
+            or script not in _ALLOWED_SCRIPTS[locale]
+            or 0x2500 <= ord(character) <= 0x257F
+            or category in ("Co", "Cs", "Cn")
+        )
+        requires_approval = _script_approval_required(character)
+        approval = (
+            target_review.symbols.get(codepoint)
+            if target_review is not None
+            else None
+        )
+        approved = (
+            not disallowed
+            and requires_approval
+            and payload_matches
+            and approval is not None
+            and approval.character == character
+            and approval.occurrences == occurrences
+        )
+        if approved:
+            approved_count += 1
+            approved_occurrences += occurrences
+            used_approvals.append(approval.key)
+            continue
+        if not disallowed and not requires_approval:
+            continue
+
+        if disallowed:
+            disallowed_count += 1
+            disallowed_occurrences += occurrences
+        else:
+            unapproved_count += 1
+            unapproved_occurrences += occurrences
+        finding = {
+            "category": category,
+            "character": character,
+            "codepoint": codepoint,
+            "occurrences": occurrences,
+            "script": script,
+            "status": "disallowed-script" if disallowed else "approval-required",
+        }
+        if approval is not None:
+            finding["approval"] = {
+                "occurrences": approval.occurrences,
+                "payload_matches": payload_matches,
+                "reason": approval.reason,
+                "source": approval.source,
+            }
+        findings.append(finding)
+    return (
+        {
+            "approved_symbol_count": approved_count,
+            "approved_symbol_occurrence_count": approved_occurrences,
+            "disallowed_symbol_count": disallowed_count,
+            "disallowed_symbol_occurrence_count": disallowed_occurrences,
+            "findings": findings,
+            "payload_matches_review": payload_matches,
+            "payload_sha256": payload_sha256,
+            "unapproved_symbol_count": unapproved_count,
+            "unapproved_symbol_occurrence_count": unapproved_occurrences,
+        },
+        tuple(used_approvals),
+    )
+
+
 def _audit_entries(
     entries: Iterable[Mapping[str, Any]],
     *,
     locale: str,
     scope: str,
     review: ReviewCatalog,
-) -> Tuple[Dict[str, Any], Tuple[str, ...]]:
+    script_review: ScriptReviewCatalog,
+) -> Tuple[Dict[str, Any], Tuple[str, ...], Tuple[str, ...]]:
     latin_payloads = []
     used_decisions = []
     exact_count = 0
@@ -420,6 +723,15 @@ def _audit_entries(
     replacement_character_count = 0
     c1_control_count = 0
     mojibake_occurrence_count = 0
+    used_script_approvals = []
+    script_payloads = []
+    approved_script_symbol_count = 0
+    approved_script_symbol_occurrence_count = 0
+    disallowed_script_symbol_count = 0
+    disallowed_script_symbol_occurrence_count = 0
+    unapproved_script_symbol_count = 0
+    unapproved_script_symbol_occurrence_count = 0
+    script_payload_mismatch_count = 0
     for entry in entries:
         audited_count += 1
         payload = entry["payload"]
@@ -429,6 +741,43 @@ def _audit_entries(
         near_count += "near-english-copy" in classifications
         latin_only_count += "latin-only-payload" in classifications
         target_key = f"{scope}/{locale}/{entry['id']}"
+        script_audit, script_used = _audit_script_payload(
+            payload,
+            locale=locale,
+            target_key=target_key,
+            review=script_review,
+        )
+        approved_script_symbol_count += script_audit[
+            "approved_symbol_count"
+        ]
+        approved_script_symbol_occurrence_count += script_audit[
+            "approved_symbol_occurrence_count"
+        ]
+        disallowed_script_symbol_count += script_audit[
+            "disallowed_symbol_count"
+        ]
+        disallowed_script_symbol_occurrence_count += script_audit[
+            "disallowed_symbol_occurrence_count"
+        ]
+        unapproved_script_symbol_count += script_audit[
+            "unapproved_symbol_count"
+        ]
+        unapproved_script_symbol_occurrence_count += script_audit[
+            "unapproved_symbol_occurrence_count"
+        ]
+        used_script_approvals.extend(script_used)
+        if (
+            target_key in script_review.approvals
+            and not script_audit["payload_matches_review"]
+        ):
+            script_payload_mismatch_count += 1
+        if script_audit["findings"] or script_used:
+            script_payloads.append(
+                {
+                    "id": entry["id"],
+                    **script_audit,
+                }
+            )
         artifacts = _payload_artifacts(payload)
         replacement_character_count += artifacts["replacement_character_count"]
         c1_control_count += artifacts["c1_control_count"]
@@ -540,8 +889,23 @@ def _audit_entries(
             "mojibake_occurrence_count": mojibake_occurrence_count,
             "artifact_payloads": artifact_payloads,
             "latin_bearing_payloads": latin_payloads,
+            "script_approved_symbol_count": approved_script_symbol_count,
+            "script_approved_symbol_occurrence_count": (
+                approved_script_symbol_occurrence_count
+            ),
+            "script_disallowed_symbol_count": disallowed_script_symbol_count,
+            "script_disallowed_symbol_occurrence_count": (
+                disallowed_script_symbol_occurrence_count
+            ),
+            "script_payload_mismatch_count": script_payload_mismatch_count,
+            "script_payloads": script_payloads,
+            "script_unapproved_symbol_count": unapproved_script_symbol_count,
+            "script_unapproved_symbol_occurrence_count": (
+                unapproved_script_symbol_occurrence_count
+            ),
         },
         tuple(used_decisions),
+        tuple(used_script_approvals),
     )
 
 
@@ -687,6 +1051,7 @@ def build_leakage_report(
     build: GameCatalogBuild,
     *,
     review: ReviewCatalog,
+    script_review: ScriptReviewCatalog,
     raw_closure: Mapping[str, Any],
     expansion_catalogs: Mapping[str, Mapping[str, str]],
     inputs: Mapping[str, Mapping[str, Any]],
@@ -696,14 +1061,16 @@ def build_leakage_report(
     raw_reports = {}
     display_alias_reports = {}
     used_decisions = set()
+    used_script_approvals = set()
     for locale in build.enabled_locales:
-        game_report, game_used = _audit_entries(
+        game_report, game_used, game_script_used = _audit_entries(
             _game_entries(build, locale),
             locale=locale,
             scope="game",
             review=review,
+            script_review=script_review,
         )
-        raw_report, raw_used = _audit_entries(
+        raw_report, raw_used, raw_script_used = _audit_entries(
             _raw_entries(
                 build,
                 locale,
@@ -713,12 +1080,18 @@ def build_leakage_report(
             locale=locale,
             scope="raw",
             review=review,
+            script_review=script_review,
         )
-        display_alias_report, display_alias_used = _audit_entries(
+        (
+            display_alias_report,
+            display_alias_used,
+            display_alias_script_used,
+        ) = _audit_entries(
             _display_alias_entries(build, locale),
             locale=locale,
             scope="display",
             review=review,
+            script_review=script_review,
         )
         game_reports[locale] = game_report
         raw_reports[locale] = raw_report
@@ -726,6 +1099,9 @@ def build_leakage_report(
         used_decisions.update(game_used)
         used_decisions.update(raw_used)
         used_decisions.update(display_alias_used)
+        used_script_approvals.update(game_script_used)
+        used_script_approvals.update(raw_script_used)
+        used_script_approvals.update(display_alias_script_used)
 
     relevant_decisions = {
         decision.key
@@ -734,6 +1110,15 @@ def build_leakage_report(
         for decision in target.spans.values()
     }
     stale_decisions = sorted(relevant_decisions - used_decisions)
+    relevant_script_approvals = {
+        approval.key
+        for target in script_review.approvals.values()
+        if any(f"/{locale}/" in target.key for locale in build.enabled_locales)
+        for approval in target.symbols.values()
+    }
+    stale_script_approvals = sorted(
+        relevant_script_approvals - used_script_approvals
+    )
     unapproved_spans = sum(
         report["unapproved_span_count"]
         for report in (
@@ -798,6 +1183,54 @@ def build_leakage_report(
             *display_alias_reports.values(),
         )
     )
+    approved_script_symbols = sum(
+        report["script_approved_symbol_count"]
+        for report in (
+            *game_reports.values(),
+            *raw_reports.values(),
+            *display_alias_reports.values(),
+        )
+    )
+    disallowed_script_symbols = sum(
+        report["script_disallowed_symbol_count"]
+        for report in (
+            *game_reports.values(),
+            *raw_reports.values(),
+            *display_alias_reports.values(),
+        )
+    )
+    disallowed_script_occurrences = sum(
+        report["script_disallowed_symbol_occurrence_count"]
+        for report in (
+            *game_reports.values(),
+            *raw_reports.values(),
+            *display_alias_reports.values(),
+        )
+    )
+    unapproved_script_symbols = sum(
+        report["script_unapproved_symbol_count"]
+        for report in (
+            *game_reports.values(),
+            *raw_reports.values(),
+            *display_alias_reports.values(),
+        )
+    )
+    unapproved_script_occurrences = sum(
+        report["script_unapproved_symbol_occurrence_count"]
+        for report in (
+            *game_reports.values(),
+            *raw_reports.values(),
+            *display_alias_reports.values(),
+        )
+    )
+    script_payload_mismatches = sum(
+        report["script_payload_mismatch_count"]
+        for report in (
+            *game_reports.values(),
+            *raw_reports.values(),
+            *display_alias_reports.values(),
+        )
+    )
     localized_decisions = sum(
         decision.decision == "localized"
         for target in review.reviews.values()
@@ -826,6 +1259,15 @@ def build_leakage_report(
             "localized_decision_contract": (
                 "exact current payload match and reviewed baseline span absent"
             ),
+            "unicode_script_allowlist": {
+                locale: sorted(_ALLOWED_SCRIPTS[locale])
+                for locale in ("ja", "zh-Hans")
+            },
+            "unicode_script_policy": (
+                "Cyrillic, box drawing, private/unassigned scalars, and "
+                "non-allowlisted scripts are forbidden; Greek and Unicode "
+                "math symbols require exact target approvals"
+            ),
         },
         "inputs": {
             **dict(sorted(inputs.items())),
@@ -834,6 +1276,11 @@ def build_leakage_report(
                 "sha256": review.sha256,
                 "byte_count": review.byte_count,
                 "baseline_commit": review.baseline_commit,
+            },
+            "unicode_script_review": {
+                "path": script_review.path,
+                "sha256": script_review.sha256,
+                "byte_count": script_review.byte_count,
             },
         },
         "baseline_review": {
@@ -879,6 +1326,18 @@ def build_leakage_report(
             "mojibake_occurrence_count": mojibake_occurrences,
             "stale_decision_count": len(stale_decisions),
             "stale_decisions": stale_decisions,
+            "approved_script_symbol_count": approved_script_symbols,
+            "disallowed_script_symbol_count": disallowed_script_symbols,
+            "disallowed_script_symbol_occurrence_count": (
+                disallowed_script_occurrences
+            ),
+            "unapproved_script_symbol_count": unapproved_script_symbols,
+            "unapproved_script_symbol_occurrence_count": (
+                unapproved_script_occurrences
+            ),
+            "script_payload_mismatch_count": script_payload_mismatches,
+            "stale_script_approval_count": len(stale_script_approvals),
+            "stale_script_approvals": stale_script_approvals,
         },
     }
     if (
@@ -886,6 +1345,10 @@ def build_leakage_report(
         or payload_mismatches
         or artifact_payloads
         or stale_decisions
+        or disallowed_script_symbols
+        or unapproved_script_symbols
+        or script_payload_mismatches
+        or stale_script_approvals
     ):
         problems = []
         if unapproved_spans:
@@ -901,6 +1364,26 @@ def build_leakage_report(
             )
         if stale_decisions:
             problems.append(f"{len(stale_decisions)} stale span decision(s)")
+        if disallowed_script_symbols:
+            problems.append(
+                f"{disallowed_script_symbols} disallowed Unicode script "
+                f"symbol(s) across {disallowed_script_occurrences} "
+                "occurrence(s)"
+            )
+        if unapproved_script_symbols:
+            problems.append(
+                f"{unapproved_script_symbols} unapproved Greek/math symbol(s) "
+                f"across {unapproved_script_occurrences} occurrence(s)"
+            )
+        if script_payload_mismatches:
+            problems.append(
+                f"{script_payload_mismatches} script-review payload "
+                "mismatch(es)"
+            )
+        if stale_script_approvals:
+            problems.append(
+                f"{len(stale_script_approvals)} stale script approval(s)"
+            )
         raise GameCatalogError("runtime locale leakage gate failed: " + ", ".join(problems))
     return report
 

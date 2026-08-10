@@ -27,6 +27,8 @@ from scripts.localization.game_locales.fixed_width_labels import (
 )
 from scripts.localization.game_locales.parsers import LocaleSourceError, parse_hash_indexed
 from scripts.localization.game_locales.raw_providers import (
+    PINNED_SOURCE_REPOSITORY,
+    PINNED_SOURCE_REVISION,
     RawProvider,
     RawProviderError,
     load_ja_raw_providers,
@@ -183,11 +185,18 @@ def _load_raw_records(path: Path) -> Dict[str, str]:
     return result
 
 
-def _load_ja_raw_records(path: Path) -> Dict[int, RawProvider]:
+def _load_ja_raw_records(
+    path: Path,
+    *,
+    expected_repository: str | None,
+    expected_revision: str | None,
+) -> Dict[int, RawProvider]:
     try:
         return load_ja_raw_providers(
             _load_json(path),
             source_root=Path(path).parent,
+            expected_repository=expected_repository,
+            expected_revision=expected_revision,
         )
     except RawProviderError as error:
         raise GameCatalogError(f"{path}: {error}") from error
@@ -879,6 +888,8 @@ def build_game_catalog(
     fixed_width_aliases_path: Path = FIXED_WIDTH_ALIASES_PATH,
     enabled_locales: Sequence[str] = LOCALE_IDS,
     suffix_share: bool = True,
+    ja_raw_expected_repository: str | None = PINNED_SOURCE_REPOSITORY,
+    ja_raw_expected_revision: str | None = PINNED_SOURCE_REVISION,
 ) -> GameCatalogBuild:
     enabled_locales = _normalize_enabled_locales(enabled_locales)
     target_count = len(load_fe8u_target_ids(target_header_path))
@@ -910,7 +921,13 @@ def build_game_catalog(
         _load_raw_records(zh_raw_path) if "zh-Hans" in enabled_locales else {}
     )
     ja_raw_records = (
-        _load_ja_raw_records(ja_raw_path) if "ja" in enabled_locales else {}
+        _load_ja_raw_records(
+            ja_raw_path,
+            expected_repository=ja_raw_expected_repository,
+            expected_revision=ja_raw_expected_revision,
+        )
+        if "ja" in enabled_locales
+        else {}
     )
     mapping_source_counts = _mapping_source_counts(mapping)
     if authored_paths is None and mapping_source_counts["authored"]:

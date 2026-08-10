@@ -1,0 +1,1369 @@
+{
+  "approvals": {
+    "game/ja/0x0416": {
+      "current_payload_sha256": "01d7e3bff8a8534b4397132c730511109b020b52d0080200ea82c5e909f68e00",
+      "locale": "ja",
+      "scope": "game",
+      "symbols": {
+        "U+FF0B": {
+          "character": "＋",
+          "occurrences": 1,
+          "reason": "Fullwidth plus is intentional stat-bonus notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x0416"
+    },
+    "game/ja/0x0417": {
+      "current_payload_sha256": "f9324cf9d5f522904618a53ac4df3545b3440c4bac00daaacf35582068292f47",
+      "locale": "ja",
+      "scope": "game",
+      "symbols": {
+        "U+FF0B": {
+          "character": "＋",
+          "occurrences": 1,
+          "reason": "Fullwidth plus is intentional stat-bonus notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x0417"
+    },
+    "game/ja/0x0425": {
+      "current_payload_sha256": "596f684b911d000eb82f07cde0b95a006bbf8b84f19e201c019052b80ff221c2",
+      "locale": "ja",
+      "scope": "game",
+      "symbols": {
+        "U+FF0B": {
+          "character": "＋",
+          "occurrences": 1,
+          "reason": "Fullwidth plus is intentional stat-bonus notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x0425"
+    },
+    "game/ja/0x0426": {
+      "current_payload_sha256": "f43095e447c2a9907ca8d0d10d27972cc16c42ed87fd67f5695947852baef743",
+      "locale": "ja",
+      "scope": "game",
+      "symbols": {
+        "U+FF0B": {
+          "character": "＋",
+          "occurrences": 1,
+          "reason": "Fullwidth plus is intentional stat-bonus notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x0426"
+    },
+    "game/ja/0x0438": {
+      "current_payload_sha256": "52c678d493b350503b5606b4d631bafb8847473343e72e3203d53ac240acefc1",
+      "locale": "ja",
+      "scope": "game",
+      "symbols": {
+        "U+FF0B": {
+          "character": "＋",
+          "occurrences": 1,
+          "reason": "Fullwidth plus is intentional stat-bonus notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x0438"
+    },
+    "game/ja/0x0446": {
+      "current_payload_sha256": "4d0f848fdbbbc42264c5e44ca596db6378b0eb092fed2548c840576b2d14df5e",
+      "locale": "ja",
+      "scope": "game",
+      "symbols": {
+        "U+FF0B": {
+          "character": "＋",
+          "occurrences": 1,
+          "reason": "Fullwidth plus is intentional stat-bonus notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x0446"
+    },
+    "game/ja/0x045E": {
+      "current_payload_sha256": "3e79efc5e2e70a33c7bb838bb23f9a9b18421df066a82391dd4a02647d94bc86",
+      "locale": "ja",
+      "scope": "game",
+      "symbols": {
+        "U+FF0B": {
+          "character": "＋",
+          "occurrences": 1,
+          "reason": "Fullwidth plus is intentional stat-bonus notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x045E"
+    },
+    "game/ja/0x0464": {
+      "current_payload_sha256": "602c77e48dd4dea01da4f1c26ec003aff3cb782b26d51641a0758d0e52af3324",
+      "locale": "ja",
+      "scope": "game",
+      "symbols": {
+        "U+FF0B": {
+          "character": "＋",
+          "occurrences": 1,
+          "reason": "Fullwidth plus is intentional stat-bonus notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x0464"
+    },
+    "game/ja/0x046A": {
+      "current_payload_sha256": "82f0eebd5a8459f7e42716be10d2aa17b23b396501f557a17b3b9aa781ba5096",
+      "locale": "ja",
+      "scope": "game",
+      "symbols": {
+        "U+FF0B": {
+          "character": "＋",
+          "occurrences": 1,
+          "reason": "Fullwidth plus is intentional stat-bonus notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x046A"
+    },
+    "game/ja/0x0483": {
+      "current_payload_sha256": "bdaf56be7e86c4002b54cf375e6fe78978f03a6ed9ed8b5f03063d09434b53f3",
+      "locale": "ja",
+      "scope": "game",
+      "symbols": {
+        "U+FF0B": {
+          "character": "＋",
+          "occurrences": 1,
+          "reason": "Fullwidth plus is intentional stat-bonus notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x0483"
+    },
+    "game/ja/0x0484": {
+      "current_payload_sha256": "f144a81a65989fce9fde850c5b8b45b14ac9c9e43281ea7a9831c742972b44f2",
+      "locale": "ja",
+      "scope": "game",
+      "symbols": {
+        "U+FF0B": {
+          "character": "＋",
+          "occurrences": 1,
+          "reason": "Fullwidth plus is intentional stat-bonus notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x0484"
+    },
+    "game/ja/0x0485": {
+      "current_payload_sha256": "a064d8b29a82b95b98796e1e307f970bba1259c955a64ac9e3d45fc0db4c78f6",
+      "locale": "ja",
+      "scope": "game",
+      "symbols": {
+        "U+FF0B": {
+          "character": "＋",
+          "occurrences": 1,
+          "reason": "Fullwidth plus is intentional stat-bonus notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x0485"
+    },
+    "game/ja/0x0486": {
+      "current_payload_sha256": "2d02ee96ad27cce4e4ccc4034159b9d6064f46d4bd8a88397d61d4062fb10a2a",
+      "locale": "ja",
+      "scope": "game",
+      "symbols": {
+        "U+FF0B": {
+          "character": "＋",
+          "occurrences": 1,
+          "reason": "Fullwidth plus is intentional stat-bonus notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x0486"
+    },
+    "game/ja/0x0487": {
+      "current_payload_sha256": "711bd122bbc7c02236ef0cfd76e17785c70a39f501bcb8ac37053b2c8557de62",
+      "locale": "ja",
+      "scope": "game",
+      "symbols": {
+        "U+FF0B": {
+          "character": "＋",
+          "occurrences": 1,
+          "reason": "Fullwidth plus is intentional stat-bonus notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x0487"
+    },
+    "game/ja/0x0488": {
+      "current_payload_sha256": "b8aad6779ecd42690e8eba886871efada86b7dd6e4a10b644c7bddfce1ca260c",
+      "locale": "ja",
+      "scope": "game",
+      "symbols": {
+        "U+FF0B": {
+          "character": "＋",
+          "occurrences": 1,
+          "reason": "Fullwidth plus is intentional stat-bonus notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x0488"
+    },
+    "game/ja/0x0489": {
+      "current_payload_sha256": "4f0220f360484ef8bc15bedf38f44cf2c411b9b8dd58d7b2aa2230c8ae07fd30",
+      "locale": "ja",
+      "scope": "game",
+      "symbols": {
+        "U+FF0B": {
+          "character": "＋",
+          "occurrences": 1,
+          "reason": "Fullwidth plus is intentional stat-bonus notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x0489"
+    },
+    "game/ja/0x048A": {
+      "current_payload_sha256": "9458cd1402c1c000e8c3009a4f6630fc295fa7eee777a6a683ffb6144b51adbe",
+      "locale": "ja",
+      "scope": "game",
+      "symbols": {
+        "U+FF0B": {
+          "character": "＋",
+          "occurrences": 1,
+          "reason": "Fullwidth plus is intentional stat-bonus notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x048A"
+    },
+    "game/ja/0x048B": {
+      "current_payload_sha256": "ba38e46dd236827c85b3b914047c8eba793f0d6c162a1a7baff6d7295ef28ac1",
+      "locale": "ja",
+      "scope": "game",
+      "symbols": {
+        "U+FF0B": {
+          "character": "＋",
+          "occurrences": 1,
+          "reason": "Fullwidth plus is intentional stat-bonus notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x048B"
+    },
+    "game/ja/0x0524": {
+      "current_payload_sha256": "a851fade5c9ca2d66a34108da1978936e6d23066ef8ef4ef6bb2fbcd0fb3a9f0",
+      "locale": "ja",
+      "scope": "game",
+      "symbols": {
+        "U+FF5E": {
+          "character": "～",
+          "occurrences": 1,
+          "reason": "Fullwidth tilde is intentional range notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x0524"
+    },
+    "game/ja/0x0525": {
+      "current_payload_sha256": "9f364ec18c8756b27658048328c2cd178b73b6d3c616a6494afd859ed13b5456",
+      "locale": "ja",
+      "scope": "game",
+      "symbols": {
+        "U+FF5E": {
+          "character": "～",
+          "occurrences": 1,
+          "reason": "Fullwidth tilde is intentional range notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x0525"
+    },
+    "game/ja/0x0527": {
+      "current_payload_sha256": "83621cc39d53afef80331352472078b7bee980710aa6ed6cfd8de1ab5c830366",
+      "locale": "ja",
+      "scope": "game",
+      "symbols": {
+        "U+FF5E": {
+          "character": "～",
+          "occurrences": 1,
+          "reason": "Fullwidth tilde is intentional range notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x0527"
+    },
+    "game/ja/0x0528": {
+      "current_payload_sha256": "3149bed3eb5dcb4fb9c6dc8b0ffe4cdade3040940532787b6151b5d20f99a933",
+      "locale": "ja",
+      "scope": "game",
+      "symbols": {
+        "U+FF5E": {
+          "character": "～",
+          "occurrences": 1,
+          "reason": "Fullwidth tilde is intentional range notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x0528"
+    },
+    "game/ja/0x0529": {
+      "current_payload_sha256": "a67b81e06ff6c1ccbb168882b23717e68ef02ac2a53088e0ed10fdcb8c3b1c49",
+      "locale": "ja",
+      "scope": "game",
+      "symbols": {
+        "U+FF5E": {
+          "character": "～",
+          "occurrences": 1,
+          "reason": "Fullwidth tilde is intentional range notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x0529"
+    },
+    "game/ja/0x0571": {
+      "current_payload_sha256": "81761d002db70616138c3d702a2aff76ac548574860119fccd5c9d068f09128a",
+      "locale": "ja",
+      "scope": "game",
+      "symbols": {
+        "U+00D7": {
+          "character": "×",
+          "occurrences": 2,
+          "reason": "Multiplication sign is intentional quantity notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x0571"
+    },
+    "game/ja/0x064A": {
+      "current_payload_sha256": "0b53d948d862f1d7fd834cf9dd5fe77ae04e12f96396f5659680e480928aa79c",
+      "locale": "ja",
+      "scope": "game",
+      "symbols": {
+        "U+FF0B": {
+          "character": "＋",
+          "occurrences": 1,
+          "reason": "Fullwidth plus is intentional stat-bonus notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x064A"
+    },
+    "game/ja/0x07C4": {
+      "current_payload_sha256": "867262c3dcb29ceb5bf8166a90287364daa4c74ba2c3d10b0a5729f97dee4ef7",
+      "locale": "ja",
+      "scope": "game",
+      "symbols": {
+        "U+FF5E": {
+          "character": "～",
+          "occurrences": 1,
+          "reason": "Fullwidth tilde is intentional range notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x07C4"
+    },
+    "game/ja/0x07C5": {
+      "current_payload_sha256": "edf39e938dfdc595a1fd1d102423f255e8b541c1bb0ab4c3455abf413ac65344",
+      "locale": "ja",
+      "scope": "game",
+      "symbols": {
+        "U+FF5E": {
+          "character": "～",
+          "occurrences": 1,
+          "reason": "Fullwidth tilde is intentional range notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x07C5"
+    },
+    "game/ja/0x07C6": {
+      "current_payload_sha256": "d4e3c17dea960b9d1a393aa0694835088ed6a952476365bfd65961e1400b91aa",
+      "locale": "ja",
+      "scope": "game",
+      "symbols": {
+        "U+FF5E": {
+          "character": "～",
+          "occurrences": 1,
+          "reason": "Fullwidth tilde is intentional range notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x07C6"
+    },
+    "game/ja/0x07C7": {
+      "current_payload_sha256": "7584b60603e7e51866d5057f546794a5fa004124db87e811b1d1874d4d35fef3",
+      "locale": "ja",
+      "scope": "game",
+      "symbols": {
+        "U+FF5E": {
+          "character": "～",
+          "occurrences": 1,
+          "reason": "Fullwidth tilde is intentional range notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x07C7"
+    },
+    "game/ja/0x0921": {
+      "current_payload_sha256": "797b6fd9fadca8961a9f10cc31c34144026714771608977564af81eeb6635858",
+      "locale": "ja",
+      "scope": "game",
+      "symbols": {
+        "U+00D7": {
+          "character": "×",
+          "occurrences": 3,
+          "reason": "Multiplication sign is intentional quantity notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x0921"
+    },
+    "game/ja/0x0966": {
+      "current_payload_sha256": "d934f8abe14653bee217c45c0e495481cc28d0a22fcae2a18713ed0388e63a4d",
+      "locale": "ja",
+      "scope": "game",
+      "symbols": {
+        "U+FF5E": {
+          "character": "～",
+          "occurrences": 1,
+          "reason": "Fullwidth tilde is intentional range notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x0966"
+    },
+    "game/ja/0x0995": {
+      "current_payload_sha256": "9f8da919c9b67e8d61b3177741b61bc31bd453c0f5383e5103ba5ca675432e14",
+      "locale": "ja",
+      "scope": "game",
+      "symbols": {
+        "U+FF5E": {
+          "character": "～",
+          "occurrences": 1,
+          "reason": "Fullwidth tilde is intentional range notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x0995"
+    },
+    "game/ja/0x0A1B": {
+      "current_payload_sha256": "37d63e30ea38ba1fc2ebcd68335e1edc8602fb876f171fd22b8dccd5d58468ca",
+      "locale": "ja",
+      "scope": "game",
+      "symbols": {
+        "U+FF5E": {
+          "character": "～",
+          "occurrences": 2,
+          "reason": "Fullwidth tilde is intentional range notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x0A1B"
+    },
+    "game/ja/0x0A2A": {
+      "current_payload_sha256": "f6c7b40b63f29c042f741a63da1cca4167935e54c4ba479b5e49d7b6e4aee694",
+      "locale": "ja",
+      "scope": "game",
+      "symbols": {
+        "U+FF5E": {
+          "character": "～",
+          "occurrences": 1,
+          "reason": "Fullwidth tilde is intentional range notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x0A2A"
+    },
+    "game/ja/0x0A4E": {
+      "current_payload_sha256": "09b2abd51edb30fa02f2f999518424e5375833899cc5b06d28cdf2bf1aef1a69",
+      "locale": "ja",
+      "scope": "game",
+      "symbols": {
+        "U+FF5E": {
+          "character": "～",
+          "occurrences": 2,
+          "reason": "Fullwidth tilde is intentional range notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x0A4E"
+    },
+    "game/ja/0x0A59": {
+      "current_payload_sha256": "7664209daa9f36dfe019d649d504a3582fb511670c16effed5cbda380e2d408b",
+      "locale": "ja",
+      "scope": "game",
+      "symbols": {
+        "U+FF5E": {
+          "character": "～",
+          "occurrences": 1,
+          "reason": "Fullwidth tilde is intentional range notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x0A59"
+    },
+    "game/ja/0x0A5A": {
+      "current_payload_sha256": "1621f78b8158d144bf8f22555d6ac5567c755b9f13013731f8ac7c77ca55a252",
+      "locale": "ja",
+      "scope": "game",
+      "symbols": {
+        "U+FF5E": {
+          "character": "～",
+          "occurrences": 1,
+          "reason": "Fullwidth tilde is intentional range notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x0A5A"
+    },
+    "game/ja/0x0A5B": {
+      "current_payload_sha256": "d83624409026b5f7bcaad7f8aed8e16be873b3779399de6d642942e72d04a1fe",
+      "locale": "ja",
+      "scope": "game",
+      "symbols": {
+        "U+FF5E": {
+          "character": "～",
+          "occurrences": 1,
+          "reason": "Fullwidth tilde is intentional range notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x0A5B"
+    },
+    "game/ja/0x0A5C": {
+      "current_payload_sha256": "375180058b31772e46f75a31f4571edee6150c476e13e65e49db2c532d4f6925",
+      "locale": "ja",
+      "scope": "game",
+      "symbols": {
+        "U+FF5E": {
+          "character": "～",
+          "occurrences": 1,
+          "reason": "Fullwidth tilde is intentional range notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x0A5C"
+    },
+    "game/ja/0x0A64": {
+      "current_payload_sha256": "584677852653a32f0929e2df21f847592a1498d0ca378641f0cb3f7872e7b1be",
+      "locale": "ja",
+      "scope": "game",
+      "symbols": {
+        "U+FF5E": {
+          "character": "～",
+          "occurrences": 1,
+          "reason": "Fullwidth tilde is intentional range notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x0A64"
+    },
+    "game/ja/0x0A66": {
+      "current_payload_sha256": "da4bf390cd9ceb6681eaee63c12aa60e7d2b373cc4742e59ddcd9591ef59018e",
+      "locale": "ja",
+      "scope": "game",
+      "symbols": {
+        "U+FF5E": {
+          "character": "～",
+          "occurrences": 1,
+          "reason": "Fullwidth tilde is intentional range notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x0A66"
+    },
+    "game/ja/0x0A84": {
+      "current_payload_sha256": "ca68d214bb036a3d96c31110bf84e25509e9113566413fb93780d756fe14f71d",
+      "locale": "ja",
+      "scope": "game",
+      "symbols": {
+        "U+FF5E": {
+          "character": "～",
+          "occurrences": 1,
+          "reason": "Fullwidth tilde is intentional range notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x0A84"
+    },
+    "game/ja/0x0AC5": {
+      "current_payload_sha256": "e167f0c8039aaf6e676dfcb3a21f40ddb2970ca0adb68c67791fe63280c1b56b",
+      "locale": "ja",
+      "scope": "game",
+      "symbols": {
+        "U+FF5E": {
+          "character": "～",
+          "occurrences": 1,
+          "reason": "Fullwidth tilde is intentional range notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x0AC5"
+    },
+    "game/ja/0x0BFA": {
+      "current_payload_sha256": "c7f192afb7f01264a11b9f44d4c450785b08c087a3d53764544af548ac180c9d",
+      "locale": "ja",
+      "scope": "game",
+      "symbols": {
+        "U+FF5E": {
+          "character": "～",
+          "occurrences": 2,
+          "reason": "Fullwidth tilde is intentional range notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x0BFA"
+    },
+    "game/ja/0x0C62": {
+      "current_payload_sha256": "ac68ae6c40e5faaa35e90f8aadd2cec03e7193c1a163ba7c4f764517cf5c14f7",
+      "locale": "ja",
+      "scope": "game",
+      "symbols": {
+        "U+FF5E": {
+          "character": "～",
+          "occurrences": 1,
+          "reason": "Fullwidth tilde is intentional range notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x0C62"
+    },
+    "game/ja/0x0C63": {
+      "current_payload_sha256": "552a6f606c27503fd8cfbfba9cbe43285172a6f5087dd7255252e7c05cdfaa68",
+      "locale": "ja",
+      "scope": "game",
+      "symbols": {
+        "U+FF5E": {
+          "character": "～",
+          "occurrences": 2,
+          "reason": "Fullwidth tilde is intentional range notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x0C63"
+    },
+    "game/ja/0x0C72": {
+      "current_payload_sha256": "85352dc03269b37974e2debb47e4b773caa8cbdde9ef768609235a0c2fdb42d3",
+      "locale": "ja",
+      "scope": "game",
+      "symbols": {
+        "U+FF5E": {
+          "character": "～",
+          "occurrences": 1,
+          "reason": "Fullwidth tilde is intentional range notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x0C72"
+    },
+    "game/ja/0x0C8D": {
+      "current_payload_sha256": "82c32154fc41b6d755d905bde0e822cdc4858239758421f4664cff4fc4902f79",
+      "locale": "ja",
+      "scope": "game",
+      "symbols": {
+        "U+FF5E": {
+          "character": "～",
+          "occurrences": 2,
+          "reason": "Fullwidth tilde is intentional range notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x0C8D"
+    },
+    "game/ja/0x0CAD": {
+      "current_payload_sha256": "6cc905887f606497684e31e34df99d2426bc00100d3bd3bba3993e763351e602",
+      "locale": "ja",
+      "scope": "game",
+      "symbols": {
+        "U+FF5E": {
+          "character": "～",
+          "occurrences": 1,
+          "reason": "Fullwidth tilde is intentional range notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x0CAD"
+    },
+    "game/ja/0x0CB4": {
+      "current_payload_sha256": "86070e6bfb014a4e1ac9d77a40fd7ca1c1cd5b84d8298a3c3196cab6476c8c64",
+      "locale": "ja",
+      "scope": "game",
+      "symbols": {
+        "U+FF5E": {
+          "character": "～",
+          "occurrences": 1,
+          "reason": "Fullwidth tilde is intentional range notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x0CB4"
+    },
+    "game/ja/0x0CBF": {
+      "current_payload_sha256": "c6db61975eb77186671138932c20a256be64015581d0740c96048919c0e4890d",
+      "locale": "ja",
+      "scope": "game",
+      "symbols": {
+        "U+FF5E": {
+          "character": "～",
+          "occurrences": 3,
+          "reason": "Fullwidth tilde is intentional range notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x0CBF"
+    },
+    "game/ja/0x0CC0": {
+      "current_payload_sha256": "7a691a704067421898bfa93ed58b1e3ee238ff28de36ad34db8b278a932d7b74",
+      "locale": "ja",
+      "scope": "game",
+      "symbols": {
+        "U+FF5E": {
+          "character": "～",
+          "occurrences": 1,
+          "reason": "Fullwidth tilde is intentional range notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x0CC0"
+    },
+    "game/ja/0x0CC2": {
+      "current_payload_sha256": "d839caf65ba8cb326e7d7b450aab3bdc5853c475afccfe42eea177a22dc1ea49",
+      "locale": "ja",
+      "scope": "game",
+      "symbols": {
+        "U+FF5E": {
+          "character": "～",
+          "occurrences": 1,
+          "reason": "Fullwidth tilde is intentional range notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x0CC2"
+    },
+    "game/ja/0x0CC4": {
+      "current_payload_sha256": "f334404403d3be479a3ebe5167c5a52f10f28c242eb52d3ee0e51d3317433e9b",
+      "locale": "ja",
+      "scope": "game",
+      "symbols": {
+        "U+FF5E": {
+          "character": "～",
+          "occurrences": 3,
+          "reason": "Fullwidth tilde is intentional range notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x0CC4"
+    },
+    "game/ja/0x0CC5": {
+      "current_payload_sha256": "ca3cb191159ddb7a3d9eb99b9b8132133c4c7e9f3e22c09f0d90d9c9a0e36f03",
+      "locale": "ja",
+      "scope": "game",
+      "symbols": {
+        "U+FF5E": {
+          "character": "～",
+          "occurrences": 1,
+          "reason": "Fullwidth tilde is intentional range notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x0CC5"
+    },
+    "game/ja/0x0CC6": {
+      "current_payload_sha256": "c81fe3ea6802d512dfe50e7f806a54d9a87219fe049e0e8ef1ae9eac706cfdaf",
+      "locale": "ja",
+      "scope": "game",
+      "symbols": {
+        "U+FF5E": {
+          "character": "～",
+          "occurrences": 2,
+          "reason": "Fullwidth tilde is intentional range notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x0CC6"
+    },
+    "game/ja/0x0CC7": {
+      "current_payload_sha256": "7a74a945c0ccb48227eea04dfe887797f2d8000acc296645c1881027a15c75d1",
+      "locale": "ja",
+      "scope": "game",
+      "symbols": {
+        "U+FF5E": {
+          "character": "～",
+          "occurrences": 1,
+          "reason": "Fullwidth tilde is intentional range notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x0CC7"
+    },
+    "game/ja/0x0CCA": {
+      "current_payload_sha256": "2f575703d7a09dcaa81bf14e76158953cf68f9b0f4cdd76fd7105d560acffbef",
+      "locale": "ja",
+      "scope": "game",
+      "symbols": {
+        "U+FF5E": {
+          "character": "～",
+          "occurrences": 1,
+          "reason": "Fullwidth tilde is intentional range notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x0CCA"
+    },
+    "game/ja/0x0CD5": {
+      "current_payload_sha256": "d45a550c1a0de01addce368aa3365e669e27ce25860d9b8b8c32b1e33f33656f",
+      "locale": "ja",
+      "scope": "game",
+      "symbols": {
+        "U+FF5E": {
+          "character": "～",
+          "occurrences": 2,
+          "reason": "Fullwidth tilde is intentional range notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x0CD5"
+    },
+    "game/ja/0x0D02": {
+      "current_payload_sha256": "329e06c6a9b25608f703b393c6dee64a0a62962858829fcdcbfd6cc671c6896e",
+      "locale": "ja",
+      "scope": "game",
+      "symbols": {
+        "U+FF5E": {
+          "character": "～",
+          "occurrences": 2,
+          "reason": "Fullwidth tilde is intentional range notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x0D02"
+    },
+    "game/ja/0x0D03": {
+      "current_payload_sha256": "82325a75bbd74aba9f772d923a5a1d544b294fbab503a1f96e845065012f4e2f",
+      "locale": "ja",
+      "scope": "game",
+      "symbols": {
+        "U+FF5E": {
+          "character": "～",
+          "occurrences": 1,
+          "reason": "Fullwidth tilde is intentional range notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x0D03"
+    },
+    "game/ja/0x0D2A": {
+      "current_payload_sha256": "1e301fcfe44aad7a79c9f6d16d38a21f1cfe36783e396835220cf52867a0e62d",
+      "locale": "ja",
+      "scope": "game",
+      "symbols": {
+        "U+FF5E": {
+          "character": "～",
+          "occurrences": 1,
+          "reason": "Fullwidth tilde is intentional range notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x0D2A"
+    },
+    "game/ja/0x0D32": {
+      "current_payload_sha256": "1e538d58f9aa15affb01ee91fbc62810feaeaf47ff87784f875d5e9472004028",
+      "locale": "ja",
+      "scope": "game",
+      "symbols": {
+        "U+FF5E": {
+          "character": "～",
+          "occurrences": 1,
+          "reason": "Fullwidth tilde is intentional range notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x0D32"
+    },
+    "game/ja/0x0D35": {
+      "current_payload_sha256": "54e0116f615f8cdd6a5cda87a17f889c29f63bf64ec191727a3d556f9beee0f1",
+      "locale": "ja",
+      "scope": "game",
+      "symbols": {
+        "U+FF5E": {
+          "character": "～",
+          "occurrences": 2,
+          "reason": "Fullwidth tilde is intentional range notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x0D35"
+    },
+    "game/ja/0x0D36": {
+      "current_payload_sha256": "300cfdf0b11aad4ef62843047649e5c29ff0b2090511b3b4e7145c7821794a82",
+      "locale": "ja",
+      "scope": "game",
+      "symbols": {
+        "U+FF5E": {
+          "character": "～",
+          "occurrences": 3,
+          "reason": "Fullwidth tilde is intentional range notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x0D36"
+    },
+    "game/ja/0x0D3A": {
+      "current_payload_sha256": "d70dd3b1af68263a97217c880eb1f84695d0a99b96476cc0107c95e7b94710db",
+      "locale": "ja",
+      "scope": "game",
+      "symbols": {
+        "U+FF5E": {
+          "character": "～",
+          "occurrences": 1,
+          "reason": "Fullwidth tilde is intentional range notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x0D3A"
+    },
+    "game/zh-Hans/0x0416": {
+      "current_payload_sha256": "f34a1cac16f4e86ec95d23c760284b0c2e8a93c76506271cbbf925f9388ddcda",
+      "locale": "zh-Hans",
+      "scope": "game",
+      "symbols": {
+        "U+FF0B": {
+          "character": "＋",
+          "occurrences": 1,
+          "reason": "Fullwidth plus is intentional stat-bonus notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x0416"
+    },
+    "game/zh-Hans/0x0417": {
+      "current_payload_sha256": "e9009dc51392c9b8e113d98bc301447c638a6e48283db6a2baef1eecea9cd9a0",
+      "locale": "zh-Hans",
+      "scope": "game",
+      "symbols": {
+        "U+FF0B": {
+          "character": "＋",
+          "occurrences": 1,
+          "reason": "Fullwidth plus is intentional stat-bonus notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x0417"
+    },
+    "game/zh-Hans/0x0425": {
+      "current_payload_sha256": "519fe23cde4ccc3a7bb4a9f3024e0e9b81ecaa38be6b402ef9cd71b1b0edad75",
+      "locale": "zh-Hans",
+      "scope": "game",
+      "symbols": {
+        "U+FF0B": {
+          "character": "＋",
+          "occurrences": 1,
+          "reason": "Fullwidth plus is intentional stat-bonus notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x0425"
+    },
+    "game/zh-Hans/0x0426": {
+      "current_payload_sha256": "22e3ffb0ee1f230acba29701d893ad5ee3a27ffc850cf0e196f06f22fc344c3a",
+      "locale": "zh-Hans",
+      "scope": "game",
+      "symbols": {
+        "U+FF0B": {
+          "character": "＋",
+          "occurrences": 1,
+          "reason": "Fullwidth plus is intentional stat-bonus notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x0426"
+    },
+    "game/zh-Hans/0x0438": {
+      "current_payload_sha256": "14189fc4001a1943ccdf1d4ba7e2c708f5544c128f1bb87bf6e79022eba55444",
+      "locale": "zh-Hans",
+      "scope": "game",
+      "symbols": {
+        "U+FF0B": {
+          "character": "＋",
+          "occurrences": 1,
+          "reason": "Fullwidth plus is intentional stat-bonus notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x0438"
+    },
+    "game/zh-Hans/0x0446": {
+      "current_payload_sha256": "1ca6d48bb8767b5eb7f05a51511e18b2b44853f950f11052feca14c5f4a12b59",
+      "locale": "zh-Hans",
+      "scope": "game",
+      "symbols": {
+        "U+FF0B": {
+          "character": "＋",
+          "occurrences": 1,
+          "reason": "Fullwidth plus is intentional stat-bonus notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x0446"
+    },
+    "game/zh-Hans/0x045E": {
+      "current_payload_sha256": "ed6d9bd114d8bda06af73f9620c12f5e12a0c4a946c80827f1e537716f6d143e",
+      "locale": "zh-Hans",
+      "scope": "game",
+      "symbols": {
+        "U+FF0B": {
+          "character": "＋",
+          "occurrences": 1,
+          "reason": "Fullwidth plus is intentional stat-bonus notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x045E"
+    },
+    "game/zh-Hans/0x0464": {
+      "current_payload_sha256": "14ad6ae21b784655dcd9f3eaa0b3e93ba09b60d7a42ebb1a3c5cdfd5b3032b40",
+      "locale": "zh-Hans",
+      "scope": "game",
+      "symbols": {
+        "U+FF0B": {
+          "character": "＋",
+          "occurrences": 1,
+          "reason": "Fullwidth plus is intentional stat-bonus notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x0464"
+    },
+    "game/zh-Hans/0x046A": {
+      "current_payload_sha256": "cd4807bcefa223f0bb06706e3838359e8911d7fb82da339a3d34b44790d29f23",
+      "locale": "zh-Hans",
+      "scope": "game",
+      "symbols": {
+        "U+FF0B": {
+          "character": "＋",
+          "occurrences": 1,
+          "reason": "Fullwidth plus is intentional stat-bonus notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x046A"
+    },
+    "game/zh-Hans/0x0483": {
+      "current_payload_sha256": "8d529a072becbda24edc89f82ac3a2c0e7de98f7f0d57bbf9bf384e670df2765",
+      "locale": "zh-Hans",
+      "scope": "game",
+      "symbols": {
+        "U+FF0B": {
+          "character": "＋",
+          "occurrences": 1,
+          "reason": "Fullwidth plus is intentional stat-bonus notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x0483"
+    },
+    "game/zh-Hans/0x0484": {
+      "current_payload_sha256": "59febbb086cf40bb88a84263091cfb9f0d00d10b3f4be93d3def2e7df9111f55",
+      "locale": "zh-Hans",
+      "scope": "game",
+      "symbols": {
+        "U+FF0B": {
+          "character": "＋",
+          "occurrences": 1,
+          "reason": "Fullwidth plus is intentional stat-bonus notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x0484"
+    },
+    "game/zh-Hans/0x0485": {
+      "current_payload_sha256": "c3696c406ca3f186de79b205cb2082eab0ce73ac1d0fdec078ebbb9a9ba6691f",
+      "locale": "zh-Hans",
+      "scope": "game",
+      "symbols": {
+        "U+FF0B": {
+          "character": "＋",
+          "occurrences": 1,
+          "reason": "Fullwidth plus is intentional stat-bonus notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x0485"
+    },
+    "game/zh-Hans/0x0486": {
+      "current_payload_sha256": "b11b172e083691a41cafeb5e11f270624f45b4d4748f5cb1c06f1b590d359568",
+      "locale": "zh-Hans",
+      "scope": "game",
+      "symbols": {
+        "U+FF0B": {
+          "character": "＋",
+          "occurrences": 1,
+          "reason": "Fullwidth plus is intentional stat-bonus notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x0486"
+    },
+    "game/zh-Hans/0x0487": {
+      "current_payload_sha256": "f4afe1d6eb67a0a7115afdea4fd9718a2c642202dc1ba201c058825202e87cbc",
+      "locale": "zh-Hans",
+      "scope": "game",
+      "symbols": {
+        "U+FF0B": {
+          "character": "＋",
+          "occurrences": 1,
+          "reason": "Fullwidth plus is intentional stat-bonus notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x0487"
+    },
+    "game/zh-Hans/0x0488": {
+      "current_payload_sha256": "b386141149af72e31156df75c81295a35c6adfd8e57743c7b97f2be2571de7b4",
+      "locale": "zh-Hans",
+      "scope": "game",
+      "symbols": {
+        "U+FF0B": {
+          "character": "＋",
+          "occurrences": 1,
+          "reason": "Fullwidth plus is intentional stat-bonus notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x0488"
+    },
+    "game/zh-Hans/0x0489": {
+      "current_payload_sha256": "71500f99f17306d78c3e5b1d238b4d911a361d8c808f09ae2eaf55fc5ee9deca",
+      "locale": "zh-Hans",
+      "scope": "game",
+      "symbols": {
+        "U+FF0B": {
+          "character": "＋",
+          "occurrences": 1,
+          "reason": "Fullwidth plus is intentional stat-bonus notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x0489"
+    },
+    "game/zh-Hans/0x048A": {
+      "current_payload_sha256": "abfcb31883f2cb695c41f2433bad3f4dc83a9ebec0491165392825369724149d",
+      "locale": "zh-Hans",
+      "scope": "game",
+      "symbols": {
+        "U+FF0B": {
+          "character": "＋",
+          "occurrences": 1,
+          "reason": "Fullwidth plus is intentional stat-bonus notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x048A"
+    },
+    "game/zh-Hans/0x048B": {
+      "current_payload_sha256": "e46b9cf26c3b301fb5b0bf3c57670a46c8dec8767097ca1abfb540585e1e4b2e",
+      "locale": "zh-Hans",
+      "scope": "game",
+      "symbols": {
+        "U+FF0B": {
+          "character": "＋",
+          "occurrences": 1,
+          "reason": "Fullwidth plus is intentional stat-bonus notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x048B"
+    },
+    "game/zh-Hans/0x0524": {
+      "current_payload_sha256": "a4b2b18d4606efe8852224708e7a518678555305f7aa06efd878ae9f9ef50494",
+      "locale": "zh-Hans",
+      "scope": "game",
+      "symbols": {
+        "U+FF5E": {
+          "character": "～",
+          "occurrences": 1,
+          "reason": "Fullwidth tilde is intentional range notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x0524"
+    },
+    "game/zh-Hans/0x0525": {
+      "current_payload_sha256": "568e44aaca7632e2f9720bb186a8d9ec59ec7a3d29571a50a91de4671cbc0a10",
+      "locale": "zh-Hans",
+      "scope": "game",
+      "symbols": {
+        "U+FF5E": {
+          "character": "～",
+          "occurrences": 1,
+          "reason": "Fullwidth tilde is intentional range notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x0525"
+    },
+    "game/zh-Hans/0x0527": {
+      "current_payload_sha256": "7ba8aab0ada16ef9b7d7e44a0f0d15b39b854af721f20dbc4fff2386c50348bd",
+      "locale": "zh-Hans",
+      "scope": "game",
+      "symbols": {
+        "U+FF5E": {
+          "character": "～",
+          "occurrences": 1,
+          "reason": "Fullwidth tilde is intentional range notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x0527"
+    },
+    "game/zh-Hans/0x0528": {
+      "current_payload_sha256": "a15a43c1fc8c0303825d1f51f2a24820020bfe99c5854aba98c05af40bf5c5b8",
+      "locale": "zh-Hans",
+      "scope": "game",
+      "symbols": {
+        "U+FF5E": {
+          "character": "～",
+          "occurrences": 1,
+          "reason": "Fullwidth tilde is intentional range notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x0528"
+    },
+    "game/zh-Hans/0x0529": {
+      "current_payload_sha256": "b9fb959cb9ca74dbadcc2368c150014611aa2c83709316de6e3d1f944ebdcf4e",
+      "locale": "zh-Hans",
+      "scope": "game",
+      "symbols": {
+        "U+FF5E": {
+          "character": "～",
+          "occurrences": 1,
+          "reason": "Fullwidth tilde is intentional range notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x0529"
+    },
+    "game/zh-Hans/0x0571": {
+      "current_payload_sha256": "4eb85f6e2ede5166a05462aff6c90d6d9dd2a162b9cbac71373f5df49b84f513",
+      "locale": "zh-Hans",
+      "scope": "game",
+      "symbols": {
+        "U+00D7": {
+          "character": "×",
+          "occurrences": 2,
+          "reason": "Multiplication sign is intentional quantity notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x0571"
+    },
+    "game/zh-Hans/0x064A": {
+      "current_payload_sha256": "4ceb064c75d478ab6883449bbc34de8014523af334d7bea36e8bae40fcab3c7c",
+      "locale": "zh-Hans",
+      "scope": "game",
+      "symbols": {
+        "U+FF0B": {
+          "character": "＋",
+          "occurrences": 1,
+          "reason": "Fullwidth plus is intentional stat-bonus notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x064A"
+    },
+    "game/zh-Hans/0x07C4": {
+      "current_payload_sha256": "51e6664788a0edb3a7719edbce95664e7d2c5392b8ab7c8312c96f7738f4f3c1",
+      "locale": "zh-Hans",
+      "scope": "game",
+      "symbols": {
+        "U+FF5E": {
+          "character": "～",
+          "occurrences": 1,
+          "reason": "Fullwidth tilde is intentional range notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x07C4"
+    },
+    "game/zh-Hans/0x07C5": {
+      "current_payload_sha256": "bb74117bc7f1f58451d4695ac01755efd03cdc3e8182d8a9181c11b2ae9be51c",
+      "locale": "zh-Hans",
+      "scope": "game",
+      "symbols": {
+        "U+FF5E": {
+          "character": "～",
+          "occurrences": 1,
+          "reason": "Fullwidth tilde is intentional range notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x07C5"
+    },
+    "game/zh-Hans/0x07C6": {
+      "current_payload_sha256": "4ccb1da983a58d62d2d074a6f1a78ed60bbdf6d7792160b2f5b12ed09482fea6",
+      "locale": "zh-Hans",
+      "scope": "game",
+      "symbols": {
+        "U+FF5E": {
+          "character": "～",
+          "occurrences": 1,
+          "reason": "Fullwidth tilde is intentional range notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x07C6"
+    },
+    "game/zh-Hans/0x07C7": {
+      "current_payload_sha256": "88fdbda1679610df0e32f281fa562c5af32eb152f467ebae5abcb1ce792b44bb",
+      "locale": "zh-Hans",
+      "scope": "game",
+      "symbols": {
+        "U+FF5E": {
+          "character": "～",
+          "occurrences": 1,
+          "reason": "Fullwidth tilde is intentional range notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x07C7"
+    },
+    "game/zh-Hans/0x0921": {
+      "current_payload_sha256": "6d5f11005c9964ad58bac0f64cb67cbd5398d3ccb32207a2ffa7b01b6bbdd770",
+      "locale": "zh-Hans",
+      "scope": "game",
+      "symbols": {
+        "U+00D7": {
+          "character": "×",
+          "occurrences": 3,
+          "reason": "Multiplication sign is intentional quantity notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x0921"
+    },
+    "game/zh-Hans/0x0D3A": {
+      "current_payload_sha256": "041ae374d8df1b3ef2e55de8df4163ae2a21451c592887d9b8a61c1fc1280ba4",
+      "locale": "zh-Hans",
+      "scope": "game",
+      "symbols": {
+        "U+FF5E": {
+          "character": "～",
+          "occurrences": 1,
+          "reason": "Fullwidth tilde is intentional range notation.",
+          "source": "Reviewed final localized FE8 payload semantics for this exact target."
+        }
+      },
+      "target": "0x0D3A"
+    }
+  },
+  "kind": "runtime-locale-unicode-script-review",
+  "policy": {
+    "cyrillic_approvals_forbidden": true,
+    "greek_and_math_require_exact_target_approval": true,
+    "script_allowlist_is_locale_scoped": true
+  },
+  "schema_version": 1
+}

@@ -677,7 +677,7 @@ void DrawChapterStatusTextForUnit(struct Unit * unit)
 
             Text_SetColor(&ptr->th, TEXT_COLOR_SYSTEM_WHITE);
 
-            str = GetCharacterDisplayName(unit->pCharacterData);
+            str = GetStringFromIndex(unit->pCharacterData->nameTextId);
             Text_SetCursor(&ptr->th, GetStringTextCenteredPos(48, str));
             Text_DrawString(&ptr->th, str);
 

@@ -25,21 +25,31 @@ SURFACE_VALUES = {
 SURFACES = {
     "character_name_40": {
         "allocation_pixels": 40,
+        "api": "GetCharacterDisplayNameForWidth",
         "category": "character",
         "data_path": Path("src/data_characters.c"),
         "call_sites": (
             {
                 "allocation": "InitText(&gUnitlistscreen_2[i], 5);",
+                "allocation_function": "UnitList_SetupDisplay",
+                "fallback": (
+                    "GetStringFromIndex(\n"
+                    "                gSortedUnits[unitNum]->unit->"
+                    "pCharacterData->nameTextId)"
+                ),
                 "path": Path("src/unitlistscreen.c"),
+                "resolver_function": "UnitList_PutRow",
                 "resolver": (
-                    "GetCharacterDisplayName("
-                    "gSortedUnits[unitNum]->unit->pCharacterData)"
+                    "GetCharacterDisplayNameForWidth(\n"
+                    "                gSortedUnits[unitNum]->unit->"
+                    "pCharacterData, 40)"
                 ),
             },
         ),
     },
     "class_name_64": {
         "allocation_pixels": 64,
+        "api": "GetClassDisplayNameForWidth",
         "category": "class",
         "data_path": Path("src/data_classes.c"),
         "call_sites": (
@@ -47,13 +57,21 @@ SURFACES = {
                 "allocation": (
                     "InitText(&texts[TEXT_PREPITEM_CLASS], 8);"
                 ),
+                "allocation_function": "PrepItemUse_InitDisplay",
+                "fallback": (
+                    "str = GetStringFromIndex(unit->pClassData->nameTextId);"
+                ),
                 "path": Path("src/prep_itemuse.c"),
-                "resolver": "GetClassDisplayName(unit->pClassData)",
+                "resolver": (
+                    "str = GetClassDisplayNameForWidth(unit->pClassData, 64);"
+                ),
+                "resolver_function": "DrawPrepScreenItemUseStatLabels",
             },
         ),
     },
     "item_name_56": {
         "allocation_pixels": 56,
+        "api": "GetItemDisplayNameForWidth",
         "category": "item",
         "data_path": Path("src/data_items.c"),
         "call_sites": (
@@ -61,8 +79,13 @@ SURFACES = {
                 "allocation": (
                     "InitTextDb(&proc->itemNameText, 7);"
                 ),
+                "allocation_function": "BattleForecast_Init",
+                "fallback": "char* str = GetItemName(itemIdx);",
                 "path": Path("src/bksel.c"),
-                "resolver": "GetItemDisplayName(itemIdx)",
+                "resolver": (
+                    "char* str = GetItemDisplayNameForWidth(itemIdx, 56);"
+                ),
+                "resolver_function": "PutBattleForecastItemName",
             },
         ),
     },
@@ -160,25 +183,89 @@ def _message_ids(path: Path) -> Tuple[int, ...]:
     return ids
 
 
+def _function_body(source: str, function: str, *, path: Path) -> str:
+    match = re.search(
+        rf"\b{re.escape(function)}\s*\([^;]*?\)\s*\{{",
+        source,
+        flags=re.DOTALL,
+    )
+    if match is None:
+        raise FixedWidthLabelError(
+            f"{path}: fixed-width audit function {function} is missing"
+        )
+    depth = 1
+    index = match.end()
+    while index < len(source) and depth:
+        if source[index] == "{":
+            depth += 1
+        elif source[index] == "}":
+            depth -= 1
+        index += 1
+    if depth:
+        raise FixedWidthLabelError(
+            f"{path}: fixed-width audit function {function} is unterminated"
+        )
+    return source[match.start() : index]
+
+
 def _source_contract(repo_root: Path) -> Dict[str, Any]:
     inputs = {}
+    api_counts = {specification["api"]: 0 for specification in SURFACES.values()}
     for surface, specification in SURFACES.items():
         call_sites = []
         for call_site in specification["call_sites"]:
             path = repo_root / call_site["path"]
             raw = path.read_bytes()
             text = raw.decode("utf-8")
-            for field in ("allocation", "resolver"):
-                needle = call_site[field]
-                if text.count(needle) != 1:
+            allocation_body = _function_body(
+                text,
+                call_site["allocation_function"],
+                path=path,
+            )
+            resolver_body = _function_body(
+                text,
+                call_site["resolver_function"],
+                path=path,
+            )
+            if allocation_body.count(call_site["allocation"]) != 1:
+                raise FixedWidthLabelError(
+                    f"{path}: expected one {surface} allocation in "
+                    f"{call_site['allocation_function']}"
+                )
+            for field in ("resolver", "fallback"):
+                if resolver_body.count(call_site[field]) != 1:
                     raise FixedWidthLabelError(
-                        f"{path}: expected one {surface} {field} call-site anchor"
+                        f"{path}: expected one {surface} {field} in "
+                        f"{call_site['resolver_function']}"
                     )
+            resolver_offset = resolver_body.index(call_site["resolver"])
+            fallback_offset = resolver_body.index(call_site["fallback"])
+            guard_offset = resolver_body.rfind(
+                "#if FE8_LOCALIZED_GAME_TEXT_CJK_PROFILE_ENABLED",
+                0,
+                resolver_offset,
+            )
+            else_offset = resolver_body.find("#else", resolver_offset)
+            endif_offset = resolver_body.find("#endif", fallback_offset)
+            if not (
+                guard_offset >= 0
+                and resolver_offset < else_offset < fallback_offset < endif_offset
+            ):
+                raise FixedWidthLabelError(
+                    f"{path}: {surface} resolver/fallback must be guarded by "
+                    "FE8_LOCALIZED_GAME_TEXT_CJK_PROFILE_ENABLED"
+                )
+            api_counts[specification["api"]] += text.count(
+                specification["api"] + "("
+            )
             call_sites.append(
                 {
                     "allocation_anchor": call_site["allocation"],
+                    "allocation_function": call_site["allocation_function"],
+                    "fallback_anchor": call_site["fallback"],
                     "path": call_site["path"].as_posix(),
                     "resolver_anchor": call_site["resolver"],
+                    "resolver_function": call_site["resolver_function"],
                     "sha256": _sha256(raw),
                 }
             )
@@ -196,6 +283,16 @@ def _source_contract(repo_root: Path) -> Dict[str, Any]:
                 f"0x{target_id:04X}" for target_id in _message_ids(data_path)
             ],
         }
+    for api, call_count in api_counts.items():
+        definition_count = sum(
+            path.read_text(encoding="utf-8").count(api + "(")
+            for path in (repo_root / "src").glob("*.c")
+        )
+        if definition_count != call_count + 1:
+            raise FixedWidthLabelError(
+                f"{api}: expected one definition plus {call_count} audited "
+                f"call(s), found {definition_count}"
+            )
     return inputs
 
 
@@ -371,4 +468,3 @@ def build_fixed_width_label_metrics(
             "surface_count": len(SURFACES),
         },
     }
-

@@ -13,7 +13,9 @@ from pathlib import Path
 from typing import Any, Dict, Mapping
 
 JA_RAW_PROVIDER_KIND = "fe8j-raw-provider-catalog"
-JA_RAW_PROVIDER_SCHEMA_VERSION = 3
+JA_RAW_PROVIDER_SCHEMA_VERSION = 4
+PINNED_SOURCE_REPOSITORY = "https://github.com/laqieer/fireemblem8j"
+PINNED_SOURCE_REVISION = "bf424414d075789d757e2f4cd0cea823bfb2862e"
 _TARGET_ID_RE = re.compile(r"0x[0-9A-F]{4}")
 _SHA256_RE = re.compile(r"[0-9a-f]{64}")
 _GIT_OID_RE = re.compile(r"[0-9a-f]{40}")
@@ -34,6 +36,7 @@ class RawProvider:
     source_anchor: str
     source_artifact_path: str
     source_artifact_sha256: str
+    source_value_index: int
     value_offset: int
     value_length: int
     value_sha256: str
@@ -49,10 +52,20 @@ class GitSourceBlob:
 
 
 @dataclass(frozen=True)
+class GitSourceTree:
+    path: str
+    oid: str
+    vendored_path: str
+    sha256: str
+    raw: bytes
+
+
+@dataclass(frozen=True)
 class GitSource:
     repository: str
     revision: str
     blobs: Mapping[str, GitSourceBlob]
+    trees: Mapping[str, GitSourceTree]
     generated_from_paths: tuple[str, ...]
     artifact_path: str
     artifact_sha256: str
@@ -220,6 +233,65 @@ def _git_object_oid(kind: str, raw: bytes) -> str:
     return hashlib.sha1(header + raw).hexdigest()
 
 
+def _commit_tree_oid(raw: bytes) -> str:
+    try:
+        first_line = raw.splitlines()[0].decode("ascii")
+    except (IndexError, UnicodeDecodeError) as error:
+        raise RawProviderError(
+            "ja raw provider vendored commit object is malformed"
+        ) from error
+    match = re.fullmatch(r"tree ([0-9a-f]{40})", first_line)
+    if match is None:
+        raise RawProviderError(
+            "ja raw provider vendored commit object has no exact root tree"
+        )
+    return match.group(1)
+
+
+def _tree_entries(raw: bytes, *, tree_path: str) -> Mapping[str, tuple[str, str]]:
+    entries: Dict[str, tuple[str, str]] = {}
+    offset = 0
+    while offset < len(raw):
+        try:
+            space = raw.index(b" ", offset)
+            nul = raw.index(b"\0", space + 1)
+        except ValueError as error:
+            raise RawProviderError(
+                f"ja raw provider vendored tree object is malformed: {tree_path}"
+            ) from error
+        mode = raw[offset:space].decode("ascii", errors="strict")
+        name = raw[space + 1 : nul].decode("utf-8", errors="strict")
+        oid_start = nul + 1
+        oid_end = oid_start + 20
+        if oid_end > len(raw) or not name or "/" in name or name in entries:
+            raise RawProviderError(
+                f"ja raw provider vendored tree object is malformed: {tree_path}"
+            )
+        entries[name] = (mode, raw[oid_start:oid_end].hex())
+        offset = oid_end
+    return entries
+
+
+def _tree_child(
+    trees: Mapping[str, GitSourceTree],
+    *,
+    parent_path: str,
+    name: str,
+) -> tuple[str, str]:
+    parent = trees.get(parent_path)
+    if parent is None:
+        raise RawProviderError(
+            f"ja raw provider source tree metadata is missing: {parent_path or '/'}"
+        )
+    entries = _tree_entries(parent.raw, tree_path=parent_path or "/")
+    if name not in entries:
+        raise RawProviderError(
+            f"ja raw provider pinned tree has no path entry "
+            f"{parent_path + '/' if parent_path else ''}{name}"
+        )
+    return entries[name]
+
+
 def _require_git_oid(value: Any, field: str) -> str:
     if (
         not isinstance(value, str)
@@ -292,6 +364,8 @@ def _load_git_source(
     snapshot: Mapping[str, Any],
     *,
     snapshot_path: Path,
+    expected_repository: str | None,
+    expected_revision: str | None,
 ) -> GitSource:
     repository = snapshot.get("source_repository")
     revision = snapshot.get("source_revision")
@@ -307,6 +381,21 @@ def _load_git_source(
         revision,
         "ja raw provider source snapshot revision",
     )
+    if (expected_repository is None) != (expected_revision is None):
+        raise RawProviderError(
+            "ja raw provider expected repository and revision must be "
+            "specified together"
+        )
+    if expected_repository is not None and repository != expected_repository:
+        raise RawProviderError(
+            "ja raw provider source snapshot repository differs from the "
+            "independently pinned FE8J repository"
+        )
+    if expected_revision is not None and revision != expected_revision:
+        raise RawProviderError(
+            "ja raw provider source snapshot revision differs from the "
+            "independently pinned FE8J commit"
+        )
     expected_source_url = (
         f"{repository.removesuffix('.git').rstrip('/')}/tree/{revision}"
     )
@@ -347,6 +436,74 @@ def _load_git_source(
     if _git_object_oid("commit", commit_raw) != revision:
         raise RawProviderError(
             "ja raw provider vendored commit object does not match revision"
+        )
+    commit_tree_oid = _commit_tree_oid(commit_raw)
+
+    raw_source_trees = snapshot.get("source_trees")
+    if not isinstance(raw_source_trees, list) or not raw_source_trees:
+        raise RawProviderError(
+            "ja raw provider source_trees must be a non-empty array"
+        )
+    source_trees: Dict[str, GitSourceTree] = {}
+    for index, raw_tree in enumerate(raw_source_trees):
+        field = f"ja raw provider source_trees[{index}]"
+        if not isinstance(raw_tree, dict) or set(raw_tree) != {
+            "oid",
+            "path",
+            "sha256",
+            "vendored_path",
+        }:
+            raise RawProviderError(
+                f"{field} must contain oid, path, sha256, and vendored_path"
+            )
+        tree_path = raw_tree["path"]
+        if not isinstance(tree_path, str) or (
+            tree_path and _require_relative_path(tree_path, f"{field}.path") != tree_path
+        ):
+            raise RawProviderError(f"{field}.path must be a safe tree path")
+        vendored_path = _require_relative_path(
+            raw_tree["vendored_path"],
+            f"{field}.vendored_path",
+        )
+        oid = _require_git_oid(raw_tree["oid"], f"{field}.oid")
+        sha256 = raw_tree["sha256"]
+        if not isinstance(sha256, str) or not _SHA256_RE.fullmatch(sha256):
+            raise RawProviderError(
+                f"{field}.sha256 must be a lowercase SHA-256"
+            )
+        if tree_path in source_trees:
+            raise RawProviderError(
+                f"duplicate ja raw provider source tree path {tree_path or '/'}"
+            )
+        try:
+            raw = (snapshot_path.parent / vendored_path).read_bytes()
+        except OSError as error:
+            raise RawProviderError(
+                f"ja raw provider vendored source tree is unavailable: "
+                f"{vendored_path}"
+            ) from error
+        if hashlib.sha256(raw).hexdigest() != sha256:
+            raise RawProviderError(
+                f"ja raw provider vendored source tree SHA-256 mismatch: "
+                f"{tree_path or '/'}"
+            )
+        if _git_object_oid("tree", raw) != oid:
+            raise RawProviderError(
+                f"ja raw provider vendored source tree Git OID mismatch: "
+                f"{tree_path or '/'}"
+            )
+        source_trees[tree_path] = GitSourceTree(
+            path=tree_path,
+            oid=oid,
+            vendored_path=vendored_path,
+            sha256=sha256,
+            raw=raw,
+        )
+    root_tree = source_trees.get("")
+    if root_tree is None or root_tree.oid != commit_tree_oid:
+        raise RawProviderError(
+            "ja raw provider vendored commit root tree does not match "
+            "source_trees"
         )
 
     raw_source_blobs = snapshot.get("source_blobs")
@@ -404,6 +561,44 @@ def _load_git_source(
             vendored_path=vendored_path,
             sha256=sha256,
             raw=raw,
+        )
+
+    required_tree_paths = {""}
+    for source_path, source_blob in source_blobs.items():
+        parts = Path(source_path).parts
+        parent_path = ""
+        for part in parts[:-1]:
+            mode, oid = _tree_child(
+                source_trees,
+                parent_path=parent_path,
+                name=part,
+            )
+            if mode not in ("40000", "040000"):
+                raise RawProviderError(
+                    f"ja raw provider pinned path component is not a tree: "
+                    f"{source_path}"
+                )
+            child_path = f"{parent_path}/{part}".lstrip("/")
+            child_tree = source_trees.get(child_path)
+            if child_tree is None or child_tree.oid != oid:
+                raise RawProviderError(
+                    f"ja raw provider source tree OID mismatch for {child_path}"
+                )
+            required_tree_paths.add(child_path)
+            parent_path = child_path
+        mode, oid = _tree_child(
+            source_trees,
+            parent_path=parent_path,
+            name=parts[-1],
+        )
+        if mode in ("40000", "040000") or oid != source_blob.oid:
+            raise RawProviderError(
+                f"ja raw provider pinned commit path/blob mismatch for "
+                f"{source_path}"
+            )
+    if set(source_trees) != required_tree_paths:
+        raise RawProviderError(
+            "ja raw provider source_trees must exactly cover pinned source paths"
         )
 
     artifact_specification = snapshot.get("provider_values_artifact")
@@ -470,6 +665,7 @@ def _load_git_source(
         repository=repository,
         revision=revision,
         blobs=source_blobs,
+        trees=source_trees,
         generated_from_paths=tuple(generated_from_paths),
         artifact_path=artifact_path,
         artifact_sha256=expected_sha256,
@@ -481,6 +677,8 @@ def load_ja_raw_providers(
     data: Any,
     *,
     source_root: Path = Path("."),
+    expected_repository: str | None = PINNED_SOURCE_REPOSITORY,
+    expected_revision: str | None = PINNED_SOURCE_REVISION,
 ) -> Dict[int, RawProvider]:
     if not isinstance(data, dict):
         raise RawProviderError("ja raw provider catalog root must be an object")
@@ -514,6 +712,8 @@ def load_ja_raw_providers(
     git_source = _load_git_source(
         snapshot,
         snapshot_path=snapshot_path,
+        expected_repository=expected_repository,
+        expected_revision=expected_revision,
     )
     if git_source.revision != source_revision:
         raise RawProviderError(
@@ -562,13 +762,14 @@ def load_ja_raw_providers(
             "offset",
             "source_anchor",
             "source_path",
+            "source_value_index",
             "symbol",
             "value_sha256",
         }:
             raise RawProviderError(
                 f"ja raw provider source snapshot {target} must contain "
-                "byte_length, offset, source_anchor, source_path, symbol, "
-                "and value_sha256"
+                "byte_length, offset, source_anchor, source_path, "
+                "source_value_index, symbol, and value_sha256"
             )
         if snapshot_provider["symbol"] != symbol:
             raise RawProviderError(
@@ -579,6 +780,7 @@ def load_ja_raw_providers(
         value_sha256 = snapshot_provider["value_sha256"]
         source_path = snapshot_provider["source_path"]
         source_anchor = snapshot_provider["source_anchor"]
+        source_value_index = snapshot_provider["source_value_index"]
         if (
             not isinstance(offset, int)
             or isinstance(offset, bool)
@@ -603,6 +805,15 @@ def load_ja_raw_providers(
         if not isinstance(source_anchor, str) or not source_anchor:
             raise RawProviderError(
                 f"ja raw provider {target} source_anchor must be non-empty"
+            )
+        if (
+            not isinstance(source_value_index, int)
+            or isinstance(source_value_index, bool)
+            or source_value_index < 0
+        ):
+            raise RawProviderError(
+                f"ja raw provider {target} source_value_index must be "
+                "a non-negative integer"
             )
         source_git_blob = git_source.blobs[source_path]
         used_source_paths.add(source_path)
@@ -639,10 +850,15 @@ def load_ja_raw_providers(
             source_git_blob,
             source_anchor=source_anchor,
         )
-        if raw_value not in source_values:
+        if source_value_index >= len(source_values):
             raise RawProviderError(
-                f"ja raw provider {target} artifact value is not extractable "
-                f"from {source_path}:{source_anchor}"
+                f"ja raw provider {target} source_value_index is out of range "
+                f"for {source_path}:{source_anchor}"
+            )
+        if raw_value != source_values[source_value_index]:
+            raise RawProviderError(
+                f"ja raw provider {target} artifact value differs from exact "
+                f"{source_path}:{source_anchor}[{source_value_index}]"
             )
         target_id = int(target, 16)
         if target_id in providers:
@@ -657,6 +873,7 @@ def load_ja_raw_providers(
             source_anchor=source_anchor,
             source_artifact_path=git_source.artifact_path,
             source_artifact_sha256=git_source.artifact_sha256,
+            source_value_index=source_value_index,
             value_offset=offset,
             value_length=byte_length,
             value_sha256=value_sha256,
@@ -711,7 +928,12 @@ def verify_ja_raw_provider_git_source(
         data,
         source_root=source_root,
     )
-    git_source = _load_git_source(snapshot, snapshot_path=snapshot_path)
+    git_source = _load_git_source(
+        snapshot,
+        snapshot_path=snapshot_path,
+        expected_repository=None,
+        expected_revision=None,
+    )
     catalog_revision = _require_git_oid(
         data.get("source_revision"),
         "ja raw provider source_revision",

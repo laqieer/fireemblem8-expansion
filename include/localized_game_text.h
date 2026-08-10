@@ -114,11 +114,21 @@ enum LocalizedGameTextStatus LocalizedGameText_ResolveCurrentToUnboundedBuffer(
 void LocalizedGameText_InvalidateCache(void);
 enum LocalizedGameTextStatus LocalizedGameText_GetLastStatus(void);
 #if FE8_LOCALIZED_GAME_TEXT_CJK_PROFILE_ENABLED
-const char * LocalizedGameText_GetDisplayAlias(
+struct CharacterData;
+struct ClassData;
+
+const char * LocalizedGameText_GetDisplayAliasForWidth(
     int msgIndex,
-    enum LocalizedGameTextDisplaySurface surface);
-#else
-#define LocalizedGameText_GetDisplayAlias(msgIndex, surface) ((const char *)0)
+    enum LocalizedGameTextDisplaySurface surface,
+    int maxPixels,
+    int canonicalPixels);
+char * GetCharacterDisplayNameForWidth(
+    const struct CharacterData *character,
+    int maxPixels);
+char * GetClassDisplayNameForWidth(
+    const struct ClassData *classData,
+    int maxPixels);
+char * GetItemDisplayNameForWidth(int item, int maxPixels);
 #endif
 
 #endif /* GUARD_LOCALIZED_GAME_TEXT_H */

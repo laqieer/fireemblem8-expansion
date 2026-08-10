@@ -95,8 +95,18 @@ class FixtureBuildTests(unittest.TestCase):
         ja_origin_oid = hashlib.sha1(
             f"blob {len(ja_origin)}\0".encode("ascii") + ja_origin
         ).hexdigest()
+        ja_src_tree = (
+            b"100644 fixture.c\0" + bytes.fromhex(ja_origin_oid)
+        )
+        ja_src_tree_oid = hashlib.sha1(
+            f"tree {len(ja_src_tree)}\0".encode("ascii") + ja_src_tree
+        ).hexdigest()
+        ja_root_tree = b"40000 src\0" + bytes.fromhex(ja_src_tree_oid)
+        ja_root_tree_oid = hashlib.sha1(
+            f"tree {len(ja_root_tree)}\0".encode("ascii") + ja_root_tree
+        ).hexdigest()
         ja_commit = (
-            "tree " + "1" * 40 + "\n"
+            "tree " + ja_root_tree_oid + "\n"
             "author Fixture <fixture@example.com> 0 +0000\n"
             "committer Fixture <fixture@example.com> 0 +0000\n"
             "\n"
@@ -106,6 +116,8 @@ class FixtureBuildTests(unittest.TestCase):
             f"commit {len(ja_commit)}\0".encode("ascii") + ja_commit
         ).hexdigest()
         (self.fixture_dir / "ja_source_commit.txt").write_bytes(ja_commit)
+        (self.fixture_dir / "ja_root.tree").write_bytes(ja_root_tree)
+        (self.fixture_dir / "ja_src.tree").write_bytes(ja_src_tree)
         ja_snapshot = {
             "kind": "fe8j-raw-symbol-source-snapshot",
             "provider_count": 1,
@@ -115,6 +127,7 @@ class FixtureBuildTests(unittest.TestCase):
                     "offset": 0,
                     "source_anchor": "fixture",
                     "source_path": "src/fixture.c",
+                    "source_value_index": 0,
                     "symbol": "fixture",
                     "value_sha256": hashlib.sha256(ja_blob).hexdigest(),
                 }
@@ -125,7 +138,7 @@ class FixtureBuildTests(unittest.TestCase):
                 "path": "ja_raw_values.cp932.bin",
                 "sha256": hashlib.sha256(ja_blob).hexdigest(),
             },
-            "schema_version": 3,
+            "schema_version": 4,
             "source_blobs": [
                 {
                     "oid": ja_origin_oid,
@@ -138,6 +151,20 @@ class FixtureBuildTests(unittest.TestCase):
                 "path": "ja_source_commit.txt",
                 "sha256": hashlib.sha256(ja_commit).hexdigest(),
             },
+            "source_trees": [
+                {
+                    "oid": ja_root_tree_oid,
+                    "path": "",
+                    "sha256": hashlib.sha256(ja_root_tree).hexdigest(),
+                    "vendored_path": "ja_root.tree",
+                },
+                {
+                    "oid": ja_src_tree_oid,
+                    "path": "src",
+                    "sha256": hashlib.sha256(ja_src_tree).hexdigest(),
+                    "vendored_path": "ja_src.tree",
+                },
+            ],
             "source_repository": "https://github.com/example/fixture",
             "source_revision": ja_revision,
             "source_url": "https://github.com/example/fixture/tree/" + ja_revision,
@@ -154,7 +181,7 @@ class FixtureBuildTests(unittest.TestCase):
                     "locale_id": "ja",
                     "provider_count": 1,
                     "providers": ja_providers,
-                    "schema_version": 3,
+                    "schema_version": 4,
                     "source_layout": "FE8J-raw-symbol",
                     "source_revision": ja_revision,
                     "source_snapshot": {
@@ -256,6 +283,8 @@ class FixtureBuildTests(unittest.TestCase):
             zh_raw_path=self.fixture_dir / "zh_raw.json",
             mapping_path=self.fixture_dir / "mapping.json",
             target_header_path=self.fixture_dir / "msg.h",
+            ja_raw_expected_repository=None,
+            ja_raw_expected_revision=None,
         )
         ja = build.locale_bundle("ja")
         zh = build.locale_bundle("zh-Hans")

@@ -293,11 +293,12 @@ descriptor slots.
    `zh-Hans`, with zero English fallback and zero unresolved rows. The
    independent 143-record raw-surface closure also has zero fallback,
    exclusion, and unresolved record. Its Japanese raw-symbol providers are
-   fail-closed against a nonzero pinned FE8J commit, vendored commit/source
-   Git objects, per-provider source paths/anchors, and the exact CP932
-   extraction artifact; symbol-backed decisions cannot omit
+   fail-closed against an independently pinned FE8J commit, vendored
+   commit/tree/source Git objects, per-provider source paths, exact declared
+   symbol slots, and the exact CP932 extraction artifact; symbol-backed
+   decisions cannot omit
    `provider_anchor`. See `docs/game_locale_sources.md` for the offline and
-   `git cat-file` origin gates. The shared modern English bundle remains the
+   mandatory raw-closure gate. The shared modern English bundle remains the
    real `en` locale; zero CJK fallback does not remove or duplicate it.
    `build-final-mapping` also regenerates
    `texts/locales/mapping/ending_layout_metrics.json`. That gate reads the
@@ -311,8 +312,12 @@ descriptor slots.
    enumerates every final JA/ZH character, class, and item name from
    `gCharacterData`, `gClassData`, and `gItemData`; pins the real 40/64/56
    pixel UI call sites and font metrics; and requires a surface-specific
-   compact alias for every canonical overflow. The canonical catalog names
-   remain unchanged.
+   compact alias for every canonical overflow. Only those three audited
+   `...DisplayNameForWidth(..., maxPixels)` calls can select aliases, and each
+   first returns the canonical name when it fits the actual width. Every call
+   is guarded by `FE8_LOCALIZED_GAME_TEXT_CJK_PROFILE_ENABLED`; non-CJK modern
+   and legacy preprocessing retains the original expressions. The canonical
+   catalog names remain unchanged.
    The final full-game catalog validator independently checks every present
    JA/ZH payload rather than a target allowlist. Every `ToggleMouthMove` must
    be paired before a dialogue boundary; FE8U-domain payloads whose dialogue

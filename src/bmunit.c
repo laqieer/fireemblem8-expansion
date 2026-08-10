@@ -949,37 +949,51 @@ s8 UnitGive(struct Unit* actor, struct Unit* target) {
     // return couldGive; // devs probably forgot to add this
 }
 
-char* GetCharacterDisplayName(const struct CharacterData* character)
+#if FE8_LOCALIZED_GAME_TEXT_CJK_PROFILE_ENABLED
+char * GetCharacterDisplayNameForWidth(
+    const struct CharacterData *character,
+    int maxPixels)
 {
-    const char* alias;
+    const char *canonical;
+    const char *alias;
 
-    alias = LocalizedGameText_GetDisplayAlias(
+    canonical = GetStringFromIndex(character->nameTextId);
+    alias = LocalizedGameText_GetDisplayAliasForWidth(
         character->nameTextId,
-        LOCALIZED_GAME_TEXT_DISPLAY_CHARACTER_NAME_40);
+        LOCALIZED_GAME_TEXT_DISPLAY_CHARACTER_NAME_40,
+        maxPixels,
+        GetStringTextLen(canonical));
     if (alias != NULL)
-        return (char*)alias;
+        return (char *)alias;
 
-    return GetStringFromIndex(character->nameTextId);
+    return (char *)canonical;
 }
 
-char* GetClassDisplayName(const struct ClassData* classData)
+char * GetClassDisplayNameForWidth(
+    const struct ClassData *classData,
+    int maxPixels)
 {
-    const char* alias;
+    const char *canonical;
+    const char *alias;
 
-    alias = LocalizedGameText_GetDisplayAlias(
+    canonical = GetStringFromIndex(classData->nameTextId);
+    alias = LocalizedGameText_GetDisplayAliasForWidth(
         classData->nameTextId,
-        LOCALIZED_GAME_TEXT_DISPLAY_CLASS_NAME_64);
+        LOCALIZED_GAME_TEXT_DISPLAY_CLASS_NAME_64,
+        maxPixels,
+        GetStringTextLen(canonical));
     if (alias != NULL)
-        return (char*)alias;
+        return (char *)alias;
 
-    return GetStringFromIndex(classData->nameTextId);
+    return (char *)canonical;
 }
+#endif
 
 inline char* GetUnitRescueName(struct Unit* unit) {
     if (!unit->rescue)
         return GetStringFromIndex(sStatusNameTextIdLookup[0]);
 
-    return GetCharacterDisplayName(GetUnit(unit->rescue)->pCharacterData);
+    return GetStringFromIndex(GetUnit(unit->rescue)->pCharacterData->nameTextId);
 }
 
 void UnitKill(struct Unit* unit) {

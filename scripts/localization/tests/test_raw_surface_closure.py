@@ -683,6 +683,8 @@ class RawSurfaceClosureTests(unittest.TestCase):
             ).hexdigest(),
             snapshot["source_revision"],
         )
+        self.assertEqual(snapshot["schema_version"], 4)
+        self.assertTrue(snapshot["source_trees"])
         pinned_blobs = {}
         for source_blob in snapshot["source_blobs"]:
             source_path = path.parent / source_blob["vendored_path"]
@@ -731,6 +733,8 @@ class RawSurfaceClosureTests(unittest.TestCase):
                     raw_value[:-1].decode("cp932"),
                     provider["text"],
                 )
+                self.assertIsInstance(source["source_value_index"], int)
+                self.assertGreaterEqual(source["source_value_index"], 0)
         self.assertTrue(
                 all(
                     not provider["symbol"].startswith("gTerrainNames[")
@@ -745,6 +749,168 @@ class RawSurfaceClosureTests(unittest.TestCase):
                 self.ja_raw["providers"]["0x01C4"]["symbol"],
                 "gTerrains_0[TERRAIN_NONE]",
         )
+
+    def test_exact_raw_provider_slots_reject_reassignment_and_fake_git_identity(self):
+        fixture = ROOT / "build/tests/raw-provider-binding"
+        if fixture.exists():
+            shutil.rmtree(fixture)
+        shutil.copytree(ROOT / "texts/locales/source/fe8j", fixture)
+        catalog_path = fixture / "raw.json"
+        snapshot_path = fixture / "raw_symbols.json"
+
+        def write_catalog(catalog, snapshot):
+            snapshot_bytes = (
+                json.dumps(
+                    snapshot,
+                    ensure_ascii=False,
+                    indent=2,
+                    sort_keys=True,
+                )
+                + "\n"
+            ).encode("utf-8")
+            snapshot_path.write_bytes(snapshot_bytes)
+            catalog["source_snapshot"] = {
+                "path": "raw_symbols.json",
+                "sha256": hashlib.sha256(snapshot_bytes).hexdigest(),
+            }
+            catalog_path.write_text(
+                json.dumps(
+                    catalog,
+                    ensure_ascii=False,
+                    indent=2,
+                    sort_keys=True,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+        original_snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
+        try:
+            swapped_catalog = deepcopy(self.ja_raw)
+            swapped_snapshot = deepcopy(original_snapshot)
+            first = "0x01C4"
+            second = "0x01C5"
+            swapped_catalog["providers"][first]["text"], swapped_catalog[
+                "providers"
+            ][second]["text"] = (
+                swapped_catalog["providers"][second]["text"],
+                swapped_catalog["providers"][first]["text"],
+            )
+            for field in ("byte_length", "offset", "value_sha256"):
+                swapped_snapshot["providers"][first][field], swapped_snapshot[
+                    "providers"
+                ][second][field] = (
+                    swapped_snapshot["providers"][second][field],
+                    swapped_snapshot["providers"][first][field],
+                )
+            write_catalog(swapped_catalog, swapped_snapshot)
+            with self.assertRaisesRegex(
+                RawProviderError,
+                "differs from exact",
+            ):
+                load_ja_raw_providers(
+                    swapped_catalog,
+                    source_root=fixture,
+                )
+
+            wrong_index_catalog = deepcopy(self.ja_raw)
+            wrong_index_snapshot = deepcopy(original_snapshot)
+            wrong_index_snapshot["providers"][first]["source_value_index"] = (
+                wrong_index_snapshot["providers"][second][
+                    "source_value_index"
+                ]
+            )
+            write_catalog(wrong_index_catalog, wrong_index_snapshot)
+            with self.assertRaisesRegex(
+                RawProviderError,
+                "differs from exact",
+            ):
+                load_ja_raw_providers(
+                    wrong_index_catalog,
+                    source_root=fixture,
+                )
+
+            fake_commit_catalog = deepcopy(self.ja_raw)
+            fake_commit_snapshot = deepcopy(original_snapshot)
+            fake_commit = (
+                fixture / fake_commit_snapshot["source_commit"]["path"]
+            ).read_bytes() + b"\nfabricated\n"
+            fake_revision = hashlib.sha1(
+                f"commit {len(fake_commit)}\0".encode("ascii") + fake_commit
+            ).hexdigest()
+            (
+                fixture / fake_commit_snapshot["source_commit"]["path"]
+            ).write_bytes(fake_commit)
+            fake_commit_snapshot["source_commit"]["sha256"] = hashlib.sha256(
+                fake_commit
+            ).hexdigest()
+            fake_commit_snapshot["source_revision"] = fake_revision
+            fake_commit_snapshot["source_url"] = (
+                "https://github.com/laqieer/fireemblem8j/tree/"
+                + fake_revision
+            )
+            fake_commit_catalog["source_revision"] = fake_revision
+            write_catalog(fake_commit_catalog, fake_commit_snapshot)
+            with self.assertRaisesRegex(
+                RawProviderError,
+                "independently pinned FE8J commit",
+            ):
+                load_ja_raw_providers(
+                    fake_commit_catalog,
+                    source_root=fixture,
+                )
+
+            original_commit_path = original_snapshot["source_commit"]["path"]
+            (fixture / original_commit_path).write_bytes(
+                (
+                    ROOT
+                    / "texts/locales/source/fe8j"
+                    / original_commit_path
+                ).read_bytes()
+            )
+            fake_repository_catalog = deepcopy(self.ja_raw)
+            fake_repository_snapshot = deepcopy(original_snapshot)
+            fake_repository_snapshot["source_repository"] = (
+                "https://github.com/example/fabricated"
+            )
+            fake_repository_snapshot["source_url"] = (
+                "https://github.com/example/fabricated/tree/"
+                + fake_repository_snapshot["source_revision"]
+            )
+            write_catalog(
+                fake_repository_catalog,
+                fake_repository_snapshot,
+            )
+            with self.assertRaisesRegex(
+                RawProviderError,
+                "independently pinned FE8J repository",
+            ):
+                load_ja_raw_providers(
+                    fake_repository_catalog,
+                    source_root=fixture,
+                )
+
+            fake_blob_catalog = deepcopy(self.ja_raw)
+            fake_blob_snapshot = deepcopy(original_snapshot)
+            source_blob = fake_blob_snapshot["source_blobs"][0]
+            source_path = fixture / source_blob["vendored_path"]
+            fake_blob = source_path.read_bytes() + b"\n/* fabricated */\n"
+            source_path.write_bytes(fake_blob)
+            source_blob["oid"] = hashlib.sha1(
+                f"blob {len(fake_blob)}\0".encode("ascii") + fake_blob
+            ).hexdigest()
+            source_blob["sha256"] = hashlib.sha256(fake_blob).hexdigest()
+            write_catalog(fake_blob_catalog, fake_blob_snapshot)
+            with self.assertRaisesRegex(
+                RawProviderError,
+                "pinned commit path/blob mismatch",
+            ):
+                load_ja_raw_providers(
+                    fake_blob_catalog,
+                    source_root=fixture,
+                )
+        finally:
+            shutil.rmtree(fixture)
 
     def test_git_origin_fixture_rejects_zero_missing_commit_and_arbitrary_blob(self):
         fixture = ROOT / "build/tests/raw-provider-origin"
@@ -788,6 +954,20 @@ class RawSurfaceClosureTests(unittest.TestCase):
                 ["git", "-C", str(repository), "rev-parse", f"{revision}:src/provider.c"],
                 text=True,
         ).strip()
+        root_tree_oid = subprocess.check_output(
+                ["git", "-C", str(repository), "rev-parse", f"{revision}^{{tree}}"],
+                text=True,
+        ).strip()
+        src_tree_oid = subprocess.check_output(
+                ["git", "-C", str(repository), "rev-parse", f"{revision}:src"],
+                text=True,
+        ).strip()
+        root_tree_raw = subprocess.check_output(
+                ["git", "-C", str(repository), "cat-file", "tree", root_tree_oid]
+        )
+        src_tree_raw = subprocess.check_output(
+                ["git", "-C", str(repository), "cat-file", "tree", src_tree_oid]
+        )
         source_raw = source_path.read_bytes()
         commit_raw = subprocess.check_output(
                 ["git", "-C", str(repository), "cat-file", "commit", revision]
@@ -797,6 +977,8 @@ class RawSurfaceClosureTests(unittest.TestCase):
         catalog_root.mkdir()
         (catalog_root / "source.c").write_bytes(source_raw)
         (catalog_root / "commit.txt").write_bytes(commit_raw)
+        (catalog_root / "root.tree").write_bytes(root_tree_raw)
+        (catalog_root / "src.tree").write_bytes(src_tree_raw)
         value_raw = b"fixture\0"
         (catalog_root / "values.bin").write_bytes(value_raw)
         snapshot = {
@@ -814,11 +996,12 @@ class RawSurfaceClosureTests(unittest.TestCase):
                         "offset": 0,
                         "source_anchor": "FixtureProvider",
                         "source_path": "src/provider.c",
+                        "source_value_index": 0,
                         "symbol": "FixtureProvider",
                         "value_sha256": hashlib.sha256(value_raw).hexdigest(),
                     }
                 },
-                "schema_version": 3,
+                "schema_version": 4,
                 "source_blobs": [
                     {
                         "oid": source_oid,
@@ -831,6 +1014,20 @@ class RawSurfaceClosureTests(unittest.TestCase):
                     "path": "commit.txt",
                     "sha256": hashlib.sha256(commit_raw).hexdigest(),
                 },
+                "source_trees": [
+                    {
+                        "oid": root_tree_oid,
+                        "path": "",
+                        "sha256": hashlib.sha256(root_tree_raw).hexdigest(),
+                        "vendored_path": "root.tree",
+                    },
+                    {
+                        "oid": src_tree_oid,
+                        "path": "src",
+                        "sha256": hashlib.sha256(src_tree_raw).hexdigest(),
+                        "vendored_path": "src.tree",
+                    },
+                ],
                 "source_repository": "https://github.com/example/fixture",
                 "source_revision": revision,
                 "source_url": f"https://github.com/example/fixture/tree/{revision}",
@@ -857,7 +1054,7 @@ class RawSurfaceClosureTests(unittest.TestCase):
                             "text": "fixture",
                         }
                     },
-                    "schema_version": 3,
+                    "schema_version": 4,
                     "source_layout": "FE8J-raw-symbol",
                     "source_revision": source_snapshot["source_revision"],
                     "source_snapshot": {
@@ -868,7 +1065,12 @@ class RawSurfaceClosureTests(unittest.TestCase):
 
         try:
                 catalog = catalog_for(snapshot)
-                load_ja_raw_providers(catalog, source_root=catalog_root)
+                load_ja_raw_providers(
+                    catalog,
+                    source_root=catalog_root,
+                    expected_repository=None,
+                    expected_revision=None,
+                )
                 verify_ja_raw_provider_git_source(
                     catalog,
                     source_root=catalog_root,
@@ -891,11 +1093,13 @@ class RawSurfaceClosureTests(unittest.TestCase):
                 mismatch_catalog["providers"]["0x0001"]["text"] = "値"
                 with self.assertRaisesRegex(
                     RawProviderError,
-                    "artifact value is not extractable",
+                    "differs from exact",
                 ):
                     load_ja_raw_providers(
                         mismatch_catalog,
                         source_root=catalog_root,
+                        expected_repository=None,
+                        expected_revision=None,
                     )
                 (catalog_root / "values.bin").write_bytes(value_raw)
 
@@ -903,7 +1107,12 @@ class RawSurfaceClosureTests(unittest.TestCase):
                 zero["source_revision"] = "0" * 40
                 zero_catalog = catalog_for(zero)
                 with self.assertRaisesRegex(RawProviderError, "nonzero full Git OID"):
-                    load_ja_raw_providers(zero_catalog, source_root=catalog_root)
+                    load_ja_raw_providers(
+                        zero_catalog,
+                        source_root=catalog_root,
+                        expected_repository=None,
+                        expected_revision=None,
+                    )
 
                 missing = deepcopy(snapshot)
                 fake_commit = commit_raw + b"\nmissing\n"
@@ -919,7 +1128,12 @@ class RawSurfaceClosureTests(unittest.TestCase):
                     fake_commit
                 ).hexdigest()
                 missing_catalog = catalog_for(missing)
-                load_ja_raw_providers(missing_catalog, source_root=catalog_root)
+                load_ja_raw_providers(
+                    missing_catalog,
+                    source_root=catalog_root,
+                    expected_repository=None,
+                    expected_revision=None,
+                )
                 with self.assertRaisesRegex(
                     RawProviderError,
                     "git source verification failed",
@@ -941,12 +1155,15 @@ class RawSurfaceClosureTests(unittest.TestCase):
                     arbitrary_raw
                 ).hexdigest()
                 arbitrary_catalog = catalog_for(arbitrary)
-                load_ja_raw_providers(arbitrary_catalog, source_root=catalog_root)
-                with self.assertRaisesRegex(RawProviderError, "blob OID mismatch"):
-                    verify_ja_raw_provider_git_source(
+                with self.assertRaisesRegex(
+                    RawProviderError,
+                    "pinned commit path/blob mismatch",
+                ):
+                    load_ja_raw_providers(
                         arbitrary_catalog,
                         source_root=catalog_root,
-                        repository=repository,
+                        expected_repository=None,
+                        expected_revision=None,
                     )
         finally:
                 shutil.rmtree(fixture)

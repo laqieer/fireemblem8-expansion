@@ -421,7 +421,7 @@ void DisplayLeftPanel(void)
         &gStatScreen.text[STATSCREEN_TEXT_CLASSNAME],
         gBG0TilemapBuffer + TILEMAP_INDEX(1, 13),
         TEXT_COLOR_SYSTEM_WHITE, 0, 0,
-        GetClassDisplayName(gStatScreen.unit->pClassData));
+        GetStringFromIndex(gStatScreen.unit->pClassData->nameTextId));
 
     // Display Lv/E labels
     PutTwoSpecialChar(gBG0TilemapBuffer + TILEMAP_INDEX(1, 15), TEXT_COLOR_SYSTEM_GOLD, TEXT_SPECIAL_LV_A, TEXT_SPECIAL_LV_B);

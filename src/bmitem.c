@@ -173,20 +173,26 @@ inline char* GetItemName(int item) {
     return result;
 }
 
-char* GetItemDisplayName(int item)
+#if FE8_LOCALIZED_GAME_TEXT_CJK_PROFILE_ENABLED
+char * GetItemDisplayNameForWidth(int item, int maxPixels)
 {
-    const struct ItemData* itemData;
-    const char* alias;
+    const struct ItemData *itemData;
+    const char *canonical;
+    const char *alias;
 
     itemData = GetItemData(ITEM_INDEX(item));
-    alias = LocalizedGameText_GetDisplayAlias(
+    canonical = GetItemName(item);
+    alias = LocalizedGameText_GetDisplayAliasForWidth(
         itemData->nameTextId,
-        LOCALIZED_GAME_TEXT_DISPLAY_ITEM_NAME_56);
+        LOCALIZED_GAME_TEXT_DISPLAY_ITEM_NAME_56,
+        maxPixels,
+        GetStringTextLen(canonical));
     if (alias != NULL)
-        return (char*)alias;
+        return (char *)alias;
 
-    return GetItemName(item);
+    return (char *)canonical;
 }
+#endif
 
 inline int GetItemDescId(int item) {
     return GetItemData(ITEM_INDEX(item))->descTextId;
@@ -502,7 +508,7 @@ s8 CanUnitUseStaffNow(struct Unit* unit, int item) {
 
 void DrawItemMenuLine(struct Text* text, int item, s8 isUsable, u16* mapOut) {
     Text_SetParams(text, 0, (isUsable ? TEXT_COLOR_SYSTEM_WHITE : TEXT_COLOR_SYSTEM_GRAY));
-    Text_DrawString(text, GetItemDisplayName(item));
+    Text_DrawString(text, GetItemName(item));
 
     PutText(text, mapOut + 2);
 
@@ -513,7 +519,7 @@ void DrawItemMenuLine(struct Text* text, int item, s8 isUsable, u16* mapOut) {
 
 void DrawItemMenuLineLong(struct Text* text, int item, s8 isUsable, u16* mapOut) {
     Text_SetParams(text, 0, (isUsable ? TEXT_COLOR_SYSTEM_WHITE : TEXT_COLOR_SYSTEM_GRAY));
-    Text_DrawString(text, GetItemDisplayName(item));
+    Text_DrawString(text, GetItemName(item));
 
     PutText(text, mapOut + 2);
 
@@ -526,7 +532,7 @@ void DrawItemMenuLineLong(struct Text* text, int item, s8 isUsable, u16* mapOut)
 
 void DrawItemMenuLineNoColor(struct Text* text, int item, u16* mapOut) {
     Text_SetCursor(text, 0);
-    Text_DrawString(text, GetItemDisplayName(item));
+    Text_DrawString(text, GetItemName(item));
 
     PutText(text, mapOut + 2);
 
@@ -543,7 +549,7 @@ void DrawItemStatScreenLine(struct Text* text, int item, int nameColor, u16* map
     color = nameColor;
     Text_SetColor(text, color);
 
-    Text_DrawString(text, GetItemDisplayName(item));
+    Text_DrawString(text, GetItemName(item));
 
     color = (nameColor == TEXT_COLOR_SYSTEM_GRAY) ? TEXT_COLOR_SYSTEM_GRAY : TEXT_COLOR_SYSTEM_WHITE;
     PutSpecialChar(mapOut + 12, color, TEXT_SPECIAL_SLASH);

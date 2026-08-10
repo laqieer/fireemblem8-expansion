@@ -31,6 +31,7 @@ from .leakage import (
     DEFAULT_RAW_CLOSURE_PATH,
     DEFAULT_REVIEW_PATH,
     DEFAULT_REPORT_PATH,
+    DEFAULT_SCRIPT_REVIEW_PATH,
     OUTPUT_REPORT_NAME,
     build_leakage_report,
     canonical_json_bytes,
@@ -38,6 +39,7 @@ from .leakage import (
     load_expansion_catalogs,
     load_raw_closure,
     load_review,
+    load_script_review,
 )
 
 
@@ -91,6 +93,11 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
         "--latin-span-review",
         type=Path,
         default=DEFAULT_REVIEW_PATH,
+    )
+    parser.add_argument(
+        "--unicode-script-review",
+        type=Path,
+        default=DEFAULT_SCRIPT_REVIEW_PATH,
     )
     parser.add_argument(
         "--raw-closure",
@@ -170,6 +177,7 @@ def _leakage_input_records(args: argparse.Namespace):
         "mapping": args.mapping,
         "raw_closure": args.raw_closure,
         "target_header": args.target_header,
+        "unicode_script_review": args.unicode_script_review,
     }
     if "ja" in enabled_locales:
         paths["ja_indexed"] = args.ja_indexed
@@ -197,6 +205,7 @@ def _leakage_input_records(args: argparse.Namespace):
 
 def _audit_from_args(args: argparse.Namespace, build):
     review = load_review(args.latin_span_review)
+    script_review = load_script_review(args.unicode_script_review)
     raw_closure = load_raw_closure(args.raw_closure)
     expansion_catalogs = load_expansion_catalogs(
         args.expansion_catalog_root,
@@ -205,6 +214,7 @@ def _audit_from_args(args: argparse.Namespace, build):
     return build_leakage_report(
         build,
         review=review,
+        script_review=script_review,
         raw_closure=raw_closure,
         expansion_catalogs=expansion_catalogs,
         inputs=_leakage_input_records(args),

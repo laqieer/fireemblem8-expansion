@@ -1,7 +1,8 @@
-import re
+import hashlib
 import sys
 import unittest
 from collections import Counter
+from copy import deepcopy
 from dataclasses import replace
 from pathlib import Path
 
@@ -13,6 +14,7 @@ from scripts.localization.game_catalog.leakage import (
     DEFAULT_RAW_CLOSURE_PATH,
     DEFAULT_REPORT_PATH,
     DEFAULT_REVIEW_PATH,
+    DEFAULT_SCRIPT_REVIEW_PATH,
     _classify_candidate,
     _latin_span_counts,
     _payload_artifacts,
@@ -22,6 +24,7 @@ from scripts.localization.game_catalog.leakage import (
     load_expansion_catalogs,
     load_raw_closure,
     load_review,
+    load_script_review,
 )
 from scripts.localization.game_catalog.model import GameCatalogError
 
@@ -31,6 +34,7 @@ class RuntimeLeakageAuditTests(unittest.TestCase):
     def setUpClass(cls):
         cls.build = build_game_catalog()
         cls.review = load_review(DEFAULT_REVIEW_PATH)
+        cls.script_review = load_script_review(DEFAULT_SCRIPT_REVIEW_PATH)
         cls.raw_closure = load_raw_closure(DEFAULT_RAW_CLOSURE_PATH)
         cls.expansion_catalogs = load_expansion_catalogs(
             ROOT / "texts/expansion",
@@ -60,6 +64,7 @@ class RuntimeLeakageAuditTests(unittest.TestCase):
         cls.report = build_leakage_report(
             cls.build,
             review=cls.review,
+            script_review=cls.script_review,
             raw_closure=cls.raw_closure,
             expansion_catalogs=cls.expansion_catalogs,
             inputs={
@@ -72,6 +77,7 @@ class RuntimeLeakageAuditTests(unittest.TestCase):
         return build_leakage_report(
             self.build,
             review=review,
+            script_review=self.script_review,
             raw_closure=self.raw_closure,
             expansion_catalogs=self.expansion_catalogs,
             inputs={},
@@ -226,6 +232,7 @@ class RuntimeLeakageAuditTests(unittest.TestCase):
                     build_leakage_report(
                         modified_build,
                         review=self.review,
+                        script_review=self.script_review,
                         raw_closure=self.raw_closure,
                         expansion_catalogs=self.expansion_catalogs,
                         inputs={},
@@ -245,6 +252,7 @@ class RuntimeLeakageAuditTests(unittest.TestCase):
             build_leakage_report(
                 modified,
                 review=self.review,
+                script_review=self.script_review,
                 raw_closure=self.raw_closure,
                 expansion_catalogs=self.expansion_catalogs,
                 inputs={},
@@ -301,12 +309,123 @@ class RuntimeLeakageAuditTests(unittest.TestCase):
         self.assertIn("只要按照同样的办法就行了", actual_zh[0x0CC3])
         self.assertNotIn("就就行了", actual_zh[0x0CC3])
 
-    def test_active_payloads_have_no_cyrillic_math_or_box_drawing_artifacts(self):
-        artifact_re = re.compile(r"[\u0400-\u04FF\u2200-\u22FF\u2500-\u257F]")
-        for locale in ("ja", "zh-Hans"):
-            for entry in self.build.locale_bundle(locale).entries:
-                with self.subTest(locale=locale, target_id=entry.target_id):
-                    self.assertIsNone(artifact_re.search(entry.source_text))
+    def test_script_allowlist_and_exact_math_approvals_are_closed(self):
+        summary = self.report["summary"]
+        self.assertEqual(summary["disallowed_script_symbol_count"], 0)
+        self.assertEqual(summary["unapproved_script_symbol_count"], 0)
+        self.assertEqual(summary["script_payload_mismatch_count"], 0)
+        self.assertEqual(summary["stale_script_approval_count"], 0)
+        self.assertGreater(summary["approved_script_symbol_count"], 0)
+
+    def test_missing_exact_math_target_approval_fails_closed(self):
+        approvals = dict(self.script_review.approvals)
+        key = next(
+            key for key in approvals if key.startswith("game/ja/")
+        )
+        approvals.pop(key)
+        incomplete = replace(
+            self.script_review,
+            approvals=approvals,
+        )
+        with self.assertRaisesRegex(
+            GameCatalogError,
+            "unapproved Greek/math symbol",
+        ):
+            build_leakage_report(
+                self.build,
+                review=self.review,
+                script_review=incomplete,
+                raw_closure=self.raw_closure,
+                expansion_catalogs=self.expansion_catalogs,
+                inputs={},
+            )
+
+    def test_cyrillic_confusable_is_rejected_in_game_raw_and_alias_payloads(self):
+        cyrillic_ok = "\u041e\u041a"
+
+        ja_bundle = self.build.locale_bundle("ja")
+        raw_target_ids = {
+            int(target_id, 16)
+            for row in self.raw_closure["rows"]
+            for target_id in row.get("target_ids", [])
+        }
+        target_id = next(
+            entry.target_id
+            for entry in ja_bundle.entries
+            if entry.target_id not in raw_target_ids
+        )
+        entries = list(ja_bundle.entries)
+        entries[target_id] = replace(
+            entries[target_id],
+            source_text=cyrillic_ok,
+        )
+        modified_game = replace(
+            self.build,
+            locales=(
+                replace(ja_bundle, entries=tuple(entries)),
+                self.build.locale_bundle("zh-Hans"),
+            ),
+        )
+        with self.assertRaisesRegex(
+            GameCatalogError,
+            "disallowed Unicode script",
+        ):
+            build_leakage_report(
+                modified_game,
+                review=self.review,
+                script_review=self.script_review,
+                raw_closure=self.raw_closure,
+                expansion_catalogs=self.expansion_catalogs,
+                inputs={},
+            )
+
+        modified_closure = deepcopy(self.raw_closure)
+        modified_expansion = deepcopy(self.expansion_catalogs)
+        expansion_row = next(
+            row
+            for row in modified_closure["rows"]
+            if row["classification"] == "expansion_message"
+        )
+        expansion_key = expansion_row["expansion_key"]
+        modified_expansion["ja"][expansion_key] = cyrillic_ok
+        expansion_row["providers"]["ja"]["text_sha256"] = hashlib.sha256(
+            cyrillic_ok.encode("utf-8")
+        ).hexdigest()
+        with self.assertRaisesRegex(
+            GameCatalogError,
+            "disallowed Unicode script",
+        ):
+            build_leakage_report(
+                self.build,
+                review=self.review,
+                script_review=self.script_review,
+                raw_closure=modified_closure,
+                expansion_catalogs=modified_expansion,
+                inputs={},
+            )
+
+        aliases = {
+            locale: {
+                surface: dict(values)
+                for surface, values in surfaces.items()
+            }
+            for locale, surfaces in self.build.display_aliases.items()
+        }
+        alias_target = next(iter(aliases["ja"]["item_name_56"]))
+        aliases["ja"]["item_name_56"][alias_target] = cyrillic_ok
+        modified_aliases = replace(self.build, display_aliases=aliases)
+        with self.assertRaisesRegex(
+            GameCatalogError,
+            "disallowed Unicode script",
+        ):
+            build_leakage_report(
+                modified_aliases,
+                review=self.review,
+                script_review=self.script_review,
+                raw_closure=self.raw_closure,
+                expansion_catalogs=self.expansion_catalogs,
+                inputs={},
+            )
 
     def test_missing_exact_target_locale_span_approval_fails_closed(self):
         reviews = dict(self.review.reviews)

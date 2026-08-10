@@ -219,7 +219,7 @@ void EkrLvup_InitStatusText(struct ProcEkrLevelup *proc)
     th = &gBanimText[EKRLVUP_STAT_MAX + EKRLVUP_STAT_CLASS];
     InitText(th, 8);
     Text_DrawString(th,
-        GetClassDisplayName(gpEkrLvupUnit->pClassData));
+        GetStringFromIndex(gpEkrLvupUnit->pClassData->nameTextId));
     PutText(th, TILEMAP_LOCATED(gBG2TilemapBuffer, 3, 7));
 
     /* level msg */
@@ -250,7 +250,7 @@ void EkrLvup_DrawUpdatedStatus(struct ProcEkrLevelup *proc, int index)
 void EkrLvup_DrawUnitName(struct ProcEkrLevelup *proc)
 {
     ClearText(&gBanimText[EKRLVUP_STAT_MAX + EKRLVUP_STAT_PNAME]);
-    Text_DrawString(&gBanimText[EKRLVUP_STAT_MAX + EKRLVUP_STAT_PNAME], GetClassDisplayName(gpEkrLvupUnit->pClassData));
+    Text_DrawString(&gBanimText[EKRLVUP_STAT_MAX + EKRLVUP_STAT_PNAME], GetStringFromIndex(gpEkrLvupUnit->pClassData->nameTextId));
     PutText(&gBanimText[EKRLVUP_STAT_MAX + EKRLVUP_STAT_PNAME], TILEMAP_LOCATED(gBG2TilemapBuffer, 2, 7));
 }
 

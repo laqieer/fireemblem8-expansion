@@ -1219,6 +1219,44 @@ class FinalMappingTests(unittest.TestCase):
         metrics = self.fixed_width_metrics
         self.assertEqual(metrics["kind"], "fe8u-fixed-width-label-metrics")
         self.assertEqual(
+            set(metrics["source_contract"]),
+            {"character_name_40", "class_name_64", "item_name_56"},
+        )
+        expected_calls = {
+            "character_name_40": (
+                "UnitList_SetupDisplay",
+                "UnitList_PutRow",
+                "GetCharacterDisplayNameForWidth",
+            ),
+            "class_name_64": (
+                "PrepItemUse_InitDisplay",
+                "DrawPrepScreenItemUseStatLabels",
+                "GetClassDisplayNameForWidth",
+            ),
+            "item_name_56": (
+                "BattleForecast_Init",
+                "PutBattleForecastItemName",
+                "GetItemDisplayNameForWidth",
+            ),
+        }
+        for surface, (
+            allocation_function,
+            resolver_function,
+            api,
+        ) in expected_calls.items():
+            call_sites = metrics["source_contract"][surface]["call_sites"]
+            self.assertEqual(len(call_sites), 1)
+            self.assertEqual(
+                call_sites[0]["allocation_function"],
+                allocation_function,
+            )
+            self.assertEqual(
+                call_sites[0]["resolver_function"],
+                resolver_function,
+            )
+            self.assertIn(api, call_sites[0]["resolver_anchor"])
+            self.assertNotIn(api, call_sites[0]["fallback_anchor"])
+        self.assertEqual(
             metrics["summary"],
             {
                 "alias_count": 120,

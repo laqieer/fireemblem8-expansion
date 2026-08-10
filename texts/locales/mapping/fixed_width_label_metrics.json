@@ -5395,9 +5395,12 @@
       "call_sites": [
         {
           "allocation_anchor": "InitText(&gUnitlistscreen_2[i], 5);",
+          "allocation_function": "UnitList_SetupDisplay",
+          "fallback_anchor": "GetStringFromIndex(\n                gSortedUnits[unitNum]->unit->pCharacterData->nameTextId)",
           "path": "src/unitlistscreen.c",
-          "resolver_anchor": "GetCharacterDisplayName(gSortedUnits[unitNum]->unit->pCharacterData)",
-          "sha256": "22d3087772e19f679193714fe979027fbcff8010e22645bca49db2aaf0b704f3"
+          "resolver_anchor": "GetCharacterDisplayNameForWidth(\n                gSortedUnits[unitNum]->unit->pCharacterData, 40)",
+          "resolver_function": "UnitList_PutRow",
+          "sha256": "3563ba206a8dd74f79cb11cf7e1871e66d430e3810475b0f8aef0a0748c275e3"
         }
       ],
       "category": "character",
@@ -5500,9 +5503,12 @@
       "call_sites": [
         {
           "allocation_anchor": "InitText(&texts[TEXT_PREPITEM_CLASS], 8);",
+          "allocation_function": "PrepItemUse_InitDisplay",
+          "fallback_anchor": "str = GetStringFromIndex(unit->pClassData->nameTextId);",
           "path": "src/prep_itemuse.c",
-          "resolver_anchor": "GetClassDisplayName(unit->pClassData)",
-          "sha256": "82ca70ed87e92264c054d9a7e14af4e232673b11e25f9bc82d0aa032541b0168"
+          "resolver_anchor": "str = GetClassDisplayNameForWidth(unit->pClassData, 64);",
+          "resolver_function": "DrawPrepScreenItemUseStatLabels",
+          "sha256": "1b878d21ef739ec38c31f64386c3e73263f571c87e167d3977c7be3febed2b7f"
         }
       ],
       "category": "class",
@@ -5589,9 +5595,12 @@
       "call_sites": [
         {
           "allocation_anchor": "InitTextDb(&proc->itemNameText, 7);",
+          "allocation_function": "BattleForecast_Init",
+          "fallback_anchor": "char* str = GetItemName(itemIdx);",
           "path": "src/bksel.c",
-          "resolver_anchor": "GetItemDisplayName(itemIdx)",
-          "sha256": "022f08afc3b6ef5239b25ada883943c6c045ee79d2054c5c368b08a391c51b08"
+          "resolver_anchor": "char* str = GetItemDisplayNameForWidth(itemIdx, 56);",
+          "resolver_function": "PutBattleForecastItemName",
+          "sha256": "ae6e84207b02d00f383f68bed441fa69a6c3053979a02aacdd24464721caf229"
         }
       ],
       "category": "item",

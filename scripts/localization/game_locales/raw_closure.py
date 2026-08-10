@@ -837,6 +837,9 @@ def build_raw_surface_closure(
                         "source_path": raw_provider.source_path,
                         "source_repository": raw_provider.source_repository,
                         "source_revision": raw_provider.source_revision,
+                        "source_value_index": (
+                            raw_provider.source_value_index
+                        ),
                         "symbol": raw_provider.symbol,
                         "value_sha256": raw_provider.value_sha256,
                     }

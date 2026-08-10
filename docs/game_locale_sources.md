@@ -29,9 +29,11 @@ remain import provenance only and never become runtime keys.
   inline goal-window labels and prevents a same-number FE8J indexed message
   from being substituted for a raw provider. The catalog pins the full
   `fireemblem8j` commit SHA and must exactly match the committed
-  `source/fe8j/raw_symbols.json` symbol/range/hash manifest plus its
+  `source/fe8j/raw_symbols.json` symbol/slot/range/hash manifest plus its
   `raw_provider_values.cp932.bin` exact NUL-terminated CP932 source blob.
-  Validation checks the snapshot hash, blob hash, every symbol, every bounded
+  Validation checks the snapshot hash, commit/root/subtree/blob Git object
+  identities, every exact source path, every declared symbol and value slot,
+  every bounded
   byte range, every per-value hash, and the decoded value; an unavailable
   revision name or a second JSON copy of the catalog is not provenance.
 - `zh-Hans/indexed.txt`: 3,339 FE8CN messages using the FE8J indexed layout.
@@ -447,23 +449,20 @@ The closure ledger accounts for all 143 unique raw imports:
 
 Japanese closure rows comprise tracked C literals, reviewed authored
 corrections/expansion catalog entries, and raw symbols resolved from the 119
-materialized target+symbol records in `ja/raw.json`. Raw-symbol schema v3 pins
-the FE8J repository URL and nonzero commit OID, vendors that commit object plus
-the five exact upstream source blobs used by the extraction, and records each
-upstream path and Git blob OID. Normal offline checks recompute the vendored
-commit/blob Git object IDs, SHA-256 hashes, source anchors, CP932 artifact
-ranges, and decoded values. To independently verify the repository relation
-with `git cat-file`, point the origin gate at a local FE8J checkout or object
-database containing the pinned commit:
-
-```bash
-python3 -m scripts.localization.game_locales check-ja-raw-origin \
-  --repository /path/to/fireemblem8j
-```
-
-This rejects an all-zero or mismatched commit, a nonexistent commit in the
-selected repository, a path whose blob OID differs at that commit, and
-arbitrary vendored bytes. Tracked literals retain their source
+materialized target+symbol records in `ja/raw.json`. Raw-symbol schema v4 pins
+the FE8J repository URL and independently pinned nonzero commit OID, vendors
+that commit object, the exact root/subtree Git objects needed to traverse all
+five upstream paths, and the five exact source blobs used by extraction.
+Normal `check-raw-closure` verification is fully offline and mandatory: it
+recomputes commit/tree/blob Git object IDs and SHA-256 hashes, traverses every
+path from the commit root tree to the declared blob OID, and extracts each
+provider from its exact declared source symbol plus `source_value_index`.
+The exact NUL-terminated CP932 value must match both the extraction artifact
+range and decoded catalog text. A shared object such as
+`JapaneseTerrainNames` therefore cannot authorize swapping one terrain value
+into another target. Fabricated commits, altered blobs, wrong paths, wrong
+slots, and reassigned values fail the normal closure check. Tracked literals
+retain their source
 path/symbol/key/context hash; authored rows retain their catalog/shard key,
 evidence kind, method, and payload hash. The closure manifest records one of
 those explicit provenance forms on every one of its 143 Japanese providers.
@@ -523,6 +522,15 @@ An approval is accepted only for an exact scope + locale + target + span with
 matching payload hash, occurrence count, category, factual reason, and source.
 Localized decisions pin the corrected payload hash and require the reviewed
 baseline span to be absent.
+
+The same final-materialization pass also applies a locale-scoped Unicode
+script allowlist to game, raw-surface, and compact-alias payloads. Han,
+hiragana, katakana, Bopomofo, Latin, common punctuation, and inherited marks
+remain available; Latin still requires the exact span review above. Cyrillic,
+box drawing, private/unassigned scalars, and every other non-allowlisted
+script fail closed. Greek and Unicode mathematical symbols are accepted only
+through `texts/locales/runtime_unicode_script_review.json`, keyed by exact
+scope, locale, target, payload hash, code point, and occurrence count.
 
 The committed report currently proves:
 

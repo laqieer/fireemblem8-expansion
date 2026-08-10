@@ -199,7 +199,6 @@ void SetItemUnsealedForCharacter(int item, u8 unk);
 s8 IsItemUnsealedForUnit(struct Unit* unit, int item);
 int GetItemIndex(int item);
 char* GetItemName(int item);
-char* GetItemDisplayName(int item);
 int GetItemDescId(int item);
 int GetItemUseDescId(int item);
 int GetItemType(int item);

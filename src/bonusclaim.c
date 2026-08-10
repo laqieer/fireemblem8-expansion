@@ -227,7 +227,7 @@ void DrawBonusClaimItemText(int idx) {
                 color,
                 0,
                 0,
-                GetItemDisplayName(itemId)
+                GetItemName(itemId)
             );
 
             PutNumberOrBlank(
@@ -247,7 +247,7 @@ void DrawBonusClaimItemText(int idx) {
                 color,
                 0,
                 0,
-                GetItemDisplayName(itemId)
+                GetItemName(itemId)
             );
 
             DrawIcon(gBG2TilemapBuffer + (unk1 * 0x20), GetItemIconId(itemId), 0x4000);
@@ -629,7 +629,7 @@ void BonusClaim_StartSelectTargetSubMenu(struct BonusClaimProc * proc)
             count = GetUnitItemCount(unit);
             color = (count == UNIT_ITEM_COUNT) ? TEXT_COLOR_SYSTEM_GRAY : TEXT_COLOR_SYSTEM_WHITE;
             Text_SetParams(th, 0, color);
-            Text_DrawString(th, GetCharacterDisplayName(unit->pCharacterData));
+            Text_DrawString(th, GetStringFromIndex(unit->pCharacterData->nameTextId));
         }
 
         if (color == 0)
@@ -784,7 +784,7 @@ void BonusClaim_DrawItemSentPopup(struct BonusClaimProc * proc)
     Text_SetParams(th, 0, TEXT_COLOR_SYSTEM_WHITE);
     Text_SetCursor(th, 0);
 
-    itemNameStr = GetItemDisplayName(itemId);
+    itemNameStr = GetItemName(itemId);
     otherStr = GetStringFromIndexInBufferWithLimit(
         0x883, buf, (u32)sizeof(buf)); // TODO: msgid "Sent[.]"
 
