@@ -90668,8 +90668,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Issue #18 full-game locale source/provenance surface under texts/locales: hash-pinned authorized FE8J/FE8CN input snapshots plus deterministic normalized catalogs, mapping evidence, fallback decisions, and manifests. Exact source and regeneration facts are documented in docs/game_locale_sources.md; no human release/legal approval is inferred.",
-    "oid": "797c7719478cad03bd24da9f078baf6d086148ba",
-    "sha256": "0d99c497224c3789ef30c4b69b1150ddbe9acaccf44de996892dac073548bc68"
+    "oid": "f7dad128c93ea43c286d576f77fe860565241b38",
+    "sha256": "0b9e7525a891a60d1b99f09d27173740f968f320cbc51c37bf36a6ad7ab9b79d"
   },
   {
     "path": "texts/locales/mapping/structural_completion_evidence.json",
