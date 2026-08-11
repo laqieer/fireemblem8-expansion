@@ -1,11 +1,4 @@
-#ifndef GUARD_EXPANSION_DEBUGTOOLS_H
-#define GUARD_EXPANSION_DEBUGTOOLS_H
 
-#ifdef FE8_ARCHIVAL_BUILD
-#include "expansion_debugtools_legacy.inc"
-#endif
-
-#ifndef FE8_ARCHIVAL_BUILD
 /*
  * Issue #11 slice 1 -- supported debug-tools foundation.
  *
@@ -137,41 +130,19 @@
 #endif
 
 /* --- Registration capacity -------------------------------------------------
- * Built-ins and contributors use separate bounded EWRAM arrays. IDs 1-9
- * occupy the nine built-in slots; contributors retain the originally
- * documented nine successful registrations in their own slots.
- *
  * MENU_ITEM_MAX is 11 (include/uimenu.h) and StartMenuCore (src/uimenu.c)
- * has no bounds check when it appends to MenuProc::menuItems. The hub
- * therefore renders at most nine actions per page plus Back (10 live rows),
- * leaving one MenuProc::menuItems slot as a safety margin. Pressing R queues
- * a page transition and freezes the current menu; a deferred Proc ends it
- * only after ProcessMenuSelectInput/Menu_OnIdle finish the current dispatch,
- * then starts the next bounded page. DEBUGTOOLS_HUB_MENU_SLOTS includes the
- * all-zero MenuItemsEnd terminator, which is not a live row. */
+ * has no bounds check when it appends to MenuProc::menuItems -- writing an
+ * 12th live item would corrupt adjacent MenuProc fields. The hub menu
+ * therefore reserves one live slot for a Back/Exit entry, leaving exactly
+ * DEBUGTOOLS_ACTION_MAX (9) slots for contributor actions, with 1 of the
+ * 11 total live slots kept as an untouched safety margin. The
+ * DEBUGTOOLS_HUB_MENU_SLOTS def-array additionally needs a MenuItemsEnd
+ * terminator, which StartMenuCore's scan loop stops at and therefore never
+ * turns into a live MenuItemProc/menuItems[] slot. */
 enum
 {
-    DEBUGTOOLS_BUILTIN_ACTION_MAX = 9,
-    DEBUGTOOLS_CONTRIBUTOR_ACTION_MAX = 9,
-    DEBUGTOOLS_ACTION_MAX = 18,
-    DEBUGTOOLS_HUB_PAGE_ACTION_MAX = 9,
-    DEBUGTOOLS_HUB_PAGE_MAX = 2,
-    DEBUGTOOLS_HUB_MENU_SLOTS = 11, /* nine actions + Back + terminator */
-    DEBUGTOOLS_MENU_WIDTH_TILES = 19,
-    DEBUGTOOLS_STATUS_TEXT_WIDTH_TILES = 24,
-    DEBUGTOOLS_BUILTIN_ID_MIN = 1,
-    DEBUGTOOLS_BUILTIN_ID_MAX = 9,
-    DEBUGTOOLS_CONTRIBUTOR_ID_MIN = 10,
-    DEBUGTOOLS_CONTRIBUTOR_ID_MAX = 0xFFFF,
-
-    /* The default BG text font starts at tile 0x80 and Text uses two
-     * 8x8 tiles per allocated text column. Tile indices are 10 bits, so
-     * the allocator has (0x400 - 0x80) / 2 == 448 columns available.
-     * Each maximum-size page uses ten 18-column rows (nine actions + Back)
-     * plus one 24-column localized status line. Transitions reclaim this
-     * bounded 204-column scope only after the old menu has ended. */
-    DEBUGTOOLS_TEXT_ALLOC_CAPACITY = 448,
-    DEBUGTOOLS_HUB_TEXT_ALLOC_BUDGET = 204,
+    DEBUGTOOLS_ACTION_MAX = 9,
+    DEBUGTOOLS_HUB_MENU_SLOTS = DEBUGTOOLS_ACTION_MAX + 2, /* actions + Back + terminator */
 
     /* Issue #11 closure: explicit policy bound on a contributor label's
      * length (excluding the NUL terminator). Not a hard memory-safety
@@ -195,7 +166,7 @@ enum DebugToolsResult
     DEBUGTOOLS_ERR_DISABLED,        /* subsystem compiled out (release build) */
     DEBUGTOOLS_ERR_INVALID_ACTION,  /* NULL action, label, or callback */
     DEBUGTOOLS_ERR_DUPLICATE,       /* id already registered */
-    DEBUGTOOLS_ERR_CAPACITY_FULL,   /* the relevant built-in/contributor storage is full */
+    DEBUGTOOLS_ERR_CAPACITY_FULL,   /* DEBUGTOOLS_ACTION_MAX already reached */
     DEBUGTOOLS_ERR_ALREADY_ACTIVE,  /* DebugTools_OpenHub called while the hub is already open */
 
     /* Issue #11 closure: appended at the end so every existing named
@@ -204,20 +175,16 @@ enum DebugToolsResult
      * docs/debugtools.md -- so no existing value may ever be
      * renumbered). */
     DEBUGTOOLS_ERR_ID_INVALID,      /* action->id == 0 (reserved/uninitialized-looking sentinel) */
-    DEBUGTOOLS_ERR_LABEL_INVALID,   /* label is empty, or longer than DEBUGTOOLS_LABEL_MAX_LENGTH */
-    DEBUGTOOLS_ERR_ID_RESERVED,     /* contributor attempted to claim built-in id 1-9 */
-    DEBUGTOOLS_ERR_TEXT_CAPACITY    /* active font cannot fit one maximum hub allocation */
+    DEBUGTOOLS_ERR_LABEL_INVALID    /* label is empty, or longer than DEBUGTOOLS_LABEL_MAX_LENGTH */
 };
 
-/* A single contributor-registered debug action. label remains a raw C string
- * for ABI compatibility and third-party actions. IDs 1-9 are reserved for
- * immutable built-in identities; contributors must choose an ID in
- * [DEBUGTOOLS_CONTRIBUTOR_ID_MIN, DEBUGTOOLS_CONTRIBUTOR_ID_MAX]. Built-ins
- * have render-time expansion-message adapters; contributor IDs keep the
- * original MenuItemDef::name/Text_DrawString raw path. onSelected has the
- * exact MenuItemDef onSelected signature, so a registered action can drive
- * the hub menu (e.g. return MENU_ACT_END | MENU_ACT_CLEAR | ... ) exactly
- * like any other MenuItemDef handler. */
+/* A single contributor-registered debug action. label is a raw C string
+ * (no msg-id/text-asset system involved -- see MenuItemDef::name /
+ * Text_DrawString in src/uimenu.c, which already draws nameMsgId==0 items
+ * directly from a raw string). onSelected has the exact MenuItemDef
+ * onSelected signature, so a registered action can drive the hub menu
+ * (e.g. return MENU_ACT_END | MENU_ACT_CLEAR | ... ) exactly like any
+ * other MenuItemDef handler. */
 struct DebugToolsAction
 {
     u16 id;                 /* stable, contributor-chosen identifier */
@@ -225,86 +192,46 @@ struct DebugToolsAction
     u8 (*onSelected)(struct MenuProc* menu, struct MenuItemProc* item);
 };
 
-/* Registers a new contributor debug action. IDs 1-9 are rejected with
- * DEBUGTOOLS_ERR_ID_RESERVED; ID 0 remains DEBUGTOOLS_ERR_ID_INVALID.
- * Valid contributor IDs are 10-65535. Exactly
- * DEBUGTOOLS_CONTRIBUTOR_ACTION_MAX contributor registrations can coexist
- * with all DEBUGTOOLS_BUILTIN_ACTION_MAX built-ins. Before accepting one,
- * the shipped built-ins are initialized once in deterministic ID/menu order
- * so an early contributor call can never displace a built-in. Returns
- * DEBUGTOOLS_OK on success, or an explicit DebugToolsResult error code
- * otherwise. Never silently drops a registration. Registration order is
- * preserved (deterministic ordering), and no heap allocation is used
- * anywhere in this subsystem. */
+/* Registers a new contributor debug action. Returns DEBUGTOOLS_OK on
+ * success, or an explicit DebugToolsResult error code otherwise. Never
+ * silently drops a registration. Registration order is preserved
+ * (deterministic ordering), and no heap allocation is used anywhere in
+ * this subsystem. */
 int DebugTools_RegisterAction(const struct DebugToolsAction* action);
 
 /* Introspection, primarily for host tests and playtest probes. */
-/* Returns the combined built-in-plus-contributor count. Indexed access lists
- * built-ins first in stable ID/menu order, then contributors in registration
- * order. The hub presents that same order in DEBUGTOOLS_HUB_PAGE_ACTION_MAX
- * rows per page; R cycles pages without growing the live menu. */
 int DebugTools_GetRegisteredCount(void);
 const struct DebugToolsAction* DebugTools_GetRegisteredAction(int index);
 enum DebugToolsResult DebugTools_GetLastRegistrationResult(void);
 
-/* Contributor submenu handoff contract.
- *
- * A registered action that opens another MenuDef must NOT call
- * StartOrphanMenu directly. Its onSelected callback must first call
- * DebugTools_QueueSubmenuTransition(menu, submenuDef), then return a result
- * containing MENU_ACT_END. Queueing marks the handoff before the ordinary
- * menu callback result ends the hub, so the hub's onEnd does not perform
- * final session cleanup or rewind Text storage while its MenuItemProc
- * objects are still live.
- *
- * The contributor submenu's MenuDef::onEnd callback must call
- * DebugTools_ReturnToHubAfterMenuEnd(menu). That schedules the matching
- * deferred rewind only after the submenu and its Text objects have ended.
- * The row-allocation font and counter baseline are captured immediately
- * before StartOrphanMenu, before MenuDef::onInit can switch gActiveFont.
- * Cleanup rewinds only that exact owner, restores the previously active
- * font as a separate step, and never writes a contributor font's unrelated
- * counter. A font-switching submenu remains responsible for any allocations
- * it deliberately makes from its own font. The hub then reopens while
- * retaining the same debug session/reentrancy ownership. The session is
- * finally released only when the reopened hub itself ends without another
- * queued transition.
- *
- * Both functions are inert when debug tools are disabled. Calls outside an
- * active hub/submenu session, duplicate transition requests, and a NULL
- * submenuDef are also safe no-ops. */
-void DebugTools_QueueSubmenuTransition(
-    struct MenuProc* menu,
-    const struct MenuDef* submenuDef);
-void DebugTools_ReturnToHubAfterMenuEnd(struct MenuProc* menu);
-
 /* Opens the debug hub menu (a StartOrphanMenu-based menu, same idiom as
  * the existing dormant debug menus in src/menu_def.c). Lazily registers
- * all shipped built-in actions on first call.
+ * the slice's one built-in launcher action on first call.
  *
  * This is the single authoritative reentrancy guard for the whole
  * subsystem: it returns DEBUGTOOLS_ERR_ALREADY_ACTIVE (an explicit,
  * observable no-op -- no menu construction, no second StartOrphanMenu,
- * gDebugToolsProbe.hubOpenCount left unchanged) if any hub/submenu/
- * allocator-transition session is already active. A release-and-repress
- * of the title hotkey during that session must never spawn a second
- * concurrent MenuProc; guarding here
+ * gDebugToolsProbe.hubOpenCount left unchanged) if the hub is already
+ * open. A release-and-repress of the title hotkey while the hub remains
+ * open must never spawn a second concurrent MenuProc; guarding here
  * (rather than in each caller) protects every current and future caller
  * (DebugTools_TitleHotkeyCheck today, any later map/prep entry point)
  * without each needing its own check. Returns DEBUGTOOLS_ERR_DISABLED
  * (and remains a no-op) when the subsystem is compiled out. */
 enum DebugToolsResult DebugTools_OpenHub(void);
 
-/* True for the complete debug-menu session: hub, submenu, and the
- * one-yield allocator transition after each old menu ends. It clears only
- * after final deferred cleanup restores the pre-debug text allocation
- * counter. Title_IDLE (src/titlescreen.c) checks this to skip its own
- * A/START handling for the whole session: the menu proc and Title_IDLE
- * are independent sibling procs under the same gProcScr_GameControl tree
- * that both still read newKeys every frame, so without this guard a
- * single A press meant for a debug menu could race the vanilla
- * title-to-gameplay transition. Always returns 0 when the subsystem is
- * compiled out. */
+/* True from the frame the hub opens until the frame it ends (Back, a
+ * built-in action's own MENU_ACT_END, or the launcher tearing down the
+ * whole gProcScr_GameControl tree the hub itself lives in -- see
+ * docs/debugtools.md "Title tree ownership"). Title_IDLE (src/titlescreen.c)
+ * checks this to skip its own A/START handling for the whole time the hub
+ * is up: the hub's menu proc and Title_IDLE are independent sibling procs
+ * under the same gProcScr_GameControl tree that both still read newKeys
+ * every frame, so without this guard a single A press meant to select a
+ * hub action would also be seen -- on the same frame -- by Title_IDLE's
+ * own unconditional newKeys check, racing the vanilla title-to-gameplay
+ * transition against the hub's own action. Always returns 0 when the
+ * subsystem is compiled out. */
 int DebugTools_IsHubActive(void);
 
 /* Call once per frame from the single supported title-screen-only call
@@ -361,9 +288,8 @@ void DebugTools_RecordTitleIdleTimer(u32 timerIdle);
  * docs/debugtools.md). The hub action ("Fast Boot: Chapter 2",
  * src/debugtools_launcher.c) now only arms a pending request and closes the
  * hub; it never touches gProcScr_GameControl, gProc_BMapMain, units, or
- * events. The request is detected by Title_IDLE (src/titlescreen.c) after
- * the hub MenuProc has closed (even while the one-yield allocator cleanup
- * still retains session ownership), and consumed exactly once by
+ * events. The request is detected by Title_IDLE (src/titlescreen.c) only
+ * after the hub has closed, and consumed exactly once by
  * GameControl_PostIntro (src/gamecontrol.c), which performs the actual
  * deterministic boot and hands off to the ordinary LGAMECTRL_EXEC_BM
  * transition -- the existing GameCtrlProc's own normal lifecycle runs
@@ -378,12 +304,9 @@ void DebugTools_RecordTitleIdleTimer(u32 timerIdle);
 void DebugTools_RequestChapter2Launch(void);
 
 /* True from the frame the hub action arms the request until the frame
- * GameControl_PostIntro consumes it. Title_IDLE checks this before the
- * broader DebugTools_IsHubActive() session guard so the deliberate
- * one-yield allocator cleanup cannot delay the deterministic launch. The
- * request is armed only by the hub action immediately before that callback
- * returns MENU_ACT_END. Title_IDLE itself never clears this flag; it only
- * reacts to it by setting the ordinary
+ * GameControl_PostIntro consumes it. Checked by Title_IDLE only after
+ * DebugTools_IsHubActive() reports the hub has closed -- Title_IDLE itself
+ * never clears this flag, it only reacts to it by setting the ordinary
  * GAME_ACTION_EVENT_RETURN next-action and calling Proc_Break on itself
  * (exactly the effect a real A/START press would have, without
  * synthesizing that keypress). Always 0 when the subsystem is compiled
@@ -655,8 +578,8 @@ u32 DebugTools_GetLastAssertCode(void);
  * that itself returns NULL/a safe sentinel on failure. Persistent SRAM
  * state is never mutated by any of the five (RNG/flags/units/convoy are
  * ordinary EWRAM runtime state; the fifth tool is read-only and never
- * mutates anything). Registers all five through the internal built-in
- * path (ids 5-9), never through the contributor API and never through
+ * mutates anything). Registers all five (ids 5-9) through the same
+ * public DebugTools_RegisterAction() API every other action uses -- no
  * direct edits to gDebugToolsHubMenuDef/sHubMenuItemDefs. */
 void DebugTools_RegisterExtendedToolActions(void);
 
@@ -817,7 +740,3 @@ enum
 };
 
 extern struct DebugToolsProbe gDebugToolsProbe;
-
-#endif /* FE8_ARCHIVAL_BUILD */
-
-#endif /* GUARD_EXPANSION_DEBUGTOOLS_H */

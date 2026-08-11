@@ -1,5 +1,10 @@
 #include "global.h"
 
+#ifdef FE8_ARCHIVAL_BUILD
+#include "debugtools_registry_legacy.inc"
+#endif
+
+#ifndef FE8_ARCHIVAL_BUILD
 #include <string.h>
 #include <stdio.h>
 
@@ -261,7 +266,7 @@ static int DebugToolsHub_BuiltinActionRowDraw(struct MenuProc* proc, struct Menu
 
     return 0;
 }
-#endif /* MODERN */
+#endif /* FE8_ARCHIVAL_BUILD */
 
 static void DebugToolsHub_BuildMenuItems(void)
 {
@@ -853,3 +858,5 @@ void DebugTools_RecordTitleIdleTimer(u32 timerIdle)
 }
 
 #endif /* FE8_EXPANSION_DEBUGTOOLS_ENABLED */
+
+#endif /* MODERN */

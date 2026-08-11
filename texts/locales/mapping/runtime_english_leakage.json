@@ -12332,7 +12332,7 @@
     "ja_raw": {
       "byte_count": 11842,
       "path": "texts/locales/ja/raw.json",
-      "sha256": "50f91df424836808adf0c60828487e9de94d793cb675dbad08118d2fa79c93dd"
+      "sha256": "f392757660b1abf100a44c85d4dc784ec35ce376ca5f15712fc45c97a0e2ddf0"
     },
     "latin_span_review": {
       "baseline_commit": "2d02ec12ddcba0640bcf1ecffcf7dc93d56deb4f",
@@ -12346,9 +12346,9 @@
       "sha256": "0ec770175b42fc5f5babe2bd1af7a27597f5e0f1dc75d0a2d3ff18f32c821313"
     },
     "raw_closure": {
-      "byte_count": 280833,
+      "byte_count": 280381,
       "path": "texts/locales/mapping/raw_surface_closure.json",
-      "sha256": "583b7cfffbbd35c72562d4a36d4224a0f2178f3998f92c1268fbc587de904801"
+      "sha256": "8ef6c8861872e63623e641495057b0ae173c67c6c838bb510803dcb69e3470f0"
     },
     "target_header": {
       "byte_count": 78840,

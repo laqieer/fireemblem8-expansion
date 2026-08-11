@@ -1,0 +1,6 @@
+{
+  "issue": 18,
+  "category": "fixed",
+  "summary": "Classify committed FE8J CP932 provenance payloads with the typed `.cp932` extension instead of prohibited generic `.bin` names, reject future raw-provider manifests that restore the old artifact class, add a public final localization gate that reports the verified authorized-ROM hash and exact slices, and isolate modern localization/debug lifecycle changes from the archival agbcc lane.",
+  "semver_impact": "none"
+}

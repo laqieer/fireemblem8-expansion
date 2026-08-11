@@ -89,7 +89,7 @@ class FixtureBuildTests(unittest.TestCase):
             "0x0001": {"symbol": "fixture", "text": "生"},
         }
         ja_blob = "生".encode("cp932") + b"\0"
-        (self.fixture_dir / "ja_raw_values.cp932.bin").write_bytes(ja_blob)
+        (self.fixture_dir / "ja_raw_values.cp932").write_bytes(ja_blob)
         ja_origin = 'const char fixture[] = "生";\n'.encode("utf-8")
         (self.fixture_dir / "ja_origin.c").write_bytes(ja_origin)
         ja_origin_oid = hashlib.sha1(
@@ -135,7 +135,7 @@ class FixtureBuildTests(unittest.TestCase):
             "provider_values_artifact": {
                 "encoding": "cp932-nul-terminated",
                 "generated_from_paths": ["src/fixture.c"],
-                "path": "ja_raw_values.cp932.bin",
+                "path": "ja_raw_values.cp932",
                 "sha256": hashlib.sha256(ja_blob).hexdigest(),
             },
             "schema_version": 6,

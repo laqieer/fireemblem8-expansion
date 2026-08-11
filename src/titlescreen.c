@@ -895,6 +895,13 @@ void Title_IDLE(struct TitleScreenProc * proc)
      * second concurrent hub MenuProc. */
     DebugTools_TitleHotkeyCheck();
 
+#ifdef FE8_ARCHIVAL_BUILD
+#define DEBUGTOOLS_ARCHIVAL_HUB_ACTIVE() DebugTools_IsHubActive()
+    if (DEBUGTOOLS_ARCHIVAL_HUB_ACTIVE())
+        return;
+#undef DEBUGTOOLS_ARCHIVAL_HUB_ACTIVE
+#endif
+
     /* The Chapter 2 action sets this request from its menu callback before
      * MENU_ACT_END tears down the hub. Check it before the broader session
      * guard: deferred Text cleanup intentionally retains session ownership
@@ -913,8 +920,10 @@ void Title_IDLE(struct TitleScreenProc * proc)
      * an A press meant to select a hub action can never also race the
      * normal title-to-gameplay transition below (always 0 in a release
      * build). */
+#ifndef FE8_ARCHIVAL_BUILD
     if (DebugTools_IsHubActive())
         return;
+#endif
 
 #if FE8_EXPANSION_ITEMTEST_ENABLED
     /* Issue #10 opt-in runtime item-expansion probe (compiled out, and

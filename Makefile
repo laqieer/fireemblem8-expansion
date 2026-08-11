@@ -47,7 +47,8 @@ else
 endif
 
 CC1FLAGS := -mthumb-interwork -Wimplicit -Wparentheses -Werror -O2 -fhex-asm -ffix-debug-line -g
-CPPFLAGS := -I tools/agbcc/include -iquote include -iquote . -nostdinc -undef
+CPPFLAGS := -I tools/agbcc/include -iquote include -iquote . -nostdinc -undef \
+	-DFE8_ARCHIVAL_BUILD=1
 ASFLAGS  := -mcpu=arm7tdmi -mthumb-interwork -I include
 
 # Issue #5 generated-data platform: standalone targets, never wired into

@@ -18,6 +18,10 @@
 #include "constants/msg.h"
 #include "constants/songs.h"
 
+#ifdef FE8_ARCHIVAL_BUILD
+#define SIO_COPY_EMPTY_TEAM_NAME(dst) SioStrCpy(GetStringFromIndex(MSG_0CC), dst)
+#endif
+
 extern struct ProcCmd ProcScr_SioTeamList[];
 
 struct LinkArenaTeamEnt
@@ -254,10 +258,14 @@ int LoadLinkArenaTeamList(int activeOption, u8 mode)
                 }
                 else
                 {
+#ifdef FE8_ARCHIVAL_BUILD
+                    SIO_COPY_EMPTY_TEAM_NAME(gLinkArenaTeamList[i].name);
+#else
                     GetStringFromIndexInBufferWithLimit(
                         MSG_0CC,
                         gLinkArenaTeamList[i].name,
                         (u32)sizeof(gLinkArenaTeamList[i].name));
+#endif
                     gLinkArenaTeamList[i].unk_10 = ptr[activeOption].unk_05;
                     gLinkArenaTeamList[i].unk_0f = i | 0x80;
                 }
