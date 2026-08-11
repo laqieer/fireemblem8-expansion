@@ -15,7 +15,10 @@ from scripts.localization.game_catalog.leakage import (
     DEFAULT_REPORT_PATH,
     DEFAULT_REVIEW_PATH,
     DEFAULT_SCRIPT_REVIEW_PATH,
+    ScriptSymbolApproval,
+    ScriptTargetApproval,
     _classify_candidate,
+    _confusable_skeletons,
     _latin_span_counts,
     _payload_artifacts,
     build_leakage_report,
@@ -83,6 +86,39 @@ class RuntimeLeakageAuditTests(unittest.TestCase):
             inputs={},
         )
 
+    def _unreviewed_game_target(self, locale):
+        raw_target_ids = {
+            int(target_id, 16)
+            for row in self.raw_closure["rows"]
+            for target_id in row.get("target_ids", [])
+        }
+        return next(
+            entry.target_id
+            for entry in self.build.locale_bundle(locale).entries
+            if entry.target_id not in raw_target_ids
+            and f"game/{locale}/0x{entry.target_id:04X}"
+            not in self.review.reviews
+            and f"game/{locale}/0x{entry.target_id:04X}"
+            not in self.script_review.approvals
+        )
+
+    def _build_with_game_payload(self, locale, target_id, payload):
+        bundle = self.build.locale_bundle(locale)
+        entries = list(bundle.entries)
+        entries[target_id] = replace(
+            entries[target_id],
+            source_text=payload,
+        )
+        modified = replace(bundle, entries=tuple(entries))
+        other_locale = "zh-Hans" if locale == "ja" else "ja"
+        locales = (
+            modified,
+            self.build.locale_bundle(other_locale),
+        )
+        if locale == "zh-Hans":
+            locales = tuple(reversed(locales))
+        return replace(self.build, locales=locales)
+
     def test_committed_report_matches_full_materialized_span_audit(self):
         self.assertEqual(
             self.review.baseline_commit,
@@ -109,6 +145,7 @@ class RuntimeLeakageAuditTests(unittest.TestCase):
             0,
         )
         self.assertEqual(self.report["summary"]["c1_control_count"], 0)
+        self.assertEqual(self.report["summary"]["format_character_count"], 0)
         self.assertEqual(
             self.report["summary"]["mojibake_occurrence_count"],
             0,
@@ -176,6 +213,7 @@ class RuntimeLeakageAuditTests(unittest.TestCase):
         examples = {
             "replacement": "\uFFFD",
             "c1": "\u0085",
+            "format": "\u200D",
             "latin1": "Ã©",
             "windows1252": "â€™",
             "cjk_utf8_as_1252": "æ—¥",
@@ -186,6 +224,7 @@ class RuntimeLeakageAuditTests(unittest.TestCase):
                 self.assertTrue(
                     artifacts["replacement_character_count"]
                     or artifacts["c1_control_count"]
+                    or artifacts["format_character_count"]
                     or artifacts["mojibake_occurrence_count"]
                 )
 
@@ -211,11 +250,12 @@ class RuntimeLeakageAuditTests(unittest.TestCase):
         original = ja_bundle.entries[target_id]
         for label, payload, diagnostic in (
             ("unicode-latin", "café", "unapproved Latin span"),
-            ("replacement", "\uFFFD", "replacement/C1/mojibake"),
-            ("c1", "\u0085", "replacement/C1/mojibake"),
-            ("latin1", "Ã©", "replacement/C1/mojibake"),
-            ("windows1252", "â€™", "replacement/C1/mojibake"),
-            ("cjk-utf8-as-1252", "æ—¥", "replacement/C1/mojibake"),
+            ("replacement", "\uFFFD", "replacement/C1/format/mojibake"),
+            ("c1", "\u0085", "replacement/C1/format/mojibake"),
+            ("format", "\u200D", "replacement/C1/format/mojibake"),
+            ("latin1", "Ã©", "replacement/C1/format/mojibake"),
+            ("windows1252", "â€™", "replacement/C1/format/mojibake"),
+            ("cjk-utf8-as-1252", "æ—¥", "replacement/C1/format/mojibake"),
         ):
             with self.subTest(label=label):
                 entries = list(ja_bundle.entries)
@@ -329,7 +369,7 @@ class RuntimeLeakageAuditTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(
             GameCatalogError,
-            "unapproved Greek/math symbol",
+            "unapproved locale-script/confusable symbol",
         ):
             build_leakage_report(
                 self.build,
@@ -368,7 +408,7 @@ class RuntimeLeakageAuditTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(
             GameCatalogError,
-            "disallowed Unicode script",
+            "unapproved locale-script/confusable",
         ):
             build_leakage_report(
                 modified_game,
@@ -393,7 +433,7 @@ class RuntimeLeakageAuditTests(unittest.TestCase):
         ).hexdigest()
         with self.assertRaisesRegex(
             GameCatalogError,
-            "disallowed Unicode script",
+            "unapproved locale-script/confusable",
         ):
             build_leakage_report(
                 self.build,
@@ -416,7 +456,7 @@ class RuntimeLeakageAuditTests(unittest.TestCase):
         modified_aliases = replace(self.build, display_aliases=aliases)
         with self.assertRaisesRegex(
             GameCatalogError,
-            "disallowed Unicode script",
+            "unapproved locale-script/confusable",
         ):
             build_leakage_report(
                 modified_aliases,
@@ -426,6 +466,104 @@ class RuntimeLeakageAuditTests(unittest.TestCase):
                 expansion_catalogs=self.expansion_catalogs,
                 inputs={},
             )
+
+    def test_nfkc_and_confusable_skeleton_bypasses_require_exact_review(self):
+        self.assertEqual(
+            _confusable_skeletons("🅾🅺"),
+            (
+                {
+                    "codepoints": ["U+1F17E", "U+1F17A"],
+                    "original": "🅾🅺",
+                    "skeleton": "OK",
+                },
+            ),
+        )
+        target_id = self._unreviewed_game_target("ja")
+        for label, payload, diagnostic in (
+            (
+                "negative-squared",
+                "🅾🅺",
+                "unapproved locale-script/confusable",
+            ),
+            ("cyrillic", "ОК", "unapproved locale-script/confusable"),
+            ("greek", "ΟΚ", "unapproved locale-script/confusable"),
+            ("emoji", "😀", "unapproved locale-script/confusable"),
+            ("fullwidth", "ＯＫ", "unapproved Latin span"),
+        ):
+            with self.subTest(label=label):
+                modified = self._build_with_game_payload(
+                    "ja",
+                    target_id,
+                    payload,
+                )
+                with self.assertRaisesRegex(GameCatalogError, diagnostic):
+                    build_leakage_report(
+                        modified,
+                        review=self.review,
+                        script_review=self.script_review,
+                        raw_closure=self.raw_closure,
+                        expansion_catalogs=self.expansion_catalogs,
+                        inputs={},
+                    )
+
+    def test_locale_prohibited_kana_and_bopomofo_need_exact_target_approval(self):
+        cases = (
+            ("ja", "ㄅ"),
+            ("zh-Hans", "ㄅ"),
+            ("zh-Hans", "カ"),
+        )
+        for locale, payload in cases:
+            target_id = self._unreviewed_game_target(locale)
+            modified = self._build_with_game_payload(locale, target_id, payload)
+            with self.subTest(locale=locale, payload=payload):
+                with self.assertRaisesRegex(
+                    GameCatalogError,
+                    "unapproved locale-script/confusable",
+                ):
+                    build_leakage_report(
+                        modified,
+                        review=self.review,
+                        script_review=self.script_review,
+                        raw_closure=self.raw_closure,
+                        expansion_catalogs=self.expansion_catalogs,
+                        inputs={},
+                    )
+
+                codepoint = f"U+{ord(payload):04X}"
+                key = f"game/{locale}/0x{target_id:04X}"
+                symbol = ScriptSymbolApproval(
+                    key=f"{key}#{codepoint}",
+                    character=payload,
+                    codepoint=codepoint,
+                    occurrences=1,
+                    reason="Exact cross-script character approved for this test target.",
+                    source="Reviewed target-specific localization context.",
+                )
+                approval = ScriptTargetApproval(
+                    key=key,
+                    current_payload_sha256=hashlib.sha256(
+                        payload.encode("utf-8")
+                    ).hexdigest(),
+                    symbols={codepoint: symbol},
+                )
+                approvals = dict(self.script_review.approvals)
+                approvals[key] = approval
+                reviewed = replace(
+                    self.script_review,
+                    approvals=approvals,
+                )
+                report = build_leakage_report(
+                    modified,
+                    review=self.review,
+                    script_review=reviewed,
+                    raw_closure=self.raw_closure,
+                    expansion_catalogs=self.expansion_catalogs,
+                    inputs={},
+                )
+                self.assertEqual(
+                    report["summary"]["unapproved_script_symbol_count"],
+                    0,
+                )
 
     def test_missing_exact_target_locale_span_approval_fails_closed(self):
         reviews = dict(self.review.reviews)

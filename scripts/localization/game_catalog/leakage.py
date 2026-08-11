@@ -14,11 +14,11 @@ from typing import Any, Dict, Iterable, Mapping, Optional, Sequence, Tuple
 
 from .model import GameCatalogBuild, GameCatalogError
 
-LEAKAGE_SCHEMA_VERSION = 4
+LEAKAGE_SCHEMA_VERSION = 5
 LEAKAGE_KIND = "runtime-locale-latin-span-audit"
 REVIEW_SCHEMA_VERSION = 1
 REVIEW_KIND = "runtime-locale-latin-span-review"
-SCRIPT_REVIEW_SCHEMA_VERSION = 1
+SCRIPT_REVIEW_SCHEMA_VERSION = 2
 SCRIPT_REVIEW_KIND = "runtime-locale-unicode-script-review"
 DEFAULT_REVIEW_PATH = Path("texts/locales/runtime_latin_span_review.json")
 DEFAULT_SCRIPT_REVIEW_PATH = Path(
@@ -48,11 +48,66 @@ _SCRIPT_REVIEW_KEY_RE = re.compile(
 _CODEPOINT_RE = re.compile(r"U\+[0-9A-F]{4,6}")
 _ALLOWED_SCRIPTS = {
     "ja": frozenset(
-        {"Bopomofo", "Common", "Han", "Hiragana", "Inherited", "Katakana", "Latin"}
+        {"Common", "Han", "Hiragana", "Inherited", "Katakana", "Latin"}
     ),
     "zh-Hans": frozenset(
-        {"Bopomofo", "Common", "Han", "Hiragana", "Inherited", "Katakana", "Latin"}
+        {"Common", "Han", "Inherited", "Latin"}
     ),
+}
+_CYRILLIC_CONFUSABLES = {
+    "А": "A",
+    "В": "B",
+    "Е": "E",
+    "К": "K",
+    "М": "M",
+    "Н": "H",
+    "О": "O",
+    "Р": "P",
+    "С": "C",
+    "Т": "T",
+    "Х": "X",
+    "а": "a",
+    "е": "e",
+    "о": "o",
+    "р": "p",
+    "с": "c",
+    "у": "y",
+    "х": "x",
+}
+_GREEK_CONFUSABLES = {
+    "Α": "A",
+    "Β": "B",
+    "Ε": "E",
+    "Ζ": "Z",
+    "Η": "H",
+    "Ι": "I",
+    "Κ": "K",
+    "Μ": "M",
+    "Ν": "N",
+    "Ο": "O",
+    "Ρ": "P",
+    "Τ": "T",
+    "Υ": "Y",
+    "Χ": "X",
+    "ι": "i",
+    "κ": "k",
+    "ο": "o",
+    "ρ": "p",
+    "τ": "t",
+    "υ": "y",
+    "χ": "x",
+}
+_DIGIT_NAMES = {
+    "ZERO": "0",
+    "ONE": "1",
+    "TWO": "2",
+    "THREE": "3",
+    "FOUR": "4",
+    "FIVE": "5",
+    "SIX": "6",
+    "SEVEN": "7",
+    "EIGHT": "8",
+    "NINE": "9",
 }
 
 
@@ -183,10 +238,99 @@ def _unicode_script(character: str) -> str:
     return "Other"
 
 
-def _script_approval_required(character: str) -> bool:
+def _confusable_ascii_character(character: str) -> str:
+    normalized = unicodedata.normalize("NFKC", character)
+    if normalized and all(
+        value.isascii() and value.isalnum() for value in normalized
+    ):
+        return normalized
+    if character in _CYRILLIC_CONFUSABLES:
+        return _CYRILLIC_CONFUSABLES[character]
+    if character in _GREEK_CONFUSABLES:
+        return _GREEK_CONFUSABLES[character]
+    name = unicodedata.name(character, "")
+    letter_match = re.search(r"LATIN (?:CAPITAL|SMALL) LETTER ([A-Z])", name)
+    if letter_match:
+        value = letter_match.group(1)
+        return value.lower() if "SMALL" in name else value
+    digit_match = re.search(
+        r"(?:DIGIT|NUMBER) (ZERO|ONE|TWO|THREE|FOUR|FIVE|SIX|SEVEN|EIGHT|NINE)",
+        name,
+    )
+    if digit_match:
+        return _DIGIT_NAMES[digit_match.group(1)]
+    return ""
+
+
+def _confusable_skeletons(text: str) -> Tuple[Dict[str, Any], ...]:
+    results = []
+    original = []
+    skeleton = []
+
+    def flush() -> None:
+        if not original:
+            return
+        original_value = "".join(original)
+        skeleton_value = "".join(skeleton)
+        if original_value != skeleton_value:
+            results.append(
+                {
+                    "codepoints": [
+                        f"U+{ord(character):04X}"
+                        for character in original_value
+                    ],
+                    "original": original_value,
+                    "skeleton": skeleton_value,
+                }
+            )
+        original.clear()
+        skeleton.clear()
+
+    for character in text:
+        mapped = _confusable_ascii_character(character)
+        if mapped:
+            original.append(character)
+            skeleton.append(mapped)
+        else:
+            flush()
+    flush()
+    return tuple(results)
+
+
+def _unconditionally_disallowed(character: str) -> bool:
+    value = ord(character)
+    category = unicodedata.category(character)
     return (
-        _unicode_script(character) == "Greek"
-        or unicodedata.category(character) == "Sm"
+        character == "\uFFFD"
+        or 0x80 <= value <= 0x9F
+        or 0x2500 <= value <= 0x257F
+        or category in ("Cf", "Co", "Cs", "Cn")
+    )
+
+
+def _script_approval_required(character: str, *, locale: str) -> bool:
+    script = _unicode_script(character)
+    category = unicodedata.category(character)
+    normalized = unicodedata.normalize("NFKC", character)
+    confusable = _confusable_ascii_character(character)
+    return (
+        script not in _ALLOWED_SCRIPTS[locale]
+        or category == "Sm"
+        or (
+            script == "Common"
+            and character != "\n"
+            and category != "Zs"
+            and category != "Nd"
+            and not category.startswith("P")
+        )
+        or (
+            bool(confusable)
+            and not all(
+                _is_latin_letter(value)
+                or unicodedata.category(value) == "Nd"
+                for value in normalized
+            )
+        )
     )
 
 
@@ -207,8 +351,10 @@ def load_script_review(
             f"{path}: script review kind must be {SCRIPT_REVIEW_KIND!r}"
         )
     if data.get("policy") != {
-        "cyrillic_approvals_forbidden": True,
-        "greek_and_math_require_exact_target_approval": True,
+        "broad_script_whitelist": False,
+        "confusable_skeleton_requires_exact_target_review": True,
+        "format_replacement_c1_approvals_forbidden": True,
+        "locale_prohibited_scripts_require_exact_target_approval": True,
         "script_allowlist_is_locale_scoped": True,
     }:
         raise GameCatalogError(f"{path}: script review policy drifted")
@@ -277,14 +423,15 @@ def load_script_review(
                 raise GameCatalogError(
                     f"{path}: script approval {key!r}/{codepoint} is invalid"
                 )
-            if _unicode_script(character) == "Cyrillic":
+            if _unconditionally_disallowed(character):
                 raise GameCatalogError(
-                    f"{path}: Cyrillic approval is forbidden for "
+                    f"{path}: unsafe format/replacement/C1 approval is forbidden for "
                     f"{key}/{codepoint}"
                 )
-            if not _script_approval_required(character):
+            if not _script_approval_required(character, locale=locale):
                 raise GameCatalogError(
-                    f"{path}: {key}/{codepoint} is not Greek or mathematical"
+                    f"{path}: {key}/{codepoint} does not require an exact "
+                    "locale-script/confusable approval"
                 )
             symbols[codepoint] = ScriptSymbolApproval(
                 key=f"{key}#{codepoint}",
@@ -564,10 +711,17 @@ def _payload_artifacts(text: str) -> Dict[str, Any]:
         for character in visible
         if 0x80 <= ord(character) <= 0x9F
     )
+    format_characters = tuple(
+        f"U+{ord(character):04X}"
+        for character in visible
+        if unicodedata.category(character) == "Cf"
+    )
     mojibake = _mojibake_spans(visible)
     return {
         "c1_control_count": len(c1_controls),
         "c1_controls": list(c1_controls),
+        "format_character_count": len(format_characters),
+        "format_characters": list(format_characters),
         "mojibake_occurrence_count": len(mojibake),
         "mojibake_spans": list(mojibake),
         "replacement_character_count": replacement_count,
@@ -611,6 +765,14 @@ def _audit_script_payload(
 ) -> Tuple[Dict[str, Any], Tuple[str, ...]]:
     visible = _BRACKET_TOKEN_RE.sub("", payload)
     counts = Counter(visible)
+    confusable_skeletons = tuple(
+        item
+        for item in _confusable_skeletons(visible)
+        if any(
+            _script_approval_required(character, locale=locale)
+            for character in item["original"]
+        )
+    )
     payload_sha256 = sha256_bytes(payload.encode("utf-8"))
     target_review = review.approvals.get(target_key)
     payload_matches = (
@@ -632,13 +794,11 @@ def _audit_script_payload(
         codepoint = f"U+{ord(character):04X}"
         script = _unicode_script(character)
         category = unicodedata.category(character)
-        disallowed = (
-            script == "Cyrillic"
-            or script not in _ALLOWED_SCRIPTS[locale]
-            or 0x2500 <= ord(character) <= 0x257F
-            or category in ("Co", "Cs", "Cn")
+        disallowed = _unconditionally_disallowed(character)
+        requires_approval = _script_approval_required(
+            character,
+            locale=locale,
         )
-        requires_approval = _script_approval_required(character)
         approval = (
             target_review.symbols.get(codepoint)
             if target_review is not None
@@ -672,8 +832,13 @@ def _audit_script_payload(
             "codepoint": codepoint,
             "occurrences": occurrences,
             "script": script,
-            "status": "disallowed-script" if disallowed else "approval-required",
+            "status": (
+                "unsafe-character" if disallowed else "approval-required"
+            ),
         }
+        skeleton = _confusable_ascii_character(character)
+        if skeleton:
+            finding["confusable_skeleton"] = skeleton
         if approval is not None:
             finding["approval"] = {
                 "occurrences": approval.occurrences,
@@ -686,6 +851,7 @@ def _audit_script_payload(
         {
             "approved_symbol_count": approved_count,
             "approved_symbol_occurrence_count": approved_occurrences,
+            "confusable_skeletons": list(confusable_skeletons),
             "disallowed_symbol_count": disallowed_count,
             "disallowed_symbol_occurrence_count": disallowed_occurrences,
             "findings": findings,
@@ -722,6 +888,7 @@ def _audit_entries(
     artifact_payloads = []
     replacement_character_count = 0
     c1_control_count = 0
+    format_character_count = 0
     mojibake_occurrence_count = 0
     used_script_approvals = []
     script_payloads = []
@@ -771,7 +938,11 @@ def _audit_entries(
             and not script_audit["payload_matches_review"]
         ):
             script_payload_mismatch_count += 1
-        if script_audit["findings"] or script_used:
+        if (
+            script_audit["findings"]
+            or script_audit["confusable_skeletons"]
+            or script_used
+        ):
             script_payloads.append(
                 {
                     "id": entry["id"],
@@ -781,10 +952,12 @@ def _audit_entries(
         artifacts = _payload_artifacts(payload)
         replacement_character_count += artifacts["replacement_character_count"]
         c1_control_count += artifacts["c1_control_count"]
+        format_character_count += artifacts["format_character_count"]
         mojibake_occurrence_count += artifacts["mojibake_occurrence_count"]
         if (
             artifacts["replacement_character_count"]
             or artifacts["c1_control_count"]
+            or artifacts["format_character_count"]
             or artifacts["mojibake_occurrence_count"]
         ):
             artifact_payloads.append(
@@ -886,6 +1059,7 @@ def _audit_entries(
             "artifact_payload_count": len(artifact_payloads),
             "replacement_character_count": replacement_character_count,
             "c1_control_count": c1_control_count,
+            "format_character_count": format_character_count,
             "mojibake_occurrence_count": mojibake_occurrence_count,
             "artifact_payloads": artifact_payloads,
             "latin_bearing_payloads": latin_payloads,
@@ -1167,6 +1341,14 @@ def build_leakage_report(
             *display_alias_reports.values(),
         )
     )
+    format_characters = sum(
+        report["format_character_count"]
+        for report in (
+            *game_reports.values(),
+            *raw_reports.values(),
+            *display_alias_reports.values(),
+        )
+    )
     mojibake_occurrences = sum(
         report["mojibake_occurrence_count"]
         for report in (
@@ -1252,7 +1434,9 @@ def build_leakage_report(
             ),
             "near_copy_detection": "SequenceMatcher >= 0.80 with >=4 Latin-script letters",
             "latin_only_detection": "Latin present and no Han/kana in visible payload",
-            "replacement_c1_mojibake_policy": "correction required; no broad exemption",
+            "replacement_c1_format_mojibake_policy": (
+                "correction required; no approvals or broad exemptions"
+            ),
             "mojibake_detection": (
                 "2..4 scalar CP1252 runs that decode as distinct valid UTF-8"
             ),
@@ -1264,9 +1448,17 @@ def build_leakage_report(
                 for locale in ("ja", "zh-Hans")
             },
             "unicode_script_policy": (
-                "Cyrillic, box drawing, private/unassigned scalars, and "
-                "non-allowlisted scripts are forbidden; Greek and Unicode "
-                "math symbols require exact target approvals"
+                "JA permits kana/Han and reviewed Latin/fullwidth spans; "
+                "zh-Hans permits Han and reviewed Latin/fullwidth spans. "
+                "Locale-prohibited kana/Bopomofo, Greek/Cyrillic lookalikes, "
+                "enclosed alphanumerics, and Unicode math require exact "
+                "target approvals. Replacement, C1, format, box drawing, "
+                "private/surrogate/unassigned scalars are unconditionally "
+                "rejected."
+            ),
+            "unicode_confusable_detection": (
+                "NFKC plus explicit enclosed-Latin and Greek/Cyrillic "
+                "ASCII-lookalike skeletons"
             ),
         },
         "inputs": {
@@ -1323,6 +1515,7 @@ def build_leakage_report(
             "artifact_payload_count": artifact_payloads,
             "replacement_character_count": replacement_characters,
             "c1_control_count": c1_controls,
+            "format_character_count": format_characters,
             "mojibake_occurrence_count": mojibake_occurrences,
             "stale_decision_count": len(stale_decisions),
             "stale_decisions": stale_decisions,
@@ -1360,7 +1553,7 @@ def build_leakage_report(
             problems.append(f"{payload_mismatches} review payload mismatch(es)")
         if artifact_payloads:
             problems.append(
-                f"{artifact_payloads} replacement/C1/mojibake payload(s)"
+                f"{artifact_payloads} replacement/C1/format/mojibake payload(s)"
             )
         if stale_decisions:
             problems.append(f"{len(stale_decisions)} stale span decision(s)")
@@ -1372,7 +1565,8 @@ def build_leakage_report(
             )
         if unapproved_script_symbols:
             problems.append(
-                f"{unapproved_script_symbols} unapproved Greek/math symbol(s) "
+                f"{unapproved_script_symbols} unapproved locale-script/"
+                "confusable symbol(s) "
                 f"across {unapproved_script_occurrences} occurrence(s)"
             )
         if script_payload_mismatches:

@@ -50,7 +50,9 @@ from .raw_closure import (
 )
 from .raw_providers import (
     RawProviderError,
+    refresh_ja_raw_provider_origin,
     verify_ja_raw_provider_baserom,
+    verify_ja_raw_provider_origin,
 )
 from .structural_completion import (
     build_structural_completion_evidence,
@@ -520,6 +522,26 @@ def _cmd_verify_ja_raw_baserom(args: argparse.Namespace) -> int:
         baserom_path=args.baserom,
     )
     print(f"verified pinned FE8J baserom slices: {args.baserom}")
+    return 0
+
+
+def _cmd_verify_ja_raw_origin(args: argparse.Namespace) -> int:
+    verify_ja_raw_provider_origin(
+        _load_json(args.ja_raw),
+        source_root=args.ja_raw.parent,
+        baserom_path=args.baserom,
+    )
+    print(f"verified pinned FE8J raw origin proof: {args.baserom}")
+    return 0
+
+
+def _cmd_refresh_ja_raw_origin(args: argparse.Namespace) -> int:
+    proof_path = refresh_ja_raw_provider_origin(
+        _load_json(args.ja_raw),
+        source_root=args.ja_raw.parent,
+        baserom_path=args.baserom,
+    )
+    print(f"refreshed pinned FE8J raw origin proof: {proof_path}")
     return 0
 
 
@@ -1155,6 +1177,43 @@ def build_parser() -> argparse.ArgumentParser:
         default=Path("baserom.gba"),
     )
     baserom_parser.set_defaults(handler=_cmd_verify_ja_raw_baserom)
+
+    origin_parser = subparsers.add_parser(
+        "verify-ja-raw-origin",
+        help=(
+            "maintainer gate: verify committed Japanese raw range proof "
+            "against an authorized FE8J ROM"
+        ),
+    )
+    origin_parser.add_argument(
+        "--ja-raw",
+        type=Path,
+        default=Path("texts/locales/ja/raw.json"),
+    )
+    origin_parser.add_argument(
+        "--baserom",
+        type=Path,
+        required=True,
+    )
+    origin_parser.set_defaults(handler=_cmd_verify_ja_raw_origin)
+
+    refresh_origin_parser = subparsers.add_parser(
+        "refresh-ja-raw-origin",
+        help=(
+            "live-ROM-only refresh of the committed Japanese raw range proof"
+        ),
+    )
+    refresh_origin_parser.add_argument(
+        "--ja-raw",
+        type=Path,
+        default=Path("texts/locales/ja/raw.json"),
+    )
+    refresh_origin_parser.add_argument(
+        "--baserom",
+        type=Path,
+        required=True,
+    )
+    refresh_origin_parser.set_defaults(handler=_cmd_refresh_ja_raw_origin)
 
     final_build_parser = subparsers.add_parser(
         "build-final-mapping",

@@ -299,8 +299,12 @@ descriptor slots.
    baseline map are accepted; comments, extern-only declarations, and nested
    generated manifests are not data. The goal-slice manifest pins the FE8J
    ROM SHA-256, map blob, ROM offsets, lengths, byte hashes, decoded values,
-   and the minimal 23-byte CP932 artifact. Per-provider source paths, symbols,
-   slots, and CP932 bytes are exact, and
+   and the minimal 23-byte CP932 artifact. A separate committed SHA-256 range
+   proof binds those slices to an independently locked known-ROM Merkle root;
+   offline checks consume but cannot refresh it. Maintainers must run
+   `verify-ja-raw-origin --baserom ...`, and `refresh-ja-raw-origin` requires
+   the live pinned FE8J ROM. Per-provider source paths, symbols, slots, and
+   CP932 bytes are exact, and
    symbol-backed decisions cannot omit
    `provider_anchor`. See `docs/game_locale_sources.md` for the offline and
    mandatory raw-closure gate. The shared modern English bundle remains the

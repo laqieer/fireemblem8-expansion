@@ -463,13 +463,20 @@ derive the goal-string ROM offsets. `goal_strings.cp932.bin` contains only the
 three NUL-terminated goal labels (23 bytes); the source manifest pins the
 authorized 16 MiB FE8J ROM SHA-256, each ROM address/offset and length, each
 slice hash and decoded value, and the exact map blob that supplied the
-addresses.
+addresses. `goal_strings.origin.json` independently proves those exact ranges
+against a non-generated SHA-256 Merkle root for the known FE8J ROM. The proof
+contains only the four 8-byte leaves intersecting the ranges plus sibling
+hashes; changing the slice bytes and their manifest hashes cannot produce the
+pinned root.
 
 Normal `check-raw-closure` verification is fully offline and mandatory: it
 recomputes the FE8J commit/tree/blob Git object IDs and SHA-256 hashes,
 traverses every path from the commit root tree to the declared blob OID, and
 extracts each provider from an actual C initializer, assembly label/data body,
 or a baserom slice whose offset is recomputed from the pinned baseline map.
+The normal offline gate also verifies the committed range proof against the
+independently locked ROM root and exact goal offsets. It can consume that
+proof but has no path that regenerates or rebinds it.
 Comments are lexically stripped, extern-only declarations cannot materialize
 values, and nested generated manifests are rejected. The exact
 NUL-terminated CP932 value must match the artifact range, per-slice hash,
@@ -497,10 +504,20 @@ Build or check the machine report:
 python3 -m scripts.localization.game_locales build-raw-closure
 python3 -m scripts.localization.game_locales check-raw-closure
 
-# Optional live confirmation when an authorized FE8J baserom is present:
-python3 -m scripts.localization.game_locales verify-ja-raw-baserom \
+# Required maintainer/final provenance gate:
+python3 -m scripts.localization.game_locales verify-ja-raw-origin \
+  --baserom /path/to/fe8j/baserom.gba
+
+# Refresh only after an intentional proof-source change; no offline mode:
+python3 -m scripts.localization.game_locales refresh-ja-raw-origin \
   --baserom /path/to/fe8j/baserom.gba
 ```
+
+Both live commands require an explicit baserom path, verify the pinned full
+ROM SHA-256 and size, check all three exact offsets and byte slices, recompute
+the independently pinned range root, and compare the canonical proof. A
+normal build remains ROM-free; a changed artifact/manifest with a stale or
+fabricated proof fails the offline closure gate.
 
 The check also verifies every recorded FE8U source path and every declared
 anchor still exists in the declared order. Scoped call sites keep all anchors

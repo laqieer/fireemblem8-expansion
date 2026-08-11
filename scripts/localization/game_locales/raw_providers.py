@@ -12,14 +12,23 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Mapping
 
+from .raw_origin import (
+    ORIGIN_PROOF_FILENAME,
+    PINNED_FE8J_ROM_SHA256 as ORIGIN_PINNED_FE8J_ROM_SHA256,
+    PINNED_FE8J_ROM_SIZE as ORIGIN_PINNED_FE8J_ROM_SIZE,
+    OriginRange,
+    RawOriginError,
+    build_origin_proof,
+    canonical_json_bytes as origin_json_bytes,
+    verify_origin_proof,
+)
+
 JA_RAW_PROVIDER_KIND = "fe8j-raw-provider-catalog"
 JA_RAW_PROVIDER_SCHEMA_VERSION = 6
 PINNED_SOURCE_REPOSITORY = "https://github.com/laqieer/fireemblem8j"
 PINNED_SOURCE_REVISION = "bf424414d075789d757e2f4cd0cea823bfb2862e"
-PINNED_FE8J_ROM_SHA256 = (
-    "44fd343625ab9e6b90f63a80758c15066d526e6873fae91474006314a5ead464"
-)
-PINNED_FE8J_ROM_SIZE = 0x1000000
+PINNED_FE8J_ROM_SHA256 = ORIGIN_PINNED_FE8J_ROM_SHA256
+PINNED_FE8J_ROM_SIZE = ORIGIN_PINNED_FE8J_ROM_SIZE
 PINNED_GOAL_SOURCE_FORMAT = "baserom-slice"
 PINNED_GOAL_OFFSET_SOURCE_PATH = (
     "layout/baseline_syms.d/GoalDisplay_Init-134e6b42.tsv"
@@ -117,6 +126,36 @@ class BaseromSource:
     artifact_sha256: str
     artifact_raw: bytes
     slices: Mapping[str, BaseromSlice]
+
+
+def _origin_ranges(baserom_source: BaseromSource) -> tuple[OriginRange, ...]:
+    return tuple(
+        OriginRange(
+            target=source_slice.target,
+            symbol=source_slice.symbol,
+            rom_offset=source_slice.rom_offset,
+            raw=source_slice.raw,
+        )
+        for source_slice in baserom_source.slices.values()
+    )
+
+
+def _origin_proof_path(snapshot_path: Path) -> Path:
+    return snapshot_path.parent / ORIGIN_PROOF_FILENAME
+
+
+def _verify_committed_origin_proof(
+    baserom_source: BaseromSource,
+    *,
+    snapshot_path: Path,
+) -> bytes:
+    try:
+        return verify_origin_proof(
+            _origin_proof_path(snapshot_path),
+            ranges=_origin_ranges(baserom_source),
+        )
+    except RawOriginError as error:
+        raise RawProviderError(f"ja raw provider origin proof: {error}") from error
 
 
 _C_STRING_RE = re.compile(r'"(?:\\.|[^"\\])*"', re.DOTALL)
@@ -1108,11 +1147,11 @@ def _load_baserom_source(
     )
 
 
-def _verify_baserom_bytes(
+def _read_verified_baserom(
     baserom_source: BaseromSource,
     *,
     baserom_path: Path,
-) -> None:
+) -> bytes:
     try:
         raw = Path(baserom_path).read_bytes()
     except OSError as error:
@@ -1132,6 +1171,7 @@ def _verify_baserom_bytes(
             raise RawProviderError(
                 f"FE8J baserom bytes mismatch for {target}"
             )
+    return raw
 
 
 def load_ja_raw_providers(
@@ -1181,12 +1221,17 @@ def load_ja_raw_providers(
         snapshot,
         snapshot_path=snapshot_path,
     )
+    if baserom_source is not None:
+        _verify_committed_origin_proof(
+            baserom_source,
+            snapshot_path=snapshot_path,
+        )
     if baserom_path is not None:
         if baserom_source is None:
             raise RawProviderError(
                 "ja raw provider catalog has no baserom-backed targets"
             )
-        _verify_baserom_bytes(
+        _read_verified_baserom(
             baserom_source,
             baserom_path=baserom_path,
         )
@@ -1546,11 +1591,114 @@ def verify_ja_raw_provider_baserom(
     source_root: Path,
     baserom_path: Path,
 ) -> None:
+    verify_ja_raw_provider_origin(
+        data,
+        source_root=source_root,
+        baserom_path=baserom_path,
+    )
+
+
+def verify_ja_raw_provider_origin(
+    data: Any,
+    *,
+    source_root: Path,
+    baserom_path: Path,
+) -> None:
     load_ja_raw_providers(
         data,
         source_root=source_root,
         baserom_path=baserom_path,
     )
+    snapshot, snapshot_path = _load_source_snapshot(
+        data,
+        source_root=source_root,
+    )
+    baserom_source = _load_baserom_source(
+        snapshot,
+        snapshot_path=snapshot_path,
+    )
+    if baserom_source is None:
+        raise RawProviderError(
+            "ja raw provider catalog has no baserom-backed targets"
+        )
+    raw = _read_verified_baserom(
+        baserom_source,
+        baserom_path=baserom_path,
+    )
+    try:
+        expected = origin_json_bytes(
+            build_origin_proof(
+                raw,
+                ranges=_origin_ranges(baserom_source),
+            )
+        )
+    except RawOriginError as error:
+        raise RawProviderError(f"ja raw provider origin proof: {error}") from error
+    actual = _verify_committed_origin_proof(
+        baserom_source,
+        snapshot_path=snapshot_path,
+    )
+    if actual != expected:
+        raise RawProviderError(
+            "ja raw provider origin proof differs from live FE8J baserom "
+            "regeneration"
+        )
+
+
+def refresh_ja_raw_provider_origin(
+    data: Any,
+    *,
+    source_root: Path,
+    baserom_path: Path,
+) -> Path:
+    if not isinstance(data, dict):
+        raise RawProviderError("ja raw provider catalog root must be an object")
+    snapshot, snapshot_path = _load_source_snapshot(
+        data,
+        source_root=source_root,
+    )
+    git_source = _load_git_source(
+        snapshot,
+        snapshot_path=snapshot_path,
+        expected_repository=PINNED_SOURCE_REPOSITORY,
+        expected_revision=PINNED_SOURCE_REVISION,
+    )
+    if (
+        data.get("source_revision") != git_source.revision
+        or snapshot.get("source_revision") != git_source.revision
+    ):
+        raise RawProviderError(
+            "ja raw provider source revision differs from pinned Git source"
+        )
+    baserom_source = _load_baserom_source(
+        snapshot,
+        snapshot_path=snapshot_path,
+    )
+    if baserom_source is None:
+        raise RawProviderError(
+            "ja raw provider catalog has no baserom-backed targets"
+        )
+    raw = _read_verified_baserom(
+        baserom_source,
+        baserom_path=baserom_path,
+    )
+    try:
+        proof = origin_json_bytes(
+            build_origin_proof(
+                raw,
+                ranges=_origin_ranges(baserom_source),
+            )
+        )
+    except RawOriginError as error:
+        raise RawProviderError(f"ja raw provider origin proof: {error}") from error
+    proof_path = _origin_proof_path(snapshot_path)
+    proof_path.write_bytes(proof)
+    load_ja_raw_providers(
+        data,
+        source_root=source_root,
+        baserom_path=baserom_path,
+    )
+    return proof_path
 
 
 def resolve_ja_raw_provider(

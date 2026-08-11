@@ -1026,6 +1026,42 @@ class RawSurfaceClosureTests(unittest.TestCase):
                 )
             goal_artifact_path.write_bytes(goal_artifact)
 
+            rebound_catalog = deepcopy(self.ja_raw)
+            rebound_snapshot = deepcopy(original_snapshot)
+            rebound_goal_artifact = (
+                "偽り\0".encode("cp932") + goal_artifact[5:]
+            )
+            rebound_goal_sha256 = hashlib.sha256(
+                rebound_goal_artifact
+            ).hexdigest()
+            rebound_value_sha256 = hashlib.sha256(
+                rebound_goal_artifact[:5]
+            ).hexdigest()
+            goal_artifact_path.write_bytes(rebound_goal_artifact)
+            rebound_snapshot["baserom_source"]["artifact"][
+                "sha256"
+            ] = rebound_goal_sha256
+            rebound_snapshot["baserom_source"]["records"]["0x01C1"].update(
+                {
+                    "bytes_sha256": rebound_value_sha256,
+                    "decoded_value": "偽り",
+                }
+            )
+            rebound_snapshot["providers"]["0x01C1"][
+                "value_sha256"
+            ] = rebound_value_sha256
+            rebound_catalog["providers"]["0x01C1"]["text"] = "偽り"
+            write_catalog(rebound_catalog, rebound_snapshot)
+            with self.assertRaisesRegex(
+                RawProviderError,
+                "origin proof.*ranges differ",
+            ):
+                load_ja_raw_providers(
+                    rebound_catalog,
+                    source_root=fixture,
+                )
+            goal_artifact_path.write_bytes(goal_artifact)
+
             altered_offset_catalog = deepcopy(self.ja_raw)
             altered_offset_snapshot = deepcopy(original_snapshot)
             altered_offset_snapshot["baserom_source"]["records"]["0x01C1"][

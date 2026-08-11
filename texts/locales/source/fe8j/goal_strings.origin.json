@@ -1,0 +1,158 @@
+{
+  "algorithm": {
+    "hash": "sha256",
+    "leaf_count": 2097152,
+    "leaf_domain": "FE8J-RANGE-LEAF-v1\u0000",
+    "leaf_size": 8,
+    "node_domain": "FE8J-RANGE-NODE-v1\u0000",
+    "tree_depth": 21
+  },
+  "kind": "fe8j-raw-origin-range-proof",
+  "leaf_blocks": {
+    "256677": "8e6382e800000000",
+    "256678": "8dc58f49835e815b",
+    "256679": "83930000835e815b",
+    "256680": "8393000050490000"
+  },
+  "proof_nodes": [
+    {
+      "index": 256676,
+      "level": 0,
+      "sha256": "1d700ee61eb083b49e5b8b5a37932a8792d9190c1f95f5a8b73bba1b611737bb"
+    },
+    {
+      "index": 256681,
+      "level": 0,
+      "sha256": "c5b2a9dbb6b2f69fead921a0a48109b5315dd935b536bfc65b826930da6f59cf"
+    },
+    {
+      "index": 128341,
+      "level": 1,
+      "sha256": "6791bac31f090cd70c7549d8c5d92efd3656cc9ec8b60cefc8527e7ebb6ef4c6"
+    },
+    {
+      "index": 64168,
+      "level": 2,
+      "sha256": "78741e917354f21564d47aa507a12e974653227db62efc931370f22e0cef2df8"
+    },
+    {
+      "index": 64171,
+      "level": 2,
+      "sha256": "03ee002a62e53caa0e06d38e3438776b016b863b646c2fed6d58a5f8cea2de82"
+    },
+    {
+      "index": 16043,
+      "level": 4,
+      "sha256": "2e63e215b852c950691fb024f65d5ef578f289e775ca25a452fa46e10b2b895d"
+    },
+    {
+      "index": 8020,
+      "level": 5,
+      "sha256": "0fc98ccfa434e3379026e5ba13d56abe666fd45645fae241f4f69bf865efd234"
+    },
+    {
+      "index": 4011,
+      "level": 6,
+      "sha256": "2960b1ff675eadc77435a918f7a8a4772bed4eb5461cb1e8c985c1ac2b18c4ea"
+    },
+    {
+      "index": 2004,
+      "level": 7,
+      "sha256": "7dabed333bda3622b9f75fd83934eb2f3546762184b200d0b661a11dffdd7d7f"
+    },
+    {
+      "index": 1003,
+      "level": 8,
+      "sha256": "718c7aebddae763be3c9133ba8dd9397ab90f40cf72be1dd5074fd31ec1dfa1e"
+    },
+    {
+      "index": 500,
+      "level": 9,
+      "sha256": "62351edf741f653dc6e96ae158ba35e0bb1982a46062c3542f0450ece606bf79"
+    },
+    {
+      "index": 251,
+      "level": 10,
+      "sha256": "0e5b1b193f57abe3445bb3185b01b853eb3306eccd436235f8ec883be8cd11c3"
+    },
+    {
+      "index": 124,
+      "level": 11,
+      "sha256": "4e88437f2590ebb89bbe6f3ef1c5f551c5ee8e900cfbc7adff101716623b36c0"
+    },
+    {
+      "index": 63,
+      "level": 12,
+      "sha256": "0be11ac5af269e5e779c785e6e65e7bb76611f8dc27325f3b0006e6421168dac"
+    },
+    {
+      "index": 30,
+      "level": 13,
+      "sha256": "2e9de9b28c8f8c488705a438614af72152240851f18e78bb06c9626e9a398b5e"
+    },
+    {
+      "index": 14,
+      "level": 14,
+      "sha256": "b06f490b23ee9bacbbd5f385d22d3846c30b0e2ff50db61ac1de24444d3a9b59"
+    },
+    {
+      "index": 6,
+      "level": 15,
+      "sha256": "d5969df160cdc9819e84c130b9a64c1b80e1eb2009c924f78c0e19b2a9395d38"
+    },
+    {
+      "index": 2,
+      "level": 16,
+      "sha256": "3df22cb917fa291655230b495435a3b67029e5c268212b8ef9c1fac9e882b5a6"
+    },
+    {
+      "index": 0,
+      "level": 17,
+      "sha256": "e1f22b2d0c28c41a10594b26d59fe3be2d2ed1b64ea9b76f1639bc946664aad3"
+    },
+    {
+      "index": 1,
+      "level": 18,
+      "sha256": "060a4384142ff22ca5a0fd4d1769e2f213b7a50e1110efc036781681c9ca5d5a"
+    },
+    {
+      "index": 1,
+      "level": 19,
+      "sha256": "93ae088d665a55352117ca2005be9992f1aaf3c4bf6e4606a546770bdd54db16"
+    },
+    {
+      "index": 1,
+      "level": 20,
+      "sha256": "2d8abbd68aea79a5b27efc49351fbf8f86535cedcd7d641854d95280680ddc3d"
+    }
+  ],
+  "ranges": [
+    {
+      "bytes_sha256": "4042ff58570ad607525ff9dc190de55038764f6999f4f06d486cb16602f8f8e6",
+      "length": 5,
+      "rom_offset": 2053416,
+      "symbol": "GoalString_UnitsLeft",
+      "target": "0x01C1"
+    },
+    {
+      "bytes_sha256": "7bc2fa80d7f7c1c271c529a75c64328b5d7c92fd1df72fcae650ed3fa3064ad1",
+      "length": 7,
+      "rom_offset": 2053436,
+      "symbol": "GoalString_Turn",
+      "target": "0x01C2"
+    },
+    {
+      "bytes_sha256": "55ded65087def01737f9f7d8b44ccafe7f09fb400dd11abb540643287ad01cf3",
+      "length": 11,
+      "rom_offset": 2053424,
+      "symbol": "GoalString_LastTurn",
+      "target": "0x01C3"
+    }
+  ],
+  "rom": {
+    "range_merkle_root": "a12049be5f9a6fc6e2fbb913a03c7a548fcc6e70c540ed1a485c327506b9851b",
+    "sha256": "44fd343625ab9e6b90f63a80758c15066d526e6873fae91474006314a5ead464",
+    "size": 16777216
+  },
+  "schema_version": 1
+}

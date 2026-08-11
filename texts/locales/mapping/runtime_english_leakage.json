@@ -28,6 +28,7 @@
         "audited_count": 99,
         "c1_control_count": 0,
         "exact_copy_count": 0,
+        "format_character_count": 0,
         "latin_bearing_payload_count": 0,
         "latin_bearing_payloads": [],
         "latin_only_count": 0,
@@ -56,6 +57,7 @@
         "audited_count": 21,
         "c1_control_count": 0,
         "exact_copy_count": 0,
+        "format_character_count": 0,
         "latin_bearing_payload_count": 0,
         "latin_bearing_payloads": [],
         "latin_only_count": 0,
@@ -89,6 +91,7 @@
         "audited_count": 3414,
         "c1_control_count": 0,
         "exact_copy_count": 20,
+        "format_character_count": 0,
         "latin_bearing_payload_count": 168,
         "latin_bearing_payloads": [
           {
@@ -5619,6 +5622,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 1,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -5631,6 +5635,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 1,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -5643,6 +5648,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 1,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -5655,6 +5661,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 1,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -5667,6 +5674,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 1,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -5679,6 +5687,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 1,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -5691,6 +5700,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 1,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -5703,6 +5713,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 1,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -5715,6 +5726,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 1,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -5727,6 +5739,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 1,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -5739,6 +5752,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 1,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -5751,6 +5765,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 1,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -5763,6 +5778,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 1,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -5775,6 +5791,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 1,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -5787,6 +5804,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 1,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -5799,6 +5817,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 1,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -5811,6 +5830,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 1,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -5823,6 +5843,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 1,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -5835,6 +5856,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 1,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -5847,6 +5869,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 1,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -5859,6 +5882,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 1,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -5871,6 +5895,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 1,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -5883,6 +5908,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 1,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -5895,6 +5921,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 2,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -5907,6 +5934,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 1,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -5919,6 +5947,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 1,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -5931,6 +5960,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 1,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -5943,6 +5973,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 1,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -5955,6 +5986,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 1,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -5967,6 +5999,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 3,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -5979,6 +6012,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 1,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -5991,6 +6025,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 1,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -6003,6 +6038,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 2,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -6015,6 +6051,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 1,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -6027,6 +6064,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 2,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -6039,6 +6077,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 1,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -6051,6 +6090,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 1,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -6063,6 +6103,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 1,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -6075,6 +6116,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 1,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -6087,6 +6129,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 1,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -6099,6 +6142,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 1,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -6111,6 +6155,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 1,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -6123,6 +6168,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 1,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -6135,6 +6181,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 2,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -6147,6 +6194,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 1,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -6159,6 +6207,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 2,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -6171,6 +6220,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 1,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -6183,6 +6233,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 2,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -6195,6 +6246,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 1,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -6207,6 +6259,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 1,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -6219,6 +6272,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 3,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -6231,6 +6285,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 1,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -6243,6 +6298,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 1,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -6255,6 +6311,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 3,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -6267,6 +6324,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 1,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -6279,6 +6337,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 2,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -6291,6 +6350,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 1,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -6303,6 +6363,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 1,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -6315,6 +6376,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 2,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -6327,6 +6389,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 2,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -6339,6 +6402,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 1,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -6351,6 +6415,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 1,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -6363,6 +6428,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 1,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -6375,6 +6441,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 2,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -6387,6 +6454,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 3,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -6399,6 +6467,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 1,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -6422,6 +6491,7 @@
         "audited_count": 3414,
         "c1_control_count": 0,
         "exact_copy_count": 18,
+        "format_character_count": 0,
         "latin_bearing_payload_count": 164,
         "latin_bearing_payloads": [
           {
@@ -11807,6 +11877,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 1,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -11819,6 +11890,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 1,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -11831,6 +11903,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 1,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -11843,6 +11916,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 1,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -11855,6 +11929,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 1,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -11867,6 +11942,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 1,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -11879,6 +11955,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 1,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -11891,6 +11968,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 1,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -11903,6 +11981,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 1,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -11915,6 +11994,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 1,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -11927,6 +12007,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 1,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -11939,6 +12020,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 1,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -11951,6 +12033,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 1,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -11963,6 +12046,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 1,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -11975,6 +12059,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 1,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -11987,6 +12072,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 1,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -11999,6 +12085,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 1,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -12011,6 +12098,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 1,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -12023,6 +12111,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 1,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -12035,6 +12124,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 1,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -12047,6 +12137,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 1,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -12059,6 +12150,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 1,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -12071,6 +12163,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 1,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -12083,6 +12176,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 2,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -12095,6 +12189,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 1,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -12107,6 +12202,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 1,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -12119,6 +12215,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 1,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -12131,6 +12228,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 1,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -12143,6 +12241,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 1,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -12155,6 +12254,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 3,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -12167,6 +12267,7 @@
           {
             "approved_symbol_count": 1,
             "approved_symbol_occurrence_count": 1,
+            "confusable_skeletons": [],
             "disallowed_symbol_count": 0,
             "disallowed_symbol_occurrence_count": 0,
             "findings": [],
@@ -12255,9 +12356,9 @@
       "sha256": "fa8d8b55aa170a8b29d4950968d42e4e7673f679ddc4f0e3ae5bd5cb7abf1a0c"
     },
     "unicode_script_review": {
-      "byte_count": 47211,
+      "byte_count": 47334,
       "path": "texts/locales/runtime_unicode_script_review.json",
-      "sha256": "9b798d60feb7844933bcbcf89708b910474fdeda2f4a2ebcc0ec66c09554adc0"
+      "sha256": "abd3159eb4ab86175a0d6c6e8fd3bf8dc063ba357417463a720b972b8bdf978d"
     },
     "zh-Hans_authored": {
       "byte_count": 46138,
@@ -12291,10 +12392,10 @@
     "localized_decision_contract": "exact current payload match and reviewed baseline span absent",
     "mojibake_detection": "2..4 scalar CP1252 runs that decode as distinct valid UTF-8",
     "near_copy_detection": "SequenceMatcher >= 0.80 with >=4 Latin-script letters",
-    "replacement_c1_mojibake_policy": "correction required; no broad exemption",
+    "replacement_c1_format_mojibake_policy": "correction required; no approvals or broad exemptions",
+    "unicode_confusable_detection": "NFKC plus explicit enclosed-Latin and Greek/Cyrillic ASCII-lookalike skeletons",
     "unicode_script_allowlist": {
       "ja": [
-        "Bopomofo",
         "Common",
         "Han",
         "Hiragana",
@@ -12303,16 +12404,13 @@
         "Latin"
       ],
       "zh-Hans": [
-        "Bopomofo",
         "Common",
         "Han",
-        "Hiragana",
         "Inherited",
-        "Katakana",
         "Latin"
       ]
     },
-    "unicode_script_policy": "Cyrillic, box drawing, private/unassigned scalars, and non-allowlisted scripts are forbidden; Greek and Unicode math symbols require exact target approvals"
+    "unicode_script_policy": "JA permits kana/Han and reviewed Latin/fullwidth spans; zh-Hans permits Han and reviewed Latin/fullwidth spans. Locale-prohibited kana/Bopomofo, Greek/Cyrillic lookalikes, enclosed alphanumerics, and Unicode math require exact target approvals. Replacement, C1, format, box drawing, private/surrogate/unassigned scalars are unconditionally rejected."
   },
   "raw_surface": {
     "locales": {
@@ -12324,6 +12422,7 @@
         "audited_count": 143,
         "c1_control_count": 0,
         "exact_copy_count": 1,
+        "format_character_count": 0,
         "latin_bearing_payload_count": 1,
         "latin_bearing_payloads": [
           {
@@ -12382,6 +12481,7 @@
         "audited_count": 143,
         "c1_control_count": 0,
         "exact_copy_count": 1,
+        "format_character_count": 0,
         "latin_bearing_payload_count": 1,
         "latin_bearing_payloads": [
           {
@@ -12435,7 +12535,7 @@
     },
     "provider_count": 143
   },
-  "schema_version": 4,
+  "schema_version": 5,
   "summary": {
     "approved_script_symbol_count": 97,
     "approved_span_count": 347,
@@ -12448,6 +12548,7 @@
       "ja",
       "zh-Hans"
     ],
+    "format_character_count": 0,
     "game_payload_count": 6828,
     "localized_span_decision_count": 36,
     "mojibake_occurrence_count": 0,

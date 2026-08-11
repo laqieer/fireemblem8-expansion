@@ -1361,9 +1361,11 @@
   },
   "kind": "runtime-locale-unicode-script-review",
   "policy": {
-    "cyrillic_approvals_forbidden": true,
-    "greek_and_math_require_exact_target_approval": true,
+    "broad_script_whitelist": false,
+    "confusable_skeleton_requires_exact_target_review": true,
+    "format_replacement_c1_approvals_forbidden": true,
+    "locale_prohibited_scripts_require_exact_target_approval": true,
     "script_allowlist_is_locale_scoped": true
   },
-  "schema_version": 1
+  "schema_version": 2
 }

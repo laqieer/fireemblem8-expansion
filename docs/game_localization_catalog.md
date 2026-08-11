@@ -63,8 +63,8 @@ Outputs are generated under `build/game-localization/generated/`:
 - `game_localization_report.json`: entry-level provenance and hashes;
 - `game_localization_budget.json`: coverage, storage, shared-English, and
   profile-specific ROM estimates;
-- `game_localization_latin_span_audit.json`: final materialized Latin-span
-  audit with exact scope/locale/target/span approvals.
+- `game_localization_latin_span_audit.json`: final materialized Latin/script/
+  confusable/artifact audit with exact scope/locale/target approvals.
 
 Every present message is strict UTF-8 plus canonical engine control bytes and
 one trailing NUL. Each descriptor records both compressed byte length and
@@ -130,9 +130,16 @@ remaining acronym/code is approved only for its exact target, locale, span,
 payload hash, occurrence count, reason, and source. Regex or category-wide
 whitelisting is not accepted.
 The companion exact-target
-`texts/locales/runtime_unicode_script_review.json` permits only reviewed
-Greek/math notation; Cyrillic confusables and other non-allowlisted scripts
-cannot be approved.
+`texts/locales/runtime_unicode_script_review.json` enforces locale-specific
+scripts: Japanese permits kana and Han, Simplified Chinese permits Han, and
+both consume only exact-reviewed Latin/fullwidth spans. Bopomofo in either
+locale and kana in `zh-Hans` require exact target approval. NFKC plus explicit
+enclosed-alphanumeric and Greek/Cyrillic lookalike skeletons catch forms such
+as `🅾🅺`, fullwidth English, and cross-script `OK`; there is no broad
+whitelist. Format characters, replacement characters, C1 controls, box
+drawing, private/surrogate/unassigned scalars, and detected mojibake require
+correction and cannot be approved. The audit covers final game, raw-surface,
+and fixed-width display-alias payloads.
 
 The 143-record raw closure is a separate call-site audit:
 
