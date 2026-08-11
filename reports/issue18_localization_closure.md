@@ -620,6 +620,7 @@ make
 make expansion-modern-localization-profile-en-ja-zh-hans MODERN_CONFIG=debug MODERN_ABI=aapcs
 make expansion-modern-localization-profile-en-ja-zh-hans MODERN_CONFIG=release MODERN_ABI=aapcs
 make expansion-modern-localization-runtime-cjk-check MODERN_CONFIG=debug MODERN_ABI=aapcs
+FE8J_BASEROM=/path/to/fe8j/baserom.gba make game-localization-final-check
 make legacy
 ```
 

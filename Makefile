@@ -524,7 +524,13 @@ MAKEDEP = mkdir -p $(DEPS_DIR)/$(dir $*) && $(CPP) $(CPPFLAGS) $< -MM -MG -MT $*
 
 MAKECMDGOALS_NODEP := clean tag $(MODERN_GOALS) \
 	game-localization-validate game-localization-generate \
-	game-localization-check game-localization-test game-localization-budget
+	game-localization-check game-localization-test game-localization-budget \
+	game-localization-leakage-audit game-localization-leakage-check \
+	game-localization-final-authored-check \
+	game-localization-final-mapping-check \
+	game-localization-final-raw-closure-check \
+	game-localization-final-leakage-audit \
+	game-localization-final-font-check game-localization-final-check
 
 ifeq (,$(filter $(MAKECMDGOALS),$(MAKECMDGOALS_NODEP)))
 -include $(addprefix $(DEPS_DIR)/,$(CFILES:.c=.d))

@@ -517,12 +517,15 @@ python3 -m scripts.localization.game_locales refresh-ja-raw-origin \
 ```
 
 The verification command and public final-delivery gate accept `--baserom` or
-`FE8J_BASEROM`; proof refresh still requires an explicit path. Live
-verification reports the verified full-ROM SHA-256, size, and all three exact
-offset/length/slice hashes, recomputes the independently pinned range root,
-and compares the canonical proof. A normal build remains ROM-free; a changed
-artifact/manifest with a stale or fabricated proof fails the offline closure
-gate.
+`FE8J_BASEROM`; proof refresh still requires an explicit path. The final Make
+target is a serialized dependency chain: authored catalogs, final mapping
+with mandatory no-fallback and live-origin flags, offline raw closure, runtime
+leakage audit, then the committed CJK font check. Its leakage report names all
+six semantic expansion keys explicitly. Live verification reports the
+verified full-ROM SHA-256, size, and all three exact offset/length/slice
+hashes, recomputes the independently pinned range root, and compares the
+canonical proof. A normal build remains ROM-free; a changed artifact/manifest
+with a stale or fabricated proof fails the offline closure gate.
 
 The check also verifies every recorded FE8U source path and every declared
 anchor still exists in the declared order. Scoped call sites keep all anchors

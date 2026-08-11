@@ -12,9 +12,10 @@ from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any, Dict, Iterable, Mapping, Optional, Sequence, Tuple
 
+from .english_source import load_english_definitions
 from .model import GameCatalogBuild, GameCatalogError
 
-LEAKAGE_SCHEMA_VERSION = 5
+LEAKAGE_SCHEMA_VERSION = 6
 LEAKAGE_KIND = "runtime-locale-latin-span-audit"
 REVIEW_SCHEMA_VERSION = 1
 REVIEW_KIND = "runtime-locale-latin-span-review"
@@ -32,7 +33,12 @@ DEFAULT_REPORT_PATH = Path(
 )
 OUTPUT_REPORT_NAME = "game_localization_latin_span_audit.json"
 
-_BRACKET_TOKEN_RE = re.compile(r"\[[^\[\]\r\n]+\]")
+_CONTROL_TOKEN_RE = re.compile(r"\[CTRL:[0-9A-F]{4}\]")
+_BRACKET_CANDIDATE_RE = re.compile(r"\[[^\[\]\r\n]+\]")
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+_NAMED_CONTROL_TOKENS = frozenset(
+    load_english_definitions(_REPO_ROOT / "texts/textdefs.txt")
+)
 _LOCALIZED_SCRIPT_RE = re.compile(
     r"[\u3040-\u30FF\u3400-\u9FFF\uF900-\uFAFF]"
 )
@@ -665,8 +671,20 @@ def load_review(path: Path = DEFAULT_REVIEW_PATH) -> ReviewCatalog:
     )
 
 
+def _strip_engine_controls(text: str, replacement: str) -> str:
+    def replace(match: re.Match[str]) -> str:
+        token = match.group(0)
+        if _CONTROL_TOKEN_RE.fullmatch(token):
+            return replacement
+        if token[1:-1] in _NAMED_CONTROL_TOKENS:
+            return replacement
+        return token
+
+    return _BRACKET_CANDIDATE_RE.sub(replace, text)
+
+
 def _visible_text(text: str) -> str:
-    without_tokens = _BRACKET_TOKEN_RE.sub(" ", text)
+    without_tokens = _strip_engine_controls(text, " ")
     normalized = unicodedata.normalize("NFKC", without_tokens)
     return " ".join(normalized.split()).strip()
 
@@ -704,7 +722,7 @@ def _mojibake_spans(text: str) -> Tuple[str, ...]:
 
 
 def _payload_artifacts(text: str) -> Dict[str, Any]:
-    visible = _BRACKET_TOKEN_RE.sub("", text)
+    visible = _strip_engine_controls(text, "")
     replacement_count = visible.count("\uFFFD")
     c1_controls = tuple(
         f"U+{ord(character):04X}"
@@ -763,7 +781,7 @@ def _audit_script_payload(
     target_key: str,
     review: ScriptReviewCatalog,
 ) -> Tuple[Dict[str, Any], Tuple[str, ...]]:
-    visible = _BRACKET_TOKEN_RE.sub("", payload)
+    visible = _strip_engine_controls(payload, "")
     counts = Counter(visible)
     confusable_skeletons = tuple(
         item
@@ -1419,6 +1437,11 @@ def build_leakage_report(
         if any(f"/{locale}/" in target.key for locale in build.enabled_locales)
         for decision in target.spans.values()
     )
+    raw_expansion_keys = sorted(
+        row["expansion_key"]
+        for row in raw_closure["rows"]
+        if row["classification"] == "expansion_message"
+    )
     report = {
         "schema_version": LEAKAGE_SCHEMA_VERSION,
         "kind": LEAKAGE_KIND,
@@ -1426,6 +1449,11 @@ def build_leakage_report(
             "approval_is_exact_target_locale_span": True,
             "broad_category_or_regex_exemption": False,
             "control_stripping_preserves_token_boundaries": True,
+            "control_token_grammar": (
+                "[CTRL:HHHH] with uppercase hexadecimal or an exact "
+                "texts/textdefs.txt named token"
+            ),
+            "unknown_or_malformed_bracket_text_is_visible": True,
             "latin_span_tokenization": (
                 "NFKC then contiguous Unicode letters whose names contain LATIN"
             ),
@@ -1488,7 +1516,9 @@ def build_leakage_report(
             "locales": game_reports,
         },
         "raw_surface": {
-            "provider_count": 143,
+            "provider_count": len(raw_closure["rows"]),
+            "expansion_message_count": len(raw_expansion_keys),
+            "expansion_keys": raw_expansion_keys,
             "locales": raw_reports,
         },
         "display_aliases": {

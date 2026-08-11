@@ -21,6 +21,7 @@ from scripts.localization.game_catalog.leakage import (
     _confusable_skeletons,
     _latin_span_counts,
     _payload_artifacts,
+    _visible_text,
     build_leakage_report,
     canonical_json_bytes,
     input_record,
@@ -202,6 +203,102 @@ class RuntimeLeakageAuditTests(unittest.TestCase):
         )
         classifications, _ = _classify_candidate("最大ＨＰが上昇", "Maximum HP up")
         self.assertEqual(classifications, ())
+
+    def test_only_canonical_control_tokens_are_hidden_from_the_audit(self):
+        self.assertEqual(_visible_text("前[CTRL:0001]後"), "前 後")
+        self.assertEqual(_latin_span_counts("前[CTRL:0001]後"), Counter())
+        self.assertEqual(
+            _latin_span_counts("[LoadFace][FID_Anna]前[X]"),
+            Counter(),
+        )
+
+        visible_cases = (
+            "[MISSING TEXT]",
+            "[TODO]",
+            "[CTRL:000G]",
+            "[CTRL:000a]",
+            "[UnknownControl]",
+            "[unterminated",
+            "stray]",
+        )
+        for payload in visible_cases:
+            with self.subTest(payload=payload):
+                self.assertIn(payload, _visible_text(payload))
+                self.assertTrue(_latin_span_counts(payload))
+
+    def test_literal_bracketed_text_fails_closed_in_game_raw_and_alias_scopes(self):
+        payload = "日本語[MISSING TEXT]"
+
+        target_id = self._unreviewed_game_target("ja")
+        modified_game = self._build_with_game_payload("ja", target_id, payload)
+        with self.assertRaisesRegex(GameCatalogError, "unapproved Latin span"):
+            build_leakage_report(
+                modified_game,
+                review=self.review,
+                script_review=self.script_review,
+                raw_closure=self.raw_closure,
+                expansion_catalogs=self.expansion_catalogs,
+                inputs={},
+            )
+
+        modified_closure = deepcopy(self.raw_closure)
+        modified_expansion = deepcopy(self.expansion_catalogs)
+        expansion_row = next(
+            row
+            for row in modified_closure["rows"]
+            if row["classification"] == "expansion_message"
+        )
+        expansion_key = expansion_row["expansion_key"]
+        modified_expansion["ja"][expansion_key] = payload
+        expansion_row["providers"]["ja"]["text_sha256"] = hashlib.sha256(
+            payload.encode("utf-8")
+        ).hexdigest()
+        with self.assertRaisesRegex(GameCatalogError, "unapproved Latin span"):
+            build_leakage_report(
+                self.build,
+                review=self.review,
+                script_review=self.script_review,
+                raw_closure=modified_closure,
+                expansion_catalogs=modified_expansion,
+                inputs={},
+            )
+
+        aliases = {
+            locale: {
+                surface: dict(entries)
+                for surface, entries in surfaces.items()
+            }
+            for locale, surfaces in self.build.display_aliases.items()
+        }
+        alias_target = next(iter(aliases["ja"]["item_name_56"]))
+        aliases["ja"]["item_name_56"][alias_target] = payload
+        modified_aliases = replace(self.build, display_aliases=aliases)
+        with self.assertRaisesRegex(GameCatalogError, "unapproved Latin span"):
+            build_leakage_report(
+                modified_aliases,
+                review=self.review,
+                script_review=self.script_review,
+                raw_closure=self.raw_closure,
+                expansion_catalogs=self.expansion_catalogs,
+                inputs={},
+            )
+
+    def test_all_raw_expansion_keys_are_named_in_the_audit(self):
+        expected = [
+            "raw_surface.class_change.option_1",
+            "raw_surface.class_change.option_2",
+            "raw_surface.class_change.option_3",
+            "raw_surface.diagnostic.build_timestamp",
+            "raw_surface.unit_action.call_monster",
+            "raw_surface.unit_action.summon",
+        ]
+        self.assertEqual(self.report["raw_surface"]["expansion_message_count"], 6)
+        self.assertEqual(self.report["raw_surface"]["expansion_keys"], expected)
+        for locale in ("ja", "zh-Hans"):
+            self.assertEqual(
+                self.report["raw_surface"]["locales"][locale]["audited_count"],
+                143,
+            )
 
     def test_unicode_latin_and_mojibake_bypasses_are_detected(self):
         self.assertEqual(_latin_span_counts("café"), Counter({"café": 1}))

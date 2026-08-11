@@ -14,6 +14,11 @@ PYTEST_ENV := PYTHONDONTWRITEBYTECODE=1
 .PHONY: game-localization-validate game-localization-generate \
 	game-localization-check game-localization-test game-localization-budget \
 	game-localization-leakage-audit game-localization-leakage-check \
+	game-localization-final-authored-check \
+	game-localization-final-mapping-check \
+	game-localization-final-raw-closure-check \
+	game-localization-final-leakage-audit \
+	game-localization-final-font-check \
 	game-localization-final-check
 
 game-localization-validate:
@@ -48,6 +53,22 @@ game-localization-budget:
 		--out-dir $(GAME_LOCALIZATION_OUT_DIR) \
 		--enabled-locales "$(GAME_LOCALIZATION_ENABLED_LOCALES)"
 
-game-localization-final-check:
+game-localization-final-authored-check:
+	$(PYTEST_ENV) $(PYTHON3) -m scripts.localization.game_locales \
+		check-authored-catalogs
+
+game-localization-final-mapping-check: game-localization-final-authored-check
 	$(PYTEST_ENV) $(PYTHON3) -m scripts.localization.game_locales \
 		check-final-mapping --require-no-fallback --require-live-origin
+
+game-localization-final-raw-closure-check: game-localization-final-mapping-check
+	$(PYTEST_ENV) $(PYTHON3) -m scripts.localization.game_locales \
+		check-raw-closure
+
+game-localization-final-leakage-audit: game-localization-final-raw-closure-check
+	$(PYTEST_ENV) $(PYTHON3) -m scripts.localization.game_catalog audit-leakage
+
+game-localization-final-font-check: game-localization-final-leakage-audit
+	$(MAKE) --no-print-directory -f cjk_fonts.mk cjk-fonts-check
+
+game-localization-final-check: game-localization-final-font-check

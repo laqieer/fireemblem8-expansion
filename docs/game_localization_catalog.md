@@ -13,6 +13,7 @@ make game-localization-check
 make game-localization-test
 make game-localization-budget
 make game-localization-leakage-check
+FE8J_BASEROM=/path/to/fe8j/baserom.gba make game-localization-final-check
 ```
 
 These targets generate both CJK bundles by default. Every generated CJK
@@ -125,7 +126,11 @@ Generation also runs the leakage gate. The committed
 audited with zero unapproved Latin spans or disallowed Unicode scripts.
 Controls are replaced by boundaries
 before NFKC tokenization, so Latin inside mixed Japanese/Chinese text cannot
-bypass the gate. Exact reviewed decisions are committed in
+bypass the gate. Only canonical `[CTRL:HHHH]` controls or exact named engine
+tokens defined by `texts/textdefs.txt` are stripped. Literal, unknown, or
+malformed bracket text such as `[MISSING TEXT]`, `[TODO]`, or `[CTRL:000G]`
+remains visible and must pass the same Latin/script audit. Exact reviewed
+decisions are committed in
 `texts/locales/runtime_latin_span_review.json`; every remaining acronym/code
 is approved only for its exact target, locale, span, payload hash, occurrence
 count, reason, and source. Regex or category-wide whitelisting is not
@@ -141,6 +146,10 @@ whitelist. Format characters, replacement characters, C1 controls, box
 drawing, private/surrogate/unassigned scalars, and detected mojibake require
 correction and cannot be approved. The audit covers final game, raw-surface,
 and fixed-width display-alias payloads.
+Its raw-surface section names all six semantic expansion keys explicitly, in
+addition to auditing all 143 providers for both locales, so a non-Latin
+semantic payload cannot disappear from the evidence merely because it has no
+review row.
 
 The 143-record raw closure is a separate call-site audit:
 
@@ -152,6 +161,13 @@ See `docs/game_locale_sources.md` for its 137 game-ID and 6 semantic expansion
 providers. The normal command also performs the offline commit/tree/path/blob,
 exact-symbol, and exact-slot checks. All 143 raw records have Japanese and
 Chinese payloads with zero fallback, exclusion, or unresolved record.
+
+The advertised final-delivery target is a serialized Make dependency chain,
+safe under `make -j`: authored-catalog freshness, deterministic final mapping
+with both `--require-no-fallback` and `--require-live-origin`, offline raw
+closure, the runtime leakage audit, and the committed CJK font check. It
+requires a legally obtained FE8J ROM through `FE8J_BASEROM`; omitting it is a
+hard failure rather than a fallback to committed provenance.
 
 Modern CJK consumers use `TextUtf8_Next` for low controls,
 `[LoadFace]` plus FID, extended controls and arguments, U+3000, strict UTF-8,

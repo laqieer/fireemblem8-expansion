@@ -291,7 +291,7 @@ descriptor slots.
    python3 -m scripts.localization.game_locales build-authored-catalogs
    python3 -m scripts.localization.game_locales check-authored-catalogs
    python3 -m scripts.localization.game_locales check-final-mapping \
-     --require-no-fallback
+     --require-no-fallback --require-live-origin
    ```
 
    The production compressed catalog is 3,414/3,414 present for both `ja` and
@@ -309,7 +309,9 @@ descriptor slots.
    offline checks consume but cannot refresh it. Maintainers must run
    `verify-ja-raw-origin --baserom ...` or
    `FE8J_BASEROM=... make game-localization-final-check`; the public final
-   gate reports the verified ROM SHA-256 and exact slices.
+   gate serially checks authored catalogs, no-fallback/live-origin final
+   mapping, raw-surface closure, runtime leakage, and committed CJK fonts. It
+   reports the verified ROM SHA-256 and exact slices.
    `refresh-ja-raw-origin` requires the live pinned FE8J ROM. Per-provider
    source paths, symbols, slots, and
    CP932 bytes are exact, and

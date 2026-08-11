@@ -31,6 +31,41 @@
 #endif
 
 #ifdef MODERN
+enum
+{
+    XMAP_PROGRESS_LABEL_BUFFER_SIZE = 0x40,
+    XMAP_PROGRESS_SUFFIX_BUFFER_SIZE = 0x10,
+};
+
+static void CopyXMapProgressText(char * dest, int capacity, const char * src)
+{
+    int used = 0;
+
+    if (capacity <= 0)
+        return;
+
+    while (*src != '\0')
+    {
+        const char * next;
+        u32 characterWidth;
+        int byteCount;
+
+        next = GetCharTextLen(src, &characterWidth);
+        if (next <= src)
+            break;
+        (void)characterWidth;
+
+        byteCount = next - src;
+        if (byteCount > capacity - used - 1)
+            break;
+
+        while (src < next)
+            dest[used++] = *src++;
+    }
+
+    dest[used] = '\0';
+}
+
 static void DrawXMapProgressLabel(struct Text * th, const char * str, int maxWidth)
 {
     int width = 0;
@@ -247,17 +282,26 @@ void PutXMapProgressPercent(struct Text * th, const char * str, int number)
 
 #ifdef MODERN
     {
-        const char * suffix = GetStringFromIndex(0x5AE);
-        int valueX = SioGetProgressValueX(
+        char label[XMAP_PROGRESS_LABEL_BUFFER_SIZE];
+        char suffix[XMAP_PROGRESS_SUFFIX_BUFFER_SIZE];
+        int valueX;
+        int labelMaxWidth;
+
+        CopyXMapProgressText(label, (int)sizeof(label), str);
+        CopyXMapProgressText(
+            suffix,
+            (int)sizeof(suffix),
+            GetStringFromIndex(0x5AE));
+        valueX = SioGetProgressValueX(
             th->tile_width * 8,
-            GetStringTextLen(str),
+            GetStringTextLen(label),
             GetStringTextLen(suffix));
-        int labelMaxWidth = valueX - 20;
+        labelMaxWidth = valueX - 20;
 
         if (labelMaxWidth < 0)
             labelMaxWidth = 0;
 
-        DrawXMapProgressLabel(th, str, labelMaxWidth);
+        DrawXMapProgressLabel(th, label, labelMaxWidth);
         SioDrawNumber(th, valueX, 2, number);
         Text_InsertDrawString(th, valueX + 8, 0, suffix);
     }

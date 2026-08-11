@@ -16,6 +16,9 @@ from scripts.localization.game_locales.ending_metrics import (
 
 ROOT = Path(__file__).resolve().parents[3]
 HOST_DRIVER = Path(__file__).with_name("host_sio_progress_layout_driver.c")
+HOST_XMAP_DRIVER = Path(__file__).with_name(
+    "host_sio_xmap_transfer_driver.c"
+)
 
 
 class SioLocalizationTests(unittest.TestCase):
@@ -100,9 +103,13 @@ class SioLocalizationTests(unittest.TestCase):
 
     def test_progress_layout_measures_labels_and_bounds_the_value_column(self):
         self.assertIn("SioGetProgressValueX(", self.source)
-        self.assertIn("GetStringTextLen(str)", self.source)
+        self.assertIn("GetStringTextLen(label)", self.source)
         self.assertIn("GetStringTextLen(suffix)", self.source)
-        self.assertIn("DrawXMapProgressLabel(th, str, labelMaxWidth)", self.source)
+        self.assertIn(
+            "DrawXMapProgressLabel(th, label, labelMaxWidth)",
+            self.source,
+        )
+        self.assertIn("CopyXMapProgressText(", self.source)
         self.assertIn(
             "int maxValueX = textWidth - suffixWidth - PROGRESS_SUFFIX_OFFSET;",
             self.main_source,
@@ -220,6 +227,96 @@ class SioLocalizationTests(unittest.TestCase):
                 result.returncode,
                 0,
                 result.stdout + result.stderr,
+            )
+
+    def test_xmap_transfer_path_preserves_shared_buffer_label_in_every_locale(self):
+        cc = shutil.which("gcc") or shutil.which("cc")
+        if cc is None:
+            self.skipTest("no host C compiler available")
+
+        build_root = ROOT / "build"
+        build_root.mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="sio-xmap-transfer-",
+            dir=build_root,
+        ) as work_dir_name:
+            work_dir = Path(work_dir_name)
+            (work_dir / "expansion_msg_ids.h").write_text(
+                "#define EXP_MSG_SIO_TRANSFER_SENDING 1\n"
+                "#define EXP_MSG_SIO_TRANSFER_RECEIVING 2\n",
+                encoding="utf-8",
+            )
+            include_flags = [
+                "-I",
+                str(work_dir),
+                "-I",
+                str(ROOT / "include"),
+            ]
+            common_flags = [
+                cc,
+                "-c",
+                "-w",
+                "-DMODERN",
+                "-DFE8_EXPANSION_ENABLED_LOCALE_MASK=0",
+                "-ffunction-sections",
+                "-fdata-sections",
+                *include_flags,
+            ]
+            commands = (
+                [
+                    *common_flags,
+                    str(ROOT / "src/sio_event.c"),
+                    "-o",
+                    str(work_dir / "sio_event.o"),
+                ],
+                [
+                    *common_flags,
+                    str(ROOT / "src/sio_main.c"),
+                    "-o",
+                    str(work_dir / "sio_main.o"),
+                ],
+                [
+                    *common_flags,
+                    str(HOST_XMAP_DRIVER),
+                    "-o",
+                    str(work_dir / "driver.o"),
+                ],
+                [
+                    cc,
+                    "-Wl,--gc-sections",
+                    str(work_dir / "sio_event.o"),
+                    str(work_dir / "sio_main.o"),
+                    str(work_dir / "driver.o"),
+                    "-o",
+                    str(work_dir / "test"),
+                ],
+            )
+            for command in commands:
+                result = subprocess.run(
+                    command,
+                    cwd=ROOT,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(
+                    result.returncode,
+                    0,
+                    result.stdout + result.stderr,
+                )
+            result = subprocess.run(
+                [str(work_dir / "test")],
+                cwd=ROOT,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(
+                result.returncode,
+                0,
+                result.stdout + result.stderr,
+            )
+            self.assertIn(
+                "SIO_XMAP_TRANSFER_SHARED_BUFFER_TEST: PASS",
+                result.stdout,
             )
 
 
