@@ -459,7 +459,7 @@ corrections/expansion catalog entries, and raw symbols resolved from the 119
 materialized target+symbol records in `ja/raw.json`. Raw-symbol schema v6
 vendors and verifies one immutable FE8J Git source: four real
 initializer/data blobs plus the committed baseline-symbol map used only to
-derive the goal-string ROM offsets. `goal_strings.cp932.bin` contains only the
+derive the goal-string ROM offsets. `goal_strings.cp932` contains only the
 three NUL-terminated goal labels (23 bytes); the source manifest pins the
 authorized 16 MiB FE8J ROM SHA-256, each ROM address/offset and length, each
 slice hash and decoded value, and the exact map blob that supplied the
@@ -504,20 +504,25 @@ Build or check the machine report:
 python3 -m scripts.localization.game_locales build-raw-closure
 python3 -m scripts.localization.game_locales check-raw-closure
 
-# Required maintainer/final provenance gate:
+# Required maintainer/final provenance gate (explicit path):
 python3 -m scripts.localization.game_locales verify-ja-raw-origin \
   --baserom /path/to/fe8j/baserom.gba
+
+# Equivalent public final-delivery gate via environment:
+FE8J_BASEROM=/path/to/fe8j/baserom.gba make game-localization-final-check
 
 # Refresh only after an intentional proof-source change; no offline mode:
 python3 -m scripts.localization.game_locales refresh-ja-raw-origin \
   --baserom /path/to/fe8j/baserom.gba
 ```
 
-Both live commands require an explicit baserom path, verify the pinned full
-ROM SHA-256 and size, check all three exact offsets and byte slices, recompute
-the independently pinned range root, and compare the canonical proof. A
-normal build remains ROM-free; a changed artifact/manifest with a stale or
-fabricated proof fails the offline closure gate.
+The verification command and public final-delivery gate accept `--baserom` or
+`FE8J_BASEROM`; proof refresh still requires an explicit path. Live
+verification reports the verified full-ROM SHA-256, size, and all three exact
+offset/length/slice hashes, recomputes the independently pinned range root,
+and compares the canonical proof. A normal build remains ROM-free; a changed
+artifact/manifest with a stale or fabricated proof fails the offline closure
+gate.
 
 The check also verifies every recorded FE8U source path and every declared
 anchor still exists in the declared order. Scoped call sites keep all anchors

@@ -155,6 +155,9 @@ class TestRestrictedSourceAssetAllowance(ArtifactGuardRepoTestCase):
         self.write("assets/x.png", "png-shaped")
         self.write("graphics/tiles/x.map.bin", "map-bin-shaped")
         self.write("graphics/tiles/x.bin", "plain-bin-shaped")
+        self.write("texts/locales/source/fe8j/proof.cp932", "typed-proof")
+        untyped_proof = "texts/locales/source/fe8j/proof.cp932" + ".bin"
+        self.write(untyped_proof, "untyped-proof")
         self.write("preview/shot.png", "png-shaped")
         self.write("sound/theme.mid", "midi-shaped")
         self.write("other/theme.mid", "midi-shaped")
@@ -165,9 +168,11 @@ class TestRestrictedSourceAssetAllowance(ArtifactGuardRepoTestCase):
         rejected = {line.split(":")[0] for line in lines}
         self.assertIn("assets/x.png", rejected)
         self.assertIn("graphics/tiles/x.bin", rejected)
+        self.assertIn(untyped_proof, rejected)
         self.assertIn("other/theme.mid", rejected)
         self.assertNotIn("graphics/tiles/x.png", rejected)
         self.assertNotIn("graphics/tiles/x.map.bin", rejected)
+        self.assertNotIn("texts/locales/source/fe8j/proof.cp932", rejected)
         self.assertNotIn("preview/shot.png", rejected)
         self.assertNotIn("sound/theme.mid", rejected)
 

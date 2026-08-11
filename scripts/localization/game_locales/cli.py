@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -78,6 +79,34 @@ def _load_json(path: Path):
         return json.loads(Path(path).read_text(encoding="utf-8"))
     except json.JSONDecodeError as error:
         raise MappingError(f"{path}: invalid JSON: {error}") from error
+
+
+def _resolve_live_baserom(path: Path | None, *, required: bool) -> Path | None:
+    if path is not None:
+        return path
+    environment_path = os.environ.get("FE8J_BASEROM")
+    if environment_path:
+        return Path(environment_path)
+    if required:
+        raise RawProviderError(
+            "authorized FE8J ROM is required: pass --baserom PATH or set "
+            "FE8J_BASEROM"
+        )
+    return None
+
+
+def _print_live_origin_verification(path: Path, verification) -> None:
+    slices = ",".join(
+        f"{target}@0x{source_slice.rom_offset:08X}+{source_slice.length}:"
+        f"{source_slice.bytes_sha256}"
+        for target, source_slice in sorted(verification.slices.items())
+    )
+    print(
+        "verified live FE8J raw origin: "
+        f"path={path} rom_sha256={verification.rom_sha256} "
+        f"rom_size={verification.rom_size} slices={len(verification.slices)} "
+        f"[{slices}]"
+    )
 
 
 def _cmd_import(args: argparse.Namespace) -> int:
@@ -516,22 +545,23 @@ def _cmd_check_raw_closure(args: argparse.Namespace) -> int:
 
 
 def _cmd_verify_ja_raw_baserom(args: argparse.Namespace) -> int:
-    verify_ja_raw_provider_baserom(
+    verification = verify_ja_raw_provider_baserom(
         _load_json(args.ja_raw),
         source_root=args.ja_raw.parent,
         baserom_path=args.baserom,
     )
-    print(f"verified pinned FE8J baserom slices: {args.baserom}")
+    _print_live_origin_verification(args.baserom, verification)
     return 0
 
 
 def _cmd_verify_ja_raw_origin(args: argparse.Namespace) -> int:
-    verify_ja_raw_provider_origin(
+    baserom_path = _resolve_live_baserom(args.baserom, required=True)
+    verification = verify_ja_raw_provider_origin(
         _load_json(args.ja_raw),
         source_root=args.ja_raw.parent,
-        baserom_path=args.baserom,
+        baserom_path=baserom_path,
     )
-    print(f"verified pinned FE8J raw origin proof: {args.baserom}")
+    _print_live_origin_verification(baserom_path, verification)
     return 0
 
 
@@ -630,6 +660,17 @@ def _cmd_check_final_mapping(args: argparse.Namespace) -> int:
         )
     if args.require_no_fallback:
         require_no_fallback(artifacts["queue"], mapping=artifacts["mapping"])
+    baserom_path = _resolve_live_baserom(
+        args.baserom,
+        required=args.require_live_origin,
+    )
+    if baserom_path is not None:
+        verification = verify_ja_raw_provider_origin(
+            _load_json(args.ja_raw),
+            source_root=args.ja_raw.parent,
+            baserom_path=baserom_path,
+        )
+        _print_live_origin_verification(baserom_path, verification)
     summary = artifacts["report"]["summary"]
     print(
         "final FE8U mapping artifacts match committed bytes: "
@@ -1193,7 +1234,7 @@ def build_parser() -> argparse.ArgumentParser:
     origin_parser.add_argument(
         "--baserom",
         type=Path,
-        required=True,
+        help="authorized FE8J ROM path (defaults to FE8J_BASEROM)",
     )
     origin_parser.set_defaults(handler=_cmd_verify_ja_raw_origin)
 
@@ -1231,6 +1272,19 @@ def build_parser() -> argparse.ArgumentParser:
         "--require-no-fallback",
         action="store_true",
         help="final-delivery gate: reject any remaining authored queue target",
+    )
+    final_check_parser.add_argument(
+        "--baserom",
+        type=Path,
+        help="authorized FE8J ROM path (defaults to FE8J_BASEROM)",
+    )
+    final_check_parser.add_argument(
+        "--require-live-origin",
+        action="store_true",
+        help=(
+            "final-delivery gate: require and verify the authorized FE8J ROM "
+            "through --baserom or FE8J_BASEROM"
+        ),
     )
     final_check_parser.set_defaults(handler=_cmd_check_final_mapping)
 

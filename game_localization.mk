@@ -13,7 +13,8 @@ PYTEST_ENV := PYTHONDONTWRITEBYTECODE=1
 
 .PHONY: game-localization-validate game-localization-generate \
 	game-localization-check game-localization-test game-localization-budget \
-	game-localization-leakage-audit game-localization-leakage-check
+	game-localization-leakage-audit game-localization-leakage-check \
+	game-localization-final-check
 
 game-localization-validate:
 	$(PYTEST_ENV) $(PYTHON3) -m scripts.localization.game_catalog validate \
@@ -46,3 +47,7 @@ game-localization-budget:
 	$(PYTEST_ENV) $(PYTHON3) -m scripts.localization.game_catalog budget \
 		--out-dir $(GAME_LOCALIZATION_OUT_DIR) \
 		--enabled-locales "$(GAME_LOCALIZATION_ENABLED_LOCALES)"
+
+game-localization-final-check:
+	$(PYTEST_ENV) $(PYTHON3) -m scripts.localization.game_locales \
+		check-final-mapping --require-no-fallback --require-live-origin

@@ -779,7 +779,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 718,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "gMenuStr_12C",
@@ -832,7 +832,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 723,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "gMenuStr_124",
@@ -885,7 +885,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 647,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "gMenuStr_14C",
@@ -938,7 +938,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 652,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "gMenuStr_144",
@@ -991,7 +991,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 657,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "gMenuStr_13C",
@@ -1044,7 +1044,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 662,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "gMenuStr_134",
@@ -1097,7 +1097,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 445,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "gMenuStr_25C",
@@ -1233,7 +1233,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 452,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "gMenuStr_24C",
@@ -1286,7 +1286,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 615,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "gMenuStr_244",
@@ -1339,7 +1339,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 622,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "gMenuStr_238",
@@ -1392,7 +1392,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 457,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "gMenuStr_22C",
@@ -1445,7 +1445,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 466,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "gMenuStr_224",
@@ -1498,7 +1498,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 473,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "gMenuStr_21C",
@@ -1669,7 +1669,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 631,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "gMenuStr_200",
@@ -1722,7 +1722,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 480,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "gMenuStr_1F8",
@@ -1775,7 +1775,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 487,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "gMenuStr_1F0",
@@ -1828,7 +1828,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 494,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "gMenuStr_1E8",
@@ -1881,7 +1881,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 501,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "gMenuStr_1E0",
@@ -1934,7 +1934,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 508,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "gMenuStr_1D8",
@@ -1987,7 +1987,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 513,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "gMenuStr_1CC",
@@ -2040,7 +2040,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 522,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "gMenuStr_1C0",
@@ -2093,7 +2093,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 531,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "gMenuStr_1B4",
@@ -2146,7 +2146,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 540,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "gMenuStr_1A8",
@@ -2199,7 +2199,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 549,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "gMenuStr_1A0",
@@ -2252,7 +2252,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 556,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "gMenuStr_194",
@@ -2305,7 +2305,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 565,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "gMenuStr_188",
@@ -2358,7 +2358,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 574,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "gMenuStr_17C",
@@ -2411,7 +2411,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 583,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "gMenuStr_170",
@@ -2464,7 +2464,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 592,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "gMenuStr_168",
@@ -2517,7 +2517,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 599,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "gMenuStr_15C",
@@ -2570,7 +2570,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 640,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "gMenuStr_154",
@@ -2623,7 +2623,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 669,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "gMenuStr_29C",
@@ -2676,7 +2676,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 608,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "gMenuStr_294",
@@ -2729,7 +2729,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 683,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "gMenuStr_28C",
@@ -2782,7 +2782,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 697,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "gMenuStr_284",
@@ -2835,7 +2835,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 676,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "gMenuStr_27C",
@@ -2888,7 +2888,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 690,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "gMenuStr_274",
@@ -2941,7 +2941,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 704,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "gMenuStr_26C",
@@ -2994,7 +2994,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 711,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "gMenuStr_264",
@@ -3342,7 +3342,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 350,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "sGmapRouteMenuText",
@@ -3395,7 +3395,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 357,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "sGmapRouteMenuText",
@@ -3448,7 +3448,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 364,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "sGmapRouteMenuText",
@@ -3501,7 +3501,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 371,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "sGmapRouteMenuText",
@@ -3554,7 +3554,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 378,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "sGmapRouteMenuText",
@@ -3607,7 +3607,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 385,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "sGmapRouteMenuText",
@@ -3660,7 +3660,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 400,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "sGmapRouteMenuText",
@@ -3713,7 +3713,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 415,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "sGmapRouteMenuText",
@@ -3766,7 +3766,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 430,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "sGmapRouteMenuText",
@@ -3819,7 +3819,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 33,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
@@ -3872,7 +3872,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 38,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
@@ -3925,7 +3925,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 43,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
@@ -3978,7 +3978,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 46,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
@@ -4083,7 +4083,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 56,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
@@ -4136,7 +4136,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 61,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
@@ -4189,7 +4189,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 68,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
@@ -4242,7 +4242,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 75,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
@@ -4295,7 +4295,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 82,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
@@ -4348,7 +4348,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 89,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
@@ -4401,7 +4401,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 92,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
@@ -4454,7 +4454,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 97,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
@@ -4507,7 +4507,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 100,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
@@ -4560,7 +4560,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 107,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
@@ -4613,7 +4613,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 112,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
@@ -4666,7 +4666,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 117,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
@@ -4719,7 +4719,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 120,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
@@ -4772,7 +4772,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 123,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
@@ -4825,7 +4825,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 130,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
@@ -4878,7 +4878,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 133,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
@@ -4931,7 +4931,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 140,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
@@ -4984,7 +4984,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 143,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
@@ -5037,7 +5037,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 146,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
@@ -5090,7 +5090,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 149,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
@@ -5143,7 +5143,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 152,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
@@ -5196,7 +5196,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 155,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
@@ -5249,7 +5249,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 158,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
@@ -5302,7 +5302,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 161,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
@@ -5355,7 +5355,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 170,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
@@ -5408,7 +5408,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 173,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
@@ -5461,7 +5461,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 176,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
@@ -5514,7 +5514,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 181,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
@@ -5567,7 +5567,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 188,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
@@ -5620,7 +5620,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 193,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
@@ -5673,7 +5673,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 198,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
@@ -5726,7 +5726,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 201,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
@@ -5779,7 +5779,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 206,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
@@ -5832,7 +5832,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 211,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
@@ -5885,7 +5885,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 216,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
@@ -5938,7 +5938,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 223,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
@@ -5991,7 +5991,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 230,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
@@ -6148,7 +6148,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 251,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
@@ -6201,7 +6201,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 256,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
@@ -6254,7 +6254,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 261,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
@@ -6307,7 +6307,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 266,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
@@ -6360,7 +6360,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 271,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
@@ -6413,7 +6413,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 280,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
@@ -6466,7 +6466,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 283,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
@@ -6519,7 +6519,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 286,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
@@ -6572,7 +6572,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 291,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
@@ -6625,7 +6625,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 298,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
@@ -6678,7 +6678,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 301,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
@@ -6731,7 +6731,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 306,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
@@ -6784,7 +6784,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 311,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
@@ -6837,7 +6837,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 316,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
@@ -6890,7 +6890,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 321,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
@@ -6943,7 +6943,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 324,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
@@ -6996,7 +6996,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 327,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
@@ -7049,7 +7049,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 330,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
@@ -7102,7 +7102,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 333,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
@@ -7155,7 +7155,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 338,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
@@ -7208,7 +7208,7 @@
             "kind": "pinned_git_source_artifact",
             "offset": 343,
             "provider_values_artifact": {
-              "path": "raw_provider_values.cp932.bin",
+              "path": "raw_provider_values.cp932",
               "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
             },
             "source_anchor": "JapaneseTerrainNames",
@@ -7273,7 +7273,7 @@
             "kind": "pinned_baserom_slice",
             "offset": 0,
             "provider_values_artifact": {
-              "path": "goal_strings.cp932.bin",
+              "path": "goal_strings.cp932",
               "sha256": "3353330b5642569520fcef4ab0656b35459ba15bfa1cd0d9633fe7af06ae677e"
             },
             "rom_address": "0x081F5528",
@@ -7341,7 +7341,7 @@
             "kind": "pinned_baserom_slice",
             "offset": 12,
             "provider_values_artifact": {
-              "path": "goal_strings.cp932.bin",
+              "path": "goal_strings.cp932",
               "sha256": "3353330b5642569520fcef4ab0656b35459ba15bfa1cd0d9633fe7af06ae677e"
             },
             "rom_address": "0x081F5530",
@@ -7409,7 +7409,7 @@
             "kind": "pinned_baserom_slice",
             "offset": 5,
             "provider_values_artifact": {
-              "path": "goal_strings.cp932.bin",
+              "path": "goal_strings.cp932",
               "sha256": "3353330b5642569520fcef4ab0656b35459ba15bfa1cd0d9633fe7af06ae677e"
             },
             "rom_address": "0x081F553C",

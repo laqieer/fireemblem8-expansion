@@ -488,6 +488,13 @@ def _require_relative_path(value: Any, field: str) -> str:
     return value
 
 
+def _require_cp932_artifact_path(value: Any, field: str) -> str:
+    path = _require_relative_path(value, field)
+    if not path.endswith(".cp932"):
+        raise RawProviderError(f"{field} must use the typed .cp932 extension")
+    return path
+
+
 def _load_source_snapshot(
     data: Mapping[str, Any],
     *,
@@ -796,7 +803,7 @@ def _load_git_source(
             "ja raw provider provider_values_artifact encoding must be "
             "cp932-nul-terminated"
         )
-    artifact_path = _require_relative_path(
+    artifact_path = _require_cp932_artifact_path(
         artifact_specification["path"],
         "ja raw provider provider_values_artifact.path",
     )
@@ -955,7 +962,7 @@ def _load_baserom_source(
         raise RawProviderError(
             "ja raw provider baserom artifact metadata is invalid"
         )
-    artifact_path = _require_relative_path(
+    artifact_path = _require_cp932_artifact_path(
         artifact["path"],
         "ja raw provider baserom artifact path",
     )
@@ -1590,8 +1597,8 @@ def verify_ja_raw_provider_baserom(
     *,
     source_root: Path,
     baserom_path: Path,
-) -> None:
-    verify_ja_raw_provider_origin(
+) -> BaseromSource:
+    return verify_ja_raw_provider_origin(
         data,
         source_root=source_root,
         baserom_path=baserom_path,
@@ -1603,7 +1610,7 @@ def verify_ja_raw_provider_origin(
     *,
     source_root: Path,
     baserom_path: Path,
-) -> None:
+) -> BaseromSource:
     load_ja_raw_providers(
         data,
         source_root=source_root,
@@ -1643,6 +1650,7 @@ def verify_ja_raw_provider_origin(
             "ja raw provider origin proof differs from live FE8J baserom "
             "regeneration"
         )
+    return baserom_source
 
 
 def refresh_ja_raw_provider_origin(

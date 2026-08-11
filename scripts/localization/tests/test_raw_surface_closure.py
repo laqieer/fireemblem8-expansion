@@ -947,6 +947,42 @@ class RawSurfaceClosureTests(unittest.TestCase):
 
         original_snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
         try:
+            wrong_provider_extension_catalog = deepcopy(self.ja_raw)
+            wrong_provider_extension_snapshot = deepcopy(original_snapshot)
+            wrong_provider_extension_snapshot["provider_values_artifact"][
+                "path"
+            ] = "raw_provider_values.cp932" + ".bin"
+            write_catalog(
+                wrong_provider_extension_catalog,
+                wrong_provider_extension_snapshot,
+            )
+            with self.assertRaisesRegex(
+                RawProviderError,
+                "must use the typed .cp932 extension",
+            ):
+                load_ja_raw_providers(
+                    wrong_provider_extension_catalog,
+                    source_root=fixture,
+                )
+
+            wrong_goal_extension_catalog = deepcopy(self.ja_raw)
+            wrong_goal_extension_snapshot = deepcopy(original_snapshot)
+            wrong_goal_extension_snapshot["baserom_source"]["artifact"][
+                "path"
+            ] = "goal_strings.cp932" + ".bin"
+            write_catalog(
+                wrong_goal_extension_catalog,
+                wrong_goal_extension_snapshot,
+            )
+            with self.assertRaisesRegex(
+                RawProviderError,
+                "must use the typed .cp932 extension",
+            ):
+                load_ja_raw_providers(
+                    wrong_goal_extension_catalog,
+                    source_root=fixture,
+                )
+
             swapped_catalog = deepcopy(self.ja_raw)
             swapped_snapshot = deepcopy(original_snapshot)
             first = "0x01C4"
@@ -1255,14 +1291,14 @@ class RawSurfaceClosureTests(unittest.TestCase):
         (catalog_root / "root.tree").write_bytes(root_tree_raw)
         (catalog_root / "src.tree").write_bytes(src_tree_raw)
         value_raw = b"fixture\0"
-        (catalog_root / "values.bin").write_bytes(value_raw)
+        (catalog_root / "values.cp932").write_bytes(value_raw)
         snapshot = {
                 "kind": "fe8j-raw-symbol-source-snapshot",
                 "provider_count": 1,
                 "provider_values_artifact": {
                     "encoding": "cp932-nul-terminated",
                     "generated_from_paths": ["src/provider.c"],
-                    "path": "values.bin",
+                    "path": "values.cp932",
                     "sha256": hashlib.sha256(value_raw).hexdigest(),
                 },
                 "providers": {
@@ -1354,7 +1390,7 @@ class RawSurfaceClosureTests(unittest.TestCase):
 
                 mismatch = deepcopy(snapshot)
                 mismatch_value = "値".encode("cp932") + b"\0"
-                (catalog_root / "values.bin").write_bytes(mismatch_value)
+                (catalog_root / "values.cp932").write_bytes(mismatch_value)
                 mismatch["provider_values_artifact"]["sha256"] = hashlib.sha256(
                     mismatch_value
                 ).hexdigest()
@@ -1376,7 +1412,7 @@ class RawSurfaceClosureTests(unittest.TestCase):
                         expected_repository=None,
                         expected_revision=None,
                     )
-                (catalog_root / "values.bin").write_bytes(value_raw)
+                (catalog_root / "values.cp932").write_bytes(value_raw)
 
                 zero = deepcopy(snapshot)
                 zero["source_revision"] = "0" * 40

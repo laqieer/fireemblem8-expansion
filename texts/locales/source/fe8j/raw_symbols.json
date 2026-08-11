@@ -2,7 +2,7 @@
   "baserom_source": {
     "artifact": {
       "encoding": "cp932-nul-terminated",
-      "path": "goal_strings.cp932.bin",
+      "path": "goal_strings.cp932",
       "sha256": "3353330b5642569520fcef4ab0656b35459ba15bfa1cd0d9633fe7af06ae677e"
     },
     "offset_source": {
@@ -56,7 +56,7 @@
       "src/menu_def.c",
       "src/data/data_081F64C0/data_081F64C0.c"
     ],
-    "path": "raw_provider_values.cp932.bin",
+    "path": "raw_provider_values.cp932",
     "sha256": "9879093d9f8a1bef7f9678d4b854f387d8ae65b2ac75d516135e0c6f7fc0d3d7"
   },
   "providers": {

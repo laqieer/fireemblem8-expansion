@@ -6,6 +6,7 @@ import sys
 import unittest
 from dataclasses import replace
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
@@ -18,6 +19,7 @@ from scripts.localization.game_locales.raw_origin import (
     canonical_json_bytes,
     verify_origin_proof,
 )
+from scripts.localization.game_locales.cli import _resolve_live_baserom
 from scripts.localization.game_locales.raw_providers import (
     RawProviderError,
     refresh_ja_raw_provider_origin,
@@ -98,6 +100,22 @@ class JapaneseRawOriginTests(unittest.TestCase):
                 baserom_path=wrong_rom,
             )
 
+    def test_live_gate_accepts_explicit_path_and_environment(self):
+        explicit = self.scratch / "explicit.gba"
+        environment = self.scratch / "environment.gba"
+        with mock.patch.dict(
+            os.environ,
+            {"FE8J_BASEROM": str(environment)},
+        ):
+            self.assertEqual(
+                _resolve_live_baserom(explicit, required=True),
+                explicit,
+            )
+            self.assertEqual(
+                _resolve_live_baserom(None, required=True),
+                environment,
+            )
+
     def test_wrong_root_offset_and_slice_fail_closed(self):
         proof = json.loads(self.proof_path.read_text(encoding="utf-8"))
         proof["rom"]["range_merkle_root"] = "0" * 64
@@ -148,6 +166,37 @@ class JapaneseRawOriginTests(unittest.TestCase):
             source_root=self.ja_root,
             baserom_path=Path(os.environ["FE8J_BASEROM"]),
         )
+
+    @unittest.skipUnless(
+        os.environ.get("FE8J_BASEROM"),
+        "set FE8J_BASEROM for the public final-delivery gate",
+    )
+    def test_public_final_gate_reports_verified_rom_and_slices(self):
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "scripts.localization.game_locales",
+                "check-final-mapping",
+                "--require-no-fallback",
+                "--require-live-origin",
+            ],
+            cwd=ROOT,
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            env=os.environ.copy(),
+        )
+        self.assertEqual(result.returncode, 0, msg=result.stdout + result.stderr)
+        self.assertIn(
+            "rom_sha256=44fd343625ab9e6b90f63a80758c15066"
+            "d526e6873fae91474006314a5ead464",
+            result.stdout,
+        )
+        self.assertIn("slices=3", result.stdout)
+        for target in ("0x01C1", "0x01C2", "0x01C3"):
+            self.assertIn(target + "@", result.stdout)
 
 
 if __name__ == "__main__":
