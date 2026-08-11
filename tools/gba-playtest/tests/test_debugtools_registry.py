@@ -12,6 +12,7 @@ this possible; those files are test-only and are never referenced by
 modern.mk/Makefile.
 """
 
+import json
 import re
 import shutil
 import subprocess
@@ -32,6 +33,8 @@ HEADER = REPO_ROOT / "include" / "expansion_debugtools.h"
 TITLESCREEN_SRC = REPO_ROOT / "src" / "titlescreen.c"
 PLAYERPHASE_SRC = REPO_ROOT / "src" / "playerphase.c"
 PREP_SALLYCURSOR_SRC = REPO_ROOT / "src" / "prep_sallycursor.c"
+UIMENU_SRC = REPO_ROOT / "src" / "uimenu.c"
+LOCALE_REGISTRY = REPO_ROOT / "texts" / "expansion" / "registry.json"
 LEGACY_LDSCRIPT = REPO_ROOT / "ldscript.txt"
 MODERN_LDSCRIPT = REPO_ROOT / "linker" / "expansion.ld"
 
@@ -59,11 +62,34 @@ def _include_flags():
     return flags
 
 
-def _compile(work_dir: Path, src: Path, obj_name: str, defines=()):
+def _write_debugtools_msg_id_header(work_dir: Path):
+    entries = json.loads(LOCALE_REGISTRY.read_text(encoding="utf-8"))["messages"]
+    ids = {entry["key"]: entry["id"] for entry in entries}
+    macros = {
+        "EXP_MSG_FRAMEWORK_BACK": "framework.back",
+        "EXP_MSG_DEBUG_ACTION_FASTBOOT_CH2": "debug.action.fastboot_ch2",
+        "EXP_MSG_DEBUG_ACTION_WEATHER": "debug.action.weather",
+        "EXP_MSG_DEBUG_ACTION_FOG": "debug.action.fog",
+        "EXP_MSG_DEBUG_ACTION_FASTBOOT_CH4PREP": "debug.action.fastboot_ch4prep",
+        "EXP_MSG_DEBUG_ACTION_UNIT_INSPECT": "debug.action.unit_inspect",
+        "EXP_MSG_DEBUG_ACTION_CONVOY_INSPECT": "debug.action.convoy_inspect",
+        "EXP_MSG_DEBUG_ACTION_FLAG_CHAPTER": "debug.action.flag_chapter",
+        "EXP_MSG_DEBUG_ACTION_RNG_INSPECT": "debug.action.rng_inspect",
+        "EXP_MSG_DEBUG_ACTION_SAVE_STATE": "debug.action.save_state",
+        "EXP_MSG_DEBUG_STATUS_HUB": "debug.status.hub",
+        "EXP_MSG_DEBUG_STATUS_HUB_ERROR": "debug.status.hub_error",
+    }
+    lines = ["#ifndef TEST_EXPANSION_MSG_IDS_H", "#define TEST_EXPANSION_MSG_IDS_H"]
+    lines += [f"#define {macro} {ids[key]}" for macro, key in macros.items()]
+    lines += ["#endif", ""]
+    (work_dir / "expansion_msg_ids.h").write_text("\n".join(lines), encoding="utf-8")
+
+
+def _compile(work_dir: Path, src: Path, obj_name: str, defines=(), extra_flags=()):
     """Compiles a single source file to an object file with the host
     compiler. Returns (returncode, combined_output)."""
     obj = work_dir / obj_name
-    cmd = [CC, "-c", "-w"] + _include_flags()
+    cmd = [CC, "-c", "-w"] + list(extra_flags) + _include_flags()
     for d in defines:
         cmd += ["-D", d]
     cmd += [str(src), "-o", str(obj)]
@@ -71,9 +97,9 @@ def _compile(work_dir: Path, src: Path, obj_name: str, defines=()):
     return proc.returncode, proc.stdout + proc.stderr, obj
 
 
-def _link(work_dir: Path, objects, exe_name: str):
+def _link(work_dir: Path, objects, exe_name: str, extra_flags=()):
     exe = work_dir / exe_name
-    cmd = [CC] + [str(o) for o in objects] + ["-o", str(exe)]
+    cmd = [CC] + [str(o) for o in objects] + list(extra_flags) + ["-o", str(exe)]
     proc = subprocess.run(cmd, cwd=str(REPO_ROOT), capture_output=True, text=True)
     return proc.returncode, proc.stdout + proc.stderr, exe
 
@@ -176,22 +202,47 @@ class DebugToolsRegistryHostTests(unittest.TestCase):
         API, returns ordinary MENU_ACT_END, and its real MenuDef::onEnd uses
         the public return API. The real registry/transition code runs here;
         the host stub only models StartMenuCore's documented per-row
-        InitText(rect.w - 1) allocation."""
+        InitText(rect.w - 1) allocation. The real unmodified
+        ProcessMenuSelectInput/Menu_OnIdle dispatcher is linked so R-page
+        teardown cannot hide behind a direct callback test. The MODERN QPS
+        path also proves contributor labels/callbacks remain raw and ordered."""
         import tempfile
         with tempfile.TemporaryDirectory() as tmp:
             work = Path(tmp)
+            _write_debugtools_msg_id_header(work)
             rc, out, registry_obj = _compile(
                 work,
                 REGISTRY_SRC,
                 "registry_lifecycle_enabled.o",
-                defines=["FE8_EXPANSION_DEBUGTOOLS_ENABLED=1"],
+                defines=[
+                    "MODERN=1",
+                    "FE8_EXPANSION_DEBUGTOOLS_ENABLED=1",
+                    "StartOrphanMenu=DebugToolsLifecycle_StartOrphanMenu",
+                ],
+                extra_flags=["-I", str(work)],
             )
             self.assertEqual(rc, 0, f"compiling lifecycle registry failed:\n{out}")
+
+            rc, out, uimenu_obj = _compile(
+                work,
+                UIMENU_SRC,
+                "lifecycle_uimenu.o",
+                extra_flags=[
+                    "-std=gnu89",
+                    "-ffunction-sections",
+                    "-fdata-sections",
+                ],
+            )
+            self.assertEqual(rc, 0, f"compiling real menu dispatcher failed:\n{out}")
 
             rc, out, stubs_obj = _compile(
                 work,
                 C_FIXTURES_DIR / "debugtools_lifecycle_host_stubs.c",
                 "lifecycle_stubs.o",
+                defines=[
+                    "MODERN=1",
+                    "DEBUGTOOLS_LIFECYCLE_USE_REAL_UIMENU=1",
+                ],
             )
             self.assertEqual(rc, 0, f"compiling lifecycle stubs failed:\n{out}")
 
@@ -204,8 +255,9 @@ class DebugToolsRegistryHostTests(unittest.TestCase):
 
             rc, out, exe = _link(
                 work,
-                [registry_obj, stubs_obj, driver_obj],
+                [registry_obj, uimenu_obj, stubs_obj, driver_obj],
                 "lifecycle_test",
+                extra_flags=["-Wl,--gc-sections"],
             )
             self.assertEqual(rc, 0, f"linking lifecycle test failed:\n{out}")
 

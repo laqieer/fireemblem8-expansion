@@ -88,7 +88,14 @@ Fits the existing `MenuProc`/`MenuItemDef` engine (`include/uimenu.h`,
   adjacent `MenuProc` fields. Each hub page therefore renders at most
   `DEBUGTOOLS_HUB_PAGE_ACTION_MAX` (9) actions plus Back/Exit, leaving 1 of
   the 11 live slots as an untouched safety margin. The shipped built-ins
-  occupy page one; pressing R cycles to the contributor page when present.
+  occupy page one; pressing R queues the contributor page when present.
+  `ProcessMenuSelectInput()` intentionally ignores `onRPress`'s return
+  value, and `Menu_OnIdle()` continues using the current `MenuProc` after
+  that callback. The hub therefore only records the target page, schedules
+  its transition Proc, and freezes input in `onRPress`; after the current
+  dispatcher call returns, the Proc's leading yield reaches a safe point,
+  ends the old menu, and starts the next page. It never calls `EndMenu()`
+  synchronously from `onRPress`.
 - Contributors register through `DebugTools_RegisterAction()` only -- they
   never edit an engine-owned `const MenuItemDef` table. A RAM-resident
   `MenuItemDef` adapter (`sHubMenuItemDefs`, sized
@@ -177,15 +184,25 @@ row, and `InitText` monotonically advances the active font's
 ended and reopen a fresh hub from the submenu's `onEnd`; repeated
 hub→submenu→hub cycles therefore accumulated allocations indefinitely.
 
-Each transition captures the current font and the first live menu row's
-`Text::chr_position` (the allocation baseline) in its Proc fields. Selecting
-a submenu starts `gProcScr_DebugToolsMenuTransition`; Back starts the same
-helper from `onEnd`. Its leading `PROC_YIELD` guarantees the old `MenuProc`
-and child `MenuItemProc::text` objects have ended before the captured counter
-is restored and the next menu allocates. Final Back uses the same deferred
-path before releasing the session guard. No live Text is rewound early, and
-the title/map/prep input guard remains active across submenus and the
-one-frame transition.
+Immediately before every debug-owned `StartOrphanMenu()`,
+`DebugTools_StartOwnedMenu()` captures the exact active font that will own
+the row allocations, its pre-allocation `chr_counter`, and the active font
+that must be restored later. This happens synchronously with
+`StartMenuCore()`'s row allocation and before the menu Proc reaches
+`MenuDef::onInit`; a contributor submenu may therefore switch `gActiveFont`
+in `onInit` without changing which font owns those already-allocated rows.
+
+Selecting a submenu starts `gProcScr_DebugToolsMenuTransition`; Back starts
+the same helper from `onEnd`. R pagination also starts it, but unlike
+ordinary `MENU_ACT_END` selection it stores the still-live hub pointer,
+freezes the menu, and lets the transition Proc call `EndMenu()` only after
+its leading `PROC_YIELD`. The transition then rewinds only the captured row
+owner's counter, restores the captured active font as a separate operation,
+and starts the next menu. It never rewinds the font that merely happens to
+be global after a contributor `onInit`, and never overwrites that unrelated
+font's counter. Final Back uses the same deferred path before releasing the
+session guard. No live Text is rewound early, and the title/map/prep input
+guard remains active across submenus and the one-frame transition.
 
 The default BG font has 448 allocator columns available from tile `0x80`
 through tile index `0x3FF` (two 8x8 tiles per text column). Each maximum hub
@@ -205,6 +222,15 @@ from the action callback is unsupported because it bypasses allocator/session
 ownership:
 
 ```c
+static struct Font gMyDebugFont;
+
+static void MyDebugSubmenu_OnInit(struct MenuProc* menu)
+{
+    (void)menu;
+    SetTextFont(&gMyDebugFont);
+    /* Any gMyDebugFont allocations remain contributor-owned. */
+}
+
 static void MyDebugSubmenu_OnEnd(struct MenuProc* menu)
 {
     DebugTools_ReturnToHubAfterMenuEnd(menu);
@@ -226,9 +252,12 @@ The action must queue the submenu **before** returning a result containing
 `MenuDef::onEnd` skip final cleanup, so no live hub `Text` is rewound
 prematurely. The submenu's own `MenuDef::onEnd` must call
 `DebugTools_ReturnToHubAfterMenuEnd`; this waits one yield for the submenu
-objects to die, reclaims the same bounded allocation scope, and reopens the
-hub without releasing the session/reentrancy guard. Disabled builds expose
-inert stubs, and calls outside an active debug session are safe no-ops.
+objects to die, reclaims the same bounded row-allocation scope, restores the
+font that was active before `MyDebugSubmenu_OnInit`, and reopens the hub
+without releasing the session/reentrancy guard. It does not reset
+`gMyDebugFont.chr_counter`; allocations deliberately made from that font are
+the contributor's responsibility. Disabled builds expose inert stubs, and
+calls outside an active debug session are safe no-ops.
 
 ### Introspection
 
@@ -1167,6 +1196,15 @@ tools" above for what each proves.
   invalid-action (`NULL` action/label/callback) rejection, and capacity-full
   rejection on the 10th contributor attempt -- all without silently dropping
   a registration or changing the count on a rejected call.
+  Its lifecycle case also links the real, unmodified `src/uimenu.c`
+  `ProcessMenuSelectInput()`/`Menu_OnIdle()`/`EndMenu()` path and executes
+  under `qps-ploc`: all nine built-ins and all nine contributors retain
+  capacity/order/callback identity; QPS adapts only built-in rows while
+  contributor labels remain on the raw renderer; R dispatch completes with
+  the old menu alive and only the yielded Proc ends it; and 64
+  hub/page/font-switching-submenu cycles restore the exact row-owner font
+  baseline while preserving every allocation made from the contributor's
+  separate font.
   A second test compiles the same source with
   `-DFE8_EXPANSION_DEBUGTOOLS_ENABLED=0` and proves both behavior (every
   entry point degrades to its disabled stub, `gDebugToolsProbe` stays

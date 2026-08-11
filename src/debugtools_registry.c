@@ -55,6 +55,20 @@ SECTION("debugtools_contributor_data") static int sContributorActionCount = 0;
 SECTION("debugtools_contributor_data") static int sHubPage = 0;
 SECTION("debugtools_contributor_data") static u32 sDebugMenuState = 0;
 
+struct DebugToolsMenuTextScope
+{
+    struct Font* ownerFont;
+    struct Font* restoreFont;
+    u16 counterBase;
+};
+
+/* StartMenuCore allocates every row synchronously inside StartOrphanMenu,
+ * before the menu Proc reaches MenuDef::onInit. Capture that exact owner
+ * here rather than consulting gActiveFont after a contributor onInit may
+ * have switched it. */
+SECTION("debugtools_contributor_data") static struct DebugToolsMenuTextScope
+    sMenuTextScope = {0};
+
 /* Preserve the established registry EWRAM layout as one explicit object.
  * Separate top-level statics are compiler-reordered in modern builds, so
  * renaming sActions to sBuiltinActions moved the old sHubActive byte away
@@ -102,15 +116,19 @@ struct DebugToolsMenuTransitionProc
     PROC_HEADER;
 
     /* 2C */ const struct MenuDef* menuDef;
-    /* 30 */ struct Font* font;
-    /* 34 */ u16 textBase;
-    /* 36 */ u8 target;
+    /* 30 */ struct MenuProc* menuToEnd;
+    /* 34 */ struct Font* textOwnerFont;
+    /* 38 */ struct Font* restoreFont;
+    /* 3C */ u16 textBase;
+    /* 3E */ u8 target;
 };
 
-static void DebugTools_StartMenuTransition(
+static int DebugTools_StartMenuTransition(
     struct MenuProc* menu,
     int target,
-    const struct MenuDef* menuDef);
+    const struct MenuDef* menuDef,
+    int deferMenuEnd);
+static struct MenuProc* DebugTools_StartOwnedMenu(const struct MenuDef* menuDef);
 static int DebugTools_GetActionCount(void);
 static const struct DebugToolsAction* DebugTools_GetAction(int index);
 
@@ -137,9 +155,12 @@ static u8 DebugToolsHub_NextPage(struct MenuProc* menu)
     if (pageCount <= 1)
         return 0;
 
+    if (sDebugMenuState & DEBUGTOOLS_STATE_TRANSITION_SCHEDULED)
+        return 0;
+
     sHubPage = (sHubPage + 1) % pageCount;
-    DebugTools_StartMenuTransition(menu, DEBUGTOOLS_TRANSITION_HUB, NULL);
-    EndMenu(menu);
+    DebugTools_StartMenuTransition(menu, DEBUGTOOLS_TRANSITION_HUB, NULL, 1);
+    menu->state |= MENU_STATE_FROZEN;
 
     return 0;
 }
@@ -155,7 +176,11 @@ static void DebugToolsHub_OnEnd(struct MenuProc* proc)
     sDebugMenuState &= ~DEBUGTOOLS_STATE_HUB_ACTIVE;
 
     if (!(sDebugMenuState & DEBUGTOOLS_STATE_TRANSITION_SCHEDULED))
-        DebugTools_StartMenuTransition(proc, DEBUGTOOLS_TRANSITION_CLEANUP, NULL);
+        DebugTools_StartMenuTransition(
+            proc,
+            DEBUGTOOLS_TRANSITION_CLEANUP,
+            NULL,
+            0);
 }
 
 CONST_DATA struct MenuDef gDebugToolsHubMenuDef = {
@@ -555,31 +580,37 @@ static int DebugTools_HasTextCapacity(void)
     return 1;
 }
 
-static u16 DebugTools_GetMenuTextBase(struct MenuProc* menu)
+static struct MenuProc* DebugTools_StartOwnedMenu(const struct MenuDef* menuDef)
 {
-    if (menu != NULL && menu->itemCount != 0 && menu->menuItems[0] != NULL)
-        return menu->menuItems[0]->text.chr_position;
+    sMenuTextScope.ownerFont = gActiveFont;
+    sMenuTextScope.restoreFont = gActiveFont;
+    sMenuTextScope.counterBase =
+        gActiveFont == NULL ? 0 : gActiveFont->chr_counter;
 
-    return gActiveFont == NULL ? 0 : gActiveFont->chr_counter;
+    return StartOrphanMenu(menuDef);
 }
 
-static void DebugTools_StartMenuTransition(
+static int DebugTools_StartMenuTransition(
     struct MenuProc* menu,
     int target,
-    const struct MenuDef* menuDef)
+    const struct MenuDef* menuDef,
+    int deferMenuEnd)
 {
     struct DebugToolsMenuTransitionProc* proc;
 
     if (sDebugMenuState & DEBUGTOOLS_STATE_TRANSITION_SCHEDULED)
-        return;
+        return 0;
 
     proc = Proc_Start(gProcScr_DebugToolsMenuTransition, PROC_TREE_3);
     proc->menuDef = menuDef;
-    proc->font = gActiveFont;
-    proc->textBase = DebugTools_GetMenuTextBase(menu);
+    proc->menuToEnd = deferMenuEnd ? menu : NULL;
+    proc->textOwnerFont = sMenuTextScope.ownerFont;
+    proc->restoreFont = sMenuTextScope.restoreFont;
+    proc->textBase = sMenuTextScope.counterBase;
     proc->target = target;
 
     sDebugMenuState |= DEBUGTOOLS_STATE_TRANSITION_SCHEDULED;
+    return 1;
 }
 
 void DebugTools_QueueSubmenuTransition(struct MenuProc* menu, const struct MenuDef* menuDef)
@@ -589,7 +620,11 @@ void DebugTools_QueueSubmenuTransition(struct MenuProc* menu, const struct MenuD
         || !(sDebugMenuState & DEBUGTOOLS_STATE_HUB_ACTIVE))
         return;
 
-    DebugTools_StartMenuTransition(menu, DEBUGTOOLS_TRANSITION_SUBMENU, menuDef);
+    DebugTools_StartMenuTransition(
+        menu,
+        DEBUGTOOLS_TRANSITION_SUBMENU,
+        menuDef,
+        0);
 }
 
 void DebugTools_ReturnToHubAfterMenuEnd(struct MenuProc* menu)
@@ -600,7 +635,7 @@ void DebugTools_ReturnToHubAfterMenuEnd(struct MenuProc* menu)
     )
         return;
 
-    DebugTools_StartMenuTransition(menu, DEBUGTOOLS_TRANSITION_HUB, NULL);
+    DebugTools_StartMenuTransition(menu, DEBUGTOOLS_TRANSITION_HUB, NULL, 0);
 }
 
 static enum DebugToolsResult DebugTools_OpenHubInternal(void)
@@ -613,14 +648,14 @@ static enum DebugToolsResult DebugTools_OpenHubInternal(void)
 #ifdef MODERN
     if (DebugToolsHub_UsesCjkText())
     {
-        StartOrphanMenu(&gDebugToolsHubMenuDef);
+        DebugTools_StartOwnedMenu(&gDebugToolsHubMenuDef);
         DebugToolsHub_ShowDiagnostics();
         return DEBUGTOOLS_OK;
     }
 #endif
 
     DebugToolsHub_ShowDiagnostics();
-    StartOrphanMenu(&gDebugToolsHubMenuDef);
+    DebugTools_StartOwnedMenu(&gDebugToolsHubMenuDef);
 
     return DEBUGTOOLS_OK;
 }
@@ -631,17 +666,18 @@ void DebugTools_RunMenuTransition(ProcPtr proc)
     const struct MenuDef* submenuDef = transition->menuDef;
     int target = transition->target;
 
-    sDebugMenuState &= ~DEBUGTOOLS_STATE_TRANSITION_SCHEDULED;
+    if (transition->menuToEnd != NULL)
+        EndMenu(transition->menuToEnd);
 
-    if (transition->font != NULL)
-    {
-        gActiveFont = transition->font;
-        transition->font->chr_counter = transition->textBase;
-    }
+    if (transition->textOwnerFont != NULL)
+        transition->textOwnerFont->chr_counter = transition->textBase;
+
+    gActiveFont = transition->restoreFont;
+    sDebugMenuState &= ~DEBUGTOOLS_STATE_TRANSITION_SCHEDULED;
 
     if (target == DEBUGTOOLS_TRANSITION_SUBMENU && submenuDef != NULL)
     {
-        StartOrphanMenu(submenuDef);
+        DebugTools_StartOwnedMenu(submenuDef);
         return;
     }
 

@@ -139,8 +139,10 @@
  * MENU_ITEM_MAX is 11 (include/uimenu.h) and StartMenuCore (src/uimenu.c)
  * has no bounds check when it appends to MenuProc::menuItems. The hub
  * therefore renders at most nine actions per page plus Back (10 live rows),
- * leaving one MenuProc::menuItems slot as a safety margin. Pressing R cycles
- * through the bounded pages. DEBUGTOOLS_HUB_MENU_SLOTS includes the
+ * leaving one MenuProc::menuItems slot as a safety margin. Pressing R queues
+ * a page transition and freezes the current menu; a deferred Proc ends it
+ * only after ProcessMenuSelectInput/Menu_OnIdle finish the current dispatch,
+ * then starts the next bounded page. DEBUGTOOLS_HUB_MENU_SLOTS includes the
  * all-zero MenuItemsEnd terminator, which is not a live row. */
 enum
 {
@@ -252,10 +254,16 @@ enum DebugToolsResult DebugTools_GetLastRegistrationResult(void);
  *
  * The contributor submenu's MenuDef::onEnd callback must call
  * DebugTools_ReturnToHubAfterMenuEnd(menu). That schedules the matching
- * deferred rewind only after the submenu and its Text objects have ended,
- * then reopens the hub while retaining the same debug session/reentrancy
- * ownership. The session is finally released only when the reopened hub
- * itself ends without another queued transition.
+ * deferred rewind only after the submenu and its Text objects have ended.
+ * The row-allocation font and counter baseline are captured immediately
+ * before StartOrphanMenu, before MenuDef::onInit can switch gActiveFont.
+ * Cleanup rewinds only that exact owner, restores the previously active
+ * font as a separate step, and never writes a contributor font's unrelated
+ * counter. A font-switching submenu remains responsible for any allocations
+ * it deliberately makes from its own font. The hub then reopens while
+ * retaining the same debug session/reentrancy ownership. The session is
+ * finally released only when the reopened hub itself ends without another
+ * queued transition.
  *
  * Both functions are inert when debug tools are disabled. Calls outside an
  * active hub/submenu session, duplicate transition requests, and a NULL

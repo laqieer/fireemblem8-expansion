@@ -2,8 +2,10 @@
 #include <string.h>
 
 #include "global.h"
+#include "hardware.h"
 #include "fontgrp.h"
 #include "uimenu.h"
+#include "expansion_locale.h"
 #include "expansion_debugtools.h"
 
 #define CHECK(cond, msg) \
@@ -16,6 +18,8 @@
 
 extern int gDebugToolsLifecycleStartMenuCount;
 extern int gDebugToolsLifecycleTransitionProcCount;
+extern int gDebugToolsLifecycleEndMenuCount;
+extern int gDebugToolsLifecycleCursorDisplayCount;
 extern int gDebugToolsLifecycleLastMenuItemCount;
 extern const struct MenuDef* gDebugToolsLifecycleLastMenuDef;
 extern struct MenuProc* gDebugToolsLifecycleLastMenuProc;
@@ -34,6 +38,34 @@ extern u8 DebugToolsLifecycle_Builtin8Selected(struct MenuProc*, struct MenuItem
 extern u8 DebugToolsLifecycle_Builtin9Selected(struct MenuProc*, struct MenuItemProc*);
 
 extern struct MenuDef CONST_DATA gDebugToolsHubMenuDef;
+extern struct Font* gActiveFont;
+
+enum
+{
+    SUBMENU_FONT_TEXT_BASE = 71,
+    SUBMENU_FONT_TEXT_WIDTH = 7
+};
+
+static struct Font sFakeSubmenuFont;
+static struct Text sFakeSubmenuText;
+static int sFakeSubmenuInitCount;
+
+static void DispatchMenuKey(u16 key)
+{
+    gKeyStatusPtr->newKeys = key;
+    gKeyStatusPtr->repeatedKeys = 0;
+    Menu_OnIdle(gDebugToolsLifecycleLastMenuProc);
+    gKeyStatusPtr->newKeys = 0;
+}
+
+static void FakeSubmenuOnInit(struct MenuProc* menu)
+{
+    (void)menu;
+
+    sFakeSubmenuInitCount++;
+    SetTextFont(&sFakeSubmenuFont);
+    InitText(&sFakeSubmenuText, SUBMENU_FONT_TEXT_WIDTH);
+}
 
 static u8 ContributorCollisionSelected(struct MenuProc* menu, struct MenuItemProc* item)
 {
@@ -116,7 +148,7 @@ static CONST_DATA struct MenuDef sFakeSubmenuDef =
     {1, 1, DEBUGTOOLS_MENU_WIDTH_TILES, 0},
     0,
     sFakeSubmenuItems,
-    0,
+    FakeSubmenuOnInit,
     FakeSubmenuOnEnd,
     0,
     MenuCancelSelect,
@@ -187,8 +219,8 @@ int main(void)
     struct DebugToolsAction contributor;
     struct Text statusText;
     const struct DebugToolsAction* action;
+    struct Font* sessionFont;
     const u16 textBase = 17;
-    u8 menuResult;
     int i;
     int cycle;
 
@@ -210,6 +242,8 @@ int main(void)
           "the default BG text allocator capacity must remain 448 columns");
     CHECK(DEBUGTOOLS_HUB_TEXT_ALLOC_BUDGET == 204,
           "the maximum hub plus localized status line must use 204 columns");
+    CHECK(ExpansionLocale_GetCurrent() == EXPANSION_LOCALE_QPS_PLOC,
+          "the public lifecycle fixture must execute under QPS");
 
     for (i = 0; i < DEBUGTOOLS_CONTRIBUTOR_ACTION_MAX; ++i)
     {
@@ -289,6 +323,10 @@ int main(void)
           "the first index past combined capacity must return NULL");
 
     DebugToolsLifecycle_SetTextCounter(textBase);
+    sessionFont = gActiveFont;
+    memset(&sFakeSubmenuFont, 0, sizeof(sFakeSubmenuFont));
+    sFakeSubmenuFont.tileref = 0x180;
+    sFakeSubmenuFont.chr_counter = SUBMENU_FONT_TEXT_BASE;
     CHECK(DebugTools_OpenHub() == DEBUGTOOLS_OK,
           "opening a maximum built-in-plus-contributor registry must succeed");
     CHECK(gDebugToolsLifecycleLastMenuDef == &gDebugToolsHubMenuDef,
@@ -306,6 +344,8 @@ int main(void)
               "page one must preserve built-in label order");
         CHECK(gDebugToolsHubMenuDef.menuItems[i].onSelected == expectedCallbacks[i],
               "page one must preserve built-in callback identity");
+        CHECK(gDebugToolsHubMenuDef.menuItems[i].onDraw != NULL,
+              "QPS must keep built-in rows on the localized draw adapter");
     }
 
     InitText(&statusText, DEBUGTOOLS_STATUS_TEXT_WIDTH_TILES);
@@ -317,11 +357,24 @@ int main(void)
 
     {
         u16 hubCounter = DebugToolsLifecycle_GetTextCounter();
+        int cursorBefore = gDebugToolsLifecycleCursorDisplayCount;
+        int endsBefore = gDebugToolsLifecycleEndMenuCount;
 
-        gDebugToolsHubMenuDef.onRPress(gDebugToolsLifecycleLastMenuProc);
+        DispatchMenuKey(R_BUTTON);
         CHECK(DebugToolsLifecycle_GetTextCounter() == hubCounter,
               "page switch must not rewind while page-one Text rows are live");
+        CHECK(gDebugToolsLifecycleEndMenuCount == endsBefore,
+              "R dispatch must not end the menu synchronously from onRPress");
+        CHECK(gDebugToolsLifecycleCursorDisplayCount == cursorBefore + 1,
+              "Menu_OnIdle must finish the current R input dispatch with the menu alive");
+        CHECK(gDebugToolsLifecycleLastMenuProc->state & MENU_STATE_FROZEN,
+              "a queued R page transition must freeze input until deferred teardown");
+        DispatchMenuKey(B_BUTTON);
+        CHECK(gDebugToolsLifecycleEndMenuCount == endsBefore,
+              "frozen input must prevent a second-frame B press from ending the queued page");
         DebugToolsLifecycle_RunPendingTransition();
+        CHECK(gDebugToolsLifecycleEndMenuCount == endsBefore + 1,
+              "the deferred transition proc must end the old page after dispatch");
         CHECK(gDebugToolsLifecycleLastMenuDef == &gDebugToolsHubMenuDef,
               "R must reopen the hub on contributor page two");
         CHECK(gDebugToolsLifecycleLastMenuItemCount
@@ -335,6 +388,8 @@ int main(void)
             CHECK(gDebugToolsHubMenuDef.menuItems[i].onSelected
                   == contributors[i].onSelected,
                   "page two must preserve contributor callback identity");
+            CHECK(gDebugToolsHubMenuDef.menuItems[i].onDraw == NULL,
+                  "QPS must preserve contributor rows on the raw label renderer");
         }
 
         InitText(&statusText, DEBUGTOOLS_STATUS_TEXT_WIDTH_TILES);
@@ -347,6 +402,8 @@ int main(void)
     {
         u16 hubCounter = DebugToolsLifecycle_GetTextCounter();
         int startsBefore = gDebugToolsLifecycleStartMenuCount;
+        int submenuFontCounter =
+            SUBMENU_FONT_TEXT_BASE + cycle * SUBMENU_FONT_TEXT_WIDTH;
 
         action = DebugTools_GetRegisteredAction(DEBUGTOOLS_BUILTIN_ACTION_MAX);
         CHECK(action != NULL && action->onSelected == Contributor0Selected,
@@ -354,18 +411,9 @@ int main(void)
         CHECK(gDebugToolsLifecycleLastMenuDef->menuItems[0].onSelected
               == Contributor0Selected,
               "the rendered contributor row must retain the registered callback");
-        menuResult = gDebugToolsLifecycleLastMenuDef->menuItems[0].onSelected(
-            gDebugToolsLifecycleLastMenuProc,
-            gDebugToolsLifecycleLastMenuProc->menuItems[0]);
-        CHECK(menuResult & MENU_ACT_END,
-              "the contributor submenu callback must use the ordinary MENU_ACT_END contract");
+        DispatchMenuKey(A_BUTTON);
         CHECK(DebugToolsLifecycle_GetTextCounter() == hubCounter,
-              "queueing from an ordinary callback must not rewind live hub Text");
-
-        if (menuResult & MENU_ACT_END)
-            EndMenu(gDebugToolsLifecycleLastMenuProc);
-        CHECK(DebugToolsLifecycle_GetTextCounter() == hubCounter,
-              "MENU_ACT_END hub cleanup must not rewind after the public handoff");
+              "ordinary A dispatch must not rewind live hub Text before deferred handoff");
         CHECK(gDebugToolsLifecycleStartMenuCount == startsBefore,
               "hub onEnd must not start the submenu before the old menu dies");
         CHECK(DebugTools_IsHubActive() != 0,
@@ -378,7 +426,16 @@ int main(void)
               == textBase + (DEBUGTOOLS_MENU_WIDTH_TILES - 1),
               "submenu allocation must restart from the saved text base");
 
-        EndMenu(gDebugToolsLifecycleLastMenuProc);
+        Menu_OnInit(gDebugToolsLifecycleLastMenuProc);
+        CHECK(sFakeSubmenuInitCount == cycle + 1,
+              "the real Menu_OnInit sequence must run for every contributor submenu");
+        CHECK(gActiveFont == &sFakeSubmenuFont,
+              "the contributor submenu must be allowed to switch the active font");
+        CHECK(sFakeSubmenuFont.chr_counter
+              == submenuFontCounter + SUBMENU_FONT_TEXT_WIDTH,
+              "the contributor font must retain its own onInit allocation");
+
+        DispatchMenuKey(B_BUTTON);
         CHECK(DebugToolsLifecycle_GetTextCounter()
               == textBase + (DEBUGTOOLS_MENU_WIDTH_TILES - 1),
               "the public submenu onEnd callback must not rewind its live Text row");
@@ -388,13 +445,18 @@ int main(void)
         DebugToolsLifecycle_RunPendingTransition();
         CHECK(gDebugToolsLifecycleLastMenuDef == &gDebugToolsHubMenuDef,
               "the deferred submenu transition must reopen the hub");
+        CHECK(gActiveFont == sessionFont,
+              "returning from a font-switching submenu must restore the session font");
+        CHECK(sFakeSubmenuFont.chr_counter
+              == submenuFontCounter + SUBMENU_FONT_TEXT_WIDTH,
+              "rewinding menu rows must not overwrite the contributor font counter");
         InitText(&statusText, DEBUGTOOLS_STATUS_TEXT_WIDTH_TILES);
         CHECK(DebugToolsLifecycle_GetTextCounter()
               == textBase + DEBUGTOOLS_HUB_TEXT_ALLOC_BUDGET,
               "every reopened maximum CJK hub must return to the same bounded peak");
 
         hubCounter = DebugToolsLifecycle_GetTextCounter();
-        gDebugToolsHubMenuDef.onRPress(gDebugToolsLifecycleLastMenuProc);
+        DispatchMenuKey(R_BUTTON);
         CHECK(DebugToolsLifecycle_GetTextCounter() == hubCounter,
               "page-two onEnd must not rewind its live Text rows");
         DebugToolsLifecycle_RunPendingTransition();
@@ -407,7 +469,7 @@ int main(void)
               "page one must reuse the same allocation scope");
 
         hubCounter = DebugToolsLifecycle_GetTextCounter();
-        gDebugToolsHubMenuDef.onRPress(gDebugToolsLifecycleLastMenuProc);
+        DispatchMenuKey(R_BUTTON);
         CHECK(DebugToolsLifecycle_GetTextCounter() == hubCounter,
               "page-one onEnd must not rewind its live Text rows");
         DebugToolsLifecycle_RunPendingTransition();
@@ -422,8 +484,11 @@ int main(void)
 
     CHECK(gDebugToolsLifecycleTransitionProcCount == 1 + 64 * 4,
           "initial paging plus each page/submenu cycle must schedule exact deferred transitions");
+    CHECK(sFakeSubmenuFont.chr_counter
+          == SUBMENU_FONT_TEXT_BASE + 64 * SUBMENU_FONT_TEXT_WIDTH,
+          "repeated public submenu cycles must preserve every unrelated font allocation");
 
-    EndMenu(gDebugToolsLifecycleLastMenuProc);
+    DispatchMenuKey(B_BUTTON);
     CHECK(DebugToolsLifecycle_GetTextCounter()
           == textBase + DEBUGTOOLS_HUB_TEXT_ALLOC_BUDGET,
           "final hub cleanup must also defer rewind until live Text rows end");

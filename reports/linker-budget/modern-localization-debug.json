@@ -32,10 +32,10 @@
   "regions_headroom": {
     "ewram": {
       "capacity_bytes": 262144,
-      "free_bytes": 1724,
-      "occupied_bytes": 260420,
+      "free_bytes": 1712,
+      "occupied_bytes": 260432,
       "overflow": false,
-      "physical_free_bytes": 1724
+      "physical_free_bytes": 1712
     },
     "iwram": {
       "capacity_bytes": 32768,
