@@ -12386,6 +12386,7 @@
     "approval_is_exact_target_locale_span": true,
     "broad_category_or_regex_exemption": false,
     "control_stripping_preserves_token_boundaries": true,
+    "control_token_grammar": "[CTRL:HHHH] with uppercase hexadecimal or an exact texts/textdefs.txt named token",
     "exact_copy_detection": "NFKC/casefold/NFKD Latin-letter and digit equality",
     "latin_only_detection": "Latin present and no Han/kana in visible payload",
     "latin_span_tokenization": "NFKC then contiguous Unicode letters whose names contain LATIN",
@@ -12410,9 +12411,19 @@
         "Latin"
       ]
     },
-    "unicode_script_policy": "JA permits kana/Han and reviewed Latin/fullwidth spans; zh-Hans permits Han and reviewed Latin/fullwidth spans. Locale-prohibited kana/Bopomofo, Greek/Cyrillic lookalikes, enclosed alphanumerics, and Unicode math require exact target approvals. Replacement, C1, format, box drawing, private/surrogate/unassigned scalars are unconditionally rejected."
+    "unicode_script_policy": "JA permits kana/Han and reviewed Latin/fullwidth spans; zh-Hans permits Han and reviewed Latin/fullwidth spans. Locale-prohibited kana/Bopomofo, Greek/Cyrillic lookalikes, enclosed alphanumerics, and Unicode math require exact target approvals. Replacement, C1, format, box drawing, private/surrogate/unassigned scalars are unconditionally rejected.",
+    "unknown_or_malformed_bracket_text_is_visible": true
   },
   "raw_surface": {
+    "expansion_keys": [
+      "raw_surface.class_change.option_1",
+      "raw_surface.class_change.option_2",
+      "raw_surface.class_change.option_3",
+      "raw_surface.diagnostic.build_timestamp",
+      "raw_surface.unit_action.call_monster",
+      "raw_surface.unit_action.summon"
+    ],
+    "expansion_message_count": 6,
     "locales": {
       "ja": {
         "approved_span_count": 1,
@@ -12535,7 +12546,7 @@
     },
     "provider_count": 143
   },
-  "schema_version": 5,
+  "schema_version": 6,
   "summary": {
     "approved_script_symbol_count": 97,
     "approved_span_count": 347,
