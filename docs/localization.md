@@ -7,9 +7,14 @@ and 16 MiB; any profile enabling either real CJK locale is an explicit
 locale preference persistence, and cache switching share the same validated
 profile. Focused CJK gba-playtest scenarios and committed fingerprints cover
 first start, Japanese/Chinese choice, Config switching, and soft-reset
-persistence.
-This is an architecture/authoring/testing reference, not a GitHub issue-state
-or closure claim; historical English/pseudo sprint evidence remains in
+persistence. The final compressed catalog contains all 3,414 FE8U messages
+for each CJK locale, and the independent raw closure contains all 143 audited
+surfaces for each locale. Fallback, exclusion, unresolved, and unapproved
+runtime-leakage counts are zero. Japanese goal-string provenance is bound to
+the pinned live FE8J ROM; complete system/talk font inventories and the shared
+FE-control/UTF-8 tokenizer cover the final payloads.
+This is an architecture/authoring/testing reference, not a remote GitHub
+issue-state claim; branch-local closure evidence remains in
 `reports/issue18_localization_closure.md`.
 
 ## Architecture
@@ -222,7 +227,7 @@ disabled prefs; only a verified bounded store mutates the prefs window. The
 full record, migration, no-wipe, and menu limitations are authoritative in
 [`save_format.md`](save_format.md).
 
-## Pseudo locale (`qps-ploc`) -- legal/non-goals
+## Pseudo locale (`qps-ploc`) contract
 
 `qps-ploc` (`scripts/localization/pseudo.py`) is a deterministic, purely
 mechanical transform of the English catalog (accenting/padding/bracketing
@@ -268,8 +273,8 @@ descriptor slots.
    active locale-neutral identifiers whose qps bytes must remain exactly equal
    to English.
    The committed `ja`/`zh-Hans` catalogs intentionally cover every active
-   key, although the generic resolver also handles a missing non-English
-   entry with one deterministic English fallback.
+   key. The resolver retains a defensive missing-entry fallback for malformed
+   or future sparse profiles, but production JA/ZH reports exercise none.
    Raw-only game surfaces must use a semantic `raw_surface.*` key, not a ROM
    address or `fe8cn.raw.import-*` identifier, and must be recorded in the raw
    closure ledger.
@@ -343,11 +348,9 @@ descriptor slots.
    exact/fallback/cache behavior, and vanilla-isolation audits.
 4. CJK builds must use `MODERN_ROM_SIZE=32M`; English/qps-only builds may
    remain 16 MiB. Other real locale IDs must first gain populated catalogs,
-   fonts, game-text providers, and configuration validation. Never hand-copy
-   or paraphrase copyrighted
-   third-party translation text into this repository (see issue #18's own
-   non-goals; also see `CONTRIBUTING.md`/#6/#10's manual-copy prohibition,
-   which this sprint does not touch).
+   fonts, game-text providers, and configuration validation. Translation
+   sources must follow `CONTRIBUTING.md` and the pinned-provenance workflow;
+   do not hand-copy or paraphrase unapproved third-party text.
 
 ## Testing -- real libmGBA runtime evidence (Sprint 4)
 

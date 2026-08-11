@@ -37,8 +37,8 @@ tokens are normalized during generation: `DashedLine` to `-`, `TAB` to UTF-8
 U+3000, `LQuote`/`RQuote` to `"`, and `AccentedE` to `e`. An unknown high-byte
 printable token is rejected rather than emitted as invalid UTF-8.
 
-The CJK mapping never infers a positional match. The generic schema still
-supports explicit fallback fixtures, but the production map contains none.
+The CJK mapping never infers a positional match. The production map contains
+no fallback or unresolved decision.
 Evidence-backed regional raw mappings
 may commit an authorized FE8J literal as the Japanese provider while retaining
 the FE8CN import as the Chinese provider, but only when a tracked C source
@@ -114,8 +114,9 @@ an earlier `GetStringFromIndex` call.
 The exhaustive audit independently decodes all 3,414 English entries, checks
 source equality, renderer-valid UTF-8/control structure, and exact NUL bit
 boundaries. It separately guards `0xD4D`, `0xD4E`, `0xD4F`, `0xD50`, and
-`0xD54`, and runs all 262 authored Japanese streams through the C resolver and
-codec. Production reports require `ja.present=3414`,
+`0xD54`, and validates all 6,828 final Japanese/Chinese streams through the
+same control, UTF-8, and codec contract. Production reports require
+`ja.present=3414`,
 `zh-Hans.present=3414`, `english_fallback=0`, and `unresolved=0`; the shared
 3,414-entry English bundle remains linked for the actual English locale.
 Generation also runs the leakage gate. The committed
@@ -124,11 +125,11 @@ Generation also runs the leakage gate. The committed
 audited with zero unapproved Latin spans or disallowed Unicode scripts.
 Controls are replaced by boundaries
 before NFKC tokenization, so Latin inside mixed Japanese/Chinese text cannot
-bypass the gate. The baseline 125 JA and 139 ZH mixed-script payload decisions
-are committed in `texts/locales/runtime_latin_span_review.json`; every
-remaining acronym/code is approved only for its exact target, locale, span,
-payload hash, occurrence count, reason, and source. Regex or category-wide
-whitelisting is not accepted.
+bypass the gate. Exact reviewed decisions are committed in
+`texts/locales/runtime_latin_span_review.json`; every remaining acronym/code
+is approved only for its exact target, locale, span, payload hash, occurrence
+count, reason, and source. Regex or category-wide whitelisting is not
+accepted.
 The companion exact-target
 `texts/locales/runtime_unicode_script_review.json` enforces locale-specific
 scripts: Japanese permits kana and Han, Simplified Chinese permits Han, and
@@ -152,6 +153,9 @@ providers. The normal command also performs the offline commit/tree/path/blob,
 exact-symbol, and exact-slot checks. All 143 raw records have Japanese and
 Chinese payloads with zero fallback, exclusion, or unresolved record.
 
-`StringInsertSpecialPrefixByCtrl`, `StrInsertTact`, and other renderer-side
-walkers remain byte-oriented. They must not process long UTF-8 overlay content
-until the renderer integration sprint replaces their legacy `0x80` parsing.
+Modern CJK consumers use `TextUtf8_Next` for low controls,
+`[LoadFace]` plus FID, extended controls and arguments, U+3000, strict UTF-8,
+and malformed/truncated input. `StringInsertSpecialPrefixByCtrl` and
+`StrInsertTact` preserve control tokens while performing bounded UTF-8
+substitutions; production callers provide explicit capacities. English-only
+and archival preprocessing retains the legacy walkers and layouts.

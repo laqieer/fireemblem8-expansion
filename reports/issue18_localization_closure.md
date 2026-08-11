@@ -1,25 +1,32 @@
-# Issue #18 sprint 4 closure evidence -- "host+semantic libmGBA localization
-# scenarios, runtime probes, budget/headroom, real fingerprint captures"
+# Issue #18 final localization closure evidence
+
+**Final branch-local state (2026-08-11):** Japanese and Simplified Chinese
+each cover all 3,414 compressed FE8U messages and all 143 audited raw
+surfaces. English fallback, raw exclusion, unresolved records, unapproved
+runtime leakage, payload mismatch, and disallowed-script leakage are all
+zero. Japanese raw goal strings are bound to the pinned live FE8J ROM through
+the committed full-ROM hash, exact offsets/slices, and independently locked
+range proof. Both locales have complete system/talk font inventories, and all
+modern CJK runtime consumers use the shared FE control/UTF-8 tokenization and
+bounded substitution contract.
 
 **Current integration clarification (2026-08-03):** this report's 11-gate
 localization evidence now matches live `verify.gates()`: localization is the
 third mirrored gate. The issues #7/#17 documentation-governance gate remains
 an additional standalone workflow step and is not mirrored.
 
-Status: **historical candidate closure evidence for reviewer/verifier. The
-implementation documented here was later merged into the current source tree;
-this report does not assert the current GitHub issue state, close it, or claim
-an online CI URL.** It maps every item of this
-sprint's frozen contract (the WHAT/DONE sections of the task that produced
-this commit) to concrete code, scenarios, tests, and explicit non-goals,
-so a reviewer can verify closure claim-by-claim. It builds on Sprint 1
+Status: **final branch-local implementation closure evidence for
+reviewer/verifier. It does not assert the remote GitHub issue state or an
+online CI URL.** The historical sprint sections below map their frozen
+contracts to concrete code, scenarios, and tests; the final-state summary
+above supersedes their intermediate scope/status wording. It builds on Sprint 1
 (`5436ec27`), Sprint 2 (`795d2abd`, `6b9fe068`), and Sprint 3 (`b746df2c`,
 `92ed1b6b`) rather than duplicating their host-only test coverage.
 
 **Sprint 5 addendum (this commit)**: fixed every Harness review/verifier
 finding raised against this report's sprint-4 claims, closing all three
 previously-descoped items for real (see the WHAT #2-3 section above and
-"Non-applicable items" below) plus four additional real defects:
+"Historical scope items now closed" below) plus four additional real defects:
 
 1. **Multi-locale clean-build header-path DAG bug**: a clean, uncached,
    non-`-j` multi-locale build could race two configs'/output roots'
@@ -411,20 +418,12 @@ sprint) -- every fix this sprint is confined to `modern.mk`, `scripts/
 shiftcheck/modern_shifted_boot.sh`, scenario/fingerprint JSON, and this
 sprint's own new files.
 
-## Non-applicable items (explicit, not silently dropped)
+## Historical scope items now closed
 
-The three items previously listed here as descoped in an earlier sprint
--- real Config settings-submenu live navigation, an explicit visible
-pseudo-marker pixel/region proof, and a literal soft-reset key-combo
-persistence variant -- are **no longer descoped**: all three are now
-implemented with real libmGBA evidence (see the WHAT #2-3 section above
-and the sprint 5 addendum below). The one remaining item from that list:
-
-- **Docs inventory / checker registry update**: searched for at HEAD;
-  no such registry file exists in this worktree's `docs/`/`reports/` tree
-  (confirmed via `find`/`ls`), so per the task's own conditional
-  instruction ("if present in current master") this item does not apply
-  and nothing was added or skipped improperly.
+Real Config navigation, visible pseudo-marker proof, literal soft-reset
+persistence, the exact documentation inventory, and the external-link
+registry are all present and checked in the final tree. The historical
+candidate's earlier descoping/non-applicability wording is superseded.
 
 ## WHERE / DON'T compliance
 
@@ -435,21 +434,21 @@ and the sprint 5 addendum below). The one remaining item from that list:
   -- one explicitly-authorized, purely additive `localization-host-suite`
   step, with the matching `verify.py` gate and doc update in the same
   commit; no existing CI gate was weakened, reordered, or removed.
-- No `#6`/`#10` manual-copy of foreign-language content; no foreign
-  content authored anywhere in this diff (`docs/localization.md`'s own
-  legal/non-goals section documents this explicitly).
+- No runtime/content semantics are inferred from documentation. Translation
+  inputs remain the pinned, reviewed sources documented in
+  `docs/game_locale_sources.md`; the final generated reports bind their exact
+  hashes and providers.
 - Every fingerprint touched in this diff is a real, capture-verified
   regeneration (see WHAT #6); none were hand-edited.
 - `git log` shows no `--amend`/force-push in this sprint's history; this
   commit is a plain, ordinary append to `agent/issue18-localization`.
-- Issue #18 is not closed by this commit.
+- Remote issue state is outside this branch-local evidence report.
 
 ## Addendum: issue #18 sprint 6 -- two runtime blockers fixed on top of cap self-heal
 
-This report above is the sprint 4/5 closure snapshot and is intentionally
-left otherwise unmodified as historical evidence; this addendum records
-the sprint 6 correction to the one claim above that sprint 6 falsified,
-plus the two runtime blockers actually fixed:
+The detailed sprint 4/5 sections remain historical evidence; this addendum
+records the sprint 6 correction to the one earlier claim that sprint 6
+falsified, plus the two runtime blockers actually fixed:
 
 1. **Fresh-metadata over-eager VALID stamp (multi-locale first-start
    prompt suppression).** `src/bmsave-lib.c`'s

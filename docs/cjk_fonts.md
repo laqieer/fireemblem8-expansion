@@ -1,9 +1,8 @@
 # Deterministic CJK font assets
 
-This directory contract supplies Sprint 3 with reviewable Japanese and
-Simplified Chinese glyph bitmaps without changing the renderer or the normal
-build. Bare `make` does not invoke FEBuilderGBA, .NET, a GUI, the network, or a
-system font lookup.
+This directory contract supplies the final Japanese and Simplified Chinese
+system/talk glyph bitmaps used by the modern UTF-8 renderer. Bare `make` does
+not invoke FEBuilderGBA, .NET, a GUI, the network, or a system font lookup.
 
 ## Inventory contract
 
@@ -36,23 +35,24 @@ The inventory reads the committed normalized sources:
   `texts/locales/authored/`, whose manifest pins the source queue and every
   reviewed shard;
 - active `texts/expansion` catalog strings, resolved through the English
-  fallback catalog when a locale catalog is absent.
+  catalog only for defensive sparse-profile behavior; the committed JA/ZH
+  catalogs contain all 53 active keys and contribute zero fallback strings.
 
 Bracketed game controls (named or `[CTRL:HHHH]`) and `{N}` expansion
 placeholders are not glyphs.
 Visible text is normalized with NFC only. ASCII remains in the existing
 runtime fonts. The source contains one non-ASCII spacing scalar, U+3000
 IDEOGRAPHIC SPACE; FEBuilder schema v1 rejects whitespace, so U+3000 is
-reported separately and Sprint 3 must give it an explicit advance rather than
+reported separately and the runtime gives it an explicit advance rather than
 performing a bitmap lookup.
 
 Current deterministic counts:
 
 | Locale | Source non-ASCII | Bitmap scalars per style | Styles |
 | --- | ---: | ---: | --- |
-| `ja` | 1,798 | 1,797 | System/item, Talk/text |
+| `ja` | 1,800 | 1,799 | System/item, Talk/text |
 | `zh-Hans` | 2,470 | 2,469 | System/item, Talk/text |
-| union | 3,284 | 3,283 | U+3000 is the one spacing scalar |
+| union | 3,285 | 3,284 | U+3000 is the one spacing scalar |
 
 The sorted corpora are in `fonts/cjk/corpora/`; human-readable scalar maps are
 in `fonts/cjk/maps/`; counts, input hashes, output hashes, token rules, and

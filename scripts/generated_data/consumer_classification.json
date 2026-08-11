@@ -2361,14 +2361,6 @@
       "category": "runtime-macro",
       "reason": null
     },
-    "include/localized_game_text.h|function-signature|character|GetCharacterDisplayNameForWidth": {
-      "category": "external-interface",
-      "reason": null
-    },
-    "include/localized_game_text.h|function-signature|class|GetClassDisplayNameForWidth": {
-      "category": "external-interface",
-      "reason": null
-    },
     "include/localized_game_text.h|function-signature|item|GetItemDisplayNameForWidth": {
       "category": "external-interface",
       "reason": null

@@ -65,7 +65,7 @@ remain import provenance only and never become runtime keys.
   decision ledger generated from committed evidence and reviewed authored
   shards. Every production row is indexed, raw, or authored.
 - `mapping/fe8u_target_map.coverage.json`: deterministic source-kind and
-  subsystem counts plus every fallback target ID and reason.
+  subsystem counts plus the final zero-fallback/zero-unresolved summary.
 - `source/febuilder/translate_textid_FE8.txt`: byte-exact, hash-pinned
   FEBuilder FE8 translator map snapshot. Normal checks never read a sibling
   FEBuilderGBA checkout.
@@ -102,9 +102,9 @@ remain import provenance only and never become runtime keys.
 - `authored/catalog.{ja,zh-Hans}.json`: deterministic canonical runtime
   catalogs generated from the pinned shard union.
 - `mapping/raw_surface_decisions.json`: the 29 audited records that were not
-  part of the original 114 raw-to-game-ID mappings. Each has a concrete game
-  message ID, semantic expansion key, explicit English fallback, or documented
-  exclusion and call-site anchors.
+  part of the original 114 raw-to-game-ID mappings. Each final record has a
+  concrete game message ID or semantic expansion key plus call-site anchors;
+  none closes through fallback or exclusion.
 - `mapping/raw_surface_closure.json`: deterministic 143-record closure
   manifest. It is rebuilt from the raw source, verified FE8U map, deferred
   decisions, expansion registry/catalogs, and live source anchors.
@@ -368,9 +368,9 @@ unresolved coverage are both zero for Japanese and Simplified Chinese.
 ## Final mapping promotion and authored queue
 
 `build-final-mapping` is the authoritative promotion pipeline. It is
-idempotent: promoted rows retain their original fallback source and
-verification, allowing the structural base to be reconstructed before every
-run. Precedence is fixed:
+idempotent: promoted rows retain their historical pre-promotion source and
+verification metadata, allowing the structural base to be reconstructed
+before every run. Precedence is fixed:
 
 1. preserve existing verified structural/raw/authored providers;
 2. promote parsed structural high-confidence proof;
@@ -572,13 +572,11 @@ The committed report currently proves:
 
 - 6,828/6,828 game-catalog payloads audited (3,414 per locale);
 - 286/286 raw-surface payloads audited (143 per locale);
-- all 125 Japanese and 139 Chinese mixed-script bypasses reviewed;
-- 25 English spans localized through hash-pinned, control-preserving
-  overrides, including the seven Japanese `MSG` placeholders;
-- 162 current Japanese and 164 current Chinese Latin-bearing game payloads;
-- 341 remaining exact approved spans across game and raw surfaces;
-- 0 near-copy candidates;
-- 0 unapproved span occurrences, 0 payload mismatches, and 0 stale decisions.
+- 120/120 fixed-width display aliases audited;
+- all remaining Latin/script approvals are exact-scope, exact-payload,
+  hash-pinned decisions rather than regex/category grants;
+- 0 unapproved span occurrences, 0 unapproved or disallowed script
+  occurrences, 0 payload mismatches, 0 stale decisions, and 0 artifacts.
 
 Generate or verify it with:
 
