@@ -36,19 +36,24 @@ This module is the durable regression: a fast, toolchain-independent
 structural pin for the new prerequisite edge, plus a real (still
 toolchain-independent -- `generated-data-check` never invokes
 arm-none-eabi-gcc) integration test that drives the actual gate-relevant
-default -> 0xCE -> 0xCE (warm) -> default (reverse) sequence against
-THIS repository's real, shared, artifact-rich
-`build/generated/data/` -- never a temp copy, never `clean` -- and
-asserts the C header / JSON / Markdown surfaces agree at every
-transition and that a same-cap warm rerun leaves every surface's mtime
-untouched. A final, toolchain-gated (but still no libmGBA/ROM-boot
-needed) tier compiles the real `data_items.o` object for both the
-`debug` and `release` modern configs at the expanded cap and proves the
-compiled object's own record count -- derived proportionally from its
-linked data-section size, never a hardcoded byte count -- agrees with
-whatever the header's ACTIVE_RECORD_COUNT says: the actual "gItem
-expansion expects 207 but sees 206" consumer-side risk this issue names,
-pinned without paying for a full ROM link/boot.
+default -> 0xCE -> 0xCE (warm) -> default (reverse) sequence against an
+artifact-rich clone of THIS repository's existing
+`build/generated/data/` tree -- never `clean`, and isolated under
+`build/test-generated-data-cap-dag/` through the target's supported
+`GENERATED_DATA_OUT_DIR` override. The isolation is essential: the full
+host suite can run alongside real default-cap Make gates in the same
+worktree, and those independent builds must not be mistaken for a warm
+rerun touching this test's files. The sequence asserts the C header /
+JSON / Markdown surfaces agree at every transition and that a same-cap
+warm rerun leaves every surface's mtime untouched. A final,
+toolchain-gated (but still no libmGBA/ROM-boot needed) tier compiles an
+isolated real `data_items.o` object for both the `debug` and `release`
+modern configs at the expanded cap and proves the compiled object's own
+record count -- derived proportionally from its linked data-section
+size, never a hardcoded byte count -- agrees with whatever the header's
+ACTIVE_RECORD_COUNT says: the actual "gItem expansion expects 207 but
+sees 206" consumer-side risk this issue names, pinned without paying for
+a full ROM link/boot.
 """
 
 import json
@@ -62,11 +67,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 GENERATED_DATA_MK = ROOT / "generated_data.mk"
 
-OUT_DIR = ROOT / "build" / "generated" / "data"
-HEADER = OUT_DIR / "id_space_active.h"
-AUDIT_JSON = OUT_DIR / "id_space_active_audit.json"
-AUDIT_MD = OUT_DIR / "id_space_active_audit.md"
-STAMP = OUT_DIR / ".item_id_cap.stamp"
+SHARED_OUT_DIR = ROOT / "build" / "generated" / "data"
+TEST_OUT_ROOT = ROOT / "build" / "test-generated-data-cap-dag"
 
 DEFAULT_CAP_HEX = "0xCD"
 DEFAULT_RECORD_COUNT = 206
@@ -80,9 +82,22 @@ def _toolchain_available():
     ) is not None
 
 
-def _run_generated_data_check(cap=None, timeout=180):
+def _relative_make_path(path):
+    return path.relative_to(ROOT).as_posix()
+
+
+def _prepare_isolated_case(name):
+    case_root = TEST_OUT_ROOT / "{}-{}".format(name, os.getpid())
+    shutil.rmtree(case_root, ignore_errors=True)
+    case_root.parent.mkdir(parents=True, exist_ok=True)
+    out_dir = case_root / "generated"
+    shutil.copytree(SHARED_OUT_DIR, out_dir)
+    return case_root, out_dir
+
+
+def _run_generated_data_check(cap=None, out_dir=SHARED_OUT_DIR, timeout=180):
     """A real (not `-n`) `make generated-data-check` invocation against the
-    actual repository build tree, with a clean baseline environment (no
+    selected generated-data tree, with a clean baseline environment (no
     ambient FE8_ITEM_ID_CAP/MAKEFLAGS leaking in from the test runner)."""
     env = os.environ.copy()
     env.pop("MAKEFLAGS", None)
@@ -91,7 +106,10 @@ def _run_generated_data_check(cap=None, timeout=180):
     else:
         env["FE8_ITEM_ID_CAP"] = cap
     result = subprocess.run(
-        ["make", "--no-print-directory", "generated-data-check"],
+        [
+            "make", "--no-print-directory", "generated-data-check",
+            "GENERATED_DATA_OUT_DIR={}".format(_relative_make_path(out_dir)),
+        ],
         cwd=str(ROOT),
         env=env,
         text=True,
@@ -103,20 +121,20 @@ def _run_generated_data_check(cap=None, timeout=180):
     return result
 
 
-def _header_defines():
-    text = HEADER.read_text(encoding="utf-8")
+def _header_defines(out_dir):
+    text = (out_dir / "id_space_active.h").read_text(encoding="utf-8")
     return dict(
         (m.group(1), m.group(2))
         for m in re.finditer(r"^#define\s+(\S+)\s+(\S+)\s*$", text, re.MULTILINE)
     )
 
 
-def _mtimes():
+def _mtimes(out_dir):
     return {
-        "header": HEADER.stat().st_mtime_ns,
-        "json": AUDIT_JSON.stat().st_mtime_ns,
-        "md": AUDIT_MD.stat().st_mtime_ns,
-        "stamp": STAMP.stat().st_mtime_ns,
+        "header": (out_dir / "id_space_active.h").stat().st_mtime_ns,
+        "json": (out_dir / "id_space_active_audit.json").stat().st_mtime_ns,
+        "md": (out_dir / "id_space_active_audit.md").stat().st_mtime_ns,
+        "stamp": (out_dir / ".item_id_cap.stamp").stat().st_mtime_ns,
     }
 
 
@@ -178,44 +196,79 @@ class GeneratedDataCheckStampPrerequisiteTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout[-3000:])
         self.assertIn(".item_id_cap.stamp", result.stdout)
 
+    def test_output_dir_override_rehomes_every_cap_mutating_recipe(self):
+        probe_dir = TEST_OUT_ROOT / "dry-run-output-probe"
+        rel_probe = _relative_make_path(probe_dir)
+        result = subprocess.run(
+            [
+                "make", "--no-print-directory", "-n", "generated-data-check",
+                "GENERATED_DATA_OUT_DIR={}".format(rel_probe),
+            ],
+            cwd=str(ROOT),
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            check=False,
+            timeout=30,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout[-3000:])
+        self.assertIn(
+            '"{}/.item_id_cap.stamp.tmp"'.format(rel_probe), result.stdout
+        )
+        self.assertIn("active-heal --out-dir {}".format(rel_probe), result.stdout)
+        self.assertIn(
+            "check --table items --out-dir {}".format(rel_probe), result.stdout
+        )
+        self.assertIn("active-check --out-dir {}".format(rel_probe), result.stdout)
+
 
 class GeneratedDataCheckArtifactRichCapDagSequenceTests(unittest.TestCase):
     """Real integration coverage, run against THIS repository's actual,
-    shared, artifact-rich build/generated/data/ -- never a temp copy,
-    never `clean` -- for the gate-relevant, order-relevant subset of the
-    11-gate `verify` sequence: default generated-data-check, an expanded
-    (0xCE) probe, a same-cap warm rerun, then the reverse default gate.
-    `generated-data-check` never invokes arm-none-eabi-gcc, so this whole
-    class needs no cross-compiler toolchain."""
+    artifact-rich build/generated/data/ as the seed for an isolated
+    GENERATED_DATA_OUT_DIR -- never `clean` -- for the gate-relevant,
+    order-relevant subset of the 11-gate `verify` sequence: default
+    generated-data-check, an expanded (0xCE) probe, a same-cap warm rerun,
+    then the reverse default gate. `generated-data-check` never invokes
+    arm-none-eabi-gcc, so this whole class needs no cross-compiler
+    toolchain."""
 
     @classmethod
     def setUpClass(cls):
-        if not OUT_DIR.is_dir():
+        if not SHARED_OUT_DIR.is_dir():
             raise unittest.SkipTest(
                 "build/generated/data does not exist yet in this worktree "
                 "(run `make generated-data-generate` first) -- this suite "
-                "asserts on the real, existing artifact-rich tree and must "
-                "never create it via `clean`/from scratch"
+                "seeds from the real, existing artifact-rich tree and must "
+                "never create that seed via `clean`/from scratch"
             )
+        cls.case_root, cls.out_dir = _prepare_isolated_case("artifact-sequence")
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls.case_root, ignore_errors=True)
 
     def tearDown(self):
-        # Always leave the shared tree at the committed default cap, no
+        # Always leave this isolated tree at the committed default cap, no
         # matter which assertion (if any) failed mid-sequence -- the same
         # "reverse default gate" step the task's own required sequence
         # ends on.
-        _run_generated_data_check(cap=None)
+        _run_generated_data_check(cap=None, out_dir=self.out_dir)
 
     def _assert_active_summary(self, cap_hex, record_count):
-        defines = _header_defines()
+        defines = _header_defines(self.out_dir)
         self.assertEqual(defines.get("ITEM_ID_ACTIVE_CONFIGURED_CAP"), cap_hex)
         self.assertEqual(
             defines.get("ITEM_ID_ACTIVE_RECORD_COUNT"), str(record_count)
         )
-        payload = json.loads(AUDIT_JSON.read_text(encoding="utf-8"))
+        payload = json.loads(
+            (self.out_dir / "id_space_active_audit.json").read_text(encoding="utf-8")
+        )
         item = next(d for d in payload["domains"] if d["key"] == "item")
         self.assertEqual(item["active_configured_cap"], int(cap_hex, 16))
         self.assertEqual(item["active_record_count"], record_count)
-        md_text = AUDIT_MD.read_text(encoding="utf-8")
+        md_text = (self.out_dir / "id_space_active_audit.md").read_text(
+            encoding="utf-8"
+        )
         want_row = "| item | {} | {} | {} | {} | {} |".format(
             "0x{:02X}".format(0xCD), DEFAULT_RECORD_COUNT,
             cap_hex, record_count,
@@ -230,26 +283,30 @@ class GeneratedDataCheckArtifactRichCapDagSequenceTests(unittest.TestCase):
     def test_default_then_expanded_then_warm_then_reverse_default(self):
         # 1. Default gate (mirrors verify's own generated-data-check gate,
         #    which never sets FE8_ITEM_ID_CAP).
-        result = _run_generated_data_check(cap=None)
+        result = _run_generated_data_check(cap=None, out_dir=self.out_dir)
         self.assertEqual(result.returncode, 0, result.stdout[-4000:])
         self._assert_active_summary(DEFAULT_CAP_HEX, DEFAULT_RECORD_COUNT)
 
         # 2. Expanded-cap probe: header/JSON/MD must all move to 0xCE/207
-        #    together, in this same shared tree, with no clean.
-        result = _run_generated_data_check(cap=EXPANDED_CAP_HEX)
+        #    together, in this same artifact-rich tree, with no clean.
+        result = _run_generated_data_check(
+            cap=EXPANDED_CAP_HEX, out_dir=self.out_dir
+        )
         self.assertEqual(result.returncode, 0, result.stdout[-4000:])
         self._assert_active_summary(EXPANDED_CAP_HEX, EXPANDED_RECORD_COUNT)
-        expanded_mtimes = _mtimes()
+        expanded_mtimes = _mtimes(self.out_dir)
 
         # 3. Warm rerun at the SAME (expanded) cap must be a true no-op:
         #    every ACTIVE surface's mtime stays exactly where step 2 left
         #    it (write-if-changed all the way down -- no rebuild storm,
         #    no spurious touch).
-        result = _run_generated_data_check(cap=EXPANDED_CAP_HEX)
+        result = _run_generated_data_check(
+            cap=EXPANDED_CAP_HEX, out_dir=self.out_dir
+        )
         self.assertEqual(result.returncode, 0, result.stdout[-4000:])
         self._assert_active_summary(EXPANDED_CAP_HEX, EXPANDED_RECORD_COUNT)
         self.assertEqual(
-            _mtimes(), expanded_mtimes,
+            _mtimes(self.out_dir), expanded_mtimes,
             "a same-cap warm generated-data-check rerun must not advance "
             "any ACTIVE surface's mtime",
         )
@@ -257,18 +314,18 @@ class GeneratedDataCheckArtifactRichCapDagSequenceTests(unittest.TestCase):
         # 4. Reverse default gate: a plain generated-data-check (no cap)
         #    must restore 0xCD/206, self-healing back down with no clean
         #    and no manual intervention.
-        result = _run_generated_data_check(cap=None)
+        result = _run_generated_data_check(cap=None, out_dir=self.out_dir)
         self.assertEqual(result.returncode, 0, result.stdout[-4000:])
         self._assert_active_summary(DEFAULT_CAP_HEX, DEFAULT_RECORD_COUNT)
-        default_mtimes = _mtimes()
+        default_mtimes = _mtimes(self.out_dir)
 
         # 5. Warm rerun at the restored default cap is equally a true
         #    no-op.
-        result = _run_generated_data_check(cap=None)
+        result = _run_generated_data_check(cap=None, out_dir=self.out_dir)
         self.assertEqual(result.returncode, 0, result.stdout[-4000:])
         self._assert_active_summary(DEFAULT_CAP_HEX, DEFAULT_RECORD_COUNT)
         self.assertEqual(
-            _mtimes(), default_mtimes,
+            _mtimes(self.out_dir), default_mtimes,
             "a warm default generated-data-check rerun must not advance "
             "any ACTIVE surface's mtime",
         )
@@ -289,18 +346,30 @@ class ExpandedCapConsumerObjectAgreementTests(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        if not OUT_DIR.is_dir():
+        if not SHARED_OUT_DIR.is_dir():
             raise unittest.SkipTest(
                 "build/generated/data does not exist yet in this worktree"
             )
+        cls.case_root, cls.out_dir = _prepare_isolated_case("consumer-object")
+        cls.modern_build_root = cls.case_root / "modern"
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls.case_root, ignore_errors=True)
 
     def tearDown(self):
-        _run_generated_data_check(cap=None)
+        _run_generated_data_check(cap=None, out_dir=self.out_dir)
         for config in self.CONFIGS:
             self._build_object(config, cap=None)
 
     def _object_path(self, config):
-        return ROOT / "build" / "expansion-modern" / config / "aapcs" / "src" / "data_items.o"
+        return (
+            self.modern_build_root
+            / config
+            / "aapcs"
+            / "src"
+            / "data_items.o"
+        )
 
     def _build_object(self, config, cap):
         env = os.environ.copy()
@@ -314,6 +383,12 @@ class ExpandedCapConsumerObjectAgreementTests(unittest.TestCase):
             [
                 "make", "--no-print-directory", rel,
                 f"MODERN_CONFIG={config}", "MODERN_ABI=aapcs",
+                "MODERN_BUILD_ROOT={}".format(
+                    _relative_make_path(self.modern_build_root)
+                ),
+                "GENERATED_DATA_OUT_DIR={}".format(
+                    _relative_make_path(self.out_dir)
+                ),
             ],
             cwd=str(ROOT),
             env=env,
@@ -369,7 +444,7 @@ class ExpandedCapConsumerObjectAgreementTests(unittest.TestCase):
                 )
 
     def _assert_active_summary_is(self, cap_hex, record_count):
-        defines = _header_defines()
+        defines = _header_defines(self.out_dir)
         self.assertEqual(defines.get("ITEM_ID_ACTIVE_CONFIGURED_CAP"), cap_hex)
         self.assertEqual(
             defines.get("ITEM_ID_ACTIVE_RECORD_COUNT"), str(record_count)
