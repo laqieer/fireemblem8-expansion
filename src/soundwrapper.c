@@ -328,6 +328,9 @@ void PlaySong(int songId, struct MusicPlayerInfo *player)
     {
         Sound_SetupMaxChannelsForSong(songId);
 
+#ifdef FE8_ARCHIVAL_BUILD
+        UnlockSoundRoomSong(0, songId);
+#else
         /* Skipped only while the debugtools bootstrap suppression is
          * active (see include/expansion_debugtools.h) -- the one-shot
          * window between the "Fast Boot: Chapter 2" debug launch
@@ -336,6 +339,7 @@ void PlaySong(int songId, struct MusicPlayerInfo *player)
          * song-room unlock tracking keeps writing normally. */
         if (!DebugTools_IsBootstrapSuppressionActive())
             UnlockSoundRoomSong(0, songId);
+#endif
     }
 
     if (player != NULL)

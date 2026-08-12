@@ -456,6 +456,7 @@ void GameControl_PostIntro(struct GameCtrlProc * proc)
         }
 #endif
 
+#ifndef FE8_ARCHIVAL_BUILD
         /* Debug hub "Fast Boot: Chapter 2" handoff (see
          * src/debugtools_launcher.c, include/expansion_debugtools.h):
          * consumed at most once per armed request, and only here, before
@@ -558,6 +559,7 @@ void GameControl_PostIntro(struct GameCtrlProc * proc)
             Proc_Goto(proc, LGAMECTRL_EXEC_BM);
             break;
         }
+#endif
 
         Proc_Goto(proc, LGAMECTRL_EXEC_SAVEMENU);
         GameControl_FadeBgmVolume(proc);

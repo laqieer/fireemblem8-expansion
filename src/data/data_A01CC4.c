@@ -40,7 +40,11 @@ u8 CONST_DATA Img_StatscreenHalo[] = INCBIN_U8("graphics/statscreen/StatscreenHa
 u8 CONST_DATA Tsa_StatscreenHalo[] = INCBIN_U8("graphics/statscreen/StatscreenHalo.bin.lz");
 u16 CONST_DATA Pal_StatscreenHalo[] = INCBIN_U16("graphics/statscreen/StatscreenHalo.gbapal");
 u8 Img_ConfigUiSprites[] = INCBIN_U8("graphics/misc/Img_ConfigUiSprites.4bpp.lz");
+#ifdef FE8_ARCHIVAL_BUILD
+u8 Img_ConfigUiIcons[] = INCBIN_U8("graphics/misc/Img_ConfigUiIcons.legacy.4bpp.lz");
+#else
 u8 Img_ConfigUiIcons[] = INCBIN_U8("graphics/misc/Img_ConfigUiIcons.4bpp.lz");
+#endif
 u8 Tsa_ConfigUiFrame[] = INCBIN_U8("graphics/misc/Tsa_ConfigUiFrame.tsa.bin.lz");
 u16 Pal_ConfigUiSprites[] = INCBIN_U16("graphics/misc/Pal_ConfigUiSprites.gbapal");
 /* ApplyChapterTitlePal treats these six symbols as one packed 0x300-byte table. */

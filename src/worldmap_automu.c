@@ -322,17 +322,23 @@ void EndGmAutoMuFor(int index)
     {
         proc = Proc_FindNext(&procIter);
 
+#ifndef FE8_ARCHIVAL_BUILD
         if (proc == NULL)
         {
             break;
         }
+#endif
 
         if (proc->unitId == index)
         {
             Proc_End(proc);
             return;
         }
+#ifdef FE8_ARCHIVAL_BUILD
+    } while (proc != NULL);
+#else
     } while (1);
+#endif
 
     return;
 }
@@ -353,16 +359,22 @@ bool IsGmAutoMuActiveFor(int index)
     {
         proc = Proc_FindNext(&procIter);
 
+#ifndef FE8_ARCHIVAL_BUILD
         if (proc == NULL)
         {
             break;
         }
+#endif
 
         if (proc->unitId == index)
         {
             return true;
         }
+#ifdef FE8_ARCHIVAL_BUILD
+    } while (proc != NULL);
+#else
     } while (1);
+#endif
 
     return false;
 }

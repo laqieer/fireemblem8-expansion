@@ -860,6 +860,10 @@ void Title_EnterMainScreen(struct TitleScreenProc* proc) {
 //! FE8U = 0x080C6354
 void Title_IDLE(struct TitleScreenProc * proc)
 {
+#ifdef FE8_ARCHIVAL_BUILD
+    proc->timer_idle++;
+    proc->timer = (++proc->timer & 0x3f);
+#else
     /* Freeze the idle/attract timer pair entirely while the hub is
      * active (see DebugTools_IsHubActive doc, include/expansion_debugtools.h):
      * checking hub state before incrementing means proc->timer_idle
@@ -895,13 +899,6 @@ void Title_IDLE(struct TitleScreenProc * proc)
      * second concurrent hub MenuProc. */
     DebugTools_TitleHotkeyCheck();
 
-#ifdef FE8_ARCHIVAL_BUILD
-#define DEBUGTOOLS_ARCHIVAL_HUB_ACTIVE() DebugTools_IsHubActive()
-    if (DEBUGTOOLS_ARCHIVAL_HUB_ACTIVE())
-        return;
-#undef DEBUGTOOLS_ARCHIVAL_HUB_ACTIVE
-#endif
-
     /* The Chapter 2 action sets this request from its menu callback before
      * MENU_ACT_END tears down the hub. Check it before the broader session
      * guard: deferred Text cleanup intentionally retains session ownership
@@ -920,7 +917,6 @@ void Title_IDLE(struct TitleScreenProc * proc)
      * an A press meant to select a hub action can never also race the
      * normal title-to-gameplay transition below (always 0 in a release
      * build). */
-#ifndef FE8_ARCHIVAL_BUILD
     if (DebugTools_IsHubActive())
         return;
 #endif
@@ -1068,7 +1064,9 @@ void StartTitleScreen_WithMusic(ProcPtr parent) {
      * proc-tree-staleness-prone signal the bootstrap observer's own
      * abandoned-run detection can rely on. No-op unless a deterministic
      * Chapter 2 boot's own bootstrap suppression is still active. */
+#ifndef FE8_ARCHIVAL_BUILD
     DebugTools_NotifyTitleScreenStarting();
+#endif
 
     proc = Proc_StartBlocking(gProcScr_TitleScreen, parent);
     proc->mode = 0;
@@ -1080,7 +1078,9 @@ void StartTitleScreen_WithMusic(ProcPtr parent) {
 void StartTitleScreen_FlagFalse(ProcPtr parent) {
     struct TitleScreenProc* proc;
 
+#ifndef FE8_ARCHIVAL_BUILD
     DebugTools_NotifyTitleScreenStarting();
+#endif
 
     proc = Proc_StartBlocking(gProcScr_TitleScreen, parent);
     proc->mode = 0;
@@ -1090,7 +1090,9 @@ void StartTitleScreen_FlagFalse(ProcPtr parent) {
 void StartTitleScreen_FlagTrue(ProcPtr parent) {
     struct TitleScreenProc* proc;
 
+#ifndef FE8_ARCHIVAL_BUILD
     DebugTools_NotifyTitleScreenStarting();
+#endif
 
     proc = Proc_StartBlocking(gProcScr_TitleScreen, parent);
     proc->mode = 1;

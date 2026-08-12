@@ -774,17 +774,23 @@ void EndGmapRmBorder1(int index)
     {
         proc = Proc_FindNext(&procIter);
 
+#ifndef FE8_ARCHIVAL_BUILD
         if (proc == NULL)
         {
             break;
         }
+#endif
 
         if (proc->index == index)
         {
             Proc_End(proc);
             return;
         }
+#ifdef FE8_ARCHIVAL_BUILD
+    } while (proc != NULL);
+#else
     } while (1);
+#endif
 
     return;
 }
@@ -806,16 +812,22 @@ int GmapRmBorder1Exists(int index)
     {
         proc = Proc_FindNext(&procIter);
 
+#ifndef FE8_ARCHIVAL_BUILD
         if (proc == NULL)
         {
             break;
         }
+#endif
 
         if (proc->index == index)
         {
             return 1;
         }
+#ifdef FE8_ARCHIVAL_BUILD
+    } while (proc != NULL);
+#else
     } while (1);
+#endif
 
     return 0;
 }
@@ -832,10 +844,12 @@ void RequestGmapRmBorder1Remove(int index)
     {
         proc = Proc_FindNext(&procIter);
 
+#ifndef FE8_ARCHIVAL_BUILD
         if (proc == NULL)
         {
             break;
         }
+#endif
 
         if (index < 0)
         {
@@ -846,7 +860,11 @@ void RequestGmapRmBorder1Remove(int index)
             proc->flag = 1;
             return;
         }
+#ifdef FE8_ARCHIVAL_BUILD
+    } while (proc != NULL);
+#else
     } while (1);
+#endif
 
     return;
 }
@@ -1189,17 +1207,23 @@ void EndWmPlaceDotByIndex(int index)
     {
         proc = Proc_FindNext(&procIter);
 
+#ifndef FE8_ARCHIVAL_BUILD
         if (proc == NULL)
         {
             break;
         }
+#endif
 
         if (proc->unk_2b == index)
         {
             Proc_End(proc);
             return;
         }
+#ifdef FE8_ARCHIVAL_BUILD
+    } while (proc != NULL);
+#else
     } while (1);
+#endif
 
     return;
 }
@@ -1220,16 +1244,22 @@ bool IsWmPlaceDotActiveAtIndex(int index)
     {
         proc = Proc_FindNext(&procIter);
 
+#ifndef FE8_ARCHIVAL_BUILD
         if (proc == NULL)
         {
             break;
         }
+#endif
 
         if (proc->unk_2b == index)
         {
             return true;
         }
+#ifdef FE8_ARCHIVAL_BUILD
+    } while (proc != NULL);
+#else
     } while (1);
+#endif
 
     return false;
 }
@@ -1245,10 +1275,12 @@ void SetWmPlaceDotFlagForIndex(int index)
     {
         proc = Proc_FindNext(&procIter);
 
+#ifndef FE8_ARCHIVAL_BUILD
         if (proc == NULL)
         {
             break;
         }
+#endif
 
         if (index < 0)
         {
@@ -1259,7 +1291,11 @@ void SetWmPlaceDotFlagForIndex(int index)
             proc->flag = 1;
             return;
         }
+#ifdef FE8_ARCHIVAL_BUILD
+    } while (proc != NULL);
+#else
     } while (1);
+#endif
 
     return;
 }

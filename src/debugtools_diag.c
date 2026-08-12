@@ -1,5 +1,7 @@
 #include "global.h"
 
+#ifndef FE8_ARCHIVAL_BUILD
+
 #include "expansion_debugtools.h"
 
 /*
@@ -111,5 +113,7 @@ u32 DebugTools_GetLastAssertCode(void)
 {
     return DEBUGTOOLS_ASSERT_NONE;
 }
+
+#endif /* FE8_EXPANSION_DEBUGTOOLS_ENABLED */
 
 #endif /* FE8_EXPANSION_DEBUGTOOLS_ENABLED */

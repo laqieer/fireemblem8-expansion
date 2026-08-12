@@ -327,8 +327,13 @@ void ClassIntro_Init(struct OpInfoEnterProc* proc) {
         GetClassData(proc->classReelEnt->classId)->nameTextId);
     proc->classNameLength = 0;
 #else
+#ifdef FE8_ARCHIVAL_BUILD
+    str = GetClassReelName(proc->classReelEnt->classId, NULL);
+    ptr = 0;
+#else
     ptr = 0;
     str = GetClassReelName(proc->classReelEnt->classId, NULL);
+#endif
     proc->classNameLength = strlen(str);
 
     while (*str != 0) {

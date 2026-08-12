@@ -1,9 +1,5 @@
 #include "global.h"
 
-#ifdef FE8_ARCHIVAL_BUILD
-#include "debugtools_registry_legacy.inc"
-#endif
-
 #ifndef FE8_ARCHIVAL_BUILD
 #include <string.h>
 #include <stdio.h>

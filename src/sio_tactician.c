@@ -987,7 +987,11 @@ void Tactician_DrawCharGrid(struct ProcTactician * proc)
 #endif
                 Text_DrawString(
                     Texts_1 + (i + proc->text_idx * 5),
+#ifdef FE8_ARCHIVAL_BUILD
+                    conf->str[proc->line_idx * 3]
+#else
                     str
+#endif
                 );
             }
         }
@@ -1075,10 +1079,18 @@ void Tactician_InitScreen(struct ProcTactician * proc)
         proc->max_len = 5;
     }
 
+#ifdef FE8_ARCHIVAL_BUILD
+    for (i = 0; i < (proc->max_len * 2 + 1); i++)
+#else
     for (i = 0; i < (int)sizeof(proc->str); i++)
+#endif
         proc->str[i] = '\0';
 
+#ifdef FE8_ARCHIVAL_BUILD
+    for (i = 0; i < proc->max_len; i++)
+#else
     for (i = 0; i < (int)ARRAY_COUNT(proc->unk4C); i++)
+#endif
         proc->unk4C[i] = 0;
 
     if (CheckInLinkArena())

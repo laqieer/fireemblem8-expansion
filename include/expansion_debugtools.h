@@ -2,10 +2,12 @@
 #define GUARD_EXPANSION_DEBUGTOOLS_H
 
 #ifdef FE8_ARCHIVAL_BUILD
-#include "expansion_debugtools_legacy.inc"
-#endif
-
-#ifndef FE8_ARCHIVAL_BUILD
+/*
+ * The supported debug-tools subsystem is modern-only. Keep archival
+ * callsites in their original source shape instead of linking disabled
+ * stubs, state, menus, or libc dependencies into the byte-matched ROM.
+ */
+#else
 /*
  * Issue #11 slice 1 -- supported debug-tools foundation.
  *
@@ -818,6 +820,6 @@ enum
 
 extern struct DebugToolsProbe gDebugToolsProbe;
 
-#endif /* FE8_ARCHIVAL_BUILD */
+#endif
 
 #endif /* GUARD_EXPANSION_DEBUGTOOLS_H */

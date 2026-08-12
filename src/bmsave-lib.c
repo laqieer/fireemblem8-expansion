@@ -10,7 +10,9 @@
 #include "bmlib.h"
 #include "eventinfo.h"
 #include "bonusclaim.h"
+#ifndef FE8_ARCHIVAL_BUILD
 #include "expansion_save_prefs.h"
+#endif
 
 // TODO: Should be in "bmsave.h", but doing so causes a non-match (implicit declaration?) in "bonusclaim.c"
 bool LoadBonusContentData(void *buf);
@@ -114,6 +116,8 @@ u16 Checksum16(void const * data, int size)
 
     return add_acc + xor_acc;
 }
+
+#ifndef FE8_ARCHIVAL_BUILD
 
 /*
  * Copies at most (destCapacity - 1) bytes from a NUL-terminated src into
@@ -513,6 +517,8 @@ bool8 ExpansionUserPrefs_StoreRaw(ExpansionLocaleId localeId, bool8 explicitSele
     return (bool8)(errorAddr == 0);
 }
 
+#endif
+
 bool ReadGlobalSaveInfo(struct GlobalSaveInfo *buf)
 {
     struct GlobalSaveInfo local_info;
@@ -585,6 +591,7 @@ void InitGlobalSaveInfodata(void)
 
     WriteGlobalSaveInfo(&info);
 
+#ifndef FE8_ARCHIVAL_BUILD
     /* Genuinely-blank SRAM is being initialized -- also stamp the current
      * expansion save metadata record (issue #2 slice 1) so this save is
      * classified SAVE_COMPAT_CURRENT from now on. */
@@ -597,8 +604,10 @@ void InitGlobalSaveInfodata(void)
 #ifdef MODERN
     gSramBootFlags |= SRAM_BOOT_FLAG_WRITES_ALLOWED;
 #endif
+#endif
 }
 
+#ifndef FE8_ARCHIVAL_BUILD
 bool EnsureGlobalSaveInfoLoaded(struct GlobalSaveInfo *buf)
 {
     /*
@@ -628,6 +637,7 @@ bool EnsureGlobalSaveInfoLoaded(struct GlobalSaveInfo *buf)
     InitGlobalSaveInfodata();
     return ReadGlobalSaveInfo(buf);
 }
+#endif
 
 void EraseBonusContentData(void)
 {
@@ -1705,7 +1715,7 @@ void EraseSramDataIfInvalid(void)
     if (state != SAVE_COMPAT_EMPTY && state != SAVE_COMPAT_CURRENT)
         return;
 #else
-    if (SAVE_COMPAT_EMPTY == ClassifySramSaveCompat())
+    if (!ReadGlobalSaveInfo(NULL))
         InitGlobalSaveInfodata();
 #endif
 

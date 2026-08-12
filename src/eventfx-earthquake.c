@@ -75,8 +75,13 @@ void EndEventEarthQuake(void)
 
     switch (proc->type) {
     case 0:
+#ifdef FE8_ARCHIVAL_BUILD
+        (u16)gBmSt.camera.x &= 0xFFFC;
+        (u16)gBmSt.camera.y &= 0xFFFC;
+#else
         gBmSt.camera.x &= 0xFFFC;
         gBmSt.camera.y &= 0xFFFC;
+#endif
         break;
 
     case 1:

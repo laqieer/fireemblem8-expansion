@@ -1,5 +1,7 @@
 #include "global.h"
 
+#ifndef FE8_ARCHIVAL_BUILD
+
 #include "constants/songs.h"
 #include "constants/msg.h"
 
@@ -407,3 +409,5 @@ void StartSaveCompatMenu(ProcPtr parent, enum SaveCompatState compat)
     gSaveCompatMenuActive = TRUE;
     gSaveCompatMenuLastState = compat;
 }
+
+#endif
