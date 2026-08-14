@@ -5,14 +5,15 @@ A small, targeted structural checker (deliberately not a general YAML
 parser -- stdlib-only, no PyYAML dependency) for the repository's
 release-rehearsal and Full Matrix workflow contracts: exactly one
 top-level `on` mapping, read-only permissions, decoded checkout credential
-hygiene, exact target-SHA binding with no step/shell override, pinned
-external actions, no secrets/network/publish mutation, the constrained
-successful-Build-CI-on-master `workflow_run` path, and canonical executable
-commands in named Full Matrix evidence/gate steps. The Full Matrix contract
-also binds each lane's actual checkout to the dispatched SHA, requires an
-immediately following executable SHA check, rejects conditional/
-continue-on-error false greens, and validates the summary's real
-needs-result failure path.
+hygiene, exact target-SHA binding with no env/shell override, pinned external
+actions, no secrets/network/publish mutation, the constrained successful-
+Build-CI-on-master `workflow_run` path, and canonical executable commands in
+named Full Matrix evidence/gate steps. Both contracts reject workflow/job
+``defaults.run.shell`` and required-step ``shell`` overrides, retaining
+GitHub's standard bash execution. The Full Matrix contract also binds each
+lane's actual checkout to the dispatched SHA, requires an immediately
+following executable SHA check, rejects conditional/continue-on-error false
+greens, and validates the summary's real needs-result failure path.
 
 Conservative and fail-closed by construction: every check here is a
 structured/line-aware substring or regex match, never a full YAML/shell
@@ -1171,6 +1172,152 @@ def _job_steps(job: _MappingEntry):
         )
         decoded.append((item, step_entries))
     return decoded, violations
+
+
+def _flow_mapping_has_key(value: str, expected_key: str) -> bool:
+    """Finds a decoded key in a flow mapping while skipping quoted values."""
+    cursor = 0
+    while cursor < len(value):
+        char = value[cursor]
+        if char in ('"', "'"):
+            end, _decoded, _problem = _scan_quoted_scalar(value, cursor, char)
+            cursor = end
+            continue
+        if char not in "{,":
+            cursor += 1
+            continue
+
+        key_start = cursor + 1
+        while key_start < len(value) and value[key_start].isspace():
+            key_start += 1
+        if key_start >= len(value):
+            break
+
+        if value[key_start] in ('"', "'"):
+            end, key, problem = _scan_quoted_scalar(
+                value, key_start, value[key_start]
+            )
+            if problem is not None:
+                cursor = end
+                continue
+            key_end = end
+        else:
+            match = re.match(r"[A-Za-z_][A-Za-z0-9_-]*", value[key_start:])
+            if match is None:
+                cursor = key_start + 1
+                continue
+            key = match.group(0)
+            key_end = key_start + len(key)
+
+        while key_end < len(value) and value[key_end].isspace():
+            key_end += 1
+        if key_end < len(value) and value[key_end] == ":" and key == expected_key:
+            return True
+        cursor = key_end + 1
+    return False
+
+
+def _check_defaults_run_shell(
+    entries: List[_MappingEntry],
+    defaults_indent: int,
+    label: str,
+) -> List[str]:
+    """Rejects ``defaults.run.shell`` at workflow or job scope."""
+    violations = []
+    for defaults in [entry for entry in entries if entry.key == "defaults"]:
+        if defaults.value:
+            if _flow_mapping_has_key(defaults.value, "shell"):
+                violations.append(
+                    f"{label} must not override defaults.run.shell; required workflow "
+                    "commands must use GitHub's standard bash"
+                )
+            continue
+
+        defaults_entries, defaults_problems = _mapping_entries_at_indent(
+            defaults.text, defaults_indent + 2
+        )
+        if defaults_problems and "shell" in defaults.text:
+            violations.append(
+                f"{label} defaults mapping containing shell is structurally ambiguous "
+                "and rejected fail-closed"
+            )
+        for run_entry in [entry for entry in defaults_entries if entry.key == "run"]:
+            if run_entry.value:
+                has_shell = _flow_mapping_has_key(run_entry.value, "shell")
+            else:
+                run_entries, run_problems = _mapping_entries_at_indent(
+                    run_entry.text, defaults_indent + 4
+                )
+                if run_problems and "shell" in run_entry.text:
+                    violations.append(
+                        f"{label} defaults.run mapping containing shell is structurally "
+                        "ambiguous and rejected fail-closed"
+                    )
+                has_shell = any(entry.key == "shell" for entry in run_entries)
+            if has_shell:
+                violations.append(
+                    f"{label} must not override defaults.run.shell; required workflow "
+                    "commands must use GitHub's standard bash"
+                )
+    return violations
+
+
+def check_shell_overrides(text: str, contract: str) -> List[str]:
+    """Rejects shell replacement at every contract-controlled scope.
+
+    GitHub accepts custom shell templates such as ``true {0}`` and
+    ``bash -n {0}``, and alternate interpreters such as ``cmd``/``pwsh``.
+    Those values can change a required command from execution into a
+    syntax-only check, a no-op, or another interpreter, so actionlint/schema
+    validity is not evidence that the guarded command ran. These workflows
+    need no explicit shell mapping: GitHub's standard bash is the contract.
+    """
+    if contract not in WORKFLOW_CONTRACT_CHOICES:
+        raise ValueError(f"unknown workflow contract: {contract}")
+
+    text = _normalize_for_scanning(text)
+    violations = []
+    top_entries, top_problems = _mapping_entries_at_indent(text, 0)
+    violations.extend(f"workflow shell contract {problem}" for problem in top_problems)
+    violations.extend(
+        _check_defaults_run_shell(top_entries, 0, "workflow-level defaults")
+    )
+
+    jobs, job_problems = _workflow_jobs(text)
+    violations.extend(job_problems)
+    for job in jobs:
+        job_entries, entry_problems = _mapping_entries_at_indent(job.text, 4)
+        violations.extend(
+            f"job {job.key!r} shell contract {problem}"
+            for problem in entry_problems
+        )
+        violations.extend(
+            _check_defaults_run_shell(
+                job_entries,
+                4,
+                f"job {job.key!r} defaults",
+            )
+        )
+
+        controls_steps = (
+            contract == WORKFLOW_CONTRACT_FULL_MATRIX
+            or job.key == "release-rehearsal"
+        )
+        if not controls_steps:
+            continue
+        steps, step_problems = _job_steps(job)
+        violations.extend(step_problems)
+        for item, step_entries in steps:
+            shell_entries = [entry for entry in step_entries if entry.key == "shell"]
+            if not shell_entries:
+                continue
+            name = _step_name(step_entries)
+            identifier = name if name is not None else f"line {item.line}"
+            violations.append(
+                f"job {job.key!r} required step {identifier!r} must not declare a "
+                "step-level shell override; use GitHub's standard bash"
+            )
+    return sorted(set(violations))
 
 
 def _entry_decoded_value(entry: _MappingEntry):
@@ -2670,6 +2817,7 @@ def validate_workflow_contract(text: str, contract: str) -> List[str]:
     normalized = _normalize_for_scanning(text)
     violations = list(validate_workflow_text(normalized))
     violations.extend(check_release_target_sha_binding(normalized))
+    violations.extend(check_shell_overrides(normalized, contract))
     if contract == WORKFLOW_CONTRACT_FULL_MATRIX:
         violations.extend(check_full_matrix_contract(normalized))
     return sorted(set(violations))

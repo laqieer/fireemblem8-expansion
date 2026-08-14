@@ -444,14 +444,15 @@ def cmd_workflow_guard(args) -> int:
 
     Shared checks cover triggers, permissions, exact checkout pins and
     decoded ``persist-credentials: false`` mappings, forbidden mutation/
-    network shapes, and release-target SHA binding without step/shell
-    overrides. ``--contract full-matrix`` additionally requires the
+    network shapes, release-target SHA binding without step/env shadowing,
+    no workflow/job ``defaults.run.shell``, and no required-step ``shell``
+    replacement. ``--contract full-matrix`` additionally requires the
     canonical executable commands in named host/modern/legacy/release-
     evidence steps, each lane's actual dispatched-revision checkout plus
     immediate executable SHA verification, no conditional/continue-on-
     error false greens, and a summary bound to every real
-    ``needs.*.result``. The default release-rehearsal contract also
-    applies its separate committed action-pin inventory cross-check.
+    ``needs.*.result``. The default release-rehearsal contract also applies
+    its separate committed action-pin inventory cross-check.
     """
     try:
         text = args.workflow.read_text(encoding="utf-8")

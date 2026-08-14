@@ -172,7 +172,11 @@ is not `"mechanically eligible"`.
   Full Matrix contract also rejects job/step `continue-on-error` and skip
   conditions, binds each lane's actual checkout to the dispatched SHA with an
   immediate executable/logged HEAD comparison, and binds the always-running
-  summary to all required jobs' real `needs.*.result` values.
+  summary to all required jobs' real `needs.*.result` values. Both workflow
+  contracts reject workflow/job `defaults.run.shell` and required-step
+  `shell` overrides, retaining GitHub's standard bash. Actionlint/schema
+  acceptance of `true {0}`, `bash -n {0}`, `cmd`, or `pwsh` does not satisfy
+  the guard's execution contract.
 * `.github/workflows/release-rehearsal.yml` -- `pull_request`, manual
   dispatch, and only completed `Build CI` runs on `master`; the sole
   workflow-run job requires conclusion `success`, structurally binds the

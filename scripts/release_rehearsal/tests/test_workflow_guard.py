@@ -10,6 +10,9 @@ sys.path.insert(0, str(ROOT))
 from scripts.release_rehearsal import workflow_guard as wg
 
 FULL_MATRIX_WORKFLOW = ROOT / ".github" / "workflows" / "full-matrix.yml"
+RELEASE_REHEARSAL_WORKFLOW = (
+    ROOT / ".github" / "workflows" / "release-rehearsal.yml"
+)
 
 GOOD_WORKFLOW = """\
 name: Release Rehearsal
@@ -728,8 +731,10 @@ class ForbiddenSubstringTests(unittest.TestCase):
 
 class RepositoryStateTests(unittest.TestCase):
     def test_real_release_rehearsal_workflow_is_clean(self):
-        path = ROOT / ".github" / "workflows" / "release-rehearsal.yml"
-        violations = wg.validate_workflow_text(path.read_text(encoding="utf-8"))
+        violations = wg.validate_workflow_contract(
+            RELEASE_REHEARSAL_WORKFLOW.read_text(encoding="utf-8"),
+            "release-rehearsal",
+        )
         self.assertEqual(violations, [])
 
     def test_no_release_publish_workflow_exists(self):
@@ -1294,6 +1299,150 @@ class FullMatrixStructuralCommandContractTests(unittest.TestCase):
         text = self.text.replace("    if: always()", "    if: success()", 1)
         violations = wg.check_full_matrix_contract(text)
         self.assertTrue(any("if: always()" in v for v in violations), violations)
+
+
+class ShellOverrideContractTests(unittest.TestCase):
+    """Schema/actionlint-valid shell choices still fail the execution guard."""
+
+    SHELL_OVERRIDES = ("true {0}", "bash -n {0}", "cmd", "pwsh")
+
+    @classmethod
+    def setUpClass(cls):
+        cls.release_text = RELEASE_REHEARSAL_WORKFLOW.read_text(encoding="utf-8")
+        cls.full_matrix_text = FULL_MATRIX_WORKFLOW.read_text(encoding="utf-8")
+
+    def assertShellRejected(self, text: str, contract: str, expected: str) -> None:
+        violations = wg.validate_workflow_contract(text, contract)
+        self.assertTrue(
+            any(expected in violation for violation in violations),
+            violations,
+        )
+
+    def requiredStepItems(self, text: str, contract: str):
+        jobs, problems = wg._workflow_jobs(text)
+        self.assertEqual(problems, [])
+        items = []
+        for job in jobs:
+            if contract == "release-rehearsal" and job.key != "release-rehearsal":
+                continue
+            steps, step_problems = wg._job_steps(job)
+            self.assertEqual(step_problems, [])
+            items.extend((job.key, item) for item, _entries in steps)
+        self.assertTrue(items)
+        return items
+
+    def test_workflow_defaults_run_shell_overrides_rejected_by_both_contracts(self):
+        for contract, source in (
+            ("release-rehearsal", self.release_text),
+            ("full-matrix", self.full_matrix_text),
+        ):
+            for shell in self.SHELL_OVERRIDES:
+                with self.subTest(contract=contract, shell=shell):
+                    text = source.replace(
+                        "\npermissions:\n",
+                        "\ndefaults:\n"
+                        "  run:\n"
+                        f"    shell: {shell}\n\n"
+                        "permissions:\n",
+                        1,
+                    )
+                    self.assertShellRejected(
+                        text,
+                        contract,
+                        "workflow-level defaults must not override defaults.run.shell",
+                    )
+
+    def test_job_defaults_run_shell_overrides_rejected_by_both_contracts(self):
+        cases = (
+            (
+                "release-rehearsal",
+                self.release_text,
+                "  release-rehearsal:\n"
+                "    if: ${{ github.event_name != 'workflow_run' || "
+                "github.event.workflow_run.conclusion == 'success' }}\n"
+                "    runs-on: ubuntu-latest\n",
+            ),
+            (
+                "full-matrix",
+                self.full_matrix_text,
+                "  host:\n"
+                "    runs-on: ubuntu-latest\n",
+            ),
+        )
+        for contract, source, anchor in cases:
+            for shell in self.SHELL_OVERRIDES:
+                with self.subTest(contract=contract, shell=shell):
+                    text = source.replace(
+                        anchor,
+                        anchor
+                        + "    defaults:\n"
+                        + "      run:\n"
+                        + f"        shell: {shell}\n",
+                        1,
+                    )
+                    self.assertShellRejected(
+                        text,
+                        contract,
+                        "must not override defaults.run.shell",
+                    )
+
+    def test_every_required_step_shell_override_is_rejected(self):
+        for contract, source in (
+            ("release-rehearsal", self.release_text),
+            ("full-matrix", self.full_matrix_text),
+        ):
+            for job_name, item in self.requiredStepItems(source, contract):
+                item_lines = item.text.splitlines()
+                for shell in self.SHELL_OVERRIDES:
+                    with self.subTest(
+                        contract=contract,
+                        job=job_name,
+                        line=item.line,
+                        shell=shell,
+                    ):
+                        replacement = "\n".join(
+                            item_lines[:1]
+                            + [f"        shell: {shell}"]
+                            + item_lines[1:]
+                        )
+                        text = source.replace(item.text, replacement, 1)
+                        self.assertShellRejected(
+                            text,
+                            contract,
+                            "step-level shell override",
+                        )
+
+    def test_flow_style_defaults_shell_override_is_rejected(self):
+        for contract, source in (
+            ("release-rehearsal", self.release_text),
+            ("full-matrix", self.full_matrix_text),
+        ):
+            with self.subTest(contract=contract):
+                text = source.replace(
+                    "\npermissions:\n",
+                    "\ndefaults: {run: {shell: pwsh}}\n\npermissions:\n",
+                    1,
+                )
+                self.assertShellRejected(
+                    text,
+                    contract,
+                    "workflow-level defaults must not override defaults.run.shell",
+                )
+
+
+class WorkflowShellDocumentationTests(unittest.TestCase):
+    def test_release_docs_distinguish_actionlint_from_guard_acceptance(self):
+        release_process = (ROOT / "docs" / "release_process.md").read_text(
+            encoding="utf-8"
+        )
+        closure = (ROOT / "docs" / "release_closure_candidate.md").read_text(
+            encoding="utf-8"
+        )
+        for text in (release_process, closure):
+            self.assertIn("defaults.run.shell", text)
+            self.assertIn("actionlint", text.lower())
+            for override in ("true {0}", "bash -n {0}", "cmd", "pwsh"):
+                self.assertIn(override, text)
 
 
 # --- issue #9 verifier remediation: adversarial verifier-probe tests -------
