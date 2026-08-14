@@ -165,14 +165,16 @@ is not `"mechanically eligible"`.
   rejected identically, and the real, legitimate
   `.github/workflows/release-rehearsal.yml` still passes with zero
   findings.
-* `.github/workflows/release-rehearsal.yml` -- `pull_request`/
-  `workflow_dispatch` only, top-level `permissions: contents: read`,
-  `persist-credentials: false`, no secrets, no artifact upload, no tag/
-  release/comment/environment mutation -- mechanically asserts the
-  expected `blocked` status (`make release-check-expect-blocked`) rather
-  than relying on prose, and renders `$GITHUB_STEP_SUMMARY` **dynamically**
-  from the tool's own canonical JSON (`cli summary`), never a hardcoded
-  status string.
+* `.github/workflows/release-rehearsal.yml` -- `pull_request`, manual
+  dispatch, and only completed `Build CI` runs on `master`; the sole
+  workflow-run job requires conclusion `success`, binds checkout and release
+  evidence to that run's exact `head_sha`, cannot recurse, and remains
+  top-level `permissions: contents: read`, `persist-credentials: false`, no
+  secrets, no artifact upload, and no tag/release/comment/environment
+  mutation. It mechanically asserts the expected `blocked` status (`make
+  release-check-expect-blocked`) rather than relying on prose, and renders
+  `$GITHUB_STEP_SUMMARY` **dynamically** from canonical JSON (`cli summary`),
+  never a hardcoded status string.
 * `release.mk` Make targets: `release-test`, `release-migrations-check`,
   `release-changelog-check`, `release-rehearse`, `release-check`, plus the
   machine-distinct `release-check-require-eligible`/

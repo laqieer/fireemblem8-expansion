@@ -45,10 +45,10 @@ document does **not** close issue #9.
 | Immutable Git-object source | `scripts/release_rehearsal/git_source.py` | `git ls-tree`/`git cat-file --batch` plumbing wrappers so archive content is always read from an immutable commit object, never the mutable worktree/index. |
 | Archive/rebuild rehearsal | `scripts/release_rehearsal/archive_rehearsal.py` | Deterministic double-build archive hash comparison (git-blob-bound); rebuild-eligibility evaluation plus (when eligible) an actually-executed double-compile-and-compare, with four machine-distinct states (`not_run`/`blocked`/`failed`/`verified_success`). issue #9 R3 fix: eligibility requires a live, non-empty configured submodule origin URL that agrees exactly with *both* independent immutable declared sources (`.gitmodules` and the provenance record) -- missing or mismatched against either is non-eligible, never a vacuous pass -- and every underlying `git status`/`git config`/`git cat-file` command is itself required to actually succeed, a genuine tooling failure being its own actionable, non-eligible finding rather than a silent false pass. |
 | Release-doc link validator | `scripts/release_rehearsal/doc_links.py` | Verifies every relative Markdown link in the release-process doc set resolves to a real file. |
-| Workflow guard | `scripts/release_rehearsal/workflow_guard.py` | Validates `.github/workflows/release-rehearsal.yml`'s own permission/safety contract: **any** permission scope (`contents`, `id-token`, `packages`, `pull-requests`, `issues`, `actions`, `checks`, `deployments`, `statuses`, or any future scope) granted `write`, at top level/job level/nested/inline-mapping, any quoting/case/spacing, shorthand `write-all` permissions, token/secrets interpolation, network/upload/publish/deploy/release commands and actions, ref mutation, and common shell-indirection evasions (line continuations, `eval`, `base64 -d`, `sh -c`/`bash -c`, command-position shell-variable/fragment assembly -- including inside a `$( ... )` command substitution *or* a legacy backtick command substitution, and including every variable tracked from a prior `export NAME=value` or `read`/`read -r NAME` statement (every name a multi-variable `read A B` populates, not only the first), not only a plain `NAME=value` assignment -- plus outright rejection of shell process substitution (`<(...)`/`>(...)`, unused by the real workflow)). |
+| Workflow guard | `scripts/release_rehearsal/workflow_guard.py` | Validates `.github/workflows/release-rehearsal.yml`'s own permission/safety contract: the only permitted `workflow_run` is completed `Build CI` on `master`, with one success-conditioned rehearsal job whose checkout and release target both bind the completed run's exact `head_sha` (while PR/manual runs retain `github.sha`); broad/recursive workflow-run or push triggers are rejected. It also rejects **any** permission scope (`contents`, `id-token`, `packages`, `pull-requests`, `issues`, `actions`, `checks`, `deployments`, `statuses`, or any future scope) granted `write`, at top level/job level/nested/inline-mapping, any quoting/case/spacing, shorthand `write-all` permissions, token/secrets interpolation, network/upload/publish/deploy/release commands and actions, ref mutation, and common shell-indirection evasions (line continuations, `eval`, `base64 -d`, `sh -c`/`bash -c`, command-position shell-variable/fragment assembly -- including inside a `$( ... )` command substitution *or* a legacy backtick command substitution, and including every variable tracked from a prior `export NAME=value` or `read`/`read -r NAME` statement (every name a multi-variable `read A B` populates, not only the first), not only a plain `NAME=value` assignment -- plus outright rejection of shell process substitution (`<(...)`/`>(...)`, unused by the real workflow)). |
 | Action pin inventory | `scripts/release_rehearsal/action_pins.py`, `docs/release_data/action_pins.json` | `workflow_guard.py`'s `check_uses_pins` rejects any external `uses:` reference not pinned to an exact 40-lowercase-hex commit SHA (no version tag -- not even a major-version tag like `v7` -- branch, or short/malformed/wrong-case SHA is ever accepted; a local `./`-prefixed action is the one explicit exemption). `action_pins.py` separately cross-checks that pin against a committed, machine-readable inventory recording the action repository, the pinned SHA, its human-readable upstream version, the official source URL/reference used to establish that correspondence, and the update procedure -- evidence/documentation only, never itself an authorization. |
 | CLI / Make targets | `scripts/release_rehearsal/cli.py`, `release.mk` | `make release-check`, `make release-rehearse`, `make release-migrations-check`, plus the machine-distinct `*-require-eligible`/`*-expect-blocked` gate targets, `release-workflow-guard` (now folding in the action-pin inventory cross-check), `release-action-pins-check`, `release-tree-coverage-check`, `release-submodule-binding-check`, and dynamic `cli summary`. |
-| CI | `.github/workflows/release-rehearsal.yml` | Runs all of the above read-only, on `pull_request`/`workflow_dispatch` only, and renders `$GITHUB_STEP_SUMMARY` dynamically from the tool's own canonical JSON. |
+| CI | `.github/workflows/release-rehearsal.yml` | Runs all of the above read-only on pull requests, manual dispatch, and automatically for the exact merged-master SHA after `Build CI` completes successfully; failed/cancelled runs leave the rehearsal job skipped. It renders `$GITHUB_STEP_SUMMARY` dynamically from the tool's own canonical JSON. |
 
 ## Exit code contract
 
@@ -167,10 +167,12 @@ integration" below for the exact, per-target breakdown of what `make
   explicitly as `--target-sha` by every `release-check`/`release-
   rehearse` target (and their `-require-eligible`/`-expect-blocked`
   siblings), and `.github/workflows/release-rehearsal.yml` overrides it
-  via a job-level `env: RELEASE_TARGET_SHA: ${{ github.sha }}` -- so CI
-  always binds to the *exact, immutable checked-out commit*, never an
-  independently-resolved value that could theoretically disagree with
-  the checkout step. `scripts/release_rehearsal/workflow_guard.py`'s
+  via one event-aware job-level environment binding: `workflow_run` uses
+  `github.event.workflow_run.head_sha`, while `pull_request` and
+  `workflow_dispatch` preserve `github.sha`. The checkout `ref` uses the
+  identical expression, so CI always binds to the *exact, immutable
+  checked-out commit*, never an independently-resolved value that could
+  disagree with the checkout step. `scripts/release_rehearsal/workflow_guard.py`'s
   `check_release_target_sha_binding()` fails closed if a release
   publication-eligibility step is ever added without this binding;
 * a **short-form derivation** (`target_sha[:8]`) matching
@@ -1194,11 +1196,15 @@ authorization" below).
 
 ## Workflow and Make integration
 
-`.github/workflows/release-rehearsal.yml` triggers on `pull_request` and
-`workflow_dispatch` only, declares top-level `permissions: contents:
-read`, checks out with `persist-credentials: false`, uses no secrets, and
-never uploads an artifact or mutates a tag/release/comment/protected
-environment (only a job summary, which is explicitly allowed). Its own
+`.github/workflows/release-rehearsal.yml` triggers on `pull_request`,
+`workflow_dispatch`, and one tightly constrained `workflow_run`: workflow
+`Build CI`, type `completed`, branch `master`. The sole rehearsal job has an
+exact conclusion-`success` condition, so failed/cancelled Build CI runs do
+not start rehearsal; the trigger cannot name itself and therefore cannot
+recurse. The workflow declares top-level `permissions: contents: read`,
+checks out with `persist-credentials: false`, uses no secrets, and never
+uploads an artifact or mutates a tag/release/comment/protected environment
+(only a job summary, which is explicitly allowed). Its own
 permission/safety contract is itself mechanically checked by
 `scripts/release_rehearsal/workflow_guard.py` (via `make
 release-workflow-guard`, using the CLI's dynamic-JSON `workflow-guard`
@@ -1213,9 +1219,9 @@ aggregate test-count claims) -- both are already folded into every
 `release-check`/`release-rehearse` report too (`"epoch_claims"`/
 `"stale_count_claims"`), so these steps are redundant-but-fast standalone
 confirmations, not the only place either is checked. Every publication-
-eligibility step in this job runs under a job-level `env:
-RELEASE_TARGET_SHA: ${{ github.sha }}` (see "Release manifest and
-identity checks" above), mechanically cross-checked by
+eligibility step in this job runs under an event-aware job-level
+`RELEASE_TARGET_SHA` binding that exactly matches checkout `ref` (see
+"Release manifest and identity checks" above), mechanically cross-checked by
 `workflow_guard.check_release_target_sha_binding()`. The job summary
 (`$GITHUB_STEP_SUMMARY`) is rendered **dynamically** from
 `scripts.release_rehearsal.cli summary`'s own canonical JSON (stdlib

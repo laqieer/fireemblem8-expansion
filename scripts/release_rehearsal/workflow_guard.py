@@ -7,7 +7,8 @@ parser -- stdlib-only, no PyYAML dependency) for exactly the constraints
 top-level/job-level/nested permissions, no credential persistence, no
 secrets/token interpolation, no tag/release/asset/comment/environment
 mutation, no artifact upload, no network publish/upload/download
-commands, and a pinned/accepted `actions/checkout` reference.
+commands, a pinned/accepted `actions/checkout` reference, and (when
+present) one exact successful-Build-CI-on-master `workflow_run` contract.
 
 Conservative and fail-closed by construction: every check here is a
 structured/line-aware substring or regex match, never a full YAML/shell
@@ -28,7 +29,22 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import List
 
-ALLOWED_TRIGGERS = {"pull_request", "workflow_dispatch"}
+ALLOWED_TRIGGERS = {"pull_request", "workflow_dispatch", "workflow_run"}
+CANONICAL_WORKFLOW_RUN_TRIGGER = """\
+  workflow_run:
+    workflows: [ "Build CI" ]
+    types: [ completed ]
+    branches: [ "master" ]"""
+WORKFLOW_RUN_JOB_CONDITION = (
+    "    if: ${{ github.event_name != 'workflow_run' || "
+    "github.event.workflow_run.conclusion == 'success' }}"
+)
+WORKFLOW_RUN_SHA_EXPRESSION = (
+    "${{ github.event_name == 'workflow_run' && "
+    "github.event.workflow_run.head_sha || github.sha }}"
+)
+WORKFLOW_RUN_TARGET_BINDING = f"      RELEASE_TARGET_SHA: {WORKFLOW_RUN_SHA_EXPRESSION}"
+WORKFLOW_RUN_CHECKOUT_REF = f"          ref: {WORKFLOW_RUN_SHA_EXPRESSION}"
 # issue #9 mandatory correction #1: there is no mutable-ref allowance any
 # more (no version tag, branch, or short SHA of any external action is
 # ever accepted -- see `check_uses_pins` below). `FULL_SHA_RE` is the one
@@ -1019,17 +1035,127 @@ _SCOPE_WRITE_CANDIDATE_RE = re.compile(
 )
 
 
+def _mapping_keys_at_indent(block: str, indent: int):
+    pattern = re.compile(
+        rf"^ {{{indent}}}(?P<key>{_QUOTED_SPAN_RE}|[a-zA-Z][a-zA-Z0-9_-]*)\s*:",
+        re.MULTILINE,
+    )
+    keys = []
+    problems = []
+    for match in pattern.finditer(block):
+        raw = match.group("key")
+        decoded, problem = _decode_quoted_span(raw)
+        if problem is not None:
+            problems.append((raw, problem))
+        else:
+            keys.append(decoded)
+    return keys, problems
+
+
 def check_triggers(text: str) -> List[str]:
     violations = []
     block = _extract_block(text, "on")
     if not block:
         return ["no top-level 'on:' trigger block found"]
-    found = set(re.findall(r"^\s{2}([a-zA-Z_]+):", block, flags=re.MULTILINE))
+    trigger_keys, trigger_problems = _mapping_keys_at_indent(block, 2)
+    for raw, problem in trigger_problems:
+        violations.append(
+            f"top-level trigger key {raw!r} is not a supported/decodable YAML scalar "
+            f"({_PROBLEM_DESCRIPTIONS.get(problem, problem)})"
+        )
+    found = set(trigger_keys)
     disallowed = found - ALLOWED_TRIGGERS
     if disallowed:
         violations.append(f"disallowed trigger(s): {sorted(disallowed)} (only {sorted(ALLOWED_TRIGGERS)} allowed)")
     if not found:
         violations.append("'on:' block declares no recognizable trigger keys")
+    workflow_run_entries = _extract_trigger_entries(block, "workflow_run")
+    if "workflow_run" in found:
+        if len(workflow_run_entries) != 1:
+            violations.append("workflow_run trigger must use exactly one canonical block mapping")
+        elif workflow_run_entries[0] != CANONICAL_WORKFLOW_RUN_TRIGGER:
+            violations.append(
+                "workflow_run trigger must exactly name workflow 'Build CI', type 'completed', "
+                "and branch 'master'; broad or differently scoped workflow_run triggers are rejected"
+            )
+    return violations
+
+
+def _extract_trigger_entries(on_block: str, trigger: str) -> List[str]:
+    """Returns each block-style top-level trigger entry with indentation
+    preserved. This intentionally accepts no flow-style or alternate
+    spelling for the privileged workflow_run trigger: the caller compares
+    the complete entry byte-for-byte with one canonical read-only shape."""
+    lines = on_block.splitlines()
+    starts = [
+        index
+        for index, line in enumerate(lines)
+        if re.fullmatch(rf"  {re.escape(trigger)}\s*:", line)
+    ]
+    entries = []
+    for start in starts:
+        end = start + 1
+        while end < len(lines) and not re.match(r"^  [a-zA-Z_]+:", lines[end]):
+            end += 1
+        entries.append("\n".join(line.rstrip() for line in lines[start:end]).rstrip())
+    return entries
+
+
+def _has_workflow_run_trigger(text: str) -> bool:
+    block = _extract_block(text, "on")
+    if not block:
+        return False
+    keys, _problems = _mapping_keys_at_indent(block, 2)
+    return "workflow_run" in keys
+
+
+def check_workflow_run_contract(text: str) -> List[str]:
+    """The sole permitted workflow_run path is one read-only rehearsal job
+    after successful Build CI on master, bound to that run's exact head SHA.
+    Pull-request and manual runs retain github.sha through the same explicit
+    event-aware expression."""
+    if not _has_workflow_run_trigger(text):
+        return []
+
+    violations = []
+    jobs_block = _extract_block(text, "jobs")
+    job_ids, job_key_problems = _mapping_keys_at_indent(jobs_block, 2)
+    for raw, problem in job_key_problems:
+        violations.append(
+            f"workflow_run job key {raw!r} is not a supported/decodable YAML scalar "
+            f"({_PROBLEM_DESCRIPTIONS.get(problem, problem)})"
+        )
+    if job_ids != ["release-rehearsal"]:
+        violations.append(
+            "workflow_run workflows must contain exactly one job named 'release-rehearsal'"
+        )
+
+    checkouts = [
+        occ
+        for occ in extract_uses_occurrences(text)
+        if occ.problem is None and occ.action_ref.lower().startswith("actions/checkout@")
+    ]
+    if len(checkouts) != 1:
+        violations.append("workflow_run workflow must contain exactly one actions/checkout step")
+
+    required_lines = (
+        (
+            WORKFLOW_RUN_JOB_CONDITION,
+            "workflow_run release-rehearsal job must run only when Build CI conclusion is exactly 'success'",
+        ),
+        (
+            WORKFLOW_RUN_TARGET_BINDING,
+            "workflow_run RELEASE_TARGET_SHA must bind head_sha for workflow_run and github.sha otherwise",
+        ),
+        (
+            WORKFLOW_RUN_CHECKOUT_REF,
+            "workflow_run checkout ref must bind head_sha for workflow_run and github.sha otherwise",
+        ),
+    )
+    lines = text.splitlines()
+    for required, message in required_lines:
+        if lines.count(required) != 1:
+            violations.append(message)
     return violations
 
 
@@ -1285,16 +1411,14 @@ def check_forbidden_patterns(text: str) -> List[str]:
 # issue #9 verifier remediation: the normal release workflow's
 # publication-eligibility steps (`make release-check`/`make release-
 # rehearse`, and their `-require-eligible`/`-expect-blocked` siblings --
-# see release.mk) must bind the exact, immutable checked-out commit
-# (`${{ github.sha }}`) as this candidate's target SHA -- never silently
-# leave it to whatever `git rev-parse HEAD` happens to resolve to inside
-# the runner (correct in practice, but not itself an auditable, explicit
-# binding a reviewer can see without also trusting the checkout step's
-# own exact behavior). release.mk's own `RELEASE_TARGET_SHA ?= $(shell
-# git rev-parse HEAD)` accepts an environment-variable override with
-# exactly this name, so a single job-level (or step-level) `env:`
-# mapping is sufficient -- never required on every individual `run:`
-# line.
+# see release.mk) must bind the exact, immutable checked-out commit as
+# this candidate's target SHA: `${{ github.sha }}` for pull-request/manual
+# runs, or the completed Build CI run's `workflow_run.head_sha` for the
+# tightly constrained workflow_run path. It must never silently leave the
+# value to whatever `git rev-parse HEAD` happens to resolve to inside the
+# runner. release.mk's own `RELEASE_TARGET_SHA ?= $(shell git rev-parse
+# HEAD)` accepts an environment-variable override with exactly this name,
+# so a single job-level (or step-level) `env:` mapping is sufficient.
 RELEASE_ELIGIBILITY_TARGET_RE = re.compile(r"\bmake\s+release-(check|rehearse)(-require-eligible|-expect-blocked)?\b")
 GITHUB_SHA_BINDING_RE = re.compile(r"RELEASE_TARGET_SHA\s*:\s*\$\{\{\s*github\.sha\s*\}\}")
 
@@ -1303,11 +1427,12 @@ def check_release_target_sha_binding(text: str) -> List[str]:
     """Fails closed if this workflow ever invokes a release publication-
     eligibility target (`make release-check`/`make release-rehearse` or
     a `-require-eligible`/`-expect-blocked` sibling) without also
-    declaring an explicit `RELEASE_TARGET_SHA: ${{ github.sha }}` `env:`
-    binding somewhere in the same file -- this is what makes "bound to
-    the exact checked-out commit" an auditable fact in the workflow
-    file itself, not merely an assumption about `git rev-parse HEAD`'s
-    behavior inside the runner.
+    declaring the exact event-appropriate `RELEASE_TARGET_SHA` `env:`
+    binding somewhere in the same file -- plain `${{ github.sha }}` for
+    pull-request/manual-only workflows, or the canonical event-aware
+    workflow_run-head-SHA expression when workflow_run is present. This
+    makes "bound to the exact checked-out commit" an auditable workflow
+    fact, not merely an assumption about `git rev-parse HEAD`.
 
     Deliberately NOT folded into `validate_workflow_text()`'s shared
     aggregator (called directly by `cli.py`'s `cmd_workflow_guard`
@@ -1321,6 +1446,13 @@ def check_release_target_sha_binding(text: str) -> List[str]:
     invokes_eligibility_target = bool(RELEASE_ELIGIBILITY_TARGET_RE.search(text))
     if not invokes_eligibility_target:
         return []
+    if _has_workflow_run_trigger(text):
+        if WORKFLOW_RUN_TARGET_BINDING in text.splitlines():
+            return []
+        return [
+            "invokes a release publication-eligibility target from workflow_run without "
+            f"the exact event-aware binding 'RELEASE_TARGET_SHA: {WORKFLOW_RUN_SHA_EXPRESSION}'"
+        ]
     if not GITHUB_SHA_BINDING_RE.search(text):
         return [
             "invokes a release publication-eligibility target (make release-check/"
@@ -1363,6 +1495,7 @@ def validate_workflow_text(text: str) -> List[str]:
     normalized = _normalize_for_scanning(text)
     violations: List[str] = []
     violations.extend(check_triggers(normalized))
+    violations.extend(check_workflow_run_contract(normalized))
     violations.extend(check_top_level_permissions(normalized))
     violations.extend(check_no_write_anywhere(normalized))
     violations.extend(check_checkout_pin(normalized))

@@ -29,6 +29,34 @@ jobs:
       - run: make release-check
 """
 
+GOOD_WORKFLOW_RUN = """\
+name: Release Rehearsal
+on:
+  pull_request:
+    branches: [ "master" ]
+  workflow_dispatch: {}
+  workflow_run:
+    workflows: [ "Build CI" ]
+    types: [ completed ]
+    branches: [ "master" ]
+
+permissions:
+  contents: read
+
+jobs:
+  release-rehearsal:
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    env:
+      RELEASE_TARGET_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+    steps:
+      - uses: actions/checkout@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+          persist-credentials: false
+      - run: make release-check
+"""
+
 
 class GoodWorkflowTests(unittest.TestCase):
     def test_no_violations(self):
@@ -40,6 +68,10 @@ class GoodWorkflowTests(unittest.TestCase):
         )
         self.assertEqual(wg.validate_workflow_text(text), [])
 
+    def test_exact_successful_build_ci_workflow_run_accepted(self):
+        self.assertEqual(wg.validate_workflow_text(GOOD_WORKFLOW_RUN), [])
+        self.assertEqual(wg.check_release_target_sha_binding(GOOD_WORKFLOW_RUN), [])
+
 
 class TriggerViolationTests(unittest.TestCase):
     def test_push_trigger_rejected(self):
@@ -49,6 +81,55 @@ class TriggerViolationTests(unittest.TestCase):
         )
         violations = wg.validate_workflow_text(text)
         self.assertTrue(any("disallowed trigger" in v for v in violations))
+
+    def test_broad_workflow_run_trigger_rejected(self):
+        text = GOOD_WORKFLOW.replace(
+            "  workflow_dispatch: {}",
+            "  workflow_dispatch: {}\n  workflow_run: {}",
+        )
+        violations = wg.validate_workflow_text(text)
+        self.assertTrue(any("workflow_run trigger" in v for v in violations), violations)
+
+    def test_quoted_or_escaped_broad_workflow_run_trigger_rejected(self):
+        for key in ('"workflow_run"', r'"workflow\u005frun"'):
+            with self.subTest(key=key):
+                text = GOOD_WORKFLOW.replace(
+                    "  workflow_dispatch: {}",
+                    f"  workflow_dispatch: {{}}\n  {key}: {{}}",
+                )
+                violations = wg.validate_workflow_text(text)
+                self.assertTrue(any("workflow_run trigger" in v for v in violations), violations)
+
+    def test_quoted_push_trigger_rejected(self):
+        text = GOOD_WORKFLOW.replace("  workflow_dispatch: {}", '  "push": {}')
+        violations = wg.validate_workflow_text(text)
+        self.assertTrue(any("disallowed trigger" in v for v in violations), violations)
+
+    def test_wrong_workflow_run_source_rejected_preventing_recursion(self):
+        text = GOOD_WORKFLOW_RUN.replace('workflows: [ "Build CI" ]', 'workflows: [ "Release Rehearsal" ]')
+        violations = wg.validate_workflow_text(text)
+        self.assertTrue(any("workflow_run trigger" in v for v in violations), violations)
+
+    def test_multiple_workflow_run_sources_rejected(self):
+        text = GOOD_WORKFLOW_RUN.replace(
+            'workflows: [ "Build CI" ]',
+            'workflows: [ "Build CI", "Release Rehearsal" ]',
+        )
+        violations = wg.validate_workflow_text(text)
+        self.assertTrue(any("workflow_run trigger" in v for v in violations), violations)
+
+    def test_non_completed_workflow_run_rejected(self):
+        text = GOOD_WORKFLOW_RUN.replace("types: [ completed ]", "types: [ requested ]")
+        violations = wg.validate_workflow_text(text)
+        self.assertTrue(any("workflow_run trigger" in v for v in violations), violations)
+
+    def test_non_master_workflow_run_rejected(self):
+        text = GOOD_WORKFLOW_RUN.replace(
+            '    types: [ completed ]\n    branches: [ "master" ]',
+            '    types: [ completed ]\n    branches: [ "**" ]',
+        )
+        violations = wg.validate_workflow_text(text)
+        self.assertTrue(any("workflow_run trigger" in v for v in violations), violations)
 
 
 class PermissionViolationTests(unittest.TestCase):
@@ -586,14 +667,93 @@ class RepositoryStateTests(unittest.TestCase):
         self.assertFalse(publish_path.exists())
 
 
+class WorkflowRunExecutionContractTests(unittest.TestCase):
+    def test_real_workflow_has_exact_success_only_non_recursive_contract(self):
+        path = ROOT / ".github" / "workflows" / "release-rehearsal.yml"
+        text = path.read_text(encoding="utf-8")
+        self.assertEqual(wg.check_workflow_run_contract(text), [])
+        self.assertIn(wg.CANONICAL_WORKFLOW_RUN_TRIGGER, text)
+        self.assertIn(wg.WORKFLOW_RUN_JOB_CONDITION, text)
+        self.assertIn(wg.WORKFLOW_RUN_TARGET_BINDING, text)
+        self.assertIn(wg.WORKFLOW_RUN_CHECKOUT_REF, text)
+        self.assertNotIn('workflows: [ "Release Rehearsal" ]', text)
+        self.assertNotRegex(text, r"(?m)^\s+[a-z-]+:\s*write\s*$")
+
+    def test_failed_or_cancelled_build_ci_cannot_start_rehearsal(self):
+        for unsafe_condition in (
+            "    if: ${{ github.event.workflow_run.conclusion != 'cancelled' }}",
+            "    if: ${{ always() }}",
+            "    if: ${{ github.event_name == 'workflow_run' }}",
+        ):
+            with self.subTest(condition=unsafe_condition):
+                text = GOOD_WORKFLOW_RUN.replace(wg.WORKFLOW_RUN_JOB_CONDITION, unsafe_condition)
+                violations = wg.validate_workflow_text(text)
+                self.assertTrue(any("conclusion is exactly 'success'" in v for v in violations), violations)
+
+    def test_workflow_run_checkout_must_use_completed_run_head_sha(self):
+        text = GOOD_WORKFLOW_RUN.replace(
+            wg.WORKFLOW_RUN_CHECKOUT_REF,
+            "          ref: ${{ github.sha }}",
+        )
+        violations = wg.validate_workflow_text(text)
+        self.assertTrue(any("checkout ref must bind head_sha" in v for v in violations), violations)
+
+    def test_workflow_run_target_must_use_completed_run_head_sha(self):
+        text = GOOD_WORKFLOW_RUN.replace(
+            wg.WORKFLOW_RUN_TARGET_BINDING,
+            "      RELEASE_TARGET_SHA: ${{ github.sha }}",
+        )
+        violations = wg.validate_workflow_text(text)
+        self.assertTrue(any("RELEASE_TARGET_SHA must bind head_sha" in v for v in violations), violations)
+        self.assertTrue(wg.check_release_target_sha_binding(text))
+
+    def test_head_sha_only_would_break_pr_and_manual_binding(self):
+        text = GOOD_WORKFLOW_RUN.replace(
+            wg.WORKFLOW_RUN_TARGET_BINDING,
+            "      RELEASE_TARGET_SHA: ${{ github.event.workflow_run.head_sha }}",
+        ).replace(
+            wg.WORKFLOW_RUN_CHECKOUT_REF,
+            "          ref: ${{ github.event.workflow_run.head_sha }}",
+        )
+        violations = wg.validate_workflow_text(text)
+        self.assertTrue(any("github.sha otherwise" in v for v in violations), violations)
+
+    def test_additional_unguarded_job_is_rejected(self):
+        text = GOOD_WORKFLOW_RUN + (
+            "\n  recursive-or-unguarded:\n"
+            "    runs-on: ubuntu-latest\n"
+            "    steps:\n"
+            "      - run: echo should-not-run\n"
+        )
+        violations = wg.validate_workflow_text(text)
+        self.assertTrue(any("exactly one job" in v for v in violations), violations)
+
+    def test_additional_checkout_is_rejected(self):
+        text = GOOD_WORKFLOW_RUN.replace(
+            "      - run: make release-check",
+            "      - uses: actions/checkout@bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n"
+            "        with:\n"
+            "          persist-credentials: false\n"
+            "      - run: make release-check",
+        )
+        violations = wg.validate_workflow_text(text)
+        self.assertTrue(any("exactly one actions/checkout" in v for v in violations), violations)
+
+    def test_workflow_run_cannot_gain_write_permissions(self):
+        text = GOOD_WORKFLOW_RUN.replace("contents: read", "contents: write")
+        violations = wg.validate_workflow_text(text)
+        self.assertTrue(any("write" in v for v in violations), violations)
+
+
 class ReleaseTargetShaBindingTests(unittest.TestCase):
     """issue #9 verifier remediation: the normal release workflow's
     publication-eligibility steps must bind the exact checked-out commit
-    (`${{ github.sha }}`) as `RELEASE_TARGET_SHA`. Deliberately not part
-    of `validate_workflow_text()`'s shared aggregator (see that
-    function's own module-level docstring) -- tested directly here, and
-    exercised end-to-end via `cli.py`'s `workflow-guard` subcommand (see
-    `scripts/release_rehearsal/tests/test_cli.py`)."""
+    as `RELEASE_TARGET_SHA`: workflow_run uses the completed run's
+    `head_sha`, while pull-request/manual runs retain `${{ github.sha }}`.
+    Deliberately not part of `validate_workflow_text()`'s shared
+    aggregator (see that function's own module-level docstring) -- tested
+    directly here and exercised end-to-end via `cli.py`'s
+    `workflow-guard` subcommand."""
 
     def test_real_workflow_binds_release_target_sha(self):
         path = ROOT / ".github" / "workflows" / "release-rehearsal.yml"
@@ -622,6 +782,19 @@ class ReleaseTargetShaBindingTests(unittest.TestCase):
         )
         violations = wg.check_release_target_sha_binding(text)
         self.assertEqual(violations, [])
+
+    def test_event_aware_workflow_run_binding_is_accepted(self):
+        violations = wg.check_release_target_sha_binding(GOOD_WORKFLOW_RUN)
+        self.assertEqual(violations, [])
+
+    def test_workflow_run_plain_github_sha_binding_is_rejected(self):
+        text = GOOD_WORKFLOW_RUN.replace(
+            wg.WORKFLOW_RUN_TARGET_BINDING,
+            "      RELEASE_TARGET_SHA: ${{ github.sha }}",
+        )
+        violations = wg.check_release_target_sha_binding(text)
+        self.assertTrue(violations)
+        self.assertTrue(any("event-aware binding" in v for v in violations), violations)
 
     def test_rehearse_variant_also_requires_binding(self):
         text = (
