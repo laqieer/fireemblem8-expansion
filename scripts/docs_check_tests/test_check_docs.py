@@ -1106,6 +1106,63 @@ class StaleFrameworkSupportABIRegressionTests(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# Full Matrix CI README badge contract
+# ---------------------------------------------------------------------------
+
+class FullMatrixBadgeContractTests(unittest.TestCase):
+    def _write_valid_contract(self, root):
+        write(root, "README.md", "# Project\n\n" + check_docs.FULL_MATRIX_BADGE + "\n")
+        write(
+            root,
+            check_docs.FULL_MATRIX_WORKFLOW_PATH,
+            "name: Full Matrix CI\n\non:\n  workflow_dispatch: {}\n",
+        )
+
+    def test_exact_badge_and_workflow_name_pass(self):
+        with TempRepo() as repo:
+            self._write_valid_contract(repo.root)
+            self.assertEqual(check_docs.check_full_matrix_badge(repo.root), [])
+
+    def test_missing_badge_fails(self):
+        with TempRepo() as repo:
+            self._write_valid_contract(repo.root)
+            write(repo.root, "README.md", "# Project\n")
+            findings = check_docs.check_full_matrix_badge(repo.root)
+            self.assertEqual(len(findings), 1)
+            self.assertIn("exactly one canonical Full Matrix CI badge", findings[0].message)
+
+    def test_badge_image_or_link_path_drift_fails(self):
+        for stale in (
+            check_docs.FULL_MATRIX_BADGE.replace("full-matrix.yml/badge.svg", "full-ci.yml/badge.svg"),
+            check_docs.FULL_MATRIX_BADGE.replace(
+                "actions/workflows/full-matrix.yml)",
+                "actions/workflows/full-ci.yml)",
+            ),
+        ):
+            with self.subTest(stale=stale), TempRepo() as repo:
+                self._write_valid_contract(repo.root)
+                write(repo.root, "README.md", stale + "\n")
+                findings = check_docs.check_full_matrix_badge(repo.root)
+                self.assertEqual(len(findings), 1)
+                self.assertIn("full-matrix.yml", findings[0].message)
+
+    def test_workflow_display_name_drift_fails(self):
+        with TempRepo() as repo:
+            self._write_valid_contract(repo.root)
+            write(
+                repo.root,
+                check_docs.FULL_MATRIX_WORKFLOW_PATH,
+                "name: Full CI\n\non:\n  workflow_dispatch: {}\n",
+            )
+            findings = check_docs.check_full_matrix_badge(repo.root)
+            self.assertEqual(len(findings), 1)
+            self.assertIn("display name", findings[0].message)
+
+    def test_real_repository_contract_passes(self):
+        self.assertEqual(check_docs.check_full_matrix_badge(REAL_REPO_ROOT), [])
+
+
+# ---------------------------------------------------------------------------
 # Issues #7/#17 independent-verifier finding: two stale current-facts
 # reintroduced after the #7/#17 docs integration --
 #
