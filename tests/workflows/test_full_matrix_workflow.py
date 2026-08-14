@@ -9,7 +9,15 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github" / "workflows" / "full-matrix.yml"
+README = ROOT / "README.md"
 CHECKOUT_PIN = "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+FULL_MATRIX_BADGE = (
+    "[![Full Matrix CI]"
+    "(https://github.com/laqieer/fireemblem8-expansion/actions/workflows/"
+    "full-matrix.yml/badge.svg)]"
+    "(https://github.com/laqieer/fireemblem8-expansion/actions/workflows/"
+    "full-matrix.yml)"
+)
 
 
 def job_block(text: str, job_id: str) -> str:
@@ -39,6 +47,15 @@ class FullMatrixWorkflowContractTests(unittest.TestCase):
             self.assertNotIn(trigger, self.text)
         self.assertNotIn("inputs:", self.text)
         self.assertNotIn("github.event.inputs", self.text)
+
+    def test_readme_badge_matches_workflow_name_and_path(self):
+        readme = README.read_text(encoding="utf-8")
+        self.assertEqual(readme.splitlines().count(FULL_MATRIX_BADGE), 1)
+        self.assertEqual(
+            len([line for line in readme.splitlines() if "[![Full Matrix CI]" in line]),
+            1,
+        )
+        self.assertRegex(self.text, r"\Aname: Full Matrix CI\n")
 
     def test_permissions_and_concurrency_are_fail_safe(self):
         self.assertRegex(
