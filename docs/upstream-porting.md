@@ -181,9 +181,9 @@ python3 -m scripts.upstream_port verify --dry-run   # list the gate commands wit
 
 **⚠️ This builds and checks the CURRENT TRUSTED WORKTREE (your repo, after
 you manually applied whatever you accepted) — it never builds, checks out,
-or executes the upstream ref/tree.** It orchestrates all 11 current-master
+or executes the upstream ref/tree.** It orchestrates all 12 current-master
 mirrored verifier gates in fail-fast order. `.github/workflows/build.yml`
-carries the same 11 commands with argv/order preserved across its host and ROM
+carries the same 12 commands with argv/order preserved across its host and ROM
 jobs, plus the deliberately standalone issues #7/#17 documentation-governance
 workflow gate described below.
 
@@ -193,21 +193,23 @@ workflow gate described below.
 2. `python3 -m unittest discover -s tests/upstream_port -v`
    (pure-stdlib upstream-port tests, including the workflow mirror contract;
    rerun it for the current test count rather than trusting a written count)
-3. `python3 -m unittest discover -s scripts/localization/tests -p "test_*.py"`
+3. `python3 -m unittest discover -s tests/workflows -p "test_*.py" -v`
+   (pure-stdlib Full Matrix CI workflow and README badge contracts)
+4. `python3 -m unittest discover -s scripts/localization/tests -p "test_*.py"`
    (issue #18 host-only localization schema/catalog/pseudo/generation/resolver
    coverage)
-4. `python3 scripts/artifact_guard.py --revision HEAD`
-5. `python3 -m unittest discover -s scripts/modernize/tests -p test_build_default_lane.py -v`
-6. `python3 -m unittest discover -s scripts/modernize/tests -p test_quickstart.py -v`
-7. `make generated-data-check`
-8. `make expansion-modern-linker-check MODERN_CONFIG=debug MODERN_ABI=aapcs`
-9. `make expansion-modern-linker-check MODERN_CONFIG=release MODERN_ABI=aapcs`
-10. `FE8_ITEM_ID_CAP=0xCE FE8_EXPANSION_ITEMTEST=1 make expansion-modern-itemexpansion-check MODERN_CONFIG=debug MODERN_ABI=aapcs EXPANSION_STARTER_CONTENT=1 EXPANSION_MECHANICS_HOOKS=1 EXPANSION_MECHANICS_SAMPLE=1`
-11. `FE8_ITEM_ID_CAP=0xCE FE8_EXPANSION_ITEMTEST=1 make expansion-modern-itemexpansion-check MODERN_CONFIG=release MODERN_ABI=aapcs EXPANSION_STARTER_CONTENT=1 EXPANSION_MECHANICS_HOOKS=1 EXPANSION_MECHANICS_SAMPLE=1`
+5. `python3 scripts/artifact_guard.py --revision HEAD`
+6. `python3 -m unittest discover -s scripts/modernize/tests -p test_build_default_lane.py -v`
+7. `python3 -m unittest discover -s scripts/modernize/tests -p test_quickstart.py -v`
+8. `make generated-data-check`
+9. `make expansion-modern-linker-check MODERN_CONFIG=debug MODERN_ABI=aapcs`
+10. `make expansion-modern-linker-check MODERN_CONFIG=release MODERN_ABI=aapcs`
+11. `FE8_ITEM_ID_CAP=0xCE FE8_EXPANSION_ITEMTEST=1 make expansion-modern-itemexpansion-check MODERN_CONFIG=debug MODERN_ABI=aapcs EXPANSION_STARTER_CONTENT=1 EXPANSION_MECHANICS_HOOKS=1 EXPANSION_MECHANICS_SAMPLE=1`
+12. `FE8_ITEM_ID_CAP=0xCE FE8_EXPANSION_ITEMTEST=1 make expansion-modern-itemexpansion-check MODERN_CONFIG=release MODERN_ABI=aapcs EXPANSION_STARTER_CONTENT=1 EXPANSION_MECHANICS_HOOKS=1 EXPANSION_MECHANICS_SAMPLE=1`
 
-Gates 8-9 aggregate the complete modern debug/release ROM, linker, budget,
+Gates 9-10 aggregate the complete modern debug/release ROM, linker, budget,
 shift, save, starter-feature, and localization runtime matrices through
-`expansion-modern-linker-check`. Gates 10-11 reuse the item-expansion runtime
+`expansion-modern-linker-check`. Gates 11-12 reuse the item-expansion runtime
 probe at cap `0xCE`; the three issue #6 arguments make the same ROM also prove
 the typed starter-content record and both registered mechanics. No extra ROM
 build or gate is added.
@@ -223,7 +225,7 @@ python3 scripts/check_docs.py --check --check-examples
 ```
 
 This gate is stdlib-only, zero-network, and zero-ROM, and runs before
-dependency/tool installation. It is additional to all 11 mirrored verifier
+dependency/tool installation. It is additional to all 12 mirrored verifier
 gates and intentionally has no `verify.gates()` entry; it does not weaken,
 reorder, or replace any mirrored command.
 

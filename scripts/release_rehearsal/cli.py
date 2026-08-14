@@ -440,43 +440,49 @@ def cmd_rehearse(args) -> int:
 
 
 def cmd_workflow_guard(args) -> int:
-    """Validates `args.workflow`'s own permission/network/safety contract
-    (`workflow_guard.validate_workflow_text`, which now includes the
-    generalized `check_uses_pins` exact-40-hex-SHA pin requirement for
-    every external action) **and** the separate, committed action-pin
-    inventory cross-check (`action_pins.check` -- issue #9 mandatory
-    correction #1: the workflow's pins and
-    `docs/release_data/action_pins.json` must agree exactly, in both
-    directions). A third, issue #9 verifier remediation check
-    (`workflow_guard.check_release_target_sha_binding` -- the exact
-    checked-out commit must be explicitly bound via `RELEASE_TARGET_SHA:
-    ${{ github.sha }}` wherever a release publication-eligibility target
-    is invoked) is folded in here too, rather than into `validate_
-    workflow_text`'s own shared aggregator (see that function's
-    docstring for why). All three are folded into one JSON report and
-    one shared 0/1/2 exit contract, since all three are the same
-    underlying "is this workflow's own safety/pin/identity-binding
-    contract intact" question `make release-workflow-guard` answers --
-    see docs/release_process.md's "Workflow guard is advisory, not
-    authorization" section: a clean result here is necessary, never
-    sufficient, for eligibility."""
+    """Validates one named repository workflow contract as machine JSON.
+
+    Shared checks cover triggers, permissions, exact checkout pins and
+    decoded ``persist-credentials: false`` mappings, forbidden mutation/
+    network shapes, release-target SHA binding without step/env shadowing,
+    no workflow/job ``defaults.run.shell``, and no required-step ``shell``
+    replacement. ``--contract full-matrix`` additionally requires the
+    canonical executable commands in named host/modern/legacy/release-
+    evidence steps, each lane's actual dispatched-revision checkout plus
+    immediate executable SHA verification, no conditional/continue-on-
+    error false greens, and a summary bound to every real
+    ``needs.*.result``. The default release-rehearsal contract also applies
+    its separate committed action-pin inventory cross-check.
+    """
     try:
         text = args.workflow.read_text(encoding="utf-8")
     except OSError as error:
         print(f"error: {error}", file=sys.stderr)
         return EXIT_TOOLING_ERROR
-    violations = list(wg.validate_workflow_text(text))
-    violations.extend(wg.check_release_target_sha_binding(text))
-    action_pin_inventory_path = REPO_ROOT / ap.DEFAULT_INVENTORY_PATH
-    try:
-        action_pin_violations = ap.check(
-            args.workflow, action_pin_inventory_path, workflow_key=args.workflow.as_posix(),
+    contract = getattr(args, "contract", wg.WORKFLOW_CONTRACT_RELEASE_REHEARSAL)
+    violations = list(wg.validate_workflow_contract(text, contract))
+    if contract == wg.WORKFLOW_CONTRACT_RELEASE_REHEARSAL:
+        action_pin_inventory_path = REPO_ROOT / ap.DEFAULT_INVENTORY_PATH
+        try:
+            action_pin_violations = ap.check(
+                args.workflow, action_pin_inventory_path, workflow_key=args.workflow.as_posix(),
+            )
+        except ap.ActionPinError as error:
+            print(f"error: {error}", file=sys.stderr)
+            return EXIT_TOOLING_ERROR
+        violations.extend(action_pin_violations)
+    violations = sorted(set(violations))
+    print(
+        json.dumps(
+            {
+                "contract": contract,
+                "workflow": str(args.workflow),
+                "violations": violations,
+            },
+            indent=2,
+            sort_keys=True,
         )
-    except ap.ActionPinError as error:
-        print(f"error: {error}", file=sys.stderr)
-        return EXIT_TOOLING_ERROR
-    violations = sorted(set(violations) | set(action_pin_violations))
-    print(json.dumps({"workflow": str(args.workflow), "violations": violations}, indent=2, sort_keys=True))
+    )
     if violations:
         print(f"workflow-guard: {len(violations)} finding(s) -- exit 1", file=sys.stderr)
         return 1
@@ -533,6 +539,12 @@ def main(argv=None) -> int:
 
     guard_p = sub.add_parser("workflow-guard", help="dynamic machine-JSON workflow permission/safety guard")
     guard_p.add_argument("workflow", type=Path)
+    guard_p.add_argument(
+        "--contract",
+        choices=wg.WORKFLOW_CONTRACT_CHOICES,
+        default=wg.WORKFLOW_CONTRACT_RELEASE_REHEARSAL,
+        help="repository workflow contract to enforce (default: release-rehearsal)",
+    )
 
     summary_p = sub.add_parser("summary", help="render a dynamic $GITHUB_STEP_SUMMARY-ready Markdown report")
     _add_common_arguments(summary_p)

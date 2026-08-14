@@ -108,6 +108,26 @@ def gates(jobs: int = 2) -> List[Gate]:
             ),
         ),
         Gate(
+            name="workflow-contract-tests",
+            command=[
+                "python3",
+                "-m",
+                "unittest",
+                "discover",
+                "-s",
+                "tests/workflows",
+                "-p",
+                "test_*.py",
+                "-v",
+            ],
+            applicable_note=(
+                "fast host lane (same `host-tests` job): stdlib-only static "
+                "contracts for the dispatch-only Full Matrix CI workflow and "
+                "its README badge path/name/link. No compiler, ROM, linker, "
+                "network, or subordinate runtime gate is invoked"
+            ),
+        ),
+        Gate(
             name="localization-host-suite",
             command=[
                 "python3",
@@ -121,7 +141,7 @@ def gates(jobs: int = 2) -> List[Gate]:
             ],
             applicable_note=(
                 "issue #18 host lane addition (same `host-tests` job, "
-                "textually after upstream-port-tests): the "
+                "textually after workflow-contract-tests): the "
                 "scripts/localization package's own pure-stdlib unit test "
                 "suite (schema/pseudo/catalog/generate/CLI/determinism plus "
                 "the host-native resolver-behavior and vanilla-isolation "

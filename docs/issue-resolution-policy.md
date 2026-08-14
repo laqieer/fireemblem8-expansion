@@ -29,7 +29,7 @@ for the checklist shape.
 Documentation itself is fail-closed in CI: every recognized Markdown extension
 is inventoried, links/anchors and offline external-URL registry coverage are
 checked, and documented Make targets must exist. The fixed upstream-port
-verifier mirrors all 11 current-master gates;
+verifier mirrors all 12 current-master gates;
 the independent documentation workflow gate is additional and deliberately
 not part of `verify.gates()`. Passing either is evidence, not an issue-closure
 decision.

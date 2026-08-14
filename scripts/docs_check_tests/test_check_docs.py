@@ -1106,6 +1106,63 @@ class StaleFrameworkSupportABIRegressionTests(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# Full Matrix CI README badge contract
+# ---------------------------------------------------------------------------
+
+class FullMatrixBadgeContractTests(unittest.TestCase):
+    def _write_valid_contract(self, root):
+        write(root, "README.md", "# Project\n\n" + check_docs.FULL_MATRIX_BADGE + "\n")
+        write(
+            root,
+            check_docs.FULL_MATRIX_WORKFLOW_PATH,
+            "name: Full Matrix CI\n\non:\n  workflow_dispatch: {}\n",
+        )
+
+    def test_exact_badge_and_workflow_name_pass(self):
+        with TempRepo() as repo:
+            self._write_valid_contract(repo.root)
+            self.assertEqual(check_docs.check_full_matrix_badge(repo.root), [])
+
+    def test_missing_badge_fails(self):
+        with TempRepo() as repo:
+            self._write_valid_contract(repo.root)
+            write(repo.root, "README.md", "# Project\n")
+            findings = check_docs.check_full_matrix_badge(repo.root)
+            self.assertEqual(len(findings), 1)
+            self.assertIn("exactly one canonical Full Matrix CI badge", findings[0].message)
+
+    def test_badge_image_or_link_path_drift_fails(self):
+        for stale in (
+            check_docs.FULL_MATRIX_BADGE.replace("full-matrix.yml/badge.svg", "full-ci.yml/badge.svg"),
+            check_docs.FULL_MATRIX_BADGE.replace(
+                "actions/workflows/full-matrix.yml)",
+                "actions/workflows/full-ci.yml)",
+            ),
+        ):
+            with self.subTest(stale=stale), TempRepo() as repo:
+                self._write_valid_contract(repo.root)
+                write(repo.root, "README.md", stale + "\n")
+                findings = check_docs.check_full_matrix_badge(repo.root)
+                self.assertEqual(len(findings), 1)
+                self.assertIn("full-matrix.yml", findings[0].message)
+
+    def test_workflow_display_name_drift_fails(self):
+        with TempRepo() as repo:
+            self._write_valid_contract(repo.root)
+            write(
+                repo.root,
+                check_docs.FULL_MATRIX_WORKFLOW_PATH,
+                "name: Full CI\n\non:\n  workflow_dispatch: {}\n",
+            )
+            findings = check_docs.check_full_matrix_badge(repo.root)
+            self.assertEqual(len(findings), 1)
+            self.assertIn("display name", findings[0].message)
+
+    def test_real_repository_contract_passes(self):
+        self.assertEqual(check_docs.check_full_matrix_badge(REAL_REPO_ROOT), [])
+
+
+# ---------------------------------------------------------------------------
 # Issues #7/#17 independent-verifier finding: two stale current-facts
 # reintroduced after the #7/#17 docs integration --
 #
@@ -1133,7 +1190,7 @@ class StaleIssue5StatusAndGateNumberRegressionTests(unittest.TestCase):
         "GitHub issue #5 is still **OPEN** (this repository does not close it),",
         "#5 is OPEN at time of writing",
         "Does not close GitHub issue #5 (OPEN).",
-        "gates 11-12 of",
+        "gates 10-11 of the current-master",
     ]
 
     def test_each_old_phrase_is_flagged_stale(self):
@@ -1206,16 +1263,17 @@ class StaleIssue5StatusAndGateNumberRegressionTests(unittest.TestCase):
         self.assertNotIn("is still **OPEN**", generated_data_text)
         self.assertNotIn("OPEN at time of writing", closure_report_text)
 
-    def test_framework_support_states_item_expansion_gates_10_11(self):
+    def test_framework_support_states_item_expansion_gates_11_12(self):
         framework_support_text = check_docs.read_text(
             os.path.join(REAL_REPO_ROOT, "docs", "framework-support.md")
         )
-        self.assertIn("gates 10-11 of", framework_support_text)
+        self.assertIn("gates 11-12 of", framework_support_text)
         self.assertNotIn("gates 9-10 of", framework_support_text)
+        self.assertNotIn("gates 10-11 of", framework_support_text)
 
-    def test_verify_gates_item_expansion_entries_are_indexes_10_and_11_of_11(self):
+    def test_verify_gates_item_expansion_entries_are_indexes_11_and_12_of_12(self):
         # Safe, standalone, no-network import of the live verify module
-        # straight off disk -- proves "gates 10-11" against the real,
+        # straight off disk -- proves "gates 11-12" against the real,
         # current scripts/upstream_port/verify.py gates() ordering rather
         # than a hardcoded fake substitute.
         verify_path = os.path.join(
@@ -1232,12 +1290,12 @@ class StaleIssue5StatusAndGateNumberRegressionTests(unittest.TestCase):
         finally:
             sys.modules.pop(spec.name, None)
 
-        self.assertEqual(len(all_gates), 11)
-        # Gates are 1-indexed in the docs ("gates 10-11"); Python lists are
-        # 0-indexed, so that's positions [9] and [10].
-        self.assertIn("itemexpansion", all_gates[9].name)
+        self.assertEqual(len(all_gates), 12)
+        # Gates are 1-indexed in the docs ("gates 11-12"); Python lists are
+        # 0-indexed, so that's positions [10] and [11].
         self.assertIn("itemexpansion", all_gates[10].name)
-        for gate in all_gates[:9]:
+        self.assertIn("itemexpansion", all_gates[11].name)
+        for gate in all_gates[:10]:
             self.assertNotIn("itemexpansion", gate.name)
 
 

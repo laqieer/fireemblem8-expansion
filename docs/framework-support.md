@@ -11,7 +11,7 @@ it links to them.
 
 | Host | Package manager | Auto-installed by `scripts/quickstart.sh` | CI-verified |
 | --- | --- | --- | --- |
-| Ubuntu / Debian / WSL | `apt` | Yes | Yes — `.github/workflows/build.yml` runs on `ubuntu-latest` |
+| Ubuntu / Debian / WSL | `apt` | Yes | Yes — automatic `.github/workflows/build.yml` plus dispatch-only `.github/workflows/full-matrix.yml` run on `ubuntu-latest` |
 | Arch Linux | `pacman` | Yes | No (community-supported; same script path as Ubuntu) |
 | macOS | Homebrew (`brew`) | Yes | No (community-supported) |
 
@@ -24,10 +24,11 @@ Ubuntu/`apt` path above). Do not read this as a native-Windows guarantee —
 none of `scripts/quickstart.sh`, the Makefile, or CI target Windows
 directly.
 
-**CI is the only host this repository automatically re-verifies on every
-push/PR.** Arch and macOS support is exercised by the same script logic but
-is not re-run in CI; treat regressions there as community-reported, not
-CI-caught.
+**Automatic Build CI is the only host this repository re-verifies on every
+push/PR.** The manual Full Matrix CI workflow adds a one-shot pre-merge broad
+pass for an exact branch/SHA; it does not change the automatic Build CI
+contract. Arch and macOS support is exercised by the same script logic but is
+not re-run in CI; treat regressions there as community-reported, not CI-caught.
 
 ## Supported toolchains
 
@@ -107,6 +108,36 @@ no ROM build or network access is required for either.
   `expansion-modern-savefmt-check` (these five need libmGBA too), and
   `scripts.upstream_port verify`.
 
+### Dispatch-only full matrix
+
+Prefer focused local checks during iteration. Once the candidate branch is
+pushed, run the expensive host, modern debug/release, archival, and
+release-evidence lanes in parallel:
+
+```bash
+gh workflow run full-matrix.yml --ref <branch>
+gh run watch <run-id> --exit-status
+```
+
+The workflow is `workflow_dispatch`-only, read-only, concurrency-cancelled by
+workflow/ref, and records the exact `github.sha` and `github.ref`. Its final
+summary fails unless host, both modern matrix configurations, legacy, and
+release-evidence all succeed. The release-evidence lane runs
+`make release-full-matrix-workflow-guard`; the stdlib-only structural guard
+requires the canonical executable commands in named host/modern/legacy/
+release-evidence steps, rejects job/step `continue-on-error` and conditional
+skip false greens, and requires every lane's actual checkout to use the
+dispatched SHA (or the dispatch-selected default) immediately followed by a
+logged executable `git rev-parse HEAD == github.sha` check. It also proves the
+`if: always()` summary depends on every required lane and fails from the real
+`needs.*.result` bindings; comments, `echo`, `true`, alternate env values,
+checkout credential drift, and release-SHA shadowing cannot satisfy it. The
+legally restricted live FE8J provenance
+proof is not a hosted-CI command and remains a mandatory local maintainer
+pre-push step. Use the procedure supported by the checked-out branch in
+[`game_locale_sources.md`](game_locale_sources.md), rather than copying a
+target from another branch or uploading restricted inputs.
+
 ## Configuration surface
 
 The full settings reference (versions, ROM identity, `MODERN_CONFIG`/
@@ -140,8 +171,8 @@ surface remains bounded by its live reference and evidence report.
   expansion gates. See [`starter_features.md`](starter_features.md).
 - **#10 typed IDs:** DEFAULT committed and ACTIVE build-local contracts,
   consumer census, and modern-only item cap `0xCE` pilot are supported; its
-  debug/release runtime commands are gates 10-11 of the current-master
-  11-gate upstream-port verifier. There is no class/chapter/unit/character
+  debug/release runtime commands are gates 11-12 of the current-master
+  12-gate upstream-port verifier. There is no class/chapter/unit/character
   widening
   or implied save migration. See
   [`id_space.md`](id_space.md).

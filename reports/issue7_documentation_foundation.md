@@ -26,7 +26,7 @@ This section describes the current master integration used for the issues
 | External links | Every merged Markdown HTTP(S) occurrence must match `docs/external-link-registry.md`; this is offline coverage, never an online-link claim |
 | Merged #6 coverage | `docs/starter_features.md`, `docs/config_identity.md`, `docs/generated_data_tutorial.md`, `docs/id_space.md`, and support/API tables document all four default-off flags, dependencies, typed content/mechanics, QoL, matrices, budgets, save/legal boundaries |
 | Merged #18 coverage | `docs/localization.md`, `docs/save_format.md`, `docs/config_identity.md`, architecture/support/API tables document stable IDs/catalogs, en/qps-ploc authoring, config/defines, prefs/epoch-2 precedence/migration, selector/settings/reset, budgets and matrices |
-| Gate truth | `scripts/upstream_port/verify.py` mirrors all 11 current-master gates, including `localization-host-suite`. The issues #7/#17 docs workflow gate is additional, standalone, and intentionally absent from `verify.gates()`; localization runtime checks remain inside the linker gates. |
+| Gate truth | `scripts/upstream_port/verify.py` mirrors all 12 current-master gates, including `workflow-contract-tests` and `localization-host-suite`. The issues #7/#17 docs workflow gate is additional, standalone, and intentionally absent from `verify.gates()`; localization runtime checks remain inside the linker gates. |
 | Future #9 boundary | Only current issue-resolution governance and an unfilled migration template exist; no release automation/tag/changelog/artifact/updater claim is made |
 
 ### Current integration validation evidence

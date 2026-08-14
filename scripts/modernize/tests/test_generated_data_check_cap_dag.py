@@ -183,7 +183,7 @@ class GeneratedDataCheckArtifactRichCapDagSequenceTests(unittest.TestCase):
     """Real integration coverage, run against THIS repository's actual,
     shared, artifact-rich build/generated/data/ -- never a temp copy,
     never `clean` -- for the gate-relevant, order-relevant subset of the
-    11-gate `verify` sequence: default generated-data-check, an expanded
+    12-gate `verify` sequence: default generated-data-check, an expanded
     (0xCE) probe, a same-cap warm rerun, then the reverse default gate.
     `generated-data-check` never invokes arm-none-eabi-gcc, so this whole
     class needs no cross-compiler toolchain."""

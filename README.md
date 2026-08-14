@@ -1,6 +1,7 @@
 # Fire Emblem 8 Expansion
 
 [![Build CI](https://github.com/laqieer/fireemblem8-expansion/actions/workflows/build.yml/badge.svg)](https://github.com/laqieer/fireemblem8-expansion/actions/workflows/build.yml)
+[![Full Matrix CI](https://github.com/laqieer/fireemblem8-expansion/actions/workflows/full-matrix.yml/badge.svg)](https://github.com/laqieer/fireemblem8-expansion/actions/workflows/full-matrix.yml)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square)](http://makeapullrequest.com)
 
 A **Fire Emblem: The Sacred Stones (GBA) expansion framework**, built and

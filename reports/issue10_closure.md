@@ -2,7 +2,7 @@
 
 **Current integration clarification (2026-08-03):** any 10-gate counts below
 are point-in-time evidence from this historical closure run and are
-superseded for current composition. Live `verify.gates()` mirrors all 11
+superseded for current composition. Live `verify.gates()` mirrors all 12
 current-master gates, including localization; the issues #7/#17 documentation
 gate remains an additional standalone workflow step.
 
