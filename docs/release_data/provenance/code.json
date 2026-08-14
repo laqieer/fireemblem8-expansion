@@ -92,8 +92,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Wave 0/issue #9 seed: repository-authored build tooling/config/source surface (or, for asm/, decompiled disassembly derived from the original ROM). No human legal/provenance review has been recorded yet; this manifest records that honestly rather than asserting a license or clearance.",
-    "oid": "4121bde7b6d52200ca86651095fa8c7f887c48d7",
-    "sha256": "8909d84381263e6ac0bc1b201f8495fd98cffaf2868ec8c1ee636ff9465d5611"
+    "oid": "88eccafec61dd54d9c6480eb6a68331807f9ac9a",
+    "sha256": "e1d38391f263e0f7030cf8a9e4a4df6b2804617ba502868119b88cccf01c5e52"
   },
   {
     "path": ".github/workflows/release-rehearsal.yml",
@@ -932,8 +932,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Wave 0/issue #9 seed: repository-authored documentation. No human legal/provenance review has been recorded yet; this manifest records that honestly rather than asserting a license or clearance.",
-    "oid": "c00d918172c2794c32779104dbba602ca9fbfa33",
-    "sha256": "34706f918a2e33cc04aa8202dc5da9026f4774b5a6625bc68eea7929291acdbe"
+    "oid": "f6e7c5220a5c5d602a4173a871bf56a56021c801",
+    "sha256": "0bc73624af77ee79a51d1cc5bccd09e1718b0732102b23fd6f3d3cdb7aad082c"
   },
   {
     "path": "docs/game_locale_sources.md",
@@ -1112,8 +1112,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Wave 0/issue #9 seed: repository-authored documentation. No human legal/provenance review has been recorded yet; this manifest records that honestly rather than asserting a license or clearance.",
-    "oid": "6ed6e927c6b93f7f30179d7744c14ff8fc195678",
-    "sha256": "65c4c14f4b97439a0cddc1592ccd81aba4f2dbd3bb6d234236645fc2342b3f4a"
+    "oid": "ca398a449ad25b51e8d1b398d899df16975433f5",
+    "sha256": "d57f07ccade9952f151abb1ed2ba9bc057fdd3abebe3814cb21acb870ef6682e"
   },
   {
     "path": "docs/release_data/action_pins.json",
@@ -1208,8 +1208,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Wave 0/issue #9 seed: repository-authored documentation. No human legal/provenance review has been recorded yet; this manifest records that honestly rather than asserting a license or clearance.",
-    "oid": "811b5d7ec46dc53f90579b635e57b7034292167b",
-    "sha256": "46a24d465640404cda5f872f90f886c4c38ec7edf35384790e979deabb3eb441"
+    "oid": "5bae31f028ecca494b819756b28de1d428f24edd",
+    "sha256": "401e00f8b8796b99a7bbd6d157b49e812f43a9c189cb45a84a078f283a78f658"
   },
   {
     "path": "docs/save_format.md",
@@ -3764,8 +3764,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Issue #9 release-process Make targets. No human legal/provenance review has been recorded yet.",
-    "oid": "ab5ac537a042b08c4d3b23865a8ed5ef94f29b63",
-    "sha256": "49e88622527d19e4a6f6a7e0167c433081b061239e0794efb5fc4adc913c1b0b"
+    "oid": "11261c70eeeedf7e15342d0f7a505bef49419b4b",
+    "sha256": "9c9c1cc851e053a9450708eb34054704bdcb72827f321b505d95a66a2dae9417"
   },
   {
     "path": "scripts/add_asm_func_end.py",
@@ -11804,8 +11804,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Wave 0/issue #9 seed: repository-authored build tooling/config/source surface (or, for asm/, decompiled disassembly derived from the original ROM). No human legal/provenance review has been recorded yet; this manifest records that honestly rather than asserting a license or clearance.",
-    "oid": "3d32fdba1f818a747947c51288572886eb145bf5",
-    "sha256": "9ad4e5624bff35fbdf0ac069cf99306a6ff799ff86825b53f05740ed44f88d05"
+    "oid": "3cf1241d93709f4b61bee18afbd8a619f8d9b076",
+    "sha256": "3b4d0826dcc4918ba9aeccd2ca7b05a4dad413d2c9f19fbd16d539d941c694ee"
   },
   {
     "path": "scripts/release_rehearsal/consistency.py",
@@ -11996,8 +11996,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Wave 0/issue #9 seed: repository-authored build tooling/config/source surface (or, for asm/, decompiled disassembly derived from the original ROM). No human legal/provenance review has been recorded yet; this manifest records that honestly rather than asserting a license or clearance.",
-    "oid": "1b3148912b938abff9223557942f9d89466b0296",
-    "sha256": "c587755c4a03c9e34af25f9a9353d9e41ae7adb31f09c669f3da9a74ce65b97d"
+    "oid": "09b8004674de6be3b1265f640964b583ce8210a7",
+    "sha256": "373a6bdb4a4d5be9d4265e3d78061159c21848d2095568b7ef6a31a9fc170e17"
   },
   {
     "path": "scripts/release_rehearsal/tests/test_consistency.py",
@@ -12152,8 +12152,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Wave 0/issue #9 seed: repository-authored build tooling/config/source surface (or, for asm/, decompiled disassembly derived from the original ROM). No human legal/provenance review has been recorded yet; this manifest records that honestly rather than asserting a license or clearance.",
-    "oid": "73778e51ee4169f85a81668afd3a8e02bf62e8b6",
-    "sha256": "cddb4179bdf5291a3c81fb525eb6003a28eee5a4c0a15e14c02584e8ccfe46d4"
+    "oid": "0cef4d7149ef014d7c01ce7787f4da9ded6065ea",
+    "sha256": "816d413b1094d99cf311c8531a22a4b0f7feaec82cab13c83f0f316fa3fd7da0"
   },
   {
     "path": "scripts/release_rehearsal/tree_coverage.py",
@@ -12176,8 +12176,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Wave 0/issue #9 seed: repository-authored build tooling/config/source surface (or, for asm/, decompiled disassembly derived from the original ROM). No human legal/provenance review has been recorded yet; this manifest records that honestly rather than asserting a license or clearance.",
-    "oid": "f44c1b1edc3fb8f8991daeddb74b4dbbb2065e14",
-    "sha256": "caa021566e0e9dafacbb32feaac1c08b6feddfbebfa51dd2f514e885c63739a6"
+    "oid": "ea1f91b11ec0153212e9b3442d52b2bbbae4be87",
+    "sha256": "e4991d3ea95be60b103961cda1dc1819d1395c786251fb0aa3bcb1767c393577"
   },
   {
     "path": "scripts/rename_symbol.sh",
@@ -21812,8 +21812,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Wave 0/issue #9 seed: repository-authored build tooling/config/source surface (or, for asm/, decompiled disassembly derived from the original ROM). No human legal/provenance review has been recorded yet; this manifest records that honestly rather than asserting a license or clearance.",
-    "oid": "93f5e0a03ba8e209812e650b68c5def339311ff2",
-    "sha256": "4819cf1a8530ee61939475926073d1fe16be3d5999ff4194de5eea23594ef17e"
+    "oid": "7b83539075e0d39cea5c69f5bb3b4a74d0bcd5b0",
+    "sha256": "ab158fbc5f932a5e050d92cb7f7fbb97f8ac3f09a65eb0c6e3c8f764d503a698"
   },
   {
     "path": "tools/aif2pcm/.gitignore",
