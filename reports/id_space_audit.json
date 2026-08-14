@@ -20539,7 +20539,7 @@
       "domain": "unit",
       "key": "src/worldmap_automu.c|struct-field|unit|GMapAutoMuProc.unitId",
       "kind": "struct-field",
-      "line": 25,
+      "line": 29,
       "path": "src/worldmap_automu.c",
       "reason": null,
       "record_count": null,
@@ -20556,7 +20556,7 @@
   "contract_note": "Committed DEFAULT contract: the vanilla cap/count every checkout and the archival lane compile against. It is deliberately env-independent -- a build that opts into FE8_ITEM_ID_CAP>=0xCE reads the build-local ACTIVE contract (build/generated/data/id_space_active_audit.json and id_space_active.h) instead, and never rewrites this file.",
   "default_item_cap": 205,
   "default_item_record_count": 206,
-  "digest": "3f12087fd181980e4f4192d085d2c38392522ffae1f4c9528be33773f2c5b4b2",
+  "digest": "b6500563cd4180ade7fb13f04f9e43a1a3d0c9d7df4461fab3d16938fb7ceb38",
   "domain_record_counts": {
     "chapter": {
       "default_record_count": null,
