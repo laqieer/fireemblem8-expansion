@@ -1,0 +1,314 @@
+name: Full Matrix CI
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  host:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout exact dispatched revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Log and verify tested revision
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+          EXPECTED_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          printf 'github.sha=%s\n' "$EXPECTED_SHA"
+          printf 'github.ref=%s\n' "$EXPECTED_REF"
+          printf 'checkout.sha=%s\n' "$(git rev-parse HEAD)"
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+
+      - name: Install host test dependencies
+        run: sudo apt-get update && sudo apt-get install -y build-essential
+
+      - name: Run artifact guard gates
+        run: |
+          python3 -m unittest discover -s scripts/artifact_guard_tests -p 'test_*.py' -v
+          python3 scripts/artifact_guard.py --revision HEAD
+
+      - name: Run documentation gates
+        run: |
+          python3 -m unittest discover -s scripts/docs_check_tests -p 'test_*.py' -v
+          python3 scripts/check_docs.py --check --check-examples
+
+      - name: Run generated-data gates
+        run: |
+          make generated-data-test
+          make generated-data-check
+
+      - name: Run expansion localization gates
+        run: |
+          make localization-test
+          make localization-check
+
+      - name: Run full-game localization and offline FE8J proof gates
+        run: |
+          make game-localization-test
+          make game-localization-check
+          python3 -m scripts.localization.game_locales check
+          python3 -m scripts.localization.game_locales check-authored-catalogs
+          python3 -m scripts.localization.game_locales check-final-mapping --require-no-fallback
+          python3 -m scripts.localization.game_locales check-raw-closure
+
+      - name: Run CJK font gates
+        run: |
+          make -f cjk_fonts.mk cjk-fonts-test
+          make -f cjk_fonts.mk cjk-fonts-check
+
+      - name: Run remaining texttools codec gates
+        run: |
+          python3 -m unittest discover -s scripts/texttools/tests -p 'test_multilang_codec*.py' -v
+
+      - name: Run configuration and linker-budget gates
+        run: |
+          python3 -m unittest discover -s scripts/modernize/tests -p 'test_expansion_config.py' -v
+          python3 -m unittest discover -s scripts/linker_report/tests -p 'test_*.py' -v
+
+      - name: Record FE8J live-origin boundary
+        run: |
+          {
+            echo "### FE8J live-origin boundary"
+            echo
+            echo "This job verified the committed offline cryptographic range proof and all no-fallback checks."
+            echo "CI receives no copyrighted FE8J ROM. The local/pre-push gate"
+            echo "\`FE8J_BASEROM=... make game-localization-final-check\` remains mandatory."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  modern:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        config: [debug, release]
+
+    steps:
+      - name: Checkout exact dispatched revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Log and verify tested revision
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+          EXPECTED_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          printf 'github.sha=%s\n' "$EXPECTED_SHA"
+          printf 'github.ref=%s\n' "$EXPECTED_REF"
+          printf 'checkout.sha=%s\n' "$(git rev-parse HEAD)"
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+
+      - name: Install modern toolchain and runtime dependencies
+        run: sudo apt-get update && sudo apt-get install -y build-essential binutils-arm-none-eabi libpng-dev gcc-arm-none-eabi libnewlib-arm-none-eabi libmgba-dev && python -m pip install ttp numpy pillow
+
+      - name: Build tools
+        run: ./build_tools.sh
+
+      - name: Run canonical modern linker/runtime gate
+        run: make expansion-modern-linker-check MODERN_CONFIG=${{ matrix.config }} MODERN_ABI=aapcs -j2
+
+  legacy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      AGBCC_COMMIT: da598c1d918402c42c0c0d7128ba14567f3175e9
+      MGFEMBP_AGBCC_COMMIT: 63b22f3eb8a8051af30bd80c4795b355e439e7ef
+
+    steps:
+      - name: Checkout exact dispatched revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Log and verify tested revision
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+          EXPECTED_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          printf 'github.sha=%s\n' "$EXPECTED_SHA"
+          printf 'github.ref=%s\n' "$EXPECTED_REF"
+          printf 'checkout.sha=%s\n' "$(git rev-parse HEAD)"
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+
+      - name: Install archival build dependencies
+        run: sudo apt-get update && sudo apt-get install -y build-essential binutils-arm-none-eabi libpng-dev pkg-config python3-pip python3-numpy python3-pil
+
+      - name: Install pinned archival agbcc compilers
+        run: |
+          set -euo pipefail
+
+          rm -rf .deps/agbcc-ci "$RUNNER_TEMP/mgfembp-agbcc-ci"
+          git init --quiet .deps/agbcc-ci
+          git -C .deps/agbcc-ci remote add origin https://github.com/pret/agbcc.git
+          git -C .deps/agbcc-ci fetch --quiet --depth=1 origin "$AGBCC_COMMIT"
+          git -C .deps/agbcc-ci checkout --quiet --detach FETCH_HEAD
+          test "$(git -C .deps/agbcc-ci rev-parse HEAD)" = "$AGBCC_COMMIT"
+          (
+            cd .deps/agbcc-ci
+            ./build.sh
+            ./install.sh "$GITHUB_WORKSPACE"
+          )
+
+          git init --quiet "$RUNNER_TEMP/mgfembp-agbcc-ci"
+          git -C "$RUNNER_TEMP/mgfembp-agbcc-ci" remote add origin https://github.com/StanHash/agbcc.git
+          git -C "$RUNNER_TEMP/mgfembp-agbcc-ci" fetch --quiet --depth=1 origin "$MGFEMBP_AGBCC_COMMIT"
+          git -C "$RUNNER_TEMP/mgfembp-agbcc-ci" checkout --quiet --detach FETCH_HEAD
+          test "$(git -C "$RUNNER_TEMP/mgfembp-agbcc-ci" rev-parse HEAD)" = "$MGFEMBP_AGBCC_COMMIT"
+          (
+            cd "$RUNNER_TEMP/mgfembp-agbcc-ci"
+            ./build.sh
+            ./install.sh "$GITHUB_WORKSPACE/mgfembp"
+          )
+
+      - name: Build tools
+        run: ./build_tools.sh
+
+      - name: Build archival lane without a copyrighted baserom
+        run: |
+          set -euo pipefail
+          test ! -e baserom.gba
+          make legacy -j2
+          test ! -e baserom.gba
+
+      - name: Validate pinned archival payload identities
+        run: make -C mgfembp compare
+
+  release-evidence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      RELEASE_TARGET_SHA: ${{ github.sha }}
+
+    steps:
+      - name: Checkout exact dispatched revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Log and verify tested revision
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+          EXPECTED_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          printf 'github.sha=%s\n' "$EXPECTED_SHA"
+          printf 'github.ref=%s\n' "$EXPECTED_REF"
+          printf 'checkout.sha=%s\n' "$(git rev-parse HEAD)"
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+
+      - name: Run release test suites
+        run: make release-test
+
+      - name: Check generated release evidence
+        run: |
+          make release-changelog-check
+          python3 -m scripts.release_rehearsal.allowlist check --target-sha "$RELEASE_TARGET_SHA"
+
+      - name: Check release documentation
+        run: python3 -m scripts.release_rehearsal.doc_links
+
+      - name: Check release tree and submodule bindings
+        run: |
+          make release-tree-coverage-check
+          make release-submodule-binding-check
+
+      - name: Check provenance records
+        run: python3 -m scripts.release_rehearsal.provenance check --target-sha "$RELEASE_TARGET_SHA"
+
+      - name: Check source-release guard
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from scripts.release_rehearsal.source_guard import (
+              load_allowlist,
+              load_map_hex_exceptions,
+              scan_source_release_candidate,
+          )
+
+          allowlist = load_allowlist(Path("docs/release_data/source_allowlist.json"))
+          exceptions = load_map_hex_exceptions(
+              Path("docs/release_data/map_hex_exceptions.json")
+          )
+          violations = scan_source_release_candidate(
+              Path("."),
+              allowlist,
+              map_hex_exceptions=exceptions,
+          )
+          for path, rule in violations:
+              print(f"{path}: {rule}")
+          if violations:
+              raise SystemExit(1)
+          print("source_guard: pass (tracked release candidate)")
+          PY
+
+      - name: Assert publication remains blocked
+        run: make release-check-expect-blocked
+
+  summary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: always()
+    needs: [host, modern, legacy, release-evidence]
+    env:
+      RUN_SHA: ${{ github.sha }}
+      RUN_REF: ${{ github.ref }}
+      HOST_RESULT: ${{ needs.host.result }}
+      MODERN_RESULT: ${{ needs.modern.result }}
+      LEGACY_RESULT: ${{ needs.legacy.result }}
+      RELEASE_EVIDENCE_RESULT: ${{ needs.release-evidence.result }}
+
+    steps:
+      - name: Write fail-closed matrix summary
+        run: |
+          {
+            echo "## Full Matrix CI"
+            echo
+            echo "| Item | Conclusion |"
+            echo "| --- | --- |"
+            echo "| SHA | \`$RUN_SHA\` |"
+            echo "| Ref | \`$RUN_REF\` |"
+            echo "| host | $HOST_RESULT |"
+            echo "| modern (debug + release) | $MODERN_RESULT |"
+            echo "| legacy | $LEGACY_RESULT |"
+            echo "| release-evidence | $RELEASE_EVIDENCE_RESULT |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          for result in \
+            "$HOST_RESULT" \
+            "$MODERN_RESULT" \
+            "$LEGACY_RESULT" \
+            "$RELEASE_EVIDENCE_RESULT"
+          do
+            if [ "$result" != "success" ]; then
+              echo "required Full Matrix CI lane did not succeed: $result" >&2
+              exit 1
+            fi
+          done
