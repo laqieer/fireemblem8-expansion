@@ -104,8 +104,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Wave 0/issue #9 seed: repository-authored build tooling/config/source surface (or, for asm/, decompiled disassembly derived from the original ROM). No human legal/provenance review has been recorded yet; this manifest records that honestly rather than asserting a license or clearance.",
-    "oid": "8bbb5976cfc46bfb1e6f14020a0b40114013d4b1",
-    "sha256": "03778d390d8e0588462b52eb793c7cbd797d30029f93837cdd1ca0e7aebdfbba"
+    "oid": "f1832933e46dc497b38556a024f84faf6e6dad29",
+    "sha256": "15c2edc951891ae1473b50880b5651bb6b94381ee7dfc40f5142853abeb6b7a3"
   },
   {
     "path": ".github/workflows/upstream-port-drift.yml",
@@ -1112,8 +1112,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Wave 0/issue #9 seed: repository-authored documentation. No human legal/provenance review has been recorded yet; this manifest records that honestly rather than asserting a license or clearance.",
-    "oid": "b5679f6e1508f47876db567f3875a703168fda1a",
-    "sha256": "0cf955a87b17ee6dd49a51a66331f0d8b652a0b1ede4aa0bf8f592af992c22e0"
+    "oid": "3e3b7c47960e6897fee64524975122412efac924",
+    "sha256": "6985db9e924cc558c543f4fbde2c5faafa9733f4838d02b577451abdd26a34cc"
   },
   {
     "path": "docs/release_data/action_pins.json",
@@ -1208,8 +1208,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Wave 0/issue #9 seed: repository-authored documentation. No human legal/provenance review has been recorded yet; this manifest records that honestly rather than asserting a license or clearance.",
-    "oid": "52910a1fc0b04b66070ff155f92f1e88fc8fbb30",
-    "sha256": "d58417134be4396c0575582ca7b02f55324a9dc7f65cc04914eb5e482f4a5dfc"
+    "oid": "e807baa3615eaec496e45d2ff383ffbae879c859",
+    "sha256": "ec9f747c52b7d9aa767efe01c73efeb1f7ae404785c3353c1ff6bd4772e5d45d"
   },
   {
     "path": "docs/save_format.md",
@@ -11804,8 +11804,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Wave 0/issue #9 seed: repository-authored build tooling/config/source surface (or, for asm/, decompiled disassembly derived from the original ROM). No human legal/provenance review has been recorded yet; this manifest records that honestly rather than asserting a license or clearance.",
-    "oid": "947fd3521a36671401b4d48ea33706de1749c8d7",
-    "sha256": "1213f739c8ae149a46180d9c0a6807589cb481ef4ee1fd4c9125ed88da587245"
+    "oid": "f210c86d5f8cda7a80e9a54e934a0c9a20694b84",
+    "sha256": "3536fd61231c055b93d11f4701542ed3abcd90f7b1a9103b4c8831650141e3f3"
   },
   {
     "path": "scripts/release_rehearsal/consistency.py",
@@ -12152,8 +12152,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Wave 0/issue #9 seed: repository-authored build tooling/config/source surface (or, for asm/, decompiled disassembly derived from the original ROM). No human legal/provenance review has been recorded yet; this manifest records that honestly rather than asserting a license or clearance.",
-    "oid": "c58c47ef3da354afcc671af543a600427201617a",
-    "sha256": "fd5577566be97aa89fbf62ee31a3a1c11d2ea025eacd59e510869b76bd3f13b4"
+    "oid": "cd0850b4ec1b7c58156e705b55aa9a51ac6aacec",
+    "sha256": "3d8692d901eef385c057dbf3ac7ab9ef22ba16165c0378497ba0095dd35e3b5f"
   },
   {
     "path": "scripts/release_rehearsal/tree_coverage.py",
@@ -12176,8 +12176,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Wave 0/issue #9 seed: repository-authored build tooling/config/source surface (or, for asm/, decompiled disassembly derived from the original ROM). No human legal/provenance review has been recorded yet; this manifest records that honestly rather than asserting a license or clearance.",
-    "oid": "f262c3de53f8539aa08d3b0380c62f6875ea2a3c",
-    "sha256": "efebe982e2816611625047982c042cd4cc91c6dbbdd01ab969174331a6cba6ca"
+    "oid": "98ac9a36a3a215a25b939a1247046cd0e3de4c29",
+    "sha256": "b2b7b66d5f7d8fe257334f696625f7b3158bdedcc078b5b1f7a3b8825d3e8be2"
   },
   {
     "path": "scripts/rename_symbol.sh",
