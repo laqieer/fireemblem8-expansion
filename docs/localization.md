@@ -306,12 +306,12 @@ descriptor slots.
    ROM SHA-256, map blob, ROM offsets, lengths, byte hashes, decoded values,
    and the minimal 23-byte CP932 artifact. A separate committed SHA-256 range
    proof binds those slices to an independently locked known-ROM Merkle root;
-   offline checks consume but cannot refresh it. Maintainers must run
-   `verify-ja-raw-origin --baserom ...` or
-   `FE8J_BASEROM=... make game-localization-final-check`; the public final
-   gate serially checks authored catalogs, no-fallback/live-origin final
-   mapping, raw-surface closure, runtime leakage, and committed CJK fonts. It
-   reports the verified ROM SHA-256 and exact slices.
+   offline checks consume but cannot refresh it. Maintainers must run the
+   mandatory local maintainer pre-push verification documented in
+   [`game_locale_sources.md`](game_locale_sources.md). That procedure
+   serially checks authored catalogs, no-fallback/live-origin final mapping,
+   raw-surface closure, runtime leakage, and committed CJK fonts, and reports
+   the verified ROM SHA-256 and exact slices.
    `refresh-ja-raw-origin` requires the live pinned FE8J ROM. Per-provider
    source paths, symbols, slots, and
    CP932 bytes are exact, and
