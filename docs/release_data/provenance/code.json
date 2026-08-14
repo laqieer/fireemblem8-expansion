@@ -1028,8 +1028,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Wave 0/issue #9 seed: repository-authored documentation. No human legal/provenance review has been recorded yet; this manifest records that honestly rather than asserting a license or clearance.",
-    "oid": "7cabbcf07cde5446e44e90e638cecfd465828a3a",
-    "sha256": "5c0eddf41707b0b62f77eb007a7cfe6947dfa4c468fe37cd372b1db8dd411829"
+    "oid": "4237df26b3dc1bd26813843c936c1d54c241c945",
+    "sha256": "80bd676a6fbde7201a48eec0300e8338c017870661508ef956f9f985d87fecb7"
   },
   {
     "path": "docs/lz_suffix_diagnostic.md",
