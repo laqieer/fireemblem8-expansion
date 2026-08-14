@@ -11,6 +11,10 @@
 #include "worldmap.h"
 #include "constants/worldmap.h"
 
+#ifdef FE8_ARCHIVAL_BUILD
+#include "archival_proc_find_iter.inc"
+#endif
+
 CONST_DATA struct ProcCmd ProcScr_GmapRmUpdateDirect[] = {
     PROC_NAME("Gmap RM update"),
     PROC_MARK(PROC_MARK_WMSTUFF),
@@ -770,25 +774,23 @@ void EndGmapRmBorder1(int index)
     }
 
     Proc_FindBegin(&procIter, ProcScr_GmapRmBorder1);
+#ifdef FE8_ARCHIVAL_BUILD
+    ARCHIVAL_END_PROC_BY_FIELD(index);
+#else
     do
     {
         proc = Proc_FindNext(&procIter);
 
-#ifndef FE8_ARCHIVAL_BUILD
         if (proc == NULL)
         {
             break;
         }
-#endif
 
         if (proc->index == index)
         {
             Proc_End(proc);
             return;
         }
-#ifdef FE8_ARCHIVAL_BUILD
-    } while (proc != NULL);
-#else
     } while (1);
 #endif
 
@@ -808,24 +810,22 @@ int GmapRmBorder1Exists(int index)
 
     Proc_FindBegin(&procIter, ProcScr_GmapRmBorder1);
 
+#ifdef FE8_ARCHIVAL_BUILD
+    ARCHIVAL_PROC_EXISTS_BY_FIELD(index, 1);
+#else
     do
     {
         proc = Proc_FindNext(&procIter);
 
-#ifndef FE8_ARCHIVAL_BUILD
         if (proc == NULL)
         {
             break;
         }
-#endif
 
         if (proc->index == index)
         {
             return 1;
         }
-#ifdef FE8_ARCHIVAL_BUILD
-    } while (proc != NULL);
-#else
     } while (1);
 #endif
 
@@ -840,16 +840,17 @@ void RequestGmapRmBorder1Remove(int index)
 
     Proc_FindBegin(&procIter, ProcScr_GmapRmBorder1);
 
+#ifdef FE8_ARCHIVAL_BUILD
+    ARCHIVAL_SET_PROC_FLAG_BY_FIELD(index);
+#else
     do
     {
         proc = Proc_FindNext(&procIter);
 
-#ifndef FE8_ARCHIVAL_BUILD
         if (proc == NULL)
         {
             break;
         }
-#endif
 
         if (index < 0)
         {
@@ -860,9 +861,6 @@ void RequestGmapRmBorder1Remove(int index)
             proc->flag = 1;
             return;
         }
-#ifdef FE8_ARCHIVAL_BUILD
-    } while (proc != NULL);
-#else
     } while (1);
 #endif
 
@@ -1203,25 +1201,23 @@ void EndWmPlaceDotByIndex(int index)
     }
 
     Proc_FindBegin(&procIter, ProcScr_WmPlaceDot);
+#ifdef FE8_ARCHIVAL_BUILD
+    ARCHIVAL_END_PROC_BY_FIELD(unk_2b);
+#else
     do
     {
         proc = Proc_FindNext(&procIter);
 
-#ifndef FE8_ARCHIVAL_BUILD
         if (proc == NULL)
         {
             break;
         }
-#endif
 
         if (proc->unk_2b == index)
         {
             Proc_End(proc);
             return;
         }
-#ifdef FE8_ARCHIVAL_BUILD
-    } while (proc != NULL);
-#else
     } while (1);
 #endif
 
@@ -1240,24 +1236,22 @@ bool IsWmPlaceDotActiveAtIndex(int index)
     }
 
     Proc_FindBegin(&procIter, ProcScr_WmPlaceDot);
+#ifdef FE8_ARCHIVAL_BUILD
+    ARCHIVAL_PROC_EXISTS_BY_FIELD(unk_2b, true);
+#else
     do
     {
         proc = Proc_FindNext(&procIter);
 
-#ifndef FE8_ARCHIVAL_BUILD
         if (proc == NULL)
         {
             break;
         }
-#endif
 
         if (proc->unk_2b == index)
         {
             return true;
         }
-#ifdef FE8_ARCHIVAL_BUILD
-    } while (proc != NULL);
-#else
     } while (1);
 #endif
 
@@ -1271,16 +1265,17 @@ void SetWmPlaceDotFlagForIndex(int index)
     struct ProcFindIterator procIter;
 
     Proc_FindBegin(&procIter, ProcScr_WmPlaceDot);
+#ifdef FE8_ARCHIVAL_BUILD
+    ARCHIVAL_SET_PROC_FLAG_BY_FIELD(unk_2b);
+#else
     do
     {
         proc = Proc_FindNext(&procIter);
 
-#ifndef FE8_ARCHIVAL_BUILD
         if (proc == NULL)
         {
             break;
         }
-#endif
 
         if (index < 0)
         {
@@ -1291,9 +1286,6 @@ void SetWmPlaceDotFlagForIndex(int index)
             proc->flag = 1;
             return;
         }
-#ifdef FE8_ARCHIVAL_BUILD
-    } while (proc != NULL);
-#else
     } while (1);
 #endif
 

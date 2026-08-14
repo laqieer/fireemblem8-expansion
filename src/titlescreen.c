@@ -860,10 +860,7 @@ void Title_EnterMainScreen(struct TitleScreenProc* proc) {
 //! FE8U = 0x080C6354
 void Title_IDLE(struct TitleScreenProc * proc)
 {
-#ifdef FE8_ARCHIVAL_BUILD
-    proc->timer_idle++;
-    proc->timer = (++proc->timer & 0x3f);
-#else
+#ifndef FE8_ARCHIVAL_BUILD
     /* Freeze the idle/attract timer pair entirely while the hub is
      * active (see DebugTools_IsHubActive doc, include/expansion_debugtools.h):
      * checking hub state before incrementing means proc->timer_idle
@@ -879,8 +876,10 @@ void Title_IDLE(struct TitleScreenProc * proc)
      * keeps both halves of the pair in lockstep. */
     if (!DebugTools_IsHubActive())
     {
+#endif
         proc->timer_idle++;
         proc->timer = (++proc->timer & 0x3f);
+#ifndef FE8_ARCHIVAL_BUILD
     }
 
     /* Stable probe evidence for the freeze above: mirrors proc->timer_idle
