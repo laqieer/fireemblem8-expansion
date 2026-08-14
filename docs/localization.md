@@ -357,6 +357,30 @@ descriptor slots.
    sources must follow `CONTRIBUTING.md` and the pinned-provenance workflow;
    do not hand-copy or paraphrase unapproved third-party text.
 
+### Efficient local and pre-merge validation
+
+Use targeted localization tests while editing. After pushing the exact
+candidate branch, run the broad host/CJK/runtime/release evidence once in the
+dispatch-only full matrix:
+
+```bash
+gh workflow run full-matrix.yml --ref <branch>
+gh run watch <run-id> --exit-status
+```
+
+The host lane verifies the committed FE8J cryptographic range proof offline,
+requires zero final fallback/raw-closure leakage, and never receives or
+fabricates a copyrighted ROM. That is not a substitute for the mandatory
+maintainer pre-push/live-origin proof:
+
+```bash
+FE8J_BASEROM=/path/to/authorized/fireemblem8j.gba make game-localization-final-check
+```
+
+Never upload that ROM to GitHub Actions. The workflow summary records the
+exact `github.sha`/`github.ref`; its modern debug/release matrix already owns
+the subordinate CJK profiles, runtime, shifted-link, and linker-budget gates.
+
 ## Testing -- real libmGBA runtime evidence (Sprint 4)
 
 The byte-consumer closure adds three focused host gates:

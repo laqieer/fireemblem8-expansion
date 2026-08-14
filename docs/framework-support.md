@@ -11,7 +11,7 @@ it links to them.
 
 | Host | Package manager | Auto-installed by `scripts/quickstart.sh` | CI-verified |
 | --- | --- | --- | --- |
-| Ubuntu / Debian / WSL | `apt` | Yes | Yes — `.github/workflows/build.yml` runs on `ubuntu-latest` |
+| Ubuntu / Debian / WSL | `apt` | Yes | Yes — automatic `.github/workflows/build.yml` plus dispatch-only `.github/workflows/full-matrix.yml` run on `ubuntu-latest` |
 | Arch Linux | `pacman` | Yes | No (community-supported; same script path as Ubuntu) |
 | macOS | Homebrew (`brew`) | Yes | No (community-supported) |
 
@@ -24,10 +24,11 @@ Ubuntu/`apt` path above). Do not read this as a native-Windows guarantee —
 none of `scripts/quickstart.sh`, the Makefile, or CI target Windows
 directly.
 
-**CI is the only host this repository automatically re-verifies on every
-push/PR.** Arch and macOS support is exercised by the same script logic but
-is not re-run in CI; treat regressions there as community-reported, not
-CI-caught.
+**Automatic Build CI is the only host this repository re-verifies on every
+push/PR.** The manual Full Matrix CI workflow adds a one-shot pre-merge broad
+pass for an exact branch/SHA; it does not change the automatic Build CI
+contract. Arch and macOS support is exercised by the same script logic but is
+not re-run in CI; treat regressions there as community-reported, not CI-caught.
 
 ## Supported toolchains
 
@@ -106,6 +107,25 @@ no ROM build or network access is required for either.
   `expansion-modern-linker-check`, `expansion-modern-debugtools-*-check`,
   `expansion-modern-savefmt-check` (these five need libmGBA too), and
   `scripts.upstream_port verify`.
+
+### Dispatch-only full matrix
+
+Prefer focused local checks during iteration. Once the candidate branch is
+pushed, run the expensive host, modern debug/release, archival, and
+release-evidence lanes in parallel:
+
+```bash
+gh workflow run full-matrix.yml --ref <branch>
+gh run watch <run-id> --exit-status
+```
+
+The workflow is `workflow_dispatch`-only, read-only, concurrency-cancelled by
+workflow/ref, and records the exact `github.sha` and `github.ref`. Its final
+summary fails unless host, both modern matrix configurations, legacy, and
+release-evidence all succeed. The FE8J live-origin proof cannot run in hosted
+CI because the copyrighted ROM is never uploaded; maintainers must still run
+`FE8J_BASEROM=/path/to/authorized/fireemblem8j.gba make
+game-localization-final-check` locally before push.
 
 ## Configuration surface
 
