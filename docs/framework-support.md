@@ -122,10 +122,11 @@ gh run watch <run-id> --exit-status
 The workflow is `workflow_dispatch`-only, read-only, concurrency-cancelled by
 workflow/ref, and records the exact `github.sha` and `github.ref`. Its final
 summary fails unless host, both modern matrix configurations, legacy, and
-release-evidence all succeed. The FE8J live-origin proof cannot run in hosted
-CI because the copyrighted ROM is never uploaded; maintainers must still run
-`FE8J_BASEROM=/path/to/authorized/fireemblem8j.gba make
-game-localization-final-check` locally before push.
+release-evidence all succeed. The legally restricted live FE8J provenance
+proof is not a hosted-CI command and remains a mandatory local maintainer
+pre-push step. Use the procedure supported by the checked-out branch in
+[`game_locale_sources.md`](game_locale_sources.md), rather than copying a
+target from another branch or uploading restricted inputs.
 
 ## Configuration surface
 

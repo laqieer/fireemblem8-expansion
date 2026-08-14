@@ -282,18 +282,15 @@ gh workflow run full-matrix.yml --ref <branch>
 gh run watch <run-id> --exit-status
 ```
 
-The host lane verifies the committed FE8J cryptographic range proof offline,
-requires zero final fallback/raw-closure leakage, and never receives or
-fabricates a copyrighted ROM. That is not a substitute for the mandatory
-maintainer pre-push/live-origin proof:
-
-```bash
-FE8J_BASEROM=/path/to/authorized/fireemblem8j.gba make game-localization-final-check
-```
-
-Never upload that ROM to GitHub Actions. The workflow summary records the
-exact `github.sha`/`github.ref`; its modern debug/release matrix already owns
-the subordinate CJK profiles, runtime, shifted-link, and linker-budget gates.
+The host lane rebuilds the committed locale-source, crosswalk, and raw-closure
+artifacts offline and never receives legally restricted FE8J inputs. That is
+not a substitute for the mandatory live FE8J provenance proof, which remains
+a local maintainer pre-push step rather than a CI command. Follow
+[`game_locale_sources.md`](game_locale_sources.md) for the procedure supported
+by the checked-out branch; do not copy a target from another branch or upload
+restricted inputs to GitHub Actions. The workflow summary records the exact
+`github.sha`/`github.ref`; its modern debug/release matrix already owns the
+subordinate CJK profiles, runtime, shifted-link, and linker-budget gates.
 
 ## Testing -- real libmGBA runtime evidence (Sprint 4)
 

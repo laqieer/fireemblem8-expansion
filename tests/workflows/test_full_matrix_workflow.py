@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import importlib.util
 import re
+import shlex
+import subprocess
 import unittest
 from pathlib import Path
 
@@ -10,6 +13,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github" / "workflows" / "full-matrix.yml"
 README = ROOT / "README.md"
+LOCALIZATION_DOC = ROOT / "docs" / "localization.md"
+FRAMEWORK_SUPPORT_DOC = ROOT / "docs" / "framework-support.md"
+GAME_LOCALE_SOURCES_DOC = ROOT / "docs" / "game_locale_sources.md"
 CHECKOUT_PIN = "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
 FULL_MATRIX_BADGE = (
     "[![Full Matrix CI]"
@@ -29,6 +35,17 @@ def job_block(text: str, job_id: str) -> str:
     if match is None:
         raise AssertionError(f"missing workflow job: {job_id}")
     return match.group(0)
+
+
+def command_lines(text: str, prefix: str) -> list[str]:
+    commands = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith(prefix):
+            commands.append(stripped)
+        elif stripped.startswith("run: ") and stripped[5:].startswith(prefix):
+            commands.append(stripped[5:])
+    return commands
 
 
 class FullMatrixWorkflowContractTests(unittest.TestCase):
@@ -108,16 +125,11 @@ class FullMatrixWorkflowContractTests(unittest.TestCase):
             "make generated-data-test",
             "make generated-data-check",
             "make localization-test",
-            "make localization-check",
             "make game-localization-test",
-            "make game-localization-check",
             "python3 -m scripts.localization.game_locales check",
-            "python3 -m scripts.localization.game_locales check-authored-catalogs",
-            "python3 -m scripts.localization.game_locales "
-            "check-final-mapping --require-no-fallback",
+            "python3 -m scripts.localization.game_locales check-crosswalk",
             "python3 -m scripts.localization.game_locales check-raw-closure",
-            "make -f cjk_fonts.mk cjk-fonts-test",
-            "make -f cjk_fonts.mk cjk-fonts-check",
+            "make -f cjk_fonts.mk cjk-fonts-check cjk-fonts-test",
             "python3 -m unittest discover -s scripts/texttools/tests "
             "-p 'test_multilang_codec*.py' -v",
             "python3 -m unittest discover -s scripts/modernize/tests "
@@ -132,6 +144,14 @@ class FullMatrixWorkflowContractTests(unittest.TestCase):
                 msg=f"canonical host command must appear exactly once: {command}",
             )
 
+        for stale_or_duplicate in (
+            "make localization-check",
+            "make game-localization-check",
+            "check-authored-catalogs",
+            "check-final-mapping",
+        ):
+            self.assertNotIn(stale_or_duplicate, host)
+
         for duplicate_subordinate in (
             "test_text_renderer_native.py",
             "test_text_consumers_native.py",
@@ -139,17 +159,141 @@ class FullMatrixWorkflowContractTests(unittest.TestCase):
         ):
             self.assertNotIn(duplicate_subordinate, host)
 
-    def test_offline_fe8j_proof_is_honest_and_live_rom_is_not_fabricated(self):
+    def test_offline_fe8j_boundary_is_honest_and_live_proof_stays_local(self):
         host = job_block(self.text, "host")
-        self.assertIn("check-final-mapping --require-no-fallback", host)
+        self.assertIn("scripts.localization.game_locales check", host)
+        self.assertIn("check-crosswalk", host)
         self.assertIn("check-raw-closure", host)
         self.assertNotIn("--require-live-origin", host)
         self.assertNotIn("baserom.gba", host)
-        self.assertIn(
-            "FE8J_BASEROM=... make game-localization-final-check",
-            host,
-        )
-        self.assertIn("CI receives no copyrighted FE8J ROM", host)
+        self.assertNotIn("FE8J_BASEROM", host)
+        self.assertNotIn("game-localization-final-check", host)
+        self.assertIn("mandatory local maintainer pre-push step", host)
+        self.assertIn("not a CI command", host)
+        self.assertIn("docs/game_locale_sources.md", host)
+        self.assertIn("CI receives no legally restricted FE8J input", host)
+
+    def test_live_provenance_documentation_is_branch_truthful_and_mirrored(self):
+        self.assertTrue(GAME_LOCALE_SOURCES_DOC.is_file())
+        for path in (LOCALIZATION_DOC, FRAMEWORK_SUPPORT_DOC):
+            text = path.read_text(encoding="utf-8")
+            self.assertNotIn("game-localization-final-check", text)
+            self.assertNotIn("FE8J_BASEROM", text)
+            self.assertIn("game_locale_sources.md", text)
+            self.assertRegex(text, r"local maintainer\s+pre-push")
+
+    def test_every_workflow_make_target_resolves_on_the_checked_out_tree(self):
+        commands = command_lines(self.text, "make ")
+        self.assertTrue(commands)
+        database_cache = {}
+        for command in commands:
+            normalized = command.replace("${{ matrix.config }}", "debug")
+            argv = shlex.split(normalized)
+            requested_targets = []
+            context_args = []
+            index = 1
+            while index < len(argv):
+                arg = argv[index]
+                if arg in ("-f", "--file"):
+                    self.assertTrue((ROOT / argv[index + 1]).is_file(), msg=command)
+                    context_args.extend((arg, argv[index + 1]))
+                    index += 2
+                    continue
+                if arg in ("-C", "--directory"):
+                    self.assertTrue((ROOT / argv[index + 1]).is_dir(), msg=command)
+                    context_args.extend((arg, argv[index + 1]))
+                    index += 2
+                    continue
+                if not arg.startswith("-") and "=" not in arg:
+                    requested_targets.append(arg)
+                index += 1
+
+            cache_key = tuple(context_args)
+            if cache_key not in database_cache:
+                result = subprocess.run(
+                    [
+                        argv[0],
+                        "--no-print-directory",
+                        "-prRn",
+                        *context_args,
+                        "__fullci_contract_database_only__",
+                    ],
+                    cwd=ROOT,
+                    text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    timeout=30,
+                    check=False,
+                )
+                database_cache[cache_key] = result.stdout
+
+            database = database_cache[cache_key]
+            for target in requested_targets:
+                self.assertRegex(
+                    database,
+                    rf"(?m)^{re.escape(target)}:(?:\s|$)",
+                    msg=f"workflow Make target does not exist: {command}",
+                )
+
+    def test_every_workflow_python_entry_point_exists_and_cli_help_resolves(self):
+        for command in command_lines(self.text, "python3 "):
+            argv = shlex.split(command)
+            if argv[1:3] == ["-m", "unittest"]:
+                source_dir = ROOT / argv[argv.index("-s") + 1]
+                pattern = argv[argv.index("-p") + 1]
+                self.assertTrue(source_dir.is_dir(), msg=command)
+                self.assertTrue(
+                    any(source_dir.glob(pattern)),
+                    msg=f"workflow unittest pattern matches no tests: {command}",
+                )
+                continue
+
+            if argv[1] == "-m":
+                module = argv[2]
+                self.assertIsNotNone(
+                    importlib.util.find_spec(module),
+                    msg=f"workflow module does not exist: {module}",
+                )
+                probe = ["python3", "-m", module]
+                if len(argv) > 3 and not argv[3].startswith("-"):
+                    probe.append(argv[3])
+                probe.append("--help")
+                result = subprocess.run(
+                    probe,
+                    cwd=ROOT,
+                    text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    timeout=30,
+                    check=False,
+                )
+                self.assertEqual(
+                    result.returncode,
+                    0,
+                    msg=(
+                        f"workflow CLI help does not resolve: {command}\n"
+                        f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+                    ),
+                )
+                continue
+
+            if argv[1].endswith(".py"):
+                self.assertTrue((ROOT / argv[1]).is_file(), msg=command)
+
+        for command in command_lines(self.text, "./"):
+            executable = ROOT / shlex.split(command)[0]
+            if executable.is_file():
+                self.assertTrue(executable.stat().st_mode & 0o111, msg=command)
+            else:
+                self.assertIn(
+                    command,
+                    (
+                        "./build.sh",
+                        './install.sh "$GITHUB_WORKSPACE"',
+                        './install.sh "$GITHUB_WORKSPACE/mgfembp"',
+                    ),
+                    msg=f"unknown non-repository executable: {command}",
+                )
 
     def test_modern_matrix_owns_all_subordinate_linker_runtime_coverage(self):
         modern = job_block(self.text, "modern")
