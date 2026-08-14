@@ -1,0 +1,5796 @@
+{
+  "alias_registry": {
+    "path": "texts/locales/fixed_width_display_aliases.json",
+    "sha256": "681c18a16c774a7c70d0cba852f62b7bc295b6bab7f6ecc4403012500ef73f0b"
+  },
+  "font_inputs": {
+    "ja": {
+      "codepoints_path": "graphics/fonts/cjk/ja.system.codepoints.u32le",
+      "codepoints_sha256": "762ef5a72e03b934ecc6f475d8fa69eb9ba0585508d38acd824ad1d052bb1a02",
+      "widths_path": "graphics/fonts/cjk/ja.system.widths.u8",
+      "widths_sha256": "429a0bfba5d9e60b9028cacb49616df80fc4e4bd2e8eff6febfb2d6590c938d5"
+    },
+    "zh-Hans": {
+      "codepoints_path": "graphics/fonts/cjk/zh-Hans.system.codepoints.u32le",
+      "codepoints_sha256": "7964ddc4fe2ffc23b6414589e0c0298485e3083818f2d889ace0b88fec67f354",
+      "widths_path": "graphics/fonts/cjk/zh-Hans.system.widths.u8",
+      "widths_sha256": "6a4d03fbad4d085069b9559fb26ba361845a387835c7ab87cda31b7999bf4190"
+    }
+  },
+  "kind": "fe8u-fixed-width-label-metrics",
+  "locales": {
+    "ja": {
+      "surfaces": {
+        "character_name_40": {
+          "alias_count": 24,
+          "allocation_pixels": 40,
+          "label_count": 87,
+          "overflow_count": 0,
+          "records": [
+            {
+              "alias_applied": false,
+              "canonical_text": "ダミー",
+              "canonical_width": 29,
+              "display_text": "ダミー",
+              "display_width": 29,
+              "target_id": "0x0025"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "エイリーク",
+              "canonical_width": 46,
+              "display_text": "エイリク",
+              "display_width": 36,
+              "target_id": "0x0212"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "ゼト",
+              "canonical_width": 19,
+              "display_text": "ゼト",
+              "display_width": 19,
+              "target_id": "0x0213"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "ギリアム",
+              "canonical_width": 38,
+              "display_text": "ギリアム",
+              "display_width": 38,
+              "target_id": "0x0214"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "フランツ",
+              "canonical_width": 38,
+              "display_text": "フランツ",
+              "display_width": 38,
+              "target_id": "0x0215"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "モルダ",
+              "canonical_width": 30,
+              "display_text": "モルダ",
+              "display_width": 30,
+              "target_id": "0x0216"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "ヴァネッサ",
+              "canonical_width": 48,
+              "display_text": "ヴァネサ",
+              "display_width": 39,
+              "target_id": "0x0217"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "ロス",
+              "canonical_width": 19,
+              "display_text": "ロス",
+              "display_width": 19,
+              "target_id": "0x0218"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "ネイミー",
+              "canonical_width": 38,
+              "display_text": "ネイミー",
+              "display_width": 38,
+              "target_id": "0x0219"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "コーマ",
+              "canonical_width": 29,
+              "display_text": "コーマ",
+              "display_width": 29,
+              "target_id": "0x021A"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "ガルシア",
+              "canonical_width": 40,
+              "display_text": "ガルシア",
+              "display_width": 40,
+              "target_id": "0x021B"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "ヒーニアス",
+              "canonical_width": 49,
+              "display_text": "ヒニアス",
+              "display_width": 39,
+              "target_id": "0x021C"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "ルーテ",
+              "canonical_width": 30,
+              "display_text": "ルーテ",
+              "display_width": 30,
+              "target_id": "0x021D"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "ナターシャ",
+              "canonical_width": 48,
+              "display_text": "ナタシャ",
+              "display_width": 38,
+              "target_id": "0x021E"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "クーガー",
+              "canonical_width": 39,
+              "display_text": "クーガー",
+              "display_width": 39,
+              "target_id": "0x021F"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "エフラム",
+              "canonical_width": 38,
+              "display_text": "エフラム",
+              "display_width": 38,
+              "target_id": "0x0220"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "フォルデ",
+              "canonical_width": 38,
+              "display_text": "フォルデ",
+              "display_width": 38,
+              "target_id": "0x0221"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "カイル",
+              "canonical_width": 28,
+              "display_text": "カイル",
+              "display_width": 28,
+              "target_id": "0x0222"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "アメリア",
+              "canonical_width": 37,
+              "display_text": "アメリア",
+              "display_width": 37,
+              "target_id": "0x0223"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "アスレイ",
+              "canonical_width": 39,
+              "display_text": "アスレイ",
+              "display_width": 39,
+              "target_id": "0x0224"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "ジスト",
+              "canonical_width": 29,
+              "display_text": "ジスト",
+              "display_width": 29,
+              "target_id": "0x0225"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "テティス",
+              "canonical_width": 38,
+              "display_text": "テティス",
+              "display_width": 38,
+              "target_id": "0x0226"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "マリカ",
+              "canonical_width": 27,
+              "display_text": "マリカ",
+              "display_width": 27,
+              "target_id": "0x0227"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "サレフ",
+              "canonical_width": 29,
+              "display_text": "サレフ",
+              "display_width": 29,
+              "target_id": "0x0228"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "ユアン",
+              "canonical_width": 30,
+              "display_text": "ユアン",
+              "display_width": 30,
+              "target_id": "0x0229"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "ラーチェル",
+              "canonical_width": 48,
+              "display_text": "ラチェル",
+              "display_width": 38,
+              "target_id": "0x022A"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "ドズラ",
+              "canonical_width": 28,
+              "display_text": "ドズラ",
+              "display_width": 28,
+              "target_id": "0x022B"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "レナック",
+              "canonical_width": 38,
+              "display_text": "レナック",
+              "display_width": 38,
+              "target_id": "0x022D"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "デュッセル",
+              "canonical_width": 47,
+              "display_text": "デュセル",
+              "display_width": 38,
+              "target_id": "0x022E"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "ミルラ",
+              "canonical_width": 28,
+              "display_text": "ミルラ",
+              "display_width": 28,
+              "target_id": "0x022F"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "ノール",
+              "canonical_width": 29,
+              "display_text": "ノール",
+              "display_width": 29,
+              "target_id": "0x0230"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "ヨシュア",
+              "canonical_width": 38,
+              "display_text": "ヨシュア",
+              "display_width": 38,
+              "target_id": "0x0231"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "シレーネ",
+              "canonical_width": 40,
+              "display_text": "シレーネ",
+              "display_width": 40,
+              "target_id": "0x0232"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "ターナ",
+              "canonical_width": 29,
+              "display_text": "ターナ",
+              "display_width": 29,
+              "target_id": "0x0233"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "リオン",
+              "canonical_width": 28,
+              "display_text": "リオン",
+              "display_width": 28,
+              "target_id": "0x0234"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "ムルヴァ",
+              "canonical_width": 39,
+              "display_text": "ムルヴァ",
+              "display_width": 39,
+              "target_id": "0x0235"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "オルソン",
+              "canonical_width": 39,
+              "display_text": "オルソン",
+              "display_width": 39,
+              "target_id": "0x0236"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "ヴァルター",
+              "canonical_width": 48,
+              "display_text": "ヴァルタ",
+              "display_width": 38,
+              "target_id": "0x0237"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "セライナ",
+              "canonical_width": 37,
+              "display_text": "セライナ",
+              "display_width": 37,
+              "target_id": "0x0238"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "ブレゲ",
+              "canonical_width": 30,
+              "display_text": "ブレゲ",
+              "display_width": 30,
+              "target_id": "0x0239"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "ボン",
+              "canonical_width": 20,
+              "display_text": "ボン",
+              "display_width": 20,
+              "target_id": "0x023A"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "バズバ",
+              "canonical_width": 30,
+              "display_text": "バズバ",
+              "display_width": 30,
+              "target_id": "0x023B"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "ザール",
+              "canonical_width": 30,
+              "display_text": "ザール",
+              "display_width": 30,
+              "target_id": "0x023C"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "ノベラ",
+              "canonical_width": 28,
+              "display_text": "ノベラ",
+              "display_width": 28,
+              "target_id": "0x023D"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "マーレイ",
+              "canonical_width": 39,
+              "display_text": "マーレイ",
+              "display_width": 39,
+              "target_id": "0x023E"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "ティラード",
+              "canonical_width": 46,
+              "display_text": "ティラド",
+              "display_width": 36,
+              "target_id": "0x023F"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "ビンクス",
+              "canonical_width": 39,
+              "display_text": "ビンクス",
+              "display_width": 39,
+              "target_id": "0x0240"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "パブロ",
+              "canonical_width": 30,
+              "display_text": "パブロ",
+              "display_width": 30,
+              "target_id": "0x0241"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "アイアス",
+              "canonical_width": 39,
+              "display_text": "アイアス",
+              "display_width": 39,
+              "target_id": "0x0242"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "カーライル",
+              "canonical_width": 47,
+              "display_text": "カライル",
+              "display_width": 37,
+              "target_id": "0x0243"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "ケセルダ",
+              "canonical_width": 39,
+              "display_text": "ケセルダ",
+              "display_width": 39,
+              "target_id": "0x0244"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "アーヴ",
+              "canonical_width": 30,
+              "display_text": "アーヴ",
+              "display_width": 30,
+              "target_id": "0x0246"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "ゲブ",
+              "canonical_width": 20,
+              "display_text": "ゲブ",
+              "display_width": 20,
+              "target_id": "0x0247"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "ベルナ",
+              "canonical_width": 30,
+              "display_text": "ベルナ",
+              "display_width": 30,
+              "target_id": "0x0248"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "オニール",
+              "canonical_width": 40,
+              "display_text": "オニール",
+              "display_width": 40,
+              "target_id": "0x0249"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "グレン",
+              "canonical_width": 30,
+              "display_text": "グレン",
+              "display_width": 30,
+              "target_id": "0x024A"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "ゾンタ",
+              "canonical_width": 29,
+              "display_text": "ゾンタ",
+              "display_width": 29,
+              "target_id": "0x024B"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "ヴィガルド",
+              "canonical_width": 47,
+              "display_text": "ヴィガル",
+              "display_width": 38,
+              "target_id": "0x024C"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "グラド兵",
+              "canonical_width": 38,
+              "display_text": "グラド兵",
+              "display_width": 38,
+              "target_id": "0x024D"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "グラド残党",
+              "canonical_width": 49,
+              "display_text": "グラ残党",
+              "display_width": 40,
+              "target_id": "0x024E"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "ならずもの",
+              "canonical_width": 48,
+              "display_text": "ならず",
+              "display_width": 29,
+              "target_id": "0x024F"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "宝あらし",
+              "canonical_width": 38,
+              "display_text": "宝あらし",
+              "display_width": 38,
+              "target_id": "0x0250"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "カルチノ兵",
+              "canonical_width": 48,
+              "display_text": "カルチ兵",
+              "display_width": 39,
+              "target_id": "0x0251"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "パブロ私兵",
+              "canonical_width": 50,
+              "display_text": "パブロ兵",
+              "display_width": 40,
+              "target_id": "0x0252"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "ビンクス隊",
+              "canonical_width": 49,
+              "display_text": "ビンク隊",
+              "display_width": 39,
+              "target_id": "0x0253"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "バズバ団",
+              "canonical_width": 40,
+              "display_text": "バズバ団",
+              "display_width": 40,
+              "target_id": "0x0254"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "魔物",
+              "canonical_width": 20,
+              "display_text": "魔物",
+              "display_width": 20,
+              "target_id": "0x0255"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "魔物",
+              "canonical_width": 20,
+              "display_text": "魔物",
+              "display_width": 20,
+              "target_id": "0x0256"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "フォデス",
+              "canonical_width": 38,
+              "display_text": "フォデス",
+              "display_width": 38,
+              "target_id": "0x025A"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "ファード",
+              "canonical_width": 37,
+              "display_text": "ファード",
+              "display_width": 37,
+              "target_id": "0x025B"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "ヘイデン",
+              "canonical_width": 39,
+              "display_text": "ヘイデン",
+              "display_width": 39,
+              "target_id": "0x025C"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "クリムト",
+              "canonical_width": 36,
+              "display_text": "クリムト",
+              "display_width": 36,
+              "target_id": "0x025D"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "マンセル",
+              "canonical_width": 39,
+              "display_text": "マンセル",
+              "display_width": 39,
+              "target_id": "0x025E"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "ダラ",
+              "canonical_width": 19,
+              "display_text": "ダラ",
+              "display_width": 19,
+              "target_id": "0x025F"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "イシュメア",
+              "canonical_width": 47,
+              "display_text": "イシュメ",
+              "display_width": 37,
+              "target_id": "0x0260"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "天馬の伝令",
+              "canonical_width": 51,
+              "display_text": "天馬伝",
+              "display_width": 31,
+              "target_id": "0x0261"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "フレリア兵",
+              "canonical_width": 47,
+              "display_text": "フレリ兵",
+              "display_width": 37,
+              "target_id": "0x0262"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "ロストン兵",
+              "canonical_width": 48,
+              "display_text": "ロスト兵",
+              "display_width": 38,
+              "target_id": "0x0263"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "市民",
+              "canonical_width": 19,
+              "display_text": "市民",
+              "display_width": 19,
+              "target_id": "0x0264"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "ルネスの民",
+              "canonical_width": 50,
+              "display_text": "ルネス民",
+              "display_width": 40,
+              "target_id": "0x0265"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "ナルーベの民",
+              "canonical_width": 60,
+              "display_text": "ナルベ民",
+              "display_width": 40,
+              "target_id": "0x0266"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "対戦相手",
+              "canonical_width": 42,
+              "display_text": "対戦手",
+              "display_width": 32,
+              "target_id": "0x0267"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "壊れる壁",
+              "canonical_width": 40,
+              "display_text": "壊れる壁",
+              "display_width": 40,
+              "target_id": "0x0268"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "古木",
+              "canonical_width": 20,
+              "display_text": "古木",
+              "display_width": 20,
+              "target_id": "0x0269"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "サマナーン",
+              "canonical_width": 50,
+              "display_text": "サマナン",
+              "display_width": 40,
+              "target_id": "0x026C"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "サモン",
+              "canonical_width": 30,
+              "display_text": "サモン",
+              "display_width": 30,
+              "target_id": "0x026D"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "亡霊戦士",
+              "canonical_width": 41,
+              "display_text": "亡霊士",
+              "display_width": 30,
+              "target_id": "0x02F1"
+            }
+          ]
+        },
+        "class_name_64": {
+          "alias_count": 17,
+          "allocation_pixels": 64,
+          "label_count": 71,
+          "overflow_count": 0,
+          "records": [
+            {
+              "alias_applied": false,
+              "canonical_text": "ロード",
+              "canonical_width": 28,
+              "display_text": "ロード",
+              "display_width": 28,
+              "target_id": "0x02BF"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "マスターロード",
+              "canonical_width": 67,
+              "display_text": "マスタロード",
+              "display_width": 57,
+              "target_id": "0x02C0"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "ソシアルナイト",
+              "canonical_width": 67,
+              "display_text": "ソシアル",
+              "display_width": 39,
+              "target_id": "0x02C1"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "パラディン",
+              "canonical_width": 48,
+              "display_text": "パラディン",
+              "display_width": 48,
+              "target_id": "0x02C2"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "アーマーナイト",
+              "canonical_width": 68,
+              "display_text": "アーマー",
+              "display_width": 40,
+              "target_id": "0x02C3"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "ジェネラル",
+              "canonical_width": 48,
+              "display_text": "ジェネラル",
+              "display_width": 48,
+              "target_id": "0x02C4"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "盗賊",
+              "canonical_width": 21,
+              "display_text": "盗賊",
+              "display_width": 21,
+              "target_id": "0x02C5"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "傭兵",
+              "canonical_width": 20,
+              "display_text": "傭兵",
+              "display_width": 20,
+              "target_id": "0x02C6"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "勇者",
+              "canonical_width": 20,
+              "display_text": "勇者",
+              "display_width": 20,
+              "target_id": "0x02C7"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "剣士",
+              "canonical_width": 20,
+              "display_text": "剣士",
+              "display_width": 20,
+              "target_id": "0x02C8"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "ソードマスター",
+              "canonical_width": 67,
+              "display_text": "ソードマスタ",
+              "display_width": 57,
+              "target_id": "0x02C9"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "アサシン",
+              "canonical_width": 40,
+              "display_text": "アサシン",
+              "display_width": 40,
+              "target_id": "0x02CA"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "アーチャー",
+              "canonical_width": 49,
+              "display_text": "アーチャー",
+              "display_width": 49,
+              "target_id": "0x02CB"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "スナイパー",
+              "canonical_width": 50,
+              "display_text": "スナイパー",
+              "display_width": 50,
+              "target_id": "0x02CC"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "フォレストナイト",
+              "canonical_width": 75,
+              "display_text": "森騎士",
+              "display_width": 31,
+              "target_id": "0x02CD"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "ドラゴンナイト",
+              "canonical_width": 66,
+              "display_text": "ドラゴン",
+              "display_width": 38,
+              "target_id": "0x02CE"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "ドラゴンマスター",
+              "canonical_width": 77,
+              "display_text": "ドラゴマスタ",
+              "display_width": 57,
+              "target_id": "0x02CF"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "ワイバーンナイト",
+              "canonical_width": 76,
+              "display_text": "ワイバーン",
+              "display_width": 48,
+              "target_id": "0x02D0"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "魔道士",
+              "canonical_width": 30,
+              "display_text": "魔道士",
+              "display_width": 30,
+              "target_id": "0x02D1"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "賢者",
+              "canonical_width": 20,
+              "display_text": "賢者",
+              "display_width": 20,
+              "target_id": "0x02D2"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "マージナイト",
+              "canonical_width": 58,
+              "display_text": "マージナイト",
+              "display_width": 58,
+              "target_id": "0x02D3"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "司祭",
+              "canonical_width": 21,
+              "display_text": "司祭",
+              "display_width": 21,
+              "target_id": "0x02D4"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "マムクート",
+              "canonical_width": 48,
+              "display_text": "マムクート",
+              "display_width": 48,
+              "target_id": "0x02D7"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "かけだし戦士",
+              "canonical_width": 60,
+              "display_text": "かけだし戦士",
+              "display_width": 60,
+              "target_id": "0x02D8"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "魔道士見習い",
+              "canonical_width": 59,
+              "display_text": "魔道士見習い",
+              "display_width": 59,
+              "target_id": "0x02D9"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "新人兵士",
+              "canonical_width": 41,
+              "display_text": "新人兵士",
+              "display_width": 41,
+              "target_id": "0x02DA"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "ローグ",
+              "canonical_width": 29,
+              "display_text": "ローグ",
+              "display_width": 29,
+              "target_id": "0x02DB"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "戦士",
+              "canonical_width": 21,
+              "display_text": "戦士",
+              "display_width": 21,
+              "target_id": "0x02DC"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "ウォーリア",
+              "canonical_width": 46,
+              "display_text": "ウォーリア",
+              "display_width": 46,
+              "target_id": "0x02DD"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "山賊",
+              "canonical_width": 21,
+              "display_text": "山賊",
+              "display_width": 21,
+              "target_id": "0x02DE"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "バーサーカー",
+              "canonical_width": 59,
+              "display_text": "バーサーカー",
+              "display_width": 59,
+              "target_id": "0x02DF"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "グレートナイト",
+              "canonical_width": 67,
+              "display_text": "グレート",
+              "display_width": 39,
+              "target_id": "0x02E0"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "シャーマン",
+              "canonical_width": 49,
+              "display_text": "シャーマン",
+              "display_width": 49,
+              "target_id": "0x02E1"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "ドルイド",
+              "canonical_width": 37,
+              "display_text": "ドルイド",
+              "display_width": 37,
+              "target_id": "0x02E2"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "サマナー",
+              "canonical_width": 40,
+              "display_text": "サマナー",
+              "display_width": 40,
+              "target_id": "0x02E3"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "修道士",
+              "canonical_width": 30,
+              "display_text": "修道士",
+              "display_width": 30,
+              "target_id": "0x02E4"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "バード",
+              "canonical_width": 29,
+              "display_text": "バード",
+              "display_width": 29,
+              "target_id": "0x02E5"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "神官",
+              "canonical_width": 20,
+              "display_text": "神官",
+              "display_width": 20,
+              "target_id": "0x02E6"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "ペガサスナイト",
+              "canonical_width": 68,
+              "display_text": "ペガサス",
+              "display_width": 40,
+              "target_id": "0x02E7"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "ファルコンナイト",
+              "canonical_width": 75,
+              "display_text": "ファルコン",
+              "display_width": 47,
+              "target_id": "0x02E8"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "シスター",
+              "canonical_width": 39,
+              "display_text": "シスター",
+              "display_width": 39,
+              "target_id": "0x02E9"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "トルバドール",
+              "canonical_width": 58,
+              "display_text": "トルバドール",
+              "display_width": 58,
+              "target_id": "0x02EA"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "ヴァルキュリア",
+              "canonical_width": 66,
+              "display_text": "ヴァルキュリ",
+              "display_width": 56,
+              "target_id": "0x02EB"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "踊り子",
+              "canonical_width": 28,
+              "display_text": "踊り子",
+              "display_width": 28,
+              "target_id": "0x02EC"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "ソルジャー",
+              "canonical_width": 48,
+              "display_text": "ソルジャー",
+              "display_width": 48,
+              "target_id": "0x02ED"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "海賊",
+              "canonical_width": 22,
+              "display_text": "海賊",
+              "display_width": 22,
+              "target_id": "0x02EE"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "ネクロマンサー",
+              "canonical_width": 68,
+              "display_text": "ネクロマン",
+              "display_width": 48,
+              "target_id": "0x02EF"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "船団",
+              "canonical_width": 21,
+              "display_text": "船団",
+              "display_width": 21,
+              "target_id": "0x02F0"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "亡霊戦士",
+              "canonical_width": 41,
+              "display_text": "亡霊戦士",
+              "display_width": 41,
+              "target_id": "0x02F1"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "ゾンビ",
+              "canonical_width": 30,
+              "display_text": "ゾンビ",
+              "display_width": 30,
+              "target_id": "0x02F2"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "マミー",
+              "canonical_width": 29,
+              "display_text": "マミー",
+              "display_width": 29,
+              "target_id": "0x02F3"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "スケルトン",
+              "canonical_width": 49,
+              "display_text": "スケルトン",
+              "display_width": 49,
+              "target_id": "0x02F4"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "ヘルボーン",
+              "canonical_width": 50,
+              "display_text": "ヘルボーン",
+              "display_width": 50,
+              "target_id": "0x02F5"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "バール",
+              "canonical_width": 30,
+              "display_text": "バール",
+              "display_width": 30,
+              "target_id": "0x02F6"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "エルダバール",
+              "canonical_width": 60,
+              "display_text": "エルダバール",
+              "display_width": 60,
+              "target_id": "0x02F7"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "サイクロプス",
+              "canonical_width": 58,
+              "display_text": "サイクロプス",
+              "display_width": 58,
+              "target_id": "0x02F8"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "モーサドゥーグ",
+              "canonical_width": 68,
+              "display_text": "モーサドゥ",
+              "display_width": 48,
+              "target_id": "0x02F9"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "ケルベロス",
+              "canonical_width": 49,
+              "display_text": "ケルベロス",
+              "display_width": 49,
+              "target_id": "0x02FA"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "タルヴォス",
+              "canonical_width": 48,
+              "display_text": "タルヴォス",
+              "display_width": 48,
+              "target_id": "0x02FB"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "マグダイル",
+              "canonical_width": 49,
+              "display_text": "マグダイル",
+              "display_width": 49,
+              "target_id": "0x02FC"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "ビグル",
+              "canonical_width": 30,
+              "display_text": "ビグル",
+              "display_width": 30,
+              "target_id": "0x02FD"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "アークビグル",
+              "canonical_width": 59,
+              "display_text": "アークビグル",
+              "display_width": 59,
+              "target_id": "0x02FE"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "ゴーゴン",
+              "canonical_width": 40,
+              "display_text": "ゴーゴン",
+              "display_width": 40,
+              "target_id": "0x02FF"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "ゴーゴンエッグ",
+              "canonical_width": 69,
+              "display_text": "ゴーゴンエ",
+              "display_width": 50,
+              "target_id": "0x0300"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "ガーゴイル",
+              "canonical_width": 49,
+              "display_text": "ガーゴイル",
+              "display_width": 49,
+              "target_id": "0x0301"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "デスガーゴイル",
+              "canonical_width": 69,
+              "display_text": "デスガゴ",
+              "display_width": 40,
+              "target_id": "0x0302"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "ドラゴンゾンビ",
+              "canonical_width": 68,
+              "display_text": "ドラゾンビ",
+              "display_width": 48,
+              "target_id": "0x0303"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "魔王",
+              "canonical_width": 20,
+              "display_text": "魔王",
+              "display_width": 20,
+              "target_id": "0x0304"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "市民",
+              "canonical_width": 19,
+              "display_text": "市民",
+              "display_width": 19,
+              "target_id": "0x0305"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "教皇",
+              "canonical_width": 21,
+              "display_text": "教皇",
+              "display_width": 21,
+              "target_id": "0x0306"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "女王",
+              "canonical_width": 20,
+              "display_text": "女王",
+              "display_width": 20,
+              "target_id": "0x0307"
+            }
+          ]
+        },
+        "item_name_56": {
+          "alias_count": 58,
+          "allocation_pixels": 56,
+          "label_count": 174,
+          "overflow_count": 0,
+          "records": [
+            {
+              "alias_applied": false,
+              "canonical_text": "てつの剣",
+              "canonical_width": 40,
+              "display_text": "てつの剣",
+              "display_width": 40,
+              "target_id": "0x0354"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "ほそみの剣",
+              "canonical_width": 50,
+              "display_text": "ほそみの剣",
+              "display_width": 50,
+              "target_id": "0x0355"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "はがねの剣",
+              "canonical_width": 50,
+              "display_text": "はがねの剣",
+              "display_width": 50,
+              "target_id": "0x0356"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "ぎんの剣",
+              "canonical_width": 40,
+              "display_text": "ぎんの剣",
+              "display_width": 40,
+              "target_id": "0x0357"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "てつの大剣",
+              "canonical_width": 50,
+              "display_text": "てつの大剣",
+              "display_width": 50,
+              "target_id": "0x0358"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "はがねの大剣",
+              "canonical_width": 60,
+              "display_text": "はがね大剣",
+              "display_width": 50,
+              "target_id": "0x0359"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "ぎんの大剣",
+              "canonical_width": 50,
+              "display_text": "ぎんの大剣",
+              "display_width": 50,
+              "target_id": "0x035A"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "どくの剣",
+              "canonical_width": 38,
+              "display_text": "どくの剣",
+              "display_width": 38,
+              "target_id": "0x035B"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "レイピア",
+              "canonical_width": 39,
+              "display_text": "レイピア",
+              "display_width": 39,
+              "target_id": "0x035C"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "ゆうしゃの剣",
+              "canonical_width": 57,
+              "display_text": "ゆうしゃ剣",
+              "display_width": 47,
+              "target_id": "0x035D"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "シャムシール",
+              "canonical_width": 59,
+              "display_text": "シャムシル",
+              "display_width": 49,
+              "target_id": "0x035E"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "キルソード",
+              "canonical_width": 48,
+              "display_text": "キルソード",
+              "display_width": 48,
+              "target_id": "0x035F"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "アーマーキラー",
+              "canonical_width": 69,
+              "display_text": "アーマキラ",
+              "display_width": 49,
+              "target_id": "0x0360"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "ドラゴンキラー",
+              "canonical_width": 67,
+              "display_text": "ドラゴンキ",
+              "display_width": 48,
+              "target_id": "0x0361"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "ひかりの剣",
+              "canonical_width": 48,
+              "display_text": "ひかりの剣",
+              "display_width": 48,
+              "target_id": "0x0362"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "ルーンソード",
+              "canonical_width": 58,
+              "display_text": "ルーンソド",
+              "display_width": 48,
+              "target_id": "0x0363"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "ランスバスター",
+              "canonical_width": 68,
+              "display_text": "ランスバス",
+              "display_width": 49,
+              "target_id": "0x0364"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "斬馬刀",
+              "canonical_width": 31,
+              "display_text": "斬馬刀",
+              "display_width": 31,
+              "target_id": "0x0365"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "ジークリンデ",
+              "canonical_width": 57,
+              "display_text": "ジクリンデ",
+              "display_width": 47,
+              "target_id": "0x0366"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "アウドムラ",
+              "canonical_width": 47,
+              "display_text": "アウドムラ",
+              "display_width": 47,
+              "target_id": "0x0367"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "かぜの剣",
+              "canonical_width": 40,
+              "display_text": "かぜの剣",
+              "display_width": 40,
+              "target_id": "0x0368"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "てつのやり",
+              "canonical_width": 48,
+              "display_text": "てつのやり",
+              "display_width": 48,
+              "target_id": "0x0369"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "ほそみのやり",
+              "canonical_width": 58,
+              "display_text": "ほそみやり",
+              "display_width": 48,
+              "target_id": "0x036A"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "はがねのやり",
+              "canonical_width": 58,
+              "display_text": "はがねやり",
+              "display_width": 48,
+              "target_id": "0x036B"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "ぎんのやり",
+              "canonical_width": 48,
+              "display_text": "ぎんのやり",
+              "display_width": 48,
+              "target_id": "0x036C"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "どくのやり",
+              "canonical_width": 46,
+              "display_text": "どくのやり",
+              "display_width": 46,
+              "target_id": "0x036D"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "ゆうしゃのやり",
+              "canonical_width": 65,
+              "display_text": "ゆうしゃやり",
+              "display_width": 55,
+              "target_id": "0x036E"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "キラーランス",
+              "canonical_width": 58,
+              "display_text": "キラランス",
+              "display_width": 48,
+              "target_id": "0x036F"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "ホースキラー",
+              "canonical_width": 59,
+              "display_text": "ホースキラ",
+              "display_width": 49,
+              "target_id": "0x0370"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "てやり",
+              "canonical_width": 28,
+              "display_text": "てやり",
+              "display_width": 28,
+              "target_id": "0x0371"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "スレンドスピア",
+              "canonical_width": 69,
+              "display_text": "スレンドス",
+              "display_width": 49,
+              "target_id": "0x0372"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "アクスバスター",
+              "canonical_width": 68,
+              "display_text": "アクスバス",
+              "display_width": 49,
+              "target_id": "0x0373"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "レギンレイヴ",
+              "canonical_width": 59,
+              "display_text": "レギンレイ",
+              "display_width": 49,
+              "target_id": "0x0374"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "ジークムント",
+              "canonical_width": 58,
+              "display_text": "ジクムント",
+              "display_width": 48,
+              "target_id": "0x0375"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "ヴィドフニル",
+              "canonical_width": 56,
+              "display_text": "ヴィドフニル",
+              "display_width": 56,
+              "target_id": "0x0376"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "ドラゴンスピア",
+              "canonical_width": 68,
+              "display_text": "ドラゴンス",
+              "display_width": 48,
+              "target_id": "0x0377"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "つらぬきのやり",
+              "canonical_width": 66,
+              "display_text": "つらぬきやり",
+              "display_width": 56,
+              "target_id": "0x0378"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "ショートスピア",
+              "canonical_width": 67,
+              "display_text": "ショトスピ",
+              "display_width": 47,
+              "target_id": "0x0379"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "てつのおの",
+              "canonical_width": 50,
+              "display_text": "てつのおの",
+              "display_width": 50,
+              "target_id": "0x037A"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "はがねのおの",
+              "canonical_width": 60,
+              "display_text": "はがねお",
+              "display_width": 40,
+              "target_id": "0x037B"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "ぎんのおの",
+              "canonical_width": 50,
+              "display_text": "ぎんのおの",
+              "display_width": 50,
+              "target_id": "0x037C"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "どくのおの",
+              "canonical_width": 48,
+              "display_text": "どくのおの",
+              "display_width": 48,
+              "target_id": "0x037D"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "ゆうしゃのおの",
+              "canonical_width": 67,
+              "display_text": "ゆうしゃお",
+              "display_width": 47,
+              "target_id": "0x037E"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "キラーアクス",
+              "canonical_width": 58,
+              "display_text": "キラアクス",
+              "display_width": 48,
+              "target_id": "0x037F"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "ハルベルト",
+              "canonical_width": 49,
+              "display_text": "ハルベルト",
+              "display_width": 49,
+              "target_id": "0x0380"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "ハンマー",
+              "canonical_width": 40,
+              "display_text": "ハンマー",
+              "display_width": 40,
+              "target_id": "0x0381"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "デビルアクス",
+              "canonical_width": 59,
+              "display_text": "デビルアク",
+              "display_width": 49,
+              "target_id": "0x0382"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "ておの",
+              "canonical_width": 30,
+              "display_text": "ておの",
+              "display_width": 30,
+              "target_id": "0x0383"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "トマホーク",
+              "canonical_width": 48,
+              "display_text": "トマホーク",
+              "display_width": 48,
+              "target_id": "0x0384"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "ソードバスター",
+              "canonical_width": 67,
+              "display_text": "ソドバスタ",
+              "display_width": 47,
+              "target_id": "0x0385"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "ソードキラー",
+              "canonical_width": 57,
+              "display_text": "ソードキラ",
+              "display_width": 47,
+              "target_id": "0x0386"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "ドラゴンアクス",
+              "canonical_width": 67,
+              "display_text": "ドラゴンア",
+              "display_width": 48,
+              "target_id": "0x0387"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "バトルアクス",
+              "canonical_width": 58,
+              "display_text": "バトルアク",
+              "display_width": 48,
+              "target_id": "0x0388"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "ガルム",
+              "canonical_width": 30,
+              "display_text": "ガルム",
+              "display_width": 30,
+              "target_id": "0x0389"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "なげおの",
+              "canonical_width": 41,
+              "display_text": "なげおの",
+              "display_width": 41,
+              "target_id": "0x038A"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "てつの弓",
+              "canonical_width": 40,
+              "display_text": "てつの弓",
+              "display_width": 40,
+              "target_id": "0x038B"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "はがねの弓",
+              "canonical_width": 50,
+              "display_text": "はがねの弓",
+              "display_width": 50,
+              "target_id": "0x038C"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "ぎんの弓",
+              "canonical_width": 40,
+              "display_text": "ぎんの弓",
+              "display_width": 40,
+              "target_id": "0x038D"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "どくの弓",
+              "canonical_width": 38,
+              "display_text": "どくの弓",
+              "display_width": 38,
+              "target_id": "0x038E"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "キラーボウ",
+              "canonical_width": 48,
+              "display_text": "キラーボウ",
+              "display_width": 48,
+              "target_id": "0x038F"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "ゆうしゃの弓",
+              "canonical_width": 57,
+              "display_text": "ゆうしゃ弓",
+              "display_width": 47,
+              "target_id": "0x0390"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "短弓",
+              "canonical_width": 20,
+              "display_text": "短弓",
+              "display_width": 20,
+              "target_id": "0x0391"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "長弓",
+              "canonical_width": 19,
+              "display_text": "長弓",
+              "display_width": 19,
+              "target_id": "0x0392"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "ロングアーチ",
+              "canonical_width": 59,
+              "display_text": "ロングアチ",
+              "display_width": 49,
+              "target_id": "0x0393"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "アイアンアーチ",
+              "canonical_width": 69,
+              "display_text": "アイアンア",
+              "display_width": 49,
+              "target_id": "0x0394"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "キラーアーチ",
+              "canonical_width": 59,
+              "display_text": "キラーアチ",
+              "display_width": 49,
+              "target_id": "0x0395"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "ニーズヘッグ",
+              "canonical_width": 59,
+              "display_text": "ニズヘッグ",
+              "display_width": 49,
+              "target_id": "0x0396"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "腐敗のブレス",
+              "canonical_width": 61,
+              "display_text": "腐敗ブレス",
+              "display_width": 51,
+              "target_id": "0x0397"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "竜石",
+              "canonical_width": 21,
+              "display_text": "竜石",
+              "display_width": 21,
+              "target_id": "0x0398"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "魔石のかけら",
+              "canonical_width": 59,
+              "display_text": "魔石かけら",
+              "display_width": 49,
+              "target_id": "0x0399"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "不浄の魔光",
+              "canonical_width": 52,
+              "display_text": "不浄の魔光",
+              "display_width": 52,
+              "target_id": "0x039A"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "滅びの魔拳",
+              "canonical_width": 52,
+              "display_text": "滅びの魔拳",
+              "display_width": 52,
+              "target_id": "0x039B"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "漆黒の悪夢",
+              "canonical_width": 50,
+              "display_text": "漆黒の悪夢",
+              "display_width": 50,
+              "target_id": "0x039C"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "するどい爪",
+              "canonical_width": 50,
+              "display_text": "するどい爪",
+              "display_width": 50,
+              "target_id": "0x039D"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "くさった爪",
+              "canonical_width": 45,
+              "display_text": "くさった爪",
+              "display_width": 45,
+              "target_id": "0x039E"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "くさった長爪",
+              "canonical_width": 54,
+              "display_text": "くさった長爪",
+              "display_width": 54,
+              "target_id": "0x039F"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "どくの爪",
+              "canonical_width": 38,
+              "display_text": "どくの爪",
+              "display_width": 38,
+              "target_id": "0x03A0"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "もうどくの爪",
+              "canonical_width": 56,
+              "display_text": "もうどくの爪",
+              "display_width": 56,
+              "target_id": "0x03A1"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "灼熱の牙",
+              "canonical_width": 41,
+              "display_text": "灼熱の牙",
+              "display_width": 41,
+              "target_id": "0x03A2"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "焦熱の牙",
+              "canonical_width": 41,
+              "display_text": "焦熱の牙",
+              "display_width": 41,
+              "target_id": "0x03A3"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "斬魔の剣",
+              "canonical_width": 41,
+              "display_text": "斬魔の剣",
+              "display_width": 41,
+              "target_id": "0x03A4"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "撃魔のやり",
+              "canonical_width": 48,
+              "display_text": "撃魔のやり",
+              "display_width": 48,
+              "target_id": "0x03A5"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "断魔のおの",
+              "canonical_width": 51,
+              "display_text": "断魔のおの",
+              "display_width": 51,
+              "target_id": "0x03A6"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "破魔の弓",
+              "canonical_width": 40,
+              "display_text": "破魔の弓",
+              "display_width": 40,
+              "target_id": "0x03A7"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "ファイアー",
+              "canonical_width": 47,
+              "display_text": "ファイアー",
+              "display_width": 47,
+              "target_id": "0x03A9"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "サンダー",
+              "canonical_width": 40,
+              "display_text": "サンダー",
+              "display_width": 40,
+              "target_id": "0x03AA"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "エルファイアー",
+              "canonical_width": 67,
+              "display_text": "エルファイ",
+              "display_width": 47,
+              "target_id": "0x03AB"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "エイルカリバー",
+              "canonical_width": 66,
+              "display_text": "エイルカリバ",
+              "display_width": 56,
+              "target_id": "0x03AC"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "サンダーストーム",
+              "canonical_width": 79,
+              "display_text": "遠雷",
+              "display_width": 20,
+              "target_id": "0x03AD"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "フィンブル",
+              "canonical_width": 47,
+              "display_text": "フィンブル",
+              "display_width": 47,
+              "target_id": "0x03AE"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "エクスカリバー",
+              "canonical_width": 66,
+              "display_text": "エクスカリバ",
+              "display_width": 56,
+              "target_id": "0x03AF"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "ライトニング",
+              "canonical_width": 57,
+              "display_text": "ライトニン",
+              "display_width": 47,
+              "target_id": "0x03B0"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "シャイン",
+              "canonical_width": 38,
+              "display_text": "シャイン",
+              "display_width": 38,
+              "target_id": "0x03B1"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "ディヴァイン",
+              "canonical_width": 56,
+              "display_text": "ディヴァイン",
+              "display_width": 56,
+              "target_id": "0x03B2"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "パージ",
+              "canonical_width": 31,
+              "display_text": "パージ",
+              "display_width": 31,
+              "target_id": "0x03B3"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "アルジローレ",
+              "canonical_width": 59,
+              "display_text": "アルジロレ",
+              "display_width": 49,
+              "target_id": "0x03B4"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "イーヴァルディ",
+              "canonical_width": 66,
+              "display_text": "イヴァルディ",
+              "display_width": 56,
+              "target_id": "0x03B5"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "ミィル",
+              "canonical_width": 27,
+              "display_text": "ミィル",
+              "display_width": 27,
+              "target_id": "0x03B6"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "ルナ",
+              "canonical_width": 20,
+              "display_text": "ルナ",
+              "display_width": 20,
+              "target_id": "0x03B7"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "リザイア",
+              "canonical_width": 37,
+              "display_text": "リザイア",
+              "display_width": 37,
+              "target_id": "0x03B8"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "イクリプス",
+              "canonical_width": 47,
+              "display_text": "イクリプス",
+              "display_width": 47,
+              "target_id": "0x03B9"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "ノスフェラート",
+              "canonical_width": 65,
+              "display_text": "ノスフェラト",
+              "display_width": 55,
+              "target_id": "0x03BA"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "グレイプニル",
+              "canonical_width": 60,
+              "display_text": "グレイプニ",
+              "display_width": 50,
+              "target_id": "0x03BB"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "ナグルファル",
+              "canonical_width": 58,
+              "display_text": "ナグルファ",
+              "display_width": 48,
+              "target_id": "0x03BC"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "ストーン",
+              "canonical_width": 39,
+              "display_text": "ストーン",
+              "display_width": 39,
+              "target_id": "0x03BD"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "イービルアイ",
+              "canonical_width": 58,
+              "display_text": "イビルアイ",
+              "display_width": 48,
+              "target_id": "0x03BE"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "ブラッディアイ",
+              "canonical_width": 65,
+              "display_text": "ブラッディア",
+              "display_width": 56,
+              "target_id": "0x03BF"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "魔幻の波動",
+              "canonical_width": 50,
+              "display_text": "魔幻の波動",
+              "display_width": 50,
+              "target_id": "0x03C0"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "暗黒の魔弾",
+              "canonical_width": 52,
+              "display_text": "暗黒の魔弾",
+              "display_width": 52,
+              "target_id": "0x03C1"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "ライブ",
+              "canonical_width": 28,
+              "display_text": "ライブ",
+              "display_width": 28,
+              "target_id": "0x03C2"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "リライブ",
+              "canonical_width": 36,
+              "display_text": "リライブ",
+              "display_width": 36,
+              "target_id": "0x03C3"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "リカバー",
+              "canonical_width": 37,
+              "display_text": "リカバー",
+              "display_width": 37,
+              "target_id": "0x03C4"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "リブロー",
+              "canonical_width": 37,
+              "display_text": "リブロー",
+              "display_width": 37,
+              "target_id": "0x03C5"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "リザーブ",
+              "canonical_width": 38,
+              "display_text": "リザーブ",
+              "display_width": 38,
+              "target_id": "0x03C6"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "レスト",
+              "canonical_width": 29,
+              "display_text": "レスト",
+              "display_width": 29,
+              "target_id": "0x03C7"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "サイレス",
+              "canonical_width": 39,
+              "display_text": "サイレス",
+              "display_width": 39,
+              "target_id": "0x03C8"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "スリープ",
+              "canonical_width": 39,
+              "display_text": "スリープ",
+              "display_width": 39,
+              "target_id": "0x03C9"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "バサーク",
+              "canonical_width": 39,
+              "display_text": "バサーク",
+              "display_width": 39,
+              "target_id": "0x03CA"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "ワープ",
+              "canonical_width": 30,
+              "display_text": "ワープ",
+              "display_width": 30,
+              "target_id": "0x03CB"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "レスキュー",
+              "canonical_width": 49,
+              "display_text": "レスキュー",
+              "display_width": 49,
+              "target_id": "0x03CC"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "トーチ",
+              "canonical_width": 29,
+              "display_text": "トーチ",
+              "display_width": 29,
+              "target_id": "0x03CD"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "ハマーン",
+              "canonical_width": 40,
+              "display_text": "ハマーン",
+              "display_width": 40,
+              "target_id": "0x03CE"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "アンロック",
+              "canonical_width": 47,
+              "display_text": "アンロック",
+              "display_width": 47,
+              "target_id": "0x03CF"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "Ｍシールド",
+              "canonical_width": 48,
+              "display_text": "Ｍシールド",
+              "display_width": 48,
+              "target_id": "0x03D0"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "ラトナ",
+              "canonical_width": 28,
+              "display_text": "ラトナ",
+              "display_width": 28,
+              "target_id": "0x03D1"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "踊る",
+              "canonical_width": 19,
+              "display_text": "踊る",
+              "display_width": 19,
+              "target_id": "0x03D2"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "天使の衣",
+              "canonical_width": 41,
+              "display_text": "天使の衣",
+              "display_width": 41,
+              "target_id": "0x03D4"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "エナジーリング",
+              "canonical_width": 68,
+              "display_text": "エナジリン",
+              "display_width": 48,
+              "target_id": "0x03D5"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "秘伝の書",
+              "canonical_width": 42,
+              "display_text": "秘伝の書",
+              "display_width": 42,
+              "target_id": "0x03D6"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "はやての羽",
+              "canonical_width": 50,
+              "display_text": "はやての羽",
+              "display_width": 50,
+              "target_id": "0x03D7"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "女神のぞう",
+              "canonical_width": 49,
+              "display_text": "女神のぞう",
+              "display_width": 49,
+              "target_id": "0x03D8"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "竜のたて",
+              "canonical_width": 41,
+              "display_text": "竜のたて",
+              "display_width": 41,
+              "target_id": "0x03D9"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "魔よけ",
+              "canonical_width": 29,
+              "display_text": "魔よけ",
+              "display_width": 29,
+              "target_id": "0x03DA"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "ブーツ",
+              "canonical_width": 30,
+              "display_text": "ブーツ",
+              "display_width": 30,
+              "target_id": "0x03DB"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "ボディリング",
+              "canonical_width": 56,
+              "display_text": "ボディリング",
+              "display_width": 56,
+              "target_id": "0x03DC"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "英雄の証",
+              "canonical_width": 40,
+              "display_text": "英雄の証",
+              "display_width": 40,
+              "target_id": "0x03DD"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "騎士の勲章",
+              "canonical_width": 50,
+              "display_text": "騎士の勲章",
+              "display_width": 50,
+              "target_id": "0x03DE"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "オリオンの矢",
+              "canonical_width": 58,
+              "display_text": "オリオン矢",
+              "display_width": 48,
+              "target_id": "0x03DF"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "天空のムチ",
+              "canonical_width": 50,
+              "display_text": "天空のムチ",
+              "display_width": 50,
+              "target_id": "0x03E0"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "導きの指輪",
+              "canonical_width": 49,
+              "display_text": "導きの指輪",
+              "display_width": 49,
+              "target_id": "0x03E1"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "たからのかぎ",
+              "canonical_width": 59,
+              "display_text": "たからかぎ",
+              "display_width": 49,
+              "target_id": "0x03E2"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "とびらのかぎ",
+              "canonical_width": 59,
+              "display_text": "とびらかぎ",
+              "display_width": 49,
+              "target_id": "0x03E3"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "とうぞくのかぎ",
+              "canonical_width": 65,
+              "display_text": "とうぞくかぎ",
+              "display_width": 55,
+              "target_id": "0x03E4"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "きずぐすり",
+              "canonical_width": 46,
+              "display_text": "きずぐすり",
+              "display_width": 46,
+              "target_id": "0x03E5"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "とっこうやく",
+              "canonical_width": 53,
+              "display_text": "とっこうやく",
+              "display_width": 53,
+              "target_id": "0x03E6"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "せいすい",
+              "canonical_width": 40,
+              "display_text": "せいすい",
+              "display_width": 40,
+              "target_id": "0x03E7"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "どくけし",
+              "canonical_width": 37,
+              "display_text": "どくけし",
+              "display_width": 37,
+              "target_id": "0x03E8"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "たいまつ",
+              "canonical_width": 39,
+              "display_text": "たいまつ",
+              "display_width": 39,
+              "target_id": "0x03E9"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "フィーリの守護",
+              "canonical_width": 65,
+              "display_text": "フィーリ守護",
+              "display_width": 55,
+              "target_id": "0x03EA"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "メンバーカード",
+              "canonical_width": 67,
+              "display_text": "メンバカド",
+              "display_width": 47,
+              "target_id": "0x03EB"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "シルバーカード",
+              "canonical_width": 68,
+              "display_text": "シルバカド",
+              "display_width": 48,
+              "target_id": "0x03EC"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "金の宝玉",
+              "canonical_width": 40,
+              "display_text": "金の宝玉",
+              "display_width": 40,
+              "target_id": "0x03ED"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "黒の宝玉",
+              "canonical_width": 40,
+              "display_text": "黒の宝玉",
+              "display_width": 40,
+              "target_id": "0x03EE"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "白の宝玉",
+              "canonical_width": 39,
+              "display_text": "白の宝玉",
+              "display_width": 39,
+              "target_id": "0x03EF"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "青の宝玉",
+              "canonical_width": 39,
+              "display_text": "青の宝玉",
+              "display_width": 39,
+              "target_id": "0x03F0"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "赤の宝玉",
+              "canonical_width": 41,
+              "display_text": "赤の宝玉",
+              "display_width": 41,
+              "target_id": "0x03F1"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "ゴールド",
+              "canonical_width": 39,
+              "display_text": "ゴールド",
+              "display_width": 39,
+              "target_id": "0x03F2"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "ホプロンの守護",
+              "canonical_width": 70,
+              "display_text": "ホプロン守",
+              "display_width": 50,
+              "target_id": "0x03F3"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "マスタープルフ",
+              "canonical_width": 69,
+              "display_text": "マスタプル",
+              "display_width": 50,
+              "target_id": "0x03F4"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "メティスの書",
+              "canonical_width": 57,
+              "display_text": "メティス書",
+              "display_width": 47,
+              "target_id": "0x03F5"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "覇者の証",
+              "canonical_width": 40,
+              "display_text": "覇者の証",
+              "display_width": 40,
+              "target_id": "0x03F6"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "月の腕輪",
+              "canonical_width": 40,
+              "display_text": "月の腕輪",
+              "display_width": 40,
+              "target_id": "0x03F7"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "太陽の腕輪",
+              "canonical_width": 52,
+              "display_text": "太陽の腕輪",
+              "display_width": 52,
+              "target_id": "0x03F8"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "１Ｇ",
+              "canonical_width": 17,
+              "display_text": "１Ｇ",
+              "display_width": 17,
+              "target_id": "0x03F9"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "５Ｇ",
+              "canonical_width": 17,
+              "display_text": "５Ｇ",
+              "display_width": 17,
+              "target_id": "0x03FA"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "１０Ｇ",
+              "canonical_width": 25,
+              "display_text": "１０Ｇ",
+              "display_width": 25,
+              "target_id": "0x03FB"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "５０Ｇ",
+              "canonical_width": 25,
+              "display_text": "５０Ｇ",
+              "display_width": 25,
+              "target_id": "0x03FC"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "１００Ｇ",
+              "canonical_width": 33,
+              "display_text": "１００Ｇ",
+              "display_width": 33,
+              "target_id": "0x03FD"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "１５０Ｇ",
+              "canonical_width": 33,
+              "display_text": "１５０Ｇ",
+              "display_width": 33,
+              "target_id": "0x03FE"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "２００Ｇ",
+              "canonical_width": 33,
+              "display_text": "２００Ｇ",
+              "display_width": 33,
+              "target_id": "0x03FF"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "３０００Ｇ",
+              "canonical_width": 41,
+              "display_text": "３０００Ｇ",
+              "display_width": 41,
+              "target_id": "0x0400"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "５０００Ｇ",
+              "canonical_width": 41,
+              "display_text": "５０００Ｇ",
+              "display_width": 41,
+              "target_id": "0x0401"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "ジュナの実",
+              "canonical_width": 49,
+              "display_text": "ジュナの実",
+              "display_width": 49,
+              "target_id": "0x0402"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "ダミー",
+              "canonical_width": 29,
+              "display_text": "ダミー",
+              "display_width": 29,
+              "target_id": "0x0403"
+            }
+          ]
+        }
+      }
+    },
+    "zh-Hans": {
+      "surfaces": {
+        "character_name_40": {
+          "alias_count": 19,
+          "allocation_pixels": 40,
+          "label_count": 87,
+          "overflow_count": 0,
+          "records": [
+            {
+              "alias_applied": false,
+              "canonical_text": "占位",
+              "canonical_width": 20,
+              "display_text": "占位",
+              "display_width": 20,
+              "target_id": "0x0025"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "艾瑞珂",
+              "canonical_width": 30,
+              "display_text": "艾瑞珂",
+              "display_width": 30,
+              "target_id": "0x0212"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "塞思",
+              "canonical_width": 20,
+              "display_text": "塞思",
+              "display_width": 20,
+              "target_id": "0x0213"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "吉利安姆",
+              "canonical_width": 41,
+              "display_text": "吉利安",
+              "display_width": 30,
+              "target_id": "0x0214"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "弗朗茨",
+              "canonical_width": 30,
+              "display_text": "弗朗茨",
+              "display_width": 30,
+              "target_id": "0x0215"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "摩达",
+              "canonical_width": 21,
+              "display_text": "摩达",
+              "display_width": 21,
+              "target_id": "0x0216"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "瓦内萨",
+              "canonical_width": 28,
+              "display_text": "瓦内萨",
+              "display_width": 28,
+              "target_id": "0x0217"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "罗斯",
+              "canonical_width": 21,
+              "display_text": "罗斯",
+              "display_width": 21,
+              "target_id": "0x0218"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "梅米",
+              "canonical_width": 22,
+              "display_text": "梅米",
+              "display_width": 22,
+              "target_id": "0x0219"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "科曼",
+              "canonical_width": 20,
+              "display_text": "科曼",
+              "display_width": 20,
+              "target_id": "0x021A"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "加西亚",
+              "canonical_width": 30,
+              "display_text": "加西亚",
+              "display_width": 30,
+              "target_id": "0x021B"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "希尼亚斯",
+              "canonical_width": 41,
+              "display_text": "希尼亚",
+              "display_width": 30,
+              "target_id": "0x021C"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "露忒",
+              "canonical_width": 21,
+              "display_text": "露忒",
+              "display_width": 21,
+              "target_id": "0x021D"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "娜塔莎",
+              "canonical_width": 30,
+              "display_text": "娜塔莎",
+              "display_width": 30,
+              "target_id": "0x021E"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "库格",
+              "canonical_width": 20,
+              "display_text": "库格",
+              "display_width": 20,
+              "target_id": "0x021F"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "伊弗列姆",
+              "canonical_width": 42,
+              "display_text": "伊弗列",
+              "display_width": 31,
+              "target_id": "0x0220"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "弗鲁迪",
+              "canonical_width": 29,
+              "display_text": "弗鲁迪",
+              "display_width": 29,
+              "target_id": "0x0221"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "凯尔",
+              "canonical_width": 21,
+              "display_text": "凯尔",
+              "display_width": 21,
+              "target_id": "0x0222"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "阿米莉娅",
+              "canonical_width": 42,
+              "display_text": "阿米莉",
+              "display_width": 32,
+              "target_id": "0x0223"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "阿斯雷",
+              "canonical_width": 32,
+              "display_text": "阿斯雷",
+              "display_width": 32,
+              "target_id": "0x0224"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "杰斯特",
+              "canonical_width": 31,
+              "display_text": "杰斯特",
+              "display_width": 31,
+              "target_id": "0x0225"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "特缇斯",
+              "canonical_width": 31,
+              "display_text": "特缇斯",
+              "display_width": 31,
+              "target_id": "0x0226"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "玛莉卡",
+              "canonical_width": 30,
+              "display_text": "玛莉卡",
+              "display_width": 30,
+              "target_id": "0x0227"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "塞勒夫",
+              "canonical_width": 30,
+              "display_text": "塞勒夫",
+              "display_width": 30,
+              "target_id": "0x0228"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "尤恩",
+              "canonical_width": 20,
+              "display_text": "尤恩",
+              "display_width": 20,
+              "target_id": "0x0229"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "拉切尔",
+              "canonical_width": 30,
+              "display_text": "拉切尔",
+              "display_width": 30,
+              "target_id": "0x022A"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "多兹拉",
+              "canonical_width": 30,
+              "display_text": "多兹拉",
+              "display_width": 30,
+              "target_id": "0x022B"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "雷纳克",
+              "canonical_width": 30,
+              "display_text": "雷纳克",
+              "display_width": 30,
+              "target_id": "0x022D"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "杜塞尔",
+              "canonical_width": 31,
+              "display_text": "杜塞尔",
+              "display_width": 31,
+              "target_id": "0x022E"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "梅尔",
+              "canonical_width": 21,
+              "display_text": "梅尔",
+              "display_width": 21,
+              "target_id": "0x022F"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "诺鲁",
+              "canonical_width": 20,
+              "display_text": "诺鲁",
+              "display_width": 20,
+              "target_id": "0x0230"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "约书亚",
+              "canonical_width": 30,
+              "display_text": "约书亚",
+              "display_width": 30,
+              "target_id": "0x0231"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "西蕾尼",
+              "canonical_width": 30,
+              "display_text": "西蕾尼",
+              "display_width": 30,
+              "target_id": "0x0232"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "塔娜",
+              "canonical_width": 20,
+              "display_text": "塔娜",
+              "display_width": 20,
+              "target_id": "0x0233"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "利昂",
+              "canonical_width": 20,
+              "display_text": "利昂",
+              "display_width": 20,
+              "target_id": "0x0234"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "穆尔瓦",
+              "canonical_width": 28,
+              "display_text": "穆尔瓦",
+              "display_width": 28,
+              "target_id": "0x0235"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "奥尔森",
+              "canonical_width": 31,
+              "display_text": "奥尔森",
+              "display_width": 31,
+              "target_id": "0x0236"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "沃尔塔",
+              "canonical_width": 30,
+              "display_text": "沃尔塔",
+              "display_width": 30,
+              "target_id": "0x0237"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "塞莱娜",
+              "canonical_width": 30,
+              "display_text": "塞莱娜",
+              "display_width": 30,
+              "target_id": "0x0238"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "普利肯",
+              "canonical_width": 30,
+              "display_text": "普利肯",
+              "display_width": 30,
+              "target_id": "0x0239"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "波恩",
+              "canonical_width": 20,
+              "display_text": "波恩",
+              "display_width": 20,
+              "target_id": "0x023A"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "帕滋帕",
+              "canonical_width": 30,
+              "display_text": "帕滋帕",
+              "display_width": 30,
+              "target_id": "0x023B"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "萨尔",
+              "canonical_width": 20,
+              "display_text": "萨尔",
+              "display_width": 20,
+              "target_id": "0x023C"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "诺贝拉",
+              "canonical_width": 30,
+              "display_text": "诺贝拉",
+              "display_width": 30,
+              "target_id": "0x023D"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "马莱",
+              "canonical_width": 20,
+              "display_text": "马莱",
+              "display_width": 20,
+              "target_id": "0x023E"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "迪拉德",
+              "canonical_width": 31,
+              "display_text": "迪拉德",
+              "display_width": 31,
+              "target_id": "0x023F"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "西克斯",
+              "canonical_width": 31,
+              "display_text": "西克斯",
+              "display_width": 31,
+              "target_id": "0x0240"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "巴勃罗",
+              "canonical_width": 30,
+              "display_text": "巴勃罗",
+              "display_width": 30,
+              "target_id": "0x0241"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "艾阿斯",
+              "canonical_width": 32,
+              "display_text": "艾阿斯",
+              "display_width": 32,
+              "target_id": "0x0242"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "卡莱尔",
+              "canonical_width": 30,
+              "display_text": "卡莱尔",
+              "display_width": 30,
+              "target_id": "0x0243"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "凯瑟达",
+              "canonical_width": 33,
+              "display_text": "凯瑟达",
+              "display_width": 33,
+              "target_id": "0x0244"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "阿维",
+              "canonical_width": 21,
+              "display_text": "阿维",
+              "display_width": 21,
+              "target_id": "0x0246"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "肯普",
+              "canonical_width": 20,
+              "display_text": "肯普",
+              "display_width": 20,
+              "target_id": "0x0247"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "贝鲁奈",
+              "canonical_width": 28,
+              "display_text": "贝鲁奈",
+              "display_width": 28,
+              "target_id": "0x0248"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "奥尼尔",
+              "canonical_width": 30,
+              "display_text": "奥尼尔",
+              "display_width": 30,
+              "target_id": "0x0249"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "格伦",
+              "canonical_width": 20,
+              "display_text": "格伦",
+              "display_width": 20,
+              "target_id": "0x024A"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "松克",
+              "canonical_width": 20,
+              "display_text": "松克",
+              "display_width": 20,
+              "target_id": "0x024B"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "彼加尔德",
+              "canonical_width": 41,
+              "display_text": "彼加尔",
+              "display_width": 30,
+              "target_id": "0x024C"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "古拉德兵",
+              "canonical_width": 41,
+              "display_text": "古拉兵",
+              "display_width": 30,
+              "target_id": "0x024D"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "古拉德残部",
+              "canonical_width": 51,
+              "display_text": "古拉残",
+              "display_width": 30,
+              "target_id": "0x024E"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "无赖",
+              "canonical_width": 20,
+              "display_text": "无赖",
+              "display_width": 20,
+              "target_id": "0x024F"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "宝物狂人",
+              "canonical_width": 40,
+              "display_text": "宝物狂人",
+              "display_width": 40,
+              "target_id": "0x0250"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "卡尔奇诺兵",
+              "canonical_width": 51,
+              "display_text": "卡尔奇兵",
+              "display_width": 40,
+              "target_id": "0x0251"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "巴勃罗私兵",
+              "canonical_width": 50,
+              "display_text": "巴勃罗兵",
+              "display_width": 40,
+              "target_id": "0x0252"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "西克斯队",
+              "canonical_width": 41,
+              "display_text": "西克队",
+              "display_width": 30,
+              "target_id": "0x0253"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "帕滋帕团",
+              "canonical_width": 40,
+              "display_text": "帕滋帕团",
+              "display_width": 40,
+              "target_id": "0x0254"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "魔物",
+              "canonical_width": 21,
+              "display_text": "魔物",
+              "display_width": 21,
+              "target_id": "0x0255"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "魔物",
+              "canonical_width": 21,
+              "display_text": "魔物",
+              "display_width": 21,
+              "target_id": "0x0256"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "弗德斯",
+              "canonical_width": 32,
+              "display_text": "弗德斯",
+              "display_width": 32,
+              "target_id": "0x025A"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "法德",
+              "canonical_width": 21,
+              "display_text": "法德",
+              "display_width": 21,
+              "target_id": "0x025B"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "海登",
+              "canonical_width": 20,
+              "display_text": "海登",
+              "display_width": 20,
+              "target_id": "0x025C"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "克利姆德",
+              "canonical_width": 42,
+              "display_text": "克利姆",
+              "display_width": 31,
+              "target_id": "0x025D"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "曼塞尔",
+              "canonical_width": 30,
+              "display_text": "曼塞尔",
+              "display_width": 30,
+              "target_id": "0x025E"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "塔拉",
+              "canonical_width": 20,
+              "display_text": "塔拉",
+              "display_width": 20,
+              "target_id": "0x025F"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "依修梅娅",
+              "canonical_width": 41,
+              "display_text": "依修梅",
+              "display_width": 31,
+              "target_id": "0x0260"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "天马传令兵",
+              "canonical_width": 50,
+              "display_text": "天马传令",
+              "display_width": 40,
+              "target_id": "0x0261"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "弗雷利亚兵",
+              "canonical_width": 50,
+              "display_text": "弗雷利兵",
+              "display_width": 40,
+              "target_id": "0x0262"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "罗斯顿兵",
+              "canonical_width": 41,
+              "display_text": "罗斯顿",
+              "display_width": 31,
+              "target_id": "0x0263"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "市民",
+              "canonical_width": 19,
+              "display_text": "市民",
+              "display_width": 19,
+              "target_id": "0x0264"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "鲁内斯住民",
+              "canonical_width": 50,
+              "display_text": "鲁内斯民",
+              "display_width": 40,
+              "target_id": "0x0265"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "纳露贝住民",
+              "canonical_width": 49,
+              "display_text": "纳露贝民",
+              "display_width": 39,
+              "target_id": "0x0266"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "对战对手",
+              "canonical_width": 43,
+              "display_text": "对战手",
+              "display_width": 32,
+              "target_id": "0x0267"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "损坏的墙壁",
+              "canonical_width": 50,
+              "display_text": "损坏墙壁",
+              "display_width": 40,
+              "target_id": "0x0268"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "古树",
+              "canonical_width": 21,
+              "display_text": "古树",
+              "display_width": 21,
+              "target_id": "0x0269"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "萨玛南",
+              "canonical_width": 30,
+              "display_text": "萨玛南",
+              "display_width": 30,
+              "target_id": "0x026C"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "塞门",
+              "canonical_width": 20,
+              "display_text": "塞门",
+              "display_width": 20,
+              "target_id": "0x026D"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "亡灵战士",
+              "canonical_width": 40,
+              "display_text": "亡灵战士",
+              "display_width": 40,
+              "target_id": "0x02F1"
+            }
+          ]
+        },
+        "class_name_64": {
+          "alias_count": 0,
+          "allocation_pixels": 64,
+          "label_count": 71,
+          "overflow_count": 0,
+          "records": [
+            {
+              "alias_applied": false,
+              "canonical_text": "领主",
+              "canonical_width": 20,
+              "display_text": "领主",
+              "display_width": 20,
+              "target_id": "0x02BF"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "大领主",
+              "canonical_width": 30,
+              "display_text": "大领主",
+              "display_width": 30,
+              "target_id": "0x02C0"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "轻骑士",
+              "canonical_width": 30,
+              "display_text": "轻骑士",
+              "display_width": 30,
+              "target_id": "0x02C1"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "圣骑士",
+              "canonical_width": 30,
+              "display_text": "圣骑士",
+              "display_width": 30,
+              "target_id": "0x02C2"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "重甲骑士",
+              "canonical_width": 40,
+              "display_text": "重甲骑士",
+              "display_width": 40,
+              "target_id": "0x02C3"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "将军",
+              "canonical_width": 20,
+              "display_text": "将军",
+              "display_width": 20,
+              "target_id": "0x02C4"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "盗贼",
+              "canonical_width": 21,
+              "display_text": "盗贼",
+              "display_width": 21,
+              "target_id": "0x02C5"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "佣兵",
+              "canonical_width": 20,
+              "display_text": "佣兵",
+              "display_width": 20,
+              "target_id": "0x02C6"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "勇者",
+              "canonical_width": 19,
+              "display_text": "勇者",
+              "display_width": 19,
+              "target_id": "0x02C7"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "剑士",
+              "canonical_width": 20,
+              "display_text": "剑士",
+              "display_width": 20,
+              "target_id": "0x02C8"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "剑圣",
+              "canonical_width": 20,
+              "display_text": "剑圣",
+              "display_width": 20,
+              "target_id": "0x02C9"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "刺客",
+              "canonical_width": 20,
+              "display_text": "刺客",
+              "display_width": 20,
+              "target_id": "0x02CA"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "弓箭手",
+              "canonical_width": 30,
+              "display_text": "弓箭手",
+              "display_width": 30,
+              "target_id": "0x02CB"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "狙击手",
+              "canonical_width": 29,
+              "display_text": "狙击手",
+              "display_width": 29,
+              "target_id": "0x02CC"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "丛林骑士",
+              "canonical_width": 40,
+              "display_text": "丛林骑士",
+              "display_width": 40,
+              "target_id": "0x02CD"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "龙骑士",
+              "canonical_width": 30,
+              "display_text": "龙骑士",
+              "display_width": 30,
+              "target_id": "0x02CE"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "龙骑统帅",
+              "canonical_width": 40,
+              "display_text": "龙骑统帅",
+              "display_width": 40,
+              "target_id": "0x02CF"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "翼龙骑士",
+              "canonical_width": 40,
+              "display_text": "翼龙骑士",
+              "display_width": 40,
+              "target_id": "0x02D0"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "魔法师",
+              "canonical_width": 31,
+              "display_text": "魔法师",
+              "display_width": 31,
+              "target_id": "0x02D1"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "贤者",
+              "canonical_width": 20,
+              "display_text": "贤者",
+              "display_width": 20,
+              "target_id": "0x02D2"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "魔法骑士",
+              "canonical_width": 41,
+              "display_text": "魔法骑士",
+              "display_width": 41,
+              "target_id": "0x02D3"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "司祭",
+              "canonical_width": 20,
+              "display_text": "司祭",
+              "display_width": 20,
+              "target_id": "0x02D4"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "龙人",
+              "canonical_width": 20,
+              "display_text": "龙人",
+              "display_width": 20,
+              "target_id": "0x02D7"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "年轻的战士",
+              "canonical_width": 51,
+              "display_text": "年轻的战士",
+              "display_width": 51,
+              "target_id": "0x02D8"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "见习魔法师",
+              "canonical_width": 51,
+              "display_text": "见习魔法师",
+              "display_width": 51,
+              "target_id": "0x02D9"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "新人士兵",
+              "canonical_width": 40,
+              "display_text": "新人士兵",
+              "display_width": 40,
+              "target_id": "0x02DA"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "侠盗",
+              "canonical_width": 19,
+              "display_text": "侠盗",
+              "display_width": 19,
+              "target_id": "0x02DB"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "战士",
+              "canonical_width": 21,
+              "display_text": "战士",
+              "display_width": 21,
+              "target_id": "0x02DC"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "勇士",
+              "canonical_width": 19,
+              "display_text": "勇士",
+              "display_width": 19,
+              "target_id": "0x02DD"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "山贼",
+              "canonical_width": 21,
+              "display_text": "山贼",
+              "display_width": 21,
+              "target_id": "0x02DE"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "狂战士",
+              "canonical_width": 31,
+              "display_text": "狂战士",
+              "display_width": 31,
+              "target_id": "0x02DF"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "重骑士",
+              "canonical_width": 30,
+              "display_text": "重骑士",
+              "display_width": 30,
+              "target_id": "0x02E0"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "巫师",
+              "canonical_width": 20,
+              "display_text": "巫师",
+              "display_width": 20,
+              "target_id": "0x02E1"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "德鲁伊",
+              "canonical_width": 31,
+              "display_text": "德鲁伊",
+              "display_width": 31,
+              "target_id": "0x02E2"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "召唤士",
+              "canonical_width": 29,
+              "display_text": "召唤士",
+              "display_width": 29,
+              "target_id": "0x02E3"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "修道士",
+              "canonical_width": 30,
+              "display_text": "修道士",
+              "display_width": 30,
+              "target_id": "0x02E4"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "吟游诗人",
+              "canonical_width": 42,
+              "display_text": "吟游诗人",
+              "display_width": 42,
+              "target_id": "0x02E5"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "神官",
+              "canonical_width": 20,
+              "display_text": "神官",
+              "display_width": 20,
+              "target_id": "0x02E6"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "天马骑士",
+              "canonical_width": 40,
+              "display_text": "天马骑士",
+              "display_width": 40,
+              "target_id": "0x02E7"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "隼骑士",
+              "canonical_width": 30,
+              "display_text": "隼骑士",
+              "display_width": 30,
+              "target_id": "0x02E8"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "修女",
+              "canonical_width": 20,
+              "display_text": "修女",
+              "display_width": 20,
+              "target_id": "0x02E9"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "神官骑士",
+              "canonical_width": 40,
+              "display_text": "神官骑士",
+              "display_width": 40,
+              "target_id": "0x02EA"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "女武神",
+              "canonical_width": 31,
+              "display_text": "女武神",
+              "display_width": 31,
+              "target_id": "0x02EB"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "舞者",
+              "canonical_width": 20,
+              "display_text": "舞者",
+              "display_width": 20,
+              "target_id": "0x02EC"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "士兵",
+              "canonical_width": 20,
+              "display_text": "士兵",
+              "display_width": 20,
+              "target_id": "0x02ED"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "海盗",
+              "canonical_width": 20,
+              "display_text": "海盗",
+              "display_width": 20,
+              "target_id": "0x02EE"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "亡灵巫师",
+              "canonical_width": 39,
+              "display_text": "亡灵巫师",
+              "display_width": 39,
+              "target_id": "0x02EF"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "军舰",
+              "canonical_width": 20,
+              "display_text": "军舰",
+              "display_width": 20,
+              "target_id": "0x02F0"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "亡灵战士",
+              "canonical_width": 40,
+              "display_text": "亡灵战士",
+              "display_width": 40,
+              "target_id": "0x02F1"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "僵尸",
+              "canonical_width": 20,
+              "display_text": "僵尸",
+              "display_width": 20,
+              "target_id": "0x02F2"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "木乃伊",
+              "canonical_width": 31,
+              "display_text": "木乃伊",
+              "display_width": 31,
+              "target_id": "0x02F3"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "骷髅兵",
+              "canonical_width": 30,
+              "display_text": "骷髅兵",
+              "display_width": 30,
+              "target_id": "0x02F4"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "骷髅战士",
+              "canonical_width": 41,
+              "display_text": "骷髅战士",
+              "display_width": 41,
+              "target_id": "0x02F5"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "毒蜘蛛",
+              "canonical_width": 32,
+              "display_text": "毒蜘蛛",
+              "display_width": 32,
+              "target_id": "0x02F6"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "毒巨蛛",
+              "canonical_width": 32,
+              "display_text": "毒巨蛛",
+              "display_width": 32,
+              "target_id": "0x02F7"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "独眼巨人",
+              "canonical_width": 40,
+              "display_text": "独眼巨人",
+              "display_width": 40,
+              "target_id": "0x02F8"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "魔刹犬",
+              "canonical_width": 31,
+              "display_text": "魔刹犬",
+              "display_width": 31,
+              "target_id": "0x02F9"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "三头地狱犬",
+              "canonical_width": 51,
+              "display_text": "三头地狱犬",
+              "display_width": 51,
+              "target_id": "0x02FA"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "战鬼",
+              "canonical_width": 21,
+              "display_text": "战鬼",
+              "display_width": 21,
+              "target_id": "0x02FB"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "半人马",
+              "canonical_width": 30,
+              "display_text": "半人马",
+              "display_width": 30,
+              "target_id": "0x02FC"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "眼魔",
+              "canonical_width": 21,
+              "display_text": "眼魔",
+              "display_width": 21,
+              "target_id": "0x02FD"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "大眼魔",
+              "canonical_width": 31,
+              "display_text": "大眼魔",
+              "display_width": 31,
+              "target_id": "0x02FE"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "石化妖",
+              "canonical_width": 30,
+              "display_text": "石化妖",
+              "display_width": 30,
+              "target_id": "0x02FF"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "石化妖之卵",
+              "canonical_width": 51,
+              "display_text": "石化妖之卵",
+              "display_width": 51,
+              "target_id": "0x0300"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "石像鬼",
+              "canonical_width": 31,
+              "display_text": "石像鬼",
+              "display_width": 31,
+              "target_id": "0x0301"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "亡灵石像鬼",
+              "canonical_width": 50,
+              "display_text": "亡灵石像鬼",
+              "display_width": 50,
+              "target_id": "0x0302"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "僵尸龙",
+              "canonical_width": 30,
+              "display_text": "僵尸龙",
+              "display_width": 30,
+              "target_id": "0x0303"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "魔王",
+              "canonical_width": 21,
+              "display_text": "魔王",
+              "display_width": 21,
+              "target_id": "0x0304"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "市民",
+              "canonical_width": 19,
+              "display_text": "市民",
+              "display_width": 19,
+              "target_id": "0x0305"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "教皇",
+              "canonical_width": 21,
+              "display_text": "教皇",
+              "display_width": 21,
+              "target_id": "0x0306"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "女王",
+              "canonical_width": 20,
+              "display_text": "女王",
+              "display_width": 20,
+              "target_id": "0x0307"
+            }
+          ]
+        },
+        "item_name_56": {
+          "alias_count": 2,
+          "allocation_pixels": 56,
+          "label_count": 174,
+          "overflow_count": 0,
+          "records": [
+            {
+              "alias_applied": false,
+              "canonical_text": "铁剑",
+              "canonical_width": 20,
+              "display_text": "铁剑",
+              "display_width": 20,
+              "target_id": "0x0354"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "细身剑",
+              "canonical_width": 30,
+              "display_text": "细身剑",
+              "display_width": 30,
+              "target_id": "0x0355"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "钢剑",
+              "canonical_width": 20,
+              "display_text": "钢剑",
+              "display_width": 20,
+              "target_id": "0x0356"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "银剑",
+              "canonical_width": 20,
+              "display_text": "银剑",
+              "display_width": 20,
+              "target_id": "0x0357"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "铁之大剑",
+              "canonical_width": 41,
+              "display_text": "铁之大剑",
+              "display_width": 41,
+              "target_id": "0x0358"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "钢之大剑",
+              "canonical_width": 41,
+              "display_text": "钢之大剑",
+              "display_width": 41,
+              "target_id": "0x0359"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "银之大剑",
+              "canonical_width": 41,
+              "display_text": "银之大剑",
+              "display_width": 41,
+              "target_id": "0x035A"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "毒剑",
+              "canonical_width": 21,
+              "display_text": "毒剑",
+              "display_width": 21,
+              "target_id": "0x035B"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "突刺剑",
+              "canonical_width": 30,
+              "display_text": "突刺剑",
+              "display_width": 30,
+              "target_id": "0x035C"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "勇者之剑",
+              "canonical_width": 40,
+              "display_text": "勇者之剑",
+              "display_width": 40,
+              "target_id": "0x035D"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "新月刃",
+              "canonical_width": 29,
+              "display_text": "新月刃",
+              "display_width": 29,
+              "target_id": "0x035E"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "必杀刃",
+              "canonical_width": 31,
+              "display_text": "必杀刃",
+              "display_width": 31,
+              "target_id": "0x035F"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "破甲剑",
+              "canonical_width": 30,
+              "display_text": "破甲剑",
+              "display_width": 30,
+              "target_id": "0x0360"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "斩龙剑",
+              "canonical_width": 30,
+              "display_text": "斩龙剑",
+              "display_width": 30,
+              "target_id": "0x0361"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "光之剑",
+              "canonical_width": 32,
+              "display_text": "光之剑",
+              "display_width": 32,
+              "target_id": "0x0362"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "卢尼之剑",
+              "canonical_width": 41,
+              "display_text": "卢尼之剑",
+              "display_width": 41,
+              "target_id": "0x0363"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "破枪剑",
+              "canonical_width": 30,
+              "display_text": "破枪剑",
+              "display_width": 30,
+              "target_id": "0x0364"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "斩马刀",
+              "canonical_width": 30,
+              "display_text": "斩马刀",
+              "display_width": 30,
+              "target_id": "0x0365"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "吉克林迪",
+              "canonical_width": 40,
+              "display_text": "吉克林迪",
+              "display_width": 40,
+              "target_id": "0x0366"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "阿德姆拉",
+              "canonical_width": 43,
+              "display_text": "阿德姆拉",
+              "display_width": 43,
+              "target_id": "0x0367"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "风之剑",
+              "canonical_width": 32,
+              "display_text": "风之剑",
+              "display_width": 32,
+              "target_id": "0x0368"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "铁枪",
+              "canonical_width": 20,
+              "display_text": "铁枪",
+              "display_width": 20,
+              "target_id": "0x0369"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "细枪",
+              "canonical_width": 20,
+              "display_text": "细枪",
+              "display_width": 20,
+              "target_id": "0x036A"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "钢枪",
+              "canonical_width": 20,
+              "display_text": "钢枪",
+              "display_width": 20,
+              "target_id": "0x036B"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "银枪",
+              "canonical_width": 20,
+              "display_text": "银枪",
+              "display_width": 20,
+              "target_id": "0x036C"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "毒枪",
+              "canonical_width": 21,
+              "display_text": "毒枪",
+              "display_width": 21,
+              "target_id": "0x036D"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "勇者之枪",
+              "canonical_width": 40,
+              "display_text": "勇者之枪",
+              "display_width": 40,
+              "target_id": "0x036E"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "必杀枪",
+              "canonical_width": 31,
+              "display_text": "必杀枪",
+              "display_width": 31,
+              "target_id": "0x036F"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "刺马枪",
+              "canonical_width": 30,
+              "display_text": "刺马枪",
+              "display_width": 30,
+              "target_id": "0x0370"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "投枪",
+              "canonical_width": 20,
+              "display_text": "投枪",
+              "display_width": 20,
+              "target_id": "0x0371"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "锁链枪",
+              "canonical_width": 30,
+              "display_text": "锁链枪",
+              "display_width": 30,
+              "target_id": "0x0372"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "破斧枪",
+              "canonical_width": 30,
+              "display_text": "破斧枪",
+              "display_width": 30,
+              "target_id": "0x0373"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "勒金雷布",
+              "canonical_width": 40,
+              "display_text": "勒金雷布",
+              "display_width": 40,
+              "target_id": "0x0374"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "吉克穆特",
+              "canonical_width": 40,
+              "display_text": "吉克穆特",
+              "display_width": 40,
+              "target_id": "0x0375"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "彼得弗尼尔",
+              "canonical_width": 50,
+              "display_text": "彼得弗尼尔",
+              "display_width": 50,
+              "target_id": "0x0376"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "龙枪",
+              "canonical_width": 20,
+              "display_text": "龙枪",
+              "display_width": 20,
+              "target_id": "0x0377"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "刺突枪",
+              "canonical_width": 30,
+              "display_text": "刺突枪",
+              "display_width": 30,
+              "target_id": "0x0378"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "短枪",
+              "canonical_width": 20,
+              "display_text": "短枪",
+              "display_width": 20,
+              "target_id": "0x0379"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "铁斧",
+              "canonical_width": 20,
+              "display_text": "铁斧",
+              "display_width": 20,
+              "target_id": "0x037A"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "钢斧",
+              "canonical_width": 20,
+              "display_text": "钢斧",
+              "display_width": 20,
+              "target_id": "0x037B"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "银斧",
+              "canonical_width": 20,
+              "display_text": "银斧",
+              "display_width": 20,
+              "target_id": "0x037C"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "毒斧",
+              "canonical_width": 21,
+              "display_text": "毒斧",
+              "display_width": 21,
+              "target_id": "0x037D"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "勇者之斧",
+              "canonical_width": 40,
+              "display_text": "勇者之斧",
+              "display_width": 40,
+              "target_id": "0x037E"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "必杀斧",
+              "canonical_width": 31,
+              "display_text": "必杀斧",
+              "display_width": 31,
+              "target_id": "0x037F"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "战戟",
+              "canonical_width": 22,
+              "display_text": "战戟",
+              "display_width": 22,
+              "target_id": "0x0380"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "战锤",
+              "canonical_width": 22,
+              "display_text": "战锤",
+              "display_width": 22,
+              "target_id": "0x0381"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "恶魔之斧",
+              "canonical_width": 42,
+              "display_text": "恶魔之斧",
+              "display_width": 42,
+              "target_id": "0x0382"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "投斧",
+              "canonical_width": 20,
+              "display_text": "投斧",
+              "display_width": 20,
+              "target_id": "0x0383"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "回旋斧",
+              "canonical_width": 30,
+              "display_text": "回旋斧",
+              "display_width": 30,
+              "target_id": "0x0384"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "破剑斧",
+              "canonical_width": 30,
+              "display_text": "破剑斧",
+              "display_width": 30,
+              "target_id": "0x0385"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "弑剑斧",
+              "canonical_width": 31,
+              "display_text": "弑剑斧",
+              "display_width": 31,
+              "target_id": "0x0386"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "龙斧",
+              "canonical_width": 20,
+              "display_text": "龙斧",
+              "display_width": 20,
+              "target_id": "0x0387"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "战斧",
+              "canonical_width": 21,
+              "display_text": "战斧",
+              "display_width": 21,
+              "target_id": "0x0388"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "贾尔姆",
+              "canonical_width": 31,
+              "display_text": "贾尔姆",
+              "display_width": 31,
+              "target_id": "0x0389"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "轻斧",
+              "canonical_width": 20,
+              "display_text": "轻斧",
+              "display_width": 20,
+              "target_id": "0x038A"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "铁弓",
+              "canonical_width": 20,
+              "display_text": "铁弓",
+              "display_width": 20,
+              "target_id": "0x038B"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "钢弓",
+              "canonical_width": 20,
+              "display_text": "钢弓",
+              "display_width": 20,
+              "target_id": "0x038C"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "银弓",
+              "canonical_width": 20,
+              "display_text": "银弓",
+              "display_width": 20,
+              "target_id": "0x038D"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "毒弓",
+              "canonical_width": 21,
+              "display_text": "毒弓",
+              "display_width": 21,
+              "target_id": "0x038E"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "必杀弓",
+              "canonical_width": 31,
+              "display_text": "必杀弓",
+              "display_width": 31,
+              "target_id": "0x038F"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "勇者之弓",
+              "canonical_width": 40,
+              "display_text": "勇者之弓",
+              "display_width": 40,
+              "target_id": "0x0390"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "短弓",
+              "canonical_width": 20,
+              "display_text": "短弓",
+              "display_width": 20,
+              "target_id": "0x0391"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "长弓",
+              "canonical_width": 20,
+              "display_text": "长弓",
+              "display_width": 20,
+              "target_id": "0x0392"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "长弩",
+              "canonical_width": 20,
+              "display_text": "长弩",
+              "display_width": 20,
+              "target_id": "0x0393"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "钢铁弩",
+              "canonical_width": 30,
+              "display_text": "钢铁弩",
+              "display_width": 30,
+              "target_id": "0x0394"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "必杀弩",
+              "canonical_width": 31,
+              "display_text": "必杀弩",
+              "display_width": 31,
+              "target_id": "0x0395"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "尼兹赫古",
+              "canonical_width": 40,
+              "display_text": "尼兹赫古",
+              "display_width": 40,
+              "target_id": "0x0396"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "死亡的吐息",
+              "canonical_width": 51,
+              "display_text": "死亡的吐息",
+              "display_width": 51,
+              "target_id": "0x0397"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "龙石",
+              "canonical_width": 20,
+              "display_text": "龙石",
+              "display_width": 20,
+              "target_id": "0x0398"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "魔石的碎片",
+              "canonical_width": 52,
+              "display_text": "魔石的碎片",
+              "display_width": 52,
+              "target_id": "0x0399"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "不净的魔光",
+              "canonical_width": 52,
+              "display_text": "不净的魔光",
+              "display_width": 52,
+              "target_id": "0x039A"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "破灭的魔拳",
+              "canonical_width": 52,
+              "display_text": "破灭的魔拳",
+              "display_width": 52,
+              "target_id": "0x039B"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "漆黑的恶梦",
+              "canonical_width": 50,
+              "display_text": "漆黑的恶梦",
+              "display_width": 50,
+              "target_id": "0x039C"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "利爪",
+              "canonical_width": 20,
+              "display_text": "利爪",
+              "display_width": 20,
+              "target_id": "0x039D"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "腐爪",
+              "canonical_width": 20,
+              "display_text": "腐爪",
+              "display_width": 20,
+              "target_id": "0x039E"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "腐长爪",
+              "canonical_width": 30,
+              "display_text": "腐长爪",
+              "display_width": 30,
+              "target_id": "0x039F"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "毒爪",
+              "canonical_width": 21,
+              "display_text": "毒爪",
+              "display_width": 21,
+              "target_id": "0x03A0"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "猛毒之爪",
+              "canonical_width": 42,
+              "display_text": "猛毒之爪",
+              "display_width": 42,
+              "target_id": "0x03A1"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "灼热之牙",
+              "canonical_width": 42,
+              "display_text": "灼热之牙",
+              "display_width": 42,
+              "target_id": "0x03A2"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "焦热之牙",
+              "canonical_width": 42,
+              "display_text": "焦热之牙",
+              "display_width": 42,
+              "target_id": "0x03A3"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "斩魔之剑",
+              "canonical_width": 42,
+              "display_text": "斩魔之剑",
+              "display_width": 42,
+              "target_id": "0x03A4"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "袭魔之枪",
+              "canonical_width": 42,
+              "display_text": "袭魔之枪",
+              "display_width": 42,
+              "target_id": "0x03A5"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "断魔之斧",
+              "canonical_width": 43,
+              "display_text": "断魔之斧",
+              "display_width": 43,
+              "target_id": "0x03A6"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "破魔之弓",
+              "canonical_width": 42,
+              "display_text": "破魔之弓",
+              "display_width": 42,
+              "target_id": "0x03A7"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "火炎",
+              "canonical_width": 20,
+              "display_text": "火炎",
+              "display_width": 20,
+              "target_id": "0x03A9"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "闪电",
+              "canonical_width": 21,
+              "display_text": "闪电",
+              "display_width": 21,
+              "target_id": "0x03AA"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "地狱业火",
+              "canonical_width": 41,
+              "display_text": "地狱业火",
+              "display_width": 41,
+              "target_id": "0x03AB"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "风之刃",
+              "canonical_width": 32,
+              "display_text": "风之刃",
+              "display_width": 32,
+              "target_id": "0x03AC"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "雷暴",
+              "canonical_width": 20,
+              "display_text": "雷暴",
+              "display_width": 20,
+              "target_id": "0x03AD"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "终末之冬",
+              "canonical_width": 41,
+              "display_text": "终末之冬",
+              "display_width": 41,
+              "target_id": "0x03AE"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "艾克斯迦利瓦",
+              "canonical_width": 59,
+              "display_text": "艾克斯迦利",
+              "display_width": 51,
+              "target_id": "0x03AF"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "闪光",
+              "canonical_width": 21,
+              "display_text": "闪光",
+              "display_width": 21,
+              "target_id": "0x03B0"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "阳光",
+              "canonical_width": 21,
+              "display_text": "阳光",
+              "display_width": 21,
+              "target_id": "0x03B1"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "神圣之光",
+              "canonical_width": 42,
+              "display_text": "神圣之光",
+              "display_width": 42,
+              "target_id": "0x03B2"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "净化之光",
+              "canonical_width": 42,
+              "display_text": "净化之光",
+              "display_width": 42,
+              "target_id": "0x03B3"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "光轮",
+              "canonical_width": 21,
+              "display_text": "光轮",
+              "display_width": 21,
+              "target_id": "0x03B4"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "伊瓦尔迪",
+              "canonical_width": 39,
+              "display_text": "伊瓦尔迪",
+              "display_width": 39,
+              "target_id": "0x03B5"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "熔流",
+              "canonical_width": 21,
+              "display_text": "熔流",
+              "display_width": 21,
+              "target_id": "0x03B6"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "月光",
+              "canonical_width": 20,
+              "display_text": "月光",
+              "display_width": 20,
+              "target_id": "0x03B7"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "吸星术",
+              "canonical_width": 29,
+              "display_text": "吸星术",
+              "display_width": 29,
+              "target_id": "0x03B8"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "月食",
+              "canonical_width": 20,
+              "display_text": "月食",
+              "display_width": 20,
+              "target_id": "0x03B9"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "诺思费拉特",
+              "canonical_width": 51,
+              "display_text": "诺思费拉特",
+              "display_width": 51,
+              "target_id": "0x03BA"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "格雷普尼尔",
+              "canonical_width": 50,
+              "display_text": "格雷普尼尔",
+              "display_width": 50,
+              "target_id": "0x03BB"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "纳格尔法尔",
+              "canonical_width": 50,
+              "display_text": "纳格尔法尔",
+              "display_width": 50,
+              "target_id": "0x03BC"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "石化光线",
+              "canonical_width": 41,
+              "display_text": "石化光线",
+              "display_width": 41,
+              "target_id": "0x03BD"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "邪眼光线",
+              "canonical_width": 41,
+              "display_text": "邪眼光线",
+              "display_width": 41,
+              "target_id": "0x03BE"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "魔眼光线",
+              "canonical_width": 42,
+              "display_text": "魔眼光线",
+              "display_width": 42,
+              "target_id": "0x03BF"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "魔幻的波动",
+              "canonical_width": 51,
+              "display_text": "魔幻的波动",
+              "display_width": 51,
+              "target_id": "0x03C0"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "暗黑的魔弹",
+              "canonical_width": 53,
+              "display_text": "暗黑的魔弹",
+              "display_width": 53,
+              "target_id": "0x03C1"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "回复之杖",
+              "canonical_width": 41,
+              "display_text": "回复之杖",
+              "display_width": 41,
+              "target_id": "0x03C2"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "治疗之杖",
+              "canonical_width": 41,
+              "display_text": "治疗之杖",
+              "display_width": 41,
+              "target_id": "0x03C3"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "痊愈之杖",
+              "canonical_width": 41,
+              "display_text": "痊愈之杖",
+              "display_width": 41,
+              "target_id": "0x03C4"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "治愈之杖",
+              "canonical_width": 41,
+              "display_text": "治愈之杖",
+              "display_width": 41,
+              "target_id": "0x03C5"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "生命之杖",
+              "canonical_width": 41,
+              "display_text": "生命之杖",
+              "display_width": 41,
+              "target_id": "0x03C6"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "复原之杖",
+              "canonical_width": 41,
+              "display_text": "复原之杖",
+              "display_width": 41,
+              "target_id": "0x03C7"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "沉默之杖",
+              "canonical_width": 42,
+              "display_text": "沉默之杖",
+              "display_width": 42,
+              "target_id": "0x03C8"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "睡眠之杖",
+              "canonical_width": 42,
+              "display_text": "睡眠之杖",
+              "display_width": 42,
+              "target_id": "0x03C9"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "狂乱之杖",
+              "canonical_width": 42,
+              "display_text": "狂乱之杖",
+              "display_width": 42,
+              "target_id": "0x03CA"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "传送杖",
+              "canonical_width": 30,
+              "display_text": "传送杖",
+              "display_width": 30,
+              "target_id": "0x03CB"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "援救杖",
+              "canonical_width": 30,
+              "display_text": "援救杖",
+              "display_width": 30,
+              "target_id": "0x03CC"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "松明之杖",
+              "canonical_width": 41,
+              "display_text": "松明之杖",
+              "display_width": 41,
+              "target_id": "0x03CD"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "修理之杖",
+              "canonical_width": 41,
+              "display_text": "修理之杖",
+              "display_width": 41,
+              "target_id": "0x03CE"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "开锁杖",
+              "canonical_width": 30,
+              "display_text": "开锁杖",
+              "display_width": 30,
+              "target_id": "0x03CF"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "魔防之杖",
+              "canonical_width": 42,
+              "display_text": "魔防之杖",
+              "display_width": 42,
+              "target_id": "0x03D0"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "拉特娜",
+              "canonical_width": 30,
+              "display_text": "拉特娜",
+              "display_width": 30,
+              "target_id": "0x03D1"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "舞蹈",
+              "canonical_width": 20,
+              "display_text": "舞蹈",
+              "display_width": 20,
+              "target_id": "0x03D2"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "天使之衣",
+              "canonical_width": 42,
+              "display_text": "天使之衣",
+              "display_width": 42,
+              "target_id": "0x03D4"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "能量之环",
+              "canonical_width": 40,
+              "display_text": "能量之环",
+              "display_width": 40,
+              "target_id": "0x03D5"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "秘传之书",
+              "canonical_width": 42,
+              "display_text": "秘传之书",
+              "display_width": 42,
+              "target_id": "0x03D6"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "疾风之羽",
+              "canonical_width": 42,
+              "display_text": "疾风之羽",
+              "display_width": 42,
+              "target_id": "0x03D7"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "女神像",
+              "canonical_width": 31,
+              "display_text": "女神像",
+              "display_width": 31,
+              "target_id": "0x03D8"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "龙盾",
+              "canonical_width": 20,
+              "display_text": "龙盾",
+              "display_width": 20,
+              "target_id": "0x03D9"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "魔法护身符",
+              "canonical_width": 51,
+              "display_text": "魔法护身符",
+              "display_width": 51,
+              "target_id": "0x03DA"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "靴子",
+              "canonical_width": 21,
+              "display_text": "靴子",
+              "display_width": 21,
+              "target_id": "0x03DB"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "体格指环",
+              "canonical_width": 40,
+              "display_text": "体格指环",
+              "display_width": 40,
+              "target_id": "0x03DC"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "英雄之证",
+              "canonical_width": 41,
+              "display_text": "英雄之证",
+              "display_width": 41,
+              "target_id": "0x03DD"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "骑士勋章",
+              "canonical_width": 40,
+              "display_text": "骑士勋章",
+              "display_width": 40,
+              "target_id": "0x03DE"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "猎户座之箭",
+              "canonical_width": 50,
+              "display_text": "猎户座之箭",
+              "display_width": 50,
+              "target_id": "0x03DF"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "天空之鞭",
+              "canonical_width": 41,
+              "display_text": "天空之鞭",
+              "display_width": 41,
+              "target_id": "0x03E0"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "指引之戒",
+              "canonical_width": 41,
+              "display_text": "指引之戒",
+              "display_width": 41,
+              "target_id": "0x03E1"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "宝箱钥匙",
+              "canonical_width": 40,
+              "display_text": "宝箱钥匙",
+              "display_width": 40,
+              "target_id": "0x03E2"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "门钥匙",
+              "canonical_width": 30,
+              "display_text": "门钥匙",
+              "display_width": 30,
+              "target_id": "0x03E3"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "盗贼钥匙",
+              "canonical_width": 41,
+              "display_text": "盗贼钥匙",
+              "display_width": 41,
+              "target_id": "0x03E4"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "伤药",
+              "canonical_width": 20,
+              "display_text": "伤药",
+              "display_width": 20,
+              "target_id": "0x03E5"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "特效药",
+              "canonical_width": 30,
+              "display_text": "特效药",
+              "display_width": 30,
+              "target_id": "0x03E6"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "圣水",
+              "canonical_width": 20,
+              "display_text": "圣水",
+              "display_width": 20,
+              "target_id": "0x03E7"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "消毒药",
+              "canonical_width": 31,
+              "display_text": "消毒药",
+              "display_width": 31,
+              "target_id": "0x03E8"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "火把",
+              "canonical_width": 21,
+              "display_text": "火把",
+              "display_width": 21,
+              "target_id": "0x03E9"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "菲利的护符",
+              "canonical_width": 50,
+              "display_text": "菲利的护符",
+              "display_width": 50,
+              "target_id": "0x03EA"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "会员卡",
+              "canonical_width": 29,
+              "display_text": "会员卡",
+              "display_width": 29,
+              "target_id": "0x03EB"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "银卡",
+              "canonical_width": 20,
+              "display_text": "银卡",
+              "display_width": 20,
+              "target_id": "0x03EC"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "金色宝玉",
+              "canonical_width": 41,
+              "display_text": "金色宝玉",
+              "display_width": 41,
+              "target_id": "0x03ED"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "黑色宝玉",
+              "canonical_width": 41,
+              "display_text": "黑色宝玉",
+              "display_width": 41,
+              "target_id": "0x03EE"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "白色宝玉",
+              "canonical_width": 40,
+              "display_text": "白色宝玉",
+              "display_width": 40,
+              "target_id": "0x03EF"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "青色宝玉",
+              "canonical_width": 40,
+              "display_text": "青色宝玉",
+              "display_width": 40,
+              "target_id": "0x03F0"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "赤色宝玉",
+              "canonical_width": 41,
+              "display_text": "赤色宝玉",
+              "display_width": 41,
+              "target_id": "0x03F1"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "金币",
+              "canonical_width": 20,
+              "display_text": "金币",
+              "display_width": 20,
+              "target_id": "0x03F2"
+            },
+            {
+              "alias_applied": true,
+              "canonical_text": "波布罗的护符",
+              "canonical_width": 60,
+              "display_text": "波布罗护符",
+              "display_width": 50,
+              "target_id": "0x03F3"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "统帅之证",
+              "canonical_width": 41,
+              "display_text": "统帅之证",
+              "display_width": 41,
+              "target_id": "0x03F4"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "知惠之书",
+              "canonical_width": 41,
+              "display_text": "知惠之书",
+              "display_width": 41,
+              "target_id": "0x03F5"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "霸者之证",
+              "canonical_width": 41,
+              "display_text": "霸者之证",
+              "display_width": 41,
+              "target_id": "0x03F6"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "月之腕轮",
+              "canonical_width": 40,
+              "display_text": "月之腕轮",
+              "display_width": 40,
+              "target_id": "0x03F7"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "太阳之腕轮",
+              "canonical_width": 51,
+              "display_text": "太阳之腕轮",
+              "display_width": 51,
+              "target_id": "0x03F8"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "1G",
+              "canonical_width": 12,
+              "display_text": "1G",
+              "display_width": 12,
+              "target_id": "0x03F9"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "5G",
+              "canonical_width": 12,
+              "display_text": "5G",
+              "display_width": 12,
+              "target_id": "0x03FA"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "10G",
+              "canonical_width": 19,
+              "display_text": "10G",
+              "display_width": 19,
+              "target_id": "0x03FB"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "50G",
+              "canonical_width": 19,
+              "display_text": "50G",
+              "display_width": 19,
+              "target_id": "0x03FC"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "100G",
+              "canonical_width": 26,
+              "display_text": "100G",
+              "display_width": 26,
+              "target_id": "0x03FD"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "150G",
+              "canonical_width": 26,
+              "display_text": "150G",
+              "display_width": 26,
+              "target_id": "0x03FE"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "200G",
+              "canonical_width": 26,
+              "display_text": "200G",
+              "display_width": 26,
+              "target_id": "0x03FF"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "3000G",
+              "canonical_width": 33,
+              "display_text": "3000G",
+              "display_width": 33,
+              "target_id": "0x0400"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "5000G",
+              "canonical_width": 33,
+              "display_text": "5000G",
+              "display_width": 33,
+              "target_id": "0x0401"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "修娜之实",
+              "canonical_width": 41,
+              "display_text": "修娜之实",
+              "display_width": 41,
+              "target_id": "0x0402"
+            },
+            {
+              "alias_applied": false,
+              "canonical_text": "占位",
+              "canonical_width": 20,
+              "display_text": "占位",
+              "display_width": 20,
+              "target_id": "0x0403"
+            }
+          ]
+        }
+      }
+    }
+  },
+  "schema_version": 1,
+  "source_contract": {
+    "character_name_40": {
+      "allocation_pixels": 40,
+      "call_sites": [
+        {
+          "allocation_anchor": "InitText(&gUnitlistscreen_2[i], 5);",
+          "allocation_function": "UnitList_SetupDisplay",
+          "fallback_anchor": "GetStringFromIndex(\n                gSortedUnits[unitNum]->unit->pCharacterData->nameTextId)",
+          "path": "src/unitlistscreen.c",
+          "resolver_anchor": "GetCharacterDisplayNameForWidth(\n                gSortedUnits[unitNum]->unit->pCharacterData, 40)",
+          "resolver_function": "UnitList_PutRow",
+          "sha256": "3563ba206a8dd74f79cb11cf7e1871e66d430e3810475b0f8aef0a0748c275e3"
+        }
+      ],
+      "category": "character",
+      "data_source": {
+        "path": "src/data_characters.c",
+        "sha256": "1ca5f30cdd6970c8e55a9be1afe3f1a4083a8b0abc1435aa99b9406292cf988f"
+      },
+      "target_ids": [
+        "0x0025",
+        "0x0212",
+        "0x0213",
+        "0x0214",
+        "0x0215",
+        "0x0216",
+        "0x0217",
+        "0x0218",
+        "0x0219",
+        "0x021A",
+        "0x021B",
+        "0x021C",
+        "0x021D",
+        "0x021E",
+        "0x021F",
+        "0x0220",
+        "0x0221",
+        "0x0222",
+        "0x0223",
+        "0x0224",
+        "0x0225",
+        "0x0226",
+        "0x0227",
+        "0x0228",
+        "0x0229",
+        "0x022A",
+        "0x022B",
+        "0x022D",
+        "0x022E",
+        "0x022F",
+        "0x0230",
+        "0x0231",
+        "0x0232",
+        "0x0233",
+        "0x0234",
+        "0x0235",
+        "0x0236",
+        "0x0237",
+        "0x0238",
+        "0x0239",
+        "0x023A",
+        "0x023B",
+        "0x023C",
+        "0x023D",
+        "0x023E",
+        "0x023F",
+        "0x0240",
+        "0x0241",
+        "0x0242",
+        "0x0243",
+        "0x0244",
+        "0x0246",
+        "0x0247",
+        "0x0248",
+        "0x0249",
+        "0x024A",
+        "0x024B",
+        "0x024C",
+        "0x024D",
+        "0x024E",
+        "0x024F",
+        "0x0250",
+        "0x0251",
+        "0x0252",
+        "0x0253",
+        "0x0254",
+        "0x0255",
+        "0x0256",
+        "0x025A",
+        "0x025B",
+        "0x025C",
+        "0x025D",
+        "0x025E",
+        "0x025F",
+        "0x0260",
+        "0x0261",
+        "0x0262",
+        "0x0263",
+        "0x0264",
+        "0x0265",
+        "0x0266",
+        "0x0267",
+        "0x0268",
+        "0x0269",
+        "0x026C",
+        "0x026D",
+        "0x02F1"
+      ]
+    },
+    "class_name_64": {
+      "allocation_pixels": 64,
+      "call_sites": [
+        {
+          "allocation_anchor": "InitText(&texts[TEXT_PREPITEM_CLASS], 8);",
+          "allocation_function": "PrepItemUse_InitDisplay",
+          "fallback_anchor": "str = GetStringFromIndex(unit->pClassData->nameTextId);",
+          "path": "src/prep_itemuse.c",
+          "resolver_anchor": "str = GetClassDisplayNameForWidth(unit->pClassData, 64);",
+          "resolver_function": "DrawPrepScreenItemUseStatLabels",
+          "sha256": "1b878d21ef739ec38c31f64386c3e73263f571c87e167d3977c7be3febed2b7f"
+        }
+      ],
+      "category": "class",
+      "data_source": {
+        "path": "src/data_classes.c",
+        "sha256": "193b9908827c24c8c60084ae7a62173941bfce1d7b1c690414df5e281ebdd4ae"
+      },
+      "target_ids": [
+        "0x02BF",
+        "0x02C0",
+        "0x02C1",
+        "0x02C2",
+        "0x02C3",
+        "0x02C4",
+        "0x02C5",
+        "0x02C6",
+        "0x02C7",
+        "0x02C8",
+        "0x02C9",
+        "0x02CA",
+        "0x02CB",
+        "0x02CC",
+        "0x02CD",
+        "0x02CE",
+        "0x02CF",
+        "0x02D0",
+        "0x02D1",
+        "0x02D2",
+        "0x02D3",
+        "0x02D4",
+        "0x02D7",
+        "0x02D8",
+        "0x02D9",
+        "0x02DA",
+        "0x02DB",
+        "0x02DC",
+        "0x02DD",
+        "0x02DE",
+        "0x02DF",
+        "0x02E0",
+        "0x02E1",
+        "0x02E2",
+        "0x02E3",
+        "0x02E4",
+        "0x02E5",
+        "0x02E6",
+        "0x02E7",
+        "0x02E8",
+        "0x02E9",
+        "0x02EA",
+        "0x02EB",
+        "0x02EC",
+        "0x02ED",
+        "0x02EE",
+        "0x02EF",
+        "0x02F0",
+        "0x02F1",
+        "0x02F2",
+        "0x02F3",
+        "0x02F4",
+        "0x02F5",
+        "0x02F6",
+        "0x02F7",
+        "0x02F8",
+        "0x02F9",
+        "0x02FA",
+        "0x02FB",
+        "0x02FC",
+        "0x02FD",
+        "0x02FE",
+        "0x02FF",
+        "0x0300",
+        "0x0301",
+        "0x0302",
+        "0x0303",
+        "0x0304",
+        "0x0305",
+        "0x0306",
+        "0x0307"
+      ]
+    },
+    "item_name_56": {
+      "allocation_pixels": 56,
+      "call_sites": [
+        {
+          "allocation_anchor": "InitTextDb(&proc->itemNameText, 7);",
+          "allocation_function": "BattleForecast_Init",
+          "fallback_anchor": "char* str = GetItemName(itemIdx);",
+          "path": "src/bksel.c",
+          "resolver_anchor": "char* str = GetItemDisplayNameForWidth(itemIdx, 56);",
+          "resolver_function": "PutBattleForecastItemName",
+          "sha256": "ae6e84207b02d00f383f68bed441fa69a6c3053979a02aacdd24464721caf229"
+        }
+      ],
+      "category": "item",
+      "data_source": {
+        "path": "src/data_items.c",
+        "sha256": "a4f618324d2b988c3e7b78f1dc8d52cd2171e054670c865e967a6887f5c82109"
+      },
+      "target_ids": [
+        "0x0354",
+        "0x0355",
+        "0x0356",
+        "0x0357",
+        "0x0358",
+        "0x0359",
+        "0x035A",
+        "0x035B",
+        "0x035C",
+        "0x035D",
+        "0x035E",
+        "0x035F",
+        "0x0360",
+        "0x0361",
+        "0x0362",
+        "0x0363",
+        "0x0364",
+        "0x0365",
+        "0x0366",
+        "0x0367",
+        "0x0368",
+        "0x0369",
+        "0x036A",
+        "0x036B",
+        "0x036C",
+        "0x036D",
+        "0x036E",
+        "0x036F",
+        "0x0370",
+        "0x0371",
+        "0x0372",
+        "0x0373",
+        "0x0374",
+        "0x0375",
+        "0x0376",
+        "0x0377",
+        "0x0378",
+        "0x0379",
+        "0x037A",
+        "0x037B",
+        "0x037C",
+        "0x037D",
+        "0x037E",
+        "0x037F",
+        "0x0380",
+        "0x0381",
+        "0x0382",
+        "0x0383",
+        "0x0384",
+        "0x0385",
+        "0x0386",
+        "0x0387",
+        "0x0388",
+        "0x0389",
+        "0x038A",
+        "0x038B",
+        "0x038C",
+        "0x038D",
+        "0x038E",
+        "0x038F",
+        "0x0390",
+        "0x0391",
+        "0x0392",
+        "0x0393",
+        "0x0394",
+        "0x0395",
+        "0x0396",
+        "0x0397",
+        "0x0398",
+        "0x0399",
+        "0x039A",
+        "0x039B",
+        "0x039C",
+        "0x039D",
+        "0x039E",
+        "0x039F",
+        "0x03A0",
+        "0x03A1",
+        "0x03A2",
+        "0x03A3",
+        "0x03A4",
+        "0x03A5",
+        "0x03A6",
+        "0x03A7",
+        "0x03A9",
+        "0x03AA",
+        "0x03AB",
+        "0x03AC",
+        "0x03AD",
+        "0x03AE",
+        "0x03AF",
+        "0x03B0",
+        "0x03B1",
+        "0x03B2",
+        "0x03B3",
+        "0x03B4",
+        "0x03B5",
+        "0x03B6",
+        "0x03B7",
+        "0x03B8",
+        "0x03B9",
+        "0x03BA",
+        "0x03BB",
+        "0x03BC",
+        "0x03BD",
+        "0x03BE",
+        "0x03BF",
+        "0x03C0",
+        "0x03C1",
+        "0x03C2",
+        "0x03C3",
+        "0x03C4",
+        "0x03C5",
+        "0x03C6",
+        "0x03C7",
+        "0x03C8",
+        "0x03C9",
+        "0x03CA",
+        "0x03CB",
+        "0x03CC",
+        "0x03CD",
+        "0x03CE",
+        "0x03CF",
+        "0x03D0",
+        "0x03D1",
+        "0x03D2",
+        "0x03D4",
+        "0x03D5",
+        "0x03D6",
+        "0x03D7",
+        "0x03D8",
+        "0x03D9",
+        "0x03DA",
+        "0x03DB",
+        "0x03DC",
+        "0x03DD",
+        "0x03DE",
+        "0x03DF",
+        "0x03E0",
+        "0x03E1",
+        "0x03E2",
+        "0x03E3",
+        "0x03E4",
+        "0x03E5",
+        "0x03E6",
+        "0x03E7",
+        "0x03E8",
+        "0x03E9",
+        "0x03EA",
+        "0x03EB",
+        "0x03EC",
+        "0x03ED",
+        "0x03EE",
+        "0x03EF",
+        "0x03F0",
+        "0x03F1",
+        "0x03F2",
+        "0x03F3",
+        "0x03F4",
+        "0x03F5",
+        "0x03F6",
+        "0x03F7",
+        "0x03F8",
+        "0x03F9",
+        "0x03FA",
+        "0x03FB",
+        "0x03FC",
+        "0x03FD",
+        "0x03FE",
+        "0x03FF",
+        "0x0400",
+        "0x0401",
+        "0x0402",
+        "0x0403"
+      ]
+    }
+  },
+  "summary": {
+    "alias_count": 120,
+    "label_count": 664,
+    "locale_count": 2,
+    "overflow_count": 0,
+    "surface_count": 3
+  }
+}

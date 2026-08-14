@@ -21,6 +21,7 @@ from .package import (
     PACKAGE_ARCHIVE,
     archive_package,
     check_compact_assets,
+    refresh_compact_asset_inventory_provenance,
     record_gate_evidence,
     write_compact_assets,
 )
@@ -82,6 +83,15 @@ def _record_gates(args: argparse.Namespace) -> int:
         f"jobs={evidence['gates']['generate']['job_count']} "
         f"rows={evidence['gates']['generate']['row_count']} "
         f"output={args.gate_report}"
+    )
+    return 0
+
+
+def _refresh_provenance(args: argparse.Namespace) -> int:
+    outputs = refresh_compact_asset_inventory_provenance(args.root)
+    print(
+        "refreshed compact CJK inventory provenance after corpus verification: "
+        f"aggregate_files={len(outputs)}"
     )
     return 0
 
@@ -177,6 +187,15 @@ def build_parser() -> argparse.ArgumentParser:
     gates.add_argument("--dotnet-sdk", required=True)
     gates.add_argument("--repository", required=True)
     gates.set_defaults(handler=_record_gates)
+
+    refresh = subparsers.add_parser(
+        "refresh-provenance",
+        help=(
+            "refresh only compact-asset inventory provenance after proving "
+            "the generated glyph corpora still match the FEBuilder oracle"
+        ),
+    )
+    refresh.set_defaults(handler=_refresh_provenance)
 
     check = subparsers.add_parser(
         "check",

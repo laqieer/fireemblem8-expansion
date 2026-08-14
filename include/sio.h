@@ -97,6 +97,9 @@ struct SioProc85A971C_Unk44
 
 u32 SioStrCpy(u8 const * src, u8 * dst);
 void SioDrawNumber(struct Text * text, int x, int color, int number);
+#ifdef MODERN
+int SioGetProgressValueX(int textWidth, int labelWidth, int suffixWidth);
+#endif
 void SioInit(void);
 void SioPollingMsgAndAck(ProcPtr proc);
 void SetBmStLinkArenaFlag(void);

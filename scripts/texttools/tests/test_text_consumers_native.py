@@ -11,6 +11,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 TEST_DIR = Path(__file__).resolve().parent
 BUILD_DIR = TEST_DIR / ".text_consumer_host_build"
+DATA_SOURCE = ROOT / "src" / "data" / "localized_font_data.c"
 
 
 class TextConsumerNativeTests(unittest.TestCase):
@@ -136,68 +137,14 @@ class TextConsumerNativeTests(unittest.TestCase):
             )
             objects.append(output)
 
-        font_symbols = (
-            (
-                "gLocalizedFontJaSystemCodepoints",
-                ROOT / "graphics/fonts/cjk/ja.system.codepoints.u32le",
-            ),
-            (
-                "gLocalizedFontJaSystemWidths",
-                ROOT / "graphics/fonts/cjk/ja.system.widths.u8",
-            ),
-            (
-                "gLocalizedFontJaSystemBitmaps",
-                ROOT / "graphics/fonts/cjk/ja.system.glyphs.2bpp",
-            ),
-            (
-                "gLocalizedFontJaTalkCodepoints",
-                ROOT / "graphics/fonts/cjk/ja.talk.codepoints.u32le",
-            ),
-            (
-                "gLocalizedFontJaTalkWidths",
-                ROOT / "graphics/fonts/cjk/ja.talk.widths.u8",
-            ),
-            (
-                "gLocalizedFontJaTalkBitmaps",
-                ROOT / "graphics/fonts/cjk/ja.talk.glyphs.2bpp",
-            ),
-            (
-                "gLocalizedFontZhHansSystemCodepoints",
-                ROOT / "graphics/fonts/cjk/zh-Hans.system.codepoints.u32le",
-            ),
-            (
-                "gLocalizedFontZhHansSystemWidths",
-                ROOT / "graphics/fonts/cjk/zh-Hans.system.widths.u8",
-            ),
-            (
-                "gLocalizedFontZhHansSystemBitmaps",
-                ROOT / "graphics/fonts/cjk/zh-Hans.system.glyphs.2bpp",
-            ),
-            (
-                "gLocalizedFontZhHansTalkCodepoints",
-                ROOT / "graphics/fonts/cjk/zh-Hans.talk.codepoints.u32le",
-            ),
-            (
-                "gLocalizedFontZhHansTalkWidths",
-                ROOT / "graphics/fonts/cjk/zh-Hans.talk.widths.u8",
-            ),
-            (
-                "gLocalizedFontZhHansTalkBitmaps",
-                ROOT / "graphics/fonts/cjk/zh-Hans.talk.glyphs.2bpp",
-            ),
-        )
-        font_data_lines = [".section .rodata", ".balign 4"]
-        font_data_lines.extend(
-            f'.globl {symbol}\n{symbol}:\n.incbin "{path}"'
-            for symbol, path in font_symbols
-        )
-        font_data_lines.extend(
-            [".section .note.GNU-stack,\"\",@progbits", ""]
-        )
-        font_data = BUILD_DIR / "localized_font_host_data.S"
-        font_data.write_text("\n".join(font_data_lines), encoding="utf-8")
+        preproc = ROOT / "tools" / "preproc" / "preproc"
+        if not preproc.is_file():
+            self._run(["make", "-C", ROOT / "tools" / "preproc"])
+        preprocessed_data = BUILD_DIR / "localized_font_data.pre.c"
+        result = self._run([preproc, DATA_SOURCE])
+        preprocessed_data.write_text(result.stdout, encoding="utf-8")
         font_data_object = BUILD_DIR / "localized_font_host_data.o"
-        self._run(["cc", "-c", font_data, "-o", font_data_object])
+        self._run(common + ["-c", preprocessed_data, "-o", font_data_object])
         objects.append(font_data_object)
 
         binary = BUILD_DIR / "text_reviewed_consumers_host_test"
@@ -265,6 +212,111 @@ class TextConsumerNativeTests(unittest.TestCase):
         result = self._run([binary])
         self.assertEqual(
             result.stdout.strip(), "item_popup_article_host_test: ok"
+        )
+
+    def test_popup_prefixes_compose_before_actual_item_names(self):
+        common = [
+            "cc",
+            "-std=gnu89",
+            "-Wall",
+            "-Wextra",
+            "-Werror=implicit-function-declaration",
+            "-Werror=declaration-after-statement",
+            "-Wno-int-to-pointer-cast",
+            "-Wno-pointer-to-int-cast",
+            "-Wno-unused-parameter",
+            "-no-pie",
+            "-fsigned-char",
+            "-ffunction-sections",
+            "-fdata-sections",
+            "-DMODERN=1",
+            "-DNONMATCHING=1",
+            "-DFE8_EXPANSION_ENABLED_LOCALE_MASK=0x07u",
+            "-DFE8_TEXT_CONSUMER_HOST_TEST=1",
+            "-I",
+            ROOT / "include",
+        ]
+        objects = []
+        for source in ("popup.c", "popup2.c"):
+            output = BUILD_DIR / f"{Path(source).stem}.composition.o"
+            self._run(
+                common
+                + [
+                    "-c",
+                    ROOT / "src" / source,
+                    "-o",
+                    output,
+                ]
+            )
+            objects.append(output)
+
+        binary = BUILD_DIR / "popup_composition_host_test"
+        self._run(
+            common
+            + [
+                TEST_DIR / "popup_composition_host_test.c",
+            ]
+            + objects
+            + [
+                "-Wl,--gc-sections",
+                "-Wl,--unresolved-symbols=ignore-all",
+                "-o",
+                binary,
+            ]
+        )
+        result = self._run([binary])
+        self.assertEqual(
+            result.stdout.strip(), "popup_composition_host_test: ok"
+        )
+
+    def test_sio_empty_team_name_uses_actual_bounded_field(self):
+        common = [
+            "cc",
+            "-std=gnu89",
+            "-Wall",
+            "-Wextra",
+            "-Werror=implicit-function-declaration",
+            "-Werror=declaration-after-statement",
+            "-Wno-int-to-pointer-cast",
+            "-Wno-pointer-to-int-cast",
+            "-Wno-unused-parameter",
+            "-no-pie",
+            "-fsigned-char",
+            "-ffunction-sections",
+            "-fdata-sections",
+            "-DMODERN=1",
+            "-DNONMATCHING=1",
+            "-DFE8_EXPANSION_ENABLED_LOCALE_MASK=0x07u",
+            "-DFE8_TEXT_CONSUMER_HOST_TEST=1",
+            "-I",
+            ROOT / "include",
+        ]
+        teamlist_object = BUILD_DIR / "sio_teamlist.bounded.o"
+        self._run(
+            common
+            + [
+                "-c",
+                ROOT / "src" / "sio_teamlist.c",
+                "-o",
+                teamlist_object,
+            ]
+        )
+
+        binary = BUILD_DIR / "sio_teamlist_host_test"
+        self._run(
+            common
+            + [
+                TEST_DIR / "sio_teamlist_host_test.c",
+                teamlist_object,
+                "-Wl,--gc-sections",
+                "-Wl,--unresolved-symbols=ignore-all",
+                "-o",
+                binary,
+            ]
+        )
+        result = self._run([binary])
+        self.assertEqual(
+            result.stdout.strip(), "sio_teamlist_host_test: ok"
         )
 
 

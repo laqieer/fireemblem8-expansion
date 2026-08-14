@@ -8,7 +8,18 @@ ROOT = Path(__file__).resolve().parents[4]
 TEST_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
 
-from scripts.localization.game_catalog.build import build_game_catalog, generate
+from scripts.localization.game_catalog.build import (
+    _TEXT_TOKEN_RE,
+    _encode_control_unit,
+    build_game_catalog,
+    generate,
+)
+from scripts.localization.game_catalog.english_source import (
+    _encode_named_token,
+    _strip_comments,
+    load_english_definitions,
+)
+from scripts.localization.game_locales.controls import expand_canonical_text
 
 
 class RealGenerateTests(unittest.TestCase):
@@ -30,25 +41,25 @@ class RealGenerateTests(unittest.TestCase):
 
             report = json.loads(written_a["report_json"].read_text(encoding="utf-8"))
             budget = json.loads(written_a["budget_json"].read_text(encoding="utf-8"))
-            self.assertEqual(report["mapping_source_counts"]["indexed"], 1472)
-            self.assertEqual(report["mapping_source_counts"]["raw"], 133)
-            self.assertEqual(report["mapping_source_counts"]["authored"], 0)
-            self.assertEqual(report["mapping_source_counts"]["english_fallback"], 1809)
+            self.assertEqual(report["mapping_source_counts"]["indexed"], 2955)
+            self.assertEqual(report["mapping_source_counts"]["raw"], 130)
+            self.assertEqual(report["mapping_source_counts"]["authored"], 329)
+            self.assertEqual(report["mapping_source_counts"]["english_fallback"], 0)
             self.assertEqual(report["mapping_source_counts"]["unresolved"], 0)
             self.assertEqual(report["shared_english"]["present_count"], 3414)
             self.assertEqual(report["shared_english"]["absent_count"], 0)
             self.assertEqual(
                 report["shared_english"]["storage"]["required_bytes"], 4000
             )
-            self.assertEqual(report["locales"]["ja"]["present_count"], 1492)
-            self.assertEqual(report["locales"]["ja"]["provider_counts"]["raw"], 20)
-            self.assertEqual(report["locales"]["ja"]["provider_unavailable_count"], 113)
-            self.assertEqual(report["locales"]["zh-Hans"]["present_count"], 1605)
-            self.assertEqual(report["locales"]["zh-Hans"]["explicit_fallback_count"], 1809)
+            self.assertEqual(report["locales"]["ja"]["present_count"], 3414)
+            self.assertEqual(report["locales"]["ja"]["provider_counts"]["raw"], 130)
+            self.assertEqual(report["locales"]["ja"]["provider_unavailable_count"], 0)
+            self.assertEqual(report["locales"]["zh-Hans"]["present_count"], 3414)
+            self.assertEqual(report["locales"]["zh-Hans"]["explicit_fallback_count"], 0)
             self.assertTrue(report["locales"]["ja"]["storage"]["target_fits"])
             self.assertTrue(report["locales"]["zh-Hans"]["storage"]["target_fits"])
-            self.assertEqual(report["locales"]["ja"]["storage"]["required_bytes"], 5328)
-            self.assertEqual(report["locales"]["zh-Hans"]["storage"]["required_bytes"], 4260)
+            self.assertEqual(report["locales"]["ja"]["storage"]["required_bytes"], 4725)
+            self.assertEqual(report["locales"]["zh-Hans"]["storage"]["required_bytes"], 3729)
             self.assertEqual(
                 report["locales"]["ja"]["hashes"]["source_framed_sha256"],
                 report["locales"]["ja"]["hashes"]["round_trip_framed_sha256"],
@@ -74,7 +85,7 @@ class RealGenerateTests(unittest.TestCase):
             self.assertIn("GAME_LOCALIZATION_TARGET_COUNT 3414u", header)
             self.assertIn("FE8_GAME_LOCALIZATION_DATA_PRESENT 1", config_header)
             self.assertIn(
-                "FE8_GAME_LOCALIZATION_MAX_DECODED_BYTES 5328u",
+                "FE8_GAME_LOCALIZATION_MAX_DECODED_BYTES 4725u",
                 config_header,
             )
             self.assertIn("gGameLocalizationEnglishEntries[]", source)
@@ -109,19 +120,43 @@ class RealGenerateTests(unittest.TestCase):
                 ).read_text(encoding="utf-8")
             )["rows"]
         }
+        ja_raw = json.loads(
+            (ROOT / "texts/locales/ja/raw.json").read_text(encoding="utf-8")
+        )["providers"]
+        authored = {
+            locale: json.loads(
+                (
+                    ROOT / f"texts/locales/authored/catalog.{locale}.json"
+                ).read_text(encoding="utf-8")
+            )["strings"]
+            for locale in ("ja", "zh-Hans")
+        }
 
         for decision in decisions["decisions"]:
             if decision["classification"] != "game_message":
                 continue
             target_id = int(decision["target_id"], 16)
+            source = mapping[decision["target_id"]]
+            if source["kind"] == "authored":
+                key = source["translation_key"]
+                expected_ja = authored["ja"][key]
+                expected_zh = authored["zh-Hans"][key]
+            else:
+                ja_source = source["regional_sources"]["ja"]
+                expected_ja = (
+                    ja_source["text"]
+                    if ja_source["kind"] == "literal"
+                    else ja_raw[decision["target_id"]]["text"]
+                )
+                expected_zh = raw[decision["import_id"]]
             with self.subTest(import_id=decision["import_id"]):
                 self.assertEqual(
                     ja.entries[target_id].source_text,
-                    mapping[decision["target_id"]]["regional_sources"]["ja"]["text"],
+                    expected_ja,
                 )
                 self.assertEqual(
                     zh.entries[target_id].source_text,
-                    raw[decision["import_id"]],
+                    expected_zh,
                 )
 
     def test_transformed_messages_fit_dedicated_runtime_scratch(self):
@@ -157,6 +192,87 @@ class RealGenerateTests(unittest.TestCase):
 
         self.assertTrue(bounds)
         self.assertLessEqual(max(bounds), 0x400)
+
+    def test_every_0a_byte_in_final_localized_streams_comes_from_an_explicit_control(self):
+        build = build_game_catalog()
+        definitions = load_english_definitions(ROOT / "texts/textdefs.txt")
+
+        def explicit_0a_count(text):
+            token_names = _TEXT_TOKEN_RE.findall(text)
+            named_tokens = [
+                name for name in token_names if not name.startswith("CTRL:")
+            ]
+            if named_tokens:
+                normalized = _strip_comments(
+                    text,
+                    source_name="localized encoded-stream audit",
+                ).replace("\r", "").replace("\n", "")
+                return sum(
+                    _encode_named_token(
+                        match.group(1),
+                        definitions,
+                        source_name="localized encoded-stream audit",
+                    ).count(b"\x0A")
+                    for match in _TEXT_TOKEN_RE.finditer(normalized)
+                )
+
+            count = 0
+            for unit in expand_canonical_text(text):
+                if isinstance(unit, str):
+                    self.assertNotIn("\r", unit)
+                    self.assertNotIn("\n", unit)
+                    self.assertNotIn(0x0A, unit.encode("utf-8"))
+                else:
+                    count += _encode_control_unit(unit).count(b"\x0A")
+            return count
+
+        for locale in ("ja", "zh-Hans"):
+            entries = build.locale_bundle(locale).entries
+            for entry in entries:
+                with self.subTest(locale=locale, target_id=entry.target_id):
+                    self.assertEqual(
+                        entry.encoded_bytes.count(b"\x0A"),
+                        explicit_0a_count(entry.source_text),
+                    )
+
+            beginner = entries[0x0149]
+            self.assertNotIn("\n", beginner.source_text)
+            self.assertEqual(beginner.encoded_bytes.count(b"\x0A"), 0)
+            self.assertEqual(beginner.encoded_bytes.count(b"\x01"), 4)
+
+            for target_id, prefix in (
+                (
+                    0x0B4A,
+                    "[CTRL:000B][CTRL:0010][CTRL:0114][CTRL:000D]"
+                    "[CTRL:0010][CTRL:0102][CTRL:000E][CTRL:0110]"
+                    "[CTRL:0001][CTRL:000E]",
+                ),
+                (
+                    0x0B91,
+                    "[CTRL:000C][CTRL:0010][CTRL:0170][CTRL:000E]"
+                    "[CTRL:0010][CTRL:0149][CTRL:000F][CTRL:0110]"
+                    "[CTRL:0001][CTRL:000E]",
+                ),
+            ):
+                entry = entries[target_id]
+                if locale == "zh-Hans":
+                    self.assertTrue(entry.source_text.startswith(prefix))
+                self.assertNotIn("\n", entry.source_text)
+                self.assertEqual(
+                    entry.encoded_bytes.count(b"\x0A"),
+                    explicit_0a_count(entry.source_text),
+                )
+
+            explicit_face_control = entries[0x0884]
+            self.assertTrue(explicit_face_control.source_text.startswith("[OpenLeft]"))
+            self.assertGreater(
+                explicit_face_control.encoded_bytes.count(b"\x0A"),
+                0,
+            )
+            self.assertEqual(
+                explicit_face_control.encoded_bytes.count(b"\x0A"),
+                explicit_0a_count(explicit_face_control.source_text),
+            )
 
     def test_profile_specific_outputs_exclude_disabled_payloads_and_size_capacity(self):
         with (
@@ -213,10 +329,10 @@ class RealGenerateTests(unittest.TestCase):
             self.assertIn("GAME_LOCALIZATION_ZH_HANS_ENABLED 1u", zh_header)
             self.assertNotIn("extern const u32 gGameLocalizationJaNodes[];", zh_header)
             self.assertIn(
-                "FE8_GAME_LOCALIZATION_MAX_DECODED_BYTES 5328u", ja_config
+                "FE8_GAME_LOCALIZATION_MAX_DECODED_BYTES 4725u", ja_config
             )
             self.assertIn(
-                "FE8_GAME_LOCALIZATION_MAX_DECODED_BYTES 4260u", zh_config
+                "FE8_GAME_LOCALIZATION_MAX_DECODED_BYTES 4000u", zh_config
             )
 
             ja_report = json.loads(ja["report_json"].read_text(encoding="utf-8"))
@@ -252,9 +368,9 @@ class RealGenerateTests(unittest.TestCase):
                 ja_budget["shared_english"]["estimated_total_c_bytes"],
                 both_budget["shared_english"]["estimated_total_c_bytes"],
             )
-            self.assertEqual(ja_budget["locales"]["ja"]["max_decoded_bytes"], 5328)
+            self.assertEqual(ja_budget["locales"]["ja"]["max_decoded_bytes"], 4725)
             self.assertEqual(
-                zh_budget["locales"]["zh-Hans"]["max_decoded_bytes"], 4260
+                zh_budget["locales"]["zh-Hans"]["max_decoded_bytes"], 3729
             )
             self.assertLess(
                 ja_budget["totals"]["estimated_total_c_bytes"],

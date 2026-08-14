@@ -19,7 +19,21 @@ from scripts.localization.game_locales.mapping import (
     format_message_id,
     validate_mapping_document,
 )
+from scripts.localization.game_locales.fixed_width_labels import (
+    ALIASES_PATH as FIXED_WIDTH_ALIASES_PATH,
+    FixedWidthLabelError,
+    build_fixed_width_label_metrics,
+    load_fixed_width_aliases,
+)
 from scripts.localization.game_locales.parsers import LocaleSourceError, parse_hash_indexed
+from scripts.localization.game_locales.raw_providers import (
+    PINNED_SOURCE_REPOSITORY,
+    PINNED_SOURCE_REVISION,
+    RawProvider,
+    RawProviderError,
+    load_ja_raw_providers,
+    resolve_ja_raw_text,
+)
 from scripts.texttools.multilang_codec import build_catalog
 from scripts.texttools.multilang_codec.codec import SCHEMA as CODEC_SCHEMA
 
@@ -45,7 +59,11 @@ from .constants import (
     SOURCE_KINDS,
     TARGET_STORAGE_BYTES,
 )
-from .english_source import load_english_source_entries
+from .english_source import (
+    encode_english_source_text,
+    load_english_definitions,
+    load_english_source_entries,
+)
 from .model import (
     EnglishCatalogBundle,
     EntryPayloadMeta,
@@ -53,16 +71,32 @@ from .model import (
     GameCatalogError,
     LocaleCatalogBundle,
 )
+from .control_streams import (
+    CONTROL_DOMAIN_FE8J,
+    CONTROL_DOMAIN_FE8U,
+    ControlStreamError,
+    load_talk_font_metrics,
+    load_portrait_operand_map,
+    remap_fe8j_portrait_operands,
+    validate_event_continuations,
+    validate_final_payload,
+)
 
 DEFAULT_ENGLISH_TEXTS_PATH = Path("texts/texts.txt")
 DEFAULT_ENGLISH_DEFINITIONS_PATH = Path("texts/textdefs.txt")
 DEFAULT_JA_INDEXED_PATH = Path("texts/locales/ja/indexed.txt")
+DEFAULT_JA_RAW_PATH = Path("texts/locales/ja/raw.json")
 DEFAULT_ZH_INDEXED_PATH = Path("texts/locales/zh-Hans/indexed.txt")
 DEFAULT_ZH_RAW_PATH = Path("texts/locales/zh-Hans/raw.json")
 DEFAULT_MAPPING_PATH = Path("texts/locales/mapping/fe8u_target_map.json")
 DEFAULT_TARGET_HEADER_PATH = Path("include/constants/msg.h")
+DEFAULT_AUTHORED_PATHS = {
+    "ja": Path("texts/locales/authored/catalog.ja.json"),
+    "zh-Hans": Path("texts/locales/authored/catalog.zh-Hans.json"),
+}
 
 _AUTHORED_KIND = "fe8u-game-authored-catalog"
+_TEXT_TOKEN_RE = re.compile(r"\[([^\[\]\r\n]+)\]")
 
 
 def canonical_json_bytes(data: Any) -> bytes:
@@ -151,6 +185,23 @@ def _load_raw_records(path: Path) -> Dict[str, str]:
     return result
 
 
+def _load_ja_raw_records(
+    path: Path,
+    *,
+    expected_repository: str | None,
+    expected_revision: str | None,
+) -> Dict[int, RawProvider]:
+    try:
+        return load_ja_raw_providers(
+            _load_json(path),
+            source_root=Path(path).parent,
+            expected_repository=expected_repository,
+            expected_revision=expected_revision,
+        )
+    except RawProviderError as error:
+        raise GameCatalogError(f"{path}: {error}") from error
+
+
 def _load_authored_catalogs(paths: Optional[Mapping[str, Path]]) -> Dict[str, Dict[str, str]]:
     if not paths:
         return {}
@@ -228,6 +279,10 @@ def encode_canonical_text(text: str) -> bytes:
     payload = bytearray()
     for unit in units:
         if isinstance(unit, str):
+            if "\r" in unit or "\n" in unit:
+                raise GameCatalogError(
+                    "literal text contains a physical newline; use [CTRL:0001]"
+                )
             encoded = unit.encode("utf-8")
             if b"\x00" in encoded:
                 raise GameCatalogError("literal UTF-8 payload contains an embedded NUL byte")
@@ -238,6 +293,27 @@ def encode_canonical_text(text: str) -> bytes:
         raise GameCatalogError("encoded payload contains an embedded NUL byte")
     payload.append(0)
     return bytes(payload)
+
+
+def encode_authored_text(
+    text: str,
+    definitions: Mapping[str, Tuple[int, ...]],
+    *,
+    source_name: str,
+) -> bytes:
+    token_names = _TEXT_TOKEN_RE.findall(text)
+    named_tokens = [name for name in token_names if not name.startswith("CTRL:")]
+    if named_tokens:
+        if len(named_tokens) != len(token_names):
+            raise GameCatalogError(
+                f"{source_name}: named and canonical control tokens must not mix"
+            )
+        return encode_english_source_text(
+            text,
+            definitions,
+            source_name=source_name,
+        )
+    return encode_canonical_text(text)
 
 
 def _mapping_source_counts(mapping) -> Dict[str, int]:
@@ -275,7 +351,10 @@ def _entry_for_locale(
     row,
     indexed_sources: Mapping[str, Mapping[int, str]],
     raw_records: Mapping[str, str],
+    ja_raw_records: Mapping[int, RawProvider],
     authored_records: Mapping[str, Mapping[str, str]],
+    english_definitions: Mapping[str, Tuple[int, ...]],
+    portrait_map,
 ) -> EntryPayloadMeta:
     source = dict(row.source)
     if row.source_kind == "english_fallback":
@@ -284,6 +363,7 @@ def _entry_for_locale(
             mapping_source_kind=row.source_kind,
             mapping_source=source,
             locale_provider_kind=None,
+            control_domain=None,
             source_text=None,
             encoded_bytes=None,
             fallback_kind=FALLBACK_KIND_EXPLICIT_ENGLISH,
@@ -299,13 +379,27 @@ def _entry_for_locale(
                 f"{format_message_id(row.target_id)}"
             )
         source_text = indexed_sources[locale][source_id]
+        encoded_bytes = encode_canonical_text(source_text)
+        try:
+            encoded_bytes, _ = remap_fe8j_portrait_operands(
+                encoded_bytes,
+                target_id=row.target_id,
+                portrait_map=portrait_map,
+                source_name=(
+                    f"{locale} indexed {source['id']} for "
+                    f"{format_message_id(row.target_id)}"
+                ),
+            )
+        except ControlStreamError as error:
+            raise GameCatalogError(str(error)) from error
         return EntryPayloadMeta(
             target_id=row.target_id,
             mapping_source_kind=row.source_kind,
             mapping_source=source,
             locale_provider_kind="indexed",
+            control_domain=CONTROL_DOMAIN_FE8J,
             source_text=source_text,
-            encoded_bytes=encode_canonical_text(source_text),
+            encoded_bytes=encoded_bytes,
             fallback_kind=FALLBACK_KIND_NONE,
             fallback_reason=None,
             note=None,
@@ -320,13 +414,27 @@ def _entry_for_locale(
                     f"{format_message_id(row.target_id)}"
                 )
             source_text = raw_records[import_id]
+            encoded_bytes = encode_canonical_text(source_text)
+            try:
+                encoded_bytes, _ = remap_fe8j_portrait_operands(
+                    encoded_bytes,
+                    target_id=row.target_id,
+                    portrait_map=portrait_map,
+                    source_name=(
+                        f"{locale} raw {import_id!r} for "
+                        f"{format_message_id(row.target_id)}"
+                    ),
+                )
+            except ControlStreamError as error:
+                raise GameCatalogError(str(error)) from error
             return EntryPayloadMeta(
                 target_id=row.target_id,
                 mapping_source_kind=row.source_kind,
                 mapping_source=source,
                 locale_provider_kind="raw",
+                control_domain=CONTROL_DOMAIN_FE8J,
                 source_text=source_text,
-                encoded_bytes=encode_canonical_text(source_text),
+                encoded_bytes=encoded_bytes,
                 fallback_kind=FALLBACK_KIND_NONE,
                 fallback_reason=None,
                 note=None,
@@ -334,33 +442,38 @@ def _entry_for_locale(
         regional_sources = source.get("regional_sources", {})
         ja_source = regional_sources.get("ja", {}) if isinstance(regional_sources, dict) else {}
         ja_kind = ja_source.get("kind") if isinstance(ja_source, dict) else None
-        if ja_kind == "literal":
-            source_text = ja_source["text"]
-            return EntryPayloadMeta(
+        try:
+            source_text = resolve_ja_raw_text(
                 target_id=row.target_id,
-                mapping_source_kind=row.source_kind,
-                mapping_source=source,
-                locale_provider_kind="raw",
-                source_text=source_text,
-                encoded_bytes=encode_canonical_text(source_text),
-                fallback_kind=FALLBACK_KIND_NONE,
-                fallback_reason=None,
-                note=None,
+                ja_source=ja_source,
+                providers=ja_raw_records,
             )
-        symbol = ja_source.get("symbol") if ja_kind == "symbol" else None
-        note = "verified raw mapping has no committed canonical ja payload source"
-        if symbol:
-            note += f"; evidence symbol={symbol}"
+        except RawProviderError as error:
+            raise GameCatalogError(str(error)) from error
+        encoded_bytes = encode_canonical_text(source_text)
+        try:
+            encoded_bytes, _ = remap_fe8j_portrait_operands(
+                encoded_bytes,
+                target_id=row.target_id,
+                portrait_map=portrait_map,
+                source_name=(
+                    f"{locale} raw provider for "
+                    f"{format_message_id(row.target_id)}"
+                ),
+            )
+        except ControlStreamError as error:
+            raise GameCatalogError(str(error)) from error
         return EntryPayloadMeta(
             target_id=row.target_id,
             mapping_source_kind=row.source_kind,
             mapping_source=source,
-            locale_provider_kind=None,
-            source_text=None,
-            encoded_bytes=None,
-            fallback_kind=FALLBACK_KIND_PROVIDER_UNAVAILABLE,
-            fallback_reason="locale-provider-unavailable",
-            note=note,
+            locale_provider_kind="raw",
+            control_domain=CONTROL_DOMAIN_FE8J,
+            source_text=source_text,
+            encoded_bytes=encoded_bytes,
+            fallback_kind=FALLBACK_KIND_NONE,
+            fallback_reason=None,
+            note=None,
         )
 
     if row.source_kind == "authored":
@@ -371,14 +484,24 @@ def _entry_for_locale(
                 f"{locale}: missing authored translation {translation_key!r} for target "
                 f"{format_message_id(row.target_id)}"
             )
-        source_text = locale_catalog[translation_key]
+        source_text = locale_catalog[translation_key] + source.get(
+            "control_suffix", ""
+        )
         return EntryPayloadMeta(
             target_id=row.target_id,
             mapping_source_kind=row.source_kind,
             mapping_source=source,
             locale_provider_kind="authored",
+            control_domain=CONTROL_DOMAIN_FE8U,
             source_text=source_text,
-            encoded_bytes=encode_canonical_text(source_text),
+            encoded_bytes=encode_authored_text(
+                source_text,
+                english_definitions,
+                source_name=(
+                    f"{locale} authored {translation_key!r} for "
+                    f"{format_message_id(row.target_id)}"
+                ),
+            ),
             fallback_kind=FALLBACK_KIND_NONE,
             fallback_reason=None,
             note=None,
@@ -393,7 +516,10 @@ def _build_locale_bundle(
     mapping,
     indexed_sources: Mapping[str, Mapping[int, str]],
     raw_records: Mapping[str, str],
+    ja_raw_records: Mapping[int, RawProvider],
     authored_records: Mapping[str, Mapping[str, str]],
+    english_definitions: Mapping[str, Tuple[int, ...]],
+    portrait_map,
     suffix_share: bool,
 ) -> LocaleCatalogBundle:
     entries = tuple(
@@ -402,13 +528,63 @@ def _build_locale_bundle(
             row=row,
             indexed_sources=indexed_sources,
             raw_records=raw_records,
+            ja_raw_records=ja_raw_records,
             authored_records=authored_records,
+            english_definitions=english_definitions,
+            portrait_map=portrait_map,
         )
         for row in mapping.rows
     )
     messages = tuple(entry.encoded_bytes for entry in entries)
     catalog = build_catalog(messages, suffix_share=suffix_share)
     return LocaleCatalogBundle(locale=locale, entries=entries, catalog=catalog)
+
+
+def _validate_final_catalog_payloads(
+    *,
+    locale_bundles: Sequence[LocaleCatalogBundle],
+    english_entries,
+    portrait_map,
+) -> Dict[str, int]:
+    totals = Counter()
+    max_talk_line_width = 0
+    for bundle in locale_bundles:
+        try:
+            talk_metrics = load_talk_font_metrics(bundle.locale)
+        except ControlStreamError as error:
+            raise GameCatalogError(str(error)) from error
+        for entry in bundle.entries:
+            if entry.encoded_bytes is None:
+                continue
+            assert entry.control_domain is not None
+            try:
+                stats = validate_final_payload(
+                    entry.encoded_bytes,
+                    english_payload=english_entries[entry.target_id].encoded_bytes,
+                    target_id=entry.target_id,
+                    locale=bundle.locale,
+                    control_domain=entry.control_domain,
+                    portrait_map=portrait_map,
+                    talk_metrics=talk_metrics,
+                )
+            except ControlStreamError as error:
+                raise GameCatalogError(str(error)) from error
+            totals.update(stats)
+            max_talk_line_width = max(
+                max_talk_line_width,
+                stats["max_talk_line_width"],
+            )
+    return {
+        "fe8u_mouth_topology_validated_payload_count": totals[
+            "fe8u_mouth_topology_validated_payload_count"
+        ],
+        "max_talk_line_width": max_talk_line_width,
+        "mouth_balance_validated_payload_count": totals[
+            "mouth_balance_validated_payload_count"
+        ],
+        "talk_line_count": totals["talk_line_count"],
+        "talk_payload_count": totals["talk_payload_count"],
+    }
 
 
 def _entry_report(meta: EntryPayloadMeta, entry) -> Dict[str, Any]:
@@ -418,6 +594,7 @@ def _entry_report(meta: EntryPayloadMeta, entry) -> Dict[str, Any]:
         "mapping_source_kind": meta.mapping_source_kind,
         "mapping_source": meta.mapping_source,
         "provider_kind": meta.locale_provider_kind,
+        "control_domain": meta.control_domain,
         "fallback_to_english": not meta.present,
         "fallback_kind": meta.fallback_kind,
         "fallback_reason": meta.fallback_reason,
@@ -451,6 +628,11 @@ def _locale_report(bundle: LocaleCatalogBundle, *, suffix_share: bool) -> Dict[s
         for meta in bundle.entries
         if meta.locale_provider_kind is not None
     )
+    control_domain_counts = Counter(
+        meta.control_domain
+        for meta in bundle.entries
+        if meta.control_domain is not None
+    )
     explicit_fallback_count = sum(
         1 for meta in bundle.entries if meta.fallback_kind == FALLBACK_KIND_EXPLICIT_ENGLISH
     )
@@ -466,6 +648,10 @@ def _locale_report(bundle: LocaleCatalogBundle, *, suffix_share: bool) -> Dict[s
         "explicit_fallback_count": explicit_fallback_count,
         "provider_unavailable_count": provider_unavailable_count,
         "provider_counts": {kind: provider_counts.get(kind, 0) for kind in PRESENT_PROVIDER_KINDS},
+        "control_domain_counts": {
+            domain: control_domain_counts.get(domain, 0)
+            for domain in (CONTROL_DOMAIN_FE8J, CONTROL_DOMAIN_FE8U)
+        },
         "storage": {
             "target_bytes": TARGET_STORAGE_BYTES,
             "required_bytes": requirement_bytes,
@@ -693,13 +879,17 @@ def build_game_catalog(
     english_texts_path: Path = DEFAULT_ENGLISH_TEXTS_PATH,
     english_definitions_path: Path = DEFAULT_ENGLISH_DEFINITIONS_PATH,
     ja_indexed_path: Path = DEFAULT_JA_INDEXED_PATH,
+    ja_raw_path: Path = DEFAULT_JA_RAW_PATH,
     zh_indexed_path: Path = DEFAULT_ZH_INDEXED_PATH,
     zh_raw_path: Path = DEFAULT_ZH_RAW_PATH,
     mapping_path: Path = DEFAULT_MAPPING_PATH,
     target_header_path: Path = DEFAULT_TARGET_HEADER_PATH,
     authored_paths: Optional[Mapping[str, Path]] = None,
+    fixed_width_aliases_path: Path = FIXED_WIDTH_ALIASES_PATH,
     enabled_locales: Sequence[str] = LOCALE_IDS,
     suffix_share: bool = True,
+    ja_raw_expected_repository: str | None = PINNED_SOURCE_REPOSITORY,
+    ja_raw_expected_revision: str | None = PINNED_SOURCE_REVISION,
 ) -> GameCatalogBuild:
     enabled_locales = _normalize_enabled_locales(enabled_locales)
     target_count = len(load_fe8u_target_ids(target_header_path))
@@ -708,6 +898,7 @@ def build_game_catalog(
         english_definitions_path,
         target_count=target_count,
     )
+    english_definitions = load_english_definitions(english_definitions_path)
     english_bundle = EnglishCatalogBundle(
         locale="en",
         entries=english_entries,
@@ -717,6 +908,10 @@ def build_game_catalog(
         ),
     )
     mapping = _load_mapping(mapping_path, target_count=target_count)
+    try:
+        portrait_map = load_portrait_operand_map()
+    except ControlStreamError as error:
+        raise GameCatalogError(str(error)) from error
     indexed_sources = {}
     if "ja" in enabled_locales:
         indexed_sources["ja"] = _load_indexed(ja_indexed_path)
@@ -725,24 +920,82 @@ def build_game_catalog(
     raw_records = (
         _load_raw_records(zh_raw_path) if "zh-Hans" in enabled_locales else {}
     )
-    authored_records = _load_authored_catalogs(authored_paths)
+    ja_raw_records = (
+        _load_ja_raw_records(
+            ja_raw_path,
+            expected_repository=ja_raw_expected_repository,
+            expected_revision=ja_raw_expected_revision,
+        )
+        if "ja" in enabled_locales
+        else {}
+    )
     mapping_source_counts = _mapping_source_counts(mapping)
+    if authored_paths is None and mapping_source_counts["authored"]:
+        authored_paths = DEFAULT_AUTHORED_PATHS
+    authored_records = _load_authored_catalogs(authored_paths)
     locale_bundles = tuple(
         _build_locale_bundle(
             locale=locale,
             mapping=mapping,
             indexed_sources=indexed_sources,
             raw_records=raw_records,
+            ja_raw_records=ja_raw_records,
             authored_records=authored_records,
+            english_definitions=english_definitions,
+            portrait_map=portrait_map,
             suffix_share=suffix_share,
         )
         for locale in enabled_locales
     )
+    display_aliases: Mapping[str, Mapping[str, Mapping[int, str]]] = {}
+    fixed_width_metrics = None
+    if target_count == 3414:
+        mapping_absolute = Path(mapping_path).resolve()
+        repo_root = mapping_absolute.parents[3]
+        alias_path = Path(fixed_width_aliases_path)
+        if not alias_path.is_absolute():
+            alias_path = repo_root / alias_path
+        try:
+            fixed_width_metrics = build_fixed_width_label_metrics(
+                repo_root,
+                localized_payloads={
+                    bundle.locale: {
+                        entry.target_id: entry.source_text
+                        for entry in bundle.entries
+                        if entry.source_text is not None
+                    }
+                    for bundle in locale_bundles
+                },
+                aliases_path=alias_path,
+            )
+            all_aliases = load_fixed_width_aliases(alias_path)
+        except FixedWidthLabelError as error:
+            raise GameCatalogError(str(error)) from error
+        display_aliases = {
+            locale: all_aliases[locale] for locale in enabled_locales
+        }
     locale_reports = {
         bundle.locale: _locale_report(bundle, suffix_share=suffix_share)
         for bundle in locale_bundles
     }
     english_report = _english_report(english_bundle, suffix_share=suffix_share)
+    final_payload_validation = _validate_final_catalog_payloads(
+        locale_bundles=locale_bundles,
+        english_entries=english_entries,
+        portrait_map=portrait_map,
+    )
+    try:
+        control_validation = validate_event_continuations(
+            english_payloads=tuple(entry.encoded_bytes for entry in english_entries),
+            localized_payloads={
+                bundle.locale: tuple(
+                    entry.encoded_bytes for entry in bundle.entries
+                )
+                for bundle in locale_bundles
+            },
+        )
+    except ControlStreamError as error:
+        raise GameCatalogError(str(error)) from error
     report = _build_report(
         english_report=english_report,
         mapping_source_counts=mapping_source_counts,
@@ -751,10 +1004,60 @@ def build_game_catalog(
         locale_reports=locale_reports,
         suffix_share=suffix_share,
     )
+    remapped_targets = {
+        entry.target_id
+        for bundle in locale_bundles
+        for entry in bundle.entries
+        if entry.control_domain == CONTROL_DOMAIN_FE8J
+        and entry.encoded_bytes is not None
+        and entry.encoded_bytes
+        != encode_canonical_text(entry.source_text or "")
+    }
+    if (
+        target_count == 3414
+        and len(remapped_targets) != portrait_map.expected_affected_target_count
+    ):
+        raise GameCatalogError(
+            "regional portrait remap affected "
+            f"{len(remapped_targets)} targets, expected "
+            f"{portrait_map.expected_affected_target_count}"
+        )
+    report["control_stream_validation"] = {
+        **control_validation,
+        **final_payload_validation,
+        "portrait_remapped_target_count": len(remapped_targets),
+        "validated_payload_count": sum(
+            entry.encoded_bytes is not None
+            for bundle in locale_bundles
+            for entry in bundle.entries
+        ),
+    }
+    if fixed_width_metrics is not None:
+        report["fixed_width_labels"] = fixed_width_metrics
     budget = _build_budget(
         mapping_source_counts=mapping_source_counts,
         english_bundle=english_bundle,
         locale_bundles=locale_bundles,
+    )
+    alias_count = sum(
+        len(entries)
+        for surfaces in display_aliases.values()
+        for entries in surfaces.values()
+    )
+    alias_text_bytes = sum(
+        len(text.encode("utf-8")) + 1
+        for surfaces in display_aliases.values()
+        for entries in surfaces.values()
+        for text in entries.values()
+    )
+    budget["display_aliases"] = {
+        "alias_count": alias_count,
+        "entry_bytes": alias_count * 8,
+        "text_bytes": alias_text_bytes,
+        "estimated_total_c_bytes": alias_count * 8 + alias_text_bytes,
+    }
+    budget["totals"]["estimated_total_c_bytes"] += (
+        alias_count * 8 + alias_text_bytes
     )
     return GameCatalogBuild(
         target_count=target_count,
@@ -764,6 +1067,7 @@ def build_game_catalog(
         locales=locale_bundles,
         report=report,
         budget=budget,
+        display_aliases=display_aliases,
         suffix_share=suffix_share,
     )
 
@@ -812,6 +1116,7 @@ def generate(
     english_texts_path: Path = DEFAULT_ENGLISH_TEXTS_PATH,
     english_definitions_path: Path = DEFAULT_ENGLISH_DEFINITIONS_PATH,
     ja_indexed_path: Path = DEFAULT_JA_INDEXED_PATH,
+    ja_raw_path: Path = DEFAULT_JA_RAW_PATH,
     zh_indexed_path: Path = DEFAULT_ZH_INDEXED_PATH,
     zh_raw_path: Path = DEFAULT_ZH_RAW_PATH,
     mapping_path: Path = DEFAULT_MAPPING_PATH,
@@ -824,6 +1129,7 @@ def generate(
         english_texts_path=english_texts_path,
         english_definitions_path=english_definitions_path,
         ja_indexed_path=ja_indexed_path,
+        ja_raw_path=ja_raw_path,
         zh_indexed_path=zh_indexed_path,
         zh_raw_path=zh_raw_path,
         mapping_path=mapping_path,

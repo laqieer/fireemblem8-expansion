@@ -1,5 +1,6 @@
 #include "global.h"
 
+#ifndef FE8_ARCHIVAL_BUILD
 #include <string.h>
 
 #include "proc.h"
@@ -7,6 +8,7 @@
 #include "fontgrp.h"
 #include "bmdebug.h"
 #include "expansion_debugtools.h"
+#include "debugtools_internal.h"
 
 #include "constants/msg.h"
 
@@ -64,21 +66,17 @@ static void DebugToolsWeather_StopMonitorIfOwned(void)
 
 static void DebugToolsWeather_OnEnd(struct MenuProc* menu)
 {
-    (void)menu;
-
     DebugToolsWeather_StopMonitorIfOwned();
 
     /* Reopen the hub so a second action (e.g. Fog) can be picked without
-     * re-pressing the map/prep/title hotkey. The hub is guaranteed
-     * closed already: this submenu only ever opens after the hub's own
-     * MENU_ACT_END has ended it (see DebugToolsActions_WeatherSelected),
-     * so DebugTools_OpenHub()'s reentrancy guard cannot reject this
-     * call. */
-    DebugTools_OpenHub();
+     * re-pressing the map/prep/title hotkey. The shared transition keeps
+     * the session guard active, yields until this submenu's Text objects
+     * are dead, then reopens the hub internally. */
+    DebugTools_ReturnToHubAfterMenuEnd(menu);
 }
 
 CONST_DATA struct MenuDef gDebugToolsWeatherMenuDef = {
-    {1, 1, 15, 0},
+    {1, 1, DEBUGTOOLS_MENU_WIDTH_TILES, 0},
     0,
     sWeatherMenuItemDefs,
     0,
@@ -106,7 +104,6 @@ static void DebugToolsWeather_BuildMenuItems(void)
 
 static u8 DebugToolsActions_WeatherSelected(struct MenuProc* menu, struct MenuItemProc* item)
 {
-    (void)menu;
     (void)item;
 
     /* DebugMenu_WeatherDraw/Idle (src/bmdebug.c, unmodified) read/write
@@ -126,11 +123,9 @@ static u8 DebugToolsActions_WeatherSelected(struct MenuProc* menu, struct MenuIt
     DebugToolsWeather_BuildMenuItems();
     SetupDebugFontForBG(2, 0);
 
-    /* Starts the weather submenu before the hub itself actually ends
-     * (see the MENU_ACT_END return below) -- the submenu is therefore
-     * already live the instant the hub finishes closing, never leaving
-     * a gap where neither menu is reachable. */
-    StartOrphanMenu(&gDebugToolsWeatherMenuDef);
+    /* The transition captures this menu's first Text allocation, then
+     * yields before rewinding it so every hub MenuItemProc is dead. */
+    DebugTools_QueueSubmenuTransition(menu, &gDebugToolsWeatherMenuDef);
 
     /* Closes the hub (this action's own owning menu) exactly like the
      * Chapter 2 launcher action does -- see src/debugtools_launcher.c. */
@@ -147,17 +142,15 @@ EWRAM_DATA static struct MenuItemDef sFogMenuItemDefs[2] = {0}; /* item + termin
 
 static void DebugToolsFog_OnEnd(struct MenuProc* menu)
 {
-    (void)menu;
-
     /* DebugMenu_FogDraw/Idle/Effect (src/bmdebug.c) only ever touch
      * gPlaySt.chapterVisionRange directly -- no ProcScr_DebugMonitor
      * dependency, so there is nothing else to tear down here. Reopen the
      * hub for the same reason as the weather submenu above. */
-    DebugTools_OpenHub();
+    DebugTools_ReturnToHubAfterMenuEnd(menu);
 }
 
 CONST_DATA struct MenuDef gDebugToolsFogMenuDef = {
-    {1, 1, 15, 0},
+    {1, 1, DEBUGTOOLS_MENU_WIDTH_TILES, 0},
     0,
     sFogMenuItemDefs,
     0,
@@ -185,13 +178,12 @@ static void DebugToolsFog_BuildMenuItems(void)
 
 static u8 DebugToolsActions_FogSelected(struct MenuProc* menu, struct MenuItemProc* item)
 {
-    (void)menu;
     (void)item;
 
     DebugToolsFog_BuildMenuItems();
     SetupDebugFontForBG(2, 0);
 
-    StartOrphanMenu(&gDebugToolsFogMenuDef);
+    DebugTools_QueueSubmenuTransition(menu, &gDebugToolsFogMenuDef);
 
     return MENU_ACT_SKIPCURSOR | MENU_ACT_END | MENU_ACT_SND6A | MENU_ACT_CLEAR;
 }
@@ -202,13 +194,11 @@ CONST_DATA static struct DebugToolsAction sFogAction = {
 
 void DebugTools_RegisterWeatherFogActions(void)
 {
-    /* Idempotent: a repeat call reports DEBUGTOOLS_ERR_DUPLICATE (same
-     * id/label) for each action -- an expected, non-silent result this
-     * one-shot lazy-init call site (DebugTools_OpenHub,
-     * src/debugtools_registry.c) deliberately ignores, same as the
-     * Chapter 2 launcher's own DebugTools_RegisterBuiltinActions. */
-    DebugTools_RegisterAction(&sWeatherAction);
-    DebugTools_RegisterAction(&sFogAction);
+    /* Internal built-in registration keeps immutable built-in identity
+     * separate from the public contributor path. Exact repeats are
+     * successful no-ops. */
+    DebugTools_RegisterBuiltinAction(&sWeatherAction);
+    DebugTools_RegisterBuiltinAction(&sFogAction);
 }
 
 #else /* !FE8_EXPANSION_DEBUGTOOLS_ENABLED */
@@ -219,3 +209,5 @@ void DebugTools_RegisterWeatherFogActions(void)
 }
 
 #endif /* FE8_EXPANSION_DEBUGTOOLS_ENABLED */
+
+#endif /* FE8_ARCHIVAL_BUILD */

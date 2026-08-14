@@ -61,7 +61,7 @@ int main(void)
     CHECK(DebugTools_GetRegisteredCount() == 0, "a rejected id==0 registration must not change the registered count");
 
     /* --- An empty label ("") must be rejected. --- */
-    action.id = 1;
+    action.id = DEBUGTOOLS_CONTRIBUTOR_ID_MIN;
     action.label = "";
     action.onSelected = DummyOnSelected;
     rc = DebugTools_RegisterAction(&action);
@@ -78,7 +78,7 @@ int main(void)
     CHECK(strlen(longLabel) == (size_t)(DEBUGTOOLS_LABEL_MAX_LENGTH + 1),
           "test setup: longLabel must be exactly one character over the limit");
 
-    action.id = 2;
+    action.id = DEBUGTOOLS_CONTRIBUTOR_ID_MIN + 1;
     action.label = longLabel;
     action.onSelected = DummyOnSelected;
     rc = DebugTools_RegisterAction(&action);
@@ -95,7 +95,7 @@ int main(void)
     CHECK(strlen(boundaryLabel) == (size_t)DEBUGTOOLS_LABEL_MAX_LENGTH,
           "test setup: boundaryLabel must be exactly at the limit");
 
-    action.id = 3;
+    action.id = DEBUGTOOLS_CONTRIBUTOR_ID_MIN + 2;
     action.label = boundaryLabel;
     action.onSelected = DummyOnSelected;
     rc = DebugTools_RegisterAction(&action);
@@ -111,7 +111,8 @@ int main(void)
      * after other registration attempts have been rejected in between. */
     {
         const struct DebugToolsAction* got = DebugTools_GetRegisteredAction(0);
-        CHECK(got != NULL && got->id == 3, "the boundary-length action must be readable back");
+        CHECK(got != NULL && got->id == DEBUGTOOLS_CONTRIBUTOR_ID_MIN + 2,
+              "the boundary-length action must be readable back");
         CHECK(strcmp(got->label, boundaryLabel) == 0, "the boundary-length label must read back unchanged");
     }
 

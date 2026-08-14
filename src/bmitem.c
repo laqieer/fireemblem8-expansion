@@ -173,6 +173,27 @@ inline char* GetItemName(int item) {
     return result;
 }
 
+#if FE8_LOCALIZED_GAME_TEXT_CJK_PROFILE_ENABLED
+char * GetItemDisplayNameForWidth(int item, int maxPixels)
+{
+    const struct ItemData *itemData;
+    const char *canonical;
+    const char *alias;
+
+    itemData = GetItemData(ITEM_INDEX(item));
+    canonical = GetItemName(item);
+    alias = LocalizedGameText_GetDisplayAliasForWidth(
+        itemData->nameTextId,
+        LOCALIZED_GAME_TEXT_DISPLAY_ITEM_NAME_56,
+        maxPixels,
+        GetStringTextLen(canonical));
+    if (alias != NULL)
+        return (char *)alias;
+
+    return (char *)canonical;
+}
+#endif
+
 inline int GetItemDescId(int item) {
     return GetItemData(ITEM_INDEX(item))->descTextId;
 }

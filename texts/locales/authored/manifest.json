@@ -1,0 +1,434 @@
+{
+  "existing_authored_targets": [
+    {
+      "subsystem": "menu-definition",
+      "target_id": "0x0005",
+      "translation_key": "game.semantic_correction.msg_005"
+    },
+    {
+      "subsystem": "menu-definition",
+      "target_id": "0x0006",
+      "translation_key": "game.semantic_correction.msg_006"
+    },
+    {
+      "subsystem": "menu-definition",
+      "target_id": "0x0008",
+      "translation_key": "game.semantic_correction.msg_008"
+    },
+    {
+      "subsystem": "menu-definition",
+      "target_id": "0x000A",
+      "translation_key": "game.semantic_correction.msg_00a"
+    },
+    {
+      "subsystem": "menu-definition",
+      "target_id": "0x000D",
+      "translation_key": "game.semantic_correction.msg_00d"
+    },
+    {
+      "subsystem": "menu-definition",
+      "target_id": "0x000E",
+      "translation_key": "game.semantic_correction.msg_00e"
+    },
+    {
+      "subsystem": "menu-definition",
+      "target_id": "0x000F",
+      "translation_key": "game.semantic_correction.msg_00f"
+    },
+    {
+      "subsystem": "menu-definition",
+      "target_id": "0x0010",
+      "translation_key": "game.semantic_correction.msg_010"
+    },
+    {
+      "subsystem": "menus",
+      "target_id": "0x0028",
+      "translation_key": "game.semantic_correction.msg_28"
+    },
+    {
+      "subsystem": "terrain",
+      "target_id": "0x01C8",
+      "translation_key": "game.semantic_correction.msg_1c8"
+    },
+    {
+      "subsystem": "terrain",
+      "target_id": "0x01EE",
+      "translation_key": "game.semantic_correction.msg_1ee"
+    },
+    {
+      "subsystem": "terrain",
+      "target_id": "0x01EF",
+      "translation_key": "game.semantic_correction.msg_1ef"
+    },
+    {
+      "subsystem": "items",
+      "target_id": "0x03A8",
+      "translation_key": "game.semantic_correction.msg_3a8"
+    },
+    {
+      "subsystem": "menus",
+      "target_id": "0x0593",
+      "translation_key": "game.semantic_correction.msg_593"
+    },
+    {
+      "subsystem": "menus",
+      "target_id": "0x0679",
+      "translation_key": "game.semantic_correction.msg_679"
+    },
+    {
+      "subsystem": "menus",
+      "target_id": "0x0693",
+      "translation_key": "raw_surface.unit_action.summon"
+    },
+    {
+      "subsystem": "chapter-event",
+      "target_id": "0x06A2",
+      "translation_key": "game.semantic_correction.msg_6a2"
+    },
+    {
+      "subsystem": "menus",
+      "target_id": "0x06AB",
+      "translation_key": "game.semantic_correction.msg_6ab"
+    },
+    {
+      "subsystem": "debug-menu",
+      "target_id": "0x06AE",
+      "translation_key": "game.semantic_correction.msg_6ae"
+    },
+    {
+      "subsystem": "debug-menu",
+      "target_id": "0x06AF",
+      "translation_key": "game.semantic_correction.msg_6af"
+    },
+    {
+      "subsystem": "debug-menu",
+      "target_id": "0x06B2",
+      "translation_key": "game.semantic_correction.msg_6b2"
+    },
+    {
+      "subsystem": "debug-menu",
+      "target_id": "0x06B9",
+      "translation_key": "game.semantic_correction.msg_6b9"
+    },
+    {
+      "subsystem": "debug-menu",
+      "target_id": "0x06BA",
+      "translation_key": "game.semantic_correction.msg_6ba"
+    },
+    {
+      "subsystem": "debug-menu",
+      "target_id": "0x06BB",
+      "translation_key": "game.semantic_correction.msg_6bb"
+    },
+    {
+      "subsystem": "debug-menu",
+      "target_id": "0x06BC",
+      "translation_key": "game.semantic_correction.msg_6bc"
+    },
+    {
+      "subsystem": "ending-details",
+      "target_id": "0x07D1",
+      "translation_key": "game.semantic_correction.msg_7d1"
+    },
+    {
+      "subsystem": "ending-details",
+      "target_id": "0x07D2",
+      "translation_key": "game.semantic_correction.msg_7d2"
+    },
+    {
+      "subsystem": "ending-details",
+      "target_id": "0x07D3",
+      "translation_key": "game.semantic_correction.msg_7d3"
+    },
+    {
+      "subsystem": "ending-details",
+      "target_id": "0x07D4",
+      "translation_key": "game.semantic_correction.msg_7d4"
+    },
+    {
+      "subsystem": "ending-details",
+      "target_id": "0x0817",
+      "translation_key": "game.semantic_correction.msg_817"
+    },
+    {
+      "subsystem": "ending-details",
+      "target_id": "0x0818",
+      "translation_key": "game.semantic_correction.msg_818"
+    },
+    {
+      "subsystem": "ending-details",
+      "target_id": "0x0819",
+      "translation_key": "game.semantic_correction.msg_819"
+    },
+    {
+      "subsystem": "ending-details",
+      "target_id": "0x081A",
+      "translation_key": "game.semantic_correction.msg_81a"
+    },
+    {
+      "subsystem": "ending-details",
+      "target_id": "0x081B",
+      "translation_key": "game.semantic_correction.msg_81b"
+    },
+    {
+      "subsystem": "ending-details",
+      "target_id": "0x081C",
+      "translation_key": "game.semantic_correction.msg_81c"
+    },
+    {
+      "subsystem": "ending-details",
+      "target_id": "0x081D",
+      "translation_key": "game.semantic_correction.msg_81d"
+    },
+    {
+      "subsystem": "ending-details",
+      "target_id": "0x081E",
+      "translation_key": "game.semantic_correction.msg_81e"
+    },
+    {
+      "subsystem": "ending-details",
+      "target_id": "0x081F",
+      "translation_key": "game.semantic_correction.msg_81f"
+    },
+    {
+      "subsystem": "ending-details",
+      "target_id": "0x0820",
+      "translation_key": "game.semantic_correction.msg_820"
+    },
+    {
+      "subsystem": "ending-details",
+      "target_id": "0x0821",
+      "translation_key": "game.semantic_correction.msg_821"
+    },
+    {
+      "subsystem": "ending-details",
+      "target_id": "0x0822",
+      "translation_key": "game.semantic_correction.msg_822"
+    },
+    {
+      "subsystem": "ending-details",
+      "target_id": "0x0823",
+      "translation_key": "game.semantic_correction.msg_823"
+    },
+    {
+      "subsystem": "ending-details",
+      "target_id": "0x0824",
+      "translation_key": "game.semantic_correction.msg_824"
+    },
+    {
+      "subsystem": "ending-details",
+      "target_id": "0x0825",
+      "translation_key": "game.semantic_correction.msg_825"
+    },
+    {
+      "subsystem": "ending-details",
+      "target_id": "0x0826",
+      "translation_key": "game.semantic_correction.msg_826"
+    },
+    {
+      "subsystem": "ending-details",
+      "target_id": "0x0827",
+      "translation_key": "game.semantic_correction.msg_827"
+    },
+    {
+      "subsystem": "ending-details",
+      "target_id": "0x0828",
+      "translation_key": "game.semantic_correction.msg_828"
+    },
+    {
+      "subsystem": "ending-details",
+      "target_id": "0x0829",
+      "translation_key": "game.semantic_correction.msg_829"
+    },
+    {
+      "subsystem": "ending-details",
+      "target_id": "0x082A",
+      "translation_key": "game.semantic_correction.msg_82a"
+    },
+    {
+      "subsystem": "ending-details",
+      "target_id": "0x082B",
+      "translation_key": "game.semantic_correction.msg_82b"
+    },
+    {
+      "subsystem": "ending-details",
+      "target_id": "0x082C",
+      "translation_key": "game.semantic_correction.msg_82c"
+    },
+    {
+      "subsystem": "ending-details",
+      "target_id": "0x082D",
+      "translation_key": "game.semantic_correction.msg_82d"
+    },
+    {
+      "subsystem": "ending-details",
+      "target_id": "0x082E",
+      "translation_key": "game.semantic_correction.msg_82e"
+    },
+    {
+      "subsystem": "ending-details",
+      "target_id": "0x082F",
+      "translation_key": "game.semantic_correction.msg_82f"
+    },
+    {
+      "subsystem": "ending-details",
+      "target_id": "0x0830",
+      "translation_key": "game.semantic_correction.msg_830"
+    },
+    {
+      "subsystem": "ending-details",
+      "target_id": "0x0831",
+      "translation_key": "game.semantic_correction.msg_831"
+    },
+    {
+      "subsystem": "ending-details",
+      "target_id": "0x0832",
+      "translation_key": "game.semantic_correction.msg_832"
+    },
+    {
+      "subsystem": "ending-details",
+      "target_id": "0x0833",
+      "translation_key": "game.semantic_correction.msg_833"
+    },
+    {
+      "subsystem": "ending-details",
+      "target_id": "0x0834",
+      "translation_key": "game.semantic_correction.msg_834"
+    },
+    {
+      "subsystem": "ending-details",
+      "target_id": "0x0835",
+      "translation_key": "game.semantic_correction.msg_835"
+    },
+    {
+      "subsystem": "ending-details",
+      "target_id": "0x0836",
+      "translation_key": "game.semantic_correction.msg_836"
+    },
+    {
+      "subsystem": "ending-details",
+      "target_id": "0x0837",
+      "translation_key": "game.semantic_correction.msg_837"
+    },
+    {
+      "subsystem": "ending-details",
+      "target_id": "0x0838",
+      "translation_key": "game.semantic_correction.msg_838"
+    },
+    {
+      "subsystem": "chapter-event",
+      "target_id": "0x0A15",
+      "translation_key": "game.semantic_correction.msg_a15"
+    },
+    {
+      "subsystem": "events",
+      "target_id": "0x0B29",
+      "translation_key": "game.semantic_correction.msg_b29"
+    },
+    {
+      "subsystem": "supports",
+      "target_id": "0x0CB6",
+      "translation_key": "game.semantic_correction.msg_cb6"
+    },
+    {
+      "subsystem": "supports",
+      "target_id": "0x0CB7",
+      "translation_key": "game.semantic_correction.msg_cb7"
+    },
+    {
+      "subsystem": "supports",
+      "target_id": "0x0CB8",
+      "translation_key": "game.semantic_correction.msg_cb8"
+    },
+    {
+      "subsystem": "expansion",
+      "target_id": "0x0D53",
+      "translation_key": "framework.back"
+    },
+    {
+      "subsystem": "expansion",
+      "target_id": "0x0D54",
+      "translation_key": "save_compat.menu_erase_all"
+    }
+  ],
+  "kind": "fe8u-authored-translation-manifest",
+  "locales": {
+    "ja": {
+      "catalog_path": "texts/locales/authored/catalog.ja.json",
+      "shards": [
+        {
+          "path": "texts/locales/authored/shards/audit_corrections.ja.json",
+          "sha256": "dbc8ebb294159eddddb209be837e9008f125c5ec786543a26e241b6c0b7016ea",
+          "target_count": 40
+        },
+        {
+          "path": "texts/locales/authored/shards/event_expansion.ja.json",
+          "sha256": "1be36b6bd7c1a479645b16e6d81fe2e77793992bfebe5a6ed13023353ae2af39",
+          "target_count": 46
+        },
+        {
+          "path": "texts/locales/authored/shards/existing_expansion.ja.json",
+          "sha256": "f5217dc8dc6948ed9aa39f1925e973b79ad3f91dd9871381e05cf27566cb9917",
+          "target_count": 3
+        },
+        {
+          "path": "texts/locales/authored/shards/help_shop.ja.json",
+          "sha256": "a8397a9147f6c0f69670cb9a6e9be5448d5548d1982c695bc9a119b65d74a27a",
+          "target_count": 81
+        },
+        {
+          "path": "texts/locales/authored/shards/menu.ja.json",
+          "sha256": "ba998542f28507dfb34f37aeca363b5af7b2c6586d09df1a80841bcad678c353",
+          "target_count": 132
+        },
+        {
+          "path": "texts/locales/authored/shards/semantic_corrections.ja.json",
+          "sha256": "18971fdd6d4ac0fcd4ee0e287891e8d01457ffb2ce804dbe1c7d270807e72ace",
+          "target_count": 27
+        }
+      ]
+    },
+    "zh-Hans": {
+      "catalog_path": "texts/locales/authored/catalog.zh-Hans.json",
+      "shards": [
+        {
+          "path": "texts/locales/authored/shards/audit_corrections.zh-Hans.json",
+          "sha256": "6fdf527e9349be430259008f974c272b8231da6bd743d74767d2820a29b9ec7c",
+          "target_count": 40
+        },
+        {
+          "path": "texts/locales/authored/shards/event_expansion.zh-Hans.json",
+          "sha256": "3c511a7ff2ba2d28a85e11825c0eb3550d0b56f465ff97cb4568dbd5d07eec74",
+          "target_count": 46
+        },
+        {
+          "path": "texts/locales/authored/shards/existing_expansion.zh-Hans.json",
+          "sha256": "52a05046a2ca55fe26fbd11d38997a809fcd202ed51efffdc2378db0009e0580",
+          "target_count": 3
+        },
+        {
+          "path": "texts/locales/authored/shards/help_shop.zh-Hans.json",
+          "sha256": "f0801373d37a21f1296dde91de3c014d7997f36a9caafa21f59e49ac91b323cd",
+          "target_count": 81
+        },
+        {
+          "path": "texts/locales/authored/shards/menu.zh-Hans.json",
+          "sha256": "2335ea7abe1fb933a73734833bee15bbd2de9518c9240ec0c15555e43c783a97",
+          "target_count": 132
+        },
+        {
+          "path": "texts/locales/authored/shards/semantic_corrections.zh-Hans.json",
+          "sha256": "1feaf0785e6809c8d1ec2b5ac6c72468bede21f5ec1519b168d3293a6ff6bdde",
+          "target_count": 27
+        }
+      ]
+    }
+  },
+  "mapping_path": "texts/locales/mapping/fe8u_target_map.json",
+  "schema_version": 1,
+  "source_queue": {
+    "path": "texts/locales/mapping/authored_translation_queue.json",
+    "revision": "e6435a8e2f444f0e16cab21713fe052b543d2e6e",
+    "sha256": "ffdff913a552076928d5cb06634ed75d8983b65c05bb4ecec9aa2b610ffe6ad6"
+  }
+}

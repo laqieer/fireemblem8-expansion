@@ -17,6 +17,7 @@ from scripts.localization.generate import (
     key_to_macro,
     locale_to_symbol,
 )
+from scripts.localization.pseudo import pseudoize
 
 
 class KeyToMacroTests(unittest.TestCase):
@@ -70,6 +71,7 @@ class BuildOutputsTests(unittest.TestCase):
         for key in (
             "active_message_count",
             "tombstone_count",
+            "pseudo_policy_counts",
             "catalog_string_bytes",
             "catalog_index_bytes",
             "scratch_budget_bytes",
@@ -78,6 +80,22 @@ class BuildOutputsTests(unittest.TestCase):
             "limits",
         ):
             self.assertIn(key, budget)
+
+    def test_budget_reports_pseudo_policy_counts(self):
+        budget = build_budget(self.catalog)
+        self.assertEqual(
+            budget["pseudo_policy_counts"],
+            {"transform": 50, "compact": 2, "preserve": 1},
+        )
+
+    def test_generated_qps_catalog_preserves_build_timestamp(self):
+        source = build_catalog_c(self.catalog)
+        qps_block = source.split("gExpansionCatalog_qps_ploc[] =")[1].split("};")[0]
+        timestamp = self.catalog.en_strings[
+            "raw_surface.diagnostic.build_timestamp"
+        ]
+        self.assertIn(f'"{timestamp}"', qps_block)
+        self.assertNotIn(f'"{pseudoize(timestamp)}"', qps_block)
 
     def test_budget_scratch_usage_within_budget(self):
         budget = build_budget(self.catalog)

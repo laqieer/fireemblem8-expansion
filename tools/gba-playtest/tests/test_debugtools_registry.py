@@ -12,6 +12,7 @@ this possible; those files are test-only and are never referenced by
 modern.mk/Makefile.
 """
 
+import json
 import re
 import shutil
 import subprocess
@@ -32,6 +33,10 @@ HEADER = REPO_ROOT / "include" / "expansion_debugtools.h"
 TITLESCREEN_SRC = REPO_ROOT / "src" / "titlescreen.c"
 PLAYERPHASE_SRC = REPO_ROOT / "src" / "playerphase.c"
 PREP_SALLYCURSOR_SRC = REPO_ROOT / "src" / "prep_sallycursor.c"
+UIMENU_SRC = REPO_ROOT / "src" / "uimenu.c"
+LOCALE_REGISTRY = REPO_ROOT / "texts" / "expansion" / "registry.json"
+LEGACY_LDSCRIPT = REPO_ROOT / "ldscript.txt"
+MODERN_LDSCRIPT = REPO_ROOT / "linker" / "expansion.ld"
 
 CC = shutil.which("gcc") or shutil.which("cc")
 
@@ -57,11 +62,34 @@ def _include_flags():
     return flags
 
 
-def _compile(work_dir: Path, src: Path, obj_name: str, defines=()):
+def _write_debugtools_msg_id_header(work_dir: Path):
+    entries = json.loads(LOCALE_REGISTRY.read_text(encoding="utf-8"))["messages"]
+    ids = {entry["key"]: entry["id"] for entry in entries}
+    macros = {
+        "EXP_MSG_FRAMEWORK_BACK": "framework.back",
+        "EXP_MSG_DEBUG_ACTION_FASTBOOT_CH2": "debug.action.fastboot_ch2",
+        "EXP_MSG_DEBUG_ACTION_WEATHER": "debug.action.weather",
+        "EXP_MSG_DEBUG_ACTION_FOG": "debug.action.fog",
+        "EXP_MSG_DEBUG_ACTION_FASTBOOT_CH4PREP": "debug.action.fastboot_ch4prep",
+        "EXP_MSG_DEBUG_ACTION_UNIT_INSPECT": "debug.action.unit_inspect",
+        "EXP_MSG_DEBUG_ACTION_CONVOY_INSPECT": "debug.action.convoy_inspect",
+        "EXP_MSG_DEBUG_ACTION_FLAG_CHAPTER": "debug.action.flag_chapter",
+        "EXP_MSG_DEBUG_ACTION_RNG_INSPECT": "debug.action.rng_inspect",
+        "EXP_MSG_DEBUG_ACTION_SAVE_STATE": "debug.action.save_state",
+        "EXP_MSG_DEBUG_STATUS_HUB": "debug.status.hub",
+        "EXP_MSG_DEBUG_STATUS_HUB_ERROR": "debug.status.hub_error",
+    }
+    lines = ["#ifndef TEST_EXPANSION_MSG_IDS_H", "#define TEST_EXPANSION_MSG_IDS_H"]
+    lines += [f"#define {macro} {ids[key]}" for macro, key in macros.items()]
+    lines += ["#endif", ""]
+    (work_dir / "expansion_msg_ids.h").write_text("\n".join(lines), encoding="utf-8")
+
+
+def _compile(work_dir: Path, src: Path, obj_name: str, defines=(), extra_flags=()):
     """Compiles a single source file to an object file with the host
     compiler. Returns (returncode, combined_output)."""
     obj = work_dir / obj_name
-    cmd = [CC, "-c", "-w"] + _include_flags()
+    cmd = [CC, "-c", "-w"] + list(extra_flags) + _include_flags()
     for d in defines:
         cmd += ["-D", d]
     cmd += [str(src), "-o", str(obj)]
@@ -69,9 +97,9 @@ def _compile(work_dir: Path, src: Path, obj_name: str, defines=()):
     return proc.returncode, proc.stdout + proc.stderr, obj
 
 
-def _link(work_dir: Path, objects, exe_name: str):
+def _link(work_dir: Path, objects, exe_name: str, extra_flags=()):
     exe = work_dir / exe_name
-    cmd = [CC] + [str(o) for o in objects] + ["-o", str(exe)]
+    cmd = [CC] + [str(o) for o in objects] + list(extra_flags) + ["-o", str(exe)]
     proc = subprocess.run(cmd, cwd=str(REPO_ROOT), capture_output=True, text=True)
     return proc.returncode, proc.stdout + proc.stderr, exe
 
@@ -101,7 +129,8 @@ def _defined_symbol_names(obj: Path) -> set:
 class DebugToolsRegistryHostTests(unittest.TestCase):
     """Compiles and executes the real src/debugtools_registry.c (enabled
     path) against tools/gba-playtest/tests/c/debugtools_registry_driver.c,
-    proving capacity (max 9), deterministic append order, duplicate
+    proving contributor capacity (9 beside the separate built-in storage),
+    deterministic append order, duplicate
     id/label rejection, invalid-action rejection, capacity-full rejection,
     and out-of-range NULL reads -- all through the exact public API
     (include/expansion_debugtools.h) contributor code uses.
@@ -139,7 +168,9 @@ class DebugToolsRegistryHostTests(unittest.TestCase):
             )
             self.assertEqual(rc, 0, f"host registry test failed:\n{out}")
             self.assertIn("DEBUGTOOLS_HOST_TEST: PASS", out)
-            self.assertIn("DEBUGTOOLS_ACTION_MAX=9", out)
+            self.assertIn("DEBUGTOOLS_BUILTIN_ACTION_MAX=9", out)
+            self.assertIn("DEBUGTOOLS_CONTRIBUTOR_ACTION_MAX=9", out)
+            self.assertIn("DEBUGTOOLS_ACTION_MAX=18", out)
             self.assertIn("DEBUGTOOLS_HUB_MENU_SLOTS=11", out)
 
     def test_registry_id_and_label_validation(self):
@@ -161,6 +192,209 @@ class DebugToolsRegistryHostTests(unittest.TestCase):
             )
             self.assertEqual(rc, 0, f"host label-validation test failed:\n{out}")
             self.assertIn("DEBUGTOOLS_LABEL_VALIDATION_HOST_TEST: PASS", out)
+
+    def test_builtin_identity_and_text_allocator_lifecycle(self):
+        """A valid contributor-before-init registration must coexist with
+        identity-safe IDs 1-9. The ninth contributor succeeds, the tenth
+        fails, R pages between the two full action pages, and 64 maximum
+        page/contributor-submenu cycles reuse one bounded text allocation
+        scope. The contributor callback uses only the public submenu handoff
+        API, returns ordinary MENU_ACT_END, and its real MenuDef::onEnd uses
+        the public return API. The real registry/transition code runs here;
+        the host stub only models StartMenuCore's documented per-row
+        InitText(rect.w - 1) allocation. The real unmodified
+        ProcessMenuSelectInput/Menu_OnIdle dispatcher is linked so R-page
+        teardown cannot hide behind a direct callback test. The MODERN QPS
+        path also proves contributor labels/callbacks remain raw and ordered."""
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            work = Path(tmp)
+            _write_debugtools_msg_id_header(work)
+            rc, out, registry_obj = _compile(
+                work,
+                REGISTRY_SRC,
+                "registry_lifecycle_enabled.o",
+                defines=[
+                    "MODERN=1",
+                    "FE8_EXPANSION_DEBUGTOOLS_ENABLED=1",
+                    "StartOrphanMenu=DebugToolsLifecycle_StartOrphanMenu",
+                ],
+                extra_flags=["-I", str(work)],
+            )
+            self.assertEqual(rc, 0, f"compiling lifecycle registry failed:\n{out}")
+
+            rc, out, uimenu_obj = _compile(
+                work,
+                UIMENU_SRC,
+                "lifecycle_uimenu.o",
+                extra_flags=[
+                    "-std=gnu89",
+                    "-ffunction-sections",
+                    "-fdata-sections",
+                ],
+            )
+            self.assertEqual(rc, 0, f"compiling real menu dispatcher failed:\n{out}")
+
+            rc, out, stubs_obj = _compile(
+                work,
+                C_FIXTURES_DIR / "debugtools_lifecycle_host_stubs.c",
+                "lifecycle_stubs.o",
+                defines=[
+                    "MODERN=1",
+                    "DEBUGTOOLS_LIFECYCLE_USE_REAL_UIMENU=1",
+                ],
+            )
+            self.assertEqual(rc, 0, f"compiling lifecycle stubs failed:\n{out}")
+
+            rc, out, driver_obj = _compile(
+                work,
+                C_FIXTURES_DIR / "debugtools_lifecycle_driver.c",
+                "lifecycle_driver.o",
+            )
+            self.assertEqual(rc, 0, f"compiling lifecycle driver failed:\n{out}")
+
+            rc, out, exe = _link(
+                work,
+                [registry_obj, uimenu_obj, stubs_obj, driver_obj],
+                "lifecycle_test",
+                extra_flags=["-Wl,--gc-sections"],
+            )
+            self.assertEqual(rc, 0, f"linking lifecycle test failed:\n{out}")
+
+            rc, out = _run(exe)
+            self.assertEqual(rc, 0, f"host lifecycle test failed:\n{out}")
+            self.assertIn("DEBUGTOOLS_LIFECYCLE_HOST_TEST: PASS", out)
+
+    def test_public_builtin_initializers_preserve_stable_id_and_row_order(self):
+        """Each public built-in initializer may be the first entry point.
+        Four fresh host processes cover every possible first group, then
+        register the remaining groups in reverse order. Sparse and complete
+        introspection must stay ID-sorted, Weather/Fog must remain hub rows
+        1/2, and contributor storage must remain separately usable."""
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+
+            for first in range(1, 5):
+                with self.subTest(first_initializer=first):
+                    work = root / f"first-{first}"
+                    work.mkdir()
+
+                    rc, out, registry_obj = _compile(
+                        work,
+                        REGISTRY_SRC,
+                        "registry_initializer_order.o",
+                        defines=["FE8_EXPANSION_DEBUGTOOLS_ENABLED=1"],
+                    )
+                    self.assertEqual(
+                        rc, 0,
+                        f"compiling initializer-order registry failed:\n{out}",
+                    )
+
+                    rc, out, stubs_obj = _compile(
+                        work,
+                        C_FIXTURES_DIR / "debugtools_lifecycle_host_stubs.c",
+                        "initializer_order_stubs.o",
+                    )
+                    self.assertEqual(
+                        rc, 0,
+                        f"compiling initializer-order stubs failed:\n{out}",
+                    )
+
+                    rc, out, driver_obj = _compile(
+                        work,
+                        C_FIXTURES_DIR / "debugtools_initializer_order_driver.c",
+                        "initializer_order_driver.o",
+                        defines=[f"DEBUGTOOLS_INITIALIZER_FIRST={first}"],
+                    )
+                    self.assertEqual(
+                        rc, 0,
+                        f"compiling initializer-order driver failed:\n{out}",
+                    )
+
+                    rc, out, exe = _link(
+                        work,
+                        [registry_obj, stubs_obj, driver_obj],
+                        "initializer_order_test",
+                    )
+                    self.assertEqual(
+                        rc, 0,
+                        f"linking initializer-order test failed:\n{out}",
+                    )
+
+                    rc, out = _run(exe)
+                    self.assertEqual(
+                        rc, 0,
+                        f"initializer-order test failed for first={first}:\n{out}",
+                    )
+                    self.assertIn(
+                        f"DEBUGTOOLS_INITIALIZER_ORDER_HOST_TEST: PASS first={first}",
+                        out,
+                    )
+
+    def test_localized_builtin_rows_require_reserved_id_identity(self):
+        registry = _strip_c_comments(REGISTRY_SRC.read_text(encoding="utf-8"))
+        builtin_sources = "\n".join(
+            _strip_c_comments(path.read_text(encoding="utf-8"))
+            for path in (LAUNCHER_SRC, ACTIONS_SRC, TOOLS_SRC)
+        )
+
+        self.assertIn(
+            "if (id < DEBUGTOOLS_BUILTIN_ID_MIN || "
+            "id > DEBUGTOOLS_BUILTIN_ID_MAX)",
+            registry,
+        )
+        self.assertIn(
+            "DebugToolsHub_ResolveBuiltinLabelMsgId(action)",
+            registry,
+        )
+        self.assertIn(
+            "DEBUGTOOLS_ERR_ID_RESERVED",
+            registry,
+        )
+        self.assertNotRegex(
+            builtin_sources,
+            r"DebugTools_RegisterAction\s*\(\s*&s\w+Action\s*\)",
+        )
+        self.assertEqual(
+            len(
+                re.findall(
+                    r"DebugTools_RegisterBuiltinAction\s*\(\s*&s\w+Action\s*\)",
+                    builtin_sources,
+                )
+            ),
+            9,
+        )
+
+    def test_contributor_storage_is_appended_after_stable_ewram_layout(self):
+        """The additional nine-action storage must not move the established
+        gDebugToolsProbe or later runtime symbols. Both linker lanes append
+        its dedicated input section only after their pre-existing EWRAM
+        content."""
+        registry = REGISTRY_SRC.read_text(encoding="utf-8")
+        modern = _strip_c_comments(MODERN_LDSCRIPT.read_text(encoding="utf-8"))
+        legacy = _strip_c_comments(LEGACY_LDSCRIPT.read_text(encoding="utf-8"))
+
+        self.assertIn(
+            'SECTION("debugtools_contributor_data") static struct DebugToolsAction',
+            registry,
+        )
+        self.assertLess(
+            modern.index("PROVIDE(gUnk_Sio_22"),
+            modern.index("*(debugtools_contributor_data)"),
+        )
+        self.assertLess(
+            modern.index("*(debugtools_contributor_data)"),
+            modern.index("PROVIDE(gLoadUnitBuffer"),
+        )
+        self.assertLess(
+            legacy.index("src/bmshop.o(ewram_data)"),
+            legacy.index("src/debugtools_registry.o(debugtools_contributor_data)"),
+        )
+        self.assertLess(
+            legacy.index("src/debugtools_registry.o(debugtools_contributor_data)"),
+            legacy.index("gLoadUnitBuffer = ."),
+        )
 
     def test_registry_disabled_path_behavior_and_symbol_omission(self):
         import tempfile
@@ -979,12 +1213,12 @@ class DebugToolsChapter2LaunchLifecycleHostTests(unittest.TestCase):
         for banned in ("Proc_End", "Proc_Find", "Proc_Start", "sBootstrapSuppressionActive", "EWRAM_DATA"):
             self.assertNotIn(banned, body, f"disabled DebugTools_CleanupBootstrapObserver must not reference {banned}")
 
-    def test_title_idle_defers_pending_request_check_until_hub_inactive(self):
-        """Title_IDLE must check DebugTools_IsHubActive() (and return early
-        while it's still active) strictly before it checks
-        DebugTools_IsChapter2LaunchPending() -- the pending request must
-        only ever be detected after the hub has fully closed, never while
-        it's still open."""
+    def test_title_idle_consumes_pending_request_before_session_guard(self):
+        """Title_IDLE must consume an already-armed Chapter 2 request before
+        the broader debug-session guard. The hub callback arms the request
+        while returning MENU_ACT_END; deferred text cleanup deliberately
+        keeps session ownership for one more yield, and must not add a frame
+        to the established launch timeline."""
         text = TITLESCREEN_SRC.read_text(encoding="utf-8", errors="replace")
         match = re.search(r"void Title_IDLE\([^)]*\)\s*\{(.*?)\n\}", text, flags=re.DOTALL)
         self.assertIsNotNone(match, "could not locate Title_IDLE's function body")
@@ -998,9 +1232,9 @@ class DebugToolsChapter2LaunchLifecycleHostTests(unittest.TestCase):
         )
         self.assertNotEqual(pending_check_pos, -1, "Title_IDLE must call DebugTools_IsChapter2LaunchPending()")
         self.assertLess(
-            hub_guard.end(), pending_check_pos,
-            "the hub-active early-out must appear before the pending-request check, so the "
-            "request is only ever detected once the hub has fully closed",
+            pending_check_pos, hub_guard.start(),
+            "the pending-request check must precede the broad session guard so deferred "
+            "allocator cleanup cannot delay the deterministic launch timeline",
         )
 
     def test_title_idle_pending_branch_never_synthesizes_input(self):
@@ -1424,8 +1658,8 @@ class DebugToolsWeatherFogActionsHostTests(unittest.TestCase):
     (enabled path) alongside the real src/debugtools_registry.c against
     tools/gba-playtest/tests/c/debugtools_actions_driver.c, proving:
     idempotent registration (id 2 "Weather", id 3 "Fog"), the combined
-    registry capacity boundary stays at DEBUGTOOLS_ACTION_MAX (9) when
-    counted alongside a simulated Chapter-2-launcher-sized filler set,
+    built-in registration remains bounded and idempotent when counted
+    alongside a simulated Chapter-2-launcher-sized filler set,
     exact MenuDef/MenuItemDef sentinel and callback wiring for both
     submenus (never a hand-rolled copy of the dormant src/bmdebug.c
     function pointers), DebugMonitor lifecycle ownership (started only if

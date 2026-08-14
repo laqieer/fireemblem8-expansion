@@ -19,6 +19,7 @@
 #include "soundwrapper.h"
 #include "bmio.h"
 #include "sio.h"
+#include "localized_game_text.h"
 
 #include "unitlistscreen.h"
 #include "constants/songs.h"
@@ -2171,8 +2172,17 @@ void UnitList_PutRow(struct UnitListScreenProc * proc, u8 unitNum, u16 * tm, u8 
             Text_SetColor(&gUnitlistscreen_2[row], inactive ? TEXT_COLOR_SYSTEM_GRAY : TEXT_COLOR_SYSTEM_WHITE);
         }
 
+#if FE8_LOCALIZED_GAME_TEXT_CJK_PROFILE_ENABLED
         Text_DrawString(
-            &gUnitlistscreen_2[row], GetStringFromIndex(gSortedUnits[unitNum]->unit->pCharacterData->nameTextId));
+            &gUnitlistscreen_2[row],
+            GetCharacterDisplayNameForWidth(
+                gSortedUnits[unitNum]->unit->pCharacterData, 40));
+#else
+        Text_DrawString(
+            &gUnitlistscreen_2[row],
+            GetStringFromIndex(
+                gSortedUnits[unitNum]->unit->pCharacterData->nameTextId));
+#endif
         PutText(&gUnitlistscreen_2[row], tm + y * 0x20 + 3);
     }
 

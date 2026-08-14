@@ -299,6 +299,128 @@ static u32 Measure(
     return width;
 }
 
+static u32 ReadPackedScalar(const u8 *data)
+{
+    return (u32)data[0]
+        | ((u32)data[1] << 8)
+        | ((u32)data[2] << 16)
+        | ((u32)data[3] << 24);
+}
+
+static void EncodeScalar(u32 scalar, u8 *text)
+{
+    if (scalar <= 0x7FF)
+    {
+        text[0] = 0xC0 | (scalar >> 6);
+        text[1] = 0x80 | (scalar & 0x3F);
+        text[2] = 0;
+        return;
+    }
+
+    text[0] = 0xE0 | (scalar >> 12);
+    text[1] = 0x80 | ((scalar >> 6) & 0x3F);
+    text[2] = 0x80 | (scalar & 0x3F);
+    text[3] = 0;
+}
+
+static int CheckGlyphWithoutFallback(
+    ExpansionLocaleId locale,
+    enum LocalizedFontStyle style,
+    u32 scalar)
+{
+    struct LocalizedFontGlyph glyph;
+    u8 text[4];
+
+    if (!LocalizedFont_Lookup(locale, style, scalar, &glyph))
+        return 0;
+    if (glyph.scalar != scalar || glyph.width == 0 || glyph.bitmap == NULL)
+        return 0;
+    if (!BitmapIsVisible(glyph.bitmap))
+        return 0;
+
+    EncodeScalar(scalar, text);
+    LocalizedFont_ResetDiagnostics();
+    if (Measure(locale, style, text) == 0)
+        return 0;
+    return LocalizedFont_GetMissingGlyphCount() == 0
+        && LocalizedFont_GetLastMissingScalar() == 0;
+}
+
+static int CheckFinalGlyph(
+    ExpansionLocaleId locale,
+    enum LocalizedFontStyle style,
+    const u8 *codepoints,
+    u32 glyphCount)
+{
+    u32 scalar;
+
+    if (glyphCount == 0)
+        return 0;
+    scalar = ReadPackedScalar(codepoints + (glyphCount - 1) * sizeof(u32));
+    return CheckGlyphWithoutFallback(locale, style, scalar);
+}
+
+static int TestCompleteGeneratedFontCoverage(void)
+{
+    static const u32 jaNewAuthoredScalars[] = {
+        0x5C90, 0x5DE1, 0x6EB6, 0x74B0, 0x96EA, 0xFF35,
+    };
+    static const u32 zhHansNewAuthoredScalars[] = {
+        0x7433, 0x74F6, 0x8C0F, 0x8F91, 0x8FC1, 0x9500, 0x96EA, 0x9A87,
+    };
+    u32 i;
+
+    if (!CheckFinalGlyph(
+            EXPANSION_LOCALE_JA, LOCALIZED_FONT_STYLE_SYSTEM,
+            gLocalizedFontJaSystemCodepoints, gLocalizedFontJaGlyphCount))
+        return 0;
+    if (!CheckFinalGlyph(
+            EXPANSION_LOCALE_JA, LOCALIZED_FONT_STYLE_TALK,
+            gLocalizedFontJaTalkCodepoints, gLocalizedFontJaGlyphCount))
+        return 0;
+    if (!CheckFinalGlyph(
+            EXPANSION_LOCALE_ZH_HANS, LOCALIZED_FONT_STYLE_SYSTEM,
+            gLocalizedFontZhHansSystemCodepoints,
+            gLocalizedFontZhHansGlyphCount))
+        return 0;
+    if (!CheckFinalGlyph(
+            EXPANSION_LOCALE_ZH_HANS, LOCALIZED_FONT_STYLE_TALK,
+            gLocalizedFontZhHansTalkCodepoints,
+            gLocalizedFontZhHansGlyphCount))
+        return 0;
+
+    for (i = 0;
+         i < sizeof(jaNewAuthoredScalars) / sizeof(jaNewAuthoredScalars[0]);
+         i++)
+    {
+        if (!CheckGlyphWithoutFallback(
+                EXPANSION_LOCALE_JA, LOCALIZED_FONT_STYLE_SYSTEM,
+                jaNewAuthoredScalars[i]))
+            return 0;
+        if (!CheckGlyphWithoutFallback(
+                EXPANSION_LOCALE_JA, LOCALIZED_FONT_STYLE_TALK,
+                jaNewAuthoredScalars[i]))
+            return 0;
+    }
+
+    for (i = 0;
+         i < sizeof(zhHansNewAuthoredScalars)
+             / sizeof(zhHansNewAuthoredScalars[0]);
+         i++)
+    {
+        if (!CheckGlyphWithoutFallback(
+                EXPANSION_LOCALE_ZH_HANS, LOCALIZED_FONT_STYLE_SYSTEM,
+                zhHansNewAuthoredScalars[i]))
+            return 0;
+        if (!CheckGlyphWithoutFallback(
+                EXPANSION_LOCALE_ZH_HANS, LOCALIZED_FONT_STYLE_TALK,
+                zhHansNewAuthoredScalars[i]))
+            return 0;
+    }
+
+    return 1;
+}
+
 static int TestWidthFallbackAndGuards(void)
 {
     static const u8 jaText[] = {
@@ -364,8 +486,10 @@ int main(void)
         return 2;
     if (!TestGlyphAnchorsAndStyles())
         return 3;
-    if (!TestWidthFallbackAndGuards())
+    if (!TestCompleteGeneratedFontCoverage())
         return 4;
+    if (!TestWidthFallbackAndGuards())
+        return 5;
 
     puts("text_renderer_host_test: ok");
     return 0;

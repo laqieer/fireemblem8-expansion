@@ -203,6 +203,11 @@ SECTIONS
         PROVIDE(gUnk_Sio_21 = .); . += 0x28;
         PROVIDE(gUnk_Sio_22 = .); . += 0x4;
 
+        /* Capacity added after the established persistent-EWRAM layout so
+         * debug/playtest probe addresses remain stable. */
+        . = ALIGN(4);
+        *(debugtools_contributor_data)
+
         . = ALIGN(4);
         PROVIDE(gLoadUnitBuffer = .);
         PROVIDE(end = .);

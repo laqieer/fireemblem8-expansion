@@ -44,7 +44,7 @@
         {
           "address": "0x02031828",
           "size": 4,
-          "value": "0x00000111"
+          "value": "0x00000110"
         }
       ]
     }
@@ -52,7 +52,7 @@
   "format_version": 2,
   "rom": {
     "game_code": "BE8E",
-    "sha1": "8e333ae5b270f8a486aa27f196e577a0595f5005",
+    "sha1": "d0098dc007bed970929a68e503fcb6973d8d4e89",
     "size": 16777216,
     "title": "FIREEMBLEM2E"
   },

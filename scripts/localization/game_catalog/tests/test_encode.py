@@ -22,6 +22,14 @@ class EncodeCanonicalTextTests(unittest.TestCase):
                 with self.assertRaises(GameCatalogError):
                     encode_canonical_text(text)
 
+    def test_physical_newline_is_rejected_but_explicit_0a_control_is_allowed(self):
+        with self.assertRaisesRegex(GameCatalogError, "physical newline"):
+            encode_canonical_text("line one\nline two")
+        self.assertEqual(
+            encode_canonical_text("[CTRL:000A]face"),
+            b"\x0Aface\x00",
+        )
+
     def test_embedded_nul_literal_and_zero_emitting_controls_are_rejected(self):
         with self.assertRaisesRegex(GameCatalogError, "embedded NUL"):
             encode_canonical_text("bad\x00text")

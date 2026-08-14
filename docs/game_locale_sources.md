@@ -11,9 +11,37 @@ remain import provenance only and never become runtime keys.
   `source/fe8j/msg_map.tsv`, and `source/fe8cn/FE8CN.txt`: byte-exact,
   hash-pinned authorized input snapshots. These committed raw files are the
   independent regeneration source.
+- `indexed_overrides.json` and its hash-pinned
+  `indexed_audit_overrides.json` supplement: corrections applied only after
+  control normalization. Entries pin either the exact normalized source text
+  or its SHA-256, plus a full replacement or exact one-occurrence fragment
+  replacements, FE8U target IDs, context, provenance audit, and reason. The
+  importer rejects source/supplement/payload drift, stale fragments, or any
+  change to control/newline/placeholder placement. Physical FE8CN payload
+  lines normalize to canonical `[CTRL:0001]` runtime line controls; they are
+  never emitted as literal UTF-8 `0x0A`. The raw FE8J/FE8CN snapshots remain
+  byte-exact.
 - `ja/indexed.txt`: 3,339 FE8J-layout messages (`0x0000` through `0x0D0A`).
 - `ja/control_defs.txt`: FE8J source aliases mapped to canonical controls. It is
   an alias table, not normalized locale payload.
+- `ja/raw.json`: 119 materialized FE8J raw-symbol providers keyed by FE8U
+  target ID plus the verified evidence symbol. This includes the three
+  baserom-backed goal-window labels and prevents a same-number FE8J indexed
+  message from being substituted for a raw provider. Raw-symbol schema v6 pins the
+  full `fireemblem8j` commit SHA for real C initializers and assembly label
+  bodies. No committed emitted definition exists for the three goal labels,
+  so their 23 exact NUL-terminated CP932 bytes are sliced from the authorized
+  FE8J ROM whose SHA-256 is
+  `44fd343625ab9e6b90f63a80758c15066d526e6873fae91474006314a5ead464`.
+  ROM offsets come only from the committed FE8J baseline map
+  `layout/baseline_syms.d/GoalDisplay_Init-134e6b42.tsv`, pinned at blob
+  `4325b593a941ce95e3821e3746564b2311fe8142`. The manifest records ROM
+  address/offset, length, byte hash, decoded value, artifact offset, and the
+  offset-source identity for every goal label. Validation checks the FE8J
+  commit/tree/blob chain, map-derived offsets, artifact ranges and hashes,
+  CP932 decoding, and the independently pinned ROM hash. C/assembly comments,
+  extern-only declarations, and nested generated manifests are never
+  providers.
 - `zh-Hans/indexed.txt`: 3,339 FE8CN messages using the FE8J indexed layout.
 - `zh-Hans/raw.json`: 152 raw-address occurrences deduplicated to 143 stable
   `fe8cn.raw.import-NNNN` IDs. IDs are assigned by pinned source import order,
@@ -29,15 +57,54 @@ remain import provenance only and never become runtime keys.
   source file, table symbol, `message_id=0xNNNN` key, and bounded initializer
   context SHA-256. Validation opens the source and requires the keyed entry's
   exact literal and fingerprint to match.
+- `mapping/structural_completion_evidence.json`: separate, non-authoritative
+  historical evidence for targets that were explicit English fallbacks before
+  final promotion. It records bounded FE8J proposals, source-payload hashes,
+  stable semantic slots, split/merge collisions, and residual targets.
 - `mapping/fe8u_target_map.json`: the authoritative 3,414-row FE8U target
-  decision ledger generated from the committed evidence. Every row is indexed,
-  raw, authored, or an explicit English fallback.
+  decision ledger generated from committed evidence and reviewed authored
+  shards. Every production row is indexed, raw, or authored.
 - `mapping/fe8u_target_map.coverage.json`: deterministic source-kind and
-  subsystem counts plus every fallback target ID and reason.
+  subsystem counts plus the final zero-fallback/zero-unresolved summary.
+- `source/febuilder/translate_textid_FE8.txt`: byte-exact, hash-pinned
+  FEBuilder FE8 translator map snapshot. Normal checks never read a sibling
+  FEBuilderGBA checkout.
+- `mapping/febuilder_alignment_evidence.json`: deterministic,
+  non-authoritative FEBuilder target-candidate ledger. It preserves indexed
+  versus pointer rows, literal substitutions, NOTFOUND rows, duplicate source
+  keys, target collision groups, payload references, and structural
+  comparisons without changing the release map.
+- `mapping/combined_fallback_coverage.json`: generated final-owner handoff that
+  recomputes the current (now empty) fallback subset against FEBuilder and
+  structural history while preserving every conflict and collision ledger.
+- `mapping/final_mapping_report.json`: deterministic promotion counts, input
+  fingerprints, residual count, and the zero-fallback final-delivery policy.
+- `mapping/audit_semantic_corrections.json`: target/call-site keyed authored
+  corrections with English, incorrect-provider, and replacement payload
+  SHA-256 pins; raw snapshots stay immutable.
+- `mapping/ending_layout_metrics.json`: generated all-title/all-solo/all-paired
+  ending metric report using the real 15-tile/26-tile `Text` allocations and
+  committed runtime CJK widths.
+- `runtime_latin_span_review.json`: the exact baseline review of every
+  Latin-bearing target. Each scope/locale/target/span decision pins payload
+  hashes, occurrence counts, approval or localization, factual reason, and
+  source; it contains no regex or category-wide exemption.
+- `mapping/runtime_english_leakage.json`: deterministic audit of all 3,414
+  final JA payloads, all 3,414 final ZH payloads, and both 143-record
+  materialized raw surfaces.
+- `mapping/authored_translation_queue.json`: byte-identical historical source
+  queue for the 259 reviewed targets, with canonical English,
+  controls/placeholders, subsystem, reference sites, no-provider reason,
+  suggested key, and grouping. The final report proves all rows fulfilled.
+- `authored/manifest.json`: pins the source queue revision/SHA-256 and every
+  reviewed shard SHA-256.
+- `authored/shards/*.json`: normalized, locale-paired reviewed translations.
+- `authored/catalog.{ja,zh-Hans}.json`: deterministic canonical runtime
+  catalogs generated from the pinned shard union.
 - `mapping/raw_surface_decisions.json`: the 29 audited records that were not
-  part of the original 114 raw-to-game-ID mappings. Each has a concrete game
-  message ID, semantic expansion key, explicit English fallback, or documented
-  exclusion and call-site anchors.
+  part of the original 114 raw-to-game-ID mappings. Each final record has a
+  concrete game message ID or semantic expansion key plus call-site anchors;
+  none closes through fallback or exclusion.
 - `mapping/raw_surface_closure.json`: deterministic 143-record closure
   manifest. It is rebuilt from the raw source, verified FE8U map, deferred
   decisions, expansion registry/catalogs, and live source anchors.
@@ -85,8 +152,113 @@ so changing an artifact and its manifest entry together still fails. The four
 raw snapshots must also match the independent SHA-256 pins in
 `scripts/localization/game_locales/importer.py`.
 
+The current override layer applies 48 Japanese and 85 Simplified Chinese
+indexed corrections. `Healing` is the ordinary HP-restoring staff cue
+(`癒やし` / `治疗`), while `Curing` is the status-removal cue
+(`浄化` / `净化`); they are deliberately not collapsed to one generic
+machine translation. Other corrected Sound Room/UI titles include
+`NOW LOADING`, `NO DATA`, `Fire Emblem Theme`, `Prologue`, `Follow me!`,
+`Indignation`, `Sadness time`, `Comical time`, `Work out a plot`,
+`Game Over`, `Fly with the Breeze`, and `Epilogue`.
+
+After changing an override, refresh every derived evidence/report layer:
+
+```bash
+python3 -m scripts.localization.game_locales regenerate
+python3 -m scripts.localization.game_locales refresh-authored-provenance
+python3 -m scripts.localization.game_locales build-authored-catalogs
+python3 -m scripts.localization.game_locales build-febuilder-evidence
+python3 -m scripts.localization.game_locales build-final-mapping
+python3 -m scripts.localization.game_locales build-combined-coverage
+python3 -m scripts.localization.game_locales build-raw-closure
+python3 -m scripts.localization.game_catalog audit-leakage
+make -f cjk_fonts.mk cjk-fonts-febuilder-all \
+  FEBUILDER_CLI="/path/to/dotnet /path/to/FEBuilderGBA.CLI.dll"
+```
+
+`build-final-mapping` emits both ending and fixed-width label metric
+manifests. Compact aliases live in
+`texts/locales/fixed_width_display_aliases.json`; they are selected only by
+fixed-width character/class/item UI helpers and never replace canonical
+localized names globally.
+
+`build-final-mapping` refreshes only normalized FE8J/payload-derived fields in
+the structural evidence before revalidating the full evidence object. The
+fulfilled authored queue remains byte-identical historical provenance; the
+final report records both its historical pre-authored map hash and the current
+hash when later payload-only evidence changes make them differ.
+
 The explicit `import` command remains available for checking prospective
 external replacements, but it accepts only inputs matching those pins.
+
+## FEBuilder alignment evidence
+
+FEBuilderGBA's translator consumes `translate_textid_FE8.txt` with semantics
+that are broader than a two-column TSV:
+
+- `U.IsComment` and `U.ClipComment` control whole-line and inline comments;
+- `U.atoh` accepts the leading hexadecimal prefix rather than requiring the
+  complete token to be hexadecimal;
+- source key zero and rows with fewer than two tab-separated fields are
+  skipped;
+- a source key in the FE8 ROM pointer range is dereferenced by FEBuilder, so
+  the importer preserves it as a pointer/raw key rather than treating it as an
+  indexed message ID;
+- a destination token containing `|` uses the literal suffix instead of
+  decoding the numeric destination and is therefore not an alignment
+  candidate;
+- a missing/non-positive destination creates FEBuilder's NOTFOUND entry and is
+  retained only as non-candidate evidence.
+
+The pinned source profile is 3,339 sequential indexed rows, including 3,006
+rows with a positive destination prefix, followed by 110 pointer rows. One
+indexed row has no destination column. The pointer key `0x080D29BC` occurs
+twice: once with destination `0x0001` and once as NOTFOUND. Because the current
+normalized raw import has no payload at that address, neither occurrence is
+invented as a payload reference.
+
+For every usable target candidate, the importer verifies:
+
+1. the FE8U target is inside the current 3,414-entry namespace;
+2. indexed source IDs exist in both normalized FE8J and FE8CN payloads;
+3. pointer keys resolve to a stable `fe8cn.raw.import-NNNN` address;
+4. payload SHA-256 values and all input-file hashes are recorded;
+5. the candidate identity is compared with the committed structural evidence.
+
+Target marks are evidence classifications, not release states:
+
+- `agrees-with-structural`: the exact indexed/raw source identity is already
+  independently proven;
+- `conflicts`: structural evidence has a comparable source type but a
+  different identity;
+- `unique-uncontested`: no comparable conflict and no unresolved differing
+  payload collision;
+- `collision-needs-context`: multiple FEBuilder rows offer different
+  normalized FE8CN payloads and structural identity does not select one.
+
+A target may carry both `conflicts` and `collision-needs-context`; `0x0647` is
+the pinned example. Every target has `promotion_eligible: false`, and the
+document-level promotion policy forbids automatic promotion of all candidates,
+especially conflicts and collisions. The importer pins 12 structural conflict
+targets and 17 unresolved differing-payload collision targets as drift gates.
+
+Build or verify the committed ledger:
+
+```bash
+python3 -m scripts.localization.game_locales build-febuilder-evidence
+python3 -m scripts.localization.game_locales check-febuilder-evidence
+```
+
+An intentional upstream refresh must use the explicit importer, which rejects
+any source whose SHA-256 or profile differs from the pin:
+
+```bash
+python3 -m scripts.localization.game_locales import-febuilder-evidence \
+  --source /path/to/FEBuilderGBA/config/data/translate_textid_FE8.txt
+```
+
+These commands never edit `fe8u_target_map.json`, coverage, raw closure, the
+game catalog, or runtime sources.
 
 ## Structural mapping methodology
 
@@ -127,58 +299,299 @@ python3 -m scripts.localization.game_locales build-crosswalk
 python3 -m scripts.localization.game_locales check-crosswalk
 ```
 
-The committed FE8U target report currently contains 3,414 decisions and zero
-unresolved:
+## Structural completion evidence
 
-- 1,472 verified indexed mappings;
-- 133 verified raw target mappings, covering 134 raw import records because
-  the two Attack pointers intentionally share FE8U message ID `0x067B`;
-- 0 authored translations;
-- 1,809 explicit English fallbacks.
+The completion harvester is deliberately a separate evidence domain. It reads
+the current authoritative map only to select `not-yet-verified` targets and
+hash-pins both that map and `fe8u_structural_evidence.json`; it never writes
+either file. Proposed pairs require bounded FE8U/FE8J IDs, a non-empty indexed
+Japanese payload, an authorized reference-map row or stronger keyed evidence,
+and a stable semantic slot. Numeric interpolation, shifted ranges, and
+proximity are not accepted evidence.
 
-Translation coverage is therefore 1,605 targets (47.01%). Explicit fallback
-coverage is 1,809 targets (52.99%); fallback content is not translated content.
-The largest reported gap is 1,797 `not-yet-verified` targets, chiefly dialogue
-outside the proven named structures. Other fallback reasons are `dummy` (1),
-`region-only` (1), and `expansion-only` (10).
+Source-site discovery is typed. It accepts `MSG_*` symbols, designated
+message-ID fields, arguments at modeled message-consuming APIs, parsed event
+message operands, and explicitly modeled message tables. Bare hexadecimal
+literals are never sites, so palette, OAM, graphics, animation, and unrelated
+numeric data cannot acquire message semantics from value equality.
+
+High confidence requires parsed source and target structures with named keys,
+actual slot context hashes, and matching message ordinals. Chapter 14B is
+matched only inside the shared `Ch14B` model: the named FE8U event symbols are
+paired with parsed scripts inside the named FE8J event table using their full
+normalized message control-flow paths. There is no repository-global opcode
+window matching. Trainee evidence parses each `PromoTrainee_TalkN.msgs` table
+and its `StartCgText` consumer. Six slots in the currently pinned FE8J source
+tree prove the mapped JP IDs; the other trainee reference-map pairs remain
+reference confidence because their cited FE8J C tables do not contain those
+IDs. Target `0x0C52` remains an explicit context collision between the
+reference-map provider and the live preparation call-site provider rather than
+choosing one arbitrarily.
+
+The committed artifact preserves the original 1,794-target completion research
+corpus even after final promotion: 1,381 unambiguous proposals and 413
+structural residuals, including 20 originally context-required collisions. Of
+the proposals, 27 have parsed high-confidence structure proof and 1,354 retain
+reference confidence. Final-map rows record their recoverable original
+fallback, so rebuilding this ledger remains deterministic after promotion.
+
+Harvest from the authorized read-only trees and FEBuilder reference maps:
+
+```bash
+python3 -m scripts.localization.game_locales harvest-structural-completion \
+  --fe8u-root /path/to/fireemblem8u \
+  --fe8j-root /path/to/fireemblem8j \
+  --reference-map /path/to/FEBuilderGBA/config/data/translate_textid_FE8.txt \
+  --region-map /path/to/FEBuilderGBA/config/data/textid_FE8.txt
+```
+
+Normal checks need no external trees:
+
+```bash
+python3 -m scripts.localization.game_locales check-structural-completion
+```
+
+For a byte-for-byte rebuild check, add `--rebuild` and the four harvest input
+paths to that command.
+
+The committed FE8U target report contains 3,414 decisions, zero fallback, and
+zero unresolved:
+
+- 2,958 verified indexed mappings;
+- 130 verified raw target mappings;
+- 326 authored mappings: 259 fulfilled historical queue rows plus 67
+  existing expansion-backed or target-specific semantic corrections.
+
+Translation coverage is 3,414/3,414 (100%). Explicit English fallback and
+unresolved coverage are both zero for Japanese and Simplified Chinese.
+
+## Final mapping promotion and authored queue
+
+`build-final-mapping` is the authoritative promotion pipeline. It is
+idempotent: promoted rows retain their historical pre-promotion source and
+verification metadata, allowing the structural base to be reconstructed
+before every run. Precedence is fixed:
+
+1. preserve existing verified structural/raw/authored providers;
+2. promote parsed structural high-confidence proof;
+3. promote payload-valid, collision-free FEBuilder indexed/raw proof;
+4. promote structural reference proof only with an independent table/call key,
+   and apply the reviewed context decisions for every former collision;
+5. reuse a mapped provider only when the normalized English bytes, including
+   control tokens, are exact and all candidate JA/ZH payloads agree.
+6. promote exactly the 259 historical queue rows from the canonical authored
+   catalogs after queue hash, shard hash, target/key union, locale parity,
+   control/newline/placeholder, and English-prose gates pass.
+
+The pipeline additionally reuses the tracked legacy
+`PROMO_OPTION_{1,2,3}_NAME` literals for the three FEBuilder pointer rows. It
+does not infer by target number, offset, or proximity. The 12 FEBuilder
+structural conflicts retain their pre-existing authoritative structural
+providers; the 17 FEBuilder collision targets and four additional structural
+collision targets have explicit context decisions rather than arbitrary
+candidate selection.
+
+```bash
+python3 -m scripts.localization.game_locales build-final-mapping
+python3 -m scripts.localization.game_locales check-final-mapping
+```
+
+`mapping/authored_translation_queue.json` retains exactly the original 259
+targets byte-for-byte so every shard continues to pin the same source queue.
+It is historical fulfilled input, not a residual runtime queue. Canonical
+catalogs are generated and checked with:
+
+```bash
+python3 -m scripts.localization.game_locales refresh-authored-provenance
+python3 -m scripts.localization.game_locales build-authored-catalogs
+python3 -m scripts.localization.game_locales check-authored-catalogs
+```
+
+Final delivery proves that every historical target is mapped to its stable
+authored key and that no fallback remains:
+
+```bash
+python3 -m scripts.localization.game_locales check-final-mapping \
+  --require-no-fallback
+```
+
+## Combined fallback coverage handoff
+
+`mapping/combined_fallback_coverage.json` is a generated, evidence-only
+handoff for the final mapping owner. It hash-pins the authoritative map,
+coverage report, structural crosswalk evidence, FEBuilder ledger, and
+structural completion ledger. It cannot update the map and keeps every
+conflict and context collision explicit.
+
+After authored promotion the combined report has zero actionable fallback,
+zero blocked target, and zero residual. It still retains the global exception
+lists (12 FEBuilder conflicts, 17 FEBuilder collisions, and 20 structural
+collision targets) so resolved history cannot silently disappear.
+
+Build or verify the committed report:
+
+```bash
+python3 -m scripts.localization.game_locales build-combined-coverage
+python3 -m scripts.localization.game_locales check-combined-coverage
+```
 
 ## Raw-surface closure
 
 The closure ledger accounts for all 143 unique raw imports:
 
-- 134 records resolve through stable FE8U game message IDs;
-- 2 distinct commands that share FE8U ID `0x0693` use semantic expansion keys
+- 137 records resolve through stable FE8U game message IDs;
+- 6 records use semantic expansion keys: 2 distinct commands that share FE8U
+  ID `0x0693`, 3 promotion-selector initializer providers, and 1 diagnostic
+  build timestamp;
+- the command keys are
   (`raw_surface.unit_action.summon` and
   `raw_surface.unit_action.call_monster`);
-- 3 promotion-selector initializer strings are excluded because their
-  `ClassChgMenuItem_OnTextDraw` callback always replaces them with localized
-  class names;
-- 1 fixed build timestamp is excluded as non-language diagnostic identity;
-- 3 goal-window records use explicit English fallback because their former
-  Japanese provenance cited an absent source file and no committed source
-  table binds the exact literals to those IDs;
+- the goal-window records use FE8J baserom-backed raw symbols
+  `GoalString_UnitsLeft`, `GoalString_Turn`, and `GoalString_LastTurn`, bound
+  to FE8U `0x01C1`-`0x01C3`; they never use unrelated same-number FE8J
+  indexed messages;
+- every record resolves to nonempty Japanese and Simplified Chinese payloads;
+- 0 records use fallback or exclusion;
 - 0 records remain unresolved.
 
-The 20 remaining Japanese literal providers are verified directly against
-tracked FE8J-derived C table entries with matching message IDs, exact values,
-and bounded context hashes. Simplified Chinese still comes from the exact
-imported raw payload. The expansion-key decisions keep the same provenance;
-their FE8J full-width indentation is normalized to the expansion catalog's
-allowed ASCII space, while the semantic labels remain exact. They are drawn
-with `Text_DrawString`, which is UTF-8 aware in modern localized-font profiles.
-Legacy initializer strings and callbacks remain unchanged.
+Japanese closure rows comprise tracked C literals, reviewed authored
+corrections/expansion catalog entries, and raw symbols resolved from the 119
+materialized target+symbol records in `ja/raw.json`. Raw-symbol schema v6
+vendors and verifies one immutable FE8J Git source: four real
+initializer/data blobs plus the committed baseline-symbol map used only to
+derive the goal-string ROM offsets. `goal_strings.cp932` contains only the
+three NUL-terminated goal labels (23 bytes); the source manifest pins the
+authorized 16 MiB FE8J ROM SHA-256, each ROM address/offset and length, each
+slice hash and decoded value, and the exact map blob that supplied the
+addresses. `goal_strings.origin.json` independently proves those exact ranges
+against a non-generated SHA-256 Merkle root for the known FE8J ROM. The proof
+contains only the four 8-byte leaves intersecting the ranges plus sibling
+hashes; changing the slice bytes and their manifest hashes cannot produce the
+pinned root.
+
+Normal `check-raw-closure` verification is fully offline and mandatory: it
+recomputes the FE8J commit/tree/blob Git object IDs and SHA-256 hashes,
+traverses every path from the commit root tree to the declared blob OID, and
+extracts each provider from an actual C initializer, assembly label/data body,
+or a baserom slice whose offset is recomputed from the pinned baseline map.
+The normal offline gate also verifies the committed range proof against the
+independently locked ROM root and exact goal offsets. It can consume that
+proof but has no path that regenerates or rebinds it.
+Comments are lexically stripped, extern-only declarations cannot materialize
+values, and nested generated manifests are rejected. The exact
+NUL-terminated CP932 value must match the artifact range, per-slice hash,
+manifest decode, and catalog text. A shared object such as
+`JapaneseTerrainNames` therefore cannot authorize swapping one terrain value
+into another target. Fabricated commits, altered blobs, wrong paths, wrong
+slots, ROM hashes, ROM offsets, bytes, and reassigned values fail the normal
+closure check. Tracked literals retain their source
+path/symbol/key/context hash; authored rows retain their catalog/shard key,
+evidence kind, method, and payload hash. The closure manifest records one of
+those explicit provenance forms on every one of its 143 Japanese providers.
+Simplified Chinese comes from the exact imported raw payload.
+Modern promotion-selector initializers are empty because their draw callback
+normally supplies a localized class name. If a bounded option target or its
+name message is absent/invalid, the callback consumes the option's localized
+semantic key as a fallback; legacy keeps the original Japanese initializer
+bytes. The modern timestamp diagnostic resolves through the expansion locale
+accessor, but every runtime locale duplicates this executable's current
+`gBuildDateTime`. The imported FE8CN 2004 timestamp remains raw-source
+provenance only; legacy keeps printing `gBuildDateTime`.
 
 Build or check the machine report:
 
 ```bash
 python3 -m scripts.localization.game_locales build-raw-closure
 python3 -m scripts.localization.game_locales check-raw-closure
+
+# Required maintainer/final provenance gate (explicit path):
+python3 -m scripts.localization.game_locales verify-ja-raw-origin \
+  --baserom /path/to/fe8j/baserom.gba
+
+# Equivalent public final-delivery gate via environment:
+FE8J_BASEROM=/path/to/fe8j/baserom.gba make game-localization-final-check
+
+# Refresh only after an intentional proof-source change; no offline mode:
+python3 -m scripts.localization.game_locales refresh-ja-raw-origin \
+  --baserom /path/to/fe8j/baserom.gba
 ```
 
-The check also verifies every recorded FE8U source path and anchor still
-exists, every literal provider matches its committed symbol/key/value/context,
-every semantic expansion key is active and translated in `en`/`ja`/`zh-Hans`,
-and each expansion-key Chinese value equals its imported raw payload.
+The verification command and public final-delivery gate accept `--baserom` or
+`FE8J_BASEROM`; proof refresh still requires an explicit path. The final Make
+target is a serialized dependency chain: authored catalogs, final mapping
+with mandatory no-fallback and live-origin flags, offline raw closure, runtime
+leakage audit, then the committed CJK font check. Its leakage report names all
+six semantic expansion keys explicitly. Live verification reports the
+verified full-ROM SHA-256, size, and all three exact offset/length/slice
+hashes, recomputes the independently pinned range root, and compares the
+canonical proof. A normal build remains ROM-free; a changed artifact/manifest
+with a stale or fabricated proof fails the offline closure gate.
+
+The check also verifies every recorded FE8U source path and every declared
+anchor still exists in the declared order. Scoped call sites keep all anchors
+inside the named function, initializer, or standalone symbol. Every explicit
+decision backed by a mapped Japanese symbol must declare a nonempty
+`provider_anchor`; omitting it is a hard error. A cross-source
+`provider_scope` can bind that anchor to the independently pinned FE8J source
+while the target anchors remain scoped to FE8U. In particular, imports
+0139-0141 bind `MSG_1C1`/`MSG_1C3`/`MSG_1C2` and
+`GoalString_UnitsLeft`/`GoalString_LastTurn`/`GoalString_Turn` to exact
+`data` rows owned by `GoalDisplay_Init` in the pinned FE8J baseline map, never
+to a quoted comment or unrelated identifier. Declared provider anchors must
+equal the mapped provider. The check verifies every literal
+provider against its committed symbol/key/value/context,
+every raw symbol has a matching target+symbol materialization, every semantic
+expansion key is active and translated in `en`/`ja`/`zh-Hans`, and every
+expansion provider names a surviving runtime consumer function whose body
+contains the key-specific resolver anchors. Chinese expansion values equal
+their imported raw payload except executable-identity records, whose
+`en`/`ja`/`zh-Hans` values must all equal the referenced C string symbol. Its
+strict gate is exactly 143 total, 143 verified game/expansion providers, 143
+materialized JA payloads, 143 explicit JA provenance records, 143 materialized
+ZH payloads, and zero fallback, exclusions, or unresolved records.
+
+Together, the compressed 3,414-row catalog and the 143-record raw-surface
+closure have zero English fallback, zero exclusion, and zero unresolved
+user-facing strings in both Japanese and Simplified Chinese.
+
+## Final runtime Latin-span leakage gate
+
+The leakage gate audits the materialized runtime payloads after mapping,
+authored resolution, raw-provider resolution, and importer overrides. It
+replaces bracketed controls with token boundaries, normalizes visible text
+with NFKC, and tokenizes every contiguous ASCII Latin span even when it is
+embedded in Japanese or Chinese. Exact/near-copy and Latin-only
+classifications remain diagnostic signals, but every runtime span is gated.
+An approval is accepted only for an exact scope + locale + target + span with
+matching payload hash, occurrence count, category, factual reason, and source.
+Localized decisions pin the corrected payload hash and require the reviewed
+baseline span to be absent.
+
+The same final-materialization pass also applies a locale-scoped Unicode
+script allowlist to game, raw-surface, and compact-alias payloads. Han,
+hiragana, katakana, Bopomofo, Latin, common punctuation, and inherited marks
+remain available; Latin still requires the exact span review above. Cyrillic,
+box drawing, private/unassigned scalars, and every other non-allowlisted
+script fail closed. Greek and Unicode mathematical symbols are accepted only
+through `texts/locales/runtime_unicode_script_review.json`, keyed by exact
+scope, locale, target, payload hash, code point, and occurrence count.
+
+The committed report currently proves:
+
+- 6,828/6,828 game-catalog payloads audited (3,414 per locale);
+- 286/286 raw-surface payloads audited (143 per locale);
+- 120/120 fixed-width display aliases audited;
+- all remaining Latin/script approvals are exact-scope, exact-payload,
+  hash-pinned decisions rather than regex/category grants;
+- 0 unapproved span occurrences, 0 unapproved or disallowed script
+  occurrences, 0 payload mismatches, 0 stale decisions, and 0 artifacts.
+
+Generate or verify it with:
+
+```bash
+python3 -m scripts.localization.game_catalog audit-leakage
+python3 -m scripts.localization.game_catalog check-leakage
+```
 
 ## Mapping validation and coverage
 

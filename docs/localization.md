@@ -7,9 +7,14 @@ and 16 MiB; any profile enabling either real CJK locale is an explicit
 locale preference persistence, and cache switching share the same validated
 profile. Focused CJK gba-playtest scenarios and committed fingerprints cover
 first start, Japanese/Chinese choice, Config switching, and soft-reset
-persistence.
-This is an architecture/authoring/testing reference, not a GitHub issue-state
-or closure claim; historical English/pseudo sprint evidence remains in
+persistence. The final compressed catalog contains all 3,414 FE8U messages
+for each CJK locale, and the independent raw closure contains all 143 audited
+surfaces for each locale. Fallback, exclusion, unresolved, and unapproved
+runtime-leakage counts are zero. Japanese goal-string provenance is bound to
+the pinned live FE8J ROM; complete system/talk font inventories and the shared
+FE-control/UTF-8 tokenizer cover the final payloads.
+This is an architecture/authoring/testing reference, not a remote GitHub
+issue-state claim; branch-local closure evidence remains in
 `reports/issue18_localization_closure.md`.
 
 ## Architecture
@@ -30,7 +35,10 @@ The framework is layered, each layer independently testable:
    `zh-Hans`; `qps-ploc` is derived from English. Validation rejects invalid
    Unicode scalars, control/format/private-use text, whitespace controls
    other than `\n`, malformed placeholders, placeholder/newline drift,
-   surface-width overflow, and UTF-8 decoded-byte overflow.
+   surface-width overflow, UTF-8 decoded-byte overflow, and unknown pseudo
+   policies. Active registry entries default to `pseudo_policy: "transform"`;
+   width-critical fixed-row labels may opt into `"compact"`, while
+   locale-neutral identifiers may opt into `"preserve"`.
    `scripts/localization/generate.py` compiles this into
    `expansion_locale_catalog.c` (ROM data) and `expansion_msg_ids.h`
    (generated header), write-if-unchanged. Its descriptor table is indexed
@@ -84,7 +92,7 @@ The framework is layered, each layer independently testable:
    never a raw/arbitrary pointer oracle.
 
    Host-native tests resolve exact Japanese/Chinese expansion strings,
-   sparse-entry English fallback, invalid/unpopulated slots, and both
+   generic sparse-entry English fallback, invalid/unpopulated slots, and both
    expansion/full-game cache invalidation. Production CJK profiles use the
    upper bank at 32 MiB. Captured CJK scenarios cover first start,
    Japanese/Chinese choice, Config switching, and soft-reset persistence.
@@ -219,14 +227,24 @@ disabled prefs; only a verified bounded store mutates the prefs window. The
 full record, migration, no-wipe, and menu limitations are authoritative in
 [`save_format.md`](save_format.md).
 
-## Pseudo locale (`qps-ploc`) -- legal/non-goals
+## Pseudo locale (`qps-ploc`) contract
 
 `qps-ploc` (`scripts/localization/pseudo.py`) is a deterministic, purely
 mechanical transform of the English catalog (accenting/padding/bracketing
 ASCII test markers), generated at build time from `catalog.en.json` --
 **never a translation, never hand-authored foreign text, and never
-represents any real language**. Every user-facing surface that can display
-it (the selector list and the More submenu) labels it `"Pseudo (Test)"`;
+represents any real language**. The default policy for every active registry
+entry is `pseudo_policy: "transform"`. An active locale-neutral identifier may
+instead declare `"pseudo_policy": "preserve"`; the generated qps entry then
+uses the exact English bytes while all other entries keep the normal transform.
+An active fixed-row label may declare `"pseudo_policy": "compact"` to keep the
+alternating-case pseudo signal without brackets or vowel expansion; its actual
+runtime geometry must still be validated.
+The build timestamp diagnostic uses this policy so `en`, `ja`, `zh-Hans`,
+`qps-ploc`, and `gBuildDateTime` remain byte-identical. Unknown policies and
+policy fields on tombstones are schema errors. Every user-facing surface that
+can display it (the selector list and the More submenu) labels it
+`"Pseudo (Test)"`;
 the compact Config-row label is the cataloged code `QPS`. Locale proper
 names/codes remain resolved against `EXPANSION_LOCALE_EN`
 (`Japanese`/`Simplified Chinese`, `JA`/`ZH`) so every first-start row is
@@ -249,15 +267,85 @@ descriptor slots.
 1. Add/edit entries in `texts/expansion/registry.json` (append-only IDs,
    never renumbering or reusing a retired id) and each authored
    `texts/expansion/catalog.<locale>.json`. English is the required fallback.
+   Omit `pseudo_policy` for the default qps transform; use
+   `"pseudo_policy": "compact"` only for fixed-row labels whose generated qps
+   width is checked against the real allocation, and use `"preserve"` only for
+   active locale-neutral identifiers whose qps bytes must remain exactly equal
+   to English.
    The committed `ja`/`zh-Hans` catalogs intentionally cover every active
-   key, although the generic resolver also handles a missing non-English
-   entry with one deterministic English fallback.
+   key. The resolver retains a defensive missing-entry fallback for malformed
+   or future sparse profiles, but production JA/ZH reports exercise none.
    Raw-only game surfaces must use a semantic `raw_surface.*` key, not a ROM
    address or `fe8cn.raw.import-*` identifier, and must be recorded in the raw
    closure ledger.
 2. `make localization-generate` (or let any modern build target
    depend on it) regenerates `expansion_locale_catalog.c`/
    `expansion_msg_ids.h`/the localization budget JSON, write-if-unchanged.
+   Full-game authored translations use the separate normalized shard platform
+   at `texts/locales/authored/`. Its manifest pins the historical 259-row
+   source queue and every shard hash; the merger produces canonical 329-key
+   JA/ZH runtime catalogs (259 fulfilled queue rows plus 70 existing
+   expansion-backed or target-specific semantic corrections):
+
+   ```bash
+   python3 -m scripts.localization.game_locales build-authored-catalogs
+   python3 -m scripts.localization.game_locales check-authored-catalogs
+   python3 -m scripts.localization.game_locales check-final-mapping \
+     --require-no-fallback --require-live-origin
+   ```
+
+   The production compressed catalog is 3,414/3,414 present for both `ja` and
+   `zh-Hans`, with zero English fallback and zero unresolved rows. The
+   independent 143-record raw-surface closure also has zero fallback,
+   exclusion, and unresolved record. Its Japanese raw-symbol providers are
+   fail-closed against vendored commit/tree/blob objects for the pinned FE8J
+   source commit. Only real C initializers, assembly label/data bodies, or
+   exact authorized-ROM slices whose offsets come from the committed FE8J
+   baseline map are accepted; comments, extern-only declarations, and nested
+   generated manifests are not data. The goal-slice manifest pins the FE8J
+   ROM SHA-256, map blob, ROM offsets, lengths, byte hashes, decoded values,
+   and the minimal 23-byte CP932 artifact. A separate committed SHA-256 range
+   proof binds those slices to an independently locked known-ROM Merkle root;
+   offline checks consume but cannot refresh it. Maintainers must run the
+   mandatory local maintainer pre-push verification documented in
+   [`game_locale_sources.md`](game_locale_sources.md). That procedure
+   serially checks authored catalogs, no-fallback/live-origin final mapping,
+   raw-surface closure, runtime leakage, and committed CJK fonts, and reports
+   the verified ROM SHA-256 and exact slices.
+   `refresh-ja-raw-origin` requires the live pinned FE8J ROM. Per-provider
+   source paths, symbols, slots, and
+   CP932 bytes are exact, and
+   symbol-backed decisions cannot omit
+   `provider_anchor`. See `docs/game_locale_sources.md` for the offline and
+   mandatory raw-closure gate. The shared modern English bundle remains the
+   real `en` locale; zero CJK fallback does not remove or duplicate it.
+   `build-final-mapping` also regenerates
+   `texts/locales/mapping/ending_layout_metrics.json`. That gate reads the
+   real `InitText` allocations in `src/ending_details.c` (120 pixels for all
+   33 character titles and up to five 208-pixel lines for all 33 solo and 34
+   paired endings) and measures every JA/ZH line with the committed runtime
+   system-font widths. A missing glyph, physical newline, invalid line count,
+   or overflow fails generation.
+   It also regenerates
+   `texts/locales/mapping/fixed_width_label_metrics.json`. That manifest
+   enumerates every final JA/ZH character, class, and item name from
+   `gCharacterData`, `gClassData`, and `gItemData`; pins the real 40/64/56
+   pixel UI call sites and font metrics; and requires a surface-specific
+   compact alias for every canonical overflow. Only those three audited
+   `...DisplayNameForWidth(..., maxPixels)` calls can select aliases, and each
+   first returns the canonical name when it fits the actual width. Every call
+   is guarded by `FE8_LOCALIZED_GAME_TEXT_CJK_PROFILE_ENABLED`; non-CJK modern
+   and legacy preprocessing retains the original expressions. The canonical
+   catalog names remain unchanged.
+   The final full-game catalog validator independently checks every present
+   JA/ZH payload rather than a target allowlist. Every `ToggleMouthMove` must
+   be paired before a dialogue boundary; FE8U-domain payloads whose dialogue
+   boundary topology matches the FE8U target must also match its mouth-toggle
+   topology. Every rendered line in all face-bearing talk payloads is measured
+   with the committed runtime system-font widths and must fit the 240-pixel
+   talk allocation. Controls, page boundaries, and face-segment boundaries do
+   not contribute visible width and reset the measured line as the runtime
+   does.
 3. `python3 -m unittest discover -s scripts/localization/tests -p
    'test_*.py' -v` (or `make localization-test`) re-validates schema,
    strict UTF-8/control, surface-width and UTF-8 byte budgets, placeholder/
@@ -265,11 +353,9 @@ descriptor slots.
    exact/fallback/cache behavior, and vanilla-isolation audits.
 4. CJK builds must use `MODERN_ROM_SIZE=32M`; English/qps-only builds may
    remain 16 MiB. Other real locale IDs must first gain populated catalogs,
-   fonts, game-text providers, and configuration validation. Never hand-copy
-   or paraphrase copyrighted
-   third-party translation text into this repository (see issue #18's own
-   non-goals; also see `CONTRIBUTING.md`/#6/#10's manual-copy prohibition,
-   which this sprint does not touch).
+   fonts, game-text providers, and configuration validation. Translation
+   sources must follow `CONTRIBUTING.md` and the pinned-provenance workflow;
+   do not hand-copy or paraphrase unapproved third-party text.
 
 ### Efficient local and pre-merge validation
 

@@ -1,0 +1,2210 @@
+{
+  "allocations": {
+    "paired": {
+      "pixel_width": 208,
+      "text_count": 5,
+      "text_index_start": 0,
+      "tile_width": 26
+    },
+    "solo": {
+      "pixel_width": 208,
+      "text_count": 5,
+      "text_index_start": 0,
+      "tile_width": 26
+    },
+    "title": {
+      "pixel_width": 120,
+      "text_count": 2,
+      "text_index_start": 5,
+      "tile_width": 15
+    }
+  },
+  "font_inputs": {
+    "ja": {
+      "codepoints_path": "graphics/fonts/cjk/ja.system.codepoints.u32le",
+      "codepoints_sha256": "762ef5a72e03b934ecc6f475d8fa69eb9ba0585508d38acd824ad1d052bb1a02",
+      "widths_path": "graphics/fonts/cjk/ja.system.widths.u8",
+      "widths_sha256": "429a0bfba5d9e60b9028cacb49616df80fc4e4bd2e8eff6febfb2d6590c938d5"
+    },
+    "zh-Hans": {
+      "codepoints_path": "graphics/fonts/cjk/zh-Hans.system.codepoints.u32le",
+      "codepoints_sha256": "7964ddc4fe2ffc23b6414589e0c0298485e3083818f2d889ace0b88fec67f354",
+      "widths_path": "graphics/fonts/cjk/zh-Hans.system.widths.u8",
+      "widths_sha256": "6a4d03fbad4d085069b9559fb26ba361845a387835c7ab87cda31b7999bf4190"
+    }
+  },
+  "kind": "fe8u-ending-layout-metrics",
+  "locales": {
+    "ja": {
+      "paired": [
+        {
+          "line_count": 5,
+          "line_widths": [
+            128,
+            119,
+            139,
+            150,
+            151
+          ],
+          "max_line_width": 151,
+          "target_id": "0x0817"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            156,
+            147,
+            152,
+            134,
+            128
+          ],
+          "max_line_width": 156,
+          "target_id": "0x0818"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            161,
+            135,
+            121,
+            142,
+            146
+          ],
+          "max_line_width": 161,
+          "target_id": "0x0819"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            125,
+            142,
+            126,
+            139,
+            155
+          ],
+          "max_line_width": 155,
+          "target_id": "0x081A"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            128,
+            152,
+            132,
+            134,
+            145
+          ],
+          "max_line_width": 152,
+          "target_id": "0x081B"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            116,
+            121,
+            141,
+            137,
+            154
+          ],
+          "max_line_width": 154,
+          "target_id": "0x081C"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            147,
+            142,
+            120,
+            148,
+            142
+          ],
+          "max_line_width": 148,
+          "target_id": "0x081D"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            108,
+            129,
+            150,
+            148,
+            142
+          ],
+          "max_line_width": 150,
+          "target_id": "0x081E"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            147,
+            100,
+            152,
+            111,
+            130
+          ],
+          "max_line_width": 152,
+          "target_id": "0x081F"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            168,
+            124,
+            151,
+            120,
+            120
+          ],
+          "max_line_width": 168,
+          "target_id": "0x0820"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            165,
+            132,
+            149,
+            124,
+            135
+          ],
+          "max_line_width": 165,
+          "target_id": "0x0821"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            150,
+            109,
+            144,
+            151,
+            148
+          ],
+          "max_line_width": 151,
+          "target_id": "0x0822"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            131,
+            144,
+            164,
+            156,
+            111
+          ],
+          "max_line_width": 164,
+          "target_id": "0x0823"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            151,
+            133,
+            120,
+            113,
+            144
+          ],
+          "max_line_width": 151,
+          "target_id": "0x0824"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            127,
+            131,
+            164,
+            126,
+            111
+          ],
+          "max_line_width": 164,
+          "target_id": "0x0825"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            170,
+            122,
+            159,
+            152,
+            133
+          ],
+          "max_line_width": 170,
+          "target_id": "0x0826"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            102,
+            132,
+            113,
+            139,
+            178
+          ],
+          "max_line_width": 178,
+          "target_id": "0x0827"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            158,
+            156,
+            138,
+            132,
+            169
+          ],
+          "max_line_width": 169,
+          "target_id": "0x0828"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            151,
+            154,
+            133,
+            190,
+            131
+          ],
+          "max_line_width": 190,
+          "target_id": "0x0829"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            169,
+            143,
+            132,
+            122,
+            111
+          ],
+          "max_line_width": 169,
+          "target_id": "0x082A"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            184,
+            127,
+            152,
+            141,
+            129
+          ],
+          "max_line_width": 184,
+          "target_id": "0x082B"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            155,
+            154,
+            153,
+            129,
+            108
+          ],
+          "max_line_width": 155,
+          "target_id": "0x082C"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            130,
+            132,
+            141,
+            172,
+            109
+          ],
+          "max_line_width": 172,
+          "target_id": "0x082D"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            131,
+            150,
+            180,
+            157,
+            137
+          ],
+          "max_line_width": 180,
+          "target_id": "0x082E"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            162,
+            123,
+            132,
+            162,
+            152
+          ],
+          "max_line_width": 162,
+          "target_id": "0x082F"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            186,
+            125,
+            162,
+            136,
+            150
+          ],
+          "max_line_width": 186,
+          "target_id": "0x0830"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            176,
+            140,
+            142,
+            171,
+            151
+          ],
+          "max_line_width": 176,
+          "target_id": "0x0831"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            132,
+            111,
+            121,
+            153,
+            131
+          ],
+          "max_line_width": 153,
+          "target_id": "0x0832"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            149,
+            163,
+            144,
+            129,
+            113
+          ],
+          "max_line_width": 163,
+          "target_id": "0x0833"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            161,
+            174,
+            170,
+            116,
+            121
+          ],
+          "max_line_width": 174,
+          "target_id": "0x0834"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            147,
+            141,
+            145,
+            165,
+            119
+          ],
+          "max_line_width": 165,
+          "target_id": "0x0835"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            160,
+            155,
+            170,
+            153,
+            71
+          ],
+          "max_line_width": 170,
+          "target_id": "0x0836"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            132,
+            143,
+            155,
+            121,
+            133
+          ],
+          "max_line_width": 155,
+          "target_id": "0x0837"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            126,
+            120,
+            175,
+            150,
+            182
+          ],
+          "max_line_width": 182,
+          "target_id": "0x0838"
+        }
+      ],
+      "solo": [
+        {
+          "line_count": 5,
+          "line_widths": [
+            103,
+            161,
+            140,
+            122,
+            131
+          ],
+          "max_line_width": 161,
+          "target_id": "0x07D6"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            131,
+            82,
+            129,
+            157,
+            152
+          ],
+          "max_line_width": 157,
+          "target_id": "0x07D8"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            99,
+            140,
+            101,
+            126,
+            142
+          ],
+          "max_line_width": 142,
+          "target_id": "0x07DA"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            150,
+            123,
+            111,
+            88,
+            98
+          ],
+          "max_line_width": 150,
+          "target_id": "0x07DC"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            110,
+            123,
+            131,
+            110,
+            149
+          ],
+          "max_line_width": 149,
+          "target_id": "0x07DE"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            43,
+            138,
+            98,
+            128,
+            153
+          ],
+          "max_line_width": 153,
+          "target_id": "0x07E0"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            92,
+            87,
+            55,
+            88,
+            135
+          ],
+          "max_line_width": 135,
+          "target_id": "0x07E2"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            132,
+            120,
+            130,
+            144,
+            148
+          ],
+          "max_line_width": 148,
+          "target_id": "0x07E4"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            98,
+            129,
+            125,
+            113,
+            148
+          ],
+          "max_line_width": 148,
+          "target_id": "0x07E6"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            129,
+            105,
+            154,
+            90,
+            138
+          ],
+          "max_line_width": 154,
+          "target_id": "0x07E8"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            123,
+            98,
+            112,
+            94,
+            120
+          ],
+          "max_line_width": 123,
+          "target_id": "0x07EA"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            136,
+            99,
+            128,
+            101,
+            89
+          ],
+          "max_line_width": 136,
+          "target_id": "0x07EC"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            121,
+            84,
+            136,
+            102,
+            150
+          ],
+          "max_line_width": 150,
+          "target_id": "0x07EE"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            149,
+            141,
+            140,
+            156,
+            140
+          ],
+          "max_line_width": 156,
+          "target_id": "0x07F0"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            130,
+            141,
+            132,
+            135,
+            145
+          ],
+          "max_line_width": 145,
+          "target_id": "0x07F2"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            83,
+            125,
+            135,
+            91,
+            138
+          ],
+          "max_line_width": 138,
+          "target_id": "0x07F4"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            103,
+            125,
+            119,
+            82,
+            109
+          ],
+          "max_line_width": 125,
+          "target_id": "0x07F6"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            110,
+            94,
+            138,
+            113,
+            140
+          ],
+          "max_line_width": 140,
+          "target_id": "0x07F8"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            151,
+            145,
+            132,
+            144,
+            111
+          ],
+          "max_line_width": 151,
+          "target_id": "0x07FA"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            124,
+            108,
+            154,
+            151,
+            118
+          ],
+          "max_line_width": 154,
+          "target_id": "0x07FC"
+        },
+        {
+          "line_count": 4,
+          "line_widths": [
+            144,
+            88,
+            117,
+            138
+          ],
+          "max_line_width": 144,
+          "target_id": "0x07FE"
+        },
+        {
+          "line_count": 4,
+          "line_widths": [
+            125,
+            82,
+            145,
+            120
+          ],
+          "max_line_width": 145,
+          "target_id": "0x0800"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            116,
+            154,
+            117,
+            99,
+            138
+          ],
+          "max_line_width": 154,
+          "target_id": "0x0802"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            115,
+            104,
+            88,
+            75,
+            140
+          ],
+          "max_line_width": 140,
+          "target_id": "0x0804"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            132,
+            82,
+            82,
+            152,
+            139
+          ],
+          "max_line_width": 152,
+          "target_id": "0x0806"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            89,
+            100,
+            130,
+            136,
+            149
+          ],
+          "max_line_width": 149,
+          "target_id": "0x0808"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            138,
+            131,
+            119,
+            116,
+            139
+          ],
+          "max_line_width": 139,
+          "target_id": "0x080A"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            101,
+            124,
+            120,
+            131,
+            140
+          ],
+          "max_line_width": 140,
+          "target_id": "0x080C"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            152,
+            152,
+            152,
+            151,
+            146
+          ],
+          "max_line_width": 152,
+          "target_id": "0x080E"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            90,
+            110,
+            94,
+            134,
+            133
+          ],
+          "max_line_width": 134,
+          "target_id": "0x0810"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            99,
+            100,
+            133,
+            152,
+            151
+          ],
+          "max_line_width": 152,
+          "target_id": "0x0812"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            110,
+            120,
+            118,
+            138,
+            125
+          ],
+          "max_line_width": 138,
+          "target_id": "0x0814"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            45,
+            164,
+            62,
+            126,
+            149
+          ],
+          "max_line_width": 164,
+          "target_id": "0x0816"
+        }
+      ],
+      "summary": {
+        "max_paired_line_width": 190,
+        "max_solo_line_width": 164,
+        "max_title_width": 117,
+        "overflow_count": 0,
+        "paired_target_count": 34,
+        "solo_target_count": 33,
+        "title_target_count": 33
+      },
+      "titles": [
+        {
+          "line_count": 1,
+          "line_widths": [
+            95
+          ],
+          "max_line_width": 95,
+          "target_id": "0x07D7"
+        },
+        {
+          "line_count": 1,
+          "line_widths": [
+            114
+          ],
+          "max_line_width": 114,
+          "target_id": "0x07DB"
+        },
+        {
+          "line_count": 1,
+          "line_widths": [
+            114
+          ],
+          "max_line_width": 114,
+          "target_id": "0x07D9"
+        },
+        {
+          "line_count": 1,
+          "line_widths": [
+            106
+          ],
+          "max_line_width": 106,
+          "target_id": "0x07DD"
+        },
+        {
+          "line_count": 1,
+          "line_widths": [
+            115
+          ],
+          "max_line_width": 115,
+          "target_id": "0x07DF"
+        },
+        {
+          "line_count": 1,
+          "line_widths": [
+            117
+          ],
+          "max_line_width": 117,
+          "target_id": "0x07E1"
+        },
+        {
+          "line_count": 1,
+          "line_widths": [
+            96
+          ],
+          "max_line_width": 96,
+          "target_id": "0x07E7"
+        },
+        {
+          "line_count": 1,
+          "line_widths": [
+            102
+          ],
+          "max_line_width": 102,
+          "target_id": "0x07E5"
+        },
+        {
+          "line_count": 1,
+          "line_widths": [
+            92
+          ],
+          "max_line_width": 92,
+          "target_id": "0x07E3"
+        },
+        {
+          "line_count": 1,
+          "line_widths": [
+            115
+          ],
+          "max_line_width": 115,
+          "target_id": "0x07F9"
+        },
+        {
+          "line_count": 1,
+          "line_widths": [
+            105
+          ],
+          "max_line_width": 105,
+          "target_id": "0x07EB"
+        },
+        {
+          "line_count": 1,
+          "line_widths": [
+            85
+          ],
+          "max_line_width": 85,
+          "target_id": "0x0811"
+        },
+        {
+          "line_count": 1,
+          "line_widths": [
+            114
+          ],
+          "max_line_width": 114,
+          "target_id": "0x07ED"
+        },
+        {
+          "line_count": 1,
+          "line_widths": [
+            105
+          ],
+          "max_line_width": 105,
+          "target_id": "0x07F3"
+        },
+        {
+          "line_count": 1,
+          "line_widths": [
+            95
+          ],
+          "max_line_width": 95,
+          "target_id": "0x07F5"
+        },
+        {
+          "line_count": 1,
+          "line_widths": [
+            104
+          ],
+          "max_line_width": 104,
+          "target_id": "0x0815"
+        },
+        {
+          "line_count": 1,
+          "line_widths": [
+            105
+          ],
+          "max_line_width": 105,
+          "target_id": "0x07E9"
+        },
+        {
+          "line_count": 1,
+          "line_widths": [
+            108
+          ],
+          "max_line_width": 108,
+          "target_id": "0x0813"
+        },
+        {
+          "line_count": 1,
+          "line_widths": [
+            95
+          ],
+          "max_line_width": 95,
+          "target_id": "0x07F7"
+        },
+        {
+          "line_count": 1,
+          "line_widths": [
+            113
+          ],
+          "max_line_width": 113,
+          "target_id": "0x080B"
+        },
+        {
+          "line_count": 1,
+          "line_widths": [
+            103
+          ],
+          "max_line_width": 103,
+          "target_id": "0x080F"
+        },
+        {
+          "line_count": 1,
+          "line_widths": [
+            95
+          ],
+          "max_line_width": 95,
+          "target_id": "0x07EF"
+        },
+        {
+          "line_count": 1,
+          "line_widths": [
+            105
+          ],
+          "max_line_width": 105,
+          "target_id": "0x0805"
+        },
+        {
+          "line_count": 1,
+          "line_widths": [
+            85
+          ],
+          "max_line_width": 85,
+          "target_id": "0x0807"
+        },
+        {
+          "line_count": 1,
+          "line_widths": [
+            95
+          ],
+          "max_line_width": 95,
+          "target_id": "0x0809"
+        },
+        {
+          "line_count": 1,
+          "line_widths": [
+            86
+          ],
+          "max_line_width": 86,
+          "target_id": "0x07FB"
+        },
+        {
+          "line_count": 1,
+          "line_widths": [
+            94
+          ],
+          "max_line_width": 94,
+          "target_id": "0x07FD"
+        },
+        {
+          "line_count": 1,
+          "line_widths": [
+            116
+          ],
+          "max_line_width": 116,
+          "target_id": "0x0803"
+        },
+        {
+          "line_count": 1,
+          "line_widths": [
+            64
+          ],
+          "max_line_width": 64,
+          "target_id": "0x07FF"
+        },
+        {
+          "line_count": 1,
+          "line_widths": [
+            114
+          ],
+          "max_line_width": 114,
+          "target_id": "0x0801"
+        },
+        {
+          "line_count": 1,
+          "line_widths": [
+            105
+          ],
+          "max_line_width": 105,
+          "target_id": "0x080D"
+        },
+        {
+          "line_count": 1,
+          "line_widths": [
+            104
+          ],
+          "max_line_width": 104,
+          "target_id": "0x07F1"
+        },
+        {
+          "line_count": 1,
+          "line_widths": [
+            112
+          ],
+          "max_line_width": 112,
+          "target_id": "0x07D5"
+        }
+      ]
+    },
+    "zh-Hans": {
+      "paired": [
+        {
+          "line_count": 5,
+          "line_widths": [
+            106,
+            74,
+            131,
+            128,
+            115
+          ],
+          "max_line_width": 131,
+          "target_id": "0x0817"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            123,
+            157,
+            92,
+            94,
+            123
+          ],
+          "max_line_width": 157,
+          "target_id": "0x0818"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            136,
+            115,
+            115,
+            115,
+            128
+          ],
+          "max_line_width": 136,
+          "target_id": "0x0819"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            128,
+            83,
+            116,
+            82,
+            113
+          ],
+          "max_line_width": 128,
+          "target_id": "0x081A"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            147,
+            92,
+            125,
+            84,
+            143
+          ],
+          "max_line_width": 147,
+          "target_id": "0x081B"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            120,
+            97,
+            138,
+            86,
+            107
+          ],
+          "max_line_width": 138,
+          "target_id": "0x081C"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            86,
+            113,
+            96,
+            118,
+            124
+          ],
+          "max_line_width": 124,
+          "target_id": "0x081D"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            83,
+            96,
+            103,
+            116,
+            125
+          ],
+          "max_line_width": 125,
+          "target_id": "0x081E"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            114,
+            64,
+            125,
+            86,
+            124
+          ],
+          "max_line_width": 125,
+          "target_id": "0x081F"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            135,
+            94,
+            94,
+            105,
+            133
+          ],
+          "max_line_width": 135,
+          "target_id": "0x0820"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            145,
+            114,
+            125,
+            116,
+            115
+          ],
+          "max_line_width": 145,
+          "target_id": "0x0821"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            147,
+            112,
+            104,
+            94,
+            74
+          ],
+          "max_line_width": 147,
+          "target_id": "0x0822"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            124,
+            134,
+            118,
+            102,
+            84
+          ],
+          "max_line_width": 134,
+          "target_id": "0x0823"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            95,
+            127,
+            95,
+            104,
+            93
+          ],
+          "max_line_width": 127,
+          "target_id": "0x0824"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            124,
+            128,
+            115,
+            106,
+            114
+          ],
+          "max_line_width": 128,
+          "target_id": "0x0825"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            117,
+            102,
+            113,
+            127,
+            113
+          ],
+          "max_line_width": 127,
+          "target_id": "0x0826"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            140,
+            120,
+            146,
+            83,
+            126
+          ],
+          "max_line_width": 146,
+          "target_id": "0x0827"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            124,
+            135,
+            137,
+            146,
+            86
+          ],
+          "max_line_width": 146,
+          "target_id": "0x0828"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            148,
+            93,
+            134,
+            101,
+            150
+          ],
+          "max_line_width": 150,
+          "target_id": "0x0829"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            125,
+            114,
+            93,
+            137,
+            74
+          ],
+          "max_line_width": 137,
+          "target_id": "0x082A"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            154,
+            96,
+            114,
+            90,
+            72
+          ],
+          "max_line_width": 154,
+          "target_id": "0x082B"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            136,
+            96,
+            103,
+            105,
+            124
+          ],
+          "max_line_width": 136,
+          "target_id": "0x082C"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            143,
+            84,
+            114,
+            164,
+            84
+          ],
+          "max_line_width": 164,
+          "target_id": "0x082D"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            97,
+            135,
+            141,
+            84,
+            116
+          ],
+          "max_line_width": 141,
+          "target_id": "0x082E"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            116,
+            140,
+            123,
+            135,
+            116
+          ],
+          "max_line_width": 140,
+          "target_id": "0x082F"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            124,
+            74,
+            95,
+            167,
+            74
+          ],
+          "max_line_width": 167,
+          "target_id": "0x0830"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            124,
+            133,
+            115,
+            150,
+            94
+          ],
+          "max_line_width": 150,
+          "target_id": "0x0831"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            116,
+            138,
+            94,
+            84,
+            143
+          ],
+          "max_line_width": 143,
+          "target_id": "0x0832"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            139,
+            95,
+            146,
+            106,
+            116
+          ],
+          "max_line_width": 146,
+          "target_id": "0x0833"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            158,
+            136,
+            155,
+            54,
+            124
+          ],
+          "max_line_width": 158,
+          "target_id": "0x0834"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            156,
+            114,
+            139,
+            114,
+            134
+          ],
+          "max_line_width": 156,
+          "target_id": "0x0835"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            83,
+            118,
+            128,
+            135,
+            137
+          ],
+          "max_line_width": 137,
+          "target_id": "0x0836"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            108,
+            105,
+            128,
+            138,
+            94
+          ],
+          "max_line_width": 138,
+          "target_id": "0x0837"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            147,
+            116,
+            86,
+            148,
+            63
+          ],
+          "max_line_width": 148,
+          "target_id": "0x0838"
+        }
+      ],
+      "solo": [
+        {
+          "line_count": 5,
+          "line_widths": [
+            116,
+            116,
+            113,
+            115,
+            102
+          ],
+          "max_line_width": 116,
+          "target_id": "0x07D6"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            124,
+            83,
+            94,
+            95,
+            113
+          ],
+          "max_line_width": 124,
+          "target_id": "0x07D8"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            119,
+            114,
+            120,
+            106,
+            85
+          ],
+          "max_line_width": 120,
+          "target_id": "0x07DA"
+        },
+        {
+          "line_count": 4,
+          "line_widths": [
+            107,
+            122,
+            105,
+            86
+          ],
+          "max_line_width": 122,
+          "target_id": "0x07DC"
+        },
+        {
+          "line_count": 4,
+          "line_widths": [
+            93,
+            105,
+            119,
+            84
+          ],
+          "max_line_width": 119,
+          "target_id": "0x07DE"
+        },
+        {
+          "line_count": 4,
+          "line_widths": [
+            121,
+            103,
+            112,
+            105
+          ],
+          "max_line_width": 121,
+          "target_id": "0x07E0"
+        },
+        {
+          "line_count": 4,
+          "line_widths": [
+            84,
+            85,
+            117,
+            73
+          ],
+          "max_line_width": 117,
+          "target_id": "0x07E2"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            116,
+            106,
+            114,
+            113,
+            115
+          ],
+          "max_line_width": 116,
+          "target_id": "0x07E4"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            119,
+            103,
+            113,
+            116,
+            63
+          ],
+          "max_line_width": 119,
+          "target_id": "0x07E6"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            116,
+            116,
+            93,
+            119,
+            73
+          ],
+          "max_line_width": 119,
+          "target_id": "0x07E8"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            114,
+            113,
+            113,
+            104,
+            33
+          ],
+          "max_line_width": 114,
+          "target_id": "0x07EA"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            121,
+            118,
+            113,
+            120,
+            44
+          ],
+          "max_line_width": 121,
+          "target_id": "0x07EC"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            104,
+            102,
+            122,
+            114,
+            104
+          ],
+          "max_line_width": 122,
+          "target_id": "0x07EE"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            119,
+            114,
+            113,
+            116,
+            107
+          ],
+          "max_line_width": 119,
+          "target_id": "0x07F0"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            114,
+            116,
+            123,
+            113,
+            83
+          ],
+          "max_line_width": 123,
+          "target_id": "0x07F2"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            113,
+            119,
+            105,
+            86,
+            114
+          ],
+          "max_line_width": 119,
+          "target_id": "0x07F4"
+        },
+        {
+          "line_count": 4,
+          "line_widths": [
+            122,
+            113,
+            113,
+            76
+          ],
+          "max_line_width": 122,
+          "target_id": "0x07F6"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            84,
+            103,
+            121,
+            107,
+            116
+          ],
+          "max_line_width": 121,
+          "target_id": "0x07F8"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            122,
+            127,
+            115,
+            124,
+            93
+          ],
+          "max_line_width": 127,
+          "target_id": "0x07FA"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            114,
+            106,
+            108,
+            117,
+            53
+          ],
+          "max_line_width": 117,
+          "target_id": "0x07FC"
+        },
+        {
+          "line_count": 4,
+          "line_widths": [
+            85,
+            120,
+            113,
+            33
+          ],
+          "max_line_width": 120,
+          "target_id": "0x07FE"
+        },
+        {
+          "line_count": 4,
+          "line_widths": [
+            122,
+            43,
+            107,
+            94
+          ],
+          "max_line_width": 122,
+          "target_id": "0x0800"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            104,
+            123,
+            114,
+            125,
+            93
+          ],
+          "max_line_width": 125,
+          "target_id": "0x0802"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            124,
+            113,
+            121,
+            93,
+            104
+          ],
+          "max_line_width": 124,
+          "target_id": "0x0804"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            115,
+            93,
+            93,
+            84,
+            103
+          ],
+          "max_line_width": 115,
+          "target_id": "0x0806"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            91,
+            53,
+            103,
+            94,
+            103
+          ],
+          "max_line_width": 103,
+          "target_id": "0x0808"
+        },
+        {
+          "line_count": 4,
+          "line_widths": [
+            120,
+            94,
+            122,
+            44
+          ],
+          "max_line_width": 122,
+          "target_id": "0x080A"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            113,
+            113,
+            123,
+            113,
+            92
+          ],
+          "max_line_width": 123,
+          "target_id": "0x080C"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            107,
+            107,
+            123,
+            106,
+            114
+          ],
+          "max_line_width": 123,
+          "target_id": "0x080E"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            83,
+            92,
+            105,
+            120,
+            77
+          ],
+          "max_line_width": 120,
+          "target_id": "0x0810"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            114,
+            117,
+            102,
+            115,
+            104
+          ],
+          "max_line_width": 117,
+          "target_id": "0x0812"
+        },
+        {
+          "line_count": 5,
+          "line_widths": [
+            114,
+            114,
+            114,
+            105,
+            77
+          ],
+          "max_line_width": 114,
+          "target_id": "0x0814"
+        },
+        {
+          "line_count": 4,
+          "line_widths": [
+            121,
+            115,
+            94,
+            83
+          ],
+          "max_line_width": 121,
+          "target_id": "0x0816"
+        }
+      ],
+      "summary": {
+        "max_paired_line_width": 167,
+        "max_solo_line_width": 127,
+        "max_title_width": 104,
+        "overflow_count": 0,
+        "paired_target_count": 34,
+        "solo_target_count": 33,
+        "title_target_count": 33
+      },
+      "titles": [
+        {
+          "line_count": 1,
+          "line_widths": [
+            83
+          ],
+          "max_line_width": 83,
+          "target_id": "0x07D7"
+        },
+        {
+          "line_count": 1,
+          "line_widths": [
+            84
+          ],
+          "max_line_width": 84,
+          "target_id": "0x07DB"
+        },
+        {
+          "line_count": 1,
+          "line_widths": [
+            95
+          ],
+          "max_line_width": 95,
+          "target_id": "0x07D9"
+        },
+        {
+          "line_count": 1,
+          "line_widths": [
+            94
+          ],
+          "max_line_width": 94,
+          "target_id": "0x07DD"
+        },
+        {
+          "line_count": 1,
+          "line_widths": [
+            82
+          ],
+          "max_line_width": 82,
+          "target_id": "0x07DF"
+        },
+        {
+          "line_count": 1,
+          "line_widths": [
+            84
+          ],
+          "max_line_width": 84,
+          "target_id": "0x07E1"
+        },
+        {
+          "line_count": 1,
+          "line_widths": [
+            83
+          ],
+          "max_line_width": 83,
+          "target_id": "0x07E7"
+        },
+        {
+          "line_count": 1,
+          "line_widths": [
+            74
+          ],
+          "max_line_width": 74,
+          "target_id": "0x07E5"
+        },
+        {
+          "line_count": 1,
+          "line_widths": [
+            74
+          ],
+          "max_line_width": 74,
+          "target_id": "0x07E3"
+        },
+        {
+          "line_count": 1,
+          "line_widths": [
+            86
+          ],
+          "max_line_width": 86,
+          "target_id": "0x07F9"
+        },
+        {
+          "line_count": 1,
+          "line_widths": [
+            85
+          ],
+          "max_line_width": 85,
+          "target_id": "0x07EB"
+        },
+        {
+          "line_count": 1,
+          "line_widths": [
+            64
+          ],
+          "max_line_width": 64,
+          "target_id": "0x0811"
+        },
+        {
+          "line_count": 1,
+          "line_widths": [
+            83
+          ],
+          "max_line_width": 83,
+          "target_id": "0x07ED"
+        },
+        {
+          "line_count": 1,
+          "line_widths": [
+            83
+          ],
+          "max_line_width": 83,
+          "target_id": "0x07F3"
+        },
+        {
+          "line_count": 1,
+          "line_widths": [
+            75
+          ],
+          "max_line_width": 75,
+          "target_id": "0x07F5"
+        },
+        {
+          "line_count": 1,
+          "line_widths": [
+            63
+          ],
+          "max_line_width": 63,
+          "target_id": "0x0815"
+        },
+        {
+          "line_count": 1,
+          "line_widths": [
+            85
+          ],
+          "max_line_width": 85,
+          "target_id": "0x07E9"
+        },
+        {
+          "line_count": 1,
+          "line_widths": [
+            84
+          ],
+          "max_line_width": 84,
+          "target_id": "0x0813"
+        },
+        {
+          "line_count": 1,
+          "line_widths": [
+            88
+          ],
+          "max_line_width": 88,
+          "target_id": "0x07F7"
+        },
+        {
+          "line_count": 1,
+          "line_widths": [
+            94
+          ],
+          "max_line_width": 94,
+          "target_id": "0x080B"
+        },
+        {
+          "line_count": 1,
+          "line_widths": [
+            104
+          ],
+          "max_line_width": 104,
+          "target_id": "0x080F"
+        },
+        {
+          "line_count": 1,
+          "line_widths": [
+            64
+          ],
+          "max_line_width": 64,
+          "target_id": "0x07EF"
+        },
+        {
+          "line_count": 1,
+          "line_widths": [
+            75
+          ],
+          "max_line_width": 75,
+          "target_id": "0x0805"
+        },
+        {
+          "line_count": 1,
+          "line_widths": [
+            74
+          ],
+          "max_line_width": 74,
+          "target_id": "0x0807"
+        },
+        {
+          "line_count": 1,
+          "line_widths": [
+            74
+          ],
+          "max_line_width": 74,
+          "target_id": "0x0809"
+        },
+        {
+          "line_count": 1,
+          "line_widths": [
+            75
+          ],
+          "max_line_width": 75,
+          "target_id": "0x07FB"
+        },
+        {
+          "line_count": 1,
+          "line_widths": [
+            75
+          ],
+          "max_line_width": 75,
+          "target_id": "0x07FD"
+        },
+        {
+          "line_count": 1,
+          "line_widths": [
+            104
+          ],
+          "max_line_width": 104,
+          "target_id": "0x0803"
+        },
+        {
+          "line_count": 1,
+          "line_widths": [
+            54
+          ],
+          "max_line_width": 54,
+          "target_id": "0x07FF"
+        },
+        {
+          "line_count": 1,
+          "line_widths": [
+            56
+          ],
+          "max_line_width": 56,
+          "target_id": "0x0801"
+        },
+        {
+          "line_count": 1,
+          "line_widths": [
+            75
+          ],
+          "max_line_width": 75,
+          "target_id": "0x080D"
+        },
+        {
+          "line_count": 1,
+          "line_widths": [
+            94
+          ],
+          "max_line_width": 94,
+          "target_id": "0x07F1"
+        },
+        {
+          "line_count": 1,
+          "line_widths": [
+            73
+          ],
+          "max_line_width": 73,
+          "target_id": "0x07D5"
+        }
+      ]
+    }
+  },
+  "schema_version": 1,
+  "source": {
+    "path": "src/ending_details.c",
+    "sha256": "cb98cba4a8e3b8ac0cb0eb0d3a34003cf74b1c4ab663319a2df4c7b1d4c93263"
+  },
+  "summary": {
+    "locale_count": 2,
+    "overflow_count": 0,
+    "paired_target_count": 34,
+    "solo_target_count": 33,
+    "title_target_count": 33
+  }
+}

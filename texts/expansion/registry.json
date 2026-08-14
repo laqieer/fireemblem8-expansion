@@ -280,6 +280,165 @@
       "max_width": 16,
       "max_decoded_bytes": 24,
       "notes": "Modern semantic adapter for the demon call command that shares FE8U message ID 0x0693 with summon; FE8J's full-width indent is normalized to catalog-safe ASCII space."
+    },
+    {
+      "id": 35,
+      "key": "raw_surface.class_change.option_1",
+      "status": "active",
+      "surface": "framework_generic",
+      "max_width": 16,
+      "max_decoded_bytes": 24,
+      "notes": "Semantic provider for the first promotion-choice raw initializer; modern rendering uses the localized promoted class name instead."
+    },
+    {
+      "id": 36,
+      "key": "raw_surface.class_change.option_2",
+      "status": "active",
+      "surface": "framework_generic",
+      "max_width": 16,
+      "max_decoded_bytes": 24,
+      "notes": "Semantic provider for the second promotion-choice raw initializer; modern rendering uses the localized promoted class name instead."
+    },
+    {
+      "id": 37,
+      "key": "raw_surface.class_change.option_3",
+      "status": "active",
+      "surface": "framework_generic",
+      "max_width": 16,
+      "max_decoded_bytes": 24,
+      "notes": "Semantic provider for the third promotion-choice raw initializer; modern rendering uses the localized promoted class name instead."
+    },
+    {
+      "id": 38,
+      "key": "raw_surface.diagnostic.build_timestamp",
+      "status": "active",
+      "surface": "debug_overlay",
+      "pseudo_policy": "preserve",
+      "max_width": 32,
+      "max_decoded_bytes": 32,
+      "notes": "Locale-neutral executable identity. Every runtime locale duplicates the current gBuildDateTime string; regional raw timestamps remain source provenance only."
+    },
+    {
+      "id": 39,
+      "key": "sio.transfer.sending",
+      "status": "active",
+      "surface": "framework_generic",
+      "max_width": 48,
+      "max_decoded_bytes": 80,
+      "pseudo_policy": "compact"
+    },
+    {
+      "id": 40,
+      "key": "sio.transfer.receiving",
+      "status": "active",
+      "surface": "framework_generic",
+      "max_width": 48,
+      "max_decoded_bytes": 80,
+      "pseudo_policy": "compact"
+    },
+    {
+      "id": 41,
+      "key": "debug.confirm.heal_full",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 48,
+      "max_decoded_bytes": 80
+    },
+    {
+      "id": 42,
+      "key": "debug.confirm.add_item",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 48,
+      "max_decoded_bytes": 80
+    },
+    {
+      "id": 43,
+      "key": "debug.confirm.toggle_flag",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 48,
+      "max_decoded_bytes": 80
+    },
+    {
+      "id": 44,
+      "key": "debug.confirm.reseed",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 48,
+      "max_decoded_bytes": 80
+    },
+    {
+      "id": 45,
+      "key": "debug.status.hub",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 48,
+      "max_decoded_bytes": 80
+    },
+    {
+      "id": 46,
+      "key": "debug.status.hub_error",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 48,
+      "max_decoded_bytes": 80
+    },
+    {
+      "id": 47,
+      "key": "debug.status.unit_hp",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 48,
+      "max_decoded_bytes": 80
+    },
+    {
+      "id": 48,
+      "key": "debug.status.unit_unavailable",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 48,
+      "max_decoded_bytes": 80
+    },
+    {
+      "id": 49,
+      "key": "debug.status.convoy",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 48,
+      "max_decoded_bytes": 80
+    },
+    {
+      "id": 50,
+      "key": "debug.status.chapter",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 48,
+      "max_decoded_bytes": 80
+    },
+    {
+      "id": 51,
+      "key": "debug.status.flag",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 48,
+      "max_decoded_bytes": 80
+    },
+    {
+      "id": 52,
+      "key": "debug.status.rng_seed",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 48,
+      "max_decoded_bytes": 80
+    },
+    {
+      "id": 53,
+      "key": "debug.status.save_state",
+      "status": "active",
+      "surface": "debug_overlay",
+      "max_width": 48,
+      "max_decoded_bytes": 80
     }
   ]
 }

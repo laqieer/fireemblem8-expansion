@@ -8,6 +8,22 @@
 #include "bmarch.h"
 #include "scene.h"
 #include "constants/classes.h"
+#include "constants/msg.h"
+#ifdef MODERN
+#include "expansion_locale.h"
+#include "expansion_msg_ids.h"
+#include "id_space.h"
+#endif
+
+#ifdef MODERN
+#define PROMO_OPTION_1_NAME ""
+#define PROMO_OPTION_2_NAME ""
+#define PROMO_OPTION_3_NAME ""
+#else
+#define PROMO_OPTION_1_NAME "　第１兵種"
+#define PROMO_OPTION_2_NAME "　第２兵種"
+#define PROMO_OPTION_3_NAME "　第３兵種"
+#endif
 
 u32 ClassChgMenuSelOnInit(struct MenuProc *proc)
 {
@@ -100,7 +116,7 @@ u8 ClassChgMenuSelOnPressB(struct MenuProc *pmenu, struct MenuItemProc *pmitem) 
     return 0;
 }
 
-void ClassChgMenuOnDrawCore(struct MenuProc *pmenu, struct MenuItemProc *pmitem, char *str)
+void ClassChgMenuOnDrawCore(struct MenuProc *pmenu, struct MenuItemProc *pmitem, const char *str)
 {
     u8 unused_stack[32];
     u16 *mapbuf;
@@ -118,15 +134,71 @@ void ClassChgMenuOnDrawCore(struct MenuProc *pmenu, struct MenuItemProc *pmitem,
     PutText(&pmitem->text, &mapbuf[pmitem->yTile * 32 + pmitem->xTile]);
 }
 
+#ifdef MODERN
+const char *ClassChgMenu_GetDisplayLabel(int itemNumber, const char *className)
+{
+    ExpansionMsgId fallbackMsgId;
+
+    if (className != NULL && className[0] != '\0')
+        return className;
+
+    switch (itemNumber)
+    {
+    case 0:
+        fallbackMsgId = EXP_MSG_RAW_SURFACE_CLASS_CHANGE_OPTION_1;
+        break;
+
+    case 1:
+        fallbackMsgId = EXP_MSG_RAW_SURFACE_CLASS_CHANGE_OPTION_2;
+        break;
+
+    case 2:
+        fallbackMsgId = EXP_MSG_RAW_SURFACE_CLASS_CHANGE_OPTION_3;
+        break;
+
+    default:
+        fallbackMsgId = EXPANSION_MSG_ID_INVALID;
+        break;
+    }
+
+    return ExpansionLocale_ResolveCurrent(fallbackMsgId);
+}
+#endif
+
 int ClassChgMenuItem_OnTextDraw(struct MenuProc *pmenu, struct MenuItemProc *pmitem)
 {
     u8 unused_stack[0x48];
     struct ProcClassChgMenuSel *parent;
     struct ProcPromoSel *gparent;
+#ifdef MODERN
+    const struct ClassData *classData;
+    const char *className;
+    int classId;
+#endif
 
     parent = pmenu->proc_parent;
     gparent = parent->proc_parent;
+#ifdef MODERN
+    className = NULL;
+    if (pmitem->itemNumber >= 0 && pmitem->itemNumber < 3)
+    {
+        classId = gparent->jid[pmitem->itemNumber];
+        if (classId > CLASS_NONE && classId <= CLASS_ID_CONFIGURED_CAP)
+        {
+            classData = GetClassData(classId);
+            if (classData != NULL && classData->nameTextId > 0
+                && classData->nameTextId < MSG_COUNT)
+                className = GetStringFromIndex(classData->nameTextId);
+        }
+    }
+    ClassChgMenuOnDrawCore(
+        pmenu,
+        pmitem,
+        ClassChgMenu_GetDisplayLabel(pmitem->itemNumber, className));
+    return 0;
+#else
     ClassChgMenuOnDrawCore(pmenu, pmitem, GetStringFromIndex(GetClassData(gparent->jid[pmitem->itemNumber])->nameTextId));
+#endif
 }
 
 int ClassChgMenuItem_OnChange(struct MenuProc *pmenu, struct MenuItemProc *pmitem)
@@ -165,7 +237,7 @@ u8 ClassChgMenuItem_3rdUsability(const struct MenuItemDef * _def, int _number)
 
 CONST_DATA struct MenuItemDef gMenuItem_PromoSel[] = {
     {
-        "　第１兵種",
+        PROMO_OPTION_1_NAME,
         0,
         0x6DC,  /* Discard items. Important[NL]items cannot be discarded. */
         TEXT_COLOR_SYSTEM_WHITE,
@@ -178,7 +250,7 @@ CONST_DATA struct MenuItemDef gMenuItem_PromoSel[] = {
         0
     },
     {
-        "　第２兵種",
+        PROMO_OPTION_2_NAME,
         0,
         0x6DC,  /* Discard items. Important[NL]items cannot be discarded. */
         TEXT_COLOR_SYSTEM_WHITE,
@@ -191,7 +263,7 @@ CONST_DATA struct MenuItemDef gMenuItem_PromoSel[] = {
         0
     },
     {
-        "　第３兵種",
+        PROMO_OPTION_3_NAME,
         0,
         0x6DC,  /* Discard items. Important[NL]items cannot be discarded. */
         TEXT_COLOR_SYSTEM_WHITE,

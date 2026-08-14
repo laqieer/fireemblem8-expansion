@@ -9,6 +9,7 @@ sys.path.insert(0, str(ROOT))
 
 from scripts.localization import schema
 from scripts.localization.catalog import load_catalog, parse_registry
+from scripts.localization.pseudo import apply_pseudo_policy, pseudoize
 from scripts.localization.schema import SchemaError
 
 
@@ -152,6 +153,41 @@ class ParseRegistryTests(unittest.TestCase):
         with self.assertRaises(SchemaError):
             parse_registry(reg)
 
+    def test_pseudo_policy_defaults_to_transform(self):
+        entries = parse_registry(_base_registry())
+        self.assertEqual(
+            entries[0].pseudo_policy,
+            schema.PSEUDO_POLICY_TRANSFORM,
+        )
+
+    def test_pseudo_policy_preserve_accepted(self):
+        reg = _base_registry()
+        reg["messages"][0]["pseudo_policy"] = schema.PSEUDO_POLICY_PRESERVE
+        entries = parse_registry(reg)
+        self.assertEqual(
+            entries[0].pseudo_policy,
+            schema.PSEUDO_POLICY_PRESERVE,
+        )
+
+    def test_invalid_pseudo_policy_rejected(self):
+        reg = _base_registry()
+        reg["messages"][0]["pseudo_policy"] = "decorate-sometimes"
+        with self.assertRaises(SchemaError):
+            parse_registry(reg)
+
+    def test_tombstone_pseudo_policy_rejected(self):
+        reg = _base_registry()
+        reg["messages"].append(
+            {
+                "id": 2,
+                "key": "a.retired",
+                "status": "tombstone",
+                "pseudo_policy": schema.PSEUDO_POLICY_PRESERVE,
+            }
+        )
+        with self.assertRaises(SchemaError):
+            parse_registry(reg)
+
     def test_max_width_out_of_range_rejected(self):
         reg = _base_registry()
         reg["messages"][0]["max_width"] = 0
@@ -198,6 +234,24 @@ class LoadCatalogTests(unittest.TestCase):
             self.assertEqual(loaded.en_strings["a.one"], "Hello")
             self.assertIn("a.one", loaded.pseudo_strings)
             self.assertNotEqual(loaded.pseudo_strings["a.one"], loaded.en_strings["a.one"])
+
+    def test_preserve_policy_keeps_selected_pseudo_entry_exact(self):
+        reg = _base_registry()
+        reg["messages"][0]["pseudo_policy"] = schema.PSEUDO_POLICY_PRESERVE
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            reg_path, cat_path = _write(
+                tmp_path, reg, {"a.one": "Identifier 123", "a.two": "World"}
+            )
+            loaded = _load(reg_path, cat_path)
+            self.assertEqual(
+                loaded.pseudo_strings["a.one"],
+                loaded.en_strings["a.one"],
+            )
+            self.assertEqual(
+                loaded.pseudo_strings["a.two"],
+                pseudoize(loaded.en_strings["a.two"]),
+            )
 
     def test_missing_catalog_key_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -415,6 +469,19 @@ class LoadCatalogTests(unittest.TestCase):
         )
         self.assertEqual(loaded.en_strings["framework.locale_short_name.ja"], "JA")
         self.assertEqual(loaded.en_strings["framework.locale_short_name.zh_hans"], "ZH")
+        preserve_entries = [
+            entry.key
+            for entry in loaded.active_entries
+            if entry.pseudo_policy == schema.PSEUDO_POLICY_PRESERVE
+        ]
+        self.assertEqual(
+            preserve_entries,
+            ["raw_surface.diagnostic.build_timestamp"],
+        )
+        for entry in loaded.active_entries:
+            en_text = loaded.en_strings[entry.key]
+            expected = apply_pseudo_policy(en_text, entry.pseudo_policy)
+            self.assertEqual(loaded.pseudo_strings[entry.key], expected)
 
 
 if __name__ == "__main__":

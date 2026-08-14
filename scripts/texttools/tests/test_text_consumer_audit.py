@@ -174,6 +174,48 @@ class TextConsumerAuditTests(unittest.TestCase):
             battle_popup.count("GetItemNameWithArticle"), 2
         )
 
+    def test_popup_prefix_and_punctuation_slots_are_exact(self):
+        popup = self._read("src/popup.c")
+        got = popup.index("struct PopupInstruction CONST_DATA PopupScr_GotItem[]")
+        stole = popup.index("struct PopupInstruction CONST_DATA PopupScr_StoleItem[]")
+        self.assertLess(popup.index("POPUP_MSG(0x008)", got), popup.index("POPUP_ITEM_STR", got))
+        self.assertLess(popup.index("POPUP_MSG(0x00A)", stole), popup.index("POPUP_ITEM_STR", stole))
+
+        popup2 = self._read("src/popup2.c")
+        drop = _function_body(popup2, "NewPopup2_DropItem")
+        send = _function_body(popup2, "NewPopup2_SendItem")
+        self.assertLess(drop.index("0x00F"), drop.index("0x022"))
+        self.assertLess(send.index("0x010"), send.index("0x011"))
+
+    def test_sio_empty_team_name_uses_bounded_actual_field(self):
+        body = _function_body(
+            self._read("src/sio_teamlist.c"), "LoadLinkArenaTeamList"
+        )
+        self.assertIn("GetStringFromIndexInBufferWithLimit", body)
+        self.assertIn("sizeof(gLinkArenaTeamList[i].name)", body)
+        self.assertNotIn(
+            "SioStrCpy(GetStringFromIndex(MSG_0CC)", body
+        )
+
+    def test_debug_clear_menu_slots_match_completion_actions(self):
+        menu = self._read("src/menu_def.c")
+        self.assertRegex(
+            menu,
+            r'\{"　クリアずみ",\s*0x6af,.*?DebugMenu_ErasedEffect',
+        )
+        self.assertRegex(
+            menu,
+            r'\{"　　　　　　　　　了解",\s*0x6bd,.*?DebugClearMenu_ClearFile',
+        )
+
+        debug = self._read("src/bmdebug.c")
+        clear_idle = _function_body(debug, "DebugMenu_ClearIdle")
+        clear_file = _function_body(debug, "DebugClearMenu_ClearFile")
+        self.assertIn("RegisterCompletedPlaythrough", clear_idle)
+        self.assertIn("SavePlayThroughData", clear_file)
+        self.assertIn("WriteGameSave", clear_file)
+        self.assertNotIn("Wipe", clear_file)
+
     def test_reviewed_class_and_name_consumers_have_cjk_paths(self):
         opinfo = self._read("src/opinfo.c")
         for function in (

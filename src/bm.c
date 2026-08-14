@@ -479,6 +479,7 @@ int BmMain_UpdateTraps(ProcPtr proc)
 //! FE8U = 0x080154F4
 void BmMain_SuspendBeforePhase(void)
 {
+#ifndef FE8_ARCHIVAL_BUILD
     /* Skipped only while the debugtools bootstrap suppression is active
      * (see include/expansion_debugtools.h) -- the one-shot window between
      * the "Fast Boot: Chapter 2" debug launch committing and its
@@ -487,6 +488,7 @@ void BmMain_SuspendBeforePhase(void)
      * writing normally. */
     if (DebugTools_IsBootstrapSuppressionActive())
         return;
+#endif
 
 #if FE8_EXPANSION_ITEMTEST_ENABLED
     /* Same one-shot boot window for the issue #10 runtime item-expansion

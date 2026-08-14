@@ -29,6 +29,23 @@ FULL_MATRIX_BADGE = (
     "(https://github.com/laqieer/fireemblem8-expansion/actions/workflows/"
     "full-matrix.yml)"
 )
+LEGACY_APT_PACKAGES = {
+    "build-essential",
+    "binutils-arm-none-eabi",
+    "gcc-arm-none-eabi",
+    "libnewlib-arm-none-eabi",
+    "libpng-dev",
+    "pkg-config",
+    "python3-pip",
+    "python3-numpy",
+    "python3-pil",
+}
+LEGACY_TOOLCHAIN_EXECUTABLES = {
+    "arm-none-eabi-cpp": "gcc-arm-none-eabi",
+    "arm-none-eabi-as": "binutils-arm-none-eabi",
+    "arm-none-eabi-ld": "binutils-arm-none-eabi",
+    "arm-none-eabi-objcopy": "binutils-arm-none-eabi",
+}
 
 
 def parsed_jobs(text: str):
@@ -93,6 +110,70 @@ def workflow_commands(jobs) -> list[str]:
             else ()
         )
     ]
+
+
+def legacy_toolchain_contract_violations(text: str) -> list[str]:
+    violations = []
+    legacy = parsed_jobs(text)["legacy"]
+    steps = parsed_job_steps(legacy)
+    step_names = [wg._step_name(entries) for _item, entries in steps]
+
+    install_name = "Install archival build dependencies"
+    preflight_name = "Preflight archival toolchain executables"
+    build_name = "Build tools"
+    for name in (install_name, preflight_name, build_name):
+        if step_names.count(name) != 1:
+            violations.append(
+                f"legacy must contain exactly one {name!r} step, found {step_names.count(name)}"
+            )
+    if violations:
+        return violations
+
+    install_index = step_names.index(install_name)
+    preflight_index = step_names.index(preflight_name)
+    build_index = step_names.index(build_name)
+    if not install_index < preflight_index < build_index:
+        violations.append(
+            "legacy toolchain preflight must run after dependency installation and before builds"
+        )
+
+    install_commands = step_commands(steps[install_index][1])
+    if len(install_commands) != 1:
+        violations.append("legacy dependency step must contain exactly one executable command")
+    else:
+        marker = "sudo apt-get install -y "
+        command = install_commands[0]
+        if marker not in command:
+            violations.append("legacy dependency step must use sudo apt-get install -y")
+        else:
+            packages = set(shlex.split(command.split(marker, 1)[1]))
+            if packages != LEGACY_APT_PACKAGES:
+                violations.append(
+                    "legacy dependency packages differ: "
+                    f"missing={sorted(LEGACY_APT_PACKAGES - packages)}, "
+                    f"unexpected={sorted(packages - LEGACY_APT_PACKAGES)}"
+                )
+
+    preflight_commands = step_commands(steps[preflight_index][1])
+    observed = {}
+    for command in preflight_commands:
+        match = re.match(r"^command -v (arm-none-eabi-[a-z0-9-]+)\b", command)
+        if match:
+            observed[match.group(1)] = command
+    if set(observed) != set(LEGACY_TOOLCHAIN_EXECUTABLES):
+        violations.append(
+            "legacy preflight executables differ: "
+            f"missing={sorted(set(LEGACY_TOOLCHAIN_EXECUTABLES) - set(observed))}, "
+            f"unexpected={sorted(set(observed) - set(LEGACY_TOOLCHAIN_EXECUTABLES))}"
+        )
+    for executable, package in LEGACY_TOOLCHAIN_EXECUTABLES.items():
+        command = observed.get(executable, "")
+        if command and ("::error::" not in command or package not in command):
+            violations.append(
+                f"legacy preflight for {executable} must name its providing package actionably"
+            )
+
+    return violations
 
 
 class FullMatrixWorkflowContractTests(unittest.TestCase):
@@ -384,6 +465,7 @@ class FullMatrixWorkflowContractTests(unittest.TestCase):
         strategy, problems = wg._mapping_entries_at_indent(strategy_entries[0].text, 6)
         self.assertEqual(problems, [])
         self.assertEqual(entry_value(strategy, "fail-fast"), "false")
+        self.assertNotIn("max-parallel", [entry.key for entry in strategy])
         matrix_entries = [entry for entry in strategy if entry.key == "matrix"]
         self.assertEqual(len(matrix_entries), 1)
         matrix, problems = wg._mapping_entries_at_indent(matrix_entries[0].text, 8)
@@ -391,12 +473,25 @@ class FullMatrixWorkflowContractTests(unittest.TestCase):
         self.assertEqual(entry_value(matrix, "config"), "[debug, release]")
         canonical = (
             "make expansion-modern-linker-check "
-            "MODERN_CONFIG=${{ matrix.config }} MODERN_ABI=aapcs -j2"
+            "MODERN_CONFIG=${{ matrix.config }} MODERN_ABI=aapcs"
         )
         _item, gate_entries = named_step(
             modern, "Run canonical modern linker/runtime gate"
         )
         self.assertEqual(step_commands(gate_entries), (canonical,))
+
+        # Keep config-level CI parallelism, but never add inner Make parallelism:
+        # nested submakes share banim outputs and can race into undefined banim_* links.
+        gate_argv = shlex.split(step_commands(gate_entries)[0])
+        self.assertFalse(
+            any(
+                arg.startswith("-j")
+                or arg == "--jobs"
+                or arg.startswith("--jobs=")
+                for arg in gate_argv
+            )
+        )
+
         all_commands = workflow_commands(self.jobs)
         for subordinate in (
             "expansion-modern-budget-check",
@@ -425,6 +520,29 @@ class FullMatrixWorkflowContractTests(unittest.TestCase):
         self.assertEqual(legacy_commands.count("test ! -e baserom.gba"), 2)
         self.assertEqual(legacy_commands.count("make legacy -j2"), 1)
         self.assertEqual(legacy_commands.count("make -C mgfembp compare"), 1)
+
+    def test_legacy_installs_and_preflights_required_arm_toolchain(self):
+        self.assertEqual(legacy_toolchain_contract_violations(self.text), [])
+
+    def test_legacy_toolchain_contract_rejects_cpp_dependency_and_preflight_mutations(self):
+        mutations = {
+            "missing gcc package": self.text.replace(
+                " binutils-arm-none-eabi gcc-arm-none-eabi libnewlib-arm-none-eabi ",
+                " binutils-arm-none-eabi libnewlib-arm-none-eabi ",
+                1,
+            ),
+            "missing cpp preflight": re.sub(
+                r"^          command -v arm-none-eabi-cpp .*\n",
+                "",
+                self.text,
+                count=1,
+                flags=re.MULTILINE,
+            ),
+        }
+        for name, mutated in mutations.items():
+            with self.subTest(name=name):
+                self.assertNotEqual(mutated, self.text)
+                self.assertTrue(legacy_toolchain_contract_violations(mutated))
 
     def test_release_evidence_runs_individual_guards_and_expected_blocker(self):
         release = self.jobs["release-evidence"]

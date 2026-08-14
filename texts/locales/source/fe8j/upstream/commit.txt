@@ -1,0 +1,10 @@
+tree 645b768fcf7b2993282cf109481ba51296e2e697
+parent 5cb71a3ddf4d5657c4e2090f3e22e92751f82acf
+author Verifier <verify@example.com> 1784625075 +0000
+committer Verifier <verify@example.com> 1784625075 +0000
+
+docs: record manual WSL2 recovery
+
+Co-authored-by: laqieer <laqieer@126.com>
+Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
+Copilot-Session: 909d0dee-df0d-4939-ba43-54409b1aa316

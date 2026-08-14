@@ -1,0 +1,474 @@
+import hashlib
+import json
+import re
+import unittest
+from collections import Counter
+from pathlib import Path
+
+from scripts.localization.game_locales.crosswalk import canonical_json_bytes
+
+
+ROOT = Path(__file__).resolve().parents[3]
+QUEUE_PATH = ROOT / "texts/locales/mapping/authored_translation_queue.json"
+SHARD_DIR = ROOT / "texts/locales/authored/shards"
+LOCALES = ("ja", "zh-Hans")
+EXPECTED_QUEUE_SHA256 = (
+    "ffdff913a552076928d5cb06634ed75d8983b65c05bb4ecec9aa2b610ffe6ad6"
+)
+EXPECTED_TARGET_IDS = (
+    "0x0000",
+    "0x0537",
+    "0x0539",
+    "0x05AE",
+    "0x05BB",
+    "0x05BC",
+    "0x05BD",
+    "0x05BE",
+    "0x06A5",
+    "0x06A6",
+    "0x06A7",
+    "0x06A8",
+    "0x06A9",
+    "0x06B1",
+    "0x06B3",
+    "0x06B4",
+    "0x06B5",
+    "0x06B6",
+    "0x06B7",
+    "0x077E",
+    "0x0889",
+    "0x088A",
+    "0x088B",
+    "0x0944",
+    "0x0945",
+    "0x094A",
+    "0x094D",
+    "0x0950",
+    "0x096B",
+    "0x096C",
+    "0x096E",
+    "0x0979",
+    "0x0983",
+    "0x0984",
+    "0x0986",
+    "0x0987",
+    "0x0AAD",
+    "0x0B2A",
+    "0x0D4C",
+    "0x0D4D",
+    "0x0D4E",
+    "0x0D4F",
+    "0x0D50",
+    "0x0D51",
+    "0x0D52",
+    "0x0D55",
+)
+EXPECTED_SUBSYSTEM_COUNTS = {
+    "chapter-event": 28,
+    "chapter-title": 1,
+    "expansion": 8,
+    "system": 1,
+    "trainee-prep": 8,
+}
+EXPECTED_EXPANSION_TEXT = {
+    "ja": {
+        "0x0D4C": (
+            "このセーブデータは[.][LF]\n"
+            "拡張セーブ形式より古く[.][LF]\n"
+            "ここでは開けません。[X]\n"
+        ),
+        "0x0D4D": "セーブデータが破損しているようで[.][LF]\n読み込めません。[X]\n",
+        "0x0D4E": (
+            "セーブデータの拡張情報が[.][LF]\n"
+            "破損しており[.][LF]\n"
+            "読み込めません。[X]\n"
+        ),
+        "0x0D4F": (
+            "このセーブデータは[.][LF]\n"
+            "古い拡張版のものです。[.][LF]\n"
+            "外部ツールを使って[.][LF]\n"
+            "移行できます。[X]\n"
+        ),
+        "0x0D50": (
+            "このセーブデータは[.][LF]\n"
+            "新しい拡張版のもので[.][LF]\n"
+            "この環境では[.][LF]\n"
+            "使用できません。[X]\n"
+        ),
+        "0x0D51": (
+            "このセーブデータは[.][LF]\n"
+            "互換性のない拡張設定で[.][LF]\n"
+            "作成されており使用できません。[X]\n"
+        ),
+        "0x0D52": "このセーブデータは[.][LF]\nここでは使用できません。[X]\n",
+        "0x0D55": "全セーブデータ消去を実行しますか？[.][LF]\n元に戻せません。[X]",
+    },
+    "zh-Hans": {
+        "0x0D4C": "此存档创建于[.][LF]\n扩展存档格式启用前，[.][LF]\n无法在此打开。[X]\n",
+        "0x0D4D": "存档似乎已损坏，[.][LF]\n无法读取。[X]\n",
+        "0x0D4E": "存档的扩展信息[.][LF]\n已经损坏，[.][LF]\n无法读取。[X]\n",
+        "0x0D4F": (
+            "此存档来自较旧的[.][LF]\n"
+            "扩展版本，[.][LF]\n"
+            "可使用外部工具[.][LF]\n"
+            "进行迁移。[X]\n"
+        ),
+        "0x0D50": (
+            "此存档来自较新的[.][LF]\n"
+            "扩展版本，[.][LF]\n"
+            "当前版本[.][LF]\n"
+            "不支持该存档。[X]\n"
+        ),
+        "0x0D51": (
+            "此存档使用了[.][LF]\n"
+            "不兼容的扩展设置，[.][LF]\n"
+            "因此无法使用。[X]\n"
+        ),
+        "0x0D52": "此存档[.][LF]\n无法在此使用。[X]\n",
+        "0x0D55": "清除全部存档？[.][LF]\n此操作无法撤销。[X]",
+    },
+}
+EXPECTED_REVIEWED_TEXT = {
+    "ja": {
+        "0x0945": (
+            "ミュラン城のグラド軍を率いる[.][LF]\n"
+            "敵将ブレゲを倒しました。[.][A][LF]\n"
+            "あとは城門を[.][ToggleRed]制圧[.][ToggleRed]すれば[.][LF]\n"
+            "勝利です。[A][LF]\n"
+            "この操作は[ToggleRed]リーダー[.][ToggleRed]だけが[LF]\n"
+            "行えます。[A][LF]\n"
+            "この部隊のリーダーはエイリークです。[LF]\n"
+            "彼女を城門へ移動させ[.][ToggleRed]制圧[.][ToggleRed]すれば[.][LF]\n"
+            "このマップはクリアとなります。[.][A][X]\n"
+        ),
+        "0x094D": (
+            "受け取った[ToggleRed]きずぐすり[.][ToggleRed]は[LF]\n"
+            "すぐに使えます。[A][LF]\n"
+            "自分の[.][ToggleRed]持ち物[.][ToggleRed]から[.][LF]\n"
+            "[.][ToggleRed]きずぐすり[.][ToggleRed]を選び、使いましょう。[A][X]\n"
+        ),
+        "0x096E": (
+            "ロスは[ToggleRed]かけだし戦士[ToggleRed]です。[.][A][LF]\n"
+            "[ToggleRed]かけだし戦士[ToggleRed]は未熟で[LF]\n"
+            "まだうまく戦えません。[A][LF]\n"
+            "[ToggleRed]レベル１０[ToggleRed]になると[A][LF]\n"
+            "[ToggleRed]クラスチェンジ[ToggleRed]して強くなり[.][LF]\n"
+            "上位の[.][ToggleRed]戦士[ToggleRed]か[ToggleRed]海賊[.][ToggleRed]"
+            "になれます。[.][A][LF]\n"
+            "強敵には[.][ToggleRed]かけだし戦士[ToggleRed]を[LF]\n"
+            "向かわせないほうがよいでしょう。[.][A][CR][LF]\n"
+            "ロスの父ガルシアは[.][ToggleRed]戦士[.][ToggleRed]です。[.][A][LF]\n"
+            "[ToggleRed]戦士[ToggleRed]はレベル１０以上になると[.][LF]\n"
+            "[ToggleRed]英雄の証[.][ToggleRed]で[ToggleRed]クラスチェンジ"
+            "[ToggleRed]し[LF]\n"
+            "上位の[.][ToggleRed]勇者[ToggleRed]か[ToggleRed]ウォーリア[ToggleRed]"
+            "になれます。[.][A][CR][LF]\n"
+            "また、[ToggleRed]ソシアルナイト[.][ToggleRed]と[.][ToggleRed]"
+            "アーマーナイト[.][ToggleRed]は[.][LF]\n"
+            "[ToggleRed]騎士の勲章[.][ToggleRed]で[ToggleRed]クラスチェンジ"
+            "[ToggleRed]でき[.][LF]\n"
+            "[ToggleRed]２種類[.][ToggleRed]ある兵種から[LF]\n"
+            "[ToggleRed]一つ[.][ToggleRed]を選べます。[.][A][LF]\n"
+            "ユニットをしっかり育て[LF]\n"
+            "機会があれば[ToggleRed]クラスチェンジ[ToggleRed]しましょう。[A][X]\n"
+        ),
+        "0x0986": (
+            "エイリークをロスの隣へ移動します。[.][LF]\n"
+            "点滅した場所へカーソルを合わせ[LF]\n"
+            "Ａボタンを押してください。[.][A][X]\n"
+        ),
+    },
+    "zh-Hans": {
+        "0x094D": (
+            "刚获得的[ToggleRed]伤药[.][ToggleRed][LF]\n"
+            "可以立即使用。[A][LF]\n"
+            "请从 [.][ToggleRed]物品[.][ToggleRed]中选择[.][LF]\n"
+            "并使用 [.][ToggleRed]伤药[.][ToggleRed]。[A][X]\n"
+        ),
+    },
+}
+EXPECTED_REVIEWED_PAYLOAD_SHA256 = {
+    "ja": {
+        "0x0AAD": "4c7c1300359df0864cab1b3d8a550b12af8181fff4f4b4f016db28d3be475bc3",
+        "0x0B2A": "2afc824ec542086137e414df5839bce4cdde30ca5393f94e2ff70c113e116ebc",
+    },
+    "zh-Hans": {
+        "0x0B2A": "346830110bd9ac96c09606a0aef56c6cd062380d18fd719b3a4694f0cd1c82c0",
+    },
+}
+EXPECTED_REVIEWED_SNIPPETS = {
+    "ja": {
+        "0x0AAD": (
+            "俺たち下の者には[LF]\n陛下のお考えなどわからない。[A]",
+        ),
+        "0x0B2A": (
+            (
+                "[OpenLeft]リオンによれば[A][LF]\n"
+                "奴はグラド、フレリア、ジャハナの[.][LF]\n"
+                "【聖石】をすでに破壊した。[A]"
+            ),
+            (
+                "[OpenFarLeft]そういえば[.][ToggleMouthMove]・・・[.][ToggleMouthMove][A][LF]\n"
+                "グラド軍はルネスの【聖石】を[.][LF]\n"
+                "破壊するため私を襲いました。[.][A][LF]\n"
+                "それがルネスを[LF]\n"
+                "侵略した理由なら[ToggleMouthMove]・・・[.][ToggleMouthMove][A][LF]\n"
+                "【聖石】の力は私たちの[LF]\n"
+                "想像以上なのかもしれません。[A]"
+            ),
+        ),
+    },
+    "zh-Hans": {
+        "0x0B2A": (
+            (
+                "[OpenLeft]据利昂所说，[A][LF]\n"
+                "他已毁掉古拉德、弗雷利亚和[.][LF]\n"
+                "贾哈那的【圣石】。[A]"
+            ),
+        ),
+    },
+}
+
+
+def structural_sequence(text):
+    return re.findall(r"\[[^\]\n]+\]|\n", text)
+
+
+class AuthoredEventExpansionTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.queue_bytes = QUEUE_PATH.read_bytes()
+        cls.queue = json.loads(cls.queue_bytes.decode("utf-8"))
+        cls.queue_rows = {
+            row["target_id"]: row for row in cls.queue["targets"]
+        }
+        cls.shard_paths = {
+            locale: SHARD_DIR / f"event_expansion.{locale}.json"
+            for locale in LOCALES
+        }
+        cls.shards = {
+            locale: json.loads(path.read_text(encoding="utf-8"))
+            for locale, path in cls.shard_paths.items()
+        }
+        cls.entries = {
+            locale: {
+                row["target_id"]: row
+                for row in cls.shards[locale]["translations"]
+            }
+            for locale in LOCALES
+        }
+
+    def test_exact_target_scope_count_and_order(self):
+        selected = [
+            row
+            for row in self.queue["targets"]
+            if row["subsystem"] in EXPECTED_SUBSYSTEM_COUNTS
+        ]
+        self.assertEqual(
+            tuple(row["target_id"] for row in selected),
+            EXPECTED_TARGET_IDS,
+        )
+        self.assertEqual(
+            Counter(row["subsystem"] for row in selected),
+            Counter(EXPECTED_SUBSYSTEM_COUNTS),
+        )
+        for locale in LOCALES:
+            shard = self.shards[locale]
+            self.assertEqual(shard["target_count"], 46)
+            self.assertEqual(
+                tuple(row["target_id"] for row in shard["translations"]),
+                EXPECTED_TARGET_IDS,
+            )
+            self.assertEqual(
+                len(set(row["target_id"] for row in shard["translations"])),
+                46,
+            )
+            self.assertEqual(
+                shard["subsystem_counts"], EXPECTED_SUBSYSTEM_COUNTS
+            )
+            self.assertTrue(
+                {"0x0738", "0x0756"}.isdisjoint(self.entries[locale])
+            )
+
+    def test_locale_parity_and_source_hash_order_are_pinned(self):
+        self.assertEqual(
+            hashlib.sha256(self.queue_bytes).hexdigest(),
+            EXPECTED_QUEUE_SHA256,
+        )
+        ja_rows = self.shards["ja"]["translations"]
+        zh_rows = self.shards["zh-Hans"]["translations"]
+        for ja_row, zh_row in zip(ja_rows, zh_rows):
+            for field in (
+                "target_id",
+                "key",
+                "subsystem",
+                "english_payload_sha256",
+            ):
+                self.assertEqual(ja_row[field], zh_row[field])
+            source = self.queue_rows[ja_row["target_id"]]
+            self.assertEqual(ja_row["key"], source["suggested_key"])
+            self.assertEqual(ja_row["subsystem"], source["subsystem"])
+            self.assertEqual(
+                ja_row["english_payload_sha256"],
+                source["english_payload_sha256"],
+            )
+        for locale in LOCALES:
+            shard = self.shards[locale]
+            self.assertEqual(shard["locale"], locale)
+            self.assertEqual(shard["shard"], "event_expansion")
+            self.assertEqual(
+                shard["source_queue"]["sha256"], EXPECTED_QUEUE_SHA256
+            )
+            self.assertEqual(
+                shard["source_map_sha256"],
+                self.queue["authoritative_target_map_sha256"],
+            )
+
+    def test_controls_newlines_and_placeholders_match_source(self):
+        for locale in LOCALES:
+            for target_id in EXPECTED_TARGET_IDS:
+                source = self.queue_rows[target_id]
+                text = self.entries[locale][target_id]["text"]
+                self.assertEqual(
+                    structural_sequence(text),
+                    structural_sequence(source["source_text"]),
+                    (locale, target_id),
+                )
+                for placeholder in source["placeholders"]:
+                    token = placeholder["token"]
+                    self.assertEqual(
+                        text.count(token),
+                        source["source_text"].count(token),
+                        (locale, target_id, token),
+                    )
+        for locale in LOCALES:
+            self.assertEqual(self.entries[locale]["0x0000"]["text"], "[X]\n")
+            self.assertEqual(
+                self.entries[locale]["0x0537"]["text"],
+                "[DashedLine][DashedLine][DashedLine][DashedLine][X]\n",
+            )
+
+    def test_files_are_canonical_deterministic_utf8(self):
+        for locale, path in self.shard_paths.items():
+            raw = path.read_bytes()
+            self.assertEqual(raw.decode("utf-8").encode("utf-8"), raw)
+            self.assertTrue(any(byte >= 0x80 for byte in raw))
+            self.assertEqual(raw, canonical_json_bytes(self.shards[locale]))
+
+    def test_no_untranslated_english_prose(self):
+        for locale in LOCALES:
+            for target_id, entry in self.entries[locale].items():
+                prose = re.sub(r"\[[^\]\n]+\]", "", entry["text"])
+                self.assertIsNone(
+                    re.search(r"[A-Za-z]{4,}", prose),
+                    (locale, target_id, prose),
+                )
+
+    def test_reviewed_payloads_are_exact(self):
+        for locale, targets in EXPECTED_REVIEWED_TEXT.items():
+            for target_id, expected in targets.items():
+                self.assertEqual(
+                    self.entries[locale][target_id]["text"],
+                    expected,
+                    (locale, target_id),
+                )
+        for locale, targets in EXPECTED_REVIEWED_PAYLOAD_SHA256.items():
+            for target_id, expected in targets.items():
+                text = self.entries[locale][target_id]["text"]
+                self.assertEqual(
+                    hashlib.sha256(text.encode("utf-8")).hexdigest(),
+                    expected,
+                    (locale, target_id),
+                )
+        for locale, targets in EXPECTED_REVIEWED_SNIPPETS.items():
+            for target_id, snippets in targets.items():
+                for expected in snippets:
+                    self.assertIn(
+                        expected,
+                        self.entries[locale][target_id]["text"],
+                        (locale, target_id),
+                    )
+
+    def test_established_terminology_is_used(self):
+        expected = {
+            "ja": {
+                "0x0945": ("ミュラン", "グラド", "ブレゲ", "エイリーク", "制圧"),
+                "0x094A": ("十字ボタン", "きずぐすり"),
+                "0x0950": ("ゼト",),
+                "0x096B": ("傭兵", "とっこうやく"),
+                "0x096E": (
+                    "ロス",
+                    "ガルシア",
+                    "かけだし戦士",
+                    "英雄の証",
+                    "騎士の勲章",
+                ),
+                "0x0AAD": (
+                    "エフラム",
+                    "リオン",
+                    "デュッセル",
+                    "ヴィガルド",
+                    "ルネス",
+                    "グラド",
+                ),
+                "0x0B2A": (
+                    "ラーチェル",
+                    "フレリア",
+                    "ジャハナ",
+                    "【魔石】",
+                    "【聖石】",
+                ),
+            },
+            "zh-Hans": {
+                "0x0945": ("缪兰", "古拉德", "普利肯", "艾瑞珂", "占领"),
+                "0x094A": ("十字键", "伤药"),
+                "0x0950": ("塞思",),
+                "0x096B": ("佣兵", "特效药"),
+                "0x096E": (
+                    "罗斯",
+                    "加西亚",
+                    "年轻的战士",
+                    "英雄之证",
+                    "骑士勋章",
+                ),
+                "0x0AAD": (
+                    "伊弗列姆",
+                    "利昂",
+                    "杜塞尔",
+                    "彼加尔德",
+                    "鲁内斯",
+                    "古拉德",
+                ),
+                "0x0B2A": (
+                    "拉切尔",
+                    "弗雷利亚",
+                    "贾哈那",
+                    "【魔石】",
+                    "【圣石】",
+                ),
+            },
+        }
+        for locale, targets in expected.items():
+            for target_id, terms in targets.items():
+                text = self.entries[locale][target_id]["text"]
+                for term in terms:
+                    self.assertIn(term, text, (locale, target_id, term))
+
+    def test_expansion_save_messages_are_materialized_and_exact(self):
+        for locale in LOCALES:
+            actual = {
+                target_id: self.entries[locale][target_id]["text"]
+                for target_id in EXPECTED_EXPANSION_TEXT[locale]
+            }
+            self.assertEqual(actual, EXPECTED_EXPANSION_TEXT[locale])
+            catalog = json.loads(
+                (
+                    ROOT / f"texts/expansion/catalog.{locale}.json"
+                ).read_text(encoding="utf-8")
+            )
+            erase_label = catalog["strings"]["save_compat.menu_erase_all"]
+            self.assertIn(erase_label, actual["0x0D55"])
+
+
+if __name__ == "__main__":
+    unittest.main()

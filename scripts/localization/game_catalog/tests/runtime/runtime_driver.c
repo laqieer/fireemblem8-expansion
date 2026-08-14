@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "bmitem.h"
+#include "localized_game_text.h"
 
 char *GetStringFromIndex(int index);
 char *GetStringFromIndexInBufferWithLimit(int index, char *buffer, u32 bufferCapacity);
@@ -66,6 +67,41 @@ static void CheckSupportScreenRecordsUnchanged(void)
 {
     CHECK(memcmp(
         gBufPrep, sPrepGuardSnapshot, sizeof(gBufPrep)) == 0);
+}
+
+static void TestFixedWidthDisplayAlias(void)
+{
+    const char *alias;
+
+    sCurrentLocale = EXPANSION_LOCALE_JA;
+    alias = LocalizedGameText_GetDisplayAliasForWidth(
+        18,
+        LOCALIZED_GAME_TEXT_DISPLAY_ITEM_NAME_56,
+        56,
+        64);
+    CHECK(alias != NULL);
+    CHECK(strcmp(alias, "短") == 0);
+    CHECK(LocalizedGameText_GetDisplayAliasForWidth(
+        18,
+        LOCALIZED_GAME_TEXT_DISPLAY_ITEM_NAME_56,
+        56,
+        56) == NULL);
+    CHECK(LocalizedGameText_GetDisplayAliasForWidth(
+        18,
+        LOCALIZED_GAME_TEXT_DISPLAY_ITEM_NAME_56,
+        64,
+        72) == NULL);
+    CHECK(LocalizedGameText_GetDisplayAliasForWidth(
+        18,
+        LOCALIZED_GAME_TEXT_DISPLAY_CLASS_NAME_64,
+        64,
+        72) == NULL);
+    sCurrentLocale = EXPANSION_LOCALE_EN;
+    CHECK(LocalizedGameText_GetDisplayAliasForWidth(
+        18,
+        LOCALIZED_GAME_TEXT_DISPLAY_ITEM_NAME_56,
+        56,
+        64) == NULL);
 }
 
 ExpansionLocaleId ExpansionLocale_GetCurrent(void)
@@ -652,6 +688,7 @@ static void TestUtf8ContinuationTailIsBounded(void)
 
 int main(void)
 {
+    TestFixedWidthDisplayAlias();
     TestPresentDecode();
     TestPresentDecodeViaBoundedPrepBuffer();
     TestAbsentFallback();

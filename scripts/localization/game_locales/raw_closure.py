@@ -9,8 +9,14 @@ from pathlib import Path
 from typing import Any, Dict, List, Mapping
 
 from .mapping import MappingError, validate_mapping_document
+from .raw_providers import (
+    RawProviderError,
+    load_ja_raw_providers,
+    resolve_ja_raw_provider,
+    resolve_ja_raw_text,
+)
 
-CLOSURE_SCHEMA_VERSION = 1
+CLOSURE_SCHEMA_VERSION = 3
 DECISIONS_KIND = "fe8cn-raw-surface-decisions"
 CLOSURE_KIND = "fe8cn-raw-surface-closure"
 DECISION_CLASSES = (
@@ -90,16 +96,277 @@ def _validate_call_sites(
             raise RawClosureError(
                 f"{site_field}.anchors must contain non-empty strings"
             )
+        provider_anchor = site.get("provider_anchor")
+        provider_scope = site.get("provider_scope")
+        normalized_provider_scope = None
+        if provider_scope is not None:
+            if provider_anchor is None:
+                raise RawClosureError(
+                    f"{site_field}.provider_scope requires provider_anchor"
+                )
+            provider_scope = _require_dict(
+                provider_scope,
+                f"{site_field}.provider_scope",
+            )
+            if "provider_scope" in provider_scope:
+                raise RawClosureError(
+                    f"{site_field}.provider_scope cannot be nested"
+                )
+            normalized_provider_scope = _validate_call_sites(
+                [provider_scope],
+                field=f"{site_field}.provider_scope",
+                repo_root=repo_root,
+            )[0]
+        if provider_anchor is not None:
+            provider_anchor = _require_string(
+                provider_anchor,
+                f"{site_field}.provider_anchor",
+            )
+            if (
+                provider_anchor not in anchors
+                and (
+                    normalized_provider_scope is None
+                    or provider_anchor
+                    not in normalized_provider_scope["anchors"]
+                )
+            ):
+                raise RawClosureError(
+                    f"{site_field}.provider_anchor must be an identifying anchor "
+                    "in the target or provider scope"
+                )
         path = repo_root / relative_path
         if not path.is_file():
             raise RawClosureError(f"{site_field}.path disappeared: {relative_path}")
         source = path.read_text(encoding="utf-8")
-        if not any(anchor in source for anchor in anchors):
+        symbol = site.get("symbol")
+        scope_kind = site.get("scope_kind")
+        if symbol is None and scope_kind is not None:
             raise RawClosureError(
-                f"{site_field} has no surviving anchor in {relative_path}: {anchors}"
+                f"{site_field}.scope_kind requires a scope symbol"
             )
-        normalized.append({"anchors": list(anchors), "path": relative_path})
+        if symbol is not None:
+            symbol = _require_string(symbol, f"{site_field}.symbol")
+            if not _IDENTIFIER_RE.fullmatch(symbol):
+                raise RawClosureError(
+                    f"{site_field}.symbol must be a C identifier"
+                )
+            if scope_kind == "function":
+                source = _function_body(source, symbol, site_field)
+            elif scope_kind == "initializer":
+                source = _initializer_body(source, symbol, site_field)
+            elif scope_kind == "symbol":
+                source = _symbol_body(source, symbol, site_field)
+            elif scope_kind == "line":
+                source = _line_body(source, symbol, site_field)
+            else:
+                raise RawClosureError(
+                    f"{site_field}.scope_kind must be 'function', "
+                    "'initializer', 'symbol', or 'line'"
+                )
+        cursor = 0
+        missing = []
+        for anchor in anchors:
+            position = source.find(anchor, cursor)
+            if position < 0:
+                missing.append(anchor)
+                continue
+            cursor = position + len(anchor)
+        if missing:
+            raise RawClosureError(
+                f"{site_field} is missing ordered anchors in {relative_path}: "
+                f"{missing}"
+            )
+        normalized_site = {"anchors": list(anchors), "path": relative_path}
+        if symbol is not None:
+            normalized_site["scope_kind"] = scope_kind
+            normalized_site["symbol"] = symbol
+        if provider_anchor is not None:
+            normalized_site["provider_anchor"] = provider_anchor
+        if normalized_provider_scope is not None:
+            normalized_site["provider_scope"] = normalized_provider_scope
+        normalized.append(normalized_site)
     return normalized
+
+
+def _strip_c_comments(source: str) -> str:
+    source = re.sub(r"/\*.*?\*/", " ", source, flags=re.DOTALL)
+    return re.sub(r"//[^\n]*", " ", source)
+
+
+def _brace_body(source: str, start: int, field: str) -> str:
+    depth = 0
+    for index in range(start, len(source)):
+        if source[index] == "{":
+            depth += 1
+        elif source[index] == "}":
+            depth -= 1
+            if depth == 0:
+                return source[start : index + 1]
+    raise RawClosureError(f"{field}.symbol has an unterminated brace body")
+
+
+def _function_body(source: str, symbol: str, field: str) -> str:
+    source = _strip_c_comments(source)
+    match = re.search(
+        rf"\b{re.escape(symbol)}\s*\([^;{{}}]*\)\s*\{{",
+        source,
+        flags=re.DOTALL,
+    )
+    if match is None:
+        raise RawClosureError(f"{field}.symbol is not a function definition")
+    return _brace_body(source, match.end() - 1, field)
+
+
+def _initializer_body(source: str, symbol: str, field: str) -> str:
+    source = _strip_c_comments(source)
+    match = re.search(
+        rf"\b{re.escape(symbol)}\s*\[[^\]]*\][^;={{}}]*=\s*\{{",
+        source,
+        flags=re.DOTALL,
+    )
+    if match is None:
+        raise RawClosureError(f"{field}.symbol is not an array initializer")
+    return _brace_body(source, match.end() - 1, field)
+
+
+def _symbol_body(source: str, symbol: str, field: str) -> str:
+    source = _strip_c_comments(source)
+    match = re.search(
+        rf"[^;{{}}]*\b{re.escape(symbol)}\b[^;{{}}]*;",
+        source,
+        flags=re.DOTALL,
+    )
+    if match is None:
+        raise RawClosureError(f"{field}.symbol is not a standalone declaration")
+    return match.group(0)
+
+
+def _line_body(source: str, symbol: str, field: str) -> str:
+    matches = [
+        line
+        for line in source.splitlines()
+        if line.split("\t", 1)[0] == symbol
+    ]
+    if len(matches) != 1:
+        raise RawClosureError(
+            f"{field}.symbol is not one exact tabular record"
+        )
+    return matches[0]
+
+
+def _scope_kind(source: str, symbol: str) -> str:
+    stripped = _strip_c_comments(source)
+    if re.search(
+        rf"\b{re.escape(symbol)}\s*\([^;{{}}]*\)\s*\{{",
+        stripped,
+        flags=re.DOTALL,
+    ):
+        return "function"
+    if re.search(
+        rf"\b{re.escape(symbol)}\s*\[[^\]]*\][^;={{}}]*=\s*\{{",
+        stripped,
+        flags=re.DOTALL,
+    ):
+        return "initializer"
+    raise RawClosureError(
+        f"{symbol} is not a scoped function or array provider"
+    )
+
+
+def _validate_runtime_consumers(
+    consumers: Any,
+    *,
+    field: str,
+    repo_root: Path,
+) -> List[Dict[str, Any]]:
+    if not isinstance(consumers, list) or not consumers:
+        raise RawClosureError(f"{field} must be a non-empty array")
+
+    normalized = []
+    for index, raw_consumer in enumerate(consumers):
+        consumer_field = f"{field}[{index}]"
+        consumer = _require_dict(raw_consumer, consumer_field)
+        relative_path = _require_string(
+            consumer.get("path"), f"{consumer_field}.path"
+        )
+        symbol = _require_string(consumer.get("symbol"), f"{consumer_field}.symbol")
+        if not _IDENTIFIER_RE.fullmatch(symbol):
+            raise RawClosureError(f"{consumer_field}.symbol must be a C identifier")
+        anchors = consumer.get("anchors")
+        if not isinstance(anchors, list) or not anchors:
+            raise RawClosureError(
+                f"{consumer_field}.anchors must be a non-empty array"
+            )
+        if any(not isinstance(anchor, str) or not anchor for anchor in anchors):
+            raise RawClosureError(
+                f"{consumer_field}.anchors must contain non-empty strings"
+            )
+
+        path = repo_root / relative_path
+        if not path.is_file():
+            raise RawClosureError(
+                f"{consumer_field}.path disappeared: {relative_path}"
+            )
+        body = _function_body(
+            path.read_text(encoding="utf-8"),
+            symbol,
+            consumer_field,
+        )
+        missing = []
+        cursor = 0
+        for anchor in anchors:
+            position = body.find(anchor, cursor)
+            if position < 0:
+                missing.append(anchor)
+                continue
+            cursor = position + len(anchor)
+        if missing:
+            raise RawClosureError(
+                f"{consumer_field} runtime consumer {symbol} in {relative_path} "
+                f"is missing ordered anchors: {missing}"
+            )
+        normalized.append(
+            {
+                "anchors": list(anchors),
+                "path": relative_path,
+                "symbol": symbol,
+            }
+        )
+    return normalized
+
+
+def _validate_runtime_payload_source(
+    source_data: Any,
+    *,
+    field: str,
+    repo_root: Path,
+) -> Dict[str, Any]:
+    source = _require_dict(source_data, field)
+    if source.get("kind") != "c_string_symbol":
+        raise RawClosureError(f"{field}.kind must be 'c_string_symbol'")
+    relative_path = _require_string(source.get("path"), f"{field}.path")
+    symbol = _require_string(source.get("symbol"), f"{field}.symbol")
+    if not _IDENTIFIER_RE.fullmatch(symbol):
+        raise RawClosureError(f"{field}.symbol must be a C identifier")
+
+    path = repo_root / relative_path
+    if not path.is_file():
+        raise RawClosureError(f"{field}.path disappeared: {relative_path}")
+    source_text = _strip_c_comments(path.read_text(encoding="utf-8"))
+    match = re.search(
+        rf'\bconst\s+char\s+{re.escape(symbol)}\s*\[\s*\]\s*=\s*"([^"\\]*)"\s*;',
+        source_text,
+    )
+    if match is None:
+        raise RawClosureError(
+            f"{field} cannot resolve const char {symbol}[] in {relative_path}"
+        )
+    return {
+        "kind": "c_string_symbol",
+        "path": relative_path,
+        "symbol": symbol,
+        "text": match.group(1),
+    }
 
 
 def _validate_decisions(
@@ -140,8 +407,6 @@ def _validate_decisions(
             raise RawClosureError(f"{field}.user_facing must be a boolean")
         if classification.endswith("_exclusion") and user_facing:
             raise RawClosureError(f"{field} exclusions cannot be user-facing")
-        if classification in ("game_message", "expansion_message") and not user_facing:
-            raise RawClosureError(f"{field} localized decisions must be user-facing")
         _require_string(decision.get("rationale"), f"{field}.rationale")
         normalized = dict(decision)
         normalized["call_sites"] = _validate_call_sites(
@@ -157,6 +422,19 @@ def _validate_decisions(
                 )
         elif classification == "expansion_message":
             _require_string(decision.get("expansion_key"), f"{field}.expansion_key")
+            normalized["runtime_consumers"] = _validate_runtime_consumers(
+                decision.get("runtime_consumers"),
+                field=f"{field}.runtime_consumers",
+                repo_root=repo_root,
+            )
+            if "runtime_payload_source" in decision:
+                normalized["_runtime_payload_source"] = (
+                    _validate_runtime_payload_source(
+                        decision["runtime_payload_source"],
+                        field=f"{field}.runtime_payload_source",
+                        repo_root=repo_root,
+                    )
+                )
         elif classification == "english_fallback":
             _require_string(decision.get("fallback_reason"), f"{field}.fallback_reason")
         result[import_id] = normalized
@@ -174,23 +452,102 @@ def _mapped_imports(
         raise RawClosureError(f"mapping literal evidence failed: {error}") from error
     result: Dict[str, Dict[str, Any]] = {}
     for row in mapping.rows:
-        if row.source_kind != "raw":
+        source = row.source
+        if row.source_kind == "raw":
+            raw_source = source
+        elif row.source_kind == "authored":
+            raw_source = (
+                (row.verification or {})
+                .get("promotion", {})
+                .get("details", {})
+                .get("incorrect_source", {})
+            )
+            if raw_source.get("kind") != "raw":
+                continue
+        else:
             continue
         for import_id in (
-            row.source["import_id"],
-            *row.source.get("alternate_import_ids", []),
+            raw_source["import_id"],
+            *raw_source.get("alternate_import_ids", []),
         ):
-            if import_id in result:
-                raise RawClosureError(f"{import_id} maps to more than one FE8U target")
-            result[import_id] = {
-                "row": row,
-                "target_id": f"0x{row.target_id:04X}",
-            }
+            entry = result.setdefault(import_id, {"rows": [], "target_ids": []})
+            entry["rows"].append(row)
+            entry["target_ids"].append(f"0x{row.target_id:04X}")
+    for entry in result.values():
+        paired = sorted(
+            zip(entry["target_ids"], entry["rows"]),
+            key=lambda pair: pair[0],
+        )
+        entry["target_ids"] = [target_id for target_id, _ in paired]
+        entry["rows"] = [row for _, row in paired]
     return result
 
 
-def _derived_call_sites(row: Any, repo_root: Path) -> List[Dict[str, Any]]:
+def _derived_call_sites(rows: List[Any], repo_root: Path) -> List[Dict[str, Any]]:
+    combined = []
+    for row in rows:
+        combined.extend(_derived_row_call_sites(row, repo_root))
+    if not combined:
+        raise RawClosureError("raw mapping group lacks an FE8U call-site path")
+    unique = {
+        (
+            site["path"],
+            site.get("scope_kind"),
+            site.get("symbol"),
+            tuple(site["anchors"]),
+        ): site
+        for site in combined
+    }
+    return [unique[key] for key in sorted(unique)]
+
+
+def _validate_declared_provider_anchors(
+    call_sites: List[Dict[str, Any]],
+    rows: List[Any],
+    *,
+    field: str,
+) -> None:
+    declared = {
+        site["provider_anchor"]
+        for site in call_sites
+        if "provider_anchor" in site
+    }
+    expected = set()
+    for row in rows:
+        source = row.source
+        if row.source_kind == "authored":
+            source = (
+                (row.verification or {})
+                .get("promotion", {})
+                .get("details", {})
+                .get("incorrect_source", {})
+            )
+        ja_source = source.get("regional_sources", {}).get("ja", {})
+        if ja_source.get("kind") == "symbol":
+            expected.add(ja_source.get("symbol"))
+    expected.discard(None)
+    if expected and not declared:
+        raise RawClosureError(
+            f"{field} must declare provider_anchor for mapped Japanese "
+            f"providers: expected={sorted(expected)}"
+        )
+    if declared != expected:
+        raise RawClosureError(
+            f"{field} provider anchors do not match mapped Japanese providers: "
+            f"declared={sorted(declared)} expected={sorted(expected)}"
+        )
+
+
+def _derived_row_call_sites(row: Any, repo_root: Path) -> List[Dict[str, Any]]:
     verification = row.verification or {}
+    if row.source_kind == "authored":
+        incorrect_source = (
+            verification.get("promotion", {})
+            .get("details", {})
+            .get("incorrect_source", {})
+        )
+        if incorrect_source.get("kind") == "raw":
+            verification = verification["promotion"]["original_verification"]
     source_paths = verification.get("source_paths", {})
     relative_path = source_paths.get("fe8u")
     if not relative_path:
@@ -198,11 +555,71 @@ def _derived_call_sites(row: Any, repo_root: Path) -> List[Dict[str, Any]]:
             f"0x{row.target_id:04X} raw mapping lacks an FE8U call-site path"
         )
     source_key = verification.get("source_key", "")
-    anchors = [verification.get("source_symbol", ""), source_key]
-    anchors.extend(_IDENTIFIER_RE.findall(source_key))
-    anchors = list(dict.fromkeys(anchor for anchor in anchors if anchor))
+    source_symbol = verification.get("source_symbol", "")
+    source = (repo_root / relative_path).read_text(encoding="utf-8")
+    target_match = re.search(
+        rf"0x0*{row.target_id:X}\b",
+        source,
+        flags=re.IGNORECASE,
+    )
+    target_token = target_match.group(0) if target_match is not None else ""
+    if source_symbol == "gTerrains_0":
+        if not target_token:
+            raise RawClosureError(
+                f"0x{row.target_id:04X} terrain provider target disappeared"
+            )
+        anchors = [f"[{source_key}]", target_token]
+    elif source_symbol == "GoalDisplay_Init":
+        anchors = [f"GetStringFromIndex(MSG_{row.target_id:X})"]
+    elif source_key and source_key in source:
+        anchors = [source_key]
+    else:
+        override_match = re.search(r"override\[(0x[0-9a-fA-F]+)\]", source_key)
+        if override_match is not None:
+            override_value = int(override_match.group(1), 16)
+            designated_target = f".nameMsgId = 0x{row.target_id:04X}"
+            if designated_target in source:
+                anchors = [
+                    designated_target,
+                    f".overrideId = {override_value},",
+                ]
+            else:
+                override_token_match = re.search(
+                    rf"0x0*{override_value:X}\b",
+                    source,
+                    flags=re.IGNORECASE,
+                )
+                if not target_token or override_token_match is None:
+                    raise RawClosureError(
+                        f"0x{row.target_id:04X} raw mapping cannot resolve "
+                        "its menu target/override relationship"
+                    )
+                anchors = [
+                    target_token,
+                    override_token_match.group(0),
+                ]
+        elif re.search(r"\[[0-9]+\]\.name$", source_key):
+            if not target_token:
+                raise RawClosureError(
+                    f"0x{row.target_id:04X} raw mapping cannot resolve "
+                    "its menu target relationship"
+                )
+            anchors = [target_token]
+        else:
+            raise RawClosureError(
+                f"0x{row.target_id:04X} raw mapping lacks a verifiable "
+                "call-site relationship"
+            )
+    scope_kind = _scope_kind(source, source_symbol)
     return _validate_call_sites(
-        [{"path": relative_path, "anchors": anchors}],
+        [
+            {
+                "anchors": anchors,
+                "path": relative_path,
+                "scope_kind": scope_kind,
+                "symbol": source_symbol,
+            }
+        ],
         field=f"mapping.0x{row.target_id:04X}.call_sites",
         repo_root=repo_root,
     )
@@ -235,6 +652,7 @@ def build_raw_surface_closure(
     raw_data: Any,
     mapping_data: Any,
     decisions_data: Any,
+    ja_raw_provider_data: Any,
     registry_data: Any,
     catalog_data: Mapping[str, Any],
     repo_root: Path,
@@ -247,6 +665,13 @@ def build_raw_surface_closure(
         repo_root=repo_root,
     )
     mapped = _mapped_imports(mapping_data, repo_root=repo_root)
+    try:
+        ja_raw_providers = load_ja_raw_providers(
+            ja_raw_provider_data,
+            source_root=repo_root / "texts/locales/ja",
+        )
+    except RawProviderError as error:
+        raise RawClosureError(f"Japanese raw provider catalog failed: {error}") from error
     active_keys = _active_registry_keys(registry_data)
     catalogs = {
         locale: _catalog_strings(catalog_data[locale], locale)
@@ -263,17 +688,18 @@ def build_raw_surface_closure(
             mapped_entry = mapped.get(import_id)
             if mapped_entry is None:
                 raise RawClosureError(f"{import_id} has no closure decision")
-            row = mapped_entry["row"]
             closure_row = {
-                "call_sites": _derived_call_sites(row, repo_root),
+                "call_sites": _derived_call_sites(mapped_entry["rows"], repo_root),
                 "classification": "game_message",
                 "decision_origin": "verified-game-map",
                 "import_id": import_id,
-                "rationale": row.verification["rationale"],
+                "rationale": mapped_entry["rows"][0].verification["rationale"],
                 "source_text_sha256": source_hash,
-                "target_id": mapped_entry["target_id"],
+                "target_ids": mapped_entry["target_ids"],
                 "user_facing": True,
             }
+            if len(mapped_entry["target_ids"]) == 1:
+                closure_row["target_id"] = mapped_entry["target_ids"][0]
         else:
             classification = decision["classification"]
             closure_row = {
@@ -291,19 +717,13 @@ def build_raw_surface_closure(
                     raise RawClosureError(
                         f"{import_id} game-message decision is absent from verified mapping"
                     )
-                if mapped_entry["target_id"] != decision["target_id"]:
+                if decision["target_id"] not in mapped_entry["target_ids"]:
                     raise RawClosureError(
-                        f"{import_id} target mismatch: {decision['target_id']} vs "
-                        f"{mapped_entry['target_id']}"
-                    )
-                ja_source = mapped_entry["row"].source.get(
-                    "regional_sources", {}
-                ).get("ja", {})
-                if ja_source.get("kind") != "literal":
-                    raise RawClosureError(
-                        f"{import_id} deferred game-message decision lacks canonical ja text"
+                        f"{import_id} target mismatch: {decision['target_id']} not in "
+                        f"{mapped_entry['target_ids']}"
                     )
                 closure_row["target_id"] = decision["target_id"]
+                closure_row["target_ids"] = mapped_entry["target_ids"]
             elif classification == "expansion_message":
                 key = decision["expansion_key"]
                 if key not in active_keys:
@@ -315,13 +735,158 @@ def build_raw_surface_closure(
                         raise RawClosureError(
                             f"{import_id} expansion key {key!r} is missing in {locale}"
                         )
-                if catalogs["zh-Hans"][key] != raw_record["text"]:
-                    raise RawClosureError(
-                        f"{import_id} zh-Hans expansion text must equal imported raw payload"
-                    )
+                payload_source = decision.get("_runtime_payload_source")
+                if payload_source is None:
+                    if catalogs["zh-Hans"][key] != raw_record["text"]:
+                        raise RawClosureError(
+                            f"{import_id} zh-Hans expansion text must equal "
+                            "imported raw payload"
+                        )
+                else:
+                    for locale in ("en", "ja", "zh-Hans"):
+                        if catalogs[locale][key] != payload_source["text"]:
+                            raise RawClosureError(
+                                f"{import_id} {locale} expansion text must equal "
+                                f"{payload_source['symbol']}"
+                            )
                 closure_row["expansion_key"] = key
+                closure_row["runtime_consumers"] = decision["runtime_consumers"]
+                if payload_source is not None:
+                    closure_row["runtime_payload_source"] = {
+                        "kind": payload_source["kind"],
+                        "path": payload_source["path"],
+                        "symbol": payload_source["symbol"],
+                        "text_sha256": hashlib.sha256(
+                            payload_source["text"].encode("utf-8")
+                        ).hexdigest(),
+                    }
+                closure_row["providers"] = {
+                    locale: {
+                        "kind": "expansion_catalog",
+                        "provenance": {
+                            "key": key,
+                            "kind": "authored_expansion_catalog",
+                            "path": f"texts/expansion/catalog.{locale}.json",
+                        },
+                        "text_sha256": hashlib.sha256(
+                            catalogs[locale][key].encode("utf-8")
+                        ).hexdigest(),
+                    }
+                    for locale in ("en", "ja", "zh-Hans")
+                }
             elif classification == "english_fallback":
                 closure_row["fallback_reason"] = decision["fallback_reason"]
+
+        relationship_entry = mapped.get(import_id)
+        if decision is not None and relationship_entry is not None:
+            _validate_declared_provider_anchors(
+                closure_row["call_sites"],
+                relationship_entry["rows"],
+                field=f"{import_id}.call_sites",
+            )
+
+        if closure_row["classification"] == "game_message":
+            mapped_entry = mapped.get(import_id)
+            if mapped_entry is None:
+                raise RawClosureError(
+                    f"{import_id} game-message provider is absent from verified mapping"
+                )
+            mapping_row = mapped_entry["rows"][0]
+            if mapping_row.source_kind == "authored":
+                verification = mapping_row.verification
+                payload_sha256 = (
+                    verification["promotion"]["details"][
+                        "payload_sha256"
+                    ]
+                )
+                closure_row["providers"] = {
+                    locale: {
+                        "kind": "authored_semantic_correction",
+                        "provenance": {
+                            "evidence_kind": verification["evidence_kind"],
+                            "kind": "reviewed_authored_translation",
+                            "method": verification["method"],
+                            "source_key": verification["source_key"],
+                            "source_table": verification["source_table"],
+                            "translation_key": mapping_row.source[
+                                "translation_key"
+                            ],
+                        },
+                        "text_sha256": payload_sha256[locale],
+                    }
+                    for locale in ("ja", "zh-Hans")
+                }
+            else:
+                ja_source = mapping_row.source.get(
+                    "regional_sources", {}
+                ).get("ja", {})
+                try:
+                    ja_text = resolve_ja_raw_text(
+                        target_id=mapping_row.target_id,
+                        ja_source=ja_source,
+                        providers=ja_raw_providers,
+                    )
+                except RawProviderError as error:
+                    raise RawClosureError(f"{import_id}: {error}") from error
+                zh_text = raw_record["text"]
+                if not ja_text or not zh_text:
+                    raise RawClosureError(
+                        f"{import_id} game-message provider payloads must be non-empty"
+                    )
+                if ja_source["kind"] == "symbol":
+                    raw_provider = resolve_ja_raw_provider(
+                        target_id=mapping_row.target_id,
+                        ja_source=ja_source,
+                        providers=ja_raw_providers,
+                    )
+                    ja_provenance = {
+                        "byte_length": raw_provider.value_length,
+                        "kind": raw_provider.provenance_kind,
+                        "offset": raw_provider.value_offset,
+                        "provider_values_artifact": {
+                            "path": raw_provider.source_artifact_path,
+                            "sha256": raw_provider.source_artifact_sha256,
+                        },
+                        "source_anchor": raw_provider.source_anchor,
+                        "source_blob_oid": raw_provider.source_blob_oid,
+                        "source_path": raw_provider.source_path,
+                        "source_repository": raw_provider.source_repository,
+                        "source_revision": raw_provider.source_revision,
+                        "source_value_index": (
+                            raw_provider.source_value_index
+                        ),
+                        "symbol": raw_provider.symbol,
+                        "value_sha256": raw_provider.value_sha256,
+                    }
+                    if raw_provider.provenance_kind == "pinned_baserom_slice":
+                        ja_provenance.update(
+                            {
+                                "decoded_value": raw_provider.decoded_value,
+                                "rom_address": raw_provider.rom_address,
+                                "rom_offset": raw_provider.rom_offset,
+                                "rom_sha256": raw_provider.rom_sha256,
+                            }
+                        )
+                else:
+                    ja_provenance = {
+                        "kind": "tracked_source_literal",
+                        **ja_source["provenance"],
+                    }
+                closure_row["providers"] = {
+                    "ja": {
+                        "kind": f"raw_{ja_source['kind']}",
+                        "provenance": ja_provenance,
+                        "text_sha256": hashlib.sha256(
+                            ja_text.encode("utf-8")
+                        ).hexdigest(),
+                    },
+                    "zh-Hans": {
+                        "kind": "raw_import",
+                        "text_sha256": hashlib.sha256(
+                            zh_text.encode("utf-8")
+                        ).hexdigest(),
+                    },
+                }
         closure_row["provenance"] = {
             "address": raw_record["provenance"]["address"],
         }
@@ -334,6 +899,30 @@ def build_raw_surface_closure(
         for classification in DECISION_CLASSES
     }
     unresolved = len(raw_records) - len(rows)
+    runtime_consumer_verified_count = sum(
+        1
+        for row in rows
+        if row["classification"] == "expansion_message"
+        and row.get("runtime_consumers")
+    )
+    provider_count = counts["game_message"] + runtime_consumer_verified_count
+    ja_materialized_count = sum(
+        1
+        for row in rows
+        if isinstance(row.get("providers", {}).get("ja", {}).get("text_sha256"), str)
+    )
+    ja_provenance_count = sum(
+        1
+        for row in rows
+        if isinstance(row.get("providers", {}).get("ja", {}).get("provenance"), dict)
+    )
+    zh_materialized_count = sum(
+        1
+        for row in rows
+        if isinstance(
+            row.get("providers", {}).get("zh-Hans", {}).get("text_sha256"), str
+        )
+    )
     summary = {
         "baseline_game_message_count": sum(
             1 for row in rows if row["decision_origin"] == "verified-game-map"
@@ -343,9 +932,13 @@ def build_raw_surface_closure(
         "english_fallback_count": counts["english_fallback"],
         "expansion_message_count": counts["expansion_message"],
         "game_message_count": counts["game_message"],
+        "ja_materialized_count": ja_materialized_count,
+        "ja_provenance_count": ja_provenance_count,
         "non_user_facing_exclusion_count": counts["non_user_facing_exclusion"],
         "total_count": len(raw_records),
         "unresolved_count": unresolved,
+        "provider_count": provider_count,
+        "runtime_consumer_verified_count": runtime_consumer_verified_count,
         "user_facing_deferred_localized_count": sum(
             1
             for row in rows
@@ -353,9 +946,27 @@ def build_raw_surface_closure(
             and row["user_facing"]
             and row["classification"] in ("game_message", "expansion_message")
         ),
+        "zh_hans_materialized_count": zh_materialized_count,
     }
-    if unresolved:
-        raise RawClosureError(f"raw closure has {unresolved} unresolved records")
+    excluded = counts["non_user_facing_exclusion"] + counts["diagnostic_exclusion"]
+    if (
+        unresolved
+        or counts["english_fallback"]
+        or excluded
+        or provider_count != len(raw_records)
+        or runtime_consumer_verified_count != counts["expansion_message"]
+        or ja_materialized_count != len(raw_records)
+        or ja_provenance_count != len(raw_records)
+        or zh_materialized_count != len(raw_records)
+    ):
+        raise RawClosureError(
+            "raw closure strict gate failed: "
+            f"total={len(raw_records)} providers={provider_count} "
+            f"fallback={counts['english_fallback']} exclusions={excluded} "
+            f"unresolved={unresolved} ja={ja_materialized_count} "
+            f"ja-provenance={ja_provenance_count} "
+            f"zh-Hans={zh_materialized_count}"
+        )
     return {
         "kind": CLOSURE_KIND,
         "rows": rows,

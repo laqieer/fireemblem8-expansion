@@ -43,6 +43,8 @@ struct KeyStatusBuffer gDebugToolsLauncherTestKeyStatus = {0};
 struct KeyStatusBuffer * CONST_DATA gKeyStatusPtr = &gDebugToolsLauncherTestKeyStatus;
 
 struct LCDControlBuffer gLCDControlBuffer = {0};
+static struct Font sDebugToolsLauncherTestFont = {0};
+struct Font* gActiveFont = &sDebugToolsLauncherTestFont;
 
 static u16 sDebugToolsLauncherStubBgMap[32 * 32];
 
@@ -76,6 +78,14 @@ u8 MenuCancelSelect(struct MenuProc* menu, struct MenuItemProc* item)
     (void)menu;
     (void)item;
     return 0;
+}
+
+struct Proc* EndMenu(struct MenuProc* proc)
+{
+    if (proc != NULL && proc->def != NULL && proc->def->onEnd != NULL)
+        proc->def->onEnd(proc);
+
+    return (struct Proc*)proc;
 }
 
 struct MenuProc* StartOrphanMenu(const struct MenuDef* def)

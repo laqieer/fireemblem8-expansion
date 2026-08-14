@@ -2,6 +2,10 @@
 
 #include "worldmap.h"
 
+#ifdef FE8_ARCHIVAL_BUILD
+#include "archival_proc_find_iter.inc"
+#endif
+
 struct AutoMuTarget
 {
     /* 00 */ union
@@ -318,6 +322,9 @@ void EndGmAutoMuFor(int index)
     }
 
     Proc_FindBegin(&procIter, ProcScr_GmapAutoMu);
+#ifdef FE8_ARCHIVAL_BUILD
+    ARCHIVAL_END_PROC_BY_FIELD(unitId);
+#else
     do
     {
         proc = Proc_FindNext(&procIter);
@@ -333,6 +340,7 @@ void EndGmAutoMuFor(int index)
             return;
         }
     } while (1);
+#endif
 
     return;
 }
@@ -349,6 +357,9 @@ bool IsGmAutoMuActiveFor(int index)
     }
 
     Proc_FindBegin(&procIter, ProcScr_GmapAutoMu);
+#ifdef FE8_ARCHIVAL_BUILD
+    ARCHIVAL_PROC_EXISTS_BY_FIELD(unitId, true);
+#else
     do
     {
         proc = Proc_FindNext(&procIter);
@@ -363,6 +374,7 @@ bool IsGmAutoMuActiveFor(int index)
             return true;
         }
     } while (1);
+#endif
 
     return false;
 }

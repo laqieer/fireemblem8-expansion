@@ -22,9 +22,10 @@ inside the automated suite), that:
   reintroduced (under this name or a `make`-noise equivalent) without
   failing here.
 * The explicit, clearly-named archival alias `make legacy` still exists and
-  is structurally identical (same dry-run plan) to the pre-existing
-  `make fireemblem8.gba` -- the archival lane is preserved, not deleted,
-  and reachable *only* by naming it.
+  reaches `fireemblem8.gba` through the mandatory
+  `legacy-identity-check`, whose recipe validates the built ROM against
+  the pinned archival manifest -- the archival lane is preserved, not
+  deleted, and reachable *only* by naming it.
 * `scripts/quickstart.sh --legacy` calls `make legacy` by name directly
   (never a bare `make -j<jobs>` plus a lane-selection variable of any
   kind) -- proven both by grepping the script for that exact invocation
@@ -95,8 +96,10 @@ class DefaultGoalDatabaseProbeTests(unittest.TestCase):
         # chain. There is no ifeq/variable-gated branch left in the
         # Makefile that could give `all:` a legacy prerequisite under any
         # condition; this is the load-bearing structural change this issue
-        # makes. See `legacy: fireemblem8.gba` (tested below) for the one
-        # place that prerequisite still lives, reachable only by name.
+        # makes. See the tested
+        # `legacy -> legacy-identity-check -> fireemblem8.gba` chain below
+        # for the one place that prerequisite still lives, reachable only
+        # by name and only through identity validation.
         probe = self.probe()
         all_rule = next(
             (line for line in probe.splitlines() if line.startswith("all:")), None
@@ -197,7 +200,7 @@ class LegacyLaneStillReachableTests(unittest.TestCase):
     """The archival lane is explicitly preserved (never deleted); these
     prove it stays structurally reachable -- but only by naming it."""
 
-    def test_make_legacy_target_depends_on_fireemblem8_gba(self):
+    def test_make_legacy_target_builds_rom_through_identity_check(self):
         # Deliberately a `-p` database probe, never a `-n`/real build of
         # `legacy`/`fireemblem8.gba`: both targets' prerequisite chain
         # reaches mgfembp/mgfembp.bin, whose own recipe invokes $(MAKE) --
@@ -205,18 +208,46 @@ class LegacyLaneStillReachableTests(unittest.TestCase):
         # mgfembp's real tools), never merely prints, even under -n. A `-p`
         # probe against an unrelated, nonexistent target dumps the parsed
         # rule database without evaluating or running any real target's
-        # recipe, so this stays a pure, side-effect-free static check that
-        # the `legacy` alias reaches the exact same, unbroken prerequisite
-        # as the pre-existing `make fireemblem8.gba`.
+        # recipe, so this stays a pure, side-effect-free static check of
+        # the complete intentional chain:
+        #
+        #   legacy -> legacy-identity-check -> fireemblem8.gba
+        #
+        # The intermediate target must also run the archival identity
+        # validator with the pinned manifest and the built ROM. Checking
+        # both prerequisites and recipe prevents a superficially renamed
+        # alias from weakening or bypassing identity validation.
         result = run_make(
             ["--no-print-directory", "-rR", "-p", "__issue15_legacy_alias_probe__"]
         )
+        self.assertNotEqual(result.returncode, 0)
         legacy_rule = next(
             (line for line in result.stdout.splitlines() if line.startswith("legacy:")),
             None,
         )
         self.assertIsNotNone(legacy_rule, result.stdout[:400])
-        self.assertEqual(legacy_rule.strip(), "legacy: fireemblem8.gba")
+        self.assertEqual(legacy_rule.strip(), "legacy: legacy-identity-check")
+
+        identity_rule = next(
+            (
+                line
+                for line in result.stdout.splitlines()
+                if line.startswith("legacy-identity-check:")
+            ),
+            None,
+        )
+        self.assertIsNotNone(identity_rule, result.stdout[:400])
+        self.assertEqual(
+            identity_rule.strip(),
+            "legacy-identity-check: fireemblem8.gba "
+            "scripts/archival_identity.py scripts/archival_identity_manifest.json",
+        )
+
+        identity_rule_pos = result.stdout.find(identity_rule)
+        identity_block = result.stdout[identity_rule_pos : identity_rule_pos + 800]
+        self.assertIn("$(PYTHON) -m scripts.archival_identity", identity_block)
+        self.assertIn("--manifest $(ARCHIVAL_IDENTITY_MANIFEST)", identity_block)
+        self.assertIn("--rom $(ROM)", identity_block)
 
     def test_fe8_default_lane_env_var_no_longer_routes_bare_make_to_agbcc(self):
         # Negative regression test (inverts the pre-fix assumption): an

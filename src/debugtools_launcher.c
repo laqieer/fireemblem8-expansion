@@ -1,10 +1,12 @@
 #include "global.h"
 
+#ifndef FE8_ARCHIVAL_BUILD
 #include "proc.h"
 #include "uimenu.h"
 #include "bmunit.h"
 #include "playerphase.h"
 #include "expansion_debugtools.h"
+#include "debugtools_internal.h"
 
 /*
  * Lifecycle-safe deterministic Chapter 2 launcher.
@@ -72,15 +74,10 @@ CONST_DATA static struct DebugToolsAction sFastBootChapter4PrepAction = {
 
 void DebugTools_RegisterBuiltinActions(void)
 {
-    /* Idempotent: a repeat call reports DEBUGTOOLS_ERR_DUPLICATE (same
-     * id/label) -- an expected, non-silent result that this one-shot
-     * lazy-init call site deliberately ignores. Registers *only* the
-     * Chapter 2 launcher -- unchanged from before issue #11 closure, so
-     * Weather/Fog's own hub-menu row indices (registered right after
-     * this call, from DebugTools_RegisterWeatherFogActions) stay exactly
-     * where every pre-existing scenario's own input script already
-     * expects them. */
-    DebugTools_RegisterAction(&sFastBootChapter2Action);
+    /* Exact repeats are successful no-ops. Registers only the Chapter 2
+     * launcher; ID-indexed storage keeps Weather/Fog at rows 1/2 no matter
+     * which public initializer ran first. */
+    DebugTools_RegisterBuiltinAction(&sFastBootChapter2Action);
 }
 
 /* Issue #11 closure: registered from its own call, deliberately *after*
@@ -92,7 +89,7 @@ void DebugTools_RegisterBuiltinActions(void)
  * own cursor-navigation input script already depends on. */
 void DebugTools_RegisterChapter4PrepAction(void)
 {
-    DebugTools_RegisterAction(&sFastBootChapter4PrepAction);
+    DebugTools_RegisterBuiltinAction(&sFastBootChapter4PrepAction);
 }
 
 void DebugTools_RequestChapter2Launch(void)
@@ -382,3 +379,5 @@ void DebugTools_NotifyTitleScreenStarting(void)
 }
 
 #endif /* FE8_EXPANSION_DEBUGTOOLS_ENABLED */
+
+#endif /* FE8_ARCHIVAL_BUILD */

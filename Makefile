@@ -47,7 +47,8 @@ else
 endif
 
 CC1FLAGS := -mthumb-interwork -Wimplicit -Wparentheses -Werror -O2 -fhex-asm -ffix-debug-line -g
-CPPFLAGS := -I tools/agbcc/include -iquote include -iquote . -nostdinc -undef
+CPPFLAGS := -I tools/agbcc/include -iquote include -iquote . -nostdinc -undef \
+	-DFE8_ARCHIVAL_BUILD=1
 ASFLAGS  := -mcpu=arm7tdmi -mthumb-interwork -I include
 
 # Issue #5 generated-data platform: standalone targets, never wired into
@@ -124,6 +125,8 @@ SOUND_S_FILES := $(wildcard sound/*.s sound/songs/*.s sound/songs/mml/*.s sound/
 SFILES       := $(ASM_S_FILES) $(SRC_S_FILES) $(DATA_S_FILES) $(DATA_SRC_S_FILES) $(SOUND_S_FILES)
 SFILES_COMPILED := $(CFILES:.c=.s)
 C_OBJECTS    := $(CFILES:.c=.o)
+LEGACY_MSG_OBJECT := $(C_SUBDIR)/msg_data.o
+LEGACY_C_OBJECTS := $(filter-out $(LEGACY_MSG_OBJECT),$(C_OBJECTS))
 ASM_OBJECTS  := $(SFILES:.s=.o)
 BANIM_OBJECT := banim/data_banim.o
 MID_FILES    := $(wildcard $(MID_SUBDIR)/*.mid)
@@ -226,9 +229,17 @@ all:
 # Explicit, clearly-named archival alias (issue #15): builds the exact same
 # agbcc-based $(ROM) as `make fireemblem8.gba`. Kept as its own target so
 # scripts/docs can name the archival lane directly.
-legacy: $(ROM)
+ARCHIVAL_IDENTITY_MANIFEST := scripts/archival_identity_manifest.json
+ARCHIVAL_IDENTITY_CHECK := scripts/archival_identity.py
+
+legacy: legacy-identity-check
 	@echo "Archival legacy build complete (agbcc, unsupported release lane): $(ROM)" >&2
 	@echo "See CONTRIBUTING.md for the decomp-matching workflow this lane exists for." >&2
+
+legacy-identity-check: $(ROM) $(ARCHIVAL_IDENTITY_CHECK) $(ARCHIVAL_IDENTITY_MANIFEST)
+	$(PYTHON) -m scripts.archival_identity \
+		--manifest $(ARCHIVAL_IDENTITY_MANIFEST) \
+		--rom $(ROM)
 
 # Prevent the catch-all %.s rule from turning the removed comparison command
 # into an unrelated native executable through make's built-in implicit rules.
@@ -236,7 +247,7 @@ compare:
 	@echo "The legacy comparison target has been removed; build fireemblem8.gba instead." >&2
 	@false
 
-.PHONY: all legacy compare
+.PHONY: all legacy legacy-identity-check compare
 
 #### Shiftability harness (scripts/shiftcheck/) ####
 # Detects hardcoded pointers (raw absolute addresses that bypass the symbol system)
@@ -412,9 +423,20 @@ TEXT_SRC  := $(TEXT_MAIN) $(shell find $(TEXT_DIR) -type f -name "*.txt")
 
 TEXT_HEADER := include/constants/msg.h
 MSG_LIST    := src/msg_data.c
+LEGACY_TEXT_FILTER := scripts/texttools/legacy_text_source.py
+LEGACY_TEXT_DIR := build/legacy/text
+LEGACY_TEXT_MAIN := $(LEGACY_TEXT_DIR)/texts.txt
+LEGACY_TEXT_HEADER := $(LEGACY_TEXT_DIR)/msg.h
+LEGACY_MSG_LIST := $(LEGACY_TEXT_DIR)/msg_data.c
 
 src/msg_data.c: $(TEXT_SRC) $(TEXT_DEFS)
 	@$(TEXT_PROCESS) $(TEXT_MAIN) $(TEXT_DEFS) $@ $(TEXT_HEADER) utf8
+
+$(LEGACY_TEXT_MAIN): $(TEXT_MAIN) $(LEGACY_TEXT_FILTER)
+	@$(PYTHON) $(LEGACY_TEXT_FILTER) $< $@
+
+$(LEGACY_MSG_LIST): $(LEGACY_TEXT_MAIN) $(TEXT_DEFS) $(TEXT_TOOLS)/textprocess.py
+	@$(TEXT_PROCESS) $(LEGACY_TEXT_MAIN) $(TEXT_DEFS) $@ $(LEGACY_TEXT_HEADER) utf8
 
 # Graphics Recipes
 
@@ -523,10 +545,16 @@ MAKEDEP = mkdir -p $(DEPS_DIR)/$(dir $*) && $(CPP) $(CPPFLAGS) $< -MM -MG -MT $*
 
 MAKECMDGOALS_NODEP := clean tag $(MODERN_GOALS) \
 	game-localization-validate game-localization-generate \
-	game-localization-check game-localization-test game-localization-budget
+	game-localization-check game-localization-test game-localization-budget \
+	game-localization-leakage-audit game-localization-leakage-check \
+	game-localization-final-authored-check \
+	game-localization-final-mapping-check \
+	game-localization-final-raw-closure-check \
+	game-localization-final-leakage-audit \
+	game-localization-final-font-check game-localization-final-check
 
 ifeq (,$(filter $(MAKECMDGOALS),$(MAKECMDGOALS_NODEP)))
--include $(addprefix $(DEPS_DIR)/,$(CFILES:.c=.d))
+-include $(addprefix $(DEPS_DIR)/,$(patsubst %.c,%.d,$(filter-out $(CFILES_GENERATED),$(CFILES))))
 endif
 
 $(DEPS_DIR)/%.d: %.c
@@ -557,7 +585,7 @@ $(ELF): $(ALL_OBJECTS) $(OBJECTS_LST) $(LDSCRIPT) $(SYM_FILES)
 %.gba: %.elf
 	$(OBJCOPY) --strip-debug -O binary --pad-to 0x9000000 --gap-fill=0xff $< $@
 
-$(C_OBJECTS): %.o: %.c $(DEPS_DIR)/%.d
+$(LEGACY_C_OBJECTS): %.o: %.c $(DEPS_DIR)/%.d
 	@$(MAKEDEP)
 	$(CPP) $(CPPFLAGS) $< | iconv -f UTF-8 -t CP932 | $(CC1) $(CC1FLAGS) -o $*.s
 	echo '.ALIGN 2, 0' >> $*.s
@@ -567,6 +595,16 @@ else
 	$(SED) '/.section	.debug_line/i\.align 2, 0' $*.s
 endif
 	$(AS) $(ASFLAGS) $*.s -o $@
+
+$(LEGACY_MSG_OBJECT): $(LEGACY_MSG_LIST)
+	$(CPP) $(CPPFLAGS) $< | iconv -f UTF-8 -t CP932 | $(CC1) $(CC1FLAGS) -o $(@:.o=.s)
+	echo '.ALIGN 2, 0' >> $(@:.o=.s)
+ifeq ($(UNAME),Darwin)
+	$(SED) -f scripts/align_2_before_debug_section_for_osx.sed $(@:.o=.s)
+else
+	$(SED) '/.section	.debug_line/i\.align 2, 0' $(@:.o=.s)
+endif
+	$(AS) $(ASFLAGS) $(@:.o=.s) -o $@
 
 ifeq ($(NODEP),1)
 asm/%.o:      data_dep :=

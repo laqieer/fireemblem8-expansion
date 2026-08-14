@@ -19,6 +19,7 @@
 #include "sysutil.h"
 #include "worldmap.h"
 #include "prepscreen.h"
+#include "localized_game_text.h"
 
 #include "constants/classes.h"
 #include "constants/items.h"
@@ -164,7 +165,11 @@ void DrawPrepScreenItemUseStatLabels(struct Unit *unit)
         GetStringFromIndex(0x4F7)
     );
 
+#if FE8_LOCALIZED_GAME_TEXT_CJK_PROFILE_ENABLED
+    str = GetClassDisplayNameForWidth(unit->pClassData, 64);
+#else
     str = GetStringFromIndex(unit->pClassData->nameTextId);
+#endif
     PutDrawText(
         text++,
         TILEMAP_LOCATED(gBG2TilemapBuffer, 21, 1),

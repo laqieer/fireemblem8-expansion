@@ -16,6 +16,7 @@ FEBUILDER_EVIDENCE_COMMAND ?= FEBuilderGBA.CLI --build-font-library
 .NOTPARALLEL:
 
 .PHONY: cjk-fonts-check cjk-fonts-test cjk-fonts-generate-inventory
+.PHONY: cjk-fonts-refresh-provenance
 .PHONY: cjk-fonts-febuilder-dry-run cjk-fonts-febuilder-generate
 .PHONY: cjk-fonts-febuilder-validate cjk-fonts-febuilder-roundtrip
 .PHONY: cjk-fonts-record-gates cjk-fonts-import cjk-fonts-febuilder-all
@@ -28,6 +29,9 @@ cjk-fonts-test:
 
 cjk-fonts-generate-inventory:
 	$(PYTHON) -m scripts.fonttools.cjk generate-inventory
+
+cjk-fonts-refresh-provenance: cjk-fonts-generate-inventory
+	$(PYTHON) -m scripts.fonttools.cjk refresh-provenance
 
 cjk-fonts-febuilder-dry-run: cjk-fonts-generate-inventory
 	rm -rf $(CJK_BUILD_DIR)/dry-run-package $(CJK_DRY_RUN_REPORT)

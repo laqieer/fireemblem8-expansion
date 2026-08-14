@@ -1,0 +1,1075 @@
+{
+  "kind": "fe8u-authored-translation-shard",
+  "locale": "zh-Hans",
+  "schema_version": 1,
+  "shard": "menu",
+  "source_map_sha256": "63b021274b7865c0d76cb1556fa84cc1dfdbcadab38037c8ccf6eeb9cdc3591a",
+  "source_queue": {
+    "path": "texts/locales/mapping/authored_translation_queue.json",
+    "revision": "e6435a8e2f444f0e16cab21713fe052b543d2e6e",
+    "sha256": "ffdff913a552076928d5cb06634ed75d8983b65c05bb4ecec9aa2b610ffe6ad6"
+  },
+  "subsystem_counts": {
+    "menu-definition": 132
+  },
+  "target_count": 132,
+  "terminology_sources": [],
+  "translations": [
+    {
+      "english_payload_sha256": "45b641d8a12522c5c00ff7bcd5626fb23ea9137eccc97054866606140205b6d8",
+      "key": "game.menu_definition.msg_011",
+      "source_text_sha256": "2ffbe1b843eb118ede40ed7924946a372abd53b208432688faae8d90df38995f",
+      "subsystem": "menu-definition",
+      "target_id": "0x0011",
+      "text": "。[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "45b641d8a12522c5c00ff7bcd5626fb23ea9137eccc97054866606140205b6d8",
+      "key": "game.menu_definition.msg_022",
+      "source_text_sha256": "2ffbe1b843eb118ede40ed7924946a372abd53b208432688faae8d90df38995f",
+      "subsystem": "menu-definition",
+      "target_id": "0x0022",
+      "text": "。[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "3d810e3db2bb02136d8e00e0fd96934efa871cb087f9d2da61ba975495bf5e42",
+      "key": "game.menu_definition.msg_02e",
+      "source_text_sha256": "9be4b6a01790a1cfbe69d8ee186d606dc7763383b9f0b33f40b8426d457fe257",
+      "subsystem": "menu-definition",
+      "target_id": "0x002E",
+      "text": "  模式  教学[X]\n"
+    },
+    {
+      "english_payload_sha256": "183eaa796acd88b405c05b223d38a0225ca25531f7f03f36752d57281a268772",
+      "key": "game.menu_definition.msg_02f",
+      "source_text_sha256": "12d70e03b1cca02ecea29b52708a726e1e30d46aea847f9bf09596eddc21260d",
+      "subsystem": "menu-definition",
+      "target_id": "0x002F",
+      "text": "  模式  普通[X]\n"
+    },
+    {
+      "english_payload_sha256": "3db6e253919f2a417b11a86a41c44c00cd1dc6c1edd898c8d9a9c9f0f4ecf00d",
+      "key": "game.menu_definition.msg_030",
+      "source_text_sha256": "91b709f59a5f14e0e810cd35518fbc81ab308a59ea33d42097ca2f1c82fcda87",
+      "subsystem": "menu-definition",
+      "target_id": "0x0030",
+      "text": "  模式  困难[X]\n"
+    },
+    {
+      "english_payload_sha256": "ee99200f1773260c77d3e99483b6c68404a8adc032b60921716926bbb7ad6c9f",
+      "key": "game.menu_definition.msg_031",
+      "source_text_sha256": "03d03473d6423da39dc8d296e136ee71c0574b707f25f3f4d78aab563b89ea14",
+      "subsystem": "menu-definition",
+      "target_id": "0x0031",
+      "text": "  据点  占领[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "3f9cf4e16f78e16433a86a731c92bf0513bf8eda4e2aa8019d9b8743a25b351a",
+      "key": "game.menu_definition.msg_035",
+      "source_text_sha256": "110884d7e46fd0cf38f24eff4e2085e39fe514c77758a1a0951171991b59a52e",
+      "subsystem": "menu-definition",
+      "target_id": "0x0035",
+      "text": "无[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "737066d9b3cf62a5941739dfc5bf2ea31d4293b3f4eeb78f231a8ff657793207",
+      "key": "game.menu_definition.msg_036",
+      "source_text_sha256": "bb588e537c033acd7bded31194f170a7106e80c0861c299394c13a43420f7157",
+      "subsystem": "menu-definition",
+      "target_id": "0x0036",
+      "text": "攻击[X]\n"
+    },
+    {
+      "english_payload_sha256": "e5c27d43be09ab214addb02e20d894c996258b90e01df64827b0f656757544aa",
+      "key": "game.menu_definition.msg_037",
+      "source_text_sha256": "e9ddc5df24dd79cc756cd9b26ed70ab216dab17d3a13d1fb1b5ceaf2cce998e8",
+      "subsystem": "menu-definition",
+      "target_id": "0x0037",
+      "text": "移动[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "f0b057e24ea0d2362b83119925d3c14c525f13a82b300cdc8d034acb8114e6e2",
+      "key": "game.menu_definition.msg_038",
+      "source_text_sha256": "72a17c64d7550be2fef4df6d605c358144c2b416b90865bf2153aa53e0c16508",
+      "subsystem": "menu-definition",
+      "target_id": "0x0038",
+      "text": "治疗[X]\n"
+    },
+    {
+      "english_payload_sha256": "ad856ad710ebd4a4263ccaba8a0f2bc039e391799e4ef65083a87602bc883be8",
+      "key": "game.menu_definition.msg_039",
+      "source_text_sha256": "6ae68dfa35d032f12bff26bb2253331444857ed6fd44d87b4d549c9d2bf71414",
+      "subsystem": "menu-definition",
+      "target_id": "0x0039",
+      "text": "状态[X]\n"
+    },
+    {
+      "english_payload_sha256": "dade9435c93f94a3ff6adcdafb54498175d0437474d9c882f59c7889c0a5fd49",
+      "key": "game.menu_definition.msg_03a",
+      "source_text_sha256": "e8ca6059381e02df0cb9f1096ead48c397fa81560136aee61eaac65181599763",
+      "subsystem": "menu-definition",
+      "target_id": "0x003A",
+      "text": "全体100[X]\n"
+    },
+    {
+      "english_payload_sha256": "fa52246fd02f3ae91a1128def132b4eff79299c07fdb577b38e6b9af59e450a6",
+      "key": "game.menu_definition.msg_03b",
+      "source_text_sha256": "4f05eef27df48b57c0ddc71402b4a322645e0f72243b9f33fe906837fb550bee",
+      "subsystem": "menu-definition",
+      "target_id": "0x003B",
+      "text": "全体80[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "460e31c731235cb1f9d2e88edf14f1b00ccf23d8019216b5d788385b418a2e00",
+      "key": "game.menu_definition.msg_03c",
+      "source_text_sha256": "424409e0ec75eb8e4212d04185554f5615ead4d2b4d20d09d4cd1990d8dee2ed",
+      "subsystem": "menu-definition",
+      "target_id": "0x003C",
+      "text": "全体50[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "e34976a747c6d35b148245c9b957c6f85995d6cda3ed6fa43d42e57322dbf481",
+      "key": "game.menu_definition.msg_03d",
+      "source_text_sha256": "d86164ef543ff74ca45c13b07b6c09628b5639de3f042d583f0257eade947c1a",
+      "subsystem": "menu-definition",
+      "target_id": "0x003D",
+      "text": "禁止移动100[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "1cfdaee000549dd11b0c567ae8318e146093510362acaffc0b3ef2586032a16f",
+      "key": "game.menu_definition.msg_03e",
+      "source_text_sha256": "27215eb740fba7bf2768aa9e57b4fc9c36b70d2da0a2f470d4b72f69ea1d9e03",
+      "subsystem": "menu-definition",
+      "target_id": "0x003E",
+      "text": "禁止移动80[X]\n"
+    },
+    {
+      "english_payload_sha256": "947fc969f89002ca26b1e2ae46821858e22c5a38730191491d257e8be3a44adb",
+      "key": "game.menu_definition.msg_03f",
+      "source_text_sha256": "88091ceb5426d40a66c695881222ea6e79e804337c83dcd5aa34dee02a10371a",
+      "subsystem": "menu-definition",
+      "target_id": "0x003F",
+      "text": "禁止移动50[X]\n"
+    },
+    {
+      "english_payload_sha256": "fdbb9db68f1db204d7823d5cbd2ff3eee530677fc945b6304356e1c6658b9ca2",
+      "key": "game.menu_definition.msg_040",
+      "source_text_sha256": "6815fe8980c665b30aac793cbb4eb1d585bbfa9de8de0746deb8470ecb578896",
+      "subsystem": "menu-definition",
+      "target_id": "0x0040",
+      "text": "无[X]\n"
+    },
+    {
+      "english_payload_sha256": "31b0c161191b6ebaa0fa4bf6730f944f2f9016f3ead4c4fbe2f4c4310d7f1ff2",
+      "key": "game.menu_definition.msg_041",
+      "source_text_sha256": "85eb42026ccd739e8be9360968ad0e9622a65de97a16e0d5915b9e77cda1a962",
+      "subsystem": "menu-definition",
+      "target_id": "0x0041",
+      "text": "无娜塔莎[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "e10dd426e6076d618ce33f2663d0632d3ee2007e3e57f56043ba9c42f7c6425d",
+      "key": "game.menu_definition.msg_042",
+      "source_text_sha256": "3f67da0e3af3b207a1ebc6df53a58d871ad4daa5314900da036c78f64ecee3e1",
+      "subsystem": "menu-definition",
+      "target_id": "0x0042",
+      "text": "道格拉斯[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "2e336abe1d6d461b87b97eee2898fe0e93ab6a1f4d444f14c312fec6641e8b63",
+      "key": "game.menu_definition.msg_043",
+      "source_text_sha256": "390943d88b9f30774939cb90abc6bd839a9437ea46fa07e7bebb580658bd525a",
+      "subsystem": "menu-definition",
+      "target_id": "0x0043",
+      "text": "无11B市民[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "e5a17e61ac3b245969470c2564989a2ae3487dde1aa2eccd6effe21e60000c3e",
+      "key": "game.menu_definition.msg_044",
+      "source_text_sha256": "5a50fb1851faddf0f3f93e1596efc2a10476c621fc3ce14ddb3e57775fc54b51",
+      "subsystem": "menu-definition",
+      "target_id": "0x0044",
+      "text": "琳[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "8024bcd58b2a0ca01e910088a0c7b9c122d7115aa963fad413c058129facb657",
+      "key": "game.menu_definition.msg_045",
+      "source_text_sha256": "76ce332df0517248bb3cf3cf2cf415b2954865f9be81440debbb51274249ff1f",
+      "subsystem": "menu-definition",
+      "target_id": "0x0045",
+      "text": "罗伊[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "69d50fae2071523feb365f03e93163c18ba73fd5a2cc241ccd92a273c85c6438",
+      "key": "game.menu_definition.msg_046",
+      "source_text_sha256": "97fe632da41ed26e8c46fad86bf9174b999577b49a10dcee1183961117a5e62b",
+      "subsystem": "menu-definition",
+      "target_id": "0x0046",
+      "text": "守门人[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "bd8cd1f4cec6a165dd90354cae64264affeaf50a00622274aa878ea33b58583a",
+      "key": "game.menu_definition.msg_047",
+      "source_text_sha256": "ce1ec354b476b05b6b1900fedf4283d3803c5ea3119b4ee1c69da04447e26efc",
+      "subsystem": "menu-definition",
+      "target_id": "0x0047",
+      "text": "首领[X]\n"
+    },
+    {
+      "english_payload_sha256": "56026e765381fc7617ec67233fa2aa672b402588a2108b0dac0661bc565b2971",
+      "key": "game.menu_definition.msg_048",
+      "source_text_sha256": "c67183dc253c5cb8b7a8327416ce2f6255551825e07a5fa0f654738aa4175a6e",
+      "subsystem": "menu-definition",
+      "target_id": "0x0048",
+      "text": "治疗[X]\n"
+    },
+    {
+      "english_payload_sha256": "5671d5f098934f3cd8975a322b67c6739b18ee46aee670fd7e02f77a7213184b",
+      "key": "game.menu_definition.msg_049",
+      "source_text_sha256": "ba4cdbf13b52c31cc576be39fa784865edd9f779f949fa8b1b53c4613524e5a1",
+      "subsystem": "menu-definition",
+      "target_id": "0x0049",
+      "text": "治疗·不移动[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "a22fe47916a7b512e9ea3dfcb2adf66656b80bb82e424bec18a08e01ae8e1ff5",
+      "key": "game.menu_definition.msg_04a",
+      "source_text_sha256": "89b1cc190e2ff3efb03a4ce8e687a0182ca06a98839298ddaa37a4dd44ec9fbe",
+      "subsystem": "menu-definition",
+      "target_id": "0x004A",
+      "text": "偷盗[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "fd8ae0cefa2ef352240ad7a89c53f9dcce45141dea9b8d6811df3c26fa85d73a",
+      "key": "game.menu_definition.msg_04b",
+      "source_text_sha256": "5453d05ac16f3e150e9191ec1001e396df7bca8b6d9e25ff7ede34f453dacd40",
+      "subsystem": "menu-definition",
+      "target_id": "0x004B",
+      "text": "开门[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "e7bc2f5303ca8d3f6dcf7a153c49f62a67c35d4b555f8525cd04d64d5a35662e",
+      "key": "game.menu_definition.msg_04c",
+      "source_text_sha256": "4866524221bad6a01187072d7998997db1fec81832f65c9d3c43c3053a17e8f0",
+      "subsystem": "menu-definition",
+      "target_id": "0x004C",
+      "text": "无鲁特加[X]\n"
+    },
+    {
+      "english_payload_sha256": "22fb1fdff8445ec12f5e69ba36316f70efef15d9707728095baf49bbc4c5ae51",
+      "key": "game.menu_definition.msg_04d",
+      "source_text_sha256": "87e7b2b59290a3d6995acea6f810d470619b40684b0bb0b881d68a8cb649bdf6",
+      "subsystem": "menu-definition",
+      "target_id": "0x004D",
+      "text": "无莱刚斯[X]\n"
+    },
+    {
+      "english_payload_sha256": "dd392ba20f42241cc105e040789e66a0aae283ae298915f6155af9df10f745f8",
+      "key": "game.menu_definition.msg_04f",
+      "source_text_sha256": "9ac7c68a80fdf1c8307c5ae6b1cd7192deeb293c86a4821e5cd257dc1f82878e",
+      "subsystem": "menu-definition",
+      "target_id": "0x004F",
+      "text": "接近[X]\n"
+    },
+    {
+      "english_payload_sha256": "7b63284c1ece0bd962b017ae1ca262b36a15d0c9cd4d325d29900d4a6d45f290",
+      "key": "game.menu_definition.msg_050",
+      "source_text_sha256": "b7588120ad619e82728331a646408682b6e2d410bab3d5abf494da42ff1f00ac",
+      "subsystem": "menu-definition",
+      "target_id": "0x0050",
+      "text": "靠近克莱丽奈[X]\n"
+    },
+    {
+      "english_payload_sha256": "e10dd426e6076d618ce33f2663d0632d3ee2007e3e57f56043ba9c42f7c6425d",
+      "key": "game.menu_definition.msg_051",
+      "source_text_sha256": "3f67da0e3af3b207a1ebc6df53a58d871ad4daa5314900da036c78f64ecee3e1",
+      "subsystem": "menu-definition",
+      "target_id": "0x0051",
+      "text": "道格拉斯[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "fdbb9db68f1db204d7823d5cbd2ff3eee530677fc945b6304356e1c6658b9ca2",
+      "key": "game.menu_definition.msg_052",
+      "source_text_sha256": "6815fe8980c665b30aac793cbb4eb1d585bbfa9de8de0746deb8470ecb578896",
+      "subsystem": "menu-definition",
+      "target_id": "0x0052",
+      "text": "无[X]\n"
+    },
+    {
+      "english_payload_sha256": "91859f29f628d38a8ffda05c9fbec2965fb85179749abd950ede9b34f2b7c8b2",
+      "key": "game.menu_definition.msg_053",
+      "source_text_sha256": "1d115277b808f5b5213cd124bba84b3dca15012d9bed86c3fbe85d19d617b4bf",
+      "subsystem": "menu-definition",
+      "target_id": "0x0053",
+      "text": "掠夺[X]\n"
+    },
+    {
+      "english_payload_sha256": "d2cf1b81169051230e5b597b6f4ff9f3e8369af3124878333c28d469010c5224",
+      "key": "game.menu_definition.msg_054",
+      "source_text_sha256": "ad7c28a1baf8a671c52bfad8376fd99817c2564e20e1aa3357b02ebcbf290728",
+      "subsystem": "menu-definition",
+      "target_id": "0x0054",
+      "text": "掠夺后撤离[X]\n"
+    },
+    {
+      "english_payload_sha256": "fe3d15fd4cad6dc3beeee31257c5dd704fd3d1974b7a031d631246b4b74840fc",
+      "key": "game.menu_definition.msg_056",
+      "source_text_sha256": "df004e023c447bed477b8ff7a2783163f3b49639679f89cb4626b3a3d850f310",
+      "subsystem": "menu-definition",
+      "target_id": "0x0056",
+      "text": "克莱丽奈2[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "30c4bfb7c6e469cffcccf0906b42de38acf290a286f4cf2ad4c4d6595e4d8d58",
+      "key": "game.menu_definition.msg_057",
+      "source_text_sha256": "bfe97041116b5dbe52050e5a62e273ebc2fe5cb0d86f32732ecd3aec10952ac2",
+      "subsystem": "menu-definition",
+      "target_id": "0x0057",
+      "text": "巡逻[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "8a7e315e8699d477e0452d191281a7d8c09d2f1c4e9c84e986d657c2b69ceab8",
+      "key": "game.menu_definition.msg_058",
+      "source_text_sha256": "d0ae69e68e2c85e43c53049e03164a30f05e593d5a47dcc34fee2755ef8ea217",
+      "subsystem": "menu-definition",
+      "target_id": "0x0058",
+      "text": "随机[X]\n"
+    },
+    {
+      "english_payload_sha256": "0f9ba77a16624d3244e902df4fd90ec4a84dbad92e35ad62a44b002c289e3cc7",
+      "key": "game.menu_definition.msg_059",
+      "source_text_sha256": "7df14f4c08dcdeb6cfa18d32c208727a1c0385a207b3b5d382f5e4596383f048",
+      "subsystem": "menu-definition",
+      "target_id": "0x0059",
+      "text": "前往艾瑞珂[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "fa5fbcfd805ab46ebc0e972233521050517d45d27f9416f1c5a48436ee81fa85",
+      "key": "game.menu_definition.msg_05a",
+      "source_text_sha256": "05788514aae7f2d998847a1d9b8359f8c190e5a68fdb2816546398a911797fd3",
+      "subsystem": "menu-definition",
+      "target_id": "0x005A",
+      "text": "前往伊弗列姆[X]\n"
+    },
+    {
+      "english_payload_sha256": "6937326ba8fce7fb850b88091d097cce8094b45376d403800fe358027d76a57e",
+      "key": "game.menu_definition.msg_05b",
+      "source_text_sha256": "e862b3f4598dc7b70cb18b64d1834a324a9ec64436fbfdc6c4b87384a40ceb18",
+      "subsystem": "menu-definition",
+      "target_id": "0x005B",
+      "text": "撤离[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "1e23b32bdf534077982a0ba087887922ecbdce00ffb663ec96e3f6b144a5ba64",
+      "key": "game.menu_definition.msg_05c",
+      "source_text_sha256": "f0ecb7f32e63956dc1ee169f403e2c23703fdaaf90a2f7ca50788e00da15bfad",
+      "subsystem": "menu-definition",
+      "target_id": "0x005C",
+      "text": "前往据点[X]\n"
+    },
+    {
+      "english_payload_sha256": "6d5e10aca0b6e6a0e7353516af528f5471bbe9e6d77c192581f4f07e192cda85",
+      "key": "game.menu_definition.msg_05d",
+      "source_text_sha256": "308949858c2854a6d3e4cc744d3d54cb092bee7808ed5d4df89e18ce16c0cf87",
+      "subsystem": "menu-definition",
+      "target_id": "0x005D",
+      "text": "破坏墙壁[X]\n"
+    },
+    {
+      "english_payload_sha256": "bf517e5506d639b6d4bf8f784c47239371177940949dfe0b5c2b9ed98d452f73",
+      "key": "game.menu_definition.msg_05e",
+      "source_text_sha256": "91e63e7b4e950ee30eb9782856fb74a96f26debc4d7aa250335cf435b091b123",
+      "subsystem": "menu-definition",
+      "target_id": "0x005E",
+      "text": "忽略接近[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "a37e7778ea9fc4cfd46202b1ed3f19923c44783e1256eb79b4651a2877fff8c4",
+      "key": "game.menu_definition.msg_05f",
+      "source_text_sha256": "d7a1f0249934e2aea6997fa050da1fb03c2624483bb424c804bfa2acd5ee0d5b",
+      "subsystem": "menu-definition",
+      "target_id": "0x005F",
+      "text": "范围[X]\n"
+    },
+    {
+      "english_payload_sha256": "6724db713b3759e12a52c9e4ca1280ff9d16863288bffdea58eff2577da20560",
+      "key": "game.menu_definition.msg_060",
+      "source_text_sha256": "1a2b7c7f1575b77ccb5394c5b265e42225866cb8c84dcde1a8237f4681984a6f",
+      "subsystem": "menu-definition",
+      "target_id": "0x0060",
+      "text": "1回合掠夺待机[X]\n"
+    },
+    {
+      "english_payload_sha256": "cc06148ea8931f021b461c1b2fe7448c040bcf7418eb2c9d25638d13ab3d8ee0",
+      "key": "game.menu_definition.msg_061",
+      "source_text_sha256": "7ce05bdc1deebbd8eda59620b17ab6e0fb0c2874b744a519e4b6069ce9193eb8",
+      "subsystem": "menu-definition",
+      "target_id": "0x0061",
+      "text": "1回合接近待机[X]\n"
+    },
+    {
+      "english_payload_sha256": "abbed058643909bb42b24c9f55e83939471fde5e73fdb55197ade8a4f17cd59e",
+      "key": "game.menu_definition.msg_062",
+      "source_text_sha256": "8e4583718092be6d33434c04d8310c20ae256b56f2546158cbd7d38f7a3393fa",
+      "subsystem": "menu-definition",
+      "target_id": "0x0062",
+      "text": "弱[X]\n"
+    },
+    {
+      "english_payload_sha256": "3e4106386be5ad1f3a8daf33e61c948c4f2bced09cf118163345fd38222b563b",
+      "key": "game.menu_definition.msg_063",
+      "source_text_sha256": "41458ebfd0070a94a7764e2a0fdfa3c3018683a878373a1fcd7e4fe133112d30",
+      "subsystem": "menu-definition",
+      "target_id": "0x0063",
+      "text": "普通[X]\n"
+    },
+    {
+      "english_payload_sha256": "3e26915faeadd24d965e72499b23c1fd92aff70272b4c01037b3420221460ed2",
+      "key": "game.menu_definition.msg_064",
+      "source_text_sha256": "72ca5f7102f5d175ef3ead27ed6fd8430058c0c5cee3b86b3bdb58a61b164c68",
+      "subsystem": "menu-definition",
+      "target_id": "0x0064",
+      "text": "强[X]\n"
+    },
+    {
+      "english_payload_sha256": "c8aad0c220162146f50c7cc6a3f9f4904191184cc8c5b2b79941c4322e89b224",
+      "key": "game.menu_definition.msg_065",
+      "source_text_sha256": "3831e9d69207c4ba0866006e64ff3883d33d4a9a062ccb00cb9ae1e04e602ca5",
+      "subsystem": "menu-definition",
+      "target_id": "0x0065",
+      "text": "最弱[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "bc337eb7ece5676d6c604cef2c7d633254ee8181cbd722fe5aac4628d92bc6cf",
+      "key": "game.menu_definition.msg_066",
+      "source_text_sha256": "540e985f2394432bd50a7a46e9fa9e1eaaca78dba110d5b404d9bef7ee0e53ef",
+      "subsystem": "menu-definition",
+      "target_id": "0x0066",
+      "text": "最强[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "6656f3870e7c8955bd626c30b6b6e8b1da815058cbce819df86608cd573359fe",
+      "key": "game.menu_definition.msg_067",
+      "source_text_sha256": "5809b56a6baa7b14fc41de7ea64552c5785bd3bbfd1d3c619025e831b478e77f",
+      "subsystem": "menu-definition",
+      "target_id": "0x0067",
+      "text": "良好[X]\n"
+    },
+    {
+      "english_payload_sha256": "0883b4fa201e71009fefd92ab87b7f0b9709fc69c423f680c4aa89ec62578078",
+      "key": "game.menu_definition.msg_068",
+      "source_text_sha256": "60eedf16d48873b20d77327e51a66c393e8a6e879d4ca11ea57ef2d3a51e5ce9",
+      "subsystem": "menu-definition",
+      "target_id": "0x0068",
+      "text": "中毒[X]\n"
+    },
+    {
+      "english_payload_sha256": "8ce8fd444bdf2fdf71a953606dd771634758cb3f5a66b25906055e3178517c1f",
+      "key": "game.menu_definition.msg_069",
+      "source_text_sha256": "8c4bfe0e477a89e8d19298b07271d0cb79d549a849b909bde4e22ab8f685c95f",
+      "subsystem": "menu-definition",
+      "target_id": "0x0069",
+      "text": "睡眠[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "a9539b5a299ed63dd4d3223302707bdb0e04de735163257ded4c709fb6e1fac2",
+      "key": "game.menu_definition.msg_06a",
+      "source_text_sha256": "145c3486e45417c4bb2eed3b607deccbb8a7c1c87f387fc706157cfa5ab8e91a",
+      "subsystem": "menu-definition",
+      "target_id": "0x006A",
+      "text": "沉默[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "58ea4fcfce29ac5763b04516d3e64befcf8d590865200973a86a683b22c7d251",
+      "key": "game.menu_definition.msg_06b",
+      "source_text_sha256": "495e2686434bb1bd5967f932861b8fcb0602f7c3658f7b7b8ee18ba63344a1a4",
+      "subsystem": "menu-definition",
+      "target_id": "0x006B",
+      "text": "狂暴[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "4ffaf5311dddfe39179836978103c206025b8ac3b7587cc38b1cf39f2f4f2889",
+      "key": "game.menu_definition.msg_06c",
+      "source_text_sha256": "5ecad77884350e72db412e6464ad9548abc9c11ade7f313ac2648bf09ed3e245",
+      "subsystem": "menu-definition",
+      "target_id": "0x006C",
+      "text": "攻击之舞[X]\n"
+    },
+    {
+      "english_payload_sha256": "f4aaee57a05b23d68fa4b6bbd3ca4a25df3fe18b33e4ff99572d2ddfc9640c6b",
+      "key": "game.menu_definition.msg_06d",
+      "source_text_sha256": "0be2409d389572f7672ab50e096c719fdf9cee254cbe0cffe3e17df73d4c9db7",
+      "subsystem": "menu-definition",
+      "target_id": "0x006D",
+      "text": "守备之舞[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "6768543f81cfc51750dd1952f075a0d2c0823a69936d85e309644a813f9d9fc9",
+      "key": "game.menu_definition.msg_06e",
+      "source_text_sha256": "04b09fcc7b25682a0822581f91d6ade060e0d6ff72105d92ddda3d1acac6c762",
+      "subsystem": "menu-definition",
+      "target_id": "0x006E",
+      "text": "技之舞[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "591904097c937d5d4112f268ddaa5dbbd1ac98368c25a169f440acd81805a772",
+      "key": "game.menu_definition.msg_06f",
+      "source_text_sha256": "c86d0859eb2e4c51dbda6bbea5e687fe5ae5a37c8c96d47f3c4dfba50f292268",
+      "subsystem": "menu-definition",
+      "target_id": "0x006F",
+      "text": "回避之舞[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "443b1c42fed07afd272e9c2890ee9e03678341b6d61b6ec3544495ee750d6e08",
+      "key": "game.menu_definition.msg_070",
+      "source_text_sha256": "3d236cd36ee8ee09cf24e9c17b36bef0cdd4d7212a5b3cdd46af8cceb4e7e6bc",
+      "subsystem": "menu-definition",
+      "target_id": "0x0070",
+      "text": "生病[X]\n"
+    },
+    {
+      "english_payload_sha256": "46bfeb25d0a9cf1734c0b6636847bdaf858d912ccf8bfacd39f9867e866445ff",
+      "key": "game.menu_definition.msg_071",
+      "source_text_sha256": "f9ca9f7a66a673a82f861da84c3c45da32b8824c5855dff7f86a7de209b93b1c",
+      "subsystem": "menu-definition",
+      "target_id": "0x0071",
+      "text": "恢复[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "e87e4d57e0544b4b10beea9212967fdf230d74c38f8844e51241e5295fc6b9b5",
+      "key": "game.menu_definition.msg_072",
+      "source_text_sha256": "6b3f9673c9336c027794a8f8c223ac56aebcd3a840fe9e735c88ede051ad118c",
+      "subsystem": "menu-definition",
+      "target_id": "0x0072",
+      "text": "石化[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "22711f8e68117929598284d732357152ec12789606cbc2cce45056b714070a13",
+      "key": "game.menu_definition.msg_073",
+      "source_text_sha256": "08c8aee5cb958079d45eba3f402b4422a8277cf8c8b71997e9c3e505abf9e88a",
+      "subsystem": "menu-definition",
+      "target_id": "0x0073",
+      "text": "屏障[X]\n"
+    },
+    {
+      "english_payload_sha256": "8dcc5d2fefa830d2c4ede4147a70fb07b801eb7a1ac25e2ebe88194cac152b75",
+      "key": "game.menu_definition.msg_074",
+      "source_text_sha256": "e67ac03ad678d197cfcb43b57415c7b37b3d1dbf9b1ae92a2c4a8b7a77b2ad3b",
+      "subsystem": "menu-definition",
+      "target_id": "0x0074",
+      "text": "石化反击[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "a45f6843de6c2eea10fc1ed3a065f132485b8995e710da8e0167f227626d316f",
+      "key": "game.menu_definition.msg_075",
+      "source_text_sha256": "72f0966fc37103ad033ac7de69024bab537fd50f1670ea8210e64fcce77f5da5",
+      "subsystem": "menu-definition",
+      "target_id": "0x0075",
+      "text": "1/4[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "b7e6fba38754549cd5762074888a80d5c7661b8e3eb0e8002c482ad0a31e6768",
+      "key": "game.menu_definition.msg_076",
+      "source_text_sha256": "78f65b7ab29fd163740f35443e894297c87e29ff28bb50c5a02e9b41dacf1df6",
+      "subsystem": "menu-definition",
+      "target_id": "0x0076",
+      "text": "2/4[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "05772ae5d98b8e99ef2c6b3c6d624352b2c82bf5583dbbfb182ef321c0d58148",
+      "key": "game.menu_definition.msg_077",
+      "source_text_sha256": "a04eb10c37d2efd87ddd0dd02ff576eb8e6a820fadf1fa445cbb6c8afe748cc6",
+      "subsystem": "menu-definition",
+      "target_id": "0x0077",
+      "text": "3/4[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "a3db4869acb3716272e88ad26646be0d40e4a69c7bfcb430598f50dccecab920",
+      "key": "game.menu_definition.msg_078",
+      "source_text_sha256": "26d4667b557f1f5f7f740dc385dec732972857153dd56a7f5b9f9207d9a1ed29",
+      "subsystem": "menu-definition",
+      "target_id": "0x0078",
+      "text": "4/4[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "5543aadbf1285cc14c04dc9dbfec7a48aa7d8500cd519a4929f5fae7a6750e3b",
+      "key": "game.menu_definition.msg_079",
+      "source_text_sha256": "c249f7e689c75284a0b32593552e94f7ec86e17fe80c16b23570fac9bcdf87d1",
+      "subsystem": "menu-definition",
+      "target_id": "0x0079",
+      "text": "位置[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "9312002065a29b7e4f2841aad7d4a0514375d0b92e4e798f06055f81dc6f6e42",
+      "key": "game.menu_definition.msg_07a",
+      "source_text_sha256": "01836d6638388ab41fa6d8cad708fec9d9bae3ef38ac1e3421bdb7cfa7185a92",
+      "subsystem": "menu-definition",
+      "target_id": "0x007A",
+      "text": "S合计[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "0266dc823770bb5417faa79da7d34ff62e271f8de2c4930787e931c61a262229",
+      "key": "game.menu_definition.msg_07b",
+      "source_text_sha256": "088d2196c069e1bd3486b51fdad62d86029ec18aa80c2649ec2bc07d530b86c1",
+      "subsystem": "menu-definition",
+      "target_id": "0x007B",
+      "text": "P合计[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "510537b82ed29ceecac23ff5d074e36fd5f4068714976dd3d3d2a8b81e9396d9",
+      "key": "game.menu_definition.msg_07c",
+      "source_text_sha256": "603b570bc344db77384a27603ff5075c07ea93153745e310c292304d1649c1a3",
+      "subsystem": "menu-definition",
+      "target_id": "0x007C",
+      "text": "CP攻击[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "2d6862e2618ef5d531204e1f9b3575d21cf7d1e41a33b00129339fa32943596c",
+      "key": "game.menu_definition.msg_07d",
+      "source_text_sha256": "4b88f7d23367953a1629df2e2bb695fae41da6d4aa0ea310bb334a097a50a1a2",
+      "subsystem": "menu-definition",
+      "target_id": "0x007D",
+      "text": "CP移动[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "15e3157b319ce9fb70933baa5232966cf4d304b1dfc3772b9ae76d2e2412ab03",
+      "key": "game.menu_definition.msg_07e",
+      "source_text_sha256": "f833c4ae6d788706dbff8d93e815c90c4f4b0487fef20e092d99140f2d010c7b",
+      "subsystem": "menu-definition",
+      "target_id": "0x007E",
+      "text": "计数[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "13c1300347165bff38fd2411c57a3f180c651f9b74383d6500fd0fecdb909200",
+      "key": "game.menu_definition.msg_07f",
+      "source_text_sha256": "f91b14016f84dd2c962a512a2cd0739985b09a333acc388648f2a3227ffc1579",
+      "subsystem": "menu-definition",
+      "target_id": "0x007F",
+      "text": "信赖度[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "11a15f1dfaca606cf35618096221f4f2de3607df556ad3ad1a81623ffaaeea3b",
+      "key": "game.menu_definition.msg_081",
+      "source_text_sha256": "a10fe3514b5a5ab97c5cf0d6e03d344a32b23135f9df85dcfb9170c8df888568",
+      "subsystem": "menu-definition",
+      "target_id": "0x0081",
+      "text": "必杀回避[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "6f425862f3df166ae23da8a0dd3cd81842de23f73ebd867e65e1b236938b420e",
+      "key": "game.menu_definition.msg_082",
+      "source_text_sha256": "3cbdd81d3db9d853a51e5fc65999110257a7d9cde6f53f51fc8403e772ba05b6",
+      "subsystem": "menu-definition",
+      "target_id": "0x0082",
+      "text": "SRAM信息[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "6ac202686a2c63751f0e586a9b2dc8d81228d335a4cecb22b3b200ac8e324bd2",
+      "key": "game.menu_definition.msg_083",
+      "source_text_sha256": "6774d25b65ee734d52d52b2e4bec953c303dcf688df007a210a8bbba554e89d8",
+      "subsystem": "menu-definition",
+      "target_id": "0x0083",
+      "text": "胜利[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "64370f02c5e7943a04244dc8f77c9e0b5a5ad1a09f9be1531ca2ac54f58355e1",
+      "key": "game.menu_definition.msg_084",
+      "source_text_sha256": "9b8a52bfc74074384ba9f1ce1e800d6472e5a43ea17e9defd9636c96a3b1c598",
+      "subsystem": "menu-definition",
+      "target_id": "0x0084",
+      "text": "败北[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "2a77ddf427641319f208266678b5884754c09f7bb255b3de80ba512f5b1f9453",
+      "key": "game.menu_definition.msg_085",
+      "source_text_sha256": "bfa4917daa1f126494c736e69ddcb29b5af80cba5b3cc4a4b99e2edbd53ca9c8",
+      "subsystem": "menu-definition",
+      "target_id": "0x0085",
+      "text": "优势[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "5c88f59dbe7a462e5c0f4f31f189a8d830dd3d409a269032f5edd0d1168dab4e",
+      "key": "game.menu_definition.msg_086",
+      "source_text_sha256": "7c69d514ef7edaedb7f204e591372b237e67fdb2eb720b515443ca044206c7ef",
+      "subsystem": "menu-definition",
+      "target_id": "0x0086",
+      "text": "E.D.[X]\n"
+    },
+    {
+      "english_payload_sha256": "025a95a34f1bc2286a1afd301ea356ffaa69acce94bbcc8efe383f3b22a73b66",
+      "key": "game.menu_definition.msg_089",
+      "source_text_sha256": "f359eb9a850d3f1c76f18adc199bb212ce8292c61ee38e360ec9b195c24a8f6a",
+      "subsystem": "menu-definition",
+      "target_id": "0x0089",
+      "text": "经验值[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "0d3345fe79d8dbb7b6f14a89d66b1e99a76d143f20cfcf1cbd1adc88f2962ed0",
+      "key": "game.menu_definition.msg_08a",
+      "source_text_sha256": "e48372a88e329bf5a26e48a90f48443071849577b44f3f1a27a3e431d0cffa73",
+      "subsystem": "menu-definition",
+      "target_id": "0x008A",
+      "text": "偏好[X]\n"
+    },
+    {
+      "english_payload_sha256": "a620cf2023e4a18269f065f6cad706977e44464a34aa5d9bad39c3a2ed3965e1",
+      "key": "game.menu_definition.msg_08b",
+      "source_text_sha256": "70631a05f8981814b34874be5ff0b06c4c9c543bf1e41974df2adfc1ae79a4d8",
+      "subsystem": "menu-definition",
+      "target_id": "0x008B",
+      "text": "无SRAM信息[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "ac024612bc0fb8e99f6e5ce6fbc6ebdc03a8df39e46bad37e11b524a6bb10d16",
+      "key": "game.menu_definition.msg_08c",
+      "source_text_sha256": "9b233bfa851e577f5856c82533f472e7eb290462b6b73852c492887a38de7401",
+      "subsystem": "menu-definition",
+      "target_id": "0x008C",
+      "text": "熟练度[X]\n"
+    },
+    {
+      "english_payload_sha256": "c2a7034748e0d2be3ecfdaaca3c323fc947c77fdebfe98a9713167cedae78a14",
+      "key": "game.menu_definition.msg_08e",
+      "source_text_sha256": "5c5cb76dc50cf80e05845738eb287275ca8211f96e37d245910ac919ec689f71",
+      "subsystem": "menu-definition",
+      "target_id": "0x008E",
+      "text": "2-CP[X]\n"
+    },
+    {
+      "english_payload_sha256": "2116bcb5be5e4856f3cf55dc37ce75eaedd63cd6df026bb8d20bf14876007b49",
+      "key": "game.menu_definition.msg_08f",
+      "source_text_sha256": "88d3f1ba9d59bbdc478c62d1559e4da9d54a6c0f32a8c08342d2bf451fe22dcf",
+      "subsystem": "menu-definition",
+      "target_id": "0x008F",
+      "text": "3-CP[X]\n"
+    },
+    {
+      "english_payload_sha256": "fa37e351f6b4c3ccdec11e28c0fdb2eb06c9722b3027d9965e49ddc763e9449d",
+      "key": "game.menu_definition.msg_144",
+      "source_text_sha256": "66e5573c5b2173223badfb17cf6cb7afee5113c5dbd4c9fab9621ad607d1cc80",
+      "subsystem": "menu-definition",
+      "target_id": "0x0144",
+      "text": "复制[X]\n"
+    },
+    {
+      "english_payload_sha256": "fd3df091114702ad0d44c3287fa8e924356a6b01c47a680370879fa8fc2bb10f",
+      "key": "game.menu_definition.msg_14c",
+      "source_text_sha256": "c16a117b18a62544822d5b204dc17ccbefc36a4b126133401db9544c858a2092",
+      "subsystem": "menu-definition",
+      "target_id": "0x014C",
+      "text": "0[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "90220a687193cf691ca3abe26aef98c8fa28ccaeb94288b6c75469f8a0829e63",
+      "key": "game.menu_definition.msg_151",
+      "source_text_sha256": "715a95416300c1182ca76750b2e018100d4b7ffad387ecb2a832c3dceb399557",
+      "subsystem": "menu-definition",
+      "target_id": "0x0151",
+      "text": "5[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "cdaa48810754da8ffe5a79e9f41af0d298ca38d8b0032881937541ddea7867e6",
+      "key": "game.menu_definition.msg_152",
+      "source_text_sha256": "7607525417e1aae48342476578362a2fe5d60e1624fb1e3a27b3cac9aff94641",
+      "subsystem": "menu-definition",
+      "target_id": "0x0152",
+      "text": "6[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "bc814cfa40cd3bc4b16020d6ec8028f6f690caaf6e23756c1b6b71ec4c382c94",
+      "key": "game.menu_definition.msg_153",
+      "source_text_sha256": "9e866d49de84fcc95cc544d3c47a1129d620ca63fe2edc0ab1cbf4064aa34d82",
+      "subsystem": "menu-definition",
+      "target_id": "0x0153",
+      "text": "7[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "4c8810c3d28bfde24d9d53c44e6ad0715b6f4bedfdbfefbca6ebd14601f936a6",
+      "key": "game.menu_definition.msg_154",
+      "source_text_sha256": "7bd9836a3bfaa23d3007b3423fb5cc8bcd0af7b65a5fb9becff93a6646900b34",
+      "subsystem": "menu-definition",
+      "target_id": "0x0154",
+      "text": "8[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "e26f8304d7304eba2cdc207b56c5f5821f560d722cee8310b975222658f32cec",
+      "key": "game.menu_definition.msg_155",
+      "source_text_sha256": "f3e5486adf5db0c7ce65bb9ed88393a5700cb9ef770139798a6e86d24dc6c569",
+      "subsystem": "menu-definition",
+      "target_id": "0x0155",
+      "text": "9[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "3f9cf4e16f78e16433a86a731c92bf0513bf8eda4e2aa8019d9b8743a25b351a",
+      "key": "game.menu_definition.msg_156",
+      "source_text_sha256": "110884d7e46fd0cf38f24eff4e2085e39fe514c77758a1a0951171991b59a52e",
+      "subsystem": "menu-definition",
+      "target_id": "0x0156",
+      "text": "无[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "b22cad0de28e17753fcd56af234589b29a609bdf2327e061a4350822e18b420f",
+      "key": "game.menu_definition.msg_15b",
+      "source_text_sha256": "2266906a91a398d033afb5a54a99a19e7e755bc78b9d5424e66d0440ac07e298",
+      "subsystem": "menu-definition",
+      "target_id": "0x015B",
+      "text": "外传[X]\n"
+    },
+    {
+      "english_payload_sha256": "91d3e52553b70f86941f8c48c1500017e69f53b979e117483aad42c103cd44c4",
+      "key": "game.menu_definition.msg_15c",
+      "source_text_sha256": "032a766d674576a1120a03241ffa9461861a23a0a868afe73f3299dffb94de2c",
+      "subsystem": "menu-definition",
+      "target_id": "0x015C",
+      "text": "分支[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "860c51015536f428efa93ad509a83a7bd222ef36fa9d3d5d21677954782856d5",
+      "key": "game.menu_definition.msg_15f",
+      "source_text_sha256": "cb216a8c377913829fdbbf9aaddeaae27c7ab7ffc4b14127fc7a97f19f8e28e8",
+      "subsystem": "menu-definition",
+      "target_id": "0x015F",
+      "text": "总回合数[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "66166391faefe92860f6f53629810d4de0a8893d590f5c45c249365149e86b46",
+      "key": "game.menu_definition.msg_50d",
+      "source_text_sha256": "3a26253fa777078a1ccd6b9823cf812169bba1d6ff5013004fe6f3f4dbff3319",
+      "subsystem": "menu-definition",
+      "target_id": "0x050D",
+      "text": "物品[X]\n"
+    },
+    {
+      "english_payload_sha256": "098495f99c59d60e39636cf8e383f21e2060dd930a59aea920d610293b675268",
+      "key": "game.menu_definition.msg_50e",
+      "source_text_sha256": "f268c5625c74bc7c45f931c7e3287b7ff38003fd754581d6693d52acecb91152",
+      "subsystem": "menu-definition",
+      "target_id": "0x050E",
+      "text": "弩车[X]\n"
+    },
+    {
+      "english_payload_sha256": "9c0aeeee3309858b89184e9faaa2b437d3f7f2b80cda55a6b8314631f0dca5ec",
+      "key": "game.menu_definition.msg_50f",
+      "source_text_sha256": "e702fef7b8e001d03157e6a14c400e3f0a47130dc3a42be6ab43f448ee46ebbd",
+      "subsystem": "menu-definition",
+      "target_id": "0x050F",
+      "text": "龙[X]\n"
+    },
+    {
+      "english_payload_sha256": "802626c08dc820b8c2989cd4fa9647800c37fe8ba7e02a7da269104f89d88b4c",
+      "key": "game.menu_definition.msg_51f",
+      "source_text_sha256": "77d7e2390aa02fddc23d339653630c9ebe230b942db91faae8a86a081f460f25",
+      "subsystem": "menu-definition",
+      "target_id": "0x051F",
+      "text": "战[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "9655f9d1f7fc3ac0555d4dab6d31a7bbdf7ea7715c76513f97a8b2747e56eb60",
+      "key": "game.menu_definition.msg_520",
+      "source_text_sha256": "e6e4631dd0ffb3d734edeedba028c760abc5fe36781c99563971b67d3997921e",
+      "subsystem": "menu-definition",
+      "target_id": "0x0520",
+      "text": "胜[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "8e98d35c516951f75401366aea782f8bd5f4f6962c85077cd074db4582e85735",
+      "key": "game.menu_definition.msg_521",
+      "source_text_sha256": "9f8b12cb106663931f739922cda78e061b19b993b9fe41fde959bdfa4507a92f",
+      "subsystem": "menu-definition",
+      "target_id": "0x0521",
+      "text": "败[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "f7224929b77597ea688e0c0ac656ce2dc571da36c14b45435cecca5d5908c7b1",
+      "key": "game.menu_definition.msg_52d",
+      "source_text_sha256": "9bd3f64bf1135f76d6e24ef376d28c20a3404e0425fcbdf38292b255f312d6ae",
+      "subsystem": "menu-definition",
+      "target_id": "0x052D",
+      "text": "E[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "b0292772f7fede551aed13bae924c8e5984b9e4fb713cf644cb3b87c7852788d",
+      "key": "game.menu_definition.msg_52e",
+      "source_text_sha256": "adc91a57489595213a2a85de9b7e71f0f4214e166d100ceeae663af9ba417546",
+      "subsystem": "menu-definition",
+      "target_id": "0x052E",
+      "text": "D[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "6f4dbc0a548550a11020138327ba03e7fb324bddb9e90dcae36f62fbd4a7798a",
+      "key": "game.menu_definition.msg_52f",
+      "source_text_sha256": "a2d8d954a1f1951b37867c0acd99299eed24e63dc52d164720ec67e04e82fc5f",
+      "subsystem": "menu-definition",
+      "target_id": "0x052F",
+      "text": "C[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "802626c08dc820b8c2989cd4fa9647800c37fe8ba7e02a7da269104f89d88b4c",
+      "key": "game.menu_definition.msg_530",
+      "source_text_sha256": "77d7e2390aa02fddc23d339653630c9ebe230b942db91faae8a86a081f460f25",
+      "subsystem": "menu-definition",
+      "target_id": "0x0530",
+      "text": "B[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "43be2b2123800a5b49a8612f0b8a04f8155ce18b283445cad767bb3fbf32b3f7",
+      "key": "game.menu_definition.msg_531",
+      "source_text_sha256": "c944d1482ce355b6e3600c5bf395229096d80e7ae7738cd99cc961ab282887cc",
+      "subsystem": "menu-definition",
+      "target_id": "0x0531",
+      "text": "A[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "0dba2f380d066962e3c1cd3c898f4344ec380de419211c54d5a3a884bf1bf97a",
+      "key": "game.menu_definition.msg_532",
+      "source_text_sha256": "2038b58e36e182a54eb00b58f1154d344c92538a5f6232bbb86e5782b4236a73",
+      "subsystem": "menu-definition",
+      "target_id": "0x0532",
+      "text": "S[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "d65cad497d559e7cfd262e4aeb307a3358b4d6b425a1219a30bda50b2aa5b470",
+      "key": "game.menu_definition.msg_533",
+      "source_text_sha256": "e1c151419f9365580a1819e3f2db6805767d2e5ed46b820dafb0f95ce85276a7",
+      "subsystem": "menu-definition",
+      "target_id": "0x0533",
+      "text": "专用[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "e45250b1f780a8751d1bf47bc3a6a27bd212b98e5bda24a7601a7e5790ba53bf",
+      "key": "game.menu_definition.msg_53a",
+      "source_text_sha256": "e27ce91ea4a5b125a85e932e2bfb3c81f73f251d3df5f1335a4709d3cd4128f9",
+      "subsystem": "menu-definition",
+      "target_id": "0x053A",
+      "text": "-[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "cebf7248fd1bc4b0fe8ade0d6e2666f69bc11f61d412b7be0ba49c9c7c27442b",
+      "key": "game.menu_definition.msg_57f",
+      "source_text_sha256": "7626a0bb0b0a762b79bfe480cbc709dea91170928cc9a43675408605eb9a7dab",
+      "subsystem": "menu-definition",
+      "target_id": "0x057F",
+      "text": "查看人物之间的[.][LF]\n支援关系[X]\n"
+    },
+    {
+      "english_payload_sha256": "7bfb78c40b7b8cae5a22bb0c51b98e64beb4a97fb2f33f76ebc187f65d241f23",
+      "key": "game.menu_definition.msg_586",
+      "source_text_sha256": "958fc1c552178a1a565e31c3eb8cc0a4d433cfe56e69febe9bc0c051e067ea5a",
+      "subsystem": "menu-definition",
+      "target_id": "0x0586",
+      "text": "战斗评价[X]\n"
+    },
+    {
+      "english_payload_sha256": "bd386810898971c72e9d634ca3584ebf74ca1162a243ae58802656e713ccade2",
+      "key": "game.menu_definition.msg_587",
+      "source_text_sha256": "975c3753cd63af7a19c4e4b8d15db88fc09c25ad54007d8c5d9dc90de9fcc283",
+      "subsystem": "menu-definition",
+      "target_id": "0x0587",
+      "text": "军师评价[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "a8f9b132282029b69c26bc5bfde7d830080297767bced7a5ddc5cd0f18b6cd4b",
+      "key": "game.menu_definition.msg_588",
+      "source_text_sha256": "30cd6174bcf98db4f3be235661571a2e6315aac94cbda63bbf27ed3bc16adbc9",
+      "subsystem": "menu-definition",
+      "target_id": "0x0588",
+      "text": "攻略占卜[X]\n"
+    },
+    {
+      "english_payload_sha256": "75099ac60611df0562364e2cb2dcdb22494249cf5fc76daec2ebfaeb0a8e14ef",
+      "key": "game.menu_definition.msg_589",
+      "source_text_sha256": "340bbc268fa04a0c1df715b4373890bf6c7b80e973b22ed7a9d83bd288e4ad7c",
+      "subsystem": "menu-definition",
+      "target_id": "0x0589",
+      "text": "占卜菜单[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "0fecb20fe91b8afa3196a5d4963dfddd452a654c86b28961c7a085ba5f60eeb5",
+      "key": "game.menu_definition.msg_58a",
+      "source_text_sha256": "79fe5ae54c18b98b2a971ef3020b693657e4247192650600ca212b7991fa25f1",
+      "subsystem": "menu-definition",
+      "target_id": "0x058A",
+      "text": "攻略评价[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "b6fcb69cc739c08ab89a342ab442726847401f052d81814c31eedecf1a2f83bd",
+      "key": "game.menu_definition.msg_58c",
+      "source_text_sha256": "160dbc7f6b64b4404dbb92948a54b6c9129f1bb1a958526450dd3deb78d6306a",
+      "subsystem": "menu-definition",
+      "target_id": "0x058C",
+      "text": "资产评价[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "025a95a34f1bc2286a1afd301ea356ffaa69acce94bbcc8efe383f3b22a73b66",
+      "key": "game.menu_definition.msg_58d",
+      "source_text_sha256": "f359eb9a850d3f1c76f18adc199bb212ce8292c61ee38e360ec9b195c24a8f6a",
+      "subsystem": "menu-definition",
+      "target_id": "0x058D",
+      "text": "经验评价[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "d4c89581de2266c06999759a140306b63d3742a61322cab71782e51d87dab85b",
+      "key": "game.menu_definition.msg_58e",
+      "source_text_sha256": "a32706b1e9cf96ec73e164a55ce68a77e2652fb7e67f55d386a81c27d5381939",
+      "subsystem": "menu-definition",
+      "target_id": "0x058E",
+      "text": "战斗评价[X]\n"
+    },
+    {
+      "english_payload_sha256": "2c5ee57b9b0bbfbb55b04c5f7faa72e81a1fff5b3f9fb0f2f0681e2fc1ab6200",
+      "key": "game.menu_definition.msg_58f",
+      "source_text_sha256": "e0f1e49a6b34752ab4d828fa5f3783eb566cba2db675a1e8a55ec8b0c09b5584",
+      "subsystem": "menu-definition",
+      "target_id": "0x058F",
+      "text": "目的评价[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "3936321aca54dcacd98ce9b8010ac4447dbb14a45d8c2e74a5ca04f5a9de444d",
+      "key": "game.menu_definition.msg_5ad",
+      "source_text_sha256": "f1e9747d55b96063e767efaec902c3e69dcd0309231a2ad53687e78b99eaa34a",
+      "subsystem": "menu-definition",
+      "target_id": "0x05AD",
+      "text": "选择人物[X]\n"
+    },
+    {
+      "english_payload_sha256": "04bbb29163018556c92b35bde9336977993da922082a047bd36be8705e3d2352",
+      "key": "game.menu_definition.msg_5b8",
+      "source_text_sha256": "6e9af5bf77f8af2831522b8560c7d41ed7e9ff3d38d451bf0eca796472d28635",
+      "subsystem": "menu-definition",
+      "target_id": "0x05B8",
+      "text": "查看至今的战绩[.][LF]\n与各项评价。[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "8fa389f1bfb79f9714d2031a26b0f715b472e5fd2b63f2dac700f483643f81cf",
+      "key": "game.menu_definition.msg_5b9",
+      "source_text_sha256": "de0dd63837e5f3e55de2689f493d3c207b0ef9107c5b11b2c4fde828e70bfc77",
+      "subsystem": "menu-definition",
+      "target_id": "0x05B9",
+      "text": "查看军师评价[.][LF]\n和人物资料。[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "214c6de7c387b158735c5fa65dca6e242c5a97bd91185e2896f10369cfceee57",
+      "key": "game.menu_definition.msg_5ba",
+      "source_text_sha256": "a46471d9959ffe1e0b8cf229feb1eb70250157973f6a3773acf3eda9baca4120",
+      "subsystem": "menu-definition",
+      "target_id": "0x05BA",
+      "text": "预测下一场[.][LF]\n战斗的情况[X]\n"
+    },
+    {
+      "english_payload_sha256": "de70f65d5185b07042819ba6f9e4037f1d75ed46f93fca5d9cf4107181f48d47",
+      "key": "game.menu_definition.msg_5bf",
+      "source_text_sha256": "b72eb083a498355a46f38289908171ae1c208a11eb8fc12b3324e3838f1a5a1d",
+      "subsystem": "menu-definition",
+      "target_id": "0x05BF",
+      "text": "开始战斗。[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "001cf79ad948f72c15f67eaef83a51cdcf30a6814756d17cf04b4dcf308b4dcc",
+      "key": "game.menu_definition.msg_6b8",
+      "source_text_sha256": "b2f4149f51e36adb89e59256e1734a0f1b54438e5a4a207799e53f26d435e636",
+      "subsystem": "menu-definition",
+      "target_id": "0x06B8",
+      "text": "通关次数[X]\n"
+    }
+  ]
+}

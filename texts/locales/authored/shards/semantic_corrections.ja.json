@@ -1,0 +1,241 @@
+{
+  "kind": "fe8u-authored-translation-shard",
+  "locale": "ja",
+  "schema_version": 1,
+  "shard": "semantic_corrections",
+  "source_map_sha256": "63b021274b7865c0d76cb1556fa84cc1dfdbcadab38037c8ccf6eeb9cdc3591a",
+  "source_queue": {
+    "path": "texts/locales/mapping/authored_translation_queue.json",
+    "revision": "e6435a8e2f444f0e16cab21713fe052b543d2e6e",
+    "sha256": "ffdff913a552076928d5cb06634ed75d8983b65c05bb4ecec9aa2b610ffe6ad6"
+  },
+  "subsystem_counts": {
+    "chapter-event": 2,
+    "debug-menu": 7,
+    "ending-details": 4,
+    "items": 1,
+    "menu-definition": 8,
+    "menus": 2,
+    "terrain": 3
+  },
+  "target_count": 27,
+  "terminology_sources": [],
+  "translations": [
+    {
+      "english_payload_sha256": "6a4df7673dafecb3086aa97192e67eb3275033fc37e45a4581c8df33af9efaaf",
+      "key": "game.semantic_correction.msg_005",
+      "source_text_sha256": "00eb6199db3d0a275b43ebb31e3a8629f260225e0e4e5c9acd4b77d1c1920dbf",
+      "subsystem": "menu-definition",
+      "target_id": "0x0005",
+      "text": "入手：[X]\n"
+    },
+    {
+      "english_payload_sha256": "26c07bdce4f1b6eed1307593b5be21d6891cbde3312878492a66a19382d18fff",
+      "key": "game.semantic_correction.msg_006",
+      "source_text_sha256": "f09039c2fa26e4eaa0c58d32f0bdc3c66a1648e769d144ea3d55e325fb09c0e3",
+      "subsystem": "menu-definition",
+      "target_id": "0x0006",
+      "text": "ゴールド。[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "6a4df7673dafecb3086aa97192e67eb3275033fc37e45a4581c8df33af9efaaf",
+      "key": "game.semantic_correction.msg_008",
+      "source_text_sha256": "00eb6199db3d0a275b43ebb31e3a8629f260225e0e4e5c9acd4b77d1c1920dbf",
+      "subsystem": "menu-definition",
+      "target_id": "0x0008",
+      "text": "入手：[X]\n"
+    },
+    {
+      "english_payload_sha256": "75802b11feb604cba988bea4a2d2bc5f76c7ab577a93c721e303568e447dfd1f",
+      "key": "game.semantic_correction.msg_00a",
+      "source_text_sha256": "a1cfe29d079b293941cd74bcd2d625bb77be482eb3d48a8a38fdea628c3ee9da",
+      "subsystem": "menu-definition",
+      "target_id": "0x000A",
+      "text": "盗品：[X]\n"
+    },
+    {
+      "english_payload_sha256": "91dac270cf076055424106bcd9e16eac279d37a4870f64ff66a065eedebe0f05",
+      "key": "game.semantic_correction.msg_00d",
+      "source_text_sha256": "a645ca148faf1a98929acfa766e59e293250324bee03189228660af88601860f",
+      "subsystem": "menu-definition",
+      "target_id": "0x000D",
+      "text": "使用可能：[X]\n"
+    },
+    {
+      "english_payload_sha256": "91dac270cf076055424106bcd9e16eac279d37a4870f64ff66a065eedebe0f05",
+      "key": "game.semantic_correction.msg_00e",
+      "source_text_sha256": "a645ca148faf1a98929acfa766e59e293250324bee03189228660af88601860f",
+      "subsystem": "menu-definition",
+      "target_id": "0x000E",
+      "text": "使用可能ユニット：[X]\n"
+    },
+    {
+      "english_payload_sha256": "64cfb2bd09e94ff669cecb1cf7f27bf2e193884df92200d999c1f66c2dca191a",
+      "key": "game.semantic_correction.msg_00f",
+      "source_text_sha256": "ddadb9a8879f4272ed41135a0eb501e792d21e7e67273b62cb1bf77e723b90c7",
+      "subsystem": "menu-definition",
+      "target_id": "0x000F",
+      "text": "廃棄：[X]\n"
+    },
+    {
+      "english_payload_sha256": "b6cceaa99d8ca1d4c05f15266afb33ee086ced77c75ab24c4abd8cd8c6ce503e",
+      "key": "game.semantic_correction.msg_010",
+      "source_text_sha256": "f32242c1cbd683b7344b087de95917fb3d99018e02518c038839fff92d59b98d",
+      "subsystem": "menu-definition",
+      "target_id": "0x0010",
+      "text": "輸送隊へ送付：[X]\n"
+    },
+    {
+      "english_payload_sha256": "2616bfdbc2b799d737b26c98ac5a775f058be6a223462d5c321750e2e87e942a",
+      "key": "game.semantic_correction.msg_1c8",
+      "source_text_sha256": "d696c2f84c47e152c74f88f84d88ff9eacefee87694c43f3e4316764b6c15d6f",
+      "subsystem": "terrain",
+      "target_id": "0x01C8",
+      "text": "閉じた村[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "a776cf705b291186fbfb42afb2e14aef767e468ea15db628dfadfd25cffaa74f",
+      "key": "game.semantic_correction.msg_1ee",
+      "source_text_sha256": "6dec14339c7969fce9cda28a33f5c24038744bc7ba6dc907471726b76538ed8c",
+      "subsystem": "terrain",
+      "target_id": "0x01EE",
+      "text": "船板[X]\n"
+    },
+    {
+      "english_payload_sha256": "c926b3b5e36445ab1aac93932d7c293b7733f6b015b2da49c5cb292cf165481e",
+      "key": "game.semantic_correction.msg_1ef",
+      "source_text_sha256": "2242a2c4a7cd3f4a9557186d88f83b850fc2e4e4c5f155c0eaf3668e638fc3f2",
+      "subsystem": "terrain",
+      "target_id": "0x01EF",
+      "text": "難破船[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "709585d1d3c3a2f67607d5c62883834c16efa4d6cffcee730640f32333105a72",
+      "key": "game.semantic_correction.msg_3a8",
+      "source_text_sha256": "51b11d2cbbb847de84b2fa1e76149211ad40fcbd4cf6ca1fc41be8a6845456e2",
+      "subsystem": "items",
+      "target_id": "0x03A8",
+      "text": "エンブレムシール[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "9ba4256a4d88821c0d44f83aaa5f84d79a4cab4832badae225aea3c4690e28b8",
+      "key": "game.semantic_correction.msg_593",
+      "source_text_sha256": "f36c4538916611bebdf0d30e69fdca2e7c40f18052eb996bf49df46955710962",
+      "subsystem": "menus",
+      "target_id": "0x0593",
+      "text": "デバッグ[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "0df058ee1d0b4199726680b7b5cc8b1939fce71e3efbdff30f29be87bdee8c4b",
+      "key": "game.semantic_correction.msg_679",
+      "source_text_sha256": "dbf9b316f09b91b391da617fbad1ce54c8ee262a7409eec508fbfeac9e1bf666",
+      "subsystem": "menus",
+      "target_id": "0x0679",
+      "text": "記録中。ゲームを再開するには[LF]\n「記録から始める」を選んでください。[X]\n"
+    },
+    {
+      "english_payload_sha256": "89fe07be1de3c43cb79f6446673044ad43a261c046ebe5d6d0564f96fc95f9da",
+      "key": "game.semantic_correction.msg_6a2",
+      "source_text_sha256": "7f2fae6d25215d8edbea2e2e877defbda8ceaa12bbc7c461df3c7869d1a0ee98",
+      "subsystem": "chapter-event",
+      "target_id": "0x06A2",
+      "text": "　デバッグ[X]\n"
+    },
+    {
+      "english_payload_sha256": "bd470203e349109c5c111ea91e03e35413b5fc8310856f32a53cfc237f0e928a",
+      "key": "game.semantic_correction.msg_6ae",
+      "source_text_sha256": "da226cc9bf30ac51d54dc7ed610f15ce2946fe58d34400cfb7f5b05b0801a0ab",
+      "subsystem": "debug-menu",
+      "target_id": "0x06AE",
+      "text": "　周回数[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "1095a953b01f2b2f3f5fd4457ffddb0a7b6ca648ee1f36e60914df85cadbe35a",
+      "key": "game.semantic_correction.msg_6af",
+      "source_text_sha256": "9828c490ddec8686d762111010b77c05fb604706b23e6511f7c3641788f27d06",
+      "subsystem": "debug-menu",
+      "target_id": "0x06AF",
+      "text": "　クリア登録[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "44c6cc2d3d95bc07464c7e9b6ba41a17e4e8e383b80eb3280bf205bd799caae8",
+      "key": "game.semantic_correction.msg_6b2",
+      "source_text_sha256": "f7cc8c92c98757ed0f83f0c33cca40b8de1b8b5d53ecee83b441fe3fe61dba27",
+      "subsystem": "debug-menu",
+      "target_id": "0x06B2",
+      "text": "砂嵐[X]\n"
+    },
+    {
+      "english_payload_sha256": "a7176f9242be570405a7a05039134f7d89d8f61dc3e5c7adf284bcafe7e03d54",
+      "key": "game.semantic_correction.msg_6b9",
+      "source_text_sha256": "0da8f01be8cd29600fc8120965eec1b7c79b37db855c15a18776c7c414db772c",
+      "subsystem": "debug-menu",
+      "target_id": "0x06B9",
+      "text": "ファイルをクリア済みに[X]\n"
+    },
+    {
+      "english_payload_sha256": "f67aac0af256f4dd3dd9042096f112269aaea447450898d3f350f6f20f1f2bd7",
+      "key": "game.semantic_correction.msg_6ba",
+      "source_text_sha256": "6ab9a662bf51d1340d448db8db766da99190ce491f1a76cf4f01d63921a726b6",
+      "subsystem": "debug-menu",
+      "target_id": "0x06BA",
+      "text": "しますか？[X]\n"
+    },
+    {
+      "english_payload_sha256": "181424d6ebecf9ad0c7611713bf65f2d735f7c2d024d0aaad489da0f27d02c97",
+      "key": "game.semantic_correction.msg_6bb",
+      "source_text_sha256": "a8d3c2e884891204dbd8c3309d3457351fdcb446ead38a832b15b58a26d72a7c",
+      "subsystem": "debug-menu",
+      "target_id": "0x06BB",
+      "text": "クリア済みファイルは[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "88def947b12d071f41e5b0d2e41fe7283d2bd3836cd0a554978aaf86019f51e9",
+      "key": "game.semantic_correction.msg_6bc",
+      "source_text_sha256": "204fffd1eec22f10423099df3036cea860b46c4b85a301d0d96c86b5e072e737",
+      "subsystem": "debug-menu",
+      "target_id": "0x06BC",
+      "text": "以後プレイできません[X]\n"
+    },
+    {
+      "english_payload_sha256": "6f1bff5800aacf9125a43d3c1786ec04f2beb1c002b28ef8325b28a02b851333",
+      "key": "game.semantic_correction.msg_7d1",
+      "source_text_sha256": "435d319ec016be9e8fa37e0af20d886b6b56ab008d2e47314ccada807b840a02",
+      "subsystem": "ending-details",
+      "target_id": "0x07D1",
+      "text": "戦死地：[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "26311e0d50109e50788aee81c265f8f4b3fe174c82a168fb9a12ae9b3087db2d",
+      "key": "game.semantic_correction.msg_7d2",
+      "source_text_sha256": "981a2b92c43c8a5a0979b8957535b1d3ea7b69dd57a36722fae6ec8333aa783b",
+      "subsystem": "ending-details",
+      "target_id": "0x07D2",
+      "text": "で負傷し、[LF]\n一行と別れた。[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "798435c2733702fba4b1b99532596b2344e0ccbbd9bb8927dfc494699b120151",
+      "key": "game.semantic_correction.msg_7d3",
+      "source_text_sha256": "212421cd03f47a458907ef5fd56c096a8851adf4f3e05434a62c5edb427464da",
+      "subsystem": "ending-details",
+      "target_id": "0x07D3",
+      "text": "負傷地：[X]\n"
+    },
+    {
+      "english_payload_sha256": "b795f8797cc8bebd384539493b3673c291d1a4ed0766d2d788271b1c414b834b",
+      "key": "game.semantic_correction.msg_7d4",
+      "source_text_sha256": "5b3ae4fa114676dd66b83fa650a554f385339b8088e89e42e72637964c2da204",
+      "subsystem": "ending-details",
+      "target_id": "0x07D4",
+      "text": "。[.][LF]\nしかし最後まで一行と旅を共にした。[.][X]\n"
+    },
+    {
+      "english_payload_sha256": "236f87a63330dee00d38afc5ef398e21cb50afd8966194e9bb17bcc062453e8e",
+      "key": "game.semantic_correction.msg_a15",
+      "source_text_sha256": "eee8a88090fffabbd8551137bdcb2412471f45fee271ebcf6cfc19014f29b69e",
+      "subsystem": "chapter-event",
+      "target_id": "0x0A15",
+      "text": "１０レベル以上のユニットは[CTRL:0001]特別なアイテムによって[CTRL:0001]上級クラスに[CTRL:0001]クラスチェンジすることができます。[CTRL:0003][CTRL:0002][CTRL:0001]ソシアルナイトのカイルは[CTRL:0001]持っている『騎士勲章』を使うことで[CTRL:0001]パラディンかグレートナイトに[CTRL:0001]クラスチェンジすることができます。[CTRL:0003][CTRL:0002][CTRL:0001]クラスチェンジする時は[CTRL:0001]持ち物から『騎士勲章』を選択し[CTRL:0001]『使う』を選んでください。[CTRL:0003]"
+    }
+  ]
+}

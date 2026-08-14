@@ -14,7 +14,7 @@ from scripts.localization.game_locales.parsers import parse_hash_indexed
 
 LOCALES = ("ja", "zh-Hans")
 STYLES = ("system", "talk")
-CONTROL_TOKEN_RE = re.compile(r"\[CTRL:[0-9A-F]{4}\]")
+TEXT_TOKEN_RE = re.compile(r"\[[^\[\]\r\n]+\]")
 PLACEHOLDER_RE = re.compile(r"\{[0-9]+\}")
 NOTO_COMMIT = "f8d157532fbfaeda587e826d4cd5b21a49186f7c"
 NOTO_RAW_ROOT = (
@@ -85,7 +85,7 @@ def _input_record(path: Path, root: Path) -> Dict[str, object]:
 
 
 def _strip_tokens(text: str, *, expansion: bool = False) -> str:
-    text = CONTROL_TOKEN_RE.sub("", text)
+    text = TEXT_TOKEN_RE.sub("", text)
     if expansion:
         text = PLACEHOLDER_RE.sub("", text)
     return unicodedata.normalize("NFC", text)
@@ -133,6 +133,28 @@ def _load_expansion_strings(root: Path, locale: str) -> Tuple[List[str], Dict[st
     return strings, metadata
 
 
+def _load_game_authored_strings(
+    root: Path, locale: str
+) -> Tuple[List[str], Dict[str, object]]:
+    path = root / f"texts/locales/authored/catalog.{locale}.json"
+    catalog = json.loads(path.read_text(encoding="utf-8"))
+    if (
+        catalog.get("kind") != "fe8u-game-authored-catalog"
+        or catalog.get("locale") != locale
+        or catalog.get("schema_version") != 1
+        or not isinstance(catalog.get("strings"), dict)
+    ):
+        raise CjkFontError(f"{path}: canonical authored catalog is malformed")
+    strings = catalog["strings"]
+    if catalog.get("target_count") != len(strings):
+        raise CjkFontError(f"{path}: canonical authored target_count drift")
+    return list(strings.values()), {
+        "catalog": path.relative_to(root).as_posix(),
+        "string_count": len(strings),
+        "source_queue_sha256": catalog["source_queue"]["sha256"],
+    }
+
+
 def _locale_texts(root: Path, locale: str) -> Tuple[Dict[str, List[str]], Dict[str, object]]:
     indexed_path = root / f"texts/locales/{locale}/indexed.txt"
     indexed = parse_hash_indexed(
@@ -142,7 +164,13 @@ def _locale_texts(root: Path, locale: str) -> Tuple[Dict[str, List[str]], Dict[s
     sources: Dict[str, List[str]] = {
         "indexed": [message.text for message in indexed],
     }
-    if locale == "zh-Hans":
+    if locale == "ja":
+        raw_path = root / "texts/locales/ja/raw.json"
+        raw = json.loads(raw_path.read_text(encoding="utf-8"))
+        sources["raw"] = [
+            provider["text"] for provider in raw["providers"].values()
+        ]
+    else:
         raw_path = root / "texts/locales/zh-Hans/raw.json"
         raw = json.loads(raw_path.read_text(encoding="utf-8"))
         seen: Set[str] = set()
@@ -156,8 +184,13 @@ def _locale_texts(root: Path, locale: str) -> Tuple[Dict[str, List[str]], Dict[s
         sources["raw"] = raw_texts
 
     expansion, expansion_metadata = _load_expansion_strings(root, locale)
+    authored_game, authored_game_metadata = _load_game_authored_strings(root, locale)
     sources["expansion"] = expansion
-    return sources, expansion_metadata
+    sources["authored_game"] = authored_game
+    return sources, {
+        "authored_game": authored_game_metadata,
+        "expansion": expansion_metadata,
+    }
 
 
 def _scalar_sets(texts: Iterable[str], *, expansion: bool = False) -> Set[int]:
@@ -176,7 +209,7 @@ def collect_inventory(root: Path) -> Dict[str, object]:
     union_spacing: Set[int] = set()
 
     for locale in LOCALES:
-        sources, expansion_metadata = _locale_texts(root, locale)
+        sources, locale_metadata = _locale_texts(root, locale)
         contribution_sets = {
             name: _scalar_sets(texts, expansion=(name == "expansion"))
             for name, texts in sources.items()
@@ -210,7 +243,7 @@ def collect_inventory(root: Path) -> Dict[str, object]:
                 }
                 for name, values in contribution_sets.items()
             },
-            "expansion": expansion_metadata,
+            **locale_metadata,
             "styles": {
                 style: {
                     "glyph_scalar_count": len(glyphs),
@@ -441,10 +474,14 @@ def build_generated_files(root: Path) -> Dict[str, bytes]:
 
     input_paths = [
         root / "texts/locales/ja/indexed.txt",
+        root / "texts/locales/ja/raw.json",
         root / "texts/locales/zh-Hans/indexed.txt",
         root / "texts/locales/zh-Hans/raw.json",
         root / "texts/expansion/registry.json",
         *sorted((root / "texts/expansion").glob("catalog.*.json")),
+        root / "texts/locales/authored/manifest.json",
+        root / "texts/locales/authored/catalog.ja.json",
+        root / "texts/locales/authored/catalog.zh-Hans.json",
     ]
     outputs = {
         path: {
@@ -458,7 +495,10 @@ def build_generated_files(root: Path) -> Dict[str, bytes]:
         "normalization": "NFC",
         "font_asset_scope": "non-ASCII visible Unicode scalars",
         "token_rules": {
-            "ignored_control_token": "[CTRL:HHHH]",
+            "ignored_control_token": (
+                "all bracketed FE control/placeholder tokens, including "
+                "[CTRL:HHHH] and named text controls"
+            ),
             "ignored_expansion_placeholder": "{N}",
             "ascii": "uses the existing runtime ASCII fonts and is reported but not packed",
             "unicode_spacing": (

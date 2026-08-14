@@ -15,12 +15,15 @@
 #include "global.h"
 #include "hardware.h"
 #include "fontgrp.h"
+#include "proc.h"
 #include "uimenu.h"
 
 struct KeyStatusBuffer gDebugToolsTestKeyStatus = {0};
 struct KeyStatusBuffer * CONST_DATA gKeyStatusPtr = &gDebugToolsTestKeyStatus;
 
 struct LCDControlBuffer gLCDControlBuffer = {0};
+static struct Font sDebugToolsTestFont = {0};
+struct Font* gActiveFont = &sDebugToolsTestFont;
 
 /* Issue #11 closure: DebugTools_PrepHotkeyCheck (src/debugtools_registry.c)
  * now reads gPlaySt.chapterStateBits to observe a live prep screen --
@@ -62,6 +65,14 @@ u8 MenuCancelSelect(struct MenuProc* menu, struct MenuItemProc* item)
     return 0;
 }
 
+struct Proc* EndMenu(struct MenuProc* proc)
+{
+    if (proc != NULL && proc->def != NULL && proc->def->onEnd != NULL)
+        proc->def->onEnd(proc);
+
+    return (struct Proc*)proc;
+}
+
 struct MenuProc* StartOrphanMenu(const struct MenuDef* def)
 {
     (void)def;
@@ -69,6 +80,13 @@ struct MenuProc* StartOrphanMenu(const struct MenuDef* def)
      * (that requires the full Proc/rendering engine); it only calls
      * DebugTools_RegisterAction et al. directly. */
     return NULL;
+}
+
+ProcPtr Proc_Start(const struct ProcCmd* script, ProcPtr parent)
+{
+    (void)script;
+    (void)parent;
+    return (ProcPtr)1;
 }
 
 void DebugTools_RegisterBuiltinActions(void)

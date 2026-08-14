@@ -822,6 +822,7 @@ void PrepScreenProc_SetupMapIdle(struct ProcPrepSallyCursor * proc)
 //! FE8U = 0x08033978
 void PrepScreenProc_MapIdle(struct ProcPrepSallyCursor * proc)
 {
+#ifndef FE8_ARCHIVAL_BUILD
     /* Issue #11 slice 2: the single supported prep-screen debug hub
      * entry point (see include/expansion_debugtools.h). Checked before
      * any of this function's own vanilla key handling, and this function
@@ -831,6 +832,7 @@ void PrepScreenProc_MapIdle(struct ProcPrepSallyCursor * proc)
     DebugTools_PrepHotkeyCheck();
     if (DebugTools_IsHubActive())
         return;
+#endif
 
     HandlePlayerCursorMovement();
     if (!DoesBMXFADEExist())

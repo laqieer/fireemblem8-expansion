@@ -177,12 +177,16 @@ bool Check3rdTraineeEnabled(void)
 {
     struct GlobalSaveInfo info;
 
-    /* Issue #2 slice 1 (review fix): only genuinely blank SRAM may be
-     * auto-initialized here; corrupt/legacy/incompatible saves must be
-     * left untouched and must not be reinterpreted -- see
-     * EnsureGlobalSaveInfoLoaded() and docs/save_format.md. */
+#ifdef FE8_ARCHIVAL_BUILD
+    u8 unlock = ReadGlobalSaveInfo(&info);
+    if (!unlock) {
+        InitGlobalSaveInfodata();
+        ReadGlobalSaveInfo(&info);
+    }
+#else
     if (!EnsureGlobalSaveInfoLoaded(&info))
         return false;
+#endif
 
     /* 3rd trainee class can only get access after both Eirka and ephyram played through */
     if (info.Eirk_mode_easy || info.Eirk_mode_norm || info.Eirk_mode_hard)

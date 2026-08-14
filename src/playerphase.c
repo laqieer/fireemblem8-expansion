@@ -212,6 +212,7 @@ struct ProcCmd CONST_DATA sProcScr_MoveLimitView[] =
 //! FE8U = 0x0801C894
 void PlayerPhase_Suspend(void)
 {
+#ifndef FE8_ARCHIVAL_BUILD
     /* Skipped only while the debugtools bootstrap suppression is active
      * (see include/expansion_debugtools.h) -- the same one-shot window
      * BmMain_SuspendBeforePhase (src/bm.c) is narrowly guarded for. This
@@ -225,6 +226,7 @@ void PlayerPhase_Suspend(void)
      * writing normally. */
     if (DebugTools_IsBootstrapSuppressionActive())
         return;
+#endif
 
 #if FE8_EXPANSION_ITEMTEST_ENABLED
     /* Same one-shot boot window for the issue #10 runtime item-expansion
@@ -280,6 +282,7 @@ bool CanShowUnitStatScreen(struct Unit * unit)
 //! FE8U = 0x0801C940
 void PlayerPhase_MainIdle(ProcPtr proc)
 {
+#ifndef FE8_ARCHIVAL_BUILD
     /* Issue #11 slice 2: the single supported map-phase debug hub entry
      * point (see include/expansion_debugtools.h). Checked before any of
      * this function's own vanilla key handling, and this function
@@ -289,6 +292,7 @@ void PlayerPhase_MainIdle(ProcPtr proc)
     DebugTools_MapHotkeyCheck();
     if (DebugTools_IsHubActive())
         return;
+#endif
 
     HandlePlayerCursorMovement();
 

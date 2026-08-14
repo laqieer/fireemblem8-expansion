@@ -17,6 +17,7 @@ from .constants import (
     TARGET_STORAGE_BYTES,
 )
 from .model import EnglishCatalogBundle, GameCatalogBuild, LocaleCatalogBundle
+from scripts.localization.game_locales.fixed_width_labels import SURFACE_VALUES
 
 
 def _locale_suffix(locale: str) -> str:
@@ -145,6 +146,14 @@ def render_header(build: GameCatalogBuild) -> str:
             "    u32 providerUnavailableCount;",
             "};",
             "",
+            "struct GameLocalizationDisplayAlias",
+            "{",
+            "    u16 targetId;",
+            "    u8 surface;",
+            "    u8 reserved;",
+            "    const char *text;",
+            "};",
+            "",
         ]
     )
     english_max_decoded = build.english.catalog.budget.max_decoded_bytes
@@ -176,9 +185,14 @@ def render_header(build: GameCatalogBuild) -> str:
             bundle = build.locale_bundle(locale)
             max_decoded = bundle.catalog.budget.max_decoded_bytes
             assertion_bytes = max(TARGET_STORAGE_BYTES, max_decoded)
+            alias_count = sum(
+                len(entries)
+                for entries in build.display_aliases.get(locale, {}).values()
+            )
         else:
             max_decoded = 0
             assertion_bytes = 0
+            alias_count = 0
         lines.extend(
             [
                 "#define GAME_LOCALIZATION_%s_ENABLED %uu"
@@ -193,6 +207,8 @@ def render_header(build: GameCatalogBuild) -> str:
                 "        >= GAME_LOCALIZATION_%s_STORAGE_REQUIREMENT_BYTES)"
                 % _locale_macro(locale),
                 "    ? 1 : -1];",
+                "#define GAME_LOCALIZATION_%s_DISPLAY_ALIAS_COUNT %uu"
+                % (_locale_macro(locale), alias_count),
                 "",
             ]
         )
@@ -205,6 +221,8 @@ def render_header(build: GameCatalogBuild) -> str:
                     % suffix,
                     "extern const struct GameLocalizationLocaleCatalog gGameLocalizationCatalog%s;"
                     % suffix,
+                    "extern const struct GameLocalizationDisplayAlias",
+                    "    gGameLocalization%sDisplayAliases[];" % suffix,
                     "",
                 ]
             )
@@ -349,6 +367,61 @@ def _render_locale_catalog(
     return lines
 
 
+def _render_display_aliases(build: GameCatalogBuild, locale: str) -> List[str]:
+    suffix = _locale_suffix(locale)
+    rows = []
+    for surface, entries in sorted(
+        build.display_aliases.get(locale, {}).items(),
+        key=lambda item: SURFACE_VALUES[item[0]],
+    ):
+        for target_id, text in sorted(entries.items()):
+            rows.append((surface, target_id, text))
+    lines: List[str] = []
+    for surface, target_id, text in rows:
+        name = "sGameLocalization%sAlias%u_%04X" % (
+            suffix,
+            SURFACE_VALUES[surface],
+            target_id,
+        )
+        lines.extend(
+            [
+                "static const u8 GAME_LOCALIZATION_SECTION %s[] =" % name,
+                "{",
+                *_wrap_values(
+                    (
+                        _hex_u8(value)
+                        for value in text.encode("utf-8") + b"\0"
+                    ),
+                    indent="    ",
+                    per_line=12,
+                ),
+                "};",
+                "",
+            ]
+        )
+    lines.extend(
+        [
+            "const struct GameLocalizationDisplayAlias GAME_LOCALIZATION_SECTION",
+            "    gGameLocalization%sDisplayAliases[] =" % suffix,
+            "{",
+        ]
+    )
+    for surface, target_id, _ in rows:
+        name = "sGameLocalization%sAlias%u_%04X" % (
+            suffix,
+            SURFACE_VALUES[surface],
+            target_id,
+        )
+        lines.append(
+            "    { 0x%04Xu, %uu, 0u, (const char *)%s },"
+            % (target_id, SURFACE_VALUES[surface], name)
+        )
+    if not rows:
+        lines.append("    { 0u, 0u, 0u, (const char *)0 },")
+    lines.extend(["};", ""])
+    return lines
+
+
 def render_source(build: GameCatalogBuild) -> str:
     enabled = set(build.enabled_locales)
     lines = [
@@ -366,6 +439,7 @@ def render_source(build: GameCatalogBuild) -> str:
         lines.extend(_render_blob_array(bundle))
         lines.extend(_render_entry_array(bundle))
         lines.extend(_render_locale_catalog(bundle))
+        lines.extend(_render_display_aliases(build, bundle.locale))
     lines.extend(
         [
             "const struct GameLocalizationLocaleCatalog *const GAME_LOCALIZATION_SECTION",

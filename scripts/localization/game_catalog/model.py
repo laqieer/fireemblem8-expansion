@@ -19,6 +19,7 @@ class EntryPayloadMeta:
     mapping_source_kind: str
     mapping_source: Dict[str, Any]
     locale_provider_kind: Optional[str]
+    control_domain: Optional[str]
     source_text: Optional[str]
     encoded_bytes: Optional[bytes]
     fallback_kind: str
@@ -61,6 +62,7 @@ class GameCatalogBuild:
     locales: Tuple[LocaleCatalogBundle, ...]
     report: Dict[str, Any]
     budget: Dict[str, Any]
+    display_aliases: Mapping[str, Mapping[str, Mapping[int, str]]]
     suffix_share: bool
 
     @property

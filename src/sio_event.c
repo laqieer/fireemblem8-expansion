@@ -18,6 +18,76 @@
 #include "sio.h"
 #include "constants/songs.h"
 
+#ifdef MODERN
+#include "expansion_locale.h"
+#include "expansion_msg_ids.h"
+#define SIO_TRANSFER_SENDING_TEXT \
+    ExpansionLocale_ResolveCurrent(EXP_MSG_SIO_TRANSFER_SENDING)
+#define SIO_TRANSFER_RECEIVING_TEXT \
+    ExpansionLocale_ResolveCurrent(EXP_MSG_SIO_TRANSFER_RECEIVING)
+#else
+#define SIO_TRANSFER_SENDING_TEXT "送信中"
+#define SIO_TRANSFER_RECEIVING_TEXT "受信中"
+#endif
+
+#ifdef MODERN
+enum
+{
+    XMAP_PROGRESS_LABEL_BUFFER_SIZE = 0x40,
+    XMAP_PROGRESS_SUFFIX_BUFFER_SIZE = 0x10,
+};
+
+static void CopyXMapProgressText(char * dest, int capacity, const char * src)
+{
+    int used = 0;
+
+    if (capacity <= 0)
+        return;
+
+    while (*src != '\0')
+    {
+        const char * next;
+        u32 characterWidth;
+        int byteCount;
+
+        next = GetCharTextLen(src, &characterWidth);
+        if (next <= src)
+            break;
+        (void)characterWidth;
+
+        byteCount = next - src;
+        if (byteCount > capacity - used - 1)
+            break;
+
+        while (src < next)
+            dest[used++] = *src++;
+    }
+
+    dest[used] = '\0';
+}
+
+static void DrawXMapProgressLabel(struct Text * th, const char * str, int maxWidth)
+{
+    int width = 0;
+
+    Text_SetCursor(th, 0);
+    Text_SetColor(th, TEXT_COLOR_SYSTEM_WHITE);
+
+    while (*str != '\0')
+    {
+        const char * next;
+        u32 characterWidth;
+
+        next = GetCharTextLen(str, &characterWidth);
+        if (next <= str || width + (int)characterWidth > maxWidth)
+            break;
+
+        str = Text_DrawCharacter(th, str);
+        width += characterWidth;
+    }
+}
+#endif
+
 /**
  * Contains Link Arena functions that are called by events
  */
@@ -210,9 +280,36 @@ void PutXMapProgressPercent(struct Text * th, const char * str, int number)
 {
     ClearText(th);
 
+#ifdef MODERN
+    {
+        char label[XMAP_PROGRESS_LABEL_BUFFER_SIZE];
+        char suffix[XMAP_PROGRESS_SUFFIX_BUFFER_SIZE];
+        int valueX;
+        int labelMaxWidth;
+
+        CopyXMapProgressText(label, (int)sizeof(label), str);
+        CopyXMapProgressText(
+            suffix,
+            (int)sizeof(suffix),
+            GetStringFromIndex(0x5AE));
+        valueX = SioGetProgressValueX(
+            th->tile_width * 8,
+            GetStringTextLen(label),
+            GetStringTextLen(suffix));
+        labelMaxWidth = valueX - 20;
+
+        if (labelMaxWidth < 0)
+            labelMaxWidth = 0;
+
+        DrawXMapProgressLabel(th, label, labelMaxWidth);
+        SioDrawNumber(th, valueX, 2, number);
+        Text_InsertDrawString(th, valueX + 8, 0, suffix);
+    }
+#else
     Text_InsertDrawString(th, 0, 0, str);
     SioDrawNumber(th, 54, 2, number);
     Text_InsertDrawString(th, 62, 0, GetStringFromIndex(0x5AE));
+#endif
 
     PutText(th, TILEMAP_LOCATED(gBG0TilemapBuffer, 15, 12));
 
@@ -227,7 +324,7 @@ void DrawXMapSendProgress(struct SioBigSendProc * proc)
         PlaySoundEffect(SONG_7D);
         proc->unk_3C++;
 
-        PutXMapProgressPercent(&gUnk_Sio_7[0], "送信中" /* "Sending" */, proc->unk_3C);
+        PutXMapProgressPercent(&gUnk_Sio_7[0], SIO_TRANSFER_SENDING_TEXT, proc->unk_3C);
         DrawStatBarGfx(
             0x100, 0xe, TILEMAP_LOCATED(gBG0TilemapBuffer, 14, 15), 0x6000, 100, proc->unk_3C, 100 - proc->unk_3C);
         BG_EnableSyncByMask(BG0_SYNC_BIT);
@@ -244,7 +341,7 @@ void DrawXMapReceiveProgress(struct SioBigReceiveProc * proc)
         PlaySoundEffect(SONG_7D);
         proc->unk_3C++;
 
-        PutXMapProgressPercent(&gUnk_Sio_7[0], "受信中" /* "Receiving" */, proc->unk_3C);
+        PutXMapProgressPercent(&gUnk_Sio_7[0], SIO_TRANSFER_RECEIVING_TEXT, proc->unk_3C);
         DrawStatBarGfx(
             0x100, 0xe, TILEMAP_LOCATED(gBG0TilemapBuffer, 14, 15), 0x6000, 100, proc->unk_3C, 100 - proc->unk_3C);
         BG_EnableSyncByMask(BG0_SYNC_BIT);

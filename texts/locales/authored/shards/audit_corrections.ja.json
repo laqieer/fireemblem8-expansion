@@ -1,0 +1,342 @@
+{
+  "kind": "fe8u-authored-translation-shard",
+  "locale": "ja",
+  "schema_version": 1,
+  "shard": "audit_corrections",
+  "source_map_sha256": "63b021274b7865c0d76cb1556fa84cc1dfdbcadab38037c8ccf6eeb9cdc3591a",
+  "source_queue": {
+    "path": "texts/locales/mapping/authored_translation_queue.json",
+    "revision": "e6435a8e2f444f0e16cab21713fe052b543d2e6e",
+    "sha256": "ffdff913a552076928d5cb06634ed75d8983b65c05bb4ecec9aa2b610ffe6ad6"
+  },
+  "subsystem_counts": {
+    "ending-details": 34,
+    "events": 1,
+    "menus": 2,
+    "supports": 3
+  },
+  "target_count": 40,
+  "terminology_sources": [],
+  "translations": [
+    {
+      "english_payload_sha256": "3bf0db140adc7f6e185862a1e47fe2e092e67abb513467cb807cc71f57cbddea",
+      "key": "game.semantic_correction.msg_28",
+      "source_text_sha256": "9f08ba390cd2ee1ee1e8efd9cc7094820cf48f9a6e76af26a02c8f40ea59066c",
+      "subsystem": "menus",
+      "target_id": "0x0028",
+      "text": "　手再開"
+    },
+    {
+      "english_payload_sha256": "66fd0f47b20c42e60c1c22843ef962dfd736d99980a88acaccfd5c44721b09ea",
+      "key": "game.semantic_correction.msg_6ab",
+      "source_text_sha256": "c03a62a035dfd6d9e5f8ccce3f381094a8280e8b90d99b5f194da1c7940b5ef1",
+      "subsystem": "menus",
+      "target_id": "0x06AB",
+      "text": "　デバッグ情報"
+    },
+    {
+      "english_payload_sha256": "868c86f2afa3d965ca4d230224c9961f0c2602f09e856b78a956b71fe7226922",
+      "key": "game.semantic_correction.msg_817",
+      "source_text_sha256": "1eefa8ebe5e666c26c845c4bc87303c9a810706297629a829f94d4f60c8d8c6e",
+      "subsystem": "ending-details",
+      "target_id": "0x0817",
+      "text": "戦後、エフラムとエイリークは[CTRL:0001]ルネス復興に力を尽くした。[CTRL:0001]その働きは民に希望を取り戻し、[CTRL:0001]エフラムは信望厚い名君となった。[CTRL:0001]エイリークは常に兄を支え続けた。"
+    },
+    {
+      "english_payload_sha256": "23227ee1ded0d5d37883a6f10aa85e6d0e3fba6cf6e5beaa9d7a3d4beb2c1261",
+      "key": "game.semantic_correction.msg_818",
+      "source_text_sha256": "71a359560686d15e234a0f9f3f484045010bd87bc27cdd92a8e9ae1d69497525",
+      "subsystem": "ending-details",
+      "target_id": "0x0818",
+      "text": "ルネスに戻ったエイリークとゼトは、[CTRL:0001]エフラムと騎士たちの祝福を受け[CTRL:0001]結婚した。王女と忠実な騎士の間に[CTRL:0001]育まれた恋の物語は、ルネスで[CTRL:0001]末永く愛される物語となった。"
+    },
+    {
+      "english_payload_sha256": "fb1b2aead1e58a443846fbb8fa1f92b97e8d76c1d80ad170b10223c5767df9a7",
+      "key": "game.semantic_correction.msg_819",
+      "source_text_sha256": "0c779f7fcc0536e3d3297006e6cf415030e13a3f5334511d6b3d957aa9450d3b",
+      "subsystem": "ending-details",
+      "target_id": "0x0819",
+      "text": "戦後、エイリークとサレフは帰郷した。[CTRL:0001]彼女は折に触れポカラを訪れ、[CTRL:0001]やがてルネスを兄に託して[CTRL:0001]サレフと結婚。２人の娘は伝説の[CTRL:0001]ナーダ・クーヤに似ていたという。"
+    },
+    {
+      "english_payload_sha256": "292056fbd72e8ae2ca16cd087d867fe520d7709752ed90544c77f3332b8c4d7f",
+      "key": "game.semantic_correction.msg_81a",
+      "source_text_sha256": "c668830f52f4a39f8d7dab942aebf662a7a27a694e90cec01335787a005e8a83",
+      "subsystem": "ending-details",
+      "target_id": "0x081A",
+      "text": "戦後もターナとエイリークは[CTRL:0001]親友であり続け、時を見つけては[CTRL:0001]互いを訪ねた。年を重ねた後、[CTRL:0001]２人の子供たちもまた、母たちに[CTRL:0001]負けないほど固い友情で結ばれた。"
+    },
+    {
+      "english_payload_sha256": "b9c51d58aee5491987dc1c70dd3613925ea1de43446b89b9bbb0a5b7dae332c6",
+      "key": "game.semantic_correction.msg_81b",
+      "source_text_sha256": "d6d02a36b4acf0fe592bf8c91aa86e3378037dbb661b62e08883075a7929fbe8",
+      "subsystem": "ending-details",
+      "target_id": "0x081B",
+      "text": "戦後、エイリークとフォルデは[CTRL:0001]ルネスへ戻った。復興に励む彼女を[CTRL:0001]フォルデは忠実に支え続けた。[CTRL:0001]彼が描いた絵には、失われたと[CTRL:0001]思われた彼女の笑顔が残された。"
+    },
+    {
+      "english_payload_sha256": "a567942092358c748fd83dd954fdcd1acbb679ea74b940d3d569c780d5e6c288",
+      "key": "game.semantic_correction.msg_81c",
+      "source_text_sha256": "22fbb5b0dc3be341dac5dff9e70475b79d8035be589a78c68a722291208a74e9",
+      "subsystem": "ending-details",
+      "target_id": "0x081C",
+      "text": "戦後、エフラムはルネスへ、[CTRL:0001]ミルラは闇の樹海へ戻った。[CTRL:0001]務めに励みつつも互いを忘れず、[CTRL:0001]ミルラが二度と森を出なくても、[CTRL:0001]エフラムはたびたび彼女を訪ねた。"
+    },
+    {
+      "english_payload_sha256": "2efb2a76aeb25fdd6ea980b6a8dea2a87e69415a7f721c080e60a2a491991e5e",
+      "key": "game.semantic_correction.msg_81d",
+      "source_text_sha256": "b76e6983bb3db6ca5a091d2a885dbb68031ab806be504e26ea0e5e350e570ded",
+      "subsystem": "ending-details",
+      "target_id": "0x081D",
+      "text": "戦後、２人はそれぞれ帰国したが、[CTRL:0001]ラーチェルは度々ルネスを訪れ、[CTRL:0001]やがてエフラムと結婚した。[CTRL:0001]ロストンは大騒ぎとなったものの、[CTRL:0001]最後は彼女の我がままが通った。"
+    },
+    {
+      "english_payload_sha256": "4d578f7c00cfcd69b78a75834d909753f58815613ffd87892595702bef278041",
+      "key": "game.semantic_correction.msg_81e",
+      "source_text_sha256": "0212a5398272c8b39829b266b600557382e14a9606f3f1ec68038ffa30004848",
+      "subsystem": "ending-details",
+      "target_id": "0x081E",
+      "text": "ルネス復興が落ち着くと、[CTRL:0001]エフラムとターナは結婚した。[CTRL:0001]反対したヒーニアスも、妹の幸せを[CTRL:0001]見て祝福した。ルネスとフレリアは[CTRL:0001]友情だけでなく血でも結ばれた。"
+    },
+    {
+      "english_payload_sha256": "8f2638a17d9ecef26e4c63560971e2916fc57ce38ec204bee34ee8fd67239fb3",
+      "key": "game.semantic_correction.msg_81f",
+      "source_text_sha256": "50ce1ac5eb269b54c9790c16f12630e73e18ad388c2082c527961e42fe2d5fde",
+      "subsystem": "ending-details",
+      "target_id": "0x081F",
+      "text": "ナターシャはゼトとルネスへ戻り、[CTRL:0001]２人はそこで結婚した。[CTRL:0001]復興の仕事に追われる日々を経て、[CTRL:0001]すべてを成し遂げた後は[CTRL:0001]平和で幸せな暮らしを送った。"
+    },
+    {
+      "english_payload_sha256": "c7c051fe08d48a2ec2b67508464223cf1d3ed034377184242709995734bb3e98",
+      "key": "game.semantic_correction.msg_820",
+      "source_text_sha256": "499f6e25545dd5689c6a00185bfafffeb455574ec3934c34356594c3c4cda9c0",
+      "subsystem": "ending-details",
+      "target_id": "0x0820",
+      "text": "フランツはアメリアをルネスへ迎えた。[CTRL:0001]彼女は短期間軍に勤めた後、[CTRL:0001]フランツとの結婚を機に退役した。[CTRL:0001]やがて生まれた娘も成長し、[CTRL:0001]立派な騎士になったという。"
+    },
+    {
+      "english_payload_sha256": "b04ea26d729cb9efc55e5f3a15728a7331dee146b43ede6899a7845c3d91d429",
+      "key": "game.semantic_correction.msg_821",
+      "source_text_sha256": "286c68bb3deb4d3cd718a6d9c3068e6f7792182de879d7e11404ea0234c29e68",
+      "subsystem": "ending-details",
+      "target_id": "0x0821",
+      "text": "ギリアムとシレーネはフレリアへ戻り、[CTRL:0001]そこで結婚した。誰もが認める[CTRL:0001]似合いの２人は、王家と騎士団から[CTRL:0001]祝福を受けた。その後も共に[CTRL:0001]揺るぎない忠誠を捧げ続けた。"
+    },
+    {
+      "english_payload_sha256": "69bcd8e62ead1c59ac3dae5d023c1b6b9a7108ad1d5e850c6c9ebe095060837c",
+      "key": "game.semantic_correction.msg_822",
+      "source_text_sha256": "f2402162484814ea0b986941395c4439161ed5b67a0d7ecf62f68c24ee4b096f",
+      "subsystem": "ending-details",
+      "target_id": "0x0822",
+      "text": "ヒーニアスに望まれ、ヴァネッサは[CTRL:0001]フレリア城へ移り住んだ。[CTRL:0001]その後も王国騎士の務めを続け、[CTRL:0001]２人は子を授かった。周囲の祝福を[CTRL:0001]受けながら幸せに暮らしたという。"
+    },
+    {
+      "english_payload_sha256": "dd542874c0ad68af15a1ab69e0088bfdb8fe43d29e96f312174d7f725cac61a4",
+      "key": "game.semantic_correction.msg_823",
+      "source_text_sha256": "9742633c78628899108f361eeb34f6289ba7d0526cb81e9bff9f39bc3f509e39",
+      "subsystem": "ending-details",
+      "target_id": "0x0823",
+      "text": "戦後、フォルデはヴァネッサを[CTRL:0001]いっそう深く愛するようになった。[CTRL:0001]彼女も同じ思いだったが、務めを優先。[CTRL:0001]諦めないフォルデがフレリアへ移り、[CTRL:0001]時を経て２人は結婚した。"
+    },
+    {
+      "english_payload_sha256": "7da5c6f0753930b4ca66fb1d0e38dee42998657d2a3762afbbf51170ec85b75e",
+      "key": "game.semantic_correction.msg_824",
+      "source_text_sha256": "a8fd3038a5491dc08a183621488c7bd48fb6232be28de8c7713ee0e569a64b68",
+      "subsystem": "ending-details",
+      "target_id": "0x0824",
+      "text": "父子はイム村へ戻り、力を合わせて[CTRL:0001]故郷を復興した。ロスは成長し、[CTRL:0001]父をも超える戦士となった。[CTRL:0001]後に彼にも息子が生まれ、[CTRL:0001]一族の武勇を受け継いだという。"
+    },
+    {
+      "english_payload_sha256": "d77e7fcde531f5bbfa2fdd75dc70c9693e65f5662cda80a503579033e548695d",
+      "key": "game.semantic_correction.msg_825",
+      "source_text_sha256": "67afd8d725d35ebbc717e2109849a7ab80ca5de514c99579b5d96691700b1e96",
+      "subsystem": "ending-details",
+      "target_id": "0x0825",
+      "text": "幼なじみの２人は恋人となり、[CTRL:0001]やがて夫婦になった。コーマは[CTRL:0001]ネイミーを案じ、危険な稼業をやめた。[CTRL:0001]ネイミーは祖父譲りの弓技を[CTRL:0001]息子と娘へ伝えたという。"
+    },
+    {
+      "english_payload_sha256": "0e820fd48c5b6652d1219ccf05f1d6035cc774ddf3bb77221b5c34e48b295399",
+      "key": "game.semantic_correction.msg_826",
+      "source_text_sha256": "61a21af9e95bd301e8206034d2ee7a7ec7d15fb0dfa010c5631f0a87ebd36707",
+      "subsystem": "ending-details",
+      "target_id": "0x0826",
+      "text": "帰郷したアスレイとルーテは結婚した。[CTRL:0001]家事をアスレイが担う以外、[CTRL:0001]暮らしは以前とほぼ変わらなかった。[CTRL:0001]息子が生まれると、ルーテの関心は[CTRL:0001]彼の不可思議な生態へ移った。"
+    },
+    {
+      "english_payload_sha256": "3bdf05e39145eb78d6a9cf301a4dfc7a781849604b108afcc6481aff8a866c3f",
+      "key": "game.semantic_correction.msg_827",
+      "source_text_sha256": "46ce74ad878cadc352900186f1a34286be6771b65b9a941adf4e09777c3cf185",
+      "subsystem": "ending-details",
+      "target_id": "0x0827",
+      "text": "戦後、カイルとルーテは[CTRL:0001]ルネスで結婚した。友人たちは[CTRL:0001]意外な花嫁に困惑したが、[CTRL:0001]２人の幸せは否定できなかった。[CTRL:0001]息子が生まれるとカイルは育児に励んだ。"
+    },
+    {
+      "english_payload_sha256": "8b8556b61caf267358e72e52c9ecdc48973df5ce812f6f8fa270862469fe0ba9",
+      "key": "game.semantic_correction.msg_828",
+      "source_text_sha256": "d74d83de3740b87930e58e16ae75deacee8e0c7b90df175a67216c85c4c6552c",
+      "subsystem": "ending-details",
+      "target_id": "0x0828",
+      "text": "ヨシュアはナターシャを伴い帰国し、[CTRL:0001]正統な後継者として王位に就いた。[CTRL:0001]ナターシャは最良の伴侶となり、[CTRL:0001]２人は力を合わせ、砂漠の大国[CTRL:0001]ジャハナに大いなる栄光をもたらした。"
+    },
+    {
+      "english_payload_sha256": "d8f4ad997d9fb36f22d92946db577cc7068530996965b5836aadc5deb9d3937c",
+      "key": "game.semantic_correction.msg_829",
+      "source_text_sha256": "1ab6ca800928baa02fb7ad0ab6b6eac5edb5b2ab99aaccb3eeb55a3b52175b46",
+      "subsystem": "ending-details",
+      "target_id": "0x0829",
+      "text": "親友同士でも、性格は大きく異なる。[CTRL:0001]帰国したカイルとフォルデの活躍は[CTRL:0001]歌や物語となって称えられた。[CTRL:0001]２人は無二の友にして最大の好敵手として、[CTRL:0001]生涯を幸せに過ごしたという。"
+    },
+    {
+      "english_payload_sha256": "6d4f177cdf0e8b80d1d702308ed4e52e8f0ecd260141e56006a6edb58417affa",
+      "key": "game.semantic_correction.msg_82a",
+      "source_text_sha256": "3138f6cdf4466cb0e677bf5aba4fd913209269f95e9d0b0ff662f76a687d9962",
+      "subsystem": "ending-details",
+      "target_id": "0x082A",
+      "text": "クーガーは帰国してグラド復興を助け、[CTRL:0001]ほどなく一人で放浪の旅へ出た。[CTRL:0001]ターナは何年も彼を捜し続け、[CTRL:0001]ついに発見。フレリアへ迎え、[CTRL:0001]王国騎士に任じたという。"
+    },
+    {
+      "english_payload_sha256": "199b00942cc42754bd733a003dde4328d401664a0eacc730dbc2b3d10eb3aed4",
+      "key": "game.semantic_correction.msg_82b",
+      "source_text_sha256": "ccc69c8a8d3826b63dbf340209f97f8a156d62159d23599826edd3a069d93847",
+      "subsystem": "ending-details",
+      "target_id": "0x082B",
+      "text": "ラーチェルとヒーニアスは出会った時から[CTRL:0001]激しく火花を散らしたという。[CTRL:0001]やがて２人の間に愛が育つにつれ、[CTRL:0001]それぞれが率いる国同士の絆も[CTRL:0001]ますます強く結ばれていった。"
+    },
+    {
+      "english_payload_sha256": "ad20f0617b56c0cda6a93b0737fc85e2443c886280a13fc8eabb6e043746bec9",
+      "key": "game.semantic_correction.msg_82c",
+      "source_text_sha256": "2f212d6776588c6d6b0a82eb95ae68fcff9a2df82a716ea5fa0380807445526c",
+      "subsystem": "ending-details",
+      "target_id": "0x082C",
+      "text": "ジストとテティスは国にも権力にも[CTRL:0001]縛られず、悠々と隠居生活を送った。[CTRL:0001]ジストは町の若者たちに剣を教え、[CTRL:0001]テティスは数々の舞台で踊り、[CTRL:0001]人々を楽しませたという。"
+    },
+    {
+      "english_payload_sha256": "7954d15b0cf5a6cccb2475667280c45f302011ecdd8923cac1ea0a59895b2800",
+      "key": "game.semantic_correction.msg_82d",
+      "source_text_sha256": "a993eff14e27488e64c2919b71111d6a8a903be117fc582cfbbc6fa98cbf2d2b",
+      "subsystem": "ending-details",
+      "target_id": "0x082D",
+      "text": "ジストは傭兵を続け、マリカは[CTRL:0001]傭兵団の剣術指南役となった。[CTRL:0001]彼女の想いにジストも応えたが、[CTRL:0001]戦い以外は何をしても不器用だと知り、[CTRL:0001]少々頭を悩ませたという。"
+    },
+    {
+      "english_payload_sha256": "3640c6cc1f0225ffd9606718eb5b4b1d48e8429679f76b6e1e88ccaa8ca1570b",
+      "key": "game.semantic_correction.msg_82e",
+      "source_text_sha256": "529955136e87278d4aeb1d34e3f6cd5faa3777d9dda7b1ca590438988ce66160",
+      "subsystem": "ending-details",
+      "target_id": "0x082E",
+      "text": "ミルラは闇の樹海へ戻ったが、[CTRL:0001]サレフに請われてポカラへ移った。[CTRL:0001]やがて里人は彼女を大いなる竜ではなく、[CTRL:0001]普通の少女として接するようになり、[CTRL:0001]ミルラは幸せに暮らしたという。"
+    },
+    {
+      "english_payload_sha256": "3cd13746fbb3562851915cda90f454a3cd4bd2fb26ca55fe06db05289b76d175",
+      "key": "game.semantic_correction.msg_82f",
+      "source_text_sha256": "d713bf03a68205ed4d40e470a26125d3f1567ad7af165ebfa92278b2175d0cd4",
+      "subsystem": "ending-details",
+      "target_id": "0x082F",
+      "text": "師弟はポカラへ戻り、穏やかに学んだ。[CTRL:0001]ユアンは修行を重ね、やがて[CTRL:0001]サレフに並ぶ力を身につけた。[CTRL:0001]対等となった２人は共に研究を続け、[CTRL:0001]魔道の知識をさらに広げていった。"
+    },
+    {
+      "english_payload_sha256": "d6f1275be4db0fcb99b99ec2b57372cbe6dcacfeb9c1ee64e5049a57a8a7e2ff",
+      "key": "game.semantic_correction.msg_830",
+      "source_text_sha256": "110266ad8d72356bccc9defb55746c47c86f0da13f2dba9863887a01b95d2f3c",
+      "subsystem": "ending-details",
+      "target_id": "0x0830",
+      "text": "ヨシュアはマリカを伴いジャハナへ戻った。[CTRL:0001]彼女は王家に仕え、国一番の[CTRL:0001]剣士となった。賭け好きのヨシュアも、[CTRL:0001]マリカを相手にした勝負だけは[CTRL:0001]いつも彼女に勝てなかったという。"
+    },
+    {
+      "english_payload_sha256": "6ab1ad3c77cab6631cc797e070816b83cf0f70bb46b948ac0af8b72ab0727957",
+      "key": "game.semantic_correction.msg_831",
+      "source_text_sha256": "55ad0cce9424526b0cef20f109a8cf21c95b825d3a0f481e5290a81d8494f1fd",
+      "subsystem": "ending-details",
+      "target_id": "0x0831",
+      "text": "やがてラーチェルはロストン女王となり、[CTRL:0001]ドズラは変わらず傍らに仕えた。[CTRL:0001]後に彼女が結婚した時、ドズラは[CTRL:0001]幼子のように号泣。その姿は式そのもの[CTRL:0001]以上に人々の記憶へ残ったという。"
+    },
+    {
+      "english_payload_sha256": "5e851d2094805e59d3368638e75b780e400b04202fb20563a44520ab9deb903c",
+      "key": "game.semantic_correction.msg_832",
+      "source_text_sha256": "2f62142db0400d8db083633c91d98697509ff9801f6d829d962119a7bb064ca8",
+      "subsystem": "ending-details",
+      "target_id": "0x0832",
+      "text": "アメリアはロスの故郷を訪れ、[CTRL:0001]そこに残ることを決めた。[CTRL:0001]やがて２人は愛し合い結婚。[CTRL:0001]後に生まれた息子は戦士へ成長し、[CTRL:0001]父をも超える腕前と力を得た。"
+    },
+    {
+      "english_payload_sha256": "160d28881a250640b476a8f7c277ecec88e8097295cad9f7140c6fc43ac2a279",
+      "key": "game.semantic_correction.msg_833",
+      "source_text_sha256": "4452d93f19cb2783581f53b8ef1d9643f284cb103d563d46ea6519a3997112d6",
+      "subsystem": "ending-details",
+      "target_id": "0x0833",
+      "text": "戦後、ユアンとアメリアは約束通り[CTRL:0001]世界を巡る旅へ出た。各地での活躍は[CTRL:0001]小さな伝説として語り継がれた。[CTRL:0001]やがてアメリアが娘を産むと、[CTRL:0001]２人は旅を終え、定住した。"
+    },
+    {
+      "english_payload_sha256": "53f573503d0d3ba2a00fc9a5dac59ae5bc910e2b8a8b355168a46156d67ebc98",
+      "key": "game.semantic_correction.msg_834",
+      "source_text_sha256": "558bb6affa6e46ca983db1678657c19e9aac905164a9c2f49f7728bcb5a0c778",
+      "subsystem": "ending-details",
+      "target_id": "0x0834",
+      "text": "戦後、ヨシュアはジストをジャハナへ[CTRL:0001]招くため決闘を挑んだ。勝負は引き分け。[CTRL:0001]だがジストは彼の堂々たる姿に感服し、[CTRL:0001]その日からヨシュアの傍を[CTRL:0001]二度と離れなかったという。"
+    },
+    {
+      "english_payload_sha256": "412630086283d83b011ed664cc35d65af13ce691afc84a11f7b974916c8a8ae7",
+      "key": "game.semantic_correction.msg_835",
+      "source_text_sha256": "7f6e1eb3b8b336d9b92ba4675adcf5413bff69df0e43c2db836331378dd52a14",
+      "subsystem": "ending-details",
+      "target_id": "0x0835",
+      "text": "戦後フレリアへ戻ったシレーネと[CTRL:0001]ヴァネッサは、久々に語り合った。[CTRL:0001]恋や戦い、失った友を思いながら、[CTRL:0001]姉妹の絆を新たにし、二度とその絆を[CTRL:0001]損なわないと誓ったという。"
+    },
+    {
+      "english_payload_sha256": "3f7bb43267641d899c3bc4b76b7d970166e1ef607ffbbc3a2d4360e0491679c8",
+      "key": "game.semantic_correction.msg_836",
+      "source_text_sha256": "505ff10e5215c105e72cd812b90115faab1759521a380ec8b127205f69c7fc97",
+      "subsystem": "ending-details",
+      "target_id": "0x0836",
+      "text": "ルネス復興を終えると、ヒーニアスは[CTRL:0001]エフラムに決闘を挑み、引き分けた。[CTRL:0001]戦いの後、エイリークはヒーニアスへの[CTRL:0001]愛を認め、エフラムの祝福を受けて[CTRL:0001]２人は結婚した。"
+    },
+    {
+      "english_payload_sha256": "c0b6859456db5a2ee797bead5645fbe899149d28974b585516f6a5928457cdd9",
+      "key": "game.semantic_correction.msg_837",
+      "source_text_sha256": "b87f9db690375e918b3b1c839862dd41945799e6887a831335e642af33eae3f9",
+      "subsystem": "ending-details",
+      "target_id": "0x0837",
+      "text": "戦後カイルはフレリアを訪れ、[CTRL:0001]シレーネの温かな歓迎を受けた。[CTRL:0001]２人は退役後に結婚し、娘を育てた。[CTRL:0001]その娘は武術にも礼法にも[CTRL:0001]並外れた才能を示したという。"
+    },
+    {
+      "english_payload_sha256": "c80c1c186ddbfe8bcf1be63b529961c10a5cd73f43c19f300059c7a5dc2ed750",
+      "key": "game.semantic_correction.msg_838",
+      "source_text_sha256": "cef3c4500a9610bfbe0a402705965f1c4214f081e0c471780cf2b1be5888b530",
+      "subsystem": "ending-details",
+      "target_id": "0x0838",
+      "text": "グラドに戻ると、デュッセルは[CTRL:0001]アメリアを母と再会させた。[CTRL:0001]母娘は喜びの涙を流して彼に感謝した。[CTRL:0001]その後アメリアは、かつて黒曜石と[CTRL:0001]呼ばれた男の最も信頼する部下となった。"
+    },
+    {
+      "english_payload_sha256": "07f5ef1a6ec69f44ffd9a2ef66d25a4f642b404fa274bba6e27324e1f7b4ef0c",
+      "key": "game.semantic_correction.msg_b29",
+      "source_text_sha256": "f0c751f2f6129f73b4d0071c01c6e72f708f863ce7a4494196c51cd70017b07b",
+      "subsystem": "events",
+      "target_id": "0x0B29",
+      "text": "[CTRL:0008][CTRL:0010][CTRL:0102][CTRL:000A][CTRL:0010][CTRL:0114][CTRL:000B][CTRL:0010][CTRL:010F][CTRL:000D][CTRL:0010][CTRL:0122][CTRL:000A]初めて顔をあわす者もいるな。[CTRL:0001]まず名乗っておこうか。[CTRL:0003][CTRL:0001]俺はルネス王子エフラム[CTRL:0001]エイリークの兄だ。[CTRL:0003][CTRL:000D]ロストン聖教国王女ラーチェルですわ。[CTRL:0001]お見知り置きくださいませ。[CTRL:0003][CTRL:000A]ではまず　俺から報告しよう。[CTRL:0003][CTRL:0001]俺たちはグラド帝都を陥落させ[CTRL:0001]皇帝ヴィガルドを倒した。[CTRL:0003][CTRL:0001]帝都のグラド兵はすでに降伏している。[CTRL:0003][CTRL:0001]散発的な抵抗はあるだろうが[CTRL:0001]これでこの戦争は終わったと考えていい。[CTRL:0003][CTRL:000B]そうか。[CTRL:0003][CTRL:000A]だが気になることがある。[CTRL:0003][CTRL:0001]俺は帝都で　ノールという[CTRL:0001]男から【魔石】の話を聞いた。[CTRL:0003][CTRL:0015][CTRL:000A]研究の末に【聖石】から生み出された[CTRL:0001]【聖石】以上の力を持つ石・・・。[CTRL:0003][CTRL:0001]グラドの異変は　【魔石】と呼ばれる[CTRL:0001]その石に原因があるらしい。[CTRL:0003][CTRL:0001]ミルラが言っていた[CTRL:0001]帝都のまがまがしい気配もそれだ。[CTRL:0003][CTRL:0015][CTRL:000A]皇帝はすでに死去し　その【魔石】の魔力で[CTRL:0001]くぐつとして動かされていたという。[CTRL:0003][CTRL:0001]今回の戦争もすべて　【魔石】・・・[CTRL:0001]それを持つ者によって画策されていた。[CTRL:0003][CTRL:000B]誰なのだ　それは？[CTRL:0003][CTRL:0080][CTRL:0004][CTRL:000A][CTRL:0016]・・・[CTRL:0016]俺は信じていない。[CTRL:0001]だが報告はしよう。[CTRL:0003][CTRL:0001]皇子リオンこそが黒幕だと[CTRL:0001]ノールは言った。[CTRL:0003][CTRL:0001]【魔石】は今　リオンが持っていると。[CTRL:0003][CTRL:000B]やはり　グラド皇子リオンが・・・[CTRL:0003][CTRL:0008]いえ　待ってください。[CTRL:0003][CTRL:0001]私と兄上はリオンをよく知っています。[CTRL:0001]彼は私たちの幼馴染なんです。[CTRL:0003][CTRL:0001]リオンはこんな戦争を[CTRL:0001]起こしたりする人ではありません。[CTRL:0003][CTRL:000B]だが　エイリーク・・・[CTRL:0003][CTRL:0008]私はリオンに会いました。[CTRL:0003][CTRL:0001]兄上もすでにご存知かと思いますが[CTRL:0003][CTRL:0001]私は海路でのロストン行きをあきらめ[CTRL:0003][CTRL:0001]ヒーニアス王子と共に陸路で[CTRL:0001]ジャハナまで進んで来ました。[CTRL:0003][CTRL:0001]そして　ジャハナ王宮で[CTRL:0001]グラド軍を率いるリオンと対面しました。[CTRL:0003][CTRL:0001]彼は詳しいことは[CTRL:0001]話してくれませんでしたが・・・[CTRL:0003][CTRL:0001]でもリオンは私たちの味方だと[CTRL:0001]そう言ってくれました。[CTRL:0003][CTRL:0001]だから　リオンは・・・[CTRL:0003][CTRL:000A]エイリーク[CTRL:0001]俺も・・・リオンに会った。[CTRL:0003][CTRL:0008]本当ですか？[CTRL:0003][CTRL:000A]ああ。だが[CTRL:0001]リオンはまるで別人のように・・・。[CTRL:0003][CTRL:0001]いや・・・[CTRL:0001]人でさえないように見えた。[CTRL:0003][CTRL:0008]あ　兄上・・・[CTRL:0001]どういうことですか？[CTRL:0003][CTRL:000A]・・・見たままを話そう。[CTRL:0003][CTRL:0001]俺は帝都で　リオンと会った。[CTRL:0003][CTRL:0001]リオンは俺に言った。[CTRL:0001]自分が　この戦争を引き起こしたのだと。[CTRL:0003][CTRL:0001]俺たち兄妹と親しくなったのも[CTRL:0001]ルネスを侵略するためだと・・・[CTRL:0003][CTRL:0001]父上を手にかけたのも　自分だと・・・[CTRL:0003][CTRL:0008]そんな　そんなこと・・・[CTRL:0003][CTRL:000A]・・・ああ　俺も信じられない。[CTRL:0001]信じたくはない。[CTRL:0003][CTRL:0001]第一　あのリオンがそんなことを[CTRL:0001]考えていたとは・・・。[CTRL:0003][CTRL:0001]俺にはどうしても思えない。[CTRL:0003][CTRL:0015]"
+    },
+    {
+      "english_payload_sha256": "d8b9029143bb40d52becaa60772cfcec641bfea6b3e234d9b46c2fc47827a804",
+      "key": "game.semantic_correction.msg_cb6",
+      "source_text_sha256": "58c5f14a414f886cde588d158a22e6c3fa39c9dd7be8f78d6de2655f809208f4",
+      "subsystem": "supports",
+      "target_id": "0x0CB6",
+      "text": "[OpenMidLeft][LoadFace][FID_Dozla]\n[OpenMidRight][LoadFace][FID_Garcia]\n[OpenMidRight]あなたがドズラ殿だな。[A]\n[OpenMidLeft]そうじゃ！ おぬしは誰じゃ？[A][ToggleSmile]\n[OpenMidRight]俺はガルシア。ドズラ殿の噂は[.][LF]\n近ごろよく耳にしている。[.][A]\n[OpenMidLeft][MoveMidLeft]\n[OpenMidLeft]よい噂ばかりじゃろうな！ ガハハ！[.][LF]\nわしもガルシア殿の噂は聞いておる。[.][A][LF]\nとくにその怪力についてな！[LF]\n試しにこの岩を持ち上げてくれんか？[.][A][LF]\n冗談じゃ！ ガハハ！[.][A]\n[OpenMidRight]はは、大したことではない。[.][LF]\nいつもそんなに[.][ToggleMouthMove]...[.][ToggleMouthMove]元気なのか？[A]\n[OpenMidLeft]腹いっぱい食べたからのう。[.][LF]\n気分は最高じゃ！[.][A]\n[OpenMidRight]空腹では戦えないからな。[A][LF]\n力を保つには食事が大切だ。[LF]\nとくに朝食はな。[A][LF]\n異国では朝食を[.][LF]\n[LQuote]断食を破る食事[RQuote]と呼ぶそうだ。[A]\n[OpenMidLeft]何じゃと？ 朝食とは、何を破るものなんじゃ？[A]\n[OpenMidRight]断食だ。[.][A]\n[OpenMidLeft][ToggleSmile]断食を破るから朝食か！[LF]\n回りくどい名じゃのう！[.][A][ToggleSmile]\n[OpenMidRight]眠っている間は何も食べない。[.][LF]\nつまり断食しているようなものだ。[.][A][LF]\n朝に食べる食事が[.][LF]\nその断食を終わらせる。[.][A][LF]\nだから朝食は[LF]\nとくに大切な食事なんだ。[A]\n[OpenMidLeft][ToggleSmile]ほう。誰が考えたんじゃろうな？[.][A][LF]\n[ToggleSmile]今朝わしが腹に入れたのは[LF]\n知識だけじゃった！[A]\n[OpenMidRight]どういう意味だ？[.][A]\n[OpenMidLeft]ほかの技も必ず学ぶように[.][LF]\nしておるということじゃ。[.][A][LF]\n戦士として成長したければ[LF]\n必要なことじゃからな。[A]\n[OpenMidRight]まったく同感だ。[.][A][LF]\nこの軍の若者は専門の技には[.][LF]\n強いが、ほかの分野には弱い。[A][LF]\n総合的に鍛える教えは[.][LF]\n若い世代から失われつつある。[.][A]\n[OpenMidLeft]その通りじゃ！ わしらの頃は[.][LF]\n戦士が多くの技を学んだものじゃ。[A][LF]\n仲間が負傷した時には[LF]\n代わりを務めねばならんからな。[.][A][LF]\nわしは昔から弓を学びたかった。[A][LF]\n繊細な狙いは斧で戦うのとは[.][LF]\n正反対じゃからな。[.][A]\n[OpenMidRight]俺もだ。今度会って[.][LF]\n一緒に学んでみないか？[A]\n[OpenMidLeft]よい考えじゃ！[A][X]\n"
+    },
+    {
+      "english_payload_sha256": "6c068943f8a57bccb6e943e5e040df35d9161dd29dc8f406197f5be9a8df1e6c",
+      "key": "game.semantic_correction.msg_cb7",
+      "source_text_sha256": "3ed1ac8cf7f898bc36ae36ca9fd098fd40738967e7af769dce3c15407cb0fa25",
+      "subsystem": "supports",
+      "target_id": "0x0CB7",
+      "text": "[OpenMidLeft][LoadFace][FID_Garcia]\n[OpenMidRight][LoadFace][FID_Dozla][ToggleSmile]\n[OpenMidRight]ガルシア！[.][A]\n[OpenMidLeft]やあ、ドズラ！[.][A]\n[OpenMidRight]この前は実に楽しかったぞ！[.][A]\n[OpenMidLeft]ああ、そうだな。[A]\n[OpenMidRight]手合わせは大好きじゃ！ 武器で[LF]\n語り合っているようなものじゃ！[A]\n[OpenMidLeft]弓を斧のように振り回しては[.][LF]\nいけないと知っているな？ はは！[A]\n[OpenMidRight]ふざけていただけじゃ！[.][A][LF]\nそういえば誰かさんは矢を逆向きに[LF]\nつがえて肩を射抜きかけたな。[.][A][LF]\nさて、誰じゃったかのう？[LF]\nううむ、思い出せんぞ？[A]\n[OpenMidLeft]あれは矢に欠陥があったんだ！[.][A]\n[OpenMidRight][MoveMidRight]\n[OpenMidRight][ToggleSmile]ガハハハハ！ そうじゃろうな！[.][A][ToggleSmile]\n[OpenMidLeft][ToggleSmile]年寄りに新しい芸を教えるのは[LF]\n無理なのかもしれんな。[A][ToggleSmile]\n[OpenMidRight]そんなことはないぞ。[.][A][LF]\nおぬしは斧の達人じゃ。[LF]\n新しい技もすぐ覚えられる！[A]\n[OpenMidLeft]いや、すごいのはお前だ。[LF]\n敵にとっては脅威そのものだ！[.][A][ToggleSmile]\n[OpenMidRight]どこでその戦い方を学んだんじゃ？[.][A]\n[OpenMidLeft]昔ルネスで部隊を率いていた。[LF]\nそこで基礎を学んだ[ToggleMouthMove]...[.][ToggleMouthMove][A][LF]\n退役してからは山で暮らしていた。[.][A][LF]\n毎日斧を振るってはいたが、[.][LF]\n薪を割るためだった。[.][A]\n[OpenMidRight]ほら、技を別の分野に[.][LF]\n生かすことを学んだではないか。[A][LF]\n弓は向いていないのかもしれん。[LF]\nほかのものを試そうぞ。[A]\n[OpenMidLeft]何がいい？[A]\n[OpenMidRight]魔法はどうじゃ？[A]\n[OpenMidLeft]ううむ[ToggleMouthMove]...[.][ToggleMouthMove][A]\n[OpenMidRight]そう難しくはないはずじゃ。[A][LF]\n見たところ、腕を振り回して[.][LF]\n意味不明な言葉を叫ぶだけじゃ。[.][A][ToggleSmile]\n[OpenMidLeft]一理あるな。[A]\n[OpenMidRight]近いうちに練習しようぞ。[.][A]\n[OpenMidLeft]楽しみにしているぞ[.][ToggleMouthMove]...[.][ToggleMouthMove]魔道士殿！[.][A]\n[OpenMidRight][MoveMidRight]\n[OpenMidRight][ToggleSmile]ガハハハハ！ その通りじゃ！[.][A][ToggleSmile][X]\n"
+    },
+    {
+      "english_payload_sha256": "bf850f4e478093e66490a9efe55f643e7df2b14be671299834363450a8987309",
+      "key": "game.semantic_correction.msg_cb8",
+      "source_text_sha256": "7d294d5d05396a1876fbc1ba542863423191976485b0e5b8d712272dfc02102b",
+      "subsystem": "supports",
+      "target_id": "0x0CB8",
+      "text": "[OpenMidLeft][LoadFace][FID_Dozla]\n[OpenMidRight][LoadFace][FID_Garcia]\n[OpenMidRight]思ったほどうまくいかなかったな。[.][A]\n[OpenMidLeft]いや、全部が失敗ではなかろう。[A]\n[OpenMidRight]杖で頭を叩かれなければ[LF]\nもう少しましだったがな。[A]\n[OpenMidLeft]当てるつもりはなかったんじゃ！[LF]\nわしが[.][ToggleMouthMove]...[.][ToggleMouthMove]術をかけている時に入ってきた。[A]\n[OpenMidRight]まだ頭にこぶが残っている。[.][A]\n[OpenMidLeft]悪かったと思っておるわい！[.][A][LF]\nそれに、あの杖でおぬしを[LF]\n治してもやったではないか！[.][A]\n[OpenMidRight]治していない！[LF]\n俺のひげを全部焼いたんだ！[A]\n[OpenMidLeft]おお、そうじゃった。[.....][LF]\nすまん。[A]\n[OpenMidRight]ふん。[.][A]\n[OpenMidLeft][MoveMidLeft][ToggleSmile]\n[OpenMidLeft]だが、ひげのないおぬしも[.][LF]\nなかなか男前じゃったぞ。[.][A][LF]\n十歳は若く見えた。[LF]\nいや、二十歳は若返った！[A]\n[OpenMidRight]本当か？[.....][LF]\n焦げた毛の臭いが離れん。[.][A]\n[OpenMidLeft]待て！ すぐ元どおりに生やした[.][LF]\nことくらい評価してくれんか。[.][A]\n[OpenMidRight][ToggleMouthMove]...[.][ToggleMouthMove][.....][LF]\n分かった。[A][LF]\nきれいに生えそろった。ありがとう。[.][A]\n[OpenMidLeft]どういたしましてじゃ！[.][A]\n[OpenMidRight]ほかの技を試したことで[.][LF]\n実に多くを学べたな。[A]\n[OpenMidLeft][ToggleSmile]わしもじゃ！[A][LF]\nここまで来れば剣術など[LF]\n朝飯前じゃろう！[A][ToggleSmile][X]\n"
+    }
+  ]
+}

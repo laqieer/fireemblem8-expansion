@@ -255,7 +255,11 @@ void EventQuakefxHorizon_SlightLoop(struct Proc * proc)
     {
         if (GetGameClock() % 2)
         {
+#ifdef FE8_ARCHIVAL_BUILD
+            (u16)gBmSt.camera.x &= ~2;
+#else
             gBmSt.camera.x &= ~2;
+#endif
             gBmSt.camera.x ^= 1;
         }
     }
@@ -279,7 +283,11 @@ void EventQuakefxVeritical_Loop(struct Proc * proc)
     {
         if (GetGameClock() % 2)
         {
+#ifdef FE8_ARCHIVAL_BUILD
+            (u16)gBmSt.camera.y &= 0xFFFD;
+#else
             gBmSt.camera.y &= 0xFFFD;
+#endif
             gBmSt.camera.y ^= 1;
         }
     }
@@ -339,14 +347,22 @@ void StartEventHorizontalQuakefxSlightlyNoSound(ProcPtr parent)
 
 void EndEventHorizontalQuakefx(ProcPtr parent)
 {
+#ifdef FE8_ARCHIVAL_BUILD
+    (u16)gBmSt.camera.x &= 0xFFFC;
+#else
     gBmSt.camera.x &= 0xFFFC;
+#endif
     Proc_EndEach(ProcScr_EventHorizontalQuakefx);
     Sound_FadeOutSE(4);
 }
 
 void EndEventVerticalQuakefx(void)
 {
+#ifdef FE8_ARCHIVAL_BUILD
+    (u16)gBmSt.camera.y &= 0xFFFC;
+#else
     gBmSt.camera.y &= 0xFFFC;
+#endif
     Proc_EndEach(ProcScr_EventVerticalQuakefx);
     Sound_FadeOutSE(4);
 }
@@ -371,7 +387,11 @@ void EventQuakefx_Loop(struct Proc * proc)
     {
         if (GetGameClock() % 2)
         {
+#ifdef FE8_ARCHIVAL_BUILD
+            (u16)gBmSt.camera.x &= 0xFFFD;
+#else
             gBmSt.camera.x &= 0xFFFD;
+#endif
             gBmSt.camera.x ^= 1;
         }
     }
@@ -396,7 +416,11 @@ void StartEventQuakefx(ProcPtr proc)
 
 void EndEventQuakefx(ProcPtr proc)
 {
+#ifdef FE8_ARCHIVAL_BUILD
+    (u16)gBmSt.camera.y &= 0xFFFC;
+#else
     gBmSt.camera.y &= 0xFFFC;
+#endif
     Sound_FadeOutSE(4);
     Proc_EndEach(ProcScr_EventQuakefx);
 }

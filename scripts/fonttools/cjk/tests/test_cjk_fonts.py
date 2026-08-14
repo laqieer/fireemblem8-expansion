@@ -1,5 +1,6 @@
 import hashlib
 import json
+import shutil
 import struct
 import subprocess
 import sys
@@ -11,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(ROOT))
 
 from scripts.fonttools.cjk.inventory import (
+    CjkFontError,
     FONT_SOURCES,
     build_generated_files,
     read_sfnt_identity,
@@ -20,13 +22,14 @@ from scripts.fonttools.cjk.package import (
     archive_package,
     check_compact_assets,
     compact_asset_filenames,
+    refresh_compact_asset_inventory_provenance,
 )
 
 
 class CjkFontTests(unittest.TestCase):
     SCRATCH = Path(__file__).resolve().parent / ".scratch"
 
-    def test_expansion_catalog_inventory_provenance_matches_current_34_keys(self):
+    def test_expansion_catalog_inventory_provenance_matches_current_53_keys(self):
         inventory = json.loads((ROOT / "fonts/cjk/inventory.json").read_text())
         registry_path = ROOT / "texts/expansion/registry.json"
         registry = json.loads(registry_path.read_text())
@@ -35,7 +38,7 @@ class CjkFontTests(unittest.TestCase):
             for record in registry["messages"]
             if record["status"] == "active"
         }
-        self.assertEqual(len(active_keys), 34)
+        self.assertEqual(len(active_keys), 53)
 
         catalog_paths = sorted((ROOT / "texts/expansion").glob("catalog.*.json"))
         source_paths = [registry_path, *catalog_paths]
@@ -64,6 +67,70 @@ class CjkFontTests(unittest.TestCase):
                 len(active_keys),
             )
             self.assertEqual(expansion["catalogs"], expected_catalogs)
+
+    def test_canonical_authored_catalogs_are_inventory_inputs_and_fully_covered(self):
+        inventory = json.loads((ROOT / "fonts/cjk/inventory.json").read_text())
+        manifest_path = ROOT / "texts/locales/authored/manifest.json"
+        input_paths = [
+            manifest_path,
+            *(
+                ROOT / f"texts/locales/authored/catalog.{locale}.json"
+                for locale in ("ja", "zh-Hans")
+            ),
+        ]
+        for path in input_paths:
+            relative = path.relative_to(ROOT).as_posix()
+            data = path.read_bytes()
+            self.assertEqual(
+                inventory["inputs"][relative],
+                {
+                    "byte_count": len(data),
+                    "sha256": hashlib.sha256(data).hexdigest(),
+                },
+            )
+
+        for locale in ("ja", "zh-Hans"):
+            catalog_path = (
+                ROOT / f"texts/locales/authored/catalog.{locale}.json"
+            )
+            catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
+            metadata = inventory["locales"][locale]["authored_game"]
+            self.assertEqual(metadata["string_count"], 329)
+            self.assertEqual(
+                metadata["catalog"],
+                catalog_path.relative_to(ROOT).as_posix(),
+            )
+            corpus = set(
+                (ROOT / f"fonts/cjk/corpora/{locale}.system.txt").read_text(
+                    encoding="utf-8"
+                )
+            )
+            authored_scalars = {
+                character
+                for text in catalog["strings"].values()
+                for character in text
+                if ord(character) > 0x7F and not character.isspace()
+            }
+            self.assertTrue(authored_scalars)
+            self.assertTrue(authored_scalars <= corpus)
+            compact_manifest = json.loads(
+                (ROOT / "graphics/fonts/cjk/manifest.json").read_text()
+            )
+            for style in ("system", "talk"):
+                asset = compact_manifest["assets"][f"{locale}.{style}"]
+                codepoints = (
+                    ROOT / asset["codepoints"]["path"]
+                ).read_bytes()
+                values = set(
+                    struct.unpack(
+                        f"<{asset['glyph_count']}I",
+                        codepoints,
+                    )
+                )
+                self.assertTrue(
+                    set(map(ord, authored_scalars)) <= values,
+                    (locale, style),
+                )
 
     def test_inventory_counts_tokens_and_spacing_contract(self):
         inventory = json.loads((ROOT / "fonts/cjk/inventory.json").read_text())
@@ -139,6 +206,55 @@ class CjkFontTests(unittest.TestCase):
         first = check_compact_assets(ROOT)
         second = check_compact_assets(ROOT)
         self.assertEqual(first, second)
+
+    def test_inventory_provenance_refresh_requires_unchanged_font_oracle(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "fonts/cjk/reports").mkdir(parents=True)
+            shutil.copytree(
+                ROOT / "fonts/cjk/corpora",
+                root / "fonts/cjk/corpora",
+            )
+            for relative_path in (
+                "fonts/cjk/inventory.json",
+                "fonts/cjk/febuilder-manifest.json",
+                "fonts/cjk/reports/febuilder-generation-report.json",
+                "fonts/cjk/reports/febuilder-gates.json",
+            ):
+                shutil.copy2(ROOT / relative_path, root / relative_path)
+            shutil.copytree(
+                ROOT / "graphics/fonts/cjk",
+                root / "graphics/fonts/cjk",
+            )
+
+            manifest_path = root / "graphics/fonts/cjk/manifest.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["sources"]["inventory"]["sha256"] = "0" * 64
+            manifest_path.write_text(
+                json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True)
+                + "\n",
+                encoding="utf-8",
+            )
+
+            refresh_compact_asset_inventory_provenance(root)
+            refreshed = json.loads(manifest_path.read_text(encoding="utf-8"))
+            self.assertEqual(
+                refreshed["sources"]["inventory"]["sha256"],
+                hashlib.sha256(
+                    (root / "fonts/cjk/inventory.json").read_bytes()
+                ).hexdigest(),
+            )
+
+            corpus_path = root / "fonts/cjk/corpora/ja.system.txt"
+            corpus_path.write_text(
+                corpus_path.read_text(encoding="utf-8") + "追",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(
+                CjkFontError,
+                "scalars must be sorted and unique|corpus SHA-256 mismatch",
+            ):
+                refresh_compact_asset_inventory_provenance(root)
 
     def test_compact_assets_use_typed_extensions_and_existing_manifest_paths(self):
         manifest = json.loads(

@@ -272,4 +272,69 @@ enum LocalizedGameTextStatus LocalizedGameText_ResolveCurrentToUnboundedBuffer(
         outDecodedLength);
 }
 
+const char * LocalizedGameText_GetDisplayAliasForWidth(
+    int msgIndex,
+    enum LocalizedGameTextDisplaySurface surface,
+    int maxPixels,
+    int canonicalPixels)
+{
+    const struct GameLocalizationDisplayAlias *aliases;
+    u32 aliasCount;
+    u32 i;
+    ExpansionLocaleId locale;
+    int surfacePixels;
+
+    switch (surface)
+    {
+    case LOCALIZED_GAME_TEXT_DISPLAY_CHARACTER_NAME_40:
+        surfacePixels = 40;
+        break;
+
+    case LOCALIZED_GAME_TEXT_DISPLAY_CLASS_NAME_64:
+        surfacePixels = 64;
+        break;
+
+    case LOCALIZED_GAME_TEXT_DISPLAY_ITEM_NAME_56:
+        surfacePixels = 56;
+        break;
+
+    default:
+        return 0;
+    }
+
+    if (maxPixels != surfacePixels || canonicalPixels <= maxPixels)
+        return 0;
+
+    locale = ExpansionLocale_GetCurrent();
+    if (locale == EXPANSION_LOCALE_JA)
+    {
+#if GAME_LOCALIZATION_JA_ENABLED
+        aliases = gGameLocalizationJaDisplayAliases;
+        aliasCount = GAME_LOCALIZATION_JA_DISPLAY_ALIAS_COUNT;
+#else
+        return 0;
+#endif
+    }
+    else if (locale == EXPANSION_LOCALE_ZH_HANS)
+    {
+#if GAME_LOCALIZATION_ZH_HANS_ENABLED
+        aliases = gGameLocalizationZhHansDisplayAliases;
+        aliasCount = GAME_LOCALIZATION_ZH_HANS_DISPLAY_ALIAS_COUNT;
+#else
+        return 0;
+#endif
+    }
+    else
+    {
+        return 0;
+    }
+
+    for (i = 0; i < aliasCount; i++)
+    {
+        if (aliases[i].targetId == msgIndex && aliases[i].surface == surface)
+            return aliases[i].text;
+    }
+    return 0;
+}
+
 #endif /* FE8_LOCALIZED_GAME_TEXT_CJK_PROFILE_ENABLED */

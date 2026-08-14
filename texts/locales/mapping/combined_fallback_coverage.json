@@ -1,0 +1,130 @@
+{
+  "authoritative": false,
+  "authority": "evidence-only",
+  "blocked_targets": [],
+  "candidate_targets": {
+    "combined_unblocked": [],
+    "febuilder_unique_uncontested": [],
+    "structural_high": [],
+    "structural_reference": []
+  },
+  "global_exceptions": {
+    "febuilder_collision_targets": [
+      "0x0010",
+      "0x053B",
+      "0x053D",
+      "0x0581",
+      "0x0601",
+      "0x060C",
+      "0x0647",
+      "0x0924",
+      "0x0925",
+      "0x0928",
+      "0x093B",
+      "0x099C",
+      "0x099D",
+      "0x09A2",
+      "0x0AAF",
+      "0x0ACA",
+      "0x0AF9"
+    ],
+    "febuilder_conflict_targets": [
+      "0x01A0",
+      "0x01A1",
+      "0x01BC",
+      "0x0647",
+      "0x093E",
+      "0x094E",
+      "0x0973",
+      "0x097D",
+      "0x097E",
+      "0x0980",
+      "0x0988",
+      "0x0989"
+    ],
+    "structural_collision_targets": [
+      "0x0010",
+      "0x053B",
+      "0x053D",
+      "0x0581",
+      "0x060C",
+      "0x0658",
+      "0x072A",
+      "0x0730",
+      "0x0732",
+      "0x0924",
+      "0x0925",
+      "0x0928",
+      "0x093B",
+      "0x099C",
+      "0x099D",
+      "0x09A2",
+      "0x0AAF",
+      "0x0ACA",
+      "0x0AF9",
+      "0x0C52"
+    ]
+  },
+  "inputs": {
+    "febuilder_alignment_evidence": {
+      "path": "texts/locales/mapping/febuilder_alignment_evidence.json",
+      "sha256": "c029a46dd63f1412aaf2b2e06143667aa900dc7f845a2b2fec637896e36282e7"
+    },
+    "structural_completion_evidence": {
+      "path": "texts/locales/mapping/structural_completion_evidence.json",
+      "sha256": "205924c5a36f8d9076cfa122a567d24f218dc275769cb961873a86b3f94b8aa6"
+    },
+    "structural_crosswalk_evidence": {
+      "path": "texts/locales/mapping/fe8u_structural_evidence.json",
+      "sha256": "83b8faa7ae25bd2d7489a9949fb4fe5ba9aa4d4b8b0270d8ea9496ff241fd4fc"
+    },
+    "target_map": {
+      "path": "texts/locales/mapping/fe8u_target_map.json",
+      "sha256": "0ec770175b42fc5f5babe2bd1af7a27597f5e0f1dc75d0a2d3ff18f32c821313"
+    },
+    "target_map_coverage": {
+      "path": "texts/locales/mapping/fe8u_target_map.coverage.json",
+      "sha256": "d2634a5c92edc19cf91efd712822425edb09ff26ae9320148f8338c8f9ddfdc2"
+    }
+  },
+  "intersections": {
+    "candidate_and_blocked_count": 0,
+    "candidate_and_blocked_targets": [],
+    "febuilder_and_structural_candidate_count": 0,
+    "febuilder_only_candidate_count": 0,
+    "febuilder_structural_collision_overlap_count": 0,
+    "structural_only_candidate_count": 0
+  },
+  "kind": "fe8u-fallback-integration-coverage",
+  "non_actionable_fallbacks": [],
+  "note": "Generated handoff summary for current not-yet-verified targets. It preserves candidate conflicts and collisions and cannot promote rows into the authoritative target map.",
+  "policy": {
+    "conflicts_and_collisions_preserved": true,
+    "promotion_permitted": false,
+    "updates_authoritative_map": false
+  },
+  "residual_targets": [],
+  "schema_version": 1,
+  "summary": {
+    "actionable_not_yet_verified_target_count": 0,
+    "combined_blocked_target_count": 0,
+    "combined_candidate_target_count": 0,
+    "combined_unblocked_candidate_target_count": 0,
+    "explicit_fallback_target_count": 0,
+    "fallback_reason_counts": {},
+    "febuilder_actionable_agrees_with_structural_count": 0,
+    "febuilder_actionable_collision_count": 0,
+    "febuilder_actionable_conflict_count": 0,
+    "febuilder_global_collision_count": 17,
+    "febuilder_global_conflict_count": 12,
+    "febuilder_unique_uncontested_candidate_count": 0,
+    "non_actionable_fallback_target_count": 0,
+    "residual_target_count": 0,
+    "structural_context_collision_count": 0,
+    "structural_global_context_collision_count": 20,
+    "structural_high_candidate_count": 0,
+    "structural_reference_candidate_count": 0,
+    "target_count": 3414,
+    "translated_target_count": 3414
+  }
+}

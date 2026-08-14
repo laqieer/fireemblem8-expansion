@@ -1,9 +1,8 @@
 # Deterministic CJK font assets
 
-This directory contract supplies Sprint 3 with reviewable Japanese and
-Simplified Chinese glyph bitmaps without changing the renderer or the normal
-build. Bare `make` does not invoke FEBuilderGBA, .NET, a GUI, the network, or a
-system font lookup.
+This directory contract supplies the final Japanese and Simplified Chinese
+system/talk glyph bitmaps used by the modern UTF-8 renderer. Bare `make` does
+not invoke FEBuilderGBA, .NET, a GUI, the network, or a system font lookup.
 
 ## Inventory contract
 
@@ -14,28 +13,46 @@ python3 -m scripts.fonttools.cjk generate-inventory
 python3 -m scripts.fonttools.cjk check
 ```
 
+If catalog/source provenance changes but the regenerated CJK corpora remain
+byte-identical to the committed FEBuilder oracle, refresh only the compact
+asset inventory hash with:
+
+```bash
+python3 -m scripts.fonttools.cjk refresh-provenance
+```
+
+This command first verifies the current manifest, corpora, and immutable
+generation report. It does not permit changed glyph rows or raster payloads
+to inherit stale FEBuilder evidence.
+
 The inventory reads the committed normalized sources:
 
 - `texts/locales/ja/indexed.txt`;
+- materialized providers in `texts/locales/ja/raw.json`;
 - `texts/locales/zh-Hans/indexed.txt`;
 - unique records in `texts/locales/zh-Hans/raw.json`;
+- canonical 329-string full-game authored catalogs under
+  `texts/locales/authored/`, whose manifest pins the source queue and every
+  reviewed shard;
 - active `texts/expansion` catalog strings, resolved through the English
-  fallback catalog when a locale catalog is absent.
+  catalog only for defensive sparse-profile behavior; the committed JA/ZH
+  catalogs contain all 53 active keys and contribute zero fallback strings.
 
-`[CTRL:HHHH]` controls and `{N}` expansion placeholders are not glyphs.
+Bracketed game controls (named or `[CTRL:HHHH]`) and `{N}` expansion
+placeholders are not glyphs.
 Visible text is normalized with NFC only. ASCII remains in the existing
 runtime fonts. The source contains one non-ASCII spacing scalar, U+3000
 IDEOGRAPHIC SPACE; FEBuilder schema v1 rejects whitespace, so U+3000 is
-reported separately and Sprint 3 must give it an explicit advance rather than
+reported separately and the runtime gives it an explicit advance rather than
 performing a bitmap lookup.
 
 Current deterministic counts:
 
 | Locale | Source non-ASCII | Bitmap scalars per style | Styles |
 | --- | ---: | ---: | --- |
-| `ja` | 1,849 | 1,848 | System/item, Talk/text |
-| `zh-Hans` | 2,460 | 2,460 | System/item, Talk/text |
-| union | 3,332 | 3,331 | U+3000 is the one spacing scalar |
+| `ja` | 1,800 | 1,799 | System/item, Talk/text |
+| `zh-Hans` | 2,470 | 2,469 | System/item, Talk/text |
+| union | 3,285 | 3,284 | U+3000 is the one spacing scalar |
 
 The sorted corpora are in `fonts/cjk/corpora/`; human-readable scalar maps are
 in `fonts/cjk/maps/`; counts, input hashes, output hashes, token rules, and
@@ -121,7 +138,7 @@ Binary-search the codepoint table. The matching index selects one width byte
 and one fixed-stride bitmap. `graphics/fonts/cjk/manifest.json` pins every
 asset hash and all package/report provenance.
 
-The four locale/style payloads total **594,504 bytes**, or **594,504 bytes**
+The four locale/style payloads total **594,090 bytes**, or **594,096 bytes**
 when every blob is independently aligned to four bytes. This budget includes
 the bitmap, width, and Unicode index data, but not future linker/table
 wrappers.

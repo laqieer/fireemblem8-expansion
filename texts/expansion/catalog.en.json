@@ -35,6 +35,25 @@
     "framework.locale_short_name.ja": "JA",
     "framework.locale_short_name.zh_hans": "ZH",
     "raw_surface.unit_action.summon": " Summon",
-    "raw_surface.unit_action.call_monster": " Summon"
+    "raw_surface.unit_action.call_monster": " Summon",
+    "raw_surface.class_change.option_1": " Class 1",
+    "raw_surface.class_change.option_2": " Class 2",
+    "raw_surface.class_change.option_3": " Class 3",
+    "raw_surface.diagnostic.build_timestamp": "2005/02/04(FRI) 16:55:40",
+    "sio.transfer.sending": "Sending",
+    "sio.transfer.receiving": "Receiving",
+    "debug.confirm.heal_full": "Confirm Heal to Full",
+    "debug.confirm.add_item": "Confirm Add Item",
+    "debug.confirm.toggle_flag": "Confirm Toggle Flag",
+    "debug.confirm.reseed": "Confirm Reseed",
+    "debug.status.hub": "DBGTOOLS",
+    "debug.status.hub_error": "DBGTOOLS ERR",
+    "debug.status.unit_hp": "UNIT HP",
+    "debug.status.unit_unavailable": "UNIT N/A",
+    "debug.status.convoy": "CONVOY",
+    "debug.status.chapter": "CH",
+    "debug.status.flag": "FLAG",
+    "debug.status.rng_seed": "RNG SEED",
+    "debug.status.save_state": "SAVE STATE"
   }
 }

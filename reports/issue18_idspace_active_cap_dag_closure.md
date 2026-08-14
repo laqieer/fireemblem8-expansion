@@ -96,18 +96,22 @@ byte-identical resulting surfaces and unchanged pass/fail behavior.
 * `GeneratedDataCheckStampPrerequisiteTests` -- fast (~1 s),
   toolchain-independent structural pins: the new prerequisite edge
   itself, that the stamp's own inline self-heal calls are untouched, and
-  a `make -n` dry-run proving the stamp recipe is actually reached.
+  `make -n` dry-runs proving the stamp recipe is actually reached and a
+  `GENERATED_DATA_OUT_DIR` override rehomes every cap-mutating recipe.
 * `GeneratedDataCheckArtifactRichCapDagSequenceTests` -- a real (not
-  `-n`) integration test, against THIS repository's actual, shared
-  `build/generated/data/` (no temp copy, no `clean`), driving the
-  gate-relevant default -> 0xCE -> 0xCE (warm) -> default (reverse)
-  sequence and asserting the C header / JSON / Markdown surfaces agree
-  at every transition and that same-cap warm reruns never advance any
-  surface's mtime.
+  `-n`) integration test, seeded from THIS repository's actual
+  artifact-rich `build/generated/data/` (no `clean`) into an isolated
+  build-local `GENERATED_DATA_OUT_DIR`. It drives the gate-relevant
+  default -> 0xCE -> 0xCE (warm) -> default (reverse) sequence and
+  asserts the C header / JSON / Markdown surfaces agree at every
+  transition and that same-cap warm reruns never advance any surface's
+  mtime. The isolated output root prevents an unrelated, concurrently
+  running default-cap Make gate from being misreported as a warm-rerun
+  write by this test.
 * `ExpandedCapConsumerObjectAgreementTests` (toolchain-gated, no
-  libmGBA/ROM-boot needed) -- compiles the real `data_items.o` for both
-  the `debug` and `release` modern configs at the expanded cap and
-  proves the compiled object's own record count -- derived
+  libmGBA/ROM-boot needed) -- compiles an isolated real `data_items.o`
+  for both the `debug` and `release` modern configs at the expanded cap
+  and proves the compiled object's own record count -- derived
   proportionally from its data-section size, never a hardcoded byte
   count -- agrees with the header's `ITEM_ID_ACTIVE_RECORD_COUNT`: the
   actual "gItem expansion expects 207 but sees 206" consumer-side risk
@@ -122,8 +126,8 @@ byte-identical resulting surfaces and unchanged pass/fail behavior.
   mtime untouched.
 * A subsequent plain `make generated-data-check` restores 0xCD/206
   again, with a warm rerun again leaving mtimes untouched.
-* The new regression module: 6/6 tests pass (fast tier ~1.5 s,
-  artifact-rich sequence tier ~253 s, toolchain-gated consumer-object
-  tier ~88 s).
+* The regression module: 7/7 tests pass, including the output-root
+  isolation structural pin, artifact-rich sequence, and toolchain-gated
+  consumer-object tier.
 * Full `python3 -m scripts.upstream_port verify --jobs 2`: 11/11 gates
   `[PASS]`, run against this same artifact-rich worktree (no `clean`).

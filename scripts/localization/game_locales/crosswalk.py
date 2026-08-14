@@ -919,12 +919,12 @@ def _harvest_terrain(
             _record(
                 target_id,
                 _raw_source(
-                    import_id, ja_symbol=f"gTerrainNames[{terrain_key}]"
+                    import_id, ja_symbol=f"gTerrains_0[{terrain_key}]"
                 ),
                 subsystem="terrain",
                 evidence_kind="regional-raw-table",
-                source_table="gTerrains_0/gTerrainNames",
-                source_symbol="gTerrainNames",
+                source_table="gTerrains_0",
+                source_symbol="gTerrains_0",
                 source_key=terrain_key,
                 source_paths=paths,
                 rationale="The shared terrain enum index selects a direct regional string.",

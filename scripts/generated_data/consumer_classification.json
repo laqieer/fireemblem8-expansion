@@ -2361,6 +2361,10 @@
       "category": "runtime-macro",
       "reason": null
     },
+    "include/localized_game_text.h|function-signature|item|GetItemDisplayNameForWidth": {
+      "category": "external-interface",
+      "reason": null
+    },
     "include/menuitempanel.h|struct-field|item|MenuItemPanelProc.ItemSlotIndex": {
       "category": "runtime-struct",
       "reason": null

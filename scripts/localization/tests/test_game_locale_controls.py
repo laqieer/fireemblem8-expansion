@@ -16,6 +16,7 @@ from scripts.localization.game_locales.controls import (
     expand_canonical_controls,
     expand_canonical_controls_bytes,
     expand_canonical_text,
+    normalize_physical_line_separators,
     normalize_source_controls,
     validate_canonical_text,
 )
@@ -51,6 +52,20 @@ class GameLocaleControlTests(unittest.TestCase):
                 aliases=FE8CN_NAMED_CONTROL_ALIASES,
             ),
             "[CTRL:0002][CTRL:001A][CTRL:0080][CTRL:0020]",
+        )
+
+    def test_physical_source_lines_become_explicit_runtime_line_controls(self):
+        self.assertEqual(
+            normalize_source_controls(
+                "第一行\r\n第二行\r第三行\n第四行",
+                dialect=SOURCE_DIALECT_CHINESE,
+                aliases=self.ALIASES,
+            ),
+            "第一行[CTRL:0001]第二行[CTRL:0001]第三行[CTRL:0001]第四行",
+        )
+        self.assertEqual(
+            normalize_physical_line_separators("A\nB", control=0x0002),
+            "A[CTRL:0002]B",
         )
 
     def test_canonical_tokens_expand_to_exact_u16_and_little_endian_bytes(self):

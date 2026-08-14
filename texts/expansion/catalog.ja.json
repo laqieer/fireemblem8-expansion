@@ -35,6 +35,25 @@
     "framework.locale_short_name.ja": "JA",
     "framework.locale_short_name.zh_hans": "ZH",
     "raw_surface.unit_action.summon": " 召喚",
-    "raw_surface.unit_action.call_monster": " 呼魔"
+    "raw_surface.unit_action.call_monster": " 呼魔",
+    "raw_surface.class_change.option_1": " 第1兵種",
+    "raw_surface.class_change.option_2": " 第2兵種",
+    "raw_surface.class_change.option_3": " 第3兵種",
+    "raw_surface.diagnostic.build_timestamp": "2005/02/04(FRI) 16:55:40",
+    "sio.transfer.sending": "送信中",
+    "sio.transfer.receiving": "受信中",
+    "debug.confirm.heal_full": "全回復",
+    "debug.confirm.add_item": "アイテム追加",
+    "debug.confirm.toggle_flag": "フラグ切替",
+    "debug.confirm.reseed": "乱数再設定",
+    "debug.status.hub": "デバッグ",
+    "debug.status.hub_error": "デバッグエラー",
+    "debug.status.unit_hp": "ユニット体力",
+    "debug.status.unit_unavailable": "ユニットなし",
+    "debug.status.convoy": "輸送隊",
+    "debug.status.chapter": "章",
+    "debug.status.flag": "フラグ",
+    "debug.status.rng_seed": "乱数種",
+    "debug.status.save_state": "保存状態"
   }
 }

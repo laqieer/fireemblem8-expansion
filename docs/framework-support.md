@@ -132,9 +132,15 @@ logged executable `git rev-parse HEAD == github.sha` check. It also proves the
 `if: always()` summary depends on every required lane and fails from the real
 `needs.*.result` bindings; comments, `echo`, `true`, alternate env values,
 checkout credential drift, and release-SHA shadowing cannot satisfy it. The
-legally restricted live FE8J provenance
-proof is not a hosted-CI command and remains a mandatory local maintainer
-pre-push step. Use the procedure supported by the checked-out branch in
+debug and release configurations remain parallel matrix jobs, but each job
+runs `expansion-modern-linker-check` with sequential Make. Do not add an inner
+`-j`/`--jobs` flag: the canonical gate invokes nested submakes that share
+battle-animation outputs, and parallelizing them can race into undefined
+`banim_*` symbols at the modern link.
+
+The legally restricted live FE8J provenance proof is not a hosted-CI command
+and remains a mandatory local maintainer pre-push step. Use the procedure
+supported by the checked-out branch in
 [`game_locale_sources.md`](game_locale_sources.md), rather than copying a
 target from another branch or uploading restricted inputs.
 

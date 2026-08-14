@@ -593,17 +593,17 @@ static const char sTacticianGridJaKatakana[] =
 #if (FE8_EXPANSION_ENABLED_LOCALE_MASK & 0x04u) != 0
 static const char sTacticianGridZhHansFrequent[] =
     "的是我了不你这一在那么人有就啊"
-    "要来也们为会可到好个吧样能以说"
-    "还没下对子什真战王和过弗时斯大"
-    "利事拉吗想都尔魔起然后之很国出"
-    "里话现上所去着他得如看但艾行心";
+    "要来们也为会可到好个吧样能以说"
+    "还没下对子战什真王和过弗时斯利"
+    "大事拉吗想都尔魔然后起之很国里"
+    "出话上现去所他得着看如但行艾心";
 
 static const char sTacticianGridZhHansExtended[] =
-    "力多珂瑞德内姆已军生哈中定道将"
-    "鲁古法物用家哥怎自经前伊主列亚"
-    "呢只使士回地而些被斗知请嗯公小"
-    "给塞石先雷无从谢成开圣天您再发"
-    "实当进敌做果身把等帝因让才动情";
+    "力多珂瑞德内姆已军生哈中定道古"
+    "将鲁法物用家哥怎自经前伊列主亚"
+    "呢只士使回地而被些知斗请嗯小给"
+    "公塞石先雷无从谢开成天圣您再敌"
+    "实当发做身进把果等帝情让因才动";
 #endif
 
 static int TacticianName_UsesLocaleGrid(void)
@@ -987,7 +987,11 @@ void Tactician_DrawCharGrid(struct ProcTactician * proc)
 #endif
                 Text_DrawString(
                     Texts_1 + (i + proc->text_idx * 5),
+#ifdef FE8_ARCHIVAL_BUILD
+                    conf->str[proc->line_idx * 3]
+#else
                     str
+#endif
                 );
             }
         }
@@ -1075,10 +1079,18 @@ void Tactician_InitScreen(struct ProcTactician * proc)
         proc->max_len = 5;
     }
 
+#ifdef FE8_ARCHIVAL_BUILD
+    for (i = 0; i < (proc->max_len * 2 + 1); i++)
+#else
     for (i = 0; i < (int)sizeof(proc->str); i++)
+#endif
         proc->str[i] = '\0';
 
+#ifdef FE8_ARCHIVAL_BUILD
+    for (i = 0; i < proc->max_len; i++)
+#else
     for (i = 0; i < (int)ARRAY_COUNT(proc->unk4C); i++)
+#endif
         proc->unk4C[i] = 0;
 
     if (CheckInLinkArena())

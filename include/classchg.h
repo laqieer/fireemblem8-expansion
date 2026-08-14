@@ -195,8 +195,11 @@ void ResetMenuTextCursors(struct MenuProc *proc);
 // ??? ClassChgMenuSelOnEnd(???);
 // ??? ClassChgMenuItem_OnSelect(???);
 // ??? ClassChgMenuSelOnPressB(???);
-void ClassChgMenuOnDrawCore(struct MenuProc *a, struct MenuItemProc *b, char *c);
+void ClassChgMenuOnDrawCore(struct MenuProc *a, struct MenuItemProc *b, const char *c);
 // ??? ClassChgMenuItem_OnTextDraw(???);
+#ifdef MODERN
+const char *ClassChgMenu_GetDisplayLabel(int itemNumber, const char *className);
+#endif
 // ??? ClassChgMenuItem_OnChange(???);
 // ??? ClassChgMenuItem_3rdUsability(???);
 void ClassChgMenuExec(struct ProcClassChgMenuSel *proc);

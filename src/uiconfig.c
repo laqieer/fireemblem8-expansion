@@ -908,10 +908,18 @@ void DrawGameOptionIcon(int selectedIdx, int yBase)
 void DrawGameOptionHelpText(void)
 {
     const char * str;
+#ifndef FE8_ARCHIVAL_BUILD
     int optionIdx = gGameOptionsUiOrder[gConfigUiState->selectedOptionIdx];
+#endif
 
     ClearText(&gConfigUiState->optionHelpText);
 
+#ifdef FE8_ARCHIVAL_BUILD
+    str = GetStringFromIndex(
+        gGameOptions[gGameOptionsUiOrder[gConfigUiState->selectedOptionIdx]]
+            .selectors[GetSelectedOptionValue()]
+            .helpTextId);
+#else
 #ifdef MODERN
     /* Issue #18 sprint 3: expansion-authored help text, resolved through
      * the catalog/current-locale resolver -- never GetStringFromIndex/
@@ -930,6 +938,7 @@ void DrawGameOptionHelpText(void)
 #endif
 
     str = GetStringFromIndex(gGameOptions[optionIdx].selectors[GetSelectedOptionValue()].helpTextId);
+#endif
     PutDrawText(
         &gConfigUiState->optionHelpText, TILEMAP_LOCATED(gBG0TilemapBuffer, 4, 18), TEXT_COLOR_SYSTEM_WHITE, 0, 22, str);
 
@@ -940,10 +949,15 @@ void DrawGameOptionHelpText(void)
 void DrawGameOptionText(int selectedIdx, int textIdx, int y)
 {
     const char * str;
+#ifndef FE8_ARCHIVAL_BUILD
     int optionIdx = gGameOptionsUiOrder[selectedIdx];
+#endif
 
     ClearText(&gConfigUiState->optionTexts[textIdx]);
 
+#ifdef FE8_ARCHIVAL_BUILD
+    str = GetStringFromIndex(gGameOptions[gGameOptionsUiOrder[selectedIdx]].msgId);
+#else
 #ifdef MODERN
     if (optionIdx == GAME_OPTION_LANGUAGE)
     {
@@ -959,6 +973,7 @@ void DrawGameOptionText(int selectedIdx, int textIdx, int y)
 #endif
 
     str = GetStringFromIndex(gGameOptions[optionIdx].msgId);
+#endif
     PutDrawText(
         &gConfigUiState->optionTexts[textIdx], TILEMAP_LOCATED(gBG1TilemapBuffer, 4, y), TEXT_COLOR_SYSTEM_WHITE, 0, 9, str);
 

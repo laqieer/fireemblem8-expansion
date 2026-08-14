@@ -10,6 +10,7 @@ sys.path.insert(0, str(ROOT))
 
 from scripts.localization.game_locales.controls import validate_canonical_text
 from scripts.localization.game_locales.importer import (
+    DEFAULT_OVERRIDE_PATH,
     PINNED_SOURCE_SHA256,
     check_vendored_locale_sources,
     regenerate_vendored_locale_sources,
@@ -62,6 +63,22 @@ class GameLocaleImportTests(unittest.TestCase):
                 "interp": 2325,
                 "seed:bmreliance-affinity": 8,
             },
+        )
+        self.assertEqual(manifest["overrides"]["path"], DEFAULT_OVERRIDE_PATH.as_posix())
+        self.assertEqual(manifest["overrides"]["entry_count"], 226)
+        self.assertEqual(
+            manifest["overrides"]["sources"]["fe8j_indexed"]["entry_count"], 70
+        )
+        self.assertEqual(
+            manifest["overrides"]["sources"]["fe8cn_source"]["entry_count"], 156
+        )
+        self.assertEqual(
+            manifest["overrides"]["sources"]["fe8j_indexed"]["source_sha256"],
+            PINNED_SOURCE_SHA256["fe8j_indexed"],
+        )
+        self.assertEqual(
+            manifest["overrides"]["sources"]["fe8cn_source"]["source_sha256"],
+            PINNED_SOURCE_SHA256["fe8cn_source"],
         )
 
     def test_manifest_artifact_hashes_match_committed_bytes(self):
@@ -116,6 +133,52 @@ class GameLocaleImportTests(unittest.TestCase):
             output_dir=self.LOCALE_ROOT,
         )
         self.assertIn("manifest.json", checked)
+
+    def test_committed_indexed_outputs_apply_contextual_leakage_overrides(self):
+        expected = {
+            "ja": {
+                0x004D: "ロード中",
+                0x0061: "なし",
+                0x0704: "序章",
+                0x070C: "ついて来い！",
+                0x0722: "癒やし",
+                0x0723: "浄化",
+                0x0729: "憤怒",
+                0x072A: "悲しみの時",
+                0x072B: "おどけたひととき",
+                0x0731: "謎を解く",
+                0x0741: "ゲームオーバー",
+                0x0745: "風とともに",
+                0x0746: "終章",
+            },
+            "zh-Hans": {
+                0x004D: "正在载入",
+                0x0061: "无数据",
+                0x0703: "火焰之纹章主题曲",
+                0x0704: "序章",
+                0x070C: "跟我来！",
+                0x0722: "治疗",
+                0x0723: "净化",
+                0x0729: "愤怒",
+                0x072A: "悲伤时刻",
+                0x072B: "诙谐时刻",
+                0x0731: "解开谜题",
+                0x0741: "游戏结束",
+                0x0745: "随风而行",
+                0x0746: "尾声",
+            },
+        }
+        for locale, locale_expected in expected.items():
+            messages = {
+                message.id: message.text
+                for message in parse_hash_indexed(
+                    (self.LOCALE_ROOT / locale / "indexed.txt").read_text(
+                        encoding="utf-8"
+                    )
+                )
+            }
+            for message_id, text in locale_expected.items():
+                self.assertEqual(messages[message_id], text)
 
     def test_artifact_and_manifest_cannot_drift_together(self):
         test_dir = Path(__file__).resolve().parent

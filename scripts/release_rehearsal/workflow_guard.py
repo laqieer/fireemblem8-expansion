@@ -2288,7 +2288,7 @@ _FULL_MATRIX_STEP_COMMANDS = {
         "./build_tools.sh",
     ),
     ("modern", "Run canonical modern linker/runtime gate"): (
-        "make expansion-modern-linker-check MODERN_CONFIG=${{ matrix.config }} MODERN_ABI=aapcs -j2",
+        "make expansion-modern-linker-check MODERN_CONFIG=${{ matrix.config }} MODERN_ABI=aapcs",
     ),
     ("legacy", "Build tools"): (
         "./build_tools.sh",

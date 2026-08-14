@@ -1,0 +1,1081 @@
+{
+  "kind": "indexed-locale-source-overrides",
+  "schema_version": 1,
+  "sources": {
+    "fe8cn_source": {
+      "entries": {
+        "0x0006": {
+          "expected_text": "地图MB",
+          "provenance": {
+            "audit": "runtime-latin-span-review-2026-08-07",
+            "context": "Exact mixed-script Latin-span correction for FE8U target 0x002B.",
+            "target_ids": [
+              "0x002B"
+            ]
+          },
+          "reason": "Replace the unexplained MB fragment with the natural Chinese viewer label requested for this exact target.",
+          "replacement_text": "地图查看器"
+        },
+        "0x0007": {
+          "expected_text": "头像MB",
+          "provenance": {
+            "audit": "runtime-latin-span-review-2026-08-07",
+            "context": "Exact mixed-script Latin-span correction for FE8U target 0x002C.",
+            "target_ids": [
+              "0x002C"
+            ]
+          },
+          "reason": "Replace the unexplained MB fragment with the natural Chinese viewer label requested for this exact target.",
+          "replacement_text": "头像查看器"
+        },
+        "0x0008": {
+          "expected_text": "会话背景MB",
+          "provenance": {
+            "audit": "runtime-latin-span-review-2026-08-07",
+            "context": "Exact mixed-script Latin-span correction for FE8U target 0x002D.",
+            "target_ids": [
+              "0x002D"
+            ]
+          },
+          "reason": "Replace the unexplained MB fragment with the natural Chinese viewer label requested for this exact target.",
+          "replacement_text": "会话背景查看器"
+        },
+        "0x0013": {
+          "expected_text": "浮动窗口",
+          "provenance": {
+            "audit": "full-semantic-audit-2026-08-07",
+            "context": "Window Color option label.",
+            "target_ids": [
+              "0x009A"
+            ]
+          },
+          "reason": "Apply the exact reviewed Simplified Chinese correction while preserving the normalized control and newline structure.",
+          "replacement_text": "窗口颜色"
+        },
+        "0x001E": {
+          "expected_text": "单位移动速度（慢）",
+          "provenance": {
+            "audit": "full-semantic-audit-2026-08-07",
+            "context": "Normal unit movement-speed option help.",
+            "target_ids": [
+              "0x00A5"
+            ]
+          },
+          "reason": "Apply the exact reviewed Simplified Chinese correction while preserving the normalized control and newline structure.",
+          "replacement_text": "单位移动速度"
+        },
+        "0x004D": {
+          "expected_text": "NOW LOADING",
+          "provenance": {
+            "audit": "runtime-english-leakage-2026-08-07",
+            "context": "Save/link UI loading status.",
+            "target_ids": [
+              "0x077D"
+            ]
+          },
+          "reason": "Replace an untranslated English status with natural Simplified Chinese.",
+          "replacement_text": "正在载入"
+        },
+        "0x0061": {
+          "expected_text": "NO DATA",
+          "provenance": {
+            "audit": "runtime-english-leakage-2026-08-07",
+            "context": "Save/link UI empty-data status.",
+            "target_ids": [
+              "0x00CC"
+            ]
+          },
+          "reason": "Replace an untranslated English status with natural Simplified Chinese.",
+          "replacement_text": "无数据"
+        },
+        "0x012C": {
+          "expected_text": "击破BOSS：奥尼尔",
+          "provenance": {
+            "audit": "runtime-latin-span-review-2026-08-07",
+            "context": "Exact mixed-script Latin-span correction for FE8U target 0x01A2.",
+            "target_ids": [
+              "0x01A2"
+            ]
+          },
+          "reason": "Replace untranslated BOSS with natural Simplified Chinese 首领 in this exact objective/help target.",
+          "replacement_text": "击破首领：奥尼尔"
+        },
+        "0x0131": {
+          "expected_text": "击破BOSS：萨尔",
+          "provenance": {
+            "audit": "runtime-latin-span-review-2026-08-07",
+            "context": "Exact mixed-script Latin-span correction for FE8U target 0x01A7.",
+            "target_ids": [
+              "0x01A7"
+            ]
+          },
+          "reason": "Replace untranslated BOSS with natural Simplified Chinese 首领 in this exact objective/help target.",
+          "replacement_text": "击破首领：萨尔"
+        },
+        "0x0133": {
+          "expected_text": "击破BOSS：诺贝拉",
+          "provenance": {
+            "audit": "runtime-latin-span-review-2026-08-07",
+            "context": "Exact mixed-script Latin-span correction for FE8U target 0x01A9.",
+            "target_ids": [
+              "0x01A9"
+            ]
+          },
+          "reason": "Replace untranslated BOSS with natural Simplified Chinese 首领 in this exact objective/help target.",
+          "replacement_text": "击破首领：诺贝拉"
+        },
+        "0x013E": {
+          "expected_text": "击破BOSS：利昂",
+          "provenance": {
+            "audit": "runtime-latin-span-review-2026-08-07",
+            "context": "Exact mixed-script Latin-span correction for FE8U target 0x01B4.",
+            "target_ids": [
+              "0x01B4"
+            ]
+          },
+          "reason": "Replace untranslated BOSS with natural Simplified Chinese 首领 in this exact objective/help target.",
+          "replacement_text": "击破首领：利昂"
+        },
+        "0x0147": {
+          "expected_text": "BOSS击破",
+          "provenance": {
+            "audit": "runtime-latin-span-review-2026-08-07",
+            "context": "Exact mixed-script Latin-span correction for FE8U target 0x01BD.",
+            "target_ids": [
+              "0x01BD"
+            ]
+          },
+          "reason": "Replace untranslated BOSS with natural Simplified Chinese 首领 in this exact objective/help target.",
+          "replacement_text": "击破首领"
+        },
+        "0x018C": {
+          "expected_text": "今回",
+          "provenance": {
+            "audit": "blue-team-followup-2026-08-08",
+            "context": "Current statistic label.",
+            "target_ids": [
+              "0x0205"
+            ]
+          },
+          "reason": "Remove the leaked Japanese payload and use natural Simplified Chinese for Current.",
+          "replacement_text": "本次"
+        },
+        "0x038A": {
+          "expected_text": "大米",
+          "provenance": {
+            "audit": "semantic-mapping-audit-2026-08-07",
+            "context": "Dummy placeholder labels, not the food noun produced by a phonetic mistranslation.",
+            "target_ids": [
+              "0x0025",
+              "0x0403"
+            ]
+          },
+          "reason": "Use the natural Simplified Chinese placeholder label instead of the mistranslation 大米.",
+          "replacement_text": "占位"
+        },
+        "0x03D1": {
+          "expected_text": "大米 ",
+          "provenance": {
+            "audit": "semantic-mapping-audit-2026-08-07",
+            "context": "Uppercase DUMMY placeholder label with significant trailing spacing.",
+            "target_ids": [
+              "0x0449"
+            ]
+          },
+          "reason": "Use the natural Simplified Chinese placeholder label while preserving the source spacing.",
+          "replacement_text": "占位　"
+        },
+        "0x0433": {
+          "expected_text": "大米",
+          "provenance": {
+            "audit": "semantic-mapping-audit-2026-08-07",
+            "context": "Uppercase DUMMY placeholder label.",
+            "target_ids": [
+              "0x04AB"
+            ]
+          },
+          "reason": "Use the natural Simplified Chinese placeholder label instead of the mistranslation 大米.",
+          "replacement_text": "占位"
+        },
+        "0x046C": {
+          "expected_text": "大米",
+          "provenance": {
+            "audit": "semantic-mapping-audit-2026-08-07",
+            "context": "Dummy placeholder label.",
+            "target_ids": [
+              "0x04E4"
+            ]
+          },
+          "reason": "Use the natural Simplified Chinese placeholder label instead of the mistranslation 大米.",
+          "replacement_text": "占位"
+        },
+        "0x048A": {
+          "expected_text": "配合",
+          "provenance": {
+            "audit": "blue-team-followup-2026-08-08",
+            "context": "Support-screen partner label.",
+            "target_ids": [
+              "0x04FB"
+            ]
+          },
+          "reason": "Use the reviewed support-partner noun instead of the unrelated coordination verb.",
+          "replacement_text": "伙伴"
+        },
+        "0x04D7": {
+          "expected_text": "人物的等级[CTRL:0001]最高为等级20",
+          "provenance": {
+            "audit": "blue-team-followup-2026-08-08",
+            "context": "Unit-level help text.",
+            "target_ids": [
+              "0x0542"
+            ]
+          },
+          "reason": "Describe level-based growth without making a universal level-20 claim.",
+          "replacement_text": "人物的等级[CTRL:0001]等级越高，能力越强"
+        },
+        "0x05C7": {
+          "expected_text": "打倒在地图上的敌军BOSS后，[CTRL:0001]就能通过这一关。[CTRL:0001]不需要打倒所有的敌人。",
+          "provenance": {
+            "audit": "runtime-latin-span-review-2026-08-07",
+            "context": "Exact mixed-script Latin-span correction for FE8U target 0x0635.",
+            "target_ids": [
+              "0x0635"
+            ]
+          },
+          "reason": "Replace untranslated BOSS with natural Simplified Chinese 首领 in this exact objective/help target.",
+          "replacement_text": "打倒在地图上的敌军首领后，[CTRL:0001]就能通过这一关。[CTRL:0001]不需要打倒所有的敌人。"
+        },
+        "0x0703": {
+          "expected_text": "Fire Emblem Theme",
+          "provenance": {
+            "audit": "runtime-english-leakage-2026-08-07",
+            "context": "Sound Room title for the series main theme.",
+            "target_ids": [
+              "0x078C"
+            ]
+          },
+          "reason": "Use the established Chinese series name in the Sound Room title.",
+          "replacement_text": "火焰之纹章主题曲"
+        },
+        "0x0704": {
+          "expected_text": "Prologue",
+          "provenance": {
+            "audit": "runtime-english-leakage-2026-08-07",
+            "context": "Sound Room title for the opening piece.",
+            "target_ids": [
+              "0x078D"
+            ]
+          },
+          "reason": "Translate the Sound Room title as the conventional opening-section term.",
+          "replacement_text": "序章"
+        },
+        "0x070C": {
+          "expected_text": "Follow me！",
+          "provenance": {
+            "audit": "runtime-english-leakage-2026-08-07",
+            "context": "Sound Room title written as a direct command.",
+            "target_ids": [
+              "0x0795"
+            ]
+          },
+          "reason": "Translate the imperative naturally rather than retaining English prose.",
+          "replacement_text": "跟我来！"
+        },
+        "0x0717": {
+          "expected_text": "出现的异形之影Ⅰ",
+          "provenance": {
+            "audit": "full-semantic-audit-2026-08-07",
+            "context": "Sound Room title Twisted Shadows A.",
+            "target_ids": [
+              "0x07A0"
+            ]
+          },
+          "reason": "Apply the exact reviewed Simplified Chinese correction while preserving the normalized control and newline structure.",
+          "replacement_text": "扭曲之影Ａ"
+        },
+        "0x0718": {
+          "expected_text": "出现的异形之影Ⅱ",
+          "provenance": {
+            "audit": "full-semantic-audit-2026-08-07",
+            "context": "Sound Room title Twisted Shadows B.",
+            "target_ids": [
+              "0x07A1"
+            ]
+          },
+          "reason": "Apply the exact reviewed Simplified Chinese correction while preserving the normalized control and newline structure.",
+          "replacement_text": "扭曲之影Ｂ"
+        },
+        "0x0722": {
+          "expected_text": "Healing",
+          "provenance": {
+            "audit": "runtime-english-leakage-2026-08-07",
+            "context": "Sound Room cue for ordinary HP-restoring staff use.",
+            "target_ids": [
+              "0x07AB"
+            ]
+          },
+          "reason": "Use 治疗 for HP restoration, distinct from status removal.",
+          "replacement_text": "治疗"
+        },
+        "0x0723": {
+          "expected_text": "Curing",
+          "provenance": {
+            "audit": "runtime-english-leakage-2026-08-07",
+            "context": "Sound Room cue for removing status ailments with restorative staves.",
+            "target_ids": [
+              "0x07AC"
+            ]
+          },
+          "reason": "Use 净化 for status removal, distinct from ordinary HP healing.",
+          "replacement_text": "净化"
+        },
+        "0x0729": {
+          "expected_text": "Indignation",
+          "provenance": {
+            "audit": "runtime-english-leakage-2026-08-07",
+            "context": "Sound Room dramatic event title.",
+            "target_ids": [
+              "0x07B2"
+            ]
+          },
+          "reason": "Translate the emotional title with the established concise term 愤怒.",
+          "replacement_text": "愤怒"
+        },
+        "0x072A": {
+          "expected_text": "Sadness time",
+          "provenance": {
+            "audit": "runtime-english-leakage-2026-08-07",
+            "context": "Sound Room sorrowful scene title.",
+            "target_ids": [
+              "0x07B3"
+            ]
+          },
+          "reason": "Replace awkward untranslated English with a natural Chinese title.",
+          "replacement_text": "悲伤时刻"
+        },
+        "0x072B": {
+          "expected_text": "Comical time",
+          "provenance": {
+            "audit": "runtime-english-leakage-2026-08-07",
+            "context": "Sound Room comic-scene title.",
+            "target_ids": [
+              "0x07B4"
+            ]
+          },
+          "reason": "Replace awkward untranslated English with a natural Chinese title.",
+          "replacement_text": "诙谐时刻"
+        },
+        "0x0731": {
+          "expected_text": "Work out a plot",
+          "provenance": {
+            "audit": "runtime-english-leakage-2026-08-07",
+            "context": "Sound Room puzzle/riddle scene title; the FE8U title is Solve the Riddle.",
+            "target_ids": [
+              "0x07BA"
+            ]
+          },
+          "reason": "Translate by the riddle-solving scene meaning rather than the awkward source English.",
+          "replacement_text": "解开谜题"
+        },
+        "0x073F": {
+          "expected_text": "胜利之歌Ⅰ",
+          "provenance": {
+            "audit": "full-semantic-audit-2026-08-07",
+            "context": "Sound Room title Victory Song A.",
+            "target_ids": [
+              "0x07C8"
+            ]
+          },
+          "reason": "Apply the exact reviewed Simplified Chinese correction while preserving the normalized control and newline structure.",
+          "replacement_text": "胜利之歌Ａ"
+        },
+        "0x0740": {
+          "expected_text": "胜利之歌Ⅱ",
+          "provenance": {
+            "audit": "full-semantic-audit-2026-08-07",
+            "context": "Sound Room title Victory Song B.",
+            "target_ids": [
+              "0x07C9"
+            ]
+          },
+          "reason": "Apply the exact reviewed Simplified Chinese correction while preserving the normalized control and newline structure.",
+          "replacement_text": "胜利之歌Ｂ"
+        },
+        "0x0741": {
+          "expected_text": "Game Over",
+          "provenance": {
+            "audit": "runtime-english-leakage-2026-08-07",
+            "context": "Sound Room game-over cue title.",
+            "target_ids": [
+              "0x07CA"
+            ]
+          },
+          "reason": "Use the standard Simplified Chinese game-over wording.",
+          "replacement_text": "游戏结束"
+        },
+        "0x0745": {
+          "expected_text": "Fly with the Breeze",
+          "provenance": {
+            "audit": "runtime-english-leakage-2026-08-07",
+            "context": "Sound Room ending/title piece with a light wind motif.",
+            "target_ids": [
+              "0x07CE"
+            ]
+          },
+          "reason": "Translate the lyrical title naturally as 随风而行.",
+          "replacement_text": "随风而行"
+        },
+        "0x0746": {
+          "expected_text": "Epilogue",
+          "provenance": {
+            "audit": "runtime-english-leakage-2026-08-07",
+            "context": "Sound Room closing piece.",
+            "target_ids": [
+              "0x07CF"
+            ]
+          },
+          "reason": "Translate the closing-section title naturally as 尾声.",
+          "replacement_text": "尾声"
+        },
+        "0x07B1": {
+          "expected_text": "FE3大米MSG[CTRL:0003]",
+          "provenance": {
+            "audit": "runtime-latin-span-review-2026-08-07",
+            "context": "Exact mixed-script Latin-span correction for FE8U target 0x0839.",
+            "target_ids": [
+              "0x0839"
+            ]
+          },
+          "reason": "Replace the internal English MSG abbreviation and mistranslated 大米 with natural Chinese 占位消息 in this exact placeholder target.",
+          "replacement_text": "FE3占位消息[CTRL:0003]"
+        },
+        "0x07B2": {
+          "expected_text": "FE3大米MSG[CTRL:0003]",
+          "provenance": {
+            "audit": "runtime-latin-span-review-2026-08-07",
+            "context": "Exact mixed-script Latin-span correction for FE8U target 0x083A.",
+            "target_ids": [
+              "0x083A"
+            ]
+          },
+          "reason": "Replace the internal English MSG abbreviation and mistranslated 大米 with natural Chinese 占位消息 in this exact placeholder target.",
+          "replacement_text": "FE3占位消息[CTRL:0003]"
+        },
+        "0x07B3": {
+          "expected_text": "FE3大米MSG[CTRL:0003]",
+          "provenance": {
+            "audit": "runtime-latin-span-review-2026-08-07",
+            "context": "Exact mixed-script Latin-span correction for FE8U target 0x083B.",
+            "target_ids": [
+              "0x083B"
+            ]
+          },
+          "reason": "Replace the internal English MSG abbreviation and mistranslated 大米 with natural Chinese 占位消息 in this exact placeholder target.",
+          "replacement_text": "FE3占位消息[CTRL:0003]"
+        },
+        "0x07B4": {
+          "expected_text": "FE3大米MSG[CTRL:0003]",
+          "provenance": {
+            "audit": "runtime-latin-span-review-2026-08-07",
+            "context": "Exact mixed-script Latin-span correction for FE8U target 0x083C.",
+            "target_ids": [
+              "0x083C"
+            ]
+          },
+          "reason": "Replace the internal English MSG abbreviation and mistranslated 大米 with natural Chinese 占位消息 in this exact placeholder target.",
+          "replacement_text": "FE3占位消息[CTRL:0003]"
+        },
+        "0x07B5": {
+          "expected_text": "FE3大米MSG[CTRL:0003]",
+          "provenance": {
+            "audit": "runtime-latin-span-review-2026-08-07",
+            "context": "Exact mixed-script Latin-span correction for FE8U target 0x083D.",
+            "target_ids": [
+              "0x083D"
+            ]
+          },
+          "reason": "Replace the internal English MSG abbreviation and mistranslated 大米 with natural Chinese 占位消息 in this exact placeholder target.",
+          "replacement_text": "FE3占位消息[CTRL:0003]"
+        },
+        "0x07B6": {
+          "expected_text": "FE3大米MSG[CTRL:0003]",
+          "provenance": {
+            "audit": "runtime-latin-span-review-2026-08-07",
+            "context": "Exact mixed-script Latin-span correction for FE8U target 0x083E.",
+            "target_ids": [
+              "0x083E"
+            ]
+          },
+          "reason": "Replace the internal English MSG abbreviation and mistranslated 大米 with natural Chinese 占位消息 in this exact placeholder target.",
+          "replacement_text": "FE3占位消息[CTRL:0003]"
+        },
+        "0x07B7": {
+          "expected_text": "FE3大米MSG[CTRL:0003]",
+          "provenance": {
+            "audit": "runtime-latin-span-review-2026-08-07",
+            "context": "Exact mixed-script Latin-span correction for FE8U target 0x083F.",
+            "target_ids": [
+              "0x083F"
+            ]
+          },
+          "reason": "Replace the internal English MSG abbreviation and mistranslated 大米 with natural Chinese 占位消息 in this exact placeholder target.",
+          "replacement_text": "FE3占位消息[CTRL:0003]"
+        },
+        "0x07E5": {
+          "expected_text": "所持物品满了请选择送往运输队",
+          "provenance": {
+            "audit": "blue-team-followup-2026-08-08",
+            "context": "Full-inventory convoy prompt.",
+            "target_ids": [
+              "0x0867"
+            ]
+          },
+          "reason": "Explicitly instruct the player to select the item that will be sent to the convoy.",
+          "replacement_text": "所持物品已满，请选择要送往运输队的物品"
+        },
+        "0x07F6": {
+          "expected_text": "选择要修复的所持武器",
+          "provenance": {
+            "audit": "blue-team-followup-2026-08-08",
+            "context": "Repair target-selection prompt.",
+            "target_ids": [
+              "0x0878"
+            ]
+          },
+          "reason": "Select the unit carrying the weapon to repair, not the weapon itself.",
+          "replacement_text": "请选择持有待修复武器的角色"
+        },
+        "0x085C": {
+          "expected_text": "这东西我们买不起。[CTRL:0003]",
+          "provenance": {
+            "audit": "blue-team-followup-2026-08-08",
+            "context": "Shop rejection for an unsellable item.",
+            "target_ids": [
+              "0x08BC"
+            ]
+          },
+          "reason": "State that the item cannot be sold rather than implying the shop lacks money.",
+          "replacement_text": "这件物品无法出售。[CTRL:0003]"
+        },
+        "0x085D": {
+          "expected_text": "哼哼哼……[CTRL:0001]这东西可是不能卖得啊。[CTRL:0003]",
+          "provenance": {
+            "audit": "blue-team-followup-2026-08-08",
+            "context": "Alternate shop rejection for an unsellable item.",
+            "target_ids": [
+              "0x08BD"
+            ]
+          },
+          "reason": "Use natural reviewer-approved unsellable-item semantics.",
+          "replacement_text": "呵呵……等一下。[CTRL:0001]这件物品无法出售！[CTRL:0003]"
+        },
+        "0x086A": {
+          "expected_text": "不好你现在还没运输队，[CTRL:0001]无法送去啊。[CTRL:0003]",
+          "provenance": {
+            "audit": "blue-team-followup-2026-08-08",
+            "context": "Shop full-inventory response when no convoy exists.",
+            "target_ids": [
+              "0x08CA"
+            ]
+          },
+          "reason": "Clearly explain that the item cannot be sent because the player has no convoy.",
+          "replacement_text": "真遗憾，你还没有运输队，[CTRL:0001]无法送过去。[CTRL:0003]"
+        },
+        "0x086B": {
+          "expected_text": "抱歉啊您还没有运输队，[CTRL:0001]货物无发输送。[CTRL:0003]",
+          "provenance": {
+            "audit": "blue-team-followup-2026-08-08",
+            "context": "Alternate shop full-inventory response when no convoy exists.",
+            "target_ids": [
+              "0x08CB"
+            ]
+          },
+          "reason": "Fix the typo and clearly express the missing-convoy condition.",
+          "replacement_text": "可惜你还没有运输队，[CTRL:0001]不然我就能替你送过去……[CTRL:0003]"
+        },
+        "0x08E2": {
+          "expected_text": "本章只要将敌BOSS打败[CTRL:0001]就可以过关。[CTRL:0103][CTRL:0080][CTRL:0021]过关条件[CTRL:0080][CTRL:0021]会在画面[CTRL:0001]的一角表示出来。[CTRL:0103]希望每到新的章节时，[CTRL:0001]大家都能够看看。[CTRL:0103]那么，开始展开[CTRL:0080][CTRL:0021]攻击[CTRL:0080][CTRL:0021]吧。[CTRL:0003]",
+          "provenance": {
+            "audit": "runtime-latin-span-review-2026-08-07",
+            "context": "Exact mixed-script Latin-span correction for FE8U target 0x0922.",
+            "target_ids": [
+              "0x0922"
+            ]
+          },
+          "reason": "Replace untranslated BOSS with natural Simplified Chinese 首领 in this exact objective/help target.",
+          "replacement_text": "本章只要将敌方首领打败[CTRL:0001]就可以过关。[CTRL:0103][CTRL:0080][CTRL:0021]过关条件[CTRL:0080][CTRL:0021]会在画面[CTRL:0001]的一角表示出来。[CTRL:0103]希望每到新的章节时，[CTRL:0001]大家都能够看看。[CTRL:0103]那么，开始展开[CTRL:0080][CTRL:0021]攻击[CTRL:0080][CTRL:0021]吧。[CTRL:0003]"
+        },
+        "0x0913": {
+          "expected_text": "在地图上没有单位的地方[CTRL:0001]按下A键的话，[CTRL:0001]便能够打开[CTRL:0080][CTRL:0021]地图菜单[CTRL:0080][CTRL:0021]。[CTRL:0103]请选择上数第3个指令，[CTRL:0001]即绿色的[CTRL:0080][CTRL:0021]『辞典』[CTRL:0080][CTRL:0021]指令。[CTRL:0103]该指令中收录了[CTRL:0001]游戏中哥哥部分的[CTRL:0080][CTRL:0021]说明[CTRL:0080][CTRL:0021]。[CTRL:0103]若不清楚[CTRL:0080][CTRL:0021]游戏玩法[CTRL:0080][CTRL:0021]的话，[CTRL:0001]请参考[CTRL:0080][CTRL:0021]『辞典』[CTRL:0080][CTRL:0021]中的内容。[CTRL:0003]",
+          "provenance": {
+            "audit": "full-semantic-audit-2026-08-07",
+            "context": "Map Guide tutorial text.",
+            "target_ids": [
+              "0x0953"
+            ]
+          },
+          "reason": "Apply the exact reviewed Simplified Chinese correction while preserving the normalized control and newline structure.",
+          "replacement_text": "在地图上没有单位的地方[CTRL:0001]按下A键的话，[CTRL:0001]便能够打开[CTRL:0080][CTRL:0021]地图菜单[CTRL:0080][CTRL:0021]。[CTRL:0103]请选择上数第3个指令，[CTRL:0001]即绿色的[CTRL:0080][CTRL:0021]『辞典』[CTRL:0080][CTRL:0021]指令。[CTRL:0103]该指令中收录了[CTRL:0001]游戏中各个部分的[CTRL:0080][CTRL:0021]说明[CTRL:0080][CTRL:0021]。[CTRL:0103]若不清楚[CTRL:0080][CTRL:0021]游戏玩法[CTRL:0080][CTRL:0021]的话，[CTRL:0001]请参考[CTRL:0080][CTRL:0021]『辞典』[CTRL:0080][CTRL:0021]中的内容。[CTRL:0003]"
+        },
+        "0x0C82": {
+          "expected_text": "[CTRL:0009][CTRL:0010][CTRL:0121][CTRL:000C][CTRL:0010][CTRL:0109][CTRL:000C]喂，你这家伙！[CTRL:0003][CTRL:0017][CTRL:0009]是罗斯啊！[CTRL:0003][CTRL:000C][CTRL:0017]我是来说之前的问题的！[CTRL:0003][CTRL:0017][CTRL:0009]真的？[CTRL:0001]真了不起，已经知道了？[CTRL:0003][CTRL:000C][CTRL:0017]对，对。[CTRL:0001]答案是……[CTRL:0003][CTRL:0017][CTRL:0009]嗯嗯。[CTRL:0003][CTRL:000C][CTRL:0017]4次！[CTRL:0003][CTRL:0017][CTRL:0009]了不起啊，罗斯！[CTRL:0001]这么拼命地思考。[CTRL:0003][CTRL:000C]嘿嘿嘿！[CTRL:0001]怎么样，看到了吧！[CTRL:0103]我并不是只懂得战斗！[CTRL:0003][CTRL:0009]可是呢，不·正·确·哦。[CTRL:0003][CTRL:000C][CTRL:0080][CTRL:000E][CTRL:000C][CTRL:0017]什，什么！？[CTRL:0001]切！[CTRL:0103]那，那应该是几次？[CTRL:0003][CTRL:0017][CTRL:0009]真遗憾呢，是3次。[CTRL:0003][CTRL:000C][CTRL:0017]只要3次？[CTRL:0001]怎么办到的，说一下。[CTRL:0003][CTRL:0017][CTRL:0009]嗯，那么我就告诉你算法吧。[CTRL:0103]首先呢，一开始放在天秤上的[CTRL:0001]石头数目是重点。[CTRL:0103]一开始，左右各[CTRL:0001]放上8块石头。[CTRL:0103]然后呢，[CTRL:0001]注意观察两边有没轻的石头混入。[CTRL:0103]在这样的情况下，[CTRL:0103]就会明白左右两边的8块石头里，[CTRL:0001]倾斜的那方里存在着不同的那块。[CTRL:0103]或者说，[CTRL:0001]假如天秤没有倾斜的情况下，[CTRL:0103]在剩下的9块中，[CTRL:0001]存在着那一块。[CTRL:0103]这样，就使用了一次。不过，之后[CTRL:0001]只要按照同样的办法就OK了。[CTRL:0103]以这9块中有那块轻的为例[CTRL:0001]进行说明。[CTRL:0103]这次在9块石头里面[CTRL:0001]各取3个放在左右两边的碟子中。[CTRL:0103]这样就进行了2次。[CTRL:0103]这时候，假如天秤倾斜，就说明[CTRL:0001]左右里的某一边，假如都没倾斜，[CTRL:0103]那么就是在[CTRL:0001]剩下的3块当中。[CTRL:0103]然后就在这3块里各取一块[CTRL:0001]放上去称就可以了。[CTRL:0103]倾斜的话，[CTRL:0001]其中那块就是。[CTRL:0103]没有的话，[CTRL:0001]就是剩下的一块。[CTRL:0103]这样，就是3次。[CTRL:0001]明白了吧。[CTRL:0003][CTRL:000C][CTRL:0017]啊？嗯，嗯。[CTRL:0001]似乎是明白了……[CTRL:0003][CTRL:0017][CTRL:0009]哎？都说了答案了，还不明白？[CTRL:0001]那还真是……[CTRL:0003][CTRL:000C][CTRL:0017]真是什么？[CTRL:0003][CTRL:0017][CTRL:0009]啊啊，没什么。[CTRL:0001]忘了这个吧，哈哈哈。[CTRL:0003][CTRL:000C][CTRL:0017]我很在意的啊！[CTRL:0003][CTRL:0017][CTRL:0009]不过，还真是有趣啊。[CTRL:0001]下次再一起玩吧，罗斯！[CTRL:0003][CTRL:000C]我可是一点都不觉得有趣，喂！[CTRL:0003]",
+          "provenance": {
+            "audit": "runtime-latin-span-review-2026-08-07",
+            "context": "Exact mixed-script Latin-span correction for FE8U target 0x0CC3.",
+            "target_ids": [
+              "0x0CC3"
+            ]
+          },
+          "reason": "Replace conversational English OK with natural Simplified Chinese 就行 in this exact support dialogue.",
+          "replacement_text": "[CTRL:0009][CTRL:0010][CTRL:0121][CTRL:000C][CTRL:0010][CTRL:0109][CTRL:000C]喂，你这家伙！[CTRL:0003][CTRL:0017][CTRL:0009]是罗斯啊！[CTRL:0003][CTRL:000C][CTRL:0017]我是来说之前的问题的！[CTRL:0003][CTRL:0017][CTRL:0009]真的？[CTRL:0001]真了不起，已经知道了？[CTRL:0003][CTRL:000C][CTRL:0017]对，对。[CTRL:0001]答案是……[CTRL:0003][CTRL:0017][CTRL:0009]嗯嗯。[CTRL:0003][CTRL:000C][CTRL:0017]4次！[CTRL:0003][CTRL:0017][CTRL:0009]了不起啊，罗斯！[CTRL:0001]这么拼命地思考。[CTRL:0003][CTRL:000C]嘿嘿嘿！[CTRL:0001]怎么样，看到了吧！[CTRL:0103]我并不是只懂得战斗！[CTRL:0003][CTRL:0009]可是呢，不·正·确·哦。[CTRL:0003][CTRL:000C][CTRL:0080][CTRL:000E][CTRL:000C][CTRL:0017]什，什么！？[CTRL:0001]切！[CTRL:0103]那，那应该是几次？[CTRL:0003][CTRL:0017][CTRL:0009]真遗憾呢，是3次。[CTRL:0003][CTRL:000C][CTRL:0017]只要3次？[CTRL:0001]怎么办到的，说一下。[CTRL:0003][CTRL:0017][CTRL:0009]嗯，那么我就告诉你算法吧。[CTRL:0103]首先呢，一开始放在天秤上的[CTRL:0001]石头数目是重点。[CTRL:0103]一开始，左右各[CTRL:0001]放上8块石头。[CTRL:0103]然后呢，[CTRL:0001]注意观察两边有没轻的石头混入。[CTRL:0103]在这样的情况下，[CTRL:0103]就会明白左右两边的8块石头里，[CTRL:0001]倾斜的那方里存在着不同的那块。[CTRL:0103]或者说，[CTRL:0001]假如天秤没有倾斜的情况下，[CTRL:0103]在剩下的9块中，[CTRL:0001]存在着那一块。[CTRL:0103]这样，就使用了一次。不过，之后[CTRL:0001]只要按照同样的办法就行了。[CTRL:0103]以这9块中有那块轻的为例[CTRL:0001]进行说明。[CTRL:0103]这次在9块石头里面[CTRL:0001]各取3个放在左右两边的碟子中。[CTRL:0103]这样就进行了2次。[CTRL:0103]这时候，假如天秤倾斜，就说明[CTRL:0001]左右里的某一边，假如都没倾斜，[CTRL:0103]那么就是在[CTRL:0001]剩下的3块当中。[CTRL:0103]然后就在这3块里各取一块[CTRL:0001]放上去称就可以了。[CTRL:0103]倾斜的话，[CTRL:0001]其中那块就是。[CTRL:0103]没有的话，[CTRL:0001]就是剩下的一块。[CTRL:0103]这样，就是3次。[CTRL:0001]明白了吧。[CTRL:0003][CTRL:000C][CTRL:0017]啊？嗯，嗯。[CTRL:0001]似乎是明白了……[CTRL:0003][CTRL:0017][CTRL:0009]哎？都说了答案了，还不明白？[CTRL:0001]那还真是……[CTRL:0003][CTRL:000C][CTRL:0017]真是什么？[CTRL:0003][CTRL:0017][CTRL:0009]啊啊，没什么。[CTRL:0001]忘了这个吧，哈哈哈。[CTRL:0003][CTRL:000C][CTRL:0017]我很在意的啊！[CTRL:0003][CTRL:0017][CTRL:0009]不过，还真是有趣啊。[CTRL:0001]下次再一起玩吧，罗斯！[CTRL:0003][CTRL:000C]我可是一点都不觉得有趣，喂！[CTRL:0003]"
+        },
+        "0x0CB7": {
+          "expected_text": "[CTRL:0009][CTRL:0010][CTRL:012A][CTRL:0009]那么，今天的运气是……[CTRL:0103][CTRL:0009][CTRL:0080][CTRL:000B][CTRL:0009][CTRL:0006][CTRL:0002]里……啊，[CTRL:0105][CTRL:0017]哎呀哎呀，今天好象也不行嘛。[CTRL:0003][CTRL:0017][CTRL:0006][CTRL:000C][CTRL:0010][CTRL:0122][CTRL:000C]啊，[CTRL:0001]在做什么呢？[CTRL:0003][CTRL:0009][CTRL:0017]嗯？啊。[CTRL:0103]用这玩意来算今天的运势。[CTRL:0001]今天大概没什么好事。[CTRL:0003][CTRL:0017][CTRL:000C]啊！那是不行的。[CTRL:0103]与其用骰子，[CTRL:0001]向神祈祷才是正确的做法。[CTRL:0103]从不怠于祈祷的我，[CTRL:0001]向来都受到幸运的保护。[CTRL:0003][CTRL:0009][CTRL:0017]哦，还真是有理有据。[CTRL:0103]哦，让我看看[CTRL:0001]幸运是否真的跟着你。[CTRL:0103]用这个赌一把如何？[CTRL:0003][CTRL:0017][CTRL:000C]啊！那可不行。[CTRL:0103]赌博是会遭天谴的。[CTRL:0003][CTRL:0009][CTRL:0017]这也太夸张了吧。[CTRL:0003][CTRL:0017][CTRL:000C]没有。[CTRL:0001]赌博会使大众堕落。[CTRL:0103]神明不会原谅不辛勤劳作的人。[CTRL:0103]首先，这里不就没有赌场吗。[CTRL:0003][CTRL:0009][CTRL:0017]什么，[CTRL:0001]不用想得那么严重吧，[CTRL:0103]好象赌博能造成[CTRL:0001]什么严重的后果似的。[CTRL:0103][CTRL:0017][CTRL:0009][CTRL:0080][CTRL:000B][CTRL:0009][CTRL:0017]好……了。[CTRL:0003][CTRL:0102]来，表还是里？[CTRL:0001]哪个？[CTRL:0003][CTRL:0017][CTRL:000C]既然受到挑战……[CTRL:0001]就不得不接受了。[CTRL:0103]是表！[CTRL:0003][CTRL:0009][CTRL:0017]好。[CTRL:0017]那么……[CTRL:0103][CTRL:0017]哦，表。[CTRL:0001]真有幸运相随啊。[CTRL:0003][CTRL:0017][CTRL:000C]哎？我赢了吗？[CTRL:0103][CTRL:0017]但仔细想是理所当然的。[CTRL:0103]就算是赌博这种事，[CTRL:0001]本公主也是不可能会输的。[CTRL:0003][CTRL:0017][CTRL:0017][CTRL:0009]好，那么继续。[CTRL:0001]下次赌100金币如何？[CTRL:0003][CTRL:000C]没问题。[CTRL:0103]既然你这么说了，我接受。[CTRL:0003][CTRL:0009]好好……[CTRL:0103]那么来吧，表里，哪个？[CTRL:0003][CTRL:000C]当然是表！[CTRL:0003]",
+          "provenance": {
+            "audit": "full-semantic-audit-2026-08-07",
+            "context": "Joshua and L’Arachel coin-toss support conversation.",
+            "target_ids": [
+              "0x0CF8"
+            ]
+          },
+          "reason": "Apply the exact reviewed Simplified Chinese correction while preserving the normalized control and newline structure.",
+          "replacement_text": "[CTRL:0009][CTRL:0010][CTRL:012A][CTRL:0009]那么，今天的运气是……[CTRL:0103][CTRL:0009][CTRL:0080][CTRL:000B][CTRL:0009][CTRL:0006][CTRL:0002]里……啊，[CTRL:0105][CTRL:0017]哎呀哎呀，今天好象也不行嘛。[CTRL:0003][CTRL:0017][CTRL:0006][CTRL:000C][CTRL:0010][CTRL:0122][CTRL:000C]啊，[CTRL:0001]在做什么呢？[CTRL:0003][CTRL:0009][CTRL:0017]嗯？啊。[CTRL:0103]用这玩意来算今天的运势。[CTRL:0001]今天大概没什么好事。[CTRL:0003][CTRL:0017][CTRL:000C]啊！那是不行的。[CTRL:0103]与其用硬币，[CTRL:0001]向神祈祷才是正确的做法。[CTRL:0103]从不怠于祈祷的我，[CTRL:0001]向来都受到幸运的保护。[CTRL:0003][CTRL:0009][CTRL:0017]哦，还真是有理有据。[CTRL:0103]哦，让我看看[CTRL:0001]幸运是否真的跟着你。[CTRL:0103]用这个赌一把如何？[CTRL:0003][CTRL:0017][CTRL:000C]啊！那可不行。[CTRL:0103]赌博是会遭天谴的。[CTRL:0003][CTRL:0009][CTRL:0017]这也太夸张了吧。[CTRL:0003][CTRL:0017][CTRL:000C]没有。[CTRL:0001]赌博会使大众堕落。[CTRL:0103]神明不会原谅不辛勤劳作的人。[CTRL:0103]首先，这里不就没有赌场吗。[CTRL:0003][CTRL:0009][CTRL:0017]什么，[CTRL:0001]不用想得那么严重吧，[CTRL:0103]好象赌博能造成[CTRL:0001]什么严重的后果似的。[CTRL:0103][CTRL:0017][CTRL:0009][CTRL:0080][CTRL:000B][CTRL:0009][CTRL:0017]好……了。[CTRL:0003][CTRL:0102]来，表还是里？[CTRL:0001]哪个？[CTRL:0003][CTRL:0017][CTRL:000C]既然受到挑战……[CTRL:0001]就不得不接受了。[CTRL:0103]是表！[CTRL:0003][CTRL:0009][CTRL:0017]好。[CTRL:0017]那么……[CTRL:0103][CTRL:0017]哦，表。[CTRL:0001]真有幸运相随啊。[CTRL:0003][CTRL:0017][CTRL:000C]哎？我赢了吗？[CTRL:0103][CTRL:0017]但仔细想是理所当然的。[CTRL:0103]就算是赌博这种事，[CTRL:0001]本公主也是不可能会输的。[CTRL:0003][CTRL:0017][CTRL:0017][CTRL:0009]好，那么继续。[CTRL:0001]下次赌100金币如何？[CTRL:0003][CTRL:000C]没问题。[CTRL:0103]既然你这么说了，我接受。[CTRL:0003][CTRL:0009]好好……[CTRL:0103]那么来吧，表里，哪个？[CTRL:0003][CTRL:000C]当然是表！[CTRL:0003]"
+        }
+      },
+      "locale_id": "zh-Hans",
+      "source_sha256": "bef561dd5a45f81658d4f06b0b9f58bdc6fde2ed4b4c57034d17b88cb595f517"
+    },
+    "fe8j_indexed": {
+      "entries": {
+        "0x0013": {
+          "expected_text": "ウィンドウパネル",
+          "provenance": {
+            "audit": "full-semantic-audit-2026-08-07",
+            "context": "Window Color option label.",
+            "target_ids": [
+              "0x009A"
+            ]
+          },
+          "reason": "Replace a decoder artifact or semantically incorrect normalized label with the exact reviewed Japanese runtime label.",
+          "replacement_text": "ウィンドウカラー"
+        },
+        "0x004D": {
+          "expected_text": "ＮＯＷ　ＬＯＡＤＩＮＧ",
+          "provenance": {
+            "audit": "runtime-english-leakage-2026-08-07",
+            "context": "Save/link UI loading status.",
+            "target_ids": [
+              "0x077D"
+            ]
+          },
+          "reason": "Render the status in Japanese instead of copying the English payload.",
+          "replacement_text": "ロード中"
+        },
+        "0x0061": {
+          "expected_text": "ＮＯ　ＤＡＴＡ",
+          "provenance": {
+            "audit": "blue-team-followup-2026-08-08",
+            "context": "LoadLinkArenaTeamList empty-slot label copied into a 15-byte team-name field.",
+            "target_ids": [
+              "0x00CC"
+            ]
+          },
+          "reason": "Use a natural Japanese empty label whose UTF-8 payload is at most 14 bytes and fits the bounded SIO field with its terminator.",
+          "replacement_text": "なし"
+        },
+        "0x0254": {
+          "expected_text": "⊂⊃┌┐",
+          "provenance": {
+            "audit": "full-semantic-audit-2026-08-07",
+            "context": "Ranger class label.",
+            "target_ids": [
+              "0x02CD"
+            ]
+          },
+          "reason": "Replace a decoder artifact or semantically incorrect normalized label with the exact reviewed Japanese runtime label.",
+          "replacement_text": "フォレストナイト"
+        },
+        "0x0256": {
+          "expected_text": "абвг",
+          "provenance": {
+            "audit": "full-semantic-audit-2026-08-07",
+            "context": "Wyvern Lord class label.",
+            "target_ids": [
+              "0x02CF"
+            ]
+          },
+          "reason": "Replace a decoder artifact or semantically incorrect normalized label with the exact reviewed Japanese runtime label.",
+          "replacement_text": "ドラゴンマスター"
+        },
+        "0x0257": {
+          "expected_text": "шщъы",
+          "provenance": {
+            "audit": "full-semantic-audit-2026-08-07",
+            "context": "Wyvern Knight class label.",
+            "target_ids": [
+              "0x02D0"
+            ]
+          },
+          "reason": "Replace a decoder artifact or semantically incorrect normalized label with the exact reviewed Japanese runtime label.",
+          "replacement_text": "ワイバーンナイト"
+        },
+        "0x026F": {
+          "expected_text": "жзий",
+          "provenance": {
+            "audit": "full-semantic-audit-2026-08-07",
+            "context": "Falcoknight class label.",
+            "target_ids": [
+              "0x02E8"
+            ]
+          },
+          "reason": "Replace a decoder artifact or semantically incorrect normalized label with the exact reviewed Japanese runtime label.",
+          "replacement_text": "ファルコンナイト"
+        },
+        "0x0280": {
+          "expected_text": "∞┴∠∧",
+          "provenance": {
+            "audit": "full-semantic-audit-2026-08-07",
+            "context": "Mauthe Doog class label.",
+            "target_ids": [
+              "0x02F9"
+            ]
+          },
+          "reason": "Replace a decoder artifact or semantically incorrect normalized label with the exact reviewed Japanese runtime label.",
+          "replacement_text": "モーサドゥーグ"
+        },
+        "0x0287": {
+          "expected_text": "∪∫∬∴",
+          "provenance": {
+            "audit": "full-semantic-audit-2026-08-07",
+            "context": "Gorgon Egg class label.",
+            "target_ids": [
+              "0x0300"
+            ]
+          },
+          "reason": "Replace a decoder artifact or semantically incorrect normalized label with the exact reviewed Japanese runtime label.",
+          "replacement_text": "ゴーゴンエッグ"
+        },
+        "0x0289": {
+          "expected_text": "∇∈∋├",
+          "provenance": {
+            "audit": "full-semantic-audit-2026-08-07",
+            "context": "Deathgoyle class label.",
+            "target_ids": [
+              "0x0302"
+            ]
+          },
+          "reason": "Replace a decoder artifact or semantically incorrect normalized label with the exact reviewed Japanese runtime label.",
+          "replacement_text": "デスガーゴイル"
+        },
+        "0x028A": {
+          "expected_text": "≠≡≦≧",
+          "provenance": {
+            "audit": "full-semantic-audit-2026-08-07",
+            "context": "Draco Zombie class label.",
+            "target_ids": [
+              "0x0303"
+            ]
+          },
+          "reason": "Replace a decoder artifact or semantically incorrect normalized label with the exact reviewed Japanese runtime label.",
+          "replacement_text": "ドラゴンゾンビ"
+        },
+        "0x0334": {
+          "expected_text": "нопр",
+          "provenance": {
+            "audit": "full-semantic-audit-2026-08-07",
+            "context": "Bolting item label.",
+            "target_ids": [
+              "0x03AD"
+            ]
+          },
+          "reason": "Replace a decoder artifact or semantically incorrect normalized label with the exact reviewed Japanese runtime label.",
+          "replacement_text": "サンダーストーム"
+        },
+        "0x0479": {
+          "expected_text": "＜＞",
+          "provenance": {
+            "audit": "full-semantic-audit-2026-08-07",
+            "context": "Maximum HP status label.",
+            "target_ids": [
+              "0x04EA"
+            ]
+          },
+          "reason": "Replace a decoder artifact or semantically incorrect normalized label with the exact reviewed Japanese runtime label.",
+          "replacement_text": "ＭＨＰ"
+        },
+        "0x0704": {
+          "expected_text": "Ｐｒｏｌｏｇｕｅ",
+          "provenance": {
+            "audit": "runtime-english-leakage-2026-08-07",
+            "context": "Sound Room title for the opening piece.",
+            "target_ids": [
+              "0x078D"
+            ]
+          },
+          "reason": "Use the conventional Japanese opening-section title.",
+          "replacement_text": "序章"
+        },
+        "0x070C": {
+          "expected_text": "Ｆｏｌｌｏｗ　ｍｅ！",
+          "provenance": {
+            "audit": "runtime-english-leakage-2026-08-07",
+            "context": "Sound Room title written as a direct command.",
+            "target_ids": [
+              "0x0795"
+            ]
+          },
+          "reason": "Translate the imperative naturally instead of retaining English prose.",
+          "replacement_text": "ついて来い！"
+        },
+        "0x0717": {
+          "expected_text": "現れし異形の影а",
+          "provenance": {
+            "audit": "full-semantic-audit-2026-08-07",
+            "context": "Sound Room title Twisted Shadows A.",
+            "target_ids": [
+              "0x07A0"
+            ]
+          },
+          "reason": "Replace a decoder artifact or semantically incorrect normalized label with the exact reviewed Japanese runtime label.",
+          "replacement_text": "現れし異形の影Ａ"
+        },
+        "0x0718": {
+          "expected_text": "現れし異形の影б",
+          "provenance": {
+            "audit": "full-semantic-audit-2026-08-07",
+            "context": "Sound Room title Twisted Shadows B.",
+            "target_ids": [
+              "0x07A1"
+            ]
+          },
+          "reason": "Replace a decoder artifact or semantically incorrect normalized label with the exact reviewed Japanese runtime label.",
+          "replacement_text": "現れし異形の影Ｂ"
+        },
+        "0x0722": {
+          "expected_text": "Ｈｅａｌｉｎｇ",
+          "provenance": {
+            "audit": "runtime-english-leakage-2026-08-07",
+            "context": "Sound Room cue for ordinary HP-restoring staff use.",
+            "target_ids": [
+              "0x07AB"
+            ]
+          },
+          "reason": "Use a Japanese title for HP-restoring staff use, distinct from status removal.",
+          "replacement_text": "癒やし"
+        },
+        "0x0723": {
+          "expected_text": "Ｃｕｒｉｎｇ",
+          "provenance": {
+            "audit": "runtime-english-leakage-2026-08-07",
+            "context": "Sound Room cue for removing status ailments with restorative staves.",
+            "target_ids": [
+              "0x07AC"
+            ]
+          },
+          "reason": "Use 浄化 for status removal, distinct from ordinary HP healing.",
+          "replacement_text": "浄化"
+        },
+        "0x0729": {
+          "expected_text": "Ｉｎｄｉｇｎａｔｉｏｎ",
+          "provenance": {
+            "audit": "runtime-english-leakage-2026-08-07",
+            "context": "Sound Room dramatic event title.",
+            "target_ids": [
+              "0x07B2"
+            ]
+          },
+          "reason": "Translate the emotional title with the concise Japanese term 憤怒.",
+          "replacement_text": "憤怒"
+        },
+        "0x072A": {
+          "expected_text": "Ｓａｄｎｅｓｓ　ｔｉｍｅ",
+          "provenance": {
+            "audit": "runtime-english-leakage-2026-08-07",
+            "context": "Sound Room sorrowful scene title.",
+            "target_ids": [
+              "0x07B3"
+            ]
+          },
+          "reason": "Replace awkward untranslated English with a natural Japanese title.",
+          "replacement_text": "悲しみの時"
+        },
+        "0x072B": {
+          "expected_text": "Ｃｏｍｉｃａｌ　ｔｉｍｅ",
+          "provenance": {
+            "audit": "runtime-english-leakage-2026-08-07",
+            "context": "Sound Room comic-scene title.",
+            "target_ids": [
+              "0x07B4"
+            ]
+          },
+          "reason": "Replace awkward untranslated English with a natural Japanese title.",
+          "replacement_text": "おどけたひととき"
+        },
+        "0x0731": {
+          "expected_text": "Ｗｏｒｋ　ｏｕｔ　ａ　ｐｌｏｔ",
+          "provenance": {
+            "audit": "runtime-english-leakage-2026-08-07",
+            "context": "Sound Room puzzle/riddle scene title; the FE8U title is Solve the Riddle.",
+            "target_ids": [
+              "0x07BA"
+            ]
+          },
+          "reason": "Translate by the riddle-solving scene meaning rather than the awkward source English.",
+          "replacement_text": "謎を解く"
+        },
+        "0x073F": {
+          "expected_text": "勝利の歌а",
+          "provenance": {
+            "audit": "full-semantic-audit-2026-08-07",
+            "context": "Sound Room title Victory Song A.",
+            "target_ids": [
+              "0x07C8"
+            ]
+          },
+          "reason": "Replace a decoder artifact or semantically incorrect normalized label with the exact reviewed Japanese runtime label.",
+          "replacement_text": "勝利の歌Ａ"
+        },
+        "0x0740": {
+          "expected_text": "勝利の歌б",
+          "provenance": {
+            "audit": "full-semantic-audit-2026-08-07",
+            "context": "Sound Room title Victory Song B.",
+            "target_ids": [
+              "0x07C9"
+            ]
+          },
+          "reason": "Replace a decoder artifact or semantically incorrect normalized label with the exact reviewed Japanese runtime label.",
+          "replacement_text": "勝利の歌Ｂ"
+        },
+        "0x0741": {
+          "expected_text": "Ｇａｍｅ　Ｏｖｅｒ",
+          "provenance": {
+            "audit": "runtime-english-leakage-2026-08-07",
+            "context": "Sound Room game-over cue title.",
+            "target_ids": [
+              "0x07CA"
+            ]
+          },
+          "reason": "Use the established Japanese game-over wording in kana.",
+          "replacement_text": "ゲームオーバー"
+        },
+        "0x0745": {
+          "expected_text": "Ｆｌｙ　ｗｉｔｈ　ｔｈｅ　Ｂｒｅｅｚｅ",
+          "provenance": {
+            "audit": "runtime-english-leakage-2026-08-07",
+            "context": "Sound Room ending/title piece with a light wind motif.",
+            "target_ids": [
+              "0x07CE"
+            ]
+          },
+          "reason": "Translate the lyrical title naturally as 風とともに.",
+          "replacement_text": "風とともに"
+        },
+        "0x0746": {
+          "expected_text": "Ｅｐｉｌｏｇｕｅ",
+          "provenance": {
+            "audit": "runtime-english-leakage-2026-08-07",
+            "context": "Sound Room closing piece.",
+            "target_ids": [
+              "0x07CF"
+            ]
+          },
+          "reason": "Use the conventional Japanese closing-section title.",
+          "replacement_text": "終章"
+        },
+        "0x07B1": {
+          "expected_text": "ＦＥ３ダミーＭＳＧ[CTRL:0003]",
+          "provenance": {
+            "audit": "runtime-latin-span-review-2026-08-07",
+            "context": "Exact mixed-script Latin-span correction for FE8U target 0x0839.",
+            "target_ids": [
+              "0x0839"
+            ]
+          },
+          "reason": "Replace the internal English MSG abbreviation with Japanese メッセージ in this exact placeholder target.",
+          "replacement_text": "ＦＥ３ダミーメッセージ[CTRL:0003]"
+        },
+        "0x07B2": {
+          "expected_text": "ＦＥ３ダミーＭＳＧ[CTRL:0003]",
+          "provenance": {
+            "audit": "runtime-latin-span-review-2026-08-07",
+            "context": "Exact mixed-script Latin-span correction for FE8U target 0x083A.",
+            "target_ids": [
+              "0x083A"
+            ]
+          },
+          "reason": "Replace the internal English MSG abbreviation with Japanese メッセージ in this exact placeholder target.",
+          "replacement_text": "ＦＥ３ダミーメッセージ[CTRL:0003]"
+        },
+        "0x07B3": {
+          "expected_text": "ＦＥ３ダミーＭＳＧ[CTRL:0003]",
+          "provenance": {
+            "audit": "runtime-latin-span-review-2026-08-07",
+            "context": "Exact mixed-script Latin-span correction for FE8U target 0x083B.",
+            "target_ids": [
+              "0x083B"
+            ]
+          },
+          "reason": "Replace the internal English MSG abbreviation with Japanese メッセージ in this exact placeholder target.",
+          "replacement_text": "ＦＥ３ダミーメッセージ[CTRL:0003]"
+        },
+        "0x07B4": {
+          "expected_text": "ＦＥ３ダミーＭＳＧ[CTRL:0003]",
+          "provenance": {
+            "audit": "runtime-latin-span-review-2026-08-07",
+            "context": "Exact mixed-script Latin-span correction for FE8U target 0x083C.",
+            "target_ids": [
+              "0x083C"
+            ]
+          },
+          "reason": "Replace the internal English MSG abbreviation with Japanese メッセージ in this exact placeholder target.",
+          "replacement_text": "ＦＥ３ダミーメッセージ[CTRL:0003]"
+        },
+        "0x07B5": {
+          "expected_text": "ＦＥ３ダミーＭＳＧ[CTRL:0003]",
+          "provenance": {
+            "audit": "runtime-latin-span-review-2026-08-07",
+            "context": "Exact mixed-script Latin-span correction for FE8U target 0x083D.",
+            "target_ids": [
+              "0x083D"
+            ]
+          },
+          "reason": "Replace the internal English MSG abbreviation with Japanese メッセージ in this exact placeholder target.",
+          "replacement_text": "ＦＥ３ダミーメッセージ[CTRL:0003]"
+        },
+        "0x07B6": {
+          "expected_text": "ＦＥ３ダミーＭＳＧ[CTRL:0003]",
+          "provenance": {
+            "audit": "runtime-latin-span-review-2026-08-07",
+            "context": "Exact mixed-script Latin-span correction for FE8U target 0x083E.",
+            "target_ids": [
+              "0x083E"
+            ]
+          },
+          "reason": "Replace the internal English MSG abbreviation with Japanese メッセージ in this exact placeholder target.",
+          "replacement_text": "ＦＥ３ダミーメッセージ[CTRL:0003]"
+        },
+        "0x07B7": {
+          "expected_text": "ＦＥ３ダミーＭＳＧ[CTRL:0003]",
+          "provenance": {
+            "audit": "runtime-latin-span-review-2026-08-07",
+            "context": "Exact mixed-script Latin-span correction for FE8U target 0x083F.",
+            "target_ids": [
+              "0x083F"
+            ]
+          },
+          "reason": "Replace the internal English MSG abbreviation with Japanese メッセージ in this exact placeholder target.",
+          "replacement_text": "ＦＥ３ダミーメッセージ[CTRL:0003]"
+        }
+      },
+      "locale_id": "ja",
+      "source_sha256": "511ce51cadd2ac94ec3f5219a81205f6aa52de3c3c659c9efd1f0f75f9079a8a"
+    }
+  },
+  "supplements": [
+    {
+      "path": "texts/locales/indexed_audit_overrides.json",
+      "sha256": "68fe148863a2ba099beb85ec0064ff9105267d0885fe29f5b6875339baada4f0"
+    }
+  ]
+}

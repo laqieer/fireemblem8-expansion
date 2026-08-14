@@ -24,7 +24,7 @@
     },
     {
       "frame": 630,
-      "framebuffer_hash": "fnv1a64-rgb24:c01548bf8c87ebaf",
+      "framebuffer_hash": "fnv1a64-rgb24:23ac325083e916f8",
       "name": "hub-opened-after-pulse",
       "probes": [
         {
@@ -90,7 +90,7 @@
   "format_version": 2,
   "rom": {
     "game_code": "BE8E",
-    "sha1": "13c0d76934ff168a6dc8a2233406a6c3c5ba9b4b",
+    "sha1": "d0098dc007bed970929a68e503fcb6973d8d4e89",
     "size": 16777216,
     "title": "FIREEMBLEM2E"
   },

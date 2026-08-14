@@ -15,6 +15,9 @@ typedef u8 bool8;
 
 
 #include "expansion_locale.h"
+#include "expansion_msg_ids.h"
+
+const char *ClassChgMenu_GetDisplayLabel(int itemNumber, const char *className);
 
 static int failures = 0;
 static int gameCacheInvalidations = 0;
@@ -131,6 +134,51 @@ int main(void)
     CHECK(ExpansionLocale_GetCurrent() == EXPANSION_LOCALE_EN);
     CHECK(gameCacheInvalidations == 4);
 
+    {
+        static const ExpansionLocaleId locales[] = {
+            EXPANSION_LOCALE_EN,
+            EXPANSION_LOCALE_JA,
+            EXPANSION_LOCALE_ZH_HANS,
+            EXPANSION_LOCALE_QPS_PLOC,
+        };
+        static const char *const fallbackLabels[][3] = {
+            {" Class 1", " Class 2", " Class 3"},
+            {" 第1兵種", " 第2兵種", " 第3兵種"},
+            {" 第1兵种", " 第2兵种", " 第3兵种"},
+        };
+        const char validClassName[] = "Localized Class Name";
+        int localeIndex;
+        int optionIndex;
+
+        for (localeIndex = 0; localeIndex < 4; localeIndex++)
+        {
+            CHECK(ExpansionLocale_SetCurrent(locales[localeIndex]) == TRUE);
+            CHECK(strcmp(
+                ExpansionLocale_ResolveCurrent(
+                    EXP_MSG_RAW_SURFACE_DIAGNOSTIC_BUILD_TIMESTAMP),
+                TEST_BUILD_DATE_TIME) == 0);
+
+            if (localeIndex >= 3)
+                continue;
+
+            for (optionIndex = 0; optionIndex < 3; optionIndex++)
+            {
+                CHECK(strcmp(
+                    ClassChgMenu_GetDisplayLabel(optionIndex, NULL),
+                    fallbackLabels[localeIndex][optionIndex]) == 0);
+                CHECK(ClassChgMenu_GetDisplayLabel(
+                    optionIndex, validClassName) == validClassName);
+            }
+        }
+        CHECK(strcmp(
+            ClassChgMenu_GetDisplayLabel(-1, NULL),
+            "<!MISSING!>") == 0);
+        CHECK(ExpansionLocale_SetCurrent(EXPANSION_LOCALE_EN) == TRUE);
+        CHECK(gameCacheInvalidations == 8);
+        printf("CLASS CHANGE FALLBACK CHECKS PASSED\n");
+        printf("BUILD TIMESTAMP LOCALE SWITCH CHECKS PASSED\n");
+    }
+
     /* Cache correctness: resolve same (locale,id) twice, must be stable
      * pointer contents (same bytes) both times. */
     {
@@ -140,10 +188,10 @@ int main(void)
     }
 
     ExpansionLocale_InvalidateCache();
-    CHECK(gameCacheInvalidations == 5);
+    CHECK(gameCacheInvalidations == 9);
 
     ExpansionLocale_GetCatalogStats(&stats);
-    CHECK(stats.activeMessageCount == 34);
+    CHECK(stats.activeMessageCount == 53);
     CHECK(stats.tombstoneCount == 1);
     CHECK(stats.populatedLocaleCount == 4);
     CHECK(stats.populatedLocaleCount == gExpansionLocalePopulatedCount);

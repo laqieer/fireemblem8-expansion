@@ -18,6 +18,7 @@
 #include "eventinfo.h"
 #include "bksel.h"
 #include "helpbox.h"
+#include "localized_game_text.h"
 
 EWRAM_OVERLAY(0) struct Text gaBattleForecastTextStructs[6] = {};
 EWRAM_OVERLAY(0) u16 gBkselPals[8][16] = {};
@@ -115,7 +116,11 @@ void PutBattleForecastUnitName(u16 * dest, struct Text * text, struct Unit * uni
 
 void PutBattleForecastItemName(u16* dest, struct Text * text, int itemIdx)
 {
+#if FE8_LOCALIZED_GAME_TEXT_CJK_PROFILE_ENABLED
+    char* str = GetItemDisplayNameForWidth(itemIdx, 56);
+#else
     char* str = GetItemName(itemIdx);
+#endif
     int position = GetStringTextCenteredPos(56, str);
 
     ClearText(text);

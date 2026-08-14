@@ -24,6 +24,28 @@ void SioDrawNumber(struct Text * text, int x, int color, int number)
     Text_DrawNumber(text, number);
 }
 
+#ifdef MODERN
+int SioGetProgressValueX(int textWidth, int labelWidth, int suffixWidth)
+{
+    enum
+    {
+        PROGRESS_LABEL_GAP = 4,
+        PROGRESS_THREE_DIGIT_SPAN = 16,
+        PROGRESS_SUFFIX_OFFSET = 8,
+    };
+    int valueX = labelWidth + PROGRESS_LABEL_GAP + PROGRESS_THREE_DIGIT_SPAN;
+    int maxValueX = textWidth - suffixWidth - PROGRESS_SUFFIX_OFFSET;
+
+    if (maxValueX < 0)
+        maxValueX = 0;
+
+    if (valueX > maxValueX)
+        valueX = maxValueX;
+
+    return valueX;
+}
+#endif
+
 struct ProcCmd CONST_DATA ProcScr_SIOCON[] = {
     PROC_NAME("SIOCON"),
     PROC_15,
@@ -153,4 +175,3 @@ void Sio_Msg89Barrier_Loop(ProcPtr proc)
         Proc_Break(proc);
     }
 }
-

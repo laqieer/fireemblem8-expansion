@@ -283,6 +283,16 @@
       "expansion_key": "raw_surface.unit_action.summon",
       "import_id": "fe8cn.raw.import-0032",
       "rationale": "Summon shares FE8U message ID 0x0693 with a distinct command, so the modern row uses a semantic expansion key.",
+      "runtime_consumers": [
+        {
+          "anchors": [
+            "EXP_MSG_RAW_SURFACE_UNIT_ACTION_SUMMON",
+            "ExpansionLocale_ResolveCurrent"
+          ],
+          "path": "src/menu_def.c",
+          "symbol": "LocalizedRawUnitActionMenuDraw"
+        }
+      ],
       "user_facing": true
     },
     {
@@ -298,6 +308,16 @@
       "expansion_key": "raw_surface.unit_action.call_monster",
       "import_id": "fe8cn.raw.import-0033",
       "rationale": "Call Monster shares FE8U message ID 0x0693 with Summon, so the modern row uses its own semantic expansion key.",
+      "runtime_consumers": [
+        {
+          "anchors": [
+            "EXP_MSG_RAW_SURFACE_UNIT_ACTION_CALL_MONSTER",
+            "ExpansionLocale_ResolveCurrent"
+          ],
+          "path": "src/menu_def.c",
+          "symbol": "LocalizedRawUnitActionMenuDraw"
+        }
+      ],
       "user_facing": true
     },
     {
@@ -334,46 +354,112 @@
       "call_sites": [
         {
           "anchors": [
-            "\"　第１兵種\"",
+            "PROMO_OPTION_1_NAME",
             "ClassChgMenuItem_OnTextDraw"
           ],
-          "path": "src/classchg-menuselect.c"
+          "path": "src/classchg-menuselect.c",
+          "provider_anchor": "PROMO_OPTION_1_NAME",
+          "scope_kind": "initializer",
+          "symbol": "gMenuItem_PromoSel"
+        },
+        {
+          "anchors": [
+            "ClassChgMenu_GetDisplayLabel"
+          ],
+          "path": "src/classchg-menuselect.c",
+          "scope_kind": "function",
+          "symbol": "ClassChgMenuItem_OnTextDraw"
         }
       ],
-      "classification": "non_user_facing_exclusion",
+      "classification": "expansion_message",
+      "expansion_key": "raw_surface.class_change.option_1",
       "import_id": "fe8cn.raw.import-0062",
-      "rationale": "The initializer name is never drawn: the row-specific onDraw callback replaces it with the locale-aware promoted class name from GetStringFromIndex.",
-      "user_facing": false
+      "rationale": "Modern rendering keeps the localized promoted class name when valid and consumes this bounded semantic provider only when the option's target class or name message is absent or invalid; legacy keeps the original Japanese initializer bytes.",
+      "runtime_consumers": [
+        {
+          "anchors": [
+            "EXP_MSG_RAW_SURFACE_CLASS_CHANGE_OPTION_1",
+            "ExpansionLocale_ResolveCurrent"
+          ],
+          "path": "src/classchg-menuselect.c",
+          "symbol": "ClassChgMenu_GetDisplayLabel"
+        }
+      ],
+      "user_facing": true
     },
     {
       "call_sites": [
         {
           "anchors": [
-            "\"　第２兵種\"",
+            "PROMO_OPTION_2_NAME",
             "ClassChgMenuItem_OnTextDraw"
           ],
-          "path": "src/classchg-menuselect.c"
+          "path": "src/classchg-menuselect.c",
+          "provider_anchor": "PROMO_OPTION_2_NAME",
+          "scope_kind": "initializer",
+          "symbol": "gMenuItem_PromoSel"
+        },
+        {
+          "anchors": [
+            "ClassChgMenu_GetDisplayLabel"
+          ],
+          "path": "src/classchg-menuselect.c",
+          "scope_kind": "function",
+          "symbol": "ClassChgMenuItem_OnTextDraw"
         }
       ],
-      "classification": "non_user_facing_exclusion",
+      "classification": "expansion_message",
+      "expansion_key": "raw_surface.class_change.option_2",
       "import_id": "fe8cn.raw.import-0063",
-      "rationale": "The initializer name is never drawn: the row-specific onDraw callback replaces it with the locale-aware promoted class name from GetStringFromIndex.",
-      "user_facing": false
+      "rationale": "Modern rendering keeps the localized promoted class name when valid and consumes this bounded semantic provider only when the option's target class or name message is absent or invalid; legacy keeps the original Japanese initializer bytes.",
+      "runtime_consumers": [
+        {
+          "anchors": [
+            "EXP_MSG_RAW_SURFACE_CLASS_CHANGE_OPTION_2",
+            "ExpansionLocale_ResolveCurrent"
+          ],
+          "path": "src/classchg-menuselect.c",
+          "symbol": "ClassChgMenu_GetDisplayLabel"
+        }
+      ],
+      "user_facing": true
     },
     {
       "call_sites": [
         {
           "anchors": [
-            "\"　第３兵種\"",
+            "PROMO_OPTION_3_NAME",
             "ClassChgMenuItem_OnTextDraw"
           ],
-          "path": "src/classchg-menuselect.c"
+          "path": "src/classchg-menuselect.c",
+          "provider_anchor": "PROMO_OPTION_3_NAME",
+          "scope_kind": "initializer",
+          "symbol": "gMenuItem_PromoSel"
+        },
+        {
+          "anchors": [
+            "ClassChgMenu_GetDisplayLabel"
+          ],
+          "path": "src/classchg-menuselect.c",
+          "scope_kind": "function",
+          "symbol": "ClassChgMenuItem_OnTextDraw"
         }
       ],
-      "classification": "non_user_facing_exclusion",
+      "classification": "expansion_message",
+      "expansion_key": "raw_surface.class_change.option_3",
       "import_id": "fe8cn.raw.import-0064",
-      "rationale": "The initializer name is never drawn: the row-specific onDraw callback replaces it with the locale-aware promoted class name from GetStringFromIndex.",
-      "user_facing": false
+      "rationale": "Modern rendering keeps the localized promoted class name when valid and consumes this bounded semantic provider only when the option's target class or name message is absent or invalid; legacy keeps the original Japanese initializer bytes.",
+      "runtime_consumers": [
+        {
+          "anchors": [
+            "EXP_MSG_RAW_SURFACE_CLASS_CHANGE_OPTION_3",
+            "ExpansionLocale_ResolveCurrent"
+          ],
+          "path": "src/classchg-menuselect.c",
+          "symbol": "ClassChgMenu_GetDisplayLabel"
+        }
+      ],
+      "user_facing": true
     },
     {
       "call_sites": [
@@ -381,13 +467,27 @@
           "anchors": [
             "GetStringFromIndex(MSG_1C1)"
           ],
-          "path": "src/player_interface.c"
+          "path": "src/player_interface.c",
+          "provider_anchor": "GoalString_UnitsLeft",
+          "provider_scope": {
+            "anchors": [
+              "GoalString_UnitsLeft",
+              "081F5528",
+              "data",
+              "GoalDisplay_Init"
+            ],
+            "path": "texts/locales/source/fe8j/upstream/layout/baseline_syms.d/GoalDisplay_Init-134e6b42.tsv",
+            "scope_kind": "line",
+            "symbol": "GoalString_UnitsLeft"
+          },
+          "scope_kind": "function",
+          "symbol": "GoalDisplay_Init"
         }
       ],
-      "classification": "english_fallback",
-      "fallback_reason": "japanese-literal-source-unverified",
+      "classification": "game_message",
       "import_id": "fe8cn.raw.import-0139",
-      "rationale": "Japanese goal-window label for FE8U 0x01C1 has no exact committed-source literal anchor.",
+      "rationale": "FE8U target 0x01C1 is bound to FE8J's baserom-backed GoalString_UnitsLeft raw provider pinned by the committed baseline symbol map and the exact FE8CN raw import, never to the unrelated same-number FE8J indexed message.",
+      "target_id": "0x01C1",
       "user_facing": true
     },
     {
@@ -396,13 +496,27 @@
           "anchors": [
             "GetStringFromIndex(MSG_1C3)"
           ],
-          "path": "src/player_interface.c"
+          "path": "src/player_interface.c",
+          "provider_anchor": "GoalString_LastTurn",
+          "provider_scope": {
+            "anchors": [
+              "GoalString_LastTurn",
+              "081F5530",
+              "data",
+              "GoalDisplay_Init"
+            ],
+            "path": "texts/locales/source/fe8j/upstream/layout/baseline_syms.d/GoalDisplay_Init-134e6b42.tsv",
+            "scope_kind": "line",
+            "symbol": "GoalString_LastTurn"
+          },
+          "scope_kind": "function",
+          "symbol": "GoalDisplay_Init"
         }
       ],
-      "classification": "english_fallback",
-      "fallback_reason": "japanese-literal-source-unverified",
+      "classification": "game_message",
       "import_id": "fe8cn.raw.import-0140",
-      "rationale": "Japanese goal-window label for FE8U 0x01C3 has no exact committed-source literal anchor.",
+      "rationale": "FE8U target 0x01C3 is bound to FE8J's baserom-backed GoalString_LastTurn raw provider pinned by the committed baseline symbol map and the exact FE8CN raw import, never to the unrelated same-number FE8J indexed message.",
+      "target_id": "0x01C3",
       "user_facing": true
     },
     {
@@ -411,13 +525,27 @@
           "anchors": [
             "GetStringFromIndex(MSG_1C2)"
           ],
-          "path": "src/player_interface.c"
+          "path": "src/player_interface.c",
+          "provider_anchor": "GoalString_Turn",
+          "provider_scope": {
+            "anchors": [
+              "GoalString_Turn",
+              "081F553C",
+              "data",
+              "GoalDisplay_Init"
+            ],
+            "path": "texts/locales/source/fe8j/upstream/layout/baseline_syms.d/GoalDisplay_Init-134e6b42.tsv",
+            "scope_kind": "line",
+            "symbol": "GoalString_Turn"
+          },
+          "scope_kind": "function",
+          "symbol": "GoalDisplay_Init"
         }
       ],
-      "classification": "english_fallback",
-      "fallback_reason": "japanese-literal-source-unverified",
+      "classification": "game_message",
       "import_id": "fe8cn.raw.import-0141",
-      "rationale": "Japanese goal-window label for FE8U 0x01C2 has no exact committed-source literal anchor.",
+      "rationale": "FE8U target 0x01C2 is bound to FE8J's baserom-backed GoalString_Turn raw provider pinned by the committed baseline symbol map and the exact FE8CN raw import, never to the unrelated same-number FE8J indexed message.",
+      "target_id": "0x01C2",
       "user_facing": true
     },
     {
@@ -426,22 +554,43 @@
           "anchors": [
             "const char gBuildDateTime[]"
           ],
-          "path": "src/main.c"
+          "path": "src/main.c",
+          "scope_kind": "symbol",
+          "symbol": "gBuildDateTime"
         },
         {
           "anchors": [
-            "PrintDebugStringToBG(bg, gBuildDateTime)"
+            "ExpansionLocale_ResolveCurrent",
+            "EXP_MSG_RAW_SURFACE_DIAGNOSTIC_BUILD_TIMESTAMP"
           ],
-          "path": "src/fe3_dummy.c"
+          "path": "src/fe3_dummy.c",
+          "scope_kind": "function",
+          "symbol": "PrintDebugBuildDateAndTime"
         }
       ],
-      "classification": "diagnostic_exclusion",
+      "classification": "expansion_message",
+      "expansion_key": "raw_surface.diagnostic.build_timestamp",
       "import_id": "fe8cn.raw.import-0142",
-      "rationale": "This fixed build timestamp is diagnostic identity printed by PrintDebugBuildDateAndTime, not natural-language UI; translating it would corrupt the diagnostic value.",
+      "rationale": "The diagnostic identity describes this executable, not its selected locale. Every modern locale payload is locked to the current gBuildDateTime string; the FE8CN 2004 bytes remain only in imported-source provenance, and legacy keeps printing gBuildDateTime unchanged.",
+      "runtime_consumers": [
+        {
+          "anchors": [
+            "ExpansionLocale_ResolveCurrent",
+            "EXP_MSG_RAW_SURFACE_DIAGNOSTIC_BUILD_TIMESTAMP"
+          ],
+          "path": "src/fe3_dummy.c",
+          "symbol": "PrintDebugBuildDateAndTime"
+        }
+      ],
+      "runtime_payload_source": {
+        "kind": "c_string_symbol",
+        "path": "src/main.c",
+        "symbol": "gBuildDateTime"
+      },
       "user_facing": false
     }
   ],
   "deferred_record_count": 29,
   "kind": "fe8cn-raw-surface-decisions",
-  "schema_version": 1
+  "schema_version": 3
 }

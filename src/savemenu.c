@@ -1674,6 +1674,8 @@ PROC_LABEL(PL_SAVEMENU_EXIT),
 void StartSaveMenu(ProcPtr parent)
 {
     struct SaveMenuProc * proc;
+
+#ifndef FE8_ARCHIVAL_BUILD
     enum SaveCompatState compat = ClassifySramSaveCompat();
 
 #ifdef MODERN
@@ -1700,6 +1702,7 @@ void StartSaveMenu(ProcPtr parent)
         StartSaveCompatMenu(parent, compat);
         return;
     }
+#endif
 
     proc = Proc_StartBlocking(ProcScr_SaveMenu, parent);
     proc->main_sel_bitfile = 0x100;
