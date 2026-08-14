@@ -122,7 +122,11 @@ gh run watch <run-id> --exit-status
 The workflow is `workflow_dispatch`-only, read-only, concurrency-cancelled by
 workflow/ref, and records the exact `github.sha` and `github.ref`. Its final
 summary fails unless host, both modern matrix configurations, legacy, and
-release-evidence all succeed. The legally restricted live FE8J provenance
+release-evidence all succeed. The release-evidence lane runs
+`make release-full-matrix-workflow-guard`; the stdlib-only structural guard
+requires the canonical executable commands in named host/modern/legacy/
+release-evidence steps and rejects comment/echo decoys, checkout credential
+drift, or release-SHA shadowing. The legally restricted live FE8J provenance
 proof is not a hosted-CI command and remains a mandatory local maintainer
 pre-push step. Use the procedure supported by the checked-out branch in
 [`game_locale_sources.md`](game_locale_sources.md), rather than copying a

@@ -164,7 +164,11 @@ is not `"mechanically eligible"`.
   `contents`; every other scope (and any future, unknown one) is now
   rejected identically, and the real, legitimate
   `.github/workflows/release-rehearsal.yml` still passes with zero
-  findings.
+  findings. The same guard now also requires exactly one top-level YAML
+  `on` mapping, decodes each actual checkout step's `with` mapping to require
+  exactly one `persist-credentials: false`, rejects step/shell
+  `RELEASE_TARGET_SHA` shadowing, and exposes a `full-matrix` contract whose
+  named gate commands cannot be satisfied by comments or `echo` strings.
 * `.github/workflows/release-rehearsal.yml` -- `pull_request`, manual
   dispatch, and only completed `Build CI` runs on `master`; the sole
   workflow-run job requires conclusion `success`, structurally binds the
@@ -183,7 +187,8 @@ is not `"mechanically eligible"`.
   `release-rehearse-require-eligible` (intentionally exit non-zero while
   blocked) and `release-check-expect-blocked`/
   `release-rehearse-expect-blocked` (expected-status health checks) gate
-  targets, and `release-workflow-guard`.
+  targets, `release-workflow-guard`, and
+  `release-full-matrix-workflow-guard`.
 * A public stdlib `unittest` suite for every module above, including
   dedicated adversarial coverage (misleading extensions/nested paths/
   magic-only detection/path-traversal-shape probes, exact map/hex
@@ -240,6 +245,7 @@ rm -rf "$EXTRACTED"
 
 # Dynamic workflow guard (machine JSON).
 make release-workflow-guard
+make release-full-matrix-workflow-guard
 
 # Release-doc link validator + exact allowlist completeness (folded into
 # `make release-check` above; standalone invocations for direct evidence):

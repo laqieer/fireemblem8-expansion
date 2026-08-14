@@ -9,6 +9,8 @@ sys.path.insert(0, str(ROOT))
 
 from scripts.release_rehearsal import workflow_guard as wg
 
+FULL_MATRIX_WORKFLOW = ROOT / ".github" / "workflows" / "full-matrix.yml"
+
 GOOD_WORKFLOW = """\
 name: Release Rehearsal
 on:
@@ -139,6 +141,35 @@ class TriggerViolationTests(unittest.TestCase):
         violations = wg.validate_workflow_text(text)
         self.assertTrue(any("exactly one canonical" in v for v in violations), violations)
 
+    def test_duplicate_top_level_on_blocks_are_rejected_before_trigger_validation(self):
+        text = GOOD_WORKFLOW.replace(
+            "\npermissions:\n",
+            "\non:\n  workflow_dispatch: {}\n\npermissions:\n",
+        )
+        violations = wg.check_triggers(text)
+        self.assertTrue(any("exactly one top-level" in v for v in violations), violations)
+        self.assertFalse(any("declares no recognizable" in v for v in violations), violations)
+
+    def test_quoted_duplicate_top_level_on_key_is_rejected(self):
+        text = GOOD_WORKFLOW.replace(
+            "\npermissions:\n",
+            '\n"on":\n  workflow_dispatch: {}\n\npermissions:\n',
+        )
+        violations = wg.check_top_level_on_mapping(text)
+        self.assertTrue(any("duplicate" in v for v in violations), violations)
+
+    def test_yaml_11_true_normalization_collision_is_rejected(self):
+        text = GOOD_WORKFLOW.replace(
+            "\npermissions:\n",
+            "\ntrue:\n  workflow_dispatch: {}\n\npermissions:\n",
+        )
+        violations = wg.check_top_level_on_mapping(text)
+        self.assertTrue(any("true-normalized" in v for v in violations), violations)
+
+    def test_single_quoted_top_level_on_mapping_is_accepted(self):
+        text = GOOD_WORKFLOW.replace("on:\n", "'on':\n", 1)
+        self.assertEqual(wg.check_top_level_on_mapping(text), [])
+
 
 class PermissionViolationTests(unittest.TestCase):
     def test_missing_top_level_permissions(self):
@@ -167,6 +198,37 @@ class CheckoutViolationTests(unittest.TestCase):
         text = GOOD_WORKFLOW.replace("          persist-credentials: false\n", "")
         violations = wg.validate_workflow_text(text)
         self.assertTrue(any("persist-credentials" in v for v in violations))
+
+    def test_true_persist_credentials_rejected_on_actual_checkout(self):
+        text = GOOD_WORKFLOW.replace("persist-credentials: false", "persist-credentials: true")
+        violations = wg.validate_workflow_text(text)
+        self.assertTrue(any("exactly 'persist-credentials: false'" in v for v in violations), violations)
+
+    def test_duplicate_persist_credentials_rejected_on_actual_checkout(self):
+        text = GOOD_WORKFLOW.replace(
+            "          persist-credentials: false",
+            "          persist-credentials: false\n"
+            "          persist-credentials: true",
+        )
+        violations = wg.validate_workflow_text(text)
+        self.assertTrue(any("exactly 'persist-credentials: false'" in v for v in violations), violations)
+
+    def test_comment_decoy_cannot_satisfy_actual_checkout(self):
+        text = GOOD_WORKFLOW.replace(
+            "          persist-credentials: false",
+            "          # persist-credentials: false",
+        )
+        violations = wg.validate_workflow_text(text)
+        self.assertTrue(any("exactly 'persist-credentials: false'" in v for v in violations), violations)
+
+    def test_unrelated_persist_credentials_text_cannot_satisfy_actual_checkout(self):
+        text = GOOD_WORKFLOW.replace(
+            "          persist-credentials: false",
+            "          fetch-depth: 0\n"
+            "      - run: echo 'persist-credentials: false'",
+        )
+        violations = wg.validate_workflow_text(text)
+        self.assertTrue(any("exactly 'persist-credentials: false'" in v for v in violations), violations)
 
 
 class GeneralizedActionPinTests(unittest.TestCase):
@@ -935,6 +997,164 @@ class ReleaseTargetShaBindingTests(unittest.TestCase):
         )
         violations = wg.check_release_target_sha_binding(text)
         self.assertEqual(violations, [])
+
+    def _bound_workflow(self, step: str) -> str:
+        return (
+            "jobs:\n"
+            "  release-rehearsal:\n"
+            "    env:\n"
+            "      RELEASE_TARGET_SHA: ${{ github.sha }}\n"
+            "    steps:\n"
+            f"{step}"
+        )
+
+    def test_step_env_github_sha_override_is_rejected_even_when_identical(self):
+        text = self._bound_workflow(
+            "      - run: make release-check\n"
+            "        env:\n"
+            "          RELEASE_TARGET_SHA: ${{ github.sha }}\n"
+        )
+        violations = wg.check_release_target_sha_binding(text)
+        self.assertTrue(any("step-level env" in v for v in violations), violations)
+
+    def test_step_env_literal_override_is_rejected(self):
+        text = self._bound_workflow(
+            "      - run: make release-rehearse\n"
+            "        env:\n"
+            "          RELEASE_TARGET_SHA: 0123456789012345678901234567890123456789\n"
+        )
+        violations = wg.check_release_target_sha_binding(text)
+        self.assertTrue(any("step-level env" in v for v in violations), violations)
+
+    def test_duplicate_step_env_release_target_keys_are_rejected(self):
+        text = self._bound_workflow(
+            "      - run: make release-check-expect-blocked\n"
+            "        env:\n"
+            "          RELEASE_TARGET_SHA: ${{ github.sha }}\n"
+            "          RELEASE_TARGET_SHA: 0123456789012345678901234567890123456789\n"
+        )
+        violations = wg.check_release_target_sha_binding(text)
+        self.assertTrue(any("step-level env" in v for v in violations), violations)
+
+    def test_duplicate_job_env_release_target_keys_are_rejected(self):
+        text = (
+            "jobs:\n"
+            "  release-rehearsal:\n"
+            "    env:\n"
+            "      RELEASE_TARGET_SHA: ${{ github.sha }}\n"
+            "      RELEASE_TARGET_SHA: 0123456789012345678901234567890123456789\n"
+            "    steps:\n"
+            "      - run: make release-check\n"
+        )
+        violations = wg.check_release_target_sha_binding(text)
+        self.assertTrue(any("job-level env.RELEASE_TARGET_SHA" in v for v in violations), violations)
+
+    def test_command_scoped_assignment_override_is_rejected(self):
+        text = self._bound_workflow(
+            "      - run: RELEASE_TARGET_SHA=0123456789012345678901234567890123456789 "
+            "make release-check\n"
+        )
+        violations = wg.check_release_target_sha_binding(text)
+        self.assertTrue(any("command-scoped assignment" in v for v in violations), violations)
+
+    def test_unquoted_github_sha_command_override_is_rejected(self):
+        text = self._bound_workflow(
+            "      - run: RELEASE_TARGET_SHA=${{ github.sha }} make release-check\n"
+        )
+        violations = wg.check_release_target_sha_binding(text)
+        self.assertTrue(any("command-scoped assignment" in v for v in violations), violations)
+
+    def test_env_command_override_is_rejected(self):
+        text = self._bound_workflow(
+            "      - run: env RELEASE_TARGET_SHA=0123456789012345678901234567890123456789 "
+            "make release-rehearse\n"
+        )
+        violations = wg.check_release_target_sha_binding(text)
+        self.assertTrue(any("env command override" in v for v in violations), violations)
+
+    def test_shell_assignment_then_release_command_is_rejected(self):
+        text = self._bound_workflow(
+            "      - run: |\n"
+            "          RELEASE_TARGET_SHA=0123456789012345678901234567890123456789\n"
+            "          make release-check\n"
+        )
+        violations = wg.check_release_target_sha_binding(text)
+        self.assertTrue(any("command-scoped assignment" in v for v in violations), violations)
+
+    def test_shell_export_then_release_command_is_rejected(self):
+        text = self._bound_workflow(
+            "      - run: |\n"
+            "          export RELEASE_TARGET_SHA=\"${{ github.sha }}\"\n"
+            "          make release-check\n"
+        )
+        violations = wg.check_release_target_sha_binding(text)
+        self.assertTrue(any("shell export" in v for v in violations), violations)
+
+
+class FullMatrixStructuralCommandContractTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.text = FULL_MATRIX_WORKFLOW.read_text(encoding="utf-8")
+
+    def test_real_full_matrix_contract_is_clean(self):
+        self.assertEqual(wg.validate_workflow_contract(self.text, "full-matrix"), [])
+
+    def test_commented_out_release_command_does_not_satisfy_contract(self):
+        text = self.text.replace(
+            "      - name: Run release test suites\n"
+            "        run: make release-test\n",
+            "      - name: Run release test suites\n"
+            "        run: |\n"
+            "          # make release-test\n",
+        )
+        violations = wg.check_full_matrix_contract(text)
+        self.assertTrue(any("Run release test suites" in v for v in violations), violations)
+
+    def test_echo_only_release_command_does_not_satisfy_contract(self):
+        text = self.text.replace(
+            "        run: make release-test",
+            '        run: echo "make release-test"',
+            1,
+        )
+        violations = wg.check_full_matrix_contract(text)
+        self.assertTrue(any("Run release test suites" in v for v in violations), violations)
+
+    def test_quoted_hash_in_command_is_not_mistaken_for_comment(self):
+        text = self.text.replace(
+            "        run: make release-test",
+            '        run: echo "# make release-test"',
+            1,
+        )
+        violations = wg.check_full_matrix_contract(text)
+        self.assertTrue(any("Run release test suites" in v for v in violations), violations)
+
+    def test_commented_out_host_gate_does_not_satisfy_contract(self):
+        text = self.text.replace(
+            "          python3 scripts/artifact_guard.py --revision HEAD",
+            "          # python3 scripts/artifact_guard.py --revision HEAD",
+            1,
+        )
+        violations = wg.check_full_matrix_contract(text)
+        self.assertTrue(any("Run artifact guard gates" in v for v in violations), violations)
+
+    def test_echo_only_modern_gate_does_not_satisfy_contract(self):
+        command = (
+            "make expansion-modern-linker-check "
+            "MODERN_CONFIG=${{ matrix.config }} MODERN_ABI=aapcs -j2"
+        )
+        text = self.text.replace(f"        run: {command}", f'        run: echo "{command}"', 1)
+        violations = wg.check_full_matrix_contract(text)
+        self.assertTrue(any("Run canonical modern linker/runtime gate" in v for v in violations), violations)
+
+    def test_commented_out_legacy_identity_gate_does_not_satisfy_contract(self):
+        text = self.text.replace(
+            "        run: make -C mgfembp compare",
+            "        run: |\n"
+            "          # make -C mgfembp compare",
+            1,
+        )
+        violations = wg.check_full_matrix_contract(text)
+        self.assertTrue(any("Validate pinned archival payload identities" in v for v in violations), violations)
 
 
 # --- issue #9 verifier remediation: adversarial verifier-probe tests -------

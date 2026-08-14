@@ -6,11 +6,16 @@ import importlib.util
 import re
 import shlex
 import subprocess
+import sys
 import unittest
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT))
+
+from scripts.release_rehearsal import workflow_guard as wg
+
 WORKFLOW = ROOT / ".github" / "workflows" / "full-matrix.yml"
 README = ROOT / "README.md"
 LOCALIZATION_DOC = ROOT / "docs" / "localization.md"
@@ -64,6 +69,9 @@ class FullMatrixWorkflowContractTests(unittest.TestCase):
             self.assertNotIn(trigger, self.text)
         self.assertNotIn("inputs:", self.text)
         self.assertNotIn("github.event.inputs", self.text)
+
+    def test_shared_structural_workflow_guard_contract_is_clean(self):
+        self.assertEqual(wg.validate_workflow_contract(self.text, "full-matrix"), [])
 
     def test_readme_badge_matches_workflow_name_and_path(self):
         readme = README.read_text(encoding="utf-8")
@@ -330,6 +338,7 @@ class FullMatrixWorkflowContractTests(unittest.TestCase):
         release = job_block(self.text, "release-evidence")
         commands = (
             "make release-test",
+            "make release-full-matrix-workflow-guard",
             "make release-changelog-check",
             "scripts.release_rehearsal.allowlist check "
             '--target-sha "$RELEASE_TARGET_SHA"',

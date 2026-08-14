@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """Read-only-publishing workflow permission/safety checker (issue #9).
 
-A small, targeted text-based checker (deliberately not a general YAML
-parser -- stdlib-only, no PyYAML dependency) for exactly the constraints
-`.github/workflows/release-rehearsal.yml` must satisfy: read-only
-top-level/job-level/nested permissions, no credential persistence, no
-secrets/token interpolation, no tag/release/asset/comment/environment
-mutation, no artifact upload, no network publish/upload/download
-commands, a pinned/accepted `actions/checkout` reference, and (when
-present) one exact successful-Build-CI-on-master `workflow_run` contract.
+A small, targeted structural checker (deliberately not a general YAML
+parser -- stdlib-only, no PyYAML dependency) for the repository's
+release-rehearsal and Full Matrix workflow contracts: exactly one
+top-level `on` mapping, read-only permissions, decoded checkout credential
+hygiene, exact target-SHA binding with no step/shell override, pinned
+external actions, no secrets/network/publish mutation, the constrained
+successful-Build-CI-on-master `workflow_run` path, and canonical executable
+commands in named Full Matrix evidence/gate steps.
 
 Conservative and fail-closed by construction: every check here is a
 structured/line-aware substring or regex match, never a full YAML/shell
@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import argparse
 import re
+import shlex
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -51,6 +52,24 @@ WORKFLOW_RUN_CHECKOUT_REF = f"          ref: {WORKFLOW_RUN_SHA_EXPRESSION}"
 # ever accepted -- see `check_uses_pins` below). `FULL_SHA_RE` is the one
 # and only accepted shape for an external `uses:` reference's pin.
 FULL_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+
+WORKFLOW_CONTRACT_RELEASE_REHEARSAL = "release-rehearsal"
+WORKFLOW_CONTRACT_FULL_MATRIX = "full-matrix"
+WORKFLOW_CONTRACT_CHOICES = (
+    WORKFLOW_CONTRACT_RELEASE_REHEARSAL,
+    WORKFLOW_CONTRACT_FULL_MATRIX,
+)
+
+RELEASE_ELIGIBILITY_TARGETS = frozenset(
+    (
+        "release-check",
+        "release-rehearse",
+        "release-check-require-eligible",
+        "release-rehearse-require-eligible",
+        "release-check-expect-blocked",
+        "release-rehearse-expect-blocked",
+    )
+)
 
 # Forbidden regardless of case/whitespace (each compiled with re.IGNORECASE
 # below); every pattern here is a *substring or simple regex*, deliberately
@@ -1100,6 +1119,233 @@ def _decode_static_scalar(value: str):
     return value, None
 
 
+def _workflow_jobs(text: str):
+    """Returns every decoded top-level job mapping in source order.
+
+    The workflow contracts below only trust one block-style top-level
+    ``jobs`` mapping with unique, block-style job IDs. Duplicate jobs or
+    alternate/ambiguous shapes fail closed instead of being merged.
+    """
+    violations = []
+    top_entries, top_problems = _mapping_entries_at_indent(text, 0)
+    violations.extend(f"workflow structure {problem}" for problem in top_problems)
+    jobs_entries = [entry for entry in top_entries if entry.key == "jobs"]
+    if len(jobs_entries) != 1 or jobs_entries[0].value:
+        violations.append("workflow must contain exactly one block-style top-level jobs mapping")
+        return [], violations
+
+    job_entries, job_problems = _mapping_entries_at_indent(jobs_entries[0].text, 2)
+    violations.extend(f"workflow jobs mapping {problem}" for problem in job_problems)
+    seen = set()
+    for entry in job_entries:
+        if entry.value:
+            violations.append(f"workflow job {entry.key!r} must use a block mapping")
+        if entry.key in seen:
+            violations.append(f"workflow jobs mapping repeats job ID {entry.key!r}")
+        seen.add(entry.key)
+    return job_entries, violations
+
+
+def _job_steps(job: _MappingEntry):
+    """Returns structurally decoded block-style steps for one job."""
+    violations = []
+    entries, entry_problems = _mapping_entries_at_indent(job.text, 4)
+    violations.extend(f"job {job.key!r} mapping {problem}" for problem in entry_problems)
+    steps_entries = [entry for entry in entries if entry.key == "steps"]
+    if len(steps_entries) != 1 or steps_entries[0].value:
+        violations.append(f"job {job.key!r} must contain exactly one block-style steps sequence")
+        return [], violations
+
+    items, item_problems = _sequence_items_at_indent(steps_entries[0].text, 6)
+    violations.extend(f"job {job.key!r} steps sequence {problem}" for problem in item_problems)
+    decoded = []
+    for item in items:
+        step_entries, step_problems = _mapping_entries_at_indent(item.mapping_text, 8)
+        violations.extend(
+            f"job {job.key!r} step starting at line {item.line} {problem}"
+            for problem in step_problems
+        )
+        decoded.append((item, step_entries))
+    return decoded, violations
+
+
+def _entry_decoded_value(entry: _MappingEntry):
+    value, problem = _decode_static_scalar(entry.value)
+    return value, problem
+
+
+def _run_script(entry: _MappingEntry):
+    """Decodes one canonical inline or literal-block ``run`` value."""
+    value = entry.value.strip()
+    if value in ("|", "|-", "|+"):
+        lines = entry.text.splitlines()[1:]
+        script_lines = []
+        for line in lines:
+            if not line.strip():
+                script_lines.append("")
+                continue
+            if not line.startswith(" " * (entry.indent + 2)):
+                return "", "run block uses unexpected indentation"
+            script_lines.append(line[entry.indent + 2:])
+        return "\n".join(script_lines), None
+    if value.startswith(">"):
+        return "", "folded run blocks are not supported by this fail-closed contract"
+    decoded, problem = _decode_static_scalar(value)
+    if problem is not None:
+        return "", f"run value is not a static scalar ({problem})"
+    return decoded, None
+
+
+def _strip_shell_line_comment(line: str) -> str:
+    """Strips a real unquoted shell comment, preserving quoted ``#``."""
+    quote = None
+    escaped = False
+    for index, char in enumerate(line):
+        if escaped:
+            escaped = False
+            continue
+        if quote != "'" and char == "\\":
+            escaped = True
+            continue
+        if char in ('"', "'"):
+            if quote is None:
+                quote = char
+            elif quote == char:
+                quote = None
+            continue
+        if char == "#" and quote is None and (index == 0 or line[index - 1].isspace()):
+            return line[:index].rstrip()
+    return line.rstrip()
+
+
+def _executable_run_lines(script: str) -> List[str]:
+    """Returns nonblank, non-comment run lines with safe comment stripping."""
+    lines = []
+    for line in script.splitlines():
+        executable = _strip_shell_line_comment(line).strip()
+        if executable:
+            lines.append(executable)
+    return lines
+
+
+def _split_shell_segments(line: str) -> List[str]:
+    """Splits unquoted shell ``;``, ``&&`` and ``||`` command separators."""
+    segments = []
+    start = 0
+    index = 0
+    quote = None
+    escaped = False
+    while index < len(line):
+        char = line[index]
+        if escaped:
+            escaped = False
+            index += 1
+            continue
+        if quote != "'" and char == "\\":
+            escaped = True
+            index += 1
+            continue
+        if char in ('"', "'"):
+            if quote is None:
+                quote = char
+            elif quote == char:
+                quote = None
+            index += 1
+            continue
+        separator_len = 0
+        if quote is None and char == ";":
+            separator_len = 1
+        elif quote is None and line[index:index + 2] in ("&&", "||"):
+            separator_len = 2
+        if separator_len:
+            segment = line[start:index].strip()
+            if segment:
+                segments.append(segment)
+            index += separator_len
+            start = index
+            continue
+        index += 1
+    tail = line[start:].strip()
+    if tail:
+        segments.append(tail)
+    return segments
+
+
+_SHELL_ASSIGNMENT_RE = re.compile(r"^(?P<name>[A-Za-z_][A-Za-z0-9_]*)=")
+
+
+def _release_step_analysis(script: str):
+    """Returns ``(targets, overrides, problems)`` for one run script.
+
+    Only a real command-position ``make release-*`` segment counts as an
+    invocation. Commented-out text and ``echo "make release-check"`` are
+    data, not commands. Any step that actually invokes a release target
+    is later rejected if this analysis found a shell assignment,
+    ``export``, or ``env`` override for ``RELEASE_TARGET_SHA`` anywhere
+    in that same step.
+    """
+    targets = []
+    overrides = []
+    problems = []
+    for line in _executable_run_lines(script):
+        for segment in _split_shell_segments(line):
+            # GitHub expressions are resolved before the runner shell
+            # executes. Replace each single-line expression with one
+            # shell token before shlex parsing so an unquoted
+            # ``NAME=${{ github.sha }} make ...`` prefix is analyzed as
+            # the real runner sees it, rather than being split on the
+            # expression's source-space.
+            analysis_segment = re.sub(r"\$\{\{.*?\}\}", "__GITHUB_EXPRESSION__", segment)
+            try:
+                tokens = shlex.split(analysis_segment, comments=False, posix=True)
+            except ValueError as error:
+                if any(target in segment for target in RELEASE_ELIGIBILITY_TARGETS):
+                    problems.append(f"cannot safely parse release command {segment!r}: {error}")
+                continue
+            if not tokens:
+                continue
+
+            index = 0
+            while index < len(tokens):
+                match = _SHELL_ASSIGNMENT_RE.match(tokens[index])
+                if match is None:
+                    break
+                if match.group("name") == "RELEASE_TARGET_SHA":
+                    overrides.append(f"command-scoped assignment {tokens[index]!r}")
+                index += 1
+
+            if index < len(tokens) and tokens[index] == "export":
+                for token in tokens[index + 1:]:
+                    match = _SHELL_ASSIGNMENT_RE.match(token)
+                    if match is not None and match.group("name") == "RELEASE_TARGET_SHA":
+                        overrides.append(f"shell export {token!r}")
+                continue
+
+            if index < len(tokens) and tokens[index] == "env":
+                index += 1
+                while index < len(tokens):
+                    match = _SHELL_ASSIGNMENT_RE.match(tokens[index])
+                    if match is None:
+                        break
+                    if match.group("name") == "RELEASE_TARGET_SHA":
+                        overrides.append(f"env command override {tokens[index]!r}")
+                    index += 1
+
+            if index < len(tokens) and tokens[index] == "make":
+                for token in tokens[index + 1:]:
+                    if token in RELEASE_ELIGIBILITY_TARGETS:
+                        targets.append(token)
+    return targets, overrides, problems
+
+
+def _step_name(step_entries: List[_MappingEntry]):
+    names = [entry for entry in step_entries if entry.key == "name"]
+    if len(names) != 1:
+        return None
+    name, problem = _entry_decoded_value(names[0])
+    return name if problem is None else None
+
+
 def _sole_release_job(text: str):
     """Returns the sole `release-rehearsal` job mapping, or violations.
 
@@ -1127,19 +1373,24 @@ def _job_entries(job: _MappingEntry):
     return entries, [f"release-rehearsal job mapping {problem}" for problem in problems]
 
 
-def _check_job_target_binding(job: _MappingEntry, expected_expression: str) -> List[str]:
+def _check_job_target_binding(
+    job: _MappingEntry,
+    expected_expression: str,
+    *,
+    label: str = "release-rehearsal",
+) -> List[str]:
     violations = []
     entries, problems = _job_entries(job)
     violations.extend(problems)
     env_entries = [entry for entry in entries if entry.key == "env"]
     if len(env_entries) != 1 or env_entries[0].value:
         return violations + [
-            "release-rehearsal job must contain exactly one block-style job-level env mapping "
+            f"{label} job must contain exactly one block-style job-level env mapping "
             "for RELEASE_TARGET_SHA"
         ]
 
     env_values, env_problems = _mapping_entries_at_indent(env_entries[0].text, 6)
-    violations.extend(f"release-rehearsal job env mapping {problem}" for problem in env_problems)
+    violations.extend(f"{label} job env mapping {problem}" for problem in env_problems)
     target_values = [entry for entry in env_values if entry.key == "RELEASE_TARGET_SHA"]
     if len(target_values) != 1 or target_values[0].value != expected_expression:
         if expected_expression == WORKFLOW_RUN_SHA_EXPRESSION:
@@ -1150,7 +1401,7 @@ def _check_job_target_binding(job: _MappingEntry, expected_expression: str) -> L
             )
         else:
             violations.append(
-                "release-rehearsal job-level env.RELEASE_TARGET_SHA must bind exactly "
+                f"{label} job-level env.RELEASE_TARGET_SHA must bind exactly "
                 f"{expected_expression!r}"
             )
     return violations
@@ -1205,6 +1456,12 @@ def _check_workflow_run_checkout(job: _MappingEntry) -> List[str]:
         violations.append(
             "workflow_run checkout ref must bind head_sha for workflow_run and github.sha otherwise, "
             "exactly as with.ref on the actual actions/checkout step"
+        )
+    persist_values = [entry for entry in with_values if entry.key == "persist-credentials"]
+    if len(persist_values) != 1 or persist_values[0].value != "false":
+        violations.append(
+            "workflow_run actual checkout with mapping must contain exactly "
+            "'persist-credentials: false'"
         )
     return violations
 
@@ -1329,11 +1586,44 @@ def _mapping_keys_at_indent(block: str, indent: int):
     return keys, problems
 
 
+_YAML_11_TRUE_KEY_ALIASES = frozenset(
+    ("on", "On", "ON", "true", "True", "TRUE", "yes", "Yes", "YES", "y", "Y")
+)
+
+
+def _top_level_on_entry(text: str):
+    """Returns the one unambiguous top-level ``on`` block mapping.
+
+    PyYAML/YAML-1.1-style parsers normalize an unquoted ``on`` key to
+    boolean true. Reject every competing true-like spelling as well as
+    literal/quoted duplicate ``on`` keys so parser normalization can
+    never silently merge or overwrite the trigger block being checked.
+    """
+    violations = []
+    entries, problems = _mapping_entries_at_indent(text, 0)
+    violations.extend(f"workflow structure {problem}" for problem in problems)
+    on_like = [entry for entry in entries if entry.key in _YAML_11_TRUE_KEY_ALIASES]
+    exact = [entry for entry in on_like if entry.key == "on"]
+    if len(on_like) != 1 or len(exact) != 1 or exact[0].value:
+        violations.append(
+            "workflow must contain exactly one top-level block-style YAML 'on' mapping; "
+            "duplicate/true-normalized trigger keys are rejected before trigger validation"
+        )
+        return None, violations
+    return exact[0], violations
+
+
+def check_top_level_on_mapping(text: str) -> List[str]:
+    _entry, violations = _top_level_on_entry(text)
+    return violations
+
+
 def check_triggers(text: str) -> List[str]:
     violations = []
-    block = _extract_block(text, "on")
-    if not block:
-        return ["no top-level 'on:' trigger block found"]
+    on_entry, structure_violations = _top_level_on_entry(text)
+    if on_entry is None:
+        return structure_violations
+    block = on_entry.text
     trigger_keys, trigger_problems = _mapping_keys_at_indent(block, 2)
     for raw, problem in trigger_problems:
         violations.append(
@@ -1379,10 +1669,10 @@ def _extract_trigger_entries(on_block: str, trigger: str) -> List[str]:
 
 
 def _has_workflow_run_trigger(text: str) -> bool:
-    block = _extract_block(text, "on")
-    if not block:
+    on_entry, violations = _top_level_on_entry(text)
+    if on_entry is None or violations:
         return False
-    keys, _problems = _mapping_keys_at_indent(block, 2)
+    keys, _problems = _mapping_keys_at_indent(on_entry.text, 2)
     return "workflow_run" in keys
 
 
@@ -1553,27 +1843,63 @@ def check_no_write_anywhere(text: str) -> List[str]:
 
 
 def check_checkout_pin(text: str) -> List[str]:
-    """`actions/checkout` itself must be present at least once, and every
-    checkout step must disable credential persistence. The *pin format*
-    for `actions/checkout` (and every other external action) is validated
-    generically by `check_uses_pins` below -- this function is
-    deliberately narrow now (checkout-specific presence/credential
-    hygiene only), so there is exactly one place (`check_uses_pins`) that
-    knows what an acceptable action pin looks like. Uses the same
-    canonical `extract_uses_occurrences` scanner as every other `uses:`
-    check in this module (see that function's own design-rationale
-    comment) -- a checkout step hidden inside a flow mapping or behind a
-    quoted key is found exactly the same way a plain block-style one
-    is."""
+    """Validates the decoded ``with`` mapping on every actual checkout.
+
+    A raw substring elsewhere in the file is never evidence: each
+    block-style job/steps/step mapping is decoded, the real
+    ``actions/checkout`` step is identified from its own ``uses`` value,
+    and that same step must contain exactly one block-style ``with``
+    mapping with exactly one decoded ``persist-credentials`` key whose
+    value is ``false``. Missing/true/duplicate values and comment decoys
+    all fail closed. Pin format remains centralized in
+    :func:`check_uses_pins`.
+    """
     violations = []
-    found_checkout = any(
-        occ.problem is None and occ.action_ref.lower().startswith("actions/checkout@")
-        for occ in extract_uses_occurrences(text)
-    )
-    if not found_checkout:
+    jobs, job_violations = _workflow_jobs(text)
+    violations.extend(job_violations)
+    checkout_count = 0
+    for job in jobs:
+        steps, step_violations = _job_steps(job)
+        violations.extend(step_violations)
+        for item, step_entries in steps:
+            uses_entries = [entry for entry in step_entries if entry.key == "uses"]
+            if len(uses_entries) != 1:
+                continue
+            action_ref, problem = _entry_decoded_value(uses_entries[0])
+            if problem is not None or not action_ref.lower().startswith("actions/checkout@"):
+                continue
+            checkout_count += 1
+            with_entries = [entry for entry in step_entries if entry.key == "with"]
+            if len(with_entries) != 1 or with_entries[0].value:
+                violations.append(
+                    f"job {job.key!r} checkout step starting at line {item.line} must contain "
+                    "exactly one block-style with mapping"
+                )
+                continue
+            with_values, with_problems = _mapping_entries_at_indent(with_entries[0].text, 10)
+            violations.extend(
+                f"job {job.key!r} checkout with mapping {problem}"
+                for problem in with_problems
+            )
+            persist_values = [
+                entry for entry in with_values if entry.key == "persist-credentials"
+            ]
+            decoded_values = []
+            for entry in persist_values:
+                decoded, value_problem = _entry_decoded_value(entry)
+                if value_problem is not None:
+                    violations.append(
+                        f"job {job.key!r} checkout persist-credentials value is not a "
+                        f"supported static scalar ({value_problem})"
+                    )
+                decoded_values.append(decoded)
+            if len(persist_values) != 1 or decoded_values != ["false"]:
+                violations.append(
+                    f"job {job.key!r} actual checkout with mapping must contain exactly "
+                    "'persist-credentials: false'"
+                )
+    if checkout_count == 0:
         violations.append("no 'actions/checkout' step found")
-    if "persist-credentials: false" not in text:
-        violations.append("no checkout step sets 'persist-credentials: false'")
     return violations
 
 
@@ -1673,19 +1999,22 @@ def check_forbidden_patterns(text: str) -> List[str]:
 # runner. release.mk's own `RELEASE_TARGET_SHA ?= $(shell git rev-parse
 # HEAD)` accepts an environment-variable override with exactly this name,
 # so the sole release job's job-level `env:` mapping must carry it.
-RELEASE_ELIGIBILITY_TARGET_RE = re.compile(r"\bmake\s+release-(check|rehearse)(-require-eligible|-expect-blocked)?\b")
-
-
 def check_release_target_sha_binding(text: str) -> List[str]:
-    """Fails closed if this workflow ever invokes a release publication-
-    eligibility target (`make release-check`/`make release-rehearse` or
-    a `-require-eligible`/`-expect-blocked` sibling) without also
-    declaring the exact event-appropriate `RELEASE_TARGET_SHA` in the
-    sole release job's own job-level `env:` mapping -- plain
-    `${{ github.sha }}` for pull-request/manual-only workflows, or the
-    canonical event-aware workflow_run-head-SHA expression when
-    workflow_run is present. Step env, job outputs, comments, and
-    unrelated expressions never satisfy this structural binding.
+    """Validates every actual release eligibility/rehearsal step.
+
+    A command-position ``make release-*`` invocation is discovered only
+    inside decoded job/steps/run mappings after safely stripping shell
+    comments. Commented-out text and echo-only strings never count. Each
+    owning job must have exactly one canonical job-level
+    ``RELEASE_TARGET_SHA`` binding: ``github.sha`` normally, or the
+    event-aware completed-run head SHA expression for the tightly
+    constrained ``workflow_run`` path.
+
+    That validated job mapping is the *only* permitted source. A release
+    step may not shadow it through step-level ``env`` (even with the same
+    expression), a command-prefix assignment, ``env NAME=value``, a
+    standalone assignment, or ``export``. Duplicate job or step env keys
+    fail closed rather than relying on YAML/shell last-value-wins rules.
 
     Deliberately NOT folded into `validate_workflow_text()`'s shared
     aggregator (called directly by `cli.py`'s `cmd_workflow_guard`
@@ -1696,15 +2025,239 @@ def check_release_target_sha_binding(text: str) -> List[str]:
     full `RELEASE_TARGET_SHA` binding; keeping this issue-#9-specific
     check separate avoids a false-positive blast radius across every
     one of those unrelated fixtures."""
-    invokes_eligibility_target = bool(RELEASE_ELIGIBILITY_TARGET_RE.search(text))
-    if not invokes_eligibility_target:
+    jobs, violations = _workflow_jobs(text)
+    expected_expression = (
+        WORKFLOW_RUN_SHA_EXPRESSION
+        if _has_workflow_run_trigger(text)
+        else "${{ github.sha }}"
+    )
+    found_release_step = False
+    for job in jobs:
+        steps, step_violations = _job_steps(job)
+        violations.extend(step_violations)
+        job_has_release_step = False
+        for item, step_entries in steps:
+            run_entries = [entry for entry in step_entries if entry.key == "run"]
+            if len(run_entries) != 1:
+                continue
+            script, run_problem = _run_script(run_entries[0])
+            if run_problem is not None:
+                continue
+            targets, overrides, analysis_problems = _release_step_analysis(script)
+            if not targets and not analysis_problems:
+                continue
+            found_release_step = True
+            job_has_release_step = True
+            for problem in analysis_problems:
+                violations.append(
+                    f"job {job.key!r} release step starting at line {item.line} {problem}"
+                )
+
+            env_entries = [entry for entry in step_entries if entry.key == "env"]
+            for env_entry in env_entries:
+                if env_entry.value:
+                    if "RELEASE_TARGET_SHA" in env_entry.value:
+                        violations.append(
+                            f"job {job.key!r} release step starting at line {item.line} "
+                            "must not override RELEASE_TARGET_SHA in step-level env"
+                        )
+                    continue
+                env_values, env_problems = _mapping_entries_at_indent(env_entry.text, 10)
+                violations.extend(
+                    f"job {job.key!r} release step env mapping {problem}"
+                    for problem in env_problems
+                )
+                target_values = [
+                    entry for entry in env_values if entry.key == "RELEASE_TARGET_SHA"
+                ]
+                if target_values:
+                    violations.append(
+                        f"job {job.key!r} release step starting at line {item.line} must not "
+                        "override RELEASE_TARGET_SHA in step-level env; only the validated "
+                        "job-level binding is allowed"
+                    )
+            if len(env_entries) > 1:
+                violations.append(
+                    f"job {job.key!r} release step starting at line {item.line} repeats "
+                    "step-level env mappings"
+                )
+            for override in overrides:
+                violations.append(
+                    f"job {job.key!r} release step starting at line {item.line} must not "
+                    f"override RELEASE_TARGET_SHA via {override}; only the validated "
+                    "job-level binding is allowed"
+                )
+
+        if job_has_release_step:
+            violations.extend(
+                _check_job_target_binding(
+                    job,
+                    expected_expression,
+                    label=job.key,
+                )
+            )
+    if not found_release_step:
         return []
-    job, structure_violations = _sole_release_job(text)
-    if job is None:
-        return structure_violations
-    if _has_workflow_run_trigger(text):
-        return structure_violations + _check_job_target_binding(job, WORKFLOW_RUN_SHA_EXPRESSION)
-    return structure_violations + _check_job_target_binding(job, "${{ github.sha }}")
+    return sorted(set(violations))
+
+
+_FULL_MATRIX_STEP_COMMANDS = {
+    ("host", "Run artifact guard gates"): (
+        "python3 -m unittest discover -s scripts/artifact_guard_tests -p 'test_*.py' -v",
+        "python3 scripts/artifact_guard.py --revision HEAD",
+    ),
+    ("host", "Run documentation gates"): (
+        "python3 -m unittest discover -s scripts/docs_check_tests -p 'test_*.py' -v",
+        "python3 scripts/check_docs.py --check --check-examples",
+    ),
+    ("host", "Run generated-data gates"): (
+        "make generated-data-test",
+        "make generated-data-check",
+    ),
+    ("host", "Run expansion localization gates"): (
+        "make localization-test",
+    ),
+    ("host", "Run full-game localization artifact gates"): (
+        "make game-localization-test",
+        "python3 -m scripts.localization.game_locales check",
+        "python3 -m scripts.localization.game_locales check-crosswalk",
+        "python3 -m scripts.localization.game_locales check-raw-closure",
+    ),
+    ("host", "Run CJK font gates"): (
+        "make -f cjk_fonts.mk cjk-fonts-check cjk-fonts-test",
+    ),
+    ("host", "Run remaining texttools codec gates"): (
+        "python3 -m unittest discover -s scripts/texttools/tests -p 'test_multilang_codec*.py' -v",
+    ),
+    ("host", "Run configuration and linker-budget gates"): (
+        "python3 -m unittest discover -s scripts/modernize/tests -p 'test_expansion_config.py' -v",
+        "python3 -m unittest discover -s scripts/linker_report/tests -p 'test_*.py' -v",
+    ),
+    ("modern", "Build tools"): (
+        "./build_tools.sh",
+    ),
+    ("modern", "Run canonical modern linker/runtime gate"): (
+        "make expansion-modern-linker-check MODERN_CONFIG=${{ matrix.config }} MODERN_ABI=aapcs -j2",
+    ),
+    ("legacy", "Build tools"): (
+        "./build_tools.sh",
+    ),
+    ("legacy", "Build archival lane without a copyrighted baserom"): (
+        "set -euo pipefail",
+        "test ! -e baserom.gba",
+        "make legacy -j2",
+        "test ! -e baserom.gba",
+    ),
+    ("legacy", "Validate pinned archival payload identities"): (
+        "make -C mgfembp compare",
+    ),
+    ("release-evidence", "Run release test suites"): (
+        "make release-test",
+    ),
+    ("release-evidence", "Validate Full Matrix workflow contract"): (
+        "make release-full-matrix-workflow-guard",
+    ),
+    ("release-evidence", "Check generated release evidence"): (
+        "make release-changelog-check",
+        'python3 -m scripts.release_rehearsal.allowlist check --target-sha "$RELEASE_TARGET_SHA"',
+    ),
+    ("release-evidence", "Check release documentation"): (
+        "python3 -m scripts.release_rehearsal.doc_links",
+    ),
+    ("release-evidence", "Check release tree and submodule bindings"): (
+        "make release-tree-coverage-check",
+        "make release-submodule-binding-check",
+    ),
+    ("release-evidence", "Check provenance records"): (
+        'python3 -m scripts.release_rehearsal.provenance check --target-sha "$RELEASE_TARGET_SHA"',
+    ),
+    ("release-evidence", "Check source-release guard"): (
+        "python3 - <<'PY'",
+        "from pathlib import Path",
+        "from scripts.release_rehearsal.source_guard import (",
+        "load_allowlist,",
+        "load_map_hex_exceptions,",
+        "scan_source_release_candidate,",
+        ")",
+        'allowlist = load_allowlist(Path("docs/release_data/source_allowlist.json"))',
+        "exceptions = load_map_hex_exceptions(",
+        'Path("docs/release_data/map_hex_exceptions.json")',
+        ")",
+        "violations = scan_source_release_candidate(",
+        'Path("."),',
+        "allowlist,",
+        "map_hex_exceptions=exceptions,",
+        ")",
+        "for path, rule in violations:",
+        'print(f"{path}: {rule}")',
+        "if violations:",
+        "raise SystemExit(1)",
+        'print("source_guard: pass (tracked release candidate)")',
+        "PY",
+    ),
+    ("release-evidence", "Assert publication remains blocked"): (
+        "make release-check-expect-blocked",
+    ),
+}
+
+
+def check_full_matrix_contract(text: str) -> List[str]:
+    """Requires canonical executable commands in named Full Matrix steps.
+
+    The contract is structural: it finds decoded jobs, decoded step
+    names, and the owning step's real static ``run`` value. Shell
+    comments are stripped quote-safely before comparison. Consequently,
+    a required command that appears only in a YAML/shell comment, an
+    ``echo`` string, another step, or an unrelated mapping cannot satisfy
+    the contract.
+    """
+    jobs, violations = _workflow_jobs(text)
+    jobs_by_name = {}
+    for job in jobs:
+        jobs_by_name.setdefault(job.key, []).append(job)
+
+    for (job_name, step_name), expected_commands in _FULL_MATRIX_STEP_COMMANDS.items():
+        matching_jobs = jobs_by_name.get(job_name, [])
+        if len(matching_jobs) != 1:
+            violations.append(
+                f"Full Matrix contract requires exactly one job named {job_name!r}"
+            )
+            continue
+        steps, step_violations = _job_steps(matching_jobs[0])
+        violations.extend(step_violations)
+        matching_steps = [
+            (item, entries)
+            for item, entries in steps
+            if _step_name(entries) == step_name
+        ]
+        if len(matching_steps) != 1:
+            violations.append(
+                f"Full Matrix job {job_name!r} must contain exactly one named step "
+                f"{step_name!r}"
+            )
+            continue
+        item, entries = matching_steps[0]
+        run_entries = [entry for entry in entries if entry.key == "run"]
+        if len(run_entries) != 1:
+            violations.append(
+                f"Full Matrix job {job_name!r} step {step_name!r} must contain exactly "
+                "one static run command"
+            )
+            continue
+        script, problem = _run_script(run_entries[0])
+        if problem is not None:
+            violations.append(
+                f"Full Matrix job {job_name!r} step {step_name!r} {problem}"
+            )
+            continue
+        actual_commands = tuple(_executable_run_lines(script))
+        if actual_commands != expected_commands:
+            violations.append(
+                f"Full Matrix job {job_name!r} step {step_name!r} executable commands "
+                f"must be exactly {list(expected_commands)!r}, found {list(actual_commands)!r} "
+                f"(step starts at line {item.line})"
+            )
+    return sorted(set(violations))
 
 
 def check_dangerous_uses_actions(text: str) -> List[str]:
@@ -1749,9 +2302,26 @@ def validate_workflow_text(text: str) -> List[str]:
     return sorted(set(violations))
 
 
+def validate_workflow_contract(text: str, contract: str) -> List[str]:
+    """Validates shared safety plus one named repository workflow contract."""
+    if contract not in WORKFLOW_CONTRACT_CHOICES:
+        raise ValueError(f"unknown workflow contract: {contract}")
+    normalized = _normalize_for_scanning(text)
+    violations = list(validate_workflow_text(normalized))
+    violations.extend(check_release_target_sha_binding(normalized))
+    if contract == WORKFLOW_CONTRACT_FULL_MATRIX:
+        violations.extend(check_full_matrix_contract(normalized))
+    return sorted(set(violations))
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("workflow", type=Path)
+    parser.add_argument(
+        "--contract",
+        choices=WORKFLOW_CONTRACT_CHOICES,
+        default=WORKFLOW_CONTRACT_RELEASE_REHEARSAL,
+    )
     args = parser.parse_args(argv)
 
     try:
@@ -1760,7 +2330,7 @@ def main(argv=None) -> int:
         print(f"error: {error}", file=sys.stderr)
         return 2
 
-    violations = validate_workflow_text(text)
+    violations = validate_workflow_contract(text, args.contract)
     for violation in violations:
         print(violation)
     if violations:

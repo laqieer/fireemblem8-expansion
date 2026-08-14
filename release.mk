@@ -85,6 +85,15 @@
 #                                    includes the action-pin inventory
 #                                    cross-check below (folded into the same
 #                                    JSON report/exit contract).
+# release-full-matrix-workflow-guard
+#                                  : structural Full Matrix workflow
+#                                    command/checkout/SHA-binding contract
+#                                    (`cli workflow-guard --contract
+#                                    full-matrix`); action pins are still
+#                                    format-checked by workflow_guard.py,
+#                                    while the release-rehearsal-specific
+#                                    inventory remains scoped to the
+#                                    release workflow above.
 # release-action-pins-check       : standalone direct invocation of
 #                                    scripts/release_rehearsal/action_pins.py
 #                                    (issue #9 mandatory correction #1) --
@@ -139,6 +148,7 @@
         release-changelog-check release-check-require-eligible \
         release-rehearse-require-eligible release-check-expect-blocked \
         release-rehearse-expect-blocked release-workflow-guard \
+        release-full-matrix-workflow-guard \
         release-action-pins-check release-tree-coverage-check \
         release-submodule-binding-check release-epoch-claims-check \
         release-stale-count-claims-check
@@ -187,6 +197,10 @@ release-rehearse-expect-blocked:
 
 release-workflow-guard:
 	$(PYTHON) -m scripts.release_rehearsal.cli workflow-guard .github/workflows/release-rehearsal.yml
+
+release-full-matrix-workflow-guard:
+	$(PYTHON) -m scripts.release_rehearsal.cli workflow-guard \
+		--contract full-matrix .github/workflows/full-matrix.yml
 
 release-action-pins-check:
 	$(PYTHON) -m scripts.release_rehearsal.action_pins .github/workflows/release-rehearsal.yml

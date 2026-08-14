@@ -224,6 +224,9 @@ jobs:
       - name: Run release test suites
         run: make release-test
 
+      - name: Validate Full Matrix workflow contract
+        run: make release-full-matrix-workflow-guard
+
       - name: Check generated release evidence
         run: |
           make release-changelog-check
@@ -283,7 +286,7 @@ jobs:
       RELEASE_EVIDENCE_RESULT: ${{ needs.release-evidence.result }}
 
     steps:
-      - name: Write fail-closed matrix summary
+      - name: Render fail-closed matrix summary
         run: |
           {
             echo "## Full Matrix CI"

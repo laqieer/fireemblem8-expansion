@@ -217,6 +217,19 @@ class WorkflowGuardSubcommandTests(unittest.TestCase):
         result = run_cli("workflow-guard", ".github/workflows/release-rehearsal.yml")
         self.assertEqual(result.returncode, 0, result.stderr)
         data = json.loads(result.stdout)
+        self.assertEqual(data["contract"], "release-rehearsal")
+        self.assertEqual(data["violations"], [])
+
+    def test_real_full_matrix_workflow_is_clean_exit_zero(self):
+        result = run_cli(
+            "workflow-guard",
+            "--contract",
+            "full-matrix",
+            ".github/workflows/full-matrix.yml",
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        data = json.loads(result.stdout)
+        self.assertEqual(data["contract"], "full-matrix")
         self.assertEqual(data["violations"], [])
 
     def test_missing_file_is_actionable_exit_2(self):
