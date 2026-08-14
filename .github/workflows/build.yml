@@ -16,7 +16,8 @@ jobs:
   # sorted-JSON output, and provenance/diagnostics -- and the pure-stdlib
   # upstream-port review tooling suite (tests/upstream_port:
   # classify/scan/drift/state/ref-binding/output-safety/merge-commit and the
-  # verify.gates() <-> build.yml mirror). Neither step needs the arm-none-eabi
+  # verify.gates() <-> build.yml mirror), plus the stdlib-only workflow
+  # contract suite under tests/workflows. None needs the arm-none-eabi
   # cross-toolchain or a 16 MB ROM build. Only a native C compiler
   # (build-essential) and libmgba-dev are installed, since the one integration
   # test that actually drives libmGBA (test_backend_integration.py) compiles
@@ -25,7 +26,7 @@ jobs:
   # separate job from `build` below so a scenario/generator/host-tooling
   # regression is reported in well under a minute, before paying for a full
   # ROM/linker build, and this lane never builds the ROM or runs the linker.
-  # Both test steps are genuine gates (required status), not merely advisory.
+  # All host test steps are genuine gates (required status), not advisory.
   host-tests:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -65,6 +66,12 @@ jobs:
     # this CI locally without a runner.
     - name: Run upstream-port tooling test suite
       run: python3 -m unittest discover -s tests/upstream_port -v
+
+    # Full Matrix CI workflow/README contract: dispatch-only trigger,
+    # permissions/concurrency, exact commands, fail-closed summary, and badge
+    # path/name/link binding. Pure stdlib/YAML-text parsing; no ROM/toolchain.
+    - name: Run workflow contract test suite
+      run: python3 -m unittest discover -s tests/workflows -p "test_*.py" -v
 
     # Issue #18 host-lane closure fix: the scripts/localization package's
     # own pure-stdlib unit test suite (schema/pseudo/catalog/generate/CLI/

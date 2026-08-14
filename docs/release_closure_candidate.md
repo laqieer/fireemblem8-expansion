@@ -164,22 +164,39 @@ is not `"mechanically eligible"`.
   `contents`; every other scope (and any future, unknown one) is now
   rejected identically, and the real, legitimate
   `.github/workflows/release-rehearsal.yml` still passes with zero
-  findings.
-* `.github/workflows/release-rehearsal.yml` -- `pull_request`/
-  `workflow_dispatch` only, top-level `permissions: contents: read`,
-  `persist-credentials: false`, no secrets, no artifact upload, no tag/
-  release/comment/environment mutation -- mechanically asserts the
-  expected `blocked` status (`make release-check-expect-blocked`) rather
-  than relying on prose, and renders `$GITHUB_STEP_SUMMARY` **dynamically**
-  from the tool's own canonical JSON (`cli summary`), never a hardcoded
-  status string.
+  findings. The same guard now also requires exactly one top-level YAML
+  `on` mapping, decodes each actual checkout step's `with` mapping to require
+  exactly one `persist-credentials: false`, rejects step/shell
+  `RELEASE_TARGET_SHA` shadowing, and exposes a `full-matrix` contract whose
+  named gate commands cannot be satisfied by comments or `echo` strings. That
+  Full Matrix contract also rejects job/step `continue-on-error` and skip
+  conditions, binds each lane's actual checkout to the dispatched SHA with an
+  immediate executable/logged HEAD comparison, and binds the always-running
+  summary to all required jobs' real `needs.*.result` values. Both workflow
+  contracts reject workflow/job `defaults.run.shell` and required-step
+  `shell` overrides, retaining GitHub's standard bash. Actionlint/schema
+  acceptance of `true {0}`, `bash -n {0}`, `cmd`, or `pwsh` does not satisfy
+  the guard's execution contract.
+* `.github/workflows/release-rehearsal.yml` -- `pull_request`, manual
+  dispatch, and only completed `Build CI` runs on `master`; the sole
+  workflow-run job requires conclusion `success`, structurally binds the
+  actual checkout step and job-level release evidence to that run's exact
+  `head_sha`, rejects relocated/decoy expressions and duplicate job/checkout
+  ambiguity, cannot recurse, and remains
+  top-level `permissions: contents: read`, `persist-credentials: false`, no
+  secrets, no artifact upload, and no tag/release/comment/environment
+  mutation. It mechanically asserts the expected `blocked` status (`make
+  release-check-expect-blocked`) rather than relying on prose, and renders
+  `$GITHUB_STEP_SUMMARY` **dynamically** from canonical JSON (`cli summary`),
+  never a hardcoded status string.
 * `release.mk` Make targets: `release-test`, `release-migrations-check`,
   `release-changelog-check`, `release-rehearse`, `release-check`, plus the
   machine-distinct `release-check-require-eligible`/
   `release-rehearse-require-eligible` (intentionally exit non-zero while
   blocked) and `release-check-expect-blocked`/
   `release-rehearse-expect-blocked` (expected-status health checks) gate
-  targets, and `release-workflow-guard`.
+  targets, `release-workflow-guard`, and
+  `release-full-matrix-workflow-guard`.
 * A public stdlib `unittest` suite for every module above, including
   dedicated adversarial coverage (misleading extensions/nested paths/
   magic-only detection/path-traversal-shape probes, exact map/hex
@@ -236,6 +253,7 @@ rm -rf "$EXTRACTED"
 
 # Dynamic workflow guard (machine JSON).
 make release-workflow-guard
+make release-full-matrix-workflow-guard
 
 # Release-doc link validator + exact allowlist completeness (folded into
 # `make release-check` above; standalone invocations for direct evidence):

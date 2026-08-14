@@ -63,24 +63,33 @@ libmGBA backend without `pkg-config` metadata) and fail actionably rather
 than silently in an incomplete environment — see each test's own
 diagnostic.
 
-## 4. Full gates (ROM/libmGBA build, run before opening a PR)
+## 4. Full validation policy
+
+During iteration, run only the focused fast checks and the one relevant ROM
+profile for the code you changed. Do not repeatedly run every host suite plus
+both linker configurations locally: the dispatch-only
+`.github/workflows/full-matrix.yml` workflow exists to parallelize that broad
+evidence pass once for the exact branch/SHA before merge. It supplements the
+existing required Build CI workflow and does not weaken or replace any
+push/pull-request gate.
+
+After pushing the candidate branch, dispatch and watch it with:
 
 ```bash
-make generated-data-check
-make expansion-modern-linker-check MODERN_CONFIG=debug MODERN_ABI=aapcs
-make expansion-modern-linker-check MODERN_CONFIG=release MODERN_ABI=aapcs
+gh workflow run full-matrix.yml --ref <branch>
+gh run watch <run-id> --exit-status
 ```
 
+The run summary records `github.sha`, `github.ref`, and fail-closed conclusions
+for the host, modern debug/release matrix, archival legacy, and release-evidence
+lanes. `gh run watch ... --exit-status` must finish successfully before merge.
+The modern matrix invokes only the canonical
+`expansion-modern-linker-check`; that target already owns its CJK profile,
+runtime, shifted-link, and linker-budget dependencies.
 
-The fixed upstream-port verifier lists all 11 current-master mirrored commands
-with `python3 -m scripts.upstream_port verify --dry-run --jobs 2`, including
-the issue #18 localization host suite. Documentation governance remains one
-additional, standalone required workflow gate; localization runtime coverage
-also remains inside the two linker checks.
-
-Run the relevant subset for your change type; run all of them for anything
-that touches shared runtime, linker, or generated-data code. If your change
-can affect boot, save, or gameplay behavior, also capture
+The fixed upstream-port verifier still lists the current-master Build CI
+commands with `python3 -m scripts.upstream_port verify --dry-run --jobs 2`.
+If your change can affect boot, save, or gameplay behavior, also capture
 `tools/gba-playtest` scenario evidence (scenario, environment, command,
 result) — see [`docs/issue-resolution-policy.md`](docs/issue-resolution-policy.md#issue-closure-evidence).
 

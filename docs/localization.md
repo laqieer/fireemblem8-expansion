@@ -357,6 +357,27 @@ descriptor slots.
    sources must follow `CONTRIBUTING.md` and the pinned-provenance workflow;
    do not hand-copy or paraphrase unapproved third-party text.
 
+### Efficient local and pre-merge validation
+
+Use targeted localization tests while editing. After pushing the exact
+candidate branch, run the broad host/CJK/runtime/release evidence once in the
+dispatch-only full matrix:
+
+```bash
+gh workflow run full-matrix.yml --ref <branch>
+gh run watch <run-id> --exit-status
+```
+
+The host lane rebuilds the committed locale-source, crosswalk, and raw-closure
+artifacts offline and never receives legally restricted FE8J inputs. That is
+not a substitute for the mandatory live FE8J provenance proof, which remains
+a local maintainer pre-push step rather than a CI command. Follow
+[`game_locale_sources.md`](game_locale_sources.md) for the procedure supported
+by the checked-out branch; do not copy a target from another branch or upload
+restricted inputs to GitHub Actions. The workflow summary records the exact
+`github.sha`/`github.ref`; its modern debug/release matrix already owns the
+subordinate CJK profiles, runtime, shifted-link, and linker-budget gates.
+
 ## Testing -- real libmGBA runtime evidence (Sprint 4)
 
 The byte-consumer closure adds three focused host gates:

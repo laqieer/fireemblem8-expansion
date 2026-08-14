@@ -29,8 +29,8 @@ are superseded. Current policy is set equality, not a frozen count:
   and [`docs/localization.md`](../docs/localization.md); narrow offline
   stale-status rules reject their former active/absent-API wording while
   preserving explicitly superseded historical evidence;
-- upstream-port `verify` has all 11 current-master mirrored commands,
-  including the localization host suite; the independent issues #7/#17 docs
+- upstream-port `verify` has all 12 current-master mirrored commands,
+  including the workflow-contract and localization host suites; the independent issues #7/#17 docs
   workflow gate is additional and intentionally absent from `verify.gates()`;
 - #9 remains future work: the template is not release automation or a current
   migration process.
@@ -196,7 +196,7 @@ trust these numbers without rerunning them.**
 - The "8 gates, not 6" sentence in the CI evidence section below
   described this branch's own pre-master-merge state and is likewise
   superseded at that intermediate point by the 10-gate figures above; both
-  snapshots are superseded for current composition by the 11-gate audit at
+  snapshots are superseded for current composition by the 12-gate audit at
   the top of this report.
 
 ## 100% Markdown count
@@ -366,7 +366,7 @@ point-in-time record of this branch in its pre-master-merge state, when
 `gates()` function of `scripts/upstream_port/verify.py`. The live contract is
 stated in the Current master-integration audit
 above: `python3 -m scripts.upstream_port verify --dry-run --jobs 2` lists
-exactly 11 mirrored gates, including localization;
+exactly 12 mirrored gates, including workflow contracts and localization;
 `docs-check-tests`/`docs-check` remain absent from that list. Documentation
 governance (`scripts/docs_check_tests` then
 `scripts/check_docs.py --check --check-examples`) remains a required,
@@ -375,7 +375,7 @@ the same position described below -- it is not dropped from CI, only
 excluded from the pinned `verify.gates()` mirror. See the Remediation
 addendum above and
 [`docs/upstream-porting.md`](../docs/upstream-porting.md#6-verify-the-manually-applied-batch)
-for the full current 11-gate mirrored list plus standalone docs gate.**
+for the full current 12-gate mirrored list plus standalone docs gate.**
 
 `.github/workflows/build.yml`'s new "Check documentation" step runs
 `python3 -m unittest discover -s scripts/docs_check_tests` and
