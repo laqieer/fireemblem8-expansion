@@ -8,7 +8,11 @@ top-level `on` mapping, read-only permissions, decoded checkout credential
 hygiene, exact target-SHA binding with no step/shell override, pinned
 external actions, no secrets/network/publish mutation, the constrained
 successful-Build-CI-on-master `workflow_run` path, and canonical executable
-commands in named Full Matrix evidence/gate steps.
+commands in named Full Matrix evidence/gate steps. The Full Matrix contract
+also binds each lane's actual checkout to the dispatched SHA, requires an
+immediately following executable SHA check, rejects conditional/
+continue-on-error false greens, and validates the summary's real
+needs-result failure path.
 
 Conservative and fail-closed by construction: every check here is a
 structured/line-aware substring or regex match, never a full YAML/shell
@@ -2200,31 +2204,379 @@ _FULL_MATRIX_STEP_COMMANDS = {
     ),
 }
 
+_FULL_MATRIX_LANE_JOBS = ("host", "modern", "legacy", "release-evidence")
+_FULL_MATRIX_REQUIRED_JOBS = _FULL_MATRIX_LANE_JOBS + ("summary",)
+_FULL_MATRIX_CHECKOUT_REF = "${{ github.sha }}"
+_FULL_MATRIX_VERIFY_STEP_NAME = "Log and verify tested revision"
+_FULL_MATRIX_VERIFY_COMMANDS = (
+    "set -euo pipefail",
+    'ACTUAL_SHA="$(git rev-parse HEAD)"',
+    "printf 'github.sha=%s\\n' \"$EXPECTED_SHA\"",
+    "printf 'github.ref=%s\\n' \"$EXPECTED_REF\"",
+    "printf 'checkout.sha=%s\\n' \"$ACTUAL_SHA\"",
+    'test "$ACTUAL_SHA" = "$EXPECTED_SHA"',
+    "printf 'verified checkout.sha=%s\\n' \"$ACTUAL_SHA\" >> \"$GITHUB_STEP_SUMMARY\"",
+)
+_FULL_MATRIX_SUMMARY_NEEDS = _FULL_MATRIX_LANE_JOBS
+_FULL_MATRIX_SUMMARY_ENV = {
+    "RUN_SHA": "${{ github.sha }}",
+    "RUN_REF": "${{ github.ref }}",
+    "HOST_RESULT": "${{ needs.host.result }}",
+    "MODERN_RESULT": "${{ needs.modern.result }}",
+    "LEGACY_RESULT": "${{ needs.legacy.result }}",
+    "RELEASE_EVIDENCE_RESULT": "${{ needs.release-evidence.result }}",
+}
+_FULL_MATRIX_SUMMARY_COMMANDS = (
+    "{",
+    'echo "## Full Matrix CI"',
+    "echo",
+    'echo "| Item | Conclusion |"',
+    'echo "| --- | --- |"',
+    'echo "| SHA | \\`$RUN_SHA\\` |"',
+    'echo "| Ref | \\`$RUN_REF\\` |"',
+    'echo "| host | $HOST_RESULT |"',
+    'echo "| modern (debug + release) | $MODERN_RESULT |"',
+    'echo "| legacy | $LEGACY_RESULT |"',
+    'echo "| release-evidence | $RELEASE_EVIDENCE_RESULT |"',
+    '} >> "$GITHUB_STEP_SUMMARY"',
+    'for result in "$HOST_RESULT" "$MODERN_RESULT" "$LEGACY_RESULT" "$RELEASE_EVIDENCE_RESULT"',
+    "do",
+    'if [ "$result" != "success" ]; then',
+    'echo "required Full Matrix CI lane did not succeed: $result" >&2',
+    "exit 1",
+    "fi",
+    "done",
+)
+
+
+def _static_entry_value(entry: _MappingEntry):
+    value, problem = _entry_decoded_value(entry)
+    return value, problem
+
+
+def _check_continue_on_error(entries: List[_MappingEntry], label: str) -> List[str]:
+    """Allows only an absent or literal-false continue-on-error value."""
+    violations = []
+    matches = [entry for entry in entries if entry.key == "continue-on-error"]
+    if len(matches) > 1:
+        violations.append(f"{label} repeats continue-on-error")
+    for entry in matches:
+        value, problem = _static_entry_value(entry)
+        if problem is not None or value.lower() != "false":
+            violations.append(
+                f"{label} must not enable or dynamically compute continue-on-error; "
+                "required Full Matrix gates must fail closed"
+            )
+    return violations
+
+
+def _decode_flow_identifier_sequence(value: str):
+    """Decodes the canonical ``[job-a, job-b]`` needs form."""
+    value = value.strip()
+    if not (value.startswith("[") and value.endswith("]")):
+        return (), "not a flow sequence"
+    body = value[1:-1].strip()
+    if not body:
+        return (), None
+    items = tuple(item.strip() for item in body.split(","))
+    if any(not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_-]*", item) for item in items):
+        return (), "contains a non-identifier or ambiguous item"
+    return items, None
+
+
+def _full_matrix_checkout_steps(steps):
+    checkout_steps = []
+    for index, (item, entries) in enumerate(steps):
+        uses_entries = [entry for entry in entries if entry.key == "uses"]
+        if len(uses_entries) != 1:
+            continue
+        action_ref, problem = _static_entry_value(uses_entries[0])
+        if problem is None and action_ref.lower().startswith("actions/checkout@"):
+            checkout_steps.append((index, item, entries))
+    return checkout_steps
+
+
+def _check_full_matrix_lane_checkout(job: _MappingEntry, steps) -> List[str]:
+    """Validates one lane's actual checkout and immediate SHA verifier."""
+    violations = []
+    checkout_steps = _full_matrix_checkout_steps(steps)
+    if len(checkout_steps) != 1:
+        return [
+            f"Full Matrix lane {job.key!r} must contain exactly one actual "
+            "actions/checkout step"
+        ]
+
+    checkout_index, _checkout_item, checkout_entries = checkout_steps[0]
+    with_entries = [entry for entry in checkout_entries if entry.key == "with"]
+    if len(with_entries) != 1 or with_entries[0].value:
+        violations.append(
+            f"Full Matrix lane {job.key!r} actual checkout must contain exactly one "
+            "block-style with mapping"
+        )
+    else:
+        with_values, with_problems = _mapping_entries_at_indent(with_entries[0].text, 10)
+        violations.extend(
+            f"Full Matrix lane {job.key!r} checkout with mapping {problem}"
+            for problem in with_problems
+        )
+        expected_values = {
+            "fetch-depth": "0",
+            "submodules": "recursive",
+            "persist-credentials": "false",
+        }
+        for key, expected in expected_values.items():
+            matches = [entry for entry in with_values if entry.key == key]
+            decoded = [_static_entry_value(entry) for entry in matches]
+            if len(matches) != 1 or decoded != [(expected, None)]:
+                violations.append(
+                    f"Full Matrix lane {job.key!r} actual checkout with mapping must "
+                    f"contain exactly {key!r}: {expected!r}"
+                )
+
+        ref_values = [entry for entry in with_values if entry.key == "ref"]
+        if len(ref_values) > 1 or (
+            ref_values and ref_values[0].value != _FULL_MATRIX_CHECKOUT_REF
+        ):
+            violations.append(
+                f"Full Matrix lane {job.key!r} actual checkout ref must be omitted "
+                "for workflow_dispatch's selected ref or bind exactly to github.sha; "
+                "branch literals and other revisions are rejected"
+            )
+
+    verify_index = checkout_index + 1
+    if verify_index >= len(steps):
+        violations.append(
+            f"Full Matrix lane {job.key!r} actual checkout must be immediately followed "
+            "by the executable dispatched-SHA verification step"
+        )
+        return violations
+
+    verify_item, verify_entries = steps[verify_index]
+    if _step_name(verify_entries) != _FULL_MATRIX_VERIFY_STEP_NAME:
+        violations.append(
+            f"Full Matrix lane {job.key!r} actual checkout must be immediately followed "
+            f"by step {_FULL_MATRIX_VERIFY_STEP_NAME!r}"
+        )
+        return violations
+
+    if {entry.key for entry in verify_entries} != {"name", "env", "run"}:
+        violations.append(
+            f"Full Matrix lane {job.key!r} SHA verification step must contain only "
+            "name, env, and run mappings"
+        )
+
+    env_entries = [entry for entry in verify_entries if entry.key == "env"]
+    if len(env_entries) != 1 or env_entries[0].value:
+        violations.append(
+            f"Full Matrix lane {job.key!r} SHA verification step must contain exactly "
+            "one block-style env mapping"
+        )
+    else:
+        env_values, env_problems = _mapping_entries_at_indent(env_entries[0].text, 10)
+        violations.extend(
+            f"Full Matrix lane {job.key!r} SHA verification env mapping {problem}"
+            for problem in env_problems
+        )
+        expected_env = {
+            "EXPECTED_SHA": "${{ github.sha }}",
+            "EXPECTED_REF": "${{ github.ref }}",
+        }
+        if len(env_values) != len(expected_env):
+            violations.append(
+                f"Full Matrix lane {job.key!r} SHA verification env must contain "
+                "only EXPECTED_SHA and EXPECTED_REF"
+            )
+        for key, expected in expected_env.items():
+            matches = [entry for entry in env_values if entry.key == key]
+            if len(matches) != 1 or matches[0].value != expected:
+                violations.append(
+                    f"Full Matrix lane {job.key!r} SHA verification env.{key} must "
+                    f"bind exactly {expected!r}"
+                )
+
+    run_entries = [entry for entry in verify_entries if entry.key == "run"]
+    if len(run_entries) != 1:
+        violations.append(
+            f"Full Matrix lane {job.key!r} SHA verification step must contain exactly "
+            "one static run command"
+        )
+    else:
+        script, problem = _run_script(run_entries[0])
+        if problem is not None:
+            violations.append(
+                f"Full Matrix lane {job.key!r} SHA verification step {problem}"
+            )
+        else:
+            commands = tuple(_executable_run_lines(script))
+            if commands != _FULL_MATRIX_VERIFY_COMMANDS:
+                violations.append(
+                    f"Full Matrix lane {job.key!r} SHA verification executable commands "
+                    f"must be exactly {list(_FULL_MATRIX_VERIFY_COMMANDS)!r}, found "
+                    f"{list(commands)!r} (step starts at line {verify_item.line}); "
+                    "comments, echo strings, and true are not verification"
+                )
+    return violations
+
+
+def _check_full_matrix_summary(job: _MappingEntry, steps) -> List[str]:
+    """Validates the all-lanes dependency and real needs-result failure path."""
+    violations = []
+    entries, entry_problems = _mapping_entries_at_indent(job.text, 4)
+    violations.extend(
+        f"Full Matrix summary job mapping {problem}" for problem in entry_problems
+    )
+
+    needs_entries = [entry for entry in entries if entry.key == "needs"]
+    if len(needs_entries) != 1:
+        violations.append(
+            "Full Matrix summary job must contain exactly one needs mapping"
+        )
+    else:
+        needs, problem = _decode_flow_identifier_sequence(needs_entries[0].value)
+        if problem is not None or needs != _FULL_MATRIX_SUMMARY_NEEDS:
+            violations.append(
+                "Full Matrix summary job needs must list host, modern, legacy, and "
+                "release-evidence exactly once"
+            )
+
+    env_entries = [entry for entry in entries if entry.key == "env"]
+    if len(env_entries) != 1 or env_entries[0].value:
+        violations.append(
+            "Full Matrix summary job must contain exactly one block-style env mapping"
+        )
+    else:
+        env_values, env_problems = _mapping_entries_at_indent(env_entries[0].text, 6)
+        violations.extend(
+            f"Full Matrix summary env mapping {problem}" for problem in env_problems
+        )
+        if len(env_values) != len(_FULL_MATRIX_SUMMARY_ENV):
+            violations.append(
+                "Full Matrix summary env must contain only the canonical run identity "
+                "and needs-result bindings"
+            )
+        for key, expected in _FULL_MATRIX_SUMMARY_ENV.items():
+            matches = [entry for entry in env_values if entry.key == key]
+            if len(matches) != 1 or matches[0].value != expected:
+                violations.append(
+                    f"Full Matrix summary env.{key} must bind exactly {expected!r}"
+                )
+
+    if len(steps) != 1:
+        violations.append("Full Matrix summary job must contain exactly one step")
+        return violations
+    item, step_entries = steps[0]
+    if _step_name(step_entries) != "Render fail-closed matrix summary":
+        violations.append(
+            "Full Matrix summary job must contain the named fail-closed summary step"
+        )
+        return violations
+    if {entry.key for entry in step_entries} != {"name", "run"}:
+        violations.append(
+            "Full Matrix summary step must contain only name and run mappings; "
+            "step env/if/continue-on-error overrides are rejected"
+        )
+    run_entries = [entry for entry in step_entries if entry.key == "run"]
+    if len(run_entries) != 1:
+        violations.append(
+            "Full Matrix summary step must contain exactly one static run command"
+        )
+        return violations
+    script, problem = _run_script(run_entries[0])
+    if problem is not None:
+        violations.append(f"Full Matrix summary step {problem}")
+        return violations
+    commands = tuple(_executable_run_lines(script))
+    if commands != _FULL_MATRIX_SUMMARY_COMMANDS:
+        violations.append(
+            "Full Matrix summary executable commands must render and fail from the "
+            f"canonical needs-result variables exactly, found {list(commands)!r} "
+            f"(step starts at line {item.line})"
+        )
+    return violations
+
 
 def check_full_matrix_contract(text: str) -> List[str]:
-    """Requires canonical executable commands in named Full Matrix steps.
+    """Requires the complete fail-closed Full Matrix job/step contract.
 
-    The contract is structural: it finds decoded jobs, decoded step
-    names, and the owning step's real static ``run`` value. Shell
-    comments are stripped quote-safely before comparison. Consequently,
-    a required command that appears only in a YAML/shell comment, an
-    ``echo`` string, another step, or an unrelated mapping cannot satisfy
-    the contract.
+    Required jobs/steps may not opt into continue-on-error or conditional
+    skipping. Each lane has one actual checkout of either the explicit
+    dispatched SHA or workflow_dispatch's selected default, immediately
+    followed by a recorded ``git rev-parse HEAD`` comparison with
+    ``github.sha``. The summary depends on every lane and fails from
+    structurally bound ``needs.*.result`` values. Comments, echo strings,
+    ``true``, unrelated mappings, and shell/env shadowing never count.
     """
+    text = _normalize_for_scanning(text)
     jobs, violations = _workflow_jobs(text)
     jobs_by_name = {}
     for job in jobs:
         jobs_by_name.setdefault(job.key, []).append(job)
 
-    for (job_name, step_name), expected_commands in _FULL_MATRIX_STEP_COMMANDS.items():
+    if tuple(job.key for job in jobs) != _FULL_MATRIX_REQUIRED_JOBS:
+        violations.append(
+            "Full Matrix jobs must be exactly host, modern, legacy, "
+            "release-evidence, and summary in canonical order"
+        )
+
+    decoded_steps = {}
+    for job_name in _FULL_MATRIX_REQUIRED_JOBS:
         matching_jobs = jobs_by_name.get(job_name, [])
         if len(matching_jobs) != 1:
             violations.append(
                 f"Full Matrix contract requires exactly one job named {job_name!r}"
             )
             continue
-        steps, step_violations = _job_steps(matching_jobs[0])
+        job = matching_jobs[0]
+        job_entries, entry_problems = _mapping_entries_at_indent(job.text, 4)
+        violations.extend(
+            f"Full Matrix job {job_name!r} mapping {problem}"
+            for problem in entry_problems
+        )
+        violations.extend(
+            _check_continue_on_error(job_entries, f"Full Matrix job {job_name!r}")
+        )
+        if_entries = [entry for entry in job_entries if entry.key == "if"]
+        if job_name == "summary":
+            decoded_if = [_static_entry_value(entry) for entry in if_entries]
+            if len(if_entries) != 1 or decoded_if != [("always()", None)]:
+                violations.append(
+                    "Full Matrix summary job must use exactly 'if: always()'"
+                )
+        elif if_entries:
+            violations.append(
+                f"Full Matrix required job {job_name!r} must not have a job-level "
+                "if condition that can skip the lane"
+            )
+
+        steps, step_violations = _job_steps(job)
         violations.extend(step_violations)
+        decoded_steps[job_name] = steps
+        for item, step_entries in steps:
+            name = _step_name(step_entries)
+            identifier = name if name is not None else f"line {item.line}"
+            step_label = f"Full Matrix job {job_name!r} step {identifier!r}"
+            violations.extend(_check_continue_on_error(step_entries, step_label))
+            if [entry for entry in step_entries if entry.key == "if"]:
+                violations.append(
+                    f"{step_label} must not have an if condition that can skip a "
+                    "required step"
+                )
+
+    for job_name in _FULL_MATRIX_LANE_JOBS:
+        matching_jobs = jobs_by_name.get(job_name, [])
+        if len(matching_jobs) == 1 and job_name in decoded_steps:
+            violations.extend(
+                _check_full_matrix_lane_checkout(
+                    matching_jobs[0],
+                    decoded_steps[job_name],
+                )
+            )
+
+    for (job_name, step_name), expected_commands in _FULL_MATRIX_STEP_COMMANDS.items():
+        matching_jobs = jobs_by_name.get(job_name, [])
+        if len(matching_jobs) != 1:
+            continue
+        steps = decoded_steps.get(job_name, [])
         matching_steps = [
             (item, entries)
             for item, entries in steps
@@ -2257,6 +2609,15 @@ def check_full_matrix_contract(text: str) -> List[str]:
                 f"must be exactly {list(expected_commands)!r}, found {list(actual_commands)!r} "
                 f"(step starts at line {item.line})"
             )
+
+    summary_jobs = jobs_by_name.get("summary", [])
+    if len(summary_jobs) == 1 and "summary" in decoded_steps:
+        violations.extend(
+            _check_full_matrix_summary(
+                summary_jobs[0],
+                decoded_steps["summary"],
+            )
+        )
     return sorted(set(violations))
 
 

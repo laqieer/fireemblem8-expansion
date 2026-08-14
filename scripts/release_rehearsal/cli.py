@@ -447,8 +447,11 @@ def cmd_workflow_guard(args) -> int:
     network shapes, and release-target SHA binding without step/shell
     overrides. ``--contract full-matrix`` additionally requires the
     canonical executable commands in named host/modern/legacy/release-
-    evidence steps. The default release-rehearsal contract also applies
-    its separate committed action-pin inventory cross-check.
+    evidence steps, each lane's actual dispatched-revision checkout plus
+    immediate executable SHA verification, no conditional/continue-on-
+    error false greens, and a summary bound to every real
+    ``needs.*.result``. The default release-rehearsal contract also
+    applies its separate committed action-pin inventory cross-check.
     """
     try:
         text = args.workflow.read_text(encoding="utf-8")

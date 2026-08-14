@@ -87,7 +87,8 @@
 #                                    JSON report/exit contract).
 # release-full-matrix-workflow-guard
 #                                  : structural Full Matrix workflow
-#                                    command/checkout/SHA-binding contract
+#                                    command/checkout/SHA/needs-result
+#                                    fail-closed contract
 #                                    (`cli workflow-guard --contract
 #                                    full-matrix`); action pins are still
 #                                    format-checked by workflow_guard.py,

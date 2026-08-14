@@ -125,8 +125,14 @@ summary fails unless host, both modern matrix configurations, legacy, and
 release-evidence all succeed. The release-evidence lane runs
 `make release-full-matrix-workflow-guard`; the stdlib-only structural guard
 requires the canonical executable commands in named host/modern/legacy/
-release-evidence steps and rejects comment/echo decoys, checkout credential
-drift, or release-SHA shadowing. The legally restricted live FE8J provenance
+release-evidence steps, rejects job/step `continue-on-error` and conditional
+skip false greens, and requires every lane's actual checkout to use the
+dispatched SHA (or the dispatch-selected default) immediately followed by a
+logged executable `git rev-parse HEAD == github.sha` check. It also proves the
+`if: always()` summary depends on every required lane and fails from the real
+`needs.*.result` bindings; comments, `echo`, `true`, alternate env values,
+checkout credential drift, and release-SHA shadowing cannot satisfy it. The
+legally restricted live FE8J provenance
 proof is not a hosted-CI command and remains a mandatory local maintainer
 pre-push step. Use the procedure supported by the checked-out branch in
 [`game_locale_sources.md`](game_locale_sources.md), rather than copying a

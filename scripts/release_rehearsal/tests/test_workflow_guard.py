@@ -1156,6 +1156,145 @@ class FullMatrixStructuralCommandContractTests(unittest.TestCase):
         violations = wg.check_full_matrix_contract(text)
         self.assertTrue(any("Validate pinned archival payload identities" in v for v in violations), violations)
 
+    def test_master_checkout_ref_is_rejected(self):
+        text = self.text.replace(
+            "          ref: ${{ github.sha }}",
+            "          ref: master",
+            1,
+        )
+        violations = wg.check_full_matrix_contract(text)
+        self.assertTrue(any("checkout ref" in v for v in violations), violations)
+
+    def test_wrong_checkout_ref_expression_is_rejected(self):
+        text = self.text.replace(
+            "          ref: ${{ github.sha }}",
+            "          ref: ${{ github.ref }}",
+            1,
+        )
+        violations = wg.check_full_matrix_contract(text)
+        self.assertTrue(any("checkout ref" in v for v in violations), violations)
+
+    def test_default_dispatch_checkout_is_accepted_when_immediately_verified(self):
+        text = self.text.replace(
+            "          ref: ${{ github.sha }}\n",
+            "",
+            1,
+        )
+        self.assertEqual(wg.check_full_matrix_contract(text), [])
+
+    def test_missing_actual_checkout_is_rejected(self):
+        text = self.text.replace(
+            "        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "        uses: ./not-a-checkout",
+            1,
+        )
+        violations = wg.check_full_matrix_contract(text)
+        self.assertTrue(any("exactly one actual actions/checkout" in v for v in violations), violations)
+
+    def test_missing_expected_sha_binding_is_rejected(self):
+        text = self.text.replace(
+            "          EXPECTED_SHA: ${{ github.sha }}",
+            "          UNUSED_SHA: ${{ github.sha }}",
+            1,
+        )
+        violations = wg.check_full_matrix_contract(text)
+        self.assertTrue(any("env.EXPECTED_SHA" in v for v in violations), violations)
+
+    def test_commented_sha_comparison_plus_true_is_rejected(self):
+        original = (
+            "        run: |\n"
+            "          set -euo pipefail\n"
+            "          ACTUAL_SHA=\"$(git rev-parse HEAD)\"\n"
+            "          printf 'github.sha=%s\\n' \"$EXPECTED_SHA\"\n"
+            "          printf 'github.ref=%s\\n' \"$EXPECTED_REF\"\n"
+            "          printf 'checkout.sha=%s\\n' \"$ACTUAL_SHA\"\n"
+            "          test \"$ACTUAL_SHA\" = \"$EXPECTED_SHA\"\n"
+            "          printf 'verified checkout.sha=%s\\n' \"$ACTUAL_SHA\" >> \"$GITHUB_STEP_SUMMARY\"\n"
+        )
+        decoy = (
+            "        run: |\n"
+            "          # test \"$(git rev-parse HEAD)\" = \"${{ github.sha }}\"\n"
+            "          true\n"
+        )
+        text = self.text.replace(original, decoy, 1)
+        violations = wg.check_full_matrix_contract(text)
+        self.assertTrue(any("comments, echo strings, and true" in v for v in violations), violations)
+
+    def test_job_continue_on_error_true_is_rejected(self):
+        text = self.text.replace(
+            "  host:\n    runs-on: ubuntu-latest",
+            "  host:\n    continue-on-error: true\n    runs-on: ubuntu-latest",
+            1,
+        )
+        violations = wg.check_full_matrix_contract(text)
+        self.assertTrue(any("continue-on-error" in v for v in violations), violations)
+
+    def test_step_continue_on_error_true_is_rejected(self):
+        text = self.text.replace(
+            "      - name: Run release test suites\n"
+            "        run: make release-test",
+            "      - name: Run release test suites\n"
+            "        continue-on-error: true\n"
+            "        run: make release-test",
+            1,
+        )
+        violations = wg.check_full_matrix_contract(text)
+        self.assertTrue(any("continue-on-error" in v for v in violations), violations)
+
+    def test_required_job_skip_condition_is_rejected(self):
+        text = self.text.replace(
+            "  legacy:\n    runs-on: ubuntu-latest",
+            "  legacy:\n    if: ${{ github.ref == 'refs/heads/master' }}\n"
+            "    runs-on: ubuntu-latest",
+            1,
+        )
+        violations = wg.check_full_matrix_contract(text)
+        self.assertTrue(any("must not have a job-level if" in v for v in violations), violations)
+
+    def test_required_step_skip_condition_is_rejected(self):
+        text = self.text.replace(
+            "      - name: Validate pinned archival payload identities\n"
+            "        run: make -C mgfembp compare",
+            "      - name: Validate pinned archival payload identities\n"
+            "        if: false\n"
+            "        run: make -C mgfembp compare",
+            1,
+        )
+        violations = wg.check_full_matrix_contract(text)
+        self.assertTrue(any("must not have an if condition" in v for v in violations), violations)
+
+    def test_summary_missing_required_need_is_rejected(self):
+        text = self.text.replace(
+            "    needs: [host, modern, legacy, release-evidence]",
+            "    needs: [host, modern, release-evidence]",
+            1,
+        )
+        violations = wg.check_full_matrix_contract(text)
+        self.assertTrue(any("summary job needs" in v for v in violations), violations)
+
+    def test_summary_fake_result_binding_is_rejected(self):
+        text = self.text.replace(
+            "      HOST_RESULT: ${{ needs.host.result }}",
+            "      HOST_RESULT: success",
+            1,
+        )
+        violations = wg.check_full_matrix_contract(text)
+        self.assertTrue(any("env.HOST_RESULT" in v for v in violations), violations)
+
+    def test_summary_continue_on_error_true_is_rejected(self):
+        text = self.text.replace(
+            "  summary:\n    runs-on: ubuntu-latest",
+            "  summary:\n    continue-on-error: true\n    runs-on: ubuntu-latest",
+            1,
+        )
+        violations = wg.check_full_matrix_contract(text)
+        self.assertTrue(any("continue-on-error" in v for v in violations), violations)
+
+    def test_summary_condition_other_than_always_is_rejected(self):
+        text = self.text.replace("    if: always()", "    if: success()", 1)
+        violations = wg.check_full_matrix_contract(text)
+        self.assertTrue(any("if: always()" in v for v in violations), violations)
+
 
 # --- issue #9 verifier remediation: adversarial verifier-probe tests -------
 # Every probe below encodes one specific evasion/escalation class the

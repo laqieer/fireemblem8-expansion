@@ -168,7 +168,11 @@ is not `"mechanically eligible"`.
   `on` mapping, decodes each actual checkout step's `with` mapping to require
   exactly one `persist-credentials: false`, rejects step/shell
   `RELEASE_TARGET_SHA` shadowing, and exposes a `full-matrix` contract whose
-  named gate commands cannot be satisfied by comments or `echo` strings.
+  named gate commands cannot be satisfied by comments or `echo` strings. That
+  Full Matrix contract also rejects job/step `continue-on-error` and skip
+  conditions, binds each lane's actual checkout to the dispatched SHA with an
+  immediate executable/logged HEAD comparison, and binds the always-running
+  summary to all required jobs' real `needs.*.result` values.
 * `.github/workflows/release-rehearsal.yml` -- `pull_request`, manual
   dispatch, and only completed `Build CI` runs on `master`; the sole
   workflow-run job requires conclusion `success`, structurally binds the
