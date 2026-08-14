@@ -35,10 +35,11 @@ CANONICAL_WORKFLOW_RUN_TRIGGER = """\
     workflows: [ "Build CI" ]
     types: [ completed ]
     branches: [ "master" ]"""
-WORKFLOW_RUN_JOB_CONDITION = (
-    "    if: ${{ github.event_name != 'workflow_run' || "
+WORKFLOW_RUN_JOB_CONDITION_EXPRESSION = (
+    "${{ github.event_name != 'workflow_run' || "
     "github.event.workflow_run.conclusion == 'success' }}"
 )
+WORKFLOW_RUN_JOB_CONDITION = f"    if: {WORKFLOW_RUN_JOB_CONDITION_EXPRESSION}"
 WORKFLOW_RUN_SHA_EXPRESSION = (
     "${{ github.event_name == 'workflow_run' && "
     "github.event.workflow_run.head_sha || github.sha }}"
@@ -932,6 +933,282 @@ def _extract_block(text: str, key: str) -> str:
     return "\n".join(block)
 
 
+@dataclass(frozen=True)
+class _MappingEntry:
+    key: str
+    value: str
+    line: int
+    indent: int
+    text: str
+
+
+@dataclass(frozen=True)
+class _SequenceItem:
+    line: int
+    text: str
+    mapping_text: str
+
+
+def _strip_yaml_line_comment(value: str) -> str:
+    """Strips a plain-scalar trailing YAML comment without treating a
+    `#` inside a quoted substring as a comment marker."""
+    quote = None
+    escaped = False
+    for index, char in enumerate(value):
+        if escaped:
+            escaped = False
+            continue
+        if quote == '"' and char == "\\":
+            escaped = True
+            continue
+        if char in ('"', "'"):
+            if quote is None:
+                quote = char
+            elif quote == char:
+                quote = None
+            continue
+        if char == "#" and quote is None and (index == 0 or value[index - 1].isspace()):
+            return value[:index].rstrip()
+    return value.rstrip()
+
+
+def _parse_mapping_key_line(line: str, indent: int):
+    if line[:indent] != " " * indent:
+        return None, None, "non-space indentation"
+    content = line[indent:]
+    if not content or content.startswith("#"):
+        return None, None, None
+
+    if content[0] in ('"', "'"):
+        end, key, problem = _scan_quoted_scalar(content, 0, content[0])
+        if problem is not None:
+            return None, None, problem
+        cursor = end
+        while cursor < len(content) and content[cursor] in " \t":
+            cursor += 1
+        if cursor >= len(content) or content[cursor] != ":":
+            return None, None, "not a mapping key"
+        return key, _strip_yaml_line_comment(content[cursor + 1:].strip()), None
+
+    match = re.match(r"([A-Za-z_][A-Za-z0-9_-]*)\s*:", content)
+    if match is None:
+        return None, None, "not a mapping key"
+    return match.group(1), _strip_yaml_line_comment(content[match.end():].strip()), None
+
+
+def _mapping_entries_at_indent(text: str, indent: int):
+    """Extracts block-mapping entries at one exact indentation level.
+
+    This is intentionally a strict subset parser for the repository's
+    canonical workflow shape. Comments and nested content are retained
+    inside the owning entry, but cannot become sibling keys or values."""
+    lines = text.splitlines()
+    starts = []
+    problems = []
+    for index, line in enumerate(lines):
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        leading = len(line) - len(line.lstrip(" "))
+        if leading != indent:
+            continue
+        key, value, problem = _parse_mapping_key_line(line, indent)
+        if problem is not None:
+            problems.append(f"line {index + 1}: {problem}")
+            continue
+        if key is not None:
+            starts.append((index, key, value))
+
+    entries = []
+    for start, key, value in starts:
+        end = len(lines)
+        for index in range(start + 1, len(lines)):
+            line = lines[index]
+            if not line.strip() or line.lstrip().startswith("#"):
+                continue
+            leading = len(line) - len(line.lstrip(" "))
+            if leading <= indent:
+                end = index
+                break
+        entries.append(
+            _MappingEntry(
+                key=key,
+                value=value,
+                line=start + 1,
+                indent=indent,
+                text="\n".join(lines[start:end]),
+            )
+        )
+    return entries, problems
+
+
+def _sequence_items_at_indent(text: str, indent: int):
+    """Extracts canonical block-sequence items at one indentation level."""
+    lines = text.splitlines()
+    starts = []
+    problems = []
+    for index, line in enumerate(lines):
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        leading = len(line) - len(line.lstrip(" "))
+        if leading != indent:
+            continue
+        content = line[indent:]
+        if content == "-" or content.startswith("- "):
+            starts.append(index)
+        else:
+            problems.append(f"line {index + 1}: expected a block sequence item")
+
+    items = []
+    for start in starts:
+        end = len(lines)
+        for index in range(start + 1, len(lines)):
+            line = lines[index]
+            if not line.strip() or line.lstrip().startswith("#"):
+                continue
+            leading = len(line) - len(line.lstrip(" "))
+            if leading <= indent:
+                end = index
+                break
+        item_lines = lines[start:end]
+        first_content = item_lines[0][indent + 1:].lstrip()
+        mapping_lines = list(item_lines[1:])
+        if first_content:
+            mapping_lines.insert(0, " " * (indent + 2) + first_content)
+        items.append(
+            _SequenceItem(
+                line=start + 1,
+                text="\n".join(item_lines),
+                mapping_text="\n".join(mapping_lines),
+            )
+        )
+    return items, problems
+
+
+def _decode_static_scalar(value: str):
+    value = value.strip()
+    if not value:
+        return "", None
+    if value[0] in ('"', "'"):
+        end, decoded, problem = _scan_quoted_scalar(value, 0, value[0])
+        if problem is not None:
+            return decoded, problem
+        if value[end:].strip():
+            return decoded, "trailing content after quoted scalar"
+        return decoded, None
+    if value.startswith(("&", "*", "!", "${{")):
+        return value, "non-static scalar"
+    return value, None
+
+
+def _sole_release_job(text: str):
+    """Returns the sole `release-rehearsal` job mapping, or violations.
+
+    Duplicate top-level `jobs` mappings, duplicate job IDs, and any
+    additional job all fail closed because there is no unambiguous job
+    whose bindings can be trusted."""
+    violations = []
+    top_entries, top_problems = _mapping_entries_at_indent(text, 0)
+    violations.extend(f"workflow structure {problem}" for problem in top_problems)
+    jobs_entries = [entry for entry in top_entries if entry.key == "jobs"]
+    if len(jobs_entries) != 1 or jobs_entries[0].value:
+        violations.append("workflow_run workflow must contain exactly one block-style top-level jobs mapping")
+        return None, violations
+
+    job_entries, job_problems = _mapping_entries_at_indent(jobs_entries[0].text, 2)
+    violations.extend(f"workflow_run jobs mapping {problem}" for problem in job_problems)
+    if len(job_entries) != 1 or job_entries[0].key != "release-rehearsal" or job_entries[0].value:
+        violations.append("workflow_run workflows must contain exactly one job named 'release-rehearsal'")
+        return None, violations
+    return job_entries[0], violations
+
+
+def _job_entries(job: _MappingEntry):
+    entries, problems = _mapping_entries_at_indent(job.text, 4)
+    return entries, [f"release-rehearsal job mapping {problem}" for problem in problems]
+
+
+def _check_job_target_binding(job: _MappingEntry, expected_expression: str) -> List[str]:
+    violations = []
+    entries, problems = _job_entries(job)
+    violations.extend(problems)
+    env_entries = [entry for entry in entries if entry.key == "env"]
+    if len(env_entries) != 1 or env_entries[0].value:
+        return violations + [
+            "release-rehearsal job must contain exactly one block-style job-level env mapping "
+            "for RELEASE_TARGET_SHA"
+        ]
+
+    env_values, env_problems = _mapping_entries_at_indent(env_entries[0].text, 6)
+    violations.extend(f"release-rehearsal job env mapping {problem}" for problem in env_problems)
+    target_values = [entry for entry in env_values if entry.key == "RELEASE_TARGET_SHA"]
+    if len(target_values) != 1 or target_values[0].value != expected_expression:
+        if expected_expression == WORKFLOW_RUN_SHA_EXPRESSION:
+            violations.append(
+                "workflow_run RELEASE_TARGET_SHA must bind head_sha for workflow_run and "
+                "github.sha otherwise through the exact event-aware binding in the actual "
+                "release-rehearsal job-level env mapping"
+            )
+        else:
+            violations.append(
+                "release-rehearsal job-level env.RELEASE_TARGET_SHA must bind exactly "
+                f"{expected_expression!r}"
+            )
+    return violations
+
+
+def _check_workflow_run_checkout(job: _MappingEntry) -> List[str]:
+    violations = []
+    entries, problems = _job_entries(job)
+    violations.extend(problems)
+    steps_entries = [entry for entry in entries if entry.key == "steps"]
+    if len(steps_entries) != 1 or steps_entries[0].value:
+        return violations + [
+            "workflow_run release-rehearsal job must contain exactly one block-style steps sequence"
+        ]
+
+    items, item_problems = _sequence_items_at_indent(steps_entries[0].text, 6)
+    violations.extend(f"release-rehearsal steps sequence {problem}" for problem in item_problems)
+    checkout_steps = []
+    for item in items:
+        step_entries, step_problems = _mapping_entries_at_indent(item.mapping_text, 8)
+        violations.extend(
+            f"release-rehearsal step starting at line {item.line} {problem}"
+            for problem in step_problems
+        )
+        uses_entries = [entry for entry in step_entries if entry.key == "uses"]
+        if len(uses_entries) != 1:
+            continue
+        action_ref, problem = _decode_static_scalar(uses_entries[0].value)
+        if problem is not None:
+            continue
+        if action_ref.lower().startswith("actions/checkout@"):
+            checkout_steps.append((item, step_entries))
+
+    if len(checkout_steps) != 1:
+        violations.append(
+            "workflow_run release-rehearsal job must contain exactly one actions/checkout step "
+            "in its actual steps sequence"
+        )
+        return violations
+
+    _item, checkout_entries = checkout_steps[0]
+    with_entries = [entry for entry in checkout_entries if entry.key == "with"]
+    if len(with_entries) != 1 or with_entries[0].value:
+        violations.append(
+            "workflow_run checkout step must contain exactly one block-style with mapping"
+        )
+        return violations
+    with_values, with_problems = _mapping_entries_at_indent(with_entries[0].text, 10)
+    violations.extend(f"workflow_run checkout with mapping {problem}" for problem in with_problems)
+    ref_values = [entry for entry in with_values if entry.key == "ref"]
+    if len(ref_values) != 1 or ref_values[0].value != WORKFLOW_RUN_SHA_EXPRESSION:
+        violations.append(
+            "workflow_run checkout ref must bind head_sha for workflow_run and github.sha otherwise, "
+            "exactly as with.ref on the actual actions/checkout step"
+        )
+    return violations
+
+
 # --- Decode-aware permission-scope/write detection helpers (issue #9
 # semantic-decoding hardening) --------------------------------------
 #
@@ -1071,7 +1348,7 @@ def check_triggers(text: str) -> List[str]:
         violations.append("'on:' block declares no recognizable trigger keys")
     workflow_run_entries = _extract_trigger_entries(block, "workflow_run")
     if "workflow_run" in found:
-        if len(workflow_run_entries) != 1:
+        if trigger_keys.count("workflow_run") != 1 or len(workflow_run_entries) != 1:
             violations.append("workflow_run trigger must use exactly one canonical block mapping")
         elif workflow_run_entries[0] != CANONICAL_WORKFLOW_RUN_TRIGGER:
             violations.append(
@@ -1118,44 +1395,21 @@ def check_workflow_run_contract(text: str) -> List[str]:
         return []
 
     violations = []
-    jobs_block = _extract_block(text, "jobs")
-    job_ids, job_key_problems = _mapping_keys_at_indent(jobs_block, 2)
-    for raw, problem in job_key_problems:
-        violations.append(
-            f"workflow_run job key {raw!r} is not a supported/decodable YAML scalar "
-            f"({_PROBLEM_DESCRIPTIONS.get(problem, problem)})"
-        )
-    if job_ids != ["release-rehearsal"]:
-        violations.append(
-            "workflow_run workflows must contain exactly one job named 'release-rehearsal'"
-        )
+    job, job_violations = _sole_release_job(text)
+    violations.extend(job_violations)
+    if job is None:
+        return violations
 
-    checkouts = [
-        occ
-        for occ in extract_uses_occurrences(text)
-        if occ.problem is None and occ.action_ref.lower().startswith("actions/checkout@")
-    ]
-    if len(checkouts) != 1:
-        violations.append("workflow_run workflow must contain exactly one actions/checkout step")
-
-    required_lines = (
-        (
-            WORKFLOW_RUN_JOB_CONDITION,
-            "workflow_run release-rehearsal job must run only when Build CI conclusion is exactly 'success'",
-        ),
-        (
-            WORKFLOW_RUN_TARGET_BINDING,
-            "workflow_run RELEASE_TARGET_SHA must bind head_sha for workflow_run and github.sha otherwise",
-        ),
-        (
-            WORKFLOW_RUN_CHECKOUT_REF,
-            "workflow_run checkout ref must bind head_sha for workflow_run and github.sha otherwise",
-        ),
-    )
-    lines = text.splitlines()
-    for required, message in required_lines:
-        if lines.count(required) != 1:
-            violations.append(message)
+    entries, entry_problems = _job_entries(job)
+    violations.extend(entry_problems)
+    if_entries = [entry for entry in entries if entry.key == "if"]
+    if len(if_entries) != 1 or if_entries[0].value != WORKFLOW_RUN_JOB_CONDITION_EXPRESSION:
+        violations.append(
+            "workflow_run release-rehearsal job-level if must run only when Build CI conclusion "
+            "is exactly 'success' while preserving pull_request/workflow_dispatch paths"
+        )
+    violations.extend(_check_job_target_binding(job, WORKFLOW_RUN_SHA_EXPRESSION))
+    violations.extend(_check_workflow_run_checkout(job))
     return violations
 
 
@@ -1418,21 +1672,20 @@ def check_forbidden_patterns(text: str) -> List[str]:
 # value to whatever `git rev-parse HEAD` happens to resolve to inside the
 # runner. release.mk's own `RELEASE_TARGET_SHA ?= $(shell git rev-parse
 # HEAD)` accepts an environment-variable override with exactly this name,
-# so a single job-level (or step-level) `env:` mapping is sufficient.
+# so the sole release job's job-level `env:` mapping must carry it.
 RELEASE_ELIGIBILITY_TARGET_RE = re.compile(r"\bmake\s+release-(check|rehearse)(-require-eligible|-expect-blocked)?\b")
-GITHUB_SHA_BINDING_RE = re.compile(r"RELEASE_TARGET_SHA\s*:\s*\$\{\{\s*github\.sha\s*\}\}")
 
 
 def check_release_target_sha_binding(text: str) -> List[str]:
     """Fails closed if this workflow ever invokes a release publication-
     eligibility target (`make release-check`/`make release-rehearse` or
     a `-require-eligible`/`-expect-blocked` sibling) without also
-    declaring the exact event-appropriate `RELEASE_TARGET_SHA` `env:`
-    binding somewhere in the same file -- plain `${{ github.sha }}` for
-    pull-request/manual-only workflows, or the canonical event-aware
-    workflow_run-head-SHA expression when workflow_run is present. This
-    makes "bound to the exact checked-out commit" an auditable workflow
-    fact, not merely an assumption about `git rev-parse HEAD`.
+    declaring the exact event-appropriate `RELEASE_TARGET_SHA` in the
+    sole release job's own job-level `env:` mapping -- plain
+    `${{ github.sha }}` for pull-request/manual-only workflows, or the
+    canonical event-aware workflow_run-head-SHA expression when
+    workflow_run is present. Step env, job outputs, comments, and
+    unrelated expressions never satisfy this structural binding.
 
     Deliberately NOT folded into `validate_workflow_text()`'s shared
     aggregator (called directly by `cli.py`'s `cmd_workflow_guard`
@@ -1446,22 +1699,12 @@ def check_release_target_sha_binding(text: str) -> List[str]:
     invokes_eligibility_target = bool(RELEASE_ELIGIBILITY_TARGET_RE.search(text))
     if not invokes_eligibility_target:
         return []
+    job, structure_violations = _sole_release_job(text)
+    if job is None:
+        return structure_violations
     if _has_workflow_run_trigger(text):
-        if WORKFLOW_RUN_TARGET_BINDING in text.splitlines():
-            return []
-        return [
-            "invokes a release publication-eligibility target from workflow_run without "
-            f"the exact event-aware binding 'RELEASE_TARGET_SHA: {WORKFLOW_RUN_SHA_EXPRESSION}'"
-        ]
-    if not GITHUB_SHA_BINDING_RE.search(text):
-        return [
-            "invokes a release publication-eligibility target (make release-check/"
-            "release-rehearse or a -require-eligible/-expect-blocked sibling) without an "
-            "explicit 'RELEASE_TARGET_SHA: ${{ github.sha }}' env binding anywhere in this "
-            "workflow -- the exact checked-out commit must be bound explicitly, never left "
-            "implicit"
-        ]
-    return []
+        return structure_violations + _check_job_target_binding(job, WORKFLOW_RUN_SHA_EXPRESSION)
+    return structure_violations + _check_job_target_binding(job, "${{ github.sha }}")
 
 
 def check_dangerous_uses_actions(text: str) -> List[str]:

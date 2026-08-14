@@ -3,13 +3,17 @@
 machine-distinct status/exit contract (issue #9 verifier remediation)."""
 
 import json
+import io
 import os
 import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
+from types import SimpleNamespace
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
@@ -218,6 +222,39 @@ class WorkflowGuardSubcommandTests(unittest.TestCase):
     def test_missing_file_is_actionable_exit_2(self):
         result = run_cli("workflow-guard", ".github/workflows/does-not-exist.yml")
         self.assertEqual(result.returncode, 2)
+
+    def test_structurally_relocated_binding_is_reported_by_cli_guard(self):
+        text = (ROOT / ".github" / "workflows" / "release-rehearsal.yml").read_text(encoding="utf-8")
+        target_line = (
+            "      RELEASE_TARGET_SHA: ${{ github.event_name == 'workflow_run' && "
+            "github.event.workflow_run.head_sha || github.sha }}\n"
+        )
+        text = text.replace("    env:\n" + target_line, "").replace(
+            "      - name: Run release rehearsal stdlib test suites\n",
+            "      - name: Run release rehearsal stdlib test suites\n"
+            "        env:\n"
+            "          RELEASE_TARGET_SHA: ${{ github.event_name == 'workflow_run' && "
+            "github.event.workflow_run.head_sha || github.sha }}\n",
+        )
+
+        class MemoryWorkflow:
+            def read_text(self, encoding):
+                return text
+
+            def as_posix(self):
+                return ".github/workflows/release-rehearsal.yml"
+
+            def __str__(self):
+                return self.as_posix()
+
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with mock.patch.object(rc.ap, "check", return_value=[]):
+            with redirect_stdout(stdout), redirect_stderr(stderr):
+                result = rc.cmd_workflow_guard(SimpleNamespace(workflow=MemoryWorkflow()))
+        self.assertEqual(result, 1)
+        data = json.loads(stdout.getvalue())
+        self.assertTrue(any("job-level env" in violation for violation in data["violations"]), data)
 
 
 class RenderMarkdownSummaryTests(unittest.TestCase):

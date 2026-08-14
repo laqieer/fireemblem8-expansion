@@ -42,8 +42,8 @@ jobs:
     # the checkout step below. Mechanically cross-checked by
     # scripts/release_rehearsal/workflow_guard.py's own
     # `check_release_target_sha_binding` (via `make release-workflow-
-    # guard`), which fails closed if this binding is ever removed while
-    # a release-check/release-rehearse step remains.
+    # guard`), which structurally checks this sole job's env and actual
+    # checkout step, failing closed on relocation, decoys, or ambiguity.
     env:
       RELEASE_TARGET_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
 

@@ -450,8 +450,10 @@ def cmd_workflow_guard(args) -> int:
     directions). A third, issue #9 verifier remediation check
     (`workflow_guard.check_release_target_sha_binding` -- the exact
     checked-out commit must be explicitly bound via the event-aware
-    `RELEASE_TARGET_SHA` contract wherever a release publication-
-    eligibility target is invoked) is folded in here too, rather than
+    `RELEASE_TARGET_SHA` contract in the actual sole release job's
+    job-level `env` mapping wherever a release publication-eligibility
+    target is invoked; step env, outputs, comments, or unrelated
+    expressions cannot satisfy it) is folded in here too, rather than
     into `validate_workflow_text`'s own shared aggregator (see that function's
     docstring for why). All three are folded into one JSON report and
     one shared 0/1/2 exit contract, since all three are the same

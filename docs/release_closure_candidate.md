@@ -167,8 +167,10 @@ is not `"mechanically eligible"`.
   findings.
 * `.github/workflows/release-rehearsal.yml` -- `pull_request`, manual
   dispatch, and only completed `Build CI` runs on `master`; the sole
-  workflow-run job requires conclusion `success`, binds checkout and release
-  evidence to that run's exact `head_sha`, cannot recurse, and remains
+  workflow-run job requires conclusion `success`, structurally binds the
+  actual checkout step and job-level release evidence to that run's exact
+  `head_sha`, rejects relocated/decoy expressions and duplicate job/checkout
+  ambiguity, cannot recurse, and remains
   top-level `permissions: contents: read`, `persist-credentials: false`, no
   secrets, no artifact upload, and no tag/release/comment/environment
   mutation. It mechanically asserts the expected `blocked` status (`make

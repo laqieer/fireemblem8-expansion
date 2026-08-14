@@ -131,6 +131,14 @@ class TriggerViolationTests(unittest.TestCase):
         violations = wg.validate_workflow_text(text)
         self.assertTrue(any("workflow_run trigger" in v for v in violations), violations)
 
+    def test_duplicate_workflow_run_trigger_is_rejected(self):
+        text = GOOD_WORKFLOW_RUN.replace(
+            '\npermissions:\n',
+            '\n  "workflow_run": {}\n\npermissions:\n',
+        )
+        violations = wg.validate_workflow_text(text)
+        self.assertTrue(any("exactly one canonical" in v for v in violations), violations)
+
 
 class PermissionViolationTests(unittest.TestCase):
     def test_missing_top_level_permissions(self):
@@ -739,6 +747,85 @@ class WorkflowRunExecutionContractTests(unittest.TestCase):
         violations = wg.validate_workflow_text(text)
         self.assertTrue(any("exactly one actions/checkout" in v for v in violations), violations)
 
+    def test_duplicate_release_job_id_is_rejected_fail_closed(self):
+        text = GOOD_WORKFLOW_RUN + (
+            "\n  release-rehearsal:\n"
+            "    if: ${{ github.event_name != 'workflow_run' || "
+            "github.event.workflow_run.conclusion == 'success' }}\n"
+            "    runs-on: ubuntu-latest\n"
+            "    steps:\n"
+            "      - run: echo duplicate\n"
+        )
+        violations = wg.validate_workflow_text(text)
+        self.assertTrue(any("exactly one job" in v for v in violations), violations)
+        self.assertTrue(wg.check_release_target_sha_binding(text))
+
+    def test_step_env_cannot_stand_in_for_job_env(self):
+        text = GOOD_WORKFLOW_RUN.replace(
+            f"    env:\n{wg.WORKFLOW_RUN_TARGET_BINDING}\n",
+            "",
+        ).replace(
+            "      - run: make release-check",
+            "      - run: make release-check\n"
+            "        env:\n"
+            f"          RELEASE_TARGET_SHA: {wg.WORKFLOW_RUN_SHA_EXPRESSION}",
+        )
+        violations = wg.validate_workflow_text(text)
+        self.assertTrue(any("job-level env" in v for v in violations), violations)
+        self.assertTrue(wg.check_release_target_sha_binding(text))
+
+    def test_job_outputs_cannot_stand_in_for_job_env(self):
+        text = GOOD_WORKFLOW_RUN.replace(
+            f"    env:\n{wg.WORKFLOW_RUN_TARGET_BINDING}\n",
+            "    outputs:\n"
+            f"      RELEASE_TARGET_SHA: {wg.WORKFLOW_RUN_SHA_EXPRESSION}\n",
+        )
+        violations = wg.validate_workflow_text(text)
+        self.assertTrue(any("job-level env" in v for v in violations), violations)
+        self.assertTrue(wg.check_release_target_sha_binding(text))
+
+    def test_comment_decoys_cannot_satisfy_job_checkout_or_env_binding(self):
+        text = GOOD_WORKFLOW_RUN.replace(
+            wg.WORKFLOW_RUN_JOB_CONDITION,
+            "    if: ${{ always() }}",
+        ).replace(
+            wg.WORKFLOW_RUN_TARGET_BINDING,
+            "      RELEASE_TARGET_SHA: ${{ github.sha }}",
+        ).replace(
+            wg.WORKFLOW_RUN_CHECKOUT_REF,
+            "          ref: ${{ github.sha }}",
+        )
+        text += (
+            f"\n# {wg.WORKFLOW_RUN_JOB_CONDITION.strip()}\n"
+            f"# {wg.WORKFLOW_RUN_TARGET_BINDING.strip()}\n"
+            f"# {wg.WORKFLOW_RUN_CHECKOUT_REF.strip()}\n"
+        )
+        violations = wg.validate_workflow_text(text)
+        self.assertTrue(any("job-level if" in v for v in violations), violations)
+        self.assertTrue(any("RELEASE_TARGET_SHA must bind head_sha" in v for v in violations), violations)
+        self.assertTrue(any("checkout ref must bind head_sha" in v for v in violations), violations)
+
+    def test_unrelated_expression_cannot_satisfy_actual_checkout_ref(self):
+        text = GOOD_WORKFLOW_RUN.replace(
+            wg.WORKFLOW_RUN_CHECKOUT_REF,
+            "          ref: ${{ github.sha }}\n"
+            f"          unrelated: {wg.WORKFLOW_RUN_SHA_EXPRESSION}",
+        )
+        violations = wg.validate_workflow_text(text)
+        self.assertTrue(any("checkout ref must bind head_sha" in v for v in violations), violations)
+
+    def test_step_if_cannot_stand_in_for_job_level_if(self):
+        text = GOOD_WORKFLOW_RUN.replace(
+            wg.WORKFLOW_RUN_JOB_CONDITION,
+            "    if: ${{ always() }}",
+        ).replace(
+            "      - run: make release-check",
+            "      - run: make release-check\n"
+            f"        if: {wg.WORKFLOW_RUN_JOB_CONDITION_EXPRESSION}",
+        )
+        violations = wg.validate_workflow_text(text)
+        self.assertTrue(any("job-level if" in v for v in violations), violations)
+
     def test_workflow_run_cannot_gain_write_permissions(self):
         text = GOOD_WORKFLOW_RUN.replace("contents: read", "contents: write")
         violations = wg.validate_workflow_text(text)
@@ -782,6 +869,29 @@ class ReleaseTargetShaBindingTests(unittest.TestCase):
         )
         violations = wg.check_release_target_sha_binding(text)
         self.assertEqual(violations, [])
+
+    def test_non_workflow_run_relocated_or_comment_binding_is_rejected(self):
+        for decoy in (
+            "    outputs:\n"
+            "      RELEASE_TARGET_SHA: ${{ github.sha }}\n"
+            "    steps:\n"
+            "      - run: make release-check\n",
+            "    steps:\n"
+            "      - run: make release-check\n"
+            "        env:\n"
+            "          RELEASE_TARGET_SHA: ${{ github.sha }}\n",
+            "    # RELEASE_TARGET_SHA: ${{ github.sha }}\n"
+            "    steps:\n"
+            "      - run: make release-check\n",
+        ):
+            with self.subTest(decoy=decoy):
+                text = (
+                    "jobs:\n"
+                    "  release-rehearsal:\n"
+                    f"{decoy}"
+                )
+                violations = wg.check_release_target_sha_binding(text)
+                self.assertTrue(any("job-level env" in v for v in violations), violations)
 
     def test_event_aware_workflow_run_binding_is_accepted(self):
         violations = wg.check_release_target_sha_binding(GOOD_WORKFLOW_RUN)
