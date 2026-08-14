@@ -10,9 +10,9 @@ range proof. Both locales have complete system/talk font inventories, and all
 modern CJK runtime consumers use the shared FE control/UTF-8 tokenization and
 bounded substitution contract.
 
-**Current integration clarification (2026-08-03):** this report's 11-gate
+**Current integration clarification (2026-08-14):** this report's 12-gate
 localization evidence now matches live `verify.gates()`: localization is the
-third mirrored gate. The issues #7/#17 documentation-governance gate remains
+fourth mirrored gate. The issues #7/#17 documentation-governance gate remains
 an additional standalone workflow step and is not mirrored.
 
 Status: **final branch-local implementation closure evidence for

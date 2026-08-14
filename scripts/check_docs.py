@@ -303,17 +303,17 @@ STALE_PHRASE_RULES = [
         "\"What this closure explicitly does NOT claim\" section",
     ),
     # Issues #7/#17 independent-verifier finding: docs/framework-support.md
-    # said the item-ID-expansion checks were "gates 11-12" of the upstream
+    # said the item-ID-expansion checks were "gates 10-11" of the upstream
     # verify gate set. The actual, current scripts/upstream_port/verify.py
     # gates() ordering (mirrored by docs/upstream-porting.md) puts the two
     # item-expansion gates (modern-itemexpansion-check-debug/-release) at
-    # indexes 9-10 of exactly 10 gates, not 11-12. This exact stale gate
+    # indexes 11-12 of exactly 12 gates, not 10-11. This exact stale gate
     # numbering must never reappear verbatim.
     (
-        re.compile(re.escape("gates 11-12")),
-        "stale claim: the item-ID-expansion checks are gates 9-10 of the "
-        "exact 10-gate scripts/upstream_port/verify.py gates() set, not "
-        "gates 11-12 -- see docs/upstream-porting.md",
+        re.compile(re.escape("gates 10-11 of the current-master")),
+        "stale claim: the item-ID-expansion checks are gates 11-12 of the "
+        "exact 12-gate scripts/upstream_port/verify.py gates() set, not "
+        "gates 10-11 -- see docs/upstream-porting.md",
     ),
 ]
 

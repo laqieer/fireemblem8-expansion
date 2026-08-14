@@ -33,9 +33,10 @@ _NON_GATE_STEP_NAMES = {
 # Issues #7/#17 remediation: the documentation step is a genuine required
 # workflow gate, but it is the sole correctness step deliberately excluded
 # from verify.gates(). Its exact commands and position are asserted separately
-# below; localization remains part of the current-master 11-gate mirror.
+# below; localization remains part of the current-master 12-gate mirror.
 _DOCS_GOVERNANCE_STEP_NAME = "Check documentation (issues #7/#17)"
 _LOCALIZATION_HOST_STEP_NAME = "Run localization host test suite (issue #18)"
+_WORKFLOW_CONTRACT_STEP_NAME = "Run workflow contract test suite"
 
 
 def _parse_workflow_gate_commands(path=BUILD_WORKFLOW_PATH):
@@ -107,7 +108,7 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
             )
 
     def test_issue_7_17_docs_governance_is_a_standalone_workflow_step_not_a_verify_gate(self):
-        """Docs governance stays outside the current-master 11-gate mirror
+        """Docs governance stays outside the current-master 12-gate mirror
         while remaining required, argv-identical, and immediately after the
         artifact guard in build.yml."""
         names = [g.name for g in verify_mod.gates()]
@@ -181,8 +182,28 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
         localization_index = ordered_unique_steps.index(_LOCALIZATION_HOST_STEP_NAME)
         self.assertEqual(
             ordered_unique_steps[localization_index - 1],
-            "Run upstream-port tooling test suite",
+            _WORKFLOW_CONTRACT_STEP_NAME,
         )
+
+    def test_workflow_contract_suite_is_fast_and_mirrored_exactly(self):
+        names = [g.name for g in verify_mod.gates()]
+        self.assertIn("workflow-contract-tests", names)
+
+        commands = [
+            argv
+            for step_name, argv in _parse_workflow_gate_commands()
+            if step_name == _WORKFLOW_CONTRACT_STEP_NAME
+        ]
+        self.assertEqual(
+            commands,
+            [[
+                "python3", "-m", "unittest", "discover", "-s",
+                "tests/workflows", "-p", "test_*.py", "-v",
+            ]],
+        )
+        gate = {g.name: g for g in verify_mod.gates()}["workflow-contract-tests"]
+        self.assertEqual(gate.command, commands[0])
+        self.assertNotIn("make", gate.command)
 
     def test_issue_15_default_lane_and_quickstart_gates_present(self):
         names = [g.name for g in verify_mod.gates()]
@@ -220,7 +241,7 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
         )
 
     def test_gate_list_full_ordered_names(self):
-        # All 11 current-master mirrored gates remain; docs governance is
+        # All 12 current-master mirrored gates remain; docs governance is
         # deliberately absent and asserted as a standalone workflow step.
         names = [g.name for g in verify_mod.gates()]
         self.assertEqual(
@@ -228,6 +249,7 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
             [
                 "gba-playtest-host-suite",
                 "upstream-port-tests",
+                "workflow-contract-tests",
                 "localization-host-suite",
                 "artifact-guard",
                 "default-lane-check",
@@ -240,18 +262,18 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
             ],
         )
         # The merged CI runs the fast `host-tests` lane textually before the
-        # ROM `build` job, so the three host-only gates are first. They must
+        # ROM `build` job, so the four host-only gates are first. They must
         # stay host-only -- never a ROM/linker `make` build (that belongs
         # solely to the modern-linker gates) -- so the fast host job and the
         # ROM build job never duplicate work.
-        for g in verify_mod.gates()[:3]:
+        for g in verify_mod.gates()[:4]:
             self.assertNotIn("make", g.command)
             self.assertNotIn("expansion-modern-linker-check", g.command)
 
     def test_artifact_guard_command(self):
-        # After the merged host lane, the three host-only gates come first, so
-        # the artifact guard (first gate of the ROM `build` job) is index 3.
-        g = verify_mod.gates()[3]
+        # After the merged host lane, the four host-only gates come first, so
+        # the artifact guard (first gate of the ROM `build` job) is index 4.
+        g = verify_mod.gates()[4]
         self.assertEqual(g.name, "artifact-guard")
         self.assertEqual(g.command, ["python3", "scripts/artifact_guard.py", "--revision", "HEAD"])
 
@@ -264,7 +286,7 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
 
     def test_dry_run_never_executes_subprocess(self):
         results = verify_mod.run_gates("/nonexistent/path/should/not/matter", dry_run=True)
-        self.assertEqual(len(results), 11)
+        self.assertEqual(len(results), 12)
         self.assertTrue(all(r.ran is False for r in results))
         self.assertTrue(all(r.passed is False for r in results))  # not-ran != passed
 
@@ -275,7 +297,7 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
         dry = [r.gate.name for r in verify_mod.run_gates("/nonexistent/path", dry_run=True)]
         real_names = [g.name for g in verify_mod.gates()]
         self.assertEqual(dry, real_names)
-        self.assertEqual(len(dry), 11)
+        self.assertEqual(len(dry), 12)
 
 
 class VerifyGateSelectionRemovedTests(unittest.TestCase):
@@ -335,7 +357,7 @@ class VerifyGateSelectionRemovedTests(unittest.TestCase):
             self.assertIn(name, printed)
         # Every line for a dry-run gate is explicitly marked SKIPPED(dry-run)
         # -- never silently omitted, never marked PASS/FAIL without running.
-        self.assertEqual(printed.count("[SKIPPED(dry-run)]"), 11)
+        self.assertEqual(printed.count("[SKIPPED(dry-run)]"), 12)
 
 
 class HostOnlyEnvGateMirrorTests(unittest.TestCase):
@@ -424,9 +446,9 @@ class HostOnlyEnvGateMirrorTests(unittest.TestCase):
                 "run_gates must not mutate the parent environment",
             )
 
-        self.assertEqual(len(results), 11)
+        self.assertEqual(len(results), 12)
         self.assertTrue(all(result.passed for result in results))
-        self.assertEqual(len(seen), 11)
+        self.assertEqual(len(seen), 12)
 
         host_argv, host_env = seen[0]
         self.assertEqual(host_argv[0], "python3")
