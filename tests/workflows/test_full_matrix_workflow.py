@@ -465,6 +465,7 @@ class FullMatrixWorkflowContractTests(unittest.TestCase):
         strategy, problems = wg._mapping_entries_at_indent(strategy_entries[0].text, 6)
         self.assertEqual(problems, [])
         self.assertEqual(entry_value(strategy, "fail-fast"), "false")
+        self.assertNotIn("max-parallel", [entry.key for entry in strategy])
         matrix_entries = [entry for entry in strategy if entry.key == "matrix"]
         self.assertEqual(len(matrix_entries), 1)
         matrix, problems = wg._mapping_entries_at_indent(matrix_entries[0].text, 8)
@@ -472,12 +473,25 @@ class FullMatrixWorkflowContractTests(unittest.TestCase):
         self.assertEqual(entry_value(matrix, "config"), "[debug, release]")
         canonical = (
             "make expansion-modern-linker-check "
-            "MODERN_CONFIG=${{ matrix.config }} MODERN_ABI=aapcs -j2"
+            "MODERN_CONFIG=${{ matrix.config }} MODERN_ABI=aapcs"
         )
         _item, gate_entries = named_step(
             modern, "Run canonical modern linker/runtime gate"
         )
         self.assertEqual(step_commands(gate_entries), (canonical,))
+
+        # Keep config-level CI parallelism, but never add inner Make parallelism:
+        # nested submakes share banim outputs and can race into undefined banim_* links.
+        gate_argv = shlex.split(step_commands(gate_entries)[0])
+        self.assertFalse(
+            any(
+                arg.startswith("-j")
+                or arg == "--jobs"
+                or arg.startswith("--jobs=")
+                for arg in gate_argv
+            )
+        )
+
         all_commands = workflow_commands(self.jobs)
         for subordinate in (
             "expansion-modern-budget-check",

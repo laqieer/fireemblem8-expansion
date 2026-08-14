@@ -1145,11 +1145,23 @@ class FullMatrixStructuralCommandContractTests(unittest.TestCase):
     def test_echo_only_modern_gate_does_not_satisfy_contract(self):
         command = (
             "make expansion-modern-linker-check "
-            "MODERN_CONFIG=${{ matrix.config }} MODERN_ABI=aapcs -j2"
+            "MODERN_CONFIG=${{ matrix.config }} MODERN_ABI=aapcs"
         )
         text = self.text.replace(f"        run: {command}", f'        run: echo "{command}"', 1)
         violations = wg.check_full_matrix_contract(text)
         self.assertTrue(any("Run canonical modern linker/runtime gate" in v for v in violations), violations)
+
+    def test_parallel_modern_gate_does_not_satisfy_contract(self):
+        sequential = (
+            "make expansion-modern-linker-check "
+            "MODERN_CONFIG=${{ matrix.config }} MODERN_ABI=aapcs"
+        )
+        text = self.text.replace(sequential, f"{sequential} -j2", 1)
+        violations = wg.check_full_matrix_contract(text)
+        self.assertTrue(
+            any("Run canonical modern linker/runtime gate" in v for v in violations),
+            violations,
+        )
 
     def test_commented_out_legacy_identity_gate_does_not_satisfy_contract(self):
         text = self.text.replace(
