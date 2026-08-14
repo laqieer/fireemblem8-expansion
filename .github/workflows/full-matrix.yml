@@ -159,7 +159,15 @@ jobs:
           printf 'verified checkout.sha=%s\n' "$ACTUAL_SHA" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Install archival build dependencies
-        run: sudo apt-get update && sudo apt-get install -y build-essential binutils-arm-none-eabi libpng-dev pkg-config python3-pip python3-numpy python3-pil
+        run: sudo apt-get update && sudo apt-get install -y build-essential binutils-arm-none-eabi gcc-arm-none-eabi libnewlib-arm-none-eabi libpng-dev pkg-config python3-pip python3-numpy python3-pil
+
+      - name: Preflight archival toolchain executables
+        run: |
+          set -euo pipefail
+          command -v arm-none-eabi-cpp >/dev/null 2>&1 || { echo "::error::arm-none-eabi-cpp is missing; install gcc-arm-none-eabi." >&2; exit 1; }
+          command -v arm-none-eabi-as >/dev/null 2>&1 || { echo "::error::arm-none-eabi-as is missing; install binutils-arm-none-eabi." >&2; exit 1; }
+          command -v arm-none-eabi-ld >/dev/null 2>&1 || { echo "::error::arm-none-eabi-ld is missing; install binutils-arm-none-eabi." >&2; exit 1; }
+          command -v arm-none-eabi-objcopy >/dev/null 2>&1 || { echo "::error::arm-none-eabi-objcopy is missing; install binutils-arm-none-eabi." >&2; exit 1; }
 
       - name: Install pinned archival agbcc compilers
         run: |
