@@ -80,8 +80,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Wave 0/issue #9 seed: repository-authored build tooling/config/source surface (or, for asm/, decompiled disassembly derived from the original ROM). No human legal/provenance review has been recorded yet; this manifest records that honestly rather than asserting a license or clearance.",
-    "oid": "a8ed59903a08426fcd7477b36e1a4152988f3125",
-    "sha256": "707fa7bdf208561ba1de62e2660254b9db7aa47881b272efae20fd5ff982b553"
+    "oid": "ee580dae863d43d080928b9a0d39f1b9bdbb3ad4",
+    "sha256": "328dcd0ce97fb90b51974ae3c4d4ef437ede55677c09649a72617a6ce5f0fec4"
   },
   {
     "path": ".github/workflows/full-matrix.yml",
