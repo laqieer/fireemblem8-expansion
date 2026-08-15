@@ -26,11 +26,13 @@ jobs:
   # separate job from `build` below so host-only regressions are reported
   # before paying for a full ROM/linker build. The exhaustive full-game
   # localization gate is intentionally measured in minutes, so this lane
-  # keeps a 30-minute budget while never building a ROM or running the linker.
+  # keeps a 45-minute budget (the local exhaustive gate takes about 31
+  # minutes before CI setup overhead) while never building a ROM or running
+  # the linker.
   # All host test steps are genuine gates (required status), not advisory.
   host-tests:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
 
     steps:
     - uses: actions/checkout@v7
