@@ -23,13 +23,14 @@ jobs:
   # test that actually drives libmGBA (test_backend_integration.py) compiles
   # its tiny backend for the *host*, never the GBA target; the upstream-port
   # tests are Python/stdlib only and link no C. This is intentionally a
-  # separate job from `build` below so a scenario/generator/host-tooling
-  # regression is reported in well under a minute, before paying for a full
-  # ROM/linker build, and this lane never builds the ROM or runs the linker.
+  # separate job from `build` below so host-only regressions are reported
+  # before paying for a full ROM/linker build. The exhaustive full-game
+  # localization gate is intentionally measured in minutes, so this lane
+  # keeps a 30-minute budget while never building a ROM or running the linker.
   # All host test steps are genuine gates (required status), not advisory.
   host-tests:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 30
 
     steps:
     - uses: actions/checkout@v7
