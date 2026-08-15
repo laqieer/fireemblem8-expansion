@@ -305,26 +305,16 @@ class RealGenerateTests(unittest.TestCase):
                 output_dir=Path(both_tmp), enabled_locales=("ja", "zh-Hans")
             )
 
-            # Materialize bytes before TemporaryDirectory cleanup. The
-            # comparisons below deliberately prove deterministic output, not
-            # a coincidental survival of a path object after its owner exits.
-            ja_bytes = {name: path.read_bytes() for name, path in ja.items()}
-            ja_repeat_bytes = {
-                name: path.read_bytes() for name, path in ja_repeat.items()
-            }
-            zh_bytes = {name: path.read_bytes() for name, path in zh.items()}
-            both_bytes = {name: path.read_bytes() for name, path in both.items()}
+            for name in ja:
+                self.assertEqual(ja[name].read_bytes(), ja_repeat[name].read_bytes(), name)
 
-            for name in ja_bytes:
-                self.assertEqual(ja_bytes[name], ja_repeat_bytes[name], name)
-
-            ja_source = ja_bytes["source"].decode("utf-8")
-            zh_source = zh_bytes["source"].decode("utf-8")
-            both_source = both_bytes["source"].decode("utf-8")
-            ja_header = ja_bytes["header"].decode("utf-8")
-            zh_header = zh_bytes["header"].decode("utf-8")
-            ja_config = ja_bytes["config_header"].decode("utf-8")
-            zh_config = zh_bytes["config_header"].decode("utf-8")
+            ja_source = ja["source"].read_text(encoding="utf-8")
+            zh_source = zh["source"].read_text(encoding="utf-8")
+            both_source = both["source"].read_text(encoding="utf-8")
+            ja_header = ja["header"].read_text(encoding="utf-8")
+            zh_header = zh["header"].read_text(encoding="utf-8")
+            ja_config = ja["config_header"].read_text(encoding="utf-8")
+            zh_config = zh["config_header"].read_text(encoding="utf-8")
 
             self.assertIn("gGameLocalizationJaCompressedBlob[]", ja_source)
             self.assertIn("gGameLocalizationEnglishCompressedBlob[]", ja_source)
@@ -360,12 +350,16 @@ class RealGenerateTests(unittest.TestCase):
                 "FE8_GAME_LOCALIZATION_MAX_DECODED_BYTES 4000u", zh_config
             )
 
-            ja_report = json.loads(ja_bytes["report_json"].decode("utf-8"))
-            zh_report = json.loads(zh_bytes["report_json"].decode("utf-8"))
-            both_report = json.loads(both_bytes["report_json"].decode("utf-8"))
-            ja_budget = json.loads(ja_bytes["budget_json"].decode("utf-8"))
-            zh_budget = json.loads(zh_bytes["budget_json"].decode("utf-8"))
-            both_budget = json.loads(both_bytes["budget_json"].decode("utf-8"))
+            ja_report = json.loads(ja["report_json"].read_text(encoding="utf-8"))
+            zh_report = json.loads(zh["report_json"].read_text(encoding="utf-8"))
+            both_report = json.loads(
+                both["report_json"].read_text(encoding="utf-8")
+            )
+            ja_budget = json.loads(ja["budget_json"].read_text(encoding="utf-8"))
+            zh_budget = json.loads(zh["budget_json"].read_text(encoding="utf-8"))
+            both_budget = json.loads(
+                both["budget_json"].read_text(encoding="utf-8")
+            )
 
             self.assertEqual(ja_report["enabled_locales"], ["ja"])
             self.assertEqual(ja_report["compiled_locales"], ["en", "ja"])
