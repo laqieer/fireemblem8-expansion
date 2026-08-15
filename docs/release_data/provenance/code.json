@@ -10736,8 +10736,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Wave 0/issue #9 seed: repository-authored build tooling/config/source surface (or, for asm/, decompiled disassembly derived from the original ROM). No human legal/provenance review has been recorded yet; this manifest records that honestly rather than asserting a license or clearance.",
-    "oid": "6baa31d5d965cc29d4599a169b746f851c4505bc",
-    "sha256": "37a9ba6fd944fe16017c4518fec12066eb7fc78d787d7d629acf6bb7e4bf82db"
+    "oid": "24787fc1bc3a15f5b7d0a28834e4f58435a13a70",
+    "sha256": "929704abda697f7677d58660b049fad6efa220b9518c69b3a86bbdc85d863e53"
   },
   {
     "path": "scripts/localization/game_catalog/tests/test_modern_english_bundle.py",
