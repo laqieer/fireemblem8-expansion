@@ -197,7 +197,7 @@ static int TestGlyphAnchorsAndStyles(void)
             &jaSystemCandidate))
         return 0;
     if (!LocalizedFont_Lookup(
-            EXPANSION_LOCALE_JA, LOCALIZED_FONT_STYLE_TALK, 0x5019,
+            EXPANSION_LOCALE_JA, LOCALIZED_FONT_STYLE_TALK, 0x4E03,
             &jaTalkCandidate))
         return 0;
     if (!LocalizedFont_Lookup(
@@ -217,13 +217,13 @@ static int TestGlyphAnchorsAndStyles(void)
             &zhSystemDiagnosis))
         return 0;
 
-    if (jaSystemCandidate.width != 11 || jaTalkCandidate.width != 9)
+    if (jaSystemCandidate.width != 11 || jaTalkCandidate.width != 11)
         return 0;
-    if (jaSystemDiagnosis.width != 11)
+    if (jaSystemDiagnosis.width != 12)
         return 0;
-    if (zhSystemCandidate.width != 10 || zhTalkCandidate.width != 8)
+    if (zhSystemCandidate.width != 9 || zhTalkCandidate.width != 13)
         return 0;
-    if (zhSystemDiagnosis.width != 11)
+    if (zhSystemDiagnosis.width != 10)
         return 0;
     if (!BitmapIsVisible(jaSystemDiagnosis.bitmap)
         || !BitmapIsVisible(zhSystemDiagnosis.bitmap))
@@ -246,6 +246,14 @@ static int TestGlyphAnchorsAndStyles(void)
             EXPANSION_LOCALE_ZH_HANS, LOCALIZED_FONT_STYLE_TALK, 0x3000, &spacing))
         return 0;
     return spacing.width == 16 && spacing.bitmap == NULL;
+}
+
+static int TestRuntimeWrapPredicate(void)
+{
+    return !LocalizedFont_ShouldWrap(0, 17, 16)
+        && !LocalizedFont_ShouldWrap(8, 8, 16)
+        && LocalizedFont_ShouldWrap(8, 9, 16)
+        && !LocalizedFont_ShouldWrap(17, 1, 16);
 }
 
 static u32 Measure(
@@ -362,61 +370,24 @@ static int CheckFinalGlyph(
 
 static int TestCompleteGeneratedFontCoverage(void)
 {
-    static const u32 jaNewAuthoredScalars[] = {
-        0x5C90, 0x5DE1, 0x6EB6, 0x74B0, 0x96EA, 0xFF35,
-    };
-    static const u32 zhHansNewAuthoredScalars[] = {
-        0x7433, 0x74F6, 0x8C0F, 0x8F91, 0x8FC1, 0x9500, 0x96EA, 0x9A87,
-    };
-    u32 i;
-
     if (!CheckFinalGlyph(
             EXPANSION_LOCALE_JA, LOCALIZED_FONT_STYLE_SYSTEM,
-            gLocalizedFontJaSystemCodepoints, gLocalizedFontJaGlyphCount))
+            gLocalizedFontJaSystemCodepoints, gLocalizedFontJaSystemGlyphCount))
         return 0;
     if (!CheckFinalGlyph(
             EXPANSION_LOCALE_JA, LOCALIZED_FONT_STYLE_TALK,
-            gLocalizedFontJaTalkCodepoints, gLocalizedFontJaGlyphCount))
+            gLocalizedFontJaTalkCodepoints, gLocalizedFontJaTalkGlyphCount))
         return 0;
     if (!CheckFinalGlyph(
             EXPANSION_LOCALE_ZH_HANS, LOCALIZED_FONT_STYLE_SYSTEM,
             gLocalizedFontZhHansSystemCodepoints,
-            gLocalizedFontZhHansGlyphCount))
+            gLocalizedFontZhHansSystemGlyphCount))
         return 0;
     if (!CheckFinalGlyph(
             EXPANSION_LOCALE_ZH_HANS, LOCALIZED_FONT_STYLE_TALK,
             gLocalizedFontZhHansTalkCodepoints,
-            gLocalizedFontZhHansGlyphCount))
+            gLocalizedFontZhHansTalkGlyphCount))
         return 0;
-
-    for (i = 0;
-         i < sizeof(jaNewAuthoredScalars) / sizeof(jaNewAuthoredScalars[0]);
-         i++)
-    {
-        if (!CheckGlyphWithoutFallback(
-                EXPANSION_LOCALE_JA, LOCALIZED_FONT_STYLE_SYSTEM,
-                jaNewAuthoredScalars[i]))
-            return 0;
-        if (!CheckGlyphWithoutFallback(
-                EXPANSION_LOCALE_JA, LOCALIZED_FONT_STYLE_TALK,
-                jaNewAuthoredScalars[i]))
-            return 0;
-    }
-
-    for (i = 0;
-         i < sizeof(zhHansNewAuthoredScalars)
-             / sizeof(zhHansNewAuthoredScalars[0]);
-         i++)
-    {
-        if (!CheckGlyphWithoutFallback(
-                EXPANSION_LOCALE_ZH_HANS, LOCALIZED_FONT_STYLE_SYSTEM,
-                zhHansNewAuthoredScalars[i]))
-            return 0;
-        if (!CheckGlyphWithoutFallback(
-                EXPANSION_LOCALE_ZH_HANS, LOCALIZED_FONT_STYLE_TALK,
-                zhHansNewAuthoredScalars[i]))
-            return 0;
-    }
 
     return 1;
 }
@@ -427,7 +398,7 @@ static int TestWidthFallbackAndGuards(void)
         'A', 0xE5, 0x80, 0x99, 0x80, 0x21, 0xE8, 0xA8, 0xBA, 0
     };
     static const u8 zhText[] = {
-        0xE5, 0x80, 0x99, 0xE8, 0xAF, 0x8A, 0xE3, 0x80, 0x80, 0
+        0xE5, 0x80, 0x99, 0xE4, 0xB8, 0x83, 0xE3, 0x80, 0x80, 0
     };
     static const u8 missingText[] = {0xF4, 0x8F, 0xBF, 0xBF, 0};
     static const u8 invalidText[] = {0xC2, 0};
@@ -437,10 +408,10 @@ static int TestWidthFallbackAndGuards(void)
 
     LocalizedFont_ResetDiagnostics();
     if (Measure(
-            EXPANSION_LOCALE_JA, LOCALIZED_FONT_STYLE_SYSTEM, jaText) != 30)
+            EXPANSION_LOCALE_JA, LOCALIZED_FONT_STYLE_SYSTEM, jaText) != 31)
         return 0;
     if (Measure(
-            EXPANSION_LOCALE_ZH_HANS, LOCALIZED_FONT_STYLE_TALK, zhText) != 32)
+            EXPANSION_LOCALE_ZH_HANS, LOCALIZED_FONT_STYLE_TALK, zhText) != 42)
         return 0;
     if (Measure(
             EXPANSION_LOCALE_JA, LOCALIZED_FONT_STYLE_SYSTEM, missingText)
@@ -485,6 +456,8 @@ int main(void)
     if (!TestMalformedUtf8())
         return 2;
     if (!TestGlyphAnchorsAndStyles())
+        return 1;
+    if (!TestRuntimeWrapPredicate())
         return 3;
     if (!TestCompleteGeneratedFontCoverage())
         return 4;

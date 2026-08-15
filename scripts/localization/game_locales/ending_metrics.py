@@ -12,7 +12,10 @@ from typing import Any, Dict, Mapping, Sequence, Tuple
 
 ENDING_SOURCE_PATH = Path("src/ending_details.c")
 FONT_MANIFEST_PATH = Path("graphics/fonts/cjk/manifest.json")
-ASCII_FONT_PATH = Path("src/data/fonts/glyphs_1.h")
+ASCII_FONT_PATHS = {
+    "system": Path("src/data/fonts/glyphs_1.h"),
+    "talk": Path("src/data/fonts/glyphs_2.h"),
+}
 TITLE_LUT_RE = re.compile(
     r"struct EndingTitleEnt CONST_DATA gCharacterEndingTitleLut\[\] =\s*"
     r"\{(.*?)\n\};",
@@ -120,8 +123,11 @@ def _ending_contract(repo_root: Path) -> Dict[str, Any]:
     }
 
 
-def _ascii_widths(repo_root: Path) -> Dict[int, int]:
-    path = repo_root / ASCII_FONT_PATH
+def _ascii_widths(repo_root: Path, *, style: str = "system") -> Dict[int, int]:
+    try:
+        path = repo_root / ASCII_FONT_PATHS[style]
+    except KeyError as error:
+        raise EndingLayoutError(f"unsupported ASCII font style {style!r}") from error
     text = path.read_text(encoding="utf-8")
     glyph_widths = {
         int(name): int(width)
@@ -132,12 +138,13 @@ def _ascii_widths(repo_root: Path) -> Dict[int, int]:
         )
     }
     table = re.search(
-        r"struct Glyph \*TextGlyphs_System\[\] =\s*\{(.*?)\n\};",
+        rf"struct Glyph \*TextGlyphs_{'System' if style == 'system' else 'Talk'}\[\] "
+        r"=\s*\{(.*?)\n\};",
         text,
         flags=re.DOTALL,
     )
     if table is None:
-        raise EndingLayoutError(f"{path}: TextGlyphs_System is missing")
+        raise EndingLayoutError(f"{path}: TextGlyphs_{style} is missing")
     entries = re.findall(r"NULL|&gFontgrp_\d+", table.group(1))
     return {
         index: glyph_widths[int(entry.removeprefix("&gFontgrp_"))]
@@ -146,10 +153,15 @@ def _ascii_widths(repo_root: Path) -> Dict[int, int]:
     }
 
 
-def _cjk_widths(repo_root: Path, locale: str) -> Tuple[Dict[int, int], Dict[str, str]]:
+def _cjk_widths(
+    repo_root: Path,
+    locale: str,
+    *,
+    style: str = "system",
+) -> Tuple[Dict[int, int], Dict[str, str]]:
     manifest_path = repo_root / FONT_MANIFEST_PATH
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    asset = manifest["assets"][f"{locale}.system"]
+    asset = manifest["assets"][f"{locale}.{style}"]
     codepoint_path = repo_root / asset["codepoints"]["path"]
     width_path = repo_root / asset["widths"]["path"]
     width_bytes = width_path.read_bytes()

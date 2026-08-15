@@ -198,6 +198,14 @@ void Text_DrawNumber(struct Text * text, int n);
 void Text_DrawNumberOrSpace(struct Text * text, int n);
 void Text_DrawNumberOrBlank(struct Text * text, int n);
 const char * Text_DrawCharacter(struct Text * text, const char * str);
+#ifdef FE8_LOCALIZED_FONT_ENABLED
+/*
+ * Returns TRUE only for the opt-in CJK runtime guard when the next scalar
+ * would exceed this actual Text allocation. The caller advances its own
+ * line/page state; this helper never injects or rewrites stream controls.
+ */
+bool8 Text_ShouldAutoWrap(struct Text *text, const char *str);
+#endif
 void *GetTextDrawDest(struct Text *a);
 // ??? GetColorLut(???);
 // ??? DrawTextGlyph(???);

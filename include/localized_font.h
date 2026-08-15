@@ -33,7 +33,8 @@ extern const u8 gLocalizedFontJaSystemBitmaps[];
 extern const u8 gLocalizedFontJaTalkCodepoints[];
 extern const u8 gLocalizedFontJaTalkWidths[];
 extern const u8 gLocalizedFontJaTalkBitmaps[];
-extern const u32 gLocalizedFontJaGlyphCount;
+extern const u32 gLocalizedFontJaSystemGlyphCount;
+extern const u32 gLocalizedFontJaTalkGlyphCount;
 #endif
 
 #if (FE8_EXPANSION_ENABLED_LOCALE_MASK & 0x04u) != 0
@@ -43,7 +44,8 @@ extern const u8 gLocalizedFontZhHansSystemBitmaps[];
 extern const u8 gLocalizedFontZhHansTalkCodepoints[];
 extern const u8 gLocalizedFontZhHansTalkWidths[];
 extern const u8 gLocalizedFontZhHansTalkBitmaps[];
-extern const u32 gLocalizedFontZhHansGlyphCount;
+extern const u32 gLocalizedFontZhHansSystemGlyphCount;
+extern const u32 gLocalizedFontZhHansTalkGlyphCount;
 #endif
 
 bool8 LocalizedFont_IsLocale(ExpansionLocaleId locale);
@@ -67,6 +69,11 @@ void LocalizedFont_RecordMissing(u32 scalar);
 void LocalizedFont_ResetDiagnostics(void);
 u16 LocalizedFont_GetMissingGlyphCount(void);
 u32 LocalizedFont_GetLastMissingScalar(void);
+
+/* Shared overflow predicate used after the renderer obtains the real glyph
+ * advance. A zero cursor never wraps, preventing an unbreakable first glyph
+ * from becoming an infinite virtual-newline loop. */
+bool8 LocalizedFont_ShouldWrap(u32 cursor, u32 advance, u32 allocationPixels);
 
 #endif /* modern build with a CJK locale */
 

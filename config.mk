@@ -131,3 +131,11 @@ EXPANSION_MECHANICS_HOOKS     ?= 0
 EXPANSION_MECHANICS_SAMPLE    ?= 0
 EXPANSION_DANGER_OVERLAY_MENU ?= 0
 EXPANSION_STARTER_CONTENT     ?= 0
+
+# EXPANSION_LOCALIZED_TEXT_AUTO_WRAP -- opt-in runtime safety net for real
+# CJK profiles. When 1, the dialogue engine measures the next VWF glyph
+# against the active Text allocation and advances to the next line before it
+# would overrun. Generated catalogs already contain validated safe breaks;
+# this catches runtime substitutions and hand-authored streams. Default 0
+# preserves historical rendering exactly.
+EXPANSION_LOCALIZED_TEXT_AUTO_WRAP ?= 0

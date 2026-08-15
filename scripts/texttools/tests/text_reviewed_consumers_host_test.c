@@ -514,9 +514,9 @@ static void TestLocaleGridCoverage(ExpansionLocaleId locale)
                 LOCALIZED_FONT_STYLE_SYSTEM,
                 token.scalar,
                 &glyph));
-            CHECK(glyph.width <= 12);
+            CHECK(glyph.width <= 13);
             CHECK(Tactician_TestGetGridX(slot)
-                == 0x10 + (slot % 15) * 12);
+                == 0x10 + (slot % 15) * 13);
         }
     }
 }

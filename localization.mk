@@ -16,7 +16,11 @@
 LOCALIZATION_OUT_DIR := build/expansion-localization/generated
 
 .PHONY: localization-validate localization-generate localization-check \
-	localization-test localization-budget
+	localization-test localization-budget localized-ui-graphics-check \
+	localized-ui-graphics-extract
+
+LOCALIZED_UI_GRAPHICS_FE8J_ROOT ?= ../fireemblem8j
+LOCALIZED_UI_GRAPHICS_FE8CN_ROM ?= ../FE8CN.gba
 
 # validate -- load + fully validate texts/expansion/registry.json +
 # catalog.en.json (duplicate/sparse/out-of-order/invalid/reused-tombstone
@@ -51,3 +55,14 @@ localization-test:
 localization-budget:
 	@mkdir -p $(LOCALIZATION_OUT_DIR)
 	python3 -m scripts.localization.cli budget --out-dir $(LOCALIZATION_OUT_DIR)
+
+# Issue #18 static UI artwork is a separate, provenance-pinned asset family:
+# check uses only committed decompressed sources; extract is an explicit,
+# authorized-reference refresh and never runs as part of ordinary builds.
+localized-ui-graphics-check:
+	python3 scripts/localization/extract_ui_graphics.py check
+
+localized-ui-graphics-extract:
+	python3 scripts/localization/extract_ui_graphics.py extract \
+		--fe8j-root "$(LOCALIZED_UI_GRAPHICS_FE8J_ROOT)" \
+		--fe8cn-rom "$(LOCALIZED_UI_GRAPHICS_FE8CN_ROM)"

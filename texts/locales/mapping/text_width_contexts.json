@@ -1,0 +1,49 @@
+{
+  "classification": {
+    "default_context": "system_default_240",
+    "ending_context": "ending_layout",
+    "fixed_label_context": "fixed_width_label",
+    "subtitle_help_context": "subtitle_help_scroll",
+    "talk_event_context": "talk_dialogue_240"
+  },
+  "contexts": {
+    "ending_layout": {
+      "allow_generated_wrap": false,
+      "max_pixels": 224,
+      "source": "src/ending_details.c; exact title/solo/paired geometry is enforced by ending_layout_metrics",
+      "style": "system"
+    },
+    "fixed_width_label": {
+      "allow_generated_wrap": false,
+      "max_pixels": 240,
+      "source": "fixed_width_label_metrics owns surface-specific 40/56/64px allocations and aliases",
+      "style": "system"
+    },
+    "subtitle_help_scroll": {
+      "allow_generated_wrap": false,
+      "max_pixels": 240,
+      "source": "src/bb.c SubtitleHelp owns scrolling and visual splitting but stops parsing on runtime NL; catalog generation must preserve its single stream",
+      "style": "talk"
+    },
+    "system_default_240": {
+      "allow_generated_wrap": true,
+      "max_pixels": 240,
+      "source": "struct Text maximum runtime allocation is 30 tiles in src/fontgrp.c; narrower source-visible fields are promoted to a named context",
+      "style": "system"
+    },
+    "talk_dialogue_240": {
+      "allow_generated_wrap": true,
+      "max_pixels": 240,
+      "source": "src/scene.c InitTalk allocates 30 tiles per active talk line; scene event TEXTSHOW/WM_TEXT/EvtTextShow2 targets are discovered at validation time",
+      "style": "talk"
+    }
+  },
+  "kind": "fe8u-text-width-context-registry",
+  "policy": {
+    "all_targets_must_be_classified": true,
+    "default_context_is_conservative_30_tile_system_text": true,
+    "explicit_controls_are_preserved": true,
+    "unmapped_runtime_usage_is_not_silently_exempted": true
+  },
+  "schema_version": 1
+}

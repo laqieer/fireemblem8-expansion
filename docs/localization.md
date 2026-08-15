@@ -134,7 +134,7 @@ The framework is layered, each layer independently testable:
    `texts/locales/zh-Hans/indexed.txt`, count U+4E00--U+9FFF occurrences,
    sort by descending frequency then ascending scalar value, and take the
    first 150 scalars as two row-major 75-cell pages. Page 3 uses the existing
-   ASCII grid. Locale pages use a 12-pixel cell pitch; selected glyph widths
+   ASCII grid. Locale pages use a 13-pixel cell pitch; selected glyph widths
    are validated against the committed production font codepoint/width data.
 
 ## Config
@@ -342,10 +342,54 @@ descriptor slots.
    be paired before a dialogue boundary; FE8U-domain payloads whose dialogue
    boundary topology matches the FE8U target must also match its mouth-toggle
    topology. Every rendered line in all face-bearing talk payloads is measured
-   with the committed runtime system-font widths and must fit the 240-pixel
+   with the committed runtime talk-font widths and must fit the 240-pixel
    talk allocation. Controls, page boundaries, and face-segment boundaries do
    not contribute visible width and reset the measured line as the runtime
    does.
+4. `texts/locales/mapping/text_width_contexts.json` is the typed, canonical
+   mapping from all 3,414 message IDs to the narrowest source-visible
+   scene/usage context. Event dialogue is discovered from `TEXTSHOW`,
+   `WM_TEXT`, and `EvtTextShow2`; ending details and fixed labels retain their
+   stricter existing metric validators; all remaining messages use the
+   documented 30-tile system-`Text` default. No entry is silently exempted.
+   `python3 -m scripts.localization.game_catalog check-width` resolves the
+   final payloads, measures every visible line with the **matching runtime
+   system or talk VWF advances**, and fails on a missing glyph, unbreakable
+   span, or overrun. It is part of `make game-localization-test` and
+   `game-localization-check`.
+
+### Deterministic CJK line breaking and runtime guard
+
+Catalog generation applies the same width contract before compression. It
+preserves authored `[CTRL:0001]`, page, portrait, and all other controls
+byte-for-byte, then inserts only the existing one-byte `[NL]` control at a
+safe scalar boundary when required. Latin words are never split; CJK breaks
+are allowed between ideographs but never after opening or before closing
+kinsoku punctuation. A scalar or word with no legal boundary is an explicit
+generation failure, never truncation or replacement. The generated catalog
+report records every target's context, measured maximum, and inserted-break
+count; the source catalogs remain authored source, not rewritten inputs.
+
+`EXPANSION_LOCALIZED_TEXT_AUTO_WRAP=0` is the default, preserving historical
+runtime behavior. Setting it to `1` for a modern CJK build (for example
+`make ... EXPANSION_ENABLED_LOCALES=en,ja MODERN_ROM_SIZE=32M
+EXPANSION_LOCALIZED_TEXT_AUTO_WRAP=1`) enables a second, allocation-aware
+guard in `TalkInterpret`: it uses actual VWF advances and the active
+`Text::tile_width`, advances to the next line before a dynamic substitution
+would overrun, and never edits the stream. Generated explicit breaks remain
+authoritative, so the guard does not double-wrap them. The flag is validated
+as 0/1 and included in the modern build fingerprint.
+
+`SubtitleHelp` is an explicit nonstandard consumer: `bb.c` visually splits
+its scrolling talk-font stream itself, but treats byte `0x01` as a terminator.
+The width registry therefore classifies the convoy subtitle targets separately:
+their width is audited by that renderer, and catalog generation must never
+insert an `[NL]` control into them.
+
+The generated [original text edit ledger](game_locale_text_edits.md) separately
+records every indexed JA/ZH source edit and its reviewed provenance. It is
+checked by `make game-localization-text-edits-check`; the catalog's new
+expansion-only keys are explicitly outside that original-game comparison.
 3. `python3 -m unittest discover -s scripts/localization/tests -p
    'test_*.py' -v` (or `make localization-test`) re-validates schema,
    strict UTF-8/control, surface-width and UTF-8 byte budgets, placeholder/
@@ -670,3 +714,36 @@ allocatable expectations. GNU ld emits an empty 16 MiB `.locale_data` output
 placeholder without `SHF_ALLOC`, while every populated CJK bank is non-empty
 and allocatable; therefore empty default builds compare cleanly and a genuine
 populated-bank omission still fails.
+
+## Localized static UI graphics
+
+`graphics/localized_ui/` contains decompressed, typed sources for the
+Japanese and Simplified-Chinese title screen, save/main-and-extra-menu labels,
+opening-movie slides, and chapter-title graphics. The runtime selector in
+`src/data/localized_ui_graphics.c` uses `ExpansionLocale_GetCurrent()` and
+returns English's existing assets for every non-CJK locale, including the
+pseudo locale. `src/titlescreen.c`, `src/savemenu.c`, `src/opsubtitle.c`, and
+`src/chapter_title.c` are the only consumers; chapter-title selection therefore
+covers save menus, map status, and chapter openings through their shared API.
+
+`graphics/localized_ui/manifest.json` pins source ROM hashes, addresses,
+indexed-PNG and raw-tile round-trip hashes/dimensions, title-table records,
+and the shared CJK title-sprite layout. Check committed artifacts without
+reference ROMs:
+
+```bash
+make localized-ui-graphics-check
+```
+
+An authorized source refresh is explicit and recreates only committed indexed
+`.png` tile sources and headered `.tsa.bin` inputs plus the generated registry
+source:
+
+```bash
+make localized-ui-graphics-extract \
+  LOCALIZED_UI_GRAPHICS_FE8J_ROOT=/path/to/fireemblem8j \
+  LOCALIZED_UI_GRAPHICS_FE8CN_ROM=/path/to/FE8CN.gba
+```
+
+The normal asset rules derive ignored `.4bpp` then `.lz` siblings from PNG
+only in the worktree/build path; neither is a committed localized-UI source.

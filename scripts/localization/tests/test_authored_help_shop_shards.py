@@ -66,8 +66,8 @@ REVIEWED_LINE_EDGE_WHITESPACE = {
 }
 REVIEWED_PIXEL_WIDTHS = {
     "ja": {
-        "0x0738": 151,
-        "0x074C": 179,
+        "0x0738": 120,
+        "0x074C": 139,
     },
 }
 

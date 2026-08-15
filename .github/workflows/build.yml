@@ -87,6 +87,13 @@ jobs:
     - name: Run localization host test suite (issue #18)
       run: python3 -m unittest discover -s scripts/localization/tests -p "test_*.py"
 
+    # The full-game payload has a separate source format from the expansion
+    # catalog. Its test target includes the typed rendered-width registry,
+    # metrics-aware generated-break validation, and native text consumer
+    # checks, so an overfull JA/ZH stream cannot pass the default CI lane.
+    - name: Run full-game localization width contract (issue #18)
+      run: make game-localization-test
+
   # Ubuntu libmGBA ROM/runtime gate: builds the full modern object/ELF/ROM
   # chain for both supported configs (debug, release; AAPCS only -- see
   # docs/config_identity.md), checks deterministic memory budgets, rejects

@@ -13,12 +13,15 @@ PYTEST_ENV := PYTHONDONTWRITEBYTECODE=1
 
 .PHONY: game-localization-validate game-localization-generate \
 	game-localization-check game-localization-test game-localization-budget \
+	game-localization-width-check \
 	game-localization-leakage-audit game-localization-leakage-check \
 	game-localization-final-authored-check \
 	game-localization-final-mapping-check \
 	game-localization-final-raw-closure-check \
 	game-localization-final-leakage-audit \
 	game-localization-final-font-check \
+	game-localization-text-edits-generate \
+	game-localization-text-edits-check \
 	game-localization-final-check
 
 game-localization-validate:
@@ -33,6 +36,18 @@ game-localization-generate:
 
 game-localization-check: game-localization-generate
 	$(PYTEST_ENV) $(PYTHON3) -m scripts.localization.game_catalog check-leakage
+	$(PYTEST_ENV) $(PYTHON3) -m scripts.localization.game_catalog check-width \
+		--enabled-locales "$(GAME_LOCALIZATION_ENABLED_LOCALES)"
+
+game-localization-width-check:
+	$(PYTEST_ENV) $(PYTHON3) -m scripts.localization.game_catalog check-width \
+		--enabled-locales "$(GAME_LOCALIZATION_ENABLED_LOCALES)"
+
+game-localization-text-edits-generate:
+	$(PYTEST_ENV) $(PYTHON3) -m scripts.localization.game_locales.text_edit_ledger generate
+
+game-localization-text-edits-check:
+	$(PYTEST_ENV) $(PYTHON3) -m scripts.localization.game_locales.text_edit_ledger check
 
 game-localization-leakage-audit:
 	$(PYTEST_ENV) $(PYTHON3) -m scripts.localization.game_catalog audit-leakage
@@ -43,9 +58,13 @@ game-localization-leakage-check:
 game-localization-test:
 	$(PYTEST_ENV) $(PYTHON3) -m unittest discover \
 		-s scripts/localization/game_catalog/tests -p 'test_*.py' -v
+	$(PYTEST_ENV) $(PYTHON3) -m unittest discover \
+		-s scripts/localization/game_locales/tests -p 'test_*.py' -v
 	$(PYTEST_ENV) $(PYTHON3) scripts/texttools/tests/test_text_renderer_native.py
 	$(PYTEST_ENV) $(PYTHON3) scripts/texttools/tests/test_text_consumers_native.py
 	$(PYTEST_ENV) $(PYTHON3) scripts/texttools/tests/test_text_consumer_audit.py
+	$(MAKE) --no-print-directory game-localization-width-check
+	$(MAKE) --no-print-directory game-localization-text-edits-check
 
 game-localization-budget:
 	@mkdir -p $(GAME_LOCALIZATION_OUT_DIR)

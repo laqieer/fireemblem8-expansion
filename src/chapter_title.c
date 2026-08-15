@@ -5,6 +5,7 @@
 #include "chapterdata.h"
 #include "bmlib.h"
 #include "helpbox.h"
+#include "localized_ui_graphics.h"
 #include "worldmap.h"
 
 EWRAM_DATA struct ChapterTitleFxSt gChapterTitleFxSt = { 0 };
@@ -45,15 +46,43 @@ void ApplyChapterTitlePal(int config, int palId)
 
 void PutChapterTitleGfx(int chr, u32 titleId)
 {
+#if LOCALIZED_UI_GRAPHICS_CJK_ENABLED
+    const struct LocalizedUiGraphicsChapterTitle *localizedTitle;
+#endif
+
     if (titleId > 0x108)
         titleId = 0x54;
 
     gChapterTitleFxSt.chr_str = chr & 0x3FF;
+
+#if LOCALIZED_UI_GRAPHICS_CJK_ENABLED
+    localizedTitle = LocalizedUiGraphics_GetChapterTitle(titleId);
+    if (localizedTitle != 0 && localizedTitle->save != 0) {
+        Decompress(localizedTitle->save, (void*)((chr * TILE_SIZE_4BPP) + VRAM));
+        return;
+    }
+#endif
+
     Decompress(chap_title_data[titleId].save, (void*)((chr * TILE_SIZE_4BPP) + VRAM));
 }
 
 void _PutChapterTitleGfx(int chr, int titleId)
 {
+#if LOCALIZED_UI_GRAPHICS_CJK_ENABLED
+    const struct LocalizedUiGraphicsChapterTitle *localizedTitle;
+    const u8 *frame;
+
+    localizedTitle = LocalizedUiGraphics_GetChapterTitle(titleId);
+    frame = LocalizedUiGraphics_GetChapterTitleFrame();
+    if (localizedTitle != 0 && localizedTitle->introLeft != 0
+        && localizedTitle->introRight != 0 && frame != 0) {
+        Decompress(frame, (void *)(VRAM + chr * TILE_SIZE_4BPP));
+        Decompress(localizedTitle->introLeft, (void *)(VRAM + chr * TILE_SIZE_4BPP + 0x20));
+        Decompress(localizedTitle->introRight, (void *)(VRAM + chr * TILE_SIZE_4BPP + 0x2A0));
+        return;
+    }
+#endif
+
     PutChapterTitleGfx(chr, titleId);
 }
 
@@ -81,6 +110,20 @@ void DrawChapterTitleStr(u16 * tm, int pal)
 
 void DrawChapterTitleStrEx(u16 * tm, int pal, int c)
 {
+#if LOCALIZED_UI_GRAPHICS_CJK_ENABLED
+    const struct LocalizedUiGraphicsChapterTitle *localizedTitle;
+    const u8 *tsa;
+
+    localizedTitle = LocalizedUiGraphics_GetChapterTitle(c);
+    tsa = LocalizedUiGraphics_GetChapterTitleTsa();
+    if (localizedTitle != 0 && localizedTitle->introLeft != 0 && tsa != 0) {
+        Decompress(tsa, gGenericBuffer);
+        CallARM_FillTileRect(tm, gGenericBuffer, (u16)TILEREF(0x280, pal));
+        BG_SetPosition(0, 0, 2);
+        return;
+    }
+#endif
+
     int i;
     int tile = TILEREF(gChapterTitleFxSt.chr_str, pal);
     for (i = 0; i < 0x40; i++)
