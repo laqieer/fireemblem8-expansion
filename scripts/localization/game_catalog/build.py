@@ -6,6 +6,7 @@ import hashlib
 import json
 import re
 from collections import Counter
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, Dict, Mapping, Optional, Sequence, Tuple
 
@@ -24,6 +25,12 @@ from scripts.localization.game_locales.fixed_width_labels import (
     FixedWidthLabelError,
     build_fixed_width_label_metrics,
     load_fixed_width_aliases,
+)
+from scripts.localization.game_locales.width_contract import (
+    DEFAULT_WIDTH_REGISTRY_PATH,
+    TextWidthContractError,
+    apply_width_contract,
+    load_width_registry,
 )
 from scripts.localization.game_locales.parsers import LocaleSourceError, parse_hash_indexed
 from scripts.localization.game_locales.raw_providers import (
@@ -736,8 +743,9 @@ def _build_report(
     mapping,
     locale_reports,
     suffix_share: bool,
+    width_validation: Mapping[str, Any] | None = None,
 ) -> Dict[str, Any]:
-    return {
+    report = {
         "schema_version": REPORT_SCHEMA_VERSION,
         "kind": REPORT_KIND,
         "codec_schema": CODEC_SCHEMA,
@@ -755,6 +763,9 @@ def _build_report(
         "shared_english": english_report,
         "locales": locale_reports,
     }
+    if width_validation is not None:
+        report["width_validation"] = width_validation
+    return report
 
 
 def _build_budget(
@@ -886,6 +897,7 @@ def build_game_catalog(
     target_header_path: Path = DEFAULT_TARGET_HEADER_PATH,
     authored_paths: Optional[Mapping[str, Path]] = None,
     fixed_width_aliases_path: Path = FIXED_WIDTH_ALIASES_PATH,
+    width_registry_path: Path = DEFAULT_WIDTH_REGISTRY_PATH,
     enabled_locales: Sequence[str] = LOCALE_IDS,
     suffix_share: bool = True,
     ja_raw_expected_repository: str | None = PINNED_SOURCE_REPOSITORY,
@@ -947,6 +959,44 @@ def build_game_catalog(
         )
         for locale in enabled_locales
     )
+    width_validation = None
+    unwrapped_locale_entries = {
+        bundle.locale: bundle.entries for bundle in locale_bundles
+    }
+    if target_count == 3414:
+        mapping_absolute = Path(mapping_path).resolve()
+        repo_root = mapping_absolute.parents[3]
+        registry_path = Path(width_registry_path)
+        if not registry_path.is_absolute():
+            registry_path = repo_root / registry_path
+        try:
+            width_registry = load_width_registry(registry_path)
+            rewritten_bundles = []
+            width_validation = {}
+            for bundle in locale_bundles:
+                payloads, validation = apply_width_contract(
+                    repo_root=repo_root,
+                    locale=bundle.locale,
+                    target_payloads=tuple(
+                        entry.encoded_bytes for entry in bundle.entries
+                    ),
+                    registry=width_registry,
+                )
+                entries = tuple(
+                    replace(entry, encoded_bytes=payload)
+                    for entry, payload in zip(bundle.entries, payloads)
+                )
+                rewritten_bundles.append(
+                    LocaleCatalogBundle(
+                        locale=bundle.locale,
+                        entries=entries,
+                        catalog=build_catalog(payloads, suffix_share=suffix_share),
+                    )
+                )
+                width_validation[bundle.locale] = validation
+            locale_bundles = tuple(rewritten_bundles)
+        except TextWidthContractError as error:
+            raise GameCatalogError(str(error)) from error
     display_aliases: Mapping[str, Mapping[str, Mapping[int, str]]] = {}
     fixed_width_metrics = None
     if target_count == 3414:
@@ -1003,11 +1053,12 @@ def build_game_catalog(
         mapping=mapping,
         locale_reports=locale_reports,
         suffix_share=suffix_share,
+        width_validation=width_validation,
     )
     remapped_targets = {
         entry.target_id
-        for bundle in locale_bundles
-        for entry in bundle.entries
+        for entries in unwrapped_locale_entries.values()
+        for entry in entries
         if entry.control_domain == CONTROL_DOMAIN_FE8J
         and entry.encoded_bytes is not None
         and entry.encoded_bytes

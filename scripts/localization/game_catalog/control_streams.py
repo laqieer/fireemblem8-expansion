@@ -413,8 +413,8 @@ def load_talk_font_metrics(
     repo_root: Path = Path("."),
 ) -> TalkFontMetrics:
     try:
-        ascii_widths = _ascii_widths(repo_root)
-        cjk_widths, _ = _cjk_widths(repo_root, locale)
+        ascii_widths = _ascii_widths(repo_root, style="talk")
+        cjk_widths, _ = _cjk_widths(repo_root, locale, style="talk")
     except (EndingLayoutError, OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
         raise ControlStreamError(
             f"{locale}: runtime system-font metrics are unavailable"

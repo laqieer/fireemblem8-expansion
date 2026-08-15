@@ -777,7 +777,25 @@ int TalkInterpret(ProcPtr proc) {
     next = TextUtf8_Next(sTalkState->str, &token);
     if (token.kind == TEXT_UTF8_TOKEN_SCALAR
         || token.kind == TEXT_UTF8_TOKEN_INVALID)
+    {
+#if FE8_EXPANSION_LOCALIZED_TEXT_AUTO_WRAP
+        /*
+         * Explicit [NL] remains authoritative. This guard only sees the
+         * next visible scalar and makes the same line/page transition as an
+         * [NL] without mutating generated or authored stream bytes.
+         */
+        if (Text_ShouldAutoWrap(
+                TALK_TEXT_BY_LINE(sTalkState->lineActive),
+                sTalkState->str))
+        {
+            if (sTalkState->putLines == 1 || sTalkState->lineActive == 1)
+                sTalkState->lineActive++;
+            sTalkState->putLines = 0;
+            return 2;
+        }
+#endif
         return 1;
+    }
 #endif
 
     switch (*sTalkState->str) {

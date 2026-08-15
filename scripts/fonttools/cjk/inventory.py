@@ -11,9 +11,15 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Mapping, Sequence, Set, Tuple
 
 from scripts.localization.game_locales.parsers import parse_hash_indexed
+from scripts.localization.game_locales.width_contract import (
+    classify_targets,
+    load_width_registry,
+)
 
 LOCALES = ("ja", "zh-Hans")
 STYLES = ("system", "talk")
+RUNTIME_USAGE_PATH = "fonts/cjk/runtime_usage.json"
+WIDTH_REGISTRY_PATH = Path("texts/locales/mapping/text_width_contexts.json")
 TEXT_TOKEN_RE = re.compile(r"\[[^\[\]\r\n]+\]")
 PLACEHOLDER_RE = re.compile(r"\{[0-9]+\}")
 NOTO_COMMIT = "f8d157532fbfaeda587e826d4cd5b21a49186f7c"
@@ -201,18 +207,209 @@ def _scalar_sets(texts: Iterable[str], *, expansion: bool = False) -> Set[int]:
     return scalars
 
 
+def _description_target_ids(root: Path, target_count: int) -> Set[int]:
+    """Return all data-owned descriptions, which have both UI and talk users."""
+
+    ids: Set[int] = set()
+    pattern = re.compile(r"\.descTextId\s*=\s*(0x[0-9A-Fa-f]+|\d+)")
+    for relative in ("src/data_characters.c", "src/data_classes.c", "src/data_items.c"):
+        source = (root / relative).read_text(encoding="utf-8")
+        ids.update(
+            int(value, 0)
+            for value in pattern.findall(source)
+            if int(value, 0) < target_count
+        )
+    return ids
+
+
+def _tactician_grid_strings(root: Path, locale: str) -> Tuple[Tuple[str, str], ...]:
+    """Static locale input grids are system-font UI, not catalog messages."""
+
+    source = (root / "src/sio_tactician.c").read_text(encoding="utf-8")
+    prefix = "sTacticianGridJa" if locale == "ja" else "sTacticianGridZhHans"
+    pattern = re.compile(
+        rf"static const char ({prefix}[A-Za-z0-9_]+)\[\]\s*=\s*"
+        r"((?:\s*\"[^\"]*\")+)\s*;"
+    )
+    grids = []
+    for name, literals in pattern.findall(source):
+        grids.append((name, "".join(re.findall(r'"([^"]*)"', literals))))
+    if len(grids) != 2 or any(len(text) != 75 for _, text in grids):
+        raise CjkFontError(f"{locale}: static tactician grid contract drifted")
+    return tuple(grids)
+
+
+def _direct_talk_target_ids(root: Path, target_count: int) -> Dict[int, str]:
+    """Discover non-event talk-font message paths with literal/table IDs."""
+
+    result: Dict[int, str] = {}
+
+    def add(value: int, reason: str) -> None:
+        if value < target_count:
+            result[value] = reason
+
+    arena = (root / "src/uiarena.c").read_text(encoding="utf-8")
+    for value in re.findall(r"\bStartArenaDialogue\s*\(\s*(0x[0-9A-Fa-f]+|\d+)", arena):
+        add(int(value, 0), "arena StartArenaDialogue talk-font consumer")
+
+    shop = (root / "src/bmshop.c").read_text(encoding="utf-8")
+    offsets = [
+        int(value, 0)
+        for value in re.findall(
+            r"\[SHOP_TYPE_[A-Z_]+\]\s*=\s*(0x[0-9A-Fa-f]+|\d+)",
+            shop,
+        )
+    ]
+    if not offsets:
+        raise CjkFontError("shop dialogue offset table is unavailable")
+    for value in re.findall(r"\bStartShopDialogue\s*\(\s*(0x[0-9A-Fa-f]+|\d+)", shop):
+        base = int(value, 0)
+        for offset in offsets:
+            add(base + offset, "shop dialogue base plus type-offset talk consumer")
+
+    for path in (root / "src").glob("*.c"):
+        source = path.read_text(encoding="utf-8")
+        for value in re.findall(
+            r"\bStartTalkMsg(?:Ext)?\s*\([^;{}]*?,\s*"
+            r"(0x[0-9A-Fa-f]+|\d+)\s*(?:,|\))",
+            source,
+        ):
+            add(int(value, 0), f"literal StartTalkMsg consumer in {path.name}")
+        for value in re.findall(
+            r"\bStartTalkExt\s*\([^;{}]*?GetStringFromIndex\s*\(\s*"
+            r"(0x[0-9A-Fa-f]+|\d+)\s*\)",
+            source,
+        ):
+            add(int(value, 0), f"literal StartTalkExt consumer in {path.name}")
+    return result
+
+
+def _runtime_catalog_usage(
+    root: Path, locale: str
+) -> Tuple[Dict[str, List[str]], List[Dict[str, object]], Dict[str, int]]:
+    """Classify every emitted runtime string before deriving a font corpus.
+
+    The game catalog is the authoritative FE8U target resolver.  The width
+    registry supplies source-visible dialogue geometry; descriptions are
+    explicitly ``both`` because they are consumed by both menu/help UI and
+    talk/text presentations.  The remaining target strings have only
+    system-font consumers in the supported runtime path.  This is
+    intentionally an allow-nothing-by-default contract: each target gets one
+    of system, talk, or both and no target is silently omitted.
+    """
+
+    from scripts.localization.game_catalog.build import build_game_catalog
+    from scripts.localization.game_catalog.control_streams import tokenize_payload
+
+    build = build_game_catalog(enabled_locales=(locale,))
+    registry = load_width_registry(root / WIDTH_REGISTRY_PATH)
+    classifications, _ = classify_targets(
+        root, target_count=build.target_count, registry=registry
+    )
+    description_ids = _description_target_ids(root, build.target_count)
+    direct_talk_ids = _direct_talk_target_ids(root, build.target_count)
+    strings = {style: [] for style in STYLES}
+    records: List[Dict[str, object]] = []
+    counts = {"system": 0, "talk": 0, "both": 0}
+    for entry in build.locale_bundle(locale).entries:
+        if entry.source_text is None or entry.encoded_bytes is None:
+            raise CjkFontError(
+                f"{locale} 0x{entry.target_id:04X}: runtime catalog payload is absent"
+            )
+        context, context_reason = classifications[entry.target_id]
+        has_talk_control = any(
+            token.kind == "control"
+            and token.control is not None
+            and 0x08 <= token.control <= 0x11
+            for token in tokenize_payload(
+                entry.encoded_bytes,
+                source_name=f"{locale} 0x{entry.target_id:04X}",
+            )
+        )
+        if entry.target_id in description_ids:
+            styles = STYLES
+            category = "both"
+            reason = "data description: UI/help and talk/text consumers"
+        elif (
+            context in (registry.talk_context, registry.subtitle_context)
+            or has_talk_control
+            or entry.target_id in direct_talk_ids
+        ):
+            styles = ("talk",)
+            category = "talk"
+            if entry.target_id in direct_talk_ids:
+                reason = direct_talk_ids[entry.target_id]
+            else:
+                reason = context_reason if not has_talk_control else "talk control stream"
+        else:
+            styles = ("system",)
+            category = "system"
+            reason = context_reason
+        for style in styles:
+            strings[style].append(entry.source_text)
+        counts[category] += 1
+        records.append(
+            {
+                "id": f"game:0x{entry.target_id:04X}",
+                "mapping_source_kind": entry.mapping_source_kind,
+                "reason": reason,
+                "styles": list(styles),
+            }
+        )
+
+    expansion, expansion_metadata = _load_expansion_strings(root, locale)
+    for key, text in zip(
+        (
+            row["key"]
+            for row in json.loads(
+                (root / "texts/expansion/registry.json").read_text(encoding="utf-8")
+            )["messages"]
+            if row["status"] == "active"
+        ),
+        expansion,
+    ):
+        strings["system"].append(text)
+        records.append(
+            {
+                "id": f"expansion:{key}",
+                "mapping_source_kind": "expansion",
+                "reason": "expansion UI registry system-font consumer",
+                "styles": ["system"],
+            }
+        )
+        counts["system"] += 1
+
+    for name, text in _tactician_grid_strings(root, locale):
+        strings["system"].append(text)
+        records.append(
+            {
+                "id": f"static:{name}",
+                "mapping_source_kind": "static_ui",
+                "reason": "tactician name-entry grid system-font consumer",
+                "styles": ["system"],
+            }
+        )
+        counts["system"] += 1
+
+    if len(records) != build.target_count + expansion_metadata["active_key_count"] + 2:
+        raise CjkFontError(f"{locale}: runtime usage coverage is incomplete")
+    return strings, records, counts
+
+
 def collect_inventory(root: Path) -> Dict[str, object]:
     locale_records: Dict[str, object] = {}
-    locale_glyphs: Dict[str, Tuple[int, ...]] = {}
+    locale_glyphs: Dict[str, Dict[str, Tuple[int, ...]]] = {}
+    runtime_usage: Dict[str, object] = {}
     union_source: Set[int] = set()
     union_glyphs: Set[int] = set()
     union_spacing: Set[int] = set()
 
     for locale in LOCALES:
-        sources, locale_metadata = _locale_texts(root, locale)
+        style_strings, usage_records, usage_counts = _runtime_catalog_usage(root, locale)
+        _, locale_metadata = _locale_texts(root, locale)
         contribution_sets = {
-            name: _scalar_sets(texts, expansion=(name == "expansion"))
-            for name, texts in sources.items()
+            style: _scalar_sets(texts, expansion=True)
+            for style, texts in style_strings.items()
         }
         all_scalars = set().union(*contribution_sets.values())
         non_ascii = {value for value in all_scalars if value > 0x7F}
@@ -222,8 +419,22 @@ def collect_inventory(root: Path) -> Dict[str, object]:
             for value in non_ascii
             if unicodedata.category(chr(value)) in {"Cc", "Cf", "Cs"}
         }
-        glyphs = tuple(sorted(non_ascii - spacing - nonrendering))
-        locale_glyphs[locale] = glyphs
+        glyphs_by_style = {
+            style: tuple(
+                sorted(
+                    {
+                        value
+                        for value in contribution_sets[style]
+                        if value > 0x7F
+                        and value not in spacing
+                        and value not in nonrendering
+                    }
+                )
+            )
+            for style in STYLES
+        }
+        glyphs = tuple(sorted(set().union(*glyphs_by_style.values())))
+        locale_glyphs[locale] = glyphs_by_style
         union_source.update(non_ascii)
         union_glyphs.update(glyphs)
         union_spacing.update(spacing)
@@ -234,9 +445,16 @@ def collect_inventory(root: Path) -> Dict[str, object]:
             "nonrendering_scalars": [
                 scalar_text(value) for value in sorted(nonrendering)
             ],
+            "runtime_usage": {
+                "record_count": len(usage_records),
+                "game_target_count": 3414,
+                "expansion_key_count": 53,
+                "classifications": usage_counts,
+                "unclassified_count": 0,
+            },
             "contributions": {
                 name: {
-                    "record_count": len(sources[name]),
+                    "record_count": len(style_strings[name]),
                     "non_ascii_scalar_count": len(
                         {value for value in values if value > 0x7F}
                     ),
@@ -246,7 +464,7 @@ def collect_inventory(root: Path) -> Dict[str, object]:
             **locale_metadata,
             "styles": {
                 style: {
-                    "glyph_scalar_count": len(glyphs),
+                    "glyph_scalar_count": len(glyphs_by_style[style]),
                     "corpus": f"fonts/cjk/corpora/{locale}.{style}.txt",
                     "runtime_contract": (
                         "system/item" if style == "system" else "talk/text"
@@ -255,6 +473,10 @@ def collect_inventory(root: Path) -> Dict[str, object]:
                 for style in STYLES
             },
         }
+        runtime_usage[locale] = {
+            "records": usage_records,
+            "summary": locale_records[locale]["runtime_usage"],
+        }
 
     return {
         "locales": locale_records,
@@ -262,6 +484,7 @@ def collect_inventory(root: Path) -> Dict[str, object]:
         "union_source": tuple(sorted(union_source)),
         "union_glyphs": tuple(sorted(union_glyphs)),
         "union_spacing": tuple(sorted(union_spacing)),
+        "runtime_usage": runtime_usage,
     }
 
 
@@ -443,16 +666,34 @@ def build_generated_files(root: Path) -> Dict[str, bytes]:
     for locale in LOCALES:
         for style in STYLES:
             generated[f"fonts/cjk/corpora/{locale}.{style}.txt"] = _corpus_bytes(
-                locale_glyphs[locale]
+                locale_glyphs[locale][style]
             )
         generated[f"fonts/cjk/maps/{locale}.txt"] = _map_bytes(
-            locale_glyphs[locale]
+            tuple(
+                sorted(
+                    set().union(
+                        *(locale_glyphs[locale][style] for style in STYLES)
+                    )
+                )
+            )
         )
     generated["fonts/cjk/corpora/union.txt"] = _corpus_bytes(
         inventory["union_glyphs"]
     )
     generated["fonts/cjk/maps/union.txt"] = _map_bytes(
         inventory["union_glyphs"]
+    )
+    generated[RUNTIME_USAGE_PATH] = json_bytes(
+        {
+            "kind": "fe8u-cjk-runtime-font-usage",
+            "schema_version": 1,
+            "locales": inventory["runtime_usage"],
+            "policy": {
+                "description_strings_are_both": True,
+                "every_supported_runtime_string_is_classified": True,
+                "unclassified_strings_are_forbidden": True,
+            },
+        }
     )
 
     font_sources = _font_source_document(root)
@@ -482,6 +723,7 @@ def build_generated_files(root: Path) -> Dict[str, bytes]:
         root / "texts/locales/authored/manifest.json",
         root / "texts/locales/authored/catalog.ja.json",
         root / "texts/locales/authored/catalog.zh-Hans.json",
+        root / WIDTH_REGISTRY_PATH,
     ]
     outputs = {
         path: {

@@ -7,6 +7,7 @@
 #include "bmlib.h"
 #include "spline.h"
 #include "sysutil.h"
+#include "localized_ui_graphics.h"
 
 #include "constants/songs.h"
 
@@ -103,6 +104,19 @@ const struct OpSubtitleEnt gOpSubtitleGfxLut[] = {
         250,
     },
 };
+
+static const struct OpSubtitleEnt *OpSubtitle_GetGfxLut(void)
+{
+#if LOCALIZED_UI_GRAPHICS_CJK_ENABLED
+    const struct LocalizedUiGraphicsSubtitleSlide *localizedSlides;
+
+    localizedSlides = LocalizedUiGraphics_GetSubtitleSlides();
+    if (localizedSlides != 0)
+        return (const struct OpSubtitleEnt *)localizedSlides;
+#endif
+
+    return gOpSubtitleGfxLut;
+}
 
 //! FE8U = 0x080C488C
 void OpSubtitle_InitBgFromCommGfx(int bg) {
@@ -316,10 +330,11 @@ void OpSubtitle_AwaitTimer2a(struct OpSubtitleProc* proc) {
 
 //! FE8U = 0x080C4C60
 void OpSubtitle_LoadSlideToBg0(struct OpSubtitleProc* proc) {
+    const struct OpSubtitleEnt *gfxLut = OpSubtitle_GetGfxLut();
 
-    Decompress(gOpSubtitleGfxLut[proc->index].gfx, (void*)0x06001000);
+    Decompress(gfxLut[proc->index].gfx, (void*)0x06001000);
 
-    Decompress(gOpSubtitleGfxLut[proc->index].tsa, gGenericBuffer);
+    Decompress(gfxLut[proc->index].tsa, gGenericBuffer);
 
     CallARM_FillTileRect(gBG0TilemapBuffer, gGenericBuffer, 0x3080);
 
@@ -334,10 +349,11 @@ void OpSubtitle_LoadSlideToBg0(struct OpSubtitleProc* proc) {
 
 //! FE8U = 0x080C4CD0
 void OpSubtitle_LoadSlideToBg0AndBg1(struct OpSubtitleProc* proc) {
+    const struct OpSubtitleEnt *gfxLut = OpSubtitle_GetGfxLut();
 
-    Decompress(gOpSubtitleGfxLut[proc->index].gfx, (void*)0x06001000);
+    Decompress(gfxLut[proc->index].gfx, (void*)0x06001000);
 
-    Decompress(gOpSubtitleGfxLut[proc->index].tsa, gGenericBuffer);
+    Decompress(gfxLut[proc->index].tsa, gGenericBuffer);
 
     CallARM_FillTileRect(gBG0TilemapBuffer, gGenericBuffer, 0x3080);
     CallARM_FillTileRect(gBG1TilemapBuffer, gGenericBuffer, 0xE080);
@@ -353,10 +369,11 @@ void OpSubtitle_LoadSlideToBg0AndBg1(struct OpSubtitleProc* proc) {
 
 //! FE8U = 0x080C4D54
 void OpSubtitle_LoadTitleSlide(int index) {
+    const struct OpSubtitleEnt *gfxLut = OpSubtitle_GetGfxLut();
 
-    Decompress(gOpSubtitleGfxLut[index].gfx, (void*)0x06005000);
+    Decompress(gfxLut[index].gfx, (void*)0x06005000);
 
-    Decompress(gOpSubtitleGfxLut[index].tsa, gGenericBuffer);
+    Decompress(gfxLut[index].tsa, gGenericBuffer);
 
     CallARM_FillTileRect(gBG0TilemapBuffer, gGenericBuffer, 0x3280);
 
@@ -384,7 +401,7 @@ void OpSubtitle_FadeInSlide_Loop(struct OpSubtitleProc* proc) {
 
         Proc_Break(proc);
 
-        proc->timer_2a = gOpSubtitleGfxLut[proc->index].timer;
+        proc->timer_2a = OpSubtitle_GetGfxLut()[proc->index].timer;
         proc->timer_2c = 0;
     }
 
@@ -491,10 +508,10 @@ void OpSubtitle_BlendFadeInSlide_Loop(struct OpSubtitleProc* proc) {
 
         if (proc->index < 5) {
             Proc_Break(proc);
-            proc->timer_2a = gOpSubtitleGfxLut[proc->index].timer;
+            proc->timer_2a = OpSubtitle_GetGfxLut()[proc->index].timer;
             proc->timer_2c = 0;
         } else {
-            proc->timer_2a = gOpSubtitleGfxLut[proc->index].timer;
+            proc->timer_2a = OpSubtitle_GetGfxLut()[proc->index].timer;
             proc->index++;
 
             Proc_Goto(proc, 4);
@@ -586,7 +603,7 @@ void OpSubtitle_FadeInScrollTextPal_Loop(struct OpSubtitleProc* proc) {
 
         Proc_Break(proc);
 
-        proc->timer_2a = gOpSubtitleGfxLut[proc->index].timer;
+        proc->timer_2a = OpSubtitle_GetGfxLut()[proc->index].timer;
         proc->timer_2c = 0;
     }
 

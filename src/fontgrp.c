@@ -473,6 +473,37 @@ static void Text_DrawLocalizedScalar(struct Text *text, u32 scalar)
     asciiGlyph = gActiveFont->glyphs['?'];
     gActiveFont->drawGlyph(text, asciiGlyph);
 }
+
+bool8 Text_ShouldAutoWrap(struct Text *text, const char *str)
+{
+#if FE8_EXPANSION_LOCALIZED_TEXT_AUTO_WRAP
+    struct TextUtf8Token token;
+    const char *next;
+    u32 width;
+    u32 limit;
+
+    if (text == NULL || str == NULL || text->x == 0
+        || !Text_UsesLocalizedFont())
+        return FALSE;
+
+    next = TextUtf8_Next(str, &token);
+    if (next == str)
+        return FALSE;
+    if (token.kind == TEXT_UTF8_TOKEN_SCALAR)
+        width = Text_GetLocalizedScalarWidth(token.scalar);
+    else if (token.kind == TEXT_UTF8_TOKEN_INVALID)
+        width = Text_GetLocalizedScalarWidth(LOCALIZED_FONT_INVALID_SCALAR);
+    else
+        return FALSE;
+
+    limit = (u32)text->tile_width * 8u;
+    return LocalizedFont_ShouldWrap((u32)text->x, width, limit);
+#else
+    (void)text;
+    (void)str;
+    return FALSE;
+#endif
+}
 #endif
 
 void InitText(struct Text *text, int tileWidth)

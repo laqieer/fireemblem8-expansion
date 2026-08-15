@@ -39,9 +39,9 @@ static bool8 LocalizedFont_GetDescriptor(
 #if (FE8_EXPANSION_ENABLED_LOCALE_MASK & 0x02u) != 0
     if (locale == EXPANSION_LOCALE_JA)
     {
-        out->glyphCount = gLocalizedFontJaGlyphCount;
         if (style == LOCALIZED_FONT_STYLE_SYSTEM)
         {
+            out->glyphCount = gLocalizedFontJaSystemGlyphCount;
             out->codepoints = gLocalizedFontJaSystemCodepoints;
             out->widths = gLocalizedFontJaSystemWidths;
             out->bitmaps = gLocalizedFontJaSystemBitmaps;
@@ -49,6 +49,7 @@ static bool8 LocalizedFont_GetDescriptor(
         }
         if (style == LOCALIZED_FONT_STYLE_TALK)
         {
+            out->glyphCount = gLocalizedFontJaTalkGlyphCount;
             out->codepoints = gLocalizedFontJaTalkCodepoints;
             out->widths = gLocalizedFontJaTalkWidths;
             out->bitmaps = gLocalizedFontJaTalkBitmaps;
@@ -61,9 +62,9 @@ static bool8 LocalizedFont_GetDescriptor(
 #if (FE8_EXPANSION_ENABLED_LOCALE_MASK & 0x04u) != 0
     if (locale == EXPANSION_LOCALE_ZH_HANS)
     {
-        out->glyphCount = gLocalizedFontZhHansGlyphCount;
         if (style == LOCALIZED_FONT_STYLE_SYSTEM)
         {
+            out->glyphCount = gLocalizedFontZhHansSystemGlyphCount;
             out->codepoints = gLocalizedFontZhHansSystemCodepoints;
             out->widths = gLocalizedFontZhHansSystemWidths;
             out->bitmaps = gLocalizedFontZhHansSystemBitmaps;
@@ -71,6 +72,7 @@ static bool8 LocalizedFont_GetDescriptor(
         }
         if (style == LOCALIZED_FONT_STYLE_TALK)
         {
+            out->glyphCount = gLocalizedFontZhHansTalkGlyphCount;
             out->codepoints = gLocalizedFontZhHansTalkCodepoints;
             out->widths = gLocalizedFontZhHansTalkWidths;
             out->bitmaps = gLocalizedFontZhHansTalkBitmaps;
@@ -169,6 +171,13 @@ u16 LocalizedFont_GetMissingGlyphCount(void)
 u32 LocalizedFont_GetLastMissingScalar(void)
 {
     return sLocalizedFontLastMissingScalar;
+}
+
+bool8 LocalizedFont_ShouldWrap(u32 cursor, u32 advance, u32 allocationPixels)
+{
+    if (cursor == 0 || advance == 0 || cursor > allocationPixels)
+        return FALSE;
+    return (bool8)(advance > allocationPixels - cursor);
 }
 
 #endif /* FE8_LOCALIZED_FONT_ENABLED */

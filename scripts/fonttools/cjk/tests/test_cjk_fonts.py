@@ -19,6 +19,8 @@ from scripts.fonttools.cjk.inventory import (
 )
 from scripts.fonttools.cjk.package import (
     ASSET_ROOT,
+    FEHBUILDER_BASELINE_MANIFEST,
+    FEHRR_SOURCES,
     archive_package,
     check_compact_assets,
     compact_asset_filenames,
@@ -100,11 +102,14 @@ class CjkFontTests(unittest.TestCase):
                 metadata["catalog"],
                 catalog_path.relative_to(ROOT).as_posix(),
             )
-            corpus = set(
-                (ROOT / f"fonts/cjk/corpora/{locale}.system.txt").read_text(
-                    encoding="utf-8"
+            corpora = {
+                style: set(
+                    (ROOT / f"fonts/cjk/corpora/{locale}.{style}.txt").read_text(
+                        encoding="utf-8"
+                    )
                 )
-            )
+                for style in ("system", "talk")
+            }
             authored_scalars = {
                 character
                 for text in catalog["strings"].values()
@@ -112,7 +117,7 @@ class CjkFontTests(unittest.TestCase):
                 if ord(character) > 0x7F and not character.isspace()
             }
             self.assertTrue(authored_scalars)
-            self.assertTrue(authored_scalars <= corpus)
+            self.assertTrue(authored_scalars <= set().union(*corpora.values()))
             compact_manifest = json.loads(
                 (ROOT / "graphics/fonts/cjk/manifest.json").read_text()
             )
@@ -127,10 +132,7 @@ class CjkFontTests(unittest.TestCase):
                         codepoints,
                     )
                 )
-                self.assertTrue(
-                    set(map(ord, authored_scalars)) <= values,
-                    (locale, style),
-                )
+                self.assertEqual(values, set(map(ord, corpora[style])))
 
     def test_inventory_counts_tokens_and_spacing_contract(self):
         inventory = json.loads((ROOT / "fonts/cjk/inventory.json").read_text())
@@ -158,10 +160,28 @@ class CjkFontTests(unittest.TestCase):
                     tuple(sorted(set(map(ord, corpus)))),
                 )
                 self.assertNotIn("[CTRL:", corpus)
-                self.assertEqual(len(corpus), record["glyph_scalar_count"])
-            locale_scalars[locale] = set(
-                map(ord, (ROOT / f"fonts/cjk/corpora/{locale}.system.txt").read_text())
+                self.assertEqual(
+                    len(corpus), record["styles"][style]["glyph_scalar_count"]
+                )
+            locale_scalars[locale] = set().union(
+                *(
+                    set(
+                        map(
+                            ord,
+                            (ROOT / f"fonts/cjk/corpora/{locale}.{style}.txt").read_text(),
+                        )
+                    )
+                    for style in ("system", "talk")
+                )
             )
+            self.assertNotEqual(
+                (ROOT / f"fonts/cjk/corpora/{locale}.system.txt").read_bytes(),
+                (ROOT / f"fonts/cjk/corpora/{locale}.talk.txt").read_bytes(),
+            )
+            usage = record["runtime_usage"]
+            self.assertEqual(usage["record_count"], 3469)
+            self.assertEqual(usage["unclassified_count"], 0)
+            self.assertGreater(usage["classifications"]["both"], 0)
 
         union = set(map(ord, (ROOT / "fonts/cjk/corpora/union.txt").read_text()))
         self.assertEqual(union, set().union(*locale_scalars.values()))
@@ -175,6 +195,33 @@ class CjkFontTests(unittest.TestCase):
         self.assertIn(0x5019, locale_scalars["zh-Hans"])
         self.assertIn(0x8A3A, locale_scalars["ja"])
         self.assertIn(0x8BCA, locale_scalars["zh-Hans"])
+
+    def test_runtime_usage_registry_covers_every_string_without_reunion(self):
+        usage = json.loads((ROOT / "fonts/cjk/runtime_usage.json").read_text())
+        self.assertEqual(
+            usage["policy"],
+            {
+                "description_strings_are_both": True,
+                "every_supported_runtime_string_is_classified": True,
+                "unclassified_strings_are_forbidden": True,
+            },
+        )
+        for locale in ("ja", "zh-Hans"):
+            data = usage["locales"][locale]
+            self.assertEqual(len(data["records"]), 3469)
+            self.assertEqual(data["summary"]["unclassified_count"], 0)
+            self.assertTrue(
+                all(record["styles"] in (["system"], ["talk"], ["system", "talk"])
+                    for record in data["records"])
+            )
+            by_id = {record["id"]: record for record in data["records"]}
+            for target in ("game:0x08BC", "game:0x08BD", "game:0x08D3"):
+                self.assertIn("talk", by_id[target]["styles"], (locale, target))
+            talk = set(
+                (ROOT / f"fonts/cjk/corpora/{locale}.talk.txt").read_text()
+            )
+            if locale == "zh-Hans":
+                self.assertTrue({"售", "周"} <= talk)
 
     def test_inventory_regeneration_is_byte_identical(self):
         generated = build_generated_files(ROOT)
@@ -215,11 +262,18 @@ class CjkFontTests(unittest.TestCase):
                 ROOT / "fonts/cjk/corpora",
                 root / "fonts/cjk/corpora",
             )
+            shutil.copytree(
+                ROOT / "fonts/cjk/febuilder-baseline",
+                root / "fonts/cjk/febuilder-baseline",
+            )
             for relative_path in (
                 "fonts/cjk/inventory.json",
                 "fonts/cjk/febuilder-manifest.json",
+                FEHBUILDER_BASELINE_MANIFEST,
+                FEHBUILDER_BASELINE_MANIFEST,
                 "fonts/cjk/reports/febuilder-generation-report.json",
                 "fonts/cjk/reports/febuilder-gates.json",
+                FEHRR_SOURCES,
             ):
                 shutil.copy2(ROOT / relative_path, root / relative_path)
             shutil.copytree(
@@ -276,15 +330,15 @@ class CjkFontTests(unittest.TestCase):
 
     def test_febuilder_gate_counts_follow_current_manifest(self):
         manifest = json.loads(
-            (ROOT / "fonts/cjk/febuilder-manifest.json").read_text()
+            (ROOT / FEHBUILDER_BASELINE_MANIFEST).read_text()
         )
         gates = json.loads(
             (ROOT / "fonts/cjk/reports/febuilder-gates.json").read_text()
         )
-        expected_rows = sum(
-            len((ROOT / "fonts/cjk" / job["corpus"]["path"]).read_text())
-            for job in manifest["jobs"]
+        report = json.loads(
+            (ROOT / "fonts/cjk/reports/febuilder-generation-report.json").read_text()
         )
+        expected_rows = sum(job["scalarCount"] for job in report["jobs"])
         for gate in gates["gates"].values():
             self.assertEqual(gate["job_count"], len(manifest["jobs"]))
             self.assertEqual(gate["row_count"], expected_rows)
@@ -293,13 +347,21 @@ class CjkFontTests(unittest.TestCase):
         manifest = json.loads(
             (ROOT / "graphics/fonts/cjk/manifest.json").read_text()
         )
+        fehrr_lock = json.loads((ROOT / FEHRR_SOURCES).read_text())
+        source_scalars = {
+            prefix: {
+                int(row["scalar"][2:], 16)
+                for row in asset["glyphs"]
+            }
+            for prefix, asset in fehrr_lock["assets"].items()
+        }
         self.assertEqual(
             manifest["spacing_scalars"],
             [
                 {
                     "advance": 16,
                     "bitmap": None,
-                    "locales": ["ja"],
+                    "locales": ["ja", "zh-Hans"],
                     "runtime_styles": ["system", "talk"],
                     "scalar": "U+3000",
                 }
@@ -317,10 +379,9 @@ class CjkFontTests(unittest.TestCase):
             self.assertEqual(len(widths), count)
             self.assertTrue(all(1 <= width <= 16 for width in widths), name)
             self.assertEqual(len(glyphs), count * 64)
-            self.assertTrue(
-                all(any(glyphs[index : index + 64]) for index in range(0, len(glyphs), 64)),
-                name,
-            )
+            for index, scalar in enumerate(values):
+                if not any(glyphs[index * 64 : (index + 1) * 64]):
+                    self.assertIn(scalar, source_scalars[name], (name, scalar))
             for kind in ("codepoints", "widths", "bitmap"):
                 data = (ROOT / asset[kind]["path"]).read_bytes()
                 payload_total += len(data)
@@ -334,6 +395,82 @@ class CjkFontTests(unittest.TestCase):
             manifest["rom_budget"]["four_byte_aligned_blob_bytes"],
             aligned_total,
         )
+
+    def test_fehrr_priority_lock_preserves_source_widths_and_fallbacks(self):
+        manifest = json.loads((ROOT / "graphics/fonts/cjk/manifest.json").read_text())
+        lock_data = (ROOT / FEHRR_SOURCES).read_bytes()
+        lock = json.loads(lock_data)
+        priority = manifest["sources"]["fehrr_priority"]
+        self.assertEqual(priority["path"], FEHRR_SOURCES)
+        self.assertEqual(priority["sha256"], hashlib.sha256(lock_data).hexdigest())
+        self.assertEqual(
+            priority["policy"],
+            (
+                "same-game same-style FEHRR glyph first; same-game cross-style "
+                "FEHRR glyph second; pinned FEHRR supplemental style tier third; "
+                "verified FEBuilder baseline fallback last"
+            ),
+        )
+        self.assertEqual(lock["source"]["repository"], "https://github.com/laqieer/FEHRR.git")
+        self.assertEqual(len(lock["source"]["commit"]), 40)
+        self.assertEqual(
+            lock["selection_policy"],
+            priority["policy"],
+        )
+        for name, asset in lock["assets"].items():
+            counts = asset["selection_counts"]
+            self.assertEqual(
+                asset["glyph_count"],
+                counts["same_game_same_style"]
+                + counts["same_game_cross_style"]
+                + counts["fehrr_supplemental"],
+            )
+            self.assertEqual(
+                asset["glyph_count"] + counts["febuilder_fallback"],
+                manifest["assets"][name]["glyph_count"],
+            )
+            self.assertGreaterEqual(counts["same_game_cross_style"], 0)
+            self.assertEqual(
+                len(asset["febuilder_fallbacks"]),
+                counts["febuilder_fallback"],
+            )
+        self.assertEqual(
+            manifest["assets"]["zh-Hans.talk"]["source_priority"][
+                "febuilder_fallback"
+            ],
+            1,
+        )
+        self.assertEqual(
+            lock["assets"]["zh-Hans.talk"]["febuilder_fallbacks"],
+            [
+                {
+                    "reason": "absent from configured FEHRR style tiers",
+                    "scalar": "U+FF05",
+                }
+            ],
+        )
+        supplemental = {
+            row["scalar"]
+            for asset in lock["assets"].values()
+            for row in asset["glyphs"]
+            if row["selection_kind"] == "fehrr_supplemental"
+        }
+        self.assertIn("U+7FD4", supplemental)  # 翔
+        self.assertIn("U+8BCA", supplemental)  # 诊
+        self.assertIn(
+            {
+                "filename": "FontText_E383BB.png",
+                "ignored_line": 3627,
+                "ignored_width": 1,
+                "scalar": "U+30FB",
+                "selected_line": 1758,
+                "selected_width": 7,
+                "source_locale": "fe8j",
+                "source_style": "text",
+            },
+            lock["duplicate_width_resolution"]["conflicts"],
+        )
+        self.assertEqual(check_compact_assets(ROOT), check_compact_assets(ROOT))
 
     def test_font_domain_contains_no_committed_package_archive(self):
         tracked = subprocess.run(

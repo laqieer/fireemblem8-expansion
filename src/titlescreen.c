@@ -7,6 +7,7 @@
 #include "gamecontrol.h"
 #include "expansion_debugtools.h"
 #include "expansion_itemtest.h"
+#include "localized_ui_graphics.h"
 #include "bmlib.h"
 #include "bm.h"
 #include "opanim.h"
@@ -60,13 +61,28 @@ void DrawTitleSprites_Init(struct TitleScreenProc* proc) {
 
 //! FE8U = 0x080C5440
 void DrawTitleSprites_Loop(struct TitleScreenProc* proc) {
+#if LOCALIZED_UI_GRAPHICS_CJK_ENABLED
+    const struct LocalizedUiGraphicsTitleSprites *localizedSprites;
 
-    PutSpriteExt(0, 4, 48, gSprite_Title_FireEmblemLogo, 0x2000);
-    PutSpriteExt(0, 220, 41, gObject_16x16, 0x201E); // TM
-    PutSpriteExt(2, 4, 1077, gSprite_Title_FireEmblemLogo, 0x2080);
-    PutSpriteExt(1, 16, 85, gSprite_Title_SacredStonesBanner, 0x31A0);
-    PutSpriteExt(1, 72, 124, gSprite_Title_PressStart, 0x1ba);
-    PutSpriteExt(1, 4, 148, gSprite_Title_CopyrightInfo, 0x1180);
+    localizedSprites = LocalizedUiGraphics_GetTitleSprites();
+    if (localizedSprites != 0) {
+        PutSpriteExt(0, 0, 39, localizedSprites->logo, 0x2000);
+        PutSpriteExt(0, 216, 39, gObject_16x16, 0x201E);
+        PutSpriteExt(2, 0, 1068, localizedSprites->logo, 0x20C0);
+        PutSpriteExt(1, 60, 26, localizedSprites->extra, 0x11B0);
+        PutSpriteExt(1, 56, 87, localizedSprites->banner, 0x31A0);
+        PutSpriteExt(1, 80, 124, localizedSprites->pressStart, 0x1F0);
+        PutSpriteExt(1, 16, 148, localizedSprites->copyright, 0x1180);
+    } else
+#endif
+    {
+        PutSpriteExt(0, 4, 48, gSprite_Title_FireEmblemLogo, 0x2000);
+        PutSpriteExt(0, 220, 41, gObject_16x16, 0x201E); // TM
+        PutSpriteExt(2, 4, 1077, gSprite_Title_FireEmblemLogo, 0x2080);
+        PutSpriteExt(1, 16, 85, gSprite_Title_SacredStonesBanner, 0x31A0);
+        PutSpriteExt(1, 72, 124, gSprite_Title_PressStart, 0x1ba);
+        PutSpriteExt(1, 4, 148, gSprite_Title_CopyrightInfo, 0x1180);
+    }
 
     if (DivRem(proc->unk_4c, 3) == 0) {
         proc->unk_52 = (proc->unk_52 + 1) & 0x1f;
@@ -199,6 +215,11 @@ void Title_Init(struct TitleScreenProc* proc) {
 void Title_SetupMainGraphics(struct TitleScreenProc * proc)
 {
     int i;
+#if LOCALIZED_UI_GRAPHICS_CJK_ENABLED
+    const struct LocalizedUiGraphicsTitle *localizedTitle;
+
+    localizedTitle = LocalizedUiGraphics_GetTitle();
+#endif
 
     switch (proc->timer) {
     case 0:
@@ -233,11 +254,23 @@ void Title_SetupMainGraphics(struct TitleScreenProc * proc)
         break;
 
     case 3:
+#if LOCALIZED_UI_GRAPHICS_CJK_ENABLED
+        Decompress(
+            localizedTitle != 0 ? localizedTitle->logo : gGfx_FireEmblemLogo,
+            (void*)0x06010000);
+#else
         Decompress(gGfx_FireEmblemLogo, (void*)0x06010000);
+#endif
         break;
 
     case 4:
+#if LOCALIZED_UI_GRAPHICS_CJK_ENABLED
+        Decompress(
+            localizedTitle != 0 ? localizedTitle->labels : gGfx_SubtitlePressStart,
+            localizedTitle != 0 ? (void *)0x06012800 : (void *)0x06013000);
+#else
         Decompress(gGfx_SubtitlePressStart, (void*)0x06013000);
+#endif
         ApplyPalettes(gPal_PressStart, 0x10, 4);
         proc->timer = 0;
         Proc_Break(proc);
@@ -805,6 +838,9 @@ void DrawTitleLightBubbleSprites(int arg) {
 void Title_Loop_LightExplosionFx(struct TitleScreenProc* proc) {
 
     int res;
+#if LOCALIZED_UI_GRAPHICS_CJK_ENABLED
+    const struct LocalizedUiGraphicsTitleSprites *localizedSprites;
+#endif
 
     gLCDControlBuffer.blendCoeffA = Interpolate(0, 16, 0, proc->timer, 24);
 
@@ -820,7 +856,20 @@ void Title_Loop_LightExplosionFx(struct TitleScreenProc* proc) {
     Nop_Titlescreen_0(res, proc->unk_30);
     proc->unk_30 = res;
 
-    PutSpriteExt(1, 16, 85, gSprite_Title_SacredStonesBanner, 0x31A0);
+#if LOCALIZED_UI_GRAPHICS_CJK_ENABLED
+    localizedSprites = LocalizedUiGraphics_GetTitleSprites();
+    if (localizedSprites != 0) {
+        PutSpriteExt(1, 56, 87, localizedSprites->banner, 0x3230);
+
+        if (proc->timer > 0x16)
+            PutSpriteExt(1, 52, 26, localizedSprites->subtitle, 0x8300);
+        else if (proc->timer > 0x14)
+            PutSpriteExt(1, 52, 26, localizedSprites->subtitle, 0x82C0);
+    } else
+#endif
+    {
+        PutSpriteExt(1, 16, 85, gSprite_Title_SacredStonesBanner, 0x31A0);
+    }
 
     DrawTitleLightBubbleSprites(proc->timer);
 

@@ -502,8 +502,8 @@ class CjkSettingsFingerprintContractTests(unittest.TestCase):
 
         expected_framebuffer_hashes = [
             "fnv1a64-rgb24:94dc8281cfc35712",
-            "fnv1a64-rgb24:1366ff38fc19bebe",
-            "fnv1a64-rgb24:5602ccf00c10aaa9",
+            "fnv1a64-rgb24:9565444d2a350a82",
+            "fnv1a64-rgb24:ca21676b88966cc6",
         ]
         expected_region_hashes = [
             "fnv1a64-region:c6a3e45929fb9ee0",

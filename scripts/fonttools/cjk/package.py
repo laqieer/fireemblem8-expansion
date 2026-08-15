@@ -8,6 +8,7 @@ import hashlib
 import io
 import json
 import struct
+import subprocess
 import zipfile
 import zlib
 from pathlib import Path, PurePosixPath
@@ -25,6 +26,12 @@ from .inventory import (
 PACKAGE_ARCHIVE = "build/tmp/cjk-fonts/febuilder-schema-v1.zip"
 GENERATION_REPORT = "fonts/cjk/reports/febuilder-generation-report.json"
 GATE_REPORT = "fonts/cjk/reports/febuilder-gates.json"
+FEHRR_SOURCES = "fonts/cjk/fehrr-sources.json"
+FEHBUILDER_BASELINE_MANIFEST = "fonts/cjk/febuilder-baseline-manifest.json"
+FEHBUILDER_BASELINE_ASSET_ROOT = "fonts/cjk/febuilder-baseline"
+FEHBUILDER_BASELINE_ASSET_MANIFEST = (
+    "fonts/cjk/febuilder-baseline/manifest.json"
+)
 ASSET_ROOT = "graphics/fonts/cjk"
 COMPACT_ASSET_SUFFIXES = {
     "codepoints": ".codepoints.u32le",
@@ -36,6 +43,66 @@ PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 SLOTS_HEADER = (
     "moji\tunicode\tstyle\twidth\tfilename\tpackedSha256\tpngSha256"
 )
+FEHRR_REPOSITORY = "https://github.com/laqieer/FEHRR.git"
+FEHRR_LOCALES = {
+    "ja": "fe8j",
+    "zh-Hans": "fe8cn",
+}
+FEHRR_SOURCE_STYLES = {
+    "system": "item",
+    "talk": "text",
+}
+FEHRR_CROSS_STYLE = {
+    "item": "text",
+    "text": "item",
+}
+FEHRR_PRIORITY_POLICY = (
+    "same-game same-style FEHRR glyph first; same-game cross-style FEHRR "
+    "glyph second; pinned FEHRR supplemental style tier third; verified "
+    "FEBuilder baseline fallback last"
+)
+FEHRR_SUPPLEMENTAL_TIERS = {
+    "ja": {
+        "system": (
+            ("common-japanese", "glyph/Microsoft Sans Serif/常用日语汉字"),
+            ("fe6j", "glyph/fe6j"),
+            ("fe7j", "glyph/fe7j"),
+            ("fe8u", "glyph/fe8u"),
+            ("missing-glyph", "glyph/Microsoft Sans Serif/缺字增补"),
+        ),
+        "talk": (
+            ("common-japanese", "glyph/Microsoft Sans Serif/常用日语汉字"),
+            ("fe6j", "glyph/fe6j"),
+            ("fe7j", "glyph/fe7j"),
+            ("fe8u", "glyph/fe8u"),
+            ("missing-glyph", "glyph/Microsoft Sans Serif/缺字增补"),
+        ),
+    },
+    "zh-Hans": {
+        "system": (
+            ("punctuation", "glyph/标点符号/道具标点"),
+            ("gba-punctuation", "glyph/GBA火纹中文字库/道具标点"),
+            ("gba-tier1", "glyph/GBA火纹中文字库/一级道具字体"),
+            ("gba-tier2", "glyph/GBA火纹中文字库/二级道具字体"),
+            ("fe6cn", "glyph/fe6cn"),
+            ("fe7cn", "glyph/fe7cn"),
+            ("fe8j", "glyph/fe8j"),
+            ("fe8u", "glyph/fe8u"),
+            ("missing-glyph", "glyph/Microsoft Sans Serif/缺字增补"),
+        ),
+        "talk": (
+            ("punctuation", "glyph/标点符号/对话标点"),
+            ("gba-punctuation", "glyph/GBA火纹中文字库/对话标点"),
+            ("gba-tier1", "glyph/GBA火纹中文字库/一级对话字体"),
+            ("gba-tier2", "glyph/GBA火纹中文字库/二级对话字体"),
+            ("fe6cn", "glyph/fe6cn"),
+            ("fe7cn", "glyph/fe7cn"),
+            ("fe8j", "glyph/fe8j"),
+            ("fe8u", "glyph/fe8u"),
+            ("missing-glyph", "glyph/Microsoft Sans Serif/缺字增补"),
+        ),
+    },
+}
 
 
 def compact_asset_filenames(prefix: str) -> Dict[str, str]:
@@ -242,6 +309,403 @@ def _pack_engine_tile(indices: bytes) -> bytes:
             | (indices[offset + 3] << 6)
         )
     return bytes(packed)
+
+
+def _read_fehrr_png_indices(png: bytes) -> bytes:
+    if not png.startswith(PNG_SIGNATURE):
+        raise CjkFontError("FEHRR glyph has an invalid PNG signature")
+    position = len(PNG_SIGNATURE)
+    chunks: List[Tuple[bytes, bytes]] = []
+    saw_iend = False
+    while position < len(png):
+        if position + 12 > len(png):
+            raise CjkFontError("FEHRR glyph has a truncated PNG chunk")
+        length = struct.unpack_from(">I", png, position)[0]
+        chunk_type = png[position + 4 : position + 8]
+        start = position + 8
+        end = start + length
+        if end + 4 > len(png):
+            raise CjkFontError("FEHRR glyph PNG chunk exceeds file bounds")
+        payload = png[start:end]
+        expected_crc = struct.unpack_from(">I", png, end)[0]
+        actual_crc = binascii.crc32(chunk_type + payload) & 0xFFFFFFFF
+        if expected_crc != actual_crc:
+            raise CjkFontError(f"FEHRR glyph {chunk_type!r} PNG CRC mismatch")
+        chunks.append((chunk_type, payload))
+        position = end + 4
+        if chunk_type == b"IEND":
+            saw_iend = True
+            break
+    if not saw_iend or position != len(png):
+        raise CjkFontError("FEHRR glyph PNG is missing IEND or has trailing bytes")
+    if not chunks or chunks[0][0] != b"IHDR" or chunks[-1][0] != b"IEND":
+        raise CjkFontError("FEHRR glyph PNG chunk order is invalid")
+    ihdr = chunks[0][1]
+    if len(ihdr) != 13:
+        raise CjkFontError("FEHRR glyph IHDR is invalid")
+    width, height, depth, color_type, compression, filter_method, interlace = struct.unpack(
+        ">IIBBBBB", ihdr
+    )
+    if (
+        width != 16
+        or height != 16
+        or depth != 8
+        or color_type not in (2, 3)
+        or compression != 0
+        or filter_method != 0
+        or interlace != 0
+    ):
+        raise CjkFontError("FEHRR glyph is not supported 16x16 PNG data")
+    palette = [payload for chunk_type, payload in chunks if chunk_type == b"PLTE"]
+    transparency = [payload for chunk_type, payload in chunks if chunk_type == b"tRNS"]
+    idat = [payload for chunk_type, payload in chunks if chunk_type == b"IDAT"]
+    if color_type == 3 and (
+        len(palette) != 1
+        or len(palette[0]) < 3
+        or len(palette[0]) > 256 * 3
+        or len(palette[0]) % 3
+    ):
+        raise CjkFontError("FEHRR glyph palette is invalid")
+    if (color_type == 2 and palette) or transparency or not idat:
+        raise CjkFontError("FEHRR glyph must not use transparency and needs image data")
+    try:
+        raw = zlib.decompress(b"".join(idat))
+    except zlib.error as error:
+        raise CjkFontError(f"FEHRR glyph PNG zlib stream is invalid: {error}") from error
+    bytes_per_pixel = 3 if color_type == 2 else 1
+    row_bytes = 16 * bytes_per_pixel
+    if len(raw) != 16 * (row_bytes + 1):
+        raise CjkFontError("FEHRR glyph decompressed scanline size is invalid")
+    decoded_rows = []
+    previous = bytearray(row_bytes)
+    for row in range(16):
+        scanline = raw[
+            row * (row_bytes + 1) : (row + 1) * (row_bytes + 1)
+        ]
+        filter_type = scanline[0]
+        current = bytearray(scanline[1:])
+        if filter_type == 0:
+            pass
+        elif filter_type == 1:
+            for index in range(row_bytes):
+                left = current[index - bytes_per_pixel] if index >= bytes_per_pixel else 0
+                current[index] = (current[index] + left) & 0xFF
+        elif filter_type == 2:
+            for index in range(row_bytes):
+                current[index] = (current[index] + previous[index]) & 0xFF
+        elif filter_type == 3:
+            for index in range(row_bytes):
+                left = current[index - bytes_per_pixel] if index >= bytes_per_pixel else 0
+                current[index] = (current[index] + ((left + previous[index]) // 2)) & 0xFF
+        elif filter_type == 4:
+            for index in range(row_bytes):
+                left = current[index - bytes_per_pixel] if index >= bytes_per_pixel else 0
+                up = previous[index]
+                upper_left = previous[index - bytes_per_pixel] if index >= bytes_per_pixel else 0
+                predictor = left + up - upper_left
+                left_distance = abs(predictor - left)
+                up_distance = abs(predictor - up)
+                upper_left_distance = abs(predictor - upper_left)
+                if left_distance <= up_distance and left_distance <= upper_left_distance:
+                    paeth = left
+                elif up_distance <= upper_left_distance:
+                    paeth = up
+                else:
+                    paeth = upper_left
+                current[index] = (current[index] + paeth) & 0xFF
+        else:
+            raise CjkFontError("FEHRR glyph PNG uses an invalid filter")
+        decoded_rows.append(bytes(current))
+        previous = current
+    if color_type == 3:
+        indices = bytearray().join(decoded_rows)
+    else:
+        pixels = [
+            tuple(row[index : index + 3])
+            for row in decoded_rows
+            for index in range(0, row_bytes, 3)
+        ]
+        frequencies = {pixel: pixels.count(pixel) for pixel in set(pixels)}
+        background = min(
+            frequencies,
+            key=lambda pixel: (-frequencies[pixel], pixel),
+        )
+        foreground = sorted(
+            (pixel for pixel in frequencies if pixel != background),
+            key=lambda pixel: (sum(pixel), pixel),
+        )
+        palette_indices = {
+            pixel: min(index + 1, 3) for index, pixel in enumerate(foreground)
+        }
+        indices = bytearray(
+            0 if pixel == background else palette_indices[pixel] for pixel in pixels
+        )
+    if any(index > 3 for index in indices):
+        raise CjkFontError("FEHRR glyph pixels must use palette entries 0 through 3")
+    return bytes(indices)
+
+
+def _source_tree_sha256(members: Iterable[Tuple[str, bytes]]) -> str:
+    digest = hashlib.sha256()
+    seen = set()
+    for name, data in sorted(members):
+        name = _safe_member(name)
+        if name in seen:
+            raise CjkFontError(f"duplicate FEHRR source member {name}")
+        seen.add(name)
+        digest.update(name.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(struct.pack(">Q", len(data)))
+        digest.update(data)
+    return digest.hexdigest()
+
+
+def _run_git(source_root: Path, *arguments: str) -> str:
+    completed = subprocess.run(
+        ("git", "-C", str(source_root), *arguments),
+        check=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    if completed.returncode:
+        detail = completed.stderr.strip() or completed.stdout.strip()
+        raise CjkFontError(f"{source_root}: git {' '.join(arguments)} failed: {detail}")
+    return completed.stdout.strip()
+
+
+def _verify_fehrr_checkout(source_root: Path) -> Dict[str, str]:
+    if not source_root.is_dir():
+        raise CjkFontError(f"{source_root}: FEHRR source checkout is missing")
+    commit = _run_git(source_root, "rev-parse", "HEAD")
+    if len(commit) != 40 or any(character not in "0123456789abcdef" for character in commit):
+        raise CjkFontError(f"{source_root}: FEHRR HEAD is not a full commit SHA")
+    if _run_git(source_root, "status", "--porcelain=v1"):
+        raise CjkFontError(f"{source_root}: FEHRR checkout must be clean")
+    origin = _run_git(source_root, "remote", "get-url", "origin")
+    if origin not in (FEHRR_REPOSITORY, FEHRR_REPOSITORY.removesuffix(".git")):
+        raise CjkFontError(f"{source_root}: FEHRR origin must be {FEHRR_REPOSITORY}")
+    return {
+        "repository": FEHRR_REPOSITORY,
+        "commit": commit,
+    }
+
+
+def _parse_fehrr_font_map(
+    source_root: Path,
+    source_locale: str,
+    relative_map: str | None = None,
+) -> Tuple[str, bytes, Dict[str, Dict[int, Dict[str, object]]], List[Dict[str, object]]]:
+    if relative_map is None:
+        relative_map = f"glyph/{source_locale}/font.fontall.txt"
+    map_path = source_root / relative_map
+    try:
+        map_data = map_path.read_bytes()
+        text = map_data.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise CjkFontError(f"{map_path}: FEHRR font map is not UTF-8") from error
+    records: Dict[str, Dict[int, Dict[str, object]]] = {"item": {}, "text": {}}
+    duplicate_widths = []
+    for line_number, line in enumerate(text.splitlines(), start=1):
+        if not line or line.startswith("//"):
+            continue
+        columns = line.split("\t")
+        if len(columns) != 4:
+            raise CjkFontError(f"{map_path}:{line_number}: expected four tab-separated fields")
+        character, source_style, width_text, filename = columns
+        if source_style not in records:
+            raise CjkFontError(f"{map_path}:{line_number}: unsupported style {source_style!r}")
+        if len(character) != 1:
+            continue
+        try:
+            width = int(width_text, 10)
+        except ValueError as error:
+            raise CjkFontError(f"{map_path}:{line_number}: width is not decimal") from error
+        if not 1 <= width <= 16:
+            raise CjkFontError(f"{map_path}:{line_number}: width is outside 1..16")
+        expected_prefix = "FontItem" if source_style == "item" else "FontText"
+        if (
+            Path(filename).name != filename
+            or not filename.startswith(expected_prefix)
+            or not filename.endswith(".png")
+        ):
+            raise CjkFontError(f"{map_path}:{line_number}: glyph filename is unsafe")
+        scalar = ord(character)
+        record = {
+            "width": width,
+            "filename": filename,
+            "line": line_number,
+        }
+        previous = records[source_style].get(scalar)
+        if previous is None:
+            records[source_style][scalar] = record
+        elif previous["width"] != width or previous["filename"] != filename:
+            duplicate_widths.append(
+                {
+                    "source_locale": source_locale,
+                    "source_style": source_style,
+                    "scalar": scalar_text(scalar),
+                    "selected_line": previous["line"],
+                    "selected_width": previous["width"],
+                    "ignored_line": line_number,
+                    "ignored_width": width,
+                    "filename": filename,
+                }
+            )
+    return relative_map, map_data, records, duplicate_widths
+
+
+def _collect_fehrr_sources(
+    root: Path,
+    source_root: Path,
+    jobs: Mapping[str, Mapping[str, object]],
+    corpora: Mapping[str, Tuple[Path, bytes, Tuple[int, ...]]],
+) -> Tuple[Dict[str, object], Dict[str, Dict[int, Tuple[int, bytes]]]]:
+    checkout = _verify_fehrr_checkout(source_root)
+    source_maps = {}
+    supplemental_maps = {}
+    duplicate_widths = []
+    for locale, source_locale in FEHRR_LOCALES.items():
+        source_maps[locale] = _parse_fehrr_font_map(source_root, source_locale)
+        duplicate_widths.extend(source_maps[locale][3])
+        for runtime_style, tiers in FEHRR_SUPPLEMENTAL_TIERS[locale].items():
+            loaded = []
+            for tier_name, glyph_dir in tiers:
+                relative_map = f"{glyph_dir}/font.fontall.txt"
+                parsed = _parse_fehrr_font_map(
+                    source_root,
+                    f"{source_locale}:{tier_name}",
+                    relative_map,
+                )
+                duplicate_widths.extend(parsed[3])
+                loaded.append((tier_name, glyph_dir, parsed))
+            supplemental_maps[(locale, runtime_style)] = tuple(loaded)
+
+    assets: Dict[str, object] = {}
+    glyph_data: Dict[str, Dict[int, Tuple[int, bytes]]] = {}
+    tree_members: List[Tuple[str, bytes]] = []
+    tree_member_names = set()
+    for locale in LOCALES:
+        relative_map, map_data, records, _ = source_maps[locale]
+        if relative_map not in tree_member_names:
+            tree_members.append((relative_map, map_data))
+            tree_member_names.add(relative_map)
+        for style in STYLES:
+            job_id = f"{locale.lower()}-{style}".replace("-hans", "-hans")
+            if job_id not in jobs:
+                raise CjkFontError(f"FEBuilder manifest is missing {job_id}")
+            _, _, corpus = corpora[job_id]
+            source_style = FEHRR_SOURCE_STYLES[style]
+            rows = []
+            selected = {}
+            fallback_rows = []
+            selection_counts = {
+                "same_game_same_style": 0,
+                "same_game_cross_style": 0,
+                "fehrr_supplemental": 0,
+                "febuilder_fallback": 0,
+            }
+            supplemental_lock = []
+            for tier_name, glyph_dir, (supplemental_map, supplemental_data, _, _) in supplemental_maps[
+                (locale, style)
+            ]:
+                if supplemental_map not in tree_member_names:
+                    tree_members.append((supplemental_map, supplemental_data))
+                    tree_member_names.add(supplemental_map)
+                supplemental_lock.append(
+                    {
+                        "tier": tier_name,
+                        "glyph_directory": glyph_dir,
+                        "path": supplemental_map,
+                        "sha256": sha256_bytes(supplemental_data),
+                    }
+                )
+            for scalar in corpus:
+                source_record = records[source_style].get(scalar)
+                selected_style = source_style
+                selection_kind = "same_game_same_style"
+                glyph_directory = f"glyph/{FEHRR_LOCALES[locale]}"
+                selected_map = relative_map
+                selected_tier = "same-game"
+                if source_record is None:
+                    selected_style = FEHRR_CROSS_STYLE[source_style]
+                    source_record = records[selected_style].get(scalar)
+                    selection_kind = "same_game_cross_style"
+                if source_record is None:
+                    for tier_name, glyph_dir, (supplemental_map, _, supplemental_records, _) in supplemental_maps[
+                        (locale, style)
+                    ]:
+                        source_record = supplemental_records[source_style].get(scalar)
+                        if source_record is not None:
+                            selection_kind = "fehrr_supplemental"
+                            glyph_directory = glyph_dir
+                            selected_map = supplemental_map
+                            selected_tier = tier_name
+                            break
+                if source_record is None:
+                    selection_counts["febuilder_fallback"] += 1
+                    fallback_rows.append(
+                        {
+                            "scalar": scalar_text(scalar),
+                            "reason": "absent from configured FEHRR style tiers",
+                        }
+                    )
+                    continue
+                relative_glyph = f"{glyph_directory}/{source_record['filename']}"
+                glyph_path = source_root / relative_glyph
+                if not glyph_path.is_file():
+                    raise CjkFontError(f"{glyph_path}: FEHRR glyph is missing")
+                png = glyph_path.read_bytes()
+                packed = _pack_engine_tile(_read_fehrr_png_indices(png))
+                if relative_glyph not in tree_member_names:
+                    tree_members.append((relative_glyph, png))
+                    tree_member_names.add(relative_glyph)
+                selected[scalar] = (int(source_record["width"]), packed)
+                selection_counts[selection_kind] += 1
+                rows.append(
+                    {
+                        "scalar": scalar_text(scalar),
+                        "filename": relative_glyph,
+                        "selection_kind": selection_kind,
+                        "source_map": selected_map,
+                        "source_style": selected_style,
+                        "source_tier": selected_tier,
+                        "width": int(source_record["width"]),
+                        "png_sha256": sha256_bytes(png),
+                        "packed_sha256": sha256_bytes(packed),
+                    }
+                )
+            prefix = f"{locale}.{style}"
+            assets[prefix] = {
+                "source_locale": FEHRR_LOCALES[locale],
+                "preferred_source_style": source_style,
+                "selection_counts": selection_counts,
+                "supplemental_maps": supplemental_lock,
+                "font_map": {
+                    "path": relative_map,
+                    "sha256": sha256_bytes(map_data),
+                },
+                "glyph_count": len(rows),
+                "febuilder_fallback_glyph_count": len(corpus) - len(rows),
+                "febuilder_fallbacks": fallback_rows,
+                "glyphs": rows,
+            }
+            glyph_data[prefix] = selected
+
+    lock = {
+        "schema_version": 1,
+        "source": {
+            **checkout,
+            "tree_sha256": _source_tree_sha256(tree_members),
+        },
+        "duplicate_width_resolution": {
+            "rule": "first declaration in font.fontall.txt wins",
+            "conflicts": duplicate_widths,
+        },
+        "selection_policy": FEHRR_PRIORITY_POLICY,
+        "assets": assets,
+    }
+    return lock, glyph_data
 
 
 def _parse_scalar(text: str) -> int:
@@ -703,10 +1167,513 @@ def write_compact_assets(
     return outputs
 
 
+def _read_fehrr_lock(root: Path, sources: Mapping[str, object]) -> Dict[str, object]:
+    priority = sources.get("fehrr_priority")
+    if priority is None:
+        return {}
+    if not isinstance(priority, dict):
+        raise CjkFontError("compact asset FEHRR priority provenance is invalid")
+    lock_path = root / FEHRR_SOURCES
+    lock_data = lock_path.read_bytes()
+    expected = {
+        "path": FEHRR_SOURCES,
+        "sha256": sha256_bytes(lock_data),
+        "policy": "FEHRR original-game glyphs and widths before FEBuilderGBA fallback",
+    }
+    if priority != expected:
+        raise CjkFontError("compact asset FEHRR priority provenance drifted")
+    try:
+        lock = json.loads(lock_data.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise CjkFontError("FEHRR source lock is not valid UTF-8 JSON") from error
+    source = lock.get("source", {})
+    if (
+        lock.get("schema_version") != 1
+        or not isinstance(source, dict)
+        or source.get("repository") != FEHRR_REPOSITORY
+        or not isinstance(source.get("commit"), str)
+        or len(source["commit"]) != 40
+        or any(character not in "0123456789abcdef" for character in source["commit"])
+        or not isinstance(source.get("tree_sha256"), str)
+        or len(source["tree_sha256"]) != 64
+        or any(
+            character not in "0123456789abcdef"
+            for character in source["tree_sha256"]
+        )
+    ):
+        raise CjkFontError("FEHRR source lock provenance is invalid")
+    if not isinstance(lock.get("assets"), dict):
+        raise CjkFontError("FEHRR source lock assets are invalid")
+    return lock
+
+
+def _fehrr_scalar(value: object) -> int:
+    if not isinstance(value, str):
+        raise CjkFontError("FEHRR source lock scalar is invalid")
+    return _parse_scalar(value)
+
+
+def _validate_fehrr_priority(
+    root: Path,
+    asset_manifest: Mapping[str, object],
+    lock: Mapping[str, object],
+    report: Mapping[str, object],
+    jobs: Mapping[str, Mapping[str, object]],
+    corpora: Mapping[str, Tuple[Path, bytes, Tuple[int, ...]]],
+    payloads: Mapping[str, Mapping[str, bytes]],
+) -> None:
+    lock_assets = lock["assets"]
+    if set(lock_assets) != set(asset_manifest.get("assets", {})):
+        raise CjkFontError("FEHRR source lock does not cover exactly the compact assets")
+    report_jobs = {
+        row["id"]: row
+        for row in report.get("jobs", [])
+        if isinstance(row, dict) and isinstance(row.get("id"), str)
+    }
+    for job_id in sorted(jobs):
+        locale, runtime_style, source_style = _job_contract(jobs[job_id])
+        prefix = f"{locale}.{runtime_style}"
+        _, _, expected_scalars = corpora[job_id]
+        lock_asset = lock_assets[prefix]
+        if not isinstance(lock_asset, dict):
+            raise CjkFontError(f"{prefix}: FEHRR source lock asset is invalid")
+        expected_source_locale = FEHRR_LOCALES[locale]
+        expected_source_style = FEHRR_SOURCE_STYLES[runtime_style]
+        if (
+            lock_asset.get("source_locale") != expected_source_locale
+            or lock_asset.get("source_style") != expected_source_style
+            or lock_asset.get("glyph_count") != len(lock_asset.get("glyphs", []))
+            or lock_asset.get("febuilder_fallback_glyph_count")
+            != len(expected_scalars) - lock_asset.get("glyph_count", 0)
+        ):
+            raise CjkFontError(f"{prefix}: FEHRR source lock contract is invalid")
+        font_map = lock_asset.get("font_map", {})
+        if (
+            font_map.get("path") != f"glyph/{expected_source_locale}/font.fontall.txt"
+            or len(font_map.get("sha256", "")) != 64
+            or any(
+                character not in "0123456789abcdef"
+                for character in font_map.get("sha256", "")
+            )
+        ):
+            raise CjkFontError(f"{prefix}: FEHRR source map provenance is invalid")
+        rows = lock_asset.get("glyphs")
+        if not isinstance(rows, list):
+            raise CjkFontError(f"{prefix}: FEHRR source rows are invalid")
+        rows_by_scalar = {}
+        for row in rows:
+            if not isinstance(row, dict):
+                raise CjkFontError(f"{prefix}: FEHRR source row is invalid")
+            scalar = _fehrr_scalar(row.get("scalar"))
+            if scalar in rows_by_scalar:
+                raise CjkFontError(f"{prefix}: duplicate FEHRR source scalar")
+            filename = row.get("filename", "")
+            if (
+                not isinstance(filename, str)
+                or not filename.startswith(f"glyph/{expected_source_locale}/")
+                or Path(filename).name != filename.rsplit("/", 1)[-1]
+                or not filename.startswith(
+                    f"glyph/{expected_source_locale}/"
+                    + ("FontItem_" if expected_source_style == "item" else "FontText_")
+                )
+            ):
+                raise CjkFontError(f"{prefix}: FEHRR source filename is invalid")
+            width = row.get("width")
+            if not isinstance(width, int) or not 1 <= width <= 16:
+                raise CjkFontError(f"{prefix}: FEHRR source width is invalid")
+            for hash_name in ("png_sha256", "packed_sha256"):
+                digest = row.get(hash_name, "")
+                if (
+                    not isinstance(digest, str)
+                    or len(digest) != 64
+                    or any(character not in "0123456789abcdef" for character in digest)
+                ):
+                    raise CjkFontError(f"{prefix}: FEHRR source {hash_name} is invalid")
+            rows_by_scalar[scalar] = row
+        source_scalars = tuple(sorted(rows_by_scalar))
+        if source_scalars != tuple(rows_by_scalar):
+            raise CjkFontError(f"{prefix}: FEHRR source rows must be sorted")
+        if not set(source_scalars) <= set(expected_scalars):
+            raise CjkFontError(f"{prefix}: FEHRR source rows are outside the corpus")
+
+        priority = asset_manifest["assets"][prefix].get("source_priority")
+        expected_priority = {
+            "fehrr_glyph_count": len(source_scalars),
+            "febuilder_fallback_glyph_count": len(expected_scalars) - len(source_scalars),
+            "source_locale": expected_source_locale,
+            "source_style": expected_source_style,
+        }
+        if priority != expected_priority:
+            raise CjkFontError(f"{prefix}: FEHRR source-priority record drifted")
+
+        scalar_index = {scalar: index for index, scalar in enumerate(expected_scalars)}
+        widths = payloads[prefix]["widths"]
+        glyphs = payloads[prefix]["bitmap"]
+        for scalar, row in rows_by_scalar.items():
+            index = scalar_index[scalar]
+            packed = glyphs[index * 64 : (index + 1) * 64]
+            if widths[index] != row["width"] or sha256_bytes(packed) != row["packed_sha256"]:
+                raise CjkFontError(f"{prefix}: FEHRR glyph or width drifted")
+        zero_scalars = {
+            scalar
+            for scalar, index in scalar_index.items()
+            if not any(glyphs[index * 64 : (index + 1) * 64])
+        }
+        if not zero_scalars <= set(source_scalars):
+            raise CjkFontError(f"{prefix}: blank glyph is not sourced from FEHRR")
+        fallback_rows = {
+            row["unicodeScalar"]: row
+            for row in report_jobs[job_id].get("glyphs", [])
+            if isinstance(row, dict) and isinstance(row.get("unicodeScalar"), int)
+        }
+        if set(fallback_rows) != set(expected_scalars):
+            raise CjkFontError(f"{prefix}: FEBuilder fallback oracle coverage drifted")
+        for scalar in set(expected_scalars) - set(source_scalars):
+            index = scalar_index[scalar]
+            packed = glyphs[index * 64 : (index + 1) * 64]
+            fallback = fallback_rows[scalar]
+            if (
+                widths[index] != fallback.get("width")
+                or sha256_bytes(packed) != fallback.get("packedSha256")
+            ):
+                raise CjkFontError(f"{prefix}: non-FEHRR glyph is not the FEBuilder fallback")
+
+
+def _source_selection(lock: Mapping[str, object]) -> Dict[str, Tuple[int, ...]]:
+    return {
+        prefix: tuple(_fehrr_scalar(row["scalar"]) for row in asset["glyphs"])
+        for prefix, asset in lock["assets"].items()
+    }
+
+
+def _existing_scalar_payloads(
+    root: Path,
+    asset: Mapping[str, object],
+) -> Dict[int, Tuple[int, bytes]]:
+    codepoints = (root / asset["codepoints"]["path"]).read_bytes()
+    widths = (root / asset["widths"]["path"]).read_bytes()
+    bitmaps = (root / asset["bitmap"]["path"]).read_bytes()
+    if len(codepoints) != len(widths) * 4 or len(bitmaps) != len(widths) * 64:
+        raise CjkFontError("existing compact asset lengths are inconsistent")
+    scalars = struct.unpack(f"<{len(widths)}I", codepoints)
+    if tuple(scalars) != tuple(sorted(set(scalars))):
+        raise CjkFontError("existing compact asset codepoints are not sorted")
+    return {
+        scalar: (widths[index], bitmaps[index * 64 : (index + 1) * 64])
+        for index, scalar in enumerate(scalars)
+    }
+
+
+def _baseline_scalar_payloads(root: Path, prefix: str) -> Dict[int, Tuple[int, bytes]]:
+    base = root / FEHBUILDER_BASELINE_ASSET_ROOT
+    codepoints = (base / f"{prefix}.codepoints.u32le").read_bytes()
+    widths = (base / f"{prefix}.widths.u8").read_bytes()
+    bitmaps = (base / f"{prefix}.glyphs.2bpp").read_bytes()
+    if len(codepoints) != len(widths) * 4 or len(bitmaps) != len(widths) * 64:
+        raise CjkFontError(f"{prefix}: FEBuilder baseline asset lengths are inconsistent")
+    scalars = struct.unpack(f"<{len(widths)}I", codepoints)
+    return {
+        scalar: (widths[index], bitmaps[index * 64 : (index + 1) * 64])
+        for index, scalar in enumerate(scalars)
+    }
+
+
+def _check_baseline_assets(root: Path) -> bytes:
+    path = root / FEHBUILDER_BASELINE_ASSET_MANIFEST
+    data = path.read_bytes()
+    try:
+        manifest = json.loads(data.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise CjkFontError("FEBuilder baseline asset manifest is invalid") from error
+    if (
+        manifest.get("kind") != "fe8u-febuilder-full-union-baseline"
+        or manifest.get("schema_version") != 1
+        or set(manifest.get("assets", {}))
+        != {"ja.system", "ja.talk", "zh-Hans.system", "zh-Hans.talk"}
+    ):
+        raise CjkFontError("FEBuilder baseline asset manifest schema drifted")
+    for prefix, files in manifest["assets"].items():
+        for suffix, record in files.items():
+            payload = (root / FEHBUILDER_BASELINE_ASSET_ROOT / f"{prefix}.{suffix}").read_bytes()
+            if (
+                record.get("byte_count") != len(payload)
+                or record.get("sha256") != sha256_bytes(payload)
+            ):
+                raise CjkFontError(f"{prefix}: FEBuilder baseline asset hash drifted")
+    return data
+
+
+def _asset_record(
+    *,
+    locale: str,
+    runtime_style: str,
+    job_id: str,
+    package_style: str,
+    codepoints: bytes,
+    widths: bytes,
+    bitmaps: bytes,
+) -> Dict[str, object]:
+    prefix = f"{locale}.{runtime_style}"
+    filenames = compact_asset_filenames(prefix)
+    return {
+        "locale": locale,
+        "runtime_style": runtime_style,
+        "febuilder_job": job_id,
+        "febuilder_style": package_style,
+        "glyph_count": len(widths),
+        "bitmap": {
+            "format": "16x16 row-major 2bpp, four pixels per byte, low-bit-first",
+            "stride_bytes": 64,
+            "path": f"{ASSET_ROOT}/{filenames['bitmap']}",
+            "byte_count": len(bitmaps),
+            "sha256": sha256_bytes(bitmaps),
+        },
+        "widths": {
+            "format": "one unsigned byte per glyph; valid range 1..16",
+            "path": f"{ASSET_ROOT}/{filenames['widths']}",
+            "byte_count": len(widths),
+            "sha256": sha256_bytes(widths),
+        },
+        "codepoints": {
+            "format": "sorted unique little-endian uint32 Unicode scalars",
+            "path": f"{ASSET_ROOT}/{filenames['codepoints']}",
+            "byte_count": len(codepoints),
+            "sha256": sha256_bytes(codepoints),
+        },
+    }
+
+
+def build_runtime_split_assets(
+    root: Path,
+    source_root: Path,
+) -> Dict[str, bytes]:
+    """Filter the verified full-union baseline into usage-specific assets.
+
+    The checked-in FEBuilder generation report predates this split but covers
+    its full scalar superset. It remains a precise fallback oracle: every new
+    corpus scalar is selected from that verified baseline unless FEHRR wins
+    under the explicit source-priority policy.
+    """
+
+    jobs = _expected_jobs(root)
+    corpora = _job_corpora(root, jobs)
+    baseline_path = root / FEHBUILDER_BASELINE_MANIFEST
+    if not baseline_path.is_file():
+        raise CjkFontError(f"{baseline_path}: missing verified full-union baseline")
+    baseline_data = baseline_path.read_bytes()
+    baseline_asset_data = _check_baseline_assets(root)
+    report_data = (root / GENERATION_REPORT).read_bytes()
+    report = json.loads(report_data.decode("utf-8"))
+    if report.get("manifestSha256") != sha256_bytes(baseline_data):
+        raise CjkFontError("FEBuilder baseline manifest/report provenance drifted")
+
+    lock, selected = _collect_fehrr_sources(root, source_root, jobs, corpora)
+    outputs: Dict[str, bytes] = {}
+    assets = {}
+    payload_total = 0
+    aligned_total = 0
+    for job_id in sorted(jobs):
+        locale, runtime_style, package_style = _job_contract(jobs[job_id])
+        prefix = f"{locale}.{runtime_style}"
+        _, _, scalars = corpora[job_id]
+        fallback = _baseline_scalar_payloads(root, prefix)
+        codepoints = bytearray()
+        widths = bytearray()
+        bitmaps = bytearray()
+        for scalar in scalars:
+            try:
+                width, bitmap = selected[prefix].get(scalar, fallback[scalar])
+            except KeyError as error:
+                raise CjkFontError(f"{prefix}: no verified fallback for {scalar_text(scalar)}") from error
+            codepoints.extend(struct.pack("<I", scalar))
+            widths.append(width)
+            bitmaps.extend(bitmap)
+        record = _asset_record(
+            locale=locale,
+            runtime_style=runtime_style,
+            job_id=job_id,
+            package_style=package_style,
+            codepoints=bytes(codepoints),
+            widths=bytes(widths),
+            bitmaps=bytes(bitmaps),
+        )
+        lock_asset = lock["assets"][prefix]
+        record["source_priority"] = {
+            **lock_asset["selection_counts"],
+            "policy": FEHRR_PRIORITY_POLICY,
+        }
+        assets[prefix] = record
+        for kind, data in (
+            ("codepoints", bytes(codepoints)),
+            ("widths", bytes(widths)),
+            ("bitmap", bytes(bitmaps)),
+        ):
+            filename = compact_asset_filenames(prefix)[kind]
+            outputs[f"{ASSET_ROOT}/{filename}"] = data
+            payload_total += len(data)
+            aligned_total += (len(data) + 3) & ~3
+
+    inventory_data = (root / "fonts/cjk/inventory.json").read_bytes()
+    manifest_data = (root / "fonts/cjk/febuilder-manifest.json").read_bytes()
+    asset_manifest = {
+        "schema_version": 2,
+        "contract": {
+            "ascii": "continue using the existing runtime ASCII font",
+            "lookup": "binary-search codepoints; use the same index for widths and the fixed 64-byte bitmap stride",
+            "style_corpora": "derived from checked runtime usage; descriptions are intentionally both",
+        },
+        "sources": {
+            "inventory": {
+                "path": "fonts/cjk/inventory.json",
+                "sha256": sha256_bytes(inventory_data),
+            },
+            "febuilder_manifest": {
+                "path": "fonts/cjk/febuilder-manifest.json",
+                "sha256": sha256_bytes(manifest_data),
+            },
+            "febuilder_baseline_manifest": {
+                "path": FEHBUILDER_BASELINE_MANIFEST,
+                "sha256": sha256_bytes(baseline_data),
+            },
+            "febuilder_baseline_assets": {
+                "path": FEHBUILDER_BASELINE_ASSET_MANIFEST,
+                "sha256": sha256_bytes(baseline_asset_data),
+            },
+            "febuilder_generation_report": {
+                "path": GENERATION_REPORT,
+                "sha256": sha256_bytes(report_data),
+                "byte_count": len(report_data),
+                "role": "verified full-union fallback baseline",
+            },
+            "fehrr_priority": {
+                "path": FEHRR_SOURCES,
+                "sha256": sha256_bytes(json_bytes(lock)),
+                "policy": FEHRR_PRIORITY_POLICY,
+            },
+        },
+        "assets": assets,
+        "rom_budget": {
+            "payload_bytes": payload_total,
+            "four_byte_aligned_blob_bytes": aligned_total,
+            "bytes_per_glyph": 69,
+            "includes": "64-byte bitmap + 1-byte width + 4-byte Unicode scalar",
+        },
+        "spacing_scalars": [
+            {
+                "scalar": "U+3000",
+                "advance": 16,
+                "bitmap": None,
+                "locales": list(LOCALES),
+                "runtime_styles": list(STYLES),
+            }
+        ],
+    }
+    outputs[FEHRR_SOURCES] = json_bytes(lock)
+    outputs[f"{ASSET_ROOT}/manifest.json"] = json_bytes(asset_manifest)
+    return outputs
+
+
+def write_runtime_split_assets(root: Path, source_root: Path) -> Dict[str, bytes]:
+    outputs = build_runtime_split_assets(root, source_root)
+    repeated = build_runtime_split_assets(root, source_root)
+    if outputs != repeated:
+        raise CjkFontError("runtime corpus split is not deterministic")
+    for relative, data in outputs.items():
+        path = root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+    return outputs
+
+
+def build_fehrr_priority_assets(
+    root: Path,
+    source_root: Path,
+) -> Dict[str, bytes]:
+    existing = check_compact_assets(root)
+    report_data = (root / GENERATION_REPORT).read_bytes()
+    report, jobs, corpora = _load_report(root, report_data, "generate")
+    asset_manifest_path = root / ASSET_ROOT / "manifest.json"
+    asset_manifest = json.loads(asset_manifest_path.read_text(encoding="utf-8"))
+    sources = asset_manifest.get("sources")
+    if not isinstance(sources, dict):
+        raise CjkFontError("compact asset sources are invalid")
+
+    lock, source_glyphs = _collect_fehrr_sources(root, source_root, jobs, corpora)
+    old_lock = _read_fehrr_lock(root, sources)
+    if old_lock and _source_selection(old_lock) != _source_selection(lock):
+        raise CjkFontError(
+            "FEHRR source coverage changed; regenerate the FEBuilder baseline before refresh"
+        )
+
+    outputs = dict(existing)
+    for job_id in sorted(jobs):
+        locale, runtime_style, _ = _job_contract(jobs[job_id])
+        prefix = f"{locale}.{runtime_style}"
+        _, _, expected_scalars = corpora[job_id]
+        codepoints = existing[
+            f"{ASSET_ROOT}/{compact_asset_filenames(prefix)['codepoints']}"
+        ]
+        widths = bytearray(
+            existing[f"{ASSET_ROOT}/{compact_asset_filenames(prefix)['widths']}"]
+        )
+        glyphs = bytearray(
+            existing[f"{ASSET_ROOT}/{compact_asset_filenames(prefix)['bitmap']}"]
+        )
+        scalar_index = {scalar: index for index, scalar in enumerate(expected_scalars)}
+        for scalar, (width, packed) in source_glyphs[prefix].items():
+            index = scalar_index[scalar]
+            widths[index] = width
+            glyphs[index * 64 : (index + 1) * 64] = packed
+        filenames = compact_asset_filenames(prefix)
+        outputs[f"{ASSET_ROOT}/{filenames['codepoints']}"] = codepoints
+        outputs[f"{ASSET_ROOT}/{filenames['widths']}"] = bytes(widths)
+        outputs[f"{ASSET_ROOT}/{filenames['bitmap']}"] = bytes(glyphs)
+
+        asset = asset_manifest["assets"][prefix]
+        for kind, filename in filenames.items():
+            path = f"{ASSET_ROOT}/{filename}"
+            data = outputs[path]
+            asset_kind = "bitmap" if kind == "bitmap" else kind
+            asset[asset_kind]["byte_count"] = len(data)
+            asset[asset_kind]["sha256"] = sha256_bytes(data)
+        asset["source_priority"] = {
+            "fehrr_glyph_count": len(source_glyphs[prefix]),
+            "febuilder_fallback_glyph_count": len(expected_scalars)
+            - len(source_glyphs[prefix]),
+            "source_locale": FEHRR_LOCALES[locale],
+            "source_style": FEHRR_SOURCE_STYLES[runtime_style],
+        }
+
+    lock_data = json_bytes(lock)
+    sources["fehrr_priority"] = {
+        "path": FEHRR_SOURCES,
+        "sha256": sha256_bytes(lock_data),
+        "policy": "FEHRR original-game glyphs and widths before FEBuilderGBA fallback",
+    }
+    outputs[FEHRR_SOURCES] = lock_data
+    outputs[f"{ASSET_ROOT}/manifest.json"] = json_bytes(asset_manifest)
+    return outputs
+
+
+def write_fehrr_priority_assets(
+    root: Path,
+    source_root: Path,
+) -> Dict[str, bytes]:
+    outputs = build_fehrr_priority_assets(root, source_root)
+    repeated = build_fehrr_priority_assets(root, source_root)
+    if outputs != repeated:
+        raise CjkFontError("FEHRR source-priority import is not deterministic")
+    for relative_path, data in outputs.items():
+        path = root / relative_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+    check_compact_assets(root)
+    return outputs
+
+
 def refresh_compact_asset_inventory_provenance(root: Path) -> Dict[str, bytes]:
     report_path = root / GENERATION_REPORT
     report_data = report_path.read_bytes()
-    _load_report(root, report_data, "generate")
 
     inventory_data = (root / "fonts/cjk/inventory.json").read_bytes()
     asset_manifest_path = root / ASSET_ROOT / "manifest.json"
@@ -714,6 +1681,8 @@ def refresh_compact_asset_inventory_provenance(root: Path) -> Dict[str, bytes]:
     sources = asset_manifest.get("sources")
     if not isinstance(sources, dict):
         raise CjkFontError("compact asset sources are invalid")
+    if asset_manifest.get("schema_version") != 2:
+        _load_report(root, report_data, "generate")
     sources["inventory"] = {
         "path": "fonts/cjk/inventory.json",
         "sha256": sha256_bytes(inventory_data),
@@ -722,8 +1691,172 @@ def refresh_compact_asset_inventory_provenance(root: Path) -> Dict[str, bytes]:
     return check_compact_assets(root)
 
 
+def _check_runtime_split_assets(root: Path, asset_manifest: Mapping[str, object]) -> Dict[str, bytes]:
+    """Validate assets derived from the immutable full-union FEBuilder baseline."""
+
+    sources = asset_manifest.get("sources")
+    if not isinstance(sources, dict):
+        raise CjkFontError("runtime split manifest sources are invalid")
+    manifest_data = (root / "fonts/cjk/febuilder-manifest.json").read_bytes()
+    inventory_data = (root / "fonts/cjk/inventory.json").read_bytes()
+    baseline_data = (root / FEHBUILDER_BASELINE_MANIFEST).read_bytes()
+    baseline_asset_data = _check_baseline_assets(root)
+    report_data = (root / GENERATION_REPORT).read_bytes()
+    try:
+        report = json.loads(report_data.decode("utf-8"))
+        lock = json.loads((root / FEHRR_SOURCES).read_text(encoding="utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise CjkFontError("runtime split provenance JSON is invalid") from error
+    expected_sources = {
+        "inventory": {
+            "path": "fonts/cjk/inventory.json",
+            "sha256": sha256_bytes(inventory_data),
+        },
+        "febuilder_manifest": {
+            "path": "fonts/cjk/febuilder-manifest.json",
+            "sha256": sha256_bytes(manifest_data),
+        },
+        "febuilder_baseline_manifest": {
+            "path": FEHBUILDER_BASELINE_MANIFEST,
+            "sha256": sha256_bytes(baseline_data),
+        },
+        "febuilder_baseline_assets": {
+            "path": FEHBUILDER_BASELINE_ASSET_MANIFEST,
+            "sha256": sha256_bytes(baseline_asset_data),
+        },
+    }
+    for key, value in expected_sources.items():
+        if sources.get(key) != value:
+            raise CjkFontError(f"runtime split {key} provenance drifted")
+    report_source = sources.get("febuilder_generation_report", {})
+    if (
+        report_source.get("path") != GENERATION_REPORT
+        or report_source.get("sha256") != sha256_bytes(report_data)
+        or report_source.get("byte_count") != len(report_data)
+        or report_source.get("role") != "verified full-union fallback baseline"
+        or report.get("manifestSha256") != sha256_bytes(baseline_data)
+    ):
+        raise CjkFontError("runtime split FEBuilder baseline provenance drifted")
+    priority = sources.get("fehrr_priority", {})
+    if (
+        priority.get("path") != FEHRR_SOURCES
+        or priority.get("sha256") != sha256_bytes(json_bytes(lock))
+        or priority.get("policy") != FEHRR_PRIORITY_POLICY
+        or lock.get("selection_policy") != FEHRR_PRIORITY_POLICY
+    ):
+        raise CjkFontError("runtime split FEHRR priority provenance drifted")
+
+    jobs = _expected_jobs(root)
+    corpora = _job_corpora(root, jobs)
+    report_jobs = {row["id"]: row for row in report.get("jobs", [])}
+    outputs: Dict[str, bytes] = {}
+    payload_total = 0
+    aligned_total = 0
+    for job_id in sorted(jobs):
+        locale, runtime_style, package_style = _job_contract(jobs[job_id])
+        prefix = f"{locale}.{runtime_style}"
+        _, _, scalars = corpora[job_id]
+        asset = asset_manifest.get("assets", {}).get(prefix)
+        lock_asset = lock.get("assets", {}).get(prefix)
+        if not isinstance(asset, dict) or not isinstance(lock_asset, dict):
+            raise CjkFontError(f"{prefix}: runtime split asset/lock is missing")
+        if (
+            asset.get("glyph_count") != len(scalars)
+            or asset.get("locale") != locale
+            or asset.get("runtime_style") != runtime_style
+            or asset.get("febuilder_job") != job_id
+            or asset.get("febuilder_style") != package_style
+        ):
+            raise CjkFontError(f"{prefix}: runtime split contract drifted")
+        filenames = compact_asset_filenames(prefix)
+        data = {}
+        for kind, filename in filenames.items():
+            key = "bitmap" if kind == "bitmap" else kind
+            path = f"{ASSET_ROOT}/{filename}"
+            payload = (root / path).read_bytes()
+            record = asset.get(key, {})
+            if (
+                record.get("path") != path
+                or record.get("byte_count") != len(payload)
+                or record.get("sha256") != sha256_bytes(payload)
+            ):
+                raise CjkFontError(f"{prefix}: {kind} hash or path drifted")
+            data[key] = payload
+            outputs[path] = payload
+            payload_total += len(payload)
+            aligned_total += (len(payload) + 3) & ~3
+        codepoints = tuple(
+            struct.unpack(f"<{len(data['widths'])}I", data["codepoints"])
+        )
+        if codepoints != scalars or len(data["bitmap"]) != len(scalars) * 64:
+            raise CjkFontError(f"{prefix}: runtime split corpus coverage drifted")
+        rows = lock_asset.get("glyphs", [])
+        selected = { _fehrr_scalar(row["scalar"]): row for row in rows }
+        if len(selected) != len(rows) or not set(selected) <= set(scalars):
+            raise CjkFontError(f"{prefix}: runtime split FEHRR rows drifted")
+        counts = {
+            "same_game_same_style": 0,
+            "same_game_cross_style": 0,
+            "fehrr_supplemental": 0,
+            "febuilder_fallback": len(scalars) - len(selected),
+        }
+        scalar_index = {scalar: index for index, scalar in enumerate(scalars)}
+        fallback_rows = {
+            row["unicodeScalar"]: row for row in report_jobs[job_id].get("glyphs", [])
+        }
+        fallback_lock = {
+            _fehrr_scalar(row["scalar"]): row
+            for row in lock_asset.get("febuilder_fallbacks", [])
+        }
+        for scalar in scalars:
+            index = scalar_index[scalar]
+            bitmap = data["bitmap"][index * 64 : (index + 1) * 64]
+            if scalar in selected:
+                row = selected[scalar]
+                kind = row.get("selection_kind")
+                if kind not in (
+                    "same_game_same_style",
+                    "same_game_cross_style",
+                    "fehrr_supplemental",
+                ):
+                    raise CjkFontError(f"{prefix}: invalid FEHRR selection kind")
+                counts[kind] += 1
+                if (
+                    data["widths"][index] != row.get("width")
+                    or sha256_bytes(bitmap) != row.get("packed_sha256")
+                ):
+                    raise CjkFontError(f"{prefix}: FEHRR glyph payload drifted")
+            else:
+                fallback = fallback_rows.get(scalar)
+                if (
+                    fallback is None
+                    or fallback_lock.get(scalar, {}).get("reason")
+                    != "absent from configured FEHRR style tiers"
+                    or data["widths"][index] != fallback.get("width")
+                    or sha256_bytes(bitmap) != fallback.get("packedSha256")
+                ):
+                    raise CjkFontError(f"{prefix}: FEBuilder fallback payload drifted")
+        if set(fallback_lock) != set(scalars) - set(selected):
+            raise CjkFontError(f"{prefix}: FEBuilder fallback lock drifted")
+        if asset.get("source_priority") != {**counts, "policy": FEHRR_PRIORITY_POLICY}:
+            raise CjkFontError(f"{prefix}: runtime split source counts drifted")
+
+    if asset_manifest.get("rom_budget", {}).get("payload_bytes") != payload_total:
+        raise CjkFontError("runtime split payload budget drifted")
+    if (
+        asset_manifest.get("rom_budget", {}).get("four_byte_aligned_blob_bytes")
+        != aligned_total
+    ):
+        raise CjkFontError("runtime split aligned budget drifted")
+    return outputs
+
+
 def check_compact_assets(root: Path) -> Dict[str, bytes]:
     _reject_generic_compact_assets(root)
+    asset_manifest_path = root / ASSET_ROOT / "manifest.json"
+    asset_manifest = json.loads(asset_manifest_path.read_text(encoding="utf-8"))
+    if asset_manifest.get("schema_version") == 2:
+        return _check_runtime_split_assets(root, asset_manifest)
     report_path = root / GENERATION_REPORT
     report_data = report_path.read_bytes()
     report, jobs, corpora = _load_report(root, report_data, "generate")
@@ -781,10 +1914,12 @@ def check_compact_assets(root: Path) -> Dict[str, bytes]:
     ):
         raise CjkFontError("FEBuilder gate generation-report hash drifted")
 
-    asset_manifest_path = root / ASSET_ROOT / "manifest.json"
     asset_manifest_data = asset_manifest_path.read_bytes()
     asset_manifest = json.loads(asset_manifest_data.decode("utf-8"))
     sources = asset_manifest.get("sources", {})
+    if not isinstance(sources, dict):
+        raise CjkFontError("compact asset sources are invalid")
+    lock = _read_fehrr_lock(root, sources)
     if sources.get("inventory") != {
         "path": "fonts/cjk/inventory.json",
         "sha256": sha256_bytes(inventory_data),
@@ -818,6 +1953,7 @@ def check_compact_assets(root: Path) -> Dict[str, bytes]:
         raise CjkFontError("compact asset package-report hash is invalid")
 
     outputs: Dict[str, bytes] = {}
+    payloads: Dict[str, Mapping[str, bytes]] = {}
     expected_assets = set()
     payload_total = 0
     aligned_total = 0
@@ -870,11 +2006,14 @@ def check_compact_assets(root: Path) -> Dict[str, bytes]:
             not 1 <= width <= 16 for width in widths
         ):
             raise CjkFontError(f"{prefix}: widths are invalid")
-        if len(glyphs) != len(expected_scalars) * 64 or any(
+        if len(glyphs) != len(expected_scalars) * 64:
+            raise CjkFontError(f"{prefix}: glyph payload is invalid")
+        if not lock and any(
             not any(glyphs[offset : offset + 64])
             for offset in range(0, len(glyphs), 64)
         ):
             raise CjkFontError(f"{prefix}: glyph payload is invalid")
+        payloads[prefix] = data_by_kind
 
     if set(asset_manifest.get("assets", {})) != expected_assets:
         raise CjkFontError("compact asset manifest has unexpected locale/style assets")
@@ -885,5 +2024,16 @@ def check_compact_assets(root: Path) -> Dict[str, bytes]:
         or budget.get("bytes_per_glyph") != 69
     ):
         raise CjkFontError("compact asset ROM budget drifted")
+    if lock:
+        _validate_fehrr_priority(
+            root,
+            asset_manifest,
+            lock,
+            report,
+            jobs,
+            corpora,
+            payloads,
+        )
+        outputs[FEHRR_SOURCES] = (root / FEHRR_SOURCES).read_bytes()
     outputs[f"{ASSET_ROOT}/manifest.json"] = asset_manifest_data
     return outputs

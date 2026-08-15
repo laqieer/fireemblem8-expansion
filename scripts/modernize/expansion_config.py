@@ -114,6 +114,7 @@ CONFIG_MK_FEATURE_KEYS = (
     "EXPANSION_MECHANICS_SAMPLE",
     "EXPANSION_DANGER_OVERLAY_MENU",
     "EXPANSION_STARTER_CONTENT",
+    "EXPANSION_LOCALIZED_TEXT_AUTO_WRAP",
 )
 
 _ASSIGNMENT_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)\s*[:?+]?=\s*(.*?)\s*$")
@@ -623,6 +624,7 @@ class ExpansionIdentity:
     mechanics_sample: int = 0
     danger_overlay_menu: int = 0
     starter_content: int = 0
+    localized_text_auto_wrap: int = 0
     config_fingerprint: str = field(default="")
 
     @property
@@ -671,6 +673,7 @@ class ExpansionIdentity:
                 "mechanics_sample": self.mechanics_sample,
                 "danger_overlay_menu": self.danger_overlay_menu,
                 "starter_content": self.starter_content,
+                "localized_text_auto_wrap": self.localized_text_auto_wrap,
             },
         }
 
@@ -707,6 +710,7 @@ def load_identity(
     mechanics_sample=None,
     danger_overlay_menu=None,
     starter_content=None,
+    localized_text_auto_wrap=None,
     item_id_cap=None,
 ) -> ExpansionIdentity:
     """Parse, validate, and resolve a complete ExpansionIdentity.
@@ -778,6 +782,12 @@ def load_identity(
         else cfg.get("EXPANSION_STARTER_CONTENT", "0"),
         item_id_cap,
     )
+    resolved_localized_text_auto_wrap = validate_feature_flag(
+        "EXPANSION_LOCALIZED_TEXT_AUTO_WRAP",
+        localized_text_auto_wrap
+        if localized_text_auto_wrap not in (None, "")
+        else cfg.get("EXPANSION_LOCALIZED_TEXT_AUTO_WRAP", "0"),
+    )
     resolved_rom_size = validate_rom_size(rom_size)
     validate_locale_rom_size(resolved_enabled_locales, resolved_rom_size)
     resolved_preset = validate_preset(config_preset)
@@ -809,6 +819,7 @@ def load_identity(
         mechanics_sample=resolved_sample,
         danger_overlay_menu=resolved_danger,
         starter_content=resolved_content,
+        localized_text_auto_wrap=resolved_localized_text_auto_wrap,
     )
     identity.config_fingerprint = compute_fingerprint(identity.fingerprint_fields())
     return identity
@@ -925,6 +936,11 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
             "ITEM_EXPANSION_CE"
         ),
     )
+    parser.add_argument(
+        "--localized-text-auto-wrap",
+        default=None,
+        help="override EXPANSION_LOCALIZED_TEXT_AUTO_WRAP (0 or 1)",
+    )
 
 
 def _resolve_tokens(identity: ExpansionIdentity) -> str:
@@ -987,6 +1003,7 @@ def main(argv=None) -> int:
             danger_overlay_menu=args.danger_overlay_menu,
             starter_content=args.starter_content,
             item_id_cap=args.item_id_cap,
+            localized_text_auto_wrap=args.localized_text_auto_wrap,
         )
     except ConfigError as error:
         print(f"error: {error}", file=sys.stderr)

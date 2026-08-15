@@ -133,7 +133,7 @@ class RuntimeLeakageAuditTests(unittest.TestCase):
         self.assertEqual(self.report["summary"]["raw_surface_payload_count"], 143 * 2)
         self.assertEqual(
             self.report["summary"]["display_alias_payload_count"],
-            120,
+            10,
         )
         self.assertEqual(self.report["summary"]["unapproved_span_count"], 0)
         self.assertEqual(

@@ -152,6 +152,16 @@ def gates(jobs: int = 2) -> List[Gate]:
             ),
         ),
         Gate(
+            name="game-localization-width-contract",
+            command=["make", "game-localization-test"],
+            applicable_note=(
+                "issue #18 full-game host lane addition: validates the 3,414 "
+                "entry JA/ZH catalog, typed UI/scene width coverage, "
+                "metrics-aware generated line breaks, and native text "
+                "consumer behavior before the target-ROM gates"
+            ),
+        ),
+        Gate(
             name="artifact-guard",
             command=["python3", "scripts/artifact_guard.py", "--revision", "HEAD"],
             applicable_note="always applicable: rejects prohibited tracked build artifacts",

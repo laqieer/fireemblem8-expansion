@@ -25,7 +25,7 @@
         "approved_span_occurrence_count": 0,
         "artifact_payload_count": 0,
         "artifact_payloads": [],
-        "audited_count": 99,
+        "audited_count": 2,
         "c1_control_count": 0,
         "exact_copy_count": 0,
         "format_character_count": 0,
@@ -54,7 +54,7 @@
         "approved_span_occurrence_count": 0,
         "artifact_payload_count": 0,
         "artifact_payloads": [],
-        "audited_count": 21,
+        "audited_count": 8,
         "c1_control_count": 0,
         "exact_copy_count": 0,
         "format_character_count": 0,
@@ -12310,9 +12310,9 @@
       "sha256": "abb320b4767423df3b66fe2f4309cae797becf0405b45e5fcebaccfd2241155f"
     },
     "fixed_width_display_aliases": {
-      "byte_count": 4803,
+      "byte_count": 856,
       "path": "texts/locales/fixed_width_display_aliases.json",
-      "sha256": "681c18a16c774a7c70d0cba852f62b7bc295b6bab7f6ecc4403012500ef73f0b"
+      "sha256": "abcf6b5d882d42e0a36a9de8afcad281872fe4c6ac537e7d4476eb37b7bb061e"
     },
     "ja_authored": {
       "byte_count": 53073,
@@ -12554,7 +12554,7 @@
     "c1_control_count": 0,
     "disallowed_script_symbol_count": 0,
     "disallowed_script_symbol_occurrence_count": 0,
-    "display_alias_payload_count": 120,
+    "display_alias_payload_count": 10,
     "enabled_locales": [
       "ja",
       "zh-Hans"

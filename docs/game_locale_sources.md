@@ -5,6 +5,21 @@ Japanese (`ja`) and Simplified Chinese (`zh-Hans`) localization. Verified
 FE8U-target decisions feed the opt-in modern game catalog; raw-address values
 remain import provenance only and never become runtime keys.
 
+## Localized static UI graphics
+
+The non-text, region-specific UI surfaces are tracked separately in
+`graphics/localized_ui/manifest.json`. It records the authorized FE8J ROM
+SHA-256 (`44fd343625ab9e6b90f63a80758c15066d526e6873fae91474006314a5ead464`)
+and FE8CN ROM SHA-256
+(`7a9477ec47be4e1cb5d0a1505eab1929b9e7622295464c3a88b919da543015d6`),
+the original LZ77 addresses, decompressed output hashes, and every 88-entry
+chapter-title pointer record. `scripts/localization/extract_ui_graphics.py`
+is the only refresh path; it validates both ROM hashes before extracting
+indexed PNG tile sources (with recorded raw 4bpp round-trip hashes) or
+headered `.tsa.bin` source assets. See
+[`localization.md`](localization.md#localized-static-ui-graphics) for runtime
+dispatch and check/extract commands.
+
 ## Layout and provenance
 
 - `source/fe8j/jp_texts.txt`, `source/fe8j/jp_textdefs.txt`,
@@ -85,6 +100,20 @@ remain import provenance only and never become runtime keys.
 - `mapping/ending_layout_metrics.json`: generated all-title/all-solo/all-paired
   ending metric report using the real 15-tile/26-tile `Text` allocations and
   committed runtime CJK widths.
+- [`game_locale_text_edits.md`](game_locale_text_edits.md): generated audit
+  ledger comparing all 3,339 Japanese and Simplified-Chinese indexed messages
+  plus 119 FE8J raw-provider exemptions and 143 FE8CN raw imports to the
+  authorized sources. It lists each reviewed original-text edit with its
+  source ID, original/current payload, reason, and provenance; direct imports
+  and expansion-only strings are counted separately. Run
+  `make game-localization-text-edits-check` to detect drift.
+- `mapping/text_width_contexts.json`: typed all-target rendered-width registry.
+  It maps event-discovered dialogue to the 30-tile talk allocation, reserves
+  the existing ending and fixed-label validators for their narrower geometry,
+  and assigns every remaining target the documented 30-tile system-`Text`
+  context. `game_catalog check-width` emits per-target context/usage/width
+  evidence in the build-local catalog report; unclassified or exempted
+  targets are a hard failure.
 - `runtime_latin_span_review.json`: the exact baseline review of every
   Latin-bearing target. Each scope/locale/target/span decision pins payload
   hashes, occurrence counts, approval or localization, factual reason, and

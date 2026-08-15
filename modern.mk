@@ -1422,6 +1422,7 @@ ifneq (,$(MODERN_EXPANSION_CONFIG_AVAILABLE))
 		--mechanics-sample "$(EXPANSION_MECHANICS_SAMPLE)" \
 		--danger-overlay-menu "$(EXPANSION_DANGER_OVERLAY_MENU)" \
 		--starter-content "$(EXPANSION_STARTER_CONTENT)" \
+		--localized-text-auto-wrap "$(EXPANSION_LOCALIZED_TEXT_AUTO_WRAP)" \
 		--item-id-cap "$(FE8_ITEM_ID_CAP)" \
 		--output-dir "$(MODERN_GENERATED_DIR)"
 else
@@ -1482,6 +1483,7 @@ ifneq (,$(filter $(MODERN_CONFIG_RESOLVE_GOALS),$(MAKECMDGOALS)))
 	--mechanics-sample "$(EXPANSION_MECHANICS_SAMPLE)" \
 	--danger-overlay-menu "$(EXPANSION_DANGER_OVERLAY_MENU)" \
 	--starter-content "$(EXPANSION_STARTER_CONTENT)" \
+	--localized-text-auto-wrap "$(EXPANSION_LOCALIZED_TEXT_AUTO_WRAP)" \
 	--item-id-cap "$(FE8_ITEM_ID_CAP)" \
 	--save-compat-epoch "$(EXPANSION_SAVE_COMPAT_EPOCH)" 2>&1)
   ifneq (,$(filter error:%,$(MODERN_EXPANSION_CONFIG_RESOLVE)))
@@ -1546,7 +1548,8 @@ ifneq (,$(filter $(MODERN_CONFIG_RESOLVE_GOALS),$(MAKECMDGOALS)))
 	-DFE8_EXPANSION_MECHANICS_HOOKS=$(EXPANSION_MECHANICS_HOOKS) \
 	-DFE8_EXPANSION_MECHANICS_SAMPLE=$(EXPANSION_MECHANICS_SAMPLE) \
 	-DFE8_EXPANSION_DANGER_OVERLAY_MENU=$(EXPANSION_DANGER_OVERLAY_MENU) \
-	-DFE8_EXPANSION_STARTER_CONTENT=$(EXPANSION_STARTER_CONTENT)
+	-DFE8_EXPANSION_STARTER_CONTENT=$(EXPANSION_STARTER_CONTENT) \
+	-DFE8_EXPANSION_LOCALIZED_TEXT_AUTO_WRAP=$(EXPANSION_LOCALIZED_TEXT_AUTO_WRAP)
 
   # Internal modern-build provenance discriminator (NOT a user feature flag,
   # NOT folded into MODERN_CONFIG_FINGERPRINT / save identity): defined for
@@ -1828,6 +1831,7 @@ $(MODERN_OUTPUT_DIR)/src/expansion_locale-catalog.o: $(MODERN_LOCALIZATION_CATAL
 # generated and linked only when the production profile enables real CJK.
 # Grouped outputs prevent parallel compiles from racing the deterministic
 # writer when the runtime headers and generated source are requested together.
+ifneq ($(strip $(MODERN_GAME_LOCALIZATION_CATALOG_LOCALES)),)
 .PHONY: FORCE_MODERN_GAME_LOCALIZATION
 FORCE_MODERN_GAME_LOCALIZATION:
 
@@ -1839,16 +1843,24 @@ $(MODERN_GAME_LOCALIZATION_BUDGET_JSON) &: FORCE_MODERN_GAME_LOCALIZATION
 		--out-dir "$(MODERN_GAME_LOCALIZATION_GENERATED_DIR)" \
 		--enabled-locales "$(MODERN_GAME_LOCALIZATION_CATALOG_LOCALES)"
 
-ifneq ($(strip $(MODERN_GAME_LOCALIZATION_CATALOG_LOCALES)),)
 $(MODERN_ALL_C_OBJECTS) $(MODERN_ALL_DATA_OBJECTS): \
 	$(MODERN_GAME_LOCALIZATION_CONFIG_H) $(MODERN_GAME_LOCALIZATION_HEADER)
 game_localization_catalog.h: $(MODERN_GAME_LOCALIZATION_HEADER) ;
 localized_game_text_data.h: $(MODERN_GAME_LOCALIZATION_CONFIG_H) ;
-endif
 
 $(MODERN_OUTPUT_DIR)/src/localized_game_text-catalog.o: $(MODERN_GAME_LOCALIZATION_C)
 	@mkdir -p $(@D)
 	"$(MODERN_CC)" $(MODERN_CFLAGS) -MMD -MP -MF "$(@:.o=.d)" -MQ "$@" -c "$<" -o "$@"
+else
+# Do not invoke the catalog generator for EN/qps-only profiles. These
+# no-recipe targets only absorb full-path prerequisites retained in old CJK
+# .d files until their objects rebuild under the current locale mask.
+game_localization_catalog.h: ;
+localized_game_text_data.h: ;
+$(MODERN_GAME_LOCALIZATION_CONFIG_H) $(MODERN_GAME_LOCALIZATION_HEADER) \
+$(MODERN_GAME_LOCALIZATION_C) $(MODERN_GAME_LOCALIZATION_REPORT_JSON) \
+$(MODERN_GAME_LOCALIZATION_BUDGET_JSON): ;
+endif
 
 
 # Resolve modern LD consistently with the toolchain root.

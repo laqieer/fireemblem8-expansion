@@ -12,11 +12,14 @@ FEBUILDER_COMMIT ?= c1700532b27c579511585ca63e2d63222b9ea646
 FEBUILDER_DOTNET_SDK ?= 10.0.302
 FEBUILDER_REPOSITORY ?= https://github.com/laqieer/FEBuilderGBA
 FEBUILDER_EVIDENCE_COMMAND ?= FEBuilderGBA.CLI --build-font-library
+FEHRR_ROOT ?= ../FEHRR
 
 .NOTPARALLEL:
 
 .PHONY: cjk-fonts-check cjk-fonts-test cjk-fonts-generate-inventory
 .PHONY: cjk-fonts-refresh-provenance
+.PHONY: cjk-fonts-import-fehrr
+.PHONY: cjk-fonts-split-runtime
 .PHONY: cjk-fonts-febuilder-dry-run cjk-fonts-febuilder-generate
 .PHONY: cjk-fonts-febuilder-validate cjk-fonts-febuilder-roundtrip
 .PHONY: cjk-fonts-record-gates cjk-fonts-import cjk-fonts-febuilder-all
@@ -32,6 +35,13 @@ cjk-fonts-generate-inventory:
 
 cjk-fonts-refresh-provenance: cjk-fonts-generate-inventory
 	$(PYTHON) -m scripts.fonttools.cjk refresh-provenance
+
+cjk-fonts-import-fehrr:
+	$(MAKE) --no-print-directory cjk-fonts-split-runtime FEHRR_ROOT="$(FEHRR_ROOT)"
+
+cjk-fonts-split-runtime:
+	$(PYTHON) -m scripts.fonttools.cjk generate-inventory
+	$(PYTHON) -m scripts.fonttools.cjk split-runtime-corpora --fehrr-root "$(FEHRR_ROOT)"
 
 cjk-fonts-febuilder-dry-run: cjk-fonts-generate-inventory
 	rm -rf $(CJK_BUILD_DIR)/dry-run-package $(CJK_DRY_RUN_REPORT)
@@ -75,5 +85,8 @@ cjk-fonts-import: cjk-fonts-record-gates
 		--package $(CJK_PACKAGE_ARCHIVE) --report $(CJK_TEMP_GENERATION_REPORT)
 
 cjk-fonts-febuilder-all: cjk-fonts-import
+	cp fonts/cjk/febuilder-manifest.json fonts/cjk/febuilder-baseline-manifest.json
+	$(PYTHON) -m scripts.fonttools.cjk generate-inventory
+	$(PYTHON) -m scripts.fonttools.cjk split-runtime-corpora --fehrr-root "$(FEHRR_ROOT)"
 	$(PYTHON) -m scripts.fonttools.cjk check
 	$(PYTHON) -m unittest discover -s scripts/fonttools/cjk/tests -p 'test_*.py' -v

@@ -12,6 +12,7 @@ from scripts.localization.game_locales.authored import (
     check_authored_catalogs,
 )
 from scripts.localization.game_locales.fixed_width_labels import ALIASES_PATH
+from scripts.localization.game_locales.width_contract import DEFAULT_WIDTH_REGISTRY_PATH
 
 from .build import (
     DEFAULT_AUTHORED_PATHS,
@@ -72,6 +73,12 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--zh-raw", type=Path, default=DEFAULT_ZH_RAW_PATH)
     parser.add_argument("--mapping", type=Path, default=DEFAULT_MAPPING_PATH)
     parser.add_argument("--target-header", type=Path, default=DEFAULT_TARGET_HEADER_PATH)
+    parser.add_argument(
+        "--width-registry",
+        type=Path,
+        default=DEFAULT_WIDTH_REGISTRY_PATH,
+        help="typed UI/scene rendered-width registry",
+    )
     parser.add_argument(
         "--authored",
         action="append",
@@ -154,6 +161,7 @@ def _build_from_args(args: argparse.Namespace):
         zh_raw_path=args.zh_raw,
         mapping_path=args.mapping,
         target_header_path=args.target_header,
+        width_registry_path=args.width_registry,
         authored_paths=_locale_path_map(args.authored),
         enabled_locales=args.enabled_locales,
         suffix_share=_suffix_share(args),
@@ -305,6 +313,29 @@ def cmd_check_leakage(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_check_width(args: argparse.Namespace) -> int:
+    build = _build_from_args(args)
+    validation = build.report.get("width_validation")
+    if not isinstance(validation, dict):
+        raise GameCatalogError(
+            "full-game rendered-width validation is unavailable for this target set"
+        )
+    summary = []
+    for locale in sorted(validation):
+        report = validation[locale]
+        summary.append(
+            "{}:targets={} lines={} inserted={} unclassified={}".format(
+                locale,
+                report["target_count"],
+                report["line_count"],
+                report["generated_line_break_count"],
+                report["unclassified_target_count"],
+            )
+        )
+    print("rendered-width contract passed: " + " ".join(summary))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -343,6 +374,13 @@ def build_parser() -> argparse.ArgumentParser:
             default=DEFAULT_REPORT_PATH,
         )
         sub_parser.set_defaults(handler=handler)
+
+    width_p = sub.add_parser(
+        "check-width",
+        help="validate generated CJK payload lines against every classified UI context",
+    )
+    _add_common_args(width_p)
+    width_p.set_defaults(handler=cmd_check_width)
 
     return parser
 

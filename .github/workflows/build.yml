@@ -23,13 +23,16 @@ jobs:
   # test that actually drives libmGBA (test_backend_integration.py) compiles
   # its tiny backend for the *host*, never the GBA target; the upstream-port
   # tests are Python/stdlib only and link no C. This is intentionally a
-  # separate job from `build` below so a scenario/generator/host-tooling
-  # regression is reported in well under a minute, before paying for a full
-  # ROM/linker build, and this lane never builds the ROM or runs the linker.
+  # separate job from `build` below so host-only regressions are reported
+  # before paying for a full ROM/linker build. The exhaustive full-game
+  # localization gate is intentionally measured in minutes, so this lane
+  # keeps a 45-minute budget (the local exhaustive gate takes about 31
+  # minutes before CI setup overhead) while never building a ROM or running
+  # the linker.
   # All host test steps are genuine gates (required status), not advisory.
   host-tests:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 45
 
     steps:
     - uses: actions/checkout@v7
@@ -86,6 +89,13 @@ jobs:
     # expansion-modern-linker-check's own dependency list, not this step).
     - name: Run localization host test suite (issue #18)
       run: python3 -m unittest discover -s scripts/localization/tests -p "test_*.py"
+
+    # The full-game payload has a separate source format from the expansion
+    # catalog. Its test target includes the typed rendered-width registry,
+    # metrics-aware generated-break validation, and native text consumer
+    # checks, so an overfull JA/ZH stream cannot pass the default CI lane.
+    - name: Run full-game localization width contract (issue #18)
+      run: make game-localization-test
 
   # Ubuntu libmGBA ROM/runtime gate: builds the full modern object/ELF/ROM
   # chain for both supported configs (debug, release; AAPCS only -- see

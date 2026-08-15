@@ -43,13 +43,10 @@ LOCALIZED_FONT_DATA_STATIC_ASSERT(
     sizeof(gLocalizedFontJaTalkBitmaps)
         == sizeof(gLocalizedFontJaTalkWidths) * LOCALIZED_FONT_BITMAP_STRIDE,
     ja_talk_bitmap_count);
-LOCALIZED_FONT_DATA_STATIC_ASSERT(
-    sizeof(gLocalizedFontJaSystemWidths)
-        == sizeof(gLocalizedFontJaTalkWidths),
-    ja_style_count);
-
-const u32 gLocalizedFontJaGlyphCount =
+const u32 gLocalizedFontJaSystemGlyphCount =
     sizeof(gLocalizedFontJaSystemWidths) / sizeof(gLocalizedFontJaSystemWidths[0]);
+const u32 gLocalizedFontJaTalkGlyphCount =
+    sizeof(gLocalizedFontJaTalkWidths) / sizeof(gLocalizedFontJaTalkWidths[0]);
 
 #endif
 
@@ -91,13 +88,11 @@ LOCALIZED_FONT_DATA_STATIC_ASSERT(
     sizeof(gLocalizedFontZhHansTalkBitmaps)
         == sizeof(gLocalizedFontZhHansTalkWidths) * LOCALIZED_FONT_BITMAP_STRIDE,
     zh_hans_talk_bitmap_count);
-LOCALIZED_FONT_DATA_STATIC_ASSERT(
-    sizeof(gLocalizedFontZhHansSystemWidths)
-        == sizeof(gLocalizedFontZhHansTalkWidths),
-    zh_hans_style_count);
-
-const u32 gLocalizedFontZhHansGlyphCount =
+const u32 gLocalizedFontZhHansSystemGlyphCount =
     sizeof(gLocalizedFontZhHansSystemWidths)
         / sizeof(gLocalizedFontZhHansSystemWidths[0]);
+const u32 gLocalizedFontZhHansTalkGlyphCount =
+    sizeof(gLocalizedFontZhHansTalkWidths)
+        / sizeof(gLocalizedFontZhHansTalkWidths[0]);
 
 #endif

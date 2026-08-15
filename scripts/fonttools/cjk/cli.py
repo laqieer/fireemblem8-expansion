@@ -23,6 +23,8 @@ from .package import (
     check_compact_assets,
     refresh_compact_asset_inventory_provenance,
     record_gate_evidence,
+    write_runtime_split_assets,
+    write_fehrr_priority_assets,
     write_compact_assets,
 )
 
@@ -96,6 +98,24 @@ def _refresh_provenance(args: argparse.Namespace) -> int:
     return 0
 
 
+def _import_fehrr(args: argparse.Namespace) -> int:
+    return _split_runtime_corpora(args)
+
+
+def _split_runtime_corpora(args: argparse.Namespace) -> int:
+    source_root = args.fehrr_root
+    if source_root is None:
+        source_root = args.root.parent / "FEHRR"
+    outputs = write_runtime_split_assets(args.root, source_root)
+    manifest = json.loads(outputs["graphics/fonts/cjk/manifest.json"].decode("utf-8"))
+    counts = ",".join(
+        f"{name}:{asset['glyph_count']}"
+        for name, asset in sorted(manifest["assets"].items())
+    )
+    print(f"regenerated runtime usage font split: {counts}")
+    return 0
+
+
 def _check(args: argparse.Namespace) -> int:
     inventory = check_generated_files(args.root)
     assets = check_compact_assets(args.root)
@@ -103,8 +123,9 @@ def _check(args: argparse.Namespace) -> int:
         inventory["fonts/cjk/inventory.json"].decode("utf-8")
     )
     coverage = ",".join(
-        f"{locale}:{inventory_document['locales'][locale]['glyph_scalar_count']}"
-        f"x{len(inventory_document['locales'][locale]['styles'])}"
+        f"{locale}:"
+        f"system={inventory_document['locales'][locale]['styles']['system']['glyph_scalar_count']},"
+        f"talk={inventory_document['locales'][locale]['styles']['talk']['glyph_scalar_count']}"
         for locale in LOCALES
     )
     review_scalars = []
@@ -196,6 +217,30 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     refresh.set_defaults(handler=_refresh_provenance)
+
+    fehrr = subparsers.add_parser(
+        "import-fehrr",
+        help=(
+            "compatibility alias for split-runtime-corpora"
+        ),
+    )
+    fehrr.add_argument(
+        "--fehrr-root",
+        type=Path,
+        default=None,
+        help="clean FEHRR checkout (default: ../FEHRR relative to --root)",
+    )
+    fehrr.set_defaults(handler=_import_fehrr)
+
+    split = subparsers.add_parser(
+        "split-runtime-corpora",
+        help=(
+            "filter the verified full-union baseline into checked runtime "
+            "system/talk corpora and apply FEHRR source priority"
+        ),
+    )
+    split.add_argument("--fehrr-root", type=Path, default=None)
+    split.set_defaults(handler=_split_runtime_corpora)
 
     check = subparsers.add_parser(
         "check",

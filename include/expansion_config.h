@@ -278,6 +278,21 @@
 #define FE8_EXPANSION_STARTER_CONTENT 0
 #endif
 
+/*
+ * Opt-in CJK runtime overflow guard. Generated locale catalogs are wrapped
+ * deterministically at build time regardless of this flag; enabling it adds
+ * a second, allocation-aware guard for dynamic substitutions. It defaults to
+ * zero in every legacy and ordinary modern build to retain legacy behavior.
+ */
+#ifndef FE8_EXPANSION_LOCALIZED_TEXT_AUTO_WRAP
+#define FE8_EXPANSION_LOCALIZED_TEXT_AUTO_WRAP 0
+#endif
+
+#if (FE8_EXPANSION_LOCALIZED_TEXT_AUTO_WRAP != 0) \
+    && (FE8_EXPANSION_LOCALIZED_TEXT_AUTO_WRAP != 1)
+#error "FE8_EXPANSION_LOCALIZED_TEXT_AUTO_WRAP must be 0 or 1"
+#endif
+
 /* Defence in depth: the same relationships expansion_config.py rejects at
  * configure time are hard compile errors here, so a hand-passed -D (or a
  * future include-only consumer) can never build a sample with no registry,

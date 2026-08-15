@@ -1,0 +1,62 @@
+{
+  "assets": {
+    "ja.system": {
+      "codepoints.u32le": {
+        "byte_count": 7196,
+        "sha256": "762ef5a72e03b934ecc6f475d8fa69eb9ba0585508d38acd824ad1d052bb1a02"
+      },
+      "glyphs.2bpp": {
+        "byte_count": 115136,
+        "sha256": "cf2c189cfc5eec2f6ffb6b4e10fcf584ef82421b8c48a29690e3e4b9c2f95c34"
+      },
+      "widths.u8": {
+        "byte_count": 1799,
+        "sha256": "429a0bfba5d9e60b9028cacb49616df80fc4e4bd2e8eff6febfb2d6590c938d5"
+      }
+    },
+    "ja.talk": {
+      "codepoints.u32le": {
+        "byte_count": 7196,
+        "sha256": "762ef5a72e03b934ecc6f475d8fa69eb9ba0585508d38acd824ad1d052bb1a02"
+      },
+      "glyphs.2bpp": {
+        "byte_count": 115136,
+        "sha256": "e84ebbbfa89c2588d38100c97dd38cf61326eafa1acd2720286e72d32471ce9e"
+      },
+      "widths.u8": {
+        "byte_count": 1799,
+        "sha256": "0bf5ab2c12bd038802e32c1b4c84188cefeeec41021f22fc8b987ddb59c86c8a"
+      }
+    },
+    "zh-Hans.system": {
+      "codepoints.u32le": {
+        "byte_count": 9876,
+        "sha256": "7964ddc4fe2ffc23b6414589e0c0298485e3083818f2d889ace0b88fec67f354"
+      },
+      "glyphs.2bpp": {
+        "byte_count": 158016,
+        "sha256": "b32f4c5a59316925897232ef42211b02ba8a6bdd0d8eaca984232c539391901e"
+      },
+      "widths.u8": {
+        "byte_count": 2469,
+        "sha256": "6a4d03fbad4d085069b9559fb26ba361845a387835c7ab87cda31b7999bf4190"
+      }
+    },
+    "zh-Hans.talk": {
+      "codepoints.u32le": {
+        "byte_count": 9876,
+        "sha256": "7964ddc4fe2ffc23b6414589e0c0298485e3083818f2d889ace0b88fec67f354"
+      },
+      "glyphs.2bpp": {
+        "byte_count": 158016,
+        "sha256": "44e86763416015fbc8509c77ac8c3c0891d458bf88468fafb1f346becd97ea0e"
+      },
+      "widths.u8": {
+        "byte_count": 2469,
+        "sha256": "d8d13dee699067af909b5487a243747baf9760a505ddc99e456ff4b18d06c234"
+      }
+    }
+  },
+  "kind": "fe8u-febuilder-full-union-baseline",
+  "schema_version": 1
+}

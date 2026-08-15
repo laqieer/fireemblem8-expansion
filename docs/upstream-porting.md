@@ -209,7 +209,7 @@ workflow gate described below.
 
 Gates 9-10 aggregate the complete modern debug/release ROM, linker, budget,
 shift, save, starter-feature, and localization runtime matrices through
-`expansion-modern-linker-check`. Gates 11-12 reuse the item-expansion runtime
+`expansion-modern-linker-check`. Gates 12-13 reuse the item-expansion runtime
 probe at cap `0xCE`; the three issue #6 arguments make the same ROM also prove
 the typed starter-content record and both registered mechanics. No extra ROM
 build or gate is added.

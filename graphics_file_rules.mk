@@ -1,5 +1,11 @@
 MOVEUNITGFXDIR := graphics/unit_icon/move
 
+# Localized UI extraction commits indexed PNG source only. The generated C
+# registry INCBINs the normal build-local .4bpp.lz derivative; make this
+# explicit so a clean checkout never relies on ignored extractor output.
+graphics/localized_ui/%.4bpp: graphics/localized_ui/%.png
+	$(GBAGFX) $< $@
+
 ### Move Unit Icon Animation Sheets ###
 
 $(MOVEUNITGFXDIR)/unit_icon_move_Ephraim_Master_Lord_sheet.4bpp: %.4bpp: %.png

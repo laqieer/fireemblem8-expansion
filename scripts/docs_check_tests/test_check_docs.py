@@ -1263,15 +1263,15 @@ class StaleIssue5StatusAndGateNumberRegressionTests(unittest.TestCase):
         self.assertNotIn("is still **OPEN**", generated_data_text)
         self.assertNotIn("OPEN at time of writing", closure_report_text)
 
-    def test_framework_support_states_item_expansion_gates_11_12(self):
+    def test_framework_support_states_item_expansion_gates_12_13(self):
         framework_support_text = check_docs.read_text(
             os.path.join(REAL_REPO_ROOT, "docs", "framework-support.md")
         )
-        self.assertIn("gates 11-12 of", framework_support_text)
-        self.assertNotIn("gates 9-10 of", framework_support_text)
+        self.assertIn("gates 12-13 of", framework_support_text)
         self.assertNotIn("gates 10-11 of", framework_support_text)
+        self.assertNotIn("gates 11-12 of", framework_support_text)
 
-    def test_verify_gates_item_expansion_entries_are_indexes_11_and_12_of_12(self):
+    def test_verify_gates_item_expansion_entries_are_indexes_12_and_13_of_13(self):
         # Safe, standalone, no-network import of the live verify module
         # straight off disk -- proves "gates 11-12" against the real,
         # current scripts/upstream_port/verify.py gates() ordering rather
@@ -1290,12 +1290,12 @@ class StaleIssue5StatusAndGateNumberRegressionTests(unittest.TestCase):
         finally:
             sys.modules.pop(spec.name, None)
 
-        self.assertEqual(len(all_gates), 12)
-        # Gates are 1-indexed in the docs ("gates 11-12"); Python lists are
-        # 0-indexed, so that's positions [10] and [11].
-        self.assertIn("itemexpansion", all_gates[10].name)
+        self.assertEqual(len(all_gates), 13)
+        # Gates are 1-indexed in the docs ("gates 12-13"); Python lists are
+        # 0-indexed, so that's positions [11] and [12].
         self.assertIn("itemexpansion", all_gates[11].name)
-        for gate in all_gates[:10]:
+        self.assertIn("itemexpansion", all_gates[12].name)
+        for gate in all_gates[:11]:
             self.assertNotIn("itemexpansion", gate.name)
 
 

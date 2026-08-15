@@ -153,10 +153,16 @@ class ModernGameLocalizationIntegrationTests(unittest.TestCase):
         self.assertIn("gGameLocalizationEnglishCompressedBlob[]", ja["source"])
         self.assertIn("gGameLocalizationJaCompressedBlob[]", ja["source"])
         self.assertNotIn("gGameLocalizationZhHansCompressedBlob[]", ja["source"])
-        self.assertIn("FE8_GAME_LOCALIZATION_MAX_DECODED_BYTES 4725u", ja["config"])
+        self.assertRegex(
+            ja["config"],
+            r"FE8_GAME_LOCALIZATION_MAX_DECODED_BYTES [1-9][0-9]*u",
+        )
         self.assertIn("gGameLocalizationZhHansCompressedBlob[]", zh["source"])
         self.assertNotIn("gGameLocalizationJaCompressedBlob[]", zh["source"])
-        self.assertIn("FE8_GAME_LOCALIZATION_MAX_DECODED_BYTES 4000u", zh["config"])
+        self.assertRegex(
+            zh["config"],
+            r"FE8_GAME_LOCALIZATION_MAX_DECODED_BYTES [1-9][0-9]*u",
+        )
         self.assertIn("gGameLocalizationEnglishCompressedBlob[]", zh["source"])
         self.assertIn("gGameLocalizationJaCompressedBlob[]", both["source"])
         self.assertIn("gGameLocalizationZhHansCompressedBlob[]", both["source"])

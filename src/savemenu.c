@@ -24,6 +24,7 @@
 #include "gba_sprites.h"
 #include "save_format.h"
 #include "save_compat_menu.h"
+#include "localized_ui_graphics.h"
 
 #include "constants/event-flags.h"
 #include "constants/characters.h"
@@ -36,6 +37,19 @@ EWRAM_DATA struct SaveMenuRTextData gSaveMenuRTextData = { 0 };
 
 // TODO: Implicit declaration
 int LoadBonusContentData(void *);
+
+static const u8 *SaveMenu_GetMainChoiceGfx(void)
+{
+#if LOCALIZED_UI_GRAPHICS_CJK_ENABLED
+    const u8 *localizedGfx;
+
+    localizedGfx = LocalizedUiGraphics_GetSaveMenuOptions();
+    if (localizedGfx != 0)
+        return localizedGfx;
+#endif
+
+    return Img_GameMainMenuObjs;
+}
 
 //! FE8U = 0x080A882C
 void SaveMenu_NewGame(ProcPtr proc)
@@ -375,7 +389,9 @@ void SaveMenu_InitScreen(struct SaveMenuProc * proc)
 //! FE8U = 0x080A8F04
 void SaveMenu_LoadExtraMenuGraphics(struct SaveMenuProc * proc)
 {
-    Decompress(Img_GameMainMenuObjs, OBJ_VRAM0 + OBJCHR_SAVEMENU_MAINCHOICE_STR * TILE_SIZE_4BPP);
+    Decompress(
+        SaveMenu_GetMainChoiceGfx(),
+        OBJ_VRAM0 + OBJCHR_SAVEMENU_MAINCHOICE_STR * TILE_SIZE_4BPP);
     InitSaveMenuChoice(proc);
 
     if (proc->main_sel_bitfile == MAIN_MENU_OPTION_EXTRAS)
@@ -931,7 +947,9 @@ void SaveMenuScrollBackToMain(struct SaveMenuProc * proc)
 
     if (proc->scroll_cnt == 0xe)
     {
-        Decompress(Img_GameMainMenuObjs, OBJ_VRAM0 + OBJCHR_SAVEMENU_MAINCHOICE_STR * TILE_SIZE_4BPP);
+        Decompress(
+            SaveMenu_GetMainChoiceGfx(),
+            OBJ_VRAM0 + OBJCHR_SAVEMENU_MAINCHOICE_STR * TILE_SIZE_4BPP);
         Proc_Break(proc);
     }
 }
@@ -1258,7 +1276,9 @@ void SaveMenuExtraSlotSelectLoop(struct SaveMenuProc * proc)
             return;
         }
 
-        Decompress(Img_GameMainMenuObjs, OBJ_VRAM0 + OBJCHR_SAVEMENU_MAINCHOICE_STR * TILE_SIZE_4BPP);
+        Decompress(
+            SaveMenu_GetMainChoiceGfx(),
+            OBJ_VRAM0 + OBJCHR_SAVEMENU_MAINCHOICE_STR * TILE_SIZE_4BPP);
         proc->scroll_cnt = 0;
         Proc_Goto(proc, PL_SAVEMENU_13);
         return;
@@ -1486,7 +1506,9 @@ void SaveMenu_ReloadScreenFormDifficulty(struct SaveMenuProc * proc)
     ApplyPalette(Pal_MenuMainObjs_0, 2);
 
     SaveMenuCopyPalette(PAL_OBJ(0x2), PAL_OBJ(0x2) - 0x10, 1);
-    Decompress(Img_GameMainMenuObjs, OBJ_VRAM0 + OBJCHR_SAVEMENU_MAINCHOICE_STR * TILE_SIZE_4BPP);
+    Decompress(
+        SaveMenu_GetMainChoiceGfx(),
+        OBJ_VRAM0 + OBJCHR_SAVEMENU_MAINCHOICE_STR * TILE_SIZE_4BPP);
 
     SaveMenuInitSubBoxText();
     SaveMenuPutChapterTitle(proc);

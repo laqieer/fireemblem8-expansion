@@ -1259,7 +1259,7 @@ class FinalMappingTests(unittest.TestCase):
         self.assertEqual(
             metrics["summary"],
             {
-                "alias_count": 120,
+                "alias_count": 10,
                 "label_count": 664,
                 "locale_count": 2,
                 "overflow_count": 0,
@@ -1281,7 +1281,8 @@ class FinalMappingTests(unittest.TestCase):
         self.assertEqual(bolting["display_text"], "遠雷")
         self.assertLessEqual(bolting["display_width"], 56)
         self.assertEqual(ranger["canonical_text"], "フォレストナイト")
-        self.assertEqual(ranger["display_text"], "森騎士")
+        self.assertFalse(ranger["alias_applied"])
+        self.assertEqual(ranger["display_text"], ranger["canonical_text"])
         self.assertLessEqual(ranger["display_width"], 64)
 
     def test_ch15_scene_boundary_does_not_duplicate_0b2a(self):
