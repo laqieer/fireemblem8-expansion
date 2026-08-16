@@ -4,6 +4,7 @@
 #include "proc.h"
 #include "bmlib.h"
 #include "hardware.h"
+#include "localized_ui_graphics.h"
 
 struct ProcCmd CONST_DATA ProcScr_ApProc[] =
 {
@@ -323,6 +324,10 @@ struct APHandle* AP_Find(const u16* definition) {
 ProcPtr APProc_Create(const void* apDefinition, int xPos, int yPos, int tileBase, int anim, int aObjNode) {
     struct APHandle* handle;
     struct APProc* proc;
+
+#if LOCALIZED_UI_GRAPHICS_EU_ENABLED
+    apDefinition = LocalizedEuUiGraphics_RemapAp(apDefinition);
+#endif
 
     // Setting up handle
     handle = AP_Create(apDefinition, aObjNode);

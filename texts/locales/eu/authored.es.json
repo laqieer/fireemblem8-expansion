@@ -1,0 +1,17 @@
+{
+  "kind": "fe8eu-target-authored-catalog",
+  "locale": "es",
+  "strings": {
+    "0x040C": "Eficaz contra infantería.[CTRL:001F]",
+    "0x07D2": "Herido en[CTRL:0001]y después dejó el grupo.[CTRL:001F]",
+    "0x0D4C": "Estos datos son anteriores al[CTRL:001F][CTRL:0001]formato ampliado y no pueden[CTRL:001F][CTRL:0001]abrirse aquí.",
+    "0x0D4D": "Los datos parecen estar[CTRL:001F][CTRL:0001]dañados y no se pueden leer.",
+    "0x0D4E": "Los datos de la expansión[CTRL:001F][CTRL:0001]están dañados y no se[CTRL:001F][CTRL:0001]pueden leer.",
+    "0x0D4F": "Estos datos pertenecen a una[CTRL:001F][CTRL:0001]versión anterior de la[CTRL:001F][CTRL:0001]expansión. Migra los datos[CTRL:001F][CTRL:0001]con una herramienta externa.",
+    "0x0D50": "Estos datos pertenecen a una[CTRL:001F][CTRL:0001]versión posterior de la[CTRL:001F][CTRL:0001]expansión y no son[CTRL:001F][CTRL:0001]compatibles aquí.",
+    "0x0D51": "Estos datos usan ajustes de[CTRL:001F][CTRL:0001]expansión incompatibles y[CTRL:001F][CTRL:0001]no se pueden utilizar.",
+    "0x0D52": "Estos datos no se pueden[CTRL:001F][CTRL:0001]utilizar aquí.",
+    "0x0D54": "Borrar todos los datos",
+    "0x0D55": "¿Borrar todos los datos?[CTRL:001F][CTRL:0001]Esta acción no se puede deshacer."
+  }
+}

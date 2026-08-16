@@ -439,6 +439,74 @@
       "surface": "debug_overlay",
       "max_width": 48,
       "max_decoded_bytes": 80
+    },
+    {
+      "id": 54,
+      "key": "framework.locale_name.fr",
+      "status": "active",
+      "surface": "locale_name",
+      "max_width": 24,
+      "max_decoded_bytes": 32
+    },
+    {
+      "id": 55,
+      "key": "framework.locale_name.de",
+      "status": "active",
+      "surface": "locale_name",
+      "max_width": 24,
+      "max_decoded_bytes": 32
+    },
+    {
+      "id": 56,
+      "key": "framework.locale_name.es",
+      "status": "active",
+      "surface": "locale_name",
+      "max_width": 24,
+      "max_decoded_bytes": 32
+    },
+    {
+      "id": 57,
+      "key": "framework.locale_name.it",
+      "status": "active",
+      "surface": "locale_name",
+      "max_width": 24,
+      "max_decoded_bytes": 32
+    },
+    {
+      "id": 58,
+      "key": "framework.locale_short_name.fr",
+      "status": "active",
+      "surface": "locale_name",
+      "max_width": 8,
+      "max_decoded_bytes": 8,
+      "pseudo_policy": "preserve"
+    },
+    {
+      "id": 59,
+      "key": "framework.locale_short_name.de",
+      "status": "active",
+      "surface": "locale_name",
+      "max_width": 8,
+      "max_decoded_bytes": 8,
+      "pseudo_policy": "preserve"
+    },
+    {
+      "id": 60,
+      "key": "framework.locale_short_name.es",
+      "status": "active",
+      "surface": "locale_name",
+      "max_width": 8,
+      "max_decoded_bytes": 8,
+      "pseudo_policy": "preserve"
+    },
+    {
+      "id": 61,
+      "key": "framework.locale_short_name.it",
+      "status": "active",
+      "surface": "locale_name",
+      "max_width": 8,
+      "max_decoded_bytes": 8,
+      "pseudo_policy": "preserve"
     }
   ]
 }

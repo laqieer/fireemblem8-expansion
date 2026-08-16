@@ -1,0 +1,799 @@
+{
+  "bitmap_format": "16x16 2bpp, 64 bytes per glyph",
+  "encoding": "Windows-1252",
+  "format": 1,
+  "purpose": "FE8EU Latin glyph source",
+  "source": {
+    "sha256": "80f94bf10da412e6d8d1ba11c043107f4873bc17fecceb02e6a7da3d1a261d6d",
+    "text_manifest_sha256": "5aa65c12fa15ca2a7ff2f318045faa49010d1b14e694fb66ac760c5b1ade424d"
+  },
+  "styles": {
+    "system": {
+      "files": {
+        "bitmaps": {
+          "byte_count": 3648,
+          "path": "graphics/fonts/eu/eu.system.glyphs.2bpp",
+          "sha256": "72e4259abbbc0cfbbbb6a063e3f83cfa31acb5b59af801bfcbeb2272bd8e74bd"
+        },
+        "codepoints": {
+          "byte_count": 228,
+          "path": "graphics/fonts/eu/eu.system.codepoints.u32le",
+          "sha256": "d429275a78b9307a5f2aadbf6797880d2d6ea01f2fa532fa718a11e733d648c6"
+        },
+        "source_bytes": {
+          "byte_count": 57,
+          "path": "graphics/fonts/eu/eu.system.source-bytes.u8",
+          "sha256": "161f80db3cd70963a0f71147b7f902916f00fdeee2e92105f2685ef96462a819"
+        },
+        "widths": {
+          "byte_count": 57,
+          "path": "graphics/fonts/eu/eu.system.widths.u8",
+          "sha256": "b5aabf024b73de1cb4640a3a964947df4861a168a2b50403f948754bbb80c7e1"
+        }
+      },
+      "glyph_count": 57,
+      "glyphs": [
+        {
+          "bitmap_sha256": "d03c787d51467517ede013517cbe2b819616fbc35f98570bdaecd8d33369b2e3",
+          "codepoint": "U+00A1",
+          "source_byte": "0xA1",
+          "width": 4
+        },
+        {
+          "bitmap_sha256": "4de3b1f25772172d652518e76731de99dedda4bc1244dd3043baf91957e389cb",
+          "codepoint": "U+00AA",
+          "source_byte": "0xAA",
+          "width": 5
+        },
+        {
+          "bitmap_sha256": "c2530a44389837a990ee1d039ce58f7773fc1bf74d8913037cc2204730d69e84",
+          "codepoint": "U+00AB",
+          "source_byte": "0xAB",
+          "width": 6
+        },
+        {
+          "bitmap_sha256": "70d7a88989d95cce1324027c2e542f087833f6c626ba4921b189be00dc33e6b3",
+          "codepoint": "U+00BA",
+          "source_byte": "0xBA",
+          "width": 4
+        },
+        {
+          "bitmap_sha256": "526f8fcc45f25783ce58730348050b3b2620bd5936e00d448dc6f1faaa6cb8a6",
+          "codepoint": "U+00BB",
+          "source_byte": "0xBB",
+          "width": 6
+        },
+        {
+          "bitmap_sha256": "ea75fea7f062371f97762d8665976619e02173430d298dad5a9ef16c54ae334a",
+          "codepoint": "U+00BF",
+          "source_byte": "0xBF",
+          "width": 6
+        },
+        {
+          "bitmap_sha256": "c41195b746b99b846822efa5d1e12a7260aef46815086c378a17b999fe475752",
+          "codepoint": "U+00C0",
+          "source_byte": "0xC0",
+          "width": 5
+        },
+        {
+          "bitmap_sha256": "37be068c8e6f3447856139ab3aa7c650b1cef8f93ec6344da7b1485ad7eeeaa0",
+          "codepoint": "U+00C1",
+          "source_byte": "0xC1",
+          "width": 5
+        },
+        {
+          "bitmap_sha256": "93402736f90a34540e31e0233bbea29d1e0176a5f6eaf581169452e0fc0d0757",
+          "codepoint": "U+00C2",
+          "source_byte": "0xC2",
+          "width": 5
+        },
+        {
+          "bitmap_sha256": "c27c13cdde1675326b6faf12e1a12ba9a8054898050c7228e14decc9c6ad32e7",
+          "codepoint": "U+00C4",
+          "source_byte": "0xC4",
+          "width": 5
+        },
+        {
+          "bitmap_sha256": "eff6ac9b5e8232d8f1de549239631dddabb419efe24fd349f37346423e2e06a9",
+          "codepoint": "U+00C7",
+          "source_byte": "0xC7",
+          "width": 6
+        },
+        {
+          "bitmap_sha256": "fcf3be34b8e20a31a6a85e7f40ab48e84e064285f7d0a0b8423859e9b8223577",
+          "codepoint": "U+00C8",
+          "source_byte": "0xC8",
+          "width": 5
+        },
+        {
+          "bitmap_sha256": "3411cfe5b53aacb533858b4a17e8b1520eaae05d4b8db6c37bd368c114a2a885",
+          "codepoint": "U+00C9",
+          "source_byte": "0xC9",
+          "width": 5
+        },
+        {
+          "bitmap_sha256": "653c2cabc3f078041213e458eccf862b30fc97a02a752a887e084944c3b3b2c8",
+          "codepoint": "U+00CA",
+          "source_byte": "0xCA",
+          "width": 5
+        },
+        {
+          "bitmap_sha256": "28bddeca3f8a21cf2a0de95d9e6987ae53ba2660cae69fadaf053c294b7dc59e",
+          "codepoint": "U+00CB",
+          "source_byte": "0xCB",
+          "width": 5
+        },
+        {
+          "bitmap_sha256": "d9c95e2b212aa51f6c0ce70dd8dbd66ac036ac5ea620c2e71db09fdb33c086ed",
+          "codepoint": "U+00CC",
+          "source_byte": "0xCC",
+          "width": 3
+        },
+        {
+          "bitmap_sha256": "b9fbaa853b90c1af165948f8b1e585175ccaa0a5b27662ae1776384f94cde8f6",
+          "codepoint": "U+00CD",
+          "source_byte": "0xCD",
+          "width": 3
+        },
+        {
+          "bitmap_sha256": "7070e9678e569374ef01793c1cdbde6f5b1986893fc8c7e3891b3910309b6b01",
+          "codepoint": "U+00CE",
+          "source_byte": "0xCE",
+          "width": 4
+        },
+        {
+          "bitmap_sha256": "a3d091fcf743361a01167d75684ea78a5e2fcd742ca90403deafbbac6b643299",
+          "codepoint": "U+00CF",
+          "source_byte": "0xCF",
+          "width": 4
+        },
+        {
+          "bitmap_sha256": "e3a22ef30bc35ae632e67fdb1974fcbee663e7b04f9abd845453d1ad5d76af92",
+          "codepoint": "U+00D1",
+          "source_byte": "0xD1",
+          "width": 5
+        },
+        {
+          "bitmap_sha256": "373537248c2d4b0fe45434660d490d9e5c24ab6a7c4af83a6ebd896d1b72aa64",
+          "codepoint": "U+00D2",
+          "source_byte": "0xD2",
+          "width": 5
+        },
+        {
+          "bitmap_sha256": "906b86558f35bc6204f470010f7f38bf643955705d8a2b915aae3fd8152296da",
+          "codepoint": "U+00D3",
+          "source_byte": "0xD3",
+          "width": 5
+        },
+        {
+          "bitmap_sha256": "95062ed8b6ee45842aaec6e68764859bb14943cc1d4a89181fe3cc2f891ae097",
+          "codepoint": "U+00D4",
+          "source_byte": "0xD4",
+          "width": 5
+        },
+        {
+          "bitmap_sha256": "6e675080dfce74d7a092a235e55667694573bb84f297a4978d052c2b28e4a9fd",
+          "codepoint": "U+00D6",
+          "source_byte": "0xD6",
+          "width": 5
+        },
+        {
+          "bitmap_sha256": "5b99521e2da3af446dfd0f2faa9d4646f18021f4aab278118dbf7e86348f750d",
+          "codepoint": "U+00D9",
+          "source_byte": "0xD9",
+          "width": 5
+        },
+        {
+          "bitmap_sha256": "5db780244eec2001900ebf5f9770f24f889a222f95a436e26081fa4bc72459e7",
+          "codepoint": "U+00DA",
+          "source_byte": "0xDA",
+          "width": 5
+        },
+        {
+          "bitmap_sha256": "9c894bf6715fdeaa0936745d59bd58914a259d1e23cb18e4521e693000717758",
+          "codepoint": "U+00DB",
+          "source_byte": "0xDB",
+          "width": 5
+        },
+        {
+          "bitmap_sha256": "aba76fff7ebca40f76662e8e3931715d9778185479633e7941c70c6ec60ec86d",
+          "codepoint": "U+00DC",
+          "source_byte": "0xDC",
+          "width": 5
+        },
+        {
+          "bitmap_sha256": "0a02e77af8c765e841d18791acdbbf752370683236035e9e9e425ea89f41bf91",
+          "codepoint": "U+00DF",
+          "source_byte": "0xDF",
+          "width": 6
+        },
+        {
+          "bitmap_sha256": "86b31bea02e555e28593694ccf7bed58719ca59bc6cd5bfb8a62cf22f460a610",
+          "codepoint": "U+00E0",
+          "source_byte": "0xE0",
+          "width": 6
+        },
+        {
+          "bitmap_sha256": "0085b60d675512d7663a8fa24f672576a5f34445040f04cca801a4c3ac0f05f1",
+          "codepoint": "U+00E1",
+          "source_byte": "0xE1",
+          "width": 6
+        },
+        {
+          "bitmap_sha256": "0890cbdc2a4f1f1ac6a3a575e7e120591d19434ab78c1b2e424d36ba7a5332aa",
+          "codepoint": "U+00E2",
+          "source_byte": "0xE2",
+          "width": 6
+        },
+        {
+          "bitmap_sha256": "55a064388adf32beb131936cee6dc59f2dd647c043907ed5e613e9a7c480075b",
+          "codepoint": "U+00E4",
+          "source_byte": "0xE4",
+          "width": 6
+        },
+        {
+          "bitmap_sha256": "7de952095bc1d0d65bcfaaa7761d48bf84b8af172bbed3184da26065251a0992",
+          "codepoint": "U+00E7",
+          "source_byte": "0xE7",
+          "width": 5
+        },
+        {
+          "bitmap_sha256": "80e6552ca2dc3fbd1663f3eb750e30f2dbfe8cbb6ad99dc6c757bee502e963f5",
+          "codepoint": "U+00E8",
+          "source_byte": "0xE8",
+          "width": 5
+        },
+        {
+          "bitmap_sha256": "708f99ab3ffb56dd3e29b7001459f07d355b0e6a272c102f858ae158e63b1f42",
+          "codepoint": "U+00E9",
+          "source_byte": "0xE9",
+          "width": 5
+        },
+        {
+          "bitmap_sha256": "eae21c22bfbd85d11f88b4875c19564b86fbebbecb76f1721f2c4004cabfab71",
+          "codepoint": "U+00EA",
+          "source_byte": "0xEA",
+          "width": 5
+        },
+        {
+          "bitmap_sha256": "bb21c1e48a9e75931406a33d4c545853e6ac10a70b1cb9976d711ae08930812b",
+          "codepoint": "U+00EB",
+          "source_byte": "0xEB",
+          "width": 5
+        },
+        {
+          "bitmap_sha256": "27c290f3cb895b39d45a0ee68e741fda749586900efdc79b7a21e6f66cc898aa",
+          "codepoint": "U+00EC",
+          "source_byte": "0xEC",
+          "width": 3
+        },
+        {
+          "bitmap_sha256": "0eacf9727e070e7973a150e34ef961d2edaedcc3ea86706190e9bd1a6997dd75",
+          "codepoint": "U+00ED",
+          "source_byte": "0xED",
+          "width": 3
+        },
+        {
+          "bitmap_sha256": "0ce8f6daca16f670bd90c1424defce3e13f9b88ab1816507dbec250dd4e4bd15",
+          "codepoint": "U+00EE",
+          "source_byte": "0xEE",
+          "width": 4
+        },
+        {
+          "bitmap_sha256": "cdaebba872c15af48ca308aa218dc5bfcd52e25c22a59c7d124fef11e08e558e",
+          "codepoint": "U+00EF",
+          "source_byte": "0xEF",
+          "width": 4
+        },
+        {
+          "bitmap_sha256": "e10607fdde9a07564e92fd33e8d198f2463a38b87f1040bb44f45904eb2e10b7",
+          "codepoint": "U+00F1",
+          "source_byte": "0xF1",
+          "width": 5
+        },
+        {
+          "bitmap_sha256": "3f895edcf3bbe12ebbfaff5280c10906a1c193ed4fd0e1e332a46501ff64782f",
+          "codepoint": "U+00F2",
+          "source_byte": "0xF2",
+          "width": 5
+        },
+        {
+          "bitmap_sha256": "241d4708c2338c74bb7a355254f0270d5bc9f69135db944e2f2278a3e8a5a260",
+          "codepoint": "U+00F3",
+          "source_byte": "0xF3",
+          "width": 5
+        },
+        {
+          "bitmap_sha256": "458316a43aa29a3cfef7b0fe8d31156f82bd23fa43a87bcdb3e0ae5f6672920c",
+          "codepoint": "U+00F4",
+          "source_byte": "0xF4",
+          "width": 5
+        },
+        {
+          "bitmap_sha256": "2bfe82b5b003e232da7c2ad176a7a0f26bb75ccb2da0ef5c85ed8bde34561587",
+          "codepoint": "U+00F6",
+          "source_byte": "0xF6",
+          "width": 5
+        },
+        {
+          "bitmap_sha256": "1581508dcfa5463e70b708932cfa05af2e6e78dada9bc2347ab105ec5cbb7982",
+          "codepoint": "U+00F9",
+          "source_byte": "0xF9",
+          "width": 5
+        },
+        {
+          "bitmap_sha256": "72c77ebe09c07e38ee4857b3d985d1a67ec15fb4a94507ff2406ac249b2c6171",
+          "codepoint": "U+00FA",
+          "source_byte": "0xFA",
+          "width": 5
+        },
+        {
+          "bitmap_sha256": "e15b31a032f1bf28e6faefc140a06a9cf64e69ab5777a73dd302edae643020c9",
+          "codepoint": "U+00FB",
+          "source_byte": "0xFB",
+          "width": 5
+        },
+        {
+          "bitmap_sha256": "6d64db1e10c5ceb5cb74b7b07c93deba31258d92410007f2e4e3f115b383e8ee",
+          "codepoint": "U+00FC",
+          "source_byte": "0xFC",
+          "width": 5
+        },
+        {
+          "bitmap_sha256": "d815eec22d874120f594c1bfe8015eebae25e9b262159dcf6ee3fe0dd43d61da",
+          "codepoint": "U+0152",
+          "source_byte": "0x8C",
+          "width": 7
+        },
+        {
+          "bitmap_sha256": "9a9569d03cd3e641a66191423fa16e5b8f348777c52d0f8070231f82ada52409",
+          "codepoint": "U+0153",
+          "source_byte": "0x9C",
+          "width": 7
+        },
+        {
+          "bitmap_sha256": "83b0e46dc9ec6b909e018402b69196098e1d96d0a645e6b36d27494e52dbd49d",
+          "codepoint": "U+2018",
+          "source_byte": "0x91",
+          "width": 3
+        },
+        {
+          "bitmap_sha256": "17c843afabed2e0f492c59deda95a1a1c1b187b3a1d593a992ff6808591d941f",
+          "codepoint": "U+2019",
+          "source_byte": "0x92",
+          "width": 2
+        },
+        {
+          "bitmap_sha256": "024b511780fa124212740ca998a0b85c319f60fb6b65f8501518439330af13e6",
+          "codepoint": "U+201C",
+          "source_byte": "0x93",
+          "width": 5
+        },
+        {
+          "bitmap_sha256": "6567e8aab58d0298452f8c67f96b279db6bf266b7ae1d8aa80bd619255b0b616",
+          "codepoint": "U+201D",
+          "source_byte": "0x94",
+          "width": 5
+        }
+      ],
+      "source_table_address": "0x08798340"
+    },
+    "talk": {
+      "files": {
+        "bitmaps": {
+          "byte_count": 3648,
+          "path": "graphics/fonts/eu/eu.talk.glyphs.2bpp",
+          "sha256": "0fd9bdbd5133acc3fb4a6d2416279dc12b1936225c6d1539adcfa1bf46a9c308"
+        },
+        "codepoints": {
+          "byte_count": 228,
+          "path": "graphics/fonts/eu/eu.talk.codepoints.u32le",
+          "sha256": "d429275a78b9307a5f2aadbf6797880d2d6ea01f2fa532fa718a11e733d648c6"
+        },
+        "source_bytes": {
+          "byte_count": 57,
+          "path": "graphics/fonts/eu/eu.talk.source-bytes.u8",
+          "sha256": "161f80db3cd70963a0f71147b7f902916f00fdeee2e92105f2685ef96462a819"
+        },
+        "widths": {
+          "byte_count": 57,
+          "path": "graphics/fonts/eu/eu.talk.widths.u8",
+          "sha256": "4312753e28584bc2b9964b0f8ad77b93cfcae7827d515afb081fa10431d7ef42"
+        }
+      },
+      "glyph_count": 57,
+      "glyphs": [
+        {
+          "bitmap_sha256": "e564a9ba7967fbc7b1b3cf873aed68df831c23365f7a3c2f9a9c2686fa0d6fa5",
+          "codepoint": "U+00A1",
+          "source_byte": "0xA1",
+          "width": 3
+        },
+        {
+          "bitmap_sha256": "2ef9277847b05e9e3f8ff2995e0a945925afe874d18a020d82c93462caeac3b9",
+          "codepoint": "U+00AA",
+          "source_byte": "0xAA",
+          "width": 6
+        },
+        {
+          "bitmap_sha256": "9893a1b41c1b155b9dda93c21f36c73d87510c0a6348c41e47b0bf1617e34f1d",
+          "codepoint": "U+00AB",
+          "source_byte": "0xAB",
+          "width": 5
+        },
+        {
+          "bitmap_sha256": "a6963c806676052a005e06b74d6c8acf9904f3b3d7c4179fc261454f141d6f8b",
+          "codepoint": "U+00BA",
+          "source_byte": "0xBA",
+          "width": 5
+        },
+        {
+          "bitmap_sha256": "d7978fdd5854bbac60a9906b6b144d566dd0b9c359ae380e4a0bf81e16aac0d3",
+          "codepoint": "U+00BB",
+          "source_byte": "0xBB",
+          "width": 5
+        },
+        {
+          "bitmap_sha256": "2fbbe689caf2c1c1b4ba5a6644aba67f6b53764b7ca375835b5f8752b03022df",
+          "codepoint": "U+00BF",
+          "source_byte": "0xBF",
+          "width": 7
+        },
+        {
+          "bitmap_sha256": "5df56c2ed813cd6801969c6e8c61657d75febc856a2db65bae126e905e017f40",
+          "codepoint": "U+00C0",
+          "source_byte": "0xC0",
+          "width": 6
+        },
+        {
+          "bitmap_sha256": "da41b433ce6e30037bb1680ff7880e562c69bb9b05da9ce8aada2c154be2051d",
+          "codepoint": "U+00C1",
+          "source_byte": "0xC1",
+          "width": 6
+        },
+        {
+          "bitmap_sha256": "0b4fe05fb45ffefff2a90fbc41edd42b05844c14c4e8bcd5168adb9638943281",
+          "codepoint": "U+00C2",
+          "source_byte": "0xC2",
+          "width": 6
+        },
+        {
+          "bitmap_sha256": "c0fa3286b1eef887a1cebc2a613486b3878478c4ab3663a2cc0410c45312ef9e",
+          "codepoint": "U+00C4",
+          "source_byte": "0xC4",
+          "width": 6
+        },
+        {
+          "bitmap_sha256": "8e1da8ac7935333c752675f473a3c05e148c6155a5b99a05b365061e7473467e",
+          "codepoint": "U+00C7",
+          "source_byte": "0xC7",
+          "width": 6
+        },
+        {
+          "bitmap_sha256": "3c67a654fce6253a7fedeb7647ffbeadd1bbf3cd3be3731173f889ac0b8b307f",
+          "codepoint": "U+00C8",
+          "source_byte": "0xC8",
+          "width": 6
+        },
+        {
+          "bitmap_sha256": "5f3cd4ddcfe5436807e65cb805418b09294a8a5730f733f8886255fe3e4dc2f6",
+          "codepoint": "U+00C9",
+          "source_byte": "0xC9",
+          "width": 6
+        },
+        {
+          "bitmap_sha256": "08eabad8a70fbbc8215f09f5c75dca16ee2a8afadfe356ab834f3bd9f371f5b0",
+          "codepoint": "U+00CA",
+          "source_byte": "0xCA",
+          "width": 6
+        },
+        {
+          "bitmap_sha256": "4d290e6865fa6d531029d74d1b465c21f612cb4c4c5e0419df47cc35e3812c04",
+          "codepoint": "U+00CB",
+          "source_byte": "0xCB",
+          "width": 6
+        },
+        {
+          "bitmap_sha256": "b5677c8d1da9c44834373792043a313cd64f7b1a18243bd610530acc18a4b3b2",
+          "codepoint": "U+00CC",
+          "source_byte": "0xCC",
+          "width": 4
+        },
+        {
+          "bitmap_sha256": "2986b02ab5109d2c5488fe0d433e728313bbd23643ac20c664a6c121f56668cd",
+          "codepoint": "U+00CD",
+          "source_byte": "0xCD",
+          "width": 4
+        },
+        {
+          "bitmap_sha256": "22929a4038c59c552be85d17795ee3419258060b2e64685ebb67b03636ccbd05",
+          "codepoint": "U+00CE",
+          "source_byte": "0xCE",
+          "width": 4
+        },
+        {
+          "bitmap_sha256": "1b96c1e24267109b9294ffb312d065b00bcdd047e49f0b27a80b0d4f91ba2423",
+          "codepoint": "U+00CF",
+          "source_byte": "0xCF",
+          "width": 4
+        },
+        {
+          "bitmap_sha256": "97461be0ad0ae97cc7f8657cf3a78ccd2c27b041a0325887e37f902bb297d9a0",
+          "codepoint": "U+00D1",
+          "source_byte": "0xD1",
+          "width": 6
+        },
+        {
+          "bitmap_sha256": "eea702b567e520200007c142c2f9097f022e12296386d044554e62d66d38730e",
+          "codepoint": "U+00D2",
+          "source_byte": "0xD2",
+          "width": 6
+        },
+        {
+          "bitmap_sha256": "e467bf65dd1b25fbddde6a6b86aecc319cc9d33af31159c208727110cb5f3914",
+          "codepoint": "U+00D3",
+          "source_byte": "0xD3",
+          "width": 6
+        },
+        {
+          "bitmap_sha256": "28f52c843bdf536c80dd7d7f5a3ddc619462aea84cfd87e1ff1cf8752bd6aa0c",
+          "codepoint": "U+00D4",
+          "source_byte": "0xD4",
+          "width": 6
+        },
+        {
+          "bitmap_sha256": "7ca3f123cba12590f51d7d52426bf25090e2fa85a0e083c4e6a8718cd040195b",
+          "codepoint": "U+00D6",
+          "source_byte": "0xD6",
+          "width": 6
+        },
+        {
+          "bitmap_sha256": "833b802290290294e6089aea927f2e874d246dddb0030fb36066af3c8de4a3bf",
+          "codepoint": "U+00D9",
+          "source_byte": "0xD9",
+          "width": 6
+        },
+        {
+          "bitmap_sha256": "c9df8f80e7f5908876f6071520bc9935b343c8c037026229778d279cec5db426",
+          "codepoint": "U+00DA",
+          "source_byte": "0xDA",
+          "width": 6
+        },
+        {
+          "bitmap_sha256": "9c76143f5545217a18e18ed916ce7d89e0039e1d96eb1b4b7ce1b298702075dc",
+          "codepoint": "U+00DB",
+          "source_byte": "0xDB",
+          "width": 6
+        },
+        {
+          "bitmap_sha256": "e85efb5ef24eafbd37b043c58030460e7357b5dd1237c1da12d158c15143ba29",
+          "codepoint": "U+00DC",
+          "source_byte": "0xDC",
+          "width": 6
+        },
+        {
+          "bitmap_sha256": "6c1c627982a6dc4f32171277876ee8982a6b50a35d57b54f9c9f74bc44fd77ab",
+          "codepoint": "U+00DF",
+          "source_byte": "0xDF",
+          "width": 7
+        },
+        {
+          "bitmap_sha256": "873907f378ada2980a9f7ebd223e8309a1c2f0149cd80b3d918c484eb236a26b",
+          "codepoint": "U+00E0",
+          "source_byte": "0xE0",
+          "width": 6
+        },
+        {
+          "bitmap_sha256": "0fcaeb8fa892a5eb4d1b26f275ce8ccc4947591d3a7c0c3753857a2231a599b7",
+          "codepoint": "U+00E1",
+          "source_byte": "0xE1",
+          "width": 6
+        },
+        {
+          "bitmap_sha256": "8e55378677dddaaa2428922e907ddd7f4551f935ae6d78584e3f1c347a8b2a46",
+          "codepoint": "U+00E2",
+          "source_byte": "0xE2",
+          "width": 6
+        },
+        {
+          "bitmap_sha256": "9b10853ce6f0df7bdada6d733a432d5a9c33f41b93122efbec7482f03b79e886",
+          "codepoint": "U+00E4",
+          "source_byte": "0xE4",
+          "width": 6
+        },
+        {
+          "bitmap_sha256": "dd8fab60717642aa7a57bcba95b4d209f8beb4960d5b55cad7f2ae01821a4ee5",
+          "codepoint": "U+00E7",
+          "source_byte": "0xE7",
+          "width": 5
+        },
+        {
+          "bitmap_sha256": "36156e7371eb4ecf52d4696b669ea1351a2fe708a5d00b925f8ba5a64e92b785",
+          "codepoint": "U+00E8",
+          "source_byte": "0xE8",
+          "width": 5
+        },
+        {
+          "bitmap_sha256": "31565796132a798fa5583b267d17390057a34322fda2257bf1d67a65679658cb",
+          "codepoint": "U+00E9",
+          "source_byte": "0xE9",
+          "width": 5
+        },
+        {
+          "bitmap_sha256": "77ac26eecbd5f891a2d2de2500965284bb52fc1b281c4fb9e30522e7c62d3867",
+          "codepoint": "U+00EA",
+          "source_byte": "0xEA",
+          "width": 5
+        },
+        {
+          "bitmap_sha256": "ab0abd0582425036ba81e5e044d5ce2f77bbb0688dbe1c0c96b9380c76d56e53",
+          "codepoint": "U+00EB",
+          "source_byte": "0xEB",
+          "width": 5
+        },
+        {
+          "bitmap_sha256": "a08cf3b2cb6f17b6cadd630900858e85a6ba20e9876443d75c86b8899082d473",
+          "codepoint": "U+00EC",
+          "source_byte": "0xEC",
+          "width": 3
+        },
+        {
+          "bitmap_sha256": "98d58f6163688ac55b2eda4f42171da90c7258b6e932736a6d2548cece9f88f0",
+          "codepoint": "U+00ED",
+          "source_byte": "0xED",
+          "width": 3
+        },
+        {
+          "bitmap_sha256": "12871db46c4f659d894bd5b25c703d717c359addec221201d77ed88ecca92acd",
+          "codepoint": "U+00EE",
+          "source_byte": "0xEE",
+          "width": 4
+        },
+        {
+          "bitmap_sha256": "6b5c6ef89b3c197ede9b159ecea23317404dda3c47651df2715f7c758f492d59",
+          "codepoint": "U+00EF",
+          "source_byte": "0xEF",
+          "width": 4
+        },
+        {
+          "bitmap_sha256": "0e7ff5ee686abe141a233f85a8a700623c680cca63f31f4e7535352faa92cbc9",
+          "codepoint": "U+00F1",
+          "source_byte": "0xF1",
+          "width": 5
+        },
+        {
+          "bitmap_sha256": "b46c057c0a263a81be879abaf0df17de554bc608b92c6735a362fe0be598c0a0",
+          "codepoint": "U+00F2",
+          "source_byte": "0xF2",
+          "width": 5
+        },
+        {
+          "bitmap_sha256": "dd3a8639641343a12337d48ddf07f91a6ae77573861d523a61babd93464cb4c6",
+          "codepoint": "U+00F3",
+          "source_byte": "0xF3",
+          "width": 5
+        },
+        {
+          "bitmap_sha256": "da883c12865fd7daf329c44aaff7517d1e0677264638098cda64abacf145eac6",
+          "codepoint": "U+00F4",
+          "source_byte": "0xF4",
+          "width": 5
+        },
+        {
+          "bitmap_sha256": "47ac2db4dff3036081aa613317d4282b197768399c9adf9ece5b1885638e6df3",
+          "codepoint": "U+00F6",
+          "source_byte": "0xF6",
+          "width": 5
+        },
+        {
+          "bitmap_sha256": "1c77da2142aa1c79934ba0262f6e537f0289cf84ecc7d8384a92487598340000",
+          "codepoint": "U+00F9",
+          "source_byte": "0xF9",
+          "width": 5
+        },
+        {
+          "bitmap_sha256": "3835e90a9264cb38d1348c048b69b8535fa34a72715d9ed829cbb49880de2446",
+          "codepoint": "U+00FA",
+          "source_byte": "0xFA",
+          "width": 5
+        },
+        {
+          "bitmap_sha256": "df9743cfadb19a97693a727fe813016c250498771c1fc136f1bc40d835f74a7e",
+          "codepoint": "U+00FB",
+          "source_byte": "0xFB",
+          "width": 5
+        },
+        {
+          "bitmap_sha256": "468b5d32096fc46af16e22f2c654e407ee5415eba0a27e1d7ccbc9d86be26652",
+          "codepoint": "U+00FC",
+          "source_byte": "0xFC",
+          "width": 5
+        },
+        {
+          "bitmap_sha256": "6682cec505a5493a47a031cda0198057cb8aedd7b8e8021369aca1a48d0a7792",
+          "codepoint": "U+0152",
+          "source_byte": "0x8C",
+          "width": 8
+        },
+        {
+          "bitmap_sha256": "0ac0338b9fe5f49287d609b094ad1508b147782b8444eb9b2358cd702fe533ea",
+          "codepoint": "U+0153",
+          "source_byte": "0x9C",
+          "width": 8
+        },
+        {
+          "bitmap_sha256": "5faf8e188f5b1c9b46c94262147370015ba11d69851972f9cd8507a0d5d7b481",
+          "codepoint": "U+2018",
+          "source_byte": "0x91",
+          "width": 2
+        },
+        {
+          "bitmap_sha256": "883804b6516dcd4aa2617688485e22942a4ea331dfabf1995d9a4c94f1fafd27",
+          "codepoint": "U+2019",
+          "source_byte": "0x92",
+          "width": 2
+        },
+        {
+          "bitmap_sha256": "2b6fce8dfa8ad71f7f10a022c84849342e408dc7b5199c85ecbc02240961da80",
+          "codepoint": "U+201C",
+          "source_byte": "0x93",
+          "width": 6
+        },
+        {
+          "bitmap_sha256": "b526380dc5d4db92ec818d5ae6cc8ac1cb11e965caaa6245e2ee432057be2294",
+          "codepoint": "U+201D",
+          "source_byte": "0x94",
+          "width": 5
+        }
+      ],
+      "source_table_address": "0x0879B248"
+    }
+  },
+  "used_non_ascii_codepoints": [
+    "U+00A1",
+    "U+00AB",
+    "U+00BA",
+    "U+00BB",
+    "U+00BF",
+    "U+00C0",
+    "U+00C1",
+    "U+00C4",
+    "U+00C7",
+    "U+00C8",
+    "U+00C9",
+    "U+00CC",
+    "U+00CD",
+    "U+00D3",
+    "U+00D6",
+    "U+00D9",
+    "U+00DA",
+    "U+00DC",
+    "U+00DF",
+    "U+00E0",
+    "U+00E1",
+    "U+00E2",
+    "U+00E4",
+    "U+00E7",
+    "U+00E8",
+    "U+00E9",
+    "U+00EA",
+    "U+00EB",
+    "U+00EC",
+    "U+00ED",
+    "U+00EE",
+    "U+00EF",
+    "U+00F1",
+    "U+00F2",
+    "U+00F3",
+    "U+00F4",
+    "U+00F6",
+    "U+00F9",
+    "U+00FA",
+    "U+00FB",
+    "U+00FC",
+    "U+0152",
+    "U+0153",
+    "U+201C",
+    "U+201D"
+  ]
+}

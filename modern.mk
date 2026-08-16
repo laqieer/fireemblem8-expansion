@@ -32,6 +32,7 @@ MODERN_GOALS := \
 	expansion-modern-localization-runtime-release-check \
 	expansion-modern-localization-runtime-multi-check \
 	expansion-modern-localization-runtime-cjk-check \
+	expansion-modern-localization-runtime-eu-check \
 	expansion-modern-localization-runtime-prefs-check \
 	expansion-modern-localization-runtime-save-check \
 	expansion-modern-localization-runtime-shifted-check \
@@ -397,11 +398,40 @@ MODERN_GAME_LOCALIZATION_CATALOG_LOCALES := zh-Hans
 MODERN_GAME_LOCALIZATION_CATALOG_LOCALES := $(MODERN_GAME_LOCALIZATION_CATALOG_LOCALES),zh-Hans
  endif
 endif
+ifneq ($(filter fr,$(MODERN_ENABLED_LOCALE_WORDS)),)
+ ifeq ($(strip $(MODERN_GAME_LOCALIZATION_CATALOG_LOCALES)),)
+MODERN_GAME_LOCALIZATION_CATALOG_LOCALES := fr
+ else
+MODERN_GAME_LOCALIZATION_CATALOG_LOCALES := $(MODERN_GAME_LOCALIZATION_CATALOG_LOCALES),fr
+ endif
+endif
+ifneq ($(filter de,$(MODERN_ENABLED_LOCALE_WORDS)),)
+ ifeq ($(strip $(MODERN_GAME_LOCALIZATION_CATALOG_LOCALES)),)
+MODERN_GAME_LOCALIZATION_CATALOG_LOCALES := de
+ else
+MODERN_GAME_LOCALIZATION_CATALOG_LOCALES := $(MODERN_GAME_LOCALIZATION_CATALOG_LOCALES),de
+ endif
+endif
+ifneq ($(filter es,$(MODERN_ENABLED_LOCALE_WORDS)),)
+ ifeq ($(strip $(MODERN_GAME_LOCALIZATION_CATALOG_LOCALES)),)
+MODERN_GAME_LOCALIZATION_CATALOG_LOCALES := es
+ else
+MODERN_GAME_LOCALIZATION_CATALOG_LOCALES := $(MODERN_GAME_LOCALIZATION_CATALOG_LOCALES),es
+ endif
+endif
+ifneq ($(filter it,$(MODERN_ENABLED_LOCALE_WORDS)),)
+ ifeq ($(strip $(MODERN_GAME_LOCALIZATION_CATALOG_LOCALES)),)
+MODERN_GAME_LOCALIZATION_CATALOG_LOCALES := it
+ else
+MODERN_GAME_LOCALIZATION_CATALOG_LOCALES := $(MODERN_GAME_LOCALIZATION_CATALOG_LOCALES),it
+ endif
+endif
 MODERN_GAME_LOCALIZATION_AVAILABLE := $(and \
 	$(wildcard scripts/localization/game_catalog/cli.py),\
 	$(wildcard scripts/localization/game_locales/fixed_width_labels.py),\
 	$(wildcard texts/locales/fixed_width_display_aliases.json),\
-	$(wildcard texts/locales/mapping/fe8u_target_map.json))
+	$(wildcard texts/locales/mapping/fe8u_target_map.json),\
+	$(wildcard texts/locales/mapping/fe8eu_to_fe8u.json))
 MODERN_GAME_LOCALIZATION_ROOT := $(MODERN_BUILD_ROOT)/game-localization
 MODERN_GAME_LOCALIZATION_GENERATED_DIR := $(MODERN_GAME_LOCALIZATION_ROOT)/generated
 MODERN_GAME_LOCALIZATION_CONFIG_H := $(MODERN_GAME_LOCALIZATION_GENERATED_DIR)/localized_game_text_data.h
@@ -1576,6 +1606,7 @@ MODERN_LOCALE_PROFILE_EN_ZH_HANS_ROOT := $(MODERN_BUILD_ROOT)-locale-en-zh-hans
 MODERN_LOCALE_PROFILE_EN_JA_ZH_HANS_ROOT := $(MODERN_BUILD_ROOT)-locale-en-ja-zh-hans
 MODERN_LOCALE_PROFILE_EN_JA_ZH_HANS_QPS_ROOT := \
 	$(MODERN_BUILD_ROOT)-locale-en-ja-zh-hans-qps
+MODERN_LOCALE_PROFILE_EN_EU_ROOT := $(MODERN_BUILD_ROOT)-locale-en-fr-de-es-it
 MODERN_LOCALE_PROFILE_EN_JA_OUTPUT_DIR := \
 	$(MODERN_LOCALE_PROFILE_EN_JA_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)
 MODERN_LOCALE_PROFILE_EN_ZH_HANS_OUTPUT_DIR := \
@@ -1584,6 +1615,8 @@ MODERN_LOCALE_PROFILE_EN_JA_ZH_HANS_OUTPUT_DIR := \
 	$(MODERN_LOCALE_PROFILE_EN_JA_ZH_HANS_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)
 MODERN_LOCALE_PROFILE_EN_JA_ZH_HANS_QPS_OUTPUT_DIR := \
 	$(MODERN_LOCALE_PROFILE_EN_JA_ZH_HANS_QPS_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)
+MODERN_LOCALE_PROFILE_EN_EU_OUTPUT_DIR := \
+	$(MODERN_LOCALE_PROFILE_EN_EU_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)
 
 expansion-modern-localization-profile-en-ja:
 	+$(MAKE) expansion-modern-rom MODERN_CONFIG=$(MODERN_CONFIG) MODERN_ABI=$(MODERN_ABI) \
@@ -1606,6 +1639,11 @@ expansion-modern-localization-profile-en-ja-zh-hans-qps:
 		MODERN_BUILD_ROOT=$(MODERN_LOCALE_PROFILE_EN_JA_ZH_HANS_QPS_ROOT) \
 		EXPANSION_ENABLED_LOCALES=en,ja,zh-Hans,qps-ploc \
 		EXPANSION_PSEUDO_LOCALE=1
+
+expansion-modern-localization-profile-en-fr-de-es-it:
+	+$(MAKE) expansion-modern-rom MODERN_CONFIG=$(MODERN_CONFIG) MODERN_ABI=$(MODERN_ABI) \
+		MODERN_ROM_SIZE=32M MODERN_BUILD_ROOT=$(MODERN_LOCALE_PROFILE_EN_EU_ROOT) \
+		EXPANSION_ENABLED_LOCALES=en,fr,de,es,it
 
 # Build the product profiles serially: every private modern build root still
 # shares the generated battle-animation sidecar, so parallel recursive profile
@@ -1655,6 +1693,7 @@ expansion-modern-localization-profile-headroom-check:
 	expansion-modern-localization-profile-en-zh-hans \
 	expansion-modern-localization-profile-en-ja-zh-hans \
 	expansion-modern-localization-profile-en-ja-zh-hans-qps \
+	expansion-modern-localization-profile-en-fr-de-es-it \
 	expansion-modern-localization-profile-headroom-check
 
 # Compile-settings stamp: a content-addressed prerequisite of every modern
@@ -3262,7 +3301,25 @@ else
 	@printf 'Modern ROM localization-runtime CJK check skipped for config=%s (debug fingerprints only)\n' '$(MODERN_CONFIG)'
 endif
 
-# 5. Corrupt/unknown-locale/disabled-locale ExpansionUserPrefs sub-states
+# 5. Production European profile: fresh preferences show all five rows and
+#    a real DOWN+A selection persists French (stable locale id 3).
+MODERN_LOCALE_EU_ROM := \
+	$(MODERN_LOCALE_PROFILE_EN_EU_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)/fireemblem8.gba
+
+expansion-modern-localization-runtime-eu-check: expansion-modern-boot-preflight \
+		expansion-modern-localization-profile-en-fr-de-es-it \
+		$(MODERN_LOCALE_FIXTURE_DIR)/unset.sav
+ifeq ($(MODERN_CONFIG),debug)
+	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --rom "$(MODERN_LOCALE_EU_ROM)" \
+		--scenario "$(MODERN_LOCALE_SCEN)/locale-eu-first-start-fr-modern-debug.json" \
+		--expected "$(MODERN_LOCALE_FP)/locale-eu-first-start-fr-modern-debug.json" \
+		--sram-image "$(MODERN_LOCALE_FIXTURE_DIR)/unset.sav" --policy behavior
+	@printf 'Modern ROM localization-runtime EU check passed: %s\n' "$(MODERN_LOCALE_EU_ROM)"
+else
+	@printf 'Modern ROM localization-runtime EU check skipped for config=%s (debug fingerprint only)\n' '$(MODERN_CONFIG)'
+endif
+
+# 6. Corrupt/unknown-locale/disabled-locale ExpansionUserPrefs sub-states
 #    all re-prompt (collapsing to AUTO_SELECT on this single-locale
 #    default build, debug-only boot-timing calibration) and provably
 #    never wipe SRAM outside (a) the 12-byte prefs record itself and (b)
@@ -3349,6 +3406,7 @@ endif
 	expansion-modern-localization-runtime-release-check \
 	expansion-modern-localization-runtime-multi-check \
 	expansion-modern-localization-runtime-cjk-check \
+	expansion-modern-localization-runtime-eu-check \
 	expansion-modern-localization-runtime-prefs-check \
 	expansion-modern-localization-runtime-save-check \
 	expansion-modern-localization-runtime-shifted-check

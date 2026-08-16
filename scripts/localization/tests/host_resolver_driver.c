@@ -85,9 +85,18 @@ int main(void)
     CHECK(strcmp(ExpansionLocale_Resolve(EXPANSION_LOCALE_JA, 1), "バージョン:") == 0);
     CHECK(strcmp(ExpansionLocale_Resolve(EXPANSION_LOCALE_ZH_HANS, 1), "版本:") == 0);
 
-    /* Stable but unpopulated and invalid locale slots both fall back exactly
-     * one step to English. */
-    CHECK(strcmp(ExpansionLocale_Resolve(EXPANSION_LOCALE_FR, 0), "Expansion Framework") == 0);
+    CHECK(strcmp(
+        ExpansionLocale_Resolve(EXPANSION_LOCALE_FR, 0),
+        "Cadre d'extension") == 0);
+    CHECK(strcmp(
+        ExpansionLocale_Resolve(EXPANSION_LOCALE_DE, 0),
+        "Erweiterungsrahmen") == 0);
+    CHECK(strcmp(
+        ExpansionLocale_Resolve(EXPANSION_LOCALE_ES, 0),
+        "Marco de expansión") == 0);
+    CHECK(strcmp(
+        ExpansionLocale_Resolve(EXPANSION_LOCALE_IT, 0),
+        "Framework espansione") == 0);
     CHECK(strcmp(
         ExpansionLocale_Resolve(EXPANSION_LOCALE_INVALID, 0),
         "Expansion Framework") == 0);
@@ -191,9 +200,9 @@ int main(void)
     CHECK(gameCacheInvalidations == 9);
 
     ExpansionLocale_GetCatalogStats(&stats);
-    CHECK(stats.activeMessageCount == 53);
+    CHECK(stats.activeMessageCount == 61);
     CHECK(stats.tombstoneCount == 1);
-    CHECK(stats.populatedLocaleCount == 4);
+    CHECK(stats.populatedLocaleCount == 8);
     CHECK(stats.populatedLocaleCount == gExpansionLocalePopulatedCount);
     CHECK(stats.scratchBudgetBytes == EXPANSION_LOCALE_SCRATCH_SLOT_BYTES);
     CHECK(stats.scratchBytes == EXPANSION_LOCALE_SCRATCH_SLOT_BYTES);

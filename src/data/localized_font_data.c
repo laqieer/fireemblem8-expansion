@@ -50,6 +50,53 @@ const u32 gLocalizedFontJaTalkGlyphCount =
 
 #endif
 
+#if defined(MODERN) && ((FE8_EXPANSION_ENABLED_LOCALE_MASK & 0x78u) != 0)
+
+const u8 gLocalizedFontEuSystemCodepoints[]
+    SECTION(".locale_data.font.eu.system.codepoints") __attribute__((aligned(4))) =
+    INCBIN_U8("graphics/fonts/eu/eu.system.codepoints.u32le");
+const u8 gLocalizedFontEuSystemWidths[]
+    SECTION(".locale_data.font.eu.system.widths") __attribute__((aligned(4))) =
+    INCBIN_U8("graphics/fonts/eu/eu.system.widths.u8");
+const u8 gLocalizedFontEuSystemBitmaps[]
+    SECTION(".locale_data.font.eu.system.bitmaps") __attribute__((aligned(4))) =
+    INCBIN_U8("graphics/fonts/eu/eu.system.glyphs.2bpp");
+
+const u8 gLocalizedFontEuTalkCodepoints[]
+    SECTION(".locale_data.font.eu.talk.codepoints") __attribute__((aligned(4))) =
+    INCBIN_U8("graphics/fonts/eu/eu.talk.codepoints.u32le");
+const u8 gLocalizedFontEuTalkWidths[]
+    SECTION(".locale_data.font.eu.talk.widths") __attribute__((aligned(4))) =
+    INCBIN_U8("graphics/fonts/eu/eu.talk.widths.u8");
+const u8 gLocalizedFontEuTalkBitmaps[]
+    SECTION(".locale_data.font.eu.talk.bitmaps") __attribute__((aligned(4))) =
+    INCBIN_U8("graphics/fonts/eu/eu.talk.glyphs.2bpp");
+
+LOCALIZED_FONT_DATA_STATIC_ASSERT(
+    sizeof(gLocalizedFontEuSystemCodepoints)
+        == sizeof(gLocalizedFontEuSystemWidths) * sizeof(u32),
+    eu_system_codepoint_count);
+LOCALIZED_FONT_DATA_STATIC_ASSERT(
+    sizeof(gLocalizedFontEuSystemBitmaps)
+        == sizeof(gLocalizedFontEuSystemWidths) * LOCALIZED_FONT_BITMAP_STRIDE,
+    eu_system_bitmap_count);
+LOCALIZED_FONT_DATA_STATIC_ASSERT(
+    sizeof(gLocalizedFontEuTalkCodepoints)
+        == sizeof(gLocalizedFontEuTalkWidths) * sizeof(u32),
+    eu_talk_codepoint_count);
+LOCALIZED_FONT_DATA_STATIC_ASSERT(
+    sizeof(gLocalizedFontEuTalkBitmaps)
+        == sizeof(gLocalizedFontEuTalkWidths) * LOCALIZED_FONT_BITMAP_STRIDE,
+    eu_talk_bitmap_count);
+const u32 gLocalizedFontEuSystemGlyphCount =
+    sizeof(gLocalizedFontEuSystemWidths)
+        / sizeof(gLocalizedFontEuSystemWidths[0]);
+const u32 gLocalizedFontEuTalkGlyphCount =
+    sizeof(gLocalizedFontEuTalkWidths)
+        / sizeof(gLocalizedFontEuTalkWidths[0]);
+
+#endif
+
 #if defined(MODERN) && ((FE8_EXPANSION_ENABLED_LOCALE_MASK & 0x04u) != 0)
 
 const u8 gLocalizedFontZhHansSystemCodepoints[]

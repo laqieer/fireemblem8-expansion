@@ -7,9 +7,14 @@
 #include "game_localization_catalog.h"
 #include "localized_text_codec.h"
 
-static int LocalizedGameText_UsesCjkCatalog(ExpansionLocaleId locale)
+static int LocalizedGameText_UsesLocalizedCatalog(ExpansionLocaleId locale)
 {
-    return locale == EXPANSION_LOCALE_JA || locale == EXPANSION_LOCALE_ZH_HANS;
+    return locale == EXPANSION_LOCALE_JA
+        || locale == EXPANSION_LOCALE_ZH_HANS
+        || locale == EXPANSION_LOCALE_FR
+        || locale == EXPANSION_LOCALE_DE
+        || locale == EXPANSION_LOCALE_ES
+        || locale == EXPANSION_LOCALE_IT;
 }
 
 struct LocalizedGameTextSelection
@@ -51,13 +56,46 @@ static const struct GameLocalizationLocaleCatalog *LocalizedGameText_GetCatalog(
     const struct GameLocalizationLocaleCatalog *catalog;
     u32 catalogIndex;
 
-    if (!LocalizedGameText_UsesCjkCatalog(locale))
+    if (!LocalizedGameText_UsesLocalizedCatalog(locale))
         return 0;
 
-    if (locale == EXPANSION_LOCALE_JA)
+    switch (locale)
+    {
+    case EXPANSION_LOCALE_JA:
         catalogIndex = GAME_LOCALIZATION_LOCALE_JA;
-    else
+        break;
+
+    case EXPANSION_LOCALE_ZH_HANS:
         catalogIndex = GAME_LOCALIZATION_LOCALE_ZH_HANS;
+        break;
+
+#ifdef GAME_LOCALIZATION_LOCALE_FR
+    case EXPANSION_LOCALE_FR:
+        catalogIndex = GAME_LOCALIZATION_LOCALE_FR;
+        break;
+#endif
+
+#ifdef GAME_LOCALIZATION_LOCALE_DE
+    case EXPANSION_LOCALE_DE:
+        catalogIndex = GAME_LOCALIZATION_LOCALE_DE;
+        break;
+#endif
+
+#ifdef GAME_LOCALIZATION_LOCALE_ES
+    case EXPANSION_LOCALE_ES:
+        catalogIndex = GAME_LOCALIZATION_LOCALE_ES;
+        break;
+#endif
+
+#ifdef GAME_LOCALIZATION_LOCALE_IT
+    case EXPANSION_LOCALE_IT:
+        catalogIndex = GAME_LOCALIZATION_LOCALE_IT;
+        break;
+#endif
+
+    default:
+        return 0;
+    }
 
     catalog = gGameLocalizationCatalogs[catalogIndex];
     if (catalog == 0 || catalog->entries == 0 || catalog->entryCount == 0)
@@ -80,7 +118,7 @@ static enum LocalizedGameTextStatus LocalizedGameText_Select(
         return LOCALIZED_GAME_TEXT_STATUS_DECODE_INVALID;
 
     locale = ExpansionLocale_GetCurrent();
-    if (!LocalizedGameText_UsesCjkCatalog(locale))
+    if (!LocalizedGameText_UsesLocalizedCatalog(locale))
     {
         catalog = &gGameLocalizationEnglishCatalog;
         successStatus = LOCALIZED_GAME_TEXT_STATUS_ENGLISH_DEFAULT;

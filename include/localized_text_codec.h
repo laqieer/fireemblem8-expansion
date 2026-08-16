@@ -28,7 +28,7 @@
  * and ASCII pseudo-locale profiles use the uncompressed catalog path and must
  * not pay for this decoder.
  */
-#if defined(MODERN) && ((FE8_EXPANSION_ENABLED_LOCALE_MASK & 0x06u) != 0)
+#if defined(MODERN) && ((FE8_EXPANSION_ENABLED_LOCALE_MASK & 0x7Eu) != 0)
 
 #define FE8_LOCALIZED_TEXT_CODEC_ENABLED 1
 

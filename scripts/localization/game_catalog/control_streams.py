@@ -414,7 +414,25 @@ def load_talk_font_metrics(
 ) -> TalkFontMetrics:
     try:
         ascii_widths = _ascii_widths(repo_root, style="talk")
-        cjk_widths, _ = _cjk_widths(repo_root, locale, style="talk")
+        if locale in ("fr", "de", "es", "it"):
+            codepoint_data = (
+                repo_root / "graphics/fonts/eu/eu.talk.codepoints.u32le"
+            ).read_bytes()
+            width_data = (
+                repo_root / "graphics/fonts/eu/eu.talk.widths.u8"
+            ).read_bytes()
+            if len(codepoint_data) != len(width_data) * 4:
+                raise ControlStreamError(
+                    f"{locale}: EU talk-font codepoint/width count mismatch"
+                )
+            cjk_widths = {
+                int.from_bytes(
+                    codepoint_data[index * 4 : index * 4 + 4], "little"
+                ): width
+                for index, width in enumerate(width_data)
+            }
+        else:
+            cjk_widths, _ = _cjk_widths(repo_root, locale, style="talk")
     except (EndingLayoutError, OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
         raise ControlStreamError(
             f"{locale}: runtime system-font metrics are unavailable"
@@ -591,7 +609,19 @@ def validate_final_payload(
             f"{name}: invalid FE8U FID operand(s) "
             + ", ".join(f"0x{operand:04X}" for operand in invalid_faces)
         )
-    if faces != english_faces:
+    if locale in ("fr", "de", "es", "it"):
+        face_index = 0
+        for operand in faces:
+            if (
+                face_index < len(english_faces)
+                and operand == english_faces[face_index]
+            ):
+                face_index += 1
+        if face_index != len(english_faces):
+            raise ControlStreamError(
+                f"{name}: FE8U target FID operands are not preserved in order"
+            )
+    elif faces != english_faces:
         raise ControlStreamError(
             f"{name}: FID operands do not match FE8U target context: "
             f"{tuple(f'0x{x:04X}' for x in faces)} != "
@@ -607,7 +637,12 @@ def validate_final_payload(
         )
     validate_mouth_toggle_balance(payload, source_name=name)
     mouth_topology_comparable = 0
-    if control_domain == CONTROL_DOMAIN_FE8U:
+    if control_domain == CONTROL_DOMAIN_FE8U and locale not in (
+        "fr",
+        "de",
+        "es",
+        "it",
+    ):
         localized_topology = _mouth_topology(tokens)
         english_topology = _mouth_topology(english_tokens)
         if localized_topology[0] == english_topology[0]:
@@ -619,7 +654,10 @@ def validate_final_payload(
                 )
     localized_double_nl = _consecutive_newline_count(tokens)
     english_double_nl = _consecutive_newline_count(english_tokens)
-    if localized_double_nl > english_double_nl:
+    if (
+        locale not in ("fr", "de", "es", "it")
+        and localized_double_nl > english_double_nl
+    ):
         raise ControlStreamError(
             f"{name}: {localized_double_nl} consecutive-NL pair(s) exceed "
             f"English target context count {english_double_nl}"

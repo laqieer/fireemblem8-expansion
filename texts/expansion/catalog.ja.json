@@ -54,6 +54,14 @@
     "debug.status.chapter": "章",
     "debug.status.flag": "フラグ",
     "debug.status.rng_seed": "乱数種",
-    "debug.status.save_state": "保存状態"
+    "debug.status.save_state": "保存状態",
+    "framework.locale_name.fr": "フランス語",
+    "framework.locale_name.de": "ドイツ語",
+    "framework.locale_name.es": "スペイン語",
+    "framework.locale_name.it": "イタリア語",
+    "framework.locale_short_name.fr": "FR",
+    "framework.locale_short_name.de": "DE",
+    "framework.locale_short_name.es": "ES",
+    "framework.locale_short_name.it": "IT"
   }
 }

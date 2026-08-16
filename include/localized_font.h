@@ -2,10 +2,10 @@
 #define GUARD_LOCALIZED_FONT_H
 
 /*
- * Compact CJK font lookup for modern profiles that explicitly enable ja or
- * zh-Hans. Include global.h before this header.
+ * Compact localized font lookup for modern non-English game profiles.
+ * Include global.h before this header.
  */
-#if defined(MODERN) && ((FE8_EXPANSION_ENABLED_LOCALE_MASK & 0x06u) != 0)
+#if defined(MODERN) && ((FE8_EXPANSION_ENABLED_LOCALE_MASK & 0x7Eu) != 0)
 
 #define FE8_LOCALIZED_FONT_ENABLED 1
 
@@ -48,6 +48,17 @@ extern const u32 gLocalizedFontZhHansSystemGlyphCount;
 extern const u32 gLocalizedFontZhHansTalkGlyphCount;
 #endif
 
+#if (FE8_EXPANSION_ENABLED_LOCALE_MASK & 0x78u) != 0
+extern const u8 gLocalizedFontEuSystemCodepoints[];
+extern const u8 gLocalizedFontEuSystemWidths[];
+extern const u8 gLocalizedFontEuSystemBitmaps[];
+extern const u8 gLocalizedFontEuTalkCodepoints[];
+extern const u8 gLocalizedFontEuTalkWidths[];
+extern const u8 gLocalizedFontEuTalkBitmaps[];
+extern const u32 gLocalizedFontEuSystemGlyphCount;
+extern const u32 gLocalizedFontEuTalkGlyphCount;
+#endif
+
 bool8 LocalizedFont_IsLocale(ExpansionLocaleId locale);
 
 /*
@@ -75,6 +86,6 @@ u32 LocalizedFont_GetLastMissingScalar(void);
  * from becoming an infinite virtual-newline loop. */
 bool8 LocalizedFont_ShouldWrap(u32 cursor, u32 advance, u32 allocationPixels);
 
-#endif /* modern build with a CJK locale */
+#endif /* modern build with a localized game locale */
 
 #endif /* GUARD_LOCALIZED_FONT_H */

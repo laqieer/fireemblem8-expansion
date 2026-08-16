@@ -1,0 +1,77 @@
+{
+  "bank_order": [
+    "en",
+    "de",
+    "fr",
+    "es",
+    "it"
+  ],
+  "format": 1,
+  "huffman": {
+    "message_bank_stride": 3381,
+    "message_pointer_table_address": "0x0835B8AC",
+    "node_count": 5673,
+    "pointer_count": 16906,
+    "root_index": 5672,
+    "root_pointer_address": "0x0835B8A8",
+    "table_address": "0x08356004"
+  },
+  "locales": {
+    "de": {
+      "bank_index": 1,
+      "max_message_id": "0x0D35",
+      "max_normalized_utf8_bytes": 8672,
+      "message_count": 3382,
+      "normalized_byte_count": 2056772,
+      "normalized_path": "texts/locales/eu/indexed.de.txt",
+      "normalized_sha256": "4053ae28b78224029abd30fd8458f5e4a4a61592dea26d35b41ca797cf8144bb",
+      "raw_payload_sha256": "092917a0fcbf500b989e48d255a0b5cbca2540fd6213153fa28810f39b54c888"
+    },
+    "en": {
+      "bank_index": 0,
+      "max_message_id": "0x0D35",
+      "max_normalized_utf8_bytes": 8041,
+      "message_count": 3382,
+      "normalized_byte_count": 1762664,
+      "normalized_path": "texts/locales/eu/indexed.en.txt",
+      "normalized_sha256": "6e2c5f724c9bc64688a60b1955a9f4849ddc24d6eef90ab45bd2495fec97bf0c",
+      "raw_payload_sha256": "c16b9be99afc0812cef5b96c18c3411d4b1a2410a1fa7c74fd2236ba8d0b696e"
+    },
+    "es": {
+      "bank_index": 3,
+      "max_message_id": "0x0D35",
+      "max_normalized_utf8_bytes": 7598,
+      "message_count": 3382,
+      "normalized_byte_count": 1700532,
+      "normalized_path": "texts/locales/eu/indexed.es.txt",
+      "normalized_sha256": "72c65f21bc2789c55de9919908c384f871e75ead7d755f7006e44a5262b01add",
+      "raw_payload_sha256": "3266ee3b36bb8b1d3836c41f4c939bfda09c097b8b12ed6cedb4da6074b0fa53"
+    },
+    "fr": {
+      "bank_index": 2,
+      "max_message_id": "0x0D35",
+      "max_normalized_utf8_bytes": 8106,
+      "message_count": 3382,
+      "normalized_byte_count": 1903884,
+      "normalized_path": "texts/locales/eu/indexed.fr.txt",
+      "normalized_sha256": "7a242a9b39897f40eacaf5078a1790d7c3ae56be836f6038c4aaf0697bb281d9",
+      "raw_payload_sha256": "c85901d61aadc60b128ef8eae819552b4f44356a997946d40c3502079adbe745"
+    },
+    "it": {
+      "bank_index": 4,
+      "max_message_id": "0x0D35",
+      "max_normalized_utf8_bytes": 8098,
+      "message_count": 3382,
+      "normalized_byte_count": 1785169,
+      "normalized_path": "texts/locales/eu/indexed.it.txt",
+      "normalized_sha256": "3c8795575ad5bfd1544f6c8892c809020606674fc7baab2f8486b862e4aa1efa",
+      "raw_payload_sha256": "b679c14b3632ee72e076465144a95dbf56ad7eb85efaf3caa9697694b447f74d"
+    }
+  },
+  "purpose": "FE8EU full-game localization source",
+  "source": {
+    "game_code": "BE8P",
+    "sha256": "80f94bf10da412e6d8d1ba11c043107f4873bc17fecceb02e6a7da3d1a261d6d",
+    "size": 33554432
+  }
+}

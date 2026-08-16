@@ -566,7 +566,11 @@ const struct LocalizedUiGraphicsSubtitleSlide *LocalizedUiGraphics_GetSubtitleSl
     case EXPANSION_LOCALE_ZH_HANS:
         return sLocalizedUiZhHansSubtitle;
     default:
+#if LOCALIZED_UI_GRAPHICS_EU_ENABLED
+        return LocalizedEuUiGraphics_GetSubtitleSlides();
+#else
         return 0;
+#endif
     }
 }
 
@@ -581,7 +585,11 @@ const struct LocalizedUiGraphicsChapterTitle *LocalizedUiGraphics_GetChapterTitl
     case EXPANSION_LOCALE_ZH_HANS:
         return &sLocalizedUiZhHansChapterTitles[titleId];
     default:
+#if LOCALIZED_UI_GRAPHICS_EU_ENABLED
+        return LocalizedEuUiGraphics_GetChapterTitle(titleId);
+#else
         return 0;
+#endif
     }
 }
 

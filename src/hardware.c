@@ -1,4 +1,5 @@
 #include "global.h"
+#include "localized_ui_graphics.h"
 #include "proc.h"
 #include "bm.h"
 #include "ctc.h"
@@ -984,7 +985,13 @@ void ClearTileRigistry(void)
 
 void RegisterDataMove(const void *src, void *dst, int size)
 {
-    struct TileDataTransfer *ptr = &gFrameTmRegister[gFrameTmRegisterConfig.count];
+    struct TileDataTransfer *ptr;
+
+#if LOCALIZED_UI_GRAPHICS_EU_ENABLED
+    src = LocalizedEuUiGraphics_RemapRaw(src);
+#endif
+
+    ptr = &gFrameTmRegister[gFrameTmRegisterConfig.count];
 
     ptr->src = src;
     ptr->dest = dst;

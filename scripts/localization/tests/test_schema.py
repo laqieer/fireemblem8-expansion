@@ -34,20 +34,23 @@ class LocaleIdStabilityTests(unittest.TestCase):
     def test_configurable_locales_match_the_production_allowlist(self):
         self.assertEqual(
             schema.CONFIGURABLE_LOCALES,
-            ("en", "ja", "zh-Hans", "qps-ploc"),
+            ("en", "ja", "zh-Hans", "fr", "de", "es", "it", "qps-ploc"),
         )
         self.assertEqual(
             schema.CONFIGURABLE_LOCALES,
             schema.POPULATED_CATALOG_LOCALES,
         )
 
-    def test_authored_catalog_locales_include_real_cjk(self):
-        self.assertEqual(schema.AUTHORED_CATALOG_LOCALES, ("en", "ja", "zh-Hans"))
+    def test_authored_catalog_locales_include_all_real_locales(self):
+        self.assertEqual(
+            schema.AUTHORED_CATALOG_LOCALES,
+            ("en", "ja", "zh-Hans", "fr", "de", "es", "it"),
+        )
 
     def test_populated_catalog_locales_include_derived_pseudo(self):
         self.assertEqual(
             schema.POPULATED_CATALOG_LOCALES,
-            ("en", "ja", "zh-Hans", "qps-ploc"),
+            ("en", "ja", "zh-Hans", "fr", "de", "es", "it", "qps-ploc"),
         )
 
     def test_every_initially_supported_locale_is_a_stable_id(self):
@@ -104,13 +107,21 @@ class CSyncTests(unittest.TestCase):
 class LanguageMenuLocaleNameTests(unittest.TestCase):
     MENU_PATH = ROOT / "src" / "expansion_language_menu.c"
 
-    def test_prepared_cjk_names_and_codes_have_stable_message_ids(self):
+    def test_prepared_locale_names_and_codes_have_stable_message_ids(self):
         text = self.MENU_PATH.read_text(encoding="utf-8")
         for macro in (
             "EXP_MSG_FRAMEWORK_LOCALE_NAME_JA",
             "EXP_MSG_FRAMEWORK_LOCALE_NAME_ZH_HANS",
             "EXP_MSG_FRAMEWORK_LOCALE_SHORT_NAME_JA",
             "EXP_MSG_FRAMEWORK_LOCALE_SHORT_NAME_ZH_HANS",
+            "EXP_MSG_FRAMEWORK_LOCALE_NAME_FR",
+            "EXP_MSG_FRAMEWORK_LOCALE_NAME_DE",
+            "EXP_MSG_FRAMEWORK_LOCALE_NAME_ES",
+            "EXP_MSG_FRAMEWORK_LOCALE_NAME_IT",
+            "EXP_MSG_FRAMEWORK_LOCALE_SHORT_NAME_FR",
+            "EXP_MSG_FRAMEWORK_LOCALE_SHORT_NAME_DE",
+            "EXP_MSG_FRAMEWORK_LOCALE_SHORT_NAME_ES",
+            "EXP_MSG_FRAMEWORK_LOCALE_SHORT_NAME_IT",
         ):
             self.assertIn(macro, text)
 

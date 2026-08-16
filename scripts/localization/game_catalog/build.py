@@ -48,7 +48,9 @@ from .c_emitter import render_config_header, render_header, render_source
 from .constants import (
     BUDGET_KIND,
     BUDGET_SCHEMA_VERSION,
+    CJK_LOCALE_IDS,
     ENTRY_STRUCT_SIZE_BYTES,
+    EU_LOCALE_IDS,
     FALLBACK_KIND_EXPLICIT_ENGLISH,
     FALLBACK_KIND_NONE,
     FALLBACK_KIND_PROVIDER_UNAVAILABLE,
@@ -96,6 +98,15 @@ DEFAULT_JA_RAW_PATH = Path("texts/locales/ja/raw.json")
 DEFAULT_ZH_INDEXED_PATH = Path("texts/locales/zh-Hans/indexed.txt")
 DEFAULT_ZH_RAW_PATH = Path("texts/locales/zh-Hans/raw.json")
 DEFAULT_MAPPING_PATH = Path("texts/locales/mapping/fe8u_target_map.json")
+DEFAULT_EU_MAPPING_PATH = Path("texts/locales/mapping/fe8eu_to_fe8u.json")
+DEFAULT_EU_INDEXED_PATHS = {
+    locale: Path(f"texts/locales/eu/indexed.{locale}.txt")
+    for locale in EU_LOCALE_IDS
+}
+DEFAULT_EU_AUTHORED_PATHS = {
+    locale: Path(f"texts/locales/eu/authored.{locale}.json")
+    for locale in EU_LOCALE_IDS
+}
 DEFAULT_TARGET_HEADER_PATH = Path("include/constants/msg.h")
 DEFAULT_AUTHORED_PATHS = {
     "ja": Path("texts/locales/authored/catalog.ja.json"),
@@ -252,7 +263,7 @@ def _load_mapping(path: Path, *, target_count: int):
         raise GameCatalogError(str(error)) from error
     if not mapping.coverage_eligible:
         raise GameCatalogError(f"{path}: mapping must be authoritative and verified")
-    expected_locales = tuple(LOCALE_IDS)
+    expected_locales = tuple(CJK_LOCALE_IDS)
     if tuple(mapping.locale_ids) != expected_locales:
         raise GameCatalogError(
             f"{path}: mapping locale_ids must be {expected_locales}, got {mapping.locale_ids}"
@@ -263,6 +274,117 @@ def _load_mapping(path: Path, *, target_count: int):
             f"target count {target_count}"
         )
     return mapping
+
+
+def _load_eu_mapping(path: Path, *, target_count: int) -> Tuple[Dict[str, Any], ...]:
+    data = _load_json(path)
+    if not isinstance(data, dict):
+        raise GameCatalogError(f"{path}: EU mapping root must be an object")
+    if data.get("kind") != "fe8eu-to-fe8u-target-map":
+        raise GameCatalogError(f"{path}: invalid EU mapping kind")
+    if data.get("format") != 1 or data.get("authoritative") is not True:
+        raise GameCatalogError(f"{path}: EU mapping must be authoritative format 1")
+    if data.get("target_count") != target_count:
+        raise GameCatalogError(
+            f"{path}: target_count {data.get('target_count')!r} does not match {target_count}"
+        )
+    if tuple(data.get("locale_ids", ())) != EU_LOCALE_IDS:
+        raise GameCatalogError(
+            f"{path}: locale_ids must be {EU_LOCALE_IDS!r}"
+        )
+    source_count = data.get("source_message_count")
+    if not isinstance(source_count, int) or source_count <= 0:
+        raise GameCatalogError(f"{path}: source_message_count must be positive")
+    rows = data.get("rows")
+    if not isinstance(rows, list) or len(rows) != target_count:
+        raise GameCatalogError(
+            f"{path}: rows must contain exactly {target_count} entries"
+        )
+
+    normalized = []
+    for target_id, row in enumerate(rows):
+        if not isinstance(row, dict):
+            raise GameCatalogError(f"{path}: rows[{target_id}] must be an object")
+        if row.get("target_id") != f"0x{target_id:04X}":
+            raise GameCatalogError(
+                f"{path}: rows[{target_id}].target_id must be 0x{target_id:04X}"
+            )
+        source = row.get("source")
+        if not isinstance(source, dict):
+            raise GameCatalogError(f"{path}: rows[{target_id}].source is missing")
+        kind = source.get("kind")
+        if kind == "indexed":
+            source_id = source.get("id")
+            if not isinstance(source_id, str) or not re.fullmatch(
+                r"0x[0-9A-F]{4}", source_id
+            ):
+                raise GameCatalogError(
+                    f"{path}: rows[{target_id}] indexed id is invalid"
+                )
+            if int(source_id, 16) >= source_count:
+                raise GameCatalogError(
+                    f"{path}: rows[{target_id}] indexed id exceeds source range"
+                )
+        elif kind == "authored":
+            if source.get("key") != f"0x{target_id:04X}":
+                raise GameCatalogError(
+                    f"{path}: rows[{target_id}] authored key must match target"
+                )
+        elif kind == "concat":
+            raw_ids = source.get("ids")
+            if (
+                not isinstance(raw_ids, list)
+                or not raw_ids
+                or any(
+                    not isinstance(source_id, str)
+                    or not re.fullmatch(r"0x[0-9A-F]{4}", source_id)
+                    for source_id in raw_ids
+                )
+            ):
+                raise GameCatalogError(
+                    f"{path}: rows[{target_id}] concat ids are invalid"
+                )
+            if any(int(source_id, 16) >= source_count for source_id in raw_ids):
+                raise GameCatalogError(
+                    f"{path}: rows[{target_id}] concat id exceeds source range"
+                )
+        elif kind == "english_preserve":
+            if not isinstance(source.get("reason"), str) or not source["reason"]:
+                raise GameCatalogError(
+                    f"{path}: rows[{target_id}] preserve reason is missing"
+                )
+        else:
+            raise GameCatalogError(
+                f"{path}: rows[{target_id}] unsupported EU source kind {kind!r}"
+            )
+        normalized.append(dict(row))
+    return tuple(normalized)
+
+
+def _load_eu_authored_catalogs(
+    paths: Mapping[str, Path],
+) -> Dict[str, Dict[str, str]]:
+    catalogs = {}
+    for locale in EU_LOCALE_IDS:
+        path = Path(paths[locale])
+        data = _load_json(path)
+        if data.get("kind") != "fe8eu-target-authored-catalog":
+            raise GameCatalogError(f"{path}: invalid EU authored catalog kind")
+        if data.get("locale") != locale:
+            raise GameCatalogError(f"{path}: locale must be {locale!r}")
+        strings = data.get("strings")
+        if not isinstance(strings, dict):
+            raise GameCatalogError(f"{path}: strings must be an object")
+        normalized = {}
+        for key, text in strings.items():
+            if not isinstance(key, str) or not re.fullmatch(r"0x[0-9A-F]{4}", key):
+                raise GameCatalogError(f"{path}: invalid authored target key {key!r}")
+            if not isinstance(text, str) or not text:
+                raise GameCatalogError(f"{path}: {key} must be a non-empty string")
+            encode_canonical_text(text)
+            normalized[key] = text
+        catalogs[locale] = normalized
+    return catalogs
 
 
 def _encode_control_unit(value: int) -> bytes:
@@ -545,6 +667,89 @@ def _build_locale_bundle(
     messages = tuple(entry.encoded_bytes for entry in entries)
     catalog = build_catalog(messages, suffix_share=suffix_share)
     return LocaleCatalogBundle(locale=locale, entries=entries, catalog=catalog)
+
+
+def _build_eu_locale_bundle(
+    *,
+    locale: str,
+    mapping_rows: Sequence[Mapping[str, Any]],
+    indexed_source: Mapping[int, str],
+    authored_records: Mapping[str, str],
+    english_entries: Sequence,
+    suffix_share: bool,
+) -> LocaleCatalogBundle:
+    entries = []
+    for target_id, row in enumerate(mapping_rows):
+        source = dict(row["source"])
+        kind = source["kind"]
+        if kind == "indexed":
+            source_id = int(source["id"], 16)
+            if source_id not in indexed_source:
+                raise GameCatalogError(
+                    f"{locale}: missing EU indexed source {source['id']} for "
+                    f"{format_message_id(target_id)}"
+                )
+            source_text = indexed_source[source_id]
+            encoded_bytes = encode_canonical_text(source_text)
+            provider_kind = "indexed"
+            note = None
+        elif kind == "authored":
+            key = source["key"]
+            if key not in authored_records:
+                raise GameCatalogError(
+                    f"{locale}: missing EU authored target {key}"
+                )
+            source_text = authored_records[key]
+            encoded_bytes = encode_canonical_text(source_text)
+            provider_kind = "authored"
+            note = "reviewed FE8U-target translation"
+        elif kind == "concat":
+            source_ids = tuple(int(value, 16) for value in source["ids"])
+            try:
+                parts = tuple(indexed_source[source_id] for source_id in source_ids)
+            except KeyError as error:
+                raise GameCatalogError(
+                    f"{locale}: missing EU concat source 0x{error.args[0]:04X}"
+                ) from error
+            source_text = "".join(parts)
+            encoded_parts = tuple(encode_canonical_text(part) for part in parts)
+            encoded_bytes = (
+                b"".join(part[:-1] for part in encoded_parts) + b"\0"
+            )
+            provider_kind = "indexed"
+            note = "concatenated official FE8EU source messages"
+        elif kind == "english_preserve":
+            source_text = english_entries[target_id].source_text
+            encoded_bytes = english_entries[target_id].encoded_bytes
+            provider_kind = "authored"
+            note = source["reason"]
+        else:
+            raise GameCatalogError(
+                f"{locale}: unsupported EU source kind {kind!r}"
+            )
+
+        entries.append(
+            EntryPayloadMeta(
+                target_id=target_id,
+                mapping_source_kind=f"eu_{kind}",
+                mapping_source=source,
+                locale_provider_kind=provider_kind,
+                control_domain=CONTROL_DOMAIN_FE8U,
+                source_text=source_text,
+                encoded_bytes=encoded_bytes,
+                fallback_kind=FALLBACK_KIND_NONE,
+                fallback_reason=None,
+                note=note,
+            )
+        )
+
+    entries_tuple = tuple(entries)
+    messages = tuple(entry.encoded_bytes for entry in entries_tuple)
+    return LocaleCatalogBundle(
+        locale=locale,
+        entries=entries_tuple,
+        catalog=build_catalog(messages, suffix_share=suffix_share),
+    )
 
 
 def _validate_final_catalog_payloads(
@@ -894,11 +1099,14 @@ def build_game_catalog(
     zh_indexed_path: Path = DEFAULT_ZH_INDEXED_PATH,
     zh_raw_path: Path = DEFAULT_ZH_RAW_PATH,
     mapping_path: Path = DEFAULT_MAPPING_PATH,
+    eu_mapping_path: Path = DEFAULT_EU_MAPPING_PATH,
+    eu_indexed_paths: Optional[Mapping[str, Path]] = None,
+    eu_authored_paths: Optional[Mapping[str, Path]] = None,
     target_header_path: Path = DEFAULT_TARGET_HEADER_PATH,
     authored_paths: Optional[Mapping[str, Path]] = None,
     fixed_width_aliases_path: Path = FIXED_WIDTH_ALIASES_PATH,
     width_registry_path: Path = DEFAULT_WIDTH_REGISTRY_PATH,
-    enabled_locales: Sequence[str] = LOCALE_IDS,
+    enabled_locales: Sequence[str] = CJK_LOCALE_IDS,
     suffix_share: bool = True,
     ja_raw_expected_repository: str | None = PINNED_SOURCE_REPOSITORY,
     ja_raw_expected_revision: str | None = PINNED_SOURCE_REVISION,
@@ -920,6 +1128,14 @@ def build_game_catalog(
         ),
     )
     mapping = _load_mapping(mapping_path, target_count=target_count)
+    eu_enabled_locales = tuple(
+        locale for locale in enabled_locales if locale in EU_LOCALE_IDS
+    )
+    eu_mapping_rows = (
+        _load_eu_mapping(eu_mapping_path, target_count=target_count)
+        if eu_enabled_locales
+        else ()
+    )
     try:
         portrait_map = load_portrait_operand_map()
     except ControlStreamError as error:
@@ -929,6 +1145,10 @@ def build_game_catalog(
         indexed_sources["ja"] = _load_indexed(ja_indexed_path)
     if "zh-Hans" in enabled_locales:
         indexed_sources["zh-Hans"] = _load_indexed(zh_indexed_path)
+    if eu_indexed_paths is None:
+        eu_indexed_paths = DEFAULT_EU_INDEXED_PATHS
+    for locale in eu_enabled_locales:
+        indexed_sources[locale] = _load_indexed(eu_indexed_paths[locale])
     raw_records = (
         _load_raw_records(zh_raw_path) if "zh-Hans" in enabled_locales else {}
     )
@@ -945,20 +1165,41 @@ def build_game_catalog(
     if authored_paths is None and mapping_source_counts["authored"]:
         authored_paths = DEFAULT_AUTHORED_PATHS
     authored_records = _load_authored_catalogs(authored_paths)
-    locale_bundles = tuple(
-        _build_locale_bundle(
-            locale=locale,
-            mapping=mapping,
-            indexed_sources=indexed_sources,
-            raw_records=raw_records,
-            ja_raw_records=ja_raw_records,
-            authored_records=authored_records,
-            english_definitions=english_definitions,
-            portrait_map=portrait_map,
-            suffix_share=suffix_share,
-        )
-        for locale in enabled_locales
+    if eu_authored_paths is None:
+        eu_authored_paths = DEFAULT_EU_AUTHORED_PATHS
+    eu_authored_records = (
+        _load_eu_authored_catalogs(eu_authored_paths)
+        if eu_enabled_locales
+        else {}
     )
+    locale_bundles_list = []
+    for locale in enabled_locales:
+        if locale in EU_LOCALE_IDS:
+            locale_bundles_list.append(
+                _build_eu_locale_bundle(
+                    locale=locale,
+                    mapping_rows=eu_mapping_rows,
+                    indexed_source=indexed_sources[locale],
+                    authored_records=eu_authored_records[locale],
+                    english_entries=english_entries,
+                    suffix_share=suffix_share,
+                )
+            )
+        else:
+            locale_bundles_list.append(
+                _build_locale_bundle(
+                    locale=locale,
+                    mapping=mapping,
+                    indexed_sources=indexed_sources,
+                    raw_records=raw_records,
+                    ja_raw_records=ja_raw_records,
+                    authored_records=authored_records,
+                    english_definitions=english_definitions,
+                    portrait_map=portrait_map,
+                    suffix_share=suffix_share,
+                )
+            )
+    locale_bundles = tuple(locale_bundles_list)
     width_validation = None
     unwrapped_locale_entries = {
         bundle.locale: bundle.entries for bundle in locale_bundles
@@ -974,6 +1215,9 @@ def build_game_catalog(
             rewritten_bundles = []
             width_validation = {}
             for bundle in locale_bundles:
+                if bundle.locale not in CJK_LOCALE_IDS:
+                    rewritten_bundles.append(bundle)
+                    continue
                 payloads, validation = apply_width_contract(
                     repo_root=repo_root,
                     locale=bundle.locale,
@@ -1005,6 +1249,10 @@ def build_game_catalog(
         alias_path = Path(fixed_width_aliases_path)
         if not alias_path.is_absolute():
             alias_path = repo_root / alias_path
+        cjk_locale_bundles = tuple(
+            bundle for bundle in locale_bundles
+            if bundle.locale in CJK_LOCALE_IDS
+        )
         try:
             fixed_width_metrics = build_fixed_width_label_metrics(
                 repo_root,
@@ -1014,7 +1262,7 @@ def build_game_catalog(
                         for entry in bundle.entries
                         if entry.source_text is not None
                     }
-                    for bundle in locale_bundles
+                    for bundle in cjk_locale_bundles
                 },
                 aliases_path=alias_path,
             )
@@ -1022,7 +1270,12 @@ def build_game_catalog(
         except FixedWidthLabelError as error:
             raise GameCatalogError(str(error)) from error
         display_aliases = {
-            locale: all_aliases[locale] for locale in enabled_locales
+            locale: (
+                all_aliases[locale]
+                if locale in CJK_LOCALE_IDS
+                else {}
+            )
+            for locale in enabled_locales
         }
     locale_reports = {
         bundle.locale: _locale_report(bundle, suffix_share=suffix_share)
@@ -1064,8 +1317,12 @@ def build_game_catalog(
         and entry.encoded_bytes
         != encode_canonical_text(entry.source_text or "")
     }
+    cjk_enabled = any(
+        bundle.locale in CJK_LOCALE_IDS for bundle in locale_bundles
+    )
     if (
         target_count == 3414
+        and cjk_enabled
         and len(remapped_targets) != portrait_map.expected_affected_target_count
     ):
         raise GameCatalogError(
@@ -1171,9 +1428,12 @@ def generate(
     zh_indexed_path: Path = DEFAULT_ZH_INDEXED_PATH,
     zh_raw_path: Path = DEFAULT_ZH_RAW_PATH,
     mapping_path: Path = DEFAULT_MAPPING_PATH,
+    eu_mapping_path: Path = DEFAULT_EU_MAPPING_PATH,
+    eu_indexed_paths: Optional[Mapping[str, Path]] = None,
+    eu_authored_paths: Optional[Mapping[str, Path]] = None,
     target_header_path: Path = DEFAULT_TARGET_HEADER_PATH,
     authored_paths: Optional[Mapping[str, Path]] = None,
-    enabled_locales: Sequence[str] = LOCALE_IDS,
+    enabled_locales: Sequence[str] = CJK_LOCALE_IDS,
     suffix_share: bool = True,
 ) -> Dict[str, Path]:
     build = build_game_catalog(
@@ -1184,6 +1444,9 @@ def generate(
         zh_indexed_path=zh_indexed_path,
         zh_raw_path=zh_raw_path,
         mapping_path=mapping_path,
+        eu_mapping_path=eu_mapping_path,
+        eu_indexed_paths=eu_indexed_paths,
+        eu_authored_paths=eu_authored_paths,
         target_header_path=target_header_path,
         authored_paths=authored_paths,
         enabled_locales=enabled_locales,

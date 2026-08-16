@@ -1,0 +1,17 @@
+{
+  "kind": "fe8eu-target-authored-catalog",
+  "locale": "it",
+  "strings": {
+    "0x040C": "Efficace contro la fanteria.[CTRL:001F]",
+    "0x07D2": "Ferito a[CTRL:0001]e poi lasciò il gruppo.[CTRL:001F]",
+    "0x0D4C": "Questi dati precedono il[CTRL:001F][CTRL:0001]formato espanso e non possono[CTRL:001F][CTRL:0001]essere aperti qui.",
+    "0x0D4D": "I dati sembrano danneggiati[CTRL:001F][CTRL:0001]e non possono essere letti.",
+    "0x0D4E": "I dati dell'espansione sono[CTRL:001F][CTRL:0001]danneggiati e non possono[CTRL:001F][CTRL:0001]essere letti.",
+    "0x0D4F": "Questi dati provengono da una[CTRL:001F][CTRL:0001]versione precedente[CTRL:001F][CTRL:0001]dell'espansione. Migrali con[CTRL:001F][CTRL:0001]uno strumento esterno.",
+    "0x0D50": "Questi dati provengono da una[CTRL:001F][CTRL:0001]versione successiva[CTRL:001F][CTRL:0001]dell'espansione e non sono[CTRL:001F][CTRL:0001]supportati qui.",
+    "0x0D51": "Questi dati usano impostazioni[CTRL:001F][CTRL:0001]dell'espansione incompatibili[CTRL:001F][CTRL:0001]e non sono utilizzabili.",
+    "0x0D52": "Questi dati non possono essere[CTRL:001F][CTRL:0001]utilizzati qui.",
+    "0x0D54": "Cancella tutti i dati",
+    "0x0D55": "Cancellare tutti i dati?[CTRL:001F][CTRL:0001]Questa azione è irreversibile."
+  }
+}

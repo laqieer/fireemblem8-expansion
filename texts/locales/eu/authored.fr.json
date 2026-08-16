@@ -1,0 +1,17 @@
+{
+  "kind": "fe8eu-target-authored-catalog",
+  "locale": "fr",
+  "strings": {
+    "0x040C": "Efficace contre l'infanterie.[CTRL:001F]",
+    "0x07D2": "Blessé à[CTRL:0001]puis quitta la compagnie.[CTRL:001F]",
+    "0x0D4C": "Cette sauvegarde précède le[CTRL:001F][CTRL:0001]format étendu et ne peut[CTRL:001F][CTRL:0001]pas être ouverte ici.",
+    "0x0D4D": "La sauvegarde semble[CTRL:001F][CTRL:0001]corrompue et reste illisible.",
+    "0x0D4E": "Les données d'extension sont[CTRL:001F][CTRL:0001]corrompues et ne peuvent[CTRL:001F][CTRL:0001]pas être lues.",
+    "0x0D4F": "Cette sauvegarde vient d'une[CTRL:001F][CTRL:0001]ancienne version de[CTRL:001F][CTRL:0001]l'extension. Migrez-la avec[CTRL:001F][CTRL:0001]un outil externe.",
+    "0x0D50": "Cette sauvegarde vient d'une[CTRL:001F][CTRL:0001]version plus récente de[CTRL:001F][CTRL:0001]l'extension et n'est pas[CTRL:001F][CTRL:0001]prise en charge ici.",
+    "0x0D51": "Cette sauvegarde utilise des[CTRL:001F][CTRL:0001]réglages d'extension[CTRL:001F][CTRL:0001]incompatibles.",
+    "0x0D52": "Cette sauvegarde ne peut pas[CTRL:001F][CTRL:0001]être utilisée ici.",
+    "0x0D54": "Effacer toutes les sauvegardes",
+    "0x0D55": "Effacer toutes les sauvegardes ?[CTRL:001F][CTRL:0001]Cette action est irréversible."
+  }
+}

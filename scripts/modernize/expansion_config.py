@@ -313,19 +313,19 @@ def validate_pseudo_locale(value, enabled_locales: Tuple[str, ...]) -> int:
 def validate_locale_rom_size(
     enabled_locales: Tuple[str, ...], rom_size_bytes: int
 ) -> None:
-    """Internal future-profile guard for the dedicated upper-ROM CJK bank."""
-    cjk_locales = tuple(
+    """Require the upper ROM bank for every real localized game profile."""
+    real_locales = tuple(
         locale
-        for locale in locale_schema.REAL_CJK_LOCALES
+        for locale in locale_schema.REAL_LOCALIZED_LOCALES
         if locale in enabled_locales
     )
     required_size = NAMED_ROM_SIZES["32M"]
-    if cjk_locales and rom_size_bytes != required_size:
+    if real_locales and rom_size_bytes != required_size:
         raise ConfigError(
-            f"EXPANSION_ENABLED_LOCALES enables real CJK locale(s) "
-            f"{cjk_locales!r}, which require MODERN_ROM_SIZE=32M "
+            f"EXPANSION_ENABLED_LOCALES enables localized game locale(s) "
+            f"{real_locales!r}, which require MODERN_ROM_SIZE=32M "
             f"({required_size} bytes); got {rom_size_bytes} bytes. "
-            f"Use MODERN_ROM_SIZE=32M or remove {cjk_locales!r}"
+            f"Use MODERN_ROM_SIZE=32M or remove {real_locales!r}"
         )
 
 

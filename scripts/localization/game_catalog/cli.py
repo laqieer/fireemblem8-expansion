@@ -28,6 +28,7 @@ from .build import (
     build_game_catalog,
     write_build,
 )
+from .constants import CJK_LOCALE_IDS, LOCALE_IDS
 from .leakage import (
     DEFAULT_RAW_CLOSURE_PATH,
     DEFAULT_REVIEW_PATH,
@@ -94,7 +95,7 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--enabled-locales",
         default="ja,zh-Hans",
-        help="comma-separated game-catalog payload locales (ja and/or zh-Hans)",
+        help="comma-separated game-catalog payload locales",
     )
     parser.add_argument(
         "--latin-span-review",
@@ -125,7 +126,7 @@ def _suffix_share(args: argparse.Namespace) -> bool:
 def _build_summary(build) -> str:
     mapping = build.report["mapping_source_counts"]
     locale_counts = []
-    for locale in ("ja", "zh-Hans"):
+    for locale in LOCALE_IDS:
         report = build.report["locales"].get(locale)
         locale_counts.append(
             "{}.present={}".format(
@@ -200,6 +201,8 @@ def _leakage_input_records(args: argparse.Namespace):
         else DEFAULT_AUTHORED_PATHS
     )
     for locale in enabled_locales:
+        if locale not in CJK_LOCALE_IDS:
+            continue
         paths[f"{locale}_authored"] = authored_paths[locale]
         paths[f"{locale}_expansion"] = (
             args.expansion_catalog_root / f"catalog.{locale}.json"
@@ -212,12 +215,22 @@ def _leakage_input_records(args: argparse.Namespace):
 
 
 def _audit_from_args(args: argparse.Namespace, build):
+    cjk_locales = tuple(
+        locale for locale in build.enabled_locales
+        if locale in CJK_LOCALE_IDS
+    )
+    if not cjk_locales:
+        return {
+            "summary": {
+                "unapproved_span_count": 0,
+            }
+        }
     review = load_review(args.latin_span_review)
     script_review = load_script_review(args.unicode_script_review)
     raw_closure = load_raw_closure(args.raw_closure)
     expansion_catalogs = load_expansion_catalogs(
         args.expansion_catalog_root,
-        build.enabled_locales,
+        cjk_locales,
     )
     return build_leakage_report(
         build,

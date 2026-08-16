@@ -25,6 +25,17 @@ nodes, compressed blob, entries, or catalog descriptor for the disabled CJK
 locale; its fixed `gGameLocalizationCatalogs[]` slot is null, while the shared
 English bundle remains present once.
 
+European profiles are opt-in with:
+
+```bash
+make game-localization-eu-check
+make expansion-modern-localization-profile-en-fr-de-es-it
+```
+
+The European generator reads `texts/locales/eu/indexed.{fr,de,es,it}.txt`
+and the authoritative `texts/locales/mapping/fe8eu_to_fe8u.json` ledger.
+Every European locale emits all 3,414 targets with zero English fallback.
+
 The generator reads committed `texts/texts.txt` plus `texts/textdefs.txt` for
 English, and the canonical `texts/locales/` sources plus verified
 `texts/locales/mapping/fe8u_target_map.json` decisions for CJK. Authored rows
@@ -82,6 +93,7 @@ event `TEXTCONT` sequence.
 English-only modern and archival builds do not generate or link this catalog.
 They retain the historical 4 KiB `MsgBuffer`, English `gMsgTable`, and ARM
 decoder path with zero modern English/CJK payload.
+European and CJK profiles share the bounded UTF-8 decoder/cache path.
 
 Production CJK assets are selected directly from the validated locale profile:
 
@@ -89,6 +101,7 @@ Production CJK assets are selected directly from the validated locale profile:
 make expansion-modern-localization-profile-en-ja
 make expansion-modern-localization-profile-en-zh-hans
 make expansion-modern-localization-profile-en-ja-zh-hans
+make expansion-modern-localization-profile-en-fr-de-es-it
 ```
 
 Equivalent direct builds use `EXPANSION_ENABLED_LOCALES=en,ja`,

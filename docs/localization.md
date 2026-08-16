@@ -1,18 +1,17 @@
 # In-game localization framework (issue #18)
 
-Status: English/pseudo plus Japanese (`ja`) and Simplified Chinese
-(`zh-Hans`) are production-configurable. The default remains English-only
-and 16 MiB; any profile enabling either real CJK locale is an explicit
-32 MiB build. Expansion and full-game catalogs, CJK fonts, UTF-8 rendering,
-locale preference persistence, and cache switching share the same validated
-profile. Focused CJK gba-playtest scenarios and committed fingerprints cover
-first start, Japanese/Chinese choice, Config switching, and soft-reset
-persistence. The final compressed catalog contains all 3,414 FE8U messages
-for each CJK locale, and the independent raw closure contains all 143 audited
-surfaces for each locale. Fallback, exclusion, unresolved, and unapproved
-runtime-leakage counts are zero. Japanese goal-string provenance is bound to
-the pinned live FE8J ROM; complete system/talk font inventories and the shared
-FE-control/UTF-8 tokenizer cover the final payloads.
+Status: English/pseudo, Japanese (`ja`), Simplified Chinese (`zh-Hans`),
+French (`fr`), German (`de`), Spanish (`es`), and Italian (`it`) are
+production-configurable. The default remains English-only and 16 MiB; every
+real localized-game profile is an explicit 32 MiB build. Expansion and
+full-game catalogs, localized fonts, UTF-8 rendering, locale preference
+persistence, cache switching, and localized static graphics share the same
+validated profile. The final compressed catalog contains all 3,414 FE8U
+messages for every production locale with zero fallback or unresolved rows.
+CJK provenance remains bound to the pinned FE8J/FE8CN sources; European text,
+glyph, chapter-title, prologue, AP, and UI resources are bound to authorized
+FE8EU ROM SHA-256
+`80f94bf10da412e6d8d1ba11c043107f4873bc17fecceb02e6a7da3d1a261d6d`.
 This is an architecture/authoring/testing reference, not a remote GitHub
 issue-state claim; branch-local closure evidence remains in
 `reports/issue18_localization_closure.md`.
@@ -31,8 +30,8 @@ The framework is layered, each layer independently testable:
 2. **Source catalog + registry** (`texts/expansion/registry.json`,
    `texts/expansion/catalog.<locale>.json`, `scripts/localization/catalog.py`):
    the source of truth for which message IDs exist and their per-locale
-   UTF-8 text. The authored mapping currently contains `en`, `ja`, and
-   `zh-Hans`; `qps-ploc` is derived from English. Validation rejects invalid
+   UTF-8 text. The authored mapping contains `en`, `ja`, `zh-Hans`, `fr`,
+   `de`, `es`, and `it`; `qps-ploc` is derived from English. Validation rejects invalid
    Unicode scalars, control/format/private-use text, whitespace controls
    other than `\n`, malformed placeholders, placeholder/newline drift,
    surface-width overflow, UTF-8 decoded-byte overflow, and unknown pseudo
@@ -58,7 +57,7 @@ The framework is layered, each layer independently testable:
    or requested entry is absent. Never reads/writes vanilla `GetLang()`/`SetLang()`/
    `gLanguageMode`/`gMsgTable`; entirely independent of the vanilla
    multi-language ROM mechanism. `ExpansionLocale_InvalidateCache()` also
-   invalidates the full-game localized message cache in CJK profiles, so
+   invalidates the full-game localized message cache in localized profiles, so
    expansion UI and `GetStringFromIndex()` cannot disagree after a switch.
 4. **User preferences** (`include/expansion_save_prefs.h`,
    versioned/checksummed `ExpansionUserPrefs`, Sprint 2): a small SRAM
@@ -91,29 +90,29 @@ The framework is layered, each layer independently testable:
    this kind of diagnostic read -- a plain, bounded, fixed-layout struct,
    never a raw/arbitrary pointer oracle.
 
-   Host-native tests resolve exact Japanese/Chinese expansion strings,
+   Host-native tests resolve exact CJK and European expansion strings,
    generic sparse-entry English fallback, invalid/unpopulated slots, and both
-   expansion/full-game cache invalidation. Production CJK profiles use the
-   upper bank at 32 MiB. Captured CJK scenarios cover first start,
-   Japanese/Chinese choice, Config switching, and soft-reset persistence.
+   expansion/full-game cache invalidation. Production localized profiles use
+   the upper bank at 32 MiB. Captured scenarios cover CJK switching and a real
+   five-language European first-start selection of French.
 
 6. **Runtime text-stream consumers** (`include/text_utf8.h`,
    `src/text_utf8.c`, `src/msg.c`, `src/scene.c`, `src/cgtext.c`,
-   `src/helpbox.c`): modern CJK builds decode FE controls and UTF-8 scalars
+   `src/helpbox.c`): modern localized builds decode FE controls and UTF-8 scalars
    through one token iterator. Low controls, `[LoadFace]` plus its FID,
    extended `0x80` controls, color arguments, U+3000/legacy spacing, valid
    scalars, and invalid/truncated input have explicit token boundaries.
    Dialogue, CG/name-box, and help-box interpreters never inspect UTF-8
    continuation bytes as controls. Message substitutions use a private,
-   CJK-only `msg.c` workspace with a `0x400`-byte derived-output region and
+   localized `msg.c` workspace with a `0x400`-byte derived-output region and
    a disjoint `0x100`-byte insertion region; the production catalog test
    conservatively bounds every current substitution stream at 273 bytes.
    The active localized-message cache remains separate, and CG name-box
    copies use a caller-owned `0x100`-byte stack buffer. Neither path borrows
    `gBufPrep`, which is live support-screen/preparation overlay state.
-   English-only and archival builds emit none of this CJK workspace. The
+   English-only and archival builds emit none of this workspace. The
    historical two-argument `GetStringFromIndexInBuffer()` ABI remains for
-   legacy builds; an unknown-size call in a modern CJK build returns
+   legacy builds; an unknown-size call in a modern localized build returns
    `<!LOC_CAP!>` with `LEGACY_BUFFER_UNBOUNDED` instead of writing
    unboundedly. Production callers use
    `GetStringFromIndexInBufferWithLimit()`.
@@ -143,7 +142,8 @@ Set at `modern.mk`/`make` invocation time (see
 `scripts/modernize/expansion_config.py` for validation):
 
 - `EXPANSION_ENABLED_LOCALES` -- comma-separated subset of the production
-  allowlist `en`, `ja`, `zh-Hans`, and `qps-ploc` (default: `en`), always
+  allowlist `en`, `ja`, `zh-Hans`, `fr`, `de`, `es`, `it`, and `qps-ploc`
+  (default: `en`), always
   including `en` for fallback. Input order is normalized to stable locale-ID
   order.
 - `EXPANSION_DEFAULT_LOCALE` -- must be a member of
@@ -152,9 +152,9 @@ Set at `modern.mk`/`make` invocation time (see
   `qps-ploc` to actually be present in `EXPANSION_ENABLED_LOCALES` (the two
   can never silently disagree -- `validate_pseudo_locale` rejects that
   combination outright).
-- `MODERN_ROM_SIZE` -- remains `16M` by default. Enabling `ja` or `zh-Hans`
-  requires exactly `32M`; English-only and English+pseudo remain valid at
-  either size.
+- `MODERN_ROM_SIZE` -- remains `16M` by default. Enabling any real localized
+  game locale requires exactly `32M`; English-only and English+pseudo remain
+  valid at either size.
 
 Profile examples:
 
@@ -171,14 +171,15 @@ make expansion-modern-rom \
 make expansion-modern-localization-profile-en-ja
 make expansion-modern-localization-profile-en-zh-hans
 make expansion-modern-localization-profile-en-ja-zh-hans
+make expansion-modern-localization-profile-en-fr-de-es-it
 
 # Optional four-locale profile; Config shows EN, JA, More.
 make expansion-modern-localization-profile-en-ja-zh-hans-qps
 ```
 
 Equivalent direct builds may set `EXPANSION_ENABLED_LOCALES`,
-`EXPANSION_DEFAULT_LOCALE`, and `MODERN_ROM_SIZE=32M` explicitly. A CJK
-profile with `MODERN_ROM_SIZE=16M` fails before compilation. The named targets
+`EXPANSION_DEFAULT_LOCALE`, and `MODERN_ROM_SIZE=32M` explicitly. A real
+localized profile with `MODERN_ROM_SIZE=16M` fails before compilation. The named targets
 use private build roots so their generated catalogs, fonts, metadata, and
 objects cannot cross-contaminate one another.
 
@@ -258,9 +259,8 @@ ID never becomes the runtime key.
 All current-locale labels/help/back/debug
 strings, including Japanese and Chinese text, render through UTF-8-aware
 `Text_DrawString`; no expansion-resolved framework surface uses
-`Text_DrawStringASCII`. `ja`/`zh-Hans` are production-configurable for explicit
-32 MiB builds as described above; `fr`/`de`/`es`/`it` remain unpopulated null
-descriptor slots.
+`Text_DrawStringASCII`. All six real locales are production-configurable for
+explicit 32 MiB builds as described above.
 
 ## Authoring
 
@@ -272,7 +272,7 @@ descriptor slots.
    width is checked against the real allocation, and use `"preserve"` only for
    active locale-neutral identifiers whose qps bytes must remain exactly equal
    to English.
-   The committed `ja`/`zh-Hans` catalogs intentionally cover every active
+   The committed real-locale catalogs intentionally cover every active
    key. The resolver retains a defensive missing-entry fallback for malformed
    or future sparse profiles, but production JA/ZH reports exercise none.
    Raw-only game surfaces must use a semantic `raw_surface.*` key, not a ROM
@@ -294,8 +294,11 @@ descriptor slots.
      --require-no-fallback --require-live-origin
    ```
 
-   The production compressed catalog is 3,414/3,414 present for both `ja` and
-   `zh-Hans`, with zero English fallback and zero unresolved rows. The
+   The production compressed catalog is 3,414/3,414 present for every real
+   locale, with zero English fallback and zero unresolved rows. European rows
+   use the authoritative `fe8eu_to_fe8u.json` ledger, official indexed text,
+   reviewed target-specific translations, and explicit split-message
+   concatenation where FE8EU and FE8U regional message boundaries differ. The
    independent 143-record raw-surface closure also has zero fallback,
    exclusion, and unresolved record. Its Japanese raw-symbol providers are
    fail-closed against vendored commit/tree/blob objects for the pinned FE8J
@@ -717,14 +720,14 @@ populated-bank omission still fails.
 
 ## Localized static UI graphics
 
-`graphics/localized_ui/` contains decompressed, typed sources for the
-Japanese and Simplified-Chinese title screen, save/main-and-extra-menu labels,
-opening-movie slides, and chapter-title graphics. The runtime selector in
-`src/data/localized_ui_graphics.c` uses `ExpansionLocale_GetCurrent()` and
-returns English's existing assets for every non-CJK locale, including the
-pseudo locale. `src/titlescreen.c`, `src/savemenu.c`, `src/opsubtitle.c`, and
-`src/chapter_title.c` are the only consumers; chapter-title selection therefore
-covers save menus, map status, and chapter openings through their shared API.
+`graphics/localized_ui/` contains decompressed, typed sources for CJK title,
+menu, prologue, and chapter graphics plus the FE8EU European resource set.
+`scripts/localization/eu.py` extracts 46 language-sensitive compressed
+resource groups, raw EXP-bar graphics, three AP definitions, seven prologue
+slides, and all 88 chapter-title slots per European locale. Central remapping
+in `Decompress`, `RegisterDataMove`, `APProc_Create`, and the battle-effect
+graphics loaders preserves existing consumers while selecting resources from
+`src/data/localized_eu_ui_graphics.c`.
 
 `graphics/localized_ui/manifest.json` pins source ROM hashes, addresses,
 indexed-PNG and raw-tile round-trip hashes/dimensions, title-table records,
@@ -733,6 +736,7 @@ reference ROMs:
 
 ```bash
 make localized-ui-graphics-check
+make eu-localization-check
 ```
 
 An authorized source refresh is explicit and recreates only committed indexed
@@ -743,6 +747,9 @@ source:
 make localized-ui-graphics-extract \
   LOCALIZED_UI_GRAPHICS_FE8J_ROOT=/path/to/fireemblem8j \
   LOCALIZED_UI_GRAPHICS_FE8CN_ROM=/path/to/FE8CN.gba
+
+make eu-localization-extract \
+  EU_LOCALIZATION_ROM=/path/to/FE8EU\(EnFrDeEsIt\).gba
 ```
 
 The normal asset rules derive ignored `.4bpp` then `.lz` siblings from PNG

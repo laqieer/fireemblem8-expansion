@@ -5,10 +5,16 @@
 
 #define LOCALIZED_UI_GRAPHICS_CHAPTER_TITLE_COUNT 88
 
-#if defined(MODERN) && ((FE8_EXPANSION_ENABLED_LOCALE_MASK & 0x06u) != 0)
+#if defined(MODERN) && ((FE8_EXPANSION_ENABLED_LOCALE_MASK & 0x7Eu) != 0)
 #define LOCALIZED_UI_GRAPHICS_CJK_ENABLED 1
 #else
 #define LOCALIZED_UI_GRAPHICS_CJK_ENABLED 0
+#endif
+
+#if defined(MODERN) && ((FE8_EXPANSION_ENABLED_LOCALE_MASK & 0x78u) != 0)
+#define LOCALIZED_UI_GRAPHICS_EU_ENABLED 1
+#else
+#define LOCALIZED_UI_GRAPHICS_EU_ENABLED 0
 #endif
 
 struct LocalizedUiGraphicsTitle
@@ -49,6 +55,16 @@ const struct LocalizedUiGraphicsChapterTitle *LocalizedUiGraphics_GetChapterTitl
 const u8 *LocalizedUiGraphics_GetChapterTitleFrame(void);
 const u8 *LocalizedUiGraphics_GetChapterTitleTsa(void);
 const struct LocalizedUiGraphicsTitleSprites *LocalizedUiGraphics_GetTitleSprites(void);
+#endif
+
+#if LOCALIZED_UI_GRAPHICS_EU_ENABLED
+const void *LocalizedEuUiGraphics_RemapCompressed(const void *source);
+const void *LocalizedEuUiGraphics_RemapRaw(const void *source);
+const void *LocalizedEuUiGraphics_RemapAp(const void *source);
+const struct LocalizedUiGraphicsSubtitleSlide *
+    LocalizedEuUiGraphics_GetSubtitleSlides(void);
+const struct LocalizedUiGraphicsChapterTitle *
+    LocalizedEuUiGraphics_GetChapterTitle(u32 titleId);
 #endif
 
 #endif /* GUARD_LOCALIZED_UI_GRAPHICS_H */

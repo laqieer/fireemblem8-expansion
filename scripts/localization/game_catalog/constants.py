@@ -1,6 +1,8 @@
 """Stable constants for generated full-game locale catalogs."""
 
-LOCALE_IDS = ("ja", "zh-Hans")
+LOCALE_IDS = ("ja", "zh-Hans", "fr", "de", "es", "it")
+CJK_LOCALE_IDS = ("ja", "zh-Hans")
+EU_LOCALE_IDS = ("fr", "de", "es", "it")
 SOURCE_KINDS = ("indexed", "raw", "authored", "english_fallback")
 PRESENT_PROVIDER_KINDS = ("indexed", "raw", "authored")
 

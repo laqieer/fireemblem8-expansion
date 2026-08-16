@@ -85,7 +85,7 @@ class BuildOutputsTests(unittest.TestCase):
         budget = build_budget(self.catalog)
         self.assertEqual(
             budget["pseudo_policy_counts"],
-            {"transform": 50, "compact": 2, "preserve": 1},
+            {"transform": 54, "compact": 2, "preserve": 5},
         )
 
     def test_generated_qps_catalog_preserves_build_timestamp(self):
@@ -105,9 +105,10 @@ class BuildOutputsTests(unittest.TestCase):
 
     def test_budget_reports_real_utf8_codepoints(self):
         budget = build_budget(self.catalog)
-        self.assertEqual(budget["populated_descriptor_count"], 4)
+        self.assertEqual(budget["populated_descriptor_count"], 8)
         self.assertIn("ja", budget["codepoints"]["per_locale"])
         self.assertIn("zh-Hans", budget["codepoints"]["per_locale"])
+        self.assertIn("fr", budget["codepoints"]["per_locale"])
         self.assertIn("U+62E1", budget["codepoints"]["utf8_scalars"])
 
     def test_generated_c_uses_exact_utf8_byte_escapes(self):
@@ -119,7 +120,7 @@ class BuildOutputsTests(unittest.TestCase):
         source = build_catalog_c(self.catalog)
         for locale in schema.LOCALE_IDS:
             self.assertIn(f"/* {locale} */", source)
-        self.assertEqual(source.count("{ NULL, NULL, 0u }"), 4)
+        self.assertEqual(source.count("{ NULL, NULL, 0u }"), 0)
 
     def test_locale_symbol_sanitizes_bcp47_separator(self):
         self.assertEqual(

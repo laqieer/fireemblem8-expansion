@@ -521,6 +521,12 @@ class ValidateEnabledLocalesTests(unittest.TestCase):
                     normalized,
                 )
 
+    def test_real_eu_locales_are_configurable_and_stably_ordered(self):
+        self.assertEqual(
+            ec.validate_enabled_locales("it,es,de,fr,en"),
+            ("en", "fr", "de", "es", "it"),
+        )
+
     def test_empty_rejected(self):
         with self.assertRaises(ec.ConfigError):
             ec.validate_enabled_locales("")
@@ -536,12 +542,6 @@ class ValidateEnabledLocalesTests(unittest.TestCase):
     def test_duplicate_locale_rejected(self):
         with self.assertRaises(ec.ConfigError):
             ec.validate_enabled_locales("en,en")
-
-    def test_reserved_but_unconfigurable_locale_rejected(self):
-        for locale in ("fr", "de", "es", "it"):
-            with self.assertRaises(ec.ConfigError):
-                ec.validate_enabled_locales(f"en,{locale}")
-
 
 class ValidateDefaultLocaleTests(unittest.TestCase):
     def test_default_within_enabled_set_ok(self):
@@ -602,6 +602,12 @@ class ValidateLocaleRomSizeTests(unittest.TestCase):
             with self.subTest(locales=locales):
                 ec.validate_locale_rom_size(locales, 32 * 1024 * 1024)
 
+    def test_real_eu_profiles_require_and_allow_32m(self):
+        locales = ("en", "fr", "de", "es", "it")
+        with self.assertRaises(ec.ConfigError):
+            ec.validate_locale_rom_size(locales, 16 * 1024 * 1024)
+        ec.validate_locale_rom_size(locales, 32 * 1024 * 1024)
+
 
 class ComputeLocaleMaskTests(unittest.TestCase):
     def test_en_only_mask_is_bit_zero(self):
@@ -613,6 +619,12 @@ class ComputeLocaleMaskTests(unittest.TestCase):
 
     def test_en_ja_zh_mask_matches_stable_bit_positions(self):
         self.assertEqual(ec.compute_locale_mask(("en", "ja", "zh-Hans")), 0x7)
+
+    def test_en_eu_mask_matches_stable_bit_positions(self):
+        self.assertEqual(
+            ec.compute_locale_mask(("en", "fr", "de", "es", "it")),
+            0x79,
+        )
 
 
 class LoadIdentityLocaleTests(unittest.TestCase):

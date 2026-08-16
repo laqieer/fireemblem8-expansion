@@ -54,6 +54,14 @@
     "debug.status.chapter": "章节",
     "debug.status.flag": "标记",
     "debug.status.rng_seed": "随机种子",
-    "debug.status.save_state": "存档状态"
+    "debug.status.save_state": "存档状态",
+    "framework.locale_name.fr": "法语",
+    "framework.locale_name.de": "德语",
+    "framework.locale_name.es": "西班牙语",
+    "framework.locale_name.it": "意大利语",
+    "framework.locale_short_name.fr": "FR",
+    "framework.locale_short_name.de": "DE",
+    "framework.locale_short_name.es": "ES",
+    "framework.locale_short_name.it": "IT"
   }
 }

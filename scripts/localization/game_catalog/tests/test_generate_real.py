@@ -326,12 +326,15 @@ class RealGenerateTests(unittest.TestCase):
             self.assertIn("gGameLocalizationZhHansCompressedBlob[]", both_source)
             self.assertEqual(ja_source.count(
                 "(const struct GameLocalizationLocaleCatalog *)0,"
-            ), 1)
+            ), 5)
             self.assertEqual(zh_source.count(
                 "(const struct GameLocalizationLocaleCatalog *)0,"
-            ), 1)
-            self.assertNotIn(
-                "(const struct GameLocalizationLocaleCatalog *)0,", both_source
+            ), 5)
+            self.assertEqual(
+                both_source.count(
+                    "(const struct GameLocalizationLocaleCatalog *)0,"
+                ),
+                4,
             )
 
             self.assertIn("GAME_LOCALIZATION_JA_ENABLED 1u", ja_header)

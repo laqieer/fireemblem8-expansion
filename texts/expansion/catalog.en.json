@@ -54,6 +54,14 @@
     "debug.status.chapter": "CH",
     "debug.status.flag": "FLAG",
     "debug.status.rng_seed": "RNG SEED",
-    "debug.status.save_state": "SAVE STATE"
+    "debug.status.save_state": "SAVE STATE",
+    "framework.locale_name.fr": "French",
+    "framework.locale_name.de": "German",
+    "framework.locale_name.es": "Spanish",
+    "framework.locale_name.it": "Italian",
+    "framework.locale_short_name.fr": "FR",
+    "framework.locale_short_name.de": "DE",
+    "framework.locale_short_name.es": "ES",
+    "framework.locale_short_name.it": "IT"
   }
 }

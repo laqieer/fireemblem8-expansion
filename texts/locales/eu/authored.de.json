@@ -1,0 +1,17 @@
+{
+  "kind": "fe8eu-target-authored-catalog",
+  "locale": "de",
+  "strings": {
+    "0x040C": "Effektiv gegen Infanterie.[CTRL:001F]",
+    "0x07D2": "Verwundet bei[CTRL:0001]und verließ danach die Gruppe.[CTRL:001F]",
+    "0x0D4C": "Diese Daten nutzen ein altes[CTRL:001F][CTRL:0001]Erweiterungsformat und können[CTRL:001F][CTRL:0001]hier nicht geöffnet werden.",
+    "0x0D4D": "Die Speicherdaten sind wohl[CTRL:001F][CTRL:0001]beschädigt und unlesbar.",
+    "0x0D4E": "Die Erweiterungsdaten sind[CTRL:001F][CTRL:0001]beschädigt und können[CTRL:001F][CTRL:0001]nicht gelesen werden.",
+    "0x0D4F": "Diese Daten stammen aus einer[CTRL:001F][CTRL:0001]älteren Erweiterungsversion.[CTRL:001F][CTRL:0001]Migriere sie mit einem[CTRL:001F][CTRL:0001]externen Werkzeug.",
+    "0x0D50": "Diese Daten stammen aus einer[CTRL:001F][CTRL:0001]neueren Erweiterungsversion[CTRL:001F][CTRL:0001]und werden hier nicht[CTRL:001F][CTRL:0001]unterstützt.",
+    "0x0D51": "Diese Daten verwenden[CTRL:001F][CTRL:0001]inkompatible Erweiterungs-[CTRL:001F][CTRL:0001]einstellungen.",
+    "0x0D52": "Diese Speicherdaten können[CTRL:001F][CTRL:0001]hier nicht verwendet werden.",
+    "0x0D54": "Alle Speicherdaten löschen",
+    "0x0D55": "Alle Speicherdaten löschen?[CTRL:001F][CTRL:0001]Dies kann nicht rückgängig werden."
+  }
+}

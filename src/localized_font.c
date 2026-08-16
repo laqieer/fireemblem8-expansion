@@ -82,6 +82,32 @@ static bool8 LocalizedFont_GetDescriptor(
     }
 #endif
 
+#if (FE8_EXPANSION_ENABLED_LOCALE_MASK & 0x78u) != 0
+    if (locale == EXPANSION_LOCALE_FR
+        || locale == EXPANSION_LOCALE_DE
+        || locale == EXPANSION_LOCALE_ES
+        || locale == EXPANSION_LOCALE_IT)
+    {
+        if (style == LOCALIZED_FONT_STYLE_SYSTEM)
+        {
+            out->glyphCount = gLocalizedFontEuSystemGlyphCount;
+            out->codepoints = gLocalizedFontEuSystemCodepoints;
+            out->widths = gLocalizedFontEuSystemWidths;
+            out->bitmaps = gLocalizedFontEuSystemBitmaps;
+            return TRUE;
+        }
+        if (style == LOCALIZED_FONT_STYLE_TALK)
+        {
+            out->glyphCount = gLocalizedFontEuTalkGlyphCount;
+            out->codepoints = gLocalizedFontEuTalkCodepoints;
+            out->widths = gLocalizedFontEuTalkWidths;
+            out->bitmaps = gLocalizedFontEuTalkBitmaps;
+            return TRUE;
+        }
+        return FALSE;
+    }
+#endif
+
     return FALSE;
 }
 
@@ -93,6 +119,13 @@ bool8 LocalizedFont_IsLocale(ExpansionLocaleId locale)
 #endif
 #if (FE8_EXPANSION_ENABLED_LOCALE_MASK & 0x04u) != 0
     if (locale == EXPANSION_LOCALE_ZH_HANS)
+        return TRUE;
+#endif
+#if (FE8_EXPANSION_ENABLED_LOCALE_MASK & 0x78u) != 0
+    if (locale == EXPANSION_LOCALE_FR
+        || locale == EXPANSION_LOCALE_DE
+        || locale == EXPANSION_LOCALE_ES
+        || locale == EXPANSION_LOCALE_IT)
         return TRUE;
 #endif
     return FALSE;

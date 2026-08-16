@@ -6,7 +6,7 @@
  * Include global.h before this header so u8/u32 and the generated locale
  * mask are available.
  */
-#if defined(MODERN) && ((FE8_EXPANSION_ENABLED_LOCALE_MASK & 0x06u) != 0)
+#if defined(MODERN) && ((FE8_EXPANSION_ENABLED_LOCALE_MASK & 0x7Eu) != 0)
 
 #define FE8_TEXT_UTF8_ENABLED 1
 
@@ -63,6 +63,6 @@ const char *TextUtf8_NextBounded(
     u32 available,
     struct TextUtf8Token *out);
 
-#endif /* modern build with a CJK locale */
+#endif /* modern build with a localized game locale */
 
 #endif /* GUARD_TEXT_UTF8_H */

@@ -1,4 +1,5 @@
 #include "global.h"
+#include "localized_ui_graphics.h"
 #include "variables.h"
 #include "functions.h"
 #include "uiutils.h"
@@ -130,6 +131,11 @@ void Decompress(const void* src, void* dst)
 
     int is_wram;
     const struct TileMapArr *tsa = src;
+
+#if LOCALIZED_UI_GRAPHICS_EU_ENABLED
+    src = LocalizedEuUiGraphics_RemapCompressed(src);
+    tsa = src;
+#endif
 
     if ((((u32) dst) - VRAM) < VRAM_SIZE)
         is_wram = FALSE; // is vram

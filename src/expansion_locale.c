@@ -156,7 +156,7 @@ void ExpansionLocale_InvalidateCache(void)
     sCacheLocale = EXPANSION_LOCALE_INVALID;
     sCacheMsgId = EXPANSION_MSG_ID_INVALID;
 
-#if (FE8_EXPANSION_ENABLED_LOCALE_MASK & 0x06u) != 0
+#if (FE8_EXPANSION_ENABLED_LOCALE_MASK & 0x7Eu) != 0
     LocalizedGameText_InvalidateCache();
 #endif
 }

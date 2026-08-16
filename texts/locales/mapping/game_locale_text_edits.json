@@ -266,6 +266,46 @@
         "ja": "保存状態",
         "key": "debug.status.save_state",
         "zh-Hans": "存档状态"
+      },
+      {
+        "ja": "フランス語",
+        "key": "framework.locale_name.fr",
+        "zh-Hans": "法语"
+      },
+      {
+        "ja": "ドイツ語",
+        "key": "framework.locale_name.de",
+        "zh-Hans": "德语"
+      },
+      {
+        "ja": "スペイン語",
+        "key": "framework.locale_name.es",
+        "zh-Hans": "西班牙语"
+      },
+      {
+        "ja": "イタリア語",
+        "key": "framework.locale_name.it",
+        "zh-Hans": "意大利语"
+      },
+      {
+        "ja": "FR",
+        "key": "framework.locale_short_name.fr",
+        "zh-Hans": "FR"
+      },
+      {
+        "ja": "DE",
+        "key": "framework.locale_short_name.de",
+        "zh-Hans": "DE"
+      },
+      {
+        "ja": "ES",
+        "key": "framework.locale_short_name.es",
+        "zh-Hans": "ES"
+      },
+      {
+        "ja": "IT",
+        "key": "framework.locale_short_name.it",
+        "zh-Hans": "IT"
       }
     ],
     "reason": "Expansion registry keys have no original FE8J/FE8CN indexed source."

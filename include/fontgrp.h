@@ -3,7 +3,7 @@
 
 #include "global.h"
 
-#if defined(MODERN) && ((FE8_EXPANSION_ENABLED_LOCALE_MASK & 0x06u) != 0)
+#if defined(MODERN) && ((FE8_EXPANSION_ENABLED_LOCALE_MASK & 0x7Eu) != 0)
 #include "localized_font.h"
 #include "text_utf8.h"
 #endif

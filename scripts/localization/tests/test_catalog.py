@@ -456,12 +456,16 @@ class LoadCatalogTests(unittest.TestCase):
         loaded = load_catalog()
         self.assertGreater(len(loaded.active_entries), 0)
         self.assertGreaterEqual(len(loaded.tombstone_entries), 1)
-        self.assertEqual(loaded.authored_locales, ("en", "ja", "zh-Hans"))
         self.assertEqual(
-            loaded.generated_locales, ("en", "ja", "zh-Hans", "qps-ploc")
+            loaded.authored_locales,
+            ("en", "ja", "zh-Hans", "fr", "de", "es", "it"),
         )
-        self.assertEqual(loaded.missing_keys("ja"), ())
-        self.assertEqual(loaded.missing_keys("zh-Hans"), ())
+        self.assertEqual(
+            loaded.generated_locales,
+            ("en", "ja", "zh-Hans", "fr", "de", "es", "it", "qps-ploc"),
+        )
+        for locale in ("ja", "zh-Hans", "fr", "de", "es", "it"):
+            self.assertEqual(loaded.missing_keys(locale), ())
         self.assertEqual(loaded.en_strings["framework.locale_name.ja"], "Japanese")
         self.assertEqual(
             loaded.en_strings["framework.locale_name.zh_hans"],
@@ -476,7 +480,13 @@ class LoadCatalogTests(unittest.TestCase):
         ]
         self.assertEqual(
             preserve_entries,
-            ["raw_surface.diagnostic.build_timestamp"],
+            [
+                "raw_surface.diagnostic.build_timestamp",
+                "framework.locale_short_name.fr",
+                "framework.locale_short_name.de",
+                "framework.locale_short_name.es",
+                "framework.locale_short_name.it",
+            ],
         )
         for entry in loaded.active_entries:
             en_text = loaded.en_strings[entry.key]

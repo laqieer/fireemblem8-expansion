@@ -42,7 +42,15 @@ PSEUDO_LOCALE = "qps-ploc"
 
 # Authored expansion-framework catalogs. qps-ploc is derived from English and
 # therefore deliberately excluded from this tuple.
-AUTHORED_CATALOG_LOCALES: Tuple[str, ...] = ("en", "ja", "zh-Hans")
+AUTHORED_CATALOG_LOCALES: Tuple[str, ...] = (
+    "en",
+    "ja",
+    "zh-Hans",
+    "fr",
+    "de",
+    "es",
+    "it",
+)
 POPULATED_CATALOG_LOCALES: Tuple[str, ...] = AUTHORED_CATALOG_LOCALES + (PSEUDO_LOCALE,)
 
 # Product configuration includes the populated expansion catalogs plus the
@@ -50,6 +58,8 @@ POPULATED_CATALOG_LOCALES: Tuple[str, ...] = AUTHORED_CATALOG_LOCALES + (PSEUDO_
 # builds enabling either real CJK locale require the 32 MiB profile.
 INITIALLY_SUPPORTED_LOCALES: Tuple[str, ...] = ("en", PSEUDO_LOCALE)
 REAL_CJK_LOCALES: Tuple[str, ...] = ("ja", "zh-Hans")
+REAL_EU_LOCALES: Tuple[str, ...] = ("fr", "de", "es", "it")
+REAL_LOCALIZED_LOCALES: Tuple[str, ...] = REAL_CJK_LOCALES + REAL_EU_LOCALES
 CONFIGURABLE_LOCALES: Tuple[str, ...] = POPULATED_CATALOG_LOCALES
 
 DEFAULT_LOCALE = "en"

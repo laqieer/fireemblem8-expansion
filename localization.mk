@@ -17,10 +17,11 @@ LOCALIZATION_OUT_DIR := build/expansion-localization/generated
 
 .PHONY: localization-validate localization-generate localization-check \
 	localization-test localization-budget localized-ui-graphics-check \
-	localized-ui-graphics-extract
+	localized-ui-graphics-extract eu-localization-check eu-localization-extract
 
 LOCALIZED_UI_GRAPHICS_FE8J_ROOT ?= ../fireemblem8j
 LOCALIZED_UI_GRAPHICS_FE8CN_ROM ?= ../FE8CN.gba
+EU_LOCALIZATION_ROM ?= ../FE8EU(EnFrDeEsIt).gba
 
 # validate -- load + fully validate texts/expansion/registry.json +
 # catalog.en.json (duplicate/sparse/out-of-order/invalid/reused-tombstone
@@ -66,3 +67,11 @@ localized-ui-graphics-extract:
 	python3 scripts/localization/extract_ui_graphics.py extract \
 		--fe8j-root "$(LOCALIZED_UI_GRAPHICS_FE8J_ROOT)" \
 		--fe8cn-rom "$(LOCALIZED_UI_GRAPHICS_FE8CN_ROM)"
+
+eu-localization-check:
+	python3 -m scripts.localization.eu check
+	python3 -m scripts.localization.eu_mapping check
+
+eu-localization-extract:
+	python3 -m scripts.localization.eu extract --rom "$(EU_LOCALIZATION_ROM)"
+	python3 -m scripts.localization.eu_mapping generate

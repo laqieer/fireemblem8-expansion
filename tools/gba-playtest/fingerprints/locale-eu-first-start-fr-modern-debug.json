@@ -1,0 +1,106 @@
+{
+  "checkpoints": [
+    {
+      "frame": 600,
+      "framebuffer_hash": "fnv1a64-rgb24:e856840dcc07d0c0",
+      "name": "five-language-selector-shown",
+      "probes": [
+        {
+          "address": "0x02031a94",
+          "size": 1,
+          "value": "0x01"
+        },
+        {
+          "address": "0x02031a96",
+          "size": 1,
+          "value": "0x01"
+        },
+        {
+          "address": "0x02031a97",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "0x02031a98",
+          "size": 1,
+          "value": "0x01"
+        },
+        {
+          "address": "0x02031a99",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "0x02031a9b",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "0x02031a9c",
+          "size": 1,
+          "value": "0x05"
+        },
+        {
+          "address": "0x02031a9e",
+          "size": 2,
+          "value": "0x0000"
+        },
+        {
+          "address": "0x02031aa0",
+          "size": 2,
+          "value": "0x0001"
+        },
+        {
+          "address": "0x02031aa6",
+          "size": 1,
+          "value": "0x01"
+        }
+      ]
+    },
+    {
+      "frame": 800,
+      "framebuffer_hash": "fnv1a64-rgb24:e39b31bd4ef59d25",
+      "name": "french-committed",
+      "probes": [
+        {
+          "address": "0x02031a94",
+          "size": 1,
+          "value": "0x00"
+        },
+        {
+          "address": "0x02031a9a",
+          "size": 1,
+          "value": "0x03"
+        },
+        {
+          "address": "0x02031a9b",
+          "size": 1,
+          "value": "0x03"
+        },
+        {
+          "address": "0x02031a9c",
+          "size": 1,
+          "value": "0x05"
+        },
+        {
+          "address": "0x02031a9e",
+          "size": 2,
+          "value": "0x0001"
+        },
+        {
+          "address": "0x02031aa6",
+          "size": 1,
+          "value": "0x00"
+        }
+      ]
+    }
+  ],
+  "format_version": 2,
+  "rom": {
+    "game_code": "BE8E",
+    "sha1": "b2c3660473825f8b588c647274937fc61f4e5fb1",
+    "size": 33554432,
+    "title": "FIREEMBLEM2E"
+  },
+  "scenario": "locale-eu-first-start-fr-modern-debug"
+}

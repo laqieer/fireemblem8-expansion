@@ -22,6 +22,7 @@ PYTEST_ENV := PYTHONDONTWRITEBYTECODE=1
 	game-localization-final-font-check \
 	game-localization-text-edits-generate \
 	game-localization-text-edits-check \
+	game-localization-eu-check \
 	game-localization-final-check
 
 game-localization-validate:
@@ -71,6 +72,10 @@ game-localization-budget:
 	$(PYTEST_ENV) $(PYTHON3) -m scripts.localization.game_catalog budget \
 		--out-dir $(GAME_LOCALIZATION_OUT_DIR) \
 		--enabled-locales "$(GAME_LOCALIZATION_ENABLED_LOCALES)"
+
+game-localization-eu-check:
+	$(PYTEST_ENV) $(PYTHON3) -m scripts.localization.game_catalog validate \
+		--enabled-locales "fr,de,es,it"
 
 game-localization-final-authored-check:
 	$(PYTEST_ENV) $(PYTHON3) -m scripts.localization.game_locales \

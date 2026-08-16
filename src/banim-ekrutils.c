@@ -1,4 +1,5 @@
 #include "global.h"
+#include "localized_ui_graphics.h"
 #include "proc.h"
 #include "hardware.h"
 #include "anime.h"
@@ -343,6 +344,9 @@ void SpellFx_WriteBgMapExt(struct Anim * anim, const u16 * src, int width, int h
 void SpellFx_RegisterObjGfx(const u16 * img, u32 size)
 {
     u16 * dst = OBJ_VRAM0 + VRAMOFF_BANIM_SPELL_OBJ;
+#if LOCALIZED_UI_GRAPHICS_EU_ENABLED
+    img = LocalizedEuUiGraphics_RemapCompressed(img);
+#endif
     LZ77UnCompWram(img, gBuf_Banim);
     RegisterDataMove(gBuf_Banim, dst, size);
 }
@@ -356,6 +360,9 @@ void SpellFx_RegisterObjPal(const u16 * pal, u32 size)
 void SpellFx_RegisterBgGfx(const u16 * img, u32 size)
 {
     u16 *dst = (void *)BG_VRAM + VRAMOFF_BANIM_SPELL_BG;
+#if LOCALIZED_UI_GRAPHICS_EU_ENABLED
+    img = LocalizedEuUiGraphics_RemapCompressed(img);
+#endif
     LZ77UnCompWram(img, gSpellAnimBgfx);
     RegisterDataMove(gSpellAnimBgfx, dst, size);
 }
