@@ -8,25 +8,25 @@
       "table_address": "0x08A4663C",
       "variants": {
         "de": {
-          "path": "graphics/localized_ui/eu/de/ap/Obj_MapAnimMISS.ap.bin",
+          "path": "graphics/localized_ui/eu/de/ap/Obj_MapAnimMISS.ap",
           "sha256": "33d35128456855e3518f78ce6726f0ec9ce237db9ffc30a66de4e9fb9021b5f7",
           "size": 380,
           "source_address": "0x08A50C18"
         },
         "es": {
-          "path": "graphics/localized_ui/eu/es/ap/Obj_MapAnimMISS.ap.bin",
+          "path": "graphics/localized_ui/eu/es/ap/Obj_MapAnimMISS.ap",
           "sha256": "6e4e79e7d0f7f5c0e6b48f15629f41e3c7711d444d165036bcec3b62730478bd",
           "size": 324,
           "source_address": "0x08A50F94"
         },
         "fr": {
-          "path": "graphics/localized_ui/eu/fr/ap/Obj_MapAnimMISS.ap.bin",
+          "path": "graphics/localized_ui/eu/fr/ap/Obj_MapAnimMISS.ap",
           "sha256": "b3fd2b572091487274621741aadf005cbd0a68d4b39fe6562c20d4c620679347",
           "size": 504,
           "source_address": "0x08A50D98"
         },
         "it": {
-          "path": "graphics/localized_ui/eu/it/ap/Obj_MapAnimMISS.ap.bin",
+          "path": "graphics/localized_ui/eu/it/ap/Obj_MapAnimMISS.ap",
           "sha256": "27d132884de45f6828e6595f02e664d206e3891146b252e6e239e5800941724e",
           "size": 380,
           "source_address": "0x08A510DC"
@@ -41,25 +41,25 @@
       "table_address": "0x08A46664",
       "variants": {
         "de": {
-          "path": "graphics/localized_ui/eu/de/ap/obj_MapAnimNODAMAGE.ap.bin",
+          "path": "graphics/localized_ui/eu/de/ap/obj_MapAnimNODAMAGE.ap",
           "sha256": "17bdc78785898f8fe45f9dbbb89b4a84b58e5c86315b8cf177b0ef5bf30f389a",
           "size": 416,
           "source_address": "0x08A51A80"
         },
         "es": {
-          "path": "graphics/localized_ui/eu/es/ap/obj_MapAnimNODAMAGE.ap.bin",
+          "path": "graphics/localized_ui/eu/es/ap/obj_MapAnimNODAMAGE.ap",
           "sha256": "5b57974d4adb8d14991a022ba8ee59e240603d34376f58b01e2fc11b0903a081",
           "size": 464,
           "source_address": "0x08A51DD0"
         },
         "fr": {
-          "path": "graphics/localized_ui/eu/fr/ap/obj_MapAnimNODAMAGE.ap.bin",
+          "path": "graphics/localized_ui/eu/fr/ap/obj_MapAnimNODAMAGE.ap",
           "sha256": "03a06d81b9102c5674d402cf0597702e11a26e05a88a3dfb1915b3e764ce209a",
           "size": 424,
           "source_address": "0x08A51C24"
         },
         "it": {
-          "path": "graphics/localized_ui/eu/it/ap/obj_MapAnimNODAMAGE.ap.bin",
+          "path": "graphics/localized_ui/eu/it/ap/obj_MapAnimNODAMAGE.ap",
           "sha256": "b52d978def0f7a24f6792d9af58246b817611c5a658988b66c057ac20919bd10",
           "size": 416,
           "source_address": "0x08A51FA4"
@@ -74,25 +74,25 @@
       "table_address": "0x08A46CDC",
       "variants": {
         "de": {
-          "path": "graphics/localized_ui/eu/de/ap/gMapanimTorchfx_0.ap.bin",
+          "path": "graphics/localized_ui/eu/de/ap/gMapanimTorchfx_0.ap",
           "sha256": "860a14a2a11cc6c8b272301cba210a7627c83deeb1dd857bfaeeb2145f761b46",
           "size": 960,
           "source_address": "0x08A48F74"
         },
         "es": {
-          "path": "graphics/localized_ui/eu/es/ap/gMapanimTorchfx_0.ap.bin",
+          "path": "graphics/localized_ui/eu/es/ap/gMapanimTorchfx_0.ap",
           "sha256": "53824d78b15a3aea6c5b538e9022e5ea90ce0a546fe8aae93ddf429622ca3a44",
           "size": 996,
           "source_address": "0x08A49EDC"
         },
         "fr": {
-          "path": "graphics/localized_ui/eu/fr/ap/gMapanimTorchfx_0.ap.bin",
+          "path": "graphics/localized_ui/eu/fr/ap/gMapanimTorchfx_0.ap",
           "sha256": "219284f7c8bef085f64e049a36d695c14efdc08377593363fa09c70d9d73bda0",
           "size": 2984,
           "source_address": "0x08A49334"
         },
         "it": {
-          "path": "graphics/localized_ui/eu/it/ap/gMapanimTorchfx_0.ap.bin",
+          "path": "graphics/localized_ui/eu/it/ap/gMapanimTorchfx_0.ap",
           "sha256": "a90e45881be40594060b468d1f0eb030683723d24133d5b10424016f7ea6fc06",
           "size": 1156,
           "source_address": "0x08A4A2C0"

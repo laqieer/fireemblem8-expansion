@@ -706,7 +706,7 @@ def _extract_ap_resources(source: bytes) -> list[dict[str, object]]:
             size = _ap_definition_size(source, address)
             raw = source[_offset(address) : _offset(address) + size]
             relative = (
-                Path(locale) / "ap" / f"{_asset_name(base_symbol)}.ap.bin"
+                Path(locale) / "ap" / f"{_asset_name(base_symbol)}.ap"
             )
             path = UI_ROOT / relative
             write_if_changed(path, raw)

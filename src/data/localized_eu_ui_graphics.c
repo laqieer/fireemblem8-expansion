@@ -20,9 +20,9 @@ extern u8 Img_SoundRoomUiElements[];
 extern u8 Img_GuideScreenBg[];
 extern u8 Img_GuideScreenPanels[];
 
-static const u8 sLocalizedEu_graphics_localized_ui_eu_de_ap_Obj_MapAnimMISS_ap_bin[] __attribute__((aligned(4))) = INCBIN_U8("graphics/localized_ui/eu/de/ap/Obj_MapAnimMISS.ap.bin");
-static const u8 sLocalizedEu_graphics_localized_ui_eu_de_ap_gMapanimTorchfx_0_ap_bin[] __attribute__((aligned(4))) = INCBIN_U8("graphics/localized_ui/eu/de/ap/gMapanimTorchfx_0.ap.bin");
-static const u8 sLocalizedEu_graphics_localized_ui_eu_de_ap_obj_MapAnimNODAMAGE_ap_bin[] __attribute__((aligned(4))) = INCBIN_U8("graphics/localized_ui/eu/de/ap/obj_MapAnimNODAMAGE.ap.bin");
+static const u8 sLocalizedEu_graphics_localized_ui_eu_de_ap_Obj_MapAnimMISS_ap[] __attribute__((aligned(4))) = INCBIN_U8("graphics/localized_ui/eu/de/ap/Obj_MapAnimMISS.ap");
+static const u8 sLocalizedEu_graphics_localized_ui_eu_de_ap_gMapanimTorchfx_0_ap[] __attribute__((aligned(4))) = INCBIN_U8("graphics/localized_ui/eu/de/ap/gMapanimTorchfx_0.ap");
+static const u8 sLocalizedEu_graphics_localized_ui_eu_de_ap_obj_MapAnimNODAMAGE_ap[] __attribute__((aligned(4))) = INCBIN_U8("graphics/localized_ui/eu/de/ap/obj_MapAnimNODAMAGE.ap");
 static const u8 sLocalizedEu_graphics_localized_ui_eu_de_chapter_asset_08A9DE74_4bpp[] __attribute__((aligned(4))) = INCBIN_U8("graphics/localized_ui/eu/de/chapter/asset_08A9DE74.4bpp.lz");
 static const u8 sLocalizedEu_graphics_localized_ui_eu_de_chapter_asset_08AA0A64_4bpp[] __attribute__((aligned(4))) = INCBIN_U8("graphics/localized_ui/eu/de/chapter/asset_08AA0A64.4bpp.lz");
 static const u8 sLocalizedEu_graphics_localized_ui_eu_de_chapter_asset_08AA0CE0_4bpp[] __attribute__((aligned(4))) = INCBIN_U8("graphics/localized_ui/eu/de/chapter/asset_08AA0CE0.4bpp.lz");
@@ -148,9 +148,9 @@ static const u8 sLocalizedEu_graphics_localized_ui_eu_de_subtitle_slide_05_4bpp[
 static const u8 sLocalizedEu_graphics_localized_ui_eu_de_subtitle_slide_05_tsa_bin[] __attribute__((aligned(4))) = INCBIN_U8("graphics/localized_ui/eu/de/subtitle/slide_05.tsa.bin.lz");
 static const u8 sLocalizedEu_graphics_localized_ui_eu_de_subtitle_slide_06_4bpp[] __attribute__((aligned(4))) = INCBIN_U8("graphics/localized_ui/eu/de/subtitle/slide_06.4bpp.lz");
 static const u8 sLocalizedEu_graphics_localized_ui_eu_de_subtitle_slide_06_tsa_bin[] __attribute__((aligned(4))) = INCBIN_U8("graphics/localized_ui/eu/de/subtitle/slide_06.tsa.bin.lz");
-static const u8 sLocalizedEu_graphics_localized_ui_eu_es_ap_Obj_MapAnimMISS_ap_bin[] __attribute__((aligned(4))) = INCBIN_U8("graphics/localized_ui/eu/es/ap/Obj_MapAnimMISS.ap.bin");
-static const u8 sLocalizedEu_graphics_localized_ui_eu_es_ap_gMapanimTorchfx_0_ap_bin[] __attribute__((aligned(4))) = INCBIN_U8("graphics/localized_ui/eu/es/ap/gMapanimTorchfx_0.ap.bin");
-static const u8 sLocalizedEu_graphics_localized_ui_eu_es_ap_obj_MapAnimNODAMAGE_ap_bin[] __attribute__((aligned(4))) = INCBIN_U8("graphics/localized_ui/eu/es/ap/obj_MapAnimNODAMAGE.ap.bin");
+static const u8 sLocalizedEu_graphics_localized_ui_eu_es_ap_Obj_MapAnimMISS_ap[] __attribute__((aligned(4))) = INCBIN_U8("graphics/localized_ui/eu/es/ap/Obj_MapAnimMISS.ap");
+static const u8 sLocalizedEu_graphics_localized_ui_eu_es_ap_gMapanimTorchfx_0_ap[] __attribute__((aligned(4))) = INCBIN_U8("graphics/localized_ui/eu/es/ap/gMapanimTorchfx_0.ap");
+static const u8 sLocalizedEu_graphics_localized_ui_eu_es_ap_obj_MapAnimNODAMAGE_ap[] __attribute__((aligned(4))) = INCBIN_U8("graphics/localized_ui/eu/es/ap/obj_MapAnimNODAMAGE.ap");
 static const u8 sLocalizedEu_graphics_localized_ui_eu_es_chapter_asset_08A9E5E8_4bpp[] __attribute__((aligned(4))) = INCBIN_U8("graphics/localized_ui/eu/es/chapter/asset_08A9E5E8.4bpp.lz");
 static const u8 sLocalizedEu_graphics_localized_ui_eu_es_chapter_asset_08AA46F0_4bpp[] __attribute__((aligned(4))) = INCBIN_U8("graphics/localized_ui/eu/es/chapter/asset_08AA46F0.4bpp.lz");
 static const u8 sLocalizedEu_graphics_localized_ui_eu_es_chapter_asset_08AA4978_4bpp[] __attribute__((aligned(4))) = INCBIN_U8("graphics/localized_ui/eu/es/chapter/asset_08AA4978.4bpp.lz");
@@ -276,9 +276,9 @@ static const u8 sLocalizedEu_graphics_localized_ui_eu_es_subtitle_slide_05_4bpp[
 static const u8 sLocalizedEu_graphics_localized_ui_eu_es_subtitle_slide_05_tsa_bin[] __attribute__((aligned(4))) = INCBIN_U8("graphics/localized_ui/eu/es/subtitle/slide_05.tsa.bin.lz");
 static const u8 sLocalizedEu_graphics_localized_ui_eu_es_subtitle_slide_06_4bpp[] __attribute__((aligned(4))) = INCBIN_U8("graphics/localized_ui/eu/es/subtitle/slide_06.4bpp.lz");
 static const u8 sLocalizedEu_graphics_localized_ui_eu_es_subtitle_slide_06_tsa_bin[] __attribute__((aligned(4))) = INCBIN_U8("graphics/localized_ui/eu/es/subtitle/slide_06.tsa.bin.lz");
-static const u8 sLocalizedEu_graphics_localized_ui_eu_fr_ap_Obj_MapAnimMISS_ap_bin[] __attribute__((aligned(4))) = INCBIN_U8("graphics/localized_ui/eu/fr/ap/Obj_MapAnimMISS.ap.bin");
-static const u8 sLocalizedEu_graphics_localized_ui_eu_fr_ap_gMapanimTorchfx_0_ap_bin[] __attribute__((aligned(4))) = INCBIN_U8("graphics/localized_ui/eu/fr/ap/gMapanimTorchfx_0.ap.bin");
-static const u8 sLocalizedEu_graphics_localized_ui_eu_fr_ap_obj_MapAnimNODAMAGE_ap_bin[] __attribute__((aligned(4))) = INCBIN_U8("graphics/localized_ui/eu/fr/ap/obj_MapAnimNODAMAGE.ap.bin");
+static const u8 sLocalizedEu_graphics_localized_ui_eu_fr_ap_Obj_MapAnimMISS_ap[] __attribute__((aligned(4))) = INCBIN_U8("graphics/localized_ui/eu/fr/ap/Obj_MapAnimMISS.ap");
+static const u8 sLocalizedEu_graphics_localized_ui_eu_fr_ap_gMapanimTorchfx_0_ap[] __attribute__((aligned(4))) = INCBIN_U8("graphics/localized_ui/eu/fr/ap/gMapanimTorchfx_0.ap");
+static const u8 sLocalizedEu_graphics_localized_ui_eu_fr_ap_obj_MapAnimNODAMAGE_ap[] __attribute__((aligned(4))) = INCBIN_U8("graphics/localized_ui/eu/fr/ap/obj_MapAnimNODAMAGE.ap");
 static const u8 sLocalizedEu_graphics_localized_ui_eu_fr_chapter_asset_08A9E234_4bpp[] __attribute__((aligned(4))) = INCBIN_U8("graphics/localized_ui/eu/fr/chapter/asset_08A9E234.4bpp.lz");
 static const u8 sLocalizedEu_graphics_localized_ui_eu_fr_chapter_asset_08AA2990_4bpp[] __attribute__((aligned(4))) = INCBIN_U8("graphics/localized_ui/eu/fr/chapter/asset_08AA2990.4bpp.lz");
 static const u8 sLocalizedEu_graphics_localized_ui_eu_fr_chapter_asset_08AA2CC8_4bpp[] __attribute__((aligned(4))) = INCBIN_U8("graphics/localized_ui/eu/fr/chapter/asset_08AA2CC8.4bpp.lz");
@@ -404,9 +404,9 @@ static const u8 sLocalizedEu_graphics_localized_ui_eu_fr_subtitle_slide_05_4bpp[
 static const u8 sLocalizedEu_graphics_localized_ui_eu_fr_subtitle_slide_05_tsa_bin[] __attribute__((aligned(4))) = INCBIN_U8("graphics/localized_ui/eu/fr/subtitle/slide_05.tsa.bin.lz");
 static const u8 sLocalizedEu_graphics_localized_ui_eu_fr_subtitle_slide_06_4bpp[] __attribute__((aligned(4))) = INCBIN_U8("graphics/localized_ui/eu/fr/subtitle/slide_06.4bpp.lz");
 static const u8 sLocalizedEu_graphics_localized_ui_eu_fr_subtitle_slide_06_tsa_bin[] __attribute__((aligned(4))) = INCBIN_U8("graphics/localized_ui/eu/fr/subtitle/slide_06.tsa.bin.lz");
-static const u8 sLocalizedEu_graphics_localized_ui_eu_it_ap_Obj_MapAnimMISS_ap_bin[] __attribute__((aligned(4))) = INCBIN_U8("graphics/localized_ui/eu/it/ap/Obj_MapAnimMISS.ap.bin");
-static const u8 sLocalizedEu_graphics_localized_ui_eu_it_ap_gMapanimTorchfx_0_ap_bin[] __attribute__((aligned(4))) = INCBIN_U8("graphics/localized_ui/eu/it/ap/gMapanimTorchfx_0.ap.bin");
-static const u8 sLocalizedEu_graphics_localized_ui_eu_it_ap_obj_MapAnimNODAMAGE_ap_bin[] __attribute__((aligned(4))) = INCBIN_U8("graphics/localized_ui/eu/it/ap/obj_MapAnimNODAMAGE.ap.bin");
+static const u8 sLocalizedEu_graphics_localized_ui_eu_it_ap_Obj_MapAnimMISS_ap[] __attribute__((aligned(4))) = INCBIN_U8("graphics/localized_ui/eu/it/ap/Obj_MapAnimMISS.ap");
+static const u8 sLocalizedEu_graphics_localized_ui_eu_it_ap_gMapanimTorchfx_0_ap[] __attribute__((aligned(4))) = INCBIN_U8("graphics/localized_ui/eu/it/ap/gMapanimTorchfx_0.ap");
+static const u8 sLocalizedEu_graphics_localized_ui_eu_it_ap_obj_MapAnimNODAMAGE_ap[] __attribute__((aligned(4))) = INCBIN_U8("graphics/localized_ui/eu/it/ap/obj_MapAnimNODAMAGE.ap");
 static const u8 sLocalizedEu_graphics_localized_ui_eu_it_chapter_asset_08A9E9AC_4bpp[] __attribute__((aligned(4))) = INCBIN_U8("graphics/localized_ui/eu/it/chapter/asset_08A9E9AC.4bpp.lz");
 static const u8 sLocalizedEu_graphics_localized_ui_eu_it_chapter_asset_08AA6414_4bpp[] __attribute__((aligned(4))) = INCBIN_U8("graphics/localized_ui/eu/it/chapter/asset_08AA6414.4bpp.lz");
 static const u8 sLocalizedEu_graphics_localized_ui_eu_it_chapter_asset_08AA667C_4bpp[] __attribute__((aligned(4))) = INCBIN_U8("graphics/localized_ui/eu/it/chapter/asset_08AA667C.4bpp.lz");
@@ -599,9 +599,9 @@ static const struct LocalizedEuResource sLocalizedEuRawResources[] =
 
 static const struct LocalizedEuResource sLocalizedEuApResources[] =
 {
-    { (const void *)Obj_MapAnimMISS, sLocalizedEu_graphics_localized_ui_eu_fr_ap_Obj_MapAnimMISS_ap_bin, sLocalizedEu_graphics_localized_ui_eu_de_ap_Obj_MapAnimMISS_ap_bin, sLocalizedEu_graphics_localized_ui_eu_es_ap_Obj_MapAnimMISS_ap_bin, sLocalizedEu_graphics_localized_ui_eu_it_ap_Obj_MapAnimMISS_ap_bin },
-    { (const void *)obj_MapAnimNODAMAGE, sLocalizedEu_graphics_localized_ui_eu_fr_ap_obj_MapAnimNODAMAGE_ap_bin, sLocalizedEu_graphics_localized_ui_eu_de_ap_obj_MapAnimNODAMAGE_ap_bin, sLocalizedEu_graphics_localized_ui_eu_es_ap_obj_MapAnimNODAMAGE_ap_bin, sLocalizedEu_graphics_localized_ui_eu_it_ap_obj_MapAnimNODAMAGE_ap_bin },
-    { (const void *)gMapanimTorchfx_0, sLocalizedEu_graphics_localized_ui_eu_fr_ap_gMapanimTorchfx_0_ap_bin, sLocalizedEu_graphics_localized_ui_eu_de_ap_gMapanimTorchfx_0_ap_bin, sLocalizedEu_graphics_localized_ui_eu_es_ap_gMapanimTorchfx_0_ap_bin, sLocalizedEu_graphics_localized_ui_eu_it_ap_gMapanimTorchfx_0_ap_bin },
+    { (const void *)Obj_MapAnimMISS, sLocalizedEu_graphics_localized_ui_eu_fr_ap_Obj_MapAnimMISS_ap, sLocalizedEu_graphics_localized_ui_eu_de_ap_Obj_MapAnimMISS_ap, sLocalizedEu_graphics_localized_ui_eu_es_ap_Obj_MapAnimMISS_ap, sLocalizedEu_graphics_localized_ui_eu_it_ap_Obj_MapAnimMISS_ap },
+    { (const void *)obj_MapAnimNODAMAGE, sLocalizedEu_graphics_localized_ui_eu_fr_ap_obj_MapAnimNODAMAGE_ap, sLocalizedEu_graphics_localized_ui_eu_de_ap_obj_MapAnimNODAMAGE_ap, sLocalizedEu_graphics_localized_ui_eu_es_ap_obj_MapAnimNODAMAGE_ap, sLocalizedEu_graphics_localized_ui_eu_it_ap_obj_MapAnimNODAMAGE_ap },
+    { (const void *)gMapanimTorchfx_0, sLocalizedEu_graphics_localized_ui_eu_fr_ap_gMapanimTorchfx_0_ap, sLocalizedEu_graphics_localized_ui_eu_de_ap_gMapanimTorchfx_0_ap, sLocalizedEu_graphics_localized_ui_eu_es_ap_gMapanimTorchfx_0_ap, sLocalizedEu_graphics_localized_ui_eu_it_ap_gMapanimTorchfx_0_ap },
 };
 
 static const struct LocalizedUiGraphicsSubtitleSlide sLocalizedEuFrSubtitles[] =
