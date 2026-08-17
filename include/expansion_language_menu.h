@@ -71,7 +71,7 @@ enum ExpansionLanguageSettingsAction
     EXPANSION_LANGUAGE_SETTINGS_OPEN_MENU = 2,
 };
 
-#define EXPANSION_LANGUAGE_INLINE_MAX 3
+#define EXPANSION_LANGUAGE_INLINE_MAX 4
 
 /*
  * Pure scalar-only decision function -- no SRAM/Proc/GBA-hardware
@@ -91,11 +91,11 @@ enum ExpansionLanguageMenuStartupAction ExpansionLanguageMenu_DecideStartupActio
     enum ExpansionLanguageMenuPromptReason *outPromptReason);
 
 /*
- * Pure settings-row decision logic. Builds with up to three enabled
- * locales select all languages inline. Builds with more than three show
- * the first two locales plus More: moving right from the second locale
- * (or from a current locale outside the first two) opens the full menu,
- * while moving left from an out-of-line locale selects the second inline
+ * Pure settings-row decision logic. Builds with up to four enabled
+ * locales select all languages inline. Builds with more than four show
+ * the first three locales plus More: moving right from the third locale
+ * (or from a current locale outside the first three) opens the full menu,
+ * while moving left from an out-of-line locale selects the third inline
  * locale. `direction` is negative for Left and positive for Right.
  * `outLocale` receives the locale to select, or
  * EXPANSION_LOCALE_INVALID when the full menu should open.
@@ -105,6 +105,23 @@ enum ExpansionLanguageSettingsAction ExpansionLanguageMenu_DecideSettingsAction(
     ExpansionLocaleId currentLocale,
     int direction,
     ExpansionLocaleId *outLocale);
+
+/*
+ * Returns TRUE only when the current locale is represented by the virtual
+ * More slot in the Config row (more than four enabled locales, with the
+ * current locale outside the first three enabled slots). This keeps the
+ * Config screen's A-button routing independent from the directional
+ * transition table.
+ */
+bool8 ExpansionLanguageMenu_IsMoreSelected(
+    u32 enabledLocaleMask,
+    ExpansionLocaleId currentLocale);
+
+/* Pure menu geometry helpers: the engine's menu rows consume two tile rows
+ * each plus a two-tile frame. Menus retain the original y=6 position when
+ * they fit; taller locale menus are centered inside the 20-tile GBA screen. */
+u8 ExpansionLanguageMenu_GetMenuHeight(u8 rowCount);
+u8 ExpansionLanguageMenu_GetMenuTop(u8 rowCount);
 
 /* --- Bounded diagnostic probe (issue #13) -------------------------------- */
 
@@ -223,7 +240,7 @@ void ExpansionLanguageMenu_InitializeSingleLocaleBoot(void);
 /*
  * Opens the full settings submenu as a blocking child of `parent`
  * (typically the Config screen's own ConfigProc). The Config row calls
- * this only through More when more than three locales are enabled.
+ * this only through More when more than four locales are enabled.
  * Selecting a locale here calls ExpansionUserPrefs_Store() (persisting
  * + invalidating the runtime resolver cache) only when it actually
  * differs from the current locale; Back leaves prefs/current locale

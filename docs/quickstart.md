@@ -365,9 +365,9 @@ before the rest of overlay 0; the verifier checks the full
 Configuration's added Language row is the fourteenth option, whose two-tile
 render starts at BG row 31; its icon and text drawing explicitly wrap the
 second tile row to row 0 instead of writing past the 32x32 tilemap buffer.
-The Language row selects up to three enabled locales inline (compact locale
-labels share the same value row). Builds with more than three locales show the
-first two plus `More`; only `More` opens the full submenu. While that submenu
+The Language row selects up to four enabled locales inline (compact locale
+labels share the same value row). Builds with more than four locales show the
+first three plus `More`; only `More` opens the full submenu. While that submenu
 is active Configuration's own hand/scroll sprites are suppressed, and its
 on-end callback redraws the six visible rows and help text after cleanup.
 

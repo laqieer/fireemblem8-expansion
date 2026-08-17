@@ -933,7 +933,7 @@
       "source_text_sha256": "e1c151419f9365580a1819e3f2db6805767d2e5ed46b820dafb0f95ce85276a7",
       "subsystem": "menu-definition",
       "target_id": "0x0533",
-      "text": "専用[.][X]\n"
+      "text": "専[.][X]\n"
     },
     {
       "english_payload_sha256": "e45250b1f780a8751d1bf47bc3a6a27bd212b98e5bda24a7601a7e5790ba53bf",

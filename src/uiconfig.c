@@ -642,11 +642,11 @@ struct GameOption CONST_DATA gGameOptions[] =
 #ifdef MODERN
     ,
 
-    /* Up to three enabled locales are selected inline. A build with more
-     * than three shows its first two locales plus More, which alone opens
+    /* Up to four enabled locales are selected inline. A build with more
+     * than four shows its first three locales plus More, which alone opens
      * the full settings menu. Labels remain expansion-catalog strings
      * drawn by GAME_OPTION_LANGUAGE special cases below; these selectors
-     * only provide the three hand/cursor x positions without changing
+     * only provide the four hand/cursor x positions without changing
      * struct GameOption's fixed selectors[4] ABI. */
     [GAME_OPTION_LANGUAGE] =
     {
@@ -654,9 +654,9 @@ struct GameOption CONST_DATA gGameOptions[] =
         .selectors =
         {
             { MSG_000, MSG_000, 112, 0 },
-            { MSG_000, MSG_000, 152, 0 },
-            { MSG_000, MSG_000, 192, 0 },
-            { MSG_000, MSG_000, 192, 0 },
+            { MSG_000, MSG_000, 136, 0 },
+            { MSG_000, MSG_000, 160, 0 },
+            { MSG_000, MSG_000, 184, 0 },
         },
         .icon = 0x22, // dedicated language/globe icon slot in Img_ConfigUiIcons
         .func = LanguageOptionEntryHandler,
@@ -784,8 +784,8 @@ static u8 GetLanguageInlineSelectedIndex(void)
         if (locales[i] != current)
             continue;
 
-        if (count > EXPANSION_LANGUAGE_INLINE_MAX && i >= 2)
-            return 2;
+        if (count > EXPANSION_LANGUAGE_INLINE_MAX && i >= EXPANSION_LANGUAGE_INLINE_MAX - 1)
+            return EXPANSION_LANGUAGE_INLINE_MAX - 1;
 
         return i;
     }
@@ -839,6 +839,7 @@ static void DrawLanguageOptionValueTexts(struct Text *text)
     ExpansionLocaleId current = ExpansionLocale_GetCurrent();
     u8 count = GetLanguageEnabledLocales(locales);
     u8 displayCount = count;
+    int baseX = gGameOptions[GAME_OPTION_LANGUAGE].selectors[0].xPos;
     u8 i;
 
     if (displayCount > EXPANSION_LANGUAGE_INLINE_MAX)
@@ -849,10 +850,11 @@ static void DrawLanguageOptionValueTexts(struct Text *text)
         const char *label;
         bool8 selected;
 
-        if (count > EXPANSION_LANGUAGE_INLINE_MAX && i == 2)
+        if (count > EXPANSION_LANGUAGE_INLINE_MAX && i == EXPANSION_LANGUAGE_INLINE_MAX - 1)
         {
             label = ExpansionLocale_ResolveCurrent(EXP_MSG_LANGUAGE_SETTINGS_MORE);
-            selected = (current != locales[0] && current != locales[1]);
+            selected = ExpansionLanguageMenu_IsMoreSelected(
+                GetLanguageEnabledLocaleMask(), current);
         }
         else
         {
@@ -860,9 +862,17 @@ static void DrawLanguageOptionValueTexts(struct Text *text)
             selected = (current == locales[i]);
         }
 
-        Text_SetCursor(text, i * 40);
+        Text_SetCursor(
+            text,
+            gGameOptions[GAME_OPTION_LANGUAGE].selectors[i].xPos - baseX);
         Text_SetColor(text, selected ? TEXT_COLOR_SYSTEM_BLUE : TEXT_COLOR_SYSTEM_GRAY);
-        DrawLanguageOptionLabel(text, label, (i == 2) ? 31 : 38);
+        DrawLanguageOptionLabel(
+            text,
+            label,
+            (i + 1 < displayCount)
+                ? gGameOptions[GAME_OPTION_LANGUAGE].selectors[i + 1].xPos
+                    - gGameOptions[GAME_OPTION_LANGUAGE].selectors[i].xPos - 2
+                : 32);
     }
 }
 #endif
@@ -1592,6 +1602,19 @@ void Config_Loop_KeyHandler(struct ConfigProc * proc)
         }
         else if (gKeyStatusPtr->newKeys & (A_BUTTON))
         {
+#ifdef MODERN
+            if (gGameOptionsUiOrder[gConfigUiState->selectedOptionIdx] == GAME_OPTION_LANGUAGE)
+            {
+                if (ExpansionLanguageMenu_IsMoreSelected(
+                    GetLanguageEnabledLocaleMask(), ExpansionLocale_GetCurrent()))
+                {
+                    ExpansionLanguageMenu_OpenSettings(proc);
+                }
+
+                break;
+            }
+#endif
+
             if ((gConfigUiState->source & CONFIG_UI_SOURCE_FROMPREP) && (PrepGetDeployedUnitAmt() == 0))
             {
                 break;
@@ -1712,7 +1735,10 @@ void Config_Loop_KeyHandler(struct ConfigProc * proc)
         break;
     }
 
-    BG_SetPosition(BG_1, 0, gConfigUiState->bg1YOffset);
+#ifdef MODERN
+    if (!gExpansionLanguageMenuProbe.settingsActive)
+#endif
+        BG_SetPosition(BG_1, 0, gConfigUiState->bg1YOffset);
 
     return;
 }

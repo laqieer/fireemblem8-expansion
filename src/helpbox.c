@@ -237,17 +237,57 @@ int DrawHelpBoxWeaponLabels(int item)
     return 2;
 }
 
+static bool8 GetHelpBoxWeaponRangeAndWeightPositions(
+    int rangeWidth,
+    int *rangeX,
+    int *weightX)
+{
+    const int contentWidth = 0x90;
+    const int weightWidth = 16;
+    const int rangeMinimumX = 48;
+    const int gap = 4;
+
+    *weightX = contentWidth - weightWidth;
+    *rangeX = 67;
+
+    if (*rangeX + rangeWidth + gap > *weightX)
+        *rangeX = *weightX - rangeWidth - gap;
+
+    if (*rangeX < rangeMinimumX)
+        return FALSE;
+
+    return TRUE;
+}
+
 //! FE8U = 0x08089CD4
 void DrawHelpBoxWeaponStats(int item)
 {
+    int rangeX;
+    int weightX;
+    const char *range;
+
+    range = GetItemDisplayRangeString(item);
+    GetHelpBoxWeaponRangeAndWeightPositions(
+        GetStringTextLen(range), &rangeX, &weightX);
+
     Text_InsertDrawString(&gHelpBoxSt.text[0], 32, 7, GetItemDisplayRankString(item));
-    Text_InsertDrawString(&gHelpBoxSt.text[0], 67, 7, GetItemDisplayRangeString(item));
-    Text_InsertDrawNumberOrBlank(&gHelpBoxSt.text[0], 129, 7, GetItemWeight(item));
+    Text_InsertDrawString(&gHelpBoxSt.text[0], rangeX, 7, range);
+    Text_InsertDrawNumberOrBlank(&gHelpBoxSt.text[0], weightX, 7, GetItemWeight(item));
 
     Text_InsertDrawNumberOrBlank(&gHelpBoxSt.text[1], 32, 7, GetItemMight(item));
     Text_InsertDrawNumberOrBlank(&gHelpBoxSt.text[1], 81, 7, GetItemHit(item));
     Text_InsertDrawNumberOrBlank(&gHelpBoxSt.text[1], 129, 7, GetItemCrit(item));
 }
+
+#ifdef FE8_TEXT_CONSUMER_HOST_TEST
+void HelpBox_TestGetWeaponRangeAndWeightPositions(
+    int rangeWidth,
+    int *rangeX,
+    int *weightX)
+{
+    GetHelpBoxWeaponRangeAndWeightPositions(rangeWidth, rangeX, weightX);
+}
+#endif
 
 //! FE8U = 0x08089D50
 int DrawHelpBoxStaffLabels(int item)
@@ -778,6 +818,15 @@ s8 IsHelpBoxMoveCtrlActive(void) {
 }
 
 //! FE8U = 0x0808A384
+static bool8 HelpBoxDescriptionHasVisibleContent(const char *text)
+{
+#ifdef FE8_TEXT_UTF8_ENABLED
+    return TextUtf8_HasVisibleContent(text);
+#else
+    return (bool8)(GetStringTextLen(text) > 8);
+#endif
+}
+
 void ApplyHelpBoxContentSize_bug(struct HelpBoxProc * proc, int w, int h) {
 
     w = (w + 0x1f) & 0xe0;
@@ -785,7 +834,11 @@ void ApplyHelpBoxContentSize_bug(struct HelpBoxProc * proc, int w, int h) {
     switch (GetHelpBoxItemInfoKind_bug(proc->item)) {
         case 1:
             w = 0xA0;
-            h = h + 0x20;
+            if (HelpBoxDescriptionHasVisibleContent(
+                    GetStringFromIndex(proc->mid)))
+                h = h + 0x20;
+            else
+                h = h + 0x10;
 
             break;
 

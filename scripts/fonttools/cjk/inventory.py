@@ -448,7 +448,9 @@ def collect_inventory(root: Path) -> Dict[str, object]:
             "runtime_usage": {
                 "record_count": len(usage_records),
                 "game_target_count": 3414,
-                "expansion_key_count": 53,
+                "expansion_key_count": locale_metadata["expansion"][
+                    "active_key_count"
+                ],
                 "classifications": usage_counts,
                 "unclassified_count": 0,
             },

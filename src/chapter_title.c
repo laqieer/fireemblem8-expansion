@@ -118,7 +118,7 @@ void DrawChapterTitleStrEx(u16 * tm, int pal, int c)
     tsa = LocalizedUiGraphics_GetChapterTitleTsa();
     if (localizedTitle != 0 && localizedTitle->introLeft != 0 && tsa != 0) {
         Decompress(tsa, gGenericBuffer);
-        CallARM_FillTileRect(tm, gGenericBuffer, (u16)TILEREF(0x280, pal));
+        CallARM_FillTileRect(gBG0TilemapBuffer, gGenericBuffer, (u16)TILEREF(0x280, pal));
         BG_SetPosition(0, 0, 2);
         return;
     }

@@ -50,6 +50,7 @@ struct LocalizedUiGraphicsChapterTitle
 #if LOCALIZED_UI_GRAPHICS_CJK_ENABLED
 const struct LocalizedUiGraphicsTitle *LocalizedUiGraphics_GetTitle(void);
 const u8 *LocalizedUiGraphics_GetSaveMenuOptions(void);
+const u8 *LocalizedUiGraphics_GetSaveMenuMainSprites(void);
 const struct LocalizedUiGraphicsSubtitleSlide *LocalizedUiGraphics_GetSubtitleSlides(void);
 const struct LocalizedUiGraphicsChapterTitle *LocalizedUiGraphics_GetChapterTitle(u32 titleId);
 const u8 *LocalizedUiGraphics_GetChapterTitleFrame(void);

@@ -177,23 +177,58 @@ int main(void)
         EXPANSION_LANGUAGE_SETTINGS_NONE, EXPANSION_LOCALE_ZH_HANS,
         "settings/en-ja-zh/zh-right-end");
 
-    /* The production four-locale profile (en, ja, zh-Hans, qps-ploc)
-     * exposes English, Japanese, More. */
+    /* Exactly four locales remain entirely inline. */
     ok &= CheckSettings(0x87u, EXPANSION_LOCALE_EN, +1,
         EXPANSION_LANGUAGE_SETTINGS_SELECT_LOCALE, EXPANSION_LOCALE_JA,
         "settings/en-ja-zh-qps/first-right");
     ok &= CheckSettings(0x87u, EXPANSION_LOCALE_JA, +1,
-        EXPANSION_LANGUAGE_SETTINGS_OPEN_MENU, EXPANSION_LOCALE_INVALID,
-        "settings/en-ja-zh-qps/second-right-more");
+        EXPANSION_LANGUAGE_SETTINGS_SELECT_LOCALE, EXPANSION_LOCALE_ZH_HANS,
+        "settings/en-ja-zh-qps/second-right");
     ok &= CheckSettings(0x87u, EXPANSION_LOCALE_ZH_HANS, +1,
-        EXPANSION_LANGUAGE_SETTINGS_OPEN_MENU, EXPANSION_LOCALE_INVALID,
-        "settings/en-ja-zh-qps/zh-right-more");
+        EXPANSION_LANGUAGE_SETTINGS_SELECT_LOCALE, EXPANSION_LOCALE_QPS_PLOC,
+        "settings/en-ja-zh-qps/zh-right");
     ok &= CheckSettings(0x87u, EXPANSION_LOCALE_QPS_PLOC, -1,
-        EXPANSION_LANGUAGE_SETTINGS_SELECT_LOCALE, EXPANSION_LOCALE_JA,
+        EXPANSION_LANGUAGE_SETTINGS_SELECT_LOCALE, EXPANSION_LOCALE_ZH_HANS,
         "settings/en-ja-zh-qps/qps-left");
     ok &= CheckSettings(0x87u, EXPANSION_LOCALE_JA, -1,
         EXPANSION_LANGUAGE_SETTINGS_SELECT_LOCALE, EXPANSION_LOCALE_EN,
         "settings/en-ja-zh-qps/second-left");
+
+    /* More than four locales expose the first three real locales plus More.
+     * The production all-locale profile has seven enabled locales. */
+    ok &= CheckSettings(0x7Fu, EXPANSION_LOCALE_EN, +1,
+        EXPANSION_LANGUAGE_SETTINGS_SELECT_LOCALE, EXPANSION_LOCALE_JA,
+        "settings/seven/first-right");
+    ok &= CheckSettings(0x7Fu, EXPANSION_LOCALE_JA, +1,
+        EXPANSION_LANGUAGE_SETTINGS_SELECT_LOCALE, EXPANSION_LOCALE_ZH_HANS,
+        "settings/seven/second-right");
+    ok &= CheckSettings(0x7Fu, EXPANSION_LOCALE_ZH_HANS, +1,
+        EXPANSION_LANGUAGE_SETTINGS_OPEN_MENU, EXPANSION_LOCALE_INVALID,
+        "settings/seven/third-right-more");
+    ok &= CheckSettings(0x7Fu, EXPANSION_LOCALE_FR, -1,
+        EXPANSION_LANGUAGE_SETTINGS_SELECT_LOCALE, EXPANSION_LOCALE_ZH_HANS,
+        "settings/seven/out-of-line-left");
+    ok &= CheckSettings(0x7Fu, EXPANSION_LOCALE_IT, +1,
+        EXPANSION_LANGUAGE_SETTINGS_OPEN_MENU, EXPANSION_LOCALE_INVALID,
+        "settings/seven/out-of-line-right-more");
+
+    CHECK(ExpansionLanguageMenu_IsMoreSelected(0x7Fu, EXPANSION_LOCALE_FR),
+        "seven-locale out-of-line current must select More");
+    CHECK(!ExpansionLanguageMenu_IsMoreSelected(0x7Fu, EXPANSION_LOCALE_ZH_HANS),
+        "third real locale must not select More");
+    CHECK(!ExpansionLanguageMenu_IsMoreSelected(0x87u, EXPANSION_LOCALE_QPS_PLOC),
+        "exactly four locales must not select More");
+
+    CHECK(ExpansionLanguageMenu_GetMenuTop(5) == 6,
+        "five locale rows must retain the original y=6 position");
+    CHECK(ExpansionLanguageMenu_GetMenuHeight(7) == 16,
+        "seven locale rows must use a 16-tile menu height");
+    CHECK(ExpansionLanguageMenu_GetMenuTop(7) == 2,
+        "seven locale rows must be centered at y=2");
+    CHECK(ExpansionLanguageMenu_GetMenuHeight(8) == 18,
+        "seven locales plus Back must use an 18-tile menu height");
+    CHECK(ExpansionLanguageMenu_GetMenuTop(8) == 1,
+        "seven locales plus Back must be centered at y=1");
 
     /* Defensive invalid current locale adopts the first enabled choice. */
     ok &= CheckSettings(

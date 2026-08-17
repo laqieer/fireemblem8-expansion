@@ -28059,6 +28059,70 @@
           ]
         },
         {
+          "id": "expansion:framework.locale_name.fr",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:framework.locale_name.de",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:framework.locale_name.es",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:framework.locale_name.it",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:framework.locale_short_name.fr",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:framework.locale_short_name.de",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:framework.locale_short_name.es",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:framework.locale_short_name.it",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
           "id": "static:sTacticianGridJaHiragana",
           "mapping_source_kind": "static_ui",
           "reason": "tactician name-entry grid system-font consumer",
@@ -28078,12 +28142,12 @@
       "summary": {
         "classifications": {
           "both": 319,
-          "system": 1978,
+          "system": 1986,
           "talk": 1172
         },
-        "expansion_key_count": 53,
+        "expansion_key_count": 61,
         "game_target_count": 3414,
-        "record_count": 3469,
+        "record_count": 3477,
         "unclassified_count": 0
       }
     },
@@ -56145,6 +56209,70 @@
           ]
         },
         {
+          "id": "expansion:framework.locale_name.fr",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:framework.locale_name.de",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:framework.locale_name.es",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:framework.locale_name.it",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:framework.locale_short_name.fr",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:framework.locale_short_name.de",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:framework.locale_short_name.es",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
+          "id": "expansion:framework.locale_short_name.it",
+          "mapping_source_kind": "expansion",
+          "reason": "expansion UI registry system-font consumer",
+          "styles": [
+            "system"
+          ]
+        },
+        {
           "id": "static:sTacticianGridZhHansFrequent",
           "mapping_source_kind": "static_ui",
           "reason": "tactician name-entry grid system-font consumer",
@@ -56164,12 +56292,12 @@
       "summary": {
         "classifications": {
           "both": 319,
-          "system": 1978,
+          "system": 1986,
           "talk": 1172
         },
-        "expansion_key_count": 53,
+        "expansion_key_count": 61,
         "game_target_count": 3414,
-        "record_count": 3469,
+        "record_count": 3477,
         "unclassified_count": 0
       }
     }

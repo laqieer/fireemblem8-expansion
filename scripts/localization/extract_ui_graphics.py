@@ -40,6 +40,7 @@ VARIANTS = {
             "labels": 0x08B45958,
         },
         "menu": 0x08AA59A0,
+        "main_sprites": 0x08AA39DC,
         "chapter_frame": 0x08A8BFA4,
     },
     "zh-Hans": {
@@ -52,6 +53,7 @@ VARIANTS = {
             "labels": 0x08B3C550,
         },
         "menu": 0x08AA59A0,
+        "main_sprites": 0x08B44B40,
         # The localized literal in _PutChapterTitleGfx at 0x0808B924.
         "chapter_frame": 0x08A7E188,
     },
@@ -123,20 +125,25 @@ def _png_chunk(kind: bytes, payload: bytes) -> bytes:
     )
 
 
-def tiled_dimensions(raw: bytes) -> tuple[int, int, int]:
+def tiled_dimensions(raw: bytes, tiles_per_row: int | None = None) -> tuple[int, int, int]:
     if len(raw) == 0 or len(raw) % 32:
         raise ValueError("4bpp tile data must contain a nonzero whole tile count")
     tiles = len(raw) // 32
-    tiles_per_row = max(
-        divisor for divisor in range(1, min(32, tiles) + 1) if tiles % divisor == 0
-    )
+    if tiles_per_row is None:
+        tiles_per_row = max(
+            divisor for divisor in range(1, min(32, tiles) + 1) if tiles % divisor == 0
+        )
+    elif tiles_per_row <= 0 or tiles_per_row > 32 or tiles % tiles_per_row:
+        raise ValueError("4bpp tile data dimensions are invalid")
     return tiles_per_row * 8, (tiles // tiles_per_row) * 8, tiles_per_row
 
 
-def encode_tiled_4bpp_png(raw: bytes) -> tuple[bytes, dict[str, int]]:
+def encode_tiled_4bpp_png(
+    raw: bytes, tiles_per_row: int | None = None
+) -> tuple[bytes, dict[str, int]]:
     """Encode GBA tile-order 4bpp bytes as a canonical indexed PNG source."""
 
-    width, height, tiles_per_row = tiled_dimensions(raw)
+    width, height, tiles_per_row = tiled_dimensions(raw, tiles_per_row)
     pixels = bytearray(width * height)
     for tile in range(len(raw) // 32):
         tile_x = (tile % tiles_per_row) * 8
@@ -252,6 +259,7 @@ def make_asset(
     address: int,
     source: bytes,
     extension: str,
+    tiles_per_row: int | None = None,
 ) -> dict[str, object]:
     raw = decomp_lz77(source, address - 0x08000000)
     relative_path = f"{locale}/{name}.{extension}"
@@ -263,7 +271,7 @@ def make_asset(
         "c_name": c_name(locale, f"{name}_{extension.replace('.', '_')}"),
     }
     if extension == "png":
-        png, dimensions = encode_tiled_4bpp_png(raw)
+        png, dimensions = encode_tiled_4bpp_png(raw, tiles_per_row)
         if decode_tiled_4bpp_png(png)[0] != raw:
             raise ValueError(f"{relative_path}: PNG round trip changed tile bytes")
         write_if_changed(path, png)
@@ -298,11 +306,16 @@ def build_variant(locale: str, source: bytes) -> dict[str, object]:
     assets: list[dict[str, object]] = []
     by_address: dict[int, int] = {}
 
-    def add(name: str, address: int, extension: str = "png") -> int:
+    def add(
+        name: str,
+        address: int,
+        extension: str = "png",
+        tiles_per_row: int | None = None,
+    ) -> int:
         if address in by_address:
             return by_address[address]
         by_address[address] = len(assets)
-        assets.append(make_asset(locale, name, address, source, extension))
+        assets.append(make_asset(locale, name, address, source, extension, tiles_per_row))
         return by_address[address]
 
     title = {
@@ -310,6 +323,7 @@ def build_variant(locale: str, source: bytes) -> dict[str, object]:
         for key, value in spec["title"].items()
     }
     menu = add("menu/main_extra_options", spec["menu"])
+    main_sprites = add("menu/main_sprites", spec["main_sprites"], tiles_per_row=32)
 
     subtitle: list[dict[str, int]] = []
     for index in range(SUBTITLE_COUNT):
@@ -341,6 +355,7 @@ def build_variant(locale: str, source: bytes) -> dict[str, object]:
         "rom_path": spec["rom_path"],
         "title": title,
         "menu": menu,
+        "main_sprites": main_sprites,
         "subtitle": subtitle,
         "chapter": {
             "table_address": f"0x{CHAPTER_TABLE:08X}",
@@ -493,6 +508,18 @@ def generate_data_source(variants: dict[str, dict[str, object]]) -> bytes:
             "        return %s;" % asset_ref(variants["ja"], variants["ja"]["menu"]),
             "    case EXPANSION_LOCALE_ZH_HANS:",
             "        return %s;" % asset_ref(variants["zh-Hans"], variants["zh-Hans"]["menu"]),
+            "    default:",
+            "        return 0;",
+            "    }",
+            "}",
+            "",
+            "const u8 *LocalizedUiGraphics_GetSaveMenuMainSprites(void)",
+            "{",
+            "    switch (LocalizedUiGraphics_CurrentCjkLocale()) {",
+            "    case EXPANSION_LOCALE_JA:",
+            "        return %s;" % asset_ref(variants["ja"], variants["ja"]["main_sprites"]),
+            "    case EXPANSION_LOCALE_ZH_HANS:",
+            "        return %s;" % asset_ref(variants["zh-Hans"], variants["zh-Hans"]["main_sprites"]),
             "    default:",
             "        return 0;",
             "    }",

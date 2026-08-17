@@ -149,7 +149,8 @@ static const char *TextUtf8_NextInternal(
         if (bytes[1] == 0x40)
         {
             TextUtf8_SetToken(
-                out, TEXT_UTF8_TOKEN_SCALAR, 0x3000, 0, 2, 0, 0,
+                out, TEXT_UTF8_TOKEN_SCALAR, TEXT_UTF8_LEGACY_SPACE_SCALAR,
+                0, 2, 0, 0,
                 TEXT_UTF8_TOKEN_FLAG_LEGACY_SPACE);
             return text + 2;
         }
@@ -268,6 +269,57 @@ const char *TextUtf8_NextBounded(
     struct TextUtf8Token *out)
 {
     return TextUtf8_NextInternal(text, available, TRUE, out);
+}
+
+static bool8 TextUtf8_IsWhitespace(u32 scalar)
+{
+    if (scalar == TEXT_UTF8_LEGACY_SPACE_SCALAR
+        || scalar == 0x3000
+        || scalar == 0x0085
+        || scalar == 0x00A0
+        || scalar == 0x1680
+        || scalar == 0x2028
+        || scalar == 0x2029
+        || scalar == 0x202F
+        || scalar == 0x205F
+        || scalar == 0xFEFF)
+        return TRUE;
+
+    return (bool8)(
+        (scalar >= 0x2000 && scalar <= 0x200A)
+        || scalar == 0x0009
+        || scalar == 0x000A
+        || scalar == 0x000B
+        || scalar == 0x000C
+        || scalar == 0x000D
+        || scalar == 0x0020
+    );
+}
+
+bool8 TextUtf8_HasVisibleContent(const char *text)
+{
+    struct TextUtf8Token token;
+    const char *next;
+
+    if (text == 0)
+        return FALSE;
+
+    for (;;)
+    {
+        next = TextUtf8_Next(text, &token);
+        if (token.kind == TEXT_UTF8_TOKEN_END)
+            return FALSE;
+        if (token.kind == TEXT_UTF8_TOKEN_SCALAR)
+        {
+            if (!TextUtf8_IsWhitespace(token.scalar))
+                return TRUE;
+        }
+        else if (token.kind == TEXT_UTF8_TOKEN_INVALID)
+        {
+            return TRUE;
+        }
+        text = next;
+    }
 }
 
 #endif /* FE8_TEXT_UTF8_ENABLED */

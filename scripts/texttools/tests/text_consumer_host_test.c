@@ -33,6 +33,8 @@ static u32 GetTestTokenWidth(const char *str)
         return 7;
     if (token.kind != TEXT_UTF8_TOKEN_SCALAR)
         return 0;
+    if (token.scalar == TEXT_UTF8_LEGACY_SPACE_SCALAR)
+        return 6;
     if (token.scalar == 0x3000)
         return 16;
     if (token.scalar < 0x80)
@@ -79,6 +81,26 @@ void NumberToStringAscii(int number, char *buffer)
 {
     sprintf(buffer, "%d", number);
 }
+
+void Scene_TestGetTalkChoiceLabelLayout(
+    int limit,
+    int origin,
+    int firstWidth,
+    int secondWidth,
+    int *firstX,
+    int *secondX,
+    int *step);
+void CgText_TestGetYesNoChoiceLabelLayout(
+    int limit,
+    int firstWidth,
+    int secondWidth,
+    int *firstX,
+    int *secondX,
+    int *step);
+void HelpBox_TestGetWeaponRangeAndWeightPositions(
+    int rangeWidth,
+    int *rangeX,
+    int *weightX);
 
 char *GetTacticianName(void)
 {
@@ -167,6 +189,44 @@ static void TestTalkLengthControlsAndSpacing(void)
     CHECK(GetStrTalkLen(tactText, FALSE) == 24);
 }
 
+static void TestVisibleContentAndWidthAwareLayouts(void)
+{
+    static const char whitespace[] = {
+        (char)0xE3, (char)0x80, (char)0x80,
+        CHFE_L_Pause8, CHFE_L_X
+    };
+    static const char visible[] = {
+        (char)0xE7, (char)0x8C, (char)0xAB, CHFE_L_X
+    };
+    int firstX;
+    int secondX;
+    int step;
+    int rangeX;
+    int weightX;
+
+    CHECK(TextUtf8_HasVisibleContent(whitespace) == FALSE);
+    CHECK(TextUtf8_HasVisibleContent(visible) == TRUE);
+
+    Scene_TestGetTalkChoiceLabelLayout(
+        80, 0, 16, 32, &firstX, &secondX, &step);
+    CHECK(firstX == 8);
+    CHECK(secondX == 48);
+    CHECK(secondX + 32 <= 80);
+    CHECK(step == 40);
+
+    CgText_TestGetYesNoChoiceLabelLayout(
+        72, 16, 32, &firstX, &secondX, &step);
+    CHECK(firstX == 0);
+    CHECK(secondX == 40);
+    CHECK(secondX + 32 <= 72);
+
+    HelpBox_TestGetWeaponRangeAndWeightPositions(
+        64, &rangeX, &weightX);
+    CHECK(rangeX >= 48);
+    CHECK(rangeX + 64 + 4 <= weightX);
+    CHECK(weightX + 16 <= 144);
+}
+
 static void TestNameCopyBounds(void)
 {
     static const char name[] = {
@@ -220,6 +280,7 @@ int main(void)
     TestCgDimensionsAndControlCollision();
     TestHelpDimensionsAndGlyphAdvance();
     TestTalkLengthControlsAndSpacing();
+    TestVisibleContentAndWidthAwareLayouts();
     TestNameCopyBounds();
 
     if (sFailures == 0)

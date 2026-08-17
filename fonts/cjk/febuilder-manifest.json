@@ -75,7 +75,7 @@
     {
       "corpus": {
         "path": "corpora/zh-Hans.system.txt",
-        "sha256": "cb6bc4cdebf2f6aacde603c4db0e0c9e1671105cfaef2b5efe90b312bcb94b67"
+        "sha256": "4d25d6a901669878be6c84a0039854abbfadd7d0aaac3b9d9fc513a30f02a538"
       },
       "font": {
         "byteLength": 8331336,

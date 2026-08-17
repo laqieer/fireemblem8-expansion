@@ -31,7 +31,7 @@ from scripts.fonttools.cjk.package import (
 class CjkFontTests(unittest.TestCase):
     SCRATCH = Path(__file__).resolve().parent / ".scratch"
 
-    def test_expansion_catalog_inventory_provenance_matches_current_53_keys(self):
+    def test_expansion_catalog_inventory_provenance_matches_current_61_keys(self):
         inventory = json.loads((ROOT / "fonts/cjk/inventory.json").read_text())
         registry_path = ROOT / "texts/expansion/registry.json"
         registry = json.loads(registry_path.read_text())
@@ -40,7 +40,7 @@ class CjkFontTests(unittest.TestCase):
             for record in registry["messages"]
             if record["status"] == "active"
         }
-        self.assertEqual(len(active_keys), 53)
+        self.assertEqual(len(active_keys), 61)
 
         catalog_paths = sorted((ROOT / "texts/expansion").glob("catalog.*.json"))
         source_paths = [registry_path, *catalog_paths]
@@ -179,7 +179,16 @@ class CjkFontTests(unittest.TestCase):
                 (ROOT / f"fonts/cjk/corpora/{locale}.talk.txt").read_bytes(),
             )
             usage = record["runtime_usage"]
-            self.assertEqual(usage["record_count"], 3469)
+            expected_record_count = (
+                usage["game_target_count"]
+                + record["expansion"]["active_key_count"]
+                + 2
+            )
+            self.assertEqual(usage["record_count"], expected_record_count)
+            self.assertEqual(
+                usage["expansion_key_count"],
+                record["expansion"]["active_key_count"],
+            )
             self.assertEqual(usage["unclassified_count"], 0)
             self.assertGreater(usage["classifications"]["both"], 0)
 
@@ -198,6 +207,7 @@ class CjkFontTests(unittest.TestCase):
 
     def test_runtime_usage_registry_covers_every_string_without_reunion(self):
         usage = json.loads((ROOT / "fonts/cjk/runtime_usage.json").read_text())
+        inventory = json.loads((ROOT / "fonts/cjk/inventory.json").read_text())
         self.assertEqual(
             usage["policy"],
             {
@@ -208,7 +218,9 @@ class CjkFontTests(unittest.TestCase):
         )
         for locale in ("ja", "zh-Hans"):
             data = usage["locales"][locale]
-            self.assertEqual(len(data["records"]), 3469)
+            expected = inventory["locales"][locale]["runtime_usage"]
+            self.assertEqual(len(data["records"]), expected["record_count"])
+            self.assertEqual(data["summary"], expected)
             self.assertEqual(data["summary"]["unclassified_count"], 0)
             self.assertTrue(
                 all(record["styles"] in (["system"], ["talk"], ["system", "talk"])
@@ -457,6 +469,16 @@ class CjkFontTests(unittest.TestCase):
         }
         self.assertIn("U+7FD4", supplemental)  # 翔
         self.assertIn("U+8BCA", supplemental)  # 诊
+        ja_talk_middle_dot = next(
+            row
+            for row in lock["assets"]["ja.talk"]["glyphs"]
+            if row["scalar"] == "U+30FB"
+        )
+        self.assertEqual(ja_talk_middle_dot["selection_kind"], "same_game_cross_style")
+        self.assertEqual(
+            ja_talk_middle_dot["filename"],
+            "glyph/fe8j/FontItem_E383BB.png",
+        )
         self.assertIn(
             {
                 "filename": "FontText_E383BB.png",

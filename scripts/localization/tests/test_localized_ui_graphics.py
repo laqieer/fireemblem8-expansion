@@ -25,10 +25,30 @@ class LocalizedUiGraphicsTests(unittest.TestCase):
         self.assertEqual(self.manifest["chapter_title_count"], 88)
         self.assertEqual(self.manifest["subtitle_slide_count"], 7)
 
+        expected_main_sprites = {
+            "ja": (
+                "0x08AA39DC",
+                "062c6299df0c57248573202a34e94542ea119badceb9a4be52b3ac4aa7c8e9fd",
+            ),
+            "zh-Hans": (
+                "0x08B44B40",
+                "cd7a9bd0d77a10d1ce08140bf631ec4bb7e90ab7dc1e3734231ffa75ac6a0a1d",
+            ),
+        }
         for locale in ("ja", "zh-Hans"):
             variant = self.manifest["variants"][locale]
             self.assertEqual(set(variant["title"]), {"logo", "labels"})
             self.assertIsInstance(variant["menu"], int)
+            self.assertIsInstance(variant["main_sprites"], int)
+            main_sprites = variant["assets"][variant["main_sprites"]]
+            self.assertEqual(main_sprites["name"], "menu/main_sprites")
+            self.assertEqual(main_sprites["source_address"], expected_main_sprites[locale][0])
+            self.assertEqual(main_sprites["raw_sha256"], expected_main_sprites[locale][1])
+            self.assertEqual(main_sprites["raw_size"], 0x3800)
+            self.assertEqual(
+                main_sprites["dimensions"],
+                {"height": 112, "tiles_per_row": 32, "width": 256},
+            )
             self.assertEqual(len(variant["subtitle"]), 7)
             self.assertEqual(len(variant["chapter"]["entries"]), 88)
 
@@ -100,6 +120,7 @@ class LocalizedUiGraphicsTests(unittest.TestCase):
         )
         self.assertIn("EXPANSION_LOCALE_JA", registry)
         self.assertIn("EXPANSION_LOCALE_ZH_HANS", registry)
+        self.assertIn("LocalizedUiGraphics_GetSaveMenuMainSprites", registry)
         self.assertIn("return 0;", registry)
 
     def test_required_graphics_sources_are_tracked_source_types(self):
@@ -129,12 +150,23 @@ class LocalizedUiGraphicsTests(unittest.TestCase):
         )
 
         intro = (ROOT / "src/chapterintrofx.c").read_text(encoding="utf-8")
-        self.assertIn("DrawChapterTitleStrEx(gBG0TilemapBuffer, 5, titleId);", intro)
+        self.assertIn(
+            "DrawChapterTitleStrEx(TILEMAP_LOCATED(gBG0TilemapBuffer, 3, 9), 5, titleId);",
+            intro,
+        )
         chapter = (ROOT / "src/chapter_title.c").read_text(encoding="utf-8")
-        self.assertIn("CallARM_FillTileRect(tm, gGenericBuffer", chapter)
+        self.assertIn(
+            "CallARM_FillTileRect(gBG0TilemapBuffer, gGenericBuffer", chapter
+        )
 
         save = (ROOT / "src/savemenu.c").read_text(encoding="utf-8")
         terminal = (ROOT / "src/sio_term.c").read_text(encoding="utf-8")
+        self.assertIn("LocalizedUiGraphics_GetSaveMenuMainSprites", save)
+        self.assertEqual(
+            save.count("Decompress(SaveMenu_GetMainSpritesGfx(),"), 2
+        )
+        self.assertIn("return Img_SaveScreenSprits;", save)
+        self.assertNotIn("Decompress(Img_SaveScreenSprits", save)
         self.assertIn("PutChapterTitleGfx(", save)
         self.assertIn("DrawChapterTitleStr(", terminal)
         self.assertNotIn("DrawChapterTitleStrEx(", save)

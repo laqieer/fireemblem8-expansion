@@ -39,7 +39,7 @@ The inventory reads the committed normalized sources:
   reviewed shard;
 - active `texts/expansion` catalog strings, resolved through the English
   catalog only for defensive sparse-profile behavior; the committed JA/ZH
-  catalogs contain all 53 active keys and contribute zero fallback strings.
+  catalogs contain all 61 active keys and contribute zero fallback strings.
 
 Bracketed game controls (named or `[CTRL:HHHH]`) and `{N}` expansion
 placeholders are not glyphs.
@@ -54,7 +54,7 @@ Current deterministic counts:
 | Locale | Source non-ASCII | System glyphs | Talk glyphs |
 | --- | ---: | ---: | --- |
 | `ja` | 1,786 | 1,174 | 1,731 |
-| `zh-Hans` | 2,442 | 1,458 | 2,382 |
+| `zh-Hans` | 2,442 | 1,459 | 2,382 |
 | union | 3,256 | 3,255 | U+3000 is the one spacing scalar |
 
 The sorted corpora are in `fonts/cjk/corpora/`; human-readable scalar maps are
@@ -78,23 +78,26 @@ hash, and its source-game width. It covers the current corpora as follows:
 | Runtime asset | FEHRR source | Original glyphs | FEBuilder fallback |
 | --- | --- | ---: | ---: |
 | `ja.system` | `fe8j` item, then text | 1,098 same-style + 73 cross-style + 3 supplemental | 0 |
-| `ja.talk` | `fe8j` text, then item | 1,730 same-style + 1 cross-style | 0 |
-| `zh-Hans.system` | `fe8cn` item, then text | 1,316 same-style + 106 cross-style + 36 supplemental | 0 |
+| `ja.talk` | `fe8j` text, then item | 1,729 same-style + 2 cross-style | 0 |
+| `zh-Hans.system` | `fe8cn` item, then text | 1,317 same-style + 106 cross-style + 36 supplemental | 0 |
 | `zh-Hans.talk` | `fe8cn` text, then item | 2,354 same-style + 27 supplemental | 1 (`％`, absent from configured tiers) |
 
 The corpora are derived from checked runtime usage, not copied wholesale:
-system has 1,174 JA / 1,458 ZH glyphs; talk has 1,731 JA / 2,382 ZH glyphs.
+system has 1,174 JA / 1,459 ZH glyphs; talk has 1,731 JA / 2,382 ZH glyphs.
 Descriptions are deliberately in both styles. The lock records every runtime
 string's system/talk/both classification and rejects an unclassified string or
 accidental corpus re-union. FEHRR priority is same-game same-style, then
 same-game cross-style, then the pinned FEHRR punctuation/common-language/
-missing-glyph tiers, then the verified full-union FEBuilder baseline. Thus a
-fallback count is never described as an FEBuilder export omission or as proof
-that an original-game glyph is absent. The one remaining fallback is U+FF05
-FULLWIDTH PERCENT in the Simplified-Chinese talk font because it is absent from
-all configured style tiers. FE8J has one duplicate text declaration for U+30FB;
-the first declaration (7 px) is selected and the ignored 1 px declaration is
-recorded in the lock.
+missing-glyph tiers, then the verified full-union FEBuilder baseline. A selected
+same-game PNG that is completely blank is treated as unavailable and follows
+the same-game cross-style fallback path; this keeps blank source art from
+entering the runtime font. Thus a fallback count is never described as an FEBuilder
+export omission or as proof that an original-game glyph is absent. The one
+remaining fallback is U+FF05 FULLWIDTH PERCENT in the Simplified-Chinese talk
+font because it is absent from all configured style tiers. FE8J has one
+duplicate text declaration for U+30FB; the first declaration (7 px) remains
+the selected source-map width, while its blank text PNG uses the visible item
+glyph and the ignored 1 px declaration is recorded in the lock.
 
 To refresh source-priority assets, use a clean checkout with the canonical
 `https://github.com/laqieer/FEHRR.git` `origin`:

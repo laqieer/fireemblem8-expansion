@@ -1,7 +1,7 @@
 {
  "schema_version": 1,
  "name": "locale-settings-real-navigation-multi-modern-debug",
- "description": "Real end-user navigation from a live Prep Map through Options to Configuration's Language row in the two-locale en+qps-ploc debug build. RIGHT selects QPS inline, LEFT selects English inline, and a final RIGHT selects QPS again; settingsActive and settingsOpenCount stay zero throughout, proving builds with no more than three enabled locales never open the More submenu. Probe checkpoints also prove each inline change persists through ExpansionUserPrefs, increments cacheGeneration/settingsChangeCount, and remains selected after Configuration exits.",
+ "description": "Real end-user navigation from a live Prep Map through Options to Configuration's Language row in the two-locale en+qps-ploc debug build. RIGHT selects QPS inline, LEFT selects English inline, and a final RIGHT selects QPS again; settingsActive and settingsOpenCount stay zero throughout, proving builds with no more than four enabled locales never open the More submenu. Probe checkpoints also prove each inline change persists through ExpansionUserPrefs, increments cacheGeneration/settingsChangeCount, and remains selected after Configuration exits.",
  "frames": [
   {
    "start": 90,

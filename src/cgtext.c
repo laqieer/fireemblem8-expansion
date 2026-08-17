@@ -1590,6 +1590,34 @@ void RestartCgTextInterpreter(struct CgTextMainProc * parent)
     return;
 }
 
+static int sYesNoChoiceStep;
+
+static void GetYesNoChoiceLabelLayout(
+    int limit,
+    int firstWidth,
+    int secondWidth,
+    int *firstX,
+    int *secondX,
+    int *step)
+{
+    int right;
+
+    *firstX = 16;
+    *step = 40;
+    if (*step < firstWidth + 8)
+        *step = firstWidth + 8;
+    *secondX = *firstX + *step;
+
+    right = *secondX + secondWidth;
+    if (right > limit)
+    {
+        *firstX -= right - limit;
+        if (*firstX < 0)
+            *firstX = 0;
+        *secondX = *firstX + *step;
+    }
+}
+
 //! FE8U = 0x0808FFE8
 void EndCgTextInterpreter(void)
 {
@@ -1639,7 +1667,9 @@ void YesNoChoice_Loop_KeyHandler(struct YesNoChoiceProc * proc)
         proc->currentChoice = TALK_CHOICE_NO;
     }
 
-    DisplayUiHand(proc->x + (proc->currentChoice - 1) * 40 - 4, proc->y);
+    DisplayUiHand(
+        proc->x + (proc->currentChoice - 1) * sYesNoChoiceStep - 4,
+        proc->y);
 
     return;
 }
@@ -1662,14 +1692,44 @@ struct ProcCmd CONST_DATA gProcScr_YesNoChoice[] =
 void StartYesNoChoice(int * choiceTextIds, struct Text * th, int x, int y, int color, int defaultChoice, ProcPtr parent)
 {
     struct YesNoChoiceProc * proc;
+    int firstX;
+    int secondX;
+    int firstWidth;
+    int secondWidth;
 
-    Text_InsertDrawString(th, 16, color, GetStringFromIndex(choiceTextIds[0]));
-    Text_InsertDrawString(th, 56, color, GetStringFromIndex(choiceTextIds[1]));
+    firstWidth = GetStringTextLen(GetStringFromIndex(choiceTextIds[0]));
+    secondWidth = GetStringTextLen(GetStringFromIndex(choiceTextIds[1]));
+    GetYesNoChoiceLabelLayout(
+        th->tile_width * 8,
+        firstWidth,
+        secondWidth,
+        &firstX,
+        &secondX,
+        &sYesNoChoiceStep);
+
+    Text_InsertDrawString(
+        th, firstX, color, GetStringFromIndex(choiceTextIds[0]));
+    Text_InsertDrawString(
+        th, secondX, color, GetStringFromIndex(choiceTextIds[1]));
 
     proc = Proc_StartBlocking(gProcScr_YesNoChoice, parent);
     proc->currentChoice = defaultChoice;
-    proc->x = x + 16;
+    proc->x = x + firstX;
     proc->y = y;
 
     return;
 }
+
+#ifdef FE8_TEXT_CONSUMER_HOST_TEST
+void CgText_TestGetYesNoChoiceLabelLayout(
+    int limit,
+    int firstWidth,
+    int secondWidth,
+    int *firstX,
+    int *secondX,
+    int *step)
+{
+    GetYesNoChoiceLabelLayout(
+        limit, firstWidth, secondWidth, firstX, secondX, step);
+}
+#endif

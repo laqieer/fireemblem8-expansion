@@ -657,6 +657,33 @@ def _collect_fehrr_sources(
                     raise CjkFontError(f"{glyph_path}: FEHRR glyph is missing")
                 png = glyph_path.read_bytes()
                 packed = _pack_engine_tile(_read_fehrr_png_indices(png))
+                if not any(packed):
+                    fallback_style = FEHRR_CROSS_STYLE[selected_style]
+                    fallback_record = records[fallback_style].get(scalar)
+                    if fallback_record is not None:
+                        selected_style = fallback_style
+                        selection_kind = "same_game_cross_style"
+                        glyph_directory = f"glyph/{FEHRR_LOCALES[locale]}"
+                        selected_map = relative_map
+                        selected_tier = "same-game"
+                        relative_glyph = (
+                            f"{glyph_directory}/{fallback_record['filename']}"
+                        )
+                        glyph_path = source_root / relative_glyph
+                        png = glyph_path.read_bytes()
+                        packed = _pack_engine_tile(_read_fehrr_png_indices(png))
+                    if not any(packed):
+                        selection_counts["febuilder_fallback"] += 1
+                        fallback_rows.append(
+                            {
+                                "scalar": scalar_text(scalar),
+                                "reason": (
+                                    "configured FEHRR glyph is blank and no "
+                                    "visible same-game fallback exists"
+                                ),
+                            }
+                        )
+                        continue
                 if relative_glyph not in tree_member_names:
                     tree_members.append((relative_glyph, png))
                     tree_member_names.add(relative_glyph)

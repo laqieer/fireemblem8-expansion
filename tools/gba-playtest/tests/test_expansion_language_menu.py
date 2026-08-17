@@ -8,7 +8,7 @@ Two kinds of proof, both executable with no ARM/GBA/mgba environment:
 
 1. Behavioral -- compiles and *executes* the real pure startup and
    settings-row decision functions against startup state combinations
-   and the 1/2/3/>3-locale inline/More thresholds.
+   and the 1/2/3/4/>4-locale inline/More thresholds.
 
 2. Structural/static -- proves, by scanning the real shipped .c/.h files,
    that this sprint's guardrails hold: the selector Proc is spliced
@@ -51,6 +51,7 @@ CJK_SETTINGS_FINGERPRINT = (
     REPO_ROOT / "tools" / "gba-playtest" / "fingerprints"
     / "locale-cjk-settings-inline-modern-debug.json"
 )
+TEST_WORK_ROOT = REPO_ROOT / ".test-work"
 
 CC = shutil.which("gcc") or shutil.which("cc")
 
@@ -89,6 +90,13 @@ def _run(exe: Path):
     return proc.returncode, proc.stdout + proc.stderr
 
 
+def _temporary_directory():
+    import tempfile
+
+    TEST_WORK_ROOT.mkdir(exist_ok=True)
+    return tempfile.TemporaryDirectory(dir=str(TEST_WORK_ROOT))
+
+
 def _strip_c_comments(text: str) -> str:
     text = re.sub(r"/\*.*?\*/", " ", text, flags=re.DOTALL)
     text = re.sub(r"//[^\n]*", " ", text)
@@ -103,9 +111,7 @@ class ExpansionLanguageMenuDecisionHostTests(unittest.TestCase):
         _skip_if_no_host_compiler()
 
     def test_decision_table_matches_every_real_input_combination(self):
-        import tempfile
-
-        with tempfile.TemporaryDirectory() as tmp:
+        with _temporary_directory() as tmp:
             work = Path(tmp)
 
             rc, out, impl_obj = _compile(work, LANGUAGE_MENU_SRC, "impl.o")
@@ -135,9 +141,7 @@ class ExpansionLanguageMenuHeaderHostCompileTests(unittest.TestCase):
         _skip_if_no_host_compiler()
 
     def test_header_compiles_standalone_without_modern_define(self):
-        import tempfile
-
-        with tempfile.TemporaryDirectory() as tmp:
+        with _temporary_directory() as tmp:
             work = Path(tmp)
             probe = work / "probe.c"
             probe.write_text(f'#include "{LANGUAGE_MENU_HEADER}"\nint unused_probe_symbol;\n')
@@ -397,9 +401,7 @@ class GameOptionAbiUnchangedTests(unittest.TestCase):
         # matches a hand-built reference layout (u16 + 4*struct Selector +
         # u8 [+ pad] + function pointer) -- proves no field was widened.
         import struct
-        import tempfile
-
-        with tempfile.TemporaryDirectory() as tmp:
+        with _temporary_directory() as tmp:
             work = Path(tmp)
             probe = work / "probe.c"
             probe.write_text(
@@ -468,8 +470,11 @@ class UiConfigLanguageEntryStructureTests(unittest.TestCase):
         self.assertIn(".icon = 0x16", subtitle_following)
         self.assertNotIn(".icon = 0x22", subtitle_following)
         self.assertIn("{ MSG_000, MSG_000, 112, 0 }", following)
-        self.assertIn("{ MSG_000, MSG_000, 152, 0 }", following)
-        self.assertIn("{ MSG_000, MSG_000, 192, 0 }", following)
+        self.assertIn("{ MSG_000, MSG_000, 136, 0 }", following)
+        self.assertIn("{ MSG_000, MSG_000, 160, 0 }", following)
+        self.assertIn("{ MSG_000, MSG_000, 184, 0 }", following)
+        positions = re.findall(r"\{\s*MSG_000,\s*MSG_000,\s*(\d+),\s*0\s*\}", following)
+        self.assertEqual(positions, ["112", "136", "160", "184"])
 
     def test_entry_handler_selects_inline_or_opens_more_submenu(self):
         match = re.search(
@@ -482,6 +487,50 @@ class UiConfigLanguageEntryStructureTests(unittest.TestCase):
         self.assertIn("ExpansionLanguageMenu_SelectSettingsLocale", body)
         self.assertIn("ExpansionLanguageMenu_OpenSettings(proc)", body)
         self.assertIn("EXPANSION_LANGUAGE_SETTINGS_OPEN_MENU", body)
+
+    def test_a_routes_to_more_only_for_virtual_more_slot(self):
+        match = re.search(
+            r"void Config_Loop_KeyHandler\(struct ConfigProc \* proc\)\s*\{(.*?)\n\}",
+            self.text,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(match)
+        body = match.group(1)
+        language_idx = body.index("GAME_OPTION_LANGUAGE")
+        generic_idx = body.index("GetGameOption(GAME_OPTION_ANIMATION)")
+        self.assertLess(language_idx, generic_idx)
+        self.assertIn("ExpansionLanguageMenu_IsMoreSelected", body)
+        self.assertIn("ExpansionLanguageMenu_OpenSettings(proc)", body)
+
+    def test_language_render_slots_follow_selector_positions(self):
+        match = re.search(
+            r"static void DrawLanguageOptionValueTexts\(struct Text \*text\)\s*\{(.*?)\n\}",
+            self.text,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(match)
+        body = match.group(1)
+        self.assertIn("selectors[i].xPos - baseX", body)
+        self.assertNotIn("Text_SetCursor(text, i * 40)", body)
+
+    def test_scrolled_config_does_not_reapply_parent_bg1_while_more_is_active(self):
+        match = re.search(
+            r"void Config_Loop_KeyHandler\(struct ConfigProc \* proc\)\s*\{(.*?)\n\}",
+            self.text,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(match)
+        body = match.group(1)
+        self.assertRegex(
+            body,
+            r"if\s*\(!gExpansionLanguageMenuProbe\.settingsActive\)\s*"
+            r"#endif\s*"
+            r"BG_SetPosition\(BG_1, 0, gConfigUiState->bg1YOffset\)",
+        )
+        self.assertLess(
+            body.index("ExpansionLanguageMenu_OpenSettings(proc)"),
+            body.index("BG_SetPosition(BG_1, 0, gConfigUiState->bg1YOffset)"),
+        )
 
     def test_config_hands_are_hidden_while_more_submenu_is_active(self):
         match = re.search(
@@ -560,6 +609,7 @@ class LanguageSettingsLifecycleStructureTests(unittest.TestCase):
         self.assertLess(body.index("BG_Fill(gBG0TilemapBuffer, 0)"), body.index("StartMenu"))
         self.assertLess(body.index("BG_Fill(gBG1TilemapBuffer, 0)"), body.index("StartMenu"))
         self.assertLess(body.index("ResetTextFont()"), body.index("StartMenu"))
+        self.assertLess(body.index("LockMenuScrollBar()"), body.index("StartMenu"))
 
     def test_more_submenu_defaults_cursor_to_current_locale(self):
         match = re.search(
@@ -577,6 +627,7 @@ class LanguageSettingsLifecycleStructureTests(unittest.TestCase):
             self.language_text,
             r"(?s)gProcScr_RedrawConfigAfterLanguageMenu\[\].*?"
             r"PROC_SLEEP\(1\).*?"
+            r"PROC_CALL\(UnlockMenuScrollBar\).*?"
             r"PROC_CALL\(Config_RedrawAfterLanguageMenu\)",
         )
         match = re.search(
@@ -591,6 +642,20 @@ class LanguageSettingsLifecycleStructureTests(unittest.TestCase):
             match.group(1),
         )
         self.assertIn("Config_RedrawAfterLanguageMenu", self.uiconfig_text)
+
+    def test_locale_menu_geometry_preserves_fitting_layout_and_centers_tall_menus(self):
+        self.assertIn("return (u8)(rowCount * 2 + 2);", self.language_text)
+        self.assertIn("if (6 + height <= 20)", self.language_text)
+        self.assertIn("return (u8)((20 - height) / 2);", self.language_text)
+        self.assertRegex(
+            self.language_text,
+            r"rect\.y\s*=\s*ExpansionLanguageMenu_GetMenuTop\(rowCount\)",
+        )
+        self.assertRegex(
+            self.language_text,
+            r"rect\.h\s*=\s*ExpansionLanguageMenu_GetMenuHeight\(rowCount\)",
+        )
+        self.assertEqual(self.language_text.count("StartMenuAt("), 2)
 
 
 class FrameworkUtf8DrawingTests(unittest.TestCase):

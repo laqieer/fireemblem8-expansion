@@ -631,11 +631,10 @@ void ChapterIntro_DrawChapterTitle(void)
     titleId = GetChapterTitleWM(&gPlaySt);
     _PutChapterTitleGfx(0x280, titleId);
     /*
-     * Localized chapter-title TSA is a full BG0 layout, unlike the vanilla
-     * 0x40-tile string strip. Keep the native offset in DrawChapterTitleStrEx
-     * for nonlocalized callers, but pass BG0's base for this full-layout path.
+     * The localized path replaces the complete BG0 tilemap; the fallback
+     * path draws the vanilla title strip at its centered location.
      */
-    DrawChapterTitleStrEx(gBG0TilemapBuffer, 5, titleId);
+    DrawChapterTitleStrEx(TILEMAP_LOCATED(gBG0TilemapBuffer, 3, 9), 5, titleId);
 
     BG_EnableSyncByMask(BG0_SYNC_BIT);
 

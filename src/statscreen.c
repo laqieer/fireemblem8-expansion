@@ -2196,6 +2196,15 @@ void StartMovingHelpBoxExt(const struct HelpBoxInfo* info, struct Proc* parent, 
     proc->info = info;
 }
 
+static bool8 StatScreenDescriptionHasVisibleContent(const char *text)
+{
+#ifdef FE8_TEXT_UTF8_ENABLED
+    return TextUtf8_HasVisibleContent(text);
+#else
+    return (bool8)(GetStringTextLen(text) > 8);
+#endif
+}
+
 void ApplyHelpBoxContentSize(struct HelpBoxProc* proc, int width, int height)
 {
     width = 0xF0 & (width + 15); // align to 16 pixel multiple
@@ -2207,7 +2216,8 @@ void ApplyHelpBoxContentSize(struct HelpBoxProc* proc, int width, int height)
         if (width < 0x90)
             width = 0x90;
 
-        if (GetStringTextLen(GetStringFromIndex(proc->mid)) > 8)
+        if (StatScreenDescriptionHasVisibleContent(
+                GetStringFromIndex(proc->mid)))
             height += 0x20;
         else
             height += 0x10;

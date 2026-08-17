@@ -2,11 +2,13 @@
 
 #include "expansion_locale.h"
 #include "localized_font.h"
+#include "text_utf8.h"
 
 #ifdef FE8_LOCALIZED_FONT_ENABLED
 
 #define LOCALIZED_FONT_IDEOGRAPHIC_SPACE 0x3000u
 #define LOCALIZED_FONT_IDEOGRAPHIC_SPACE_WIDTH 16u
+#define LOCALIZED_FONT_LEGACY_SPACE_WIDTH 6u
 #define LOCALIZED_FONT_MISSING_COUNT_MAX 0xFFFFu
 
 struct LocalizedFontDescriptor
@@ -145,6 +147,14 @@ bool8 LocalizedFont_Lookup(
 
     if (out == 0 || !LocalizedFont_IsLocale(locale))
         return FALSE;
+
+    if (scalar == TEXT_UTF8_LEGACY_SPACE_SCALAR)
+    {
+        out->bitmap = 0;
+        out->scalar = scalar;
+        out->width = LOCALIZED_FONT_LEGACY_SPACE_WIDTH;
+        return TRUE;
+    }
 
     if (scalar == LOCALIZED_FONT_IDEOGRAPHIC_SPACE)
     {

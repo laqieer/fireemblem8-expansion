@@ -1534,15 +1534,58 @@ void TalkShiftClearAll_OnIdle(struct Proc* proc) {
     return;
 }
 
+static void GetTalkChoiceLabelLayout(
+    int limit,
+    int origin,
+    int firstWidth,
+    int secondWidth,
+    int *firstX,
+    int *secondX,
+    int *step)
+{
+    int right;
+
+    *firstX = origin + 16;
+    *step = 40;
+    if (*step < firstWidth + 8)
+        *step = firstWidth + 8;
+    *secondX = *firstX + *step;
+
+    right = *secondX + secondWidth;
+    if (right > limit)
+    {
+        *firstX -= right - limit;
+        if (*firstX < origin)
+            *firstX = origin;
+        *secondX = *firstX + *step;
+    }
+}
+
 //! FE8U = 0x08007DE8
 void StartTalkChoice(const struct ChoiceEntryInfo* choices, struct Text* text, u16 * tm, int defaultChoice, int color, ProcPtr parent) {
     struct TalkChoiceProc* proc;
+    int firstX;
+    int secondX;
+    int step;
+    int firstWidth;
+    int secondWidth;
 
-    int x = Text_GetCursor(text) + 16;
+    firstWidth = GetStringTextLen(GetStringFromIndex(choices[0].msgid));
+    secondWidth = GetStringTextLen(GetStringFromIndex(choices[1].msgid));
+    GetTalkChoiceLabelLayout(
+        text->tile_width * 8,
+        Text_GetCursor(text),
+        firstWidth,
+        secondWidth,
+        &firstX,
+        &secondX,
+        &step);
 
-    Text_InsertDrawString(text, x, color, GetStringFromIndex(choices[0].msgid));
+    Text_InsertDrawString(
+        text, firstX, color, GetStringFromIndex(choices[0].msgid));
 
-    Text_InsertDrawString(text, x + 40, color, GetStringFromIndex(choices[1].msgid));
+    Text_InsertDrawString(
+        text, secondX, color, GetStringFromIndex(choices[1].msgid));
 
     PutText(text, tm);
 
@@ -1552,8 +1595,10 @@ void StartTalkChoice(const struct ChoiceEntryInfo* choices, struct Text* text, u
 
     proc->selectedChoice = defaultChoice;
 
-    proc->xDisp = (((tm - gBG0TilemapBuffer) & 0x1f) * 8 - gLCDControlBuffer.bgoffset[0].x) + x;
+    proc->xDisp = (((tm - gBG0TilemapBuffer) & 0x1f) * 8
+        - gLCDControlBuffer.bgoffset[0].x) + firstX;
     proc->yDisp = ((tm - gBG0TilemapBuffer) / 0x20) * 8 - gLCDControlBuffer.bgoffset[0].y;
+    proc->pad = step;
 
     proc->choices = choices;
 
@@ -1605,10 +1650,27 @@ void TalkChoice_OnIdle(struct TalkChoiceProc* proc) {
         }
     }
 
-    DisplayUiHand(proc->xDisp + (proc->selectedChoice - 1) * 40 - 4, proc->yDisp);
+    DisplayUiHand(
+        proc->xDisp + (proc->selectedChoice - 1) * proc->pad - 4,
+        proc->yDisp);
 
     return;
 }
+
+#ifdef FE8_TEXT_CONSUMER_HOST_TEST
+void Scene_TestGetTalkChoiceLabelLayout(
+    int limit,
+    int origin,
+    int firstWidth,
+    int secondWidth,
+    int *firstX,
+    int *secondX,
+    int *step)
+{
+    GetTalkChoiceLabelLayout(
+        limit, origin, firstWidth, secondWidth, firstX, secondX, step);
+}
+#endif
 
 //! FE8U = 0x08007F9C
 void TalkShiftClear_OnInit(struct Proc* proc) {

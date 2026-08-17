@@ -8,6 +8,7 @@
 static const u8 sLocalizedUiJaTitleLogoPng[] = INCBIN_U8("graphics/localized_ui/ja/title/logo.4bpp.lz");
 static const u8 sLocalizedUiJaTitleLabelsPng[] = INCBIN_U8("graphics/localized_ui/ja/title/labels.4bpp.lz");
 static const u8 sLocalizedUiJaMenuMainExtraOptionsPng[] = INCBIN_U8("graphics/localized_ui/ja/menu/main_extra_options.4bpp.lz");
+static const u8 sLocalizedUiJaMenuMainSpritesPng[] = INCBIN_U8("graphics/localized_ui/ja/menu/main_sprites.4bpp.lz");
 static const u8 sLocalizedUiJaPrologueSlide00Png[] = INCBIN_U8("graphics/localized_ui/ja/prologue/slide_00.4bpp.lz");
 static const u8 sLocalizedUiJaPrologueSlide00TsaBin[] = INCBIN_U8("graphics/localized_ui/ja/prologue/slide_00.tsa.bin.lz");
 static const u8 sLocalizedUiJaPrologueSlide01Png[] = INCBIN_U8("graphics/localized_ui/ja/prologue/slide_01.4bpp.lz");
@@ -144,6 +145,7 @@ static const u8 sLocalizedUiJaChapterTitleLayoutTsaBin[] = INCBIN_U8("graphics/l
 static const u8 sLocalizedUiZhHansTitleLogoPng[] = INCBIN_U8("graphics/localized_ui/zh-Hans/title/logo.4bpp.lz");
 static const u8 sLocalizedUiZhHansTitleLabelsPng[] = INCBIN_U8("graphics/localized_ui/zh-Hans/title/labels.4bpp.lz");
 static const u8 sLocalizedUiZhHansMenuMainExtraOptionsPng[] = INCBIN_U8("graphics/localized_ui/zh-Hans/menu/main_extra_options.4bpp.lz");
+static const u8 sLocalizedUiZhHansMenuMainSpritesPng[] = INCBIN_U8("graphics/localized_ui/zh-Hans/menu/main_sprites.4bpp.lz");
 static const u8 sLocalizedUiZhHansPrologueSlide00Png[] = INCBIN_U8("graphics/localized_ui/zh-Hans/prologue/slide_00.4bpp.lz");
 static const u8 sLocalizedUiZhHansPrologueSlide00TsaBin[] = INCBIN_U8("graphics/localized_ui/zh-Hans/prologue/slide_00.tsa.bin.lz");
 static const u8 sLocalizedUiZhHansPrologueSlide01Png[] = INCBIN_U8("graphics/localized_ui/zh-Hans/prologue/slide_01.4bpp.lz");
@@ -553,6 +555,18 @@ const u8 *LocalizedUiGraphics_GetSaveMenuOptions(void)
         return sLocalizedUiJaMenuMainExtraOptionsPng;
     case EXPANSION_LOCALE_ZH_HANS:
         return sLocalizedUiZhHansMenuMainExtraOptionsPng;
+    default:
+        return 0;
+    }
+}
+
+const u8 *LocalizedUiGraphics_GetSaveMenuMainSprites(void)
+{
+    switch (LocalizedUiGraphics_CurrentCjkLocale()) {
+    case EXPANSION_LOCALE_JA:
+        return sLocalizedUiJaMenuMainSpritesPng;
+    case EXPANSION_LOCALE_ZH_HANS:
+        return sLocalizedUiZhHansMenuMainSpritesPng;
     default:
         return 0;
     }

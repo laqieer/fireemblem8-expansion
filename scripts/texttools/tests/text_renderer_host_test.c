@@ -112,7 +112,8 @@ static int TestValidUtf8AndControls(void)
             0x80, 0x01, TEXT_UTF8_TOKEN_FLAG_EXTENDED_ARGUMENT))
         return 0;
     if (!CheckToken(
-            legacySpace, TEXT_UTF8_TOKEN_SCALAR, 0x3000, 0, 2, 0, 0,
+            legacySpace, TEXT_UTF8_TOKEN_SCALAR,
+            TEXT_UTF8_LEGACY_SPACE_SCALAR, 0, 2, 0, 0,
             TEXT_UTF8_TOKEN_FLAG_LEGACY_SPACE))
         return 0;
 
@@ -186,6 +187,7 @@ static int TestGlyphAnchorsAndStyles(void)
 {
     struct LocalizedFontGlyph jaSystemCandidate;
     struct LocalizedFontGlyph jaTalkCandidate;
+    struct LocalizedFontGlyph jaTalkMiddleDot;
     struct LocalizedFontGlyph jaSystemDiagnosis;
     struct LocalizedFontGlyph zhSystemCandidate;
     struct LocalizedFontGlyph zhTalkCandidate;
@@ -199,6 +201,10 @@ static int TestGlyphAnchorsAndStyles(void)
     if (!LocalizedFont_Lookup(
             EXPANSION_LOCALE_JA, LOCALIZED_FONT_STYLE_TALK, 0x4E03,
             &jaTalkCandidate))
+        return 0;
+    if (!LocalizedFont_Lookup(
+            EXPANSION_LOCALE_JA, LOCALIZED_FONT_STYLE_TALK, 0x30FB,
+            &jaTalkMiddleDot))
         return 0;
     if (!LocalizedFont_Lookup(
             EXPANSION_LOCALE_JA, LOCALIZED_FONT_STYLE_SYSTEM, 0x8A3A,
@@ -226,7 +232,8 @@ static int TestGlyphAnchorsAndStyles(void)
     if (zhSystemDiagnosis.width != 10)
         return 0;
     if (!BitmapIsVisible(jaSystemDiagnosis.bitmap)
-        || !BitmapIsVisible(zhSystemDiagnosis.bitmap))
+        || !BitmapIsVisible(zhSystemDiagnosis.bitmap)
+        || !BitmapIsVisible(jaTalkMiddleDot.bitmap))
         return 0;
     if (jaSystemCandidate.bitmap == jaTalkCandidate.bitmap)
         return 0;
@@ -402,11 +409,16 @@ static int TestWidthFallbackAndGuards(void)
     };
     static const u8 missingText[] = {0xF4, 0x8F, 0xBF, 0xBF, 0};
     static const u8 invalidText[] = {0xC2, 0};
+    static const u8 legacySpaceText[] = {0x81, 0x40, 0};
     struct LocalizedFontGlyph glyph;
     u8 storage[66];
     int i;
 
     LocalizedFont_ResetDiagnostics();
+    if (Measure(
+            EXPANSION_LOCALE_JA, LOCALIZED_FONT_STYLE_SYSTEM, legacySpaceText)
+        != 6)
+        return 0;
     if (Measure(
             EXPANSION_LOCALE_JA, LOCALIZED_FONT_STYLE_SYSTEM, jaText) != 31)
         return 0;

@@ -38,7 +38,7 @@
         "byte_count": 110784,
         "format": "16x16 row-major 2bpp, four pixels per byte, low-bit-first",
         "path": "graphics/fonts/cjk/ja.talk.glyphs.2bpp",
-        "sha256": "ad0fbde531973bd8138c50383add4dc895fdba64bf9f93e8bc5dbcee1e62bdbb",
+        "sha256": "d09c66a9d3bd170fc2d52abf8b5ccd6d823644b0a7303a8cf9d8aeacddfc4db5",
         "stride_bytes": 64
       },
       "codepoints": {
@@ -56,8 +56,8 @@
         "febuilder_fallback": 0,
         "fehrr_supplemental": 0,
         "policy": "same-game same-style FEHRR glyph first; same-game cross-style FEHRR glyph second; pinned FEHRR supplemental style tier third; verified FEBuilder baseline fallback last",
-        "same_game_cross_style": 1,
-        "same_game_same_style": 1730
+        "same_game_cross_style": 2,
+        "same_game_same_style": 1729
       },
       "widths": {
         "byte_count": 1731,
@@ -68,21 +68,21 @@
     },
     "zh-Hans.system": {
       "bitmap": {
-        "byte_count": 93312,
+        "byte_count": 93376,
         "format": "16x16 row-major 2bpp, four pixels per byte, low-bit-first",
         "path": "graphics/fonts/cjk/zh-Hans.system.glyphs.2bpp",
-        "sha256": "857d4df70da944bae2488d08a27aa6c2188cb1032eaaae427b343de2ffcec101",
+        "sha256": "933cdc43a85e52589cae6a0163ae8ee05b8a68ade227b177f2b12c15e536131b",
         "stride_bytes": 64
       },
       "codepoints": {
-        "byte_count": 5832,
+        "byte_count": 5836,
         "format": "sorted unique little-endian uint32 Unicode scalars",
         "path": "graphics/fonts/cjk/zh-Hans.system.codepoints.u32le",
-        "sha256": "8933facafa7bb5825f2fd1e5f321451d19a5b6b8d382ba4e12caaecbd0517c93"
+        "sha256": "e23a6dd56bfb62dac469fc77ee7e42a0b8a6f0b7103801a659747946004898e4"
       },
       "febuilder_job": "zh-hans-system",
       "febuilder_style": "item",
-      "glyph_count": 1458,
+      "glyph_count": 1459,
       "locale": "zh-Hans",
       "runtime_style": "system",
       "source_priority": {
@@ -90,13 +90,13 @@
         "fehrr_supplemental": 36,
         "policy": "same-game same-style FEHRR glyph first; same-game cross-style FEHRR glyph second; pinned FEHRR supplemental style tier third; verified FEBuilder baseline fallback last",
         "same_game_cross_style": 106,
-        "same_game_same_style": 1316
+        "same_game_same_style": 1317
       },
       "widths": {
-        "byte_count": 1458,
+        "byte_count": 1459,
         "format": "one unsigned byte per glyph; valid range 1..16",
         "path": "graphics/fonts/cjk/zh-Hans.system.widths.u8",
-        "sha256": "198a00f38f9a6e2f5472b570fe68783017af80c540a02aeabea91d9ece3b557e"
+        "sha256": "e536481e15127314cb9401730c6778a1046836a760a39fdf9119f76e5ac1fdea"
       }
     },
     "zh-Hans.talk": {
@@ -140,9 +140,9 @@
   },
   "rom_budget": {
     "bytes_per_glyph": 69,
-    "four_byte_aligned_blob_bytes": 465412,
+    "four_byte_aligned_blob_bytes": 465480,
     "includes": "64-byte bitmap + 1-byte width + 4-byte Unicode scalar",
-    "payload_bytes": 465405
+    "payload_bytes": 465474
   },
   "schema_version": 2,
   "sources": {
@@ -162,16 +162,16 @@
     },
     "febuilder_manifest": {
       "path": "fonts/cjk/febuilder-manifest.json",
-      "sha256": "a2db14fc8fe820726bcbb76cc64a99360823e8db9a26cbd4330ccf084639140d"
+      "sha256": "680fb56bd6beeec09336b906096f73d5bfb38b5ca25b476a5881d49194ad3825"
     },
     "fehrr_priority": {
       "path": "fonts/cjk/fehrr-sources.json",
       "policy": "same-game same-style FEHRR glyph first; same-game cross-style FEHRR glyph second; pinned FEHRR supplemental style tier third; verified FEBuilder baseline fallback last",
-      "sha256": "93abf78949f8f4c3b2e3de6411d9e77850253bd085b1387e83046e0b32fa3ab0"
+      "sha256": "90e5255f750e051112cc19bb846490675e6ab0f71e6992b7da99ad9634519382"
     },
     "inventory": {
       "path": "fonts/cjk/inventory.json",
-      "sha256": "fcddec0aaaef25c81e9818144d31487d5153a1403dd1dfe28c03b20e99cdbfb3"
+      "sha256": "4046afc2996d99b4821bc19c2109291d5dbcf05cdc262e7facaa8158917637dd"
     }
   },
   "spacing_scalars": [

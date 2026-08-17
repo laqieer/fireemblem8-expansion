@@ -51,6 +51,19 @@ static const u8 *SaveMenu_GetMainChoiceGfx(void)
     return Img_GameMainMenuObjs;
 }
 
+static const u8 *SaveMenu_GetMainSpritesGfx(void)
+{
+#if LOCALIZED_UI_GRAPHICS_CJK_ENABLED
+    const u8 *localizedGfx;
+
+    localizedGfx = LocalizedUiGraphics_GetSaveMenuMainSprites();
+    if (localizedGfx != 0)
+        return localizedGfx;
+#endif
+
+    return Img_SaveScreenSprits;
+}
+
 //! FE8U = 0x080A882C
 void SaveMenu_NewGame(ProcPtr proc)
 {
@@ -338,7 +351,7 @@ void SaveMenu_InitScreen(struct SaveMenuProc * proc)
         gGenericBuffer,
         OBJ_PALETTE(BGPAL_SAVEMENU_BGFOG) + OBJ_PRIORITY(0) + OBJ_CHAR(BGCHR_SAVEMENU_BGFOG));
 
-    Decompress(Img_SaveScreenSprits, OBJ_VRAM0 + OBJCHR_SAVEMENU_SPRITES * TILE_SIZE_4BPP);
+    Decompress(SaveMenu_GetMainSpritesGfx(), OBJ_VRAM0 + OBJCHR_SAVEMENU_SPRITES * TILE_SIZE_4BPP);
     ApplyPalettes(Pal_SaveScreenSprits, OBJPAL_SAVEMENU_SPRITES + 0x10, 8);
 
     ApplyPalette(Pal_MenuMainObjs_0, 2);
@@ -1501,7 +1514,7 @@ void SaveMenu_ReloadScreenFormDifficulty(struct SaveMenuProc * proc)
     Decompress(Tsa_MainMenuBgFog, gGenericBuffer);
     CallARM_FillTileRect(gBG2TilemapBuffer, gGenericBuffer, 0x00007260);
 
-    Decompress(Img_SaveScreenSprits, (void*)0x06010800);
+    Decompress(SaveMenu_GetMainSpritesGfx(), (void*)0x06010800);
     ApplyPalettes(Pal_SaveScreenSprits, 0x12, 8);
     ApplyPalette(Pal_MenuMainObjs_0, 2);
 

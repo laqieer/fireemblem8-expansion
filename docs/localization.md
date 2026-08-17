@@ -77,7 +77,7 @@ The framework is layered, each layer independently testable:
    MODERN`-guarded call site in `src/gamecontrol.c`); with exactly one
    enabled locale it silently auto-selects and never shows a UI. The
    Config row selects all enabled locales inline when there are at most
-   three. With more than three it shows the first two compact locale labels
+   four. With more than four it shows the first three compact locale labels
    plus `More`; only `More` opens `ExpansionLanguageMenu_OpenSettings()`.
    Inline or submenu selection calls `ExpansionUserPrefs_Store()` and
    invalidates the resolver cache only when the locale actually changes;
@@ -174,7 +174,7 @@ make expansion-modern-localization-profile-en-ja-zh-hans
 make expansion-modern-localization-profile-en-fr-de-es-it
 make expansion-modern-localization-profile-all
 
-# Optional four-locale profile; Config shows EN, JA, More.
+# Optional four-locale profile; Config shows EN, JA, ZH, QPS.
 make expansion-modern-localization-profile-en-ja-zh-hans-qps
 ```
 

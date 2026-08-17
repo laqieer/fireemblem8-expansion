@@ -25,7 +25,7 @@
     },
     {
       "path": "texts/locales/authored/shards/menu.zh-Hans.json",
-      "sha256": "2335ea7abe1fb933a73734833bee15bbd2de9518c9240ec0c15555e43c783a97",
+      "sha256": "3b1093d4defdd2402002bad8e11b6751d9353e971cb0b9fef683499a710e07c3",
       "target_count": 132
     },
     {
@@ -225,7 +225,7 @@
     "game.menu_definition.msg_530": "B[.][X]\n",
     "game.menu_definition.msg_531": "A[.][X]\n",
     "game.menu_definition.msg_532": "S[.][X]\n",
-    "game.menu_definition.msg_533": "专用[.][X]\n",
+    "game.menu_definition.msg_533": "专[.][X]\n",
     "game.menu_definition.msg_53a": "-[.][X]\n",
     "game.menu_definition.msg_57f": "查看人物之间的[.][LF]\n支援关系[X]\n",
     "game.menu_definition.msg_586": "战斗评价[X]\n",

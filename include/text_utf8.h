@@ -28,6 +28,13 @@ enum TextUtf8TokenFlags
     TEXT_UTF8_TOKEN_FLAG_LEGACY_SPACE = (1 << 3)
 };
 
+/*
+ * Internal scalar used for the legacy SJIS 0x8140 spacing token. It is
+ * outside Unicode's scalar range so an authored U+3000 remains distinct and
+ * keeps its ordinary localized-font advance.
+ */
+#define TEXT_UTF8_LEGACY_SPACE_SCALAR 0x110000u
+
 struct TextUtf8Token
 {
     enum TextUtf8TokenKind kind;
@@ -46,9 +53,9 @@ struct TextUtf8Token
  * later valid token. Low controls are one byte except [LoadFace], which owns
  * its two-byte FID payload. A standalone 0x80 begins an extended control;
  * color controls 0x80 0x00..0x03 own one additional argument byte. The
- * legacy 0x81 0x40 spacing token is normalized to scalar U+3000 and flagged
- * so modern consumers never special-case its bytes. A 0x80 reached while
- * decoding a valid scalar remains its continuation byte.
+ * legacy 0x81 0x40 spacing token is normalized to an internal out-of-range
+ * scalar and flagged so modern consumers never special-case its bytes. A
+ * 0x80 reached while decoding a valid scalar remains its continuation byte.
  */
 const char *TextUtf8_Next(const char *text, struct TextUtf8Token *out);
 
@@ -62,6 +69,13 @@ const char *TextUtf8_NextBounded(
     const char *text,
     u32 available,
     struct TextUtf8Token *out);
+
+/*
+ * Returns TRUE when text contains at least one visible scalar. Engine
+ * controls and Unicode whitespace, including legacy imported spacing, do not
+ * count as content.
+ */
+bool8 TextUtf8_HasVisibleContent(const char *text);
 
 #endif /* modern build with a localized game locale */
 

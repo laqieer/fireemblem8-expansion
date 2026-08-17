@@ -176,12 +176,31 @@ enum ExpansionLanguageSettingsAction ExpansionLanguageMenu_DecideSettingsAction(
         return EXPANSION_LANGUAGE_SETTINGS_NONE;
     }
 
-    if (currentIndex == 1 || currentIndex >= 2)
+    if (currentIndex == 1)
     {
         if (direction < 0)
         {
             if (outLocale != NULL)
-                *outLocale = (currentIndex == 1) ? locales[0] : locales[1];
+                *outLocale = locales[0];
+
+            return EXPANSION_LANGUAGE_SETTINGS_SELECT_LOCALE;
+        }
+
+        if (direction > 0)
+        {
+            if (outLocale != NULL)
+                *outLocale = locales[2];
+
+            return EXPANSION_LANGUAGE_SETTINGS_SELECT_LOCALE;
+        }
+    }
+
+    if (currentIndex == 2 || currentIndex >= 3)
+    {
+        if (direction < 0)
+        {
+            if (outLocale != NULL)
+                *outLocale = (currentIndex == 2) ? locales[1] : locales[2];
 
             return EXPANSION_LANGUAGE_SETTINGS_SELECT_LOCALE;
         }
@@ -196,6 +215,47 @@ enum ExpansionLanguageSettingsAction ExpansionLanguageMenu_DecideSettingsAction(
     }
 
     return EXPANSION_LANGUAGE_SETTINGS_NONE;
+}
+
+bool8 ExpansionLanguageMenu_IsMoreSelected(
+    u32 enabledLocaleMask,
+    ExpansionLocaleId currentLocale)
+{
+    ExpansionLocaleId locale;
+    int enabledCount = 0;
+    int currentIndex = -1;
+
+    for (locale = 0; locale < EXPANSION_LOCALE_COUNT; ++locale)
+    {
+        if (!(enabledLocaleMask & (1u << locale)))
+            continue;
+
+        if (locale == currentLocale)
+            currentIndex = enabledCount;
+
+        enabledCount++;
+    }
+
+    return (bool8)(enabledCount > EXPANSION_LANGUAGE_INLINE_MAX
+                && currentIndex >= EXPANSION_LANGUAGE_INLINE_MAX - 1);
+}
+
+u8 ExpansionLanguageMenu_GetMenuHeight(u8 rowCount)
+{
+    return (u8)(rowCount * 2 + 2);
+}
+
+u8 ExpansionLanguageMenu_GetMenuTop(u8 rowCount)
+{
+    u8 height = ExpansionLanguageMenu_GetMenuHeight(rowCount);
+
+    if (height >= 20)
+        return 0;
+
+    if (6 + height <= 20)
+        return 6;
+
+    return (u8)((20 - height) / 2);
 }
 
 /* --- Bounded diagnostic probe (issue #13) -------------------------------- */
@@ -217,6 +277,7 @@ EWRAM_DATA struct ExpansionLanguageMenuProbe gExpansionLanguageMenuProbe = {0};
 #include "uiutils.h"
 #include "bm.h"
 #include "bmsave.h"
+#include "prepscreen.h"
 #include "uiconfig.h"
 
 /* One row per BUILD-ENABLED locale slot, plus one reserved Back row
@@ -494,6 +555,18 @@ static void ExpansionLanguageMenu_PrepareScreen(void)
     BG_SetPosition(BG_3, 0, 0);
 }
 
+static struct MenuRect ExpansionLanguageMenu_GetMenuRect(u8 rowCount)
+{
+    struct MenuRect rect;
+
+    rect.x = 6;
+    rect.y = ExpansionLanguageMenu_GetMenuTop(rowCount);
+    rect.w = 18;
+    rect.h = ExpansionLanguageMenu_GetMenuHeight(rowCount);
+
+    return rect;
+}
+
 static void ExpansionLanguageMenu_SelectorOnEnd(struct MenuProc *proc)
 {
     (void)proc;
@@ -503,7 +576,7 @@ static void ExpansionLanguageMenu_SelectorOnEnd(struct MenuProc *proc)
 
 CONST_DATA struct MenuDef gExpansionLanguageSelectorMenuDef =
 {
-    {6, 6, 18, 0},
+    {6, 0, 18, 0},
     0,
     sLanguageMenuItemDefs,
     0,
@@ -520,6 +593,7 @@ CONST_DATA struct MenuDef gExpansionLanguageSelectorMenuDef =
 static CONST_DATA struct ProcCmd gProcScr_RedrawConfigAfterLanguageMenu[] =
 {
     PROC_SLEEP(1),
+    PROC_CALL(UnlockMenuScrollBar),
     PROC_CALL(Config_RedrawAfterLanguageMenu),
     PROC_END,
 };
@@ -532,7 +606,7 @@ static void ExpansionLanguageMenu_SettingsOnEnd(struct MenuProc *proc)
 
 CONST_DATA struct MenuDef gExpansionLanguageSettingsMenuDef =
 {
-    {6, 6, 18, 0},
+    {6, 0, 18, 0},
     0,
     sLanguageMenuItemDefs,
     0,
@@ -691,12 +765,15 @@ static void ExpansionLanguageMenu_RuntimeInit(ProcPtr procPtr)
 
 static void ExpansionLanguageMenu_ShowSelector(ProcPtr procPtr)
 {
+    u8 rowCount;
+
     ExpansionLanguageMenu_PrepareScreen();
-    ExpansionLanguageMenu_BuildLocaleRows(sLanguageMenuItemDefs, FALSE);
+    rowCount = ExpansionLanguageMenu_BuildLocaleRows(sLanguageMenuItemDefs, FALSE);
 
     gExpansionLanguageMenuProbe.active = TRUE;
 
-    StartMenu(&gExpansionLanguageSelectorMenuDef, procPtr);
+    StartMenuAt(&gExpansionLanguageSelectorMenuDef,
+        ExpansionLanguageMenu_GetMenuRect(rowCount), procPtr);
 }
 
 static u8 ExpansionLanguageMenu_ChildMenuBlocked(ProcPtr procPtr)
@@ -722,18 +799,21 @@ void ExpansionLanguageMenu_OpenSettings(ProcPtr parent)
     ExpansionLocaleId current;
     ExpansionLocaleId locale;
     u8 itemIndex;
+    u8 rowCount;
 
-    ExpansionLanguageMenu_BuildLocaleRows(sLanguageMenuItemDefs, TRUE);
+    rowCount = ExpansionLanguageMenu_BuildLocaleRows(sLanguageMenuItemDefs, TRUE);
 
     gExpansionLanguageMenuProbe.settingsActive = TRUE;
     gExpansionLanguageMenuProbe.settingsOpenCount++;
+    LockMenuScrollBar();
 
     BG_Fill(gBG0TilemapBuffer, 0);
     BG_Fill(gBG1TilemapBuffer, 0);
     BG_EnableSyncByMask(BG0_SYNC_BIT | BG1_SYNC_BIT);
 
     ResetTextFont();
-    menu = StartMenu(&gExpansionLanguageSettingsMenuDef, parent);
+    menu = StartMenuAt(&gExpansionLanguageSettingsMenuDef,
+        ExpansionLanguageMenu_GetMenuRect(rowCount), parent);
 
     current = ExpansionLocale_GetCurrent();
     itemIndex = 0;

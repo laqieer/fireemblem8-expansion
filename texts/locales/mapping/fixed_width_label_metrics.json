@@ -12,9 +12,9 @@
     },
     "zh-Hans": {
       "codepoints_path": "graphics/fonts/cjk/zh-Hans.system.codepoints.u32le",
-      "codepoints_sha256": "8933facafa7bb5825f2fd1e5f321451d19a5b6b8d382ba4e12caaecbd0517c93",
+      "codepoints_sha256": "e23a6dd56bfb62dac469fc77ee7e42a0b8a6f0b7103801a659747946004898e4",
       "widths_path": "graphics/fonts/cjk/zh-Hans.system.widths.u8",
-      "widths_sha256": "198a00f38f9a6e2f5472b570fe68783017af80c540a02aeabea91d9ece3b557e"
+      "widths_sha256": "e536481e15127314cb9401730c6778a1046836a760a39fdf9119f76e5ac1fdea"
     }
   },
   "kind": "fe8u-fixed-width-label-metrics",
