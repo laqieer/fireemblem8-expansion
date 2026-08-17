@@ -22,7 +22,7 @@
     },
     {
       "frame": 1690,
-      "framebuffer_hash": "fnv1a64-rgb24:fd5b926ec2fb1e7d",
+      "framebuffer_hash": "fnv1a64-rgb24:0be48d3d7170ba97",
       "name": "post-reset-selector-skipped-zh-hans-restored",
       "probes": [
         {"address": "0x02031a94", "size": 1, "value": "0x00"},
@@ -37,7 +37,7 @@
   "format_version": 2,
   "rom": {
     "game_code": "BE8E",
-    "sha1": "04c3b20dd41f62f915002bdf58e11dc7bac6785b",
+    "sha1": "dbcf81947c63bba23fa2261661691570b2f664c8",
     "size": 33554432,
     "title": "FIREEMBLEM2E"
   },
