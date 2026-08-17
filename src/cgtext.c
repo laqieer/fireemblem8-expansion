@@ -1590,8 +1590,6 @@ void RestartCgTextInterpreter(struct CgTextMainProc * parent)
     return;
 }
 
-static int sYesNoChoiceStep;
-
 static void GetYesNoChoiceLabelLayout(
     int limit,
     int firstWidth,
@@ -1668,7 +1666,7 @@ void YesNoChoice_Loop_KeyHandler(struct YesNoChoiceProc * proc)
     }
 
     DisplayUiHand(
-        proc->x + (proc->currentChoice - 1) * sYesNoChoiceStep - 4,
+        proc->x + (proc->currentChoice - 1) * proc->step - 4,
         proc->y);
 
     return;
@@ -1694,6 +1692,7 @@ void StartYesNoChoice(int * choiceTextIds, struct Text * th, int x, int y, int c
     struct YesNoChoiceProc * proc;
     int firstX;
     int secondX;
+    int step;
     int firstWidth;
     int secondWidth;
 
@@ -1705,7 +1704,7 @@ void StartYesNoChoice(int * choiceTextIds, struct Text * th, int x, int y, int c
         secondWidth,
         &firstX,
         &secondX,
-        &sYesNoChoiceStep);
+        &step);
 
     Text_InsertDrawString(
         th, firstX, color, GetStringFromIndex(choiceTextIds[0]));
@@ -1716,6 +1715,7 @@ void StartYesNoChoice(int * choiceTextIds, struct Text * th, int x, int y, int c
     proc->currentChoice = defaultChoice;
     proc->x = x + firstX;
     proc->y = y;
+    proc->step = step;
 
     return;
 }

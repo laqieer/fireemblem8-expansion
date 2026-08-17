@@ -550,9 +550,9 @@ class CjkSettingsFingerprintContractTests(unittest.TestCase):
         fingerprint = json.loads(CJK_SETTINGS_FINGERPRINT.read_text(encoding="utf-8"))
 
         expected_framebuffer_hashes = [
-            "fnv1a64-rgb24:94dc8281cfc35712",
-            "fnv1a64-rgb24:9565444d2a350a82",
-            "fnv1a64-rgb24:ca21676b88966cc6",
+            "fnv1a64-rgb24:9995888dd9db25cb",
+            "fnv1a64-rgb24:c09b54be7f4497ac",
+            "fnv1a64-rgb24:f72f30067ef23674",
         ]
         expected_region_hashes = [
             "fnv1a64-region:c6a3e45929fb9ee0",

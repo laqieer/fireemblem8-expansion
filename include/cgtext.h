@@ -84,6 +84,7 @@ struct YesNoChoiceProc
     /* 2A */ s16 currentChoice;
     /* 2C */ s16 x;
     /* 2E */ s16 y;
+    /* 30 */ s16 step;
 };
 
 void SetCgTextFlags(int flags);
