@@ -1607,6 +1607,7 @@ MODERN_LOCALE_PROFILE_EN_JA_ZH_HANS_ROOT := $(MODERN_BUILD_ROOT)-locale-en-ja-zh
 MODERN_LOCALE_PROFILE_EN_JA_ZH_HANS_QPS_ROOT := \
 	$(MODERN_BUILD_ROOT)-locale-en-ja-zh-hans-qps
 MODERN_LOCALE_PROFILE_EN_EU_ROOT := $(MODERN_BUILD_ROOT)-locale-en-fr-de-es-it
+MODERN_LOCALE_PROFILE_ALL_ROOT := $(MODERN_BUILD_ROOT)-locale-all
 MODERN_LOCALE_PROFILE_EN_JA_OUTPUT_DIR := \
 	$(MODERN_LOCALE_PROFILE_EN_JA_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)
 MODERN_LOCALE_PROFILE_EN_ZH_HANS_OUTPUT_DIR := \
@@ -1617,6 +1618,8 @@ MODERN_LOCALE_PROFILE_EN_JA_ZH_HANS_QPS_OUTPUT_DIR := \
 	$(MODERN_LOCALE_PROFILE_EN_JA_ZH_HANS_QPS_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)
 MODERN_LOCALE_PROFILE_EN_EU_OUTPUT_DIR := \
 	$(MODERN_LOCALE_PROFILE_EN_EU_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)
+MODERN_LOCALE_PROFILE_ALL_OUTPUT_DIR := \
+	$(MODERN_LOCALE_PROFILE_ALL_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)
 
 expansion-modern-localization-profile-en-ja:
 	+$(MAKE) expansion-modern-rom MODERN_CONFIG=$(MODERN_CONFIG) MODERN_ABI=$(MODERN_ABI) \
@@ -1644,6 +1647,11 @@ expansion-modern-localization-profile-en-fr-de-es-it:
 	+$(MAKE) expansion-modern-rom MODERN_CONFIG=$(MODERN_CONFIG) MODERN_ABI=$(MODERN_ABI) \
 		MODERN_ROM_SIZE=32M MODERN_BUILD_ROOT=$(MODERN_LOCALE_PROFILE_EN_EU_ROOT) \
 		EXPANSION_ENABLED_LOCALES=en,fr,de,es,it
+
+expansion-modern-localization-profile-all:
+	+$(MAKE) expansion-modern-rom MODERN_CONFIG=$(MODERN_CONFIG) MODERN_ABI=$(MODERN_ABI) \
+		MODERN_ROM_SIZE=32M MODERN_BUILD_ROOT=$(MODERN_LOCALE_PROFILE_ALL_ROOT) \
+		EXPANSION_ENABLED_LOCALES=en,ja,zh-Hans,fr,de,es,it
 
 # Build the product profiles serially: every private modern build root still
 # shares the generated battle-animation sidecar, so parallel recursive profile
@@ -1694,6 +1702,7 @@ expansion-modern-localization-profile-headroom-check:
 	expansion-modern-localization-profile-en-ja-zh-hans \
 	expansion-modern-localization-profile-en-ja-zh-hans-qps \
 	expansion-modern-localization-profile-en-fr-de-es-it \
+	expansion-modern-localization-profile-all \
 	expansion-modern-localization-profile-headroom-check
 
 # Compile-settings stamp: a content-addressed prerequisite of every modern

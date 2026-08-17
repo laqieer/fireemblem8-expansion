@@ -102,6 +102,7 @@ make expansion-modern-localization-profile-en-ja
 make expansion-modern-localization-profile-en-zh-hans
 make expansion-modern-localization-profile-en-ja-zh-hans
 make expansion-modern-localization-profile-en-fr-de-es-it
+make expansion-modern-localization-profile-all
 ```
 
 Equivalent direct builds use `EXPANSION_ENABLED_LOCALES=en,ja`,

@@ -1,5 +1,7 @@
 import json
+import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -77,6 +79,39 @@ class EuGameCatalogTests(unittest.TestCase):
             self.assertEqual(report["present_count"], 3414)
             self.assertEqual(report["explicit_fallback_count"], 0)
             self.assertEqual(report["provider_unavailable_count"], 0)
+
+    def test_combined_cjk_and_eu_cli_profile_generates(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "scripts.localization.game_catalog",
+                    "generate",
+                    "--out-dir",
+                    tmp,
+                    "--enabled-locales",
+                    "ja,zh-Hans,fr,de,es,it",
+                ],
+                cwd=ROOT,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout)
+            report = json.loads(
+                (Path(tmp) / "game_localization_report.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertEqual(
+                report["enabled_locales"],
+                ["ja", "zh-Hans", "fr", "de", "es", "it"],
+            )
+            self.assertEqual(
+                report["compiled_locales"],
+                ["en", "ja", "zh-Hans", "fr", "de", "es", "it"],
+            )
 
 
 if __name__ == "__main__":

@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 from scripts.localization.game_locales.authored import (
@@ -232,8 +233,16 @@ def _audit_from_args(args: argparse.Namespace, build):
         args.expansion_catalog_root,
         cjk_locales,
     )
-    return build_leakage_report(
+    audit_build = replace(
         build,
+        locales=tuple(
+            bundle
+            for bundle in build.locales
+            if bundle.locale in CJK_LOCALE_IDS
+        ),
+    )
+    return build_leakage_report(
+        audit_build,
         review=review,
         script_review=script_review,
         raw_closure=raw_closure,

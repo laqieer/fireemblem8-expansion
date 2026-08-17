@@ -172,6 +172,7 @@ make expansion-modern-localization-profile-en-ja
 make expansion-modern-localization-profile-en-zh-hans
 make expansion-modern-localization-profile-en-ja-zh-hans
 make expansion-modern-localization-profile-en-fr-de-es-it
+make expansion-modern-localization-profile-all
 
 # Optional four-locale profile; Config shows EN, JA, More.
 make expansion-modern-localization-profile-en-ja-zh-hans-qps
