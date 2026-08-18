@@ -221,14 +221,12 @@ int main(void)
 
     CHECK(ExpansionLanguageMenu_GetMenuTop(5) == 6,
         "five locale rows must retain the original y=6 position");
+    CHECK(ExpansionLanguageMenu_GetMenuHeight(5) == 12,
+        "four More locales plus Back must use a 12-tile menu height");
     CHECK(ExpansionLanguageMenu_GetMenuHeight(7) == 16,
         "seven locale rows must use a 16-tile menu height");
     CHECK(ExpansionLanguageMenu_GetMenuTop(7) == 2,
         "seven locale rows must be centered at y=2");
-    CHECK(ExpansionLanguageMenu_GetMenuHeight(8) == 18,
-        "seven locales plus Back must use an 18-tile menu height");
-    CHECK(ExpansionLanguageMenu_GetMenuTop(8) == 1,
-        "seven locales plus Back must be centered at y=1");
 
     /* Defensive invalid current locale adopts the first enabled choice. */
     ok &= CheckSettings(

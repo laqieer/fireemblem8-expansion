@@ -1,0 +1,5 @@
+"""Shared FE8J legacy-space token contract."""
+
+LEGACY_SJIS_SPACE_BYTES = b"\x81\x40"
+LEGACY_SJIS_SPACE_SCALAR = 0x110000
+LEGACY_SJIS_SPACE_WIDTH = 6

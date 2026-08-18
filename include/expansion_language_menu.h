@@ -94,11 +94,12 @@ enum ExpansionLanguageMenuStartupAction ExpansionLanguageMenu_DecideStartupActio
  * Pure settings-row decision logic. Builds with up to four enabled
  * locales select all languages inline. Builds with more than four show
  * the first three locales plus More: moving right from the third locale
- * (or from a current locale outside the first three) opens the full menu,
+ * (or from a current locale outside the first three) opens the remaining-
+ * locale menu,
  * while moving left from an out-of-line locale selects the third inline
  * locale. `direction` is negative for Left and positive for Right.
  * `outLocale` receives the locale to select, or
- * EXPANSION_LOCALE_INVALID when the full menu should open.
+ * EXPANSION_LOCALE_INVALID when the remaining-locale menu should open.
  */
 enum ExpansionLanguageSettingsAction ExpansionLanguageMenu_DecideSettingsAction(
     u32 enabledLocaleMask,

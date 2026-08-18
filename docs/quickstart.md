@@ -411,9 +411,10 @@ render starts at BG row 31; its icon and text drawing explicitly wrap the
 second tile row to row 0 instead of writing past the 32x32 tilemap buffer.
 The Language row selects up to four enabled locales inline (compact locale
 labels share the same value row). Builds with more than four locales show the
-first three plus `More`; only `More` opens the full submenu. While that submenu
-is active Configuration's own hand/scroll sprites are suppressed, and its
-on-end callback redraws the six visible rows and help text after cleanup.
+first three plus `More`; only `More` opens the remaining-locale submenu. While
+that submenu is active, Configuration's header remains visible while its own
+hand/scroll sprites are suppressed; its on-end callback redraws the six
+visible rows and help text after cleanup.
 
 `UnpackUiFrameBuffered()` decompresses UI-frame graphics into the scratch
 range ending at `gFadeComponentStep`. The modern linker therefore places that

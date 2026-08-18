@@ -16,6 +16,10 @@ void DialogBoxGetGlyphLen(const char *str, u8 *xOut);
 extern struct TalkState *sTalkState;
 
 static int sFailures;
+static int sHelpBoxDrawCallCount;
+static int sHelpBoxDrawCallX[6];
+static int sHelpBoxDrawCallValue[6];
+static const char *sHelpBoxDrawCallText[6];
 
 #define CHECK(condition) do { \
     if (!(condition)) { \
@@ -72,6 +76,62 @@ int GetStringTextLen(const char *str)
     }
 }
 
+void Text_InsertDrawString(struct Text *text, int x, int colorId, const char *str)
+{
+    (void)text;
+    (void)colorId;
+    sHelpBoxDrawCallX[sHelpBoxDrawCallCount] = x;
+    sHelpBoxDrawCallValue[sHelpBoxDrawCallCount] = -1;
+    sHelpBoxDrawCallText[sHelpBoxDrawCallCount] = str;
+    sHelpBoxDrawCallCount++;
+}
+
+void Text_InsertDrawNumberOrBlank(struct Text *text, int x, int colorId, int number)
+{
+    (void)text;
+    (void)colorId;
+    sHelpBoxDrawCallX[sHelpBoxDrawCallCount] = x;
+    sHelpBoxDrawCallValue[sHelpBoxDrawCallCount] = number;
+    sHelpBoxDrawCallText[sHelpBoxDrawCallCount] = NULL;
+    sHelpBoxDrawCallCount++;
+}
+
+char *GetItemDisplayRankString(int item)
+{
+    (void)item;
+    return "D";
+}
+
+char *GetItemDisplayRangeString(int item)
+{
+    (void)item;
+    return "\x81\x40\x81\x40\x81\x40" "1";
+}
+
+int GetItemWeight(int item)
+{
+    (void)item;
+    return 10;
+}
+
+int GetItemMight(int item)
+{
+    (void)item;
+    return 8;
+}
+
+int GetItemHit(int item)
+{
+    (void)item;
+    return 75;
+}
+
+int GetItemCrit(int item)
+{
+    (void)item;
+    return 0;
+}
+
 void SetTextFontGlyphs(int glyphSet)
 {
     (void)glyphSet;
@@ -97,10 +157,7 @@ void CgText_TestGetYesNoChoiceLabelLayout(
     int *firstX,
     int *secondX,
     int *step);
-void HelpBox_TestGetWeaponRangeAndWeightPositions(
-    int rangeWidth,
-    int *rangeX,
-    int *weightX);
+void DrawHelpBoxWeaponStats(int item);
 
 char *GetTacticianName(void)
 {
@@ -201,8 +258,6 @@ static void TestVisibleContentAndWidthAwareLayouts(void)
     int firstX;
     int secondX;
     int step;
-    int rangeX;
-    int weightX;
 
     CHECK(TextUtf8_HasVisibleContent(whitespace) == FALSE);
     CHECK(TextUtf8_HasVisibleContent(visible) == TRUE);
@@ -219,12 +274,27 @@ static void TestVisibleContentAndWidthAwareLayouts(void)
     CHECK(firstX == 0);
     CHECK(secondX == 40);
     CHECK(secondX + 32 <= 72);
+}
 
-    HelpBox_TestGetWeaponRangeAndWeightPositions(
-        64, &rangeX, &weightX);
-    CHECK(rangeX >= 48);
-    CHECK(rangeX + 64 + 4 <= weightX);
-    CHECK(weightX + 16 <= 144);
+static void TestWeaponHelpBoxFixedValueSlots(void)
+{
+    sHelpBoxDrawCallCount = 0;
+
+    DrawHelpBoxWeaponStats(0);
+
+    CHECK(sHelpBoxDrawCallCount == 6);
+    CHECK(sHelpBoxDrawCallX[0] == 32);
+    CHECK(strcmp(sHelpBoxDrawCallText[0], "D") == 0);
+    CHECK(sHelpBoxDrawCallX[1] == 67);
+    CHECK(strcmp(sHelpBoxDrawCallText[1], "\x81\x40\x81\x40\x81\x40" "1") == 0);
+    CHECK(sHelpBoxDrawCallX[2] == 129);
+    CHECK(sHelpBoxDrawCallValue[2] == 10);
+    CHECK(sHelpBoxDrawCallX[3] == 32);
+    CHECK(sHelpBoxDrawCallValue[3] == 8);
+    CHECK(sHelpBoxDrawCallX[4] == 81);
+    CHECK(sHelpBoxDrawCallValue[4] == 75);
+    CHECK(sHelpBoxDrawCallX[5] == 129);
+    CHECK(sHelpBoxDrawCallValue[5] == 0);
 }
 
 static void TestNameCopyBounds(void)
@@ -281,6 +351,7 @@ int main(void)
     TestHelpDimensionsAndGlyphAdvance();
     TestTalkLengthControlsAndSpacing();
     TestVisibleContentAndWidthAwareLayouts();
+    TestWeaponHelpBoxFixedValueSlots();
     TestNameCopyBounds();
 
     if (sFailures == 0)

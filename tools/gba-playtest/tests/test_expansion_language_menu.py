@@ -488,6 +488,26 @@ class UiConfigLanguageEntryStructureTests(unittest.TestCase):
         self.assertIn("ExpansionLanguageMenu_OpenSettings(proc)", body)
         self.assertIn("EXPANSION_LANGUAGE_SETTINGS_OPEN_MENU", body)
 
+    def test_more_submenu_lists_only_locales_outside_inline_slots(self):
+        language_text = LANGUAGE_MENU_SRC.read_text(encoding="utf-8")
+        match = re.search(
+            r"void ExpansionLanguageMenu_OpenSettings\(ProcPtr parent\)\s*\{(.*?)\n\}",
+            language_text,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(match)
+        body = match.group(1)
+        self.assertIn(
+            "skippedRows = EXPANSION_LANGUAGE_INLINE_MAX - 1;",
+            body,
+        )
+        self.assertRegex(
+            body,
+            r"ExpansionLanguageMenu_BuildLocaleRows\(\s*"
+            r"sLanguageMenuItemDefs,\s*TRUE,\s*skippedRows\)",
+        )
+        self.assertIn("if (skippedRows != 0)", body)
+
     def test_a_routes_to_more_only_for_virtual_more_slot(self):
         match = re.search(
             r"void Config_Loop_KeyHandler\(struct ConfigProc \* proc\)\s*\{(.*?)\n\}",
@@ -539,7 +559,23 @@ class UiConfigLanguageEntryStructureTests(unittest.TestCase):
             re.DOTALL,
         )
         self.assertIsNotNone(match)
-        self.assertIn("gExpansionLanguageMenuProbe.settingsActive", match.group(1))
+        body = match.group(1)
+        self.assertIn(
+            "if (!gExpansionLanguageMenuProbe.settingsActive)",
+            body,
+        )
+        self.assertNotRegex(
+            body,
+            r"if\s*\(gExpansionLanguageMenuProbe\.settingsActive\)\s*return",
+        )
+        self.assertLess(
+            body.index("gSprite_ConfigurationUiHeader"),
+            body.index("if (!gExpansionLanguageMenuProbe.settingsActive)"),
+        )
+        self.assertGreater(
+            body.index("UpdateMenuScrollBarConfig("),
+            body.index("DisplayUiHand("),
+        )
 
 
 class CjkSettingsFingerprintContractTests(unittest.TestCase):

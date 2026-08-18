@@ -489,21 +489,28 @@ static u8 ExpansionLanguageMenu_RowSelected(struct MenuProc *menu, struct MenuIt
 }
 
 /* Populates `defs` (an EXPANSION_LANGUAGE_MENU_MAX_ROWS-sized array) with
- * one row per build-enabled ExpansionLocaleId (in ascending id order --
+ * build-enabled ExpansionLocaleId rows (in ascending id order --
  * never the currently-selected/enabled-order-dependent order, so a
  * host/playtest scenario's cursor navigation is deterministic across
- * runs), optionally followed by one reserved Back row. Returns the total
- * row count actually written. */
-static u8 ExpansionLanguageMenu_BuildLocaleRows(struct MenuItemDef *defs, bool8 includeBackRow)
+ * runs), optionally skipping already-inline locales and appending one
+ * reserved Back row. Returns the total row count actually written. */
+static u8 ExpansionLanguageMenu_BuildLocaleRows(
+    struct MenuItemDef *defs,
+    bool8 includeBackRow,
+    u8 skipEnabledRows)
 {
     ExpansionLocaleId locale;
     u8 count = 0;
+    u8 enabledIndex = 0;
 
     memset(defs, 0, sizeof(struct MenuItemDef) * EXPANSION_LANGUAGE_MENU_MAX_ROWS);
 
     for (locale = 0; locale < EXPANSION_LOCALE_COUNT; ++locale)
     {
         if (!ExpansionLocale_IsEnabled(locale))
+            continue;
+
+        if (enabledIndex++ < skipEnabledRows)
             continue;
 
         /* Cannot overflow: EXPANSION_LANGUAGE_MENU_MAX_ROWS reserves all
@@ -768,7 +775,7 @@ static void ExpansionLanguageMenu_ShowSelector(ProcPtr procPtr)
     u8 rowCount;
 
     ExpansionLanguageMenu_PrepareScreen();
-    rowCount = ExpansionLanguageMenu_BuildLocaleRows(sLanguageMenuItemDefs, FALSE);
+    rowCount = ExpansionLanguageMenu_BuildLocaleRows(sLanguageMenuItemDefs, FALSE, 0);
 
     gExpansionLanguageMenuProbe.active = TRUE;
 
@@ -800,8 +807,13 @@ void ExpansionLanguageMenu_OpenSettings(ProcPtr parent)
     ExpansionLocaleId locale;
     u8 itemIndex;
     u8 rowCount;
+    u8 skippedRows;
 
-    rowCount = ExpansionLanguageMenu_BuildLocaleRows(sLanguageMenuItemDefs, TRUE);
+    skippedRows = EXPANSION_LANGUAGE_INLINE_MAX - 1;
+    rowCount = ExpansionLanguageMenu_BuildLocaleRows(
+        sLanguageMenuItemDefs,
+        TRUE,
+        skippedRows);
 
     gExpansionLanguageMenuProbe.settingsActive = TRUE;
     gExpansionLanguageMenuProbe.settingsOpenCount++;
@@ -822,6 +834,12 @@ void ExpansionLanguageMenu_OpenSettings(ProcPtr parent)
     {
         if (!ExpansionLocale_IsEnabled(locale))
             continue;
+
+        if (skippedRows != 0)
+        {
+            skippedRows--;
+            continue;
+        }
 
         if (locale == current)
         {

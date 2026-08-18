@@ -14,6 +14,11 @@ from scripts.localization.game_locales.ending_metrics import (
     _ascii_widths,
     _cjk_widths,
 )
+from scripts.localization.legacy_spacing import (
+    LEGACY_SJIS_SPACE_BYTES,
+    LEGACY_SJIS_SPACE_SCALAR,
+    LEGACY_SJIS_SPACE_WIDTH,
+)
 
 CONTROL_DOMAIN_FE8J = "fe8j"
 CONTROL_DOMAIN_FE8U = "fe8u"
@@ -284,8 +289,19 @@ def tokenize_payload(payload: bytes, *, source_name: str) -> Tuple[StreamToken, 
             )
             offset += length
             continue
-        if first == 0x81 and offset + 2 <= limit - 1 and payload[offset + 1] == 0x40:
-            tokens.append(StreamToken("scalar", offset, 2, scalar=0x3000))
+        if (
+            first == LEGACY_SJIS_SPACE_BYTES[0]
+            and offset + 2 <= limit - 1
+            and payload[offset + 1] == LEGACY_SJIS_SPACE_BYTES[1]
+        ):
+            tokens.append(
+                StreamToken(
+                    "scalar",
+                    offset,
+                    2,
+                    scalar=LEGACY_SJIS_SPACE_SCALAR,
+                )
+            )
             offset += 2
             continue
 
@@ -454,6 +470,8 @@ def _is_talk_payload(tokens: Sequence[StreamToken]) -> bool:
 def _scalar_width(scalar: int, *, metrics: TalkFontMetrics) -> int:
     if scalar < 0x20:
         return 0
+    if scalar == LEGACY_SJIS_SPACE_SCALAR:
+        return LEGACY_SJIS_SPACE_WIDTH
     if scalar < 0x80:
         try:
             return metrics.ascii_widths[scalar]
@@ -508,7 +526,10 @@ def validate_talk_line_widths(
             line_count += 1
             max_line_width = max(max_line_width, line_width)
             if line_width > metrics.allocation_pixels:
-                preview = "".join(chr(scalar) for scalar in line_scalars)
+                preview = "".join(
+                    " " if scalar == LEGACY_SJIS_SPACE_SCALAR else chr(scalar)
+                    for scalar in line_scalars
+                )
                 raise ControlStreamError(
                     f"{source_name}: talk line {preview!r} is {line_width}px, "
                     f"exceeding the {metrics.allocation_pixels}px allocation"

@@ -21,6 +21,7 @@ from scripts.localization.game_catalog.control_streams import (
     validate_mouth_toggle_balance,
     validate_talk_line_widths,
 )
+from scripts.localization.legacy_spacing import LEGACY_SJIS_SPACE_SCALAR
 
 
 def face_operands(payload):
@@ -48,6 +49,16 @@ class FinalControlStreamTests(unittest.TestCase):
         cls.build = build_game_catalog(suffix_share=False)
         cls.portrait_map = load_portrait_operand_map()
 
+    def test_fe8j_space_token_keeps_legacy_width_semantics(self):
+        tokens = tokenize_payload(
+            b"A\x81\x40B\x00",
+            source_name="legacy FE8J spacing",
+        )
+        self.assertEqual(
+            tuple(token.scalar for token in tokens if token.kind == "scalar"),
+            (ord("A"), LEGACY_SJIS_SPACE_SCALAR, ord("B")),
+        )
+
     def test_every_final_payload_is_bounded_and_fids_match_fe8u_context(self):
         self.assertEqual(
             self.build.report["control_stream_validation"],
@@ -58,7 +69,7 @@ class FinalControlStreamTests(unittest.TestCase):
                 "modeled_target_count": 275,
                 "mouth_balance_validated_payload_count": 6828,
                 "portrait_remapped_target_count": 187,
-                "talk_line_count": 54791,
+                "talk_line_count": 54714,
                 "talk_payload_count": 1976,
                 "validated_payload_count": 6828,
             },

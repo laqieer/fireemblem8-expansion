@@ -397,7 +397,7 @@ void SaveDraw_SetObjPalColor(s8 flag, u16 color)
 void SaveDraw_DrawMainMenuOption(ProcPtr unused, int x, int y, u8 spriteIdx, u8 palIdA, u8 palIdB)
 {
     PutSpriteExt(4, OAM1_X(x), y, Sprite_Savedraw_0, OAM2_PAL(palIdA));
-    PutSpriteExt(4, OAM1_X(x + 8), y + 8, SpriteArray_SavemenuData_1[spriteIdx], OAM2_PAL(palIdB));
+    PutSpriteExt(4, OAM1_X(x + 8), y + 8, GetSaveMenuMainOptionSprite(spriteIdx), OAM2_PAL(palIdB));
     return;
 }
 
@@ -453,8 +453,6 @@ void SaveDraw_UpdateSlotPalette(struct SaveDrawProc * proc)
     return;
 }
 
-extern u16 * SpriteArray_SavemenuData_1[];
-
 //! FE8U = 0x080AADE0
 void SaveDraw_DrawSelectedOption(struct SaveDrawProc * proc)
 {
@@ -470,14 +468,14 @@ void SaveDraw_DrawSelectedOption(struct SaveDrawProc * proc)
     if (saveMenuProc->unk_46 != 0)
     {
         if (saveMenuProc->extra_sel_bitfile & EXTRA_MENU_OPTION_MAP)
-            PutSpriteExt(4, 56, y + 8, SpriteArray_SavemenuData_1[10], OAM2_PAL(4));
+            PutSpriteExt(4, 56, y + 8, GetSaveMenuMainOptionSprite(10), OAM2_PAL(4));
         else
-            PutSpriteExt(4, 56, y + 8, SpriteArray_SavemenuData_1[8], OAM2_PAL(4));
+            PutSpriteExt(4, 56, y + 8, GetSaveMenuMainOptionSprite(8), OAM2_PAL(4));
     }
     else
     {
         spriteIdx = BitfileToIndex(saveMenuProc->main_sel_bitfile);
-        PutSpriteExt(4, 56, y + 8, SpriteArray_SavemenuData_1[spriteIdx], OAM2_PAL(4));
+        PutSpriteExt(4, 56, y + 8, GetSaveMenuMainOptionSprite(spriteIdx), OAM2_PAL(4));
     }
 }
 

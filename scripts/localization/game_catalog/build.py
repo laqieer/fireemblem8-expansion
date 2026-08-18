@@ -32,6 +32,7 @@ from scripts.localization.game_locales.width_contract import (
     apply_width_contract,
     load_width_registry,
 )
+from scripts.localization.legacy_spacing import LEGACY_SJIS_SPACE_BYTES
 from scripts.localization.game_locales.parsers import LocaleSourceError, parse_hash_indexed
 from scripts.localization.game_locales.raw_providers import (
     PINNED_SOURCE_REPOSITORY,
@@ -400,7 +401,11 @@ def _encode_control_unit(value: int) -> bytes:
     return chunk
 
 
-def encode_canonical_text(text: str) -> bytes:
+def encode_canonical_text(
+    text: str,
+    *,
+    preserve_legacy_sjis_space: bool = False,
+) -> bytes:
     try:
         units = expand_canonical_text(text)
     except ControlSyntaxError as error:
@@ -413,6 +418,11 @@ def encode_canonical_text(text: str) -> bytes:
                     "literal text contains a physical newline; use [CTRL:0001]"
                 )
             encoded = unit.encode("utf-8")
+            if preserve_legacy_sjis_space:
+                encoded = encoded.replace(
+                    "\u3000".encode("utf-8"),
+                    LEGACY_SJIS_SPACE_BYTES,
+                )
             if b"\x00" in encoded:
                 raise GameCatalogError("literal UTF-8 payload contains an embedded NUL byte")
             payload.extend(encoded)
@@ -508,7 +518,10 @@ def _entry_for_locale(
                 f"{format_message_id(row.target_id)}"
             )
         source_text = indexed_sources[locale][source_id]
-        encoded_bytes = encode_canonical_text(source_text)
+        encoded_bytes = encode_canonical_text(
+            source_text,
+            preserve_legacy_sjis_space=(locale == "ja"),
+        )
         try:
             encoded_bytes, _ = remap_fe8j_portrait_operands(
                 encoded_bytes,
@@ -579,7 +592,10 @@ def _entry_for_locale(
             )
         except RawProviderError as error:
             raise GameCatalogError(str(error)) from error
-        encoded_bytes = encode_canonical_text(source_text)
+        encoded_bytes = encode_canonical_text(
+            source_text,
+            preserve_legacy_sjis_space=True,
+        )
         try:
             encoded_bytes, _ = remap_fe8j_portrait_operands(
                 encoded_bytes,
@@ -1310,12 +1326,18 @@ def build_game_catalog(
     )
     remapped_targets = {
         entry.target_id
-        for entries in unwrapped_locale_entries.values()
+        for locale, entries in unwrapped_locale_entries.items()
         for entry in entries
         if entry.control_domain == CONTROL_DOMAIN_FE8J
         and entry.encoded_bytes is not None
         and entry.encoded_bytes
-        != encode_canonical_text(entry.source_text or "")
+        != encode_canonical_text(
+            entry.source_text or "",
+            preserve_legacy_sjis_space=(
+                locale == "ja"
+                and entry.locale_provider_kind in ("indexed", "raw")
+            ),
+        )
     }
     cjk_enabled = any(
         bundle.locale in CJK_LOCALE_IDS for bundle in locale_bundles

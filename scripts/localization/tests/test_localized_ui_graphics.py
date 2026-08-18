@@ -1,4 +1,5 @@
 import json
+import re
 import subprocess
 import sys
 import unittest
@@ -123,6 +124,50 @@ class LocalizedUiGraphicsTests(unittest.TestCase):
         self.assertIn("LocalizedUiGraphics_GetSaveMenuMainSprites", registry)
         self.assertIn("return 0;", registry)
 
+    def test_japanese_main_sprite_oam_layout_matches_regional_sheet(self):
+        source = (ROOT / "src" / "savemenu_data.c").read_text(encoding="utf-8")
+        expected_chr = {
+            0: ("100", "104", "108", "10C"),
+            1: ("186", "18A", "106", "10A", "10E"),
+            2: ("110", "114", "118"),
+            3: ("110", "114", "116", "15D", "15F", "11A"),
+            4: ("180", "184", "106", "10A", "10E"),
+            5: ("D0", "D4", "D8"),
+            6: ("18C", "190", "194"),
+            7: ("C0", "C4", "C8"),
+            8: ("C0", "C4", "C8", "CC"),
+            9: ("18E", "192", "196", "19A"),
+        }
+        for index, expected in expected_chr.items():
+            match = re.search(
+                rf"static u16 CONST_DATA sSprite_SavemenuDataJa_{index}\[\]\s*="
+                r"\s*\{(.*?)\n\};",
+                source,
+                re.DOTALL,
+            )
+            self.assertIsNotNone(match, index)
+            self.assertEqual(
+                tuple(re.findall(r"OAM2_CHR\(0x([0-9A-F]+)\)", match.group(1))),
+                expected,
+            )
+
+        array = re.search(
+            r"static u16 \* CONST_DATA sSpriteArray_SavemenuDataJa\[\]\s*="
+            r"\s*\{(.*?)\n\};",
+            source,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(array)
+        self.assertEqual(
+            tuple(
+                re.findall(
+                    r"sSprite_SavemenuDataJa_(\d+)",
+                    array.group(1),
+                )
+            ),
+            ("0", "1", "2", "3", "4", "5", "6", "1", "8", "9", "7"),
+        )
+
     def test_required_graphics_sources_are_tracked_source_types(self):
         generated = (ROOT / "src/data/localized_ui_graphics.c").read_text(
             encoding="utf-8"
@@ -167,6 +212,19 @@ class LocalizedUiGraphicsTests(unittest.TestCase):
         )
         self.assertIn("return Img_SaveScreenSprits;", save)
         self.assertNotIn("Decompress(Img_SaveScreenSprits", save)
+        savedraw = (ROOT / "src" / "savedraw.c").read_text(encoding="utf-8")
+        savemenu_data = (ROOT / "src" / "savemenu_data.c").read_text(
+            encoding="utf-8"
+        )
+        self.assertEqual(savedraw.count("GetSaveMenuMainOptionSprite("), 4)
+        self.assertNotIn("SpriteArray_SavemenuData_1[", savedraw)
+        self.assertIn("sSpriteArray_SavemenuDataJa", savemenu_data)
+        self.assertIn("OAM2_CHR(0x186)", savemenu_data)
+        self.assertIn("OAM2_CHR(0x15D)", savemenu_data)
+        self.assertIn(
+            "ExpansionLocale_GetCurrent() == EXPANSION_LOCALE_JA",
+            savemenu_data,
+        )
         self.assertIn("PutChapterTitleGfx(", save)
         self.assertIn("DrawChapterTitleStr(", terminal)
         self.assertNotIn("DrawChapterTitleStrEx(", save)

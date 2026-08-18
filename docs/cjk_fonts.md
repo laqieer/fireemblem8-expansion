@@ -47,7 +47,9 @@ Visible text is normalized with NFC only. ASCII remains in the existing
 runtime fonts. The source contains one non-ASCII spacing scalar, U+3000
 IDEOGRAPHIC SPACE; FEBuilder schema v1 rejects whitespace, so U+3000 is
 reported separately and the runtime gives it an explicit advance rather than
-performing a bitmap lookup.
+performing a bitmap lookup. Verified FE8J indexed/raw providers preserve the
+original SJIS `0x8140` token and its 6-pixel advance; authored Unicode U+3000
+remains a distinct 16-pixel ideographic space.
 
 Current deterministic counts:
 

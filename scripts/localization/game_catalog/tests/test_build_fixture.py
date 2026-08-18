@@ -318,7 +318,14 @@ class FixtureBuildTests(unittest.TestCase):
 
         self.assertEqual(
             ja.catalog.decode_entry(0x0023),
-            "　決定".encode("utf-8") + b"\x00",
+            b"\x81\x40" + "決定".encode("utf-8") + b"\x00",
+        )
+        self.assertEqual(
+            ja.catalog.decode_entry(0x059C),
+            "売る".encode("utf-8")
+            + b"\x81\x40\x81\x40"
+            + "やめる".encode("utf-8")
+            + b"\x00",
         )
         self.assertEqual(build.report["locales"]["ja"]["provider_counts"]["raw"], 130)
         self.assertEqual(

@@ -11,6 +11,10 @@ from scripts.localization.game_locales.ending_metrics import (
     _cjk_widths,
     _line_width,
 )
+from scripts.localization.legacy_spacing import (
+    LEGACY_SJIS_SPACE_BYTES,
+    LEGACY_SJIS_SPACE_WIDTH,
+)
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -99,6 +103,16 @@ class DebugToolsLocalizationTests(unittest.TestCase):
             locale=locale,
             ascii_widths=cls.ascii_widths,
             cjk_widths=cls.cjk_widths.get(locale, {}),
+        )
+
+    @classmethod
+    def _catalog_entry_width(cls, catalog, message_id, locale):
+        payload = catalog.decode_entry(message_id)[:-1]
+        legacy_spaces = payload.count(LEGACY_SJIS_SPACE_BYTES)
+        text = payload.replace(LEGACY_SJIS_SPACE_BYTES, b"").decode("utf-8")
+        return (
+            cls._pixel_width(text, locale)
+            + legacy_spaces * LEGACY_SJIS_SPACE_WIDTH
         )
 
     @classmethod
@@ -355,16 +369,22 @@ class DebugToolsLocalizationTests(unittest.TestCase):
                 else self.game_catalog.locale_bundle(game_locale).catalog
             )
             for label_id, value_ids in rows:
-                label = catalog.decode_entry(label_id)[:-1].decode("utf-8")
-                label_width = self._pixel_width(label, game_locale)
+                label_width = self._catalog_entry_width(
+                    catalog,
+                    label_id,
+                    game_locale,
+                )
                 with self.subTest(
                     locale=locale,
                     label_id=f"0x{label_id:04X}",
                 ):
                     self.assertLessEqual(8 + label_width, 64)
                 for value_id in value_ids:
-                    value = catalog.decode_entry(value_id)[:-1].decode("utf-8")
-                    value_width = self._pixel_width(value, game_locale)
+                    value_width = self._catalog_entry_width(
+                        catalog,
+                        value_id,
+                        game_locale,
+                    )
                     with self.subTest(
                         locale=locale,
                         label_id=f"0x{label_id:04X}",

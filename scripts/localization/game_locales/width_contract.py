@@ -16,6 +16,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterable, Mapping, Sequence, Tuple
 
+from scripts.localization.legacy_spacing import (
+    LEGACY_SJIS_SPACE_SCALAR,
+    LEGACY_SJIS_SPACE_WIDTH,
+)
+
 from .ending_metrics import EndingLayoutError, _ascii_widths, _cjk_widths
 from .fixed_width_labels import SURFACES, _message_ids
 
@@ -196,6 +201,8 @@ def load_width_metrics(
 def _scalar_width(scalar: int, metrics: WidthMetrics) -> int:
     if scalar < 0x20:
         return 0
+    if scalar == LEGACY_SJIS_SPACE_SCALAR:
+        return LEGACY_SJIS_SPACE_WIDTH
     if scalar < 0x80:
         try:
             return metrics.ascii_widths[scalar]
@@ -231,6 +238,11 @@ def _safe_break(left, right) -> bool:
     """Return whether an inserted NL preserves CJK and ASCII word semantics."""
 
     assert left.scalar is not None and right.scalar is not None
+    if (
+        left.scalar == LEGACY_SJIS_SPACE_SCALAR
+        or right.scalar == LEGACY_SJIS_SPACE_SCALAR
+    ):
+        return True
     left_char = chr(left.scalar)
     right_char = chr(right.scalar)
     if left_char.isspace() or right_char.isspace():

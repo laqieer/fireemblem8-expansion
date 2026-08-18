@@ -1044,29 +1044,29 @@ void DrawConfigUiSprites(void)
     int optionIdx;
     u8 time;
 
-#ifdef MODERN
-    if (gExpansionLanguageMenuProbe.settingsActive)
-        return;
-#endif
-
-    optionIdx = gGameOptionsUiOrder[gConfigUiState->selectedOptionIdx];
-    time = (GetGameClock() % 16) & 8;
-
     CallARM_PushToSecondaryOAM(18, 8, gSprite_ConfigurationUiHeader, OAM2_CHR(0xC0) + OAM2_PAL(2));
 
-    // current option position on screen (cur index - top index)
-    y = (gConfigUiState->selectedOptionIdx - gConfigUiState->headOptionIdx) * 16 + 40;
-
-    DisplayFrozenUiHand(16, y);
-
-    DisplayUiHand(gGameOptions[optionIdx].selectors[GetGameOption(optionIdx)].xPos - 2, y);
-
-    if (!(gConfigUiState->source & CONFIG_UI_SOURCE_FROMPREP) || (PrepGetDeployedUnitAmt() != 0))
+#ifdef MODERN
+    if (!gExpansionLanguageMenuProbe.settingsActive)
+#endif
     {
-        if ((GetSelectedGameOption() == GAME_OPTION_ANIMATION) && (GetSelectedOptionValue() == 3))
+        optionIdx = gGameOptionsUiOrder[gConfigUiState->selectedOptionIdx];
+        time = (GetGameClock() % 16) & 8;
+
+        // current option position on screen (cur index - top index)
+        y = (gConfigUiState->selectedOptionIdx - gConfigUiState->headOptionIdx) * 16 + 40;
+
+        DisplayFrozenUiHand(16, y);
+
+        DisplayUiHand(gGameOptions[optionIdx].selectors[GetGameOption(optionIdx)].xPos - 2, y);
+
+        if (!(gConfigUiState->source & CONFIG_UI_SOURCE_FROMPREP) || (PrepGetDeployedUnitAmt() != 0))
         {
-            // Draw sprite for blinking "A Press" prompt
-            CallARM_PushToSecondaryOAM(192, 40, gObject_16x16, (time != 0) ? OAM2_CHR(0xCE) + OAM2_PAL(2) : OAM2_CHR(0xCC) + OAM2_PAL(2));
+            if ((GetSelectedGameOption() == GAME_OPTION_ANIMATION) && (GetSelectedOptionValue() == 3))
+            {
+                // Draw sprite for blinking "A Press" prompt
+                CallARM_PushToSecondaryOAM(192, 40, gObject_16x16, (time != 0) ? OAM2_CHR(0xCE) + OAM2_PAL(2) : OAM2_CHR(0xCC) + OAM2_PAL(2));
+            }
         }
     }
 

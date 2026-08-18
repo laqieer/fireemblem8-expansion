@@ -16,6 +16,22 @@ class EncodeCanonicalTextTests(unittest.TestCase):
             b"A\x80\x20" + "中".encode("utf-8") + b"\x65\x01\x00",
         )
 
+    def test_verified_fe8j_spacing_preserves_the_legacy_runtime_token(self):
+        self.assertEqual(
+            encode_canonical_text(
+                "売る　　やめる",
+                preserve_legacy_sjis_space=True,
+            ),
+            "売る".encode("utf-8")
+            + b"\x81\x40\x81\x40"
+            + "やめる".encode("utf-8")
+            + b"\x00",
+        )
+        self.assertEqual(
+            encode_canonical_text("　"),
+            "\u3000".encode("utf-8") + b"\x00",
+        )
+
     def test_unknown_and_malformed_controls_are_rejected(self):
         for text in ("[LF]", "[CTRL:001]", "[CTRL:ZZZZ]", "[CTRL:0001"):
             with self.subTest(text=text):

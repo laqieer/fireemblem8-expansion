@@ -1,6 +1,9 @@
 #include "global.h"
 
 #include "ctc.h"
+#if defined(MODERN) && ((FE8_EXPANSION_ENABLED_LOCALE_MASK & 0x02u) != 0)
+#include "expansion_locale.h"
+#endif
 
 // clang-format off
 
@@ -227,6 +230,128 @@ u16 * CONST_DATA SpriteArray_SavemenuData_1[] =
     gSprite_SavemenuData_9,
     gSprite_SavemenuData_7,
 };
+
+#if defined(MODERN) && ((FE8_EXPANSION_ENABLED_LOCALE_MASK & 0x02u) != 0)
+
+/* FE8J's localized main-sprite sheet uses different OAM composition from
+ * FE8U. These descriptors mirror the regional layout for the pinned
+ * graphics/localized_ui/ja/menu/main_sprites.png source. */
+static u16 CONST_DATA sSprite_SavemenuDataJa_0[] =
+{
+    4,
+    OAM0_SHAPE_32x16, OAM1_SIZE_32x16, OAM2_CHR(0x100) + OAM2_LAYER(2),
+    OAM0_SHAPE_32x16, OAM1_SIZE_32x16 + OAM1_X(32), OAM2_CHR(0x104) + OAM2_LAYER(2),
+    OAM0_SHAPE_32x16, OAM1_SIZE_32x16 + OAM1_X(64), OAM2_CHR(0x108) + OAM2_LAYER(2),
+    OAM0_SHAPE_32x16, OAM1_SIZE_32x16 + OAM1_X(96), OAM2_CHR(0x10C) + OAM2_LAYER(2),
+};
+
+static u16 CONST_DATA sSprite_SavemenuDataJa_1[] =
+{
+    5,
+    OAM0_SHAPE_32x16, OAM1_SIZE_32x16, OAM2_CHR(0x186) + OAM2_LAYER(2),
+    OAM0_SHAPE_16x16, OAM1_SIZE_16x16 + OAM1_X(32), OAM2_CHR(0x18A) + OAM2_LAYER(2),
+    OAM0_SHAPE_32x16, OAM1_SIZE_32x16 + OAM1_X(48), OAM2_CHR(0x106) + OAM2_LAYER(2),
+    OAM0_SHAPE_32x16, OAM1_SIZE_32x16 + OAM1_X(80), OAM2_CHR(0x10A) + OAM2_LAYER(2),
+    OAM0_SHAPE_16x16, OAM1_SIZE_16x16 + OAM1_X(112), OAM2_CHR(0x10E) + OAM2_LAYER(2),
+};
+
+static u16 CONST_DATA sSprite_SavemenuDataJa_2[] =
+{
+    3,
+    OAM0_SHAPE_32x16, OAM1_SIZE_32x16 + OAM1_X(16), OAM2_CHR(0x110) + OAM2_LAYER(2),
+    OAM0_SHAPE_32x16, OAM1_SIZE_32x16 + OAM1_X(48), OAM2_CHR(0x114) + OAM2_LAYER(2),
+    OAM0_SHAPE_32x16, OAM1_SIZE_32x16 + OAM1_X(80), OAM2_CHR(0x118) + OAM2_LAYER(2),
+};
+
+static u16 CONST_DATA sSprite_SavemenuDataJa_3[] =
+{
+    6,
+    OAM0_SHAPE_32x16, OAM1_SIZE_32x16 + OAM1_X(16), OAM2_CHR(0x110) + OAM2_LAYER(2),
+    OAM0_SHAPE_16x16, OAM1_SIZE_16x16 + OAM1_X(48), OAM2_CHR(0x114) + OAM2_LAYER(2),
+    OAM0_SHAPE_8x16, OAM1_SIZE_8x16 + OAM1_X(64), OAM2_CHR(0x116) + OAM2_LAYER(2),
+    OAM0_SHAPE_16x16, OAM1_SIZE_16x16 + OAM1_X(72), OAM2_CHR(0x15D) + OAM2_LAYER(2),
+    OAM0_SHAPE_8x16, OAM1_SIZE_8x16 + OAM1_X(88), OAM2_CHR(0x15F) + OAM2_LAYER(2),
+    OAM0_SHAPE_16x16, OAM1_SIZE_16x16 + OAM1_X(96), OAM2_CHR(0x11A) + OAM2_LAYER(2),
+};
+
+static u16 CONST_DATA sSprite_SavemenuDataJa_4[] =
+{
+    5,
+    OAM0_SHAPE_32x16, OAM1_SIZE_32x16, OAM2_CHR(0x180) + OAM2_LAYER(2),
+    OAM0_SHAPE_16x16, OAM1_SIZE_16x16 + OAM1_X(32), OAM2_CHR(0x184) + OAM2_LAYER(2),
+    OAM0_SHAPE_32x16, OAM1_SIZE_32x16 + OAM1_X(48), OAM2_CHR(0x106) + OAM2_LAYER(2),
+    OAM0_SHAPE_32x16, OAM1_SIZE_32x16 + OAM1_X(80), OAM2_CHR(0x10A) + OAM2_LAYER(2),
+    OAM0_SHAPE_16x16, OAM1_SIZE_16x16 + OAM1_X(112), OAM2_CHR(0x10E) + OAM2_LAYER(2),
+};
+
+static u16 CONST_DATA sSprite_SavemenuDataJa_5[] =
+{
+    3,
+    OAM0_SHAPE_32x16, OAM1_SIZE_32x16 + OAM1_X(16), OAM2_CHR(0xD0) + OAM2_LAYER(2),
+    OAM0_SHAPE_32x16, OAM1_SIZE_32x16 + OAM1_X(48), OAM2_CHR(0xD4) + OAM2_LAYER(2),
+    OAM0_SHAPE_32x16, OAM1_SIZE_32x16 + OAM1_X(80), OAM2_CHR(0xD8) + OAM2_LAYER(2),
+};
+
+static u16 CONST_DATA sSprite_SavemenuDataJa_6[] =
+{
+    3,
+    OAM0_SHAPE_32x16, OAM1_SIZE_32x16 + OAM1_X(24), OAM2_CHR(0x18C) + OAM2_LAYER(2),
+    OAM0_SHAPE_32x16, OAM1_SIZE_32x16 + OAM1_X(56), OAM2_CHR(0x190) + OAM2_LAYER(2),
+    OAM0_SHAPE_16x16, OAM1_SIZE_16x16 + OAM1_X(88), OAM2_CHR(0x194) + OAM2_LAYER(2),
+};
+
+static u16 CONST_DATA sSprite_SavemenuDataJa_7[] =
+{
+    3,
+    OAM0_SHAPE_32x16, OAM1_SIZE_32x16 + OAM1_X(16), OAM2_CHR(0xC0) + OAM2_LAYER(2),
+    OAM0_SHAPE_32x16, OAM1_SIZE_32x16 + OAM1_X(48), OAM2_CHR(0xC4) + OAM2_LAYER(2),
+    OAM0_SHAPE_32x16, OAM1_SIZE_32x16 + OAM1_X(80), OAM2_CHR(0xC8) + OAM2_LAYER(2),
+};
+
+static u16 CONST_DATA sSprite_SavemenuDataJa_8[] =
+{
+    4,
+    OAM0_SHAPE_32x16, OAM1_SIZE_32x16, OAM2_CHR(0xC0) + OAM2_LAYER(2),
+    OAM0_SHAPE_32x16, OAM1_SIZE_32x16 + OAM1_X(32), OAM2_CHR(0xC4) + OAM2_LAYER(2),
+    OAM0_SHAPE_32x16, OAM1_SIZE_32x16 + OAM1_X(64), OAM2_CHR(0xC8) + OAM2_LAYER(2),
+    OAM0_SHAPE_32x16, OAM1_SIZE_32x16 + OAM1_X(96), OAM2_CHR(0xCC) + OAM2_LAYER(2),
+};
+
+static u16 CONST_DATA sSprite_SavemenuDataJa_9[] =
+{
+    4,
+    OAM0_SHAPE_32x16, OAM1_SIZE_32x16, OAM2_CHR(0x18E) + OAM2_LAYER(2),
+    OAM0_SHAPE_32x16, OAM1_SIZE_32x16 + OAM1_X(32), OAM2_CHR(0x192) + OAM2_LAYER(2),
+    OAM0_SHAPE_32x16, OAM1_SIZE_32x16 + OAM1_X(64), OAM2_CHR(0x196) + OAM2_LAYER(2),
+    OAM0_SHAPE_16x16, OAM1_SIZE_16x16 + OAM1_X(96), OAM2_CHR(0x19A) + OAM2_LAYER(2),
+};
+
+static u16 * CONST_DATA sSpriteArray_SavemenuDataJa[] =
+{
+    sSprite_SavemenuDataJa_0,
+    sSprite_SavemenuDataJa_1,
+    sSprite_SavemenuDataJa_2,
+    sSprite_SavemenuDataJa_3,
+    sSprite_SavemenuDataJa_4,
+    sSprite_SavemenuDataJa_5,
+    sSprite_SavemenuDataJa_6,
+    sSprite_SavemenuDataJa_1,
+    sSprite_SavemenuDataJa_8,
+    sSprite_SavemenuDataJa_9,
+    sSprite_SavemenuDataJa_7,
+};
+
+#endif
+
+#if defined(MODERN) && ((FE8_EXPANSION_ENABLED_LOCALE_MASK & 0x02u) != 0)
+const u16 *GetSaveMenuMainOptionSprite(u8 spriteIdx)
+{
+    if (ExpansionLocale_GetCurrent() == EXPANSION_LOCALE_JA)
+        return sSpriteArray_SavemenuDataJa[spriteIdx];
+
+    return SpriteArray_SavemenuData_1[spriteIdx];
+}
+#endif
 
 u16 * CONST_DATA SpriteArray_SavemenuData_2[] =
 {
