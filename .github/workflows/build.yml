@@ -25,14 +25,13 @@ jobs:
   # tests are Python/stdlib only and link no C. This is intentionally a
   # separate job from `build` below so host-only regressions are reported
   # before paying for a full ROM/linker build. The exhaustive full-game
-  # localization gate is intentionally measured in minutes, so this lane
-  # keeps a 45-minute budget (the local exhaustive gate takes about 31
-  # minutes before CI setup overhead) while never building a ROM or running
-  # the linker.
+  # localization gate is intentionally measured in minutes. Keep a 60-minute
+  # budget: a normal run is roughly 34 minutes including setup, but shared
+  # runner variance has reached the former 45-minute ceiling.
   # All host test steps are genuine gates (required status), not advisory.
   host-tests:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
 
     steps:
     - uses: actions/checkout@v7
@@ -116,7 +115,9 @@ jobs:
   # checks.
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # A normal debug+release linker/runtime run is roughly 25 minutes, but
+    # shared-runner variance has reached the former 30-minute ceiling.
+    timeout-minutes: 60
 
     steps:
     - uses: actions/checkout@v7
