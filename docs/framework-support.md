@@ -26,9 +26,10 @@ directly.
 
 **Automatic Build CI is the only host this repository re-verifies on every
 push/PR.** The manual Full Matrix CI workflow adds a one-shot pre-merge broad
-pass for an exact branch/SHA; it does not change the automatic Build CI
-contract. Arch and macOS support is exercised by the same script logic but is
-not re-run in CI; treat regressions there as community-reported, not CI-caught.
+pass for the candidate branch's exact commit; it does not change the automatic
+Build CI contract. Arch and macOS support is exercised by the same script
+logic but is not re-run in CI; treat regressions there as community-reported,
+not CI-caught.
 
 ## Supported toolchains
 

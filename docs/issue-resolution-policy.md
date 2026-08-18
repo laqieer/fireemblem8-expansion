@@ -1,16 +1,18 @@
 # Issue resolution policy
 
-This is the single authoritative Wave 0 governance document for closing
-issues and reviewing changes in this repository. It replaces the earlier
-Wave 0 candidate's machine evidence schema, baseline diff engine, and
-closure-discovery tooling with GitHub-native review controls plus one small,
-auditable checker (`scripts/artifact_guard.py`) that reads immutable Git
-objects.
+This is the general Wave 0 governance document for closing issues and
+reviewing changes in this repository. For feature requests and bug fixes, the
+project-scoped
+[`development-workflow`](../.github/skills/development-workflow/SKILL.md)
+skill implements Discussion #30 and is authoritative wherever generic review
+or closure language conflicts with it. It requires no human review or approval.
 
 ## Issue closure evidence
 
-Closing an issue is a human decision, not a checker's output. Before closing,
-the linked pull request or issue comment should record, in plain prose:
+Closing an issue is an evidence-based decision, not a checker's output. An
+agent may close a feature or bug issue when its accepted scope is delivered and
+the required evidence is complete. Before closing, the linked pull request or
+issue comment should record, in plain prose:
 
 - the frozen, itemized scope and any explicit non-goals;
 - every validation command that was actually run, and its result (paste
@@ -21,9 +23,9 @@ the linked pull request or issue comment should record, in plain prose:
   affected, and how they were checked.
 
 There is intentionally **no machine-readable evidence schema or validator**.
-Human-readable evidence in the issue/PR thread, reviewed by a person, is the
-contract. See [`.github/PULL_REQUEST_TEMPLATE.md`](../.github/PULL_REQUEST_TEMPLATE.md)
-for the checklist shape.
+Plain-prose evidence in the issue/PR thread is the contract. See
+[`.github/PULL_REQUEST_TEMPLATE.md`](../.github/PULL_REQUEST_TEMPLATE.md) for
+the checklist shape.
 
 
 Documentation itself is fail-closed in CI: every recognized Markdown extension
@@ -46,8 +48,11 @@ itself is changing and what was independently verified. `CODEOWNERS` names
 itself gate merging (see below).
 
 This repository does **not** ship an automated baseline diff/history engine.
-Reviewing a baseline/fingerprint change is a human judgment call assisted by
-`git diff` and normal CI, not a bespoke comparison tool.
+Reviewing a baseline/fingerprint change is an evidence-based judgment assisted
+by `git diff` and normal CI, not a bespoke comparison tool. The implementing
+agent may make and record that judgment; if the oracle change cannot be
+validated reliably, it must leave the exact criterion unresolved rather than
+request blanket review.
 
 ## Legal and copyright boundary
 
@@ -73,11 +78,11 @@ checker's silence.
 
 `CODEOWNERS` can request `@laqieer` as a reviewer for the paths listed in
 [`.github/CODEOWNERS`](../.github/CODEOWNERS). By itself, **CODEOWNERS does
-not require or block anything** — a repository administrator must configure
-GitHub branch protection or a repository ruleset on `master` that requires a
-pull request, requires that code-owner review, and requires the `Build CI`
-status, for any of this to be enforced. A green `Build CI` run or a passing
-`scripts/artifact_guard.py` is not, by itself, human approval.
+not require or block anything**. Repository branch protection or rulesets may
+enforce external controls, but the development workflow does not add a human
+review or approval requirement. A green `Build CI` run or a passing
+`scripts/artifact_guard.py` is evidence, but is not by itself complete
+delivery proof.
 
 ## Supported modern path vs. archival decomp path
 

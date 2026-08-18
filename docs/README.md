@@ -20,6 +20,7 @@ the authoritative technical documentation and are checked by CI.
 | Enable/extend starter content, mechanics, or Threat Range QoL | [`starter_features.md`](starter_features.md) |
 | Author expansion-localized UI text/locales | [`localization.md`](localization.md) |
 | Generate or test localized full-game message catalogs | [`game_localization_catalog.md`](game_localization_catalog.md) |
+| Evaluate and deliver a feature request or bug fix with Copilot | [`development-workflow`](../.github/skills/development-workflow/SKILL.md) |
 | Contribute code/docs and know the review process | [`../CONTRIBUTING.md`](../CONTRIBUTING.md), [`project-governance.md`](project-governance.md) |
 | Come from the old decomp-base/agbcc workflow | [`migration-from-decomp.md`](migration-from-decomp.md) |
 | Do byte-for-byte decomp-matching work | [`archival-decomp.md`](archival-decomp.md) |
@@ -114,7 +115,7 @@ and
 | [`documentation-inventory.md`](documentation-inventory.md) | Current | Exact recognized-Markdown inventory |
 | [`external-link-registry.md`](external-link-registry.md) | Current | Offline URL ownership/status coverage |
 | [`upstream-porting.md`](upstream-porting.md) | Current | Canonical upstream drift tooling (issue #12) |
-| [`issue-resolution-policy.md`](issue-resolution-policy.md) | Current, authoritative | Issue closure / review / legal-boundary governance |
+| [`issue-resolution-policy.md`](issue-resolution-policy.md) | Current, general policy | Issue evidence / review / legal-boundary governance; the development workflow skill overrides conflicts |
 | [`dump_extraction_plan.md`](dump_extraction_plan.md) | Archival | Raw-blob-to-source extraction workflow |
 | [`lz_suffix_diagnostic.md`](lz_suffix_diagnostic.md) | Archival | Hidden-asset diagnostic technique |
 | [`tsa_audit.md`](tsa_audit.md) | Archival, point-in-time | Tilemap data audit snapshot |

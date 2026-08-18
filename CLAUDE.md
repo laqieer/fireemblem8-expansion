@@ -51,11 +51,11 @@ without a whole-source/object/ROM identity hash gate.
 
 For any task that changes tracked files, local implementation and tests are
 not completion. Unless the user explicitly says not to commit or push, commit
-and push all intended changes, wait for exact-SHA Build CI, and require
-`make remote-completion-check` to pass before reporting completion.
+and push all intended changes, wait for Build CI on the exact pushed commit,
+and require `make remote-completion-check` to pass before reporting completion.
 
 For an objective to resolve all repository issues, also close the resolved
-issues, wait for exact-SHA Release Rehearsal, and require
+issues, wait for Release Rehearsal on the exact pushed commit, and require
 `make all-issues-completion-check` to pass. Track commit, push, CI, and issue
 closure as explicit dependent todos from the start.
 

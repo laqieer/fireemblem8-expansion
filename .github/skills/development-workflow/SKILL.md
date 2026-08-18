@@ -1,0 +1,300 @@
+---
+name: development-workflow
+description: Triage and deliver feature requests and bug fixes for fireemblem8-expansion. Use when asked to review an idea, accept or reject a feature, investigate or fix a bug or regression, add a justified build gate, validate behavior, create or review a PR, merge it, or close its issue.
+---
+
+# Development workflow
+
+Use this skill for incoming feature requests, bug reports, and regressions that
+may change the supported expansion framework. Do not use it for routine
+dependency maintenance or archival decomp matching unless that work is part of
+an accepted feature or bug fix.
+
+The governing principle is:
+
+> Keep the core generic, make optional behavior explicit, prove both enabled
+> and disabled paths, ship documentation with the change, merge autonomously
+> when objective evidence is complete, and leave work open only for a
+> precisely named criterion the agent cannot validate reliably.
+
+Follow every phase below. Do not skip directly from implementation to delivery.
+For feature requests and bug fixes, this skill implements Discussion #30 and
+is authoritative over conflicting generic review or closure guidance elsewhere
+in the repository. Do not add a human code-review or approval gate.
+
+## Phase 1: establish state
+
+1. Read the complete issue or discussion, including comments and linked PRs.
+2. Inspect the current worktree, branch, upstream, relevant implementation,
+   tests, documentation, and recent history. Do not assume the request still
+   matches the current tree.
+3. Search for an existing public seam, registry, schema, flag, scenario, or
+   validation target before designing another one.
+4. For tracked changes, create dependent work items for implementation,
+   validation, commit, push, candidate-commit CI, and the remote completion
+   gate.
+5. Resolve ordinary ambiguity from repository evidence. Stop at `Needs design`
+   only when a material contract cannot be chosen safely.
+
+## Phase 2: triage and classify the request
+
+### Bug triage
+
+For a bug report or regression, triage the bug before designing or editing:
+
+1. State the expected and actual behavior, affected configurations, and
+   severity.
+2. Reproduce the failure with the smallest deterministic test or runtime
+   scenario available. If direct reproduction is impossible, establish the
+   failure from concrete code, logs, history, or invariant evidence and state
+   that limitation.
+3. Preserve the failing evidence. Do not refresh a fingerprint, weaken an
+   assertion, or add a success-shaped fallback.
+4. Trace the root cause and every coupled surface that must change together.
+5. Classify the report as **Confirmed**, **Needs evidence**, **By design/not a
+   bug**, **Duplicate**, or **Already fixed**.
+
+Proceed with implementation only for a confirmed bug. A bug fix does not need
+to pass the feature universality test below; it must restore an intended
+contract, fix the root cause, and add a regression test that fails for the
+original defect.
+
+### Feature classification
+
+For a feature request, return exactly one of these classifications before
+implementation:
+
+1. **Framework capability**: reusable infrastructure with a stable,
+   typed or data-driven extension surface. Accept.
+2. **Optional reusable module or reference implementation**: broadly useful
+   behavior that projects may choose differently. Accept with a validated,
+   usually default-off profile.
+3. **Project-specific content or ruleset**: hard-coded characters, chapters,
+   skills, assets, balance values, or an opinionated game design. Decline it
+   from the framework core and identify the generic hook or schema through
+   which a downstream project can implement it.
+4. **Needs design**: potentially reusable, but its acceptance criteria,
+   compatibility impact, integration seam, or maintenance cost is not yet
+   concrete.
+
+A core proposal must satisfy all of these checks:
+
+- It supports at least two plausible project uses without hard-coded game
+  content.
+- It reuses or introduces one narrow public seam instead of duplicating a
+  router, registry, or data source.
+- Its default-disabled or default-configured build preserves intended
+  behavior.
+- Its ROM, RAM, save, generated-data, debug/release, configuration, and
+  archival-lane impact can be stated explicitly.
+- It has a maintainable automated validation strategy.
+
+Examples:
+
+- A plain-text fallback for chapter-title rendering is a framework capability.
+- A gameplay skill catalog and project-specific effects are not framework
+  core. A generic typed trigger/effect registry may be.
+- A 1RN versus 2RN rule is a reusable project choice, but it should plug into a
+  generic hit-calculation or mechanics seam instead of adding another direct
+  conditional throughout battle code.
+
+When declining a request from core, explain the boundary and the reusable seam
+that would make downstream implementation possible. Do not dismiss the use
+case without that guidance.
+
+## Phase 3: freeze the design contract
+
+Record these items in the issue or implementation notes before editing:
+
+- itemized scope and explicit non-goals;
+- observable acceptance criteria;
+- classification and rationale;
+- public API, data, configuration, and integration contracts;
+- affected modern debug/release profiles and any archival-lane impact;
+- save-format or migration impact;
+- generated-data and localization impact;
+- ROM/RAM/resource-budget impact;
+- focused host checks, target-ROM checks, runtime scenarios, and negative
+  controls;
+- rollback or revert plan for a post-merge regression.
+
+Prefer typed APIs, generated data, symbolic IDs, and existing registries. Do not
+introduce a second subsystem when the current public seam can be extended.
+
+## Change gate policy
+
+Do not add a compile-time flag automatically for every change.
+
+Bug fixes do not need a feature gate by default. Fix the root cause directly
+and pin it with a regression test. Add a temporary or permanent gate only when
+a documented special concern makes both paths intentional, such as a risky
+format migration, incomplete platform coverage, a staged compatibility
+transition, or a project-selectable behavior discovered during triage. If the
+behavior is a permanent project choice rather than restoration of an intended
+contract, reclassify it as an optional feature.
+
+Use a gate for optional gameplay or UI behavior, a supported project profile,
+or a staged feature whose enabled and disabled forms are both intentional. Do
+not add a gate for a routine bug fix, refactor, documentation change,
+build-tool change, or foundational API when the disabled branch would only
+create dead code. Never use a gate to hide a failing fix or avoid resolving the
+root cause.
+
+Every accepted gate must provide:
+
+- a GNU Autoconf option, Make variable, and C macro with one documented
+  default;
+- strict `0` or `1` validation and fail-fast dependency/conflict checks;
+- configuration-identity participation when behavior or ROM identity changes;
+- an explicit save-compatibility and migration decision;
+- an enabled positive test and a disabled negative control;
+- supported named profiles and dependency-boundary tests rather than an
+  unmaintainable power-set matrix;
+- a lifecycle decision: permanent project choice, temporary incubation flag,
+  or future graduation/removal candidate.
+
+A compile-time flag is not an emergency runtime kill switch. Disabling it
+requires rebuilding the ROM, and it reduces risk only while both paths remain
+tested. Follow the established contracts in
+[`docs/starter_features.md`](../../../docs/starter_features.md) and
+[`docs/config_identity.md`](../../../docs/config_identity.md).
+
+## Phase 4: implement
+
+1. Treat the modern `arm-none-eabi` GCC/AAPCS framework as the supported
+   default path.
+2. Make complete, surgical changes through existing extension points.
+3. Preserve the default behavior unless the accepted contract explicitly
+   changes it.
+4. Keep disabled optional code absent or semantically inert, and prove that
+   property with a negative control.
+5. For a bug fix, add a regression test that demonstrates the original failure
+   and the corrected behavior.
+6. Update user-facing, contributor, configuration, and public-API
+   documentation in the same change. Documentation is part of implementation,
+   not post-merge cleanup.
+7. Do not hand-edit build-local generated output.
+
+Follow the repository conventions in
+[`CONTRIBUTING.md`](../../../CONTRIBUTING.md) and
+[`copilot-instructions.md`](../../copilot-instructions.md).
+
+## Phase 5: validate
+
+During iteration, run the smallest focused host checks and the one relevant
+modern ROM profile. Before delivery, expand validation to the exact acceptance
+surface described in [`CONTRIBUTING.md`](../../../CONTRIBUTING.md).
+
+For a bug fix, first reproduce the original symptom or preserve equivalent
+structural failure evidence, then prove the symptom is gone and the new
+regression test fails if the fix is removed.
+
+For boot, save, UI, or gameplay behavior:
+
+- prefer deterministic headless libmGBA scenarios;
+- assert semantic state, counters, save bytes, or bounded transitions rather
+  than timing or pointer accidents;
+- include enabled behavior and a disabled/default negative control;
+- preserve a failing fingerprint and root-cause it instead of refreshing an
+  oracle merely to make the test green;
+- use screenshots or recordings as supplementary visual evidence, never as
+  the sole proof of correctness.
+
+Automate every deterministic acceptance criterion. If a material result is
+inherently subjective or cannot be asserted reliably, such as a visual, audio,
+or UX judgment, leave the work open and state the exact unresolved criterion
+and all evidence already collected. Do not convert that hold into a blanket
+human-review requirement.
+
+### Issue #29 identity boundary
+
+Do not add or restore a whole-source/object/ROM SHA-256 identity gate.
+`legacy-identity-check`, `scripts/archival_identity.py`, and its manifest were
+removed intentionally. Git records source history, the modern expansion ROM is
+not required to match the original binary, and `asmdiff.sh` remains available
+for explicit archival investigations.
+
+Build CI for the **exact candidate commit** means only that the successful run
+must correspond to the commit being delivered, not an earlier revision. It is
+not a ROM or source-tree SHA-256 equality requirement. Configuration
+fingerprints, dependency integrity hashes, and release-archive determinism may
+remain when they serve their separate correctness contracts.
+
+## Phase 6: PR, AI review, and merge
+
+Use a pull request by default. Push directly to `master` only when the user
+explicitly requests it and repository permissions allow it; direct delivery
+still requires the same local validation, Full Matrix run for the pushed
+commit, pushed-commit Build CI, and remote completion gate.
+
+The PR must record:
+
+- frozen scope and non-goals;
+- feature classification or bug-triage result and root cause;
+- every command actually run and its result;
+- runtime scenario, environment, command, and result when behavior changes;
+- save, generated-data, debug, release, and archival compatibility impact;
+- any baseline or fingerprint change and why the oracle itself changed.
+
+Triage every AI review finding. Fix valid findings, answer questions, and close
+false positives with a reasoned explanation. Do not implement review comments
+blindly.
+
+No human code review or approval is required. A CODEOWNERS request is advisory
+unless an external GitHub ruleset enforces it; this workflow does not add such
+a gate.
+
+Before merge:
+
+1. Confirm required Build CI succeeds for the exact candidate commit.
+2. Dispatch and pass `full-matrix.yml` for that same candidate branch and
+   commit.
+3. Resolve every review thread with code or an explanation.
+4. Confirm every objective acceptance criterion, positive scenario, negative
+   control, compatibility check, and documentation requirement is complete.
+5. Confirm no material risk or validation gap remains unresolved.
+
+Merge the PR autonomously when all five conditions hold. Do not wait for human
+review or approval. Respect branch protection and never bypass a required
+GitHub control.
+
+Leave the PR open only when:
+
+- a material acceptance criterion is subjective or otherwise cannot be
+  validated reliably by the agent;
+- a required external permission or repository control blocks merging; or
+- an objective check is still failing or missing.
+
+In every hold case, name the exact blocker or missing validation. Do not leave
+a generically worded request for review.
+
+## Phase 7: post-merge completion
+
+1. Verify Build CI on the resulting `master` commit.
+2. If `master` fails, immediately fix forward or revert; do not report the
+   feature as delivered.
+3. Add the final evidence and commit/PR/CI links to the originating issue.
+4. Close the feature or bug issue when its accepted scope is delivered and its
+   evidence is complete. This development workflow overrides conflicting
+   generic language that reserves closure for human review.
+5. For tracked changes, run `make remote-completion-check` only after the
+   intended commit is pushed and its Build CI succeeds.
+
+The task is complete only when the implementation and documentation are
+persistent upstream, required CI is green, the remote completion gate passes,
+and no current-request work item remains open.
+
+## Required final report
+
+Report:
+
+- the feature classification or bug-triage outcome and short rationale;
+- the implemented behavior and configuration surface;
+- focused and runtime evidence;
+- commit, PR or direct-push, and CI links;
+- whether the PR was merged autonomously or left open for one precisely named
+  non-agent-verifiable criterion;
+- the remote completion result.
+
+Do not claim delivery from screenshots, AI review, or CI alone. Conversely, do
+not stop for review or approval after all objective evidence is complete.

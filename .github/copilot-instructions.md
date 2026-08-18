@@ -58,15 +58,24 @@ investigations when `baserom.gba` is present.
 For any task that changes tracked repository files, local implementation and
 tests are not completion. Unless the user explicitly says not to commit or
 push, do not call `task_complete` until all intended changes are committed,
-pushed to the configured upstream, exact-SHA Build CI has passed, and
-`make remote-completion-check` succeeds.
+pushed to the configured upstream, Build CI for the exact pushed commit has
+passed, and `make remote-completion-check` succeeds.
 
 For an objective to resolve all repository issues, also close the resolved
-GitHub issues, wait for the exact-SHA Release Rehearsal, and require
-`make all-issues-completion-check` to succeed. Create explicit dependent
-todos for commit, push, CI, and issue closure at the start of such a task.
-Memory is advisory context; these executable gates are the completion
+GitHub issues, wait for Release Rehearsal on the exact pushed commit, and
+require `make all-issues-completion-check` to succeed. Create explicit
+dependent todos for commit, push, CI, and issue closure at the start of such a
+task. Memory is advisory context; these executable gates are the completion
 authority.
+
+## Development workflow skill
+
+For incoming feature requests, ideas, bug reports, or regressions, invoke the
+project-scoped `/development-workflow` skill. It owns core-vs-project
+classification, bug reproduction/root-cause triage, selective change gates,
+evidence requirements, autonomous merge, and the precise hold boundary for
+criteria the agent cannot validate. It is authoritative over conflicting
+generic review or closure guidance and requires no human review or approval.
 
 ## Architecture
 

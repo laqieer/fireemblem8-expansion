@@ -7,14 +7,21 @@ than duplicating them.
 
 ## Contribution governance
 
-The single authoritative governance document for issue closure, review
-enforcement, and the baseline/fingerprint review process is
-[`docs/issue-resolution-policy.md`](issue-resolution-policy.md). In summary:
+The general governance document for issue closure, review enforcement, and the
+baseline/fingerprint review process is
+[`docs/issue-resolution-policy.md`](issue-resolution-policy.md). For feature
+requests and bug fixes, the project-scoped
+[`development-workflow`](../.github/skills/development-workflow/SKILL.md) skill
+is authoritative wherever generic review or closure guidance conflicts with
+it. In summary:
 
-- Issue closure is a **human decision**, recorded as plain-prose evidence
-  in the linked PR/issue (frozen scope, every validation command actually
-  run and its result, runtime/playtest evidence when behavior can be
-  affected). There is intentionally no machine-readable evidence schema.
+- Issue closure is an evidence-based decision recorded as plain-prose evidence
+  in the linked PR/issue (frozen scope, every validation command actually run
+  and its result, runtime/playtest evidence when behavior can be affected).
+  For features and bug fixes, the project skill is authoritative, requires no
+  human review or approval, and permits autonomous merge and closure when
+  evidence is complete. There is intentionally no machine-readable evidence
+  schema.
 - `.github/CODEOWNERS` requests `@laqieer` as reviewer for baseline/
   fingerprint and artifact-governance paths, but **does not by itself
   require or block anything** — only repository branch protection/rulesets

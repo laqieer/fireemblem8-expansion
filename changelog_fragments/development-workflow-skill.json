@@ -1,0 +1,6 @@
+{
+  "issue": null,
+  "category": "added",
+  "summary": "Add a project-scoped Copilot development workflow skill for feature and bug triage, selective change gates, automated evidence, autonomous merge and closure, and explicitly authorized direct-master delivery.",
+  "semver_impact": "none"
+}

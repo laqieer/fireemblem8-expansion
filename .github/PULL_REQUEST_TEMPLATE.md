@@ -39,9 +39,12 @@ make expansion-modern-linker-check MODERN_CONFIG=release MODERN_ABI=aapcs
 - [ ] I am not claiming any tracked source asset (e.g. `graphics/`, `sound/`)
       is legally cleared; see [`docs/issue-resolution-policy.md`](../docs/issue-resolution-policy.md).
 
-## Review boundary
+## Merge boundary
 
-> Passing CI or the artifact checker is not human approval. CODEOWNERS can
-> request a reviewer but only branch protection/rulesets can require it.
+> Feature and bug-fix PRs require no human review or approval. Passing CI or
+> the artifact checker alone is still not complete delivery evidence. Follow
+> [the development workflow skill](skills/development-workflow/SKILL.md);
+> CODEOWNERS requests are advisory unless an external ruleset enforces them.
 
-- [ ] A human review is requested for protected-path changes.
+- [ ] Every objective acceptance criterion is validated; or the exact
+      non-agent-verifiable criterion preventing merge is named.
