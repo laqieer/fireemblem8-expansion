@@ -33,11 +33,46 @@ in the repository. Do not add a human code-review or approval gate.
    package if neither command works.
 4. Search for an existing public seam, registry, schema, flag, scenario, or
    validation target before designing another one.
-5. For tracked changes, create dependent work items for implementation,
+5. Identify dependencies and conflicts between the request, already accepted
+   requirements, existing feature profiles, save/config identities, generated
+   data, IDs, memory budgets, and shared runtime seams. Keep this relationship
+   map active throughout implementation.
+6. For tracked changes, create dependent work items for implementation,
    validation, commit, push, candidate-commit CI, and the remote completion
    gate.
-6. Resolve ordinary ambiguity from repository evidence. Stop at `Needs design`
+7. Resolve ordinary ambiguity from repository evidence. Stop at `Needs design`
    only when a material contract cannot be chosen safely.
+
+## Investigation resources and tools
+
+Use the smallest authoritative resource set that can answer the question:
+
+1. Start with this repository's source, documentation, tests, generated-data
+   sources, Git history, and runtime scenarios.
+2. Use sibling decompilation sources such as `../fireemblem8u` and
+   `../fireemblem8j` when upstream/original behavior or symbol context matters.
+3. Use `../FEBuilderGBA`, including its initialized Git submodules, and
+   relevant Nightmare modules for editor/data-format behavior.
+4. Use legally obtained clean ROMs under `../GBA-FE-ROMS` only for local
+   investigation. Never copy, commit, publish, or embed those ROMs in this
+   repository or its evidence comments.
+
+Use tools according to the evidence needed:
+
+- ARM GDB (`arm-none-eabi-gdb` or `gdb-multiarch`) for register, stack, symbol,
+  memory, and control-flow debugging.
+- IDA Pro/IDALib CLI or MCP as the preferred primary disassembler/decompiler
+  when available; project experience finds it more stable.
+- Ghidra/PyGhidra CLI or MCP as a cross-check, fallback, or batch-analysis
+  path.
+- `arm-none-eabi` binutils and repository scripts for symbol, relocation,
+  section, and disassembly checks.
+
+Install another local tool when investigation shows a concrete benefit and its
+source is trusted. Record every tool installed for the task, its version, and
+why it was needed in the final issue/discussion comment. Never record
+credentials, copy restricted ROM content, or send repository/ROM data to an
+unapproved third party.
 
 ## Phase 2: triage and classify the request
 
@@ -89,6 +124,8 @@ A core proposal must satisfy all of these checks:
   content.
 - It reuses or introduces one narrow public seam instead of duplicating a
   router, registry, or data source.
+- Its dependencies, dependents, conflicts, and supported feature/profile
+  combinations can be stated and validated.
 - Its default-disabled or default-configured build preserves intended
   behavior.
 - Its ROM, RAM, save, generated-data, debug/release, configuration, and
@@ -115,6 +152,7 @@ Record these items in the issue or implementation notes before editing:
 - itemized scope and explicit non-goals;
 - observable acceptance criteria;
 - classification and rationale;
+- dependency/dependent/conflict matrix, including explicit `none` entries;
 - public API, data, configuration, and integration contracts;
 - affected modern debug/release profiles and any archival-lane impact;
 - save-format or migration impact;
@@ -126,6 +164,8 @@ Record these items in the issue or implementation notes before editing:
 
 Prefer typed APIs, generated data, symbolic IDs, and existing registries. Do not
 introduce a second subsystem when the current public seam can be extended.
+When implementation reveals a new dependency or conflict, update the frozen
+contract and every affected validator/test/document before continuing.
 
 ## Change gate policy
 
@@ -176,10 +216,13 @@ tested. Follow the established contracts in
    property with a negative control.
 5. For a bug fix, add a regression test that demonstrates the original failure
    and the corrected behavior.
-6. Update user-facing, contributor, configuration, and public-API
+6. Preserve every declared dependency and conflict in configuration validators,
+   compile-time guards, runtime checks, or tests as appropriate.
+7. Update user-facing, contributor, configuration, and public-API
    documentation in the same change. Documentation is part of implementation,
-   not post-merge cleanup.
-7. Do not hand-edit build-local generated output.
+   not post-merge cleanup. Final docs must name all dependencies and conflicts
+   with other features, or state explicitly that none exist.
+8. Do not hand-edit build-local generated output.
 
 Follow the repository conventions in
 [`CONTRIBUTING.md`](../../../CONTRIBUTING.md) and
@@ -237,6 +280,7 @@ The PR must record:
 
 - frozen scope and non-goals;
 - feature classification or bug-triage result and root cause;
+- dependencies, dependents, conflicts, and supported combinations;
 - every command actually run and its result;
 - runtime scenario, environment, command, and result when behavior changes;
 - save, generated-data, debug, release, and archival compatibility impact;
@@ -280,6 +324,8 @@ a generically worded request for review.
 2. If `master` fails, immediately fix forward or revert; do not report the
    feature as delivered.
 3. Add the final evidence and commit/PR/CI links to the originating issue.
+   Include installed investigation tools, versions, purpose, and any
+   pre-existing IDA/Ghidra/GDB resources used.
 4. Close the feature or bug issue when its accepted scope is delivered and its
    evidence is complete. This development workflow overrides conflicting
    generic language that reserves closure for human review.
@@ -295,8 +341,10 @@ and no current-request work item remains open.
 Report:
 
 - the feature classification or bug-triage outcome and short rationale;
+- dependencies, conflicts, and their enforced validation;
 - the implemented behavior and configuration surface;
 - focused and runtime evidence;
+- installed or used investigation tools and versions;
 - commit, PR or direct-push, and CI links;
 - whether the PR was merged autonomously or left open for one precisely named
   non-agent-verifiable criterion;

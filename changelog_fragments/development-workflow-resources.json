@@ -1,0 +1,6 @@
+{
+  "issue": null,
+  "category": "added",
+  "summary": "Extend the project development workflow with requirement dependency/conflict tracking, local decomp/FEBuilder/Nightmare/clean-ROM investigation resources, IDA-first and Ghidra cross-check guidance, and final tool/version evidence.",
+  "semver_impact": "none"
+}

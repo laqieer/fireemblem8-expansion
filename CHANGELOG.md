@@ -18,6 +18,7 @@ Do not hand-edit the text between the two HTML comment markers below --
 ### Added
 
 - Add a project-scoped Copilot development workflow skill for feature and bug triage, selective change gates, automated evidence, autonomous merge and closure, and explicitly authorized direct-master delivery.
+- Extend the project development workflow with requirement dependency/conflict tracking, local decomp/FEBuilder/Nightmare/clean-ROM investigation resources, IDA-first and Ghidra cross-check guidance, and final tool/version evidence.
 - Install and ARM-probe GDB in quickstart, and require debugger-backed evidence in the project development workflow when register, stack, symbol, memory, or control-flow state matters.
 - Add four independent, default-off starter-feature build flags (EXPANSION_MECHANICS_HOOKS, EXPANSION_MECHANICS_SAMPLE, EXPANSION_DANGER_OVERLAY_MENU, EXPANSION_STARTER_CONTENT), the public battle-stat mechanics hook registry, the player-facing danger/range overlay menu surface, and the bundled generated-data content example they gate; a default build links none of them and stays byte-identical (see docs/starter_features.md). (#6)
 - Add a typed ID space (include/id_space.h, generated from scripts/generated_data/idspace.py) with per-domain technical-max/configured-cap macros and compile-time range diagnostics, and raise the configurable item ID cap to 0xCE (the default build's cap is unchanged); no EXPANSION_SAVE_COMPAT_EPOCH change (see docs/id_space.md, reports/id_space_audit.md). (#10)

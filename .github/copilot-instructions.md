@@ -74,9 +74,11 @@ authority.
 For incoming feature requests, ideas, bug reports, or regressions, invoke the
 project-scoped `/development-workflow` skill. It owns core-vs-project
 classification, bug reproduction/root-cause triage, selective change gates,
-evidence requirements, autonomous merge, and the precise hold boundary for
-criteria the agent cannot validate. It is authoritative over conflicting
-generic review or closure guidance and requires no human review or approval.
+dependency/conflict tracking, local IDA/Ghidra/GDB and reference-resource
+selection, evidence requirements, autonomous merge, and the precise hold
+boundary for criteria the agent cannot validate. It is authoritative over
+conflicting generic review or closure guidance and requires no human review or
+approval.
 
 ## Architecture
 

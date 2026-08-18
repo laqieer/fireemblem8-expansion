@@ -15,11 +15,12 @@ For an incoming feature request or bug fix, Copilot CLI contributors should
 invoke the project-scoped `/development-workflow` skill in
 [`SKILL.md`](.github/skills/development-workflow/SKILL.md). It owns feature
 classification, bug reproduction/root-cause triage, selective change gates,
-automated runtime evidence, autonomous merge when objective evidence is
-complete, and the precise hold boundary for criteria the agent cannot
-validate. For features and bug fixes, that skill is authoritative over
-conflicting generic review or closure guidance; it requires no human review or
-approval.
+dependency/conflict tracking, local IDA/Ghidra/GDB and reference-resource
+selection, automated runtime evidence, autonomous merge when objective
+evidence is complete, and the precise hold boundary for criteria the agent
+cannot validate. For features and bug fixes, that skill is authoritative over
+conflicting generic review or closure guidance; it requires no human review
+or approval.
 
 ## 1. Preparation
 
