@@ -647,6 +647,29 @@ class LanguageSettingsLifecycleStructureTests(unittest.TestCase):
         self.assertLess(body.index("ResetTextFont()"), body.index("StartMenu"))
         self.assertLess(body.index("LockMenuScrollBar()"), body.index("StartMenu"))
 
+    def test_settings_expands_and_restores_configuration_window(self):
+        open_match = re.search(
+            r"void ExpansionLanguageMenu_OpenSettings\(ProcPtr parent\)\s*\{(.*?)\n\}",
+            self.language_text,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(open_match)
+        self.assertIn(
+            "SetWin0Box(0, 40, DISPLAY_WIDTH, DISPLAY_HEIGHT);",
+            open_match.group(1),
+        )
+
+        redraw_match = re.search(
+            r"void Config_RedrawAfterLanguageMenu\(void\)\s*\{(.*?)\n\}",
+            self.uiconfig_text,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(redraw_match)
+        self.assertIn(
+            "SetWin0Box(0, 40, DISPLAY_WIDTH, 136);",
+            redraw_match.group(1),
+        )
+
     def test_more_submenu_defaults_cursor_to_current_locale(self):
         match = re.search(
             r"void ExpansionLanguageMenu_OpenSettings\(ProcPtr parent\)\s*\{(.*?)\n\}",

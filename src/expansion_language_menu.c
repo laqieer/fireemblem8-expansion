@@ -818,6 +818,7 @@ void ExpansionLanguageMenu_OpenSettings(ProcPtr parent)
     gExpansionLanguageMenuProbe.settingsActive = TRUE;
     gExpansionLanguageMenuProbe.settingsOpenCount++;
     LockMenuScrollBar();
+    SetWin0Box(0, 40, DISPLAY_WIDTH, DISPLAY_HEIGHT);
 
     BG_Fill(gBG0TilemapBuffer, 0);
     BG_Fill(gBG1TilemapBuffer, 0);
