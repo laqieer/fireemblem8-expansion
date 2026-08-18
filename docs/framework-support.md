@@ -150,7 +150,9 @@ The full settings reference (versions, ROM identity, `MODERN_CONFIG`/
 `MODERN_ABI`/`MODERN_ROM_SIZE`/`MODERN_TEXT_SHIFT`, the config-identity
 fingerprint, and what is/isn't save-compatibility-relevant) lives in
 [`docs/config_identity.md`](config_identity.md); this document does not
-duplicate it.
+duplicate it. Persistent feature/profile choices use the GNU Autoconf front
+end (`./configure --help`, then `make`); direct Make overrides remain
+supported for one-off builds.
 
 ## Troubleshooting
 

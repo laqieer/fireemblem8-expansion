@@ -21,6 +21,10 @@ toolchain (and libmGBA) by default, **no agbcc of any kind**; pass
 which installs agbcc instead. A legally obtained `baserom.gba` is
 optional and only needed by `asmdiff.sh`.
 
+Persistent feature/profile choices use the committed GNU Autoconf front end:
+run `./configure --help`, select flags/locales/caps, then run `make`.
+`configure` writes ignored `config.autotools.mk` and `GNUmakefile` outputs;
+direct `make VAR=value` remains supported for one-off overrides.
 
 For generated content use `docs/generated_data_tutorial.md`; for the four
 validated, default-off starter flags and typed mechanics registry use
@@ -44,7 +48,8 @@ make clean_fast
 
 A successful build exits cleanly. Modern ROM correctness is judged by
 successful link, boot, and runtime behavior, not by equality with the
-vanilla ROM; the archival lane remains judged by byte-identical matching.
+vanilla ROM. The archival lane remains available for byte-level matching
+investigations, but no whole-source/object/ROM identity hash is enforced.
 `./asmdiff.sh <hex_addr> <byte_len>` remains available for legacy matching
 investigations when `baserom.gba` is present.
 

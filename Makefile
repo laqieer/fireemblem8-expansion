@@ -40,6 +40,20 @@ MARTOMAP   := scripts/mar_to_map.py
 PYTHON    ?= python3
 PAL2GBAPAL := $(GBAGFX)
 
+# Optional GNU Autoconf front end (issue #28). A configured build writes an
+# ignored Make fragment and a GNUmakefile wrapper; direct `make` keeps using
+# the committed defaults when the fragment is absent. Load it before
+# generated_data.mk because FE8_ITEM_ID_CAP is an immediate parse-time input
+# there, not only a later modern compiler define.
+AUTOTOOLS_CONFIG_MK ?= config.autotools.mk
+AUTOTOOLS_BUILD_DIR ?= .
+-include $(wildcard $(AUTOTOOLS_CONFIG_MK))
+
+# A command-line FE8_ITEM_ID_CAP already reaches recipe subprocesses; a value
+# loaded from config.autotools.mk must have identical behavior so every Python
+# generator and the compiler observe one cap.
+export FE8_ITEM_ID_CAP
+
 ifeq ($(UNAME),Darwin)
 	SED := sed -i ''
 else
@@ -226,20 +240,13 @@ src/menu_def.o: CC1FLAGS += -Wno-error
 all:
 	+$(MAKE) expansion-modern-boot-check MODERN_CONFIG=release MODERN_ABI=aapcs
 
-# Explicit, clearly-named archival alias (issue #15): builds the exact same
-# agbcc-based $(ROM) as `make fireemblem8.gba`. Kept as its own target so
-# scripts/docs can name the archival lane directly.
-ARCHIVAL_IDENTITY_MANIFEST := scripts/archival_identity_manifest.json
-ARCHIVAL_IDENTITY_CHECK := scripts/archival_identity.py
-
-legacy: legacy-identity-check
+# Explicit, clearly-named archival alias (issue #15): builds the same
+# agbcc-based $(ROM) as `make fireemblem8.gba`. The obsolete whole-build
+# identity hash gate was removed by issue #29; source history belongs in Git,
+# while decomp investigations can still use asmdiff.sh when a baserom exists.
+legacy: $(ROM)
 	@echo "Archival legacy build complete (agbcc, unsupported release lane): $(ROM)" >&2
 	@echo "See CONTRIBUTING.md for the decomp-matching workflow this lane exists for." >&2
-
-legacy-identity-check: $(ROM) $(ARCHIVAL_IDENTITY_CHECK) $(ARCHIVAL_IDENTITY_MANIFEST)
-	$(PYTHON) -m scripts.archival_identity \
-		--manifest $(ARCHIVAL_IDENTITY_MANIFEST) \
-		--rom $(ROM)
 
 # Prevent the catch-all %.s rule from turning the removed comparison command
 # into an unrelated native executable through make's built-in implicit rules.
@@ -247,7 +254,7 @@ compare:
 	@echo "The legacy comparison target has been removed; build fireemblem8.gba instead." >&2
 	@false
 
-.PHONY: all legacy legacy-identity-check compare
+.PHONY: all legacy compare
 
 #### Shiftability harness (scripts/shiftcheck/) ####
 # Detects hardcoded pointers (raw absolute addresses that bypass the symbol system)
@@ -386,6 +393,19 @@ clean: clean_common
 	@find . \( -iname '*.o' -o -iname '*.obj' -o -iname '*.feimg*.bin'  -o -iname '*.fetsa*.bin' -o -iname '*.1bpp' -o -iname '*.4bpp' -o -iname '*.8bpp' -o -iname '*.gbapal' -o -iname '*.lz' -o -iname '*.fk' -o -iname '*.latfont' -o -iname '*.hwjpnfont' -o -iname '*.fwjpnfont' \) -exec rm {} +
 
 .PHONY: clean
+
+# Remove generated Autoconf state in addition to normal build outputs.
+# AUTOTOOLS_BUILD_DIR is absolute when invoked through GNUmakefile, so this
+# also works for an out-of-tree `../configure && make distclean` wrapper.
+distclean: clean
+	$(RM) "$(AUTOTOOLS_CONFIG_MK)"
+	$(RM) "$(AUTOTOOLS_BUILD_DIR)/GNUmakefile"
+	$(RM) "$(AUTOTOOLS_BUILD_DIR)/config.log"
+	$(RM) "$(AUTOTOOLS_BUILD_DIR)/config.status"
+	$(RM) "$(AUTOTOOLS_BUILD_DIR)/config.cache"
+	$(RM) -r "$(AUTOTOOLS_BUILD_DIR)/autom4te.cache"
+
+.PHONY: distclean
 
 # Hard clean: remove every untracked and ignored file in the working tree,
 # preserving only baserom.gba (and embedded git repos like .deps/agbcc).

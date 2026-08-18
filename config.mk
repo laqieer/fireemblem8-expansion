@@ -1,5 +1,7 @@
-# config.mk -- central, committed configuration surface for the expansion
-# framework's semantic version and default GBA ROM identity (issue #8).
+# config.mk -- central, committed defaults for the expansion framework's
+# semantic version and GBA ROM identity (issue #8). `./configure` may write
+# ignored overrides to config.autotools.mk; this file remains the source of
+# defaults when no persistent option was selected.
 #
 # This file intentionally does NOT redefine or duplicate MODERN_CONFIG
 # (debug|release), MODERN_ABI (aapcs|apcs-gnu), MODERN_ROM_SIZE (16M|32M),
@@ -100,8 +102,9 @@ EXPANSION_PSEUDO_LOCALE ?= 0
 # Independent 0/1 switches for the issue #6 starter-feature foundation. Each
 # flag defaults to 0, so a default build links none of them and stays
 # byte/behaviour-identical to today's ROM (see docs/starter_features.md).
+# `./configure --enable-*` persists these choices in config.autotools.mk.
 # Overriding a flag on the `make` command line (e.g.
-# `make ... EXPANSION_MECHANICS_HOOKS=1`) opts that one feature in.
+# `make ... EXPANSION_MECHANICS_HOOKS=1`) remains available for one build.
 # scripts/modernize/expansion_config.py validates every value (only 0 or 1
 # is accepted; -1/2/text fail with an actionable message) and folds every
 # one of them into the config-identity fingerprint and embedded metadata JSON --

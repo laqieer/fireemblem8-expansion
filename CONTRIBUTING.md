@@ -26,8 +26,9 @@ For architecture context before you dive in, see
    troubleshooting, and [`docs/framework-support.md`](docs/framework-support.md)
    for supported hosts/toolchains.
 4. Review `config.mk` and [`docs/config_identity.md`](docs/config_identity.md).
-   Defaults are English-only and all issue #6 starter flags are off; opt-ins
-   are explicit build inputs, not source edits.
+   Defaults are English-only and all issue #6 starter flags are off. Use
+   `./configure --help` for persistent, validated feature/profile choices;
+   direct `make VAR=value` overrides remain available for one-off builds.
 
 ## 2. Choose your change type
 

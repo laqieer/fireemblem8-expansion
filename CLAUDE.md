@@ -44,7 +44,8 @@ A bare `make`/`make all` always builds and boot-verifies the modern
 release ROM and never requires, builds, or resolves to a `tools/agbcc`
 executable or library. Modern ROM correctness is judged by successful
 link, boot, and runtime behavior, not by equality with the vanilla ROM;
-the archival lane remains judged by byte-identical matching.
+the archival lane remains available for byte-level matching investigations
+without a whole-source/object/ROM identity hash gate.
 
 First-time setup: `./scripts/quickstart.sh` installs/probes the modern
 toolchain (and libmGBA) by default, **no agbcc of any kind**; pass
@@ -54,6 +55,10 @@ optional and only needed by `asmdiff.sh`. See
 [`docs/quickstart.md`](docs/quickstart.md) for full setup/troubleshooting
 and [`docs/framework-support.md`](docs/framework-support.md) for exactly
 which hosts/toolchains/targets are supported vs. archival-only.
+
+Persistent feature/profile choices use `./configure --help` followed by
+`make`. The generated `config.autotools.mk` and `GNUmakefile` are ignored;
+direct `make VAR=value` remains supported for one-off overrides.
 
 Authoring game content (characters/classes/items/supports/etc.) goes
 through the generated-data platform rather than hand-written C tables —

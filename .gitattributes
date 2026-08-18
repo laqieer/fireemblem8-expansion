@@ -15,6 +15,9 @@ fonts/cjk/febuilder-baseline/*.widths.u8 binary
 # Declare files that will always have LF line endings on checkout.
 *.sha1 text eol=lf
 
+# Autoconf emits one final blank line in its generated configure script.
+configure whitespace=-blank-at-eof
+
 # Custom for Visual Studio
 *.cs     diff=csharp
 

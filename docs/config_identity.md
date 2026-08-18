@@ -1,7 +1,8 @@
 # Framework configuration and ROM identity (issue #8)
 
 This document is the single reference for the expansion framework's
-configuration surface: the committed `config.mk` file, the
+configuration surface: the committed `config.mk` defaults, the optional
+Autoconf-generated `config.autotools.mk` overrides, the
 `MODERN_CONFIG`/`MODERN_ABI`/`MODERN_ROM_SIZE`/`MODERN_TEXT_SHIFT` build
 presets, the deterministic per-build metadata generated under `build/`,
 the embedded `ExpansionMetadata` record in every modern ROM, and exactly
@@ -11,6 +12,28 @@ path; the legacy agbcc build is unaffected and keeps its hardcoded
 defaults (see "Legacy build path" below).
 
 ## Settings reference
+
+### GNU Autoconf front end
+
+Run `./configure --help` to see the persistent feature/profile interface.
+`configure` validates the selected combination with the same
+`scripts/modernize/expansion_config.py` implementation used by the build, then
+writes ignored `config.autotools.mk` and `GNUmakefile` files. Supported options
+cover the starter flags, localized-text auto-wrap, enabled/default/pseudo
+locales, ROM size, item ID cap, and link-time text shift.
+
+Only options explicitly passed to `configure` are written, so unspecified
+settings continue to use `config.mk`/`modern.mk` defaults. Precedence is:
+
+1. an explicit `make VAR=value` for one invocation;
+2. an explicit `./configure` option persisted in `config.autotools.mk`;
+3. an environment value or committed `config.mk`/`modern.mk` default.
+
+The generated GNUmakefile forwards all goals to the committed Make backend,
+including from a separate configure directory. The backend still owns the
+specialized ROM, asset, linker, and runtime-gate recipes. `make distclean`
+removes generated Autoconf state. Contributors changing `configure.ac` must
+regenerate the committed `configure` script with `autoreconf -fi`.
 
 ### `config.mk` (root, committed)
 
@@ -33,9 +56,10 @@ defaults (see "Legacy build path" below).
 | `EXPANSION_DANGER_OVERLAY_MENU` | `0` or `1` | `0` | issue #6 starter feature (fingerprint) -- expose the player danger/range overlay map-menu surface |
 | `EXPANSION_STARTER_CONTENT` | `0` or `1` | `0` | issue #6 starter feature (fingerprint) -- link the bundled generated-data content example; requires `EXPANSION_MECHANICS_HOOKS=1` **and** an item ID cap reaching `ITEM_EXPANSION_CE` (`FE8_ITEM_ID_CAP=0xCE` or higher) |
 
-Every value has a `?=` default, so overriding on the `make` command line
-(e.g. `make expansion-modern-rom EXPANSION_ROM_TITLE=MYHACK`) or via the
-environment changes the built ROM's identity without editing the file.
+Every value has a `?=` default, so an explicit `./configure` option, `make`
+command-line override (e.g.
+`make expansion-modern-rom EXPANSION_ROM_TITLE=MYHACK`), or environment value
+changes the built ROM's identity without editing the file.
 `config.mk` deliberately does **not** duplicate `MODERN_CONFIG`,
 `MODERN_ABI`, `MODERN_ROM_SIZE`, or `MODERN_TEXT_SHIFT` -- those remain
 owned by `modern.mk`, which already had working presets for them before

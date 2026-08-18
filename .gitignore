@@ -57,6 +57,14 @@ Temporary Items
 # Build Outputs
 # =========================
 
+# GNU Autoconf output. configure/configure.ac/templates are tracked; these
+# per-worktree or per-build-directory results are not.
+/GNUmakefile
+/config.autotools.mk
+/config.status
+/config.cache
+/autom4te.cache/
+
 *.gba
 *.elf
 *.map
@@ -998,3 +1006,7 @@ scripts/generated_data/tests/.scratch/
 /drift-report.json
 /scan-report.json
 /scan-report.err
+
+# The generic template above re-includes directories ending in .cache.
+# Autoconf's generated cache must remain ignored.
+/autom4te.cache/

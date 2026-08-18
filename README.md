@@ -37,8 +37,17 @@ troubleshooting, and [`docs/framework-support.md`](docs/framework-support.md)
 for the exact supported-host/toolchain/target matrix.
 
 
-Then configure the build in `config.mk` or with `make` overrides. The default
-is English-only with all starter features off; see
+The default is English-only with all starter features off, so no configuration
+step is required. For persistent opt-ins, use the GNU Autoconf front end:
+
+```bash
+./configure --enable-mechanics-hooks --enable-mechanics-sample
+make
+```
+
+`configure` validates the complete profile and writes ignored
+`config.autotools.mk`/`GNUmakefile` outputs; direct `make VAR=value` overrides
+remain available for one-off builds. See
 [`docs/config_identity.md`](docs/config_identity.md),
 [`docs/starter_features.md`](docs/starter_features.md), and
 [`docs/localization.md`](docs/localization.md) before enabling optional

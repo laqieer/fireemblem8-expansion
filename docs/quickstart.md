@@ -51,13 +51,57 @@ On success you’ll see:
 [✓] Modern build complete: /path/to/fireemblem8-expansion/build/expansion-modern/release/aapcs/fireemblem8.gba
 ```
 
+## Persistent feature configuration (GNU Autotools)
+
+The committed defaults need no configuration step. To persist feature and
+locale choices without repeating a long Make command, run the committed
+Autoconf-generated `configure` script, then build normally:
+
+```bash
+./configure \
+    --enable-mechanics-hooks \
+    --enable-mechanics-sample \
+    --enable-danger-overlay-menu
+make
+```
+
+The bundled starter-content example also needs its typed item-cap dependency:
+
+```bash
+./configure \
+    --enable-mechanics-hooks \
+    --enable-starter-content \
+    --with-item-id-cap=0xCE
+make
+```
+
+Production CJK profiles can select locales and the required ROM size:
+
+```bash
+./configure \
+    --with-enabled-locales=en,ja,zh-Hans \
+    --with-default-locale=ja \
+    --with-rom-size=32M
+make
+```
+
+`./configure --help` lists every supported option. Configuration is validated
+before output is written; invalid flag dependencies, locale combinations,
+item caps, ROM sizes, or text shifts fail immediately. The generated
+`config.autotools.mk`, `GNUmakefile`, `config.status`, and `config.log` are
+ignored worktree files. `make distclean` removes them along with ordinary
+build output. The specialized ROM/asset recipes remain in the committed
+Makefile, so existing direct `make VAR=value` commands and bare-`make`
+defaults continue to work.
+
 
 ## After installation: configure, author, test, debug
 
 1. Keep the supported linked ABI at `MODERN_ABI=aapcs`; choose
    `MODERN_CONFIG=debug` while developing and `release` for the default lane.
-2. Set ROM identity, locale configuration, or the four default-off starter
-   flags through `config.mk`/`make` overrides, following
+2. Set persistent locale/starter-feature choices through `./configure`, or
+   use `config.mk`/direct `make` overrides for advanced identity settings and
+   one-off builds, following
    [`config_identity.md`](config_identity.md),
    [`starter_features.md`](starter_features.md), and
    [`localization.md`](localization.md). Invalid locale/flag/dependency

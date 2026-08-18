@@ -1,0 +1,240 @@
+AC_PREREQ([2.69])
+AC_INIT(
+    [fireemblem8-expansion],
+    [0.1.0],
+    [https://github.com/laqieer/fireemblem8-expansion/issues])
+AC_CONFIG_SRCDIR([config.mk])
+
+AC_PATH_PROGS([PYTHON], [python3 python])
+AS_IF([test -z "$PYTHON"], [AC_MSG_ERROR([Python 3 is required])])
+
+AC_MSG_CHECKING([whether $PYTHON is Python 3])
+if "$PYTHON" -c 'import sys; raise SystemExit(sys.version_info.major != 3)'
+then
+    AC_MSG_RESULT([yes])
+else
+    AC_MSG_RESULT([no])
+    AC_MSG_ERROR([Python 3 is required])
+fi
+
+AC_ARG_ENABLE(
+    [mechanics-hooks],
+    [AS_HELP_STRING(
+        [--enable-mechanics-hooks],
+        [link the public battle-stat mechanics hook registry])],
+    [AS_CASE(
+        [$enableval],
+        [yes], [fe8_mechanics_hooks=1],
+        [no], [fe8_mechanics_hooks=0],
+        [AC_MSG_ERROR([--enable-mechanics-hooks accepts only yes or no])])],
+    [fe8_mechanics_hooks=])
+
+AC_ARG_ENABLE(
+    [mechanics-sample],
+    [AS_HELP_STRING(
+        [--enable-mechanics-sample],
+        [register the bundled sample mechanic (requires mechanics hooks)])],
+    [AS_CASE(
+        [$enableval],
+        [yes], [fe8_mechanics_sample=1],
+        [no], [fe8_mechanics_sample=0],
+        [AC_MSG_ERROR([--enable-mechanics-sample accepts only yes or no])])],
+    [fe8_mechanics_sample=])
+
+AC_ARG_ENABLE(
+    [danger-overlay-menu],
+    [AS_HELP_STRING(
+        [--enable-danger-overlay-menu],
+        [expose the player Threat Range map-menu entry])],
+    [AS_CASE(
+        [$enableval],
+        [yes], [fe8_danger_overlay_menu=1],
+        [no], [fe8_danger_overlay_menu=0],
+        [AC_MSG_ERROR([--enable-danger-overlay-menu accepts only yes or no])])],
+    [fe8_danger_overlay_menu=])
+
+AC_ARG_ENABLE(
+    [starter-content],
+    [AS_HELP_STRING(
+        [--enable-starter-content],
+        [link the generated starter item and mechanic])],
+    [AS_CASE(
+        [$enableval],
+        [yes], [fe8_starter_content=1],
+        [no], [fe8_starter_content=0],
+        [AC_MSG_ERROR([--enable-starter-content accepts only yes or no])])],
+    [fe8_starter_content=])
+
+AC_ARG_ENABLE(
+    [localized-text-auto-wrap],
+    [AS_HELP_STRING(
+        [--enable-localized-text-auto-wrap],
+        [enable the runtime localized-text wrapping safety net])],
+    [AS_CASE(
+        [$enableval],
+        [yes], [fe8_localized_text_auto_wrap=1],
+        [no], [fe8_localized_text_auto_wrap=0],
+        [AC_MSG_ERROR([--enable-localized-text-auto-wrap accepts only yes or no])])],
+    [fe8_localized_text_auto_wrap=])
+
+AC_ARG_ENABLE(
+    [pseudo-locale],
+    [AS_HELP_STRING(
+        [--enable-pseudo-locale],
+        [enable qps-ploc (also include it in --with-enabled-locales)])],
+    [AS_CASE(
+        [$enableval],
+        [yes], [fe8_pseudo_locale=1],
+        [no], [fe8_pseudo_locale=0],
+        [AC_MSG_ERROR([--enable-pseudo-locale accepts only yes or no])])],
+    [fe8_pseudo_locale=])
+
+AC_ARG_WITH(
+    [enabled-locales],
+    [AS_HELP_STRING(
+        [--with-enabled-locales=LIST],
+        [comma-separated locale IDs, including en])],
+    [AS_CASE(
+        [$withval],
+        [yes|no], [AC_MSG_ERROR([--with-enabled-locales requires a value])],
+        [fe8_enabled_locales=$withval])],
+    [fe8_enabled_locales=])
+
+AC_ARG_WITH(
+    [default-locale],
+    [AS_HELP_STRING(
+        [--with-default-locale=ID],
+        [default locale ID; must be in --with-enabled-locales])],
+    [AS_CASE(
+        [$withval],
+        [yes|no], [AC_MSG_ERROR([--with-default-locale requires a value])],
+        [fe8_default_locale=$withval])],
+    [fe8_default_locale=])
+
+AC_ARG_WITH(
+    [rom-size],
+    [AS_HELP_STRING(
+        [--with-rom-size=16M|32M],
+        [modern ROM size; CJK locale profiles require 32M])],
+    [AS_CASE(
+        [$withval],
+        [yes|no], [AC_MSG_ERROR([--with-rom-size requires 16M or 32M])],
+        [fe8_rom_size=$withval])],
+    [fe8_rom_size=])
+
+AC_ARG_WITH(
+    [item-id-cap],
+    [AS_HELP_STRING(
+        [--with-item-id-cap=VALUE],
+        [active item ID cap, e.g. 0xCE for starter content])],
+    [AS_CASE(
+        [$withval],
+        [yes|no], [AC_MSG_ERROR([--with-item-id-cap requires a value])],
+        [fe8_item_id_cap=$withval])],
+    [fe8_item_id_cap=])
+
+AC_ARG_WITH(
+    [text-shift],
+    [AS_HELP_STRING(
+        [--with-text-shift=BYTES],
+        [4-byte-aligned modern link-time text shift])],
+    [AS_CASE(
+        [$withval],
+        [yes|no], [AC_MSG_ERROR([--with-text-shift requires a value])],
+        [fe8_text_shift=$withval])],
+    [fe8_text_shift=])
+
+AS_IF(
+    [test -n "$fe8_mechanics_hooks"],
+    [FE8_CFG_MECHANICS_HOOKS="EXPANSION_MECHANICS_HOOKS := $fe8_mechanics_hooks"],
+    [FE8_CFG_MECHANICS_HOOKS=])
+AS_IF(
+    [test -n "$fe8_mechanics_sample"],
+    [FE8_CFG_MECHANICS_SAMPLE="EXPANSION_MECHANICS_SAMPLE := $fe8_mechanics_sample"],
+    [FE8_CFG_MECHANICS_SAMPLE=])
+AS_IF(
+    [test -n "$fe8_danger_overlay_menu"],
+    [FE8_CFG_DANGER_OVERLAY_MENU="EXPANSION_DANGER_OVERLAY_MENU := $fe8_danger_overlay_menu"],
+    [FE8_CFG_DANGER_OVERLAY_MENU=])
+AS_IF(
+    [test -n "$fe8_starter_content"],
+    [FE8_CFG_STARTER_CONTENT="EXPANSION_STARTER_CONTENT := $fe8_starter_content"],
+    [FE8_CFG_STARTER_CONTENT=])
+AS_IF(
+    [test -n "$fe8_localized_text_auto_wrap"],
+    [FE8_CFG_LOCALIZED_TEXT_AUTO_WRAP="EXPANSION_LOCALIZED_TEXT_AUTO_WRAP := $fe8_localized_text_auto_wrap"],
+    [FE8_CFG_LOCALIZED_TEXT_AUTO_WRAP=])
+AS_IF(
+    [test -n "$fe8_pseudo_locale"],
+    [FE8_CFG_PSEUDO_LOCALE="EXPANSION_PSEUDO_LOCALE := $fe8_pseudo_locale"],
+    [FE8_CFG_PSEUDO_LOCALE=])
+AS_IF(
+    [test -n "$fe8_enabled_locales"],
+    [FE8_CFG_ENABLED_LOCALES="EXPANSION_ENABLED_LOCALES := $fe8_enabled_locales"],
+    [FE8_CFG_ENABLED_LOCALES=])
+AS_IF(
+    [test -n "$fe8_default_locale"],
+    [FE8_CFG_DEFAULT_LOCALE="EXPANSION_DEFAULT_LOCALE := $fe8_default_locale"],
+    [FE8_CFG_DEFAULT_LOCALE=])
+AS_IF(
+    [test -n "$fe8_rom_size"],
+    [FE8_CFG_ROM_SIZE="MODERN_ROM_SIZE := $fe8_rom_size"],
+    [FE8_CFG_ROM_SIZE=])
+AS_IF(
+    [test -n "$fe8_item_id_cap"],
+    [FE8_CFG_ITEM_ID_CAP="FE8_ITEM_ID_CAP := $fe8_item_id_cap"],
+    [FE8_CFG_ITEM_ID_CAP=])
+AS_IF(
+    [test -n "$fe8_text_shift"],
+    [FE8_CFG_TEXT_SHIFT="MODERN_TEXT_SHIFT := $fe8_text_shift"],
+    [FE8_CFG_TEXT_SHIFT=])
+
+AC_SUBST([FE8_CFG_MECHANICS_HOOKS])
+AC_SUBST([FE8_CFG_MECHANICS_SAMPLE])
+AC_SUBST([FE8_CFG_DANGER_OVERLAY_MENU])
+AC_SUBST([FE8_CFG_STARTER_CONTENT])
+AC_SUBST([FE8_CFG_LOCALIZED_TEXT_AUTO_WRAP])
+AC_SUBST([FE8_CFG_PSEUDO_LOCALE])
+AC_SUBST([FE8_CFG_ENABLED_LOCALES])
+AC_SUBST([FE8_CFG_DEFAULT_LOCALE])
+AC_SUBST([FE8_CFG_ROM_SIZE])
+AC_SUBST([FE8_CFG_ITEM_ID_CAP])
+AC_SUBST([FE8_CFG_TEXT_SHIFT])
+
+fe8_validate_rom_size=${fe8_rom_size:-16M}
+fe8_validate_text_shift=${fe8_text_shift:-0}
+fe8_abs_srcdir=`cd "$srcdir" && pwd`
+
+AC_MSG_CHECKING([configured expansion profile])
+fe8_config_output=`PYTHONPATH="$fe8_abs_srcdir${PYTHONPATH:+:$PYTHONPATH}" \
+    "$PYTHON" "$fe8_abs_srcdir/scripts/modernize/expansion_config.py" validate \
+    --config-mk "$fe8_abs_srcdir/config.mk" \
+    --config release \
+    --abi aapcs \
+    --rom-size "$fe8_validate_rom_size" \
+    --text-shift "$fe8_validate_text_shift" \
+    --repo-root "$fe8_abs_srcdir" \
+    --enabled-locales "$fe8_enabled_locales" \
+    --default-locale "$fe8_default_locale" \
+    --pseudo-locale "$fe8_pseudo_locale" \
+    --mechanics-hooks "$fe8_mechanics_hooks" \
+    --mechanics-sample "$fe8_mechanics_sample" \
+    --danger-overlay-menu "$fe8_danger_overlay_menu" \
+    --starter-content "$fe8_starter_content" \
+    --localized-text-auto-wrap "$fe8_localized_text_auto_wrap" \
+    --item-id-cap "$fe8_item_id_cap" 2>&1`
+fe8_config_status=$?
+AS_IF(
+    [test "$fe8_config_status" -eq 0],
+    [AC_MSG_RESULT([valid])],
+    [AC_MSG_RESULT([invalid])
+     fe8_config_output=${fe8_config_output#error: }
+     AC_MSG_ERROR([$fe8_config_output])])
+
+AC_CONFIG_FILES([
+    GNUmakefile:GNUmakefile.in
+    config.autotools.mk:config.autotools.mk.in
+])
+AC_MSG_NOTICE([configuration saved in config.autotools.mk])
+AC_MSG_NOTICE([run 'make' to build the configured modern release ROM])
+AC_OUTPUT

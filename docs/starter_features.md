@@ -12,14 +12,30 @@ keeps vanilla behaviour.
 
 ## Build flags
 
-| `config.mk` (Make) | C macro (`include/expansion_config.h`) | Default | Effect |
-|---|---|---|---|
-| `EXPANSION_MECHANICS_HOOKS` | `FE8_EXPANSION_MECHANICS_HOOKS` | `0` | Link the public battle-stat mechanics hook registry. |
-| `EXPANSION_MECHANICS_SAMPLE` | `FE8_EXPANSION_MECHANICS_SAMPLE` | `0` | Register the bundled sample mechanic. **Requires `EXPANSION_MECHANICS_HOOKS=1`.** |
-| `EXPANSION_DANGER_OVERLAY_MENU` | `FE8_EXPANSION_DANGER_OVERLAY_MENU` | `0` | Expose the player-facing danger/range overlay map-menu surface. |
-| `EXPANSION_STARTER_CONTENT` | `FE8_EXPANSION_STARTER_CONTENT` | `0` | Link the bundled generated-data content example. **Requires `EXPANSION_MECHANICS_HOOKS=1` and `FE8_ITEM_ID_CAP >= 0xCE`.** |
+| Autoconf option | Make setting | C macro (`include/expansion_config.h`) | Default | Effect |
+|---|---|---|---|---|
+| `--enable-mechanics-hooks` | `EXPANSION_MECHANICS_HOOKS` | `FE8_EXPANSION_MECHANICS_HOOKS` | `0` | Link the public battle-stat mechanics hook registry. |
+| `--enable-mechanics-sample` | `EXPANSION_MECHANICS_SAMPLE` | `FE8_EXPANSION_MECHANICS_SAMPLE` | `0` | Register the bundled sample mechanic. **Requires mechanics hooks.** |
+| `--enable-danger-overlay-menu` | `EXPANSION_DANGER_OVERLAY_MENU` | `FE8_EXPANSION_DANGER_OVERLAY_MENU` | `0` | Expose the player-facing danger/range overlay map-menu surface. |
+| `--enable-starter-content` | `EXPANSION_STARTER_CONTENT` | `FE8_EXPANSION_STARTER_CONTENT` | `0` | Link the bundled generated-data content example. **Requires mechanics hooks and `--with-item-id-cap=0xCE` or higher.** |
 
-Opt in on the `make` command line, e.g.:
+Persist a profile through GNU Autoconf:
+
+```bash
+./configure --enable-mechanics-hooks --enable-mechanics-sample
+make
+
+./configure --enable-danger-overlay-menu
+make
+
+./configure \
+    --enable-starter-content \
+    --enable-mechanics-hooks \
+    --with-item-id-cap=0xCE
+make
+```
+
+One-off Make overrides remain supported:
 
 ```bash
 make expansion-modern-rom EXPANSION_MECHANICS_HOOKS=1 EXPANSION_MECHANICS_SAMPLE=1
@@ -31,7 +47,8 @@ FE8_ITEM_ID_CAP=0xCE make expansion-modern-rom \
 ### Validation
 
 `scripts/modernize/expansion_config.py` validates every flag before any modern
-compile or link:
+compile or link, and `configure` calls the same validator before writing its
+generated Make fragment:
 
 * each flag must be exactly `0` or `1`; `-1`, `2`, and non-numeric text each
   fail with a specific, actionable message;

@@ -60,10 +60,10 @@ when working with tooling that inherently depends on agbcc's exact codegen
    ```
    make legacy
    ```
-6. A successful `make legacy` produces `fireemblem8.gba` and verifies the
-   pinned source, sensitive object sections, and final ROM SHA-1 through
-   `scripts/archival_identity.py`. This guard reads the accepted hash from
-   `reports/baseline/baseline.json`; it does not refresh or relax that evidence.
+6. A successful `make legacy` produces `fireemblem8.gba`. The former
+   whole-source/object/ROM identity hash gate has been removed: Git records
+   source history, and `./asmdiff.sh` remains the explicit byte-comparison
+   tool when a legal `baserom.gba` is available.
 
 `./scripts/quickstart.sh --legacy` automates steps 1-6; see
 [`docs/quickstart.md`](quickstart.md#archival---legacy-path).

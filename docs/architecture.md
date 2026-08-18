@@ -59,12 +59,13 @@ precedence/migration, runtime/shifted/budget matrices, and legal non-goals:
 
 ## Config identity & save format
 
-- `config.mk` (root, committed) plus `modern.mk`'s `MODERN_CONFIG`/
+- `config.mk` (root, committed), optional Autoconf-generated
+  `config.autotools.mk` overrides, and `modern.mk`'s `MODERN_CONFIG`/
   `MODERN_ABI`/`MODERN_ROM_SIZE`/`MODERN_TEXT_SHIFT` presets define the
-  framework's version, ROM identity, and ABI/layout choices, folded into a
-  deterministic config-identity fingerprint embedded in every modern ROM
-  (`struct ExpansionMetadata`, `include/expansion_metadata.h`). Full
-  reference: [`docs/config_identity.md`](config_identity.md).
+  framework's version, ROM identity, feature profile, and ABI/layout choices,
+  folded into a deterministic config-identity fingerprint embedded in every
+  modern ROM (`struct ExpansionMetadata`, `include/expansion_metadata.h`).
+  Full reference: [`docs/config_identity.md`](config_identity.md).
 - Save-format compatibility (on-media record, raw-byte classifier,
   save-menu compatibility gate/UI) is a **separate**, narrower key
   (`EXPANSION_SAVE_COMPAT_EPOCH`) from the config fingerprint above — see

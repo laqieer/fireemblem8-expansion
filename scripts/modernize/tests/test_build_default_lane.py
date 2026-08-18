@@ -22,10 +22,12 @@ inside the automated suite), that:
   reintroduced (under this name or a `make`-noise equivalent) without
   failing here.
 * The explicit, clearly-named archival alias `make legacy` still exists and
-  reaches `fireemblem8.gba` through the mandatory
-  `legacy-identity-check`, whose recipe validates the built ROM against
-  the pinned archival manifest -- the archival lane is preserved, not
-  deleted, and reachable *only* by naming it.
+  reaches `fireemblem8.gba` directly. The obsolete source/object/ROM identity
+  hash gate is gone, while the archival lane itself remains reachable *only*
+  by naming it.
+* The GNU Autoconf front end persists validated feature/profile choices in an
+  ignored Make fragment and its generated GNUmakefile forwards those values to
+  the committed Make backend without changing direct `make` defaults.
 * `scripts/quickstart.sh --legacy` calls `make legacy` by name directly
   (never a bare `make -j<jobs>` plus a lane-selection variable of any
   kind) -- proven both by grepping the script for that exact invocation
@@ -43,12 +45,14 @@ suite must stay fast and deterministic.
 import os
 import re
 import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
 MAKEFILE = ROOT / "Makefile"
 QUICKSTART = ROOT / "scripts" / "quickstart.sh"
+CONFIGURE = ROOT / "configure"
 
 
 def run_make(args, env_overrides=None):
@@ -97,9 +101,8 @@ class DefaultGoalDatabaseProbeTests(unittest.TestCase):
         # Makefile that could give `all:` a legacy prerequisite under any
         # condition; this is the load-bearing structural change this issue
         # makes. See the tested
-        # `legacy -> legacy-identity-check -> fireemblem8.gba` chain below
-        # for the one place that prerequisite still lives, reachable only
-        # by name and only through identity validation.
+        # `legacy -> fireemblem8.gba` chain below for the one place that
+        # prerequisite still lives, reachable only by name.
         probe = self.probe()
         all_rule = next(
             (line for line in probe.splitlines() if line.startswith("all:")), None
@@ -138,6 +141,12 @@ class BareMakeDryRunTests(unittest.TestCase):
         result = run_make(["-n"])
         self.assertEqual(result.returncode, 0, result.stdout[-4000:])
         self.assertNotIn("agbcc", result.stdout)
+
+    def test_missing_autotools_fragment_never_triggers_implicit_rule_search(self):
+        result = run_make(["-n"])
+        self.assertEqual(result.returncode, 0, result.stdout[-4000:])
+        self.assertNotIn("config.autotools.mk.s", result.stdout)
+        self.assertNotIn("can't open config.autotools.mk", result.stdout)
 
     def test_make_all_dry_run_matches_bare_make(self):
         bare = run_make(["-n"])
@@ -200,7 +209,7 @@ class LegacyLaneStillReachableTests(unittest.TestCase):
     """The archival lane is explicitly preserved (never deleted); these
     prove it stays structurally reachable -- but only by naming it."""
 
-    def test_make_legacy_target_builds_rom_through_identity_check(self):
+    def test_make_legacy_target_builds_rom_without_identity_hash_gate(self):
         # Deliberately a `-p` database probe, never a `-n`/real build of
         # `legacy`/`fireemblem8.gba`: both targets' prerequisite chain
         # reaches mgfembp/mgfembp.bin, whose own recipe invokes $(MAKE) --
@@ -211,12 +220,7 @@ class LegacyLaneStillReachableTests(unittest.TestCase):
         # recipe, so this stays a pure, side-effect-free static check of
         # the complete intentional chain:
         #
-        #   legacy -> legacy-identity-check -> fireemblem8.gba
-        #
-        # The intermediate target must also run the archival identity
-        # validator with the pinned manifest and the built ROM. Checking
-        # both prerequisites and recipe prevents a superficially renamed
-        # alias from weakening or bypassing identity validation.
+        #   legacy -> fireemblem8.gba
         result = run_make(
             ["--no-print-directory", "-rR", "-p", "__issue15_legacy_alias_probe__"]
         )
@@ -226,28 +230,16 @@ class LegacyLaneStillReachableTests(unittest.TestCase):
             None,
         )
         self.assertIsNotNone(legacy_rule, result.stdout[:400])
-        self.assertEqual(legacy_rule.strip(), "legacy: legacy-identity-check")
+        self.assertEqual(legacy_rule.strip(), "legacy: fireemblem8.gba")
 
-        identity_rule = next(
-            (
-                line
-                for line in result.stdout.splitlines()
-                if line.startswith("legacy-identity-check:")
-            ),
-            None,
+        text = MAKEFILE.read_text(encoding="utf-8")
+        self.assertNotIn("legacy-identity-check", text)
+        self.assertNotIn("archival_identity.py", text)
+        self.assertNotIn("archival_identity_manifest.json", text)
+        self.assertFalse((ROOT / "scripts" / "archival_identity.py").exists())
+        self.assertFalse(
+            (ROOT / "scripts" / "archival_identity_manifest.json").exists()
         )
-        self.assertIsNotNone(identity_rule, result.stdout[:400])
-        self.assertEqual(
-            identity_rule.strip(),
-            "legacy-identity-check: fireemblem8.gba "
-            "scripts/archival_identity.py scripts/archival_identity_manifest.json",
-        )
-
-        identity_rule_pos = result.stdout.find(identity_rule)
-        identity_block = result.stdout[identity_rule_pos : identity_rule_pos + 800]
-        self.assertIn("$(PYTHON) -m scripts.archival_identity", identity_block)
-        self.assertIn("--manifest $(ARCHIVAL_IDENTITY_MANIFEST)", identity_block)
-        self.assertIn("--rom $(ROM)", identity_block)
 
     def test_fe8_default_lane_env_var_no_longer_routes_bare_make_to_agbcc(self):
         # Negative regression test (inverts the pre-fix assumption): an
@@ -299,6 +291,122 @@ class NoLaneSelectionVariableSurvivesInMakefileTests(unittest.TestCase):
         self.assertIn("expansion-modern-boot-check MODERN_CONFIG=release MODERN_ABI=aapcs", recipe)
         self.assertNotIn("ifeq", recipe)
         self.assertNotIn("FE8_DEFAULT_LANE", recipe)
+
+
+class AutotoolsConfigureTests(unittest.TestCase):
+    @staticmethod
+    def run_configure(build_dir, *args):
+        return subprocess.run(
+            [str(CONFIGURE), *args],
+            cwd=build_dir,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            check=False,
+        )
+
+    def test_configure_help_lists_public_feature_and_profile_options(self):
+        result = subprocess.run(
+            [str(CONFIGURE), "--help"],
+            cwd=ROOT,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout[-4000:])
+        for option in (
+            "--enable-mechanics-hooks",
+            "--enable-mechanics-sample",
+            "--enable-danger-overlay-menu",
+            "--enable-starter-content",
+            "--enable-localized-text-auto-wrap",
+            "--enable-pseudo-locale",
+            "--with-enabled-locales=LIST",
+            "--with-default-locale=ID",
+            "--with-rom-size=16M|32M",
+            "--with-item-id-cap=VALUE",
+        ):
+            self.assertIn(option, result.stdout)
+
+    def test_configure_full_starter_profile_reaches_make_backend(self):
+        with tempfile.TemporaryDirectory() as build_dir:
+            result = self.run_configure(
+                build_dir,
+                "--enable-mechanics-hooks",
+                "--enable-mechanics-sample",
+                "--enable-danger-overlay-menu",
+                "--enable-starter-content",
+                "--with-item-id-cap=0xCE",
+            )
+            self.assertEqual(result.returncode, 0, result.stdout[-4000:])
+
+            fragment = (Path(build_dir) / "config.autotools.mk").read_text(
+                encoding="utf-8"
+            )
+            self.assertIn("EXPANSION_MECHANICS_HOOKS := 1", fragment)
+            self.assertIn("EXPANSION_MECHANICS_SAMPLE := 1", fragment)
+            self.assertIn("EXPANSION_DANGER_OVERLAY_MENU := 1", fragment)
+            self.assertIn("EXPANSION_STARTER_CONTENT := 1", fragment)
+            self.assertIn("FE8_ITEM_ID_CAP := 0xCE", fragment)
+            self.assertTrue((Path(build_dir) / "GNUmakefile").is_file())
+
+            make_result = subprocess.run(
+                [
+                    "make",
+                    "--no-print-directory",
+                    "print-EXPANSION_MECHANICS_HOOKS",
+                    "print-EXPANSION_STARTER_CONTENT",
+                    "print-FE8_ITEM_ID_CAP",
+                    "print-GENERATED_DATA_ITEM_CAP",
+                ],
+                cwd=build_dir,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                check=False,
+            )
+            self.assertEqual(make_result.returncode, 0, make_result.stdout[-4000:])
+            self.assertIn(
+                "EXPANSION_MECHANICS_HOOKS is a simple variable set to [1]",
+                make_result.stdout,
+            )
+            self.assertIn(
+                "EXPANSION_STARTER_CONTENT is a simple variable set to [1]",
+                make_result.stdout,
+            )
+            self.assertIn(
+                "FE8_ITEM_ID_CAP is a simple variable set to [0xCE]",
+                make_result.stdout,
+            )
+            self.assertIn(
+                "GENERATED_DATA_ITEM_CAP is a simple variable set to [0xCE]",
+                make_result.stdout,
+            )
+
+    def test_configure_rejects_invalid_feature_dependency(self):
+        with tempfile.TemporaryDirectory() as build_dir:
+            result = self.run_configure(build_dir, "--enable-mechanics-sample")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(
+            "EXPANSION_MECHANICS_SAMPLE=1 requires EXPANSION_MECHANICS_HOOKS=1",
+            result.stdout,
+        )
+
+    def test_configure_without_options_preserves_committed_defaults(self):
+        with tempfile.TemporaryDirectory() as build_dir:
+            result = self.run_configure(build_dir)
+            self.assertEqual(result.returncode, 0, result.stdout[-4000:])
+            fragment = (Path(build_dir) / "config.autotools.mk").read_text(
+                encoding="utf-8"
+            )
+
+            assignments = [
+                line
+                for line in fragment.splitlines()
+                if re.match(r"^[A-Z][A-Z0-9_]*\s*:=", line)
+            ]
+            self.assertEqual(assignments, [])
 
 
 class QuickstartLegacyGlueRegressionGuardTests(unittest.TestCase):
