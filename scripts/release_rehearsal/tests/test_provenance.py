@@ -457,7 +457,7 @@ class AssignRootTests(unittest.TestCase):
         self.assertIn("matches no seed root", str(ctx.exception))
 
     def test_real_seed_covers_the_real_exact_allowlist_and_exclusions_with_no_errors(self):
-        """`PROVENANCE_ROOT_SEED` (the real, checked-in 46-root seed) must
+        """`PROVENANCE_ROOT_SEED` (the real, checked-in 50-root seed) must
         assign every single real, checked-in exact allowlist/exclusion
         path to exactly one root -- this is exactly the invariant that
         lets this repository regenerate its provenance data
