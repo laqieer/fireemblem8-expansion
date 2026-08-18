@@ -1,0 +1,86 @@
+name: Feature request
+description: Propose a reusable capability for the expansion framework.
+title: "[Feature]: "
+labels: ["enhancement"]
+assignees: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe the capability and why it belongs in a reusable FE8 expansion framework.
+        Project-specific content or rulesets may be redirected to a downstream extension seam.
+  - type: textarea
+    id: feature_description
+    attributes:
+      label: Detailed feature description
+      description: Explain the behavior, user-facing result, and intended integration surface.
+      placeholder: Describe what should exist and how projects would use it.
+    validations:
+      required: true
+  - type: textarea
+    id: request_reason
+    attributes:
+      label: Request reason
+      description: Explain the problem this solves and why the framework should own it.
+      placeholder: Why is this useful, and why is an external project-only implementation insufficient?
+    validations:
+      required: true
+  - type: textarea
+    id: use_cases
+    attributes:
+      label: Reusable use cases
+      description: Give at least two plausible project uses without hard-coded characters, chapters, assets, or balance values.
+      placeholder: |
+        1. ...
+        2. ...
+    validations:
+      required: true
+  - type: textarea
+    id: dependencies_conflicts
+    attributes:
+      label: Dependencies and conflicts
+      description: List prerequisites, dependent features, shared runtime/data seams, incompatible profiles, and known conflicts. Write "None known" only after checking.
+      placeholder: |
+        Dependencies:
+        Dependents:
+        Conflicts:
+        Shared IDs/data/save/config/runtime surfaces:
+    validations:
+      required: true
+  - type: textarea
+    id: configuration
+    attributes:
+      label: Configuration and compatibility
+      description: Describe default behavior, any optional build profile/gate, and save, generated-data, debug/release, ROM/RAM, or archival-lane impact.
+      placeholder: |
+        Default behavior:
+        Optional configuration:
+        Compatibility/resource impact:
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance_criteria
+    attributes:
+      label: Observable acceptance criteria
+      description: List measurable outcomes and the runtime or host evidence that should prove each one.
+      placeholder: |
+        - [ ] ...
+        - [ ] ...
+    validations:
+      required: true
+  - type: textarea
+    id: non_goals
+    attributes:
+      label: Non-goals
+      description: State related behavior that should remain outside this request.
+  - type: checkboxes
+    id: submission_checks
+    attributes:
+      label: Submission checks
+      options:
+        - label: I searched existing issues and discussions for duplicates.
+          required: true
+        - label: I described a reusable framework capability rather than only project-specific content.
+          required: true
+        - label: I did not attach ROMs, saves, savestates, patches, or copyrighted game assets.
+          required: true

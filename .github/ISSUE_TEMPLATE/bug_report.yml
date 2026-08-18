@@ -1,0 +1,96 @@
+name: Bug report
+description: Report a reproducible defect or regression in the expansion framework.
+title: "[Bug]: "
+labels: ["bug"]
+assignees: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Preserve the failing evidence and provide enough configuration detail to reproduce the same build.
+        Do not attach ROMs, saves, savestates, patches, or copyrighted game assets.
+  - type: input
+    id: commit
+    attributes:
+      label: Commit
+      description: Provide the full commit ID or branch tip where the bug occurs.
+      placeholder: 40-character Git commit ID
+    validations:
+      required: true
+  - type: textarea
+    id: build_config
+    attributes:
+      label: Detailed build configuration
+      description: Include the configure command or Make overrides, MODERN_CONFIG, MODERN_ABI, locales, feature flags, ID caps, ROM size, and any non-default settings.
+      placeholder: |
+        ./configure ...
+        make ...
+        MODERN_CONFIG=
+        MODERN_ABI=
+        Locales/features/caps:
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment and tools
+      description: Include host OS, compiler/binutils versions, emulator/backend, debugger, and any IDA/Ghidra tooling used.
+      placeholder: |
+        OS:
+        arm-none-eabi-gcc:
+        Emulator/libmGBA:
+        GDB/IDA/Ghidra:
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction steps
+      description: Give the smallest deterministic sequence from a clean checkout/build to the failure.
+      placeholder: |
+        1. ...
+        2. ...
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: State the intended observable result.
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: State what happened instead, including exact errors or incorrect game state.
+    validations:
+      required: true
+  - type: upload
+    id: screenshots
+    attributes:
+      label: Game screenshots
+      description: Upload screenshots that show the bug and relevant on-screen context. If capture is impossible, attach an explanatory image or state why in the logs field.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs and diagnostic evidence
+      description: Add test output, scenario/fingerprint failures, debugger observations, or an explanation if screenshots cannot be captured. Do not include credentials or restricted ROM data.
+      render: shell
+  - type: checkboxes
+    id: submission_checks
+    attributes:
+      label: Submission checks
+      options:
+        - label: I searched existing issues and discussions for duplicates.
+          required: true
+        - label: I reproduced this from a clean checkout or explained why that was impossible.
+          required: true
+        - label: I preserved the failing evidence instead of refreshing or weakening an oracle.
+          required: true
+        - label: I did not attach ROMs, saves, savestates, patches, or copyrighted game assets.
+          required: true

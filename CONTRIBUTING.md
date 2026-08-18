@@ -106,7 +106,22 @@ If your change can affect boot, save, or gameplay behavior, also capture
 result) — see [`docs/issue-resolution-policy.md`](docs/issue-resolution-policy.md#issue-closure-evidence).
 
 
-## 5. Debug before filing a regression
+## 5. File a feature request or bug report
+
+Use the structured forms in [`.github/ISSUE_TEMPLATE/`](.github/ISSUE_TEMPLATE/):
+
+- **Feature request** requires a detailed capability description, request
+  reason, reusable use cases, dependency/conflict review, configuration and
+  compatibility impact, acceptance criteria, and explicit non-goals.
+- **Bug report** requires the exact commit, detailed build configuration and
+  environment, deterministic reproduction steps, expected versus actual
+  behavior, and game screenshots. Preserve failing logs/fingerprints and add
+  GDB/IDA/Ghidra evidence when used.
+
+Blank issues are disabled for ordinary contributors; use the linked
+Discussions page for questions or early design exploration.
+
+## 6. Debug before filing a regression
 
 Use [`docs/debugtools.md`](docs/debugtools.md) for the release-safe debug
 surface and [`tools/gba-playtest/README.md`](tools/gba-playtest/README.md)
@@ -114,7 +129,7 @@ for deterministic scenario/fingerprint diagnosis. Do not refresh a reviewed
 fingerprint merely to make a mismatch disappear; preserve the failing output,
 root-cause it, and document any justified oracle change.
 
-## 6. PR provenance and delivery
+## 7. PR provenance and delivery
 
 This repository's general Wave 0 governance baseline describes what a PR/issue
 must record before closure:

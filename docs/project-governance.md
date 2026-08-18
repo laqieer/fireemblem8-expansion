@@ -32,6 +32,9 @@ it. In summary:
   or copyright clearance — see "Copyright and provenance" below.
 - Use the [`.github/PULL_REQUEST_TEMPLATE.md`](../.github/PULL_REQUEST_TEMPLATE.md)
   checklist shape for every PR.
+- Use the structured feature-request and bug-report forms under
+  [`.github/ISSUE_TEMPLATE/`](../.github/ISSUE_TEMPLATE/); they require the
+  review/triage evidence consumed by the development workflow.
 
 ## Security reporting
 

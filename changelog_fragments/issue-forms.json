@@ -1,0 +1,6 @@
+{
+  "issue": null,
+  "category": "added",
+  "summary": "Add structured GitHub issue forms for feature review and bug triage, requiring dependency/conflict analysis, exact build configuration, reproduction evidence, expected versus actual behavior, and game screenshots.",
+  "semver_impact": "none"
+}

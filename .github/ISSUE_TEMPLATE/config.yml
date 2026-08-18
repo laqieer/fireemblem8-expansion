@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: General project discussion
+    url: https://github.com/laqieer/fireemblem8-expansion/discussions
+    about: Use Discussions for questions, design exploration, and ideas that are not ready for a feature or bug issue.
