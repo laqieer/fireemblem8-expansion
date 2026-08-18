@@ -36,6 +36,42 @@
     "sha256": "e542347158ed7653b462c092f671e7ac27a6d0b6a3a1efec071e90489435f1f3"
   },
   {
+    "path": ".github/ISSUE_TEMPLATE/bug_report.yml",
+    "category": "code",
+    "author": "NOASSERTION",
+    "rightsholder": "NOASSERTION",
+    "license": "NOASSERTION",
+    "redistribution_approved": false,
+    "reviewer": null,
+    "notes": "Wave 0/issue #9 seed: repository-authored build tooling/config/source surface (or, for asm/, decompiled disassembly derived from the original ROM). No human legal/provenance review has been recorded yet; this manifest records that honestly rather than asserting a license or clearance.",
+    "oid": "49603da2b8835fb06da16083648c327649481e6c",
+    "sha256": "e427f56558a66a7a5f71ffa5a049477edb6276d4f750227785fab7aaab339f3c"
+  },
+  {
+    "path": ".github/ISSUE_TEMPLATE/config.yml",
+    "category": "code",
+    "author": "NOASSERTION",
+    "rightsholder": "NOASSERTION",
+    "license": "NOASSERTION",
+    "redistribution_approved": false,
+    "reviewer": null,
+    "notes": "Wave 0/issue #9 seed: repository-authored build tooling/config/source surface (or, for asm/, decompiled disassembly derived from the original ROM). No human legal/provenance review has been recorded yet; this manifest records that honestly rather than asserting a license or clearance.",
+    "oid": "ac53f7a1731f734765a5af8ff63f203ac0f732d6",
+    "sha256": "20d1f7c18b6946da43c67be4b4d0896759653f7f252309ff6dcfb75bd46b6d5e"
+  },
+  {
+    "path": ".github/ISSUE_TEMPLATE/feature_request.yml",
+    "category": "code",
+    "author": "NOASSERTION",
+    "rightsholder": "NOASSERTION",
+    "license": "NOASSERTION",
+    "redistribution_approved": false,
+    "reviewer": null,
+    "notes": "Wave 0/issue #9 seed: repository-authored build tooling/config/source surface (or, for asm/, decompiled disassembly derived from the original ROM). No human legal/provenance review has been recorded yet; this manifest records that honestly rather than asserting a license or clearance.",
+    "oid": "e5c5bcedf16a594bfe50324926e47744705ee82e",
+    "sha256": "637e39013e7ff33be005bc62c309beec0f3eec2e8aeffab2a5f0a14203a538ce"
+  },
+  {
     "path": ".github/PULL_REQUEST_TEMPLATE.md",
     "category": "code",
     "author": "NOASSERTION",
@@ -164,8 +200,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Issue #9 release-process tooling output/input surface. No human legal/provenance review has been recorded yet; kept honestly unresolved like every other tracked path rather than assumed-clear because it is new.",
-    "oid": "d497b26c6a59c661f9c8c5000dd63707ebb91a5e",
-    "sha256": "b888ff3a9692a95dc4992d22fce3ecd39efcdb17d598c57d631316532a993ea2"
+    "oid": "9ee87ea97560ce2a889f1794c318893e40ef84a1",
+    "sha256": "bc77d2eac50b98f2fa5e2167f008b6ad0ff72383b2736546046d9469525bbb16"
   },
   {
     "path": "CLAUDE.md",
@@ -188,8 +224,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Wave 0/issue #9 seed: repository-authored build tooling/config/source surface (or, for asm/, decompiled disassembly derived from the original ROM). No human legal/provenance review has been recorded yet; this manifest records that honestly rather than asserting a license or clearance.",
-    "oid": "9085f88766a50eb57f49399a735bab869022c7e3",
-    "sha256": "a0c9a45eabe551025367b27e4743c3a35bf4bcb875480b75ef3154c65f6b556a"
+    "oid": "c2210358c9c0624cbbd94bc7849bcd4efbccbdae",
+    "sha256": "75e1f825cfd4b645aa435f774128a214b4c328d2a0dbd5d894105277bf39987f"
   },
   {
     "path": "GNUmakefile.in",
@@ -792,6 +828,18 @@
     "sha256": "57266aa271ab8731baf6483a23eb7f64538caa738ae18f35e0117827a9d10faf"
   },
   {
+    "path": "changelog_fragments/issue-forms.json",
+    "category": "code",
+    "author": "NOASSERTION",
+    "rightsholder": "NOASSERTION",
+    "license": "NOASSERTION",
+    "redistribution_approved": false,
+    "reviewer": null,
+    "notes": "Issue #9 release-process tooling output/input surface. No human legal/provenance review has been recorded yet; kept honestly unresolved like every other tracked path rather than assumed-clear because it is new.",
+    "oid": "51db062b554b8bb223d8475cc39845c1165d7e63",
+    "sha256": "c9c6ecbbe4af0d77420c767f260362a386c47f75883a0138dc81871f7ebc65a3"
+  },
+  {
     "path": "cjk_fonts.mk",
     "category": "code",
     "author": "NOASSERTION",
@@ -1184,8 +1232,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Wave 0/issue #9 seed: repository-authored documentation. No human legal/provenance review has been recorded yet; this manifest records that honestly rather than asserting a license or clearance.",
-    "oid": "11d2f72bd75e2d7f4dbeab859eb035dda64bdd50",
-    "sha256": "130dd5eecccbfc1b17cffdaf8d7618d6cd081b80d465746e824cf18f65d74e74"
+    "oid": "1adee9b6ed9741625cf0b2ea05e2379fa237a2b7",
+    "sha256": "f55da87d92a7a09aa04f9924a73ce63c6033aeaa6399e7fa1596d2b7e0b28d45"
   },
   {
     "path": "docs/public_api_policy.md",
@@ -22582,6 +22630,18 @@
     "notes": "Wave 0/issue #9 seed: repository-authored build tooling/config/source surface (or, for asm/, decompiled disassembly derived from the original ROM). No human legal/provenance review has been recorded yet; this manifest records that honestly rather than asserting a license or clearance.",
     "oid": "c79adb5a23f0416bb72f81f7e055378a8e026148",
     "sha256": "ccdc8e1752e44189571e69ea0abccd0c9e67d76c9b13072a6fb8337576317ec5"
+  },
+  {
+    "path": "tests/workflows/test_issue_templates.py",
+    "category": "code",
+    "author": "NOASSERTION",
+    "rightsholder": "NOASSERTION",
+    "license": "NOASSERTION",
+    "redistribution_approved": false,
+    "reviewer": null,
+    "notes": "Wave 0/issue #9 seed: repository-authored build tooling/config/source surface (or, for asm/, decompiled disassembly derived from the original ROM). No human legal/provenance review has been recorded yet; this manifest records that honestly rather than asserting a license or clearance.",
+    "oid": "886e808d91d8a13bfebf3e3bdb343164e34ec958",
+    "sha256": "d14dad21e02d646a0ebf7239874cf68209b67deb851b36cf554b84bc89e8b34d"
   },
   {
     "path": "tools/aif2pcm/.gitignore",
