@@ -58,7 +58,7 @@ class RealGenerateTests(unittest.TestCase):
             self.assertEqual(report["locales"]["zh-Hans"]["explicit_fallback_count"], 0)
             self.assertTrue(report["locales"]["ja"]["storage"]["target_fits"])
             self.assertTrue(report["locales"]["zh-Hans"]["storage"]["target_fits"])
-            self.assertEqual(report["locales"]["ja"]["storage"]["required_bytes"], 4732)
+            self.assertEqual(report["locales"]["ja"]["storage"]["required_bytes"], 4715)
             self.assertEqual(report["locales"]["zh-Hans"]["storage"]["required_bytes"], 3743)
             self.assertEqual(
                 report["locales"]["ja"]["hashes"]["source_framed_sha256"],
@@ -74,7 +74,7 @@ class RealGenerateTests(unittest.TestCase):
             self.assertIn("codec_budget", budget["locales"]["zh-Hans"])
             self.assertIn("codec_budget", budget["shared_english"])
             self.assertEqual(budget["compiled_locales"], ["en", "ja", "zh-Hans"])
-            for locale, inserted in (("ja", 2116), ("zh-Hans", 2062)):
+            for locale, inserted in (("ja", 2033), ("zh-Hans", 2062)):
                 width = report["width_validation"][locale]
                 self.assertEqual(width["target_count"], 3414)
                 self.assertEqual(width["unclassified_target_count"], 0)
@@ -100,7 +100,7 @@ class RealGenerateTests(unittest.TestCase):
             self.assertIn("GAME_LOCALIZATION_TARGET_COUNT 3414u", header)
             self.assertIn("FE8_GAME_LOCALIZATION_DATA_PRESENT 1", config_header)
             self.assertIn(
-                "FE8_GAME_LOCALIZATION_MAX_DECODED_BYTES 4732u",
+                "FE8_GAME_LOCALIZATION_MAX_DECODED_BYTES 4715u",
                 config_header,
             )
             self.assertIn("gGameLocalizationEnglishEntries[]", source)
@@ -347,7 +347,7 @@ class RealGenerateTests(unittest.TestCase):
             self.assertIn("GAME_LOCALIZATION_ZH_HANS_ENABLED 1u", zh_header)
             self.assertNotIn("extern const u32 gGameLocalizationJaNodes[];", zh_header)
             self.assertIn(
-                "FE8_GAME_LOCALIZATION_MAX_DECODED_BYTES 4732u", ja_config
+                "FE8_GAME_LOCALIZATION_MAX_DECODED_BYTES 4715u", ja_config
             )
             self.assertIn(
                 "FE8_GAME_LOCALIZATION_MAX_DECODED_BYTES 4000u", zh_config
@@ -386,7 +386,7 @@ class RealGenerateTests(unittest.TestCase):
                 ja_budget["shared_english"]["estimated_total_c_bytes"],
                 both_budget["shared_english"]["estimated_total_c_bytes"],
             )
-            self.assertEqual(ja_budget["locales"]["ja"]["max_decoded_bytes"], 4732)
+            self.assertEqual(ja_budget["locales"]["ja"]["max_decoded_bytes"], 4715)
             self.assertEqual(
                 zh_budget["locales"]["zh-Hans"]["max_decoded_bytes"], 3743
             )
