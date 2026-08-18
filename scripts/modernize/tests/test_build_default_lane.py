@@ -53,6 +53,8 @@ ROOT = Path(__file__).resolve().parents[3]
 MAKEFILE = ROOT / "Makefile"
 QUICKSTART = ROOT / "scripts" / "quickstart.sh"
 CONFIGURE = ROOT / "configure"
+COPILOT_INSTRUCTIONS = ROOT / ".github" / "copilot-instructions.md"
+CLAUDE_INSTRUCTIONS = ROOT / "CLAUDE.md"
 
 
 def run_make(args, env_overrides=None):
@@ -407,6 +409,29 @@ class AutotoolsConfigureTests(unittest.TestCase):
                 if re.match(r"^[A-Z][A-Z0-9_]*\s*:=", line)
             ]
             self.assertEqual(assignments, [])
+
+
+class RemoteCompletionGateTests(unittest.TestCase):
+    def test_makefile_gate_checks_clean_pushed_exact_sha_ci_and_open_issues(self):
+        text = MAKEFILE.read_text(encoding="utf-8")
+        self.assertIn("remote-completion-check:", text)
+        self.assertIn("all-issues-completion-check: remote-completion-check", text)
+        self.assertIn("git status --porcelain", text)
+        self.assertIn("git rev-parse '@{u}'", text)
+        self.assertIn("--commit \"$$head_sha\" --workflow build.yml", text)
+        self.assertIn("--workflow release-rehearsal.yml", text)
+        self.assertIn("gh issue list", text)
+        self.assertIn("--state open", text)
+
+    def test_agent_instructions_make_remote_gate_mandatory(self):
+        for path in (COPILOT_INSTRUCTIONS, CLAUDE_INSTRUCTIONS):
+            text = path.read_text(encoding="utf-8")
+            self.assertIn("make remote-completion-check", text)
+            self.assertIn("make all-issues-completion-check", text)
+            self.assertIn("commit", text.lower())
+            self.assertIn("push", text.lower())
+            self.assertIn("Build CI", text)
+            self.assertIn("Release Rehearsal", text)
 
 
 class QuickstartLegacyGlueRegressionGuardTests(unittest.TestCase):

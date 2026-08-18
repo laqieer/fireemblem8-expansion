@@ -256,6 +256,67 @@ compare:
 
 .PHONY: all legacy compare
 
+# Remote completion gates
+#
+# These are intentionally opt-in, networked maintainer/agent checks rather
+# than build prerequisites. They turn "done" into an executable contract:
+# the worktree must be clean, HEAD must already be pushed to its configured
+# upstream, and the exact pushed SHA must have a successful required workflow.
+# The all-issues variant additionally requires the release rehearsal and zero
+# open GitHub issues.
+remote-completion-check:
+	@set -eu; \
+	command -v gh >/dev/null 2>&1 || { \
+		echo "error: remote-completion-check requires the GitHub CLI (gh)" >&2; \
+		exit 1; \
+	}; \
+	if [ -n "$$(git status --porcelain)" ]; then \
+		echo "error: worktree is not clean; commit all intended changes first" >&2; \
+		git status --short >&2; \
+		exit 1; \
+	fi; \
+	head_sha=$$(git rev-parse HEAD); \
+	upstream_sha=$$(git rev-parse '@{u}' 2>/dev/null) || { \
+		echo "error: current branch has no configured upstream; push with -u first" >&2; \
+		exit 1; \
+	}; \
+	if [ "$$head_sha" != "$$upstream_sha" ]; then \
+		printf 'error: local HEAD %s does not match upstream HEAD %s; push first\n' \
+			"$$head_sha" "$$upstream_sha" >&2; \
+		exit 1; \
+	fi; \
+	repo=$$(gh repo view --json nameWithOwner --jq .nameWithOwner); \
+	run=$$(gh run list --repo "$$repo" --commit "$$head_sha" --workflow build.yml \
+		--limit 1 --json status,conclusion,url \
+		--jq 'if length == 0 then "missing,," else .[0].status + "," + (.[0].conclusion // "") + "," + .[0].url end'); \
+	case "$$run" in \
+		completed,success,*) ;; \
+		*) printf 'error: Build CI for %s is not successful: %s\n' "$$head_sha" "$$run" >&2; exit 1 ;; \
+	esac; \
+	printf 'Remote completion gate passed: %s (%s)\n' "$$head_sha" "$$repo"
+
+all-issues-completion-check: remote-completion-check
+	@set -eu; \
+	head_sha=$$(git rev-parse HEAD); \
+	repo=$$(gh repo view --json nameWithOwner --jq .nameWithOwner); \
+	run=$$(gh run list --repo "$$repo" --commit "$$head_sha" --workflow release-rehearsal.yml \
+		--limit 1 --json status,conclusion,url \
+		--jq 'if length == 0 then "missing,," else .[0].status + "," + (.[0].conclusion // "") + "," + .[0].url end'); \
+	case "$$run" in \
+		completed,success,*) ;; \
+		*) printf 'error: Release Rehearsal for %s is not successful: %s\n' "$$head_sha" "$$run" >&2; exit 1 ;; \
+	esac; \
+	open_issues=$$(gh issue list --repo "$$repo" --state open --limit 1000 \
+		--json number --jq 'length'); \
+	if [ "$$open_issues" -ne 0 ]; then \
+		printf 'error: %s open GitHub issue(s) remain in %s\n' "$$open_issues" "$$repo" >&2; \
+		gh issue list --repo "$$repo" --state open --limit 1000 >&2; \
+		exit 1; \
+	fi; \
+	printf 'All-issues completion gate passed: %s (%s)\n' "$$head_sha" "$$repo"
+
+.PHONY: remote-completion-check all-issues-completion-check
+
 #### Shiftability harness (scripts/shiftcheck/) ####
 # Detects hardcoded pointers (raw absolute addresses that bypass the symbol system)
 # which would break if the ROM layout shifted. See scripts/shiftcheck/README.md.

@@ -53,6 +53,21 @@ investigations, but no whole-source/object/ROM identity hash is enforced.
 `./asmdiff.sh <hex_addr> <byte_len>` remains available for legacy matching
 investigations when `baserom.gba` is present.
 
+## Remote completion gate
+
+For any task that changes tracked repository files, local implementation and
+tests are not completion. Unless the user explicitly says not to commit or
+push, do not call `task_complete` until all intended changes are committed,
+pushed to the configured upstream, exact-SHA Build CI has passed, and
+`make remote-completion-check` succeeds.
+
+For an objective to resolve all repository issues, also close the resolved
+GitHub issues, wait for the exact-SHA Release Rehearsal, and require
+`make all-issues-completion-check` to succeed. Create explicit dependent
+todos for commit, push, CI, and issue closure at the start of such a task.
+Memory is advisory context; these executable gates are the completion
+authority.
+
 ## Architecture
 
 ### Compiler & toolchain
