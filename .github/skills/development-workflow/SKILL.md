@@ -28,12 +28,15 @@ in the repository. Do not add a human code-review or approval gate.
 2. Inspect the current worktree, branch, upstream, relevant implementation,
    tests, documentation, and recent history. Do not assume the request still
    matches the current tree.
-3. Search for an existing public seam, registry, schema, flag, scenario, or
+3. Verify an ARM debugger is available as `arm-none-eabi-gdb` or
+   `gdb-multiarch`. Run `./scripts/quickstart.sh` or install the platform
+   package if neither command works.
+4. Search for an existing public seam, registry, schema, flag, scenario, or
    validation target before designing another one.
-4. For tracked changes, create dependent work items for implementation,
+5. For tracked changes, create dependent work items for implementation,
    validation, commit, push, candidate-commit CI, and the remote completion
    gate.
-5. Resolve ordinary ambiguity from repository evidence. Stop at `Needs design`
+6. Resolve ordinary ambiguity from repository evidence. Stop at `Needs design`
    only when a material contract cannot be chosen safely.
 
 ## Phase 2: triage and classify the request
@@ -48,10 +51,13 @@ For a bug report or regression, triage the bug before designing or editing:
    scenario available. If direct reproduction is impossible, establish the
    failure from concrete code, logs, history, or invariant evidence and state
    that limitation.
-3. Preserve the failing evidence. Do not refresh a fingerprint, weaken an
+3. Use ARM GDB when register, stack, symbol, memory, or control-flow state is
+   needed to establish the failure or root cause. Prefer debugger evidence over
+   speculative source edits.
+4. Preserve the failing evidence. Do not refresh a fingerprint, weaken an
    assertion, or add a success-shaped fallback.
-4. Trace the root cause and every coupled surface that must change together.
-5. Classify the report as **Confirmed**, **Needs evidence**, **By design/not a
+5. Trace the root cause and every coupled surface that must change together.
+6. Classify the report as **Confirmed**, **Needs evidence**, **By design/not a
    bug**, **Duplicate**, or **Already fixed**.
 
 Proceed with implementation only for a confirmed bug. A bug fix does not need

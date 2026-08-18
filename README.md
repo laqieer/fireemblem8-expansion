@@ -24,9 +24,9 @@ From the repo root, on Ubuntu/WSL, Arch Linux, or macOS/Homebrew, run:
 ./scripts/quickstart.sh [--rom /path/to/baserom.gba] [--legacy] [--refresh-agbcc]
 ```
 
-By default this installs the modern toolchain and libmGBA playtest backend
-(**no agbcc of any kind**), then builds and boot-verifies the **supported
-modern AAPCS release ROM**
+By default this installs the modern toolchain, an ARM GDB debugger, and the
+libmGBA playtest backend (**no agbcc of any kind**), then builds and
+boot-verifies the **supported modern AAPCS release ROM**
 (`build/expansion-modern/release/aapcs/fireemblem8.gba`). Pass `--legacy`
 to build the archival agbcc-based `fireemblem8.gba` instead. The build does
 **not** require the original ROM — a `baserom.gba` is only used by

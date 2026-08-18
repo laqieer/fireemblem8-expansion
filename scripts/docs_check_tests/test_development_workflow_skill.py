@@ -49,6 +49,8 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             "this skill implements Discussion #30",
             "Bug fixes do not need a feature gate by default.",
             "add a regression test that demonstrates the original failure",
+            "Verify an ARM debugger is available",
+            "Use ARM GDB when register, stack, symbol, memory, or control-flow state",
             "Do not add or restore a whole-source/object/ROM SHA-256 identity gate.",
             "Build CI for the **exact candidate commit**",
             "make remote-completion-check",

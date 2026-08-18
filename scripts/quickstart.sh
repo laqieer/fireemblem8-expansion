@@ -21,10 +21,11 @@ Options:
                     is only needed by the archival legacy build.
 
 Default (no --legacy): installs/probes the modern arm-none-eabi GCC
-toolchain and the libmGBA playtest backend, then builds and boot-verifies
-the supported modern AAPCS release ROM via `make expansion-modern-boot-check
-MODERN_CONFIG=release MODERN_ABI=aapcs`. No legacy compiler toolchain of
-any kind is installed or invoked on this path.
+toolchain, an ARM-capable GDB debugger, and the libmGBA playtest backend,
+then builds and boot-verifies the supported modern AAPCS release ROM via
+`make expansion-modern-boot-check MODERN_CONFIG=release MODERN_ABI=aapcs`.
+No legacy compiler toolchain of any kind is installed or invoked on this
+path.
 
 You can also set FIREEMBLEM8U_ROM to point to the ROM.
 EOF
@@ -105,6 +106,24 @@ have_cmd() {
   command -v "$1" >/dev/null 2>&1
 }
 
+arm_debugger_command() {
+  local debugger=""
+  for debugger in arm-none-eabi-gdb gdb-multiarch; do
+    have_cmd "${debugger}" || continue
+    if "${debugger}" -q -batch \
+      -ex "set architecture arm" \
+      -ex "show architecture" >/dev/null 2>&1; then
+      printf '%s\n' "${debugger}"
+      return
+    fi
+  done
+  return 1
+}
+
+probe_arm_debugger() {
+  arm_debugger_command >/dev/null
+}
+
 job_count() {
   local count=""
   if have_cmd nproc; then
@@ -157,9 +176,9 @@ install_deps() {
   else
     echo "[!] No supported package manager detected (apt, pacman, brew)." >&2
     if (( LEGACY_MODE == 1 )); then
-      echo "    Install the prerequisites manually: arm-none-eabi binutils, pkg-config, libpng, python3, pip, numpy, pillow." >&2
+      echo "    Install the prerequisites manually: arm-none-eabi binutils/GDB, pkg-config, libpng, python3, pip, numpy, pillow." >&2
     else
-      echo "    Install the prerequisites manually: arm-none-eabi GCC/binutils/newlib, pkg-config, libpng, python3, pip, numpy, pillow." >&2
+      echo "    Install the prerequisites manually: arm-none-eabi GCC/binutils/newlib/GDB, pkg-config, libpng, python3, pip, numpy, pillow." >&2
     fi
     return
   fi
@@ -176,6 +195,11 @@ install_deps() {
     fi
   elif ! probe_arm_toolchain_headers; then
     need_toolchain=1
+  fi
+
+  local need_debugger=0
+  if ! probe_arm_debugger; then
+    need_debugger=1
   fi
 
   # The libmGBA playtest backend is only needed by the default modern
@@ -200,6 +224,9 @@ install_deps() {
       echo "[+] Updating apt package index..."
       ${sudo_cmd} apt-get update -y >/dev/null
       local packages=(pkg-config libpng-dev python3-pip python3-numpy python3-pil)
+      if (( need_debugger )); then
+        packages=(gdb-multiarch "${packages[@]}")
+      fi
       if (( need_playtest_backend )); then
         packages=("${packages[@]}" libmgba-dev)
       fi
@@ -227,6 +254,9 @@ install_deps() {
         fi
       fi
       local packages=(pkgconf libpng python-pip python-numpy python-pillow)
+      if (( need_debugger )); then
+        packages=(arm-none-eabi-gdb "${packages[@]}")
+      fi
       if (( need_playtest_backend )); then
         packages=("${packages[@]}" mgba)
       fi
@@ -261,6 +291,9 @@ install_deps() {
         echo "[+] Installing official Arm GNU toolchain cask (bundled newlib)"
         brew install --cask gcc-arm-embedded
       fi
+      if (( need_debugger && need_toolchain == 0 && need_binutils == 0 )); then
+        packages=(arm-none-eabi-gdb "${packages[@]}")
+      fi
       echo "[+] Installing packages via Homebrew: ${packages[*]}"
       brew update >/dev/null
       brew install "${packages[@]}"
@@ -278,6 +311,16 @@ install_deps() {
   esac
 
   hash -r
+  if ! probe_arm_debugger; then
+    echo "[!] No working ARM debugger found (expected arm-none-eabi-gdb or gdb-multiarch)." >&2
+    case "${pkg_mgr}" in
+      apt) echo "    Install gdb-multiarch and rerun." >&2 ;;
+      pacman) echo "    Install arm-none-eabi-gdb and rerun." >&2 ;;
+      brew) echo "    Install arm-none-eabi-gdb or the gcc-arm-embedded cask and rerun." >&2 ;;
+    esac
+    return 1
+  fi
+
   if (( LEGACY_MODE == 1 )); then
     if ! have_arm_binutils; then
       echo "[!] arm-none-eabi-as/arm-none-eabi-ld are still unavailable for the --legacy build." >&2

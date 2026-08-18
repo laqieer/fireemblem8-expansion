@@ -36,6 +36,7 @@ not CI-caught.
 | Toolchain | Status | Used for |
 | --- | --- | --- |
 | `arm-none-eabi` GCC (modern, AAPCS) | **Supported release lane** | The default `make`/`make all` target, every `expansion-modern-*` target, and CI's linker/boot gates |
+| `arm-none-eabi-gdb` or `gdb-multiarch` | **Supported developer debugger** | Register, stack, symbol, memory, and control-flow diagnosis; installed and ARM-probed by quickstart, but not required by unattended Build CI |
 | agbcc (original GBA-era GCC 2.95 fork) | **Archival only, not a supported release lane** | `make legacy` (`make fireemblem8.gba`) — decomp-matching work only; see [`docs/archival-decomp.md`](archival-decomp.md) |
 
 A bare `make`/`make all` never requires, builds, or resolves to a
@@ -188,7 +189,9 @@ surface remains bounded by its live reference and evidence report.
 - **#11 debug tools:** release-safe config gate, fixed-capacity action API,
   title/map/prep entry points, five bounded tools, and scalar diagnostics are
   supported. No full debug-print protocol, arbitrary memory editor, or
-  interactive debugger is claimed. See [`debugtools.md`](debugtools.md).
+  in-ROM interactive debugger is claimed. External ARM GDB is a separate,
+  supported developer tool installed by quickstart. See
+  [`debugtools.md`](debugtools.md).
 - **#13 runtime harness:** deterministic JSON scenarios/fingerprints,
   `GBA_PLAYTEST_HOST_ONLY=1`, timeout/retry/provenance policy, and live ROM
   verification are supported. Ubuntu + `arm-none-eabi` is the only CI matrix;

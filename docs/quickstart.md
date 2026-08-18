@@ -37,13 +37,14 @@ is installed or invoked on this path**:
 1. Copies `baserom.gba` from the `--rom` path (or `FIREEMBLEM8U_ROM`) if you provided one. A missing ROM is fine — it is optional and not required to build.
 2. Detects your package manager (`apt`, `pacman`, or `brew`) and installs the prerequisites only when they’re not already available:
    - Toolchain (`arm-none-eabi-binutils`, `arm-none-eabi-gcc`, and newlib headers; the official Arm cask on macOS)
+   - ARM debugger (`gdb-multiarch` on apt; `arm-none-eabi-gdb` on pacman/Homebrew)
    - The libmGBA playtest backend (`libmgba-dev` on apt, `mgba` on pacman/Homebrew) used by the boot-check step below
    - `pkg-config` / `pkgconf`
    - `libpng`
    - `python3`, `pip3`, `numpy`, `pillow`
 3. Fetches submodules (`git submodule update --init --recursive`). The FE6 SIO link payload is built from source via the [mgfembp](https://github.com/StanHash/mgfembp) submodule using modern GCC — no agbcc variant of any kind is fetched/built on this path.
 4. Builds helper tools via `./build_tools.sh`.
-5. Runs `make expansion-modern-toolchain-check` then `make expansion-modern-boot-check MODERN_CONFIG=release MODERN_ABI=aapcs -j"${jobs}"` (using `nproc`, `sysctl -n hw.logicalcpu`, or 1 job in that order), which builds the full modern object/ELF/ROM chain and verifies all three boot checkpoints (frames 0/60/120).
+5. Probes `arm-none-eabi-gdb` or `gdb-multiarch`, runs `make expansion-modern-toolchain-check`, then runs `make expansion-modern-boot-check MODERN_CONFIG=release MODERN_ABI=aapcs -j"${jobs}"` (using `nproc`, `sysctl -n hw.logicalcpu`, or 1 job in that order), which builds the full modern object/ELF/ROM chain and verifies all three boot checkpoints (frames 0/60/120).
 
 On success you’ll see:
 
@@ -114,6 +115,8 @@ defaults continue to work.
    save, budget, shifted-link, starter, and localization coverage.
 5. Diagnose failures with [`debugtools.md`](debugtools.md) and the scenario
    harness in [`../tools/gba-playtest/README.md`](../tools/gba-playtest/README.md).
+   Use `arm-none-eabi-gdb` (preferred) or `gdb-multiarch` when register,
+   stack, symbol, memory, or control-flow evidence is needed.
 
 ### Archival `--legacy` path
 
@@ -139,7 +142,13 @@ On success you’ll see:
 - **No sudo/root** – apt/pacman installs require elevated privileges. Without
   sudo the script stops and asks you to install the prerequisites manually.
   Homebrew installs keep working without sudo.
-- **Unsupported distro** – Install the prerequisites manually (arm-none-eabi toolchain, libmGBA, pkg-config, libpng, python3, pip, numpy, pillow) then rerun the script; it’ll skip package installs once the tools are on your PATH.
+- **Unsupported distro** – Install the prerequisites manually
+  (`arm-none-eabi` toolchain and GDB, libmGBA, pkg-config, libpng, python3,
+  pip, numpy, pillow), then rerun the script; it skips package installs once
+  the tools are on your PATH.
+- **Missing debugger** – Install `gdb-multiarch` on Ubuntu/WSL or
+  `arm-none-eabi-gdb` on Arch/Homebrew. Quickstart fails actionably if neither
+  debugger can select the ARM architecture.
 - **Already-installed toolchain** – The script detects `arm-none-eabi-*` binaries and skips reinstalling them. `--legacy`'s existing `tools/agbcc` installs are reused too; run `./scripts/quickstart.sh --legacy --refresh-agbcc` if you need a fresh copy.
 - **Stale Arch package database** – The script never performs a partial
   `pacman` upgrade. Complete a full
@@ -213,14 +222,16 @@ in `include/functions.h` (most are placeholder `// ??? Name(???);` comments);
 this cohort promotion assembles the handwritten source as-is and does not
 type those exports, link, boot, or otherwise claim runtime readiness.
 
-Install GCC, binutils, and newlib headers for `arm-none-eabi`. Package names are
+Install GCC, binutils, newlib headers, and an ARM debugger. Package names are
 `gcc-arm-none-eabi`, `binutils-arm-none-eabi`, and
-`libnewlib-arm-none-eabi` on Ubuntu/WSL; `arm-none-eabi-gcc`,
-`arm-none-eabi-binutils`, and `arm-none-eabi-newlib` on Arch; and
-the official `gcc-arm-embedded` Homebrew cask on macOS:
+`libnewlib-arm-none-eabi` plus `gdb-multiarch` on Ubuntu/WSL;
+`arm-none-eabi-gcc`, `arm-none-eabi-binutils`, `arm-none-eabi-newlib`, and
+`arm-none-eabi-gdb` on Arch; and the official `gcc-arm-embedded` Homebrew cask
+plus `arm-none-eabi-gdb` on macOS:
 
 ```bash
 brew install --cask gcc-arm-embedded
+brew install arm-none-eabi-gdb
 ```
 
 Do not use Homebrew core's `arm-none-eabi-gcc` formula for this cohort: it is

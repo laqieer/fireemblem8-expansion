@@ -94,6 +94,37 @@ class QuickstartTests(unittest.TestCase):
         single = self.run_helper("job_count", {})
         self.assertEqual((single.returncode, single.stdout), (0, "1\n"))
 
+    def test_arm_debugger_command_prefers_target_gdb_and_falls_back(self):
+        target = self.run_helper(
+            "arm_debugger_command",
+            {
+                "arm-none-eabi-gdb": "exit 0",
+                "gdb-multiarch": "exit 0",
+            },
+        )
+        self.assertEqual((target.returncode, target.stdout), (0, "arm-none-eabi-gdb\n"))
+
+        multiarch = self.run_helper(
+            "arm_debugger_command",
+            {"gdb-multiarch": "exit 0"},
+        )
+        self.assertEqual((multiarch.returncode, multiarch.stdout), (0, "gdb-multiarch\n"))
+
+        broken_target = self.run_helper(
+            "arm_debugger_command",
+            {
+                "arm-none-eabi-gdb": "exit 1",
+                "gdb-multiarch": "exit 0",
+            },
+        )
+        self.assertEqual(
+            (broken_target.returncode, broken_target.stdout),
+            (0, "gdb-multiarch\n"),
+        )
+
+        missing = self.run_helper("arm_debugger_command", {})
+        self.assertNotEqual(missing.returncode, 0)
+
     def test_package_commands_and_shell_syntax(self):
         syntax = subprocess.run(
             ["/bin/bash", "-n", str(QUICKSTART)],
@@ -109,6 +140,8 @@ class QuickstartTests(unittest.TestCase):
             "binutils-arm-none-eabi gcc-arm-none-eabi libnewlib-arm-none-eabi",
             script,
         )
+        self.assertIn("gdb-multiarch", script)
+        self.assertIn("arm-none-eabi-gdb", script)
         self.assertIn("pacman -S --needed --noconfirm", script)
         self.assertNotIn("pacman -Sy", script)
         self.assertIn("brew install --cask gcc-arm-embedded", script)
@@ -256,6 +289,7 @@ class QuickstartTests(unittest.TestCase):
                     "arm-none-eabi-gcc": "exit 0",
                     "arm-none-eabi-as": "exit 0",
                     "arm-none-eabi-ld": "exit 0",
+                    "arm-none-eabi-gdb": "exit 0",
                 }
                 bin_dir = self.helper_environment(commands)
                 snippet = (
@@ -292,6 +326,7 @@ class QuickstartTests(unittest.TestCase):
                     "arm-none-eabi-gcc": "exit 0",
                     "arm-none-eabi-as": "exit 0",
                     "arm-none-eabi-ld": "exit 0",
+                    "arm-none-eabi-gdb": "exit 0",
                 }
                 bin_dir = self.helper_environment(commands)
                 snippet = (
@@ -330,6 +365,7 @@ class QuickstartTests(unittest.TestCase):
                     "arm-none-eabi-gcc": "exit 0",
                     "arm-none-eabi-as": "exit 0",
                     "arm-none-eabi-ld": "exit 0",
+                    "arm-none-eabi-gdb": "exit 0",
                 }
                 bin_dir = self.helper_environment(commands)
                 snippet = (
@@ -366,6 +402,7 @@ class QuickstartTests(unittest.TestCase):
             "pip3": "exit 0",
             "arm-none-eabi-as": "exit 0",
             "arm-none-eabi-ld": "exit 0",
+            "arm-none-eabi-gdb": "exit 0",
         }
         bin_dir = self.helper_environment(commands)
         snippet = 'source "$1"; PATH="$2"; parse_args --legacy; install_deps'
@@ -395,6 +432,7 @@ class QuickstartTests(unittest.TestCase):
             "apt-get": self.logging_command(log_path, "apt-get"),
             "sudo": 'exec "$@"',
             "pip3": "exit 0",
+            "arm-none-eabi-gdb": "exit 0",
         }
         bin_dir = self.helper_environment(commands)
         snippet = 'source "$1"; PATH="$2"; parse_args --legacy; install_deps'
@@ -425,6 +463,7 @@ class QuickstartTests(unittest.TestCase):
             "sudo": 'exec "$@"',
             "arm-none-eabi-as": "exit 0",
             "arm-none-eabi-ld": "exit 0",
+            "arm-none-eabi-gdb": "exit 0",
         }
         bin_dir = self.helper_environment(commands)
         snippet = 'source "$1"; PATH="$2"; parse_args --legacy; install_deps'
@@ -459,6 +498,7 @@ class QuickstartTests(unittest.TestCase):
             "brew": brew_body,
             "arm-none-eabi-as": "exit 0",
             "arm-none-eabi-ld": "exit 0",
+            "arm-none-eabi-gdb": "exit 0",
         }
         bin_dir = self.helper_environment(commands)
         snippet = 'source "$1"; PATH="$2"; parse_args --legacy; install_deps'
@@ -487,6 +527,7 @@ class QuickstartTests(unittest.TestCase):
             "apt-get": self.logging_command(log_path, "apt-get"),
             "sudo": 'exec "$@"',
             "pip3": "exit 0",
+            "arm-none-eabi-gdb": "exit 0",
             # No arm-none-eabi-gcc/as anywhere: the fake apt-get does not
             # actually install a working compiler, so the toolchain stays
             # broken across both probe attempts.
@@ -508,6 +549,86 @@ class QuickstartTests(unittest.TestCase):
         log = log_path.read_text(encoding="utf-8") if log_path.exists() else ""
         install_lines = [line for line in log.splitlines() if "install -y" in line]
         self.assertTrue(any("gcc-arm-none-eabi" in line for line in install_lines), log)
+
+    def test_install_deps_requests_platform_debugger_when_missing(self):
+        cases = (
+            ("apt-get", "gdb-multiarch"),
+            ("pacman", "arm-none-eabi-gdb"),
+            ("brew", "arm-none-eabi-gdb"),
+        )
+        for manager, expected_package in cases:
+            with self.subTest(manager=manager):
+                self.temporary = tempfile.TemporaryDirectory()
+                self.addCleanup(self.temporary.cleanup)
+                temporary = Path(self.temporary.name)
+                log_path = temporary / "invocations.log"
+                commands = {
+                    manager: self.logging_command(log_path, manager),
+                    "sudo": 'exec "$@"',
+                    "pip3": "exit 0",
+                    "arm-none-eabi-gcc": "exit 0",
+                    "arm-none-eabi-as": "exit 0",
+                    "arm-none-eabi-ld": "exit 0",
+                }
+                bin_dir = self.helper_environment(commands)
+                snippet = (
+                    'source "$1"; PATH="$2"; debugger_probe_count=0; '
+                    'probe_arm_debugger() { '
+                    'debugger_probe_count=$((debugger_probe_count + 1)); '
+                    '[[ "$debugger_probe_count" -gt 1 ]]; '
+                    '}; parse_args; install_deps'
+                )
+                result = subprocess.run(
+                    [
+                        "/bin/bash",
+                        "-c",
+                        snippet,
+                        "quickstart-test",
+                        str(QUICKSTART),
+                        str(bin_dir),
+                    ],
+                    text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    check=False,
+                )
+                self.assertEqual(result.returncode, 0, result.stdout)
+                log = log_path.read_text(encoding="utf-8")
+                self.assertIn(expected_package, log)
+
+    def test_install_deps_fails_actionably_when_debugger_stays_missing(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        temporary = Path(self.temporary.name)
+        log_path = temporary / "invocations.log"
+        commands = {
+            "apt-get": self.logging_command(log_path, "apt-get"),
+            "sudo": 'exec "$@"',
+            "pip3": "exit 0",
+            "arm-none-eabi-gcc": "exit 0",
+            "arm-none-eabi-as": "exit 0",
+            "arm-none-eabi-ld": "exit 0",
+        }
+        bin_dir = self.helper_environment(commands)
+        snippet = 'source "$1"; PATH="$2"; parse_args; install_deps'
+        result = subprocess.run(
+            [
+                "/bin/bash",
+                "-c",
+                snippet,
+                "quickstart-test",
+                str(QUICKSTART),
+                str(bin_dir),
+            ],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn("No working ARM debugger found", result.stdout)
+        log = log_path.read_text(encoding="utf-8")
+        self.assertIn("gdb-multiarch", log)
 
     def test_readme_and_docs_flags_match_script_usage(self):
         usage_snippet = 'source "$1"; usage'

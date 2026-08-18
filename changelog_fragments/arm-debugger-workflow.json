@@ -1,0 +1,6 @@
+{
+  "issue": null,
+  "category": "added",
+  "summary": "Install and ARM-probe GDB in quickstart, and require debugger-backed evidence in the project development workflow when register, stack, symbol, memory, or control-flow state matters.",
+  "semver_impact": "none"
+}
