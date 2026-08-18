@@ -56,8 +56,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Wave 0/issue #9 seed: repository-authored build tooling/config/source surface (or, for asm/, decompiled disassembly derived from the original ROM). No human legal/provenance review has been recorded yet; this manifest records that honestly rather than asserting a license or clearance.",
-    "oid": "6d5940f7cdc894db1230dd265184fcc1163306f6",
-    "sha256": "eb6fe70f94dc472c10353cf345597479bef17be2a14bd0002d83acb918830453"
+    "oid": "bfef05fae1217f273ed4aa5c853bcc035c31256c",
+    "sha256": "46adb1278904ce11fe47c073b6c017b872f953f83af06297b377562a942a37c4"
   },
   {
     "path": ".github/copilot/settings.json",
@@ -80,8 +80,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Wave 0/issue #9 seed: repository-authored build tooling/config/source surface (or, for asm/, decompiled disassembly derived from the original ROM). No human legal/provenance review has been recorded yet; this manifest records that honestly rather than asserting a license or clearance.",
-    "oid": "bcb7236e9db82f533a2e5364315948ad13fd64da",
-    "sha256": "a948a7ee4a1fc1c1dd3098165668cb41ccfa17e0a03854a555dd6cd65c457a7e"
+    "oid": "bcf441173b1d5d842b12257db4f3cca560ca9ea6",
+    "sha256": "6f115d3099ca693c99bf362868c1f0368ce036ff414509d3b75e7c5f3ff20426"
   },
   {
     "path": ".github/workflows/build.yml",
@@ -164,8 +164,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Issue #9 release-process tooling output/input surface. No human legal/provenance review has been recorded yet; kept honestly unresolved like every other tracked path rather than assumed-clear because it is new.",
-    "oid": "1b8cef85c6920d769279d403ffe0173225990a00",
-    "sha256": "33f5cddcb733e554a6d533fe5d557efe8430e46623a5943bd3e5121f99f1cb82"
+    "oid": "d497b26c6a59c661f9c8c5000dd63707ebb91a5e",
+    "sha256": "b888ff3a9692a95dc4992d22fce3ecd39efcdb17d598c57d631316532a993ea2"
   },
   {
     "path": "CLAUDE.md",
@@ -188,8 +188,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Wave 0/issue #9 seed: repository-authored build tooling/config/source surface (or, for asm/, decompiled disassembly derived from the original ROM). No human legal/provenance review has been recorded yet; this manifest records that honestly rather than asserting a license or clearance.",
-    "oid": "7e52a195e214775c1c8b60fc992abf14e29af068",
-    "sha256": "d8d6fefc3563613634fcdf03559953b564cc079899571da44ba3342b56496c25"
+    "oid": "9085f88766a50eb57f49399a735bab869022c7e3",
+    "sha256": "a0c9a45eabe551025367b27e4743c3a35bf4bcb875480b75ef3154c65f6b556a"
   },
   {
     "path": "GNUmakefile.in",
@@ -766,6 +766,18 @@
     "notes": "Issue #9 release-process tooling output/input surface. No human legal/provenance review has been recorded yet; kept honestly unresolved like every other tracked path rather than assumed-clear because it is new.",
     "oid": "77fa5763543c5772f66f3cfdba4766915328ebc7",
     "sha256": "36c3248b79b8eaa5e07caba06f056f0562d40ecbb433be21f577542095ab3e24"
+  },
+  {
+    "path": "changelog_fragments/development-workflow-resources.json",
+    "category": "code",
+    "author": "NOASSERTION",
+    "rightsholder": "NOASSERTION",
+    "license": "NOASSERTION",
+    "redistribution_approved": false,
+    "reviewer": null,
+    "notes": "Issue #9 release-process tooling output/input surface. No human legal/provenance review has been recorded yet; kept honestly unresolved like every other tracked path rather than assumed-clear because it is new.",
+    "oid": "979c1497a2fcf518e7261ab511905b4166e198d4",
+    "sha256": "d6d862478d2e983bb209a3ae7990c5e5cc2cad31e16dd497c27af595196a78bd"
   },
   {
     "path": "changelog_fragments/development-workflow-skill.json",
@@ -4376,8 +4388,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Wave 0/issue #9 seed: repository-authored build tooling/config/source surface (or, for asm/, decompiled disassembly derived from the original ROM). No human legal/provenance review has been recorded yet; this manifest records that honestly rather than asserting a license or clearance.",
-    "oid": "5caac942eff13ce07ecfd3b4a262b25e79a6a19f",
-    "sha256": "a9aa9a6ad5d3df3d1060fa0b6deed00d56038c77d640807a9f045619b6febd02"
+    "oid": "b50208b5151fac78278425ca655c9e9fc55bb1b9",
+    "sha256": "fe72b2cd07ee563894e8439c2847eb130569e030547ffa1853913a7b4c58e01d"
   },
   {
     "path": "scripts/dump-proc.py",
