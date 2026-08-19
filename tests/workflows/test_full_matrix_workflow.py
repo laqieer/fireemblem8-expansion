@@ -222,7 +222,7 @@ class FullMatrixWorkflowContractTests(unittest.TestCase):
             ["host", "modern", "legacy", "release-evidence", "summary"],
         )
         expected = {
-            "host": "30",
+            "host": "60",
             "modern": "60",
             "legacy": "60",
             "release-evidence": "20",
