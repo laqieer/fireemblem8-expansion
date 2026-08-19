@@ -37,6 +37,7 @@ not CI-caught.
 | --- | --- | --- |
 | `arm-none-eabi` GCC (modern, AAPCS) | **Supported release lane** | The default `make`/`make all` target, every `expansion-modern-*` target, and CI's linker/boot gates |
 | `arm-none-eabi-gdb` or `gdb-multiarch` | **Supported developer debugger** | Register, stack, symbol, memory, and control-flow diagnosis; installed and ARM-probed by quickstart, but not required by unattended Build CI |
+| mGBA SDL GDB server | **Supported debug target** | Runs the cross-compiled debug ROM under `mgba --gdb`; `make expansion-modern-gdb-smoke` proves remote attach, registers, symbolic breakpoint, continue, and backtrace |
 | agbcc (original GBA-era GCC 2.95 fork) | **Archival only, not a supported release lane** | `make legacy` (`make fireemblem8.gba`) — decomp-matching work only; see [`docs/archival-decomp.md`](archival-decomp.md) |
 
 A bare `make`/`make all` never requires, builds, or resolves to a
@@ -57,6 +58,7 @@ name.
 | `make expansion-modern-elf MODERN_CONFIG=<debug\|release> MODERN_ABI=aapcs` | Linked modern ELF + map. `aapcs` is the only ABI this (or any other linked/ROM/runtime target below) accepts -- `MODERN_ABI=apcs-gnu` fails fast in `modern.mk`'s linked-goal guard instead of producing an EABI5-incompatible link; see the ABI contract note below the table. | No | No |
 | `make expansion-modern-rom MODERN_CONFIG=... MODERN_ABI=aapcs` | Header-verified modern ROM | Yes | No |
 | `make expansion-modern-boot-check MODERN_CONFIG=... MODERN_ABI=aapcs` | Modern ROM + deterministic boot-fingerprint verification (frames 0/60/120) | Yes | Yes |
+| `make expansion-modern-gdb-smoke` | Debug ELF/ROM + live ARM GDB session through the headless mGBA GDB server | Yes | mGBA SDL frontend |
 | `make expansion-modern-linker-check MODERN_CONFIG=... MODERN_ABI=aapcs` | Boot-check plus budget/shift/overlay/title-fingerprint gates | Yes | Yes |
 | `make legacy` / `make fireemblem8.gba` | Archival agbcc `fireemblem8.gba` | Yes | No (agbcc, fetched on first use) |
 | `make clean` / `make clean_fast` | Removes build artifacts (see [`README.md`](../README.md)) | — | — |

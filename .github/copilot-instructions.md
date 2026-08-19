@@ -16,8 +16,8 @@ based decompilation build is preserved as an explicit, separate
 byte decomp-matching work only — see `docs/archival-decomp.md`.
 
 First-time setup: `./scripts/quickstart.sh` installs/probes the modern
-toolchain, an ARM GDB debugger, and libmGBA by default, **no agbcc of any
-kind**; pass
+toolchain, an ARM GDB debugger, the mGBA GDB-server frontend, and libmGBA by
+default, **no agbcc of any kind**; pass
 `--legacy` (or `--refresh-agbcc`) only when you need the archival lane,
 which installs agbcc instead. A legally obtained `baserom.gba` is
 optional and only needed by `asmdiff.sh`.

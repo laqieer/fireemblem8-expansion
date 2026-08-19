@@ -79,6 +79,9 @@ class QuickstartTests(unittest.TestCase):
     def logging_command(self, log_path: Path, label: str) -> str:
         return f'printf "{label} %s\\n" "$*" >> "{log_path}"\nexit 0'
 
+    def mgba_command(self) -> str:
+        return 'printf "%s\\n" "  -g, --gdb  Start GDB session"\nexit 0'
+
     def test_parallel_job_fallback_order(self):
         nproc = self.run_helper(
             "job_count",
@@ -125,6 +128,19 @@ class QuickstartTests(unittest.TestCase):
         missing = self.run_helper("arm_debugger_command", {})
         self.assertNotEqual(missing.returncode, 0)
 
+    def test_probe_mgba_gdb_frontend_requires_gdb_option(self):
+        supported = self.run_helper(
+            "probe_mgba_gdb_frontend",
+            {"mgba": self.mgba_command()},
+        )
+        self.assertEqual(supported.returncode, 0, supported.stdout)
+
+        unsupported = self.run_helper(
+            "probe_mgba_gdb_frontend",
+            {"mgba": 'printf "%s\\n" "usage: mgba"'},
+        )
+        self.assertNotEqual(unsupported.returncode, 0)
+
     def test_package_commands_and_shell_syntax(self):
         syntax = subprocess.run(
             ["/bin/bash", "-n", str(QUICKSTART)],
@@ -142,6 +158,7 @@ class QuickstartTests(unittest.TestCase):
         )
         self.assertIn("gdb-multiarch", script)
         self.assertIn("arm-none-eabi-gdb", script)
+        self.assertIn("mgba-sdl", script)
         self.assertIn("pacman -S --needed --noconfirm", script)
         self.assertNotIn("pacman -Sy", script)
         self.assertIn("brew install --cask gcc-arm-embedded", script)
@@ -290,6 +307,7 @@ class QuickstartTests(unittest.TestCase):
                     "arm-none-eabi-as": "exit 0",
                     "arm-none-eabi-ld": "exit 0",
                     "arm-none-eabi-gdb": "exit 0",
+                    "mgba": self.mgba_command(),
                 }
                 bin_dir = self.helper_environment(commands)
                 snippet = (
@@ -312,6 +330,11 @@ class QuickstartTests(unittest.TestCase):
                     any("libmgba-dev" in line for line in install_lines),
                     log,
                 )
+                self.assertEqual(
+                    expect_mgba,
+                    any("mgba-sdl" in line for line in install_lines),
+                    log,
+                )
 
     def test_install_deps_pacman_default_adds_mgba_legacy_omits_it(self):
         for legacy_args, expect_mgba in (("", True), ("--legacy", False)):
@@ -327,6 +350,7 @@ class QuickstartTests(unittest.TestCase):
                     "arm-none-eabi-as": "exit 0",
                     "arm-none-eabi-ld": "exit 0",
                     "arm-none-eabi-gdb": "exit 0",
+                    "mgba": self.mgba_command(),
                 }
                 bin_dir = self.helper_environment(commands)
                 snippet = (
@@ -366,6 +390,7 @@ class QuickstartTests(unittest.TestCase):
                     "arm-none-eabi-as": "exit 0",
                     "arm-none-eabi-ld": "exit 0",
                     "arm-none-eabi-gdb": "exit 0",
+                    "mgba": self.mgba_command(),
                 }
                 bin_dir = self.helper_environment(commands)
                 snippet = (
@@ -528,6 +553,7 @@ class QuickstartTests(unittest.TestCase):
             "sudo": 'exec "$@"',
             "pip3": "exit 0",
             "arm-none-eabi-gdb": "exit 0",
+            "mgba": self.mgba_command(),
             # No arm-none-eabi-gcc/as anywhere: the fake apt-get does not
             # actually install a working compiler, so the toolchain stays
             # broken across both probe attempts.
@@ -569,6 +595,7 @@ class QuickstartTests(unittest.TestCase):
                     "arm-none-eabi-gcc": "exit 0",
                     "arm-none-eabi-as": "exit 0",
                     "arm-none-eabi-ld": "exit 0",
+                    "mgba": self.mgba_command(),
                 }
                 bin_dir = self.helper_environment(commands)
                 snippet = (
@@ -629,6 +656,41 @@ class QuickstartTests(unittest.TestCase):
         self.assertIn("No working ARM debugger found", result.stdout)
         log = log_path.read_text(encoding="utf-8")
         self.assertIn("gdb-multiarch", log)
+
+    def test_install_deps_fails_actionably_when_mgba_frontend_stays_missing(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        temporary = Path(self.temporary.name)
+        log_path = temporary / "invocations.log"
+        commands = {
+            "apt-get": self.logging_command(log_path, "apt-get"),
+            "sudo": 'exec "$@"',
+            "pip3": "exit 0",
+            "arm-none-eabi-gcc": "exit 0",
+            "arm-none-eabi-as": "exit 0",
+            "arm-none-eabi-ld": "exit 0",
+            "arm-none-eabi-gdb": "exit 0",
+        }
+        bin_dir = self.helper_environment(commands)
+        snippet = 'source "$1"; PATH="$2"; parse_args; install_deps'
+        result = subprocess.run(
+            [
+                "/bin/bash",
+                "-c",
+                snippet,
+                "quickstart-test",
+                str(QUICKSTART),
+                str(bin_dir),
+            ],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn("No mGBA frontend with GDB-server support found", result.stdout)
+        log = log_path.read_text(encoding="utf-8")
+        self.assertIn("mgba-sdl", log)
 
     def test_readme_and_docs_flags_match_script_usage(self):
         usage_snippet = 'source "$1"; usage'

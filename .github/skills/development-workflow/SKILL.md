@@ -61,6 +61,8 @@ Use tools according to the evidence needed:
 
 - ARM GDB (`arm-none-eabi-gdb` or `gdb-multiarch`) for register, stack, symbol,
   memory, and control-flow debugging.
+- mGBA's GDB server plus `make expansion-modern-gdb-smoke` to prove the
+  cross-compiled debug ELF can be controlled through a real emulator target.
 - IDA Pro/IDALib CLI or MCP as the preferred primary disassembler/decompiler
   when available; project experience finds it more stable.
 - Ghidra/PyGhidra CLI or MCP as a cross-check, fallback, or batch-analysis
@@ -237,6 +239,11 @@ surface described in [`CONTRIBUTING.md`](../../../CONTRIBUTING.md).
 For a bug fix, first reproduce the original symptom or preserve equivalent
 structural failure evidence, then prove the symptom is gone and the new
 regression test fails if the fix is removed.
+
+When debugging runtime code with GDB, do not stop at a host-side version or
+architecture probe. Run `make expansion-modern-gdb-smoke` and require a real
+remote connection, register read, symbolic `AgbMain` breakpoint, continue, and
+backtrace through mGBA before claiming the debugging chain works.
 
 For boot, save, UI, or gameplay behavior:
 

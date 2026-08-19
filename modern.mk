@@ -6,6 +6,7 @@ MODERN_GOALS := \
 	expansion-modern-all \
 	expansion-modern-elf \
 	expansion-modern-rom \
+	expansion-modern-gdb-smoke \
 	expansion-modern-boot-check \
 	expansion-modern-savefmt-check \
 	expansion-modern-itemexpansion-check \
@@ -2205,6 +2206,16 @@ $(MODERN_ROM): $(MODERN_ELF) $(MODERN_BUILD_METADATA_JSON)
 expansion-modern-rom: expansion-modern-elf $(MODERN_ROM)
 	@printf 'Modern ROM ready: %s (config=%s abi=%s)\n' \
 		"$(MODERN_ROM)" '$(MODERN_CONFIG)' '$(MODERN_ABI)'
+
+MODERN_GDB_SMOKE_OUTPUT_DIR := $(MODERN_BUILD_ROOT)/debug/aapcs
+MODERN_GDB_SMOKE := scripts/modernize/gdb_smoke.py
+
+expansion-modern-gdb-smoke:
+	+$(MAKE) --no-print-directory expansion-modern-rom \
+		MODERN_BUILD_ROOT="$(MODERN_BUILD_ROOT)" MODERN_CONFIG=debug MODERN_ABI=aapcs
+	"$(PYTHON)" "$(MODERN_GDB_SMOKE)" \
+		--elf "$(MODERN_GDB_SMOKE_OUTPUT_DIR)/fireemblem8.elf" \
+		--rom "$(MODERN_GDB_SMOKE_OUTPUT_DIR)/fireemblem8.gba"
 
 # Preflight the libmGBA-backed playtest backend before spending time building
 # the ROM, with an actionable error pointing at the same backend-check

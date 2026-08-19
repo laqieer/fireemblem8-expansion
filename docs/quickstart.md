@@ -38,7 +38,7 @@ is installed or invoked on this path**:
 2. Detects your package manager (`apt`, `pacman`, or `brew`) and installs the prerequisites only when they’re not already available:
    - Toolchain (`arm-none-eabi-binutils`, `arm-none-eabi-gcc`, and newlib headers; the official Arm cask on macOS)
    - ARM debugger (`gdb-multiarch` on apt; `arm-none-eabi-gdb` on pacman/Homebrew)
-   - The libmGBA playtest backend (`libmgba-dev` on apt, `mgba` on pacman/Homebrew) used by the boot-check step below
+   - The libmGBA playtest backend and GDB-server frontend (`libmgba-dev` plus `mgba-sdl` on apt, `mgba` on pacman/Homebrew)
    - `pkg-config` / `pkgconf`
    - `libpng`
    - `python3`, `pip3`, `numpy`, `pillow`
@@ -118,6 +118,21 @@ defaults continue to work.
    Use `arm-none-eabi-gdb` (preferred) or `gdb-multiarch` when register,
    stack, symbol, memory, or control-flow evidence is needed.
 
+### ARM GDB through the mGBA emulator
+
+Cross-compiled GBA artifacts cannot execute directly on the host. Verify the
+complete debugger chain with:
+
+```bash
+make expansion-modern-gdb-smoke
+```
+
+The target builds the modern debug ELF/ROM, launches `mgba --gdb` headlessly
+on its default local port `2345`, attaches ARM GDB with ELF symbols, reads ARM
+registers, sets and reaches the symbolic `AgbMain` breakpoint, prints a
+backtrace, disconnects, and removes its temporary ROM/save directory. A version
+probe alone is not accepted as debugger evidence.
+
 ### Archival `--legacy` path
 
 Pass `--legacy` (or `--refresh-agbcc`, which implies it) to build the
@@ -149,6 +164,9 @@ On success you’ll see:
 - **Missing debugger** – Install `gdb-multiarch` on Ubuntu/WSL or
   `arm-none-eabi-gdb` on Arch/Homebrew. Quickstart fails actionably if neither
   debugger can select the ARM architecture.
+- **Missing emulator GDB server** – Install `mgba-sdl` on Ubuntu/WSL or
+  `mgba` on Arch/Homebrew. The default quickstart requires `mgba --gdb`; use
+  `make expansion-modern-gdb-smoke` to verify the live remote-debug chain.
 - **Already-installed toolchain** – The script detects `arm-none-eabi-*` binaries and skips reinstalling them. `--legacy`'s existing `tools/agbcc` installs are reused too; run `./scripts/quickstart.sh --legacy --refresh-agbcc` if you need a fresh copy.
 - **Stale Arch package database** – The script never performs a partial
   `pacman` upgrade. Complete a full

@@ -21,11 +21,11 @@ Options:
                     is only needed by the archival legacy build.
 
 Default (no --legacy): installs/probes the modern arm-none-eabi GCC
-toolchain, an ARM-capable GDB debugger, and the libmGBA playtest backend,
-then builds and boot-verifies the supported modern AAPCS release ROM via
-`make expansion-modern-boot-check MODERN_CONFIG=release MODERN_ABI=aapcs`.
-No legacy compiler toolchain of any kind is installed or invoked on this
-path.
+toolchain, an ARM-capable GDB debugger, the mGBA GDB-server frontend, and
+the libmGBA playtest backend, then builds and boot-verifies the supported
+modern AAPCS release ROM via `make expansion-modern-boot-check
+MODERN_CONFIG=release MODERN_ABI=aapcs`. No legacy compiler toolchain of
+any kind is installed or invoked on this path.
 
 You can also set FIREEMBLEM8U_ROM to point to the ROM.
 EOF
@@ -122,6 +122,16 @@ arm_debugger_command() {
 
 probe_arm_debugger() {
   arm_debugger_command >/dev/null
+}
+
+probe_mgba_gdb_frontend() {
+  have_cmd mgba || return 1
+  local help=""
+  help="$(mgba --help 2>&1 || true)"
+  case "${help}" in
+    *--gdb*) return 0 ;;
+    *) return 1 ;;
+  esac
 }
 
 job_count() {
@@ -228,7 +238,7 @@ install_deps() {
         packages=(gdb-multiarch "${packages[@]}")
       fi
       if (( need_playtest_backend )); then
-        packages=("${packages[@]}" libmgba-dev)
+        packages=("${packages[@]}" libmgba-dev mgba-sdl)
       fi
       if (( LEGACY_MODE == 1 )); then
         if (( need_binutils )); then
@@ -317,6 +327,15 @@ install_deps() {
       apt) echo "    Install gdb-multiarch and rerun." >&2 ;;
       pacman) echo "    Install arm-none-eabi-gdb and rerun." >&2 ;;
       brew) echo "    Install arm-none-eabi-gdb or the gcc-arm-embedded cask and rerun." >&2 ;;
+    esac
+    return 1
+  fi
+
+  if (( LEGACY_MODE == 0 )) && ! probe_mgba_gdb_frontend; then
+    echo "[!] No mGBA frontend with GDB-server support found (expected 'mgba --gdb')." >&2
+    case "${pkg_mgr}" in
+      apt) echo "    Install mgba-sdl and rerun." >&2 ;;
+      pacman | brew) echo "    Install mgba and rerun." >&2 ;;
     esac
     return 1
   fi

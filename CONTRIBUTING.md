@@ -127,7 +127,10 @@ Use [`docs/debugtools.md`](docs/debugtools.md) for the release-safe debug
 surface and [`tools/gba-playtest/README.md`](tools/gba-playtest/README.md)
 for deterministic scenario/fingerprint diagnosis. Do not refresh a reviewed
 fingerprint merely to make a mismatch disappear; preserve the failing output,
-root-cause it, and document any justified oracle change.
+root-cause it, and document any justified oracle change. For live source-level
+debugging, run `make expansion-modern-gdb-smoke` to prove ARM GDB can control
+the modern debug ROM through mGBA's remote server before relying on debugger
+evidence.
 
 ## 7. PR provenance and delivery
 

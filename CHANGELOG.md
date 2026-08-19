@@ -17,6 +17,7 @@ Do not hand-edit the text between the two HTML comment markers below --
 <!-- release-rehearsal:unreleased:begin -->
 ### Added
 
+- Add a live ARM debugging smoke target that launches the modern debug ROM under mGBA's GDB server and proves remote attach, register access, a symbolic AgbMain breakpoint, continue, and backtrace.
 - Add a project-scoped Copilot development workflow skill for feature and bug triage, selective change gates, automated evidence, autonomous merge and closure, and explicitly authorized direct-master delivery.
 - Add structured GitHub issue forms for feature review and bug triage, requiring dependency/conflict analysis, exact build configuration, reproduction evidence, expected versus actual behavior, and game screenshots.
 - Extend the project development workflow with requirement dependency/conflict tracking, local decomp/FEBuilder/Nightmare/clean-ROM investigation resources, IDA-first and Ghidra cross-check guidance, and final tool/version evidence.

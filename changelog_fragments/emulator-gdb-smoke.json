@@ -1,0 +1,6 @@
+{
+  "issue": null,
+  "category": "added",
+  "summary": "Add a live ARM debugging smoke target that launches the modern debug ROM under mGBA's GDB server and proves remote attach, register access, a symbolic AgbMain breakpoint, continue, and backtrace.",
+  "semver_impact": "none"
+}

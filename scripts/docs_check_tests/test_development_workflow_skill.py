@@ -57,6 +57,8 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             "Ghidra/PyGhidra CLI or MCP as a cross-check",
             "../GBA-FE-ROMS",
             "Record every tool installed for the task, its version",
+            "make expansion-modern-gdb-smoke",
+            "symbolic `AgbMain` breakpoint",
             "Do not add or restore a whole-source/object/ROM SHA-256 identity gate.",
             "Build CI for the **exact candidate commit**",
             "make remote-completion-check",
