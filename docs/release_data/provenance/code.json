@@ -200,8 +200,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Issue #9 release-process tooling output/input surface. No human legal/provenance review has been recorded yet; kept honestly unresolved like every other tracked path rather than assumed-clear because it is new.",
-    "oid": "8ce4af3e7bf5033179941c9b42cfa01dfff2d347",
-    "sha256": "30118bfe611ff9354191e1aff47a59c37578633aa8191c34c3a72831281a88a6"
+    "oid": "79e6030e8a8ec4d84f32bc26d2c6210ebbfbd9f0",
+    "sha256": "5cd917cb7fe83e728f2f8e07ad131f8b4fa73d7778f266dcb3465df733f54006"
   },
   {
     "path": "CLAUDE.md",
@@ -802,6 +802,18 @@
     "notes": "Issue #9 release-process tooling output/input surface. No human legal/provenance review has been recorded yet; kept honestly unresolved like every other tracked path rather than assumed-clear because it is new.",
     "oid": "77fa5763543c5772f66f3cfdba4766915328ebc7",
     "sha256": "36c3248b79b8eaa5e07caba06f056f0562d40ecbb433be21f577542095ab3e24"
+  },
+  {
+    "path": "changelog_fragments/banim-producer-lock.json",
+    "category": "code",
+    "author": "NOASSERTION",
+    "rightsholder": "NOASSERTION",
+    "license": "NOASSERTION",
+    "redistribution_approved": false,
+    "reviewer": null,
+    "notes": "Issue #9 release-process tooling output/input surface. No human legal/provenance review has been recorded yet; kept honestly unresolved like every other tracked path rather than assumed-clear because it is new.",
+    "oid": "586a8e9d74ac471ec08bf81612577188ab692c91",
+    "sha256": "ad509c057a22d9665b6f29a79489d5770b028f3482def4637da30da25c38dff0"
   },
   {
     "path": "changelog_fragments/development-workflow-resources.json",
@@ -4076,8 +4088,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Wave 0/issue #9 seed: repository-authored build tooling/config/source surface (or, for asm/, decompiled disassembly derived from the original ROM). No human legal/provenance review has been recorded yet; this manifest records that honestly rather than asserting a license or clearance.",
-    "oid": "89d425f735b268bebfb01d0494a36f8184ee5d00",
-    "sha256": "ebdca5a52ba453cf8baf791149e5cb5618ae7961d8c1bc6409d5cebe689ec5d7"
+    "oid": "e9943dbae1fbefd2e07fd0ef31fd5b5a6fd08826",
+    "sha256": "42637daf2772b9bc792ba30d0aeb9e884913fe61322a06d04ab4c450043931b3"
   },
   {
     "path": "scripts/artifact_guard.py",
@@ -12094,6 +12106,18 @@
     "notes": "Wave 0/issue #9 seed: repository-authored build tooling/config/source surface (or, for asm/, decompiled disassembly derived from the original ROM). No human legal/provenance review has been recorded yet; this manifest records that honestly rather than asserting a license or clearance.",
     "oid": "cb2a4f8ea964142380b92ededc5bbb38f2feb644",
     "sha256": "bca966e9d9ddbb4d842d2911bb7dc061c56c5d3acaea60d8668e31f65a6882c1"
+  },
+  {
+    "path": "scripts/modernize/tests/test_arm_compressing_linker_lock.py",
+    "category": "code",
+    "author": "NOASSERTION",
+    "rightsholder": "NOASSERTION",
+    "license": "NOASSERTION",
+    "redistribution_approved": false,
+    "reviewer": null,
+    "notes": "Wave 0/issue #9 seed: repository-authored build tooling/config/source surface (or, for asm/, decompiled disassembly derived from the original ROM). No human legal/provenance review has been recorded yet; this manifest records that honestly rather than asserting a license or clearance.",
+    "oid": "b44440c988ce3371357f4b4613fc2d6dc5bb2250",
+    "sha256": "99e1c82c21aa9b4146bac00c860b74fe4a2024629a74c2c3fcd5143fbfb45313"
   },
   {
     "path": "scripts/modernize/tests/test_audit.py",
