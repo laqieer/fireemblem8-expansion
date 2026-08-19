@@ -1,0 +1,6 @@
+{
+  "issue": null,
+  "category": "fixed",
+  "summary": "Serialize concurrent producers of the shared compressed battle-animation object so parallel modern profile links cannot tear data_banim.o or its symbol sidecar.",
+  "semver_impact": "none"
+}

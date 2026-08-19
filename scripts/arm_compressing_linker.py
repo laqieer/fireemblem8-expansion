@@ -7,15 +7,46 @@
 
 # author: https://github.com/laqieer
 
+from contextlib import contextmanager
+import fcntl
+import getopt
+import hashlib
 import os
 import sys
-import getopt
+import tempfile
+
 
 def rreplace(self, old, new, *max):
     count = len(self)
     if max and str(max[0]).isdigit():
         count = max[0]
     return new.join(self.rsplit(old, count))
+
+
+def output_lock_path(outputfile):
+    output = os.path.abspath(outputfile)
+    digest = hashlib.sha256(output.encode('utf-8')).hexdigest()
+    uid = os.getuid() if hasattr(os, 'getuid') else 0
+    lock_dir = os.path.join(
+        tempfile.gettempdir(), 'fe8-arm-linker-locks-%d' % uid)
+    os.makedirs(lock_dir, mode=0o700, exist_ok=True)
+    return os.path.join(lock_dir, digest + '.lock')
+
+
+@contextmanager
+def output_lock(outputfile, is_debug=False):
+    lock_path = output_lock_path(outputfile)
+    with open(lock_path, 'a+', encoding='utf-8') as lock_file:
+        if is_debug:
+            print('Waiting for output lock: %s' % lock_path)
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+        try:
+            if is_debug:
+                print('Acquired output lock: %s' % lock_path)
+            yield
+        finally:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+
 
 def parse_linker_script(filename):
     obj_list = []
@@ -282,10 +313,11 @@ for makefile.\n')
         sys.exit()
     if objcopy == '':
         objcopy = rreplace(ld, 'ld', 'objcopy', 1)
-    if os.path.exists(outputfile):
-        os.remove(outputfile)
-    link_objects(obj_list, outputfile, base_addr, ld, objcopy, compressor,
-                 is_debug)
+    with output_lock(outputfile, is_debug):
+        if os.path.exists(outputfile):
+            os.remove(outputfile)
+        link_objects(obj_list, outputfile, base_addr, ld, objcopy, compressor,
+                     is_debug)
 
 
 if __name__ == "__main__":
@@ -294,4 +326,3 @@ if __name__ == "__main__":
     else:
         argv = sys.argv[1:]
     main(argv)
-
