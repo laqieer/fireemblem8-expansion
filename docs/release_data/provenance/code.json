@@ -140,8 +140,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Wave 0/issue #9 seed: repository-authored build tooling/config/source surface (or, for asm/, decompiled disassembly derived from the original ROM). No human legal/provenance review has been recorded yet; this manifest records that honestly rather than asserting a license or clearance.",
-    "oid": "6fd271be9488b44e014f71156f3c8aa6531d086e",
-    "sha256": "d7dd944fd30b22476cbcf32594560187f460abd79606da772861853b8fc5315a"
+    "oid": "62d9faa6de3cf8172401c32d0f60fc9aa6ee7ab3",
+    "sha256": "812525a70e840436d19c32e14e6faae3d335ef66ed3e6865526edae11a11dda7"
   },
   {
     "path": ".github/workflows/release-rehearsal.yml",
@@ -200,8 +200,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Issue #9 release-process tooling output/input surface. No human legal/provenance review has been recorded yet; kept honestly unresolved like every other tracked path rather than assumed-clear because it is new.",
-    "oid": "9ee87ea97560ce2a889f1794c318893e40ef84a1",
-    "sha256": "bc77d2eac50b98f2fa5e2167f008b6ad0ff72383b2736546046d9469525bbb16"
+    "oid": "3842ae7c274f9ce5c658120e6963eecc4e23b680",
+    "sha256": "0cf91f70a715e0d3d26f6cf88e5c359b3168c5017e56065dd5dacdee756071e6"
   },
   {
     "path": "CLAUDE.md",
@@ -826,6 +826,18 @@
     "notes": "Issue #9 release-process tooling output/input surface. No human legal/provenance review has been recorded yet; kept honestly unresolved like every other tracked path rather than assumed-clear because it is new.",
     "oid": "598311e3c3ea652e844af57f8ff0037eea80828c",
     "sha256": "57266aa271ab8731baf6483a23eb7f64538caa738ae18f35e0117827a9d10faf"
+  },
+  {
+    "path": "changelog_fragments/full-matrix-host-timeout.json",
+    "category": "code",
+    "author": "NOASSERTION",
+    "rightsholder": "NOASSERTION",
+    "license": "NOASSERTION",
+    "redistribution_approved": false,
+    "reviewer": null,
+    "notes": "Issue #9 release-process tooling output/input surface. No human legal/provenance review has been recorded yet; kept honestly unresolved like every other tracked path rather than assumed-clear because it is new.",
+    "oid": "2f57ca8e1ac730de1800c1bc9e9e6d5d53788435",
+    "sha256": "2667c9bf7dacc389cba77d4d1f8220725183ec84c182ce97547a27dd91fb9e2c"
   },
   {
     "path": "changelog_fragments/issue-forms.json",
@@ -22628,8 +22640,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Wave 0/issue #9 seed: repository-authored build tooling/config/source surface (or, for asm/, decompiled disassembly derived from the original ROM). No human legal/provenance review has been recorded yet; this manifest records that honestly rather than asserting a license or clearance.",
-    "oid": "c79adb5a23f0416bb72f81f7e055378a8e026148",
-    "sha256": "ccdc8e1752e44189571e69ea0abccd0c9e67d76c9b13072a6fb8337576317ec5"
+    "oid": "ab2be1c07f8f22297b07eeba91dbfd00c52bb66c",
+    "sha256": "45ef085ca24c2d1556c5c2f847517d911bd7ec1ebdfb6efd2227d2f259d199e9"
   },
   {
     "path": "tests/workflows/test_issue_templates.py",
