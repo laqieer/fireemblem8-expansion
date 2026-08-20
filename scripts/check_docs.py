@@ -60,6 +60,7 @@ example commands (``--help`` invocations and this script's own
 command discovered in a doc file.
 """
 import argparse
+import json
 import os
 import re
 import subprocess
@@ -73,6 +74,8 @@ from collections import namedtuple
 
 INVENTORY_PATH = "docs/documentation-inventory.md"
 REGISTRY_PATH = "docs/external-link-registry.md"
+TEST_CASE_REGISTRY_PATH = "docs/test-cases/registry.json"
+TEST_CASE_SCHEMA_VERSION = 1
 FULL_MATRIX_WORKFLOW_PATH = ".github/workflows/full-matrix.yml"
 FULL_MATRIX_WORKFLOW_NAME = "Full Matrix CI"
 FULL_MATRIX_BADGE = (
@@ -117,6 +120,25 @@ INVENTORY_STATUSES = {
     "deprecated",         # superseded; kept only for compatibility/history
     "evidence",           # issue/closure candidate evidence report; not a closure claim
     "template",           # intentionally unfilled scaffolding
+}
+
+TEST_CASE_FEATURE_STATUSES = {"current", "retired", "excluded"}
+TEST_CASE_COVERAGE_MODES = {"foundation", "complete"}
+TEST_CASE_ID_RE = re.compile(r"^TC-[A-Z][A-Z0-9-]*-\d{3}$")
+TEST_CASE_FEATURE_ID_RE = re.compile(r"^[a-z][a-z0-9-]*$")
+TEST_CASE_ISSUE_URL_RE = re.compile(
+    r"^https://github\.com/laqieer/fireemblem8-expansion/issues/[1-9]\d*$"
+)
+TEST_CASE_PLACEHOLDER_VALUES = {
+    "n/a",
+    "none",
+    "not applicable",
+    "pass",
+    "passed",
+    "placeholder",
+    "success",
+    "tbd",
+    "todo",
 }
 
 # Controlled status enum for docs/external-link-registry.md rules.
@@ -1176,6 +1198,292 @@ def check_inventory_coverage(root, markdown_files, entries):
 
 
 # ---------------------------------------------------------------------------
+# docs/test-cases/registry.json parsing and validation
+# ---------------------------------------------------------------------------
+
+def _is_non_placeholder_string(value):
+    return (
+        isinstance(value, str)
+        and bool(value.strip())
+        and value.strip().casefold() not in TEST_CASE_PLACEHOLDER_VALUES
+    )
+
+
+def _is_nonempty_string_list(value):
+    return (
+        isinstance(value, list)
+        and bool(value)
+        and all(_is_non_placeholder_string(item) for item in value)
+    )
+
+
+def _registry_root_path(root, path):
+    if not isinstance(path, str) or not path or os.path.isabs(path):
+        return None
+    normalized = os.path.normpath(path)
+    if normalized == ".." or normalized.startswith(".." + os.sep):
+        return None
+    return os.path.join(root, normalized)
+
+
+def _check_registry_document(root, path, anchor, label):
+    full_path = _registry_root_path(root, path)
+    if full_path is None or not os.path.isfile(full_path):
+        return ["%s references missing document %r" % (label, path)]
+    if anchor:
+        if not _is_non_placeholder_string(anchor):
+            return ["%s has an empty anchor" % label]
+        slugs = compute_heading_slugs(strip_fenced_blocks(read_text(full_path)))
+        if anchor not in slugs:
+            return ["%s references missing anchor #%s in %s" % (label, anchor, path)]
+    return []
+
+
+def parse_test_case_registry(root):
+    """Load the independent tester-case registry without executing its data."""
+    path = os.path.join(root, TEST_CASE_REGISTRY_PATH)
+    try:
+        with open(path, "r", encoding="utf-8") as stream:
+            return json.load(stream), []
+    except OSError as exc:
+        return None, ["cannot read tester-case registry: %s" % exc]
+    except ValueError as exc:
+        return None, ["invalid JSON in tester-case registry: %s" % exc]
+
+
+def check_test_case_registry(root):
+    """Validate the stable feature/case catalog and its staged coverage lifecycle."""
+    registry, errors = parse_test_case_registry(root)
+    findings = [Finding(TEST_CASE_REGISTRY_PATH, 0, error) for error in errors]
+    if registry is None:
+        return findings
+    if not isinstance(registry, dict):
+        return findings + [Finding(TEST_CASE_REGISTRY_PATH, 0, "tester-case registry must be an object")]
+    if registry.get("schema_version") != TEST_CASE_SCHEMA_VERSION:
+        findings.append(Finding(
+            TEST_CASE_REGISTRY_PATH, 0,
+            "tester-case registry schema_version must be %d" % TEST_CASE_SCHEMA_VERSION,
+        ))
+
+    features = registry.get("features")
+    cases = registry.get("cases")
+    coverage = registry.get("coverage")
+    if not isinstance(features, list):
+        findings.append(Finding(TEST_CASE_REGISTRY_PATH, 0, "tester-case registry features must be a list"))
+        features = []
+    if not isinstance(cases, list):
+        findings.append(Finding(TEST_CASE_REGISTRY_PATH, 0, "tester-case registry cases must be a list"))
+        cases = []
+    if not isinstance(coverage, dict):
+        findings.append(Finding(TEST_CASE_REGISTRY_PATH, 0, "tester-case registry coverage must be an object"))
+        coverage = {}
+
+    feature_ids = set()
+    case_ids = set()
+    feature_by_id = {}
+    case_ids_by_feature = {}
+    for index, feature in enumerate(features):
+        label = "feature entry %d" % (index + 1)
+        if not isinstance(feature, dict):
+            findings.append(Finding(TEST_CASE_REGISTRY_PATH, 0, "%s must be an object" % label))
+            continue
+        feature_id = feature.get("id")
+        if not isinstance(feature_id, str) or not TEST_CASE_FEATURE_ID_RE.match(feature_id):
+            findings.append(Finding(
+                TEST_CASE_REGISTRY_PATH, 0, "%s has malformed feature ID %r" % (label, feature_id)
+            ))
+            continue
+        if feature_id in feature_ids:
+            findings.append(Finding(TEST_CASE_REGISTRY_PATH, 0, "duplicate feature ID %r" % feature_id))
+            continue
+        feature_ids.add(feature_id)
+        feature_by_id[feature_id] = feature
+        for field in ("title", "reference"):
+            if not _is_non_placeholder_string(feature.get(field)):
+                findings.append(Finding(
+                    TEST_CASE_REGISTRY_PATH, 0, "%s has empty or placeholder %s" % (label, field)
+                ))
+        issue_urls = feature.get("issue_urls")
+        if not _is_nonempty_string_list(issue_urls) or not all(
+            TEST_CASE_ISSUE_URL_RE.match(url) for url in issue_urls or []
+        ):
+            findings.append(Finding(
+                TEST_CASE_REGISTRY_PATH, 0, "%s must name valid originating issue URLs" % label
+            ))
+        status = feature.get("status")
+        if status not in TEST_CASE_FEATURE_STATUSES:
+            findings.append(Finding(TEST_CASE_REGISTRY_PATH, 0, "%s has invalid status %r" % (label, status)))
+        required_cases = feature.get("required_cases")
+        if not isinstance(required_cases, list) or any(
+            not isinstance(case_id, str) or not TEST_CASE_ID_RE.match(case_id)
+            for case_id in required_cases
+        ):
+            findings.append(Finding(TEST_CASE_REGISTRY_PATH, 0, "%s has malformed required_cases" % label))
+        elif len(required_cases) != len(set(required_cases)):
+            findings.append(Finding(TEST_CASE_REGISTRY_PATH, 0, "%s has duplicate required case IDs" % label))
+        if status == "current" and not required_cases:
+            findings.append(Finding(
+                TEST_CASE_REGISTRY_PATH, 0, "current %s has no required tester case" % label
+            ))
+        if status in {"retired", "excluded"} and not _is_non_placeholder_string(feature.get("reason")):
+            findings.append(Finding(
+                TEST_CASE_REGISTRY_PATH, 0,
+                "%s status %s requires an explicit non-placeholder reason" % (label, status),
+            ))
+        if _is_non_placeholder_string(feature.get("reference")):
+            for message in _check_registry_document(root, feature["reference"], None, label):
+                findings.append(Finding(TEST_CASE_REGISTRY_PATH, 0, message))
+
+    case_fields = (
+        "title", "document", "anchor", "purpose", "prerequisites", "actions",
+        "expected_result", "negative_control", "interactions", "save_compatibility",
+        "cleanup", "limitations",
+    )
+    for index, case in enumerate(cases):
+        label = "case entry %d" % (index + 1)
+        if not isinstance(case, dict):
+            findings.append(Finding(TEST_CASE_REGISTRY_PATH, 0, "%s must be an object" % label))
+            continue
+        case_id = case.get("id")
+        if not isinstance(case_id, str) or not TEST_CASE_ID_RE.match(case_id):
+            findings.append(Finding(
+                TEST_CASE_REGISTRY_PATH, 0, "%s has malformed case ID %r" % (label, case_id)
+            ))
+            continue
+        if case_id in case_ids:
+            findings.append(Finding(TEST_CASE_REGISTRY_PATH, 0, "duplicate case ID %r" % case_id))
+            continue
+        case_ids.add(case_id)
+        feature_id = case.get("feature_id")
+        if feature_id not in feature_ids:
+            findings.append(Finding(
+                TEST_CASE_REGISTRY_PATH, 0, "%s references unknown feature ID %r" % (label, feature_id)
+            ))
+        else:
+            case_ids_by_feature.setdefault(feature_id, set()).add(case_id)
+        for field in case_fields:
+            if not _is_non_placeholder_string(case.get(field)):
+                findings.append(Finding(
+                    TEST_CASE_REGISTRY_PATH, 0, "%s has empty or placeholder %s" % (label, field)
+                ))
+        issue_urls = case.get("issue_urls")
+        if not _is_nonempty_string_list(issue_urls) or not all(
+            TEST_CASE_ISSUE_URL_RE.match(url) for url in issue_urls or []
+        ):
+            findings.append(Finding(
+                TEST_CASE_REGISTRY_PATH, 0, "%s must name valid originating issue URLs" % label
+            ))
+        if not _is_nonempty_string_list(case.get("profiles")):
+            findings.append(Finding(
+                TEST_CASE_REGISTRY_PATH, 0, "%s must name supported profiles or artifacts" % label
+            ))
+        automation = case.get("automation")
+        if not isinstance(automation, list) or not automation:
+            findings.append(Finding(TEST_CASE_REGISTRY_PATH, 0, "%s must name deterministic automation" % label))
+        else:
+            for automation_index, record in enumerate(automation):
+                automation_label = "%s automation %d" % (label, automation_index + 1)
+                if not isinstance(record, dict) or not _is_non_placeholder_string(record.get("command")):
+                    findings.append(Finding(
+                        TEST_CASE_REGISTRY_PATH, 0, "%s has no named command" % automation_label
+                    ))
+                    continue
+                evidence_path = _registry_root_path(root, record.get("evidence"))
+                if evidence_path is None or not os.path.isfile(evidence_path):
+                    findings.append(Finding(
+                        TEST_CASE_REGISTRY_PATH, 0,
+                        "%s references no real command/scenario/test evidence %r"
+                        % (automation_label, record.get("evidence")),
+                    ))
+        if _is_non_placeholder_string(case.get("document")):
+            for message in _check_registry_document(root, case["document"], case.get("anchor"), label):
+                findings.append(Finding(TEST_CASE_REGISTRY_PATH, 0, message))
+
+    for feature_id, feature in feature_by_id.items():
+        required_cases = feature.get("required_cases")
+        if not isinstance(required_cases, list):
+            continue
+        actual_cases = case_ids_by_feature.get(feature_id, set())
+        for case_id in required_cases:
+            if case_id not in actual_cases:
+                findings.append(Finding(
+                    TEST_CASE_REGISTRY_PATH, 0,
+                    "feature %r requires case %r, but no owned case entry exists"
+                    % (feature_id, case_id),
+                ))
+
+    mode = coverage.get("mode")
+    expected_feature_ids = coverage.get("expected_feature_ids")
+    deferred_issues = coverage.get("deferred_issues")
+    if mode not in TEST_CASE_COVERAGE_MODES:
+        findings.append(Finding(
+            TEST_CASE_REGISTRY_PATH, 0, "coverage mode must be one of %s"
+            % ", ".join(sorted(TEST_CASE_COVERAGE_MODES)),
+        ))
+    if not isinstance(expected_feature_ids, list) or any(
+        not isinstance(feature_id, str) or not TEST_CASE_FEATURE_ID_RE.match(feature_id)
+        for feature_id in expected_feature_ids or []
+    ):
+        findings.append(Finding(
+            TEST_CASE_REGISTRY_PATH, 0, "coverage expected_feature_ids must contain valid feature IDs"
+        ))
+        expected_feature_ids = []
+    elif len(expected_feature_ids) != len(set(expected_feature_ids)):
+        findings.append(Finding(
+            TEST_CASE_REGISTRY_PATH, 0, "coverage expected_feature_ids contains duplicates"
+        ))
+    if not isinstance(deferred_issues, list) or any(
+        not isinstance(issue, str) or not TEST_CASE_ISSUE_URL_RE.match(issue)
+        for issue in deferred_issues or []
+    ):
+        findings.append(Finding(
+            TEST_CASE_REGISTRY_PATH, 0, "coverage deferred_issues must contain valid issue URLs"
+        ))
+        deferred_issues = []
+    if mode == "foundation":
+        if not _is_non_placeholder_string(coverage.get("reason")):
+            findings.append(Finding(
+                TEST_CASE_REGISTRY_PATH, 0,
+                "foundation coverage mode requires an explicit non-placeholder deferral reason",
+            ))
+        if not deferred_issues:
+            findings.append(Finding(
+                TEST_CASE_REGISTRY_PATH, 0, "foundation coverage mode requires named backfill issues"
+            ))
+    if mode == "complete" and deferred_issues:
+        findings.append(Finding(
+            TEST_CASE_REGISTRY_PATH, 0, "complete coverage mode cannot retain deferred backfill issues"
+        ))
+    if mode == "complete" and not expected_feature_ids:
+        findings.append(Finding(
+            TEST_CASE_REGISTRY_PATH, 0, "complete coverage mode requires an explicit shipped-feature index"
+        ))
+    for feature_id in expected_feature_ids:
+        feature = feature_by_id.get(feature_id)
+        if feature is None:
+            findings.append(Finding(
+                TEST_CASE_REGISTRY_PATH, 0,
+                "coverage expects feature %r, but it is absent from the registry" % feature_id,
+            ))
+        elif mode == "complete" and feature.get("status") != "current":
+            findings.append(Finding(
+                TEST_CASE_REGISTRY_PATH, 0,
+                "complete coverage feature %r must be current, not %r"
+                % (feature_id, feature.get("status")),
+            ))
+    if mode == "complete":
+        expected_feature_id_set = set(expected_feature_ids)
+        for feature_id, feature in feature_by_id.items():
+            if feature.get("status") == "current" and feature_id not in expected_feature_id_set:
+                findings.append(Finding(
+                    TEST_CASE_REGISTRY_PATH, 0,
+                    "complete coverage omits current feature %r from the explicit shipped-feature index"
+                    % feature_id,
+                ))
+    return findings
+
+
+# ---------------------------------------------------------------------------
 # docs/external-link-registry.md parsing
 # ---------------------------------------------------------------------------
 
@@ -1883,6 +2191,7 @@ def run_checks(root, check_examples=False):
     entries, inv_errors = parse_inventory(root)
     findings.extend(Finding(INVENTORY_PATH, 0, e) for e in inv_errors)
     findings.extend(check_inventory_coverage(root, markdown_files, entries))
+    findings.extend(check_test_case_registry(root))
 
     rules, reg_errors = parse_registry(root)
     findings.extend(Finding(REGISTRY_PATH, 0, e) for e in reg_errors)
