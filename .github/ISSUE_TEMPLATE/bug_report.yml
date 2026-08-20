@@ -8,6 +8,8 @@ body:
     attributes:
       value: |
         Preserve the failing evidence and provide enough configuration detail to reproduce the same build.
+        Propose a post-fix tester-facing regression case in addition to the deterministic reproduction.
+        The canonical indexed catalog is tracked by https://github.com/laqieer/fireemblem8-expansion/issues/54.
         Do not attach ROMs, saves, savestates, patches, or copyrighted game assets.
   - type: input
     id: commit
@@ -68,6 +70,31 @@ body:
       description: State what happened instead, including exact errors or incorrect game state.
     validations:
       required: true
+  - type: textarea
+    id: regression_case
+    attributes:
+      label: Proposed tester-facing regression case
+      description: >
+        Define a stable case ID linked to this bug issue. Include the supported source configuration/profile or
+        optional artifact; prerequisites and clean starting state; exact actions/inputs; observable post-fix
+        result; the pre-fix behavior as the negative control; dependencies/conflicts/interactions and save
+        expectations; deterministic host/ROM automation mapping or a precise manual-only visual/audio/UX reason;
+        reset/cleanup; limitations and unsupported configurations. This complements rather than replaces the
+        reproduction above. The canonical catalog is tracked by issue #54.
+      placeholder: |
+        Case ID: TC-AREA-001
+        Linked issue: this issue
+        Configuration/profile or artifact:
+        Prerequisites and clean starting state:
+        Actions/inputs:
+        Observable post-fix result:
+        Pre-fix negative control:
+        Dependencies/conflicts/interactions and save expectations:
+        Automation mapping or precise manual-only reason:
+        Reset/cleanup:
+        Limitations/unsupported configurations:
+    validations:
+      required: true
   - type: upload
     id: screenshots
     attributes:
@@ -91,6 +118,8 @@ body:
         - label: I reproduced this from a clean checkout or explained why that was impossible.
           required: true
         - label: I preserved the failing evidence instead of refreshing or weakening an oracle.
+          required: true
+        - label: I proposed a stable post-fix regression case without replacing the deterministic reproduction.
           required: true
         - label: I did not attach ROMs, saves, savestates, patches, or copyrighted game assets.
           required: true
