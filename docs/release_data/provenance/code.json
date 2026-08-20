@@ -25592,8 +25592,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Wave 0/issue #9 seed: repository-authored build tooling/config/source surface (or, for asm/, decompiled disassembly derived from the original ROM). No human legal/provenance review has been recorded yet; this manifest records that honestly rather than asserting a license or clearance.",
-    "oid": "4bcd30e3d073581c151db448aa0ca38d806b4b04",
-    "sha256": "9fcd0b918bcee348a8155efb3e5bc50de4087af8d057bbcd40433961b187aba8"
+    "oid": "22880591305c2550db2157359585485e621ff413",
+    "sha256": "dcb6aab7685b9f7b190a0b04445f201337c6c7954a7c91143ed0698b4bad033c"
   },
   {
     "path": "tools/gba-playtest/tests/test_region_pixel_schema.py",
