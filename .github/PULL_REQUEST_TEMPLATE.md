@@ -1,7 +1,21 @@
 ## Frozen scope
 
 - Issue: <!-- exact https://github.com/laqieer/fireemblem8-expansion/issues/N -->
+- Closure: <!-- Closes #N; exactly one independent issue -->
 - [ ] Scope is itemized and non-goals are explicit.
+
+## PR boundary and stack
+
+- [ ] This PR implements and closes exactly one independent issue.
+- Immediate base branch: <!-- master, or the genuine parent branch -->
+- Stack position: <!-- root, or child N of M -->
+- Depends on: <!-- None, or issue and PR links using Depends on #... -->
+- Known dependents: <!-- None, or issue and PR links -->
+- Umbrella issue/discussion: <!-- None, or tracking link; never an umbrella implementation PR -->
+- [ ] Implementation, tests, documentation, generated outputs, migrations,
+      and provenance for this issue remain together.
+- [ ] Any separately deliverable contracts were created as explicit dependent
+      sub-issues before being split into separate PRs.
 
 ## Validation commands
 
@@ -17,6 +31,25 @@ make expansion-modern-linker-check MODERN_CONFIG=release MODERN_ABI=aapcs
 
 - [ ] All commands above (or the subset relevant to this change) pass.
 - Runtime/playtest evidence (scenario, environment, command, result): <!-- required only when behavior changes -->
+
+## Review-size preflight
+
+Record the immediate-base comparison before requesting review:
+
+```
+git diff --name-only <base>...HEAD
+git diff --numstat <base>...HEAD
+git diff --shortstat <base>...HEAD
+```
+
+- Changed files:
+- Additions:
+- Deletions:
+- Total changed lines:
+- [ ] The PR remains below GitHub Copilot review's 20,000-line hard ceiling;
+      or this is one genuinely indivisible issue whose reason and alternative
+      automated/per-area review evidence are recorded below.
+- Indivisible-change exception and alternative evidence: <!-- None for normal PRs -->
 
 ## Compatibility impact
 
