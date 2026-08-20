@@ -67,7 +67,7 @@ extern u8 gMenuSoundroom_2[];
 u16 * CONST_DATA gSoundroom_0 = (u16 *)gGenericBuffer;
 void * CONST_DATA gSoundroom_1 = gGenericBuffer + 0x800;
 struct SoundRoomVolumeGraphPoint * CONST_DATA gSoundroom_2 = (void *)(gGenericBuffer + 0x1000);
-s8 * CONST_DATA gSoundRoomShuffleBuffer = gGenericBuffer + 0x1200;
+u16 * CONST_DATA gSoundRoomShuffleBuffer = (void *)(gGenericBuffer + 0x1200);
 
 //! FE8U = 0x080AEC7C
 bool IsSoundRoomCompleted(struct SoundRoomProc * proc)
@@ -89,47 +89,53 @@ bool SoundRoom_RetFalse(void)
 //! FE8U = 0x080AEC94
 int CountTotalSoundRoomSongs(void)
 {
-    int i = 0;
+    if (!IsSoundRoomCatalogValid())
+        return 0;
 
-    do
+    return gSoundRoomTableCount;
+}
+
+bool IsSoundRoomCatalogValid(void)
+{
+    u32 i;
+
+    if (gSoundRoomTableCount > SOUND_ROOM_CATALOG_CAPACITY)
+        return FALSE;
+
+    for (i = 0; i < gSoundRoomTableCount; i++)
     {
-        if (gSoundRoomTable[i].bgmId < 0)
-        {
-            break;
-        }
+        if (!IsSoundRoomSongIdValid(gSoundRoomTable[i].bgmId))
+            return FALSE;
+    }
 
-        i++;
-    } while (1);
-
-    return i;
+    return TRUE;
 }
 
 //! FE8U = 0x080AECB4
 int CountSecretSoundRoomSongs(void)
 {
-    int i = 0;
+    u32 i;
     int count = 0;
 
-    do
+    if (!IsSoundRoomCatalogValid())
+        return 0;
+
+    for (i = 0; i < gSoundRoomTableCount; i++)
     {
-        if (gSoundRoomTable[i].bgmId < 0)
-        {
-            return count;
-        }
-
         if (gSoundRoomTable[i].displayCondFunc != NULL)
-        {
             count++;
-        }
+    }
 
-        i++;
-    } while (1);
+    return count;
 }
 
 //! FE8U = 0x080AECEC
 bool IsSoundRoomSongPlayable(struct SoundRoomProc * proc, int flag)
 {
-    if ((*(proc->flags + (flag >> 5)) >> (flag & 0x1f)) & 1)
+    if (flag < 0 || flag >= SOUND_ROOM_CATALOG_CAPACITY)
+        return FALSE;
+
+    if ((proc->playableFlags[flag >> 5] >> (flag & 0x1f)) & 1)
     {
         return TRUE;
     }
@@ -138,22 +144,22 @@ bool IsSoundRoomSongPlayable(struct SoundRoomProc * proc, int flag)
 }
 
 //! FE8U = 0x080AED10
-int CountDisplayedSoundRoomSongs(struct SoundRoomProc * proc)
+int CountDisplayedSoundRoomSongs(
+    struct SoundRoomProc * proc,
+    const u32 * visibleFlags)
 {
     int i = 0;
 
     int result = 0;
 
-    do
-    {
-        if (gSoundRoomTable[i].bgmId < 0)
-        {
-            return result;
-        }
+    if (!IsSoundRoomCatalogValid())
+        return 0;
 
+    for (i = 0; i < (int)gSoundRoomTableCount; i++)
+    {
         if (gSoundRoomTable[i].displayCondFunc != NULL)
         {
-            if ((*(proc->flags + (i >> 5)) >> (i & 0x1f)) & 1)
+            if ((visibleFlags[i >> 5] >> (i & 0x1f)) & 1)
             {
                 result = i + 1;
             }
@@ -162,63 +168,65 @@ int CountDisplayedSoundRoomSongs(struct SoundRoomProc * proc)
         {
             result = i + 1;
         }
+    }
 
-        i++;
-
-    } while (1);
+    return result;
 }
 
 //! FE8U = 0x080AED64
 void InitSoundRoomSongData(struct SoundRoomProc * proc)
 {
     struct SoundRoomSaveData soundRoomData;
+    u32 visibleFlags[SOUND_ROOM_CATALOG_FLAG_WORDS];
 
     proc->totalSongs = CountTotalSoundRoomSongs();
-    CpuFill16(0, proc->flags, 0x10);
+    CpuFill16(0, visibleFlags, sizeof(visibleFlags));
+    CpuFill16(0, proc->playableFlags, sizeof(proc->playableFlags));
 
     proc->playableSongs = 0;
 
     if (LoadAndVerifySoundRoomData(&soundRoomData))
     {
         int i;
-        for (i = 0; gSoundRoomTable[i].bgmId > -1; i++)
+        int nonSecretSongs;
+        for (i = 0; i < proc->totalSongs; i++)
         {
-            if (gSoundRoomTable[i].displayCondFunc != NULL)
+            if (IsSoundRoomSongUnlocked(&soundRoomData, gSoundRoomTable[i].bgmId))
             {
-                continue;
-            }
+                proc->playableFlags[i >> 5] |= 1 << (i & 0x1f);
+                visibleFlags[i >> 5] |= 1 << (i & 0x1f);
 
-            if ((soundRoomData.flags[gSoundRoomTable[i].bgmId >> 5] >> (gSoundRoomTable[i].bgmId & 0x1f)) & 1)
-            {
-                *(proc->flags + (i >> 5)) |= 1 << (i & 0x1f);
-                proc->playableSongs++;
+                if (gSoundRoomTable[i].displayCondFunc == NULL)
+                    proc->playableSongs++;
             }
         }
 
-        proc->completionPercent = (proc->playableSongs * 100) / (proc->totalSongs - CountSecretSoundRoomSongs());
+        nonSecretSongs = proc->totalSongs - CountSecretSoundRoomSongs();
+        if (nonSecretSongs > 0)
+            proc->completionPercent = (proc->playableSongs * 100) / nonSecretSongs;
+        else
+            proc->completionPercent = 0;
 
-        for (i = 0; gSoundRoomTable[i].bgmId > -1; i++)
+        for (i = 0; i < proc->totalSongs; i++)
         {
             if (gSoundRoomTable[i].displayCondFunc == NULL)
             {
                 continue;
             }
 
-            if (!((soundRoomData.flags[gSoundRoomTable[i].bgmId >> 5] >> (gSoundRoomTable[i].bgmId & 0x1f)) & 1))
+            if (!IsSoundRoomSongUnlocked(&soundRoomData, gSoundRoomTable[i].bgmId)
+                && !gSoundRoomTable[i].displayCondFunc(proc))
             {
-                if (!gSoundRoomTable[i].displayCondFunc(proc))
-                {
-                    continue;
-                }
+                continue;
             }
 
-            *(proc->flags + (i >> 5)) |= 1 << (i & 0x1f);
-            proc->playableSongs++;
+            proc->playableFlags[i >> 5] |= 1 << (i & 0x1f);
+            visibleFlags[i >> 5] |= 1 << (i & 0x1f);
             proc->unk_2e = 1;
         }
     }
 
-    proc->totalSongs = CountDisplayedSoundRoomSongs(proc);
+    proc->totalSongs = CountDisplayedSoundRoomSongs(proc, visibleFlags);
 
     return;
 }
@@ -269,7 +277,7 @@ void PlayNextShuffledSong(struct SoundRoomProc * proc)
 
     proc->shuffleIndex++;
 
-    if ((gSoundRoomShuffleBuffer[proc->shuffleIndex] == -1) || (proc->shuffleIndex == 0x80))
+    if (gSoundRoomShuffleBuffer[proc->shuffleIndex] == SOUND_ROOM_SHUFFLE_END)
     {
         proc->shuffleIndex = 0;
     }
@@ -286,28 +294,34 @@ void InitSoundRoomShuffleBuffer(struct SoundRoomProc * proc)
     int i;
     int numAvailableSongs;
 
-    for (i = 0; i < 0x80; i++)
+    for (i = 0; i < SOUND_ROOM_CATALOG_CAPACITY; i++)
     {
-        gSoundRoomShuffleBuffer[i] = -1;
+        gSoundRoomShuffleBuffer[i] = SOUND_ROOM_SHUFFLE_END;
     }
 
-    seed1 = GetGameClock() & 0x7f;
+    seed1 = GetGameClock() % SOUND_ROOM_CATALOG_CAPACITY;
     it = seed1;
     i = 0;
 
     do
     {
         // TODO: Permuter; addition does not seem to match here
-        if ((*(proc->flags - -(it >> 5)) >> (it & 0x1f)) & 1)
+        if ((proc->playableFlags[it >> 5] >> (it & 0x1f)) & 1)
         {
             gSoundRoomShuffleBuffer[i] = it;
             i++;
         }
 
-        it = ((it + 1) % 0x80);
+        it = ((it + 1) % SOUND_ROOM_CATALOG_CAPACITY);
     } while (it != seed1);
 
     numAvailableSongs = i;
+
+    if (numAvailableSongs == 0)
+    {
+        proc->isSongPlaying = 0;
+        return;
+    }
 
     seed2 = GetGameClock() + 0x7b;
     for (i = 0; i < 0x100; i++)
@@ -331,18 +345,20 @@ void InitSoundRoomShuffleBuffer(struct SoundRoomProc * proc)
 
     proc->shuffleIndex = 0;
 
-    if ((*(proc->flags + (proc->curIndex >> 5)) >> (proc->curIndex & 0x1f)) & 1)
+    if ((proc->playableFlags[proc->curIndex >> 5] >> (proc->curIndex & 0x1f)) & 1)
     {
-        for (; gSoundRoomShuffleBuffer[proc->shuffleIndex] != proc->curIndex; proc->shuffleIndex++)
+        for (i = 0; i < numAvailableSongs; i++)
         {
-            if (proc->shuffleIndex == 0x80)
-            {
-                proc->shuffleIndex = 0;
-                goto _080AF0C4;
-            }
+            if (gSoundRoomShuffleBuffer[proc->shuffleIndex] == proc->curIndex)
+                break;
+
+            proc->shuffleIndex++;
         }
+
+        if (i == numAvailableSongs)
+            proc->shuffleIndex = 0;
     }
-_080AF0C4:
+
     proc->isSongPlaying = 1;
     PlayNextShuffledSong(proc);
 
@@ -352,12 +368,23 @@ _080AF0C4:
 //! FE8U = 0x080AF0E0
 bool SoundRoom_StartNextSong_Positive(struct SoundRoomProc * proc)
 {
-    u8 idx;
+    int idx;
+    int step;
 
-    for (idx = (proc->currentSongIdx + 1) & 0x7f;; idx = (idx + 1), idx &= 0x7f)
+    if (proc->totalSongs == 0)
+        return FALSE;
+
+    idx = proc->currentSongIdx + 1;
+    if (idx >= proc->totalSongs)
+        idx = 0;
+
+    for (step = 0; step < proc->totalSongs; step++)
     {
-        if (!(((*(proc->flags + (idx >> 5))) >> (idx & 0x1f)) & 1))
+        if (!IsSoundRoomSongPlayable(proc, idx))
         {
+            idx++;
+            if (idx >= proc->totalSongs)
+                idx = 0;
             continue;
         }
 
@@ -369,17 +396,30 @@ bool SoundRoom_StartNextSong_Positive(struct SoundRoomProc * proc)
 
         return FALSE;
     }
+
+    return FALSE;
 }
 
 //! FE8U = 0x080AF140
 bool SoundRoom_StartNextSong_Negative(struct SoundRoomProc * proc)
 {
-    u8 idx;
+    int idx;
+    int step;
 
-    for (idx = (proc->currentSongIdx - 1) & 0x7f;; idx = (idx - 1), idx &= 0x7f)
+    if (proc->totalSongs == 0)
+        return FALSE;
+
+    idx = proc->currentSongIdx - 1;
+    if (idx < 0)
+        idx = proc->totalSongs - 1;
+
+    for (step = 0; step < proc->totalSongs; step++)
     {
-        if (!(((*(proc->flags + (idx >> 5))) >> (idx & 0x1f)) & 1))
+        if (!IsSoundRoomSongPlayable(proc, idx))
         {
+            idx--;
+            if (idx < 0)
+                idx = proc->totalSongs - 1;
             continue;
         }
 
@@ -391,6 +431,8 @@ bool SoundRoom_StartNextSong_Negative(struct SoundRoomProc * proc)
 
         return FALSE;
     }
+
+    return FALSE;
 }
 
 //! FE8U = 0x080AF1A0
@@ -710,6 +752,9 @@ void SoundRoomUi_Init(struct SoundRoomProc * proc)
 //! FE8U = 0x080AF7F4
 bool StartSoundRoomSong(struct SoundRoomProc * proc, int index, int flagsMaybe)
 {
+    if (index < 0 || index >= proc->totalSongs || !IsSoundRoomSongPlayable(proc, index))
+        return FALSE;
+
     if (MusicProc4Exists())
     {
         return FALSE;

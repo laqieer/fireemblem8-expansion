@@ -72,6 +72,13 @@
  * ExpansionUserPrefs_ValidateRaw's version handling below. */
 #define EXPANSION_USER_PREFS_VERSION_CURRENT 1u
 
+/* The selections share the existing four-byte reserved tail without
+ * changing the record size or its checksum domain. Selection schema byte 0
+ * preserves pre-selection records as a safe default. */
+#define EXPANSION_USER_PREFS_DEFAULT_POLICY_ID 0
+#define EXPANSION_USER_PREFS_UTILITY_THREAT_RANGE 0x01
+#define EXPANSION_USER_PREFS_UTILITY_MASK 0x01
+
 /* flags bit 0: the player explicitly chose this locale (via a future
  * settings UI); unset means this record was auto-populated with the
  * build's configured default (e.g. by a brand-new save or a migrated
@@ -101,7 +108,8 @@ struct ExpansionUserPrefs {
     /* 0x01 */ u8 version;
     /* 0x02 */ u8 localeId;    /* ExpansionLocaleId (include/expansion_locale.h) */
     /* 0x03 */ u8 flags;       /* EXPANSION_USER_PREFS_FLAG_* bits */
-    /* 0x04 */ u8 reserved[4]; /* reserved for near-future fields; always 0 */
+    /* 0x04 */ u8 reserved[4]; /* [0] policy, [1] utility bits,
+                                * [2] selection schema, [3] reserved */
     /* 0x08 */ u16 checksum;   /* Checksum16() over bytes [0x00, 0x08) */
 } ALIGN(4); /* size = 0x0C (agbcc rounds the unpadded 0x0A up to a 4-byte multiple) */
 
@@ -182,6 +190,12 @@ enum ExpansionUserPrefsState {
  * FALSE for an auto-populated default (new save / migrated older save)
  * and TRUE only when the player actually chose `localeId` themselves. */
 void ExpansionUserPrefs_Build(struct ExpansionUserPrefs *prefs, ExpansionLocaleId localeId, bool8 explicitSelection);
+void ExpansionUserPrefs_BuildWithSelections(
+    struct ExpansionUserPrefs *prefs,
+    ExpansionLocaleId localeId,
+    bool8 explicitSelection,
+    u8 policyId,
+    u8 utilityFlags);
 
 /* Recomputes and returns the checksum for the given record (mirrors
  * Checksum16(prefs, EXPANSION_USER_PREFS_SIZE_FOR_CHECKSUM)). */
@@ -225,11 +239,27 @@ enum ExpansionUserPrefsState ExpansionUserPrefs_Normalize(
  * bounded WriteAndVerifySramFast() call covering
  * only this record's own EXPANSION_USER_PREFS_META_OFFSET..+sizeof(...)
  * window inside gSram->expansionSaveMeta.reserved -- never WipeSram(),
- * never any other SRAM byte. Returns FALSE (writing nothing) if
- * `localeId` is not supported+enabled, SRAM is not confirmed working, or
- * the outer save is not CURRENT; otherwise returns whether the write
- * verified successfully. */
+ * never any other SRAM byte. A locale-only write preserves a schema-0
+ * record's zero-filled selection padding and leaves it schema 0 until a
+ * full UI-preference store supplies current selections. Returns FALSE
+ * (writing nothing) if `localeId` is not supported+enabled, SRAM is not
+ * confirmed working, or the outer save is not CURRENT; otherwise returns
+ * whether the write verified successfully. */
 bool8 ExpansionUserPrefs_StoreRaw(ExpansionLocaleId localeId, bool8 explicitSelection);
+bool8 ExpansionUserPrefs_StoreRawWithSelections(
+    ExpansionLocaleId localeId,
+    bool8 explicitSelection,
+    u8 policyId,
+    u8 utilityFlags);
+
+/* Reads the bounded selections without changing locale state, or returns
+ * the safe defaults for an unset/legacy/corrupt record. */
+void ExpansionUserPrefs_GetSelections(u8 *outPolicyId, u8 *outUtilityFlags);
+
+/* Persists selections while preserving the currently stored locale and
+ * explicit-locale flag. This uses the same checksum/write window as the
+ * locale store and rejects values outside the bounded registry contract. */
+bool8 ExpansionUserPrefs_StoreSelections(u8 policyId, u8 utilityFlags);
 
 /* Full store entry point (src/expansion_save_prefs.c, modern-ROM-linked
  * only -- see this header's file comment): rejects an unsupported/

@@ -1,4 +1,5 @@
 #include "global.h"
+#include "expansion_bgm.h"
 #include "functions.h"
 #include "variables.h"
 #include "bmunit.h"
@@ -184,7 +185,9 @@ void PrepScreenMenu_OnItems(struct ProcAtMenu* proc) {
 
 void PrepScreenMenu_OnSupport(struct ProcAtMenu* proc) {
     proc->state = 4;
-    ChangeBgm(SONG_BONDS, 0x100, 0x100, 0x20, 0);
+    ExpansionBgm_Change(
+        EXPANSION_BGM_CONTEXT_PREPARATION, SONG_BONDS,
+        0x100, 0x100, 0x20, 0);
     Proc_Goto(proc, 0xA);
 }
 

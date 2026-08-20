@@ -1,4 +1,5 @@
 #include "global.h"
+#include "expansion_bgm.h"
 
 #include "hardware.h"
 #include "proc.h"
@@ -921,7 +922,10 @@ void ChapterIntro_LoopFadeToMap(struct ChapterIntroFxProc * proc)
         {
             if (GetROMChapterStruct(gPlaySt.chapterIndex)->mapBgmIds[MAP_BGM_PROLOGUE] != 0xFFFF)
             {
-                StartBgm(GetROMChapterStruct(gPlaySt.chapterIndex)->mapBgmIds[MAP_BGM_PROLOGUE], NULL);
+                ExpansionBgm_Start(
+                    EXPANSION_BGM_CONTEXT_EVENT,
+                    GetROMChapterStruct(gPlaySt.chapterIndex)->mapBgmIds[MAP_BGM_PROLOGUE],
+                    3, NULL);
             }
 
             proc->timer = 0;
@@ -941,7 +945,10 @@ void ChapterIntro_LoopFadeToMap(struct ChapterIntroFxProc * proc)
 
         if (proc->timer == 24 && GetROMChapterStruct(gPlaySt.chapterIndex)->mapBgmIds[MAP_BGM_PROLOGUE] != 0xFFFF)
         {
-            StartBgm(GetROMChapterStruct(gPlaySt.chapterIndex)->mapBgmIds[MAP_BGM_PROLOGUE], NULL);
+            ExpansionBgm_Start(
+                EXPANSION_BGM_CONTEXT_EVENT,
+                GetROMChapterStruct(gPlaySt.chapterIndex)->mapBgmIds[MAP_BGM_PROLOGUE],
+                3, NULL);
         }
 
         if (proc->timer < 0)
@@ -1048,7 +1055,10 @@ void ChapterIntro_BeginFastFadeToMap(struct ChapterIntroFxProc * proc)
 
     if (GetROMChapterStruct(gPlaySt.chapterIndex)->mapBgmIds[MAP_BGM_PROLOGUE] != 0xFFFF)
     {
-        StartBgm(GetROMChapterStruct(gPlaySt.chapterIndex)->mapBgmIds[MAP_BGM_PROLOGUE], NULL);
+        ExpansionBgm_Start(
+            EXPANSION_BGM_CONTEXT_EVENT,
+            GetROMChapterStruct(gPlaySt.chapterIndex)->mapBgmIds[MAP_BGM_PROLOGUE],
+            3, NULL);
     }
 
     return;

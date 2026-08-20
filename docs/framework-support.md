@@ -65,6 +65,7 @@ name.
 | `make generated-data-validate` / `-generate` / `-check` / `-test` | Structured content authoring (see [`docs/generated_data_tutorial.md`](generated_data_tutorial.md)) | No | No |
 | `make localization-validate` / `make localization-generate` / `make localization-check` / `make localization-test` | Expansion locale registry/catalog authoring and host tests (see [`localization.md`](localization.md)) | No | No |
 | `make expansion-modern-starter-runtime-check MODERN_CONFIG=... MODERN_ABI=aapcs` | Issue #6 enabled/disabled mechanics + Threat Range runtime matrix | Yes | Yes |
+| `make expansion-modern-aoe-check MODERN_CONFIG=... MODERN_ABI=aapcs` | Issue #42 typed AoE enabled reference + default-disabled semantic runtime matrix | Yes | Yes |
 | `make expansion-modern-localization-budget-check MODERN_CONFIG=... MODERN_ABI=aapcs` | Issue #18 catalog/resolver/UI source+linker budget and real region headroom | No new ROM beyond its linked prerequisite | No |
 | `python3 -m scripts.upstream_port {scan,drift,report,verify,...}` | Upstream-drift tracking (see [`docs/upstream-porting.md`](upstream-porting.md)) | No for `scan`/`drift`/`report`; `verify` builds the full gate set | No for `scan`/`drift`/`report`; depends on the gate set for `verify` |
 
@@ -205,6 +206,11 @@ surface remains bounded by its live reference and evidence report.
   and host/debug/release/shifted/save runtime matrices are supported. Reserved
   locale slots have no catalog content and pseudo is not a translation. See
   [`localization.md`](localization.md) and [`save_format.md`](save_format.md).
+- **#42 typed AoE:** fixed-capacity shape/filter targeting, deterministic
+  effect execution, one shared item/action/AI route registry, explicit
+  EXP/animation/event/AI/save contracts, and a default-off project-neutral
+  radius-heal reference are supported in modern AAPCS builds. See
+  [`aoe.md`](aoe.md).
 
 The archival agbcc lane remains explicit and default-only for these expansion
 features. Modern output is judged by link/boot/runtime behavior, never vanilla

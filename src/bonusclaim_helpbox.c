@@ -1,4 +1,5 @@
 #include "global.h"
+#include "expansion_bgm.h"
 #include <string.h>
 #include "hardware.h"
 #include "bmlib.h"
@@ -48,14 +49,16 @@ void ClearPrimaryHBlankHandler(void)
 //! FE8U = 0x080AEB28
 void FadeOutBgm(int unk)
 {
-    ChangeBgm(SONG_NONE, 0x100, 0, unk, NULL);
+    ExpansionBgm_ChangeExplicit(
+        EXPANSION_BGM_CONTEXT_MENU, SONG_NONE, 0x100, 0, unk, NULL);
     return;
 }
 
 //! FE8U = 0x080AEB44
 void StartBgm_2(int songId)
 {
-    ChangeBgm(songId, 0x100, 0x100, 0x20, NULL);
+    ExpansionBgm_ChangeExplicit(
+        EXPANSION_BGM_CONTEXT_MENU, songId, 0x100, 0x100, 0x20, NULL);
     return;
 }
 

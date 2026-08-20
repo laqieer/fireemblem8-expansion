@@ -279,6 +279,21 @@
 #endif
 
 /*
+ * Optional issue #42 reference implementation. The typed AoE core API and
+ * item/action/AI registry seam are modern framework infrastructure; this
+ * flag controls only the bundled radius-heal reference effect and its
+ * deterministic runtime probe.
+ */
+#ifndef FE8_EXPANSION_AOE_REFERENCE
+#define FE8_EXPANSION_AOE_REFERENCE 0
+#endif
+
+#if (FE8_EXPANSION_AOE_REFERENCE != 0) \
+    && (FE8_EXPANSION_AOE_REFERENCE != 1)
+#error "FE8_EXPANSION_AOE_REFERENCE must be 0 or 1"
+#endif
+
+/*
  * Opt-in CJK runtime overflow guard. Generated locale catalogs are wrapped
  * deterministically at build time regardless of this flag; enabling it adds
  * a second, allocation-aware guard for dynamic substitutions. It defaults to
@@ -291,6 +306,37 @@
 #if (FE8_EXPANSION_LOCALIZED_TEXT_AUTO_WRAP != 0) \
     && (FE8_EXPANSION_LOCALIZED_TEXT_AUTO_WRAP != 1)
 #error "FE8_EXPANSION_LOCALIZED_TEXT_AUTO_WRAP must be 0 or 1"
+#endif
+
+/*
+ * Optional casual defeat policy. When enabled, only ordinary combat/arena
+ * player defeats are marked for chapter-boundary restoration. Scripted deaths
+ * and explicit permanent removals continue to use the legacy UnitKill path.
+ * The marker is part of the existing serialized unit state; no save layout
+ * or compatibility epoch change is required.
+ */
+#ifndef FE8_EXPANSION_CASUAL_MODE
+#define FE8_EXPANSION_CASUAL_MODE 0
+#endif
+
+#if (FE8_EXPANSION_CASUAL_MODE != 0) \
+    && (FE8_EXPANSION_CASUAL_MODE != 1)
+#error "FE8_EXPANSION_CASUAL_MODE must be 0 or 1"
+#endif
+
+/*
+ * Permanent BGM continuation policy (issues #37/#39). The modern build
+ * supplies the numeric value resolved from config.mk; the legacy build uses
+ * preserve, which is the historical behavior. This is configuration
+ * identity only and never a save-format compatibility key.
+ */
+#ifndef FE8_EXPANSION_BGM_CONTINUATION_POLICY
+#define FE8_EXPANSION_BGM_CONTINUATION_POLICY 0
+#endif
+
+#if (FE8_EXPANSION_BGM_CONTINUATION_POLICY < 0) \
+    || (FE8_EXPANSION_BGM_CONTINUATION_POLICY > 2)
+#error "FE8_EXPANSION_BGM_CONTINUATION_POLICY must be preserve (0), resume (1), or restart (2)"
 #endif
 
 /* Defence in depth: the same relationships expansion_config.py rejects at

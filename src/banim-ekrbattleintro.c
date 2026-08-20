@@ -1,4 +1,7 @@
 #include "global.h"
+#ifdef MODERN
+#include "banim_presentation.h"
+#endif
 #include "anime.h"
 #include "ekrbattle.h"
 #include "efxbattle.h"
@@ -1267,6 +1270,19 @@ bool PrepareBattleGraphicsMaybe(void)
         gEkrGaugeCrt[POS_R] = -1;
     }
 
+#ifdef MODERN
+    BanimPresentationPolicy_ApplyDamageNumberStyle(
+        BanimPresentationPolicy_GetCurrent(),
+        &gEkrGaugeHit[POS_L],
+        &gEkrGaugeDmg[POS_L],
+        &gEkrGaugeCrt[POS_L]);
+    BanimPresentationPolicy_ApplyDamageNumberStyle(
+        BanimPresentationPolicy_GetCurrent(),
+        &gEkrGaugeHit[POS_R],
+        &gEkrGaugeDmg[POS_R],
+        &gEkrGaugeCrt[POS_R]);
+#endif
+
     if (valid_l)
         gBanimExpPrevious[POS_L] = (s8)bu1->expPrevious; // needed explicit casts
 
@@ -1324,7 +1340,12 @@ bool PrepareBattleGraphicsMaybe(void)
 
     gBanimBG = 0;
 
+#ifdef MODERN
+    if (BanimPresentationPolicy_UsesBackgrounds(BanimPresentationPolicy_GetCurrent())
+        && GetBattleAnimPreconfType() == PLAY_ANIMCONF_ON_UNIQUE_BG)
+#else
     if (GetBattleAnimPreconfType() == PLAY_ANIMCONF_ON_UNIQUE_BG)
+#endif
     {
         if (gBanimValid[POS_L] != false)
             gBanimBG =

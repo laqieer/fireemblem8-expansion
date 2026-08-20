@@ -1,5 +1,9 @@
 #include "global.h"
 
+#if FE8_EXPANSION_MODERN_BUILD
+#include "expansion_aoe.h"
+#endif
+
 #include "constants/classes.h"
 #include "constants/items.h"
 
@@ -938,6 +942,26 @@ void ExecDanceRing(ProcPtr proc) {
 
 void ActionStaffDoorChestUseItem(ProcPtr proc) {
     int itemId = GetItemIndex(GetUnit(gActionData.subjectIndex)->items[gActionData.itemSlotIndex]);
+#if FE8_EXPANSION_MODERN_BUILD
+    struct Unit* actor = GetUnit(gActionData.subjectIndex);
+    struct ExpansionAoEItemContext aoeContext;
+    enum ExpansionAoEItemDispatchResult aoeResult;
+
+    ExpansionAoE_InitItemContext(
+        &aoeContext,
+        EXPANSION_AOE_ITEM_EXECUTE,
+        actor,
+        actor->items[gActionData.itemSlotIndex],
+        gActionData.itemSlotIndex);
+    aoeContext.targetUnitId = gActionData.targetIndex;
+    aoeContext.originX = gActionData.xOther;
+    aoeContext.originY = gActionData.yOther;
+    aoeContext.parent = proc;
+    aoeResult = ExpansionAoE_DispatchItem(&aoeContext);
+
+    if (aoeResult != EXPANSION_AOE_ITEM_NOT_HANDLED)
+        return;
+#endif
 
     gBattleActor.hasItemEffectTarget = 0;
 

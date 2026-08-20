@@ -1,4 +1,7 @@
 #include "global.h"
+#include "expansion_bgm.h"
+#include "banim_presentation.h"
+#include "expansion_ui_prefs.h"
 
 #include "fontgrp.h"
 #include "hardware.h"
@@ -1198,7 +1201,8 @@ bool MusicOptionChangeHandler(ProcPtr proc)
 
     if (gConfigUiState->source & CONFIG_UI_SOURCE_FROMPREP)
     {
-        StartBgm(SONG_COMBAT_PREPARATION, NULL);
+        ExpansionBgm_Start(
+            EXPANSION_BGM_CONTEXT_PREPARATION, SONG_COMBAT_PREPARATION, 3, NULL);
         return false;
     }
 
@@ -1414,18 +1418,30 @@ void SetGameOption(u8 index, u8 newValue)
         {
         case 0:
             gPlaySt.config.animationType = PLAY_ANIMCONF_ON;
+#ifdef MODERN
+            ExpansionUiPrefs_NotifyAnimationOptionChange(gPlaySt.config.animationType);
+#endif
             return;
 
         case 1:
             gPlaySt.config.animationType = PLAY_ANIMCONF_ON_UNIQUE_BG;
+#ifdef MODERN
+            ExpansionUiPrefs_NotifyAnimationOptionChange(gPlaySt.config.animationType);
+#endif
             return;
 
         case 2:
             gPlaySt.config.animationType = PLAY_ANIMCONF_OFF;
+#ifdef MODERN
+            ExpansionUiPrefs_NotifyAnimationOptionChange(gPlaySt.config.animationType);
+#endif
             return;
 
         case 3:
             gPlaySt.config.animationType = PLAY_ANIMCONF_SOLO_ANIM;
+#ifdef MODERN
+            ExpansionUiPrefs_NotifyAnimationOptionChange(gPlaySt.config.animationType);
+#endif
             return;
         }
 

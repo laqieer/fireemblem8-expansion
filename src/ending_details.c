@@ -1,4 +1,7 @@
 #include "global.h"
+#include "expansion_bgm.h"
+
+#include "expansion_portraits.h"
 
 #include "chapterdata.h"
 #include "bmsave.h"
@@ -828,7 +831,18 @@ void SoloEndingBattleDisp_Init(struct EndingBattleDisplayProc * proc)
     PutNumber(gSoloEndingBattleDispConf[0] + TILEMAP_INDEX(21, 1) + CountDigits(proc->winAmounts[0]), TEXT_COLOR_SYSTEM_BLUE, proc->winAmounts[0]);
     PutNumber(gSoloEndingBattleDispConf[0] + TILEMAP_INDEX(25, 1) + CountDigits(proc->lossAmounts[0]), TEXT_COLOR_SYSTEM_BLUE, proc->lossAmounts[0]);
 
-    StartFace2(0, gCharacterData[proc->pCharacterEnding->pidA - 1].portraitId, 416, 56, FACE_DISP_KIND(FACE_96x80) | FACE_DISP_HLAYER(4) | FACE_DISP_BLEND);
+    StartFace2(
+        0,
+        ExpansionPortrait_ResolveCharacter(
+            &gCharacterData[proc->pCharacterEnding->pidA - 1],
+            NULL,
+            EXPANSION_PORTRAIT_KIND_FULL,
+            0
+        ),
+        416,
+        56,
+        FACE_DISP_KIND(FACE_96x80) | FACE_DISP_HLAYER(4) | FACE_DISP_BLEND
+    );
 
     if (proc->units[0]->state & US_DEAD)
     {
@@ -948,8 +962,30 @@ void PairedEndingBattleDisp_Init(struct EndingBattleDisplayProc * proc)
 
     SetDefaultColorEffects();
 
-    StartFace2(0, gCharacterData[proc->pCharacterEnding->pidA - 1].portraitId, 304, 48, FACE_DISP_KIND(FACE_96x80_FLIPPED) | FACE_DISP_FLIPPED | FACE_DISP_HLAYER(4) | FACE_DISP_BLEND);
-    StartFace2(1, gCharacterData[proc->pCharacterEnding->pidB - 1].portraitId, 416, 48, FACE_DISP_KIND(FACE_96x80) | FACE_DISP_HLAYER(4) | FACE_DISP_BLEND);
+    StartFace2(
+        0,
+        ExpansionPortrait_ResolveCharacter(
+            &gCharacterData[proc->pCharacterEnding->pidA - 1],
+            NULL,
+            EXPANSION_PORTRAIT_KIND_FULL,
+            0
+        ),
+        304,
+        48,
+        FACE_DISP_KIND(FACE_96x80_FLIPPED) | FACE_DISP_FLIPPED | FACE_DISP_HLAYER(4) | FACE_DISP_BLEND
+    );
+    StartFace2(
+        1,
+        ExpansionPortrait_ResolveCharacter(
+            &gCharacterData[proc->pCharacterEnding->pidB - 1],
+            NULL,
+            EXPANSION_PORTRAIT_KIND_FULL,
+            0
+        ),
+        416,
+        48,
+        FACE_DISP_KIND(FACE_96x80) | FACE_DISP_HLAYER(4) | FACE_DISP_BLEND
+    );
 
     return;
 }
@@ -1863,7 +1899,7 @@ void TurnRecord_SetupGfx(void)
     BG_EnableSyncByMask(BG2_SYNC_BIT | BG3_SYNC_BIT);
 
     StartSaveBgFog(gEndingDetailBuf);
-    StartBgm(SONG_EPILOGUE, 0);
+    ExpansionBgm_Start(EXPANSION_BGM_CONTEXT_EVENT, SONG_EPILOGUE, 3, 0);
 
     return;
 }

@@ -91,6 +91,7 @@ class SaveFormatLayoutTests(unittest.TestCase):
         #include "bmdifficulty.h"
         #include "sram-layout.h"
         #include "expansion_save_prefs.h"
+        #include "soundroom.h"
 
         /* struct ExpansionSaveMeta itself: exactly the 0x5C-byte pad,
          * zero implicit padding, checksum domain fixed at 0x2E bytes. */
@@ -116,6 +117,7 @@ class SaveFormatLayoutTests(unittest.TestCase):
         char probe_sz_GameRankSaveData[sizeof(struct GameRankSaveData) == 0x18 ? 1 : -1];
         char probe_sz_GameRankSaveDataPacks[sizeof(struct GameRankSaveDataPacks) == 0x94 ? 1 : -1];
         char probe_sz_SoundRoomSaveData[sizeof(struct SoundRoomSaveData) == 0x24 ? 1 : -1];
+        char probe_sz_SoundRoomProc[sizeof(struct SoundRoomProc) <= sizeof(struct Proc) ? 1 : -1];
         char probe_sz_bmsave_unkstruct2[sizeof(struct bmsave_unkstruct2) == 0x14 ? 1 : -1];
         char probe_sz_BonusClaimEnt[sizeof(struct BonusClaimEnt) == 0x14 ? 1 : -1];
         char probe_sz_BonusClaimSaveData[sizeof(struct BonusClaimSaveData) == 0x144 ? 1 : -1];

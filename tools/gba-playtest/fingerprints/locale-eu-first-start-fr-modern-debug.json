@@ -6,52 +6,52 @@
       "name": "five-language-selector-shown",
       "probes": [
         {
-          "address": "0x02031a94",
+          "address": "gExpansionLanguageMenuProbe+0x00",
           "size": 1,
           "value": "0x01"
         },
         {
-          "address": "0x02031a96",
+          "address": "gExpansionLanguageMenuProbe+0x02",
           "size": 1,
           "value": "0x01"
         },
         {
-          "address": "0x02031a97",
+          "address": "gExpansionLanguageMenuProbe+0x03",
           "size": 1,
           "value": "0x00"
         },
         {
-          "address": "0x02031a98",
+          "address": "gExpansionLanguageMenuProbe+0x04",
           "size": 1,
           "value": "0x01"
         },
         {
-          "address": "0x02031a99",
+          "address": "gExpansionLanguageMenuProbe+0x05",
           "size": 1,
           "value": "0x00"
         },
         {
-          "address": "0x02031a9b",
+          "address": "gExpansionLanguageMenuProbe+0x07",
           "size": 1,
           "value": "0x00"
         },
         {
-          "address": "0x02031a9c",
+          "address": "gExpansionLanguageMenuProbe+0x08",
           "size": 1,
           "value": "0x05"
         },
         {
-          "address": "0x02031a9e",
+          "address": "gExpansionLanguageMenuProbe+0x0a",
           "size": 2,
           "value": "0x0000"
         },
         {
-          "address": "0x02031aa0",
+          "address": "gExpansionLanguageMenuProbe+0x0c",
           "size": 2,
           "value": "0x0001"
         },
         {
-          "address": "0x02031aa6",
+          "address": "gExpansionLanguageMenuProbe+0x12",
           "size": 1,
           "value": "0x01"
         }
@@ -63,32 +63,32 @@
       "name": "french-committed",
       "probes": [
         {
-          "address": "0x02031a94",
+          "address": "gExpansionLanguageMenuProbe+0x00",
           "size": 1,
           "value": "0x00"
         },
         {
-          "address": "0x02031a9a",
+          "address": "gExpansionLanguageMenuProbe+0x06",
           "size": 1,
           "value": "0x03"
         },
         {
-          "address": "0x02031a9b",
+          "address": "gExpansionLanguageMenuProbe+0x07",
           "size": 1,
           "value": "0x03"
         },
         {
-          "address": "0x02031a9c",
+          "address": "gExpansionLanguageMenuProbe+0x08",
           "size": 1,
           "value": "0x05"
         },
         {
-          "address": "0x02031a9e",
+          "address": "gExpansionLanguageMenuProbe+0x0a",
           "size": 2,
           "value": "0x0001"
         },
         {
-          "address": "0x02031aa6",
+          "address": "gExpansionLanguageMenuProbe+0x12",
           "size": 1,
           "value": "0x00"
         }

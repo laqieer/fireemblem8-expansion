@@ -1,4 +1,5 @@
 #include "global.h"
+#include "expansion_bgm.h"
 #include "proc.h"
 #include "rng.h"
 #include "hardware.h"
@@ -595,7 +596,8 @@ u8 Event12_StartBGM(struct EventEngineProc * proc)
     if (evArgument < 0)
         evArgument = gEventSlots[2];
 
-    StartBgmExt(evArgument, 3, NULL);
+    ExpansionBgm_StartExplicit(
+        EXPANSION_BGM_CONTEXT_EVENT, evArgument, 3, NULL);
     return EVC_ADVANCE_YIELD;
 }
 
@@ -612,7 +614,8 @@ u8 Event13_BgmFadeIn(struct EventEngineProc * proc)
         if (EVENT_IS_SKIPPING(proc))
             return EVC_ADVANCE_CONTINUE;
 
-        StartBgmFadeIn(evArgument, subcode, 0);
+        ExpansionBgm_FadeInExplicit(
+            EXPANSION_BGM_CONTEXT_EVENT, evArgument, subcode, 0);
         return EVC_ADVANCE_YIELD;
     }
     else
@@ -640,13 +643,13 @@ u8 Event14_BgmOverideRestore(struct EventEngineProc * proc)
             if (evArgument < 0)
                 evArgument = gEventSlots[2];
 
-            OverrideBgm(evArgument);
+            ExpansionBgm_Override(EXPANSION_BGM_CONTEXT_EVENT, evArgument);
 
             break;
 
         case 1:
             DeleteAll6CWaitMusicRelated();
-            _RestoreBgm(evArgument);
+            ExpansionBgm_Restore(EXPANSION_BGM_CONTEXT_EVENT, evArgument);
 
             break;
 

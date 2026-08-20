@@ -1,4 +1,5 @@
 #include "global.h"
+#include "expansion_bgm.h"
 
 #include "hardware.h"
 #include "bm.h"
@@ -1419,7 +1420,8 @@ void LAPhaseIntro_End(void)
 //! FE8U = 0x0804D3DC
 void LAPhaseIntro_StartBgm(void)
 {
-    StartBgm(SONG_COMBAT_PREPARATION, &gMPlayInfo_BGM2);
+    ExpansionBgm_Start(
+        EXPANSION_BGM_CONTEXT_MENU, SONG_COMBAT_PREPARATION, 3, &gMPlayInfo_BGM2);
     return;
 }
 

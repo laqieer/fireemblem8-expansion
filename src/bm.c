@@ -6,6 +6,9 @@
 #include "bmreliance.h"
 #include "event.h"
 #include "chapterdata.h"
+#include "expansion_bgm.h"
+
+#include "expansion_aoe_reference.h"
 #include "bmunit.h"
 #include "bmudisp.h"
 #include "playerphase.h"
@@ -442,6 +445,9 @@ void BmMain_StartPhase(ProcPtr proc)
 {
     switch (gPlaySt.faction) {
     case FACTION_BLUE:
+#if FE8_EXPANSION_AOE_REFERENCE
+        ExpansionAoEReference_RunProbe();
+#endif
         Proc_StartBlocking(gProcScr_PlayerPhase, proc);
         break;
 
@@ -1223,7 +1229,7 @@ int GetCurrentMapMusicIndex(void) {
 
 //! FE8U = 0x080160D0
 void StartMapSongBgm(void) {
-    StartBgm(GetCurrentMapMusicIndex(), NULL);
+    ExpansionBgm_Start(EXPANSION_BGM_CONTEXT_MAP_PHASE, GetCurrentMapMusicIndex(), 3, NULL);
     return;
 }
 

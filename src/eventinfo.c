@@ -1,4 +1,5 @@
 #include "global.h"
+#include "expansion_bgm.h"
 
 #include <string.h>
 
@@ -587,11 +588,12 @@ void DisplayDefeatTalkForPid(u8 pid) {
 
     if (ent) {
         if ((ent->route == 1) && (ent->flag == 0x65)) {
-            StartBgm(SONG_GAME_OVER, NULL);
+            ExpansionBgm_Start(EXPANSION_BGM_CONTEXT_GAME_OVER, SONG_GAME_OVER, 3, NULL);
             gPlaySt.config.disableBgm = 1;
         } else {
             if (UNIT_FACTION(GetUnitFromCharId(pid)) == FACTION_BLUE) {
-                StartBgm(SONG_IN_SORROWS_SHROUD, NULL);
+                ExpansionBgm_Start(
+                    EXPANSION_BGM_CONTEXT_EVENT, SONG_IN_SORROWS_SHROUD, 3, NULL);
             }
         }
         if (ent->msg != 0) {
@@ -694,7 +696,7 @@ u16 GetSupportTalkSong_(u8 unused, u8 pidA, u8 pidB, int rank) {
 //! FE8U = 0x080837B0
 void ForceGameOver(void) {
     SetFlag(EVFLAG_GAMEOVER);
-    StartBgm(SONG_GAME_OVER, NULL);
+    ExpansionBgm_Start(EXPANSION_BGM_CONTEXT_GAME_OVER, SONG_GAME_OVER, 3, NULL);
     gPlaySt.config.disableBgm = 1;
     CallGameOverEvent();
 

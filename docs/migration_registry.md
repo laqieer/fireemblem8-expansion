@@ -26,6 +26,15 @@ own docstrings for the exact enforcement).
 | *(none -- no `ExpansionSaveMeta` record at all, i.e. legacy/vanilla save)* | *(none)* | `1` | `1` | mechanical | `scripts/modernize/save_format_tool.py migrate SOURCE DEST` |
 | `1` | `1` | `2` | `2` | mechanical | `scripts/modernize/save_format_tool.py migrate SOURCE DEST` |
 
+Issue #36 does **not** add an outer save-format transition. The existing
+`SoundRoomSaveData.magic2` trailer word is a named field, not untracked
+padding, and its legacy value (`0`) remains fully interpretable because the
+checksum-covered eight-word flag region is unchanged. The host migrator
+therefore upgrades that auxiliary marker losslessly while producing a
+current image; no `ExpansionSaveMeta` field, `ExpansionUserPrefs` bytes, or
+casual-mode marker overlap is involved, and `EXPANSION_SAVE_COMPAT_EPOCH`
+remains `2`.
+
 `EXPANSION_SAVE_COMPAT_EPOCH` has been bumped once, from `1` to `2`
 (`config.mk`; issue #18 sprint 2 -- `struct ExpansionUserPrefs`,
 [`include/expansion_save_prefs.h`](../include/expansion_save_prefs.h), now

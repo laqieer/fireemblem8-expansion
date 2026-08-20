@@ -6,32 +6,32 @@
       "name": "single-locale-row-before-right",
       "probes": [
         {
-          "address": "0x02031588",
+          "address": "gExpansionLanguageMenuProbe+0x00",
           "size": 1,
           "value": "0x00"
         },
         {
-          "address": "0x02031589",
+          "address": "gExpansionLanguageMenuProbe+0x01",
           "size": 1,
           "value": "0x00"
         },
         {
-          "address": "0x0203158f",
+          "address": "gExpansionLanguageMenuProbe+0x07",
           "size": 1,
           "value": "0x00"
         },
         {
-          "address": "0x02031592",
+          "address": "gExpansionLanguageMenuProbe+0x0a",
           "size": 2,
           "value": "0x0000"
         },
         {
-          "address": "0x02031596",
+          "address": "gExpansionLanguageMenuProbe+0x0e",
           "size": 2,
           "value": "0x0000"
         },
         {
-          "address": "0x02031598",
+          "address": "gExpansionLanguageMenuProbe+0x10",
           "size": 2,
           "value": "0x0000"
         }
@@ -43,32 +43,32 @@
       "name": "single-locale-right-is-noop",
       "probes": [
         {
-          "address": "0x02031588",
+          "address": "gExpansionLanguageMenuProbe+0x00",
           "size": 1,
           "value": "0x00"
         },
         {
-          "address": "0x02031589",
+          "address": "gExpansionLanguageMenuProbe+0x01",
           "size": 1,
           "value": "0x00"
         },
         {
-          "address": "0x0203158f",
+          "address": "gExpansionLanguageMenuProbe+0x07",
           "size": 1,
           "value": "0x00"
         },
         {
-          "address": "0x02031592",
+          "address": "gExpansionLanguageMenuProbe+0x0a",
           "size": 2,
           "value": "0x0000"
         },
         {
-          "address": "0x02031596",
+          "address": "gExpansionLanguageMenuProbe+0x0e",
           "size": 2,
           "value": "0x0000"
         },
         {
-          "address": "0x02031598",
+          "address": "gExpansionLanguageMenuProbe+0x10",
           "size": 2,
           "value": "0x0000"
         }
@@ -80,32 +80,32 @@
       "name": "single-locale-row-remains-stable",
       "probes": [
         {
-          "address": "0x02031588",
+          "address": "gExpansionLanguageMenuProbe+0x00",
           "size": 1,
           "value": "0x00"
         },
         {
-          "address": "0x02031589",
+          "address": "gExpansionLanguageMenuProbe+0x01",
           "size": 1,
           "value": "0x00"
         },
         {
-          "address": "0x0203158f",
+          "address": "gExpansionLanguageMenuProbe+0x07",
           "size": 1,
           "value": "0x00"
         },
         {
-          "address": "0x02031592",
+          "address": "gExpansionLanguageMenuProbe+0x0a",
           "size": 2,
           "value": "0x0000"
         },
         {
-          "address": "0x02031596",
+          "address": "gExpansionLanguageMenuProbe+0x0e",
           "size": 2,
           "value": "0x0000"
         },
         {
-          "address": "0x02031598",
+          "address": "gExpansionLanguageMenuProbe+0x10",
           "size": 2,
           "value": "0x0000"
         }

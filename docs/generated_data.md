@@ -3798,3 +3798,40 @@ as deliberate non-goals of this sprint:
   has scoped so far. Procedural combat/growth/AI formulas themselves
   (as opposed to their clean lookup tables) are explicitly out of data
   scope -- see the `weapontriangle` bullet above.
+
+## `ui_presentation` schema (Issue #43)
+
+`src/data/ui_presentation.json` is a metadata-backed, generated-C manifest
+for chapter-title and screen presentation contexts. Each record validates its
+localized title key, text fallback, optional asset ID, and VRAM/palette/OAM
+requirements. It is intentionally additive: static chapter-title graphics
+remain the default, while optional missing assets resolve through the
+documented text/static fallback. The table is included in
+`GENERATED_DATA_TABLES`, has a fixed 32-record runtime budget, and is linked
+as `expansion_ui_presentation_manifest.o` in modern builds.
+
+## Typed event-script helper layer (Issue #45)
+
+The `eventlists` schema has an optional `helperScripts` surface for bounded
+structured authoring. A helper is identified by a closed
+`family`/`operation` pair and typed arguments; validation resolves live
+character, song, event-flag, faction, event-script, shop, and unit symbols,
+checks arity and integer widths, and reports actionable source locations.
+
+Generation lowers each valid helper to exactly one existing
+`EAstdlib.h`/`eventscript.h` macro (`ENUT`, `ENUF`, `SPAWN_*`, `LOAD1`..`LOAD4`,
+`MUSC`, `EvtBgmFadeIn`, `MUSS`, `MURE`, `SET_HP`, or `WARP_OUT`) and appends
+the established `ENDA` terminator. Generated helper sources include
+`constants/songs.h`, so typed `MUSC`/`EvtBgmFadeIn`/`MUSS` helpers compile
+when they emit `SONG_*` identifiers. Temporary `ENUT`/`ENUF` operations may
+reuse the same flag: duplicate detection applies only to event-list
+allocation/ownership fields, while operational set/clear references are
+validated for shape and range but are not allocations. Existing event-list entries can use the
+same bounded representation for `Armory`/`Vendor`/`SecretShop`, `TURN`,
+`AFEV`, and `AREA`. No second event router, bytecode format, or visual editor
+is introduced.
+
+The current Chapter 2 source intentionally has no helper scripts; the
+default generated C and handwritten round-trip remain the negative control.
+Synthetic fixtures cover every helper family and invalid family, operation,
+reference, arity, type, and range diagnostics.

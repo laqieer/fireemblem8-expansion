@@ -1,4 +1,5 @@
 #include "global.h"
+#include "expansion_bgm.h"
 
 #include "hardware.h"
 #include "m4a.h"
@@ -414,7 +415,8 @@ void GameControl_ClearPaletteAndReset(ProcPtr proc)
 
 void GameControl_StartMainTheme(ProcPtr proc)
 {
-    StartBgmCore(SONG_MAIN_THEME, 0);
+    ExpansionBgm_Start(
+        EXPANSION_BGM_CONTEXT_TITLE, SONG_MAIN_THEME, 0, 0);
     StartBgmVolumeChange(0, 0xC0, 0x3C, 0);
 }
 

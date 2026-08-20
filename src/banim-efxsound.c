@@ -1,4 +1,5 @@
 #include "global.h"
+#include "expansion_bgm.h"
 #include "proc.h"
 #include "anime.h"
 #include "ekrbattle.h"
@@ -72,7 +73,7 @@ void EfxOverrideBgm(int songid, int volume)
         return;
 
     Sound_SetSEVolume(volume);
-    OverrideBgm(songid);
+    ExpansionBgm_Override(EXPANSION_BGM_CONTEXT_BATTLE, songid);
 }
 
 void StopBGM1(void)
@@ -980,7 +981,14 @@ void EkrPlayMainBGM(void)
 
     if (ret == true)
     {
-        EfxOverrideBgm(SONG_TETHYS, 0x100);
+        EfxOverrideBgm(
+            ExpansionBgm_SelectActionSong(
+                EXPANSION_BGM_ACTION_DANCE,
+                &bur->unit,
+                0,
+                EXPANSION_BGM_STAFF_NONE,
+                SONG_TETHYS),
+            0x100);
         return;
     }
 
@@ -1007,7 +1015,28 @@ void EkrPlayMainBGM(void)
 
     if (songid != -1)
     {
-        EfxOverrideBgm(songid, 0x100);
+        const struct Unit *staffUnit = NULL;
+        int staffItem = 0;
+
+        if (EfxCheckRetaliation(POS_L) == true)
+        {
+            staffUnit = &gBattleActor.unit;
+            staffItem = gBattleActor.weaponBefore;
+        }
+        else if (EfxCheckRetaliation(POS_R) == true)
+        {
+            staffUnit = &gBattleTarget.unit;
+            staffItem = gBattleTarget.weaponBefore;
+        }
+
+        EfxOverrideBgm(
+            ExpansionBgm_SelectActionSong(
+                EXPANSION_BGM_ACTION_STAFF,
+                staffUnit,
+                staffItem,
+                (enum ExpansionBgmStaffKind)staff_type,
+                songid),
+            0x100);
         return;
     }
     gEkrMainBgmPlaying = false;
@@ -1021,7 +1050,7 @@ void EkrRestoreBGM(void)
         return;
     }
 
-    RestoreBgm();
+    ExpansionBgm_Restore(EXPANSION_BGM_CONTEXT_BATTLE, 6);
 }
 
 CONST_DATA int gBanimBossBGMs[32 * 2] = {

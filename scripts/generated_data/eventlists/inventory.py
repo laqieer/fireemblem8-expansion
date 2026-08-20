@@ -18,6 +18,7 @@ def build_inventory(records):
     lines.append("- Schema: `{}`\n".format(SCHEMA_ID))
     lines.append("- Event list count: {}\n".format(len(records.lists)))
     lines.append("- Tutorial entry count: {}\n".format(len(records.tutorial.entries)))
+    lines.append("- Typed helper script count: {}\n".format(len(records.helper_scripts)))
     lines.append("- Manifest symbol: `{}`\n".format(records.manifest.symbol))
     lines.append("- Dependencies: {}\n".format(", ".join(graph.nodes())))
     lines.append("- Dependency graph digest (sha256): `{}`\n".format(graph.digest()))
@@ -31,6 +32,12 @@ def build_inventory(records):
             records.tutorial.field, records.tutorial.symbol, len(records.tutorial.entries)
         )
     )
+    if records.helper_scripts:
+        lines.append("\n")
+        lines.append("| Typed helper script | Helper count |\n")
+        lines.append("|---|---|\n")
+        for script in records.helper_scripts:
+            lines.append("| {} | {} |\n".format(script.symbol, len(script.entries)))
     lines.append("\n")
     lines.append("| Manifest field | Value |\n")
     lines.append("|---|---|\n")

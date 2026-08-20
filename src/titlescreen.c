@@ -1,4 +1,5 @@
 #include "global.h"
+#include "expansion_bgm.h"
 
 #include "hardware.h"
 #include "ctc.h"
@@ -486,7 +487,8 @@ void Title_Loop_DrawRedBlueOrbs(struct TitleScreenProc* proc) {
     );
 
     if (proc->timer == 20) {
-        StartBgmExt(SONG_MAIN_THEME_EXT, 0, 0);
+        ExpansionBgm_Start(
+            EXPANSION_BGM_CONTEXT_TITLE, SONG_MAIN_THEME_EXT, 0, 0);
     }
 
     if (proc->timer < 20) {
@@ -1026,7 +1028,8 @@ void Title_RestartProc(struct TitleScreenProc* proc) {
     gLCDControlBuffer.dispcnt.bg3_on = 0;
     gLCDControlBuffer.dispcnt.obj_on = 0;
 
-    StartBgmExt(SONG_MAIN_THEME, 0, 0);
+    ExpansionBgm_Start(
+        EXPANSION_BGM_CONTEXT_TITLE, SONG_MAIN_THEME, 0, 0);
 
     return;
 }
@@ -1119,7 +1122,8 @@ void StartTitleScreen_WithMusic(ProcPtr parent) {
     proc = Proc_StartBlocking(gProcScr_TitleScreen, parent);
     proc->mode = 0;
 
-    StartBgmExt(SONG_MAIN_THEME, 0, 0);
+    ExpansionBgm_Start(
+        EXPANSION_BGM_CONTEXT_TITLE, SONG_MAIN_THEME, 0, 0);
 }
 
 //! FE8U = 0x080C6444

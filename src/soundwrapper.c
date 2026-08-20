@@ -324,7 +324,7 @@ void StartSongDelayed(int songId, int delay, struct MusicPlayerInfo *player)
 
 void PlaySong(int songId, struct MusicPlayerInfo *player)
 {
-    if (songId < 128)
+    if (IsSoundRoomSongIdValid(songId))
     {
         Sound_SetupMaxChannelsForSong(songId);
 

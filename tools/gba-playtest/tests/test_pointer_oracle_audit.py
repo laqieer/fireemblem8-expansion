@@ -70,7 +70,7 @@ def _iter_scenario_probe_values():
             for probe in checkpoint.probes:
                 if probe.expected is None:
                     continue
-                yield path.name, checkpoint.name, probe.address, probe.size, probe.expected
+                yield path.name, checkpoint.name, probe.binding, probe.size, probe.expected
 
 
 def _iter_fingerprint_probe_values():
@@ -83,8 +83,13 @@ def _iter_fingerprint_probe_values():
                 value = probe.get("value")
                 if value is None:
                     continue
-                address = int(probe["address"], 16)
-                yield path.name, checkpoint["name"], address, int(probe["size"]), value
+                yield (
+                    path.name,
+                    checkpoint["name"],
+                    probe["address"],
+                    int(probe["size"]),
+                    value,
+                )
 
 
 def _offenders(rows):
@@ -96,11 +101,11 @@ def _offenders(rows):
         parsed = int(value, 16) if isinstance(value, str) else int(value)
         if not _in_pointer_range(parsed):
             continue
-        key = (file_name, checkpoint_name, f"0x{address:08x}", f"0x{parsed:08x}")
+        key = (file_name, checkpoint_name, str(address), f"0x{parsed:08x}")
         if key in _REVIEWED_ALLOWLIST:
             continue
         offenders.append(
-            f"{file_name} :: {checkpoint_name} :: probe 0x{address:08x}/{size} "
+            f"{file_name} :: {checkpoint_name} :: probe {address}/{size} "
             f"asserts pointer-range value 0x{parsed:08x}"
         )
     return offenders
@@ -143,7 +148,7 @@ class PointerOracleAuditTests(unittest.TestCase):
             _iter_scenario_probe_values()
         ) + list(_iter_fingerprint_probe_values()):
             parsed = int(value, 16) if isinstance(value, str) else int(value)
-            live_keys.add((file_name, checkpoint_name, f"0x{address:08x}", f"0x{parsed:08x}"))
+            live_keys.add((file_name, checkpoint_name, str(address), f"0x{parsed:08x}"))
         stale = sorted(entry for entry in _REVIEWED_ALLOWLIST if entry not in live_keys)
         self.assertEqual(stale, [], f"stale allowlist entries must be removed: {stale}")
 

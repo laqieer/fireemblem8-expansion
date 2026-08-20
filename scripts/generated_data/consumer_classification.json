@@ -2137,6 +2137,50 @@
       "category": "event-operand",
       "reason": null
     },
+    "include/expansion_aoe.h|function-signature|unit|void": {
+      "category": "external-interface",
+      "reason": null
+    },
+    "include/expansion_aoe.h|struct-field|item|ExpansionAoEItemContext.item": {
+      "category": "runtime-struct",
+      "reason": null
+    },
+    "include/expansion_aoe.h|struct-field|item|ExpansionAoEItemContext.itemSlot": {
+      "category": "runtime-struct",
+      "reason": null
+    },
+    "include/expansion_aoe_reference.h|struct-field|unit|ExpansionAoEReferenceProbe.firstTargetUnitId": {
+      "category": "runtime-struct",
+      "reason": null
+    },
+    "include/expansion_aoe_reference.h|struct-field|unit|ExpansionAoEReferenceProbe.secondTargetUnitId": {
+      "category": "runtime-struct",
+      "reason": null
+    },
+    "include/expansion_aoe_reference.h|struct-field|unit|ExpansionAoEReferenceProbe.sourceUnitId": {
+      "category": "runtime-struct",
+      "reason": null
+    },
+    "include/expansion_bgm.h|struct-field|chapter|ExpansionBgmContextRequest.chapterId": {
+      "category": "runtime-struct",
+      "reason": null
+    },
+    "include/expansion_bgm.h|struct-field|chapter|ExpansionBgmVariant.chapterId": {
+      "category": "lookup-table",
+      "reason": null
+    },
+    "include/expansion_bgm.h|struct-field|character|ExpansionBgmActionSelector.characterId": {
+      "category": "lookup-table",
+      "reason": null
+    },
+    "include/expansion_bgm.h|struct-field|class|ExpansionBgmActionSelector.classId": {
+      "category": "lookup-table",
+      "reason": null
+    },
+    "include/expansion_bgm.h|struct-field|item|ExpansionBgmActionSelector.itemId": {
+      "category": "lookup-table",
+      "reason": null
+    },
     "include/expansion_debugtools.h|function-signature|chapter|DebugTools_ConsumePendingChapter2Launch": {
       "category": "external-interface",
       "reason": null
@@ -2197,12 +2241,44 @@
       "category": "runtime-struct",
       "reason": null
     },
+    "include/expansion_portraits.h|struct-field|chapter|ExpansionPortraitContext.chapter_id": {
+      "category": "runtime-struct",
+      "reason": null
+    },
+    "include/expansion_portraits.h|struct-field|chapter|ExpansionPortraitRule.chapter_id": {
+      "category": "lookup-table",
+      "reason": null
+    },
+    "include/expansion_portraits.h|struct-field|character|ExpansionPortraitContext.character_id": {
+      "category": "runtime-struct",
+      "reason": null
+    },
+    "include/expansion_portraits.h|struct-field|character|ExpansionPortraitRule.character_id": {
+      "category": "lookup-table",
+      "reason": null
+    },
+    "include/expansion_portraits.h|struct-field|class|ExpansionPortraitContext.class_id": {
+      "category": "runtime-struct",
+      "reason": null
+    },
+    "include/expansion_portraits.h|struct-field|class|ExpansionPortraitRule.class_id": {
+      "category": "lookup-table",
+      "reason": null
+    },
     "include/expansion_starter_content.h|function-signature|item|ExpansionStarterContentItemId": {
       "category": "external-interface",
       "reason": null
     },
     "include/expansion_starter_content.h|function-signature|item|ExpansionStarterContentItemName": {
       "category": "external-interface",
+      "reason": null
+    },
+    "include/expansion_ui_presentation.h|function-signature|chapter|ExpansionUiPresentation_FindChapterTitle": {
+      "category": "ui-buffer",
+      "reason": null
+    },
+    "include/expansion_ui_presentation.h|struct-field|chapter|ExpansionUiPresentationManifest.chapterId": {
+      "category": "ui-buffer",
       "reason": null
     },
     "include/functions.h|function-signature|item|ConvoyMenuProc_MaybeStartSelectConvoyItem": {

@@ -11,6 +11,21 @@ the original game. The original agbcc-based decompilation build is kept as
 an explicit, unbroken **archival** side lane for decomp-matching work — see
 [`docs/archival-decomp.md`](docs/archival-decomp.md).
 
+## Supported languages
+
+The production localization framework supports **English**, **Japanese**,
+**Simplified Chinese**, **French**, **German**, **Spanish**, and **Italian**.
+English remains the default; every real multilingual profile uses a 32 MiB
+ROM. The derived `qps-ploc` pseudo-locale is also available for UI testing,
+but is not a translation.
+
+Use `./configure --with-enabled-locales=... --with-default-locale=... \
+--with-rom-size=32M` for a persistent profile, or one of the named
+`expansion-modern-localization-profile-*` Make targets for a one-off build.
+The complete locale matrix, authoring workflow, provenance rules, runtime
+selector behavior, and validation commands are in
+[`docs/localization.md`](docs/localization.md).
+
 📚 **[Full documentation index](docs/README.md)** — start there for
 architecture, support matrix, governance, and migration guides. The
 **[project wiki](https://github.com/laqieer/fireemblem8-expansion/wiki)**
@@ -100,14 +115,6 @@ optional navigation; no wiki is required for that path.
 - **Architecture overview**: [`docs/architecture.md`](docs/architecture.md)
 - **Contribution/security/copyright governance**: [`docs/project-governance.md`](docs/project-governance.md)
 - **Issue closure and review policy**: [`docs/issue-resolution-policy.md`](docs/issue-resolution-policy.md)
-
-## Used by
-
-Projects powered by this repository:
-
-* [**fe-maps**](https://github.com/laqieer/fe-maps) ([site](https://laqieer.github.io/fe-maps/)) — browsable ROM/RAM data maps extracted from this repo's ELF with `readelf`/`nm -l`.
-* [**FE_GBA_Function_Library**](https://github.com/laqieer/FE_GBA_Function_Library) ([site](https://laqieer.github.io/FE_GBA_Function_Library/)) — cross-game function documentation using `nm -l` for signatures and `source:line` links.
-* [**FE-Clib-Decomp**](https://github.com/laqieer/FE-Clib-Decomp) — ROM-hacking linker scripts, `lyn` reference assembly, and Event Assembler defines generated from this repo's ELF.
 
 ## Historical upstream `[historical upstream]`
 

@@ -1,5 +1,7 @@
 #include "global.h"
 
+#include "expansion_portraits.h"
+
 #include <string.h>
 
 #include "constants/items.h"
@@ -315,25 +317,11 @@ inline int GetUnitLuck(struct Unit* unit) {
 }
 
 inline int GetUnitPortraitId(struct Unit* unit) {
-    if (unit->pCharacterData->portraitId) {
-        // TODO: PORTRAIT_LYON?, CHAPTER definitions
-        if (gPlaySt.chapterIndex == 0x22 && unit->pCharacterData->portraitId == 0x4A)
-            return 0x46;
-
-        return unit->pCharacterData->portraitId;
-    }
-
-    if (unit->pClassData->defaultPortraitId)
-        return unit->pClassData->defaultPortraitId;
-
-    return 0;
+    return ExpansionPortrait_ResolveUnit(unit, EXPANSION_PORTRAIT_KIND_FULL);
 }
 
 inline int GetUnitMiniPortraitId(struct Unit* unit) {
-    if (unit->pCharacterData->miniPortrait)
-        return 0x7F00 + unit->pCharacterData->miniPortrait;
-
-    return GetUnitPortraitId(unit);
+    return ExpansionPortrait_ResolveUnit(unit, EXPANSION_PORTRAIT_KIND_MINIMUG);
 }
 
 inline int GetUnitLeaderCharId(struct Unit* unit) {
@@ -997,6 +985,15 @@ inline char* GetUnitRescueName(struct Unit* unit) {
 }
 
 void UnitKill(struct Unit* unit) {
+#if FE8_EXPANSION_CASUAL_MODE
+    /*
+     * A later explicit UnitKill supersedes an earlier ordinary defeat. The
+     * combat/arena handlers mark only after this function returns, so their
+     * newly eligible defeat is not cleared here.
+     */
+    unit->state &= ~US_BIT24;
+#endif
+
     if (UNIT_FACTION(unit) == FACTION_BLUE) {
         if (UNIT_IS_PHANTOM(unit))
             unit->pCharacterData = NULL;

@@ -1,4 +1,5 @@
 #include "global.h"
+#include "expansion_bgm.h"
 
 #include "bmunit.h"
 #include "player_interface.h"
@@ -901,9 +902,9 @@ void Shop_Init(struct ProcShop * proc)
     int i;
 
     if (proc->shopType == SHOP_TYPE_ARMORY)
-        StartBgm(SONG_ARMORIES, 0);
+        ExpansionBgm_Start(EXPANSION_BGM_CONTEXT_SHOP, SONG_ARMORIES, 3, 0);
     else
-        StartBgm(SONG_SHOPS, 0);
+        ExpansionBgm_Start(EXPANSION_BGM_CONTEXT_SHOP, SONG_SHOPS, 3, 0);
 
     Proc_ForEach(ProcScr_Mu, (ProcFunc) HideMu);
 

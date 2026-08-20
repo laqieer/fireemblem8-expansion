@@ -249,7 +249,7 @@ enum
     US_BIT21        = (1 << 21),
     US_BIT22        = (1 << 22),
     US_BIT23        = (1 << 23),
-    // = (1 << 24),
+    US_BIT24        = (1 << 24), // eligible for optional casual restoration
     US_BIT25 = (1 << 25),
     US_BIT26 = (1 << 26),
     US_BIT27 = (1 << 27),

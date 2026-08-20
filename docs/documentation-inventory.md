@@ -69,6 +69,10 @@ Markdown library, so it stays stdlib-parseable and diff-friendly.
 - docs/generated_data.md | laqieer | current | Full generated-data platform design/reference (issue #5)
 - docs/generated_data_tutorial.md | laqieer | current | Contributor-facing generated-data authoring walkthrough
 - docs/starter_features.md | laqieer | current | Four default-off starter flags, typed mechanics/content API, QoL, and runtime matrices (issue #6)
+- docs/aoe.md | laqieer | current | Typed bounded AoE targeting/effects, shared item/action/AI seam, and default-off reference (issue #42)
+- docs/portrait_resolver.md | laqieer | current | Typed character/class/chapter/flag portrait and minimug resolver with legacy fallback (issue #35)
+- docs/bgm_routing.md | laqieer | current | Typed BGM context routing, action selectors, and preserve/continue policy
+- docs/ui_presentation_registry.md | laqieer | current | Typed UI presentation manifests and bounded presentation-resource registry
 - docs/localization.md | laqieer | current | Stable locale/message IDs, catalog authoring, prefs/UI, budgets, and runtime matrices (issue #18)
 - docs/game_localization_catalog.md | laqieer | current | Full-game FE8U-indexed CJK catalog generation, bounded runtime, and synthetic link gate
 - docs/game_locale_sources.md | laqieer | current | Maintainer reference for pinned FE8J/FE8CN imports, verified FE8U mappings, fallbacks, and regeneration gates
@@ -109,6 +113,7 @@ Markdown library, so it stays stdlib-parseable and diff-friendly.
 - reports/generated_data_terrainstats_inventory.md | laqieer | generated | Auto-generated terrainstats table inventory
 - reports/generated_data_traps_inventory.md | laqieer | generated | Auto-generated traps table inventory
 - reports/generated_data_units_inventory.md | laqieer | generated | Auto-generated units table inventory
+- reports/generated_data_ui_presentation_inventory.md | laqieer | generated | Auto-generated UI presentation manifest inventory
 - reports/generated_data_weapontriangle_inventory.md | laqieer | generated | Auto-generated weapontriangle table inventory
 - reports/id_space_audit.md | laqieer | generated | Auto-generated DEFAULT ID-space contract audit (issue #10)
 - reports/generated_data_issue5_closure.md | laqieer | evidence | Candidate closure evidence mapping for issue #5, not a closure claim

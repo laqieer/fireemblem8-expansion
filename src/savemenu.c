@@ -1,4 +1,5 @@
 #include "global.h"
+#include "expansion_bgm.h"
 
 #include "m4a.h"
 #include "soundwrapper.h"
@@ -1075,12 +1076,16 @@ void SaveMenuExtrasMenuLoop(struct SaveMenuProc * proc)
             break;
 
         case EXTRA_MENU_OPTION_SOUND_ROOM:
-            ChangeBgm(SONG_NONE, 0xc0, 0, 0x18, 0);
+            ExpansionBgm_Change(
+                EXPANSION_BGM_CONTEXT_MENU, SONG_NONE,
+                0xc0, 0, 0x18, 0);
             Proc_Goto(proc, PL_SAVEMENU_EXEC_EXTRA_MISC_OPTION);
             break;
 
         case EXTRA_MENU_OPTION_SUPPORT:
-            ChangeBgm(SONG_DISTANT_ROADS, 0xc0, 0x100, 0x18, 0);
+            ExpansionBgm_Change(
+                EXPANSION_BGM_CONTEXT_SUPPORT, SONG_DISTANT_ROADS,
+                0xc0, 0x100, 0x18, 0);
             Proc_Goto(proc, PL_SAVEMENU_EXEC_EXTRA_MISC_OPTION);
             break;
 
@@ -1350,7 +1355,9 @@ void PostSaveMenuHandler(struct SaveMenuProc * proc)
 //! FE8U = 0x080AA100
 void ExtraMapStartSomeBgm(struct SaveMenuProc * proc)
 {
-    ChangeBgm(SONG_NONE, 0xc0, 0, 0x18, proc);
+    ExpansionBgm_Change(
+        EXPANSION_BGM_CONTEXT_MENU, SONG_NONE,
+        0xc0, 0, 0x18, proc);
 }
 
 //! FE8U = 0x080AA118

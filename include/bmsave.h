@@ -125,10 +125,32 @@ struct GameRankSaveDataPacks {
     u16 unk92;
 };
 
+/*
+ * The original sound-room record already reserved eight flag words, but the
+ * runtime only addressed the first 128 song/catalog slots.  Keep the
+ * on-media size and checksum domain unchanged while using the existing
+ * second trailer word as an explicit representation marker:
+ *
+ *   0       legacy record (the pre-issue-36 representation)
+ *   0x0801  version 1, eight 32-bit flag words (256 slots)
+ *
+ * The marker is deliberately not padding and is not covered by magic1:
+ * legacy records remain checksum-valid and can be upgraded without changing
+ * any unlock bit.
+ */
+#define SOUND_ROOM_SAVE_FLAG_WORDS 8
+#define SOUND_ROOM_SAVE_CAPACITY (SOUND_ROOM_SAVE_FLAG_WORDS * 32)
+#define SOUND_ROOM_SAVE_FORMAT_LEGACY 0
+#define SOUND_ROOM_SAVE_FORMAT_VERSION_CURRENT 1
+#define SOUND_ROOM_SAVE_FORMAT_CAPACITY_SHIFT 8
+#define SOUND_ROOM_SAVE_FORMAT_CURRENT \
+    ((SOUND_ROOM_SAVE_FLAG_WORDS << SOUND_ROOM_SAVE_FORMAT_CAPACITY_SHIFT) \
+        | SOUND_ROOM_SAVE_FORMAT_VERSION_CURRENT)
+
 struct SoundRoomSaveData {
-    u32 flags[0x8];
+    u32 flags[SOUND_ROOM_SAVE_FLAG_WORDS];
     u16 magic1;
-    u16 magic2;
+    u16 magic2; /* SOUND_ROOM_SAVE_FORMAT_* */
 };
 
 struct bmsave_unkstruct2 {
@@ -236,6 +258,7 @@ enum packed_unit_state_bits {
     PACKED_US_B4         = 1 << 5,
     PACKED_US_B5         = 1 << 6,
     PACKED_US_NEW_FRIEND = 1 << 7,
+    PACKED_US_CASUAL_DEFEAT = 1 << 8,
 };
 
 struct SuspendSavePackedUnit {     /* Suspend Data */
@@ -522,6 +545,8 @@ void EraseSoundRoomSaveData(void);
 bool LoadAndVerifySoundRoomData(struct SoundRoomSaveData * buf);
 void WriteSoundRoomSaveData(struct SoundRoomSaveData *);
 bool IsSoundRoomSongUnlocked(struct SoundRoomSaveData * buf, int val);
+bool IsSoundRoomSongIdValid(int val);
+bool IsSoundRoomSaveDataFormatValid(const struct SoundRoomSaveData *buf);
 void EraseLinkArenaStruct2(void);
 bool LoadAndVerfyLinkArenaStruct2(void *buf);
 void WriteLinkArenaStruct2(struct bmsave_unkstruct2 *buf);

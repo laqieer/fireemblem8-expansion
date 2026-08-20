@@ -27,7 +27,7 @@
 
 GENERATED_DATA_PY       := $(PYTHON) -m scripts.generated_data
 GENERATED_DATA_OUT_DIR  := build/generated/data
-GENERATED_DATA_TABLES   := supports units shops traps items classes characters eventscripts eventlists chapterbundle terrainstats movecost weapontriangle
+GENERATED_DATA_TABLES   := supports units shops traps items classes characters eventscripts eventlists chapterbundle terrainstats movecost weapontriangle ui_presentation
 GENERATED_DATA_CH2_TABLES := units shops traps eventscripts eventlists chapterbundle
 
 .PHONY: generated-data-validate generated-data-generate generated-data-check generated-data-test \
@@ -1661,8 +1661,9 @@ GENERATED_DATA_CH2_EVENTLISTS_OBJECT := $(GENERATED_DATA_CH2_EVENTLISTS_C:.c=.o)
 # `eventlists`' own generator "config" inputs: include/constants/
 # characters.h (CHARACTER_* designators, via the shared
 # character_refs.py helper), include/bmunit.h (FACTION_ID_* constants),
-# and include/constants/event-flags.h (EVFLAG_* range, read live by
-# scripts/generated_data/eventlists/schema.py's validate()) -- plus the
+# include/constants/event-flags.h (EVFLAG_* range, read live by
+# scripts/generated_data/eventlists/schema.py's validate()), and
+# include/constants/songs.h (BGM helper IDs) -- plus the
 # 4 cross-table JSON sources its schema's dependency_tables() loads
 # (src/data/ch2_units.json/ch2_shops.json/ch2_traps.json/
 # ch2_eventscripts.json), so a change to any of those also triggers a
@@ -1672,6 +1673,10 @@ GENERATED_DATA_CONFIG_INPUTS_eventlists := \
 	include/constants/characters.h \
 	include/bmunit.h \
 	include/constants/event-flags.h \
+	include/constants/songs.h \
+	include/eventscript.h \
+	include/EAstdlib.h \
+	include/EA_Standard_Library/Main_Code_Helpers.h \
 	src/data/ch2_units.json \
 	src/data/ch2_shops.json \
 	src/data/ch2_traps.json \

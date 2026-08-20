@@ -113,72 +113,72 @@
       "name": "pre-repair-selector-shown",
       "probes": [
         {
-          "address": "0x02031588",
+          "address": "gExpansionLanguageMenuProbe+0x00",
           "size": 1,
           "value": "0x01"
         },
         {
-          "address": "0x02031589",
+          "address": "gExpansionLanguageMenuProbe+0x01",
           "size": 1,
           "value": "0x00"
         },
         {
-          "address": "0x0203158a",
+          "address": "gExpansionLanguageMenuProbe+0x02",
           "size": 1,
           "value": "0x01"
         },
         {
-          "address": "0x0203158b",
+          "address": "gExpansionLanguageMenuProbe+0x03",
           "size": 1,
           "value": "0x00"
         },
         {
-          "address": "0x0203158c",
+          "address": "gExpansionLanguageMenuProbe+0x04",
           "size": 1,
           "value": "0x01"
         },
         {
-          "address": "0x0203158d",
+          "address": "gExpansionLanguageMenuProbe+0x05",
           "size": 1,
           "value": "0x00"
         },
         {
-          "address": "0x0203158e",
+          "address": "gExpansionLanguageMenuProbe+0x06",
           "size": 1,
           "value": "0x00"
         },
         {
-          "address": "0x0203158f",
+          "address": "gExpansionLanguageMenuProbe+0x07",
           "size": 1,
           "value": "0x00"
         },
         {
-          "address": "0x02031590",
+          "address": "gExpansionLanguageMenuProbe+0x08",
           "size": 1,
           "value": "0x02"
         },
         {
-          "address": "0x02031592",
+          "address": "gExpansionLanguageMenuProbe+0x0a",
           "size": 2,
           "value": "0x0000"
         },
         {
-          "address": "0x02031594",
+          "address": "gExpansionLanguageMenuProbe+0x0c",
           "size": 2,
           "value": "0x0001"
         },
         {
-          "address": "0x02031596",
+          "address": "gExpansionLanguageMenuProbe+0x0e",
           "size": 2,
           "value": "0x0000"
         },
         {
-          "address": "0x02031598",
+          "address": "gExpansionLanguageMenuProbe+0x10",
           "size": 2,
           "value": "0x0000"
         },
         {
-          "address": "0x0203159a",
+          "address": "gExpansionLanguageMenuProbe+0x12",
           "size": 1,
           "value": "0x01"
         }
@@ -190,22 +190,22 @@
       "name": "selector-after-navigate-down",
       "probes": [
         {
-          "address": "0x02031588",
+          "address": "gExpansionLanguageMenuProbe+0x00",
           "size": 1,
           "value": "0x01"
         },
         {
-          "address": "0x0203158a",
+          "address": "gExpansionLanguageMenuProbe+0x02",
           "size": 1,
           "value": "0x01"
         },
         {
-          "address": "0x02031592",
+          "address": "gExpansionLanguageMenuProbe+0x0a",
           "size": 2,
           "value": "0x0000"
         },
         {
-          "address": "0x0203159a",
+          "address": "gExpansionLanguageMenuProbe+0x12",
           "size": 1,
           "value": "0x01"
         }
@@ -217,22 +217,22 @@
       "name": "selector-after-navigate-back-to-en",
       "probes": [
         {
-          "address": "0x02031588",
+          "address": "gExpansionLanguageMenuProbe+0x00",
           "size": 1,
           "value": "0x01"
         },
         {
-          "address": "0x0203158a",
+          "address": "gExpansionLanguageMenuProbe+0x02",
           "size": 1,
           "value": "0x01"
         },
         {
-          "address": "0x02031592",
+          "address": "gExpansionLanguageMenuProbe+0x0a",
           "size": 2,
           "value": "0x0000"
         },
         {
-          "address": "0x0203159a",
+          "address": "gExpansionLanguageMenuProbe+0x12",
           "size": 1,
           "value": "0x01"
         }
@@ -244,52 +244,52 @@
       "name": "post-repair-committed",
       "probes": [
         {
-          "address": "0x02031588",
+          "address": "gExpansionLanguageMenuProbe+0x00",
           "size": 1,
           "value": "0x00"
         },
         {
-          "address": "0x02031589",
+          "address": "gExpansionLanguageMenuProbe+0x01",
           "size": 1,
           "value": "0x00"
         },
         {
-          "address": "0x0203158a",
+          "address": "gExpansionLanguageMenuProbe+0x02",
           "size": 1,
           "value": "0x01"
         },
         {
-          "address": "0x0203158b",
+          "address": "gExpansionLanguageMenuProbe+0x03",
           "size": 1,
           "value": "0x00"
         },
         {
-          "address": "0x0203158c",
+          "address": "gExpansionLanguageMenuProbe+0x04",
           "size": 1,
           "value": "0x01"
         },
         {
-          "address": "0x0203158d",
+          "address": "gExpansionLanguageMenuProbe+0x05",
           "size": 1,
           "value": "0x00"
         },
         {
-          "address": "0x0203158e",
+          "address": "gExpansionLanguageMenuProbe+0x06",
           "size": 1,
           "value": "0x00"
         },
         {
-          "address": "0x0203158f",
+          "address": "gExpansionLanguageMenuProbe+0x07",
           "size": 1,
           "value": "0x00"
         },
         {
-          "address": "0x02031592",
+          "address": "gExpansionLanguageMenuProbe+0x0a",
           "size": 2,
           "value": "0x0001"
         },
         {
-          "address": "0x0203159a",
+          "address": "gExpansionLanguageMenuProbe+0x12",
           "size": 1,
           "value": "0x00"
         },
@@ -431,72 +431,72 @@
       "name": "post-reset-ewram-fresh",
       "probes": [
         {
-          "address": "0x02031588",
+          "address": "gExpansionLanguageMenuProbe+0x00",
           "size": 1,
           "value": "0x00"
         },
         {
-          "address": "0x02031589",
+          "address": "gExpansionLanguageMenuProbe+0x01",
           "size": 1,
           "value": "0x00"
         },
         {
-          "address": "0x0203158a",
+          "address": "gExpansionLanguageMenuProbe+0x02",
           "size": 1,
           "value": "0x00"
         },
         {
-          "address": "0x0203158b",
+          "address": "gExpansionLanguageMenuProbe+0x03",
           "size": 1,
           "value": "0x00"
         },
         {
-          "address": "0x0203158c",
+          "address": "gExpansionLanguageMenuProbe+0x04",
           "size": 1,
           "value": "0x00"
         },
         {
-          "address": "0x0203158d",
+          "address": "gExpansionLanguageMenuProbe+0x05",
           "size": 1,
           "value": "0x00"
         },
         {
-          "address": "0x0203158e",
+          "address": "gExpansionLanguageMenuProbe+0x06",
           "size": 1,
           "value": "0x00"
         },
         {
-          "address": "0x0203158f",
+          "address": "gExpansionLanguageMenuProbe+0x07",
           "size": 1,
           "value": "0x00"
         },
         {
-          "address": "0x02031590",
+          "address": "gExpansionLanguageMenuProbe+0x08",
           "size": 1,
           "value": "0x00"
         },
         {
-          "address": "0x02031592",
+          "address": "gExpansionLanguageMenuProbe+0x0a",
           "size": 2,
           "value": "0x0000"
         },
         {
-          "address": "0x02031594",
+          "address": "gExpansionLanguageMenuProbe+0x0c",
           "size": 2,
           "value": "0x0000"
         },
         {
-          "address": "0x02031596",
+          "address": "gExpansionLanguageMenuProbe+0x0e",
           "size": 2,
           "value": "0x0000"
         },
         {
-          "address": "0x02031598",
+          "address": "gExpansionLanguageMenuProbe+0x10",
           "size": 2,
           "value": "0x0000"
         },
         {
-          "address": "0x0203159a",
+          "address": "gExpansionLanguageMenuProbe+0x12",
           "size": 1,
           "value": "0x00"
         },
@@ -513,62 +513,62 @@
       "name": "post-reset-selector-skipped-en-restored",
       "probes": [
         {
-          "address": "0x02031588",
+          "address": "gExpansionLanguageMenuProbe+0x00",
           "size": 1,
           "value": "0x00"
         },
         {
-          "address": "0x02031589",
+          "address": "gExpansionLanguageMenuProbe+0x01",
           "size": 1,
           "value": "0x00"
         },
         {
-          "address": "0x0203158a",
+          "address": "gExpansionLanguageMenuProbe+0x02",
           "size": 1,
           "value": "0x00"
         },
         {
-          "address": "0x0203158b",
+          "address": "gExpansionLanguageMenuProbe+0x03",
           "size": 1,
           "value": "0x00"
         },
         {
-          "address": "0x0203158c",
+          "address": "gExpansionLanguageMenuProbe+0x04",
           "size": 1,
           "value": "0x00"
         },
         {
-          "address": "0x0203158d",
+          "address": "gExpansionLanguageMenuProbe+0x05",
           "size": 1,
           "value": "0x05"
         },
         {
-          "address": "0x0203158e",
+          "address": "gExpansionLanguageMenuProbe+0x06",
           "size": 1,
           "value": "0x00"
         },
         {
-          "address": "0x0203158f",
+          "address": "gExpansionLanguageMenuProbe+0x07",
           "size": 1,
           "value": "0x00"
         },
         {
-          "address": "0x02031590",
+          "address": "gExpansionLanguageMenuProbe+0x08",
           "size": 1,
           "value": "0x02"
         },
         {
-          "address": "0x02031592",
+          "address": "gExpansionLanguageMenuProbe+0x0a",
           "size": 2,
           "value": "0x0000"
         },
         {
-          "address": "0x02031594",
+          "address": "gExpansionLanguageMenuProbe+0x0c",
           "size": 2,
           "value": "0x0001"
         },
         {
-          "address": "0x0203159a",
+          "address": "gExpansionLanguageMenuProbe+0x12",
           "size": 1,
           "value": "0x00"
         }

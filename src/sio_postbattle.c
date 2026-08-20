@@ -1,4 +1,5 @@
 #include "global.h"
+#include "expansion_bgm.h"
 
 #include "face.h"
 #include "bmlib.h"
@@ -369,11 +370,13 @@ void SioPostBattleMusic_PlayFanfare(struct SioPostBattleMusicProc * proc)
 {
     if (proc->isPlayerWinner != 0)
     {
-        StartBgmExt(SONG_COLOSSEUM_VICTORY, 0, 0);
+        ExpansionBgm_Start(
+            EXPANSION_BGM_CONTEXT_VICTORY, SONG_COLOSSEUM_VICTORY, 0, 0);
     }
     else
     {
-        StartBgmExt(SONG_COLOSSEUM_DEFEAT, 0, 0);
+        ExpansionBgm_Start(
+            EXPANSION_BGM_CONTEXT_VICTORY, SONG_COLOSSEUM_DEFEAT, 0, 0);
     }
 
     PlaySoundEffect(SONG_81);
@@ -384,7 +387,8 @@ void SioPostBattleMusic_PlayFanfare(struct SioPostBattleMusicProc * proc)
 //! FE8U = 0x08045920
 void SioPostBattleMusic_PlayStandardBgm(void)
 {
-    StartBgmExt(SONG_COLOSSEUM_DEFEAT, 0, 0);
+    ExpansionBgm_Start(
+        EXPANSION_BGM_CONTEXT_VICTORY, SONG_COLOSSEUM_DEFEAT, 0, 0);
     return;
 }
 

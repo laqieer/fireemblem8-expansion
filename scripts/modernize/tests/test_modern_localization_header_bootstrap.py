@@ -787,13 +787,6 @@ REPAIR_FIXTURE_FOR_STATE = {
     "disabled": "disabled_on_multi.sav",
 }
 
-# gExpansionLanguageMenuProbe's own EWRAM base address per config -- see
-# tools/gba-playtest/scenarios/locale-blank-sram-selector-multi-modern-
-# {debug,release}.json's own probe addresses (this module never invents
-# these; they are the same literal bases every other locale-*.json
-# scenario in this repository already uses).
-REPAIR_EWRAM_BASE = {"debug": 0x02031A94, "release": 0x02031588}
-
 # struct ExpansionLanguageMenuProbe field byte offsets -- see include/
 # expansion_language_menu.h's field declaration order, independently
 # compiler-verified against every locale-*.json scenario (including this
@@ -869,8 +862,8 @@ class ModernLocalizationRepairMatrixTests(unittest.TestCase):
                 return checkpoint
         self.fail(f"{data['name']}: missing required checkpoint {name!r}")
 
-    def _probe_value(self, checkpoint, base, field):
-        address = "0x%08x" % (base + REPAIR_FIELD_OFFSET[field])
+    def _probe_value(self, checkpoint, field):
+        address = "gExpansionLanguageMenuProbe+0x%02x" % REPAIR_FIELD_OFFSET[field]
         for probe in checkpoint["probes"]:
             if probe["address"] == address:
                 return probe.get("expected")
@@ -921,23 +914,22 @@ class ModernLocalizationRepairMatrixTests(unittest.TestCase):
         for state in REPAIR_STATES:
             for config in REPAIR_CONFIGS:
                 data = self._load_scenario(state, config)
-                base = REPAIR_EWRAM_BASE[config]
                 cp = self._checkpoint_by_name(data, "pre-repair-selector-shown")
-                self.assertEqual(self._probe_value(cp, base, "active"), "0x01")
+                self.assertEqual(self._probe_value(cp, "active"), "0x01")
                 self.assertEqual(
-                    self._probe_value(cp, base, "autoSelected"), "0x00",
+                    self._probe_value(cp, "autoSelected"), "0x00",
                     f"locale-repair-{state}-multi-modern-{config}.json's prompt "
                     "checkpoint must never show autoSelected=1 -- this build "
                     "enables 2 locales, so the real blocking selector (never "
                     "AUTO_SELECT) must be the one exercised here",
                 )
-                self.assertEqual(self._probe_value(cp, base, "needsPreferenceRepair"), "0x01")
+                self.assertEqual(self._probe_value(cp, "needsPreferenceRepair"), "0x01")
                 self.assertEqual(
-                    self._probe_value(cp, base, "promptReason"),
+                    self._probe_value(cp, "promptReason"),
                     "0x%02x" % REPAIR_PROMPT_REASON[state],
                 )
                 self.assertEqual(
-                    self._probe_value(cp, base, "prefsState"),
+                    self._probe_value(cp, "prefsState"),
                     "0x%02x" % REPAIR_PREFS_STATE[state],
                 )
 
@@ -945,11 +937,10 @@ class ModernLocalizationRepairMatrixTests(unittest.TestCase):
         for state in REPAIR_STATES:
             for config in REPAIR_CONFIGS:
                 data = self._load_scenario(state, config)
-                base = REPAIR_EWRAM_BASE[config]
                 cp = self._checkpoint_by_name(data, "post-repair-committed")
-                self.assertEqual(self._probe_value(cp, base, "active"), "0x00")
-                self.assertEqual(self._probe_value(cp, base, "needsPreferenceRepair"), "0x00")
-                self.assertEqual(self._probe_value(cp, base, "cacheGeneration"), "0x0001")
+                self.assertEqual(self._probe_value(cp, "active"), "0x00")
+                self.assertEqual(self._probe_value(cp, "needsPreferenceRepair"), "0x00")
+                self.assertEqual(self._probe_value(cp, "cacheGeneration"), "0x0001")
                 self.assertTrue(
                     cp.get("sram_hash"),
                     f"locale-repair-{state}-multi-modern-{config}.json's commit "
@@ -970,21 +961,20 @@ class ModernLocalizationRepairMatrixTests(unittest.TestCase):
         for state in REPAIR_STATES:
             for config in REPAIR_CONFIGS:
                 data = self._load_scenario(state, config)
-                base = REPAIR_EWRAM_BASE[config]
                 cp = self._checkpoint_by_name(data, "post-reset-selector-skipped-en-restored")
-                self.assertEqual(self._probe_value(cp, base, "active"), "0x00")
+                self.assertEqual(self._probe_value(cp, "active"), "0x00")
                 self.assertEqual(
-                    self._probe_value(cp, base, "promptShown"), "0x00",
+                    self._probe_value(cp, "promptShown"), "0x00",
                     f"locale-repair-{state}-multi-modern-{config}.json must "
                     "prove the selector/prompt is absent after reboot",
                 )
                 self.assertEqual(
-                    self._probe_value(cp, base, "prefsState"),
+                    self._probe_value(cp, "prefsState"),
                     "0x%02x" % REPAIR_PREFS_STATE_VALID,
                     "the second real boot's own Normalize() must classify the "
                     "repaired record VALID",
                 )
-                self.assertEqual(self._probe_value(cp, base, "currentLocale"), "0x00")
+                self.assertEqual(self._probe_value(cp, "currentLocale"), "0x00")
 
     def test_baseline_and_commit_sram_hash_exclude_only_documented_ranges(self):
         expected_ranges = [

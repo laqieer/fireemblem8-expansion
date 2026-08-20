@@ -14,7 +14,7 @@ macro body is expanded or reimplemented, only the call syntax itself.
 from __future__ import annotations
 
 from ..cgen import render_banner
-from .schema import END_MAIN, NULL_TOKEN
+from .schema import END_MAIN, HelperCall, NULL_TOKEN, _lower_helper
 
 
 def render_arg(arg):
@@ -32,8 +32,12 @@ def render_arg(arg):
     raise AssertionError("unknown MacroArg kind '{}'".format(arg.kind))
 
 
-def render_call(call):
+def render_call(call, context="list"):
     """Render one :class:`~.schema.MacroCall` list entry as C89 source text."""
+    if isinstance(call, HelperCall):
+        call, errors = _lower_helper(call, context)
+        if errors:
+            raise ValueError(str(errors[0]))
     if not call.args:
         return call.macro
     inner = ", ".join(render_arg(a) for a in call.args)
@@ -50,13 +54,26 @@ def generate_c_source(records, source_path):
     parts.append('#include "bmtrap.h"\n')
     parts.append('#include "chapterdata.h"\n')
     parts.append('#include "constants/event-flags.h"\n')
-    parts.append('#include "constants/characters.h"\n\n')
+    parts.append('#include "constants/characters.h"\n')
+    parts.append('#include "constants/songs.h"\n\n')
+
+    if records.helper_scripts:
+        for script in records.helper_scripts:
+            parts.append("extern EventListScr {}[];\n".format(script.symbol))
+        parts.append("\n")
 
     for lst in records.lists:
         parts.append("CONST_DATA EventListScr {}[] = {{\n".format(lst.symbol))
         for call in lst.entries:
             parts.append("    {}\n".format(render_call(call)))
         parts.append("    {}\n".format(END_MAIN))
+        parts.append("};\n\n")
+
+    for script in records.helper_scripts:
+        parts.append("CONST_DATA EventListScr {}[] = {{\n".format(script.symbol))
+        for call in script.entries:
+            parts.append("    {}\n".format(render_call(call, context="script")))
+        parts.append("    ENDA\n")
         parts.append("};\n\n")
 
     tutorial = records.tutorial

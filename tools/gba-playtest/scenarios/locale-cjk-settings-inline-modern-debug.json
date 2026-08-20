@@ -59,11 +59,11 @@
       "framebuffer": true,
       "name": "cursor-on-three-language-row",
       "probes": [
-        {"address": "0x02031a94", "size": 1, "expected": "0x00"},
-        {"address": "0x02031a95", "size": 1, "expected": "0x00"},
-        {"address": "0x02031a9b", "size": 1, "expected": "0x00"},
-        {"address": "0x02031a9c", "size": 1, "expected": "0x03"},
-        {"address": "0x02031aa2", "size": 2, "expected": "0x0000"}
+        {"address": "gExpansionLanguageMenuProbe+0x00", "size": 1, "expected": "0x00"},
+        {"address": "gExpansionLanguageMenuProbe+0x01", "size": 1, "expected": "0x00"},
+        {"address": "gExpansionLanguageMenuProbe+0x07", "size": 1, "expected": "0x00"},
+        {"address": "gExpansionLanguageMenuProbe+0x08", "size": 1, "expected": "0x03"},
+        {"address": "gExpansionLanguageMenuProbe+0x0e", "size": 2, "expected": "0x0000"}
       ],
       "regions": [
         {"name": "language-globe-icon", "x": 16, "y": 120, "width": 16, "height": 16}
@@ -74,13 +74,13 @@
       "framebuffer": true,
       "name": "japanese-inline-selected",
       "probes": [
-        {"address": "0x02031a94", "size": 1, "expected": "0x00"},
-        {"address": "0x02031a95", "size": 1, "expected": "0x00"},
-        {"address": "0x02031a9a", "size": 1, "expected": "0x01"},
-        {"address": "0x02031a9b", "size": 1, "expected": "0x01"},
-        {"address": "0x02031a9e", "size": 2, "expected": "0x0001"},
-        {"address": "0x02031aa2", "size": 2, "expected": "0x0000"},
-        {"address": "0x02031aa4", "size": 2, "expected": "0x0001"}
+        {"address": "gExpansionLanguageMenuProbe+0x00", "size": 1, "expected": "0x00"},
+        {"address": "gExpansionLanguageMenuProbe+0x01", "size": 1, "expected": "0x00"},
+        {"address": "gExpansionLanguageMenuProbe+0x06", "size": 1, "expected": "0x01"},
+        {"address": "gExpansionLanguageMenuProbe+0x07", "size": 1, "expected": "0x01"},
+        {"address": "gExpansionLanguageMenuProbe+0x0a", "size": 2, "expected": "0x0001"},
+        {"address": "gExpansionLanguageMenuProbe+0x0e", "size": 2, "expected": "0x0000"},
+        {"address": "gExpansionLanguageMenuProbe+0x10", "size": 2, "expected": "0x0001"}
       ],
       "regions": [
         {"name": "language-globe-icon", "x": 16, "y": 120, "width": 16, "height": 16}
@@ -91,13 +91,13 @@
       "framebuffer": true,
       "name": "simplified-chinese-inline-selected",
       "probes": [
-        {"address": "0x02031a94", "size": 1, "expected": "0x00"},
-        {"address": "0x02031a95", "size": 1, "expected": "0x00"},
-        {"address": "0x02031a9a", "size": 1, "expected": "0x02"},
-        {"address": "0x02031a9b", "size": 1, "expected": "0x02"},
-        {"address": "0x02031a9e", "size": 2, "expected": "0x0002"},
-        {"address": "0x02031aa2", "size": 2, "expected": "0x0000"},
-        {"address": "0x02031aa4", "size": 2, "expected": "0x0002"},
+        {"address": "gExpansionLanguageMenuProbe+0x00", "size": 1, "expected": "0x00"},
+        {"address": "gExpansionLanguageMenuProbe+0x01", "size": 1, "expected": "0x00"},
+        {"address": "gExpansionLanguageMenuProbe+0x06", "size": 1, "expected": "0x02"},
+        {"address": "gExpansionLanguageMenuProbe+0x07", "size": 1, "expected": "0x02"},
+        {"address": "gExpansionLanguageMenuProbe+0x0a", "size": 2, "expected": "0x0002"},
+        {"address": "gExpansionLanguageMenuProbe+0x0e", "size": 2, "expected": "0x0000"},
+        {"address": "gExpansionLanguageMenuProbe+0x10", "size": 2, "expected": "0x0002"},
         {"address": "0x0e0073d6", "size": 1, "expected": "0x02"}
       ],
       "regions": [

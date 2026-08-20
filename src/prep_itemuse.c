@@ -1,4 +1,5 @@
 #include "global.h"
+#include "expansion_bgm.h"
 #include "bmunit.h"
 #include "bmitem.h"
 #include "bmusemind.h"
@@ -725,7 +726,7 @@ void PrepItemUse_ResetBgmAfterPromo(struct ProcPrepItemUse * proc)
     Sound_SetSEVolume(0x100);
 
     if (CheckInLinkArena()) {
-        OverrideBgm(SONG_COLOSSEUM_ENTRANCE);
+        ExpansionBgm_Override(EXPANSION_BGM_CONTEXT_BATTLE, SONG_COLOSSEUM_ENTRANCE);
         return;
     }
     
@@ -735,12 +736,14 @@ void PrepItemUse_ResetBgmAfterPromo(struct ProcPrepItemUse * proc)
         return;
     }
 
-    OverrideBgm(SONG_COMBAT_PREPARATION);
+    ExpansionBgm_Override(EXPANSION_BGM_CONTEXT_PREPARATION, SONG_COMBAT_PREPARATION);
 }
 
 void PrepItemUse_FadeOutBgm(void)
 {
-    ChangeBgm(SONG_NONE, 0x100, 0, 0x10, NULL);
+    ExpansionBgm_Change(
+        EXPANSION_BGM_CONTEXT_PREPARATION, SONG_NONE,
+        0x100, 0, 0x10, NULL);
 }
 
 void StartPrepItemUseScreen(struct Unit *unit, ProcPtr parent)

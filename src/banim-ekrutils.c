@@ -1,4 +1,7 @@
 #include "global.h"
+#ifdef MODERN
+#include "banim_presentation.h"
+#endif
 #include "localized_ui_graphics.h"
 #include "proc.h"
 #include "hardware.h"
@@ -70,6 +73,12 @@ void StartBattleAnimHitEffects(struct Anim *anim, int type, int a, int b)
     struct Anim *animr7, *animr9, *animr5, *animr8;
     int val1, val2;
     s16 roundt1, roundt2;
+#ifdef MODERN
+    struct BanimPresentationPolicy const *policy = BanimPresentationPolicy_GetCurrent();
+
+    if (!BanimPresentationPolicy_UsesHitEffects(policy))
+        return;
+#endif
 
     if (GetAnimPosition(anim) == EKR_POS_L) {
         animr7 = gAnims[2];
@@ -116,20 +125,54 @@ void StartBattleAnimHitEffects(struct Anim *anim, int type, int a, int b)
         if (val1 != val2) {
             NewEfxHpBar(animr5);
 
+#ifdef MODERN
+            if (policy->hitEffectStyle == BANIM_PRESENTATION_HIT_EFFECT_STANDARD)
+            {
+#endif
             if (CheckRoundCrit(animr7) == 1)
                 NewEfxHitQuake(animr5, animr7, b);
             else
                 NewEfxHitQuake(animr5, animr7, a);
+#ifdef MODERN
+            }
+#endif
             
-            NewEfxFlashHPBar(animr5, 0, 5);
+            NewEfxFlashHPBar(
+                animr5,
+                0,
+#ifdef MODERN
+                BanimPresentationPolicy_AdjustEffectDuration(policy, 5));
+            if (BanimPresentationPolicy_UsesHitEffectPalette(policy))
+                NewEfxFlashUnit(
+                    animr5,
+                    0,
+                    BanimPresentationPolicy_AdjustEffectDuration(policy, 8),
+                    0);
+#else
+                5);
             NewEfxFlashUnit(animr5, 0, 8, 0);
+#endif
         } else {
+#ifdef MODERN
+            if (policy->hitEffectStyle == BANIM_PRESENTATION_HIT_EFFECT_STANDARD)
+            {
+#endif
             NewEfxNoDamage(animr5, animr8, 0);
+#ifdef MODERN
+            }
+#endif
         }
         break;
 
     case EKR_MISS:
+#ifdef MODERN
+        if (policy->hitEffectStyle == BANIM_PRESENTATION_HIT_EFFECT_STANDARD)
+        {
+#endif
         NewEfxAvoid(animr5);
+#ifdef MODERN
+        }
+#endif
         break;
     }
 }
@@ -138,6 +181,12 @@ void StartBattleAnimResireHitEffects(struct Anim * anim, int type)
 {
     int val1, val2, off;
     struct Anim * animR7, * animR5, * animR8;
+#ifdef MODERN
+    struct BanimPresentationPolicy const *policy = BanimPresentationPolicy_GetCurrent();
+
+    if (!BanimPresentationPolicy_UsesHitEffects(policy))
+        return;
+#endif
 
     if (GetAnimPosition(anim) == EKR_POS_L) {
         animR7 = gAnims[2];
@@ -163,21 +212,55 @@ void StartBattleAnimResireHitEffects(struct Anim * anim, int type)
         if (val1 != val2) {
             NewEfxHpBarResire(animR5);
 
+#ifdef MODERN
+            if (policy->hitEffectStyle == BANIM_PRESENTATION_HIT_EFFECT_STANDARD)
+            {
+#endif
             if (CheckRoundCrit(animR7) == 1)
                 NewEfxHitQuake(animR5, animR7, 4);
             else
                 NewEfxHitQuake(animR5, animR7, 3);
+#ifdef MODERN
+            }
+#endif
             
-            NewEfxFlashHPBar(animR5, 0, 5);
+            NewEfxFlashHPBar(
+                animR5,
+                0,
+#ifdef MODERN
+                BanimPresentationPolicy_AdjustEffectDuration(policy, 5));
+            if (BanimPresentationPolicy_UsesHitEffectPalette(policy))
+                NewEfxFlashUnit(
+                    animR5,
+                    0,
+                    BanimPresentationPolicy_AdjustEffectDuration(policy, 8),
+                    0);
+#else
+                5);
             NewEfxFlashUnit(animR5, 0, 8, 0);
+#endif
         } else {
+#ifdef MODERN
+            if (policy->hitEffectStyle == BANIM_PRESENTATION_HIT_EFFECT_STANDARD)
+            {
+#endif
             gEfxHpBarResireFlag = 2;
             NewEfxNoDamage(animR5, animR8, 1);
+#ifdef MODERN
+            }
+#endif
         }
         break;
 
     case EKR_MISS:
+#ifdef MODERN
+        if (policy->hitEffectStyle == BANIM_PRESENTATION_HIT_EFFECT_STANDARD)
+        {
+#endif
         NewEfxAvoid(animR5);
+#ifdef MODERN
+        }
+#endif
         break;
     }
 }
@@ -185,6 +268,10 @@ void StartBattleAnimResireHitEffects(struct Anim * anim, int type)
 void StartBattleAnimStatusChgHitEffects(struct Anim * anim, int type)
 {
     struct Anim * anim1;
+#ifdef MODERN
+    if (!BanimPresentationPolicy_UsesHitEffects(BanimPresentationPolicy_GetCurrent()))
+        return;
+#endif
 
     if (GetAnimPosition(anim) == EKR_POS_L)
         anim1 = gAnims[0];

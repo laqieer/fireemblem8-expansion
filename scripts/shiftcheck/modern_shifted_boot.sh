@@ -116,6 +116,8 @@ verify_scenario()
     printf 'Verifying shifted %s behavior (shift=%s)...\n' "$label" "$SHIFT"
     if ! python3 tools/gba-playtest/gba_playtest.py verify \
         --rom "$OUTDIR/shifted.gba" \
+        --elf "$OUTDIR/shifted.elf" \
+        --nm "$NM" \
         --scenario "$scenario" \
         --expected "$expected" \
         ${sram_image:+--sram-image "$sram_image"} \

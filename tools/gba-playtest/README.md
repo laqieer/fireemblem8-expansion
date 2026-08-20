@@ -198,7 +198,14 @@ checkpoint at N is captured.
 
 Probes may be 1, 2, or 4 aligned bytes in EWRAM
 (`0x02000000`-`0x0203ffff`) or IWRAM
-(`0x03000000`-`0x03007fff`). Address strings always have eight hex digits.
+(`0x03000000`-`0x03007fff`). Address strings may have eight hex digits or use
+a bounded ELF binding such as `gExpansionLanguageMenuProbe+0x04`. Symbolic
+probes require `--elf` for capture/verify execution; `--nm` selects the exact
+tool explicitly, while `MODERN_NM` and `MODERN_TOOLCHAIN_ROOT` are the
+configured fallbacks. The backend plan receives the resolved RAM address, but
+captured fingerprints retain the symbolic expression. A relink therefore
+changes execution addresses without rewriting scenario or fingerprint
+semantics.
 Optional probe values are lowercase, fixed-width little-endian integer
 renderings. Optional inline expectations make capture fail immediately; normal
 regression verification uses a separate checked-in fingerprint.

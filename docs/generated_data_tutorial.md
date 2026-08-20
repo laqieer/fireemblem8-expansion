@@ -235,6 +235,37 @@ missing manifest field are each reported with a location. Output:
 cross-references. Override a dependency's source for local iteration with
 `--dep-source NAME=PATH`.
 
+#### Typed event-script helpers
+
+The optional `helperScripts` array adds bounded, typed operations without
+introducing another event router or bytecode language. Each entry has a
+`symbol` and `entries`, where each entry is a
+`{"helper": FAMILY, "operation": NAME, "args": [...]}` object; the generator
+lowers it to one established `EAstdlib.h`/`eventscript.h` macro and appends
+`ENDA`. An optional `owner` (`turn_based`, `character_based`,
+`location_based`, `misc_based`, or `tutorial`) lets existing list/tutorial entries reference the
+generated script with no separate eventscript declaration.
+Helpers are also accepted as entries in the existing event-list arrays, where
+they lower to `TURN`, `AFEV`, `AREA`, `Armory`, `Vendor`, or `SecretShop`.
+
+Supported script families are:
+
+* `flag.set` / `flag.clear` -> `ENUT` / `ENUF`;
+* `unit.spawn_ally`, `unit.spawn_npc`, `unit.spawn_enemy` -> the matching
+  `SPAWN_*` macro, and `unit.load1`..`unit.load4` -> `LOAD1`..`LOAD4`;
+* `bgm.start`, `bgm.fade_in`, `bgm.override`, `bgm.restore` -> `MUSC`,
+  `EvtBgmFadeIn`, `MUSS`, and `MURE`;
+* `recovery.set_hp` -> `SET_HP` (the established event-slot-1 HP contract);
+* `escape.warp_out` -> `WARP_OUT`.
+
+List helpers are `shop.armory`/`shop.vendor`/`shop.secret_shop`,
+`turn.event`, `flag.event`, and `escape.area`. IDs resolve against the live
+character, song, event-flag, faction, event-script, shop, and unit tables;
+coordinates and command widths are range checked. Unknown families,
+operations, references, arity, types, or ranges report the source
+`file:line:column` and JSON breadcrumb. The default Chapter 2 source has no
+`helperScripts`, so its generated C remains unchanged.
+
 ### Compose the whole chapter: the **chapter bundle** (`--table chapterbundle`)
 
 Source: `src/data/ch2_bundle.json`. This is the coherence layer: it names

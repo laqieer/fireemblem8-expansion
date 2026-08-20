@@ -1,6 +1,9 @@
 #include "global.h"
 
 #include "expansion_danger_overlay.h"
+#ifdef MODERN
+#include "expansion_ui_prefs.h"
+#endif
 
 #include "hardware.h"
 #include "fontgrp.h"
@@ -179,6 +182,12 @@ u8 MapMenu_DangerZone_UnusedEffect(void) {
     return MENU_ACT_SKIPCURSOR | MENU_ACT_END | MENU_ACT_SND6A | MENU_ACT_CLEAR;
 }
 
+#ifdef MODERN
+#define EXPANSION_RECORD_DANGER_OVERLAY_PREF() ExpansionUiPrefs_Set(EXPANSION_UI_PREF_THREAT_RANGE, 1)
+#else
+#define EXPANSION_RECORD_DANGER_OVERLAY_PREF() ((void)0)
+#endif
+
 #if FE8_EXPANSION_DANGER_OVERLAY_MENU
 /*
  * Issue #6 player QoL: config-gated map-menu command that promotes the
@@ -193,8 +202,8 @@ u8 MapMenu_DangerZone_UnusedEffect(void) {
  * (MENU_ACT_END | MENU_ACT_CLEAR) and enters the danger-range display. The
  * vanilla map-menu cancel/return path is untouched, so B or a normal cancel
  * returns to the map with the cursor and interactivity intact, and the entry
- * is safe to open and exit repeatedly. It persists no option bit or save
- * field -- the surface exists purely as a compile-time build flag.
+ * is safe to open and exit repeatedly. Selecting it records the existing
+ * behavior through the bounded utility-preference registry.
  */
 u8 ExpansionDangerOverlay_MenuSelect(struct MenuProc* menu, struct MenuItemProc* menuItem)
 {
@@ -202,10 +211,13 @@ u8 ExpansionDangerOverlay_MenuSelect(struct MenuProc* menu, struct MenuItemProc*
     (void)menuItem;
 
     gExpansionDangerOverlayProbe.menuSelectCount++;
+    EXPANSION_RECORD_DANGER_OVERLAY_PREF();
 
     return MapMenu_DangerZone_UnusedEffect();
 }
 #endif
+
+#undef EXPANSION_RECORD_DANGER_OVERLAY_PREF
 
 u8 MapMenu_SuspendCommandEffect(void) {
 

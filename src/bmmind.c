@@ -1,4 +1,7 @@
 #include "global.h"
+#include "expansion_bgm.h"
+
+#include "expansion_casual_mode.h"
 
 #include "proc.h"
 #include "rng.h"
@@ -515,6 +518,7 @@ void KillUnitOnCombatDeath(struct Unit* unitA, struct Unit* unitB) {
     PidStatsRecordDefeatInfo(unitA->pCharacterData->number, unitB->pCharacterData->number, DEFEAT_CAUSE_COMBAT);
 
     UnitKill(unitA);
+    ExpansionCasualMode_MarkDefeat(unitA, EXPANSION_CASUAL_DEFEAT_COMBAT);
 
     return;
 }
@@ -526,6 +530,7 @@ void KillUnitOnArenaDeathMaybe(struct Unit* unit) {
     }
 
     UnitKill(unit);
+    ExpansionCasualMode_MarkDefeat(unit, EXPANSION_CASUAL_DEFEAT_ARENA);
 
     PidStatsRecordDefeatInfo(unit->pCharacterData->number, 0, DEFEAT_CAUSE_ARENA);
 
@@ -617,9 +622,7 @@ void BATTLE_HandleCombatDeaths(struct CombatActionProc* proc) {
 void RestoreMapSongBgm(void) {
     int bgmIdx = GetCurrentMapMusicIndex();
 
-    if (GetCurrentBgmSong() != bgmIdx) {
-        StartBgmExt(bgmIdx, 6, NULL);
-    }
+    ExpansionBgm_Continue(EXPANSION_BGM_CONTEXT_MAP_PHASE, bgmIdx, 6, NULL);
 
     return;
 }

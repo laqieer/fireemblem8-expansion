@@ -53,67 +53,67 @@
       "name": "selector-shown-before-pick",
       "probes": [
         {
-          "address": "0x02031a94",
+          "address": "gExpansionLanguageMenuProbe+0x00",
           "size": 1,
           "expected": "0x01"
         },
         {
-          "address": "0x02031a95",
+          "address": "gExpansionLanguageMenuProbe+0x01",
           "size": 1,
           "expected": "0x00"
         },
         {
-          "address": "0x02031a96",
+          "address": "gExpansionLanguageMenuProbe+0x02",
           "size": 1,
           "expected": "0x01"
         },
         {
-          "address": "0x02031a97",
+          "address": "gExpansionLanguageMenuProbe+0x03",
           "size": 1,
           "expected": "0x00"
         },
         {
-          "address": "0x02031a98",
+          "address": "gExpansionLanguageMenuProbe+0x04",
           "size": 1,
           "expected": "0x01"
         },
         {
-          "address": "0x02031a99",
+          "address": "gExpansionLanguageMenuProbe+0x05",
           "size": 1,
           "expected": "0x00"
         },
         {
-          "address": "0x02031a9a",
+          "address": "gExpansionLanguageMenuProbe+0x06",
           "size": 1,
           "expected": "0x00"
         },
         {
-          "address": "0x02031a9b",
+          "address": "gExpansionLanguageMenuProbe+0x07",
           "size": 1,
           "expected": "0x00"
         },
         {
-          "address": "0x02031a9c",
+          "address": "gExpansionLanguageMenuProbe+0x08",
           "size": 1,
           "expected": "0x02"
         },
         {
-          "address": "0x02031a9e",
+          "address": "gExpansionLanguageMenuProbe+0x0a",
           "size": 2,
           "expected": "0x0000"
         },
         {
-          "address": "0x02031aa0",
+          "address": "gExpansionLanguageMenuProbe+0x0c",
           "size": 2,
           "expected": "0x0001"
         },
         {
-          "address": "0x02031aa2",
+          "address": "gExpansionLanguageMenuProbe+0x0e",
           "size": 2,
           "expected": "0x0000"
         },
         {
-          "address": "0x02031aa4",
+          "address": "gExpansionLanguageMenuProbe+0x10",
           "size": 2,
           "expected": "0x0000"
         }
@@ -125,60 +125,60 @@
       "name": "selector-still-shown-after-down",
       "probes": [
         {
-          "address": "0x02031a94",
+          "address": "gExpansionLanguageMenuProbe+0x00",
           "size": 1,
           "expected": "0x01"
         },
         {
-          "address": "0x02031a95",
+          "address": "gExpansionLanguageMenuProbe+0x01",
           "size": 1
         },
         {
-          "address": "0x02031a96",
+          "address": "gExpansionLanguageMenuProbe+0x02",
           "size": 1,
           "expected": "0x01"
         },
         {
-          "address": "0x02031a97",
+          "address": "gExpansionLanguageMenuProbe+0x03",
           "size": 1
         },
         {
-          "address": "0x02031a98",
+          "address": "gExpansionLanguageMenuProbe+0x04",
           "size": 1
         },
         {
-          "address": "0x02031a99",
+          "address": "gExpansionLanguageMenuProbe+0x05",
           "size": 1
         },
         {
-          "address": "0x02031a9a",
+          "address": "gExpansionLanguageMenuProbe+0x06",
           "size": 1,
           "expected": "0x00"
         },
         {
-          "address": "0x02031a9b",
+          "address": "gExpansionLanguageMenuProbe+0x07",
           "size": 1,
           "expected": "0x00"
         },
         {
-          "address": "0x02031a9c",
+          "address": "gExpansionLanguageMenuProbe+0x08",
           "size": 1
         },
         {
-          "address": "0x02031a9e",
+          "address": "gExpansionLanguageMenuProbe+0x0a",
           "size": 2,
           "expected": "0x0000"
         },
         {
-          "address": "0x02031aa0",
+          "address": "gExpansionLanguageMenuProbe+0x0c",
           "size": 2
         },
         {
-          "address": "0x02031aa2",
+          "address": "gExpansionLanguageMenuProbe+0x0e",
           "size": 2
         },
         {
-          "address": "0x02031aa4",
+          "address": "gExpansionLanguageMenuProbe+0x10",
           "size": 2
         }
       ]
@@ -189,67 +189,67 @@
       "name": "qps-ploc-committed-and-dismissed",
       "probes": [
         {
-          "address": "0x02031a94",
+          "address": "gExpansionLanguageMenuProbe+0x00",
           "size": 1,
           "expected": "0x00"
         },
         {
-          "address": "0x02031a95",
+          "address": "gExpansionLanguageMenuProbe+0x01",
           "size": 1,
           "expected": "0x00"
         },
         {
-          "address": "0x02031a96",
+          "address": "gExpansionLanguageMenuProbe+0x02",
           "size": 1,
           "expected": "0x01"
         },
         {
-          "address": "0x02031a97",
+          "address": "gExpansionLanguageMenuProbe+0x03",
           "size": 1,
           "expected": "0x00"
         },
         {
-          "address": "0x02031a98",
+          "address": "gExpansionLanguageMenuProbe+0x04",
           "size": 1,
           "expected": "0x01"
         },
         {
-          "address": "0x02031a99",
+          "address": "gExpansionLanguageMenuProbe+0x05",
           "size": 1,
           "expected": "0x00"
         },
         {
-          "address": "0x02031a9a",
+          "address": "gExpansionLanguageMenuProbe+0x06",
           "size": 1,
           "expected": "0x07"
         },
         {
-          "address": "0x02031a9b",
+          "address": "gExpansionLanguageMenuProbe+0x07",
           "size": 1,
           "expected": "0x07"
         },
         {
-          "address": "0x02031a9c",
+          "address": "gExpansionLanguageMenuProbe+0x08",
           "size": 1,
           "expected": "0x02"
         },
         {
-          "address": "0x02031a9e",
+          "address": "gExpansionLanguageMenuProbe+0x0a",
           "size": 2,
           "expected": "0x0001"
         },
         {
-          "address": "0x02031aa0",
+          "address": "gExpansionLanguageMenuProbe+0x0c",
           "size": 2,
           "expected": "0x0001"
         },
         {
-          "address": "0x02031aa2",
+          "address": "gExpansionLanguageMenuProbe+0x0e",
           "size": 2,
           "expected": "0x0000"
         },
         {
-          "address": "0x02031aa4",
+          "address": "gExpansionLanguageMenuProbe+0x10",
           "size": 2,
           "expected": "0x0000"
         }
