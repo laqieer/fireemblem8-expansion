@@ -85892,8 +85892,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Wave 0/issue #9 seed: extracted/derived original-game asset or generated-report content (graphics/sound/text/animation data, or GitHub Pages report output). Original Fire Emblem: The Sacred Stones copyright/trademark ownership is Nintendo/Intelligent Systems and is NOT asserted or cleared by this repository. No human legal/provenance review has been recorded yet.",
-    "oid": "2d78590c5742bf4a1ff8599107748a6416beee39",
-    "sha256": "7f03723c594ea43806d485483636e6aac27bf89c7e798ae938d49109af028532"
+    "oid": "c93df1e82f0a67c3eaab26280c4c00f080c0cc72",
+    "sha256": "0da8b888c16cb5001171f3703e064b4635c779fd6fa0cfc0f503d30520f874a3"
   },
   {
     "path": "reports/generated_data_eventscripts_inventory.md",
@@ -85940,8 +85940,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Wave 0/issue #9 seed: extracted/derived original-game asset or generated-report content (graphics/sound/text/animation data, or GitHub Pages report output). Original Fire Emblem: The Sacred Stones copyright/trademark ownership is Nintendo/Intelligent Systems and is NOT asserted or cleared by this repository. No human legal/provenance review has been recorded yet.",
-    "oid": "080b1a190d976d68d92c23d7ea82705985ee5c2f",
-    "sha256": "fc3a9e2ccaf3380e880de1d3dddcae7e6f240fef2724be7105c7d5e7c1dd654c"
+    "oid": "d8b8f7f44bb7d4feb263f5c41bb9945a87911f58",
+    "sha256": "4e7146335aa050e5283f8a645ef77b0ce4405eb66a3c0850638d614d7a6202cf"
   },
   {
     "path": "reports/generated_data_movecost_inventory.md",
@@ -86004,6 +86004,18 @@
     "sha256": "682ce79ce185d0091f103b16e54ba57cde233f19faab1fa3dd0d3450eb1c2a43"
   },
   {
+    "path": "reports/generated_data_ui_presentation_inventory.md",
+    "category": "asset",
+    "author": "NOASSERTION",
+    "rightsholder": "NOASSERTION",
+    "license": "NOASSERTION",
+    "redistribution_approved": false,
+    "reviewer": null,
+    "notes": "Wave 0/issue #9 seed: extracted/derived original-game asset or generated-report content (graphics/sound/text/animation data, or GitHub Pages report output). Original Fire Emblem: The Sacred Stones copyright/trademark ownership is Nintendo/Intelligent Systems and is NOT asserted or cleared by this repository. No human legal/provenance review has been recorded yet.",
+    "oid": "ccfbec0e67e9af5c77cfd3f600c334a849b724d2",
+    "sha256": "a6cd1329a18f5bd243f00cf18f5fc2ea6fe9a5ff2e47a6baa1b7b31a16d3a04f"
+  },
+  {
     "path": "reports/generated_data_units_inventory.md",
     "category": "asset",
     "author": "NOASSERTION",
@@ -86036,8 +86048,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Wave 0/issue #9 seed: extracted/derived original-game asset or generated-report content (graphics/sound/text/animation data, or GitHub Pages report output). Original Fire Emblem: The Sacred Stones copyright/trademark ownership is Nintendo/Intelligent Systems and is NOT asserted or cleared by this repository. No human legal/provenance review has been recorded yet.",
-    "oid": "a5a0bd0184b253818682b7ad6de5efa5997c1f78",
-    "sha256": "f52e24c64d371f4312a6760af37fc1ce8bb067f2c2614c01caee868432802948"
+    "oid": "4dc5b8c3ba3aa54cfdf334ebe64c3d2521da304e",
+    "sha256": "98be2cc2adb585abf1f0d582520a5e9543cd3c88a62153b95edcbc344a7e821b"
   },
   {
     "path": "reports/id_space_audit.md",
@@ -86048,8 +86060,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Wave 0/issue #9 seed: extracted/derived original-game asset or generated-report content (graphics/sound/text/animation data, or GitHub Pages report output). Original Fire Emblem: The Sacred Stones copyright/trademark ownership is Nintendo/Intelligent Systems and is NOT asserted or cleared by this repository. No human legal/provenance review has been recorded yet.",
-    "oid": "427b3e0b334054604f4da3dc42934e123eff5906",
-    "sha256": "ee9008cd13e70f3fbb4f81e730690e6de5a2ba8d2f5a83888d8368143ae2e4f5"
+    "oid": "f0eba2b5eb0b0168325ef07db35201f067c79ce7",
+    "sha256": "1f01f856b81eeb7f81f7085f4ed2fdafaceeea2c345a18fc9dabf5d11d93915e"
   },
   {
     "path": "reports/issue10_closure.md",
@@ -86156,8 +86168,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Wave 0/issue #9 seed: extracted/derived original-game asset or generated-report content (graphics/sound/text/animation data, or GitHub Pages report output). Original Fire Emblem: The Sacred Stones copyright/trademark ownership is Nintendo/Intelligent Systems and is NOT asserted or cleared by this repository. No human legal/provenance review has been recorded yet.",
-    "oid": "0bf11413eda0a4b0ff0373897b108507f58069c8",
-    "sha256": "9c977d680078fd48d6053c9dcd01e63347edaec5fe4368a60e73388229bd4e73"
+    "oid": "b3a065a38f59c0363f5a265e30ab16903845d67c",
+    "sha256": "bfe8a8834c5d01a854679b7276ebb7ffdb7e58a4e6e3800f5e4e358b04629242"
   },
   {
     "path": "reports/linker-budget/modern-localization-debug.json",
@@ -86168,8 +86180,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Wave 0/issue #9 seed: extracted/derived original-game asset or generated-report content (graphics/sound/text/animation data, or GitHub Pages report output). Original Fire Emblem: The Sacred Stones copyright/trademark ownership is Nintendo/Intelligent Systems and is NOT asserted or cleared by this repository. No human legal/provenance review has been recorded yet.",
-    "oid": "f825751d62af62f2685aaf66bb20bf45981dd441",
-    "sha256": "a20746061a9dfe79cc5d102474b825dbf5924e8c615b8248473177626e58e805"
+    "oid": "2d2cecda870321aa903c9724bdc63be806fe70dc",
+    "sha256": "721adb67d23464472cdc7e7cd686d9094fc3873f080febfcc2d430cb4a68616e"
   },
   {
     "path": "reports/linker-budget/modern-localization-release.json",
@@ -86180,8 +86192,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Wave 0/issue #9 seed: extracted/derived original-game asset or generated-report content (graphics/sound/text/animation data, or GitHub Pages report output). Original Fire Emblem: The Sacred Stones copyright/trademark ownership is Nintendo/Intelligent Systems and is NOT asserted or cleared by this repository. No human legal/provenance review has been recorded yet.",
-    "oid": "89d2ca380f99bc32169dd05cdc22776fa581a362",
-    "sha256": "aed986505e31133efc5e91f0c39f9262bf7e860f2133785c182db3a429d66215"
+    "oid": "23c3d606aa133e78d10f57166ee51028f35106da",
+    "sha256": "f8bbbec23089f55bb6dc2ddf95836899700b3c34e139ef0f4506820da8d50729"
   },
   {
     "path": "reports/linker-budget/modern-release.json",
@@ -86192,8 +86204,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Wave 0/issue #9 seed: extracted/derived original-game asset or generated-report content (graphics/sound/text/animation data, or GitHub Pages report output). Original Fire Emblem: The Sacred Stones copyright/trademark ownership is Nintendo/Intelligent Systems and is NOT asserted or cleared by this repository. No human legal/provenance review has been recorded yet.",
-    "oid": "4f4a6ed5fc883942dd075f97ea85a26d97d35485",
-    "sha256": "c4b320566895bc5e418bd38ba5389c2942e97e25b1f1dd2c1999c1d1ab7be002"
+    "oid": "ef55ac1bc28cae59d1cb976ffde1046bace4fbf6",
+    "sha256": "91aa642381d462b9712b868a94786c660cbb892159b4d3ba196ae6b35d8e6716"
   },
   {
     "path": "reports/modernize/inventory.json",
@@ -99932,8 +99944,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Issue #9 disclosure-correction seed (issue #18 localization): tracked localization catalog/source under texts/expansion -- repository-authored framework message keys and locale catalog content (e.g. registry.json / catalog.<locale>.json), never extracted or derived from the original Fire Emblem: The Sacred Stones ROM/game text. This path previously, inaccurately inherited the general 'texts' root's original-game-asset note (Nintendo/Intelligent Systems copyright) via directory-prefix seeding; that note never applied here. Author/rightsholder/license/redistribution-approval remain exactly as unresolved as every other tracked path -- this correction states the provenance *kind* honestly, it does not invent or assert an author, rightsholder, license, or approval.",
-    "oid": "2ab499e457edbd6627fe66c79180f0a161626e3c",
-    "sha256": "7c21cff49f9f9daff343666b5d13910fea75695516430fdf472e1294e49b7bdf"
+    "oid": "67c1443f50573fb4352413ad909ce8e826407725",
+    "sha256": "8b978b4144d152f66643de7f65a6a102146d51796d79e80d0115bc77dc42b0b4"
   },
   {
     "path": "texts/expansion/catalog.en.json",
@@ -99944,8 +99956,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Issue #9 disclosure-correction seed (issue #18 localization): tracked localization catalog/source under texts/expansion -- repository-authored framework message keys and locale catalog content (e.g. registry.json / catalog.<locale>.json), never extracted or derived from the original Fire Emblem: The Sacred Stones ROM/game text. This path previously, inaccurately inherited the general 'texts' root's original-game-asset note (Nintendo/Intelligent Systems copyright) via directory-prefix seeding; that note never applied here. Author/rightsholder/license/redistribution-approval remain exactly as unresolved as every other tracked path -- this correction states the provenance *kind* honestly, it does not invent or assert an author, rightsholder, license, or approval.",
-    "oid": "664c76875ced86cc1df62b7f95b78bea20de4f1b",
-    "sha256": "5ac611d0dbecba878b74aedd8ea451005e11450722f97d1539f5a8fea3e1e6ae"
+    "oid": "a72dcffe472d51ec358c85060b9356b7dfe51e78",
+    "sha256": "198bd443204b21d856698a73f7ddf71aaabf9954788b671a329e4aa87c9ec15e"
   },
   {
     "path": "texts/expansion/catalog.es.json",
@@ -99956,8 +99968,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Issue #9 disclosure-correction seed (issue #18 localization): tracked localization catalog/source under texts/expansion -- repository-authored framework message keys and locale catalog content (e.g. registry.json / catalog.<locale>.json), never extracted or derived from the original Fire Emblem: The Sacred Stones ROM/game text. This path previously, inaccurately inherited the general 'texts' root's original-game-asset note (Nintendo/Intelligent Systems copyright) via directory-prefix seeding; that note never applied here. Author/rightsholder/license/redistribution-approval remain exactly as unresolved as every other tracked path -- this correction states the provenance *kind* honestly, it does not invent or assert an author, rightsholder, license, or approval.",
-    "oid": "fc4ee1d36f735db3d820a79b5b0a1027dd6c7468",
-    "sha256": "ebaa3dce55a1e6263b1b5e29476c1f7b8adad31758118c5276244a38a6b0216a"
+    "oid": "aa2fadf68f53b5ce5feb772e2b4add1b8b8b7584",
+    "sha256": "ea492dd3cf56b98db2892e371309ef8be499bcf79a7356e34cda83954973f512"
   },
   {
     "path": "texts/expansion/catalog.fr.json",
@@ -99968,8 +99980,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Issue #9 disclosure-correction seed (issue #18 localization): tracked localization catalog/source under texts/expansion -- repository-authored framework message keys and locale catalog content (e.g. registry.json / catalog.<locale>.json), never extracted or derived from the original Fire Emblem: The Sacred Stones ROM/game text. This path previously, inaccurately inherited the general 'texts' root's original-game-asset note (Nintendo/Intelligent Systems copyright) via directory-prefix seeding; that note never applied here. Author/rightsholder/license/redistribution-approval remain exactly as unresolved as every other tracked path -- this correction states the provenance *kind* honestly, it does not invent or assert an author, rightsholder, license, or approval.",
-    "oid": "83b8ea66041b79dab3523249adb19f94389f5b07",
-    "sha256": "b4ed3f28e7caeca959237e24aa92e6a329540d26ba816c0d047fd83a1649d5c2"
+    "oid": "e938b878c11efb8d145b1a6a74825b8fe638dcdc",
+    "sha256": "21d13f5124696425a15fcbfcca956087fc96b61336dfda5587d03d6418b1064f"
   },
   {
     "path": "texts/expansion/catalog.it.json",
@@ -99980,8 +99992,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Issue #9 disclosure-correction seed (issue #18 localization): tracked localization catalog/source under texts/expansion -- repository-authored framework message keys and locale catalog content (e.g. registry.json / catalog.<locale>.json), never extracted or derived from the original Fire Emblem: The Sacred Stones ROM/game text. This path previously, inaccurately inherited the general 'texts' root's original-game-asset note (Nintendo/Intelligent Systems copyright) via directory-prefix seeding; that note never applied here. Author/rightsholder/license/redistribution-approval remain exactly as unresolved as every other tracked path -- this correction states the provenance *kind* honestly, it does not invent or assert an author, rightsholder, license, or approval.",
-    "oid": "f9c5f97e506cfcb426112787b5f1ec92748de076",
-    "sha256": "76bcd802e6d5c79ba41da33358c6ef7cbf11efaa64595c215c04b4f40fa8f322"
+    "oid": "cebb18cbef8ceab55861af1729c29bce3e739aa5",
+    "sha256": "2070a94f089c2b7dec0d206246a408591ca4e8f163b902e51b0c583e07f76779"
   },
   {
     "path": "texts/expansion/catalog.ja.json",
@@ -99992,8 +100004,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Issue #9 disclosure-correction seed (issue #18 localization): tracked localization catalog/source under texts/expansion -- repository-authored framework message keys and locale catalog content (e.g. registry.json / catalog.<locale>.json), never extracted or derived from the original Fire Emblem: The Sacred Stones ROM/game text. This path previously, inaccurately inherited the general 'texts' root's original-game-asset note (Nintendo/Intelligent Systems copyright) via directory-prefix seeding; that note never applied here. Author/rightsholder/license/redistribution-approval remain exactly as unresolved as every other tracked path -- this correction states the provenance *kind* honestly, it does not invent or assert an author, rightsholder, license, or approval.",
-    "oid": "b06fd646d17b9fe8450f178171a815bbb72fee15",
-    "sha256": "6c5080dfd309801fb8217ea0b9b159d2411743faec2e2be6a271d13c783f341b"
+    "oid": "f73a0415f024a24ad84d521aabd91ae6dc3f22dc",
+    "sha256": "c0b3e2abdfcfe80270da7f39105996c14d79360896da8888ac427082c3104db4"
   },
   {
     "path": "texts/expansion/catalog.zh-Hans.json",
@@ -100004,8 +100016,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Issue #9 disclosure-correction seed (issue #18 localization): tracked localization catalog/source under texts/expansion -- repository-authored framework message keys and locale catalog content (e.g. registry.json / catalog.<locale>.json), never extracted or derived from the original Fire Emblem: The Sacred Stones ROM/game text. This path previously, inaccurately inherited the general 'texts' root's original-game-asset note (Nintendo/Intelligent Systems copyright) via directory-prefix seeding; that note never applied here. Author/rightsholder/license/redistribution-approval remain exactly as unresolved as every other tracked path -- this correction states the provenance *kind* honestly, it does not invent or assert an author, rightsholder, license, or approval.",
-    "oid": "e66bf25d3427ac2fff3606e18a52bcf0d38acb79",
-    "sha256": "c4aaf59c9b482854b53644ae6b3e5d4dc6a46a13c1f12cf2ae53d8f4d72a937a"
+    "oid": "3bc078a8490b2d7287ff2974a0d52d3f1ef70841",
+    "sha256": "affbbabb97247c7fbf56a74eb7382b09aa71db79650fa26529346cba7da90d5d"
   },
   {
     "path": "texts/expansion/registry.json",
@@ -100016,8 +100028,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Issue #9 disclosure-correction seed (issue #18 localization): tracked localization catalog/source under texts/expansion -- repository-authored framework message keys and locale catalog content (e.g. registry.json / catalog.<locale>.json), never extracted or derived from the original Fire Emblem: The Sacred Stones ROM/game text. This path previously, inaccurately inherited the general 'texts' root's original-game-asset note (Nintendo/Intelligent Systems copyright) via directory-prefix seeding; that note never applied here. Author/rightsholder/license/redistribution-approval remain exactly as unresolved as every other tracked path -- this correction states the provenance *kind* honestly, it does not invent or assert an author, rightsholder, license, or approval.",
-    "oid": "d35e9ff1f99b26aafc0e713ef4d2cae38311bdce",
-    "sha256": "14af79c063f26bc780b322686f364c2469a309d937c1f02dcc2cb071e9162862"
+    "oid": "7db2324cdae77ff498fcc666ea8744956c1fd469",
+    "sha256": "64598e9b4af77e0c0a5c87ca2d6694d18bfbbb374f89b56996ddc0a3a8c37256"
   },
   {
     "path": "texts/locales/authored/catalog.ja.json",
@@ -100448,8 +100460,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Issue #18 full-game locale source/provenance surface under texts/locales: hash-pinned authorized FE8J/FE8CN input snapshots plus deterministic normalized catalogs, mapping evidence, fallback decisions, and manifests. Exact source and regeneration facts are documented in docs/game_locale_sources.md; no human release/legal approval is inferred.",
-    "oid": "31143e58c0ccab76cc86005819a499fd86dd1029",
-    "sha256": "2624cde0ab92224147bb93249a2120c84666e921e489a2765f266a6d1c5dee43"
+    "oid": "2f5e7814a155b10cb5f06040c990428d50e4e4a6",
+    "sha256": "0e49b1dde1d69a9889ed0c3b1e4f54c11e5caa52e92e4a99ceced41493b1374b"
   },
   {
     "path": "texts/locales/mapping/fe8eu_to_fe8u.json",
@@ -100544,8 +100556,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Issue #18 full-game locale source/provenance surface under texts/locales: hash-pinned authorized FE8J/FE8CN input snapshots plus deterministic normalized catalogs, mapping evidence, fallback decisions, and manifests. Exact source and regeneration facts are documented in docs/game_locale_sources.md; no human release/legal approval is inferred.",
-    "oid": "6d8eec6a5e03e36c8b57faefc1e5351d3bda795b",
-    "sha256": "0418a1187c7f28c15692dd8aa76b8220722e8b60b8ff26ede62fb49330f61273"
+    "oid": "8cdad1e636ea640dc31b13e31581195bd588aad9",
+    "sha256": "7c636fa6fc8e8c7ab08cacc6e45f15dac9242568d0296c60d2051591f36ea1fd"
   },
   {
     "path": "texts/locales/mapping/fixed_width_label_metrics.json",
@@ -100556,8 +100568,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Issue #18 full-game locale source/provenance surface under texts/locales: hash-pinned authorized FE8J/FE8CN input snapshots plus deterministic normalized catalogs, mapping evidence, fallback decisions, and manifests. Exact source and regeneration facts are documented in docs/game_locale_sources.md; no human release/legal approval is inferred.",
-    "oid": "c2ffb3de25e94d8d986d6b6880e09786dc59462b",
-    "sha256": "228160f336397cee12059f3bd48d2e964939fb53103e511da697b5bbccb9eab3"
+    "oid": "734c0d76e516a76d44972e703db6f32882139eab",
+    "sha256": "54dbaed8b0dba357977f6474b41e3089d729d6206bee66cd97f72c0ab02aad58"
   },
   {
     "path": "texts/locales/mapping/game_locale_text_edits.json",
