@@ -2,36 +2,36 @@
   "font_asset_scope": "non-ASCII visible Unicode scalars",
   "inputs": {
     "texts/expansion/catalog.de.json": {
-      "byte_count": 3022,
-      "sha256": "7c21cff49f9f9daff343666b5d13910fea75695516430fdf472e1294e49b7bdf"
+      "byte_count": 3078,
+      "sha256": "8b978b4144d152f66643de7f65a6a102146d51796d79e80d0115bc77dc42b0b4"
     },
     "texts/expansion/catalog.en.json": {
-      "byte_count": 2935,
-      "sha256": "5ac611d0dbecba878b74aedd8ea451005e11450722f97d1539f5a8fea3e1e6ae"
+      "byte_count": 2991,
+      "sha256": "198bd443204b21d856698a73f7ddf71aaabf9954788b671a329e4aa87c9ec15e"
     },
     "texts/expansion/catalog.es.json": {
-      "byte_count": 3029,
-      "sha256": "ebaa3dce55a1e6263b1b5e29476c1f7b8adad31758118c5276244a38a6b0216a"
+      "byte_count": 3087,
+      "sha256": "ea492dd3cf56b98db2892e371309ef8be499bcf79a7356e34cda83954973f512"
     },
     "texts/expansion/catalog.fr.json": {
-      "byte_count": 3073,
-      "sha256": "b4ed3f28e7caeca959237e24aa92e6a329540d26ba816c0d047fd83a1649d5c2"
+      "byte_count": 3130,
+      "sha256": "21d13f5124696425a15fcbfcca956087fc96b61336dfda5587d03d6418b1064f"
     },
     "texts/expansion/catalog.it.json": {
-      "byte_count": 3018,
-      "sha256": "76bcd802e6d5c79ba41da33358c6ef7cbf11efaa64595c215c04b4f40fa8f322"
+      "byte_count": 3075,
+      "sha256": "2070a94f089c2b7dec0d206246a408591ca4e8f163b902e51b0c583e07f76779"
     },
     "texts/expansion/catalog.ja.json": {
-      "byte_count": 3070,
-      "sha256": "6c5080dfd309801fb8217ea0b9b159d2411743faec2e2be6a271d13c783f341b"
+      "byte_count": 3134,
+      "sha256": "c0b3e2abdfcfe80270da7f39105996c14d79360896da8888ac427082c3104db4"
     },
     "texts/expansion/catalog.zh-Hans.json": {
-      "byte_count": 2960,
-      "sha256": "c4aaf59c9b482854b53644ae6b3e5d4dc6a46a13c1f12cf2ae53d8f4d72a937a"
+      "byte_count": 3015,
+      "sha256": "affbbabb97247c7fbf56a74eb7382b09aa71db79650fa26529346cba7da90d5d"
     },
     "texts/expansion/registry.json": {
-      "byte_count": 12769,
-      "sha256": "14af79c063f26bc780b322686f364c2469a309d937c1f02dcc2cb071e9162862"
+      "byte_count": 13077,
+      "sha256": "64598e9b4af77e0c0a5c87ca2d6694d18bfbbb374f89b56996ddc0a3a8c37256"
     },
     "texts/locales/authored/catalog.ja.json": {
       "byte_count": 53070,
@@ -76,7 +76,7 @@
       "contributions": {
         "system": {
           "non_ascii_scalar_count": 1175,
-          "record_count": 2305
+          "record_count": 2306
         },
         "talk": {
           "non_ascii_scalar_count": 1732,
@@ -84,7 +84,7 @@
         }
       },
       "expansion": {
-        "active_key_count": 61,
+        "active_key_count": 62,
         "catalogs": [
           "texts/expansion/catalog.de.json",
           "texts/expansion/catalog.en.json",
@@ -103,12 +103,12 @@
       "runtime_usage": {
         "classifications": {
           "both": 319,
-          "system": 1986,
+          "system": 1987,
           "talk": 1172
         },
-        "expansion_key_count": 61,
+        "expansion_key_count": 62,
         "game_target_count": 3414,
-        "record_count": 3477,
+        "record_count": 3478,
         "unclassified_count": 0
       },
       "source_non_ascii_scalar_count": 1786,
@@ -137,7 +137,7 @@
       "contributions": {
         "system": {
           "non_ascii_scalar_count": 1460,
-          "record_count": 2305
+          "record_count": 2306
         },
         "talk": {
           "non_ascii_scalar_count": 2383,
@@ -145,7 +145,7 @@
         }
       },
       "expansion": {
-        "active_key_count": 61,
+        "active_key_count": 62,
         "catalogs": [
           "texts/expansion/catalog.de.json",
           "texts/expansion/catalog.en.json",
@@ -164,12 +164,12 @@
       "runtime_usage": {
         "classifications": {
           "both": 319,
-          "system": 1986,
+          "system": 1987,
           "talk": 1172
         },
-        "expansion_key_count": 61,
+        "expansion_key_count": 62,
         "game_target_count": 3414,
-        "record_count": 3477,
+        "record_count": 3478,
         "unclassified_count": 0
       },
       "source_non_ascii_scalar_count": 2442,
@@ -233,8 +233,8 @@
       "sha256": "a58c41c11d3c387f9884b0c8539ba729bfdcc26bf6a0540bf3f38e74d6f991d6"
     },
     "fonts/cjk/runtime_usage.json": {
-      "byte_count": 1495805,
-      "sha256": "0209ea4260a65aefb38d0156b8c5f6b3145d8db9aff697c8f3610530d769cb46"
+      "byte_count": 1496315,
+      "sha256": "d877a540de89f45dde16d61fdcab3190f36a59ff1be57da88fdfee136da7b64c"
     }
   },
   "schema_version": 1,
