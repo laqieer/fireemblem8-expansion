@@ -5528,8 +5528,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Wave 0/issue #9 seed: repository-authored build tooling/config/source surface (or, for asm/, decompiled disassembly derived from the original ROM). No human legal/provenance review has been recorded yet; this manifest records that honestly rather than asserting a license or clearance.",
-    "oid": "ac520aa239ec21e6a6b1a8bc34da4448690c1728",
-    "sha256": "1f96ce38409b9c9c9194805d8e82024f5e18ac9f374f6fda773fe43b1f5225e9"
+    "oid": "539c5428046fd1ec4dd27d4e12cd9be78b488704",
+    "sha256": "6cdde3844706c735c8654e13d482fb011643f1533eb5e573dbe063c852d40d2b"
   },
   {
     "path": "scripts/func_re_hard.js",

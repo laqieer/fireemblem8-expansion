@@ -2780,8 +2780,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Issue #18 CJK font asset/provenance surface under fonts/cjk: unmodified Noto CJK OTF inputs, the vendored OFL-1.1 text, deterministic corpora/maps/manifests/reports, and third-party notices. Exact upstream commit, source URLs, licenses, and hashes are recorded in this tree; no human release/legal approval is inferred from those factual records.",
-    "oid": "4878b5b7d0132d723202a28d80589b432ec9c80e",
-    "sha256": "4046afc2996d99b4821bc19c2109291d5dbcf05cdc262e7facaa8158917637dd"
+    "oid": "ae173984e3d705604b1cd8babaa4eaeab7ec2ade",
+    "sha256": "be19d2cbc1bfff2c865f6d40ce630f050de37739accbc86c70eda5f3456f5926"
   },
   {
     "path": "fonts/cjk/licenses/Noto-CJK-OFL-1.1.txt",
@@ -2864,8 +2864,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Issue #18 CJK font asset/provenance surface under fonts/cjk: unmodified Noto CJK OTF inputs, the vendored OFL-1.1 text, deterministic corpora/maps/manifests/reports, and third-party notices. Exact upstream commit, source URLs, licenses, and hashes are recorded in this tree; no human release/legal approval is inferred from those factual records.",
-    "oid": "3c677a756dcb89167a7a15a0f8ddcd501f3d9472",
-    "sha256": "0209ea4260a65aefb38d0156b8c5f6b3145d8db9aff697c8f3610530d769cb46"
+    "oid": "dfbbad4e5f4781504b959959300960b5211522b4",
+    "sha256": "d877a540de89f45dde16d61fdcab3190f36a59ff1be57da88fdfee136da7b64c"
   },
   {
     "path": "fonts/cjk/upstream/NotoSansJP-Regular.otf",
@@ -39212,8 +39212,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Wave 0/issue #9 seed: extracted/derived original-game asset or generated-report content (graphics/sound/text/animation data, or GitHub Pages report output). Original Fire Emblem: The Sacred Stones copyright/trademark ownership is Nintendo/Intelligent Systems and is NOT asserted or cleared by this repository. No human legal/provenance review has been recorded yet.",
-    "oid": "7699ee8014edba62651872b4b4c7b147d38b87ad",
-    "sha256": "b9a97487253bc9843b414a99c7fe9f172d24b60ae6420079067bb9af983723a0"
+    "oid": "cfd6955d7025810276af2c62a3cc872e0fc677e8",
+    "sha256": "9b7bca027297b94684275f3b9f528c0b57f8336279f63ad427e4c956928a4ef1"
   },
   {
     "path": "graphics/fonts/cjk/zh-Hans.system.codepoints.u32le",
