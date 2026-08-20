@@ -1172,8 +1172,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Wave 0/issue #9 seed: repository-authored documentation. No human legal/provenance review has been recorded yet; this manifest records that honestly rather than asserting a license or clearance.",
-    "oid": "8e1739b2ae08f76ef54c554ae80a84fa6a7ef8f4",
-    "sha256": "521763ceec2e887caa5011f5cec5c7be254a871bf0fc06d8c29455df20cf69fc"
+    "oid": "59b6981ec7dbfdd6ce609002138dfb90c074ef4e",
+    "sha256": "66d3dc23ec54981b1f4744061f5badb583002e5170ab919aa705bd5cc53c09f4"
   },
   {
     "path": "docs/game_localization_catalog.md",

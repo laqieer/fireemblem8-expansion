@@ -100580,8 +100580,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Issue #18 full-game locale source/provenance surface under texts/locales: hash-pinned authorized FE8J/FE8CN input snapshots plus deterministic normalized catalogs, mapping evidence, fallback decisions, and manifests. Exact source and regeneration facts are documented in docs/game_locale_sources.md; no human release/legal approval is inferred.",
-    "oid": "cffb027c881a9374d2f912a18ecfd92ca7323078",
-    "sha256": "b346f17da90bd30393d951934d5fc40353901c8305372b129f474c521800b8fa"
+    "oid": "59029819cb5127dbf287d2d5514807fcbb92ef09",
+    "sha256": "c129f82db4f755bbabbd05ab0273fb7e03c9d6e5f3d67e5afb810db655301bbd"
   },
   {
     "path": "texts/locales/mapping/raw_surface_closure.json",
@@ -100616,8 +100616,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Issue #18 full-game locale source/provenance surface under texts/locales: hash-pinned authorized FE8J/FE8CN input snapshots plus deterministic normalized catalogs, mapping evidence, fallback decisions, and manifests. Exact source and regeneration facts are documented in docs/game_locale_sources.md; no human release/legal approval is inferred.",
-    "oid": "2ee5e45de52c1d54f57b92ada9f6940938e41c65",
-    "sha256": "f7f1af5ea4d47bdaeba5a35fea29221086e717ad47a8f4d36a0723787ec23497"
+    "oid": "bbdaa0d7fd44e91f47056eb6b06871318bca728f",
+    "sha256": "4c47f8d48c21b4b45c4144b0310f915d4146529ec88443cbf6e438bd3d6361b1"
   },
   {
     "path": "texts/locales/mapping/structural_completion_evidence.json",
