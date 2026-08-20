@@ -1,5 +1,7 @@
 #include "global.h"
 
+#include "expansion_casual_mode.h"
+
 #include <string.h>
 
 #include "constants/classes.h"
@@ -1248,8 +1250,12 @@ void ChapterChangeUnitCleanup(void) {
 
             unit->state &= (
                 US_DEAD | US_GROWTH_BOOST | US_SOLOANIM_1 | US_SOLOANIM_2 |
-                US_BIT16 | US_BIT20 | US_BIT21 | US_BIT25 | US_BIT26
+                US_BIT16 | US_BIT20 | US_BIT21 |
+                US_BIT24 |
+                US_BIT25 | US_BIT26
             );
+
+            ExpansionCasualMode_RestoreAtChapterBoundary(unit);
 
             if (UNIT_CATTRIBUTES(unit) & CA_SUPPLY)
                 unit->state = unit->state &~ US_DEAD;

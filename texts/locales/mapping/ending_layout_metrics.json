@@ -2198,7 +2198,7 @@
   "schema_version": 1,
   "source": {
     "path": "src/ending_details.c",
-    "sha256": "cb98cba4a8e3b8ac0cb0eb0d3a34003cf74b1c4ab663319a2df4c7b1d4c93263"
+    "sha256": "8b2bc8d04e29f23681f548e4eb81799956785df170c5396108e585ab06527125"
   },
   "summary": {
     "locale_count": 2,

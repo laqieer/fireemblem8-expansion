@@ -16,16 +16,16 @@
       "framebuffer": true,
       "name": "five-language-selector-shown",
       "probes": [
-        {"address": "0x02031a94", "size": 1, "expected": "0x01"},
-        {"address": "0x02031a96", "size": 1, "expected": "0x01"},
-        {"address": "0x02031a97", "size": 1, "expected": "0x00"},
-        {"address": "0x02031a98", "size": 1, "expected": "0x01"},
-        {"address": "0x02031a99", "size": 1, "expected": "0x00"},
-        {"address": "0x02031a9b", "size": 1, "expected": "0x00"},
-        {"address": "0x02031a9c", "size": 1, "expected": "0x05"},
-        {"address": "0x02031a9e", "size": 2, "expected": "0x0000"},
-        {"address": "0x02031aa0", "size": 2, "expected": "0x0001"},
-        {"address": "0x02031aa6", "size": 1, "expected": "0x01"}
+        {"address": "gExpansionLanguageMenuProbe+0x00", "size": 1, "expected": "0x01"},
+        {"address": "gExpansionLanguageMenuProbe+0x02", "size": 1, "expected": "0x01"},
+        {"address": "gExpansionLanguageMenuProbe+0x03", "size": 1, "expected": "0x00"},
+        {"address": "gExpansionLanguageMenuProbe+0x04", "size": 1, "expected": "0x01"},
+        {"address": "gExpansionLanguageMenuProbe+0x05", "size": 1, "expected": "0x00"},
+        {"address": "gExpansionLanguageMenuProbe+0x07", "size": 1, "expected": "0x00"},
+        {"address": "gExpansionLanguageMenuProbe+0x08", "size": 1, "expected": "0x05"},
+        {"address": "gExpansionLanguageMenuProbe+0x0a", "size": 2, "expected": "0x0000"},
+        {"address": "gExpansionLanguageMenuProbe+0x0c", "size": 2, "expected": "0x0001"},
+        {"address": "gExpansionLanguageMenuProbe+0x12", "size": 1, "expected": "0x01"}
       ]
     },
     {
@@ -33,12 +33,12 @@
       "framebuffer": true,
       "name": "french-committed",
       "probes": [
-        {"address": "0x02031a94", "size": 1, "expected": "0x00"},
-        {"address": "0x02031a9a", "size": 1, "expected": "0x03"},
-        {"address": "0x02031a9b", "size": 1, "expected": "0x03"},
-        {"address": "0x02031a9c", "size": 1, "expected": "0x05"},
-        {"address": "0x02031a9e", "size": 2, "expected": "0x0001"},
-        {"address": "0x02031aa6", "size": 1, "expected": "0x00"}
+        {"address": "gExpansionLanguageMenuProbe+0x00", "size": 1, "expected": "0x00"},
+        {"address": "gExpansionLanguageMenuProbe+0x06", "size": 1, "expected": "0x03"},
+        {"address": "gExpansionLanguageMenuProbe+0x07", "size": 1, "expected": "0x03"},
+        {"address": "gExpansionLanguageMenuProbe+0x08", "size": 1, "expected": "0x05"},
+        {"address": "gExpansionLanguageMenuProbe+0x0a", "size": 2, "expected": "0x0001"},
+        {"address": "gExpansionLanguageMenuProbe+0x12", "size": 1, "expected": "0x00"}
       ]
     }
   ]

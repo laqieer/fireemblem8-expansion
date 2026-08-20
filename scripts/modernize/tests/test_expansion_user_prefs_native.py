@@ -30,6 +30,7 @@ other state must yield (defaultLocaleId, requiresPrompt=true) -- the
 """
 
 import re
+import struct
 import subprocess
 import sys
 import tempfile
@@ -197,6 +198,117 @@ int main(void)
         )
         return binary
 
+    def _build_selection_migration_probe(self, tmp_path: Path) -> Path:
+        struct_def = _extract_struct_with_trailing_attribute(
+            self.expansion_save_prefs_h, "ExpansionUserPrefs"
+        )
+        checksum16_fn = _extract_c_function(self.bmsave_lib_c, "Checksum16")
+        build_fn = _extract_c_function(self.bmsave_lib_c, "ExpansionUserPrefs_Build")
+        checksum_fn = _extract_c_function(self.bmsave_lib_c, "ExpansionUserPrefsChecksum")
+        legacy_fn = _extract_c_function(
+            self.bmsave_lib_c, "ExpansionUserPrefs_BuildLegacyLocaleOnly"
+        )
+        current_fn = _extract_c_function(
+            self.bmsave_lib_c, "ExpansionUserPrefs_BuildWithSelections"
+        )
+
+        probe_source = f"""\
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+typedef uint8_t u8;
+typedef uint16_t u16;
+typedef uint32_t u32;
+typedef int8_t s8;
+typedef s8 bool;
+typedef u8 bool8;
+enum {{ false, true }};
+
+#ifndef TRUE
+#define TRUE 1
+#endif
+#ifndef FALSE
+#define FALSE 0
+#endif
+
+#define ALIGN(m) __attribute__((aligned (m)))
+
+typedef u8 ExpansionLocaleId;
+#define EXPANSION_USER_PREFS_MAGIC 0xA5u
+#define EXPANSION_USER_PREFS_VERSION_CURRENT 1u
+#define EXPANSION_USER_PREFS_FLAG_LOCALE_EXPLICIT 0x01u
+#define EXPANSION_USER_PREFS_SIZE_FOR_CHECKSUM 0x08
+#define EXPANSION_USER_PREFS_DEFAULT_POLICY_ID 0
+#define EXPANSION_USER_PREFS_UTILITY_MASK 0x01
+
+{struct_def};
+
+{checksum16_fn}
+{checksum_fn}
+{build_fn}
+{legacy_fn}
+{current_fn}
+
+int main(int argc, char **argv)
+{{
+    struct ExpansionUserPrefs prefs;
+    int mode;
+
+    if (argc != 4)
+        return 2;
+
+    mode = atoi(argv[1]);
+    if (mode == 0)
+        ExpansionUserPrefs_BuildLegacyLocaleOnly(
+            &prefs, 0, (ExpansionLocaleId)atoi(argv[2]), (bool8)atoi(argv[3]));
+    else if (mode == 2)
+        ExpansionUserPrefs_BuildLegacyLocaleOnly(
+            &prefs, 1, (ExpansionLocaleId)atoi(argv[2]), (bool8)atoi(argv[3]));
+    else
+        ExpansionUserPrefs_BuildWithSelections(
+            &prefs,
+            (ExpansionLocaleId)atoi(argv[2]),
+            (bool8)atoi(argv[3]),
+            2,
+            1);
+
+    fwrite(&prefs, sizeof(prefs), 1, stdout);
+    return 0;
+}}
+"""
+        source = tmp_path / "selection_migration_probe.c"
+        binary = tmp_path / "selection_migration_probe"
+        source.write_text(probe_source, encoding="utf-8")
+
+        compile_result = subprocess.run(
+            [self.cc, "-std=c99", str(source), "-o", str(binary)],
+            cwd=ROOT,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            check=False,
+        )
+        self.assertEqual(
+            compile_result.returncode,
+            0,
+            f"native selection migration probe failed to compile:\n"
+            f"{compile_result.stdout}\n\n--- generated source ---\n{probe_source}",
+        )
+        return binary
+
+    def _run_selection_migration_case(self, binary: Path, mode: int) -> bytes:
+        result = subprocess.run(
+            [str(binary), str(mode), "3", "1"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, f"probe crashed: {result.stdout!r}")
+        self.assertEqual(len(result.stdout), sft.EXPANSION_USER_PREFS_SIZE)
+        return result.stdout
+
     def _run_case(self, binary: Path, raw12: bytes, region_unset: bool):
         self.assertEqual(len(raw12), sft.EXPANSION_USER_PREFS_SIZE)
         stdin_bytes = raw12 + bytes([1 if region_unset else 0])
@@ -237,29 +349,45 @@ int main(void)
             valid_prefs = make_raw(locale_id=0)
             cases.append(("valid_current_enabled", valid_prefs.pack(), False, valid_prefs))
 
-            # 4. unknown locale id (>= LOCALE_COUNT) -> UNKNOWN_LOCALE
+            # 4. current bounded policy/utility selections -> VALID
+            selected_prefs = make_raw(locale_id=0, reserved=bytes((2, 1, 1, 0)))
+            cases.append(("valid_current_selections", selected_prefs.pack(), False, selected_prefs))
+
+            # 5. selection policy outside the public registry -> CORRUPT
+            invalid_policy_prefs = make_raw(locale_id=0, reserved=bytes((5, 0, 1, 0)))
+            cases.append(("corrupt_selection_policy", invalid_policy_prefs.pack(), False, invalid_policy_prefs))
+
+            # 6. utility bits outside the bounded mask -> CORRUPT
+            invalid_utility_prefs = make_raw(locale_id=0, reserved=bytes((0, 2, 1, 0)))
+            cases.append(("corrupt_selection_utility", invalid_utility_prefs.pack(), False, invalid_utility_prefs))
+
+            # 7. selection schema newer than this build -> CORRUPT
+            newer_selection_prefs = make_raw(locale_id=0, reserved=bytes((0, 0, 2, 0)))
+            cases.append(("corrupt_newer_selection_schema", newer_selection_prefs.pack(), False, newer_selection_prefs))
+
+            # 8. unknown locale id (>= LOCALE_COUNT) -> UNKNOWN_LOCALE
             unknown_prefs = make_raw(locale_id=LOCALE_COUNT + 3)
             cases.append(("unknown_locale", unknown_prefs.pack(), False, unknown_prefs))
 
-            # 5. supported but disabled locale id (1 is not in ENABLED_MASK) -> DISABLED_LOCALE
+            # 9. supported but disabled locale id (1 is not in ENABLED_MASK) -> DISABLED_LOCALE
             disabled_prefs = make_raw(locale_id=1)
             cases.append(("disabled_locale", disabled_prefs.pack(), False, disabled_prefs))
 
-            # 6. bad magic -> CORRUPT
+            # 10. bad magic -> CORRUPT
             bad_magic_prefs = make_raw(magic=0x00)
             cases.append(("corrupt_magic", bad_magic_prefs.pack(), False, bad_magic_prefs))
 
-            # 7. bad checksum (magic/version untouched) -> CORRUPT
+            # 11. bad checksum (magic/version untouched) -> CORRUPT
             bad_checksum_prefs = make_raw(checksum=0, fixup_checksum=False)
             # magic/version left correct, checksum deliberately wrong (0
             # does not match the real computed checksum for these fields).
             cases.append(("corrupt_checksum", bad_checksum_prefs.pack(), False, bad_checksum_prefs))
 
-            # 8. version newer than this build knows -> CORRUPT
+            # 12. version newer than this build knows -> CORRUPT
             newer_prefs = make_raw(version=sft.EXPANSION_USER_PREFS_VERSION_CURRENT + 1)
             cases.append(("corrupt_newer_version", newer_prefs.pack(), False, newer_prefs))
 
-            # 9. well-formed *older* version, enabled locale -> MIGRATED
+            # 13. well-formed *older* version, enabled locale -> MIGRATED
             #    (version 0 is "older than current" for this probe -- no
             #    real prior version has shipped yet, but the classifier's
             #    `<` comparison is exercised identically either way).
@@ -317,6 +445,49 @@ int main(void)
             )
             self.assertEqual(c_locale_id, default_locale_id)
             self.assertTrue(c_requires_prompt)
+
+    def test_native_schema_zero_locale_write_preserves_legacy_selection_padding(self):
+        source = self.bmsave_lib_c
+        self.assertIn("ExpansionUserPrefs_BuildLegacyLocaleOnly", source)
+        self.assertIn("current.reserved[2] == 0", source)
+        self.assertIn("schema 0 until a full UI-preference store", source)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            binary = self._build_selection_migration_probe(Path(tmp))
+            raw = self._run_selection_migration_case(binary, 0)
+
+        self.assertEqual(raw[1], 0, "locale-only migration must remain schema 0")
+        self.assertEqual(raw[2], 3)
+        self.assertEqual(raw[3], 1)
+        self.assertEqual(raw[4:8], b"\x00" * 4)
+        self.assertEqual(
+            struct.unpack_from("<H", raw, 8)[0],
+            sft.checksum16(raw[:8]),
+        )
+
+    def test_native_current_record_with_schema_zero_preserves_legacy_padding(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            binary = self._build_selection_migration_probe(Path(tmp))
+            raw = self._run_selection_migration_case(binary, 2)
+
+        self.assertEqual(raw[1], sft.EXPANSION_USER_PREFS_VERSION_CURRENT)
+        self.assertEqual(raw[4:8], b"\x00" * 4)
+        self.assertEqual(
+            struct.unpack_from("<H", raw, 8)[0],
+            sft.checksum16(raw[:8]),
+        )
+
+    def test_native_full_selection_write_promotes_to_current_schema(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            binary = self._build_selection_migration_probe(Path(tmp))
+            raw = self._run_selection_migration_case(binary, 1)
+
+        self.assertEqual(raw[1], sft.EXPANSION_USER_PREFS_VERSION_CURRENT)
+        self.assertEqual(raw[4:8], bytes((2, 1, 1, 0)))
+        self.assertEqual(
+            struct.unpack_from("<H", raw, 8)[0],
+            sft.checksum16(raw[:8]),
+        )
 
 
 if __name__ == "__main__":

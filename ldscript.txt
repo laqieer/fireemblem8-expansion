@@ -237,6 +237,12 @@ SECTIONS
         . = ALIGN(4); src/debugtools_tools.o(ewram_data);
         . = ALIGN(4); src/bmshop.o(ewram_data);
         . = ALIGN(4); src/debugtools_registry.o(debugtools_contributor_data);
+        /*
+         * The archival compiler emits static EWRAM_DATA objects as .bss.
+         * Keep the sound-room flag arrays in persistent EWRAM after the
+         * existing fixed placements, without shifting those addresses.
+         */
+        . = ALIGN(4); src/soundroom.o(.bss);
 
         /*
          * Issue #2 slice 2: src/save_compat_menu.o(ewram_data) above added
@@ -275,6 +281,7 @@ SECTIONS
         src/time.o(.text);
         src/hardware.o(.text);
         src/soundwrapper.o(.text);
+        src/expansion_bgm.o(.text);
         src/ramfunc.o(.text);
         src/proc.o(.text);
         src/icon.o(.text);
@@ -307,6 +314,8 @@ SECTIONS
         src/bm.o(.text);
         src/bmitem.o(.text);
         src/bmunit.o(.text);
+        src/expansion_portraits.o(.text);
+        src/expansion_casual_mode.o(.text);
         src/bmmap.o(.text);
         src/bmidoten.o(.text);
         src/bmdebug.o(.text);
@@ -647,6 +656,8 @@ SECTIONS
 
         /* .rodata */
         . = ALIGN(4); src/main.o(.rodata);
+        . = ALIGN(4); src/expansion_bgm.o(.rodata);
+        . = ALIGN(4); src/expansion_bgm_data.o(.rodata);
         . = ALIGN(4); src/rng.o(.rodata);
         . = ALIGN(4); src/hardware.o(.rodata);
         . = ALIGN(4); src/data/trig_rodata.o(.rodata);
@@ -678,6 +689,8 @@ SECTIONS
         . = ALIGN(4); src/bmusemind.o(.rodata);
         . = ALIGN(4); src/menu_def.o(.rodata);
         . = ALIGN(4); src/bmio.o(.rodata);
+        . = ALIGN(4); src/expansion_portraits.o(.rodata);
+        . = ALIGN(4); src/expansion_casual_mode.o(.rodata);
         . = ALIGN(4); src/bmarena.o(.rodata);
         . = ALIGN(4); src/prep_sallycursor.o(.rodata);
         . = ALIGN(4); src/unitinfowindow.o(.rodata);
@@ -859,6 +872,7 @@ SECTIONS
         . = ALIGN(4); src/classchg-menuconfirm.o(.rodata);
         . = ALIGN(4); src/classchg-menuselect.o(.rodata);
         . = ALIGN(4); src/bmguide.o(.rodata);
+        . = ALIGN(4); src/soundroom_data.o(.rodata);
         . = ALIGN(4); INCLUDE "linker_script_sound.txt"
         . = ALIGN(4); src/agb_sram.o(.rodata);
         . = ALIGN(4); *libc.a:vfprintf.o(.rodata);
@@ -872,6 +886,8 @@ SECTIONS
         . = ALIGN(4); src/main.o(.data);
         . = ALIGN(4); src/hardware.o(.data);
         . = ALIGN(4); src/soundwrapper.o(.data);
+        . = ALIGN(4); src/expansion_bgm.o(.data);
+        . = ALIGN(4); src/expansion_bgm_data.o(.data);
         . = ALIGN(4); src/proc.o(.data);
         . = ALIGN(4); src/fontgrp.o(.data);
         . = ALIGN(4); src/fontgrp-data.o(.data);

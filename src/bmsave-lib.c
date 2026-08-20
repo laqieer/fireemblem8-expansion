@@ -384,8 +384,35 @@ void ExpansionUserPrefs_Build(struct ExpansionUserPrefs *prefs, ExpansionLocaleI
     prefs->localeId = (u8)localeId;
     prefs->flags = explicitSelection ? EXPANSION_USER_PREFS_FLAG_LOCALE_EXPLICIT : 0;
 
-    /* prefs->reserved is already zeroed by the memset() above. */
+    prefs->checksum = ExpansionUserPrefsChecksum(prefs);
+}
 
+void ExpansionUserPrefs_BuildWithSelections(
+    struct ExpansionUserPrefs *prefs,
+    ExpansionLocaleId localeId,
+    bool8 explicitSelection,
+    u8 policyId,
+    u8 utilityFlags)
+{
+    ExpansionUserPrefs_Build(prefs, localeId, explicitSelection);
+    prefs->reserved[0] = policyId;
+    prefs->reserved[1] = utilityFlags & EXPANSION_USER_PREFS_UTILITY_MASK;
+    prefs->reserved[2] = EXPANSION_USER_PREFS_VERSION_CURRENT;
+    prefs->checksum = ExpansionUserPrefsChecksum(prefs);
+}
+
+static void ExpansionUserPrefs_BuildLegacyLocaleOnly(
+    struct ExpansionUserPrefs *prefs,
+    u8 version,
+    ExpansionLocaleId localeId,
+    bool8 explicitSelection)
+{
+    memset(prefs, 0, sizeof(*prefs));
+
+    prefs->magic = EXPANSION_USER_PREFS_MAGIC;
+    prefs->version = version;
+    prefs->localeId = (u8)localeId;
+    prefs->flags = explicitSelection ? EXPANSION_USER_PREFS_FLAG_LOCALE_EXPLICIT : 0;
     prefs->checksum = ExpansionUserPrefsChecksum(prefs);
 }
 
@@ -418,6 +445,12 @@ enum ExpansionUserPrefsState ExpansionUserPrefs_ValidateRaw(struct ExpansionUser
         return EXPANSION_USER_PREFS_CORRUPT;
 
     if (prefs->version > EXPANSION_USER_PREFS_VERSION_CURRENT)
+        return EXPANSION_USER_PREFS_CORRUPT;
+
+    if (prefs->reserved[0] > 4
+        || (prefs->reserved[1] & (u8)~0x01) != 0
+        || prefs->reserved[2] > EXPANSION_USER_PREFS_VERSION_CURRENT
+        || prefs->reserved[3] != 0)
         return EXPANSION_USER_PREFS_CORRUPT;
 
     if (prefs->localeId >= EXPANSION_LOCALE_COUNT)
@@ -478,9 +511,10 @@ enum ExpansionUserPrefsState ExpansionUserPrefs_Normalize(
     return state;
 }
 
-bool8 ExpansionUserPrefs_StoreRaw(ExpansionLocaleId localeId, bool8 explicitSelection)
+static bool8 ExpansionUserPrefs_StoreRecord(
+    ExpansionLocaleId localeId,
+    struct ExpansionUserPrefs const *prefs)
 {
-    struct ExpansionUserPrefs prefs;
     u32 errorAddr;
 
     if (localeId >= EXPANSION_LOCALE_COUNT)
@@ -509,12 +543,90 @@ bool8 ExpansionUserPrefs_StoreRaw(ExpansionLocaleId localeId, bool8 explicitSele
      * (classified EXPANSION_USER_PREFS_CORRUPT -- safe fallback + a
      * requires-prompt signal, never SRAM corruption elsewhere).
      */
-    ExpansionUserPrefs_Build(&prefs, localeId, explicitSelection);
-
     errorAddr = WriteAndVerifySramFast(
-        &prefs, &gSram->expansionSaveMeta.reserved[EXPANSION_USER_PREFS_META_OFFSET], sizeof(prefs));
+        prefs,
+        &gSram->expansionSaveMeta.reserved[EXPANSION_USER_PREFS_META_OFFSET],
+        sizeof(*prefs));
 
     return (bool8)(errorAddr == 0);
+}
+
+bool8 ExpansionUserPrefs_StoreRaw(ExpansionLocaleId localeId, bool8 explicitSelection)
+{
+    struct ExpansionUserPrefs current;
+    struct ExpansionUserPrefs prefs;
+    enum ExpansionUserPrefsState state;
+    u8 policyId = EXPANSION_USER_PREFS_DEFAULT_POLICY_ID;
+    u8 utilityFlags = 0;
+
+    state = ExpansionUserPrefs_Load(&current);
+    if ((state == EXPANSION_USER_PREFS_VALID || state == EXPANSION_USER_PREFS_MIGRATED)
+        && current.reserved[0] == 0
+        && current.reserved[1] == 0
+        && current.reserved[2] == 0
+        && current.reserved[3] == 0)
+    {
+        /*
+         * A schema-0 locale-only write must not promote its zero-filled
+         * padding into authoritative current policy selections. Leave the
+         * record at schema 0 until a full UI-preference store supplies the
+         * current runtime selections.
+         */
+        ExpansionUserPrefs_BuildLegacyLocaleOnly(
+            &prefs, current.version, localeId, explicitSelection);
+        return ExpansionUserPrefs_StoreRecord(localeId, &prefs);
+    }
+
+    if (state == EXPANSION_USER_PREFS_VALID || state == EXPANSION_USER_PREFS_MIGRATED)
+    {
+        policyId = current.reserved[0];
+        utilityFlags = current.reserved[1];
+    }
+
+    return ExpansionUserPrefs_StoreRawWithSelections(
+        localeId, explicitSelection, policyId, utilityFlags);
+}
+
+bool8 ExpansionUserPrefs_StoreRawWithSelections(
+    ExpansionLocaleId localeId,
+    bool8 explicitSelection,
+    u8 policyId,
+    u8 utilityFlags)
+{
+    struct ExpansionUserPrefs prefs;
+
+    if (policyId > 4 || (utilityFlags & (u8)~EXPANSION_USER_PREFS_UTILITY_MASK) != 0)
+        return FALSE;
+
+    ExpansionUserPrefs_BuildWithSelections(
+        &prefs,
+        localeId,
+        explicitSelection,
+        policyId,
+        utilityFlags);
+
+    return ExpansionUserPrefs_StoreRecord(localeId, &prefs);
+}
+
+void ExpansionUserPrefs_GetSelections(u8 *outPolicyId, u8 *outUtilityFlags)
+{
+    struct ExpansionUserPrefs prefs;
+    enum ExpansionUserPrefsState state;
+
+    state = ExpansionUserPrefs_Load(&prefs);
+    if (state != EXPANSION_USER_PREFS_VALID && state != EXPANSION_USER_PREFS_MIGRATED)
+    {
+        if (outPolicyId != NULL)
+            *outPolicyId = EXPANSION_USER_PREFS_DEFAULT_POLICY_ID;
+        if (outUtilityFlags != NULL)
+            *outUtilityFlags = 0;
+        return;
+    }
+
+    if (outPolicyId != NULL)
+        *outPolicyId = prefs.reserved[0];
+    if (outUtilityFlags != NULL)
+        *outUtilityFlags = prefs.reserved[1] & EXPANSION_USER_PREFS_UTILITY_MASK;
 }
 
 #endif
@@ -1530,6 +1642,17 @@ void EraseSoundRoomSaveData(void)
     WriteSoundRoomSaveData(&buf);
 }
 
+bool IsSoundRoomSongIdValid(int val)
+{
+    return val >= 0 && val < SOUND_ROOM_SAVE_CAPACITY;
+}
+
+bool IsSoundRoomSaveDataFormatValid(const struct SoundRoomSaveData *buf)
+{
+    return buf->magic2 == SOUND_ROOM_SAVE_FORMAT_LEGACY
+        || buf->magic2 == SOUND_ROOM_SAVE_FORMAT_CURRENT;
+}
+
 bool LoadAndVerifySoundRoomData(struct SoundRoomSaveData * buf)
 {
     struct SoundRoomSaveData tmp;
@@ -1544,8 +1667,8 @@ bool LoadAndVerifySoundRoomData(struct SoundRoomSaveData * buf)
 
     if (buf->magic1 != Checksum16(buf, sizeof(struct SoundRoomSaveData) - 4))
         return false;
-    else
-        return true;
+
+    return IsSoundRoomSaveDataFormatValid(buf);
 }
 
 void WriteSoundRoomSaveData(struct SoundRoomSaveData * buf)
@@ -1555,6 +1678,7 @@ void WriteSoundRoomSaveData(struct SoundRoomSaveData * buf)
         return;
 #endif
 
+    buf->magic2 = SOUND_ROOM_SAVE_FORMAT_CURRENT;
     buf->magic1 = Checksum16(buf, sizeof(struct SoundRoomSaveData) - 4);
     WriteAndVerifySramFast(buf, &gSram->soundRoomSave, sizeof(struct SoundRoomSaveData));
 }
@@ -1564,10 +1688,16 @@ bool IsSoundRoomSongUnlocked(struct SoundRoomSaveData * buf, int val)
     struct SoundRoomSaveData tmp;
     u32 _val = val;
 
+    if (!IsSoundRoomSongIdValid(val))
+        return false;
+
     if (buf == NULL) {
         buf = &tmp;
-        LoadAndVerifySoundRoomData(&tmp);
+        if (!LoadAndVerifySoundRoomData(&tmp))
+            return false;
     }
+    else if (!IsSoundRoomSaveDataFormatValid(buf))
+        return false;
 
     if ((buf->flags[val >> 5] >> (_val % 0x20)) & 1)
         return true;
@@ -1579,15 +1709,25 @@ void UnlockSoundRoomSong(struct SoundRoomSaveData * buf, int val)
 {
     struct SoundRoomSaveData tmp;
     u32 _val = val;
-    
+
+    if (!IsSoundRoomSongIdValid(val))
+        return;
+
     if (buf == NULL) {
         buf = &tmp;
         if (!LoadAndVerifySoundRoomData(&tmp))
             return;
     }
 
-    if (buf->flags[val >> 5] & (1 << (_val % 0x20)))
+    if (!IsSoundRoomSaveDataFormatValid(buf))
         return;
+
+    if (buf->flags[val >> 5] & (1 << (_val % 0x20)))
+    {
+        if (buf->magic2 == SOUND_ROOM_SAVE_FORMAT_LEGACY)
+            WriteSoundRoomSaveData(buf);
+        return;
+    }
 
     buf->flags[val >> 5] |= 1 << (_val % 0x20);
 

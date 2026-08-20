@@ -507,6 +507,16 @@
       "max_width": 8,
       "max_decoded_bytes": 8,
       "pseudo_policy": "preserve"
+    },
+    {
+      "id": 62,
+      "key": "ui.presentation.chapter_title_default",
+      "status": "active",
+      "surface": "framework_generic",
+      "max_width": 20,
+      "max_decoded_bytes": 32,
+      "pseudo_policy": "preserve",
+      "notes": "Issue #43 typed chapter-title manifest fallback label."
     }
   ]
 }

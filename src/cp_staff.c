@@ -1,5 +1,9 @@
 #include "global.h"
 
+#if FE8_EXPANSION_MODERN_BUILD
+#include "expansion_aoe.h"
+#endif
+
 #include "cp_common.h"
 
 #include "bmitem.h"
@@ -80,6 +84,10 @@ s8 AiTryDoStaff(s8 (*isEnemy)(struct Unit* unit)) {
     for (i = 0; i < UNIT_ITEM_COUNT; i++) {
         int funcIndex;
         u16 item = gActiveUnit->items[i];
+#if FE8_EXPANSION_MODERN_BUILD
+        struct ExpansionAoEItemContext aoeContext;
+        enum ExpansionAoEItemDispatchResult aoeResult;
+#endif
 
         if (item == 0) {
             break;
@@ -88,6 +96,19 @@ s8 AiTryDoStaff(s8 (*isEnemy)(struct Unit* unit)) {
         if (!(GetItemAttributes(item) & IA_STAFF)) {
             continue;
         }
+
+#if FE8_EXPANSION_MODERN_BUILD
+        ExpansionAoE_InitItemContext(
+            &aoeContext, EXPANSION_AOE_ITEM_AI_SELECT, gActiveUnit, item, i);
+        aoeContext.aiRelation = isEnemy;
+        aoeResult = ExpansionAoE_DispatchItem(&aoeContext);
+
+        if (aoeResult == EXPANSION_AOE_ITEM_HANDLED)
+            return gAiDecision.actionPerformed;
+
+        if (aoeResult != EXPANSION_AOE_ITEM_NOT_HANDLED)
+            continue;
+#endif
 
         if (GetItemRequiredExp(item) < exp) {
             continue;

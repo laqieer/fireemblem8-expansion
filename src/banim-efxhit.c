@@ -1,4 +1,7 @@
 #include "global.h"
+#ifdef MODERN
+#include "banim_presentation.h"
+#endif
 #include "anime.h"
 #include "ekrbattle.h"
 #include "efxbattle.h"
@@ -34,7 +37,14 @@ void efxDamageMojiEffectMain(struct ProcEfx * proc)
         return;
     }
 
-    if (time == 0xA) {
+    if (time ==
+#ifdef MODERN
+        BanimPresentationPolicy_AdjustEffectDuration(
+            BanimPresentationPolicy_GetCurrent(),
+            0xA)) {
+#else
+        0xA) {
+#endif
         Proc_Break(proc);
         return;
     }
@@ -56,10 +66,22 @@ void NewEfxDamageMojiEffectOBJ(struct Anim * anim, int hitted)
     proc->timer = 0;
 
     if (hitted == 0) {
+#ifdef MODERN
+        proc->terminator = BanimPresentationPolicy_AdjustEffectDuration(
+            BanimPresentationPolicy_GetCurrent(),
+            0x32);
+#else
         proc->terminator = 0x32;
+#endif
         anim_scr = AnimScr_NoDamage;
     } else {
+#ifdef MODERN
+        proc->terminator = BanimPresentationPolicy_AdjustEffectDuration(
+            BanimPresentationPolicy_GetCurrent(),
+            0x32);
+#else
         proc->terminator = 0x32;
+#endif
         anim_scr = AnimScr_Miss;
     }
 

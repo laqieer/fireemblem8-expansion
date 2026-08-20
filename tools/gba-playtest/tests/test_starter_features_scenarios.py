@@ -3,9 +3,9 @@ Issue #6 starter-feature runtime scenarios (reuses the issue #13 gba-playtest
 harness; no new framework).
 
 Schema/pointer-audit checks always run. The libmGBA runtime verifications run
-only when a caller points STARTER_HOOK_ROM / STARTER_HOOK_NEGATIVE_ROM at built
-modern ROMs (the Make gate expansion-modern-starter-hook-check does this after
-building the dedicated starter-foundation profile ROM and the default ROM);
+only when the Make gates point at built modern ROMs (the starter runtime gate
+does this after building the dedicated starter-foundation profile ROM and the
+default ROM);
 otherwise they skip, exactly like the other modern-ROM scenario tests that
 skip when the ROM has not been built.
 """
@@ -22,6 +22,7 @@ FINGERPRINTS_DIR = PLAYTEST_DIR / "fingerprints"
 sys.path.insert(0, str(PLAYTEST_DIR))
 
 import gba_playtest  # noqa: E402
+import check_starter_probe_addresses  # noqa: E402
 
 POSITIVE = "starter-hook-modern-debug"
 NEGATIVE = "starter-hook-negative-modern-debug"
@@ -66,6 +67,79 @@ class StarterHookScenarioSchemaTests(unittest.TestCase):
         for name in (POSITIVE, NEGATIVE):
             fp = self._fingerprint(name)
             self.assertEqual(fp["scenario"], name)
+
+    def test_probe_addresses_bind_to_current_debug_and_release_elves(self):
+        cases = (
+            (
+                "build/expansion-modern-starter/debug/aapcs/fireemblem8.elf",
+                "starter-hook-modern-debug",
+            ),
+            (
+                "build/expansion-modern/debug/aapcs/fireemblem8.elf",
+                "starter-hook-negative-modern-debug",
+            ),
+            (
+                "build/expansion-modern-starter/release/aapcs/fireemblem8.elf",
+                "starter-hook-clean-modern-release",
+            ),
+            (
+                "build/expansion-modern/release/aapcs/fireemblem8.elf",
+                "starter-hook-clean-negative-modern-release",
+            ),
+        )
+        missing = [
+            elf
+            for elf, _ in cases
+            if not (REPO_ROOT / elf).is_file()
+        ]
+        if missing:
+            raise unittest.SkipTest(
+                "starter probe binding ELFs not built: %s" % ", ".join(missing)
+            )
+        for elf, name in cases:
+            check_starter_probe_addresses.check_bindings(
+                REPO_ROOT / elf,
+                SCENARIOS_DIR / (name + ".json"),
+                FINGERPRINTS_DIR / (name + ".json"),
+            )
+
+    def test_danger_overlay_probe_addresses_bind_to_current_elves(self):
+        cases = (
+            (
+                "build/expansion-modern-starter/debug/aapcs/fireemblem8.elf",
+                "starter-danger-overlay-modern-debug",
+            ),
+            (
+                "build/expansion-modern/debug/aapcs/fireemblem8.elf",
+                "starter-danger-overlay-negative-modern-debug",
+            ),
+            (
+                "build/expansion-modern-starter/release/aapcs/fireemblem8.elf",
+                "starter-danger-overlay-modern-release",
+            ),
+            (
+                "build/expansion-modern/release/aapcs/fireemblem8.elf",
+                "starter-danger-overlay-negative-modern-release",
+            ),
+        )
+        missing = [
+            elf
+            for elf, _ in cases
+            if not (REPO_ROOT / elf).is_file()
+        ]
+        if missing:
+            raise unittest.SkipTest(
+                "danger-overlay probe binding ELFs not built: %s" % ", ".join(missing)
+            )
+        for elf, name in cases:
+            check_starter_probe_addresses.check_bindings(
+                REPO_ROOT / elf,
+                SCENARIOS_DIR / (name + ".json"),
+                FINGERPRINTS_DIR / (name + ".json"),
+                symbol="gExpansionDangerOverlayProbe",
+                probe_size=5 * 4,
+                checkpoint_markers=("overlay",),
+            )
 
     def test_probes_are_semantic_scalars_not_pointers(self):
         import json

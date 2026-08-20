@@ -1,5 +1,6 @@
 #include "classchg.h"
 
+#include "expansion_bgm.h"
 #include "bm.h"
 #include "bmio.h"
 #include "bmudisp.h"
@@ -184,9 +185,9 @@ void PromoMain_OnEnd(struct ProcPromoMain *proc)
 {
     struct ProcPromoHandler *parent = proc->proc_parent;
     if (parent->bmtype == PROMO_HANDLER_TYPE_TRANINEE) {
-        RestoreBgm();
+        ExpansionBgm_Restore(EXPANSION_BGM_CONTEXT_MENU, 6);
         Sound_SetSEVolume(0x100);
-        OverrideBgm(SONG_COMBAT_PREPARATION);
+        ExpansionBgm_Override(EXPANSION_BGM_CONTEXT_MENU, SONG_COMBAT_PREPARATION);
     }
     parent->stat = 2;
     EndAllProcChildren(proc);

@@ -211,6 +211,22 @@ META_MAGIC = b"FSAV"  # EXPANSION_SAVE_META_MAGIC
 SRAM_PROBE_OFFSET = META_OFFSET - 4  # gSram->reserved, overwritten by SramInit()
 SRAM_PROBE_SIZE = 4
 
+# struct SoundRoomSaveData (include/bmsave.h). Issue #36 deliberately keeps
+# this record at its historical SRAM offset/size and uses its existing
+# second trailer word as a version/capacity marker.
+SOUND_ROOM_OFFSET = 0x7224
+SOUND_ROOM_SIZE = 0x24
+SOUND_ROOM_CHECKSUM_DOMAIN = 0x20
+SOUND_ROOM_FLAG_WORDS = 8
+SOUND_ROOM_CAPACITY = SOUND_ROOM_FLAG_WORDS * 32
+SOUND_ROOM_FORMAT_LEGACY = 0
+SOUND_ROOM_FORMAT_VERSION_CURRENT = 1
+SOUND_ROOM_FORMAT_CURRENT = (
+    SOUND_ROOM_FLAG_WORDS << 8
+) | SOUND_ROOM_FORMAT_VERSION_CURRENT
+SOUND_ROOM_FORMAT_OFFSET = SOUND_ROOM_OFFSET + 0x22
+SOUND_ROOM_CHECKSUM_OFFSET = SOUND_ROOM_OFFSET + 0x20
+
 # Bumped 1 -> 2 for issue #18 sprint 2 alongside
 # include/save_format.h's SAVE_FORMAT_VERSION_CURRENT: struct
 # ExpansionUserPrefs (see below) now occupies part of `reserved`.
@@ -279,6 +295,68 @@ def checksum16(data: bytes) -> int:
     return (add_acc + xor_acc) & 0xFFFF
 
 
+def sound_room_song_id_is_valid(song_id: int) -> bool:
+    """Mirrors IsSoundRoomSongIdValid() (include/bmsave.h/src/bmsave-lib.c)."""
+    return 0 <= song_id < SOUND_ROOM_CAPACITY
+
+
+def sound_room_flags_bytes(flags: bytes) -> bytes:
+    """Validate and return the checksum-covered sound-room flag region."""
+    if len(flags) != SOUND_ROOM_CHECKSUM_DOMAIN:
+        raise SaveFormatError(
+            f"sound-room flags must be exactly {SOUND_ROOM_CHECKSUM_DOMAIN} bytes"
+        )
+    return flags
+
+
+def sound_room_save_state(raw: bytes) -> str:
+    """Classify one raw struct SoundRoomSaveData record.
+
+    The legacy representation has the same checksum-covered 256-bit flag
+    region and a zero trailer marker. Version 1 records carry the explicit
+    256-slot capacity marker. Unknown markers and checksum failures are
+    rejected rather than guessed at.
+    """
+    if len(raw) != SOUND_ROOM_SIZE:
+        raise SaveFormatError(
+            f"sound-room record must be exactly {SOUND_ROOM_SIZE} bytes"
+        )
+
+    flags = sound_room_flags_bytes(raw[:SOUND_ROOM_CHECKSUM_DOMAIN])
+    stored_checksum = int.from_bytes(
+        raw[SOUND_ROOM_CHECKSUM_DOMAIN:SOUND_ROOM_CHECKSUM_DOMAIN + 2], "little"
+    )
+    if stored_checksum != checksum16(flags):
+        return "SOUND_ROOM_SAVE_CORRUPT"
+
+    format_marker = int.from_bytes(raw[0x22:0x24], "little")
+    if format_marker == SOUND_ROOM_FORMAT_LEGACY:
+        return "SOUND_ROOM_SAVE_LEGACY"
+    if format_marker == SOUND_ROOM_FORMAT_CURRENT:
+        return "SOUND_ROOM_SAVE_CURRENT"
+    return "SOUND_ROOM_SAVE_UNSUPPORTED"
+
+
+def migrate_sound_room_save_bytes(raw: bytes) -> bytes:
+    """Upgrade a valid legacy sound-room record without changing unlock bits.
+
+    The checksum domain is intentionally unchanged, so migration only writes
+    the explicit version/capacity marker. This pure transform is used by the
+    host save migrator and by focused issue #36 tests.
+    """
+    state = sound_room_save_state(raw)
+    if state == "SOUND_ROOM_SAVE_CORRUPT":
+        raise SaveFormatError("cannot migrate a corrupt sound-room record")
+    if state == "SOUND_ROOM_SAVE_UNSUPPORTED":
+        raise SaveFormatError("cannot migrate an unsupported sound-room record")
+    if state == "SOUND_ROOM_SAVE_CURRENT":
+        return raw
+
+    migrated = bytearray(raw)
+    migrated[0x22:0x24] = SOUND_ROOM_FORMAT_CURRENT.to_bytes(2, "little")
+    return bytes(migrated)
+
+
 def is_region_blank(data: bytes) -> bool:
     """Mirrors IsRegionBlank() (src/bmsave-lib.c): true iff every byte is
     0xFF, matching WipeSram()'s 0xFFFFFFFF fill pattern."""
@@ -329,6 +407,9 @@ def is_sram_image_erased(image: bytes) -> bool:
 EXPANSION_USER_PREFS_MAGIC = 0xA5
 EXPANSION_USER_PREFS_VERSION_CURRENT = 1
 EXPANSION_USER_PREFS_FLAG_LOCALE_EXPLICIT = 0x01
+EXPANSION_USER_PREFS_DEFAULT_POLICY_ID = 0
+EXPANSION_USER_PREFS_UTILITY_THREAT_RANGE = 0x01
+EXPANSION_USER_PREFS_UTILITY_MASK = 0x01
 EXPANSION_USER_PREFS_SIZE_FOR_CHECKSUM = 0x08
 EXPANSION_USER_PREFS_META_OFFSET = 0
 EXPANSION_USER_PREFS_SIZE = 0x0C  # sizeof(struct ExpansionUserPrefs) (ALIGN(4))
@@ -426,6 +507,14 @@ def classify_user_prefs_raw(prefs: ExpansionUserPrefs, region_unset: bool, local
         return EXPANSION_USER_PREFS_CORRUPT
 
     if prefs.version > EXPANSION_USER_PREFS_VERSION_CURRENT:
+        return EXPANSION_USER_PREFS_CORRUPT
+
+    if (
+        prefs.reserved[0] > 4
+        or prefs.reserved[1] & ~EXPANSION_USER_PREFS_UTILITY_MASK
+        or prefs.reserved[2] > EXPANSION_USER_PREFS_VERSION_CURRENT
+        or prefs.reserved[3] != 0
+    ):
         return EXPANSION_USER_PREFS_CORRUPT
 
     if prefs.locale_id >= locale_count:
@@ -824,6 +913,16 @@ def cmd_inspect(args: argparse.Namespace) -> int:
                 print(f"userPrefs.effectiveDefaultLocaleId: {default_locale_id}")
             except (SaveFormatError, ec.ConfigError) as error:
                 print(f"userPrefs.classification: error resolving config: {error}")
+
+        try:
+            print(
+                "soundRoom.classification: "
+                + sound_room_save_state(
+                    image[SOUND_ROOM_OFFSET:SOUND_ROOM_OFFSET + SOUND_ROOM_SIZE]
+                )
+            )
+        except SaveFormatError as error:
+            print(f"soundRoom.classification: error: {error}")
     return 0
 
 
@@ -1198,6 +1297,29 @@ def cmd_migrate(args: argparse.Namespace) -> int:
         target_compat_epoch = to_compat_epoch
 
     image[META_OFFSET:META_OFFSET + META_SIZE] = new_meta.pack()
+
+    # Issue #36: the outer ExpansionSaveMeta layout and compatibility epoch
+    # do not change. The existing sound-room trailer word is upgraded only
+    # when producing this build's current representation; legacy unlock bits
+    # remain byte-for-byte intact and corrupt/unknown auxiliary records are
+    # rejected rather than silently erased.
+    if (
+        target_format_version == SAVE_FORMAT_VERSION_CURRENT
+        and target_compat_epoch == save_compat_epoch
+    ):
+        try:
+            image[SOUND_ROOM_OFFSET:SOUND_ROOM_OFFSET + SOUND_ROOM_SIZE] = (
+                migrate_sound_room_save_bytes(
+                    bytes(image[SOUND_ROOM_OFFSET:SOUND_ROOM_OFFSET + SOUND_ROOM_SIZE])
+                )
+            )
+        except SaveFormatError as error:
+            print(
+                f"error: sound-room migration failed: {error}; "
+                f"source left untouched, nothing written",
+                file=sys.stderr,
+            )
+            return 4
 
     # Verify the in-memory rebuilt image is *exactly* the declared
     # target, not merely "some migration happened": the raw formatVersion

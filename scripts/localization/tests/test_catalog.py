@@ -486,6 +486,7 @@ class LoadCatalogTests(unittest.TestCase):
                 "framework.locale_short_name.de",
                 "framework.locale_short_name.es",
                 "framework.locale_short_name.it",
+                "ui.presentation.chapter_title_default",
             ],
         )
         for entry in loaded.active_entries:

@@ -53,12 +53,12 @@
       "frame": 5200,
       "framebuffer": true,
       "probes": [
-        {"address": "0x02031588", "size": 1, "expected": "0x00"},
-        {"address": "0x02031589", "size": 1, "expected": "0x00"},
-        {"address": "0x0203158f", "size": 1, "expected": "0x00"},
-        {"address": "0x02031592", "size": 2, "expected": "0x0000"},
-        {"address": "0x02031596", "size": 2, "expected": "0x0000"},
-        {"address": "0x02031598", "size": 2, "expected": "0x0000"}
+        {"address": "gExpansionLanguageMenuProbe+0x00", "size": 1, "expected": "0x00"},
+        {"address": "gExpansionLanguageMenuProbe+0x01", "size": 1, "expected": "0x00"},
+        {"address": "gExpansionLanguageMenuProbe+0x07", "size": 1, "expected": "0x00"},
+        {"address": "gExpansionLanguageMenuProbe+0x0a", "size": 2, "expected": "0x0000"},
+        {"address": "gExpansionLanguageMenuProbe+0x0e", "size": 2, "expected": "0x0000"},
+        {"address": "gExpansionLanguageMenuProbe+0x10", "size": 2, "expected": "0x0000"}
       ]
     },
     {
@@ -66,12 +66,12 @@
       "frame": 5500,
       "framebuffer": true,
       "probes": [
-        {"address": "0x02031588", "size": 1, "expected": "0x00"},
-        {"address": "0x02031589", "size": 1, "expected": "0x00"},
-        {"address": "0x0203158f", "size": 1, "expected": "0x00"},
-        {"address": "0x02031592", "size": 2, "expected": "0x0000"},
-        {"address": "0x02031596", "size": 2, "expected": "0x0000"},
-        {"address": "0x02031598", "size": 2, "expected": "0x0000"}
+        {"address": "gExpansionLanguageMenuProbe+0x00", "size": 1, "expected": "0x00"},
+        {"address": "gExpansionLanguageMenuProbe+0x01", "size": 1, "expected": "0x00"},
+        {"address": "gExpansionLanguageMenuProbe+0x07", "size": 1, "expected": "0x00"},
+        {"address": "gExpansionLanguageMenuProbe+0x0a", "size": 2, "expected": "0x0000"},
+        {"address": "gExpansionLanguageMenuProbe+0x0e", "size": 2, "expected": "0x0000"},
+        {"address": "gExpansionLanguageMenuProbe+0x10", "size": 2, "expected": "0x0000"}
       ]
     },
     {
@@ -79,12 +79,12 @@
       "frame": 5650,
       "framebuffer": true,
       "probes": [
-        {"address": "0x02031588", "size": 1, "expected": "0x00"},
-        {"address": "0x02031589", "size": 1, "expected": "0x00"},
-        {"address": "0x0203158f", "size": 1, "expected": "0x00"},
-        {"address": "0x02031592", "size": 2, "expected": "0x0000"},
-        {"address": "0x02031596", "size": 2, "expected": "0x0000"},
-        {"address": "0x02031598", "size": 2, "expected": "0x0000"}
+        {"address": "gExpansionLanguageMenuProbe+0x00", "size": 1, "expected": "0x00"},
+        {"address": "gExpansionLanguageMenuProbe+0x01", "size": 1, "expected": "0x00"},
+        {"address": "gExpansionLanguageMenuProbe+0x07", "size": 1, "expected": "0x00"},
+        {"address": "gExpansionLanguageMenuProbe+0x0a", "size": 2, "expected": "0x0000"},
+        {"address": "gExpansionLanguageMenuProbe+0x0e", "size": 2, "expected": "0x0000"},
+        {"address": "gExpansionLanguageMenuProbe+0x10", "size": 2, "expected": "0x0000"}
       ]
     }
   ]

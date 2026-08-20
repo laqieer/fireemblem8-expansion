@@ -1,5 +1,15 @@
 # Expansion save format (issue #2)
 
+## Issue #42 AoE compatibility note
+
+The typed AoE framework persists no target list, callback, raw pointer, proc,
+or in-progress effect state. Its only route policy is synchronous
+`EXPANSION_AOE_SAVE_ATOMIC_REBUILD`: unfinished selection is rebuilt from
+ordinary scalar action state after resume, while completed effects already
+exist in ordinary unit/item state. `EXPANSION_AOE_REFERENCE` participates in
+the diagnostic config fingerprint but adds no save field or migration and does
+not change `EXPANSION_SAVE_COMPAT_EPOCH`. See [`aoe.md`](aoe.md).
+
 This document is the single reference for the expansion-owned save
 metadata record, the raw-byte compatibility classifier, the destructive
 boot-path fix, the host-side `scripts/modernize/save_format_tool.py` CLI
@@ -16,6 +26,60 @@ older *current-format* save layouts -- see "Limitations" below, which
 remains true after slice 2.
 
 ## On-media format
+
+### Optional casual defeat marker (issue #34)
+
+The default `EXPANSION_CASUAL_MODE=0` preserves ordinary permadeath. When
+the optional policy is enabled, eligible combat/arena defeats use
+`US_BIT24`, which is already present in the packed unit `flag` bitfield
+(`PACKED_US_CASUAL_DEFEAT`) and in the suspend unit's existing full `state`
+word. Game and suspend save paths always serialize and restore this marker,
+even in a non-casual build, because profiles share the same save epoch. Only
+marker creation and chapter-boundary restoration are gated by
+`EXPANSION_CASUAL_MODE`; a disabled profile carries the marker without
+activating casual behavior. No save struct grows or moves, and
+`EXPANSION_SAVE_COMPAT_EPOCH` remains unchanged. The marker is cleared when
+the chapter-boundary cleanup restores the unit; direct scripted or permanent
+`UnitKill` calls clear any stale marker before applying death.
+
+### Versioned sound-room unlock record (issue #36)
+
+`struct SoundRoomSaveData` remains at SRAM offset `0x7224`, remains exactly
+`0x24` bytes, and keeps the historical `Checksum16` domain (`flags[8]`,
+`0x20` bytes). The existing second trailer word (`magic2`) is now an explicit
+representation marker; it was previously always zero and was not padding:
+
+| `magic2` | Meaning |
+| --- | --- |
+| `0x0000` | legacy record; all eight flag words are still preserved |
+| `0x0801` | version 1, eight 32-bit words, 256 song-ID slots |
+
+The old `songId < 128` runtime gate is gone. `IsSoundRoomSongIdValid()` accepts
+IDs `0..255`, and invalid IDs are rejected without indexing or writing. A
+legacy record is accepted after its unchanged checksum validates; the next
+allowed sound-room write stamps `0x0801` without changing any unlock bit.
+Boot-time write suppression still applies before this stamp, so loading a
+legacy record never causes an unsolicited SRAM write.
+
+Sound-room catalog visibility is tracked separately from playable/unlocked
+state: a catalog condition may expose a locked entry without making it
+playable. The 32-byte playable bitset lives inline in the already allocated
+`SoundRoomProc` only while that screen runs; the 32-byte visibility bitset is
+call-local scratch used only by `InitSoundRoomSongData`. Neither bitset
+reserves always-live EWRAM, and `sizeof(struct SoundRoomProc) <= sizeof(struct
+Proc)` remains an ARM/host layout assertion. Existing all-ordinary catalogs
+therefore retain their prior behavior. The catalog and persisted flag capacity
+are validated together; an entry outside the 256-slot persisted capacity makes
+the catalog invalid rather than silently consuming unrelated memory.
+
+This is an additive, same-offset representation change: no `SaveBlocks` field
+grows or moves, `ExpansionSaveMeta`/`ExpansionUserPrefs`/the casual-mode
+marker are not touched, and `EXPANSION_SAVE_COMPAT_EPOCH` remains unchanged.
+The host save tool mirrors the marker validation and performs the same
+lossless legacy-to-current auxiliary-record transform when producing a
+current image. Corrupt or unknown sound-room records are rejected rather than
+guessed at. No localization hash input, music asset, or campaign unlock rule
+changes.
 
 ### Where it lives
 
@@ -84,7 +148,7 @@ field's offset, or touch `xmap`/any other `SaveBlocks` field. See
 | `0x01` | 1 | `version` (`EXPANSION_USER_PREFS_VERSION_CURRENT`, currently `1`) |
 | `0x02` | 1 | `localeId` (`ExpansionLocaleId`) |
 | `0x03` | 1 | `flags` (bit 0 = `EXPANSION_USER_PREFS_FLAG_LOCALE_EXPLICIT`) |
-| `0x04` | 4 | `reserved[4]` (always `0`, headroom for near-future fields) |
+| `0x04` | 4 | `reserved[0]` policy ID, `reserved[1]` utility bits, `reserved[2]` selection schema, `reserved[3]` zero |
 | `0x08` | 2 | `checksum` (`Checksum16` over `[0x00, 0x08)`, its own independent domain -- never covered by `ExpansionSaveMeta`'s own checksum) |
 
 `sizeof(struct ExpansionUserPrefs) == 0x0C` (`ALIGN(4)` forces legacy agbcc
@@ -129,6 +193,14 @@ or `WipeSram()` call on any validation failure. On a successful store it
 calls `ExpansionLocale_SetCurrent()` (which internally invalidates the
 runtime resolver's cache), so a UI that just persisted a selection can
 immediately observe it without a reboot.
+
+Schema-0 records from the pre-selection implementation have zero-filled
+selection padding. A locale-only preference write updates only the locale
+and explicit-selection flag and deliberately keeps that record at schema 0;
+it is promoted to the current selection schema only when a full UI-preference
+write provides the runtime policy and utility values. This prevents a locale
+change from silently turning legacy zero padding into authoritative current
+selections.
 
 Host-side (`scripts/modernize/save_format_tool.py`) mirrors this exact
 struct/classification/checksum logic in Python (`ExpansionUserPrefs`

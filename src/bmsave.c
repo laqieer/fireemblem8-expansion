@@ -16,10 +16,24 @@
 #include "bmsave.h"
 #include "sram-layout.h"
 #include "eventinfo.h"
+#ifndef FE8_ARCHIVAL_BUILD
+#include "expansion_ui_prefs.h"
+#endif
 
 /* variables */
 EWRAM_DATA u32 gBonusContentClaimFlags = 0;
 EWRAM_DATA u8 gSuspendSaveIdOffset = 0;
+
+#ifndef FE8_ARCHIVAL_BUILD
+static void ApplySavedGlobalUiPrefsAfterLoad(void)
+{
+    ExpansionUiPrefs_ApplySaved();
+}
+#else
+static void ApplySavedGlobalUiPrefsAfterLoad(void)
+{
+}
+#endif
 
 u32 GetBonusContentClaimFlags(void)
 {
@@ -229,6 +243,7 @@ void ReadGameSave(int slot)
     ReadSramFast(src->dungeons, dungeon, sizeof(dungeon));
     LoadDungeonRecords(dungeon);
     WriteLastGameSaveId(slot);
+    ApplySavedGlobalUiPrefsAfterLoad();
 }
 
 bool IsSaveValid(int index)
@@ -366,6 +381,9 @@ void WriteGameSavePackedUnit(struct Unit *unit, void *sram_dest)
     if (US_BIT21 & unit->state)
         unitp.flag |= PACKED_US_NEW_FRIEND;
 
+    if (US_BIT24 & unit->state)
+        unitp.flag |= PACKED_US_CASUAL_DEFEAT;
+
     for (i = 0; i < 8; i++)
         unitp.wpnRanks[i] = unit->ranks[i];
 
@@ -433,6 +451,9 @@ void LoadSavedUnit(const void *sram_src, struct Unit *unit)
 
     if (PACKED_US_NEW_FRIEND & unitp.flag)
         unit->state |= US_BIT21;
+
+    if (PACKED_US_CASUAL_DEFEAT & unitp.flag)
+        unit->state |= US_BIT24;
 
     for (i = 0; i < 8; i++)
         unit->ranks[i] = unitp.wpnRanks[i];
@@ -593,6 +614,7 @@ void ReadSuspendSave(int slot)
     SetEventSlotCounter(val);
 
     SetBonusContentClaimFlags(LoadSavedBonusClaimFlags(gPlaySt.gameSaveSlot));
+    ApplySavedGlobalUiPrefsAfterLoad();
 }
 
 u8 IsValidSuspendSave(int slot)

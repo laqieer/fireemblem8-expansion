@@ -66,6 +66,18 @@ AC_ARG_ENABLE(
     [fe8_starter_content=])
 
 AC_ARG_ENABLE(
+    [aoe-reference],
+    [AS_HELP_STRING(
+        [--enable-aoe-reference],
+        [enable the bounded typed-AoE reference probe/effect])],
+    [AS_CASE(
+        [$enableval],
+        [yes], [fe8_aoe_reference=1],
+        [no], [fe8_aoe_reference=0],
+        [AC_MSG_ERROR([--enable-aoe-reference accepts only yes or no])])],
+    [fe8_aoe_reference=])
+
+AC_ARG_ENABLE(
     [localized-text-auto-wrap],
     [AS_HELP_STRING(
         [--enable-localized-text-auto-wrap],
@@ -76,6 +88,31 @@ AC_ARG_ENABLE(
         [no], [fe8_localized_text_auto_wrap=0],
         [AC_MSG_ERROR([--enable-localized-text-auto-wrap accepts only yes or no])])],
     [fe8_localized_text_auto_wrap=])
+
+AC_ARG_ENABLE(
+    [casual-mode],
+    [AS_HELP_STRING(
+        [--enable-casual-mode],
+        [restore eligible ordinary player defeats at chapter boundaries])],
+    [AS_CASE(
+        [$enableval],
+        [yes], [fe8_casual_mode=1],
+        [no], [fe8_casual_mode=0],
+        [AC_MSG_ERROR([--enable-casual-mode accepts only yes or no])])],
+    [fe8_casual_mode=])
+
+AC_ARG_WITH(
+    [bgm-continuation-policy],
+    [AS_HELP_STRING(
+        [--with-bgm-continuation-policy=preserve|resume|restart],
+        [music continuation policy across map, battle, and menu transitions])],
+    [AS_CASE(
+        [$withval],
+        [preserve], [fe8_bgm_continuation_policy=preserve],
+        [resume], [fe8_bgm_continuation_policy=resume],
+        [restart], [fe8_bgm_continuation_policy=restart],
+        [AC_MSG_ERROR([--with-bgm-continuation-policy accepts only preserve, resume, or restart])])],
+    [fe8_bgm_continuation_policy=])
 
 AC_ARG_ENABLE(
     [pseudo-locale],
@@ -161,9 +198,21 @@ AS_IF(
     [FE8_CFG_STARTER_CONTENT="EXPANSION_STARTER_CONTENT := $fe8_starter_content"],
     [FE8_CFG_STARTER_CONTENT=])
 AS_IF(
+    [test -n "$fe8_aoe_reference"],
+    [FE8_CFG_AOE_REFERENCE="EXPANSION_AOE_REFERENCE := $fe8_aoe_reference"],
+    [FE8_CFG_AOE_REFERENCE=])
+AS_IF(
     [test -n "$fe8_localized_text_auto_wrap"],
     [FE8_CFG_LOCALIZED_TEXT_AUTO_WRAP="EXPANSION_LOCALIZED_TEXT_AUTO_WRAP := $fe8_localized_text_auto_wrap"],
     [FE8_CFG_LOCALIZED_TEXT_AUTO_WRAP=])
+AS_IF(
+    [test -n "$fe8_casual_mode"],
+    [FE8_CFG_CASUAL_MODE="EXPANSION_CASUAL_MODE := $fe8_casual_mode"],
+    [FE8_CFG_CASUAL_MODE=])
+AS_IF(
+    [test -n "$fe8_bgm_continuation_policy"],
+    [FE8_CFG_BGM_CONTINUATION_POLICY="EXPANSION_BGM_CONTINUATION_POLICY := $fe8_bgm_continuation_policy"],
+    [FE8_CFG_BGM_CONTINUATION_POLICY=])
 AS_IF(
     [test -n "$fe8_pseudo_locale"],
     [FE8_CFG_PSEUDO_LOCALE="EXPANSION_PSEUDO_LOCALE := $fe8_pseudo_locale"],
@@ -193,7 +242,10 @@ AC_SUBST([FE8_CFG_MECHANICS_HOOKS])
 AC_SUBST([FE8_CFG_MECHANICS_SAMPLE])
 AC_SUBST([FE8_CFG_DANGER_OVERLAY_MENU])
 AC_SUBST([FE8_CFG_STARTER_CONTENT])
+AC_SUBST([FE8_CFG_AOE_REFERENCE])
 AC_SUBST([FE8_CFG_LOCALIZED_TEXT_AUTO_WRAP])
+AC_SUBST([FE8_CFG_CASUAL_MODE])
+AC_SUBST([FE8_CFG_BGM_CONTINUATION_POLICY])
 AC_SUBST([FE8_CFG_PSEUDO_LOCALE])
 AC_SUBST([FE8_CFG_ENABLED_LOCALES])
 AC_SUBST([FE8_CFG_DEFAULT_LOCALE])
@@ -221,7 +273,10 @@ fe8_config_output=`PYTHONPATH="$fe8_abs_srcdir${PYTHONPATH:+:$PYTHONPATH}" \
     --mechanics-sample "$fe8_mechanics_sample" \
     --danger-overlay-menu "$fe8_danger_overlay_menu" \
     --starter-content "$fe8_starter_content" \
+    --aoe-reference "$fe8_aoe_reference" \
     --localized-text-auto-wrap "$fe8_localized_text_auto_wrap" \
+    --casual-mode "$fe8_casual_mode" \
+    --bgm-continuation-policy "$fe8_bgm_continuation_policy" \
     --item-id-cap "$fe8_item_id_cap" 2>&1`
 fe8_config_status=$?
 AS_IF(

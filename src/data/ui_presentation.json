@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "contexts": [
+    {
+      "id": 0,
+      "kind": "chapter_title",
+      "chapter_id": 0,
+      "title_key": "ui.presentation.chapter_title_default",
+      "fallback_text": "Chapter",
+      "asset_id": null,
+      "resources": {
+        "required": false,
+        "vram_bytes": 0,
+        "palette_slots": 0,
+        "oam_entries": 0
+      }
+    },
+    {
+      "id": 1,
+      "kind": "screen",
+      "chapter_id": 0,
+      "title_key": "ui.presentation.chapter_title_default",
+      "fallback_text": "Expansion",
+      "asset_id": null,
+      "resources": {
+        "required": false,
+        "vram_bytes": 0,
+        "palette_slots": 0,
+        "oam_entries": 0
+      }
+    }
+  ]
+}

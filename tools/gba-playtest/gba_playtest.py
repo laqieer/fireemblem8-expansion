@@ -14,7 +14,14 @@ import sys
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Callable, Iterable
+
+from probe_bindings import (
+    ElfSymbolResolver,
+    ProbeBindingError,
+    SYMBOL_EXPRESSION_RE,
+    resolve_probe_expression,
+)
 
 
 SCENARIO_SCHEMA_VERSION = 1
@@ -136,10 +143,7 @@ def _expect_frame(value: Any, path: str) -> int:
     return value
 
 
-def _parse_address(value: Any, size: int, path: str) -> int:
-    if not isinstance(value, str) or not HEX_ADDRESS_RE.fullmatch(value):
-        raise PlaytestError(f"{path} must be an 8-digit hexadecimal string such as 0x02000000")
-    address = int(value, 16)
+def _validate_resolved_address(address: int, size: int, path: str) -> None:
     containing = next(
         ((start, end) for start, end in RAM_RANGES if start <= address < end),
         None,
@@ -154,7 +158,55 @@ def _parse_address(value: Any, size: int, path: str) -> int:
         raise PlaytestError(f"{path} plus size {size} crosses the RAM region boundary")
     if address % size:
         raise PlaytestError(f"{path} must be aligned to probe size {size}")
-    return address
+
+
+def _parse_address(
+    value: Any,
+    size: int,
+    path: str,
+    symbol_resolver: Callable[[str], tuple[int, int]] | None = None,
+) -> tuple[str, int | None]:
+    if not isinstance(value, str):
+        raise PlaytestError(
+            f"{path} must be an 8-digit hexadecimal string or ELF symbol expression"
+        )
+    if HEX_ADDRESS_RE.fullmatch(value):
+        address = int(value, 16)
+        binding = f"0x{address:08x}"
+    elif SYMBOL_EXPRESSION_RE.fullmatch(value):
+        if symbol_resolver is None:
+            return value, None
+        else:
+            try:
+                address = resolve_probe_expression(value, size, symbol_resolver, path)
+            except ProbeBindingError as exc:
+                raise PlaytestError(str(exc)) from exc
+            binding = value
+    else:
+        raise PlaytestError(
+            f"{path} must be an 8-digit hexadecimal string such as 0x02000000 "
+            "or a symbol expression such as gExpansionLanguageMenuProbe+0x04"
+        )
+    _validate_resolved_address(address, size, path)
+    return binding, address
+
+
+def _probe_binding_sort_key(binding: str, size: int) -> tuple[Any, ...]:
+    if HEX_ADDRESS_RE.fullmatch(binding):
+        address = int(binding, 16)
+        if 0x02000000 <= address < 0x02040000:
+            region = 0
+        elif 0x03000000 <= address < 0x03008000:
+            region = 2
+        else:
+            region = 3
+        return (region, address, size)
+    match = SYMBOL_EXPRESSION_RE.fullmatch(binding)
+    if match is None:
+        raise ValueError(f"invalid probe binding {binding!r}")
+    symbol, offset_text = match.groups()
+    offset = int(offset_text, 16) if offset_text is not None else 0
+    return (1, symbol, offset, size)
 
 
 @dataclass(frozen=True)
@@ -166,7 +218,8 @@ class InputRange:
 
 @dataclass(frozen=True)
 class Probe:
-    address: int
+    binding: str
+    address: int | None
     size: int
     expected: str | None
 
@@ -223,7 +276,11 @@ class Scenario:
     checkpoints: tuple[Checkpoint, ...]
 
 
-def parse_scenario_data(data: Any, source: str = "<scenario>") -> Scenario:
+def parse_scenario_data(
+    data: Any,
+    source: str = "<scenario>",
+    symbol_resolver: Callable[[str], tuple[int, int]] | None = None,
+) -> Scenario:
     root = _expect_object(
         data,
         source,
@@ -389,7 +446,8 @@ def parse_scenario_data(data: Any, source: str = "<scenario>") -> Scenario:
         if not isinstance(probes_data, list):
             raise PlaytestError(f"{path}.probes must be an array")
         probes: list[Probe] = []
-        seen_probes: set[tuple[int, int]] = set()
+        seen_bindings: set[tuple[str, int]] = set()
+        seen_addresses: set[tuple[int, int]] = set()
         for probe_index, raw_probe in enumerate(probes_data):
             probe_path = f"{path}.probes[{probe_index}]"
             probe_data = _expect_object(
@@ -398,11 +456,25 @@ def parse_scenario_data(data: Any, source: str = "<scenario>") -> Scenario:
             size = probe_data["size"]
             if not _is_int(size) or size not in (1, 2, 4):
                 raise PlaytestError(f"{probe_path}.size must be integer 1, 2, or 4")
-            address = _parse_address(probe_data["address"], size, f"{probe_path}.address")
-            identity = (address, size)
-            if identity in seen_probes:
-                raise PlaytestError(f"{probe_path} duplicates address/size in this checkpoint")
-            seen_probes.add(identity)
+            binding, address = _parse_address(
+                probe_data["address"],
+                size,
+                f"{probe_path}.address",
+                symbol_resolver,
+            )
+            binding_identity = (binding, size)
+            if binding_identity in seen_bindings:
+                raise PlaytestError(
+                    f"{probe_path} duplicates symbolic address/size in this checkpoint"
+                )
+            seen_bindings.add(binding_identity)
+            if address is not None:
+                address_identity = (address, size)
+                if address_identity in seen_addresses:
+                    raise PlaytestError(
+                        f"{probe_path} resolves to a duplicate address/size in this checkpoint"
+                    )
+                seen_addresses.add(address_identity)
             expected = probe_data.get("expected")
             if expected is not None:
                 pattern = re.compile(rf"^0x[0-9a-f]{{{size * 2}}}$")
@@ -410,7 +482,7 @@ def parse_scenario_data(data: Any, source: str = "<scenario>") -> Scenario:
                     raise PlaytestError(
                         f"{probe_path}.expected must be lowercase 0x plus {size * 2} hex digits"
                     )
-            probes.append(Probe(address, size, expected))
+            probes.append(Probe(binding, address, size, expected))
 
         regions_data = item.get("regions", [])
         if not isinstance(regions_data, list):
@@ -522,7 +594,15 @@ def parse_scenario_data(data: Any, source: str = "<scenario>") -> Scenario:
                 sram_hash,
                 expected_sram_hash,
                 tuple(sram_hash_exclude_ranges),
-                tuple(sorted(probes, key=lambda probe: (probe.address, probe.size))),
+                tuple(
+                    sorted(
+                        probes,
+                        key=lambda probe: _probe_binding_sort_key(
+                            probe.binding,
+                            probe.size,
+                        ),
+                    )
+                ),
                 tuple(sorted(regions, key=lambda region: region.name)),
                 tuple(sorted(pixel_probes, key=lambda pixel: (pixel.x, pixel.y))),
             )
@@ -544,8 +624,11 @@ def parse_scenario_data(data: Any, source: str = "<scenario>") -> Scenario:
     )
 
 
-def load_scenario(path: Path) -> Scenario:
-    return parse_scenario_data(_read_json(path), str(path))
+def load_scenario(
+    path: Path,
+    symbol_resolver: Callable[[str], tuple[int, int]] | None = None,
+) -> Scenario:
+    return parse_scenario_data(_read_json(path), str(path), symbol_resolver)
 
 
 def serialize_fingerprint(fingerprint: dict[str, Any]) -> str:
@@ -720,7 +803,13 @@ def _write_plan(path: Path, scenario: Scenario) -> None:
             f"{offset} {length}"
             for offset, length in checkpoint.sram_hash_exclude_ranges
         )
-        lines.extend(f"{probe.address} {probe.size}" for probe in checkpoint.probes)
+        for probe in checkpoint.probes:
+            if probe.address is None:
+                raise PlaytestError(
+                    f"scenario {scenario.name!r} probe {probe.binding!r} has no "
+                    "resolved execution address; supply the exact linked ELF with --elf"
+                )
+            lines.append(f"{probe.address} {probe.size}")
         lines.extend(
             f"{region.x} {region.y} {region.width} {region.height}"
             for region in checkpoint.regions
@@ -863,7 +952,7 @@ def _parse_backend_output(stdout: str, scenario: Scenario) -> dict[str, Any]:
             captured["sram_hash"] = sram_hashes[checkpoint_index]
         captured["probes"] = [
             {
-                "address": f"0x{probe.address:08x}",
+                "address": probe.binding,
                 "size": probe.size,
                 "value": f"0x{values[(checkpoint_index, probe_index)]:0{probe.size * 2}x}",
             }
@@ -1014,7 +1103,7 @@ def compare_inline_expectations(
             actual_value = actual["probes"][probe_index]["value"]
             if actual_value != probe.expected:
                 differences.append(
-                    f"{prefix} probe 0x{probe.address:08x}/{probe.size}: "
+                    f"{prefix} probe {probe.binding}/{probe.size}: "
                     f"expected {probe.expected!r}, actual {actual_value!r}"
                 )
         for region_index, region in enumerate(checkpoint.regions):
@@ -1038,7 +1127,11 @@ def compare_inline_expectations(
     return differences
 
 
-def validate_fingerprint(data: Any, source: str) -> dict[str, Any]:
+def validate_fingerprint(
+    data: Any,
+    source: str,
+    symbol_resolver: Callable[[str], tuple[int, int]] | None = None,
+) -> dict[str, Any]:
     root = _expect_object(
         data, source, {"format_version", "scenario", "rom", "checkpoints"}
     )
@@ -1096,18 +1189,40 @@ def validate_fingerprint(data: Any, source: str) -> dict[str, Any]:
             raise PlaytestError(f"{path}.sram_hash is malformed")
         if not isinstance(checkpoint["probes"], list):
             raise PlaytestError(f"{path}.probes must be an array")
-        previous_probe: tuple[int, int] | None = None
+        seen_bindings: set[tuple[str, int]] = set()
+        seen_addresses: set[tuple[int, int]] = set()
+        previous_sort_key: tuple[Any, ...] | None = None
         for probe_index, raw_probe in enumerate(checkpoint["probes"]):
             probe_path = f"{path}.probes[{probe_index}]"
             probe = _expect_object(raw_probe, probe_path, {"address", "size", "value"})
             size = probe["size"]
             if not _is_int(size) or size not in (1, 2, 4):
                 raise PlaytestError(f"{probe_path}.size must be integer 1, 2, or 4")
-            address = _parse_address(probe["address"], size, f"{probe_path}.address")
-            identity = (address, size)
-            if previous_probe is not None and identity <= previous_probe:
-                raise PlaytestError(f"{probe_path} must be sorted and unique by address/size")
-            previous_probe = identity
+            binding, address = _parse_address(
+                probe["address"],
+                size,
+                f"{probe_path}.address",
+                symbol_resolver,
+            )
+            binding_identity = (binding, size)
+            if binding_identity in seen_bindings:
+                raise PlaytestError(
+                    f"{probe_path} duplicates symbolic address/size in this checkpoint"
+                )
+            seen_bindings.add(binding_identity)
+            sort_key = _probe_binding_sort_key(binding, size)
+            if previous_sort_key is not None and sort_key <= previous_sort_key:
+                raise PlaytestError(
+                    f"{probe_path} must be sorted and unique by semantic address/size"
+                )
+            previous_sort_key = sort_key
+            if address is not None:
+                address_identity = (address, size)
+                if address_identity in seen_addresses:
+                    raise PlaytestError(
+                        f"{probe_path} resolves to a duplicate address/size in this checkpoint"
+                    )
+                seen_addresses.add(address_identity)
             pattern = re.compile(rf"^0x[0-9a-f]{{{size * 2}}}$")
             if not isinstance(probe["value"], str) or not pattern.fullmatch(probe["value"]):
                 raise PlaytestError(f"{probe_path}.value is malformed for size {size}")
@@ -1239,6 +1354,18 @@ def _make_parser() -> argparse.ArgumentParser:
         "capture", help="run a scenario and emit its deterministic fingerprint"
     )
     capture_parser.add_argument("--rom", required=True, type=Path)
+    capture_parser.add_argument(
+        "--elf",
+        type=Path,
+        help="exact linked ELF used to resolve symbolic probe addresses",
+    )
+    capture_parser.add_argument(
+        "--nm",
+        help=(
+            "nm executable used with --elf (default: MODERN_NM, then "
+            "MODERN_TOOLCHAIN_ROOT/bin/arm-none-eabi-nm, then NM)"
+        ),
+    )
     capture_parser.add_argument("--scenario", required=True, type=Path)
     capture_parser.add_argument(
         "--sram-image",
@@ -1257,6 +1384,18 @@ def _make_parser() -> argparse.ArgumentParser:
         "verify", help="capture and compare against an expected fingerprint"
     )
     verify_parser.add_argument("--rom", required=True, type=Path)
+    verify_parser.add_argument(
+        "--elf",
+        type=Path,
+        help="exact linked ELF used to resolve symbolic probe addresses",
+    )
+    verify_parser.add_argument(
+        "--nm",
+        help=(
+            "nm executable used with --elf (default: MODERN_NM, then "
+            "MODERN_TOOLCHAIN_ROOT/bin/arm-none-eabi-nm, then NM)"
+        ),
+    )
     verify_parser.add_argument("--scenario", required=True, type=Path)
     verify_parser.add_argument("--expected", required=True, type=Path)
     verify_parser.add_argument(
@@ -1299,12 +1438,19 @@ def main(argv: list[str] | None = None) -> int:
                 build_backend(Path(temporary) / "gba-playtest-backend", args.retries)
             print("libmGBA backend: available")
             return 0
-        scenario = load_scenario(args.scenario)
+        symbol_resolver = (
+            ElfSymbolResolver(args.elf, args.nm) if args.elf is not None else None
+        )
+        scenario = load_scenario(args.scenario, symbol_resolver)
         actual = capture(args.rom, scenario, args.sram_image, args.retries)
         if args.mode == "capture":
             _write_output(args.output, serialize_fingerprint(actual))
             return 0
-        expected = validate_fingerprint(_read_json(args.expected), str(args.expected))
+        expected = validate_fingerprint(
+            _read_json(args.expected),
+            str(args.expected),
+            symbol_resolver,
+        )
         differences = compare_fingerprints(expected, actual, args.policy)
         if differences:
             print(

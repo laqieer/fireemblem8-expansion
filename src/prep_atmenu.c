@@ -1,4 +1,5 @@
 #include "global.h"
+#include "expansion_bgm.h"
 #include "functions.h"
 #include "variables.h"
 #include "hardware.h"
@@ -310,7 +311,9 @@ void AtMenu_CtrlLoop(struct ProcAtMenu * proc)
             PlaySoundEffect(SONG_SE_SYS_WINDOW_SELECT1);
 
             if (2 == Prep_GetSupportItemBitIndex(proc->hand_pos, proc->unk_2F))
-                ChangeBgm(SONG_BONDS, 0x100, 0x100, 0x20, NULL);
+                ExpansionBgm_Change(
+                    EXPANSION_BGM_CONTEXT_PREPARATION, SONG_BONDS,
+                    0x100, 0x100, 0x20, NULL);
 
             proc->state = 4;
             Proc_Goto(proc, 8);

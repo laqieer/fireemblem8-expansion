@@ -77,10 +77,11 @@ EXPANSION_SAVE_COMPAT_EPOCH ?= 2
 # EXPANSION_ENABLED_LOCALES -- comma-separated stable locale ids (see
 #   scripts/localization/schema.py's LOCALE_IDS) enabled for this build; must
 #   include "en" and must not repeat an id. The production allowlist is
-#   "en", "ja", "zh-Hans", plus "qps-ploc" (an ASCII pseudo-locale test
-#   harness, never a real translation -- see scripts/localization/pseudo.py).
-#   Enabling "ja" or "zh-Hans" requires MODERN_ROM_SIZE=32M so their full-game
-#   catalogs and CJK fonts live in the dedicated upper-ROM locale bank.
+#   "en", "ja", "zh-Hans", "fr", "de", "es", "it", plus "qps-ploc" (an
+#   ASCII pseudo-locale test harness, never a real translation -- see
+#   scripts/localization/pseudo.py). Enabling any real non-English locale
+#   requires MODERN_ROM_SIZE=32M so its full-game catalog and localized
+#   resources live in the dedicated upper-ROM locale bank.
 #   Normalized into the fixed stable-id order regardless of the order given
 #   here (see scripts/modernize/expansion_config.py's validate_enabled_locales).
 EXPANSION_ENABLED_LOCALES ?= en
@@ -130,10 +131,15 @@ EXPANSION_PSEUDO_LOCALE ?= 0
 #                                    expanded item ID cap
 #                                    (FE8_ITEM_ID_CAP=0xCE or higher) --
 #                                    both validated, both hard errors.
+#   EXPANSION_AOE_REFERENCE       -- enable issue #42's bounded, test-entry-
+#                                    only radius-heal reference module. The
+#                                    typed AoE API and item/action seam remain
+#                                    available independently.
 EXPANSION_MECHANICS_HOOKS     ?= 0
 EXPANSION_MECHANICS_SAMPLE    ?= 0
 EXPANSION_DANGER_OVERLAY_MENU ?= 0
 EXPANSION_STARTER_CONTENT     ?= 0
+EXPANSION_AOE_REFERENCE       ?= 0
 
 # EXPANSION_LOCALIZED_TEXT_AUTO_WRAP -- opt-in runtime safety net for real
 # CJK profiles. When 1, the dialogue engine measures the next VWF glyph
@@ -142,3 +148,17 @@ EXPANSION_STARTER_CONTENT     ?= 0
 # this catches runtime substitutions and hand-authored streams. Default 0
 # preserves historical rendering exactly.
 EXPANSION_LOCALIZED_TEXT_AUTO_WRAP ?= 0
+
+# EXPANSION_CASUAL_MODE -- opt-in ordinary player defeat restoration. Combat
+# and arena defeats are restored at the chapter boundary; scripted deaths and
+# explicit permanent removals remain permanent. It participates in config
+# identity but does not change the save layout.
+EXPANSION_CASUAL_MODE ?= 0
+
+# EXPANSION_BGM_CONTINUATION_POLICY -- permanent project policy for music
+# transitions. `preserve` reproduces the current behavior (active same-song
+# transitions are no-ops and a changed map song starts normally); `resume`
+# also restarts a target song when the player is silent; `restart` uses a
+# fade-in when a changed context returns. The value participates in config
+# identity but never changes save compatibility.
+EXPANSION_BGM_CONTINUATION_POLICY ?= preserve

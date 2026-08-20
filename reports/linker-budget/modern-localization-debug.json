@@ -32,10 +32,10 @@
   "regions_headroom": {
     "ewram": {
       "capacity_bytes": 262144,
-      "free_bytes": 1712,
-      "occupied_bytes": 260432,
+      "free_bytes": 1704,
+      "occupied_bytes": 260440,
       "overflow": false,
-      "physical_free_bytes": 1712
+      "physical_free_bytes": 1704
     },
     "iwram": {
       "capacity_bytes": 32768,
@@ -71,48 +71,60 @@
     "missing": [],
     "symbols": {
       "gExpansionLocaleMsgCount": 2,
-      "gExpansionLocaleMsgIds": 106,
+      "gExpansionLocaleMsgIds": 124,
       "gExpansionLocaleTombstoneCount": 2
     },
-    "total_bytes": 110
+    "total_bytes": 128
   },
   "rom_catalog_strings": {
     "missing": [],
     "symbols": {
-      "gExpansionCatalog_en": 212,
-      "gExpansionCatalog_ja": 212,
-      "gExpansionCatalog_qps_ploc": 212,
-      "gExpansionCatalog_zh_Hans": 212
+      "gExpansionCatalog_de": 248,
+      "gExpansionCatalog_en": 248,
+      "gExpansionCatalog_es": 248,
+      "gExpansionCatalog_fr": 248,
+      "gExpansionCatalog_it": 248,
+      "gExpansionCatalog_ja": 248,
+      "gExpansionCatalog_qps_ploc": 248,
+      "gExpansionCatalog_zh_Hans": 248
     },
-    "total_bytes": 848,
+    "total_bytes": 1984,
     "unexpected": []
   },
   "schema_version": 1,
   "source_catalog_budget": {
-    "active_message_count": 53,
-    "catalog_index_bytes": 1050,
+    "active_message_count": 62,
+    "catalog_index_bytes": 2204,
     "catalog_string_bytes": {
-      "en": 609,
-      "ja": 713,
-      "qps-ploc": 970,
-      "total": 2911,
-      "zh-Hans": 619
+      "de": 746,
+      "en": 659,
+      "es": 755,
+      "fr": 798,
+      "it": 743,
+      "ja": 802,
+      "qps-ploc": 1045,
+      "total": 6226,
+      "zh-Hans": 678
     },
-    "glyphs_used_count": 250,
+    "glyphs_used_count": 282,
     "locales_generated": [
       "en",
       "ja",
       "zh-Hans",
+      "fr",
+      "de",
+      "es",
+      "it",
       "qps-ploc"
     ],
     "pseudo_policy_counts": {
       "compact": 2,
-      "preserve": 1,
-      "transform": 50
+      "preserve": 6,
+      "transform": 54
     },
     "scratch_budget_bytes": 96,
-    "scratch_headroom_bytes": 64,
-    "scratch_slot_bytes_used_max": 32,
+    "scratch_headroom_bytes": 63,
+    "scratch_slot_bytes_used_max": 33,
     "tombstone_count": 1
   }
 }

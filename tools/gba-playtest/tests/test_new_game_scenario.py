@@ -235,7 +235,14 @@ class NewGameRuntimeTests(unittest.TestCase):
                 sram_hash=False,
                 expected_sram_hash=None,
                 sram_hash_exclude_ranges=(),
-                probes=(gba_playtest.Probe(callback_address, 4, None),),
+                probes=(
+                    gba_playtest.Probe(
+                        f"0x{callback_address:08x}",
+                        callback_address,
+                        4,
+                        None,
+                    ),
+                ),
                 regions=(),
                 pixel_probes=(),
             )

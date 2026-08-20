@@ -1,4 +1,7 @@
 #include "global.h"
+#include "expansion_bgm.h"
+
+#include "expansion_portraits.h"
 #include "bmunit.h"
 #include "bmbattle.h"
 #include "hardware.h"
@@ -61,7 +64,10 @@ void ManimLevelUp_InitMainScreen(struct ManimLevelUpProc *proc)
     BG_SetPosition(BG_0, 0, proc->y_scroll_offset);
     BG_SetPosition(BG_1, 0, proc->y_scroll_offset);
 
-    StartFace(0, gManimSt.actor[proc->actor_id].unit->pCharacterData->portraitId,
+    StartFace(0, ExpansionPortrait_ResolveUnit(
+        gManimSt.actor[proc->actor_id].unit,
+        EXPANSION_PORTRAIT_KIND_FULL
+    ),
         184, 32 - proc->y_scroll_offset, 0x1042);
 
     gFaces[0]->yPos = 32 - proc->y_scroll_offset;
@@ -197,7 +203,12 @@ void ManimLevelUp_EndLevelUpText(struct ManimLevelUpProc * proc)
 
 void ManimLevelUp_RestoreBgm(struct ManimLevelUpProc * proc)
 {
-    StartBgmVolumeChange(0x80, 0x100, 0x10, proc);
+    if (ExpansionBgm_GetContinuationPolicy()
+        == EXPANSION_BGM_CONTINUATION_RESTART)
+        ExpansionBgm_Continue(
+            EXPANSION_BGM_CONTEXT_BATTLE, GetCurrentBgmSong(), 1, NULL);
+    else
+        StartBgmVolumeChange(0x80, 0x100, 0x10, proc);
 }
 
 void ManimLevelUp_Clear(struct ManimLevelUpProc * proc)

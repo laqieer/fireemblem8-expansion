@@ -425,3 +425,5 @@ struct SoundRoomEnt CONST_DATA gSoundRoomTable[] =
         .bgmId = -1,
     },
 };
+
+const u32 gSoundRoomTableCount = ARRAY_COUNT(gSoundRoomTable) - 1;

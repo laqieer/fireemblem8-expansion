@@ -1,4 +1,5 @@
 #include "global.h"
+#include "expansion_bgm.h"
 
 #include "bmsave.h"
 #include "bmlib.h"
@@ -163,7 +164,7 @@ void SioMenu_LoadGraphics(struct SioMenuProc * proc)
 
     proc->unk_54 = 0;
 
-    StartBgm(SONG_COLOSSEUM_ENTRANCE, 0);
+    ExpansionBgm_Start(EXPANSION_BGM_CONTEXT_MENU, SONG_COLOSSEUM_ENTRANCE, 3, 0);
     LinkArenaBattleMap_InitConfig();
 
     return;
@@ -314,7 +315,7 @@ void SioMenu_RestartGraphicsMaybe(struct SioMenuProc * proc)
     PutSioText(SioMenu_GetItemHelpText(proc, 1), 1);
     LinkArenaBattleMap_InitConfig();
 
-    StartBgm(SONG_COLOSSEUM_ENTRANCE, 0);
+    ExpansionBgm_Start(EXPANSION_BGM_CONTEXT_MENU, SONG_COLOSSEUM_ENTRANCE, 3, 0);
 
     proc->unk_54 = 0;
 

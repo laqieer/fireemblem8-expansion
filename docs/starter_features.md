@@ -1,5 +1,23 @@
 # Starter features (issue #6)
 
+## Optional casual defeat policy (issue #34)
+
+`EXPANSION_CASUAL_MODE` is an independent, default-off GNU Autoconf/Make/C
+flag (`./configure --enable-casual-mode`). When enabled, the public
+`ExpansionCasualMode_MarkDefeat` seam is called only by ordinary combat and
+arena player defeat handlers. `ChapterChangeUnitCleanup` restores those marked
+units at the chapter boundary, preserving their PID, class, stats, inventory,
+BWL defeat record, and existing save/suspend serialization.
+
+Scripted deaths, hazards, and explicit permanent removals continue to call
+`UnitKill` directly and are never marked. The marker occupies an unused bit in
+the existing packed unit-state flags for normal saves and the existing full
+state word for suspend saves; no save layout or `EXPANSION_SAVE_COMPAT_EPOCH`
+bump is required. The disabled/default path does not mark or restore any unit.
+It has no dependency or conflict with the starter mechanics/content/localization
+flags; its only supported combinations are the default (`0`) and opt-in (`1`)
+profiles, both validated as strict binary values.
+
 Four independent, default-off build flags add an opt-in
 *runtime/config/hook/QoL/content* starter surface on top of the existing modern
 build. Sprint 1 delivered the mechanics seam and the player QoL overlay;
@@ -9,6 +27,10 @@ Sprint 2 adds the bundled **generated-data content example** now that issue
 Every flag defaults to `0`, so a default build (and the legacy agbcc build,
 which never receives the modern `-D` flags) links none of these features and
 keeps vanilla behaviour.
+
+Issue #42's `EXPANSION_AOE_REFERENCE` is a separate optional module, not a
+fifth starter flag and not a skill/content catalog. It has no dependency or
+conflict with these four flags; see [`aoe.md`](aoe.md).
 
 ## Build flags
 
@@ -256,7 +278,7 @@ bounded. Inventory membership is read with the production accessor
 | Install point | The one existing `ExpansionMechanicsInstallBuiltins()`. No second router, no second registry. |
 | Stat | `battleAvoidRate` -- deliberately **different** from the content-free sample's `battleDefense`, so both are independently observable in one apply and the pre-existing sample keeps its exact previous standalone semantics. |
 | Apply-order safety | Reads only the subject's own inventory and its own already-computed stat, never `context->opponent->battle*`, so it is correct under both apply orders. |
-| Disabled | The whole translation unit compiles to stubs with **zero** data/bss/rodata, so a default build's RAM layout -- and every committed scenario probe address -- is unchanged. |
+| Disabled | The whole translation unit compiles to stubs with **zero** data/bss/rodata. The always-linked semantic probe remains zero; scenario addresses are bound to each linked ELF rather than assumed globally stable. |
 | Save format | Untouched. The item ID travels in the existing 14-bit item fields; no new save field, no epoch bump. |
 
 ### Runtime evidence
@@ -394,6 +416,17 @@ positive scenario. Schema/contract tests:
 `tools/gba-playtest/tests/test_starter_clean_route_scenarios.py` and
 `test_starter_features_scenarios.py`. Captured counters and the full
 per-requirement matrix are in `reports/issue6_foundation_evidence.md`.
+
+The mechanics and danger-overlay probe bindings in the committed starter
+scenarios and fingerprints are symbolic
+(`gExpansionMechanicsProbe+0xNN` /
+`gExpansionDangerOverlayProbe+0xNN`). They are resolved from the exact current
+debug/release profile ELF by
+`tools/gba-playtest/check_starter_probe_addresses.py` and `gba_playtest.py`;
+the corresponding Make gate passes the configured `MODERN_NM` before libmGBA
+reads memory. Relinking may change the execution address, but it does not
+rewrite the scenario/fingerprint binding or refresh a semantic value or ROM
+identity hash.
 
 ### A release-only lock found on the way here
 

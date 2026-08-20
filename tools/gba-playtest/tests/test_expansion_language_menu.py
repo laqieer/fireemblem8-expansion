@@ -186,7 +186,7 @@ class RowSelectedPreferenceRepairStructureTests(unittest.TestCase):
         self.assertEqual(
             field_lines[-1], "u8 needsPreferenceRepair;",
             "needsPreferenceRepair must be the last (appended, never inserted) field "
-            "so every pre-sprint-6 scenario's hardcoded probe field offsets stay valid",
+            "so every pre-sprint-6 scenario's symbolic probe field offsets stay valid",
         )
 
     def test_runtime_init_sets_flag_from_requires_prompt_before_branching(self):
@@ -203,6 +203,22 @@ class RowSelectedPreferenceRepairStructureTests(unittest.TestCase):
             set_idx, switch_idx,
             "needsPreferenceRepair must be set from requiresPrompt before the "
             "startup action switch, unconditionally of which action fires",
+        )
+
+    def test_runtime_init_applies_saved_ui_prefs_before_every_fast_return(self):
+        match = re.search(
+            r"static void ExpansionLanguageMenu_RuntimeInitCore\(ProcPtr procPtr\)\s*\{(.*?)\n\}",
+            self.stripped_src, re.DOTALL,
+        )
+        self.assertIsNotNone(match)
+        body = match.group(1)
+        apply_idx = body.index("ExpansionUiPrefs_ApplySaved();")
+        first_return_idx = body.index("return;")
+        self.assertLess(
+            apply_idx,
+            first_return_idx,
+            "saved UI preferences must be initialized before the single-locale "
+            "and compatibility-gate early returns",
         )
 
     def test_auto_select_clears_flag_only_inside_store_succeeded_guard(self):

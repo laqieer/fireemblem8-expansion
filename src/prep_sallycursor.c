@@ -1,4 +1,5 @@
 #include "global.h"
+#include "expansion_bgm.h"
 
 #include "hardware.h"
 #include "ctc.h"
@@ -1251,7 +1252,9 @@ void PrepScreenProc_UpdateBgm(void)
         return;
     }
 
-    ChangeBgm(SONG_COMBAT_PREPARATION, 0x100, 0x100, 0x18, NULL);
+    ExpansionBgm_Change(
+        EXPANSION_BGM_CONTEXT_PREPARATION, SONG_COMBAT_PREPARATION,
+        0x100, 0x100, 0x18, NULL);
 
     return;
 }

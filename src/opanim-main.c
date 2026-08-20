@@ -1,4 +1,5 @@
 #include "global.h"
+#include "expansion_bgm.h"
 #include "ctc.h"
 #include "proc.h"
 #include "soundwrapper.h"
@@ -149,7 +150,8 @@ void SetupOpAnimWorldMapfx(struct ProcOpAnim * proc)
     proc->unk36 = 0;
 
     SetDispEnable(0, 0, 1, 0, 1);
-    StartBgmExt(0x1, 0, NULL);
+    ExpansionBgm_StartExplicit(
+        EXPANSION_BGM_CONTEXT_TITLE, 0x1, 0, NULL);
 }
 
 void OpAnimBldAlphaInit(struct ProcOpAnimBLDALPHA * proc)

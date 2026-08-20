@@ -41,6 +41,9 @@ MODERN_GOALS := \
 	expansion-modern-starter-hook-check \
 	expansion-modern-starter-qol-check \
 	expansion-modern-starter-runtime-check \
+	expansion-modern-bgm-registry-check \
+	expansion-modern-aoe-profile-rom \
+	expansion-modern-aoe-check \
 	expansion-modern-idspace-active-check \
 	expansion-modern-clean
 ifneq (,$(filter $(MODERN_GOALS),$(MAKECMDGOALS)))
@@ -464,6 +467,18 @@ ifneq ($(strip $(MODERN_LOCALIZATION_AVAILABLE)),)
 MODERN_CFLAGS += -I$(MODERN_LOCALIZATION_GENERATED_DIR)
 endif
 
+MODERN_BGM_REGISTRY_JSON := src/data/bgm_registry.json
+MODERN_BGM_REGISTRY_SCRIPT := scripts/modernize/bgm_registry.py
+MODERN_BGM_REGISTRY_C := src/expansion_bgm_data.c
+MODERN_BGM_REGISTRY_AVAILABLE := $(and \
+	$(wildcard $(MODERN_BGM_REGISTRY_JSON)),\
+	$(wildcard $(MODERN_BGM_REGISTRY_SCRIPT)))
+ifneq ($(strip $(MODERN_BGM_REGISTRY_AVAILABLE)),)
+ifeq (,$(findstring $(MODERN_BGM_REGISTRY_C),$(MODERN_ALL_C_SOURCES)))
+MODERN_ALL_C_SOURCES += $(MODERN_BGM_REGISTRY_C)
+endif
+endif
+
 MODERN_ALL_C_OBJECTS := $(addprefix $(MODERN_OUTPUT_DIR)/,$(MODERN_ALL_C_SOURCES:.c=.o))
 
 # Reinstate a linked table's object at exactly its *original* (hand
@@ -652,6 +667,20 @@ ifneq ($(strip $(MODERN_GAME_LOCALIZATION_CATALOG_LOCALES)),)
 MODERN_ALL_C_OBJECTS += $(MODERN_OUTPUT_DIR)/src/localized_game_text-catalog.o
 endif
 
+# Issue #43: the validated chapter/screen presentation manifest is generated
+# under build/ and linked as an additive object. Its fallback-only records
+# preserve the existing static title graphics unless a future project
+# supplies an explicitly validated optional asset. Keep this conditional so
+# standalone modern.mk test fixtures without the presentation data do not
+# acquire an unreachable generated prerequisite.
+MODERN_UI_PRESENTATION_MANIFEST_C := $(GENERATED_DATA_OUT_DIR)/expansion_ui_presentation_manifest.c
+MODERN_UI_PRESENTATION_AVAILABLE := $(and \
+	$(wildcard src/data/ui_presentation.json),\
+	$(wildcard scripts/generated_data/ui_presentation/schema.py))
+ifneq ($(strip $(MODERN_UI_PRESENTATION_AVAILABLE)),)
+MODERN_ALL_C_OBJECTS += $(MODERN_OUTPUT_DIR)/src/expansion_ui_presentation_manifest.o
+endif
+
 MODERN_ALL_DATA_PRE := $(addprefix $(MODERN_OUTPUT_DIR)/,$(MODERN_ALL_DATA_C_SOURCES:.c=.pre.c))
 MODERN_ALL_DATA_OBJECTS := $(addprefix $(MODERN_OUTPUT_DIR)/,$(MODERN_ALL_DATA_C_SOURCES:.c=.o))
 MODERN_ALL_ASM_OBJECTS := $(addprefix $(MODERN_OUTPUT_DIR)/,$(MODERN_ALL_ASM_SOURCES:.s=.o))
@@ -700,6 +729,7 @@ MODERN_ALL_SOURCE_GOALS := \
 	expansion-modern-newgame-check \
 	expansion-modern-combat-check \
 	expansion-modern-saveload-check \
+	expansion-modern-aoe-check \
 	expansion-modern-budget \
 	expansion-modern-budget-check \
 	expansion-modern-relocs \
@@ -776,7 +806,8 @@ $(MODERN_COHORT_OBJECTS): | expansion-modern-toolchain-check
 # assembly files to relocatable objects only. This does not link, boot, or
 # claim runtime readiness, and it does not replace expansion-modern-cohort,
 # which remains the fast/default migration target.
-expansion-modern-all: expansion-modern-toolchain-check $(MODERN_ALL_OBJECTS)
+expansion-modern-all: expansion-modern-toolchain-check \
+	expansion-modern-bgm-registry-check $(MODERN_ALL_OBJECTS)
 	@printf 'Built %s modern relocatable objects in %s\n' \
 		'$(words $(MODERN_ALL_OBJECTS))' '$(MODERN_OUTPUT_DIR)'
 
@@ -785,6 +816,48 @@ $(MODERN_ALL_OBJECTS): | expansion-modern-toolchain-check
 $(MODERN_OUTPUT_DIR)/%.o: %.c
 	@mkdir -p "$(@D)"
 	"$(MODERN_CC)" $(MODERN_CFLAGS) -MMD -MP -MF "$(@:.o=.d)" -MQ "$@" -c "$<" -o "$@"
+
+ifneq ($(strip $(MODERN_UI_PRESENTATION_AVAILABLE)),)
+$(MODERN_OUTPUT_DIR)/src/expansion_ui_presentation_manifest.o: $(MODERN_UI_PRESENTATION_MANIFEST_C)
+	@mkdir -p $(@D)
+	"$(MODERN_CC)" $(MODERN_CFLAGS) -MMD -MP -MF "$(@:.o=.d)" -MQ "$@" -c "$<" -o "$@"
+
+$(MODERN_UI_PRESENTATION_MANIFEST_C): src/data/ui_presentation.json \
+	scripts/generated_data/ui_presentation/schema.py \
+	scripts/generated_data/registry.py \
+	texts/expansion/registry.json $(wildcard texts/expansion/catalog.*.json)
+	$(PYTHON) -m scripts.generated_data generate --table ui_presentation --out-dir $(GENERATED_DATA_OUT_DIR)
+endif
+
+ifneq ($(strip $(MODERN_BGM_REGISTRY_AVAILABLE)),)
+$(MODERN_BGM_REGISTRY_C): $(MODERN_BGM_REGISTRY_JSON) \
+	$(MODERN_BGM_REGISTRY_SCRIPT) include/expansion_bgm.h \
+	include/constants/songs.h include/id_space.h src/eventinfo.c
+	$(PYTHON) $(MODERN_BGM_REGISTRY_SCRIPT) generate
+
+$(MODERN_OUTPUT_DIR)/src/expansion_bgm_data.o: $(MODERN_BGM_REGISTRY_C) \
+	expansion-modern-bgm-registry-check
+	@mkdir -p "$(@D)"
+	"$(MODERN_CC)" $(MODERN_CFLAGS) -MMD -MP -MF "$(@:.o=.d)" -MQ "$@" -c "$<" -o "$@"
+
+expansion-modern-bgm-registry-check: $(MODERN_BGM_REGISTRY_C)
+	$(PYTHON) $(MODERN_BGM_REGISTRY_SCRIPT) check
+else
+expansion-modern-bgm-registry-check:
+	@:
+endif
+
+.PHONY: expansion-modern-bgm-registry-check bgm-registry-validate \
+	bgm-registry-generate bgm-registry-check
+
+bgm-registry-validate:
+	$(PYTHON) scripts/modernize/bgm_registry.py validate
+
+bgm-registry-generate:
+	$(PYTHON) scripts/modernize/bgm_registry.py generate
+
+bgm-registry-check:
+	$(PYTHON) scripts/modernize/bgm_registry.py check
 
 # Issue #5 Batch 2c-1: explicit (non-pattern) compile rule for each linked
 # table's reinstated object (see the MODERN_ALL_C_OBJECTS += comment
@@ -1314,6 +1387,8 @@ MODERN_LINKED_GOALS := \
 	expansion-modern-newgame-check \
 	expansion-modern-combat-check \
 	expansion-modern-saveload-check \
+	expansion-modern-aoe-profile-rom \
+	expansion-modern-aoe-check \
 	expansion-modern-budget \
 	expansion-modern-budget-check \
 	expansion-modern-relocs \
@@ -1459,7 +1534,10 @@ ifneq (,$(MODERN_EXPANSION_CONFIG_AVAILABLE))
 		--mechanics-sample "$(EXPANSION_MECHANICS_SAMPLE)" \
 		--danger-overlay-menu "$(EXPANSION_DANGER_OVERLAY_MENU)" \
 		--starter-content "$(EXPANSION_STARTER_CONTENT)" \
+		--aoe-reference "$(EXPANSION_AOE_REFERENCE)" \
 		--localized-text-auto-wrap "$(EXPANSION_LOCALIZED_TEXT_AUTO_WRAP)" \
+		--casual-mode "$(EXPANSION_CASUAL_MODE)" \
+		--bgm-continuation-policy "$(EXPANSION_BGM_CONTINUATION_POLICY)" \
 		--item-id-cap "$(FE8_ITEM_ID_CAP)" \
 		--output-dir "$(MODERN_GENERATED_DIR)"
 else
@@ -1520,7 +1598,10 @@ ifneq (,$(filter $(MODERN_CONFIG_RESOLVE_GOALS),$(MAKECMDGOALS)))
 	--mechanics-sample "$(EXPANSION_MECHANICS_SAMPLE)" \
 	--danger-overlay-menu "$(EXPANSION_DANGER_OVERLAY_MENU)" \
 	--starter-content "$(EXPANSION_STARTER_CONTENT)" \
+	--aoe-reference "$(EXPANSION_AOE_REFERENCE)" \
 	--localized-text-auto-wrap "$(EXPANSION_LOCALIZED_TEXT_AUTO_WRAP)" \
+	--casual-mode "$(EXPANSION_CASUAL_MODE)" \
+	--bgm-continuation-policy "$(EXPANSION_BGM_CONTINUATION_POLICY)" \
 	--item-id-cap "$(FE8_ITEM_ID_CAP)" \
 	--save-compat-epoch "$(EXPANSION_SAVE_COMPAT_EPOCH)" 2>&1)
   ifneq (,$(filter error:%,$(MODERN_EXPANSION_CONFIG_RESOLVE)))
@@ -1548,6 +1629,18 @@ ifneq (,$(filter $(MODERN_CONFIG_RESOLVE_GOALS),$(MAKECMDGOALS)))
   MODERN_EXPANSION_ENABLED_LOCALE_MASK := $(patsubst MODERN_EXPANSION_ENABLED_LOCALE_MASK=%,%,$(filter MODERN_EXPANSION_ENABLED_LOCALE_MASK=%,$(MODERN_EXPANSION_CONFIG_RESOLVE)))
   MODERN_EXPANSION_DEFAULT_LOCALE_ID := $(patsubst MODERN_EXPANSION_DEFAULT_LOCALE_ID=%,%,$(filter MODERN_EXPANSION_DEFAULT_LOCALE_ID=%,$(MODERN_EXPANSION_CONFIG_RESOLVE)))
   MODERN_EXPANSION_PSEUDO_LOCALE_ENABLED := $(patsubst MODERN_EXPANSION_PSEUDO_LOCALE_ENABLED=%,%,$(filter MODERN_EXPANSION_PSEUDO_LOCALE_ENABLED=%,$(MODERN_EXPANSION_CONFIG_RESOLVE)))
+  MODERN_EXPANSION_AOE_REFERENCE := $(patsubst MODERN_EXPANSION_AOE_REFERENCE=%,%,$(filter MODERN_EXPANSION_AOE_REFERENCE=%,$(MODERN_EXPANSION_CONFIG_RESOLVE)))
+  MODERN_EXPANSION_CASUAL_MODE := $(patsubst MODERN_EXPANSION_CASUAL_MODE=%,%,$(filter MODERN_EXPANSION_CASUAL_MODE=%,$(MODERN_EXPANSION_CONFIG_RESOLVE)))
+  MODERN_EXPANSION_BGM_CONTINUATION_POLICY := $(patsubst MODERN_EXPANSION_BGM_CONTINUATION_POLICY=%,%,$(filter MODERN_EXPANSION_BGM_CONTINUATION_POLICY=%,$(MODERN_EXPANSION_CONFIG_RESOLVE)))
+  ifeq ($(MODERN_EXPANSION_BGM_CONTINUATION_POLICY),preserve)
+    MODERN_EXPANSION_BGM_CONTINUATION_POLICY_ID := 0
+  else ifeq ($(MODERN_EXPANSION_BGM_CONTINUATION_POLICY),resume)
+    MODERN_EXPANSION_BGM_CONTINUATION_POLICY_ID := 1
+  else ifeq ($(MODERN_EXPANSION_BGM_CONTINUATION_POLICY),restart)
+    MODERN_EXPANSION_BGM_CONTINUATION_POLICY_ID := 2
+  else
+    $(error modern.mk: unresolved BGM continuation policy '$(MODERN_EXPANSION_BGM_CONTINUATION_POLICY)')
+  endif
   ifeq ($(strip $(MODERN_BUILD_COMMIT)),)
     $(error modern.mk: failed to resolve MODERN_BUILD_COMMIT from '$(MODERN_EXPANSION_CONFIG_TOOL) resolve'; got: $(MODERN_EXPANSION_CONFIG_RESOLVE))
   endif
@@ -1586,7 +1679,10 @@ ifneq (,$(filter $(MODERN_CONFIG_RESOLVE_GOALS),$(MAKECMDGOALS)))
 	-DFE8_EXPANSION_MECHANICS_SAMPLE=$(EXPANSION_MECHANICS_SAMPLE) \
 	-DFE8_EXPANSION_DANGER_OVERLAY_MENU=$(EXPANSION_DANGER_OVERLAY_MENU) \
 	-DFE8_EXPANSION_STARTER_CONTENT=$(EXPANSION_STARTER_CONTENT) \
-	-DFE8_EXPANSION_LOCALIZED_TEXT_AUTO_WRAP=$(EXPANSION_LOCALIZED_TEXT_AUTO_WRAP)
+	-DFE8_EXPANSION_AOE_REFERENCE=$(EXPANSION_AOE_REFERENCE) \
+	-DFE8_EXPANSION_LOCALIZED_TEXT_AUTO_WRAP=$(EXPANSION_LOCALIZED_TEXT_AUTO_WRAP) \
+	-DFE8_EXPANSION_CASUAL_MODE=$(EXPANSION_CASUAL_MODE) \
+	-DFE8_EXPANSION_BGM_CONTINUATION_POLICY=$(MODERN_EXPANSION_BGM_CONTINUATION_POLICY_ID)
 
   # Internal modern-build provenance discriminator (NOT a user feature flag,
   # NOT folded into MODERN_CONFIG_FINGERPRINT / save identity): defined for
@@ -1766,6 +1862,9 @@ ifneq (,$(MODERN_EXPANSION_DEFINES_ACTIVE))
 		printf '%s\n' 'mechanics_sample=$(EXPANSION_MECHANICS_SAMPLE)'; \
 		printf '%s\n' 'danger_overlay_menu=$(EXPANSION_DANGER_OVERLAY_MENU)'; \
 		printf '%s\n' 'starter_content=$(EXPANSION_STARTER_CONTENT)'; \
+		printf '%s\n' 'aoe_reference=$(EXPANSION_AOE_REFERENCE)'; \
+		printf '%s\n' 'casual_mode=$(EXPANSION_CASUAL_MODE)'; \
+		printf '%s\n' 'bgm_continuation_policy=$(MODERN_EXPANSION_BGM_CONTINUATION_POLICY)'; \
 		printf '%s\n' 'modern_build=1'; \
 		printf '%s\n' 'item_id_cap=$(FE8_ITEM_ID_CAP)'; \
 		printf '%s\n' 'item_expansion_itemtest=$(FE8_EXPANSION_ITEMTEST)'; \
@@ -1936,6 +2035,8 @@ else
   MODERN_READELF ?= $(MODERN_TOOLCHAIN_ROOT)/bin/$(PREFIX)readelf$(EXE)
   MODERN_NM ?= $(MODERN_TOOLCHAIN_ROOT)/bin/$(PREFIX)nm$(EXE)
 endif
+export MODERN_NM
+export MODERN_TOOLCHAIN_ROOT
 
 # Library discovery at recipe time (space-safe, no xargs).
 MODERN_LIBGCC_DIR = $(shell p=$$("$(MODERN_CC)" $(MODERN_BINUTILS_FLAG) \
@@ -2839,18 +2940,28 @@ define modern_starter_require_pair
 	fi
 endef
 
+define modern_starter_probe_binding
+	"$(PYTHON)" tools/gba-playtest/check_starter_probe_addresses.py \
+		--elf "$(1)" --nm "$(MODERN_NM)" \
+		--scenario "$(2)" --fingerprint "$(3)" $(4)
+endef
+
 ifeq ($(MODERN_CONFIG),debug)
 expansion-modern-starter-hook-check: expansion-modern-boot-preflight \
 		expansion-modern-rom expansion-modern-starter-profile-rom
 	$(call modern_starter_require_pair,$(MODERN_STARTER_HOOK_SCENARIO),$(MODERN_STARTER_HOOK_FINGERPRINT))
 	$(call modern_starter_require_pair,$(MODERN_STARTER_HOOK_NEG_SCENARIO),$(MODERN_STARTER_HOOK_NEG_FINGERPRINT))
+	$(call modern_starter_probe_binding,$(MODERN_STARTER_PROFILE_ELF),$(MODERN_STARTER_HOOK_SCENARIO),$(MODERN_STARTER_HOOK_FINGERPRINT))
+	$(call modern_starter_probe_binding,$(MODERN_ELF),$(MODERN_STARTER_HOOK_NEG_SCENARIO),$(MODERN_STARTER_HOOK_NEG_FINGERPRINT))
 	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify \
 		--rom "$(MODERN_STARTER_PROFILE_ROM)" \
+		--elf "$(MODERN_STARTER_PROFILE_ELF)" --nm "$(MODERN_NM)" \
 		--scenario "$(MODERN_STARTER_HOOK_SCENARIO)" \
 		--expected "$(MODERN_STARTER_HOOK_FINGERPRINT)" \
 		--policy behavior
 	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify \
 		--rom "$(MODERN_ROM)" \
+		--elf "$(MODERN_ELF)" --nm "$(MODERN_NM)" \
 		--scenario "$(MODERN_STARTER_HOOK_NEG_SCENARIO)" \
 		--expected "$(MODERN_STARTER_HOOK_NEG_FINGERPRINT)" \
 		--policy behavior
@@ -2862,13 +2973,17 @@ expansion-modern-starter-hook-check: expansion-modern-boot-preflight \
 		expansion-modern-rom expansion-modern-starter-profile-rom
 	$(call modern_starter_require_pair,$(MODERN_STARTER_HOOK_CLEAN_SCENARIO),$(MODERN_STARTER_HOOK_CLEAN_FINGERPRINT))
 	$(call modern_starter_require_pair,$(MODERN_STARTER_HOOK_CLEAN_NEG_SCENARIO),$(MODERN_STARTER_HOOK_CLEAN_NEG_FINGERPRINT))
+	$(call modern_starter_probe_binding,$(MODERN_STARTER_PROFILE_ELF),$(MODERN_STARTER_HOOK_CLEAN_SCENARIO),$(MODERN_STARTER_HOOK_CLEAN_FINGERPRINT))
+	$(call modern_starter_probe_binding,$(MODERN_ELF),$(MODERN_STARTER_HOOK_CLEAN_NEG_SCENARIO),$(MODERN_STARTER_HOOK_CLEAN_NEG_FINGERPRINT))
 	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify \
 		--rom "$(MODERN_STARTER_PROFILE_ROM)" \
+		--elf "$(MODERN_STARTER_PROFILE_ELF)" --nm "$(MODERN_NM)" \
 		--scenario "$(MODERN_STARTER_HOOK_CLEAN_SCENARIO)" \
 		--expected "$(MODERN_STARTER_HOOK_CLEAN_FINGERPRINT)" \
 		--policy behavior
 	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify \
 		--rom "$(MODERN_ROM)" \
+		--elf "$(MODERN_ELF)" --nm "$(MODERN_NM)" \
 		--scenario "$(MODERN_STARTER_HOOK_CLEAN_NEG_SCENARIO)" \
 		--expected "$(MODERN_STARTER_HOOK_CLEAN_NEG_FINGERPRINT)" \
 		--policy behavior
@@ -2888,13 +3003,17 @@ expansion-modern-starter-qol-check: expansion-modern-boot-preflight \
 		expansion-modern-rom expansion-modern-starter-profile-rom
 	$(call modern_starter_require_pair,$(MODERN_STARTER_QOL_SCENARIO),$(MODERN_STARTER_QOL_FINGERPRINT))
 	$(call modern_starter_require_pair,$(MODERN_STARTER_QOL_NEG_SCENARIO),$(MODERN_STARTER_QOL_NEG_FINGERPRINT))
+	$(call modern_starter_probe_binding,$(MODERN_STARTER_PROFILE_ELF),$(MODERN_STARTER_QOL_SCENARIO),$(MODERN_STARTER_QOL_FINGERPRINT),--symbol gExpansionDangerOverlayProbe)
+	$(call modern_starter_probe_binding,$(MODERN_ELF),$(MODERN_STARTER_QOL_NEG_SCENARIO),$(MODERN_STARTER_QOL_NEG_FINGERPRINT),--symbol gExpansionDangerOverlayProbe)
 	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify \
 		--rom "$(MODERN_STARTER_PROFILE_ROM)" \
+		--elf "$(MODERN_STARTER_PROFILE_ELF)" --nm "$(MODERN_NM)" \
 		--scenario "$(MODERN_STARTER_QOL_SCENARIO)" \
 		--expected "$(MODERN_STARTER_QOL_FINGERPRINT)" \
 		--policy behavior
 	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify \
 		--rom "$(MODERN_ROM)" \
+		--elf "$(MODERN_ELF)" --nm "$(MODERN_NM)" \
 		--scenario "$(MODERN_STARTER_QOL_NEG_SCENARIO)" \
 		--expected "$(MODERN_STARTER_QOL_NEG_FINGERPRINT)" \
 		--policy behavior
@@ -2909,6 +3028,48 @@ expansion-modern-starter-runtime-check: expansion-modern-starter-hook-check \
 		expansion-modern-starter-qol-check
 	@printf 'Modern ROM starter runtime matrix passed (mechanics hook + player QoL overlay, positive and default-disabled negative): config=%s abi=%s\n' \
 		'$(MODERN_CONFIG)' '$(MODERN_ABI)'
+
+# Issue #42 typed AoE runtime gate. The reference effect has its own enabled
+# build root, and the disabled negative control has a separate build root that
+# forces EXPANSION_AOE_REFERENCE=0. This prevents a command-line
+# EXPANSION_AOE_REFERENCE=1 from contaminating both sides. Both use the same
+# established real-map input route, while the runner resolves semantic probe
+# addresses from each ELF independently.
+MODERN_AOE_PROFILE_ROOT := build/expansion-modern-aoe
+MODERN_AOE_PROFILE_ROM := $(MODERN_AOE_PROFILE_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)/fireemblem8.gba
+MODERN_AOE_PROFILE_ELF := $(MODERN_AOE_PROFILE_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)/fireemblem8.elf
+MODERN_AOE_DISABLED_PROFILE_ROOT := build/expansion-modern-aoe-disabled
+MODERN_AOE_DISABLED_PROFILE_ROM := $(MODERN_AOE_DISABLED_PROFILE_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)/fireemblem8.gba
+MODERN_AOE_DISABLED_PROFILE_ELF := $(MODERN_AOE_DISABLED_PROFILE_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)/fireemblem8.elf
+MODERN_AOE_RUNTIME_OUTDIR := $(MODERN_OUTPUT_DIR)/aoe-runtime-check
+MODERN_AOE_RUNTIME_SCRIPT := tools/gba-playtest/run_aoe_checks.py
+
+CLEAN_DIRS += $(MODERN_AOE_PROFILE_ROOT)
+CLEAN_DIRS += $(MODERN_AOE_DISABLED_PROFILE_ROOT)
+
+expansion-modern-aoe-profile-rom:
+	+$(MAKE) expansion-modern-rom \
+		MODERN_CONFIG=$(MODERN_CONFIG) MODERN_ABI=$(MODERN_ABI) \
+		MODERN_BUILD_ROOT=$(MODERN_AOE_PROFILE_ROOT) \
+		EXPANSION_AOE_REFERENCE=1
+
+expansion-modern-aoe-disabled-profile-rom:
+	+$(MAKE) expansion-modern-rom \
+		MODERN_CONFIG=$(MODERN_CONFIG) MODERN_ABI=$(MODERN_ABI) \
+		MODERN_BUILD_ROOT=$(MODERN_AOE_DISABLED_PROFILE_ROOT) \
+		EXPANSION_AOE_REFERENCE=0
+
+expansion-modern-aoe-check: expansion-modern-boot-preflight \
+		expansion-modern-aoe-profile-rom \
+		expansion-modern-aoe-disabled-profile-rom
+	MODERN_NM="$(MODERN_NM)" MODERN_TOOLCHAIN_ROOT="$(MODERN_TOOLCHAIN_ROOT)" \
+		"$(PYTHON)" "$(MODERN_AOE_RUNTIME_SCRIPT)" \
+		--enabled-rom "$(MODERN_AOE_PROFILE_ROM)" \
+		--enabled-elf "$(MODERN_AOE_PROFILE_ELF)" \
+		--disabled-rom "$(MODERN_AOE_DISABLED_PROFILE_ROM)" \
+		--disabled-elf "$(MODERN_AOE_DISABLED_PROFILE_ELF)" \
+		--config "$(MODERN_CONFIG)" \
+		--out-dir "$(MODERN_AOE_RUNTIME_OUTDIR)"
 
 # Normal save/load runtime scenario (issue #13 closure). Reuses new-game.json's
 # clean-boot SaveMenu New Game -> slot 0 write, then a real A+B+SELECT+START
@@ -3168,10 +3329,12 @@ expansion-modern-localization-runtime-debug-check: expansion-modern-boot-preflig
 		$(MODERN_LOCALE_FIXTURE_DIR)/unset.sav
 ifeq ($(MODERN_CONFIG),debug)
 	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --rom "$(MODERN_ROM)" \
+		--elf "$(MODERN_ELF)" \
 		--scenario "$(MODERN_LOCALE_SCEN)/locale-blank-sram-no-selector-default-modern-debug.json" \
 		--expected "$(MODERN_LOCALE_FP)/locale-blank-sram-no-selector-default-modern-debug.json" \
 		--sram-image "$(MODERN_LOCALE_FIXTURE_DIR)/blank.sav" --policy behavior
 	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --rom "$(MODERN_ROM)" \
+		--elf "$(MODERN_ELF)" \
 		--scenario "$(MODERN_LOCALE_SCEN)/locale-auto-select-single-locale-modern-debug.json" \
 		--expected "$(MODERN_LOCALE_FP)/locale-auto-select-single-locale-modern-debug.json" \
 		--sram-image "$(MODERN_LOCALE_FIXTURE_DIR)/unset.sav" --policy behavior
@@ -3189,14 +3352,17 @@ expansion-modern-localization-runtime-release-check: expansion-modern-boot-prefl
 		$(MODERN_LOCALE_FIXTURE_DIR)/valid_explicit_en.sav
 ifeq ($(MODERN_CONFIG),release)
 	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --rom "$(MODERN_ROM)" \
+		--elf "$(MODERN_ELF)" \
 		--scenario "$(MODERN_LOCALE_SCEN)/locale-blank-sram-no-selector-default-modern-release.json" \
 		--expected "$(MODERN_LOCALE_FP)/locale-blank-sram-no-selector-default-modern-release.json" \
 		--sram-image "$(MODERN_LOCALE_FIXTURE_DIR)/blank.sav" --policy behavior
 	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --rom "$(MODERN_ROM)" \
+		--elf "$(MODERN_ELF)" \
 		--scenario "$(MODERN_LOCALE_SCEN)/locale-auto-select-single-locale-modern-release.json" \
 		--expected "$(MODERN_LOCALE_FP)/locale-auto-select-single-locale-modern-release.json" \
 		--sram-image "$(MODERN_LOCALE_FIXTURE_DIR)/unset.sav" --policy behavior
 	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --rom "$(MODERN_ROM)" \
+		--elf "$(MODERN_ELF)" \
 		--scenario "$(MODERN_LOCALE_SCEN)/locale-settings-inline-single-modern-release.json" \
 		--expected "$(MODERN_LOCALE_FP)/locale-settings-inline-single-modern-release.json" \
 		--sram-image "$(MODERN_LOCALE_FIXTURE_DIR)/valid_explicit_en.sav" --policy behavior
@@ -3234,6 +3400,7 @@ endif
 #    on-disk output path actually changes.
 MODERN_LOCALE_MULTI_BUILD_ROOT := $(MODERN_BUILD_ROOT)-multi
 MODERN_LOCALE_MULTI_ROM := $(MODERN_LOCALE_MULTI_BUILD_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)/fireemblem8.gba
+MODERN_LOCALE_MULTI_ELF := $(MODERN_LOCALE_MULTI_BUILD_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)/fireemblem8.elf
 
 expansion-modern-localization-runtime-multi-check: expansion-modern-boot-preflight \
 		$(MODERN_LOCALE_FIXTURE_DIR)/blank.sav \
@@ -3246,6 +3413,7 @@ expansion-modern-localization-runtime-multi-check: expansion-modern-boot-preflig
 		MODERN_BUILD_ROOT=$(MODERN_LOCALE_MULTI_BUILD_ROOT) \
 		EXPANSION_ENABLED_LOCALES=en,qps-ploc EXPANSION_PSEUDO_LOCALE=1
 	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --rom "$(MODERN_LOCALE_MULTI_ROM)" \
+		--elf "$(MODERN_LOCALE_MULTI_ELF)" \
 		--scenario "$(MODERN_LOCALE_SCEN)/locale-blank-sram-selector-multi-modern-$(MODERN_CONFIG).json" \
 		--expected "$(MODERN_LOCALE_FP)/locale-blank-sram-selector-multi-modern-$(MODERN_CONFIG).json" \
 		--sram-image "$(MODERN_LOCALE_FIXTURE_DIR)/blank.sav" --policy behavior
@@ -3262,31 +3430,38 @@ expansion-modern-localization-runtime-multi-check: expansion-modern-boot-preflig
 	# A+B+SELECT+START soft reset. See tools/gba-playtest/scenarios/
 	# locale-repair-*-multi-modern-*.json and docs/localization.md.
 	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --rom "$(MODERN_LOCALE_MULTI_ROM)" \
+		--elf "$(MODERN_LOCALE_MULTI_ELF)" \
 		--scenario "$(MODERN_LOCALE_SCEN)/locale-repair-unset-multi-modern-$(MODERN_CONFIG).json" \
 		--expected "$(MODERN_LOCALE_FP)/locale-repair-unset-multi-modern-$(MODERN_CONFIG).json" \
 		--sram-image "$(MODERN_LOCALE_FIXTURE_DIR)/unset.sav" --policy behavior
 	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --rom "$(MODERN_LOCALE_MULTI_ROM)" \
+		--elf "$(MODERN_LOCALE_MULTI_ELF)" \
 		--scenario "$(MODERN_LOCALE_SCEN)/locale-repair-corrupt-multi-modern-$(MODERN_CONFIG).json" \
 		--expected "$(MODERN_LOCALE_FP)/locale-repair-corrupt-multi-modern-$(MODERN_CONFIG).json" \
 		--sram-image "$(MODERN_LOCALE_FIXTURE_DIR)/corrupt.sav" --policy behavior
 	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --rom "$(MODERN_LOCALE_MULTI_ROM)" \
+		--elf "$(MODERN_LOCALE_MULTI_ELF)" \
 		--scenario "$(MODERN_LOCALE_SCEN)/locale-repair-unknown-multi-modern-$(MODERN_CONFIG).json" \
 		--expected "$(MODERN_LOCALE_FP)/locale-repair-unknown-multi-modern-$(MODERN_CONFIG).json" \
 		--sram-image "$(MODERN_LOCALE_FIXTURE_DIR)/unknown.sav" --policy behavior
 	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --rom "$(MODERN_LOCALE_MULTI_ROM)" \
+		--elf "$(MODERN_LOCALE_MULTI_ELF)" \
 		--scenario "$(MODERN_LOCALE_SCEN)/locale-repair-disabled-multi-modern-$(MODERN_CONFIG).json" \
 		--expected "$(MODERN_LOCALE_FP)/locale-repair-disabled-multi-modern-$(MODERN_CONFIG).json" \
 		--sram-image "$(MODERN_LOCALE_FIXTURE_DIR)/disabled_on_multi.sav" --policy behavior
 ifeq ($(MODERN_CONFIG),debug)
 	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --rom "$(MODERN_LOCALE_MULTI_ROM)" \
+		--elf "$(MODERN_LOCALE_MULTI_ELF)" \
 		--scenario "$(MODERN_LOCALE_SCEN)/locale-selector-multi-switch-qps-modern-debug.json" \
 		--expected "$(MODERN_LOCALE_FP)/locale-selector-multi-switch-qps-modern-debug.json" \
 		--sram-image "$(MODERN_LOCALE_FIXTURE_DIR)/unset.sav" --policy behavior
 	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --rom "$(MODERN_LOCALE_MULTI_ROM)" \
+		--elf "$(MODERN_LOCALE_MULTI_ELF)" \
 		--scenario "$(MODERN_LOCALE_SCEN)/locale-settings-real-navigation-multi-modern-debug.json" \
 		--expected "$(MODERN_LOCALE_FP)/locale-settings-real-navigation-multi-modern-debug.json" \
 		--sram-image "$(MODERN_LOCALE_FIXTURE_DIR)/valid_explicit_en.sav" --policy behavior
 	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --rom "$(MODERN_LOCALE_MULTI_ROM)" \
+		--elf "$(MODERN_LOCALE_MULTI_ELF)" \
 		--scenario "$(MODERN_LOCALE_SCEN)/locale-softreset-persistence-multi-modern-debug.json" \
 		--expected "$(MODERN_LOCALE_FP)/locale-softreset-persistence-multi-modern-debug.json" \
 		--sram-image "$(MODERN_LOCALE_FIXTURE_DIR)/unset.sav" --policy behavior
@@ -3300,6 +3475,8 @@ endif
 #    a real soft reset.
 MODERN_LOCALE_CJK_ROM := \
 	$(MODERN_LOCALE_PROFILE_EN_JA_ZH_HANS_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)/fireemblem8.gba
+MODERN_LOCALE_CJK_ELF := \
+	$(MODERN_LOCALE_PROFILE_EN_JA_ZH_HANS_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)/fireemblem8.elf
 
 expansion-modern-localization-runtime-cjk-check: expansion-modern-boot-preflight \
 		expansion-modern-localization-profile-headroom-check \
@@ -3307,18 +3484,22 @@ expansion-modern-localization-runtime-cjk-check: expansion-modern-boot-preflight
 		$(MODERN_LOCALE_FIXTURE_DIR)/valid_explicit_en.sav
 ifeq ($(MODERN_CONFIG),debug)
 	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --rom "$(MODERN_LOCALE_CJK_ROM)" \
+		--elf "$(MODERN_LOCALE_CJK_ELF)" \
 		--scenario "$(MODERN_LOCALE_SCEN)/locale-cjk-first-start-ja-modern-debug.json" \
 		--expected "$(MODERN_LOCALE_FP)/locale-cjk-first-start-ja-modern-debug.json" \
 		--sram-image "$(MODERN_LOCALE_FIXTURE_DIR)/unset.sav" --policy behavior
 	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --rom "$(MODERN_LOCALE_CJK_ROM)" \
+		--elf "$(MODERN_LOCALE_CJK_ELF)" \
 		--scenario "$(MODERN_LOCALE_SCEN)/locale-cjk-first-start-zh-hans-modern-debug.json" \
 		--expected "$(MODERN_LOCALE_FP)/locale-cjk-first-start-zh-hans-modern-debug.json" \
 		--sram-image "$(MODERN_LOCALE_FIXTURE_DIR)/unset.sav" --policy behavior
 	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --rom "$(MODERN_LOCALE_CJK_ROM)" \
+		--elf "$(MODERN_LOCALE_CJK_ELF)" \
 		--scenario "$(MODERN_LOCALE_SCEN)/locale-cjk-settings-inline-modern-debug.json" \
 		--expected "$(MODERN_LOCALE_FP)/locale-cjk-settings-inline-modern-debug.json" \
 		--sram-image "$(MODERN_LOCALE_FIXTURE_DIR)/valid_explicit_en.sav" --policy behavior
 	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --rom "$(MODERN_LOCALE_CJK_ROM)" \
+		--elf "$(MODERN_LOCALE_CJK_ELF)" \
 		--scenario "$(MODERN_LOCALE_SCEN)/locale-cjk-softreset-persistence-modern-debug.json" \
 		--expected "$(MODERN_LOCALE_FP)/locale-cjk-softreset-persistence-modern-debug.json" \
 		--sram-image "$(MODERN_LOCALE_FIXTURE_DIR)/unset.sav" --policy behavior
@@ -3331,12 +3512,15 @@ endif
 #    a real DOWN+A selection persists French (stable locale id 3).
 MODERN_LOCALE_EU_ROM := \
 	$(MODERN_LOCALE_PROFILE_EN_EU_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)/fireemblem8.gba
+MODERN_LOCALE_EU_ELF := \
+	$(MODERN_LOCALE_PROFILE_EN_EU_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)/fireemblem8.elf
 
 expansion-modern-localization-runtime-eu-check: expansion-modern-boot-preflight \
 		expansion-modern-localization-profile-en-fr-de-es-it \
 		$(MODERN_LOCALE_FIXTURE_DIR)/unset.sav
 ifeq ($(MODERN_CONFIG),debug)
 	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --rom "$(MODERN_LOCALE_EU_ROM)" \
+		--elf "$(MODERN_LOCALE_EU_ELF)" \
 		--scenario "$(MODERN_LOCALE_SCEN)/locale-eu-first-start-fr-modern-debug.json" \
 		--expected "$(MODERN_LOCALE_FP)/locale-eu-first-start-fr-modern-debug.json" \
 		--sram-image "$(MODERN_LOCALE_FIXTURE_DIR)/unset.sav" --policy behavior
@@ -3367,14 +3551,17 @@ expansion-modern-localization-runtime-prefs-check: expansion-modern-boot-preflig
 		$(MODERN_LOCALE_FIXTURE_DIR)/disabled_on_default.sav
 ifeq ($(MODERN_CONFIG),debug)
 	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --rom "$(MODERN_ROM)" \
+		--elf "$(MODERN_ELF)" \
 		--scenario "$(MODERN_LOCALE_SCEN)/locale-prefs-corrupt-no-wipe-modern-debug.json" \
 		--expected "$(MODERN_LOCALE_FP)/locale-prefs-corrupt-no-wipe-modern-debug.json" \
 		--sram-image "$(MODERN_LOCALE_FIXTURE_DIR)/corrupt.sav" --policy behavior
 	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --rom "$(MODERN_ROM)" \
+		--elf "$(MODERN_ELF)" \
 		--scenario "$(MODERN_LOCALE_SCEN)/locale-prefs-unknown-locale-no-wipe-modern-debug.json" \
 		--expected "$(MODERN_LOCALE_FP)/locale-prefs-unknown-locale-no-wipe-modern-debug.json" \
 		--sram-image "$(MODERN_LOCALE_FIXTURE_DIR)/unknown.sav" --policy behavior
 	"$(PYTHON)" "$(MODERN_PLAYTEST)" verify --rom "$(MODERN_ROM)" \
+		--elf "$(MODERN_ELF)" \
 		--scenario "$(MODERN_LOCALE_SCEN)/locale-prefs-disabled-locale-no-wipe-modern-debug.json" \
 		--expected "$(MODERN_LOCALE_FP)/locale-prefs-disabled-locale-no-wipe-modern-debug.json" \
 		--sram-image "$(MODERN_LOCALE_FIXTURE_DIR)/disabled_on_default.sav" --policy behavior
@@ -3392,9 +3579,8 @@ expansion-modern-localization-runtime-save-check: expansion-modern-saveload-chec
 
 # 7. Shifted ROM layout (P9-A __text_shift regression class): locale
 #    resolver/selector probes must behave identically after the whole ROM
-#    is relocated -- EWRAM probe addresses are unaffected by a ROM-only
-#    text shift, so the exact same debug scenarios/fingerprints are reused
-#    against the shifted ROM.
+#    is relocated. The same symbolic scenarios/fingerprints are reused, but
+#    modern_shifted_boot.sh binds them from shifted.elf itself.
 expansion-modern-localization-runtime-shifted-check: expansion-modern-boot-preflight \
 		expansion-modern-rom \
 		$(MODERN_LOCALE_FIXTURE_DIR)/blank.sav \

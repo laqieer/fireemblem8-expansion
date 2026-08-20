@@ -1,4 +1,5 @@
 #include "global.h"
+#include "expansion_bgm.h"
 #include <string.h>
 #include "hardware.h"
 #include "m4a.h"
@@ -206,7 +207,7 @@ void OpSubtitle_Init(struct OpSubtitleProc* proc) {
 
     BG_EnableSyncByMask(BG2_SYNC_BIT);
 
-    StartBgm(SONG_PROLOGUE, 0);
+    ExpansionBgm_Start(EXPANSION_BGM_CONTEXT_TITLE, SONG_PROLOGUE, 3, 0);
 
     proc->index = 0;
     proc->timer_2a = 60;

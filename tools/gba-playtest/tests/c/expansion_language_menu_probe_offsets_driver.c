@@ -8,11 +8,10 @@
  * own field order/packing, which is exactly what a real GBA `nm`/objdump
  * symbol-address readout would also reflect for gExpansionLanguageMenuProbe
  * (a plain EWRAM struct, no vtable/dynamic layout). Used by
- * test_locale_probe_schema.py to prove every hardcoded probe address in
- * tools/gba-playtest/scenarios/locale-*.json is `base + offsetof(field)`,
- * not an independently (and possibly incorrectly) guessed literal, so a
- * future header edit that reorders/resizes a field is caught here instead
- * of silently producing a wrong-field pinned fingerprint.
+ * test_locale_probe_schema.py to prove every symbolic locale probe offset is
+ * a real `offsetof(field)`, not an independently guessed literal. A future
+ * header edit that reorders or resizes a field is caught here instead of
+ * silently producing a wrong-field fingerprint.
  */
 #include <stddef.h>
 #include <stdio.h>

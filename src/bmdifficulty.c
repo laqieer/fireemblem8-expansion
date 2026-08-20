@@ -1,4 +1,5 @@
 #include "global.h"
+#include "expansion_bgm.h"
 #include <string.h>
 
 #include "constants/characters.h"
@@ -487,7 +488,7 @@ void PopGlobalTimer(ProcPtr proc) {
 }
 
 void DungeonRecordUi_StartBgm(ProcPtr proc) {
-    StartBgm(SONG_RECORDS, 0);
+    ExpansionBgm_Start(EXPANSION_BGM_CONTEXT_MENU, SONG_RECORDS, 3, 0);
     return;
 }
 

@@ -1,4 +1,6 @@
 #include "global.h"
+
+#include "expansion_portraits.h"
 #include "face.h"
 #include "anime.h"
 #include "proc.h"
@@ -433,9 +435,9 @@ void EkrLvup_InitLevelUpBox(struct ProcEkrLevelup *proc)
     proc->timer = EKR_LVUP_UI_BASE;
 
     if (GetAnimPosition(anim) == EKR_POS_L)
-        portrait = bu1->unit.pCharacterData->portraitId;
+        portrait = ExpansionPortrait_ResolveUnit(&bu1->unit, EXPANSION_PORTRAIT_KIND_FULL);
     else
-        portrait = bu2->unit.pCharacterData->portraitId;
+        portrait = ExpansionPortrait_ResolveUnit(&bu2->unit, EXPANSION_PORTRAIT_KIND_FULL);
 
     SetupFaceGfxData(&gEkrlvup_2[0]);
     StartFace(0, portrait, 0xBC, EKR_LVUP_UI_BASE, 0x1042);

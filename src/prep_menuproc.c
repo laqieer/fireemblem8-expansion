@@ -9,6 +9,7 @@
 #include "bmusemind.h"
 #include "cgtext.h"
 #include "chapterdata.h"
+#include "expansion_bgm.h"
 #include "classchg.h"
 #include "ctc.h"
 #include "fontgrp.h"
@@ -80,7 +81,9 @@ void NullExpForChar100AndResetScreen(struct Proc08A184B4 * proc)
 
     SetBlendDarken(16);
     SetDispEnable(0, 0, 0, 0, 0);
-    ChangeBgm(SONG_COMBAT_PREPARATION, 0x100, 0x100, 0x20, NULL);
+    ExpansionBgm_Change(
+        EXPANSION_BGM_CONTEXT_PREPARATION, SONG_COMBAT_PREPARATION,
+        0x100, 0x100, 0x20, NULL);
 }
 
 void PrepPromoteDebugMaybe(struct Proc08A184B4 * proc)
@@ -102,7 +105,9 @@ void PrepPromoteDebugMaybe(struct Proc08A184B4 * proc)
 
 void FadeOutPrepBgm(void)
 {
-    ChangeBgm(SONG_NONE, 0x100, 0, 0x20, NULL);
+    ExpansionBgm_Change(
+        EXPANSION_BGM_CONTEXT_PREPARATION, SONG_NONE,
+        0x100, 0, 0x20, NULL);
 }
 
 void NewPrepScreenTraineePromotionManager(ProcPtr proc)

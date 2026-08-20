@@ -19,7 +19,7 @@ Run `./configure --help` to see the persistent feature/profile interface.
 `configure` validates the selected combination with the same
 `scripts/modernize/expansion_config.py` implementation used by the build, then
 writes ignored `config.autotools.mk` and `GNUmakefile` files. Supported options
-cover the starter flags, localized-text auto-wrap, enabled/default/pseudo
+cover the starter flags, AoE reference, casual-mode policy, localized-text auto-wrap, enabled/default/pseudo
 locales, ROM size, item ID cap, and link-time text shift.
 
 Only options explicitly passed to `configure` are written, so unspecified
@@ -48,13 +48,16 @@ regenerate the committed `configure` script with `autoreconf -fi`.
 | `EXPANSION_ROM_REVISION` | integer, `[0, 255]` | `0` | ROM header "software version" byte (fingerprint) |
 | `EXPANSION_BUILD_ID` | empty, or 4-40 hex characters | empty | embedded build commit override |
 | `EXPANSION_SAVE_COMPAT_EPOCH` | integer, `[0, 65535]` | `2` | save-format compatibility gate (see `docs/save_format.md`); **not** part of the fingerprint above |
-| `EXPANSION_ENABLED_LOCALES` | comma-separated subset of `en`, `ja`, `zh-Hans`, `qps-ploc`; must include `en`; enabling either CJK locale requires `MODERN_ROM_SIZE=32M` | `en` | issue #18 localization (fingerprint) -- which locale profile this ROM enables |
+| `EXPANSION_ENABLED_LOCALES` | comma-separated subset of `en`, `ja`, `zh-Hans`, `fr`, `de`, `es`, `it`, `qps-ploc`; must include `en`; enabling any real non-English locale requires `MODERN_ROM_SIZE=32M` | `en` | issue #18 localization (fingerprint) -- which locale profile this ROM enables |
 | `EXPANSION_DEFAULT_LOCALE` | must be a member of `EXPANSION_ENABLED_LOCALES` | `en` | issue #18 localization (fingerprint) -- the locale `src/expansion_locale.c`'s runtime resolver starts in |
 | `EXPANSION_PSEUDO_LOCALE` | `0` or `1`; must be `1` if and only if `qps-ploc` is in `EXPANSION_ENABLED_LOCALES` | `0` | issue #18 localization (fingerprint) -- enables the deterministic ASCII pseudo-locale test harness (`scripts/localization/pseudo.py`), never a real translation |
 | `EXPANSION_MECHANICS_HOOKS` | `0` or `1` | `0` | issue #6 starter feature (fingerprint) -- link the public battle-stat mechanics hook registry |
 | `EXPANSION_MECHANICS_SAMPLE` | `0` or `1` | `0` | issue #6 starter feature (fingerprint) -- register the content-free sample mechanic; requires `EXPANSION_MECHANICS_HOOKS=1` |
 | `EXPANSION_DANGER_OVERLAY_MENU` | `0` or `1` | `0` | issue #6 starter feature (fingerprint) -- expose the player danger/range overlay map-menu surface |
 | `EXPANSION_STARTER_CONTENT` | `0` or `1` | `0` | issue #6 starter feature (fingerprint) -- link the bundled generated-data content example; requires `EXPANSION_MECHANICS_HOOKS=1` **and** an item ID cap reaching `ITEM_EXPANSION_CE` (`FE8_ITEM_ID_CAP=0xCE` or higher) |
+| `EXPANSION_AOE_REFERENCE` | `0` or `1` | `0` | issue #42 optional project-neutral radius-heal reference and semantic probe (fingerprint); the typed AoE core remains available independently and the flag has no dependencies or conflicts |
+| `EXPANSION_CASUAL_MODE` | `0` or `1` | `0` | issue #34 optional ordinary player-defeat restoration (fingerprint); combat/arena defeats are restored at the next chapter boundary, while scripted deaths and explicit removals remain permanent |
+| `EXPANSION_BGM_CONTINUATION_POLICY` | `preserve`, `resume`, or `restart` | `preserve` | issues #37/#39 typed BGM continuation policy (fingerprint); never save-compatible |
 
 Every value has a `?=` default, so an explicit `./configure` option, `make`
 command-line override (e.g.
@@ -90,19 +93,22 @@ make expansion-modern-rom \
   EXPANSION_PSEUDO_LOCALE=1
 ```
 
-Japanese and Simplified Chinese are opt-in 32 MiB production profiles:
+All real non-English locales are opt-in 32 MiB production profiles:
 
 ```bash
 make expansion-modern-localization-profile-en-ja
 make expansion-modern-localization-profile-en-zh-hans
 make expansion-modern-localization-profile-en-ja-zh-hans
+make expansion-modern-localization-profile-en-fr-de-es-it
+make expansion-modern-localization-profile-all
 ```
 
 The named targets use isolated build roots and select their full-game catalog
 and localized font payload from the same validated
 `EXPANSION_ENABLED_LOCALES` profile used for metadata and fingerprinting.
 Direct builds may set the same locales plus `MODERN_ROM_SIZE=32M`.
-`MODERN_ROM_SIZE=16M` with `ja` or `zh-Hans` is rejected before compilation.
+`MODERN_ROM_SIZE=16M` with any real non-English locale is rejected before
+compilation.
 English-only and English+pseudo remain valid/default at 16 MiB.
 
 `MODERN_ABI=apcs-gnu` is accepted only by the compile-only
@@ -191,6 +197,8 @@ compatibility-relevant setting changes.
 | `rom_title`, `rom_game_code`, `rom_maker_code`, `rom_revision` | ROM identity; changing these produces a distinguishable ROM (e.g. for emulator save matching, patch tooling) |
 | `enabled_locales`, `default_locale`, `pseudo_locale_enabled` | issue #18 localization settings; the enabled set is normalized into stable locale-ID order before hashing, so equivalent input orders share a fingerprint while different locale profiles do not. Diagnostic/UI identity only -- see `docs/localization.md`; never touches the save format (`EXPANSION_SAVE_COMPAT_EPOCH` stays independent, see below) |
 | `features.mechanics_hooks`, `features.mechanics_sample`, `features.danger_overlay_menu`, `features.starter_content` | issue #6 starter-feature opt-ins; each links different code and/or data, so two builds that differ in any of them are behaviourally distinguishable. Diagnostic identity only -- see `docs/starter_features.md`; none of them touches the save format |
+| `features.aoe_reference` | issue #42 default-off reference effect/probe; changes runtime behavior only when explicitly invoked. Diagnostic identity only -- see `docs/aoe.md`; it does not touch the save format |
+| `features.casual_mode` | issue #34 changes defeat handling and therefore runtime behavior. Its marker uses existing serialized unit-state capacity; no save struct or compatibility epoch changes |
 
 Settings that are **not** folded into the fingerprint (e.g. the resolved
 `build_commit`) are informational only: two builds from different commits

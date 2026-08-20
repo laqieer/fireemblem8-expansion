@@ -1,5 +1,6 @@
 #include "global.h"
 
+#include "expansion_bgm.h"
 #include "soundwrapper.h"
 #include "prepscreen.h"
 #include "bmshop.h"
@@ -41,7 +42,8 @@ void GMapBaseMenu_RestoreBgm(struct GMapBaseMenuProc * proc)
 {
     if (proc->wasBgmPlaying != 0)
     {
-        StartBgmFadeIn(proc->bgmSongId, 1, 0);
+        ExpansionBgm_Continue(
+            EXPANSION_BGM_CONTEXT_WORLD_MAP, proc->bgmSongId, 1, 0);
     }
 
     return;

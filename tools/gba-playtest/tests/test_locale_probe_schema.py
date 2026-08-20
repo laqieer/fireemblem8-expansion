@@ -1,28 +1,7 @@
-"""
-Issue #18 sprint 4 host tests -- locale/language-menu probe schema and
-bounds lock-in.
-
-WHAT #1 requires host tests that cover "probe schema/bounds" for the new
-semantic scenarios' `gExpansionLanguageMenuProbe` (include/
-expansion_language_menu.h) reads. These scenarios reuse the existing
-generic, already-reviewed backend/schema address+size probe mechanism
-(tools/gba-playtest/backend.c, `Probe` in gba_playtest.py) unchanged --
-a plain, bounded EWRAM read of a known diagnostic struct's own fields,
-never a raw/arbitrary pointer dereference -- so no new backend C code or
-JSON-schema field was required to satisfy this sprint's "safe read" intent.
-What *is* new here is proving those hardcoded scenario addresses are
-correct and will not silently drift: this module compiles and runs the
-real, unmodified header (never re-implementing/guessing its layout) to
-get the compiler's own offsetof()/sizeof() for every probed field, then
-cross-checks every tools/gba-playtest/scenarios/locale-*.json probe
-address against `base + offsetof(field)`, and every probe against the
-struct's own sizeof() bound. A future header edit that reorders, resizes,
-or removes a field will fail this suite instead of silently producing a
-wrong-field (or out-of-bounds) pinned fingerprint that still happens to
-byte-compare equal by coincidence.
-"""
+"""Locale probe layout and exact-ELF symbolic-binding contract tests."""
 
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -30,17 +9,20 @@ import unittest
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-SCENARIOS_DIR = REPO_ROOT / "tools" / "gba-playtest" / "scenarios"
+PLAYTEST_DIR = REPO_ROOT / "tools" / "gba-playtest"
+SCENARIOS_DIR = PLAYTEST_DIR / "scenarios"
+FINGERPRINTS_DIR = PLAYTEST_DIR / "fingerprints"
 C_FIXTURES_DIR = Path(__file__).resolve().parent / "c"
-HEADER = REPO_ROOT / "include" / "expansion_language_menu.h"
 DRIVER_SRC = C_FIXTURES_DIR / "expansion_language_menu_probe_offsets_driver.c"
-
 CC = shutil.which("gcc") or shutil.which("cc")
 
-# Field order matches include/expansion_language_menu.h's
-# struct ExpansionLanguageMenuProbe declaration order exactly -- this
-# module never reorders/re-derives it independently; it only asks the
-# real compiler for each field's actual offsetof()/sizeof().
+sys.path.insert(0, str(PLAYTEST_DIR))
+import gba_playtest  # noqa: E402
+
+PROBE_SYMBOL = "gExpansionLanguageMenuProbe"
+PROBE_EXPRESSION_RE = re.compile(
+    rf"^{PROBE_SYMBOL}\+(0x[0-9a-fA-F]+)$"
+)
 PROBE_FIELDS = [
     "active",
     "settingsActive",
@@ -55,15 +37,8 @@ PROBE_FIELDS = [
     "startupRunCount",
     "settingsOpenCount",
     "settingsChangeCount",
-    # Issue #18 sprint 6 (runtime blocker fix): appended, never inserted
-    # -- see the header's own "new fields may only be appended" note --
-    # so every pre-sprint-6 scenario's hardcoded probe address stays
-    # valid despite this struct growing.
     "needsPreferenceRepair",
 ]
-
-# Byte width of each field, in the same order as PROBE_FIELDS (u8 fields
-# then u16 fields -- see the header's own comments).
 PROBE_FIELD_SIZES = {
     "active": 1,
     "settingsActive": 1,
@@ -80,29 +55,48 @@ PROBE_FIELD_SIZES = {
     "settingsChangeCount": 2,
     "needsPreferenceRepair": 1,
 }
+EWRAM_RANGE = (0x02000000, 0x02040000)
+
+
+def language_probe_offset(address):
+    match = PROBE_EXPRESSION_RE.fullmatch(address) if isinstance(address, str) else None
+    if match is not None:
+        return int(match.group(1), 16)
+    if isinstance(address, str) and address.startswith("0x"):
+        value = int(address, 16)
+        if EWRAM_RANGE[0] <= value < EWRAM_RANGE[1]:
+            raise AssertionError(
+                f"stale literal EWRAM probe address {address}; use "
+                f"{PROBE_SYMBOL}+offsetof(field)"
+            )
+        return None
+    raise AssertionError(
+        f"unsupported locale probe address {address!r}; expected {PROBE_SYMBOL}+0xNN "
+        "or a non-EWRAM literal such as cart SRAM"
+    )
 
 
 @unittest.skipIf(CC is None, "no host C compiler available")
 class ExpansionLanguageMenuProbeSchemaTests(unittest.TestCase):
-    """Compiles+runs the real header's offsetof()/sizeof() layout, then
-    cross-checks it against every locale-*.json scenario's hardcoded
-    probe addresses."""
-
     @classmethod
     def setUpClass(cls):
-        cls.assertTrue_ = None  # placeholder, unused
-        binary = C_FIXTURES_DIR / "expansion_language_menu_probe_offsets_driver.bin"
+        binary = (
+            C_FIXTURES_DIR / "expansion_language_menu_probe_offsets_driver.bin"
+        )
         result = subprocess.run(
             [CC, "-I", str(REPO_ROOT / "include"), "-o", str(binary), str(DRIVER_SRC)],
-            capture_output=True, text=True,
+            capture_output=True,
+            text=True,
         )
         if result.returncode != 0:
             raise AssertionError(
-                "failed to compile expansion_language_menu_probe_offsets_driver.c "
-                f"against the real include/expansion_language_menu.h:\n{result.stderr}"
+                "failed to compile the real ExpansionLanguageMenuProbe header:\n"
+                f"{result.stderr}"
             )
         try:
-            run = subprocess.run([str(binary)], capture_output=True, text=True, check=True)
+            run = subprocess.run(
+                [str(binary)], capture_output=True, text=True, check=True
+            )
         finally:
             binary.unlink(missing_ok=True)
         layout = {}
@@ -112,131 +106,172 @@ class ExpansionLanguageMenuProbeSchemaTests(unittest.TestCase):
         cls.offsets = {name: layout[name] for name in PROBE_FIELDS}
         cls.struct_size = layout["sizeof"]
 
-    def test_driver_reports_every_documented_field_and_matches_hand_derivation(self):
-        """Sanity check on the driver itself: every PROBE_FIELDS name must
-        actually appear in the header (i.e. the driver still compiles
-        against the real, current field list, not a stale copy), fields
-        must be in strictly increasing offset order (packed, no
-        reordering), and the struct must round up to a whole u16 (size
-        20, matching 9 u8 + pad(1) + 4 u16 + 1 appended u8 (issue #18
-        sprint 6's needsPreferenceRepair) + pad(1) = 8 + 2(pad) + 8 + 1 +
-        1(pad) = 20)."""
-        offsets_in_order = [self.offsets[name] for name in PROBE_FIELDS]
-        self.assertEqual(offsets_in_order, sorted(offsets_in_order),
-                          "probe fields must be declared/packed in strictly increasing offset order")
-        self.assertEqual(self.struct_size, 20,
-                          "struct ExpansionLanguageMenuProbe layout changed size (9 u8 + pad(1) + 4 u16 + "
-                          "1 u8 + pad(1) = 20) -- update PROBE_FIELDS/PROBE_FIELD_SIZES and every "
-                          "locale-*.json probe address")
+    def _probe_files(self):
+        return sorted(SCENARIOS_DIR.glob("locale-*.json")) + sorted(
+            FINGERPRINTS_DIR.glob("locale-*.json")
+        )
 
-    def _scenario_files(self):
-        return sorted(SCENARIOS_DIR.glob("locale-*.json"))
-
-    # EWRAM address space (GBA memory map): this schema only governs
-    # gExpansionLanguageMenuProbe reads, which always live here. Some
-    # locale-*-no-wipe-*.json scenarios (issue #18 sprint 5 WHAT #2) also
-    # legitimately probe cart SRAM (0x0e000000-0x0e007fff) -- individual,
-    # honestly-described bytes proving specific known-noise SRAM regions
-    # (the vanilla SoundRoom self-test pad, ExpansionSaveMeta's own
-    # magic/checksum, and the untouched XMAP region) are stable/expected,
-    # which is an entirely different probe domain from this EWRAM struct
-    # and is intentionally out of scope for this module's offsetof()/
-    # sizeof() cross-check. Those SRAM probes are excluded here (not
-    # exempted from review -- see the same scenarios' own description
-    # fields and docs/localization.md).
-    _EWRAM_RANGE = (0x02000000, 0x02040000)
-
-    def _probe_ewram_addresses(self, data):
-        addrs = set()
+    def _probes(self, path):
+        data = json.loads(path.read_text(encoding="utf-8"))
         for checkpoint in data["checkpoints"]:
-            for probe in checkpoint.get("probes", []):
-                addr = int(probe["address"], 16)
-                if self._EWRAM_RANGE[0] <= addr < self._EWRAM_RANGE[1]:
-                    addrs.add(addr)
-        return addrs
+            yield from checkpoint.get("probes", [])
 
-    def test_every_locale_scenario_probe_address_matches_a_documented_field_offset(self):
-        """Every probe address used by any locale-*.json scenario must be
-        `base + offsetof(field)` for some real field, where `base` is
-        that scenario's own gExpansionLanguageMenuProbe runtime address
-        (derived per-scenario since debug/release symbol addresses
-        legitimately differ -- taken as the scenario's own minimum probed
-        address, which is always field `active` at offset 0)."""
-        scenario_files = self._scenario_files()
-        self.assertGreaterEqual(len(scenario_files), 10,
-                                 "expected at least the 10 issue #18 sprint 4 locale-*.json scenarios")
-        offset_to_field = {v: k for k, v in self.offsets.items()}
-        for path in scenario_files:
-            data = json.loads(path.read_text(encoding="utf-8"))
-            addrs = self._probe_ewram_addresses(data)
-            if not addrs:
-                continue
-            base = min(addrs)
-            self.assertIn(
-                self.offsets["active"], {addr - base for addr in addrs},
-                f"{path.name}: no probe targets field 'active' (offset 0) -- 'base' (lowest probed "
-                "address) would not be the real struct base",
-            )
-            for addr in addrs:
-                rel = addr - base
+    def test_driver_reports_current_probe_layout(self):
+        offsets = [self.offsets[name] for name in PROBE_FIELDS]
+        self.assertEqual(offsets, sorted(offsets))
+        self.assertEqual(self.struct_size, 20)
+
+    def test_all_locale_scenarios_and_fingerprints_use_symbolic_probe_addresses(self):
+        files = self._probe_files()
+        self.assertGreaterEqual(len(files), 52)
+        for path in files:
+            for probe in self._probes(path):
+                try:
+                    language_probe_offset(probe["address"])
+                except AssertionError as error:
+                    self.fail(f"{path.name}: {error}")
+
+    def test_symbolic_offsets_match_real_fields_sizes_and_bounds(self):
+        offset_to_field = {offset: field for field, offset in self.offsets.items()}
+        for path in self._probe_files():
+            for probe in self._probes(path):
+                offset = language_probe_offset(probe["address"])
+                if offset is None:
+                    continue
                 self.assertIn(
-                    rel, offset_to_field,
-                    f"{path.name}: probe address {hex(addr)} (base {hex(base)}, +{rel}) does not match "
-                    "any documented ExpansionLanguageMenuProbe field offset -- update the scenario or the "
-                    "header/PROBE_FIELDS mapping",
+                    offset,
+                    offset_to_field,
+                    f"{path.name}: {probe['address']} is not a real probe field offset",
                 )
+                field = offset_to_field[offset]
+                size = int(probe["size"])
+                self.assertEqual(
+                    size,
+                    PROBE_FIELD_SIZES[field],
+                    f"{path.name}: {field} uses size {size}",
+                )
+                self.assertLessEqual(offset + size, self.struct_size)
 
-    def test_every_locale_scenario_probe_stays_within_struct_bounds(self):
-        """No probe (address + size) may reach past sizeof(struct
-        ExpansionLanguageMenuProbe) from its scenario's own base -- this
-        is the schema "bounds" half of WHAT #1: these scenarios only ever
-        read inside the one known, fixed-size diagnostic struct, never
-        adjacent EWRAM state."""
-        for path in self._scenario_files():
-            data = json.loads(path.read_text(encoding="utf-8"))
-            addrs = self._probe_ewram_addresses(data)
-            if not addrs:
-                continue
-            base = min(addrs)
-            for checkpoint in data["checkpoints"]:
-                for probe in checkpoint.get("probes", []):
-                    addr = int(probe["address"], 16)
-                    if addr not in addrs:
-                        continue  # not an EWRAM gExpansionLanguageMenuProbe read (see _probe_ewram_addresses)
-                    size = int(probe["size"])
-                    end_offset = (addr - base) + size
-                    self.assertLessEqual(
-                        end_offset, self.struct_size,
-                        f"{path.name}: probe at {probe['address']} size {size} ends at struct+{end_offset}, "
-                        f"past sizeof(struct ExpansionLanguageMenuProbe)={self.struct_size}",
-                    )
+    def test_runtime_parser_binds_scenario_and_fingerprint_from_exact_elf_symbols(self):
+        base = 0x02032120
 
-    def test_every_locale_scenario_probe_size_matches_its_fields_declared_width(self):
-        """A probe's byte `size` must match the actual declared width of
-        the field it targets (1 for every u8 field, 2 for every u16
-        field) -- catches a probe that reads too few/many bytes for its
-        own field even if it happens to still land in-bounds."""
-        offset_to_field = {v: k for k, v in self.offsets.items()}
-        for path in self._scenario_files():
-            data = json.loads(path.read_text(encoding="utf-8"))
-            addrs = self._probe_ewram_addresses(data)
-            if not addrs:
-                continue
-            base = min(addrs)
-            for checkpoint in data["checkpoints"]:
-                for probe in checkpoint.get("probes", []):
-                    addr = int(probe["address"], 16)
-                    if addr not in addrs:
-                        continue  # not an EWRAM gExpansionLanguageMenuProbe read (see _probe_ewram_addresses)
-                    rel = addr - base
-                    field = offset_to_field.get(rel)
-                    if field is None:
-                        continue  # already reported by the offset-match test
-                    self.assertEqual(
-                        int(probe["size"]), PROBE_FIELD_SIZES[field],
-                        f"{path.name}: probe at {probe['address']} targets field '{field}' "
-                        f"(declared width {PROBE_FIELD_SIZES[field]}) but uses size {probe['size']}",
-                    )
+        def resolver(symbol):
+            self.assertEqual(symbol, PROBE_SYMBOL)
+            return base, self.struct_size
+
+        scenario_path = SCENARIOS_DIR / "locale-cjk-first-start-ja-modern-debug.json"
+        fingerprint_path = (
+            FINGERPRINTS_DIR / "locale-cjk-first-start-ja-modern-debug.json"
+        )
+        scenario = gba_playtest.parse_scenario_data(
+            json.loads(scenario_path.read_text(encoding="utf-8")),
+            str(scenario_path),
+            resolver,
+        )
+        expected = gba_playtest.validate_fingerprint(
+            json.loads(fingerprint_path.read_text(encoding="utf-8")),
+            str(fingerprint_path),
+            resolver,
+        )
+        self.assertEqual(scenario.checkpoints[0].probes[0].address, base)
+        self.assertEqual(
+            expected["checkpoints"][0]["probes"][0]["address"],
+            f"{PROBE_SYMBOL}+0x00",
+        )
+
+    def test_rebased_symbols_preserve_capture_and_fingerprint_bindings(self):
+        data = {
+            "schema_version": 1,
+            "name": "rebased-symbol-probe",
+            "frames": [],
+            "checkpoints": [
+                {
+                    "name": "probe",
+                    "frame": 1,
+                    "framebuffer": False,
+                    "probes": [
+                        {
+                            "address": f"{PROBE_SYMBOL}+0x04",
+                            "size": 1,
+                            "expected": "0x01",
+                        }
+                    ],
+                }
+            ],
+        }
+
+        captures = []
+        for base in (0x02030000, 0x02034000):
+            scenario = gba_playtest.parse_scenario_data(
+                data,
+                symbol_resolver=lambda symbol, base=base: (base, self.struct_size),
+            )
+            self.assertEqual(scenario.checkpoints[0].probes[0].address, base + 4)
+            captures.append(
+                gba_playtest._parse_backend_output(
+                    "CHECKPOINT\t0\t1\t0000000000000000\nPROBE\t0\t0\t1\n",
+                    scenario,
+                )
+            )
+
+        self.assertEqual(captures[0], captures[1])
+        self.assertEqual(
+            captures[0]["checkpoints"][0]["probes"][0]["address"],
+            f"{PROBE_SYMBOL}+0x04",
+        )
+        self.assertEqual(
+            gba_playtest.compare_fingerprints(
+                {
+                    **captures[0],
+                    "rom": {"sha1": "0" * 40, "size": 1, "title": "", "game_code": ""},
+                },
+                {
+                    **captures[1],
+                    "rom": {"sha1": "1" * 40, "size": 1, "title": "", "game_code": ""},
+                },
+                policy="behavior",
+            ),
+            [],
+        )
+
+    def test_stale_literal_negative_control_is_rejected(self):
+        with self.assertRaisesRegex(AssertionError, "stale literal EWRAM"):
+            language_probe_offset("0x02031a94")
+
+    def test_symbol_expression_loads_without_elf_but_execution_needs_binding(self):
+        data = {
+            "schema_version": 1,
+            "name": "symbol-probe",
+            "frames": [],
+            "checkpoints": [
+                {
+                    "name": "probe",
+                    "frame": 1,
+                    "framebuffer": False,
+                    "probes": [
+                        {
+                            "address": f"{PROBE_SYMBOL}+0x14",
+                            "size": 1,
+                        }
+                    ],
+                }
+            ],
+        }
+        scenario = gba_playtest.parse_scenario_data(data)
+        self.assertIsNone(scenario.checkpoints[0].probes[0].address)
+        self.assertEqual(
+            scenario.checkpoints[0].probes[0].binding,
+            f"{PROBE_SYMBOL}+0x14",
+        )
+        with self.assertRaisesRegex(gba_playtest.PlaytestError, "supply.*--elf"):
+            import tempfile
+
+            with tempfile.TemporaryDirectory(dir=REPO_ROOT / "build") as work:
+                gba_playtest._write_plan(Path(work) / "plan.txt", scenario)
+        with self.assertRaisesRegex(gba_playtest.PlaytestError, "past the"):
+            gba_playtest.parse_scenario_data(
+                data, symbol_resolver=lambda symbol: (0x02030000, self.struct_size)
+            )
 
 
 if __name__ == "__main__":

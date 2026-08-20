@@ -1,4 +1,5 @@
 #include "global.h"
+#include "expansion_bgm.h"
 #include "event.h"
 #include "eventinfo.h"
 #include "eventscript.h"
@@ -889,9 +890,9 @@ void DrawEventMapAnimMaskfxTsa(int index, int mode)
 void EventMapAnim_Init(struct ProcEventMapAnim * proc)
 {
     if (0 == proc->mode)
-        StartBgm(SONG_VICTORY_SONG_B, 0);
+        ExpansionBgm_Start(EXPANSION_BGM_CONTEXT_VICTORY, SONG_VICTORY_SONG_B, 3, 0);
     else
-        StartBgm(SONG_VICTORY_SONG_A, 0);
+        ExpansionBgm_Start(EXPANSION_BGM_CONTEXT_VICTORY, SONG_VICTORY_SONG_A, 3, 0);
 
     SetDispEnable(1, 1, 1, 1, 1);
     proc->timer = 0;

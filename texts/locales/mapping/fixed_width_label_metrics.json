@@ -5508,7 +5508,7 @@
           "path": "src/prep_itemuse.c",
           "resolver_anchor": "str = GetClassDisplayNameForWidth(unit->pClassData, 64);",
           "resolver_function": "DrawPrepScreenItemUseStatLabels",
-          "sha256": "1b878d21ef739ec38c31f64386c3e73263f571c87e167d3977c7be3febed2b7f"
+          "sha256": "7230ee6fe01f3b81ae692227cee93e09cf411a8a6fba615a1d5b4aab4e700f2e"
         }
       ],
       "category": "class",

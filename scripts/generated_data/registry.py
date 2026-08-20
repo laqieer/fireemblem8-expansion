@@ -20,6 +20,7 @@ from .characters.schema import CharactersTableSchema
 from .terrainstats.schema import TerrainStatsTableSchema
 from .movecost.schema import MovecostTableSchema
 from .weapontriangle.schema import WeaponTriangleTableSchema
+from .ui_presentation.schema import UiPresentationTableSchema
 
 REGISTRY.register(SupportsTableSchema())
 REGISTRY.register(UnitsTableSchema())
@@ -52,3 +53,4 @@ REGISTRY.register(MovecostTableSchema())
 # GENERATED_DATA_TABLES/CI. See weapontriangle/schema.py's module
 # docstring for the full write-up.
 REGISTRY.register(WeaponTriangleTableSchema())
+REGISTRY.register(UiPresentationTableSchema())

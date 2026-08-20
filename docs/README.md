@@ -18,6 +18,9 @@ the authoritative technical documentation and are checked by CI.
 | Get the architecture map before diving into source | [`architecture.md`](architecture.md) |
 | Author game content (characters/classes/items/etc.) | [`generated_data_tutorial.md`](generated_data_tutorial.md) |
 | Enable/extend starter content, mechanics, or Threat Range QoL | [`starter_features.md`](starter_features.md) |
+| Add a bounded area-of-effect target/effect or item route | [`aoe.md`](aoe.md) |
+| Configure casual defeat restoration | [`starter_features.md`](starter_features.md#optional-casual-defeat-policy-issue-34) |
+| Configure portrait/minimug rules | [`portrait_resolver.md`](portrait_resolver.md) |
 | Author expansion-localized UI text/locales | [`localization.md`](localization.md) |
 | Generate or test localized full-game message catalogs | [`game_localization_catalog.md`](game_localization_catalog.md) |
 | Evaluate and deliver a feature request or bug fix with Copilot | [`development-workflow`](../.github/skills/development-workflow/SKILL.md) |
@@ -60,10 +63,13 @@ numbers mark merged (closed) contracts only:
 | Subsystem | Public entry points | Reference |
 | --- | --- | --- |
 | Generated data authoring | JSON sources under `src/data/*.json` + table schemas in `scripts/generated_data/*/schema.py`; `make generated-data-check`/`generated-data-active-heal-check` | [`generated_data.md`](generated_data.md), [`generated_data_tutorial.md`](generated_data_tutorial.md) |
+| Typed BGM routing and continuation | Public context router, validated chapter/flag variants, dancer/staff selectors, and preserve/resume/restart policy | [`bgm_routing.md`](bgm_routing.md), [`config_identity.md`](config_identity.md) |
 | Typed IDs / caps (issue #10) | `include/id_space.h` (DEFAULT), `build/generated/data/id_space_active.h` (ACTIVE), `FE8_ITEM_ID_CAP` | [`id_space.md`](id_space.md), [`../reports/id_space_audit.md`](../reports/id_space_audit.md) |
 | Config / ROM identity | `struct ExpansionMetadata` (`include/expansion_metadata.h`), `EXPANSION_SAVE_COMPAT_EPOCH` | [`config_identity.md`](config_identity.md), [`save_format.md`](save_format.md) |
 | Debug-tools extension (issue #11) | Action-registration API (`include/expansion_debugtools.h`), `FE8_EXPANSION_DEBUGTOOLS_ENABLED` | [`debugtools.md`](debugtools.md) |
 | Starter features (issue #6) | Four default-off flags; `include/expansion_mechanics.h`; `include/expansion_starter_content.h`; danger-overlay menu | [`starter_features.md`](starter_features.md) |
+| Typed area-of-effect actions (issue #42) | `include/expansion_aoe.h`; bounded target/effect API and shared item/action/AI route registry | [`aoe.md`](aoe.md) |
+| Portrait/minimug resolver (issue #35) | Typed character/class/chapter/flag registry with legacy fallback | [`portrait_resolver.md`](portrait_resolver.md) |
 | Localization (issue #18) | `ExpansionLocaleId`/`ExpansionMsgId`, `texts/expansion/`, prefs + selector/settings APIs | [`localization.md`](localization.md), [`save_format.md`](save_format.md) |
 | Runtime test harness (issue #13) | JSON scenario format + fingerprints, `GBA_PLAYTEST_HOST_ONLY` | [`../tools/gba-playtest/README.md`](../tools/gba-playtest/README.md) |
 | Upstream-port review tooling | `python3 -m scripts.upstream_port {scan,drift,verify,update-state}` | [`upstream-porting.md`](upstream-porting.md) |
@@ -110,7 +116,10 @@ and
 | [`generated_data.md`](generated_data.md) | Current, reference | Full generated-data design reference (issue #5) |
 | [`generated_data_tutorial.md`](generated_data_tutorial.md) | Current, tutorial | Contributor-facing generated-data walkthrough |
 | [`starter_features.md`](starter_features.md) | Current | Four opt-in flags, typed mechanics/content API, QoL and matrices (issue #6) |
+| [`aoe.md`](aoe.md) | Current | Typed bounded AoE targeting/effects, shared item seam, and default-off reference (issue #42) |
+| [`portrait_resolver.md`](portrait_resolver.md) | Current | Typed data-driven portrait/minimug resolver and validation contract (issue #35) |
 | [`localization.md`](localization.md) | Current | Stable locale/message IDs, authoring, prefs/UI, budgets and matrices (issue #18) |
+| [`ui_presentation_registry.md`](ui_presentation_registry.md) | Current | Typed battle-animation, chapter/screen manifest, and utility-preference registries (issues #41/#43/#44) |
 | [`game_localization_catalog.md`](game_localization_catalog.md) | Current | Full-game FE8U-indexed CJK catalog generation, runtime bounds, and synthetic link gate |
 | [`documentation-inventory.md`](documentation-inventory.md) | Current | Exact recognized-Markdown inventory |
 | [`external-link-registry.md`](external-link-registry.md) | Current | Offline URL ownership/status coverage |

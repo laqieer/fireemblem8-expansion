@@ -1,4 +1,5 @@
 #include "global.h"
+#include "expansion_bgm.h"
 
 #include "m4a.h"
 #include "soundwrapper.h"
@@ -340,14 +341,18 @@ void Arena_PlayResultSong(ProcPtr proc) {
     switch (ArenaGetResult()) {
         case 1:
             if (!gPlaySt.config.disableBgm) {
-                StartBgmCore(SONG_COLOSSEUM_VICTORY, 0);
+                ExpansionBgm_Start(
+                    EXPANSION_BGM_CONTEXT_VICTORY,
+                    SONG_COLOSSEUM_VICTORY, 0, 0);
             }
 
             break;
 
         default:
             if (!gPlaySt.config.disableBgm) {
-                StartBgmCore(SONG_COLOSSEUM_ENTRANCE, 0);
+                ExpansionBgm_Start(
+                    EXPANSION_BGM_CONTEXT_BATTLE,
+                    SONG_COLOSSEUM_ENTRANCE, 0, 0);
             }
 
             Proc_End(proc);
@@ -360,7 +365,8 @@ void Arena_PlayResultSong(ProcPtr proc) {
 
 //! FE8U = 0x080B5D2C
 void Arena_PlayArenaSong(void) {
-    StartBgmExt(SONG_COLOSSEUM_ENTRANCE, 0, 0);
+    ExpansionBgm_Start(
+        EXPANSION_BGM_CONTEXT_BATTLE, SONG_COLOSSEUM_ENTRANCE, 0, 0);
     return;
 }
 

@@ -1,4 +1,7 @@
 #include "global.h"
+#include "expansion_bgm.h"
+
+#include "expansion_portraits.h"
 
 #include "bmunit.h"
 #include "bmreliance.h"
@@ -769,9 +772,13 @@ void SupportScreen_StartUnitSubMenu(struct SupportScreenProc* proc) {
 //! FE8U = 0x080A1930
 void SupportScreen_RestartSourceScreenMusic(struct SupportScreenProc* proc) {
     if (!proc->fromPrepScreen) {
-        ChangeBgm(SONG_MAIN_THEME, 0x100, 0xc0, 0x18, 0);
+        ExpansionBgm_Change(
+            EXPANSION_BGM_CONTEXT_SUPPORT, SONG_MAIN_THEME,
+            0x100, 0xc0, 0x18, 0);
     } else {
-        ChangeBgm(SONG_COMBAT_PREPARATION, 0x100, 0x100, 0x18, 0);
+        ExpansionBgm_Change(
+            EXPANSION_BGM_CONTEXT_SUPPORT, SONG_COMBAT_PREPARATION,
+            0x100, 0x100, 0x18, 0);
     }
 
     return;
@@ -1360,7 +1367,12 @@ void SupportSubScreen_SetupGraphics(struct SubScreenProc* proc) {
     PutFace80x72(
         (struct Proc*)proc,
         TILEMAP_LOCATED(gBG0TilemapBuffer, 2, 1),
-        gCharacterData[GetSupportScreenCharIdAt(proc->unitIdx) - 1].portraitId,
+        ExpansionPortrait_ResolveCharacter(
+            &gCharacterData[GetSupportScreenCharIdAt(proc->unitIdx) - 1],
+            NULL,
+            EXPANSION_PORTRAIT_KIND_FULL,
+            0
+        ),
         0x200,
         2
     );
@@ -1662,7 +1674,12 @@ void SupportSubScreen_ReinitAfterSwapPage(struct SubScreenProc* proc) {
     PutFace80x72(
         (struct Proc*)proc,
         gBG0TilemapBuffer + 0x22,
-        gCharacterData[GetSupportScreenCharIdAt(proc->unitIdx) - 1].portraitId,
+        ExpansionPortrait_ResolveCharacter(
+            &gCharacterData[GetSupportScreenCharIdAt(proc->unitIdx) - 1],
+            NULL,
+            EXPANSION_PORTRAIT_KIND_FULL,
+            0
+        ),
         0x200,
         2
     );
@@ -1726,9 +1743,13 @@ void SupportSubScreen_PrepareSupportConvo(struct SubScreenProc* proc) {
     );
 
     if (proc->songId == 0) {
-        ChangeBgm(SONG_DISTANT_ROADS, 0x100, 0x80, 0x10, 0);
+        ExpansionBgm_Change(
+            EXPANSION_BGM_CONTEXT_SUPPORT, SONG_DISTANT_ROADS,
+            0x100, 0x80, 0x10, 0);
     } else {
-        ChangeBgm(proc->songId, 0x100, 0x100, 0x10, 0);
+        ExpansionBgm_Change(
+            EXPANSION_BGM_CONTEXT_SUPPORT, proc->songId,
+            0x100, 0x100, 0x10, 0);
     }
 
     return;
@@ -1738,9 +1759,13 @@ void SupportSubScreen_PrepareSupportConvo(struct SubScreenProc* proc) {
 void SupportSubScreen_RestoreBgm(struct SubScreenProc* proc) {
 
     if (proc->songId == 0) {
-        ChangeBgm(SONG_DISTANT_ROADS, 0x80, 0x100, 0x10, 0);
+        ExpansionBgm_Change(
+            EXPANSION_BGM_CONTEXT_SUPPORT, SONG_DISTANT_ROADS,
+            0x80, 0x100, 0x10, 0);
     } else {
-        ChangeBgm(SONG_DISTANT_ROADS, 0x100, 0x100, 0x10, 0);
+        ExpansionBgm_Change(
+            EXPANSION_BGM_CONTEXT_SUPPORT, SONG_DISTANT_ROADS,
+            0x100, 0x100, 0x10, 0);
     }
 
     return;

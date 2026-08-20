@@ -631,11 +631,20 @@ small driver (`tools/gba-playtest/tests/c/
 expansion_language_menu_probe_offsets_driver.c`) against the real,
 unmodified `include/expansion_language_menu.h` to get the compiler's own
 `offsetof()`/`sizeof()` for every `gExpansionLanguageMenuProbe` field, then
-cross-checks every `locale-*.json` scenario's hardcoded probe address
-against `base + offsetof(field)` and every probe's `(address, size)`
-against the struct's real bounds/field width. A future header edit that
-reorders, resizes, or removes a field fails this suite instead of silently
-producing a wrong-field (or out-of-bounds) pinned fingerprint.
+cross-checks every locale scenario and fingerprint's symbolic
+`gExpansionLanguageMenuProbe+0xNN` expression against
+`offsetof(field)` and every probe's size against the struct's real
+bounds/field width. Literal EWRAM addresses are a failing negative control.
+
+`tools/gba-playtest/gba_playtest.py --elf <exact-linked.elf>` resolves those
+expressions through the shared `probe_bindings.py` ELF-symbol facility before
+building the backend read plan. Capture and fingerprint validation preserve the
+authored expression, so behavior comparison is independent of the symbol's
+linked address. Every localization runtime target passes the ELF paired with
+its exact default, multi-locale, CJK, European, or shifted ROM and the Make
+toolchain's configured `MODERN_NM`. A future EWRAM layout shift therefore
+changes the runtime binding, not the committed semantic scenario or
+fingerprint.
 
 ### XMAP / region-magic
 
@@ -643,8 +652,9 @@ producing a wrong-field (or out-of-bounds) pinned fingerprint.
 gate (`expansion-modern-shifted-check`) are unchanged by this sprint;
 `expansion-modern-localization-runtime-shifted-check` (below) additionally
 proves the locale resolver/selector-probe scenarios still pass under a
-`__text_shift=0x40000` relink, i.e. no hardcoded/build-address-dependent
-behavior was introduced by this feature.
+`__text_shift=0x40000` relink, resolving probes from `shifted.elf` itself,
+i.e. no hardcoded/build-address-dependent behavior was introduced by this
+feature.
 
 ### Make targets
 

@@ -41,6 +41,7 @@ class ScenarioParsingTests(unittest.TestCase):
         scenario = gba_playtest.parse_scenario_data(valid_scenario())
         self.assertEqual(scenario.inputs[0].key_mask, (1 << 0) | (1 << 4))
         self.assertEqual(scenario.checkpoints[0].probes[0].address, 0x02000000)
+        self.assertEqual(scenario.checkpoints[0].probes[0].binding, "0x02000000")
 
     def test_rejects_unknown_key_name(self):
         data = valid_scenario()

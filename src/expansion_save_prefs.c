@@ -37,3 +37,26 @@ bool8 ExpansionUserPrefs_Store(ExpansionLocaleId localeId, bool8 explicitSelecti
      */
     return ExpansionLocale_SetCurrent(localeId);
 }
+
+bool8 ExpansionUserPrefs_StoreSelections(u8 policyId, u8 utilityFlags)
+{
+    struct ExpansionUserPrefs prefs;
+    enum ExpansionUserPrefsState state;
+    ExpansionLocaleId localeId;
+    bool8 explicitSelection;
+
+    state = ExpansionUserPrefs_Load(&prefs);
+    if (state != EXPANSION_USER_PREFS_VALID && state != EXPANSION_USER_PREFS_MIGRATED)
+        localeId = (ExpansionLocaleId)FE8_EXPANSION_DEFAULT_LOCALE_ID;
+    else
+        localeId = (ExpansionLocaleId)prefs.localeId;
+
+    explicitSelection = (state == EXPANSION_USER_PREFS_VALID || state == EXPANSION_USER_PREFS_MIGRATED)
+        && (prefs.flags & EXPANSION_USER_PREFS_FLAG_LOCALE_EXPLICIT);
+
+    if (!ExpansionLocale_IsSupported(localeId) || !ExpansionLocale_IsEnabled(localeId))
+        return FALSE;
+
+    return ExpansionUserPrefs_StoreRawWithSelections(
+        localeId, explicitSelection, policyId, utilityFlags);
+}

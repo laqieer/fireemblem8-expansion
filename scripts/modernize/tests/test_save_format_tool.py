@@ -367,14 +367,38 @@ class CliMigrateTests(unittest.TestCase):
             epoch = sft.resolve_save_compat_epoch(ROOT)
             self.assertEqual(sft.classify_image(migrated, epoch), sft.SAVE_COMPAT_CURRENT)
 
-            # Only the metadata region should differ from the source; the
-            # header and every other byte are preserved out-of-place.
+            # Metadata and the version marker of the existing sound-room
+            # auxiliary record may differ; the header, unlock flag region,
+            # and every unrelated byte remain preserved out-of-place.
             self.assertEqual(
-                migrated[: sft.META_OFFSET], source_bytes[: sft.META_OFFSET]
+                migrated[: sft.SOUND_ROOM_OFFSET],
+                source_bytes[: sft.SOUND_ROOM_OFFSET],
             )
             self.assertEqual(
-                migrated[sft.META_OFFSET + sft.META_SIZE :],
-                source_bytes[sft.META_OFFSET + sft.META_SIZE :],
+                migrated[
+                    sft.SOUND_ROOM_OFFSET:
+                    sft.SOUND_ROOM_OFFSET + sft.SOUND_ROOM_CHECKSUM_DOMAIN + 2
+                ],
+                source_bytes[
+                    sft.SOUND_ROOM_OFFSET:
+                    sft.SOUND_ROOM_OFFSET + sft.SOUND_ROOM_CHECKSUM_DOMAIN + 2
+                ],
+            )
+            self.assertEqual(
+                migrated[sft.SOUND_ROOM_FORMAT_OFFSET:sft.SOUND_ROOM_FORMAT_OFFSET + 2],
+                sft.SOUND_ROOM_FORMAT_CURRENT.to_bytes(2, "little"),
+            )
+            self.assertEqual(
+                migrated[
+                    sft.SOUND_ROOM_OFFSET + sft.SOUND_ROOM_SIZE:sft.META_OFFSET
+                ],
+                source_bytes[
+                    sft.SOUND_ROOM_OFFSET + sft.SOUND_ROOM_SIZE:sft.META_OFFSET
+                ],
+            )
+            self.assertEqual(
+                migrated[sft.META_OFFSET + sft.META_SIZE:],
+                source_bytes[sft.META_OFFSET + sft.META_SIZE:],
             )
 
     def test_already_current_source_migrates_idempotently(self):

@@ -258,5 +258,45 @@ class EventListsSchemaRealCh2SourceTests(unittest.TestCase):
         self.assertEqual(len(records.tutorial.entries), 30)
 
 
+class EventListsTypedHelperTests(unittest.TestCase):
+    def test_synthetic_fixture_covers_every_helper_family(self):
+        records, diagnostics = _validate("helpers_valid.json")
+        self.assertTrue(diagnostics.ok, msg=[str(e) for e in diagnostics.errors])
+        self.assertEqual(len(records.helper_scripts), 5)
+        self.assertEqual(
+            {script.entries[0].family for script in records.helper_scripts},
+            {"flag", "unit", "bgm", "recovery", "escape"},
+        )
+
+    def test_operational_temp_flag_reuse_is_allowed(self):
+        _, diagnostics = _validate("helpers_valid.json")
+        self.assertTrue(
+            diagnostics.ok,
+            msg=[str(e) for e in diagnostics.errors],
+        )
+
+    def test_unknown_helper_diagnosis_is_actionable(self):
+        _, diagnostics = _validate("helper_unknown.json")
+        self.assertFalse(diagnostics.ok)
+        messages = [str(e) for e in diagnostics.errors]
+        self.assertTrue(any("unsupported script helper 'teleport.now'" in m for m in messages), messages)
+        self.assertTrue(any("at script.teleport.now" in m for m in messages), messages)
+
+    def test_helper_arity_diagnosis_is_actionable(self):
+        _, diagnostics = _validate("helper_wrong_arity.json")
+        self.assertFalse(diagnostics.ok)
+        messages = [str(e) for e in diagnostics.errors]
+        self.assertTrue(any("helper 'recovery.set_hp' expects 1 argument(s), got 0" in m for m in messages), messages)
+
+    def test_helper_reference_and_range_diagnostics_are_actionable(self):
+        _, diagnostics = _validate("helper_bad_references.json")
+        self.assertFalse(diagnostics.ok)
+        messages = [str(e) for e in diagnostics.errors]
+        self.assertTrue(any("undefined character reference 'CHARACTER_DOES_NOT_EXIST'" in m for m in messages), messages)
+        self.assertTrue(any("BGM fade speed 16 out of range [0, 15]" in m for m in messages), messages)
+        self.assertTrue(any("coordinate 256 out of range [0, 255]" in m for m in messages), messages)
+        self.assertTrue(any("undefined event-script reference 'EventScr_DOES_NOT_EXIST'" in m for m in messages), messages)
+
+
 if __name__ == "__main__":
     unittest.main()

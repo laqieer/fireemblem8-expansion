@@ -3,9 +3,9 @@
   "inputs": {
     "audit_semantic_corrections_sha256": "0e75498919a1a984e6e3217c73a46de3289053789b48ceb601a0d7998e352352",
     "current_pre_authored_target_map_sha256": "8c9f2bc5ff9f69c472ba5fce886caa1437e8c9f09faebf0409fcbf3422e3853a",
-    "ending_layout_metrics_sha256": "8a7a0b7806a6c73587b356da900c25322936dfa3fdfdeb476fe5f56c6302eb5e",
+    "ending_layout_metrics_sha256": "cc1b4d4e8caadb7e36c6da3cc7db217799b3053fb8ba78c14fdbc93885571505",
     "febuilder_alignment_evidence_sha256": "083a4e5c6ef7570830543e6b229c45f67af5d51f77fc70269169de5094183976",
-    "fixed_width_label_metrics_sha256": "63f87029a89490b310390e7a1c7f1ecd0a16bdbf9cc5f51b1de90745e163f1d4",
+    "fixed_width_label_metrics_sha256": "7c9e5f881105fe6aa87952a28b965511749e80be4f1946bb7d0792862e59a368",
     "historical_pre_authored_target_map_sha256": "63b021274b7865c0d76cb1556fa84cc1dfdbcadab38037c8ccf6eeb9cdc3591a",
     "original_target_map_sha256": "0d6ee09ff2814b9dc8d5d26acb8ba1ea1f72b2f79a32a930d94091c9096116f7",
     "runtime_authored_catalog_sha256": {

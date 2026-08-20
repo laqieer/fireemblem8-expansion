@@ -1,4 +1,5 @@
 #include "global.h"
+#include "expansion_bgm.h"
 #include "functions.h"
 #include "variables.h"
 #include "proc.h"
@@ -143,7 +144,7 @@ void GameOverScreen_Init(struct ProcGameOverScreen *proc)
 
     BMapDispSuspend();
 
-    StartBgm(SONG_GAME_OVER, 0);
+    ExpansionBgm_Start(EXPANSION_BGM_CONTEXT_GAME_OVER, SONG_GAME_OVER, 3, 0);
 
     gLCDControlBuffer.bg0cnt.priority = 0;
     gLCDControlBuffer.bg1cnt.priority = 1;

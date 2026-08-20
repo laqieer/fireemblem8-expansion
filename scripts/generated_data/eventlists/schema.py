@@ -74,6 +74,7 @@ from ..json_loader import load_json_file
 from ..schema import DependencyGraph, TableSchema
 from .. import character_refs
 from ..validators import extract_enum_constants, validate_range, validate_reference, validate_unique
+from . import helper_specs
 
 SCHEMA_NAME = "eventlists"
 SCHEMA_VERSION = 1
@@ -112,8 +113,8 @@ TUTORIAL_FIELD = "tutorialEvents"
 ALLOWED_MACROS_BY_FIELD = {
     "turnBasedEvents": frozenset({"TURN"}),
     "characterBasedEvents": frozenset({"CHAR"}),
-    "locationBasedEvents": frozenset({"Village", "Armory"}),
-    "miscBasedEvents": frozenset({"DefeatAll", "CauseGameOverIfLordDies"}),
+    "locationBasedEvents": frozenset({"Village", "Armory", "Vendor", "SecretShop", "AREA"}),
+    "miscBasedEvents": frozenset({"DefeatAll", "CauseGameOverIfLordDies", "AFEV"}),
     "specialEventsWhenUnitSelected": frozenset(),
     "specialEventsWhenDestSelected": frozenset(),
     "specialEventsAfterUnitMoved": frozenset(),
@@ -128,6 +129,7 @@ EVENT_SCR_OWNER_BY_FIELD = {
     "locationBasedEvents": "location_based",
     "miscBasedEvents": "misc_based",
 }
+HELPER_SCRIPT_OWNERS = frozenset(EVENT_SCR_OWNER_BY_FIELD.values()) | {"tutorial"}
 
 # macro name -> ordered tuple of (arg_name, kind). `kind` is one of:
 #   "flag"        -- 0 / EVFLAG_* / EVFLAG_TMP(7..40)
@@ -163,8 +165,31 @@ MACRO_SPECS = {
         ("x", "int"),
         ("y", "int"),
     ),
+    "Vendor": (
+        ("list", "shop_symbol"),
+        ("x", "int"),
+        ("y", "int"),
+    ),
+    "SecretShop": (
+        ("list", "shop_symbol"),
+        ("x", "int"),
+        ("y", "int"),
+    ),
     "DefeatAll": (
         ("event_scr", "event_scr"),
+    ),
+    "AFEV": (
+        ("ent_flag", "flag"),
+        ("scr", "event_scr"),
+        ("trigger_flag", "flag"),
+    ),
+    "AREA": (
+        ("ent_flag", "flag"),
+        ("scr", "event_scr"),
+        ("x1", "int"),
+        ("y1", "int"),
+        ("x2", "int"),
+        ("y2", "int"),
     ),
     "CauseGameOverIfLordDies": (),
 }
@@ -244,6 +269,40 @@ class MacroCall:
         return (self.macro, tuple(a.as_tuple() for a in self.args))
 
 
+class HelperCall:
+    """One bounded structured helper operation before macro lowering."""
+
+    __slots__ = ("family", "family_loc", "operation", "operation_loc", "args", "loc")
+
+    def __init__(self, family, family_loc, operation, operation_loc, args, loc):
+        self.family = family
+        self.family_loc = family_loc
+        self.operation = operation
+        self.operation_loc = operation_loc
+        self.args = args
+        self.loc = loc
+
+    def as_tuple(self):
+        return (
+            "helper",
+            self.family,
+            self.operation,
+            tuple(a.as_tuple() for a in self.args),
+        )
+
+
+class HelperScript:
+    __slots__ = ("owner", "owner_loc", "symbol", "symbol_loc", "entries", "loc")
+
+    def __init__(self, owner, owner_loc, symbol, symbol_loc, entries, loc):
+        self.owner = owner
+        self.owner_loc = owner_loc
+        self.symbol = symbol
+        self.symbol_loc = symbol_loc
+        self.entries = entries
+        self.loc = loc
+
+
 class EventList:
     __slots__ = ("field", "field_loc", "symbol", "symbol_loc", "entries", "loc")
 
@@ -291,12 +350,13 @@ class EventListsRecords:
     """The full parsed ``ch2_eventlists.json`` document: the 7 event
     lists, the tutorial pointer array, and the ``Ch2Events`` manifest."""
 
-    def __init__(self, lists, tutorial, manifest, loc):
+    def __init__(self, lists, tutorial, manifest, loc, helper_scripts=None):
         self.lists = lists
         self.lists_by_field = {lst.field: lst for lst in lists}
         self.tutorial = tutorial
         self.manifest = manifest
         self.loc = loc
+        self.helper_scripts = list(helper_scripts or ())
 
     def __len__(self):
         # 7 event lists + the tutorial array + the Ch2Events manifest.
@@ -331,6 +391,29 @@ def _parse_macro_call(node):
     return MacroCall(macro=macro_node.as_str(), macro_loc=macro_node.loc, args=args, loc=node.loc)
 
 
+def _parse_helper_call(node):
+    helper_node = node.require("helper")
+    operation_node = node.require("operation")
+    args_node = node.get("args")
+    args = [_parse_arg_node(n) for n in (args_node.as_list() if args_node is not None else [])]
+    return HelperCall(
+        family=helper_node.as_str(),
+        family_loc=helper_node.loc,
+        operation=operation_node.as_str(),
+        operation_loc=operation_node.loc,
+        args=args,
+        loc=node.loc,
+    )
+
+
+def _parse_entry(node):
+    if not node.is_object():
+        raise GeneratedDataError("event-list entry must be an object", node.loc)
+    if node.get("helper") is not None:
+        return _parse_helper_call(node)
+    return _parse_macro_call(node)
+
+
 def load_records(source_path):
     root = load_json_file(source_path)
     schema_node = root.require("$schema")
@@ -345,7 +428,7 @@ def load_records(source_path):
         field_node = list_node.require("field")
         symbol_node = list_node.require("symbol")
         entries_node = list_node.require("entries")
-        entries = [_parse_macro_call(n) for n in entries_node.as_list()]
+        entries = [_parse_entry(n) for n in entries_node.as_list()]
         lists.append(
             EventList(
                 field=field_node.as_str(), field_loc=field_node.loc,
@@ -353,6 +436,25 @@ def load_records(source_path):
                 entries=entries, loc=list_node.loc,
             )
         )
+
+    helper_scripts = []
+    helper_scripts_node = root.get("helperScripts")
+    if helper_scripts_node is not None:
+        for script_node in helper_scripts_node.as_list():
+            owner_node = script_node.get("owner")
+            symbol_node = script_node.require("symbol")
+            entries_node = script_node.require("entries")
+            entries = [_parse_entry(n) for n in entries_node.as_list()]
+            helper_scripts.append(
+                HelperScript(
+                    owner=owner_node.as_str() if owner_node is not None else None,
+                    owner_loc=owner_node.loc if owner_node is not None else None,
+                    symbol=symbol_node.as_str(),
+                    symbol_loc=symbol_node.loc,
+                    entries=entries,
+                    loc=script_node.loc,
+                )
+            )
 
     tutorial_node = root.require("tutorial")
     tut_field_node = tutorial_node.require("field")
@@ -381,17 +483,24 @@ def load_records(source_path):
         fields=fields, loc=manifest_node.loc,
     )
 
-    return EventListsRecords(lists=lists, tutorial=tutorial, manifest=manifest, loc=root.loc)
+    return EventListsRecords(
+        lists=lists,
+        tutorial=tutorial,
+        manifest=manifest,
+        loc=root.loc,
+        helper_scripts=helper_scripts,
+    )
 
 
 def _err(message, loc, ref):
     return GeneratedDataError(message, loc, ref)
 
 
-def _validate_flag_arg(arg, evflags, low, high, ref):
+def _validate_flag_arg(arg, evflags, low, high, ref, track_ownership=False):
     """Returns ``(errors, temp_flag_uses)`` where ``temp_flag_uses`` is a
-    list of ``(n, loc)`` for every ``EVFLAG_TMP(n)`` use found (fed into
-    the chapter-wide duplicate-temp-flag check by the caller)."""
+    list of ``(n, loc)`` for each owned event-list allocation found (fed into
+    the chapter-wide duplicate-temp-flag check by the caller). Operational
+    ENUT/ENUF references are validated but are not allocations."""
     if arg.kind == "int":
         if arg.value != 0:
             return [
@@ -418,15 +527,28 @@ def _validate_flag_arg(arg, evflags, low, high, ref):
                     call.args[0].loc, ref,
                 )
             ], []
-        return [], [(n, call.args[0].loc)]
+        return [], [(n, call.args[0].loc)] if track_ownership else []
     return [_err("invalid flag argument", arg.loc, ref)], []
 
 
-def _validate_event_scr_arg(arg, eventscripts_by_symbol, owner, ref):
+def _validate_event_scr_arg(arg, eventscripts_by_symbol, helper_scripts_by_symbol, owner, ref):
     if arg.kind != "symbol":
         return [_err("expected an event-script symbol reference", arg.loc, ref)]
     record = eventscripts_by_symbol.get(arg.value)
     if record is None:
+        helper_script = helper_scripts_by_symbol.get(arg.value)
+        if helper_script is not None:
+            if owner is not None and helper_script.owner not in (None, owner):
+                return [
+                    _err(
+                        "helper script '{}' has owner '{}', expected '{}' for this list".format(
+                            arg.value, helper_script.owner, owner
+                        ),
+                        arg.loc,
+                        ref,
+                    )
+                ]
+            return []
         return [
             _err(
                 "undefined event-script reference '{}' (not found in the eventscripts table, "
@@ -481,6 +603,148 @@ def _validate_int_arg(arg, ref):
     return validate_range(arg.value, _U8_MIN, _U8_MAX, arg.loc, ref, field_name="value")
 
 
+def _lower_helper(call, context):
+    """Lower one structured helper to its established macro call.
+
+    The helper catalog is deliberately closed.  Returning diagnostics instead
+    of raising keeps validation able to report every malformed helper in one
+    pass.
+    """
+    spec = helper_specs.get_spec(context, call.family, call.operation)
+    if spec is None:
+        supported = helper_specs.supported_operations(context)
+        return None, [
+            _err(
+                "unsupported {} helper '{}.{}'; supported helpers: {}".format(
+                    context,
+                    call.family,
+                    call.operation,
+                    ", ".join(
+                        "{}.{}".format(family, operation)
+                        for family, operations in supported.items()
+                        for operation in operations
+                    )
+                    or "<none>",
+                ),
+                call.operation_loc,
+                "{}.{}.{}".format(context, call.family, call.operation),
+            )
+        ]
+    if len(call.args) != len(spec.args):
+        return None, [
+            _err(
+                "helper '{}.{}' expects {} argument(s), got {}".format(
+                    call.family, call.operation, len(spec.args), len(call.args)
+                ),
+                call.loc,
+                "{}.{}.{}".format(context, call.family, call.operation),
+            )
+        ]
+    return MacroCall(
+        macro=spec.macro,
+        macro_loc=call.operation_loc,
+        args=call.args,
+        loc=call.loc,
+    ), []
+
+
+def _validate_helper_script_arg(
+    arg,
+    kind,
+    ref,
+    evflags,
+    evflag_tmp_low,
+    evflag_tmp_high,
+    characters,
+    songs,
+    unit_symbols,
+):
+    if kind == "flag":
+        errors, _ = _validate_flag_arg(
+            arg, evflags, evflag_tmp_low, evflag_tmp_high, ref
+        )
+        return errors
+    if kind == "character":
+        return _validate_symbol_arg(arg, characters, ref, "character")
+    if kind == "song":
+        return _validate_symbol_arg(arg, songs, ref, "song")
+    if kind == "unit_symbol":
+        return _validate_table_symbol_arg(
+            arg, unit_symbols, ref, "unit group", "src/data/ch2_units.json"
+        )
+    if kind == "coord":
+        if arg.kind != "int":
+            return [_err("expected an integer literal", arg.loc, ref)]
+        return validate_range(arg.value, _U8_MIN, _U8_MAX, arg.loc, ref, field_name="coordinate")
+    if kind == "speed":
+        if arg.kind != "int":
+            return [_err("expected an integer literal", arg.loc, ref)]
+        return validate_range(arg.value, 0, 0xF, arg.loc, ref, field_name="BGM fade speed")
+    if kind == "u32":
+        if arg.kind != "int":
+            return [_err("expected an integer literal", arg.loc, ref)]
+        return validate_range(arg.value, 0, 0xFFFFFFFF, arg.loc, ref, field_name="value")
+    return [_err("unsupported helper argument kind '{}'".format(kind), arg.loc, ref)]
+
+
+def _validate_helper_script(
+    script,
+    diagnostics,
+    evflags,
+    evflag_tmp_low,
+    evflag_tmp_high,
+    characters,
+    songs,
+    unit_symbols,
+):
+    temp_flag_uses = []
+    for index, entry in enumerate(script.entries):
+        ref = "helperScripts[symbol={}].entries[{}]".format(script.symbol, index)
+        if not isinstance(entry, HelperCall):
+            diagnostics.add(
+                _err(
+                    "helper script entries must use structured helper objects "
+                    "(raw macro '{}' is not allowed here)".format(entry.macro),
+                    entry.loc,
+                    ref,
+                )
+            )
+            continue
+        lowered, errors = _lower_helper(entry, "script")
+        diagnostics.extend(errors)
+        if lowered is None:
+            continue
+        spec = helper_specs.get_spec("script", entry.family, entry.operation)
+        for (arg_name, kind), arg in zip(spec.args, entry.args):
+            arg_ref = "{}.{}".format(ref, arg_name)
+            if kind == "flag":
+                errors, flag_uses = _validate_flag_arg(
+                    arg,
+                    evflags,
+                    evflag_tmp_low,
+                    evflag_tmp_high,
+                    arg_ref,
+                    track_ownership=False,
+                )
+                diagnostics.extend(errors)
+                temp_flag_uses.extend(flag_uses)
+            else:
+                diagnostics.extend(
+                    _validate_helper_script_arg(
+                        arg,
+                        kind,
+                        arg_ref,
+                        evflags,
+                        evflag_tmp_low,
+                        evflag_tmp_high,
+                        characters,
+                        songs,
+                        unit_symbols,
+                    )
+                )
+    return temp_flag_uses
+
+
 def validate(records, diagnostics, dependency_records=None, characters_header=CHARACTERS_HEADER):
     """Validate the 7 event lists, the tutorial pointer array, and the
     ``Ch2Events`` manifest, cross-referencing ``dependency_records``
@@ -492,10 +756,12 @@ def validate(records, diagnostics, dependency_records=None, characters_header=CH
     shop_symbols = {r.symbol for r in dependency_records.get("shops", ())}
     trap_symbols = {r.symbol for r in dependency_records.get("traps", ())}
     eventscripts_by_symbol = {r.symbol: r for r in dependency_records.get("eventscripts", ())}
+    helper_scripts_by_symbol = {script.symbol: script for script in records.helper_scripts}
 
     characters = character_refs.read_character_designators(characters_header)
     factions = extract_enum_constants(BMUNIT_HEADER, name_prefix="FACTION_ID_")
     evflags = extract_enum_constants(EVENT_FLAGS_HEADER, name_prefix="EVFLAG_")
+    songs = extract_enum_constants(os.path.join(REPO_ROOT, "include", "constants", "songs.h"), name_prefix="SONG_")
     evflag_tmp_low, evflag_tmp_high = read_evflag_tmp_range()
 
     # -- 1. exactly the 7 known list fields, no duplicates/missing/extra --
@@ -533,13 +799,59 @@ def validate(records, diagnostics, dependency_records=None, characters_header=CH
     diagnostics.extend(
         validate_unique(
             [(lst.symbol, lst.symbol_loc) for lst in records.lists]
-            + [(records.tutorial.symbol, records.tutorial.symbol_loc)],
+            + [(records.tutorial.symbol, records.tutorial.symbol_loc)]
+            + [(script.symbol, script.symbol_loc) for script in records.helper_scripts],
             "duplicate event-list symbol '{key}' (first defined at {first_loc})",
             "lists[symbol={key}]",
         )
     )
 
     temp_flag_uses = []
+    for symbol, record in eventscripts_by_symbol.items():
+        helper_script = helper_scripts_by_symbol.get(symbol)
+        if helper_script is not None:
+            diagnostics.add(
+                _err(
+                    "helper script symbol '{}' duplicates an eventscripts dependency "
+                    "(first dependency record at {})".format(symbol, record.loc),
+                    helper_script.symbol_loc,
+                    "helperScripts[symbol={}].symbol".format(symbol),
+                )
+            )
+
+    for script in records.helper_scripts:
+        ref = "helperScripts[symbol={}]".format(script.symbol)
+        if script.owner is not None and script.owner not in HELPER_SCRIPT_OWNERS:
+            diagnostics.add(
+                _err(
+                    "unknown helper script owner '{}', expected one of {}".format(
+                        script.owner, sorted(HELPER_SCRIPT_OWNERS)
+                    ),
+                    script.owner_loc,
+                    "{}.owner".format(ref),
+                )
+            )
+        if not re.match(r"^EventScr_[A-Za-z_][A-Za-z0-9_]*$", script.symbol):
+            diagnostics.add(
+                _err(
+                    "helper script symbol '{}' must be a valid EventScr_ C identifier".format(script.symbol),
+                    script.symbol_loc,
+                    ref,
+                )
+            )
+        temp_flag_uses.extend(
+            _validate_helper_script(
+                script,
+                diagnostics,
+                evflags,
+                evflag_tmp_low,
+                evflag_tmp_high,
+                characters,
+                songs,
+                unit_symbols,
+            )
+        )
+
     location_coords = {}
 
     for lst in records.lists:
@@ -549,6 +861,11 @@ def validate(records, diagnostics, dependency_records=None, characters_header=CH
 
         for index, call in enumerate(lst.entries):
             entry_ref = "{}.entries[{}]".format(ref_prefix, index)
+            if isinstance(call, HelperCall):
+                call, errors = _lower_helper(call, "list")
+                diagnostics.extend(errors)
+                if call is None:
+                    continue
 
             if call.macro == END_MAIN:
                 diagnostics.add(
@@ -593,11 +910,22 @@ def validate(records, diagnostics, dependency_records=None, characters_header=CH
             for (arg_name, kind), arg in zip(spec, call.args):
                 arg_ref = "{}.{}".format(entry_ref, arg_name)
                 if kind == "flag":
-                    errors, flag_uses = _validate_flag_arg(arg, evflags, evflag_tmp_low, evflag_tmp_high, arg_ref)
+                    errors, flag_uses = _validate_flag_arg(
+                        arg,
+                        evflags,
+                        evflag_tmp_low,
+                        evflag_tmp_high,
+                        arg_ref,
+                        track_ownership=arg_name in ("ent_flag", "eid"),
+                    )
                     diagnostics.extend(errors)
                     temp_flag_uses.extend(flag_uses)
                 elif kind == "event_scr":
-                    diagnostics.extend(_validate_event_scr_arg(arg, eventscripts_by_symbol, owner, arg_ref))
+                    diagnostics.extend(
+                        _validate_event_scr_arg(
+                            arg, eventscripts_by_symbol, helper_scripts_by_symbol, owner, arg_ref
+                        )
+                    )
                 elif kind == "character":
                     diagnostics.extend(_validate_symbol_arg(arg, characters, arg_ref, "character"))
                 elif kind == "faction":
@@ -673,6 +1001,19 @@ def validate(records, diagnostics, dependency_records=None, characters_header=CH
             continue
         record = eventscripts_by_symbol.get(symbol)
         if record is None:
+            helper_script = helper_scripts_by_symbol.get(symbol)
+            if helper_script is not None:
+                if helper_script.owner not in (None, "tutorial"):
+                    diagnostics.add(
+                        _err(
+                            "helper script '{}' has owner '{}', expected 'tutorial' for this list".format(
+                                symbol, helper_script.owner
+                            ),
+                            loc,
+                            entry_ref,
+                        )
+                    )
+                continue
             diagnostics.add(
                 _err(
                     "undefined event-script reference '{}' (not found in the eventscripts table, "
@@ -821,7 +1162,8 @@ class EventListsTableSchema(TableSchema):
     def dependencies(self):
         return (
             "units", "shops", "traps", "eventscripts",
-            "constants.characters", "bmunit.FACTION_ID", "constants.event-flags.EVFLAG_TMP",
+            "constants.characters", "constants.songs", "bmunit.FACTION_ID",
+            "constants.event-flags.EVFLAG_TMP",
         )
 
     def dependency_tables(self):

@@ -1,4 +1,5 @@
 #include "global.h"
+#include "expansion_bgm.h"
 
 #include "bmlib.h"
 #include "bmsave.h"
@@ -1701,7 +1702,7 @@ void WorldMap_UpdateBgm(ProcPtr unused)
 
     if (GetCurrentBgmSong() != songId)
     {
-        OverrideBgm(songId);
+        ExpansionBgm_Override(EXPANSION_BGM_CONTEXT_WORLD_MAP, songId);
     }
 
     return;

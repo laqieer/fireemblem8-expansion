@@ -279,6 +279,7 @@ EWRAM_DATA struct ExpansionLanguageMenuProbe gExpansionLanguageMenuProbe = {0};
 #include "bmsave.h"
 #include "prepscreen.h"
 #include "uiconfig.h"
+#include "expansion_ui_prefs.h"
 
 /* One row per BUILD-ENABLED locale slot, plus one reserved Back row
  * (settings submenu only) -- mirrors DEBUGTOOLS_HUB_MENU_SLOTS' own
@@ -636,6 +637,7 @@ static void ExpansionLanguageMenu_RuntimeInitCore(ProcPtr procPtr)
     ExpansionLocaleId i;
 
     gExpansionLanguageMenuProbe.startupRunCount++;
+    ExpansionUiPrefs_ApplySaved();
 
 #if FE8_EXPANSION_ENABLED_LOCALE_COUNT <= 1 && !FE8_EXPANSION_DEBUG
     /*
@@ -686,7 +688,6 @@ static void ExpansionLanguageMenu_RuntimeInitCore(ProcPtr procPtr)
             Proc_Goto(procPtr, LBL_EXPANSION_LANGUAGE_SELECTOR_DONE);
         return;
     }
-
     state = ExpansionUserPrefs_Load(&prefs);
     state = ExpansionUserPrefs_Normalize(&prefs, state, &effectiveLocale, &requiresPrompt);
 

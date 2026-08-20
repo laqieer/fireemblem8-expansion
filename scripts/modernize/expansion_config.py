@@ -103,7 +103,6 @@ CONFIG_MK_KEYS = (
     "EXPANSION_DEFAULT_LOCALE",
     "EXPANSION_PSEUDO_LOCALE",
 )
-
 # Optional starter-feature flag keys (issue #6). Unlike CONFIG_MK_KEYS these
 # are NOT required to be present: a config.mk (or a synthetic test fixture)
 # that omits them is treated exactly as if each were 0, matching config.mk's
@@ -114,8 +113,13 @@ CONFIG_MK_FEATURE_KEYS = (
     "EXPANSION_MECHANICS_SAMPLE",
     "EXPANSION_DANGER_OVERLAY_MENU",
     "EXPANSION_STARTER_CONTENT",
+    "EXPANSION_AOE_REFERENCE",
     "EXPANSION_LOCALIZED_TEXT_AUTO_WRAP",
+    "EXPANSION_CASUAL_MODE",
+    "EXPANSION_BGM_CONTINUATION_POLICY",
 )
+
+BGM_CONTINUATION_POLICIES = ("preserve", "resume", "restart")
 
 _ASSIGNMENT_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)\s*[:?+]?=\s*(.*?)\s*$")
 
@@ -308,6 +312,16 @@ def validate_pseudo_locale(value, enabled_locales: Tuple[str, ...]) -> int:
             f"or remove it from EXPANSION_ENABLED_LOCALES"
         )
     return flag
+
+
+def validate_bgm_continuation_policy(value) -> str:
+    text = str(value).strip().lower()
+    if text not in BGM_CONTINUATION_POLICIES:
+        raise ConfigError(
+            f"EXPANSION_BGM_CONTINUATION_POLICY {value!r} invalid; expected one of "
+            f"{BGM_CONTINUATION_POLICIES}"
+        )
+    return text
 
 
 def validate_locale_rom_size(
@@ -624,7 +638,10 @@ class ExpansionIdentity:
     mechanics_sample: int = 0
     danger_overlay_menu: int = 0
     starter_content: int = 0
+    aoe_reference: int = 0
     localized_text_auto_wrap: int = 0
+    casual_mode: int = 0
+    bgm_continuation_policy: str = "preserve"
     config_fingerprint: str = field(default="")
 
     @property
@@ -673,8 +690,11 @@ class ExpansionIdentity:
                 "mechanics_sample": self.mechanics_sample,
                 "danger_overlay_menu": self.danger_overlay_menu,
                 "starter_content": self.starter_content,
+                "aoe_reference": self.aoe_reference,
                 "localized_text_auto_wrap": self.localized_text_auto_wrap,
+                "casual_mode": self.casual_mode,
             },
+            "bgm_continuation_policy": self.bgm_continuation_policy,
         }
 
     def to_dict(self) -> dict:
@@ -710,7 +730,10 @@ def load_identity(
     mechanics_sample=None,
     danger_overlay_menu=None,
     starter_content=None,
+    aoe_reference=None,
     localized_text_auto_wrap=None,
+    casual_mode=None,
+    bgm_continuation_policy=None,
     item_id_cap=None,
 ) -> ExpansionIdentity:
     """Parse, validate, and resolve a complete ExpansionIdentity.
@@ -788,6 +811,23 @@ def load_identity(
         if localized_text_auto_wrap not in (None, "")
         else cfg.get("EXPANSION_LOCALIZED_TEXT_AUTO_WRAP", "0"),
     )
+    resolved_aoe_reference = validate_feature_flag(
+        "EXPANSION_AOE_REFERENCE",
+        aoe_reference
+        if aoe_reference not in (None, "")
+        else cfg.get("EXPANSION_AOE_REFERENCE", "0"),
+    )
+    resolved_casual_mode = validate_feature_flag(
+        "EXPANSION_CASUAL_MODE",
+        casual_mode
+        if casual_mode not in (None, "")
+        else cfg.get("EXPANSION_CASUAL_MODE", "0"),
+    )
+    resolved_bgm_continuation_policy = validate_bgm_continuation_policy(
+        bgm_continuation_policy
+        if bgm_continuation_policy not in (None, "")
+        else cfg.get("EXPANSION_BGM_CONTINUATION_POLICY", "preserve")
+    )
     resolved_rom_size = validate_rom_size(rom_size)
     validate_locale_rom_size(resolved_enabled_locales, resolved_rom_size)
     resolved_preset = validate_preset(config_preset)
@@ -819,7 +859,10 @@ def load_identity(
         mechanics_sample=resolved_sample,
         danger_overlay_menu=resolved_danger,
         starter_content=resolved_content,
+        aoe_reference=resolved_aoe_reference,
         localized_text_auto_wrap=resolved_localized_text_auto_wrap,
+        casual_mode=resolved_casual_mode,
+        bgm_continuation_policy=resolved_bgm_continuation_policy,
     )
     identity.config_fingerprint = compute_fingerprint(identity.fingerprint_fields())
     return identity
@@ -863,6 +906,9 @@ def generate_metadata_files(output_dir: Path, identity: ExpansionIdentity) -> Di
         f"MODERN_EXPANSION_ENABLED_LOCALE_MASK := {identity.enabled_locale_mask}",
         f"MODERN_EXPANSION_DEFAULT_LOCALE_ID := {identity.default_locale_id}",
         f"MODERN_EXPANSION_PSEUDO_LOCALE_ENABLED := {identity.pseudo_locale_enabled}",
+        f"MODERN_EXPANSION_AOE_REFERENCE := {identity.aoe_reference}",
+        f"MODERN_EXPANSION_CASUAL_MODE := {identity.casual_mode}",
+        f"MODERN_EXPANSION_BGM_CONTINUATION_POLICY := {identity.bgm_continuation_policy}",
         "",
     ]
     _write_if_changed(mk_path, "\n".join(mk_lines))
@@ -928,6 +974,11 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
         help="override EXPANSION_STARTER_CONTENT (0 or 1)",
     )
     parser.add_argument(
+        "--aoe-reference",
+        default=None,
+        help="override EXPANSION_AOE_REFERENCE (0 or 1)",
+    )
+    parser.add_argument(
         "--item-id-cap",
         default=None,
         help=(
@@ -941,6 +992,16 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
         default=None,
         help="override EXPANSION_LOCALIZED_TEXT_AUTO_WRAP (0 or 1)",
     )
+    parser.add_argument(
+        "--casual-mode",
+        default=None,
+        help="override EXPANSION_CASUAL_MODE (0 or 1)",
+    )
+    parser.add_argument(
+        "--bgm-continuation-policy",
+        default=None,
+        help="override EXPANSION_BGM_CONTINUATION_POLICY (preserve, resume, or restart)",
+    )
 
 
 def _resolve_tokens(identity: ExpansionIdentity) -> str:
@@ -953,6 +1014,9 @@ def _resolve_tokens(identity: ExpansionIdentity) -> str:
         f"MODERN_EXPANSION_ENABLED_LOCALE_MASK={identity.enabled_locale_mask} "
         f"MODERN_EXPANSION_DEFAULT_LOCALE_ID={identity.default_locale_id} "
         f"MODERN_EXPANSION_PSEUDO_LOCALE_ENABLED={identity.pseudo_locale_enabled}"
+        f" MODERN_EXPANSION_CASUAL_MODE={identity.casual_mode}"
+        f" MODERN_EXPANSION_AOE_REFERENCE={identity.aoe_reference}"
+        f" MODERN_EXPANSION_BGM_CONTINUATION_POLICY={identity.bgm_continuation_policy}"
     )
 
 
@@ -1002,8 +1066,11 @@ def main(argv=None) -> int:
             mechanics_sample=args.mechanics_sample,
             danger_overlay_menu=args.danger_overlay_menu,
             starter_content=args.starter_content,
+            aoe_reference=args.aoe_reference,
             item_id_cap=args.item_id_cap,
             localized_text_auto_wrap=args.localized_text_auto_wrap,
+            casual_mode=args.casual_mode,
+            bgm_continuation_policy=args.bgm_continuation_policy,
         )
     except ConfigError as error:
         print(f"error: {error}", file=sys.stderr)

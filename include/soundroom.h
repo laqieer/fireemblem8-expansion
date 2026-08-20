@@ -1,6 +1,12 @@
 #ifndef GUARD_SOUNDROOM_H
 #define GUARD_SOUNDROOM_H
 
+#include "bmsave.h"
+
+#define SOUND_ROOM_CATALOG_CAPACITY SOUND_ROOM_SAVE_CAPACITY
+#define SOUND_ROOM_CATALOG_FLAG_WORDS SOUND_ROOM_SAVE_FLAG_WORDS
+#define SOUND_ROOM_SHUFFLE_END 0xFFFF
+
 struct SoundRoomProc
 {
     /* 00 */ PROC_HEADER;
@@ -12,21 +18,22 @@ struct SoundRoomProc
     /* 2F */ u8 unk_2f;
     /* 30 */ s8 isSongPlaying;
     /* 31 */ u8 shuffleIndex;
-    /* 32 */ s8 currentSongIdx;
-    /* 33 */ u8 playableSongs;
-    /* 34 */ u8 completionPercent;
-    /* 35 */ u8 curIndex;
-    /* 36 */ u8 totalSongs;
-    /* 37 */ s8 unk_37;
-    /* 38 */ u8 unk_38;
-    /* 39 */ u8 unk_39; // pad?
-    /* 3A */ u8 unk_3a;
-    /* 3B */ u8 unk_3b;
-    /* 3C */ s8 unk_3c;
-    /* 3D */ s8 unk_3d;
-    /* 3E */ s8 unk_3e;
-    /* 3F */ u8 unk_3f;
-    /* 40 */ u32 flags[4];
+    /* 32 */ s16 currentSongIdx;
+    /* 34 */ u16 playableSongs;
+    /* 36 */ u16 totalSongs;
+    /* 38 */ u8 completionPercent;
+    /* 39 */ u8 curIndex;
+    /* 3A */ s8 unk_37;
+    /* 3B */ u8 unk_38;
+    /* 3C */ u8 unk_39;
+    /* 3D */ s8 unk_3a;
+    /* 3E */ u8 unk_3b;
+    /* 3F */ s8 unk_3c;
+    /* 40 */ s8 unk_3d;
+    /* 41 */ s8 unk_3e;
+    /* 42 */ u8 unk_3f;
+    /* 43 */ u8 pad43;
+    /* 44 */ u32 playableFlags[SOUND_ROOM_CATALOG_FLAG_WORDS];
 };
 
 struct SoundRoomEnt
@@ -40,6 +47,7 @@ struct SoundRoomEnt
 // ??? IsSoundRoomCompleted(???);
 // ??? SoundRoom_RetFalse(???);
 int CountTotalSoundRoomSongs(void);
+bool IsSoundRoomCatalogValid(void);
 // ??? CountSecretSoundRoomSongs(???);
 // ??? IsSoundRoomSongPlayable(???);
 // ??? CountDisplayedSoundRoomSongs(???);
@@ -91,5 +99,6 @@ void DrawSoundRoomSongTitle(int index);
 ProcPtr DrawSoundRoomSprites(ProcPtr);
 
 extern struct SoundRoomEnt gSoundRoomTable[];
+extern const u32 gSoundRoomTableCount;
 
 #endif // GUARD_SOUNDROOM_H

@@ -1,4 +1,6 @@
 #include "global.h"
+
+#include "expansion_portraits.h"
 #include "hardware.h"
 #include "mu.h"
 #include "face.h"
@@ -89,7 +91,7 @@ void PromoTrainee_InitScreen(struct ProcPromoTraineeEvent *proc)
     proc->pid = parent->pid;
     unit = GetUnitFromCharId(proc->pid);
     if (unit)
-        proc->face = unit->pCharacterData->portraitId;
+        proc->face = ExpansionPortrait_ResolveUnit(unit, EXPANSION_PORTRAIT_KIND_FULL);
     else
         proc->face = 0;
 

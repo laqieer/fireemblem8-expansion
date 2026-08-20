@@ -1,6 +1,10 @@
 
 #include "global.h"
 
+#if FE8_EXPANSION_MODERN_BUILD
+#include "expansion_aoe.h"
+#endif
+
 #include "m4a.h"
 #include "soundwrapper.h"
 #include "hardware.h"
@@ -94,6 +98,21 @@ PROC_LABEL(100),
 
 s8 CanUnitUseItem(struct Unit* unit, int item)
 {
+#if FE8_EXPANSION_MODERN_BUILD
+    struct ExpansionAoEItemContext aoeContext;
+    enum ExpansionAoEItemDispatchResult aoeResult;
+
+    ExpansionAoE_InitItemContext(
+        &aoeContext, EXPANSION_AOE_ITEM_CAN_USE, unit, item, -1);
+    aoeResult = ExpansionAoE_DispatchItem(&aoeContext);
+
+    if (aoeResult == EXPANSION_AOE_ITEM_HANDLED)
+        return TRUE;
+
+    if (aoeResult != EXPANSION_AOE_ITEM_NOT_HANDLED)
+        return FALSE;
+#endif
+
     if ((GetItemAttributes(item) & IA_STAFF) && !CanUnitUseStaff(unit, item))
         return FALSE;
 
@@ -291,8 +310,26 @@ int GetItemCantUseMsgid(struct Unit* unit, int item)
 
 void DoItemUse(struct Unit* unit, int item)
 {
+#if FE8_EXPANSION_MODERN_BUILD
+    struct ExpansionAoEItemContext aoeContext;
+    enum ExpansionAoEItemDispatchResult aoeResult;
+#endif
+
     ClearBg0Bg1();
     EndFaceById(0);
+
+#if FE8_EXPANSION_MODERN_BUILD
+    ExpansionAoE_InitItemContext(
+        &aoeContext,
+        EXPANSION_AOE_ITEM_BEGIN_USE,
+        unit,
+        item,
+        gActionData.itemSlotIndex);
+    aoeResult = ExpansionAoE_DispatchItem(&aoeContext);
+
+    if (aoeResult != EXPANSION_AOE_ITEM_NOT_HANDLED)
+        return;
+#endif
 
     switch (GetItemIndex(item))
     {
