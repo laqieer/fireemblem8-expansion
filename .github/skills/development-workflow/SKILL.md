@@ -37,10 +37,14 @@ in the repository. Do not add a human code-review or approval gate.
    requirements, existing feature profiles, save/config identities, generated
    data, IDs, memory budgets, and shared runtime seams. Keep this relationship
    map active throughout implementation.
-6. For tracked changes, create dependent work items for implementation,
-   validation, commit, push, candidate-commit CI, and the remote completion
-   gate.
-7. Resolve ordinary ambiguity from repository evidence. Stop at `Needs design`
+6. For a multi-issue objective, build a dependency graph before editing. Treat
+   each independent issue as its own root delivery unit based on `master`; use
+   a stack only when a child issue genuinely requires another issue's unmerged
+   code or contract.
+7. For tracked changes, create per-issue dependent work items for
+   implementation, validation, commit, push, candidate-commit CI, merge,
+   post-merge verification, issue closure, and the remote completion gate.
+8. Resolve ordinary ambiguity from repository evidence. Stop at `Needs design`
    only when a material contract cannot be chosen safely.
 
 ## Investigation resources and tools
@@ -169,6 +173,76 @@ introduce a second subsystem when the current public seam can be extended.
 When implementation reveals a new dependency or conflict, update the frozen
 contract and every affected validator/test/document before continuing.
 
+## Issue and pull-request boundaries
+
+Every independent issue must have one dedicated pull request. A pull request
+must not implement or close several independent issues, even when they share
+files, a discussion, a milestone, or a planned release. Track a multi-issue
+initiative in an umbrella issue or discussion with a current checklist and
+dependency links; do not use an umbrella implementation PR for its independent
+issues.
+
+Keep one issue's implementation, tests, documentation, generated outputs,
+migrations, and provenance updates together. Do not split an issue
+mechanically by file type or line count when that would leave an incomplete or
+unbuildable layer. If one request contains separately deliverable contracts,
+create explicit dependent sub-issues before implementation, freeze each
+sub-issue's contract, and give each sub-issue its own PR.
+
+### Independent roots and genuine stacks
+
+Base every independent issue branch directly on `master`. Use a stack only
+when one issue genuinely depends on another issue's unmerged code or contract,
+not merely because the issues touch shared files or belong to the same
+initiative.
+
+Every non-root PR must record:
+
+- `Depends on #...` links for its immediate issue and PR dependency;
+- its immediate base branch and position in the stack;
+- known dependent issues and PRs; and
+- the umbrella issue or discussion, when one exists.
+
+Keep those links and the umbrella checklist current as the stack changes.
+Every issue-specific layer must remain buildable and testable against its
+immediate base. Review and merge the stack bottom-up; never merge a child while
+its required parent is open. After a parent merges, run
+`gh pr edit <child-pr> --base master`, confirm that
+`git diff master...<child-branch>` contains only the child issue's scope, and
+rerun exact-candidate remote checks whenever the candidate commit or tree
+changes.
+
+Apply candidate-commit Build CI, Full Matrix, post-merge Build verification,
+issue evidence and closure, and the remote completion gate independently to
+every issue PR. Complete the umbrella initiative only after every accepted
+issue has been independently merged, verified on `master`, and closed.
+
+### Review-size preflight
+
+Before requesting review, record the immediate base, changed-file list, and
+numeric additions, deletions, and total changed lines from:
+
+```bash
+git diff --name-only <base>...HEAD
+git diff --numstat <base>...HEAD
+git diff --shortstat <base>...HEAD
+```
+
+Treat GitHub Copilot review's 20,000-line limit as a hard ceiling, not a
+target, and replan before an issue PR knowingly reaches it. Split independent
+contracts into independent issues; when one issue has separately deliverable
+contracts, create explicit dependent sub-issues. Never reduce the reported
+size by separating required tests, generated evidence, migrations,
+documentation, or provenance from their implementation.
+
+The only exception is a genuinely indivisible single-issue change. The PR
+must document why no complete smaller contract exists, the changed files and
+diff size, and the alternative automated and per-area review evidence used
+because hosted review cannot cover the complete diff. This exception must
+never combine independent issues or add a human approval gate. The normal
+workflow requires only `git` and `gh`; do not require Graphite, Git Town, or
+another stacking service.
+
 ## Change gate policy
 
 Do not add a compile-time flag automatically for every change.
@@ -278,16 +352,20 @@ remain when they serve their separate correctness contracts.
 
 ## Phase 6: PR, AI review, and merge
 
-Use a pull request by default. Push directly to `master` only when the user
-explicitly requests it and repository permissions allow it; direct delivery
-still requires the same local validation, Full Matrix run for the pushed
-commit, pushed-commit Build CI, and remote completion gate.
+Use one dedicated pull request for exactly one independent issue by default.
+Push directly to `master` only when the user explicitly requests it and
+repository permissions allow it; direct delivery still requires the same local
+validation, Full Matrix run for the pushed commit, pushed-commit Build CI, and
+remote completion gate.
 
 The PR must record:
 
 - frozen scope and non-goals;
 - feature classification or bug-triage result and root cause;
 - dependencies, dependents, conflicts, and supported combinations;
+- immediate base, stack position, parent dependency, and known dependents;
+- review-size changed files and additions/deletions, or the narrow
+  indivisible-single-issue exception and alternative evidence;
 - every command actually run and its result;
 - runtime scenario, environment, command, and result when behavior changes;
 - save, generated-data, debug, release, and archival compatibility impact;
@@ -315,6 +393,9 @@ Merge the PR autonomously when all five conditions hold. Do not wait for human
 review or approval. Respect branch protection and never bypass a required
 GitHub control.
 
+For a stacked PR, satisfy those conditions against its immediate base, merge
+only after its parent, then retarget and revalidate it as described above.
+
 Leave the PR open only when:
 
 - a material acceptance criterion is subjective or otherwise cannot be
@@ -326,6 +407,8 @@ In every hold case, name the exact blocker or missing validation. Do not leave
 a generically worded request for review.
 
 ## Phase 7: post-merge completion
+
+For every issue-specific PR:
 
 1. Verify Build CI on the resulting `master` commit.
 2. If `master` fails, immediately fix forward or revert; do not report the
@@ -353,6 +436,7 @@ Report:
 - focused and runtime evidence;
 - installed or used investigation tools and versions;
 - commit, PR or direct-push, and CI links;
+- immediate base, stack position, and review-size preflight result;
 - whether the PR was merged autonomously or left open for one precisely named
   non-agent-verifiable criterion;
 - the remote completion result.

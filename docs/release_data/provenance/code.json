@@ -80,8 +80,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Wave 0/issue #9 seed: repository-authored build tooling/config/source surface (or, for asm/, decompiled disassembly derived from the original ROM). No human legal/provenance review has been recorded yet; this manifest records that honestly rather than asserting a license or clearance.",
-    "oid": "36958bbc721218a3a784749009eb3506da54b07c",
-    "sha256": "19e77e660a3efebbe46710016f0c1d133abd1cfb56c0d0d05c4c7670346212e8"
+    "oid": "904ec1f6c31bb0236af709968b9b42c7242e9d0d",
+    "sha256": "c11f656db5ddfae24619050c3f43d07c52c883200969c3a38203ee069b70ffc1"
   },
   {
     "path": ".github/copilot-instructions.md",
@@ -116,8 +116,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Wave 0/issue #9 seed: repository-authored build tooling/config/source surface (or, for asm/, decompiled disassembly derived from the original ROM). No human legal/provenance review has been recorded yet; this manifest records that honestly rather than asserting a license or clearance.",
-    "oid": "d50a1d9056731f5597c8dbaa32577f7b76a72831",
-    "sha256": "279e71f60b07333b9fc419aec1e584487ab722c290a1c89342c61a3df1233bb4"
+    "oid": "fbae6b956b78c0d52ddf5f3a819ec6f927746589",
+    "sha256": "040c804967d197890ff76336a7c5b0c70606c5e48e3212fef419ac91132b0d3c"
   },
   {
     "path": ".github/workflows/build.yml",
@@ -224,8 +224,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Wave 0/issue #9 seed: repository-authored build tooling/config/source surface (or, for asm/, decompiled disassembly derived from the original ROM). No human legal/provenance review has been recorded yet; this manifest records that honestly rather than asserting a license or clearance.",
-    "oid": "338e23ced47520a9f70626b23ee126d353a106fb",
-    "sha256": "04c9bc05a5be700f9ca07584eefcca5ebc5ad4f69751dfc232f1190ae12e3332"
+    "oid": "3515e6656ebf9abf09ed01b7ab2ad44267cc4a05",
+    "sha256": "952e8dc8cc79bd1927c012f21ab3941f3b4636a7cbdbd844ee0cac3806f5ccad"
   },
   {
     "path": "GNUmakefile.in",
@@ -4628,8 +4628,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Wave 0/issue #9 seed: repository-authored build tooling/config/source surface (or, for asm/, decompiled disassembly derived from the original ROM). No human legal/provenance review has been recorded yet; this manifest records that honestly rather than asserting a license or clearance.",
-    "oid": "a83e3fdcf9efc36cf6542958478e1edbf45fc19b",
-    "sha256": "57db63368cbf004a46098bbea7dc70817c47d100f411496cd02ae7938ae83516"
+    "oid": "2acbc4ad4cba423d0a9664b9f2882f6c65ce513c",
+    "sha256": "1ea0274589b4a7a311dca6d25ae0faa43beb15895f92ab0c5662692dccb4b3e3"
   },
   {
     "path": "scripts/dump-proc.py",

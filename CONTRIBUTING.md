@@ -106,7 +106,78 @@ If your change can affect boot, save, or gameplay behavior, also capture
 result) — see [`docs/issue-resolution-policy.md`](docs/issue-resolution-policy.md#issue-closure-evidence).
 
 
-## 5. File a feature request or bug report
+## 5. Keep pull requests issue-sized
+
+Every independent issue gets one dedicated branch and PR. Do not implement or
+close several independent issues in one PR because they share files, a
+discussion, a milestone, or a release. Use an umbrella issue or discussion to
+track a multi-issue initiative, its dependency graph, and its current
+checklist; the umbrella is not an implementation PR.
+
+Base independent issue branches directly on `master`. Stack a child issue only
+when it requires a parent's unmerged code or contract. A non-root PR must say
+`Depends on #...`, identify its immediate base branch and stack position, and
+list known dependents. Keep each layer buildable and testable against that
+base, merge bottom-up, and never merge a child before its required parent.
+After the parent merges, retarget the child to `master`, confirm its diff
+contains only the child issue, and rerun exact-candidate checks if the commit
+or candidate tree changes.
+
+Keep an issue's implementation, tests, documentation, generated outputs,
+migrations, and provenance evidence in the same PR. Do not split by file type
+or line count if that leaves an incomplete layer. When one request contains
+separately deliverable contracts, create explicit dependent sub-issues first;
+then each sub-issue receives its own branch, frozen contract, PR, validation,
+merge, post-merge Build verification, issue closure, and
+`make remote-completion-check`.
+
+### Worked umbrella and stack example
+
+Suppose discussion `#100` tracks three accepted issues:
+
+| Issue | Branch and PR base | Relationship | Merge order |
+| --- | --- | --- | --- |
+| `#101` documentation search | `feat/101-doc-search`, base `master` | Independent root | Any time after its own gates pass |
+| `#102` typed registry | `feat/102-registry`, base `master` | Independent root | Before `#103` |
+| `#103` registry-backed selector | `feat/103-selector`, base `feat/102-registry` | `Depends on #102` and its PR | After `#102` |
+
+Discussion `#100` keeps links and completion state for all three PRs, but has
+no umbrella implementation PR. PRs `#101` and `#102` are independent even if
+they touch a shared guide. PR `#103` is a genuine child because it cannot
+build against `master` until `#102` lands. After merging `#102` with the
+repository's merge-commit policy, run
+`gh pr edit <child-pr-number> --base master`, inspect
+`git diff master...feat/103-selector`, and rerun exact-candidate Build CI and
+Full Matrix if the candidate commit or tree changed. Complete discussion
+`#100` only after all three issues are independently merged, verified on
+`master`, and closed.
+
+### Review-size preflight
+
+Before requesting review, record the immediate base, changed files, additions,
+deletions, and total changed lines:
+
+```bash
+base_ref=master # or the genuine parent branch for a stacked child
+git diff --name-only "$base_ref"...HEAD
+git diff --numstat "$base_ref"...HEAD
+git diff --shortstat "$base_ref"...HEAD
+```
+
+GitHub Copilot review's 20,000-line limit is a hard ceiling, not a target.
+Replan before knowingly reaching it. Independent contracts become independent
+issues; separately deliverable parts of one issue require explicit dependent
+sub-issues. Required tests, generated evidence, migrations, documentation, and
+provenance stay with their implementation.
+
+An exception is allowed only for one genuinely indivisible issue. Record why
+no smaller complete contract exists, the full changed-file and diff-size
+result, and the alternative automated and per-area review evidence. The
+exception cannot combine independent issues or require human approval. The
+normal lifecycle uses `git` and `gh`; Graphite, Git Town, and other stacking
+services are optional and never required.
+
+## 6. File a feature request or bug report
 
 Use the structured forms in [`.github/ISSUE_TEMPLATE/`](.github/ISSUE_TEMPLATE/):
 
@@ -121,7 +192,7 @@ Use the structured forms in [`.github/ISSUE_TEMPLATE/`](.github/ISSUE_TEMPLATE/)
 Blank issues are disabled for ordinary contributors; use the linked
 Discussions page for questions or early design exploration.
 
-## 6. Debug before filing a regression
+## 7. Debug before filing a regression
 
 Use [`docs/debugtools.md`](docs/debugtools.md) for the release-safe debug
 surface and [`tools/gba-playtest/README.md`](tools/gba-playtest/README.md)
@@ -132,7 +203,7 @@ debugging, run `make expansion-modern-gdb-smoke` to prove ARM GDB can control
 the modern debug ROM through mGBA's remote server before relying on debugger
 evidence.
 
-## 7. PR provenance and delivery
+## 8. PR provenance and delivery
 
 This repository's general Wave 0 governance baseline describes what a PR/issue
 must record before closure:
