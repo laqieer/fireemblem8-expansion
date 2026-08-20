@@ -58,6 +58,7 @@ class IssueTemplateTests(unittest.TestCase):
             "dependencies_conflicts",
             "configuration",
             "acceptance_criteria",
+            "tester_cases",
             "submission_checks",
         }
         self.assertTrue(required.issubset(form_fields))
@@ -65,6 +66,7 @@ class IssueTemplateTests(unittest.TestCase):
             with self.subTest(field_id=field_id):
                 self.assertIn("required: true", form_fields[field_id])
         self.assertIn('labels: ["enhancement"]', text)
+        self.assert_case_contract(form_fields["tester_cases"], negative_control="negative control")
 
     def test_bug_form_requires_triage_evidence_and_screenshots(self):
         text = BUG.read_text(encoding="utf-8")
@@ -76,6 +78,7 @@ class IssueTemplateTests(unittest.TestCase):
             "reproduction",
             "expected",
             "actual",
+            "regression_case",
             "screenshots",
             "submission_checks",
         }
@@ -85,6 +88,32 @@ class IssueTemplateTests(unittest.TestCase):
                 self.assertIn("required: true", form_fields[field_id])
         self.assertTrue(form_fields["screenshots"].startswith("upload\n"))
         self.assertIn('labels: ["bug"]', text)
+        self.assertIn("complements rather than replaces", form_fields["regression_case"])
+        self.assert_case_contract(
+            form_fields["regression_case"],
+            negative_control="pre-fix",
+        )
+
+    def assert_case_contract(self, field: str, *, negative_control: str) -> None:
+        field_lower = field.lower()
+        requirements = (
+            "stable case ID",
+            "configuration/profile",
+            "prerequisites and clean starting state",
+            "exact actions/inputs",
+            "observable",
+            negative_control,
+            "dependencies/conflicts/interactions and save expectations",
+            "automation mapping",
+            "manual-only visual/audio/UX",
+            "reset/cleanup",
+            "limitations and unsupported configurations",
+            "issue #54",
+            "required: true",
+        )
+        for requirement in requirements:
+            with self.subTest(requirement=requirement):
+                self.assertIn(requirement.lower(), field_lower)
 
     def test_template_chooser_routes_unstructured_requests_to_discussions(self):
         text = CONFIG.read_text(encoding="utf-8")

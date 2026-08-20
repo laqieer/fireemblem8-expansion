@@ -183,16 +183,58 @@ Use the structured forms in [`.github/ISSUE_TEMPLATE/`](.github/ISSUE_TEMPLATE/)
 
 - **Feature request** requires a detailed capability description, request
   reason, reusable use cases, dependency/conflict review, configuration and
-  compatibility impact, acceptance criteria, and explicit non-goals.
+  compatibility impact, acceptance criteria, explicit non-goals, and at least
+  one proposed tester-facing case.
 - **Bug report** requires the exact commit, detailed build configuration and
   environment, deterministic reproduction steps, expected versus actual
-  behavior, and game screenshots. Preserve failing logs/fingerprints and add
-  GDB/IDA/Ghidra evidence when used.
+  behavior, a proposed post-fix regression case, and game screenshots.
+  Preserve failing logs/fingerprints and add GDB/IDA/Ghidra evidence when
+  used. The regression case complements rather than replaces deterministic
+  reproduction.
 
 Blank issues are disabled for ordinary contributors; use the linked
 Discussions page for questions or early design exploration.
 
-## 7. Debug before filing a regression
+## 7. Write tester-facing cases
+
+Every accepted feature request and confirmed bug fix freezes at least one
+stable tester-facing case before implementation. Case IDs are never silently
+renumbered or reused; use a readable form such as `TC-SAVE-001`. The canonical
+indexed catalog and coverage guard are tracked by
+[issue #54](https://github.com/laqieer/fireemblem8-expansion/issues/54).
+Until it lands, keep the proposed ID and complete case in the originating
+issue and relevant feature or bug documentation rather than creating another
+registry.
+
+Each case states:
+
+- linked issue and stable case ID;
+- exact supported configuration/profile or optional downloadable artifact;
+- prerequisites, clean starting state, and reset/cleanup requirements;
+- numbered actions or inputs and the observable expected result;
+- default/disabled or pre-fix negative control, or why it is not applicable;
+- dependencies, conflicts, feature interactions, and save expectations;
+- the deterministic host/ROM test, command, or scenario that covers each
+  assertion, or a precise manual-only reason; and
+- known limitations and unsupported configurations.
+
+Tester instructions and automated evidence are complementary. Keep the human
+procedure even when a unit test or `tools/gba-playtest` scenario covers every
+assertion; testers should not need to reverse-engineer automation. Conversely,
+automate every deterministic result instead of treating the written procedure
+as proof. Manual-only judgment is legitimate only for a precisely named
+visual, audio, or UX result that cannot be asserted reliably. If that
+criterion is material and unverified, leave the PR and issue open on that
+exact hold rather than requesting generic review.
+
+Cases must remain runnable from documented source profiles. A downloadable or
+combined artifact may be named when available, but cannot be the only setup.
+For PR evidence, record the case IDs exercised, definition/catalog links,
+exact profile or artifact, environment, positive and negative actual results,
+interactions/save expectations, and the automation result or precise
+manual-only reason.
+
+## 8. Debug before filing a regression
 
 Use [`docs/debugtools.md`](docs/debugtools.md) for the release-safe debug
 surface and [`tools/gba-playtest/README.md`](tools/gba-playtest/README.md)
@@ -203,7 +245,7 @@ debugging, run `make expansion-modern-gdb-smoke` to prove ARM GDB can control
 the modern debug ROM through mGBA's remote server before relying on debugger
 evidence.
 
-## 8. PR provenance and delivery
+## 9. PR provenance and delivery
 
 This repository's general Wave 0 governance baseline describes what a PR/issue
 must record before closure:

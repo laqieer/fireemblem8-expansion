@@ -104,7 +104,9 @@ For a bug report or regression, triage the bug before designing or editing:
 Proceed with implementation only for a confirmed bug. A bug fix does not need
 to pass the feature universality test below; it must restore an intended
 contract, fix the root cause, and add a regression test that fails for the
-original defect.
+original defect. It must also retain the deterministic reproduction and freeze
+at least one tester-facing regression case whose pre-fix behavior is the
+negative control.
 
 ### Feature classification
 
@@ -151,6 +153,11 @@ When declining a request from core, explain the boundary and the reusable seam
 that would make downstream implementation possible. Do not dismiss the use
 case without that guidance.
 
+Do not accept a feature request without at least one proposed tester-facing
+case. If the reusable behavior is plausible but no complete case can yet be
+frozen, classify it as `Needs design` rather than inventing acceptance
+evidence during implementation.
+
 ## Phase 3: freeze the design contract
 
 Record these items in the issue or implementation notes before editing:
@@ -164,6 +171,7 @@ Record these items in the issue or implementation notes before editing:
 - save-format or migration impact;
 - generated-data and localization impact;
 - ROM/RAM/resource-budget impact;
+- tester-facing case IDs and their positive and negative evidence;
 - focused host checks, target-ROM checks, runtime scenarios, and negative
   controls;
 - rollback or revert plan for a post-merge regression.
@@ -172,6 +180,49 @@ Prefer typed APIs, generated data, symbolic IDs, and existing registries. Do not
 introduce a second subsystem when the current public seam can be extended.
 When implementation reveals a new dependency or conflict, update the frozen
 contract and every affected validator/test/document before continuing.
+
+## Tester-facing case contract
+
+Before accepting a feature request or implementing a confirmed bug fix, freeze
+at least one tester-facing case. Stable case IDs are never silently renumbered
+or reused; use a readable form such as `TC-SAVE-001`. The canonical indexed
+catalog and coverage guard are tracked by
+[issue #54](https://github.com/laqieer/fireemblem8-expansion/issues/54).
+Until that catalog lands, keep each proposed ID and its complete definition in
+the originating issue and relevant feature or bug documentation. Do not create
+a competing registry.
+
+Each tester-facing case must state:
+
+- its stable case ID and linked feature or bug issue;
+- the supported configuration/profile or downloadable artifact, while
+  remaining runnable from a documented source build;
+- prerequisites, clean starting state, and reset or cleanup requirements;
+- exact actions or inputs;
+- the observable expected result;
+- the default/disabled or pre-fix negative control, or why one is not
+  applicable;
+- dependencies, conflicts, feature interactions, and save-compatibility
+  expectations;
+- mapping to deterministic host/ROM automation, or the precise reason a
+  criterion remains manual; and
+- known limitations and unsupported configurations.
+
+A bug report and fix require deterministic reproduction plus at least one
+regression case; the regression case does not replace the triage evidence. A
+feature request without at least one proposed tester-facing case cannot be
+accepted for implementation.
+
+During implementation, ship or update the tester-facing procedure with the
+behavior and its feature/bug documentation. Do not defer it to post-merge
+cleanup. Preserve the human steps even when automation covers every assertion;
+a tester must not have to reverse-engineer a unit test or scenario file.
+
+Automate every deterministic assertion in the case. Manual-only evidence is
+reserved for a precisely named visual, audio, or UX judgment that cannot be
+asserted reliably. Record the exact manual criterion and environment. If it is
+material and remains unverified, hold merge and closure on that criterion
+rather than requesting generic review.
 
 ## Issue and pull-request boundaries
 
@@ -298,7 +349,9 @@ tested. Follow the established contracts in
    documentation in the same change. Documentation is part of implementation,
    not post-merge cleanup. Final docs must name all dependencies and conflicts
    with other features, or state explicitly that none exist.
-8. Do not hand-edit build-local generated output.
+8. Ship or update every required tester-facing case with the behavior and map
+   its deterministic assertions to host or ROM automation.
+9. Do not hand-edit build-local generated output.
 
 Follow the repository conventions in
 [`CONTRIBUTING.md`](../../../CONTRIBUTING.md) and
@@ -334,7 +387,9 @@ Automate every deterministic acceptance criterion. If a material result is
 inherently subjective or cannot be asserted reliably, such as a visual, audio,
 or UX judgment, leave the work open and state the exact unresolved criterion
 and all evidence already collected. Do not convert that hold into a blanket
-human-review requirement.
+human-review requirement. Validation evidence must name the tester-facing case
+IDs exercised, exact profile or artifact, environment, positive and negative
+actual results, and the mapped automation result or precise manual-only reason.
 
 ### Issue #29 identity boundary
 
@@ -366,6 +421,9 @@ The PR must record:
 - immediate base, stack position, parent dependency, and known dependents;
 - review-size changed files and additions/deletions, or the narrow
   indivisible-single-issue exception and alternative evidence;
+- tester-facing case IDs exercised, definition/catalog links, exact profile or
+  artifact, environment, positive and negative actual results, interactions
+  and save expectations, and automation mapping or precise manual-only reason;
 - every command actually run and its result;
 - runtime scenario, environment, command, and result when behavior changes;
 - save, generated-data, debug, release, and archival compatibility impact;
@@ -386,7 +444,8 @@ Before merge:
    commit.
 3. Resolve every review thread with code or an explanation.
 4. Confirm every objective acceptance criterion, positive scenario, negative
-   control, compatibility check, and documentation requirement is complete.
+   control, compatibility check, tester-facing case, and documentation
+   requirement is complete.
 5. Confirm no material risk or validation gap remains unresolved.
 
 Merge the PR autonomously when all five conditions hold. Do not wait for human
@@ -416,9 +475,10 @@ For every issue-specific PR:
 3. Add the final evidence and commit/PR/CI links to the originating issue.
    Include installed investigation tools, versions, purpose, and any
    pre-existing IDA/Ghidra/GDB resources used.
-4. Close the feature or bug issue when its accepted scope is delivered and its
-   evidence is complete. This development workflow overrides conflicting
-   generic language that reserves closure for human review.
+4. Close the feature or bug issue only when every required tester-facing case
+   is present and every material manual criterion is verified. This
+   development workflow overrides conflicting generic language that reserves
+   closure for human review.
 5. For tracked changes, run `make remote-completion-check` only after the
    intended commit is pushed and its Build CI succeeds.
 
@@ -437,6 +497,8 @@ Report:
 - installed or used investigation tools and versions;
 - commit, PR or direct-push, and CI links;
 - immediate base, stack position, and review-size preflight result;
+- tester-facing case IDs, exact profile/artifact and environment, actual
+  positive/negative results, and automation or manual evidence;
 - whether the PR was merged autonomously or left open for one precisely named
   non-agent-verifiable criterion;
 - the remote completion result.

@@ -166,6 +166,62 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             with self.subTest(requirement=requirement):
                 self.assertIn(requirement, text)
 
+    def test_tester_facing_case_contract_is_integrated(self):
+        _, skill = read_skill()
+        skill_contract = (
+            "Do not accept a feature request without at least one proposed tester-facing",
+            "deterministic reproduction plus at least one",
+            "stable case ID and linked feature or bug issue",
+            "supported configuration/profile or downloadable artifact",
+            "prerequisites, clean starting state",
+            "exact actions or inputs",
+            "observable expected result",
+            "default/disabled or pre-fix negative control",
+            "dependencies, conflicts, feature interactions, and save-compatibility",
+            "mapping to deterministic host/ROM automation",
+            "known limitations and unsupported configurations",
+            "issue #54",
+            "Manual-only evidence is",
+            "visual, audio, or UX judgment",
+            "tester-facing case IDs exercised",
+            "Close the feature or bug issue only when every required tester-facing case",
+        )
+        for requirement in skill_contract:
+            with self.subTest(surface="skill", requirement=requirement):
+                self.assertIn(requirement, skill)
+
+        contributing = CONTRIBUTING_PATH.read_text(encoding="utf-8")
+        contributing_contract = (
+            "Write tester-facing cases",
+            "Every accepted feature request and confirmed bug fix",
+            "TC-SAVE-001",
+            "issue #54",
+            "Tester instructions and automated evidence are complementary.",
+            "Manual-only judgment is legitimate only",
+            "Cases must remain runnable from documented source profiles.",
+            "positive and negative actual results",
+        )
+        for requirement in contributing_contract:
+            with self.subTest(surface="contributing", requirement=requirement):
+                self.assertIn(requirement, contributing)
+
+        template = PR_TEMPLATE_PATH.read_text(encoding="utf-8")
+        template_contract = (
+            "Tester-facing cases",
+            "Case IDs exercised",
+            "Definition/catalog links",
+            "Exact configuration/profile or artifact",
+            "Positive procedure and actual result",
+            "pre-fix negative control and actual result",
+            "feature interactions, and save expectations",
+            "Automation mapping and result, or precise manual-only reason",
+            "Reset/cleanup, known limitations, and unsupported configurations",
+            "visual, audio, or UX judgment",
+        )
+        for requirement in template_contract:
+            with self.subTest(surface="template", requirement=requirement):
+                self.assertIn(requirement, template)
+
 
 if __name__ == "__main__":
     unittest.main()

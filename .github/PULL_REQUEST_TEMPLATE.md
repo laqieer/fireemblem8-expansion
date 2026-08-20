@@ -32,6 +32,23 @@ make expansion-modern-linker-check MODERN_CONFIG=release MODERN_ABI=aapcs
 - [ ] All commands above (or the subset relevant to this change) pass.
 - Runtime/playtest evidence (scenario, environment, command, result): <!-- required only when behavior changes -->
 
+## Tester-facing cases
+
+- Case IDs exercised: <!-- e.g. TC-SAVE-001 -->
+- Definition/catalog links: <!-- originating issue/docs; canonical catalog tracked by #54 -->
+- Exact configuration/profile or artifact:
+- Environment:
+- Positive procedure and actual result:
+- Default/disabled or pre-fix negative control and actual result:
+- Dependencies, conflicts, feature interactions, and save expectations:
+- Automation mapping and result, or precise manual-only reason:
+- Reset/cleanup, known limitations, and unsupported configurations:
+- [ ] Required cases shipped or were updated with the behavior; none were
+      deferred to post-merge cleanup.
+- [ ] Every deterministic assertion is automated. Any manual-only evidence is
+      a precisely named visual, audio, or UX judgment that cannot be asserted
+      reliably.
+
 ## Review-size preflight
 
 Record the immediate-base comparison before requesting review:

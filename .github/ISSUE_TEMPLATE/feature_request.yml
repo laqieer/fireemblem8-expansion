@@ -9,6 +9,8 @@ body:
       value: |
         Describe the capability and why it belongs in a reusable FE8 expansion framework.
         Project-specific content or rulesets may be redirected to a downstream extension seam.
+        Propose at least one tester-facing case. The canonical indexed catalog is tracked by
+        https://github.com/laqieer/fireemblem8-expansion/issues/54.
   - type: textarea
     id: feature_description
     attributes:
@@ -69,6 +71,31 @@ body:
     validations:
       required: true
   - type: textarea
+    id: tester_cases
+    attributes:
+      label: Proposed tester-facing cases
+      description: >
+        Define at least one stable case ID and linked issue. Include the supported source configuration/profile
+        or optional artifact; prerequisites and clean starting state; exact actions/inputs; observable expected
+        result; default/disabled negative control or why none applies; dependencies/conflicts/interactions and
+        save expectations; deterministic host/ROM automation mapping or a precise manual-only visual/audio/UX
+        reason; reset/cleanup; limitations and unsupported configurations. IDs must not be silently renumbered
+        or reused. The canonical catalog is tracked by issue #54.
+      placeholder: |
+        Case ID: TC-AREA-001
+        Linked issue: this issue
+        Configuration/profile or artifact:
+        Prerequisites and clean starting state:
+        Actions/inputs:
+        Observable expected result:
+        Default/disabled negative control:
+        Dependencies/conflicts/interactions and save expectations:
+        Automation mapping or precise manual-only reason:
+        Reset/cleanup:
+        Limitations/unsupported configurations:
+    validations:
+      required: true
+  - type: textarea
     id: non_goals
     attributes:
       label: Non-goals
@@ -81,6 +108,8 @@ body:
         - label: I searched existing issues and discussions for duplicates.
           required: true
         - label: I described a reusable framework capability rather than only project-specific content.
+          required: true
+        - label: I proposed at least one stable tester-facing case and mapped every deterministic assertion to automation or named a precise manual-only criterion.
           required: true
         - label: I did not attach ROMs, saves, savestates, patches, or copyrighted game assets.
           required: true
