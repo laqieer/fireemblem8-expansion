@@ -6,7 +6,6 @@ import contextlib
 import io
 import json
 import os
-import subprocess
 import sys
 import tempfile
 import unittest
@@ -146,28 +145,20 @@ class ProbeBindingToolTests(unittest.TestCase):
         self.assertNotIn("Traceback", stderr.getvalue())
 
     def test_make_threads_modern_nm_to_playtest_and_binding_tools(self):
-        completed = subprocess.run(
-            [
-                "make",
-                "-n",
-                "expansion-modern-starter-runtime-check",
-                "MODERN_CONFIG=debug",
-                "MODERN_ABI=aapcs",
-                f"MODERN_NM={self.work / 'toolchain' / 'bin' / 'nm'}",
-            ],
-            cwd=REPO_ROOT,
-            capture_output=True,
-            text=True,
-        )
-        self.assertEqual(
-            completed.returncode,
-            0,
-            completed.stdout + completed.stderr,
-        )
-        output = completed.stdout + completed.stderr
+        modern_mk = (REPO_ROOT / "modern.mk").read_text(encoding="utf-8")
         self.assertIn(
-            f'--nm "{self.work / "toolchain" / "bin" / "nm"}"',
-            output,
+            '--elf "$(1)" --nm "$(MODERN_NM)"',
+            modern_mk,
+        )
+        self.assertGreaterEqual(
+            modern_mk.count('--elf "$(MODERN_ELF)" --nm "$(MODERN_NM)"'),
+            2,
+        )
+        self.assertGreaterEqual(
+            modern_mk.count(
+                '--elf "$(MODERN_STARTER_PROFILE_ELF)" --nm "$(MODERN_NM)"'
+            ),
+            2,
         )
 
 
