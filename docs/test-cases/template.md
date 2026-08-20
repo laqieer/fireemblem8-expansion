@@ -33,7 +33,9 @@ inapplicable, state why.]
 
 [Exact deterministic command/scenario/test and what it proves. Name a precise
 manual-only visual, audio, or UX criterion only when automation cannot assert
-it.]
+it. In `registry.json`, omit or leave `automation` empty only with a
+non-placeholder `manual_only_reason` that names the criterion and why a human
+judgment is necessary.]
 
 ### Cleanup and limitations
 

@@ -13,7 +13,9 @@ separate `features` and `cases` arrays:
   authoritative reference document, lifecycle status, and required case IDs.
 - A case identifies one stable `TC-<AREA>-NNN` ID, its owning feature,
   originating issue URLs, Markdown procedure and anchor, supported source
-  profiles/artifacts, required procedure data, and named automation evidence.
+  profiles/artifacts, required procedure data, and either named automation
+  evidence or an explicit `manual_only_reason` for a visual, audio, or UX
+  criterion that cannot be asserted deterministically.
 
 Stable IDs are never silently renumbered or reused. Add a case from
 [`template.md`](template.md), then add the corresponding feature/case

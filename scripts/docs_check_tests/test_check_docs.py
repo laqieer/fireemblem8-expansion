@@ -784,6 +784,33 @@ class TesterCaseRegistryTests(unittest.TestCase):
         self.assertTrue(any("no real command/scenario/test evidence" in message
                             for message in self._messages(directory)))
 
+    def test_manual_only_rationale_is_a_valid_automation_alternative(self):
+        manual_only = self._valid_registry()
+        manual_only["cases"][0]["automation"] = []
+        manual_only["cases"][0]["manual_only_reason"] = (
+            "A subjective visual accessibility judgment requires a human tester."
+        )
+        self.assertEqual(self._messages(manual_only), [])
+
+        missing_evidence = self._valid_registry()
+        missing_evidence["cases"][0]["automation"] = []
+        self.assertTrue(any("deterministic automation or an explicit manual_only_reason" in message
+                            for message in self._messages(missing_evidence)))
+
+        placeholder_rationale = self._valid_registry()
+        placeholder_rationale["cases"][0]["automation"] = []
+        placeholder_rationale["cases"][0]["manual_only_reason"] = "TODO"
+        self.assertTrue(any("manual_only_reason must be an explicit" in message
+                            for message in self._messages(placeholder_rationale)))
+
+        malformed_automation = self._valid_registry()
+        malformed_automation["cases"][0]["automation"] = {}
+        malformed_automation["cases"][0]["manual_only_reason"] = (
+            "A subjective visual accessibility judgment requires a human tester."
+        )
+        self.assertTrue(any("automation must be a list" in message
+                            for message in self._messages(malformed_automation)))
+
     def test_broken_reference_document_and_case_anchor_fail(self):
         reference = self._valid_registry()
         reference["features"][0]["reference"] = "docs/missing.md"

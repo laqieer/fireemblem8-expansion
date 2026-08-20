@@ -26,8 +26,9 @@ foundation catalog.
 
 The focused fixtures reject malformed or duplicate IDs, unknown feature/case
 ownership, missing document/anchor/reference links, empty or success-shaped
-required fields, unnamed automation evidence, an excluded/retired feature
-without a reason, and a missing expected feature in future `complete` mode.
+required fields, unmapped automation/manual-only evidence, an
+excluded/retired feature without a reason, and a missing expected feature in
+future `complete` mode.
 
 ### Interactions and save compatibility
 

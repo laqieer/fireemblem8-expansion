@@ -1378,9 +1378,10 @@ def check_test_case_registry(root):
                 TEST_CASE_REGISTRY_PATH, 0, "%s must name supported profiles or artifacts" % label
             ))
         automation = case.get("automation")
-        if not isinstance(automation, list) or not automation:
-            findings.append(Finding(TEST_CASE_REGISTRY_PATH, 0, "%s must name deterministic automation" % label))
-        else:
+        manual_only_reason = case.get("manual_only_reason")
+        if automation is not None and not isinstance(automation, list):
+            findings.append(Finding(TEST_CASE_REGISTRY_PATH, 0, "%s automation must be a list" % label))
+        elif automation:
             for automation_index, record in enumerate(automation):
                 automation_label = "%s automation %d" % (label, automation_index + 1)
                 if not isinstance(record, dict) or not _is_non_placeholder_string(record.get("command")):
@@ -1395,6 +1396,16 @@ def check_test_case_registry(root):
                         "%s references no real command/scenario/test evidence %r"
                         % (automation_label, record.get("evidence")),
                     ))
+        if "manual_only_reason" in case and not _is_non_placeholder_string(manual_only_reason):
+            findings.append(Finding(
+                TEST_CASE_REGISTRY_PATH, 0,
+                "%s manual_only_reason must be an explicit non-placeholder rationale" % label,
+            ))
+        if not automation and not _is_non_placeholder_string(manual_only_reason):
+            findings.append(Finding(
+                TEST_CASE_REGISTRY_PATH, 0,
+                "%s must name deterministic automation or an explicit manual_only_reason" % label,
+            ))
         if _is_non_placeholder_string(case.get("document")):
             for message in _check_registry_document(root, case["document"], case.get("anchor"), label):
                 findings.append(Finding(TEST_CASE_REGISTRY_PATH, 0, message))
