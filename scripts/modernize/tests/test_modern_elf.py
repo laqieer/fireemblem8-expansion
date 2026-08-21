@@ -158,7 +158,8 @@ class ModernElfTargetTests(unittest.TestCase):
         """modern.mk must declare NODEP=0 in the legacy-ready step."""
         mk = (ROOT / "modern.mk").read_text(encoding="utf-8")
         self.assertIn("expansion-modern-legacy-ready", mk)
-        self.assertIn("+$(MAKE) NODEP=0", mk)
+        self.assertIn("$(MAKE) NODEP=0", mk)
+        self.assertNotIn("+$(MAKE) NODEP=0", mk)
         # link-prepare must depend on legacy-ready (may span lines)
         self.assertIn("expansion-modern-legacy-ready", mk)
         prep_idx = mk.index("expansion-modern-link-prepare:")
