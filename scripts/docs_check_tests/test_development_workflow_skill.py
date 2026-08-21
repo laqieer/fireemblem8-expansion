@@ -90,6 +90,49 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             text,
         )
 
+    def test_ci_waiting_does_not_hold_reasoning_subagents(self):
+        _, text = read_skill()
+        required_contract = (
+            "Reasoning subagents must not remain alive merely to wait",
+            "records the exact candidate",
+            "SHA and run ID",
+            "returns immediately",
+            "exactly one direct shell watcher",
+            "timeout 90m gh run watch <run-id> --interval 30 --exit-status",
+            "process-completion",
+            "never create duplicate watchers",
+            "Only after the workflow reaches a terminal state",
+            "gh run cancel <run-id>",
+            "Never repeatedly wake the same subagent merely",
+            "never accept a stale run",
+        )
+
+        for requirement in required_contract:
+            with self.subTest(requirement=requirement):
+                self.assertIn(requirement, text)
+
+        project_instructions = (
+            ROOT / ".github" / "copilot-instructions.md"
+        ).read_text(encoding="utf-8")
+        project_contract = (
+            "CI waiting must not occupy a reasoning subagent.",
+            "records its exact SHA and run ID, then returns immediately",
+            "exactly one bounded direct shell watcher",
+            "timeout 90m gh run watch <run-id> --interval 30 --exit-status",
+            "invoke a reasoning agent only",
+            "after the run is terminal",
+            "Do not repeatedly wake an",
+            "agent to poll",
+            "cancel superseded",
+            "candidate runs before dispatching replacement checks",
+        )
+
+        for requirement in project_contract:
+            with self.subTest(
+                surface="project instructions", requirement=requirement
+            ):
+                self.assertIn(requirement, project_instructions)
+
     def test_issue_specific_pull_request_and_stack_contract(self):
         _, text = read_skill()
         required_contract = (
