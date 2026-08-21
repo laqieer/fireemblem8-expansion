@@ -758,7 +758,7 @@ either CJK locale is enabled and does not alter locale preferences, saves, or
 configuration identity.
 
 `TC-ISSUE18-ZH-HANS-MAIN-MENU-OAM-001` is captured by
-`locale-cjk-softreset-persistence-modern-debug`. Its zh-Hans main-menu
+`locale-cjk-softreset-persistence-modern-debug`. Its zh-Hans Save Menu
 checkpoint uses `fnv1a64-rgb24:33ebd93fb62f99e7`: the corrected FE8CN
 descriptor composition changes only the menu pixels while the persisted-locale
 and selector-state probes remain unchanged. The former
