@@ -1532,8 +1532,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Wave 0/issue #9 seed: repository-authored documentation. No human legal/provenance review has been recorded yet; this manifest records that honestly rather than asserting a license or clearance.",
-    "oid": "4235087a920aaa0f2407b1528cdecd324df22ac2",
-    "sha256": "4fbc02157637bcdc761a85d46b5981243381a66af80d206b1e80bc09b5b4c162"
+    "oid": "50c5b265b0993e45678c177f5c95fa547ef4b508",
+    "sha256": "a912523d1f8f48502567d42bfcaf78322ff4cffaceee89204c05213a3511de86"
   },
   {
     "path": "docs/release_data/version_ledger.json",
@@ -4436,8 +4436,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Wave 0/issue #9 seed: repository-authored build tooling/config/source surface (or, for asm/, decompiled disassembly derived from the original ROM). No human legal/provenance review has been recorded yet; this manifest records that honestly rather than asserting a license or clearance.",
-    "oid": "7fb44dd77ecb3e72b56402213d08ecc8efe5d684",
-    "sha256": "a2b5269aeb0ddf858b006526219bcdc8d9d1c44497ed02f42ce08d79fb015a05"
+    "oid": "ebee8788e408f0f8f7490f17fe66c989cf21bd96",
+    "sha256": "17a269234329afe0582646083b780b8cca509a49e44985894d192015f4f8104f"
   },
   {
     "path": "scripts/assets/tests/__init__.py",
@@ -4460,8 +4460,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Wave 0/issue #9 seed: repository-authored build tooling/config/source surface (or, for asm/, decompiled disassembly derived from the original ROM). No human legal/provenance review has been recorded yet; this manifest records that honestly rather than asserting a license or clearance.",
-    "oid": "3dab7d20810a3ef6f6ff642f266e4c26c5bf3ad8",
-    "sha256": "82ee0b1f500f1f1c617c5e8d69c233858b3e53401159cd73ae20bcef50fa1022"
+    "oid": "c636ad58b924a6bac27577a35d9a75949d56482e",
+    "sha256": "7f542840abb0cf92175d40166feeb54e3398697380407660898b2adf28e0fa0b"
   },
   {
     "path": "scripts/banim_codes.json",
