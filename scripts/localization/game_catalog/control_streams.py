@@ -140,11 +140,25 @@ def load_portrait_operand_map(path: Path = DEFAULT_PORTRAIT_MAP_PATH) -> Portrai
         ):
             raise ControlStreamError(f"{path}: {region} portrait source pin is invalid")
     fe8u_source = Path(derivation["sources"]["fe8u"]["path"])
+    fe8u_registry = None
     if fe8u_source.is_file() and (
         hashlib.sha256(fe8u_source.read_bytes()).hexdigest()
         != derivation["sources"]["fe8u"]["sha256"]
     ):
         raise ControlStreamError(f"{path}: pinned FE8U portrait table changed")
+    if fe8u_source == Path("assets/portrait_registry.json"):
+        try:
+            document = json.loads(fe8u_source.read_text(encoding="utf-8"))
+            rows = document["entries"]
+            fe8u_registry = {
+                row["id"]: row
+                for row in rows
+                if isinstance(row, dict) and isinstance(row.get("id"), int)
+            }
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError, KeyError, TypeError) as error:
+            raise ControlStreamError(
+                f"{path}: canonical FE8U portrait registry is unavailable"
+            ) from error
 
     source_to_target: Dict[int, int] = {}
     valid_target_operands: Set[int] = set()
@@ -171,6 +185,25 @@ def load_portrait_operand_map(path: Path = DEFAULT_PORTRAIT_MAP_PATH) -> Portrai
         )
         if source in source_to_target:
             raise ControlStreamError(f"{path}: duplicate source operand 0x{source:04X}")
+        if fe8u_registry is not None and target != 0xFFFF:
+            target_fid = target & 0xFF
+            row = fe8u_registry.get(target_fid)
+            signature = entry.get("signature")
+            blink_names = {
+                "FACE_BLINK_NORMAL": 1,
+                "FACE_BLINK_CLOSED": 6,
+            }
+            if (
+                row is None
+                or not isinstance(signature, dict)
+                or signature.get("tileset") != row.get("img")
+                or signature.get("palette") != row.get("pal")
+                or signature.get("blink") != blink_names.get(row.get("blinkKind"))
+            ):
+                raise ControlStreamError(
+                    f"{path}: target portrait operand 0x{target:04X} no longer matches "
+                    "the canonical FE8U portrait registry"
+                )
         source_to_target[source] = target
         valid_target_operands.add(target)
     if source_to_target.get(0xFFFF) != 0xFFFF:

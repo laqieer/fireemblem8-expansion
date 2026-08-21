@@ -14,6 +14,7 @@
 #include "rng.h"
 #include "bmsave.h"
 #include "save_format.h"
+#include "face.h"
 #include "expansion_debugtools.h"
 #include "debugtools_internal.h"
 
@@ -90,6 +91,9 @@ enum
  * DEBUGTOOLS_FASTBOOT_RNG_SEED (src/gamecontrol.c) so the two are never
  * confused in logs/tests. */
 #define DEBUGTOOLS_TOOLS_RNG_SEED 0x1EE7C0DEu
+#define DEBUGTOOLS_PORTRAIT_PROBE_FACE_ID 2
+#define DEBUGTOOLS_PORTRAIT_PROBE_CHR 0x280
+#define DEBUGTOOLS_PORTRAIT_PROBE_PAL 2
 
 #ifdef MODERN
 static int DebugToolsTools_LocalizedMenuItemDraw(
@@ -321,6 +325,9 @@ static void DebugToolsUnit_BuildMenuItems(void)
 static u8 DebugToolsActions_UnitInspectSelected(struct MenuProc* menu, struct MenuItemProc* item)
 {
     struct Unit* unit;
+    struct FaceProc* face;
+    struct FaceBlinkProc* mouth;
+    u32* mouthTiles;
     char buf[64];
 
     (void)item;
@@ -329,9 +336,55 @@ static u8 DebugToolsActions_UnitInspectSelected(struct MenuProc* menu, struct Me
 
     if (UNIT_IS_VALID(unit))
     {
+        PutFaceChibi(
+            DEBUGTOOLS_PORTRAIT_PROBE_FACE_ID,
+            TILEMAP_LOCATED(BG_GetMapBuffer(2), 1, 4),
+            DEBUGTOOLS_PORTRAIT_PROBE_CHR,
+            DEBUGTOOLS_PORTRAIT_PROBE_PAL,
+            FALSE);
+        BG_EnableSyncByMask(BG2_SYNC_BIT);
+
         gDebugToolsProbe.unitInspectTargetFound = 1;
         gDebugToolsProbe.unitInspectLastCurHp = (u32)GetUnitCurrentHp(unit);
         gDebugToolsProbe.unitInspectLastMaxHp = (u32)GetUnitMaxHp(unit);
+        gDebugToolsProbe.portraitProbeFaceId = DEBUGTOOLS_PORTRAIT_PROBE_FACE_ID;
+        gDebugToolsProbe.portraitProbeMinimugRenderCount++;
+        gDebugToolsProbe.portraitProbeMinimugVramWord = *(u32 *)(
+            VRAM + (DEBUGTOOLS_PORTRAIT_PROBE_CHR * CHR_SIZE) + 0x20);
+        gDebugToolsProbe.portraitProbeMinimugPaletteWord =
+            *(u32 *)(gPaletteBuffer + (DEBUGTOOLS_PORTRAIT_PROBE_PAL * 0x10));
+
+        face = StartFace2(
+            0,
+            DEBUGTOOLS_PORTRAIT_PROBE_FACE_ID,
+            48,
+            24,
+            FACE_DISP_KIND(FACE_96x80) | FACE_DISP_TALK_1);
+        if (face != NULL)
+        {
+            SetFaceEyeControl(face, 2);
+            gDebugToolsProbe.portraitProbeFullFaceRenderCount++;
+            gDebugToolsProbe.portraitProbeMouthDisplayBits =
+                GetFaceDisplayBits(face) & (FACE_DISP_TALK_1 | FACE_DISP_TALK_2);
+            gDebugToolsProbe.portraitProbeEyeControl = 2;
+            gDebugToolsProbe.portraitProbeFaceOam2 = face->oam2;
+
+            mouth = (struct FaceBlinkProc*)face->unk_44;
+            FaceMouth_Init(mouth);
+            mouth->unk_32 = -1;
+            mouth->blinkControl = 0;
+            FaceMouth_Loop(mouth);
+            mouthTiles = (u32 *)(
+                VRAM + (((face->oam2 + 28) & 0x3FF) * CHR_SIZE));
+            gDebugToolsProbe.portraitProbeMouthFrame0 =
+                mouthTiles[1] ^ mouthTiles[9] ^ mouthTiles[17] ^ mouthTiles[25];
+
+            mouth->unk_32 = -1;
+            mouth->blinkControl = 1;
+            FaceMouth_Loop(mouth);
+            gDebugToolsProbe.portraitProbeMouthFrame2 =
+                mouthTiles[1] ^ mouthTiles[9] ^ mouthTiles[17] ^ mouthTiles[25];
+        }
         sprintf(buf, "%s %d/%d",
             DEBUGTOOLS_LOCALIZED_TEXT(EXP_MSG_DEBUG_STATUS_UNIT_HP, "UNIT HP"),
             GetUnitCurrentHp(unit), GetUnitMaxHp(unit));

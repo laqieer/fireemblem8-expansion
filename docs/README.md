@@ -23,6 +23,7 @@ the authoritative technical documentation and are checked by CI.
 | Configure portrait/minimug rules | [`portrait_resolver.md`](portrait_resolver.md) |
 | Audit a community asset format before proposing an adapter | [`community_asset_coverage.md`](community_asset_coverage.md) |
 | Author a source-owned asset record or add an asset adapter | [`asset_manifest.md`](asset_manifest.md) |
+| Author a strict formatted full-portrait package | [`portrait_packages.md`](portrait_packages.md) |
 | Author expansion-localized UI text/locales | [`localization.md`](localization.md) |
 | Generate or test localized full-game message catalogs | [`game_localization_catalog.md`](game_localization_catalog.md) |
 | Evaluate and deliver a feature request or bug fix with Copilot | [`development-workflow`](../.github/skills/development-workflow/SKILL.md) |
@@ -74,6 +75,7 @@ numbers mark merged (closed) contracts only:
 | Portrait/minimug resolver (issue #35) | Typed character/class/chapter/flag registry with legacy fallback | [`portrait_resolver.md`](portrait_resolver.md) |
 | Community asset coverage (issue #59) | Asset-family ownership/gap catalog; not an importer or runtime API | [`community_asset_coverage.md`](community_asset_coverage.md) |
 | Asset manifest (issue #60) | Versioned source-owned asset records and generated existing-seam dependencies | [`asset_manifest.md`](asset_manifest.md) |
+| Formatted portrait packages (issue #63) | Strict sheet contract, generated FaceData registration, and tester procedure | [`portrait_packages.md`](portrait_packages.md) |
 | Localization (issue #18) | `ExpansionLocaleId`/`ExpansionMsgId`, `texts/expansion/`, prefs + selector/settings APIs | [`localization.md`](localization.md), [`save_format.md`](save_format.md) |
 | Runtime test harness (issue #13) | JSON scenario format + fingerprints, `GBA_PLAYTEST_HOST_ONLY` | [`../tools/gba-playtest/README.md`](../tools/gba-playtest/README.md) |
 | Upstream-port review tooling | `python3 -m scripts.upstream_port {scan,drift,verify,update-state}` | [`upstream-porting.md`](upstream-porting.md) |
@@ -124,6 +126,7 @@ and
 | [`portrait_resolver.md`](portrait_resolver.md) | Current | Typed data-driven portrait/minimug resolver and validation contract (issue #35) |
 | [`community_asset_coverage.md`](community_asset_coverage.md) | Current | Authoritative community asset family ownership, build/runtime seam, and gap catalog (issue #59) |
 | [`asset_manifest.md`](asset_manifest.md) | Current | Versioned asset manifest, generated existing-seam dependencies, and adapter contract (issue #60) |
+| [`portrait_packages.md`](portrait_packages.md) | Current | Strict formatted portrait package, generated FaceData registration, and tester procedure (issue #63) |
 | [`localization.md`](localization.md) | Current | Stable locale/message IDs, authoring, prefs/UI, budgets and matrices (issue #18) |
 | [`ui_presentation_registry.md`](ui_presentation_registry.md) | Current | Typed battle-animation, chapter/screen manifest, and utility-preference registries (issues #41/#43/#44) |
 | [`game_localization_catalog.md`](game_localization_catalog.md) | Current | Full-game FE8U-indexed CJK catalog generation, runtime bounds, and synthetic link gate |

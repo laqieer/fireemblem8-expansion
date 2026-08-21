@@ -37,7 +37,7 @@ consumption case.
 | Map changes | Manual-only | Chapter event/map-change data | Future `map-change schema/adapter` after #60 |
 | Tilesets and map configuration | Partially supported | Chapter asset table plus graphics rules | Future `tileset package` after #60 |
 | Tile animation | Manual-only | Chapter asset table and map-animation data | Future `tile-animation schema/adapter` after #60 |
-| Portraits, minimugs, and cards | Manual-only | `portrait_data[]` and portrait symbols | #63 after #60 |
+| Portraits, minimugs, and cards | Partially supported | `portrait_data[]` and portrait symbols | #63 formatted full-portrait package; cards remain manual-only |
 | Battle animations | Manual-only | `banim_data[]`, class definitions, and banim linker list | #62 after #60 |
 | Spell and magic animations | Runtime capability missing | Per-effect battle/magic code and data | #61 after #60; it remains Needs design |
 | Backgrounds and TSA/tilemaps | Partially supported | Per-screen data and graphics rules | Future `background/TSA package` after #60 |
@@ -123,12 +123,12 @@ and lane cell records the family-specific coverage in addition to them.
 
 | Field | Current coverage |
 | --- | --- |
-| Community input | No formatted portrait-sheet importer is owned. Community 128x112 portrait packages may be useful reference inputs but are not accepted project source today. |
-| Canonical source/build product | Existing portrait graphics/palettes and declared symbols are consumed by the hand-written `portrait_data[]` table. |
+| Community input | A source-owned, strict FE7/FE8 128x112 formatted full-portrait package is supported through `formatted-portrait-package`; cards and generic/half-body formats remain manual-only. |
+| Canonical source/build product | `assets/portrait_registry.json` owns the typed FaceData registry; package sheets/metadata generate ignored 4bpp/LZ77 products and `portrait_data[]` registration. |
 | Runtime consumer/seam | `GetPortraitData` in `src/face.c` indexes `portrait_data[]`; `struct FaceData` selects tiles, minimug/chibi, palette, mouth, card, and blink metadata. The typed resolver only chooses existing IDs; it does not import graphics. |
 | IDs and limits | `docs/portrait_resolver.md` validates full portrait IDs `1..0xAC` and generic minimug IDs `0x7F00..0x7F07`. `struct FaceData` plus the existing OBJ palette/tile loading path are the real resource contract; no generic package validator checks sheet geometry, card/minimug presence, or complete symbol wiring. |
-| Validation and lane | Resolver validation covers references, not asset conversion or registration. Existing assets are linked normally; no generated portrait table exists. |
-| Status/gap | **Manual-only**. #63 must generate every required symbol and `FaceData`/ID wiring through #60's single ownership mechanism. |
+| Validation and lane | The manifest rejects bad geometry/palette/metadata/provenance/ownership and generated drift; modern debug/release use the generated table. Archival source compatibility is retained without a byte-identity claim. |
+| Status/gap | **Partially supported**. #63 owns formatted full portraits/minimugs; cards, generic enemies, and half-body formats remain independently manual-only. |
 
 ### Battle animations
 

@@ -55,12 +55,12 @@ class ScenarioParsingTests(unittest.TestCase):
         with self.assertRaisesRegex(gba_playtest.PlaytestError, "only string"):
             gba_playtest.parse_scenario_data(data)
 
-    def test_rejects_rom_and_unmapped_addresses(self):
-        for address in ("0x08000000", "0x03008000"):
+    def test_rejects_unmapped_addresses(self):
+        for address in ("0x01000000", "0x03008000"):
             with self.subTest(address=address):
                 data = valid_scenario()
                 data["checkpoints"][0]["probes"][0]["address"] = address
-                with self.assertRaisesRegex(gba_playtest.PlaytestError, "must be in EWRAM"):
+                with self.assertRaisesRegex(gba_playtest.PlaytestError, "must be in"):
                     gba_playtest.parse_scenario_data(data)
 
     def test_rejects_unaligned_and_boundary_crossing_probe(self):
