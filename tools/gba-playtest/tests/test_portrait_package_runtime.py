@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 import subprocess
 import unittest
@@ -9,6 +10,12 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 PLAYTEST_DIR = REPO_ROOT / "tools" / "gba-playtest"
+PORTRAIT_RUNTIME_BUILD_ROOT = Path(
+    os.environ.get(
+        "FE8_PORTRAIT_PACKAGE_RUNTIME_BUILD_ROOT",
+        REPO_ROOT / "build" / "expansion-modern-portrait-package-runtime",
+    )
+)
 sys.path.insert(0, str(PLAYTEST_DIR))
 sys.path.insert(0, str(PLAYTEST_DIR / "tests"))
 
@@ -36,6 +43,27 @@ class PortraitPackageScenarioTests(unittest.TestCase):
                     }
                 )
 
+    def test_portrait_probe_is_confined_to_internal_runtime_target(self):
+        modern_mk = (REPO_ROOT / "modern.mk").read_text(encoding="utf-8")
+        tools_src = (REPO_ROOT / "src" / "debugtools_tools.c").read_text(encoding="utf-8")
+        public_header = (REPO_ROOT / "include" / "expansion_debugtools.h").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn(
+            "expansion-modern-portrait-package-runtime-check:",
+            modern_mk,
+        )
+        self.assertIn(
+            'MODERN_INTERNAL_TEST_DEFINES="-DFE8_PORTRAIT_PACKAGE_RUNTIME_TEST=1"',
+            modern_mk,
+        )
+        self.assertIn(
+            "#if defined(FE8_PORTRAIT_PACKAGE_RUNTIME_TEST)",
+            tools_src,
+        )
+        self.assertNotIn("PortraitPackageRuntimeProbe", public_header)
+        self.assertNotIn("portraitProbeFaceId", public_header)
+
 
 @host_mode.live_artifact_testcase("portrait package runtime coverage")
 class PortraitPackageRuntimeTests(unittest.TestCase):
@@ -54,6 +82,20 @@ class PortraitPackageRuntimeTests(unittest.TestCase):
             if len(fields) == 3 and fields[2] == symbol:
                 return int(fields[0], 16)
         raise AssertionError(f"{symbol} is missing from {elf}")
+
+    @staticmethod
+    def _defined_symbols(elf: Path) -> set[str]:
+        result = subprocess.run(
+            ["arm-none-eabi-nm", "--defined-only", str(elf)],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        return {
+            fields[-1]
+            for line in result.stdout.splitlines()
+            if (fields := line.split())
+        }
 
     def _scenario(self, elf: Path):
         resolver = ElfSymbolResolver(elf)
@@ -129,25 +171,25 @@ class PortraitPackageRuntimeTests(unittest.TestCase):
         self.assertNotEqual(values["face-vram-slot-0"], 0, "face tiles must reach VRAM")
         self.assertNotEqual(values["face-oam"], 0, "face sprites must reach hardware OAM")
 
-    def _minimug_scenario(self, elf: Path, config: str):
+    def _minimug_scenario(self, elf: Path):
         base = gp.load_scenario(
-            PLAYTEST_DIR / "scenarios" / f"debugtools-tools-modern-{config}.json"
+            PLAYTEST_DIR / "scenarios" / "debugtools-tools-modern-debug.json"
         )
         frame = 14600
-        probe_base = self._symbol_address(elf, "gDebugToolsProbe")
+        probe_base = self._symbol_address(elf, "gPortraitPackageRuntimeProbe")
         probes = tuple(
             gp.Probe(name, probe_base + offset, 4, None)
             for name, offset in (
-                ("portrait-probe-face-id", 0x84),
-                ("portrait-probe-render-count", 0x88),
-                ("portrait-probe-vram-word", 0x8C),
-                ("portrait-probe-palette-word", 0x90),
-                ("portrait-probe-full-face-count", 0x94),
-                ("portrait-probe-mouth-display-bits", 0x98),
-                ("portrait-probe-eye-control", 0x9C),
-                ("portrait-probe-face-oam2", 0xA0),
-                ("portrait-probe-mouth-frame-0", 0xA4),
-                ("portrait-probe-mouth-frame-2", 0xA8),
+                ("portrait-probe-face-id", 0x00),
+                ("portrait-probe-render-count", 0x04),
+                ("portrait-probe-vram-word", 0x08),
+                ("portrait-probe-palette-word", 0x0C),
+                ("portrait-probe-full-face-count", 0x10),
+                ("portrait-probe-mouth-display-bits", 0x14),
+                ("portrait-probe-eye-control", 0x18),
+                ("portrait-probe-face-oam2", 0x1C),
+                ("portrait-probe-mouth-frame-0", 0x20),
+                ("portrait-probe-mouth-frame-2", 0x24),
             )
         ) + (gp.Probe("eirika-mouth-vram", 0x060163C0, 4, None),)
         checkpoints = tuple(
@@ -166,7 +208,7 @@ class PortraitPackageRuntimeTests(unittest.TestCase):
             for checkpoint_frame in (frame, frame + 48, frame + 96)
         )
         return gp.Scenario(
-            f"issue63-minimug-{config}",
+            "issue63-minimug-runtime-test",
             "Use the existing Unit Inspect debug seam to render Eirika's minimug.",
             False,
             None,
@@ -175,17 +217,16 @@ class PortraitPackageRuntimeTests(unittest.TestCase):
         )
 
     def test_debug_unit_inspect_renders_eirika_minimug(self):
-        config = "debug"
-        rom = host_mode.modern_rom(config)
-        elf = host_mode.modern_elf(config)
-        host_mode.require_built_rom(rom, "modern debug ROM")
-        host_mode.require_built_rom(elf, "modern debug ELF")
+        rom = PORTRAIT_RUNTIME_BUILD_ROOT / "debug" / "aapcs" / "fireemblem8.gba"
+        elf = PORTRAIT_RUNTIME_BUILD_ROOT / "debug" / "aapcs" / "fireemblem8.elf"
+        host_mode.require_built_rom(rom, "portrait runtime test ROM")
+        host_mode.require_built_rom(elf, "portrait runtime test ELF")
         fixture = sf.write_deterministic_current_fixture(
-            REPO_ROOT / "build" / "gba-playtest-tmp" / "issue63-minimug-debug.sav"
+            REPO_ROOT / "build" / "gba-playtest-tmp" / "issue63-minimug-runtime-test.sav"
         )
         actual = host_mode.capture_live_or_skip(
             rom,
-            self._minimug_scenario(elf, config),
+            self._minimug_scenario(elf),
             fixture,
             label="issue #63 Eirika minimug runtime",
         )
@@ -216,25 +257,16 @@ class PortraitPackageRuntimeTests(unittest.TestCase):
         ]
         self.assertTrue(any(mouth_words), "Eirika mouth tiles must reach VRAM")
 
-    def test_release_unit_inspect_probe_is_inert(self):
-        config = "release"
-        rom = host_mode.modern_rom(config)
-        elf = host_mode.modern_elf(config)
-        host_mode.require_built_rom(rom, "modern release ROM")
-        host_mode.require_built_rom(elf, "modern release ELF")
-        fixture = sf.write_deterministic_current_fixture(
-            REPO_ROOT / "build" / "gba-playtest-tmp" / "issue63-minimug-release.sav"
-        )
-        actual = host_mode.capture_live_or_skip(
-            rom,
-            self._minimug_scenario(elf, config),
-            fixture,
-            label="issue #63 release minimug negative",
-        )
-        self.assertEqual(
-            [probe["value"] for probe in actual["checkpoints"][0]["probes"][:-1]],
-            ["0x00000000"] * 10,
-        )
+    def test_default_profiles_omit_portrait_probe_symbol(self):
+        for config in ("debug", "release"):
+            with self.subTest(config=config):
+                elf = host_mode.modern_elf(config)
+                host_mode.require_built_rom(elf, f"modern {config} ELF")
+                self.assertNotIn(
+                    "gPortraitPackageRuntimeProbe",
+                    self._defined_symbols(elf),
+                    f"modern {config} must omit portrait runtime test state",
+                )
 
     def test_debug_eirika_dialogue_loads_face_pipeline(self):
         self._run("debug")

@@ -111,6 +111,7 @@ int main(void)
     CHECK(gDebugToolsProbe.unitInspectLastCurHp == 5, "inspect must sample curHP");
     CHECK(gDebugToolsProbe.unitInspectLastMaxHp == 20, "inspect must sample maxHP");
     CHECK(gDebugToolsProbe.unitHealTransactionCount == 0, "inspect alone must never apply a heal transaction");
+#if defined(FE8_PORTRAIT_PACKAGE_RUNTIME_TEST)
     CHECK(gDebugToolsToolsHostStubPutFaceChibiCallCount == 1,
           "valid Unit Inspect must render exactly one minimug");
     CHECK(gDebugToolsToolsHostStubLastFaceChibiId == 2
@@ -121,29 +122,34 @@ int main(void)
     CHECK(gDebugToolsToolsHostStubBgSyncCallCount == 1
           && gDebugToolsToolsHostStubLastBgSyncMask == BG2_SYNC_BIT,
           "minimug rendering must synchronize BG2 exactly once");
-    CHECK(gDebugToolsProbe.portraitProbeFaceId == 2
-          && gDebugToolsProbe.portraitProbeMinimugRenderCount == 1,
+    CHECK(gPortraitPackageRuntimeProbe.faceId == 2
+          && gPortraitPackageRuntimeProbe.minimugRenderCount == 1,
           "valid Unit Inspect must record Eirika minimug evidence");
-    CHECK(gDebugToolsProbe.portraitProbeMinimugVramWord == 0xE1A2B3C4
-          && gDebugToolsProbe.portraitProbeMinimugPaletteWord == 0x56781234,
+    CHECK(gPortraitPackageRuntimeProbe.minimugVramWord == 0xE1A2B3C4
+          && gPortraitPackageRuntimeProbe.minimugPaletteWord == 0x56781234,
           "minimug probe must sample the rendered VRAM and palette state");
     CHECK(gDebugToolsToolsHostStubStartFace2CallCount == 1
           && gDebugToolsToolsHostStubLastStartFaceId == 2
-          && gDebugToolsProbe.portraitProbeFullFaceRenderCount == 1,
+          && gPortraitPackageRuntimeProbe.fullFaceRenderCount == 1,
           "valid Unit Inspect must render the documented full face once");
     CHECK(gDebugToolsToolsHostStubLastEyeControl == 2
-          && gDebugToolsProbe.portraitProbeEyeControl == 2,
+          && gPortraitPackageRuntimeProbe.eyeControl == 2,
           "full-face probe must exercise eye control state 2");
-    CHECK(gDebugToolsProbe.portraitProbeMouthDisplayBits == FACE_DISP_TALK_1,
+    CHECK(gPortraitPackageRuntimeProbe.mouthDisplayBits == FACE_DISP_TALK_1,
           "full-face probe must preserve the requested talk display bit");
     CHECK(gDebugToolsToolsHostStubFaceMouthInitCount == 1
           && gDebugToolsToolsHostStubFaceMouthLoopCount == 2,
           "full-face probe must initialize and render both mouth states");
-    CHECK(gDebugToolsProbe.portraitProbeMouthFrame0 != 0
-          && gDebugToolsProbe.portraitProbeMouthFrame2 != 0
-          && gDebugToolsProbe.portraitProbeMouthFrame0
-              != gDebugToolsProbe.portraitProbeMouthFrame2,
+    CHECK(gPortraitPackageRuntimeProbe.mouthFrame0 != 0
+          && gPortraitPackageRuntimeProbe.mouthFrame2 != 0
+          && gPortraitPackageRuntimeProbe.mouthFrame0
+              != gPortraitPackageRuntimeProbe.mouthFrame2,
           "mouth probe must record distinct nonzero frame evidence");
+#else
+    CHECK(gDebugToolsToolsHostStubPutFaceChibiCallCount == 0
+          && gDebugToolsToolsHostStubStartFace2CallCount == 0,
+          "supported Unit Inspect builds must omit portrait test instrumentation");
+#endif
 
     CHECK(strcmp(gDebugToolsUnitMenuDef.menuItems[0].name, "Confirm Heal to Full") == 0, "unit submenu item 0 must be the Confirm item");
     CHECK(strcmp(gDebugToolsUnitMenuDef.menuItems[1].name, "Back") == 0, "unit submenu item 1 must be Back");

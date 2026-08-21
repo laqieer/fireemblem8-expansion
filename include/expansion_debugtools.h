@@ -811,21 +811,6 @@ struct DebugToolsProbe
                                   * SaveCompatState) */
     u32 saveCompatInspectCount; /* increments once per inspect */
 
-    /* --- Portrait package probe (issue #63) ---
-     * Debug-only Unit Inspect invokes the existing minimug renderer for
-     * Eirika and records bounded scalar evidence of the resulting data.
-     * Release builds retain these fields at zero with the whole debug-tools
-     * implementation compiled out. */
-    u32 portraitProbeFaceId;
-    u32 portraitProbeMinimugRenderCount;
-    u32 portraitProbeMinimugVramWord;
-    u32 portraitProbeMinimugPaletteWord;
-    u32 portraitProbeFullFaceRenderCount;
-    u32 portraitProbeMouthDisplayBits;
-    u32 portraitProbeEyeControl;
-    u32 portraitProbeFaceOam2;
-    u32 portraitProbeMouthFrame0;
-    u32 portraitProbeMouthFrame2;
 };
 
 enum

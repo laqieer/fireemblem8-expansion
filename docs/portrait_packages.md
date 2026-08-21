@@ -80,6 +80,14 @@ this adapter neither synthesizes it nor blocks unrelated downstream work.
 
 ## Tester procedure: `TC-PORTRAIT-PACKAGE-063`
 
+`expansion-modern-portrait-package-runtime-check` is a dedicated internal
+test artifact, not a feature profile or configuration option. It alone
+defines `FE8_PORTRAIT_PACKAGE_RUNTIME_TEST=1` and the private
+`gPortraitPackageRuntimeProbe` instrumentation used to assert the Eirika
+minimug, face, mouth, and eye path. Supported debug, release, and maximal
+item-expansion builds omit that symbol and state entirely; production
+debug-tools behavior and EWRAM budgets therefore remain unchanged.
+
 Use a clean default modern checkout with no feature flags and no save reset.
 Run the five asset commands above, build modern debug and release, then use
 the normal Eirika face and minimug UI paths. The expected positive result is
