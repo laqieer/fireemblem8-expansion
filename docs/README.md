@@ -22,6 +22,7 @@ the authoritative technical documentation and are checked by CI.
 | Configure casual defeat restoration | [`starter_features.md`](starter_features.md#optional-casual-defeat-policy-issue-34) |
 | Configure portrait/minimug rules | [`portrait_resolver.md`](portrait_resolver.md) |
 | Run a tester-facing feature procedure | [`test-cases/README.md`](test-cases/README.md) |
+| Audit a community asset format before proposing an adapter | [`community_asset_coverage.md`](community_asset_coverage.md) |
 | Author expansion-localized UI text/locales | [`localization.md`](localization.md) |
 | Generate or test localized full-game message catalogs | [`game_localization_catalog.md`](game_localization_catalog.md) |
 | Evaluate and deliver a feature request or bug fix with Copilot | [`development-workflow`](../.github/skills/development-workflow/SKILL.md) |
@@ -71,6 +72,7 @@ numbers mark merged (closed) contracts only:
 | Starter features (issue #6) | Four default-off flags; `include/expansion_mechanics.h`; `include/expansion_starter_content.h`; danger-overlay menu | [`starter_features.md`](starter_features.md) |
 | Typed area-of-effect actions (issue #42) | `include/expansion_aoe.h`; bounded target/effect API and shared item/action/AI route registry | [`aoe.md`](aoe.md) |
 | Portrait/minimug resolver (issue #35) | Typed character/class/chapter/flag registry with legacy fallback | [`portrait_resolver.md`](portrait_resolver.md) |
+| Community asset coverage (issue #59) | Asset-family ownership/gap catalog; not an importer or runtime API | [`community_asset_coverage.md`](community_asset_coverage.md) |
 | Localization (issue #18) | `ExpansionLocaleId`/`ExpansionMsgId`, `texts/expansion/`, prefs + selector/settings APIs | [`localization.md`](localization.md), [`save_format.md`](save_format.md) |
 | Runtime test harness (issue #13) | JSON scenario format + fingerprints, `GBA_PLAYTEST_HOST_ONLY` | [`../tools/gba-playtest/README.md`](../tools/gba-playtest/README.md) |
 | Upstream-port review tooling | `python3 -m scripts.upstream_port {scan,drift,verify,update-state}` | [`upstream-porting.md`](upstream-porting.md) |
@@ -119,6 +121,7 @@ and
 | [`starter_features.md`](starter_features.md) | Current | Four opt-in flags, typed mechanics/content API, QoL and matrices (issue #6) |
 | [`aoe.md`](aoe.md) | Current | Typed bounded AoE targeting/effects, shared item seam, and default-off reference (issue #42) |
 | [`portrait_resolver.md`](portrait_resolver.md) | Current | Typed data-driven portrait/minimug resolver and validation contract (issue #35) |
+| [`community_asset_coverage.md`](community_asset_coverage.md) | Current | Authoritative community asset family ownership, build/runtime seam, and gap catalog (issue #59) |
 | [`localization.md`](localization.md) | Current | Stable locale/message IDs, authoring, prefs/UI, budgets and matrices (issue #18) |
 | [`ui_presentation_registry.md`](ui_presentation_registry.md) | Current | Typed battle-animation, chapter/screen manifest, and utility-preference registries (issues #41/#43/#44) |
 | [`test-cases/README.md`](test-cases/README.md) | Current | Indexed tester-facing case catalog, template, and backfill lifecycle (issue #54) |
