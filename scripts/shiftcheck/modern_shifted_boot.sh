@@ -24,6 +24,7 @@ SHIFT="${1:-${SHIFTCHECK_SHIFT:-0x40000}}"
 OUTDIR="${SHIFTCHECK_OUTDIR:-build/shiftcheck}"
 OBJECTS_LST="${SHIFTCHECK_OBJECTS_LST:-build/expansion-modern/debug/aapcs/link/objects.lst}"
 BANIM_SYM="${SHIFTCHECK_BANIM_SYM:-banim/data_banim.o.sym.o}"
+BANIM_OBJECT="${SHIFTCHECK_BANIM_OBJECT:-${BANIM_SYM%.sym.o}}"
 LDSCRIPT="${SHIFTCHECK_LDSCRIPT:-linker/expansion.ld}"
 BASE_ELF="${SHIFTCHECK_BASE_ELF:-build/expansion-modern/debug/aapcs/fireemblem8.elf}"
 ROM_SIZE="${SHIFTCHECK_ROM_SIZE_BYTES:-0x01000000}"
@@ -62,7 +63,7 @@ mkdir -p "$OUTDIR"
 
 # --- Link with shift ---
 printf 'Linking shifted ELF (__text_shift=%s)...\n' "$SHIFT"
-"$LD" \
+python3 scripts/arm_compressing_linker.py --lock-output "$BANIM_OBJECT" -- "$LD" \
     --orphan-handling=error \
     --defsym=__rom_size="$ROM_SIZE" \
     --defsym=__text_shift="$SHIFT" \

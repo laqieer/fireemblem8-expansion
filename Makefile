@@ -238,7 +238,21 @@ src/menu_def.o: CC1FLAGS += -Wno-error
 # there is nothing for quickstart -- or anyone else -- to set to reach the
 # archival lane except this target's name.
 all:
-	+$(MAKE) expansion-modern-boot-check MODERN_CONFIG=release MODERN_ABI=aapcs
+	@dry_run=0; \
+	for flag in $(MAKEFLAGS); do \
+		case "$$flag" in \
+		--) break ;; \
+		n|-n|--dry-run|--just-print|--recon) dry_run=1 ;; \
+		--*) ;; \
+		*n*) dry_run=1 ;; \
+		esac; \
+	done; \
+	if [ "$$dry_run" = 1 ]; then \
+		printf '%s\n' \
+			'$(MAKE) expansion-modern-boot-check MODERN_CONFIG=release MODERN_ABI=aapcs'; \
+	else \
+		$(MAKE) expansion-modern-boot-check MODERN_CONFIG=release MODERN_ABI=aapcs; \
+	fi
 
 # Explicit, clearly-named archival alias (issue #15): builds the same
 # agbcc-based $(ROM) as `make fireemblem8.gba`. The obsolete whole-build
@@ -668,7 +682,7 @@ $(OBJECTS_LST): $(ALL_OBJECTS) FORCE
 	@cmp -s $@.tmp $@ 2>/dev/null && rm -f $@.tmp || mv -f $@.tmp $@
 
 $(ELF): $(ALL_OBJECTS) $(OBJECTS_LST) $(LDSCRIPT) $(SYM_FILES)
-	$(LD) -T $(LDSCRIPT) -Map $(MAP) @$(OBJECTS_LST) -R $(BANIM_OBJECT).sym.o -L tools/agbcc/lib -o $@ -lc -lgcc
+	$(PYTHON) scripts/arm_compressing_linker.py --lock-output $(BANIM_OBJECT) -- $(LD) -T $(LDSCRIPT) -Map $(MAP) @$(OBJECTS_LST) -R $(BANIM_OBJECT).sym.o -L tools/agbcc/lib -o $@ -lc -lgcc
 	$(STRIP) -N .gcc2_compiled. $@
 
 %.gba: %.elf
