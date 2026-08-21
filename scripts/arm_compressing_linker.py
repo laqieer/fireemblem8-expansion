@@ -74,15 +74,55 @@ def remove_staging_outputs(staging):
             os.unlink(filename)
 
 
+def previous_output_paths(outputfile):
+    output = os.fspath(outputfile)
+    return output + '.previous', output + '.sym.o.previous'
+
+
+def recover_incomplete_publish(outputfile):
+    output = os.fspath(outputfile)
+    output_sym = output + '.sym.o'
+    previous, previous_sym = previous_output_paths(output)
+    has_output = os.path.isfile(output)
+    has_output_sym = os.path.isfile(output_sym)
+    has_previous = os.path.isfile(previous)
+    has_previous_sym = os.path.isfile(previous_sym)
+
+    if not has_previous and not has_previous_sym:
+        return
+
+    if has_previous and has_previous_sym:
+        if has_output and has_output_sym:
+            os.unlink(previous)
+            os.unlink(previous_sym)
+            return
+        if has_output:
+            os.unlink(output)
+        if has_output_sym:
+            os.unlink(output_sym)
+        os.replace(previous, output)
+        os.replace(previous_sym, output_sym)
+        return
+
+    if has_previous:
+        if has_output:
+            os.unlink(output)
+        os.replace(previous, output)
+    else:
+        if has_output_sym:
+            os.unlink(output_sym)
+        os.replace(previous_sym, output_sym)
+
+
 def build_and_publish_output(outputfile, builder):
     output = os.fspath(outputfile)
     for filename in stale_staging_output_paths(output):
         if os.path.isfile(filename):
             os.unlink(filename)
+    recover_incomplete_publish(output)
     staging = staging_output_path(output)
     staging_sym = staging + '.sym.o'
-    previous = staging + '.previous'
-    previous_sym = previous + '.sym.o'
+    previous, previous_sym = previous_output_paths(output)
     moved_output = False
     moved_sym = False
     published_output = False
@@ -107,7 +147,7 @@ def build_and_publish_output(outputfile, builder):
         published_output = True
         os.replace(staging_sym, output + '.sym.o')
         published_sym = True
-    except:
+    except BaseException:
         if published_output and os.path.isfile(output):
             os.unlink(output)
         if published_sym and os.path.isfile(output + '.sym.o'):
@@ -119,6 +159,9 @@ def build_and_publish_output(outputfile, builder):
         raise
     finally:
         remove_staging_outputs(staging)
+        for filename in (previous, previous_sym):
+            if os.path.isfile(filename):
+                os.unlink(filename)
 
 
 def run_with_output_lock(outputfile, command, is_debug=False):

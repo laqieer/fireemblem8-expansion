@@ -296,6 +296,22 @@ class ArmCompressingLinkerLockTests(unittest.TestCase):
             self.assertEqual(symbol_output.read_text(encoding="utf-8"), "old symbols")
             self.assertEqual(list(Path(temporary).glob(".shared.o.*")), [])
 
+    def test_interrupted_publication_recovers_previous_pair(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary) / "shared.o"
+            symbol_output = Path(str(output) + ".sym.o")
+            previous, previous_sym = arm_linker.previous_output_paths(output)
+            output.write_text("partial new object", encoding="utf-8")
+            Path(previous).write_text("old object", encoding="utf-8")
+            Path(previous_sym).write_text("old symbols", encoding="utf-8")
+
+            arm_linker.recover_incomplete_publish(output)
+
+            self.assertEqual(output.read_text(encoding="utf-8"), "old object")
+            self.assertEqual(symbol_output.read_text(encoding="utf-8"), "old symbols")
+            self.assertFalse(Path(previous).exists())
+            self.assertFalse(Path(previous_sym).exists())
+
     def test_malformed_staging_and_first_build_failure_leave_no_publication_or_staging(self):
         with tempfile.TemporaryDirectory() as temporary:
             output = Path(temporary) / "shared.o"
