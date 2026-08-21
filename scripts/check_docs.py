@@ -124,8 +124,8 @@ INVENTORY_STATUSES = {
 
 TEST_CASE_FEATURE_STATUSES = {"current", "retired", "excluded"}
 TEST_CASE_COVERAGE_MODES = {"foundation", "complete"}
-TEST_CASE_ID_RE = re.compile(r"^TC-[A-Z][A-Z0-9-]*-\d{3}$")
-TEST_CASE_FEATURE_ID_RE = re.compile(r"^[a-z][a-z0-9-]*$")
+TEST_CASE_ID_RE = re.compile(r"^TC-[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*-\d{3}$")
+TEST_CASE_FEATURE_ID_RE = re.compile(r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$")
 TEST_CASE_ISSUE_URL_RE = re.compile(
     r"^https://github\.com/laqieer/fireemblem8-expansion/issues/[1-9]\d*$"
 )

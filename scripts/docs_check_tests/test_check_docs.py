@@ -752,13 +752,26 @@ class TesterCaseRegistryTests(unittest.TestCase):
         self.assertEqual(check_docs.check_test_case_registry(REAL_REPO_ROOT), [])
 
     def test_malformed_and_duplicate_case_ids_fail(self):
-        malformed = self._valid_registry()
-        malformed["cases"][0]["id"] = "not-a-case"
-        self.assertTrue(any("malformed case ID" in message for message in self._messages(malformed)))
+        for case_id in ("not-a-case", "TC-SAMPLE--001"):
+            malformed = self._valid_registry()
+            malformed["cases"][0]["id"] = case_id
+            self.assertTrue(
+                any("malformed case ID" in message for message in self._messages(malformed))
+            )
 
         duplicate = self._valid_registry()
         duplicate["cases"].append(copy.deepcopy(duplicate["cases"][0]))
         self.assertTrue(any("duplicate case ID" in message for message in self._messages(duplicate)))
+
+    def test_malformed_feature_ids_fail(self):
+        for feature_id in ("sample-feature-", "sample--feature"):
+            malformed = self._valid_registry()
+            malformed["features"][0]["id"] = feature_id
+            malformed["cases"][0]["feature_id"] = feature_id
+            malformed["coverage"]["expected_feature_ids"] = [feature_id]
+            self.assertTrue(
+                any("malformed feature ID" in message for message in self._messages(malformed))
+            )
 
     def test_unknown_feature_and_missing_required_case_fail(self):
         unknown = self._valid_registry()
