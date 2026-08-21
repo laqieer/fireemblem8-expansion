@@ -41,6 +41,8 @@ VARIANTS = {
         },
         "menu": 0x08AA59A0,
         "main_sprites": 0x08AA39DC,
+        # InitDifficultySelectScreen's localized literal at 0x080B0C34.
+        "difficulty_menu": 0x08AA65A8,
         "chapter_frame": 0x08A8BFA4,
     },
     "zh-Hans": {
@@ -54,6 +56,8 @@ VARIANTS = {
         },
         "menu": 0x08AA59A0,
         "main_sprites": 0x08B44B40,
+        # InitDifficultySelectScreen's localized literal at 0x080B0C34.
+        "difficulty_menu": 0x08AA39DC,
         # The localized literal in _PutChapterTitleGfx at 0x0808B924.
         "chapter_frame": 0x08A7E188,
     },
@@ -350,19 +354,23 @@ def build_variant(locale: str, source: bytes) -> dict[str, object]:
             ]
         )
 
+    chapter = {
+        "table_address": f"0x{CHAPTER_TABLE:08X}",
+        "entries": chapters,
+        "frame": add("chapter/frame", spec["chapter_frame"]),
+        "tsa": add("chapter/title_layout", CHAPTER_TSA, "tsa.bin"),
+    }
+    difficulty_menu = add("menu/difficulty_mode", spec["difficulty_menu"], tiles_per_row=32)
+
     return {
         "rom_sha256": spec["rom_sha256"],
         "rom_path": spec["rom_path"],
         "title": title,
         "menu": menu,
         "main_sprites": main_sprites,
+        "difficulty_menu": difficulty_menu,
         "subtitle": subtitle,
-        "chapter": {
-            "table_address": f"0x{CHAPTER_TABLE:08X}",
-            "entries": chapters,
-            "frame": add("chapter/frame", spec["chapter_frame"]),
-            "tsa": add("chapter/title_layout", CHAPTER_TSA, "tsa.bin"),
-        },
+        "chapter": chapter,
         "assets": assets,
     }
 
@@ -525,6 +533,18 @@ def generate_data_source(variants: dict[str, dict[str, object]]) -> bytes:
             "    }",
             "}",
             "",
+            "const u8 *LocalizedUiGraphics_GetDifficultyMenuObjects(void)",
+            "{",
+            "    switch (LocalizedUiGraphics_CurrentCjkLocale()) {",
+            "    case EXPANSION_LOCALE_JA:",
+            "        return %s;" % asset_ref(variants["ja"], variants["ja"]["difficulty_menu"]),
+            "    case EXPANSION_LOCALE_ZH_HANS:",
+            "        return %s;" % asset_ref(variants["zh-Hans"], variants["zh-Hans"]["difficulty_menu"]),
+            "    default:",
+            "        return 0;",
+            "    }",
+            "}",
+            "",
             "const struct LocalizedUiGraphicsSubtitleSlide *LocalizedUiGraphics_GetSubtitleSlides(void)",
             "{",
             "    switch (LocalizedUiGraphics_CurrentCjkLocale()) {",
@@ -669,6 +689,13 @@ def check() -> None:
 
     for locale in ("ja", "zh-Hans"):
         variant = manifest["variants"][locale]
+        difficulty_menu = variant.get("difficulty_menu")
+        if (
+            not isinstance(difficulty_menu, int)
+            or difficulty_menu < 0
+            or difficulty_menu >= len(variant["assets"])
+        ):
+            raise ValueError(f"{locale}: difficulty-menu asset is invalid")
         if len(variant["subtitle"]) != SUBTITLE_COUNT:
             raise ValueError(f"{locale}: subtitle slide count drift")
         if len(variant["chapter"]["entries"]) != CHAPTER_TITLE_COUNT:
