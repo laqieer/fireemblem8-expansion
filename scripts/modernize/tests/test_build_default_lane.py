@@ -292,7 +292,8 @@ class NoLaneSelectionVariableSurvivesInMakefileTests(unittest.TestCase):
         recipe = match.group(1)
         self.assertIn("expansion-modern-boot-check MODERN_CONFIG=release MODERN_ABI=aapcs", recipe)
         self.assertNotIn("+$(MAKE)", recipe)
-        self.assertIn("$(filter n -n --dry-run --just-print --recon,$(MAKEFLAGS))", recipe)
+        self.assertIn("for flag in $(MAKEFLAGS); do", recipe)
+        self.assertIn("*n*) dry_run=1 ;;", recipe)
         self.assertNotIn("ifeq", recipe)
         self.assertNotIn("FE8_DEFAULT_LANE", recipe)
 

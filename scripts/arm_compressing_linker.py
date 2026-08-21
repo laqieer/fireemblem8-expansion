@@ -80,9 +80,15 @@ def build_and_publish_output(outputfile, builder):
         if os.path.isfile(filename):
             os.unlink(filename)
     staging = staging_output_path(output)
+    staging_sym = staging + '.sym.o'
+    previous = staging + '.previous'
+    previous_sym = previous + '.sym.o'
+    moved_output = False
+    moved_sym = False
+    published_output = False
+    published_sym = False
     try:
         builder(staging)
-        staging_sym = staging + '.sym.o'
 
         if not os.path.isfile(staging):
             raise RuntimeError('linker did not produce staged output: %s' % staging)
@@ -90,8 +96,27 @@ def build_and_publish_output(outputfile, builder):
             raise RuntimeError(
                 'linker did not produce staged symbol output: %s' % staging_sym)
 
+        if os.path.isfile(output):
+            os.replace(output, previous)
+            moved_output = True
+        if os.path.isfile(output + '.sym.o'):
+            os.replace(output + '.sym.o', previous_sym)
+            moved_sym = True
+
         os.replace(staging, output)
+        published_output = True
         os.replace(staging_sym, output + '.sym.o')
+        published_sym = True
+    except:
+        if published_output and os.path.isfile(output):
+            os.unlink(output)
+        if published_sym and os.path.isfile(output + '.sym.o'):
+            os.unlink(output + '.sym.o')
+        if moved_output:
+            os.replace(previous, output)
+        if moved_sym:
+            os.replace(previous_sym, output + '.sym.o')
+        raise
     finally:
         remove_staging_outputs(staging)
 

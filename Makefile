@@ -238,7 +238,16 @@ src/menu_def.o: CC1FLAGS += -Wno-error
 # there is nothing for quickstart -- or anyone else -- to set to reach the
 # archival lane except this target's name.
 all:
-	@if [ -n "$(filter n -n --dry-run --just-print --recon,$(MAKEFLAGS))" ]; then \
+	@dry_run=0; \
+	for flag in $(MAKEFLAGS); do \
+		case "$$flag" in \
+		--) break ;; \
+		n|-n|--dry-run|--just-print|--recon) dry_run=1 ;; \
+		--*) ;; \
+		*n*) dry_run=1 ;; \
+		esac; \
+	done; \
+	if [ "$$dry_run" = 1 ]; then \
 		printf '%s\n' \
 			'$(MAKE) expansion-modern-boot-check MODERN_CONFIG=release MODERN_ABI=aapcs'; \
 	else \

@@ -157,13 +157,10 @@ class ArmCompressingLinkerLockTests(unittest.TestCase):
                         "producer did not publish the staged object",
                     )
 
-                    # Without the shared consumer lock, independently opening
-                    # the two paths can observe the unavoidable replace gap.
+                    # Without the shared consumer lock, a reader can observe
+                    # the publication gap while the prior pair is staged away.
                     self.assertEqual(output.read_text(encoding="utf-8"), "new object")
-                    self.assertEqual(
-                        symbol_output.read_text(encoding="utf-8"),
-                        "old symbols",
-                    )
+                    self.assertFalse(symbol_output.exists())
 
                     consumer = executor.submit(consume)
                     self.assertTrue(
@@ -266,6 +263,34 @@ class ArmCompressingLinkerLockTests(unittest.TestCase):
 
             with self.assertRaisesRegex(RuntimeError, "simulated compressor failure"):
                 arm_linker.build_and_publish_output(output, failed_build)
+
+            self.assertEqual(output.read_text(encoding="utf-8"), "old object")
+            self.assertEqual(symbol_output.read_text(encoding="utf-8"), "old symbols")
+            self.assertEqual(list(Path(temporary).glob(".shared.o.*")), [])
+
+    def test_sidecar_publish_failure_restores_last_complete_pair(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary) / "shared.o"
+            symbol_output = Path(str(output) + ".sym.o")
+            output.write_text("old object", encoding="utf-8")
+            symbol_output.write_text("old symbols", encoding="utf-8")
+            original_replace = arm_linker.os.replace
+
+            def fail_sidecar_publish(source, destination):
+                if source.endswith(".tmp.sym.o") and destination == str(symbol_output):
+                    raise OSError("simulated sidecar publication failure")
+                original_replace(source, destination)
+
+            def build(staging):
+                Path(staging).write_text("new object", encoding="utf-8")
+                Path(staging + ".sym.o").write_text("new symbols", encoding="utf-8")
+
+            arm_linker.os.replace = fail_sidecar_publish
+            try:
+                with self.assertRaisesRegex(OSError, "sidecar publication failure"):
+                    arm_linker.build_and_publish_output(output, build)
+            finally:
+                arm_linker.os.replace = original_replace
 
             self.assertEqual(output.read_text(encoding="utf-8"), "old object")
             self.assertEqual(symbol_output.read_text(encoding="utf-8"), "old symbols")

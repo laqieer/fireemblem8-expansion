@@ -171,10 +171,9 @@ class ModernElfTargetTests(unittest.TestCase):
     def test_dry_run_does_not_fail_on_missing_sidecar(self):
         """make -n with a guaranteed-missing sidecar must exit 0."""
         mk = (ROOT / "modern.mk").read_text(encoding="utf-8")
-        self.assertIn(
-            "$(filter n -n --dry-run --just-print --recon,$(MAKEFLAGS))",
-            mk,
-        )
+        self.assertIn("for flag in $(MAKEFLAGS); do", mk)
+        self.assertIn("--) break ;;", mk)
+        self.assertIn("*n*) dry_run=1 ;;", mk)
         self.assertNotIn("$(findstring n,$(MAKEFLAGS))", mk)
         self.assertNotIn('+@if [ ! -f "$(MODERN_ELF_BANIM_SYM)"', mk)
         with tempfile.TemporaryDirectory() as tmp:
