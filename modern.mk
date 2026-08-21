@@ -42,6 +42,7 @@ MODERN_GOALS := \
 	expansion-modern-starter-qol-check \
 	expansion-modern-starter-runtime-check \
 	expansion-modern-bgm-registry-check \
+	expansion-modern-banim-package-runtime-check \
 	expansion-modern-aoe-profile-rom \
 	expansion-modern-aoe-check \
 	expansion-modern-idspace-active-check \
