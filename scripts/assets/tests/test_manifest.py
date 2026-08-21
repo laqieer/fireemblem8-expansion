@@ -373,11 +373,16 @@ class AssetManifestTests(unittest.TestCase):
         self.assertTrue(os.path.isfile(os.path.join(out_dir, "portraits", record["id"], "tileset.4bpp.lz")))
         self.assertEqual(len(manifest.portrait_component_outputs(records, out_dir)), 7)
 
-    def test_formatted_portrait_package_uses_low_nibble_first_4bpp(self):
+    def test_formatted_portrait_package_uses_tile_ordered_low_nibble_first_4bpp(self):
+        rows = [[1, 2] * 4 + [3, 4] * 4 for _ in range(8)]
+        packed = manifest._pack_4bpp(rows, 0, 0, 16, 8)
         self.assertEqual(
-            manifest._pack_4bpp([[1, 2, 3, 4]], 0, 0, 4, 1),
-            bytes((0x21, 0x43)),
+            packed[:4],
+            bytes((0x21, 0x21, 0x21, 0x21)),
         )
+        self.assertEqual(packed[32:36], bytes((0x43, 0x43, 0x43, 0x43)))
+        with self.assertRaisesRegex(ValueError, "multiples of 8"):
+            manifest._pack_4bpp([[1, 2, 3, 4]], 0, 0, 4, 1)
 
     def test_formatted_portrait_package_rejects_sheet_and_metadata_failures(self):
         record = valid_portrait_record(TEST_ROOT)

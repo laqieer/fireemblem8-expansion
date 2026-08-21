@@ -508,10 +508,14 @@ def _read_jasc_palette(path):
 
 
 def _pack_4bpp(rows, x, y, width, height):
+    if width % 8 or height % 8:
+        raise ValueError("4bpp component dimensions must be multiples of 8 pixels")
     output = bytearray()
-    for row in rows[y:y + height]:
-        for column in range(x, x + width, 2):
-            output.append(row[column] | (row[column + 1] << 4))
+    for tile_y in range(y, y + height, 8):
+        for tile_x in range(x, x + width, 8):
+            for row in rows[tile_y:tile_y + 8]:
+                for column in range(tile_x, tile_x + 8, 2):
+                    output.append(row[column] | (row[column + 1] << 4))
     return bytes(output)
 
 

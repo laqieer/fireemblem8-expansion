@@ -32,6 +32,10 @@ The fixed sheet grid is deliberately not inferred:
 | Open/closed eye frames | `(0, 72, 32, 16)`, `(32, 72, 32, 16)` |
 | Closed/open mouth frames | `(64, 72, 32, 16)`, `(96, 72, 32, 16)` |
 
+Every component rectangle must remain a multiple of 8 pixels in both axes.
+Generated 4bpp data is emitted in GBA 8x8 tile order with the left pixel in
+each byte's low nibble; it is never serialized in image scanline order.
+
 The adapter rejects missing/multiple sheets, non-indexed/interlaced/wrong-size
 PNG data, palette violations, JASC disagreement, unsafe or untracked paths,
 incomplete metadata, invalid anchors/frames, duplicate IDs, duplicate
