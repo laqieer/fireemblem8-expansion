@@ -17,6 +17,12 @@ Each manifest record declares exactly one tracked package directory with:
 * optionally, a same-name JASC-PAL (`JASC-PAL`, `0100`, 16 RGB rows) whose
   colors exactly match the PNG palette.
 
+The tracked-artifact guard permits these source inputs only at
+`assets/portraits/<package>/<package>.png` and the optional matching `.pal`
+sidecar. It rejects alternate basenames, nested paths, other palette formats,
+and all other PNG/palette locations under `assets/`; this is a package-source
+exception, not a general generated-artifact or image allowance.
+
 The fixed sheet grid is deliberately not inferred:
 
 | Component | Rectangle `(x, y, width, height)` |

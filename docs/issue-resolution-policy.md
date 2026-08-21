@@ -64,7 +64,13 @@ not reject arbitrary `.map`, `.a`, `.d`, or `.hex` files, and narrowly permits
 the repository's already-tracked source-asset classes (for example
 `.png`/`.agbpal`/`.pal`/`.mar`/`.tmap`/`.tsa` under `graphics/`, `.png` under
 `preview/`, and `.aif`/`.mid`/`.pcm` under `sound/`) so that ordinary
-decompilation and graphics/sound source work keeps functioning.
+decompilation and graphics/sound source work keeps functioning. Source-owned
+formatted portrait packages have one additional deliberately narrow allowance:
+only `assets/portraits/<package>/<package>.png` and an optional
+`assets/portraits/<package>/<package>.pal` sidecar. Other PNG/palette names,
+nesting, extensions, and locations under `assets/` remain rejected. The
+asset-manifest validator owns metadata, provenance, and package-schema checks;
+this guard only recognizes the safe source-input location.
 
 **This is a structural-compatibility allowance only.** Passing the checker
 does not mean any tracked asset is confirmed to be legally cleared,

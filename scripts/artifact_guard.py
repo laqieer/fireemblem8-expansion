@@ -44,6 +44,9 @@ PROHIBITED_PATH_SEGMENTS = {
 PROHIBITED_ROOT_ARTIFACTS = {"fireemblem8.map", "fireemblem8_relocs.map", "objects.lst"}
 
 # Existing tracked source assets are narrowly allowed only under known roots.
+# Portrait package sheets are source inputs owned by assets/manifest.json; the
+# package directory and the sheet basename must agree so this does not turn
+# assets/ into a general image/palette allowance.
 RESTRICTED_EXTENSIONS = {
     ".png", ".bin", ".agbpal", ".mid", ".pal", ".aif", ".mar", ".pcm",
     ".tmap", ".tsa",
@@ -166,6 +169,18 @@ def _extension_of(filename):
     return f".{filename.rsplit('.', 1)[-1]}" if "." in filename else ""
 
 def _is_allowed_source_asset(lower_path, filename, ext):
+    portrait_prefix = "assets/portraits/"
+
+    if lower_path.startswith(portrait_prefix) and ext in {".png", ".pal"}:
+        relative_path = lower_path[len(portrait_prefix):]
+        package_name, separator, package_file = relative_path.partition("/")
+
+        return (
+            bool(package_name)
+            and separator == "/"
+            and "/" not in package_file
+            and package_file in {f"{package_name}.png", f"{package_name}.pal"}
+        )
     if ext == ".bin":
         return lower_path.startswith("graphics/") and (
             filename.endswith(".map.bin") or filename.endswith(".tsa.bin")
