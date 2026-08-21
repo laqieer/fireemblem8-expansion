@@ -17,8 +17,9 @@ separate `features` and `cases` arrays:
   evidence or an explicit `manual_only_reason` for a visual, audio, or UX
   criterion that cannot be asserted deterministically.
 
-Case areas use non-empty uppercase alphanumeric hyphen-separated segments;
-feature IDs use non-empty lowercase alphanumeric hyphen-separated segments.
+Case areas start with an uppercase letter, while feature IDs start with a
+lowercase letter. Their hyphen-separated segments must be non-empty and use
+only the corresponding alphanumeric character set.
 Stable IDs are never silently renumbered or reused. Add a case from
 [`template.md`](template.md), then add the corresponding feature/case
 records to `registry.json` in the same change. The existing
