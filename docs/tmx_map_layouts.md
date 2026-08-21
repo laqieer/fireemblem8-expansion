@@ -47,6 +47,9 @@ palettes, or configuration is a separate future capability.
 3. Run `make assets-validate assets-generate assets-check assets-test`, then
    the supported modern build profile. Generated `.mar`, JSON, `.bin`, and
    `.lz` products live only below `build/generated/assets/tmx/`.
+   `ASSET_OUTPUT_DIR` is intentionally fixed to `build/generated/assets`
+   while this compile-time adapter has an INCBIN consumer, so a build cannot
+   generate the stream in a location different from the C filename.
 
 `CH2_MAIN_MAP` is the reference migration. Its generated `.mar` exactly
 matches the prior Chapter 2 source payload; the existing converter then emits

@@ -124,10 +124,14 @@ class AssetManifestTests(unittest.TestCase):
         self.assert_validation_error([non_nfc], "NFC-normalized Unicode")
 
         link_path = os.path.join(
-            REPO_ROOT, "scripts", "assets", "tests", ".asset_manifest_source_link.tmx"
+            REPO_ROOT,
+            "scripts",
+            "assets",
+            "tests",
+            ".asset_manifest_source_link.tmx",
         )
         os.symlink(
-            os.path.join(            REPO_ROOT, "assets", "tmx", "Ch2Map.tmx"),
+            os.path.join(REPO_ROOT, "assets", "tmx", "Ch2Map.tmx"),
             link_path,
         )
         self.addCleanup(lambda: os.path.lexists(link_path) and os.unlink(link_path))
@@ -339,6 +343,35 @@ class AssetManifestTests(unittest.TestCase):
         with self.assertRaises(GeneratedDataValidationError) as raised:
             manifest.check(source, out_dir)
         self.assertIn("orphan generated output", str(raised.exception))
+
+    def test_asset_makefile_tracks_declared_manifest_sources(self):
+        with open(os.path.join(REPO_ROOT, "assets.mk"), encoding="utf-8") as handle:
+            asset_makefile = handle.read()
+        self.assertIn(
+            'ASSET_MANIFEST_SOURCES := $(shell $(ASSET_TOOL) --manifest "$(ASSET_MANIFEST)" sources)',
+            asset_makefile,
+        )
+        self.assertIn(
+            "$(ASSET_OUTPUT_MK): $(ASSET_MANIFEST) $(ASSET_MANIFEST_SOURCES) $(ASSET_TOOL_INPUTS)",
+            asset_makefile,
+        )
+
+    def test_asset_makefile_rejects_an_incbin_output_override(self):
+        result = subprocess.run(
+            [
+                "make",
+                "-f",
+                "assets.mk",
+                "ASSET_OUTPUT_DIR=build/generated/assets/alternate",
+                "assets-validate",
+            ],
+            cwd=REPO_ROOT,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("must be build/generated/assets", result.stderr)
 
     def test_check_detects_orphans_through_a_relative_output_path(self):
         source = self.write_manifest([valid_record()])

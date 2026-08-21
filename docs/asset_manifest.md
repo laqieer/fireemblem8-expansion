@@ -91,9 +91,13 @@ before rendering:
 
 The generated dependency fragment attaches the TMX source to the existing
 table object and makes the existing `const_data_chapter_maps.o` depend on its
-ignored generated `.mar`/JSON -> `.bin` -> `.lz` chain. It does not emit C,
+ignored generated `.mar`/JSON -> `.bin` -> `.lz` chain. Every declared source
+is also a prerequisite of the generated include, so editing a TMX regenerates
+that chain before Make resolves object prerequisites. It does not emit C,
 assembly, a linker list, or an asset lookup table. The existing `Ch2Map`
-symbol now INCbins that generated LZ stream; the pre-existing
+symbol now INCbins that generated LZ stream from the fixed
+`build/generated/assets/` root. `ASSET_OUTPUT_DIR` therefore fails fast if
+overridden while a TMX map layout has an INCBIN consumer; the pre-existing
 `gChapterDataAssetTable`, `GetChapterMapPointer`, and
 `InitChapterMap`/`UnpackChapterMap` path remain the runtime consumers.
 
@@ -113,8 +117,9 @@ fragment, inventory, and adapter-owned canonical outputs and fails on stale,
 missing, or orphan files. It recognizes only the TMX adapter's `.bin` and
 `.bin.lz` transient build products in addition to those canonical outputs.
 The normal Make include regenerates the dependency fragment before graph
-resolution when the source manifest/framework changes, then exposes ordinary
-source prerequisites for the actual owning object. Outputs are confined to
+resolution when the source manifest, framework, or any declared source
+changes, then exposes ordinary source prerequisites for the actual owning
+object. Outputs are confined to the fixed
 ignored `build/generated/assets/`, are disposable, and must never be
 hand-edited or committed.
 
