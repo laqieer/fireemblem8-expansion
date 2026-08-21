@@ -11,7 +11,7 @@ import sys
 import unittest
 from unittest import mock
 
-from scripts.assets import manifest
+from scripts.assets import banim, manifest
 from scripts.generated_data.diagnostics import GeneratedDataError, GeneratedDataValidationError
 
 
@@ -324,6 +324,119 @@ class AssetManifestTests(unittest.TestCase):
             with open(os.path.join(out_dir, name), encoding="utf-8") as handle:
                 outputs[name] = handle.read()
         return outputs
+
+
+class BattleAnimationPackageTests(unittest.TestCase):
+    def setUp(self):
+        if os.path.exists(TEST_ROOT):
+            shutil.rmtree(TEST_ROOT)
+        os.makedirs(TEST_ROOT)
+
+    def tearDown(self):
+        if os.path.exists(TEST_ROOT):
+            shutil.rmtree(TEST_ROOT)
+
+    def test_real_package_is_valid_and_generates_existing_runtime_symbols(self):
+        records = manifest.load_and_validate(os.path.join(REPO_ROOT, "assets", "manifest.json"))
+        output = os.path.join(TEST_ROOT, "out")
+        manifest.generate(os.path.join(REPO_ROOT, "assets", "manifest.json"), output)
+        with open(os.path.join(output, "banim", "banim_data_entries.inc"), encoding="utf-8") as handle:
+            entry = handle.read()
+        with open(os.path.join(output, "banim", "banim_defs.inc"), encoding="utf-8") as handle:
+            definition = handle.read()
+        self.assertIn('{"lorm_sp1", &banim_lorm_sp1_modes_bin', entry)
+        self.assertIn("BanimPackage_LormSp1Proof", definition)
+        self.assertEqual(len([record for record in records if record.kind == "battle-animation-package"]), 1)
+        manifest.check(os.path.join(REPO_ROOT, "assets", "manifest.json"), output)
+
+    def test_png_contract_and_script_commands_fail_closed(self):
+        png = os.path.join(REPO_ROOT, "graphics", "banim", "banim_lorm_sp1_sheet_0.png")
+        self.assertEqual(banim.read_indexed_png(png)["tiles"], 256)
+        corrupt_png = os.path.join(TEST_ROOT, "invalid.png")
+        with open(png, "rb") as source, open(corrupt_png, "wb") as destination:
+            data = bytearray(source.read())
+            data[29] ^= 1
+            destination.write(data)
+        with self.assertRaisesRegex(ValueError, "invalid PNG chunk CRC"):
+            banim.read_indexed_png(corrupt_png)
+
+        script = os.path.join(TEST_ROOT, "invalid.txt")
+        with open(script, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write("BANIM 1\nmode normal\nframe 1 idle\ncommand call_spell\nend\n")
+        with self.assertRaisesRegex(ValueError, "unsupported vanilla command"):
+            banim.parse_script(script, {"idle": "fixture.png"})
+
+        with open(script, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write("BANIM 1\nmode normal\nframe 1 idle\nend\n")
+        with self.assertRaisesRegex(ValueError, "must define every v1 mode"):
+            banim.parse_script(script, {"idle": "fixture.png"})
+
+        with open(script, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write(
+                "BANIM 1\nmode normal\nframe 256 idle\nend\n"
+                "mode critical\nwait 1\nend\nmode ranged\nwait 1\nend\n"
+                "mode dodge\nwait 1\nend\nmode standing\nwait 1\nend\n"
+            )
+        with self.assertRaisesRegex(ValueError, "within 1..255"):
+            banim.parse_script(script, {"idle": "fixture.png"})
+
+        with open(script, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write(
+                "BANIM 1\nmode normal\nwait 1\ncommand start_attack_1\nloop 1\nend\n"
+                "mode critical\nwait 1\nend\nmode ranged\nwait 1\nend\n"
+                "mode dodge\nwait 1\nend\nmode standing\nwait 1\nend\n"
+            )
+        with self.assertRaisesRegex(ValueError, "loop without a preceding timed group"):
+            banim.parse_script(script, {"idle": "fixture.png"})
+
+    def test_banim_ownership_and_resource_conflicts_fail(self):
+        with open(os.path.join(REPO_ROOT, "assets", "manifest.json"), encoding="utf-8") as handle:
+            document = json.load(handle)
+        proof = next(record for record in document["assets"] if record["kind"] == "battle-animation-package")
+        duplicate = copy.deepcopy(proof)
+        duplicate["id"] = "LORM_SP1_DUPLICATE"
+        document["assets"].append(duplicate)
+        path = os.path.join(TEST_ROOT, "manifest.json")
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(document, handle)
+        package = banim.load_package(
+            REPO_ROOT,
+            proof["sources"][0],
+            proof["sources"][1],
+            set(proof["sources"]),
+        )
+        package.data = copy.deepcopy(package.data)
+        duplicate_package = copy.deepcopy(package)
+        duplicate_package.data["id"] = duplicate["id"]
+        with mock.patch.object(banim, "load_package", side_effect=[package, duplicate_package]):
+            with self.assertRaises(GeneratedDataValidationError) as raised:
+                manifest.load_and_validate(path)
+        self.assertIn("ownership conflict", str(raised.exception))
+
+        proof["resources"]["oamEntries"] = 129
+        document["assets"] = [record for record in document["assets"] if record["id"] != "LORM_SP1_DUPLICATE"]
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(document, handle)
+        with self.assertRaises(GeneratedDataValidationError) as raised:
+            manifest.load_and_validate(path)
+        self.assertIn("resources.oamEntries", str(raised.exception))
+
+    def test_runtime_test_declarations_are_generated_from_package_data(self):
+        records = manifest.load_and_validate(os.path.join(REPO_ROOT, "assets", "manifest.json"))
+        output = os.path.join(TEST_ROOT, "out")
+        manifest.generate(os.path.join(REPO_ROOT, "assets", "manifest.json"), output)
+        with open(
+            os.path.join(output, "banim", "banim_runtime_test_defs.h"), encoding="utf-8"
+        ) as handle:
+            definitions = handle.read()
+        package = next(record.banim_package for record in records if record.id == "LORM_SP1_PROOF")
+        self.assertIn("#define BANIM_PACKAGE_LORM_SP1_PROOF_MODE_COUNT 5", definitions)
+        self.assertIn(
+            "#define BANIM_PACKAGE_LORM_SP1_PROOF_TOTAL_DURATION {}".format(
+                sum(package.mode_durations.values())
+            ),
+            definitions,
+        )
 
 
 if __name__ == "__main__":

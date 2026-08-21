@@ -1,0 +1,37 @@
+{
+  "schemaVersion": "fe8.community-banim.v1",
+  "id": "LORM_SP1_PROOF",
+  "abbreviation": "lorm_sp1",
+  "animConf": "AnimConf_0",
+  "class": "CLASS_EPHRAIM_LORD",
+  "runtime": {
+    "modes": "banim/banim_lorm_sp1_modes.bin",
+    "motion": "banim/banim_lorm_sp1_motion.o",
+    "oamLeft": "banim/banim_lorm_sp1_oam_l.bin",
+    "oamRight": "banim/banim_lorm_sp1_oam_r.bin",
+    "palette": "graphics/banim/banim_lorm_sp1.agbpal",
+    "linkerInputs": [
+      "graphics/banim/banim_lorm_sp1_sheet_0.4bpp.lz",
+      "graphics/banim/banim_lorm_sp1.agbpal.lz",
+      "banim/banim_lorm_sp1_oam_l.bin.lz",
+      "banim/banim_lorm_sp1_oam_r.bin.lz",
+      "banim/banim_lorm_sp1_motion.o",
+      "banim/banim_lorm_sp1_modes.bin"
+    ]
+  },
+  "frames": [
+    {
+      "id": "idle",
+      "path": "graphics/banim/banim_lorm_sp1_sheet_0.png"
+    }
+  ],
+  "paletteVariants": [
+    "default"
+  ],
+  "resources": {
+    "maxFrames": 1,
+    "maxSheetTiles": 256,
+    "maxOamPerFrame": 32,
+    "maxPaletteColors": 16
+  }
+}

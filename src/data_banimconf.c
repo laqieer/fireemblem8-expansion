@@ -1822,3 +1822,5 @@ CONST_DATA struct BattleAnimDef AnimConf_100[] = {
     },
     { 0 }
 };
+
+#include "../build/generated/assets/banim/banim_defs.inc"

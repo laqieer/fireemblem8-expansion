@@ -202,6 +202,7 @@ struct BattleAnim banim_data[] = {
 	{"mf_mi1", &banim_mf_mi1_modes_bin, &banim_mf_mi1_motion_o, &banim_mf_mi1_oam_r_bin, &banim_mf_mi1_oam_l_bin, &banim_mf_mi1_agbpal}, // 0xC6
 	{"prif_ro1", &banim_prif_ro1_2_modes_bin, &banim_prif_ro1_2_motion_o, &banim_prif_ro1_2_oam_r_bin, &banim_prif_ro1_2_oam_l_bin, &banim_prif_ro1_2_agbpal}, // 0xC7
 	{"fifd_mg1", &banim_fifd_mg1_2_modes_bin, &banim_fifd_mg1_2_motion_o, &banim_fifd_mg1_2_oam_r_bin, &banim_fifd_mg1_2_oam_l_bin, &banim_fifd_mg1_2_agbpal}, // 0xC8
+#include "../build/generated/assets/banim/banim_data_entries.inc"
 };
 __attribute__((section(".data.banim_array_len")))
 long long banim_number = sizeof(banim_data) / sizeof(banim_data[0]);
