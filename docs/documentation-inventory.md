@@ -72,6 +72,7 @@ Markdown library, so it stays stdlib-parseable and diff-friendly.
 - docs/aoe.md | laqieer | current | Typed bounded AoE targeting/effects, shared item/action/AI seam, and default-off reference (issue #42)
 - docs/portrait_resolver.md | laqieer | current | Typed character/class/chapter/flag portrait and minimug resolver with legacy fallback (issue #35)
 - docs/community_asset_coverage.md | laqieer | current | Authoritative community asset-family ownership, build/runtime seam, provenance boundary, and gap catalog (issue #59)
+- docs/asset_manifest.md | laqieer | current | Versioned source-owned asset manifest, ownership dependency generation, and adapter contract (issue #60)
 - docs/bgm_routing.md | laqieer | current | Typed BGM context routing, action selectors, and preserve/continue policy
 - docs/ui_presentation_registry.md | laqieer | current | Typed UI presentation manifests and bounded presentation-resource registry
 - docs/localization.md | laqieer | current | Stable locale/message IDs, catalog authoring, prefs/UI, budgets, and runtime matrices (issue #18)
