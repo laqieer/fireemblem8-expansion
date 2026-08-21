@@ -833,6 +833,27 @@ class TesterCaseRegistryTests(unittest.TestCase):
         anchor["cases"][0]["anchor"] = "missing-anchor"
         self.assertTrue(any("missing anchor" in message for message in self._messages(anchor)))
 
+    def test_registry_paths_cannot_escape_through_symlinks(self):
+        with TempRepo() as repo:
+            registry = self._valid_registry()
+            self._write_registry_fixture(repo.root, registry)
+            outside = write(
+                os.path.dirname(repo.root),
+                os.path.basename(repo.root) + "-registry-outside.md",
+                "# Outside reference\n",
+            )
+            os.symlink(outside, os.path.join(repo.root, "docs", "outside.md"))
+            registry["features"][0]["reference"] = "docs/outside.md"
+            write(
+                repo.root,
+                check_docs.TEST_CASE_REGISTRY_PATH,
+                json.dumps(registry, indent=2) + "\n",
+            )
+            messages = [
+                finding.message for finding in check_docs.check_test_case_registry(repo.root)
+            ]
+            self.assertTrue(any("missing document" in message for message in messages))
+
     def test_current_and_excluded_feature_lifecycle_rules_fail(self):
         uncovered = self._valid_registry()
         uncovered["features"][0]["required_cases"] = []

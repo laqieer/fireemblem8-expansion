@@ -1223,7 +1223,11 @@ def _registry_root_path(root, path):
     normalized = os.path.normpath(path)
     if normalized == ".." or normalized.startswith(".." + os.sep):
         return None
-    return os.path.join(root, normalized)
+    resolved_root = os.path.realpath(root)
+    resolved_path = os.path.realpath(os.path.join(resolved_root, normalized))
+    if os.path.commonpath([resolved_root, resolved_path]) != resolved_root:
+        return None
+    return resolved_path
 
 
 def _check_registry_document(root, path, anchor, label):
