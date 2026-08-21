@@ -115,6 +115,8 @@ class ArmCompressingLinkerLockTests(unittest.TestCase):
             symbol_output.write_text("old symbols", encoding="utf-8")
             first_replace = threading.Event()
             release_publish = threading.Event()
+            consumer_started = threading.Event()
+            consumer_acquired_lock = threading.Event()
             original_replace = arm_linker.os.replace
 
             def pause_between_publications(source, destination):
@@ -134,6 +136,15 @@ class ArmCompressingLinkerLockTests(unittest.TestCase):
                 with arm_linker.output_lock(output):
                     arm_linker.build_and_publish_output(output, build)
 
+            def consume():
+                consumer_started.set()
+                with arm_linker.output_lock(output):
+                    consumer_acquired_lock.set()
+                    return (
+                        output.read_text(encoding="utf-8"),
+                        symbol_output.read_text(encoding="utf-8"),
+                    )
+
             arm_linker.os.replace = pause_between_publications
             try:
                 with ThreadPoolExecutor(max_workers=2) as executor:
@@ -151,17 +162,13 @@ class ArmCompressingLinkerLockTests(unittest.TestCase):
                         "old symbols",
                     )
 
-                    consumer = executor.submit(
-                        arm_linker.run_with_output_lock,
-                        output,
-                        lambda: (
-                            output.read_text(encoding="utf-8"),
-                            symbol_output.read_text(encoding="utf-8"),
-                        ),
+                    consumer = executor.submit(consume)
+                    self.assertTrue(
+                        consumer_started.wait(3),
+                        "consumer task did not start",
                     )
-                    time.sleep(0.1)
                     self.assertFalse(
-                        consumer.done(),
+                        consumer_acquired_lock.is_set(),
                         "consumer bypassed the shared object publication lock",
                     )
 
@@ -182,6 +189,7 @@ class ArmCompressingLinkerLockTests(unittest.TestCase):
                     [
                         sys.executable,
                         str(MODULE_PATH),
+                        "--debug",
                         "--lock-output",
                         str(output),
                         "--",
@@ -194,7 +202,10 @@ class ArmCompressingLinkerLockTests(unittest.TestCase):
                     text=True,
                 )
                 self.addCleanup(consumer.kill)
-                time.sleep(0.1)
+                self.assertTrue(
+                    consumer.stdout.readline().startswith("Waiting for output lock:"),
+                    "consumer did not reach the output lock",
+                )
                 self.assertIsNone(
                     consumer.poll(),
                     "cross-process consumer bypassed the producer lock",

@@ -169,6 +169,12 @@ class ModernElfTargetTests(unittest.TestCase):
 
     def test_dry_run_does_not_fail_on_missing_sidecar(self):
         """make -n with a guaranteed-missing sidecar must exit 0."""
+        mk = (ROOT / "modern.mk").read_text(encoding="utf-8")
+        self.assertIn(
+            "$(filter n -n --dry-run --just-print --recon,$(MAKEFLAGS))",
+            mk,
+        )
+        self.assertNotIn("$(findstring n,$(MAKEFLAGS))", mk)
         with tempfile.TemporaryDirectory() as tmp:
             missing_sym = Path(tmp) / "dir with spaces" / "banim.o.sym.o"
             banim_obj = Path(ROOT / "banim" / "data_banim.o")

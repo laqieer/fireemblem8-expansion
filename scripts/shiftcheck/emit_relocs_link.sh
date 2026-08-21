@@ -13,6 +13,9 @@
 # Env (default to the project's values): LD, OBJECTS_LST, BANIM_OBJECT.
 set -e
 
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+repo_root=$(CDPATH= cd -- "$script_dir/../.." && pwd)
+
 OUT="$1"
 LDSCRIPT="$2"
 shift 2

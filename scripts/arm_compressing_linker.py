@@ -40,11 +40,11 @@ def output_lock(outputfile, is_debug=False):
     lock_path = output_lock_path(outputfile)
     with open(lock_path, 'a+', encoding='utf-8') as lock_file:
         if is_debug:
-            print('Waiting for output lock: %s' % lock_path)
+            print('Waiting for output lock: %s' % lock_path, flush=True)
         fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
         try:
             if is_debug:
-                print('Acquired output lock: %s' % lock_path)
+                print('Acquired output lock: %s' % lock_path, flush=True)
             yield
         finally:
             fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
