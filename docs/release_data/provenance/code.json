@@ -1328,8 +1328,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Wave 0/issue #9 seed: repository-authored documentation. No human legal/provenance review has been recorded yet; this manifest records that honestly rather than asserting a license or clearance.",
-    "oid": "d0e0e7bcbdb186deb60bca19c79c03511ce566e4",
-    "sha256": "bc130edcaff3d35fb90197312fb7deee983ab8e5356da5824ebe778d52ddd337"
+    "oid": "9a2757dda47396fb76501a66201d4560f9928bdf",
+    "sha256": "95ddc08fcb5f47e9d50020196c55c60d39dc7820902f3077807864b7a7bfc320"
   },
   {
     "path": "docs/localization.md",
@@ -1388,8 +1388,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Wave 0/issue #9 seed: repository-authored documentation. No human legal/provenance review has been recorded yet; this manifest records that honestly rather than asserting a license or clearance.",
-    "oid": "463e96d8cb61ade4957352da93b2f6c8e1439136",
-    "sha256": "5097b0e83ac0c247d06f56e2eb207e6394c8d972bfaaf86fa0b9c862801bb989"
+    "oid": "12b474d7ecb68222a6b7d41a3c75818eecfb06d0",
+    "sha256": "658d5778c3fc2156eb2d570d50b3ff6636189a6f5ffa9bac45686b46e9198fc5"
   },
   {
     "path": "docs/portrait_resolver.md",
@@ -1508,8 +1508,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Wave 0/issue #9 seed: repository-authored documentation. No human legal/provenance review has been recorded yet; this manifest records that honestly rather than asserting a license or clearance.",
-    "oid": "0005755ef45c154b107506ccb25cb222282f8365",
-    "sha256": "33b72c5dfb81d114edc7711a8f6e13431300cfc314ea5bed1d094d1e4f0587b5"
+    "oid": "3692f647de47fae351ac8150c1c534838e48ea7c",
+    "sha256": "42690e89bcd9caf8627bc0f02c40283f13f14bdd2ed943bdefa8dfee0c28a352"
   },
   {
     "path": "docs/release_data/provenance/submodules.json",
@@ -1532,8 +1532,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Wave 0/issue #9 seed: repository-authored documentation. No human legal/provenance review has been recorded yet; this manifest records that honestly rather than asserting a license or clearance.",
-    "oid": "462a98812a0775fe51b6ebeb051354a10d5bd482",
-    "sha256": "e8ff3ebc3842e009ebebf962fa572feeca4693a18380eeb6aeed1461e4e6ae01"
+    "oid": "678991cbab77f38954583616f5395bea5ea33e35",
+    "sha256": "a5038d902b311474a5917a78d470b9d69d02ebb030fa113171621fc1b24b0181"
   },
   {
     "path": "docs/release_data/version_ledger.json",
@@ -4364,8 +4364,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Wave 0/issue #9 seed: repository-authored build tooling/config/source surface (or, for asm/, decompiled disassembly derived from the original ROM). No human legal/provenance review has been recorded yet; this manifest records that honestly rather than asserting a license or clearance.",
-    "oid": "c53b69c40e469e28de24512a3292a41628588705",
-    "sha256": "2be75e486bb88b301ea2a4c9c1c00439406bbdb2965b76874f3cf50dbdbfbbe9"
+    "oid": "798e736dd5bbbe2b3025aa87e8a022ca746e29ea",
+    "sha256": "122c4e5bf7bbee97ff29b474d271db030e9298ef7be46d17e42e5416705efd71"
   },
   {
     "path": "scripts/artifact_guard_tests/test_artifact_guard.py",
@@ -4376,8 +4376,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Wave 0/issue #9 seed: repository-authored build tooling/config/source surface (or, for asm/, decompiled disassembly derived from the original ROM). No human legal/provenance review has been recorded yet; this manifest records that honestly rather than asserting a license or clearance.",
-    "oid": "7ad8ad11e9d2ddf426ae1ba2ceb7ecf5e75abdba",
-    "sha256": "d523af14ec47b394bb3c9033998f96923689c4eb4d4b7f583236c5c6d2e19f47"
+    "oid": "04de91ae3ced4dc0891a7fd17cc5d828f935818f",
+    "sha256": "c5b2373d15736fa8b04c0c578afabece2160b873eadc88b775d6f19ceb536343"
   },
   {
     "path": "scripts/asm2casm.py",
@@ -25388,8 +25388,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Wave 0/issue #9 seed: repository-authored build tooling/config/source surface (or, for asm/, decompiled disassembly derived from the original ROM). No human legal/provenance review has been recorded yet; this manifest records that honestly rather than asserting a license or clearance.",
-    "oid": "4c589a5e4f8dcdd809c14a85290873d8953a18b9",
-    "sha256": "dd7af928eae97f6ed8eafb95ef1f85d95ebc3e495be325728510c633fdfe8591"
+    "oid": "b43f2b66d84a354a4bafee8adca9fcd88690771b",
+    "sha256": "66514bc621b7416b78f6d9359bfd716adac97b4c0fb3b463fe3b86f970c9caeb"
   },
   {
     "path": "tools/gba-playtest/tests/c/debugtools_tools_host_stubs.c",
@@ -25400,8 +25400,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Wave 0/issue #9 seed: repository-authored build tooling/config/source surface (or, for asm/, decompiled disassembly derived from the original ROM). No human legal/provenance review has been recorded yet; this manifest records that honestly rather than asserting a license or clearance.",
-    "oid": "48e10323e7023cd5d6a8d0e4f936ea93a2761c9b",
-    "sha256": "628392931b032aef80b52de8939af42779f719891fe0d55bd60547b1720414d2"
+    "oid": "a2ddf5214eebb4c22c6c60c78984498ea7550e29",
+    "sha256": "01f60203c56a7dfb3175747508e62ce7c9e6999bc11a885044f0f96b89e14e64"
   },
   {
     "path": "tools/gba-playtest/tests/c/expansion_aoe_disabled_driver.c",
