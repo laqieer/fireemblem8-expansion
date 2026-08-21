@@ -2167,10 +2167,10 @@ expansion-modern-link-prepare: $(MODERN_ELF_FE6SIO) \
 	@if [ ! -f "$(MODERN_ELF_BANIM_SYM)" ]; then \
 		printf '%s\n' \
 			"Sidecar missing; forcing banim rebuild..." >&2; \
-		rm -f "$(BANIM_OBJECT)" "$(MODERN_ELF_BANIM_SYM)"; \
 	fi
-	+@if [ ! -f "$(MODERN_ELF_BANIM_SYM)" ]; then \
-		$(MAKE) "$(BANIM_OBJECT)"; \
+	+@if [ ! -f "$(MODERN_ELF_BANIM_SYM)" ] && \
+			[ -z "$(findstring n,$(MAKEFLAGS))" ]; then \
+		$(MAKE) -B "$(BANIM_OBJECT)"; \
 	fi
 	@if [ ! -f "$(MODERN_ELF_BANIM_SYM)" ]; then \
 		printf '%s\n' \
@@ -2230,7 +2230,8 @@ $(MODERN_ELF): expansion-modern-link-prepare $(MODERN_ELF_LINK_SETTINGS) \
 			"libc.a." >&2; \
 		exit 1; \
 	fi; \
-	"$(MODERN_LD)" \
+	"$(PYTHON)" scripts/arm_compressing_linker.py \
+		--lock-output "$(BANIM_OBJECT)" -- "$(MODERN_LD)" \
 		--orphan-handling=error \
 		--defsym=__rom_size=$(MODERN_ROM_SIZE_BYTES) \
 		--defsym=__text_shift=$(MODERN_TEXT_SHIFT) \

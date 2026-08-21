@@ -9,9 +9,11 @@
 
 from contextlib import contextmanager
 import fcntl
+import glob
 import getopt
 import hashlib
 import os
+import subprocess
 import sys
 import tempfile
 
@@ -46,6 +48,66 @@ def output_lock(outputfile, is_debug=False):
             yield
         finally:
             fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+
+
+def staging_output_path(outputfile):
+    output = os.path.abspath(outputfile)
+    output_dir = os.path.dirname(output)
+    prefix = '.%s.' % os.path.basename(output)
+    descriptor, staging = tempfile.mkstemp(
+        prefix=prefix, suffix='.tmp', dir=output_dir)
+    os.close(descriptor)
+    os.unlink(staging)
+    return staging
+
+
+def stale_staging_output_paths(outputfile):
+    output = os.path.abspath(outputfile)
+    output_dir = os.path.dirname(output)
+    prefix = '.%s.' % os.path.basename(output)
+    return glob.glob(os.path.join(output_dir, prefix + '*.tmp*'))
+
+
+def remove_staging_outputs(staging):
+    for filename in glob.glob(staging + '*'):
+        if os.path.isfile(filename):
+            os.unlink(filename)
+
+
+def build_and_publish_output(outputfile, builder):
+    output = os.fspath(outputfile)
+    for filename in stale_staging_output_paths(output):
+        if os.path.isfile(filename):
+            os.unlink(filename)
+    staging = staging_output_path(output)
+    try:
+        builder(staging)
+        staging_sym = staging + '.sym.o'
+
+        if not os.path.isfile(staging):
+            raise RuntimeError('linker did not produce staged output: %s' % staging)
+        if not os.path.isfile(staging_sym):
+            raise RuntimeError(
+                'linker did not produce staged symbol output: %s' % staging_sym)
+
+        os.replace(staging, output)
+        os.replace(staging_sym, output + '.sym.o')
+    finally:
+        remove_staging_outputs(staging)
+
+
+def run_with_output_lock(outputfile, command, is_debug=False):
+    with output_lock(outputfile, is_debug):
+        return command()
+
+
+def run_locked_command(outputfile, command, is_debug=False):
+    def run():
+        if is_debug:
+            print('Running with output lock: %s' % ' '.join(command))
+        return subprocess.call(command)
+
+    return run_with_output_lock(outputfile, run, is_debug)
 
 
 def parse_linker_script(filename):
@@ -258,11 +320,12 @@ def main(argv):
     base_addr = 0
     is_debug = False
     is_dependency = False
+    lock_output = None
     try:
         opts, args = getopt.getopt(argv, "ho:l:c:t:b:dm",
                                    ["help", "output=", "script=", "base=",
                                     "ld=", "objcopy=", "compressor=", "debug",
-                                    "dependency"])
+                                    "dependency", "lock-output="])
     except getopt.GetoptError:
         print('Error: wrong option. Use -h for help information.')
         sys.exit(1)
@@ -287,6 +350,8 @@ Default: compressor.py.\n')
             print('\t-d, --debug\tEnable debug infomation output.\n')
             print('\t-m, --dependency\tOutput dependency from linker script \
 for makefile.\n')
+            print('\t--lock-output <file>\tRun the remaining command while \
+holding this output lock.\n')
             sys.exit()
         elif opt in ('-o', '--output'):
             outputfile = arg
@@ -304,6 +369,13 @@ for makefile.\n')
             is_debug = True
         elif opt in ('-m', '--dependency'):
             is_dependency = True
+        elif opt == '--lock-output':
+            lock_output = arg
+    if lock_output is not None:
+        if not args:
+            print('Error: --lock-output requires a command after --.', file=sys.stderr)
+            return 2
+        return run_locked_command(lock_output, args, is_debug)
     obj_list = parse_linker_script(linker_script)
     if is_dependency:
         s = []
@@ -314,10 +386,11 @@ for makefile.\n')
     if objcopy == '':
         objcopy = rreplace(ld, 'ld', 'objcopy', 1)
     with output_lock(outputfile, is_debug):
-        if os.path.exists(outputfile):
-            os.remove(outputfile)
-        link_objects(obj_list, outputfile, base_addr, ld, objcopy, compressor,
-                     is_debug)
+        def build(staging):
+            link_objects(obj_list, staging, base_addr, ld, objcopy, compressor,
+                         is_debug)
+
+        build_and_publish_output(outputfile, build)
 
 
 if __name__ == "__main__":
@@ -325,4 +398,6 @@ if __name__ == "__main__":
         argv = ['-h']
     else:
         argv = sys.argv[1:]
-    main(argv)
+    status = main(argv)
+    if status is not None:
+        sys.exit(status)

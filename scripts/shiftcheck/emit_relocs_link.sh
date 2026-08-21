@@ -21,5 +21,6 @@ LD="${LD:-arm-none-eabi-ld}"
 OBJECTS_LST="${OBJECTS_LST:-objects.lst}"
 BANIM_OBJECT="${BANIM_OBJECT:-banim/data_banim.o}"
 
-exec "$LD" -T "$LDSCRIPT" -Map "${OUT%.elf}.map" @"$OBJECTS_LST" \
+exec python3 "$repo_root/scripts/arm_compressing_linker.py" \
+    --lock-output "$BANIM_OBJECT" -- "$LD" -T "$LDSCRIPT" -Map "${OUT%.elf}.map" @"$OBJECTS_LST" \
     -R "${BANIM_OBJECT}.sym.o" -L tools/agbcc/lib -o "$OUT" -lc -lgcc "$@"

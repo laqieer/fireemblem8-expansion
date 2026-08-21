@@ -1,8 +1,10 @@
+from concurrent.futures import ThreadPoolExecutor
 import importlib.util
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
 
@@ -64,6 +66,225 @@ class ArmCompressingLinkerLockTests(unittest.TestCase):
             self.assertEqual(first.returncode, 0, first_stderr + first_stdout)
             self.assertEqual(second.returncode, 0, second_stderr + second_stdout)
             self.assertIn("ACQUIRED", second_stdout)
+
+    def test_staged_publish_keeps_complete_output_during_producer_consumer_overlap(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary) / "shared.o"
+            symbol_output = Path(str(output) + ".sym.o")
+            output.write_text("old object", encoding="utf-8")
+            symbol_output.write_text("old symbols", encoding="utf-8")
+            staging_ready = threading.Event()
+            release_producer = threading.Event()
+
+            def build(staging):
+                Path(staging).write_text("new object", encoding="utf-8")
+                Path(staging + ".sym.o").write_text("new symbols", encoding="utf-8")
+                staging_ready.set()
+                release_producer.wait(3)
+
+            def produce():
+                with arm_linker.output_lock(output):
+                    arm_linker.build_and_publish_output(output, build)
+
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                producer = executor.submit(produce)
+                self.assertTrue(
+                    staging_ready.wait(3),
+                    "producer did not finish staging the replacement",
+                )
+
+                # This models arm-none-eabi-ld reading the object and its symbols
+                # while another Make root is still regenerating the shared output.
+                self.assertEqual(output.read_text(encoding="utf-8"), "old object")
+                self.assertEqual(
+                    symbol_output.read_text(encoding="utf-8"),
+                    "old symbols",
+                )
+
+                release_producer.set()
+                producer.result(timeout=3)
+
+            self.assertEqual(output.read_text(encoding="utf-8"), "new object")
+            self.assertEqual(symbol_output.read_text(encoding="utf-8"), "new symbols")
+
+    def test_consumer_lock_keeps_object_and_sidecar_from_one_generation(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary) / "shared.o"
+            symbol_output = Path(str(output) + ".sym.o")
+            output.write_text("old object", encoding="utf-8")
+            symbol_output.write_text("old symbols", encoding="utf-8")
+            first_replace = threading.Event()
+            release_publish = threading.Event()
+            original_replace = arm_linker.os.replace
+
+            def pause_between_publications(source, destination):
+                original_replace(source, destination)
+                if destination == str(output):
+                    first_replace.set()
+                    self.assertTrue(
+                        release_publish.wait(3),
+                        "test did not release the staged publication",
+                    )
+
+            def build(staging):
+                Path(staging).write_text("new object", encoding="utf-8")
+                Path(staging + ".sym.o").write_text("new symbols", encoding="utf-8")
+
+            def produce():
+                with arm_linker.output_lock(output):
+                    arm_linker.build_and_publish_output(output, build)
+
+            arm_linker.os.replace = pause_between_publications
+            try:
+                with ThreadPoolExecutor(max_workers=2) as executor:
+                    producer = executor.submit(produce)
+                    self.assertTrue(
+                        first_replace.wait(3),
+                        "producer did not publish the staged object",
+                    )
+
+                    # Without the shared consumer lock, independently opening
+                    # the two paths can observe the unavoidable replace gap.
+                    self.assertEqual(output.read_text(encoding="utf-8"), "new object")
+                    self.assertEqual(
+                        symbol_output.read_text(encoding="utf-8"),
+                        "old symbols",
+                    )
+
+                    consumer = executor.submit(
+                        arm_linker.run_with_output_lock,
+                        output,
+                        lambda: (
+                            output.read_text(encoding="utf-8"),
+                            symbol_output.read_text(encoding="utf-8"),
+                        ),
+                    )
+                    time.sleep(0.1)
+                    self.assertFalse(
+                        consumer.done(),
+                        "consumer bypassed the shared object publication lock",
+                    )
+
+                    release_publish.set()
+                    producer.result(timeout=3)
+                    self.assertEqual(consumer.result(timeout=3), ("new object", "new symbols"))
+            finally:
+                arm_linker.os.replace = original_replace
+
+    def test_locked_consumer_process_waits_for_producer_lock(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary) / "shared.o"
+            output.write_text("complete object", encoding="utf-8")
+            code = "import sys; print('CONSUMED', flush=True)"
+
+            with arm_linker.output_lock(output):
+                consumer = subprocess.Popen(
+                    [
+                        sys.executable,
+                        str(MODULE_PATH),
+                        "--lock-output",
+                        str(output),
+                        "--",
+                        sys.executable,
+                        "-c",
+                        code,
+                    ],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                )
+                self.addCleanup(consumer.kill)
+                time.sleep(0.1)
+                self.assertIsNone(
+                    consumer.poll(),
+                    "cross-process consumer bypassed the producer lock",
+                )
+
+            stdout, stderr = consumer.communicate(timeout=3)
+            self.assertEqual(consumer.returncode, 0, stderr + stdout)
+            self.assertIn("CONSUMED", stdout)
+
+    def test_legacy_delete_before_build_negative_control_hides_consumer_input(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary) / "shared.o"
+            output.write_text("old object", encoding="utf-8")
+            deleted_output = threading.Event()
+            release_producer = threading.Event()
+
+            def legacy_producer():
+                output.unlink()
+                deleted_output.set()
+                release_producer.wait(3)
+                output.write_text("new object", encoding="utf-8")
+
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                producer = executor.submit(legacy_producer)
+                self.assertTrue(
+                    deleted_output.wait(3),
+                    "legacy producer did not delete the published output",
+                )
+
+                # Pre-fix control: the original delete-then-rebuild sequence
+                # deterministically leaves the linker consumer without its input.
+                with self.assertRaises(FileNotFoundError):
+                    output.read_text(encoding="utf-8")
+
+                release_producer.set()
+                producer.result(timeout=3)
+
+    def test_failed_staging_preserves_last_complete_publication(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary) / "shared.o"
+            symbol_output = Path(str(output) + ".sym.o")
+            output.write_text("old object", encoding="utf-8")
+            symbol_output.write_text("old symbols", encoding="utf-8")
+
+            def failed_build(staging):
+                Path(staging).write_text("incomplete object", encoding="utf-8")
+                Path(staging + ".sym.o").write_text(
+                    "incomplete symbols",
+                    encoding="utf-8",
+                )
+                raise RuntimeError("simulated compressor failure")
+
+            with self.assertRaisesRegex(RuntimeError, "simulated compressor failure"):
+                arm_linker.build_and_publish_output(output, failed_build)
+
+            self.assertEqual(output.read_text(encoding="utf-8"), "old object")
+            self.assertEqual(symbol_output.read_text(encoding="utf-8"), "old symbols")
+            self.assertEqual(list(Path(temporary).glob(".shared.o.*")), [])
+
+    def test_malformed_staging_and_first_build_failure_leave_no_publication_or_staging(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary) / "shared.o"
+            stale = Path(temporary) / ".shared.o.interrupted.tmp.sym.o"
+            stale.write_text("interrupted", encoding="utf-8")
+
+            def missing_symbol(staging):
+                Path(staging).write_text("incomplete object", encoding="utf-8")
+
+            with self.assertRaisesRegex(RuntimeError, "staged symbol output"):
+                arm_linker.build_and_publish_output(output, missing_symbol)
+
+            self.assertFalse(output.exists())
+            self.assertFalse(Path(str(output) + ".sym.o").exists())
+            self.assertEqual(list(Path(temporary).glob(".shared.o.*")), [])
+
+    def test_first_build_publishes_both_outputs(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary) / "shared.o"
+
+            def build(staging):
+                Path(staging).write_text("first object", encoding="utf-8")
+                Path(staging + ".sym.o").write_text("first symbols", encoding="utf-8")
+
+            arm_linker.build_and_publish_output(output, build)
+
+            self.assertEqual(output.read_text(encoding="utf-8"), "first object")
+            self.assertEqual(
+                Path(str(output) + ".sym.o").read_text(encoding="utf-8"),
+                "first symbols",
+            )
 
 
 if __name__ == "__main__":
