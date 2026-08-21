@@ -1,7 +1,7 @@
 #include "global.h"
 
 #include "ctc.h"
-#if defined(MODERN) && ((FE8_EXPANSION_ENABLED_LOCALE_MASK & 0x02u) != 0)
+#if defined(MODERN) && ((FE8_EXPANSION_ENABLED_LOCALE_MASK & 0x06u) != 0)
 #include "expansion_locale.h"
 #endif
 
@@ -231,11 +231,12 @@ u16 * CONST_DATA SpriteArray_SavemenuData_1[] =
     gSprite_SavemenuData_7,
 };
 
-#if defined(MODERN) && ((FE8_EXPANSION_ENABLED_LOCALE_MASK & 0x02u) != 0)
+#if defined(MODERN) && ((FE8_EXPANSION_ENABLED_LOCALE_MASK & 0x06u) != 0)
 
 /* FE8J's localized main-sprite sheet uses different OAM composition from
  * FE8U. These descriptors mirror the regional layout for the pinned
  * graphics/localized_ui/ja/menu/main_sprites.png source. */
+#if ((FE8_EXPANSION_ENABLED_LOCALE_MASK & 0x02u) != 0)
 static u16 CONST_DATA sSprite_SavemenuDataJa_0[] =
 {
     4,
@@ -340,14 +341,141 @@ static u16 * CONST_DATA sSpriteArray_SavemenuDataJa[] =
     sSprite_SavemenuDataJa_9,
     sSprite_SavemenuDataJa_7,
 };
-
 #endif
 
-#if defined(MODERN) && ((FE8_EXPANSION_ENABLED_LOCALE_MASK & 0x02u) != 0)
+/* FE8CN's localized main-sprite sheet has its own OAM composition. These
+ * descriptors are from the pinned FE8CN regional source at 0x08A9D6A8. */
+#if ((FE8_EXPANSION_ENABLED_LOCALE_MASK & 0x04u) != 0)
+static u16 CONST_DATA sSprite_SavemenuDataZhHans_0[] =
+{
+    4,
+    OAM0_SHAPE_32x16, OAM1_SIZE_32x16, OAM2_CHR(0x100) + OAM2_LAYER(2),
+    OAM0_SHAPE_32x16, OAM1_SIZE_32x16 + OAM1_X(32), OAM2_CHR(0x104) + OAM2_LAYER(2),
+    OAM0_SHAPE_32x16, OAM1_SIZE_32x16 + OAM1_X(64), OAM2_CHR(0x108) + OAM2_LAYER(2),
+    OAM0_SHAPE_32x16, OAM1_SIZE_32x16 + OAM1_X(96), OAM2_CHR(0x10C) + OAM2_LAYER(2),
+};
+
+static u16 CONST_DATA sSprite_SavemenuDataZhHans_1[] =
+{
+    5,
+    OAM0_SHAPE_32x16, OAM1_SIZE_32x16, OAM2_CHR(0xC0) + OAM2_LAYER(2),
+    OAM0_SHAPE_16x16, OAM1_SIZE_16x16 + OAM1_X(32), OAM2_CHR(0xC4) + OAM2_LAYER(2),
+    OAM0_SHAPE_32x16, OAM1_SIZE_32x16 + OAM1_X(48), OAM2_CHR(0xC6) + OAM2_LAYER(2),
+    OAM0_SHAPE_32x16, OAM1_SIZE_32x16 + OAM1_X(80), OAM2_CHR(0xCA) + OAM2_LAYER(2),
+    OAM0_SHAPE_16x16, OAM1_SIZE_16x16 + OAM1_X(112), OAM2_CHR(0xCE) + OAM2_LAYER(2),
+};
+
+static u16 CONST_DATA sSprite_SavemenuDataZhHans_2[] =
+{
+    3,
+    OAM0_SHAPE_32x16, OAM1_SIZE_32x16 + OAM1_X(16), OAM2_CHR(0x110) + OAM2_LAYER(2),
+    OAM0_SHAPE_32x16, OAM1_SIZE_32x16 + OAM1_X(48), OAM2_CHR(0x114) + OAM2_LAYER(2),
+    OAM0_SHAPE_32x16, OAM1_SIZE_32x16 + OAM1_X(80), OAM2_CHR(0x118) + OAM2_LAYER(2),
+};
+
+static u16 CONST_DATA sSprite_SavemenuDataZhHans_3[] =
+{
+    6,
+    OAM0_SHAPE_32x16, OAM1_SIZE_32x16 + OAM1_X(16), OAM2_CHR(0x180) + OAM2_LAYER(2),
+    OAM0_SHAPE_16x16, OAM1_SIZE_16x16 + OAM1_X(48), OAM2_CHR(0x184) + OAM2_LAYER(2),
+    OAM0_SHAPE_8x16, OAM1_SIZE_8x16 + OAM1_X(64), OAM2_CHR(0x186) + OAM2_LAYER(2),
+    OAM0_SHAPE_16x16, OAM1_SIZE_16x16 + OAM1_X(72), OAM2_CHR(0x187) + OAM2_LAYER(2),
+    OAM0_SHAPE_8x16, OAM1_SIZE_8x16 + OAM1_X(88), OAM2_CHR(0x189) + OAM2_LAYER(2),
+    OAM0_SHAPE_16x16, OAM1_SIZE_16x16 + OAM1_X(96), OAM2_CHR(0x18A) + OAM2_LAYER(2),
+};
+
+static u16 CONST_DATA sSprite_SavemenuDataZhHans_4[] =
+{
+    5,
+    OAM0_SHAPE_32x16, OAM1_SIZE_32x16, OAM2_CHR(0x54) + OAM2_LAYER(2),
+    OAM0_SHAPE_16x16, OAM1_SIZE_16x16 + OAM1_X(32), OAM2_CHR(0x58) + OAM2_LAYER(2),
+    OAM0_SHAPE_16x16, OAM1_SIZE_16x16 + OAM1_X(48), OAM2_CHR(0x5A) + OAM2_LAYER(2),
+    OAM0_SHAPE_32x16, OAM1_SIZE_32x16 + OAM1_X(64), OAM2_CHR(0x94) + OAM2_LAYER(2),
+    OAM0_SHAPE_32x16, OAM1_SIZE_32x16 + OAM1_X(96), OAM2_CHR(0x98) + OAM2_LAYER(2),
+};
+
+static u16 CONST_DATA sSprite_SavemenuDataZhHans_5[] =
+{
+    3,
+    OAM0_SHAPE_32x16, OAM1_SIZE_32x16 + OAM1_X(16), OAM2_CHR(0xD0) + OAM2_LAYER(2),
+    OAM0_SHAPE_32x16, OAM1_SIZE_32x16 + OAM1_X(48), OAM2_CHR(0xD4) + OAM2_LAYER(2),
+    OAM0_SHAPE_32x16, OAM1_SIZE_32x16 + OAM1_X(80), OAM2_CHR(0xD8) + OAM2_LAYER(2),
+};
+
+static u16 CONST_DATA sSprite_SavemenuDataZhHans_6[] =
+{
+    3,
+    OAM0_SHAPE_32x16, OAM1_SIZE_32x16 + OAM1_X(24), OAM2_CHR(0x18C) + OAM2_LAYER(2),
+    OAM0_SHAPE_32x16, OAM1_SIZE_32x16 + OAM1_X(56), OAM2_CHR(0x190) + OAM2_LAYER(2),
+    OAM0_SHAPE_16x16, OAM1_SIZE_16x16 + OAM1_X(88), OAM2_CHR(0x194) + OAM2_LAYER(2),
+};
+
+static u16 CONST_DATA sSprite_SavemenuDataZhHans_7[] =
+{
+    3,
+    OAM0_SHAPE_32x16, OAM1_SIZE_32x16 + OAM1_X(16), OAM2_CHR(0x240) + OAM2_LAYER(2),
+    OAM0_SHAPE_32x16, OAM1_SIZE_32x16 + OAM1_X(48), OAM2_CHR(0x244) + OAM2_LAYER(2),
+    OAM0_SHAPE_32x16, OAM1_SIZE_32x16 + OAM1_X(80), OAM2_CHR(0x248) + OAM2_LAYER(2),
+};
+
+static u16 CONST_DATA sSprite_SavemenuDataZhHans_8[] =
+{
+    4,
+    OAM0_SHAPE_32x16, OAM1_SIZE_32x16, OAM2_CHR(0xC0) + OAM2_LAYER(2),
+    OAM0_SHAPE_32x16, OAM1_SIZE_32x16 + OAM1_X(32), OAM2_CHR(0xC4) + OAM2_LAYER(2),
+    OAM0_SHAPE_32x16, OAM1_SIZE_32x16 + OAM1_X(64), OAM2_CHR(0xC8) + OAM2_LAYER(2),
+    OAM0_SHAPE_32x16, OAM1_SIZE_32x16 + OAM1_X(96), OAM2_CHR(0xCC) + OAM2_LAYER(2),
+};
+
+static u16 CONST_DATA sSprite_SavemenuDataZhHans_9[] =
+{
+    4,
+    OAM0_SHAPE_32x16, OAM1_SIZE_32x16, OAM2_CHR(0x18E) + OAM2_LAYER(2),
+    OAM0_SHAPE_32x16, OAM1_SIZE_32x16 + OAM1_X(32), OAM2_CHR(0x192) + OAM2_LAYER(2),
+    OAM0_SHAPE_32x16, OAM1_SIZE_32x16 + OAM1_X(64), OAM2_CHR(0x196) + OAM2_LAYER(2),
+    OAM0_SHAPE_16x16, OAM1_SIZE_16x16 + OAM1_X(96), OAM2_CHR(0x19A) + OAM2_LAYER(2),
+};
+
+static u16 * CONST_DATA sSpriteArray_SavemenuDataZhHans[] =
+{
+    sSprite_SavemenuDataZhHans_0,
+    sSprite_SavemenuDataZhHans_1,
+    sSprite_SavemenuDataZhHans_2,
+    sSprite_SavemenuDataZhHans_3,
+    sSprite_SavemenuDataZhHans_4,
+    sSprite_SavemenuDataZhHans_5,
+    sSprite_SavemenuDataZhHans_6,
+    sSprite_SavemenuDataZhHans_1,
+    sSprite_SavemenuDataZhHans_8,
+    sSprite_SavemenuDataZhHans_9,
+    sSprite_SavemenuDataZhHans_7,
+};
+#endif
+
+struct SaveMenuMainSpriteLayout
+{
+    ExpansionLocaleId locale;
+    u16 * const * sprites;
+};
+
+static const struct SaveMenuMainSpriteLayout sSaveMenuMainSpriteLayouts[] =
+{
+#if ((FE8_EXPANSION_ENABLED_LOCALE_MASK & 0x02u) != 0)
+    { EXPANSION_LOCALE_JA, sSpriteArray_SavemenuDataJa },
+#endif
+#if ((FE8_EXPANSION_ENABLED_LOCALE_MASK & 0x04u) != 0)
+    { EXPANSION_LOCALE_ZH_HANS, sSpriteArray_SavemenuDataZhHans },
+#endif
+};
+
 const u16 *GetSaveMenuMainOptionSprite(u8 spriteIdx)
 {
-    if (ExpansionLocale_GetCurrent() == EXPANSION_LOCALE_JA)
-        return sSpriteArray_SavemenuDataJa[spriteIdx];
+    u8 i;
+    ExpansionLocaleId locale = ExpansionLocale_GetCurrent();
+
+    for (i = 0; i < ARRAY_COUNT(sSaveMenuMainSpriteLayouts); ++i)
+        if (locale == sSaveMenuMainSpriteLayouts[i].locale)
+            return sSaveMenuMainSpriteLayouts[i].sprites[spriteIdx];
 
     return SpriteArray_SavemenuData_1[spriteIdx];
 }
