@@ -447,6 +447,16 @@ class AssetManifestTests(unittest.TestCase):
                 json.dump(metadata, handle)
             self.assert_validation_error([record], "must match canonical FaceData symbol")
 
+    def test_formatted_portrait_package_rejects_unsafe_registry_expression(self):
+        record = valid_portrait_record(TEST_ROOT)
+        registry_path = os.path.join(REPO_ROOT, record["ownership"]["registrySource"])
+        with open(registry_path, encoding="utf-8") as handle:
+            registry = json.load(handle)
+        registry["entries"][0]["img"] = "portrait_Proof_tileset; injected"
+        with open(registry_path, "w", encoding="utf-8") as handle:
+            json.dump(registry, handle)
+        self.assert_validation_error([record], "C identifiers or 0")
+
     def test_capacity_and_actual_ownership_conflicts_fail(self):
         capacity = valid_record()
         capacity["resources"]["mapWidth"] = 200

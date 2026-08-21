@@ -1328,6 +1328,7 @@ def _read_portrait_registry(path):
         "id", "img", "imgChibi", "pal", "imgMouth", "imgCard",
         "xMouth", "yMouth", "xEyes", "yEyes", "blinkKind",
     }
+    c_symbol_or_null_re = re.compile(r"^(?:0|[A-Za-z_][A-Za-z0-9_]*)$")
     entries = {}
     for entry in document["entries"]:
         if not isinstance(entry, dict) or set(entry) != required_entry:
@@ -1336,12 +1337,16 @@ def _read_portrait_registry(path):
         if not _is_int(portrait_id) or portrait_id in entries:
             raise ValueError("portrait registry IDs must be unique integers")
         fields = ("img", "imgChibi", "pal", "imgMouth")
-        if any(not isinstance(entry[field], str) or not entry[field] for field in fields):
-            raise ValueError("portrait registry image/palette symbols must be non-empty strings")
-        if entry["imgCard"] is not None and (
-            not isinstance(entry["imgCard"], str) or not entry["imgCard"]
+        if any(
+            not isinstance(entry[field], str) or not c_symbol_or_null_re.fullmatch(entry[field])
+            for field in fields
         ):
-            raise ValueError("portrait registry imgCard must be a symbol or null")
+            raise ValueError("portrait registry image/palette symbols must be C identifiers or 0")
+        if entry["imgCard"] is not None and (
+            not isinstance(entry["imgCard"], str)
+            or not c_symbol_or_null_re.fullmatch(entry["imgCard"])
+        ):
+            raise ValueError("portrait registry imgCard must be a C identifier, 0, or null")
         if entry["blinkKind"] not in ("FACE_BLINK_NORMAL", "FACE_BLINK_CLOSED"):
             raise ValueError("portrait registry blinkKind is invalid")
         if any(
