@@ -158,7 +158,8 @@ class ModernElfTargetTests(unittest.TestCase):
         """modern.mk must declare NODEP=0 in the legacy-ready step."""
         mk = (ROOT / "modern.mk").read_text(encoding="utf-8")
         self.assertIn("expansion-modern-legacy-ready", mk)
-        self.assertIn("+$(MAKE) NODEP=0", mk)
+        self.assertIn("$(MAKE) NODEP=0", mk)
+        self.assertNotIn("+$(MAKE) NODEP=0", mk)
         # link-prepare must depend on legacy-ready (may span lines)
         self.assertIn("expansion-modern-legacy-ready", mk)
         prep_idx = mk.index("expansion-modern-link-prepare:")
@@ -169,6 +170,12 @@ class ModernElfTargetTests(unittest.TestCase):
 
     def test_dry_run_does_not_fail_on_missing_sidecar(self):
         """make -n with a guaranteed-missing sidecar must exit 0."""
+        mk = (ROOT / "modern.mk").read_text(encoding="utf-8")
+        self.assertIn("for flag in $(MAKEFLAGS); do", mk)
+        self.assertIn("--) break ;;", mk)
+        self.assertIn("*n*) dry_run=1 ;;", mk)
+        self.assertNotIn("$(findstring n,$(MAKEFLAGS))", mk)
+        self.assertNotIn('+@if [ ! -f "$(MODERN_ELF_BANIM_SYM)"', mk)
         with tempfile.TemporaryDirectory() as tmp:
             missing_sym = Path(tmp) / "dir with spaces" / "banim.o.sym.o"
             banim_obj = Path(ROOT / "banim" / "data_banim.o")
