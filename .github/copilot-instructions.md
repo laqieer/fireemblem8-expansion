@@ -78,6 +78,14 @@ after the run is terminal to inspect logs or reviews. Do not repeatedly wake an
 agent to poll, do not create duplicate watchers, and cancel superseded
 candidate runs before dispatching replacement checks.
 
+After a PR merge, monitor the exact-`master` Build CI with an attached,
+nonblocking asynchronous shell watcher. Leave its verification todo in
+progress and continue every unrelated dependency-ready task instead of
+stopping to wait or sending a waiting-only response. Only closure, remote
+completion, and true dependents wait. When the watcher finishes, resume those
+dependents on success; on failure, fix forward or revert the broken default
+branch immediately.
+
 ## Development workflow skill
 
 For incoming feature requests, ideas, bug reports, or regressions, invoke the

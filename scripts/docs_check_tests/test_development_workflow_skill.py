@@ -105,6 +105,14 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             "gh run cancel <run-id>",
             "Never repeatedly wake the same subagent merely",
             "never accept a stale run",
+            "Post-merge `master` Build CI monitoring is always nonblocking.",
+            "attached asynchronous mode",
+            "immediately continue scheduling every dependency-ready",
+            "Do not stop orchestration or",
+            "send a waiting-only response",
+            "Only issue closure, remote completion, and other true dependents",
+            "exact merged `master` SHA",
+            "fix forward or revert immediately",
         )
 
         for requirement in required_contract:
@@ -125,6 +133,12 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             "agent to poll",
             "cancel superseded",
             "candidate runs before dispatching replacement checks",
+            "After a PR merge, monitor the exact-`master` Build CI",
+            "nonblocking asynchronous shell watcher",
+            "continue every unrelated dependency-ready task",
+            "stopping to wait or sending a waiting-only response",
+            "Only closure, remote",
+            "fix forward or revert the broken default",
         )
 
         for requirement in project_contract:

@@ -464,6 +464,21 @@ If a candidate SHA changes, cancel superseded candidate runs with
 checks for the replacement SHA. Never repeatedly wake the same subagent merely
 to poll CI, and never accept a stale run because its watcher completed.
 
+Post-merge `master` Build CI monitoring is always nonblocking. Start its
+bounded direct shell watcher in attached asynchronous mode so process
+completion produces a notification, leave the post-merge verification work
+item in progress, and immediately continue scheduling every dependency-ready
+task that does not depend on that Build result. Do not stop orchestration or
+send a waiting-only response merely because the master watcher is active.
+Only issue closure, remote completion, and other true dependents wait for the
+post-merge result.
+
+When the asynchronous watcher completes, verify that the run belongs to the
+exact merged `master` SHA and inspect every required job. Resume the dependent
+completion chain on success. On failure, interrupt ordinary delivery work as
+needed to fix forward or revert immediately; never let background monitoring
+hide a broken default branch.
+
 Before merge:
 
 1. Confirm required Build CI succeeds for the exact candidate commit.
