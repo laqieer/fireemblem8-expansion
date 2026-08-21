@@ -1472,8 +1472,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Wave 0/issue #9 seed: repository-authored documentation. No human legal/provenance review has been recorded yet; this manifest records that honestly rather than asserting a license or clearance.",
-    "oid": "46358da62feeb990df5eb44894d71b22929709c5",
-    "sha256": "adfddd3062bf8505c1688e18c55093070d87092e3e82a4fabde3e44090e5bde9"
+    "oid": "477184eefd4be9405fc0195b7df3c6199565a165",
+    "sha256": "2a41eba08e6e3cc46a7de4ee7654903650e24f4d3bf2adf67635eb736fc50502"
   },
   {
     "path": "docs/release_data/version_ledger.json",
@@ -4196,8 +4196,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Wave 0/issue #9 seed: repository-authored build tooling/config/source surface (or, for asm/, decompiled disassembly derived from the original ROM). No human legal/provenance review has been recorded yet; this manifest records that honestly rather than asserting a license or clearance.",
-    "oid": "2a5d1ce90ae10e1c64d652e36dd23779142889b8",
-    "sha256": "8f9d2e8582f18fbd1949f90184111e41a0d94dc6dbe328e54b785c567f1910b1"
+    "oid": "9dfeb7f7c5383fb4c6656176273fac3824fea4d5",
+    "sha256": "b83e588884a2a90f817957dcb9b27b43f5bfd62c4d101a8a8b951c58a6b61297"
   },
   {
     "path": "release.mk",
@@ -4292,8 +4292,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Wave 0/issue #9 seed: repository-authored build tooling/config/source surface (or, for asm/, decompiled disassembly derived from the original ROM). No human legal/provenance review has been recorded yet; this manifest records that honestly rather than asserting a license or clearance.",
-    "oid": "6107b4c0bd6e722ca325e959ea351543b5b06340",
-    "sha256": "542d91f53b81a7b9ab5e2bbe34ed88320201736f95bf92a3c6a48048d11b59de"
+    "oid": "8a3618172ac4ba332845bc3967a6a8432be3f0f1",
+    "sha256": "02b661de071b94f622226c0bbbdeffc0a962102d2b2bd2c1dff23016c62c63ff"
   },
   {
     "path": "scripts/artifact_guard.py",
@@ -12500,8 +12500,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Wave 0/issue #9 seed: repository-authored build tooling/config/source surface (or, for asm/, decompiled disassembly derived from the original ROM). No human legal/provenance review has been recorded yet; this manifest records that honestly rather than asserting a license or clearance.",
-    "oid": "1c1bf0622e37932d780175564b27839083aa4b51",
-    "sha256": "0d5c54dd97bb29bd12f7cce272d0579bb20ab4ab41b59aca1d213d96f0de6d82"
+    "oid": "ef363887ec68a943f0b95dce41f012f2d3c8b16a",
+    "sha256": "c46d38ddb91a94fcd5148b39f7d0bc567b88a5961a38036eade8c768977b22c7"
   },
   {
     "path": "scripts/modernize/tests/test_audit.py",
@@ -12704,8 +12704,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Wave 0/issue #9 seed: repository-authored build tooling/config/source surface (or, for asm/, decompiled disassembly derived from the original ROM). No human legal/provenance review has been recorded yet; this manifest records that honestly rather than asserting a license or clearance.",
-    "oid": "69e8a8d07ba61f80a46634da66415930c03f85dc",
-    "sha256": "1b675a032c20dc1b401f9eee7b8b8d83828fd79f91aafeeffb8c10fce21450f9"
+    "oid": "edd4267ca8b56d39a3a27de6243c7b42ca6e989b",
+    "sha256": "cd2b2e440b4564708c88382b0fe0ebf93c9e89fef4a4db36e0269d3fb15fefa3"
   },
   {
     "path": "scripts/modernize/tests/test_modern_itemexpansion_gate_order_race.py",
@@ -13484,8 +13484,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Wave 0/issue #9 seed: repository-authored build tooling/config/source surface (or, for asm/, decompiled disassembly derived from the original ROM). No human legal/provenance review has been recorded yet; this manifest records that honestly rather than asserting a license or clearance.",
-    "oid": "5d0cf964a98777608fae38da8c5a8993ce9ccaa7",
-    "sha256": "f39d88acf8881e3b4a988bffb9c3322ee6adf3c166f8a619441f783bd69bca97"
+    "oid": "69a73a5acce5af990b4c060f2d49cb08c69df50a",
+    "sha256": "7c2f0be985c5cacd5403582d6090d9b83b0e21a5e26f01f720b59246cd4d8d6e"
   },
   {
     "path": "scripts/shiftcheck/gen_shifted_ldscript.py",
