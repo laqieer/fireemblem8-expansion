@@ -2168,7 +2168,7 @@ expansion-modern-link-prepare: $(MODERN_ELF_FE6SIO) \
 		printf '%s\n' \
 			"Sidecar missing; forcing banim rebuild..." >&2; \
 	fi
-	+@if [ ! -f "$(MODERN_ELF_BANIM_SYM)" ] && \
+	@if [ ! -f "$(MODERN_ELF_BANIM_SYM)" ] && \
 			[ -z "$(filter n -n --dry-run --just-print --recon,$(MAKEFLAGS))" ]; then \
 		$(MAKE) -B "$(BANIM_OBJECT)"; \
 	fi

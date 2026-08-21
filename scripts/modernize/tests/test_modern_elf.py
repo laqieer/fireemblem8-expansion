@@ -175,6 +175,7 @@ class ModernElfTargetTests(unittest.TestCase):
             mk,
         )
         self.assertNotIn("$(findstring n,$(MAKEFLAGS))", mk)
+        self.assertNotIn('+@if [ ! -f "$(MODERN_ELF_BANIM_SYM)"', mk)
         with tempfile.TemporaryDirectory() as tmp:
             missing_sym = Path(tmp) / "dir with spaces" / "banim.o.sym.o"
             banim_obj = Path(ROOT / "banim" / "data_banim.o")
