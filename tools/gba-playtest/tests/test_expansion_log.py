@@ -21,13 +21,19 @@ def run(command):
     return subprocess.run(command, cwd=ROOT, capture_output=True, text=True)
 
 
+def temporary_directory():
+    root = ROOT / "build"
+    root.mkdir(parents=True, exist_ok=True)
+    return tempfile.TemporaryDirectory(dir=root)
+
+
 class ExpansionLogHostTests(unittest.TestCase):
     def setUp(self):
         if CC is None:
             self.skipTest("no host C compiler")
 
     def test_enabled_handshake_payload_and_failure_contracts(self):
-        with tempfile.TemporaryDirectory(dir=ROOT / "build") as temporary:
+        with temporary_directory() as temporary:
             work = Path(temporary)
             objects = []
             for source in (SOURCE, DRIVER):
@@ -59,7 +65,7 @@ class ExpansionLogHostTests(unittest.TestCase):
         self.assertIn("EXPANSION_LOG_HOST_TEST: PASS", completed.stdout)
 
     def test_disabled_macros_are_inert_without_a_backend_object(self):
-        with tempfile.TemporaryDirectory(dir=ROOT / "build") as temporary:
+        with temporary_directory() as temporary:
             work = Path(temporary)
             executable = work / "expansion-log-disabled"
             completed = run(
@@ -87,7 +93,7 @@ class ExpansionLogArmTests(unittest.TestCase):
     def test_aapcs_enabled_and_disabled_symbol_boundaries(self):
         if ARM_CC is None or ARM_NM is None or ARM_OBJDUMP is None:
             self.skipTest("arm-none-eabi compiler/binutils unavailable")
-        with tempfile.TemporaryDirectory(dir=ROOT / "build") as temporary:
+        with temporary_directory() as temporary:
             work = Path(temporary)
             enabled = work / "enabled.o"
             disabled = work / "disabled.o"
