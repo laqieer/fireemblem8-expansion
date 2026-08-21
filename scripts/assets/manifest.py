@@ -511,7 +511,7 @@ def _pack_4bpp(rows, x, y, width, height):
     output = bytearray()
     for row in rows[y:y + height]:
         for column in range(x, x + width, 2):
-            output.append((row[column] << 4) | row[column + 1])
+            output.append(row[column] | (row[column + 1] << 4))
     return bytes(output)
 
 
@@ -973,9 +973,13 @@ class FormattedPortraitPackageKind:
                     record.resource_locs[key], "{}.resources.{}".format(record.id, key),
                 ))
         expected_sources = 3 if record.options["jascSidecar"] else 2
-        if len(record.sources) != expected_sources or not record.sources[0].endswith(".png") or not record.sources[1].endswith(".json"):
+        if (
+            len(record.sources) != expected_sources
+            or not record.sources[0].endswith(".png")
+            or os.path.basename(record.sources[1]) != "metadata.json"
+        ):
             diagnostics.add(GeneratedDataError(
-                "formatted-portrait-package requires ordered sheet PNG and metadata JSON sources",
+                "formatted-portrait-package requires ordered sheet PNG and metadata.json sources",
                 record.loc, "{}.sources".format(record.id),
             ))
             return
@@ -1351,13 +1355,13 @@ def portrait_registration_ids(manifest_path=os.path.join(REPO_ROOT, "assets", "m
     """Return the live generated FaceData IDs from the sole asset manifest."""
     records = load_and_validate(manifest_path)
     portrait_records = _portrait_records(records)
-    if not portrait_records:
-        return ()
     registry_paths = {record.ownership["registrySource"] for record in portrait_records}
-    if len(registry_paths) != 1:
+    if len(registry_paths) > 1:
         raise GeneratedDataError("formatted portrait packages must share one portrait registry source")
     try:
-        entries = _read_portrait_registry(next(iter(registry_paths)))
+        entries = _read_portrait_registry(
+            next(iter(registry_paths), "assets/portrait_registry.json")
+        )
     except (OSError, ValueError) as exc:
         raise GeneratedDataError("invalid portrait registry: {}".format(exc))
     return tuple(sorted(entries))
@@ -1365,16 +1369,12 @@ def portrait_registration_ids(manifest_path=os.path.join(REPO_ROOT, "assets", "m
 
 def render_portrait_data(records):
     portrait_records = _portrait_records(records)
-    if not portrait_records:
-        return (
-            "#include \"global.h\"\n\n"
-            "#include \"portrait_pointer.h\"\n\n"
-            "struct FaceData CONST_DATA portrait_data[] = { };\n"
-        )
     registry_paths = {record.ownership["registrySource"] for record in portrait_records}
-    if len(registry_paths) != 1:
+    if len(registry_paths) > 1:
         raise ValueError("formatted portrait packages must share one portrait registry source")
-    entries = _read_portrait_registry(next(iter(registry_paths)))
+    entries = _read_portrait_registry(
+        next(iter(registry_paths), "assets/portrait_registry.json")
+    )
     for record in portrait_records:
         metadata = _read_portrait_metadata(record)
         entry = entries[record.ownership["portraitId"]].copy()

@@ -56,9 +56,14 @@ def main(argv=None):
             print("OK: {} generated asset record(s) are current".format(len(records)))
         elif args.command == "sources":
             records = manifest.load_and_validate(args.manifest)
+            sources = {"assets/portrait_registry.json"}
             for record in records:
-                for source in record.sources:
-                    print(source)
+                sources.update(record.sources)
+                kind = manifest.KIND_REGISTRY.resolve(record.kind)
+                for _, dependencies in kind.make_dependencies(record):
+                    sources.update(dependencies)
+            for source in sorted(sources):
+                print(source)
         else:
             if os.path.exists(args.out_dir):
                 shutil.rmtree(args.out_dir)

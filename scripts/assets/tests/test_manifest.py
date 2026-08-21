@@ -232,6 +232,15 @@ class AssetManifestTests(unittest.TestCase):
         )
         self.assertEqual(manifest.portrait_registration_ids(), tuple(range(1, 173)))
 
+    def test_portrait_registry_is_complete_without_package_overrides(self):
+        records = manifest.load_and_validate(self.write_manifest([valid_record()]))
+        rendered = manifest.render_portrait_data(records)
+        self.assertEqual(rendered.count("// "), 172)
+        self.assertEqual(
+            manifest.portrait_registration_ids(self.write_manifest([valid_record()])),
+            tuple(range(1, 173)),
+        )
+
     def test_generated_fragment_uses_existing_chapter_table_object(self):
         records = manifest.load_and_validate(self.write_manifest([valid_record()]))
         rendered = manifest.render_makefile(records)
@@ -364,6 +373,12 @@ class AssetManifestTests(unittest.TestCase):
         self.assertTrue(os.path.isfile(os.path.join(out_dir, "portraits", record["id"], "tileset.4bpp.lz")))
         self.assertEqual(len(manifest.portrait_component_outputs(records, out_dir)), 7)
 
+    def test_formatted_portrait_package_uses_low_nibble_first_4bpp(self):
+        self.assertEqual(
+            manifest._pack_4bpp([[1, 2, 3, 4]], 0, 0, 4, 1),
+            bytes((0x21, 0x43)),
+        )
+
     def test_formatted_portrait_package_rejects_sheet_and_metadata_failures(self):
         record = valid_portrait_record(TEST_ROOT)
         source = self.write_manifest([record])
@@ -380,6 +395,27 @@ class AssetManifestTests(unittest.TestCase):
             with open(os.path.join(REPO_ROOT, record["sources"][1]), "w", encoding="utf-8") as handle:
                 json.dump(metadata, handle)
             self.assert_validation_error([record], "must contain exactly")
+
+    def test_formatted_portrait_package_requires_metadata_json(self):
+        record = valid_portrait_record(TEST_ROOT)
+        record["sources"][1] = record["sources"][1].replace("metadata.json", "proof.json")
+        source_path = os.path.join(REPO_ROOT, record["sources"][1])
+        os.rename(
+            os.path.join(REPO_ROOT, record["sources"][1].replace("proof.json", "metadata.json")),
+            source_path,
+        )
+        self.assert_validation_error([record], "metadata.json")
+
+    def test_sources_command_includes_portrait_registry_dependency(self):
+        result = subprocess.run(
+            [sys.executable, "-m", "scripts.assets", "sources"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            check=True,
+            text=True,
+        )
+        self.assertIn("assets/portrait_registry.json", result.stdout.splitlines())
+
 
     def test_formatted_portrait_package_rejects_boolean_geometry_and_alias_drift(self):
         record = valid_portrait_record(TEST_ROOT)

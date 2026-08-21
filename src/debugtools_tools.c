@@ -101,6 +101,11 @@ enum
 #define DEBUGTOOLS_PORTRAIT_PROBE_FACE_ID 2
 #define DEBUGTOOLS_PORTRAIT_PROBE_CHR 0x280
 #define DEBUGTOOLS_PORTRAIT_PROBE_PAL 2
+
+static u32 DebugToolsTools_ReadU32(const u16* values)
+{
+    return (u32)values[0] | ((u32)values[1] << 16);
+}
 #endif
 
 #ifdef MODERN
@@ -336,7 +341,7 @@ static u8 DebugToolsActions_UnitInspectSelected(struct MenuProc* menu, struct Me
 #if defined(FE8_PORTRAIT_PACKAGE_RUNTIME_TEST)
     struct FaceProc* face;
     struct FaceBlinkProc* mouth;
-    u32* mouthTiles;
+    u16* mouthTiles;
 #endif
     char buf[64];
 
@@ -363,10 +368,10 @@ static u8 DebugToolsActions_UnitInspectSelected(struct MenuProc* menu, struct Me
 #if defined(FE8_PORTRAIT_PACKAGE_RUNTIME_TEST)
         gPortraitPackageRuntimeProbe.faceId = DEBUGTOOLS_PORTRAIT_PROBE_FACE_ID;
         gPortraitPackageRuntimeProbe.minimugRenderCount++;
-        gPortraitPackageRuntimeProbe.minimugVramWord = *(u32 *)(
-            VRAM + (DEBUGTOOLS_PORTRAIT_PROBE_CHR * CHR_SIZE) + 0x20);
+        gPortraitPackageRuntimeProbe.minimugVramWord = DebugToolsTools_ReadU32(
+            (const u16*)(VRAM + (DEBUGTOOLS_PORTRAIT_PROBE_CHR * CHR_SIZE) + 0x20));
         gPortraitPackageRuntimeProbe.minimugPaletteWord =
-            *(u32 *)(gPaletteBuffer + (DEBUGTOOLS_PORTRAIT_PROBE_PAL * 0x10));
+            DebugToolsTools_ReadU32(gPaletteBuffer + (DEBUGTOOLS_PORTRAIT_PROBE_PAL * 0x10));
         face = StartFace2(
             0,
             DEBUGTOOLS_PORTRAIT_PROBE_FACE_ID,
@@ -387,16 +392,16 @@ static u8 DebugToolsActions_UnitInspectSelected(struct MenuProc* menu, struct Me
             mouth->unk_32 = -1;
             mouth->blinkControl = 0;
             FaceMouth_Loop(mouth);
-            mouthTiles = (u32 *)(
+            mouthTiles = (u16*)(
                 VRAM + (((face->oam2 + 28) & 0x3FF) * CHR_SIZE));
             gPortraitPackageRuntimeProbe.mouthFrame0 =
-                mouthTiles[1] ^ mouthTiles[9] ^ mouthTiles[17] ^ mouthTiles[25];
+                mouthTiles[2] ^ mouthTiles[18] ^ mouthTiles[34] ^ mouthTiles[50];
 
             mouth->unk_32 = -1;
             mouth->blinkControl = 1;
             FaceMouth_Loop(mouth);
             gPortraitPackageRuntimeProbe.mouthFrame2 =
-                mouthTiles[1] ^ mouthTiles[9] ^ mouthTiles[17] ^ mouthTiles[25];
+                mouthTiles[2] ^ mouthTiles[18] ^ mouthTiles[34] ^ mouthTiles[50];
         }
 #endif
         sprintf(buf, "%s %d/%d",

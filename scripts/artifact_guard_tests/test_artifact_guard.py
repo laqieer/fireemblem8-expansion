@@ -167,6 +167,12 @@ class TestRestrictedSourceAssetAllowance(ArtifactGuardRepoTestCase):
         self.write("preview/shot.png", "png-shaped")
         self.write("sound/theme.mid", "midi-shaped")
         self.write("other/theme.mid", "midi-shaped")
+        self.write(
+            "assets/manifest.json",
+            """{"assets":[{"kind":"formatted-portrait-package","sources":[
+            "assets/portraits/eirika/eirika.png",
+            "assets/portraits/eirika/eirika.pal"]}]}""",
+        )
         self.commit()
 
         code, lines = self.findings("--revision", "HEAD")
@@ -187,6 +193,22 @@ class TestRestrictedSourceAssetAllowance(ArtifactGuardRepoTestCase):
         self.assertNotIn("texts/locales/source/fe8j/proof.cp932", rejected)
         self.assertNotIn("preview/shot.png", rejected)
         self.assertNotIn("sound/theme.mid", rejected)
+
+    def test_undeclared_canonical_portrait_package_is_rejected(self):
+        self.write("assets/portraits/rogue/rogue.png", "portrait-png-shaped")
+        self.write(
+            "assets/manifest.json",
+            """{"assets":[{"kind":"formatted-portrait-package","sources":[
+            "assets/portraits/eirika/eirika.png"]}]}""",
+        )
+        self.commit()
+
+        code, lines = self.findings("--revision", "HEAD")
+        self.assertEqual(code, 1)
+        self.assertIn(
+            "assets/portraits/rogue/rogue.png: restricted-extension-outside-allowed-root",
+            lines,
+        )
 
 
 class TestUnmergedIndexEntries(ArtifactGuardRepoTestCase):
