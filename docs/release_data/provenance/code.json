@@ -212,8 +212,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Wave 0/issue #9 seed: repository-authored build tooling/config/source surface (or, for asm/, decompiled disassembly derived from the original ROM). No human legal/provenance review has been recorded yet; this manifest records that honestly rather than asserting a license or clearance.",
-    "oid": "2b2f68d20a70fa0320af2c5352ecb3f1a58e664f",
-    "sha256": "ed40ad92665e92b5b42005c38b1accccb09fcc6248a0eefd283dfc150c8969a1"
+    "oid": "3e297e50719c3064620ea65f50d4412a859ab0ca",
+    "sha256": "186e8cd454541b6d0c5606fd5e40913ae2e491da22b5487e59df05b83c591219"
   },
   {
     "path": "CONTRIBUTING.md",
@@ -1472,8 +1472,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Wave 0/issue #9 seed: repository-authored documentation. No human legal/provenance review has been recorded yet; this manifest records that honestly rather than asserting a license or clearance.",
-    "oid": "635a4fc15035a9f3d75c49db51a7fe8746f7aa34",
-    "sha256": "14f254a00d64857ac2aa9534805addba8ef6c252e3d139633440ea506d9d0e11"
+    "oid": "97037c2afade84ec3967187ef9ca08dd46259f6a",
+    "sha256": "831a876c13d1906160b565f5ebb55002f8ee09ae8cc12def6abd5c346b5e591b"
   },
   {
     "path": "docs/release_data/version_ledger.json",
@@ -4748,8 +4748,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Wave 0/issue #9 seed: repository-authored build tooling/config/source surface (or, for asm/, decompiled disassembly derived from the original ROM). No human legal/provenance review has been recorded yet; this manifest records that honestly rather than asserting a license or clearance.",
-    "oid": "8d82b71eb18e6df107dab5ad951010bcde2e23a8",
-    "sha256": "9f21c781e5231f8b9ac60e148d2fc6732b68ea2bd67fdf7b4220223e80731595"
+    "oid": "00706b5666280fb7b3b33633bfd1f8b7ef467da6",
+    "sha256": "60cf8c65d4364408984ce2c93b322bfa44196d6e6b8330bf7fd116a578c90745"
   },
   {
     "path": "scripts/dump-proc.py",
