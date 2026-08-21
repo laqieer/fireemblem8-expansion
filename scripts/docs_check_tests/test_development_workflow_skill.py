@@ -8,6 +8,7 @@ SKILL_PATH = (
 )
 CONTRIBUTING_PATH = ROOT / "CONTRIBUTING.md"
 PR_TEMPLATE_PATH = ROOT / ".github" / "PULL_REQUEST_TEMPLATE.md"
+CLAUDE_PATH = ROOT / "CLAUDE.md"
 
 
 def read_skill():
@@ -146,6 +147,13 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                 surface="project instructions", requirement=requirement
             ):
                 self.assertIn(requirement, project_instructions)
+
+        claude_instructions = CLAUDE_PATH.read_text(encoding="utf-8")
+        for requirement in project_contract:
+            with self.subTest(
+                surface="Claude project instructions", requirement=requirement
+            ):
+                self.assertIn(requirement, claude_instructions)
 
     def test_issue_specific_pull_request_and_stack_contract(self):
         _, text = read_skill()
