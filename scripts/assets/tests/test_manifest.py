@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import os
 import shutil
@@ -11,22 +12,30 @@ import sys
 import unittest
 from unittest import mock
 
-from scripts.assets import manifest
+from scripts.assets import manifest, tmx
 from scripts.generated_data.diagnostics import GeneratedDataError, GeneratedDataValidationError
 
 
 REPO_ROOT = manifest.REPO_ROOT
 TEST_ROOT = os.path.join(REPO_ROOT, "build", "generated", "assets", "test-work")
-FIXTURE_ROOT = "graphics/map/layout"
+FIXTURE_ROOT = "assets/tmx"
+TMX_FIXTURE_ROOT = os.path.join(
+    REPO_ROOT, "scripts", "assets", "tests", "fixtures", "tmx"
+)
 
 
 def valid_record():
     return {
         "id": "CH2_MAIN_MAP",
-        "kind": "chapter-map-layout",
-        "sources": [FIXTURE_ROOT + "/Ch2Map.mar", FIXTURE_ROOT + "/Ch2Map.json"],
+        "kind": "tiled-tmx-map-layout",
+        "sources": [FIXTURE_ROOT + "/Ch2Map.tmx"],
         "dependsOn": [],
-        "options": {"format": "mar", "compression": "lz77"},
+        "options": {
+            "format": "tmx-safe-v1",
+            "compression": "lz77",
+            "layer": "Main",
+            "tilesetId": "fe8-metatiles-16px-4096",
+        },
         "ownership": {
             "seam": "chapter-data-asset-table",
             "tableSource": "src/data/data_8B363C.c",
@@ -77,7 +86,7 @@ class AssetManifestTests(unittest.TestCase):
         second = manifest.load_and_validate(path)
         self.assertEqual(manifest.render_makefile(first), manifest.render_makefile(second))
         self.assertIn(
-            "$(MODERN_OUTPUT_DIR)/src/data/data_8B363C.o: graphics/map/layout/Ch2Map.mar",
+            "$(MODERN_OUTPUT_DIR)/src/data/data_8B363C.o: assets/tmx/Ch2Map.tmx",
             manifest.render_makefile(first),
         )
 
@@ -85,6 +94,10 @@ class AssetManifestTests(unittest.TestCase):
         records = manifest.load_and_validate(self.write_manifest([valid_record()]))
         rendered = manifest.render_makefile(records)
         self.assertIn("src/data/data_8B363C.o:", rendered)
+        self.assertIn(
+            "src/data/const_data_chapter_maps.o: $(ASSET_OUTPUT_DIR)/tmx/CH2_MAIN_MAP.bin.lz",
+            rendered,
+        )
         self.assertNotIn("gAsset", rendered)
         self.assertNotIn("linker_script", rendered)
 
@@ -104,22 +117,22 @@ class AssetManifestTests(unittest.TestCase):
 
     def test_posix_unicode_and_symlink_source_paths_fail_closed(self):
         non_posix = valid_record()
-        non_posix["sources"][0] = "graphics\\map\\layout\\Ch2Map.mar"
+        non_posix["sources"][0] = "assets\\tmx\\Ch2Map.tmx"
         self.assert_validation_error([non_posix], "normalized POSIX separators")
         non_nfc = valid_record()
-        non_nfc["sources"][0] = "graphics/map/layout/Ch2Map\u0065\u0301.mar"
+        non_nfc["sources"][0] = "assets/tmx/Ch2Map\u0065\u0301.tmx"
         self.assert_validation_error([non_nfc], "NFC-normalized Unicode")
 
         link_path = os.path.join(
-            REPO_ROOT, "scripts", "assets", "tests", ".asset_manifest_source_link.mar"
+            REPO_ROOT, "scripts", "assets", "tests", ".asset_manifest_source_link.tmx"
         )
         os.symlink(
-            os.path.join(REPO_ROOT, "graphics", "map", "layout", "Ch2Map.mar"),
+            os.path.join(            REPO_ROOT, "assets", "tmx", "Ch2Map.tmx"),
             link_path,
         )
         self.addCleanup(lambda: os.path.lexists(link_path) and os.unlink(link_path))
         symlink = valid_record()
-        symlink["sources"][0] = "scripts/assets/tests/.asset_manifest_source_link.mar"
+        symlink["sources"][0] = "scripts/assets/tests/.asset_manifest_source_link.tmx"
         self.assert_validation_error([symlink], "must not traverse a symbolic link")
 
     def test_casefold_and_unicode_source_collision_keys_are_stable(self):
@@ -208,6 +221,104 @@ class AssetManifestTests(unittest.TestCase):
         ownership["ownership"]["mainLayerId"] = 12
         self.assert_validation_error([ownership], "does not select mainLayerId 12")
 
+    def test_tmx_adapter_preserves_chapter_two_bytes_and_runtime_wiring(self):
+        source = os.path.join(REPO_ROOT, "assets", "tmx", "Ch2Map.tmx")
+        width, height, values = tmx.parse_tmx(source)
+        mar = tmx.render_mar(values)
+        map_payload = bytes((width, height)) + b"".join(
+            value.to_bytes(2, byteorder="little") for value in values
+        )
+        self.assertEqual((width, height, len(values)), (15, 15, 225))
+        self.assertEqual(
+            hashlib.sha256(mar).hexdigest(),
+            "fde487693e8b2f0c0696329c859511ec6fdcde7dfaa0b0ddeb3eea6e25578b56",
+        )
+        self.assertEqual(
+            hashlib.sha256(map_payload).hexdigest(),
+            "ed7696f03cc64202ed40fea773cf241317a30722dcc40cddc8ff1138c2f64447",
+        )
+        with open(
+            os.path.join(REPO_ROOT, "src", "data", "const_data_chapter_maps.c"),
+            encoding="utf-8",
+        ) as handle:
+            self.assertIn(
+                'Ch2Map[] = INCBIN_U8("build/generated/assets/tmx/CH2_MAIN_MAP.bin.lz")',
+                handle.read(),
+            )
+        with open(os.path.join(REPO_ROOT, "src", "chapterdata.c"), encoding="utf-8") as handle:
+            self.assertIn(
+                "gChapterDataAssetTable[GetROMChapterStruct(chIndex)->map.mainLayerId]",
+                handle.read(),
+            )
+
+    def test_tmx_synthetic_positive_and_adversarial_fixtures(self):
+        width, height, values = tmx.parse_tmx(
+            os.path.join(TMX_FIXTURE_ROOT, "valid.tmx")
+        )
+        self.assertEqual((width, height, values), (2, 2, [0, 1, 2, 3]))
+        self.assertEqual(
+            tmx.render_mar(values),
+            b"\x00\x00\x08\x00\x10\x00\x18\x00",
+        )
+        for name in ("external_tileset.tmx", "flipped_gid.tmx"):
+            with self.subTest(name=name):
+                with self.assertRaises(tmx.TmxError):
+                    tmx.parse_tmx(os.path.join(TMX_FIXTURE_ROOT, name))
+
+    def test_tmx_safe_subset_rejects_unsupported_inputs(self):
+        source_path = os.path.join(REPO_ROOT, "assets", "tmx", "Ch2Map.tmx")
+        with open(source_path, encoding="utf-8") as handle:
+            source = handle.read()
+        cases = {
+            "external_tileset": source.replace(
+                'name="fe8-metatiles-16px-4096"', 'source="../tiles.tsx"', 1
+            ),
+            "wrong_tile_size": source.replace('tilewidth="16"', 'tilewidth="8"', 1),
+            "base64": source.replace('encoding="csv"', 'encoding="base64"'),
+            "flipped_gid": source.replace("521,521", "2147484169,521", 1),
+            "zero_gid": source.replace("521,521", "0,521", 1),
+            "group": source.replace("</map>", "<group id=\"2\" name=\"bad\"/></map>"),
+            "entity": source.replace("<map ", "<!DOCTYPE map [<!ENTITY x \"y\">]><map "),
+            "chunk": source.replace("<data encoding=\"csv\">", "<data encoding=\"csv\"><chunk>"),
+            "namespace": source.replace("<map ", "<map xmlns=\"urn:unsupported\" ", 1),
+            "wrong_orientation": source.replace('orientation="orthogonal"', 'orientation="isometric"'),
+            "wrong_render_order": source.replace('renderorder="right-down"', 'renderorder="right-up"'),
+            "infinite": source.replace('infinite="0"', 'infinite="1"'),
+            "large_dimension": source.replace('width="15"', 'width="256"', 1),
+            "second_tileset": source.replace("</map>", "<tileset firstgid=\"1\"/></map>"),
+            "tileset_image": source.replace("/>", "><image source=\"tiles.png\"/></tileset>", 1),
+            "bad_firstgid": source.replace('firstgid="1"', 'firstgid="2"'),
+            "bad_tile_count": source.replace('tilecount="4096"', 'tilecount="4095"'),
+            "bad_columns": source.replace('columns="64"', 'columns="63"'),
+            "wrong_layer_size": source.replace('width="15" height="15">', 'width="14" height="15">', 1),
+            "second_layer": source.replace("</map>", "<layer id=\"2\" name=\"Other\" width=\"15\" height=\"15\"/>"
+                                          "</map>"),
+            "object_layer": source.replace("</map>", "<objectgroup id=\"2\" name=\"Objects\"/></map>"),
+            "image_layer": source.replace("</map>", "<imagelayer id=\"2\" name=\"Image\"/></map>"),
+            "property": source.replace("</map>", "<properties><property name=\"x\"/></properties></map>"),
+            "compression": source.replace('encoding="csv"', 'encoding="csv" compression="zlib"'),
+            "wrong_count": source.replace("521,521", "521", 1),
+            "signed_gid": source.replace("521,521", "-1,521", 1),
+            "plus_gid": source.replace("521,521", "+1,521", 1),
+            "overflow_gid": source.replace("521,521", "99999999999,521", 1),
+            "unicode_whitespace": source.replace("521,521", "521,\u00a0521", 1),
+        }
+        for name, document in cases.items():
+            with self.subTest(name=name):
+                path = os.path.join(TEST_ROOT, name + ".tmx")
+                with open(path, "w", encoding="utf-8") as handle:
+                    handle.write(document)
+                with self.assertRaises(tmx.TmxError):
+                    tmx.parse_tmx(path)
+
+    def test_tmx_rejects_oversized_source_before_xml_parsing(self):
+        path = os.path.join(TEST_ROOT, "oversized.tmx")
+        with open(path, "wb") as handle:
+            handle.write(tmx.TMX_XML_DECLARATION)
+            handle.write(b" " * (tmx.MAX_TMX_BYTES + 1))
+        with self.assertRaisesRegex(tmx.TmxError, "source limit"):
+            tmx.parse_tmx(path)
+
     def test_check_detects_missing_stale_and_orphan_output(self):
         source = self.write_manifest([valid_record()])
         out_dir = os.path.join(TEST_ROOT, "out")
@@ -293,6 +404,16 @@ class AssetManifestTests(unittest.TestCase):
                 "build", "generated", "assets", "test-work", "linked-output"
             )
             manifest.safe_output_dir(manifest_path)
+
+    def test_generate_and_check_reject_descendant_output_symlinks(self):
+        source = self.write_manifest([valid_record()])
+        out_dir = os.path.join(TEST_ROOT, "out")
+        os.makedirs(out_dir)
+        os.symlink(TEST_ROOT, os.path.join(out_dir, "tmx"))
+        with self.assertRaisesRegex(GeneratedDataError, "symbolic link"):
+            manifest.generate(source, out_dir)
+        with self.assertRaisesRegex(GeneratedDataError, "symbolic link"):
+            manifest.check(source, out_dir)
 
     def test_rendered_prerequisites_include_transitive_dependencies(self):
         dependent = valid_record()

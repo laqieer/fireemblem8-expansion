@@ -2,9 +2,9 @@
 
 Issue #60 provides one versioned, source-owned asset-manifest framework for
 future adapters. It is infrastructure, not an editor importer or a runtime
-asset registry. The current version proves one existing Chapter 2 map layout
-without changing the selected map, ROM data, save format, configuration
-identity, localization, or runtime behavior.
+asset registry. The current version proves one Chapter 2 TMX map layout
+without changing the selected map, save format, configuration identity,
+localization, or runtime behavior.
 
 The authoritative coverage and ownership audit remains
 [`community_asset_coverage.md`](community_asset_coverage.md). Read that
@@ -22,10 +22,15 @@ Its version-1 shape is:
   "assets": [
     {
       "id": "STABLE_SYMBOLIC_ID",
-      "kind": "chapter-map-layout",
-      "sources": ["committed/source.mar", "committed/metadata.json"],
+      "kind": "tiled-tmx-map-layout",
+      "sources": ["assets/tmx/ChapterMap.tmx"],
       "dependsOn": [],
-      "options": {"format": "mar", "compression": "lz77"},
+      "options": {
+        "format": "tmx-safe-v1",
+        "compression": "lz77",
+        "layer": "Main",
+        "tilesetId": "fe8-metatiles-16px-4096"
+      },
       "ownership": {
         "seam": "chapter-data-asset-table",
         "tableSource": "src/data/data_8B363C.c",
@@ -74,22 +79,23 @@ clearance. External tools such as FEBuilderGBA, Event Assembler, Tiled, and
 ## Current proof and runtime seam
 
 `CH2_MAIN_MAP` owns the dependency relationship for the tracked
-`graphics/map/layout/Ch2Map.mar` and `Ch2Map.json` pair. Its
-`chapter-map-layout` adapter verifies all of the following before rendering:
+[`assets/tmx/Ch2Map.tmx`](../assets/tmx/Ch2Map.tmx) source. Its
+`tiled-tmx-map-layout` adapter verifies the safe TMX contract documented in
+[`tmx_map_layouts.md`](tmx_map_layouts.md), as well as all of the following
+before rendering:
 
-1. The metadata ID and dimensions match the declared symbol/resource data.
+1. The parsed TMX dimensions and canonical payload match declared resources.
 2. The Chapter 2 settings row selects `mainLayerId` 11.
 3. `gChapterDataAssetTable[11]` is the existing `Ch2Map` symbol.
 4. Dimensions fit the existing 2048-byte `gBmMapBuffer` contract.
 
-The generated dependency fragment attaches both sources to the existing
-`src/data/data_8B363C.o` object and the active modern equivalent
-`$(MODERN_OUTPUT_DIR)/src/data/data_8B363C.o`. It does not emit C, assembly,
-a linker list, or an asset lookup table. The pre-existing
-`GetChapterMapPointer` and `InitChapterMap`/`UnpackChapterMap` path remain
-the runtime consumers. This deliberately leaves #64 free to add a safe TMX
-adapter through the same seam, while #62/#63 can add their own catalogue
-seams and #61 remains a separate runtime design.
+The generated dependency fragment attaches the TMX source to the existing
+table object and makes the existing `const_data_chapter_maps.o` depend on its
+ignored generated `.mar`/JSON -> `.bin` -> `.lz` chain. It does not emit C,
+assembly, a linker list, or an asset lookup table. The existing `Ch2Map`
+symbol now INCbins that generated LZ stream; the pre-existing
+`gChapterDataAssetTable`, `GetChapterMapPointer`, and
+`InitChapterMap`/`UnpackChapterMap` path remain the runtime consumers.
 
 ## Commands and generated-output policy
 
@@ -103,16 +109,19 @@ make assets-clean     # remove only build/generated/assets/
 
 `assets-generate` uses write-if-changed output for deterministic incremental
 builds. `assets-check` never writes outputs; it compares the expected
-fragment/inventory and fails on stale, missing, or orphan files. The normal
-Make include regenerates the dependency fragment before graph resolution when
-the source manifest/framework changes, then exposes ordinary source
-prerequisites for the actual owning object. Outputs are confined to ignored
-`build/generated/assets/`, are disposable, and must never be hand-edited or
-committed.
+fragment, inventory, and adapter-owned canonical outputs and fails on stale,
+missing, or orphan files. It recognizes only the TMX adapter's `.bin` and
+`.bin.lz` transient build products in addition to those canonical outputs.
+The normal Make include regenerates the dependency fragment before graph
+resolution when the source manifest/framework changes, then exposes ordinary
+source prerequisites for the actual owning object. Outputs are confined to
+ignored `build/generated/assets/`, are disposable, and must never be
+hand-edited or committed.
 
 The framework does not replace `generated_data.mk`; typed game data remains
-owned by the generated-data platform. It also does not change the ordinary
-map conversion path (`.mar` -> build-local `.bin` -> build-local `.lz`).
+owned by the generated-data platform. The TMX adapter deliberately reuses the
+ordinary map conversion path (`.mar` -> build-local `.bin` -> build-local
+`.lz`) after generating its canonical private inputs.
 
 ## Adding a kind
 
@@ -146,10 +155,15 @@ unknown schema/kind/options, duplicate ID/ownership, invalid source path,
 dangling dependency, malformed provenance, map capacity/selector conflict,
 and missing/stale/orphan outputs.
 
-No save reset or migration is required. The framework has no localization
-payload, ROM/RAM allocation, or archival byte-identity effect. Bare `make`
-remains the supported modern AAPCS path; `make legacy` remains an archival
-lane and sees only an ordinary source prerequisite. Revert the manifest
-include, framework, proof record, and docs together to restore the prior
-dependency graph; no source asset, save, configuration, or runtime migration
-needs reversal.
+**TC-ASSET-TMX-064-POSITIVE** freezes the generated Chapter 2 15x15 payload
+and its map-load wiring. **TC-ASSET-TMX-064-DEFAULT** proves that the normal
+default map-loader remains the only runtime behavior. **TC-ASSET-TMX-064-
+NEGATIVE** exercises unsafe XML, unsupported layers/tilesets/GIDs, capacity,
+ownership, source-path, stale, and orphan failures. No save reset or migration
+is required. The adapter has no localization payload, configuration flag,
+runtime XML dependency, or new ROM/RAM allocation beyond the existing map's
+unchanged 452-byte uncompressed payload. Bare `make` remains the supported
+modern AAPCS path; `make legacy` sees the ordinary generated map prerequisite
+but makes no byte-identity claim. Revert the TMX record/source and generated
+dependency edge together to return to a `.mar` source with no save,
+configuration, or runtime migration.

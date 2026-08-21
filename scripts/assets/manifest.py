@@ -9,6 +9,7 @@ import subprocess
 import tempfile
 import unicodedata
 
+from scripts.assets import tmx
 from scripts.generated_data.diagnostics import (
     DiagnosticCollector,
     GeneratedDataError,
@@ -247,6 +248,23 @@ def safe_output_dir(path):
     return requested
 
 
+def _safe_output_path(path, out_dir):
+    requested = os.path.abspath(path)
+    if os.path.commonpath((out_dir, requested)) != out_dir:
+        raise GeneratedDataError(
+            "generated output '{}' must stay under {}".format(path, out_dir)
+        )
+    relative = os.path.relpath(requested, out_dir)
+    current = out_dir
+    for component in relative.split(os.sep):
+        current = os.path.join(current, component)
+        if os.path.islink(current):
+            raise GeneratedDataError(
+                "generated output '{}' must not traverse a symbolic link".format(path)
+            )
+    return requested
+
+
 def _write_if_changed(path, content):
     existing = None
     if os.path.exists(path):
@@ -263,6 +281,30 @@ def _write_if_changed(path, content):
     )
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            handle.write(content)
+        os.replace(temporary_path, path)
+    except OSError:
+        if os.path.exists(temporary_path):
+            os.unlink(temporary_path)
+        raise
+    return True
+
+
+def _write_bytes_if_changed(path, content):
+    existing = None
+    if os.path.exists(path):
+        with open(path, "rb") as handle:
+            existing = handle.read()
+    if existing == content:
+        return False
+    directory = os.path.dirname(path)
+    os.makedirs(directory, exist_ok=True)
+    descriptor, temporary_path = tempfile.mkstemp(
+        prefix=".asset-manifest-",
+        dir=directory,
+    )
+    try:
+        with os.fdopen(descriptor, "wb") as handle:
             handle.write(content)
         os.replace(temporary_path, path)
     except OSError:
@@ -531,6 +573,208 @@ class ChapterMapLayoutKind:
     def make_dependencies(self, record):
         return ((self._object, record.sources), (self._modern_object, record.sources))
 
+    def generated_outputs(self, record, out_dir):
+        del record, out_dir
+        return {}
+
+    def transient_outputs(self, record, out_dir):
+        del record, out_dir
+        return ()
+
+
+class TiledTmxMapLayoutKind(ChapterMapLayoutKind):
+    """TMX source adapter sharing the existing chapter-map ownership seam."""
+
+    name = "tiled-tmx-map-layout"
+    _options = {
+        "format": "tmx-safe-v1",
+        "compression": "lz77",
+        "layer": "Main",
+        "tilesetId": tmx.TILESET_NAME,
+    }
+    _map_object = "src/data/const_data_chapter_maps.o"
+    _modern_map_object = "$(MODERN_OUTPUT_DIR)/src/data/const_data_chapter_maps.o"
+    _map_data_source = "src/data/const_data_chapter_maps.c"
+
+    @staticmethod
+    def _output_paths(record, out_dir):
+        stem = os.path.join(out_dir, "tmx", record.id)
+        return stem + ".mar", stem + ".json", stem + ".bin.lz"
+
+    def validate(self, record, diagnostics):
+        options_valid = _validate_exact_values(
+            record.options, record.option_locs, self._options, diagnostics,
+            record.loc, "{}.options".format(record.id),
+        )
+        ownership_valid = _validate_exact_values(
+            record.ownership, record.ownership_locs,
+            (
+                "seam", "tableSource", "chapterSettings", "chapterSettingsIndex",
+                "mainLayerId", "symbol", "consumer",
+            ),
+            diagnostics, record.loc, "{}.ownership".format(record.id),
+        )
+        resources_valid = _validate_exact_values(
+            record.resources, record.resource_locs,
+            ("mapWidth", "mapHeight", "mapBufferBytes"),
+            diagnostics, record.loc, "{}.resources".format(record.id),
+        )
+        if not options_valid or not ownership_valid or not resources_valid:
+            return
+        for key, expected in self._options.items():
+            if record.options[key] != expected:
+                diagnostics.add(GeneratedDataError(
+                    "unsupported {} '{}'; expected '{}'".format(
+                        key, record.options[key], expected
+                    ),
+                    record.option_locs[key], "{}.options.{}".format(record.id, key),
+                ))
+        for key, expected in self._ownership.items():
+            if record.ownership[key] != expected:
+                diagnostics.add(GeneratedDataError(
+                    "tiled-tmx-map-layout ownership.{} must be '{}'".format(key, expected),
+                    record.ownership_locs[key], "{}.ownership.{}".format(record.id, key),
+                ))
+        if len(record.sources) != 1 or not record.sources[0].endswith(".tmx"):
+            diagnostics.add(GeneratedDataError(
+                "tiled-tmx-map-layout requires exactly one .tmx source file",
+                record.loc, "{}.sources".format(record.id),
+            ))
+            return
+
+        width = record.resources["mapWidth"]
+        height = record.resources["mapHeight"]
+        buffer_bytes = record.resources["mapBufferBytes"]
+        for key, value in (("mapWidth", width), ("mapHeight", height), ("mapBufferBytes", buffer_bytes)):
+            if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+                diagnostics.add(GeneratedDataError(
+                    "resources.{} must be a positive integer".format(key),
+                    record.resource_locs[key], "{}.resources.{}".format(record.id, key),
+                ))
+        if buffer_bytes != self._map_buffer_bytes:
+            diagnostics.add(GeneratedDataError(
+                "resources.mapBufferBytes must state the runtime map buffer capacity {}".format(
+                    self._map_buffer_bytes
+                ),
+                record.resource_locs["mapBufferBytes"],
+                "{}.resources.mapBufferBytes".format(record.id),
+            ))
+        if isinstance(width, int) and isinstance(height, int) and width * height + 2 > self._map_buffer_bytes:
+            diagnostics.add(GeneratedDataError(
+                "map dimensions {}x{} exceed the {}-byte gBmMapBuffer contract".format(
+                    width, height, self._map_buffer_bytes
+                ),
+                record.resource_locs["mapWidth"], "{}.resources".format(record.id),
+            ))
+        try:
+            source_width, source_height, values = tmx.parse_tmx(
+                os.path.join(REPO_ROOT, record.sources[0])
+            )
+        except (OSError, tmx.TmxError) as exc:
+            diagnostics.add(GeneratedDataError(
+                str(exc), record.source_locs[0], "{}.sources[0]".format(record.id)
+            ))
+            return
+        if source_width != width or source_height != height:
+            diagnostics.add(GeneratedDataError(
+                "TMX dimensions {}x{} do not match declared resources {}x{}".format(
+                    source_width, source_height, width, height
+                ),
+                record.source_locs[0], "{}.resources".format(record.id),
+            ))
+        if len(values) * 2 + 2 > self._map_buffer_bytes:
+            diagnostics.add(GeneratedDataError(
+                "TMX payload exceeds the {}-byte gBmMapBuffer contract".format(
+                    self._map_buffer_bytes
+                ),
+                record.source_locs[0], "{}.sources[0]".format(record.id),
+            ))
+
+        index = record.ownership["chapterSettingsIndex"]
+        slot = record.ownership["mainLayerId"]
+        if not isinstance(index, int) or isinstance(index, bool) or index < 0:
+            diagnostics.add(GeneratedDataError(
+                "chapterSettingsIndex must be a non-negative integer",
+                record.ownership_locs["chapterSettingsIndex"],
+                "{}.ownership.chapterSettingsIndex".format(record.id),
+            ))
+            return
+        if not isinstance(slot, int) or isinstance(slot, bool) or slot < 0:
+            diagnostics.add(GeneratedDataError(
+                "mainLayerId must be a non-negative integer",
+                record.ownership_locs["mainLayerId"],
+                "{}.ownership.mainLayerId".format(record.id),
+            ))
+            return
+        try:
+            row = _chapter_settings_row(record.ownership["chapterSettings"], index)
+            entries = _chapter_table_entries(record.ownership["tableSource"])
+        except (OSError, ValueError, TypeError) as exc:
+            diagnostics.add(GeneratedDataError(
+                str(exc), record.ownership_locs["tableSource"],
+                "{}.ownership".format(record.id),
+            ))
+            return
+        if row is None or row.get("map", {}).get("mainLayerId") != slot:
+            diagnostics.add(GeneratedDataError(
+                "chapter settings index {} does not select mainLayerId {}".format(index, slot),
+                record.ownership_locs["mainLayerId"],
+                "{}.ownership.mainLayerId".format(record.id),
+            ))
+        if slot >= len(entries) or entries[slot] != record.ownership["symbol"]:
+            actual = entries[slot] if slot < len(entries) else "<out of range>"
+            diagnostics.add(GeneratedDataError(
+                "gChapterDataAssetTable[{}] is '{}', not '{}'".format(
+                    slot, actual, record.ownership["symbol"]
+                ),
+                record.ownership_locs["mainLayerId"],
+                "{}.ownership.mainLayerId".format(record.id),
+            ))
+        generated_path = "build/generated/assets/tmx/{}.bin.lz".format(record.id)
+        expected_incbin = '{}[] = INCBIN_U8("{}")'.format(
+            record.ownership["symbol"], generated_path
+        )
+        try:
+            with open(os.path.join(REPO_ROOT, self._map_data_source), encoding="utf-8") as handle:
+                map_data_source = handle.read()
+        except OSError as exc:
+            diagnostics.add(GeneratedDataError(
+                str(exc), record.loc, "{}.ownership".format(record.id)
+            ))
+            return
+        if expected_incbin not in map_data_source:
+            diagnostics.add(GeneratedDataError(
+                "{} must own generated '{}' through {}".format(
+                    record.ownership["symbol"], generated_path, self._map_data_source
+                ),
+                record.ownership_locs["symbol"], "{}.ownership.symbol".format(record.id),
+            ))
+
+    def generated_outputs(self, record, out_dir):
+        width, height, values = tmx.parse_tmx(os.path.join(REPO_ROOT, record.sources[0]))
+        mar_path, metadata_path, unused_lz_path = self._output_paths(record, out_dir)
+        del unused_lz_path
+        return {
+            mar_path: tmx.render_mar(values),
+            metadata_path: tmx.render_metadata(record.ownership["symbol"], width, height),
+        }
+
+    def transient_outputs(self, record, out_dir):
+        mar_path, metadata_path, lz_path = self._output_paths(record, out_dir)
+        del mar_path, metadata_path
+        return (lz_path[:-3], lz_path)
+
+    def make_dependencies(self, record):
+        mar_path, metadata_path, lz_path = self._output_paths(record, "$(ASSET_OUTPUT_DIR)")
+        generated_sources = (mar_path, metadata_path)
+        return (
+            (self._object, record.sources),
+            (self._modern_object, record.sources),
+            (self._map_object, (lz_path,) + tuple(record.sources)),
+            (self._modern_map_object, (lz_path,) + tuple(record.sources)),
+            (generated_sources, tuple(record.sources) + ("$(ASSET_MANIFEST)",)),
+        )
+
 
 class KindRegistry:
     """The sole static extension seam for asset kinds."""
@@ -549,6 +793,7 @@ class KindRegistry:
 
 KIND_REGISTRY = KindRegistry()
 KIND_REGISTRY.register(ChapterMapLayoutKind())
+KIND_REGISTRY.register(TiledTmxMapLayoutKind())
 
 
 def validate(records):
@@ -707,6 +952,8 @@ def render_makefile(records):
         kind = KIND_REGISTRY.resolve(record.kind)
         for target, sources in kind.make_dependencies(record):
             prerequisites = list(sources) + dependency_sources(record)
+            if isinstance(target, tuple):
+                target = " ".join(target)
             lines.append("{}: {}\n".format(target, " ".join(prerequisites)))
     return "".join(lines)
 
@@ -732,16 +979,24 @@ def render_inventory(records):
 
 def expected_outputs(records, out_dir):
     out_dir = safe_output_dir(out_dir)
-    return {
-        os.path.join(out_dir, OUTPUT_MAKEFILE): render_makefile(records),
-        os.path.join(out_dir, OUTPUT_INVENTORY): render_inventory(records),
+    outputs = {
+        os.path.join(out_dir, OUTPUT_MAKEFILE): render_makefile(records).encode("utf-8"),
+        os.path.join(out_dir, OUTPUT_INVENTORY): render_inventory(records).encode("utf-8"),
     }
+    for record in records:
+        kind = KIND_REGISTRY.resolve(record.kind)
+        outputs.update(kind.generated_outputs(record, out_dir))
+    return outputs
 
 
 def generate(manifest_path, out_dir):
     records = load_and_validate(manifest_path)
-    for path, content in expected_outputs(records, out_dir).items():
-        _write_if_changed(path, content)
+    out_dir = safe_output_dir(out_dir)
+    outputs = expected_outputs(records, out_dir)
+    for path in outputs:
+        _safe_output_path(path, out_dir)
+    for path, content in outputs.items():
+        _write_bytes_if_changed(path, content)
     return records
 
 
@@ -751,17 +1006,29 @@ def check(manifest_path, out_dir):
     expected = expected_outputs(records, out_dir)
     errors = []
     for path, content in expected.items():
+        _safe_output_path(path, out_dir)
         if not os.path.isfile(path):
             errors.append("missing generated output {}".format(path))
             continue
-        with open(path, encoding="utf-8") as handle:
+        with open(path, "rb") as handle:
             if handle.read() != content:
                 errors.append("stale generated output {}".format(path))
     if os.path.isdir(out_dir):
-        for root, _, files in os.walk(out_dir):
+        transient_outputs = set()
+        for record in records:
+            kind = KIND_REGISTRY.resolve(record.kind)
+            transient_outputs.update(kind.transient_outputs(record, out_dir))
+        for root, directories, files in os.walk(out_dir):
             for filename in files:
                 path = os.path.join(root, filename)
-                if path not in expected:
+                if path not in expected and path not in transient_outputs:
+                    errors.append("orphan generated output {}".format(path))
+            for directory in directories:
+                path = os.path.join(root, directory)
+                if not any(
+                    candidate.startswith(path + os.sep)
+                    for candidate in set(expected) | transient_outputs
+                ):
                     errors.append("orphan generated output {}".format(path))
     if errors:
         raise GeneratedDataValidationError([GeneratedDataError(error) for error in errors])
