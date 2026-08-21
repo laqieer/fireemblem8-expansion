@@ -145,6 +145,17 @@ class AssetManifestTests(unittest.TestCase):
             manifest.load_and_validate(self.write_manifest([options]))
         self.assertIn("unknown field 'editorMode'", str(raised.exception))
 
+    def test_malformed_provenance_and_chapter_settings_fail_closed(self):
+        missing_provenance = valid_record()
+        del missing_provenance["provenance"]["license"]
+        self.assert_validation_error([missing_provenance], "missing required field 'license'")
+        extra_provenance = valid_record()
+        extra_provenance["provenance"]["reviewer"] = "unexpected"
+        self.assert_validation_error([extra_provenance], "unknown field 'reviewer'")
+        missing_settings = valid_record()
+        missing_settings["ownership"]["chapterSettings"] = "missing/settings.json"
+        self.assert_validation_error([missing_settings], "ownership.chapterSettings")
+
     def test_dangling_dependency_and_bad_provenance_fail(self):
         dangling = valid_record()
         dangling["dependsOn"] = ["MISSING_ASSET"]
@@ -218,6 +229,17 @@ class AssetManifestTests(unittest.TestCase):
             manifest.check(source, out_dir)
         self.assertIn("orphan generated output", str(raised.exception))
 
+    def test_check_detects_orphans_through_a_relative_output_path(self):
+        source = self.write_manifest([valid_record()])
+        out_dir = os.path.join(TEST_ROOT, "out")
+        manifest.generate(source, out_dir)
+        with open(os.path.join(out_dir, "orphan.txt"), "w", encoding="utf-8") as handle:
+            handle.write("orphan\n")
+        relative_out_dir = os.path.relpath(out_dir, REPO_ROOT)
+        with self.assertRaises(GeneratedDataValidationError) as raised:
+            manifest.check(source, relative_out_dir)
+        self.assertIn("orphan generated output", str(raised.exception))
+
     def test_failed_generation_keeps_existing_outputs_unchanged(self):
         source = self.write_manifest([valid_record()])
         out_dir = os.path.join(TEST_ROOT, "out")
@@ -264,13 +286,36 @@ class AssetManifestTests(unittest.TestCase):
 
     def test_cli_rejects_symlinked_output_directory(self):
         link_path = os.path.join(TEST_ROOT, "linked-output")
-        os.symlink(REPO_ROOT, link_path)
+        os.symlink(TEST_ROOT, link_path)
         self.addCleanup(lambda: os.path.lexists(link_path) and os.unlink(link_path))
         with self.assertRaises(GeneratedDataError):
             manifest_path = os.path.join(
                 "build", "generated", "assets", "test-work", "linked-output"
             )
             manifest.safe_output_dir(manifest_path)
+
+    def test_rendered_prerequisites_include_transitive_dependencies(self):
+        dependent = valid_record()
+        direct = valid_record()
+        transitive = valid_record()
+        dependent["id"] = "DEPENDENT"
+        direct["id"] = "DIRECT"
+        transitive["id"] = "TRANSITIVE"
+        dependent["sources"] = ["dependent.mar"]
+        direct["sources"] = ["direct.mar"]
+        transitive["sources"] = ["transitive.mar"]
+        dependent["dependsOn"] = ["DIRECT"]
+        direct["dependsOn"] = ["TRANSITIVE"]
+        records = manifest.load_manifest(
+            self.write_document({"schemaVersion": manifest.SCHEMA_VERSION, "assets": [
+                dependent, direct, transitive,
+            ]})
+        )
+        rendered = manifest.render_makefile(records)
+        self.assertIn(
+            "src/data/data_8B363C.o: dependent.mar transitive.mar direct.mar\n",
+            rendered,
+        )
 
     @staticmethod
     def read_outputs(out_dir):

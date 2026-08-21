@@ -22,9 +22,10 @@ OUTPUT_MAKEFILE = "asset_manifest.mk"
 OUTPUT_INVENTORY = "asset_inventory.md"
 OUTPUT_NAMES = (OUTPUT_MAKEFILE, OUTPUT_INVENTORY)
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-ASSET_OUTPUT_ROOT = os.path.realpath(
+ASSET_OUTPUT_ROOT = os.path.abspath(
     os.path.join(REPO_ROOT, "build", "generated", "assets")
 )
+ASSET_OUTPUT_ROOT_REAL = os.path.realpath(ASSET_OUTPUT_ROOT)
 ID_RE = re.compile(r"^[A-Z][A-Z0-9_]*$")
 
 
@@ -225,12 +226,25 @@ def _canonical_source_key(path):
 
 
 def safe_output_dir(path):
-    resolved = os.path.realpath(os.path.abspath(path))
-    if os.path.commonpath((ASSET_OUTPUT_ROOT, resolved)) != ASSET_OUTPUT_ROOT:
+    requested = os.path.abspath(path)
+    if os.path.commonpath((ASSET_OUTPUT_ROOT, requested)) != ASSET_OUTPUT_ROOT:
         raise GeneratedDataError(
             "generated output directory '{}' must stay under {}".format(path, ASSET_OUTPUT_ROOT)
         )
-    return resolved
+    relative = os.path.relpath(requested, REPO_ROOT)
+    current = REPO_ROOT
+    for component in relative.split(os.sep):
+        current = os.path.join(current, component)
+        if os.path.islink(current):
+            raise GeneratedDataError(
+                "generated output directory '{}' must not traverse a symbolic link".format(path)
+            )
+    resolved = os.path.realpath(requested)
+    if os.path.commonpath((ASSET_OUTPUT_ROOT_REAL, resolved)) != ASSET_OUTPUT_ROOT_REAL:
+        raise GeneratedDataError(
+            "generated output directory '{}' must stay under {}".format(path, ASSET_OUTPUT_ROOT)
+        )
+    return requested
 
 
 def _write_if_changed(path, content):
@@ -259,6 +273,16 @@ def _write_if_changed(path, content):
 
 
 def _validate_provenance(record, diagnostics):
+    expected = ("origin", "license", "modifications", "tools")
+    if not _validate_exact_values(
+        record.provenance,
+        record.provenance_locs,
+        expected,
+        diagnostics,
+        record.loc,
+        "{}.provenance".format(record.id),
+    ):
+        return
     for key in ("origin", "license", "modifications"):
         value = record.provenance[key]
         if not isinstance(value, str) or not value.strip():
@@ -295,10 +319,13 @@ def _chapter_table_entries(path):
 
 def _chapter_settings_row(path, index):
     with open(os.path.join(REPO_ROOT, path), encoding="utf-8") as handle:
-        chapters = json.load(handle)["chapters"]
+        document = json.load(handle)
+    chapters = document.get("chapters") if isinstance(document, dict) else None
+    if not isinstance(chapters, list):
+        return None
     if not isinstance(index, int) or isinstance(index, bool) or not 0 <= index < len(chapters):
         return None
-    return chapters[index]
+    return chapters[index] if isinstance(chapters[index], dict) else None
 
 
 class ChapterMapLayoutKind:
@@ -418,6 +445,13 @@ class ChapterMapLayoutKind:
         except (OSError, ValueError) as exc:
             diagnostics.add(GeneratedDataError(str(exc), record.source_locs[1], "{}.sources[1]".format(record.id)))
             return
+        if not isinstance(metadata, dict):
+            diagnostics.add(GeneratedDataError(
+                "map metadata must be a JSON object",
+                record.source_locs[1],
+                "{}.sources[1]".format(record.id),
+            ))
+            return
         if metadata.get("id") != record.ownership["symbol"]:
             diagnostics.add(
                 GeneratedDataError(
@@ -456,7 +490,15 @@ class ChapterMapLayoutKind:
                 "{}.ownership.mainLayerId".format(record.id),
             ))
             return
-        row = _chapter_settings_row(record.ownership["chapterSettings"], index)
+        try:
+            row = _chapter_settings_row(record.ownership["chapterSettings"], index)
+        except (OSError, ValueError, TypeError) as exc:
+            diagnostics.add(GeneratedDataError(
+                str(exc),
+                record.ownership_locs["chapterSettings"],
+                "{}.ownership.chapterSettings".format(record.id),
+            ))
+            return
         if row is None or row.get("map", {}).get("mainLayerId") != slot:
             diagnostics.add(GeneratedDataError(
                 "chapter settings index {} does not select mainLayerId {}".format(index, slot),
@@ -559,7 +601,15 @@ def validate(records):
             record.sources = normalized_sources
         _validate_provenance(record, diagnostics)
         kind.validate(record, diagnostics)
-        key = kind.ownership_key(record)
+        try:
+            key = kind.ownership_key(record)
+        except (KeyError, TypeError) as exc:
+            diagnostics.add(GeneratedDataError(
+                "cannot derive ownership key: {}".format(exc),
+                record.loc,
+                "{}.ownership".format(record.id),
+            ))
+            continue
         if key in ownership:
             diagnostics.add(GeneratedDataError(
                 "ownership conflict '{}' with asset '{}'".format(key, ownership[key].id),
@@ -632,10 +682,32 @@ def render_makefile(records):
         "# This is an ordinary Make dependency fragment, not a runtime registry.\n",
         "\n",
     ]
+    by_id = {record.id: record for record in records}
+
+    def dependency_sources(record):
+        sources = []
+        visited = set()
+
+        def visit(dependency_id):
+            if dependency_id in visited:
+                return
+            visited.add(dependency_id)
+            dependency = by_id.get(dependency_id)
+            if dependency is None:
+                return
+            for nested_id in dependency.depends_on:
+                visit(nested_id)
+            sources.extend(dependency.sources)
+
+        for dependency_id in record.depends_on:
+            visit(dependency_id)
+        return sources
+
     for record in records:
         kind = KIND_REGISTRY.resolve(record.kind)
         for target, sources in kind.make_dependencies(record):
-            lines.append("{}: {}\n".format(target, " ".join(sources)))
+            prerequisites = list(sources) + dependency_sources(record)
+            lines.append("{}: {}\n".format(target, " ".join(prerequisites)))
     return "".join(lines)
 
 
@@ -675,6 +747,7 @@ def generate(manifest_path, out_dir):
 
 def check(manifest_path, out_dir):
     records = load_and_validate(manifest_path)
+    out_dir = safe_output_dir(out_dir)
     expected = expected_outputs(records, out_dir)
     errors = []
     for path, content in expected.items():
