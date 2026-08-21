@@ -116,6 +116,7 @@ LDSCRIPT     := ldscript.txt
 SYM_FILES    := sym_iwram.txt
 CFILES_GENERATED := $(C_SUBDIR)/msg_data.c
 CFILES       := $(wildcard $(C_SUBDIR)/*.c)
+CFILES       := $(filter-out src/expansion_log.c,$(CFILES))
 ifeq (,$(findstring $(CFILES_GENERATED),$(CFILES)))
 CFILES       += $(CFILES_GENERATED)
 endif
