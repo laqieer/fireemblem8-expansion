@@ -86048,8 +86048,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Wave 0/issue #9 seed: extracted/derived original-game asset or generated-report content (graphics/sound/text/animation data, or GitHub Pages report output). Original Fire Emblem: The Sacred Stones copyright/trademark ownership is Nintendo/Intelligent Systems and is NOT asserted or cleared by this repository. No human legal/provenance review has been recorded yet.",
-    "oid": "4dc5b8c3ba3aa54cfdf334ebe64c3d2521da304e",
-    "sha256": "98be2cc2adb585abf1f0d582520a5e9543cd3c88a62153b95edcbc344a7e821b"
+    "oid": "c53258add71271936532da6afdcd2a4e7948470e",
+    "sha256": "1fb7ed75aa9d713e5ec8dd96a21798ccc13bf87d879fb81b39056a0f411567a4"
   },
   {
     "path": "reports/id_space_audit.md",
@@ -86060,8 +86060,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Wave 0/issue #9 seed: extracted/derived original-game asset or generated-report content (graphics/sound/text/animation data, or GitHub Pages report output). Original Fire Emblem: The Sacred Stones copyright/trademark ownership is Nintendo/Intelligent Systems and is NOT asserted or cleared by this repository. No human legal/provenance review has been recorded yet.",
-    "oid": "f0eba2b5eb0b0168325ef07db35201f067c79ce7",
-    "sha256": "1f01f856b81eeb7f81f7085f4ed2fdafaceeea2c345a18fc9dabf5d11d93915e"
+    "oid": "d6824d723fec44484c6987bb8a7d82bfd1a04d77",
+    "sha256": "7510da0b5cd8ae4d792da45403ba2aeaf72ca014203fdae16570c28d7436ae32"
   },
   {
     "path": "reports/issue10_closure.md",
@@ -100496,8 +100496,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Issue #18 full-game locale source/provenance surface under texts/locales: hash-pinned authorized FE8J/FE8CN input snapshots plus deterministic normalized catalogs, mapping evidence, fallback decisions, and manifests. Exact source and regeneration facts are documented in docs/game_locale_sources.md; no human release/legal approval is inferred.",
-    "oid": "c70d74392ac97577725d05be6add5bb65918077a",
-    "sha256": "b4a9322b04b831ada36e577e99db29d0856ce9d050d25f7ba3f38da58ecd3a27"
+    "oid": "6680361148627a1d8eae237a9e46c24284008b01",
+    "sha256": "0f5b0ab267936745e43b326bbc60c2bd45a0181c7e0f115b2f8cdaf50a851ef8"
   },
   {
     "path": "texts/locales/mapping/fe8u_structural_evidence.json",
