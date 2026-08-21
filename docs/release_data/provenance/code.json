@@ -1004,8 +1004,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Wave 0/issue #9 seed: repository-authored documentation. No human legal/provenance review has been recorded yet; this manifest records that honestly rather than asserting a license or clearance.",
-    "oid": "403a483de4b97863720ea1f407b5efe4ff69816e",
-    "sha256": "f9b15155d83bb8fd449d2e85c4f4d258def5444879545c0d771ae909c2fa402a"
+    "oid": "18d9c266679d8b99bb12c70cec0c1d2970016e5d",
+    "sha256": "914a531bcc50727db75fb5be1e63944e81d0980274de55cd9f464af75bec255e"
   },
   {
     "path": "docs/aoe.md",
@@ -1080,6 +1080,18 @@
     "sha256": "368fadb10b33c2d6c5571b30bb8ef74d7ec31b520f2463fd908311bc243fbcfd"
   },
   {
+    "path": "docs/community_asset_coverage.md",
+    "category": "code",
+    "author": "NOASSERTION",
+    "rightsholder": "NOASSERTION",
+    "license": "NOASSERTION",
+    "redistribution_approved": false,
+    "reviewer": null,
+    "notes": "Wave 0/issue #9 seed: repository-authored documentation. No human legal/provenance review has been recorded yet; this manifest records that honestly rather than asserting a license or clearance.",
+    "oid": "5cae16da744ee60fe1fda373d8030a5711a444e3",
+    "sha256": "98fb6b21cc3150f1c42f746b07b88cbfcf65eb04282e63d0e517aee0b02b2ad6"
+  },
+  {
     "path": "docs/config_identity.md",
     "category": "code",
     "author": "NOASSERTION",
@@ -1112,8 +1124,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Wave 0/issue #9 seed: repository-authored documentation. No human legal/provenance review has been recorded yet; this manifest records that honestly rather than asserting a license or clearance.",
-    "oid": "a0b74eb4223a132c1267f72693caa58a943fab51",
-    "sha256": "df97c03a3a7f6e14da4e4f39e69f06ef6aaf223fbdeb1eb0583a8e361d177108"
+    "oid": "7c521b58de726d2f659763ab1f2cdd38c1da2442",
+    "sha256": "972184f93d58bf7cdbffb0efbc198d4a02aea752a98f0a89105658b334a0da0b"
   },
   {
     "path": "docs/dump_extraction_plan.md",
@@ -1424,8 +1436,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Wave 0/issue #9 seed: repository-authored documentation. No human legal/provenance review has been recorded yet; this manifest records that honestly rather than asserting a license or clearance.",
-    "oid": "0f2017263a2df2fcc5c42899eaa467dc8f3e3c5e",
-    "sha256": "400ad2c6dc7a909db46a8ca07608a4af15b3268ac4cb787e43533d4ce66134b2"
+    "oid": "d01efbe1166b9ca23c54aa1981c920bece873e02",
+    "sha256": "d4275918d4ece02e61b49a1f196d8e28634e1744f313dae84a1d04769e1aa6fb"
   },
   {
     "path": "docs/release_data/version_ledger.json",
