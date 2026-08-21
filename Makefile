@@ -437,6 +437,14 @@ CLEAN_SONGS := $(MID_SUBDIR)/*.s
 # Isolated, opt-in modern GCC object rules (no modern ELF/ROM target).
 include modern.mk
 
+# Issue #60: one versioned manifest owns asset-to-existing-seam dependencies.
+# Include this after modern.mk so its generated fragment can name the active
+# MODERN_OUTPUT_DIR as well as the archival object without a second registry.
+include assets.mk
+
+# assets.mk is included after the simply-expanded CLEAN_DIRS assignment above.
+CLEAN_DIRS += $(ASSET_OUTPUT_DIR)
+
 # Shared clean routine
 clean_common:
 	$(RM) $(CLEAN_FILES) $(CLEAN_BINS) $(CLEAN_SONGS)
