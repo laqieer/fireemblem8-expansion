@@ -80,7 +80,10 @@ class ArmCompressingLinkerLockTests(unittest.TestCase):
                 Path(staging).write_text("new object", encoding="utf-8")
                 Path(staging + ".sym.o").write_text("new symbols", encoding="utf-8")
                 staging_ready.set()
-                release_producer.wait(3)
+                self.assertTrue(
+                    release_producer.wait(10),
+                    "test did not release the staged producer",
+                )
 
             def produce():
                 with arm_linker.output_lock(output):
@@ -225,7 +228,10 @@ class ArmCompressingLinkerLockTests(unittest.TestCase):
             def legacy_producer():
                 output.unlink()
                 deleted_output.set()
-                release_producer.wait(3)
+                self.assertTrue(
+                    release_producer.wait(10),
+                    "test did not release the legacy producer",
+                )
                 output.write_text("new object", encoding="utf-8")
 
             with ThreadPoolExecutor(max_workers=1) as executor:
