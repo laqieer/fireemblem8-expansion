@@ -248,8 +248,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Wave 0/issue #9 seed: repository-authored build tooling/config/source surface (or, for asm/, decompiled disassembly derived from the original ROM). No human legal/provenance review has been recorded yet; this manifest records that honestly rather than asserting a license or clearance.",
-    "oid": "6e3912a532e4c25f1c9d35c0b4042d8be054fd13",
-    "sha256": "1ceb660ee25c5bbf3b0dc529f8206372d59997e636ca6c0816af13c79733fbc9"
+    "oid": "203833635252b21f241ec6fd2572b41c2923cbca",
+    "sha256": "85eb72ef5d15d6b852c6ecb059508c3c662c312c474e5b2517d088d236f83e5e"
   },
   {
     "path": "README.md",
@@ -4196,8 +4196,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Wave 0/issue #9 seed: repository-authored build tooling/config/source surface (or, for asm/, decompiled disassembly derived from the original ROM). No human legal/provenance review has been recorded yet; this manifest records that honestly rather than asserting a license or clearance.",
-    "oid": "36ef6631e7f5718e77b835bb75409455e81e620a",
-    "sha256": "3593a08dacf1fc53a78986a10f4b2a06647e97c96116903cbae76724f67c0284"
+    "oid": "2078c9145a440f87442a974c297f27f2e9e95d62",
+    "sha256": "844d43b41577be77aba9b640920780921903746bb3a33be25048626e4dc5455d"
   },
   {
     "path": "release.mk",
@@ -4292,8 +4292,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Wave 0/issue #9 seed: repository-authored build tooling/config/source surface (or, for asm/, decompiled disassembly derived from the original ROM). No human legal/provenance review has been recorded yet; this manifest records that honestly rather than asserting a license or clearance.",
-    "oid": "8a3618172ac4ba332845bc3967a6a8432be3f0f1",
-    "sha256": "02b661de071b94f622226c0bbbdeffc0a962102d2b2bd2c1dff23016c62c63ff"
+    "oid": "10fdb4ff43cca111094efac1b709703bafe6da8d",
+    "sha256": "a0b26e4f0340e083e6be53c79943e2142162ce1e0d9ee28761b709e88614e818"
   },
   {
     "path": "scripts/artifact_guard.py",
@@ -12500,8 +12500,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Wave 0/issue #9 seed: repository-authored build tooling/config/source surface (or, for asm/, decompiled disassembly derived from the original ROM). No human legal/provenance review has been recorded yet; this manifest records that honestly rather than asserting a license or clearance.",
-    "oid": "6625acd5f069144de80cbdbb3fef09af7ba1690e",
-    "sha256": "b8120dce8571bb7ca7e65fbfcb83d29119c597b97cc9a7c0fa24deb8fc89c91b"
+    "oid": "80093f94db8497695d857cf60188f131a4b10714",
+    "sha256": "c8e058b6ca1631d59f34c23f1aa06642fb55f82a90278938c0a92432f1a047f8"
   },
   {
     "path": "scripts/modernize/tests/test_audit.py",
@@ -12536,8 +12536,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Wave 0/issue #9 seed: repository-authored build tooling/config/source surface (or, for asm/, decompiled disassembly derived from the original ROM). No human legal/provenance review has been recorded yet; this manifest records that honestly rather than asserting a license or clearance.",
-    "oid": "3583e3870fcadddda33ac54ff30e4a48ff2a0c5a",
-    "sha256": "7b304bc4352bcdf56f6c6dd39b8bb9bc13fd85109a446163bf316e9f3554e680"
+    "oid": "0358704d032a77d704489a867f6a13f06ffe0c32",
+    "sha256": "d0d33c223b807a72f172faf719515e75ea0979790fa571d0a2881bb35b5fc486"
   },
   {
     "path": "scripts/modernize/tests/test_build_mgfembp.py",
@@ -12704,8 +12704,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Wave 0/issue #9 seed: repository-authored build tooling/config/source surface (or, for asm/, decompiled disassembly derived from the original ROM). No human legal/provenance review has been recorded yet; this manifest records that honestly rather than asserting a license or clearance.",
-    "oid": "8fcee4a52b98215ec190fd656f78b93ea87f8408",
-    "sha256": "c3191d7094259c0df6af96b89103e128ada28054f1257ea529f29f6c24e1a71c"
+    "oid": "4cbe1ed3fd69501efebf430c3c999eb435d0155e",
+    "sha256": "2df629b3f8ab232a72452d9a55e4aa2ca69f55dba2f94369f36b0e75b4b6d123"
   },
   {
     "path": "scripts/modernize/tests/test_modern_itemexpansion_gate_order_race.py",
