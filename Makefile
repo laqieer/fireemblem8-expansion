@@ -238,7 +238,12 @@ src/menu_def.o: CC1FLAGS += -Wno-error
 # there is nothing for quickstart -- or anyone else -- to set to reach the
 # archival lane except this target's name.
 all:
-	$(MAKE) expansion-modern-boot-check MODERN_CONFIG=release MODERN_ABI=aapcs
+	@if [ -n "$(filter n -n --dry-run --just-print --recon,$(MAKEFLAGS))" ]; then \
+		printf '%s\n' \
+			'$(MAKE) expansion-modern-boot-check MODERN_CONFIG=release MODERN_ABI=aapcs'; \
+	else \
+		$(MAKE) expansion-modern-boot-check MODERN_CONFIG=release MODERN_ABI=aapcs; \
+	fi
 
 # Explicit, clearly-named archival alias (issue #15): builds the same
 # agbcc-based $(ROM) as `make fireemblem8.gba`. The obsolete whole-build
