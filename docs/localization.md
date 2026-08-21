@@ -750,6 +750,35 @@ make localized-ui-graphics-check
 make eu-localization-check
 ```
 
+The Mode Select background uses the same CJK registry through
+`LocalizedUiGraphics_GetDifficultyMenuObjects()`. It returns the Japanese or
+Simplified Chinese source only for that active locale; the caller retains
+`Img_DifficultyMenuObjs` as its English/default fallback. The manifest pins
+the regional `menu/difficulty_mode` source address, tile dimensions, and raw
+hash for both locales, so a missing resource or a direct consumer bypass is a
+host-test failure.
+
+#### Mode Select CJK regression: `TC-ISSUE18-MODE-SELECT-CJK-001`
+
+Build the all-locale release artifact with:
+
+```sh
+make expansion-modern-localization-profile-all \
+  MODERN_CONFIG=release MODERN_ABI=aapcs PREFIX=arm-none-eabi-
+```
+
+Start with blank SRAM and select Japanese (`DOWN`, `A`) or Simplified Chinese
+(`DOWN`, `DOWN`, `A`) at the first-start selector. Continue through the title
+screen, choose **New Game**, and stop at the three Mode Select choices before
+confirming a difficulty. The image-backed labels/background must use the
+selected regional artwork without tile or OAM corruption. Delete or replace
+only the test SRAM before repeating a locale; do not create a save slot before
+this observation. The deterministic manifest/accessor/consumer tests cover
+the resource-selection contract for both CJK locales and the English/default
+fallback. The remaining manual visual criterion is that the rendered glyphs
+visibly match the FE8J/FE8CN regional Mode Select artwork; a framebuffer
+capture alone does not establish that comparison.
+
 An authorized source refresh is explicit and recreates only committed indexed
 `.png` tile sources and headered `.tsa.bin` inputs plus the generated registry
 source:
