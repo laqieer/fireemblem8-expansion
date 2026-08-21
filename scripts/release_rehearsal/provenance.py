@@ -579,6 +579,8 @@ PROVENANCE_ROOT_SEED: Tuple[RootSeed, ...] = (
     RootSeed("Makefile", "code", _NOTE_CODE_BUILD_TOOLING),
     RootSeed("README.md", "code", _NOTE_CODE_BUILD_TOOLING),
     RootSeed("asmdiff.sh", "code", _NOTE_CODE_BUILD_TOOLING),
+    RootSeed("assets", "code", _NOTE_CODE_BUILD_TOOLING),
+    RootSeed("assets.mk", "code", _NOTE_CODE_BUILD_TOOLING),
     RootSeed("buddy.yml", "code", _NOTE_CODE_BUILD_TOOLING),
     RootSeed("build_tools.sh", "code", _NOTE_CODE_BUILD_TOOLING),
     RootSeed("cjk_fonts.mk", "code", _NOTE_CODE_BUILD_TOOLING),
