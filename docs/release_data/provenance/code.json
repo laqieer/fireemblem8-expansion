@@ -1484,8 +1484,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Wave 0/issue #9 seed: repository-authored documentation. No human legal/provenance review has been recorded yet; this manifest records that honestly rather than asserting a license or clearance.",
-    "oid": "dee880b97cd236474d9d378d81db1dc1118e9bad",
-    "sha256": "0a3e361b6e58ba78d4caf3108c1c4520aa07b97dc8f4c6724592570772b8e90a"
+    "oid": "913556934ac78dd62d7958baf18e9160e75afdb3",
+    "sha256": "77df899ad8b91be72c22c285ec728acd75d400488d0b251d5f8a4143d23be498"
   },
   {
     "path": "docs/release_data/version_ledger.json",
