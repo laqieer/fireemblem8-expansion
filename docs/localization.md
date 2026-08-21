@@ -750,6 +750,24 @@ make localized-ui-graphics-check
 make eu-localization-check
 ```
 
+The Save Menu's main-sprite sheet and OBJ OAM composition are one locale-bound
+resource. `GetSaveMenuMainOptionSprite()` resolves an explicit FE8J or FE8CN
+layout through `ExpansionLocale_GetCurrent()`; English and European locales
+retain the original FE8U layout. The descriptor registry is active whenever
+either CJK locale is enabled and does not alter locale preferences, saves, or
+configuration identity.
+
+`TC-ISSUE18-ZH-HANS-MAIN-MENU-OAM-001` is captured by
+`locale-cjk-softreset-persistence-modern-debug`. Its zh-Hans Save Menu
+checkpoint uses `fnv1a64-rgb24:33ebd93fb62f99e7`: the corrected FE8CN
+descriptor composition changes only the menu pixels while the persisted-locale
+and selector-state probes remain unchanged. The former
+`fnv1a64-rgb24:0be48d3d7170ba97` is retained as the explicit pre-fix negative
+control for the Chinese sheet rendered through the FE8U OAM layout. The
+descriptor test pins FE8CN's count, shape, size, position, and tile semantics
+against the approved source hash without embedding source-ROM bytes; Japanese,
+English, and European scenario oracles remain unchanged.
+
 An authorized source refresh is explicit and recreates only committed indexed
 `.png` tile sources and headered `.tsa.bin` inputs plus the generated registry
 source:
