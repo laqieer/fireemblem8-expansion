@@ -1234,9 +1234,9 @@ def _check_registry_document(root, path, anchor, label):
     full_path = _registry_root_path(root, path)
     if full_path is None or not os.path.isfile(full_path):
         return ["%s references missing document %r" % (label, path)]
-    if anchor:
+    if anchor is not None:
         if not _is_non_placeholder_string(anchor):
-            return ["%s has an empty anchor" % label]
+            return ["%s has empty or placeholder anchor" % label]
         slugs = compute_heading_slugs(strip_fenced_blocks(read_text(full_path)))
         if anchor not in slugs:
             return ["%s references missing anchor #%s in %s" % (label, anchor, path)]
@@ -1410,7 +1410,10 @@ def check_test_case_registry(root):
                 TEST_CASE_REGISTRY_PATH, 0,
                 "%s must name deterministic automation or an explicit manual_only_reason" % label,
             ))
-        if _is_non_placeholder_string(case.get("document")):
+        if (
+            _is_non_placeholder_string(case.get("document"))
+            and _is_non_placeholder_string(case.get("anchor"))
+        ):
             for message in _check_registry_document(root, case["document"], case.get("anchor"), label):
                 findings.append(Finding(TEST_CASE_REGISTRY_PATH, 0, message))
 

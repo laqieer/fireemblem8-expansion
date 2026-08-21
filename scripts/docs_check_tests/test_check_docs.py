@@ -833,6 +833,15 @@ class TesterCaseRegistryTests(unittest.TestCase):
         anchor["cases"][0]["anchor"] = "missing-anchor"
         self.assertTrue(any("missing anchor" in message for message in self._messages(anchor)))
 
+    def test_placeholder_case_anchor_has_single_precise_error(self):
+        anchor = self._valid_registry()
+        anchor["cases"][0]["anchor"] = "TODO"
+        messages = self._messages(anchor)
+        self.assertEqual(
+            [message for message in messages if "anchor" in message],
+            ["case entry 1 has empty or placeholder anchor"],
+        )
+
     def test_registry_paths_cannot_escape_through_symlinks(self):
         with TempRepo() as repo:
             registry = self._valid_registry()
