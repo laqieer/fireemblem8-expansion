@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "assets": [
+    {
+      "id": "CH2_MAIN_MAP",
+      "kind": "chapter-map-layout",
+      "sources": [
+        "graphics/map/layout/Ch2Map.mar",
+        "graphics/map/layout/Ch2Map.json"
+      ],
+      "dependsOn": [],
+      "options": {
+        "format": "mar",
+        "compression": "lz77"
+      },
+      "ownership": {
+        "seam": "chapter-data-asset-table",
+        "tableSource": "src/data/data_8B363C.c",
+        "chapterSettings": "src/data/chapter_settings.json",
+        "chapterSettingsIndex": 2,
+        "mainLayerId": 11,
+        "symbol": "Ch2Map",
+        "consumer": "GetChapterMapPointer"
+      },
+      "resources": {
+        "mapWidth": 15,
+        "mapHeight": 15,
+        "mapBufferBytes": 2048
+      },
+      "provenance": {
+        "origin": "repository extraction",
+        "license": "Repository provenance is recorded separately; this field is not legal clearance.",
+        "modifications": "none",
+        "tools": []
+      }
+    }
+  ]
+}
