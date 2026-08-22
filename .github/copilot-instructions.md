@@ -54,6 +54,14 @@ investigations, but no whole-source/object/ROM identity hash is enforced.
 `./asmdiff.sh <hex_addr> <byte_len>` remains available for legacy matching
 investigations when `baserom.gba` is present.
 
+Release provenance derives candidate paths, modes, and gitlinks from the
+immutable target tree. Do not add committed source/blob/object/commit snapshots,
+per-file content-hash ledgers, or duplicate submodule pins. Keep only human
+exact-path provenance facts in committed metadata. Configuration fingerprints,
+external input/dependency hashes, extracted-content integrity, behavioral
+framebuffer/SRAM hashes, format checksums, exact candidate SHA binding, and
+release-time manifest/archive hashes remain valid independent boundaries.
+
 ## Remote completion gate
 
 For any task that changes tracked repository files, local implementation and

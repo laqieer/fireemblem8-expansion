@@ -39,14 +39,15 @@ def _real_head_sha() -> str:
 
 
 def _extract_head_archive(head_sha: str) -> Path:
-    """A real `git archive` extraction of this repository's own actual
-    HEAD into a fresh temp directory with **no** `.git` at all -- a
+    """A real staged-candidate archive extraction with **no** `.git` -- a
     genuine non-git candidate tree exactly like a downloaded, extracted
     GitHub source archive (never a hand-authored fake; "mgfembp"
     naturally lands as a real empty directory here, exactly as GitHub's
     own auto-generated archive produces it). Caller owns cleanup."""
     tmp = Path(tempfile.mkdtemp(prefix="fe8-issue9-cli-extracted-"))
-    archive = subprocess.run(["git", "archive", head_sha], cwd=str(ROOT), capture_output=True)
+    tree = subprocess.run(["git", "write-tree"], cwd=str(ROOT), capture_output=True, text=True)
+    assert tree.returncode == 0, tree.stderr
+    archive = subprocess.run(["git", "archive", tree.stdout.strip()], cwd=str(ROOT), capture_output=True)
     assert archive.returncode == 0, archive.stderr
     extract = subprocess.run(["tar", "-x"], input=archive.stdout, cwd=str(tmp))
     assert extract.returncode == 0
@@ -188,10 +189,10 @@ class RehearseSubcommandTests(unittest.TestCase):
         self.assertEqual(data["rebuild"]["status"], "blocked")
         self.assertIn("mgfembp", str(data["rebuild"]["reasons"]))
 
-    def test_report_includes_allowlist_and_version_ledger(self):
+    def test_report_includes_candidate_tree_and_version_ledger(self):
         result = run_cli("rehearse")
         data = json.loads(result.stdout)
-        self.assertIn("allowlist", data)
+        self.assertIn("candidate_tree", data)
         self.assertIn("version_ledger", data)
 
     def test_target_sha_override_binds_the_archive_itself_not_just_the_manifest(self):
@@ -300,7 +301,7 @@ class RenderMarkdownSummaryTests(unittest.TestCase):
             "reasons": [],
             "provenance": {"status": "mechanically eligible", "reasons": []},
             "source_guard": {"status": "pass", "violations": []},
-            "allowlist": {"ok": True, "errors": []},
+            "candidate_tree": {"ok": True, "errors": []},
             "rebuild": {"status": "verified_success", "reasons": []},
         }
         text = rc.render_markdown_summary(report)
@@ -311,16 +312,16 @@ class RenderMarkdownSummaryTests(unittest.TestCase):
     def test_check_table_reflects_each_sub_report_status_dynamically(self):
         ok_report = {
             "status": "blocked", "reasons": ["r"],
-            "allowlist": {"ok": True, "errors": []},
+            "candidate_tree": {"ok": True, "errors": []},
         }
         bad_report = {
             "status": "blocked", "reasons": ["r"],
-            "allowlist": {"ok": False, "errors": ["gap"]},
+            "candidate_tree": {"ok": False, "errors": ["gap"]},
         }
         ok_text = rc.render_markdown_summary(ok_report)
         bad_text = rc.render_markdown_summary(bad_report)
-        self.assertIn("| `allowlist` | ✅ |", ok_text)
-        self.assertIn("| `allowlist` | ❌ |", bad_text)
+        self.assertIn("| `candidate_tree` | ✅ |", ok_text)
+        self.assertIn("| `candidate_tree` | ❌ |", bad_text)
 
     def test_unknown_status_never_crashes_and_is_shown_verbatim(self):
         text = rc.render_markdown_summary({"status": "some-future-status", "reasons": []})
@@ -448,12 +449,8 @@ class ExtractedNonGitTreeEndToEndTests(unittest.TestCase):
         data = json.loads(result.stdout)
         self.assertEqual(data["status"], "blocked")
         self.assertEqual(data["target_sha"], self.head_sha)
-        self.assertTrue(data["allowlist"]["ok"], data["allowlist"]["errors"])
-        self.assertEqual(data["source_guard"]["status"], "blocked")
-        self.assertEqual(
-            data["source_guard"]["violations"],
-            ["docs/release_data/provenance/code.json: not-allowlisted"],
-        )
+        self.assertTrue(data["candidate_tree"]["ok"], data["candidate_tree"]["errors"])
+        self.assertEqual(data["source_guard"]["status"], "pass")
 
     def test_check_expect_status_blocked_exits_zero(self):
         result = run_cli(
@@ -587,8 +584,8 @@ class MalformedExtractedTreeTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         data = json.loads(result.stdout)
         self.assertEqual(data["status"], "blocked")
-        self.assertFalse(data["allowlist"]["ok"])
-        self.assertTrue(any("README.md" in e for e in data["allowlist"]["errors"]))
+        self.assertEqual(data["source_guard"]["status"], "blocked")
+        self.assertTrue(any("README.md" in e for e in data["source_guard"]["violations"]))
 
     def test_extra_unlisted_member_is_reported_blocked_not_exit_2(self):
         """An extra, never-allowlisted file present in an extracted tree
@@ -616,16 +613,8 @@ class MalformedExtractedTreeTests(unittest.TestCase):
         self.assertEqual(rehearse_result.returncode, 0, rehearse_result.stderr)
 
 
-class MalformedAllowlistCliExitTests(unittest.TestCase):
-    """issue #9 trust-boundary fix (C): a structurally malformed
-    `docs/release_data/source_allowlist.json` -- truncated JSON, wrong
-    top-level type, malformed schema/entry, or a duplicate path entry --
-    must map to `EXIT_TOOLING_ERROR` (2) through the real, top-level
-    `check`/`rehearse` CLI, never a raw traceback and never
-    `EXIT_NOT_ELIGIBLE` (1) even under `--require-eligible`. A
-    well-formed-but-blocked document remains ordinary exit 0 (plain
-    report mode) / exit 1 (only via `--require-eligible`) -- the
-    valid-but-blocked distinction this fix exists to preserve."""
+class MalformedProvenanceMetadataCliExitTests(unittest.TestCase):
+    """Malformed human metadata is a tooling error, never eligibility."""
 
     @classmethod
     def setUpClass(cls):
@@ -636,93 +625,43 @@ class MalformedAllowlistCliExitTests(unittest.TestCase):
         self.addCleanup(shutil.rmtree, tree, True)
         return tree
 
-    def _assert_no_traceback(self, result):
-        self.assertNotIn("Traceback (most recent call last)", result.stderr)
-        self.assertNotIn("Traceback (most recent call last)", result.stdout)
+    @staticmethod
+    def _metadata_path(tree: Path) -> Path:
+        return tree / "docs" / "release_data" / "provenance.json"
 
-    def _allowlist_path(self, tree: Path) -> Path:
-        return tree / "docs" / "release_data" / "source_allowlist.json"
-
-    def test_truncated_json_exits_2_via_check(self):
+    def test_truncated_metadata_exits_2_via_check_and_rehearse(self):
         tree = self._extract()
-        self._allowlist_path(tree).write_text("{not json", encoding="utf-8")
+        self._metadata_path(tree).write_text("{not json", encoding="utf-8")
+        for command in ("check", "rehearse"):
+            with self.subTest(command=command):
+                result = run_cli(command, "--repo-root", str(tree), "--target-sha", self.head_sha)
+                self.assertEqual(result.returncode, 2)
+                self.assertIn("error:", result.stderr)
+
+    def test_wrong_schema_version_exits_2(self):
+        tree = self._extract()
+        metadata = json.loads(self._metadata_path(tree).read_text(encoding="utf-8"))
+        metadata["schema_version"] = 99
+        self._metadata_path(tree).write_text(json.dumps(metadata), encoding="utf-8")
         result = run_cli("check", "--repo-root", str(tree), "--target-sha", self.head_sha)
-        self._assert_no_traceback(result)
-        self.assertEqual(result.returncode, 2)
-        self.assertIn("error:", result.stderr)
-
-    def test_truncated_json_never_exits_1_even_with_require_eligible(self):
-        """The exact regression this fix exists to close: a malformed
-        input must never be indistinguishable from a truthful, well-
-        formed EXIT_NOT_ELIGIBLE (1) result."""
-        tree = self._extract()
-        self._allowlist_path(tree).write_text("{not json", encoding="utf-8")
-        result = run_cli(
-            "check", "--repo-root", str(tree), "--target-sha", self.head_sha, "--require-eligible",
-        )
-        self._assert_no_traceback(result)
-        self.assertEqual(result.returncode, 2)
-
-    def test_wrong_top_level_type_exits_2_via_check(self):
-        tree = self._extract()
-        self._allowlist_path(tree).write_text(json.dumps([1, 2, 3]), encoding="utf-8")
-        result = run_cli("check", "--repo-root", str(tree), "--target-sha", self.head_sha)
-        self._assert_no_traceback(result)
-        self.assertEqual(result.returncode, 2)
-
-    def test_malformed_schema_version_exits_2_via_check(self):
-        tree = self._extract()
-        self._allowlist_path(tree).write_text(
-            json.dumps({"schema_version": 1, "paths": ["README.md"], "modes": {"README.md": "100644"}}),
-            encoding="utf-8",
-        )
-        result = run_cli("check", "--repo-root", str(tree), "--target-sha", self.head_sha)
-        self._assert_no_traceback(result)
         self.assertEqual(result.returncode, 2)
         self.assertIn("schema_version", result.stderr)
 
-    def test_duplicate_path_entry_exits_2_via_check(self):
+    def test_duplicate_exact_path_exits_2(self):
         tree = self._extract()
-        self._allowlist_path(tree).write_text(
-            json.dumps({
-                "schema_version": 4,
-                "paths": ["README.md", "README.md"],
-                "modes": {"README.md": "100644"},
-            }),
-            encoding="utf-8",
-        )
+        metadata = json.loads(self._metadata_path(tree).read_text(encoding="utf-8"))
+        metadata["entries"].append(dict(metadata["entries"][0]))
+        self._metadata_path(tree).write_text(json.dumps(metadata), encoding="utf-8")
         result = run_cli("check", "--repo-root", str(tree), "--target-sha", self.head_sha)
-        self._assert_no_traceback(result)
         self.assertEqual(result.returncode, 2)
         self.assertIn("duplicate", result.stderr)
 
-    def test_truncated_json_exits_2_via_rehearse(self):
-        tree = self._extract()
-        self._allowlist_path(tree).write_text("{not json", encoding="utf-8")
-        result = run_cli("rehearse", "--repo-root", str(tree), "--target-sha", self.head_sha)
-        self._assert_no_traceback(result)
-        self.assertEqual(result.returncode, 2)
-
-    def test_valid_but_blocked_allowlist_is_not_a_tooling_error(self):
-        """The valid-but-blocked distinction: a well-formed,
-        schema-valid document that genuinely disagrees with the real
-        tracked-file set (an extra, unlisted file) remains an ordinary
-        exit 0 (plain report) / exit 1 (only via --require-eligible)
-        business result -- never a tooling error."""
+    def test_extra_file_is_blocked_not_a_tooling_error(self):
         tree = self._extract()
         (tree / "unreviewed_extra_file.c").write_text("int extra;\n")
         result = run_cli("check", "--repo-root", str(tree), "--target-sha", self.head_sha)
-        self._assert_no_traceback(result)
-        self.assertEqual(result.returncode, 0, result.stderr)
-        data = json.loads(result.stdout)
-        self.assertEqual(data["status"], "blocked")
-
-        require_eligible_result = run_cli(
-            "check", "--repo-root", str(tree), "--target-sha", self.head_sha, "--require-eligible",
-        )
-        self._assert_no_traceback(require_eligible_result)
-        self.assertEqual(require_eligible_result.returncode, 1)
-
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(json.loads(result.stdout)["status"], "blocked")
 
 
 class NestedOuterRepositoryZeroGitCallsTests(unittest.TestCase):

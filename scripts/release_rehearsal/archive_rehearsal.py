@@ -51,12 +51,11 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from scripts.release_rehearsal import allowlist as al
+from scripts.release_rehearsal import candidate_tree as ct
 from scripts.release_rehearsal import git_source as gs
 from scripts.release_rehearsal import gitmodules as gm
 from scripts.release_rehearsal import provenance as prov
 from scripts.release_rehearsal import source_guard as sg
-from scripts.release_rehearsal import tree_coverage as tc
 from scripts.modernize import verify_rom_header as vrh
 
 CANONICAL_MTIME = 0
@@ -297,13 +296,15 @@ def _iter_archive_contents(
     if gs.is_git_repo(root):
         try:
             resolved_target_sha = target_sha if target_sha is not None else gs.resolve_sha(root, "HEAD")
-            entries = sorted(
-                (
-                    entry for entry in gs.list_tree(root, resolved_target_sha)
-                    if entry.path in allowlist_set and not entry.is_gitlink
-                ),
-                key=lambda entry: entry.path,
-            )
+            tree = ct.load(root, resolved_target_sha)
+            expected_paths = set(tree.source_paths)
+            if allowlist_set != expected_paths:
+                raise ArchiveRehearsalError(
+                    "refusing to archive: caller paths differ from the immutable target tree "
+                    f"(missing: {sorted(expected_paths - allowlist_set)}; "
+                    f"extra: {sorted(allowlist_set - expected_paths)})"
+                )
+            entries = tuple(sorted(tree.source_entries, key=lambda entry: entry.path))
             with gs.GitBatchBlobReader(root) as reader:
                 fetched = [(entry, reader.read(entry.object_id)) for entry in entries]
         except gs.GitSourceError as error:
@@ -312,18 +313,9 @@ def _iter_archive_contents(
             _hard_deny_check_git_entry(entry, data, violations, map_hex_exceptions)
         if not violations:
             contents = [(entry.path, data) for entry, data in fetched]
-            # issue #9 mandatory correction #2: candidate archive members
-            # MUST equal the included (allowlist) set exactly -- never a
-            # subset (a declared member silently missing) nor a superset
-            # (an undeclared member silently smuggled in, e.g. a gitlink
-            # that slipped past the `not entry.is_gitlink` filter above
-            # due to a future bug). This is a direct, load-bearing check
-            # inside the archive-building path itself -- it never merely
-            # relies on some *other*, possibly-skipped check
-            # (`allowlist.check_allowlist_completeness`) having already
-            # run first.
             built_paths = {path for path, _ in contents}
-            missing_members, extra_members = tc.check_archive_membership_exact(built_paths, allowlist_set)
+            missing_members = sorted(allowlist_set - built_paths)
+            extra_members = sorted(built_paths - allowlist_set)
             if missing_members or extra_members:
                 raise ArchiveRehearsalError(
                     "refusing to archive: built archive members do not exactly equal the "
@@ -339,7 +331,11 @@ def _iter_archive_contents(
         # command for a non-git `root` (see module docstring's "Immutable,
         # HEAD-bound archive inputs").
         resolved_target_sha = target_sha
-        _missing_unused, unrepresented = al.check_allowlist_completeness_non_git(root, sorted(allowlist_set))
+        unrepresented = [
+            f"{path}: no regular on-disk source member"
+            for path in sorted(allowlist_set)
+            if not (root / path).is_file()
+        ]
         if unrepresented:
             raise ArchiveRehearsalError(
                 "refusing to archive: allowlisted member(s) have no on-disk representation "
@@ -639,7 +635,9 @@ def evaluate_rebuild_eligibility(
     is never fetched/initialized/approved in this branch either, exactly
     like the real-git-repo path below."""
     repo_root = Path(repo_root)
-    provenance_dir = Path(provenance_dir) if provenance_dir else repo_root / "docs" / "release_data" / "provenance"
+    provenance_path = Path(provenance_dir) if provenance_dir else repo_root / "docs" / "release_data" / "provenance.json"
+    if provenance_path.is_dir():
+        provenance_path = provenance_path / "provenance.json"
 
     if not gs.is_git_repo(repo_root):
         reason = (
@@ -658,7 +656,7 @@ def evaluate_rebuild_eligibility(
             "submodule_declared_url": None,
             "submodule_provenance_url": None,
             "submodule_pinned_object_accessible": False,
-            "provenance_pinned_commit": None,
+            "candidate_tree_pinned_commit": None,
             "provenance_redistribution_approved": False,
             "identity_matches_pinned": False,
             "reasons": [reason],
@@ -687,16 +685,24 @@ def evaluate_rebuild_eligibility(
     approved = False
     provenance_url: Optional[str] = None
     try:
-        entries = prov.load_all(provenance_dir)
-    except prov.ProvenanceError:
+        entries = prov.load_metadata(provenance_path)
+        tree = ct.load(repo_root, gs.resolve_sha(repo_root, "HEAD"))
+    except (prov.ProvenanceError, ct.CandidateTreeError, gs.GitSourceError):
         entries = []
+        tree = None
     matches = [entry for entry in entries if entry.get("path") == submodule_path]
     if not matches:
-        reasons.append(f"no provenance entry recorded for '{submodule_path}' in {provenance_dir}")
+        reasons.append(f"no provenance entry recorded for '{submodule_path}' in {provenance_path}")
     else:
-        pinned_commit = matches[0].get("pinned_commit")
         approved = bool(matches[0].get("redistribution_approved"))
         provenance_url = matches[0].get("url") or None
+        tree_entry = None if tree is None else next(
+            (entry for entry in tree.gitlink_entries if entry.path == submodule_path), None
+        )
+        if tree_entry is None:
+            reasons.append(f"no immutable target-tree gitlink recorded for '{submodule_path}'")
+        else:
+            pinned_commit = tree_entry.object_id
         if not approved:
             reasons.append(
                 f"provenance for the '{submodule_path}' submodule content is recorded as "
@@ -834,7 +840,7 @@ def evaluate_rebuild_eligibility(
         "submodule_declared_url": declared_url,
         "submodule_provenance_url": provenance_url,
         "submodule_pinned_object_accessible": pinned_object_accessible,
-        "provenance_pinned_commit": pinned_commit,
+        "candidate_tree_pinned_commit": pinned_commit,
         "provenance_redistribution_approved": approved,
         "identity_matches_pinned": identity_ok,
         "reasons": reasons,
@@ -1409,10 +1415,10 @@ def rebuild_rehearsal_blocker(
         }
 
     # `eligible` is only ever True once `evaluate_rebuild_eligibility`
-    # has already confirmed `provenance_pinned_commit` is set, matches
+    # has already confirmed `candidate_tree_pinned_commit` is set, matches
     # the submodule's own checked-out HEAD, and is a real, locally-
     # accessible commit object -- so it is always non-None here.
-    pinned_commit = eligibility_report["provenance_pinned_commit"]
+    pinned_commit = eligibility_report["candidate_tree_pinned_commit"]
     build_result = run_build_twice_from_immutable_source(
         repo_root, resolved_target_sha, build_command, output_relpaths,
         extra_materialize=_materialize_verified_submodule_content(repo_root, submodule_path, pinned_commit),
@@ -1451,7 +1457,7 @@ def main(argv=None) -> int:
 
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repo-root", type=Path, default=Path("."))
-    parser.add_argument("--allowlist", type=Path, default=Path("docs/release_data/source_allowlist.json"))
+    parser.add_argument("--target-sha", default="HEAD")
     parser.add_argument(
         "--map-hex-exceptions", type=Path,
         default=Path("docs/release_data/map_hex_exceptions.json"),
@@ -1459,13 +1465,16 @@ def main(argv=None) -> int:
     args = parser.parse_args(argv)
 
     try:
-        allowlist = sg.load_allowlist(args.allowlist)
+        target_sha = gs.resolve_sha(args.repo_root, args.target_sha)
+        tree = ct.load(args.repo_root, target_sha)
         map_hex_exceptions = (
             sg.load_map_hex_exceptions(args.map_hex_exceptions)
             if args.map_hex_exceptions.is_file() else frozenset()
         )
-        archive_report = rehearse_archive_twice(args.repo_root, allowlist, map_hex_exceptions=map_hex_exceptions)
-    except (sg.SourceGuardError, ArchiveRehearsalError, OSError) as error:
+        archive_report = rehearse_archive_twice(
+            args.repo_root, tree.source_paths, target_sha=target_sha, map_hex_exceptions=map_hex_exceptions
+        )
+    except (sg.SourceGuardError, ArchiveRehearsalError, ct.CandidateTreeError, gs.GitSourceError, OSError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 2
 

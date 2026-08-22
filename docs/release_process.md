@@ -16,7 +16,7 @@ Wave 0 deliberately deferred all of this to issue #9.
 today and until a human maintainer:
 
 1. resolves the legal/provenance status recorded in
-   [`docs/release_data/provenance/*.json`](release_data/provenance/) (currently every
+   [`docs/release_data/provenance.json`](release_data/provenance.json) (currently every
    entry is honestly `NOASSERTION`/`redistribution_approved: false`/no
    reviewer -- see "Legal and provenance boundary" below), **and**
 2. separately authorizes (in a future, distinct change) any write-capable
@@ -33,12 +33,11 @@ document does **not** close issue #9.
 | Component | Module | Purpose |
 |---|---|---|
 | Changelog fragments | `scripts/release_rehearsal/changelog.py`, `changelog_fragments/*.json`, `CHANGELOG.md` | Categorized, schema-validated, deterministically-rendered change notes with declared SemVer impact. |
-| Release manifest | `scripts/release_rehearsal/manifest.py` | Ties together `config.mk` SemVer, embedded C metadata, a candidate tag string, changelog, docs, save format/migrations, previous/next supported versions, the exact allowlist, version-ledger topology, C-fallback-metadata consistency, migration-epoch reachability, doc-link validity, and the rebuild rehearsal into one report. |
+| Release manifest | `scripts/release_rehearsal/manifest.py` | Ties together `config.mk` SemVer, embedded C metadata, a candidate tag string, changelog, docs, save format/migrations, previous/next supported versions, immutable candidate-tree coverage, version-ledger topology, C-fallback-metadata consistency, migration-epoch reachability, doc-link validity, and the rebuild rehearsal into one report. |
 | Manifest consistency validators | `scripts/release_rehearsal/consistency.py` | Version-ledger topology/candidate-agreement, changelog-declared-SemVer-impact-vs-actual-delta (pre-/post-1.0 aware), `include/expansion_config.h` C-fallback-vs-`config.mk` cross-check, and save-format migration-registry epoch reachability. |
 | Migration registry | `scripts/modernize/migrations/registry.py` | Declares mechanical vs. manual save-format epoch transitions; see [`docs/migration_registry.md`](migration_registry.md). |
-| Provenance manifests | `scripts/release_rehearsal/provenance.py`, `docs/release_data/provenance/*.json` | Factual, generated code/asset/submodule provenance records: one exact record per exact allowlisted path (never directory-prefix/category credit), bound to the exact allowlist by a literal exact-path bijection (no gap, no ghost entry, no duplicate/leftover-category-style entry), plus a submodule gitlink-pin cross-check. |
-| Exact source allowlist | `scripts/release_rehearsal/allowlist.py`, `docs/release_data/source_allowlist.json` | Exact, deterministic, generated **per-member** (every tracked blob -- regular file, executable, or symlink) allowlist, with a bound-and-cross-checked exact Git mode per member (`"modes"`, schema_version 4) -- no directory-level/prefix grant, and neither a gitlink nor a self-referential-evidence blob (see Tree coverage below) is ever a member here. `check_allowlist_completeness()`/`check_mode_identity()` fail actionably the moment a tracked blob, its mode, or the checked-in allowlist ever disagree in any direction. |
-| Exact tree coverage / export exclusions | `scripts/release_rehearsal/tree_coverage.py`, `docs/release_data/export_exclusions.json` | Proves the included allowlist and an explicit, factual export-exclusions file (every excluded member's exact path, kind -- `"gitlink"` or `"self_referential_evidence"` -- immutable mode, and reason) are an exact, disjoint partition of the *complete* immutable HEAD tree -- a new tracked path (of any kind) absent from both fails coverage outright; a changed/stale pin, or a kind mismatch, is reported, never silently trusted. issue #9 R1/R2 fix: a `"gitlink"` exclusion additionally carries and strictly cross-checks an exact, immutable OID; a `"self_referential_evidence"` exclusion never carries an OID at all (schema requires it absent/`null`; a supplied/stale/fake value is a hard validator rejection, never merely "unchecked"), and this kind's own path is itself validated -- as a validator invariant, not a generator convention -- against a small, hard-coded, curated policy set (today exactly `docs/release_data/provenance/code.json`); an arbitrary tracked path claimed under this kind, or an extra/uncurated row of this kind, fails coverage outright even when constructed directly, bypassing the generator entirely. Also proves the actually-built archive's members equal the included set exactly (with a dedicated regression test against the real, wired archive-building call site), and closed-world-validates a genuine non-git extracted candidate tree's missing/extra/unsafe paths (of any filesystem entry kind, never skipping a stray symlink) against this same contract. |
+| Human provenance metadata | `scripts/release_rehearsal/provenance.py`, `docs/release_data/provenance.json` | Exact-path records select preserved human fact bundles only. The schema rejects content hashes, object IDs, commit pins, and generation-basis claims; a missing, stale, duplicate, or kind-incompatible path fails closed. |
+| Immutable candidate tree | `scripts/release_rehearsal/candidate_tree.py`, `scripts/release_rehearsal/git_source.py` | Git derives the exact target paths, modes, and gitlinks live from the candidate tree. This derived set is the source-archive membership authority and is cross-checked with exact human provenance metadata; no committed allowlist or export-exclusion snapshot exists. |
 | `.gitmodules` parser | `scripts/release_rehearsal/gitmodules.py` | Minimal, dependency-free parser for Git's `[submodule "name"]` INI dialect, reading the blob's exact content at an immutable target SHA (never the worktree path). |
 | mgfembp submodule three-way binding | `scripts/release_rehearsal/submodule_binding.py` | Cross-checks `.gitmodules`'s exact section/path/URL, the immutable HEAD tree gitlink's exact mode/OID, the export-exclusion record, and the submodule provenance record all agree exactly -- a missing/duplicate/malformed `.gitmodules` section, a path/URL mismatch, a non-`https://` URL scheme, a wrong gitlink mode/OID, a wrong provenance/exclusion URL/OID, or the submodule path appearing in the *included* allowlist (an allowlist/exclusion contradiction) are all reported. Never fetches/initializes the submodule. |
 | Source-release guard | `scripts/release_rehearsal/source_guard.py`, `docs/release_data/map_hex_exceptions.json` | Recursive hard-deny rules (path/extension **and** file-magic) for a release candidate tree/archive, including default-deny `.map`/`.hex` with an exact, factual, file-level exception list. Separate from, and does not modify, `scripts/artifact_guard.py`. |
@@ -263,30 +262,17 @@ contributing reason listed verbatim in `"reasons"`.
 
 ## Legal and provenance boundary
 
-`docs/release_data/provenance/{code,assets,submodules}.json` record, for
-every entry in `docs/release_data/source_allowlist.json` (the included
-set) plus the `mgfembp` gitlink exclusion, an honestly-unresolved
-`author`/`rightsholder`/`license` of `"NOASSERTION"`,
-`"redistribution_approved": false`, and `"reviewer": null`. **This
-repository's tooling never invents an author, rightsholder, license, or
-reviewer, and never selects or adds a root `LICENSE` file** -- doing so
-would be a legal claim this repository has no authority to make on its
-own. The `mgfembp` git submodule is separately pinned in
-`docs/release_data/provenance/submodules.json` to the exact commit
-`c87e74dcd6c8878b809e013cd8ff0c52baa75332` (matching this worktree's
-gitlink) and is, and remains, `redistribution_approved: false`. The
-one, sole exception to "every included/gitlink-excluded path has its own
-record" is `docs/release_data/provenance/code.json` itself (guardian-
-correction remediation, D2): it is neither an included allowlist member
-nor a gitlink -- it is its own explicit, minimal, self-referential-
-evidence export exclusion (see "Exact immutable HEAD tree coverage and
-explicit export exclusions" below) and, structurally, never has (or
-needs) its own provenance-manifest entry at all.
+`docs/release_data/provenance.json` preserves human provenance facts for
+exact paths. Its schema intentionally rejects commit IDs, blob object IDs,
+content hashes, and generation-basis claims. The immutable candidate tree is
+the sole authority for each path, mode, and gitlink commit. Every current
+human record remains honestly unresolved (`NOASSERTION`, no reviewer, and
+`redistribution_approved: false`), so release eligibility remains blocked
+until external legal review resolves those facts.
 
-`scripts/release_rehearsal/provenance.py evaluate()` is `"blocked"` whenever any
-entry has `NOASSERTION`, `redistribution_approved: false`, or no
-`reviewer` -- which is every entry, today. Resolving this is a human legal
-decision; no amount of running this tooling changes that.
+The `mgfembp` record retains its reviewed source URL and unresolved
+redistribution status. Its exact commit is never duplicated in metadata: it
+is read from the candidate tree when the archive/rebuild rehearsal needs it.
 
 ## External attestation is outside candidate control
 
@@ -307,9 +293,9 @@ control**:
   candidate-writable path anywhere in this repository that could ever
   change it to `"present"`.
 * No in-repo reviewer string recorded in
-  `docs/release_data/provenance/*.json`, no `redistribution_approved`
+  `docs/release_data/provenance.json`, no `redistribution_approved`
   boolean there, no clean `workflow_guard`/`action_pins`/
-  `tree_coverage`/`submodule_binding` result, no CI job output, and no
+  `candidate_tree`/`submodule_binding` result, no CI job output, and no
   `--require-eligible`/`--expect-status` CLI argument is ever *sufficient*
   to produce an overall `"mechanically eligible"` status -- this
   substatus is unconditionally folded into the overall candidate status
@@ -353,390 +339,29 @@ authorization" under "Workflow and Make integration" below) -- applied
 one level up, to the *entire* in-repo mechanical result, not just its
 permission/safety contract.
 
-## Exact per-member source allowlist and provenance coverage
+## Candidate-tree membership and provenance coverage
 
-`docs/release_data/source_allowlist.json` is **not** a top-level-directory
-grant any more. It is an exact, deterministic, generated list of every
-single tracked *blob* path (regular file, executable, or symlink) --
-generated and validated by `scripts/release_rehearsal/allowlist.py`
-directly from Git's own tree listing (`git ls-tree -r`), never
-hand-maintained. Neither a gitlink (e.g. the `mgfembp` submodule
-mountpoint) nor a self-referential-evidence blob (e.g.
-`docs/release_data/provenance/code.json`) is ever a member here -- each
-is instead its own explicit, factual export-exclusion record (see
-"Exact immutable HEAD tree coverage and explicit export exclusions"
-below). A brand-new tracked file with no corresponding entry is an
-actionable `make release-check` failure (`check_allowlist_completeness`'s
-"missing" list), not a silent gap; a stale entry for a file that no
-longer exists is equally reported ("stale" list) so the allowlist can
-never quietly drift out of sync with reality in either direction.
-Regenerate it with:
+Release membership is derived directly from `git ls-tree -r` for the exact
+candidate. `scripts/release_rehearsal/candidate_tree.py` supplies the complete
+path/mode/gitlink set, and `provenance.py` requires one exact human provenance
+record for every derived path. Missing, stale, duplicate, or kind-incompatible
+records fail closed. No committed source-membership ledger, export-exclusion
+ledger, mode snapshot, content hash, gitlink pin, or generation-basis claim is
+used.
 
-```sh
-python3 -m scripts.release_rehearsal.allowlist generate --target-sha HEAD --write
-```
+The deterministic archive includes exactly the derived non-gitlink source
+paths and writes canonical tar member modes. Gitlinks are never archive
+members; their URL and human review status are checked against `.gitmodules`
+and the candidate tree.
 
-**issue #9 final-review remediation -- 'generation_basis_sha' must be a
-real, reachable commit, never a dangling tree.** Both
-`docs/release_data/source_allowlist.json` and `docs/release_data/
-export_exclusions.json` record a `"generation_basis_sha"` field whose
-own schema/comment text promises it documents *which commit* the file
-was last regenerated against. `--target-sha index` (a development-time
-convenience that serializes the *current staged index* into a real Git
-tree object via `git write-tree` -- see `git_source.write_index_tree`)
-is useful for previewing/verifying an in-progress, not-yet-committed
-change, but its resulting object is a **tree**, never a commit, and (if
-never actually committed) is never reachable from any ref either -- a
-future `git gc` can prune it at any time. Writing that value into the
-actual checked-in file would make the schema's own "which commit"
-promise false and ephemeral. Both CLIs therefore **refuse** `--write`
-combined with `--target-sha index` outright (`generate --write` /
-`generate-exclusions --write` exit 2, actionably, without touching the
-checked-in file) -- `--target-sha index` remains available without
-`--write` for a local, uncommitted stdout preview only. `allowlist.py
-check()` and `manifest.check_tree_coverage()` additionally both call
-the single, shared `git_source.check_generation_basis_is_commit()`
-check on every `make release-check`, which fails closed if either
-checked-in document's own `"generation_basis_sha"` is not itself a
-real, still-reachable commit object -- so this exact defect (a
-dangling/tree basis silently committed into checked-in evidence) can
-never regress unnoticed.
+## mgfembp submodule binding
 
-### Archive member mode policy (guardian-correction remediation, D4)
-
-`docs/release_data/source_allowlist.json` (schema_version 4) additionally
-records a `"modes"` map: every included path's exact Git mode
-(`100644`/`100755`/`120000`). `allowlist.py check()` cross-checks this
-map is an exact bijection with `"paths"` (no gap, no orphan) and, for a
-real git repository, that every declared mode still matches the live
-tree's actual mode for that path (`check_mode_identity`) -- a committed
-executable-bit (or other mode) change now makes this canonical data
-stale/fail until `allowlist generate --write` is re-run, exactly like a
-content or path change already does.
-
-**issue #9 R5 fix -- mode binding cannot be silently switched off.** An
-earlier version of this schema treated `"modes"` as effectively
-optional at load time: `load_allowlist_modes()` returned `None` with no
-error at all when the key was simply absent, and nothing anywhere
-checked `schema_version` itself -- so deleting the `"modes"` key (or
-rolling `schema_version` back to an older value) silently disabled
-every mode check above with no actionable failure, while every other
-allowlist check kept passing. `load_allowlist_modes()` now hard-requires
-`schema_version` to be *exactly* the current, single supported value
-(`4`; every real checked-in document has always been schema_version 4,
-so there is no legitimate older-schema fallback to preserve) -- a
-missing, downgraded, upgraded-but-unknown, or wrong-type
-`schema_version` is an actionable `AllowlistError`, raised *before* any
-mode checking is even attempted. Once `schema_version` passes, `"modes"`
-itself becomes unconditionally mandatory (a missing key is now the same
-class of hard error, never a silent `None`), and its bijection/identity
-checks always run -- there is no code path left that skips them.
-
-This mode binding is a **drift-detection/provenance-identity** concern
-only -- it is deliberately **not** an archive-fidelity promise.
-`archive_rehearsal.py`'s `build_deterministic_archive` continues to
-canonicalize *every* written tar member's mode to a fixed
-`CANONICAL_FILE_MODE = 0o644`, regardless of the source path's actual
-Git mode (a `100755` executable script and a `100644` ordinary file both
-land in the archive with the identical `0o644` tar mode) -- this is a
-deliberate, tested determinism policy (byte-identical archives from
-byte-identical trees, independent of a host's own umask/tar-implementation
-quirks), not an oversight. A tracked symlink (`120000`) is never archived
-at all (`source_guard.py`'s pre-existing hard-deny), so the only modes
-that ever reach the archive-writing step in practice are `100644`/
-`100755`, both mapped to the same fixed output mode. If archive-fidelity
-mode preservation is ever needed for `120000`-adjacent tooling, that
-would be a distinct, explicitly-reviewed policy change -- this document
-and the allowlist's own `"modes"` map exist so that decision is at least
-made with full, exact, live information about what modes are actually in
-play, never guessed at.
-
-**Provenance coverage is now a literal, exact, one-record-per-member
-bijection -- never directory-prefix/category credit.** A fresh,
-independent review found the previous design let a single category-level
-provenance entry (e.g. `"src"`) "cover" every allowlisted path nested
-under it by directory prefix, which meant a brand-new tracked file, once
-added to the allowlist, could silently inherit an ancestor directory's
-provenance record with no dedicated review decision of its own. That is
-fixed: `docs/release_data/provenance/{code,assets,submodules}.json` now
-contain one exact provenance record **per exact allowlisted path** (as
-many records as there are allowlist entries -- currently in the
-thousands, one for every tracked file plus the single `mgfembp` gitlink),
-and `scripts/release_rehearsal/provenance.py`'s coverage functions
-(`coverage_gaps`, `find_ghost_entries`, `find_duplicate_entry_paths`,
-`evaluate_coverage`) are now pure **exact-path set operations**: an
-entry's `path` covers *only* that literal path, never a descendant. A new
-allowlisted file with no exact same-path provenance entry is an actionable
-`missing provenance entry for ...` finding, exactly like a brand-new
-tracked file with no allowlist entry is an actionable allowlist finding --
-there is no auto-granting at validation time in either case.
-`find_ambiguous_entries()` is kept as a defense-in-depth hygiene guard
-(it can never legitimately fire against a genuine one-record-per-tracked-
-file data set, since no real Git blob path can be a directory-prefix
-ancestor of another) that catches a leftover category/directory-style
-entry mixed in with exact ones.
-
-Hand-authoring thousands of otherwise-identical `NOASSERTION` records by
-hand would itself be an unreviewable maintenance hazard, so
-`scripts/release_rehearsal/provenance.py` also provides a small,
-deterministic **generator**: `PROVENANCE_ROOT_SEED` is the single,
-human-curated input (one entry per reviewable top-level root -- the same
-roots this repository already reviewed at category granularity before
-this fix), and `generate_exact_entries()` mechanically fans each root's
-`category`/`notes` out to every exact allowlisted (or, for a
-`"submodule"`-category root, explicitly excluded) path nested under (or
-equal to) it. **Guardian-correction remediation (D5): this generator
-never "preserves" a previously-recorded fact across a changed or
-brand-new blob -- there is nothing to preserve.** Every run always,
-unconditionally, freshly proposes the exact same honest starting point
-for `author`/`rightsholder`/`license`/`redistribution_approved`/
-`reviewer` (`"NOASSERTION"`/`"NOASSERTION"`/`"NOASSERTION"`/`false`/
-`null`) for every path, however it was assigned a root -- it never
-invents a *different* fact, but it equally never carries a human's
-*already-recorded* `redistribution_approved: true`/named `reviewer`
-forward either: regenerating after a human has actually resolved an
-entry would silently discard that resolution back to the unresolved
-starting point (this is precisely why `check`/`evaluate_coverage`'s
-runtime validation path -- see below -- never invokes this generator
-itself; it only ever reads whatever a human has actually committed).
-A `"submodule"`-category entry's `pinned_commit` and `url` are always
-read fresh from the immutable target tree/`.gitmodules` at generation
-time, never hardcoded or carried over from any existing on-disk
-record -- so a re-pinned submodule commit or a changed `.gitmodules` URL
-is reflected immediately, honestly, the next time this generator is run,
-never silently stale. This directory-prefix fan-out is **exclusively a
-generator-time convenience**; it plays no role in, and is never invoked
-by, the runtime `check`/`evaluate_coverage` validation path, which only
-ever reads whatever exact records are actually committed to disk.
-Regenerate (after adding a new root to `PROVENANCE_ROOT_SEED` for a
-genuinely new top-level location, or whenever the allowlist changes)
-with:
-
-```sh
-python3 -m scripts.release_rehearsal.provenance generate --write
-```
-
-`scripts/release_rehearsal/provenance.py`'s `check_gitlink_pins()` is an
-additional cross-check specific to the `"submodule"`-category entry: it
-compares the provenance record's declared `pinned_commit` against the
-actual gitlink object id Git's own tree records for that exact path (via
-`git ls-tree`), independent of whether the submodule is actually
-initialized/checked out locally -- a provenance record that merely
-*claims* a pin is exactly as much an honesty gap as an unresolved
-NOASSERTION fact if the superproject's own tree does not actually record
-that commit.
-
-## Exact immutable HEAD tree coverage and explicit export exclusions
-
-Issue #9 mandatory correction #2 closes a residual gap the exact
-per-member allowlist above, on its own, still left open: the `mgfembp`
-submodule **gitlink** used to sit *inside* that same allowlist file as an
-ordinary-looking entry (`archive_rehearsal.py` has always silently
-skipped it via `not entry.is_gitlink` when building archive bytes, since
-a gitlink has no blob content at all -- but nothing forced that skip to
-be an explicit, separately reviewed, checked-in decision).
-
-`scripts/release_rehearsal/tree_coverage.py` defines two canonical sets
-directly from an immutable `git ls-tree -r <target_sha>`:
-
-* **included** -- `docs/release_data/source_allowlist.json`'s exact
-  per-blob paths (regular file, executable, or symlink -- never a
-  gitlink any more; `allowlist.py`'s generator schema_version bumped to
-  `3`, then to `4` for the added `"modes"` mode-binding map -- see
-  "Archive member mode policy" below -- to reflect this);
-* **excluded** -- `docs/release_data/export_exclusions.json`'s exact,
-  factual records: for every currently-excluded member, its exact path,
-  `kind`, immutable `mode`, and a factual `reason`. Two kinds are
-  modeled today (a brand-new, third kind is deliberately rejected
-  fail-closed rather than silently accepted), and -- issue #9 R1/R2 fix
-  -- each kind now has genuinely distinct, kind-specific OID/path
-  semantics that the *validator itself* enforces (never merely a
-  convention the generator happens to follow -- see below):
-  * `"gitlink"` -- a real Git gitlink with no blob content in this
-    repository's own tree at all. Today this is exactly one entry:
-    `mgfembp`, excluded because no approved submodule content is
-    present (see "Legal and provenance boundary" above); a gitlink
-    exclusion still requires its own separate, dedicated provenance-
-    manifest legal-review record elsewhere (`docs/release_data/
-    provenance/submodules.json`). It carries and strictly requires an
-    exact, immutable 40-lowercase-hex `oid`, cross-checked against the
-    live tree exactly like before -- a changed/stale pin is reported,
-    never silently trusted.
-  * `"self_referential_evidence"` (guardian-correction remediation, D2;
-    issue #9 R1/R2 fix below) -- an ordinary tracked *blob* (never a
-    gitlink) that is structurally excluded because it cannot record a
-    live-content-bound identity fact about itself without an unsolvable
-    circular dependency. Today this is exactly one entry:
-    `docs/release_data/provenance/code.json` itself -- `provenance.py`'s
-    own generated "code"-category manifest, which is what *every other*
-    included blob's own oid/sha256 provenance record (including the
-    records describing `assets.json` and `submodules.json` themselves)
-    actually lives inside. A record describing `code.json` *inside*
-    `code.json` would need to embed a hash of its own not-yet-finalized
-    content (a "hash quine"); there is no ordinary regeneration process
-    that reaches a fixed point for that. Unlike a gitlink exclusion,
-    this kind's own `reason` field *is* its complete, sufficient,
-    externally-owned evidence record -- it never requires (and never
-    receives) a *second*, separate provenance-manifest entry (see "Exact
-    per-file provenance identity" below for why exempting a path from
-    live cross-checking inside `check_blob_identity()` is the wrong fix,
-    and excluding it from the archive/required-coverage set entirely is
-    the right one).
-
-    **issue #9 R1/R2 fix -- curated path-only-plus-mode exclusion, no
-    OID semantics at all.** Two independent defects an earlier version
-    of this fix left open, both closed as *validator* invariants (in
-    `tree_coverage.check_partition()`/`load_exclusions()` themselves,
-    independent of whichever code happens to construct an exclusion
-    entry -- so neither gap can be reopened merely by bypassing the
-    generator):
-
-    * **R1 (arbitrary self-evidence exclusion injection).** Previously,
-      *any* tracked path could be claimed under
-      `kind: "self_referential_evidence"` with a fabricated `oid`, and
-      tree coverage stayed clean -- silently moving an arbitrary blob
-      out of the archive+provenance-required set with no actual review.
-      This kind's `path` is now checked against a small, hard-coded,
-      human-curated policy set (`SELF_REFERENTIAL_EVIDENCE_PATHS`,
-      today exactly `{"docs/release_data/provenance/code.json"}`) in
-      *both* `load_exclusions()` (the JSON-file-loading gate) and
-      independently again inside `check_partition()` itself (so even a
-      directly-constructed exclusion entry that never went through
-      `load_exclusions()` at all is still caught) -- no prefix, no
-      wildcard, no second/extra row of this kind for any other path. A
-      claim against any other path, or an uncurated extra row, fails
-      the partition outright (`invalid_self_referential_evidence`).
-      Dropping the one legitimate curated exclusion is unaffected and
-      still separately caught by the pre-existing `missing_included`
-      accounting once the real path resurfaces as neither included nor
-      excluded.
-    * **R2 (stale, unenforced, falsely-immutable-sounding OID).** This
-      kind's exclusion record used to carry an `oid` that was, in
-      truth, never cross-checked against anything at all (silently
-      "documentary/best-effort" only, while nearby prose read as if it
-      were an immutable, verified fact) -- and the real, checked-in
-      document's own recorded value had already drifted stale relative
-      to the live blob well before this fix, precisely because nothing
-      ever caught that drift. There is no such thing as a truthful,
-      immutable oid for this kind in the first place: a file cannot
-      record an exact hash of its own not-yet-finalized content without
-      exactly the "hash quine" cycle described above. The schema now
-      requires this kind's `oid` to be absent or JSON `null` --
-      `load_exclusions()` hard-rejects any supplied/stale/fake value
-      (a real 40-hex OID, an empty string, anything but `null`/absent)
-      -- and `generate_exclusions_document()` always writes `null` for
-      it, never a live tree OID. **Nothing about this kind's OID is
-      ever claimed, recorded, or cross-checked as a content-identity
-      fact**; a content change to the curated path is instead caught
-      purely by the ordinary tree-membership contract (it remains a
-      live, correctly-kinded, correctly-moded blob either way, so
-      neither a stale nor a "correct" OID was ever doing any real work).
-      This is a structural path-only-plus-mode exclusion and **external
-      rehearsal evidence about this repository's own tooling -- never
-      source archive content, and never itself a redistribution/legal
-      authorization of any kind.** Every *included* blob (every
-      ordinary allowlist member, `assets.json`, and `submodules.json`
-      alike) remains exactly OID/SHA256-bound with no exemption at all;
-      only this one, single, curated, self-referential path is excluded
-      this way.
-
-`check_partition()` proves these two checked-in sets, **together**,
-account for *every* tracked path in the complete tree **exactly once**:
-a brand-new tracked path of any kind (blob or gitlink) that is not
-already in one of these two sets fails coverage outright -- it is never
-silently absorbed into either side, and it never merely disappears from
-the archive. It also rejects any overlap (a path listed in both), any
-stale entry (an included/excluded record that no longer matches a real
-tracked path of the expected kind -- including a kind mismatch, e.g. a
-`"gitlink"`-kind exclusion whose path is now an ordinary blob, or vice
-versa), and any export-exclusion path that is a directory-prefix
-ancestor of another tracked path (broad-prefix directory exclusions are
-forbidden -- every exclusion must be an exact leaf, exactly like every
-allowlist entry already is).
-
-Two further checks close the loop end-to-end:
-
-* **Archive-member exact equality** (`check_archive_membership_exact`) --
-  wired directly into `archive_rehearsal.py`'s own archive-building path
-  (not merely a separate, possibly-skipped report): the actually-built
-  archive's members must equal the included set exactly, or the archive
-  build itself refuses (`ArchiveRehearsalError`) rather than silently
-  producing a subset/superset. Guardian-correction remediation (D5):
-  `scripts/release_rehearsal/tests/test_archive_rehearsal.py`'s
-  `test_wired_membership_exact_check_refuses_on_extra_members` forces
-  this exact, wired call site (not merely the standalone `tree_
-  coverage.check_archive_membership_exact` helper) to refuse, proving
-  the wiring itself, not only the underlying helper's own logic.
-* **Non-git closed-world coverage** (`check_non_git_tree`) -- for a
-  genuine already-extracted candidate tree (no `.git` at all), reports
-  three independent, actionable buckets: `missing` (an included path
-  with no on-disk file, or a gitlink-kind excluded path with no on-disk
-  directory), `extra` (a present filesystem entry of *any* kind --
-  regular file, symlink, hardlink, device, FIFO, socket -- accounted for
-  by neither set), and `unsafe` (a path present with the wrong *shape*
-  -- e.g. an included path materialized as a symlink, a gitlink-kind
-  excluded path materialized as a plain file instead of a directory, or
-  a self-referential-evidence-kind excluded path present *at all*, in
-  any shape -- it was never part of the archive to begin with, so
-  nothing should ever be there). Never invokes any git command.
-  Guardian-correction remediation (D5): a fresh, independent review
-  found the previous enumeration (`_present_regular_files`) `continue`d
-  straight past any symlink it found, making a stray, unlisted symlink
-  at any path completely invisible to both `extra` and `missing`
-  accounting; the replacement (`_present_paths`) never skips a
-  filesystem entry by kind -- only a genuine, non-symlink directory is
-  still ever walked through rather than reported.
-
-`scripts/release_rehearsal/manifest.py`'s `check_tree_coverage()` folds
-this into the overall candidate report (`"tree_coverage"`) exactly like
-every other sub-check -- any finding here forces the overall status to
-`"blocked"`. Provenance coverage (below) now spans **both** the included
-allowlist **and** the export exclusions (`tree_coverage.
-combined_required_paths`), so `mgfembp`'s own provenance/exclusion record
-is neither a false "ghost" nor a false "gap".
-
-Regenerate with:
-
-```sh
-python3 -m scripts.release_rehearsal.tree_coverage generate-exclusions --target-sha HEAD --write
-```
-
-## mgfembp submodule three-way binding
-
-Issue #9 mandatory correction #4: `scripts/release_rehearsal/
-submodule_binding.py` proves the `mgfembp` submodule is consistently
-described across every immutable source this repository records about
-it -- never merely "the JSON files happen to look similar":
-
-1. `.gitmodules`'s blob content at the target SHA (parsed by the new,
-   minimal, dependency-free `scripts/release_rehearsal/gitmodules.py` --
-   never the worktree path): the exact `[submodule "mgfembp"]` section's
-   `path` and `url`. A missing section, more than one section declaring
-   the same path, a path mismatch, a missing/empty `url`, or a `url` not
-   using the `https://` scheme (this module's explicit, minimal URL-
-   scheme policy) are all reported.
-2. The immutable HEAD tree's own gitlink entry for that exact path
-   (mode `160000`, an exact pinned commit OID).
-3. `docs/release_data/export_exclusions.json`'s exact exclusion record
-   (same path, `kind: "gitlink"`, and OID -- cross-checked against the
-   live gitlink OID, exactly like `tree_coverage.py`'s own check).
-4. `docs/release_data/provenance/submodules.json`'s exact provenance
-   record (same path, `url`, `pinned_commit`) -- `provenance.py`'s
-   schema now requires every `"submodule"`-category entry to also
-   record a non-empty `url`, cross-checked against `.gitmodules`'s own
-   URL; the deterministic generator (`generate_exact_entries`) reads
-   this URL fresh from `.gitmodules` every run, never hardcoding it.
-
-A `mgfembp` path present in the *included* source allowlist (rather than
-only the export exclusions) is reported as an explicit allowlist/
-exclusion contradiction. This module never fetches, initializes, or
-clones the submodule -- every check reads only already-committed,
-immutable blob/tree content and the already-checked-in JSON data files.
-Folded into the overall candidate status
-(`scripts/release_rehearsal/manifest.py`'s `check_submodule_binding`,
-`"submodule_binding"`) exactly like every other sub-check -- any finding
-here forces `"blocked"`. Also directly runnable standalone via
-`make release-submodule-binding-check`.
+`submodule_binding.py` cross-checks the exact `mgfembp` path and HTTPS URL
+between `.gitmodules`, the human provenance record, and the immutable target
+tree. The target tree alone supplies mode `160000` and the pinned commit used
+for archive/rebuild materialization. Missing, duplicate, or inconsistent URL
+and path metadata fails closed; the tool never fetches or initializes the
+submodule during ordinary release validation.
 
 ## Source-release guard
 

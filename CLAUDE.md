@@ -47,6 +47,14 @@ link, boot, and runtime behavior, not by equality with the vanilla ROM;
 the archival lane remains available for byte-level matching investigations
 without a whole-source/object/ROM identity hash gate.
 
+Release provenance derives path, mode, and gitlink membership from the
+immutable target tree. Never commit redundant source/blob/object/ROM/commit
+snapshots, per-file blob hashes, or duplicated submodule pins. Committed
+provenance may preserve human exact-path facts only; configuration fingerprints,
+external source/dependency hashes, extracted-content integrity, behavioral
+framebuffer/SRAM hashes, format CRCs/checksums, exact candidate binding, and
+release-time artifact hashes remain required where consumed.
+
 ## Remote Completion Gate
 
 For any task that changes tracked files, local implementation and tests are

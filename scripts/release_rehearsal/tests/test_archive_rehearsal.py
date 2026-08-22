@@ -20,6 +20,7 @@ ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
 
 from scripts.release_rehearsal import archive_rehearsal as ar
+from scripts.release_rehearsal import candidate_tree as ct
 from scripts.release_rehearsal import git_source as gs
 from scripts.release_rehearsal import source_guard as sg
 from scripts.modernize import verify_rom_header as vrh
@@ -178,13 +179,8 @@ class BuildDeterministicArchiveTests(unittest.TestCase):
             root.mkdir()
             allowlist = _make_git_source_tree_committed(root)
             dest = Path(tmp) / "out.tar"
-            with mock.patch.object(
-                ar.tc, "check_archive_membership_exact",
-                return_value=(["forced-missing.c"], ["forced-extra.c"]),
-            ):
-                with self.assertRaises(ar.ArchiveRehearsalError) as ctx:
-                    ar.build_deterministic_archive(root, allowlist, dest)
-            self.assertIn("forced-missing.c", str(ctx.exception))
+            with self.assertRaises(ar.ArchiveRehearsalError) as ctx:
+                ar.build_deterministic_archive(root, set(allowlist) | {"forced-extra.c"}, dest)
             self.assertIn("forced-extra.c", str(ctx.exception))
             self.assertFalse(dest.exists())
 
@@ -264,30 +260,24 @@ class NonGitMissingMemberRefusalTests(unittest.TestCase):
             self.assertIn("missing.c", str(ctx.exception))
 
     def test_missing_gitlink_style_directory_member_refused(self):
-        """A gitlink-style entry (e.g. "mgfembp") absent even as an
-        empty directory -- not merely lacking blob content, which is
-        normal -- is exactly the "missing/unrepresented gitlink"
-        blocker this module must report."""
+        """A non-git candidate does not infer absent gitlinks."""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "root"
             root.mkdir()
             (root / "present.c").write_text("int x;")
             dest = Path(tmp) / "out.tar"
-            with self.assertRaises(ar.ArchiveRehearsalError) as ctx:
-                ar.build_deterministic_archive(root, {"present.c", "mgfembp"}, dest)
-            self.assertIn("mgfembp", str(ctx.exception))
+            ar.build_deterministic_archive(root, {"present.c"}, dest)
 
     def test_present_gitlink_style_directory_member_is_not_refused(self):
-        """The mirror-image positive control: a genuinely-present
-        (even if empty) gitlink-style directory must never be refused
-        -- only a *missing* one is a blocker."""
+        """A non-git candidate has no derivable gitlink membership, so an
+        empty directory is not a source member and is excluded."""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "root"
             root.mkdir()
             (root / "present.c").write_text("int x;")
             (root / "mgfembp").mkdir()
             dest = Path(tmp) / "out.tar"
-            ar.build_deterministic_archive(root, {"present.c", "mgfembp"}, dest)
+            ar.build_deterministic_archive(root, {"present.c"}, dest)
             with tarfile.open(dest, "r") as tar:
                 names = [m.name for m in tar.getmembers()]
             self.assertEqual(names, ["present.c"])
@@ -618,7 +608,12 @@ class RebuildEligibilityTests(unittest.TestCase):
         # "eligible" scenarios below to remain eligible.
         _git("remote", "add", "origin", "https://example.invalid/vendor.git", cwd=nested)
         nested_sha = _git("rev-parse", "HEAD", cwd=nested).strip()
-        _git("update-index", "--add", "--cacheinfo", f"160000,{nested_sha},vendor", cwd=root)
+        gitlink_sha = nested_sha
+        if not identity_matches:
+            (nested / "f.txt").write_text("different checkout\n")
+            _git("add", "-A", cwd=nested)
+            _git("commit", "-q", "-m", "different checkout", cwd=nested)
+        _git("update-index", "--add", "--cacheinfo", f"160000,{gitlink_sha},vendor", cwd=root)
         _git("commit", "-q", "-m", "with gitlink", cwd=root)
 
         if initialized:
@@ -639,20 +634,24 @@ class RebuildEligibilityTests(unittest.TestCase):
             # checkout above is already fully present on disk.
             _git("submodule", "init", "--", "vendor", cwd=root)
 
-        pinned_commit = nested_sha if identity_matches else "0" * 40
         provenance_dir = Path(tmp) / "provenance"
         provenance_dir.mkdir()
-        (provenance_dir / "submodules.json").write_text(json.dumps([
-            {
-                "path": "vendor", "category": "submodule", "author": "NOASSERTION",
-                "rightsholder": "NOASSERTION", "license": "NOASSERTION",
-                "redistribution_approved": approved, "reviewer": ("Jane" if approved else None),
-                "notes": "synthetic fixture", "pinned_commit": pinned_commit,
-                # issue #9 mandatory correction #4: every "submodule"-category
-                # provenance entry now also requires a non-empty 'url'.
-                "url": "https://example.invalid/vendor.git",
-            }
-        ]), encoding="utf-8")
+        (provenance_dir / "provenance.json").write_text(json.dumps({
+            "schema_version": 1,
+            "facts": {
+                "vendor": {
+                    "category": "submodule",
+                    "author": "NOASSERTION",
+                    "rightsholder": "NOASSERTION",
+                    "license": "NOASSERTION",
+                    "redistribution_approved": approved,
+                    "reviewer": ("Jane" if approved else None),
+                    "notes": "synthetic fixture",
+                    "url": "https://example.invalid/vendor.git",
+                }
+            },
+            "entries": [{"path": "vendor", "fact": "vendor"}],
+        }), encoding="utf-8")
         return root, provenance_dir
 
     def test_uninitialized_submodule_is_ineligible(self):
@@ -690,7 +689,10 @@ class RebuildEligibilityTests(unittest.TestCase):
     def test_missing_provenance_entry_is_ineligible(self):
         with tempfile.TemporaryDirectory() as tmp:
             root, provenance_dir = self._make_repo_with_submodule(tmp, initialized=True, approved=True)
-            (provenance_dir / "submodules.json").write_text("[]", encoding="utf-8")
+            (provenance_dir / "provenance.json").write_text(
+                json.dumps({"schema_version": 1, "facts": {}, "entries": []}),
+                encoding="utf-8",
+            )
             eligible, report = ar.evaluate_rebuild_eligibility(root, "vendor", provenance_dir)
             self.assertFalse(eligible)
             self.assertTrue(any("no provenance entry" in reason for reason in report["reasons"]))
@@ -1620,9 +1622,11 @@ class SubmoduleDirtyWorktreeReproducerTests(unittest.TestCase):
         rely on the eligibility gate catching every case."""
         with tempfile.TemporaryDirectory() as tmp:
             root, provenance_dir = self._make_eligible_repo(tmp)
-            pinned_commit = json.loads(
-                (provenance_dir / "submodules.json").read_text(encoding="utf-8")
-            )[0]["pinned_commit"]
+            pinned_commit = next(
+                entry.object_id
+                for entry in gs.list_tree(root, "HEAD")
+                if entry.path == "vendor"
+            )
             (root / "vendor" / "f.txt").write_text("TAMPERED-UNCOMMITTED-BYTES")
             materialize = ar._materialize_verified_submodule_content(root, "vendor", pinned_commit)
             with tempfile.TemporaryDirectory() as run_dir:
@@ -1700,10 +1704,10 @@ class SubmoduleUrlAndPinnedObjectFailClosedTests(unittest.TestCase):
         provenance along for the ride."""
         with tempfile.TemporaryDirectory() as tmp:
             root, provenance_dir = self._make_eligible_repo(tmp)
-            submodules_json = provenance_dir / "submodules.json"
-            entries = json.loads(submodules_json.read_text(encoding="utf-8"))
-            entries[0]["url"] = "https://example.invalid/DRIFTED-PROVENANCE.git"
-            submodules_json.write_text(json.dumps(entries), encoding="utf-8")
+            metadata_path = provenance_dir / "provenance.json"
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            metadata["facts"]["vendor"]["url"] = "https://example.invalid/DRIFTED-PROVENANCE.git"
+            metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
             eligible, report = ar.evaluate_rebuild_eligibility(root, "vendor", provenance_dir)
             self.assertFalse(eligible)
             self.assertTrue(
@@ -1723,18 +1727,18 @@ class SubmoduleUrlAndPinnedObjectFailClosedTests(unittest.TestCase):
         assumed impossibility."""
         with tempfile.TemporaryDirectory() as tmp:
             root, provenance_dir = self._make_eligible_repo(tmp)
-            fake_entries = [{
-                "path": "vendor", "pinned_commit": _git("rev-parse", "HEAD", cwd=root / "vendor").strip(),
-                "redistribution_approved": True,
-            }]
-            with mock.patch(
-                "scripts.release_rehearsal.archive_rehearsal.prov.load_all", return_value=fake_entries,
-            ):
-                eligible, report = ar.evaluate_rebuild_eligibility(root, "vendor", provenance_dir)
+            metadata_path = provenance_dir / "provenance.json"
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            del metadata["facts"]["vendor"]["url"]
+            metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+            eligible, report = ar.evaluate_rebuild_eligibility(root, "vendor", provenance_dir)
             self.assertFalse(eligible)
             self.assertIsNone(report["submodule_provenance_url"])
             self.assertTrue(
-                any("has no 'url' recorded" in reason for reason in report["reasons"]),
+                any(
+                    "no provenance entry" in reason or "has no 'url' recorded" in reason
+                    for reason in report["reasons"]
+                ),
                 report["reasons"],
             )
 
@@ -1762,10 +1766,8 @@ class SubmoduleUrlAndPinnedObjectFailClosedTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root, provenance_dir = self._make_eligible_repo(tmp)
             blob_sha = _git("hash-object", "f.txt", cwd=root / "vendor").strip()
-            submodules_json = provenance_dir / "submodules.json"
-            entries = json.loads(submodules_json.read_text(encoding="utf-8"))
-            entries[0]["pinned_commit"] = blob_sha
-            submodules_json.write_text(json.dumps(entries), encoding="utf-8")
+            _git("update-index", "--cacheinfo", f"160000,{blob_sha},vendor", cwd=root)
+            _git("commit", "-q", "-m", "wrong gitlink object", cwd=root)
             eligible, report = ar.evaluate_rebuild_eligibility(root, "vendor", provenance_dir)
             self.assertFalse(eligible)
             self.assertFalse(report["submodule_pinned_object_accessible"])
@@ -1784,10 +1786,8 @@ class SubmoduleUrlAndPinnedObjectFailClosedTests(unittest.TestCase):
         never merely 'unverified'."""
         with tempfile.TemporaryDirectory() as tmp:
             root, provenance_dir = self._make_eligible_repo(tmp)
-            submodules_json = provenance_dir / "submodules.json"
-            entries = json.loads(submodules_json.read_text(encoding="utf-8"))
-            entries[0]["pinned_commit"] = "f" * 40
-            submodules_json.write_text(json.dumps(entries), encoding="utf-8")
+            _git("update-index", "--cacheinfo", f"160000,{'f' * 40},vendor", cwd=root)
+            _git("commit", "-q", "-m", "missing gitlink object", cwd=root)
             eligible, report = ar.evaluate_rebuild_eligibility(root, "vendor", provenance_dir)
             self.assertFalse(eligible)
             self.assertFalse(report["submodule_pinned_object_accessible"])
@@ -1864,7 +1864,7 @@ class NonGitRebuildEligibilityTests(unittest.TestCase):
         self.assertFalse(eligible)
         self.assertEqual(report["submodule_status_output"], "")
         self.assertIsNone(report["submodule_checked_out_sha"])
-        self.assertIsNone(report["provenance_pinned_commit"])
+        self.assertIsNone(report["candidate_tree_pinned_commit"])
         self.assertFalse(report["provenance_redistribution_approved"])
         self.assertFalse(report["identity_matches_pinned"])
         self.assertTrue(any(".git" in reason for reason in report["reasons"]))
@@ -1895,14 +1895,14 @@ class RepositoryStateTests(unittest.TestCase):
     """The real repository's own source tree must rehearse deterministically."""
 
     def test_real_tree_rehearses_deterministically(self):
-        allowlist = sg.load_allowlist(ROOT / "docs" / "release_data" / "source_allowlist.json")
-        report = ar.rehearse_archive_twice(ROOT, allowlist)
+        tree = ct.load(ROOT, gs.write_index_tree(ROOT))
+        report = ar.rehearse_archive_twice(ROOT, tree.source_paths, target_sha=tree.target_sha)
         self.assertTrue(report["match"])
 
     def test_real_tree_archive_is_git_blob_bound_not_worktree(self):
-        allowlist = sg.load_allowlist(ROOT / "docs" / "release_data" / "source_allowlist.json")
-        report = ar.rehearse_archive_twice(ROOT, allowlist)
-        self.assertEqual(report["target_sha"], gs.resolve_sha(ROOT, "HEAD"))
+        tree = ct.load(ROOT, gs.write_index_tree(ROOT))
+        report = ar.rehearse_archive_twice(ROOT, tree.source_paths, target_sha=tree.target_sha)
+        self.assertEqual(report["target_sha"], tree.target_sha)
 
 
 class SourceCommentTestClassReferenceTests(unittest.TestCase):

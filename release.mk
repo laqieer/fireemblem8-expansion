@@ -106,13 +106,10 @@
 #                                    action_pins.json's committed inventory.
 #                                    This is documentation/evidence only --
 #                                    never itself a publication authorization.
-# release-tree-coverage-check     : standalone direct invocation of
-#                                    scripts/release_rehearsal/tree_coverage.py
-#                                    (issue #9 mandatory correction #2) --
-#                                    the included allowlist and the export
-#                                    exclusions must be an exact, disjoint
-#                                    partition of the complete immutable
-#                                    HEAD tree.
+# release-candidate-tree-check    : validates that exact human provenance
+#                                    metadata covers the immutable target
+#                                    tree, whose own paths/modes/gitlinks are
+#                                    derived live rather than committed.
 # release-submodule-binding-check : standalone direct invocation of
 #                                    scripts/release_rehearsal/submodule_binding.py
 #                                    (issue #9 mandatory correction #4) --
@@ -150,7 +147,7 @@
         release-rehearse-require-eligible release-check-expect-blocked \
         release-rehearse-expect-blocked release-workflow-guard \
         release-full-matrix-workflow-guard \
-        release-action-pins-check release-tree-coverage-check \
+        release-action-pins-check release-candidate-tree-check \
         release-submodule-binding-check release-epoch-claims-check \
         release-stale-count-claims-check
 
@@ -206,8 +203,8 @@ release-full-matrix-workflow-guard:
 release-action-pins-check:
 	$(PYTHON) -m scripts.release_rehearsal.action_pins .github/workflows/release-rehearsal.yml
 
-release-tree-coverage-check:
-	$(PYTHON) -m scripts.release_rehearsal.tree_coverage check
+release-candidate-tree-check:
+	$(PYTHON) -m scripts.release_rehearsal.provenance check --target-sha $(RELEASE_TARGET_SHA)
 
 release-submodule-binding-check:
 	$(PYTHON) -m scripts.release_rehearsal.submodule_binding

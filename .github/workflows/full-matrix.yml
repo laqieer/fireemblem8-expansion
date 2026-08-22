@@ -250,14 +250,14 @@ jobs:
       - name: Check generated release evidence
         run: |
           make release-changelog-check
-          python3 -m scripts.release_rehearsal.allowlist check --target-sha "$RELEASE_TARGET_SHA"
+          python3 -m scripts.release_rehearsal.provenance check --target-sha "$RELEASE_TARGET_SHA"
 
       - name: Check release documentation
         run: python3 -m scripts.release_rehearsal.doc_links
 
       - name: Check release tree and submodule bindings
         run: |
-          make release-tree-coverage-check
+          make release-candidate-tree-check
           make release-submodule-binding-check
 
       - name: Check provenance records
@@ -266,20 +266,21 @@ jobs:
       - name: Check source-release guard
         run: |
           python3 - <<'PY'
+          import os
           from pathlib import Path
+          from scripts.release_rehearsal.candidate_tree import load
           from scripts.release_rehearsal.source_guard import (
-              load_allowlist,
               load_map_hex_exceptions,
               scan_source_release_candidate,
           )
 
-          allowlist = load_allowlist(Path("docs/release_data/source_allowlist.json"))
+          tree = load(Path("."), os.environ["RELEASE_TARGET_SHA"])
           exceptions = load_map_hex_exceptions(
               Path("docs/release_data/map_hex_exceptions.json")
           )
           violations = scan_source_release_candidate(
               Path("."),
-              allowlist,
+              tree.source_paths,
               map_hex_exceptions=exceptions,
           )
           for path, rule in violations:

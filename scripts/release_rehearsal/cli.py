@@ -74,8 +74,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 from scripts.release_rehearsal import action_pins as ap  # noqa: E402
-from scripts.release_rehearsal import allowlist as al  # noqa: E402
 from scripts.release_rehearsal import archive_rehearsal as ar  # noqa: E402
+from scripts.release_rehearsal import candidate_tree as ct  # noqa: E402
 from scripts.release_rehearsal import git_source as gs  # noqa: E402
 from scripts.release_rehearsal import manifest as rm  # noqa: E402
 from scripts.release_rehearsal import provenance as prov  # noqa: E402
@@ -125,8 +125,8 @@ EXPECTED_TOOLING_ERRORS = (
     sg.SourceGuardError,
     ar.ArchiveRehearsalError,
     gs.GitSourceError,
-    al.AllowlistError,
     prov.ProvenanceError,
+    ct.CandidateTreeError,
     OSError,
 )
 
@@ -195,8 +195,7 @@ def _apply_status_gates(report: dict, args, label: str) -> int:
 _SUB_REPORT_OK_RULES = {
     "changelog": lambda value: value.get("ok"),
     "migrations": lambda value: value.get("ok"),
-    "allowlist": lambda value: value.get("ok"),
-    "tree_coverage": lambda value: value.get("ok"),
+    "candidate_tree": lambda value: value.get("ok"),
     "submodule_binding": lambda value: value.get("ok"),
     "external_attestation": lambda value: value.get("status") == "present",
     "version_ledger": lambda value: value.get("ok"),
@@ -214,7 +213,7 @@ _SUB_REPORT_OK_RULES = {
 # Rendered in this fixed order when present, for a byte-stable summary
 # given the same input report.
 _SUB_REPORT_ORDER = (
-    "allowlist", "tree_coverage", "submodule_binding", "external_attestation", "changelog",
+    "candidate_tree", "submodule_binding", "external_attestation", "changelog",
     "version_ledger", "c_fallback_metadata", "migration_reachability", "doc_links",
     "epoch_claims", "stale_count_claims", "identity_binding", "migrations",
     "provenance", "source_guard", "archive", "rebuild",
@@ -280,7 +279,7 @@ def render_markdown_summary(report: dict) -> str:
     lines.append(
         "This workflow is read-only: no tag, release, asset, comment, or "
         "protected-environment mutation ever occurs here. See "
-        "`docs/release_process.md` and `docs/release_data/provenance/*.json` "
+        "`docs/release_process.md` and `docs/release_data/provenance.json` "
         "for the exact unresolved inventory."
     )
     return "\n".join(lines) + "\n"
@@ -355,13 +354,20 @@ def cmd_rehearse(args) -> int:
     target_sha = rm.resolve_target_sha(args.repo_root, args.target_sha)
 
     map_hex_exceptions_path = args.repo_root / "docs" / "release_data" / "map_hex_exceptions.json"
-    allowlist = sg.load_allowlist(args.repo_root / "docs" / "release_data" / "source_allowlist.json")
+    if gs.is_git_repo(args.repo_root):
+        source_paths = ct.load(args.repo_root, target_sha).source_paths
+    else:
+        source_paths = tuple(
+            entry["path"]
+            for entry in prov.load_metadata(args.repo_root / "docs" / "release_data" / "provenance.json")
+            if entry["category"] != "submodule"
+        )
     map_hex_exceptions = (
         sg.load_map_hex_exceptions(map_hex_exceptions_path)
         if map_hex_exceptions_path.is_file() else frozenset()
     )
     archive_report = ar.rehearse_archive_twice(
-        args.repo_root, allowlist, target_sha=target_sha, map_hex_exceptions=map_hex_exceptions,
+        args.repo_root, source_paths, target_sha=target_sha, map_hex_exceptions=map_hex_exceptions,
     )
 
     # issue #9 mandatory correction #3 (executable future-eligible
@@ -411,8 +417,7 @@ def cmd_rehearse(args) -> int:
         "rebuild": manifest["rebuild"],
         "provenance": manifest["provenance"],
         "source_guard": manifest["source_guard"],
-        "allowlist": manifest["allowlist"],
-        "tree_coverage": manifest["tree_coverage"],
+        "candidate_tree": manifest["candidate_tree"],
         "submodule_binding": manifest["submodule_binding"],
         "external_attestation": manifest["external_attestation"],
         "version_ledger": manifest["version_ledger"],
