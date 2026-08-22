@@ -122,12 +122,10 @@ jobs:
   # exact (and only) supported CI host matrix today:
   # ubuntu-latest with arm-none-eabi GCC. macOS (Homebrew) is documented in
   # tools/gba-playtest/README.md for local development but is not exercised
-  # by CI. The archival/decomp agbcc `fireemblem8.gba` path (see
-  # docs/issue-resolution-policy.md "Supported modern path vs. archival
-  # decomp path") continues to build locally and is unaffected by this
-  # workflow, but it is not part of this or any CI gate and must never be
-  # read as one. Per repository policy, CI ends after these target-ROM
-  # checks.
+  # by CI. The archival/decomp agbcc `fireemblem8.gba` path is deliberately
+  # absent from this modern job; the parallel `legacy` job below owns its
+  # archival CI evidence. Per repository policy, this job ends after its
+  # target-ROM checks.
   build:
     runs-on: ubuntu-latest
     # A normal debug+release linker/runtime run is roughly 25 minutes, but

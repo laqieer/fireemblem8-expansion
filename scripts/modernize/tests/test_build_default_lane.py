@@ -421,7 +421,10 @@ class RemoteCompletionGateTests(unittest.TestCase):
         self.assertIn("all-issues-completion-check: remote-completion-check", text)
         self.assertIn("git status --porcelain", text)
         self.assertIn("git rev-parse '@{u}'", text)
-        self.assertIn("--commit \"$$head_sha\" --workflow build.yml", text)
+        self.assertIn(
+            "--event push --branch master --commit \"$$head_sha\" --workflow build.yml",
+            text,
+        )
         self.assertIn("gh issue list", text)
         self.assertIn("--state open", text)
 

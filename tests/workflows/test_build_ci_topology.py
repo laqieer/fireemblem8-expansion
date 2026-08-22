@@ -15,6 +15,14 @@ MASTER_PUBLISHER_CONDITION = (
     "${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}"
 )
 SUMMARY_NEEDS = "needs: [host-tests, build, extended-host-tests, legacy]"
+PULL_REQUEST_TRIGGER = 'pull_request:\n    branches: [ "master" ]'
+PUSH_TRIGGER = 'push:\n    branches: [ "master" ]'
+SUMMARY_RESULTS = (
+    '"$HOST_TESTS_RESULT"',
+    '"$BUILD_RESULT"',
+    '"$EXTENDED_HOST_TESTS_RESULT"',
+    '"$LEGACY_RESULT"',
+)
 
 
 def _job_blocks(text: str) -> dict[str, str]:
@@ -73,10 +81,10 @@ def _make_recipe(text: str, target: str) -> str:
 def _errors(text: str, full_matrix_exists: bool) -> list[str]:
     errors = []
     header = text[: text.index("\njobs:\n")]
-    if "pull_request:" not in header:
-        errors.append("Build must retain the pull-request trigger")
-    if "push:" not in header:
-        errors.append("Build must retain the push trigger")
+    if PULL_REQUEST_TRIGGER not in header:
+        errors.append("Build must retain the pull-request master trigger")
+    if PUSH_TRIGGER not in header:
+        errors.append("Build must retain the push master trigger")
     if "workflow_dispatch" in header:
         errors.append("Build must not expose a manual Matrix trigger")
     if full_matrix_exists:
@@ -112,6 +120,10 @@ def _errors(text: str, full_matrix_exists: bool) -> list[str]:
         errors.append("summary must depend on every required combined Build job")
     if '[ "$result" != "success" ]' not in summary:
         errors.append("summary must fail closed")
+    loop = summary[summary.index("for result") : summary.index("done", summary.index("for result"))]
+    for result in SUMMARY_RESULTS:
+        if result not in loop:
+            errors.append(f"summary loop omits required result: {result}")
 
     extended_host = jobs["extended-host-tests"]
     for command in (
@@ -189,12 +201,12 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
         self.assertTrue(any("must run for pull-request" in error for error in _errors(changed, False)))
 
     def test_missing_pull_request_trigger_fails(self):
-        changed = self.text.replace('  pull_request:\n    branches: [ "master" ]\n', "", 1)
-        self.assertTrue(any("pull-request trigger" in error for error in _errors(changed, False)))
+        changed = self.text.replace(PULL_REQUEST_TRIGGER, 'pull_request:\n    branches: [ "other" ]', 1)
+        self.assertTrue(any("pull-request master trigger" in error for error in _errors(changed, False)))
 
     def test_missing_push_trigger_fails(self):
-        changed = self.text.replace('  push:\n    branches: [ "master" ]\n', "", 1)
-        self.assertTrue(any("push trigger" in error for error in _errors(changed, False)))
+        changed = self.text.replace(PUSH_TRIGGER, 'push:\n    branches: [ "other" ]', 1)
+        self.assertTrue(any("push master trigger" in error for error in _errors(changed, False)))
 
     def test_serial_combined_worker_dependency_fails(self):
         changed = self.text.replace(
@@ -211,6 +223,14 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             1,
         )
         self.assertTrue(any("summary must depend" in error for error in _errors(changed, False)))
+
+    def test_summary_omitting_legacy_result_fails(self):
+        changed = self.text.replace(
+            '"$LEGACY_RESULT"\n        do',
+            '"$HOST_TESTS_RESULT"\n        do',
+            1,
+        )
+        self.assertTrue(any("summary loop omits" in error for error in _errors(changed, False)))
 
     def test_duplicate_modern_gate_in_master_host_fails(self):
         changed = self.text.replace(
