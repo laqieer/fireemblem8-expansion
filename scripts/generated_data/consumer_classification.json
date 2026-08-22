@@ -93,6 +93,10 @@
       "category": "external-interface",
       "reason": null
     },
+    "include/banim_package_runtime_test.h|struct-field|class|BanimPackageRuntimeTestProbe.defaultClassIndex": {
+      "category": "runtime-struct",
+      "reason": null
+    },
     "include/bksel.h|function-signature|item|PutBattleForecastItemName": {
       "category": "ui-buffer",
       "reason": null
