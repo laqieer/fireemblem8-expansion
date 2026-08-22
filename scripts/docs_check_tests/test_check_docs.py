@@ -1172,15 +1172,15 @@ class FullMatrixBadgeContractTests(unittest.TestCase):
 #      ac0ee5d7f17eb8e70175576cb46d9f320d8013cd merged into master.
 #   2. docs/framework-support.md said the item-ID-expansion checks were
 #      "gates 11-12" of the upstream verify gate set; the real, current
-#      scripts/upstream_port/verify.py gates() puts them at indexes 9-10
-#      of exactly 10.
+#      scripts/upstream_port/verify.py gates() puts them at gates 12-13
+#      of exactly 14.
 #
 # These tests prove: (a) every old phrase is flagged stale if it reappears,
 # (b) the current live doc/report text is stale-clean, (c) the historical,
 # batch-scoped technical boundary wording (which looks similar but is not a
 # live current-status claim) is NOT flagged, (d) the current docs/report
 # state #5 CLOSED with the real completion commit as merged evidence, and
-# (e) the "gates 9-10" claim is source-backed against the real
+# (e) the "gates 12-13" claim is source-backed against the real
 # scripts/upstream_port/verify.py gates() ordering -- never a hardcoded
 # fake substitute.
 # ---------------------------------------------------------------------------
@@ -1271,7 +1271,7 @@ class StaleIssue5StatusAndGateNumberRegressionTests(unittest.TestCase):
         self.assertNotIn("gates 10-11 of", framework_support_text)
         self.assertNotIn("gates 11-12 of", framework_support_text)
 
-    def test_verify_gates_item_expansion_entries_are_indexes_12_and_13_of_13(self):
+    def test_verify_gates_item_expansion_entries_are_indexes_12_and_13_of_14(self):
         # Safe, standalone, no-network import of the live verify module
         # straight off disk -- proves "gates 11-12" against the real,
         # current scripts/upstream_port/verify.py gates() ordering rather
@@ -1290,13 +1290,17 @@ class StaleIssue5StatusAndGateNumberRegressionTests(unittest.TestCase):
         finally:
             sys.modules.pop(spec.name, None)
 
-        self.assertEqual(len(all_gates), 13)
+        self.assertEqual(len(all_gates), 14)
         # Gates are 1-indexed in the docs ("gates 12-13"); Python lists are
         # 0-indexed, so that's positions [11] and [12].
         self.assertIn("itemexpansion", all_gates[11].name)
         self.assertIn("itemexpansion", all_gates[12].name)
         for gate in all_gates[:11]:
             self.assertNotIn("itemexpansion", gate.name)
+        self.assertEqual(
+            all_gates[13].name,
+            "modern-all-locales-all-features-profile",
+        )
 
 
 class ABIFactualDocContractTests(unittest.TestCase):
