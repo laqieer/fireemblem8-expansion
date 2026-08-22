@@ -11,7 +11,7 @@ non-fragment-only link target resolves to an existing file relative to
 the linking document.
 
 Deliberately dependency-free (Python stdlib only, a regex scan -- not a
-full Markdown parser, matching this repository's other release-rehearsal
+full Markdown parser, matching this repository's other local technical
 tooling).
 
 Exit codes (CLI): 0 clean, 1 broken link(s) found, 2 invocation/I/O error.

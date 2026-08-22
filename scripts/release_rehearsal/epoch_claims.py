@@ -28,7 +28,7 @@ transition sentence never uses. This is intentionally an allowlist of
 happens to match the live epoch is never flagged.
 
 Deliberately dependency-free (Python stdlib only), matching this
-repository's other release-rehearsal tooling.
+repository's other local technical tooling.
 
 Exit codes (CLI): 0 clean, 1 stale claim(s) found, 2 invocation/I/O error.
 """
@@ -142,7 +142,7 @@ class EpochClaimError(ValueError):
 def current_epoch(repo_root: Path) -> int:
     """The single, authoritative live epoch value -- config.mk's
     EXPANSION_SAVE_COMPAT_EPOCH, parsed the exact same way every other
-    release-rehearsal/modern-build tool does (never re-derived here)."""
+    local modern-build tool does (never re-derived here)."""
     repo_root = Path(repo_root)
     config = ec.parse_config_mk(repo_root / "config.mk")
     return ec.validate_save_compat_epoch(config["EXPANSION_SAVE_COMPAT_EPOCH"])

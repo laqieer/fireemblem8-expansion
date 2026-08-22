@@ -10,6 +10,16 @@ This is not a skill catalog, campaign spell, copied patch, item-content pack,
 or general scripting language. It introduces no item, text, graphics, event,
 animation, generated-data record, localization ID, or save field.
 
+## Tester-facing cases
+
+[`TC-GAMEPLAY-006`](test-cases/optional-gameplay.md#tc-gameplay-006-typed-aoe-reference-heals-bounded-allied-targets)
+provides the complete enabled-reference and disabled-reference procedure,
+including source profiles, exact target/effect values, cleanup, and the mapped
+host/ROM gates. [`TC-GAMEPLAY-007`](test-cases/optional-gameplay.md#tc-gameplay-007-optional-gameplay-profiles-compose-without-changing-saves)
+covers the AoE reference's independent composition with the other optional
+gameplay modules. Both remain indexed in the tester-case catalog and preserve
+the default-off configuration.
+
 ## Configuration
 
 | Autoconf | Make | C | Default |
