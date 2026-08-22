@@ -69,16 +69,33 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
     def test_trusted_push_only_and_no_pr_publication(self):
         self.assertIn("github.event_name == 'push'", self.patch_job)
         self.assertIn("github.ref == 'refs/heads/master'", self.patch_job)
-        self.assertIn("needs: build", self.patch_job)
+        self.assertIn("needs: [build, host-tests]", self.patch_job)
         self.assertNotIn("pull_request_target", self.text)
-        self.assertEqual(self.text.count("uses: actions/upload-artifact@v7"), 1)
+        self.assertEqual(
+            self.patch_job.count(
+                "uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a"
+            ),
+            1,
+        )
 
-    def test_secret_is_scoped_to_the_trusted_job_only(self):
+    def test_secret_is_scoped_to_the_trusted_download_step_only(self):
         self.assertEqual(self.text.count("secrets.BASEROM_URL"), 1)
         self.assertIn("BASEROM_URL: ${{ secrets.BASEROM_URL }}", self.patch_job)
+        job_header = self.patch_job.split("\n    steps:\n", 1)[0]
+        self.assertNotIn("BASEROM_URL", job_header)
         self.assertNotIn("BASEROM_URL:", self.text.split("\n  patch-release:\n", 1)[0])
         self.assertIn("--proto '=https'", self.patch_job)
         self.assertNotIn("set -x", self.patch_job)
+
+    def test_publisher_actions_are_immutably_pinned(self):
+        self.assertIn(
+            "uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            self.patch_job,
+        )
+        self.assertNotRegex(
+            self.patch_job,
+            r"uses: actions/(?:checkout|upload-artifact)@v[0-9]+",
+        )
 
     def test_runner_context_is_scoped_to_steps(self):
         job_header = self.patch_job.split("\n    steps:\n", 1)[0]
