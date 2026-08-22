@@ -97,10 +97,12 @@ is also a prerequisite of the generated include, so editing a TMX regenerates
 that chain before Make resolves object prerequisites. It does not emit C,
 assembly, a linker list, or an asset lookup table. The existing `Ch2Map`
 symbol now INCbins that generated LZ stream from the fixed
-`build/generated/assets/` root. `ASSET_OUTPUT_DIR` therefore fails fast if
-overridden while a TMX map layout has an INCBIN consumer; the pre-existing
-`gChapterDataAssetTable`, `GetChapterMapPointer`, and
-`InitChapterMap`/`UnpackChapterMap` path remain the runtime consumers.
+`build/generated/assets/` root. `ASSET_OUTPUT_DIR` therefore fails fast only
+when the selected manifest declares a TMX map layout with that literal INCBIN
+consumer. A manifest without a `tiled-tmx-map-layout` record retains the
+supported subdirectory override. The pre-existing `gChapterDataAssetTable`,
+`GetChapterMapPointer`, and `InitChapterMap`/`UnpackChapterMap` path remain
+the runtime consumers.
 
 ## Commands and generated-output policy
 

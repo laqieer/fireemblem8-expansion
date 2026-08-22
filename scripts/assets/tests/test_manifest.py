@@ -336,6 +336,13 @@ class AssetManifestTests(unittest.TestCase):
                 with self.assertRaises(tmx.TmxError):
                     tmx.parse_tmx(path)
 
+    def test_tmx_reports_non_map_roots_before_map_attribute_diagnostics(self):
+        path = os.path.join(TEST_ROOT, "non-map-root.tmx")
+        with open(path, "wb") as handle:
+            handle.write(tmx.TMX_XML_DECLARATION + b"\n<tileset/>")
+        with self.assertRaisesRegex(tmx.TmxError, "^root element must be map$"):
+            tmx.parse_tmx(path)
+
     def test_tmx_rejects_oversized_source_before_xml_parsing(self):
         path = os.path.join(TEST_ROOT, "oversized.tmx")
         with open(path, "wb") as handle:
@@ -377,12 +384,10 @@ class AssetManifestTests(unittest.TestCase):
             asset_makefile,
         )
 
-    def test_asset_makefile_rejects_an_incbin_output_override(self):
-        result = subprocess.run(
+    def test_asset_makefile_guards_only_tmx_incbin_consumers(self):
+        guarded = subprocess.run(
             [
                 "make",
-                "-f",
-                "assets.mk",
                 "ASSET_OUTPUT_DIR=build/generated/assets/alternate",
                 "assets-validate",
             ],
@@ -391,8 +396,36 @@ class AssetManifestTests(unittest.TestCase):
             stderr=subprocess.PIPE,
             text=True,
         )
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("must be build/generated/assets", result.stderr)
+        self.assertNotEqual(guarded.returncode, 0)
+        self.assertIn("must be build/generated/assets", guarded.stderr)
+
+        legacy = valid_record()
+        legacy["id"] = "CH1_MAIN_MAP"
+        legacy["kind"] = "chapter-map-layout"
+        legacy["sources"] = [
+            "graphics/map/layout/Ch1Map.mar",
+            "graphics/map/layout/Ch1Map.json",
+        ]
+        legacy["options"] = {"format": "mar", "compression": "lz77"}
+        legacy["ownership"].update(
+            {"chapterSettingsIndex": 1, "mainLayerId": 8, "symbol": "Ch1Map"}
+        )
+        legacy["resources"].update({"mapWidth": 15, "mapHeight": 10})
+        legacy_manifest = self.write_manifest([legacy])
+        allowed = subprocess.run(
+            [
+                "make",
+                "ASSET_MANIFEST={}".format(os.path.relpath(legacy_manifest, REPO_ROOT)),
+                "ASSET_OUTPUT_DIR=build/generated/assets/test-work/legacy-override",
+                "assets-generate",
+                "assets-check",
+            ],
+            cwd=REPO_ROOT,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        self.assertEqual(allowed.returncode, 0, allowed.stderr)
 
     def test_check_detects_orphans_through_a_relative_output_path(self):
         source = self.write_manifest([valid_record()])

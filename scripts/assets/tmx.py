@@ -109,6 +109,8 @@ def parse_tmx(path):
     except (UnicodeDecodeError, ElementTree.ParseError) as exc:
         raise TmxError("malformed UTF-8 XML: {}".format(exc))
 
+    if root.tag != "map":
+        raise TmxError("root element must be map")
     _exact_attributes(
         root,
         {
@@ -124,8 +126,6 @@ def parse_tmx(path):
         },
         "map",
     )
-    if root.tag != "map":
-        raise TmxError("root element must be map")
     if not TILED_VERSION_RE.fullmatch(root.attrib["tiledversion"]):
         raise TmxError("map tiledversion must be a Tiled 1.10.x version")
     width = _positive_dimension(root.attrib["width"], "map width")
