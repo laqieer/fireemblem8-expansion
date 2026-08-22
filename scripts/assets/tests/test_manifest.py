@@ -401,6 +401,44 @@ class AssetManifestTests(unittest.TestCase):
                 json.dump(metadata, handle)
             self.assert_validation_error([record], "must contain exactly")
 
+    def test_formatted_portrait_package_reports_malformed_metadata_without_crashing(self):
+        record = valid_portrait_record(TEST_ROOT)
+        with open(os.path.join(REPO_ROOT, record["sources"][1]), "w", encoding="utf-8") as handle:
+            handle.write("{ malformed metadata")
+        self.assert_validation_error([record], "cannot load portrait metadata")
+
+    def test_formatted_portrait_package_reports_unreadable_metadata_without_crashing(self):
+        record = valid_portrait_record(TEST_ROOT)
+        metadata_path = os.path.join(REPO_ROOT, record["sources"][1])
+        real_open = open
+
+        def reject_metadata(path, *args, **kwargs):
+            if os.fspath(path) == metadata_path:
+                raise OSError("metadata unavailable for test")
+            return real_open(path, *args, **kwargs)
+
+        with mock.patch("builtins.open", side_effect=reject_metadata):
+            self.assert_validation_error([record], "cannot load portrait metadata")
+
+    def test_formatted_portrait_package_reports_missing_metadata_field_without_crashing(self):
+        record = valid_portrait_record(TEST_ROOT)
+        metadata_path = os.path.join(REPO_ROOT, record["sources"][1])
+        with open(metadata_path, encoding="utf-8") as handle:
+            metadata = json.load(handle)
+        del metadata["blinkKind"]
+        metadata["alias"] = {
+            "mode": "existing-components",
+            "components": {
+                "img": "portrait_Mystery_1_tileset",
+                "imgChibi": "portrait_Mystery_1_chibi",
+                "pal": "portrait_Mystery_1_palette",
+                "imgMouth": "portrait_Mystery_1_mouth",
+            },
+        }
+        with open(metadata_path, "w", encoding="utf-8") as handle:
+            json.dump(metadata, handle)
+        self.assert_validation_error([record], "portrait metadata must contain exactly")
+
     def test_formatted_portrait_package_requires_metadata_json(self):
         record = valid_portrait_record(TEST_ROOT)
         record["sources"][1] = record["sources"][1].replace("metadata.json", "proof.json")

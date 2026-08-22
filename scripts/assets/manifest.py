@@ -1017,7 +1017,7 @@ class FormattedPortraitPackageKind:
                 "invalid formatted portrait package: {}".format(exc),
                 record.source_locs[0], "{}.sources".format(record.id),
             ))
-        self._validate_metadata(record, diagnostics)
+        return self._validate_metadata(record, diagnostics)
 
     def ownership_key(self, record):
         return "{}:{}:{}".format(
@@ -1059,6 +1059,7 @@ def validate(records):
     by_id = {}
     ownership = {}
     sources = {}
+    portrait_metadata = {}
     for record in records:
         if not ID_RE.fullmatch(record.id):
             diagnostics.add(GeneratedDataError(
@@ -1103,7 +1104,9 @@ def validate(records):
         if len(normalized_sources) == len(record.sources):
             record.sources = normalized_sources
         _validate_provenance(record, diagnostics)
-        kind.validate(record, diagnostics)
+        metadata = kind.validate(record, diagnostics)
+        if record.kind == FormattedPortraitPackageKind.name:
+            portrait_metadata[id(record)] = metadata
         try:
             key = kind.ownership_key(record)
         except (KeyError, TypeError) as exc:
@@ -1144,7 +1147,7 @@ def validate(records):
                             "{}.ownership.portraitId".format(record.id),
                         ))
                         continue
-                    metadata = _read_portrait_metadata(record)
+                    metadata = portrait_metadata.get(id(record))
                     entry = entries[portrait_id]
                     anchors = metadata.get("anchors") if isinstance(metadata, dict) else None
                     alias = metadata.get("alias") if isinstance(metadata, dict) else None
