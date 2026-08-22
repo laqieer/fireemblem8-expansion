@@ -282,7 +282,7 @@ jobs:
         target_image="$RUNNER_TEMP/target-image"
         cp build/expansion-modern-all-locales-all-features/release/aapcs/fireemblem8.gba "$target_image"
         trap 'rm -f "$base_image" "$target_image"' EXIT
-        curl --fail --silent --proto '=https' --tlsv1.2 --output "$base_image" "$BASEROM_URL"
+        curl --fail --silent --location --proto '=https' --proto-redir '=https' --tlsv1.2 --output "$base_image" "$BASEROM_URL"
         python3 -m scripts.modernize.patch_release create --base "$base_image" --target "$target_image" --metadata build/expansion-modern-all-locales-all-features/release/aapcs/generated/expansion_build_metadata.json --output-dir "$PATCH_ARTIFACT_DIR" --commit "$PATCH_COMMIT"
         python3 -m scripts.modernize.patch_release verify --base "$base_image" --artifact-dir "$PATCH_ARTIFACT_DIR"
         find "$PATCH_ARTIFACT_DIR" -maxdepth 1 -type f -printf '%f\n' | sort | diff -u - <(printf '%s\n' fireemblem8-expansion-all-locales-all-features-aapcs.bps manifest.json README.txt)
