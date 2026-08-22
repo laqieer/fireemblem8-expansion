@@ -9,6 +9,7 @@
 #include "gamecontrol.h"
 #ifdef MODERN
 #include "expansion_language_menu.h"
+#include "expansion_log.h"
 #endif
 #include "bm.h"
 #include "bmsave.h"
@@ -82,6 +83,9 @@ void AgbMain(void)
     GmDataInit();
     SetLang(LANG_ENGLISH);
     ResetText();
+#if FE8_EXPANSION_MODERN_BUILD && FE8_EXPANSION_LOGGING_ENABLED
+    EXPANSION_LOG_INFO("FE8LOG ready");
+#endif
 #if defined(MODERN) && !FE8_EXPANSION_DEBUG
     /*
      * Modern GCC reaches StartGame seven VBlanks early with an existing

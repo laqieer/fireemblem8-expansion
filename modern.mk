@@ -17,6 +17,7 @@ MODERN_GOALS := \
 	expansion-modern-debugtools-tools-check \
 	expansion-modern-debugtools-prep-check \
 	expansion-modern-debugtools-ch4prep-check \
+	expansion-modern-debuglog-check \
 	expansion-modern-newgame-check \
 	expansion-modern-combat-check \
 	expansion-modern-saveload-check \
@@ -2375,6 +2376,14 @@ expansion-modern-boot-check: expansion-modern-boot-preflight expansion-modern-ro
 		--expected "$(MODERN_BOOT_FINGERPRINT)" \
 		--policy behavior
 	@printf 'Modern ROM boot-check passed: %s (config=%s abi=%s)\n' \
+		"$(MODERN_ROM)" '$(MODERN_CONFIG)' '$(MODERN_ABI)'
+
+expansion-modern-debuglog-check: expansion-modern-boot-preflight expansion-modern-rom
+	@mkdir -p "$(MODERN_OUTPUT_DIR)/debuglog-tmp"
+	TMPDIR="$(abspath $(MODERN_OUTPUT_DIR)/debuglog-tmp)" \
+		"$(PYTHON)" tools/gba-playtest/run_debuglog_checks.py \
+			--rom "$(MODERN_ROM)" --elf "$(MODERN_ELF)" --config "$(MODERN_CONFIG)"
+	@printf 'Modern ROM debuglog-check passed: %s (config=%s abi=%s)\n' \
 		"$(MODERN_ROM)" '$(MODERN_CONFIG)' '$(MODERN_ABI)'
 
 expansion-modern-title-check: expansion-modern-boot-preflight expansion-modern-rom
