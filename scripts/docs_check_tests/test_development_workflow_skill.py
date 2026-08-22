@@ -13,7 +13,7 @@ PR_TEMPLATE_PATH = ROOT / ".github" / "PULL_REQUEST_TEMPLATE.md"
 CLAUDE_PATH = ROOT / "CLAUDE.md"
 COPILOT_INSTRUCTIONS_PATH = ROOT / ".github" / "copilot-instructions.md"
 MEANINGFUL_TEST_POLICY_HEADING = "Meaningful test evidence"
-MARKDOWN_HEADING = re.compile(r"^(?P<level>#{2,6}) (?P<heading>.+)$")
+MARKDOWN_HEADING = re.compile(r"^(?P<level>#{1,6}) (?P<heading>.+)$")
 POLICY_ATOM = re.compile(r"^[A-Za-z]+(?:[ /-][A-Za-z]+)*$")
 MEANINGFUL_TEST_POLICY_CLAUSE = re.compile(
     r"^- \*\*(?P<name>[^*:]+):\*\* (?P<status>[a-z-]+)"
@@ -513,6 +513,11 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
         )
 
         policy_text = render_meaningful_test_policy()
+        top_level_terminator = policy_text + "\n# Separate document section\n"
+        self.assertEqual(
+            CANONICAL_POLICY_AST,
+            self.assert_meaningful_test_policy(top_level_terminator),
+        )
         wrapped_git_rationale = policy_text.replace(
             "  - **Git-text rationale:** required. "
             "git-tracks=source,review,history; "

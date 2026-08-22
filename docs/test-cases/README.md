@@ -57,4 +57,7 @@ python3 -m unittest scripts.docs_check_tests.test_check_docs -v
 python3 scripts/check_docs.py --check
 ```
 
-The foundation procedure is [`TC-CATALOG-001`](foundation.md#tc-catalog-001-tester-case-catalog-foundation).
+The foundation procedures are
+[`TC-CATALOG-001`](foundation.md#tc-catalog-001-tester-case-catalog-foundation)
+and
+[`TC-TEST-QUALITY-001`](foundation.md#tc-test-quality-001-meaningful-test-evidence-policy-rejects-semantic-mutations).
