@@ -42,3 +42,10 @@ participates in configuration identity, not save compatibility. Use
 
 Issue #36's expanded sound-room persistence is intentionally not included.
 These APIs leave room for that future catalog to provide unlock metadata.
+
+## Tester-facing cases
+
+[`TC-BGM-001` through `TC-BGM-004`](test-cases/presentation-audio-utility.md#tc-bgm-001-keep-an-empty-bgm-registry-inert-and-honor-explicit-requests)
+cover the disposable router/variant/selector fixtures, the intentionally
+empty committed registry, explicit requests, continuation policies, and stop
+requests. They validate selection semantics rather than subjective audio.

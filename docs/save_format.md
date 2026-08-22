@@ -81,6 +81,9 @@ current image. Corrupt or unknown sound-room records are rejected rather than
 guessed at. No localization hash input, music asset, or campaign unlock rule
 changes.
 
+The byte-level, disposable-record procedure is
+[`TC-SOUND-001`](test-cases/presentation-audio-utility.md#tc-sound-001-persist-expanded-sound-room-unlocks-safely).
+
 ### Where it lives
 
 `struct SaveBlocks` (`include/bmsave.h`) previously reserved a 4-byte

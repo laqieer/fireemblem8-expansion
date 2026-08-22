@@ -1,11 +1,16 @@
 """Focused contracts for the typed BGM router, registry, and continuation policy."""
 
 import json
+import re
 import shutil
 import subprocess
 import sys
 import unittest
 from pathlib import Path
+
+from scripts.modernize.tests.test_save_format_meta_bytes_native import (
+    _extract_c_function,
+)
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "scripts" / "modernize"))
@@ -208,6 +213,141 @@ class BgmRegistryTests(unittest.TestCase):
 
 
 class BgmRoutingContractTests(unittest.TestCase):
+    def test_native_fixture_resolves_variants_explicit_requests_and_selectors(self):
+        source = (ROOT / "src/expansion_bgm.c").read_text(encoding="utf-8")
+        header = (ROOT / "include/expansion_bgm.h").read_text(encoding="utf-8")
+        request = re.search(
+            r"struct ExpansionBgmContextRequest\s*\{.*?\n\};", header, re.DOTALL
+        )
+        variant = re.search(
+            r"struct ExpansionBgmVariant\s*\{.*?\n\};", header, re.DOTALL
+        )
+        selector = re.search(
+            r"struct ExpansionBgmActionSelector\s*\{.*?\n\};", header, re.DOTALL
+        )
+        self.assertIsNotNone(request)
+        self.assertIsNotNone(variant)
+        self.assertIsNotNone(selector)
+
+        functions = "\n".join(
+            _extract_c_function(source, name)
+            for name in (
+                "ExpansionBgm_ContextIsValid",
+                "ExpansionBgm_ActionIsValid",
+                "ExpansionBgm_VariantMatches",
+                "ExpansionBgm_Resolve",
+                "ExpansionBgm_SelectorMatches",
+                "ExpansionBgm_SelectActionSong",
+            )
+        )
+        probe = f"""
+#include <stdint.h>
+
+typedef uint8_t u8;
+typedef uint16_t u16;
+typedef uint32_t u32;
+#define NULL ((void *)0)
+#define TRUE 1
+#define FALSE 0
+#define SONG_NONE 0
+#define ITEM_INDEX(item) ((item) & 0xFF)
+#define UNIT_CHAR_ID(unit) ((unit)->characterId)
+#define UNIT_CLASS_ID(unit) ((unit)->classId)
+#define EXPANSION_BGM_CONTEXT_MAP_PHASE 0
+#define EXPANSION_BGM_CONTEXT_COUNT 13
+#define EXPANSION_BGM_ACTION_DANCE 0
+#define EXPANSION_BGM_ACTION_STAFF 1
+#define EXPANSION_BGM_ACTION_COUNT 2
+#define EXPANSION_BGM_STAFF_NONE 0
+#define EXPANSION_BGM_STAFF_HEAL 1
+#define EXPANSION_BGM_VARIANT_MATCH_CHAPTER (1 << 0)
+#define EXPANSION_BGM_VARIANT_MATCH_FLAG (1 << 1)
+#define EXPANSION_BGM_SELECTOR_MATCH_STAFF_KIND (1 << 0)
+#define EXPANSION_BGM_SELECTOR_MATCH_CHARACTER (1 << 1)
+#define EXPANSION_BGM_SELECTOR_MATCH_CLASS (1 << 2)
+#define EXPANSION_BGM_SELECTOR_MATCH_ITEM (1 << 3)
+enum ExpansionBgmContext {{ EXPANSION_BGM_CONTEXT_ENUM_MAP_PHASE = 0 }};
+enum ExpansionBgmAction {{ EXPANSION_BGM_ACTION_ENUM_DANCE = 0 }};
+enum ExpansionBgmStaffKind {{ EXPANSION_BGM_STAFF_ENUM_NONE = 0 }};
+struct Unit {{ u8 characterId; u8 classId; }};
+{request.group(0)}
+{variant.group(0)}
+{selector.group(0)}
+
+static u8 sFlag5;
+int CheckFlag(u16 flagId) {{ return flagId == 5 ? sFlag5 : 0; }}
+const struct ExpansionBgmVariant gExpansionBgmVariants[] = {{
+    {{ 7, 0, 11, EXPANSION_BGM_CONTEXT_MAP_PHASE, 0, 1,
+        EXPANSION_BGM_VARIANT_MATCH_CHAPTER, {{ 0, 0 }} }},
+    {{ 7, 5, 12, EXPANSION_BGM_CONTEXT_MAP_PHASE, 1, 5,
+        EXPANSION_BGM_VARIANT_MATCH_CHAPTER | EXPANSION_BGM_VARIANT_MATCH_FLAG,
+        {{ 0, 0 }} }},
+    {{ 7, 5, 13, EXPANSION_BGM_CONTEXT_MAP_PHASE, 1, 5,
+        EXPANSION_BGM_VARIANT_MATCH_CHAPTER | EXPANSION_BGM_VARIANT_MATCH_FLAG,
+        {{ 0, 0 }} }},
+}};
+const u32 gExpansionBgmVariantCount = 3;
+const struct ExpansionBgmActionSelector gExpansionBgmActionSelectors[] = {{
+    {{ EXPANSION_BGM_ACTION_DANCE, 1, 0, 0, 0, 0, 0, 21 }},
+    {{ EXPANSION_BGM_ACTION_DANCE, 1, 0, 10, 3,
+        EXPANSION_BGM_SELECTOR_MATCH_CHARACTER | EXPANSION_BGM_SELECTOR_MATCH_CLASS,
+        0, 22 }},
+    {{ EXPANSION_BGM_ACTION_DANCE, 1, 0, 10, 3,
+        EXPANSION_BGM_SELECTOR_MATCH_CHARACTER | EXPANSION_BGM_SELECTOR_MATCH_CLASS,
+        0, 23 }},
+    {{ EXPANSION_BGM_ACTION_STAFF, 2, EXPANSION_BGM_STAFF_HEAL, 0, 0,
+        EXPANSION_BGM_SELECTOR_MATCH_STAFF_KIND | EXPANSION_BGM_SELECTOR_MATCH_ITEM,
+        4, 24 }},
+}};
+const u32 gExpansionBgmActionSelectorCount = 4;
+{functions}
+
+int main(void)
+{{
+    struct ExpansionBgmContextRequest request =
+        {{ EXPANSION_BGM_CONTEXT_MAP_PHASE, 7, 0, 0, 10, SONG_NONE }};
+    struct Unit unit = {{ 10, 3 }};
+
+    if (ExpansionBgm_Resolve(&request) != 11)
+        return 1;
+    sFlag5 = 1;
+    if (ExpansionBgm_Resolve(&request) != 12)
+        return 2;
+    request.hasExplicitSong = 1;
+    request.explicitSong = 99;
+    if (ExpansionBgm_Resolve(&request) != 99)
+        return 3;
+    request.hasExplicitSong = 0;
+    request.fallbackSong = SONG_NONE;
+    if (ExpansionBgm_Resolve(&request) != SONG_NONE)
+        return 4;
+    if (ExpansionBgm_SelectActionSong(
+            EXPANSION_BGM_ACTION_DANCE, &unit, 0, EXPANSION_BGM_STAFF_NONE, 20) != 22)
+        return 5;
+    if (ExpansionBgm_SelectActionSong(
+            EXPANSION_BGM_ACTION_STAFF, &unit, 4, EXPANSION_BGM_STAFF_HEAL, 20) != 24)
+        return 6;
+    if (ExpansionBgm_SelectActionSong(
+            EXPANSION_BGM_ACTION_STAFF, &unit, 4, EXPANSION_BGM_STAFF_NONE, 20) != 20)
+        return 7;
+    return 0;
+}}
+"""
+        artifact_dir = ROOT / "build" / "test-artifacts" / "bgm-routing-native"
+        artifact_dir.mkdir(parents=True, exist_ok=True)
+        source_path = artifact_dir / "probe.c"
+        binary_path = artifact_dir / "probe"
+        source_path.write_text(probe, encoding="utf-8")
+        try:
+            subprocess.run(
+                ["cc", "-std=c99", str(source_path), "-o", str(binary_path)],
+                cwd=ROOT,
+                check=True,
+            )
+            subprocess.run([str(binary_path)], cwd=ROOT, check=True)
+        finally:
+            shutil.rmtree(artifact_dir, ignore_errors=True)
+
     def test_public_surface_and_linker_entries_exist(self):
         header = (ROOT / "include/expansion_bgm.h").read_text(encoding="utf-8")
         source = (ROOT / "src/expansion_bgm.c").read_text(encoding="utf-8")
