@@ -2270,6 +2270,23 @@
           "sha256": "331afd1b5ff99eeedf3265e822f0852f0d9fea45814d12d4174e98b809db52e4",
           "size": 1202,
           "source_address": "0x08A92410"
+        },
+        {
+          "build_path": "graphics/localized_ui/ja/menu/difficulty_mode.4bpp",
+          "c_name": "sLocalizedUiJaMenuDifficultyModePng",
+          "dimensions": {
+            "height": 48,
+            "tiles_per_row": 32,
+            "width": 256
+          },
+          "kind": "tiled_4bpp_png",
+          "name": "menu/difficulty_mode",
+          "path": "graphics/localized_ui/ja/menu/difficulty_mode.png",
+          "png_sha256": "8b61d0732d31233ed8ea8734f5d676c262acce7960ed1292328b6221e34f18fb",
+          "png_size": 2080,
+          "raw_sha256": "2d5af0d84088b41ccee69c4262ad81b83e0b6184872adbce4e281ccea8c88069",
+          "raw_size": 6144,
+          "source_address": "0x08AA65A8"
         }
       ],
       "chapter": {
@@ -2719,6 +2736,7 @@
         "table_address": "0x08A732C0",
         "tsa": 135
       },
+      "difficulty_menu": 136,
       "main_sprites": 3,
       "menu": 2,
       "rom_path": "../fireemblem8j/baserom.gba",
@@ -5014,6 +5032,23 @@
           "sha256": "331afd1b5ff99eeedf3265e822f0852f0d9fea45814d12d4174e98b809db52e4",
           "size": 1202,
           "source_address": "0x08A92410"
+        },
+        {
+          "build_path": "graphics/localized_ui/zh-Hans/menu/difficulty_mode.4bpp",
+          "c_name": "sLocalizedUiZhHansMenuDifficultyModePng",
+          "dimensions": {
+            "height": 48,
+            "tiles_per_row": 32,
+            "width": 256
+          },
+          "kind": "tiled_4bpp_png",
+          "name": "menu/difficulty_mode",
+          "path": "graphics/localized_ui/zh-Hans/menu/difficulty_mode.png",
+          "png_sha256": "ea32d51af5f07396646039fa1feed1bdecd7faa7807b9de7315faf4d93338b77",
+          "png_size": 2054,
+          "raw_sha256": "b562014ef0376d6abb509438e728a310f6f6671a5d34d27ae61daa4ac4e8ae5e",
+          "raw_size": 6144,
+          "source_address": "0x08AA39DC"
         }
       ],
       "chapter": {
@@ -5463,6 +5498,7 @@
         "table_address": "0x08A732C0",
         "tsa": 135
       },
+      "difficulty_menu": 136,
       "main_sprites": 3,
       "menu": 2,
       "rom_path": "../FE8CN.gba",

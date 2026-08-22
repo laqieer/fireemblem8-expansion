@@ -1,4 +1,7 @@
 #include "global.h"
+
+#include "localized_ui_graphics.h"
+
 #include <string.h>
 #include "bmsave.h"
 #include "hardware.h"
@@ -341,6 +344,14 @@ extern u8 Tsa_DifficultyMenuObjs[];
 void InitDifficultySelectScreen(struct DifficultyMenuProc * proc)
 {
     int i;
+    const u8 *difficultyMenuObjects = Img_DifficultyMenuObjs;
+
+#if LOCALIZED_UI_GRAPHICS_CJK_ENABLED
+    const u8 *localizedDifficultyMenuObjects = LocalizedUiGraphics_GetDifficultyMenuObjects();
+
+    if (localizedDifficultyMenuObjects != NULL)
+        difficultyMenuObjects = localizedDifficultyMenuObjects;
+#endif
 
     ResetTextFont();
     LoadUiFrameGraphics();
@@ -357,7 +368,7 @@ void InitDifficultySelectScreen(struct DifficultyMenuProc * proc)
     ApplyPalettes(Pal_SaveScreenSprits, 18, 8);
     ApplyPalette(Pal_MenuMainObjs_0, 2);
 
-    Decompress(Img_DifficultyMenuObjs, (void *)0x06010800);
+    Decompress(difficultyMenuObjects, (void *)0x06010800);
     ApplyPalettes(Pal_DifficultyMenuObjs, 17, 10);
 
     EnablePaletteSync();

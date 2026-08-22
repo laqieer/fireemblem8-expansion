@@ -10,6 +10,7 @@
 #include <mgba/core/log.h>
 
 #include <inttypes.h>
+#include <stdarg.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -85,14 +86,22 @@ struct Plan {
 	struct Checkpoint* checkpoints;
 };
 
-static void silent_log(struct mLogger* logger, int category,
-                       enum mLogLevel level, const char* format, va_list args)
+static FILE* sLogCapture;
+
+static void capture_log(struct mLogger* logger, int category,
+                        enum mLogLevel level, const char* format, va_list args)
 {
+	char line[1024];
+	va_list copy;
+
 	(void) logger;
-	(void) category;
-	(void) level;
-	(void) format;
-	(void) args;
+	if (!sLogCapture)
+		return;
+	va_copy(copy, args);
+	vsnprintf(line, sizeof(line), format, copy);
+	va_end(copy);
+	fprintf(sLogCapture, "%d\t%d\t%s\n", category, level, line);
+	fflush(sLogCapture);
 }
 
 static void free_plan(struct Plan* plan)
@@ -474,16 +483,34 @@ static int run(const char* rom_path, const struct Plan* plan, const char* sram_p
 
 int main(int argc, char** argv)
 {
+	const char* log_capture_path;
+	int result;
+
 	if (argc != 3 && argc != 4) {
 		fprintf(stderr, "usage: %s <rom.gba> <plan> [sram-image]\n", argv[0]);
 		return 2;
 	}
-	struct mLogger logger = {.log = silent_log, .filter = NULL};
+	log_capture_path = getenv("GBA_PLAYTEST_LOG_CAPTURE");
+	if (log_capture_path) {
+		sLogCapture = fopen(log_capture_path, "w");
+		if (!sLogCapture) {
+			fprintf(stderr, "cannot open mGBA log capture: %s\n", log_capture_path);
+			return 2;
+		}
+	}
+	struct mLogger logger = {.log = capture_log, .filter = NULL};
 	mLogSetDefaultLogger(&logger);
 	struct Plan plan = {0};
-	if (!read_plan(argv[2], &plan))
+	if (!read_plan(argv[2], &plan)) {
+		if (sLogCapture)
+			fclose(sLogCapture);
 		return 2;
-	int result = run(argv[1], &plan, argc == 4 ? argv[3] : NULL);
+	}
+	result = run(argv[1], &plan, argc == 4 ? argv[3] : NULL);
 	free_plan(&plan);
+	if (sLogCapture && fclose(sLogCapture) != 0) {
+		fprintf(stderr, "cannot finalize mGBA log capture: %s\n", log_capture_path);
+		return 2;
+	}
 	return result;
 }
