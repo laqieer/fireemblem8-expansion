@@ -75,6 +75,12 @@ after the run is terminal to inspect logs or reviews. Do not repeatedly wake an
 agent to poll, do not create duplicate watchers, and cancel superseded
 candidate runs before dispatching replacement checks.
 
+Monitor Copilot review concurrently with candidate Build CI using its own
+bounded direct watcher. Inspect review threads as soon as that review is
+terminal; do not wait for Build or Full Matrix. A valid finding supersedes the
+candidate, so cancel stale CI, fix and push, then rerun exact-candidate gates.
+Start Full Matrix only after Build and Copilot review are both clean.
+
 After a PR merge, monitor the exact-`master` Build CI with an attached,
 nonblocking asynchronous shell watcher. Leave its verification todo in
 progress and continue every unrelated dependency-ready task instead of
@@ -82,6 +88,11 @@ stopping to wait or sending a waiting-only response. Only closure, remote
 completion, and true dependents wait. When the watcher finishes, resume those
 dependents on success; on failure, fix forward or revert the broken default
 branch immediately.
+
+Independent PRs may validate and merge in parallel. Do not queue them by age,
+issue number, shared initiative, or another independent PR's post-merge CI.
+Refresh a candidate only for a real dependency, merge conflict, candidate-tree
+change, shared-contract change, or demonstrated interaction.
 
 First-time setup: `./scripts/quickstart.sh` installs/probes the modern
 toolchain, an ARM GDB debugger, the mGBA GDB-server frontend, and libmGBA by

@@ -116,6 +116,11 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             "Only issue closure, remote completion, and other true dependents",
             "exact merged `master` SHA",
             "fix forward or revert immediately",
+            "Validate and merge independent PRs in parallel.",
+            "Another",
+            "independent merge advancing `master` does not by itself",
+            "Monitor Copilot review concurrently with candidate Build CI.",
+            "Dispatch Full Matrix only after both Build CI and Copilot review",
         )
 
         for requirement in required_contract:
@@ -142,6 +147,11 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             "stopping to wait or sending a waiting-only response",
             "Only closure, remote",
             "fix forward or revert the broken default",
+            "Monitor Copilot review concurrently with candidate Build CI",
+            "do not wait for Build or Full Matrix",
+            "Start Full Matrix only after Build and Copilot review are both clean.",
+            "Independent PRs may validate and merge in parallel.",
+            "another independent PR's post-merge CI",
         )
 
         for requirement in project_contract:

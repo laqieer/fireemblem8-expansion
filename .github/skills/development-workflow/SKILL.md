@@ -247,6 +247,15 @@ when one issue genuinely depends on another issue's unmerged code or contract,
 not merely because the issues touch shared files or belong to the same
 initiative.
 
+Validate and merge independent PRs in parallel. Do not serialize them by age,
+issue number, shared initiative, or an unrelated PR's post-merge CI. Another
+independent merge advancing `master` does not by itself invalidate a candidate
+head's evidence. Refresh and rerun gates only when the candidate tree changes,
+GitHub reports a merge conflict, a declared shared contract changes, or the
+new base exposes a concrete interaction. Post-merge Build CI then verifies the
+combined default branch and triggers immediate fix-forward or revert on
+failure.
+
 Every non-root PR must record:
 
 - `Depends on #...` links for its immediate issue and PR dependency;
@@ -469,6 +478,14 @@ If a candidate SHA changes, cancel superseded candidate runs with
 `gh run cancel <run-id>` when safe, discard their evidence, and dispatch new
 checks for the replacement SHA. Never repeatedly wake the same subagent merely
 to poll CI, and never accept a stale run because its watcher completed.
+
+Monitor Copilot review concurrently with candidate Build CI. Use a separate
+bounded direct watcher for the exact candidate's Copilot review check; when it
+finishes, inspect and triage its threads immediately instead of waiting for
+Build or Full Matrix. A valid finding changes the candidate: cancel any
+superseded Build or Matrix run, fix and push, then restart exact-candidate
+checks. Dispatch Full Matrix only after both Build CI and Copilot review are
+terminal and clean for the same candidate.
 
 Post-merge `master` Build CI monitoring is always nonblocking. Start its
 bounded direct shell watcher in attached asynchronous mode so process
