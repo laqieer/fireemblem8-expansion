@@ -69,7 +69,9 @@ tests are not completion. Unless the user explicitly says not to commit or
 push, do not call `task_complete` until all intended changes are committed and
 pushed, the candidate Build CI and Copilot review are clean, the change is
 merged, automatic Build CI and manually dispatched Full Matrix both succeed on
-the exact `master` revision, and `make remote-completion-check` succeeds.
+the exact `master` revision, and `make remote-completion-check` succeeds. Full
+Matrix's every job is master-only; a non-master dispatch executes no Matrix
+job.
 
 For an objective to resolve all repository issues, also close the resolved
 GitHub issues and require `make all-issues-completion-check` to succeed. Create explicit

@@ -125,10 +125,11 @@ and archival lanes in parallel:
 gh workflow run full-matrix.yml --ref master
 ```
 
-The workflow is `workflow_dispatch`-only, read-only, concurrency-cancelled for
-`master`, and rejects every other ref before its lanes execute. Its final
-summary fails unless host, both modern matrix configurations, and legacy
-succeed. The debug and release configurations remain parallel matrix jobs, and each job
+The workflow is `workflow_dispatch`-only, read-only, and concurrency-cancelled
+for `master`. Every Matrix job, including its summary, requires `master`, so a
+non-master dispatch executes no Matrix job. Its master-only final summary fails
+unless host, both modern matrix configurations, and legacy succeed. The debug
+and release configurations remain parallel matrix jobs, and each job
 uses sequential Make to keep its resource use predictable. The canonical Build
 CI gate also runs `expansion-modern-linker-check` with `-j2`:
 battle-animation producers retain the last complete object while staging a

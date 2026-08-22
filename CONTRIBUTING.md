@@ -91,9 +91,10 @@ manually dispatch the reduced Full Matrix for that exact `master` revision:
 gh workflow run full-matrix.yml --ref master
 ```
 
-The workflow rejects every ref other than `refs/heads/master` before its
-expensive lanes start. Its fail-closed summary covers Matrix-only CJK/font,
-codec, configuration/linker-budget, modern debug/release, and archival legacy
+Every Matrix job—including the fail-closed summary—requires
+`refs/heads/master`; a non-master `workflow_dispatch` executes no Matrix job.
+Its master-only summary covers Matrix-only CJK/font, codec,
+configuration/linker-budget, modern debug/release, and archival legacy
 evidence. Build CI remains the sole PR/master owner of artifact, documentation,
 generated-data, and localization host evidence; no result artifact or SHA
 ledger is used to transfer that ownership. The modern Matrix invokes only the canonical

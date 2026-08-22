@@ -12,8 +12,7 @@ concurrency:
 
 jobs:
   host:
-    # A Matrix dispatch from a PR or topic branch is rejected before any
-    # expensive lane starts. Build CI owns candidate evidence.
+    # Every Matrix job is master-only. Build CI owns candidate evidence.
     if: ${{ github.ref == 'refs/heads/master' }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -156,7 +155,9 @@ jobs:
   summary:
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    if: always()
+    # Keep the fail-closed aggregate after a master-lane failure, but never
+    # execute a Matrix job for any other ref.
+    if: ${{ always() && github.ref == 'refs/heads/master' }}
     needs: [host, modern, legacy]
     env:
       HOST_RESULT: ${{ needs.host.result }}

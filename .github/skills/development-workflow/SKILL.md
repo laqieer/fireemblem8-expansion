@@ -491,7 +491,8 @@ Before merge:
 1. Confirm required Build CI succeeds for the exact candidate commit.
 2. Request Copilot review concurrently with Build CI, and resolve each finding
    with code or an explanation. Do not dispatch Full Matrix for a candidate,
-   local branch, or pull request.
+   local branch, or pull request; every Matrix job is executable only on
+   `master`.
 3. Confirm every objective acceptance criterion, positive scenario, negative
    control, compatibility check, tester-facing case, and documentation
    requirement is complete.
@@ -521,7 +522,8 @@ For every issue-specific PR:
 1. Verify Build CI on the resulting `master` commit.
 2. Manually dispatch `full-matrix.yml --ref master` only after that Build
    succeeds, and verify its host, modern, legacy, and fail-closed summary
-   results for the same `master` revision.
+   results for the same `master` revision. Every Matrix job is master-only;
+   a non-master dispatch executes no Matrix job.
 3. If either post-merge gate fails, immediately fix forward or revert; do not
    report the feature as delivered. The failure blocks the affected issue's
    closure and remote completion, but not unrelated independent PRs.

@@ -17,6 +17,7 @@ WORKFLOW = ROOT / ".github" / "workflows" / "full-matrix.yml"
 BUILD_WORKFLOW = ROOT / ".github" / "workflows" / "build.yml"
 CHECKOUT_PIN = "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
 MASTER_CONDITION = "${{ github.ref == 'refs/heads/master' }}"
+SUMMARY_CONDITION = "${{ always() && github.ref == 'refs/heads/master' }}"
 
 
 def _job_blocks(text: str) -> dict[str, str]:
@@ -106,10 +107,10 @@ def _workflow_errors(workflow_text: str, build_text: str) -> list[str]:
 
     if "needs: [host, modern, legacy]" not in jobs["summary"]:
         errors.append("summary must consume every master Matrix lane")
-    if "if: always()" not in jobs["summary"]:
-        errors.append("summary must run for skipped or failed lanes")
+    if f"if: {SUMMARY_CONDITION}" not in jobs["summary"]:
+        errors.append("summary must never execute for a non-master dispatch")
     if '[ "$result" != "success" ]' not in jobs["summary"]:
-        errors.append("summary must fail closed on skipped or failed lanes")
+        errors.append("summary must fail closed after a master lane fails")
     return errors
 
 
@@ -147,6 +148,15 @@ class FullMatrixPolicyTests(unittest.TestCase):
         changed = self.workflow_text.replace(MASTER_CONDITION, "${{ github.ref != '' }}", 1)
         self.assertTrue(
             any("reject non-master" in error for error in _workflow_errors(changed, self.build_text))
+        )
+
+    def test_non_master_summary_mutation_is_rejected(self):
+        changed = self.workflow_text.replace(SUMMARY_CONDITION, "${{ always() }}", 1)
+        self.assertTrue(
+            any(
+                "summary must never execute" in error
+                for error in _workflow_errors(changed, self.build_text)
+            )
         )
 
     def test_reintroduced_duplicate_host_evidence_is_rejected(self):

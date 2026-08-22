@@ -419,9 +419,10 @@ gh workflow run full-matrix.yml --ref master
 The Matrix host lane retains only CJK font, multilang-codec, and
 configuration/linker-budget evidence. Build CI owns locale-source, crosswalk,
 raw-closure, and rendered-width evidence for both candidate and `master`
-revisions. The workflow rejects non-`master` refs before any expensive lane
-runs; its modern debug/release matrix owns the subordinate CJK profiles,
-runtime, shifted-link, and linker-budget gates.
+revisions. Every Matrix job, including summary, requires `master`, so a
+non-master dispatch executes no Matrix job; its modern debug/release matrix
+owns the subordinate CJK profiles, runtime, shifted-link, and linker-budget
+gates.
 
 ## Testing -- real libmGBA runtime evidence (Sprint 4)
 
