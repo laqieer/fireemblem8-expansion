@@ -1484,8 +1484,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Wave 0/issue #9 seed: repository-authored documentation. No human legal/provenance review has been recorded yet; this manifest records that honestly rather than asserting a license or clearance.",
-    "oid": "28519a48b9d755840dffa079fddea5187eaf1908",
-    "sha256": "5857c8701b5be2672cf0dc669f18772f941b044227dea690d86bd653cafe59b9"
+    "oid": "8a533762774e6bacf274546dfd31dc79fde9d47c",
+    "sha256": "06e0b0827f328ace6577ed2918f0c559c9f3ccf459f7de45c68ccfe920f28c28"
   },
   {
     "path": "docs/release_data/version_ledger.json",
@@ -4208,8 +4208,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Wave 0/issue #9 seed: repository-authored build tooling/config/source surface (or, for asm/, decompiled disassembly derived from the original ROM). No human legal/provenance review has been recorded yet; this manifest records that honestly rather than asserting a license or clearance.",
-    "oid": "cef6590f492808cbd5e233b34e00ecb6b159e3cb",
-    "sha256": "7c498b92540e4cfe73648c688e0e8af02556beb1997d6b8c786053d5ac286dab"
+    "oid": "618182df22d84c5af24fd3a0b00e26c79a83d212",
+    "sha256": "c6e7546c7cc95215caa77906f94756ccd9bf10ef81e3c56707a91ec55a51157d"
   },
   {
     "path": "release.mk",
@@ -12788,8 +12788,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Wave 0/issue #9 seed: repository-authored build tooling/config/source surface (or, for asm/, decompiled disassembly derived from the original ROM). No human legal/provenance review has been recorded yet; this manifest records that honestly rather than asserting a license or clearance.",
-    "oid": "2eddef91b878b53fa4faba0af6a7bfa4cf048ecd",
-    "sha256": "b4cae9590610eb87e0c8a47dbbe2c758a0c3f052b3de32702f545623f889a6fc"
+    "oid": "9971df17e01a13b50a71dba25c1746f461897b9d",
+    "sha256": "4ac0904416bea1a5561e82001974ea6856bb86e13e41d05e8668b4a68d207391"
   },
   {
     "path": "scripts/modernize/tests/test_prepare_modern_link.py",
