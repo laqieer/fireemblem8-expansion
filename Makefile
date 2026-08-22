@@ -49,6 +49,10 @@ AUTOTOOLS_CONFIG_MK ?= config.autotools.mk
 AUTOTOOLS_BUILD_DIR ?= .
 -include $(wildcard $(AUTOTOOLS_CONFIG_MK))
 
+# Keep the archival guard default-disabled before modern.mk has included the
+# committed config.mk. Command-line and configured values still override this.
+EXPANSION_HQ_MIXER ?= 0
+
 # The HQ mixer has a modern GCC/GAS/linker contract and its IWRAM layout is
 # intentionally unavailable to the archival decompilation lane.
 ifneq (,$(filter legacy fireemblem8.gba,$(MAKECMDGOALS)))

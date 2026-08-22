@@ -69,8 +69,10 @@ def require_symbol(resolver: ElfSymbolResolver, symbol: str) -> tuple[int, int]:
 
 def require_absent_symbol(elf: Path, symbol: str, nm: str) -> None:
     try:
-        resolve_elf_symbol(elf, symbol, nm)
+        address, size = resolve_elf_symbol(elf, symbol, nm)
     except ProbeBindingError:
+        return
+    if address == 0 and size == 0:
         return
     fail(f"{symbol} must be absent from disabled ELF {elf}")
 

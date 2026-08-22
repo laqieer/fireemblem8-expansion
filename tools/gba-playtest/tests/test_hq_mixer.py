@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -26,6 +27,12 @@ ARM_NM = shutil.which("arm-none-eabi-nm")
 
 def run(command: list[str]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(command, cwd=ROOT, capture_output=True, text=True)
+
+
+def build_scratch_dir() -> Path:
+    path = ROOT / "build"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
 
 
 class HqMixerConfigurationTests(unittest.TestCase):
@@ -56,7 +63,7 @@ class HqMixerConfigurationTests(unittest.TestCase):
             )
 
     def test_configure_persists_enabled_hq_mixer(self) -> None:
-        with tempfile.TemporaryDirectory(dir=ROOT / "build") as temporary:
+        with tempfile.TemporaryDirectory(dir=build_scratch_dir()) as temporary:
             fragment = Path(temporary) / "config.autotools.mk"
             result = subprocess.run(
                 [str(ROOT / "configure"), "--enable-hq-mixer"],
@@ -83,6 +90,18 @@ class HqMixerConfigurationTests(unittest.TestCase):
         )
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("unsupported by the archival lane", result.stdout + result.stderr)
+
+    def test_archival_lane_defaults_hq_mixer_off_before_modern_config_load(self) -> None:
+        result = run(
+            [
+                "make",
+                "-rR",
+                "-pn",
+                "__hq_mixer_archival_default_probe__",
+                "MAKECMDGOALS=legacy",
+            ]
+        )
+        self.assertNotIn("unsupported by the archival lane", result.stdout + result.stderr)
 
     def test_resolved_modern_link_inputs_only_include_hq_source_when_enabled(self) -> None:
         for enabled in (0, 1):
@@ -111,7 +130,7 @@ class HqMixerCompiledArtifactTests(unittest.TestCase):
             self.skipTest("arm-none-eabi GCC/binutils unavailable")
 
     def test_dma_disabled_mixer_and_stock_replacement_are_mutually_exclusive(self) -> None:
-        with tempfile.TemporaryDirectory(dir=ROOT / "build") as temporary:
+        with tempfile.TemporaryDirectory(dir=build_scratch_dir()) as temporary:
             work = Path(temporary)
             stock = work / "m4a-stock.o"
             hq_stock = work / "m4a-hq-stock.o"
@@ -157,6 +176,14 @@ class HqMixerCompiledArtifactTests(unittest.TestCase):
             mixer_end, _ = resolver("SoundMainRAM_End")
             self.assertEqual(mixer_size, hq.HQ_CODE_BYTES)
             self.assertEqual(mixer_end - mixer, hq.HQ_CODE_BYTES)
+
+    def test_disabled_linker_placeholders_are_not_real_hq_definitions(self) -> None:
+        with mock.patch.object(hq, "resolve_elf_symbol", return_value=(0, 0)):
+            hq.require_absent_symbol(Path("disabled.elf"), "SoundMainRAM_End", "nm")
+
+        with mock.patch.object(hq, "resolve_elf_symbol", return_value=(0x08000000, 4)):
+            with self.assertRaisesRegex(RuntimeError, "must be absent"):
+                hq.require_absent_symbol(Path("disabled.elf"), "SoundMainRAM_End", "nm")
 
 
 class HqMixerQualityFixtureTests(unittest.TestCase):

@@ -320,7 +320,7 @@ extern struct BgCnt *gUnknown_08587948[];
 // extern ??? gMusicProc3Script
 // extern ??? sMusicProc4Script
 // extern ??? gProcCmdFuncs
-extern u8 debug_font_4bpp[];
+extern const u8 debug_font_4bpp[];
 extern u16 *s2bppTo4bppLutTable[];
 // extern ??? ProcScr_TextPrint
 // extern ??? ProcScr_GreenTextColor
