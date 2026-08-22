@@ -19,7 +19,7 @@ class BanimPresentationRuntimeProbeTests(unittest.TestCase):
         self.assertIn("#ifdef BANIM_PRESENTATION_RUNTIME_PROBE_POLICY", header)
         self.assertIn("#ifdef BANIM_PRESENTATION_RUNTIME_PROBE_POLICY", source)
         self.assertIn(
-            "EWRAM_DATA static u8 sSelectedPolicy",
+            "IWRAM_DATA static u8 sSelectedPolicyState",
             source,
         )
         self.assertIn(

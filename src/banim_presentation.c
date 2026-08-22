@@ -48,7 +48,7 @@ struct BanimPresentationPolicy const gBanimPresentationPolicies[BANIM_PRESENTATI
     },
 };
 
-EWRAM_DATA static u8 sSelectedPolicy = BANIM_PRESENTATION_POLICY_INVALID;
+IWRAM_DATA static u8 sSelectedPolicyState;
 
 #ifdef BANIM_PRESENTATION_RUNTIME_PROBE_POLICY
 #if BANIM_PRESENTATION_RUNTIME_PROBE_POLICY != BANIM_PRESENTATION_POLICY_DEFAULT && \
@@ -60,7 +60,7 @@ IWRAM_DATA struct BanimPresentationRuntimeProbe gBanimPresentationRuntimeProbe =
 
 void BanimPresentationPolicy_RuntimeProbePrepare(void)
 {
-    sSelectedPolicy = BANIM_PRESENTATION_RUNTIME_PROBE_POLICY;
+    sSelectedPolicyState = BANIM_PRESENTATION_RUNTIME_PROBE_POLICY + 1;
 }
 
 void BanimPresentationPolicy_RuntimeProbeRecordHit(
@@ -116,10 +116,12 @@ u8 BanimPresentationPolicy_FromAnimationOption(u8 animationOption)
 
 struct BanimPresentationPolicy const *BanimPresentationPolicy_GetCurrent(void)
 {
-    u8 policyId = sSelectedPolicy;
+    u8 policyId;
 
-    if (policyId == BANIM_PRESENTATION_POLICY_INVALID)
+    if (sSelectedPolicyState == 0)
         policyId = BanimPresentationPolicy_FromAnimationOption(gPlaySt.config.animationType);
+    else
+        policyId = sSelectedPolicyState - 1;
 
     return BanimPresentationPolicy_Get(policyId);
 }
@@ -131,14 +133,15 @@ bool8 BanimPresentationPolicy_Select(u8 policyId)
     if (!BanimPresentationPolicy_Validate(policy))
         return FALSE;
 
-    sSelectedPolicy = policyId;
+    sSelectedPolicyState = policyId + 1;
     gPlaySt.config.animationType = policy->animationOption;
     return TRUE;
 }
 
 void BanimPresentationPolicy_AdoptAnimationOption(u8 animationOption)
 {
-    sSelectedPolicy = BanimPresentationPolicy_FromAnimationOption(animationOption);
+    sSelectedPolicyState =
+        BanimPresentationPolicy_FromAnimationOption(animationOption) + 1;
 }
 
 bool8 BanimPresentationPolicy_Validate(struct BanimPresentationPolicy const *policy)
