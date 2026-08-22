@@ -86,10 +86,10 @@ candidate actually changes.
 
 After each PR opens or updates, concurrently monitor exact-head Build CI,
 Copilot comments/threads, and mergeability; triage review findings
-immediately. Refresh real conflicts with a normal `master` merge. After every
-merge, monitor exact-master combined Build CI and rescan every open PR for
-conflicts. Fix forward or revert a broken `master`; unrelated PRs do not wait
-on healthy master runs.
+immediately. Refresh real conflicts with a normal `master` merge. Monitor master-branch CI after every merge.
+That means the exact-master combined Build CI and an open-PR conflict rescan.
+Fix forward or revert a broken `master`;
+unrelated PRs do not wait on healthy master runs.
 
 First-time setup: `./scripts/quickstart.sh` installs/probes the modern
 toolchain, an ARM GDB debugger, the mGBA GDB-server frontend, and libmGBA by
