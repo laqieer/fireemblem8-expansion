@@ -35,7 +35,9 @@ The only accepted controller values are:
 calls that reset for a fresh map, a restarted map, a resumed map, and map
 cleanup. The value is never serialized. A save or suspend load therefore
 always resumes with `PLAYER`, even if the previous process had requested
-`COMPUTER`.
+`COMPUTER`. A controller change requested during an active blue computer phase
+returns `EXPANSION_AUTOPLAY_ERR_PHASE_ACTIVE`, preserves the running
+controller, and records an explicit invalid-phase failure.
 
 `gExpansionAutoplayTelemetry` is a 64-byte EWRAM record containing only `u32`
 scalars. It has no pointers, callback addresses, Proc handles, or dynamically
@@ -124,9 +126,11 @@ save bit, preference, or release behavior.
 - **Archival:** `src/expansion_autoplay.c` and all hooks are excluded from
   `FE8_ARCHIVAL_BUILD`; the agbcc lane is unchanged.
 - **Modern budget:** 68 bytes EWRAM total (64-byte telemetry plus 4-byte
-  controller); the module contributes 736 bytes of debug Thumb text and 640
-  bytes of release Thumb text. The linked debug build retains 1,636 bytes of
-  physical EWRAM headroom; release retains 3,060 bytes.
+  controller); the module contributes 772 bytes of debug Thumb text and 692
+  bytes of release Thumb text. Relative
+  to the immediate base, linked ROM content grows by 2,136 debug bytes and 880
+  release bytes. The linked debug build retains 1,636 bytes of physical EWRAM
+  headroom; release retains 3,060 bytes.
 
 ## Validation
 

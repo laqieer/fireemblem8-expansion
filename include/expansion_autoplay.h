@@ -14,6 +14,7 @@ enum ExpansionAutoplayResult
 {
     EXPANSION_AUTOPLAY_OK = 0,
     EXPANSION_AUTOPLAY_ERR_INVALID_CONTROL = 1,
+    EXPANSION_AUTOPLAY_ERR_PHASE_ACTIVE = 2,
 };
 
 enum ExpansionAutoplayState

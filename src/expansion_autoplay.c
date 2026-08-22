@@ -49,6 +49,16 @@ enum ExpansionAutoplayResult ExpansionAutoplay_SetBlueControl(enum ExpansionBlue
         return EXPANSION_AUTOPLAY_ERR_INVALID_CONTROL;
     }
 
+    if (ExpansionAutoplay_IsBlueComputerPhase())
+    {
+        if (control == sExpansionBlueControl)
+            return EXPANSION_AUTOPLAY_OK;
+
+        IncrementBounded(&gExpansionAutoplayTelemetry.invalidRecordCount);
+        SetFailure(EXPANSION_AUTOPLAY_FAILURE_INVALID_PHASE);
+        return EXPANSION_AUTOPLAY_ERR_PHASE_ACTIVE;
+    }
+
     sExpansionBlueControl = control;
     gExpansionAutoplayTelemetry.controller = control;
     gExpansionAutoplayTelemetry.failure = EXPANSION_AUTOPLAY_FAILURE_NONE;

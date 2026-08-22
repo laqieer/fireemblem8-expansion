@@ -126,6 +126,17 @@ static int TestValidationAndBounds(void)
           "typed API must enable COMPUTER in every modern config");
 
     ExpansionAutoplay_OnBlueComputerPhaseStart();
+    CHECK(ExpansionAutoplay_SetBlueControl(EXPANSION_BLUE_CONTROL_PLAYER)
+              == EXPANSION_AUTOPLAY_ERR_PHASE_ACTIVE,
+          "controller changes during a blue computer phase must fail");
+    CHECK(ExpansionAutoplay_GetBlueControl() == EXPANSION_BLUE_CONTROL_COMPUTER,
+          "active-phase rejection must preserve COMPUTER control");
+    CHECK(gExpansionAutoplayTelemetry.failure
+              == EXPANSION_AUTOPLAY_FAILURE_INVALID_PHASE,
+          "active-phase controller change must be observable");
+    ExpansionAutoplay_Reset();
+    ExpansionAutoplay_SetBlueControl(EXPANSION_BLUE_CONTROL_COMPUTER);
+    ExpansionAutoplay_OnBlueComputerPhaseStart();
     ExpansionAutoplay_RecordEligibleActors(
         FACTION_BLUE, EXPANSION_AUTOPLAY_BLUE_ACTOR_CAPACITY + 1);
     CHECK(gExpansionAutoplayTelemetry.failure
