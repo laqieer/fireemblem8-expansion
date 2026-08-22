@@ -56,7 +56,7 @@ EXPANSION_HQ_MIXER ?= 0
 # The HQ mixer has a modern GCC/GAS/linker contract and its IWRAM layout is
 # intentionally unavailable to the archival decompilation lane.
 ifneq (,$(filter legacy fireemblem8.gba,$(MAKECMDGOALS)))
-ifneq ($(EXPANSION_HQ_MIXER),0)
+ifneq ($(or $(strip $(EXPANSION_HQ_MIXER)),0),0)
 $(error EXPANSION_HQ_MIXER=$(EXPANSION_HQ_MIXER) is unsupported by the archival lane; use the modern AAPCS build or set EXPANSION_HQ_MIXER=0)
 endif
 endif
