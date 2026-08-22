@@ -308,7 +308,7 @@ remote-completion-check:
 		exit 1; \
 	fi; \
 	repo=$$(gh repo view --json nameWithOwner --jq .nameWithOwner); \
-	run=$$(gh run list --repo "$$repo" --branch master --commit "$$head_sha" --workflow build.yml \
+	run=$$(gh run list --repo "$$repo" --event push --branch master --commit "$$head_sha" --workflow build.yml \
 		--limit 1 --json status,conclusion,url \
 		--jq 'if length == 0 then "missing,," else .[0].status + "," + (.[0].conclusion // "") + "," + .[0].url end'); \
 	case "$$run" in \

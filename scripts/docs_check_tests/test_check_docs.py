@@ -1375,7 +1375,7 @@ class StaleFrameworkSupportABIRegressionTests(unittest.TestCase):
 #   2. docs/framework-support.md said the item-ID-expansion checks were
 #      "gates 11-12" of the upstream verify gate set; the real, current
 #      scripts/upstream_port/verify.py gates() puts them at gates 17-18
-#      of exactly 14.
+#      of exactly 19.
 #
 # These tests prove: (a) every old phrase is flagged stale if it reappears,
 # (b) the current live doc/report text is stale-clean, (c) the historical,

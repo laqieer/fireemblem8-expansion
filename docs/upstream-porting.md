@@ -183,7 +183,7 @@ python3 -m scripts.upstream_port verify --dry-run   # list the gate commands wit
 you manually applied whatever you accepted) — it never builds, checks out,
 or executes the upstream ref/tree.** It orchestrates all 19 current-master
 mirrored verifier gates in fail-fast order. `.github/workflows/build.yml`
-carries the same 12 commands with argv/order preserved across its host and ROM
+carries the same 19 commands with argv/order preserved across its host and ROM
 jobs, plus the deliberately standalone issues #7/#17 documentation-governance
 workflow gate described below.
 

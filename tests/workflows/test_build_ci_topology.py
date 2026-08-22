@@ -36,7 +36,27 @@ def _normalise(text: str) -> str:
 
 
 def _contains_command(job: str, command: str) -> bool:
-    return _normalise(command) in _normalise(job)
+    lines = job.splitlines()
+    commands = []
+    index = 0
+    while index < len(lines):
+        inline = re.match(r"^    - run: (?P<value>.+)$", lines[index])
+        field = re.match(r"^      run: (?P<value>.+)$", lines[index])
+        match = inline or field
+        if match is None:
+            index += 1
+            continue
+        if match.group("value") == "|":
+            index += 1
+            block = []
+            while index < len(lines) and lines[index].startswith("        "):
+                block.append(lines[index].strip())
+                index += 1
+            commands.extend(block)
+            continue
+        commands.append(match.group("value"))
+        index += 1
+    return any(_normalise(command) in _normalise(run) for run in commands)
 
 
 def _make_recipe(text: str, target: str) -> str:
@@ -53,8 +73,10 @@ def _make_recipe(text: str, target: str) -> str:
 def _errors(text: str, full_matrix_exists: bool) -> list[str]:
     errors = []
     header = text[: text.index("\njobs:\n")]
-    if "pull_request:" not in header or "push:" not in header:
-        errors.append("Build must retain pull-request and push triggers")
+    if "pull_request:" not in header:
+        errors.append("Build must retain the pull-request trigger")
+    if "push:" not in header:
+        errors.append("Build must retain the push trigger")
     if "workflow_dispatch" in header:
         errors.append("Build must not expose a manual Matrix trigger")
     if full_matrix_exists:
@@ -137,7 +159,7 @@ def _errors(text: str, full_matrix_exists: bool) -> list[str]:
 def _remote_completion_errors(makefile_text: str) -> list[str]:
     recipe = _make_recipe(makefile_text, "remote-completion-check")
     required = (
-        "--branch master --commit",
+        "--event push --branch master --commit",
         "--workflow build.yml",
         "requires merged master",
     )
@@ -165,6 +187,14 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             1,
         )
         self.assertTrue(any("must run for pull-request" in error for error in _errors(changed, False)))
+
+    def test_missing_pull_request_trigger_fails(self):
+        changed = self.text.replace('  pull_request:\n    branches: [ "master" ]\n', "", 1)
+        self.assertTrue(any("pull-request trigger" in error for error in _errors(changed, False)))
+
+    def test_missing_push_trigger_fails(self):
+        changed = self.text.replace('  push:\n    branches: [ "master" ]\n', "", 1)
+        self.assertTrue(any("push trigger" in error for error in _errors(changed, False)))
 
     def test_serial_combined_worker_dependency_fails(self):
         changed = self.text.replace(
@@ -199,6 +229,10 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             1,
         )
         self.assertTrue(any("deleted Matrix" in error for error in _remote_completion_errors(changed)))
+
+    def test_pull_request_remote_completion_dependency_fails(self):
+        changed = MAKEFILE.read_text(encoding="utf-8").replace("--event push ", "", 1)
+        self.assertTrue(any("--event push" in error for error in _remote_completion_errors(changed)))
 
     def test_comment_only_change_preserves_contract(self):
         self.assertEqual(_errors(self.text + "\n# no graph change\n", False), [])
