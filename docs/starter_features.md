@@ -32,6 +32,18 @@ Issue #42's `EXPANSION_AOE_REFERENCE` is a separate optional module, not a
 fifth starter flag and not a skill/content catalog. It has no dependency or
 conflict with these four flags; see [`aoe.md`](aoe.md).
 
+## Tester-facing cases
+
+The indexed procedures and exact source profiles are in
+[`docs/test-cases/optional-gameplay.md`](test-cases/optional-gameplay.md):
+[`TC-GAMEPLAY-001`](test-cases/optional-gameplay.md#tc-gameplay-001-mechanics-registry-applies-ordered-bounded-hooks)
+through [`TC-GAMEPLAY-005`](test-cases/optional-gameplay.md#tc-gameplay-005-casual-defeat-restores-ordinary-player-defeats-only)
+cover the registry, Full-HP Guard, Threat Range, Sample Charm, and casual
+defeat policy. [`TC-GAMEPLAY-007`](test-cases/optional-gameplay.md#tc-gameplay-007-optional-gameplay-profiles-compose-without-changing-saves)
+covers their supported combinations and dependency failures. The catalog maps
+every deterministic result to the existing host or ROM automation; it does not
+turn these default-off features on.
+
 ## Build flags
 
 | Autoconf option | Make setting | C macro (`include/expansion_config.h`) | Default | Effect |
