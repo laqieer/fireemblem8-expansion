@@ -16,6 +16,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
 
+from scripts.release_rehearsal import candidate_tree as ct
+from scripts.release_rehearsal import git_source as gs
 from scripts.release_rehearsal import source_guard as sg
 
 
@@ -1141,27 +1143,13 @@ class LoadAllowlistTests(unittest.TestCase):
 
 
 class RepositoryStateTests(unittest.TestCase):
-    def test_real_allowlist_loads(self):
-        allowlist = sg.load_allowlist(ROOT / "docs" / "release_data" / "source_allowlist.json")
-        self.assertEqual(len(allowlist), len(set(allowlist)))
-
-    def test_real_allowlist_excludes_mgfembp_gitlink(self):
-        """schema_version 3 / issue #9 mandatory correction #2: the
-        `mgfembp` gitlink is now an explicit export-exclusion (see
-        docs/release_data/export_exclusions.json and
-        scripts/release_rehearsal/tests/test_tree_coverage.py), never an
-        allowlist ("included") entry."""
-        allowlist = sg.load_allowlist(ROOT / "docs" / "release_data" / "source_allowlist.json")
-        self.assertNotIn("mgfembp", allowlist)
-
-    def test_real_allowlist_is_exact_per_file_not_top_level_directories(self):
-        """issue #9 verifier remediation: the checked-in allowlist must be
-        the new exact per-member shape (thousands of exact file paths),
-        never the old handful of bare top-level directory names."""
-        allowlist = sg.load_allowlist(ROOT / "docs" / "release_data" / "source_allowlist.json")
-        self.assertGreater(len(allowlist), 1000)
-        self.assertIn("scripts/release_rehearsal/source_guard.py", allowlist)
-        self.assertNotIn("src", allowlist)  # bare top-level directory name, not a file
+    def test_real_candidate_tree_has_exact_source_members(self):
+        tree = ct.load(ROOT, gs.write_index_tree(ROOT))
+        self.assertEqual(len(tree.source_paths), len(set(tree.source_paths)))
+        self.assertNotIn("mgfembp", tree.source_paths)
+        self.assertGreater(len(tree.source_paths), 1000)
+        self.assertIn("scripts/release_rehearsal/source_guard.py", tree.source_paths)
+        self.assertNotIn("src", tree.source_paths)
 
     def test_real_map_hex_exceptions_file_loads(self):
         exceptions = sg.load_map_hex_exceptions(ROOT / "docs" / "release_data" / "map_hex_exceptions.json")

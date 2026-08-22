@@ -33,6 +33,7 @@ LD=$(shiftcheck_resolve_tool \
     }
 OBJECTS_LST=${OBJECTS_LST:-$repo_root/build/expansion-modern/debug/aapcs/link/objects.lst}
 BANIM_SYM=${BANIM_SYM:-$repo_root/banim/data_banim.o.sym.o}
+BANIM_OBJECT=${BANIM_OBJECT:-${BANIM_SYM%.sym.o}}
 LDSCRIPT=${LDSCRIPT:-$repo_root/linker/expansion.ld}
 ROM_SIZE_BYTES=${ROM_SIZE_BYTES:-0x01000000}
 TEXT_SHIFT=${TEXT_SHIFT:-0}
@@ -57,7 +58,8 @@ libc_dir=$(shiftcheck_newlib_dir "$CC" "${MODERN_NEWLIB_LIB:-}") || {
 
 mkdir -p "$(dirname -- "$out")"
 
-exec "$LD" \
+exec python3 "$repo_root/scripts/arm_compressing_linker.py" \
+    --lock-output "$BANIM_OBJECT" -- "$LD" \
     --orphan-handling=error \
     --defsym=__rom_size="$ROM_SIZE_BYTES" \
     --defsym=__text_shift="$TEXT_SHIFT" \

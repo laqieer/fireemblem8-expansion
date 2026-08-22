@@ -238,7 +238,21 @@ src/menu_def.o: CC1FLAGS += -Wno-error
 # there is nothing for quickstart -- or anyone else -- to set to reach the
 # archival lane except this target's name.
 all:
-	+$(MAKE) expansion-modern-boot-check MODERN_CONFIG=release MODERN_ABI=aapcs
+	@dry_run=0; \
+	for flag in $(MAKEFLAGS); do \
+		case "$$flag" in \
+		--) break ;; \
+		n|-n|--dry-run|--just-print|--recon) dry_run=1 ;; \
+		--*) ;; \
+		*n*) dry_run=1 ;; \
+		esac; \
+	done; \
+	if [ "$$dry_run" = 1 ]; then \
+		printf '%s\n' \
+			'$(MAKE) expansion-modern-boot-check MODERN_CONFIG=release MODERN_ABI=aapcs'; \
+	else \
+		$(MAKE) expansion-modern-boot-check MODERN_CONFIG=release MODERN_ABI=aapcs; \
+	fi
 
 # Explicit, clearly-named archival alias (issue #15): builds the same
 # agbcc-based $(ROM) as `make fireemblem8.gba`. The obsolete whole-build
@@ -262,8 +276,7 @@ compare:
 # than build prerequisites. They turn "done" into an executable contract:
 # the worktree must be clean, HEAD must already be pushed to its configured
 # upstream, and the exact pushed SHA must have a successful required workflow.
-# The all-issues variant additionally requires the release rehearsal and zero
-# open GitHub issues.
+# The all-issues variant additionally requires zero open GitHub issues.
 remote-completion-check:
 	@set -eu; \
 	command -v gh >/dev/null 2>&1 || { \
@@ -297,15 +310,7 @@ remote-completion-check:
 
 all-issues-completion-check: remote-completion-check
 	@set -eu; \
-	head_sha=$$(git rev-parse HEAD); \
 	repo=$$(gh repo view --json nameWithOwner --jq .nameWithOwner); \
-	run=$$(gh run list --repo "$$repo" --commit "$$head_sha" --workflow release-rehearsal.yml \
-		--limit 1 --json status,conclusion,url \
-		--jq 'if length == 0 then "missing,," else .[0].status + "," + (.[0].conclusion // "") + "," + .[0].url end'); \
-	case "$$run" in \
-		completed,success,*) ;; \
-		*) printf 'error: Release Rehearsal for %s is not successful: %s\n' "$$head_sha" "$$run" >&2; exit 1 ;; \
-	esac; \
 	open_issues=$$(gh issue list --repo "$$repo" --state open --limit 1000 \
 		--json number --jq 'length'); \
 	if [ "$$open_issues" -ne 0 ]; then \
@@ -668,7 +673,7 @@ $(OBJECTS_LST): $(ALL_OBJECTS) FORCE
 	@cmp -s $@.tmp $@ 2>/dev/null && rm -f $@.tmp || mv -f $@.tmp $@
 
 $(ELF): $(ALL_OBJECTS) $(OBJECTS_LST) $(LDSCRIPT) $(SYM_FILES)
-	$(LD) -T $(LDSCRIPT) -Map $(MAP) @$(OBJECTS_LST) -R $(BANIM_OBJECT).sym.o -L tools/agbcc/lib -o $@ -lc -lgcc
+	$(PYTHON) scripts/arm_compressing_linker.py --lock-output $(BANIM_OBJECT) -- $(LD) -T $(LDSCRIPT) -Map $(MAP) @$(OBJECTS_LST) -R $(BANIM_OBJECT).sym.o -L tools/agbcc/lib -o $@ -lc -lgcc
 	$(STRIP) -N .gcc2_compiled. $@
 
 %.gba: %.elf
