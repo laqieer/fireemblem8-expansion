@@ -128,8 +128,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Wave 0/issue #9 seed: repository-authored build tooling/config/source surface (or, for asm/, decompiled disassembly derived from the original ROM). No human legal/provenance review has been recorded yet; this manifest records that honestly rather than asserting a license or clearance.",
-    "oid": "edcd3a596bee00da150e88d8c7fee36c92bcd313",
-    "sha256": "28598ab0bb0359a9e089feef3cccd8a06d448dbfe3f8415d7beede5ccfea908f"
+    "oid": "3faa26f31e1f86999af6106fddfe01296f810473",
+    "sha256": "a70e95aeb1402235318552f5fbee4a531799fe19d3d7927db9bcafa6399c2fc7"
   },
   {
     "path": ".github/workflows/full-matrix.yml",
@@ -1484,8 +1484,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Wave 0/issue #9 seed: repository-authored documentation. No human legal/provenance review has been recorded yet; this manifest records that honestly rather than asserting a license or clearance.",
-    "oid": "ba36e8ce5249d32af4cff9c9fb5e4d3908e52c79",
-    "sha256": "4384de16e1b72e4a6989af633dfa37bdb626cb6c11f71b1a95a21a1f2574ab07"
+    "oid": "890f6d69c68cece4786314baacf699a6c412896a",
+    "sha256": "ff7e9866c96d60c23d009d25e4b650e280527397f31f66e051ca1777922bfae7"
   },
   {
     "path": "docs/release_data/version_ledger.json",
@@ -23348,8 +23348,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Wave 0/issue #9 seed: repository-authored build tooling/config/source surface (or, for asm/, decompiled disassembly derived from the original ROM). No human legal/provenance review has been recorded yet; this manifest records that honestly rather than asserting a license or clearance.",
-    "oid": "6960af851d894fdf333944ff4165955f9c057f38",
-    "sha256": "a9adc89456cf25fc20743a764460a81c197705f35f868b4de16dddf3e2e80de9"
+    "oid": "19a3772302e962552fb270debdc744908b540e26",
+    "sha256": "bf9a289fe86c6965683fca9f672f68e2b5be5617d04a4051009816e63d7052bc"
   },
   {
     "path": "tools/aif2pcm/.gitignore",
