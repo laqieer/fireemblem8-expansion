@@ -224,7 +224,6 @@ void Sio_ResetState(void)
     Sio_SetCommParams(0x6584, 3, 0x88);
     Sio_SetSubState(0);
     Sio_ResetSession();
-    gSioSt->unk_01F = SIO_BIG_TRANSFER_ACTIVE;
 
     sUnk_1 = 0;
 }
@@ -1302,6 +1301,7 @@ void SioBigSend_Init(struct SioBigSendProc * proc)
     gSioSt->seq[0] = gSioSt->seq[1] = gSioSt->seq[2] = gSioSt->seq[3] = 0;
 
     Sio_ResetSession();
+    gSioSt->unk_01F = SIO_BIG_TRANSFER_ACTIVE;
 
     data[0] = proc->unk_34;
     data[1] = proc->blockCount >> 8;

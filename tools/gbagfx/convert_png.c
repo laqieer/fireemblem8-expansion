@@ -177,7 +177,6 @@ void ReadPng(char *path, struct Image *image)
         image->pixels =
             ConvertBitDepth(image->pixels, bit_depth, image->bitDepth, width * (size_t)height);
         free(src);
-        image->bitDepth = bit_depth;
     }
 }
 

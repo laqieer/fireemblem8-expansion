@@ -292,6 +292,19 @@ static void TestBigTransferLayoutAndCopy(void)
     CHECK(!SioValidateBigTransferLayout(1, SIO_MAX_DATA + 1, 0xC00, &totalSize));
 
     ResetState();
+    gSioSt->unk_01F = SIO_BIG_TRANSFER_ACTIVE;
+    Sio_ResetState();
+    CHECK(GetSioBigTransferStatus() == SIO_BIG_TRANSFER_IDLE);
+
+    ResetState();
+    memset(&sendProc, 0, sizeof(sendProc));
+    sendProc.blockCount = 1;
+    sendProc.lastBlockLen = 4;
+    SioBigSend_Init(&sendProc);
+    CHECK(GetSioBigTransferStatus() == SIO_BIG_TRANSFER_ACTIVE);
+    CHECK(gSioSt->pendingSend[0].packet.len == 4);
+
+    ResetState();
     memset(&sendProc, 0, sizeof(sendProc));
     memset(source, 0xA5, sizeof(source));
     for (i = 0; i < 0xC00; i++)
