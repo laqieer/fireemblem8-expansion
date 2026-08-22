@@ -422,7 +422,6 @@ class RemoteCompletionGateTests(unittest.TestCase):
         self.assertIn("git status --porcelain", text)
         self.assertIn("git rev-parse '@{u}'", text)
         self.assertIn("--commit \"$$head_sha\" --workflow build.yml", text)
-        self.assertIn("--workflow release-rehearsal.yml", text)
         self.assertIn("gh issue list", text)
         self.assertIn("--state open", text)
 
@@ -434,7 +433,6 @@ class RemoteCompletionGateTests(unittest.TestCase):
             self.assertIn("commit", text.lower())
             self.assertIn("push", text.lower())
             self.assertIn("Build CI", text)
-            self.assertIn("Release Rehearsal", text)
 
 
 class QuickstartLegacyGlueRegressionGuardTests(unittest.TestCase):

@@ -93,8 +93,8 @@ gh run watch <run-id> --exit-status
 ```
 
 The run summary records `github.sha`, `github.ref`, and fail-closed conclusions
-for the host, modern debug/release matrix, archival legacy, and release-evidence
-lanes. `gh run watch ... --exit-status` must finish successfully before merge.
+for the host, modern debug/release matrix, and archival legacy lanes.
+`gh run watch ... --exit-status` must finish successfully before merge.
 The modern matrix invokes only the canonical
 `expansion-modern-linker-check`; that target already owns its CJK profile,
 runtime, shifted-link, and linker-budget dependencies.

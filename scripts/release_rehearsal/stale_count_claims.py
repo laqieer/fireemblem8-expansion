@@ -23,7 +23,7 @@ regression tests", "seven live structural findings", "epoch bumped from
 countable-total shapes this module matches, so those are never flagged.
 
 Deliberately dependency-free (Python stdlib only), matching this
-repository's other release-rehearsal tooling.
+repository's other local technical tooling.
 
 Exit codes (CLI): 0 clean, 1 stale claim(s) found, 2 invocation/I/O error.
 """
