@@ -1,5 +1,16 @@
 # GBA headless playtest fingerprints
 
+## Capturing mGBA debug-register logs
+
+For an isolated real-core capture, set `GBA_PLAYTEST_LOG_CAPTURE` to a
+writable file before invoking `capture` or `verify`. The libmGBA backend
+records its normal log callback as tab-separated category, level, and message
+records in that file; it otherwise remains silent. Issue #68's
+`tools/gba-playtest/run_debuglog_checks.py` uses this seam to assert one
+`FE8LOG ready` mGBA message in the debug ROM and no message in release. Set
+`TMPDIR` to a repository-local build directory when running the command in an
+environment that forbids system temporary directories.
+
 `gba_playtest.py` replays a strict JSON input scenario through libmGBA, captures
 named framebuffer/RAM checkpoints, and emits deterministic JSON. It is intended
 to compare behavior when ROM bytes or link addresses legitimately change.

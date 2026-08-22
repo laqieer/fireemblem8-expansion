@@ -143,6 +143,11 @@ three by default -- this preserves the pre-existing `NDEBUG` convention
 already used by `include/gba/isagbprint.h`'s `AGB_ASSERT`/`AGB_WARNING`
 macros; subsystems added later should gate development-only code on
 `FE8_EXPANSION_DEBUG` rather than re-deriving it from `NDEBUG` themselves.
+Issue #68's mGBA logging frontend uses the existing
+`FE8_EXPANSION_LOGGING_ENABLED` consequence of this preset directly: it
+adds no independent option, Make variable, or identity field. The preset is
+already fingerprinted, so debug logging and release omission have distinct,
+deterministic ROM identities without changing save compatibility.
 
 Both modern configurations define `BUGFIX=1`, enabling the decompilation's
 reviewed correctness fixes alongside `MODERN=1` and `NONMATCHING=1`. The
