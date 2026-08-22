@@ -438,6 +438,8 @@ def _read_png(path):
     width, height, depth, color_type, compression, filter_method, interlace = struct.unpack(
         ">IIBBBBB", chunks[0][1]
     )
+    if (width, height) != (128, 112):
+        raise ValueError("portrait sheet must be exactly 128x112 pixels")
     if color_type != 3 or depth not in (4, 8):
         raise ValueError("PNG must use indexed color with 4-bit or 8-bit indices")
     if compression != 0 or filter_method != 0 or interlace != 0:
@@ -463,8 +465,23 @@ def _read_png(path):
         raise ValueError("PNG palette index 0 must be transparent and all alpha values must be 0 or 255")
 
     stride = (width * depth + 7) // 8
-    raw = zlib.decompress(idat)
-    if len(raw) != height * (stride + 1):
+    expected_scanline_size = height * (stride + 1)
+    max_decompressed_size = expected_scanline_size + 1
+    try:
+        decompressor = zlib.decompressobj()
+        raw = decompressor.decompress(idat, max_decompressed_size)
+        if len(raw) > expected_scanline_size or decompressor.unconsumed_tail:
+            raise ValueError("PNG scanline data exceeds the expected length")
+        raw += decompressor.flush(max_decompressed_size - len(raw))
+    except zlib.error as exc:
+        raise ValueError("PNG IDAT stream is invalid") from exc
+    if len(raw) > expected_scanline_size:
+        raise ValueError("PNG scanline data exceeds the expected length")
+    if not decompressor.eof:
+        raise ValueError("PNG IDAT stream is incomplete")
+    if decompressor.unused_data:
+        raise ValueError("PNG IDAT stream has trailing data")
+    if len(raw) != expected_scanline_size:
         raise ValueError("PNG scanline data has an unexpected length")
     rows = []
     previous = [0] * stride

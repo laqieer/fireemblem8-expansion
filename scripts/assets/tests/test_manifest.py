@@ -141,27 +141,49 @@ def valid_portrait_record(root):
     }
 
 
-def write_indexed_png(path, width=128, height=112, indexed=True):
+def png_chunk(kind, payload):
+    return (
+        struct.pack(">I", len(payload))
+        + kind
+        + payload
+        + struct.pack(">I", zlib.crc32(kind + payload) & 0xFFFFFFFF)
+    )
+
+
+def write_indexed_png_stream(
+    path, *, width=128, height=112, depth=4, indexed=True, interlace=0, idat=b""
+):
     color_type = 3 if indexed else 2
-    depth = 4 if indexed else 8
     palette = bytes(component for value in range(16) for component in (value * 16,) * 3)
-    rows = b"".join(b"\0" + (b"\0" * ((width * depth + 7) // 8)) for _ in range(height))
-
-    def chunk(kind, payload):
-        return (
-            struct.pack(">I", len(payload)) + kind + payload
-            + struct.pack(">I", zlib.crc32(kind + payload) & 0xFFFFFFFF)
-        )
-
     chunks = [
         b"\x89PNG\r\n\x1a\n",
-        chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, depth, color_type, 0, 0, 0)),
+        png_chunk(
+            b"IHDR",
+            struct.pack(">IIBBBBB", width, height, depth, color_type, 0, 0, interlace),
+        ),
     ]
     if indexed:
-        chunks.extend((chunk(b"PLTE", palette), chunk(b"tRNS", b"\0" + b"\xff" * 15)))
-    chunks.extend((chunk(b"IDAT", zlib.compress(rows)), chunk(b"IEND", b"")))
+        chunks.extend(
+            (png_chunk(b"PLTE", palette), png_chunk(b"tRNS", b"\0" + b"\xff" * 15))
+        )
+    chunks.extend((png_chunk(b"IDAT", idat), png_chunk(b"IEND", b"")))
     with open(path, "wb") as handle:
         handle.write(b"".join(chunks))
+
+
+def write_indexed_png(path, width=128, height=112, indexed=True):
+    depth = 4 if indexed else 8
+    rows = b"".join(
+        b"\0" + (b"\0" * ((width * depth + 7) // 8)) for _ in range(height)
+    )
+    write_indexed_png_stream(
+        path,
+        width=width,
+        height=height,
+        depth=depth,
+        indexed=indexed,
+        idat=zlib.compress(rows),
+    )
 
 
 def write_jasc_palette(path):
@@ -448,6 +470,67 @@ class AssetManifestTests(unittest.TestCase):
             with open(os.path.join(REPO_ROOT, record["sources"][1]), "w", encoding="utf-8") as handle:
                 json.dump(metadata, handle)
             self.assert_validation_error([record], "must contain exactly")
+
+    def test_formatted_portrait_png_reader_bounds_decompression(self):
+        huge_path = os.path.join(TEST_ROOT, "huge-ihdr.png")
+        write_indexed_png_stream(
+            huge_path,
+            width=0x7FFFFFFF,
+            height=0x7FFFFFFF,
+            idat=zlib.compress(b"bomb"),
+        )
+        with mock.patch.object(manifest.zlib, "decompressobj") as decompressor:
+            with self.assertRaisesRegex(ValueError, "exactly 128x112"):
+                manifest._read_png(huge_path)
+        decompressor.assert_not_called()
+
+        expected_size = 112 * (((128 * 4 + 7) // 8) + 1)
+        overrun_path = os.path.join(TEST_ROOT, "overrun.png")
+        write_indexed_png_stream(
+            overrun_path,
+            idat=zlib.compress(b"\0" * (expected_size * 128)),
+        )
+        real_decompressobj = zlib.decompressobj
+        limits = []
+
+        class RecordingDecompressor:
+            def __init__(self):
+                self._inner = real_decompressobj()
+
+            def decompress(self, data, max_length):
+                limits.append(max_length)
+                return self._inner.decompress(data, max_length)
+
+            def flush(self, max_length):
+                return self._inner.flush(max_length)
+
+            @property
+            def eof(self):
+                return self._inner.eof
+
+            @property
+            def unconsumed_tail(self):
+                return self._inner.unconsumed_tail
+
+            @property
+            def unused_data(self):
+                return self._inner.unused_data
+
+        with mock.patch.object(
+            manifest.zlib, "decompressobj", side_effect=RecordingDecompressor
+        ):
+            with self.assertRaisesRegex(ValueError, "exceeds the expected length"):
+                manifest._read_png(overrun_path)
+        self.assertEqual(limits, [expected_size + 1])
+
+        trailing_path = os.path.join(TEST_ROOT, "trailing-zlib.png")
+        valid_rows = b"\0" * expected_size
+        write_indexed_png_stream(
+            trailing_path,
+            idat=zlib.compress(valid_rows) + zlib.compress(b"trailing"),
+        )
+        with self.assertRaisesRegex(ValueError, "trailing data"):
+            manifest._read_png(trailing_path)
 
     def test_formatted_portrait_package_reports_malformed_metadata_without_crashing(self):
         record = valid_portrait_record(TEST_ROOT)
