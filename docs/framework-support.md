@@ -11,7 +11,7 @@ it links to them.
 
 | Host | Package manager | Auto-installed by `scripts/quickstart.sh` | CI-verified |
 | --- | --- | --- | --- |
-| Ubuntu / Debian / WSL | `apt` | Yes | Yes — automatic `.github/workflows/build.yml` plus dispatch-only `.github/workflows/full-matrix.yml` run on `ubuntu-latest` |
+| Ubuntu / Debian / WSL | `apt` | Yes | Yes — automatic `.github/workflows/build.yml`; post-merge manual `.github/workflows/full-matrix.yml` on `master`, both on `ubuntu-latest` |
 | Arch Linux | `pacman` | Yes | No (community-supported; same script path as Ubuntu) |
 | macOS | Homebrew (`brew`) | Yes | No (community-supported) |
 
@@ -25,9 +25,10 @@ none of `scripts/quickstart.sh`, the Makefile, or CI target Windows
 directly.
 
 **Automatic Build CI is the only host this repository re-verifies on every
-push/PR.** The manual Full Matrix CI workflow adds a one-shot pre-merge broad
-pass for the candidate branch's exact commit; it does not change the automatic
-Build CI contract. Arch and macOS support is exercised by the same script
+push/PR.** A PR candidate uses Build CI and Copilot review concurrently; it
+must never dispatch Full Matrix. After the direct merge, automatic Build CI
+runs on `master`, then a maintainer manually dispatches Full Matrix only on
+that exact branch. Arch and macOS support is exercised by the same script
 logic but is not re-run in CI; treat regressions there as community-reported,
 not CI-caught.
 
@@ -115,17 +116,17 @@ no ROM build or network access is required for either.
 
 ### Dispatch-only full matrix
 
-Prefer focused local checks during iteration. Once the candidate branch is
-pushed, run the expensive host, modern debug/release, and archival lanes in
-parallel:
+Prefer focused local checks during iteration. Candidate branches use Build CI
+and Copilot review, not Full Matrix. Once the change is merged and automatic
+Build CI succeeds on `master`, run the Matrix-only host, modern debug/release,
+and archival lanes in parallel:
 
 ```bash
-gh workflow run full-matrix.yml --ref <branch>
-gh run watch <run-id> --exit-status
+gh workflow run full-matrix.yml --ref master
 ```
 
-The workflow is `workflow_dispatch`-only, read-only, concurrency-cancelled by
-workflow/ref, and records the exact `github.sha` and `github.ref`. Its final
+The workflow is `workflow_dispatch`-only, read-only, concurrency-cancelled for
+`master`, and rejects every other ref before its lanes execute. Its final
 summary fails unless host, both modern matrix configurations, and legacy
 succeed. The debug and release configurations remain parallel matrix jobs, and each job
 uses sequential Make to keep its resource use predictable. The canonical Build
@@ -142,12 +143,6 @@ individual replacement gap.
 its explicit legacy delete-before-build control preserves the pre-fix
 missing-input failure, while staged-output and first-build assertions cover
 failed/interrupted production cleanup and no-prior-publication behavior.
-
-The legally restricted live FE8J provenance proof is not a hosted-CI command
-and remains a mandatory local maintainer pre-push step. Use the procedure
-supported by the checked-out branch in
-[`game_locale_sources.md`](game_locale_sources.md), rather than copying a
-target from another branch or uploading restricted inputs.
 
 ## Configuration surface
 
@@ -179,13 +174,14 @@ surface remains bounded by its live reference and evidence report.
   to `0`. Sample requires hooks; starter content requires hooks and
   `FE8_ITEM_ID_CAP>=0xCE`. The mechanics registry has typed callbacks, eight
   slots, copied key/label storage, deterministic order, explicit error codes,
-  and a reentrancy guard. Debug and release both run enabled and default-
-  disabled runtime negatives; the content profile rides the existing item-
-  expansion gates. See [`starter_features.md`](starter_features.md).
+  and a reentrancy guard. Debug and release both run enabled and default-disabled runtime negatives;
+  the content profile rides gates 17-18 of the current
+  `scripts/upstream_port/verify.py` sequence. See
+  [`starter_features.md`](starter_features.md).
 - **#10 typed IDs:** DEFAULT committed and ACTIVE build-local contracts,
   consumer census, and modern-only item cap `0xCE` pilot are supported; its
-  debug/release runtime commands are gates 12-13 of the current-master
-  13-gate upstream-port verifier. There is no class/chapter/unit/character
+  debug/release runtime commands are gates 17-18 of the current-master
+  18-gate upstream-port verifier. There is no class/chapter/unit/character
   widening
   or implied save migration. See
   [`id_space.md`](id_space.md).

@@ -181,7 +181,7 @@ python3 -m scripts.upstream_port verify --dry-run   # list the gate commands wit
 
 **⚠️ This builds and checks the CURRENT TRUSTED WORKTREE (your repo, after
 you manually applied whatever you accepted) — it never builds, checks out,
-or executes the upstream ref/tree.** It orchestrates all 12 current-master
+or executes the upstream ref/tree.** It orchestrates all 18 current-master
 mirrored verifier gates in fail-fast order. `.github/workflows/build.yml`
 carries the same 12 commands with argv/order preserved across its host and ROM
 jobs, plus the deliberately standalone issues #7/#17 documentation-governance
@@ -198,18 +198,24 @@ workflow gate described below.
 4. `python3 -m unittest discover -s scripts/localization/tests -p "test_*.py"`
    (issue #18 host-only localization schema/catalog/pseudo/generation/resolver
    coverage)
-5. `python3 scripts/artifact_guard.py --revision HEAD`
-6. `python3 -m unittest discover -s scripts/modernize/tests -p test_build_default_lane.py -v`
-7. `python3 -m unittest discover -s scripts/modernize/tests -p test_quickstart.py -v`
-8. `make generated-data-check`
-9. `make expansion-modern-linker-check MODERN_CONFIG=debug MODERN_ABI=aapcs`
-10. `make expansion-modern-linker-check MODERN_CONFIG=release MODERN_ABI=aapcs`
-11. `FE8_ITEM_ID_CAP=0xCE FE8_EXPANSION_ITEMTEST=1 make expansion-modern-itemexpansion-check MODERN_CONFIG=debug MODERN_ABI=aapcs EXPANSION_STARTER_CONTENT=1 EXPANSION_MECHANICS_HOOKS=1 EXPANSION_MECHANICS_SAMPLE=1`
-12. `FE8_ITEM_ID_CAP=0xCE FE8_EXPANSION_ITEMTEST=1 make expansion-modern-itemexpansion-check MODERN_CONFIG=release MODERN_ABI=aapcs EXPANSION_STARTER_CONTENT=1 EXPANSION_MECHANICS_HOOKS=1 EXPANSION_MECHANICS_SAMPLE=1`
+5. `make game-localization-test`
+6. `python3 -m scripts.localization.game_locales check`
+7. `python3 -m scripts.localization.game_locales check-crosswalk`
+8. `python3 -m scripts.localization.game_locales check-raw-closure`
+9. `python3 -m unittest discover -s scripts/artifact_guard_tests -p 'test_*.py' -v`
+10. `python3 scripts/artifact_guard.py --revision HEAD`
+11. `python3 -m unittest discover -s scripts/modernize/tests -p test_build_default_lane.py -v`
+12. `python3 -m unittest discover -s scripts/modernize/tests -p test_quickstart.py -v`
+13. `make generated-data-test`
+14. `make generated-data-check`
+15. `make expansion-modern-linker-check MODERN_CONFIG=debug MODERN_ABI=aapcs`
+16. `make expansion-modern-linker-check MODERN_CONFIG=release MODERN_ABI=aapcs`
+17. `FE8_ITEM_ID_CAP=0xCE FE8_EXPANSION_ITEMTEST=1 make expansion-modern-itemexpansion-check MODERN_CONFIG=debug MODERN_ABI=aapcs EXPANSION_STARTER_CONTENT=1 EXPANSION_MECHANICS_HOOKS=1 EXPANSION_MECHANICS_SAMPLE=1`
+18. `FE8_ITEM_ID_CAP=0xCE FE8_EXPANSION_ITEMTEST=1 make expansion-modern-itemexpansion-check MODERN_CONFIG=release MODERN_ABI=aapcs EXPANSION_STARTER_CONTENT=1 EXPANSION_MECHANICS_HOOKS=1 EXPANSION_MECHANICS_SAMPLE=1`
 
-Gates 9-10 aggregate the complete modern debug/release ROM, linker, budget,
+Gates 15-16 aggregate the complete modern debug/release ROM, linker, budget,
 shift, save, starter-feature, and localization runtime matrices through
-`expansion-modern-linker-check`. Gates 12-13 reuse the item-expansion runtime
+`expansion-modern-linker-check`. Gates 17-18 reuse the item-expansion runtime
 probe at cap `0xCE`; the three issue #6 arguments make the same ROM also prove
 the typed starter-content record and both registered mechanics. No extra ROM
 build or gate is added.
@@ -225,7 +231,7 @@ python3 scripts/check_docs.py --check --check-examples
 ```
 
 This gate is stdlib-only, zero-network, and zero-ROM, and runs before
-dependency/tool installation. It is additional to all 12 mirrored verifier
+dependency/tool installation. It is additional to all 18 mirrored verifier
 gates and intentionally has no `verify.gates()` entry; it does not weaken,
 reorder, or replace any mirrored command.
 

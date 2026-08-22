@@ -105,7 +105,11 @@ jobs:
     # metrics-aware generated-break validation, and native text consumer
     # checks, so an overfull JA/ZH stream cannot pass the default CI lane.
     - name: Run full-game localization width contract (issue #18)
-      run: make game-localization-test
+      run: |
+        make game-localization-test
+        python3 -m scripts.localization.game_locales check
+        python3 -m scripts.localization.game_locales check-crosswalk
+        python3 -m scripts.localization.game_locales check-raw-closure
 
   # Ubuntu libmGBA ROM/runtime gate: builds the full modern object/ELF/ROM
   # chain for both supported configs (debug, release; AAPCS only -- see
@@ -151,7 +155,9 @@ jobs:
     # build output, so a prohibited tracked artifact fails fast on Git object
     # content instead of being masked by later build products.
     - name: Check tracked artifacts
-      run: python3 scripts/artifact_guard.py --revision HEAD
+      run: |
+        python3 -m unittest discover -s scripts/artifact_guard_tests -p 'test_*.py' -v
+        python3 scripts/artifact_guard.py --revision HEAD
 
     # Issues #7/#17 closure: a fast, stdlib-only, zero-network,
     # zero-ROM documentation governance gate. Runs the checker's own
@@ -197,7 +203,9 @@ jobs:
     # fails fast with actionable file:line diagnostics instead of being
     # masked by (or confused with) a much slower linker failure.
     - name: Check generated-data tables for drift
-      run: make generated-data-check
+      run: |
+        make generated-data-test
+        make generated-data-check
 
     # The linker gate builds the full modern object/ELF/ROM chain, checks
     # deterministic memory budgets, rejects orphan/overflow/cross-overlay
@@ -246,8 +254,7 @@ jobs:
     # content example, so the one probe run additionally asserts the authored
     # item record (original name/description/uses/type/attributes/icon) and
     # the content mechanic registered through the public hook registry. No
-    # extra workflow command and no extra ROM build: the CI correctness
-    # command count stays exactly 10.
+    # extra workflow command and no extra ROM build.
     #
     # Why this is not stale: every modern C/data object depends on
     # modern.mk's content-addressed MODERN_COMPILE_SETTINGS stamp (which

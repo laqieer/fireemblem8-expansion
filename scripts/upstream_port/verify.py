@@ -162,6 +162,46 @@ def gates(jobs: int = 2) -> List[Gate]:
             ),
         ),
         Gate(
+            name="game-localization-catalog-check",
+            command=["python3", "-m", "scripts.localization.game_locales", "check"],
+            applicable_note="Build host lane closure check for the committed full-game locale catalog",
+        ),
+        Gate(
+            name="game-localization-crosswalk-check",
+            command=[
+                "python3",
+                "-m",
+                "scripts.localization.game_locales",
+                "check-crosswalk",
+            ],
+            applicable_note="Build host lane closure check for full-game source/catalog crosswalk coverage",
+        ),
+        Gate(
+            name="game-localization-raw-closure-check",
+            command=[
+                "python3",
+                "-m",
+                "scripts.localization.game_locales",
+                "check-raw-closure",
+            ],
+            applicable_note="Build host lane closure check for unresolved raw full-game locale content",
+        ),
+        Gate(
+            name="artifact-guard-tests",
+            command=[
+                "python3",
+                "-m",
+                "unittest",
+                "discover",
+                "-s",
+                "scripts/artifact_guard_tests",
+                "-p",
+                "test_*.py",
+                "-v",
+            ],
+            applicable_note="Build ROM lane host tests for immutable candidate artifact hygiene",
+        ),
+        Gate(
             name="artifact-guard",
             command=["python3", "scripts/artifact_guard.py", "--revision", "HEAD"],
             applicable_note="always applicable: rejects prohibited tracked build artifacts",
@@ -206,6 +246,11 @@ def gates(jobs: int = 2) -> List[Gate]:
                 "archival agbcc lane via explicit `make legacy`/`make "
                 "fireemblem8.gba`, never via env/CLI variable overrides"
             ),
+        ),
+        Gate(
+            name="generated-data-test",
+            command=["make", "generated-data-test"],
+            applicable_note="applicable when generated-data schema and cross-reference tests exist",
         ),
         Gate(
             name="generated-data-check",

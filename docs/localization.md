@@ -407,24 +407,21 @@ expansion-only keys are explicitly outside that original-game comparison.
 
 ### Efficient local and pre-merge validation
 
-Use targeted localization tests while editing. After pushing the exact
-candidate branch, run the broad host/CJK/runtime/release evidence once in the
-dispatch-only full matrix:
+Use targeted localization tests while editing. A candidate branch receives
+Build CI and Copilot review concurrently; it must not dispatch Full Matrix.
+After merge, once automatic Build CI succeeds for `master`, dispatch the
+reduced Matrix from that exact branch:
 
 ```bash
-gh workflow run full-matrix.yml --ref <branch>
-gh run watch <run-id> --exit-status
+gh workflow run full-matrix.yml --ref master
 ```
 
-The host lane rebuilds the committed locale-source, crosswalk, and raw-closure
-artifacts offline and never receives legally restricted FE8J inputs. That is
-not a substitute for the mandatory live FE8J provenance proof, which remains
-a local maintainer pre-push step rather than a CI command. Follow
-[`game_locale_sources.md`](game_locale_sources.md) for the procedure supported
-by the checked-out branch; do not copy a target from another branch or upload
-restricted inputs to GitHub Actions. The workflow summary records the exact
-`github.sha`/`github.ref`; its modern debug/release matrix already owns the
-subordinate CJK profiles, runtime, shifted-link, and linker-budget gates.
+The Matrix host lane retains only CJK font, multilang-codec, and
+configuration/linker-budget evidence. Build CI owns locale-source, crosswalk,
+raw-closure, and rendered-width evidence for both candidate and `master`
+revisions. The workflow rejects non-`master` refs before any expensive lane
+runs; its modern debug/release matrix owns the subordinate CJK profiles,
+runtime, shifted-link, and linker-budget gates.
 
 ## Testing -- real libmGBA runtime evidence (Sprint 4)
 
