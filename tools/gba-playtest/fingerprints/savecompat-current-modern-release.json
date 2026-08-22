@@ -9,11 +9,5 @@
     }
   ],
   "format_version": 2,
-  "rom": {
-    "game_code": "BE8E",
-    "sha1": "2be359e6755c2db5622a50de51f749bbe638109e",
-    "size": 16777216,
-    "title": "FIREEMBLEM2E"
-  },
   "scenario": "savecompat-current"
 }

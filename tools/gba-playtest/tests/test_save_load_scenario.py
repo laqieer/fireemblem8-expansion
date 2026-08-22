@@ -98,7 +98,9 @@ class SaveLoadScenarioFilesTests(unittest.TestCase):
     def test_committed_fingerprint_matches(self):
         self.assertTrue(FINGERPRINT_PATH.exists(), f"missing: {FINGERPRINT_PATH}")
         fp = gba_playtest.validate_fingerprint(
-            json.loads(FINGERPRINT_PATH.read_text(encoding="utf-8")), str(FINGERPRINT_PATH)
+            json.loads(FINGERPRINT_PATH.read_text(encoding="utf-8")),
+            str(FINGERPRINT_PATH),
+            policy="behavior",
         )
         self.assertEqual(fp["scenario"], "save-load")
         self.assertEqual(len(fp["checkpoints"]), 4)
@@ -113,7 +115,9 @@ class SaveLoadRuntimeTests(unittest.TestCase):
         host_mode.require_built_rom(DEBUG_ROM, "modern debug ROM")
         scenario = gba_playtest.load_scenario(SCENARIO_PATH)
         expected = gba_playtest.validate_fingerprint(
-            json.loads(FINGERPRINT_PATH.read_text(encoding="utf-8")), str(FINGERPRINT_PATH)
+            json.loads(FINGERPRINT_PATH.read_text(encoding="utf-8")),
+            str(FINGERPRINT_PATH),
+            policy="behavior",
         )
         with tempfile.TemporaryDirectory(prefix="gba-playtest-save-load-test-") as tmp:
             fixture = sf.write_deterministic_current_fixture(Path(tmp) / "current.sav")

@@ -96,9 +96,11 @@ precedence/migration, runtime/shifted/budget matrices, and legal non-goals:
 ## Runtime verification / test surfaces
 
 - `tools/gba-playtest/` replays JSON input scenarios through libmGBA and
-  verifies deterministic framebuffer/RAM-checkpoint fingerprints bound to
-  ROM provenance (SHA-1, size, header title/game code). See its own
-  `README.md` for scenario/fingerprint format and host tests.
+  verifies deterministic framebuffer/RAM-checkpoint fingerprints. Capture
+  output always records ROM provenance (SHA-1, size, header title/game code);
+  exact-ROM verification requires it, while behavior-policy expected
+  baselines omit that unused metadata. See its own `README.md` for
+  scenario/fingerprint format and host tests.
 - `expansion-modern-boot-check` verifies the `boot.json` scenario at frames
   0/60/120 with `--policy behavior` (not byte-identity — the modern ROM is
   not byte-identical to the legacy ROM). `expansion-modern-linker-check`

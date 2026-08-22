@@ -41,6 +41,21 @@ _BASELINE_TEXT = gba_playtest.serialize_fingerprint(
     }
 )
 
+_BEHAVIOR_BASELINE_TEXT = gba_playtest.serialize_fingerprint(
+    {
+        "format_version": 2,
+        "scenario": "boot",
+        "checkpoints": [
+            {
+                "frame": 5,
+                "name": "visible",
+                "framebuffer_hash": "fnv1a64-rgb24:0000000000000000",
+                "probes": [],
+            }
+        ],
+    }
+)
+
 _MISMATCHING_CAPTURE = {
     "format_version": 2,
     "scenario": "boot",
@@ -81,9 +96,15 @@ _MATCHING_CAPTURE = {
 
 
 class BaselineNoAutoRefreshTests(unittest.TestCase):
-    def _run_verify(self, tmp_path: Path, captured: dict) -> int:
+    def _run_verify(
+        self,
+        tmp_path: Path,
+        captured: dict,
+        baseline_text: str = _BASELINE_TEXT,
+        policy: str | None = None,
+    ) -> tuple[int, str, str]:
         expected_path = tmp_path / "expected.json"
-        expected_path.write_text(_BASELINE_TEXT, encoding="utf-8")
+        expected_path.write_text(baseline_text, encoding="utf-8")
         scenario_path = tmp_path / "scenario.json"
         scenario_path.write_text(
             gba_playtest.json.dumps(
@@ -108,19 +129,22 @@ class BaselineNoAutoRefreshTests(unittest.TestCase):
 
         before_bytes = expected_path.read_bytes()
         before_mtime_ns = expected_path.stat().st_mtime_ns
+        arguments = [
+            "verify",
+            "--rom",
+            str(rom_path),
+            "--scenario",
+            str(scenario_path),
+            "--expected",
+            str(expected_path),
+        ]
+        if policy is not None:
+            arguments.extend(("--policy", policy))
         with mock.patch.object(gba_playtest, "capture", return_value=captured):
-            with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
-                exit_code = gba_playtest.main(
-                    [
-                        "verify",
-                        "--rom",
-                        str(rom_path),
-                        "--scenario",
-                        str(scenario_path),
-                        "--expected",
-                        str(expected_path),
-                    ]
-                )
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+            with redirect_stdout(stdout), redirect_stderr(stderr):
+                exit_code = gba_playtest.main(arguments)
         self.assertEqual(
             expected_path.read_bytes(),
             before_bytes,
@@ -132,17 +156,30 @@ class BaselineNoAutoRefreshTests(unittest.TestCase):
             "verify must never even rewrite --expected with identical bytes "
             "(mtime must be untouched)",
         )
-        return exit_code
+        return exit_code, stdout.getvalue(), stderr.getvalue()
 
     def test_mismatching_verify_leaves_baseline_untouched(self):
         with gba_playtest.tempfile.TemporaryDirectory() as tmp:
-            exit_code = self._run_verify(Path(tmp), _MISMATCHING_CAPTURE)
+            exit_code, _, _ = self._run_verify(Path(tmp), _MISMATCHING_CAPTURE)
         self.assertEqual(exit_code, 1)
 
     def test_passing_verify_leaves_baseline_untouched(self):
         with gba_playtest.tempfile.TemporaryDirectory() as tmp:
-            exit_code = self._run_verify(Path(tmp), _MATCHING_CAPTURE)
+            exit_code, _, _ = self._run_verify(Path(tmp), _MATCHING_CAPTURE)
         self.assertEqual(exit_code, 0)
+
+    def test_behavior_verify_accepts_romless_baseline_and_reports_capture_identity(self):
+        with gba_playtest.tempfile.TemporaryDirectory() as tmp:
+            exit_code, stdout, stderr = self._run_verify(
+                Path(tmp),
+                _MATCHING_CAPTURE,
+                baseline_text=_BEHAVIOR_BASELINE_TEXT,
+                policy="behavior",
+            )
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(stderr, "")
+        self.assertIn("baseline ROM: not recorded (behavior-policy baseline)", stdout)
+        self.assertIn("candidate ROM: sha1=" + "0" * 40, stdout)
 
     def test_verify_subcommand_has_no_write_or_refresh_style_flag(self):
         parser = gba_playtest._make_parser()
