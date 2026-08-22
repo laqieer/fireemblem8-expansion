@@ -14,16 +14,16 @@ $(error assets.mk: ASSET_OUTPUT_DIR must be build/generated/assets while portrai
 endif
 endif
 
+ASSET_TMX_INCBIN_CONSUMERS := $(shell $(ASSET_TOOL) --manifest "$(ASSET_MANIFEST)" tmx-incbin-consumers)
+ifneq ($(strip $(ASSET_TMX_INCBIN_CONSUMERS)),)
+ifneq ($(ASSET_OUTPUT_DIR),build/generated/assets)
+$(error assets.mk: ASSET_OUTPUT_DIR must be build/generated/assets while TMX map-layout INCBIN consumer(s) $(ASSET_TMX_INCBIN_CONSUMERS) are declared)
+endif
+endif
+
 ASSET_OUTPUT_MK := $(ASSET_OUTPUT_DIR)/asset_manifest.mk
-ASSET_PORTRAIT_DATA := $(ASSET_OUTPUT_DIR)/portrait_data.inc
-ASSET_PORTRAIT_COMPONENTS := $(ASSET_OUTPUT_DIR)/portrait_components.inc
-ASSET_PORTRAIT_SYMBOLS := $(ASSET_OUTPUT_DIR)/portrait_components.h
-ASSET_GENERATED_OUTPUTS := $(ASSET_OUTPUT_MK) $(ASSET_OUTPUT_DIR)/asset_inventory.md \
-	$(ASSET_PORTRAIT_DATA) $(ASSET_PORTRAIT_COMPONENTS) $(ASSET_PORTRAIT_SYMBOLS)
 ASSET_TOOL_INPUTS := $(filter-out scripts/assets/tests/%,$(sort $(shell find scripts/assets -type f -name '*.py' -print)))
-# Resolve all typed manifest inputs before Make evaluates the generated
-# include, so source changes remake every generated output incrementally.
-ASSET_SOURCE_INPUTS := $(shell $(ASSET_TOOL) --manifest "$(ASSET_MANIFEST)" sources)
+ASSET_MANIFEST_SOURCES := $(shell $(ASSET_TOOL) --manifest "$(ASSET_MANIFEST)" sources)
 
 .PHONY: assets-validate assets-generate assets-check assets-clean assets-test
 
@@ -45,7 +45,7 @@ assets-test:
 # Remake this included Makefile before resolving object prerequisites. The
 # emitted fragment lists every declared source directly on the existing
 # chapter-table objects, including the configured modern output path.
-$(ASSET_GENERATED_OUTPUTS): $(ASSET_MANIFEST) $(ASSET_SOURCE_INPUTS) $(ASSET_TOOL_INPUTS)
+$(ASSET_OUTPUT_MK): $(ASSET_MANIFEST) $(ASSET_MANIFEST_SOURCES) $(ASSET_TOOL_INPUTS)
 	$(ASSET_TOOL) --manifest "$(ASSET_MANIFEST)" --out-dir "$(ASSET_OUTPUT_DIR)" generate
 
 # A strict maintenance/check command must report a missing or stale output

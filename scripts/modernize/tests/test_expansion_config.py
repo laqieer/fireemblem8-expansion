@@ -475,6 +475,22 @@ class LoadIdentityTests(unittest.TestCase):
             )
         self.assertNotEqual(debug.config_fingerprint, release.config_fingerprint)
 
+    def test_item_cap_is_recorded_and_changes_the_fingerprint(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config_mk = write_config_mk(Path(tmp))
+            default = ec.load_identity(
+                config_mk_path=config_mk, config_preset="debug", abi="aapcs",
+                rom_size="16M", repo_root=Path(tmp),
+            )
+            expanded = ec.load_identity(
+                config_mk_path=config_mk, config_preset="debug", abi="aapcs",
+                rom_size="16M", repo_root=Path(tmp), item_id_cap="0xCE",
+            )
+        self.assertEqual(default.item_id_cap, 0xCD)
+        self.assertEqual(expanded.item_id_cap, 0xCE)
+        self.assertEqual(expanded.to_dict()["item_id_cap"], 0xCE)
+        self.assertNotEqual(default.config_fingerprint, expanded.config_fingerprint)
+
     def test_build_id_override_from_config_mk_is_used(self):
         with tempfile.TemporaryDirectory() as tmp:
             config_mk = write_config_mk(Path(tmp), build_id="deadbeef")

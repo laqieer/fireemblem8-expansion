@@ -1139,10 +1139,17 @@ def validate_fingerprint(
     data: Any,
     source: str,
     symbol_resolver: Callable[[str], tuple[int, int]] | None = None,
+    policy: str = "exact-rom",
 ) -> dict[str, Any]:
-    root = _expect_object(
-        data, source, {"format_version", "scenario", "rom", "checkpoints"}
-    )
+    if policy not in ("exact-rom", "behavior"):
+        raise ValueError(f"unknown verification policy: {policy}")
+    required_fields = {"format_version", "scenario", "checkpoints"}
+    optional_fields: set[str] = set()
+    if policy == "exact-rom":
+        required_fields.add("rom")
+    else:
+        optional_fields.add("rom")
+    root = _expect_object(data, source, required_fields, optional_fields)
     if (
         not _is_int(root["format_version"])
         or root["format_version"] != FINGERPRINT_FORMAT_VERSION
@@ -1151,20 +1158,21 @@ def validate_fingerprint(
             f"{source}.format_version must be integer {FINGERPRINT_FORMAT_VERSION}"
         )
     _expect_name(root["scenario"], f"{source}.scenario")
-    rom = _expect_object(
-        root["rom"], f"{source}.rom", {"sha1", "size", "title", "game_code"}
-    )
-    if not isinstance(rom["sha1"], str) or not re.fullmatch(
-        r"[0-9a-f]{40}", rom["sha1"]
-    ):
-        raise PlaytestError(f"{source}.rom.sha1 must be 40 lowercase hex digits")
-    if not _is_int(rom["size"]) or rom["size"] <= 0:
-        raise PlaytestError(f"{source}.rom.size must be a positive integer")
-    for field, limit in (("title", 48), ("game_code", 16)):
-        if not isinstance(rom[field], str) or len(rom[field]) > limit:
-            raise PlaytestError(
-                f"{source}.rom.{field} must be a string no longer than {limit} characters"
-            )
+    if "rom" in root:
+        rom = _expect_object(
+            root["rom"], f"{source}.rom", {"sha1", "size", "title", "game_code"}
+        )
+        if not isinstance(rom["sha1"], str) or not re.fullmatch(
+            r"[0-9a-f]{40}", rom["sha1"]
+        ):
+            raise PlaytestError(f"{source}.rom.sha1 must be 40 lowercase hex digits")
+        if not _is_int(rom["size"]) or rom["size"] <= 0:
+            raise PlaytestError(f"{source}.rom.size must be a positive integer")
+        for field, limit in (("title", 48), ("game_code", 16)):
+            if not isinstance(rom[field], str) or len(rom[field]) > limit:
+                raise PlaytestError(
+                    f"{source}.rom.{field} must be a string no longer than {limit} characters"
+                )
     if not isinstance(root["checkpoints"], list):
         raise PlaytestError(f"{source}.checkpoints must be an array")
     previous_frame = -1
@@ -1343,6 +1351,12 @@ def format_rom_identity(provenance: dict[str, Any]) -> str:
     )
 
 
+def format_baseline_rom_identity(fingerprint: dict[str, Any]) -> str:
+    if "rom" not in fingerprint:
+        return "not recorded (behavior-policy baseline)"
+    return format_rom_identity(fingerprint["rom"])
+
+
 def _write_output(path: str, text: str) -> None:
     if path == "-":
         sys.stdout.write(text)
@@ -1458,8 +1472,10 @@ def main(argv: list[str] | None = None) -> int:
             _read_json(args.expected),
             str(args.expected),
             symbol_resolver,
+            args.policy,
         )
         differences = compare_fingerprints(expected, actual, args.policy)
+        baseline_rom_identity = format_baseline_rom_identity(expected)
         if differences:
             print(
                 f"fingerprint mismatch for scenario {scenario.name!r} "
@@ -1467,7 +1483,7 @@ def main(argv: list[str] | None = None) -> int:
                 file=sys.stderr,
             )
             print(
-                f"  baseline ROM: {format_rom_identity(expected['rom'])}",
+                f"  baseline ROM: {baseline_rom_identity}",
                 file=sys.stderr,
             )
             print(
@@ -1480,7 +1496,7 @@ def main(argv: list[str] | None = None) -> int:
         print(
             f"fingerprint verified: policy={args.policy} scenario={scenario.name} "
             f"checkpoints={len(scenario.checkpoints)}\n"
-            f"  baseline ROM: {format_rom_identity(expected['rom'])}\n"
+            f"  baseline ROM: {baseline_rom_identity}\n"
             f"  candidate ROM: {format_rom_identity(actual['rom'])}"
         )
         return 0

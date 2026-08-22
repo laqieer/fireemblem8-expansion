@@ -74,6 +74,7 @@ Markdown library, so it stays stdlib-parseable and diff-friendly.
 - docs/community_asset_coverage.md | laqieer | current | Authoritative community asset-family ownership, build/runtime seam, provenance boundary, and gap catalog (issue #59)
 - docs/asset_manifest.md | laqieer | current | Versioned source-owned asset manifest, ownership dependency generation, and adapter contract (issue #60)
 - docs/portrait_packages.md | laqieer | current | Strict formatted portrait package, generated FaceData registration, and tester procedure (issue #63)
+- docs/tmx_map_layouts.md | laqieer | current | Fail-closed Tiled TMX map-layout subset, source workflow, and compatibility boundary (issue #64)
 - docs/bgm_routing.md | laqieer | current | Typed BGM context routing, action selectors, and preserve/continue policy
 - docs/ui_presentation_registry.md | laqieer | current | Typed UI presentation manifests and bounded presentation-resource registry
 - docs/test-cases/README.md | laqieer | current | Indexed tester-facing case catalog, schema, and staged coverage lifecycle
@@ -81,7 +82,9 @@ Markdown library, so it stays stdlib-parseable and diff-friendly.
 - docs/test-cases/foundation.md | laqieer | current | Tester procedure for the catalog and checker foundation (issue #54)
 - docs/test-cases/presentation-audio-utility.md | laqieer | current | Tester procedures for portrait, sound-room, BGM, presentation, manifest, and utility seams (issue #58)
 - docs/test-cases/optional-gameplay.md | laqieer | current | Indexed optional gameplay procedures, profiles, negatives, save expectations, and automation (issue #55)
+- docs/test-cases/patch-release.md | laqieer | current | Indexed BPS artifact validation/application and fail-closed input procedures (issue #49)
 - docs/localization.md | laqieer | current | Stable locale/message IDs, catalog authoring, prefs/UI, budgets, and runtime matrices (issue #18)
+- docs/patch_release.md | laqieer | current | Trusted BPS-only maximal-profile artifact and local verification contract (issue #49)
 - docs/game_localization_catalog.md | laqieer | current | Full-game FE8U-indexed CJK catalog generation, bounded runtime, and synthetic link gate
 - docs/game_locale_sources.md | laqieer | current | Maintainer reference for pinned FE8J/FE8CN imports, verified FE8U mappings, fallbacks, and regeneration gates
 - docs/game_locale_text_edits.md | laqieer | current | Generated ledger for reviewed original FE8J/FE8CN text edits and direct-import coverage

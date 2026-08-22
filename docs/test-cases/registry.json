@@ -111,6 +111,19 @@
       ]
     },
     {
+      "id": "patch-release-artifact",
+      "title": "Trusted BPS-only all-locales/all-features release artifact",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/49"
+      ],
+      "reference": "docs/patch_release.md",
+      "status": "current",
+      "required_cases": [
+        "TC-CI-PATCH-049-001",
+        "TC-CI-PATCH-049-002"
+      ]
+    },
+    {
       "id": "portrait-minimug-resolver",
       "title": "Portrait and minimug resolver",
       "issue_urls": [
@@ -466,6 +479,43 @@
       ]
     },
     {
+      "id": "TC-CI-PATCH-049-001",
+      "title": "Validate and write a trusted BPS artifact locally",
+      "feature_id": "patch-release-artifact",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/49"
+      ],
+      "document": "docs/test-cases/patch-release.md",
+      "anchor": "tc-ci-patch-049-001-validate-and-write-a-trusted-bps-artifact-locally",
+      "profiles": [
+        "Trusted SHA-named modern-release-all-locales-all-features-aapcs BPS artifact from master",
+        "Equivalent modern release/AAPCS all-locales/all-features source profile"
+      ],
+      "purpose": "Validate the trusted BPS artifact and separately write its checked output without publishing a base or ROM.",
+      "prerequisites": "Repository root, Python 3, unpacked three-file artifact, independently acquired legal FE8U revision-0 base, separate output path, and blank or disposable SRAM.",
+      "actions": "Validate the base and artifact, apply the BPS to a separately named local output, then run the equivalent local patch-check profile.",
+      "expected_result": "Validation succeeds without writing a ROM; the BPS applier validates CRCs and writes only the selected output; the source profile round-trips the same 32 MiB metadata-bound artifact.",
+      "negative_control": "The default English-only 16 MiB bare make path has no artifact, while a wrong or one-byte-modified base fails before a patched output is written.",
+      "interactions": "Depends on modern metadata, generated data, localization, linker budget, boot/runtime, artifact guard, and preserve BGM; conflicts with untrusted access, wrong bases, contamination, and non-preserve BGM.",
+      "save_compatibility": "No save layout, migration, or compatibility-epoch change; use blank or disposable SRAM when changing profile.",
+      "cleanup": "Delete only the chosen local output and use make clean_fast for generated profile artifacts.",
+      "limitations": "The repository never publishes a base or output ROM, and verify reconstructs only in memory rather than writing output.",
+      "automation": [
+        {
+          "command": "python3 -m unittest scripts.modernize.tests.test_patch_release -v",
+          "evidence": "scripts/modernize/tests/test_patch_release.py"
+        },
+        {
+          "command": "make expansion-modern-all-locales-all-features-check",
+          "evidence": "modern.mk"
+        },
+        {
+          "command": "make expansion-modern-all-locales-all-features-patch-check PATCH_BASE_ROM=/path/to/legal-fe8u-rev0",
+          "evidence": "modern.mk"
+        }
+      ]
+    },
+    {
       "id": "TC-PORTRAIT-001",
       "title": "Resolve ordered portrait and minimug rules",
       "feature_id": "portrait-minimug-resolver",
@@ -490,6 +540,39 @@
         {
           "command": "python3 -m unittest scripts.modernize.tests.test_issue34_35_resolvers.PortraitResolverContractTests -v",
           "evidence": "scripts/modernize/tests/test_issue34_35_resolvers.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-CI-PATCH-049-002",
+      "title": "Reject untrusted or malformed patch inputs",
+      "feature_id": "patch-release-artifact",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/49"
+      ],
+      "document": "docs/test-cases/patch-release.md",
+      "anchor": "tc-ci-patch-049-002-reject-untrusted-or-malformed-patch-inputs",
+      "profiles": [
+        "Clean source checkout with synthetic patch-release fixtures",
+        "Optional disposable local copy of an independently acquired legal FE8U revision-0 base"
+      ],
+      "purpose": "Prove malformed or untrusted bases, artifacts, and workflow events fail closed without secret, ROM, or path disclosure.",
+      "prerequisites": "Repository root and Python 3; use only disposable local copies for optional base mutation and never publish a base or output.",
+      "actions": "Run the patch-release synthetic suite and workflow contract, then optionally retain nonzero verification/application results for a one-byte-modified disposable base.",
+      "expected_result": "Malformed, changed, or untrusted inputs fail before output or upload, and the trusted workflow has no PR secret or publication path.",
+      "negative_control": "A matching synthetic three-file artifact round-trips successfully, while the default bare make path has no base secret, patch artifact, or publish step.",
+      "interactions": "Shares the trusted metadata, preserve-BGM, artifact-guard, wrong-base, untrusted-event, and output-contamination boundaries of TC-CI-PATCH-049-001.",
+      "save_compatibility": "No save field, layout, migration, compatibility epoch, public C API, localization-ID, or archival-lane change.",
+      "cleanup": "Remove only disposable local copies and outputs created for a negative control.",
+      "limitations": "Legal base acquisition remains private and manual because no ROM can be published; deterministic validation is automated.",
+      "automation": [
+        {
+          "command": "python3 -m unittest scripts.modernize.tests.test_patch_release -v",
+          "evidence": "scripts/modernize/tests/test_patch_release.py"
+        },
+        {
+          "command": "python3 -m unittest tests.workflows.test_patch_release_workflow -v",
+          "evidence": "tests/workflows/test_patch_release_workflow.py"
         }
       ]
     },

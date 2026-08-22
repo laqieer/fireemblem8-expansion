@@ -301,6 +301,16 @@ def gates(jobs: int = 2) -> List[Gate]:
                 "and the final step of build.yml ROM `build` job"
             ),
         ),
+        Gate(
+            name="modern-all-locales-all-features-profile",
+            command=["make", "expansion-modern-all-locales-all-features-check", "-j1"],
+            applicable_note=(
+                "issue #49 trusted-patch preflight: builds and validates the "
+                "isolated release/AAPCS 32 MiB all-production-locales and "
+                "maximal-supported-features profile without reading a base "
+                "image, creating a patch, or publishing an artifact"
+            ),
+        ),
     ]
 
 

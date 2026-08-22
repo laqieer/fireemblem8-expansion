@@ -36,6 +36,7 @@ def _parser():
         "check",
         "sources",
         "portrait-incbin-consumers",
+        "tmx-incbin-consumers",
         "clean",
     ):
         subparsers.add_parser(name)
@@ -74,6 +75,10 @@ def main(argv=None):
         elif args.command == "portrait-incbin-consumers":
             records = manifest.load_and_validate(args.manifest)
             for record_id in manifest.portrait_incbin_consumer_ids(records):
+                print(record_id)
+        elif args.command == "tmx-incbin-consumers":
+            records = manifest.load_and_validate(args.manifest)
+            for record_id in manifest.tmx_incbin_consumer_ids(records):
                 print(record_id)
         else:
             if os.path.exists(args.out_dir):

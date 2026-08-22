@@ -33,7 +33,7 @@ consumption case.
 
 | Family | Current status | Current owning seam | Next owner for the gap |
 | --- | --- | --- | --- |
-| Chapter map layouts | Partially supported | Chapter asset-table indices and map data | #64 after #60 |
+| Chapter map layouts | Supported | Chapter asset-table indices and map data | #64 TMX safe subset |
 | Map changes | Manual-only | Chapter event/map-change data | Future `map-change schema/adapter` after #60 |
 | Tilesets and map configuration | Partially supported | Chapter asset table plus graphics rules | Future `tileset package` after #60 |
 | Tile animation | Manual-only | Chapter asset table and map-animation data | Future `tile-animation schema/adapter` after #60 |
@@ -79,12 +79,12 @@ and lane cell records the family-specific coverage in addition to them.
 
 | Field | Current coverage |
 | --- | --- |
-| Community input | No project-owned TMX adapter. Tiled TMX is an external authoring format and is out of scope until #64's safe subset is specified. |
-| Canonical source/build product | Existing layouts are committed map data; `MARTOMAP` (`scripts/mar_to_map.py`) is the current `.mar` conversion primitive and emits map data used by the build. |
+| Community input | `tmx-safe-v1`: the documented finite, orthogonal, one-layer Tiled TMX subset in `docs/tmx_map_layouts.md`; Tiled itself remains optional. |
+| Canonical source/build product | A manifest-owned TMX generates ignored `.mar`/JSON inputs, then `MARTOMAP` (`scripts/mar_to_map.py`) emits the existing `.bin` payload and normal rules compress it. |
 | Runtime consumer/seam | `GetChapterMapPointer` and map loading consume `struct ROMChapterData.map.mainLayerId` through `gChapterDataAssetTable`; `src/bmmap.c` loads the selected resources. |
-| IDs and limits | Chapter map fields and asset-table indexes are `u8`; there is no manifest-level uniqueness, map-dimension, tileset, or VRAM budget validator. #64 must state its accepted TMX layers, encodings, dimensions, tileset mapping, and overflow behavior. |
-| Validation and lane | Current build dependency conversion is available in both build lanes where its assets are linked. Modern release is the supported lane; archival matching is not a substitute for an authoring contract. |
-| Status/gap | **Partially supported**. #60 owns common ownership metadata; #64 owns a deterministic safe TMX subset and real chapter registration proof. |
+| IDs and limits | Chapter map fields and asset-table indexes are `u8`; the adapter validates manifest ID/ownership, the 1..255 dimensions, 4096-GID mapping, and the 2048-byte map-buffer capacity. |
+| Validation and lane | Deterministic manifest/adapter checks cover syntax, ownership, source safety, drift, and adversarial TMX. Modern release/debug are the supported integration lanes; archival matching is not an authoring contract. |
+| Status/gap | **Supported** for `tmx-safe-v1` only. Map changes, tileset packages, objects, transforms, external tilesets, and other editor exports remain separate unsupported contracts. |
 
 ### Map changes
 
