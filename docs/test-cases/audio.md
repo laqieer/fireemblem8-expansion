@@ -25,12 +25,13 @@
 Both enabled profiles link and boot with exactly one HQ `SoundMainRAM`
 implementation. The mixer copies its bounded ROM code to IWRAM, uses the
 aligned 16-bit intermediate buffer, leaves the DMA3 path disabled, retains
-the `0x1000` user-stack floor, and completes the scripted battle's ordinary HBlank/DMA
-activity. libmGBA captures non-silent, bounded left and right PCM buffers,
-valid PCM interrupt counters, a matching pre-execution ROM/IWRAM copy
-checksum, and no invalid interrupt-buffer observation. The deterministic
-multi-voice host fixture reports lower final-quantization RMS error than the
-stock per-voice model.
+the `0x1000` user-stack floor, omits reverb feedback, and completes the
+scripted battle's ordinary HBlank/DMA activity. libmGBA captures non-silent,
+bounded, distinct left and right PCM buffers, valid PCM interrupt counters, a
+matching pre-execution ROM/IWRAM copy checksum, and no invalid
+interrupt-buffer observation. This validates fixed paired-channel output; it
+does not claim a mono/stereo toggle. The deterministic multi-voice host fixture
+reports lower final-quantization RMS error than the stock per-voice model.
 
 ### Negative control
 

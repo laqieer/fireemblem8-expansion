@@ -2,8 +2,10 @@
 
 Issue #83 adds a permanent, default-off high-resolution PCM mixer at the
 existing MP2K `SoundMainRAM` / `m4aSoundInit` seam. It retains the normal
-sequence, song, SFX, volume, and reverb APIs: only the direct-sound PCM mixing
-implementation changes after a rebuild.
+sequence, song, SFX, and volume APIs; only the direct-sound PCM mixing
+implementation changes after a rebuild. The pinned HQ profile compiles
+`ENABLE_REVERB=0`: its downsampler omits reverb feedback, so MP2K's stored
+reverb setting is not applied to HQ PCM output.
 
 ## Configuration
 
@@ -36,9 +38,13 @@ The vendored mixer is pinned to upstream revision
 `2b1e2ea36ad6c256718f219b7c55eb434c50477c`; its source carries the required
 copyright and MIT permission notice. The build never fetches it.
 
-The initial profile is non-Pokemon, stereo, FE8's existing 13,379 Hz frame
-length, and DMA-disabled. The 16-bit interleaved intermediate buffer is
-linker-owned rather than address-coded. The exact fixed resources are:
+The initial profile is non-Pokemon, always emits paired left/right
+interleaved PCM samples, uses FE8's existing 13,379 Hz frame length, omits
+reverb feedback, and is DMA-disabled. The upstream `ENABLE_STEREO` pseudo
+switch was unused and is intentionally absent: this integration has no
+mono/stereo runtime or build toggle. The 16-bit interleaved intermediate
+buffer is linker-owned rather than address-coded. The exact fixed resources
+are:
 
 | Resource | Disabled | Enabled | Delta |
 | --- | ---: | ---: | ---: |
@@ -69,9 +75,12 @@ decomp matching are unsupported.
 checks the exact selected mixer symbols, copy extent, aligned IWRAM buffer,
 absent disabled symbols, linker stack floor, and the 16-bit buffer size. Its
 libmGBA's fixed scripted-battle progression captures both PCM FIFO buffers and live interrupt
-state from the linked ELF symbols, verifies bounded non-silent stereo output,
-checks the one-time ROM-to-IWRAM copy checksum before self-modifying mixer
-execution, and runs the ordinary scripted-battle HBlank/DMA progression on both profiles.
+state from the linked ELF symbols, verifies bounded non-silent left/right
+output with distinct captured channel values, checks the one-time
+ROM-to-IWRAM copy checksum before self-modifying mixer execution, and runs the
+ordinary scripted-battle HBlank/DMA progression on both profiles. This is
+evidence for the fixed paired-channel output, not for a selectable stereo
+mode.
 
 The deterministic host fixture compares stock per-voice rounding against one
 final high-resolution quantization and requires lower RMS error for the latter.

@@ -174,8 +174,8 @@ class HqMixerCompiledArtifactTests(unittest.TestCase):
             resolver = hq.ElfSymbolResolver(hq_object, ARM_NM)
             mixer, mixer_size = resolver("SoundMainRAM")
             mixer_end, _ = resolver("SoundMainRAM_End")
-            self.assertEqual(mixer_size, hq.HQ_CODE_BYTES)
-            self.assertEqual(mixer_end - mixer, hq.HQ_CODE_BYTES)
+            self.assertEqual(mixer_size, hq.HQ_NO_REVERB_CODE_BYTES)
+            self.assertEqual(mixer_end - mixer, hq.HQ_NO_REVERB_CODE_BYTES)
 
     def test_disabled_linker_placeholders_are_not_real_hq_definitions(self) -> None:
         with mock.patch.object(hq, "resolve_elf_symbol", return_value=(0, 0)):

@@ -18,7 +18,7 @@ import gba_playtest
 from probe_bindings import ElfSymbolResolver, ProbeBindingError, resolve_elf_symbol
 from scripts.linker_report import budget
 
-HQ_CODE_BYTES = 0xAC0
+HQ_NO_REVERB_CODE_BYTES = 0xAC0
 HQ_MIX_BUFFER_BYTES = 0x380
 HQ_EWRAM_BOOKKEEPING_BYTES = 0x418
 SOUND_INFO_PCM_BUFFER_OFFSET = 0x350
@@ -125,17 +125,20 @@ def check_link_selection(enabled_elf: Path, disabled_elf: Path, nm: str) -> dict
 
     if not 0x08000000 <= code < 0x0A000000:
         fail(f"HQ SoundMainRAM is not linked in ROM: 0x{code:08x}")
-    if code_size != HQ_CODE_BYTES or code_end - code != HQ_CODE_BYTES:
+    if (
+        code_size != HQ_NO_REVERB_CODE_BYTES
+        or code_end - code != HQ_NO_REVERB_CODE_BYTES
+    ):
         fail(
             f"HQ SoundMainRAM extent is 0x{code_size:x}/0x{code_end - code:x}, "
-            f"expected 0x{HQ_CODE_BYTES:x}"
+            f"expected no-reverb profile size 0x{HQ_NO_REVERB_CODE_BYTES:x}"
         )
     if not 0x03000000 <= code_buffer < 0x03008000:
         fail(f"HQ code buffer is not in IWRAM: 0x{code_buffer:08x}")
-    if code_buffer_size != HQ_CODE_BYTES:
+    if code_buffer_size != HQ_NO_REVERB_CODE_BYTES:
         fail(
             f"HQ code buffer size is 0x{code_buffer_size:x}, "
-            f"expected 0x{HQ_CODE_BYTES:x}"
+            f"expected no-reverb profile size 0x{HQ_NO_REVERB_CODE_BYTES:x}"
         )
     if not 0x03000000 <= mix_buffer < 0x03008000:
         fail(f"HQ intermediate buffer is not in IWRAM: 0x{mix_buffer:08x}")
@@ -277,8 +280,11 @@ def validate_pcm_capture(capture: dict, enabled: bool, selection: dict | None = 
         index += len(names)
         if probe["initialization_count"] == 0 or probe["sound_main_count"] == 0:
             fail("HQ mixer did not initialize and execute SoundMain")
-        if probe["code_bytes"] != HQ_CODE_BYTES:
-            fail(f"HQ copy used 0x{probe['code_bytes']:x} bytes, expected 0x{HQ_CODE_BYTES:x}")
+        if probe["code_bytes"] != HQ_NO_REVERB_CODE_BYTES:
+            fail(
+                f"HQ copy used 0x{probe['code_bytes']:x} bytes, expected no-reverb "
+                f"profile size 0x{HQ_NO_REVERB_CODE_BYTES:x}"
+            )
         if probe["source_checksum"] == 0 or probe["source_checksum"] != probe["destination_checksum"]:
             fail("HQ mixer IWRAM copy checksum does not match its ROM source")
         if selection is None:
@@ -325,6 +331,7 @@ def validate_pcm_capture(capture: dict, enabled: bool, selection: dict | None = 
         "framebuffer_hashes": framebuffer_hashes,
         "pcm_dma_counter": counter,
         "pcm_dma_period": period,
+        "stereo_output_observed": True,
         "final_left_pcm_words": final_left,
         "final_right_pcm_words": final_right,
         "left_pcm_words": left,

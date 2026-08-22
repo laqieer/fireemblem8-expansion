@@ -32,8 +32,7 @@
 
     .equ    hq_buffer_ptr, SoundMainRAM_MixBuffer   @ <-- set this to an IWRAM address where you want your high quality mix buffer to be
     .equ    POKE_CHN_INIT, 0                        @ <-- set to '1' for pokemon games, '0' for other games
-    .equ    ENABLE_STEREO, 1                        @ <-- TODO actually implement, not functional yet
-    .equ    ENABLE_REVERB, 0                        @ <-- if you want faster code or don't like reverb, set this to '0', set to '1' otherwise
+    .equ    ENABLE_REVERB, 0                        @ pinned profile: omit reverb feedback from the downsampler
     .equ    ENABLE_DMA, 0                           @ DMA3 is reserved for HBlank and other framework users.
 
     /*****************
