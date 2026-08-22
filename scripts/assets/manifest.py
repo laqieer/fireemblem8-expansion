@@ -789,6 +789,10 @@ class ChapterMapLayoutKind:
     def make_dependencies(self, record):
         return ((self._object, record.sources), (self._modern_object, record.sources))
 
+    def source_dependencies(self, record):
+        del record
+        return ()
+
     def generated_outputs(self, record, out_dir):
         del record, out_dir
         return {}
@@ -997,6 +1001,10 @@ class TiledTmxMapLayoutKind(ChapterMapLayoutKind):
             (generated_sources, tuple(record.sources) + ("$(ASSET_MANIFEST)",)),
             (bin_path, generated_sources),
         )
+
+    def source_dependencies(self, record):
+        del record
+        return ()
 
 
 class FormattedPortraitPackageKind:
@@ -1268,6 +1276,9 @@ class FormattedPortraitPackageKind:
             (self._modern_object, sources),
             (self._modern_data_object, sources),
         )
+
+    def source_dependencies(self, record):
+        return (record.ownership["registrySource"],)
 
     def generated_outputs(self, record, out_dir):
         del record, out_dir

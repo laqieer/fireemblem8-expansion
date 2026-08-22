@@ -68,8 +68,7 @@ def main(argv=None):
             for record in records:
                 sources.update(record.sources)
                 kind = manifest.KIND_REGISTRY.resolve(record.kind)
-                for _, dependencies in kind.make_dependencies(record):
-                    sources.update(dependencies)
+                sources.update(kind.source_dependencies(record))
             for source in sorted(sources):
                 print(source)
         elif args.command == "portrait-incbin-consumers":

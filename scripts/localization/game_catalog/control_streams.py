@@ -150,11 +150,24 @@ def load_portrait_operand_map(path: Path = DEFAULT_PORTRAIT_MAP_PATH) -> Portrai
         try:
             document = json.loads(fe8u_source.read_text(encoding="utf-8"))
             rows = document["entries"]
-            fe8u_registry = {
-                row["id"]: row
-                for row in rows
-                if isinstance(row, dict) and isinstance(row.get("id"), int)
-            }
+            if not isinstance(rows, list):
+                raise TypeError("entries must be a list")
+            fe8u_registry = {}
+            for index, row in enumerate(rows):
+                if not isinstance(row, dict):
+                    raise TypeError(f"entries[{index}] must be an object")
+                portrait_id = row.get("id")
+                if not isinstance(portrait_id, int) or isinstance(portrait_id, bool):
+                    raise ControlStreamError(
+                        f"{path}: canonical FE8U portrait registry entries[{index}].id "
+                        "must be an integer"
+                    )
+                if portrait_id in fe8u_registry:
+                    raise ControlStreamError(
+                        f"{path}: canonical FE8U portrait registry has duplicate id "
+                        f"{portrait_id}"
+                    )
+                fe8u_registry[portrait_id] = row
         except (OSError, UnicodeDecodeError, json.JSONDecodeError, KeyError, TypeError) as error:
             raise ControlStreamError(
                 f"{path}: canonical FE8U portrait registry is unavailable"

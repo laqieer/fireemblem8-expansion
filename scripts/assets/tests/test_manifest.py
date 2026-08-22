@@ -505,7 +505,11 @@ class AssetManifestTests(unittest.TestCase):
             check=True,
             text=True,
         )
-        self.assertIn("assets/portrait_registry.json", result.stdout.splitlines())
+        sources = result.stdout.splitlines()
+        self.assertIn("assets/portrait_registry.json", sources)
+        self.assertIn("assets/tmx/Ch2Map.tmx", sources)
+        self.assertTrue(all("$(" not in source for source in sources))
+        self.assertFalse(any(source.startswith("build/") for source in sources))
 
     def test_make_rejects_output_override_with_portrait_incbin_consumer(self):
         result = self.run_assets_make(
