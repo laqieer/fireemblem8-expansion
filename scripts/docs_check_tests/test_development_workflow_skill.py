@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 import unittest
 
 
@@ -11,8 +12,21 @@ PR_TEMPLATE_PATH = ROOT / ".github" / "PULL_REQUEST_TEMPLATE.md"
 CLAUDE_PATH = ROOT / "CLAUDE.md"
 
 
-def normalize_markdown_whitespace(text):
-    return " ".join(text.split())
+def normalize_policy(text):
+    return " ".join(re.findall(r"[a-z0-9]+", text.lower()))
+
+
+def assert_normalized_policy(test_case, surface, text, concepts, forbidden=()):
+    normalized = normalize_policy(text)
+
+    for concept, terms in concepts:
+        for term in terms:
+            with test_case.subTest(surface=surface, concept=concept, term=term):
+                test_case.assertIn(normalize_policy(term), normalized)
+
+    for clause in forbidden:
+        with test_case.subTest(surface=surface, forbidden=clause):
+            test_case.assertNotIn(normalize_policy(clause), normalized)
 
 
 def read_skill():
@@ -81,7 +95,7 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
         _, text = read_skill()
 
         self.assertIn(
-            "Merge the PR autonomously when all five conditions hold.",
+            "Merge the PR autonomously when all four conditions hold.",
             text,
         )
         self.assertIn(
@@ -99,102 +113,94 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
 
     def test_ci_waiting_does_not_hold_reasoning_subagents(self):
         _, text = read_skill()
-        required_contract = (
-            "Reasoning subagents must not remain alive merely to wait",
-            "records the exact candidate",
-            "SHA and run ID",
-            "returns immediately",
-            "exactly one direct shell watcher",
-            "timeout 90m gh run watch <run-id> --interval 30 --exit-status",
-            "process-completion",
-            "never create duplicate watchers",
-            "Only after the workflow reaches a terminal state",
-            "gh run cancel <run-id>",
-            "Never repeatedly wake the same subagent merely",
-            "never accept a stale run",
-            "Post-merge `master` Build CI monitoring is always nonblocking.",
-            "attached asynchronous mode",
-            "immediately continue scheduling every dependency-ready",
-            "Do not stop orchestration or",
-            "send a waiting-only response",
-            "Only issue closure, remote completion, and other true dependents",
-            "exact merged `master` SHA",
-            "fix forward or revert immediately",
-        )
-
-        for requirement in required_contract:
-            with self.subTest(requirement=requirement):
-                self.assertIn(requirement, text)
-
-        markdown_contract = (
-            "Validate and merge independent PRs in parallel.",
-            "Another independent merge advancing `master` does not by itself "
-            "invalidate a candidate head's evidence.",
-            "Monitor Copilot review concurrently with candidate Build CI. Use a "
-            "separate bounded direct watcher for the exact candidate's Copilot "
-            "review check; when it finishes, inspect and triage its threads "
-            "immediately instead of waiting for Build or Full Matrix.",
-            "Dispatch Full Matrix only after both Build CI and Copilot review "
-            "are terminal and clean for the same candidate.",
-        )
-        normalized_skill = normalize_markdown_whitespace(text)
-        for requirement in markdown_contract:
-            with self.subTest(surface="skill", requirement=requirement):
-                self.assertIn(requirement, normalized_skill)
-
         project_instructions = (
             ROOT / ".github" / "copilot-instructions.md"
         ).read_text(encoding="utf-8")
-        project_contract = (
-            "CI waiting must not occupy a reasoning subagent.",
-            "records its exact SHA and run ID, then returns immediately",
-            "exactly one bounded direct shell watcher",
-            "timeout 90m gh run watch <run-id> --interval 30 --exit-status",
-            "invoke a reasoning agent only",
-            "after the run is terminal",
-            "Do not repeatedly wake an",
-            "agent to poll",
-            "cancel superseded",
-            "candidate runs before dispatching replacement checks",
-            "After a PR merge, monitor the exact-`master` Build CI",
-            "nonblocking asynchronous shell watcher",
-            "continue every unrelated dependency-ready task",
-            "stopping to wait or sending a waiting-only response",
-            "Only closure, remote",
-            "fix forward or revert the broken default",
-        )
-
-        for requirement in project_contract:
-            with self.subTest(
-                surface="project instructions", requirement=requirement
-            ):
-                self.assertIn(requirement, project_instructions)
-
         claude_instructions = CLAUDE_PATH.read_text(encoding="utf-8")
-        project_markdown_contract = (
-            "Monitor Copilot review concurrently with candidate Build CI using "
-            "its own bounded direct watcher.",
-            "Inspect review threads as soon as that review is terminal; do not "
-            "wait for Build or Full Matrix.",
-            "Start Full Matrix only after Build and Copilot review are both clean.",
-            "Independent PRs may validate and merge in parallel.",
-            "Do not queue them by age, issue number, shared initiative, or "
-            "another independent PR's post-merge CI.",
+        contributing = CONTRIBUTING_PATH.read_text(encoding="utf-8")
+        required_policy = (
+            (
+                "candidate gates",
+                ("exact-candidate Build CI", "concurrent Copilot review"),
+            ),
+            (
+                "review finding cancellation",
+                ("valid review finding", "supersedes", "cancels", "candidate checks"),
+            ),
+            (
+                "candidate matrix exclusion",
+                ("Do not run Full Matrix", "candidate PR", "stacked child"),
+            ),
+            (
+                "direct candidate merge",
+                ("merge directly", "candidate", "local Full Matrix"),
+            ),
+            (
+                "exact master dispatch",
+                (
+                    "Immediately after each merge",
+                    "intentional independent merge batch",
+                    "dispatch Full Matrix CI",
+                    "exact resulting master SHA and branch",
+                ),
+            ),
+            (
+                "independent merge concurrency",
+                ("nonblocking only", "unrelated independent PR merges"),
+            ),
+            (
+                "master failure response",
+                ("failures interrupt ordinary work", "fix-forward or revert"),
+            ),
+            (
+                "closure and completion gate",
+                (
+                    "Issue closure",
+                    "remote completion",
+                    "exact merged-master",
+                    "Build",
+                    "Full Matrix",
+                    "succeed",
+                ),
+            ),
         )
+        forbidden_policy = (
+            "Dispatch and pass full matrix yml for that same candidate branch",
+            "Start Full Matrix only after Build and Copilot review are both clean",
+            "Full Matrix if the candidate commit or tree changed",
+        )
+
         for surface, instructions in (
+            ("development workflow skill", text),
             ("project instructions", project_instructions),
             ("Claude project instructions", claude_instructions),
+            ("contributor guidance", contributing),
         ):
-            normalized_instructions = normalize_markdown_whitespace(instructions)
-            for requirement in project_markdown_contract:
-                with self.subTest(surface=surface, requirement=requirement):
-                    self.assertIn(requirement, normalized_instructions)
+            assert_normalized_policy(
+                self,
+                surface,
+                instructions,
+                required_policy,
+                forbidden_policy,
+            )
 
-        for requirement in project_contract:
-            with self.subTest(
-                surface="Claude project instructions", requirement=requirement
-            ):
-                self.assertIn(requirement, claude_instructions)
+        assert_normalized_policy(
+            self,
+            "development workflow skill",
+            text,
+            (
+                (
+                    "direct watcher lifecycle",
+                    (
+                        "Reasoning subagents must not remain alive merely to wait",
+                        "exactly one direct shell watcher",
+                        "timeout 90m gh run watch <run-id> --interval 30 --exit-status",
+                        "never create duplicate watchers",
+                        "Only after the workflow reaches a terminal state",
+                    ),
+                ),
+            ),
+        )
 
     def test_issue_specific_pull_request_and_stack_contract(self):
         _, text = read_skill()
@@ -207,7 +213,8 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             "`Depends on #...` links",
             "Review and merge the stack bottom-up",
             "gh pr edit <child-pr> --base master",
-            "Apply candidate-commit Build CI, Full Matrix, post-merge Build verification",
+            "Apply exact-candidate Build CI and concurrent Copilot review",
+            "Do not run Full Matrix for a candidate PR or stacked child.",
             "Complete the umbrella initiative only after every accepted",
         )
 
@@ -241,7 +248,7 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             "`feat/103-selector`, base `feat/102-registry`",
             "gh pr edit <child-pr-number> --base master",
             "exact-candidate Build CI",
-            "Full Matrix if the candidate commit or tree changed",
+            "concurrent Copilot review if the candidate commit or tree changed",
             "make remote-completion-check",
             "git diff --name-only \"$base_ref\"...HEAD",
             "20,000-line limit is a hard ceiling",
