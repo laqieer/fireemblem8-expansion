@@ -116,6 +116,6 @@ const u8 __attribute__((aligned(4))) Ch5Map[] = INCBIN_U8("graphics/map/layout/C
 const u8 __attribute__((aligned(4))) Ch5XMap[] = INCBIN_U8("graphics/map/layout/Ch5XMap.bin.lz");
 const u8 __attribute__((aligned(4))) Ch4Map[] = INCBIN_U8("graphics/map/layout/Ch4Map.bin.lz");
 const u8 __attribute__((aligned(4))) Ch3Map[] = INCBIN_U8("graphics/map/layout/Ch3Map.bin.lz");
-const u8 __attribute__((aligned(4))) Ch2Map[] = INCBIN_U8("graphics/map/layout/Ch2Map.bin.lz");
+const u8 __attribute__((aligned(4))) Ch2Map[] = INCBIN_U8("build/generated/assets/tmx/CH2_MAIN_MAP.bin.lz");
 const u8 __attribute__((aligned(4))) Ch1Map[] = INCBIN_U8("graphics/map/layout/Ch1Map.bin.lz");
 const u8 __attribute__((aligned(4))) PrologueMap[] = INCBIN_U8("graphics/map/layout/PrologueMap.bin.lz");

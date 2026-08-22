@@ -3,15 +3,16 @@
   "assets": [
     {
       "id": "CH2_MAIN_MAP",
-      "kind": "chapter-map-layout",
+      "kind": "tiled-tmx-map-layout",
       "sources": [
-        "graphics/map/layout/Ch2Map.mar",
-        "graphics/map/layout/Ch2Map.json"
+        "assets/tmx/Ch2Map.tmx"
       ],
       "dependsOn": [],
       "options": {
-        "format": "mar",
-        "compression": "lz77"
+        "format": "tmx-safe-v1",
+        "compression": "lz77",
+        "layer": "Main",
+        "tilesetId": "fe8-metatiles-16px-4096"
       },
       "ownership": {
         "seam": "chapter-data-asset-table",
@@ -28,10 +29,10 @@
         "mapBufferBytes": 2048
       },
       "provenance": {
-        "origin": "repository extraction",
+        "origin": "repository extraction migrated to a project-owned TMX layout",
         "license": "Repository provenance is recorded separately; this field is not legal clearance.",
-        "modifications": "none",
-        "tools": []
+        "modifications": "TMX GIDs preserve the prior Chapter 2 metatile payload.",
+        "tools": ["Tiled 1.10.x optional authoring boundary"]
       }
     }
   ]

@@ -604,11 +604,5 @@
     }
   ],
   "format_version": 2,
-  "rom": {
-    "game_code": "BE8E",
-    "sha1": "d8c37471b2eb0483c818a052f8629837fdb00138",
-    "size": 16777216,
-    "title": "FIREEMBLEM2E"
-  },
   "scenario": "starter-danger-overlay-modern-release"
 }

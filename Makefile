@@ -284,8 +284,9 @@ compare:
 # These are intentionally opt-in, networked maintainer/agent checks rather
 # than build prerequisites. They turn "done" into an executable contract:
 # the worktree must be clean, HEAD must already be pushed to its configured
-# upstream, and the exact pushed SHA must have a successful required workflow.
-# The all-issues variant additionally requires zero open GitHub issues.
+# upstream. Remote completion applies only to the exact pushed `master` SHA,
+# which must have successful Build and Full Matrix workflows. The all-issues
+# variant additionally requires zero open GitHub issues.
 remote-completion-check:
 	@set -eu; \
 	command -v gh >/dev/null 2>&1 || { \
@@ -295,6 +296,15 @@ remote-completion-check:
 	if [ -n "$$(git status --porcelain)" ]; then \
 		echo "error: worktree is not clean; commit all intended changes first" >&2; \
 		git status --short >&2; \
+		exit 1; \
+	fi; \
+	branch=$$(git branch --show-current); \
+	if [ -z "$$branch" ]; then \
+		echo "error: remote completion requires checked-out master; HEAD is detached" >&2; \
+		exit 1; \
+	fi; \
+	if [ "$$branch" != "master" ]; then \
+		printf 'error: remote completion requires master, not %s\n' "$$branch" >&2; \
 		exit 1; \
 	fi; \
 	head_sha=$$(git rev-parse HEAD); \
@@ -309,16 +319,26 @@ remote-completion-check:
 	fi; \
 	repo=$$(gh repo view --json nameWithOwner --jq .nameWithOwner); \
 	run=$$(gh run list --repo "$$repo" --commit "$$head_sha" --workflow build.yml \
+		--branch master \
 		--limit 1 --json status,conclusion,url \
 		--jq 'if length == 0 then "missing,," else .[0].status + "," + (.[0].conclusion // "") + "," + .[0].url end'); \
 	case "$$run" in \
 		completed,success,*) ;; \
 		*) printf 'error: Build CI for %s is not successful: %s\n' "$$head_sha" "$$run" >&2; exit 1 ;; \
 	esac; \
+	matrix=$$(gh run list --repo "$$repo" --commit "$$head_sha" --workflow full-matrix.yml \
+		--branch master \
+		--limit 1 --json status,conclusion,url \
+		--jq 'if length == 0 then "missing,," else .[0].status + "," + (.[0].conclusion // "") + "," + .[0].url end'); \
+	case "$$matrix" in \
+		completed,success,*) ;; \
+		*) printf 'error: Full Matrix CI for master %s is not successful: %s\n' "$$head_sha" "$$matrix" >&2; exit 1 ;; \
+	esac; \
 	printf 'Remote completion gate passed: %s (%s)\n' "$$head_sha" "$$repo"
 
 all-issues-completion-check: remote-completion-check
 	@set -eu; \
+	head_sha=$$(git rev-parse HEAD); \
 	repo=$$(gh repo view --json nameWithOwner --jq .nameWithOwner); \
 	open_issues=$$(gh issue list --repo "$$repo" --state open --limit 1000 \
 		--json number --jq 'length'); \

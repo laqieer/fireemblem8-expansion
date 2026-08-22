@@ -76,7 +76,9 @@ def _iter_scenario_probe_values():
 def _iter_fingerprint_probe_values():
     for path in sorted(FINGERPRINTS_DIR.glob("*.json")):
         data = gba_playtest.validate_fingerprint(
-            json.loads(path.read_text(encoding="utf-8")), str(path)
+            json.loads(path.read_text(encoding="utf-8")),
+            str(path),
+            policy="behavior",
         )
         for checkpoint in data["checkpoints"]:
             for probe in checkpoint["probes"]:

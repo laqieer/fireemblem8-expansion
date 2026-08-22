@@ -659,6 +659,7 @@ class ExpansionIdentity:
     casual_mode: int = 0
     hq_mixer: int = 0
     bgm_continuation_policy: str = "preserve"
+    item_id_cap: int = ITEM_ID_DEFAULT_CAP
     config_fingerprint: str = field(default="")
 
     @property
@@ -713,6 +714,7 @@ class ExpansionIdentity:
                 "hq_mixer": self.hq_mixer,
             },
             "bgm_continuation_policy": self.bgm_continuation_policy,
+            "item_id_cap": self.item_id_cap,
         }
 
     def to_dict(self) -> dict:
@@ -809,6 +811,7 @@ def load_identity(
         pseudo_locale if pseudo_locale not in (None, "") else cfg["EXPANSION_PSEUDO_LOCALE"],
         resolved_enabled_locales,
     )
+    resolved_item_id_cap = validate_item_id_cap(item_id_cap)
     resolved_hooks, resolved_sample, resolved_danger, resolved_content = validate_feature_flags(
         mechanics_hooks
         if mechanics_hooks not in (None, "")
@@ -822,7 +825,7 @@ def load_identity(
         starter_content
         if starter_content not in (None, "")
         else cfg.get("EXPANSION_STARTER_CONTENT", "0"),
-        item_id_cap,
+        resolved_item_id_cap,
     )
     resolved_localized_text_auto_wrap = validate_feature_flag(
         "EXPANSION_LOCALIZED_TEXT_AUTO_WRAP",
@@ -890,6 +893,7 @@ def load_identity(
         casual_mode=resolved_casual_mode,
         hq_mixer=resolved_hq_mixer,
         bgm_continuation_policy=resolved_bgm_continuation_policy,
+        item_id_cap=resolved_item_id_cap,
     )
     identity.config_fingerprint = compute_fingerprint(identity.fingerprint_fields())
     return identity

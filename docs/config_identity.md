@@ -80,6 +80,7 @@ override).
 | `MODERN_ABI` | `aapcs`, `apcs-gnu` | `aapcs` | calling convention / struct layout (fingerprint) |
 | `MODERN_ROM_SIZE` | `16M`, `32M`, or an exact byte count equal to one of those | `16M` | output ROM size / padding (fingerprint) |
 | `MODERN_TEXT_SHIFT` | non-negative integer, 4-byte aligned | `0` | link-time padding before `.text` (fingerprint) |
+| `FE8_ITEM_ID_CAP` | integer, `[0x00, 0xFF]` | `0xCD` | active item table capacity and compiled content boundary (metadata and fingerprint) |
 
 The supported default remains English-only at 16 MiB:
 
@@ -104,6 +105,18 @@ make expansion-modern-localization-profile-en-ja-zh-hans
 make expansion-modern-localization-profile-en-fr-de-es-it
 make expansion-modern-localization-profile-all
 ```
+
+The complete supported optional-feature composition has a separate,
+non-configurable named build/check target:
+
+```bash
+make expansion-modern-all-locales-all-features-check
+```
+
+It is release/AAPCS-only, uses a private generated-data/output root, and
+selects all production locales plus the documented optional features. See
+[`patch_release.md`](patch_release.md) for its patch-only artifact contract;
+the default build and every existing locale profile remain unchanged.
 
 The named targets use isolated build roots and select their full-game catalog
 and localized font payload from the same validated
@@ -207,6 +220,7 @@ compatibility-relevant setting changes.
 | `features.aoe_reference` | issue #42 default-off reference effect/probe; changes runtime behavior only when explicitly invoked. Diagnostic identity only -- see `docs/aoe.md`; it does not touch the save format |
 | `features.casual_mode` | issue #34 changes defeat handling and therefore runtime behavior. Its marker uses existing serialized unit-state capacity; no save struct or compatibility epoch changes |
 | `features.hq_mixer` | issue #83 selects a different default-off PCM mixer implementation, which changes runtime audio behavior and linked resources but never save layout or the compatibility epoch |
+| `item_id_cap` | changes the active generated item table and whether expansion content can compile, so builds with different caps must never share an identity |
 
 Settings that are **not** folded into the fingerprint (e.g. the resolved
 `build_commit`) are informational only: two builds from different commits

@@ -140,7 +140,9 @@ class PrepPositiveScenarioFilesTests(unittest.TestCase):
     def test_committed_fingerprint_matches(self):
         self.assertTrue(FINGERPRINT_PATH.exists(), f"missing: {FINGERPRINT_PATH}")
         fp = gba_playtest.validate_fingerprint(
-            json.loads(FINGERPRINT_PATH.read_text(encoding="utf-8")), str(FINGERPRINT_PATH)
+            json.loads(FINGERPRINT_PATH.read_text(encoding="utf-8")),
+            str(FINGERPRINT_PATH),
+            policy="behavior",
         )
         self.assertEqual(fp["scenario"], NAME)
         self.assertEqual(len(fp["checkpoints"]), 4)
@@ -155,7 +157,9 @@ class PrepPositiveRuntimeTests(unittest.TestCase):
         host_mode.require_built_rom(DEBUG_ROM, "modern debug ROM")
         scenario = gba_playtest.load_scenario(SCENARIO_PATH)
         expected = gba_playtest.validate_fingerprint(
-            json.loads(FINGERPRINT_PATH.read_text(encoding="utf-8")), str(FINGERPRINT_PATH)
+            json.loads(FINGERPRINT_PATH.read_text(encoding="utf-8")),
+            str(FINGERPRINT_PATH),
+            policy="behavior",
         )
         actual = host_mode.capture_live_or_skip(  # blank SRAM
             DEBUG_ROM, scenario, label="prep-positive runtime coverage"

@@ -47,7 +47,7 @@ linker-owned rather than address-coded. The exact fixed resources are:
 | IWRAM intermediate buffer | absent | `0x380` bytes | `+0x380` bytes |
 | IWRAM static end | `0x030067A8` | `0x03006E00` | `+0x658` bytes |
 | Minimum user stack | `0x1000` bytes | `0x1000` bytes | unchanged |
-| Relocated MP2K bookkeeping and probe | absent | EWRAM | `+0x414` bytes |
+| Relocated MP2K/presentation bookkeeping and probe | absent | EWRAM | `+0x418` bytes |
 
 The enabled layout deliberately consumes the pre-existing static-growth
 headroom but never crosses `__iwram_static_limit`; linker assertions and

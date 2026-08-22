@@ -121,6 +121,99 @@
       "required_cases": [
         "TC-AUDIO-HQMIX-001"
       ]
+    },
+    {
+      "id": "patch-release-artifact",
+      "title": "Trusted BPS-only all-locales/all-features release artifact",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/49"
+      ],
+      "reference": "docs/patch_release.md",
+      "status": "current",
+      "required_cases": [
+        "TC-CI-PATCH-049-001",
+        "TC-CI-PATCH-049-002"
+      ]
+    },
+    {
+      "id": "portrait-minimug-resolver",
+      "title": "Portrait and minimug resolver",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/35"
+      ],
+      "reference": "docs/portrait_resolver.md",
+      "status": "current",
+      "required_cases": [
+        "TC-PORTRAIT-001",
+        "TC-PORTRAIT-002"
+      ]
+    },
+    {
+      "id": "expanded-sound-room",
+      "title": "Expanded sound-room unlock persistence",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/36"
+      ],
+      "reference": "docs/save_format.md",
+      "status": "current",
+      "required_cases": [
+        "TC-SOUND-001"
+      ]
+    },
+    {
+      "id": "typed-bgm-routing",
+      "title": "Typed BGM routing, variants, selectors, and continuation",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/37",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/38",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/39",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/40"
+      ],
+      "reference": "docs/bgm_routing.md",
+      "status": "current",
+      "required_cases": [
+        "TC-BGM-001",
+        "TC-BGM-002",
+        "TC-BGM-003",
+        "TC-BGM-004"
+      ]
+    },
+    {
+      "id": "battle-animation-presentation",
+      "title": "Battle-animation presentation policies",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/41"
+      ],
+      "reference": "docs/ui_presentation_registry.md",
+      "status": "current",
+      "required_cases": [
+        "TC-BANIM-001",
+        "TC-BANIM-002"
+      ]
+    },
+    {
+      "id": "ui-presentation-manifests",
+      "title": "Chapter and screen presentation manifests",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/43"
+      ],
+      "reference": "docs/ui_presentation_registry.md",
+      "status": "current",
+      "required_cases": [
+        "TC-MANIFEST-001"
+      ]
+    },
+    {
+      "id": "unified-utility-preferences",
+      "title": "Unified utility preference descriptors",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/44"
+      ],
+      "reference": "docs/ui_presentation_registry.md",
+      "status": "current",
+      "required_cases": [
+        "TC-UTILITY-001"
+      ]
     }
   ],
   "cases": [
@@ -432,6 +525,402 @@
         {
           "command": "make expansion-modern-hq-mixer-check MODERN_CONFIG=release MODERN_ABI=aapcs",
           "evidence": "tools/gba-playtest/run_hq_mixer_checks.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-CI-PATCH-049-001",
+      "title": "Validate and write a trusted BPS artifact locally",
+      "feature_id": "patch-release-artifact",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/49"
+      ],
+      "document": "docs/test-cases/patch-release.md",
+      "anchor": "tc-ci-patch-049-001-validate-and-write-a-trusted-bps-artifact-locally",
+      "profiles": [
+        "Trusted SHA-named modern-release-all-locales-all-features-aapcs BPS artifact from master",
+        "Equivalent modern release/AAPCS all-locales/all-features source profile"
+      ],
+      "purpose": "Validate the trusted BPS artifact and separately write its checked output without publishing a base or ROM.",
+      "prerequisites": "Repository root, Python 3, unpacked three-file artifact, independently acquired legal FE8U revision-0 base, separate output path, and blank or disposable SRAM.",
+      "actions": "Validate the base and artifact, apply the BPS to a separately named local output, then run the equivalent local patch-check profile.",
+      "expected_result": "Validation succeeds without writing a ROM; the BPS applier validates CRCs and writes only the selected output; the source profile round-trips the same 32 MiB metadata-bound artifact.",
+      "negative_control": "The default English-only 16 MiB bare make path has no artifact, while a wrong or one-byte-modified base fails before a patched output is written.",
+      "interactions": "Depends on modern metadata, generated data, localization, linker budget, boot/runtime, artifact guard, and preserve BGM; conflicts with untrusted access, wrong bases, contamination, and non-preserve BGM.",
+      "save_compatibility": "No save layout, migration, or compatibility-epoch change; use blank or disposable SRAM when changing profile.",
+      "cleanup": "Delete only the chosen local output and use make clean_fast for generated profile artifacts.",
+      "limitations": "The repository never publishes a base or output ROM, and verify reconstructs only in memory rather than writing output.",
+      "automation": [
+        {
+          "command": "python3 -m unittest scripts.modernize.tests.test_patch_release -v",
+          "evidence": "scripts/modernize/tests/test_patch_release.py"
+        },
+        {
+          "command": "make expansion-modern-all-locales-all-features-check",
+          "evidence": "modern.mk"
+        },
+        {
+          "command": "make expansion-modern-all-locales-all-features-patch-check PATCH_BASE_ROM=/path/to/legal-fe8u-rev0",
+          "evidence": "modern.mk"
+        }
+      ]
+    },
+    {
+      "id": "TC-PORTRAIT-001",
+      "title": "Resolve ordered portrait and minimug rules",
+      "feature_id": "portrait-minimug-resolver",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/35"
+      ],
+      "document": "docs/test-cases/presentation-audio-utility.md",
+      "anchor": "tc-portrait-001-resolve-ordered-portrait-and-minimug-rules",
+      "profiles": [
+        "Default modern source checkout with a host C compiler; no ROM, save, or replacement portrait assets"
+      ],
+      "purpose": "Prove declaration-order, selector, flag, full-portrait, and minimug resolution through a disposable native fixture.",
+      "prerequisites": "Keep the committed production registry empty; the test creates and deletes its fixture under build/test-artifacts.",
+      "actions": "Run the named resolver unittest and inspect its ordered character/class/chapter/flag fixture assertions.",
+      "expected_result": "The real resolver selects the first valid matching full/minimug row and preserves the committed empty registry.",
+      "negative_control": "Conflicting flags and an out-of-range full portrait ID do not select a fixture row.",
+      "interactions": "No optional profile dependency or conflict; resolves existing IDs only and does not add art.",
+      "save_compatibility": "Read-only resolver; no save bytes, migration, or compatibility epoch change.",
+      "cleanup": "The unittest removes build/test-artifacts/portrait-resolver-native.",
+      "limitations": "The fixture proves framework resolution, not a project-authored campaign portrait mapping.",
+      "automation": [
+        {
+          "command": "python3 -m unittest scripts.modernize.tests.test_issue34_35_resolvers.PortraitResolverContractTests -v",
+          "evidence": "scripts/modernize/tests/test_issue34_35_resolvers.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-CI-PATCH-049-002",
+      "title": "Reject untrusted or malformed patch inputs",
+      "feature_id": "patch-release-artifact",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/49"
+      ],
+      "document": "docs/test-cases/patch-release.md",
+      "anchor": "tc-ci-patch-049-002-reject-untrusted-or-malformed-patch-inputs",
+      "profiles": [
+        "Clean source checkout with synthetic patch-release fixtures",
+        "Optional disposable local copy of an independently acquired legal FE8U revision-0 base"
+      ],
+      "purpose": "Prove malformed or untrusted bases, artifacts, and workflow events fail closed without secret, ROM, or path disclosure.",
+      "prerequisites": "Repository root and Python 3; use only disposable local copies for optional base mutation and never publish a base or output.",
+      "actions": "Run the patch-release synthetic suite and workflow contract, then optionally retain nonzero verification/application results for a one-byte-modified disposable base.",
+      "expected_result": "Malformed, changed, or untrusted inputs fail before output or upload, and the trusted workflow has no PR secret or publication path.",
+      "negative_control": "A matching synthetic three-file artifact round-trips successfully, while the default bare make path has no base secret, patch artifact, or publish step.",
+      "interactions": "Shares the trusted metadata, preserve-BGM, artifact-guard, wrong-base, untrusted-event, and output-contamination boundaries of TC-CI-PATCH-049-001.",
+      "save_compatibility": "No save field, layout, migration, compatibility epoch, public C API, localization-ID, or archival-lane change.",
+      "cleanup": "Remove only disposable local copies and outputs created for a negative control.",
+      "limitations": "Legal base acquisition remains private and manual because no ROM can be published; deterministic validation is automated.",
+      "automation": [
+        {
+          "command": "python3 -m unittest scripts.modernize.tests.test_patch_release -v",
+          "evidence": "scripts/modernize/tests/test_patch_release.py"
+        },
+        {
+          "command": "python3 -m unittest tests.workflows.test_patch_release_workflow -v",
+          "evidence": "tests/workflows/test_patch_release_workflow.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-PORTRAIT-002",
+      "title": "Fall back for empty or invalid portrait registries",
+      "feature_id": "portrait-minimug-resolver",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/35"
+      ],
+      "document": "docs/test-cases/presentation-audio-utility.md",
+      "anchor": "tc-portrait-002-fall-back-for-empty-or-invalid-portrait-registries",
+      "profiles": [
+        "Default modern source checkout with a host C compiler; no ROM or saved state"
+      ],
+      "purpose": "Prove empty and invalid registry fallback plus chapter-specific legacy portrait substitution.",
+      "prerequisites": "Use the committed empty registry and the temporary invalid-bound row from the native resolver fixture.",
+      "actions": "Run the named resolver unittest and inspect the invalid-ID, minimug fallback, and chapter 0x22 assertions.",
+      "expected_result": "Legacy character/class/minimug behavior remains available when no valid custom row can apply.",
+      "negative_control": "An invalid registry cannot partially apply an earlier row or bypass legacy fallback.",
+      "interactions": "Preserves existing chapter substitutions and has no locale, resource, or feature-profile interaction.",
+      "save_compatibility": "No save state is read or written.",
+      "cleanup": "The unittest deletes its native fixture directory.",
+      "limitations": "The stock campaign deliberately contains no custom portrait registry rows.",
+      "automation": [
+        {
+          "command": "python3 -m unittest scripts.modernize.tests.test_issue34_35_resolvers.PortraitResolverContractTests -v",
+          "evidence": "scripts/modernize/tests/test_issue34_35_resolvers.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-SOUND-001",
+      "title": "Persist expanded sound-room unlocks safely",
+      "feature_id": "expanded-sound-room",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/36"
+      ],
+      "document": "docs/test-cases/presentation-audio-utility.md",
+      "anchor": "tc-sound-001-persist-expanded-sound-room-unlocks-safely",
+      "profiles": [
+        "Default modern source checkout with Python 3; no ROM or real SRAM image"
+      ],
+      "purpose": "Prove 256-slot sound-room persistence, visibility/playability state, migration, and corruption rejection.",
+      "prerequisites": "Start without a save file; the test builds every 0x24-byte record in memory.",
+      "actions": "Run the named sound-room unittest and inspect synthetic legacy/current/corrupt record outcomes.",
+      "expected_result": "IDs through 255 persist losslessly, visibility stays separate from playability, and current migration is idempotent.",
+      "negative_control": "Out-of-range IDs, bad checksums, and unknown format markers are rejected without a guessed write.",
+      "interactions": "Sound-room data is independent of locale, casual markers, and ExpansionUserPrefs.",
+      "save_compatibility": "The record stays at SRAM 0x7224 with size 0x24 and its existing checksum domain.",
+      "cleanup": "All synthetic records are in memory and vanish on test exit.",
+      "limitations": "No project-specific catalog condition or song is shipped by this framework case.",
+      "automation": [
+        {
+          "command": "python3 -m unittest scripts.modernize.tests.test_issue36_soundroom -v",
+          "evidence": "scripts/modernize/tests/test_issue36_soundroom.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-BGM-001",
+      "title": "Keep an empty BGM registry inert and honor explicit requests",
+      "feature_id": "typed-bgm-routing",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/37"
+      ],
+      "document": "docs/test-cases/presentation-audio-utility.md",
+      "anchor": "tc-bgm-001-keep-an-empty-bgm-registry-inert-and-honor-explicit-requests",
+      "profiles": [
+        "Default modern source checkout with Python 3 and a host C compiler; preserve continuation policy"
+      ],
+      "purpose": "Prove empty-registry fallback and authoritative explicit BGM routing using a disposable native fixture.",
+      "prerequisites": "Keep src/data/bgm_registry.json empty; do not add rows outside the test fixture.",
+      "actions": "Run the named BGM unittest and make bgm-registry-check, then inspect ordinary and explicit request assertions.",
+      "expected_result": "Empty production data retains legacy songs while an explicit request wins and SONG_NONE remains a stop.",
+      "negative_control": "A matching fixture row cannot replace an explicit song or make the committed empty registry select music.",
+      "interactions": "No sound-room persistence dependency; continuation policy is separately exercised by TC-BGM-004.",
+      "save_compatibility": "Routing and continuation do not change save data.",
+      "cleanup": "The unittest deletes build/test-artifacts/bgm-routing-native.",
+      "limitations": "The fixture proves route selection, not subjective music quality or campaign content.",
+      "automation": [
+        {
+          "command": "python3 -m unittest scripts.modernize.tests.test_issue37_40_bgm -v",
+          "evidence": "scripts/modernize/tests/test_issue37_40_bgm.py"
+        },
+        {
+          "command": "make bgm-registry-check",
+          "evidence": "scripts/modernize/bgm_registry.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-BGM-002",
+      "title": "Select chapter and flag variants deterministically",
+      "feature_id": "typed-bgm-routing",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/37",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/38"
+      ],
+      "document": "docs/test-cases/presentation-audio-utility.md",
+      "anchor": "tc-bgm-002-select-chapter-and-flag-variants-deterministically",
+      "profiles": [
+        "Default modern source checkout with Python 3 and a host C compiler"
+      ],
+      "purpose": "Prove variant priority/source-order selection and legal flag/mask boundaries in a disposable fixture.",
+      "prerequisites": "Use the native test fixture; leave the committed BGM registry empty.",
+      "actions": "Run the named BGM unittest and observe its chapter-7, flag-5, equal-priority source-order fixture.",
+      "expected_result": "The matching high-priority variant wins and equal priorities retain declaration order.",
+      "negative_control": "Sentinel, out-of-space flag, chapter, context, and song values fail validation before generation.",
+      "interactions": "Ordinary fallback routing only; explicit requests remain authoritative.",
+      "save_compatibility": "Variant records do not persist or change the save format.",
+      "cleanup": "The unittest removes its generated native probe.",
+      "limitations": "The empty production registry intentionally has no campaign-authored variant.",
+      "automation": [
+        {
+          "command": "python3 -m unittest scripts.modernize.tests.test_issue37_40_bgm -v",
+          "evidence": "scripts/modernize/tests/test_issue37_40_bgm.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-BGM-003",
+      "title": "Resolve dancer and staff selectors by specificity",
+      "feature_id": "typed-bgm-routing",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/37",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/40"
+      ],
+      "document": "docs/test-cases/presentation-audio-utility.md",
+      "anchor": "tc-bgm-003-resolve-dancer-and-staff-selectors-by-specificity",
+      "profiles": [
+        "Default modern source checkout with Python 3 and a host C compiler"
+      ],
+      "purpose": "Prove action selector priority, specificity, source order, and legacy fallback with a disposable fixture.",
+      "prerequisites": "Use the in-test selector fixture and no production registry rows.",
+      "actions": "Run the named BGM unittest and inspect generic/specific dancer plus staff-kind/item selection outcomes.",
+      "expected_result": "Priority then specificity then source order select a song; no matching staff selector preserves legacy audio.",
+      "negative_control": "Invalid actions, staff-none calls, and invalid selector IDs cannot select a custom song.",
+      "interactions": "Independent of sound-room and continuation persistence; it consumes ordinary action fallback only.",
+      "save_compatibility": "No action selector state is saved.",
+      "cleanup": "The unittest deletes its native artifact directory.",
+      "limitations": "The test verifies routing semantics only; the stock registry is intentionally empty.",
+      "automation": [
+        {
+          "command": "python3 -m unittest scripts.modernize.tests.test_issue37_40_bgm -v",
+          "evidence": "scripts/modernize/tests/test_issue37_40_bgm.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-BGM-004",
+      "title": "Apply continuation policy and preserve stop requests",
+      "feature_id": "typed-bgm-routing",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/39"
+      ],
+      "document": "docs/test-cases/presentation-audio-utility.md",
+      "anchor": "tc-bgm-004-apply-continuation-policy-and-preserve-stop-requests",
+      "profiles": [
+        "Modern debug source profile with preserve, resume, or restart continuation policy"
+      ],
+      "purpose": "Prove the three configured continuation paths and SONG_NONE stop behavior.",
+      "prerequisites": "Use a clean source profile and configure one documented continuation policy at a time.",
+      "actions": "Run the named BGM unittest and invoke expansion_config.py resolve for preserve, resume, and restart.",
+      "expected_result": "Preserve, resume, and restart take their distinct documented continuation branches and valid choices affect identity.",
+      "negative_control": "Invalid policy text fails configuration resolution and SONG_NONE bypasses routing.",
+      "interactions": "Composes with ordinary variants/selectors and has no sound-room save dependency.",
+      "save_compatibility": "Policy changes configuration identity only, never save compatibility.",
+      "cleanup": "Remove local configure outputs only if configure was run.",
+      "limitations": "The deterministic case asserts control flow rather than whether a listener prefers a transition.",
+      "automation": [
+        {
+          "command": "python3 -m unittest scripts.modernize.tests.test_issue37_40_bgm -v",
+          "evidence": "scripts/modernize/tests/test_issue37_40_bgm.py"
+        },
+        {
+          "command": "python3 scripts/modernize/expansion_config.py resolve --config debug --abi aapcs --rom-size 16M --bgm-continuation-policy preserve",
+          "evidence": "scripts/modernize/expansion_config.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-BANIM-001",
+      "title": "Apply standard, reduced, and off battle presentation",
+      "feature_id": "battle-animation-presentation",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/41"
+      ],
+      "document": "docs/test-cases/presentation-audio-utility.md",
+      "anchor": "tc-banim-001-apply-standard-reduced-and-off-battle-presentation",
+      "profiles": [
+        "Default modern source checkout with a host C compiler; no ROM or save"
+      ],
+      "purpose": "Prove semantic standard, reduced, and off number/effect policy behavior.",
+      "prerequisites": "No fixture or game state is required; the native probe owns its removable artifact directory.",
+      "actions": "Run the named native policy unittest and inspect standard, reduced, and off assertions.",
+      "expected_result": "Standard retains effects/numbers, reduced retains damage only with bounded timing, and off suppresses all numbers/effects.",
+      "negative_control": "The existing default Animation option remains standard and unsupported values do not select a new effect.",
+      "interactions": "The existing Animation setting persists normally; utility preference selection is covered by TC-UTILITY-001.",
+      "save_compatibility": "No save layout change; existing Animation persistence remains in its original record.",
+      "cleanup": "The unittest deletes build/test-artifacts/banim-policy-runtime.",
+      "limitations": "Semantic suppression is automated; no subjective visual preference is a pass criterion.",
+      "automation": [
+        {
+          "command": "python3 -m unittest scripts.modernize.tests.test_banim_policy_native -v",
+          "evidence": "scripts/modernize/tests/test_banim_policy_native.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-BANIM-002",
+      "title": "Reject invalid presentation resources and persist selections",
+      "feature_id": "battle-animation-presentation",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/41"
+      ],
+      "document": "docs/test-cases/presentation-audio-utility.md",
+      "anchor": "tc-banim-002-reject-invalid-presentation-resources-and-persist-selections",
+      "profiles": [
+        "Default modern source checkout with Python 3 and a host C compiler"
+      ],
+      "purpose": "Prove bounded policy validation and saved preference selection normalization.",
+      "prerequisites": "No SRAM image is required; tests construct synthetic preference records.",
+      "actions": "Run the named policy, UI registry, and native preference unittests.",
+      "expected_result": "Only bounded resources/timings validate, and valid policy selections round-trip through existing preferences.",
+      "negative_control": "Out-of-range policy resources, unknown policies, unsupported extension bytes, and out-of-mask utility bits are rejected.",
+      "interactions": "Shares ExpansionUserPrefs with locale selection but does not affect sound-room or casual records.",
+      "save_compatibility": "Uses the fixed checksummed 12-byte preference record without offset or epoch changes.",
+      "cleanup": "All probe artifacts are deleted by the tests.",
+      "limitations": "Metadata validation does not reserve GPU resources.",
+      "automation": [
+        {
+          "command": "python3 -m unittest scripts.modernize.tests.test_banim_policy_native scripts.modernize.tests.test_ui_registry_contract scripts.modernize.tests.test_expansion_user_prefs_native -v",
+          "evidence": "scripts/modernize/tests/test_banim_policy_native.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-MANIFEST-001",
+      "title": "Resolve localized presentation manifest fallbacks safely",
+      "feature_id": "ui-presentation-manifests",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/43"
+      ],
+      "document": "docs/test-cases/presentation-audio-utility.md",
+      "anchor": "tc-manifest-001-resolve-localized-presentation-manifest-fallbacks-safely",
+      "profiles": [
+        "Default modern source checkout with Python 3 and a host C compiler; no custom assets or save"
+      ],
+      "purpose": "Prove generated manifest title fallback, escaping, resource validation, and record capacity.",
+      "prerequisites": "Use the committed ui_presentation.json; schema tests clone records and clean their generated artifacts.",
+      "actions": "Run the named schema unittest and make generated-data-check.",
+      "expected_result": "Localized keys and deterministic static fallback text validate within the 32-record/resource bounds.",
+      "negative_control": "Missing required assets, unknown keys, NUL text, resource overflow, and record 33 fail before output.",
+      "interactions": "Generated presentation data leaves default rendering and locale persistence unchanged until a project calls the resolver seam.",
+      "save_compatibility": "No manifest data is persisted.",
+      "cleanup": "The schema unittest removes build/test-artifacts/ui-presentation-schema.",
+      "limitations": "The case proves data/resolver inputs, not a project-specific screen or asset package.",
+      "automation": [
+        {
+          "command": "python3 -m unittest scripts.generated_data.tests.test_ui_presentation -v",
+          "evidence": "scripts/generated_data/tests/test_ui_presentation.py"
+        },
+        {
+          "command": "make generated-data-check",
+          "evidence": "scripts/generated_data/cli.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-UTILITY-001",
+      "title": "Persist available utility preferences without record interference",
+      "feature_id": "unified-utility-preferences",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/44"
+      ],
+      "document": "docs/test-cases/presentation-audio-utility.md",
+      "anchor": "tc-utility-001-persist-available-utility-preferences-without-record-interference",
+      "profiles": [
+        "Default modern source checkout and EXPANSION_DANGER_OVERLAY_MENU=1 opt-in profile; Python 3 and a host C compiler"
+      ],
+      "purpose": "Prove descriptor availability, preference persistence, safe legacy/unknown defaults, and record isolation.",
+      "prerequisites": "Use synthetic ExpansionUserPrefs records; start with Threat Range unavailable in the default profile.",
+      "actions": "Run the named UI/native tests and resolve both danger-overlay-menu profile values with expansion_config.py.",
+      "expected_result": "Battle presentation is available, Threat Range is profile-gated, and valid selections persist without corrupting other records.",
+      "negative_control": "Unknown policies, out-of-mask bits, newer schemas, and unavailable Threat Range safely reject or default.",
+      "interactions": "Uses the one descriptor registry and existing map-menu command; does not add a second settings screen.",
+      "save_compatibility": "Reuses the fixed 12-byte preference record and does not reuse sound-room or casual bytes.",
+      "cleanup": "No persistent fixture, ROM, or save is created.",
+      "limitations": "The catalog remains foundation mode and the case does not score subjective UX preference.",
+      "automation": [
+        {
+          "command": "python3 -m unittest scripts.modernize.tests.test_ui_registry_contract scripts.modernize.tests.test_expansion_user_prefs_native -v",
+          "evidence": "scripts/modernize/tests/test_ui_registry_contract.py"
+        },
+        {
+          "command": "python3 scripts/modernize/expansion_config.py resolve --config debug --abi aapcs --rom-size 16M --danger-overlay-menu 0",
+          "evidence": "scripts/modernize/expansion_config.py"
         }
       ]
     }

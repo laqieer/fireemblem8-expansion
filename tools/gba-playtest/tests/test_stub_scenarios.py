@@ -122,7 +122,9 @@ class FormerlyStubbedScenariosAreEnabledTests(unittest.TestCase):
                 fp_path = PLAYTEST_DIR / "fingerprints" / fp_name
                 self.assertTrue(fp_path.exists(), f"missing fingerprint: {fp_path}")
                 fingerprint = gba_playtest.validate_fingerprint(
-                    json.loads(fp_path.read_text(encoding="utf-8")), str(fp_path)
+                    json.loads(fp_path.read_text(encoding="utf-8")),
+                    str(fp_path),
+                    policy="behavior",
                 )
                 self.assertEqual(
                     fingerprint["scenario"],
