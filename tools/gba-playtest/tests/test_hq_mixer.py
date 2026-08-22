@@ -56,7 +56,9 @@ class HqMixerConfigurationTests(unittest.TestCase):
             )
 
     def test_configure_persists_enabled_hq_mixer(self) -> None:
-        with tempfile.TemporaryDirectory(dir=ROOT / "build") as temporary:
+        build_dir = ROOT / "build"
+        build_dir.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=build_dir) as temporary:
             fragment = Path(temporary) / "config.autotools.mk"
             result = subprocess.run(
                 [str(ROOT / "configure"), "--enable-hq-mixer"],
@@ -111,7 +113,9 @@ class HqMixerCompiledArtifactTests(unittest.TestCase):
             self.skipTest("arm-none-eabi GCC/binutils unavailable")
 
     def test_dma_disabled_mixer_and_stock_replacement_are_mutually_exclusive(self) -> None:
-        with tempfile.TemporaryDirectory(dir=ROOT / "build") as temporary:
+        build_dir = ROOT / "build"
+        build_dir.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=build_dir) as temporary:
             work = Path(temporary)
             stock = work / "m4a-stock.o"
             hq_stock = work / "m4a-hq-stock.o"
