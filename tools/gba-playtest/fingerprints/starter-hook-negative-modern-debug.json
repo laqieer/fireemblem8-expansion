@@ -75,11 +75,5 @@
     }
   ],
   "format_version": 2,
-  "rom": {
-    "game_code": "BE8E",
-    "sha1": "f2d5d112f6d497959ee8df5ff6fe5a23730b01c7",
-    "size": 16777216,
-    "title": "FIREEMBLEM2E"
-  },
   "scenario": "starter-hook-negative-modern-debug"
 }

@@ -87,7 +87,7 @@ class DiagnosticTests(unittest.TestCase):
             [],
         )
 
-    def test_fingerprint_provenance_is_required_and_strict(self):
+    def test_exact_rom_policy_requires_valid_provenance(self):
         missing = {
             "format_version": 2,
             "scenario": "boot",
@@ -107,6 +107,41 @@ class DiagnosticTests(unittest.TestCase):
         }
         with self.assertRaisesRegex(gba_playtest.PlaytestError, "40 lowercase"):
             gba_playtest.validate_fingerprint(malformed, "<fingerprint>")
+
+    def test_behavior_policy_accepts_romless_baseline_and_checks_behavior(self):
+        baseline = {
+            "format_version": 2,
+            "scenario": "boot",
+            "checkpoints": [],
+        }
+        self.assertEqual(
+            gba_playtest.validate_fingerprint(
+                baseline, "<behavior-baseline>", policy="behavior"
+            ),
+            baseline,
+        )
+        candidate = {
+            **baseline,
+            "rom": {
+                "sha1": "1" * 40,
+                "size": 1024,
+                "title": "CANDIDATE",
+                "game_code": "CAN0",
+            },
+        }
+        self.assertEqual(
+            gba_playtest.compare_fingerprints(baseline, candidate, policy="behavior"),
+            [],
+        )
+        candidate["scenario"] = "changed"
+        self.assertTrue(
+            any(
+                difference.startswith("scenario:")
+                for difference in gba_playtest.compare_fingerprints(
+                    baseline, candidate, policy="behavior"
+                )
+            )
+        )
 
 
 if __name__ == "__main__":

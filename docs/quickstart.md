@@ -500,10 +500,10 @@ rerun) rather than a confusing downstream crash. It then builds the ROM and
 runs `gba_playtest.py verify --policy behavior` against all three
 checkpoints (frames 0/60/120) — never weakened to a frame-0-only check.
 `--policy behavior` is required (not `--policy exact-rom`) because the
-modern ROM is not byte-identical to the legacy ROM referenced by the
-checked-in fingerprint's own `rom` stanza; this target makes no ROM
-byte-identity claim, only that both ROMs reach the same deterministic
-runtime state.
+modern ROM is not byte-identical to the legacy baseline. This target makes no
+ROM byte-identity claim, only that both ROMs reach the same deterministic
+runtime state; behavior-policy expected fingerprints therefore omit their
+unused ROM identity metadata.
 
 Setting up the libmGBA playtest backend follows the same bootstrap as any
 other `tools/gba-playtest` consumer — see that tool's own documentation for

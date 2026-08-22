@@ -17,6 +17,9 @@ to compare behavior when ROM bytes or link addresses legitimately change.
 Every capture binds the behavior to machine-readable ROM provenance: SHA-1,
 byte size, header title, and header game code. The backend executes the same
 immutable temporary ROM copy that is hashed, avoiding a hash/load path race.
+Capture output always includes that diagnostic identity. A behavior-policy
+expected baseline may omit it because behavior verification does not compare
+ROM identity; exact-ROM verification still requires it.
 
 The tool does not load save files, screenshots, or savestates. Framebuffer hashes
 are FNV-1a-64 over canonical 24-bit RGB bytes (alpha/padding and host endianness
@@ -81,7 +84,8 @@ python3 tools/gba-playtest/gba_playtest.py verify \
   --scenario tools/gba-playtest/scenarios/boot.json \
   --expected tools/gba-playtest/fingerprints/boot.json
 
-# Explicit migration comparison: report both ROM identities but compare behavior
+# Explicit behavior comparison: report the candidate ROM identity, while an
+# older baseline identity is shown when the expected file retains one.
 python3 tools/gba-playtest/gba_playtest.py verify \
   --policy behavior \
   --rom candidate.gba \
@@ -117,11 +121,13 @@ match. Accidentally testing the wrong ROM is therefore a hard mismatch.
 
 `--policy behavior` is the explicit baseline-vs-candidate migration mode. It
 compares scenario/checkpoint behavior while intentionally allowing ROM
-provenance to differ, and always prints both complete identities. Use it only
-when changed ROM bytes are expected; it never silently turns off identity
-reporting. Capture JSON always contains provenance under `"rom"` regardless of
-the later verification policy. Scenario schema version remains 1; provenance is
-mandatory in fingerprint format version 2.
+provenance to differ. Its expected baseline may omit the otherwise-unused
+`"rom"` object; diagnostics label that omitted baseline identity and always
+print the captured candidate identity. Use it only when changed ROM bytes are
+expected; it never silently turns off capture identity reporting. Capture JSON
+always contains provenance under `"rom"` regardless of the later verification
+policy. Scenario schema version remains 1; exact-ROM expected fingerprints
+require valid provenance in format version 2.
 
 ## Host-only test mode
 

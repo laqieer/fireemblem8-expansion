@@ -273,7 +273,7 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
         )
 
     def test_gate_list_full_ordered_names(self):
-        # All 13 current-master mirrored gates remain; docs governance is
+        # All 14 current-master mirrored gates remain; docs governance is
         # deliberately absent and asserted as a standalone workflow step.
         names = [g.name for g in verify_mod.gates()]
         self.assertEqual(
@@ -292,6 +292,7 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
                 "modern-linker-check-release",
                 "modern-itemexpansion-check-debug",
                 "modern-itemexpansion-check-release",
+                "modern-all-locales-all-features-profile",
             ],
         )
         # The merged CI runs the fast `host-tests` lane textually before the
@@ -321,7 +322,7 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
 
     def test_dry_run_never_executes_subprocess(self):
         results = verify_mod.run_gates("/nonexistent/path/should/not/matter", dry_run=True)
-        self.assertEqual(len(results), 13)
+        self.assertEqual(len(results), 14)
         self.assertTrue(all(r.ran is False for r in results))
         self.assertTrue(all(r.passed is False for r in results))  # not-ran != passed
 
@@ -332,7 +333,7 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
         dry = [r.gate.name for r in verify_mod.run_gates("/nonexistent/path", dry_run=True)]
         real_names = [g.name for g in verify_mod.gates()]
         self.assertEqual(dry, real_names)
-        self.assertEqual(len(dry), 13)
+        self.assertEqual(len(dry), 14)
 
 
 class VerifyGateSelectionRemovedTests(unittest.TestCase):
@@ -392,7 +393,7 @@ class VerifyGateSelectionRemovedTests(unittest.TestCase):
             self.assertIn(name, printed)
         # Every line for a dry-run gate is explicitly marked SKIPPED(dry-run)
         # -- never silently omitted, never marked PASS/FAIL without running.
-        self.assertEqual(printed.count("[SKIPPED(dry-run)]"), 13)
+        self.assertEqual(printed.count("[SKIPPED(dry-run)]"), 14)
 
 
 class HostOnlyEnvGateMirrorTests(unittest.TestCase):
@@ -481,9 +482,9 @@ class HostOnlyEnvGateMirrorTests(unittest.TestCase):
                 "run_gates must not mutate the parent environment",
             )
 
-        self.assertEqual(len(results), 13)
+        self.assertEqual(len(results), 14)
         self.assertTrue(all(result.passed for result in results))
-        self.assertEqual(len(seen), 13)
+        self.assertEqual(len(seen), 14)
 
         host_argv, host_env = seen[0]
         self.assertEqual(host_argv[0], "python3")

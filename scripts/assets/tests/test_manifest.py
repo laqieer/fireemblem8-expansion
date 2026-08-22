@@ -3,30 +3,40 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import os
 import shutil
 import subprocess
 import sys
+import time
 import unittest
 from unittest import mock
 
-from scripts.assets import manifest
+from scripts.assets import manifest, tmx
 from scripts.generated_data.diagnostics import GeneratedDataError, GeneratedDataValidationError
 
 
 REPO_ROOT = manifest.REPO_ROOT
 TEST_ROOT = os.path.join(REPO_ROOT, "build", "generated", "assets", "test-work")
-FIXTURE_ROOT = "graphics/map/layout"
+FIXTURE_ROOT = "assets/tmx"
+TMX_FIXTURE_ROOT = os.path.join(
+    REPO_ROOT, "scripts", "assets", "tests", "fixtures", "tmx"
+)
 
 
 def valid_record():
     return {
         "id": "CH2_MAIN_MAP",
-        "kind": "chapter-map-layout",
-        "sources": [FIXTURE_ROOT + "/Ch2Map.mar", FIXTURE_ROOT + "/Ch2Map.json"],
+        "kind": "tiled-tmx-map-layout",
+        "sources": [FIXTURE_ROOT + "/Ch2Map.tmx"],
         "dependsOn": [],
-        "options": {"format": "mar", "compression": "lz77"},
+        "options": {
+            "format": "tmx-safe-v1",
+            "compression": "lz77",
+            "layer": "Main",
+            "tilesetId": "fe8-metatiles-16px-4096",
+        },
         "ownership": {
             "seam": "chapter-data-asset-table",
             "tableSource": "src/data/data_8B363C.c",
@@ -77,7 +87,7 @@ class AssetManifestTests(unittest.TestCase):
         second = manifest.load_and_validate(path)
         self.assertEqual(manifest.render_makefile(first), manifest.render_makefile(second))
         self.assertIn(
-            "$(MODERN_OUTPUT_DIR)/src/data/data_8B363C.o: graphics/map/layout/Ch2Map.mar",
+            "$(MODERN_OUTPUT_DIR)/src/data/data_8B363C.o: assets/tmx/Ch2Map.tmx",
             manifest.render_makefile(first),
         )
 
@@ -85,6 +95,10 @@ class AssetManifestTests(unittest.TestCase):
         records = manifest.load_and_validate(self.write_manifest([valid_record()]))
         rendered = manifest.render_makefile(records)
         self.assertIn("src/data/data_8B363C.o:", rendered)
+        self.assertIn(
+            "src/data/const_data_chapter_maps.o: $(ASSET_OUTPUT_DIR)/tmx/CH2_MAIN_MAP.bin.lz",
+            rendered,
+        )
         self.assertNotIn("gAsset", rendered)
         self.assertNotIn("linker_script", rendered)
 
@@ -104,22 +118,26 @@ class AssetManifestTests(unittest.TestCase):
 
     def test_posix_unicode_and_symlink_source_paths_fail_closed(self):
         non_posix = valid_record()
-        non_posix["sources"][0] = "graphics\\map\\layout\\Ch2Map.mar"
+        non_posix["sources"][0] = "assets\\tmx\\Ch2Map.tmx"
         self.assert_validation_error([non_posix], "normalized POSIX separators")
         non_nfc = valid_record()
-        non_nfc["sources"][0] = "graphics/map/layout/Ch2Map\u0065\u0301.mar"
+        non_nfc["sources"][0] = "assets/tmx/Ch2Map\u0065\u0301.tmx"
         self.assert_validation_error([non_nfc], "NFC-normalized Unicode")
 
         link_path = os.path.join(
-            REPO_ROOT, "scripts", "assets", "tests", ".asset_manifest_source_link.mar"
+            REPO_ROOT,
+            "scripts",
+            "assets",
+            "tests",
+            ".asset_manifest_source_link.tmx",
         )
         os.symlink(
-            os.path.join(REPO_ROOT, "graphics", "map", "layout", "Ch2Map.mar"),
+            os.path.join(REPO_ROOT, "assets", "tmx", "Ch2Map.tmx"),
             link_path,
         )
         self.addCleanup(lambda: os.path.lexists(link_path) and os.unlink(link_path))
         symlink = valid_record()
-        symlink["sources"][0] = "scripts/assets/tests/.asset_manifest_source_link.mar"
+        symlink["sources"][0] = "scripts/assets/tests/.asset_manifest_source_link.tmx"
         self.assert_validation_error([symlink], "must not traverse a symbolic link")
 
     def test_casefold_and_unicode_source_collision_keys_are_stable(self):
@@ -199,14 +217,216 @@ class AssetManifestTests(unittest.TestCase):
         ):
             self.assert_validation_error([valid_record(), other], "ownership conflict")
 
-    def test_capacity_and_actual_ownership_conflicts_fail(self):
-        capacity = valid_record()
-        capacity["resources"]["mapWidth"] = 200
-        capacity["resources"]["mapHeight"] = 200
-        self.assert_validation_error([capacity], "exceed the 2048-byte gBmMapBuffer")
+    def test_tmx_capacity_boundaries_agree_for_resources_and_payloads(self):
+        fitting = valid_record()
+        fitting["resources"]["mapWidth"] = 31
+        fitting["resources"]["mapHeight"] = 33
+        self.assertEqual(
+            manifest.ChapterMapLayoutKind._map_payload_bytes(31 * 33),
+            2048,
+        )
+        with mock.patch.object(tmx, "parse_tmx", return_value=(31, 33, [0] * (31 * 33))):
+            manifest.load_and_validate(self.write_manifest([fitting]))
+
+        overflowing = valid_record()
+        overflowing["resources"]["mapWidth"] = 32
+        overflowing["resources"]["mapHeight"] = 32
+        self.assertEqual(
+            manifest.ChapterMapLayoutKind._map_payload_bytes(32 * 32),
+            2050,
+        )
+        with mock.patch.object(tmx, "parse_tmx") as parse_tmx:
+            self.assert_validation_error(
+                [overflowing],
+                "map dimensions 32x32 exceed the 2048-byte gBmMapBuffer",
+            )
+        parse_tmx.assert_not_called()
+
+    def test_actual_ownership_conflict_fails(self):
         ownership = valid_record()
         ownership["ownership"]["mainLayerId"] = 12
         self.assert_validation_error([ownership], "does not select mainLayerId 12")
+
+    def test_tmx_adapter_preserves_chapter_two_bytes_and_runtime_wiring(self):
+        source = os.path.join(REPO_ROOT, "assets", "tmx", "Ch2Map.tmx")
+        width, height, values = tmx.parse_tmx(source)
+        mar = tmx.render_mar(values)
+        map_payload = bytes((width, height)) + b"".join(
+            value.to_bytes(2, byteorder="little") for value in values
+        )
+        self.assertEqual((width, height, len(values)), (15, 15, 225))
+        self.assertEqual(
+            hashlib.sha256(mar).hexdigest(),
+            "fde487693e8b2f0c0696329c859511ec6fdcde7dfaa0b0ddeb3eea6e25578b56",
+        )
+        self.assertEqual(
+            hashlib.sha256(map_payload).hexdigest(),
+            "ed7696f03cc64202ed40fea773cf241317a30722dcc40cddc8ff1138c2f64447",
+        )
+        with open(
+            os.path.join(REPO_ROOT, "src", "data", "const_data_chapter_maps.c"),
+            encoding="utf-8",
+        ) as handle:
+            self.assertIn(
+                'Ch2Map[] = INCBIN_U8("build/generated/assets/tmx/CH2_MAIN_MAP.bin.lz")',
+                handle.read(),
+            )
+        with open(os.path.join(REPO_ROOT, "src", "chapterdata.c"), encoding="utf-8") as handle:
+            self.assertIn(
+                "gChapterDataAssetTable[GetROMChapterStruct(chIndex)->map.mainLayerId]",
+                handle.read(),
+            )
+
+    def test_tmx_metadata_change_rebuilds_bin_lz_and_incbin_consumer(self):
+        source = self.write_manifest([valid_record()])
+        out_dir = os.path.join(TEST_ROOT, "incremental")
+        manifest.generate(source, out_dir)
+        mar_path = os.path.join(out_dir, "tmx", "CH2_MAIN_MAP.mar")
+        metadata_path = os.path.join(out_dir, "tmx", "CH2_MAIN_MAP.json")
+        bin_path = os.path.join(out_dir, "tmx", "CH2_MAIN_MAP.bin")
+        lz_path = bin_path + ".lz"
+        consumer_path = os.path.join(TEST_ROOT, "incbin.o")
+        consumer_target = os.path.relpath(consumer_path, REPO_ROOT)
+        makefile_path = os.path.join(TEST_ROOT, "incremental.mk")
+        with open(makefile_path, "w", encoding="utf-8") as handle:
+            handle.write(
+                "ASSET_OUTPUT_DIR := {out_dir}\n"
+                "MODERN_OUTPUT_DIR := {out_dir}/modern\n"
+                "MARTOMAP := {python} {mar_to_map}\n"
+                "GBAGFX := {gbagfx}\n"
+                "include {fragment}\n"
+                "\n"
+                "%.bin: %.mar\n"
+                "\t$(MARTOMAP) $< $@\n"
+                "%.bin.lz: %.bin\n"
+                "\t$(GBAGFX) $< $@\n"
+                "{consumer}: $(ASSET_OUTPUT_DIR)/tmx/CH2_MAIN_MAP.bin.lz\n"
+                "\tcp $< $@\n".format(
+                    out_dir=out_dir,
+                    python=sys.executable,
+                    mar_to_map=os.path.join(REPO_ROOT, "scripts", "mar_to_map.py"),
+                    gbagfx=os.path.join(REPO_ROOT, "tools", "gbagfx", "gbagfx"),
+                    fragment=os.path.join(out_dir, manifest.OUTPUT_MAKEFILE),
+                    consumer=consumer_target,
+                )
+            )
+
+        def build_consumer():
+            return subprocess.run(
+                ["make", "-f", makefile_path, consumer_target],
+                cwd=REPO_ROOT,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+
+        first = build_consumer()
+        self.assertEqual(first.returncode, 0, first.stderr)
+        with open(mar_path, "rb") as handle:
+            mar_before = handle.read()
+        with open(bin_path, "rb") as handle:
+            bin_before = handle.read()
+        with open(lz_path, "rb") as handle:
+            lz_before = handle.read()
+        with open(consumer_path, "rb") as handle:
+            consumer_before = handle.read()
+        self.assertEqual(bin_before[:2], b"\x0f\x0f")
+
+        with open(metadata_path, "wb") as handle:
+            handle.write(tmx.render_metadata("Ch2Map", 9, 25))
+        modified_at = max(time.time_ns(), os.stat(bin_path).st_mtime_ns + 1)
+        os.utime(metadata_path, ns=(modified_at, modified_at))
+
+        second = build_consumer()
+        self.assertEqual(second.returncode, 0, second.stderr)
+        with open(mar_path, "rb") as handle:
+            self.assertEqual(handle.read(), mar_before)
+        with open(bin_path, "rb") as handle:
+            bin_after = handle.read()
+        with open(lz_path, "rb") as handle:
+            lz_after = handle.read()
+        with open(consumer_path, "rb") as handle:
+            consumer_after = handle.read()
+        self.assertEqual(bin_after[:2], b"\x09\x19")
+        self.assertNotEqual(bin_after, bin_before)
+        self.assertNotEqual(lz_after, lz_before)
+        self.assertNotEqual(consumer_after, consumer_before)
+        self.assertEqual(consumer_after, lz_after)
+
+    def test_tmx_synthetic_positive_and_adversarial_fixtures(self):
+        width, height, values = tmx.parse_tmx(
+            os.path.join(TMX_FIXTURE_ROOT, "valid.tmx")
+        )
+        self.assertEqual((width, height, values), (2, 2, [0, 1, 2, 3]))
+        self.assertEqual(
+            tmx.render_mar(values),
+            b"\x00\x00\x08\x00\x10\x00\x18\x00",
+        )
+        for name in ("external_tileset.tmx", "flipped_gid.tmx"):
+            with self.subTest(name=name):
+                with self.assertRaises(tmx.TmxError):
+                    tmx.parse_tmx(os.path.join(TMX_FIXTURE_ROOT, name))
+
+    def test_tmx_safe_subset_rejects_unsupported_inputs(self):
+        source_path = os.path.join(REPO_ROOT, "assets", "tmx", "Ch2Map.tmx")
+        with open(source_path, encoding="utf-8") as handle:
+            source = handle.read()
+        cases = {
+            "external_tileset": source.replace(
+                'name="fe8-metatiles-16px-4096"', 'source="../tiles.tsx"', 1
+            ),
+            "wrong_tile_size": source.replace('tilewidth="16"', 'tilewidth="8"', 1),
+            "base64": source.replace('encoding="csv"', 'encoding="base64"'),
+            "flipped_gid": source.replace("521,521", "2147484169,521", 1),
+            "zero_gid": source.replace("521,521", "0,521", 1),
+            "group": source.replace("</map>", "<group id=\"2\" name=\"bad\"/></map>"),
+            "entity": source.replace("<map ", "<!DOCTYPE map [<!ENTITY x \"y\">]><map "),
+            "chunk": source.replace("<data encoding=\"csv\">", "<data encoding=\"csv\"><chunk>"),
+            "namespace": source.replace("<map ", "<map xmlns=\"urn:unsupported\" ", 1),
+            "wrong_orientation": source.replace('orientation="orthogonal"', 'orientation="isometric"'),
+            "wrong_render_order": source.replace('renderorder="right-down"', 'renderorder="right-up"'),
+            "infinite": source.replace('infinite="0"', 'infinite="1"'),
+            "large_dimension": source.replace('width="15"', 'width="256"', 1),
+            "second_tileset": source.replace("</map>", "<tileset firstgid=\"1\"/></map>"),
+            "tileset_image": source.replace("/>", "><image source=\"tiles.png\"/></tileset>", 1),
+            "bad_firstgid": source.replace('firstgid="1"', 'firstgid="2"'),
+            "bad_tile_count": source.replace('tilecount="4096"', 'tilecount="4095"'),
+            "bad_columns": source.replace('columns="64"', 'columns="63"'),
+            "wrong_layer_size": source.replace('width="15" height="15">', 'width="14" height="15">', 1),
+            "second_layer": source.replace("</map>", "<layer id=\"2\" name=\"Other\" width=\"15\" height=\"15\"/>"
+                                          "</map>"),
+            "object_layer": source.replace("</map>", "<objectgroup id=\"2\" name=\"Objects\"/></map>"),
+            "image_layer": source.replace("</map>", "<imagelayer id=\"2\" name=\"Image\"/></map>"),
+            "property": source.replace("</map>", "<properties><property name=\"x\"/></properties></map>"),
+            "compression": source.replace('encoding="csv"', 'encoding="csv" compression="zlib"'),
+            "wrong_count": source.replace("521,521", "521", 1),
+            "signed_gid": source.replace("521,521", "-1,521", 1),
+            "plus_gid": source.replace("521,521", "+1,521", 1),
+            "overflow_gid": source.replace("521,521", "99999999999,521", 1),
+            "unicode_whitespace": source.replace("521,521", "521,\u00a0521", 1),
+        }
+        for name, document in cases.items():
+            with self.subTest(name=name):
+                path = os.path.join(TEST_ROOT, name + ".tmx")
+                with open(path, "w", encoding="utf-8") as handle:
+                    handle.write(document)
+                with self.assertRaises(tmx.TmxError):
+                    tmx.parse_tmx(path)
+
+    def test_tmx_reports_non_map_roots_before_map_attribute_diagnostics(self):
+        path = os.path.join(TEST_ROOT, "non-map-root.tmx")
+        with open(path, "wb") as handle:
+            handle.write(tmx.TMX_XML_DECLARATION + b"\n<tileset/>")
+        with self.assertRaisesRegex(tmx.TmxError, "^root element must be map$"):
+            tmx.parse_tmx(path)
+
+    def test_tmx_rejects_oversized_source_before_xml_parsing(self):
+        path = os.path.join(TEST_ROOT, "oversized.tmx")
+        with open(path, "wb") as handle:
+            handle.write(tmx.TMX_XML_DECLARATION)
+            handle.write(b" " * (tmx.MAX_TMX_BYTES + 1))
+        with self.assertRaisesRegex(tmx.TmxError, "source limit"):
+            tmx.parse_tmx(path)
 
     def test_check_detects_missing_stale_and_orphan_output(self):
         source = self.write_manifest([valid_record()])
@@ -228,6 +448,61 @@ class AssetManifestTests(unittest.TestCase):
         with self.assertRaises(GeneratedDataValidationError) as raised:
             manifest.check(source, out_dir)
         self.assertIn("orphan generated output", str(raised.exception))
+
+    def test_asset_makefile_tracks_declared_manifest_sources(self):
+        with open(os.path.join(REPO_ROOT, "assets.mk"), encoding="utf-8") as handle:
+            asset_makefile = handle.read()
+        self.assertIn(
+            'ASSET_MANIFEST_SOURCES := $(shell $(ASSET_TOOL) --manifest "$(ASSET_MANIFEST)" sources)',
+            asset_makefile,
+        )
+        self.assertIn(
+            "$(ASSET_OUTPUT_MK): $(ASSET_MANIFEST) $(ASSET_MANIFEST_SOURCES) $(ASSET_TOOL_INPUTS)",
+            asset_makefile,
+        )
+
+    def test_asset_makefile_guards_only_tmx_incbin_consumers(self):
+        guarded = subprocess.run(
+            [
+                "make",
+                "ASSET_OUTPUT_DIR=build/generated/assets/alternate",
+                "assets-validate",
+            ],
+            cwd=REPO_ROOT,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        self.assertNotEqual(guarded.returncode, 0)
+        self.assertIn("must be build/generated/assets", guarded.stderr)
+
+        legacy = valid_record()
+        legacy["id"] = "CH1_MAIN_MAP"
+        legacy["kind"] = "chapter-map-layout"
+        legacy["sources"] = [
+            "graphics/map/layout/Ch1Map.mar",
+            "graphics/map/layout/Ch1Map.json",
+        ]
+        legacy["options"] = {"format": "mar", "compression": "lz77"}
+        legacy["ownership"].update(
+            {"chapterSettingsIndex": 1, "mainLayerId": 8, "symbol": "Ch1Map"}
+        )
+        legacy["resources"].update({"mapWidth": 15, "mapHeight": 10})
+        legacy_manifest = self.write_manifest([legacy])
+        allowed = subprocess.run(
+            [
+                "make",
+                "ASSET_MANIFEST={}".format(os.path.relpath(legacy_manifest, REPO_ROOT)),
+                "ASSET_OUTPUT_DIR=build/generated/assets/test-work/legacy-override",
+                "assets-generate",
+                "assets-check",
+            ],
+            cwd=REPO_ROOT,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        self.assertEqual(allowed.returncode, 0, allowed.stderr)
 
     def test_check_detects_orphans_through_a_relative_output_path(self):
         source = self.write_manifest([valid_record()])
@@ -293,6 +568,16 @@ class AssetManifestTests(unittest.TestCase):
                 "build", "generated", "assets", "test-work", "linked-output"
             )
             manifest.safe_output_dir(manifest_path)
+
+    def test_generate_and_check_reject_descendant_output_symlinks(self):
+        source = self.write_manifest([valid_record()])
+        out_dir = os.path.join(TEST_ROOT, "out")
+        os.makedirs(out_dir)
+        os.symlink(TEST_ROOT, os.path.join(out_dir, "tmx"))
+        with self.assertRaisesRegex(GeneratedDataError, "symbolic link"):
+            manifest.generate(source, out_dir)
+        with self.assertRaisesRegex(GeneratedDataError, "symbolic link"):
+            manifest.check(source, out_dir)
 
     def test_rendered_prerequisites_include_transitive_dependencies(self):
         dependent = valid_record()
