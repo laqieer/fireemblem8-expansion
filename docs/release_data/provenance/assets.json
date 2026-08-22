@@ -86168,8 +86168,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Wave 0/issue #9 seed: extracted/derived original-game asset or generated-report content (graphics/sound/text/animation data, or GitHub Pages report output). Original Fire Emblem: The Sacred Stones copyright/trademark ownership is Nintendo/Intelligent Systems and is NOT asserted or cleared by this repository. No human legal/provenance review has been recorded yet.",
-    "oid": "b3a065a38f59c0363f5a265e30ab16903845d67c",
-    "sha256": "bfe8a8834c5d01a854679b7276ebb7ffdb7e58a4e6e3800f5e4e358b04629242"
+    "oid": "a318477886e87de57977c186f9491931c5d051dc",
+    "sha256": "c168c15a823da5db82c7f496dcb3cec066660e38f538cf5e1611e4d7ca570285"
   },
   {
     "path": "reports/linker-budget/modern-localization-debug.json",
@@ -86204,8 +86204,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Wave 0/issue #9 seed: extracted/derived original-game asset or generated-report content (graphics/sound/text/animation data, or GitHub Pages report output). Original Fire Emblem: The Sacred Stones copyright/trademark ownership is Nintendo/Intelligent Systems and is NOT asserted or cleared by this repository. No human legal/provenance review has been recorded yet.",
-    "oid": "ef55ac1bc28cae59d1cb976ffde1046bace4fbf6",
-    "sha256": "91aa642381d462b9712b868a94786c660cbb892159b4d3ba196ae6b35d8e6716"
+    "oid": "adea286ed115641f67d6deb56975846be746c2b6",
+    "sha256": "5c23e90b95da5e27ff69e35018f8fb650981a0138714a413f6197b1ae0a0372e"
   },
   {
     "path": "reports/modernize/inventory.json",
