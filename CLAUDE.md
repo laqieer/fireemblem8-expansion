@@ -99,7 +99,8 @@ branch immediately.
   - **line numbers:** prohibited
   - **ordering:** prohibited
   - **implementation spelling:** prohibited
-  - **Git-text rationale:** required. git-tracks=source,review,history; raw-tracked-text=not-behavior-evidence
+  - **Git-text rationale:** required. git-tracks=source,review,history;
+    raw-tracked-text=not-behavior-evidence
 - **Static-contract exception:** conditional
   - **source-text assertion:** permitted-only
   - **exact syntax/spelling/absence:** required

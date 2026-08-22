@@ -13,7 +13,7 @@ PR_TEMPLATE_PATH = ROOT / ".github" / "PULL_REQUEST_TEMPLATE.md"
 CLAUDE_PATH = ROOT / "CLAUDE.md"
 COPILOT_INSTRUCTIONS_PATH = ROOT / ".github" / "copilot-instructions.md"
 MEANINGFUL_TEST_POLICY_HEADING = "Meaningful test evidence"
-MARKDOWN_HEADING = re.compile(r"^#{2,6} (?P<heading>.+)$")
+MARKDOWN_HEADING = re.compile(r"^(?P<level>#{2,6}) (?P<heading>.+)$")
 MEANINGFUL_TEST_POLICY_CLAUSE = re.compile(
     r"^- \*\*(?P<name>[^*:]+):\*\* (?P<status>[a-z-]+)"
     r"(?:\. (?P<detail>.+))?$"
@@ -142,7 +142,7 @@ def read_skill():
 def read_markdown_section(text, heading):
     lines = text.splitlines()
     heading_lines = [
-        index
+        (index, len(match.group("level")))
         for index, line in enumerate(lines)
         if (
             (match := MARKDOWN_HEADING.match(line))
@@ -158,12 +158,15 @@ def read_markdown_section(text, heading):
     end_line = next(
         (
             index
-            for index in range(heading_lines[0] + 1, len(lines))
-            if MARKDOWN_HEADING.match(lines[index])
+            for index in range(heading_lines[0][0] + 1, len(lines))
+            if (
+                (match := MARKDOWN_HEADING.match(lines[index]))
+                and len(match.group("level")) <= heading_lines[0][1]
+            )
         ),
         len(lines),
     )
-    return lines[heading_lines[0] + 1:end_line]
+    return lines[heading_lines[0][0] + 1:end_line]
 
 
 def normalize_policy_atom(text):
@@ -264,6 +267,7 @@ CANONICAL_POLICY_AST = build_canonical_policy_ast()
 def parse_meaningful_test_policy(text):
     raw_clauses = {}
     current_clause = None
+    current_item = None
     for line in read_markdown_section(text, MEANINGFUL_TEST_POLICY_HEADING):
         if not line.strip():
             continue
@@ -277,6 +281,7 @@ def parse_meaningful_test_policy(text):
                 "items": {},
             }
             current_clause = clause_name
+            current_item = None
             continue
         if match := MEANINGFUL_TEST_POLICY_ITEM.match(line):
             if current_clause is None:
@@ -289,6 +294,14 @@ def parse_meaningful_test_policy(text):
                 "status": normalize_policy_atom(match.group("status")),
                 "detail": match.group("detail") or "",
             }
+            current_item = items[item_name]
+            continue
+        if current_item is not None and line.startswith("    "):
+            if re.match(r"^\s*(?:[-*+] |\d+\. )", line):
+                raise AssertionError(f"unexpected policy content: {line.strip()}")
+            current_item["detail"] = " ".join(
+                (current_item["detail"], line.strip())
+            ).strip()
             continue
         raise AssertionError(f"unexpected policy content: {line.strip()}")
 
@@ -501,11 +514,27 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
         )
 
         policy_text = render_meaningful_test_policy()
+        wrapped_git_rationale = policy_text.replace(
+            "  - **Git-text rationale:** required. "
+            "git-tracks=source,review,history; "
+            "raw-tracked-text=not-behavior-evidence",
+            "  - **Git-text rationale:** required. "
+            "git-tracks=source,review,history;\n"
+            "    raw-tracked-text=not-behavior-evidence",
+        )
+        self.assertEqual(
+            CANONICAL_POLICY_AST,
+            self.assert_meaningful_test_policy(wrapped_git_rationale),
+        )
+
         mutations = {
             "unexpected paragraph": policy_text
             + "\nText-only tests are permitted.\n",
             "duplicate heading": policy_text
             + "\n## Meaningful test evidence\n\n",
+            "lower-level heading": policy_text
+            + "\n### Text-only tests are permitted\n"
+            "Text-only tests are permitted.\n",
             "negated requirement": policy_text
             + "\nTests must not prove runtime state.\n",
             "top-level prohibited polarity": policy_text.replace(
@@ -532,6 +561,10 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             ),
         }
         for category in PROHIBITED_EVIDENCE_CATEGORIES:
+            mutations[f"{category} removal"] = policy_text.replace(
+                f"  - **{category}:** prohibited\n",
+                "",
+            )
             mutations[f"{category} detail"] = policy_text.replace(
                 f"  - **{category}:** prohibited",
                 f"  - **{category}:** prohibited. text-only tests are permitted",
