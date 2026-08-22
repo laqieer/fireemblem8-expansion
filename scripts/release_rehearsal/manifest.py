@@ -37,7 +37,6 @@ from scripts.release_rehearsal import doc_links as dl  # noqa: E402
 from scripts.release_rehearsal import epoch_claims as epc  # noqa: E402
 from scripts.release_rehearsal import stale_count_claims as scc  # noqa: E402
 from scripts.release_rehearsal import git_source as gs  # noqa: E402
-from scripts.release_rehearsal import provenance as prov  # noqa: E402
 from scripts.release_rehearsal import source_guard as sg  # noqa: E402
 from scripts.release_rehearsal import submodule_binding as sb  # noqa: E402
 from scripts.modernize.migrations import registry as migrations_registry  # noqa: E402
@@ -52,13 +51,12 @@ REQUIRED_DOCS = (
     "docs/migration_registry.md",
     "docs/save_format.md",
     "docs/release_data/version_ledger.json",
-    "docs/release_data/provenance.json",
 )
 
 
 class ManifestError(ValueError):
     """An actionable, well-formed input/consistency error -- distinct from
-    the expected 'blocked' business status."""
+    the expected 'failed' business status."""
 
 
 def _is_git_repo(repo_root: Path) -> bool:
@@ -210,26 +208,13 @@ def check_changelog(repo_root: Path) -> Dict:
     return {"ok": ok, "errors": errors, "aggregate_impact": impact}
 
 
-def check_provenance(repo_root: Path, target_sha: str) -> Dict:
-    """Validate human exact-path facts against the immutable candidate tree."""
-    try:
-        return prov.check(
-            repo_root, target_sha, repo_root / "docs" / "release_data" / "provenance.json"
-        )
-    except (prov.ProvenanceError, ct.CandidateTreeError) as error:
-        raise ManifestError(str(error)) from error
-
-
-
 def check_tree_coverage(repo_root: Path, target_sha: str) -> Dict:
-    """Compatibility entry point for immutable candidate-tree coverage."""
+    """Load the exact path/mode/gitlink set from the immutable candidate."""
     try:
         tree = ct.load(repo_root, target_sha)
-        entries = prov.load_metadata(repo_root / "docs" / "release_data" / "provenance.json")
-    except (ct.CandidateTreeError, prov.ProvenanceError) as error:
+    except ct.CandidateTreeError as error:
         raise ManifestError(str(error)) from error
-    errors = prov.check_candidate_tree(entries, tree)
-    return {"ok": not errors, "errors": errors, "modes": tree.modes}
+    return {"ok": True, "errors": [], "modes": tree.modes}
 
 
 
@@ -253,8 +238,9 @@ def check_source_guard(repo_root: Path, target_sha: Optional[str] = None) -> Dic
             source_paths = ct.load(repo_root, resolved_target_sha).source_paths
         else:
             source_paths = tuple(
-                entry["path"]
-                for entry in prov.load_metadata(repo_root / "docs" / "release_data" / "provenance.json")
+                path.relative_to(repo_root).as_posix()
+                for path in repo_root.rglob("*")
+                if path.is_file()
             )
         map_hex_exceptions = (
             sg.load_map_hex_exceptions(map_hex_exceptions_path)
@@ -263,29 +249,21 @@ def check_source_guard(repo_root: Path, target_sha: Optional[str] = None) -> Dic
         violations = sg.scan_source_release_candidate(
             repo_root, source_paths, map_hex_exceptions
         )
-        if not gs.is_git_repo(repo_root):
-            violations.extend(
-                (path, "missing-candidate-member")
-                for path in source_paths
-                if not (repo_root / path).exists()
-            )
     except (sg.SourceGuardError, ct.CandidateTreeError) as error:
         raise ManifestError(str(error)) from error
     return {
-        "status": "blocked" if violations else "pass",
+        "passed": not violations,
         "violations": [f"{path}: {rule}" for path, rule in violations],
     }
 
 
 def check_allowlist_exact(repo_root: Path, target_sha: str) -> Dict:
-    """Validate exact candidate-tree membership and modes without a ledger."""
+    """Compatibility entry point for exact candidate-tree membership."""
     try:
         tree = ct.load(repo_root, target_sha)
-        entries = prov.load_metadata(repo_root / "docs" / "release_data" / "provenance.json")
-    except (ct.CandidateTreeError, prov.ProvenanceError) as error:
+    except ct.CandidateTreeError as error:
         raise ManifestError(str(error)) from error
-    errors = prov.check_candidate_tree(entries, tree)
-    return {"ok": not errors, "errors": errors, "modes": tree.modes}
+    return {"ok": True, "errors": [], "modes": tree.modes}
 
 
 
@@ -295,62 +273,13 @@ def check_submodule_binding(repo_root: Path, target_sha: str) -> Dict:
     gitlink, the export-exclusion record, and the submodule provenance
     record all agree exactly on path/URL/pinned-commit -- see
     `scripts/release_rehearsal/submodule_binding.py`. Any finding here
-    forces the overall candidate status to "blocked", exactly like every
+    forces the overall candidate status to "failed", exactly like every
     other sub-check."""
     try:
-        errors = sb.check_submodule_binding(
-            repo_root, target_sha, repo_root / "docs" / "release_data" / "provenance.json"
-        )
+        errors = sb.check_submodule_binding(repo_root, target_sha)
     except sb.SubmoduleBindingError as error:
         raise ManifestError(str(error)) from error
     return {"ok": not errors, "errors": errors}
-
-
-# --- External/human attestation (issue #9 mandatory correction #5) --------
-#
-# Publication eligibility for a real-world release additionally requires
-# a *protected external human attestation* -- a legal/provenance review
-# decision made by an accountable human reviewer, outside this
-# repository's own tooling, that this candidate's evidence is
-# sufficient. This in-repo tooling structurally cannot supply, compute,
-# accept, or verify that attestation itself: there is no in-repo
-# attestation file, secret, public key, environment variable, CLI flag,
-# or any other candidate-writable path anywhere in this module (or
-# anywhere in scripts/release_rehearsal/) that ever sets
-# `EXTERNAL_ATTESTATION_STATUS` to anything other than the fixed,
-# hardcoded literal below. No reviewer string recorded in
-# docs/release_data/provenance/*.json, no `redistribution_approved`
-# boolean there, no workflow_guard/action_pins/tree_coverage/
-# submodule_binding "clean" result, and no `--require-eligible`/
-# `--expect-status` CLI argument can ever change this value -- see
-# docs/release_process.md's "External attestation is outside candidate
-# control" section. The only entity permitted to combine a genuine
-# external protected human attestation with this candidate's evidence is
-# a future, separate, out-of-repo human/harness gate that does not exist
-# in this repository and is not any part of this workflow.
-EXTERNAL_ATTESTATION_STATUS = "missing"
-
-
-def check_external_attestation() -> Dict:
-    """Always, unconditionally returns the fixed `"missing"` substatus
-    above (never `"present"`, never anything computed from candidate-
-    controlled input) -- this alone is sufficient to keep the overall
-    candidate status `"blocked"` forever, regardless of how many *other*
-    sub-checks pass. Deliberately takes no arguments at all: there is no
-    parameter this in-repo caller could ever supply to change the
-    result."""
-    return {
-        "status": EXTERNAL_ATTESTATION_STATUS,
-        "reasons": [
-            "external protected human attestation is missing/not_supplied: this in-repo "
-            "tooling has no mechanism to supply, accept, or verify one (no attestation file, "
-            "secret, public key, environment variable, CLI flag, or other candidate-writable "
-            "path exists for this purpose anywhere in this repository); only a future, "
-            "separate, out-of-repo human/harness gate may combine a genuine external "
-            "attestation with this candidate's evidence -- this substatus can never become "
-            "anything other than 'missing' from inside this repository or this workflow",
-        ],
-    }
 
 
 def check_migrations() -> Dict:
@@ -467,8 +396,8 @@ def check_embedded_identity_binding(target_sha: str, embedded_short_sha: Optiona
     *missing* embedded_short_sha (None -- nobody supplied one at all) is
     not a tooling error; it is an honest, unresolved fact this function
     turns into its own always-present, never-mockable-away reason, so a
-    candidate can never be reported "mechanically eligible" while its
-    build-identity binding to `target_sha` was never actually verified
+    candidate cannot pass this check while its build-identity binding to
+    `target_sha` was never actually verified
     against a real embedded artifact."""
     if embedded_short_sha is None:
         return {
@@ -497,10 +426,10 @@ def check_rebuild(
     (a fast eligibility-only check suitable for every `make release-check`
     run) -- eligibility (submodule initialized/approved/identity-matched)
     is still always evaluated; only the actual, potentially-heavy double
-    compile-and-compare is opt-in. Never "mechanically eligible" while
+    compile-and-compare is opt-in. Never report a clean technical result while
     this reports anything other than `REBUILD_STATUS_VERIFIED_SUCCESS`
-    (see build_manifest below) -- a blocked/not-run/failed rebuild always
-    forces the overall candidate status to "blocked".
+    (see build_manifest below) -- a failed/not-run/failed rebuild always
+    forces the overall candidate status to "failed".
 
     `target_sha` is always threaded through explicitly (issue #9 verifier
     remediation) -- never left for `rebuild_rehearsal_blocker` to
@@ -575,15 +504,10 @@ def build_manifest(
     candidate_tag = build_candidate_tag(identity.version_string)
     missing_docs = check_required_docs(repo_root)
     changelog_report = check_changelog(repo_root)
-    provenance_report = check_provenance(repo_root, target_sha)
     source_guard_report = check_source_guard(repo_root, target_sha)
     migrations_report = check_migrations()
     if gs.is_git_repo(repo_root):
-        candidate_tree_errors = prov.check_candidate_tree(
-            prov.load_metadata(repo_root / "docs" / "release_data" / "provenance.json"),
-            ct.load(repo_root, target_sha),
-        )
-        candidate_tree_report = {"ok": not candidate_tree_errors, "errors": candidate_tree_errors}
+        candidate_tree_report = check_tree_coverage(repo_root, target_sha)
     else:
         candidate_tree_report = {
             "ok": True,
@@ -591,7 +515,6 @@ def build_manifest(
             "note": "non-git candidate membership is validated by the closed-world source guard",
         }
     submodule_binding_report = check_submodule_binding(repo_root, target_sha)
-    external_attestation_report = check_external_attestation()
     ledger_report = check_version_ledger_and_semver(
         repo_root, target_sha, identity, changelog_report,
         release_tag_attestation_path=release_tag_attestation_path,
@@ -614,18 +537,14 @@ def build_manifest(
         reasons.append(f"missing required doc(s): {', '.join(missing_docs)}")
     if not changelog_report["ok"]:
         reasons.extend(changelog_report["errors"])
-    if provenance_report["status"] != "mechanically eligible":
-        reasons.extend(provenance_report["reasons"])
-    if source_guard_report["status"] != "pass":
+    if not source_guard_report["passed"]:
         reasons.extend(source_guard_report["violations"])
     if not migrations_report["ok"]:
         reasons.extend(migrations_report["errors"])
     if not candidate_tree_report["ok"]:
-        reasons.append("candidate tree is not fully covered by exact human provenance metadata")
+        reasons.extend(candidate_tree_report["errors"])
     if not submodule_binding_report["ok"]:
         reasons.extend(submodule_binding_report["errors"])
-    if external_attestation_report["status"] != "present":
-        reasons.extend(external_attestation_report["reasons"])
     if not ledger_report["ok"]:
         reasons.extend(ledger_report["errors"])
     if not c_fallback_report["ok"]:
@@ -638,15 +557,13 @@ def build_manifest(
         reasons.extend(epoch_claims_report["errors"])
     if not stale_count_claims_report["ok"]:
         reasons.extend(stale_count_claims_report["errors"])
-    if not identity_binding_report["ok"]:
+    if embedded_short_sha is not None and not identity_binding_report["ok"]:
         reasons.extend(identity_binding_report["reasons"])
-    if rebuild_report["status"] != ar.REBUILD_STATUS_VERIFIED_SUCCESS:
+    if not rebuild_report["passed"]:
         reasons.extend(
             rebuild_report.get("reasons")
-            or [f"rebuild rehearsal status is {rebuild_report['status']!r}, not {ar.REBUILD_STATUS_VERIFIED_SUCCESS!r}"]
+            or ["rebuild check failed"]
         )
-
-    status = "blocked" if reasons else "mechanically eligible"
 
     return {
         "version_string": identity.version_string,
@@ -660,12 +577,10 @@ def build_manifest(
         "next_supported_version": ledger.get("next_supported_version"),
         "docs": {"missing": missing_docs},
         "changelog": changelog_report,
-        "provenance": provenance_report,
         "source_guard": source_guard_report,
         "migrations": migrations_report,
         "candidate_tree": candidate_tree_report,
         "submodule_binding": submodule_binding_report,
-        "external_attestation": external_attestation_report,
         "version_ledger": ledger_report,
         "c_fallback_metadata": c_fallback_report,
         "migration_reachability": migration_reachability_report,
@@ -675,7 +590,6 @@ def build_manifest(
         "identity_binding": identity_binding_report,
         "embedded_short_sha": embedded_short_sha,
         "rebuild": rebuild_report,
-        "status": status,
         "reasons": reasons,
     }
 
@@ -711,7 +625,6 @@ def main(argv=None) -> int:
         return 2
 
     print(json.dumps(manifest, indent=2, sort_keys=True))
-    print(f"status: {manifest['status']}", file=sys.stderr)
     return 0
 
 

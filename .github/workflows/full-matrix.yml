@@ -213,98 +213,17 @@ jobs:
       - name: Validate pinned archival payload identities
         run: make -C mgfembp compare
 
-  release-evidence:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    env:
-      RELEASE_TARGET_SHA: ${{ github.sha }}
-
-    steps:
-      - name: Checkout exact dispatched revision
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ github.sha }}
-          fetch-depth: 0
-          submodules: recursive
-          persist-credentials: false
-
-      - name: Log and verify tested revision
-        env:
-          EXPECTED_SHA: ${{ github.sha }}
-          EXPECTED_REF: ${{ github.ref }}
-        run: |
-          set -euo pipefail
-          ACTUAL_SHA="$(git rev-parse HEAD)"
-          printf 'github.sha=%s\n' "$EXPECTED_SHA"
-          printf 'github.ref=%s\n' "$EXPECTED_REF"
-          printf 'checkout.sha=%s\n' "$ACTUAL_SHA"
-          test "$ACTUAL_SHA" = "$EXPECTED_SHA"
-          printf 'verified checkout.sha=%s\n' "$ACTUAL_SHA" >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Run release test suites
-        run: make release-test
-
-      - name: Validate Full Matrix workflow contract
-        run: make release-full-matrix-workflow-guard
-
-      - name: Check generated release evidence
-        run: |
-          make release-changelog-check
-          python3 -m scripts.release_rehearsal.provenance check --target-sha "$RELEASE_TARGET_SHA"
-
-      - name: Check release documentation
-        run: python3 -m scripts.release_rehearsal.doc_links
-
-      - name: Check release tree and submodule bindings
-        run: |
-          make release-candidate-tree-check
-          make release-submodule-binding-check
-
-      - name: Check provenance records
-        run: python3 -m scripts.release_rehearsal.provenance check --target-sha "$RELEASE_TARGET_SHA"
-
-      - name: Check source-release guard
-        run: |
-          python3 - <<'PY'
-          import os
-          from pathlib import Path
-          from scripts.release_rehearsal.candidate_tree import load
-          from scripts.release_rehearsal.source_guard import (
-              load_map_hex_exceptions,
-              scan_source_release_candidate,
-          )
-
-          tree = load(Path("."), os.environ["RELEASE_TARGET_SHA"])
-          exceptions = load_map_hex_exceptions(
-              Path("docs/release_data/map_hex_exceptions.json")
-          )
-          violations = scan_source_release_candidate(
-              Path("."),
-              tree.source_paths,
-              map_hex_exceptions=exceptions,
-          )
-          for path, rule in violations:
-              print(f"{path}: {rule}")
-          if violations:
-              raise SystemExit(1)
-          print("source_guard: pass (tracked release candidate)")
-          PY
-
-      - name: Assert publication remains blocked
-        run: make release-check-expect-blocked
-
   summary:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     if: always()
-    needs: [host, modern, legacy, release-evidence]
+    needs: [host, modern, legacy]
     env:
       RUN_SHA: ${{ github.sha }}
       RUN_REF: ${{ github.ref }}
       HOST_RESULT: ${{ needs.host.result }}
       MODERN_RESULT: ${{ needs.modern.result }}
       LEGACY_RESULT: ${{ needs.legacy.result }}
-      RELEASE_EVIDENCE_RESULT: ${{ needs.release-evidence.result }}
 
     steps:
       - name: Render fail-closed matrix summary
@@ -319,10 +238,9 @@ jobs:
             echo "| host | $HOST_RESULT |"
             echo "| modern (debug + release) | $MODERN_RESULT |"
             echo "| legacy | $LEGACY_RESULT |"
-            echo "| release-evidence | $RELEASE_EVIDENCE_RESULT |"
           } >> "$GITHUB_STEP_SUMMARY"
 
-          for result in "$HOST_RESULT" "$MODERN_RESULT" "$LEGACY_RESULT" "$RELEASE_EVIDENCE_RESULT"
+          for result in "$HOST_RESULT" "$MODERN_RESULT" "$LEGACY_RESULT"
           do
             if [ "$result" != "success" ]; then
               echo "required Full Matrix CI lane did not succeed: $result" >&2

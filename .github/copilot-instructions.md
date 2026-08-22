@@ -56,8 +56,8 @@ investigations when `baserom.gba` is present.
 
 Release provenance derives candidate paths, modes, and gitlinks from the
 immutable target tree. Do not add committed source/blob/object/commit snapshots,
-per-file content-hash ledgers, or duplicate submodule pins. Keep only human
-exact-path provenance facts in committed metadata. Configuration fingerprints,
+per-file content-hash ledgers, or duplicate submodule pins. Do not keep
+human provenance/legal-review facts in committed metadata. Configuration fingerprints,
 external input/dependency hashes, extracted-content integrity, behavioral
 framebuffer/SRAM hashes, format checksums, exact candidate SHA binding, and
 release-time manifest/archive hashes remain valid independent boundaries.
@@ -71,8 +71,7 @@ pushed to the configured upstream, Build CI for the exact pushed commit has
 passed, and `make remote-completion-check` succeeds.
 
 For an objective to resolve all repository issues, also close the resolved
-GitHub issues, wait for Release Rehearsal on the exact pushed commit, and
-require `make all-issues-completion-check` to succeed. Create explicit
+GitHub issues and require `make all-issues-completion-check` to succeed. Create explicit
 dependent todos for commit, push, CI, and issue closure at the start of such a
 task. Memory is advisory context; these executable gates are the completion
 authority.

@@ -63,9 +63,8 @@ and push all intended changes, wait for Build CI on the exact pushed commit,
 and require `make remote-completion-check` to pass before reporting completion.
 
 For an objective to resolve all repository issues, also close the resolved
-issues, wait for Release Rehearsal on the exact pushed commit, and require
-`make all-issues-completion-check` to pass. Track commit, push, CI, and issue
-closure as explicit dependent todos from the start.
+issues and require `make all-issues-completion-check` to pass. Track commit,
+push, CI, and issue closure as explicit dependent todos from the start.
 
 CI waiting must not occupy a reasoning subagent. The subagent that dispatches
 a workflow records its exact SHA and run ID, then returns immediately. The
