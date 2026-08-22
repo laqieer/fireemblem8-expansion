@@ -81,10 +81,9 @@ class HqMixerConfigurationTests(unittest.TestCase):
         result = run(
             [
                 "make",
-                "-rR",
-                "-pn",
-                "__hq_mixer_archival_rejection_probe__",
+                "-n",
                 "legacy",
+                "MAKE=:",
                 "EXPANSION_HQ_MIXER=1",
             ]
         )
@@ -95,12 +94,12 @@ class HqMixerConfigurationTests(unittest.TestCase):
         result = run(
             [
                 "make",
-                "-rR",
-                "-pn",
-                "__hq_mixer_archival_default_probe__",
-                "MAKECMDGOALS=legacy",
+                "-n",
+                "legacy",
+                "MAKE=:",
             ]
         )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertNotIn("unsupported by the archival lane", result.stdout + result.stderr)
 
     def test_resolved_modern_link_inputs_only_include_hq_source_when_enabled(self) -> None:
@@ -177,9 +176,17 @@ class HqMixerCompiledArtifactTests(unittest.TestCase):
             self.assertEqual(mixer_size, hq.HQ_NO_REVERB_CODE_BYTES)
             self.assertEqual(mixer_end - mixer, hq.HQ_NO_REVERB_CODE_BYTES)
 
-    def test_disabled_linker_placeholders_are_not_real_hq_definitions(self) -> None:
-        with mock.patch.object(hq, "resolve_elf_symbol", return_value=(0, 0)):
+    def test_disabled_hq_symbols_must_be_absent(self) -> None:
+        with mock.patch.object(
+            hq,
+            "resolve_elf_symbol",
+            side_effect=hq.ProbeBindingError("symbol missing"),
+        ):
             hq.require_absent_symbol(Path("disabled.elf"), "SoundMainRAM_End", "nm")
+
+        with mock.patch.object(hq, "resolve_elf_symbol", return_value=(0, 0)):
+            with self.assertRaisesRegex(RuntimeError, "must be absent"):
+                hq.require_absent_symbol(Path("disabled.elf"), "SoundMainRAM_End", "nm")
 
         with mock.patch.object(hq, "resolve_elf_symbol", return_value=(0x08000000, 4)):
             with self.assertRaisesRegex(RuntimeError, "must be absent"):
