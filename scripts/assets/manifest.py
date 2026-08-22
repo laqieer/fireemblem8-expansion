@@ -780,6 +780,7 @@ class TiledTmxMapLayoutKind(ChapterMapLayoutKind):
 
     def make_dependencies(self, record):
         mar_path, metadata_path, lz_path = self._output_paths(record, "$(ASSET_OUTPUT_DIR)")
+        bin_path = lz_path[:-3]
         generated_sources = (mar_path, metadata_path)
         return (
             (self._object, record.sources),
@@ -787,6 +788,7 @@ class TiledTmxMapLayoutKind(ChapterMapLayoutKind):
             (self._map_object, (lz_path,) + tuple(record.sources)),
             (self._modern_map_object, (lz_path,) + tuple(record.sources)),
             (generated_sources, tuple(record.sources) + ("$(ASSET_MANIFEST)",)),
+            (bin_path, generated_sources),
         )
 
 

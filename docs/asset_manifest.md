@@ -94,9 +94,12 @@ The generated dependency fragment attaches the TMX source to the existing
 table object and makes the existing `const_data_chapter_maps.o` depend on its
 ignored generated `.mar`/JSON -> `.bin` -> `.lz` chain. Every declared source
 is also a prerequisite of the generated include, so editing a TMX regenerates
-that chain before Make resolves object prerequisites. It does not emit C,
-assembly, a linker list, or an asset lookup table. The existing `Ch2Map`
-symbol now INCbins that generated LZ stream from the fixed
+that chain before Make resolves object prerequisites. The generated `.bin`
+explicitly depends on both `.mar` and JSON because `mar_to_map.py` reads the
+JSON dimensions for its header; its `.lz` and INCBIN consumer therefore rebuild
+when dimensions change even if the flattened tile bytes do not. It does not
+emit C, assembly, a linker list, or an asset lookup table. The existing
+`Ch2Map` symbol now INCbins that generated LZ stream from the fixed
 `build/generated/assets/` root. `ASSET_OUTPUT_DIR` therefore fails fast only
 when the selected manifest declares a TMX map layout with that literal INCBIN
 consumer. A manifest without a `tiled-tmx-map-layout` record retains the

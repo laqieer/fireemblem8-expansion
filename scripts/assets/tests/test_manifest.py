@@ -9,6 +9,7 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 import unittest
 from unittest import mock
 
@@ -275,6 +276,82 @@ class AssetManifestTests(unittest.TestCase):
                 "gChapterDataAssetTable[GetROMChapterStruct(chIndex)->map.mainLayerId]",
                 handle.read(),
             )
+
+    def test_tmx_metadata_change_rebuilds_bin_lz_and_incbin_consumer(self):
+        source = self.write_manifest([valid_record()])
+        out_dir = os.path.join(TEST_ROOT, "incremental")
+        manifest.generate(source, out_dir)
+        mar_path = os.path.join(out_dir, "tmx", "CH2_MAIN_MAP.mar")
+        metadata_path = os.path.join(out_dir, "tmx", "CH2_MAIN_MAP.json")
+        bin_path = os.path.join(out_dir, "tmx", "CH2_MAIN_MAP.bin")
+        lz_path = bin_path + ".lz"
+        consumer_path = os.path.join(TEST_ROOT, "incbin.o")
+        consumer_target = os.path.relpath(consumer_path, REPO_ROOT)
+        makefile_path = os.path.join(TEST_ROOT, "incremental.mk")
+        with open(makefile_path, "w", encoding="utf-8") as handle:
+            handle.write(
+                "ASSET_OUTPUT_DIR := {out_dir}\n"
+                "MODERN_OUTPUT_DIR := {out_dir}/modern\n"
+                "MARTOMAP := {python} {mar_to_map}\n"
+                "GBAGFX := {gbagfx}\n"
+                "include {fragment}\n"
+                "\n"
+                "%.bin: %.mar\n"
+                "\t$(MARTOMAP) $< $@\n"
+                "%.bin.lz: %.bin\n"
+                "\t$(GBAGFX) $< $@\n"
+                "{consumer}: $(ASSET_OUTPUT_DIR)/tmx/CH2_MAIN_MAP.bin.lz\n"
+                "\tcp $< $@\n".format(
+                    out_dir=out_dir,
+                    python=sys.executable,
+                    mar_to_map=os.path.join(REPO_ROOT, "scripts", "mar_to_map.py"),
+                    gbagfx=os.path.join(REPO_ROOT, "tools", "gbagfx", "gbagfx"),
+                    fragment=os.path.join(out_dir, manifest.OUTPUT_MAKEFILE),
+                    consumer=consumer_target,
+                )
+            )
+
+        def build_consumer():
+            return subprocess.run(
+                ["make", "-f", makefile_path, consumer_target],
+                cwd=REPO_ROOT,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+
+        first = build_consumer()
+        self.assertEqual(first.returncode, 0, first.stderr)
+        with open(mar_path, "rb") as handle:
+            mar_before = handle.read()
+        with open(bin_path, "rb") as handle:
+            bin_before = handle.read()
+        with open(lz_path, "rb") as handle:
+            lz_before = handle.read()
+        with open(consumer_path, "rb") as handle:
+            consumer_before = handle.read()
+        self.assertEqual(bin_before[:2], b"\x0f\x0f")
+
+        with open(metadata_path, "wb") as handle:
+            handle.write(tmx.render_metadata("Ch2Map", 9, 25))
+        modified_at = max(time.time_ns(), os.stat(bin_path).st_mtime_ns + 1)
+        os.utime(metadata_path, ns=(modified_at, modified_at))
+
+        second = build_consumer()
+        self.assertEqual(second.returncode, 0, second.stderr)
+        with open(mar_path, "rb") as handle:
+            self.assertEqual(handle.read(), mar_before)
+        with open(bin_path, "rb") as handle:
+            bin_after = handle.read()
+        with open(lz_path, "rb") as handle:
+            lz_after = handle.read()
+        with open(consumer_path, "rb") as handle:
+            consumer_after = handle.read()
+        self.assertEqual(bin_after[:2], b"\x09\x19")
+        self.assertNotEqual(bin_after, bin_before)
+        self.assertNotEqual(lz_after, lz_before)
+        self.assertNotEqual(consumer_after, consumer_before)
+        self.assertEqual(consumer_after, lz_after)
 
     def test_tmx_synthetic_positive_and_adversarial_fixtures(self):
         width, height, values = tmx.parse_tmx(
