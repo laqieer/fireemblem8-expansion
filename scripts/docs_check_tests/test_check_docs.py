@@ -1,4 +1,6 @@
+import copy
 import importlib.util
+import json
 import os
 import re
 import subprocess
@@ -674,6 +676,229 @@ class InventoryTests(unittest.TestCase):
             self._write_inventory(root, "- a.md |  | current | test doc")
             _, errors = check_docs.parse_inventory(root)
             self.assertTrue(any("empty owner" in e for e in errors))
+
+
+# ---------------------------------------------------------------------------
+# Tester-case catalog fixtures
+# ---------------------------------------------------------------------------
+
+class TesterCaseRegistryTests(unittest.TestCase):
+    def _valid_registry(self):
+        return {
+            "schema_version": 1,
+            "coverage": {
+                "mode": "foundation",
+                "expected_feature_ids": ["sample-feature"],
+                "deferred_issues": [
+                    "https://github.com/laqieer/fireemblem8-expansion/issues/55"
+                ],
+                "reason": "The remaining feature families are owned by their backfill issues.",
+            },
+            "features": [{
+                "id": "sample-feature",
+                "title": "Sample feature",
+                "issue_urls": [
+                    "https://github.com/laqieer/fireemblem8-expansion/issues/54"
+                ],
+                "reference": "docs/reference.md",
+                "status": "current",
+                "required_cases": ["TC-SAMPLE-001"],
+            }],
+            "cases": [{
+                "id": "TC-SAMPLE-001",
+                "title": "Sample procedure",
+                "feature_id": "sample-feature",
+                "issue_urls": [
+                    "https://github.com/laqieer/fireemblem8-expansion/issues/54"
+                ],
+                "document": "docs/case.md",
+                "anchor": "tc-sample-001-sample-procedure",
+                "profiles": ["Clean source checkout"],
+                "purpose": "Proves the catalog contract.",
+                "prerequisites": "Start at the repository root.",
+                "actions": "Run the focused test.",
+                "expected_result": "The checker accepts valid data.",
+                "negative_control": "Broken data is rejected.",
+                "interactions": "No runtime interaction.",
+                "save_compatibility": "No save impact.",
+                "cleanup": "No cleanup.",
+                "limitations": "Only the generic schema is covered.",
+                "automation": [{
+                    "command": "python3 -m unittest tests.test_case",
+                    "evidence": "tests/test_case.py",
+                }],
+            }],
+        }
+
+    def _write_registry_fixture(self, root, registry):
+        write(root, "docs/reference.md", "# Reference\n")
+        write(root, "docs/case.md", "# Cases\n\n## TC-SAMPLE-001: Sample procedure\n")
+        write(root, "tests/test_case.py", "import unittest\n")
+        write(
+            root,
+            check_docs.TEST_CASE_REGISTRY_PATH,
+            json.dumps(registry, indent=2) + "\n",
+        )
+
+    def _messages(self, registry):
+        with TempRepo() as repo:
+            self._write_registry_fixture(repo.root, registry)
+            return [finding.message for finding in check_docs.check_test_case_registry(repo.root)]
+
+    def test_valid_foundation_registry_passes(self):
+        self.assertEqual(self._messages(self._valid_registry()), [])
+
+    def test_real_repository_foundation_registry_passes(self):
+        self.assertEqual(check_docs.check_test_case_registry(REAL_REPO_ROOT), [])
+
+    def test_malformed_and_duplicate_case_ids_fail(self):
+        for case_id in ("not-a-case", "TC-SAMPLE--001"):
+            malformed = self._valid_registry()
+            malformed["cases"][0]["id"] = case_id
+            self.assertTrue(
+                any("malformed case ID" in message for message in self._messages(malformed))
+            )
+
+        duplicate = self._valid_registry()
+        duplicate["cases"].append(copy.deepcopy(duplicate["cases"][0]))
+        self.assertTrue(any("duplicate case ID" in message for message in self._messages(duplicate)))
+
+    def test_malformed_feature_ids_fail(self):
+        for feature_id in ("sample-feature-", "sample--feature"):
+            malformed = self._valid_registry()
+            malformed["features"][0]["id"] = feature_id
+            malformed["cases"][0]["feature_id"] = feature_id
+            malformed["coverage"]["expected_feature_ids"] = [feature_id]
+            self.assertTrue(
+                any("malformed feature ID" in message for message in self._messages(malformed))
+            )
+
+    def test_unknown_feature_and_missing_required_case_fail(self):
+        unknown = self._valid_registry()
+        unknown["cases"][0]["feature_id"] = "unknown-feature"
+        self.assertTrue(any("unknown feature ID" in message for message in self._messages(unknown)))
+
+        missing = self._valid_registry()
+        missing["features"][0]["required_cases"] = ["TC-SAMPLE-002"]
+        self.assertTrue(any("no owned case entry" in message for message in self._messages(missing)))
+
+    def test_required_fields_and_automation_evidence_fail_closed(self):
+        placeholder = self._valid_registry()
+        placeholder["cases"][0]["actions"] = "TODO"
+        self.assertTrue(any("placeholder actions" in message for message in self._messages(placeholder)))
+
+        automation = self._valid_registry()
+        automation["cases"][0]["automation"][0]["evidence"] = "tests/missing.py"
+        self.assertTrue(any("no real command/scenario/test evidence" in message
+                            for message in self._messages(automation)))
+
+        directory = self._valid_registry()
+        directory["cases"][0]["automation"][0]["evidence"] = "tests"
+        self.assertTrue(any("no real command/scenario/test evidence" in message
+                            for message in self._messages(directory)))
+
+    def test_manual_only_rationale_is_a_valid_automation_alternative(self):
+        manual_only = self._valid_registry()
+        manual_only["cases"][0]["automation"] = []
+        manual_only["cases"][0]["manual_only_reason"] = (
+            "A subjective visual accessibility judgment requires a human tester."
+        )
+        self.assertEqual(self._messages(manual_only), [])
+
+        missing_evidence = self._valid_registry()
+        missing_evidence["cases"][0]["automation"] = []
+        self.assertTrue(any("deterministic automation or an explicit manual_only_reason" in message
+                            for message in self._messages(missing_evidence)))
+
+        placeholder_rationale = self._valid_registry()
+        placeholder_rationale["cases"][0]["automation"] = []
+        placeholder_rationale["cases"][0]["manual_only_reason"] = "TODO"
+        self.assertTrue(any("manual_only_reason must be an explicit" in message
+                            for message in self._messages(placeholder_rationale)))
+
+        malformed_automation = self._valid_registry()
+        malformed_automation["cases"][0]["automation"] = {}
+        malformed_automation["cases"][0]["manual_only_reason"] = (
+            "A subjective visual accessibility judgment requires a human tester."
+        )
+        self.assertTrue(any("automation must be a list" in message
+                            for message in self._messages(malformed_automation)))
+
+    def test_broken_reference_document_and_case_anchor_fail(self):
+        reference = self._valid_registry()
+        reference["features"][0]["reference"] = "docs/missing.md"
+        self.assertTrue(any("missing document" in message for message in self._messages(reference)))
+
+        anchor = self._valid_registry()
+        anchor["cases"][0]["anchor"] = "missing-anchor"
+        self.assertTrue(any("missing anchor" in message for message in self._messages(anchor)))
+
+    def test_placeholder_case_anchor_has_single_precise_error(self):
+        anchor = self._valid_registry()
+        anchor["cases"][0]["anchor"] = "TODO"
+        messages = self._messages(anchor)
+        self.assertEqual(
+            [message for message in messages if "anchor" in message],
+            ["case entry 1 has empty or placeholder anchor"],
+        )
+
+    def test_registry_paths_cannot_escape_through_symlinks(self):
+        with TempRepo() as repo:
+            registry = self._valid_registry()
+            self._write_registry_fixture(repo.root, registry)
+            outside = write(
+                os.path.dirname(repo.root),
+                os.path.basename(repo.root) + "-registry-outside.md",
+                "# Outside reference\n",
+            )
+            os.symlink(outside, os.path.join(repo.root, "docs", "outside.md"))
+            registry["features"][0]["reference"] = "docs/outside.md"
+            write(
+                repo.root,
+                check_docs.TEST_CASE_REGISTRY_PATH,
+                json.dumps(registry, indent=2) + "\n",
+            )
+            messages = [
+                finding.message for finding in check_docs.check_test_case_registry(repo.root)
+            ]
+            self.assertTrue(any("missing document" in message for message in messages))
+
+    def test_current_and_excluded_feature_lifecycle_rules_fail(self):
+        uncovered = self._valid_registry()
+        uncovered["features"][0]["required_cases"] = []
+        self.assertTrue(any("has no required tester case" in message
+                            for message in self._messages(uncovered)))
+
+        excluded = self._valid_registry()
+        excluded["features"][0]["status"] = "excluded"
+        excluded["features"][0].pop("reason", None)
+        self.assertTrue(any("requires an explicit non-placeholder reason" in message
+                            for message in self._messages(excluded)))
+
+    def test_foundation_deferral_and_complete_coverage_rules_fail_closed(self):
+        foundation = self._valid_registry()
+        foundation["coverage"]["reason"] = "TBD"
+        self.assertTrue(any("deferral reason" in message for message in self._messages(foundation)))
+
+        complete = self._valid_registry()
+        complete["coverage"]["mode"] = "complete"
+        complete["coverage"]["deferred_issues"] = []
+        complete["coverage"]["expected_feature_ids"] = ["sample-feature", "missing-feature"]
+        self.assertTrue(any("absent from the registry" in message
+                            for message in self._messages(complete)))
+
+        omitted = self._valid_registry()
+        omitted["coverage"]["mode"] = "complete"
+        omitted["coverage"]["deferred_issues"] = []
+        omitted_feature = copy.deepcopy(omitted["features"][0])
+        omitted_feature["id"] = "another-feature"
+        omitted_feature["required_cases"] = ["TC-ANOTHER-001"]
+        omitted["features"].append(omitted_feature)
+        omitted_case = copy.deepcopy(omitted["cases"][0])
+        omitted_case["id"] = "TC-ANOTHER-001"
+        omitted_case["feature_id"] = "another-feature"
+        omitted["cases"].append(omitted_case)
+        self.assertTrue(any("omits current feature" in message for message in self._messages(omitted)))
 
 
 # ---------------------------------------------------------------------------
