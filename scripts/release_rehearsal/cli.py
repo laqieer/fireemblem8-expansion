@@ -102,6 +102,28 @@ def cmd_summary(args) -> int:
     return EXIT_TECHNICAL_FAILURE if _technical_failures(report) else EXIT_OK
 
 
+def cmd_candidate_tree(args) -> int:
+    target_sha = rm.resolve_target_sha(args.repo_root, args.target_sha)
+    if not gs.is_git_repo(args.repo_root):
+        raise rm.ManifestError("candidate-tree check requires a Git repository")
+    tree = ct.load(args.repo_root, target_sha)
+    report = {
+        "target_sha": target_sha,
+        "entry_count": len(tree.entries),
+        "source_count": len(tree.source_entries),
+        "gitlinks": [
+            {
+                "path": entry.path,
+                "mode": entry.mode,
+                "commit": entry.object_id,
+            }
+            for entry in tree.gitlink_entries
+        ],
+    }
+    print(json.dumps(report, indent=2, sort_keys=True))
+    return EXIT_OK
+
+
 def cmd_rehearse(args) -> int:
     target_sha = rm.resolve_target_sha(args.repo_root, args.target_sha)
     if not gs.is_git_repo(args.repo_root):
@@ -114,10 +136,12 @@ def cmd_rehearse(args) -> int:
     )
     report = _manifest(args)
     report["archive"] = archive
-    print(json.dumps(report, indent=2, sort_keys=True))
     failures = _technical_failures(report)
     if not archive["match"]:
-        failures.append("deterministic archive hashes differ")
+        mismatch = "deterministic archive hashes differ"
+        failures.append(mismatch)
+        report.setdefault("reasons", []).append(mismatch)
+    print(json.dumps(report, indent=2, sort_keys=True))
     for reason in failures:
         print(f"release-rehearse: {reason}", file=sys.stderr)
     return EXIT_TECHNICAL_FAILURE if failures else EXIT_OK
@@ -136,13 +160,15 @@ def _add_common(parser) -> None:
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
-    for name in ("check", "rehearse", "summary"):
+    for name in ("candidate-tree", "check", "rehearse", "summary"):
         command = sub.add_parser(name)
         _add_common(command)
     args = parser.parse_args(argv)
     try:
         if args.command == "check":
             return cmd_check(args)
+        if args.command == "candidate-tree":
+            return cmd_candidate_tree(args)
         if args.command == "rehearse":
             return cmd_rehearse(args)
         if args.command == "summary":

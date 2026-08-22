@@ -42,7 +42,7 @@ release-check:
 	$(PYTHON) -m scripts.release_rehearsal.cli check --target-sha $(RELEASE_TARGET_SHA)
 
 release-candidate-tree-check:
-	$(PYTHON) -m scripts.release_rehearsal.cli check --target-sha $(RELEASE_TARGET_SHA)
+	$(PYTHON) -m scripts.release_rehearsal.cli candidate-tree --target-sha $(RELEASE_TARGET_SHA)
 
 release-submodule-binding-check:
 	$(PYTHON) -m scripts.release_rehearsal.submodule_binding
