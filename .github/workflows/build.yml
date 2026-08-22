@@ -240,7 +240,6 @@ jobs:
     env:
       BASEROM_URL: ${{ secrets.BASEROM_URL }}
       PATCH_COMMIT: ${{ github.sha }}
-      PATCH_ARTIFACT_DIR: ${{ runner.temp }}/patch-artifact
 
     steps:
     - uses: actions/checkout@v7
@@ -266,6 +265,8 @@ jobs:
         python3 -m scripts.modernize.patch_release create --base "$base_image" --target "$target_image" --metadata build/expansion-modern-all-locales-all-features/release/aapcs/generated/expansion_build_metadata.json --output-dir "$PATCH_ARTIFACT_DIR" --commit "$PATCH_COMMIT"
         python3 -m scripts.modernize.patch_release verify --base "$base_image" --artifact-dir "$PATCH_ARTIFACT_DIR"
         find "$PATCH_ARTIFACT_DIR" -maxdepth 1 -type f -printf '%f\n' | sort | diff -u - <(printf '%s\n' fireemblem8-expansion-all-locales-all-features-aapcs.bps manifest.json README.txt)
+      env:
+        PATCH_ARTIFACT_DIR: ${{ runner.temp }}/patch-artifact
 
     - uses: actions/upload-artifact@v7
       with:

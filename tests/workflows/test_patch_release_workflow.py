@@ -30,6 +30,14 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
         self.assertIn("--proto '=https'", self.patch_job)
         self.assertNotIn("set -x", self.patch_job)
 
+    def test_runner_context_is_scoped_to_steps(self):
+        job_header = self.patch_job.split("\n    steps:\n", 1)[0]
+        self.assertNotIn("runner.temp", job_header)
+        self.assertIn(
+            "PATCH_ARTIFACT_DIR: ${{ runner.temp }}/patch-artifact",
+            self.patch_job,
+        )
+
     def test_artifact_is_exactly_named_allowlisted_and_retained_for_30_days(self):
         self.assertIn(
             "modern-release-all-locales-all-features-aapcs-bps-${{ github.sha }}",
