@@ -27,12 +27,6 @@ MEANINGFUL_TEST_POLICY_TERMS = {
         "compile/link properties",
         "runtime state",
     ),
-    "Prohibited evidence": (
-        "arbitrary strings",
-        "Git-tracked text file",
-        "Git already preserves that text",
-        "does not prove the implementation works",
-    ),
     "Static-contract exception": (
         "documented public format",
         "security boundary",
@@ -62,11 +56,19 @@ MARKDOWN_HEADING = re.compile(r"^#{2,6} (?P<heading>.+)$")
 MEANINGFUL_TEST_POLICY_CLAUSE = re.compile(
     r"^- \*\*(?P<name>[^*:]+):\*\* (?P<value>.+)$"
 )
-MEANINGFUL_TEST_POLICY_FORBIDDEN_TERMS = {
-    "Prohibited evidence": (
-        "source-text-only test is permitted",
-    ),
-}
+MEANINGFUL_TEST_POLICY_ITEM = re.compile(
+    r"^  - \*\*(?P<name>[^*:]+):\*\* "
+    r"(?P<status>[a-z-]+)(?:\. (?P<detail>.+))?$"
+)
+PROHIBITED_EVIDENCE_CATEGORIES = (
+    "arbitrary strings",
+    "comments",
+    "helper names",
+    "line numbers",
+    "ordering",
+    "implementation spelling",
+)
+GIT_TEXT_RATIONALE = "Git-text rationale"
 
 
 def read_skill():
@@ -126,9 +128,23 @@ def parse_meaningful_test_policy(text):
             clause_name = match.group("name")
             if clause_name in clauses:
                 raise AssertionError(f"duplicate policy clause: {clause_name}")
-            clauses[clause_name] = [match.group("value")]
+            clauses[clause_name] = {
+                "text": [match.group("value")],
+                "items": {},
+            }
+        elif match := MEANINGFUL_TEST_POLICY_ITEM.match(line):
+            if clause_name is None:
+                raise AssertionError(f"orphaned policy item: {match.group('name')}")
+            items = clauses[clause_name]["items"]
+            item_name = match.group("name")
+            if item_name in items:
+                raise AssertionError(f"duplicate policy item: {item_name}")
+            items[item_name] = {
+                "status": match.group("status"),
+                "detail": match.group("detail") or "",
+            }
         elif clause_name is not None and line.startswith("  ") and line.strip():
-            clauses[clause_name].append(line.strip())
+            clauses[clause_name]["text"].append(line.strip())
 
     expected = set(MEANINGFUL_TEST_POLICY_CLAUSES)
     actual = set(clauses)
@@ -136,21 +152,28 @@ def parse_meaningful_test_policy(text):
         raise AssertionError(
             f"policy clauses differ: missing={expected - actual}, extra={actual - expected}"
         )
-    return {name: " ".join(clauses[name]) for name in MEANINGFUL_TEST_POLICY_CLAUSES}
+    return {
+        name: {
+            "text": " ".join(clauses[name]["text"]),
+            "items": clauses[name]["items"],
+        }
+        for name in MEANINGFUL_TEST_POLICY_CLAUSES
+    }
 
 
 def render_meaningful_test_policy(clauses, clause_order):
-    return "\n".join(
-        [
-            f"## {MEANINGFUL_TEST_POLICY_HEADING}",
-            "",
-            *[
-                f"- **{name}:** {clauses[name]}"
-                for name in clause_order
-            ],
-            "",
-        ]
-    )
+    lines = [f"## {MEANINGFUL_TEST_POLICY_HEADING}", ""]
+    for name in clause_order:
+        clause = clauses[name]
+        lines.append(f"- **{name}:** {clause['text']}")
+        for item_name, item in clause["items"].items():
+            detail = f". {item['detail']}" if item["detail"] else ""
+            lines.append(f"  - **{item_name}:** {item['status']}{detail}")
+    return "\n".join([*lines, ""])
+
+
+def normalize_policy_text(text):
+    return text.replace("behaviour", "behavior")
 
 
 class DevelopmentWorkflowSkillTests(unittest.TestCase):
@@ -158,10 +181,34 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
         clauses = parse_meaningful_test_policy(text)
         for clause_name, terms in MEANINGFUL_TEST_POLICY_TERMS.items():
             for term in terms:
-                self.assertIn(term, clauses[clause_name], f"{clause_name}: {term}")
-        for clause_name, terms in MEANINGFUL_TEST_POLICY_FORBIDDEN_TERMS.items():
-            for term in terms:
-                self.assertNotIn(term, clauses[clause_name], f"{clause_name}: {term}")
+                self.assertIn(
+                    term,
+                    normalize_policy_text(clauses[clause_name]["text"]),
+                    f"{clause_name}: {term}",
+                )
+
+        prohibited_items = clauses["Prohibited evidence"]["items"]
+        expected_items = {*PROHIBITED_EVIDENCE_CATEGORIES, GIT_TEXT_RATIONALE}
+        self.assertEqual(
+            expected_items,
+            set(prohibited_items),
+            "Prohibited evidence categories differ",
+        )
+        for category in PROHIBITED_EVIDENCE_CATEGORIES:
+            self.assertEqual(
+                "prohibited",
+                prohibited_items[category]["status"],
+                f"{category} must remain prohibited",
+            )
+        self.assertEqual(
+            "required",
+            prohibited_items[GIT_TEXT_RATIONALE]["status"],
+            "Git-text rationale must remain required",
+        )
+        self.assertTrue(
+            prohibited_items[GIT_TEXT_RATIONALE]["detail"],
+            "Git-text rationale must explain the prohibition",
+        )
         return clauses
 
     def test_frontmatter_matches_project_skill_directory(self):
@@ -320,9 +367,28 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                     path.read_text(encoding="utf-8")
                 )
                 if canonical is None:
-                    canonical = clauses
+                    canonical = {
+                        name: {
+                            "items": {
+                                item_name: item["status"]
+                                for item_name, item in clause["items"].items()
+                            }
+                        }
+                        for name, clause in clauses.items()
+                    }
                 else:
-                    self.assertEqual(canonical, clauses)
+                    self.assertEqual(
+                        canonical,
+                        {
+                            name: {
+                                "items": {
+                                    item_name: item["status"]
+                                    for item_name, item in clause["items"].items()
+                                }
+                            }
+                            for name, clause in clauses.items()
+                        },
+                    )
 
         _, skill = read_skill()
         clauses = self.assert_meaningful_test_policy(skill)
@@ -335,11 +401,22 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
         )
 
         self.assertEqual(clauses, parse_meaningful_test_policy(reordered))
+        self.assert_meaningful_test_policy(
+            render_meaningful_test_policy(
+                clauses, MEANINGFUL_TEST_POLICY_CLAUSES
+            ).replace("behavior", "behaviour")
+        )
 
-        mutation = dict(clauses)
-        mutation["Static-contract exception"] = mutation[
+        mutation = {
+            name: {
+                "text": clause["text"],
+                "items": dict(clause["items"]),
+            }
+            for name, clause in clauses.items()
+        }
+        mutation["Static-contract exception"]["text"] = mutation[
             "Static-contract exception"
-        ].replace(
+        ]["text"].replace(
             "functional, parsed, compiled, or runtime evidence cannot replace it",
             "the assertion is convenient",
         )
@@ -355,14 +432,35 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             )
 
         mutation = dict(clauses)
-        mutation["Prohibited evidence"] += (
-            " A source-text-only test is permitted when its expected phrase exists."
-        )
+        mutation["Prohibited evidence"] = {
+            "text": clauses["Prohibited evidence"]["text"],
+            "items": dict(clauses["Prohibited evidence"]["items"]),
+        }
+        del mutation["Prohibited evidence"]["items"]["helper names"]
 
         with self.assertRaisesRegex(
             AssertionError,
-            "source-text-only test is permitted",
+            "Prohibited evidence categories differ",
         ):
+            self.assert_meaningful_test_policy(
+                render_meaningful_test_policy(
+                    mutation, MEANINGFUL_TEST_POLICY_CLAUSES
+                )
+            )
+
+        mutation = {
+            name: {
+                "text": clause["text"],
+                "items": dict(clause["items"]),
+            }
+            for name, clause in clauses.items()
+        }
+        mutation["Prohibited evidence"]["items"]["comments"] = {
+            "status": "permitted",
+            "detail": "",
+        }
+
+        with self.assertRaisesRegex(AssertionError, "comments must remain prohibited"):
             self.assert_meaningful_test_policy(
                 render_meaningful_test_policy(
                     mutation, MEANINGFUL_TEST_POLICY_CLAUSES

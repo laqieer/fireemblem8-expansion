@@ -110,11 +110,16 @@ The labeled clauses below are the public test-evidence contract for agents.
 
 - **Evidence standard:** Tests must prove behavior, a parsed structural
   contract, generated output, compile/link properties, or runtime state.
-- **Prohibited evidence:** Do not add a test whose only evidence is that
-  arbitrary strings, comments, helper names, line numbers, ordering, or
-  implementation spelling exist or do not exist in a Git-tracked text file.
-  Git already preserves that text, and retaining the expected phrase does not
-  prove the implementation works.
+- **Prohibited evidence:** Do not add a test whose only evidence comes from a
+  listed category; each listed category is prohibited.
+  - **arbitrary strings:** prohibited
+  - **comments:** prohibited
+  - **helper names:** prohibited
+  - **line numbers:** prohibited
+  - **ordering:** prohibited
+  - **implementation spelling:** prohibited
+  - **Git-text rationale:** required. Git already preserves that text, and
+    retaining the expected phrase does not prove the implementation works.
 - **Static-contract exception:** A source-text assertion is permitted only
   when the exact syntax, spelling, or absence is itself a documented public
   format, security boundary, generated-file contract, ABI/layout constraint,
