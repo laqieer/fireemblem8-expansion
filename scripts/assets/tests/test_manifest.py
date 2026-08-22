@@ -885,6 +885,58 @@ class BattleAnimationPackageTests(unittest.TestCase):
             1,
         )
 
+    def test_obj_vram_budget_uses_deduplicated_runtime_payloads(self):
+        with open(os.path.join(REPO_ROOT, "assets", "manifest.json"), encoding="utf-8") as handle:
+            document = json.load(handle)
+        proof = next(record for record in document["assets"] if record["kind"] == "battle-animation-package")
+        path = os.path.join(TEST_ROOT, "manifest.json")
+        package = banim.load_package(
+            REPO_ROOT,
+            "assets/banim/lorm_sp1/package.json",
+            "assets/banim/lorm_sp1/script.txt",
+            {
+                "assets/banim/lorm_sp1/package.json",
+                "assets/banim/lorm_sp1/script.txt",
+                "graphics/banim/banim_lorm_sp1_sheet_0.png",
+            },
+        )
+        duplicate = copy.deepcopy(package)
+        duplicate.data = copy.deepcopy(package.data)
+        duplicate.data["resources"]["maxFrames"] = 2
+        duplicate.data["resources"]["maxSheetTiles"] = 512
+        duplicate.frames["duplicate"] = duplicate.frames["idle"]
+        duplicate.pngs["duplicate"] = duplicate.pngs["idle"]
+        _outputs, _paths, duplicate_metadata = banim.runtime_outputs(duplicate, TEST_ROOT)
+        proof["resources"]["objVramBytes"] = duplicate_metadata["unique_frame_bytes"]
+        proof["resources"]["romBytes"] = duplicate_metadata["runtime_bytes"]
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(document, handle)
+        with mock.patch.object(banim, "load_package", return_value=duplicate):
+            manifest.load_and_validate(path)
+
+        proof["resources"]["romBytes"] = duplicate_metadata["runtime_bytes"] - 1
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(document, handle)
+        with mock.patch.object(banim, "load_package", return_value=duplicate):
+            with self.assertRaises(GeneratedDataValidationError) as raised:
+                manifest.load_and_validate(path)
+        self.assertIn("generated runtime data", str(raised.exception))
+
+        unique = copy.deepcopy(duplicate)
+        unique.pngs["duplicate"] = copy.deepcopy(package.pngs["idle"])
+        unique.pngs["duplicate"]["pixels"] = (
+            b"\x11" + unique.pngs["duplicate"]["pixels"][1:]
+        )
+        _outputs, _paths, unique_metadata = banim.runtime_outputs(unique, TEST_ROOT)
+        proof["resources"]["romBytes"] = unique_metadata["runtime_bytes"]
+        proof["resources"]["objVramBytes"] = duplicate_metadata["unique_frame_bytes"]
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(document, handle)
+        with mock.patch.object(banim, "load_package", return_value=unique):
+            with self.assertRaises(GeneratedDataValidationError) as raised:
+                manifest.load_and_validate(path)
+        self.assertIn("generated frame data", str(raised.exception))
+
     def test_side_specific_frames_emit_distinct_aligned_oam_payloads(self):
         package = banim.load_package(
             REPO_ROOT,

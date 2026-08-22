@@ -532,10 +532,21 @@ def runtime_outputs(package, out_dir):
     for frame_id, png in package.pngs.items():
         if aliases[frame_id] == frame_id:
             outputs[paths["frame_" + frame_id]] = _frame_tiles(png)
+    unique_frame_bytes = sum(
+        len(content)
+        for path, content in outputs.items()
+        if path.endswith(".4bpp")
+    )
+    runtime_bytes = sum(
+        len(content.encode("utf-8")) if isinstance(content, str) else len(content)
+        for content in outputs.values()
+    )
     metadata = {
         "max_oam_entries": max_oam_entries,
         "palette_color_1": struct.unpack("<H", outputs[paths["palette"]][2:4])[0],
         "script_word_count": offset // 4,
         "sound_opcode": sounds[0] if sounds else 0,
+        "unique_frame_bytes": unique_frame_bytes,
+        "runtime_bytes": runtime_bytes,
     }
     return outputs, paths, metadata

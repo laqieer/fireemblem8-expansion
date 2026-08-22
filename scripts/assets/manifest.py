@@ -879,11 +879,11 @@ class BattleAnimationPackageKind:
                         metadata["max_oam_entries"]
                     )
                 )
-            if sum(png["tiles"] * 32 for png in package.pngs.values()) > record.resources["objVramBytes"]:
+            if metadata["unique_frame_bytes"] > record.resources["objVramBytes"]:
                 raise ValueError("generated frame data exceeds resources.objVramBytes")
             if max(png["colors"] for png in package.pngs.values()) > record.resources["paletteColors"]:
                 raise ValueError("generated palette exceeds resources.paletteColors")
-            if sum(len(content) for content in outputs.values()) > record.resources["romBytes"]:
+            if metadata["runtime_bytes"] > record.resources["romBytes"]:
                 raise ValueError("generated runtime data exceeds resources.romBytes")
             self._validate_class_binding(package.data, record)
         except (OSError, ValueError, json.JSONDecodeError) as exc:

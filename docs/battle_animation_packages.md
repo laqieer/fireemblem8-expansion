@@ -92,8 +92,10 @@ v1 emits exactly one runtime palette. The generator
 converts the indexed pixels into 4bpp tile payloads, converts PLTE values to
 the existing 15-bit palette layout, deterministically composes each frame into
 left/right 32x32 OAM records, and emits mode offsets plus relocatable motion
-assembly. It validates the derived 1024-sheet-tile, 32-OAM-entry, 16-palette
-color, 128-total-OAM, 32KiB OBJ-VRAM, and declared ROM bounds before
+assembly. Identical frame payloads share one emitted sheet: OBJ-VRAM budget
+uses that deduplicated emitted-sheet set, while ROM budget separately covers
+every emitted runtime product. It validates the derived 1024-sheet-tile,
+32-OAM-entry, 16-palette color, 128-total-OAM, 32KiB OBJ-VRAM, and declared ROM bounds before
 publishing.
 
 Generation writes only ignored `build/generated/assets/banim/` products:
