@@ -124,7 +124,7 @@ expensive host, modern debug/release, and archival lanes in parallel:
 
 ```bash
 gh workflow run full-matrix.yml --ref master
-gh run watch <run-id> --exit-status
+timeout 90m gh run watch <run-id> --interval 30 --exit-status
 ```
 
 The workflow is `workflow_dispatch`-only, read-only, concurrency-cancelled by

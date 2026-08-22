@@ -1,6 +1,6 @@
-from pathlib import Path
 import re
 import unittest
+from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -12,6 +12,19 @@ PR_TEMPLATE_PATH = ROOT / ".github" / "PULL_REQUEST_TEMPLATE.md"
 CLAUDE_PATH = ROOT / "CLAUDE.md"
 FRAMEWORK_SUPPORT_PATH = ROOT / "docs" / "framework-support.md"
 LOCALIZATION_PATH = ROOT / "docs" / "localization.md"
+WATCHER_DOC_PATHS = (
+    SKILL_PATH,
+    CONTRIBUTING_PATH,
+    FRAMEWORK_SUPPORT_PATH,
+    LOCALIZATION_PATH,
+)
+CANONICAL_WATCHER_COMMAND = (
+    "timeout 90m gh run watch <run-id> --interval 30 --exit-status"
+)
+FENCED_COMMAND_BLOCK = re.compile(
+    r"```(?:bash|sh|shell|text)?\n(?P<commands>.*?)```",
+    re.DOTALL,
+)
 
 
 def normalize_policy(text):
@@ -29,6 +42,16 @@ def assert_normalized_policy(test_case, surface, text, concepts, forbidden=()):
     for clause in forbidden:
         with test_case.subTest(surface=surface, forbidden=clause):
             test_case.assertNotIn(normalize_policy(clause), normalized)
+
+
+def watcher_example_violations(text):
+    violations = []
+    for block in FENCED_COMMAND_BLOCK.finditer(text):
+        for command in block.group("commands").splitlines():
+            normalized = " ".join(command.split())
+            if re.search(r"\bgh run watch\b", normalized) and normalized != CANONICAL_WATCHER_COMMAND:
+                violations.append(normalized)
+    return violations
 
 
 def read_skill():
@@ -231,6 +254,24 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                 path.read_text(encoding="utf-8"),
                 master_only_policy,
             )
+
+    def test_contributor_watcher_examples_are_bounded(self):
+        watcher_examples = []
+        for path in WATCHER_DOC_PATHS:
+            text = path.read_text(encoding="utf-8")
+            watcher_examples.extend(
+                " ".join(command.split())
+                for block in FENCED_COMMAND_BLOCK.finditer(text)
+                for command in block.group("commands").splitlines()
+                if re.search(r"\bgh run watch\b", command)
+            )
+            self.assertEqual(watcher_example_violations(text), [], path)
+
+        self.assertIn(CANONICAL_WATCHER_COMMAND, watcher_examples)
+        self.assertEqual(
+            watcher_example_violations("```bash\ngh run watch <run-id> --exit-status\n```"),
+            ["gh run watch <run-id> --exit-status"],
+        )
 
     def test_issue_specific_pull_request_and_stack_contract(self):
         _, text = read_skill()

@@ -416,7 +416,7 @@ broad host/CJK/runtime matrix once:
 
 ```bash
 gh workflow run full-matrix.yml --ref master
-gh run watch <run-id> --exit-status
+timeout 90m gh run watch <run-id> --interval 30 --exit-status
 ```
 
 The host lane rebuilds the committed locale-source, crosswalk, and raw-closure
