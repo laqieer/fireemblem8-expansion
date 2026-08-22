@@ -887,6 +887,11 @@ $(foreach t,$(GENERATED_DATA_LINKED_TABLES),$(eval $(call GENERATED_DATA_MODERN_
 # consumes that header.
 ifeq ($(EXPANSION_STARTER_CONTENT),1)
 $(MODERN_OUTPUT_DIR)/src/expansion_starter_content.o: $(GENERATED_DATA_CONTENT_TEXT_HEADER)
+# A clean generated-header scan can record the literal include spelling
+# before GCC can resolve the profile-specific -I directory. Keep that bare
+# token as an alias of the real build-local output so any included dependency
+# file remains resolvable across Make's remake/restart cycle.
+$(notdir $(GENERATED_DATA_CONTENT_TEXT_HEADER)): $(GENERATED_DATA_CONTENT_TEXT_HEADER) ;
 endif
 
 # Issue #5 Batch 3a: explicit (non-pattern) compile rule for the `units`

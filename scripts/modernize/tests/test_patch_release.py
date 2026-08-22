@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -155,6 +156,32 @@ class NamedProfileTests(unittest.TestCase):
             "FE8_ITEM_ID_CAP=0xCE",
         ):
             self.assertIn(setting, modern_mk)
+
+    def test_starter_content_header_bare_alias_resolves_on_a_cold_build(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp) / "generated-data"
+            result = subprocess.run(
+                [
+                    "make",
+                    "--no-print-directory",
+                    "-n",
+                    "items_expansion_content_text.h",
+                    "EXPANSION_STARTER_CONTENT=1",
+                    f"GENERATED_DATA_OUT_DIR={output_dir}",
+                ],
+                cwd=ROOT,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                check=False,
+            )
+
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertNotIn("No rule to make target", result.stdout)
+        self.assertIn(
+            f"content-text --out-dir {output_dir}",
+            result.stdout,
+        )
 
 
 if __name__ == "__main__":
