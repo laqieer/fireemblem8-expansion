@@ -1566,3 +1566,9 @@ verify the target ELF omits the backend symbols and ready string. Both cases
 have no save, generated-data, localization, resource allocation, or
 debug-tools-ring interaction; the only debug resource cost is code/ROM data
 measured by the normal linker budget check.
+
+## Tester-facing procedure
+
+[`TC-CORE-006`](test-cases/core-framework.md#tc-core-006-debug-tools-are-debug-only)
+records the clean-boot debug-hub procedure, each bounded tool's semantic
+effect, safe map return, and the release compiled-out negative control.

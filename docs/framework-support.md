@@ -216,6 +216,13 @@ The archival agbcc lane remains explicit and default-only for these expansion
 features. Modern output is judged by link/boot/runtime behavior, never vanilla
 ROM byte identity.
 
+## Tester-facing procedure
+
+[`TC-CORE-009`](test-cases/core-framework.md#tc-core-009-build-artifact-has-exact-identity)
+documents how to bind the published `modern-release-aapcs-rom-map` artifact
+to one successful Build CI head SHA, verify its header, and distinguish it
+from issue #49's proposed maximal artifact.
+
 ## Future versioned release work (issue #9)
 
 No release automation, semantic-version/tag/changelog contract, versioned

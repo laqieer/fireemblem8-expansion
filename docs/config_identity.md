@@ -334,3 +334,9 @@ runs `validate`/`resolve` as part of evaluating the makefile itself, so a
 bad value fails the `make` invocation immediately) and before any ROM
 byte is patched (`finalize_rom_header.py` validates first, then patches).
 Invalid values are never silently normalized or clamped.
+
+## Tester-facing procedure
+
+[`TC-CORE-002`](test-cases/core-framework.md#tc-core-002-configuration-identity-rejects-invalid-values)
+covers configured and one-off debug/release identities, embedded metadata,
+and pre-build invalid-value rejection.
