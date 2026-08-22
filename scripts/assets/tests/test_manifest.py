@@ -438,6 +438,21 @@ class BattleAnimationPackageTests(unittest.TestCase):
             definitions,
         )
 
+    def test_generated_banim_includes_are_root_relative(self):
+        expected = {
+            "include/ekrbattle.h": "build/generated/assets/banim/banim_defs.h",
+            "src/banim_data.c": "build/generated/assets/banim/banim_data_entries.inc",
+            "src/data_banimconf.c": "build/generated/assets/banim/banim_defs.inc",
+            "src/banim_package_runtime_test.c":
+                "build/generated/assets/banim/banim_runtime_test_defs.h",
+        }
+        for source, generated in expected.items():
+            with self.subTest(source=source):
+                with open(os.path.join(REPO_ROOT, source), encoding="utf-8") as handle:
+                    text = handle.read()
+                self.assertIn('#include "{}"'.format(generated), text)
+                self.assertNotIn("../build/generated/assets", text)
+
 
 if __name__ == "__main__":
     unittest.main()
