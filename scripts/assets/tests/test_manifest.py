@@ -216,11 +216,32 @@ class AssetManifestTests(unittest.TestCase):
         ):
             self.assert_validation_error([valid_record(), other], "ownership conflict")
 
-    def test_capacity_and_actual_ownership_conflicts_fail(self):
-        capacity = valid_record()
-        capacity["resources"]["mapWidth"] = 200
-        capacity["resources"]["mapHeight"] = 200
-        self.assert_validation_error([capacity], "exceed the 2048-byte gBmMapBuffer")
+    def test_tmx_capacity_boundaries_agree_for_resources_and_payloads(self):
+        fitting = valid_record()
+        fitting["resources"]["mapWidth"] = 31
+        fitting["resources"]["mapHeight"] = 33
+        self.assertEqual(
+            manifest.ChapterMapLayoutKind._map_payload_bytes(31 * 33),
+            2048,
+        )
+        with mock.patch.object(tmx, "parse_tmx", return_value=(31, 33, [0] * (31 * 33))):
+            manifest.load_and_validate(self.write_manifest([fitting]))
+
+        overflowing = valid_record()
+        overflowing["resources"]["mapWidth"] = 32
+        overflowing["resources"]["mapHeight"] = 32
+        self.assertEqual(
+            manifest.ChapterMapLayoutKind._map_payload_bytes(32 * 32),
+            2050,
+        )
+        with mock.patch.object(tmx, "parse_tmx") as parse_tmx:
+            self.assert_validation_error(
+                [overflowing],
+                "map dimensions 32x32 exceed the 2048-byte gBmMapBuffer",
+            )
+        parse_tmx.assert_not_called()
+
+    def test_actual_ownership_conflict_fails(self):
         ownership = valid_record()
         ownership["ownership"]["mainLayerId"] = 12
         self.assert_validation_error([ownership], "does not select mainLayerId 12")

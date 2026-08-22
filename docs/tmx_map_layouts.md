@@ -60,10 +60,13 @@ the same 15x15 canonical map bytes selected by
 
 There is no feature flag, configuration identity change, save-format change,
 generated-data schema change, localization ID/catalog change, or map-change
-semantic change. The existing 2048-byte `gBmMapBuffer` capacity is validated;
-the reference map's dimensions and payload are unchanged. Modern debug and
-release consume the same generated semantic map. The archival lane can consume
-the ordinary generated prerequisite but is not an original-ROM identity claim.
+semantic change. The existing 2048-byte `gBmMapBuffer` capacity is validated
+as a 2-byte header plus 2 bytes for every `u16` tile: 1023 cells (such as
+31x33) fit exactly, while 32x32 requires 2050 bytes and fails before TMX
+payload parsing. The reference map's dimensions and payload are unchanged.
+Modern debug and release consume the same generated semantic map. The archival
+lane can consume the ordinary generated prerequisite but is not an original-ROM
+identity claim.
 
 Map changes, objects, tileset graphics/configuration, tile animation, and
 external editor packages are deliberately out of scope. Revert a map record,

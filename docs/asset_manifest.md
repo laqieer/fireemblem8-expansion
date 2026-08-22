@@ -87,7 +87,8 @@ before rendering:
 1. The parsed TMX dimensions and canonical payload match declared resources.
 2. The Chapter 2 settings row selects `mainLayerId` 11.
 3. `gChapterDataAssetTable[11]` is the existing `Ch2Map` symbol.
-4. Dimensions fit the existing 2048-byte `gBmMapBuffer` contract.
+4. The serialized dimensions fit the existing 2048-byte `gBmMapBuffer` contract:
+   a 2-byte header plus 2 bytes for each `u16` tile.
 
 The generated dependency fragment attaches the TMX source to the existing
 table object and makes the existing `const_data_chapter_maps.o` depend on its

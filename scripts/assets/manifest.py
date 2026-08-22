@@ -383,6 +383,10 @@ class ChapterMapLayoutKind:
     _modern_object = "$(MODERN_OUTPUT_DIR)/src/data/data_8B363C.o"
     _map_buffer_bytes = 0x800
 
+    @staticmethod
+    def _map_payload_bytes(tile_count):
+        return 2 + tile_count * 2
+
     def validate(self, record, diagnostics):
         options_valid = _validate_exact_values(
             record.options,
@@ -470,7 +474,11 @@ class ChapterMapLayoutKind:
                     "{}.resources.mapBufferBytes".format(record.id),
                 )
             )
-        if isinstance(width, int) and isinstance(height, int) and width * height + 2 > self._map_buffer_bytes:
+        dimensions_valid = all(
+            isinstance(value, int) and not isinstance(value, bool) and value > 0
+            for value in (width, height)
+        )
+        if dimensions_valid and self._map_payload_bytes(width * height) > self._map_buffer_bytes:
             diagnostics.add(
                 GeneratedDataError(
                     "map dimensions {}x{} exceed the {}-byte gBmMapBuffer contract".format(
@@ -480,6 +488,7 @@ class ChapterMapLayoutKind:
                     "{}.resources".format(record.id),
                 )
             )
+            return
 
         try:
             with open(os.path.join(REPO_ROOT, record.sources[1]), encoding="utf-8") as handle:
@@ -659,13 +668,18 @@ class TiledTmxMapLayoutKind(ChapterMapLayoutKind):
                 record.resource_locs["mapBufferBytes"],
                 "{}.resources.mapBufferBytes".format(record.id),
             ))
-        if isinstance(width, int) and isinstance(height, int) and width * height + 2 > self._map_buffer_bytes:
+        dimensions_valid = all(
+            isinstance(value, int) and not isinstance(value, bool) and value > 0
+            for value in (width, height)
+        )
+        if dimensions_valid and self._map_payload_bytes(width * height) > self._map_buffer_bytes:
             diagnostics.add(GeneratedDataError(
                 "map dimensions {}x{} exceed the {}-byte gBmMapBuffer contract".format(
                     width, height, self._map_buffer_bytes
                 ),
                 record.resource_locs["mapWidth"], "{}.resources".format(record.id),
             ))
+            return
         try:
             source_width, source_height, values = tmx.parse_tmx(
                 os.path.join(REPO_ROOT, record.sources[0])
@@ -682,7 +696,7 @@ class TiledTmxMapLayoutKind(ChapterMapLayoutKind):
                 ),
                 record.source_locs[0], "{}.resources".format(record.id),
             ))
-        if len(values) * 2 + 2 > self._map_buffer_bytes:
+        if self._map_payload_bytes(len(values)) > self._map_buffer_bytes:
             diagnostics.add(GeneratedDataError(
                 "TMX payload exceeds the {}-byte gBmMapBuffer contract".format(
                     self._map_buffer_bytes
