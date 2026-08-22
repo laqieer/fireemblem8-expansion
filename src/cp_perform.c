@@ -597,7 +597,7 @@ void CpPerform_Cleanup(struct CpPerformProc* proc) {
 
     if (gAiDecision.targetId != 0)
     {
-        relation = AreUnitsAllied(gAiDecision.unitId, gAiDecision.targetId)
+        relation = IsAllegianceAllied(gAiDecision.unitId, gAiDecision.targetId)
             ? EXPANSION_AUTOPLAY_TARGET_ALLIED
             : EXPANSION_AUTOPLAY_TARGET_HOSTILE;
     }

@@ -2,6 +2,7 @@
 
 #include <stdio.h>
 
+#include "bmphase.h"
 #include "bmunit.h"
 #include "cp_common.h"
 #include "expansion_autoplay.h"
@@ -17,13 +18,28 @@
         } \
     } while (0)
 
+struct PlaySt gPlaySt;
+
+struct Unit* GetUnit(int id)
+{
+    (void)id;
+    return NULL;
+}
+
 static int TestControllerAndLifecycle(void)
 {
     const struct ExpansionAutoplayTelemetry* telemetry;
+    u8* byte = (u8*)&gExpansionAutoplayTelemetry;
+    int i;
 
+    ExpansionAutoplay_SetBlueControl(EXPANSION_BLUE_CONTROL_COMPUTER);
+    for (i = 0; i < (int)sizeof(gExpansionAutoplayTelemetry); i++)
+        byte[i] = 0xA5;
     ExpansionAutoplay_Reset();
     telemetry = ExpansionAutoplay_GetTelemetry();
 
+    for (i = 0; i < (int)sizeof(gExpansionAutoplayTelemetry); i++)
+        CHECK(byte[i] == 0, "reset must clear every telemetry byte");
     CHECK(ExpansionAutoplay_GetBlueControl() == EXPANSION_BLUE_CONTROL_PLAYER,
           "reset must restore PLAYER control");
     CHECK(telemetry->controller == EXPANSION_BLUE_CONTROL_PLAYER,
@@ -40,6 +56,8 @@ static int TestControllerAndLifecycle(void)
     ExpansionAutoplay_RecordEligibleActors(FACTION_BLUE, 3);
     ExpansionAutoplay_RecordRelationCheck(1, 0x81, false);
     ExpansionAutoplay_RecordRelationCheck(1, 0x41, true);
+    CHECK(!IsAllegianceAllied(1, 0x81), "pure relation helper must classify red as hostile");
+    CHECK(IsAllegianceAllied(1, 0x41), "pure relation helper must classify green as allied");
     ExpansionAutoplay_RecordCommittedAction(
         FACTION_BLUE,
         1,
@@ -65,7 +83,7 @@ static int TestControllerAndLifecycle(void)
     CHECK(telemetry->hostileTargetCheckCount == 1
               && telemetry->alliedTargetCheckCount == 1
               && telemetry->invalidRecordCount == 0,
-          "red hostility and green alliance checks must remain valid");
+          "committed action recording must not increment relation-check counters");
     CHECK(telemetry->suspendWriteSuppressedCount == 1,
           "transient blue AI must report suppressed suspend writes");
     CHECK(telemetry->state == EXPANSION_AUTOPLAY_STATE_COMPUTER_PHASE_COMPLETE

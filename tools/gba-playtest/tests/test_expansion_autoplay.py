@@ -13,6 +13,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 INCLUDES = ["-I", str(ROOT / "include"), "-I", str(ROOT / "include" / "generated")]
 SOURCE = ROOT / "src" / "expansion_autoplay.c"
+BMPHASE_SOURCE = ROOT / "src" / "bmphase.c"
 DRIVER = Path(__file__).resolve().parent / "c" / "expansion_autoplay_driver.c"
 CC = shutil.which("gcc") or shutil.which("cc")
 ARM_CC = shutil.which("arm-none-eabi-gcc")
@@ -57,10 +58,14 @@ class AutoplayHostTests(unittest.TestCase):
                             "-Werror=declaration-after-statement",
                             "-Werror=implicit-function-declaration",
                             "-Werror=implicit-int",
+                            "-O2",
+                            "-fstrict-aliasing",
+                            "-Wstrict-aliasing=2",
                             *INCLUDES,
                             "-DFE8_EXPANSION_MODERN_BUILD=1",
                             *extra_define,
                             str(SOURCE),
+                            str(BMPHASE_SOURCE),
                             str(DRIVER),
                             "-o",
                             str(executable),

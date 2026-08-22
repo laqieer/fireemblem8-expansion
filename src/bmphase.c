@@ -50,10 +50,14 @@ int CountUnitsInState(int faction, int state) {
     return count;
 }
 
-s8 AreUnitsAllied(int left, int right) {
+s8 IsAllegianceAllied(int left, int right) {
     int a = left & 0x80;
     int b = right & 0x80;
-    s8 result = (a == b);
+    return (a == b);
+}
+
+s8 AreUnitsAllied(int left, int right) {
+    s8 result = IsAllegianceAllied(left, right);
 
 #ifndef FE8_ARCHIVAL_BUILD
     ExpansionAutoplay_RecordRelationCheck(left, right, result);

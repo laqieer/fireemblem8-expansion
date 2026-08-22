@@ -74,6 +74,9 @@ post-action trap/event, cleanup, and phase-transition pipeline. Blue actor
 enumeration uses the existing 62-slot faction range and existing `Unit.ai1`,
 `Unit.ai2`, and `ai_config` values. Target classification continues to use
 `AreUnitsAllied`: blue and green are allied, while blue and red are hostile.
+Committed-action target relations use the same faction-bit rule through the
+pure `IsAllegianceAllied` helper, so recording an action cannot increment the
+AI relation-check counters it is reporting.
 Fog and camera handling uses the executor's already-visible non-red path.
 Phase events, healing setup, combat/staff/item/pillage/steal/refresh/talk,
 ballista, summon, pick, post-action traps/events, cleanup, and game-over checks
@@ -126,7 +129,7 @@ save bit, preference, or release behavior.
 - **Archival:** `src/expansion_autoplay.c` and all hooks are excluded from
   `FE8_ARCHIVAL_BUILD`; the agbcc lane is unchanged.
 - **Modern budget:** 68 bytes EWRAM total (64-byte telemetry plus 4-byte
-  controller); the module contributes 772 bytes of debug Thumb text and 692
+  controller); the module contributes 768 bytes of debug Thumb text and 692
   bytes of release Thumb text. Relative
   to the immediate base, linked ROM content grows by 2,136 debug bytes and 880
   release bytes. The linked debug build retains 1,636 bytes of physical EWRAM

@@ -25,11 +25,11 @@ static void SetFailure(enum ExpansionAutoplayFailure failure)
 
 void ExpansionAutoplay_Reset(void)
 {
-    u32* word = (u32*)&gExpansionAutoplayTelemetry;
+    u8* byte = (u8*)&gExpansionAutoplayTelemetry;
     int i;
 
-    for (i = 0; i < (int)(sizeof(gExpansionAutoplayTelemetry) / sizeof(*word)); i++)
-        word[i] = 0;
+    for (i = 0; i < (int)sizeof(gExpansionAutoplayTelemetry); i++)
+        byte[i] = 0;
 
     sExpansionBlueControl = EXPANSION_BLUE_CONTROL_PLAYER;
     gExpansionAutoplayTelemetry.controller = EXPANSION_BLUE_CONTROL_PLAYER;

@@ -33,7 +33,7 @@ The COMPUTER route enters the existing computer-phase Proc, enumerates six
 eligible blue actors, commits six supported actions, completes once, and
 progresses from the interactive blue turn 1 through blue computer control on
 turn 2 into the following green phase. Its semantic telemetry
-records 105 actual hostile checks against red actors, 56 actual allied checks
+records 104 actual hostile checks against red actors, 56 actual allied checks
 against green actors, no invalid relation, no failure, and six deliberately
 suppressed blue-AI suspend writes.
 
