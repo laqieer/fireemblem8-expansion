@@ -710,7 +710,7 @@ class BattleAnimationPackageTests(unittest.TestCase):
             banim.parse_script(script, {"idle": "fixture.png"})
 
     @staticmethod
-    def write_indexed_png(path, alpha):
+    def write_indexed_png(path, alpha, width=32, height=32, palette=b"\x00\x00\x00\xff\xff\xff"):
         def chunk(name, data):
             return (
                 struct.pack(">I", len(data))
@@ -719,11 +719,11 @@ class BattleAnimationPackageTests(unittest.TestCase):
                 + struct.pack(">I", zlib.crc32(name + data) & 0xFFFFFFFF)
             )
 
-        pixels = b"".join(b"\x00" + b"\x00" * 4 for _ in range(8))
+        pixels = b"".join(b"\x00" + b"\x00" * (width // 2) for _ in range(height))
         payload = (
             b"\x89PNG\r\n\x1a\n"
-            + chunk(b"IHDR", struct.pack(">IIBBBBB", 8, 8, 4, 3, 0, 0, 0))
-            + chunk(b"PLTE", b"\x00\x00\x00\xff\xff\xff")
+            + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 4, 3, 0, 0, 0))
+            + chunk(b"PLTE", palette)
             + chunk(b"tRNS", alpha)
             + chunk(b"IDAT", zlib.compress(pixels))
             + chunk(b"IEND", b"")
@@ -745,6 +745,11 @@ class BattleAnimationPackageTests(unittest.TestCase):
         self.write_indexed_png(opaque, b"\xff\xff")
         with self.assertRaisesRegex(ValueError, "exactly one transparent"):
             banim.read_indexed_png(opaque)
+
+        non_block = os.path.join(TEST_ROOT, "forty-pixels.png")
+        self.write_indexed_png(non_block, b"\x00\xff", width=40, height=32)
+        with self.assertRaisesRegex(ValueError, "multiples of 32"):
+            banim.read_indexed_png(non_block)
 
     def test_script_diagnostics_preserve_original_source_line_numbers(self):
         script = os.path.join(TEST_ROOT, "line-numbers.txt")
@@ -879,6 +884,59 @@ class BattleAnimationPackageTests(unittest.TestCase):
             ),
             1,
         )
+
+    def test_side_specific_frames_emit_distinct_aligned_oam_payloads(self):
+        package = banim.load_package(
+            REPO_ROOT,
+            "assets/banim/lorm_sp1/package.json",
+            "assets/banim/lorm_sp1/script.txt",
+            {
+                "assets/banim/lorm_sp1/package.json",
+                "assets/banim/lorm_sp1/script.txt",
+                "graphics/banim/banim_lorm_sp1_sheet_0.png",
+            },
+        )
+        package.modes["normal"][0] = ("frame", 1, "idle", "left")
+        package.modes["critical"][0] = ("frame", 1, "idle", "right")
+        outputs, paths, _metadata = banim.runtime_outputs(package, TEST_ROOT)
+        left = outputs[paths["oam_left"]]
+        right = outputs[paths["oam_right"]]
+        self.assertNotEqual(left, right)
+        self.assertEqual(len(left), len(right))
+        self.assertEqual(left[0:12], right[408:420])
+        self.assertEqual(right[0:12], left[408:420])
+
+    def test_palette_variant_and_frame_palette_mismatches_fail_closed(self):
+        package_path = os.path.join(TEST_ROOT, "package.json")
+        script_path = os.path.join(TEST_ROOT, "script.txt")
+        frame_path = os.path.join(TEST_ROOT, "frame.png")
+        second_path = os.path.join(TEST_ROOT, "second.png")
+        with open(os.path.join(REPO_ROOT, "assets/banim/lorm_sp1/package.json"), encoding="utf-8") as handle:
+            package = json.load(handle)
+        with open(os.path.join(REPO_ROOT, "assets/banim/lorm_sp1/script.txt"), encoding="utf-8") as source:
+            script = source.read()
+        shutil.copyfile(os.path.join(REPO_ROOT, "graphics/banim/banim_lorm_sp1_sheet_0.png"), frame_path)
+        package["frames"][0]["path"] = "frame.png"
+        package["paletteVariants"] = ["default", "alternate"]
+        with open(package_path, "w", encoding="utf-8") as handle:
+            json.dump(package, handle)
+        with open(script_path, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write(script)
+        with self.assertRaisesRegex(ValueError, "exactly \\['default'\\]"):
+            banim.load_package(TEST_ROOT, "package.json", "script.txt", {"package.json", "script.txt", "frame.png"})
+
+        package["paletteVariants"] = ["default"]
+        package["frames"].append({"id": "second", "path": "second.png"})
+        self.write_indexed_png(second_path, b"\x00\xff")
+        with open(package_path, "w", encoding="utf-8") as handle:
+            json.dump(package, handle)
+        with self.assertRaisesRegex(ValueError, "identical PLTE and tRNS"):
+            banim.load_package(
+                TEST_ROOT,
+                "package.json",
+                "script.txt",
+                {"package.json", "script.txt", "frame.png", "second.png"},
+            )
 
     def test_generated_linker_derivatives_are_not_orphans(self):
         manifest_path = os.path.join(REPO_ROOT, "assets", "manifest.json")

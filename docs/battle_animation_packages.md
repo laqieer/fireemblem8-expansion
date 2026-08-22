@@ -37,7 +37,8 @@ symlinked, escaping, or case-fold-colliding.
 }
 ```
 
-The package may not name pre-existing motion, OAM, palette, mode, or linker
+V1 has exactly one palette variant: `paletteVariants` must be precisely
+`["default"]`. The package may not name pre-existing motion, OAM, palette, mode, or linker
 artifacts. The adapter derives all of those build-local products from the
 declared PNG frames and text script, then registers them through the existing
 compressing-linker object, additive `banim_data[]` entry, and generated
@@ -68,7 +69,10 @@ with `end`; expanded duration is capped at 65535 ticks. `loop` repeats only
 the immediately preceding frame or wait group inside the current mode.
 Commands map one-to-one to the named existing `banim_code_*` macros.
 
-The three `sound` names are the complete v1 sound subset. They map one-to-one
+`left` and `right` create equal-offset but distinct left/right OAM payloads:
+the selected side receives the frame while the opposite side receives a
+padded terminator frame. `both` emits the frame in both payloads. The three
+`sound` names are the complete v1 sound subset. They map one-to-one
 to `banim_code_sound_sword_swing_short`,
 `banim_code_sound_sword_slash_air`, and `banim_code_sound_step_heavy`.
 No numeric opcode or sound ID, FEditor binary serialization, macro, include,
@@ -78,11 +82,13 @@ malformed mode, or unterminated frame group is accepted.
 ## Images, palettes, and budgets
 
 Each frame is a single-IDAT, non-interlaced PNG with indexed color type 3,
-4-bit depth, standard compression/filter, a positive 8x8-tile-aligned
+4-bit depth, standard compression/filter, a positive 32x32-block-aligned
 geometry, one 1..16-color `PLTE`, and zero or one `tRNS` chunk. If `tRNS`
 exists it must have exactly one zero-alpha color and every other declared
 entry must be fully opaque (`255`). RGB/RGBA, interlaced,
-over-color, cropped, scaled, rotated, or multi-IDAT PNGs fail. The generator
+over-color, 8x8-but-not-32px, cropped, scaled, rotated, or multi-IDAT PNGs
+fail. Every frame must carry byte-identical `PLTE` and `tRNS` chunks, since
+v1 emits exactly one runtime palette. The generator
 converts the indexed pixels into 4bpp tile payloads, converts PLTE values to
 the existing 15-bit palette layout, deterministically composes each frame into
 left/right 32x32 OAM records, and emits mode offsets plus relocatable motion

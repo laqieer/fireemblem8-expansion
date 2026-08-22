@@ -111,8 +111,8 @@ def read_indexed_png(path):
         raise ValueError(
             "{} must be non-interlaced indexed 4bpp PNG with standard compression/filter".format(path)
         )
-    if width == 0 or height == 0 or width % 8 or height % 8:
-        raise ValueError("{} dimensions must be positive multiples of 8".format(path))
+    if width == 0 or height == 0 or width % 32 or height % 32:
+        raise ValueError("{} dimensions must be positive multiples of 32".format(path))
     names = [name for name, _ in chunks]
     if names.count(b"PLTE") != 1 or names.count(b"IDAT") != 1 or names.count(b"tRNS") > 1:
         raise ValueError("{} must contain one PLTE, one IDAT, and at most one tRNS".format(path))
@@ -182,6 +182,7 @@ def read_indexed_png(path):
         "colors": len(palette) // 3,
         "pixels": bytes(decoded),
         "palette": palette,
+        "transparency": transparent[0] if transparent else None,
     }
 
 
@@ -293,6 +294,15 @@ def _duration(text, path, line_number, ref):
     return duration
 
 
+def _validate_shared_palette(pngs):
+    first = next(iter(pngs.values()))
+    for frame_id, png in pngs.items():
+        if png["palette"] != first["palette"] or png["transparency"] != first["transparency"]:
+            raise ValueError(
+                "frame '{}' must share the first frame's identical PLTE and tRNS".format(frame_id)
+            )
+
+
 def load_package(root, package_source, script_source, declared_sources):
     package_path = os.path.join(root, package_source)
     with open(package_path, encoding="utf-8") as handle:
@@ -317,12 +327,8 @@ def load_package(root, package_source, script_source, declared_sources):
         raise ValueError("resources.maxOamPerFrame exceeds vanilla OAM frame capacity")
     if data["resources"]["maxPaletteColors"] > MAX_PALETTE_COLORS:
         raise ValueError("resources.maxPaletteColors exceeds one OBJ palette bank")
-    if not isinstance(data["paletteVariants"], list) or not data["paletteVariants"]:
-        raise ValueError("paletteVariants must be a non-empty list")
-    if any(not isinstance(variant, str) or not variant for variant in data["paletteVariants"]):
-        raise ValueError("paletteVariants must contain non-empty strings")
-    if len(set(data["paletteVariants"])) != len(data["paletteVariants"]):
-        raise ValueError("paletteVariants contains a duplicate variant")
+    if data["paletteVariants"] != ["default"]:
+        raise ValueError("v1 paletteVariants must be exactly ['default']")
     frame_paths = {}
     if not isinstance(data["frames"], list) or not data["frames"]:
         raise ValueError("frames must be a non-empty list")
@@ -336,6 +342,7 @@ def load_package(root, package_source, script_source, declared_sources):
             raise ValueError("frame.path must name an indexed PNG")
         frame_paths[frame["id"]] = frame["path"]
     pngs = {frame_id: read_indexed_png(os.path.join(root, path)) for frame_id, path in frame_paths.items()}
+    _validate_shared_palette(pngs)
     if len(frame_paths) > data["resources"]["maxFrames"]:
         raise ValueError("frame count exceeds resources.maxFrames")
     if sum(png["tiles"] for png in pngs.values()) > data["resources"]["maxSheetTiles"]:
@@ -393,38 +400,58 @@ def _palette_data(png):
     return bytes(data)
 
 
+def _oam_frame(png):
+    data = bytearray()
+    columns = png["width"] // 32
+    rows = png["height"] // 32
+    for row in range(rows):
+        for column in range(columns):
+            tile = (row * 4 * (png["width"] // 8)) + column * 4
+            data.extend(
+                struct.pack(
+                    "<6H",
+                    0,
+                    0x8000,
+                    tile,
+                    (column * 32 - png["width"] // 2) & 0xFFFF,
+                    (row * 32 - png["height"] // 2) & 0xFFFF,
+                    0,
+                )
+            )
+    data.extend(struct.pack("<3I", 1, 0, 0))
+    return bytes(data), columns * rows
+
+
 def _oam_data(package):
     offsets = {}
-    data = bytearray()
+    left = bytearray()
+    right = bytearray()
     max_entries = 0
-    for frame_id, png in package.pngs.items():
-        columns = (png["width"] + 31) // 32
-        rows = (png["height"] + 31) // 32
-        entries = columns * rows
+    pairs = []
+    fallback_frame = next(iter(package.frames))
+    for mode in MODES:
+        for entry in package.modes[mode]:
+            if entry[0] == "frame":
+                pairs.append((entry[2], entry[3]))
+            elif entry[0] == "wait":
+                pairs.append((fallback_frame, "both"))
+    for frame_id, side in pairs:
+        key = (frame_id, side)
+        if key in offsets:
+            continue
+        frame, entries = _oam_frame(package.pngs[frame_id])
         if entries > package.data["resources"]["maxOamPerFrame"]:
             raise ValueError(
                 "frame '{}' requires {} OAM entries, exceeding resources.maxOamPerFrame".format(
                     frame_id, entries
                 )
             )
-        offsets[frame_id] = len(data)
+        offsets[key] = len(left)
         max_entries = max(max_entries, entries)
-        for row in range(rows):
-            for column in range(columns):
-                tile = (row * 4 * (png["width"] // 8)) + column * 4
-                data.extend(
-                    struct.pack(
-                        "<6H",
-                        0,
-                        0x8000,
-                        tile,
-                        (column * 32 - png["width"] // 2) & 0xFFFF,
-                        (row * 32 - png["height"] // 2) & 0xFFFF,
-                        0,
-                    )
-                )
-        data.extend(struct.pack("<3I", 1, 0, 0))
-    return bytes(data), offsets, max_entries
+        blank = struct.pack("<3I", 1, 0, 0) + b"\0" * (len(frame) - 12)
+        left.extend(frame if side in ("left", "both") else blank)
+        right.extend(frame if side in ("right", "both") else blank)
+    return bytes(left), bytes(right), offsets, max_entries
 
 
 def _script_word_count(entries):
@@ -450,16 +477,16 @@ def _motion_source(package, offsets, aliases):
         for entry in package.modes[mode]:
             kind = entry[0]
             if kind == "frame":
-                _, duration, frame_id, _side = entry
+                _, duration, frame_id, side = entry
                 lines.append(
                     "banim_code_frame {}, {}_{}, 0, {}\n".format(
-                        duration, stem, aliases[frame_id], offsets[frame_id]
+                        duration, stem, aliases[frame_id], offsets[(frame_id, side)]
                     )
                 )
             elif kind == "wait":
                 lines.append(
                     "banim_code_frame {}, {}_{}, 0, {}\n".format(
-                        entry[1], stem, aliases[fallback_frame], offsets[fallback_frame]
+                        entry[1], stem, aliases[fallback_frame], offsets[(fallback_frame, "both")]
                     )
                 )
             elif kind == "command":
@@ -481,7 +508,7 @@ def runtime_outputs(package, out_dir):
             aliases[frame_id] = frame_id
             unique_frames[payload] = frame_id
     paths = runtime_paths(package, out_dir, aliases)
-    oam, offsets, max_oam_entries = _oam_data(package)
+    oam_left, oam_right, offsets, max_oam_entries = _oam_data(package)
     mode_offsets = {}
     offset = 0
     for mode in MODES:
@@ -498,8 +525,8 @@ def runtime_outputs(package, out_dir):
     outputs = {
         paths["motion"]: _motion_source(package, offsets, aliases),
         paths["modes"]: modes,
-        paths["oam_left"]: oam,
-        paths["oam_right"]: oam,
+        paths["oam_left"]: oam_left,
+        paths["oam_right"]: oam_right,
         paths["palette"]: _palette_data(first_png),
     }
     for frame_id, png in package.pngs.items():
