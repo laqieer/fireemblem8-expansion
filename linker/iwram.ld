@@ -191,5 +191,9 @@ __localized_msg_transform_scratch_start = .;
 *src/msg.o(iwram_data.localized_msg_transform)
 __localized_msg_transform_scratch_end = .;
 
-/* Issue #58's runtime probe exists only in dedicated debug test profiles. */
+/*
+ * This section always contains sSelectedPolicyState for the selected policy
+ * used by regular builds. Dedicated debug test profiles additionally append
+ * Issue #58's runtime probe fields.
+ */
 *src/banim_presentation.o(iwram_data)
