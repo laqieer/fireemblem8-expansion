@@ -220,7 +220,8 @@ diagnostic config fingerprint.
   `FE8_ITEM_ID_CAP=0xCE FE8_EXPANSION_ITEMTEST=1 make VPATH=build/generated/data expansion-modern-itemexpansion-check MODERN_CONFIG=debug MODERN_ABI=aapcs EXPANSION_STARTER_CONTENT=1 EXPANSION_MECHANICS_HOOKS=1 EXPANSION_MECHANICS_SAMPLE=1`
   — `tools/gba-playtest/run_item_expansion_checks.py`.
 - `make expansion-modern-starter-hook-check MODERN_CONFIG=release MODERN_ABI=aapcs`
-  — `tools/gba-playtest/tests/test_expansion_starter_content.py`.
+  — `tools/gba-playtest/scenarios/starter-hook-clean-modern-release.json` and
+  `tools/gba-playtest/fingerprints/starter-hook-clean-modern-release.json`.
 
 ### Cleanup and limitations
 
@@ -336,7 +337,7 @@ is no save layout or epoch change.
 - `make expansion-modern-aoe-check MODERN_CONFIG=debug MODERN_ABI=aapcs`
   — `tools/gba-playtest/run_aoe_checks.py`.
 - `make expansion-modern-aoe-check MODERN_CONFIG=release MODERN_ABI=aapcs`
-  — `tools/gba-playtest/scenarios/combat.json`.
+  — `tools/gba-playtest/run_aoe_checks.py`.
 
 ### Cleanup and limitations
 
