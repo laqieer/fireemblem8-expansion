@@ -118,8 +118,8 @@ The labeled clauses below are the public test-evidence contract for agents.
   - **line numbers:** prohibited
   - **ordering:** prohibited
   - **implementation spelling:** prohibited
-  - **Git-text rationale:** required. Git already preserves that text, and
-    retaining the expected phrase does not prove the implementation works.
+  - **Git-text rationale:** required. Git tracks source, review, and history,
+    so raw tracked-text presence is not behavior evidence.
 - **Static-contract exception:** A source-text assertion is permitted only
   when the exact syntax, spelling, or absence is itself a documented public
   format, security boundary, generated-file contract, ABI/layout constraint,
