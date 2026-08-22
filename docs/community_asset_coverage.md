@@ -38,7 +38,7 @@ consumption case.
 | Tilesets and map configuration | Partially supported | Chapter asset table plus graphics rules | Future `tileset package` after #60 |
 | Tile animation | Manual-only | Chapter asset table and map-animation data | Future `tile-animation schema/adapter` after #60 |
 | Portraits, minimugs, and cards | Manual-only | `portrait_data[]` and portrait symbols | #63 after #60 |
-| Battle animations | `battle-animation-package` v1 text/indexed PNG package | `banim_data[]`, `BattleAnimDef`, class generated-data validation, and banim linker list | #62 after #60 |
+| Battle animations | `battle-animation-package` v1 text/indexed PNG package | Generated 4bpp/palette/OAM/mode/motion payloads through `banim_data[]`, `BattleAnimDef`, class validation, and the existing banim linker | #62 after #60 |
 | Spell and magic animations | Runtime capability missing | Per-effect battle/magic code and data | #61 after #60; it remains Needs design |
 | Backgrounds and TSA/tilemaps | Partially supported | Per-screen data and graphics rules | Future `background/TSA package` after #60 |
 | Icons and map sprites | Partially supported | Per-consumer source/data plus graphics rules | Future `icon/map-sprite package` after #60 |

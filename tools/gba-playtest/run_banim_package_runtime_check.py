@@ -30,6 +30,7 @@ PROBE_FIELDS = (
     "battleEntryCount",
     "battleCompleteCount",
     "selectedBattleIndex",
+    "runtimeDataConsumeCount",
 )
 
 
@@ -144,6 +145,7 @@ def main() -> int:
     expect(values, "battleEntryCount", 1, "scripted battle")
     expect(values, "battleCompleteCount", 1, "scripted battle")
     expect(values, "selectedBattleIndex", alias_index, "scripted battle")
+    expect(values, "runtimeDataConsumeCount", 1, "scripted battle")
     if values["originalIndex"] == values["aliasIndex"]:
         failures.append("originalIndex unexpectedly equals the test-only alias index")
     if failures:

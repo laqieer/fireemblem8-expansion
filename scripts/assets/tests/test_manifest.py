@@ -339,7 +339,7 @@ class BattleAnimationPackageTests(unittest.TestCase):
         if os.path.exists(TEST_ROOT):
             shutil.rmtree(TEST_ROOT)
 
-    def test_real_package_is_valid_and_generates_existing_runtime_symbols(self):
+    def test_real_package_generates_runtime_symbols_and_payloads(self):
         records = manifest.load_and_validate(os.path.join(REPO_ROOT, "assets", "manifest.json"))
         output = os.path.join(TEST_ROOT, "out")
         manifest.generate(os.path.join(REPO_ROOT, "assets", "manifest.json"), output)
@@ -347,8 +347,31 @@ class BattleAnimationPackageTests(unittest.TestCase):
             entry = handle.read()
         with open(os.path.join(output, "banim", "banim_defs.inc"), encoding="utf-8") as handle:
             definition = handle.read()
-        self.assertIn('{"lorm_sp1", &banim_lorm_sp1_modes_bin', entry)
+        self.assertIn('{"lorm_sp1", &banim_package_lorm_sp1_proof_modes_bin', entry)
         self.assertIn("BanimPackage_LORM_SP1_PROOF", definition)
+        with open(
+            os.path.join(output, "banim", "banim_package_lorm_sp1_proof_motion.s"),
+            encoding="utf-8",
+        ) as handle:
+            motion = handle.read()
+        self.assertIn("banim_code_sound_sword_swing_short", motion)
+        self.assertNotIn("banim_lorm_sp1_motion", motion)
+        self.assertEqual(
+            os.path.getsize(
+                os.path.join(output, "banim", "banim_package_lorm_sp1_proof_idle.4bpp")
+            ),
+            8192,
+        )
+        self.assertEqual(
+            os.path.getsize(
+                os.path.join(output, "banim", "banim_package_lorm_sp1_proof_modes.bin")
+            ),
+            96,
+        )
+        with open(os.path.join(output, "banim", "linker_script_banim.txt"), encoding="utf-8") as handle:
+            linker = handle.read()
+        self.assertIn("banim_package_lorm_sp1_proof_motion.o|.data.script>lz", linker)
+        self.assertIn("banim_package_lorm_sp1_proof_palette.pal>lz", linker)
         self.assertEqual(len([record for record in records if record.kind == "battle-animation-package"]), 1)
         manifest.check(os.path.join(REPO_ROOT, "assets", "manifest.json"), output)
 
@@ -390,6 +413,15 @@ class BattleAnimationPackageTests(unittest.TestCase):
                 "mode dodge\nwait 1\nend\nmode standing\nwait 1\nend\n"
             )
         with self.assertRaisesRegex(ValueError, "loop without a preceding timed group"):
+            banim.parse_script(script, {"idle": "fixture.png"})
+
+        with open(script, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write(
+                "BANIM 1\nmode normal\nframe 1 idle\nsound unknown\nend\n"
+                "mode critical\nwait 1\nend\nmode ranged\nwait 1\nend\n"
+                "mode dodge\nwait 1\nend\nmode standing\nwait 1\nend\n"
+            )
+        with self.assertRaisesRegex(ValueError, "unsupported sound command"):
             banim.parse_script(script, {"idle": "fixture.png"})
 
     @staticmethod
@@ -440,31 +472,31 @@ class BattleAnimationPackageTests(unittest.TestCase):
             banim.parse_script(script, {"idle": "fixture.png"})
 
     def test_manifest_ids_remain_collision_free_generated_symbols(self):
-        runtime = {
-            "modes": "banim/example_modes.bin",
-            "motion": "banim/example_motion.o",
-            "oamRight": "banim/example_oam_r.bin",
-            "oamLeft": "banim/example_oam_l.bin",
-            "palette": "graphics/banim/example.agbpal",
-            "linkerInputs": ["banim/example.s"],
-        }
-        package = SimpleNamespace(
-            data={"runtime": runtime, "abbreviation": "example"},
-            mode_durations={mode: 1 for mode in banim.MODES},
+        package = banim.load_package(
+            REPO_ROOT,
+            "assets/banim/lorm_sp1/package.json",
+            "assets/banim/lorm_sp1/script.txt",
+            {
+                "assets/banim/lorm_sp1/package.json",
+                "assets/banim/lorm_sp1/script.txt",
+                "graphics/banim/banim_lorm_sp1_sheet_0.png",
+            },
         )
         records = [
             SimpleNamespace(
                 id=record_id,
                 kind=manifest.BattleAnimationPackageKind.name,
-                banim_package=package,
+                banim_package=copy.deepcopy(package),
             )
             for record_id in ("A_B", "A__B")
         ]
-        definitions = manifest.banim_expected_outputs(records, TEST_ROOT)[
-            os.path.join(TEST_ROOT, "banim", "banim_defs.inc")
+        for record in records:
+            record.banim_package.data["id"] = record.id
+        entries = manifest.banim_expected_outputs(records, TEST_ROOT)[
+            os.path.join(TEST_ROOT, "banim", "banim_data_entries.inc")
         ]
-        self.assertIn("BanimPackage_A_B[]", definitions)
-        self.assertIn("BanimPackage_A__B[]", definitions)
+        self.assertIn("banim_package_a_b_modes_bin", entries)
+        self.assertIn("banim_package_a__b_modes_bin", entries)
 
     def test_banim_ownership_and_resource_conflicts_fail(self):
         with open(os.path.join(REPO_ROOT, "assets", "manifest.json"), encoding="utf-8") as handle:
@@ -498,6 +530,27 @@ class BattleAnimationPackageTests(unittest.TestCase):
             manifest.load_and_validate(path)
         self.assertIn("resources.oamEntries", str(raised.exception))
 
+    def test_generated_runtime_budgets_fail_closed(self):
+        with open(os.path.join(REPO_ROOT, "assets", "manifest.json"), encoding="utf-8") as handle:
+            document = json.load(handle)
+        proof = next(record for record in document["assets"] if record["kind"] == "battle-animation-package")
+        path = os.path.join(TEST_ROOT, "manifest.json")
+
+        proof["resources"]["oamEntries"] = 1
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(document, handle)
+        with self.assertRaises(GeneratedDataValidationError) as raised:
+            manifest.load_and_validate(path)
+        self.assertIn("generated OAM count", str(raised.exception))
+
+        proof["resources"]["oamEntries"] = 32
+        proof["resources"]["romBytes"] = 1
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(document, handle)
+        with self.assertRaises(GeneratedDataValidationError) as raised:
+            manifest.load_and_validate(path)
+        self.assertIn("generated runtime data", str(raised.exception))
+
     def test_runtime_test_declarations_are_generated_from_package_data(self):
         records = manifest.load_and_validate(os.path.join(REPO_ROOT, "assets", "manifest.json"))
         output = os.path.join(TEST_ROOT, "out")
@@ -508,12 +561,51 @@ class BattleAnimationPackageTests(unittest.TestCase):
             definitions = handle.read()
         package = next(record.banim_package for record in records if record.id == "LORM_SP1_PROOF")
         self.assertIn("#define BANIM_PACKAGE_LORM_SP1_PROOF_MODE_COUNT 5", definitions)
+        self.assertIn("#define BANIM_PACKAGE_LORM_SP1_PROOF_SOUND_OPCODE 0x85000022", definitions)
         self.assertIn(
             "#define BANIM_PACKAGE_LORM_SP1_PROOF_TOTAL_DURATION {}".format(
                 sum(package.mode_durations.values())
             ),
             definitions,
         )
+
+    def test_identical_frames_share_one_generated_sheet(self):
+        package = banim.load_package(
+            REPO_ROOT,
+            "assets/banim/lorm_sp1/package.json",
+            "assets/banim/lorm_sp1/script.txt",
+            {
+                "assets/banim/lorm_sp1/package.json",
+                "assets/banim/lorm_sp1/script.txt",
+                "graphics/banim/banim_lorm_sp1_sheet_0.png",
+            },
+        )
+        package.frames["duplicate"] = package.frames["idle"]
+        package.pngs["duplicate"] = package.pngs["idle"]
+        outputs, paths, _metadata = banim.runtime_outputs(package, TEST_ROOT)
+        self.assertEqual(paths["frame_idle"], paths["frame_duplicate"])
+        self.assertEqual(
+            len(
+                [
+                    path
+                    for path in outputs
+                    if path.endswith(".4bpp")
+                ]
+            ),
+            1,
+        )
+
+    def test_generated_linker_derivatives_are_not_orphans(self):
+        manifest_path = os.path.join(REPO_ROOT, "assets", "manifest.json")
+        output = os.path.join(TEST_ROOT, "out")
+        records = manifest.generate(manifest_path, output)
+        package = next(record.banim_package for record in records if record.id == "LORM_SP1_PROOF")
+        _outputs, paths, _metadata = banim.runtime_outputs(package, output)
+        with open(paths["motion"][:-1] + "o", "wb") as handle:
+            handle.write(b"test object")
+        with open(paths["frame_idle"] + ".lz.o", "wb") as handle:
+            handle.write(b"test compressed object")
+        manifest.check(manifest_path, output)
 
     def test_generated_banim_includes_are_root_relative(self):
         expected = {
@@ -528,13 +620,18 @@ class BattleAnimationPackageTests(unittest.TestCase):
                     text = handle.read()
                 self.assertIn('#include "{}"'.format(generated), text)
                 self.assertNotIn("../build/generated/assets", text)
+        with open(os.path.join(REPO_ROOT, "src", "banim_data.c"), encoding="utf-8") as handle:
+            self.assertIn(
+                '#include "build/generated/assets/banim/banim_runtime_symbols.h"',
+                handle.read(),
+            )
         with open(os.path.join(REPO_ROOT, "include", "ekrbattle.h"), encoding="utf-8") as handle:
             self.assertNotIn("build/generated/assets", handle.read())
 
     def test_partial_banim_output_clean_regenerates_all_grouped_outputs(self):
         with open(os.path.join(REPO_ROOT, "assets.mk"), encoding="utf-8") as handle:
             rules = handle.read()
-        self.assertIn("$(ASSET_BANIM_RUNTIME_TEST_DEFS) &: $(ASSET_OUTPUT_MK)", rules)
+        self.assertIn("$(ASSET_BANIM_RUNTIME_SYMBOLS) &: $(ASSET_OUTPUT_MK)", rules)
         self.assertIn(
             '$(ASSET_TOOL) --manifest "$(ASSET_MANIFEST)" --out-dir "$(ASSET_OUTPUT_DIR)" generate',
             rules,

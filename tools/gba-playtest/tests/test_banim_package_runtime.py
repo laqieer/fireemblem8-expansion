@@ -38,6 +38,7 @@ class BanimPackageRuntimeLifecycleTests(unittest.TestCase):
             encoding="utf-8"
         )
         self.events = (REPO_ROOT / "src" / "eventscr.c").read_text(encoding="utf-8")
+        self.main = (REPO_ROOT / "src" / "banim-ekrmain.c").read_text(encoding="utf-8")
         self.runner = (PLAYTEST_DIR / "run_banim_package_runtime_check.py").read_text(
             encoding="utf-8"
         )
@@ -87,6 +88,10 @@ class BanimPackageRuntimeLifecycleTests(unittest.TestCase):
         )
         complete = function_body(self.probe, "BanimPackageRuntimeTest_MarkBattleComplete")
         self.assertIn("battleEntryCount == 1", complete)
+        self.assertIn(
+            "BanimPackageRuntimeTest_MarkRuntimeDataConsumed(",
+            function_body(self.main, "UpdateBanimFrame"),
+        )
 
     def test_runtime_runner_has_default_negative_and_scripted_positive_controls(self):
         self.assertIn("banim-package-runtime-default-control", self.runner)
@@ -94,6 +99,7 @@ class BanimPackageRuntimeLifecycleTests(unittest.TestCase):
         self.assertIn('expect(values, "selectionCount", 1, "scripted battle")', self.runner)
         self.assertIn('expect(values, "battleEntryCount", 1, "scripted battle")', self.runner)
         self.assertIn('expect(values, "battleCompleteCount", 1, "scripted battle")', self.runner)
+        self.assertIn('expect(values, "runtimeDataConsumeCount", 1, "scripted battle")', self.runner)
         scenario = gba_playtest.load_scenario(
             PLAYTEST_DIR / "scenarios" / "combat.json"
         )

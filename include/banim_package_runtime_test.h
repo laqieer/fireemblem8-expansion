@@ -24,6 +24,7 @@ struct BanimPackageRuntimeTestProbe {
     /* 24 */ u32 battleEntryCount;
     /* 28 */ u32 battleCompleteCount;
     /* 2C */ u32 selectedBattleIndex;
+    /* 30 */ u32 runtimeDataConsumeCount;
 };
 
 extern EWRAM_DATA struct BanimPackageRuntimeTestProbe gBanimPackageRuntimeTestProbe;
@@ -31,6 +32,11 @@ extern EWRAM_DATA struct BanimPackageRuntimeTestProbe gBanimPackageRuntimeTestPr
 bool BanimPackageRuntimeTest_ForceFirstScriptedBattle(void);
 void BanimPackageRuntimeTest_BeginScriptedBattle(void);
 void BanimPackageRuntimeTest_MarkBattleEntry(void);
+void BanimPackageRuntimeTest_MarkRuntimeDataConsumed(
+    const u32 * script,
+    const u32 * oam,
+    const u16 * palette
+);
 void BanimPackageRuntimeTest_MarkBattleComplete(void);
 
 #endif /* FE8_BANIM_PACKAGE_RUNTIME_TEST */

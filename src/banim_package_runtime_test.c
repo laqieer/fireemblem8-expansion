@@ -64,6 +64,40 @@ void BanimPackageRuntimeTest_MarkBattleEntry(void)
     }
 }
 
+void BanimPackageRuntimeTest_MarkRuntimeDataConsumed(
+    const u32 * script,
+    const u32 * oam,
+    const u16 * palette
+)
+{
+    int index;
+
+    if (
+        gBanimPackageRuntimeTestProbe.selectionCount != 1
+        || gBanimPackageRuntimeTestProbe.runtimeDataConsumeCount != 0
+        || gBanimPackageRuntimeTestProbe.selectedBattleIndex
+            != BANIM_PACKAGE_LORM_SP1_PROOF_INDEX
+    )
+    {
+        return;
+    }
+
+    for (index = 0; index < BANIM_PACKAGE_LORM_SP1_PROOF_SCRIPT_WORD_COUNT; index++)
+    {
+        if (script[index] == BANIM_PACKAGE_LORM_SP1_PROOF_SOUND_OPCODE)
+        {
+            if (
+                ((const u16 *)oam)[1] == 0x8000
+                && palette[1] == BANIM_PACKAGE_LORM_SP1_PROOF_PALETTE_COLOR_1
+            )
+            {
+                gBanimPackageRuntimeTestProbe.runtimeDataConsumeCount++;
+            }
+            return;
+        }
+    }
+}
+
 void BanimPackageRuntimeTest_MarkBattleComplete(void)
 {
     if (

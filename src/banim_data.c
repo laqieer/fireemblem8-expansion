@@ -1,4 +1,5 @@
 #include "banim_data.h"
+#include "build/generated/assets/banim/banim_runtime_symbols.h"
 __attribute__((section(".data.banim_array")))
 struct BattleAnim banim_data[] = {
 	{"lorm_sp1", &banim_lorm_sp1_modes_bin, &banim_lorm_sp1_motion_o, &banim_lorm_sp1_oam_r_bin, &banim_lorm_sp1_oam_l_bin, &banim_lorm_sp1_agbpal}, // 0x0

@@ -23,17 +23,9 @@ symlinked, escaping, or case-fold-colliding.
 {
   "schemaVersion": "fe8.community-banim.v1",
   "id": "UPPER_SNAKE_CASE_MANIFEST_ID",
-  "abbreviation": "existing_banim_abbreviation",
+  "abbreviation": "package_animation_abbreviation",
   "animConf": "AnimConf_N",
   "class": "CLASS_SYMBOL",
-  "runtime": {
-    "modes": "banim/name_modes.bin",
-    "motion": "banim/name_motion.o",
-    "oamLeft": "banim/name_oam_l.bin",
-    "oamRight": "banim/name_oam_r.bin",
-    "palette": "graphics/banim/name.agbpal",
-    "linkerInputs": ["existing linker_script_banim.txt entry"]
-  },
   "frames": [{"id": "lower_case_frame_id", "path": "graphics/banim/frame.png"}],
   "paletteVariants": ["default"],
   "resources": {
@@ -45,12 +37,13 @@ symlinked, escaping, or case-fold-colliding.
 }
 ```
 
-The adapter checks that the runtime symbols name one existing `banim_data[]`
-entry, every linker input is already owned by `linker_script_banim.txt`, and
-the selected class currently points to the declared `AnimConf_*`. This
-registers an additive `BattleAnimDef` hook and table alias without altering
-the default class mapping. Duplicate `AnimConf_*` ownership, IDs, source
-paths, or package IDs fail before generation.
+The package may not name pre-existing motion, OAM, palette, mode, or linker
+artifacts. The adapter derives all of those build-local products from the
+declared PNG frames and text script, then registers them through the existing
+compressing-linker object, additive `banim_data[]` entry, and generated
+`BattleAnimDef`. The selected class must currently point to the declared
+`AnimConf_*`; duplicate `AnimConf_*` ownership, IDs, source paths, or package
+IDs fail before generation.
 
 ## Text grammar v1
 
@@ -65,6 +58,7 @@ wait <decimal 1..255>
 command start_attack_1|start_attack_2|hit_normal|hit_critical_1
 command prepare_hp_deplete|wait_hp_deplete|start_dodge|end_dodge
 command range_attack|shake_screen_heavily|shake_screen_slightly
+sound sword_swing_short|sword_slash_air|step_heavy
 loop <positive decimal count>
 end
 ```
@@ -74,11 +68,12 @@ with `end`; expanded duration is capped at 65535 ticks. `loop` repeats only
 the immediately preceding frame or wait group inside the current mode.
 Commands map one-to-one to the named existing `banim_code_*` macros.
 
-No numeric opcode, FEditor binary serialization, macro, include, alias,
-path, transform, custom spell command, unknown command, malformed mode, or
-unterminated frame group is accepted. Sound commands are intentionally not in
-v1 because their command-to-sound semantics need a separately versioned
-runtime policy; they fail rather than being guessed or dropped.
+The three `sound` names are the complete v1 sound subset. They map one-to-one
+to `banim_code_sound_sword_swing_short`,
+`banim_code_sound_sword_slash_air`, and `banim_code_sound_step_heavy`.
+No numeric opcode or sound ID, FEditor binary serialization, macro, include,
+alias, path, transform, custom spell command, unknown command/sound,
+malformed mode, or unterminated frame group is accepted.
 
 ## Images, palettes, and budgets
 
@@ -87,21 +82,24 @@ Each frame is a single-IDAT, non-interlaced PNG with indexed color type 3,
 geometry, one 1..16-color `PLTE`, and zero or one `tRNS` chunk. If `tRNS`
 exists it must have exactly one zero-alpha color and every other declared
 entry must be fully opaque (`255`). RGB/RGBA, interlaced,
-over-color, cropped, scaled, rotated, or multi-IDAT PNGs fail. Frame payload
-deduplication and OAM composition remain in the established compiler/linker
-formats; v1 validates the declared 1024-sheet-tile, 32-OAM-entry, 16-palette
-color, 128-total-OAM, 32KiB OBJ-VRAM, 256KiB ROM declaration bounds before
+over-color, cropped, scaled, rotated, or multi-IDAT PNGs fail. The generator
+converts the indexed pixels into 4bpp tile payloads, converts PLTE values to
+the existing 15-bit palette layout, deterministically composes each frame into
+left/right 32x32 OAM records, and emits mode offsets plus relocatable motion
+assembly. It validates the derived 1024-sheet-tile, 32-OAM-entry, 16-palette
+color, 128-total-OAM, 32KiB OBJ-VRAM, and declared ROM bounds before
 publishing.
 
 Generation writes only ignored `build/generated/assets/banim/` products:
-`banim_data_entries.inc`, `banim_defs.inc`, `banim_defs.h`, and
-`linker_inputs.mk`. The existing C source includes the generated entry and
-definition seams only; no public header includes generated content.
-`banim_defs.h` remains a generated declaration compatibility artifact for
-incremental archival dependency files. `linker_inputs.mk` is a dependency
-report, not a second linker list. `assets-generate` is write-if-changed/atomic; `assets-check`
-rejects missing, stale, and orphan products. The existing #67 publication
-lock still exclusively serializes `banim/data_banim.o`.
+4bpp frames, palette payloads, left/right OAM, mode offsets, relocatable
+motion assembly, `banim_data_entries.inc`, runtime symbol declarations,
+`banim_defs.inc`, `banim_defs.h`, and a combined compressor-linker script.
+The existing C source includes only generated entry/definition/symbol seams;
+no public header includes generated content. The generated linker script
+extends the committed base list and is consumed by the existing #67-locked
+`banim/data_banim.o` publication path; it is not a second runtime linker.
+`assets-generate` is write-if-changed/atomic; `assets-check` rejects missing,
+stale, and orphan products.
 
 ## Workflow and tester case
 
@@ -121,9 +119,10 @@ lock still exclusively serializes `banim/data_banim.o`.
 
 **TC-BANIM-PACKAGE-062** uses `LORM_SP1_PROOF` in a clean checkout. The
 positive host automation validates its v1 text/PNG/package/class/linker
-binding and asserts deterministic generated declarations; the default control
-retains `CLASS_EPHRAIM_LORD -> AnimConf_0` and its original battle entry.
-Host negatives cover unsupported commands, missing mode structure,
+binding and asserts generated 4bpp/palette/OAM/mode/motion/linker payloads;
+the default control retains `CLASS_EPHRAIM_LORD -> AnimConf_0` and its
+original battle entry. Host negatives cover unsupported commands and sounds,
+missing mode structure,
 nonconforming PNGs, invalid resource declarations, duplicate ownership,
 unsafe source paths, stale/orphan output, and atomic replacement.
 
@@ -138,10 +137,11 @@ select the alias. The real scripted route then selects `LORM_SP1_PROOF` exactly
 once after the ordinary resolver has chosen its default mapping, records entry
 only when the battle-animation lifecycle starts, and records completion only
 from `EkrMainEndExec`. It asserts that selected alias index, five modes,
-normal/total timing, five existing runtime resources, the actual
+normal/total timing, generated script sound opcode, decompressed OAM and
+palette payloads, the actual
 `CLASS_EPHRAIM_LORD` class ID (`0x01`), the unchanged
 `CLASS_EPHRAIM_LORD -> AnimConf_0 -> 0` default mapping, and one selection,
-entry, and completion. The macro is absent from ordinary debug/release builds, so it
+entry, generated-data consumption, and completion. The macro is absent from ordinary debug/release builds, so it
 cannot create a production mapping or router. The generated alias remains
 additive and the ordinary resolver remains unmodified.
 

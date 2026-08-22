@@ -11,6 +11,8 @@ ASSET_BANIM_DATA_ENTRIES := $(ASSET_OUTPUT_DIR)/banim/banim_data_entries.inc
 ASSET_BANIM_DEFS := $(ASSET_OUTPUT_DIR)/banim/banim_defs.inc
 ASSET_BANIM_DEFS_HEADER := $(ASSET_OUTPUT_DIR)/banim/banim_defs.h
 ASSET_BANIM_RUNTIME_TEST_DEFS := $(ASSET_OUTPUT_DIR)/banim/banim_runtime_test_defs.h
+ASSET_BANIM_RUNTIME_SYMBOLS := $(ASSET_OUTPUT_DIR)/banim/banim_runtime_symbols.h
+ASSET_BANIM_COMBINED_LINKER_SCRIPT := $(ASSET_OUTPUT_DIR)/banim/linker_script_banim.txt
 ASSET_TOOL := $(PYTHON) -m scripts.assets
 ASSET_TOOL_INPUTS := $(filter-out scripts/assets/tests/%,$(sort $(shell find scripts/assets -type f -name '*.py' -print)))
 
@@ -38,11 +40,12 @@ $(ASSET_OUTPUT_MK): $(ASSET_MANIFEST) $(ASSET_TOOL_INPUTS)
 	$(ASSET_TOOL) --manifest "$(ASSET_MANIFEST)" --out-dir "$(ASSET_OUTPUT_DIR)" generate
 
 $(ASSET_BANIM_DATA_ENTRIES) $(ASSET_BANIM_DEFS) $(ASSET_BANIM_DEFS_HEADER) \
-$(ASSET_BANIM_RUNTIME_TEST_DEFS) &: $(ASSET_OUTPUT_MK)
+$(ASSET_BANIM_RUNTIME_TEST_DEFS) $(ASSET_BANIM_RUNTIME_SYMBOLS) &: $(ASSET_OUTPUT_MK)
 	$(ASSET_TOOL) --manifest "$(ASSET_MANIFEST)" --out-dir "$(ASSET_OUTPUT_DIR)" generate
 	@test -f $@
 
-src/banim_data.o $(MODERN_OUTPUT_DIR)/src/banim_data.o: $(ASSET_BANIM_DATA_ENTRIES)
+src/banim_data.o $(MODERN_OUTPUT_DIR)/src/banim_data.o: $(ASSET_BANIM_DATA_ENTRIES) \
+$(ASSET_BANIM_RUNTIME_SYMBOLS)
 
 src/data_banimconf.o $(MODERN_OUTPUT_DIR)/src/data_banimconf.o: $(ASSET_BANIM_DEFS)
 

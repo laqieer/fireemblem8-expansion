@@ -251,10 +251,15 @@ def safe_output_dir(path):
 
 
 def _write_if_changed(path, content):
+    binary = isinstance(content, bytes)
     existing = None
     if os.path.exists(path):
-        with open(path, encoding="utf-8") as handle:
-            existing = handle.read()
+        if binary:
+            with open(path, "rb") as handle:
+                existing = handle.read()
+        else:
+            with open(path, encoding="utf-8") as handle:
+                existing = handle.read()
     if existing == content:
         return False
     directory = os.path.dirname(path)
@@ -262,11 +267,15 @@ def _write_if_changed(path, content):
     descriptor, temporary_path = tempfile.mkstemp(
         prefix=".asset-manifest-",
         dir=directory,
-        text=True,
+        text=not binary,
     )
     try:
-        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-            handle.write(content)
+        if binary:
+            with os.fdopen(descriptor, "wb") as handle:
+                handle.write(content)
+        else:
+            with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+                handle.write(content)
         os.replace(temporary_path, path)
     except OSError:
         if os.path.exists(temporary_path):
@@ -599,26 +608,26 @@ class BattleAnimationPackageKind:
                 raise ValueError("package id '{}' does not match manifest id '{}'".format(package.data["id"], record.id))
             if not package.data["animConf"].startswith("AnimConf_"):
                 raise ValueError("animConf must name an existing AnimConf_* declaration")
-            self._validate_runtime_inputs(package.data["runtime"], package.data["abbreviation"], record)
+            outputs, _paths, metadata = banim.runtime_outputs(
+                package, os.path.join(ASSET_OUTPUT_ROOT, "banim")
+            )
+            if metadata["max_oam_entries"] > record.resources["oamEntries"]:
+                raise ValueError(
+                    "generated OAM count {} exceeds resources.oamEntries".format(
+                        metadata["max_oam_entries"]
+                    )
+                )
+            if sum(png["tiles"] * 32 for png in package.pngs.values()) > record.resources["objVramBytes"]:
+                raise ValueError("generated frame data exceeds resources.objVramBytes")
+            if max(png["colors"] for png in package.pngs.values()) > record.resources["paletteColors"]:
+                raise ValueError("generated palette exceeds resources.paletteColors")
+            if sum(len(content) for content in outputs.values()) > record.resources["romBytes"]:
+                raise ValueError("generated runtime data exceeds resources.romBytes")
             self._validate_class_binding(package.data, record)
         except (OSError, ValueError, json.JSONDecodeError) as exc:
             diagnostics.add(GeneratedDataError(str(exc), record.loc, "{}.package".format(record.id)))
             return
         record.banim_package = package
-
-    def _validate_runtime_inputs(self, runtime, abbreviation, record):
-        for key in ("modes", "motion", "oamLeft", "oamRight", "palette"):
-            _runtime_output_path(runtime[key], "{}.runtime.{}".format(record.id, key))
-        with open(os.path.join(REPO_ROOT, "linker_script_banim.txt"), encoding="utf-8") as handle:
-            linker_lines = {line.split("|", 1)[0].strip() for line in handle if line.strip() and not line.startswith("#")}
-        for item in runtime["linkerInputs"]:
-            _runtime_output_path(item, "{}.runtime.linkerInputs".format(record.id))
-            if item not in linker_lines:
-                raise ValueError("linker input '{}' is not owned by linker_script_banim.txt".format(item))
-        with open(os.path.join(REPO_ROOT, "src", "banim_data.c"), encoding="utf-8") as handle:
-            table = handle.read()
-        if package_abbr_from_table(table, runtime) != abbreviation:
-            raise ValueError("runtime symbols do not match an existing banim_data[] entry")
 
     def _validate_class_binding(self, package, record):
         with open(os.path.join(REPO_ROOT, record.ownership["classData"]), encoding="utf-8") as handle:
@@ -631,7 +640,7 @@ class BattleAnimationPackageKind:
         return "{}:{}".format(record.ownership["seam"], record.banim_package.data["animConf"])
 
     def make_dependencies(self, record):
-        sources = tuple(record.sources) + tuple(record.banim_package.data["runtime"]["linkerInputs"])
+        sources = tuple(record.sources)
         return (
             (self._object, sources),
             (self._definitions_object, sources),
@@ -639,23 +648,6 @@ class BattleAnimationPackageKind:
             ("$(MODERN_OUTPUT_DIR)/src/banim_data.o", sources),
             ("$(MODERN_OUTPUT_DIR)/src/data_banimconf.o", sources),
         )
-
-
-def package_abbr_from_table(table, runtime):
-    symbols = (
-        _symbol(runtime["modes"]),
-        _symbol(runtime["motion"]),
-        _symbol(runtime["oamRight"]),
-        _symbol(runtime["oamLeft"]),
-        _symbol(runtime["palette"]),
-    )
-    pattern = re.compile(
-        r'\{\s*"(?P<abbr>[^"]+)"\s*,\s*&' + r'\s*,\s*&'.join(
-            re.escape(symbol) for symbol in symbols
-        ) + r'\s*\}'
-    )
-    match = pattern.search(table)
-    return match.group("abbr") if match else None
 
 
 class KindRegistry:
@@ -837,6 +829,41 @@ def render_makefile(records):
         for target, sources in kind.make_dependencies(record):
             prerequisites = list(sources) + dependency_sources(record)
             lines.append("{}: {}\n".format(target, " ".join(prerequisites)))
+    packages = [
+        record for record in records if record.kind == BattleAnimationPackageKind.name
+    ]
+    if packages:
+        generated = []
+        for record in packages:
+            _outputs, paths, _metadata = banim.runtime_outputs(
+                record.banim_package, "$(ASSET_OUTPUT_DIR)"
+            )
+            generated.extend(paths.values())
+        generated.append("$(ASSET_BANIM_COMBINED_LINKER_SCRIPT)")
+        lines.append("\n{} &: $(ASSET_OUTPUT_MK)\n".format(" ".join(generated)))
+        lines.append(
+            '\t$(ASSET_TOOL) --manifest "$(ASSET_MANIFEST)" --out-dir "$(ASSET_OUTPUT_DIR)" generate\n'
+        )
+        lines.append("\t@test -f $@\n")
+        for record in packages:
+            _outputs, paths, _metadata = banim.runtime_outputs(
+                record.banim_package, "$(ASSET_OUTPUT_DIR)"
+            )
+            motion_object = paths["motion"][:-1] + "o"
+            lines.append("\n{}: {}\n".format(motion_object, paths["motion"]))
+            lines.append("\t$(AS) $(ASFLAGS) $< -o $@\n")
+            lines.append(
+                "banim/data_banim.o: {} {} {} {} {} {}\n".format(
+                    motion_object,
+                    paths["modes"],
+                    paths["oam_left"],
+                    paths["oam_right"],
+                    paths["palette"],
+                    " ".join(
+                        paths["frame_" + frame_id] for frame_id in record.banim_package.frames
+                    ),
+                )
+            )
     return "".join(lines)
 
 
@@ -869,6 +896,29 @@ def expected_outputs(records, out_dir):
     return expected
 
 
+def banim_derived_outputs(records, out_dir):
+    paths = set()
+    for record in records:
+        if record.kind != BattleAnimationPackageKind.name:
+            continue
+        _outputs, runtime, _metadata = banim.runtime_outputs(record.banim_package, out_dir)
+        motion_object = runtime["motion"][:-1] + "o"
+        paths.update(
+            (
+                motion_object,
+                motion_object + ".bin",
+                motion_object + ".bin.lz",
+                motion_object + ".bin.lz.o",
+                runtime["modes"] + ".o",
+            )
+        )
+        for key, path in runtime.items():
+            if key.startswith("frame_") or key in ("palette", "oam_left", "oam_right"):
+                paths.add(path + ".lz")
+                paths.add(path + ".lz.o")
+    return paths
+
+
 def banim_expected_outputs(records, out_dir):
     packages = [record for record in records if record.kind == BattleAnimationPackageKind.name]
     entries = [
@@ -883,21 +933,35 @@ def banim_expected_outputs(records, out_dir):
     runtime_test = [
         "/* AUTO-GENERATED by scripts.assets; do not edit. */\n",
     ]
-    linker = [
-        "# AUTO-GENERATED banim source prerequisites; not a second linker list.\n",
+    symbols = [
+        "/* AUTO-GENERATED by scripts.assets; do not edit. */\n",
     ]
+    linker = []
+    with open(os.path.join(REPO_ROOT, "linker_script_banim.txt"), encoding="utf-8") as handle:
+        linker.append(handle.read())
+    if linker[-1] and not linker[-1].endswith("\n"):
+        linker.append("\n")
+    linker.append("# AUTO-GENERATED package runtime entries; do not edit.\n")
     for offset, record in enumerate(packages):
-        runtime = record.banim_package.data["runtime"]
         abbr = record.banim_package.data["abbreviation"]
+        _outputs, paths, metadata = banim.runtime_outputs(record.banim_package, out_dir)
+        stem = banim.runtime_stem(record.banim_package)
         index = _banim_table_count() + offset + 1
+        symbols.extend((
+            "extern int {}_modes_bin;\n".format(stem),
+            "extern char {}_motion_o;\n".format(stem),
+            "extern char {}_oam_r_bin;\n".format(stem),
+            "extern char {}_oam_l_bin;\n".format(stem),
+            "extern char {}_palette_pal;\n".format(stem),
+        ))
         entries.append(
             '\t{{"{}", &{}, &{}, &{}, &{}, &{}}},\n'.format(
                 abbr,
-                _symbol(runtime["modes"]),
-                _symbol(runtime["motion"]),
-                _symbol(runtime["oamRight"]),
-                _symbol(runtime["oamLeft"]),
-                _symbol(runtime["palette"]),
+                stem + "_modes_bin",
+                stem + "_motion_o",
+                stem + "_oam_r_bin",
+                stem + "_oam_l_bin",
+                stem + "_palette_pal",
             )
         )
         definitions.extend((
@@ -919,15 +983,40 @@ def banim_expected_outputs(records, out_dir):
                 prefix, record.banim_package.mode_durations["normal"]),
             "#define {}_TOTAL_DURATION {}\n".format(
                 prefix, sum(record.banim_package.mode_durations.values())),
+            "#define {}_SCRIPT_WORD_COUNT {}\n".format(prefix, metadata["script_word_count"]),
+            "#define {}_SOUND_OPCODE 0x{:08X}\n".format(prefix, metadata["sound_opcode"]),
+            "#define {}_OAM_ENTRY_COUNT {}\n".format(prefix, metadata["max_oam_entries"]),
+            "#define {}_PALETTE_COLOR_1 0x{:04X}\n".format(
+                prefix, metadata["palette_color_1"]
+            ),
         ))
-        linker.append("{}: {}\n".format(record.id, " ".join(runtime["linkerInputs"])))
-    return {
+        seen_frames = set()
+        for frame_id in record.banim_package.frames:
+            path = paths["frame_" + frame_id]
+            if path not in seen_frames:
+                linker.append("{}>lz\n".format(path))
+                seen_frames.add(path)
+        linker.extend(
+            (
+                "{}>lz\n".format(paths["palette"]),
+                "{}>lz\n".format(paths["oam_left"]),
+                "{}>lz\n".format(paths["oam_right"]),
+                "{}|.data.script>lz\n".format(paths["motion"][:-1] + "o"),
+                "{}\n".format(paths["modes"]),
+            )
+        )
+    expected = {
         os.path.join(out_dir, "banim", "banim_data_entries.inc"): "".join(entries),
         os.path.join(out_dir, "banim", "banim_defs.inc"): "".join(definitions),
         os.path.join(out_dir, "banim", "banim_defs.h"): "".join(declarations),
         os.path.join(out_dir, "banim", "banim_runtime_test_defs.h"): "".join(runtime_test),
-        os.path.join(out_dir, "banim", "linker_inputs.mk"): "".join(linker),
+        os.path.join(out_dir, "banim", "banim_runtime_symbols.h"): "".join(symbols),
+        os.path.join(out_dir, "banim", "linker_script_banim.txt"): "".join(linker),
     }
+    for record in packages:
+        outputs, _paths, _metadata = banim.runtime_outputs(record.banim_package, out_dir)
+        expected.update(outputs)
+    return expected
 
 
 def _banim_package_symbol(record_id):
@@ -959,19 +1048,20 @@ def _banim_table_count():
 def generate(manifest_path, out_dir):
     records = load_and_validate(manifest_path)
     expected = expected_outputs(records, out_dir)
+    derived = banim_derived_outputs(records, out_dir)
     for path, content in expected.items():
         _write_if_changed(path, content)
-    _remove_orphan_outputs(safe_output_dir(out_dir), expected)
+    _remove_orphan_outputs(safe_output_dir(out_dir), expected, derived)
     return records
 
 
-def _remove_orphan_outputs(out_dir, expected):
+def _remove_orphan_outputs(out_dir, expected, derived):
     if not os.path.isdir(out_dir):
         return
     for root, _, files in os.walk(out_dir):
         for filename in files:
             path = os.path.join(root, filename)
-            if path not in expected:
+            if path not in expected and path not in derived:
                 os.unlink(path)
     for root, directories, _ in os.walk(out_dir, topdown=False):
         for directory in directories:
@@ -984,19 +1074,25 @@ def check(manifest_path, out_dir):
     records = load_and_validate(manifest_path)
     out_dir = safe_output_dir(out_dir)
     expected = expected_outputs(records, out_dir)
+    derived = banim_derived_outputs(records, out_dir)
     errors = []
     for path, content in expected.items():
         if not os.path.isfile(path):
             errors.append("missing generated output {}".format(path))
             continue
-        with open(path, encoding="utf-8") as handle:
-            if handle.read() != content:
-                errors.append("stale generated output {}".format(path))
+        if isinstance(content, bytes):
+            with open(path, "rb") as handle:
+                actual = handle.read()
+        else:
+            with open(path, encoding="utf-8") as handle:
+                actual = handle.read()
+        if actual != content:
+            errors.append("stale generated output {}".format(path))
     if os.path.isdir(out_dir):
         for root, _, files in os.walk(out_dir):
             for filename in files:
                 path = os.path.join(root, filename)
-                if path not in expected:
+                if path not in expected and path not in derived:
                     errors.append("orphan generated output {}".format(path))
     if errors:
         raise GeneratedDataValidationError([GeneratedDataError(error) for error in errors])

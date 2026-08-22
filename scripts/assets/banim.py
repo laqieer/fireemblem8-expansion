@@ -30,21 +30,33 @@ COMMANDS = {
     "shake_screen_heavily": "banim_code_shake_screnn_heavily",
     "shake_screen_slightly": "banim_code_shake_screnn_slightly",
 }
+SOUNDS = {
+    "sword_swing_short": ("banim_code_sound_sword_swing_short", 0x85000022),
+    "sword_slash_air": ("banim_code_sound_sword_slash_air", 0x85000024),
+    "step_heavy": ("banim_code_sound_step_heavy", 0x85000034),
+}
 IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 FRAME_ID_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 MAX_MODE_DURATION = 0xFFFF
 MAX_SHEET_TILES = 1024
 MAX_OAM_PER_FRAME = 32
 MAX_PALETTE_COLORS = 16
+MODE_INDEXES = (
+    "normal", "normal", "critical", "critical", "ranged", "ranged",
+    "dodge", "dodge", "standing", "standing", "standing", "standing",
+    "normal", "normal", "normal", "normal", "normal", "normal",
+    "normal", "normal", "normal", "normal", "normal", "normal",
+)
 
 
 class BanimPackage:
     """Validated package data used by the static asset adapter."""
 
-    def __init__(self, data, frames, mode_durations, pngs):
+    def __init__(self, data, frames, mode_durations, modes, pngs):
         self.data = data
         self.frames = frames
         self.mode_durations = mode_durations
+        self.modes = modes
         self.pngs = pngs
 
 
@@ -134,6 +146,7 @@ def read_indexed_png(path):
     if len(pixels) != height * (row_bytes + 1):
         raise ValueError("{} has an invalid indexed-PNG scanline size".format(path))
     previous = bytearray(row_bytes)
+    decoded = bytearray()
     colors = len(palette) // 3
     offset = 0
     for _ in range(height):
@@ -160,8 +173,16 @@ def read_indexed_png(path):
                 row[index] = (value + predictor) & 0xFF
         if any((value >> 4) >= colors or (value & 0x0F) >= colors for value in row):
             raise ValueError("{} has a palette index outside PLTE".format(path))
+        decoded.extend(row)
         previous = row
-    return {"width": width, "height": height, "tiles": width * height // 64, "colors": len(palette) // 3}
+    return {
+        "width": width,
+        "height": height,
+        "tiles": width * height // 64,
+        "colors": len(palette) // 3,
+        "pixels": bytes(decoded),
+        "palette": palette,
+    }
 
 
 def parse_script(path, frames):
@@ -181,9 +202,11 @@ def parse_script(path, frames):
     if header_line is None:
         raise ValueError("{} must begin with '{}'".format(path, SCRIPT_HEADER))
     mode_durations = {}
+    modes = {}
     mode = None
     timed = False
     group_duration = None
+    group = None
     for line_number, source_line in enumerate(lines[header_line:], header_line + 1):
         line = source_line.strip()
         if not line or line.startswith("#"):
@@ -196,37 +219,56 @@ def parse_script(path, frames):
             mode = words[1]
             timed = False
             group_duration = None
+            group = None
             mode_durations[mode] = 0
+            modes[mode] = []
         elif command == "end":
             if len(words) != 1 or mode is None or not timed:
                 raise ValueError("{}:{} ends an empty or unopened mode".format(path, line_number))
             mode = None
             group_duration = None
+            group = None
         elif command == "frame":
             if mode is None or len(words) not in (3, 4) or words[2] not in frames:
                 raise ValueError("{}:{} has an unknown or malformed frame".format(path, line_number))
             if len(words) == 4 and words[3] not in SIDES:
                 raise ValueError("{}:{} has an invalid frame side".format(path, line_number))
             duration = _duration(words[1], path, line_number, "frame duration")
+            entry = ("frame", duration, words[2], words[3] if len(words) == 4 else "both")
+            modes[mode].append(entry)
             group_duration = duration
+            group = (entry,)
             mode_durations[mode] += duration
             timed = True
         elif command == "wait":
             if mode is None or len(words) != 2:
                 raise ValueError("{}:{} has an invalid wait".format(path, line_number))
             duration = _duration(words[1], path, line_number, "wait duration")
+            entry = ("wait", duration)
+            modes[mode].append(entry)
             group_duration = duration
+            group = (entry,)
             mode_durations[mode] += duration
             timed = True
         elif command == "loop":
-            if mode is None or len(words) != 2 or group_duration is None:
+            if mode is None or len(words) != 2 or group_duration is None or group is None:
                 raise ValueError("{}:{} has a loop without a preceding timed group".format(path, line_number))
             count = _positive_int(_decimal(words[1], path, line_number), "loop count")
             mode_durations[mode] += group_duration * count
+            for _ in range(count):
+                modes[mode].extend(group)
         elif command == "command":
             if mode is None or len(words) != 2 or words[1] not in COMMANDS:
                 raise ValueError("{}:{} has an unsupported vanilla command".format(path, line_number))
+            modes[mode].append(("command", words[1]))
             group_duration = None
+            group = None
+        elif command == "sound":
+            if mode is None or len(words) != 2 or words[1] not in SOUNDS:
+                raise ValueError("{}:{} has an unsupported sound command".format(path, line_number))
+            modes[mode].append(("sound", words[1]))
+            group_duration = None
+            group = None
         else:
             raise ValueError("{}:{} has unknown command '{}'".format(path, line_number, command))
         if mode is not None and mode_durations[mode] > MAX_MODE_DURATION:
@@ -235,7 +277,7 @@ def parse_script(path, frames):
         raise ValueError("{} has an unterminated mode".format(path))
     if tuple(sorted(mode_durations)) != tuple(sorted(MODES)):
         raise ValueError("{} must define every v1 mode exactly once".format(path))
-    return mode_durations
+    return mode_durations, modes
 
 
 def _decimal(text, path, line_number):
@@ -257,7 +299,7 @@ def load_package(root, package_source, script_source, declared_sources):
         data = json.load(handle)
     _exact_keys(
         data,
-        ("schemaVersion", "id", "abbreviation", "animConf", "class", "runtime", "frames", "paletteVariants",
+        ("schemaVersion", "id", "abbreviation", "animConf", "class", "frames", "paletteVariants",
          "resources"),
         package_source,
     )
@@ -266,10 +308,6 @@ def load_package(root, package_source, script_source, declared_sources):
     for name in ("id", "abbreviation", "animConf", "class"):
         if not isinstance(data[name], str) or not IDENTIFIER_RE.fullmatch(data[name]):
             raise ValueError("{}.{} must be a C identifier".format(package_source, name))
-    _exact_keys(data["runtime"], ("modes", "motion", "oamLeft", "oamRight", "palette", "linkerInputs"), "runtime")
-    runtime = data["runtime"]
-    if not isinstance(runtime["linkerInputs"], list) or not runtime["linkerInputs"]:
-        raise ValueError("runtime.linkerInputs must list existing compressor inputs")
     _exact_keys(data["resources"], ("maxFrames", "maxSheetTiles", "maxOamPerFrame", "maxPaletteColors"), "resources")
     for key in data["resources"]:
         _positive_int(data["resources"][key], "resources.{}".format(key))
@@ -304,5 +342,173 @@ def load_package(root, package_source, script_source, declared_sources):
         raise ValueError("frame sheet tiles exceed resources.maxSheetTiles")
     if max(png["colors"] for png in pngs.values()) > data["resources"]["maxPaletteColors"]:
         raise ValueError("frame palette colors exceed resources.maxPaletteColors")
-    durations = parse_script(os.path.join(root, script_source), frame_paths)
-    return BanimPackage(data, frame_paths, durations, pngs)
+    durations, modes = parse_script(os.path.join(root, script_source), frame_paths)
+    return BanimPackage(data, frame_paths, durations, modes, pngs)
+
+
+def runtime_stem(package):
+    return "banim_package_{}".format(package.data["id"].lower())
+
+
+def runtime_paths(package, out_dir, aliases=None):
+    stem = runtime_stem(package)
+    directory = os.path.join(out_dir, "banim")
+    paths = {
+        "motion": os.path.join(directory, stem + "_motion.s"),
+        "modes": os.path.join(directory, stem + "_modes.bin"),
+        "oam_left": os.path.join(directory, stem + "_oam_l.bin"),
+        "oam_right": os.path.join(directory, stem + "_oam_r.bin"),
+        "palette": os.path.join(directory, stem + "_palette.pal"),
+    }
+    for frame_id in package.frames:
+        source_id = aliases[frame_id] if aliases is not None else frame_id
+        paths["frame_" + frame_id] = os.path.join(directory, stem + "_" + source_id + ".4bpp")
+    return paths
+
+
+def _pixel(png, x, y):
+    packed = png["pixels"][y * (png["width"] // 2) + x // 2]
+    return packed >> 4 if x % 2 == 0 else packed & 0x0F
+
+
+def _frame_tiles(png):
+    data = bytearray()
+    for tile_y in range(0, png["height"], 8):
+        for tile_x in range(0, png["width"], 8):
+            for y in range(tile_y, tile_y + 8):
+                for x in range(tile_x, tile_x + 8, 2):
+                    data.append(_pixel(png, x, y) | (_pixel(png, x + 1, y) << 4))
+    return bytes(data)
+
+
+def _palette_data(png):
+    data = bytearray()
+    for index in range(MAX_PALETTE_COLORS):
+        if index < png["colors"]:
+            red, green, blue = png["palette"][index * 3:index * 3 + 3]
+            color = (red >> 3) | ((green >> 3) << 5) | ((blue >> 3) << 10)
+        else:
+            color = 0
+        data.extend(struct.pack("<H", color))
+    return bytes(data)
+
+
+def _oam_data(package):
+    offsets = {}
+    data = bytearray()
+    max_entries = 0
+    for frame_id, png in package.pngs.items():
+        columns = (png["width"] + 31) // 32
+        rows = (png["height"] + 31) // 32
+        entries = columns * rows
+        if entries > package.data["resources"]["maxOamPerFrame"]:
+            raise ValueError(
+                "frame '{}' requires {} OAM entries, exceeding resources.maxOamPerFrame".format(
+                    frame_id, entries
+                )
+            )
+        offsets[frame_id] = len(data)
+        max_entries = max(max_entries, entries)
+        for row in range(rows):
+            for column in range(columns):
+                tile = (row * 4 * (png["width"] // 8)) + column * 4
+                data.extend(
+                    struct.pack(
+                        "<6H",
+                        0,
+                        0x8000,
+                        tile,
+                        (column * 32 - png["width"] // 2) & 0xFFFF,
+                        (row * 32 - png["height"] // 2) & 0xFFFF,
+                        0,
+                    )
+                )
+        data.extend(struct.pack("<3I", 1, 0, 0))
+    return bytes(data), offsets, max_entries
+
+
+def _script_word_count(entries):
+    words = 1
+    for entry in entries:
+        words += 3 if entry[0] in ("frame", "wait") else 1
+    return words
+
+
+def _motion_source(package, offsets, aliases):
+    stem = runtime_stem(package)
+    lines = [
+        '@ AUTO-GENERATED by scripts.assets; do not edit.\n',
+        '.include "banim_code.inc"\n',
+        '.section .data.script\n',
+        stem + "_script:\n",
+    ]
+    for frame_id in sorted(set(aliases.values())):
+        lines.append(".extern {}_{}\n".format(stem, frame_id))
+    fallback_frame = next(iter(package.frames))
+    for mode in MODES:
+        lines.append(stem + "_mode_" + mode + ":\n")
+        for entry in package.modes[mode]:
+            kind = entry[0]
+            if kind == "frame":
+                _, duration, frame_id, _side = entry
+                lines.append(
+                    "banim_code_frame {}, {}_{}, 0, {}\n".format(
+                        duration, stem, aliases[frame_id], offsets[frame_id]
+                    )
+                )
+            elif kind == "wait":
+                lines.append(
+                    "banim_code_frame {}, {}_{}, 0, {}\n".format(
+                        entry[1], stem, aliases[fallback_frame], offsets[fallback_frame]
+                    )
+                )
+            elif kind == "command":
+                lines.append(COMMANDS[entry[1]] + "\n")
+            else:
+                lines.append(SOUNDS[entry[1]][0] + "\n")
+        lines.append("banim_code_end_mode\n")
+    return "".join(lines)
+
+
+def runtime_outputs(package, out_dir):
+    aliases = {}
+    unique_frames = {}
+    for frame_id, png in package.pngs.items():
+        payload = _frame_tiles(png)
+        if payload in unique_frames:
+            aliases[frame_id] = unique_frames[payload]
+        else:
+            aliases[frame_id] = frame_id
+            unique_frames[payload] = frame_id
+    paths = runtime_paths(package, out_dir, aliases)
+    oam, offsets, max_oam_entries = _oam_data(package)
+    mode_offsets = {}
+    offset = 0
+    for mode in MODES:
+        mode_offsets[mode] = offset
+        offset += _script_word_count(package.modes[mode]) * 4
+    modes = b"".join(struct.pack("<I", mode_offsets[mode]) for mode in MODE_INDEXES)
+    first_png = next(iter(package.pngs.values()))
+    sounds = [
+        SOUNDS[entry[1]][1]
+        for entries in package.modes.values()
+        for entry in entries
+        if entry[0] == "sound"
+    ]
+    outputs = {
+        paths["motion"]: _motion_source(package, offsets, aliases),
+        paths["modes"]: modes,
+        paths["oam_left"]: oam,
+        paths["oam_right"]: oam,
+        paths["palette"]: _palette_data(first_png),
+    }
+    for frame_id, png in package.pngs.items():
+        if aliases[frame_id] == frame_id:
+            outputs[paths["frame_" + frame_id]] = _frame_tiles(png)
+    metadata = {
+        "max_oam_entries": max_oam_entries,
+        "palette_color_1": struct.unpack("<H", outputs[paths["palette"]][2:4])[0],
+        "script_word_count": offset // 4,
+        "sound_opcode": sounds[0] if sounds else 0,
+    }
+    return outputs, paths, metadata

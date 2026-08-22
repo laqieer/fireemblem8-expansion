@@ -2,6 +2,7 @@ BANIM 1
 mode normal
 frame 1 idle both
 command start_attack_1
+sound sword_swing_short
 wait 1
 loop 1
 end
