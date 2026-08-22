@@ -73,6 +73,7 @@ void ApplyEnabledMapChanges(void);
 void RefreshAllLightRunes(void);
 int GetObstacleHpAt(int x, int y);
 const struct MapChange* GetMapChange(int id);
+bool IsMapChangeInBounds(const struct MapChange * mapChange);
 int GetMapChangeIdAt(int x, int y);
 void ApplyMapChangesById(int mapChangeId);
 void EnableMapChange(int mapChangeId);

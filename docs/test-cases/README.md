@@ -61,3 +61,6 @@ python3 scripts/check_docs.py --check
 ```
 
 The foundation procedure is [`TC-CATALOG-001`](foundation.md#tc-catalog-001-tester-case-catalog-foundation).
+Issue #84's security/correctness procedures are
+[`TC-SIO-084`](codeql-alerts.md#tc-sio-084-bounded-link-arena-transfer) and
+[`TC-CODEQL-084`](codeql-alerts.md#tc-codeql-084-remaining-confirmed-alert-boundaries).

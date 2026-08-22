@@ -132,6 +132,8 @@ void PrintByte(const char *format, ...)
     va_end(args);
 }
 
+void PrintWord(const char *format, ...) __attribute__((format(printf, 1, 2)));
+
 void PrintWord(const char *format, ...)
 {
     std::va_list args;
@@ -522,7 +524,11 @@ void PrintAgbTrack(std::vector<Event>& events)
             break;
         case EventType::Pattern:
             PrintByte("PATT");
-            PrintWord("%s_%u_%03lu", g_asmLabel.c_str(), g_agbTrack, event.param2);
+            PrintWord(
+                "%s_%u_%03lu",
+                g_asmLabel.c_str(),
+                g_agbTrack,
+                static_cast<unsigned long>(static_cast<std::uint32_t>(event.param2)));
 
             while (!IsPatternBoundary(events[i + 1].type))
                 i++;

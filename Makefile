@@ -38,6 +38,7 @@ FETSATOOL  := scripts/gfxtools/tsa_generator.py
 TMAP2TSA   := scripts/tmap2tsa.py
 MARTOMAP   := scripts/mar_to_map.py
 PYTHON    ?= python3
+HOST_CC   ?= cc
 PAL2GBAPAL := $(GBAGFX)
 
 # Optional GNU Autoconf front end (issue #28). A configured build writes an
@@ -646,12 +647,59 @@ graphics/map/%.bin: graphics/map/%.S graphics/map/tile_config.inc
 	$(AS) $(ASFLAGS) -g $< -o $(@:.bin=.o)
 	$(OBJCOPY) -O binary $(@:.bin=.o) $@
 
+CODEQL_TEST_DIR := build/tests/codeql
+CODEQL_TEST_CFLAGS := -std=gnu11 -DMODERN -Iinclude -ffunction-sections \
+	-fdata-sections -Wall -Wextra -Werror -fsanitize=address,undefined \
+	-fno-omit-frame-pointer -Wno-unused-parameter -Wno-unused-variable \
+	-Wno-sequence-point -Wno-return-type -Wno-implicit-fallthrough
+CODEQL_TEST_LDFLAGS := -Wl,--gc-sections -fsanitize=address,undefined
+
+codeql-alerts-test:
+	@mkdir -p $(CODEQL_TEST_DIR)
+	$(HOST_CC) $(CODEQL_TEST_CFLAGS) \
+	    tests/codeql/sio_protocol_host_test.c src/sio_core.c \
+	    $(CODEQL_TEST_LDFLAGS) -o $(CODEQL_TEST_DIR)/sio_protocol_host_test
+	ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1 \
+	    $(CODEQL_TEST_DIR)/sio_protocol_host_test
+	$(HOST_CC) $(CODEQL_TEST_CFLAGS) \
+	    tests/codeql/runtime_bounds_host_test.c src/bmtrick.c src/event.c \
+	    $(CODEQL_TEST_LDFLAGS) -o $(CODEQL_TEST_DIR)/runtime_bounds_host_test
+	ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1 \
+	    $(CODEQL_TEST_DIR)/runtime_bounds_host_test
+	$(HOST_CC) -std=c11 -Itools/gbagfx -ffunction-sections -fdata-sections \
+	    -Wall -Wextra -Werror -fsanitize=address,undefined -fno-omit-frame-pointer \
+	    $$(pkg-config --cflags libpng) \
+	    tests/codeql/png_bounds_host_test.c tools/gbagfx/convert_png.c \
+	    -Wl,--gc-sections -fsanitize=address,undefined \
+	    $$(pkg-config --libs libpng) -o $(CODEQL_TEST_DIR)/png_bounds_host_test
+	ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1 \
+	    $(CODEQL_TEST_DIR)/png_bounds_host_test
+	$(HOST_CC) -std=gnu11 -DMODERN -Iinclude -fanalyzer \
+	    -Werror=analyzer-use-after-free -Werror=analyzer-double-free \
+	    -Werror=analyzer-out-of-bounds -Werror=analyzer-use-of-uninitialized-value \
+	    -Wno-unused-variable -Wno-unused-parameter -c src/sio_core.c \
+	    -o $(CODEQL_TEST_DIR)/sio_core_analyzer.o
+	$(HOST_CC) -std=gnu11 -DMODERN -Iinclude -fanalyzer \
+	    -Werror=analyzer-out-of-bounds -Werror=analyzer-use-of-uninitialized-value \
+	    -Wno-unused-variable -Wno-unused-parameter -c src/event.c \
+	    -o $(CODEQL_TEST_DIR)/event_analyzer.o
+	$(HOST_CC) -std=c11 -Itools/gbagfx $$(pkg-config --cflags libpng) -fanalyzer \
+	    -Werror=analyzer-malloc-leak -Werror=analyzer-use-after-free \
+	    -Werror=analyzer-double-free -Werror=analyzer-null-dereference \
+	    -c tools/gbagfx/convert_png.c -o $(CODEQL_TEST_DIR)/convert_png_analyzer.o
+	$(PYTHON) -m unittest \
+	    scripts.modernize.tests.test_audit.AuditTests.test_bitfield_matcher_is_linear_and_preserves_valid_declarations \
+	    -v
+	$(MAKE) -C tools/gbagfx
+	$(MAKE) -C tools/mid2agb
+
+.PHONY: codeql-alerts-test
 
 # Automatic dependency generation
 
 MAKEDEP = mkdir -p $(DEPS_DIR)/$(dir $*) && $(CPP) $(CPPFLAGS) $< -MM -MG -MT $*.o > $(DEPS_DIR)/$*.d
 
-MAKECMDGOALS_NODEP := clean tag $(MODERN_GOALS) \
+MAKECMDGOALS_NODEP := clean tag codeql-alerts-test $(MODERN_GOALS) \
 	game-localization-validate game-localization-generate \
 	game-localization-check game-localization-test game-localization-budget \
 	game-localization-leakage-audit game-localization-leakage-check \

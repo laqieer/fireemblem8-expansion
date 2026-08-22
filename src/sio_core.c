@@ -224,6 +224,7 @@ void Sio_ResetState(void)
     Sio_SetCommParams(0x6584, 3, 0x88);
     Sio_SetSubState(0);
     Sio_ResetSession();
+    gSioSt->unk_01F = SIO_BIG_TRANSFER_ACTIVE;
 
     sUnk_1 = 0;
 }
@@ -480,17 +481,49 @@ void SioMain_Loop(void)
 
     for (i = 0; i < 4; i++)
     {
-        u16 len;
+        s16 len;
 
     redo:
         len = Sio_ReadPacket(i, gSioSt->buf);
 
-        if (len != 0)
+        if (len > 0)
         {
+            struct SioData * data_message = (void *)gSioSt->buf;
+
+            if (len >= (s16)offsetof(struct SioData, bytes) &&
+                data_message->head.kind == SIO_MSG_DATA)
+            {
+                if (!Sio_IsValidDataPacket(data_message, len, i))
+                    continue;
+
+                if (data_message->head.sender == gSioSt->selfId)
+                    continue;
+
+                if (data_message->head.param != gSioSt->seq[data_message->head.sender])
+                {
+                    gSioMsgBuf.kind = SIO_MSG_DATA_ACK;
+                    gSioMsgBuf.sender = (gSioSt->selfId << 4) | data_message->head.sender;
+                    gSioMsgBuf.param = gSioSt->seq[data_message->head.sender];
+
+                    SioSend(&gSioMsgBuf, sizeof(gSioMsgBuf));
+
+                    goto redo;
+                }
+
+                if (SioQueuePendingRecvData(data_message, len) < 0)
+                    continue;
+
+                gSioMsgBuf.kind = SIO_MSG_DATA_ACK;
+                gSioMsgBuf.sender = (gSioSt->selfId << 4) | data_message->head.sender;
+                gSioMsgBuf.param = gSioSt->seq[data_message->head.sender] + 1;
+
+                SioSend(&gSioMsgBuf, sizeof(gSioMsgBuf));
+                continue;
+            }
+
             switch (len)
             {
                 struct SioMessage * message;
-                struct SioData * data_message;
 
                 case 0x0A:
                 case 0x16:
@@ -500,36 +533,7 @@ void SioMain_Loop(void)
                     data_message = (void *)gSioSt->buf;
 
                     if (data_message->head.kind != SIO_MSG_8C)
-                    {
-                        if (data_message->head.kind != SIO_MSG_DATA)
-                            break;
-
-                        if (data_message->head.sender == gSioSt->selfId)
-                            break;
-
-                        if (data_message->head.param != gSioSt->seq[data_message->head.sender])
-                        {
-                            gSioMsgBuf.kind = SIO_MSG_DATA_ACK;
-                            gSioMsgBuf.sender = (gSioSt->selfId << 4) | data_message->head.sender;
-                            gSioMsgBuf.param = gSioSt->seq[data_message->head.sender];
-
-                            SioSend(&gSioMsgBuf, sizeof(gSioMsgBuf));
-
-                            goto redo;
-                        }
-                        else
-                        {
-                            SioQueuePendingRecvData(data_message);
-
-                            gSioMsgBuf.kind = SIO_MSG_DATA_ACK;
-                            gSioMsgBuf.sender = (gSioSt->selfId << 4) | data_message->head.sender;
-                            gSioMsgBuf.param = gSioSt->seq[data_message->head.sender] + 1;
-
-                            SioSend(&gSioMsgBuf, sizeof(gSioMsgBuf));
-                        }
-
                         break;
-                    }
 
                     for (j = 0; j < 15; j++)
                     {
@@ -749,7 +753,7 @@ s16 SioSend(const void * src, u16 len)
 
     u16 cur = sWriteCursor;
 
-    if (len > SIO_MAX_PACKET)
+    if ((src == NULL && len != 0) || len > SIO_MAX_PACKET || (len & 1) != 0)
         return -1;
 
     len = len / 2;
@@ -878,7 +882,7 @@ yes:
 
     len = gSioIncoming[lookahead][playerId];
 
-    if (len > SIO_MAX_PACKET)
+    if (len > SIO_MAX_PACKET / (int)sizeof(u16))
     {
         sReadCursor[playerId] += 1;
         sReadCursor[playerId] &= 0x1FF;
@@ -970,13 +974,48 @@ int Sio_ReadMultiFrame(int unused_0, u16 * arg_1)
     return 0;
 }
 
-void SioQueuePendingRecvData(struct SioData * data)
+bool Sio_IsValidDataPacket(const struct SioData * data, u16 packetLen, u8 physicalSender)
 {
-    // TODO: clean up
+    u16 headerLen = offsetof(struct SioData, bytes);
 
+    if (data == NULL || packetLen < headerLen)
+        return false;
+
+    if (physicalSender >= ARRAY_COUNT(gSioSt->seq))
+        return false;
+
+    if (data->head.kind != SIO_MSG_DATA || data->head.sender != physicalSender)
+        return false;
+
+    if (data->len == 0 || data->len > SIO_MAX_DATA || (data->len & 1) != 0)
+        return false;
+
+    return packetLen == headerLen + data->len;
+}
+
+int SioQueuePendingRecvData(const struct SioData * data, u16 packetLen)
+{
     int i;
+    int result;
+    struct SioPending * ent;
 
-    struct SioPending * ent = &gSioSt->pendingRecv[gSioSt->nextPendingRecv];
+    if (data == NULL || packetLen < offsetof(struct SioData, bytes))
+        return -1;
+
+    if (data->head.kind != SIO_MSG_DATA ||
+        data->head.sender >= ARRAY_COUNT(gSioSt->seq) ||
+        data->len == 0 ||
+        data->len > SIO_MAX_DATA ||
+        (data->len & 1) != 0)
+        return -1;
+
+    if (packetLen != offsetof(struct SioData, bytes) + data->len)
+        return -1;
+
+    ent = &gSioSt->pendingRecv[gSioSt->nextPendingRecv];
+
+    if (ent->packet.head.kind != 0)
+        return -1;
 
     ent->packet.head.kind = data->head.kind;
     ent->packet.head.sender = data->head.sender;
@@ -989,8 +1028,11 @@ void SioQueuePendingRecvData(struct SioData * data)
         ent->packet.bytes[i] = data->bytes[i];
     }
 
+    result = gSioSt->nextPendingRecv;
     gSioSt->nextPendingRecv += 1;
     gSioSt->nextPendingRecv &= (SIO_MAX_PENDING_RECV - 1);
+
+    return result;
 }
 
 struct SioData * Sio_PeekPendingSendData(u32 * out)
@@ -1006,17 +1048,25 @@ struct SioData * Sio_PeekPendingSendData(u32 * out)
 
 int SioEmitData(u8 const * src, u16 len)
 {
-    // TODO: clean up
-
     int result;
-    u8 i;
+    int i;
 
     struct SioData * dat;
+
+    if ((src == NULL && len != 0) || len == 0 || len > SIO_MAX_DATA || (len & 1) != 0)
+        return -1;
+
+    if (gSioSt->selfId < 0 || gSioSt->selfId >= (int)ARRAY_COUNT(gSioSt->seq))
+        return -1;
+
+    dat = &gSioSt->pendingSend[gSioSt->nextPendingWrite].packet;
+
+    if (dat->head.kind != 0)
+        return -1;
 
     sUnk_1 = 1;
 
     gSioSt->pendingSend[gSioSt->nextPendingWrite].unk_00 = 0;
-    dat = &gSioSt->pendingSend[gSioSt->nextPendingWrite].packet;
 
     dat->head.kind = SIO_MSG_DATA;
     dat->head.sender = gSioSt->selfId;
@@ -1040,77 +1090,111 @@ int SioEmitData(u8 const * src, u16 len)
     return result;
 }
 
-int SioReceiveData(void * dst, u8 * outSenderId, bool (*verify)(void *))
+int SioReceiveData(void * dst, u16 dstCapacity, u8 * outSenderId, bool (*verify)(void *))
 {
-    u8 i;
-    u8 sender_id;
-
-    struct SioData * dat = &gSioSt->pendingRecv[gSioSt->nextPendingRead].packet;
-
-    if (dat->head.kind != SIO_MSG_DATA || dat->head.sender == gSioSt->selfId)
-        return 0;
-
-    if (dat->head.param != gSioSt->seq[dat->head.sender])
+    for (;;)
     {
-        gSioMsgBuf.kind = SIO_MSG_DATA_ACK;
-        gSioMsgBuf.sender = (gSioSt->selfId << 4) | dat->head.sender;
-        gSioMsgBuf.param = gSioSt->seq[dat->head.sender];
+        int result;
+        u8 senderId;
+        u8 * data = gUnk_75;
+        struct SioData * dat = &gSioSt->pendingRecv[gSioSt->nextPendingRead].packet;
 
-        SioSend(&gSioMsgBuf, sizeof(gSioMsgBuf));
+        if (dat->head.kind != SIO_MSG_DATA)
+            return 0;
 
+        senderId = dat->head.sender;
+
+        if (senderId >= ARRAY_COUNT(gSioSt->seq) || senderId == gSioSt->selfId ||
+            dat->len == 0 || dat->len > SIO_MAX_DATA || dst == NULL ||
+            outSenderId == NULL || dat->len > dstCapacity || (dat->len & 1) != 0)
+        {
+            dat->head.kind = 0;
+            gSioSt->nextPendingRead += 1;
+            gSioSt->nextPendingRead &= (SIO_MAX_PENDING_RECV - 1);
+            return -1;
+        }
+
+        if (dat->head.param != gSioSt->seq[senderId])
+        {
+            gSioMsgBuf.kind = SIO_MSG_DATA_ACK;
+            gSioMsgBuf.sender = (gSioSt->selfId << 4) | senderId;
+            gSioMsgBuf.param = gSioSt->seq[senderId];
+
+            SioSend(&gSioMsgBuf, sizeof(gSioMsgBuf));
+
+            dat->head.kind = 0;
+            gSioSt->nextPendingRead += 1;
+            gSioSt->nextPendingRead &= (SIO_MAX_PENDING_RECV - 1);
+            continue;
+        }
+
+        memcpy(data, dat->bytes, dat->len);
+
+        if (verify != NULL && !verify(data))
+        {
+            gSioMsgBuf.kind = SIO_MSG_DATA_ACK;
+            gSioMsgBuf.sender = (gSioSt->selfId << 4) | senderId;
+            gSioMsgBuf.param = gSioSt->seq[senderId];
+
+            SioSend(&gSioMsgBuf, sizeof(gSioMsgBuf));
+
+            dat->head.kind = 0;
+
+            gSioSt->nextPendingRead += 1;
+            gSioSt->nextPendingRead &= (SIO_MAX_PENDING_RECV - 1);
+            continue;
+        }
+
+        memcpy(dst, data, dat->len);
+
+        result = dat->len;
         dat->head.kind = 0;
+
+        gSioSt->seq[senderId] += 1;
 
         gSioSt->nextPendingRead += 1;
         gSioSt->nextPendingRead &= (SIO_MAX_PENDING_RECV - 1);
 
-        // recursion!
-        return SioReceiveData(dst, outSenderId, verify);
+        *outSenderId = senderId;
+
+        gSioMsgBuf.kind = SIO_MSG_DATA_ACK;
+        gSioMsgBuf.sender = (gSioSt->selfId << 4) | senderId;
+        gSioMsgBuf.param = gSioSt->seq[senderId];
+
+        SioSend(&gSioMsgBuf, sizeof(gSioMsgBuf));
+
+        return result;
     }
-    else
-    {
-        for (i = 0; i < dat->len; i++)
-        {
-            ((u8 *)dst)[i] = dat->bytes[i];
-        }
+}
 
-        if (verify != NULL && !verify(dst))
-        {
-            gSioMsgBuf.kind = SIO_MSG_DATA_ACK;
-            gSioMsgBuf.sender = (gSioSt->selfId << 4) | dat->head.sender;
-            gSioMsgBuf.param = gSioSt->seq[dat->head.sender];
+bool SioGetBigTransferLayout(u32 len, u16 * blockCount, u8 * lastBlockLen)
+{
+    u32 count;
 
-            SioSend(&gSioMsgBuf, sizeof(gSioMsgBuf));
+    if (len == 0 || (len & 1) != 0 || len > SIO_MAX_DATA * UINT16_MAX ||
+        blockCount == NULL || lastBlockLen == NULL)
+        return false;
 
-            dat->head.kind = 0;
+    count = (len + SIO_MAX_DATA - 1) / SIO_MAX_DATA;
+    *blockCount = count;
+    *lastBlockLen = len - (count - 1) * SIO_MAX_DATA;
+    return true;
+}
 
-            gSioSt->nextPendingRead += 1;
-            gSioSt->nextPendingRead &= (SIO_MAX_PENDING_RECV - 1);
+bool SioValidateBigTransferLayout(u16 blockCount, u8 lastBlockLen, u32 capacity, u32 * totalSize)
+{
+    u32 size;
 
-            // recursion!
-            return SioReceiveData(dst, outSenderId, verify);
-        }
-        else
-        {
-            dat->head.kind = 0;
+    if (blockCount == 0 || lastBlockLen == 0 || lastBlockLen > SIO_MAX_DATA || totalSize == NULL)
+        return false;
 
-            sender_id = dat->head.sender;
+    size = (blockCount - 1) * SIO_MAX_DATA + lastBlockLen;
 
-            gSioSt->seq[dat->head.sender] += 1;
+    if (size > capacity)
+        return false;
 
-            gSioSt->nextPendingRead += 1;
-            gSioSt->nextPendingRead &= (SIO_MAX_PENDING_RECV - 1);
-
-            *outSenderId = sender_id;
-
-            gSioMsgBuf.kind = SIO_MSG_DATA_ACK;
-            gSioMsgBuf.sender = (gSioSt->selfId << 4) | dat->head.sender;
-            gSioMsgBuf.param = gSioSt->seq[dat->head.sender];
-
-            SioSend(&gSioMsgBuf, sizeof(gSioMsgBuf));
-
-            return dat->len;
-        }
-    }
+    *totalSize = size;
+    return true;
 }
 
 void Sio_Halt(void)
@@ -1211,7 +1295,6 @@ void SioClearOutgoingQueue(void)
 
 void SioBigSend_Init(struct SioBigSendProc * proc)
 {
-    int i;
     u8 data[4];
 
     gSioSt->selfSeq = gSioSt->unk_022 = gSioSt->unk_02E = 0;
@@ -1225,31 +1308,44 @@ void SioBigSend_Init(struct SioBigSendProc * proc)
     data[2] = proc->blockCount & 0xFF;
     data[3] = proc->lastBlockLen;
 
-    SioEmitData(data, sizeof(data));
+    if (SioEmitData(data, sizeof(data)) < 0)
+    {
+        gSioSt->unk_01F = SIO_BIG_TRANSFER_ERROR;
+        Proc_End(proc);
+        return;
+    }
+
     gSioSt->unk_02E = 1;
 }
 
 void SioBigSend_Loop(struct SioBigSendProc * proc)
 {
+    int len;
+
     if (proc->func != NULL)
         proc->func(proc);
 
     if (gSioSt->unk_02E == 0)
     {
-        if (proc->currentBlock != gSioSt->selfSeq - 1)
-        {
-            proc->data += SIO_MAX_DATA;
-            proc->completionPercent = proc->currentBlock * 100 / proc->blockCount;
-            proc->currentBlock++;
-        }
+        if (proc->currentBlock >= proc->blockCount)
+            return;
 
-        SioEmitData(proc->data, SIO_MAX_DATA);
+        len = proc->currentBlock == proc->blockCount - 1 ? proc->lastBlockLen : SIO_MAX_DATA;
+
+        if (SioEmitData((u8 const *)proc->data + proc->currentBlock * SIO_MAX_DATA, len) < 0)
+            return;
+
+        proc->currentBlock++;
+        proc->completionPercent = proc->currentBlock * 100 / proc->blockCount;
         gSioSt->unk_02E = 1;
 
         gSioSt->unk_010 = 0;
 
         if (proc->currentBlock >= proc->blockCount)
+        {
+            gSioSt->unk_01F = SIO_BIG_TRANSFER_COMPLETE;
             Proc_Break(proc);
+        }
     }
 }
 
@@ -1260,65 +1356,86 @@ void SioBigReceive_Init(struct SioBigReceiveProc * proc)
     gSioSt->seq[0] = gSioSt->seq[1] = gSioSt->seq[2] = gSioSt->seq[3] = 0;
 
     Sio_ResetSession();
+    gSioSt->unk_01F = SIO_BIG_TRANSFER_ACTIVE;
 }
 
 void SioBigReceive_RecvHeader(struct SioBigReceiveProc * proc)
 {
     u8 data[4];
     u8 id;
+    u32 totalSize;
 
-    u16 got = SioReceiveData(&data, &id, NULL);
+    int got = SioReceiveData(data, sizeof(data), &id, NULL);
 
-    if (got != 0)
+    if (got < 0)
     {
-        proc->unk_34 = data[0];
-        proc->blockCount = (data[1] << 8) + (data[2] & 0xFF);
-        proc->lastBlockLen = data[3];
-
-        Proc_Break(proc);
+        gSioSt->unk_01F = SIO_BIG_TRANSFER_ERROR;
+        Proc_End(proc);
+        return;
     }
+
+    if (got == 0)
+        return;
+
+    if (got != sizeof(data))
+        goto error;
+
+    proc->unk_34 = data[0];
+    proc->blockCount = (data[1] << 8) + data[2];
+    proc->lastBlockLen = data[3];
+
+    if (!SioValidateBigTransferLayout(
+            proc->blockCount,
+            proc->lastBlockLen,
+            proc->capacity,
+            &totalSize))
+        goto error;
+
+    proc->receivedSize = totalSize;
+    Proc_Break(proc);
+    return;
+
+error:
+    gSioSt->unk_01F = SIO_BIG_TRANSFER_ERROR;
+    Proc_End(proc);
 }
 
 void SioBigReceive_Loop(struct SioBigReceiveProc * proc)
 {
     int i;
+    int expectedLen;
+    int got;
     u8 id;
-
     u8 * buf = gGenericBuffer;
 
-    if (proc->currentBlock < proc->blockCount - 1)
-    {
-        u16 got = SioReceiveData(proc->data, &id, NULL);
+    expectedLen = proc->currentBlock == proc->blockCount - 1 ? proc->lastBlockLen : SIO_MAX_DATA;
+    got = SioReceiveData(buf, SIO_MAX_DATA, &id, NULL);
 
-        if (got != 0)
-        {
-            proc->data += SIO_MAX_DATA;
-            proc->completionPercent = proc->currentBlock * 100 / proc->blockCount;
-            proc->currentBlock++;
-        }
+    if (got < 0 || (got > 0 && got != expectedLen))
+    {
+        gSioSt->unk_01F = SIO_BIG_TRANSFER_ERROR;
+        Proc_End(proc);
+        return;
     }
-    else
+
+    if (got > 0)
     {
-        u16 got = SioReceiveData(buf, &id, NULL);
+        for (i = 0; i < got; i++)
+            ((u8 *)proc->data)[i] = buf[i];
 
-        if (got != 0)
-        {
-            for (i = 0; i < proc->lastBlockLen; i++)
-            {
-                *((u8 *)proc->data) = buf[i];
-                proc->data++;
-            }
-
-            proc->completionPercent = proc->currentBlock * 100 / proc->blockCount;
-            proc->currentBlock++;
-        }
+        proc->data = (u8 *)proc->data + got;
+        proc->currentBlock++;
+        proc->completionPercent = proc->currentBlock * 100 / proc->blockCount;
     }
 
     if (proc->func != NULL)
         proc->func(proc);
 
     if (proc->currentBlock >= proc->blockCount)
+    {
+        gSioSt->unk_01F = SIO_BIG_TRANSFER_COMPLETE;
         Proc_Break(proc);
+    }
 }
 
 int StartSioBigSend(void * data, u32 len, void (*func)(struct SioBigSendProc *), u8 arg_3, ProcPtr parent)
@@ -1328,18 +1445,15 @@ int StartSioBigSend(void * data, u32 len, void (*func)(struct SioBigSendProc *),
     u8 lastBlockLen;
     u16 blockCount;
 
-    if (len > SIO_MAX_DATA * UINT16_MAX)
+    if (data == NULL || !SioGetBigTransferLayout(len, &blockCount, &lastBlockLen))
+    {
+        gSioSt->unk_01F = SIO_BIG_TRANSFER_ERROR;
         return -1;
-
-    blockCount = len / SIO_MAX_DATA + 1;
-
-    if (len % SIO_MAX_DATA != 0)
-        blockCount++;
-
-    lastBlockLen = len % SIO_MAX_DATA;
+    }
 
     proc = Proc_StartBlocking(gProcScr_SioBigSend, parent);
 
+    gSioSt->unk_01F = SIO_BIG_TRANSFER_ACTIVE;
     proc->data = data;
     proc->unk_34 = arg_3;
     proc->func = func;
@@ -1352,17 +1466,32 @@ int StartSioBigSend(void * data, u32 len, void (*func)(struct SioBigSendProc *),
     return 0;
 }
 
-void StartSioBigReceive(void * data, void (*func)(struct SioBigReceiveProc *), ProcPtr parent)
+int StartSioBigReceive(
+    void * data,
+    u32 capacity,
+    void (*func)(struct SioBigReceiveProc *),
+    ProcPtr parent)
 {
     struct SioBigReceiveProc * proc;
 
+    if (data == NULL || capacity == 0)
+    {
+        gSioSt->unk_01F = SIO_BIG_TRANSFER_ERROR;
+        return -1;
+    }
+
     proc = Proc_StartBlocking(gProcScr_SioBigReceive, parent);
 
+    gSioSt->unk_01F = SIO_BIG_TRANSFER_ACTIVE;
     proc->func = func;
     proc->data = data;
     proc->completionPercent = 0;
     proc->currentBlock = 0;
     proc->unk_3C = 0;
+    proc->capacity = capacity;
+    proc->receivedSize = 0;
+
+    return 0;
 }
 
 bool IsSioBigTransferActive(void)
@@ -1371,4 +1500,9 @@ bool IsSioBigTransferActive(void)
         return FALSE;
 
     return TRUE;
+}
+
+int GetSioBigTransferStatus(void)
+{
+    return gSioSt->unk_01F;
 }
