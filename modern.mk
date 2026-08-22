@@ -1315,9 +1315,7 @@ $(MODERN_ALL_C_HEADER_DEPS): | expansion-modern-toolchain-check
 # unresolvable alias GCC's -MG happens to also emit.
 MODERN_LOCALIZATION_MSG_IDS_H_BASENAME := $(notdir $(MODERN_LOCALIZATION_MSG_IDS_H))
 MODERN_CONTENT_TEXT_H_BASENAME := $(notdir $(GENERATED_DATA_CONTENT_TEXT_HEADER))
-MODERN_GENERATED_HEADER_BASENAME_RE := $(strip \
-	$(subst .,\.,$(MODERN_LOCALIZATION_MSG_IDS_H_BASENAME))|\
-	$(subst .,\.,$(MODERN_CONTENT_TEXT_H_BASENAME)))
+MODERN_GENERATED_HEADER_BASENAME_RE := $(subst .,\.,$(MODERN_LOCALIZATION_MSG_IDS_H_BASENAME))|$(subst .,\.,$(MODERN_CONTENT_TEXT_H_BASENAME))
 
 # Portability note: this filter deliberately never uses `sed -i` (in-place
 # editing). GNU sed's `-i` takes an *optional* backup-suffix argument (no

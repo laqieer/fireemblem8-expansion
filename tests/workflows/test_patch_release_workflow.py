@@ -19,7 +19,8 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             r"(?ms)^  patch-release:\n(?P<body>.*?)(?=^  [A-Za-z0-9_-]+:\n|\Z)",
             cls.text,
         )
-        cls.assertIsNotNone(job, "workflow must define a jobs.patch-release job")
+        if job is None:
+            raise AssertionError("workflow must define a jobs.patch-release job")
         cls.patch_job = job.group("body")
 
     def test_trusted_push_only_and_no_pr_publication(self):
