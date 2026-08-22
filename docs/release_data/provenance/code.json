@@ -1508,8 +1508,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Wave 0/issue #9 seed: repository-authored documentation. No human legal/provenance review has been recorded yet; this manifest records that honestly rather than asserting a license or clearance.",
-    "oid": "7010a4c60bcbe38416345caa6fe2b20bb21c67fc",
-    "sha256": "deeead970be5e378025c05edf744d69f1352f86d3aaf61b86e89683f81470704"
+    "oid": "b5f09d3e1f790382addad61ae255b3485f4d3d5d",
+    "sha256": "25663ec42fe206677b3ab066cbf81594ca326030b77a5f69fb82451e38475a82"
   },
   {
     "path": "docs/release_data/version_ledger.json",
@@ -6068,8 +6068,8 @@
     "redistribution_approved": false,
     "reviewer": null,
     "notes": "Wave 0/issue #9 seed: repository-authored build tooling/config/source surface (or, for asm/, decompiled disassembly derived from the original ROM). No human legal/provenance review has been recorded yet; this manifest records that honestly rather than asserting a license or clearance.",
-    "oid": "f5a6a3f77d21363f38444b7b0db6aebf8c215ef1",
-    "sha256": "7dd5dc55e557607505b9ba161ea776d983fa25a29cd8e609860eef5162f09f69"
+    "oid": "4e67486960a38fab82ff66b51360336881351601",
+    "sha256": "d292f40755a701367d518ed718c19828b6dde50a84e86ac2339c73adb7baf373"
   },
   {
     "path": "scripts/generated_data/cparse.py",
