@@ -48,7 +48,46 @@ struct BanimPresentationPolicy const gBanimPresentationPolicies[BANIM_PRESENTATI
     },
 };
 
-static u8 sSelectedPolicy = BANIM_PRESENTATION_POLICY_INVALID;
+EWRAM_DATA static u8 sSelectedPolicy = BANIM_PRESENTATION_POLICY_INVALID;
+
+#ifdef BANIM_PRESENTATION_RUNTIME_PROBE_POLICY
+#if BANIM_PRESENTATION_RUNTIME_PROBE_POLICY != BANIM_PRESENTATION_POLICY_DEFAULT && \
+    BANIM_PRESENTATION_RUNTIME_PROBE_POLICY != BANIM_PRESENTATION_POLICY_OFF
+#error "BANIM_PRESENTATION_RUNTIME_PROBE_POLICY must select standard or off"
+#endif
+
+IWRAM_DATA struct BanimPresentationRuntimeProbe gBanimPresentationRuntimeProbe = {0};
+
+void BanimPresentationPolicy_RuntimeProbePrepare(void)
+{
+    sSelectedPolicy = BANIM_PRESENTATION_RUNTIME_PROBE_POLICY;
+}
+
+void BanimPresentationPolicy_RuntimeProbeRecordHit(
+    struct BanimPresentationPolicy const *policy)
+{
+    if (policy == NULL)
+        return;
+
+    gBanimPresentationRuntimeProbe.policyId = policy->id;
+    gBanimPresentationRuntimeProbe.realHitPathObserved = TRUE;
+    gBanimPresentationRuntimeProbe.hitEffectsEnabled =
+        BanimPresentationPolicy_UsesHitEffects(policy);
+    gBanimPresentationRuntimeProbe.paletteFlashEnabled =
+        BanimPresentationPolicy_UsesHitEffectPalette(policy);
+    gBanimPresentationRuntimeProbe.hitNumbersVisible =
+        BanimPresentationPolicy_ShowsHitNumbers(policy);
+    gBanimPresentationRuntimeProbe.damageNumbersVisible =
+        BanimPresentationPolicy_ShowsDamageNumbers(policy);
+    gBanimPresentationRuntimeProbe.critNumbersVisible =
+        BanimPresentationPolicy_ShowsCritNumbers(policy);
+}
+
+void BanimPresentationPolicy_RuntimeProbeRecordPaletteFlash(void)
+{
+    gBanimPresentationRuntimeProbe.paletteFlashStarted = TRUE;
+}
+#endif
 
 struct BanimPresentationPolicy const *BanimPresentationPolicy_Get(u8 policyId)
 {
@@ -149,7 +188,7 @@ bool8 BanimPresentationPolicy_UsesHitEffects(struct BanimPresentationPolicy cons
 
 bool8 BanimPresentationPolicy_UsesHitEffectPalette(struct BanimPresentationPolicy const *policy)
 {
-    return policy != NULL
+    return BanimPresentationPolicy_UsesHitEffects(policy)
         && policy->hitEffectPalette == BANIM_PRESENTATION_HIT_EFFECT_PALETTE_STANDARD;
 }
 

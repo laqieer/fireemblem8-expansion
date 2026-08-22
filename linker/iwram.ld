@@ -190,3 +190,6 @@ PROVIDE(gUnk_86 = __iwram_start + 0x00650C);
 __localized_msg_transform_scratch_start = .;
 *src/msg.o(iwram_data.localized_msg_transform)
 __localized_msg_transform_scratch_end = .;
+
+/* Issue #58's runtime probe exists only in dedicated debug test profiles. */
+*src/banim_presentation.o(iwram_data)

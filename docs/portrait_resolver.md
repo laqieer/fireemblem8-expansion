@@ -25,3 +25,9 @@ retain the existing chapter-specific substitution. The resolver changes no
 save data and adds no graphics assets. It has no dependency or conflict with
 the optional gameplay/config flags. Project rules should be added to the
 registry rather than introducing consumer-specific conditionals.
+
+## Tester-facing cases
+
+[`TC-PORTRAIT-001` and `TC-PORTRAIT-002`](test-cases/presentation-audio-utility.md#tc-portrait-001-resolve-ordered-portrait-and-minimug-rules)
+exercise ordered fixture resolution, bounds, the empty/invalid-registry
+fallback, and chapter substitution without adding portrait content.

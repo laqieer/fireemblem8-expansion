@@ -6,6 +6,10 @@ import subprocess
 import unittest
 from pathlib import Path
 
+from scripts.modernize.tests.test_save_format_meta_bytes_native import (
+    _extract_c_function,
+)
+
 ROOT = Path(__file__).resolve().parents[3]
 
 
@@ -128,6 +132,115 @@ class CasualModeContractTests(unittest.TestCase):
 
 
 class PortraitResolverContractTests(unittest.TestCase):
+    def test_native_fixture_resolves_rule_order_flags_bounds_and_legacy_fallback(self):
+        source = (ROOT / "src/expansion_portraits.c").read_text(encoding="utf-8")
+        header = (ROOT / "include/expansion_portraits.h").read_text(encoding="utf-8")
+        context = re.search(
+            r"struct ExpansionPortraitContext\s*\{.*?\n\};", header, re.DOTALL
+        )
+        rule = re.search(
+            r"struct ExpansionPortraitRule\s*\{.*?\n\};", header, re.DOTALL
+        )
+        self.assertIsNotNone(context)
+        self.assertIsNotNone(rule)
+
+        functions = "\n".join(
+            _extract_c_function(source, name)
+            for name in (
+                "IsValidPortraitId",
+                "IsValidMinimugId",
+                "ExpansionPortrait_ValidateRegistry",
+                "RuleMatches",
+                "ResolveLegacy",
+                "ExpansionPortrait_Resolve",
+            )
+        )
+        probe = f"""
+#include <stdint.h>
+
+typedef uint8_t u8;
+typedef uint16_t u16;
+typedef uint32_t u32;
+#define NULL ((void *)0)
+#define EXPANSION_PORTRAIT_MATCH_ANY 0xFFFF
+#define EXPANSION_PORTRAIT_CHAPTER_ANY 0xFF
+#define EXPANSION_PORTRAIT_FULL_ID_MAX 0x00AC
+#define EXPANSION_PORTRAIT_MINIMUG_ID_MIN 0x7F00
+#define EXPANSION_PORTRAIT_MINIMUG_ID_MAX 0x7F07
+enum ExpansionPortraitKind {{
+    EXPANSION_PORTRAIT_KIND_FULL = 0,
+    EXPANSION_PORTRAIT_KIND_MINIMUG = 1,
+}};
+struct CharacterData {{ u16 number; u16 portraitId; u8 miniPortrait; }};
+struct ClassData {{ u16 number; u16 defaultPortraitId; }};
+struct Unit {{ int unused; }};
+{context.group(0)}
+{rule.group(0)}
+
+struct ExpansionPortraitRule gExpansionPortraitRules[] = {{
+    {{ 10, EXPANSION_PORTRAIT_MATCH_ANY, EXPANSION_PORTRAIT_CHAPTER_ANY, 0,
+        0, 0, 20, 0x7F01 }},
+    {{ 10, 3, 7, 0, 1, 0, 30, 0x7F02 }},
+    {{ 11, EXPANSION_PORTRAIT_MATCH_ANY, EXPANSION_PORTRAIT_CHAPTER_ANY, 0,
+        1, 2, 40, 0x7F03 }},
+}};
+unsigned gExpansionPortraitRuleCount = 3;
+{functions}
+
+int main(void)
+{{
+    struct CharacterData character = {{ 10, 0x4A, 2 }};
+    struct ClassData classData = {{ 3, 0x66 }};
+    struct Unit unit = {{ 0 }};
+    struct ExpansionPortraitContext context = {{
+        &unit, &character, &classData, 10, 3, 7, 1
+    }};
+
+    if (ExpansionPortrait_Resolve(&context, EXPANSION_PORTRAIT_KIND_FULL) != 20)
+        return 1;
+    if (ExpansionPortrait_Resolve(&context, EXPANSION_PORTRAIT_KIND_MINIMUG) != 0x7F01)
+        return 2;
+
+    context.character_id = 11;
+    context.flags = 1;
+    if (ExpansionPortrait_Resolve(&context, EXPANSION_PORTRAIT_KIND_FULL) != 40)
+        return 3;
+    context.flags = 3;
+    if (ExpansionPortrait_Resolve(&context, EXPANSION_PORTRAIT_KIND_FULL) != 0x4A)
+        return 4;
+
+    context.character_id = 10;
+    context.flags = 0;
+    context.chapter_id = 0x22;
+    gExpansionPortraitRuleCount = 0;
+    if (ExpansionPortrait_Resolve(&context, EXPANSION_PORTRAIT_KIND_FULL) != 0x46)
+        return 5;
+
+    gExpansionPortraitRuleCount = 3;
+    context.chapter_id = 7;
+    gExpansionPortraitRules[0].full_portrait_id = 0xAD;
+    if (ExpansionPortrait_ValidateRegistry() != 0)
+        return 6;
+    if (ExpansionPortrait_Resolve(&context, EXPANSION_PORTRAIT_KIND_MINIMUG) != 0x7F02)
+        return 7;
+    return 0;
+}}
+"""
+        artifact_dir = ROOT / "build" / "test-artifacts" / "portrait-resolver-native"
+        artifact_dir.mkdir(parents=True, exist_ok=True)
+        source_path = artifact_dir / "probe.c"
+        binary_path = artifact_dir / "probe"
+        source_path.write_text(probe, encoding="utf-8")
+        try:
+            subprocess.run(
+                ["cc", "-std=c99", str(source_path), "-o", str(binary_path)],
+                cwd=ROOT,
+                check=True,
+            )
+            subprocess.run([str(binary_path)], cwd=ROOT, check=True)
+        finally:
+            shutil.rmtree(artifact_dir, ignore_errors=True)
+
     def test_typed_registry_supports_all_selectors_and_validation(self):
         header = (ROOT / "include/expansion_portraits.h").read_text(encoding="utf-8")
         source = (ROOT / "src/expansion_portraits.c").read_text(encoding="utf-8")

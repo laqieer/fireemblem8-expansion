@@ -7,6 +7,7 @@ MODERN_GOALS := \
 	expansion-modern-elf \
 	expansion-modern-rom \
 	expansion-modern-gdb-smoke \
+	expansion-modern-banim-presentation-check \
 	expansion-modern-boot-check \
 	expansion-modern-savefmt-check \
 	expansion-modern-itemexpansion-check \
@@ -146,6 +147,21 @@ MODERN_BANIM_OVERLAY_LAYOUT_FLAGS := -fno-toplevel-reorder
 # Modern framework builds favor corrected behavior; the archival lane leaves
 # BUGFIX undefined to preserve byte-identical original behavior.
 MODERN_DEFINE_FLAGS := -DMODERN=1 -DNONMATCHING=1 -DBUGFIX=1
+
+# Internal-only battle-presentation runtime evidence. The probe is compiled
+# solely by expansion-modern-banim-presentation-check's dedicated debug
+# profiles; ordinary debug and every release/production build omit it.
+MODERN_BANIM_PRESENTATION_RUNTIME_PROBE_POLICY ?=
+ifneq ($(strip $(MODERN_BANIM_PRESENTATION_RUNTIME_PROBE_POLICY)),)
+  ifneq ($(MODERN_CONFIG),debug)
+    $(error MODERN_BANIM_PRESENTATION_RUNTIME_PROBE_POLICY is debug-test-only)
+  endif
+  ifeq (,$(filter 0 3,$(MODERN_BANIM_PRESENTATION_RUNTIME_PROBE_POLICY)))
+    $(error MODERN_BANIM_PRESENTATION_RUNTIME_PROBE_POLICY must be 0 (standard) or 3 (off))
+  endif
+  MODERN_DEFINE_FLAGS += \
+	-DBANIM_PRESENTATION_RUNTIME_PROBE_POLICY=$(MODERN_BANIM_PRESENTATION_RUNTIME_PROBE_POLICY)
+endif
 
 # Issue #10: the item ID cap is a single build input shared by the data
 # generator (scripts/generated_data/idspace.py resolve_item_id_cap, via the
@@ -2327,6 +2343,35 @@ expansion-modern-gdb-smoke:
 	"$(PYTHON)" "$(MODERN_GDB_SMOKE)" \
 		--elf "$(MODERN_GDB_SMOKE_OUTPUT_DIR)/fireemblem8.elf" \
 		--rom "$(MODERN_GDB_SMOKE_OUTPUT_DIR)/fireemblem8.gba"
+
+MODERN_BANIM_PRESENTATION_RUNTIME_ROOT := $(MODERN_BUILD_ROOT)-banim-presentation-runtime
+MODERN_BANIM_PRESENTATION_RUNTIME_STANDARD_ROOT := \
+	$(MODERN_BANIM_PRESENTATION_RUNTIME_ROOT)/standard
+MODERN_BANIM_PRESENTATION_RUNTIME_OFF_ROOT := \
+	$(MODERN_BANIM_PRESENTATION_RUNTIME_ROOT)/off
+MODERN_BANIM_PRESENTATION_RUNTIME_CHECK := \
+	tools/gba-playtest/run_banim_presentation_checks.py
+MODERN_BANIM_PRESENTATION_RUNTIME_OUTPUT := \
+	$(MODERN_BANIM_PRESENTATION_RUNTIME_ROOT)/captures
+
+.PHONY: expansion-modern-banim-presentation-check
+expansion-modern-banim-presentation-check: expansion-modern-boot-preflight
+	+$(MAKE) --no-print-directory expansion-modern-rom \
+		MODERN_CONFIG=debug MODERN_ABI=aapcs \
+		MODERN_BUILD_ROOT="$(MODERN_BANIM_PRESENTATION_RUNTIME_STANDARD_ROOT)" \
+		MODERN_BANIM_PRESENTATION_RUNTIME_PROBE_POLICY=0
+	+$(MAKE) --no-print-directory expansion-modern-rom \
+		MODERN_CONFIG=debug MODERN_ABI=aapcs \
+		MODERN_BUILD_ROOT="$(MODERN_BANIM_PRESENTATION_RUNTIME_OFF_ROOT)" \
+		MODERN_BANIM_PRESENTATION_RUNTIME_PROBE_POLICY=3
+	"$(PYTHON)" "$(MODERN_BANIM_PRESENTATION_RUNTIME_CHECK)" \
+		--standard-rom "$(MODERN_BANIM_PRESENTATION_RUNTIME_STANDARD_ROOT)/debug/aapcs/fireemblem8.gba" \
+		--standard-elf "$(MODERN_BANIM_PRESENTATION_RUNTIME_STANDARD_ROOT)/debug/aapcs/fireemblem8.elf" \
+		--off-rom "$(MODERN_BANIM_PRESENTATION_RUNTIME_OFF_ROOT)/debug/aapcs/fireemblem8.gba" \
+		--off-elf "$(MODERN_BANIM_PRESENTATION_RUNTIME_OFF_ROOT)/debug/aapcs/fireemblem8.elf" \
+		--out-dir "$(MODERN_BANIM_PRESENTATION_RUNTIME_OUTPUT)"
+	@printf 'Modern ROM battle-presentation runtime check passed (real Ch4 hit, standard + off): %s\n' \
+		"$(MODERN_BANIM_PRESENTATION_RUNTIME_OUTPUT)"
 
 # Preflight the libmGBA-backed playtest backend before spending time building
 # the ROM, with an actionable error pointing at the same backend-check

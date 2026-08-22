@@ -1,4 +1,5 @@
 #include "global.h"
+#include "banim_presentation.h"
 #include "expansion_bgm.h"
 
 #include "hardware.h"
@@ -529,6 +530,13 @@ void GameControl_PostIntro(struct GameCtrlProc * proc)
          * (EventScr_Ch4_BeginningScene, src/events/ch4-eventscript.h)
          * calls CALL(EventScr_CommonPrep) partway through, unlike
          * Chapter 2's. */
+#ifdef BANIM_PRESENTATION_RUNTIME_PROBE_POLICY
+        if (!gBanimPresentationRuntimeProbe.autoLaunchArmed)
+        {
+            DebugTools_RequestChapter4PrepLaunch();
+            gBanimPresentationRuntimeProbe.autoLaunchArmed = TRUE;
+        }
+#endif
         if (DebugTools_ConsumePendingChapter4PrepLaunch())
         {
             SetLCGRNValue(DEBUGTOOLS_FASTBOOT_RNG_SEED);

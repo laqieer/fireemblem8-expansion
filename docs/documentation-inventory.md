@@ -78,6 +78,7 @@ Markdown library, so it stays stdlib-parseable and diff-friendly.
 - docs/test-cases/README.md | laqieer | current | Indexed tester-facing case catalog, schema, and staged coverage lifecycle
 - docs/test-cases/template.md | laqieer | template | Reusable tester-facing case procedure template
 - docs/test-cases/foundation.md | laqieer | current | Tester procedure for the catalog and checker foundation (issue #54)
+- docs/test-cases/presentation-audio-utility.md | laqieer | current | Tester procedures for portrait, sound-room, BGM, presentation, manifest, and utility seams (issue #58)
 - docs/localization.md | laqieer | current | Stable locale/message IDs, catalog authoring, prefs/UI, budgets, and runtime matrices (issue #18)
 - docs/game_localization_catalog.md | laqieer | current | Full-game FE8U-indexed CJK catalog generation, bounded runtime, and synthetic link gate
 - docs/game_locale_sources.md | laqieer | current | Maintainer reference for pinned FE8J/FE8CN imports, verified FE8U mappings, fallbacks, and regeneration gates
