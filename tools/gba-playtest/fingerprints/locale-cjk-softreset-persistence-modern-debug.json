@@ -22,7 +22,7 @@
     },
     {
       "frame": 1690,
-      "framebuffer_hash": "fnv1a64-rgb24:0be48d3d7170ba97",
+      "framebuffer_hash": "fnv1a64-rgb24:33ebd93fb62f99e7",
       "name": "post-reset-selector-skipped-zh-hans-restored",
       "probes": [
         {"address": "gExpansionLanguageMenuProbe+0x00", "size": 1, "value": "0x00"},

@@ -437,6 +437,48 @@ No human code review or approval is required. A CODEOWNERS request is advisory
 unless an external GitHub ruleset enforces it; this workflow does not add such
 a gate.
 
+### CI waiting and agent lifetime
+
+Reasoning subagents must not remain alive merely to wait for a remote workflow.
+The subagent that pushes or dispatches a workflow records the exact candidate
+SHA and run ID, updates the orchestration state, and returns immediately. It
+must not poll until completion, sleep through rate-limit backoff, or repeatedly
+report that the workflow is still pending.
+
+The orchestrator owns exactly one direct shell watcher for each active run,
+rather than assigning that wait to a reasoning subagent:
+
+```bash
+timeout 90m gh run watch <run-id> --interval 30 --exit-status
+```
+
+Run the watcher through the shell runtime so its process-completion
+notification resumes orchestration without model polling. If the bounded
+watcher times out while the workflow is legitimately still running, query its
+status once, then re-arm one direct watcher; never create duplicate watchers.
+Only after the workflow reaches a terminal state may a short-lived reasoning
+agent inspect logs, triage findings, or update evidence.
+
+If a candidate SHA changes, cancel superseded candidate runs with
+`gh run cancel <run-id>` when safe, discard their evidence, and dispatch new
+checks for the replacement SHA. Never repeatedly wake the same subagent merely
+to poll CI, and never accept a stale run because its watcher completed.
+
+Post-merge `master` Build CI monitoring is always nonblocking. Start its
+bounded direct shell watcher in attached asynchronous mode so process
+completion produces a notification, leave the post-merge verification work
+item in progress, and immediately continue scheduling every dependency-ready
+task that does not depend on that Build result. Do not stop orchestration or
+send a waiting-only response merely because the master watcher is active.
+Only issue closure, remote completion, and other true dependents wait for the
+post-merge result.
+
+When the asynchronous watcher completes, verify that the run belongs to the
+exact merged `master` SHA and inspect every required job. Resume the dependent
+completion chain on success. On failure, interrupt ordinary delivery work as
+needed to fix forward or revert immediately; never let background monitoring
+hide a broken default branch.
+
 Before merge:
 
 1. Confirm required Build CI succeeds for the exact candidate commit.
