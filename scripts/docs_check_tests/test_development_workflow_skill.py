@@ -14,6 +14,7 @@ CLAUDE_PATH = ROOT / "CLAUDE.md"
 COPILOT_INSTRUCTIONS_PATH = ROOT / ".github" / "copilot-instructions.md"
 MEANINGFUL_TEST_POLICY_HEADING = "Meaningful test evidence"
 MARKDOWN_HEADING = re.compile(r"^(?P<level>#{2,6}) (?P<heading>.+)$")
+POLICY_ATOM = re.compile(r"^[A-Za-z]+(?:[ /-][A-Za-z]+)*$")
 MEANINGFUL_TEST_POLICY_CLAUSE = re.compile(
     r"^- \*\*(?P<name>[^*:]+):\*\* (?P<status>[a-z-]+)"
     r"(?:\. (?P<detail>.+))?$"
@@ -170,13 +171,11 @@ def read_markdown_section(text, heading):
 
 
 def normalize_policy_atom(text):
-    return " ".join(
-        re.sub(
-            r"[^a-z0-9]+",
-            " ",
-            text.casefold().replace("behaviour", "behavior"),
-        ).split()
-    )
+    """Normalize only accepted policy whitespace and behavior spelling."""
+    normalized = " ".join(text.strip().split())
+    if not POLICY_ATOM.fullmatch(normalized):
+        raise AssertionError(f"invalid policy atom: {text}")
+    return re.sub(r"\bbehaviour\b", "behavior", normalized.casefold())
 
 
 def parse_git_text_rationale_detail(detail):
@@ -526,6 +525,19 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             CANONICAL_POLICY_AST,
             self.assert_meaningful_test_policy(wrapped_git_rationale),
         )
+        whitespace_variation = policy_text.replace(
+            "parsed structural contract",
+            "parsed   structural\tcontract",
+        ).replace(
+            "git-tracks=source,review,history; "
+            "raw-tracked-text=not-behavior-evidence",
+            "git-tracks = source, review, history ; "
+            "raw-tracked-text = not-behavior-evidence",
+        )
+        self.assertEqual(
+            CANONICAL_POLICY_AST,
+            self.assert_meaningful_test_policy(whitespace_variation),
+        )
 
         mutations = {
             "unexpected paragraph": policy_text
@@ -545,9 +557,37 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                 "  - **comments:** prohibited",
                 "  - **comments:** permitted",
             ),
+            "strikethrough label": policy_text.replace(
+                "  - **comments:** prohibited",
+                "  - **~~comments~~:** prohibited",
+            ),
+            "altered emphasis label": policy_text.replace(
+                "  - **comments:** prohibited",
+                "  - **_comments_:** prohibited",
+            ),
+            "marked status": policy_text.replace(
+                "- **Prohibited evidence:** prohibited",
+                "- **Prohibited evidence:** ~~prohibited~~",
+            ),
             "contradictory Git rationale polarity": policy_text.replace(
                 "raw-tracked-text=not-behavior-evidence",
                 "raw-tracked-text=behavior-evidence",
+            ),
+            "punctuated Git rationale polarity": policy_text.replace(
+                "raw-tracked-text=not-behavior-evidence",
+                "raw-tracked-text=not!behavior-evidence",
+            ),
+            "strikethrough Git rationale value": policy_text.replace(
+                "not-behavior-evidence",
+                "~~not-behavior-evidence~~",
+            ),
+            "linked Git rationale value": policy_text.replace(
+                "not-behavior-evidence",
+                "[not-behavior-evidence](https://example.invalid/policy)",
+            ),
+            "code-span Git rationale value": policy_text.replace(
+                "not-behavior-evidence",
+                "`not-behavior-evidence`",
             ),
             "contradictory Git rationale detail": policy_text.replace(
                 "raw-tracked-text=not-behavior-evidence",
