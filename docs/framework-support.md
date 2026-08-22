@@ -11,7 +11,7 @@ it links to them.
 
 | Host | Package manager | Auto-installed by `scripts/quickstart.sh` | CI-verified |
 | --- | --- | --- | --- |
-| Ubuntu / Debian / WSL | `apt` | Yes | Yes — automatic `.github/workflows/build.yml` on `ubuntu-latest`, with parallel master-only broader host and archival lanes after merge |
+| Ubuntu / Debian / WSL | `apt` | Yes | Yes — automatic `.github/workflows/build.yml` on `ubuntu-latest`, with parallel broader host and archival lanes on both PR and master runs |
 | Arch Linux | `pacman` | Yes | No (community-supported; same script path as Ubuntu) |
 | macOS | Homebrew (`brew`) | Yes | No (community-supported) |
 
@@ -25,11 +25,11 @@ none of `scripts/quickstart.sh`, the Makefile, or CI target Windows
 directly.
 
 **Automatic Build CI is the only host this repository re-verifies on every
-push/PR.** A PR candidate uses Build CI and Copilot review concurrently. After
-the direct merge, the same Build workflow adds parallel master-only broader
-host, archival, publication, and fail-closed summary jobs. Arch and macOS
-support is exercised by the same script logic but is not re-run in CI; treat
-regressions there as community-reported, not CI-caught.
+push/PR.** A PR candidate uses the complete combined Build gate and Copilot
+review concurrently. The same Build jobs rerun on `master`; only the
+technically used patch publisher is master-only. Arch and macOS support is
+exercised by the same script logic but is not re-run in CI; treat regressions
+there as community-reported, not CI-caught.
 
 ## Supported toolchains
 
@@ -115,14 +115,14 @@ no ROM build or network access is required for either.
 
 ### Consolidated Build CI
 
-Prefer focused local checks during iteration. Candidate branches run the
-existing `host-tests` and `build` jobs plus Copilot review. A merged `master`
-push automatically adds parallel `master-host-tests`, `legacy`,
-`patch-release`, and fail-closed `summary` jobs to that same workflow. The
-broader master jobs retain CJK/font, codec, configuration/budget, archival,
-and publication evidence without rerunning Build-owned modern debug/release,
-artifact, documentation, generated-data, or localization commands. The
-expected wall clock is approximately 35–40 minutes, not a hard duration gate.
+Prefer focused local checks during iteration. Candidate branches run
+`host-tests`, `build`, `extended-host-tests`, `legacy`, and fail-closed
+`summary` jobs plus Copilot review. A merged `master` push reruns that same
+combined gate and adds only `patch-release`. Unique CJK/font, codec,
+configuration/budget, and archival evidence stays parallel with Build-owned
+modern debug/release, artifact, documentation, generated-data, and
+localization commands. The expected wall clock is approximately 35–40 minutes,
+not a hard duration gate.
 
 The canonical Build CI gate runs `expansion-modern-linker-check` with `-j2`:
 battle-animation producers retain the last complete object while staging a

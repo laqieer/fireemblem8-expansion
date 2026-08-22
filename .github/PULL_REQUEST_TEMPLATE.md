@@ -97,7 +97,7 @@ git diff --shortstat <base>...HEAD
 > CODEOWNERS requests are advisory unless an external ruleset enforces them.
 
 - [ ] Candidate Build CI and Copilot review ran concurrently.
-- [ ] After merge, automatic Build CI's consolidated master-only jobs and
-      fail-closed summary will be recorded before issue closure or remote completion.
+- [ ] After merge, automatic Build CI reruns the same combined jobs and
+      fail-closed summary before issue closure or remote completion.
 - [ ] Every objective acceptance criterion is validated; or the exact
       non-agent-verifiable criterion preventing merge is named.

@@ -69,8 +69,9 @@ tests are not completion. Unless the user explicitly says not to commit or
 push, do not call `task_complete` until all intended changes are committed and
 pushed, the candidate Build CI and Copilot review are clean, the change is
 merged, automatic consolidated Build CI succeeds on the exact `master`
-revision, and `make remote-completion-check` succeeds. The master Build
-contains every required broader host, archival, publication, and summary job.
+revision, and `make remote-completion-check` succeeds. Candidate and master
+Build runs contain the same broader host, archival, and summary jobs; only
+the technically used patch publisher is master-only.
 
 For an objective to resolve all repository issues, also close the resolved
 GitHub issues and require `make all-issues-completion-check` to succeed. Create explicit

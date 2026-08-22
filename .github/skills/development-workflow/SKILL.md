@@ -489,8 +489,8 @@ Before merge:
 
 1. Confirm required Build CI succeeds for the exact candidate commit.
 2. Request Copilot review concurrently with Build CI, and resolve each finding
-   with code or an explanation. Candidate branches run no manual CI workflow;
-   broader evidence belongs to the automatic post-merge Build jobs.
+   with code or an explanation. Candidate Build CI includes the complete
+   combined host, modern, extended-host, archival, and summary gate.
 3. Confirm every objective acceptance criterion, positive scenario, negative
    control, compatibility check, tester-facing case, and documentation
    requirement is complete.
@@ -518,8 +518,8 @@ a generically worded request for review.
 For every issue-specific PR:
 
 1. Verify Build CI on the resulting `master` commit.
-2. Verify the same Build workflow's parallel master-only broader-host,
-   archival, publication, and fail-closed summary jobs for that revision.
+2. Verify the same combined Build workflow for that revision; only the
+   technically used patch publisher is master-only.
 3. If the consolidated post-merge Build fails, immediately fix forward or revert; do not
    report the feature as delivered. The failure blocks the affected issue's
    closure and remote completion, but not unrelated independent PRs.

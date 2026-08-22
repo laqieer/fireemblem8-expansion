@@ -408,11 +408,11 @@ expansion-only keys are explicitly outside that original-game comparison.
 ### Efficient local and pre-merge validation
 
 Use targeted localization tests while editing. A candidate branch receives
-Build CI and Copilot review concurrently. After merge, automatic Build CI on
-`master` adds parallel CJK/font, multilang-codec, and
-configuration/linker-budget coverage. Build owns locale-source, crosswalk,
-raw-closure, rendered-width, and modern debug/release evidence exactly once
-for both candidate and `master` revisions; no separate manual workflow exists.
+Build CI and Copilot review concurrently. The same combined Build gate runs
+parallel CJK/font, multilang-codec, and configuration/linker-budget coverage
+for both candidate and `master` revisions. Build owns locale-source,
+crosswalk, raw-closure, rendered-width, and modern debug/release evidence
+exactly once; no separate manual workflow exists.
 
 ## Testing -- real libmGBA runtime evidence (Sprint 4)
 

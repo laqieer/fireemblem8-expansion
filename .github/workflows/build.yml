@@ -258,10 +258,9 @@ jobs:
     - name: Build isolated all-locales/all-features profile (issue #49)
       run: make expansion-modern-all-locales-all-features-check -j1
 
-  # This master-only lane holds the unique broader host evidence that is too
-  # expensive for candidate PRs but must accompany the post-merge Build run.
-  master-host-tests:
-    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
+  # This lane holds unique broader host evidence for both candidate and
+  # post-merge Build runs. It is independent of host-tests and build.
+  extended-host-tests:
     runs-on: ubuntu-latest
     timeout-minutes: 60
 
@@ -273,10 +272,10 @@ jobs:
         submodules: recursive
         persist-credentials: false
 
-    - name: Verify checked-out master revision
+    - name: Verify checked-out revision
       run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
 
-    - name: Install master host dependencies
+    - name: Install extended host dependencies
       run: sudo apt-get update && sudo apt-get install -y build-essential
 
     - name: Run CJK font gates
@@ -290,10 +289,9 @@ jobs:
         python3 -m unittest discover -s scripts/modernize/tests -p 'test_expansion_config.py' -v
         python3 -m unittest discover -s scripts/linker_report/tests -p 'test_*.py' -v
 
-  # The archival lane remains master-only and parallel with the supported
-  # modern jobs. It is intentionally not candidate PR evidence.
+  # The archival lane is a combined-gate member for both candidate and master
+  # runs, parallel with the supported modern jobs.
   legacy:
-    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
@@ -308,7 +306,7 @@ jobs:
         submodules: recursive
         persist-credentials: false
 
-    - name: Verify checked-out master revision
+    - name: Verify checked-out revision
       run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
 
     - name: Install archival build dependencies
@@ -409,34 +407,32 @@ jobs:
         retention-days: 30
 
   summary:
-    if: ${{ always() && github.event_name == 'push' && github.ref == 'refs/heads/master' }}
-    needs: [host-tests, build, master-host-tests, legacy, patch-release]
+    if: always()
+    needs: [host-tests, build, extended-host-tests, legacy]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
       HOST_TESTS_RESULT: ${{ needs.host-tests.result }}
       BUILD_RESULT: ${{ needs.build.result }}
-      MASTER_HOST_TESTS_RESULT: ${{ needs.master-host-tests.result }}
+      EXTENDED_HOST_TESTS_RESULT: ${{ needs.extended-host-tests.result }}
       LEGACY_RESULT: ${{ needs.legacy.result }}
-      PATCH_RELEASE_RESULT: ${{ needs.patch-release.result }}
 
     steps:
-    - name: Render fail-closed master Build summary
+    - name: Render fail-closed combined Build summary
       run: |
         {
-          echo "## Master Build CI"
+          echo "## Combined Build CI"
           echo
           echo "| Job | Conclusion |"
           echo "| --- | --- |"
           echo "| host-tests | $HOST_TESTS_RESULT |"
           echo "| build | $BUILD_RESULT |"
-          echo "| master-host-tests | $MASTER_HOST_TESTS_RESULT |"
+          echo "| extended-host-tests | $EXTENDED_HOST_TESTS_RESULT |"
           echo "| legacy | $LEGACY_RESULT |"
-          echo "| patch-release | $PATCH_RELEASE_RESULT |"
         } >> "$GITHUB_STEP_SUMMARY"
 
-        for result in "$HOST_TESTS_RESULT" "$BUILD_RESULT" "$MASTER_HOST_TESTS_RESULT" \
-          "$LEGACY_RESULT" "$PATCH_RELEASE_RESULT"
+        for result in "$HOST_TESTS_RESULT" "$BUILD_RESULT" "$EXTENDED_HOST_TESTS_RESULT" \
+          "$LEGACY_RESULT"
         do
           if [ "$result" != "success" ]; then
             echo "required master Build CI job did not succeed: $result" >&2

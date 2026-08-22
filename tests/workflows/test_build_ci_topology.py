@@ -11,13 +11,10 @@ ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github" / "workflows" / "build.yml"
 FULL_MATRIX = ROOT / ".github" / "workflows" / "full-matrix.yml"
 MAKEFILE = ROOT / "Makefile"
-MASTER_WORKER_CONDITION = (
+MASTER_PUBLISHER_CONDITION = (
     "${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}"
 )
-SUMMARY_CONDITION = (
-    "${{ always() && github.event_name == 'push' && github.ref == 'refs/heads/master' }}"
-)
-SUMMARY_NEEDS = "needs: [host-tests, build, master-host-tests, legacy, patch-release]"
+SUMMARY_NEEDS = "needs: [host-tests, build, extended-host-tests, legacy]"
 
 
 def _job_blocks(text: str) -> dict[str, str]:
@@ -67,7 +64,7 @@ def _errors(text: str, full_matrix_exists: bool) -> list[str]:
     expected_jobs = {
         "host-tests",
         "build",
-        "master-host-tests",
+        "extended-host-tests",
         "legacy",
         "patch-release",
         "summary",
@@ -76,33 +73,33 @@ def _errors(text: str, full_matrix_exists: bool) -> list[str]:
         errors.append(f"Build job set differs from consolidated contract: {sorted(jobs)}")
         return errors
 
-    for job_name in ("host-tests", "build"):
-        if MASTER_WORKER_CONDITION in jobs[job_name]:
-            errors.append(f"{job_name} must remain available to pull-request candidates")
+    for job_name in ("host-tests", "build", "extended-host-tests", "legacy"):
+        if "if:" in jobs[job_name]:
+            errors.append(f"{job_name} must run for pull-request candidates and master pushes")
 
-    for job_name in ("master-host-tests", "legacy", "patch-release"):
-        if f"if: {MASTER_WORKER_CONDITION}" not in jobs[job_name]:
-            errors.append(f"{job_name} must be master-push-only")
+    if f"if: {MASTER_PUBLISHER_CONDITION}" not in jobs["patch-release"]:
+        errors.append("patch-release must remain master-push-only")
+    for job_name in ("extended-host-tests", "legacy", "patch-release"):
         if "needs:" in jobs[job_name]:
-            errors.append(f"{job_name} must not create a serial master critical path")
+            errors.append(f"{job_name} must not create a serial combined-gate critical path")
 
     summary = jobs["summary"]
-    if f"if: {SUMMARY_CONDITION}" not in summary:
-        errors.append("summary must be master-push-only and run after failed master jobs")
+    if "if: always()" not in summary:
+        errors.append("summary must run after failed combined jobs on both triggers")
     if SUMMARY_NEEDS not in summary:
         errors.append("summary must depend on every required master Build job")
     if '[ "$result" != "success" ]' not in summary:
         errors.append("summary must fail closed")
 
-    master_host = jobs["master-host-tests"]
+    extended_host = jobs["extended-host-tests"]
     for command in (
         "make -f cjk_fonts.mk cjk-fonts-check cjk-fonts-test",
         "python3 -m unittest discover -s scripts/texttools/tests -p 'test_multilang_codec*.py' -v",
         "python3 -m unittest discover -s scripts/modernize/tests -p 'test_expansion_config.py' -v",
         "python3 -m unittest discover -s scripts/linker_report/tests -p 'test_*.py' -v",
     ):
-        if not _contains_command(master_host, command):
-            errors.append(f"master host lost unique evidence: {command}")
+        if not _contains_command(extended_host, command):
+            errors.append(f"extended host lost unique evidence: {command}")
 
     for duplicate in (
         "scripts/artifact_guard",
@@ -112,8 +109,8 @@ def _errors(text: str, full_matrix_exists: bool) -> list[str]:
         "make game-localization-test",
         "expansion-modern-linker-check",
     ):
-        if _contains_command(master_host, duplicate):
-            errors.append(f"master host repeats Build-owned evidence: {duplicate}")
+        if _contains_command(extended_host, duplicate):
+            errors.append(f"extended host repeats Build-owned evidence: {duplicate}")
 
     for command in (
         "scripts.localization.game_locales check-crosswalk",
@@ -161,13 +158,13 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             [],
         )
 
-    def test_master_worker_removed_from_pull_request_path_fails(self):
+    def test_combined_worker_removed_from_pull_request_path_fails(self):
         changed = self.text.replace(
-            f"if: {MASTER_WORKER_CONDITION}",
-            "if: ${{ github.event_name == 'push' }}",
+            "  extended-host-tests:\n",
+            f"  extended-host-tests:\n    if: {MASTER_PUBLISHER_CONDITION}\n",
             1,
         )
-        self.assertTrue(any("master-push-only" in error for error in _errors(changed, False)))
+        self.assertTrue(any("must run for pull-request" in error for error in _errors(changed, False)))
 
     def test_serial_master_worker_dependency_fails(self):
         changed = self.text.replace(
@@ -175,12 +172,12 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             "  patch-release:\n    needs: [build]\n",
             1,
         )
-        self.assertTrue(any("serial master critical path" in error for error in _errors(changed, False)))
+        self.assertTrue(any("serial combined-gate critical path" in error for error in _errors(changed, False)))
 
     def test_missing_summary_dependency_fails(self):
         changed = self.text.replace(
             SUMMARY_NEEDS,
-            "needs: [host-tests, build, master-host-tests, legacy]",
+            "needs: [host-tests, build, extended-host-tests]",
             1,
         )
         self.assertTrue(any("summary must depend" in error for error in _errors(changed, False)))
